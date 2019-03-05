@@ -1202,6 +1202,7 @@ class CatalystExpressionBuilder(
         case Opcode.LDC2_W => ldc(state, List(anonfunCode(offset + 1), anonfunCode(offset + 2)))
         case Opcode.ICONST_1 => const(state, 1)
         case Opcode.IADD => add(state)
+        case Opcode.ISUB => sub(state)
         case Opcode.IRETURN => state
         // Branching instructions
         /*
@@ -1259,6 +1260,11 @@ class CatalystExpressionBuilder(
   def add(state: State): State = {
     val State(op2::op1::rest, locals) = state
     State(Add(op1, op2)::rest, locals)
+  }
+
+  def sub(state: State): State = {
+    val State(op2::op1::rest, locals) = state
+    State(Subtract(op1, op2)::rest, locals)
   }
 
   def ldc(state: State, indexbytes: List[Int]): State = {
