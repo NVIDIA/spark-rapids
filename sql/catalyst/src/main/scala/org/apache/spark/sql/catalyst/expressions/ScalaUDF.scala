@@ -23,11 +23,6 @@ import org.apache.spark.sql.catalyst.expressions.codegen._
 import org.apache.spark.sql.catalyst.expressions.codegen.Block._
 import org.apache.spark.sql.types.{AbstractDataType, DataType}
 
-import javassist.ClassClassPath
-import javassist.ClassPool
-import javassist.bytecode.Opcode
-import javassist.bytecode.analysis.Analyzer
-
 /**
  * User-defined function.
  * @param function  The user defined scala function to run.
@@ -1079,59 +1074,208 @@ case class ScalaUDF(
   }
 
   val expr = {
-    import org.apache.spark.sql.catalyst.expressions.Literal
-    import org.apache.spark.sql.catalyst.expressions.Add
-    val classPool = ClassPool.getDefault
-    val functionClass = function.getClass
-    val functionClassName = functionClass.getName
-    val offset = functionClassName.indexOf("$$Lambda$")
-    val name = functionClassName.substring(0, offset)
-    classPool.insertClassPath(new ClassClassPath(Class.forName(name, true, functionClass.getClassLoader)))
-    val ctClass = classPool.getOrNull(name)
-    val classFile = ctClass.getClassFile
-    val constPool = classFile.getConstPool
-    val methodInfoList = classFile.getMethods.stream.filter(x => x.getName.startsWith("$anonfun$")).collect(java.util.stream.Collectors.toList())
-    System.err.println(s"functionClass: $functionClass")
-    System.err.println(s"functionClassName: $functionClassName")
-    System.err.println(s"name: $name")
-    System.err.println(s"ctClass: $ctClass")
-    System.err.println(s"classFile: $classFile")
-    System.err.println(s"constPool: $constPool")
-    System.err.println(methodInfoList)
-    val methodInfo = methodInfoList.get(0)
-    val codeAttribute = methodInfo.getCodeAttribute()
-    val frames = (new Analyzer()).analyze(ctClass, methodInfo)
-    System.err.println(frames.length)
-    System.err.println("\nframes: ")
-    frames.map(System.err.println(_))
-    val code = codeAttribute.getCode()
-    System.err.println(code.mkString(" "))
     try {
-      val (_, stack) = code.foldLeft(("", List[Expression]())){ (ret, c) =>
-        val (expr, stack) = ret
-        if (c == Opcode.ILOAD_0.toByte) {
-          val result = children(0)
-          (expr + "\nOpcode.ILOAD_0" + result, result::stack)
-        } else if (c == Opcode.ICONST_1.toByte) {
-          val result = Literal(1)
-          (expr + "\nOpcode.ICONST_1" + result, result::stack)
-        } else if (c == Opcode.IADD.toByte) {
-          val op2::op1::rest = stack.takeRight(2)
-          val result = Add(op1, op2)
-          (expr + "\nOpcode.IADD" + result, result::rest)
-        } else if (c == Opcode.IRETURN.toByte) {
-          (expr + "\nOpcode.IRETURN" + stack.headOption, stack)
-        } else {
-          (expr + "\nOther", null::stack)
+      new CatalystExpressionBuilder(function, children)()
+    } catch {
+      case e: Throwable => {e.printStackTrace; None}
+    }
+  }
+}
+
+class CatalystExpressionBuilder(
+    private val function: AnyRef,
+    private val children: Seq[Expression]) {
+
+  import jdk.vm.ci.meta.ConstantPool
+  import jdk.vm.ci.meta.PrimitiveConstant
+  import jdk.vm.ci.hotspot.HotSpotResolvedJavaMethod
+  import jdk.vm.ci.hotspot.HotSpotJVMCIRuntime
+  import jdk.internal.org.objectweb.asm.Opcodes
+  import java.lang.reflect.Method
+  import com.sun.tools.classfile.Opcode
+  import org.apache.spark.sql.catalyst.expressions.Literal
+  import org.apache.spark.sql.catalyst.expressions.Add
+  import scala.annotation.tailrec
+
+  case class State(val stack: List[Expression], val locals: Array[Expression])
+  case class BasicBlock(val offset: Int, val state: State)
+
+  final private val brInstr = Set[Opcode](Opcode.IFLT, Opcode.IRETURN)
+  final private val operandBytes = Map[Opcode, Int](
+      Opcode.LDC2_W -> 2,
+      Opcode.INVOKEINTERFACE -> 4,
+      Opcode.INVOKESTATIC -> 2,
+      Opcode.INVOKEVIRTUAL -> 2
+    ).withDefaultValue(0)
+
+  final private val anonfun: HotSpotResolvedJavaMethod = {
+    val hsmap = HotSpotJVMCIRuntime.runtime.getHostJVMCIBackend.getMetaAccess
+
+    @tailrec
+    def getTarget(lambdaClass: Class[_], getByte: Int => Int, constantPool: ConstantPool, offset: Int): Method = {
+      val opcode = Opcode.get(getByte(offset))
+      System.err.println("opcode: " + opcode)
+      opcode match {
+        case Opcode.INVOKESTATIC |
+             Opcode.INVOKEINTERFACE |
+             Opcode.INVOKEVIRTUAL => {
+          val constPoolIndex = (getByte(offset + 1) << 8) | getByte(offset + 2)
+          val hsMethod = constantPool.lookupMethod(constPoolIndex, opcode.opcode)
+          val targetName = hsMethod.getName
+          if (targetName.startsWith("$anonfun$")) {
+            val declaringClassName = hsMethod.getDeclaringClass.toJavaName
+            System.err.println("targetName1: " + targetName)
+            System.err.println("declaringClass: " + declaringClassName)
+            Class.forName(declaringClassName, true, lambdaClass.getClassLoader).getMethods.find(_.getName.equals(targetName)).get
+          } else if (targetName.startsWith("apply")) {
+            System.err.println("targetName2: " + targetName)
+            System.err.println("lambdaClass: " + lambdaClass)
+            System.err.println("lambdaClass.getMethods: " + lambdaClass.getMethods.mkString(", "))
+            lambdaClass.getMethods.find(_.getName.equals(targetName)).get
+          } else {
+            System.err.println("targetName3: " + targetName)
+            getTarget(lambdaClass, getByte, constantPool, offset + 1 + operandBytes(opcode))
+          }
+        }
+        case _ => getTarget(lambdaClass, getByte, constantPool, offset + 1 + operandBytes(opcode))
+      }
+    }
+
+    @tailrec
+    def getAnonfun(method: Method, lambdaClass: Class[_]): HotSpotResolvedJavaMethod = {
+      val name = method.getName
+      val hsMethod = hsmap.lookupJavaMethod(method).asInstanceOf[HotSpotResolvedJavaMethod]
+      System.err.println("getAnonfunXXX: " + name)
+      if (name.startsWith("$anonfun$") && !name.endsWith("adapted")) {
+        hsMethod
+      } else {
+        getAnonfun(
+          getTarget(
+            lambdaClass,
+            (x: Int) => hsMethod.getCode()(x) & 0xff,
+            hsMethod.getConstantPool,
+            0),
+          lambdaClass)
+      }
+    }
+
+    val functionClass = this.function.getClass
+    System.err.println("functionClass: " + functionClass)
+    val applyMethod = functionClass.getMethods.find(x => x.getName.equals("apply") && x.getReturnType == classOf[Any]).get
+    getAnonfun(applyMethod, functionClass)
+  }
+
+  System.err.println("anonfun: " + anonfun)
+  val anonfunCode: Int => Int = anonfun.getCode()(_) & 0xff
+
+  private def getOffsetsForBasicBlock(basicBlock: BasicBlock): List[Int] = {
+    System.err.println("getCode--")
+    @tailrec
+    def getCodeUntilBr(offsets: List[Int], offset: Int): List[Int] = {
+      val opcode = Opcode.get(anonfunCode(offset))
+      System.err.println("getCodUntilBr: " + opcode)
+      if (brInstr(opcode)) {
+        System.err.println("getCodUntilBr1: " + opcode)
+        offset::offsets
+      } else {
+        System.err.println("getCodUntilBr2: " + opcode)
+        getCodeUntilBr(offset::offsets, offset + 1 + operandBytes(opcode))
+      }
+    }
+    val v = getCodeUntilBr(List[Int](), basicBlock.offset)
+    System.err.println("getCode: " + v.mkString(", "))
+    v
+  }
+
+  private def apply(worklist: List[BasicBlock]): State = {
+    val basicBlock::rest = worklist
+    val BasicBlock(offset, state) = basicBlock
+    getOffsetsForBasicBlock(basicBlock).foldRight(state) { (offset, state) =>
+      val opcode = Opcode.get(anonfunCode(offset))
+      System.err.println("opcode: " + opcode)
+      opcode match {
+        case Opcode.ILOAD_0 => load(state, 0)
+        case Opcode.DLOAD_0 => load(state, 0)
+        case Opcode.DLOAD_3 => load(state, 3)
+        case Opcode.DSTORE_3 => store(state, 3)
+        case Opcode.DCMPL=> dcmpl(state)
+        case Opcode.LDC2_W => ldc(state, List(anonfunCode(offset + 1), anonfunCode(offset + 2)))
+        case Opcode.ICONST_1 => const(state, 1)
+        case Opcode.IADD => add(state)
+        case Opcode.IRETURN => state
+        // Branching instructions
+        /*
+        case Opcode.IFLT => {
+          val (trueBranch, falseBranch) = iflt(state)
+
+        }*/
+        case _ => {
+          System.err.println("Cannot handle bytecode: " + opcode);
           throw new Exception
         }
       }
-      Some(stack.head)
-    } catch {
-      case e => {
-        //e.printStackTrace
-        None
-      }
     }
   }
+
+  def apply(): Option[Expression] = {
+    System.err.println("\nparams: ")
+    anonfun.getParameters.map(System.err.println(_))
+    val (locals, _) = anonfun.getParameters.zip(children).foldLeft((new Array[Expression](anonfun.getMaxLocals), 0)) { (l, p) =>
+      val (locals, index) = l
+      val (param, child) = p
+      val newIndex = param.getKind.toJavaClass match {
+        case java.lang.Double.TYPE => index + 2
+        case java.lang.Long.TYPE => index + 2
+        case _ => index + 1
+      }
+      (locals.updated(index, child), newIndex)
+    }
+    System.err.println("\nlocals: ")
+    locals.map(System.err.println(_))
+    try {
+      val state = apply(List[BasicBlock](BasicBlock(0, State(List[Expression](), locals))))
+      println(state.stack.head)
+      Some(state.stack.head)
+    } catch {
+      case e: Throwable => {e.printStackTrace; None}
+    }
+  }
+
+  def load(state: State, localsIndex: Int): State = {
+    val State(stack, locals) = state
+    State(locals(localsIndex)::stack, locals)
+  }
+
+  def store(state: State, localsIndex: Int): State = {
+    val State(top::rest, locals) = state
+    State(rest, locals.updated(localsIndex, top))
+  }
+
+  def const(state: State, value: Any): State = {
+    val State(stack, locals) = state
+    State(Literal(value)::stack, locals)
+  }
+
+  def add(state: State): State = {
+    val State(op2::op1::rest, locals) = state
+    State(Add(op1, op2)::rest, locals)
+  }
+
+  def ldc(state: State, indexbytes: List[Int]): State = {
+    val State(stack, locals) = state
+    val constPoolIndex = indexbytes.foldLeft(0)((x: Int, y: Int) => (x << 8) | y)
+    State(Literal(anonfun.getConstantPool.lookupConstant(constPoolIndex).asInstanceOf[PrimitiveConstant].asBoxedPrimitive)::stack, locals)
+  }
+
+  def dcmpl(state:State): State = {
+    val State(op2::op1::rest, locals) = state
+    val conditional =
+      If(GreaterThan(op1, op2),
+         Literal(1),
+         If(LessThan(op1, op2),
+            Literal(-1),
+            Literal(0)))
+    State(conditional::rest, locals)
+  }
+
 }
