@@ -1077,7 +1077,7 @@ case class ScalaUDF(
     try {
       new CatalystExpressionBuilder(function, children)()
     } catch {
-      case e: Throwable => None
+      case e: Throwable => { e.printStackTrace; None }
     }
   }
 }
@@ -1097,6 +1097,8 @@ class CatalystExpressionBuilder(
   import jdk.vm.ci.hotspot.HotSpotResolvedJavaMethod
   import org.apache.spark.sql.catalyst.expressions.Literal
   import org.apache.spark.sql.catalyst.expressions.Add
+  import org.apache.spark.sql.catalyst.expressions.And
+  import org.apache.spark.sql.catalyst.expressions.Not
   import org.apache.spark.sql.types.{DoubleType, LongType}
   import scala.annotation.tailrec
   import scala.collection.immutable.IntMap
@@ -1110,9 +1112,10 @@ class CatalystExpressionBuilder(
     val locals = LocalVariables(lambdaReflection)
     try {
       val entryBlock = cfg.basicBlocks.head
-      apply(List(entryBlock), Map(entryBlock -> State(locals)))
+      val expr = apply(List(entryBlock), Map(entryBlock -> State(locals)))
+      expr
     } catch {
-      case e: Throwable => None
+      case e: Throwable => { e.printStackTrace; None }
     }
   }
 
@@ -1120,25 +1123,37 @@ class CatalystExpressionBuilder(
   private def apply(
       worklist: List[BB],
       states: Map[BB, State],
+      pending: Map[BB, Int] = cfg.pred.mapValues { v => v.size },
       visited: Set[BB] = Set()): Option[Expression] = {
-    val basicBlock::rest = worklist
-    val state = states(basicBlock)
-    val unvisitedSucc = cfg.succ(basicBlock).filterNot { x =>
-      (visited + basicBlock)(x)
-    }
-    val newState = (state /: basicBlock.instructionTable) { (st, i) =>
-      i._2(basicBlock, st)
-    }
-    val newStates = (states /: (basicBlock::unvisitedSucc)) { (st, s) =>
-      st + (s -> newState)
-    }
-    if (rest.isEmpty && unvisitedSucc.isEmpty) {
-      newStates(cfg.basicBlocks.head).expr(newStates)
+    if (worklist.isEmpty) {
+      states(cfg.basicBlocks.head).expr
     } else {
-      apply(
-        (rest /: unvisitedSucc) { (w, s) => s::w },
-        newStates,
-        visited + basicBlock)
+      val basicBlock::rest = worklist
+      if (visited(basicBlock)) {
+        // Returning to this basic block after visiting all of its successors.
+        // Combine the expressions from its successors.
+        apply(rest, states + (basicBlock -> basicBlock.combineExpr(states)), pending, visited)
+      } else {
+        val newStates = (states /: basicBlock.instructionTable) { (st, i) =>
+          i._2(basicBlock, st)
+        }
+        val newVisited = visited + basicBlock
+        val (readySucc, newPending) =
+          ((List[BB](), pending) /: cfg.succ(basicBlock)) { (x, s) =>
+            if (newVisited(s)) {
+              x
+            } else {
+              val (r, np) = x
+              val count = np(s) - 1
+              if (count > 0) (r, np + (s -> count)) else (s::r, np - s)
+            }
+          }
+        apply(
+          readySucc:::basicBlock::rest,
+          newStates,
+          newPending,
+          newVisited)
+      }
     }
   }
 
@@ -1146,39 +1161,37 @@ class CatalystExpressionBuilder(
   // State
   //
   case class State(
-    val locals: LocalVariables,
-    val stack: List[Expression] = List(),
-    val expr: Map[BB, State] => Option[Expression] = states => None)
-
-  case class LocalVariables(
-      private val locals: Array[Expression],
-      cond: Expression,
-      next: Option[LocalVariables]) {
-
-    def apply(index: Int): Expression = {
-      next match {
-        case Some(e) => If(cond, locals(index), e(index))
-        case None => locals(index)
+      val locals: LocalVariables,
+      val stack: List[Expression] = List(),
+      val cond: Expression = Literal(true),
+      val expr: Option[Expression] = None) {
+    def +(that: Option[State]): State = {
+      that match {
+        case Some(s) => s.copy(locals = locals.addConditional(cond, s.locals))
+        case None => this
       }
     }
+  }
+
+  case class LocalVariables(private val locals: Array[Expression]) {
+
+    def apply(index: Int): Expression = locals(index)
 
     def updated(index: Int, local: Expression): LocalVariables = {
-      this.copy(locals = locals.updated(index, local), next = next match {
-        case Some(e) => Some(e.updated(index, local))
-        case None => None
-      })
+      this.copy(locals = locals.updated(index, local))
+    }
+
+    def addConditional(cond: Expression, that: LocalVariables): LocalVariables = {
+      this.copy(locals = this.locals.zip(that.locals).map { l => If(cond, l._1, l._2) })
     }
 
     override def toString: String = locals.toString
     def mkString(sep: String): String = locals.mkString(sep)
   }
   object LocalVariables {
-    def apply(
-        lambdaReflection: LambdaReflection,
-        cond: Expression = Literal(true),
-        next: Option[LocalVariables] = None): LocalVariables = {
+    def apply(lambdaReflection: LambdaReflection): LocalVariables = {
       val max = lambdaReflection.getMaxLocals
-      val params = lambdaReflection.getParameters.zip(children)
+      val params = lambdaReflection.getParameters.view.zip(children)
       val (locals, _) = ((new Array[Expression](max), 0) /: params) { (l, p) =>
         val (locals, index) = l
         val (param, arg) = p
@@ -1189,7 +1202,7 @@ class CatalystExpressionBuilder(
         }
         (locals.updated(index, arg), newIndex)
       }
-      LocalVariables(locals, cond, next)
+      LocalVariables(locals)
     }
   }
 
@@ -1197,8 +1210,9 @@ class CatalystExpressionBuilder(
   // CFG
   //
   case class Instruction(val opcode: Opcode, operands: Array[Byte]) {
-    def apply(basicBlock: BB, state: State): State = {
-      opcode match {
+    def apply(basicBlock: BB, states: Map[BB, State]): Map[BB, State] = {
+      val state = states(basicBlock)
+      val newState = opcode match {
         case Opcode.ALOAD_2 => load(state, 2)
         case Opcode.DLOAD_0 => load(state, 0)
         case Opcode.DLOAD_3 => load(state, 3)
@@ -1212,77 +1226,113 @@ class CatalystExpressionBuilder(
         case Opcode.IADD => add(state)
         case Opcode.ISUB => sub(state)
         case Opcode.ARETURN | Opcode.IRETURN =>
-          state.copy(expr = _ => Some(state.stack.head))
-        case _ => {
-          throw new Exception
+          state.copy(expr = Some(state.stack.head))
+        // Branching instructions
+        case Opcode.IFLT => ifOp(state, x => LessThan(x, Literal(0)))
+        case Opcode.GOTO => state
+        case _ => throw new Exception
+      }
+      opcode match {
+        case Opcode.IFLT => {
+          val trueSucc::falseSucc::Nil = cfg.succ(basicBlock)
+          val newTrueState = newState
+          val newFalseState = newState.copy(cond = newState.cond match {
+            case And(cond1, cond2) => And(Not(cond1), cond2)
+            case _ => Not(newState.cond)
+          })
+          (states + (basicBlock -> newState)
+                  + (trueSucc -> (newTrueState + states.get(trueSucc)))
+                  + (falseSucc -> (newFalseState + states.get(falseSucc))))
         }
+        case Opcode.GOTO => {
+          val succ::Nil = cfg.succ(basicBlock)
+          (states + (basicBlock -> newState)
+                  + (succ -> (newState + states.get(succ))))
+        }
+        case _ => states + (basicBlock -> newState)
       }
     }
 
     def size: Int = Instruction.size(opcode)
 
+    def combineExpr(basicBlock: BB, states: Map[BB, State]): State = {
+      val state = states(basicBlock)
+      val succExprs = cfg.succ(basicBlock).map { s => states(s).expr }
+      opcode match {
+        /*
+        case Opcode.IFLT => {
+          println("Combine " + succExprs(0).get + " and " + succExprs(1).get + " into GOTO")
+          state.copy(expr = Some(If(state.cond, succExprs(0).get, succExprs(1).get)))
+        }
+        case Opcode.GOTO => {
+          println("Combine " + succExprs.head + " into GOTO")
+          state.copy(expr = succExprs.head)
+        }
+        case _ => {
+          println("Combine " + state.expr + " into " + opcode)
+          state
+        }
+        */
+        case _ => {
+          if (succExprs.isEmpty) state else state.copy(expr = succExprs.head)
+        }
+      }
+    }
+
     //
     // Handle instructions
     //
     private def load(state: State, localsIndex: Int): State = {
-      val State(locals, stack, expr) = state
-      State(locals, locals(localsIndex)::stack, expr)
+      val State(locals, stack, cond, expr) = state
+      State(locals, locals(localsIndex)::stack, cond, expr)
     }
 
     private def store(state: State, localsIndex: Int): State = {
-      val State(locals, top::rest, expr) = state
-      State(locals.updated(localsIndex, top), rest, expr)
+      val State(locals, top::rest, cond, expr) = state
+      State(locals.updated(localsIndex, top), rest, cond, expr)
     }
 
     private def const(state: State, value: Any): State = {
-      val State(locals, stack, expr) = state
-      State(locals, Literal(value)::stack, expr)
+      val State(locals, stack, cond, expr) = state
+      State(locals, Literal(value)::stack, cond, expr)
     }
 
     private def add(state: State): State = {
-      val State(locals, op2::op1::rest, expr) = state
-      State(locals, Add(op1, op2)::rest, expr)
+      val State(locals, op2::op1::rest, cond, expr) = state
+      State(locals, Add(op1, op2)::rest, cond, expr)
     }
 
     private def sub(state: State): State = {
-      val State(locals, op2::op1::rest, expr) = state
-      State(locals, Subtract(op1, op2)::rest, expr)
+      val State(locals, op2::op1::rest, cond, expr) = state
+      State(locals, Subtract(op1, op2)::rest, cond, expr)
     }
 
     private def ldc(state: State): State = {
-      val State(locals, stack, expr) = state
+      val State(locals, stack, cond, expr) = state
       val constPoolIndex = bytesToInt(operands)
       val constant = Literal(lambdaReflection.lookupConstant(constPoolIndex))
-      State(locals, constant::stack, expr)
+      State(locals, constant::stack, cond, expr)
     }
 
     private def dcmpl(state: State): State = {
-      val State(locals, op2::op1::rest, expr) = state
+      val State(locals, op2::op1::rest, cond, expr) = state
       val conditional =
         If(GreaterThan(op1, op2),
            Literal(1),
            If(LessThan(op1, op2),
               Literal(-1),
               Literal(0)))
-      State(locals, conditional::rest, expr)
+      State(locals, conditional::rest, cond, expr)
     }
 
     private def ifOp(
-        state: State, succ: List[BB],
+        state: State,
         predicate: Expression => Expression): State = {
-      val State(locals, top::rest, expr) = state
-      val fBB::tBB::Nil = succ 
-      State(locals, rest, states => 
-        Some(If(predicate(top),
-                states(tBB).expr(states).get,
-                states(fBB).expr(states).get))
-      )
+      val State(locals, top::rest, cond, expr) = state
+      State(locals, rest, And(predicate(top), cond), expr)
     }
 
-    private def gotoOp(state: State, succ: List[BB]): State = {
-      val State(locals, stack, expr) = state
-      State(locals, stack, states => Some(states(succ.head).expr(states).get))
-    }
+    private def gotoOp(state: State): State = state
   }
   object Instruction {
     def size(opcode: Opcode) : Int = {
@@ -1297,9 +1347,11 @@ class CatalystExpressionBuilder(
     }
   }
 
-  case class BasicBlock(val begin: Int, val end: Int, val succ: List[Int])
-
-  case class BB(instructionTable: SortedMap[Int, Instruction])
+  case class BB(instructionTable: SortedMap[Int, Instruction]) {
+    def combineExpr(states: Map[BB, State]): State = {
+      instructionTable.last._2.combineExpr(this, states)
+    }
+  }
 
   case class CFG(
     basicBlocks: Seq[BB],
