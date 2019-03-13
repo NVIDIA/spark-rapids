@@ -1075,16 +1075,14 @@ case class ScalaUDF(
 
   val expr = {
     try {
-      new CatalystExpressionBuilder(function, children)()
+      CatalystExpressionBuilder(function)(children)
     } catch {
       case e: Throwable => { e.printStackTrace; None }
     }
   }
 }
 
-class CatalystExpressionBuilder(
-    private val function: AnyRef,
-    private val children: Seq[Expression]) {
+case class CatalystExpressionBuilder(private val function: AnyRef) {
 
   import com.sun.tools.classfile.Opcode
   import java.lang.reflect.Method
@@ -1104,8 +1102,8 @@ class CatalystExpressionBuilder(
   final private val lambdaReflection = LambdaReflection(function)
   final private val cfg = CFG(lambdaReflection)
 
-  def apply(): Option[Expression] = {
-    val locals = LocalVariables(lambdaReflection)
+  def apply(children: Seq[Expression]): Option[Expression] = {
+    val locals = LocalVariables(lambdaReflection, children)
     try {
       val entryBlock = cfg.basicBlocks.head
       val expr = apply(List(entryBlock), Map(entryBlock -> State(locals)))
@@ -1130,11 +1128,10 @@ class CatalystExpressionBuilder(
     } else {
       val newVisited = visited + basicBlock
       val (readySucc, newPending) =
-        ((List[BB](), pending) /: cfg.succ(basicBlock)) { (x, s) =>
+        ((List[BB](), pending) /: cfg.succ(basicBlock)) { case (x@(r, np), s) =>
           if (newVisited(s)) {
             x
           } else {
-            val (r, np) = x
             val count = np(s) - 1
             if (count > 0) (r, np + (s -> count)) else (s::r, np - s)
           }
@@ -1213,7 +1210,9 @@ class CatalystExpressionBuilder(
     def mkString(sep: String): String = locals.mkString(sep)
   }
   object LocalVariables {
-    def apply(lambdaReflection: LambdaReflection): LocalVariables = {
+    def apply(
+        lambdaReflection: LambdaReflection,
+        children: Seq[Expression]): LocalVariables = {
       val max = lambdaReflection.getMaxLocals
       val params = lambdaReflection.getParameters.view.zip(children)
       val (locals, _) = ((new Array[Expression](max), 0) /: params) { (l, p) =>
@@ -1438,8 +1437,7 @@ class CatalystExpressionBuilder(
         val instructions = instructionTable
         val bb = BB(instructions)
         ((bb+:basicBlocks).reverse,
-         (offsetToBB /: instructions) { (offsetToBB, instruction) =>
-           val (offset, _) = instruction
+         (offsetToBB /: instructions) { case (offsetToBB, (offset, _)) =>
            offsetToBB + (offset -> bb)
          })
       } else {
@@ -1447,8 +1445,7 @@ class CatalystExpressionBuilder(
         val bb = BB(instructions)
         createBasicBlocks(
           labels.tail, rest, bb+:basicBlocks,
-          (offsetToBB /: instructions) { (offsetToBB, instruction) =>
-            val (offset, _) = instruction
+          (offsetToBB /: instructions) { case (offsetToBB, (offset, _)) =>
             offsetToBB + (offset -> bb)
           })
       }
