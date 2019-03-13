@@ -1095,11 +1095,6 @@ class CatalystExpressionBuilder(
   import jdk.vm.ci.hotspot.HotSpotJVMCIRuntime
   import jdk.vm.ci.hotspot.HotSpotObjectConstant
   import jdk.vm.ci.hotspot.HotSpotResolvedJavaMethod
-  import org.apache.spark.sql.catalyst.expressions.Literal
-  import org.apache.spark.sql.catalyst.expressions.Add
-  import org.apache.spark.sql.catalyst.expressions.And
-  import org.apache.spark.sql.catalyst.expressions.Not
-  import org.apache.spark.sql.catalyst.expressions.Or
   import org.apache.spark.sql.types.{DoubleType, LongType}
   import scala.annotation.tailrec
   import scala.collection.immutable.IntMap
