@@ -1099,6 +1099,7 @@ class CatalystExpressionBuilder(
   import org.apache.spark.sql.catalyst.expressions.Add
   import org.apache.spark.sql.catalyst.expressions.And
   import org.apache.spark.sql.catalyst.expressions.Not
+  import org.apache.spark.sql.catalyst.expressions.Or
   import org.apache.spark.sql.types.{DoubleType, LongType}
   import scala.annotation.tailrec
   import scala.collection.immutable.IntMap
@@ -1151,13 +1152,47 @@ class CatalystExpressionBuilder(
     }
   }
 
+  @tailrec
+  private def simplifyCond(cond: Expression): Expression = {
+    cond match {
+      case And(Literal.TrueLiteral, c) => simplifyCond(c)
+      case And(c, Literal.TrueLiteral) => simplifyCond(c)
+      case And(Literal.FalseLiteral, c) => Literal.FalseLiteral
+      case And(c1@LessThan(s1, Literal(v1, t1)),
+               c2@LessThan(s2, Literal(v2, t2))) if s1 == s2 && t1 == t2 => {
+                 t1 match {
+                   case DoubleType => {
+                     if (v1.asInstanceOf[Double] < v2.asInstanceOf[Double])
+                       c1
+                     else
+                       c2
+                   }
+                   case _ => cond
+                 }
+               }
+      case Or(Literal.TrueLiteral, c) => Literal.TrueLiteral
+      case Or(Literal.FalseLiteral, c) => simplifyCond(c)
+      case Or(c, Literal.FalseLiteral) => simplifyCond(c)
+      case Not(Literal.TrueLiteral) => Literal.FalseLiteral
+      case Not(Literal.FalseLiteral) => Literal.TrueLiteral
+      case Not(LessThan(c1, c2)) => GreaterThanOrEqual(c1, c2)
+      case LessThan(If(c1,
+                       Literal(1, _),
+                       If(c2,
+                          Literal(-1, _),
+                          Literal(0, _))),
+                    Literal(0, _)) => c2
+      case _ => cond
+    }
+  }
+
   //
   // State
   //
   case class State(
       val locals: LocalVariables,
       val stack: List[Expression] = List(),
-      val cond: Expression = Literal(true),
+      val cond: Expression = Literal.TrueLiteral,
       val expr: Option[Expression] = None) {
     def +(that: Option[State]): State = {
       that match {
@@ -1206,7 +1241,7 @@ class CatalystExpressionBuilder(
   case class Instruction(val opcode: Opcode, operands: Array[Byte]) {
     def apply(basicBlock: BB, states: Map[BB, State]): Map[BB, State] = {
       val state = states(basicBlock)
-      val newState = opcode match {
+      val newState@State(_, _, cond, _) = opcode match {
         case Opcode.ALOAD_2 => load(state, 2)
         case Opcode.DLOAD_0 => load(state, 0)
         case Opcode.DLOAD_3 => load(state, 3)
@@ -1222,7 +1257,7 @@ class CatalystExpressionBuilder(
         case Opcode.ARETURN | Opcode.IRETURN =>
           state.copy(expr = Some(state.stack.head))
         // Branching instructions
-        case Opcode.IFLT => ifOp(state, x => LessThan(x, Literal(0)))
+        case Opcode.IFLT => ifOp(state, x => simplifyCond(LessThan(x, Literal(0))))
         case Opcode.GOTO => state
         case _ => throw new Exception
       }
@@ -1230,11 +1265,11 @@ class CatalystExpressionBuilder(
       opcode match {
         case Opcode.IFLT => {
           val trueSucc::falseSucc::Nil = cfg.succ(basicBlock)
-          val newTrueState = newState
-          val newFalseState = newState.copy(cond = newState.cond match {
-            case And(cond1, cond2) => And(Not(cond1), cond2)
-            case _ => Not(newState.cond)
-          })
+          val newTrueState = newState.copy(cond = simplifyCond(cond))
+          val newFalseState = newState.copy(cond = simplifyCond(cond match {
+            case And(cond1, cond2) => And(simplifyCond(Not(cond1)), cond2)
+            case _ => Not(cond)
+          }))
           (newStates
             + (trueSucc -> (newTrueState + newStates.get(trueSucc)))
             + (falseSucc -> (newFalseState + newStates.get(falseSucc))))
