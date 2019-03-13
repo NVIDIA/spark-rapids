@@ -1125,6 +1125,7 @@ class CatalystExpressionBuilder(
       states: Map[BB, State],
       pending: Map[BB, Int] = cfg.pred.mapValues { v => v.size },
       visited: Set[BB] = Set()): Option[Expression] = {
+    val basicBlock::rest = worklist
     val newStates = (states /: basicBlock.instructionTable) { (st, i) =>
       i._2(basicBlock, st)
     }
@@ -1143,7 +1144,7 @@ class CatalystExpressionBuilder(
           }
         }
       apply(
-        readySucc:::basicBlock::rest,
+        readySucc:::rest,
         newStates,
         newPending,
         newVisited)
