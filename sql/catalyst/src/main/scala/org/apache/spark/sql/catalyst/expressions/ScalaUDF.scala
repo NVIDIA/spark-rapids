@@ -1125,35 +1125,28 @@ class CatalystExpressionBuilder(
       states: Map[BB, State],
       pending: Map[BB, Int] = cfg.pred.mapValues { v => v.size },
       visited: Set[BB] = Set()): Option[Expression] = {
-    if (worklist.isEmpty) {
-      states(cfg.basicBlocks.head).expr
+    val newStates = (states /: basicBlock.instructionTable) { (st, i) =>
+      i._2(basicBlock, st)
+    }
+    if (basicBlock.lastInstruction.isReturn) {
+      newStates(basicBlock).expr
     } else {
-      val basicBlock::rest = worklist
-      if (visited(basicBlock)) {
-        // Returning to this basic block after visiting all of its successors.
-        // Combine the expressions from its successors.
-        apply(rest, states + (basicBlock -> basicBlock.combineExpr(states)), pending, visited)
-      } else {
-        val newStates = (states /: basicBlock.instructionTable) { (st, i) =>
-          i._2(basicBlock, st)
-        }
-        val newVisited = visited + basicBlock
-        val (readySucc, newPending) =
-          ((List[BB](), pending) /: cfg.succ(basicBlock)) { (x, s) =>
-            if (newVisited(s)) {
-              x
-            } else {
-              val (r, np) = x
-              val count = np(s) - 1
-              if (count > 0) (r, np + (s -> count)) else (s::r, np - s)
-            }
+      val newVisited = visited + basicBlock
+      val (readySucc, newPending) =
+        ((List[BB](), pending) /: cfg.succ(basicBlock)) { (x, s) =>
+          if (newVisited(s)) {
+            x
+          } else {
+            val (r, np) = x
+            val count = np(s) - 1
+            if (count > 0) (r, np + (s -> count)) else (s::r, np - s)
           }
-        apply(
-          readySucc:::basicBlock::rest,
-          newStates,
-          newPending,
-          newVisited)
-      }
+        }
+      apply(
+        readySucc:::basicBlock::rest,
+        newStates,
+        newPending,
+        newVisited)
     }
   }
 
@@ -1232,6 +1225,7 @@ class CatalystExpressionBuilder(
         case Opcode.GOTO => state
         case _ => throw new Exception
       }
+      val newStates = states + (basicBlock -> newState)
       opcode match {
         case Opcode.IFLT => {
           val trueSucc::falseSucc::Nil = cfg.succ(basicBlock)
@@ -1240,43 +1234,24 @@ class CatalystExpressionBuilder(
             case And(cond1, cond2) => And(Not(cond1), cond2)
             case _ => Not(newState.cond)
           })
-          (states + (basicBlock -> newState)
-                  + (trueSucc -> (newTrueState + states.get(trueSucc)))
-                  + (falseSucc -> (newFalseState + states.get(falseSucc))))
+          (newStates
+            + (trueSucc -> (newTrueState + newStates.get(trueSucc)))
+            + (falseSucc -> (newFalseState + newStates.get(falseSucc))))
         }
         case Opcode.GOTO => {
           val succ::Nil = cfg.succ(basicBlock)
-          (states + (basicBlock -> newState)
-                  + (succ -> (newState + states.get(succ))))
+          (newStates + (succ -> (newState + newStates.get(succ))))
         }
-        case _ => states + (basicBlock -> newState)
+        case _ => newStates
       }
     }
 
     def size: Int = Instruction.size(opcode)
 
-    def combineExpr(basicBlock: BB, states: Map[BB, State]): State = {
-      val state = states(basicBlock)
-      val succExprs = cfg.succ(basicBlock).map { s => states(s).expr }
-      opcode match {
-        /*
-        case Opcode.IFLT => {
-          println("Combine " + succExprs(0).get + " and " + succExprs(1).get + " into GOTO")
-          state.copy(expr = Some(If(state.cond, succExprs(0).get, succExprs(1).get)))
-        }
-        case Opcode.GOTO => {
-          println("Combine " + succExprs.head + " into GOTO")
-          state.copy(expr = succExprs.head)
-        }
-        case _ => {
-          println("Combine " + state.expr + " into " + opcode)
-          state
-        }
-        */
-        case _ => {
-          if (succExprs.isEmpty) state else state.copy(expr = succExprs.head)
-        }
-      }
+    def isReturn: Boolean = opcode match {
+      case Opcode.IRETURN | Opcode.LRETURN | Opcode.FRETURN | Opcode.DRETURN |
+           Opcode.ARETURN | Opcode.RETURN => true
+      case _ => false
     }
 
     //
@@ -1348,9 +1323,9 @@ class CatalystExpressionBuilder(
   }
 
   case class BB(instructionTable: SortedMap[Int, Instruction]) {
-    def combineExpr(states: Map[BB, State]): State = {
-      instructionTable.last._2.combineExpr(this, states)
-    }
+    def last: (Int, Instruction) = instructionTable.last
+
+    def lastInstruction: Instruction = last._2
   }
 
   case class CFG(
