@@ -1353,13 +1353,15 @@ case class CatalystExpressionBuilder(private val function: AnyRef) {
   }
 
   case class BB(instructionTable: SortedMap[Int, Instruction]) {
+    def offset: Int = instructionTable.head._1
+
     def last: (Int, Instruction) = instructionTable.last
 
     def lastInstruction: Instruction = last._2
   }
 
   case class CFG(
-    basicBlocks: Seq[BB],
+    basicBlocks: List[BB],
     pred: Map[BB, List[BB]],
     succ: Map[BB, List[BB]])
   object CFG {
@@ -1431,8 +1433,8 @@ case class CatalystExpressionBuilder(private val function: AnyRef) {
     private def createBasicBlocks(
         labels: SortedSet[Int],
         instructionTable: SortedMap[Int, Instruction],
-        basicBlocks: Seq[BB] = List(),
-        offsetToBB: IntMap[BB] = IntMap()): (Seq[BB], IntMap[BB]) = {
+        basicBlocks: List[BB] = List(),
+        offsetToBB: IntMap[BB] = IntMap()): (List[BB], IntMap[BB]) = {
       if (labels.isEmpty) {
         val instructions = instructionTable
         val bb = BB(instructions)
@@ -1453,26 +1455,30 @@ case class CatalystExpressionBuilder(private val function: AnyRef) {
 
     @tailrec
     private def connectBasicBlocks(
-        basicBlocks: Seq[BB],
+        basicBlocks: List[BB],
         offsetToBB: IntMap[BB],
         edges: SortedMap[Int, List[Int]],
         pred: Map[BB, List[BB]] = Map().withDefaultValue(Nil),
         succ: Map[BB, List[BB]] = Map().withDefaultValue(Nil))
         : (Map[BB, List[BB]], Map[BB, List[BB]]) = {
-      if (edges.isEmpty) {
+      if (basicBlocks.isEmpty) {
         (pred, succ)
       } else {
-        val edge = edges.head
-        val src = offsetToBB(edge._1)
-        val dst = edge._2.map(offsetToBB)
+        val src::rest = basicBlocks
+        val dst = edges.getOrElse(src.last._1,
+                                  if (rest.isEmpty)
+                                    List()
+                                  else
+                                    List(rest.head.offset)).map(offsetToBB)
         connectBasicBlocks(
-          basicBlocks,
+          rest,
           offsetToBB,
-          edges.tail,
+          edges,
           (pred /: dst) { (p, l) => (p + (l -> (src::p(l)))) },
           succ + (src -> dst))
       }
     }
+
   }
 
   //
