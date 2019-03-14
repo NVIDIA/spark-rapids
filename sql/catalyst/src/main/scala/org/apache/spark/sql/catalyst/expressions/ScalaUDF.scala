@@ -1103,10 +1103,10 @@ case class CatalystExpressionBuilder(private val function: AnyRef) {
   final private val cfg = CFG(lambdaReflection)
 
   def apply(children: Seq[Expression]): Option[Expression] = {
-    val locals = LocalVariables(lambdaReflection, children)
     try {
+      val entryState = State(lambdaReflection, children)
       val entryBlock = cfg.basicBlocks.head
-      val expr = apply(List(entryBlock), Map(entryBlock -> State(locals)))
+      val expr = apply(List(entryBlock), Map(entryBlock -> entryState))
       expr
     } catch {
       case e: Throwable => { e.printStackTrace; None }
@@ -1182,37 +1182,27 @@ case class CatalystExpressionBuilder(private val function: AnyRef) {
   // State
   //
   case class State(
-      val locals: LocalVariables,
+      val locals: Array[Expression],
       val stack: List[Expression] = List(),
       val cond: Expression = Literal.TrueLiteral,
       val expr: Option[Expression] = None) {
     def +(that: Option[State]): State = {
       that match {
-        case Some(s) => s.copy(locals = locals.addConditional(cond, s.locals))
+        case Some(s) => addConditional(s)
         case None => this
       }
     }
-  }
 
-  case class LocalVariables(private val locals: Array[Expression]) {
-
-    def apply(index: Int): Expression = locals(index)
-
-    def updated(index: Int, local: Expression): LocalVariables = {
-      this.copy(locals = locals.updated(index, local))
+    private def addConditional(that: State): State = {
+      val combine: ((Expression, Expression)) => Expression = { case (l1, l2) => If(cond, l1, l2) }
+      that.copy(locals = this.locals.zip(that.locals).map(combine),
+                stack = this.stack.zip(that.stack).map(combine))
     }
-
-    def addConditional(cond: Expression, that: LocalVariables): LocalVariables = {
-      this.copy(locals = this.locals.zip(that.locals).map { l => If(cond, l._1, l._2) })
-    }
-
-    override def toString: String = locals.toString
-    def mkString(sep: String): String = locals.mkString(sep)
   }
-  object LocalVariables {
+  object State {
     def apply(
         lambdaReflection: LambdaReflection,
-        children: Seq[Expression]): LocalVariables = {
+        children: Seq[Expression]): State = {
       val max = lambdaReflection.getMaxLocals
       val params = lambdaReflection.getParameters.view.zip(children)
       val (locals, _) = ((new Array[Expression](max), 0) /: params) { (l, p) =>
@@ -1225,7 +1215,7 @@ case class CatalystExpressionBuilder(private val function: AnyRef) {
         }
         (locals.updated(index, arg), newIndex)
       }
-      LocalVariables(locals)
+      State(locals)
     }
   }
 
