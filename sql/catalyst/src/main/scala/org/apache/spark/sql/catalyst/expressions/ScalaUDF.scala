@@ -1120,9 +1120,11 @@ case class CatalystExpressionBuilder(private val function: AnyRef) {
       pending: Map[BB, Int] = cfg.pred.mapValues { v => v.size },
       visited: Set[BB] = Set()): Option[Expression] = {
     val basicBlock::rest = worklist
-    val newStates = (states /: basicBlock.instructionTable) { (st, i) =>
+    val state = states(basicBlock)
+    val newState = (state /: basicBlock.instructionTable) { (st, i) =>
       i._2(basicBlock, st)
     }
+    val newStates = basicBlock.propagateCond(states + (basicBlock -> newState))
     if (basicBlock.lastInstruction.isReturn) {
       newStates(basicBlock).expr
     } else {
@@ -1195,8 +1197,9 @@ case class CatalystExpressionBuilder(private val function: AnyRef) {
 
     private def addConditional(that: State): State = {
       val combine: ((Expression, Expression)) => Expression = { case (l1, l2) => If(cond, l1, l2) }
-      that.copy(locals = this.locals.zip(that.locals).map(combine),
-                stack = this.stack.zip(that.stack).map(combine))
+      that.copy(locals = locals.zip(that.locals).map(combine),
+                stack = stack.zip(that.stack).map(combine),
+                cond = Or(cond, that.cond))
     }
   }
   object State {
@@ -1223,9 +1226,8 @@ case class CatalystExpressionBuilder(private val function: AnyRef) {
   // CFG
   //
   case class Instruction(val opcode: Opcode, operands: Array[Byte]) {
-    def apply(basicBlock: BB, states: Map[BB, State]): Map[BB, State] = {
-      val state = states(basicBlock)
-      val newState@State(_, _, cond, _) = opcode match {
+    def apply(basicBlock: BB, state: State): State = {
+      opcode match {
         case Opcode.ALOAD_2 => load(state, 2)
         case Opcode.DLOAD_0 => load(state, 0)
         case Opcode.DLOAD_3 => load(state, 3)
@@ -1243,26 +1245,7 @@ case class CatalystExpressionBuilder(private val function: AnyRef) {
         // Branching instructions
         case Opcode.IFLT => ifOp(state, x => simplifyCond(LessThan(x, Literal(0))))
         case Opcode.GOTO => state
-        case _ => throw new Exception
-      }
-      val newStates = states + (basicBlock -> newState)
-      opcode match {
-        case Opcode.IFLT => {
-          val trueSucc::falseSucc::Nil = cfg.succ(basicBlock)
-          val newTrueState = newState.copy(cond = simplifyCond(cond))
-          val newFalseState = newState.copy(cond = simplifyCond(cond match {
-            case And(cond1, cond2) => And(simplifyCond(Not(cond1)), cond2)
-            case _ => Not(cond)
-          }))
-          (newStates
-            + (trueSucc -> (newTrueState + newStates.get(trueSucc)))
-            + (falseSucc -> (newFalseState + newStates.get(falseSucc))))
-        }
-        case Opcode.GOTO => {
-          val succ::Nil = cfg.succ(basicBlock)
-          (newStates + (succ -> (newState + newStates.get(succ))))
-        }
-        case _ => newStates
+        case _ => throw new Exception("Unsupported opcode: " + opcode)
       }
     }
 
@@ -1348,6 +1331,30 @@ case class CatalystExpressionBuilder(private val function: AnyRef) {
     def last: (Int, Instruction) = instructionTable.last
 
     def lastInstruction: Instruction = last._2
+
+    def propagateCond(states: Map[BB, State]): Map[BB, State] = {
+      val state@State(_, _, cond, _) = states(this)
+      last._2.opcode match {
+        case Opcode.IFLT | Opcode.IFLE | Opcode.IFGT | Opcode.IFGE |
+             Opcode.IFEQ => {
+          val trueSucc::falseSucc::Nil = cfg.succ(this)
+          val trueState = state.copy(cond = simplifyCond(cond))
+          val falseState = state.copy(cond = simplifyCond(cond match {
+            case And(cond1, cond2) => And(simplifyCond(Not(cond1)), cond2)
+            case _ => Not(cond)
+          }))
+          (states
+            + (trueSucc -> (trueState + states.get(trueSucc)))
+            + (falseSucc -> (falseState + states.get(falseSucc))))
+        }
+        case Opcode.IRETURN | Opcode.LRETURN | Opcode.FRETURN | Opcode.DRETURN |
+             Opcode.ARETURN | Opcode.RETURN => states
+        case _ => {
+          val succ::Nil = cfg.succ(this)
+          (states + (succ -> (state + states.get(succ))))
+        }
+      }
+    }
   }
 
   case class CFG(
