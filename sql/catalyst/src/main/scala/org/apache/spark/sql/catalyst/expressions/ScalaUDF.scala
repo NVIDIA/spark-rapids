@@ -1254,7 +1254,7 @@ case class CatalystExpressionBuilder(private val function: AnyRef) {
       val combine: ((Expression, Expression)) => Expression = { case (l1, l2) => If(cond, l1, l2) }
       that.copy(locals = locals.zip(that.locals).map(combine),
                 stack = stack.zip(that.stack).map(combine),
-                cond = simplifyCond(Or(cond, that.cond)))
+                cond = simplifyCond(Or(that.cond, cond)))
     }
   }
   object State {
@@ -1370,7 +1370,7 @@ case class CatalystExpressionBuilder(private val function: AnyRef) {
         state: State,
         predicate: Expression => Expression): State = {
       val State(locals, top::rest, cond, expr) = state
-      State(locals, rest, And(predicate(top), cond), expr)
+      State(locals, rest, And(cond, predicate(top)), expr)
     }
 
     private def gotoOp(state: State): State = state
@@ -1400,15 +1400,15 @@ case class CatalystExpressionBuilder(private val function: AnyRef) {
       last._2.opcode match {
         case Opcode.IFLT | Opcode.IFLE | Opcode.IFGT | Opcode.IFGE |
              Opcode.IFEQ => {
-          val trueSucc::falseSucc::Nil = cfg.succ(this)
-          val trueState = state.copy(cond = simplifyCond(cond))
+          val falseSucc::trueSucc::Nil = cfg.succ(this)
           val falseState = state.copy(cond = simplifyCond(cond match {
-            case And(cond1, cond2) => And(simplifyCond(Not(cond1)), cond2)
+            case And(cond1, cond2) => And(cond1, simplifyCond(Not(cond2)))
             case _ => simplifyCond(Not(cond))
           }))
+          val trueState = state.copy(cond = simplifyCond(cond))
           (states
-            + (trueSucc -> (trueState + states.get(trueSucc)))
-            + (falseSucc -> (falseState + states.get(falseSucc))))
+            + (falseSucc -> (falseState + states.get(falseSucc)))
+            + (trueSucc -> (trueState + states.get(trueSucc))))
         }
         case Opcode.IRETURN | Opcode.LRETURN | Opcode.FRETURN | Opcode.DRETURN |
              Opcode.ARETURN | Opcode.RETURN => states
@@ -1448,13 +1448,13 @@ case class CatalystExpressionBuilder(private val function: AnyRef) {
         opcode match {
           case Opcode.IFEQ | Opcode.IFNE | Opcode.IFLT | Opcode.IFGE |
                Opcode.IFGT | Opcode.IFLE => {
+            val falseOffset = nextOffset
             val trueOffset = offset + bytesToInt(Array(code(offset + 1),
                                                        code(offset + 2)))
-            val falseOffset = nextOffset
             collectLabelsAndEdges(
               code, nextOffset,
-              labels + trueOffset + falseOffset,
-              edges + (offset -> List(trueOffset, falseOffset)))
+              labels + falseOffset + trueOffset,
+              edges + (offset -> List(falseOffset, trueOffset)))
           }
           case Opcode.GOTO => {
             val labelOffset = offset + bytesToInt(Array(code(offset + 1),
