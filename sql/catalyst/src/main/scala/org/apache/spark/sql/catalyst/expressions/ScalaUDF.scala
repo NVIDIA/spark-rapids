@@ -1234,16 +1234,24 @@ case class CatalystExpressionBuilder(private val function: AnyRef) {
         case Opcode.ILOAD_0 => load(state, 0)
         case Opcode.ASTORE_2 => store(state, 2)
         case Opcode.DSTORE_3 => store(state, 3)
-        case Opcode.DCMPL => dcmpl(state)
+        case Opcode.DCMPL => dcmp(state)
+        case Opcode.DCMPG => dcmp(state)
         case Opcode.LDC => ldc(state)
         case Opcode.LDC2_W => ldc(state)
         case Opcode.ICONST_1 => const(state, 1)
+        case Opcode.DCONST_0 => const(state, 0.0)
+        case Opcode.DCONST_1 => const(state, 1.0)
         case Opcode.IADD => add(state)
         case Opcode.ISUB => sub(state)
-        case Opcode.ARETURN | Opcode.IRETURN =>
+        case Opcode.IRETURN | Opcode.LRETURN | Opcode.FRETURN | Opcode.DRETURN |
+             Opcode.ARETURN | Opcode.RETURN =>
           state.copy(expr = Some(state.stack.head))
         // Branching instructions
         case Opcode.IFLT => ifOp(state, x => simplifyCond(LessThan(x, Literal(0))))
+        case Opcode.IFLE => ifOp(state, x => simplifyCond(LessThanOrEqual(x, Literal(0))))
+        case Opcode.IFGT => ifOp(state, x => simplifyCond(GreaterThan(x, Literal(0))))
+        case Opcode.IFGE => ifOp(state, x => simplifyCond(GreaterThanOrEqual(x, Literal(0))))
+        case Opcode.IFEQ => ifOp(state, x => simplifyCond(EqualTo(x, Literal(0))))
         case Opcode.GOTO => state
         case _ => throw new Exception("Unsupported opcode: " + opcode)
       }
@@ -1292,7 +1300,7 @@ case class CatalystExpressionBuilder(private val function: AnyRef) {
       State(locals, constant::stack, cond, expr)
     }
 
-    private def dcmpl(state: State): State = {
+    private def dcmp(state: State): State = {
       val State(locals, op2::op1::rest, cond, expr) = state
       val conditional =
         If(GreaterThan(op1, op2),
