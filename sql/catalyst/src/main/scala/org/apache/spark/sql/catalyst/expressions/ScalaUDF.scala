@@ -1146,93 +1146,125 @@ case class CatalystExpressionBuilder(private val function: AnyRef) {
     }
   }
 
-  private def simplifyCond(cond: Expression): Expression = {
-    cond match {
-      case And(Literal.TrueLiteral, c) => simplifyCond(c)
-      case And(c, Literal.TrueLiteral) => simplifyCond(c)
-      case And(Literal.FalseLiteral, c) => Literal.FalseLiteral
-      case And(c1@LessThan(s1, Literal(v1, t1)),
-               c2@LessThan(s2, Literal(v2, t2))) if s1 == s2 && t1 == t2 => {
-                 t1 match {
-                   case DoubleType => {
-                     if (v1.asInstanceOf[Double] < v2.asInstanceOf[Double])
-                       c1
-                     else
-                       c2
+  @tailrec
+  private def simplify(cond: Expression): Expression = {
+    def simplifyCond(cond: Expression): Expression = {
+      cond match {
+        case And(Literal.TrueLiteral, c) => simplifyCond(c)
+        case And(c, Literal.TrueLiteral) => simplifyCond(c)
+        case And(Literal.FalseLiteral, c) => Literal.FalseLiteral
+        case And(c1@LessThan(s1, Literal(v1, t1)),
+                 c2@LessThan(s2, Literal(v2, t2))) if s1 == s2 && t1 == t2 => {
+                   t1 match {
+                     case DoubleType => {
+                       if (v1.asInstanceOf[Double] < v2.asInstanceOf[Double])
+                         c1
+                       else
+                         c2
+                     }
+                     case _ => cond
                    }
-                   case _ => cond
                  }
-               }
-      case And(c1@GreaterThan(s1, Literal(v1, t1)),
-               c2@GreaterThan(s2, Literal(v2, t2))) if s1 == s2 && t1 == t2 => {
-                 t1 match {
-                   case DoubleType => {
-                     if (v1.asInstanceOf[Double] > v2.asInstanceOf[Double])
-                       c1
-                     else
-                       c2
+        case And(c1@LessThanOrEqual(s1, Literal(v1, t1)),
+                 c2@LessThanOrEqual(s2, Literal(v2, t2))) if s1 == s2 && t1 == t2 => {
+                   t1 match {
+                     case DoubleType => {
+                       if (v1.asInstanceOf[Double] < v2.asInstanceOf[Double])
+                         c1
+                       else
+                         c2
+                     }
+                     case _ => cond
                    }
-                   case _ => cond
                  }
-               }
-      case And(c1, c2) => And(simplifyCond(c1), simplifyCond(c2))
-      case Or(Literal.TrueLiteral, c) => Literal.TrueLiteral
-      case Or(Literal.FalseLiteral, c) => simplifyCond(c)
-      case Or(c, Literal.FalseLiteral) => simplifyCond(c)
-      case Or(c1, c2) => Or(simplifyCond(c1), simplifyCond(c2))
-      case Or(c1@GreaterThan(s1, Literal(v1, t1)),
-              c2@GreaterThanOrEqual(s2, Literal(v2, t2))) if s1 == s2 && t1 == t2 => {
-                t1 match {
-                  case DoubleType => {
-                    if (v1.asInstanceOf[Double] < v2.asInstanceOf[Double])
-                      c1
-                    else
-                      c2
+        case And(c1@LessThanOrEqual(s1, Literal(v1, t1)),
+                 c2@LessThan(s2, Literal(v2, t2))) if s1 == s2 && t1 == t2 => {
+                   t1 match {
+                     case DoubleType => {
+                       if (v1.asInstanceOf[Double] <= v2.asInstanceOf[Double])
+                         c1
+                       else
+                         c2
+                     }
+                     case _ => cond
+                   }
+                 }
+        case And(c1@GreaterThan(s1, Literal(v1, t1)),
+                 c2@GreaterThan(s2, Literal(v2, t2))) if s1 == s2 && t1 == t2 => {
+                   t1 match {
+                     case DoubleType => {
+                       if (v1.asInstanceOf[Double] > v2.asInstanceOf[Double])
+                         c1
+                       else
+                         c2
+                     }
+                     case _ => cond
+                   }
+                 }
+        case And(c1, c2) => And(simplifyCond(c1), simplifyCond(c2))
+        case Or(Literal.TrueLiteral, c) => Literal.TrueLiteral
+        case Or(Literal.FalseLiteral, c) => simplifyCond(c)
+        case Or(c, Literal.FalseLiteral) => simplifyCond(c)
+        case Or(c1@GreaterThan(s1, Literal(v1, t1)),
+                c2@GreaterThanOrEqual(s2, Literal(v2, t2))) if s1 == s2 && t1 == t2 => {
+                  t1 match {
+                    case DoubleType => {
+                      if (v1.asInstanceOf[Double] < v2.asInstanceOf[Double]) {
+                        c1
+                      } else {
+                        c2
+                      }
+                    }
+                    case _ => {
+                      cond
+                    }
                   }
-                  case _ => cond
                 }
-              }
-      case Not(Literal.TrueLiteral) => Literal.FalseLiteral
-      case Not(Literal.FalseLiteral) => Literal.TrueLiteral
-      case Not(LessThan(c1, c2)) => GreaterThanOrEqual(c1, c2)
-      case Not(LessThanOrEqual(c1, c2)) => GreaterThan(c1, c2)
-      case Not(GreaterThan(c1, c2)) => LessThanOrEqual(c1, c2)
-      case Not(GreaterThanOrEqual(c1, c2)) => LessThan(c1, c2)
-      case EqualTo(Literal(v1, _), Literal(v2, _)) => {
-        if (v1 == v2) Literal.TrueLiteral else Literal.FalseLiteral
+        case Or(c1, c2) => Or(simplifyCond(c1), simplifyCond(c2))
+        case Not(Literal.TrueLiteral) => Literal.FalseLiteral
+        case Not(Literal.FalseLiteral) => Literal.TrueLiteral
+        case Not(LessThan(c1, c2)) => GreaterThanOrEqual(c1, c2)
+        case Not(LessThanOrEqual(c1, c2)) => GreaterThan(c1, c2)
+        case Not(GreaterThan(c1, c2)) => LessThanOrEqual(c1, c2)
+        case Not(GreaterThanOrEqual(c1, c2)) => LessThan(c1, c2)
+        case EqualTo(Literal(v1, _), Literal(v2, _)) => {
+          if (v1 == v2) Literal.TrueLiteral else Literal.FalseLiteral
+        }
+        case LessThan(If(c1,
+                         Literal(1, _),
+                         If(c2,
+                            Literal(-1, _),
+                            Literal(0, _))),
+                      Literal(0, _)) => simplifyCond(And(Not(c1), c2))
+        case LessThanOrEqual(If(c1,
+                                Literal(1, _),
+                                If(c2,
+                                   Literal(-1, _),
+                                   Literal(0, _))),
+                             Literal(0, _)) => simplifyCond(Not(c1))
+        case GreaterThan(If(c1,
+                            Literal(1, _),
+                            If(c2,
+                               Literal(-1, _),
+                               Literal(0, _))),
+                         Literal(0, _)) => c1
+        case GreaterThanOrEqual(If(c1,
+                                   Literal(1, _),
+                                   If(c2,
+                                      Literal(-1, _),
+                                      Literal(0, _))),
+                                Literal(0, _)) => simplifyCond(Or(c1, Not(c2)))
+        case EqualTo(If(c1,
+                        Literal(1, _),
+                        If(c2,
+                           Literal(-1, _),
+                           Literal(0, _))),
+                     Literal(0, _)) => simplifyCond(And(Not(c1), Not(c2)))
+        case _ => cond
       }
-      case LessThan(If(c1,
-                       Literal(1, _),
-                       If(c2,
-                          Literal(-1, _),
-                          Literal(0, _))),
-                    Literal(0, _)) => simplifyCond(And(Not(c1), c2))
-      case LessThanOrEqual(If(c1,
-                              Literal(1, _),
-                              If(c2,
-                                 Literal(-1, _),
-                                 Literal(0, _))),
-                           Literal(0, _)) => simplifyCond(Not(c1))
-      case GreaterThan(If(c1,
-                          Literal(1, _),
-                          If(c2,
-                             Literal(-1, _),
-                             Literal(0, _))),
-                       Literal(0, _)) => c1
-      case GreaterThanOrEqual(If(c1,
-                                 Literal(1, _),
-                                 If(c2,
-                                    Literal(-1, _),
-                                    Literal(0, _))),
-                              Literal(0, _)) => simplifyCond(Or(c1, Not(c2)))
-      case EqualTo(If(c1,
-                      Literal(1, _),
-                      If(c2,
-                         Literal(-1, _),
-                         Literal(0, _))),
-                   Literal(0, _)) => simplifyCond(And(Not(c1), Not(c2)))
-      case _ => cond
     }
+    val simplifiedCond = simplifyCond(cond)
+    if (simplifiedCond == cond) simplifiedCond else simplify(simplifiedCond)
   }
 
   //
@@ -1254,7 +1286,7 @@ case class CatalystExpressionBuilder(private val function: AnyRef) {
       val combine: ((Expression, Expression)) => Expression = { case (l1, l2) => If(cond, l1, l2) }
       that.copy(locals = locals.zip(that.locals).map(combine),
                 stack = stack.zip(that.stack).map(combine),
-                cond = simplifyCond(Or(that.cond, cond)))
+                cond = simplify(Or(that.cond, cond)))
     }
   }
   object State {
@@ -1302,11 +1334,11 @@ case class CatalystExpressionBuilder(private val function: AnyRef) {
              Opcode.ARETURN | Opcode.RETURN =>
           state.copy(expr = Some(state.stack.head))
         // Branching instructions
-        case Opcode.IFLT => ifOp(state, x => simplifyCond(LessThan(x, Literal(0))))
-        case Opcode.IFLE => ifOp(state, x => simplifyCond(LessThanOrEqual(x, Literal(0))))
-        case Opcode.IFGT => ifOp(state, x => simplifyCond(GreaterThan(x, Literal(0))))
-        case Opcode.IFGE => ifOp(state, x => simplifyCond(GreaterThanOrEqual(x, Literal(0))))
-        case Opcode.IFEQ => ifOp(state, x => simplifyCond(EqualTo(x, Literal(0))))
+        case Opcode.IFLT => ifOp(state, x => simplify(LessThan(x, Literal(0))))
+        case Opcode.IFLE => ifOp(state, x => simplify(LessThanOrEqual(x, Literal(0))))
+        case Opcode.IFGT => ifOp(state, x => simplify(GreaterThan(x, Literal(0))))
+        case Opcode.IFGE => ifOp(state, x => simplify(GreaterThanOrEqual(x, Literal(0))))
+        case Opcode.IFEQ => ifOp(state, x => simplify(EqualTo(x, Literal(0))))
         case Opcode.GOTO => state
         case _ => throw new Exception("Unsupported opcode: " + opcode)
       }
@@ -1401,11 +1433,11 @@ case class CatalystExpressionBuilder(private val function: AnyRef) {
         case Opcode.IFLT | Opcode.IFLE | Opcode.IFGT | Opcode.IFGE |
              Opcode.IFEQ => {
           val falseSucc::trueSucc::Nil = cfg.succ(this)
-          val falseState = state.copy(cond = simplifyCond(cond match {
-            case And(cond1, cond2) => And(cond1, simplifyCond(Not(cond2)))
-            case _ => simplifyCond(Not(cond))
+          val falseState = state.copy(cond = simplify(cond match {
+            case And(cond1, cond2) => And(cond1, Not(cond2))
+            case _ => Not(cond)
           }))
-          val trueState = state.copy(cond = simplifyCond(cond))
+          val trueState = state.copy(cond = simplify(cond))
           (states
             + (falseSucc -> (falseState + states.get(falseSucc)))
             + (trueSucc -> (trueState + states.get(trueSucc))))
