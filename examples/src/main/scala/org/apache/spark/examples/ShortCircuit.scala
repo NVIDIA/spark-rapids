@@ -11,7 +11,7 @@ object ShortCircuit {
     val f: Double => Double = { x =>
       val t =
         if (x > 1.0 && x < 3.7) {
-          if (x > 1.1 && x < 2.0) 1.0 else 1.1
+          (if (x > 1.1 && x < 2.0) 1.0 else 1.1) + 24.0
         } else {
 	  if (x < 0.1) 2.3 else 4.1
         }
