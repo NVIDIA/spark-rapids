@@ -1106,8 +1106,7 @@ case class CatalystExpressionBuilder(private val function: AnyRef) {
     try {
       val entryState = State(lambdaReflection, children)
       val entryBlock = cfg.basicBlocks.head
-      val expr = apply(List(entryBlock), Map(entryBlock -> entryState))
-      expr
+      apply(List(entryBlock), Map(entryBlock -> entryState))
     } catch {
       case e: Throwable => { e.printStackTrace; None }
     }
@@ -1147,11 +1146,11 @@ case class CatalystExpressionBuilder(private val function: AnyRef) {
   }
 
   @tailrec
-  private def simplify(cond: Expression): Expression = {
-    def simplifyCond(cond: Expression): Expression = {
-      cond match {
-        case And(Literal.TrueLiteral, c) => simplifyCond(c)
-        case And(c, Literal.TrueLiteral) => simplifyCond(c)
+  private def simplify(expr: Expression): Expression = {
+    def simplifyExpr(expr: Expression): Expression = {
+      expr match {
+        case And(Literal.TrueLiteral, c) => simplifyExpr(c)
+        case And(c, Literal.TrueLiteral) => simplifyExpr(c)
         case And(Literal.FalseLiteral, c) => Literal.FalseLiteral
         case And(c1@LessThan(s1, Literal(v1, t1)),
                  c2@LessThan(s2, Literal(v2, t2))) if s1 == s2 && t1 == t2 => {
@@ -1162,7 +1161,7 @@ case class CatalystExpressionBuilder(private val function: AnyRef) {
                        else
                          c2
                      }
-                     case _ => cond
+                     case _ => expr
                    }
                  }
         case And(c1@LessThanOrEqual(s1, Literal(v1, t1)),
@@ -1174,7 +1173,7 @@ case class CatalystExpressionBuilder(private val function: AnyRef) {
                        else
                          c2
                      }
-                     case _ => cond
+                     case _ => expr
                    }
                  }
         case And(c1@LessThanOrEqual(s1, Literal(v1, t1)),
@@ -1186,7 +1185,7 @@ case class CatalystExpressionBuilder(private val function: AnyRef) {
                        else
                          c2
                      }
-                     case _ => cond
+                     case _ => expr
                    }
                  }
         case And(c1@GreaterThan(s1, Literal(v1, t1)),
@@ -1198,13 +1197,25 @@ case class CatalystExpressionBuilder(private val function: AnyRef) {
                        else
                          c2
                      }
-                     case _ => cond
+                     case _ => expr
                    }
                  }
-        case And(c1, c2) => And(simplifyCond(c1), simplifyCond(c2))
+        case And(c1@GreaterThan(s1, Literal(v1, t1)),
+                 c2@GreaterThanOrEqual(s2, Literal(v2, t2))) if s1 == s2 && t1 == t2 => {
+                   t1 match {
+                     case DoubleType => {
+                       if (v1.asInstanceOf[Double] >= v2.asInstanceOf[Double])
+                         c1
+                       else
+                         c2
+                     }
+                     case _ => expr
+                   }
+                 }
+        case And(c1, c2) => And(simplifyExpr(c1), simplifyExpr(c2))
         case Or(Literal.TrueLiteral, c) => Literal.TrueLiteral
-        case Or(Literal.FalseLiteral, c) => simplifyCond(c)
-        case Or(c, Literal.FalseLiteral) => simplifyCond(c)
+        case Or(Literal.FalseLiteral, c) => simplifyExpr(c)
+        case Or(c, Literal.FalseLiteral) => simplifyExpr(c)
         case Or(c1@GreaterThan(s1, Literal(v1, t1)),
                 c2@GreaterThanOrEqual(s2, Literal(v2, t2))) if s1 == s2 && t1 == t2 => {
                   t1 match {
@@ -1216,11 +1227,11 @@ case class CatalystExpressionBuilder(private val function: AnyRef) {
                       }
                     }
                     case _ => {
-                      cond
+                      expr
                     }
                   }
                 }
-        case Or(c1, c2) => Or(simplifyCond(c1), simplifyCond(c2))
+        case Or(c1, c2) => Or(simplifyExpr(c1), simplifyExpr(c2))
         case Not(Literal.TrueLiteral) => Literal.FalseLiteral
         case Not(Literal.FalseLiteral) => Literal.TrueLiteral
         case Not(LessThan(c1, c2)) => GreaterThanOrEqual(c1, c2)
@@ -1235,13 +1246,13 @@ case class CatalystExpressionBuilder(private val function: AnyRef) {
                          If(c2,
                             Literal(-1, _),
                             Literal(0, _))),
-                      Literal(0, _)) => simplifyCond(And(Not(c1), c2))
+                      Literal(0, _)) => simplifyExpr(And(Not(c1), c2))
         case LessThanOrEqual(If(c1,
                                 Literal(1, _),
                                 If(c2,
                                    Literal(-1, _),
                                    Literal(0, _))),
-                             Literal(0, _)) => simplifyCond(Not(c1))
+                             Literal(0, _)) => simplifyExpr(Not(c1))
         case GreaterThan(If(c1,
                             Literal(1, _),
                             If(c2,
@@ -1253,18 +1264,19 @@ case class CatalystExpressionBuilder(private val function: AnyRef) {
                                    If(c2,
                                       Literal(-1, _),
                                       Literal(0, _))),
-                                Literal(0, _)) => simplifyCond(Or(c1, Not(c2)))
+                                Literal(0, _)) => simplifyExpr(Or(c1, Not(c2)))
         case EqualTo(If(c1,
                         Literal(1, _),
                         If(c2,
                            Literal(-1, _),
                            Literal(0, _))),
-                     Literal(0, _)) => simplifyCond(And(Not(c1), Not(c2)))
-        case _ => cond
+                     Literal(0, _)) => simplifyExpr(And(Not(c1), Not(c2)))
+        case If(c, t, f) if t == f => t
+        case _ => expr
       }
     }
-    val simplifiedCond = simplifyCond(cond)
-    if (simplifiedCond == cond) simplifiedCond else simplify(simplifiedCond)
+    val simplifiedExpr = simplifyExpr(expr)
+    if (simplifiedExpr == expr) simplifiedExpr else simplify(simplifiedExpr)
   }
 
   //
@@ -1283,7 +1295,7 @@ case class CatalystExpressionBuilder(private val function: AnyRef) {
     }
 
     private def addConditional(that: State): State = {
-      val combine: ((Expression, Expression)) => Expression = { case (l1, l2) => If(cond, l1, l2) }
+      val combine: ((Expression, Expression)) => Expression = { case (l1, l2) => simplify(If(cond, l1, l2)) }
       that.copy(locals = locals.zip(that.locals).map(combine),
                 stack = stack.zip(that.stack).map(combine),
                 cond = simplify(Or(that.cond, cond)))
