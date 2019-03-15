@@ -1329,9 +1329,11 @@ case class CatalystExpressionBuilder(private val function: AnyRef) {
       opcode match {
         case Opcode.ALOAD_2 => load(state, 2)
         case Opcode.DLOAD_0 => load(state, 0)
+        case Opcode.DLOAD_2 => load(state, 2)
         case Opcode.DLOAD_3 => load(state, 3)
         case Opcode.ILOAD_0 => load(state, 0)
         case Opcode.ASTORE_2 => store(state, 2)
+        case Opcode.DSTORE_2 => store(state, 2)
         case Opcode.DSTORE_3 => store(state, 3)
         case Opcode.DCMPL => dcmp(state)
         case Opcode.DCMPG => dcmp(state)
@@ -1341,6 +1343,7 @@ case class CatalystExpressionBuilder(private val function: AnyRef) {
         case Opcode.DCONST_0 => const(state, 0.0)
         case Opcode.DCONST_1 => const(state, 1.0)
         case Opcode.IADD => add(state)
+        case Opcode.DADD => add(state)
         case Opcode.ISUB => sub(state)
         case Opcode.IRETURN | Opcode.LRETURN | Opcode.FRETURN | Opcode.DRETURN |
              Opcode.ARETURN | Opcode.RETURN =>
