@@ -1339,6 +1339,7 @@ case class CatalystExpressionBuilder(private val function: AnyRef) {
         case Opcode.DCMPG => dcmp(state)
         case Opcode.LDC => ldc(state)
         case Opcode.LDC2_W => ldc(state)
+        case Opcode.GETSTATIC => getstatic(state)
         case Opcode.ICONST_1 => const(state, 1)
         case Opcode.DCONST_0 => const(state, 0.0)
         case Opcode.DCONST_1 => const(state, 1.0)
@@ -1355,6 +1356,7 @@ case class CatalystExpressionBuilder(private val function: AnyRef) {
         case Opcode.IFGE => ifOp(state, x => simplify(GreaterThanOrEqual(x, Literal(0))))
         case Opcode.IFEQ => ifOp(state, x => simplify(EqualTo(x, Literal(0))))
         case Opcode.GOTO => state
+        case Opcode.INVOKEVIRTUAL => invokevirtual(state)
         case _ => throw new Exception("Unsupported opcode: " + opcode)
       }
     }
@@ -1402,6 +1404,13 @@ case class CatalystExpressionBuilder(private val function: AnyRef) {
       State(locals, constant::stack, cond, expr)
     }
 
+    private def getstatic(state: State): State = {
+      val State(locals, stack, cond, expr) = state
+      val constPoolIndex = bytesToInt(operands)
+      val field = lambdaReflection.lookupField(constPoolIndex, opcode)
+      State(locals, Literal(field.getName)::stack, cond, expr)
+    }
+
     private def dcmp(state: State): State = {
       val State(locals, op2::op1::rest, cond, expr) = state
       val conditional =
@@ -1421,13 +1430,34 @@ case class CatalystExpressionBuilder(private val function: AnyRef) {
     }
 
     private def gotoOp(state: State): State = state
+
+    private def invokevirtual(state: State): State = {
+      val State(locals, stack, cond, expr) = state
+      val constPoolIndex = bytesToInt(operands)
+      val method = lambdaReflection.lookupMethod(constPoolIndex, opcode)
+      val signature = method.getSignature
+      val (args, rest) = stack.splitAt(signature.getParameterCount(true))
+      if (method.getDeclaringClass.toClassName.equals("scala.math.package$")) {
+        // Math functions
+        val ret = method.getName match {
+          case "asin" => Asin(args(0))
+          case "acos" => Acos(args(0))
+          case _ => throw new Exception
+        }
+        State(locals, ret::rest, cond, expr)
+      } else {
+        // Other functions
+        throw new Exception
+      }
+    }
   }
   object Instruction {
     def size(opcode: Opcode) : Int = {
       opcode match {
         case Opcode.GOTO | Opcode.LDC2_W | Opcode.IFEQ | Opcode.IFNE |
              Opcode.IFLT | Opcode.IFGE | Opcode.IFGT | Opcode.IFLE |
-             Opcode.INVOKESTATIC | Opcode.INVOKEVIRTUAL => 3
+             Opcode.INVOKESTATIC | Opcode.INVOKEVIRTUAL |
+             Opcode.GETSTATIC => 3
         case Opcode.LDC => 2
         case Opcode.INVOKEINTERFACE => 5
         case _ => 1
@@ -1606,6 +1636,14 @@ case class CatalystExpressionBuilder(private val function: AnyRef) {
       } else {
         throw new Exception
       }
+    }
+
+    def lookupField(constPoolIndex: Int, opcode: Opcode): jdk.vm.ci.meta.JavaField = {
+      anonfun.getConstantPool.lookupField(constPoolIndex, anonfun, opcode.opcode)
+    }
+
+    def lookupMethod(constPoolIndex: Int, opcode: Opcode): jdk.vm.ci.meta.JavaMethod = {
+      anonfun.getConstantPool.lookupMethod(constPoolIndex, opcode.opcode)
     }
 
     def getCode = anonfun.getCode
