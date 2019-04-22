@@ -1077,7 +1077,12 @@ case class ScalaUDF(
     try {
       CatalystExpressionBuilder(function)(children)
     } catch {
-      case e: Throwable => { e.printStackTrace; None }
+      case e: SparkException => {
+        // scalastyle:off println
+        System.err.println("UDF compilation failure: " + e)
+        None
+        // scalastyle:on println
+      }
     }
   }
 }
@@ -1103,13 +1108,9 @@ case class CatalystExpressionBuilder(private val function: AnyRef) {
   final private val cfg = CFG(lambdaReflection)
 
   def apply(children: Seq[Expression]): Option[Expression] = {
-    try {
-      val entryState = State(lambdaReflection, children)
-      val entryBlock = cfg.basicBlocks.head
-      apply(List(entryBlock), Map(entryBlock -> entryState))
-    } catch {
-      case e: Throwable => { e.printStackTrace; None }
-    }
+    val entryState = State(lambdaReflection, children)
+    val entryBlock = cfg.basicBlocks.head
+    apply(List(entryBlock), Map(entryBlock -> entryState))
   }
 
   @tailrec
@@ -1357,7 +1358,7 @@ case class CatalystExpressionBuilder(private val function: AnyRef) {
         case Opcode.IFEQ => ifOp(state, x => simplify(EqualTo(x, Literal(0))))
         case Opcode.GOTO => state
         case Opcode.INVOKEVIRTUAL => invokevirtual(state)
-        case _ => throw new Exception("Unsupported opcode: " + opcode)
+        case _ => throw new SparkException("Unsupported instruction: " + opcode)
       }
     }
 
@@ -1442,12 +1443,14 @@ case class CatalystExpressionBuilder(private val function: AnyRef) {
         val ret = method.getName match {
           case "asin" => Asin(args(0))
           case "acos" => Acos(args(0))
-          case _ => throw new Exception
+          case _ => throw new SparkException(
+            "Unsupported math function: " + method.getName)
         }
         State(locals, ret::rest, cond, expr)
       } else {
         // Other functions
-        throw new Exception
+        throw new SparkException(
+          "Unsupported instruction: " + Opcode.INVOKEVIRTUAL)
       }
     }
   }
@@ -1631,10 +1634,11 @@ case class CatalystExpressionBuilder(private val function: AnyRef) {
         if (objectConstant.isInternedString) {
           objectConstant.asObject(classOf[String])
         } else {
-          throw new Exception
+          throw new SparkException(
+            "Unsupported object constant: " + objectConstant)
         }
       } else {
-        throw new Exception
+        throw new SparkException("Unsupported constant: " + constant)
       }
     }
 
