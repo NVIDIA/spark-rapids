@@ -1158,9 +1158,10 @@ case class CatalystExpressionBuilder(private val function: AnyRef) {
                    t1 match {
                      case DoubleType =>
                        if (v1.asInstanceOf[Double] < v2.asInstanceOf[Double]) {
-                         c1 }
-                       else {
-                         c2 }
+                         c1
+                       } else {
+                         c2
+                       }
                      case _ => expr
                    }
                  }
@@ -1169,9 +1170,10 @@ case class CatalystExpressionBuilder(private val function: AnyRef) {
                    t1 match {
                      case DoubleType =>
                        if (v1.asInstanceOf[Double] < v2.asInstanceOf[Double]) {
-                         c1 }
-                       else {
-                         c2 }
+                         c1
+                       } else {
+                         c2
+                       }
                      case _ => expr
                    }
                  }
@@ -1180,9 +1182,10 @@ case class CatalystExpressionBuilder(private val function: AnyRef) {
                    t1 match {
                      case DoubleType =>
                        if (v1.asInstanceOf[Double] <= v2.asInstanceOf[Double]) {
-                         c1 }
-                       else {
-                         c2 }
+                         c1
+                       } else {
+                         c2
+                       }
                      case _ => expr
                    }
                  }
@@ -1191,9 +1194,10 @@ case class CatalystExpressionBuilder(private val function: AnyRef) {
                    t1 match {
                      case DoubleType =>
                        if (v1.asInstanceOf[Double] > v2.asInstanceOf[Double]) {
-                         c1 }
-                       else {
-                         c2 }
+                         c1
+                       } else {
+                         c2
+                       }
                      case _ => expr
                    }
                  }
@@ -1202,9 +1206,10 @@ case class CatalystExpressionBuilder(private val function: AnyRef) {
                    t1 match {
                      case DoubleType =>
                        if (v1.asInstanceOf[Double] >= v2.asInstanceOf[Double]) {
-                         c1 }
-                       else {
-                         c2 }
+                         c1
+                       } else {
+                         c2
+                       }
                      case _ => expr
                    }
                  }
@@ -1598,9 +1603,10 @@ case class CatalystExpressionBuilder(private val function: AnyRef) {
         val src::rest = basicBlocks
         val dst = edges.getOrElse(src.last._1,
                                   if (rest.isEmpty) {
-                                    List() }
-                                  else {
-                                    List(rest.head.offset) } ).map(offsetToBB)
+                                    List()
+                                  } else {
+                                    List(rest.head.offset)
+                                  }).map(offsetToBB)
         connectBasicBlocks(
           rest,
           offsetToBB,
