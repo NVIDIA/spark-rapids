@@ -1156,60 +1156,55 @@ case class CatalystExpressionBuilder(private val function: AnyRef) {
         case And(c1@LessThan(s1, Literal(v1, t1)),
                  c2@LessThan(s2, Literal(v2, t2))) if s1 == s2 && t1 == t2 => {
                    t1 match {
-                     case DoubleType => {
-                       if (v1.asInstanceOf[Double] < v2.asInstanceOf[Double])
-                         c1
-                       else
-                         c2
-                     }
+                     case DoubleType =>
+                       if (v1.asInstanceOf[Double] < v2.asInstanceOf[Double]) {
+                         c1 }
+                       else {
+                         c2 }
                      case _ => expr
                    }
                  }
         case And(c1@LessThanOrEqual(s1, Literal(v1, t1)),
                  c2@LessThanOrEqual(s2, Literal(v2, t2))) if s1 == s2 && t1 == t2 => {
                    t1 match {
-                     case DoubleType => {
-                       if (v1.asInstanceOf[Double] < v2.asInstanceOf[Double])
-                         c1
-                       else
-                         c2
-                     }
+                     case DoubleType =>
+                       if (v1.asInstanceOf[Double] < v2.asInstanceOf[Double]) {
+                         c1 }
+                       else {
+                         c2 }
                      case _ => expr
                    }
                  }
         case And(c1@LessThanOrEqual(s1, Literal(v1, t1)),
                  c2@LessThan(s2, Literal(v2, t2))) if s1 == s2 && t1 == t2 => {
                    t1 match {
-                     case DoubleType => {
-                       if (v1.asInstanceOf[Double] <= v2.asInstanceOf[Double])
-                         c1
-                       else
-                         c2
-                     }
+                     case DoubleType =>
+                       if (v1.asInstanceOf[Double] <= v2.asInstanceOf[Double]) {
+                         c1 }
+                       else {
+                         c2 }
                      case _ => expr
                    }
                  }
         case And(c1@GreaterThan(s1, Literal(v1, t1)),
                  c2@GreaterThan(s2, Literal(v2, t2))) if s1 == s2 && t1 == t2 => {
                    t1 match {
-                     case DoubleType => {
-                       if (v1.asInstanceOf[Double] > v2.asInstanceOf[Double])
-                         c1
-                       else
-                         c2
-                     }
+                     case DoubleType =>
+                       if (v1.asInstanceOf[Double] > v2.asInstanceOf[Double]) {
+                         c1 }
+                       else {
+                         c2 }
                      case _ => expr
                    }
                  }
         case And(c1@GreaterThan(s1, Literal(v1, t1)),
                  c2@GreaterThanOrEqual(s2, Literal(v2, t2))) if s1 == s2 && t1 == t2 => {
                    t1 match {
-                     case DoubleType => {
-                       if (v1.asInstanceOf[Double] >= v2.asInstanceOf[Double])
-                         c1
-                       else
-                         c2
-                     }
+                     case DoubleType =>
+                       if (v1.asInstanceOf[Double] >= v2.asInstanceOf[Double]) {
+                         c1 }
+                       else {
+                         c2 }
                      case _ => expr
                    }
                  }
@@ -1220,16 +1215,14 @@ case class CatalystExpressionBuilder(private val function: AnyRef) {
         case Or(c1@GreaterThan(s1, Literal(v1, t1)),
                 c2@GreaterThanOrEqual(s2, Literal(v2, t2))) if s1 == s2 && t1 == t2 => {
                   t1 match {
-                    case DoubleType => {
+                    case DoubleType =>
                       if (v1.asInstanceOf[Double] < v2.asInstanceOf[Double]) {
                         c1
                       } else {
                         c2
                       }
-                    }
-                    case _ => {
+                    case _ =>
                       expr
-                    }
                   }
                 }
         case Or(c1, c2) => Or(simplifyExpr(c1), simplifyExpr(c2))
@@ -1239,9 +1232,8 @@ case class CatalystExpressionBuilder(private val function: AnyRef) {
         case Not(LessThanOrEqual(c1, c2)) => GreaterThan(c1, c2)
         case Not(GreaterThan(c1, c2)) => LessThanOrEqual(c1, c2)
         case Not(GreaterThanOrEqual(c1, c2)) => LessThan(c1, c2)
-        case EqualTo(Literal(v1, _), Literal(v2, _)) => {
+        case EqualTo(Literal(v1, _), Literal(v2, _)) =>
           if (v1 == v2) Literal.TrueLiteral else Literal.FalseLiteral
-        }
         case LessThan(If(c1,
                          Literal(1, _),
                          If(c2,
@@ -1296,7 +1288,8 @@ case class CatalystExpressionBuilder(private val function: AnyRef) {
     }
 
     private def addConditional(that: State): State = {
-      val combine: ((Expression, Expression)) => Expression = { case (l1, l2) => simplify(If(cond, l1, l2)) }
+      val combine: ((Expression, Expression)) =>
+          Expression = { case (l1, l2) => simplify(If(cond, l1, l2)) }
       that.copy(locals = locals.zip(that.locals).map(combine),
                 stack = stack.zip(that.stack).map(combine),
                 cond = simplify(Or(that.cond, cond)))
@@ -1492,10 +1485,9 @@ case class CatalystExpressionBuilder(private val function: AnyRef) {
         }
         case Opcode.IRETURN | Opcode.LRETURN | Opcode.FRETURN | Opcode.DRETURN |
              Opcode.ARETURN | Opcode.RETURN => states
-        case _ => {
+        case _ =>
           val succ::Nil = cfg.succ(this)
           (states + (succ -> (state + states.get(succ))))
-        }
       }
     }
   }
@@ -1536,14 +1528,13 @@ case class CatalystExpressionBuilder(private val function: AnyRef) {
               labels + falseOffset + trueOffset,
               edges + (offset -> List(falseOffset, trueOffset)))
           }
-          case Opcode.GOTO => {
+          case Opcode.GOTO =>
             val labelOffset = offset + bytesToInt(Array(code(offset + 1),
                                                         code(offset + 2)))
             collectLabelsAndEdges(
               code, nextOffset,
               labels + labelOffset,
               edges + (offset -> List(labelOffset)))
-          }
           case _ => collectLabelsAndEdges(code, nextOffset, labels, edges)
         }
       } else {
@@ -1606,10 +1597,10 @@ case class CatalystExpressionBuilder(private val function: AnyRef) {
       } else {
         val src::rest = basicBlocks
         val dst = edges.getOrElse(src.last._1,
-                                  if (rest.isEmpty)
-                                    List()
-                                  else
-                                    List(rest.head.offset)).map(offsetToBB)
+                                  if (rest.isEmpty) {
+                                    List() }
+                                  else {
+                                    List(rest.head.offset) } ).map(offsetToBB)
         connectBasicBlocks(
           rest,
           offsetToBB,
@@ -1649,12 +1640,13 @@ case class CatalystExpressionBuilder(private val function: AnyRef) {
     def lookupMethod(constPoolIndex: Int, opcode: Opcode): jdk.vm.ci.meta.JavaMethod = {
       anonfun.getConstantPool.lookupMethod(constPoolIndex, opcode.opcode)
     }
-
+    // scalastyle:off
     def getCode = anonfun.getCode
 
     def getParameters = anonfun.getParameters
 
     def getMaxLocals = anonfun.getMaxLocals
+    // scalastyle:on
   }
   object LambdaReflection {
     def apply(function: AnyRef): LambdaReflection = {
@@ -1703,9 +1695,11 @@ case class CatalystExpressionBuilder(private val function: AnyRef) {
           val targetName = hsMethod.getName
           if (targetName.startsWith("$anonfun$")) {
             val declaringClassName = hsMethod.getDeclaringClass.toJavaName
+            // scalastyle:off classforname
             Class.forName(declaringClassName, true, lambdaClass.getClassLoader)
                  .getMethods.find(_.getName.equals(targetName))
                  .get
+            // scalastyle:on classforname
           } else if (targetName.startsWith("apply")) {
             lambdaClass.getMethods.find(_.getName.equals(targetName)).get
           } else {

@@ -21,6 +21,8 @@ import org.apache.spark._
 import org.apache.spark.sql._
 import org.apache.spark.sql.functions._;
 
+// scalastyle:off println
+
 object UDFMathToExpr {
   val spark: SparkSession = SparkSession.builder.master("local").getOrCreate()
   import spark.implicits._
@@ -35,3 +37,4 @@ object UDFMathToExpr {
   }
 }
 
+// scalastyle:on println

@@ -21,6 +21,8 @@ import org.apache.spark._
 import org.apache.spark.sql._
 import org.apache.spark.sql.functions._;
 
+// scalastyle:off println
+
 object ShortCircuit {
   val spark: SparkSession = SparkSession.builder.master("local").getOrCreate()
   import spark.implicits._
@@ -30,7 +32,7 @@ object ShortCircuit {
         if (x > 1.0 && x < 3.7) {
           (if (x > 1.1 && x < 2.0) 1.0 else 1.1) + 24.0
         } else {
-	  if (x < 0.1) 2.3 else 4.1
+          if (x < 0.1) 2.3 else 4.1
         }
 
       t + 2.2
@@ -41,3 +43,5 @@ object ShortCircuit {
     result.show; println(result.queryExecution)
   }
 }
+
+// scalastyle:on println
