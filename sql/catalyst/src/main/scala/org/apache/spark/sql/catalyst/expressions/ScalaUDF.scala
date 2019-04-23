@@ -1077,12 +1077,11 @@ case class ScalaUDF(
     try {
       CatalystExpressionBuilder(function)(children)
     } catch {
-      case e: SparkException => {
+      case e: SparkException =>
         // scalastyle:off println
         System.err.println("UDF compilation failure: " + e)
         None
         // scalastyle:on println
-      }
     }
   }
 }
