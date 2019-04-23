@@ -1349,9 +1349,9 @@ case class CatalystExpressionBuilder(private val function: AnyRef) {
         case Opcode.ICONST_1 => const(state, 1)
         case Opcode.DCONST_0 => const(state, 0.0)
         case Opcode.DCONST_1 => const(state, 1.0)
-        case Opcode.IADD => add(state)
-        case Opcode.DADD => add(state)
-        case Opcode.ISUB => sub(state)
+        case Opcode.DADD | Opcode.FADD | Opcode.IADD | Opcode.LADD => add(state)
+        case Opcode.DSUB | Opcode.FSUB | Opcode.ISUB | Opcode.LSUB => sub(state)
+        case Opcode.DMUL | Opcode.FMUL | Opcode.IMUL | Opcode.LMUL => mul(state)
         case Opcode.IRETURN | Opcode.LRETURN | Opcode.FRETURN | Opcode.DRETURN |
              Opcode.ARETURN | Opcode.RETURN =>
           state.copy(expr = Some(state.stack.head))
@@ -1401,6 +1401,11 @@ case class CatalystExpressionBuilder(private val function: AnyRef) {
     private def sub(state: State): State = {
       val State(locals, op2::op1::rest, cond, expr) = state
       State(locals, Subtract(op1, op2)::rest, cond, expr)
+    }
+
+    private def mul(state: State): State = {
+      val State(locals, op2::op1::rest, cond, expr) = state
+      State(locals, Multiply(op1, op2)::rest, cond, expr)
     }
 
     private def ldc(state: State): State = {
