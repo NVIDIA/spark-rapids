@@ -1325,14 +1325,22 @@ case class CatalystExpressionBuilder(private val function: AnyRef) {
   case class Instruction(val opcode: Opcode, operands: Array[Byte]) {
     def apply(basicBlock: BB, state: State): State = {
       opcode match {
-        case Opcode.ALOAD_2 => load(state, 2)
-        case Opcode.DLOAD_0 => load(state, 0)
-        case Opcode.DLOAD_2 => load(state, 2)
-        case Opcode.DLOAD_3 => load(state, 3)
-        case Opcode.ILOAD_0 => load(state, 0)
-        case Opcode.ASTORE_2 => store(state, 2)
-        case Opcode.DSTORE_2 => store(state, 2)
-        case Opcode.DSTORE_3 => store(state, 3)
+        case Opcode.ALOAD_0 | Opcode.DLOAD_0 | Opcode.FLOAD_0 |
+             Opcode.ILOAD_0 | Opcode.LLOAD_0 => load(state, 0)
+        case Opcode.ALOAD_1 | Opcode.DLOAD_1 | Opcode.FLOAD_1 |
+             Opcode.ILOAD_1 | Opcode.LLOAD_1 => load(state, 1)
+        case Opcode.ALOAD_2 | Opcode.DLOAD_2 | Opcode.FLOAD_2 |
+             Opcode.ILOAD_2 | Opcode.LLOAD_2 => load(state, 2)
+        case Opcode.ALOAD_3 | Opcode.DLOAD_3 | Opcode.FLOAD_3 |
+             Opcode.ILOAD_3 | Opcode.LLOAD_3 => load(state, 3)
+        case Opcode.ASTORE_0 | Opcode.DSTORE_0 | Opcode.FSTORE_0 |
+             Opcode.ISTORE_0 | Opcode.LSTORE_0 => store(state, 0)
+        case Opcode.ASTORE_1 | Opcode.DSTORE_1 | Opcode.FSTORE_1 |
+             Opcode.ISTORE_1 | Opcode.LSTORE_1 => store(state, 1)
+        case Opcode.ASTORE_2 | Opcode.DSTORE_2 | Opcode.FSTORE_2 |
+             Opcode.ISTORE_2 | Opcode.LSTORE_2 => store(state, 2)
+        case Opcode.ASTORE_3 | Opcode.DSTORE_3 | Opcode.FSTORE_3 |
+             Opcode.ISTORE_3 | Opcode.LSTORE_3 => store(state, 3)
         case Opcode.DCMPL => dcmp(state)
         case Opcode.DCMPG => dcmp(state)
         case Opcode.LDC => ldc(state)
