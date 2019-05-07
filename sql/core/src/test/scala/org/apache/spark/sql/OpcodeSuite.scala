@@ -426,33 +426,23 @@ class OpcodeSuite extends QueryTest with SharedSQLContext {
   
   // the test immediately below is meant to cover IFEQ, but is failing due to absense of IFNE
 
-/*  test("IFEQ opcode", test22) {
-    val myudf: (Double,Double) => Double = (a,b) => {
-      if (a==b) {
-        var myDoub : Double = a*a
-      } else {
-        var myDoub : Double = a
+  test("IFEQ opcode", test22) {
+    val myudf: (Double) => Double = (a) => {
+      var myDoub : Double = a;
+      if (a==a) {
+        myDoub = a*a
       }
-      // myDoub = a*a
-      // var myDoub : Double = a*a
       myDoub
     }
     val dataset = List(2.0).toDS()
-    val dataset2 = dataset.withColumn("value2",lit(2.0))
     val u = udf(myudf)
-    val result = dataset2.withColumn("new", u(col("value"),col("value2")))
-    val ref = dataset2.withColumn("new", lit(4.0))
-    val resultdf = result.toDF()
-    val refdf = ref.toDF()
-    val columns = refdf.schema.fields.map(_.name)
-    val selectiveDifferences = columns.map(col => refdf.select(col).except(resultdf.select(col)))
-    selectiveDifferences.map(diff => {assert(diff.count==0)})
-    result.show
-    ref.show
-    println("This test is failing as of 5/6/2019. It will fall back to JVM execution due to IFNE. No promises that IFEQ functions correctly")
+    val result = dataset.withColumn("new", u(col("value")))
+    val ref = dataset.withColumn("new", lit(4.0))
+    checkEquiv(result, ref)
+    println("This test is failing as of 5/6/2019. It will fall back to JVM execution due to IFNE.")
 
   }
- */
+
 
   // the test below is a one-off test used to test the functionality of LDC, also covers ASTORE_0. currently having trouble verifying output
 
