@@ -19,7 +19,7 @@ package org.apache.spark.sql
 import org.apache.spark._
 import org.apache.spark.sql._
 import org.apache.spark.sql.functions._
-import java.math.BigDecimal
+import org.scalatest.Assertions._
 
 import org.apache.spark.sql.api.java._
 import org.apache.spark.sql.catalyst.plans.logical.Project
@@ -38,6 +38,20 @@ class OpcodeSuite extends QueryTest with SharedSQLContext {
 
   import testImplicits._
   import org.scalatest.Tag
+
+
+// Utility Function for checking equivalency of Dataset type  
+  def checkEquiv[T](ds1: Dataset[T], ds2: Dataset[T]) : Unit = {
+    val resultdf = ds1.toDF()
+    val refdf = ds2.toDF()
+    ds1.show
+    ds2.show
+    val columns = refdf.schema.fields.map(_.name)
+    val selectiveDifferences = columns.map(col => refdf.select(col).except(resultdf.select(col))) 
+    selectiveDifferences.map(diff => { assert(diff.count==0) } )
+    println("TEST: ***PASSED***")
+  }
+
 
   object test0 extends Tag("test0")
   object test1 extends Tag("test1")
@@ -65,27 +79,46 @@ class OpcodeSuite extends QueryTest with SharedSQLContext {
   object test23 extends Tag("test23")
   object test24 extends Tag("test24")
   object test25 extends Tag("test25")
-
-
-
-// Utility Function for checking equivalency of Dataset type  
-  def checkEquiv[T](ds1: Dataset[T], ds2: Dataset[T]) : Unit = {
-    val resultdf = ds1.toDF()
-    val refdf = ds2.toDF()
-    val columns = refdf.schema.fields.map(_.name)
-    val selectiveDifferences = columns.map(col => refdf.select(col).except(resultdf.select(col))) 
-    selectiveDifferences.map(diff => {assert(diff.count==0)})
-    ds1.show
-    ds2.show
-    println("TEST: ***PASSED***")
-  }
-
+  object test26 extends Tag("test26")
 
 // START OF TESTS 
 
 
+
+
 // conditional tests, all but test0 fall back to JVM execution
-  test("conditional doubles",test0) {
+  test("conditional floats", test0) {
+    println("\n\n")
+    Thread.sleep(1000)
+    println("EXECUTING TEST: conditional floats\n\n")
+
+    val myudf: Float => Float = { x =>
+      val t =
+        if (x > 1.0f && x < 3.7f) {
+          (if (x > 1.1f && x < 2.0f) 1.0f else 1.1f) + 24.0f
+        } else {
+          if (x < 0.1f) 2.3f else 4.1f
+        }
+      t + 2.2f
+    }
+    val u = udf(myudf)
+    val dataset = List(2.0f).toDS()
+    val result = dataset.withColumn("new", u('value))
+    val ref = dataset.withColumn("new", lit(27.300001f))
+    checkEquiv(result, ref)
+    val dataset2 = List(4.0f).toDS()
+    val result2 = dataset2.withColumn("new", u('value))
+    val ref2 = dataset2.withColumn("new", lit(6.3f))
+    checkEquiv(result2, ref2)
+    println("TEST: *** END ***\n")
+  }
+
+
+
+  test("conditional doubles",test1) {
+    println("\n\n")
+    Thread.sleep(1000)
+    println("EXECUTING TEST: conditional doubles\n\n")
     val myudf: Double => Double = { x => 
       val t =
         if (x > 1.0 && x <= 3.7) {
@@ -96,12 +129,21 @@ class OpcodeSuite extends QueryTest with SharedSQLContext {
       t + 2.2
     }
     val u = udf(myudf)
-    val dataset = List(1.0, 2, 3, 4).toDS()
+    val dataset = List(1.0).toDS()
     val result = dataset.withColumn("new", u('value))
-    result.show
+    val ref = dataset.withColumn("new", lit(4.5))
+    checkEquiv(result, ref)
+    val dataset2 = List(2.0).toDS()
+    val result2 = dataset2.withColumn("new", u('value))
+    val ref2 = dataset2.withColumn("new", lit(27.2))
+    checkEquiv(result2, ref2)
+    println("TEST: *** END ***\n")
   }
 
-  test("conditional ints",test1) {
+  test("conditional ints",test2) {
+    println("\n\n")
+    Thread.sleep(1000)
+    println("EXECUTING TEST: conditional ints\n\n")
     val myudf: Int => Int = { x =>
       val t =
         if (x > 1 && x < 5) {
@@ -112,29 +154,21 @@ class OpcodeSuite extends QueryTest with SharedSQLContext {
       t + 5
     }
     val u = udf(myudf)
-    val dataset = List(2,4,6,8).toDS()
+    val dataset = List(2).toDS()
     val result = dataset.withColumn("new",u('value))
-    result.show
-  }
-
-  test("conditional floats", test2) {
-    val myudf: Float => Float = { x =>
-      val t =
-        if (x > 1.0f && x < 3.7f) {
-          (if (x > 1.1f && x < 2.0f) 1.0f else 1.1f) + 24.0f
-        } else {
-          if (x < 0.1f) 2.3f else 4.1f
-        }
-      t + 2.2f
-    }  
-    val u = udf(myudf)
-    val dataset = List(1.0f,2.0f,3.0f,4.0f).toDS()
-    val result = dataset.withColumn("new",u('value))
-    result.show
-
+    val ref = dataset.withColumn("new", lit(15))
+    checkEquiv(result, ref)
+    val dataset2 = List(8).toDS()
+    val result2 = dataset2.withColumn("new", u('value))
+    val ref2 = dataset2.withColumn("new", lit(25))
+    checkEquiv(result2, ref2)
+    println("TEST: *** END ***\n")
   }
 
   test("conditional longs", test3) {
+    println("\n\n")
+    Thread.sleep(1000)
+    println("EXECUTING TEST: conditional longs\n\n")
     val myudf: Long => Long = { x =>
       val t = 
         if (x > 1l && x < 5l) {
@@ -145,16 +179,24 @@ class OpcodeSuite extends QueryTest with SharedSQLContext {
       t + 5l
     }
     val u = udf(myudf)
-    val dataset = List(2l,4l,6l,8l).toDS()
+    val dataset = List(2l).toDS()
     val result = dataset.withColumn("new", u('value))
-    result.show
-
+    val ref = dataset.withColumn("new", lit(15l))
+    checkEquiv(result, ref)
+    val dataset2 = List(8l).toDS()
+    val result2 = dataset2.withColumn("new", u('value))
+    val ref2 = dataset2.withColumn("new", lit(25l))
+    checkEquiv(result2, ref2)
+    println("TEST: *** END ***\n")
   }
 
 
 
 // tests for load and store operations, also cover +/-/* operators for int,long,double,float
   test("LLOAD_<n> odd", test4) {
+    println("\n\n")
+    Thread.sleep(1000)
+    println("EXECUTING TEST: LLOAD_<n> odd")
     println("\n\n")
     val dataset = List(1).toDS()
     val dataset2 = dataset.withColumn("value2",lit(1l))
@@ -166,10 +208,14 @@ class OpcodeSuite extends QueryTest with SharedSQLContext {
     val result = dataset3.withColumn("new",u(col("value"),col("value2"),col("value3")))
     val ref = dataset3.withColumn("new",(col("value2")+col("value3"))*col("value3") - col("value2"))
     checkEquiv(result, ref)
+    println("TEST: *** END ***\n")
   }
 
 
   test("DLOAD_<n> odd", test5) {
+    println("\n\n")
+    Thread.sleep(1000)
+    println("EXECUTING TEST: DLOAD_<n> odd")
     println("\n\n")
     val dataset = List(1).toDS()
     val dataset2 = dataset.withColumn("value2",lit(1.0))
@@ -181,9 +227,13 @@ class OpcodeSuite extends QueryTest with SharedSQLContext {
     val result = dataset3.withColumn("new", u(col("value"),col("value2"),col("value3")))
     val ref = dataset3.withColumn("new",(col("value2")+col("value3"))*col("value2")-col("value3"))
     checkEquiv(result, ref)
+    println("TEST: *** END ***\n")
   }
 
   test("DLOAD_<n> even", test6) {
+    println("\n\n")
+    Thread.sleep(1000)
+    println("EXECUTING TEST: DLOAD_<n> even")
     println("\n\n")
     val dataset = List(1.0).toDS()
     val dataset2 = dataset.withColumn("value2",col("value"))
@@ -194,9 +244,13 @@ class OpcodeSuite extends QueryTest with SharedSQLContext {
     val result = dataset2.withColumn("new",u(col("value"),col("value2"))) 
     val ref = dataset2.withColumn("new",(col("value")+col("value2"))*col("value")-col("value2"))
     checkEquiv(result, ref)
+    println("TEST: *** END ***\n")
   }
 
   test("LLOAD_<n> even", test7) {
+    println("\n\n")
+    Thread.sleep(1000)
+    println("EXECUTING TEST: LLOAD_<n> even")
     println("\n\n")
     val dataset = List(1l).toDS()
     val dataset2 = dataset.withColumn("value2",col("value"))
@@ -207,9 +261,13 @@ class OpcodeSuite extends QueryTest with SharedSQLContext {
     val result = dataset2.withColumn("new",u(col("value"),col("value2")))
     val ref = dataset2.withColumn("new",(col("value")+col("value2"))*col("value")-col("value2"))
     checkEquiv(result, ref)
+    println("TEST: *** END ***\n")
   }
 
   test("ILOAD_<n> all",test8) {
+    println("\n\n")
+    Thread.sleep(1000)
+    println("EXECUTING TEST: ILOAD_<n> all")
     println("\n\n")
     val dataset = List(1).toDS()
     val dataset2 = dataset.withColumn("value2",col("value"))
@@ -222,9 +280,13 @@ class OpcodeSuite extends QueryTest with SharedSQLContext {
     val result = dataset4.withColumn("new",u(col("value"),col("value2"),col("value3"),col("value4")))
     val ref = dataset4.withColumn("new",(col("value")+col("value2")-col("value3"))*col("value4"))
     checkEquiv(result, ref)
+    println("TEST: *** END ***\n")
   }
 
   test("FLOAD_<n> all", test9) {
+    println("\n\n")
+    Thread.sleep(1000)
+    println("EXECUTING TEST: FLOAD_<n> all")
     println("\n\n")
     val dataset = List(1.0f).toDS()
     val dataset2 = dataset.withColumn("value2",col("value"))
@@ -237,9 +299,13 @@ class OpcodeSuite extends QueryTest with SharedSQLContext {
     val result = dataset4.withColumn("new",u(col("value"),col("value2"),col("value3"),col("value4")))
     val ref = dataset4.withColumn("new",(col("value")+col("value2")-col("value3"))*col("value4"))
     checkEquiv(result, ref)
+    println("TEST: *** END ***\n")
   }
 
   test("ISTORE_<n> all", test10) {
+    println("\n\n")
+    Thread.sleep(1000)
+    println("EXECUTING TEST: ISTORE_<n> all")
     println("\n\n")
     val myudf: () => Int = () => {
       var myInt : Int = 1
@@ -253,9 +319,13 @@ class OpcodeSuite extends QueryTest with SharedSQLContext {
     val result = dataset.withColumn("new", u())
     val ref = dataset.withColumn("new",lit(1))
     checkEquiv(result, ref)
+    println("TEST: *** END ***\n")
   }
 
   test("DSTORE_<n> even", test11) {
+    println("\n\n")
+    Thread.sleep(1000)
+    println("EXECUTING TEST: DSTORE_<n> even")
     println("\n\n")
     val myudf: () => Double = () => {
       var myDoub : Double = 0.0
@@ -267,9 +337,13 @@ class OpcodeSuite extends QueryTest with SharedSQLContext {
     val result = dataset.withColumn("new", u())
     val ref = dataset.withColumn("new",lit(1.0))
     checkEquiv(result, ref)
+    println("TEST: *** END ***\n")
   }
 
   test("DSTORE_<n> odd", test12) {
+    println("\n\n")
+    Thread.sleep(1000)
+    println("EXECUTING TEST: DSTORE_<n> odd")
     println("\n\n")
     val myudf: (Int) => Double = (a) => {
       var myDoub : Double = 1.0
@@ -281,9 +355,13 @@ class OpcodeSuite extends QueryTest with SharedSQLContext {
     val result = dataset.withColumn("new", u(col("value")))
     val ref = dataset.withColumn("new",lit(1.0))
     checkEquiv(result, ref)
+    println("TEST: *** END ***\n")
   }
 
   test("ALOAD_0", test13) {
+    println("\n\n")
+    Thread.sleep(1000)
+    println("EXECUTING TEST: ALOAD_0")
     println("\n\n")
     val myudf: (String,String,String,String) => String = (a,b,c,d) => {
       a
@@ -296,9 +374,13 @@ class OpcodeSuite extends QueryTest with SharedSQLContext {
     val result = dataset4.withColumn("new",u(col("value"),col("value2"),col("value3"),col("value4")))
     val ref = dataset4.withColumn("new",col("value"))
     checkEquiv(result, ref)
+    println("TEST: *** END ***\n")
   }
 
   test("ALOAD_1", test14) {
+    println("\n\n")
+    Thread.sleep(1000)
+    println("EXECUTING TEST: ALOAD_1")
     println("\n\n")
     val myudf: (String,String,String,String) => String = (a,b,c,d) => {
       b
@@ -311,9 +393,13 @@ class OpcodeSuite extends QueryTest with SharedSQLContext {
     val result = dataset4.withColumn("new",u(col("value"),col("value2"),col("value3"),col("value4")))
     val ref = dataset4.withColumn("new",col("value2"))
     checkEquiv(result, ref)
+    println("TEST: *** END ***\n")
   }
 
   test("ALOAD_2", test15) {
+    println("\n\n")
+    Thread.sleep(1000)
+    println("EXECUTING TEST: ALOAD_2")
     println("\n\n")
     val myudf: (String,String,String,String) => String = (a,b,c,d) => {
       c
@@ -326,9 +412,13 @@ class OpcodeSuite extends QueryTest with SharedSQLContext {
     val result = dataset4.withColumn("new",u(col("value"),col("value2"),col("value3"),col("value4")))
     val ref = dataset4.withColumn("new",col("value3"))
     checkEquiv(result, ref)
+    println("TEST: *** END ***\n")
   }
 
   test("ALOAD_3", test16) {
+    println("\n\n")
+    Thread.sleep(1000)
+    println("EXECUTING TEST: ALOAD_3")
     println("\n\n")
     val myudf: (String,String,String,String) => String = (a,b,c,d) => {
       d
@@ -341,9 +431,13 @@ class OpcodeSuite extends QueryTest with SharedSQLContext {
     val result = dataset4.withColumn("new",u(col("value"),col("value2"),col("value3"),col("value4")))
     val ref = dataset4.withColumn("new",col("value4"))
     checkEquiv(result, ref)
+    println("TEST: *** END ***\n")
   }
 
   test("ASTORE_1,2,3", test17) {
+    println("\n\n")
+    Thread.sleep(1000)
+    println("EXECUTING TEST: ASTORE_1,2,3")
     println("\n\n")
     val myudf: (String) => String = (a) => {
       val myString : String = a
@@ -356,9 +450,13 @@ class OpcodeSuite extends QueryTest with SharedSQLContext {
     val result = dataset.withColumn("new",u(col("value")))
     val ref = dataset.withColumn("new",col("value"))
     checkEquiv(result, ref)
+    println("TEST: *** END ***\n")
   }
 
   test("FSTORE_1,2,3", test18) {
+    println("\n\n")
+    Thread.sleep(1000)
+    println("EXECUTING TEST: FSTORE_1,2,3")
     println("\n\n")
     val myudf: (Float) => Float = (a) => {
       var myFloat : Float = a
@@ -371,10 +469,14 @@ class OpcodeSuite extends QueryTest with SharedSQLContext {
     val result = dataset.withColumn("new", u(col("value")))
     val ref = dataset.withColumn("new",col("value")*3)
     checkEquiv(result, ref)
+    println("TEST: *** END ***\n")
   }
 
 
   test("LSTORE_2", test19) {
+    println("\n\n")
+    Thread.sleep(1000)
+    println("EXECUTING TEST: LSTORE_2")
     println("\n\n")
     val myudf: (Long) => Long = (a) => {
       var myLong : Long = a
@@ -385,9 +487,13 @@ class OpcodeSuite extends QueryTest with SharedSQLContext {
     val result = dataset.withColumn("new", u(col("value")))
     val ref = dataset.withColumn("new",col("value"))
     checkEquiv(result, ref)
+    println("TEST: *** END ***\n")
   }
 
   test("LSTORE_3", test20) {
+    println("\n\n")
+    Thread.sleep(1000)
+    println("EXECUTING TEST: LSTORE_3")
     println("\n\n")
     val myudf: (Int, Long) => Long = (a,b) => {
       var myLong : Long = b
@@ -399,12 +505,15 @@ class OpcodeSuite extends QueryTest with SharedSQLContext {
     val result = dataset2.withColumn("new", u(col("value"),col("value2")))
     val ref = dataset2.withColumn("new",col("value2"))
     checkEquiv(result, ref)
+    println("TEST: *** END ***\n")
   }
 
   // misc. tests. Boolean check currently failing, can't handle true/false
 
   test("Boolean check", test21) {
     println("\n\n")
+    Thread.sleep(1000)
+    println("EXECUTING TEST: Boolean check\n\n")
     val myudf: () => Boolean = () => {
       var myBool : Boolean = true
       myBool
@@ -420,13 +529,17 @@ class OpcodeSuite extends QueryTest with SharedSQLContext {
     // selectiveDifferences.map(diff => {assert(diff.count==0)})
     result.show
     ref.show
-    println("This test is failing as of 5/5/2019. If the two tables directly above are not identical, test is still failing.")
+    println("This test is *** FAILED *** as of 5/5/2019. If the two tables directly above are not identical, test is still failing.\n")
+    println("TEST: *** END ***\n")
   }
 
   
   // the test immediately below is meant to cover IFEQ, but is failing due to absense of IFNE
 
   test("IFEQ opcode", test22) {
+    println("\n\n")
+    Thread.sleep(1000)
+    println("EXECUTING TEST: IFEQ\n\n")
     val myudf: (Double) => Double = (a) => {
       var myDoub : Double = a;
       if (a==a) {
@@ -439,15 +552,17 @@ class OpcodeSuite extends QueryTest with SharedSQLContext {
     val result = dataset.withColumn("new", u(col("value")))
     val ref = dataset.withColumn("new", lit(4.0))
     checkEquiv(result, ref)
-    println("This test is failing as of 5/6/2019. It will fall back to JVM execution due to IFNE.")
-
+    println("TEST: *** END ***\n")
   }
 
 
   // the test below is a one-off test used to test the functionality of LDC, also covers ASTORE_0. currently having trouble verifying output
 
-  
+
   test("LDC tests", test23) {
+    println("\n\n")
+    Thread.sleep(1000)
+    println("EXECUTING TEST: LDC tests\n\n")
     class placeholder {
       val myudf: () => (String) = () => {
         val myString : String = "a"
@@ -467,11 +582,17 @@ class OpcodeSuite extends QueryTest with SharedSQLContext {
       //println("LDC test: ***PASSED***")
       checkEquiv(result, ref)
     }
+    println("TEST: *** END ***\n")
   }
+
+
 
   // this test makes sure we can handle udfs with more than 2 args
 
   test("UDF 4 args",test24) {
+    println("\n\n")
+    Thread.sleep(1000)
+    println("EXECUTING TEST: UDF 4 args\n\n")
     val myudf: (Int, Int, Int, Int) => Int = (w,x,y,z) => { w+x+y+z }
     val u = udf(myudf)
     val dataset = List(1,2,3,4).toDS()
@@ -484,11 +605,15 @@ class OpcodeSuite extends QueryTest with SharedSQLContext {
     val result = dataset4.withColumn("new", u(col("value"), col("value2"), col("value3"), col("value4")))
     val ref = dataset4.withColumn("new", col("value")+col("value2")+col("value3")+col("value4"))
     checkEquiv(result, ref)
+    println("TEST: *** END ***\n")
   }
 
   // this test covers getstatic and invokevirtual, shows we can handle math ops (only acos/asin)
 
   test("math functions - trig - asin and acos", test25) {
+    println("\n\n")
+    Thread.sleep(1000) 
+    println("EXECUTING TEST: math functions - trig - asin and acos\n\n")
     val myudf1: Double => Double = x => { math.acos(x) }
     val u1 = udf(myudf1)
     val myudf2: Double => Double = x => { math.asin(x) }
@@ -497,7 +622,21 @@ class OpcodeSuite extends QueryTest with SharedSQLContext {
     val result = dataset.withColumn("new", u1('value)+u2('value))
     val ref = dataset.withColumn("new", acos(col("value")) + asin(col("value")))
     checkEquiv(result, ref)
+    println("TEST: *** END ***\n")
   }
 
+/*
+  test("Unit return value", test26) {
+    val myudf: Int => Unit = (a) => {}
+    val u = udf(myudf)
+    val dataset = List(1).toDS()
+    val result = dataset.withColumn("new", u())
+    // val ref = dataset.withColumn("new", lit(null))
+    //checkEquiv(result, ref)
+    result.show
+  }
+ */
+
+  // pw.close
 }
  
