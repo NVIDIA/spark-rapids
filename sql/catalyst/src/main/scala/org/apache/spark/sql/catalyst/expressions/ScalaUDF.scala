@@ -1097,7 +1097,7 @@ case class CatalystExpressionBuilder(private val function: AnyRef) {
   import jdk.vm.ci.hotspot.HotSpotJVMCIRuntime
   import jdk.vm.ci.hotspot.HotSpotObjectConstant
   import jdk.vm.ci.hotspot.HotSpotResolvedJavaMethod
-  import org.apache.spark.sql.types.{DoubleType, LongType}
+  import org.apache.spark.sql.types._
   import scala.annotation.tailrec
   import scala.collection.immutable.IntMap
   import scala.collection.immutable.SortedMap
@@ -1333,6 +1333,8 @@ case class CatalystExpressionBuilder(private val function: AnyRef) {
              Opcode.ILOAD_2 | Opcode.LLOAD_2 => load(state, 2)
         case Opcode.ALOAD_3 | Opcode.DLOAD_3 | Opcode.FLOAD_3 |
              Opcode.ILOAD_3 | Opcode.LLOAD_3 => load(state, 3)
+        case Opcode.ALOAD | Opcode.DLOAD | Opcode.FLOAD |
+             Opcode.ILOAD | Opcode.LLOAD => load(state, bytesToInt(operands))
         case Opcode.ASTORE_0 | Opcode.DSTORE_0 | Opcode.FSTORE_0 |
              Opcode.ISTORE_0 | Opcode.LSTORE_0 => store(state, 0)
         case Opcode.ASTORE_1 | Opcode.DSTORE_1 | Opcode.FSTORE_1 |
@@ -1341,27 +1343,45 @@ case class CatalystExpressionBuilder(private val function: AnyRef) {
              Opcode.ISTORE_2 | Opcode.LSTORE_2 => store(state, 2)
         case Opcode.ASTORE_3 | Opcode.DSTORE_3 | Opcode.FSTORE_3 |
              Opcode.ISTORE_3 | Opcode.LSTORE_3 => store(state, 3)
-        case Opcode.DCMPL => dcmp(state)
-        case Opcode.DCMPG => dcmp(state)
-        case Opcode.LDC => ldc(state)
-        case Opcode.LDC2_W => ldc(state)
-        case Opcode.GETSTATIC => getstatic(state)
-        case Opcode.ICONST_1 => const(state, 1)
-        case Opcode.DCONST_0 => const(state, 0.0)
-        case Opcode.DCONST_1 => const(state, 1.0)
+        case Opcode.DCONST_0 | Opcode.DCONST_1 =>
+          const(state, (opcode.opcode - Opcode.DCONST_0.opcode).asInstanceOf[Double])
+        case Opcode.FCONST_0 | Opcode.FCONST_1 | Opcode.FCONST_2 =>
+          const(state, (opcode.opcode - Opcode.FCONST_0.opcode).asInstanceOf[Float])
+        case Opcode.ICONST_0 | Opcode.ICONST_1 | Opcode.ICONST_2 |
+             Opcode.ICONST_3 | Opcode.ICONST_4 | Opcode.ICONST_5 =>
+          const(state, (opcode.opcode - Opcode.ICONST_0.opcode).asInstanceOf[Int])
+        case Opcode.LCONST_0 | Opcode.LCONST_1 =>
+          const(state, (opcode.opcode - Opcode.LCONST_0.opcode).asInstanceOf[Long])
         case Opcode.DADD | Opcode.FADD | Opcode.IADD | Opcode.LADD => add(state)
         case Opcode.DSUB | Opcode.FSUB | Opcode.ISUB | Opcode.LSUB => sub(state)
         case Opcode.DMUL | Opcode.FMUL | Opcode.IMUL | Opcode.LMUL => mul(state)
-        case Opcode.IRETURN | Opcode.LRETURN | Opcode.FRETURN | Opcode.DRETURN |
-             Opcode.ARETURN | Opcode.RETURN =>
-          state.copy(expr = Some(state.stack.head))
+        case Opcode.DCMPL | Opcode.DCMPG => dcmp(state)
+        case Opcode.LDC | Opcode.LDC_W | Opcode.LDC2_W => ldc(state)
+        case Opcode.DUP => dup(state)
+        case Opcode.GETSTATIC => getstatic(state)
+        // Cast instructions
+        case Opcode.I2B => cast(state, ByteType)
+        case Opcode.I2C =>
+          throw new SparkException("Opcode.I2C unsupported: no corresponding Catalyst expression")
+        case Opcode.F2D | Opcode.I2D | Opcode.L2D => cast(state, DoubleType)
+        case Opcode.D2F | Opcode.I2F | Opcode.L2F => cast(state, FloatType)
+        case Opcode.D2I | Opcode.F2I | Opcode.L2I => cast(state, IntegerType)
+        case Opcode.D2L | Opcode.F2L | Opcode.I2L => cast(state, LongType)
+        case Opcode.I2S => cast(state, ShortType)
         // Branching instructions
         case Opcode.IFLT => ifOp(state, x => simplify(LessThan(x, Literal(0))))
         case Opcode.IFLE => ifOp(state, x => simplify(LessThanOrEqual(x, Literal(0))))
         case Opcode.IFGT => ifOp(state, x => simplify(GreaterThan(x, Literal(0))))
         case Opcode.IFGE => ifOp(state, x => simplify(GreaterThanOrEqual(x, Literal(0))))
         case Opcode.IFEQ => ifOp(state, x => simplify(EqualTo(x, Literal(0))))
+        case Opcode.IFNE => ifOp(state, x => simplify(Not(EqualTo(x, Literal(0)))))
+        case Opcode.IFNULL => ifOp(state, x => simplify(IsNull(x)))
+        case Opcode.IFNONNULL => ifOp(state, x => simplify(IsNotNull(x)))
         case Opcode.GOTO => state
+        case Opcode.IRETURN | Opcode.LRETURN | Opcode.FRETURN | Opcode.DRETURN |
+             Opcode.ARETURN | Opcode.RETURN =>
+          state.copy(expr = Some(state.stack.head))
+        // Call instructions
         case Opcode.INVOKEVIRTUAL => invokevirtual(state)
         case _ => throw new SparkException("Unsupported instruction: " + opcode)
       }
@@ -1415,6 +1435,11 @@ case class CatalystExpressionBuilder(private val function: AnyRef) {
       State(locals, constant::stack, cond, expr)
     }
 
+    private def dup(state: State): State = {
+      val State(locals, top::rest, cond, expr) = state
+      State(locals, top::top::rest, cond, expr)
+    }
+
     private def getstatic(state: State): State = {
       val State(locals, stack, cond, expr) = state
       val constPoolIndex = bytesToInt(operands)
@@ -1431,6 +1456,13 @@ case class CatalystExpressionBuilder(private val function: AnyRef) {
               Literal(-1),
               Literal(0)))
       State(locals, conditional::rest, cond, expr)
+    }
+
+    private def cast(
+        state: State,
+        dataType: DataType): State = {
+      val State(locals, top::rest, cond, expr) = state
+      State(locals, Cast(top, dataType)::rest, cond, expr)
     }
 
     private def ifOp(
@@ -1467,11 +1499,14 @@ case class CatalystExpressionBuilder(private val function: AnyRef) {
   object Instruction {
     def size(opcode: Opcode) : Int = {
       opcode match {
-        case Opcode.GOTO | Opcode.LDC2_W | Opcode.IFEQ | Opcode.IFNE |
-             Opcode.IFLT | Opcode.IFGE | Opcode.IFGT | Opcode.IFLE |
+        case Opcode.GOTO | Opcode.LDC_W | Opcode.LDC2_W |
+             Opcode.IFEQ | Opcode.IFNE | Opcode.IFLT |
+             Opcode.IFGE | Opcode.IFGT | Opcode.IFLE |
+             Opcode.IFNULL | Opcode.IFNONNULL |
              Opcode.INVOKESTATIC | Opcode.INVOKEVIRTUAL |
              Opcode.GETSTATIC => 3
-        case Opcode.LDC => 2
+        case Opcode.ALOAD | Opcode.DLOAD | Opcode.FLOAD |
+             Opcode.ILOAD | Opcode.LLOAD | Opcode.LDC => 2
         case Opcode.INVOKEINTERFACE => 5
         case _ => 1
       }
@@ -1489,7 +1524,7 @@ case class CatalystExpressionBuilder(private val function: AnyRef) {
       val state@State(_, _, cond, _) = states(this)
       last._2.opcode match {
         case Opcode.IFLT | Opcode.IFLE | Opcode.IFGT | Opcode.IFGE |
-             Opcode.IFEQ => {
+             Opcode.IFEQ | Opcode.IFNE | Opcode.IFNULL | Opcode.IFNONNULL => {
           val falseSucc::trueSucc::Nil = cfg.succ(this)
           val falseState = state.copy(cond = simplify(cond match {
             case And(cond1, cond2) => And(cond1, Not(cond2))
@@ -1536,7 +1571,7 @@ case class CatalystExpressionBuilder(private val function: AnyRef) {
         val nextOffset = offset + Instruction.size(opcode)
         opcode match {
           case Opcode.IFEQ | Opcode.IFNE | Opcode.IFLT | Opcode.IFGE |
-               Opcode.IFGT | Opcode.IFLE => {
+               Opcode.IFGT | Opcode.IFLE | Opcode.IFNULL | Opcode.IFNONNULL => {
             val falseOffset = nextOffset
             val trueOffset = offset + bytesToInt(Array(code(offset + 1),
                                                        code(offset + 2)))
