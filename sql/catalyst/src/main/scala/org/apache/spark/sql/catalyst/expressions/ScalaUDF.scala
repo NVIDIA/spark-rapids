@@ -1483,8 +1483,21 @@ case class CatalystExpressionBuilder(private val function: AnyRef) {
       if (method.getDeclaringClass.toClassName.equals("scala.math.package$")) {
         // Math functions
         val ret = method.getName match {
-          case "asin" => Asin(args(0))
+          case "abs" => Abs(args(0))
           case "acos" => Acos(args(0))
+          case "asin" => Asin(args(0))
+          case "atan" => Atan(args(0))
+          case "cos" => Cos(args(0))
+          case "cosh" => Cosh(args(0))
+          case "sin" => Sin(args(0))
+          case "tan" => Tan(args(0))
+          case "tanh" => Tanh(args(0))
+          case "ceil" => Ceil(args(0))
+          case "floor" => Floor(args(0))
+          case "exp" => Exp(args(0))
+          case "log" => Log(args(0))
+          case "log10" => Log10(args(0))
+          case "sqrt" => Sqrt(args(0))
           case _ => throw new SparkException(
             "Unsupported math function: " + method.getName)
         }
