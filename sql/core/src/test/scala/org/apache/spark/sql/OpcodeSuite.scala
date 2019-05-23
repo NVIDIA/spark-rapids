@@ -21,6 +21,8 @@ import org.apache.spark.sql._
 import org.apache.spark.sql.functions._
 import org.scalatest.Assertions._
 
+import org.apache.spark.sql.functions.{log => nickslog}
+
 import org.apache.spark.sql.api.java._
 import org.apache.spark.sql.catalyst.plans.logical.Project
 import org.apache.spark.sql.execution.QueryExecution
@@ -80,6 +82,27 @@ class OpcodeSuite extends QueryTest with SharedSQLContext {
   object test24 extends Tag("test24")
   object test25 extends Tag("test25")
   object test26 extends Tag("test26")
+  object test27 extends Tag("test27")
+  object test28 extends Tag("test28")
+  object test29 extends Tag("test29")
+  object test30 extends Tag("test30")
+  object test31 extends Tag("test31")
+  object test32 extends Tag("test32")
+  object test33 extends Tag("test33")
+  object test34 extends Tag("test34")
+  object test35 extends Tag("test35")
+  object test36 extends Tag("test36")
+  object test37 extends Tag("test37")
+  object test38 extends Tag("test38")
+  object test39 extends Tag("test39")
+  object test40 extends Tag("test40")
+  object test41 extends Tag("test41")
+  object test42 extends Tag("test42")
+  object test43 extends Tag("test43")
+  object test44 extends Tag("test44")
+  object test45 extends Tag("test45")
+  object test46 extends Tag("test46")
+  object test47 extends Tag("test47")
 
 // START OF TESTS 
 
@@ -610,33 +633,441 @@ class OpcodeSuite extends QueryTest with SharedSQLContext {
 
   // this test covers getstatic and invokevirtual, shows we can handle math ops (only acos/asin)
 
-  test("math functions - trig - asin and acos", test25) {
+  test("math functions - trig - (a)sin and (a)cos", test25) {
     println("\n\n")
     Thread.sleep(1000) 
-    println("EXECUTING TEST: math functions - trig - asin and acos\n\n")
-    val myudf1: Double => Double = x => { math.acos(x) }
+    println("EXECUTING TEST: math functions - trig - (a)sin and (a)cos\n\n")
+    val myudf1: Double => Double = x => { math.cos(x) }
     val u1 = udf(myudf1)
-    val myudf2: Double => Double = x => { math.asin(x) }
+    val myudf2: Double => Double = x => { math.sin(x) }
     val u2 = udf(myudf2)
+    val myudf3: Double => Double = x => { math.acos(x) }
+    val u3 = udf(myudf3)
+    val myudf4: Double => Double = x => { math.asin(x) }
+    val u4 = udf(myudf4)
     val dataset = List(1.0,2.0,3.0).toDS()
-    val result = dataset.withColumn("new", u1('value)+u2('value))
-    val ref = dataset.withColumn("new", acos(col("value")) + asin(col("value")))
+    val result = dataset.withColumn("new", u1('value)+u2('value)+u3('value)+u4('value))
+    val ref = dataset.withColumn("new", cos(col("value"))+sin(col("value"))+acos(col("value"))+asin(col("value")))
     checkEquiv(result, ref)
     println("TEST: *** END ***\n")
   }
 
-/*
-  test("Unit return value", test26) {
-    val myudf: Int => Unit = (a) => {}
+
+  test("math functions - trig - (a)tan(h) and cosh", test26) {
+    println("\n\n")
+    Thread.sleep(1000) 
+    println("EXECUTING TEST: math functions - trig - (a)tan(h) and cosh\n\n")
+    val myudf1: Double => Double = x => { math.tan(x) }
+    val u1 = udf(myudf1)
+    val myudf2: Double => Double = x => { math.atan(x) }
+    val u2 = udf(myudf2)
+    val myudf3: Double => Double = x => { math.cosh(x) }
+    val u3 = udf(myudf3)
+    val myudf4: Double => Double = x => { math.tanh(x) }
+    val u4 = udf(myudf4)
+    val dataset = List(1.0,2.0,3.0).toDS()
+    val result = dataset.withColumn("new", u1('value)+u2('value)+u3('value)+u4('value))
+    val ref = dataset.withColumn("new", tan(col("value")) + atan(col("value")) + cosh(col("value")) + tanh(col("value")))
+    checkEquiv(result, ref)
+    println("TEST: *** END ***\n")
+  }
+
+  test("math functions - abs, ceil, floor", test27) {
+    println("\n\n")
+    Thread.sleep(1000) 
+    println("EXECUTING TEST: math functions - abs, ceil, floor\n\n")
+    val myudf1: Double => Double = x => { math.abs(x) }
+    val u1 = udf(myudf1)
+    val myudf2: Double => Double = x => { math.ceil(x) }
+    val u2 = udf(myudf2)
+    val myudf3: Double => Double = x => { math.floor(x) }
+    val u3 = udf(myudf3)
+    val dataset = List(-0.5,0.5).toDS()
+    val result = dataset.withColumn("new", u2(u1('value))+u3(u1('value)))
+    val ref = dataset.withColumn("new", ceil(abs(col("value"))) + floor(abs(col("value"))))
+    checkEquiv(result, ref)
+    println("TEST: *** END ***\n")
+  }
+
+
+  test("math functions - exp, log, log10, sqrt", test28) {
+    println("\n\n")
+    Thread.sleep(1000) 
+    println("EXECUTING TEST: math functions - exp, log, log10, sqrt\n\n")
+    val myudf1: Double => Double = x => { math.exp(x) }
+    val u1 = udf(myudf1)
+    val myudf2: Double => Double = x => { math.log(x) }
+    val u2 = udf(myudf2)
+    val myudf3: Double => Double = x => { math.log10(x) }
+    val u3 = udf(myudf3)
+    val myudf4: Double => Double = x => { math.sqrt(x) }
+    val u4 = udf(myudf4)
+    val dataset = List(2.0,5.0).toDS()
+    val result = dataset.withColumn("new", u1('value)+u2('value)+u3('value)+u4('value))
+    val ref = dataset.withColumn("new", exp(col("value"))+nickslog(col("value"))+log10(col("value"))+sqrt(col("value")))
+    checkEquiv(result, ref)
+    println("TEST: *** END ***\n")
+  }
+
+  test("FSTORE_0, LSTORE_1", test29) {
+    println("\n\n")
+    Thread.sleep(1000)
+    println("EXECUTING TEST: FSTORE_0, LSTORE_1\n\n")
+    val myudf: () => Float = () => {
+      var myFloat : Float = 1.0f
+      var myLong : Long = 1l
+      myFloat
+    }
+    val dataset = List(5.0f).toDS()
+    val u = udf(myudf)
+    val result = dataset.withColumn("new", u())
+    val ref = dataset.withColumn("new",lit(1.0f))
+    checkEquiv(result, ref)
+    println("TEST: *** END ***\n")
+  }
+
+  test("LSTORE_0", test30) {
+    println("\n\n")
+    Thread.sleep(1000)
+    println("EXECUTING TEST: LSTORE_0\n\n")
+    val myudf: () => Long = () => {
+      var myLong : Long = 1l
+      myLong
+    }
+    val dataset = List(1l).toDS()
+    val u = udf(myudf)
+    val result = dataset.withColumn("new", u())
+    val ref = dataset.withColumn("new",lit(1l))
+    checkEquiv(result, ref)
+    println("TEST: *** END ***\n")
+  }
+
+  test("ILOAD",test31) {
+    println("\n\n")
+    Thread.sleep(1000)
+    println("EXECUTING TEST: ILOAD\n\n")
+    val myudf: (Int, Int, Int, Int, Int, Long, Float, Double) => Int = (a,b,c,d,e,f,g,h) => {
+      e
+    }
+    val u = udf(myudf)
+    val dataset = List(1).toDS()
+    val dataset2 = dataset.withColumn("value2",col("value") + 1)
+    val dataset3 = dataset2.withColumn("value3",col("value2") + 1)
+    val dataset4 = dataset3.withColumn("value4",col("value3") + 1)
+    val dataset5 = dataset4.withColumn("value5",col("value4") + 1)
+    val dataset6 = dataset5.withColumn("value6",lit(1l))
+    val dataset7 = dataset6.withColumn("value7",lit(1.0f))
+    val dataset8 = dataset7.withColumn("value8",lit(1.0))
+    val result = dataset8.withColumn("new", u(col("value"),col("value2"),col("value3"),col("value4"),col("value5"),col("value6"),col("value7"),col("value8")))
+    val ref = dataset8.withColumn("new", lit(5))
+    checkEquiv(result, ref)
+    println("TEST: *** END ***\n")
+  }
+
+  test("LLOAD",test32) {
+    println("\n\n")
+    Thread.sleep(1000)
+    println("EXECUTING TEST: LLOAD\n\n")
+    val myudf: (Int, Int, Int, Int, Int, Long, Float, Double) => Long = (a,b,c,d,e,f,g,h) => {
+      f
+    }
+    val u = udf(myudf)
+    val dataset = List(1).toDS()
+    val dataset2 = dataset.withColumn("value2",col("value") + 1)
+    val dataset3 = dataset2.withColumn("value3",col("value2") + 1)
+    val dataset4 = dataset3.withColumn("value4",col("value3") + 1)
+    val dataset5 = dataset4.withColumn("value5",col("value4") + 1)
+    val dataset6 = dataset5.withColumn("value6",lit(1l))
+    val dataset7 = dataset6.withColumn("value7",lit(1.0f))
+    val dataset8 = dataset7.withColumn("value8",lit(1.0))
+    val result = dataset8.withColumn("new", u(col("value"),col("value2"),col("value3"),col("value4"),col("value5"),col("value6"),col("value7"),col("value8")))
+    val ref = dataset8.withColumn("new", lit(1l))
+    checkEquiv(result, ref)
+    println("TEST: *** END ***\n")
+  }
+
+  test("FLOAD",test33) {
+    println("\n\n")
+    Thread.sleep(1000)
+    println("EXECUTING TEST: FLOAD\n\n")
+    val myudf: (Int, Int, Int, Int, Int, Long, Float, Double) => Float = (a,b,c,d,e,f,g,h) => {
+      g
+    }
+    val u = udf(myudf)
+    val dataset = List(1).toDS()
+    val dataset2 = dataset.withColumn("value2",col("value") + 1)
+    val dataset3 = dataset2.withColumn("value3",col("value2") + 1)
+    val dataset4 = dataset3.withColumn("value4",col("value3") + 1)
+    val dataset5 = dataset4.withColumn("value5",col("value4") + 1)
+    val dataset6 = dataset5.withColumn("value6",lit(1l))
+    val dataset7 = dataset6.withColumn("value7",lit(1.0f))
+    val dataset8 = dataset7.withColumn("value8",lit(1.0))
+    val result = dataset8.withColumn("new", u(col("value"),col("value2"),col("value3"),col("value4"),col("value5"),col("value6"),col("value7"),col("value8")))
+    val ref = dataset8.withColumn("new", lit(1.0f))
+    checkEquiv(result, ref)
+    println("TEST: *** END ***\n")
+  }
+
+  test("DLOAD",test34) {
+    println("\n\n")
+    Thread.sleep(1000)
+    println("EXECUTING TEST: DLOAD\n\n")
+    val myudf: (Int, Int, Int, Int, Int, Long, Float, Double) => Double = (a,b,c,d,e,f,g,h) => {
+      h
+    }
+    val u = udf(myudf)
+    val dataset = List(1).toDS()
+    val dataset2 = dataset.withColumn("value2",col("value") + 1)
+    val dataset3 = dataset2.withColumn("value3",col("value2") + 1)
+    val dataset4 = dataset3.withColumn("value4",col("value3") + 1)
+    val dataset5 = dataset4.withColumn("value5",col("value4") + 1)
+    val dataset6 = dataset5.withColumn("value6",lit(1l))
+    val dataset7 = dataset6.withColumn("value7",lit(1.0f))
+    val dataset8 = dataset7.withColumn("value8",lit(1.0))
+    val result = dataset8.withColumn("new", u(col("value"),col("value2"),col("value3"),col("value4"),col("value5"),col("value6"),col("value7"),col("value8")))
+    val ref = dataset8.withColumn("new", lit(1.0))
+    checkEquiv(result, ref)
+    println("TEST: *** END ***\n")
+  }
+
+  test("Cast Double to Int",test35) {
+    println("\n\n")
+    Thread.sleep(1000)
+    println("EXECUTING TEST: Cast Double to Int\n\n")
+    val myudf: () => Int = () => {
+      var myVar : Double = 0.0
+      myVar = myVar + 1.0
+      val myVar2 : Int = myVar.toInt
+      myVar2
+    }
     val u = udf(myudf)
     val dataset = List(1).toDS()
     val result = dataset.withColumn("new", u())
-    // val ref = dataset.withColumn("new", lit(null))
-    //checkEquiv(result, ref)
-    result.show
+    val ref = dataset.withColumn("new", lit(1))
+    checkEquiv(result, ref)
+    println("TEST: *** END ***\n")
   }
- */
 
-  // pw.close
+  test("Cast Float to Int",test36) {
+    println("\n\n")
+    Thread.sleep(1000)
+    println("EXECUTING TEST: Cast Float to Int\n\n")
+    val myudf: () => Int = () => {
+      var myVar : Float = 0.0f
+      myVar = myVar + 1.0f + 2.0f
+      val myVar2 : Int = myVar.toInt
+      myVar2
+    }
+    val u = udf(myudf)
+    val dataset = List(1).toDS()
+    val result = dataset.withColumn("new", u())
+    val ref = dataset.withColumn("new", lit(3))
+    checkEquiv(result, ref)
+    println("TEST: *** END ***\n")
+  }
+
+  test("Cast Long to Int",test37) {
+    println("\n\n")
+    Thread.sleep(1000)
+    println("EXECUTING TEST: Cast Long to Int\n\n")
+    val myudf: () => Int = () => {
+      var myVar : Long = 0l
+      myVar = myVar + 1l
+      val myVar2 : Int = myVar.toInt
+      myVar2
+    }
+    val u = udf(myudf)
+    val dataset = List(1).toDS()
+    val result = dataset.withColumn("new", u())
+    val ref = dataset.withColumn("new", lit(1l))
+    checkEquiv(result, ref)
+    println("TEST: *** END ***\n")
+  }
+
+  test("Cast Int to Long",test38) {
+    println("\n\n")
+    Thread.sleep(1000)
+    println("EXECUTING TEST: Cast Int to Long\n\n")
+    val myudf: () => Long = () => {
+      var myVar : Int = 0
+      myVar = myVar + 1 + 2 + 3 + 4 + 5
+      val myVar2 : Long = myVar.toLong
+      myVar2
+    }
+    val u = udf(myudf)
+    val dataset = List(1).toDS()
+    val result = dataset.withColumn("new", u())
+    val ref = dataset.withColumn("new", lit(15l))
+    checkEquiv(result, ref)
+    println("TEST: *** END ***\n")
+  }
+
+  test("Cast Float to Long",test39) {
+    println("\n\n")
+    Thread.sleep(1000)
+    println("EXECUTING TEST: Cast Float to Long\n\n")
+    val myudf: () => Long = () => {
+      var myVar : Float = 0.0f
+      myVar = myVar + 1.0f + 2.0f
+      val myVar2 : Long = myVar.toLong
+      myVar2
+    }
+    val u = udf(myudf)
+    val dataset = List(1).toDS()
+    val result = dataset.withColumn("new", u())
+    val ref = dataset.withColumn("new", lit(3l))
+    checkEquiv(result, ref)
+    println("TEST: *** END ***\n")
+  }
+
+  test("Cast Double to Long",test40) {
+    println("\n\n")
+    Thread.sleep(1000)
+    println("EXECUTING TEST: Cast Double to Long\n\n")
+    val myudf: () => Long = () => {
+      var myVar : Double = 0.0
+      myVar = myVar + 1.0
+      val myVar2 : Long = myVar.toLong
+      myVar2
+    }
+    val u = udf(myudf)
+    val dataset = List(1).toDS()
+    val result = dataset.withColumn("new", u())
+    val ref = dataset.withColumn("new", lit(1l))
+    checkEquiv(result, ref)
+    println("TEST: *** END ***\n")
+  }
+
+
+  test("Cast Int to Float",test41) {
+    println("\n\n")
+    Thread.sleep(1000)
+    println("EXECUTING TEST: Cast Int to Float\n\n")
+    val myudf: () => Float = () => {
+      var myVar : Int = 0
+      myVar = myVar + 1 + 2 + 3 + 4 + 5
+      val myVar2 : Float = myVar.toFloat
+      myVar2
+    }
+    val u = udf(myudf)
+    val dataset = List(1).toDS()
+    val result = dataset.withColumn("new", u())
+    val ref = dataset.withColumn("new", lit(15.0f))
+    checkEquiv(result, ref)
+    println("TEST: *** END ***\n")
+  }
+
+  test("Cast Long to Float",test42) {
+    println("\n\n")
+    Thread.sleep(1000)
+    println("EXECUTING TEST: Cast Long to Float\n\n")
+    val myudf: () => Float = () => {
+      var myVar : Long = 0l
+      myVar = myVar + 1l
+      val myVar2 : Float = myVar.toFloat
+      myVar2
+    }
+    val u = udf(myudf)
+    val dataset = List(1).toDS()
+    val result = dataset.withColumn("new", u())
+    val ref = dataset.withColumn("new", lit(1.0f))
+    checkEquiv(result, ref)
+    println("TEST: *** END ***\n")
+  }
+
+  test("Cast Double to Float",test43) {
+    println("\n\n")
+    Thread.sleep(1000)
+    println("EXECUTING TEST: Cast Double to Float\n\n")
+    val myudf: () => Float = () => {
+      var myVar : Double = 0.0
+      myVar = myVar + 1.0
+      val myVar2 : Float = myVar.toFloat
+      myVar2
+    }
+    val u = udf(myudf)
+    val dataset = List(1).toDS()
+    val result = dataset.withColumn("new", u())
+    val ref = dataset.withColumn("new", lit(1.0f))
+    checkEquiv(result, ref)
+    println("TEST: *** END ***\n")
+  }
+
+  test("Cast Int to Double",test44) {
+    println("\n\n")
+    Thread.sleep(1000)
+    println("EXECUTING TEST: Cast Int to Double\n\n")
+    val myudf: () => Double = () => {
+      var myVar : Int = 0
+      myVar = myVar + 1 + 2 + 3 + 4 + 5
+      val myVar2 : Double = myVar.toDouble
+      myVar2
+    }
+    val u = udf(myudf)
+    val dataset = List(1).toDS()
+    val result = dataset.withColumn("new", u())
+    val ref = dataset.withColumn("new", lit(15.0))
+    checkEquiv(result, ref)
+    println("TEST: *** END ***\n")
+  }
+
+  test("Cast Long to Double",test45) {
+    println("\n\n")
+    Thread.sleep(1000)
+    println("EXECUTING TEST: Cast Long to Double\n\n")
+    val myudf: () => Double = () => {
+      var myVar : Long = 0l
+      myVar = myVar + 1l
+      val myVar2 : Double = myVar.toDouble
+      myVar2
+    }
+    val u = udf(myudf)
+    val dataset = List(1).toDS()
+    val result = dataset.withColumn("new", u())
+    val ref = dataset.withColumn("new", lit(1.0))
+    checkEquiv(result, ref)
+    println("TEST: *** END ***\n")
+  }
+
+  test("Cast Float to Double",test46) {
+    println("\n\n")
+    Thread.sleep(1000)
+    println("EXECUTING TEST: Cast Float to Double\n\n")
+    val myudf: () => Double = () => {
+      var myVar : Float = 0.0f
+      myVar = myVar + 1.0f + 2.0f
+      val myVar2 : Double = myVar.toDouble
+      myVar2
+    }
+    val u = udf(myudf)
+    val dataset = List(1).toDS()
+    val result = dataset.withColumn("new", u())
+    val ref = dataset.withColumn("new", lit(3.0))
+    checkEquiv(result, ref)
+    println("TEST: *** END ***\n")
+  }
+
+
+
+
+  // test("UDF 4 args",test26) {
+  //   println("\n\n")
+  //   Thread.sleep(1000)
+  //   println("EXECUTING TEST: UDF 4 args\n\n")
+  //   val myudf: (Int, Int, Int, Int) => Int = (w,x,y,z) => { w+x+y+z }
+  //   val u = udf(myudf)
+  //   val dataset = List(1,2,3,4).toDS()
+  //   val dataset2 = dataset.withColumn("value2",col("value") + 1)
+  //   val dataset3 = dataset2.withColumn("value3",col("value2") + 1)
+  //   val dataset4 = dataset3.withColumn("value4",col("value3") + 1)
+  //   // val result = u(data)
+  //   // dataset3.show
+  //   // val dataset = List((1,2,3),(2,3,4),(3,4,5)).toDS()
+  //   val result = dataset4.withColumn("new", u(col("value"), col("value2"), col("value3"), col("value4")))
+  //   val ref = dataset4.withColumn("new", col("value")+col("value2")+col("value3")+col("value4"))
+  //   checkEquiv(result, ref)
+  //   println("TEST: *** END ***\n")
+  // }
+
 }
  
