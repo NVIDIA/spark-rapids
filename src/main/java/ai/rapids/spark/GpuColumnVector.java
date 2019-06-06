@@ -101,6 +101,10 @@ public final class GpuColumnVector extends ColumnVector {
 
     public static TimeUnit getTimeUnits(StructField field) {
         DataType type = field.dataType();
+        return getTimeUnits(type);
+    }
+
+    public static TimeUnit getTimeUnits(DataType type) {
         if (type instanceof TimestampType) {
             return TimeUnit.MICROSECONDS;
         }
@@ -109,6 +113,10 @@ public final class GpuColumnVector extends ColumnVector {
 
     public static DType getRapidsType(StructField field) {
         DataType type = field.dataType();
+        return getRapidsType(type);
+    }
+
+    public static DType getRapidsType(DataType type) {
         if (type instanceof LongType) {
             return DType.INT64;
         } else if (type instanceof DoubleType) {
