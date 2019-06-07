@@ -109,27 +109,27 @@ case class GpuOverrides(session: SparkSession) extends Rule[SparkPlan] with Logg
       new GpuUnaryPositive(replaceWithGpuExpression(plus.child))
     case abs: Abs if (areAllSupportedTypes(abs.dataType, abs.child.dataType)) =>
       new GpuAbs(replaceWithGpuExpression(abs.child))
-    case acos: Acos if (areAllSupportedTypes(acos.child.dataType)) =>
+    case acos: Acos if enableIncompat && (areAllSupportedTypes(acos.child.dataType)) =>
       new GpuAcos(replaceWithGpuExpression(acos.child))
-    case asin: Asin if (areAllSupportedTypes(asin.child.dataType)) =>
+    case asin: Asin if enableIncompat && (areAllSupportedTypes(asin.child.dataType)) =>
       new GpuAsin(replaceWithGpuExpression(asin.child))
-    case atan: Atan if (areAllSupportedTypes(atan.child.dataType)) =>
+    case atan: Atan if enableIncompat && (areAllSupportedTypes(atan.child.dataType)) =>
       new GpuAtan(replaceWithGpuExpression(atan.child))
     case ceil: Ceil if (areAllSupportedTypes(ceil.child.dataType)) =>
       new GpuCeil(replaceWithGpuExpression(ceil.child))
-    case cos: Cos if (areAllSupportedTypes(cos.child.dataType)) =>
+    case cos: Cos if enableIncompat && (areAllSupportedTypes(cos.child.dataType)) =>
       new GpuCos(replaceWithGpuExpression(cos.child))
-    case exp: Exp if (areAllSupportedTypes(exp.child.dataType)) =>
+    case exp: Exp if enableIncompat && (areAllSupportedTypes(exp.child.dataType)) =>
       new GpuExp(replaceWithGpuExpression(exp.child))
     case floor: Floor if (areAllSupportedTypes(floor.child.dataType)) =>
       new GpuFloor(replaceWithGpuExpression(floor.child))
-    case log: Log if (areAllSupportedTypes(log.child.dataType)) =>
+    case log: Log if enableIncompat && (areAllSupportedTypes(log.child.dataType)) =>
       new GpuLog(replaceWithGpuExpression(log.child))
-    case sin: Sin if (areAllSupportedTypes(sin.child.dataType)) =>
+    case sin: Sin if enableIncompat && (areAllSupportedTypes(sin.child.dataType)) =>
       new GpuSin(replaceWithGpuExpression(sin.child))
-    case sqrt: Sqrt if (areAllSupportedTypes(sqrt.child.dataType)) =>
+    case sqrt: Sqrt if enableIncompat && (areAllSupportedTypes(sqrt.child.dataType)) =>
       new GpuSqrt(replaceWithGpuExpression(sqrt.child))
-    case tan: Tan if (areAllSupportedTypes(tan.child.dataType)) =>
+    case tan: Tan if enableIncompat && (areAllSupportedTypes(tan.child.dataType)) =>
       new GpuTan(replaceWithGpuExpression(tan.child))
     case cast: Cast if (areAllSupportedTypes(cast.dataType, cast.child.dataType) &&
       GpuCast.canCast(cast.child.dataType, cast.dataType)) =>
@@ -180,6 +180,7 @@ case class GpuOverrides(session: SparkSession) extends Rule[SparkPlan] with Logg
 
   override def apply(plan: SparkPlan) :SparkPlan = {
     if (gpuEnabled) {
+      // TODO need a way to actually verify everything is on the GPU if under test instead of what we were doing...
       replaceWithGpuPlan(plan)
     } else {
       plan

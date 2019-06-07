@@ -112,12 +112,12 @@ class SparkQueryCompareTestSuite extends FunSuite with BeforeAndAfterEach {
   def runOnCpuAndGpu(df: SparkSession => DataFrame, fun: DataFrame => DataFrame): (Array[Row], Array[Row]) = {
     val fromCpu = withCpuSparkSession((session) => {
       // repartition the data so it is turned into a projection, not folded into the table scan exec
-      fun(df(session).repartition(2)).collect()
+      fun(df(session).repartition(1)).collect()
     })
 
     val fromGpu = withGpuSparkSession((session) => {
       // repartition the data so it is turned into a projection, not folded into the table scan exec
-      fun(df(session).repartition(2)).collect()
+      fun(df(session).repartition(1)).collect()
     })
 
     (fromCpu, fromGpu)
@@ -227,6 +227,19 @@ class SparkQueryCompareTestSuite extends FunSuite with BeforeAndAfterEach {
       (500.0f, 5.0f),
       (-100.0f, 6.0f),
       (-500.0f, 0.0f)
+    ).toDF("floats", "more_floats")
+  }
+
+  def nonZeroFloatDf(session: SparkSession): DataFrame = {
+    import session.sqlContext.implicits._
+    Seq(
+      (100.0f, 1.0f),
+      (200.0f, 2.0f),
+      (300.0f, 3.0f),
+      (400.0f, 4.0f),
+      (500.0f, 5.0f),
+      (-100.0f, 6.0f),
+      (-500.0f, 50.5f)
     ).toDF("floats", "more_floats")
   }
 
@@ -368,11 +381,11 @@ class SparkQueryCompareTestSuite extends FunSuite with BeforeAndAfterEach {
     frame => frame.select(asin(col("floats")), asin(col("more_floats")))
   }
 
-  testSparkResultsAreEqual("Test atan doubles", doubleDf) {
+  testSparkResultsAreEqualRelaxedFloat("Test atan doubles", doubleDf, 0.00001) {
     frame => frame.select(atan(col("doubles")), atan(col("more_doubles")))
   }
 
-  testSparkResultsAreEqual("Test atan floats", floatDf) {
+  testSparkResultsAreEqualRelaxedFloat("Test atan floats", floatDf, 0.00001) {
     frame => frame.select(atan(col("floats")), atan(col("more_floats")))
   }
 
@@ -381,14 +394,15 @@ class SparkQueryCompareTestSuite extends FunSuite with BeforeAndAfterEach {
   }
 
   testSparkResultsAreEqual("Test ceil floats", floatDf) {
-    frame => frame.select(ceil(col("floats")), ceil(col("more_floats")))
+    frame => frame.select(col("floats"), ceil(col("floats")),
+      col("more_floats"), ceil(col("more_floats")))
   }
 
-  testSparkResultsAreEqual("Test cos doubles", doubleDf) {
+  testSparkResultsAreEqualRelaxedFloat("Test cos doubles", doubleDf, 0.00001) {
     frame => frame.select(cos(col("doubles")), cos(col("more_doubles")))
   }
 
-  testSparkResultsAreEqual("Test cos floats", floatDf) {
+  testSparkResultsAreEqualRelaxedFloat("Test cos floats", floatDf, 0.00001) {
     frame => frame.select(cos(col("floats")), cos(col("more_floats")))
   }
 
@@ -408,19 +422,21 @@ class SparkQueryCompareTestSuite extends FunSuite with BeforeAndAfterEach {
     frame => frame.select(floor(col("floats")), floor(col("more_floats")))
   }
 
-  testSparkResultsAreEqual("Test log doubles", doubleDf) {
-    frame => frame.select(log(col("doubles")), log(col("more_doubles")))
+  testSparkResultsAreEqual("Test log doubles", nonZeroDoubleDf) {
+        // Use ABS to work around incompatibility when input is negative, and we also need to skip 0
+    frame => frame.select(log(abs(col("doubles"))), log(abs(col("more_doubles"))))
   }
 
-  testSparkResultsAreEqual("Test log floats", floatDf) {
-    frame => frame.select(log(col("floats")), log(col("more_floats")))
+  testSparkResultsAreEqual("Test log floats", nonZeroFloatDf) {
+    // Use ABS to work around incompatibility when input is negative and we also need to skip 0
+    frame => frame.select(log(abs(col("floats"))), log(abs(col("more_floats"))))
   }
 
-  testSparkResultsAreEqual("Test sin doubles", doubleDf) {
+  testSparkResultsAreEqualRelaxedFloat("Test sin doubles", doubleDf, 0.00001) {
     frame => frame.select(sin(col("doubles")), sin(col("more_doubles")))
   }
 
-  testSparkResultsAreEqual("Test sin floats", floatDf) {
+  testSparkResultsAreEqualRelaxedFloat("Test sin floats", floatDf, 0.00001) {
     frame => frame.select(sin(col("floats")), sin(col("more_floats")))
   }
 
@@ -432,11 +448,11 @@ class SparkQueryCompareTestSuite extends FunSuite with BeforeAndAfterEach {
     frame => frame.select(sqrt(col("floats")), sqrt(col("more_floats")))
   }
 
-  testSparkResultsAreEqual("Test tan doubles", doubleDf) {
+  testSparkResultsAreEqualRelaxedFloat("Test tan doubles", doubleDf, 0.00001) {
     frame => frame.select(tan(col("doubles")), tan(col("more_doubles")))
   }
 
-  testSparkResultsAreEqual("Test tan floats", floatDf) {
+  testSparkResultsAreEqualRelaxedFloat("Test tan floats", floatDf, 0.00001) {
     frame => frame.select(tan(col("floats")), tan(col("more_floats")))
   }
 
