@@ -16,9 +16,9 @@
 
 package ai.rapids.spark
 
-import ai.rapids.cudf.Scalar
+import ai.rapids.cudf.{BinaryOp, BinaryOperable, DType, Scalar, UnaryOp}
 
-import org.apache.spark.sql.catalyst.expressions.{Abs, Add, Divide, Expression, IntegralDivide, Multiply, Remainder, Subtract, UnaryMinus, UnaryPositive}
+import org.apache.spark.sql.catalyst.expressions.{Abs, Add, BinaryExpression, Divide, Expression, IntegralDivide, Multiply, Remainder, Subtract, UnaryExpression, UnaryMinus, UnaryPositive}
 import org.apache.spark.sql.vectorized.{ColumnarBatch, ColumnVector}
 
 object GpuScalar {
@@ -35,109 +35,73 @@ object GpuScalar {
   }
 }
 
-class GpuUnaryMinus(child: Expression) extends UnaryMinus(child) {
+trait GpuUnaryExpression extends UnaryExpression {
   override def supportsColumnar(): Boolean = child.supportsColumnar
 
+  def doColumnar(input: GpuColumnVector): GpuColumnVector
+
   override def columnarEval(batch: ColumnarBatch): Any = {
-    var ret: Any = null
     val input = child.columnarEval(batch)
     try {
-      if (input == null) {
-        ret = null
-      } else if (input.isInstanceOf[GpuColumnVector]) {
-        ret = GpuColumnVector.from(Scalar.fromByte(0)
-          .sub(input.asInstanceOf[GpuColumnVector].getBase))
-      } else {
-        ret = nullSafeEval(input)
-      }
-      ret
-    } finally {
-      if (input != null && input.isInstanceOf[ColumnVector]) {
-        input.asInstanceOf[ColumnVector].close()
-      }
-    }
-  }
-
-  override def equals(other: Any): Boolean = {
-    if (!super.equals(other)) {
-      return false
-    }
-    return other.isInstanceOf[GpuUnaryMinus]
-  }
-}
-
-class GpuUnaryPositive(child: Expression) extends UnaryPositive(child) {
-  override def supportsColumnar(): Boolean = child.supportsColumnar
-
-  override def columnarEval(batch: ColumnarBatch): Any = {
-    child.columnarEval(batch)
-  }
-
-  override def equals(other: Any): Boolean = {
-    if (!super.equals(other)) {
-      return false
-    }
-    return other.isInstanceOf[GpuUnaryPositive]
-  }
-}
-
-class GpuAbs(child: Expression) extends Abs(child) {
-  override def supportsColumnar(): Boolean = child.supportsColumnar
-
-  override def columnarEval(batch: ColumnarBatch): Any = {
-    var ret: Any = null
-    var input: Any = null
-    try {
-      input = child.columnarEval(batch)
-      if (input.isInstanceOf[GpuColumnVector]) {
-        ret = GpuColumnVector.from(input.asInstanceOf[GpuColumnVector].getBase.abs())
-      } else {
-        ret = nullSafeEval(input)
+      input match {
+        case vec: GpuColumnVector => doColumnar(vec)
+        case v if (v != null) => nullSafeEval(v)
+        case _ => null
       }
     } finally {
       if (input != null && input.isInstanceOf[ColumnVector]) {
         input.asInstanceOf[ColumnVector].close()
       }
     }
-    ret
   }
 
   override def equals(other: Any): Boolean = {
     if (!super.equals(other)) {
       return false
     }
-    return other.isInstanceOf[GpuAbs]
+    return other.isInstanceOf[GpuUnaryExpression]
+  }
+
+  override def hashCode(): Int = super.hashCode()
+}
+
+
+trait CudfUnaryExpression extends GpuUnaryExpression {
+  def unaryOp: UnaryOp
+  def outputTypeOverride: DType = null
+
+  override def doColumnar(input: GpuColumnVector): GpuColumnVector = {
+    val base = input.getBase
+    val outType = if (outputTypeOverride != null) {
+      outputTypeOverride
+    } else {
+      base.getType
+    }
+    GpuColumnVector.from(base.unaryOp(unaryOp, outType))
   }
 }
 
-class GpuAdd(left: Expression, right: Expression)
-    extends Add(left, right) {
+
+trait GpuBinaryExpression extends BinaryExpression {
   override def supportsColumnar(): Boolean = left.supportsColumnar && right.supportsColumnar
+
+  def doColumnar(lhs: GpuColumnVector, rhs: GpuColumnVector): GpuColumnVector
+  def doColumnar(lhs: Scalar, rhs: GpuColumnVector): GpuColumnVector
+  def doColumnar(lhs: GpuColumnVector, rhs: Scalar): GpuColumnVector
 
   override def columnarEval(batch: ColumnarBatch): Any = {
     var lhs: Any = null
     var rhs: Any = null
-    var ret: Any = null
     try {
       lhs = left.columnarEval(batch)
       rhs = right.columnarEval(batch)
 
-      if (lhs == null || rhs == null) {
-        ret = null
-      } else if (lhs.isInstanceOf[GpuColumnVector] && rhs.isInstanceOf[GpuColumnVector]) {
-        val l = lhs.asInstanceOf[GpuColumnVector]
-        val r = rhs.asInstanceOf[GpuColumnVector]
-        ret = GpuColumnVector.from(l.getBase.add(r.getBase))
-      } else if (rhs.isInstanceOf[GpuColumnVector]) {
-        val l = GpuScalar.from(lhs)
-        val r = rhs.asInstanceOf[GpuColumnVector]
-        ret = GpuColumnVector.from(l.add(r.getBase))
-      } else if (lhs.isInstanceOf[GpuColumnVector]) {
-        val l = lhs.asInstanceOf[GpuColumnVector]
-        val r = GpuScalar.from(rhs)
-        ret = GpuColumnVector.from(l.getBase.add(r))
-      } else {
-        ret = nullSafeEval(lhs, rhs)
+      (lhs, rhs) match {
+        case (l: GpuColumnVector, r: GpuColumnVector) => doColumnar(l, r)
+        case (l, r: GpuColumnVector) => doColumnar(GpuScalar.from(l), r)
+        case (l: GpuColumnVector, r) => doColumnar(l, GpuScalar.from(r))
+        case (l, r) if (l != null && r != null) => nullSafeEval(l, r)
+        case _ => null
       }
     } finally {
       if (lhs != null && lhs.isInstanceOf[ColumnVector]) {
@@ -147,254 +111,99 @@ class GpuAdd(left: Expression, right: Expression)
         rhs.asInstanceOf[ColumnVector].close()
       }
     }
-    ret
   }
 
   override def equals(other: Any): Boolean = {
     if (!super.equals(other)) {
       return false
     }
-    return other.isInstanceOf[GpuAdd]
+    return other.isInstanceOf[GpuBinaryExpression]
+  }
+
+  override def hashCode(): Int = super.hashCode()
+}
+
+
+trait CudfBinaryExpression extends GpuBinaryExpression {
+  def binaryOp: BinaryOp
+  def outputTypeOverride: DType = null
+
+  def outputType(l: BinaryOperable, r: BinaryOperable) : DType = {
+    val over = outputTypeOverride
+    if (over == null) {
+      BinaryOperable.implicitConversion(l, r)
+    } else {
+      over
+    }
+  }
+
+  override def doColumnar(lhs: GpuColumnVector, rhs: GpuColumnVector): GpuColumnVector = {
+    val lBase = lhs.getBase
+    val rBase = rhs.getBase
+    val outType = outputType(lBase, rBase)
+    GpuColumnVector.from(lBase.binaryOp(binaryOp, rBase, outType))
+  }
+
+  override def doColumnar(lhs: Scalar, rhs: GpuColumnVector): GpuColumnVector = {
+    val rBase = rhs.getBase
+    val outType = outputType(lhs, rBase)
+    GpuColumnVector.from(lhs.binaryOp(binaryOp, rBase, outType))
+  }
+
+  override def doColumnar(lhs: GpuColumnVector, rhs: Scalar): GpuColumnVector = {
+    val lBase = lhs.getBase
+    val outType = outputType(lBase, rhs)
+    GpuColumnVector.from(lBase.binaryOp(binaryOp, rhs, outType))
   }
 }
 
-class GpuSubtract(left: Expression, right: Expression)
-  extends Subtract(left, right) {
-  override def supportsColumnar(): Boolean = left.supportsColumnar && right.supportsColumnar
 
-  override def columnarEval(batch: ColumnarBatch): Any = {
-    var lhs: Any = null
-    var rhs: Any = null
-    var ret: Any = null
-    try {
-      lhs = left.columnarEval(batch)
-      rhs = right.columnarEval(batch)
-
-      if (lhs == null || rhs == null) {
-        ret = null
-      } else if (lhs.isInstanceOf[GpuColumnVector] && rhs.isInstanceOf[GpuColumnVector]) {
-        val l = lhs.asInstanceOf[GpuColumnVector]
-        val r = rhs.asInstanceOf[GpuColumnVector]
-        ret = GpuColumnVector.from(l.getBase.sub(r.getBase))
-      } else if (rhs.isInstanceOf[GpuColumnVector]) {
-        val l = GpuScalar.from(lhs)
-        val r = rhs.asInstanceOf[GpuColumnVector]
-        ret = GpuColumnVector.from(l.sub(r.getBase))
-      } else if (lhs.isInstanceOf[GpuColumnVector]) {
-        val l = lhs.asInstanceOf[GpuColumnVector]
-        val r = GpuScalar.from(rhs)
-        ret = GpuColumnVector.from(l.getBase.sub(r))
-      } else {
-        ret = nullSafeEval(lhs, rhs)
-      }
-    } finally {
-      if (lhs != null && lhs.isInstanceOf[ColumnVector]) {
-        lhs.asInstanceOf[ColumnVector].close()
-      }
-      if (rhs != null && rhs.isInstanceOf[ColumnVector]) {
-        rhs.asInstanceOf[ColumnVector].close()
-      }
-    }
-    ret
-  }
-
-  override def equals(other: Any): Boolean = {
-    if (!super.equals(other)) {
-      return false
-    }
-    return other.isInstanceOf[GpuAdd]
+class GpuUnaryMinus(child: Expression) extends UnaryMinus(child) with GpuUnaryExpression {
+  override def doColumnar(input: GpuColumnVector) : GpuColumnVector = {
+    GpuColumnVector.from(Scalar.fromByte(0)
+      .sub(input.getBase))
   }
 }
 
-class GpuMultiply(left: Expression, right: Expression)
-  extends Multiply(left, right) {
-  override def supportsColumnar(): Boolean = left.supportsColumnar && right.supportsColumnar
+class GpuUnaryPositive(child: Expression) extends UnaryPositive(child) with GpuUnaryExpression {
+  override def doColumnar(input: GpuColumnVector) : GpuColumnVector = input
+}
 
-  override def columnarEval(batch: ColumnarBatch): Any = {
-    var lhs: Any = null
-    var rhs: Any = null
-    var ret: Any = null
-    try {
-      lhs = left.columnarEval(batch)
-      rhs = right.columnarEval(batch)
+class GpuAbs(child: Expression) extends Abs(child) with CudfUnaryExpression {
+  override def unaryOp: UnaryOp = UnaryOp.ABS
+}
 
-      if (lhs == null || rhs == null) {
-        ret = null
-      } else if (lhs.isInstanceOf[GpuColumnVector] && rhs.isInstanceOf[GpuColumnVector]) {
-        val l = lhs.asInstanceOf[GpuColumnVector]
-        val r = rhs.asInstanceOf[GpuColumnVector]
-        ret = GpuColumnVector.from(l.getBase.mul(r.getBase))
-      } else if (rhs.isInstanceOf[GpuColumnVector]) {
-        val l = GpuScalar.from(lhs)
-        val r = rhs.asInstanceOf[GpuColumnVector]
-        ret = GpuColumnVector.from(l.mul(r.getBase))
-      } else if (lhs.isInstanceOf[GpuColumnVector]) {
-        val l = lhs.asInstanceOf[GpuColumnVector]
-        val r = GpuScalar.from(rhs)
-        ret = GpuColumnVector.from(l.getBase.mul(r))
-      } else {
-        ret = nullSafeEval(lhs, rhs)
-      }
-    } finally {
-      if (lhs != null && lhs.isInstanceOf[ColumnVector]) {
-        lhs.asInstanceOf[ColumnVector].close()
-      }
-      if (rhs != null && rhs.isInstanceOf[ColumnVector]) {
-        rhs.asInstanceOf[ColumnVector].close()
-      }
-    }
-    ret
-  }
+class GpuAdd(left: Expression, right: Expression) extends Add(left, right)
+  with CudfBinaryExpression {
 
-  override def equals(other: Any): Boolean = {
-    if (!super.equals(other)) {
-      return false
-    }
-    return other.isInstanceOf[GpuMultiply]
-  }
+  override def binaryOp: BinaryOp = BinaryOp.ADD
+}
+
+class GpuSubtract(left: Expression, right: Expression) extends Subtract(left, right)
+  with CudfBinaryExpression {
+
+  override def binaryOp: BinaryOp = BinaryOp.SUB
+}
+
+class GpuMultiply(left: Expression, right: Expression) extends Multiply(left, right)
+  with CudfBinaryExpression {
+
+  override def binaryOp: BinaryOp = BinaryOp.MUL
 }
 
 // This is for doubles and floats...
-class GpuDivide(left: Expression, right: Expression)
-  extends Divide(left, right) {
-  override def supportsColumnar(): Boolean = left.supportsColumnar && right.supportsColumnar
+class GpuDivide(left: Expression, right: Expression) extends Divide(left, right)
+  with CudfBinaryExpression {
 
-  override def columnarEval(batch: ColumnarBatch): Any = {
-    var lhs: Any = null
-    var rhs: Any = null
-    var ret: Any = null
-    try {
-      lhs = left.columnarEval(batch)
-      rhs = right.columnarEval(batch)
-
-      if (lhs == null || rhs == null) {
-        ret = null
-      } else if (lhs.isInstanceOf[GpuColumnVector] && rhs.isInstanceOf[GpuColumnVector]) {
-        val l = lhs.asInstanceOf[GpuColumnVector]
-        val r = rhs.asInstanceOf[GpuColumnVector]
-        ret = GpuColumnVector.from(l.getBase.trueDiv(r.getBase))
-      } else if (rhs.isInstanceOf[GpuColumnVector]) {
-        val l = GpuScalar.from(lhs)
-        val r = rhs.asInstanceOf[GpuColumnVector]
-        ret = GpuColumnVector.from(l.trueDiv(r.getBase))
-      } else if (lhs.isInstanceOf[GpuColumnVector]) {
-        val l = lhs.asInstanceOf[GpuColumnVector]
-        val r = GpuScalar.from(rhs)
-        ret = GpuColumnVector.from(l.getBase.trueDiv(r))
-      } else {
-        ret = nullSafeEval(lhs, rhs)
-      }
-    } finally {
-      if (lhs != null && lhs.isInstanceOf[ColumnVector]) {
-        lhs.asInstanceOf[ColumnVector].close()
-      }
-      if (rhs != null && rhs.isInstanceOf[ColumnVector]) {
-        rhs.asInstanceOf[ColumnVector].close()
-      }
-    }
-    ret
-  }
-
-  override def equals(other: Any): Boolean = {
-    if (!super.equals(other)) {
-      return false
-    }
-    return other.isInstanceOf[GpuDivide]
-  }
+  override def binaryOp: BinaryOp = BinaryOp.TRUE_DIV
 }
 
-class GpuIntegralDivide(left: Expression, right: Expression)
-  extends IntegralDivide(left, right) {
-  override def supportsColumnar(): Boolean = left.supportsColumnar && right.supportsColumnar
-
-  override def columnarEval(batch: ColumnarBatch): Any = {
-    var lhs: Any = null
-    var rhs: Any = null
-    var ret: Any = null
-    try {
-      lhs = left.columnarEval(batch)
-      rhs = right.columnarEval(batch)
-
-      if (lhs == null || rhs == null) {
-        ret = null
-      } else if (lhs.isInstanceOf[GpuColumnVector] && rhs.isInstanceOf[GpuColumnVector]) {
-        val l = lhs.asInstanceOf[GpuColumnVector]
-        val r = rhs.asInstanceOf[GpuColumnVector]
-        ret = GpuColumnVector.from(l.getBase.div(r.getBase))
-      } else if (rhs.isInstanceOf[GpuColumnVector]) {
-        val l = GpuScalar.from(lhs)
-        val r = rhs.asInstanceOf[GpuColumnVector]
-        ret = GpuColumnVector.from(l.div(r.getBase))
-      } else if (lhs.isInstanceOf[GpuColumnVector]) {
-        val l = lhs.asInstanceOf[GpuColumnVector]
-        val r = GpuScalar.from(rhs)
-        ret = GpuColumnVector.from(l.getBase.div(r))
-      } else {
-        ret = nullSafeEval(lhs, rhs)
-      }
-    } finally {
-      if (lhs != null && lhs.isInstanceOf[ColumnVector]) {
-        lhs.asInstanceOf[ColumnVector].close()
-      }
-      if (rhs != null && rhs.isInstanceOf[ColumnVector]) {
-        rhs.asInstanceOf[ColumnVector].close()
-      }
-    }
-    ret
-  }
-
-  override def equals(other: Any): Boolean = {
-    if (!super.equals(other)) {
-      return false
-    }
-    return other.isInstanceOf[GpuIntegralDivide]
-  }
+class GpuIntegralDivide(left: Expression, right: Expression) extends IntegralDivide(left, right)
+  with CudfBinaryExpression {
+  override def binaryOp: BinaryOp = BinaryOp.DIV
 }
 
-class GpuRemainder(left: Expression, right: Expression)
-  extends Remainder(left, right) {
-  override def supportsColumnar(): Boolean = left.supportsColumnar && right.supportsColumnar
-
-  override def columnarEval(batch: ColumnarBatch): Any = {
-    var lhs: Any = null
-    var rhs: Any = null
-    var ret: Any = null
-    try {
-      lhs = left.columnarEval(batch)
-      rhs = right.columnarEval(batch)
-
-      if (lhs == null || rhs == null) {
-        ret = null
-      } else if (lhs.isInstanceOf[GpuColumnVector] && rhs.isInstanceOf[GpuColumnVector]) {
-        val l = lhs.asInstanceOf[GpuColumnVector]
-        val r = rhs.asInstanceOf[GpuColumnVector]
-        ret = GpuColumnVector.from(l.getBase.mod(r.getBase))
-      } else if (rhs.isInstanceOf[GpuColumnVector]) {
-        val l = GpuScalar.from(lhs)
-        val r = rhs.asInstanceOf[GpuColumnVector]
-        ret = GpuColumnVector.from(l.mod(r.getBase))
-      } else if (lhs.isInstanceOf[GpuColumnVector]) {
-        val l = lhs.asInstanceOf[GpuColumnVector]
-        val r = GpuScalar.from(rhs)
-        ret = GpuColumnVector.from(l.getBase.mod(r))
-      } else {
-        ret = nullSafeEval(lhs, rhs)
-      }
-    } finally {
-      if (lhs != null && lhs.isInstanceOf[ColumnVector]) {
-        lhs.asInstanceOf[ColumnVector].close()
-      }
-      if (rhs != null && rhs.isInstanceOf[ColumnVector]) {
-        rhs.asInstanceOf[ColumnVector].close()
-      }
-    }
-    ret
-  }
-
-  override def equals(other: Any): Boolean = {
-    if (!super.equals(other)) {
-      return false
-    }
-    return other.isInstanceOf[GpuRemainder]
-  }
+class GpuRemainder(left: Expression, right: Expression) extends Remainder(left, right)
+  with CudfBinaryExpression {
+  override def binaryOp: BinaryOp = BinaryOp.MOD
 }
