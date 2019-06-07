@@ -60,11 +60,11 @@ class SparkQueryCompareTestSuite extends FunSuite with BeforeAndAfterEach {
     }
   }
 
-  def withGpuSparkSession[U](f: SparkSession => U): U = {
+  def withGpuSparkSession[U](f: SparkSession => U, conf: SparkConf = new SparkConf()): U = {
     withSparkSession("gpu-sql-test",
-      new SparkConf()
+      conf
         .set("spark.sql.extensions", "ai.rapids.spark.Plugin")
-        .set("ai.rapids.gpu.testing", "true"),
+        .set(Plugin.TEST_CONF, "true"),
       f)
   }
 
@@ -109,7 +109,8 @@ class SparkQueryCompareTestSuite extends FunSuite with BeforeAndAfterEach {
   }
 
 
-  def runOnCpuAndGpu(df: SparkSession => DataFrame, fun: DataFrame => DataFrame): (Array[Row], Array[Row]) = {
+  def runOnCpuAndGpu(df: SparkSession => DataFrame, fun: DataFrame => DataFrame,
+      conf: SparkConf = new SparkConf()): (Array[Row], Array[Row]) = {
     val fromCpu = withCpuSparkSession((session) => {
       // repartition the data so it is turned into a projection, not folded into the table scan exec
       fun(df(session).repartition(1)).collect()
@@ -118,16 +119,17 @@ class SparkQueryCompareTestSuite extends FunSuite with BeforeAndAfterEach {
     val fromGpu = withGpuSparkSession((session) => {
       // repartition the data so it is turned into a projection, not folded into the table scan exec
       fun(df(session).repartition(1)).collect()
-    })
+    }, conf)
 
     (fromCpu, fromGpu)
   }
 
 
-  def testSparkResultsAreEqualRelaxedFloat(testName: String, df: SparkSession => DataFrame, maxFloatDiff: Double)
+  def INCOMPAT_testSparkResultsAreEqual(testName: String, df: SparkSession => DataFrame, maxFloatDiff: Double = 0.0)
     (fun: DataFrame => DataFrame): Unit = {
     test(testName) {
-      val (fromCpu, fromGpu) = runOnCpuAndGpu(df, fun)
+      val (fromCpu, fromGpu) = runOnCpuAndGpu(df, fun,
+        new SparkConf().set(Plugin.INCOMPATIBLE_OPS_CONF, "true"))
 
       if (!compare(fromCpu, fromGpu, maxFloatDiff)) {
         fail(
@@ -296,30 +298,30 @@ class SparkQueryCompareTestSuite extends FunSuite with BeforeAndAfterEach {
     frame => frame.select(col("longs") * col("more_longs"))
   }
 
-  testSparkResultsAreEqual("Test scalar divide", doubleDf) {
+  INCOMPAT_testSparkResultsAreEqual("Test scalar divide", doubleDf) {
     frame => frame.select(col("doubles") / 100.0)
   }
 
   // Divide by 0 results in null for spark, but -Infinity for cudf...
-  testSparkResultsAreEqual("Test divide", nonZeroDoubleDf) {
+  INCOMPAT_testSparkResultsAreEqual("Test divide", nonZeroDoubleDf) {
     frame => frame.select(col("doubles") / col("more_doubles"))
   }
 
-  testSparkResultsAreEqual("Test scalar int divide", longsDf) {
+  INCOMPAT_testSparkResultsAreEqual("Test scalar int divide", longsDf) {
     frame => frame.selectExpr("longs DIV 100")
   }
 
   // Divide by 0 results in null for spark, but -1 for cudf...
-  testSparkResultsAreEqual("Test int divide", nonZeroLongsDf) {
+  INCOMPAT_testSparkResultsAreEqual("Test int divide", nonZeroLongsDf) {
     frame => frame.selectExpr("longs DIV more_longs")
   }
 
-  testSparkResultsAreEqual("Test scalar remainder", longsDf) {
+  INCOMPAT_testSparkResultsAreEqual("Test scalar remainder", longsDf) {
     frame => frame.selectExpr("longs % 100")
   }
 
   // Divide by 0 results in null for spark, but -1 for cudf...
-  testSparkResultsAreEqual("Test remainder", nonZeroLongsDf) {
+  INCOMPAT_testSparkResultsAreEqual("Test remainder", nonZeroLongsDf) {
     frame => frame.selectExpr("longs % more_longs")
   }
 
@@ -381,11 +383,11 @@ class SparkQueryCompareTestSuite extends FunSuite with BeforeAndAfterEach {
     frame => frame.select(asin(col("floats")), asin(col("more_floats")))
   }
 
-  testSparkResultsAreEqualRelaxedFloat("Test atan doubles", doubleDf, 0.00001) {
+  INCOMPAT_testSparkResultsAreEqual("Test atan doubles", doubleDf, 0.00001) {
     frame => frame.select(atan(col("doubles")), atan(col("more_doubles")))
   }
 
-  testSparkResultsAreEqualRelaxedFloat("Test atan floats", floatDf, 0.00001) {
+  INCOMPAT_testSparkResultsAreEqual("Test atan floats", floatDf, 0.00001) {
     frame => frame.select(atan(col("floats")), atan(col("more_floats")))
   }
 
@@ -398,19 +400,19 @@ class SparkQueryCompareTestSuite extends FunSuite with BeforeAndAfterEach {
       col("more_floats"), ceil(col("more_floats")))
   }
 
-  testSparkResultsAreEqualRelaxedFloat("Test cos doubles", doubleDf, 0.00001) {
+  INCOMPAT_testSparkResultsAreEqual("Test cos doubles", doubleDf, 0.00001) {
     frame => frame.select(cos(col("doubles")), cos(col("more_doubles")))
   }
 
-  testSparkResultsAreEqualRelaxedFloat("Test cos floats", floatDf, 0.00001) {
+  INCOMPAT_testSparkResultsAreEqual("Test cos floats", floatDf, 0.00001) {
     frame => frame.select(cos(col("floats")), cos(col("more_floats")))
   }
 
-  testSparkResultsAreEqual("Test exp doubles", doubleDf) {
+  INCOMPAT_testSparkResultsAreEqual("Test exp doubles", doubleDf) {
     frame => frame.select(exp(col("doubles")), exp(col("more_doubles")))
   }
 
-  testSparkResultsAreEqual("Test exp floats", floatDf) {
+  INCOMPAT_testSparkResultsAreEqual("Test exp floats", floatDf) {
     frame => frame.select(exp(col("floats")), exp(col("more_floats")))
   }
 
@@ -422,21 +424,21 @@ class SparkQueryCompareTestSuite extends FunSuite with BeforeAndAfterEach {
     frame => frame.select(floor(col("floats")), floor(col("more_floats")))
   }
 
-  testSparkResultsAreEqual("Test log doubles", nonZeroDoubleDf) {
+  INCOMPAT_testSparkResultsAreEqual("Test log doubles", nonZeroDoubleDf) {
         // Use ABS to work around incompatibility when input is negative, and we also need to skip 0
     frame => frame.select(log(abs(col("doubles"))), log(abs(col("more_doubles"))))
   }
 
-  testSparkResultsAreEqual("Test log floats", nonZeroFloatDf) {
+  INCOMPAT_testSparkResultsAreEqual("Test log floats", nonZeroFloatDf) {
     // Use ABS to work around incompatibility when input is negative and we also need to skip 0
     frame => frame.select(log(abs(col("floats"))), log(abs(col("more_floats"))))
   }
 
-  testSparkResultsAreEqualRelaxedFloat("Test sin doubles", doubleDf, 0.00001) {
+  INCOMPAT_testSparkResultsAreEqual("Test sin doubles", doubleDf, 0.00001) {
     frame => frame.select(sin(col("doubles")), sin(col("more_doubles")))
   }
 
-  testSparkResultsAreEqualRelaxedFloat("Test sin floats", floatDf, 0.00001) {
+  INCOMPAT_testSparkResultsAreEqual("Test sin floats", floatDf, 0.00001) {
     frame => frame.select(sin(col("floats")), sin(col("more_floats")))
   }
 
@@ -448,19 +450,19 @@ class SparkQueryCompareTestSuite extends FunSuite with BeforeAndAfterEach {
     frame => frame.select(sqrt(col("floats")), sqrt(col("more_floats")))
   }
 
-  testSparkResultsAreEqualRelaxedFloat("Test tan doubles", doubleDf, 0.00001) {
+  INCOMPAT_testSparkResultsAreEqual("Test tan doubles", doubleDf, 0.00001) {
     frame => frame.select(tan(col("doubles")), tan(col("more_doubles")))
   }
 
-  testSparkResultsAreEqualRelaxedFloat("Test tan floats", floatDf, 0.00001) {
+  INCOMPAT_testSparkResultsAreEqual("Test tan floats", floatDf, 0.00001) {
     frame => frame.select(tan(col("floats")), tan(col("more_floats")))
   }
 
-  testSparkResultsAreEqualRelaxedFloat("Test scalar pow", longsDf, 0.00001) {
+  INCOMPAT_testSparkResultsAreEqual("Test scalar pow", longsDf, 0.00001) {
     frame => frame.select(pow(col("longs"), 3))
   }
 
-  testSparkResultsAreEqualRelaxedFloat("Test pow", longsDf, 0.00001) {
+  INCOMPAT_testSparkResultsAreEqual("Test pow", longsDf, 0.00001) {
     frame => frame.select(pow(col("longs"), col("more_longs")))
   }
 }

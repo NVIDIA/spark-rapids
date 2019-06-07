@@ -60,16 +60,8 @@ class GpuProjectExec(projectList: Seq[NamedExpression], child: SparkPlan)
 }
 
 case class GpuOverrides(session: SparkSession) extends Rule[SparkPlan] with Logging {
-  lazy val underTest = session.sqlContext.
-    getConf("ai.rapids.gpu.testing", "false").trim.toBoolean
-  // Some operations are currently not 100% compatible with spark.  This will enable
-  // those operations if a customer is willing to work around compatibility issues for
-  // more processing on the GPU
-  lazy val enableIncompat = underTest || session.sqlContext.
-    getConf("ai.rapids.gpu.incompatible_ops", "false").trim.toBoolean
-
-  lazy val gpuEnabled = session.sqlContext.
-    getConf("ai.rapids.gpu.enabled", "true").trim.toBoolean
+  lazy val incompatEnabled = Plugin.isIncompatEnabled(session)
+  lazy val gpuEnabled = Plugin.isGpuEnabled(session)
 
   def areAllSupportedTypes(types: DataType*): Boolean = {
     types.forall(_ match {
@@ -94,6 +86,9 @@ case class GpuOverrides(session: SparkSession) extends Rule[SparkPlan] with Logg
       att // No sub expressions and already supports columnar so just return it
     case lit: Literal =>
       lit // No sub expressions and already supports columnar so just return it
+    case cast: Cast if (areAllSupportedTypes(cast.dataType, cast.child.dataType) &&
+      GpuCast.canCast(cast.child.dataType, cast.dataType)) =>
+      new GpuCast(replaceWithGpuExpression(cast.child), cast.dataType, cast.timeZoneId)
     case add: Add if (areAllSupportedTypes(add.dataType, add.left.dataType, add.right.dataType)) =>
       new GpuAdd(replaceWithGpuExpression(add.left),
         replaceWithGpuExpression(add.right))
@@ -109,53 +104,49 @@ case class GpuOverrides(session: SparkSession) extends Rule[SparkPlan] with Logg
       new GpuUnaryPositive(replaceWithGpuExpression(plus.child))
     case abs: Abs if (areAllSupportedTypes(abs.dataType, abs.child.dataType)) =>
       new GpuAbs(replaceWithGpuExpression(abs.child))
-    case acos: Acos if enableIncompat && (areAllSupportedTypes(acos.child.dataType)) =>
+    case acos: Acos if (areAllSupportedTypes(acos.child.dataType)) =>
       new GpuAcos(replaceWithGpuExpression(acos.child))
-    case asin: Asin if enableIncompat && (areAllSupportedTypes(asin.child.dataType)) =>
+    case asin: Asin if (areAllSupportedTypes(asin.child.dataType)) =>
       new GpuAsin(replaceWithGpuExpression(asin.child))
-    case atan: Atan if enableIncompat && (areAllSupportedTypes(atan.child.dataType)) =>
+    case sqrt: Sqrt if (areAllSupportedTypes(sqrt.child.dataType)) =>
+      new GpuSqrt(replaceWithGpuExpression(sqrt.child))
+      //////////////////////////////////////////////////////////////////////
+      // INCOMPATIBLE OPERATIONS
+      //////////////////////////////////////////////////////////////////////
+    case atan: Atan if incompatEnabled && (areAllSupportedTypes(atan.child.dataType)) =>
       new GpuAtan(replaceWithGpuExpression(atan.child))
     case ceil: Ceil if (areAllSupportedTypes(ceil.child.dataType)) =>
       new GpuCeil(replaceWithGpuExpression(ceil.child))
-    case cos: Cos if enableIncompat && (areAllSupportedTypes(cos.child.dataType)) =>
+    case cos: Cos if incompatEnabled && (areAllSupportedTypes(cos.child.dataType)) =>
       new GpuCos(replaceWithGpuExpression(cos.child))
-    case exp: Exp if enableIncompat && (areAllSupportedTypes(exp.child.dataType)) =>
+    case exp: Exp if incompatEnabled && (areAllSupportedTypes(exp.child.dataType)) =>
       new GpuExp(replaceWithGpuExpression(exp.child))
     case floor: Floor if (areAllSupportedTypes(floor.child.dataType)) =>
       new GpuFloor(replaceWithGpuExpression(floor.child))
-    case log: Log if enableIncompat && (areAllSupportedTypes(log.child.dataType)) =>
+    case log: Log if incompatEnabled && (areAllSupportedTypes(log.child.dataType)) =>
       new GpuLog(replaceWithGpuExpression(log.child))
-    case sin: Sin if enableIncompat && (areAllSupportedTypes(sin.child.dataType)) =>
+    case sin: Sin if incompatEnabled && (areAllSupportedTypes(sin.child.dataType)) =>
       new GpuSin(replaceWithGpuExpression(sin.child))
-    case sqrt: Sqrt if enableIncompat && (areAllSupportedTypes(sqrt.child.dataType)) =>
-      new GpuSqrt(replaceWithGpuExpression(sqrt.child))
-    case tan: Tan if enableIncompat && (areAllSupportedTypes(tan.child.dataType)) =>
+    case tan: Tan if incompatEnabled && (areAllSupportedTypes(tan.child.dataType)) =>
       new GpuTan(replaceWithGpuExpression(tan.child))
-    case cast: Cast if (areAllSupportedTypes(cast.dataType, cast.child.dataType) &&
-      GpuCast.canCast(cast.child.dataType, cast.dataType)) =>
-      new GpuCast(replaceWithGpuExpression(cast.child), cast.dataType, cast.timeZoneId)
-    case pow: Pow if enableIncompat && // floating point results are not always bit for bit exact
+    case pow: Pow if incompatEnabled && // floating point results are not always bit for bit exact
       (areAllSupportedTypes(pow.dataType, pow.left.dataType, pow.right.dataType)) =>
       new GpuPow(replaceWithGpuExpression(pow.left),
         replaceWithGpuExpression(pow.right))
-    case div: Divide if enableIncompat && // divide by 0 results in null for spark but -Infinity for cudf
+    case div: Divide if incompatEnabled && // divide by 0 results in null for spark but -Infinity for cudf
       (areAllSupportedTypes(div.dataType, div.left.dataType, div.right.dataType)) =>
       new GpuDivide(replaceWithGpuExpression(div.left),
         replaceWithGpuExpression(div.right))
-    case div: IntegralDivide if enableIncompat && // divide by 0 results in null for spark but -1 for cudf
+    case div: IntegralDivide if incompatEnabled && // divide by 0 results in null for spark but -1 for cudf
       (areAllSupportedTypes(div.dataType, div.left.dataType, div.right.dataType)) =>
       new GpuIntegralDivide(replaceWithGpuExpression(div.left),
         replaceWithGpuExpression(div.right))
-    case rem: Remainder if enableIncompat &&  // divide by 0 results in null for spark, but not for cudf
+    case rem: Remainder if incompatEnabled &&  // divide by 0 results in null for spark, but not for cudf
       (areAllSupportedTypes(rem.dataType, rem.left.dataType, rem.right.dataType)) =>
       new GpuRemainder(replaceWithGpuExpression(rem.left),
         replaceWithGpuExpression(rem.right))
     case exp =>
-      if (underTest) {
-        throw new IllegalStateException(s"GPU Processing for expression ${exp.getClass} ${exp} is not currently supported.")
-      } else {
-        logWarning(s"GPU Processing for expression ${exp.getClass} ${exp} is not currently supported.")
-      }
+      logWarning(s"GPU Processing for expression ${exp.getClass} ${exp} is not currently supported.")
       exp
   }
 
@@ -165,22 +156,12 @@ case class GpuOverrides(session: SparkSession) extends Rule[SparkPlan] with Logg
         replaceWithGpuExpression(exp).asInstanceOf[NamedExpression]),
         replaceWithGpuPlan(plan.child))
     case p =>
-      if (underTest) {
-        p match {
-          case _ :LocalTableScanExec => ()
-          case _ :ShuffleExchangeExec => () //Ignored for now
-          case _ =>
-            throw new IllegalStateException(s"GPU Processing for ${p.getClass} is not currently supported.")
-        }
-      } else {
-        logWarning(s"GPU Processing for ${p.getClass} is not currently supported.")
-      }
+      logWarning(s"GPU Processing for ${p.getClass} is not currently supported.")
       p.withNewChildren(p.children.map(replaceWithGpuPlan))
   }
 
   override def apply(plan: SparkPlan) :SparkPlan = {
     if (gpuEnabled) {
-      // TODO need a way to actually verify everything is on the GPU if under test instead of what we were doing...
       replaceWithGpuPlan(plan)
     } else {
       plan
@@ -189,14 +170,13 @@ case class GpuOverrides(session: SparkSession) extends Rule[SparkPlan] with Logg
 }
 
 case class GpuTransitionOverrides(session: SparkSession) extends Rule[SparkPlan] {
-
-  lazy val gpuEnabled = session.sqlContext.
-    getConf("ai.rapids.gpu.enabled", "true").trim.toBoolean
+  lazy val underTest = Plugin.isTestEnabled(session)
+  lazy val gpuEnabled = Plugin.isGpuEnabled(session)
 
   def replaceWithGpuPlan(plan: SparkPlan): SparkPlan = plan match {
-      // TODO need to verify that all columnar processing is GPU accelerated, or insert transitions
-      // to/from host columnar data (this is likely to happen for python, R, and .net processing
-      // This may come in the future, but does nto currently happen
+    // TODO need to verify that all columnar processing is GPU accelerated, or insert transitions
+    // to/from host columnar data (this is likely to happen for python, R, and .net processing
+    // This may come in the future, but does nto currently happen
     case r2c: RowToColumnarExec =>
       new GpuRowToColumnarExec(replaceWithGpuPlan(r2c.child))
     case c2r: ColumnarToRowExec =>
@@ -205,9 +185,37 @@ case class GpuTransitionOverrides(session: SparkSession) extends Rule[SparkPlan]
       p.withNewChildren(p.children.map(replaceWithGpuPlan))
   }
 
- override def apply(plan: SparkPlan) :SparkPlan = {
+  def assertIsOnTheGpu(exp: Expression): Unit = {
+    if (!exp.supportsColumnar) {
+      throw new IllegalArgumentException(s"The expression ${exp} is not columnar ${exp.getClass}")
+    }
+  }
+
+  def assertIsOnTheGpu(plan: SparkPlan): Unit = {
+    plan match {
+      case lts: LocalTableScanExec =>
+        if (!lts.expressions.forall(_.isInstanceOf[AttributeReference])) {
+          throw new IllegalArgumentException("It looks like some operations were " +
+            s"pushed down to LocalTableScanExec ${lts.expressions.mkString(",")}")
+        }
+      case _: GpuColumnarToRowExec => () // Ignored
+      case _: ShuffleExchangeExec => () // Ignored for now
+      case _ =>
+        if (!plan.supportsColumnar) {
+          throw new IllegalArgumentException(s"Part of the plan is not columnar ${plan.getClass}\n${plan}")
+        }
+        plan.expressions.foreach(assertIsOnTheGpu)
+    }
+    plan.children.foreach(assertIsOnTheGpu)
+  }
+
+  override def apply(plan: SparkPlan) :SparkPlan = {
     if (gpuEnabled) {
-      replaceWithGpuPlan(plan)
+      val ret = replaceWithGpuPlan(plan)
+      if (underTest) {
+        assertIsOnTheGpu(ret)
+      }
+      ret
     } else {
       plan
     }
@@ -222,6 +230,24 @@ case class ColumnarOverrideRules(session: SparkSession) extends ColumnarRule wit
   override def preColumnarTransitions : Rule[SparkPlan] = overrides
 
   override def postColumnarTransitions: Rule[SparkPlan] = overrideTransitions
+}
+
+object Plugin {
+  val GPU_ENABLED_CONF: String = "ai.rapids.gpu.enabled"
+  // Some operations are currently not 100% compatible with spark.  This will enable
+  // those operations if a customer is willing to work around compatibility issues for
+  // more processing on the GPU
+  val INCOMPATIBLE_OPS_CONF: String = "ai.rapids.gpu.incompatible_ops"
+  val TEST_CONF: String = "ai.rapids.gpu.testing"
+
+  def isGpuEnabled(session: SparkSession): Boolean = session.sqlContext.
+    getConf(GPU_ENABLED_CONF, "true").trim.toBoolean
+
+  def isIncompatEnabled(session: SparkSession): Boolean = session.sqlContext.
+    getConf(INCOMPATIBLE_OPS_CONF, "false").trim.toBoolean
+
+  def isTestEnabled(session: SparkSession): Boolean = session.sqlContext.
+    getConf(TEST_CONF, "false").trim.toBoolean
 }
 
 /**
