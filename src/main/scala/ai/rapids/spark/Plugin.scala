@@ -59,7 +59,7 @@ class GpuProjectExec(projectList: Seq[NamedExpression], child: SparkPlan)
   }
 }
 
-case class GpuOverrides(session: SparkSession) extends Logging {
+case class GpuOverrides(session: SparkSession) extends Rule[SparkPlan] with Logging {
   lazy val underTest = session.sqlContext.
     getConf("ai.rapids.gpu.testing", "false").trim.toBoolean
   // Some operations are currently not 100% compatible with spark.  This will enable
@@ -67,6 +67,9 @@ case class GpuOverrides(session: SparkSession) extends Logging {
   // more processing on the GPU
   lazy val enableIncompat = underTest || session.sqlContext.
     getConf("ai.rapids.gpu.incompatible_ops", "false").trim.toBoolean
+
+  lazy val gpuEnabled = session.sqlContext.
+    getConf("ai.rapids.gpu.enabled", "true").trim.toBoolean
 
   def areAllSupportedTypes(types: DataType*): Boolean = {
     types.forall(_ match {
@@ -175,12 +178,19 @@ case class GpuOverrides(session: SparkSession) extends Logging {
       p.withNewChildren(p.children.map(replaceWithGpuPlan))
   }
 
-  def apply(plan: SparkPlan) :SparkPlan = {
-    replaceWithGpuPlan(plan)
+  override def apply(plan: SparkPlan) :SparkPlan = {
+    if (gpuEnabled) {
+      replaceWithGpuPlan(plan)
+    } else {
+      plan
+    }
   }
 }
 
-case class GpuTransitionOverrides() extends Rule[SparkPlan] {
+case class GpuTransitionOverrides(session: SparkSession) extends Rule[SparkPlan] {
+
+  lazy val gpuEnabled = session.sqlContext.
+    getConf("ai.rapids.gpu.enabled", "true").trim.toBoolean
 
   def replaceWithGpuPlan(plan: SparkPlan): SparkPlan = plan match {
       // TODO need to verify that all columnar processing is GPU accelerated, or insert transitions
@@ -194,32 +204,23 @@ case class GpuTransitionOverrides() extends Rule[SparkPlan] {
       p.withNewChildren(p.children.map(replaceWithGpuPlan))
   }
 
-  def apply(plan: SparkPlan) :SparkPlan = {
-    replaceWithGpuPlan(plan)
+ override def apply(plan: SparkPlan) :SparkPlan = {
+    if (gpuEnabled) {
+      replaceWithGpuPlan(plan)
+    } else {
+      plan
+    }
   }
 }
 
 case class ColumnarOverrideRules(session: SparkSession) extends ColumnarRule with Logging {
-  def gpuEnabled = session.sqlContext.
-    getConf("ai.rapids.gpu.enabled", "true").trim.toBoolean
+
   val overrides = GpuOverrides(session)
-  val overrideTransitions = GpuTransitionOverrides()
+  val overrideTransitions = GpuTransitionOverrides(session)
 
-  override def pre: Rule[SparkPlan] = plan => {
-    if (gpuEnabled) {
-      overrides(plan)
-    } else {
-      plan
-    }
-  }
+  override def preColumnarTransitions : Rule[SparkPlan] = overrides
 
-  override def post: Rule[SparkPlan] = plan => {
-    if (gpuEnabled) {
-      overrideTransitions(plan)
-    } else {
-      plan
-    }
-  }
+  override def postColumnarTransitions: Rule[SparkPlan] = overrideTransitions
 }
 
 /**

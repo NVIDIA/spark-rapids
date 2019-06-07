@@ -186,7 +186,7 @@ public final class GpuColumnVector extends ColumnVector {
     }
 
     @Override
-    public void doClose() {
+    protected void cleanupResources() {
         cudfCv.close();
     }
 

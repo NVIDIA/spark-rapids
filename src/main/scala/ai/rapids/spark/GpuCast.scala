@@ -25,34 +25,18 @@ import org.apache.spark.sql.vectorized.{ColumnarBatch, ColumnVector}
 object GpuCast {
   /**
    * Returns true iff we can cast `from` to `to` using the GPU.
+   *
+   * Eventually we will need to match what is supported by spark proper
+   * https://github.com/apache/spark/blob/master/sql/catalyst/src/main/scala/org/apache/spark/sql/catalyst/expressions/Cast.scala#L37-L95
    */
   def canCast(from: DataType, to: DataType): Boolean =
     (from, to) match {
     case (fromType, toType) if fromType == toType => true
 
-    case (DateType, BooleanType) => true
-    case (TimestampType, BooleanType) => true
     case (_: NumericType, BooleanType) => true
 
-    case (BooleanType, TimestampType) => true
-    case (DateType, TimestampType) => true
-    case (_: NumericType, TimestampType) => true
-
-    case (TimestampType, DateType) => true
-
-    // TODO getting errors on going to string types
-    //case (IntegerType, StringType) => true
-    //case (LongType, StringType) => true
-    //case (FloatType, StringType) => true
-    //case (DoubleType, StringType) => true
-
-    // case (StringType, IntegerType) => true
-    // case (StringType, LongType) => true
-    // case (StringType, FloatType) => true
-    // case (StringType, DoubleType) => true
     case (BooleanType, _: NumericType) => true
-    case (DateType, _: NumericType) => true
-    case (TimestampType, _: NumericType) => true
+
     case (_: NumericType, _: NumericType) => true
 
     case _ => false

@@ -155,6 +155,16 @@ class SparkQueryCompareTestSuite extends FunSuite with BeforeAndAfterEach {
     }
   }
 
+  def booleanDf(session: SparkSession): DataFrame = {
+    import session.sqlContext.implicits._
+    Seq[(Boolean, Boolean)](
+      (true, true),
+      (false, true),
+      (true, false),
+      (false, false)
+    ).toDF("bools", "more_bools")
+  }
+
   def longsDf(session: SparkSession): DataFrame = {
     import session.sqlContext.implicits._
     Seq(
@@ -303,9 +313,37 @@ class SparkQueryCompareTestSuite extends FunSuite with BeforeAndAfterEach {
   testSparkResultsAreEqual("Test cast from long", longsDf) {
     frame => frame.select(
       col("longs").cast(IntegerType),
+      col("longs").cast(LongType),
       // col("longs").cast(StringType),
       col("more_longs").cast(BooleanType),
-      col("more_longs").cast(ByteType))
+      col("more_longs").cast(ByteType),
+      col("longs").cast(ShortType),
+      col("longs").cast(FloatType),
+      col("longs").cast(DoubleType))
+  }
+
+  testSparkResultsAreEqual("Test cast from double", doubleDf) {
+    frame => frame.select(
+      col("doubles").cast(IntegerType),
+      col("doubles").cast(LongType),
+      // col("longs").cast(StringType),
+      col("more_doubles").cast(BooleanType),
+      col("more_doubles").cast(ByteType),
+      col("doubles").cast(ShortType),
+      col("doubles").cast(FloatType),
+      col("doubles").cast(DoubleType))
+  }
+
+  testSparkResultsAreEqual("Test cast from boolean", booleanDf) {
+    frame => frame.select(
+      col("bools").cast(IntegerType),
+      col("bools").cast(LongType),
+      // col("longs").cast(StringType),
+      col("more_bools").cast(BooleanType),
+      col("more_bools").cast(ByteType),
+      col("bools").cast(ShortType),
+      col("bools").cast(FloatType),
+      col("bools").cast(DoubleType))
   }
 
   // String are not currently supported

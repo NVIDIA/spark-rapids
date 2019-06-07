@@ -22,26 +22,16 @@ import org.apache.spark.sql.catalyst.expressions.{Abs, Add, Divide, Expression, 
 import org.apache.spark.sql.vectorized.{ColumnarBatch, ColumnVector}
 
 object GpuScalar {
-  def from(v: Any): Scalar = {
-    if (v == null) {
-      Scalar.NULL
-    } else if (v.isInstanceOf[Long]) {
-      Scalar.fromLong(v.asInstanceOf[Long])
-    } else if (v.isInstanceOf[Double]) {
-      Scalar.fromDouble(v.asInstanceOf[Double])
-    } else if (v.isInstanceOf[Int]) {
-      Scalar.fromInt(v.asInstanceOf[Int])
-    } else if (v.isInstanceOf[Float]) {
-      Scalar.fromFloat(v.asInstanceOf[Float])
-    } else if (v.isInstanceOf[Short]) {
-      Scalar.fromShort(v.asInstanceOf[Short])
-    } else if (v.isInstanceOf[Byte]) {
-      Scalar.fromByte(v.asInstanceOf[Byte])
-    } else if (v.isInstanceOf[Boolean]) {
-      Scalar.fromBool(v.asInstanceOf[Boolean])
-    } else {
-      throw new IllegalStateException(s"${v} is not supported as a scalar yet")
-    }
+  def from(v: Any): Scalar = v match {
+    case _ if (v == null) => Scalar.NULL
+    case l: Long => Scalar.fromLong(l)
+    case d: Double => Scalar.fromDouble(d)
+    case i: Int => Scalar.fromInt(i)
+    case f: Float => Scalar.fromFloat(f)
+    case s: Short => Scalar.fromShort(s)
+    case b: Byte => Scalar.fromByte(b)
+    case b: Boolean => Scalar.fromBool(b)
+    case _ => throw new IllegalStateException(s"${v} is not supported as a scalar yet")
   }
 }
 
