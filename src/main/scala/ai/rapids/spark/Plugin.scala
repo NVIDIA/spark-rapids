@@ -26,21 +26,21 @@ import org.apache.spark.sql.execution.exchange.ShuffleExchangeExec
 import org.apache.spark.sql.types._
 import org.apache.spark.sql.vectorized.{ColumnarBatch, ColumnVector}
 
-class GpuProjectExec(projectList: Seq[NamedExpression], child: SparkPlan)
-  extends ProjectExec(projectList, child) {
+class GpuProjectExec(projectList: Seq[GpuExpression], child: SparkPlan)
+  extends ProjectExec(projectList.asInstanceOf[Seq[NamedExpression]], child) {
 
   override def supportsColumnar = true
   // Disable code generation for now...
   override def supportCodegen: Boolean = false
 
   override def doExecuteColumnar() : RDD[ColumnarBatch] = {
-    val boundProjectList: Seq[Any] = BindReferences.bindReferences(projectList, child.output)
+    val boundProjectList: Seq[Any] = GpuBindReferences.bindReferences(projectList, child.output)
     val rdd = child.executeColumnar()
     AutoCloseColumnBatchIterator.map(rdd,
       (cb: ColumnarBatch) => {
         val newColumns = boundProjectList.map(
           expr => {
-            val result = expr.asInstanceOf[Expression].columnarEval(cb)
+            val result = expr.asInstanceOf[GpuExpression].columnarEval(cb)
             // TODO it is possible for a constant to be returned that we need to
             // create a columnVector for, might be a special sub-class
             // that only stores a single value.
@@ -57,6 +57,10 @@ class GpuProjectExec(projectList: Seq[NamedExpression], child: SparkPlan)
     }
     return other.isInstanceOf[GpuProjectExec]
   }
+}
+
+class CannotReplaceException(str: String) extends RuntimeException(str) {
+
 }
 
 case class GpuOverrides(session: SparkSession) extends Rule[SparkPlan] with Logging {
@@ -79,13 +83,14 @@ case class GpuOverrides(session: SparkSession) extends Rule[SparkPlan] with Logg
     })
   }
 
-  def replaceWithGpuExpression(exp: Expression): Expression = exp match {
+  def replaceWithGpuExpression(exp: Expression): GpuExpression = exp match {
     case a: Alias =>
-      Alias(replaceWithGpuExpression(a.child), a.name)(a.exprId, a.qualifier, a.explicitMetadata)
+      new GpuAlias(replaceWithGpuExpression(a.child), a.name)(a.exprId, a.qualifier, a.explicitMetadata)
     case att: AttributeReference =>
-      att // No sub expressions and already supports columnar so just return it
+      new GpuAttributeReference(att.name, att.dataType, att.nullable,
+        att.metadata)(att.exprId, att.qualifier)
     case lit: Literal =>
-      lit // No sub expressions and already supports columnar so just return it
+      new GpuLiteral(lit.value, lit.dataType)
     case cast: Cast if (areAllSupportedTypes(cast.dataType, cast.child.dataType) &&
       GpuCast.canCast(cast.child.dataType, cast.dataType)) =>
       new GpuCast(replaceWithGpuExpression(cast.child), cast.dataType, cast.timeZoneId)
@@ -146,19 +151,25 @@ case class GpuOverrides(session: SparkSession) extends Rule[SparkPlan] with Logg
       new GpuRemainder(replaceWithGpuExpression(rem.left),
         replaceWithGpuExpression(rem.right))
     case exp =>
-      logWarning(s"GPU Processing for expression ${exp.getClass} ${exp} is not currently supported.")
-      exp
+      throw new CannotReplaceException(s"expression ${exp.getClass} ${exp} is not currently supported.")
   }
 
-  def replaceWithGpuPlan(plan: SparkPlan): SparkPlan = plan match {
-    case plan: ProjectExec =>
-      new GpuProjectExec(plan.projectList.map((exp) =>
-        replaceWithGpuExpression(exp).asInstanceOf[NamedExpression]),
-        replaceWithGpuPlan(plan.child))
-    case p =>
-      logWarning(s"GPU Processing for ${p.getClass} is not currently supported.")
-      p.withNewChildren(p.children.map(replaceWithGpuPlan))
-  }
+  def replaceWithGpuPlan(plan: SparkPlan): SparkPlan =
+    try {
+      plan match {
+        case plan: ProjectExec =>
+          new GpuProjectExec(plan.projectList.map((exp) => replaceWithGpuExpression(exp)),
+            replaceWithGpuPlan(plan.child))
+        case p =>
+          logWarning(s"GPU Processing for ${p.getClass} is not currently supported.")
+          p.withNewChildren(p.children.map(replaceWithGpuPlan))
+      }
+    } catch {
+      case exp: CannotReplaceException =>
+        logWarning(s"Columnar processing for ${plan.getClass} is not currently supported" +
+          s"because ${exp.getMessage}")
+        plan.withNewChildren(plan.children.map(replaceWithGpuPlan))
+    }
 
   override def apply(plan: SparkPlan) :SparkPlan = {
     if (gpuEnabled) {
@@ -186,7 +197,7 @@ case class GpuTransitionOverrides(session: SparkSession) extends Rule[SparkPlan]
   }
 
   def assertIsOnTheGpu(exp: Expression): Unit = {
-    if (!exp.supportsColumnar) {
+    if (!exp.isInstanceOf[GpuExpression]) {
       throw new IllegalArgumentException(s"The expression ${exp} is not columnar ${exp.getClass}")
     }
   }

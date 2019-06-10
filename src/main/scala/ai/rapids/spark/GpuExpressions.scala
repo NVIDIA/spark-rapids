@@ -18,30 +18,38 @@ package ai.rapids.spark
 
 import ai.rapids.cudf.{BinaryOp, BinaryOperable, DType, Scalar, TimeUnit, UnaryOp}
 
-import org.apache.spark.sql.catalyst.expressions.{BinaryExpression, UnaryExpression}
+import org.apache.spark.sql.catalyst.expressions.{BinaryExpression, Expression, UnaryExpression}
 import org.apache.spark.sql.vectorized.{ColumnarBatch, ColumnVector}
 
-object GpuScalar {
-  def from(v: Any): Scalar = v match {
-    case _ if (v == null) => Scalar.NULL
-    case l: Long => Scalar.fromLong(l)
-    case d: Double => Scalar.fromDouble(d)
-    case i: Int => Scalar.fromInt(i)
-    case f: Float => Scalar.fromFloat(f)
-    case s: Short => Scalar.fromShort(s)
-    case b: Byte => Scalar.fromByte(b)
-    case b: Boolean => Scalar.fromBool(b)
-    case _ => throw new IllegalStateException(s"${v} is not supported as a scalar yet")
+trait GpuExpression extends Expression {
+  /**
+   * Returns the result of evaluating this expression on the entire
+   * [[ColumnarBatch]]. The result of calling this may be a single [[GpuColumnVector]] or a scalar
+   * value. Scalar values typically happen if they are a part of the expression i.e. col("a") + 100.
+   * In this case the 100 is a literal that Add would have to be able to handle.
+   *
+   * By convention any [[GpuColumnVector]] returned by [[columnarEval]]
+   * is owned by the caller and will need to be closed by them. This can happen by putting it into
+   * a [[ColumnarBatch]] and closing the batch or by closing the vector directly if it is a
+   * temporary value.
+   */
+  def columnarEval(batch: ColumnarBatch): Any
+
+  override def equals(other: Any): Boolean = {
+    if (!super.equals(other)) {
+      return false
+    }
+    return other.isInstanceOf[GpuBinaryExpression]
   }
+
+  override def hashCode(): Int = super.hashCode()
 }
 
-trait GpuUnaryExpression extends UnaryExpression {
-  override def supportsColumnar(): Boolean = child.supportsColumnar
-
+trait GpuUnaryExpression extends UnaryExpression with GpuExpression {
   def doColumnar(input: GpuColumnVector): GpuColumnVector
 
   override def columnarEval(batch: ColumnarBatch): Any = {
-    val input = child.columnarEval(batch)
+    val input = child.asInstanceOf[GpuExpression].columnarEval(batch)
     try {
       input match {
         case vec: GpuColumnVector => doColumnar(vec)
@@ -54,15 +62,6 @@ trait GpuUnaryExpression extends UnaryExpression {
       }
     }
   }
-
-  override def equals(other: Any): Boolean = {
-    if (!super.equals(other)) {
-      return false
-    }
-    return other.isInstanceOf[GpuUnaryExpression]
-  }
-
-  override def hashCode(): Int = super.hashCode()
 }
 
 
@@ -91,8 +90,7 @@ trait CudfUnaryExpression extends GpuUnaryExpression {
   }
 }
 
-trait GpuBinaryExpression extends BinaryExpression {
-  override def supportsColumnar(): Boolean = left.supportsColumnar && right.supportsColumnar
+trait GpuBinaryExpression extends BinaryExpression with GpuExpression {
 
   def doColumnar(lhs: GpuColumnVector, rhs: GpuColumnVector): GpuColumnVector
   def doColumnar(lhs: Scalar, rhs: GpuColumnVector): GpuColumnVector
@@ -102,8 +100,8 @@ trait GpuBinaryExpression extends BinaryExpression {
     var lhs: Any = null
     var rhs: Any = null
     try {
-      lhs = left.columnarEval(batch)
-      rhs = right.columnarEval(batch)
+      lhs = left.asInstanceOf[GpuExpression].columnarEval(batch)
+      rhs = right.asInstanceOf[GpuExpression].columnarEval(batch)
 
       (lhs, rhs) match {
         case (l: GpuColumnVector, r: GpuColumnVector) => doColumnar(l, r)
@@ -121,15 +119,6 @@ trait GpuBinaryExpression extends BinaryExpression {
       }
     }
   }
-
-  override def equals(other: Any): Boolean = {
-    if (!super.equals(other)) {
-      return false
-    }
-    return other.isInstanceOf[GpuBinaryExpression]
-  }
-
-  override def hashCode(): Int = super.hashCode()
 }
 
 

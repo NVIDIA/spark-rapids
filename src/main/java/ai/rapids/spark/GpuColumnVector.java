@@ -175,6 +175,7 @@ public final class GpuColumnVector extends ColumnVector {
     }
 
     private final ai.rapids.cudf.ColumnVector cudfCv;
+    private int refCount = 1;
 
     /**
      * Sets up the data type of this column vector.
@@ -185,9 +186,17 @@ public final class GpuColumnVector extends ColumnVector {
         this.cudfCv = cudfCv;
     }
 
+    public GpuColumnVector inRefCount() {
+        refCount++;
+        return this;
+    }
+
     @Override
-    protected void cleanupResources() {
-        cudfCv.close();
+    public void close() {
+        refCount--;
+        if (refCount == 0) {
+            cudfCv.close();
+        }
     }
 
     @Override
@@ -268,7 +277,7 @@ public final class GpuColumnVector extends ColumnVector {
     }
 
     @Override
-    protected ColumnVector getChild(int ordinal) {
+    public ColumnVector getChild(int ordinal) {
         throw new IllegalStateException("Struct and struct like types are currently not supported by rapids cudf");
     }
 

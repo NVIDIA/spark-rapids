@@ -20,7 +20,6 @@ import ai.rapids.cudf.{DType, TimeUnit}
 
 import org.apache.spark.sql.catalyst.expressions.{Cast, Expression}
 import org.apache.spark.sql.types._
-import org.apache.spark.sql.vectorized.{ColumnarBatch, ColumnVector}
 
 object GpuCast {
   /**
@@ -47,36 +46,13 @@ object GpuCast {
  * Casts using the GPU
  */
 class GpuCast(child: Expression, dataType: DataType, timeZoneId: Option[String] = None)
-  extends Cast(child, dataType, timeZoneId) {
-
-  override def supportsColumnar(): Boolean = child.supportsColumnar
+  extends Cast(child, dataType, timeZoneId) with GpuUnaryExpression {
 
   def cudfType(): DType = GpuColumnVector.getRapidsType(dataType)
   def cudfTimeUnit(): TimeUnit = GpuColumnVector.getTimeUnits(dataType)
 
-  override def columnarEval(batch: ColumnarBatch): Any = {
-    var ret: Any = null
-    var input: Any = null
-    try {
-      input = child.columnarEval(batch)
-      if (input.isInstanceOf[GpuColumnVector]) {
-        ret = GpuColumnVector.from(
-          input.asInstanceOf[GpuColumnVector].getBase.castTo(cudfType, cudfTimeUnit))
-      } else {
-        ret = nullSafeEval(input)
-      }
-    } finally {
-      if (input != null && input.isInstanceOf[ColumnVector]) {
-        input.asInstanceOf[ColumnVector].close()
-      }
-    }
-    ret
-  }
-
-  override def equals(other: Any): Boolean = {
-    if (!super.equals(other)) {
-      return false
-    }
-    return other.isInstanceOf[GpuCast]
+  override def doColumnar(input: GpuColumnVector): GpuColumnVector = {
+    GpuColumnVector.from(
+      input.asInstanceOf[GpuColumnVector].getBase.castTo(cudfType, cudfTimeUnit))
   }
 }
