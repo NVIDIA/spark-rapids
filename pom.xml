@@ -6,7 +6,7 @@
 
     <groupId>ai.rapids</groupId>
     <artifactId>rapids-4-spark</artifactId>
-    <version>0.8-SNAPSHOT</version>
+    <version>0.9-SNAPSHOT</version>
 
     <properties>
         <maven.compiler.source>1.8</maven.compiler.source>
@@ -22,7 +22,7 @@
         <dependency>
             <groupId>ai.rapids</groupId>
             <artifactId>cudf</artifactId>
-            <version>0.8-SNAPSHOT</version>
+            <version>0.9-SNAPSHOT</version>
             <classifier>${cuda.version}</classifier>
         </dependency>
         <dependency>
