@@ -465,4 +465,101 @@ class SparkQueryCompareTestSuite extends FunSuite with BeforeAndAfterEach {
   INCOMPAT_testSparkResultsAreEqual("Test pow", longsDf, 0.00001) {
     frame => frame.select(pow(col("longs"), col("more_longs")))
   }
+
+  //////////////////
+  // LOGICAL TESTS
+  /////////////////
+  testSparkResultsAreEqual("Test logical not", booleanDf) {
+    frame => frame.select(!col("bools"))
+  }
+
+  testSparkResultsAreEqual("Test logical and", booleanDf) {
+    frame => frame.select(col("bools") && col("more_bools"))
+  }
+
+  testSparkResultsAreEqual("Test logical or", booleanDf) {
+    frame => frame.select(col("bools") || col("more_bools"))
+  }
+
+  //
+  // (in)equality with longs
+  //
+  testSparkResultsAreEqual("Equal to longs", longsDf) {
+    frame => frame.selectExpr("longs = more_longs")
+  }
+
+  testSparkResultsAreEqual("Not equal to longs", longsDf) {
+    frame => frame.selectExpr("longs != more_longs")
+  }
+
+  testSparkResultsAreEqual("Less than longs", longsDf) {
+    frame => frame.selectExpr("longs < more_longs")
+  }
+
+  testSparkResultsAreEqual("Less than or equal longs", longsDf) {
+    frame => frame.selectExpr("longs <= more_longs")
+  }
+
+  testSparkResultsAreEqual("Greater than longs", longsDf) {
+    frame => frame.selectExpr("longs > more_longs")
+  }
+
+  testSparkResultsAreEqual("Greater than or equal longs", longsDf) {
+    frame => frame.selectExpr("longs >= more_longs")
+  }
+  
+  //
+  // (in)equality with doubles
+  //
+  testSparkResultsAreEqual("Equal to doubles", doubleDf) {
+    frame => frame.selectExpr("doubles = more_doubles")
+  }
+
+  testSparkResultsAreEqual("Not equal to doubles", doubleDf) {
+    frame => frame.selectExpr("doubles != more_doubles")
+  }
+
+  testSparkResultsAreEqual("Less than doubles", doubleDf) {
+    frame => frame.selectExpr("doubles < more_doubles")
+  }
+
+  testSparkResultsAreEqual("Less than or equal doubles", doubleDf) {
+    frame => frame.selectExpr("doubles <= more_doubles")
+  }
+
+  testSparkResultsAreEqual("Greater than doubles", doubleDf) {
+    frame => frame.selectExpr("doubles > more_doubles")
+  }
+
+  testSparkResultsAreEqual("Greater than or equal doubles", doubleDf) {
+    frame => frame.selectExpr("doubles >= more_doubles")
+  }
+
+  //
+  // (in)equality with booleans
+  // 
+  testSparkResultsAreEqual("Equal to booleans", booleanDf) {
+    frame => frame.selectExpr("bools = more_bools")
+  }
+
+  testSparkResultsAreEqual("Not equal to booleans", booleanDf) {
+    frame => frame.selectExpr("bools != more_bools")
+  }
+
+  testSparkResultsAreEqual("Less than booleans", booleanDf) {
+    frame => frame.selectExpr("bools < more_bools")
+  }
+
+  testSparkResultsAreEqual("Less than or equal booleans", booleanDf) {
+    frame => frame.selectExpr("bools <= more_bools")
+  }
+
+  testSparkResultsAreEqual("Greater than boleans", booleanDf) {
+    frame => frame.selectExpr("bools > more_bools")
+  }
+
+  testSparkResultsAreEqual("Greater than or equal", booleanDf) {
+    frame => frame.selectExpr("bools >= more_bools")
+  }
+  ///////
 }
