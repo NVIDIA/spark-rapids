@@ -83,54 +83,54 @@ case class GpuOverrides(session: SparkSession) extends Rule[SparkPlan] with Logg
     })
   }
 
-  def replaceIncompatUnaryExpressions(exp: UnaryExpression): GpuExpression = exp match {
-    case atan: Atan => new GpuAtan(replaceWithGpuExpression(atan.child))
-    case cos: Cos => new GpuCos(replaceWithGpuExpression(cos.child))
-    case exp: Exp => new GpuExp(replaceWithGpuExpression(exp.child))
-    case log: Log => new GpuLog(replaceWithGpuExpression(log.child))
-    case sin: Sin => new GpuSin(replaceWithGpuExpression(sin.child))
-    case tan: Tan => new GpuTan(replaceWithGpuExpression(tan.child))
+  def replaceIncompatUnaryExpressions(exp: UnaryExpression, child: GpuExpression): GpuExpression = exp match {
+      // for all of the following the floating point results are not exact
+    case atan: Atan => new GpuAtan(child)
+    case cos: Cos => new GpuCos(child)
+    case exp: Exp => new GpuExp(child)
+    case log: Log => new GpuLog(child)
+    case sin: Sin => new GpuSin(child)
+    case tan: Tan => new GpuTan(child)
     case exp =>
       throw new CannotReplaceException(s"expression ${exp.getClass} ${exp} is not currently supported.")
   }
 
-  def replaceUnaryExpressions(exp: UnaryExpression): GpuExpression = exp match {
+  def replaceUnaryExpressions(exp: UnaryExpression, child: GpuExpression): GpuExpression = exp match {
     case cast: Cast if GpuCast.canCast(cast.child.dataType, cast.dataType) =>
-      new GpuCast(replaceWithGpuExpression(cast.child), cast.dataType, cast.timeZoneId)
-    case min: UnaryMinus => new GpuUnaryMinus(replaceWithGpuExpression(min.child))
-    case plus: UnaryPositive => new GpuUnaryPositive(replaceWithGpuExpression(plus.child))
-    case abs: Abs => new GpuAbs(replaceWithGpuExpression(abs.child))
-    case acos: Acos => new GpuAcos(replaceWithGpuExpression(acos.child))
-    case asin: Asin => new GpuAsin(replaceWithGpuExpression(asin.child))
-    case sqrt: Sqrt => new GpuSqrt(replaceWithGpuExpression(sqrt.child))
-    case floor: Floor => new GpuFloor(replaceWithGpuExpression(floor.child))
-    case ceil: Ceil => new GpuCeil(replaceWithGpuExpression(ceil.child))
-    case exp if incompatEnabled => replaceIncompatUnaryExpressions(exp)
+      new GpuCast(child, cast.dataType, cast.timeZoneId)
+    case min: UnaryMinus => new GpuUnaryMinus(child)
+    case plus: UnaryPositive => new GpuUnaryPositive(child)
+    case abs: Abs => new GpuAbs(child)
+    case acos: Acos => new GpuAcos(child)
+    case asin: Asin => new GpuAsin(child)
+    case sqrt: Sqrt => new GpuSqrt(child)
+    case floor: Floor => new GpuFloor(child)
+    case ceil: Ceil => new GpuCeil(child)
+    case exp if incompatEnabled => replaceIncompatUnaryExpressions(exp, child)
     case exp =>
       throw new CannotReplaceException(s"expression ${exp.getClass} ${exp} is not currently supported.")
   }
 
-  def replaceIncompatBinaryExpressions(exp: BinaryExpression): GpuExpression = exp match {
-    case pow: Pow => // floating point results are not always bit for bit exact
-      new GpuPow(replaceWithGpuExpression(pow.left), replaceWithGpuExpression(pow.right))
-    case div: Divide => // divide by 0 results in null for spark but -Infinity for cudf
-      new GpuDivide(replaceWithGpuExpression(div.left), replaceWithGpuExpression(div.right))
-    case div: IntegralDivide => // divide by 0 results in null for spark but -1 for cudf
-      new GpuIntegralDivide(replaceWithGpuExpression(div.left), replaceWithGpuExpression(div.right))
-    case rem: Remainder => // divide by 0 results in null for spark, but not for cudf
-      new GpuRemainder(replaceWithGpuExpression(rem.left), replaceWithGpuExpression(rem.right))
+  def replaceIncompatBinaryExpressions(exp: BinaryExpression,
+      left: GpuExpression, right:GpuExpression): GpuExpression = exp match {
+    // floating point results are not always bit for bit exact
+    case pow: Pow => new GpuPow(left, right)
+    // divide by 0 results in null for spark but -Infinity for cudf
+    case div: Divide => new GpuDivide(left, right)
+    // divide by 0 results in null for spark but -1 for cudf
+    case div: IntegralDivide => new GpuIntegralDivide(left, right)
+    // divide by 0 results in null for spark, but not for cudf
+    case rem: Remainder => new GpuRemainder(left, right)
     case exp =>
       throw new CannotReplaceException(s"expression ${exp.getClass} ${exp} is not currently supported.")
   }
 
-  def replaceBinaryExpressions(exp: BinaryExpression): GpuExpression = exp match {
-    case add: Add =>
-      new GpuAdd(replaceWithGpuExpression(add.left), replaceWithGpuExpression(add.right))
-    case sub: Subtract =>
-      new GpuSubtract(replaceWithGpuExpression(sub.left), replaceWithGpuExpression(sub.right))
-    case mul: Multiply =>
-      new GpuMultiply(replaceWithGpuExpression(mul.left), replaceWithGpuExpression(mul.right))
-    case exp if incompatEnabled => replaceIncompatBinaryExpressions(exp)
+  def replaceBinaryExpressions(exp: BinaryExpression,
+      left: GpuExpression, right:GpuExpression): GpuExpression = exp match {
+    case add: Add => new GpuAdd(left, right)
+    case sub: Subtract => new GpuSubtract(left, right)
+    case mul: Multiply => new GpuMultiply(left, right)
+    case exp if incompatEnabled => replaceIncompatBinaryExpressions(exp, left, right)
     case exp =>
       throw new CannotReplaceException(s"expression ${exp.getClass} ${exp} is not currently supported.")
   }
@@ -144,9 +144,10 @@ case class GpuOverrides(session: SparkSession) extends Rule[SparkPlan] with Logg
     case lit: Literal =>
       new GpuLiteral(lit.value, lit.dataType)
     case exp: UnaryExpression if areAllSupportedTypes(exp.dataType, exp.child.dataType) =>
-      replaceUnaryExpressions(exp)
+      replaceUnaryExpressions(exp, replaceWithGpuExpression(exp.child))
     case exp: BinaryExpression if (areAllSupportedTypes(exp.dataType, exp.left.dataType, exp.right.dataType)) =>
-      replaceBinaryExpressions(exp)
+      replaceBinaryExpressions(exp,
+        replaceWithGpuExpression(exp.left), replaceWithGpuExpression(exp.right))
     case exp =>
       throw new CannotReplaceException(s"expression ${exp.getClass} ${exp} is not currently supported.")
   }
