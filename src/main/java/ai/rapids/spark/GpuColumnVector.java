@@ -111,6 +111,13 @@ public final class GpuColumnVector extends ColumnVector {
         return TimeUnit.NONE;
     }
 
+    public static TimeUnit getTimeUnits(DType type) {
+        if (type == DType.TIMESTAMP) {
+            return TimeUnit.MICROSECONDS;
+        }
+        return TimeUnit.NONE;
+    }
+
     public static DType getRapidsType(StructField field) {
         DataType type = field.dataType();
         return getRapidsType(type);

@@ -83,6 +83,58 @@ case class GpuOverrides(session: SparkSession) extends Rule[SparkPlan] with Logg
     })
   }
 
+  def replaceIncompatUnaryExpressions(exp: UnaryExpression): GpuExpression = exp match {
+    case atan: Atan => new GpuAtan(replaceWithGpuExpression(atan.child))
+    case cos: Cos => new GpuCos(replaceWithGpuExpression(cos.child))
+    case exp: Exp => new GpuExp(replaceWithGpuExpression(exp.child))
+    case log: Log => new GpuLog(replaceWithGpuExpression(log.child))
+    case sin: Sin => new GpuSin(replaceWithGpuExpression(sin.child))
+    case tan: Tan => new GpuTan(replaceWithGpuExpression(tan.child))
+    case exp =>
+      throw new CannotReplaceException(s"expression ${exp.getClass} ${exp} is not currently supported.")
+  }
+
+  def replaceUnaryExpressions(exp: UnaryExpression): GpuExpression = exp match {
+    case cast: Cast if GpuCast.canCast(cast.child.dataType, cast.dataType) =>
+      new GpuCast(replaceWithGpuExpression(cast.child), cast.dataType, cast.timeZoneId)
+    case min: UnaryMinus => new GpuUnaryMinus(replaceWithGpuExpression(min.child))
+    case plus: UnaryPositive => new GpuUnaryPositive(replaceWithGpuExpression(plus.child))
+    case abs: Abs => new GpuAbs(replaceWithGpuExpression(abs.child))
+    case acos: Acos => new GpuAcos(replaceWithGpuExpression(acos.child))
+    case asin: Asin => new GpuAsin(replaceWithGpuExpression(asin.child))
+    case sqrt: Sqrt => new GpuSqrt(replaceWithGpuExpression(sqrt.child))
+    case floor: Floor => new GpuFloor(replaceWithGpuExpression(floor.child))
+    case ceil: Ceil => new GpuCeil(replaceWithGpuExpression(ceil.child))
+    case exp if incompatEnabled => replaceIncompatUnaryExpressions(exp)
+    case exp =>
+      throw new CannotReplaceException(s"expression ${exp.getClass} ${exp} is not currently supported.")
+  }
+
+  def replaceIncompatBinaryExpressions(exp: BinaryExpression): GpuExpression = exp match {
+    case pow: Pow => // floating point results are not always bit for bit exact
+      new GpuPow(replaceWithGpuExpression(pow.left), replaceWithGpuExpression(pow.right))
+    case div: Divide => // divide by 0 results in null for spark but -Infinity for cudf
+      new GpuDivide(replaceWithGpuExpression(div.left), replaceWithGpuExpression(div.right))
+    case div: IntegralDivide => // divide by 0 results in null for spark but -1 for cudf
+      new GpuIntegralDivide(replaceWithGpuExpression(div.left), replaceWithGpuExpression(div.right))
+    case rem: Remainder => // divide by 0 results in null for spark, but not for cudf
+      new GpuRemainder(replaceWithGpuExpression(rem.left), replaceWithGpuExpression(rem.right))
+    case exp =>
+      throw new CannotReplaceException(s"expression ${exp.getClass} ${exp} is not currently supported.")
+  }
+
+  def replaceBinaryExpressions(exp: BinaryExpression): GpuExpression = exp match {
+    case add: Add =>
+      new GpuAdd(replaceWithGpuExpression(add.left), replaceWithGpuExpression(add.right))
+    case sub: Subtract =>
+      new GpuSubtract(replaceWithGpuExpression(sub.left), replaceWithGpuExpression(sub.right))
+    case mul: Multiply =>
+      new GpuMultiply(replaceWithGpuExpression(mul.left), replaceWithGpuExpression(mul.right))
+    case exp if incompatEnabled => replaceIncompatBinaryExpressions(exp)
+    case exp =>
+      throw new CannotReplaceException(s"expression ${exp.getClass} ${exp} is not currently supported.")
+  }
+
   def replaceWithGpuExpression(exp: Expression): GpuExpression = exp match {
     case a: Alias =>
       new GpuAlias(replaceWithGpuExpression(a.child), a.name)(a.exprId, a.qualifier, a.explicitMetadata)
@@ -91,65 +143,10 @@ case class GpuOverrides(session: SparkSession) extends Rule[SparkPlan] with Logg
         att.metadata)(att.exprId, att.qualifier)
     case lit: Literal =>
       new GpuLiteral(lit.value, lit.dataType)
-    case cast: Cast if (areAllSupportedTypes(cast.dataType, cast.child.dataType) &&
-      GpuCast.canCast(cast.child.dataType, cast.dataType)) =>
-      new GpuCast(replaceWithGpuExpression(cast.child), cast.dataType, cast.timeZoneId)
-    case add: Add if (areAllSupportedTypes(add.dataType, add.left.dataType, add.right.dataType)) =>
-      new GpuAdd(replaceWithGpuExpression(add.left),
-        replaceWithGpuExpression(add.right))
-    case sub: Subtract if (areAllSupportedTypes(sub.dataType, sub.left.dataType, sub.right.dataType)) =>
-      new GpuSubtract(replaceWithGpuExpression(sub.left),
-        replaceWithGpuExpression(sub.right))
-    case mul: Multiply if (areAllSupportedTypes(mul.dataType, mul.left.dataType, mul.right.dataType)) =>
-      new GpuMultiply(replaceWithGpuExpression(mul.left),
-        replaceWithGpuExpression(mul.right))
-    case min: UnaryMinus if (areAllSupportedTypes(min.dataType, min.child.dataType)) =>
-      new GpuUnaryMinus(replaceWithGpuExpression(min.child))
-    case plus: UnaryPositive if (areAllSupportedTypes(plus.dataType, plus.child.dataType)) =>
-      new GpuUnaryPositive(replaceWithGpuExpression(plus.child))
-    case abs: Abs if (areAllSupportedTypes(abs.dataType, abs.child.dataType)) =>
-      new GpuAbs(replaceWithGpuExpression(abs.child))
-    case acos: Acos if (areAllSupportedTypes(acos.child.dataType)) =>
-      new GpuAcos(replaceWithGpuExpression(acos.child))
-    case asin: Asin if (areAllSupportedTypes(asin.child.dataType)) =>
-      new GpuAsin(replaceWithGpuExpression(asin.child))
-    case sqrt: Sqrt if (areAllSupportedTypes(sqrt.child.dataType)) =>
-      new GpuSqrt(replaceWithGpuExpression(sqrt.child))
-      //////////////////////////////////////////////////////////////////////
-      // INCOMPATIBLE OPERATIONS
-      //////////////////////////////////////////////////////////////////////
-    case atan: Atan if incompatEnabled && (areAllSupportedTypes(atan.child.dataType)) =>
-      new GpuAtan(replaceWithGpuExpression(atan.child))
-    case ceil: Ceil if (areAllSupportedTypes(ceil.child.dataType)) =>
-      new GpuCeil(replaceWithGpuExpression(ceil.child))
-    case cos: Cos if incompatEnabled && (areAllSupportedTypes(cos.child.dataType)) =>
-      new GpuCos(replaceWithGpuExpression(cos.child))
-    case exp: Exp if incompatEnabled && (areAllSupportedTypes(exp.child.dataType)) =>
-      new GpuExp(replaceWithGpuExpression(exp.child))
-    case floor: Floor if (areAllSupportedTypes(floor.child.dataType)) =>
-      new GpuFloor(replaceWithGpuExpression(floor.child))
-    case log: Log if incompatEnabled && (areAllSupportedTypes(log.child.dataType)) =>
-      new GpuLog(replaceWithGpuExpression(log.child))
-    case sin: Sin if incompatEnabled && (areAllSupportedTypes(sin.child.dataType)) =>
-      new GpuSin(replaceWithGpuExpression(sin.child))
-    case tan: Tan if incompatEnabled && (areAllSupportedTypes(tan.child.dataType)) =>
-      new GpuTan(replaceWithGpuExpression(tan.child))
-    case pow: Pow if incompatEnabled && // floating point results are not always bit for bit exact
-      (areAllSupportedTypes(pow.dataType, pow.left.dataType, pow.right.dataType)) =>
-      new GpuPow(replaceWithGpuExpression(pow.left),
-        replaceWithGpuExpression(pow.right))
-    case div: Divide if incompatEnabled && // divide by 0 results in null for spark but -Infinity for cudf
-      (areAllSupportedTypes(div.dataType, div.left.dataType, div.right.dataType)) =>
-      new GpuDivide(replaceWithGpuExpression(div.left),
-        replaceWithGpuExpression(div.right))
-    case div: IntegralDivide if incompatEnabled && // divide by 0 results in null for spark but -1 for cudf
-      (areAllSupportedTypes(div.dataType, div.left.dataType, div.right.dataType)) =>
-      new GpuIntegralDivide(replaceWithGpuExpression(div.left),
-        replaceWithGpuExpression(div.right))
-    case rem: Remainder if incompatEnabled &&  // divide by 0 results in null for spark, but not for cudf
-      (areAllSupportedTypes(rem.dataType, rem.left.dataType, rem.right.dataType)) =>
-      new GpuRemainder(replaceWithGpuExpression(rem.left),
-        replaceWithGpuExpression(rem.right))
+    case exp: UnaryExpression if areAllSupportedTypes(exp.dataType, exp.child.dataType) =>
+      replaceUnaryExpressions(exp)
+    case exp: BinaryExpression if (areAllSupportedTypes(exp.dataType, exp.left.dataType, exp.right.dataType)) =>
+      replaceBinaryExpressions(exp)
     case exp =>
       throw new CannotReplaceException(s"expression ${exp.getClass} ${exp} is not currently supported.")
   }

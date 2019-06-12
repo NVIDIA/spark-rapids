@@ -75,7 +75,7 @@ trait CudfUnaryExpression extends GpuUnaryExpression {
     var tmp = base.unaryOp(unaryOp, base.getType)
     try {
       val ret = if (outputTypeOverride != null && outputTypeOverride != tmp.getType) {
-        tmp.castTo(outputTypeOverride, TimeUnit.NONE)
+        tmp.castTo(outputTypeOverride, GpuColumnVector.getTimeUnits(outputTypeOverride))
       } else {
         val r = tmp
         tmp = null
