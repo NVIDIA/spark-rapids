@@ -16,67 +16,57 @@
 
 package ai.rapids.spark
 
-import ai.rapids.cudf.Scalar
+import ai.rapids.cudf.{BinaryOp, Scalar, UnaryOp}
 
-import org.apache.spark.sql.catalyst.expressions.{Add, Expression}
-import org.apache.spark.sql.vectorized.{ColumnarBatch, ColumnVector}
+import org.apache.spark.sql.catalyst.expressions.{Abs, Add, Divide, Expression, IntegralDivide, Multiply, Remainder, Subtract, UnaryMinus, UnaryPositive}
 
-object GpuScalar {
-  def from(v: Any): Scalar = {
-    if (v == null) {
-      Scalar.NULL
-    } else if (v.isInstanceOf[Long]) {
-      Scalar.fromLong(v.asInstanceOf[Long])
-    } else {
-      throw new IllegalStateException(s"${v} is not supported as a scalar yet")
-    }
+
+class GpuUnaryMinus(child: Expression) extends UnaryMinus(child) with GpuUnaryExpression {
+  override def doColumnar(input: GpuColumnVector) : GpuColumnVector = {
+    GpuColumnVector.from(Scalar.fromByte(0)
+      .sub(input.getBase))
   }
 }
 
-class GpuAdd(left: Expression, right: Expression)
-    extends Add(left, right) {
-  override def supportsColumnar(): Boolean = left.supportsColumnar && right.supportsColumnar
+class GpuUnaryPositive(child: Expression) extends UnaryPositive(child) with GpuUnaryExpression {
+  override def doColumnar(input: GpuColumnVector) : GpuColumnVector = input
+}
 
-  override def columnarEval(batch: ColumnarBatch): Any = {
-    var lhs: Any = null
-    var rhs: Any = null
-    var ret: Any = null
-    try {
-      lhs = left.columnarEval(batch)
-      rhs = right.columnarEval(batch)
+class GpuAbs(child: Expression) extends Abs(child) with CudfUnaryExpression {
+  override def unaryOp: UnaryOp = UnaryOp.ABS
+}
 
-      if (lhs == null || rhs == null) {
-        ret = null
-      } else if (lhs.isInstanceOf[GpuColumnVector] && rhs.isInstanceOf[GpuColumnVector]) {
-        val l = lhs.asInstanceOf[GpuColumnVector]
-        val r = rhs.asInstanceOf[GpuColumnVector]
-        ret = GpuColumnVector.from(l.getBase.add(r.getBase))
-      } else if (rhs.isInstanceOf[GpuColumnVector]) {
-        val l = GpuScalar.from(lhs)
-        val r = rhs.asInstanceOf[GpuColumnVector]
-        ret = GpuColumnVector.from(l.add(r.getBase))
-      } else if (lhs.isInstanceOf[GpuColumnVector]) {
-        val l = lhs.asInstanceOf[GpuColumnVector]
-        val r = GpuScalar.from(rhs)
-        ret = GpuColumnVector.from(l.getBase.add(r))
-      } else {
-        ret = nullSafeEval(lhs, rhs)
-      }
-    } finally {
-      if (lhs != null && lhs.isInstanceOf[GpuColumnVector]) {
-        lhs.asInstanceOf[ColumnVector].close()
-      }
-      if (rhs != null && rhs.isInstanceOf[GpuColumnVector]) {
-        rhs.asInstanceOf[ColumnVector].close()
-      }
-    }
-    ret
-  }
+class GpuAdd(left: Expression, right: Expression) extends Add(left, right)
+  with CudfBinaryExpression {
 
-  override def equals(other: Any): Boolean = {
-    if (!super.equals(other)) {
-      return false
-    }
-    return other.isInstanceOf[GpuAdd]
-  }
+  override def binaryOp: BinaryOp = BinaryOp.ADD
+}
+
+class GpuSubtract(left: Expression, right: Expression) extends Subtract(left, right)
+  with CudfBinaryExpression {
+
+  override def binaryOp: BinaryOp = BinaryOp.SUB
+}
+
+class GpuMultiply(left: Expression, right: Expression) extends Multiply(left, right)
+  with CudfBinaryExpression {
+
+  override def binaryOp: BinaryOp = BinaryOp.MUL
+}
+
+// This is for doubles and floats...
+class GpuDivide(left: Expression, right: Expression) extends Divide(left, right)
+  with CudfBinaryExpression {
+
+  override def binaryOp: BinaryOp = BinaryOp.TRUE_DIV
+}
+
+class GpuIntegralDivide(left: Expression, right: Expression) extends IntegralDivide(left, right)
+  with CudfBinaryExpression {
+  override def binaryOp: BinaryOp = BinaryOp.DIV
+}
+
+class GpuRemainder(left: Expression, right: Expression) extends Remainder(left, right)
+  with CudfBinaryExpression {
+  override def binaryOp: BinaryOp = BinaryOp.MOD
 }
