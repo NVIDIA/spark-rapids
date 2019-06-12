@@ -101,7 +101,18 @@ public final class GpuColumnVector extends ColumnVector {
 
     public static TimeUnit getTimeUnits(StructField field) {
         DataType type = field.dataType();
+        return getTimeUnits(type);
+    }
+
+    public static TimeUnit getTimeUnits(DataType type) {
         if (type instanceof TimestampType) {
+            return TimeUnit.MICROSECONDS;
+        }
+        return TimeUnit.NONE;
+    }
+
+    public static TimeUnit getTimeUnits(DType type) {
+        if (type == DType.TIMESTAMP) {
             return TimeUnit.MICROSECONDS;
         }
         return TimeUnit.NONE;
@@ -109,6 +120,10 @@ public final class GpuColumnVector extends ColumnVector {
 
     public static DType getRapidsType(StructField field) {
         DataType type = field.dataType();
+        return getRapidsType(type);
+    }
+
+    public static DType getRapidsType(DataType type) {
         if (type instanceof LongType) {
             return DType.INT64;
         } else if (type instanceof DoubleType) {
@@ -167,6 +182,7 @@ public final class GpuColumnVector extends ColumnVector {
     }
 
     private final ai.rapids.cudf.ColumnVector cudfCv;
+    private int refCount = 1;
 
     /**
      * Sets up the data type of this column vector.
@@ -177,9 +193,17 @@ public final class GpuColumnVector extends ColumnVector {
         this.cudfCv = cudfCv;
     }
 
+    public GpuColumnVector inRefCount() {
+        refCount++;
+        return this;
+    }
+
     @Override
-    public void doClose() {
-        cudfCv.close();
+    public void close() {
+        refCount--;
+        if (refCount == 0) {
+            cudfCv.close();
+        }
     }
 
     @Override
@@ -260,7 +284,7 @@ public final class GpuColumnVector extends ColumnVector {
     }
 
     @Override
-    protected ColumnVector getChild(int ordinal) {
+    public ColumnVector getChild(int ordinal) {
         throw new IllegalStateException("Struct and struct like types are currently not supported by rapids cudf");
     }
 
