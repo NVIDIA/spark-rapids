@@ -278,7 +278,7 @@ private object GpuRowToColumnConverter {
 /**
  * GPU version of row to columnar transition.
  */
-class GpuRowToColumnarExec(child: SparkPlan) extends RowToColumnarExec(child) {
+class GpuRowToColumnarExec(child: SparkPlan) extends RowToColumnarExec(child) with GpuExec {
 
   override def doExecuteColumnar(): RDD[ColumnarBatch] = {
     // TODO need to add in the GPU accelerated unsafe row translation when there is no
