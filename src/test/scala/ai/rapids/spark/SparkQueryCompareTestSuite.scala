@@ -15,6 +15,7 @@
  */
 package ai.rapids.spark
 
+import java.sql.Date
 import java.util.{Locale, TimeZone}
 
 import org.scalatest.{BeforeAndAfterEach, FunSuite}
@@ -165,6 +166,19 @@ class SparkQueryCompareTestSuite extends FunSuite with BeforeAndAfterEach {
       (true, false),
       (false, false)
     ).toDF("bools", "more_bools")
+  }
+
+  def datesDf(session: SparkSession): DataFrame = {
+    import session.sqlContext.implicits._
+    Seq(
+      (Date.valueOf("0100-1-1"), Date.valueOf("2100-1-1")),
+      (Date.valueOf("0211-1-1"), Date.valueOf("1492-4-7")),
+      (Date.valueOf("1900-2-2"), Date.valueOf("1776-7-4")),
+      (Date.valueOf("1989-3-3"), Date.valueOf("1808-11-12")),
+      (Date.valueOf("2010-4-4"), Date.valueOf("2100-12-30")),
+      (Date.valueOf("2020-5-5"), Date.valueOf("2019-6-19")),
+      (Date.valueOf("2050-10-30"), Date.valueOf("0100-5-28"))
+    ).toDF("dates", "more_dates")
   }
 
   def longsDf(session: SparkSession): DataFrame = {
@@ -464,5 +478,20 @@ class SparkQueryCompareTestSuite extends FunSuite with BeforeAndAfterEach {
 
   INCOMPAT_testSparkResultsAreEqual("Test pow", longsDf, 0.00001) {
     frame => frame.select(pow(col("longs"), col("more_longs")))
+  }
+
+  testSparkResultsAreEqual("Test year", datesDf) {
+    frame => frame.select(year(col("dates")),
+      year(col("more_dates")))
+  }
+
+  testSparkResultsAreEqual("Test month", datesDf) {
+    frame => frame.select(month(col("dates")),
+      month(col("more_dates")))
+  }
+
+  testSparkResultsAreEqual("Test day of month", datesDf) {
+    frame => frame.select(dayofmonth(col("dates")),
+      dayofmonth(col("more_dates")))
   }
 }
