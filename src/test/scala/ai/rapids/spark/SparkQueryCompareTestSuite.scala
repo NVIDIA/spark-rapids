@@ -128,7 +128,7 @@ class SparkQueryCompareTestSuite extends FunSuite with BeforeAndAfterEach {
 
   def INCOMPAT_testSparkResultsAreEqual(testName: String, df: SparkSession => DataFrame, maxFloatDiff: Double = 0.0)
     (fun: DataFrame => DataFrame): Unit = {
-    test(testName) {
+    test("INCOMPAT: " + testName) {
       val (fromCpu, fromGpu) = runOnCpuAndGpu(df, fun,
         new SparkConf().set(Plugin.INCOMPATIBLE_OPS_CONF, "true"))
 
