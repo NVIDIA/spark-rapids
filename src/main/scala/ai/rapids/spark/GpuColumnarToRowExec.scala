@@ -25,7 +25,7 @@ import org.apache.spark.sql.execution.{ColumnarBatchScan, ColumnarToRowExec, Spa
 import org.apache.spark.sql.types.DataType
 import org.apache.spark.sql.vectorized.{ColumnarBatch, ColumnVector}
 
-class GpuColumnarToRowExec(child: SparkPlan) extends ColumnarToRowExec(child) {
+class GpuColumnarToRowExec(child: SparkPlan) extends ColumnarToRowExec(child) with GpuExec {
 
   override def doExecute(): RDD[InternalRow] = {
     val numOutputRows = longMetric("numOutputRows")

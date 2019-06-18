@@ -26,10 +26,22 @@ import org.apache.spark.sql.execution.exchange.ShuffleExchangeExec
 import org.apache.spark.sql.types._
 import org.apache.spark.sql.vectorized.{ColumnarBatch, ColumnVector}
 
-class GpuProjectExec(projectList: Seq[GpuExpression], child: SparkPlan)
-  extends ProjectExec(projectList.asInstanceOf[Seq[NamedExpression]], child) {
-
+trait GpuExec extends SparkPlan {
   override def supportsColumnar = true
+
+  override def equals(other: Any): Boolean = {
+    if (!super.equals(other)) {
+      return false
+    }
+    return other.isInstanceOf[GpuExec]
+  }
+
+  override def hashCode(): Int = super.hashCode()
+}
+
+class GpuProjectExec(projectList: Seq[GpuExpression], child: SparkPlan)
+  extends ProjectExec(projectList.asInstanceOf[Seq[NamedExpression]], child) with GpuExec {
+
   // Disable code generation for now...
   override def supportCodegen: Boolean = false
 
@@ -50,13 +62,6 @@ class GpuProjectExec(projectList: Seq[GpuExpression], child: SparkPlan)
       }
     )
   }
-
-  override def equals(other: Any): Boolean = {
-    if (!super.equals(other)) {
-      return false
-    }
-    return other.isInstanceOf[GpuProjectExec]
-  }
 }
 
 class CannotReplaceException(str: String) extends RuntimeException(str) {
@@ -64,8 +69,7 @@ class CannotReplaceException(str: String) extends RuntimeException(str) {
 }
 
 case class GpuOverrides(session: SparkSession) extends Rule[SparkPlan] with Logging {
-  lazy val incompatEnabled = Plugin.isIncompatEnabled(session)
-  lazy val gpuEnabled = Plugin.isGpuEnabled(session)
+  var incompatEnabled: Boolean = false
 
   def areAllSupportedTypes(types: DataType*): Boolean = {
     types.forall(_ match {
@@ -170,7 +174,8 @@ case class GpuOverrides(session: SparkSession) extends Rule[SparkPlan] with Logg
     }
 
   override def apply(plan: SparkPlan) :SparkPlan = {
-    if (gpuEnabled) {
+    if (Plugin.isGpuEnabled(session)) {
+      incompatEnabled = Plugin.isIncompatEnabled(session)
       replaceWithGpuPlan(plan)
     } else {
       plan
@@ -179,19 +184,35 @@ case class GpuOverrides(session: SparkSession) extends Rule[SparkPlan] with Logg
 }
 
 case class GpuTransitionOverrides(session: SparkSession) extends Rule[SparkPlan] {
-  lazy val underTest = Plugin.isTestEnabled(session)
-  lazy val gpuEnabled = Plugin.isGpuEnabled(session)
-
-  def replaceWithGpuPlan(plan: SparkPlan): SparkPlan = plan match {
-    // TODO need to verify that all columnar processing is GPU accelerated, or insert transitions
-    // to/from host columnar data (this is likely to happen for python, R, and .net processing
-    // This may come in the future, but does nto currently happen
-    case r2c: RowToColumnarExec =>
-      new GpuRowToColumnarExec(replaceWithGpuPlan(r2c.child))
-    case c2r: ColumnarToRowExec =>
-      new GpuColumnarToRowExec(replaceWithGpuPlan(c2r.child))
+  def optimizeGpuPlanTransitions(plan: SparkPlan): SparkPlan = plan match {
+    case HostColumnarToGpu(r2c: RowToColumnarExec) =>
+      new GpuRowToColumnarExec(optimizeGpuPlanTransitions(r2c.child))
+    case ColumnarToRowExec(bb: GpuBringBackToHost) =>
+      new GpuColumnarToRowExec(optimizeGpuPlanTransitions(bb.child))
     case p =>
-      p.withNewChildren(p.children.map(replaceWithGpuPlan))
+      p.withNewChildren(p.children.map(optimizeGpuPlanTransitions))
+  }
+
+  /**
+   * Inserts a transition to be running on the CPU columnar
+   */
+  private def insertColumnarFromGpu(plan: SparkPlan): SparkPlan = {
+    if (plan.supportsColumnar && plan.isInstanceOf[GpuExec]) {
+      GpuBringBackToHost(insertColumnarToGpu(plan))
+    } else {
+      plan.withNewChildren(plan.children.map(insertColumnarFromGpu))
+    }
+  }
+
+  /**
+   * Inserts a transition to be running on the GPU from CPU columnar
+   */
+  private def insertColumnarToGpu(plan: SparkPlan): SparkPlan = {
+    if (plan.supportsColumnar && !plan.isInstanceOf[GpuExec]) {
+      HostColumnarToGpu(insertColumnarFromGpu(plan))
+    } else {
+      plan.withNewChildren(plan.children.map(insertColumnarToGpu))
+    }
   }
 
   def assertIsOnTheGpu(exp: Expression): Unit = {
@@ -219,9 +240,10 @@ case class GpuTransitionOverrides(session: SparkSession) extends Rule[SparkPlan]
   }
 
   override def apply(plan: SparkPlan) :SparkPlan = {
-    if (gpuEnabled) {
-      val ret = replaceWithGpuPlan(plan)
-      if (underTest) {
+    if (Plugin.isGpuEnabled(session)) {
+      val tmp = insertColumnarFromGpu(plan)
+      val ret = optimizeGpuPlanTransitions(tmp)
+      if (Plugin.isTestEnabled(session)) {
         assertIsOnTheGpu(ret)
       }
       ret
@@ -232,7 +254,6 @@ case class GpuTransitionOverrides(session: SparkSession) extends Rule[SparkPlan]
 }
 
 case class ColumnarOverrideRules(session: SparkSession) extends ColumnarRule with Logging {
-
   val overrides = GpuOverrides(session)
   val overrideTransitions = GpuTransitionOverrides(session)
 

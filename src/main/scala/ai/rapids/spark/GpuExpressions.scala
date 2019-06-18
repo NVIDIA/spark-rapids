@@ -71,8 +71,7 @@ trait CudfUnaryExpression extends GpuUnaryExpression {
 
   override def doColumnar(input: GpuColumnVector): GpuColumnVector = {
     val base = input.getBase
-    // For unary opts the input and output type must match
-    var tmp = base.unaryOp(unaryOp, base.getType)
+    var tmp = base.unaryOp(unaryOp)
     try {
       val ret = if (outputTypeOverride != null && outputTypeOverride != tmp.getType) {
         tmp.castTo(outputTypeOverride, GpuColumnVector.getTimeUnits(outputTypeOverride))
