@@ -113,6 +113,7 @@ case class GpuOverrides(session: SparkSession) extends Rule[SparkPlan] with Logg
     case sqrt: Sqrt => new GpuSqrt(child)
     case floor: Floor => new GpuFloor(child)
     case ceil: Ceil => new GpuCeil(child)
+    case not: Not => new GpuNot(child)
     case exp if incompatEnabled => replaceIncompatUnaryExpressions(exp, child)
     case exp =>
       throw new CannotReplaceException(s"expression ${exp.getClass} ${exp} is not currently supported.")
@@ -137,6 +138,13 @@ case class GpuOverrides(session: SparkSession) extends Rule[SparkPlan] with Logg
     case add: Add => new GpuAdd(left, right)
     case sub: Subtract => new GpuSubtract(left, right)
     case mul: Multiply => new GpuMultiply(left, right)
+    case and: And => new GpuAnd(left, right)
+    case or: Or => new GpuOr(left, right)
+    case eq: EqualTo => new GpuEqualTo(left, right)
+    case gt: GreaterThan => new GpuGreaterThan(left, right)
+    case geq: GreaterThanOrEqual => new GpuGreaterThanOrEqual(left, right)
+    case lt: LessThan => new GpuLessThan(left, right)
+    case leq: LessThanOrEqual => new GpuLessThanOrEqual (left, right)
     case exp if incompatEnabled => replaceIncompatBinaryExpressions(exp, left, right)
     case exp =>
       throw new CannotReplaceException(s"expression ${exp.getClass} ${exp} is not currently supported.")
