@@ -172,7 +172,7 @@ case class GpuOverrides(session: SparkSession) extends Rule[SparkPlan] with Logg
     } catch {
       case exp: CannotReplaceException =>
         logWarning(s"Columnar processing for ${plan.getClass} is not currently supported" +
-          s"because ${exp.getMessage}")
+          s" because ${exp.getMessage}")
         plan.withNewChildren(plan.children.map(replaceWithGpuPlan))
     }
 
