@@ -223,8 +223,7 @@ public final class GpuColumnVector extends ColumnVector {
 
     @Override
     public boolean getBoolean(int rowId) {
-        // TODO should replace this with an official getBoolean...
-        return cudfCv.getByte(rowId) != 0;
+        return cudfCv.getBoolean(rowId);
     }
 
     @Override
