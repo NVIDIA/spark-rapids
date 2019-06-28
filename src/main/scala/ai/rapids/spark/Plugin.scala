@@ -22,7 +22,10 @@ import org.apache.spark.sql.{SparkSession, SparkSessionExtensions}
 import org.apache.spark.sql.catalyst.expressions._
 import org.apache.spark.sql.catalyst.rules.Rule
 import org.apache.spark.sql.execution._
+import org.apache.spark.sql.execution.datasources.v2.BatchScanExec
+import org.apache.spark.sql.execution.datasources.v2.csv.CSVScan
 import org.apache.spark.sql.execution.exchange.ShuffleExchangeExec
+import org.apache.spark.sql.sources.v2.reader.Scan
 import org.apache.spark.sql.types._
 import org.apache.spark.sql.vectorized.{ColumnarBatch, ColumnVector}
 
@@ -70,6 +73,7 @@ class CannotReplaceException(str: String) extends RuntimeException(str) {
 
 case class GpuOverrides(session: SparkSession) extends Rule[SparkPlan] with Logging {
   var incompatEnabled: Boolean = false
+  var inputExecEnabled: Boolean = true
 
   def areAllSupportedTypes(types: DataType*): Boolean = {
     types.forall(_ match {
@@ -164,12 +168,32 @@ case class GpuOverrides(session: SparkSession) extends Rule[SparkPlan] with Logg
       throw new CannotReplaceException(s"expression ${exp.getClass} ${exp} is not currently supported.")
   }
 
+  def replaceBatchScan(scan: Scan): Scan = scan match {
+    case scan : CSVScan =>
+      GpuCSVScan.assertCanSupport(scan)
+      new GpuCSVScan(scan.sparkSession,
+        scan.fileIndex,
+        scan.dataSchema,
+        scan.readDataSchema,
+        scan.readPartitionSchema,
+        scan.options)
+    case p =>
+      throw new CannotReplaceException(s"scan ${scan.getClass} ${scan} is not currently supported.")
+  }
+
   def replaceWithGpuPlan(plan: SparkPlan): SparkPlan =
     try {
       plan match {
         case plan: ProjectExec =>
-          new GpuProjectExec(plan.projectList.map((exp) => replaceWithGpuExpression(exp)),
+          new GpuProjectExec(plan.projectList.map(replaceWithGpuExpression),
             replaceWithGpuPlan(plan.child))
+        case exec : BatchScanExec =>
+          if (!inputExecEnabled) {
+            throw new CannotReplaceException(s"GPU input parsing has been disabled, to enable it" +
+              s" set ${Plugin.INPUT_EXECS_CONF} to true")
+          }
+          new GpuBatchScanExec(exec.output.map((exec) => replaceWithGpuExpression(exec).asInstanceOf[AttributeReference]),
+            replaceBatchScan(exec.scan))
         case p =>
           logWarning(s"GPU Processing for ${p.getClass} is not currently supported.")
           p.withNewChildren(p.children.map(replaceWithGpuPlan))
@@ -184,6 +208,7 @@ case class GpuOverrides(session: SparkSession) extends Rule[SparkPlan] with Logg
   override def apply(plan: SparkPlan) :SparkPlan = {
     if (Plugin.isGpuEnabled(session)) {
       incompatEnabled = Plugin.isIncompatEnabled(session)
+      inputExecEnabled = Plugin.isInputExecEnabled(session)
       replaceWithGpuPlan(plan)
     } else {
       plan
@@ -276,10 +301,14 @@ object Plugin {
   // those operations if a customer is willing to work around compatibility issues for
   // more processing on the GPU
   val INCOMPATIBLE_OPS_CONF: String = "ai.rapids.gpu.incompatible_ops"
+  val INPUT_EXECS_CONF: String = "ai.rapids.gpu.input_parsing"
   val TEST_CONF: String = "ai.rapids.gpu.testing"
 
   def isGpuEnabled(session: SparkSession): Boolean = session.sqlContext.
     getConf(GPU_ENABLED_CONF, "true").trim.toBoolean
+
+  def isInputExecEnabled(session: SparkSession): Boolean = session.sqlContext.
+    getConf(INPUT_EXECS_CONF, "true").trim.toBoolean
 
   def isIncompatEnabled(session: SparkSession): Boolean = session.sqlContext.
     getConf(INCOMPATIBLE_OPS_CONF, "false").trim.toBoolean

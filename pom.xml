@@ -6,7 +6,7 @@
 
     <groupId>ai.rapids</groupId>
     <artifactId>rapids-4-spark</artifactId>
-    <version>0.8-SNAPSHOT</version>
+    <version>0.9-SNAPSHOT</version>
 
     <properties>
         <maven.compiler.source>1.8</maven.compiler.source>
@@ -22,7 +22,7 @@
         <dependency>
             <groupId>ai.rapids</groupId>
             <artifactId>cudf</artifactId>
-            <version>0.8-SNAPSHOT</version>
+            <version>0.9-SNAPSHOT</version>
             <classifier>${cuda.version}</classifier>
         </dependency>
         <dependency>
@@ -127,6 +127,7 @@
                     <argLine>-ea -Xmx4g -Xss4m</argLine>
                     <stderr/>
                     <systemProperties>
+                        <ai.rapids.refcount.debug>true</ai.rapids.refcount.debug>
                         <java.awt.headless>true</java.awt.headless>
                         <java.io.tmpdir>${project.build.directory}/tmp</java.io.tmpdir>
                         <spark.ui.enabled>false</spark.ui.enabled>
