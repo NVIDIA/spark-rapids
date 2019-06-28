@@ -104,6 +104,9 @@ case class GpuOverrides(session: SparkSession) extends Rule[SparkPlan] with Logg
       new GpuCast(child, cast.dataType, cast.timeZoneId)
     case min: UnaryMinus => new GpuUnaryMinus(child)
     case plus: UnaryPositive => new GpuUnaryPositive(child)
+    case year: Year => new GpuYear(child)
+    case month: Month => new GpuMonth(child)
+    case day: DayOfMonth => new GpuDayOfMonth(child)
     case abs: Abs => new GpuAbs(child)
     case acos: Acos => new GpuAcos(child)
     case asin: Asin => new GpuAsin(child)
@@ -177,7 +180,7 @@ case class GpuOverrides(session: SparkSession) extends Rule[SparkPlan] with Logg
     } catch {
       case exp: CannotReplaceException =>
         logWarning(s"Columnar processing for ${plan.getClass} is not currently supported" +
-          s"because ${exp.getMessage}")
+          s" because ${exp.getMessage}")
         plan.withNewChildren(plan.children.map(replaceWithGpuPlan))
     }
 
