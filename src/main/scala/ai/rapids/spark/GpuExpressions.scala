@@ -47,12 +47,29 @@ trait GpuExpression extends Expression {
 
 trait GpuUnaryExpression extends UnaryExpression with GpuExpression {
   def doColumnar(input: GpuColumnVector): GpuColumnVector
+  def outputTypeOverride: DType = null
 
   override def columnarEval(batch: ColumnarBatch): Any = {
     val input = child.asInstanceOf[GpuExpression].columnarEval(batch)
     try {
       input match {
-        case vec: GpuColumnVector => doColumnar(vec)
+        case vec: GpuColumnVector =>
+          var tmp = doColumnar(vec)
+          try {
+            val base = tmp.getBase
+            if (outputTypeOverride != null && outputTypeOverride != base.getType) {
+              GpuColumnVector.from(base.castTo(outputTypeOverride,
+                GpuColumnVector.getTimeUnits(outputTypeOverride)))
+            } else {
+              val r = tmp
+              tmp = null
+              r
+            }
+          } finally {
+            if (tmp != null) {
+              tmp.close()
+            }
+          }
         case v if (v != null) => nullSafeEval(v)
         case _ => null
       }
@@ -64,29 +81,11 @@ trait GpuUnaryExpression extends UnaryExpression with GpuExpression {
   }
 }
 
-
 trait CudfUnaryExpression extends GpuUnaryExpression {
   def unaryOp: UnaryOp
-  def outputTypeOverride: DType = null
 
-  override def doColumnar(input: GpuColumnVector): GpuColumnVector = {
-    val base = input.getBase
-    var tmp = base.unaryOp(unaryOp)
-    try {
-      val ret = if (outputTypeOverride != null && outputTypeOverride != tmp.getType) {
-        tmp.castTo(outputTypeOverride, GpuColumnVector.getTimeUnits(outputTypeOverride))
-      } else {
-        val r = tmp
-        tmp = null
-        r
-      }
-      GpuColumnVector.from(ret)
-    } finally {
-      if (tmp != null) {
-        tmp.close()
-      }
-    }
-  }
+  override def doColumnar(input: GpuColumnVector): GpuColumnVector =
+    GpuColumnVector.from(input.getBase.unaryOp(unaryOp))
 }
 
 trait GpuBinaryExpression extends BinaryExpression with GpuExpression {
