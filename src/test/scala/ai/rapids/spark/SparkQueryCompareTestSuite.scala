@@ -15,7 +15,7 @@
  */
 package ai.rapids.spark
 
-import java.nio.file.{Files, Path}
+import java.nio.file.{FileAlreadyExistsException, Files, Path, Paths}
 import java.util.{Locale, TimeZone}
 
 import org.apache.commons.io.FileUtils
@@ -121,9 +121,24 @@ class SparkQueryCompareTestSuite extends FunSuite with BeforeAndAfterEach {
     */
   def runOnCpuAndGpu(df: SparkSession => DataFrame, fun: DataFrame => DataFrame, useCsv: Boolean = true,
       conf: SparkConf = new SparkConf()): (Array[Row], Array[Row]) = {
+    var tmp:Path = null
     var tempPath:Path = null
     try {
-      tempPath = if (useCsv) Files.createTempDirectory("rapids-plugin-4-spark") else null
+      tempPath = if (useCsv) {
+        val targetTmp = Paths.get("target/tmp")
+        try {
+          tmp = Files.createDirectory(targetTmp)
+        } catch  {
+          case fae: FileAlreadyExistsException => {
+            FileUtils.deleteDirectory(targetTmp.toFile)
+            tmp = Files.createDirectory(targetTmp)
+          }
+        }
+        tmp.toFile().deleteOnExit()
+        Files.createTempDirectory(tmp, "rapids-plugin-4-spark")
+      } else { 
+        null 
+      }
       val fromCpu = withCpuSparkSession((session) => {
         val df2 = if (useCsv) {
           df(session).write.mode(SaveMode.Overwrite)
@@ -149,8 +164,8 @@ class SparkQueryCompareTestSuite extends FunSuite with BeforeAndAfterEach {
 
       (fromCpu, fromGpu)
     } finally {
-      if (tempPath != null) {
-        FileUtils.deleteDirectory(tempPath.toFile)
+      if (tmp != null) {
+        FileUtils.deleteDirectory(tmp.toFile)
       }
     }
   }
