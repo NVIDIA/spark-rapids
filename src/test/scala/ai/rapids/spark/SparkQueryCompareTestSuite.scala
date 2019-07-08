@@ -114,60 +114,22 @@ class SparkQueryCompareTestSuite extends FunSuite with BeforeAndAfterEach {
     *
     * @param df     - the DataFrame to use as input
     * @param fun    - the function to transform the DataFrame (produces another DataFrame)
-    * @param useCsv - set to true (default) to force write/read from a csv, instead of
-    *                 from a LocalRelation
     * @param conf   - spark conf
     * @return       - tuple of (cpu results, gpu results) as arrays of Row
     */
-  def runOnCpuAndGpu(df: SparkSession => DataFrame, fun: DataFrame => DataFrame, useCsv: Boolean = true,
+  def runOnCpuAndGpu(df: SparkSession => DataFrame, fun: DataFrame => DataFrame,
       conf: SparkConf = new SparkConf()): (Array[Row], Array[Row]) = {
-    var tmp:Path = null
-    var tempPath:Path = null
-    try {
-      tempPath = if (useCsv) {
-        val targetTmp = Paths.get("target/tmp")
-        try {
-          tmp = Files.createDirectory(targetTmp)
-        } catch  {
-          case fae: FileAlreadyExistsException => {
-            FileUtils.deleteDirectory(targetTmp.toFile)
-            tmp = Files.createDirectory(targetTmp)
-          }
-        }
-        tmp.toFile().deleteOnExit()
-        Files.createTempDirectory(tmp, "rapids-plugin-4-spark")
-      } else { 
-        null 
-      }
-      val fromCpu = withCpuSparkSession((session) => {
-        val df2 = if (useCsv) {
-          df(session).write.mode(SaveMode.Overwrite)
-            .option("header", "true")
-            .csv(tempPath.toString)
-          session.read.format("csv").schema(df(session).schema)
-            .load(tempPath.toString)
-        } else {
-          df(session)
-        }
-        fun(df2).collect
-      })
+    val fromCpu = withCpuSparkSession((session) => {
+      // repartition the data so it is turned into a projection, not folded into the table scan exec
+      fun(df(session).repartition(1)).collect
+    })
 
-      val fromGpu = withGpuSparkSession((session) => {
-        val df2 =  if (useCsv) {
-          session.read.format("csv").schema(df(session).schema)
-            .load(tempPath.toString)
-        } else {
-          df(session)
-        }
-        fun(df2).collect
-      }, conf)
+    val fromGpu = withGpuSparkSession((session) => {
+      // repartition the data so it is turned into a projection, not folded into the table scan exec
+      fun(df(session).repartition(1)).collect
+    }, conf)
 
-      (fromCpu, fromGpu)
-    } finally {
-      if (tmp != null) {
-        FileUtils.deleteDirectory(tmp.toFile)
-      }
-    }
+    (fromCpu, fromGpu)
   }
 
   def INCOMPAT_testSparkResultsAreEqual(testName: String, df: SparkSession => DataFrame, maxFloatDiff: Double = 0.0)
@@ -187,10 +149,10 @@ class SparkQueryCompareTestSuite extends FunSuite with BeforeAndAfterEach {
     }
   }
 
-  def testSparkResultsAreEqual(testName: String, df: SparkSession => DataFrame, useCsv: Boolean = true)
+  def testSparkResultsAreEqual(testName: String, df: SparkSession => DataFrame)
                               (fun: DataFrame => DataFrame): Unit = {
     test(testName) {
-      val (fromCpu, fromGpu) = runOnCpuAndGpu(df, fun, useCsv)
+      val (fromCpu, fromGpu) = runOnCpuAndGpu(df, fun)
 
       if (!compare(fromCpu, fromGpu)) {
         fail(
@@ -328,6 +290,31 @@ class SparkQueryCompareTestSuite extends FunSuite with BeforeAndAfterEach {
       ("-100.0", null),
       ("-500.0", "0.0")
     ).toDF("strings", "more_strings")
+  }
+
+  // Note: some tests here currently use this to force Spark not to
+  // push down expressions into the scan (e.g. GpuFilters need this)
+  def fromCsvDf(csvPath: String, schema: StructType)
+               (session: SparkSession): DataFrame = {
+    var df = session.read.format("csv")
+      .option("header", "true")
+    df.schema(schema).load(csvPath).toDF()
+  }
+
+  def nullableFloatCsvDf = {
+    var path = this.getClass.getClassLoader.getResource("nullable_floats.csv")
+    fromCsvDf(path.toString, StructType(Array(
+      StructField("floats", FloatType, true),
+      StructField("more_floats", FloatType, true)
+    )))(_)
+  }
+
+  def floatCsvDf = {
+    var path = this.getClass.getClassLoader.getResource("floats.csv")
+    fromCsvDf(path.toString, StructType(Array(
+      StructField("floats", FloatType, false),
+      StructField("more_floats", FloatType, false)
+    )))(_)
   }
 
   testSparkResultsAreEqual("Test scalar addition", longsDf) {
@@ -647,39 +634,39 @@ class SparkQueryCompareTestSuite extends FunSuite with BeforeAndAfterEach {
     frame => frame.selectExpr("floats is null OR more_floats is null")
   }
 
-  testSparkResultsAreEqual("filter is not null", nullableFloatDf) {
+  testSparkResultsAreEqual("filter is not null", nullableFloatCsvDf) {
     frame => frame.filter("floats is not null")
   }
 
-  testSparkResultsAreEqual("filter is null", nullableFloatDf) {
+  testSparkResultsAreEqual("filter is null", nullableFloatCsvDf) {
     frame => frame.filter("floats is null")
   }
 
-  testSparkResultsAreEqual("filter is null col1 OR is null col2", nullableFloatDf) {
+  testSparkResultsAreEqual("filter is null col1 OR is null col2", nullableFloatCsvDf) {
     frame => frame.filter("floats is null OR more_floats is null")
   }
 
-  testSparkResultsAreEqual("filter less than", floatDf) {
+  testSparkResultsAreEqual("filter less than", floatCsvDf) {
     frame => frame.filter("floats < more_floats")
   }
 
-  testSparkResultsAreEqual("filter greater than", floatDf) {
+  testSparkResultsAreEqual("filter greater than", floatCsvDf) {
     frame => frame.filter("floats > more_floats")
   }
 
-  testSparkResultsAreEqual("filter less than or equal", floatDf) {
+  testSparkResultsAreEqual("filter less than or equal", floatCsvDf) {
     frame => frame.filter("floats <= more_floats")
   }
 
-  testSparkResultsAreEqual("filter greater than or equal", floatDf) {
+  testSparkResultsAreEqual("filter greater than or equal", floatCsvDf) {
     frame => frame.filter("floats >= more_floats")
   }
 
-  testSparkResultsAreEqual("filter is null and greater than or equal", nullableFloatDf) {
+  testSparkResultsAreEqual("filter is null and greater than or equal", nullableFloatCsvDf) {
     frame => frame.filter("floats is null AND more_floats >= 3.0")
   }
 
-  testSparkResultsAreEqual("filter is not null and greater than or equal", nullableFloatDf) {
+  testSparkResultsAreEqual("filter is not null and greater than or equal", nullableFloatCsvDf) {
     frame => frame.filter("floats is not null AND more_floats >= 3.0")
   }
 
