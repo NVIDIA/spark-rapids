@@ -24,45 +24,11 @@ import org.apache.spark.sql.catalyst.expressions.{Expression, IsNotNull, IsNull}
  */
 
 class GpuIsNull(child: Expression) extends IsNull(child) with GpuUnaryExpression {
-  override def doColumnar(input: GpuColumnVector): GpuColumnVector = {
-    var tmp = input.getBase.isNull
-    try {
-      val ret = tmp
-      tmp = null
-      GpuColumnVector.from(ret)
-    } finally {
-      if (tmp != null) {
-        tmp.close()
-      }
-    }
-  }
-
-  override def equals(other: Any): Boolean = {
-    if (!super.equals(other)) {
-      return false
-    }
-    return other.isInstanceOf[GpuIsNull]
-  }
+  override def doColumnar(input: GpuColumnVector): GpuColumnVector =
+    GpuColumnVector.from(input.getBase.isNull)
 }
 
 class GpuIsNotNull(child: Expression) extends IsNotNull(child) with GpuUnaryExpression {
-  override def doColumnar(input: GpuColumnVector): GpuColumnVector = {
-    var tmp = input.getBase.isNotNull
-    try {
-      val ret = tmp
-      tmp = null
-      GpuColumnVector.from(ret)
-    } finally {
-      if (tmp != null) {
-        tmp.close()
-      }
-    }
-  }
-
-  override def equals(other: Any): Boolean = {
-    if (!super.equals(other)) {
-      return false
-    }
-    return other.isInstanceOf[GpuIsNotNull]
-  }
+  override def doColumnar(input: GpuColumnVector): GpuColumnVector =
+    GpuColumnVector.from(input.getBase.isNotNull)
 }
