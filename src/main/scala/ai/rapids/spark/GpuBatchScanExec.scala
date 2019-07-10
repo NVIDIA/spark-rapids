@@ -21,11 +21,13 @@ import java.nio.charset.StandardCharsets
 
 import scala.collection.JavaConverters._
 import scala.util.control.NonFatal
+
 import ai.rapids.cudf.{HostMemoryBuffer, Table}
 import ai.rapids.cudf
 import org.apache.hadoop.conf.Configuration
 import org.apache.hadoop.fs.Path
 import org.apache.hadoop.io.compress.CompressionCodecFactory
+
 import org.apache.spark.broadcast.Broadcast
 import org.apache.spark.internal.Logging
 import org.apache.spark.sql.catalyst.expressions.AttributeReference
@@ -208,12 +210,15 @@ case class GpuCSVPartitionReaderFactory(
 }
 
 
-class SingleTablePartitionReader(conf: Configuration, partFile: PartitionedFile,
-    dataSchema: StructType, readDataSchema: StructType, parsedOptions: CSVOptions)
-  extends PartitionReader[ColumnarBatch] {
-  var moreToRead = true
+class SingleTablePartitionReader(
+    conf: Configuration,
+    partFile: PartitionedFile,
+    dataSchema: StructType,
+    readDataSchema: StructType,
+    parsedOptions: CSVOptions) extends PartitionReader[ColumnarBatch] {
+  var batch: Option[ColumnarBatch] = None
 
-  private lazy val initHostBufferSize: Long = {
+  private lazy val estimatedHostBufferSize: Long = {
     val rawPath = new Path(partFile.filePath)
     val fs = rawPath.getFileSystem(conf)
     val path = fs.makeQualified(rawPath)
@@ -224,16 +229,13 @@ class SingleTablePartitionReader(conf: Configuration, partFile: PartitionedFile,
       // wild guess that compression is 2X or less
       fileSize * 2
     } else if (partFile.start + partFile.length == fileSize) {
-      // Last split doesn't need to read an additional record
+      // last split doesn't need to read an additional record
       partFile.length
     } else {
-      // wild guess at how much extra space is needed for the
-      // record after the end split offset.
+      // wild guess for extra space needed for the record after the split end offset
       partFile.length + 128 * 1024
     }
   }
-
-  override def next(): Boolean = moreToRead
 
   def buildCsvOptions(parsedOptions: CSVOptions, schema: StructType): cudf.CSVOptions = {
     val builder = cudf.CSVOptions.builder()
@@ -271,7 +273,7 @@ class SingleTablePartitionReader(conf: Configuration, partFile: PartitionedFile,
     val separator = parsedOptions.lineSeparatorInRead.getOrElse(Array('\n'.toByte))
     var succeeded = false
     var totalSize: Long = 0L
-    var hmb = HostMemoryBuffer.allocate(initHostBufferSize)
+    var hmb = HostMemoryBuffer.allocate(estimatedHostBufferSize)
     try {
       val lineReader = new HadoopFileLinesReader(partFile, parsedOptions.lineSeparatorInRead, conf)
       try {
@@ -298,45 +300,48 @@ class SingleTablePartitionReader(conf: Configuration, partFile: PartitionedFile,
     (hmb, totalSize)
   }
 
-  private def readToTable() : Table = {
+  private def readToTable(): Option[Table] = {
     val (dataBuffer, dataSize) = readPartFile()
     try {
-      val csvSchemaBuilder = ai.rapids.cudf.Schema.builder
-      dataSchema.foreach(f => csvSchemaBuilder.column(GpuColumnVector.getRapidsType(f.dataType), f.name))
-      val table = Table.readCSV(csvSchemaBuilder.build(), buildCsvOptions(parsedOptions, readDataSchema),
-        dataBuffer, 0, dataSize)
-      val numColumns = table.getNumberOfColumns
-      if (readDataSchema.length != numColumns) {
-        table.close()
-        throw new QueryExecutionException(s"Expected ${readDataSchema.length} columns " +
-          s"but only read ${table.getNumberOfColumns} from $partFile")
+      if (dataSize == 0) {
+        None
+      } else {
+        val csvSchemaBuilder = ai.rapids.cudf.Schema.builder
+        dataSchema.foreach(f => csvSchemaBuilder.column(GpuColumnVector.getRapidsType(f.dataType), f.name))
+        val table = Table.readCSV(csvSchemaBuilder.build(), buildCsvOptions(parsedOptions, readDataSchema),
+          dataBuffer, 0, dataSize)
+        val numColumns = table.getNumberOfColumns
+        if (readDataSchema.length != numColumns) {
+          table.close()
+          throw new QueryExecutionException(s"Expected ${readDataSchema.length} columns " +
+            s"but only read ${table.getNumberOfColumns} from $partFile")
+        }
+        Some(table)
       }
-      table
     } finally {
       dataBuffer.close()
     }
   }
 
-  var batch: ColumnarBatch = null
-
-  override def get(): ColumnarBatch = {
-    if (moreToRead) {
-      moreToRead = false
+  override def next(): Boolean = {
+    if (batch.isDefined) {
+      batch.foreach(_.close())
+      batch = None
+    } else {
       val table = readToTable()
       try {
-        batch = GpuColumnVector.from(table)
-        batch
+        batch = table.map(GpuColumnVector.from)
       } finally {
-        table.close()
+        table.foreach(_.close())
       }
-    } else {
-      throw new NoSuchElementException()
     }
+    batch.isDefined
   }
 
+  override def get(): ColumnarBatch = batch.getOrElse(throw new NoSuchElementException)
+
   override def close(): Unit = {
-    if (batch != null) {
-      batch.close()
-    }
+    batch.foreach(_.close())
+    batch = None
   }
 }

@@ -301,6 +301,16 @@ class SparkQueryCompareTestSuite extends FunSuite with BeforeAndAfterEach {
     frame => frame.select(col("ints_1"), col("ints_3"), col("ints_5"))
   }
 
+  val smallSplitsConf = {
+    val conf = new SparkConf()
+    conf.set("spark.sql.files.maxPartitionBytes", "10")
+    conf
+  }
+
+  testSparkResultsAreEqual("Test CSV splits", intsFromCsv, smallSplitsConf) {
+    frame => frame.select(col("ints_1"), col("ints_3"), col("ints_5"))
+  }
+
   /**
    * Running with an inferred schema results in running things that are not columnar optimized.
    */
