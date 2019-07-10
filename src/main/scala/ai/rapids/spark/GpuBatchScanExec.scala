@@ -36,6 +36,7 @@ import org.apache.spark.sql.types.StructType
 import org.apache.spark.sql.SparkSession
 import org.apache.spark.sql.catalyst.csv.CSVOptions
 import org.apache.spark.sql.catalyst.InternalRow
+import org.apache.spark.sql.catalyst.util.PermissiveMode
 import org.apache.spark.sql.execution.datasources.v2.csv.CSVScan
 import org.apache.spark.sql.execution.QueryExecutionException
 import org.apache.spark.sql.internal.SQLConf
@@ -89,21 +90,16 @@ object GpuCSVScan {
       sparkSession.sessionState.conf.sessionLocalTimeZone,
       sparkSession.sessionState.conf.columnNameOfCorruptRecord)
 
-    if (parsedOptions.delimiter > 128) {
+    if (parsedOptions.delimiter > 127) {
       throw new CannotReplaceException(s"GpuCSVScan does not support non-ASCII deliminators")
     }
 
-    if (parsedOptions.quote > 128) {
+    if (parsedOptions.quote > 127) {
       throw new CannotReplaceException(s"GpuCSVScan does not support non-ASCII quote chars")
     }
 
-    if (parsedOptions.comment > 128) {
+    if (parsedOptions.comment > 127) {
       throw new CannotReplaceException(s"GpuCSVScan does not support non-ASCII comment chars")
-    }
-
-    if (parsedOptions.inferSchemaFlag) {
-      // TODO need to test this because we inherent from something that might do it.
-      throw new CannotReplaceException(s"GpuCSVScan does not support schema inference")
     }
 
     if (parsedOptions.escape != '\\') {
@@ -139,7 +135,9 @@ object GpuCSVScan {
       throw new CannotReplaceException("GpuCSVScan only supports \"\\n\" as a line separator")
     }
 
-    // TODO parsedOptions.parseMode
+    if (parsedOptions.parseMode != PermissiveMode) {
+      throw new CannotReplaceException("GpuCSVScan only supports Permissive CSV parsing")
+    }
     // TODO parsedOptions.columnNameOfCorruptRecord
     // TODO parsedOptions.nanValue This is here by default so we need to be able to support it
     // TODO parsedOptions.positiveInf This is here by default so we need to be able to support it
@@ -332,7 +330,7 @@ class SingleTablePartitionReader(conf: Configuration, partFile: PartitionedFile,
         table.close()
       }
     } else {
-      throw new IllegalStateException("What is the right thing to throw when we read too much?")
+      throw new NoSuchElementException()
     }
   }
 
