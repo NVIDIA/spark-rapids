@@ -21,17 +21,15 @@ import java.nio.charset.StandardCharsets
 
 import scala.collection.JavaConverters._
 import scala.util.control.NonFatal
-
 import ai.rapids.cudf.{HostMemoryBuffer, Table}
 import ai.rapids.cudf
 import org.apache.hadoop.conf.Configuration
 import org.apache.hadoop.fs.Path
 import org.apache.hadoop.io.compress.CompressionCodecFactory
-
 import org.apache.spark.broadcast.Broadcast
 import org.apache.spark.internal.Logging
 import org.apache.spark.sql.catalyst.expressions.AttributeReference
-import org.apache.spark.sql.execution.datasources.{PartitionedFile, PartitioningAwareFileIndex}
+import org.apache.spark.sql.execution.datasources.{HadoopFileLinesReader, PartitionedFile, PartitioningAwareFileIndex}
 import org.apache.spark.sql.execution.datasources.v2.{BatchScanExec, FilePartitionReaderFactory}
 import org.apache.spark.sql.sources.v2.reader.{PartitionReader, PartitionReaderFactory, Scan}
 import org.apache.spark.sql.types.StructType
@@ -165,9 +163,6 @@ class GpuCSVScan(
     options: CaseInsensitiveStringMap) extends
   CSVScan(sparkSession, fileIndex, dataSchema, readDataSchema, readPartitionSchema, options) {
 
-  // TODO eventually we need to support splits...
-  override def isSplitable(path: Path): Boolean = false
-
   lazy val parsedOptions: CSVOptions = new CSVOptions(
     options.asScala.toMap,
     columnPruning = sparkSession.sessionState.conf.csvColumnPruning,
@@ -219,6 +214,27 @@ class SingleTablePartitionReader(conf: Configuration, partFile: PartitionedFile,
     dataSchema: StructType, readDataSchema: StructType, parsedOptions: CSVOptions)
   extends PartitionReader[ColumnarBatch] {
   var moreToRead = true
+
+  private lazy val initHostBufferSize: Long = {
+    val rawPath = new Path(partFile.filePath)
+    val fs = rawPath.getFileSystem(conf)
+    val path = fs.makeQualified(rawPath)
+    val fileSize = fs.getFileStatus(path).getLen
+    val codecFactory = new CompressionCodecFactory(conf)
+    val codec = codecFactory.getCodec(path)
+    if (codec != null) {
+      // wild guess that compression is 2X or less
+      fileSize * 2
+    } else if (partFile.start + partFile.length == fileSize) {
+      // Last split doesn't need to read an additional record
+      partFile.length
+    } else {
+      // wild guess at how much extra space is needed for the
+      // record after the end split offset.
+      partFile.length + 128 * 1024
+    }
+  }
+
   override def next(): Boolean = moreToRead
 
   def buildCsvOptions(parsedOptions: CSVOptions, schema: StructType): cudf.CSVOptions = {
@@ -253,49 +269,44 @@ class SingleTablePartitionReader(conf: Configuration, partFile: PartitionedFile,
     result
   }
 
-  private def readPartFileFully(): (HostMemoryBuffer, Long) = {
-    val rawPath = new Path(partFile.filePath)
-    val fs = rawPath.getFileSystem(conf)
-    val path = fs.makeQualified(rawPath)
-    val fileSize = fs.getFileStatus(path).getLen
+  private def readPartFile(): (HostMemoryBuffer, Long) = {
+    val separator = parsedOptions.lineSeparatorInRead.getOrElse(Array('\n'.toByte))
     var succeeded = false
-    var hmb = HostMemoryBuffer.allocate(fileSize)
-    var totalBytesRead: Long = 0L
+    var totalSize: Long = 0L
+    var hmb = HostMemoryBuffer.allocate(initHostBufferSize)
     try {
-      val buffer = new Array[Byte](1024 * 16)
-      val codecFactory = new CompressionCodecFactory(conf)
-      val codec = codecFactory.getCodec(path)
-      val rawInput = fs.open(path)
-      val in = if (codec != null) codec.createInputStream(rawInput) else rawInput
+      val lineReader = new HadoopFileLinesReader(partFile, parsedOptions.lineSeparatorInRead, conf)
       try {
-        var numBytes = in.read(buffer)
-        while (numBytes >= 0) {
-          if (totalBytesRead + numBytes > hmb.getLength) {
-            hmb = growHostBuffer(hmb, totalBytesRead + numBytes)
+        while (lineReader.hasNext) {
+          val line = lineReader.next()
+          val lineSize = line.getLength
+          val newTotal = totalSize + lineSize + separator.length
+          if (newTotal > hmb.getLength) {
+            hmb = growHostBuffer(hmb, newTotal)
           }
-          hmb.setBytes(totalBytesRead, buffer, 0, numBytes)
-          totalBytesRead += numBytes
-          numBytes = in.read(buffer)
+          hmb.setBytes(totalSize, line.getBytes, 0, lineSize)
+          hmb.setBytes(totalSize + lineSize, separator, 0, separator.length)
+          totalSize = newTotal
         }
+        succeeded = true
       } finally {
-        in.close()
+        lineReader.close()
       }
-      succeeded = true
     } finally {
       if (!succeeded) {
         hmb.close()
       }
     }
-    (hmb, totalBytesRead)
+    (hmb, totalSize)
   }
 
   private def readToTable() : Table = {
-    val (dataBuffer, dataSize) = readPartFileFully()
+    val (dataBuffer, dataSize) = readPartFile()
     try {
       val csvSchemaBuilder = ai.rapids.cudf.Schema.builder
       dataSchema.foreach(f => csvSchemaBuilder.column(GpuColumnVector.getRapidsType(f.dataType), f.name))
       val table = Table.readCSV(csvSchemaBuilder.build(), buildCsvOptions(parsedOptions, readDataSchema),
-        dataBuffer, dataSize)
+        dataBuffer, 0, dataSize)
       val numColumns = table.getNumberOfColumns
       if (readDataSchema.length != numColumns) {
         table.close()
