@@ -17,6 +17,7 @@
 package ai.rapids.spark;
 
 import ai.rapids.cudf.DType;
+import ai.rapids.cudf.Table;
 import ai.rapids.cudf.TimeUnit;
 import org.apache.spark.sql.types.*;
 import org.apache.spark.sql.vectorized.ColumnVector;
@@ -174,6 +175,32 @@ public final class GpuColumnVector extends ColumnVector {
             default:
                 throw new IllegalStateException(type + " is not supported by spark yet.");
 
+        }
+    }
+
+    public static ColumnarBatch from(Table table) {
+        int numColumns = table.getNumberOfColumns();
+        ColumnVector[] columns = new ColumnVector[numColumns];
+        boolean success = false;
+        try {
+            for (int i = 0; i < numColumns; i++) {
+                columns[i] = from(table.getColumn(i).incRefCount());
+            }
+            long rows = table.getRowCount();
+            if (rows != (int) rows) {
+                throw new IllegalStateException("Cannot support a batch larger that MAX INT rows");
+            }
+            ColumnarBatch ret = new ColumnarBatch(columns, (int)rows);
+            success = true;
+            return ret;
+        } finally {
+            if (!success) {
+                for (ColumnVector cv: columns) {
+                    if (cv != null) {
+                        cv.close();
+                    }
+                }
+            }
         }
     }
 

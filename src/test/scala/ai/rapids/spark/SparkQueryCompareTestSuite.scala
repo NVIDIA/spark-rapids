@@ -23,7 +23,7 @@ import org.scalatest.{BeforeAndAfterEach, FunSuite}
 import org.apache.spark.sql.{DataFrame, Row, SparkSession}
 import org.apache.spark.SparkConf
 import org.apache.spark.sql.functions._
-import org.apache.spark.sql.types._
+import org.apache.spark.sql.types.{StructField, _}
 
 /**
  * Set of tests that compare the output using the CPU version of spark vs our GPU version.
@@ -270,6 +270,22 @@ class SparkQueryCompareTestSuite extends FunSuite with BeforeAndAfterEach {
       ("-100.0", "6.0"),
       ("-500.0", "0.0")
     ).toDF("doubles", "more_doubles")
+  }
+
+  def intsFromCsv(session: SparkSession): DataFrame = {
+    val schema = StructType(Array(
+      StructField("ints_1", IntegerType),
+      StructField("ints_2", IntegerType),
+      StructField("ints_3", IntegerType),
+      StructField("ints_4", IntegerType),
+      StructField("ints_5", IntegerType)
+    ))
+    val path = this.getClass.getClassLoader.getResource("test.csv")
+    session.read.schema(schema).csv(path.toString)
+  }
+
+  testSparkResultsAreEqual("Test CSV", intsFromCsv) {
+    frame => frame.select(col("ints_1"), col("ints_3"), col("ints_5"))
   }
 
   testSparkResultsAreEqual("Test scalar addition", longsDf) {
