@@ -146,7 +146,7 @@ public final class GpuColumnVector extends ColumnVector {
         } else if (type instanceof StringType) {
             return DType.STRING; // TODO what do we want to do about STRING_CATEGORY???
         }
-        throw new IllegalStateException(type + " is not supported for GPU processing yet.");
+        throw new IllegalArgumentException(type + " is not supported for GPU processing yet.");
     }
 
     private static DataType getSparkType(DType type) {
@@ -173,7 +173,7 @@ public final class GpuColumnVector extends ColumnVector {
             case STRING_CATEGORY:
                 return DataTypes.StringType;
             default:
-                throw new IllegalStateException(type + " is not supported by spark yet.");
+                throw new IllegalArgumentException(type + " is not supported by spark yet.");
 
         }
     }

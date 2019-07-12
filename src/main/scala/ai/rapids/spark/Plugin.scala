@@ -26,6 +26,7 @@ import org.apache.spark.sql.execution._
 import org.apache.spark.sql.execution.aggregate.HashAggregateExec
 import org.apache.spark.sql.execution.datasources.v2.BatchScanExec
 import org.apache.spark.sql.execution.datasources.v2.csv.CSVScan
+import org.apache.spark.sql.execution.datasources.v2.parquet.ParquetScan
 import org.apache.spark.sql.execution.exchange.ShuffleExchangeExec
 import org.apache.spark.sql.sources.v2.reader.Scan
 import org.apache.spark.sql.types._
@@ -213,13 +214,23 @@ case class GpuOverrides(session: SparkSession) extends Rule[SparkPlan] with Logg
   }
 
   def replaceBatchScan(scan: Scan): Scan = scan match {
-    case scan : CSVScan =>
+    case scan: CSVScan =>
       GpuCSVScan.assertCanSupport(scan)
       new GpuCSVScan(scan.sparkSession,
         scan.fileIndex,
         scan.dataSchema,
         scan.readDataSchema,
         scan.readPartitionSchema,
+        scan.options)
+    case scan: ParquetScan =>
+      GpuParquetScan.assertCanSupport(scan)
+      new GpuParquetScan(scan.sparkSession,
+        scan.hadoopConf,
+        scan.fileIndex,
+        scan.dataSchema,
+        scan.readDataSchema,
+        scan.readPartitionSchema,
+        scan.pushedFilters,
         scan.options)
     case p =>
       throw new CannotReplaceException(s"scan ${scan.getClass} ${scan} is not currently supported.")

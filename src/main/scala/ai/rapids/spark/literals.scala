@@ -19,7 +19,7 @@ package ai.rapids.spark
 import ai.rapids.cudf.Scalar
 
 import org.apache.spark.sql.catalyst.expressions.Literal
-import org.apache.spark.sql.types.DataType
+import org.apache.spark.sql.types._
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
 object GpuScalar {
@@ -33,6 +33,26 @@ object GpuScalar {
     case b: Byte => Scalar.fromByte(b)
     case b: Boolean => Scalar.fromBool(b)
     case _ => throw new IllegalStateException(s"${v} is not supported as a scalar yet")
+  }
+
+  def from(v: Any, t: DataType): Scalar = v match {
+    case _ if v == null => Scalar.fromNull(GpuColumnVector.getRapidsType(t))
+    case l: Long => t match {
+      case LongType => Scalar.fromLong(l)
+      case TimestampType => Scalar.timestampFromLong(l)
+      case _ => throw new IllegalArgumentException(s"$t not supported for long values")
+    }
+    case d: Double => Scalar.fromDouble(d)
+    case i: Int => t match {
+      case IntegerType => Scalar.fromInt(i)
+      case DateType => Scalar.dateFromInt(i)
+      case _ => throw new IllegalArgumentException(s"$t not supported for int values")
+    }
+    case f: Float => Scalar.fromFloat(f)
+    case s: Short => Scalar.fromShort(s)
+    case b: Byte => Scalar.fromByte(b)
+    case b: Boolean => Scalar.fromBool(b)
+    case _ => throw new IllegalStateException(s"$v is not supported as a scalar yet")
   }
 }
 
