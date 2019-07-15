@@ -27,7 +27,7 @@ import org.apache.spark.sql.execution.datasources.v2.csv.CSVScan
 import org.apache.spark.sql.execution.exchange.ShuffleExchangeExec
 import org.apache.spark.sql.sources.v2.reader.Scan
 import org.apache.spark.sql.types._
-import org.apache.spark.sql.vectorized.{ColumnarBatch, ColumnVector}
+import org.apache.spark.sql.vectorized.{ColumnVector, ColumnarBatch}
 
 trait GpuExec extends SparkPlan {
   override def supportsColumnar = true
@@ -62,6 +62,43 @@ class GpuProjectExec(projectList: Seq[GpuExpression], child: SparkPlan)
             result.asInstanceOf[ColumnVector]
           }).toArray
         new ColumnarBatch(newColumns, cb.numRows())
+      }
+    )
+  }
+}
+
+class GpuFilterExec(condition: GpuExpression, child: SparkPlan) 
+  extends FilterExec(condition, child) with GpuExec {
+
+  // Disable code generation for now...
+  override def supportCodegen: Boolean = false
+
+  override def doExecuteColumnar(): RDD[ColumnarBatch] = {
+    val boundCondition: Any = GpuBindReferences.bindReference(condition, child.output)
+    val rdd = child.executeColumnar()
+    AutoCloseColumnBatchIterator.map(rdd,
+      (cb: ColumnarBatch) => {
+        val boundExpression = boundCondition.asInstanceOf[GpuExpression]
+        val evalCv = boundExpression.columnarEval(cb)
+        var cols = Seq[GpuColumnVector]()
+        var rowCount = 0
+        try {
+          val gpuEvalCv = evalCv.asInstanceOf[GpuColumnVector]
+
+          // rebuild the columns, but with new filtered columns
+          for (i <- 0 until cb.numCols()) {
+            val colBase = cb.column(i).asInstanceOf[GpuColumnVector].getBase
+            val filtered = colBase.filter(gpuEvalCv.getBase)
+            cols = (cols :+ GpuColumnVector.from(filtered))
+            rowCount = filtered.getRowCount().intValue() // all columns have the same # of rows
+          }
+        } finally {
+          if (evalCv != null && evalCv.isInstanceOf[GpuColumnVector]) {
+            evalCv.asInstanceOf[GpuColumnVector].close();
+          }
+        }
+
+        new ColumnarBatch(cols.toArray, rowCount)
       }
     )
   }
@@ -118,6 +155,8 @@ case class GpuOverrides(session: SparkSession) extends Rule[SparkPlan] with Logg
     case floor: Floor => new GpuFloor(child)
     case ceil: Ceil => new GpuCeil(child)
     case not: Not => new GpuNot(child)
+    case isNull: IsNull => new GpuIsNull(child)
+    case isNotNull: IsNotNull => new GpuIsNotNull(child)
     case exp if incompatEnabled => replaceIncompatUnaryExpressions(exp, child)
     case exp =>
       throw new CannotReplaceException(s"expression ${exp.getClass} ${exp} is not currently supported.")
@@ -197,6 +236,9 @@ case class GpuOverrides(session: SparkSession) extends Rule[SparkPlan] with Logg
           }
           new GpuBatchScanExec(exec.output.map((exec) => replaceWithGpuExpression(exec).asInstanceOf[AttributeReference]),
             replaceBatchScan(exec.scan))
+        case filter: FilterExec =>
+          new GpuFilterExec(replaceWithGpuExpression(filter.condition),
+            replaceWithGpuPlan(filter.child))
         case p =>
           logWarning(s"GPU Processing for ${p.getClass} is not currently supported.")
           p.withNewChildren(p.children.map(replaceWithGpuPlan))
@@ -266,6 +308,7 @@ case class GpuTransitionOverrides(session: SparkSession) extends Rule[SparkPlan]
         }
       case _: GpuColumnarToRowExec => () // Ignored
       case _: ShuffleExchangeExec => () // Ignored for now
+      case _: BatchScanExec => () // Ignored for now
       case _ =>
         if (!plan.supportsColumnar) {
           throw new IllegalArgumentException(s"Part of the plan is not columnar ${plan.getClass}\n${plan}")
