@@ -92,9 +92,6 @@ class GpuColumnarToRowExec(child: SparkPlan) extends ColumnarToRowExec(child) wi
   /**
    * Generate [[ColumnVector]] expressions for our parent to consume as rows.
    * This is called once per [[ColumnVector]] in the batch.
-   *
-   * This code came unchanged from [[ColumnarBatchScan]] and will hopefully replace it
-   * at some point.
    */
   private def genCodeColumnVector(
       ctx: CodegenContext,
@@ -125,10 +122,7 @@ class GpuColumnarToRowExec(child: SparkPlan) extends ColumnarToRowExec(child) wi
   /**
    * Produce code to process the input iterator as [[ColumnarBatch]]es.
    * This produces an [[org.apache.spark.sql.catalyst.expressions.UnsafeRow]] for each row in
-   * each batch.
-   *
-   * This code came almost completely unchanged from [[ColumnarBatchScan]] and will
-   * hopefully replace it at some point.
+   * each batch..
    */
   override protected def doProduce(ctx: CodegenContext): String = {
     // PhysicalRDD always just has one input

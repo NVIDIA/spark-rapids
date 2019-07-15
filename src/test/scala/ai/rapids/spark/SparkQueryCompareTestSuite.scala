@@ -62,11 +62,12 @@ class SparkQueryCompareTestSuite extends FunSuite with BeforeAndAfterEach {
   }
 
   def withGpuSparkSession[U](f: SparkSession => U, conf: SparkConf = new SparkConf()): U = {
-    withSparkSession("gpu-sql-test",
-      conf
-        .set("spark.sql.extensions", "ai.rapids.spark.Plugin")
-        .set(Plugin.TEST_CONF, "true"),
-      f)
+    var c = conf.set("spark.sql.extensions", "ai.rapids.spark.Plugin")
+
+    if (c.getOption(Plugin.TEST_CONF).isEmpty) {
+       c = c.set(Plugin.TEST_CONF, "true")
+    }
+    withSparkSession("gpu-sql-test", c, f)
   }
 
   def withCpuSparkSession[U](f: SparkSession => U): U = {
@@ -132,11 +133,12 @@ class SparkQueryCompareTestSuite extends FunSuite with BeforeAndAfterEach {
     (fromCpu, fromGpu)
   }
 
-  def INCOMPAT_testSparkResultsAreEqual(testName: String, df: SparkSession => DataFrame, maxFloatDiff: Double = 0.0)
+  def INCOMPAT_testSparkResultsAreEqual(testName: String, df: SparkSession => DataFrame,
+      maxFloatDiff: Double = 0.0, conf: SparkConf = new SparkConf())
     (fun: DataFrame => DataFrame): Unit = {
     test("INCOMPAT: " + testName) {
       val (fromCpu, fromGpu) = runOnCpuAndGpu(df, fun,
-        conf = new SparkConf().set(Plugin.INCOMPATIBLE_OPS_CONF, "true"))
+        conf.set(Plugin.INCOMPATIBLE_OPS_CONF, "true"))
 
       if (!compare(fromCpu, fromGpu, maxFloatDiff)) {
         fail(
@@ -149,10 +151,16 @@ class SparkQueryCompareTestSuite extends FunSuite with BeforeAndAfterEach {
     }
   }
 
-  def testSparkResultsAreEqual(testName: String, df: SparkSession => DataFrame)
-                              (fun: DataFrame => DataFrame): Unit = {
+  def ALLOW_NON_GPU_testSparkResultsAreEqual(testName: String, df: SparkSession => DataFrame,
+      conf: SparkConf = new SparkConf())(fun: DataFrame => DataFrame): Unit = {
+    testSparkResultsAreEqual("NOT ALL ON GPU: " + testName, df,
+      conf.set(Plugin.TEST_CONF, "false"))(fun)
+  }
+
+  def testSparkResultsAreEqual(testName: String, df: SparkSession => DataFrame,
+      conf: SparkConf = new SparkConf())(fun: DataFrame => DataFrame): Unit = {
     test(testName) {
-      val (fromCpu, fromGpu) = runOnCpuAndGpu(df, fun)
+      val (fromCpu, fromGpu) = runOnCpuAndGpu(df, fun, conf)
 
       if (!compare(fromCpu, fromGpu)) {
         fail(
@@ -279,6 +287,23 @@ class SparkQueryCompareTestSuite extends FunSuite with BeforeAndAfterEach {
     ).toDF("doubles", "more_doubles")
   }
 
+  def intsFromCsv(session: SparkSession): DataFrame = {
+    val schema = StructType(Array(
+      StructField("ints_1", IntegerType),
+      StructField("ints_2", IntegerType),
+      StructField("ints_3", IntegerType),
+      StructField("ints_4", IntegerType),
+      StructField("ints_5", IntegerType)
+    ))
+    val path = this.getClass.getClassLoader.getResource("test.csv")
+    session.read.schema(schema).csv(path.toString)
+  }
+
+  def intsFromCsvInferredSchema(session: SparkSession): DataFrame = {
+    val path = this.getClass.getClassLoader.getResource("test.csv")
+    session.read.option("inferSchema", "true").csv(path.toString)
+  }
+
   def nullableFloatDf(session: SparkSession): DataFrame = {
     import session.sqlContext.implicits._
     Seq[(java.lang.Float, java.lang.Float)](
@@ -328,6 +353,17 @@ class SparkQueryCompareTestSuite extends FunSuite with BeforeAndAfterEach {
       StructField("floats", FloatType, false),
       StructField("more_floats", FloatType, false)
     )))(_)
+  }
+
+  testSparkResultsAreEqual("Test CSV", intsFromCsv) {
+    frame => frame.select(col("ints_1"), col("ints_3"), col("ints_5"))
+  }
+
+  /**
+   * Running with an inferred schema results in running things that are not columnar optimized.
+   */
+  ALLOW_NON_GPU_testSparkResultsAreEqual("Test CSV inferred schema", intsFromCsvInferredSchema) {
+    frame => frame.select(col("*"))
   }
 
   testSparkResultsAreEqual("Test scalar addition", longsDf) {
