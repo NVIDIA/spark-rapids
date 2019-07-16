@@ -119,10 +119,8 @@ private class GpuColumnarBatchSerializerInstance(
 
           TaskContext.get().addTaskCompletionListener[Unit]((tc: TaskContext) => {
             closeCurrentBatch()
-            if (toBeReturned.isDefined) {
-              toBeReturned.map(_.close())
-              toBeReturned = None
-            }
+            toBeReturned.foreach(_.close())
+            toBeReturned = None
           })
 
           def tryReadNext(): Option[ColumnarBatch] = {

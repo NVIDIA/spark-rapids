@@ -176,7 +176,7 @@ class SparkQueryCompareTestSuite extends FunSuite with BeforeAndAfterEach {
       return true
     }
     // lengths are the same
-    for (i <- 0 until a.length) {
+    for (i <- a.indices) {
       val v1 = a(i)
       val v2 = b(i)
       if (v1 != v2) {

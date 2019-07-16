@@ -21,7 +21,7 @@ import scala.collection.mutable.ArrayBuffer
 
 import ai.rapids.cudf.{ColumnVector, HashFunction, Table}
 
-import org.apache.spark.{Partitioner, ShuffleDependency}
+import org.apache.spark.ShuffleDependency
 import org.apache.spark.rdd.RDD
 import org.apache.spark.serializer.Serializer
 import org.apache.spark.sql.catalyst.errors._
@@ -29,7 +29,7 @@ import org.apache.spark.sql.catalyst.expressions.Attribute
 import org.apache.spark.sql.catalyst.plans.physical.{HashPartitioning, Partitioning}
 import org.apache.spark.sql.execution.{BatchPartitionIdPassthrough, ShuffledBatchRDD, SparkPlan}
 import org.apache.spark.sql.execution.exchange.ShuffleExchangeExec
-import org.apache.spark.sql.execution.metric.{SQLMetric, SQLMetrics, SQLShuffleReadMetricsReporter, SQLShuffleWriteMetricsReporter}
+import org.apache.spark.sql.execution.metric._
 import org.apache.spark.sql.vectorized.ColumnarBatch
 import org.apache.spark.util.MutablePair
 
@@ -115,9 +115,7 @@ object GpuShuffleExchangeExec {
           private val mutablePair = new MutablePair[Int, ColumnarBatch]()
           private def partNextBatch: Unit = {
             if (partitioned != null) {
-              for (i <- 0 until partitioned.length) {
-                partitioned(i)._1.close()
-              }
+              partitioned.foreach(_._1.close())
               partitioned = null
               at = 0
             }
@@ -125,7 +123,6 @@ object GpuShuffleExchangeExec {
               val batch = iter.next()
               partitioned = getParts(batch).asInstanceOf[Array[(ColumnarBatch, Int)]]
               at = 0
-              batch.close()
             }
           }
 
@@ -184,7 +181,7 @@ class GpuHashPartitioning(expressions: Seq[GpuExpression], numPartitions: Int)
   }
 
   def insertDedupe(indexesOut: Array[Int], colsIn: Array[GpuColumnVector], dedupedData: ArrayBuffer[ColumnVector]): Unit = {
-    for (i <- 0 until indexesOut.length) {
+    indexesOut.indices.foreach((i) => {
       val b = colsIn(i).getBase
       val idx = dedupedData.indexOf(b)
       if (idx < 0) {
@@ -193,7 +190,7 @@ class GpuHashPartitioning(expressions: Seq[GpuExpression], numPartitions: Int)
       } else {
         indexesOut(i) = idx
       }
-    }
+    })
   }
 
   def dedupe(keyCols: Array[GpuColumnVector], dataCols: Array[GpuColumnVector]):
