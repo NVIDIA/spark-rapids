@@ -109,13 +109,8 @@ case class GpuParquetPartitionReaderFactory(
 
   override def buildColumnarReader(partitionedFile: PartitionedFile): PartitionReader[ColumnarBatch] = {
     val conf = broadcastedConf.value.value
-    val partitionValues = partitionedFile.partitionValues.toSeq(partitionSchema)
-    val partitionScalarTypes = partitionSchema.fields.map(_.dataType)
-    val partitionScalars = partitionValues.zip(partitionScalarTypes).map {
-      case (v, t) => GpuScalar.from(v, t)
-    }.toArray
     val reader = new ParquetPartitionReader(conf, partitionedFile, dataSchema, readDataSchema, filters)
-    new ColumnarPartitionReaderWithPartitionValues(reader, partitionScalars)
+    ColumnarPartitionReaderWithPartitionValues.newReader(partitionedFile, reader, partitionSchema)
   }
 }
 

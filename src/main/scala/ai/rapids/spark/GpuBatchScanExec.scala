@@ -80,10 +80,6 @@ class GpuBatchScanExec(
 
 object GpuCSVScan {
   def assertCanSupport(scan: CSVScan) : Unit = {
-    if (!scan.readPartitionSchema.isEmpty) {
-      // TODO would be great to support this
-      throw new CannotReplaceException(s"GpuCSVScan does not support read partition fields")
-    }
     val options = scan.options
     val sparkSession = scan.sparkSession
     val parsedOptions: CSVOptions = new CSVOptions(
@@ -205,7 +201,8 @@ case class GpuCSVPartitionReaderFactory(
 
   override def buildColumnarReader(partFile: PartitionedFile): PartitionReader[ColumnarBatch] = {
     val conf = broadcastedConf.value.value
-    new SingleTablePartitionReader(conf, partFile, dataSchema, readDataSchema, parsedOptions)
+    val reader = new SingleTablePartitionReader(conf, partFile, dataSchema, readDataSchema, parsedOptions)
+    ColumnarPartitionReaderWithPartitionValues.newReader(partFile, reader, partitionSchema)
   }
 }
 
