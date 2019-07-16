@@ -20,8 +20,10 @@ import org.apache.spark.internal.Logging
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.{SparkSession, SparkSessionExtensions}
 import org.apache.spark.sql.catalyst.expressions._
+import org.apache.spark.sql.catalyst.plans.physical.{HashPartitioning, Partitioning}
 import org.apache.spark.sql.catalyst.rules.Rule
 import org.apache.spark.sql.execution._
+import org.apache.spark.sql.execution.aggregate.HashAggregateExec
 import org.apache.spark.sql.execution.datasources.v2.BatchScanExec
 import org.apache.spark.sql.execution.datasources.v2.csv.CSVScan
 import org.apache.spark.sql.execution.exchange.ShuffleExchangeExec
@@ -223,6 +225,13 @@ case class GpuOverrides(session: SparkSession) extends Rule[SparkPlan] with Logg
       throw new CannotReplaceException(s"scan ${scan.getClass} ${scan} is not currently supported.")
   }
 
+  def replaceWithGpuPartitioning(part: Partitioning): Partitioning = part match {
+    case hp: HashPartitioning => new GpuHashPartitioning(
+      hp.expressions.map(replaceWithGpuExpression), hp.numPartitions)
+    case _ =>
+      throw new CannotReplaceException(s"${part.getClass} is not supported for partitioning")
+  }
+
   def replaceWithGpuPlan(plan: SparkPlan): SparkPlan =
     try {
       plan match {
@@ -239,13 +248,15 @@ case class GpuOverrides(session: SparkSession) extends Rule[SparkPlan] with Logg
         case filter: FilterExec =>
           new GpuFilterExec(replaceWithGpuExpression(filter.condition),
             replaceWithGpuPlan(filter.child))
+        case shuffle: ShuffleExchangeExec =>
+          new GpuShuffleExchangeExec(replaceWithGpuPartitioning(shuffle.outputPartitioning), replaceWithGpuPlan(shuffle.child))
         case p =>
           logWarning(s"GPU Processing for ${p.getClass} is not currently supported.")
           p.withNewChildren(p.children.map(replaceWithGpuPlan))
       }
     } catch {
       case exp: CannotReplaceException =>
-        logWarning(s"Columnar processing for ${plan.getClass} is not currently supported" +
+        logWarning(s"GPU processing for ${plan.getClass} is not currently supported" +
           s" because ${exp.getMessage}")
         plan.withNewChildren(plan.children.map(replaceWithGpuPlan))
     }
@@ -308,6 +319,7 @@ case class GpuTransitionOverrides(session: SparkSession) extends Rule[SparkPlan]
         }
       case _: GpuColumnarToRowExec => () // Ignored
       case _: ShuffleExchangeExec => () // Ignored for now
+      case _: HashAggregateExec => () // Ignored for now
       case _: BatchScanExec => () // Ignored for now
       case _ =>
         if (!plan.supportsColumnar) {

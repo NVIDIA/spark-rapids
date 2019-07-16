@@ -119,15 +119,23 @@ class SparkQueryCompareTestSuite extends FunSuite with BeforeAndAfterEach {
     * @return       - tuple of (cpu results, gpu results) as arrays of Row
     */
   def runOnCpuAndGpu(df: SparkSession => DataFrame, fun: DataFrame => DataFrame,
-      conf: SparkConf = new SparkConf()): (Array[Row], Array[Row]) = {
+      conf: SparkConf = new SparkConf(), repart: Integer = 1): (Array[Row], Array[Row]) = {
     val fromCpu = withCpuSparkSession((session) => {
-      // repartition the data so it is turned into a projection, not folded into the table scan exec
-      fun(df(session).repartition(1)).collect
+      var data = df(session)
+      if (repart > 0) {
+        // repartition the data so it is turned into a projection, not folded into the table scan exec
+        data = data.repartition(repart)
+      }
+      fun(data).collect()
     })
 
     val fromGpu = withGpuSparkSession((session) => {
-      // repartition the data so it is turned into a projection, not folded into the table scan exec
-      fun(df(session).repartition(1)).collect
+      var data = df(session)
+      if (repart > 0) {
+        // repartition the data so it is turned into a projection, not folded into the table scan exec
+        data = data.repartition(repart)
+      }
+      fun(data).collect()
     }, conf)
 
     (fromCpu, fromGpu)
@@ -157,18 +165,71 @@ class SparkQueryCompareTestSuite extends FunSuite with BeforeAndAfterEach {
       conf.set(Plugin.TEST_CONF, "false"))(fun)
   }
 
-  def testSparkResultsAreEqual(testName: String, df: SparkSession => DataFrame,
-      conf: SparkConf = new SparkConf())(fun: DataFrame => DataFrame): Unit = {
-    test(testName) {
-      val (fromCpu, fromGpu) = runOnCpuAndGpu(df, fun, conf)
+  def IGNORE_ORDER_testSparkResultsAreEqual(testName: String, df: SparkSession => DataFrame,
+      repart: Integer = 1)(fun: DataFrame => DataFrame): Unit = {
+    testSparkResultsAreEqual("IGNORE ORDER: " + testName, df, repart=repart, sort=true)(fun)
+  }
 
-      if (!compare(fromCpu, fromGpu)) {
-        fail(
-          s"""
-             |Running on the GPU and on the CPU did not match
-             |CPU: ${fromCpu.toSeq}
-             |GPU: ${fromGpu.toSeq}
-         """.stripMargin)
+  // we guarantee that the types will be the same
+  private def seqLt(a: Seq[Any], b: Seq[Any]): Boolean = {
+    if (a.length < b.length) {
+      return true
+    }
+    // lengths are the same
+    for (i <- a.indices) {
+      val v1 = a(i)
+      val v2 = b(i)
+      if (v1 != v2) {
+        // null is always < anything but null
+        if (v1 == null) {
+          return true
+        }
+
+        if (v2 == null) {
+          return false
+        }
+
+        if ((v1, v2) match {
+          case (i1: Int, i2:Int) => i1 < i2
+          case (i1: Long, i2:Long) => i1 < i2
+          case (o1, o2) => throw new UnsupportedOperationException(o1.getClass + " is not supported yet")
+        }) {
+          return true
+        }
+      }
+    }
+    return false
+  }
+
+  def testSparkResultsAreEqual(testName: String, df: SparkSession => DataFrame,
+      conf: SparkConf = new SparkConf(), repart: Integer = 1, sort: Boolean = false)
+      (fun: DataFrame => DataFrame): Unit = {
+    test(testName) {
+      var (fromCpu, fromGpu) = runOnCpuAndGpu(df, fun, conf=conf, repart = repart)
+      if (sort) {
+        val cpu = fromCpu.map(_.toSeq).sortWith(seqLt)
+        val gpu = fromGpu.map(_.toSeq).sortWith(seqLt)
+        if (!compare(cpu, gpu)) {
+          fail(
+            s"""
+               |Running on the GPU and on the CPU did not match
+               |CPU: ${cpu.seq}
+
+               |GPU: ${gpu.seq}
+         """.
+              stripMargin)
+        }
+      } else {
+        if (!compare(fromCpu, fromGpu)) {
+          fail(
+            s"""
+               |Running on the GPU and on the CPU did not match
+               |CPU: ${fromCpu.toSeq}
+
+               |GPU: ${fromGpu.toSeq}
+         """.
+              stripMargin)
+        }
       }
     }
   }
@@ -194,6 +255,14 @@ class SparkQueryCompareTestSuite extends FunSuite with BeforeAndAfterEach {
       (Date.valueOf("2020-5-5"), Date.valueOf("2019-6-19")),
       (Date.valueOf("2050-10-30"), Date.valueOf("0100-5-28"))
     ).toDF("dates", "more_dates")
+  }
+
+  def longsFromCSVDf(session: SparkSession): DataFrame = {
+    var path = this.getClass.getClassLoader.getResource("lots_o_longs.csv")
+    session.read.schema(StructType(Array(
+      StructField("longs", LongType, true),
+      StructField("more_longs", LongType, true)
+    ))).csv(path.toString)
   }
 
   def longsDf(session: SparkSession): DataFrame = {
@@ -374,6 +443,10 @@ class SparkQueryCompareTestSuite extends FunSuite with BeforeAndAfterEach {
    */
   ALLOW_NON_GPU_testSparkResultsAreEqual("Test CSV inferred schema", intsFromCsvInferredSchema) {
     frame => frame.select(col("*"))
+  }
+
+  IGNORE_ORDER_testSparkResultsAreEqual("test hash agg with shuffle", longsFromCSVDf, repart = 2) {
+    frame => frame.groupBy(col("longs")).agg(sum(col("more_longs")))
   }
 
   testSparkResultsAreEqual("Test scalar addition", longsDf) {
