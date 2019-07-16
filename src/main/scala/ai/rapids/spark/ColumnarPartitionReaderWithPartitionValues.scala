@@ -18,7 +18,9 @@ package ai.rapids.spark
 
 import ai.rapids.cudf.Scalar
 
+import org.apache.spark.sql.execution.datasources.PartitionedFile
 import org.apache.spark.sql.sources.v2.reader.PartitionReader
+import org.apache.spark.sql.types.StructType
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
 /**
@@ -72,5 +74,18 @@ class ColumnarPartitionReaderWithPartitionValues(
         result.filter(_ != null).foreach(_.close())
       }
     }
+  }
+}
+
+object ColumnarPartitionReaderWithPartitionValues {
+  def newReader(partFile: PartitionedFile,
+      baseReader: PartitionReader[ColumnarBatch],
+      partitionSchema: StructType): PartitionReader[ColumnarBatch] = {
+    val partitionValues = partFile.partitionValues.toSeq(partitionSchema)
+    val partitionScalarTypes = partitionSchema.fields.map(_.dataType)
+    val partitionScalars = partitionValues.zip(partitionScalarTypes).map {
+      case (v, t) => GpuScalar.from(v, t)
+    }.toArray
+    new ColumnarPartitionReaderWithPartitionValues(baseReader, partitionScalars)
   }
 }

@@ -331,7 +331,6 @@ case class GpuTransitionOverrides(session: SparkSession) extends Rule[SparkPlan]
       case _: GpuColumnarToRowExec => () // Ignored
       case _: ShuffleExchangeExec => () // Ignored for now
       case _: HashAggregateExec => () // Ignored for now
-      case _: BatchScanExec => () // Ignored for now
       case _ =>
         if (!plan.supportsColumnar) {
           throw new IllegalArgumentException(s"Part of the plan is not columnar ${plan.getClass}\n${plan}")

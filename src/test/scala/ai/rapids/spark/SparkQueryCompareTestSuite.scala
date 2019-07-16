@@ -368,6 +368,19 @@ class SparkQueryCompareTestSuite extends FunSuite with BeforeAndAfterEach {
     session.read.schema(schema).csv(path.toString)
   }
 
+  def intsFromPartitionedCsv(session: SparkSession): DataFrame = {
+    val schema = StructType(Array(
+      StructField("partKey", IntegerType),
+      StructField("ints_1", IntegerType),
+      StructField("ints_2", IntegerType),
+      StructField("ints_3", IntegerType),
+      StructField("ints_4", IntegerType),
+      StructField("ints_5", IntegerType)
+    ))
+    val path = this.getClass.getClassLoader.getResource("partitioned-csv")
+    session.read.schema(schema).csv(path.toString)
+  }
+
   def intsFromCsvInferredSchema(session: SparkSession): DataFrame = {
     val path = this.getClass.getClassLoader.getResource("test.csv")
     session.read.option("inferSchema", "true").csv(path.toString)
@@ -428,6 +441,10 @@ class SparkQueryCompareTestSuite extends FunSuite with BeforeAndAfterEach {
     frame => frame.select(col("ints_1"), col("ints_3"), col("ints_5"))
   }
 
+  testSparkResultsAreEqual("Test partitioned CSV", intsFromPartitionedCsv) {
+    frame => frame.select(col("partKey"), col("ints_1"), col("ints_3"), col("ints_5"))
+  }
+
   private val smallSplitsConf = {
     val conf = new SparkConf()
     conf.set("spark.sql.files.maxPartitionBytes", "10")
@@ -436,6 +453,10 @@ class SparkQueryCompareTestSuite extends FunSuite with BeforeAndAfterEach {
 
   testSparkResultsAreEqual("Test CSV splits", intsFromCsv, conf=smallSplitsConf) {
     frame => frame.select(col("ints_1"), col("ints_3"), col("ints_5"))
+  }
+
+  testSparkResultsAreEqual("Test partitioned CSV splits", intsFromPartitionedCsv, conf=smallSplitsConf) {
+    frame => frame.select(col("partKey"), col("ints_1"), col("ints_3"), col("ints_5"))
   }
 
   /**
