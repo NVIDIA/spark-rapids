@@ -428,13 +428,13 @@ class SparkQueryCompareTestSuite extends FunSuite with BeforeAndAfterEach {
     frame => frame.select(col("ints_1"), col("ints_3"), col("ints_5"))
   }
 
-  val smallSplitsConf = {
+  private val smallSplitsConf = {
     val conf = new SparkConf()
     conf.set("spark.sql.files.maxPartitionBytes", "10")
     conf
   }
 
-  testSparkResultsAreEqual("Test CSV splits", intsFromCsv, smallSplitsConf) {
+  testSparkResultsAreEqual("Test CSV splits", intsFromCsv, conf=smallSplitsConf) {
     frame => frame.select(col("ints_1"), col("ints_3"), col("ints_5"))
   }
 
@@ -443,6 +443,24 @@ class SparkQueryCompareTestSuite extends FunSuite with BeforeAndAfterEach {
    */
   ALLOW_NON_GPU_testSparkResultsAreEqual("Test CSV inferred schema", intsFromCsvInferredSchema) {
     frame => frame.select(col("*"))
+  }
+
+  def intsFromParquet(session: SparkSession): DataFrame = {
+    val path = this.getClass.getClassLoader.getResource("test.snappy.parquet")
+    session.read.parquet(path.toString)
+  }
+
+  testSparkResultsAreEqual("Test Parquet", intsFromParquet) {
+    frame => frame.select(col("ints_1"), col("ints_3"), col("ints_5"))
+  }
+
+  def intsFromPartitionedParquet(session: SparkSession): DataFrame = {
+    val path = this.getClass.getClassLoader.getResource("partitioned-parquet")
+    session.read.parquet(path.toString)
+  }
+
+  testSparkResultsAreEqual("Test partitioned Parquet", intsFromPartitionedParquet) {
+    frame => frame.select(col("partKey"), col("ints_1"), col("ints_3"), col("ints_5"))
   }
 
   IGNORE_ORDER_testSparkResultsAreEqual("test hash agg with shuffle", longsFromCSVDf, repart = 2) {
