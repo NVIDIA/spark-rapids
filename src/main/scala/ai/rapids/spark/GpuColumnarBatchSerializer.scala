@@ -124,15 +124,15 @@ private class GpuColumnarBatchSerializerInstance(
           })
 
           def tryReadNext(): Option[ColumnarBatch] = {
-            try {
-              val table = JCudfSerialization.readTableFrom(dIn)
+            val table = JCudfSerialization.readTableFrom(dIn)
+            if (table == null) {
+              None
+            } else {
               try {
                 Some(GpuColumnVector.from(table))
               } finally {
                 table.close()
               }
-            } catch {
-              case e: EOFException => None // Ignored
             }
           }
 
