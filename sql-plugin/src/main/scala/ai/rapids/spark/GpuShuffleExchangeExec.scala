@@ -38,7 +38,9 @@ import org.apache.spark.util.MutablePair
  */
 class GpuShuffleExchangeExec(
     override val outputPartitioning: Partitioning,
-    child: SparkPlan) extends ShuffleExchangeExec(outputPartitioning, child) with GpuExec {
+    child: SparkPlan,
+    override val canChangeNumPartitions: Boolean) extends
+  ShuffleExchangeExec(outputPartitioning, child, canChangeNumPartitions) with GpuExec {
 
   private lazy val writeMetrics =
   SQLShuffleWriteMetricsReporter.createShuffleWriteMetrics(sparkContext)
