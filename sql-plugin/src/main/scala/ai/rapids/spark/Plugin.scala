@@ -260,7 +260,8 @@ case class GpuOverrides(session: SparkSession) extends Rule[SparkPlan] with Logg
           new GpuFilterExec(replaceWithGpuExpression(filter.condition),
             replaceWithGpuPlan(filter.child))
         case shuffle: ShuffleExchangeExec =>
-          new GpuShuffleExchangeExec(replaceWithGpuPartitioning(shuffle.outputPartitioning), replaceWithGpuPlan(shuffle.child))
+          new GpuShuffleExchangeExec(replaceWithGpuPartitioning(shuffle.outputPartitioning),
+            replaceWithGpuPlan(shuffle.child), shuffle.canChangeNumPartitions)
         case p =>
           logWarning(s"GPU Processing for ${p.getClass} is not currently supported.")
           p.withNewChildren(p.children.map(replaceWithGpuPlan))
