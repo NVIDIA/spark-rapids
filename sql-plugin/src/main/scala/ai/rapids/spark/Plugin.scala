@@ -196,21 +196,26 @@ case class GpuOverrides(session: SparkSession) extends Rule[SparkPlan] with Logg
       throw new CannotReplaceException(s"expression ${exp.getClass} ${exp} is not currently supported.")
   }
 
-  def replaceWithGpuExpression(exp: Expression): GpuExpression = exp match {
-    case a: Alias =>
-      new GpuAlias(replaceWithGpuExpression(a.child), a.name)(a.exprId, a.qualifier, a.explicitMetadata)
-    case att: AttributeReference =>
-      new GpuAttributeReference(att.name, att.dataType, att.nullable,
-        att.metadata)(att.exprId, att.qualifier)
-    case lit: Literal =>
-      new GpuLiteral(lit.value, lit.dataType)
-    case exp: UnaryExpression if areAllSupportedTypes(exp.dataType, exp.child.dataType) =>
-      replaceUnaryExpressions(exp, replaceWithGpuExpression(exp.child))
-    case exp: BinaryExpression if (areAllSupportedTypes(exp.dataType, exp.left.dataType, exp.right.dataType)) =>
-      replaceBinaryExpressions(exp,
-        replaceWithGpuExpression(exp.left), replaceWithGpuExpression(exp.right))
-    case exp =>
-      throw new CannotReplaceException(s"expression ${exp.getClass} ${exp} is not currently supported.")
+  def replaceWithGpuExpression(exp: Expression): GpuExpression = {
+    if (!areAllSupportedTypes(exp.dataType)) {
+      throw new CannotReplaceException(s"expression ${exp.getClass} ${exp} produces an unsupported type ${exp.dataType}")
+    }
+    exp match {
+      case a: Alias =>
+        new GpuAlias(replaceWithGpuExpression(a.child), a.name)(a.exprId, a.qualifier, a.explicitMetadata)
+      case att: AttributeReference =>
+        new GpuAttributeReference(att.name, att.dataType, att.nullable,
+          att.metadata)(att.exprId, att.qualifier)
+      case lit: Literal =>
+        new GpuLiteral(lit.value, lit.dataType)
+      case exp: UnaryExpression if areAllSupportedTypes(exp.child.dataType) =>
+        replaceUnaryExpressions(exp, replaceWithGpuExpression(exp.child))
+      case exp: BinaryExpression if (areAllSupportedTypes(exp.left.dataType, exp.right.dataType)) =>
+        replaceBinaryExpressions(exp,
+          replaceWithGpuExpression(exp.left), replaceWithGpuExpression(exp.right))
+      case exp =>
+        throw new CannotReplaceException(s"expression ${exp.getClass} ${exp} is not currently supported.")
+    }
   }
 
   def replaceBatchScan(scan: Scan): Scan = scan match {
@@ -245,6 +250,12 @@ case class GpuOverrides(session: SparkSession) extends Rule[SparkPlan] with Logg
 
   def replaceWithGpuPlan(plan: SparkPlan): SparkPlan =
     try {
+      if (!areAllSupportedTypes(plan.output.map(_.dataType) :_*)) {
+        throw new CannotReplaceException("unsupported data types in its output")
+      }
+      if (!areAllSupportedTypes(plan.children.flatMap(_.output.map(_.dataType)) :_*)) {
+        throw new CannotReplaceException("unsupported data types in its input")
+      }
       plan match {
         case plan: ProjectExec =>
           new GpuProjectExec(plan.projectList.map(replaceWithGpuExpression),
