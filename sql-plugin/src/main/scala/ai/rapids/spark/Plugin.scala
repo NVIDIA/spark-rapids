@@ -16,7 +16,7 @@
 
 package ai.rapids.spark
 
-import ai.rapids.cudf.{Cuda, Rmm, RmmAllocationMode}
+import ai.rapids.cudf.{Cuda, DType, Rmm, RmmAllocationMode}
 
 import org.apache.spark.internal.Logging
 import org.apache.spark.rdd.RDD
@@ -96,13 +96,24 @@ class GpuFilterExec(condition: GpuExpression, child: SparkPlan)
           // rebuild the columns, but with new filtered columns
           for (i <- 0 until cb.numCols()) {
             val colBase = cb.column(i).asInstanceOf[GpuColumnVector].getBase
-            val filtered = colBase.filter(gpuEvalCv.getBase)
+            val filtered = if (colBase.getType == DType.STRING) {
+              // filter does not work on strings...
+              // TODO we need a faster way to work with these values!!!
+              val tmp = colBase.asStringCategories()
+              try {
+                tmp.filter(gpuEvalCv.getBase)
+              } finally {
+                tmp.close()
+              }
+            } else {
+              colBase.filter(gpuEvalCv.getBase)
+            }
             cols = (cols :+ GpuColumnVector.from(filtered))
             rowCount = filtered.getRowCount().intValue() // all columns have the same # of rows
           }
         } finally {
           if (evalCv != null && evalCv.isInstanceOf[GpuColumnVector]) {
-            evalCv.asInstanceOf[GpuColumnVector].close();
+            evalCv.asInstanceOf[GpuColumnVector].close()
           }
         }
         numOutputRows += rowCount
@@ -132,7 +143,7 @@ case class GpuOverrides(session: SparkSession) extends Rule[SparkPlan] with Logg
       case DoubleType => true
       case DateType => true
       case TimestampType => false // true we really need to understand how the timezone works with this
-      case StringType => false // true we cannot convert rows to strings so we cannot support this right now...
+      case StringType => true
       case _ => false
     })
   }
@@ -258,8 +269,11 @@ case class GpuOverrides(session: SparkSession) extends Rule[SparkPlan] with Logg
   }
 
   def replaceWithGpuPartitioning(part: Partitioning): Partitioning = part match {
-    case hp: HashPartitioning => new GpuHashPartitioning(
-      hp.expressions.map(replaceWithGpuExpression), hp.numPartitions)
+    case hp: HashPartitioning =>
+      if (hp.expressions.map(_.dataType).contains(StringType)) {
+        throw new CannotReplaceException("strings are not supported as the keys for hash partitioning.")
+      }
+      new GpuHashPartitioning(hp.expressions.map(replaceWithGpuExpression), hp.numPartitions)
     case _ =>
       throw new CannotReplaceException(s"${part.getClass} is not supported for partitioning")
   }

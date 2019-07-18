@@ -22,7 +22,6 @@ import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.expressions.Attribute
 import org.apache.spark.sql.execution.{SparkPlan, UnaryExecNode}
-import org.apache.spark.sql.types.{DoubleType, FloatType}
 import org.apache.spark.sql.vectorized.{ColumnarBatch, ColumnVector}
 
 /**
@@ -112,15 +111,27 @@ case class HostColumnarToGpu(child: SparkPlan) extends UnaryExecNode with GpuExe
         for (i <- 0 until rows) {
           b.append(cv.getDouble(i))
         }
+      case (DType.STRING, true) =>
+        for (i <- 0 until rows) {
+          if (cv.isNullAt(i)) {
+            b.appendNull()
+          } else {
+            b.appendUTF8String(cv.getUTF8String(i).getBytes)
+          }
+        }
+      case (DType.STRING, false) =>
+        for (i <- 0 until rows) {
+          b.appendUTF8String(cv.getUTF8String(i).getBytes)
+        }
       case (t, n) =>
-        throw new IllegalArgumentException(s"Converting to GPU for ${t} is not currently supported")
+        throw new UnsupportedOperationException(s"Converting to GPU for ${t} is not currently supported")
     }
   }
 
   override protected def doExecuteColumnar(): RDD[ColumnarBatch] = {
     AutoCloseColumnBatchIterator.map[ColumnarBatch](child.executeColumnar(), b => {
       val rows = b.numRows()
-      val batchBuilder = new GpuColumnVector.GpuColumnarBatchBuilder(schema, rows)
+      val batchBuilder = new GpuColumnVector.GpuColumnarBatchBuilder(schema, rows, b)
       try {
         for (i <- 0 until b.numCols()) {
           columnarCopy(b.column(i), batchBuilder.builder(i), schema.fields(i).nullable, rows)

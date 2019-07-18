@@ -63,7 +63,8 @@ private object GpuRowToColumnConverter {
       case (DateType, false) => NotNullIntConverter
       case (TimestampType, true) => LongConverter
       case (TimestampType, false) => NotNullLongConverter
-      // NOT REALLY SUPPORTED YET case StringType => StringConverter
+      case (StringType, true) => StringConverter
+      case (StringType, false) => NotNullStringConverter
       // NOT SUPPORTED YET case CalendarIntervalType => CalendarConverter
       // NOT SUPPORTED YET case at: ArrayType => new ArrayConverter(getConverterForType(at.elementType))
       // NOT SUPPORTED YET case st: StructType => new StructConverter(st.fields.map(
@@ -71,7 +72,7 @@ private object GpuRowToColumnConverter {
       // NOT SUPPORTED YET case dt: DecimalType => new DecimalConverter(dt)
       // NOT SUPPORTED YET case mt: MapType => new MapConverter(getConverterForType(mt.keyType),
       //  getConverterForType(mt.valueType))
-      case unknown => throw new UnsupportedOperationException(
+      case (unknown, _) => throw new UnsupportedOperationException(
         s"Type $unknown not supported")
     }
   }
@@ -174,20 +175,19 @@ private object GpuRowToColumnConverter {
       builder.append(row.getDouble(column))
   }
 
-  // TODO we need a good way to append strings...
-//  private object StringConverter extends TypeConverter {
-//    override def append(row: SpecializedGetters, column: Int, builder: ai.rapids.cudf.ColumnVector.Builder): Unit =
-//      if (row.isNullAt(column)) {
-//        builder.appendNull()
-//      } else {
-//        NotNullStringConverter.append(row, column, builder)
-//      }
-//  }
-//
-//  private object NotNullStringConverter extends TypeConverter {
-//    override def append(row: SpecializedGetters, column: Int, builder: ai.rapids.cudf.ColumnVector.Builder): Unit =
-//      builder.append(row.getUTF8String(column))
-//  }
+  private object StringConverter extends TypeConverter {
+    override def append(row: SpecializedGetters, column: Int, builder: ai.rapids.cudf.ColumnVector.Builder): Unit =
+      if (row.isNullAt(column)) {
+        builder.appendNull()
+      } else {
+        NotNullStringConverter.append(row, column, builder)
+      }
+  }
+
+  private object NotNullStringConverter extends TypeConverter {
+    override def append(row: SpecializedGetters, column: Int, builder: ai.rapids.cudf.ColumnVector.Builder): Unit =
+      builder.appendUTF8String(row.getUTF8String(column).getBytes)
+  }
 //
 //  private object CalendarConverter extends TypeConverter {
 //    override def append(row: SpecializedGetters, column: Int, builder: ai.rapids.cudf.ColumnVector.Builder): Unit = {
@@ -290,7 +290,7 @@ class GpuRowToColumnarExec(child: SparkPlan) extends RowToColumnarExec(child) wi
     val rowBased = child.execute()
     rowBased.mapPartitions((rowIter) => {
       new AutoCloseColumnBatchIterator[InternalRow](rowIter, (rowIter) => {
-        val builders = new GpuColumnarBatchBuilder(schema, numRows)
+        val builders = new GpuColumnarBatchBuilder(schema, numRows, null)
         try {
           var rowCount = 0
           while (rowCount < numRows && rowIter.hasNext) {

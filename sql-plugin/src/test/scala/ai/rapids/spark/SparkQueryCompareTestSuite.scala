@@ -615,7 +615,7 @@ class SparkQueryCompareTestSuite extends FunSuite with BeforeAndAfterEach {
     frame => frame.select(
       col("longs").cast(IntegerType),
       col("longs").cast(LongType),
-      // col("longs").cast(StringType),
+      //col("longs").cast(StringType),
       col("more_longs").cast(BooleanType),
       col("more_longs").cast(ByteType),
       col("longs").cast(ShortType),
@@ -627,7 +627,7 @@ class SparkQueryCompareTestSuite extends FunSuite with BeforeAndAfterEach {
     frame => frame.select(
       col("doubles").cast(IntegerType),
       col("doubles").cast(LongType),
-      // col("longs").cast(StringType),
+      //col("doubles").cast(StringType),
       col("more_doubles").cast(BooleanType),
       col("more_doubles").cast(ByteType),
       col("doubles").cast(ShortType),
@@ -639,7 +639,7 @@ class SparkQueryCompareTestSuite extends FunSuite with BeforeAndAfterEach {
     frame => frame.select(
       col("bools").cast(IntegerType),
       col("bools").cast(LongType),
-      // col("longs").cast(StringType),
+      //col("bools").cast(StringType),
       col("more_bools").cast(BooleanType),
       col("more_bools").cast(ByteType),
       col("bools").cast(ShortType),
@@ -647,7 +647,6 @@ class SparkQueryCompareTestSuite extends FunSuite with BeforeAndAfterEach {
       col("bools").cast(DoubleType))
   }
 
-  // String are not currently supported
 //  testSparkResultsAreEqual("Test cast from strings", doubleStringsDf) {
 //    frame => frame.select(
 //      col("doubles").cast(DoubleType))
@@ -912,18 +911,15 @@ class SparkQueryCompareTestSuite extends FunSuite with BeforeAndAfterEach {
     frame => frame.filter("floats is not null AND more_floats >= 3.0")
   }
 
-  /*
-  Strings are not currently supported
-    testSparkResultsAreEqual("IsNotNull strings", nullableStringsDf) {
-      frame => frame.selectExpr("strings is not null")
-    }
+  testSparkResultsAreEqual("IsNotNull strings", nullableStringsDf) {
+    frame => frame.selectExpr("strings is not null")
+  }
 
-    testSparkResultsAreEqual("IsNull strings", nullableStringsDf) {
-      frame => frame.selectExpr("strings is null")
-    }
+  testSparkResultsAreEqual("IsNull strings", nullableStringsDf) {
+    frame => frame.selectExpr("strings is null")
+  }
 
-    testSparkResultsAreEqual("IsNull OR IsNull strings", nullableStringsDf) {
-      frame => frame.selectExpr("strings is null OR more_strings is null")
-    }
-    */
+  testSparkResultsAreEqual("IsNull OR IsNull strings", nullableStringsDf) {
+    frame => frame.selectExpr("strings is null OR more_strings is null")
+  }
 }
