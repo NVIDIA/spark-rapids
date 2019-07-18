@@ -9,6 +9,11 @@
     <version>0.9-SNAPSHOT</version>
     <packaging>pom</packaging>
 
+    <modules>
+        <module>sql-plugin</module>
+        <module>tests</module>
+    </modules>
+
     <properties>
         <maven.compiler.source>1.8</maven.compiler.source>
         <maven.compiler.target>1.8</maven.compiler.target>
@@ -18,10 +23,6 @@
         <test.exclude.tags></test.exclude.tags>
         <test.include.tags></test.include.tags>
     </properties>
-
-    <modules>
-        <module>sql-plugin</module>
-    </modules>
 
     <dependencyManagement>
         <dependencies>
@@ -46,6 +47,13 @@
                 <artifactId>spark-sql_${scala.binary.version}</artifactId>
                 <version>3.0.0-SNAPSHOT</version>
             </dependency>
+            <!-- WE CANNOT SUPPORT XGBOOST YET BECAUSE OF A MISMATCH IN SCALA VERSIONS
+            <dependency>
+                <groupId>ml.dmlc</groupId>
+                <artifactId>xgboost4j-spark</artifactId>
+                <version>0.90</version>
+            </dependency>
+            -->
             <dependency>
                 <groupId>org.scalatest</groupId>
                 <artifactId>scalatest_${scala.binary.version}</artifactId>
