@@ -451,6 +451,12 @@ class SparkQueryCompareTestSuite extends FunSuite with BeforeAndAfterEach {
     conf
   }
 
+  private val parquetSplitsConf = {
+    val conf = new SparkConf()
+    conf.set("spark.sql.files.maxPartitionBytes", "10000")
+    conf
+  }
+
   testSparkResultsAreEqual("Test CSV splits", intsFromCsv, conf=smallSplitsConf) {
     frame => frame.select(col("ints_1"), col("ints_3"), col("ints_5"))
   }
@@ -478,6 +484,15 @@ class SparkQueryCompareTestSuite extends FunSuite with BeforeAndAfterEach {
   def intsFromPartitionedParquet(session: SparkSession): DataFrame = {
     val path = this.getClass.getClassLoader.getResource("partitioned-parquet")
     session.read.parquet(path.toString)
+  }
+
+  def fileSplitsParquet(session: SparkSession): DataFrame = {
+    val path = this.getClass.getClassLoader.getResource("file-splits.parquet")
+    session.read.parquet(path.toString)
+  }
+
+  testSparkResultsAreEqual("Test Parquet file splitting", fileSplitsParquet, conf=parquetSplitsConf) {
+    frame => frame.select(col("*"))
   }
 
   testSparkResultsAreEqual("Test partitioned Parquet", intsFromPartitionedParquet) {
