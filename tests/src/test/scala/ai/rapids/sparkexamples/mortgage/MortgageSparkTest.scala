@@ -23,9 +23,9 @@ import org.scalatest.{FlatSpec, Matchers}
 class MortgageSparkTest extends FlatSpec with Matchers {
   it should "extract mortgage data" in {
     val session = SparkSession.builder
-      .master("local[1]")
+      .master("local[2]")
       .appName("UnitTest")
-      // TODO .config("spark.sql.extensions", "ai.rapids.spark.Plugin")
+      .config("spark.sql.extensions", "ai.rapids.spark.Plugin")
       .getOrCreate()
 
     session.sparkContext.setLogLevel("warn")
@@ -35,6 +35,7 @@ class MortgageSparkTest extends FlatSpec with Matchers {
       "src/test/resources/Performance_2007Q3.txt_0",
       "src/test/resources/Acquisition_2007Q3.txt"
     ).sort(col("loan_id"), col("monthly_reporting_period"))
+
     assert(df.count() === 10000)
   }
 }
