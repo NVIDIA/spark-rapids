@@ -70,13 +70,14 @@ class GpuProjectExec(projectList: Seq[GpuExpression], child: SparkPlan)
   }
 }
 
-class GpuFilterExec(condition: GpuExpression, child: SparkPlan) 
+class GpuFilterExec(condition: GpuExpression, child: SparkPlan)
   extends FilterExec(condition, child) with GpuExec {
 
   // Disable code generation for now...
   override def supportCodegen: Boolean = false
 
   override def doExecuteColumnar(): RDD[ColumnarBatch] = {
+    val numOutputRows = longMetric("numOutputRows")
     val boundCondition: Any = GpuBindReferences.bindReference(condition, child.output)
     val rdd = child.executeColumnar()
     AutoCloseColumnBatchIterator.map(rdd,
@@ -100,6 +101,7 @@ class GpuFilterExec(condition: GpuExpression, child: SparkPlan)
             evalCv.asInstanceOf[GpuColumnVector].close();
           }
         }
+        numOutputRows += rowCount
 
         new ColumnarBatch(cols.toArray, rowCount)
       }
