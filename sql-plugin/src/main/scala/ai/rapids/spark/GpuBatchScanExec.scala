@@ -234,11 +234,13 @@ class SingleTablePartitionReader(
     }
   }
 
-  def buildCsvOptions(parsedOptions: CSVOptions, schema: StructType): cudf.CSVOptions = {
+  def buildCsvOptions(
+     parsedOptions: CSVOptions,
+     schema: StructType,
+     isFirstSplit: Boolean): cudf.CSVOptions = {
     val builder = cudf.CSVOptions.builder()
     builder.withDelim(parsedOptions.delimiter)
-    // TODO if we do partitioning we need to update this so it is just for the first partition.
-    builder.hasHeader(parsedOptions.headerFlag)
+    builder.hasHeader(isFirstSplit && parsedOptions.headerFlag)
     // TODO parsedOptions.parseMode
     builder.withQuote(parsedOptions.quote)
     builder.withComment(parsedOptions.comment)
@@ -305,8 +307,8 @@ class SingleTablePartitionReader(
       } else {
         val csvSchemaBuilder = ai.rapids.cudf.Schema.builder
         dataSchema.foreach(f => csvSchemaBuilder.column(GpuColumnVector.getRapidsType(f.dataType), f.name))
-        val table = Table.readCSV(csvSchemaBuilder.build(), buildCsvOptions(parsedOptions, readDataSchema),
-          dataBuffer, 0, dataSize)
+        val csvOpts = buildCsvOptions(parsedOptions, readDataSchema, partFile.start == 0)
+        val table = Table.readCSV(csvSchemaBuilder.build(), csvOpts, dataBuffer, 0, dataSize)
         val numColumns = table.getNumberOfColumns
         if (readDataSchema.length != numColumns) {
           table.close()
