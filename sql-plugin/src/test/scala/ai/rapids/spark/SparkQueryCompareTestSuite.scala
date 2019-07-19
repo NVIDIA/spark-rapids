@@ -455,6 +455,10 @@ class SparkQueryCompareTestSuite extends FunSuite with BeforeAndAfterEach {
     frame => frame.select(col("ints_1"), col("ints_3"), col("ints_5"))
   }
 
+  testSparkResultsAreEqual("Test CSV splits with header", floatCsvDf, conf=smallSplitsConf) {
+    frame => frame.select(col("*"))
+  }
+
   testSparkResultsAreEqual("Test partitioned CSV splits", intsFromPartitionedCsv, conf=smallSplitsConf) {
     frame => frame.select(col("partKey"), col("ints_1"), col("ints_3"), col("ints_5"))
   }
