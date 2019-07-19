@@ -18,7 +18,7 @@ package ai.rapids.spark
 
 import java.io.OutputStream
 import java.net.URI
-import java.nio.charset.Charset
+import java.nio.charset.StandardCharsets
 import java.util.Collections
 
 import scala.collection.JavaConverters._
@@ -157,9 +157,6 @@ case class GpuParquetPartitionReaderFactory(
     val clippedBlocks = ParquetPartitionReader.clipBlocks(columnPaths, blocks.asScala)
     new ParquetPartitionReader(conf, filePath, clippedBlocks, clippedSchema, readDataSchema, filters)
   }
-}
-
-object GpuParquetPartitionReaderFactory {
 }
 
 class ParquetPartitionReader(
@@ -336,7 +333,7 @@ class ParquetPartitionReader(
 }
 
 object ParquetPartitionReader {
-  private val PARQUET_MAGIC = "PAR1".getBytes(Charset.forName("ASCII"))
+  private val PARQUET_MAGIC = "PAR1".getBytes(StandardCharsets.US_ASCII)
   private val PARQUET_CREATOR = "RAPIDS Spark Plugin"
   private val PARQUET_VERSION = 1
 

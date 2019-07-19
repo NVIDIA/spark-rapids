@@ -451,12 +451,6 @@ class SparkQueryCompareTestSuite extends FunSuite with BeforeAndAfterEach {
     conf
   }
 
-  private val parquetSplitsConf = {
-    val conf = new SparkConf()
-    conf.set("spark.sql.files.maxPartitionBytes", "10000")
-    conf
-  }
-
   testSparkResultsAreEqual("Test CSV splits", intsFromCsv, conf=smallSplitsConf) {
     frame => frame.select(col("ints_1"), col("ints_3"), col("ints_5"))
   }
@@ -472,30 +466,36 @@ class SparkQueryCompareTestSuite extends FunSuite with BeforeAndAfterEach {
     frame => frame.select(col("*"))
   }
 
-  def intsFromParquet(session: SparkSession): DataFrame = {
-    val path = this.getClass.getClassLoader.getResource("test.snappy.parquet")
-    session.read.parquet(path.toString)
+  def frameFromParquet(filename: String): SparkSession => DataFrame = {
+    val path = this.getClass.getClassLoader.getResource(filename)
+    s: SparkSession => s.read.parquet(path.toString)
   }
 
-  testSparkResultsAreEqual("Test Parquet", intsFromParquet) {
+  testSparkResultsAreEqual("Test Parquet", frameFromParquet("test.snappy.parquet")) {
     frame => frame.select(col("ints_1"), col("ints_3"), col("ints_5"))
   }
 
-  def intsFromPartitionedParquet(session: SparkSession): DataFrame = {
-    val path = this.getClass.getClassLoader.getResource("partitioned-parquet")
-    session.read.parquet(path.toString)
-  }
+  private val fileSplitsParquet = frameFromParquet("file-splits.parquet")
 
-  def fileSplitsParquet(session: SparkSession): DataFrame = {
-    val path = this.getClass.getClassLoader.getResource("file-splits.parquet")
-    session.read.parquet(path.toString)
-  }
+  private val parquetSplitsConf = new SparkConf().set("spark.sql.files.maxPartitionBytes", "10000")
 
-  testSparkResultsAreEqual("Test Parquet file splitting", fileSplitsParquet, conf=parquetSplitsConf) {
+  testSparkResultsAreEqual("Test Parquet file splitting", fileSplitsParquet,
+      conf=parquetSplitsConf) {
     frame => frame.select(col("*"))
   }
 
-  testSparkResultsAreEqual("Test partitioned Parquet", intsFromPartitionedParquet) {
+  testSparkResultsAreEqual("Test Parquet predicate push-down", fileSplitsParquet) {
+    frame => frame.select(col("loan_id"), col("orig_interest_rate"), col("zip"))
+        .where(col("orig_interest_rate") > 10)
+  }
+
+  testSparkResultsAreEqual("Test Parquet splits predicate push-down", fileSplitsParquet,
+    conf=parquetSplitsConf) {
+    frame => frame.select(col("loan_id"), col("orig_interest_rate"), col("zip"))
+        .where(col("orig_interest_rate") > 10)
+  }
+
+  testSparkResultsAreEqual("Test partitioned Parquet", frameFromParquet("partitioned-parquet")) {
     frame => frame.select(col("partKey"), col("ints_1"), col("ints_3"), col("ints_5"))
   }
 
