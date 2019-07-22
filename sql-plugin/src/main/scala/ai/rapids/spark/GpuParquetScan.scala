@@ -91,6 +91,15 @@ object GpuParquetScan {
       }
     }
 
+    // Currently timestamp conversion is not supported.
+    // If support needs to be added then we need to follow the logic in Spark's
+    // ParquetPartitionReaderFactory and VectorizedColumnReader which essentially
+    // does the following:
+    //   - check if Parquet file was created by "parquet-mr"
+    //   - if not then look at SQLConf.SESSION_LOCAL_TIMEZONE and assume timestamps
+    //     were written in that timezone and convert them to UTC timestamps.
+    // Essentially this should boil down to a vector subtract of the scalar delta
+    // between the configured timezone's delta from UTC on the timestamp data.
     if (scan.sparkSession.sessionState.conf.isParquetINT96TimestampConversion) {
       throw new CannotReplaceException("GpuParquetScan does not support int96 timestamp conversion")
     }
