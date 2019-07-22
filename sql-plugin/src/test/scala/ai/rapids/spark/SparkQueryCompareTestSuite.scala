@@ -18,9 +18,8 @@ package ai.rapids.spark
 import java.sql.Date
 import java.util.{Locale, TimeZone}
 
-import org.apache.commons.io.FileUtils
 import org.scalatest.{BeforeAndAfterEach, FunSuite}
-import org.apache.spark.sql.{DataFrame, Row, SaveMode, SparkSession}
+import org.apache.spark.sql.{DataFrame, Row, SparkSession}
 import org.apache.spark.SparkConf
 import org.apache.spark.sql.functions._
 import org.apache.spark.sql.types._
@@ -62,7 +61,7 @@ class SparkQueryCompareTestSuite extends FunSuite with BeforeAndAfterEach {
   }
 
   def withGpuSparkSession[U](f: SparkSession => U, conf: SparkConf = new SparkConf()): U = {
-    var c = conf.set("spark.sql.extensions", "ai.rapids.spark.Plugin")
+    var c = conf.clone().set("spark.sql.extensions", "ai.rapids.spark.Plugin")
 
     if (c.getOption(Plugin.TEST_CONF).isEmpty) {
        c = c.set(Plugin.TEST_CONF, "true")
@@ -70,8 +69,8 @@ class SparkQueryCompareTestSuite extends FunSuite with BeforeAndAfterEach {
     withSparkSession("gpu-sql-test", c, f)
   }
 
-  def withCpuSparkSession[U](f: SparkSession => U): U = {
-    withSparkSession("cpu-sql-test", new SparkConf(), f)
+  def withCpuSparkSession[U](f: SparkSession => U, conf: SparkConf = new SparkConf()): U = {
+    withSparkSession("cpu-sql-test", conf, f)
   }
 
   private def compare(obj1: Any, obj2: Any, maxFloatDiff: Double = 0.0): Boolean = (obj1, obj2) match {
@@ -118,8 +117,11 @@ class SparkQueryCompareTestSuite extends FunSuite with BeforeAndAfterEach {
     * @param conf   - spark conf
     * @return       - tuple of (cpu results, gpu results) as arrays of Row
     */
-  def runOnCpuAndGpu(df: SparkSession => DataFrame, fun: DataFrame => DataFrame,
-      conf: SparkConf = new SparkConf(), repart: Integer = 1): (Array[Row], Array[Row]) = {
+  def runOnCpuAndGpu(
+      df: SparkSession => DataFrame,
+      fun: DataFrame => DataFrame,
+      conf: SparkConf = new SparkConf(),
+      repart: Integer = 1): (Array[Row], Array[Row]) = {
     val fromCpu = withCpuSparkSession((session) => {
       var data = df(session)
       if (repart > 0) {
@@ -127,7 +129,7 @@ class SparkQueryCompareTestSuite extends FunSuite with BeforeAndAfterEach {
         data = data.repartition(repart)
       }
       fun(data).collect()
-    })
+    }, conf)
 
     val fromGpu = withGpuSparkSession((session) => {
       var data = df(session)
@@ -141,12 +143,15 @@ class SparkQueryCompareTestSuite extends FunSuite with BeforeAndAfterEach {
     (fromCpu, fromGpu)
   }
 
-  def INCOMPAT_testSparkResultsAreEqual(testName: String, df: SparkSession => DataFrame,
-      maxFloatDiff: Double = 0.0, conf: SparkConf = new SparkConf())
+  def INCOMPAT_testSparkResultsAreEqual(
+      testName: String,
+      df: SparkSession => DataFrame,
+      maxFloatDiff: Double = 0.0,
+      conf: SparkConf = new SparkConf())
     (fun: DataFrame => DataFrame): Unit = {
+    val testConf = conf.clone().set(Plugin.INCOMPATIBLE_OPS_CONF, "true")
     test("INCOMPAT: " + testName) {
-      val (fromCpu, fromGpu) = runOnCpuAndGpu(df, fun,
-        conf.set(Plugin.INCOMPATIBLE_OPS_CONF, "true"))
+      val (fromCpu, fromGpu) = runOnCpuAndGpu(df, fun, conf=testConf)
 
       if (!compare(fromCpu, fromGpu, maxFloatDiff)) {
         fail(
@@ -159,15 +164,24 @@ class SparkQueryCompareTestSuite extends FunSuite with BeforeAndAfterEach {
     }
   }
 
-  def ALLOW_NON_GPU_testSparkResultsAreEqual(testName: String, df: SparkSession => DataFrame,
+  def ALLOW_NON_GPU_testSparkResultsAreEqual(
+      testName: String,
+      df: SparkSession => DataFrame,
       conf: SparkConf = new SparkConf())(fun: DataFrame => DataFrame): Unit = {
-    testSparkResultsAreEqual("NOT ALL ON GPU: " + testName, df,
-      conf.set(Plugin.TEST_CONF, "false"))(fun)
+    val testConf = conf.clone().set(Plugin.TEST_CONF, "false")
+     testSparkResultsAreEqual("NOT ALL ON GPU: " + testName, df,
+      conf=testConf)(fun)
   }
 
-  def IGNORE_ORDER_testSparkResultsAreEqual(testName: String, df: SparkSession => DataFrame,
-      repart: Integer = 1)(fun: DataFrame => DataFrame): Unit = {
-    testSparkResultsAreEqual("IGNORE ORDER: " + testName, df, repart=repart, sort=true)(fun)
+  def IGNORE_ORDER_testSparkResultsAreEqual(
+      testName: String,
+      df: SparkSession => DataFrame,
+      repart: Integer = 1,
+      conf: SparkConf = new SparkConf())(fun: DataFrame => DataFrame): Unit = {
+    testSparkResultsAreEqual("IGNORE ORDER: " + testName, df,
+      conf=conf,
+      repart=repart,
+      sort=true)(fun)
   }
 
   // we guarantee that the types will be the same
@@ -201,11 +215,17 @@ class SparkQueryCompareTestSuite extends FunSuite with BeforeAndAfterEach {
     return false
   }
 
-  def testSparkResultsAreEqual(testName: String, df: SparkSession => DataFrame,
-      conf: SparkConf = new SparkConf(), repart: Integer = 1, sort: Boolean = false)
+  def testSparkResultsAreEqual(
+      testName: String,
+      df: SparkSession => DataFrame,
+      conf: SparkConf = new SparkConf(),
+      repart: Integer = 1,
+      sort: Boolean = false)
       (fun: DataFrame => DataFrame): Unit = {
     test(testName) {
-      var (fromCpu, fromGpu) = runOnCpuAndGpu(df, fun, conf=conf, repart = repart)
+      var (fromCpu, fromGpu) = runOnCpuAndGpu(df, fun,
+        conf=conf,
+        repart = repart)
       if (sort) {
         val cpu = fromCpu.map(_.toSeq).sortWith(seqLt)
         val gpu = fromGpu.map(_.toSeq).sortWith(seqLt)
@@ -445,11 +465,7 @@ class SparkQueryCompareTestSuite extends FunSuite with BeforeAndAfterEach {
     frame => frame.select(col("partKey"), col("ints_1"), col("ints_3"), col("ints_5"))
   }
 
-  private val smallSplitsConf = {
-    val conf = new SparkConf()
-    conf.set("spark.sql.files.maxPartitionBytes", "10")
-    conf
-  }
+  private val smallSplitsConf = new SparkConf().set("spark.sql.files.maxPartitionBytes", "10")
 
   testSparkResultsAreEqual("Test CSV splits", intsFromCsv, conf=smallSplitsConf) {
     frame => frame.select(col("ints_1"), col("ints_3"), col("ints_5"))
