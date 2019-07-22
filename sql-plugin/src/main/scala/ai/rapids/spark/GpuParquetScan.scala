@@ -245,11 +245,7 @@ class ParquetPartitionReader(
     var size: Long = 4 + 4 + 4
 
     // add in the size of the row group data
-    for (block <- clippedBlocks) {
-      for (column <- block.getColumns.asScala) {
-        size += column.getTotalSize
-      }
-    }
+    size += clippedBlocks.map(_.getTotalByteSize).sum
 
     // Calculate size of the footer metadata.
     // This uses the column metadata from the original file, but that should
@@ -327,7 +323,7 @@ class ParquetPartitionReader(
           column.getTotalUncompressedSize)
         copyColumnData(column, in, out, copyBuffer)
       }
-      outputBlocks += ParquetPartitionReader.newParquetBlock(block, outputColumns)
+      outputBlocks += ParquetPartitionReader.newParquetBlock(block.getRowCount, outputColumns)
     }
     outputBlocks
   }
@@ -389,20 +385,25 @@ object ParquetPartitionReader {
   private[spark] val DUMP_PATH_PREFIX_CONF = "spark.rapids.sql.parquet.debug-dump-prefix"
 
   /**
-    * Build a new BlockMetaData based on an old one but using the specified column chunks.
+    * Build a new BlockMetaData
     *
-    * @param oldBlock the original BlockMetaData
+    * @param rowCount the number of rows in this block
     * @param columns the new column chunks to reference in the new BlockMetaData
     * @return the new BlockMetaData
     */
   private def newParquetBlock(
-      oldBlock: BlockMetaData,
+      rowCount: Long,
       columns: Seq[ColumnChunkMetaData]): BlockMetaData = {
     val block = new BlockMetaData
-    block.setPath(oldBlock.getPath)
-    block.setRowCount(oldBlock.getRowCount)
-    block.setTotalByteSize(oldBlock.getTotalByteSize)
-    columns.foreach(block.addColumn)
+    block.setRowCount(rowCount)
+
+    var totalSize: Long = 0
+    for (column <- columns) {
+      block.addColumn(column)
+      totalSize += column.getTotalSize
+    }
+    block.setTotalByteSize(totalSize)
+
     block
   }
 
@@ -420,7 +421,7 @@ object ParquetPartitionReader {
     blocks.map(oldBlock => {
       //noinspection ScalaDeprecation
       val newColumns = oldBlock.getColumns.asScala.filter(c => pathSet.contains(c.getPath))
-      ParquetPartitionReader.newParquetBlock(oldBlock, newColumns)
+      ParquetPartitionReader.newParquetBlock(oldBlock.getRowCount, newColumns)
     })
   }
 
