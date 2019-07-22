@@ -23,10 +23,12 @@ import java.util.Collections
 
 import scala.collection.JavaConverters._
 import scala.collection.mutable.ArrayBuffer
+import scala.util.Random
+
 import ai.rapids.cudf.{HostMemoryBuffer, ParquetOptions, Table}
 import org.apache.commons.io.output.{CountingOutputStream, NullOutputStream}
 import org.apache.hadoop.conf.Configuration
-import org.apache.hadoop.fs.{FSDataInputStream, Path}
+import org.apache.hadoop.fs.{FileAlreadyExistsException, FSDataInputStream, FSDataOutputStream, Path}
 import org.apache.parquet.bytes.BytesUtils
 import org.apache.parquet.filter2.compat.{FilterCompat, RowGroupFilter}
 import org.apache.parquet.filter2.predicate.FilterApi
@@ -34,6 +36,7 @@ import org.apache.parquet.format.converter.ParquetMetadataConverter
 import org.apache.parquet.hadoop.ParquetFileReader
 import org.apache.parquet.hadoop.metadata.{BlockMetaData, ColumnChunkMetaData, ColumnPath, FileMetaData, ParquetMetadata}
 import org.apache.parquet.schema.MessageType
+
 import org.apache.spark.broadcast.Broadcast
 import org.apache.spark.internal.Logging
 import org.apache.spark.sql.SparkSession
@@ -118,6 +121,8 @@ case class GpuParquetPartitionReaderFactory(
   private val pushDownDecimal = sqlConf.parquetFilterPushDownDecimal
   private val pushDownStringStartWith = sqlConf.parquetFilterPushDownStringStartWith
   private val pushDownInFilterThreshold = sqlConf.parquetFilterPushDownInFilterThreshold
+  private val debugDumpPrefix = sqlConf.getConfString(
+      ParquetPartitionReader.DUMP_PATH_PREFIX_CONF, null)
 
   override def supportColumnarReads(partition: InputPartition): Boolean = true
 
@@ -152,10 +157,12 @@ case class GpuParquetPartitionReaderFactory(
       footer.getBlocks
     }
 
-    val clippedSchema = ParquetReadSupport.clipParquetSchema(fileSchema, readDataSchema, isCaseSensitive)
+    val clippedSchema = ParquetReadSupport.clipParquetSchema(fileSchema, readDataSchema,
+        isCaseSensitive)
     val columnPaths = clippedSchema.getPaths.asScala.map(x => ColumnPath.get(x:_*))
     val clippedBlocks = ParquetPartitionReader.clipBlocks(columnPaths, blocks.asScala)
-    new ParquetPartitionReader(conf, filePath, clippedBlocks, clippedSchema, readDataSchema)
+    new ParquetPartitionReader(conf, filePath, clippedBlocks, clippedSchema, readDataSchema,
+        debugDumpPrefix)
   }
 }
 
@@ -173,13 +180,15 @@ case class GpuParquetPartitionReaderFactory(
   * @param clippedParquetSchema the Parquet schema from the original Parquet file that has been
   *                             clipped to contain only the columns to be read
   * @param readDataSchema the Spark schema describing what will be read
+  * @param debugDumpPrefix a path prefix to use for dumping the fabricated Parquet data or null
   */
 class ParquetPartitionReader(
     conf: Configuration,
     filePath: Path,
     clippedBlocks: Seq[BlockMetaData],
     clippedParquetSchema: MessageType,
-    readDataSchema: StructType) extends PartitionReader[ColumnarBatch] with Logging {
+    readDataSchema: StructType,
+    debugDumpPrefix: String) extends PartitionReader[ColumnarBatch] with Logging {
   private var isExhausted: Boolean = false
   private var batch: Option[ColumnarBatch] = None
 
@@ -333,6 +342,9 @@ class ParquetPartitionReader(
       if (dataSize == 0) {
         None
       } else {
+        if (debugDumpPrefix != null) {
+          dumpParquetData(debugDumpPrefix, dataBuffer, dataSize)
+        }
         val parseOpts = ParquetOptions.builder().includeColumn(readDataSchema.fieldNames:_*).build()
         val table = Table.readParquet(parseOpts, dataBuffer, 0, dataSize)
         val numColumns = table.getNumberOfColumns
@@ -347,14 +359,45 @@ class ParquetPartitionReader(
       dataBuffer.close()
     }
   }
+
+  private def dumpParquetData(
+      dumpPathPrefix: String,
+      hmb: HostMemoryBuffer,
+      dataLength: Long): Unit = {
+    val (out, path) = ParquetPartitionReader.createTempFile(conf, dumpPathPrefix)
+    try {
+      logInfo(s"Writing Parquet split data to $path")
+      val buffer = new Array[Byte](128 * 1024)
+      var pos = 0
+      while (pos < dataLength) {
+        // downcast is safe because buffer.length is an int
+        val readLength = Math.min(dataLength - pos, buffer.length).toInt
+        hmb.getBytes(buffer, 0, pos, readLength)
+        out.write(buffer, 0, readLength)
+        pos += readLength
+      }
+    } finally {
+      out.close()
+    }
+  }
 }
 
 object ParquetPartitionReader {
   private val PARQUET_MAGIC = "PAR1".getBytes(StandardCharsets.US_ASCII)
   private val PARQUET_CREATOR = "RAPIDS Spark Plugin"
   private val PARQUET_VERSION = 1
+  private[spark] val DUMP_PATH_PREFIX_CONF = "spark.rapids.sql.parquet.debug-dump-prefix"
 
-  private def newParquetBlock(oldBlock: BlockMetaData, columns: Seq[ColumnChunkMetaData]): BlockMetaData = {
+  /**
+    * Build a new BlockMetaData based on an old one but using the specified column chunks.
+    *
+    * @param oldBlock the original BlockMetaData
+    * @param columns the new column chunks to reference in the new BlockMetaData
+    * @return the new BlockMetaData
+    */
+  private def newParquetBlock(
+      oldBlock: BlockMetaData,
+      columns: Seq[ColumnChunkMetaData]): BlockMetaData = {
     val block = new BlockMetaData
     block.setPath(oldBlock.getPath)
     block.setRowCount(oldBlock.getRowCount)
@@ -379,6 +422,26 @@ object ParquetPartitionReader {
       val newColumns = oldBlock.getColumns.asScala.filter(c => pathSet.contains(c.getPath))
       ParquetPartitionReader.newParquetBlock(oldBlock, newColumns)
     })
+  }
+
+  private def createTempFile(
+      conf: Configuration,
+      pathPrefix: String): (FSDataOutputStream, Path) = {
+    val fs = new Path(pathPrefix).getFileSystem(conf)
+    val rnd = new Random
+    var out: FSDataOutputStream = null
+    var path: Path = null
+    var succeeded = false
+    while (!succeeded) {
+      path = new Path(pathPrefix + rnd.nextInt(Integer.MAX_VALUE) + ".parquet")
+      if (!fs.exists(path)) {
+        scala.util.control.Exception.ignoring(classOf[FileAlreadyExistsException]) {
+          out = fs.create(path, false)
+          succeeded = true
+        }
+      }
+    }
+    (out, path)
   }
 }
 
