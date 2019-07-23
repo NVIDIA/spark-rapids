@@ -23,10 +23,12 @@ import java.util.Collections
 
 import scala.collection.JavaConverters._
 import scala.collection.mutable.ArrayBuffer
+import scala.util.Random
+
 import ai.rapids.cudf.{HostMemoryBuffer, ParquetOptions, Table}
 import org.apache.commons.io.output.{CountingOutputStream, NullOutputStream}
 import org.apache.hadoop.conf.Configuration
-import org.apache.hadoop.fs.{FSDataInputStream, Path}
+import org.apache.hadoop.fs.{FileAlreadyExistsException, FSDataInputStream, FSDataOutputStream, Path}
 import org.apache.parquet.bytes.BytesUtils
 import org.apache.parquet.filter2.compat.{FilterCompat, RowGroupFilter}
 import org.apache.parquet.filter2.predicate.FilterApi
@@ -34,6 +36,7 @@ import org.apache.parquet.format.converter.ParquetMetadataConverter
 import org.apache.parquet.hadoop.ParquetFileReader
 import org.apache.parquet.hadoop.metadata.{BlockMetaData, ColumnChunkMetaData, ColumnPath, FileMetaData, ParquetMetadata}
 import org.apache.parquet.schema.MessageType
+
 import org.apache.spark.broadcast.Broadcast
 import org.apache.spark.internal.Logging
 import org.apache.spark.sql.SparkSession
@@ -89,6 +92,15 @@ object GpuParquetScan {
       }
     }
 
+    // Currently timestamp conversion is not supported.
+    // If support needs to be added then we need to follow the logic in Spark's
+    // ParquetPartitionReaderFactory and VectorizedColumnReader which essentially
+    // does the following:
+    //   - check if Parquet file was created by "parquet-mr"
+    //   - if not then look at SQLConf.SESSION_LOCAL_TIMEZONE and assume timestamps
+    //     were written in that timezone and convert them to UTC timestamps.
+    // Essentially this should boil down to a vector subtract of the scalar delta
+    // between the configured timezone's delta from UTC on the timestamp data.
     if (scan.sparkSession.sessionState.conf.isParquetINT96TimestampConversion) {
       throw new CannotReplaceException("GpuParquetScan does not support int96 timestamp conversion")
     }
@@ -109,6 +121,8 @@ case class GpuParquetPartitionReaderFactory(
   private val pushDownDecimal = sqlConf.parquetFilterPushDownDecimal
   private val pushDownStringStartWith = sqlConf.parquetFilterPushDownStringStartWith
   private val pushDownInFilterThreshold = sqlConf.parquetFilterPushDownInFilterThreshold
+  private val debugDumpPrefix = sqlConf.getConfString(
+      ParquetPartitionReader.DUMP_PATH_PREFIX_CONF, null)
 
   override def supportColumnarReads(partition: InputPartition): Boolean = true
 
@@ -143,20 +157,38 @@ case class GpuParquetPartitionReaderFactory(
       footer.getBlocks
     }
 
-    val clippedSchema = ParquetReadSupport.clipParquetSchema(fileSchema, readDataSchema, isCaseSensitive)
+    val clippedSchema = ParquetReadSupport.clipParquetSchema(fileSchema, readDataSchema,
+        isCaseSensitive)
     val columnPaths = clippedSchema.getPaths.asScala.map(x => ColumnPath.get(x:_*))
     val clippedBlocks = ParquetPartitionReader.clipBlocks(columnPaths, blocks.asScala)
-    new ParquetPartitionReader(conf, filePath, clippedBlocks, clippedSchema, readDataSchema, filters)
+    new ParquetPartitionReader(conf, filePath, clippedBlocks, clippedSchema, readDataSchema,
+        debugDumpPrefix)
   }
 }
 
+/**
+  * A PartitionReader that reads a Parquet file split on the GPU.
+  *
+  * Efficiently reading a Parquet split on the GPU requires re-constructing the Parquet file
+  * in memory that contains just the column chunks that are needed. This avoids sending
+  * unnecessary data to the GPU and saves GPU memory.
+  *
+  * @param conf the Hadoop configuration
+  * @param filePath the path to the Parquet file
+  * @param clippedBlocks the block metadata from the original Parquet file that has been clipped
+  *                      to only contain the column chunks to be read
+  * @param clippedParquetSchema the Parquet schema from the original Parquet file that has been
+  *                             clipped to contain only the columns to be read
+  * @param readDataSchema the Spark schema describing what will be read
+  * @param debugDumpPrefix a path prefix to use for dumping the fabricated Parquet data or null
+  */
 class ParquetPartitionReader(
     conf: Configuration,
     filePath: Path,
     clippedBlocks: Seq[BlockMetaData],
     clippedParquetSchema: MessageType,
     readDataSchema: StructType,
-    filters: Array[Filter]) extends PartitionReader[ColumnarBatch] with Logging {
+    debugDumpPrefix: String) extends PartitionReader[ColumnarBatch] with Logging {
   private var isExhausted: Boolean = false
   private var batch: Option[ColumnarBatch] = None
 
@@ -213,11 +245,7 @@ class ParquetPartitionReader(
     var size: Long = 4 + 4 + 4
 
     // add in the size of the row group data
-    for (block <- clippedBlocks) {
-      for (column <- block.getColumns.asScala) {
-        size += column.getTotalSize
-      }
-    }
+    size += clippedBlocks.map(_.getTotalByteSize).sum
 
     // Calculate size of the footer metadata.
     // This uses the column metadata from the original file, but that should
@@ -255,11 +283,14 @@ class ParquetPartitionReader(
   }
 
   /**
-    * Copies the data corresponding to the clipped blocks in the original file.
+    * Copies the data corresponding to the clipped blocks in the original file and compute the
+    * block metadata for the output. The output blocks will contain the same column chunk
+    * metadata but with the file offsets updated to reflect the new position of the column data
+    * as written to the output.
     *
     * @param in the input stream for the original Parquet file
     * @param out the output stream to receive the data
-    * @return updated block metadata corresponding to the output file
+    * @return updated block metadata corresponding to the output
     */
   private def copyClippedBlocksData(
       in: FSDataInputStream,
@@ -292,7 +323,7 @@ class ParquetPartitionReader(
           column.getTotalUncompressedSize)
         copyColumnData(column, in, out, copyBuffer)
       }
-      outputBlocks += ParquetPartitionReader.newParquetBlock(block, outputColumns)
+      outputBlocks += ParquetPartitionReader.newParquetBlock(block.getRowCount, outputColumns)
     }
     outputBlocks
   }
@@ -307,6 +338,9 @@ class ParquetPartitionReader(
       if (dataSize == 0) {
         None
       } else {
+        if (debugDumpPrefix != null) {
+          dumpParquetData(debugDumpPrefix, dataBuffer, dataSize)
+        }
         val parseOpts = ParquetOptions.builder().includeColumn(readDataSchema.fieldNames:_*).build()
         val table = Table.readParquet(parseOpts, dataBuffer, 0, dataSize)
         val numColumns = table.getNumberOfColumns
@@ -321,29 +355,94 @@ class ParquetPartitionReader(
       dataBuffer.close()
     }
   }
+
+  private def dumpParquetData(
+      dumpPathPrefix: String,
+      hmb: HostMemoryBuffer,
+      dataLength: Long): Unit = {
+    val (out, path) = ParquetPartitionReader.createTempFile(conf, dumpPathPrefix)
+    try {
+      logInfo(s"Writing Parquet split data to $path")
+      val buffer = new Array[Byte](128 * 1024)
+      var pos = 0
+      while (pos < dataLength) {
+        // downcast is safe because buffer.length is an int
+        val readLength = Math.min(dataLength - pos, buffer.length).toInt
+        hmb.getBytes(buffer, 0, pos, readLength)
+        out.write(buffer, 0, readLength)
+        pos += readLength
+      }
+    } finally {
+      out.close()
+    }
+  }
 }
 
 object ParquetPartitionReader {
   private val PARQUET_MAGIC = "PAR1".getBytes(StandardCharsets.US_ASCII)
   private val PARQUET_CREATOR = "RAPIDS Spark Plugin"
   private val PARQUET_VERSION = 1
+  private[spark] val DUMP_PATH_PREFIX_CONF = "spark.rapids.sql.parquet.debug-dump-prefix"
 
-  private def newParquetBlock(oldBlock: BlockMetaData, columns: Seq[ColumnChunkMetaData]): BlockMetaData = {
+  /**
+    * Build a new BlockMetaData
+    *
+    * @param rowCount the number of rows in this block
+    * @param columns the new column chunks to reference in the new BlockMetaData
+    * @return the new BlockMetaData
+    */
+  private def newParquetBlock(
+      rowCount: Long,
+      columns: Seq[ColumnChunkMetaData]): BlockMetaData = {
     val block = new BlockMetaData
-    block.setPath(oldBlock.getPath)
-    block.setRowCount(oldBlock.getRowCount)
-    block.setTotalByteSize(oldBlock.getTotalByteSize)
-    columns.foreach(block.addColumn)
+    block.setRowCount(rowCount)
+
+    var totalSize: Long = 0
+    for (column <- columns) {
+      block.addColumn(column)
+      totalSize += column.getTotalSize
+    }
+    block.setTotalByteSize(totalSize)
+
     block
   }
 
+  /**
+    * Trim block metadata to contain only the column chunks that occur in the specified columns.
+    * The column chunks that are returned are preserved verbatim
+    * (i.e.: file offsets remain unchanged).
+    *
+    * @param columnPaths the paths of columns to preserve
+    * @param blocks the block metadata from the original Parquet file
+    * @return the updated block metadata with undesired column chunks removed
+    */
   private[spark] def clipBlocks(columnPaths: Seq[ColumnPath], blocks: Seq[BlockMetaData]): Seq[BlockMetaData] = {
     val pathSet = columnPaths.toSet
     blocks.map(oldBlock => {
       //noinspection ScalaDeprecation
       val newColumns = oldBlock.getColumns.asScala.filter(c => pathSet.contains(c.getPath))
-      ParquetPartitionReader.newParquetBlock(oldBlock, newColumns)
+      ParquetPartitionReader.newParquetBlock(oldBlock.getRowCount, newColumns)
     })
+  }
+
+  private def createTempFile(
+      conf: Configuration,
+      pathPrefix: String): (FSDataOutputStream, Path) = {
+    val fs = new Path(pathPrefix).getFileSystem(conf)
+    val rnd = new Random
+    var out: FSDataOutputStream = null
+    var path: Path = null
+    var succeeded = false
+    while (!succeeded) {
+      path = new Path(pathPrefix + rnd.nextInt(Integer.MAX_VALUE) + ".parquet")
+      if (!fs.exists(path)) {
+        scala.util.control.Exception.ignoring(classOf[FileAlreadyExistsException]) {
+          out = fs.create(path, false)
+          succeeded = true
+        }
+      }
+    }
+    (out, path)
   }
 }
 
