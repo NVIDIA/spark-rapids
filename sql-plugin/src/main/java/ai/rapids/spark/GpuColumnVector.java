@@ -119,12 +119,7 @@ public final class GpuColumnVector extends ColumnVector {
     return TimeUnit.NONE;
   }
 
-  public static DType getRapidsType(StructField field) {
-    DataType type = field.dataType();
-    return getRapidsType(type);
-  }
-
-  public static DType getRapidsType(DataType type) {
+  private static DType toRapidsOrNull(DataType type) {
     if (type instanceof LongType) {
       return DType.INT64;
     } else if (type instanceof DoubleType) {
@@ -146,7 +141,24 @@ public final class GpuColumnVector extends ColumnVector {
     } else if (type instanceof StringType) {
       return DType.STRING; // TODO what do we want to do about STRING_CATEGORY???
     }
-    throw new IllegalArgumentException(type + " is not supported for GPU processing yet.");
+    return null;
+  }
+
+  public static boolean isSupportedType(DataType type) {
+    return toRapidsOrNull(type) != null;
+  }
+
+  public static DType getRapidsType(StructField field) {
+    DataType type = field.dataType();
+    return getRapidsType(type);
+  }
+
+  public static DType getRapidsType(DataType type) {
+    DType result = toRapidsOrNull(type);
+    if (result == null) {
+      throw new IllegalArgumentException(type + " is not supported for GPU processing yet.");
+    }
+    return result;
   }
 
   private static DataType getSparkType(DType type) {

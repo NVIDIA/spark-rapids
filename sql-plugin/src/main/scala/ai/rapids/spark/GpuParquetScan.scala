@@ -46,7 +46,7 @@ import org.apache.spark.sql.execution.datasources.parquet.{ParquetFilters, Parqu
 import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.sources.Filter
 import org.apache.spark.sql.sources.v2.reader.{InputPartition, PartitionReader, PartitionReaderFactory}
-import org.apache.spark.sql.types.{DataType, StructType}
+import org.apache.spark.sql.types.StructType
 import org.apache.spark.sql.util.CaseInsensitiveStringMap
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
@@ -58,8 +58,9 @@ class GpuParquetScan(
     readDataSchema: StructType,
     readPartitionSchema: StructType,
     pushedFilters: Array[Filter],
-    options: CaseInsensitiveStringMap) extends ParquetScan(sparkSession, hadoopConf, fileIndex, dataSchema,
-                                                           readDataSchema, readPartitionSchema, pushedFilters,options) {
+    options: CaseInsensitiveStringMap)
+  extends ParquetScan(sparkSession, hadoopConf, fileIndex, dataSchema,
+    readDataSchema, readPartitionSchema, pushedFilters,options) {
 
   override def createReaderFactory(): PartitionReaderFactory = {
     val broadcastedConf = sparkSession.sparkContext.broadcast(
@@ -83,7 +84,7 @@ object GpuParquetScan {
   def assertCanSupport(scan: ParquetScan): Unit = {
     val schema = StructType(scan.readDataSchema ++ scan.readPartitionSchema)
     for (field <- schema) {
-      if (!isSupportedType(field.dataType)) {
+      if (!GpuColumnVector.isSupportedType(field.dataType)) {
         throw new CannotReplaceException(s"GpuParquetScan does not support fields of type ${field.dataType}")
       }
     }
@@ -91,16 +92,6 @@ object GpuParquetScan {
     if (scan.sparkSession.sessionState.conf.isParquetINT96TimestampConversion) {
       throw new CannotReplaceException("GpuParquetScan does not support int96 timestamp conversion")
     }
-  }
-
-  private def isSupportedType(dataType: DataType): Boolean = {
-    var supported = true
-    try {
-      GpuColumnVector.getRapidsType(dataType)
-    } catch {
-      case _: IllegalArgumentException => supported = false
-    }
-    supported
   }
 }
 

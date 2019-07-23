@@ -26,11 +26,12 @@ import org.apache.spark.sql.execution._
 import org.apache.spark.sql.execution.aggregate.HashAggregateExec
 import org.apache.spark.sql.execution.datasources.v2.BatchScanExec
 import org.apache.spark.sql.execution.datasources.v2.csv.CSVScan
+import org.apache.spark.sql.execution.datasources.v2.orc.OrcScan
 import org.apache.spark.sql.execution.datasources.v2.parquet.ParquetScan
 import org.apache.spark.sql.execution.exchange.ShuffleExchangeExec
 import org.apache.spark.sql.sources.v2.reader.Scan
 import org.apache.spark.sql.types._
-import org.apache.spark.sql.vectorized.{ColumnVector, ColumnarBatch}
+import org.apache.spark.sql.vectorized.{ColumnarBatch, ColumnVector}
 
 trait GpuExec extends SparkPlan {
   override def supportsColumnar = true
@@ -239,7 +240,17 @@ case class GpuOverrides(session: SparkSession) extends Rule[SparkPlan] with Logg
         scan.readPartitionSchema,
         scan.pushedFilters,
         scan.options)
-    case p =>
+    case scan: OrcScan =>
+      GpuOrcScan.assertCanSupport(scan)
+      new GpuOrcScan(scan.sparkSession,
+        scan.hadoopConf,
+        scan.fileIndex,
+        scan.dataSchema,
+        scan.readDataSchema,
+        scan.readPartitionSchema,
+        scan.options,
+        scan.pushedFilters)
+    case _ =>
       throw new CannotReplaceException(s"scan ${scan.getClass} ${scan} is not currently supported.")
   }
 
