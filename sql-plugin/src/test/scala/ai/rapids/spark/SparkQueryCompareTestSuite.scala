@@ -519,6 +519,15 @@ class SparkQueryCompareTestSuite extends FunSuite with BeforeAndAfterEach {
     frame => frame.select(col("partKey"), col("ints_1"), col("ints_3"), col("ints_5"))
   }
 
+  def frameFromOrc(filename: String): SparkSession => DataFrame = {
+    val path = this.getClass.getClassLoader.getResource(filename)
+    s: SparkSession => s.read.orc(path.toString)
+  }
+
+  testSparkResultsAreEqual("Test ORC", frameFromOrc("test.snappy.orc")) {
+    frame => frame.select(col("ints_1"), col("ints_3"), col("ints_5"))
+  }
+
   IGNORE_ORDER_testSparkResultsAreEqual("test hash agg with shuffle", longsFromCSVDf, repart = 2) {
     frame => frame.groupBy(col("longs")).agg(sum(col("more_longs")))
   }
