@@ -39,6 +39,15 @@ public final class GpuColumnVector extends ColumnVector {
     private final ai.rapids.cudf.ColumnVector.Builder[] builders;
     private final StructField[] fields;
 
+    /**
+     * A collection of builders for building up columnar data.
+     * @param schema the schema of the batch.
+     * @param rows the maximum number of rows in this batch.
+     * @param batch if this is going to copy a ColumnarBatch in a non GPU format that batch
+     *              we are going to copy. If not this may be null. This is used to get an idea
+     *              of how big to allocate buffers that do not necessarily correspond to the
+     *              number of rows.
+     */
     public GpuColumnarBatchBuilder(StructType schema, int rows, ColumnarBatch batch) {
       fields = schema.fields();
       int len = fields.length;
@@ -50,8 +59,9 @@ public final class GpuColumnVector extends ColumnVector {
           DType type = getRapidsType(field);
           TimeUnit units = getTimeUnits(field);
           if (type == DType.STRING) {
-            // For now assume that we can only support an average of 8 characters per
-            // row (like a long). most strings are short
+            // If we cannot know the exact size, assume the string is small and allocate
+            // 8 bytes per row.  The buffer of the builder will grow as needed if it is
+            // too small.
             int bufferSize = rows * 8;
             if (batch != null) {
               ColumnVector cv = batch.column(i);
