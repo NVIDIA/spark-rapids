@@ -51,3 +51,50 @@ object ETL {
       .write.option("overwrite", "true").csv(jobArgs.output)
   }
 }
+
+object CsvToParquet {
+  def main(args: Array[String]): Unit = {
+    val jobArgs = Benchmark.etlArgs(args)
+
+    val session = Benchmark.session
+
+    ReadPerformanceCsv(session, jobArgs.perfPath)
+      .write.mode("overwrite").parquet(jobArgs.output + "/perf")
+
+    ReadAcquisitionCsv(session, jobArgs.acqPath)
+      .write.mode("overwrite").parquet(jobArgs.output + "/acq")
+  }
+}
+
+object AggregatesCsv {
+  def main(args: Array[String]): Unit = {
+    val jobArgs = Benchmark.etlArgs(args)
+
+    val session = Benchmark.session
+
+    SimpleAggregates.csv(session, jobArgs.perfPath, jobArgs.acqPath)
+      .write.option("overwrite", "true").parquet(jobArgs.output)
+  }
+}
+
+object AggregatesWithPercentilesCsv {
+  def main(args: Array[String]): Unit = {
+    val jobArgs = Benchmark.etlArgs(args)
+
+    val session = Benchmark.session
+
+    AggregatesWithPercentiles.csv(session, jobArgs.perfPath)
+      .write.option("overwrite", "true").parquet(jobArgs.output)
+  }
+}
+
+object AggregatesWithJoinCsv {
+  def main(args: Array[String]): Unit = {
+    val jobArgs = Benchmark.etlArgs(args)
+
+    val session = Benchmark.session
+
+    AggregatesWithJoin.csv(session, jobArgs.perfPath, jobArgs.acqPath)
+      .write.option("overwrite", "true").parquet(jobArgs.output)
+  }
+}
