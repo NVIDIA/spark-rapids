@@ -61,7 +61,9 @@ class SparkQueryCompareTestSuite extends FunSuite with BeforeAndAfterEach {
   }
 
   def withGpuSparkSession[U](f: SparkSession => U, conf: SparkConf = new SparkConf()): U = {
-    var c = conf.clone().set("spark.sql.extensions", "ai.rapids.spark.Plugin")
+    var c = conf.clone()
+      .set("spark.sql.extensions", "ai.rapids.spark.Plugin")
+      .set("spark.executor.plugins", "ai.rapids.spark.GpuResourceManager")
 
     if (c.getOption(Plugin.TEST_CONF).isEmpty) {
        c = c.set(Plugin.TEST_CONF, "true")
