@@ -922,4 +922,16 @@ class SparkQueryCompareTestSuite extends FunSuite with BeforeAndAfterEach {
   testSparkResultsAreEqual("IsNull OR IsNull strings", nullableStringsDf) {
     frame => frame.selectExpr("strings is null OR more_strings is null")
   }
+
+  testSparkResultsAreEqual("Test union doubles", doubleDf) {
+    frame => frame.union(frame)
+  }
+
+  testSparkResultsAreEqual("Test unionAll doubles", doubleDf) {
+    frame => frame.unionAll(frame)
+  }
+
+  testSparkResultsAreEqual("Test unionByName doubles", doubleDf) {
+    frame => frame.unionByName(frame.select(col("more_doubles"), col("doubles")))
+  }
 }
