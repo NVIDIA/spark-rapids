@@ -161,8 +161,8 @@ case class GpuParquetPartitionReaderFactory(
         isCaseSensitive)
     val columnPaths = clippedSchema.getPaths.asScala.map(x => ColumnPath.get(x:_*))
     val clippedBlocks = ParquetPartitionReader.clipBlocks(columnPaths, blocks.asScala)
-    new ParquetPartitionReader(conf, filePath, clippedBlocks, clippedSchema, readDataSchema,
-        debugDumpPrefix)
+    new ParquetPartitionReader(conf, file, filePath, clippedBlocks, clippedSchema,
+        readDataSchema, debugDumpPrefix)
   }
 }
 
@@ -174,6 +174,7 @@ case class GpuParquetPartitionReaderFactory(
   * unnecessary data to the GPU and saves GPU memory.
   *
   * @param conf the Hadoop configuration
+  * @param split the file split to read
   * @param filePath the path to the Parquet file
   * @param clippedBlocks the block metadata from the original Parquet file that has been clipped
   *                      to only contain the column chunks to be read
@@ -184,6 +185,7 @@ case class GpuParquetPartitionReaderFactory(
   */
 class ParquetPartitionReader(
     conf: Configuration,
+    split: PartitionedFile,
     filePath: Path,
     clippedBlocks: Seq[BlockMetaData],
     clippedParquetSchema: MessageType,
@@ -197,12 +199,7 @@ class ParquetPartitionReader(
     batch = None
     if (!isExhausted) {
       isExhausted = true
-      val table = readToTable()
-      try {
-        batch = table.map(GpuColumnVector.from)
-      } finally {
-        table.foreach(_.close())
-      }
+      batch = readBatch()
     }
     batch.isDefined
   }
@@ -295,9 +292,14 @@ class ParquetPartitionReader(
   private def copyClippedBlocksData(
       in: FSDataInputStream,
       out: HostMemoryBufferOutputStream): Seq[BlockMetaData] = {
+    var totalRows: Long = 0
     val copyBuffer = new Array[Byte](128 * 1024)
     val outputBlocks = new ArrayBuffer[BlockMetaData](clippedBlocks.length)
     for (block <- clippedBlocks) {
+      totalRows += block.getRowCount
+      if (totalRows > Integer.MAX_VALUE) {
+        throw new UnsupportedOperationException(s"Too many rows in split $split")
+      }
       val columns = block.getColumns.asScala
       val outputColumns = new ArrayBuffer[ColumnChunkMetaData](columns.length)
       for (column <- columns) {
@@ -326,6 +328,24 @@ class ParquetPartitionReader(
       outputBlocks += ParquetPartitionReader.newParquetBlock(block.getRowCount, outputColumns)
     }
     outputBlocks
+  }
+
+  private def readBatch(): Option[ColumnarBatch] = {
+    if (readDataSchema.isEmpty) {
+      // not reading any data, so return a degenerate ColumnarBatch with the row count
+      val numRows = clippedBlocks.map(_.getRowCount).sum
+      if (numRows > Integer.MAX_VALUE) {
+        throw new UnsupportedOperationException(s"Too many rows in split $split")
+      }
+      Some(new ColumnarBatch(Array.empty, numRows.toInt))
+    } else {
+      val table = readToTable()
+      try {
+        table.map(GpuColumnVector.from)
+      } finally {
+        table.foreach(_.close())
+      }
+    }
   }
 
   private def readToTable(): Option[Table] = {
