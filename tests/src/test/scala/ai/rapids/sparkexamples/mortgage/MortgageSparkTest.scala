@@ -26,6 +26,7 @@ class MortgageSparkTest extends FlatSpec with Matchers {
       .master("local[2]")
       .appName("UnitTest")
       .config("spark.sql.extensions", "ai.rapids.spark.Plugin")
+      .config("spark.executor.plugins", "ai.rapids.spark.GpuResourceManager")
       .getOrCreate()
 
     session.sparkContext.setLogLevel("warn")

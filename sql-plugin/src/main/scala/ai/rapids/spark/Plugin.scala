@@ -16,6 +16,8 @@
 
 package ai.rapids.spark
 
+import ai.rapids.cudf.{Cuda, Rmm, RmmAllocationMode}
+
 import org.apache.spark.internal.Logging
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.{SparkSession, SparkSessionExtensions}
@@ -32,6 +34,7 @@ import org.apache.spark.sql.execution.exchange.ShuffleExchangeExec
 import org.apache.spark.sql.sources.v2.reader.Scan
 import org.apache.spark.sql.types._
 import org.apache.spark.sql.vectorized.{ColumnarBatch, ColumnVector}
+import org.apache.spark.{ExecutorPlugin, SparkConf, SparkEnv}
 
 trait GpuExec extends SparkPlan {
   override def supportsColumnar = true
@@ -298,7 +301,7 @@ case class GpuOverrides(session: SparkSession) extends Rule[SparkPlan] with Logg
     }
 
   override def apply(plan: SparkPlan) :SparkPlan = {
-    if (Plugin.isGpuEnabled(session)) {
+    if (Plugin.isSqlEnabled(session)) {
       incompatEnabled = Plugin.isIncompatEnabled(session)
       inputExecEnabled = Plugin.isInputExecEnabled(session)
       replaceWithGpuPlan(plan)
@@ -366,7 +369,7 @@ case class GpuTransitionOverrides(session: SparkSession) extends Rule[SparkPlan]
   }
 
   override def apply(plan: SparkPlan) :SparkPlan = {
-    if (Plugin.isGpuEnabled(session)) {
+    if (Plugin.isSqlEnabled(session)) {
       val tmp = insertColumnarFromGpu(plan)
       val ret = optimizeGpuPlanTransitions(tmp)
       if (Plugin.isTestEnabled(session)) {
@@ -389,16 +392,16 @@ case class ColumnarOverrideRules(session: SparkSession) extends ColumnarRule wit
 }
 
 object Plugin {
-  val GPU_ENABLED_CONF: String = "ai.rapids.gpu.enabled"
+  val SQL_ENABLED_CONF: String = "spark.rapids.sql.enabled"
   // Some operations are currently not 100% compatible with spark.  This will enable
   // those operations if a customer is willing to work around compatibility issues for
   // more processing on the GPU
-  val INCOMPATIBLE_OPS_CONF: String = "ai.rapids.gpu.incompatible_ops"
-  val INPUT_EXECS_CONF: String = "ai.rapids.gpu.input_parsing"
-  val TEST_CONF: String = "ai.rapids.gpu.testing"
+  val INCOMPATIBLE_OPS_CONF: String = "spark.rapids.sql.incompatible_ops"
+  val INPUT_EXECS_CONF: String = "spark.rapids.sql.input_parsing"
+  val TEST_CONF: String = "spark.rapids.sql.testing"
 
-  def isGpuEnabled(session: SparkSession): Boolean = session.sqlContext.
-    getConf(GPU_ENABLED_CONF, "true").trim.toBoolean
+  def isSqlEnabled(session: SparkSession): Boolean = session.sqlContext.
+    getConf(SQL_ENABLED_CONF, "true").trim.toBoolean
 
   def isInputExecEnabled(session: SparkSession): Boolean = session.sqlContext.
     getConf(INPUT_EXECS_CONF, "true").trim.toBoolean
@@ -417,8 +420,50 @@ object Plugin {
   */
 class Plugin extends Function1[SparkSessionExtensions, Unit] with Logging {
   override def apply(extensions: SparkSessionExtensions): Unit = {
-    logWarning("Installing extensions to enable rapids.ai GPU support." +
-      " To disable GPU support set `ai.rapids.gpu.enabled` to false")
+    logWarning("Installing extensions to enable rapids GPU SQL support." +
+      " To disable GPU support set `spark.rapids.sql.enabled` to false")
     extensions.injectColumnar((session) => ColumnarOverrideRules(session))
+  }
+}
+
+object GpuResourceManager {
+  val MEM_DEBUG_CONF: String = "spark.rapids.memory_debug"
+
+  def isMemDebugEnabled(conf: SparkConf): Boolean =
+    conf.getBoolean(MEM_DEBUG_CONF, false)
+}
+
+/**
+ * Config to enable pooled GPU memory allocation which can improve performance.  This should be off
+ * if you want to use operators that also use GPU memory like XGBoost or Tensorflow, as the pool
+ * it allocates cannot be used by other tools.
+ *
+ * To enable this set spark.executor.plugins to ai.rapids.spark.GpuResourceManager
+ */
+class GpuResourceManager extends ExecutorPlugin with Logging {
+  var loggingEnabled = false
+
+  override def init(): Unit = synchronized {
+    // We eventually will need a way to know which GPU to use/etc, but for now, we will just
+    // go with the default GPU.
+    if (!Rmm.isInitialized) {
+      val env = SparkEnv.get
+      val conf = env.conf
+      loggingEnabled = GpuResourceManager.isMemDebugEnabled(conf)
+      val info = Cuda.memGetInfo()
+      val initialAllocation = info.free / 4
+      logInfo(s"Initializing RMM ${initialAllocation / 1024 / 1024.0} MB")
+      try {
+        Rmm.initialize(RmmAllocationMode.POOL, loggingEnabled, initialAllocation)
+      } catch {
+        case e: Exception => logError("Could not initialize RMM", e)
+      }
+    }
+  }
+
+  override def shutdown(): Unit = {
+    if (loggingEnabled) {
+      logWarning(s"RMM LOG\n${Rmm.getLog}")
+    }
   }
 }
