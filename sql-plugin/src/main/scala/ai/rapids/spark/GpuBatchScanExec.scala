@@ -272,11 +272,16 @@ class SingleTablePartitionReader(
     val separator = parsedOptions.lineSeparatorInRead.getOrElse(Array('\n'.toByte))
     var succeeded = false
     var totalSize: Long = 0L
+    var totalRows: Long = 0L
     var hmb = HostMemoryBuffer.allocate(estimatedHostBufferSize)
     try {
       val lineReader = new HadoopFileLinesReader(partFile, parsedOptions.lineSeparatorInRead, conf)
       try {
         while (lineReader.hasNext) {
+          totalRows += 1
+          if (totalRows > Integer.MAX_VALUE) {
+            throw new UnsupportedOperationException("Too many rows in split $partFile")
+          }
           val line = lineReader.next()
           val lineSize = line.getLength
           val newTotal = totalSize + lineSize + separator.length
@@ -297,6 +302,33 @@ class SingleTablePartitionReader(
       }
     }
     (hmb, totalSize)
+  }
+
+  private def readBatch(): Option[ColumnarBatch] = {
+    if (readDataSchema.isEmpty) {
+      // no data is requested, so return a degenerate ColumnarBatch with the row count
+      val lineReader = new HadoopFileLinesReader(partFile, parsedOptions.lineSeparatorInRead, conf)
+      var totalRows: Long = 0L
+      try {
+        while (lineReader.hasNext) {
+          totalRows += 1
+          if (totalRows > Integer.MAX_VALUE) {
+            throw new UnsupportedOperationException("Too many rows in split $partFile")
+          }
+          lineReader.next()
+        }
+        Some(new ColumnarBatch(Array.empty, totalRows.toInt))
+      } finally {
+        lineReader.close()
+      }
+    } else {
+      val table = readToTable()
+      try {
+        table.map(GpuColumnVector.from)
+      } finally {
+        table.foreach(_.close())
+      }
+    }
   }
 
   private def readToTable(): Option[Table] = {
@@ -327,12 +359,7 @@ class SingleTablePartitionReader(
       batch.foreach(_.close())
       batch = None
     } else {
-      val table = readToTable()
-      try {
-        batch = table.map(GpuColumnVector.from)
-      } finally {
-        table.foreach(_.close())
-      }
+      batch = readBatch()
     }
     batch.isDefined
   }

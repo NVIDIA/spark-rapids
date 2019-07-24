@@ -457,9 +457,16 @@ class SparkQueryCompareTestSuite extends FunSuite with BeforeAndAfterEach {
     )))(_)
   }
 
+  def frameCount(frame: DataFrame): DataFrame = {
+    import frame.sparkSession.implicits._
+    Seq(frame.count()).toDF
+  }
+
   testSparkResultsAreEqual("Test CSV", intsFromCsv) {
     frame => frame.select(col("ints_1"), col("ints_3"), col("ints_5"))
   }
+
+  testSparkResultsAreEqual("Test CSV count", intsFromCsv)(frameCount)
 
   testSparkResultsAreEqual("Test partitioned CSV", intsFromPartitionedCsv) {
     frame => frame.select(col("partKey"), col("ints_1"), col("ints_3"), col("ints_5"))
@@ -503,6 +510,9 @@ class SparkQueryCompareTestSuite extends FunSuite with BeforeAndAfterEach {
       conf=parquetSplitsConf) {
     frame => frame.select(col("*"))
   }
+
+  testSparkResultsAreEqual("Test Parquet count", fileSplitsParquet,
+      conf=parquetSplitsConf)(frameCount)
 
   testSparkResultsAreEqual("Test Parquet predicate push-down", fileSplitsParquet) {
     frame => frame.select(col("loan_id"), col("orig_interest_rate"), col("zip"))
