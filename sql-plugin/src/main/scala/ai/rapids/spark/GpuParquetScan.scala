@@ -63,7 +63,8 @@ class GpuParquetScan(
     pushedFilters: Array[Filter],
     options: CaseInsensitiveStringMap)
   extends ParquetScan(sparkSession, hadoopConf, fileIndex, dataSchema,
-    readDataSchema, readPartitionSchema, pushedFilters,options) {
+    readDataSchema, readPartitionSchema, pushedFilters,options)
+    with GpuScan {
 
   override def createReaderFactory(): PartitionReaderFactory = {
     val broadcastedConf = sparkSession.sparkContext.broadcast(

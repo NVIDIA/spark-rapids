@@ -157,7 +157,8 @@ class GpuCSVScan(
     readDataSchema: StructType, // schema that is for the data being read in (including dropped columns)
     readPartitionSchema: StructType, // schema for the parts that come from the file path
     options: CaseInsensitiveStringMap) extends
-  CSVScan(sparkSession, fileIndex, dataSchema, readDataSchema, readPartitionSchema, options) {
+  CSVScan(sparkSession, fileIndex, dataSchema, readDataSchema, readPartitionSchema, options)
+  with GpuScan {
 
   lazy val parsedOptions: CSVOptions = new CSVOptions(
     options.asScala.toMap,
@@ -175,16 +176,6 @@ class GpuCSVScan(
     return new GpuCSVPartitionReaderFactory(sparkSession.sessionState.conf, broadcastedConf,
       dataSchema, readDataSchema, readPartitionSchema, parsedOptions)
   }
-
-  // TODO need a common base for these...
-  override def equals(other: Any): Boolean = {
-    if (!super.equals(other)) {
-      return false
-    }
-    return other.isInstanceOf[GpuCSVScan]
-  }
-
-  override def hashCode(): Int = super.hashCode()
 }
 
 case class GpuCSVPartitionReaderFactory(

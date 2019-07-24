@@ -167,7 +167,7 @@ object GpuShuffleExchangeExec {
 }
 
 class GpuHashPartitioning(expressions: Seq[GpuExpression], numPartitions: Int)
-  extends HashPartitioning(expressions, numPartitions) with GpuExpression {
+  extends HashPartitioning(expressions, numPartitions) with GpuExpression with GpuPartitioning {
 
   def getGpuKeyColumns(batch: ColumnarBatch) : Array[GpuColumnVector] = {
     expressions.map(_.columnarEval(batch).asInstanceOf[GpuColumnVector]).toArray

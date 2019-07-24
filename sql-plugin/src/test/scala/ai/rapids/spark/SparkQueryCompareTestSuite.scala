@@ -65,8 +65,8 @@ class SparkQueryCompareTestSuite extends FunSuite with BeforeAndAfterEach {
       .set("spark.sql.extensions", "ai.rapids.spark.Plugin")
       .set("spark.executor.plugins", "ai.rapids.spark.GpuResourceManager")
 
-    if (c.getOption(Plugin.TEST_CONF).isEmpty) {
-       c = c.set(Plugin.TEST_CONF, "true")
+    if (c.getOption(RapidsConf.TEST_CONF.key).isEmpty) {
+       c = c.set(RapidsConf.TEST_CONF.key, "true")
     }
     withSparkSession("gpu-sql-test", c, f)
   }
@@ -151,7 +151,7 @@ class SparkQueryCompareTestSuite extends FunSuite with BeforeAndAfterEach {
       maxFloatDiff: Double = 0.0,
       conf: SparkConf = new SparkConf())
     (fun: DataFrame => DataFrame): Unit = {
-    val testConf = conf.clone().set(Plugin.INCOMPATIBLE_OPS_CONF, "true")
+    val testConf = conf.clone().set(RapidsConf.INCOMPATIBLE_OPS.key, "true")
     test("INCOMPAT: " + testName) {
       val (fromCpu, fromGpu) = runOnCpuAndGpu(df, fun, conf=testConf)
 
@@ -170,7 +170,7 @@ class SparkQueryCompareTestSuite extends FunSuite with BeforeAndAfterEach {
       testName: String,
       df: SparkSession => DataFrame,
       conf: SparkConf = new SparkConf())(fun: DataFrame => DataFrame): Unit = {
-    val testConf = conf.clone().set(Plugin.TEST_CONF, "false")
+    val testConf = conf.clone().set(RapidsConf.TEST_CONF.key, "false")
      testSparkResultsAreEqual("NOT ALL ON GPU: " + testName, df,
       conf=testConf)(fun)
   }

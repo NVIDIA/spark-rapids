@@ -46,7 +46,7 @@ class GpuOrcScan(
     options: CaseInsensitiveStringMap,
     pushedFilters: Array[Filter])
   extends OrcScan(sparkSession, hadoopConf, fileIndex, dataSchema,
-    readDataSchema, readPartitionSchema, options, pushedFilters) {
+    readDataSchema, readPartitionSchema, options, pushedFilters) with GpuScan {
 
   // Splitting an individual ORC file is currently not supported.
   override def isSplitable(path: Path): Boolean = false
