@@ -40,4 +40,95 @@ class MortgageSparkTest extends FlatSpec with Matchers {
 
     assert(df.count() === 10000)
   }
+
+  it should "convert data to parquet" in {
+    val session = SparkSession.builder
+      .master("local[2]")
+      .appName("UnitTest")
+      .config("spark.sql.extensions", "ai.rapids.spark.Plugin")
+      .config("spark.executor.plugins", "ai.rapids.spark.GpuResourceManager")
+      .getOrCreate()
+
+    session.sparkContext.setLogLevel("warn")
+    ReadPerformanceCsv(session, "src/test/resources/Performance_2007Q3.txt_0")
+      .write.mode("overwrite").parquet("target/test_output/perf")
+
+    ReadAcquisitionCsv(session, "src/test/resources/Acquisition_2007Q3.txt")
+      .write.mode("overwrite").parquet("target/test_output/acq")
+  }
+
+  it should "run on parquet data" in {
+    val session = SparkSession.builder
+      .master("local[2]")
+      .appName("UnitTest")
+      .config("spark.sql.extensions", "ai.rapids.spark.Plugin")
+      .config("spark.executor.plugins", "ai.rapids.spark.GpuResourceManager")
+      .getOrCreate()
+
+    session.sparkContext.setLogLevel("warn")
+
+    val df = Run.parquet(
+      session,
+      "src/test/resources/parquet_perf",
+      "src/test/resources/parquet_acq"
+    ).sort(col("loan_id"), col("monthly_reporting_period"))
+
+    assert(df.count() === 10000)
+  }
+
+  it should "compute some basic aggregates" in {
+    val session = SparkSession.builder
+      .master("local[2]")
+      .appName("UnitTest")
+      .config("spark.sql.extensions", "ai.rapids.spark.Plugin")
+      .config("spark.executor.plugins", "ai.rapids.spark.GpuResourceManager")
+      .getOrCreate()
+
+    session.sparkContext.setLogLevel("warn")
+
+    val df = SimpleAggregates.csv(
+      session,
+      "src/test/resources/Performance_2007Q3.txt_0",
+      "src/test/resources/Acquisition_2007Q3.txt"
+    )
+
+    assert(df.count() === 1660)
+  }
+
+  it should "compute aggregates with percentiles" in {
+    val session = SparkSession.builder
+      .master("local[2]")
+      .appName("UnitTest")
+      .config("spark.sql.extensions", "ai.rapids.spark.Plugin")
+      .config("spark.executor.plugins", "ai.rapids.spark.GpuResourceManager")
+      .getOrCreate()
+
+    session.sparkContext.setLogLevel("warn")
+
+    val df = AggregatesWithPercentiles.csv(
+      session,
+      "src/test/resources/Performance_2007Q3.txt_0"
+    )
+
+    assert(df.count() === 177)
+  }
+
+  it should "compute aggregates with joins" in {
+    val session = SparkSession.builder
+      .master("local[2]")
+      .appName("UnitTest")
+      .config("spark.sql.extensions", "ai.rapids.spark.Plugin")
+      .config("spark.executor.plugins", "ai.rapids.spark.GpuResourceManager")
+      .getOrCreate()
+
+    session.sparkContext.setLogLevel("warn")
+
+    val df = AggregatesWithJoin.csv(
+      session,
+      "src/test/resources/Performance_2007Q3.txt_0",
+      "src/test/resources/Acquisition_2007Q3.txt"
+    )
+
+    assert(df.count() === 177)
+  }
 }
