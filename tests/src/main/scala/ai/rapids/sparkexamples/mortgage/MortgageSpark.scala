@@ -318,11 +318,99 @@ object Run {
     CleanAcquisitionPrime(spark, dfPerf, dfAcq)
   }
 
-  def apply(spark: SparkSession, mortgagePerformance: String, mortgageAcquisition: String, output: String): Unit = {
+  def parquet(spark: SparkSession, mortgagePerformance: String, mortgageAcquisition: String): DataFrame = {
     val dfPerf = CreatePerformanceDelinquency.prepare(spark.read.parquet(mortgagePerformance))
     val dfAcq = spark.read.parquet(mortgageAcquisition)
 
-    CleanAcquisitionPrime(spark, dfPerf, dfAcq).write.mode("overwrite").parquet(output)
+    CleanAcquisitionPrime(spark, dfPerf, dfAcq)
+  }
+
+  def apply(spark: SparkSession, mortgagePerformance: String, mortgageAcquisition: String, output: String): Unit = {
+    parquet(spark, mortgagePerformance, mortgageAcquisition)
+      .write.mode("overwrite").parquet(output)
+  }
+}
+
+object SimpleAggregates {
+
+  def csv(spark: SparkSession, mortgagePerformance: String, mortgageAcquisition: String): DataFrame = {
+    val dfp = ReadPerformanceCsv(spark, mortgagePerformance)
+    val dfa = ReadAcquisitionCsv(spark, mortgageAcquisition)
+
+    val maxRate = dfp
+      .withColumn("monthly_reporting_period", to_date(col("monthly_reporting_period"), "MM/dd/yyyy"))
+      .withColumn("monthval", month(col("monthly_reporting_period")))
+      .groupBy(col("monthval"), col("loan_id"))
+      .agg(max("interest_rate").as("max_monthly_rate"))
+
+    val joined = maxRate.join(dfa, maxRate("loan_id") === dfa("loan_id"))
+    joined.groupBy(col("zip"), col("monthval"))
+        .agg(min("max_monthly_rate").as("min_max_monthly_rate"))
+  }
+
+  def apply(spark: SparkSession, mortgagePerformance: String, mortgageAcquisition: String, output: String): Unit = {
+    csv(spark, mortgagePerformance, mortgageAcquisition)
+      .write.mode("overwrite").parquet(output)
+  }
+}
+
+object AggregatesWithPercentiles {
+  def csv(spark: SparkSession, mortgagePerformance: String): DataFrame = {
+    val dfp =  ReadPerformanceCsv(spark, mortgagePerformance)
+    val kindOfAnon = dfp.withColumn("loan_id_hash", hex(hash(col("loan_id"))))
+      .drop("loan_id")
+
+    kindOfAnon.createOrReplaceTempView("perf_data")
+
+    val ret = spark.sql(
+      """
+        select r.loan_id_hash,
+          round(min(r.interest_rate), 4) as interest_rate_min,
+          round(max(r.interest_rate), 4) as interest_rate_max,
+          round(avg(r.interest_rate), 4) as interest_rate_avg,
+          round(percentile(r.interest_rate, 0.5), 4) as interest_rate_50p,
+          round(percentile(r.interest_rate, 0.75), 4) as interest_rate_75p,
+          round(percentile(r.interest_rate, 0.90), 4) as interest_rate_90p,
+          round(percentile(r.interest_rate, 0.99), 4) as interest_rate_99p
+        from perf_data r
+         group by r.loan_id_hash
+      """.stripMargin)
+
+    return ret
+  }
+}
+
+object AggregatesWithJoin {
+  def csv(spark: SparkSession, mortgagePerformance: String, mortgageAcquisition: String): DataFrame = {
+    val dfp =  ReadPerformanceCsv(spark, mortgagePerformance)
+    val kindOfAnonPerf = dfp.withColumn("loan_id_hash", hex(hash(col("loan_id"))))
+      .drop("loan_id")
+
+    kindOfAnonPerf.createOrReplaceTempView("perf_data")
+
+    val dfa =  ReadAcquisitionCsv(spark, mortgageAcquisition)
+    val kindOfAnonAcq = dfa.withColumn("loan_id_hash", hex(hash(col("loan_id"))))
+      .drop("loan_id")
+
+    kindOfAnonAcq.createOrReplaceTempView("acq_data")
+
+    val ret = spark.sql(
+      """
+        select * from (
+          select loan_id_hash,
+           min(interest_rate) as min_int_rate
+          from perf_data
+          group by loan_id_hash
+        ) a left join (
+          select loan_id_hash,
+           first(orig_interest_rate) as first_int_rate,
+           coalesce(max(dti), 0.0) as max_dti
+          from acq_data
+          group by loan_id_hash
+        ) b on a.loan_id_hash = b.loan_id_hash
+      """.stripMargin)
+
+    return ret
   }
 }
 
