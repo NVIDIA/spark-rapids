@@ -537,7 +537,8 @@ class SparkQueryCompareTestSuite extends FunSuite with BeforeAndAfterEach {
   }
 
   testSparkResultsAreEqual("Test ORC", frameFromOrc("test.snappy.orc")) {
-    frame => frame.select(col("ints_1"), col("ints_3"), col("ints_5"))
+    // dropping the timestamp column since timestamp expressions are not GPU supported yet
+    frame => frame.select(col("*")).drop("timestamp")
   }
 
   IGNORE_ORDER_testSparkResultsAreEqual("test hash agg with shuffle", longsFromCSVDf, repart = 2) {
