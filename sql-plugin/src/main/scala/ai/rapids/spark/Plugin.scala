@@ -682,11 +682,11 @@ case class GpuOverrides() extends Rule[SparkPlan] with Logging {
   def replaceWithGpuExpression(exp: Expression): GpuExpression = {
     val rule = GpuOverrides.expressions.getOrElse(exp.getClass,
       throw new CannotReplaceException(s"no GPU enabled version of expression" +
-        s" ${exp.getClass} ${exp} could be found"))
+        s" ${exp.getClass.getName} ${exp} could be found"))
 
     if (!conf.isOperatorEnabled(rule.confKey, rule.isIncompat)) {
       if (rule.isIncompat && !conf.isIncompatEnabled) {
-        throw new CannotReplaceException(s"the GPU version of expression ${exp.getClass} ${exp}" +
+        throw new CannotReplaceException(s"the GPU version of expression ${exp.getClass.getName} ${exp}" +
           s" is not 100% compatible with the Spark version. ${rule.incompatDoc}. To enable this" +
           s" operator despite the incompatibilities please set the config" +
           s" ${rule.confKey} to true. You could also set ${RapidsConf.INCOMPATIBLE_OPS} to true" +
@@ -708,11 +708,11 @@ case class GpuOverrides() extends Rule[SparkPlan] with Logging {
   def replaceWithGpuScan(scan: Scan): GpuScan = {
     val rule = GpuOverrides.scans.getOrElse(scan.getClass,
       throw new CannotReplaceException(s"no GPU enabled version of input type" +
-        s" ${scan.getClass} could be found"))
+        s" ${scan.getClass.getName} could be found"))
 
     if (!conf.isOperatorEnabled(rule.confKey, rule.isIncompat)) {
       if (rule.isIncompat && !conf.isIncompatEnabled) {
-        throw new CannotReplaceException(s"the GPU version of input type ${scan.getClass}" +
+        throw new CannotReplaceException(s"the GPU version of input type ${scan.getClass.getName}" +
           s" is not 100% compatible with the Spark version. ${rule.incompatDoc}. To enable this" +
           s" operator despite the incompatibilities please set the config" +
           s" ${rule.confKey} to true. You could also set ${RapidsConf.INCOMPATIBLE_OPS} to true" +
@@ -731,11 +731,11 @@ case class GpuOverrides() extends Rule[SparkPlan] with Logging {
   def replaceWithGpuPartitioning(part: Partitioning): GpuPartitioning = {
     val rule = GpuOverrides.parts.getOrElse(part.getClass,
       throw new CannotReplaceException(s"no GPU enabled version of partitioning type" +
-        s" ${part.getClass} could be found"))
+        s" ${part.getClass.getName} could be found"))
 
     if (!conf.isOperatorEnabled(rule.confKey, rule.isIncompat)) {
       if (rule.isIncompat && !conf.isIncompatEnabled) {
-        throw new CannotReplaceException(s"the GPU version of partitioning type ${part.getClass}" +
+        throw new CannotReplaceException(s"the GPU version of partitioning type ${part.getClass.getName}" +
           s" is not 100% compatible with the Spark version. ${rule.incompatDoc}. To enable this" +
           s" operator despite the incompatibilities please set the config" +
           s" ${rule.confKey} to true. You could also set ${RapidsConf.INCOMPATIBLE_OPS} to true" +
@@ -755,11 +755,11 @@ case class GpuOverrides() extends Rule[SparkPlan] with Logging {
     try {
       val rule = GpuOverrides.execs.getOrElse(plan.getClass,
         throw new CannotReplaceException(s"no GPU enabled version of operator" +
-          s" ${plan.getClass} could be found"))
+          s" ${plan.getClass.getName} could be found"))
 
       if (!conf.isOperatorEnabled(rule.confKey, rule.isIncompat)) {
         if (rule.isIncompat && !conf.isIncompatEnabled) {
-          throw new CannotReplaceException(s"the GPU version of ${plan.getClass}" +
+          throw new CannotReplaceException(s"the GPU version of ${plan.getClass.getName}" +
             s" is not 100% compatible with the Spark version. ${rule.incompatDoc}. To enable this" +
             s" operator despite the incompatibilities please set the config" +
             s" ${rule.confKey} to true. You could also set ${RapidsConf.INCOMPATIBLE_OPS} to true" +
@@ -786,7 +786,7 @@ case class GpuOverrides() extends Rule[SparkPlan] with Logging {
     } catch {
       case exp: CannotReplaceException =>
         if (conf.explain) {
-          logWarning(s"GPU processing for ${plan.getClass} is not currently supported" +
+          logWarning(s"${plan.getClass.getSimpleName} will not run on a GPU" +
             s" because ${exp.getMessage}")
         }
         plan.withNewChildren(plan.children.map(replaceWithGpuPlan))
