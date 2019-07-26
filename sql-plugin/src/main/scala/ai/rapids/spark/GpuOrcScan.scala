@@ -59,16 +59,6 @@ class GpuOrcScan(
     GpuOrcPartitionReaderFactory(sparkSession.sessionState.conf, broadcastedConf,
       dataSchema, readDataSchema, readPartitionSchema)
   }
-
-  // TODO need a common base for these...
-  override def equals(other: Any): Boolean = {
-    if (!super.equals(other)) {
-      return false
-    }
-    other.isInstanceOf[GpuOrcScan]
-  }
-
-  override def hashCode(): Int = super.hashCode()
 }
 
 object GpuOrcScan {

@@ -608,7 +608,7 @@ object GpuOverrides {
           scan.readPartitionSchema,
           scan.options,
           scan.pushedFilters))
-      .desc("Orc parsing")
+      .desc("ORC parsing")
       .assertIsAllowed((scan, conf) => GpuOrcScan.assertCanSupport(scan))
       .build(),
   )
