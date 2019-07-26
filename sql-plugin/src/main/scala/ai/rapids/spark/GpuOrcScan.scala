@@ -16,7 +16,9 @@
 
 package ai.rapids.spark
 
-import ai.rapids.cudf.{HostMemoryBuffer, ORCOptions, Table}
+import scala.collection.mutable.ArrayBuffer
+
+import ai.rapids.cudf.{ColumnVector, DType, HostMemoryBuffer, ORCOptions, Table, TimeUnit}
 import org.apache.hadoop.conf.Configuration
 import org.apache.hadoop.fs.Path
 import org.apache.hadoop.io.compress.CompressionCodecFactory
@@ -199,10 +201,38 @@ class GpuOrcPartitionReader(
           throw new QueryExecutionException(s"Expected ${readDataSchema.length} columns " +
               s"but read ${table.getNumberOfColumns} from $partFile")
         }
-        Some(table)
+        Some(handleDate64Casts(table))
       }
     } finally {
       dataBuffer.close()
     }
+  }
+
+  // The GPU ORC reader always casts date and timestamp columns to DATE64.
+  // See https://github.com/rapidsai/cudf/issues/2384.
+  // Cast DATE64 columns back to either DATE32 or TIMESTAMP based on the read schema
+  private def handleDate64Casts(table: Table): Table = {
+    var columns: ArrayBuffer[ColumnVector] = null
+    for (i <- 0 until table.getNumberOfColumns) {
+      val column = table.getColumn(i)
+      if (column.getType == DType.DATE64) {
+        if (columns == null) {
+          columns = (0 until table.getNumberOfColumns).map(table.getColumn).to[ArrayBuffer]
+        }
+        val rapidsType = GpuColumnVector.getRapidsType(readDataSchema.fields(i).dataType)
+        columns(i) = columns(i).castTo(rapidsType, TimeUnit.MICROSECONDS)
+      }
+    }
+
+    var result = table
+    if (columns != null) {
+      try {
+        result = new Table(columns:_*)
+      } finally {
+        table.close()
+      }
+    }
+
+    result
   }
 }

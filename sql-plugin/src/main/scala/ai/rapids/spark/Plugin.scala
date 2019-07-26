@@ -18,7 +18,7 @@ package ai.rapids.spark
 
 import scala.reflect.ClassTag
 
-import ai.rapids.cudf.{Cuda, Rmm, RmmAllocationMode}
+import ai.rapids.cudf.{Cuda, DType, Rmm, RmmAllocationMode}
 import ai.rapids.spark
 
 import org.apache.spark.internal.Logging
@@ -27,7 +27,6 @@ import org.apache.spark.sql.catalyst.expressions._
 import org.apache.spark.sql.catalyst.plans.physical.{HashPartitioning, Partitioning}
 import org.apache.spark.sql.catalyst.rules.Rule
 import org.apache.spark.sql.execution._
-import org.apache.spark.sql.execution.aggregate.HashAggregateExec
 import org.apache.spark.sql.execution.datasources.v2.BatchScanExec
 import org.apache.spark.sql.execution.datasources.v2.csv.CSVScan
 import org.apache.spark.sql.execution.datasources.v2.orc.OrcScan
@@ -36,6 +35,7 @@ import org.apache.spark.sql.execution.exchange.ShuffleExchangeExec
 import org.apache.spark.sql.sources.v2.reader.Scan
 import org.apache.spark.sql.types._
 import org.apache.spark.{ExecutorPlugin, SparkEnv}
+import org.apache.spark.sql.execution.aggregate.HashAggregateExec
 
 trait GpuExec extends SparkPlan {
   override def supportsColumnar = true
@@ -618,6 +618,10 @@ object GpuOverrides {
       .convert((hp, overrides) =>
         new GpuHashPartitioning(
           hp.expressions.map(overrides.replaceWithGpuExpression), hp.numPartitions))
+      .assertIsAllowed((hp, conf) =>
+        if (hp.expressions.map(_.dataType).contains(StringType)) {
+          throw new CannotReplaceException("strings are not supported as the keys for hash partitioning.")
+        })
       .desc("Hash based partitioning")
       .build()
   )
@@ -670,7 +674,7 @@ case class GpuOverrides() extends Rule[SparkPlan] with Logging {
       case DoubleType => true
       case DateType => true
       case TimestampType => false // true we really need to understand how the timezone works with this
-      case StringType => false // true we cannot convert rows to strings so we cannot support this right now...
+      case StringType => true
       case _ => false
     })
   }
