@@ -16,6 +16,8 @@
 
 package ai.rapids.spark
 
+import ai.rapids.cudf.DType
+
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.expressions.NamedExpression
 import org.apache.spark.sql.execution.{FilterExec, ProjectExec, SparkPlan, UnionExec}
@@ -68,13 +70,24 @@ class GpuFilterExec(condition: GpuExpression, child: SparkPlan)
           // rebuild the columns, but with new filtered columns
           for (i <- 0 until cb.numCols()) {
             val colBase = cb.column(i).asInstanceOf[GpuColumnVector].getBase
-            val filtered = colBase.filter(gpuEvalCv.getBase)
+            val filtered = if (colBase.getType == DType.STRING) {
+              // filter does not work on strings...
+              // TODO we need a faster way to work with these values!!!
+              val tmp = colBase.asStringCategories()
+              try {
+                tmp.filter(gpuEvalCv.getBase)
+              } finally {
+                tmp.close()
+              }
+            } else {
+              colBase.filter(gpuEvalCv.getBase)
+            }
             cols = (cols :+ GpuColumnVector.from(filtered))
             rowCount = filtered.getRowCount().intValue() // all columns have the same # of rows
           }
         } finally {
           if (evalCv != null && evalCv.isInstanceOf[GpuColumnVector]) {
-            evalCv.asInstanceOf[GpuColumnVector].close();
+            evalCv.asInstanceOf[GpuColumnVector].close()
           }
         }
         numOutputRows += rowCount

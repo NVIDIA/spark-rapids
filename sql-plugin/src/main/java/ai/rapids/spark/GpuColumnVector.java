@@ -19,6 +19,7 @@ package ai.rapids.spark;
 import ai.rapids.cudf.DType;
 import ai.rapids.cudf.Table;
 import ai.rapids.cudf.TimeUnit;
+import org.apache.spark.sql.execution.vectorized.WritableColumnVector;
 import org.apache.spark.sql.types.*;
 import org.apache.spark.sql.vectorized.ColumnVector;
 import org.apache.spark.sql.vectorized.ColumnarArray;
@@ -38,7 +39,16 @@ public final class GpuColumnVector extends ColumnVector {
     private final ai.rapids.cudf.ColumnVector.Builder[] builders;
     private final StructField[] fields;
 
-    public GpuColumnarBatchBuilder(StructType schema, int rows) {
+    /**
+     * A collection of builders for building up columnar data.
+     * @param schema the schema of the batch.
+     * @param rows the maximum number of rows in this batch.
+     * @param batch if this is going to copy a ColumnarBatch in a non GPU format that batch
+     *              we are going to copy. If not this may be null. This is used to get an idea
+     *              of how big to allocate buffers that do not necessarily correspond to the
+     *              number of rows.
+     */
+    public GpuColumnarBatchBuilder(StructType schema, int rows, ColumnarBatch batch) {
       fields = schema.fields();
       int len = fields.length;
       builders = new ai.rapids.cudf.ColumnVector.Builder[len];
@@ -48,7 +58,25 @@ public final class GpuColumnVector extends ColumnVector {
           StructField field = fields[i];
           DType type = getRapidsType(field);
           TimeUnit units = getTimeUnits(field);
-          builders[i] = ai.rapids.cudf.ColumnVector.builder(type, units, rows);
+          if (type == DType.STRING) {
+            // If we cannot know the exact size, assume the string is small and allocate
+            // 8 bytes per row.  The buffer of the builder will grow as needed if it is
+            // too small.
+            int bufferSize = rows * 8;
+            if (batch != null) {
+              ColumnVector cv = batch.column(i);
+              if (cv instanceof WritableColumnVector) {
+                WritableColumnVector wcv = (WritableColumnVector)cv;
+                if (!wcv.hasDictionary()) {
+                  bufferSize = wcv.getArrayOffset(rows-1) +
+                      wcv.getArrayLength(rows - 1);
+                }
+              }
+            }
+            builders[i] = ai.rapids.cudf.ColumnVector.builder(type, rows, bufferSize);
+          } else {
+            builders[i] = ai.rapids.cudf.ColumnVector.builder(type, units, rows);
+          }
           success = true;
         }
       } finally {
@@ -163,29 +191,29 @@ public final class GpuColumnVector extends ColumnVector {
 
   private static DataType getSparkType(DType type) {
     switch (type) {
-    case BOOL8:
-      return DataTypes.BooleanType;
-    case INT8:
-      return DataTypes.ByteType;
-    case INT16:
-      return DataTypes.ShortType;
-    case INT32:
-      return DataTypes.IntegerType;
-    case INT64:
-      return DataTypes.LongType;
-    case FLOAT32:
-      return DataTypes.FloatType;
-    case FLOAT64:
-      return DataTypes.DoubleType;
-    case DATE32:
-      return DataTypes.DateType;
-    case TIMESTAMP:
-      return DataTypes.TimestampType; // TODO need to verify that the TimeUnits are correct
-    case STRING: //Fall through
-    case STRING_CATEGORY:
-      return DataTypes.StringType;
-    default:
-      throw new IllegalArgumentException(type + " is not supported by spark yet.");
+      case BOOL8:
+        return DataTypes.BooleanType;
+      case INT8:
+        return DataTypes.ByteType;
+      case INT16:
+        return DataTypes.ShortType;
+      case INT32:
+        return DataTypes.IntegerType;
+      case INT64:
+        return DataTypes.LongType;
+      case FLOAT32:
+        return DataTypes.FloatType;
+      case FLOAT64:
+        return DataTypes.DoubleType;
+      case DATE32:
+        return DataTypes.DateType;
+      case TIMESTAMP:
+        return DataTypes.TimestampType; // TODO need to verify that the TimeUnits are correct
+      case STRING: //Fall through
+      case STRING_CATEGORY:
+        return DataTypes.StringType;
+      default:
+        throw new IllegalArgumentException(type + " is not supported by spark yet.");
 
     }
   }
