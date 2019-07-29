@@ -383,6 +383,11 @@ class ExecRuleBuilder[INPUT <: SparkPlan](implicit val tag: ClassTag[INPUT])
 }
 
 object GpuOverrides {
+  val FLOAT_DIFFERS_INCOMPAT =
+    "floating point results in some cases may differ with the JVM version by a small amount"
+  val DIVIDE_BY_ZERO_INCOMPAT = "divide by 0 does not result in null"
+
+
   def expr[INPUT <: Expression](implicit tag: ClassTag[INPUT]): ExprRuleBuilder[INPUT] = {
     new ExprRuleBuilder[INPUT]()
   }
@@ -484,32 +489,32 @@ object GpuOverrides {
     expr[Atan]
       .unary(new GpuAtan(_))
       .desc("inverse tangent")
-      .incompat("floating point results in some cases may differ with the JVM version by a small amount")
+      .incompat(FLOAT_DIFFERS_INCOMPAT)
       .build(),
     expr[Cos]
       .unary(new GpuCos(_))
       .desc("cosine")
-      .incompat("floating point results in some cases may differ with the JVM version by a small amount")
+      .incompat(FLOAT_DIFFERS_INCOMPAT)
       .build(),
     expr[Exp]
       .unary(new GpuExp(_))
       .desc("Euler's number e raised to a power")
-      .incompat("floating point results in some cases may differ with the JVM version by a small amount")
+      .incompat(FLOAT_DIFFERS_INCOMPAT)
       .build(),
     expr[Log]
       .unary(new GpuLog(_))
       .desc("natural log")
-      .incompat("floating point results in some cases may differ with the JVM version by a small amount")
+      .incompat(FLOAT_DIFFERS_INCOMPAT)
       .build(),
     expr[Sin]
       .unary(new GpuSin(_))
       .desc("sine")
-      .incompat("floating point results in some cases may differ with the JVM version by a small amount")
+      .incompat(FLOAT_DIFFERS_INCOMPAT)
       .build(),
     expr[Tan]
       .unary(new GpuTan(_))
       .desc("tangent")
-      .incompat("floating point results in some cases may differ with the JVM version by a small amount")
+      .incompat(FLOAT_DIFFERS_INCOMPAT)
       .build(),
     expr[Add]
       .binary(new GpuAdd(_, _))
@@ -554,22 +559,22 @@ object GpuOverrides {
     expr[Pow]
       .binary(new GpuPow(_, _))
       .desc("lhs ^ rhs")
-      .incompat("floating point results in some cases may differ with the JVM version by a small amount")
+      .incompat(FLOAT_DIFFERS_INCOMPAT)
       .build(),
     expr[Divide]
       .binary(new GpuDivide(_, _))
       .desc("division")
-      .incompat("divide by 0 results in -Infinity instead of null")
+      .incompat(DIVIDE_BY_ZERO_INCOMPAT)
       .build(),
     expr[IntegralDivide]
       .binary(new GpuIntegralDivide(_, _))
       .desc("division with a integer result")
-      .incompat("divide by 0 does not result in null")
+      .incompat(DIVIDE_BY_ZERO_INCOMPAT)
       .build(),
     expr[Remainder]
       .binary(new GpuRemainder(_, _))
       .desc("remainder or modulo")
-      .incompat("divide by 0 does not result in null")
+      .incompat(DIVIDE_BY_ZERO_INCOMPAT)
       .build()
   )
 
