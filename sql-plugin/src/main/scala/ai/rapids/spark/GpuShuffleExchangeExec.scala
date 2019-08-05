@@ -216,6 +216,9 @@ class GpuHashPartitioning(expressions: Seq[GpuExpression], numPartitions: Int)
       gpuDataColumns = getGpuDataColumns(batch)
 
       val (keys, dataIndexes, table) = dedupe(gpuKeyColumns, gpuDataColumns)
+      // Don't need the batch any more table has all we need in it.
+      batch.close
+
       val partedTable = table.onColumns(keys: _*).partition(numPartitions, HashFunction.MURMUR3)
       table.close()
       val parts = partedTable.getPartitions

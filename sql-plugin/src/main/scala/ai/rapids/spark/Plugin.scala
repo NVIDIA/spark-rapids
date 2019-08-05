@@ -18,7 +18,7 @@ package ai.rapids.spark
 
 import scala.reflect.ClassTag
 
-import ai.rapids.cudf.{Cuda, DType, Rmm, RmmAllocationMode}
+import ai.rapids.cudf.{Cuda, Rmm, RmmAllocationMode}
 import ai.rapids.spark
 
 import org.apache.spark.internal.Logging

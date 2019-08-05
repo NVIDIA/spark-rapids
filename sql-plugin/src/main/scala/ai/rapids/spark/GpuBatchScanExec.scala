@@ -204,7 +204,8 @@ class SingleTablePartitionReader(
     dataSchema: StructType,
     readDataSchema: StructType,
     parsedOptions: CSVOptions) extends PartitionReader[ColumnarBatch] {
-  var batch: Option[ColumnarBatch] = None
+  private var batch: Option[ColumnarBatch] = None
+  private var isExhausted: Boolean = false
 
   private lazy val estimatedHostBufferSize: Long = {
     val rawPath = new Path(partFile.filePath)
@@ -346,19 +347,25 @@ class SingleTablePartitionReader(
   }
 
   override def next(): Boolean = {
-    if (batch.isDefined) {
-      batch.foreach(_.close())
-      batch = None
-    } else {
+    batch.foreach(_.close())
+    batch = None
+    if (!isExhausted) {
       batch = readBatch()
+      // We currently only support a single batch
+      isExhausted = true
     }
     batch.isDefined
   }
 
-  override def get(): ColumnarBatch = batch.getOrElse(throw new NoSuchElementException)
+  override def get(): ColumnarBatch = {
+    val ret = batch.getOrElse(throw new NoSuchElementException)
+    batch = None
+    ret
+  }
 
   override def close(): Unit = {
     batch.foreach(_.close())
     batch = None
+    isExhausted = true
   }
 }

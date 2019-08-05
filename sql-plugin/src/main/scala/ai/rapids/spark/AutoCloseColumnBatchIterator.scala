@@ -20,9 +20,13 @@ import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
 /**
- * It is the responsibility of the SparkPlan exec that creates a ColumnarBatch to close it,
- * This provides a simple way to be sure that it gets closed in all cases once it is done being
- * used.
+ * For columnar code on the CPU it is the responsibility of the SparkPlan exec that creates a
+ * [[ColumnarBatch]] to close it.  In the case of code running on the GPU that would waste too
+ * much memory, so it is the responsibility of the code receiving the batch to close it, when it
+ * is not longer needed.
+ *
+ * This class provides a simple way for CPU batch code to be sure that a batch gets closed. If your
+ * code is executing on the GPU do not use this class.
  */
 class AutoCloseColumnBatchIterator[U](itr: Iterator[U], nextBatch: Iterator[U] => ColumnarBatch)
     extends Iterator[ColumnarBatch] {
