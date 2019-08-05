@@ -233,7 +233,11 @@ class ParquetPartitionReader(
     var size: Long = 4 + 4 + 4
 
     // add in the size of the row group data
-    size += clippedBlocks.map(_.getTotalByteSize).sum
+
+    // Calculate the total amount of column data that will be copied
+    // NOTE: Avoid using block.getTotalByteSize here as that is the
+    //       uncompressed size rather than the size in the file.
+    size += clippedBlocks.flatMap(_.getColumns.asScala.map(_.getTotalSize)).sum
 
     // Calculate size of the footer metadata.
     // This uses the column metadata from the original file, but that should
@@ -409,9 +413,9 @@ object ParquetPartitionReader {
     block.setRowCount(rowCount)
 
     var totalSize: Long = 0
-    for (column <- columns) {
+    columns.foreach { column =>
       block.addColumn(column)
-      totalSize += column.getTotalSize
+      totalSize += column.getTotalUncompressedSize
     }
     block.setTotalByteSize(totalSize)
 
