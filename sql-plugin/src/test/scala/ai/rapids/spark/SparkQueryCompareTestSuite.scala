@@ -686,6 +686,15 @@ class SparkQueryCompareTestSuite extends FunSuite with BeforeAndAfterEach {
       col("more_floats"), ceil(col("more_floats")))
   }
 
+  testSparkResultsAreEqual("Test literal values in select", floatDf) {
+    frame => frame.select(col("floats"), lit(100))
+  }
+
+  // TODO need a way to fill a column from a string
+//  testSparkResultsAreEqual("Test literal string values in select", floatDf) {
+//    frame => frame.select(col("floats"), lit("test"))
+//  }
+
   INCOMPAT_testSparkResultsAreEqual("Test cos doubles", doubleDf, 0.00001) {
     frame => frame.select(cos(col("doubles")), cos(col("more_doubles")))
   }

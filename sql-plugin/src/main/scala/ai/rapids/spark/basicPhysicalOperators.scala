@@ -37,10 +37,10 @@ class GpuProjectExec(projectList: Seq[GpuExpression], child: SparkPlan)
         val newColumns = boundProjectList.map(
           expr => {
             val result = expr.asInstanceOf[GpuExpression].columnarEval(cb)
-            // TODO it is possible for a constant to be returned that we need to
-            // create a columnVector for, might be a special sub-class
-            // that only stores a single value.
-            result.asInstanceOf[ColumnVector]
+            result match {
+              case cv: ColumnVector => cv
+              case other => GpuColumnVector.from(GpuScalar.from(other), cb.numRows())
+            }
           }).toArray
         new ColumnarBatch(newColumns, cb.numRows())
       }
