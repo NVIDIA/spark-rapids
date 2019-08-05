@@ -17,6 +17,7 @@
 package ai.rapids.spark;
 
 import ai.rapids.cudf.DType;
+import ai.rapids.cudf.Scalar;
 import ai.rapids.cudf.Table;
 import ai.rapids.cudf.TimeUnit;
 import org.apache.spark.sql.execution.vectorized.WritableColumnVector;
@@ -246,6 +247,10 @@ public final class GpuColumnVector extends ColumnVector {
 
   public static GpuColumnVector from(ai.rapids.cudf.ColumnVector cudfCv) {
     return new GpuColumnVector(getSparkType(cudfCv.getType()), cudfCv);
+  }
+
+  public static GpuColumnVector from(Scalar scalar, int count) {
+    return from(ai.rapids.cudf.ColumnVector.fromScalar(scalar, count));
   }
 
   private final ai.rapids.cudf.ColumnVector cudfCv;

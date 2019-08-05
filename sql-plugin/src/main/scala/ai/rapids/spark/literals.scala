@@ -21,6 +21,7 @@ import ai.rapids.cudf.Scalar
 import org.apache.spark.sql.catalyst.expressions.Literal
 import org.apache.spark.sql.types._
 import org.apache.spark.sql.vectorized.ColumnarBatch
+import org.apache.spark.unsafe.types.UTF8String
 
 object GpuScalar {
   def from(v: Any): Scalar = v match {
@@ -32,7 +33,9 @@ object GpuScalar {
     case s: Short => Scalar.fromShort(s)
     case b: Byte => Scalar.fromByte(b)
     case b: Boolean => Scalar.fromBool(b)
-    case _ => throw new IllegalStateException(s"${v} is not supported as a scalar yet")
+    case s: String => Scalar.fromString(s)
+    case s: UTF8String => Scalar.fromString(s.toString)
+    case _ => throw new IllegalStateException(s"${v.getClass} '${v}' is not supported as a scalar yet")
   }
 
   def from(v: Any, t: DataType): Scalar = v match {
@@ -52,7 +55,9 @@ object GpuScalar {
     case s: Short => Scalar.fromShort(s)
     case b: Byte => Scalar.fromByte(b)
     case b: Boolean => Scalar.fromBool(b)
-    case _ => throw new IllegalStateException(s"$v is not supported as a scalar yet")
+    case s: String => Scalar.fromString(s)
+    case s: UTF8String => Scalar.fromString(s.toString)
+    case _ => throw new IllegalStateException(s"${v.getClass} '${v}' is not supported as a scalar yet")
   }
 }
 

@@ -387,6 +387,17 @@ object GpuOverrides {
     "floating point results in some cases may differ with the JVM version by a small amount"
   val DIVIDE_BY_ZERO_INCOMPAT = "divide by 0 does not result in null"
 
+  def isStringLit(exp: Expression): Boolean = exp match {
+    case Literal(_, StringType) => true
+    case a: Alias => isStringLit(a.child)
+    case _ => false
+  }
+
+  /**
+   * Checks to see if any expressions are a String Literal
+   */
+  def isAnyStringLit(expressions: Seq[Expression]): Boolean =
+    expressions.filter(isStringLit).nonEmpty
 
   def expr[INPUT <: Expression](implicit tag: ClassTag[INPUT]): ExprRuleBuilder[INPUT] = {
     new ExprRuleBuilder[INPUT]()
@@ -637,6 +648,10 @@ object GpuOverrides {
         new GpuProjectExec(plan.projectList.map(overrides.replaceWithGpuExpression),
               overrides.replaceWithGpuPlan(plan.child)))
       .desc("The backend for most select, withColumn and dropColumn statements")
+      .assertIsAllowed((proj, conf) =>
+        if (isAnyStringLit(proj.expressions)) {
+          throw new CannotReplaceException("String literal values are not supported in a projection")
+        })
       .build(),
     exec[BatchScanExec]
       .convert((exec, overrides) =>
