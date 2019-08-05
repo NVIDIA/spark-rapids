@@ -26,6 +26,7 @@ import ai.rapids.cudf.{HostMemoryBuffer, Table}
 import ai.rapids.cudf
 import org.apache.hadoop.conf.Configuration
 import org.apache.hadoop.fs.Path
+import org.apache.hadoop.io.Text
 import org.apache.hadoop.io.compress.CompressionCodecFactory
 
 import org.apache.spark.broadcast.Broadcast
@@ -156,7 +157,8 @@ class GpuCSVScan(
     dataSchema: StructType, // original schema passed in by the user (all the data)
     readDataSchema: StructType, // schema that is for the data being read in (including dropped columns)
     readPartitionSchema: StructType, // schema for the parts that come from the file path
-    options: CaseInsensitiveStringMap) extends
+    options: CaseInsensitiveStringMap,
+    maxReaderBatchSize: Integer) extends
   CSVScan(sparkSession, fileIndex, dataSchema, readDataSchema, readPartitionSchema, options)
   with GpuScan {
 
@@ -174,7 +176,7 @@ class GpuCSVScan(
       new GpuSerializableConfiguration(hadoopConf))
 
     return new GpuCSVPartitionReaderFactory(sparkSession.sessionState.conf, broadcastedConf,
-      dataSchema, readDataSchema, readPartitionSchema, parsedOptions)
+      dataSchema, readDataSchema, readPartitionSchema, parsedOptions, maxReaderBatchSize)
   }
 }
 
@@ -184,7 +186,8 @@ case class GpuCSVPartitionReaderFactory(
     dataSchema: StructType,
     readDataSchema: StructType,
     partitionSchema: StructType, // TODO need to filter these out, or support pulling them in. These are values from the file name/path itself
-    parsedOptions: CSVOptions) extends FilePartitionReaderFactory {
+    parsedOptions: CSVOptions,
+    maxReaderBatchSize: Integer) extends FilePartitionReaderFactory {
 
   override def buildReader(partitionedFile: PartitionedFile): PartitionReader[InternalRow] = {
     throw new IllegalStateException("ROW BASED PARSING IS NOT SUPPORTED ON THE GPU...")
@@ -192,19 +195,22 @@ case class GpuCSVPartitionReaderFactory(
 
   override def buildColumnarReader(partFile: PartitionedFile): PartitionReader[ColumnarBatch] = {
     val conf = broadcastedConf.value.value
-    val reader = new SingleTablePartitionReader(conf, partFile, dataSchema, readDataSchema, parsedOptions)
+    val reader = new CSVPartitionReader(conf, partFile, dataSchema, readDataSchema, parsedOptions, maxReaderBatchSize)
     ColumnarPartitionReaderWithPartitionValues.newReader(partFile, reader, partitionSchema)
   }
 }
 
 
-class SingleTablePartitionReader(
+class CSVPartitionReader(
     conf: Configuration,
     partFile: PartitionedFile,
     dataSchema: StructType,
     readDataSchema: StructType,
-    parsedOptions: CSVOptions) extends PartitionReader[ColumnarBatch] {
+    parsedOptions: CSVOptions,
+    maxRowsPerChunk: Integer) extends PartitionReader[ColumnarBatch] {
   private var batch: Option[ColumnarBatch] = None
+  private val lineReader = new HadoopFileLinesReader(partFile, parsedOptions.lineSeparatorInRead, conf)
+  private var isFirstChunkForIterator: Boolean = true
   private var isExhausted: Boolean = false
 
   private lazy val estimatedHostBufferSize: Long = {
@@ -216,7 +222,7 @@ class SingleTablePartitionReader(
     val codec = codecFactory.getCodec(path)
     if (codec != null) {
       // wild guess that compression is 2X or less
-      fileSize * 2
+      partFile.length * 2
     } else if (partFile.start + partFile.length == fileSize) {
       // last split doesn't need to read an additional record
       partFile.length
@@ -261,33 +267,28 @@ class SingleTablePartitionReader(
   }
 
   private def readPartFile(): (HostMemoryBuffer, Long) = {
+    isFirstChunkForIterator = false
     val separator = parsedOptions.lineSeparatorInRead.getOrElse(Array('\n'.toByte))
     var succeeded = false
     var totalSize: Long = 0L
-    var totalRows: Long = 0L
+    var totalRows: Integer = 0
     var hmb = HostMemoryBuffer.allocate(estimatedHostBufferSize)
     try {
-      val lineReader = new HadoopFileLinesReader(partFile, parsedOptions.lineSeparatorInRead, conf)
-      try {
-        while (lineReader.hasNext) {
-          totalRows += 1
-          if (totalRows > Integer.MAX_VALUE) {
-            throw new UnsupportedOperationException("Too many rows in split $partFile")
-          }
-          val line = lineReader.next()
-          val lineSize = line.getLength
-          val newTotal = totalSize + lineSize + separator.length
-          if (newTotal > hmb.getLength) {
-            hmb = growHostBuffer(hmb, newTotal)
-          }
-          hmb.setBytes(totalSize, line.getBytes, 0, lineSize)
-          hmb.setBytes(totalSize + lineSize, separator, 0, separator.length)
-          totalSize = newTotal
+      while (lineReader.hasNext && totalRows != maxRowsPerChunk) {
+        val line = lineReader.next()
+        val lineSize = line.getLength
+        val newTotal = totalSize + lineSize + separator.length
+        if (newTotal > hmb.getLength) {
+          hmb = growHostBuffer(hmb, newTotal)
         }
-        succeeded = true
-      } finally {
-        lineReader.close()
+        hmb.setBytes(totalSize, line.getBytes, 0, lineSize)
+        hmb.setBytes(totalSize + lineSize, separator, 0, separator.length)
+        totalRows += 1
+        totalSize = newTotal
       }
+      //Indicate this is the last chunk
+      isExhausted = !lineReader.hasNext
+      succeeded = true
     } finally {
       if (!succeeded) {
         hmb.close()
@@ -299,19 +300,17 @@ class SingleTablePartitionReader(
   private def readBatch(): Option[ColumnarBatch] = {
     if (readDataSchema.isEmpty) {
       // no data is requested, so return a degenerate ColumnarBatch with the row count
-      val lineReader = new HadoopFileLinesReader(partFile, parsedOptions.lineSeparatorInRead, conf)
       var totalRows: Long = 0L
-      try {
-        while (lineReader.hasNext) {
-          totalRows += 1
-          if (totalRows > Integer.MAX_VALUE) {
-            throw new UnsupportedOperationException("Too many rows in split $partFile")
-          }
-          lineReader.next()
-        }
+      while (lineReader.hasNext && totalRows != maxRowsPerChunk) {
+        lineReader.next()
+        totalRows += 1
+      }
+      //Indicate this is the last chunk
+      isExhausted = !lineReader.hasNext
+      if (totalRows == 0) {
+        None
+      } else {
         Some(new ColumnarBatch(Array.empty, totalRows.toInt))
-      } finally {
-        lineReader.close()
       }
     } else {
       val table = readToTable()
@@ -324,6 +323,7 @@ class SingleTablePartitionReader(
   }
 
   private def readToTable(): Option[Table] = {
+    val isFirstSplit = partFile.start == 0 && isFirstChunkForIterator
     val (dataBuffer, dataSize) = readPartFile()
     try {
       if (dataSize == 0) {
@@ -331,7 +331,7 @@ class SingleTablePartitionReader(
       } else {
         val csvSchemaBuilder = ai.rapids.cudf.Schema.builder
         dataSchema.foreach(f => csvSchemaBuilder.column(GpuColumnVector.getRapidsType(f.dataType), f.name))
-        val csvOpts = buildCsvOptions(parsedOptions, readDataSchema, partFile.start == 0)
+        val csvOpts = buildCsvOptions(parsedOptions, readDataSchema, isFirstSplit)
         val table = Table.readCSV(csvSchemaBuilder.build(), csvOpts, dataBuffer, 0, dataSize)
         val numColumns = table.getNumberOfColumns
         if (readDataSchema.length != numColumns) {
@@ -348,12 +348,7 @@ class SingleTablePartitionReader(
 
   override def next(): Boolean = {
     batch.foreach(_.close())
-    batch = None
-    if (!isExhausted) {
-      batch = readBatch()
-      // We currently only support a single batch
-      isExhausted = true
-    }
+    batch = if (isExhausted) None else readBatch()
     batch.isDefined
   }
 
@@ -364,6 +359,7 @@ class SingleTablePartitionReader(
   }
 
   override def close(): Unit = {
+    lineReader.close()
     batch.foreach(_.close())
     batch = None
     isExhausted = true

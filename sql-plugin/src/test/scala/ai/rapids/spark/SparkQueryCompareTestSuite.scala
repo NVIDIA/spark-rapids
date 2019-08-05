@@ -488,6 +488,14 @@ class SparkQueryCompareTestSuite extends FunSuite with BeforeAndAfterEach {
     frame => frame.select(col("partKey"), col("ints_1"), col("ints_3"), col("ints_5"))
   }
 
+  testSparkResultsAreEqual("Test CSV splits with chunks", floatCsvDf, conf= new SparkConf().set(
+    "spark.rapids.sql.maxReaderBatchSize", "1")) {
+    frame => frame.select(col("floats"))
+  }
+
+  testSparkResultsAreEqual("Test CSV count chunked", intsFromCsv, conf= new SparkConf().set(
+    "spark.rapids.sql.maxReaderBatchSize", "1"))(frameCount)
+
   /**
    * Running with an inferred schema results in running things that are not columnar optimized.
    */

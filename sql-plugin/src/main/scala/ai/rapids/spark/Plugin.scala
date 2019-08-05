@@ -597,7 +597,8 @@ object GpuOverrides {
           scan.dataSchema,
           scan.readDataSchema,
           scan.readPartitionSchema,
-          scan.options))
+          scan.options,
+          overrides.conf.maxReadBatchSize))
       .desc("CSV parsing")
       .assertIsAllowed((scan, conf) => GpuCSVScan.assertCanSupport(scan))
       .build(),

@@ -30,6 +30,15 @@ object ConfHelper {
         throw new IllegalArgumentException(s"$key should be boolean, but was $s")
     }
   }
+
+  def toInteger(s: String, key: String): Integer = {
+    try {
+      s.trim.toInt
+    } catch {
+      case _: IllegalArgumentException =>
+        throw new IllegalArgumentException(s"$key should be integer, but was $s")
+    }
+  }
 }
 
 abstract class ConfEntry[T](val key: String, val converter: String => T,
@@ -92,6 +101,10 @@ class ConfBuilder(val key: String, val register: ConfEntry[_] => Unit) {
   def booleanConf: TypedConfBuilder[Boolean] = {
     new TypedConfBuilder[Boolean](this, toBoolean(_, key))
   }
+
+  def integerConf: TypedConfBuilder[Integer] = {
+    new TypedConfBuilder[Integer](this, toInteger(_, key))
+  }
 }
 
 object RapidsConf {
@@ -134,6 +147,11 @@ object RapidsConf {
     .booleanConf
     .createWithDefault(false)
 
+  val MAX_READER_BATCH_SIZE = conf("spark.rapids.sql.maxReaderBatchSize")
+    .doc("Maximum number of rows the reader reads at a time")
+    .integerConf
+    .createWithDefault(Integer.MAX_VALUE)
+
   def help(): Unit = {
     println("Rapids Configs:")
     registeredConfs.foreach(_.help())
@@ -169,6 +187,8 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
   lazy val isMemDebugEnabled: Boolean = get(MEM_DEBUG)
 
   lazy val explain: Boolean = get(EXPLAIN)
+
+  lazy val maxReadBatchSize = get(MAX_READER_BATCH_SIZE)
 
   def isOperatorEnabled(key: String, incompat: Boolean): Boolean = {
     val default = !incompat || (incompat && isIncompatEnabled)
