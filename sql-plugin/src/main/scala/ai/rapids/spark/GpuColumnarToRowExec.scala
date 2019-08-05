@@ -24,6 +24,7 @@ import org.apache.spark.sql.catalyst.expressions.codegen.{CodegenContext, CodeGe
 import org.apache.spark.sql.execution.{ColumnarToRowExec, SparkPlan}
 import org.apache.spark.sql.types.DataType
 import org.apache.spark.sql.vectorized.{ColumnarBatch, ColumnVector}
+import org.apache.spark.TaskContext
 
 class GpuColumnarToRowExec(child: SparkPlan) extends ColumnarToRowExec(child) with GpuExec {
 
@@ -32,20 +33,35 @@ class GpuColumnarToRowExec(child: SparkPlan) extends ColumnarToRowExec(child) wi
     val numInputBatches = longMetric("numInputBatches")
     val scanTime = longMetric("scanTime")
     val batches = child.executeColumnar()
+
     batches.mapPartitions {
       (cbIter) => {
         // UnsafeProjection is not serializable so do it on the executor side
         val outputProject = UnsafeProjection.create(output, output)
         new Iterator[InternalRow] {
+          // GPU batches read in must be closed by the receiver (us)
+          @transient var cb: ColumnarBatch = null
           var it: java.util.Iterator[InternalRow] = null
 
+          TaskContext.get().addTaskCompletionListener[Unit]((tc: TaskContext) => {
+            closeCurrentBatch()
+          })
+
+          private def closeCurrentBatch(): Unit = {
+            if (cb != null) {
+              cb.close
+              cb = null
+            }
+          }
+
           def loadNextBatch: Unit = {
+            closeCurrentBatch()
             if (it != null) {
               it = null
             }
             val batchStartNs = System.nanoTime()
             if (cbIter.hasNext) {
-              val cb = cbIter.next()
+              cb = cbIter.next()
               for (i <- 0 until cb.numCols()) {
                 // TODO in the future we should have much better ways of supporting this.
                 cb.column(i).asInstanceOf[GpuColumnVector].getBase.ensureOnHost()
@@ -189,6 +205,7 @@ class GpuColumnarToRowExec(child: SparkPlan) extends ColumnarToRowExec(child) wi
        |    $shouldStop
        |  }
        |  $idx = $numRows;
+       |  $batch.close();
        |  $batch = null;
        |  $nextBatchFuncName();
        |}

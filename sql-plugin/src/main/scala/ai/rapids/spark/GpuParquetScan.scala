@@ -189,13 +189,18 @@ class ParquetPartitionReader(
     batch.foreach(_.close())
     batch = None
     if (!isExhausted) {
-      isExhausted = true
       batch = readBatch()
+      // We only support a single batch
+      isExhausted = true
     }
     batch.isDefined
   }
 
-  override def get(): ColumnarBatch = batch.getOrElse(throw new NoSuchElementException)
+  override def get(): ColumnarBatch = {
+    val ret = batch.getOrElse(throw new NoSuchElementException)
+    batch = None
+    ret
+  }
 
   override def close(): Unit = {
     batch.foreach(_.close())

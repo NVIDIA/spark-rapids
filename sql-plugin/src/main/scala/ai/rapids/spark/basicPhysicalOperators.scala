@@ -32,19 +32,19 @@ class GpuProjectExec(projectList: Seq[GpuExpression], child: SparkPlan)
   override def doExecuteColumnar() : RDD[ColumnarBatch] = {
     val boundProjectList: Seq[Any] = GpuBindReferences.bindReferences(projectList, child.output)
     val rdd = child.executeColumnar()
-    AutoCloseColumnBatchIterator.map(rdd,
-      (cb: ColumnarBatch) => {
-        val newColumns = boundProjectList.map(
-          expr => {
-            val result = expr.asInstanceOf[GpuExpression].columnarEval(cb)
-            result match {
-              case cv: ColumnVector => cv
-              case other => GpuColumnVector.from(GpuScalar.from(other), cb.numRows())
-            }
-          }).toArray
-        new ColumnarBatch(newColumns, cb.numRows())
-      }
-    )
+    rdd.map(cb => try {
+      val newColumns = boundProjectList.map(
+        expr => {
+          val result = expr.asInstanceOf[GpuExpression].columnarEval(cb)
+          result match {
+            case cv: ColumnVector => cv
+            case other => GpuColumnVector.from(GpuScalar.from(other), cb.numRows())
+          }
+        }).toArray
+      new ColumnarBatch(newColumns, cb.numRows())
+    } finally {
+      cb.close()
+    })
   }
 }
 
@@ -58,42 +58,43 @@ class GpuFilterExec(condition: GpuExpression, child: SparkPlan)
     val numOutputRows = longMetric("numOutputRows")
     val boundCondition: Any = GpuBindReferences.bindReference(condition, child.output)
     val rdd = child.executeColumnar()
-    AutoCloseColumnBatchIterator.map(rdd,
-      (cb: ColumnarBatch) => {
-        val boundExpression = boundCondition.asInstanceOf[GpuExpression]
-        val evalCv = boundExpression.columnarEval(cb)
-        var cols = Seq[GpuColumnVector]()
-        var rowCount = 0
-        try {
-          val gpuEvalCv = evalCv.asInstanceOf[GpuColumnVector]
+    rdd.map(cb => try {
+      val boundExpression = boundCondition.asInstanceOf[GpuExpression]
+      val evalCv = boundExpression.columnarEval(cb)
+      var cols = Seq[GpuColumnVector]()
+      var rowCount = 0
+      try {
+        val gpuEvalCv = evalCv.asInstanceOf[GpuColumnVector]
 
-          // rebuild the columns, but with new filtered columns
-          for (i <- 0 until cb.numCols()) {
-            val colBase = cb.column(i).asInstanceOf[GpuColumnVector].getBase
-            val filtered = if (colBase.getType == DType.STRING) {
-              // filter does not work on strings...
-              // TODO we need a faster way to work with these values!!!
-              val tmp = colBase.asStringCategories()
-              try {
-                tmp.filter(gpuEvalCv.getBase)
-              } finally {
-                tmp.close()
-              }
-            } else {
-              colBase.filter(gpuEvalCv.getBase)
+        // rebuild the columns, but with new filtered columns
+        for (i <- 0 until cb.numCols()) {
+          val colBase = cb.column(i).asInstanceOf[GpuColumnVector].getBase
+          val filtered = if (colBase.getType == DType.STRING) {
+            // filter does not work on strings...
+            // TODO we need a faster way to work with these values!!!
+            val tmp = colBase.asStringCategories()
+            try {
+              tmp.filter(gpuEvalCv.getBase)
+            } finally {
+              tmp.close()
             }
-            cols = (cols :+ GpuColumnVector.from(filtered))
-            rowCount = filtered.getRowCount().intValue() // all columns have the same # of rows
+          } else {
+            colBase.filter(gpuEvalCv.getBase)
           }
-        } finally {
-          if (evalCv != null && evalCv.isInstanceOf[GpuColumnVector]) {
-            evalCv.asInstanceOf[GpuColumnVector].close()
-          }
+          cols = (cols :+ GpuColumnVector.from(filtered))
+          rowCount = filtered.getRowCount().intValue() // all columns have the same # of rows
         }
-        numOutputRows += rowCount
-
-        new ColumnarBatch(cols.toArray, rowCount)
+      } finally {
+        if (evalCv != null && evalCv.isInstanceOf[GpuColumnVector]) {
+          evalCv.asInstanceOf[GpuColumnVector].close()
+        }
       }
+      numOutputRows += rowCount
+
+      new ColumnarBatch(cols.toArray, rowCount)
+    } finally {
+      cb.close()
+    }
     )
   }
 }

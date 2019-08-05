@@ -97,13 +97,15 @@ class GpuOrcPartitionReader(
     partFile: PartitionedFile,
     dataSchema: StructType,
     readDataSchema: StructType) extends PartitionReader[ColumnarBatch] with Logging {
-  var batch: Option[ColumnarBatch] = None
+  private var batch: Option[ColumnarBatch] = None
+  private var isExhausted: Boolean = false
 
   override def next(): Boolean = {
-    if (batch.isDefined) {
-      batch.foreach(_.close())
-      batch = None
-    } else {
+    batch.foreach(_.close())
+    batch = None
+    if (!isExhausted) {
+      // We only support a single batch
+      isExhausted = true
       val table = readToTable()
       try {
         batch = table.map(GpuColumnVector.from)
@@ -114,11 +116,16 @@ class GpuOrcPartitionReader(
     batch.isDefined
   }
 
-  override def get(): ColumnarBatch = batch.getOrElse(throw new NoSuchElementException)
+  override def get(): ColumnarBatch = {
+    val ret = batch.getOrElse(throw new NoSuchElementException)
+    batch = None
+    ret
+  }
 
   override def close(): Unit = {
     batch.foreach(_.close())
     batch = None
+    isExhausted = true
   }
 
   /**
@@ -203,26 +210,34 @@ class GpuOrcPartitionReader(
   // Cast DATE64 columns back to either DATE32 or TIMESTAMP based on the read schema
   private def handleDate64Casts(table: Table): Table = {
     var columns: ArrayBuffer[ColumnVector] = null
-    for (i <- 0 until table.getNumberOfColumns) {
-      val column = table.getColumn(i)
-      if (column.getType == DType.DATE64) {
-        if (columns == null) {
-          columns = (0 until table.getNumberOfColumns).map(table.getColumn).to[ArrayBuffer]
+    // If we have to create a new column from the cast, we need to close it after adding it to the
+    // table, which will increment its reference count
+    var toClose = new ArrayBuffer[ColumnVector]()
+    try {
+      for (i <- 0 until table.getNumberOfColumns) {
+        val column = table.getColumn(i)
+        if (column.getType == DType.DATE64) {
+          if (columns == null) {
+            columns = (0 until table.getNumberOfColumns).map(table.getColumn).to[ArrayBuffer]
+          }
+          val rapidsType = GpuColumnVector.getRapidsType(readDataSchema.fields(i).dataType)
+          columns(i) = columns(i).castTo(rapidsType, TimeUnit.MICROSECONDS)
+          toClose += columns(i)
         }
-        val rapidsType = GpuColumnVector.getRapidsType(readDataSchema.fields(i).dataType)
-        columns(i) = columns(i).castTo(rapidsType, TimeUnit.MICROSECONDS)
       }
-    }
 
-    var result = table
-    if (columns != null) {
-      try {
-        result = new Table(columns:_*)
-      } finally {
-        table.close()
+      var result = table
+      if (columns != null) {
+        try {
+          result = new Table(columns: _*)
+        } finally {
+          table.close()
+        }
       }
-    }
 
-    result
+      result
+    } finally {
+      toClose.foreach(_.close())
+    }
   }
 }
