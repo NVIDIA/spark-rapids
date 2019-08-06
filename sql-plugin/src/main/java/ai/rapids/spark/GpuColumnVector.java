@@ -254,7 +254,6 @@ public final class GpuColumnVector extends ColumnVector {
   }
 
   private final ai.rapids.cudf.ColumnVector cudfCv;
-  private int refCount = 1;
 
   /**
    * Sets up the data type of this column vector.
@@ -266,16 +265,15 @@ public final class GpuColumnVector extends ColumnVector {
   }
 
   public GpuColumnVector inRefCount() {
-    refCount++;
+    // Just pass through the reference counting
+    cudfCv.incRefCount();
     return this;
   }
 
   @Override
   public void close() {
-    refCount--;
-    if (refCount == 0) {
-      cudfCv.close();
-    }
+    // Just pass through the reference counting
+    cudfCv.close();
   }
 
   @Override
