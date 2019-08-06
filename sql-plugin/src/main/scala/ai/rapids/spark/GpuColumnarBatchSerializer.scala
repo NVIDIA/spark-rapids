@@ -107,18 +107,9 @@ private class GpuColumnarBatchSerializerInstance(
 
       override def asKeyValueIterator: Iterator[(Int, ColumnarBatch)] = {
         new Iterator[(Int, ColumnarBatch)] {
-          var toBeClosed : ColumnarBatch = null
           var toBeReturned: Option[ColumnarBatch] = None
 
-          private def closeCurrentBatch(): Unit = {
-            if (toBeClosed != null) {
-              toBeClosed.close
-              toBeClosed = null
-            }
-          }
-
           TaskContext.get().addTaskCompletionListener[Unit]((tc: TaskContext) => {
-            closeCurrentBatch()
             toBeReturned.foreach(_.close())
             toBeReturned = None
           })
@@ -151,10 +142,9 @@ private class GpuColumnarBatchSerializerInstance(
                 throw new NoSuchElementException("Walked off of the end...")
               }
             }
-            closeCurrentBatch()
-            toBeClosed = toBeReturned.get
+            val ret = toBeReturned.get
             toBeReturned = None
-            (0, toBeClosed)
+            (0, ret)
           }
         }
       }
