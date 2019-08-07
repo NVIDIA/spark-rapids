@@ -105,6 +105,10 @@ class ConfBuilder(val key: String, val register: ConfEntry[_] => Unit) {
   def integerConf: TypedConfBuilder[Integer] = {
     new TypedConfBuilder[Integer](this, toInteger(_, key))
   }
+
+  def stringConf: TypedConfBuilder[String] = {
+    new TypedConfBuilder[String](this, identity[String])
+  }
 }
 
 object RapidsConf {
@@ -132,7 +136,7 @@ object RapidsConf {
   val TEST_CONF = conf("spark.rapids.sql.testing")
     .doc("Intended to be used by unit tests, if enabled all operations must run on the GPU" +
       " or an error happens.")
-    .internal
+    .internal()
     .booleanConf
     .createWithDefault(false)
 
@@ -151,6 +155,18 @@ object RapidsConf {
     .doc("Maximum number of rows the reader reads at a time")
     .integerConf
     .createWithDefault(Integer.MAX_VALUE)
+
+  val PARQUET_DEBUG_DUMP_PREFIX = conf("spark.rapids.sql.parquet.debug-dump-prefix")
+      .doc("A path prefix where Parquet split file data is dumped for debugging.")
+      .internal()
+      .stringConf
+      .createWithDefault(null)
+
+  val ORC_DEBUG_DUMP_PREFIX = conf("spark.rapids.sql.orc.debug-dump-prefix")
+      .doc("A path prefix where ORC split file data is dumped for debugging.")
+      .internal()
+      .stringConf
+      .createWithDefault(null)
 
   def help(): Unit = {
     println("Rapids Configs:")
@@ -188,7 +204,11 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
 
   lazy val explain: Boolean = get(EXPLAIN)
 
-  lazy val maxReadBatchSize = get(MAX_READER_BATCH_SIZE)
+  lazy val maxReadBatchSize: Int = get(MAX_READER_BATCH_SIZE)
+
+  lazy val parquetDebugDumpPrefix: String = get(PARQUET_DEBUG_DUMP_PREFIX)
+
+  lazy val orcDebugDumpPrefix: String = get(ORC_DEBUG_DUMP_PREFIX)
 
   def isOperatorEnabled(key: String, incompat: Boolean): Boolean = {
     val default = !incompat || (incompat && isIncompatEnabled)

@@ -23,12 +23,12 @@ import java.util.Collections
 
 import scala.collection.JavaConverters._
 import scala.collection.mutable.ArrayBuffer
-import scala.util.Random
 
 import ai.rapids.cudf.{HostMemoryBuffer, ParquetOptions, Table}
 import org.apache.commons.io.output.{CountingOutputStream, NullOutputStream}
+import org.apache.commons.io.IOUtils
 import org.apache.hadoop.conf.Configuration
-import org.apache.hadoop.fs.{FileAlreadyExistsException, FSDataInputStream, FSDataOutputStream, Path}
+import org.apache.hadoop.fs.{FSDataInputStream, Path}
 import org.apache.parquet.bytes.BytesUtils
 import org.apache.parquet.filter2.compat.{FilterCompat, RowGroupFilter}
 import org.apache.parquet.filter2.predicate.FilterApi
@@ -61,7 +61,8 @@ class GpuParquetScan(
     readDataSchema: StructType,
     readPartitionSchema: StructType,
     pushedFilters: Array[Filter],
-    options: CaseInsensitiveStringMap)
+    options: CaseInsensitiveStringMap,
+    rapidsConf: RapidsConf)
   extends ParquetScan(sparkSession, hadoopConf, fileIndex, dataSchema,
     readDataSchema, readPartitionSchema, pushedFilters,options)
     with GpuScan {
@@ -70,7 +71,7 @@ class GpuParquetScan(
     val broadcastedConf = sparkSession.sparkContext.broadcast(
       new GpuSerializableConfiguration(hadoopConf))
     GpuParquetPartitionReaderFactory(sparkSession.sessionState.conf, broadcastedConf,
-      dataSchema, readDataSchema, readPartitionSchema, pushedFilters)
+      dataSchema, readDataSchema, readPartitionSchema, pushedFilters, rapidsConf)
   }
 }
 
@@ -99,12 +100,13 @@ object GpuParquetScan {
 }
 
 case class GpuParquetPartitionReaderFactory(
-    sqlConf: SQLConf,
+    @transient sqlConf: SQLConf,
     broadcastedConf: Broadcast[GpuSerializableConfiguration],
     dataSchema: StructType,
     readDataSchema: StructType,
     partitionSchema: StructType,
-    filters: Array[Filter]) extends FilePartitionReaderFactory {
+    filters: Array[Filter],
+    @transient rapidsConf: RapidsConf) extends FilePartitionReaderFactory {
   private val isCaseSensitive = sqlConf.caseSensitiveAnalysis
   private val enableParquetFilterPushDown: Boolean = sqlConf.parquetFilterPushDown
   private val pushDownDate = sqlConf.parquetFilterPushDownDate
@@ -112,8 +114,7 @@ case class GpuParquetPartitionReaderFactory(
   private val pushDownDecimal = sqlConf.parquetFilterPushDownDecimal
   private val pushDownStringStartWith = sqlConf.parquetFilterPushDownStringStartWith
   private val pushDownInFilterThreshold = sqlConf.parquetFilterPushDownInFilterThreshold
-  private val debugDumpPrefix = sqlConf.getConfString(
-      ParquetPartitionReader.DUMP_PATH_PREFIX_CONF, null)
+  private val debugDumpPrefix = rapidsConf.parquetDebugDumpPrefix
 
   override def supportColumnarReads(partition: InputPartition): Boolean = true
 
@@ -214,7 +215,7 @@ class ParquetPartitionReader(
       var succeeded = false
       val hmb = HostMemoryBuffer.allocate(calculateParquetOutputSize())
       try {
-        val out = new HostMemoryBufferOutputStream(hmb)
+        val out = new HostMemoryOutputStream(hmb)
         out.write(ParquetPartitionReader.PARQUET_MAGIC)
         val outputBlocks = copyClippedBlocksData(in, out)
         val footerPos = out.getPos
@@ -291,7 +292,7 @@ class ParquetPartitionReader(
     */
   private def copyClippedBlocksData(
       in: FSDataInputStream,
-      out: HostMemoryBufferOutputStream): Seq[BlockMetaData] = {
+      out: HostMemoryOutputStream): Seq[BlockMetaData] = {
     var totalRows: Long = 0
     val copyBuffer = new Array[Byte](128 * 1024)
     val outputBlocks = new ArrayBuffer[BlockMetaData](clippedBlocks.length)
@@ -359,7 +360,7 @@ class ParquetPartitionReader(
         None
       } else {
         if (debugDumpPrefix != null) {
-          dumpParquetData(debugDumpPrefix, dataBuffer, dataSize)
+          dumpParquetData(dataBuffer, dataSize)
         }
         val parseOpts = ParquetOptions.builder().includeColumn(readDataSchema.fieldNames:_*).build()
         val table = Table.readParquet(parseOpts, dataBuffer, 0, dataSize)
@@ -377,21 +378,13 @@ class ParquetPartitionReader(
   }
 
   private def dumpParquetData(
-      dumpPathPrefix: String,
       hmb: HostMemoryBuffer,
       dataLength: Long): Unit = {
-    val (out, path) = ParquetPartitionReader.createTempFile(conf, dumpPathPrefix)
+    val (out, path) = FileUtils.createTempFile(conf, debugDumpPrefix, ".parquet")
     try {
-      logInfo(s"Writing Parquet split data to $path")
-      val buffer = new Array[Byte](128 * 1024)
-      var pos = 0
-      while (pos < dataLength) {
-        // downcast is safe because buffer.length is an int
-        val readLength = Math.min(dataLength - pos, buffer.length).toInt
-        hmb.getBytes(buffer, 0, pos, readLength)
-        out.write(buffer, 0, readLength)
-        pos += readLength
-      }
+      logInfo(s"Writing Parquet split data for $split to $path")
+      val in = new HostMemoryInputStream(hmb, dataLength)
+      IOUtils.copy(in, out)
     } finally {
       out.close()
     }
@@ -402,7 +395,6 @@ object ParquetPartitionReader {
   private val PARQUET_MAGIC = "PAR1".getBytes(StandardCharsets.US_ASCII)
   private val PARQUET_CREATOR = "RAPIDS Spark Plugin"
   private val PARQUET_VERSION = 1
-  private[spark] val DUMP_PATH_PREFIX_CONF = "spark.rapids.sql.parquet.debug-dump-prefix"
 
   /**
     * Build a new BlockMetaData
@@ -444,52 +436,6 @@ object ParquetPartitionReader {
       ParquetPartitionReader.newParquetBlock(oldBlock.getRowCount, newColumns)
     })
   }
-
-  private def createTempFile(
-      conf: Configuration,
-      pathPrefix: String): (FSDataOutputStream, Path) = {
-    val fs = new Path(pathPrefix).getFileSystem(conf)
-    val rnd = new Random
-    var out: FSDataOutputStream = null
-    var path: Path = null
-    var succeeded = false
-    while (!succeeded) {
-      path = new Path(pathPrefix + rnd.nextInt(Integer.MAX_VALUE) + ".parquet")
-      if (!fs.exists(path)) {
-        scala.util.control.Exception.ignoring(classOf[FileAlreadyExistsException]) {
-          out = fs.create(path, false)
-          succeeded = true
-        }
-      }
-    }
-    (out, path)
-  }
 }
 
-/**
-  * An implementation of Parquet's PositionOutputStream that writes to a HostMemoryBuffer.
-  *
-  * NOTE: Closing this output stream does NOT close the buffer!
-  *
-  * @param buffer the buffer to receive written data
-  */
-private class HostMemoryBufferOutputStream(buffer: HostMemoryBuffer) extends OutputStream {
-  private var pos: Long = 0
 
-  override def write(i: Int): Unit = {
-    buffer.setByte(pos, i.toByte)
-    pos += 1
-  }
-
-  override def write(bytes: Array[Byte]): Unit = {
-    buffer.setBytes(pos, bytes, 0, bytes.length)
-    pos += bytes.length
-  }
-
-  override def write(bytes: Array[Byte], offset: Int, len: Int): Unit = {
-    buffer.setBytes(pos, bytes, offset, len)
-    pos += len
-  }
-
-  def getPos: Long = pos
-}
