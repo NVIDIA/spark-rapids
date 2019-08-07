@@ -164,13 +164,12 @@ class GpuColumnarToRowExec(child: SparkPlan) extends ColumnarToRowExec(child) wi
     val nextBatchFuncName = ctx.addNewFunction(nextBatch,
       s"""
          |private void $nextBatch() throws java.io.IOException {
-         |  long getBatchStart = System.nanoTime();
          |  if ($input.hasNext()) {
          |    $batch = ($columnarBatchClz)$input.next();
          |    $numOutputRows.add($batch.numRows());
+         |    ${numInputBatches}.add(1);
          |    $idx = 0;
          |    ${columnAssigns.mkString("", "\n", "\n")}
-         |    ${numInputBatches}.add(1);
          |  }
          |}""".stripMargin)
 
@@ -191,7 +190,7 @@ class GpuColumnarToRowExec(child: SparkPlan) extends ColumnarToRowExec(child) wi
        |if ($batch == null) {
        |  $nextBatchFuncName();
        |}
-       |while ($batch != null) {
+       |while ($limitNotReachedCond $batch != null) {
        |  int $numRows = $batch.numRows();
        |  int $localEnd = $numRows - $idx;
        |  for (int $localIdx = 0; $localIdx < $localEnd; $localIdx++) {
