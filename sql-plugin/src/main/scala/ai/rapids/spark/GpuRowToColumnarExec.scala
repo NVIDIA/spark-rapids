@@ -286,14 +286,15 @@ class GpuRowToColumnarExec(child: SparkPlan) extends RowToColumnarExec(child) wi
     val numInputRows = longMetric("numInputRows")
     val numOutputBatches = longMetric("numOutputBatches")
     val numRows = conf.columnBatchSize
-    val converters = new GpuRowToColumnConverter(schema)
+    val localSchema = schema
+    val converters = new GpuRowToColumnConverter(localSchema)
     val rowBased = child.execute()
     rowBased.mapPartitions((rowIter) => {
       new Iterator[ColumnarBatch]() {
         override def hasNext: Boolean = rowIter.hasNext
 
         override def next(): ColumnarBatch = {
-          val builders = new GpuColumnarBatchBuilder(schema, numRows, null)
+          val builders = new GpuColumnarBatchBuilder(localSchema, numRows, null)
           try {
             var rowCount = 0
             while (rowCount < numRows && rowIter.hasNext) {

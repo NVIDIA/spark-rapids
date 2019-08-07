@@ -313,6 +313,19 @@ class SparkQueryCompareTestSuite extends FunSuite with BeforeAndAfterEach {
     ).toDF("longs", "more_longs")
   }
 
+  def smallDoubleDf(session: SparkSession): DataFrame = {
+    import session.sqlContext.implicits._
+    Seq(
+      (1.0, 1.0),
+      (2.0, 2.0),
+      (3.0, 3.0),
+      (4.0, 4.0),
+      (5.0, 5.0),
+      (-1.0, 6.0),
+      (-5.0, 0.0)
+    ).toDF("doubles", "more_doubles")
+  }
+
   def doubleDf(session: SparkSession): DataFrame = {
     import session.sqlContext.implicits._
     Seq(
@@ -337,6 +350,19 @@ class SparkQueryCompareTestSuite extends FunSuite with BeforeAndAfterEach {
       (-100.0, 6.0),
       (-500.0, 50.5)
     ).toDF("doubles", "more_doubles")
+  }
+
+  def smallFloatDf(session: SparkSession): DataFrame = {
+    import session.sqlContext.implicits._
+    Seq(
+      (1.0f, 1.0f),
+      (2.0f, 2.0f),
+      (3.0f, 3.0f),
+      (4.0f, 4.0f),
+      (5.0f, 5.0f),
+      (-1.0f, 6.0f),
+      (-5.0f, 0.0f)
+    ).toDF("floats", "more_floats")
   }
 
   def floatDf(session: SparkSession): DataFrame = {
@@ -711,11 +737,11 @@ class SparkQueryCompareTestSuite extends FunSuite with BeforeAndAfterEach {
     frame => frame.select(cos(col("floats")), cos(col("more_floats")))
   }
 
-  INCOMPAT_testSparkResultsAreEqual("Test exp doubles", doubleDf) {
+  INCOMPAT_testSparkResultsAreEqual("Test exp doubles", smallDoubleDf, 0.00001) {
     frame => frame.select(exp(col("doubles")), exp(col("more_doubles")))
   }
 
-  INCOMPAT_testSparkResultsAreEqual("Test exp floats", floatDf) {
+  INCOMPAT_testSparkResultsAreEqual("Test exp floats", smallFloatDf, 0.00001) {
     frame => frame.select(exp(col("floats")), exp(col("more_floats")))
   }
 
@@ -727,12 +753,12 @@ class SparkQueryCompareTestSuite extends FunSuite with BeforeAndAfterEach {
     frame => frame.select(floor(col("floats")), floor(col("more_floats")))
   }
 
-  INCOMPAT_testSparkResultsAreEqual("Test log doubles", nonZeroDoubleDf) {
+  INCOMPAT_testSparkResultsAreEqual("Test log doubles", nonZeroDoubleDf, 0.00001) {
         // Use ABS to work around incompatibility when input is negative, and we also need to skip 0
     frame => frame.select(log(abs(col("doubles"))), log(abs(col("more_doubles"))))
   }
 
-  INCOMPAT_testSparkResultsAreEqual("Test log floats", nonZeroFloatDf) {
+  INCOMPAT_testSparkResultsAreEqual("Test log floats", nonZeroFloatDf, 0.00001) {
     // Use ABS to work around incompatibility when input is negative and we also need to skip 0
     frame => frame.select(log(abs(col("floats"))), log(abs(col("more_floats"))))
   }

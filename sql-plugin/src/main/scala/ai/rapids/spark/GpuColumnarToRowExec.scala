@@ -27,81 +27,80 @@ import org.apache.spark.sql.vectorized.{ColumnarBatch, ColumnVector}
 import org.apache.spark.TaskContext
 
 class GpuColumnarToRowExec(child: SparkPlan) extends ColumnarToRowExec(child) with GpuExec {
+  // We need to do this so the assertions don't fail
+  override def supportsColumnar = false
 
   override def doExecute(): RDD[InternalRow] = {
     val numOutputRows = longMetric("numOutputRows")
     val numInputBatches = longMetric("numInputBatches")
-    val scanTime = longMetric("scanTime")
-    val batches = child.executeColumnar()
 
-    batches.mapPartitions {
-      (cbIter) => {
-        // UnsafeProjection is not serializable so do it on the executor side
-        val outputProject = UnsafeProjection.create(output, output)
-        new Iterator[InternalRow] {
-          // GPU batches read in must be closed by the receiver (us)
-          @transient var cb: ColumnarBatch = null
-          var it: java.util.Iterator[InternalRow] = null
+    // This avoids calling `output` in the RDD closure, so that we don't need to include the entire
+    // plan (this) in the closure.
+    val localOutput = this.output
 
-          TaskContext.get().addTaskCompletionListener[Unit]((tc: TaskContext) => {
-            closeCurrentBatch()
-          })
+    child.executeColumnar().mapPartitions { batches => {
+      // UnsafeProjection is not serializable so do it on the executor side
+      val toUnsafe = UnsafeProjection.create(localOutput, localOutput)
+      new Iterator[InternalRow] {
+        // GPU batches read in must be closed by the receiver (us)
+        @transient var cb: ColumnarBatch = null
+        var it: java.util.Iterator[InternalRow] = null
 
-          private def closeCurrentBatch(): Unit = {
-            if (cb != null) {
-              cb.close
-              cb = null
-            }
+        TaskContext.get().addTaskCompletionListener[Unit]((tc: TaskContext) => {
+          closeCurrentBatch()
+        })
+
+        private def closeCurrentBatch(): Unit = {
+          if (cb != null) {
+            cb.close
+            cb = null
           }
+        }
 
-          def loadNextBatch: Unit = {
-            closeCurrentBatch()
-            if (it != null) {
-              it = null
-            }
-            val batchStartNs = System.nanoTime()
-            if (cbIter.hasNext) {
-              cb = cbIter.next()
-              for (i <- 0 until cb.numCols()) {
-                // TODO in the future we should have much better ways of supporting this.
-                cb.column(i).asInstanceOf[GpuColumnVector].getBase.ensureOnHost()
-              }
-              it = cb.rowIterator()
-              numInputBatches += 1
-              // In order to match the numOutputRows metric in the generated code we update
-              // numOutputRows for each batch. This is less accurate than doing it at output
-              // because it will over count the number of rows output in the case of a limit,
-              // but it is more efficient.
-              numOutputRows += cb.numRows()
-            }
-            scanTime += ((System.nanoTime() - batchStartNs) / (1000 * 1000))
+        def loadNextBatch: Unit = {
+          closeCurrentBatch()
+          if (it != null) {
+            it = null
           }
-
-          override def hasNext: Boolean = {
-            val itHasNext = it != null && it.hasNext
-            if (!itHasNext) {
-              loadNextBatch
-              it != null && it.hasNext
-            } else {
-              itHasNext
-            }
+          if (batches.hasNext) {
+            cb = batches.next()
+            (0 until cb.numCols()).foreach(
+              i => cb.column(i).asInstanceOf[GpuColumnVector].getBase.ensureOnHost())
+            it = cb.rowIterator()
+            numInputBatches += 1
+            // In order to match the numOutputRows metric in the generated code we update
+            // numOutputRows for each batch. This is less accurate than doing it at output
+            // because it will over count the number of rows output in the case of a limit,
+            // but it is more efficient.
+            numOutputRows += cb.numRows()
           }
+        }
 
-          override def next(): InternalRow = {
-            if (it == null || !it.hasNext) {
-              loadNextBatch
-            }
-            if (it == null) {
-              throw new NoSuchElementException()
-            }
-            it.next()
+        override def hasNext: Boolean = {
+          val itHasNext = it != null && it.hasNext
+          if (!itHasNext) {
+            loadNextBatch
+            it != null && it.hasNext
+          } else {
+            itHasNext
           }
+        }
 
-          // This is to convert the InternalRow to an UnsafeRow. Even though the type is
-          // InternalRow some operations downstream operations like collect require it to
-          // be UnsafeRow
-        }.map(outputProject)
-      }
+        override def next(): InternalRow = {
+          if (it == null || !it.hasNext) {
+            loadNextBatch
+          }
+          if (it == null) {
+            throw new NoSuchElementException()
+          }
+          it.next()
+        }
+
+        // This is to convert the InternalRow to an UnsafeRow. Even though the type is
+        // InternalRow some operations downstream operations like collect require it to
+        // be UnsafeRow
+      }.map(toUnsafe)
+    }
     }
   }
 
@@ -148,9 +147,6 @@ class GpuColumnarToRowExec(child: SparkPlan) extends ColumnarToRowExec(child) wi
     // metrics
     val numOutputRows = metricTerm(ctx, "numOutputRows")
     val numInputBatches = metricTerm(ctx, "numInputBatches")
-    val scanTimeMetric = metricTerm(ctx, "scanTime")
-    val scanTimeTotalNs =
-      ctx.addMutableState(CodeGenerator.JAVA_LONG, "scanTime") // init as scanTime = 0
 
     val columnarBatchClz = classOf[ColumnarBatch].getName
     val batch = ctx.addMutableState(columnarBatchClz, "batch")
@@ -168,15 +164,13 @@ class GpuColumnarToRowExec(child: SparkPlan) extends ColumnarToRowExec(child) wi
     val nextBatchFuncName = ctx.addNewFunction(nextBatch,
       s"""
          |private void $nextBatch() throws java.io.IOException {
-         |  long getBatchStart = System.nanoTime();
          |  if ($input.hasNext()) {
          |    $batch = ($columnarBatchClz)$input.next();
          |    $numOutputRows.add($batch.numRows());
+         |    ${numInputBatches}.add(1);
          |    $idx = 0;
          |    ${columnAssigns.mkString("", "\n", "\n")}
-         |    ${numInputBatches}.add(1);
          |  }
-         |  $scanTimeTotalNs += System.nanoTime() - getBatchStart;
          |}""".stripMargin)
 
     ctx.currentVars = null
@@ -196,7 +190,7 @@ class GpuColumnarToRowExec(child: SparkPlan) extends ColumnarToRowExec(child) wi
        |if ($batch == null) {
        |  $nextBatchFuncName();
        |}
-       |while ($batch != null) {
+       |while ($limitNotReachedCond $batch != null) {
        |  int $numRows = $batch.numRows();
        |  int $localEnd = $numRows - $idx;
        |  for (int $localIdx = 0; $localIdx < $localEnd; $localIdx++) {
@@ -209,8 +203,6 @@ class GpuColumnarToRowExec(child: SparkPlan) extends ColumnarToRowExec(child) wi
        |  $batch = null;
        |  $nextBatchFuncName();
        |}
-       |$scanTimeMetric.add($scanTimeTotalNs / (1000 * 1000));
-       |$scanTimeTotalNs = 0;
      """.stripMargin
   }
 
@@ -218,6 +210,6 @@ class GpuColumnarToRowExec(child: SparkPlan) extends ColumnarToRowExec(child) wi
     if (!super.equals(other)) {
       return false
     }
-    return other.isInstanceOf[GpuColumnarToRowExec]
+    other.isInstanceOf[GpuColumnarToRowExec]
   }
 }
