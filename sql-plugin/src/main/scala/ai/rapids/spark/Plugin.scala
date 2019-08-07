@@ -611,7 +611,8 @@ object GpuOverrides {
           scan.readDataSchema,
           scan.readPartitionSchema,
           scan.pushedFilters,
-          scan.options))
+          scan.options,
+          overrides.conf))
       .desc("Parquet parsing")
       .assertIsAllowed((scan, conf) => GpuParquetScan.assertCanSupport(scan))
       .build(),
@@ -624,7 +625,8 @@ object GpuOverrides {
           scan.readDataSchema,
           scan.readPartitionSchema,
           scan.options,
-          scan.pushedFilters))
+          scan.pushedFilters,
+          overrides.conf))
       .desc("ORC parsing")
       .assertIsAllowed((scan, conf) => GpuOrcScan.assertCanSupport(scan))
       .build(),

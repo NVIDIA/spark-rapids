@@ -570,9 +570,35 @@ class SparkQueryCompareTestSuite extends FunSuite with BeforeAndAfterEach {
     s: SparkSession => s.read.orc(path.toString)
   }
 
+  private val fileSplitsOrc = frameFromOrc("file-splits.orc")
+
+  private val orcSplitsConf = new SparkConf().set("spark.sql.files.maxPartitionBytes", "30000")
+
   testSparkResultsAreEqual("Test ORC", frameFromOrc("test.snappy.orc")) {
     // dropping the timestamp column since timestamp expressions are not GPU supported yet
     frame => frame.select(col("*")).drop("timestamp")
+  }
+
+  testSparkResultsAreEqual("Test ORC file splitting", fileSplitsOrc, conf=orcSplitsConf) {
+    frame => frame.select(col("*"))
+  }
+
+  testSparkResultsAreEqual("Test ORC count", fileSplitsOrc,
+      conf=orcSplitsConf)(frameCount)
+
+  testSparkResultsAreEqual("Test ORC predicate push-down", fileSplitsOrc) {
+    frame => frame.select(col("loan_id"), col("orig_interest_rate"), col("zip"))
+        .where(col("orig_interest_rate") > 10)
+  }
+
+  testSparkResultsAreEqual("Test ORC splits predicate push-down", fileSplitsOrc,
+      conf=orcSplitsConf) {
+    frame => frame.select(col("loan_id"), col("orig_interest_rate"), col("zip"))
+        .where(col("orig_interest_rate") > 10)
+  }
+
+  testSparkResultsAreEqual("Test partitioned ORC", frameFromOrc("partitioned-orc")) {
+    frame => frame.select(col("partKey"), col("ints_5"), col("ints_3"), col("ints_1"))
   }
 
   IGNORE_ORDER_testSparkResultsAreEqual("test hash agg with shuffle", longsFromCSVDf, repart = 2) {
