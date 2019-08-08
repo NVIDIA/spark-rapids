@@ -175,6 +175,7 @@ object RapidsConf {
     GpuOverrides.execs.values.foreach(_.confHelp())
     GpuOverrides.scans.values.foreach(_.confHelp())
     GpuOverrides.parts.values.foreach(_.confHelp())
+    GpuOverrides.aggs.values.foreach(_.confHelp())
   }
 }
 
