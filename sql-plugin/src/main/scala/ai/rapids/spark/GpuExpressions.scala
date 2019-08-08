@@ -17,9 +17,8 @@
 package ai.rapids.spark
 
 import ai.rapids.cudf.{BinaryOp, BinaryOperable, DType, Scalar, TimeUnit, UnaryOp}
-
-import org.apache.spark.sql.catalyst.expressions.{BinaryExpression, Expression, UnaryExpression}
-import org.apache.spark.sql.vectorized.{ColumnarBatch, ColumnVector}
+import org.apache.spark.sql.catalyst.expressions.{BinaryExpression, Expression, UnaryExpression, Unevaluable}
+import org.apache.spark.sql.vectorized.{ColumnVector, ColumnarBatch}
 
 trait GpuExpression extends Expression {
   /**
@@ -39,10 +38,15 @@ trait GpuExpression extends Expression {
     if (!super.equals(other)) {
       return false
     }
-    return other.isInstanceOf[GpuBinaryExpression]
+    return other.isInstanceOf[GpuExpression]
   }
 
   override def hashCode(): Int = super.hashCode()
+}
+
+trait GpuUnevaluable extends Unevaluable with GpuExpression {
+  final override def columnarEval(batch: ColumnarBatch): Any =
+    throw new UnsupportedOperationException(s"Cannot columnar evaluate expression: $this")
 }
 
 trait GpuUnaryExpression extends UnaryExpression with GpuExpression {

@@ -149,30 +149,25 @@ class SparkQueryCompareTestSuite extends FunSuite with BeforeAndAfterEach {
       testName: String,
       df: SparkSession => DataFrame,
       maxFloatDiff: Double = 0.0,
-      conf: SparkConf = new SparkConf())
+      conf: SparkConf = new SparkConf(),
+      sort: Boolean = false,
+      repart: Integer = 1)
     (fun: DataFrame => DataFrame): Unit = {
-    val testConf = conf.clone().set(RapidsConf.INCOMPATIBLE_OPS.key, "true")
-    test("INCOMPAT: " + testName) {
-      val (fromCpu, fromGpu) = runOnCpuAndGpu(df, fun, conf=testConf)
-
-      if (!compare(fromCpu, fromGpu, maxFloatDiff)) {
-        fail(
-          s"""
-             |Running on the GPU and on the CPU did not match (relaxed float comparison)
-             |CPU: ${fromCpu.toSeq}
-             |GPU: ${fromGpu.toSeq}
-         """.stripMargin)
-      }
-    }
+    testSparkResultsAreEqual(testName, df,
+      conf=conf,
+      repart=repart,
+      sort=sort,
+      maxFloatDiff=maxFloatDiff,
+      incompat=true)(fun)
   }
 
   def ALLOW_NON_GPU_testSparkResultsAreEqual(
       testName: String,
       df: SparkSession => DataFrame,
       conf: SparkConf = new SparkConf())(fun: DataFrame => DataFrame): Unit = {
-    val testConf = conf.clone().set(RapidsConf.TEST_CONF.key, "false")
-     testSparkResultsAreEqual("NOT ALL ON GPU: " + testName, df,
-      conf=testConf)(fun)
+    testSparkResultsAreEqual(testName, df,
+      conf=conf,
+      allowNonGpu=true)(fun)
   }
 
   def IGNORE_ORDER_testSparkResultsAreEqual(
@@ -180,9 +175,21 @@ class SparkQueryCompareTestSuite extends FunSuite with BeforeAndAfterEach {
       df: SparkSession => DataFrame,
       repart: Integer = 1,
       conf: SparkConf = new SparkConf())(fun: DataFrame => DataFrame): Unit = {
-    testSparkResultsAreEqual("IGNORE ORDER: " + testName, df,
+    testSparkResultsAreEqual(testName, df,
       conf=conf,
       repart=repart,
+      sort=true)(fun)
+  }
+
+  def INCOMPAT_IGNORE_ORDER_testSparkResultsAreEqual(
+      testName: String,
+      df: SparkSession => DataFrame,
+      repart: Integer = 1,
+      conf: SparkConf = new SparkConf())(fun: DataFrame => DataFrame): Unit = {
+    testSparkResultsAreEqual(testName, df,
+      conf=conf,
+      repart=repart,
+      incompat=true,
       sort=true)(fun)
   }
 
@@ -205,12 +212,18 @@ class SparkQueryCompareTestSuite extends FunSuite with BeforeAndAfterEach {
           return false
         }
 
-        if ((v1, v2) match {
+        return if ((v1, v2) match {
           case (i1: Int, i2:Int) => i1 < i2
           case (i1: Long, i2:Long) => i1 < i2
+          case (i1: Float, i2:Float) => i1 < i2
+          case (i1: Date, i2:Date) => i1.before(i2)
+          case (i1: Double, i2:Double) => i1 < i2
+          case (i1: Short, i2:Short) => i1 < i2
           case (o1, o2) => throw new UnsupportedOperationException(o1.getClass + " is not supported yet")
         }) {
-          return true
+          true
+        } else {
+          false
         }
       }
     }
@@ -222,19 +235,43 @@ class SparkQueryCompareTestSuite extends FunSuite with BeforeAndAfterEach {
       df: SparkSession => DataFrame,
       conf: SparkConf = new SparkConf(),
       repart: Integer = 1,
-      sort: Boolean = false)
+      sort: Boolean = false,
+      maxFloatDiff: Double = 0.0,
+      incompat: Boolean = false,
+      allowNonGpu: Boolean = false)
       (fun: DataFrame => DataFrame): Unit = {
-    test(testName) {
+    var qualifiers = Set[String]()
+    var testConf = conf
+    if (incompat) {
+      testConf = testConf.clone().set(RapidsConf.INCOMPATIBLE_OPS.key, "true")
+      qualifiers = qualifiers + "INCOMPAT"
+    }
+    if (sort) {
+      qualifiers = qualifiers + "IGNORE ORDER"
+    }
+    if (allowNonGpu) {
+      testConf = testConf.clone().set(RapidsConf.TEST_CONF.key, "false")
+      qualifiers = qualifiers + "NOT ALL ON GPU"
+    }
+    val qualifiedTestName = qualifiers.mkString("",
+      ", ",
+      (if (qualifiers.nonEmpty) ": " else "") + testName)
+    test(qualifiedTestName) {
       var (fromCpu, fromGpu) = runOnCpuAndGpu(df, fun,
-        conf=conf,
+        conf = testConf,
         repart = repart)
+      val relaxedFloatDisclaimer = if (maxFloatDiff > 0) {
+        "(relaxed float comparison)"
+      } else {
+        ""
+      }
       if (sort) {
         val cpu = fromCpu.map(_.toSeq).sortWith(seqLt)
         val gpu = fromGpu.map(_.toSeq).sortWith(seqLt)
-        if (!compare(cpu, gpu)) {
+        if (!compare(cpu, gpu, maxFloatDiff)) {
           fail(
             s"""
-               |Running on the GPU and on the CPU did not match
+               |Running on the GPU and on the CPU did not match $relaxedFloatDisclaimer
                |CPU: ${cpu.seq}
 
                |GPU: ${gpu.seq}
@@ -242,10 +279,10 @@ class SparkQueryCompareTestSuite extends FunSuite with BeforeAndAfterEach {
               stripMargin)
         }
       } else {
-        if (!compare(fromCpu, fromGpu)) {
+        if (!compare(fromCpu, fromGpu, maxFloatDiff)) {
           fail(
             s"""
-               |Running on the GPU and on the CPU did not match
+               |Running on the GPU and on the CPU did not match $relaxedFloatDisclaimer
                |CPU: ${fromCpu.toSeq}
 
                |GPU: ${fromGpu.toSeq}
@@ -277,14 +314,6 @@ class SparkQueryCompareTestSuite extends FunSuite with BeforeAndAfterEach {
       (Date.valueOf("2020-5-5"), Date.valueOf("2019-6-19")),
       (Date.valueOf("2050-10-30"), Date.valueOf("0100-5-28"))
     ).toDF("dates", "more_dates")
-  }
-
-  def longsFromCSVDf(session: SparkSession): DataFrame = {
-    var path = this.getClass.getClassLoader.getResource("lots_o_longs.csv")
-    session.read.schema(StructType(Array(
-      StructField("longs", LongType, true),
-      StructField("more_longs", LongType, true)
-    ))).csv(path.toString)
   }
 
   def longsDf(session: SparkSession): DataFrame = {
@@ -404,36 +433,6 @@ class SparkQueryCompareTestSuite extends FunSuite with BeforeAndAfterEach {
     ).toDF("doubles", "more_doubles")
   }
 
-  def intsFromCsv(session: SparkSession): DataFrame = {
-    val schema = StructType(Array(
-      StructField("ints_1", IntegerType),
-      StructField("ints_2", IntegerType),
-      StructField("ints_3", IntegerType),
-      StructField("ints_4", IntegerType),
-      StructField("ints_5", IntegerType)
-    ))
-    val path = this.getClass.getClassLoader.getResource("test.csv")
-    session.read.schema(schema).csv(path.toString)
-  }
-
-  def intsFromPartitionedCsv(session: SparkSession): DataFrame = {
-    val schema = StructType(Array(
-      StructField("partKey", IntegerType),
-      StructField("ints_1", IntegerType),
-      StructField("ints_2", IntegerType),
-      StructField("ints_3", IntegerType),
-      StructField("ints_4", IntegerType),
-      StructField("ints_5", IntegerType)
-    ))
-    val path = this.getClass.getClassLoader.getResource("partitioned-csv")
-    session.read.schema(schema).csv(path.toString)
-  }
-
-  def intsFromCsvInferredSchema(session: SparkSession): DataFrame = {
-    val path = this.getClass.getClassLoader.getResource("test.csv")
-    session.read.option("inferSchema", "true").csv(path.toString)
-  }
-
   def nullableFloatDf(session: SparkSession): DataFrame = {
     import session.sqlContext.implicits._
     Seq[(java.lang.Float, java.lang.Float)](
@@ -462,24 +461,65 @@ class SparkQueryCompareTestSuite extends FunSuite with BeforeAndAfterEach {
 
   // Note: some tests here currently use this to force Spark not to
   // push down expressions into the scan (e.g. GpuFilters need this)
-  def fromCsvDf(csvPath: String, schema: StructType)
+  def fromCsvDf(file: String, schema: StructType)
                (session: SparkSession): DataFrame = {
+    //val resource = this.getClass.getClassLoader.getResource(file).toString
+    val resource = "/home/abellina/work/rapids-plugin-4-spark/sql-plugin/src/test/resources/"+file
     var df = session.read.format("csv")
-      .option("header", "true")
-    df.schema(schema).load(csvPath).toDF()
+    df.schema(schema).load(resource).toDF()
+  }
+
+  def shortsFromCsv = {
+    fromCsvDf("shorts.csv", StructType(Array(
+      StructField("shorts", ShortType),
+      StructField("more_shorts", ShortType),
+      StructField("five", ShortType),
+      StructField("six", ShortType),
+    )))(_)
+  }
+
+  def intsFromCsv = {
+    fromCsvDf("test.csv", StructType(Array(
+      StructField("ints_1", IntegerType),
+      StructField("ints_2", IntegerType),
+      StructField("ints_3", IntegerType),
+      StructField("ints_4", IntegerType),
+      StructField("ints_5", IntegerType)
+    )))(_)
+  }
+
+  def intsFromPartitionedCsv= {
+    fromCsvDf("partitioned-csv", StructType(Array(
+      StructField("partKey", IntegerType),
+      StructField("ints_1", IntegerType),
+      StructField("ints_2", IntegerType),
+      StructField("ints_3", IntegerType),
+      StructField("ints_4", IntegerType),
+      StructField("ints_5", IntegerType)
+    )))(_)
+  }
+
+  def longsFromCSVDf = {
+    fromCsvDf("lots_o_longs.csv", StructType(Array(
+      StructField("longs", LongType, true),
+      StructField("more_longs", LongType, true)
+    )))(_)
+  }
+
+  def intsFromCsvInferredSchema(session: SparkSession): DataFrame = {
+    val path = this.getClass.getClassLoader.getResource("test.csv")
+    session.read.option("inferSchema", "true").csv(path.toString)
   }
 
   def nullableFloatCsvDf = {
-    var path = this.getClass.getClassLoader.getResource("nullable_floats.csv")
-    fromCsvDf(path.toString, StructType(Array(
+    fromCsvDf("nullable_floats.csv", StructType(Array(
       StructField("floats", FloatType, true),
       StructField("more_floats", FloatType, true)
     )))(_)
   }
 
   def floatCsvDf = {
-    var path = this.getClass.getClassLoader.getResource("floats.csv")
-    fromCsvDf(path.toString, StructType(Array(
+    fromCsvDf("floats.csv", StructType(Array(
       StructField("floats", FloatType, false),
       StructField("more_floats", FloatType, false)
     )))(_)
@@ -488,6 +528,38 @@ class SparkQueryCompareTestSuite extends FunSuite with BeforeAndAfterEach {
   def frameCount(frame: DataFrame): DataFrame = {
     import frame.sparkSession.implicits._
     Seq(frame.count()).toDF
+  }
+
+  def intCsvDf= {
+    fromCsvDf("ints.csv", StructType(Array(
+      StructField("ints", IntegerType, false),
+      StructField("more_ints", IntegerType, false),
+      StructField("five", IntegerType, false),
+      StructField("six", IntegerType, false)
+    )))(_)
+  }
+
+  def longsCsvDf= {
+    fromCsvDf("ints.csv", StructType(Array(
+      StructField("longs", LongType, false),
+      StructField("more_longs", LongType, false),
+      StructField("five", IntegerType, false),
+      StructField("six", IntegerType, false)
+    )))(_)
+  }
+
+  def doubleCsvDf= {
+    fromCsvDf("floats.csv", StructType(Array(
+      StructField("doubles", DoubleType, false),
+      StructField("more_doubles", DoubleType, false)
+    )))(_)
+  }
+
+  def datesCsvDf= {
+    fromCsvDf("dates.csv", StructType(Array(
+      StructField("dates", DateType, false),
+      StructField("ints", IntegerType, false)
+    )))(_)
   }
 
   testSparkResultsAreEqual("Test CSV", intsFromCsv) {
@@ -877,7 +949,7 @@ class SparkQueryCompareTestSuite extends FunSuite with BeforeAndAfterEach {
   testSparkResultsAreEqual("Greater than or equal longs", longsDf) {
     frame => frame.selectExpr("longs >= more_longs")
   }
-  
+
   //
   // (in)equality with doubles
   //
@@ -1003,5 +1075,229 @@ class SparkQueryCompareTestSuite extends FunSuite with BeforeAndAfterEach {
 
   testSparkResultsAreEqual("Test unionByName doubles", doubleDf) {
     frame => frame.unionByName(frame.select(col("more_doubles"), col("doubles")))
+  }
+
+  /*
+   * HASH AGGREGATE TESTS
+   */
+  IGNORE_ORDER_testSparkResultsAreEqual("short reduction aggs", shortsFromCsv) {
+    frame => frame.agg(
+      (max("shorts") - min("more_shorts")) * lit(5),
+      sum("shorts"),
+      count("*"),
+      avg("shorts"),
+      avg(col("more_shorts") * lit("10")))
+  }
+
+  IGNORE_ORDER_testSparkResultsAreEqual("reduction aggs", longsCsvDf) {
+    frame => frame.agg(
+      (max("longs") - min("more_longs")) * lit(5),
+      sum("longs"),
+      count("*"),
+      avg("longs"),
+      avg(col("more_longs") * lit("10")))
+  }
+
+  IGNORE_ORDER_testSparkResultsAreEqual("test count, sum, max, min with shuffle", longsFromCSVDf, repart = 2) {
+    frame => frame.groupBy(col("more_longs")).agg(
+      count("*"),
+      sum("more_longs"),
+      sum("longs") * lit(2),
+      (max("more_longs") - min("more_longs")) * 3.0)
+  }
+
+  INCOMPAT_IGNORE_ORDER_testSparkResultsAreEqual("float basic aggregates group by floats", floatCsvDf) {
+    frame => frame.groupBy("floats").agg(
+      lit(456f),
+      min(col("floats")) + lit(123),
+      sum(col("more_floats") + lit(123.0)),
+      max(col("floats") * col("more_floats")),
+      max("floats") - min("more_floats"),
+      max("more_floats") - min("floats"),
+      sum("floats") + sum("more_floats"),
+      avg("floats"),
+      count("*"))
+  }
+
+  INCOMPAT_IGNORE_ORDER_testSparkResultsAreEqual("float basic aggregates group by more_floats", floatCsvDf) {
+    frame => frame.groupBy("more_floats").agg(
+      lit(456f),
+      min(col("floats")) + lit(123),
+      sum(col("more_floats") + lit(123.0)),
+      max(col("floats") * col("more_floats")),
+      max("floats") - min("more_floats"),
+      max("more_floats") - min("floats"),
+      sum("floats") + sum("more_floats"),
+      avg("floats"),
+      count("*"))
+  }
+
+  INCOMPAT_IGNORE_ORDER_testSparkResultsAreEqual("nullable float basic aggregates group by more_floats", nullableFloatCsvDf) {
+    frame => frame.groupBy("more_floats").agg(
+      lit(456f),
+      min(col("floats")) + lit(123),
+      sum(col("more_floats") + lit(123.0)),
+      max(col("floats") * col("more_floats")),
+      max("floats") - min("more_floats"),
+      max("more_floats") - min("floats"),
+      sum("floats") + sum("more_floats"),
+      avg("floats"),
+      count("*"))
+  }
+
+  INCOMPAT_IGNORE_ORDER_testSparkResultsAreEqual("shorts basic aggregates group by more_shorts", shortsFromCsv) {
+    frame => frame.groupBy("more_shorts").agg(
+      lit(456),
+      min(col("shorts")) + lit(123),
+      sum(col("more_shorts") + lit(123.0)),
+      max(col("shorts") * col("more_shorts")),
+      max("shorts") - min("more_shorts"),
+      max("more_shorts") - min("shorts"),
+      sum("shorts"),
+      avg("shorts"),
+      count("*"))
+  }
+
+  IGNORE_ORDER_testSparkResultsAreEqual("long basic aggregates group by longs", longsCsvDf) {
+    frame => frame.groupBy("longs").agg(
+      lit(456f),
+      min(col("longs")) + lit(123),
+      sum(col("more_longs") + lit(123.0)),
+      max(col("longs") * col("more_longs")),
+      max("longs") - min("more_longs"),
+      max("more_longs") - min("longs"),
+      sum("longs") + sum("more_longs"),
+      avg("longs"),
+      count("*"))
+  }
+
+  IGNORE_ORDER_testSparkResultsAreEqual("long basic aggregates group by more_longs", longsCsvDf) {
+    frame => frame.groupBy("more_longs").agg(
+      lit(456f),
+      min(col("longs")) + lit(123),
+      sum(col("more_longs") + lit(123.0)),
+      max(col("longs") * col("more_longs")),
+      max("longs") - min("more_longs"),
+      max("more_longs") - min("longs"),
+      sum("longs") + sum("more_longs"),
+      avg("longs"),
+      count("*"))
+  }
+
+  IGNORE_ORDER_testSparkResultsAreEqual("ints basic aggregates group by ints", intCsvDf) {
+    frame => frame.groupBy("ints").agg(
+      lit(456f),
+      min(col("ints")) + lit(123),
+      sum(col("more_ints") + lit(123.0)),
+      max(col("ints") * col("more_ints")),
+      max("ints") - min("more_ints"),
+      max("more_ints") - min("ints"),
+      sum("ints") + sum("more_ints"),
+      avg("ints"),
+      count("*"))
+  }
+
+  IGNORE_ORDER_testSparkResultsAreEqual("ints basic aggregates group by more_ints", intCsvDf) {
+    frame => frame.groupBy("more_ints").agg(
+      lit(456f),
+      min(col("ints")) + lit(123),
+      sum(col("more_ints") + lit(123.0)),
+      max(col("ints") * col("more_ints")),
+      max("ints") - min("more_ints"),
+      max("more_ints") - min("ints"),
+      sum("ints") + sum("more_ints"),
+      avg("ints"),
+      count("*"))
+  }
+
+  INCOMPAT_IGNORE_ORDER_testSparkResultsAreEqual("doubles basic aggregates group by doubles", doubleCsvDf) {
+    frame => frame.groupBy("doubles").agg(
+      lit(456f),
+      min(col("doubles")) + lit(123),
+      sum(col("more_doubles") + lit(123.0)),
+      max(col("doubles") * col("more_doubles")),
+      max("doubles") - min("more_doubles"),
+      max("more_doubles") - min("doubles"),
+      sum("doubles") + sum("more_doubles"),
+      avg("doubles"),
+      count("*"))
+  }
+
+  INCOMPAT_IGNORE_ORDER_testSparkResultsAreEqual("doubles basic aggregates group by more_doubles", doubleCsvDf) {
+    frame => frame.groupBy("more_doubles").agg(
+      lit(456f),
+      min(col("doubles")) + lit(123),
+      sum(col("more_doubles") + lit(123.0)),
+      max(col("doubles") * col("more_doubles")),
+      max("doubles") - min("more_doubles"),
+      max("more_doubles") - min("doubles"),
+      sum("doubles") + sum("more_doubles"),
+      avg("doubles"),
+      count("*"))
+  }
+
+  IGNORE_ORDER_testSparkResultsAreEqual("sum(longs) multi group by longs, more_longs", longsCsvDf) {
+    frame => frame.groupBy("longs", "more_longs").agg(
+      sum("longs"), count("*"))
+  }
+
+  // misc aggregation tests
+  testSparkResultsAreEqual("sum(ints) group by literal", intCsvDf) {
+    frame => frame.groupBy(lit(1)).agg(sum("ints"))
+  }
+
+  IGNORE_ORDER_testSparkResultsAreEqual("sum(ints) group by dates", datesCsvDf) {
+    frame => frame.groupBy("dates").sum("ints")
+  }
+
+  IGNORE_ORDER_testSparkResultsAreEqual("max(ints) group by month", datesCsvDf) {
+    frame => frame.withColumn("monthval", month(col("dates")))
+                  .groupBy(col("monthval"))
+                  .agg(max("ints").as("max_ints_by_month"))
+  }
+
+  INCOMPAT_IGNORE_ORDER_testSparkResultsAreEqual("sum(floats) group by more_floats 2 partitions", floatCsvDf, repart = 2) {
+    frame => frame.groupBy("more_floats").sum("floats")
+  }
+
+  INCOMPAT_IGNORE_ORDER_testSparkResultsAreEqual("avg(floats) group by more_floats 4 partitions", floatCsvDf, repart = 4) {
+    frame => frame.groupBy("more_floats").avg("floats")
+  }
+
+  INCOMPAT_IGNORE_ORDER_testSparkResultsAreEqual("avg(floats),count(floats) group by more_floats 4 partitions", floatCsvDf, repart = 4) {
+    frame => frame
+      .groupBy("more_floats")
+      .agg(avg("floats"), count("*"))
+  }
+
+  IGNORE_ORDER_testSparkResultsAreEqual("complex aggregate expressions", intCsvDf) {
+    frame => frame.groupBy(col("more_ints") * 2).agg(
+      lit(1000) +
+        (lit(100) * (avg("ints") * sum("ints") - min("ints"))))
+  }
+
+  IGNORE_ORDER_testSparkResultsAreEqual("complex aggregate expressions 2", intCsvDf) {
+    frame => frame.groupBy("more_ints").agg(
+      min("ints") +
+        (lit(100) * (avg("ints") * sum("ints") - min("ints"))))
+  }
+
+  IGNORE_ORDER_testSparkResultsAreEqual("complex aggregate expression 3", intCsvDf) {
+    frame => frame.groupBy("more_ints").agg(
+      min("ints"), avg("ints"),
+      max(col("ints") + col("more_ints")), lit(1), min("ints"))
+  }
+
+  IGNORE_ORDER_testSparkResultsAreEqual("grouping expressions", longsCsvDf) {
+    frame => frame.groupBy(col("more_longs") + lit(10)).agg(min("longs"))
+  }
+
+  IGNORE_ORDER_testSparkResultsAreEqual("grouping expressions 2", longsCsvDf) {
+    frame => frame.groupBy(col("more_longs") + col("longs")).agg(min("longs"))
+  }
+
+  IGNORE_ORDER_testSparkResultsAreEqual("first/last aggregates", intCsvDf) {
+    frame => frame.groupBy(col("more_ints")).agg(
+      first("five", true), last("six", true))
   }
 }
