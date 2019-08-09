@@ -1,0 +1,93 @@
+/**
+*
+* Jenkinsfile for rapids-plugin building ubuntu/centos, cuda9.2/cuda10 versions
+*
+*/
+
+pipeline {
+    agent { label 'vanilla' }
+
+    options {
+        ansiColor('xterm')
+        timeout(time: 120, unit: 'MINUTES')
+        buildDiscarder(logRotator(numToKeepStr: '10'))
+    }
+
+    parameters {
+        string(name: 'REF', defaultValue: 'support-gpu', description: 'Commit to build')
+    }
+
+    environment {
+        JENKINS_ROOT  = 'jenkins'
+        BUILD_SCRIPT = '$JENKINS_ROOT/build-plugin.sh'
+    }
+
+    stages {
+        stage('Build and Test') {
+            parallel {
+                stage('Ubuntu16 CUDA9.2') {
+                    agent {
+                        dockerfile {
+                            label 'docker-gpu'
+                            filename 'Dockerfile.ubuntu16'
+                            dir "$JENKINS_ROOT"
+                            args '--runtime=nvidia -v ${HOME}/.m2:${HOME}/.m2:rw \
+                                -v ${HOME}/.zinc:${HOME}/.zinc:rw \
+                                -v /etc/passwd:/etc/passwd -v /etc/group:/etc/group'
+                            additionalBuildArgs  '--build-arg CUDA_VER=9.2'
+                        }
+                    }
+                    steps {
+                        sh "bash $BUILD_SCRIPT 9.2"
+                    }
+                }
+                stage('Ubuntu16 CUDA10.0') {
+                    agent {
+                        dockerfile {
+                            label 'docker-gpu'
+                            filename 'Dockerfile.ubuntu16'
+                            dir "$JENKINS_ROOT"
+                            args '--runtime=nvidia -v ${HOME}/.m2:${HOME}/.m2:rw \
+                                -v ${HOME}/.zinc:${HOME}/.zinc:rw \
+                                -v /etc/passwd:/etc/passwd -v /etc/group:/etc/group'
+                            additionalBuildArgs  '--build-arg CUDA_VER=10.0'
+                        }
+                    }
+                    steps {
+                        script {
+                            echo 'buiding ubuntu16 cuda10.0 ...'
+                            sh "bash $BUILD_SCRIPT 10.0"
+                        }
+                    }
+                }
+            }
+        }
+    } // end of stages
+
+    post {
+        always {
+            script {
+                if (currentBuild.currentResult == "SUCCESS") {
+                    updateGitlabCommitStatus(name: 'Jenkins CI', state: "success")
+                    slack("#rapidsai-spark-cicd", "Success", color: "#33CC33")
+                } else {
+                    updateGitlabCommitStatus(name: 'Jenkins CI', state: "failed")
+                    slack("#rapidsai-spark-cicd", "Failed", color: "#FF0000")
+                }
+            }
+        }
+    }
+} // end of pipeline
+
+void slack(Map params = [:], String channel, String message) {
+    Map defaultParams = [
+            color: "#000000",
+            baseUrl: "https://nvidia.slack.com/services/hooks/jenkins-ci/",
+            tokenCredentialId: "slack_token"
+    ]
+
+    params["channel"] = channel
+    params["message"] = "${BUILD_URL}\n" + message
+
+    slackSend(defaultParams << params)
+}
