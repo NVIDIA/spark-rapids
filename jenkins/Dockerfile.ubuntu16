@@ -1,0 +1,18 @@
+###
+#
+# Build the image for rapids-plugin development environment
+#
+# Arguments: CUDA_VER=9.2 or 10.0
+#
+###
+
+ARG CUDA_VER=10.0
+
+FROM nvidia/cuda:${CUDA_VER}-runtime-ubuntu16.04
+
+#Install maven for rapids-4-spark-plugin build
+#install java 8, maven, on ubuntu16.04_cuda x.x docker image
+RUN apt update -y && \
+    apt install -y maven \
+    openjdk-8-jdk
+
