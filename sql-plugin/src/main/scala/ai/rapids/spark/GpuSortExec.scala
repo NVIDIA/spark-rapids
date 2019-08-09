@@ -23,6 +23,7 @@ import scala.collection.mutable.ArrayBuffer
 import ai.rapids.cudf
 import ai.rapids.cudf.{NvtxColor, NvtxRange, Table}
 import ai.rapids.spark.GpuExpressionsUtils.evaluateBoundExpressions
+import ai.rapids.spark.RapidsPluginImplicits._
 
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.expressions.{Ascending, Attribute, Expression, NullOrdering, NullsFirst, NullsLast, RowOrdering, SortDirection, SortOrder}
@@ -124,6 +125,8 @@ class GpuColumnarBatchSorter(
             }
           } finally {
             nvtxRange.close()
+            inputCvs.safeClose()
+            batch.close()
           }
         }
         val nvtxRange = new NvtxRange("sort concatenate", NvtxColor.YELLOW)
@@ -138,7 +141,7 @@ class GpuColumnarBatchSorter(
           nvtxRange.close()
         }
       } finally {
-        inputTbls.foreach(_.close())
+        inputTbls.safeClose()
       }
 
       val nvtxRange = new NvtxRange("sort", NvtxColor.ORANGE)
@@ -202,10 +205,8 @@ class GpuColumnarBatchSorter(
       sortCvs ++= evaluateBoundExpressions(batchWithCategories, childExprs)
     } catch {
       case t: Throwable =>
-        sortCvs.foreach(_.close())
-        if (batchWithCategories != null) {
-          batchWithCategories.close()
-        }
+        sortCvs.safeClose()
+        batchWithCategories.safeClose()
         throw t
     }
     sortCvs ++ GpuColumnVector.extractColumns(batchWithCategories)

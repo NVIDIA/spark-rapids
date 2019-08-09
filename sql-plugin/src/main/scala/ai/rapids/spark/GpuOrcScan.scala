@@ -639,7 +639,6 @@ class GpuOrcPartitionReader(
         }
         val includedColumns = ctx.updatedReadSchema.getFieldNames.asScala
         val parseOpts = ORCOptions.builder()
-            .withTimeUnit(TimeUnit.MICROSECONDS)
             .withNumPyTypes(false)
             .includeColumn(includedColumns:_*).build()
         val table = Table.readORC(parseOpts, dataBuffer, 0, dataSize)

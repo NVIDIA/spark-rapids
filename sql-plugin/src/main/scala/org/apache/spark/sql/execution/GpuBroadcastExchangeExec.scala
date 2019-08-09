@@ -25,6 +25,7 @@ import scala.util.control.NonFatal
 
 import ai.rapids.cudf.{JCudfSerialization, Table}
 import ai.rapids.spark.{ConcatAndConsumeAll, GpuColumnVector, GpuExec}
+import ai.rapids.spark.RapidsPluginImplicits._
 import com.google.common.util.concurrent.ThreadFactoryBuilder
 
 import org.apache.spark.{broadcast, SparkException}
