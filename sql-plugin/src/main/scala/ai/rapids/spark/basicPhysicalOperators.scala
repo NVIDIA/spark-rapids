@@ -16,6 +16,7 @@
 
 package ai.rapids.spark
 
+import ai.rapids.cudf
 import ai.rapids.cudf.DType
 
 import org.apache.spark.rdd.RDD
@@ -56,46 +57,91 @@ class GpuFilterExec(condition: GpuExpression, child: SparkPlan)
 
   override def doExecuteColumnar(): RDD[ColumnarBatch] = {
     val numOutputRows = longMetric("numOutputRows")
-    val boundCondition: Any = GpuBindReferences.bindReference(condition, child.output)
+    val boundCondition = GpuBindReferences.bindReference(condition, child.output)
     val rdd = child.executeColumnar()
-    rdd.map(cb => try {
-      val boundExpression = boundCondition.asInstanceOf[GpuExpression]
-      val evalCv = boundExpression.columnarEval(cb)
-      var cols = Seq[GpuColumnVector]()
-      var rowCount = 0
-      try {
-        val gpuEvalCv = evalCv.asInstanceOf[GpuColumnVector]
 
-        // rebuild the columns, but with new filtered columns
-        for (i <- 0 until cb.numCols()) {
-          val colBase = cb.column(i).asInstanceOf[GpuColumnVector].getBase
-          val filtered = if (colBase.getType == DType.STRING) {
-            // filter does not work on strings...
+    rdd.map(batch => {
+      var cols = Seq[GpuColumnVector]()
+      var success = false
+      var error: Throwable = null
+      try {
+        for (i <- 0 until batch.numCols) {
+          val col = batch.column(i).asInstanceOf[GpuColumnVector]
+          col.getBase.getType match {
+            // filter does not work on strings, so turn them to categories
             // TODO we need a faster way to work with these values!!!
-            val tmp = colBase.asStringCategories()
-            try {
-              tmp.filter(gpuEvalCv.getBase)
-            } finally {
-              tmp.close()
+            case DType.STRING => {
+              val catCv = col.getBase.asStringCategories
+              var successFrom = false
+              try {
+                cols = cols :+ GpuColumnVector.from(catCv)
+                successFrom = true
+              } finally {
+                if (!successFrom) {
+                  catCv.close
+                }
+              }
             }
-          } else {
-            colBase.filter(gpuEvalCv.getBase)
+            case _ => cols = cols :+ col.inRefCount()
           }
-          cols = (cols :+ GpuColumnVector.from(filtered))
-          rowCount = filtered.getRowCount().intValue() // all columns have the same # of rows
         }
+        success = true
       } finally {
-        if (evalCv != null && evalCv.isInstanceOf[GpuColumnVector]) {
-          evalCv.asInstanceOf[GpuColumnVector].close()
+        if (!success) {
+          // this foreach will not throw
+          cols.foreach(col => {
+            try {
+              col.close
+            } catch {
+              case t: Throwable => {
+                if (error == null) {
+                  error = t
+                } else {
+                  error.addSuppressed(t)
+                }
+              }
+            }
+          })
         }
       }
-      numOutputRows += rowCount
 
-      new ColumnarBatch(cols.toArray, rowCount)
-    } finally {
-      cb.close()
-    }
-    )
+      // throw error if there were problems closing
+      if (error != null) {
+        throw error
+      }
+
+      var filterConditionCv: GpuColumnVector = null
+      var tbl: cudf.Table = null
+      var filtered: cudf.Table = null
+      val filteredBatch = try {
+        filterConditionCv = boundCondition.columnarEval(batch).asInstanceOf[GpuColumnVector]
+        tbl = new cudf.Table(cols.map(_.getBase): _*)
+        filtered = tbl.filter(filterConditionCv.getBase)
+        numOutputRows += filtered.getRowCount
+        GpuColumnVector.from(filtered)
+      } finally {
+        // this foreach will not throw
+        (Seq(filtered, tbl, filterConditionCv, batch) ++ cols).foreach (toClose => {
+          try {
+            toClose.close
+          } catch {
+            case t: Throwable => {
+              if (error == null) {
+                error = t
+              } else {
+                error.addSuppressed(t)
+              }
+            }
+          }
+        })
+      }
+
+      if (error != null) {
+        throw error
+      }
+
+      filteredBatch
+    })
   }
 }
 
