@@ -83,7 +83,7 @@ class GpuFilterExec(condition: GpuExpression, child: SparkPlan)
                 }
               }
             }
-            case _ => cols :+ col.inRefCount()
+            case _ => cols += col.inRefCount()
           }
         }
         success = true
