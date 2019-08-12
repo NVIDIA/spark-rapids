@@ -62,7 +62,7 @@ class GpuFilterExec(condition: GpuExpression, child: SparkPlan)
     val rdd = child.executeColumnar()
 
     rdd.map(batch => {
-      val cols = ArrayBuffer[GpuColumnVector]()
+      val cols = ArrayBuffer[GpuColumnVector](batch.numCols)
       var success = false
       var error: Throwable = null
       try {
