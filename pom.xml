@@ -20,6 +20,9 @@
         <cuda.version>cuda10</cuda.version>
         <scala.binary.version>2.12</scala.binary.version>
         <scala.version>2.12.8</scala.version>
+        <orc.version>1.5.5</orc.version>
+        <orc.classifier>nohive</orc.classifier>
+        <rapids.shade.package>ai.rapids.spark.shaded</rapids.shade.package>
         <test.exclude.tags></test.exclude.tags>
         <test.include.tags></test.include.tags>
     </properties>
@@ -43,9 +46,76 @@
                 <version>1.1.1</version>
             </dependency>
             <dependency>
-                <groupId>org.apache.spark</groupId>
-                <artifactId>spark-sql_${scala.binary.version}</artifactId>
-                <version>3.0.0-SNAPSHOT</version>
+              <groupId>org.apache.spark</groupId>
+              <artifactId>spark-sql_${scala.binary.version}</artifactId>
+              <version>3.0.0-SNAPSHOT</version>
+            </dependency>
+            <dependency>
+              <groupId>org.apache.orc</groupId>
+              <artifactId>orc-core</artifactId>
+              <version>${orc.version}</version>
+              <classifier>${orc.classifier}</classifier>
+              <exclusions>
+                <exclusion>
+                  <groupId>javax.xml.bind</groupId>
+                  <artifactId>jaxb-api</artifactId>
+                </exclusion>
+                <exclusion>
+                  <groupId>org.apache.hadoop</groupId>
+                  <artifactId>hadoop-common</artifactId>
+                </exclusion>
+                <exclusion>
+                  <groupId>org.apache.hadoop</groupId>
+                  <artifactId>hadoop-hdfs</artifactId>
+                </exclusion>
+                <exclusion>
+                  <groupId>org.apache.hive</groupId>
+                  <artifactId>hive-storage-api</artifactId>
+                </exclusion>
+              </exclusions>
+            </dependency>
+            <dependency>
+              <groupId>org.apache.orc</groupId>
+              <artifactId>orc-mapreduce</artifactId>
+              <version>${orc.version}</version>
+              <classifier>${orc.classifier}</classifier>
+              <exclusions>
+                <exclusion>
+                  <groupId>org.apache.hadoop</groupId>
+                  <artifactId>hadoop-common</artifactId>
+                </exclusion>
+                <exclusion>
+                  <groupId>org.apache.hadoop</groupId>
+                  <artifactId>hadoop-mapreduce-client-core</artifactId>
+                </exclusion>
+                <exclusion>
+                  <groupId>org.apache.orc</groupId>
+                  <artifactId>orc-core</artifactId>
+                </exclusion>
+                <exclusion>
+                  <groupId>org.apache.hive</groupId>
+                  <artifactId>hive-storage-api</artifactId>
+                </exclusion>
+                <exclusion>
+                  <groupId> com.esotericsoftware</groupId>
+                  <artifactId>kryo-shaded</artifactId>
+                </exclusion>
+              </exclusions>
+            </dependency>
+            <dependency>
+              <groupId>org.apache.orc</groupId>
+              <artifactId>orc-shims</artifactId>
+              <version>${orc.version}</version>
+              <exclusions>
+                <exclusion>
+                  <groupId>org.apache.hadoop</groupId>
+                  <artifactId>hadoop-common</artifactId>
+                </exclusion>
+                <exclusion>
+                  <groupId>org.apache.hadoop</groupId>
+                  <artifactId>hadoop-hdfs</artifactId>
+                </exclusion>
+              </exclusions>
             </dependency>
             <!-- WE CANNOT SUPPORT XGBOOST YET BECAUSE OF A MISMATCH IN SCALA VERSIONS
             <dependency>
@@ -66,6 +136,15 @@
     <build>
         <pluginManagement>
             <plugins>
+                <plugin>
+                  <artifactId>maven-antrun-plugin</artifactId>
+                  <version>1.8</version>
+                </plugin>
+                <plugin>
+                  <groupId>org.apache.maven.plugins</groupId>
+                  <artifactId>maven-shade-plugin</artifactId>
+                  <version>3.2.1</version>
+                </plugin>
                 <plugin>
                     <groupId>org.apache.maven.plugins</groupId>
                     <artifactId>maven-surefire-plugin</artifactId>

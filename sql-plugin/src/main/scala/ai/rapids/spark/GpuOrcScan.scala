@@ -48,6 +48,7 @@ import org.apache.spark.sql.execution.datasources.v2.FilePartitionReaderFactory
 import org.apache.spark.sql.execution.QueryExecutionException
 import org.apache.spark.sql.execution.datasources.orc.OrcUtils
 import org.apache.spark.sql.internal.SQLConf
+import org.apache.spark.sql.rapids.OrcFilters
 import org.apache.spark.sql.sources.Filter
 import org.apache.spark.sql.sources.v2.reader.{InputPartition, PartitionReader, PartitionReaderFactory}
 import org.apache.spark.sql.types.StructType
@@ -68,10 +69,14 @@ class GpuOrcScan(
     readDataSchema, readPartitionSchema, options, pushedFilters) with GpuScan {
 
   override def createReaderFactory(): PartitionReaderFactory = {
+    // Unset any serialized search argument setup by Spark's OrcScanBuilder as
+    // it will be incompatible due to shading and potential ORC classifier mismatch.
+    hadoopConf.unset(OrcConf.KRYO_SARG.getAttribute)
+
     val broadcastedConf = sparkSession.sparkContext.broadcast(
       new GpuSerializableConfiguration(hadoopConf))
     GpuOrcPartitionReaderFactory(sparkSession.sessionState.conf, broadcastedConf,
-      dataSchema, readDataSchema, readPartitionSchema, rapidsConf)
+      dataSchema, readDataSchema, readPartitionSchema, pushedFilters, rapidsConf)
   }
 }
 
@@ -92,6 +97,7 @@ case class GpuOrcPartitionReaderFactory(
     dataSchema: StructType,
     readDataSchema: StructType,
     partitionSchema: StructType,
+    pushedFilters: Array[Filter],
     @transient rapidsConf: RapidsConf) extends FilePartitionReaderFactory {
   private val isCaseSensitive = sqlConf.caseSensitiveAnalysis
   private val debugDumpPrefix = rapidsConf.orcDebugDumpPrefix
@@ -108,8 +114,9 @@ case class GpuOrcPartitionReaderFactory(
     OrcConf.MAPRED_INPUT_SCHEMA.setString(conf, orcSchemaString)
     OrcConf.IS_SCHEMA_EVOLUTION_CASE_SENSITIVE.setBoolean(conf, isCaseSensitive)
 
+    val fullSchema = StructType(dataSchema ++ partitionSchema)
     val reader = new GpuOrcPartitionReader(conf, partFile, dataSchema, readDataSchema,
-      debugDumpPrefix)
+      fullSchema, pushedFilters, debugDumpPrefix)
     ColumnarPartitionReaderWithPartitionValues.newReader(partFile, reader, partitionSchema)
   }
 }
@@ -155,6 +162,8 @@ class GpuOrcPartitionReader(
     partFile: PartitionedFile,
     dataSchema: StructType,
     readDataSchema: StructType,
+    fullSchema: StructType,
+    pushedFilters: Array[Filter],
     debugDumpPrefix: String) extends PartitionReader[ColumnarBatch] with Logging {
   private var batch: Option[ColumnarBatch] = None
   private var isExhausted: Boolean = false
@@ -598,6 +607,11 @@ class GpuOrcPartitionReader(
       splitStripes: Seq[StripeInformation],
       useUTCTimestamp: Boolean): Option[Table] = {
     val readerOpts = OrcInputFormat.buildOptions(conf, orcReader, partFile.start, partFile.length)
+    // create the search argument if we have pushed filters
+    OrcFilters.createFilter(fullSchema, pushedFilters).foreach { f =>
+      readerOpts.searchArgument(f, fullSchema.fieldNames)
+    }
+
     val updatedReadSchema = checkSchemaCompatibility(orcReader.getSchema, readerOpts.getSchema,
       readerOpts.getIsSchemaEvolutionCaseAware)
 

@@ -32,6 +32,16 @@
             <artifactId>spark-sql_${scala.binary.version}</artifactId>
         </dependency>
         <dependency>
+          <groupId>org.apache.orc</groupId>
+          <artifactId>orc-core</artifactId>
+          <classifier>${orc.classifier}</classifier>
+        </dependency>
+        <dependency>
+          <groupId>org.apache.orc</groupId>
+          <artifactId>orc-mapreduce</artifactId>
+          <classifier>${orc.classifier}</classifier>
+        </dependency>
+        <dependency>
             <groupId>org.scalatest</groupId>
             <artifactId>scalatest_${scala.binary.version}</artifactId>
             <scope>test</scope>
@@ -39,7 +49,75 @@
     </dependencies>
 
     <build>
+        <resources>
+          <resource>
+            <directory>${project.basedir}/..</directory>
+            <targetPath>META-INF</targetPath>
+            <includes>
+              <!-- The NOTICE will be taken care of by the antrun task below -->
+              <include>LICENSE</include>
+            </includes>
+          </resource>
+        </resources>
         <plugins>
+            <plugin>
+              <artifactId>maven-antrun-plugin</artifactId>
+              <executions>
+                <execution>
+                  <id>copy-notice</id>
+                  <goals>
+                    <goal>run</goal>
+                  </goals>
+                  <phase>process-resources</phase>
+                  <configuration>
+                    <target>
+                      <!-- copy NOTICE-binary to NOTICE -->
+                      <copy
+                          todir="${project.build.directory}/classes/META-INF/"
+                          verbose="true">
+                        <fileset dir="${project.basedir}/..">
+                          <include name="NOTICE-binary"/>
+                        </fileset>
+                        <mapper type="glob" from="*-binary" to="*"/>
+                      </copy>
+                    </target>
+                  </configuration>
+                </execution>
+              </executions>
+            </plugin>
+            <plugin>
+              <groupId>org.apache.maven.plugins</groupId>
+              <artifactId>maven-shade-plugin</artifactId>
+              <configuration>
+                <shadedArtifactAttached>false</shadedArtifactAttached>
+                <createDependencyReducedPom>true</createDependencyReducedPom>
+                <artifactSet>
+                  <includes>
+                    <include>org.apache.orc:orc-core</include>
+                    <include>org.apache.orc:orc-mapreduce</include>
+                    <include>org.apache.orc:orc-shims</include>
+                  </includes>
+                </artifactSet>
+                <relocations>
+                  <relocation>
+                    <pattern>org.apache.orc</pattern>
+                    <shadedPattern>${rapids.shade.package}.orc</shadedPattern>
+                  </relocation>
+                  <relocation>
+                    <pattern>com.google.protobuf25</pattern>
+                    <shadedPattern>${rapids.shade.package}.protobuf25</shadedPattern>
+                  </relocation>
+                </relocations>
+              </configuration>
+              <executions>
+                <execution>
+                  <phase>package</phase>
+                  <goals>
+                    <goal>shade</goal>
+                  </goals>
+                </execution>
+              </executions>
+            </plugin>
             <!-- disable surefire as we are using scalatest only -->
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
