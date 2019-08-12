@@ -17,3 +17,8 @@ enable it again.
 > spark-shell --jars 'rapids-4-spark-0.8-SNAPSHOT.jar,cudf-0.8-SNAPSHOT-cuda10.jar' --conf spark.sql.extensions=ai.rapids.spark.Plugin
 ```
 
+## Notes on Building
+
+The build requires Apache Spark 3.0+ built against the nohive ORC classifier.  Building with a
+version of Spark built without the nohive support (e.g.: the Apache Spark hadoop-3.2 profile)
+will cause errors during build and test due to the conflicting ORC jars.
