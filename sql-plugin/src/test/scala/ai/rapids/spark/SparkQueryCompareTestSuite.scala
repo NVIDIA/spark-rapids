@@ -463,9 +463,8 @@ class SparkQueryCompareTestSuite extends FunSuite with BeforeAndAfterEach {
   // push down expressions into the scan (e.g. GpuFilters need this)
   def fromCsvDf(file: String, schema: StructType)
                (session: SparkSession): DataFrame = {
-    //val resource = this.getClass.getClassLoader.getResource(file).toString
-    val resource = "/home/abellina/work/rapids-plugin-4-spark/sql-plugin/src/test/resources/"+file
-    var df = session.read.format("csv")
+    val resource = this.getClass.getClassLoader.getResource(file).toString
+    val df = session.read.format("csv")
     df.schema(schema).load(resource).toDF()
   }
 
