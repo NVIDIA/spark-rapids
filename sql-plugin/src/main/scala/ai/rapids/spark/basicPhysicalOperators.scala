@@ -18,11 +18,12 @@ package ai.rapids.spark
 
 import ai.rapids.cudf
 import ai.rapids.cudf.DType
-
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.expressions.NamedExpression
 import org.apache.spark.sql.execution.{FilterExec, ProjectExec, SparkPlan, UnionExec}
-import org.apache.spark.sql.vectorized.{ColumnarBatch, ColumnVector}
+import org.apache.spark.sql.vectorized.{ColumnVector, ColumnarBatch}
+
+import scala.collection.mutable.ArrayBuffer
 
 class GpuProjectExec(projectList: Seq[GpuExpression], child: SparkPlan)
   extends ProjectExec(projectList.asInstanceOf[Seq[NamedExpression]], child) with GpuExec {
@@ -61,7 +62,7 @@ class GpuFilterExec(condition: GpuExpression, child: SparkPlan)
     val rdd = child.executeColumnar()
 
     rdd.map(batch => {
-      var cols = Seq[GpuColumnVector]()
+      val cols = ArrayBuffer[GpuColumnVector]()
       var success = false
       var error: Throwable = null
       try {
@@ -74,7 +75,7 @@ class GpuFilterExec(condition: GpuExpression, child: SparkPlan)
               val catCv = col.getBase.asStringCategories
               var successFrom = false
               try {
-                cols = cols :+ GpuColumnVector.from(catCv)
+                cols += GpuColumnVector.from(catCv)
                 successFrom = true
               } finally {
                 if (!successFrom) {
@@ -82,7 +83,7 @@ class GpuFilterExec(condition: GpuExpression, child: SparkPlan)
                 }
               }
             }
-            case _ => cols = cols :+ col.inRefCount()
+            case _ => cols :+ col.inRefCount()
           }
         }
         success = true
@@ -103,11 +104,10 @@ class GpuFilterExec(condition: GpuExpression, child: SparkPlan)
             }
           })
         }
-      }
-
-      // throw error if there were problems closing
-      if (error != null) {
-        throw error
+        // throw error if there were problems closing
+        if (error != null) {
+          throw error
+        }
       }
 
       var filterConditionCv: GpuColumnVector = null
@@ -123,7 +123,9 @@ class GpuFilterExec(condition: GpuExpression, child: SparkPlan)
         // this foreach will not throw
         (Seq(filtered, tbl, filterConditionCv, batch) ++ cols).foreach (toClose => {
           try {
-            toClose.close
+            if (toClose != null) {
+              toClose.close
+            }
           } catch {
             case t: Throwable => {
               if (error == null) {
@@ -134,10 +136,9 @@ class GpuFilterExec(condition: GpuExpression, child: SparkPlan)
             }
           }
         })
-      }
-
-      if (error != null) {
-        throw error
+        if (error != null) {
+          throw error
+        }
       }
 
       filteredBatch
