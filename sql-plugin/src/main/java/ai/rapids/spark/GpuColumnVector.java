@@ -360,4 +360,6 @@ public final class GpuColumnVector extends ColumnVector {
   public ai.rapids.cudf.ColumnVector getBase() {
     return cudfCv;
   }
+
+  public long getRowCount() { return cudfCv.getRowCount(); }
 }

@@ -459,6 +459,13 @@ class SparkQueryCompareTestSuite extends FunSuite with BeforeAndAfterEach {
     ).toDF("strings", "more_strings")
   }
 
+  def nullableStringsFromCsv = {
+    fromCsvDf("strings.csv", StructType(Array(
+      StructField("strings", StringType, true),
+      StructField("more_strings", StringType, true)
+    )))(_)
+  }
+
   // Note: some tests here currently use this to force Spark not to
   // push down expressions into the scan (e.g. GpuFilters need this)
   def fromCsvDf(file: String, schema: StructType)
@@ -1051,6 +1058,23 @@ class SparkQueryCompareTestSuite extends FunSuite with BeforeAndAfterEach {
 
   testSparkResultsAreEqual("filter is not null and greater than or equal", nullableFloatCsvDf) {
     frame => frame.filter("floats is not null AND more_floats >= 3.0")
+  }
+
+  // these are ALLOW_NON_GPU because you can't project a string
+  ALLOW_NON_GPU_testSparkResultsAreEqual("filter strings are not null", nullableStringsFromCsv) {
+    frame => frame.filter("strings is not null or more_strings is not null")
+  }
+
+  ALLOW_NON_GPU_testSparkResultsAreEqual("filter strings equality", nullableStringsFromCsv) {
+    frame => frame.filter("strings = 'Bar'")
+  }
+
+  ALLOW_NON_GPU_testSparkResultsAreEqual("filter strings greater than", nullableStringsFromCsv) {
+    frame => frame.filter("strings > 'Bar'")
+  }
+
+  ALLOW_NON_GPU_testSparkResultsAreEqual("filter strings less than", nullableStringsFromCsv) {
+    frame => frame.filter("strings < 'Bar'")
   }
 
   testSparkResultsAreEqual("IsNotNull strings", nullableStringsDf) {
