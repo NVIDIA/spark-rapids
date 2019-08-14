@@ -114,7 +114,8 @@ class GpuFilterExec(condition: GpuExpression, child: SparkPlan)
       var tbl: cudf.Table = null
       var filtered: cudf.Table = null
       val filteredBatch = try {
-        filterConditionCv = boundCondition.columnarEval(batch).asInstanceOf[GpuColumnVector]
+        val batchWithCategories = new ColumnarBatch(cols.toArray, batch.numRows)
+        filterConditionCv = boundCondition.columnarEval(batchWithCategories).asInstanceOf[GpuColumnVector]
         tbl = new cudf.Table(cols.map(_.getBase): _*)
         filtered = tbl.filter(filterConditionCv.getBase)
         numOutputRows += filtered.getRowCount
