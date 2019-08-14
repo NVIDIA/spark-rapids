@@ -625,6 +625,11 @@ class SparkQueryCompareTestSuite extends FunSuite with BeforeAndAfterEach {
     frame => frame.select(col("*"))
   }
 
+  testSparkResultsAreEqual("Test Parquet with chunks", fileSplitsParquet,
+    conf = new SparkConf().set("spark.rapids.sql.maxReaderBatchSize", "100")) {
+    frame => frame.select(col("*"))
+  }
+
   testSparkResultsAreEqual("Test Parquet count", fileSplitsParquet,
       conf=parquetSplitsConf)(frameCount)
 
