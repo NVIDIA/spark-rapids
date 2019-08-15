@@ -7,4 +7,4 @@
 ###
 set -e
 
-mvn clean package 
+mvn clean package --settings=settings.xml deploy -Pgpuwa
