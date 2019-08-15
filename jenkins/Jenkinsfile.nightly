@@ -19,7 +19,11 @@ pipeline {
 
     environment {
         JENKINS_ROOT  = 'jenkins'
-        BUILD_SCRIPT = '$JENKINS_ROOT/build-plugin.sh'
+        BUILD_SCRIPT = '$JENKINS_ROOT/build-plugin-deploy.sh'
+    }
+
+    triggers {
+        cron('H 0 * * *')
     }
 
     stages {
@@ -49,8 +53,10 @@ pipeline {
             script {
                 if (currentBuild.currentResult == "SUCCESS") {
                     updateGitlabCommitStatus(name: 'Jenkins CI', state: "success")
+                    slack("#rapidsai-spark-cicd", "Success", color: "#33CC33")
                 } else {
                     updateGitlabCommitStatus(name: 'Jenkins CI', state: "failed")
+                    slack("#rapidsai-spark-cicd", "Failed", color: "#FF0000")
                 }
             }
         }
