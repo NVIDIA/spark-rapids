@@ -68,14 +68,12 @@ class TpchLikeSparkTest extends FunSuite with BeforeAndAfterAll {
 
   test("Something like TPCH Query 7") {
     val df = Q7Like(session)
-    // Work around for count of nothing throwing an exception
-    assert(0 == df.collect().length)
+    assert(0 == df.count())
   }
 
   test("Something like TPCH Query 8") {
     val df = Q8Like(session)
-    // Work around for count of nothing throwing an exception
-    assert(0 == df.collect().length)
+    assert(0 == df.count())
   }
 
   test("Something like TPCH Query 9") {
@@ -124,11 +122,13 @@ class TpchLikeSparkTest extends FunSuite with BeforeAndAfterAll {
   }
 
   // TODO not getting the right answer out on larger dataset.  Need to dig in more.
-//  test("Something like TPCH Query 18") {
-//    val df = Q18Like(session)
-//    // Work around for count of nothing throwing an exception
-//    assert(0 == df.collect().length)
-//  }
+  //https://gitlab-master.nvidia.com/nvspark/rapids-plugin-4-spark/issues/31
+  /*
+    test("Something like TPCH Query 18") {
+    val df = Q18Like(session)
+    assert(0 == df.count())
+  }
+  */
 
   test("Something like TPCH Query 19") {
     val df = Q19Like(session)
@@ -137,14 +137,12 @@ class TpchLikeSparkTest extends FunSuite with BeforeAndAfterAll {
 
   test("Something like TPCH Query 20") {
     val df = Q20Like(session)
-    // Work around for count of nothing throwing an exception
-    assert(0 == df.collect().length)
+    assert(0 == df.count())
   }
 
   test("Something like TPCH Query 21") {
     val df = Q21Like(session)
-    // Work around for count of nothing throwing an exception
-    assert(0 == df.collect().length)
+    assert(0 == df.count())
   }
 
   test("Something like TPCH Query 22") {
