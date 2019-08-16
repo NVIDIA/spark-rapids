@@ -19,7 +19,6 @@ pipeline {
 
     environment {
         JENKINS_ROOT  = 'jenkins'
-        BUILD_SCRIPT = '$JENKINS_ROOT/build-plugin-deploy.sh'
     }
 
     triggers {
@@ -42,7 +41,7 @@ pipeline {
             steps {
                 script {
                     echo 'buiding ubuntu16 cuda10.0 ...'
-                    sh "bash $BUILD_SCRIPT"
+                    sh 'mvn clean deploy'
                 }
             }
         }

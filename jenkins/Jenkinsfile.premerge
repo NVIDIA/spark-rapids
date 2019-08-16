@@ -14,12 +14,11 @@ pipeline {
     }
 
     parameters {
-        string(name: 'REF', defaultValue: 'master', description: 'Commit to build')
+        string(name: 'REF', defaultValue: '\${gitlabBranch}', description: 'Commit to build')
     }
 
     environment {
         JENKINS_ROOT  = 'jenkins'
-        BUILD_SCRIPT = '$JENKINS_ROOT/build-plugin.sh'
     }
 
     stages {
@@ -38,7 +37,7 @@ pipeline {
             steps {
                 script {
                     echo 'buiding ubuntu16 cuda10.0 ...'
-                    sh "bash $BUILD_SCRIPT"
+                    sh 'mvn clean package'
                 }
             }
         }
@@ -56,16 +55,3 @@ pipeline {
         }
     }
 } // end of pipeline
-
-void slack(Map params = [:], String channel, String message) {
-    Map defaultParams = [
-            color: "#000000",
-            baseUrl: "https://nvidia.slack.com/services/hooks/jenkins-ci/",
-            tokenCredentialId: "slack_token"
-    ]
-
-    params["channel"] = channel
-    params["message"] = "${BUILD_URL}\n" + message
-
-    slackSend(defaultParams << params)
-}
