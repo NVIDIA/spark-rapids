@@ -30,7 +30,6 @@ import org.apache.spark.sql.catalyst.rules.Rule
 import org.apache.spark.sql.execution._
 import org.apache.spark.sql.execution.aggregate.HashAggregateExec
 import org.apache.spark.sql.catalyst.optimizer._
-
 import org.apache.spark.sql.execution.datasources.v2.BatchScanExec
 import org.apache.spark.sql.execution.datasources.v2.csv.CSVScan
 import org.apache.spark.sql.execution.datasources.v2.orc.OrcScan
@@ -39,6 +38,7 @@ import org.apache.spark.sql.execution.exchange.ShuffleExchangeExec
 import org.apache.spark.sql.sources.v2.reader.Scan
 import org.apache.spark.sql.types._
 import org.apache.spark.{ExecutorPlugin, SparkEnv}
+import org.apache.spark.sql.execution.joins.{BroadcastHashJoinExec, BuildLeft, BuildRight, ShuffledHashJoinExec, SortMergeJoinExec}
 
 trait GpuExec extends SparkPlan {
   override def supportsColumnar = true
@@ -758,6 +758,11 @@ object GpuOverrides {
         new GpuShuffleExchangeExec(overrides.replaceWithGpuPartitioning(shuffle.outputPartitioning),
           overrides.replaceWithGpuPlan(shuffle.child), shuffle.canChangeNumPartitions))
       .desc("The backend for most data being exchanged between processes")
+      .assertIsAllowed((shuffle, conf) => {
+        if (shuffle.output.map(_.dataType).contains(StringType)) {
+          throw new CannotReplaceException("Strings are not currently supported for shuffling on GPU")
+        }
+      })
       .build(),
     exec[UnionExec]
       .convert((union, overrides) =>
@@ -848,6 +853,23 @@ object GpuOverrides {
       .desc("average aggregate operator")
       .build(),
   )
+}
+
+/**
+ * This is a hack and should be removed ASAP.  Because GpuShuffleExchangeExec is a subclass of
+ * ShuffleExchangeExec which is a case class some odd things happen with equals that this overrides,
+ * but we really should just not have anything inheret from a case class which means we will have to
+ * pull in more code from spark proper. This is ShuffleExchangeExec that was rolled back.
+ */
+class RevertedShuffleExchangeExec(
+    override val outputPartitioning: Partitioning,
+    child: SparkPlan,
+    canChangeNumPartitions: Boolean) extends ShuffleExchangeExec(outputPartitioning,
+  child,
+  canChangeNumPartitions) {
+
+  override def equals(o: Any): Boolean =
+    super.equals(o) && o.isInstanceOf[RevertedShuffleExchangeExec]
 }
 
 case class GpuOverrides() extends Rule[SparkPlan] with Logging {
@@ -1005,10 +1027,63 @@ case class GpuOverrides() extends Rule[SparkPlan] with Logging {
     rule.convert(agg, this)
   }
 
+  def findShuffleExchange(plan: SparkPlan): SparkPlan = plan match {
+    case exchange: GpuShuffleExchangeExec => exchange
+    case exchange: ShuffleExchangeExec => exchange
+    case other if other.children.length == 1 => findShuffleExchange(other.children(0))
+    case bkj: BroadcastHashJoinExec  => bkj.buildSide match {
+      case BuildLeft => findShuffleExchange(bkj.right)
+      case BuildRight => findShuffleExchange(bkj.left)
+    }
+    case _ => null // will cause it to be forced
+  }
+
+  def mapBackPartitioning(part: Partitioning): Partitioning = part match {
+    case part: GpuHashPartitioning => HashPartitioning(part.expressions, part.numPartitions)
+    case other => throw new IllegalStateException(s"${other.getClass} is not supported for fixing up exchange error")
+  }
+
+  def forceCpuShuffleExchange(plan: SparkPlan): SparkPlan = plan match {
+    case exchange: GpuShuffleExchangeExec =>
+      new RevertedShuffleExchangeExec(mapBackPartitioning(exchange.outputPartitioning),
+        exchange.child,
+        exchange.canChangeNumPartitions)
+    case exchange: ShuffleExchangeExec => exchange
+    case bkj: BroadcastHashJoinExec => bkj.buildSide match {
+      case BuildLeft =>
+        bkj.withNewChildren(Seq(bkj.left, forceCpuShuffleExchange(bkj.right)))
+      case BuildRight =>
+        bkj.withNewChildren(Seq(forceCpuShuffleExchange(bkj.left), bkj.right))
+    }
+    case other =>
+      other.withNewChildren(other.children.map(forceCpuShuffleExchange))
+  }
+
+  def needsShuffleFix(left: SparkPlan, right: SparkPlan): Boolean = {
+    // Cannot rely on match to work properly because a GpuShuffleExchangeExec is a ShuffleExchangeExec
+    val l = findShuffleExchange(left)
+    val r = findShuffleExchange(right)
+    val isLOnGpu = l != null && l.isInstanceOf[GpuShuffleExchangeExec]
+    val isROnGpu = r != null && r.isInstanceOf[GpuShuffleExchangeExec]
+    (isLOnGpu && !isROnGpu) || (!isLOnGpu && isROnGpu)
+  }
+
+  def fixGlobalConsistency(plan: SparkPlan): SparkPlan = {
+    val tmp = plan match {
+      case ShuffledHashJoinExec(_, _, _, _, _, left, right) if needsShuffleFix(left, right) =>
+        plan.withNewChildren(plan.children.map(forceCpuShuffleExchange))
+      case SortMergeJoinExec(_, _, _, _, left, right) if needsShuffleFix(left, right) =>
+        plan.withNewChildren(plan.children.map(forceCpuShuffleExchange))
+      case other => other
+    }
+    tmp.withNewChildren(tmp.children.map(fixGlobalConsistency))
+  }
+
   override def apply(plan: SparkPlan) :SparkPlan = {
     conf = new RapidsConf(plan.conf)
     if (conf.isSqlEnabled) {
-      replaceWithGpuPlan(plan)
+      val tmp = replaceWithGpuPlan(plan)
+      fixGlobalConsistency(tmp)
     } else {
       plan
     }

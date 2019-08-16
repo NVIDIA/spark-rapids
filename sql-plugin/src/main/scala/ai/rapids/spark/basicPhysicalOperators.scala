@@ -18,11 +18,11 @@ package ai.rapids.spark
 
 import ai.rapids.cudf
 import ai.rapids.cudf.DType
-import org.apache.spark.rdd.RDD
-import org.apache.spark.sql.catalyst.expressions.NamedExpression
-import org.apache.spark.sql.execution.{FilterExec, ProjectExec, SparkPlan, UnionExec}
-import org.apache.spark.sql.vectorized.{ColumnVector, ColumnarBatch}
 
+import org.apache.spark.rdd.RDD
+import org.apache.spark.sql.catalyst.expressions.{Expression, NamedExpression}
+import org.apache.spark.sql.execution.{FilterExec, ProjectExec, SparkPlan, UnionExec}
+import org.apache.spark.sql.vectorized.{ColumnarBatch, ColumnVector}
 import scala.collection.mutable.ArrayBuffer
 
 class GpuProjectExec(projectList: Seq[GpuExpression], child: SparkPlan)
@@ -50,7 +50,7 @@ class GpuProjectExec(projectList: Seq[GpuExpression], child: SparkPlan)
   }
 }
 
-class GpuFilterExec(condition: GpuExpression, child: SparkPlan)
+class GpuFilterExec(condition: Expression, child: SparkPlan)
   extends FilterExec(condition, child) with GpuExec {
 
   // Disable code generation for now...
@@ -58,7 +58,7 @@ class GpuFilterExec(condition: GpuExpression, child: SparkPlan)
 
   override def doExecuteColumnar(): RDD[ColumnarBatch] = {
     val numOutputRows = longMetric("numOutputRows")
-    val boundCondition = GpuBindReferences.bindReference(condition, child.output)
+    val boundCondition = GpuBindReferences.bindReference(condition.asInstanceOf[GpuExpression], child.output)
     val rdd = child.executeColumnar()
 
     rdd.map(batch => {
