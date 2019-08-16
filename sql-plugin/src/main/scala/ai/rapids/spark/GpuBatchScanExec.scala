@@ -26,7 +26,6 @@ import ai.rapids.cudf.{HostMemoryBuffer, Table}
 import ai.rapids.cudf
 import org.apache.hadoop.conf.Configuration
 import org.apache.hadoop.fs.Path
-import org.apache.hadoop.io.Text
 import org.apache.hadoop.io.compress.CompressionCodecFactory
 
 import org.apache.spark.broadcast.Broadcast
@@ -35,7 +34,7 @@ import org.apache.spark.sql.catalyst.expressions.AttributeReference
 import org.apache.spark.sql.execution.datasources.{HadoopFileLinesReader, PartitionedFile, PartitioningAwareFileIndex}
 import org.apache.spark.sql.execution.datasources.v2.{BatchScanExec, FilePartitionReaderFactory}
 import org.apache.spark.sql.sources.v2.reader.{PartitionReader, PartitionReaderFactory, Scan}
-import org.apache.spark.sql.types.StructType
+import org.apache.spark.sql.types.{StructType, TimestampType}
 import org.apache.spark.sql.SparkSession
 import org.apache.spark.sql.catalyst.csv.CSVOptions
 import org.apache.spark.sql.catalyst.InternalRow
@@ -88,6 +87,19 @@ object GpuCSVScan {
       columnPruning = sparkSession.sessionState.conf.csvColumnPruning,
       sparkSession.sessionState.conf.sessionLocalTimeZone,
       sparkSession.sessionState.conf.columnNameOfCorruptRecord)
+
+    if (!parsedOptions.enforceSchema) {
+      throw new CannotReplaceException("GpuCSVScan always enforces schemas")
+    }
+
+    if (scan.dataSchema == null || scan.dataSchema.isEmpty) {
+      throw new CannotReplaceException("GpuCSVScan requires a specified data schema")
+    }
+
+    // TODO: Add an incompat override flag to specify no timezones appear in timestamp types?
+    if (scan.dataSchema.map(_.dataType).contains(TimestampType)) {
+      throw new CannotReplaceException("GpuCSVScan does not support parsing timestamp types")
+    }
 
     if (parsedOptions.delimiter > 127) {
       throw new CannotReplaceException(s"GpuCSVScan does not support non-ASCII deliminators")
@@ -175,7 +187,7 @@ class GpuCSVScan(
     val broadcastedConf = sparkSession.sparkContext.broadcast(
       new GpuSerializableConfiguration(hadoopConf))
 
-    return new GpuCSVPartitionReaderFactory(sparkSession.sessionState.conf, broadcastedConf,
+    GpuCSVPartitionReaderFactory(sparkSession.sessionState.conf, broadcastedConf,
       dataSchema, readDataSchema, readPartitionSchema, parsedOptions, maxReaderBatchSize)
   }
 }

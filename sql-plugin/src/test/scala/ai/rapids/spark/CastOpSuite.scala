@@ -18,9 +18,10 @@ package ai.rapids.spark
 
 import org.apache.spark.sql.functions.col
 import org.apache.spark.sql.types._
-import org.scalatest.{BeforeAndAfterEach, FunSuite}
+import org.apache.spark.SparkConf
 
-class CastOpSuite extends FunSuite with BeforeAndAfterEach with SparkQueryCompareTestSuite {
+class CastOpSuite extends SparkQueryCompareTestSuite {
+  private val timestampDatesMsecParquet = frameFromParquet("timestamp-date-test-msec.parquet")
 
   testSparkResultsAreEqual("Test cast from long", longsDf) {
     frame => frame.select(
@@ -58,9 +59,37 @@ class CastOpSuite extends FunSuite with BeforeAndAfterEach with SparkQueryCompar
       col("bools").cast(DoubleType))
   }
 
+  testSparkResultsAreEqual("Test cast from date", timestampDatesMsecParquet) {
+    frame => frame.select(
+      col("date"),
+      col("date").cast(BooleanType),
+      col("date").cast(ByteType),
+      col("date").cast(ShortType),
+      col("date").cast(IntegerType),
+      col("date").cast(LongType),
+      col("date").cast(FloatType),
+      col("date").cast(DoubleType),
+      col("date").cast(LongType),
+      col("date").cast(TimestampType))
+   }
+
+  testSparkResultsAreEqual("Test cast from timestamp", timestampDatesMsecParquet,
+      conf = new SparkConf().set(RapidsConf.TIMESTAMP_READER_MSEC.key, "true")) {
+    frame => frame.select(
+      col("time"),
+      col("time").cast(BooleanType),
+      col("time").cast(ByteType),
+      col("time").cast(ShortType),
+      col("time").cast(IntegerType),
+      col("time").cast(LongType),
+      col("time").cast(FloatType),
+      col("time").cast(DoubleType),
+      col("time").cast(LongType),
+      col("time").cast(DateType))
+  }
+
   //  testSparkResultsAreEqual("Test cast from strings", doubleStringsDf) {
   //    frame => frame.select(
   //      col("doubles").cast(DoubleType))
   //  }
-
 }

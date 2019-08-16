@@ -16,6 +16,8 @@
 
 package ai.rapids.spark
 
+import java.util.TimeZone
+
 import scala.reflect.ClassTag
 
 import ai.rapids.cudf.{Cuda, Rmm, RmmAllocationMode}
@@ -451,6 +453,7 @@ object GpuOverrides {
   val FLOAT_DIFFERS_GROUP_INCOMPAT =
     "when enabling these, there may be extra groups produced for floating point grouping keys (e.g. -0.0, and 0.0)"
   val DIVIDE_BY_ZERO_INCOMPAT = "divide by 0 does not result in null"
+  private val UTC_TIMEZONE = TimeZone.getTimeZone("UTC")
 
   def isStringLit(exp: Expression): Boolean = exp match {
     case Literal(_, StringType) => true
@@ -698,7 +701,7 @@ object GpuOverrides {
           scan.options,
           overrides.conf))
       .desc("Parquet parsing")
-      .assertIsAllowed((scan, conf) => GpuParquetScan.assertCanSupport(scan))
+      .assertIsAllowed((scan, conf) => GpuParquetScan.assertCanSupport(scan, conf))
       .build(),
     scan[OrcScan]
       .convert((scan, overrides) =>
@@ -712,7 +715,7 @@ object GpuOverrides {
           scan.pushedFilters,
           overrides.conf))
       .desc("ORC parsing")
-      .assertIsAllowed((scan, conf) => GpuOrcScan.assertCanSupport(scan))
+      .assertIsAllowed((scan, conf) => GpuOrcScan.assertCanSupport(scan, conf))
       .build(),
   )
 
@@ -876,7 +879,7 @@ case class GpuOverrides() extends Rule[SparkPlan] with Logging {
   var conf: RapidsConf = null
 
   def areAllSupportedTypes(types: DataType*): Boolean = {
-    types.forall(_ match {
+    types.forall {
       case BooleanType => true
       case ByteType => true
       case ShortType => true
@@ -885,10 +888,10 @@ case class GpuOverrides() extends Rule[SparkPlan] with Logging {
       case FloatType => true
       case DoubleType => true
       case DateType => true
-      case TimestampType => false // true we really need to understand how the timezone works with this
+      case TimestampType => TimeZone.getDefault == GpuOverrides.UTC_TIMEZONE
       case StringType => true
       case _ => false
-    })
+    }
   }
 
   def replaceWithGpuExpression(exp: Expression): GpuExpression = {
