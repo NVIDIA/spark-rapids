@@ -144,7 +144,7 @@ class GpuMax(child: GpuExpression) extends Max(child)
   override def cudfBufferAttributes(merge: Boolean): Seq[AttributeReference] = cudfMax :: Nil
 }
 
-class GpuSum(child: GpuExpression) extends Sum(child)
+class GpuSum(child: Expression) extends Sum(child)
   with GpuDeclarativeAggregate {
   // copied this from Sum.scala
   private lazy val resultType = child.dataType match {
@@ -156,7 +156,7 @@ class GpuSum(child: GpuExpression) extends Sum(child)
 
   private lazy val cudfSum = new GpuAttributeReference("cudf_sum", resultType)()
 
-  override lazy val inputProjection: Seq[GpuExpression] = Seq(child)
+  override lazy val inputProjection: Seq[GpuExpression] = Seq(child.asInstanceOf[GpuExpression])
   override lazy val updateExpressions: Seq[GpuExpression] = Seq(new CudfSum(cudfSum))
   override lazy val mergeExpressions: Seq[GpuExpression] = Seq(new CudfSum(cudfSum))
   override lazy val finalExpression: GpuExpression = cudfSum
