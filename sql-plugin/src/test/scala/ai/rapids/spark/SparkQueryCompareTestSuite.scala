@@ -27,9 +27,9 @@ import org.apache.spark.sql.types._
  * Set of tests that compare the output using the CPU version of spark vs our GPU version.
  */
 trait SparkQueryCompareTestSuite extends FunSuite with BeforeAndAfterEach {
+  // Timezone is fixed to UTC to allow timestamps to work by default
+  TimeZone.setDefault(TimeZone.getTimeZone("UTC"))
 
-  // Timezone is fixed to America/Los_Angeles for those timezone sensitive tests (timestamp_*)
-  TimeZone.setDefault(TimeZone.getTimeZone("America/Los_Angeles"))
   // Add Locale setting
   Locale.setDefault(Locale.US)
 
@@ -324,7 +324,8 @@ trait SparkQueryCompareTestSuite extends FunSuite with BeforeAndAfterEach {
       (400L, 4L),
       (500L, 5L),
       (-100L, 6L),
-      (-500L, 0L)
+      (-500L, 0L),
+      (0x123400L, 7L)
     ).toDF("longs", "more_longs")
   }
 
@@ -565,5 +566,15 @@ trait SparkQueryCompareTestSuite extends FunSuite with BeforeAndAfterEach {
       StructField("dates", DateType, false),
       StructField("ints", IntegerType, false)
     )))(_)
+  }
+
+  def frameFromParquet(filename: String): SparkSession => DataFrame = {
+    val path = this.getClass.getClassLoader.getResource(filename)
+    s: SparkSession => s.read.parquet(path.toString)
+  }
+
+  def frameFromOrc(filename: String): SparkSession => DataFrame = {
+    val path = this.getClass.getClassLoader.getResource(filename)
+    s: SparkSession => s.read.orc(path.toString)
   }
 }

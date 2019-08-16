@@ -17,17 +17,9 @@
 package ai.rapids.spark
 
 import org.apache.spark.SparkConf
-import org.apache.spark.sql.{DataFrame, SparkSession}
 import org.apache.spark.sql.functions.col
-import org.scalatest.{BeforeAndAfterEach, FunSuite}
 
-
-class OrcScanSuite extends FunSuite with BeforeAndAfterEach with SparkQueryCompareTestSuite {
-
-  def frameFromOrc(filename: String): SparkSession => DataFrame = {
-    val path = this.getClass.getClassLoader.getResource(filename)
-    s: SparkSession => s.read.orc(path.toString)
-  }
+class OrcScanSuite extends SparkQueryCompareTestSuite {
 
   private val fileSplitsOrc = frameFromOrc("file-splits.orc")
 
@@ -60,4 +52,18 @@ class OrcScanSuite extends FunSuite with BeforeAndAfterEach with SparkQueryCompa
     frame => frame.select(col("partKey"), col("ints_5"), col("ints_3"), col("ints_1"))
   }
 
+  testSparkResultsAreEqual("Test ORC msec timestamps and dates",
+      frameFromOrc("timestamp-date-test-msec.orc"),
+      conf = new SparkConf().set(RapidsConf.TIMESTAMP_READER_MSEC.key, "true")) {
+    frame => frame.select(col("*"))
+  }
+
+  // This test is commented out because cudf doesn't support loading anything more than
+  // millsecond resolution timestamps yet.  See https://github.com/rapidsai/cudf/issues/2497
+  // NOTE: When this is fixed, the timestamp msec test and data file should be deleted
+  //       in preference of this test.
+  //testSparkResultsAreEqual("Test ORC timestamps and dates",
+  //  frameFromOrc("timestamp-date-test.orc")) {
+  //  frame => frame.select(col("*"))
+  //}
 }

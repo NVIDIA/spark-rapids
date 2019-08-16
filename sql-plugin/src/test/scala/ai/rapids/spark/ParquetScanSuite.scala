@@ -17,17 +17,9 @@
 package ai.rapids.spark
 
 import org.apache.spark.SparkConf
-import org.apache.spark.sql.{DataFrame, SparkSession}
 import org.apache.spark.sql.functions.col
-import org.scalatest.{BeforeAndAfterEach, FunSuite}
 
-
-class ParquetScanSuite extends FunSuite with BeforeAndAfterEach with SparkQueryCompareTestSuite {
-
-  def frameFromParquet(filename: String): SparkSession => DataFrame = {
-    val path = this.getClass.getClassLoader.getResource(filename)
-    s: SparkSession => s.read.parquet(path.toString)
-  }
+class ParquetScanSuite extends SparkQueryCompareTestSuite {
 
   testSparkResultsAreEqual("Test Parquet", frameFromParquet("test.snappy.parquet")) {
     frame => frame.select(col("ints_1"), col("ints_3"), col("ints_5"))
@@ -64,4 +56,19 @@ class ParquetScanSuite extends FunSuite with BeforeAndAfterEach with SparkQueryC
   testSparkResultsAreEqual("Test partitioned Parquet", frameFromParquet("partitioned-parquet")) {
     frame => frame.select(col("partKey"), col("ints_1"), col("ints_3"), col("ints_5"))
   }
+
+  testSparkResultsAreEqual("Test Parquet msec timestamps and dates",
+      frameFromParquet("timestamp-date-test-msec.parquet"),
+      conf = new SparkConf().set(RapidsConf.TIMESTAMP_READER_MSEC.key, "true")) {
+    frame => frame.select(col("*"))
+  }
+
+  // This test is commented out because cudf doesn't support loading anything more than
+  // millsecond resolution timestamps yet.  See https://github.com/rapidsai/cudf/issues/2497
+  // NOTE: When this is fixed, the timestamp msec test and data file should be deleted
+  //       in preference of this test.
+  //testSparkResultsAreEqual("Test Parquet timestamps and dates",
+  //  frameFromParquet("timestamp-date-test.parquet")) {
+  //  frame => frame.select(col("*"))
+  //}
 }
