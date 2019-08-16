@@ -247,4 +247,10 @@
             <url>https://gpuwa.nvidia.com/artifactory/sw-spark-maven</url>
         </repository>
     </repositories>
+    <distributionManagement>
+        <repository>
+            <id>spark.sw.nvidia.com</id>
+            <url>https://gpuwa.nvidia.com/artifactory/sw-spark-maven-local</url>
+        </repository>
+    </distributionManagement>
 </project>
