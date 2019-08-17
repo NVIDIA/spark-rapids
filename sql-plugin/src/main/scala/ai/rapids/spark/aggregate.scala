@@ -45,7 +45,7 @@ trait GpuAggregateFunction extends AggregateFunction with GpuUnevaluable {
 
   // these are values that spark calls initial because it uses
   // them to initialize the aggregation buffer, and returns them in case
-  // of an empty aggregate when there are grouping expressions,
+  // of an empty aggregate when there are no expressions,
   // here we copy them but with the gpu equivalent
   val initialValues: Seq[GpuExpression]
 
