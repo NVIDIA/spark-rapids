@@ -144,6 +144,45 @@ trait SparkQueryCompareTestSuite extends FunSuite with BeforeAndAfterEach {
     (fromCpu, fromGpu)
   }
 
+  /**
+   * Runs a test defined by fun, using 2 dataframes dfA and dfB.
+   *
+   * @param dfA  - the first DataFrame to use as input
+   * @param dfB  - the second DataFrame to use as input
+   * @param fun  - the function to transform the DataFrame (produces another DataFrame)
+   * @param conf - spark conf
+   * @return       - tuple of (cpu results, gpu results) as arrays of Row
+   */
+  def runOnCpuAndGpu2(dfA: SparkSession => DataFrame,
+      dfB: SparkSession => DataFrame,
+      fun: (DataFrame, DataFrame) => DataFrame,
+      conf: SparkConf = new SparkConf(),
+      repart: Integer = 1): (Array[Row], Array[Row]) = {
+    val fromCpu = withCpuSparkSession((session) => {
+      var dataA = dfA(session)
+      var dataB = dfB(session)
+      if (repart > 0) {
+        // repartition the data so it is turned into a projection, not folded into the table scan exec
+        dataA = dataA.repartition(repart)
+        dataB = dataB.repartition(repart)
+      }
+      fun(dataA, dataB).collect()
+    })
+
+    val fromGpu = withGpuSparkSession((session) => {
+      var dataA = dfA(session)
+      var dataB = dfB(session)
+      if (repart > 0) {
+        // repartition the data so it is turned into a projection, not folded into the table scan exec
+        dataA = dataA.repartition(repart)
+        dataB = dataB.repartition(repart)
+      }
+      fun(dataA, dataB).collect()
+    }, conf)
+
+    (fromCpu, fromGpu)
+  }
+
   def INCOMPAT_testSparkResultsAreEqual(
       testName: String,
       df: SparkSession => DataFrame,
@@ -229,16 +268,13 @@ trait SparkQueryCompareTestSuite extends FunSuite with BeforeAndAfterEach {
     return false
   }
 
-  def testSparkResultsAreEqual(
+  def setupTestConfAndQualifierName(
       testName: String,
-      df: SparkSession => DataFrame,
-      conf: SparkConf = new SparkConf(),
-      repart: Integer = 1,
-      sort: Boolean = false,
-      maxFloatDiff: Double = 0.0,
-      incompat: Boolean = false,
-      allowNonGpu: Boolean = false)
-      (fun: DataFrame => DataFrame): Unit = {
+      incompat: Boolean,
+      sort: Boolean,
+      allowNonGpu: Boolean,
+      conf: SparkConf): (SparkConf, String) = {
+
     var qualifiers = Set[String]()
     var testConf = conf
     if (incompat) {
@@ -252,43 +288,90 @@ trait SparkQueryCompareTestSuite extends FunSuite with BeforeAndAfterEach {
       testConf = testConf.clone().set(RapidsConf.TEST_CONF.key, "false")
       qualifiers = qualifiers + "NOT ALL ON GPU"
     }
-    val qualifiedTestName = qualifiers.mkString("",
-      ", ",
+    val qualifiedTestName = qualifiers.mkString("", ", ",
       (if (qualifiers.nonEmpty) ": " else "") + testName)
+    (testConf, qualifiedTestName)
+  }
+
+  def compareResults(
+      sort: Boolean,
+      maxFloatDiff:Double,
+      fromCpu: Array[Row],
+      fromGpu: Array[Row]): Unit = {
+    val relaxedFloatDisclaimer = if (maxFloatDiff > 0) {
+      "(relaxed float comparison)"
+    } else {
+      ""
+    }
+    if (sort) {
+      val cpu = fromCpu.map(_.toSeq).sortWith(seqLt)
+      val gpu = fromGpu.map(_.toSeq).sortWith(seqLt)
+      if (!compare(cpu, gpu, maxFloatDiff)) {
+        fail(
+          s"""
+             |Running on the GPU and on the CPU did not match $relaxedFloatDisclaimer
+             |CPU: ${cpu.seq}
+
+             |GPU: ${gpu.seq}
+         """.
+            stripMargin)
+      }
+    } else {
+      if (!compare(fromCpu, fromGpu, maxFloatDiff)) {
+        fail(
+          s"""
+             |Running on the GPU and on the CPU did not match $relaxedFloatDisclaimer
+             |CPU: ${fromCpu.toSeq}
+
+             |GPU: ${fromGpu.toSeq}
+         """.
+            stripMargin)
+      }
+    }
+  }
+
+  def testSparkResultsAreEqual(
+      testName: String,
+      df: SparkSession => DataFrame,
+      conf: SparkConf = new SparkConf(),
+      repart: Integer = 1,
+      sort: Boolean = false,
+      maxFloatDiff: Double = 0.0,
+      incompat: Boolean = false,
+      allowNonGpu: Boolean = false)
+      (fun: DataFrame => DataFrame): Unit = {
+
+    val (testConf, qualifiedTestName) =
+      setupTestConfAndQualifierName(testName, incompat, sort, allowNonGpu, conf)
+
     test(qualifiedTestName) {
       var (fromCpu, fromGpu) = runOnCpuAndGpu(df, fun,
         conf = testConf,
         repart = repart)
-      val relaxedFloatDisclaimer = if (maxFloatDiff > 0) {
-        "(relaxed float comparison)"
-      } else {
-        ""
-      }
-      if (sort) {
-        val cpu = fromCpu.map(_.toSeq).sortWith(seqLt)
-        val gpu = fromGpu.map(_.toSeq).sortWith(seqLt)
-        if (!compare(cpu, gpu, maxFloatDiff)) {
-          fail(
-            s"""
-               |Running on the GPU and on the CPU did not match $relaxedFloatDisclaimer
-               |CPU: ${cpu.seq}
 
-               |GPU: ${gpu.seq}
-         """.
-              stripMargin)
-        }
-      } else {
-        if (!compare(fromCpu, fromGpu, maxFloatDiff)) {
-          fail(
-            s"""
-               |Running on the GPU and on the CPU did not match $relaxedFloatDisclaimer
-               |CPU: ${fromCpu.toSeq}
+      compareResults(sort, maxFloatDiff, fromCpu, fromGpu)
+    }
+  }
 
-               |GPU: ${fromGpu.toSeq}
-         """.
-              stripMargin)
-        }
-      }
+  def testSparkResultsAreEqual2(
+      testName: String,
+      dfA: SparkSession => DataFrame,
+      dfB: SparkSession => DataFrame,
+      conf: SparkConf = new SparkConf(),
+      repart: Integer = 1,
+      sort: Boolean = false,
+      maxFloatDiff: Double = 0.0,
+      incompat: Boolean = false,
+      allowNonGpu: Boolean = false)
+    (fun: (DataFrame, DataFrame) => DataFrame): Unit = {
+
+    val (testConf, qualifiedTestName) =
+      setupTestConfAndQualifierName(testName, incompat, sort, allowNonGpu, conf)
+
+    test(qualifiedTestName) {
+      var (fromCpu, fromGpu) = runOnCpuAndGpu2(dfA, dfB, fun, conf = testConf, repart = repart)
+
+      compareResults(sort, maxFloatDiff, fromCpu, fromGpu)
     }
   }
 

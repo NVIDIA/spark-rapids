@@ -16,9 +16,34 @@
 
 package ai.rapids.spark
 
+import scala.collection.mutable.ArrayBuffer
+
 import ai.rapids.cudf.{BinaryOp, BinaryOperable, DType, Scalar, TimeUnit, UnaryOp}
+
 import org.apache.spark.sql.catalyst.expressions.{BinaryExpression, Expression, UnaryExpression, Unevaluable}
-import org.apache.spark.sql.vectorized.{ColumnVector, ColumnarBatch}
+import org.apache.spark.sql.vectorized.{ColumnarBatch, ColumnVector}
+
+
+object GpuExpressionsUtils {
+
+
+  def evaluateBoundExpressions[A <: GpuExpression](cb: ColumnarBatch, boundExprs: Seq[A]) : Seq[GpuColumnVector] = {
+    val numCols = boundExprs.length
+    val resultCvs = new ArrayBuffer[GpuColumnVector](numCols)
+    try {
+      for (i <- 0 until numCols) {
+        val ref = boundExprs(i)
+        resultCvs += ref.asInstanceOf[GpuExpression].columnarEval(cb).
+          asInstanceOf[GpuColumnVector]
+      }
+    } catch {
+      case t: Throwable =>
+        resultCvs.foreach(_.close())
+        throw t
+    }
+    resultCvs
+  }
+}
 
 trait GpuExpression extends Expression {
   /**

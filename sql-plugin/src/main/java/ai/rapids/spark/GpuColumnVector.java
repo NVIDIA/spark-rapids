@@ -220,12 +220,27 @@ public final class GpuColumnVector extends ColumnVector {
   }
 
   public static ColumnarBatch from(Table table) {
-    int numColumns = table.getNumberOfColumns();
+    return from(table, 0, table.getNumberOfColumns());
+  }
+
+  /**
+   * Get a ColumnarBatch from a set of columns from the Table. This gets the columns
+   * starting at startColIndex and going until but not including untilColIndex.
+   *
+   * @param table  - a table of vectors
+   * @param startColIndex - index of the first vector you want in the final ColumnarBatch
+   * @param untilColIndex - until index of the columns. (ie doesn't include that column num)
+   * @return       - a ColumnarBatch of the vectors from the table
+   */
+  public static ColumnarBatch from(Table table, int startColIndex, int untilColIndex) {
+    int numColumns = untilColIndex - startColIndex;
     ColumnVector[] columns = new ColumnVector[numColumns];
+    int finalLoc = 0;
     boolean success = false;
     try {
-      for (int i = 0; i < numColumns; i++) {
-        columns[i] = from(table.getColumn(i).incRefCount());
+      for (int i = startColIndex; i < untilColIndex; i++) {
+        columns[finalLoc] = from(table.getColumn(i).incRefCount());
+        finalLoc++;
       }
       long rows = table.getRowCount();
       if (rows != (int) rows) {
