@@ -220,6 +220,21 @@ class ExprRuleBuilder[INPUT <: Expression](implicit val tag: ClassTag[INPUT])
     })
   }
 
+  final def unarySort(
+      func: (GpuExpression, SortDirection, NullOrdering, Set[Expression]) => GpuExpression)
+    : ExprRuleBuilder[INPUT] = {
+
+    if (!classOf[UnaryExpression].isAssignableFrom(tag.runtimeClass)) {
+      throw new IllegalStateException(s"unarySort called on a class that is not" +
+        s" a UnaryExpression ${tag}")
+    }
+    convert((exp, overrides) => {
+      val sortExp = exp.asInstanceOf[SortOrder]
+      val child = overrides.replaceWithGpuExpression(exp.asInstanceOf[UnaryExpression].child)
+      func(child, sortExp.direction, sortExp.nullOrdering, sortExp.sameOrderExpressions)
+    })
+  }
+
   /**
    * Set a conversion function for a [[UnaryExpression]] that needs access to the original operator.
    * @param func takes the original expression and the already converted child expression and
@@ -673,6 +688,10 @@ object GpuOverrides {
     expr[AggregateExpression]
       .aggregate(new GpuAggregateExpression(_, _, _, _))
       .desc("aggregate expression")
+      .build(),
+    expr[SortOrder]
+      .unarySort(new GpuSortOrder(_, _, _, _))
+      .desc("sort order")
       .build()
   )
 
@@ -801,6 +820,34 @@ object GpuOverrides {
         }
       })
       .desc("The backend for hash based aggregations")
+      .build(),
+    exec[SortExec]
+      .convert((sort, overrides) =>
+        new GpuSortExec(sort.sortOrder.map(overrides.replaceWithGpuExpression).asInstanceOf[Seq[GpuSortOrder]],
+          sort.global,
+          overrides.replaceWithGpuPlan(sort.child)))
+      .assertIsAllowed((sort, conf) => {
+        // handle strings - https://gitlab-master.nvidia.com/nvspark/rapids-plugin-4-spark/issues/26
+        if (isAnyStringLit(sort.sortOrder)) {
+          throw new CannotReplaceException("string literal values are not supported in a sort")
+        }
+        val schemaDataTypes = sort.schema.map(_.dataType)
+        if (schemaDataTypes.contains(StringType)) {
+          throw new CannotReplaceException("strings are not supported in sort.")
+        }
+        val nullOrderings = sort.sortOrder.map(o => o.nullOrdering)
+        if (!nullOrderings.forall(_ == nullOrderings.head)) {
+          // ERROR we can't handle this right now since only 1 parameter for areNullsSmallest
+          // to Table.orderBy
+          throw new CannotReplaceException(s"GPU cudf can't handle multiple null orderings!")
+        }
+        // note that dataframe.sort always sets this to true
+        if (sort.global == true) {
+          throw new CannotReplaceException(s"Don't support total ordering on GPU yet")
+        }
+
+      })
+      .desc("The backend for the sort operator")
       .build()
   )
 
