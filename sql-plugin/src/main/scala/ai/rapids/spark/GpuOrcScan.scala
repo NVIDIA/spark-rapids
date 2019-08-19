@@ -44,7 +44,7 @@ import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.util.CaseInsensitiveMap
 import org.apache.spark.sql.execution.datasources.{PartitionedFile, PartitioningAwareFileIndex}
 import org.apache.spark.sql.execution.datasources.v2.orc.OrcScan
-import org.apache.spark.sql.execution.datasources.v2.FilePartitionReaderFactory
+import org.apache.spark.sql.execution.datasources.v2.{FilePartitionReaderFactory, FileScan}
 import org.apache.spark.sql.execution.QueryExecutionException
 import org.apache.spark.sql.execution.datasources.orc.OrcUtils
 import org.apache.spark.sql.internal.SQLConf
@@ -55,7 +55,7 @@ import org.apache.spark.sql.types.{StructType, TimestampType}
 import org.apache.spark.sql.util.CaseInsensitiveStringMap
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
-class GpuOrcScan(
+case class GpuOrcScan(
     sparkSession: SparkSession,
     hadoopConf: Configuration,
     fileIndex: PartitioningAwareFileIndex,
@@ -65,8 +65,9 @@ class GpuOrcScan(
     options: CaseInsensitiveStringMap,
     pushedFilters: Array[Filter],
     rapidsConf: RapidsConf)
-  extends OrcScan(sparkSession, hadoopConf, fileIndex, dataSchema,
-    readDataSchema, readPartitionSchema, options, pushedFilters) with GpuScan {
+  extends FileScan(sparkSession, fileIndex, readDataSchema, readPartitionSchema) {
+
+  override def isSplitable(path: Path): Boolean = true
 
   override def createReaderFactory(): PartitionReaderFactory = {
     // Unset any serialized search argument setup by Spark's OrcScanBuilder as
@@ -77,6 +78,20 @@ class GpuOrcScan(
       new GpuSerializableConfiguration(hadoopConf))
     GpuOrcPartitionReaderFactory(sparkSession.sessionState.conf, broadcastedConf,
       dataSchema, readDataSchema, readPartitionSchema, pushedFilters, rapidsConf)
+  }
+
+  override def equals(obj: Any): Boolean = obj match {
+    case o: GpuOrcScan =>
+      fileIndex == o.fileIndex && dataSchema == o.dataSchema &&
+      readDataSchema == o.readDataSchema && readPartitionSchema == o.readPartitionSchema &&
+      options == o.options && equivalentFilters(pushedFilters, o.pushedFilters)
+    case _ => false
+  }
+
+  override def hashCode(): Int = getClass.hashCode()
+
+  override def description(): String = {
+    super.description() + ", PushedFilters: " + pushedFilters.mkString("[", ", ", "]")
   }
 }
 
