@@ -1077,15 +1077,14 @@ case class GpuOverrides() extends Rule[SparkPlan] with Logging {
     rule.convert(agg, this)
   }
 
-  def findShuffleExchange(plan: SparkPlan): SparkPlan = plan match {
-    case exchange: GpuShuffleExchangeExec => exchange
-    case exchange: ShuffleExchangeExec => exchange
-    case other if other.children.length == 1 => findShuffleExchange(other.children(0))
+  def findShuffleExchanges(plan: SparkPlan): Seq[SparkPlan] = plan match {
+    case exchange: GpuShuffleExchangeExec => exchange :: Nil
+    case exchange: ShuffleExchangeExec => exchange :: Nil
     case bkj: BroadcastHashJoinExec  => bkj.buildSide match {
-      case BuildLeft => findShuffleExchange(bkj.right)
-      case BuildRight => findShuffleExchange(bkj.left)
+      case BuildLeft => findShuffleExchanges(bkj.right)
+      case BuildRight => findShuffleExchanges(bkj.left)
     }
-    case _ => null // will cause it to be forced
+    case other => other.children.flatMap(findShuffleExchanges)
   }
 
   def mapBackPartitioning(part: Partitioning): Partitioning = part match {
@@ -1095,6 +1094,11 @@ case class GpuOverrides() extends Rule[SparkPlan] with Logging {
 
   def forceCpuShuffleExchange(plan: SparkPlan): SparkPlan = plan match {
     case exchange: GpuShuffleExchangeExec =>
+      if (conf.explain) {
+        logWarning(s"${plan.getClass.getSimpleName} will not run on a GPU" +
+          s" because other exchanges that feed the same join are on the CPU and GPU hashing is" +
+          s" not consistent with the CPU version")
+      }
       new RevertedShuffleExchangeExec(mapBackPartitioning(exchange.outputPartitioning),
         exchange.child,
         exchange.canChangeNumPartitions)
@@ -1109,21 +1113,21 @@ case class GpuOverrides() extends Rule[SparkPlan] with Logging {
       other.withNewChildren(other.children.map(forceCpuShuffleExchange))
   }
 
-  def needsShuffleFix(left: SparkPlan, right: SparkPlan): Boolean = {
+  def needsShuffleFix(plan: SparkPlan): Boolean = {
     // Cannot rely on match to work properly because a GpuShuffleExchangeExec is a ShuffleExchangeExec
-    val l = findShuffleExchange(left)
-    val r = findShuffleExchange(right)
-    val isLOnGpu = l != null && l.isInstanceOf[GpuShuffleExchangeExec]
-    val isROnGpu = r != null && r.isInstanceOf[GpuShuffleExchangeExec]
-    (isLOnGpu && !isROnGpu) || (!isLOnGpu && isROnGpu)
+    val exchanges = findShuffleExchanges(plan)
+    val onGpu = exchanges.map(e => e.isInstanceOf[GpuShuffleExchangeExec])
+    val allOnGpu = onGpu.forall(identity)
+    val allOnCpu = onGpu.forall(b => !b)
+    (!allOnGpu) && (!allOnCpu)
   }
 
   def fixGlobalConsistency(plan: SparkPlan): SparkPlan = {
     val tmp = plan match {
-      case ShuffledHashJoinExec(_, _, _, _, _, left, right) if needsShuffleFix(left, right) =>
-        plan.withNewChildren(plan.children.map(forceCpuShuffleExchange))
-      case SortMergeJoinExec(_, _, _, _, left, right) if needsShuffleFix(left, right) =>
-        plan.withNewChildren(plan.children.map(forceCpuShuffleExchange))
+      case p: ShuffledHashJoinExec if needsShuffleFix(p) =>
+        p.withNewChildren(p.children.map(forceCpuShuffleExchange))
+      case p: SortMergeJoinExec if needsShuffleFix(p) =>
+        p.withNewChildren(p.children.map(forceCpuShuffleExchange))
       case other => other
     }
     tmp.withNewChildren(tmp.children.map(fixGlobalConsistency))
