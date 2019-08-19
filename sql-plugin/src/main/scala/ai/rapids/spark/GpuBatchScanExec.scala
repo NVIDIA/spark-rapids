@@ -34,7 +34,7 @@ import org.apache.spark.sql.catalyst.expressions.AttributeReference
 import org.apache.spark.sql.execution.datasources.{HadoopFileLinesReader, PartitionedFile, PartitioningAwareFileIndex}
 import org.apache.spark.sql.execution.datasources.v2.{BatchScanExec, FilePartitionReaderFactory}
 import org.apache.spark.sql.sources.v2.reader.{PartitionReader, PartitionReaderFactory, Scan}
-import org.apache.spark.sql.types.{StructType, TimestampType}
+import org.apache.spark.sql.types.{StructField, StructType, TimestampType}
 import org.apache.spark.sql.SparkSession
 import org.apache.spark.sql.catalyst.csv.CSVOptions
 import org.apache.spark.sql.catalyst.InternalRow
@@ -247,10 +247,10 @@ class CSVPartitionReader(
   def buildCsvOptions(
      parsedOptions: CSVOptions,
      schema: StructType,
-     isFirstSplit: Boolean): cudf.CSVOptions = {
+     hasHeader: Boolean): cudf.CSVOptions = {
     val builder = cudf.CSVOptions.builder()
     builder.withDelim(parsedOptions.delimiter)
-    builder.hasHeader(isFirstSplit && parsedOptions.headerFlag)
+    builder.hasHeader(hasHeader)
     // TODO parsedOptions.parseMode
     builder.withQuote(parsedOptions.quote)
     builder.withComment(parsedOptions.comment)
@@ -310,32 +310,20 @@ class CSVPartitionReader(
   }
 
   private def readBatch(): Option[ColumnarBatch] = {
-    if (readDataSchema.isEmpty) {
-      // no data is requested, so return a degenerate ColumnarBatch with the row count
-      var totalRows: Long = 0L
-      while (lineReader.hasNext && totalRows != maxRowsPerChunk) {
-        lineReader.next()
-        totalRows += 1
-      }
-      //Indicate this is the last chunk
-      isExhausted = !lineReader.hasNext
-      if (totalRows == 0) {
-        None
+    val hasHeader = partFile.start == 0 && isFirstChunkForIterator && parsedOptions.headerFlag
+    val table = readToTable(hasHeader)
+    try {
+      if (readDataSchema.isEmpty) {
+        table.map(t => new ColumnarBatch(Array.empty, t.getRowCount.toInt))
       } else {
-        Some(new ColumnarBatch(Array.empty, totalRows.toInt))
-      }
-    } else {
-      val table = readToTable()
-      try {
         table.map(GpuColumnVector.from)
-      } finally {
-        table.foreach(_.close())
       }
+    } finally {
+      table.foreach(_.close())
     }
   }
 
-  private def readToTable(): Option[Table] = {
-    val isFirstSplit = partFile.start == 0 && isFirstChunkForIterator
+  private def readToTable(hasHeader: Boolean): Option[Table] = {
     val (dataBuffer, dataSize) = readPartFile()
     try {
       if (dataSize == 0) {
@@ -343,12 +331,18 @@ class CSVPartitionReader(
       } else {
         val csvSchemaBuilder = ai.rapids.cudf.Schema.builder
         dataSchema.foreach(f => csvSchemaBuilder.column(GpuColumnVector.getRapidsType(f.dataType), f.name))
-        val csvOpts = buildCsvOptions(parsedOptions, readDataSchema, isFirstSplit)
+        val newReadDataSchema: StructType = if (readDataSchema.isEmpty) {
+          val smallestField = dataSchema.min(Ordering.by[StructField, Integer](_.dataType.defaultSize))
+          StructType(Seq(smallestField))
+        } else {
+          readDataSchema
+        }
+        val csvOpts = buildCsvOptions(parsedOptions, newReadDataSchema, hasHeader)
         val table = Table.readCSV(csvSchemaBuilder.build(), csvOpts, dataBuffer, 0, dataSize)
         val numColumns = table.getNumberOfColumns
-        if (readDataSchema.length != numColumns) {
+        if (newReadDataSchema.length != numColumns) {
           table.close()
-          throw new QueryExecutionException(s"Expected ${readDataSchema.length} columns " +
+          throw new QueryExecutionException(s"Expected ${newReadDataSchema.length} columns " +
             s"but only read ${table.getNumberOfColumns} from $partFile")
         }
         Some(table)
