@@ -176,6 +176,15 @@ object RapidsConf {
       .stringConf
       .createWithDefault(null)
 
+  val HASH_AGG_REPLACE_MODE = conf("spark.rapids.sql.exec.hash-agg-mode-to-replace")
+    .doc("Only when hash aggregate exec has these modes (\"all\" by default): " +
+      "\"all\" (try to replace all aggregates, default), " +
+      "\"partial\" (exclusively replace partial aggregates), " +
+      "\"final\" (exclusively replace final aggregates)")
+    .internal()
+    .stringConf
+    .createWithDefault("all")
+
   def help(): Unit = {
     println("Rapids Configs:")
     registeredConfs.foreach(_.help())
@@ -220,6 +229,8 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
   lazy val parquetDebugDumpPrefix: String = get(PARQUET_DEBUG_DUMP_PREFIX)
 
   lazy val orcDebugDumpPrefix: String = get(ORC_DEBUG_DUMP_PREFIX)
+
+  lazy val hashAggReplaceMode: String = get(HASH_AGG_REPLACE_MODE)
 
   def isOperatorEnabled(key: String, incompat: Boolean): Boolean = {
     val default = !incompat || (incompat && isIncompatEnabled)

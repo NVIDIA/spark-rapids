@@ -195,9 +195,9 @@ class GpuAverage(child: Expression) extends Average(child)
   with GpuDeclarativeAggregate {
   // averages are either Decimal or Double. We don't support decimal yet, so making this double.
   private lazy val cudfSum = new GpuAttributeReference("cudf_sum", DoubleType)()
-  private lazy val cudfCount = new GpuAttributeReference("cudf_count", DoubleType)()
+  private lazy val cudfCount = new GpuAttributeReference("cudf_count", LongType)()
   // this is is the merge-side sum of counts
-  private lazy val cudfSumCount = new GpuAttributeReference("cudf_sum_count", DoubleType)()
+  private lazy val cudfSumCount = new GpuAttributeReference("cudf_sum_count", LongType)()
 
   override lazy val inputProjection: Seq[GpuExpression] = Seq(child,
     if (child.isInstanceOf[GpuLiteral]) {
@@ -215,7 +215,7 @@ class GpuAverage(child: Expression) extends Average(child)
 
   override lazy val initialValues = Seq(
     new GpuLiteral(null, DoubleType),
-    new GpuLiteral(null, DoubleType))
+    new GpuLiteral(null, LongType))
 
   override def cudfBufferAttributes(merge: Boolean): Seq[AttributeReference] = {
     if (merge) {
@@ -399,9 +399,7 @@ class GpuHashAggregateExec(requiredChildDistributionExpressions: Option[Seq[GpuE
            boundFinalProjections,
            boundResultReferences) =
       setupReferences(
-        finalMode, child.output.map(a =>
-          new GpuAttributeReference(a.name, a.dataType, a.nullable, a.metadata)(a.exprId, a.qualifier)),
-        groupingExpressions, aggregateExpressions)
+        finalMode, child.output, groupingExpressions, aggregateExpressions)
       try {
         while (cbIter.hasNext) {
           // 1) Consume the raw incoming batch, evaluating nested expressions (e.g. avg(col1 + col2)),
@@ -639,7 +637,7 @@ class GpuHashAggregateExec(requiredChildDistributionExpressions: Option[Seq[GpuE
     *         in allExpressions
     */
   def setupReferences(finalMode: Boolean,
-                      childAttr: Seq[GpuAttributeReference],
+                      childAttr: AttributeSeq,
                       groupingExpressions: Seq[GpuExpression],
                       aggregateExpressions: Seq[GpuAggregateExpression]):
     (Seq[GpuExpression], Seq[CudfAggregate], Seq[CudfAggregate], Option[Seq[GpuExpression]], Seq[GpuExpression]) = {

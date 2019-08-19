@@ -138,7 +138,6 @@ trait SparkQueryCompareTestSuite extends FunSuite with BeforeAndAfterEach {
         // repartition the data so it is turned into a projection, not folded into the table scan exec
         data = data.repartition(repart)
       }
-      fun(data).explain()
       fun(data).collect()
     }, conf)
 
