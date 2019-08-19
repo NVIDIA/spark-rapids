@@ -121,14 +121,10 @@ class TpchLikeSparkTest extends FunSuite with BeforeAndAfterAll {
     assertResult(1)(df.count())
   }
 
-  // TODO not getting the right answer out on larger dataset.  Need to dig in more.
-  //https://gitlab-master.nvidia.com/nvspark/rapids-plugin-4-spark/issues/31
-  /*
-    test("Something like TPCH Query 18") {
+  test("Something like TPCH Query 18") {
     val df = Q18Like(session)
     assertResult(0)(df.count())
   }
-  */
 
   test("Something like TPCH Query 19") {
     val df = Q19Like(session)

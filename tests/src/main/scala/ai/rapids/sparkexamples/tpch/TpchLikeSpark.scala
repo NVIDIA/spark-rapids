@@ -821,6 +821,37 @@ object Q17Like {
       |""".stripMargin)
 }
 
+object Q18Debug {
+  def apply(spark: SparkSession): DataFrame = spark.sql(
+    """
+      |-- using default substitutions
+      |
+      |select
+      |        o_orderkey,
+      |        sum(l_quantity)
+      |from
+      |        orders,
+      |        lineitem
+      |where
+      |        o_orderkey in (
+      |                select
+      |                        l_orderkey
+      |                from
+      |                        lineitem
+      |                group by
+      |                        l_orderkey having
+      |                                sum(l_quantity) > 300
+      |        )
+      |        and o_orderkey = l_orderkey
+      |group by
+      |        o_orderkey
+      |order by
+      |        o_orderkey desc
+      |limit 100
+      |
+      |""".stripMargin)
+}
+
 // TODO not getting the right answer out on larger dataset.  Need to dig in more.
 object Q18Like {
   def apply(spark: SparkSession): DataFrame = spark.sql(
