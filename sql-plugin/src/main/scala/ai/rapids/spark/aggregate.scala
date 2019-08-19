@@ -399,7 +399,9 @@ class GpuHashAggregateExec(requiredChildDistributionExpressions: Option[Seq[GpuE
            boundFinalProjections,
            boundResultReferences) =
       setupReferences(
-        finalMode, child.output, groupingExpressions, aggregateExpressions)
+        finalMode, child.output.map(a =>
+          new GpuAttributeReference(a.name, a.dataType, a.nullable, a.metadata)(a.exprId, a.qualifier)),
+        groupingExpressions, aggregateExpressions)
       try {
         while (cbIter.hasNext) {
           // 1) Consume the raw incoming batch, evaluating nested expressions (e.g. avg(col1 + col2)),
@@ -637,7 +639,7 @@ class GpuHashAggregateExec(requiredChildDistributionExpressions: Option[Seq[GpuE
     *         in allExpressions
     */
   def setupReferences(finalMode: Boolean,
-                      childAttr: AttributeSeq,
+                      childAttr: Seq[GpuAttributeReference],
                       groupingExpressions: Seq[GpuExpression],
                       aggregateExpressions: Seq[GpuAggregateExpression]):
     (Seq[GpuExpression], Seq[CudfAggregate], Seq[CudfAggregate], Option[Seq[GpuExpression]], Seq[GpuExpression]) = {
@@ -680,9 +682,7 @@ class GpuHashAggregateExec(requiredChildDistributionExpressions: Option[Seq[GpuE
     // - Partial mode: we use the aggregateExpressions to pick out the correct columns.
     // - Final mode: we pick the columns in the order as handed to us.
     val boundInputReferences = if (finalMode) {
-      GpuBindReferences.bindReferences(
-        child.output.asInstanceOf[Seq[GpuAttributeReference]],
-        child.output)
+      GpuBindReferences.bindReferences(childAttr, childAttr)
     } else {
       GpuBindReferences.bindReferences(inputProjections, childAttr)
     }
