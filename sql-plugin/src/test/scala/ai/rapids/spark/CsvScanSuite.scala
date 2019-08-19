@@ -44,8 +44,6 @@ class CsvScanSuite extends FunSuite with BeforeAndAfterEach with SparkQueryCompa
     frame => frame.select(col("*"))
   }
 
-  testSparkResultsAreEqual("Test CSV count with headers", intsFromCsvWitHeader)(frameCount)
-
   testSparkResultsAreEqual("Test partitioned CSV splits", intsFromPartitionedCsv, conf=smallSplitsConf) {
     frame => frame.select(col("partKey"), col("ints_1"), col("ints_3"), col("ints_5"))
   }
