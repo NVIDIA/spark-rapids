@@ -31,9 +31,19 @@ One set is based off of the mortgage dataset you can download at https://rapidsa
 and are in the ai.rapids.sparkexamples.mortgage package.
 
 The other is based off of TPCH. You can use the TPCH `dbgen` tool to generate data for them.  They are
-in the ai.rapids.sparkexamples.tpch package.
+in the ai.rapids.sparkexamples.tpch package. dbgen has various options, one way to generate the data is like
+`dbgen -b dists.dss -s 10`.
 
-To setup for the queries you can run `TpchLikeSpark.setupAllCSV` for CSV formatted data or
-`TpchLikeSpark.setupAllParquet` for parquet formatted data.  After that each query has its own
-object.  They generally follow TPCH but are not guaranteed to be the same.  `Q1Like(spark)` will return
-a dataframe that can be executed to run the corresponding query.
+You can include the test jar (`rapids-plugin-4-spark/tests/target/rapids-4-spark-tests-0.9-SNAPSHOT.jar`) with the
+Spark --jars option to get the Tpch tests. To setup for the queries you can run `TpchLikeSpark.setupAllCSV`
+for CSV formatted data or `TpchLikeSpark.setupAllParquet` for parquet formatted data.  Both of those take
+ the spark session and a path to the dbgen generated data.  After that each query has its own object.
+So you can call like:
+```
+import ai.rapids.sparkexamples.tpch._
+val pathTodbgenoutput = SPECIFY PATH
+TpchLikeSpark.setupAllCSV(spark, pathTodbgenoutput)
+Q1Like(spark).count()
+```
+They generally follow TPCH but are not guaranteed to be the same.
+`Q1Like(spark)` will return a dataframe that can be executed to run the corresponding query.
