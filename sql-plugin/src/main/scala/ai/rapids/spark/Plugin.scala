@@ -818,6 +818,24 @@ object GpuOverrides {
         if (hashAgg.resultExpressions.isEmpty) {
           throw new CannotReplaceException("result expressions is empty")
         }
+        val hashAggMode = hashAgg.aggregateExpressions.map(_.mode).distinct
+        val hashAggReplaceMode = conf.hashAggReplaceMode.toLowerCase
+        if (!hashAggReplaceMode.equals("all")) {
+          hashAggReplaceMode match {
+            case "partial" => if (hashAggMode.contains(Final)) {
+              // replacing only Partial hash aggregates, so a Final one should not replace
+              throw new CannotReplaceException("Replacing Final hash aggregates disabled")
+            }
+            case "final" => if (hashAggMode.contains(Partial)) {
+              // replacing only Final hash aggregates, so a Partial one should not replace
+              throw new CannotReplaceException("Replacing Partial aggregates disabled")
+            }
+            case _ => {
+              throw new IllegalArgumentException(s"The hash aggregate replacement mode ${hashAggReplaceMode} " +
+                "is not valid. Valid options are: \"partial\", \"final\", or \"all\"")
+            }
+          }
+        }
       })
       .desc("The backend for hash based aggregations")
       .build(),

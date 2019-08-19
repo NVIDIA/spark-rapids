@@ -195,9 +195,9 @@ class GpuAverage(child: Expression) extends Average(child)
   with GpuDeclarativeAggregate {
   // averages are either Decimal or Double. We don't support decimal yet, so making this double.
   private lazy val cudfSum = new GpuAttributeReference("cudf_sum", DoubleType)()
-  private lazy val cudfCount = new GpuAttributeReference("cudf_count", DoubleType)()
+  private lazy val cudfCount = new GpuAttributeReference("cudf_count", LongType)()
   // this is is the merge-side sum of counts
-  private lazy val cudfSumCount = new GpuAttributeReference("cudf_sum_count", DoubleType)()
+  private lazy val cudfSumCount = new GpuAttributeReference("cudf_sum_count", LongType)()
 
   override lazy val inputProjection: Seq[GpuExpression] = Seq(child,
     if (child.isInstanceOf[GpuLiteral]) {
@@ -215,7 +215,7 @@ class GpuAverage(child: Expression) extends Average(child)
 
   override lazy val initialValues = Seq(
     new GpuLiteral(null, DoubleType),
-    new GpuLiteral(null, DoubleType))
+    new GpuLiteral(null, LongType))
 
   override def cudfBufferAttributes(merge: Boolean): Seq[AttributeReference] = {
     if (merge) {
@@ -680,9 +680,7 @@ class GpuHashAggregateExec(requiredChildDistributionExpressions: Option[Seq[GpuE
     // - Partial mode: we use the aggregateExpressions to pick out the correct columns.
     // - Final mode: we pick the columns in the order as handed to us.
     val boundInputReferences = if (finalMode) {
-      GpuBindReferences.bindReferences(
-        child.output.asInstanceOf[Seq[GpuAttributeReference]],
-        child.output)
+      GpuBindReferences.bindReferences(childAttr, childAttr)
     } else {
       GpuBindReferences.bindReferences(inputProjections, childAttr)
     }

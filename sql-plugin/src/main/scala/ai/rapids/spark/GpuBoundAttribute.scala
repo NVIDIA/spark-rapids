@@ -43,12 +43,22 @@ object GpuBindReferences extends Logging {
   }
 
   /**
-   * A helper function to bind given expressions to an input schema.
+   * bindReferences[GpuExpression]: a helper function to bind given expressions to
+   * an input schema where the expressions are GpuExpressions.
    */
   def bindReferences[A <: GpuExpression](
       expressions: Seq[A],
       input: AttributeSeq): Seq[A] = {
     expressions.map(GpuBindReferences.bindReference(_, input))
+  }
+
+  /**
+   * A version of [[bindReferences]] that takes AttributeSeq as its expressions
+   */
+  def bindReferences(expressions: AttributeSeq, input: AttributeSeq): Seq[GpuExpression] = {
+    bindReferences(expressions.attrs.map(ref => new GpuAttributeReference(
+      ref.name, ref.dataType, ref.nullable, ref.metadata)(ref.exprId, ref.qualifier)),
+      input)
   }
 }
 
