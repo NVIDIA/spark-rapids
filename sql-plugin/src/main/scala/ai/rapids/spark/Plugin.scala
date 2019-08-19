@@ -856,7 +856,7 @@ object GpuOverrides {
     agg[Count]
       .assertIsAllowed((count, conf) =>
         if (!count.children.forall(_.isInstanceOf[Literal])) {
-          throw new CannotReplaceException("only count('*') or count(1) supported")
+          throw new CannotReplaceException("only count(*) or count(1) supported")
         })
       .convert((count, overrides) =>
         new GpuCount(count.children.map(overrides.replaceWithGpuExpression)))

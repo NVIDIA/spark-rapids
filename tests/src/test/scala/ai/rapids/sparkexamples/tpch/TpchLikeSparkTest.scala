@@ -38,117 +38,115 @@ class TpchLikeSparkTest extends FunSuite with BeforeAndAfterAll {
 
   test("Something like TPCH Query 1") {
     val df = Q1Like(session)
-    assert(4 == df.count())
+    assertResult(4)(df.count())
   }
 
   test("Something like TPCH Query 2") {
     val df = Q2Like(session)
-    assert(1 == df.count())
+    assertResult(1)(df.count())
   }
 
   test("Something like TPCH Query 3") {
     val df = Q3Like(session)
-    assert(3 == df.count())
+    assertResult(3)(df.count())
   }
 
   test("Something like TPCH Query 4") {
     val df = Q4Like(session)
-    assert(5 == df.count())
+    assertResult(5)(df.count())
   }
 
   test("Something like TPCH Query 5") {
     val df = Q5Like(session)
-    assert(1 == df.count())
+    assertResult(1)(df.count())
   }
 
   test("Something like TPCH Query 6") {
     val df = Q6Like(session)
-    assert(1 == df.count())
+    assertResult(1)(df.count())
   }
 
   test("Something like TPCH Query 7") {
     val df = Q7Like(session)
-    // Work around for count of nothing throwing an exception
-    assert(0 == df.collect().length)
+    assertResult(0)(df.count())
   }
 
   test("Something like TPCH Query 8") {
     val df = Q8Like(session)
-    // Work around for count of nothing throwing an exception
-    assert(0 == df.collect().length)
+    assertResult(0)(df.count())
   }
 
   test("Something like TPCH Query 9") {
     val df = Q9Like(session)
-    assert(5 == df.count())
+    assertResult(5)(df.count())
   }
 
   test("Something like TPCH Query 10") {
     val df = Q10Like(session)
-    assert(4 == df.count())
+    assertResult(4)(df.count())
   }
 
   test("Something like TPCH Query 11") {
     val df = Q11Like(session)
-    assert(47 == df.count())
+    assertResult(47)(df.count())
   }
 
   test("Something like TPCH Query 12") {
     val df = Q12Like(session)
-    assert(2 == df.count())
+    assertResult(2)(df.count())
   }
 
   test("Something like TPCH Query 13") {
     val df = Q13Like(session)
-    assert(6 == df.count())
+    assertResult(6)(df.count())
   }
 
   test("Something like TPCH Query 14") {
     val df = Q14Like(session)
-    assert(1 == df.count())
+    assertResult(1)(df.count())
   }
 
   test("Something like TPCH Query 15") {
     val df = Q15Like(session)
-    assert(1 == df.count())
+    assertResult(1)(df.count())
   }
 
   test("Something like TPCH Query 16") {
     val df = Q16Like(session)
-    assert(42 == df.count())
+    assertResult(42)(df.count())
   }
 
   test("Something like TPCH Query 17") {
     val df = Q17Like(session)
-    assert(1 == df.count())
+    assertResult(1)(df.count())
   }
 
   // TODO not getting the right answer out on larger dataset.  Need to dig in more.
-//  test("Something like TPCH Query 18") {
-//    val df = Q18Like(session)
-//    // Work around for count of nothing throwing an exception
-//    assert(0 == df.collect().length)
-//  }
+  //https://gitlab-master.nvidia.com/nvspark/rapids-plugin-4-spark/issues/31
+  /*
+    test("Something like TPCH Query 18") {
+    val df = Q18Like(session)
+    assertResult(0)(df.count())
+  }
+  */
 
   test("Something like TPCH Query 19") {
     val df = Q19Like(session)
-    assert(1 == df.count())
+    assertResult(1)(df.count())
   }
 
   test("Something like TPCH Query 20") {
     val df = Q20Like(session)
-    // Work around for count of nothing throwing an exception
-    assert(0 == df.collect().length)
+    assertResult(0)(df.count())
   }
 
   test("Something like TPCH Query 21") {
     val df = Q21Like(session)
-    // Work around for count of nothing throwing an exception
-    assert(0 == df.collect().length)
+    assertResult(0)(df.count())
   }
 
   test("Something like TPCH Query 22") {
     val df = Q22Like(session)
-    assert(7 == df.count())
+    assertResult(7)(df.count())
   }
 }

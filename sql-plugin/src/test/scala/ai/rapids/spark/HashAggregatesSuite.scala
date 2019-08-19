@@ -16,10 +16,16 @@
 
 package ai.rapids.spark
 
+import org.apache.spark.SparkConf
 import org.apache.spark.sql.functions._
 import org.scalatest.{BeforeAndAfterEach, FunSuite}
 
 class HashAggregatesSuite extends FunSuite with BeforeAndAfterEach with SparkQueryCompareTestSuite {
+  def makeBatched(batchSize: Int): SparkConf = {
+    // forces ColumnarBatch of batchSize rows to be handed to the hash aggregate
+    // which is useful to test concatenation
+    new SparkConf().set("spark.sql.inMemoryColumnarStorage.batchSize", batchSize.toString)
+  }
 
   IGNORE_ORDER_testSparkResultsAreEqual("test hash agg with shuffle", longsFromCSVDf, repart = 2) {
     frame => frame.groupBy(col("longs")).agg(sum(col("more_longs")))
@@ -37,7 +43,8 @@ class HashAggregatesSuite extends FunSuite with BeforeAndAfterEach with SparkQue
       avg(col("more_shorts") * lit("10")))
   }
 
-  IGNORE_ORDER_testSparkResultsAreEqual("reduction aggs", longsCsvDf) {
+  IGNORE_ORDER_testSparkResultsAreEqual("reduction aggs", longsCsvDf,
+    conf = makeBatched(3)) {
     frame => frame.agg(
       (max("longs") - min("more_longs")) * lit(5),
       sum("longs"),
@@ -54,7 +61,8 @@ class HashAggregatesSuite extends FunSuite with BeforeAndAfterEach with SparkQue
       (max("more_longs") - min("more_longs")) * 3.0)
   }
 
-  INCOMPAT_IGNORE_ORDER_testSparkResultsAreEqual("float basic aggregates group by floats", floatCsvDf) {
+  INCOMPAT_IGNORE_ORDER_testSparkResultsAreEqual("float basic aggregates group by floats", floatCsvDf,
+    conf = makeBatched(3)) {
     frame => frame.groupBy("floats").agg(
       lit(456f),
       min(col("floats")) + lit(123),
@@ -67,7 +75,8 @@ class HashAggregatesSuite extends FunSuite with BeforeAndAfterEach with SparkQue
       count("*"))
   }
 
-  INCOMPAT_IGNORE_ORDER_testSparkResultsAreEqual("float basic aggregates group by more_floats", floatCsvDf) {
+  INCOMPAT_IGNORE_ORDER_testSparkResultsAreEqual("float basic aggregates group by more_floats", floatCsvDf,
+    conf = makeBatched(3)) {
     frame => frame.groupBy("more_floats").agg(
       lit(456f),
       min(col("floats")) + lit(123),
@@ -80,7 +89,8 @@ class HashAggregatesSuite extends FunSuite with BeforeAndAfterEach with SparkQue
       count("*"))
   }
 
-  INCOMPAT_IGNORE_ORDER_testSparkResultsAreEqual("nullable float basic aggregates group by more_floats", nullableFloatCsvDf) {
+  INCOMPAT_IGNORE_ORDER_testSparkResultsAreEqual("nullable float basic aggregates group by more_floats", nullableFloatCsvDf,
+    conf = makeBatched(3)) {
     frame => frame.groupBy("more_floats").agg(
       lit(456f),
       min(col("floats")) + lit(123),
@@ -93,7 +103,8 @@ class HashAggregatesSuite extends FunSuite with BeforeAndAfterEach with SparkQue
       count("*"))
   }
 
-  INCOMPAT_IGNORE_ORDER_testSparkResultsAreEqual("shorts basic aggregates group by more_shorts", shortsFromCsv) {
+  INCOMPAT_IGNORE_ORDER_testSparkResultsAreEqual("shorts basic aggregates group by more_shorts", shortsFromCsv,
+    conf = makeBatched(3)) {
     frame => frame.groupBy("more_shorts").agg(
       lit(456),
       min(col("shorts")) + lit(123),
@@ -106,7 +117,8 @@ class HashAggregatesSuite extends FunSuite with BeforeAndAfterEach with SparkQue
       count("*"))
   }
 
-  IGNORE_ORDER_testSparkResultsAreEqual("long basic aggregates group by longs", longsCsvDf) {
+  IGNORE_ORDER_testSparkResultsAreEqual("long basic aggregates group by longs", longsCsvDf,
+    conf = makeBatched(3)) {
     frame => frame.groupBy("longs").agg(
       lit(456f),
       min(col("longs")) + lit(123),
@@ -119,7 +131,8 @@ class HashAggregatesSuite extends FunSuite with BeforeAndAfterEach with SparkQue
       count("*"))
   }
 
-  IGNORE_ORDER_testSparkResultsAreEqual("long basic aggregates group by more_longs", longsCsvDf) {
+  IGNORE_ORDER_testSparkResultsAreEqual("long basic aggregates group by more_longs", longsCsvDf,
+    conf = makeBatched(3)) {
     frame => frame.groupBy("more_longs").agg(
       lit(456f),
       min(col("longs")) + lit(123),
@@ -132,7 +145,8 @@ class HashAggregatesSuite extends FunSuite with BeforeAndAfterEach with SparkQue
       count("*"))
   }
 
-  IGNORE_ORDER_testSparkResultsAreEqual("ints basic aggregates group by ints", intCsvDf) {
+  IGNORE_ORDER_testSparkResultsAreEqual("ints basic aggregates group by ints", intCsvDf,
+    conf = makeBatched(3)) {
     frame => frame.groupBy("ints").agg(
       lit(456f),
       min(col("ints")) + lit(123),
@@ -145,7 +159,8 @@ class HashAggregatesSuite extends FunSuite with BeforeAndAfterEach with SparkQue
       count("*"))
   }
 
-  IGNORE_ORDER_testSparkResultsAreEqual("ints basic aggregates group by more_ints", intCsvDf) {
+  IGNORE_ORDER_testSparkResultsAreEqual("ints basic aggregates group by more_ints", intCsvDf,
+    conf = makeBatched(3)) {
     frame => frame.groupBy("more_ints").agg(
       lit(456f),
       min(col("ints")) + lit(123),
@@ -158,7 +173,8 @@ class HashAggregatesSuite extends FunSuite with BeforeAndAfterEach with SparkQue
       count("*"))
   }
 
-  INCOMPAT_IGNORE_ORDER_testSparkResultsAreEqual("doubles basic aggregates group by doubles", doubleCsvDf) {
+  INCOMPAT_IGNORE_ORDER_testSparkResultsAreEqual("doubles basic aggregates group by doubles", doubleCsvDf,
+    conf = makeBatched(3)) {
     frame => frame.groupBy("doubles").agg(
       lit(456f),
       min(col("doubles")) + lit(123),
@@ -171,7 +187,8 @@ class HashAggregatesSuite extends FunSuite with BeforeAndAfterEach with SparkQue
       count("*"))
   }
 
-  INCOMPAT_IGNORE_ORDER_testSparkResultsAreEqual("doubles basic aggregates group by more_doubles", doubleCsvDf) {
+  INCOMPAT_IGNORE_ORDER_testSparkResultsAreEqual("doubles basic aggregates group by more_doubles", doubleCsvDf,
+    conf = makeBatched(3)) {
     frame => frame.groupBy("more_doubles").agg(
       lit(456f),
       min(col("doubles")) + lit(123),
@@ -249,4 +266,41 @@ class HashAggregatesSuite extends FunSuite with BeforeAndAfterEach with SparkQue
       first("five", true), last("six", true))
   }
 
+  IGNORE_ORDER_testSparkResultsAreEqual("empty df: reduction count", floatCsvDf) {
+    frame => frame.filter("floats > 10000000.0").agg(count("*"))
+  }
+
+  IGNORE_ORDER_testSparkResultsAreEqual("empty df: reduction aggs", floatCsvDf) {
+    frame => frame.filter("floats > 10000000.0").agg(
+      lit(456f),
+      min(col("floats")) + lit(123),
+      sum(col("more_floats") + lit(123.0)),
+      max(col("floats") * col("more_floats")),
+      max("floats") - min("more_floats"),
+      max("more_floats") - min("floats"),
+      sum("floats") + sum("more_floats"),
+      avg("floats"),
+      first("floats", true),
+      last("floats", true),
+      count("*"))
+  }
+
+  INCOMPAT_IGNORE_ORDER_testSparkResultsAreEqual("empty df: grouped count", floatCsvDf) {
+    frame => frame.filter("floats > 10000000.0").groupBy("floats").agg(count("*"))
+  }
+
+  INCOMPAT_IGNORE_ORDER_testSparkResultsAreEqual("empty df: float basic aggregates group by floats", floatCsvDf) {
+    frame => frame.filter("floats > 10000000.0").groupBy("floats").agg(
+      lit(456f),
+      min(col("floats")) + lit(123),
+      sum(col("more_floats") + lit(123.0)),
+      max(col("floats") * col("more_floats")),
+      max("floats") - min("more_floats"),
+      max("more_floats") - min("floats"),
+      sum("floats") + sum("more_floats"),
+      avg("floats"),
+      first("floats", true),
+      last("floats", true),
+      count("*"))
+  }
 }
