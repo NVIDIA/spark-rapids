@@ -55,17 +55,6 @@ trait GpuExec extends SparkPlan {
   override def hashCode(): Int = super.hashCode()
 }
 
-trait GpuScan extends Scan {
-  override def equals(other: Any): Boolean = {
-    if (!super.equals(other)) {
-      return false
-    }
-    return other.isInstanceOf[GpuScan]
-  }
-
-  override def hashCode(): Int = super.hashCode()
-}
-
 trait GpuPartitioning extends Partitioning {
   override def equals(other: Any): Boolean = {
     if (!super.equals(other)) {
@@ -311,13 +300,13 @@ class ExprRuleBuilder[INPUT <: Expression](implicit val tag: ClassTag[INPUT])
  * Holds everything that is needed to replace a [[Scan]] with a GPU enabled version.
  */
 class ScanRule[INPUT <: Scan](
-    doConvert: (INPUT, GpuOverrides) => GpuScan,
+    doConvert: (INPUT, GpuOverrides) => Scan,
     doAssertIsAllowed: (INPUT, RapidsConf) => Unit,
     isIncompat: Boolean,
     incompatDoc: String,
     desc: String,
     tag: ClassTag[INPUT])
-  extends ReplacementRule[INPUT, Scan, GpuScan](doConvert,
+  extends ReplacementRule[INPUT, Scan, Scan](doConvert,
     doAssertIsAllowed, isIncompat, incompatDoc, desc, tag) {
 
   override val confKeyPart: String = "input"
@@ -331,7 +320,7 @@ class ScanRule[INPUT <: Scan](
  * @tparam INPUT the type of INPUT [[Scan]] this rule will replace.
  */
 class ScanRuleBuilder[INPUT <: Scan](implicit val tag: ClassTag[INPUT])
-  extends ReplacementRuleBuilder[INPUT, GpuScan] {
+  extends ReplacementRuleBuilder[INPUT, Scan] {
 
   /**
    * Build the final rule.
@@ -985,7 +974,7 @@ case class GpuOverrides() extends Rule[SparkPlan] with Logging {
     rule.convert(exp, this)
   }
 
-  def replaceWithGpuScan(scan: Scan): GpuScan = {
+  def replaceWithGpuScan(scan: Scan): Scan = {
     val rule = GpuOverrides.scans.getOrElse(scan.getClass,
       throw new CannotReplaceException(s"no GPU enabled version of input type" +
         s" ${scan.getClass.getName} could be found"))

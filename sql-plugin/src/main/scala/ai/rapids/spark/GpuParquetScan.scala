@@ -43,7 +43,7 @@ import org.apache.spark.sql.SparkSession
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.execution.datasources.{PartitionedFile, PartitioningAwareFileIndex}
 import org.apache.spark.sql.execution.datasources.v2.parquet.ParquetScan
-import org.apache.spark.sql.execution.datasources.v2.FilePartitionReaderFactory
+import org.apache.spark.sql.execution.datasources.v2.{FilePartitionReaderFactory, FileScan}
 import org.apache.spark.sql.execution.QueryExecutionException
 import org.apache.spark.sql.execution.datasources.parquet.{ParquetFilters, ParquetReadSupport}
 import org.apache.spark.sql.internal.SQLConf
@@ -53,7 +53,7 @@ import org.apache.spark.sql.types.{StructType, TimestampType}
 import org.apache.spark.sql.util.CaseInsensitiveStringMap
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
-class GpuParquetScan(
+case class GpuParquetScan(
     sparkSession: SparkSession,
     hadoopConf: Configuration,
     fileIndex: PartitioningAwareFileIndex,
@@ -63,9 +63,9 @@ class GpuParquetScan(
     pushedFilters: Array[Filter],
     options: CaseInsensitiveStringMap,
     rapidsConf: RapidsConf)
-  extends ParquetScan(sparkSession, hadoopConf, fileIndex, dataSchema,
-    readDataSchema, readPartitionSchema, pushedFilters,options)
-    with GpuScan {
+  extends FileScan(sparkSession, fileIndex, readDataSchema, readPartitionSchema) {
+
+  override def isSplitable(path: Path): Boolean = true
 
   override def createReaderFactory(): PartitionReaderFactory = {
     val broadcastedConf = sparkSession.sparkContext.broadcast(
@@ -73,6 +73,16 @@ class GpuParquetScan(
     GpuParquetPartitionReaderFactory(sparkSession.sessionState.conf, broadcastedConf,
       dataSchema, readDataSchema, readPartitionSchema, pushedFilters, rapidsConf)
   }
+
+  override def equals(obj: Any): Boolean = obj match {
+    case p: GpuParquetScan =>
+      fileIndex == p.fileIndex && dataSchema == p.dataSchema &&
+        readDataSchema == p.readDataSchema && readPartitionSchema == p.readPartitionSchema &&
+        options == p.options && equivalentFilters(pushedFilters, p.pushedFilters)
+    case _ => false
+  }
+
+  override def hashCode(): Int = getClass.hashCode()
 }
 
 object GpuParquetScan {

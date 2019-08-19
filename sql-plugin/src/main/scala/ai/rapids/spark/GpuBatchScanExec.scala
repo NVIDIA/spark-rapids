@@ -30,17 +30,20 @@ import org.apache.hadoop.io.compress.CompressionCodecFactory
 
 import org.apache.spark.broadcast.Broadcast
 import org.apache.spark.internal.Logging
+import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.expressions.AttributeReference
 import org.apache.spark.sql.execution.datasources.{HadoopFileLinesReader, PartitionedFile, PartitioningAwareFileIndex}
-import org.apache.spark.sql.execution.datasources.v2.{BatchScanExec, FilePartitionReaderFactory}
-import org.apache.spark.sql.sources.v2.reader.{PartitionReader, PartitionReaderFactory, Scan}
+import org.apache.spark.sql.execution.datasources.v2.{DataSourceRDD, DataSourceV2ScanExecBase, FilePartitionReaderFactory, TextBasedFileScan}
+import org.apache.spark.sql.sources.v2.reader.{InputPartition, PartitionReader, PartitionReaderFactory, Scan}
 import org.apache.spark.sql.types.{StructField, StructType, TimestampType}
 import org.apache.spark.sql.SparkSession
 import org.apache.spark.sql.catalyst.csv.CSVOptions
 import org.apache.spark.sql.catalyst.InternalRow
+import org.apache.spark.sql.catalyst.plans.QueryPlan
 import org.apache.spark.sql.catalyst.util.PermissiveMode
 import org.apache.spark.sql.execution.datasources.v2.csv.CSVScan
 import org.apache.spark.sql.execution.QueryExecutionException
+import org.apache.spark.sql.execution.datasources.csv.CSVDataSource
 import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.util.CaseInsensitiveStringMap
 import org.apache.spark.sql.vectorized.ColumnarBatch
@@ -72,10 +75,25 @@ class GpuSerializableConfiguration(@transient var value: Configuration)
   }
 }
 
-class GpuBatchScanExec(
+case class GpuBatchScanExec(
     output: Seq[AttributeReference],
-    @transient scan: Scan) extends BatchScanExec(output, scan) with GpuExec {
+    @transient scan: Scan) extends DataSourceV2ScanExecBase with GpuExec {
 
+  @transient lazy val batch = scan.toBatch
+
+  override def supportsColumnar = true
+
+  override lazy val partitions: Seq[InputPartition] = batch.planInputPartitions()
+
+  override lazy val readerFactory: PartitionReaderFactory = batch.createReaderFactory()
+
+  override lazy val inputRDD: RDD[InternalRow] = {
+    new DataSourceRDD(sparkContext, partitions, readerFactory, supportsColumnar)
+  }
+
+  override def doCanonicalize(): GpuBatchScanExec = {
+    this.copy(output = output.map(QueryPlan.normalizeExprId(_, output)))
+  }
 }
 
 object GpuCSVScan {
@@ -163,22 +181,34 @@ object GpuCSVScan {
   }
 }
 
-class GpuCSVScan(
+case class GpuCSVScan(
     sparkSession: SparkSession,
     fileIndex: PartitioningAwareFileIndex,
     dataSchema: StructType, // original schema passed in by the user (all the data)
     readDataSchema: StructType, // schema that is for the data being read in (including dropped columns)
     readPartitionSchema: StructType, // schema for the parts that come from the file path
     options: CaseInsensitiveStringMap,
-    maxReaderBatchSize: Integer) extends
-  CSVScan(sparkSession, fileIndex, dataSchema, readDataSchema, readPartitionSchema, options)
-  with GpuScan {
+    maxReaderBatchSize: Integer)
+  extends TextBasedFileScan(sparkSession, fileIndex, readDataSchema, readPartitionSchema, options) {
 
-  lazy val parsedOptions: CSVOptions = new CSVOptions(
+  private lazy val parsedOptions: CSVOptions = new CSVOptions(
     options.asScala.toMap,
     columnPruning = sparkSession.sessionState.conf.csvColumnPruning,
     sparkSession.sessionState.conf.sessionLocalTimeZone,
     sparkSession.sessionState.conf.columnNameOfCorruptRecord)
+
+  override def isSplitable(path: Path): Boolean = {
+    CSVDataSource(parsedOptions).isSplitable && super.isSplitable(path)
+  }
+
+  override def getFileUnSplittableReason(path: Path): String = {
+    assert(!isSplitable(path))
+    if (!super.isSplitable(path)) {
+      super.getFileUnSplittableReason(path)
+    } else {
+      "the csv datasource is set multiLine mode"
+    }
+  }
 
   override def createReaderFactory(): PartitionReaderFactory = {
     val caseSensitiveMap = options.asCaseSensitiveMap.asScala.toMap
