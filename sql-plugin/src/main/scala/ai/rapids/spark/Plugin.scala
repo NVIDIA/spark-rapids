@@ -462,7 +462,6 @@ object GpuOverrides {
   def isStringLit(exp: Expression): Boolean = exp match {
     case Literal(_, StringType) => true
     case a: Alias => isStringLit(a.child)
-    case a: AttributeReference => a.dataType == StringType
     case _ => false
   }
 
@@ -803,6 +802,9 @@ object GpuOverrides {
         // to go away after the plugin anyway)
         if (isAnyStringLit(hashAgg.groupingExpressions)) {
           throw new CannotReplaceException("string literal values are not supported in a hash aggregate")
+        }
+        if (hashAgg.groupingExpressions.map(_.dataType).contains(StringType)) {
+          throw new CannotReplaceException("strings are not supported as grouping keys for hash aggregation.")
         }
         if (hashAgg.resultExpressions.isEmpty) {
           throw new CannotReplaceException("result expressions is empty")
