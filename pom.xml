@@ -6,7 +6,7 @@
 
     <groupId>ai.rapids</groupId>
     <artifactId>rapids-4-spark-parent</artifactId>
-    <version>0.9-SNAPSHOT</version>
+    <version>0.10-SNAPSHOT</version>
     <packaging>pom</packaging>
 
     <modules>
@@ -32,7 +32,7 @@
             <dependency>
                 <groupId>ai.rapids</groupId>
                 <artifactId>cudf</artifactId>
-                <version>0.9-SNAPSHOT</version>
+                <version>0.10-SNAPSHOT</version>
                 <classifier>${cuda.version}</classifier>
             </dependency>
             <dependency>
