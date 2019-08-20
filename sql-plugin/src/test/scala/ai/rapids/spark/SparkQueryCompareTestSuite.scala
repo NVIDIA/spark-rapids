@@ -273,7 +273,8 @@ trait SparkQueryCompareTestSuite extends FunSuite with BeforeAndAfterEach {
       incompat: Boolean,
       sort: Boolean,
       allowNonGpu: Boolean,
-      conf: SparkConf): (SparkConf, String) = {
+      conf: SparkConf,
+      execsAllowedNonGpu: Seq[String]): (SparkConf, String) = {
 
     var qualifiers = Set[String]()
     var testConf = conf
@@ -287,6 +288,11 @@ trait SparkQueryCompareTestSuite extends FunSuite with BeforeAndAfterEach {
     if (allowNonGpu) {
       testConf = testConf.clone().set(RapidsConf.TEST_CONF.key, "false")
       qualifiers = qualifiers + "NOT ALL ON GPU"
+    }
+    if (execsAllowedNonGpu.nonEmpty) {
+      val execStr = execsAllowedNonGpu.mkString(",")
+      testConf = testConf.clone().set(RapidsConf.TEST_ALLOWED_NONGPU.key, execStr)
+      qualifiers = qualifiers + s"NOT ON GPU[$execStr]"
     }
     val qualifiedTestName = qualifiers.mkString("", ", ",
       (if (qualifiers.nonEmpty) ": " else "") + testName)
@@ -338,11 +344,12 @@ trait SparkQueryCompareTestSuite extends FunSuite with BeforeAndAfterEach {
       sort: Boolean = false,
       maxFloatDiff: Double = 0.0,
       incompat: Boolean = false,
-      allowNonGpu: Boolean = false)
+      allowNonGpu: Boolean = false,
+      execsAllowedNonGpu: Seq[String] = Seq.empty)
       (fun: DataFrame => DataFrame): Unit = {
 
     val (testConf, qualifiedTestName) =
-      setupTestConfAndQualifierName(testName, incompat, sort, allowNonGpu, conf)
+      setupTestConfAndQualifierName(testName, incompat, sort, allowNonGpu, conf, execsAllowedNonGpu)
 
     test(qualifiedTestName) {
       var (fromCpu, fromGpu) = runOnCpuAndGpu(df, fun,
@@ -362,11 +369,12 @@ trait SparkQueryCompareTestSuite extends FunSuite with BeforeAndAfterEach {
       sort: Boolean = false,
       maxFloatDiff: Double = 0.0,
       incompat: Boolean = false,
-      allowNonGpu: Boolean = false)
+      allowNonGpu: Boolean = false,
+      execsAllowedNonGpu: Seq[String] = Seq.empty)
     (fun: (DataFrame, DataFrame) => DataFrame): Unit = {
 
     val (testConf, qualifiedTestName) =
-      setupTestConfAndQualifierName(testName, incompat, sort, allowNonGpu, conf)
+      setupTestConfAndQualifierName(testName, incompat, sort, allowNonGpu, conf, execsAllowedNonGpu)
 
     test(qualifiedTestName) {
       var (fromCpu, fromGpu) = runOnCpuAndGpu2(dfA, dfB, fun, conf = testConf, repart = repart)
