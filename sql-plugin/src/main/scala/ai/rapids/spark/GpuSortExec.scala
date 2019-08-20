@@ -25,21 +25,40 @@ import ai.rapids.cudf.Table
 import ai.rapids.spark.GpuExpressionsUtils.evaluateBoundExpressions
 
 import org.apache.spark.rdd.RDD
-import org.apache.spark.sql.catalyst.expressions.{Expression, NullOrdering, NullsFirst, NullsLast, SortDirection, SortOrder}
-import org.apache.spark.sql.execution.{SortExec, SparkPlan}
+import org.apache.spark.sql.catalyst.expressions.{Attribute, Expression, NullOrdering, NullsFirst, NullsLast, SortDirection, SortOrder}
+import org.apache.spark.sql.execution.{SparkPlan, UnaryExecNode}
 import org.apache.spark.sql.types.StructType
-import org.apache.spark.sql.vectorized.{ColumnarBatch, ColumnVector}
+import org.apache.spark.sql.vectorized.ColumnarBatch
 import org.apache.spark.TaskContext
+import org.apache.spark.sql.catalyst.plans.physical.{Distribution, OrderedDistribution, Partitioning, UnspecifiedDistribution}
+import org.apache.spark.sql.catalyst.InternalRow
+import org.apache.spark.sql.execution.metric.SQLMetrics
 
-class GpuSortExec(
+case class GpuSortExec(
     sortOrder: Seq[GpuSortOrder],
     global: Boolean,
     child: SparkPlan,
-    testSpillFrequency: Int = 0) 
-  extends SortExec(sortOrder, global, child, testSpillFrequency) with GpuExec {
+    testSpillFrequency: Int = 0)
+  extends UnaryExecNode with GpuExec {
 
-  // Disable code generation for now...
-  override def supportCodegen: Boolean = false
+  override def output: Seq[Attribute] = child.output
+
+  override def outputOrdering: Seq[SortOrder] = sortOrder
+
+  // sort performed is local within a given partition so will retain
+  // child operator's partitioning
+  override def outputPartitioning: Partitioning = child.outputPartitioning
+
+  override def requiredChildDistribution: Seq[Distribution] =
+    if (global) OrderedDistribution(sortOrder) :: Nil else UnspecifiedDistribution :: Nil
+
+  override lazy val metrics = Map(
+    "sortTime" -> SQLMetrics.createTimingMetric(sparkContext, "sort time"),
+    "peakMemory" -> SQLMetrics.createSizeMetric(sparkContext, "peak memory"),
+    "spillSize" -> SQLMetrics.createSizeMetric(sparkContext, "spill size"))
+
+  override def doExecute(): RDD[InternalRow] = throw new IllegalStateException(
+    "Row-based execution should not occur for this class")
 
   override def doExecuteColumnar(): RDD[ColumnarBatch] = {
     val sortTime = longMetric("sortTime")
@@ -97,7 +116,7 @@ class GpuColumnarBatchSorter(
             batch.close()
           }
         }
-        if (numRows == 0 || inputTbls.length == 0) return Iterator.empty
+        if (numRows == 0 || inputTbls.isEmpty) return Iterator.empty
         if (inputTbls.length > 1) {
           concatTbl = Table.concatenate(inputTbls: _*)
         } else {
@@ -117,9 +136,7 @@ class GpuColumnarBatchSorter(
       success = true
       new Iterator[ColumnarBatch] {
 
-        TaskContext.get().addTaskCompletionListener[Unit]((tc: TaskContext) => {
-          closeBatch()
-        })
+        TaskContext.get().addTaskCompletionListener[Unit](_ => closeBatch())
 
         private def closeBatch(): Unit = {
           if (resultCb != null) {
