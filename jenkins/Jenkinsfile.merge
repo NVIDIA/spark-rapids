@@ -33,10 +33,10 @@ pipeline {
                 defaultValue: 'master')
 
         string(name: 'TARGET_BRANCH',
-                defaultValue: 'dev_cudf0_10')
+                defaultValue: 'dev-cudf0_10')
         
         string(name: 'REF',
-                defaultValue: 'dev_cudf0_10')
+                defaultValue: 'dev-cudf0_10')
 
     }
 
@@ -56,6 +56,7 @@ pipeline {
                                 sh "git checkout ${params.TARGET_BRANCH}"
                                 sh "git pull origin ${params.TARGET_BRANCH}"
                                 sh "git merge origin/${params.SOURCE_BRANCH}"
+                                sh "git push origin ${params.TARGET_BRANCH}"
                             }
                             else{
                                 echo 'Everything is up to date.'
