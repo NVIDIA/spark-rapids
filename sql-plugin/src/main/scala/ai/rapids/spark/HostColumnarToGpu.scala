@@ -128,18 +128,34 @@ case class HostColumnarToGpu(child: SparkPlan) extends UnaryExecNode with GpuExe
     }
   }
 
+  /**
+    * Returns an RDD[ColumnarBatch] that when mapped over will produce GPU-side column vectors
+    * that are expected to be closed by its caller, not [[HostcolumnarToGpu]].
+    *
+    * The expectation is that the only valid instantiation of this node is
+    * as a child of a GPU exec node.
+    *
+    * @return an RDD of [[ColumnarBatch]]
+    */
   override protected def doExecuteColumnar(): RDD[ColumnarBatch] = {
-    AutoCloseColumnBatchIterator.map[ColumnarBatch](child.executeColumnar(), b => {
-      val rows = b.numRows()
-      val batchBuilder = new GpuColumnVector.GpuColumnarBatchBuilder(schema, rows, b)
-      try {
-        for (i <- 0 until b.numCols()) {
-          columnarCopy(b.column(i), batchBuilder.builder(i), schema.fields(i).nullable, rows)
+    child.executeColumnar().mapPartitions { cbIter =>
+      new Iterator[ColumnarBatch] {
+        override def hasNext: Boolean = cbIter.hasNext
+
+        override def next(): ColumnarBatch = {
+          val b = cbIter.next()
+          val rows = b.numRows()
+          val batchBuilder = new GpuColumnVector.GpuColumnarBatchBuilder(schema, rows, b)
+          try {
+            for (i <- 0 until b.numCols()) {
+              columnarCopy(b.column(i), batchBuilder.builder(i), schema.fields(i).nullable, rows)
+            }
+            batchBuilder.build(rows)
+          } finally {
+            batchBuilder.close()
+          }
         }
-        batchBuilder.build(rows)
-      } finally {
-        batchBuilder.close()
       }
-    })
+    }
   }
 }

@@ -16,10 +16,15 @@
 
 package ai.rapids.spark
 
+import org.apache.spark.SparkConf
 import org.apache.spark.sql.functions.{col, lit}
 import org.scalatest.{BeforeAndAfterEach, FunSuite}
 
 class ProjectExprSuite extends FunSuite with BeforeAndAfterEach with SparkQueryCompareTestSuite {
+  def forceHostColumnarToGpu(): SparkConf = {
+    // turns off BatchScanExec, so we get a CPU BatchScanExec together with a HostColumnarToGpu
+    new SparkConf().set("spark.rapids.sql.exec.BatchScanExec", "false")
+  }
 
   testSparkResultsAreEqual("project is not null", nullableFloatDf) {
     frame => frame.selectExpr("floats is not null")
@@ -47,5 +52,41 @@ class ProjectExprSuite extends FunSuite with BeforeAndAfterEach with SparkQueryC
 
   testSparkResultsAreEqual("IsNull OR IsNull strings", nullableStringsDf) {
     frame => frame.selectExpr("strings is null OR more_strings is null")
+  }
+
+  testSparkResultsAreEqual("project time", frameFromParquet("timestamp-date-test.parquet"),
+    conf = forceHostColumnarToGpu(),
+    allowNonGpu = true) {
+    frame => frame.select("time")
+  }
+
+  testSparkResultsAreEqual("IsNull timestamp", frameFromParquet("timestamp-date-test.parquet"),
+    conf = forceHostColumnarToGpu(),
+    allowNonGpu = true) {
+    frame => frame.selectExpr("time is null")
+  }
+
+  testSparkResultsAreEqual("IsNotNull timestamp", frameFromParquet("timestamp-date-test.parquet"),
+    conf = forceHostColumnarToGpu(),
+    allowNonGpu = true) {
+    frame => frame.selectExpr("time is not null")
+  }
+
+  testSparkResultsAreEqual("year timestamp", frameFromParquet("timestamp-date-test.parquet"),
+    conf = forceHostColumnarToGpu(),
+    allowNonGpu = true) {
+    frame => frame.selectExpr("year(time)")
+  }
+
+  testSparkResultsAreEqual("month timestamp", frameFromParquet("timestamp-date-test.parquet"),
+    conf = forceHostColumnarToGpu(),
+    allowNonGpu = true) {
+    frame => frame.selectExpr("month(time)")
+  }
+
+  testSparkResultsAreEqual("day timestamp", frameFromParquet("timestamp-date-test.parquet"),
+    conf = forceHostColumnarToGpu(),
+    allowNonGpu = true) {
+    frame => frame.selectExpr("day(time)")
   }
 }
