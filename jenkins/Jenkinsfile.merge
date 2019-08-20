@@ -56,7 +56,6 @@ pipeline {
                                 sh "git checkout ${params.TARGET_BRANCH}"
                                 sh "git pull origin ${params.TARGET_BRANCH}"
                                 sh "git merge origin/${params.SOURCE_BRANCH}"
-                                #sh "echo git push origin ${params.TARGET_BRANCH}"
                             }
                             else{
                                 echo 'Everything is up to date.'
