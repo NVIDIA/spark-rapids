@@ -73,10 +73,8 @@ pipeline {
             script {
                 if (currentBuild.currentResult == "SUCCESS") {
                     updateGitlabCommitStatus(name: 'Jenkins CI', state: "success")
-                    slack("#rapidsai-spark-cicd", "Success", color: "#33CC33")
                 } else {
                     updateGitlabCommitStatus(name: 'Jenkins CI', state: "failed")
-                    slack("#rapidsai-spark-cicd", "Failed", color: "#FF0000")
                 }
             }
         }
