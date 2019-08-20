@@ -18,10 +18,13 @@ package ai.rapids.spark
 
 import ai.rapids.spark.GpuColumnVector.GpuColumnarBatchBuilder
 
+import org.apache.spark.broadcast.Broadcast
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.InternalRow
-import org.apache.spark.sql.catalyst.expressions.SpecializedGetters
-import org.apache.spark.sql.execution.{RowToColumnarExec, SparkPlan}
+import org.apache.spark.sql.catalyst.expressions.{Attribute, SortOrder, SpecializedGetters}
+import org.apache.spark.sql.catalyst.plans.physical.Partitioning
+import org.apache.spark.sql.execution.{SparkPlan, TrampolineUtil, UnaryExecNode}
+import org.apache.spark.sql.execution.metric.{SQLMetric, SQLMetrics}
 import org.apache.spark.sql.types._
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
@@ -278,7 +281,27 @@ private object GpuRowToColumnConverter {
 /**
  * GPU version of row to columnar transition.
  */
-class GpuRowToColumnarExec(child: SparkPlan) extends RowToColumnarExec(child) with GpuExec {
+case class GpuRowToColumnarExec(child: SparkPlan) extends UnaryExecNode with GpuExec {
+  override def output: Seq[Attribute] = child.output
+
+  override def outputPartitioning: Partitioning = child.outputPartitioning
+
+  override def outputOrdering: Seq[SortOrder] = child.outputOrdering
+
+  override def doExecute(): RDD[InternalRow] = {
+    child.execute()
+  }
+
+  override def doExecuteBroadcast[T](): Broadcast[T] = {
+    TrampolineUtil.doExecuteBroadcast(child)
+  }
+
+  override def supportsColumnar: Boolean = true
+
+  override lazy val metrics: Map[String, SQLMetric] = Map(
+    "numInputRows" -> SQLMetrics.createMetric(sparkContext, "number of input rows"),
+    "numOutputBatches" -> SQLMetrics.createMetric(sparkContext, "number of output batches")
+  )
 
   override def doExecuteColumnar(): RDD[ColumnarBatch] = {
     // TODO need to add in the GPU accelerated unsafe row translation when there is no
@@ -289,7 +312,7 @@ class GpuRowToColumnarExec(child: SparkPlan) extends RowToColumnarExec(child) wi
     val localSchema = schema
     val converters = new GpuRowToColumnConverter(localSchema)
     val rowBased = child.execute()
-    rowBased.mapPartitions((rowIter) => {
+    rowBased.mapPartitions { rowIter =>
       new Iterator[ColumnarBatch]() {
         override def hasNext: Boolean = rowIter.hasNext
 
@@ -312,13 +335,6 @@ class GpuRowToColumnarExec(child: SparkPlan) extends RowToColumnarExec(child) wi
           }
         }
       }
-    })
-  }
-
-  override def equals(other: Any): Boolean = {
-    if (!super.equals(other)) {
-      return false
     }
-    return other.isInstanceOf[GpuRowToColumnarExec]
   }
 }
