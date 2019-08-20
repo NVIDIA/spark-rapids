@@ -39,6 +39,19 @@ object ConfHelper {
         throw new IllegalArgumentException(s"$key should be integer, but was $s")
     }
   }
+
+  def stringToSeq(str: String): Seq[String] = {
+    str.split(",").map(_.trim()).filter(_.nonEmpty)
+  }
+
+  def stringToSeq[T](str: String, converter: String => T): Seq[T] = {
+    stringToSeq(str).map(converter)
+  }
+
+  def seqToString[T](v: Seq[T], stringConverter: T => String): String = {
+    v.map(stringConverter).mkString(",")
+  }
+
 }
 
 abstract class ConfEntry[T](val key: String, val converter: String => T,
@@ -70,7 +83,12 @@ class ConfEntryWithDefault[T](key: String, converter: String => T, doc: String,
 
 class TypedConfBuilder[T](
     val parent: ConfBuilder,
-    val converter: String => T) {
+    val converter: String => T,
+    val stringConverter: T => String) {
+
+  def this(parent: ConfBuilder, converter: String => T) = {
+    this(parent, converter, Option(_).map(_.toString).orNull)
+  }
 
   def createWithDefault(value: T): ConfEntry[T] = {
     val ret = new ConfEntryWithDefault[T](parent.key, converter,
@@ -79,6 +97,10 @@ class TypedConfBuilder[T](
     ret
   }
 
+  /** Turns the config entry into a sequence of values of the underlying type. */
+  def toSequence: TypedConfBuilder[Seq[T]] = {
+    new TypedConfBuilder(parent, ConfHelper.stringToSeq(_, converter), ConfHelper.seqToString(_, stringConverter))
+  }
 }
 
 class ConfBuilder(val key: String, val register: ConfEntry[_] => Unit) {
@@ -133,12 +155,27 @@ object RapidsConf {
     .booleanConf
     .createWithDefault(false)
 
+  val HAS_NANS = conf("spark.rapids.sql.hasNans")
+    .doc("Config to indicate if your data has NaN's. Cudf doesn't " +
+      "currently support NaN's properly so you can get corrupt data if you have NaN's in your " +
+      "data and it runs on the GPU.")
+    .booleanConf
+    .createWithDefault(true)
+
   val TEST_CONF = conf("spark.rapids.sql.testing")
     .doc("Intended to be used by unit tests, if enabled all operations must run on the GPU" +
       " or an error happens.")
     .internal()
     .booleanConf
     .createWithDefault(false)
+
+  val TEST_ALLOWED_NONGPU = conf("spark.rapids.sql.test.allowedNonGpu")
+    .doc("Comma separate string of exec or expression class names that are allowed " +
+      "to not be GPU accelerated for testing.")
+    .internal()
+    .stringConf
+    .toSequence
+    .createWithDefault(Nil)
 
   val EXPLAIN = conf("spark.rapids.sql.explain")
     .doc("Explain why some parts of a query were not placed on a GPU")
@@ -218,7 +255,11 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
 
   lazy val isTestEnabled: Boolean = get(TEST_CONF)
 
+  lazy val testingAllowedNonGpu: Seq[String] = get(TEST_ALLOWED_NONGPU)
+
   lazy val isMemDebugEnabled: Boolean = get(MEM_DEBUG)
+
+  lazy val hasNans: Boolean = get(HAS_NANS)
 
   lazy val explain: Boolean = get(EXPLAIN)
 

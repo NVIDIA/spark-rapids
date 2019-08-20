@@ -844,6 +844,12 @@ object GpuOverrides {
         if (schemaDataTypes.contains(StringType)) {
           throw new CannotReplaceException("strings are not supported in sort.")
         }
+        val keyDataTypes = sort.sortOrder.map(_.dataType)
+        if ((keyDataTypes.contains(FloatType) || keyDataTypes.contains(DoubleType)) && conf.hasNans) {
+          throw new CannotReplaceException("floats/doubles are not supported in sort, due to " +
+            "incompatibility with NaN. If you don't have any NaN's in your data you can set " +
+            "spark.rapids.sql.hasNans=false to bypass this.")
+        }
         val nullOrderings = sort.sortOrder.map(o => o.nullOrdering)
         if (!nullOrderings.forall(_ == nullOrderings.head)) {
           // ERROR we can't handle this right now since only 1 parameter for areNullsSmallest
@@ -1185,13 +1191,19 @@ case class GpuTransitionOverrides() extends Rule[SparkPlan] {
     }
   }
 
-  def assertIsOnTheGpu(exp: Expression): Unit = {
-    if (!exp.isInstanceOf[GpuExpression]) {
+  private def getBaseNameFromClass(planClassStr: String): String = {
+    val firstDotIndex = planClassStr.lastIndexOf(".")
+    if (firstDotIndex != -1) planClassStr.substring(firstDotIndex + 1) else planClassStr
+  }
+
+  def assertIsOnTheGpu(exp: Expression, conf: RapidsConf): Unit = {
+    if (!exp.isInstanceOf[GpuExpression] &&
+      !conf.testingAllowedNonGpu.contains(getBaseNameFromClass(exp.getClass.toString))) {
       throw new IllegalArgumentException(s"The expression ${exp} is not columnar ${exp.getClass}")
     }
   }
 
-  def assertIsOnTheGpu(plan: SparkPlan): Unit = {
+  def assertIsOnTheGpu(plan: SparkPlan, conf: RapidsConf): Unit = {
     plan match {
       case lts: LocalTableScanExec =>
         if (!lts.expressions.forall(_.isInstanceOf[AttributeReference])) {
@@ -1200,13 +1212,14 @@ case class GpuTransitionOverrides() extends Rule[SparkPlan] {
         }
       case _: GpuColumnarToRowExec => () // Ignored
       case _: ShuffleExchangeExec => () // Ignored for now
-      case _ =>
-        if (!plan.supportsColumnar) {
+      case other =>
+        if (!plan.supportsColumnar &&
+          !conf.testingAllowedNonGpu.contains(getBaseNameFromClass(other.getClass.toString))) {
           throw new IllegalArgumentException(s"Part of the plan is not columnar ${plan.getClass}\n${plan}")
         }
-        plan.expressions.foreach(assertIsOnTheGpu)
+        plan.expressions.foreach(assertIsOnTheGpu(_, conf))
     }
-    plan.children.foreach(assertIsOnTheGpu)
+    plan.children.foreach(assertIsOnTheGpu(_, conf))
   }
 
   override def apply(plan: SparkPlan): SparkPlan = {
@@ -1215,7 +1228,7 @@ case class GpuTransitionOverrides() extends Rule[SparkPlan] {
       val tmp = insertColumnarFromGpu(plan)
       val ret = optimizeGpuPlanTransitions(tmp)
       if (conf.isTestEnabled) {
-        assertIsOnTheGpu(ret)
+        assertIsOnTheGpu(ret, conf)
       }
       ret
     } else {

@@ -15,9 +15,13 @@
  */
 package ai.rapids.spark
 
+import scala.util.Random
+
 import org.apache.spark.SparkConf
 import org.apache.spark.sql.functions._
-import org.apache.spark.sql.{DataFrame, SparkSession}
+import org.apache.spark.sql.catalyst.dsl.expressions._
+import org.apache.spark.sql.{DataFrame, RandomDataGenerator, Row, SparkSession}
+import org.apache.spark.sql.types._
 
 class SortExecSuite extends SparkQueryCompareTestSuite {
 
@@ -38,11 +42,30 @@ class SortExecSuite extends SparkQueryCompareTestSuite {
     ).toDF("longs", "more_longs")
   }
 
-  // Sort tests
-  // Note the sortExec plugin has an extra check to allow testing to skip the global ordering
-  // check since for small datasets we don't need to shuffle anyway.
-  testSparkResultsAreEqual("sort longs", longsDf) {
-    frame => frame.sortWithinPartitions("longs")
+  def generateData(dataType: DataType, nullable: Boolean, size: Int): (SparkSession => DataFrame) = {
+    val generator = RandomDataGenerator.forType(dataType, nullable).get
+    val inputData = Seq.fill(size)(generator())
+    (session: SparkSession) => {
+      import session.sqlContext.implicits._
+      session.createDataFrame(
+        session.sparkContext.parallelize(Random.shuffle(inputData).map(v => Row(v))),
+        StructType(StructField("a", dataType, nullable = true) :: Nil)
+      )
+    }
+  }
+
+  // Note I -- out the set of Types that aren't supported with Sort right now so we can explicitly see them and remove
+  // individually as we add support
+  for (
+    dataType <- DataTypeTestUtils.atomicTypes ++ Set(NullType) -- Set(FloatType, StringType, NullType, DoubleType, DecimalType.USER_DEFAULT,
+      DecimalType(20, 5), DecimalType.SYSTEM_DEFAULT, BinaryType);
+    nullable <- Seq(true, false);
+    sortOrder <- Seq('a.asc :: Nil, 'a.asc_nullsLast :: Nil, 'a.desc :: Nil, 'a.desc_nullsFirst :: Nil)
+  ) {
+    val inputDf = generateData(dataType, nullable, 10)
+    testSparkResultsAreEqual(s"sorting on $dataType with nullable=$nullable, sortOrder=$sortOrder",  inputDf, allowNonGpu=false, execsAllowedNonGpu = Seq("RDDScanExec", "AttributeReference")) {
+      frame => frame.sortWithinPartitions("a")
+    }
   }
 
   testSparkResultsAreEqual("sort 2 cols longs nulls", nullableLongsDfWithDuplicates) {
@@ -61,26 +84,6 @@ class SortExecSuite extends SparkQueryCompareTestSuite {
     frame => frame.sortWithinPartitions(col("longs").desc_nulls_last, col("more_longs").desc_nulls_last)
   }
 
-  testSparkResultsAreEqual("sort floats", floatDf) {
-    frame => frame.sortWithinPartitions("floats")
-  }
-
-  testSparkResultsAreEqual("sort doubles", smallDoubleDf) {
-    frame => frame.sortWithinPartitions("doubles")
-  }
-
-  testSparkResultsAreEqual("sort booleans", booleanDf) {
-    frame => frame.sortWithinPartitions("bools")
-  }
-
-  testSparkResultsAreEqual("sort dates", datesDf) {
-    frame => frame.sortWithinPartitions("dates")
-  }
-
-  testSparkResultsAreEqual("sort ints", intCsvDf) {
-    frame => frame.sortWithinPartitions("ints")
-  }
-
   // force a sortMergeJoin
   private val sortJoinConf = new SparkConf().set("spark.sql.autoBroadcastJoinThreshold", "-1").
     set("spark.sql.join.preferSortMergeJoin", "true").set("spark.sql.exchange.reuse", "false")
@@ -96,6 +99,4 @@ class SortExecSuite extends SparkQueryCompareTestSuite {
       conf = sortJoinMultiBatchConf, allowNonGpu = true, sort = true) {
     (dfA, dfB) => dfA.join(dfB, dfA("longs") === dfB("longs"))
   }
-
-  // TODO - add tests for timestamps and strings once functional
 }
