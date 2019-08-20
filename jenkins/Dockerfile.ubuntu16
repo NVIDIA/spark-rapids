@@ -14,4 +14,5 @@ FROM nvidia/cuda:${CUDA_VER}-runtime-ubuntu16.04
 #install java 8, maven, on ubuntu16.04_cuda x.x docker image
 RUN apt update -y && \
     apt install -y maven \
-    openjdk-8-jdk
+    openjdk-8-jdk \
+    tzdata
