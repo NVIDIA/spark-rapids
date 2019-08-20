@@ -18,17 +18,39 @@ package ai.rapids.spark
 
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.InternalRow
-import org.apache.spark.sql.catalyst.expressions.UnsafeProjection
+import org.apache.spark.sql.catalyst.expressions.{Attribute, SortOrder, UnsafeProjection}
 import org.apache.spark.sql.catalyst.expressions.codegen.Block._
 import org.apache.spark.sql.catalyst.expressions.codegen.{CodegenContext, CodeGenerator, ExprCode, FalseLiteral, JavaCode}
-import org.apache.spark.sql.execution.{ColumnarToRowExec, SparkPlan}
+import org.apache.spark.sql.execution.{CodegenSupport, SparkPlan, UnaryExecNode}
 import org.apache.spark.sql.types.DataType
 import org.apache.spark.sql.vectorized.{ColumnarBatch, ColumnVector}
 import org.apache.spark.TaskContext
+import org.apache.spark.sql.catalyst.plans.physical.Partitioning
+import org.apache.spark.sql.execution.metric.{SQLMetric, SQLMetrics}
 
-class GpuColumnarToRowExec(child: SparkPlan) extends ColumnarToRowExec(child) with GpuExec {
+case class GpuColumnarToRowExec(child: SparkPlan) extends UnaryExecNode
+    with CodegenSupport with GpuExec {
   // We need to do this so the assertions don't fail
   override def supportsColumnar = false
+
+  override def output: Seq[Attribute] = child.output
+
+  override def outputPartitioning: Partitioning = child.outputPartitioning
+
+  override def outputOrdering: Seq[SortOrder] = child.outputOrdering
+
+  // `GpuColumnarToRowExec` processes the input RDD directly, which is kind of a leaf node in the
+  // codegen stage and needs to do the limit check.
+  protected override def canCheckLimitNotReached: Boolean = true
+
+  override lazy val metrics: Map[String, SQLMetric] = Map(
+    "numOutputRows" -> SQLMetrics.createMetric(sparkContext, "number of output rows"),
+    "numInputBatches" -> SQLMetrics.createMetric(sparkContext, "number of input batches")
+  )
+
+  override def inputRDDs(): Seq[RDD[InternalRow]] = {
+    Seq(child.executeColumnar().asInstanceOf[RDD[InternalRow]]) // Hack because of type erasure
+  }
 
   override def doExecute(): RDD[InternalRow] = {
     val numOutputRows = longMetric("numOutputRows")
@@ -43,21 +65,19 @@ class GpuColumnarToRowExec(child: SparkPlan) extends ColumnarToRowExec(child) wi
       val toUnsafe = UnsafeProjection.create(localOutput, localOutput)
       new Iterator[InternalRow] {
         // GPU batches read in must be closed by the receiver (us)
-        @transient var cb: ColumnarBatch = null
-        var it: java.util.Iterator[InternalRow] = null
+        @transient var cb: ColumnarBatch = _
+        var it: java.util.Iterator[InternalRow] = _
 
-        TaskContext.get().addTaskCompletionListener[Unit]((tc: TaskContext) => {
-          closeCurrentBatch()
-        })
+        TaskContext.get().addTaskCompletionListener[Unit](_ => closeCurrentBatch())
 
         private def closeCurrentBatch(): Unit = {
           if (cb != null) {
-            cb.close
+            cb.close()
             cb = null
           }
         }
 
-        def loadNextBatch: Unit = {
+        def loadNextBatch(): Unit = {
           closeCurrentBatch()
           if (it != null) {
             it = null
@@ -79,7 +99,7 @@ class GpuColumnarToRowExec(child: SparkPlan) extends ColumnarToRowExec(child) wi
         override def hasNext: Boolean = {
           val itHasNext = it != null && it.hasNext
           if (!itHasNext) {
-            loadNextBatch
+            loadNextBatch()
             it != null && it.hasNext
           } else {
             itHasNext
@@ -88,7 +108,7 @@ class GpuColumnarToRowExec(child: SparkPlan) extends ColumnarToRowExec(child) wi
 
         override def next(): InternalRow = {
           if (it == null || !it.hasNext) {
-            loadNextBatch
+            loadNextBatch()
           }
           if (it == null) {
             throw new NoSuchElementException()
@@ -167,7 +187,7 @@ class GpuColumnarToRowExec(child: SparkPlan) extends ColumnarToRowExec(child) wi
          |  if ($input.hasNext()) {
          |    $batch = ($columnarBatchClz)$input.next();
          |    $numOutputRows.add($batch.numRows());
-         |    ${numInputBatches}.add(1);
+         |    $numInputBatches.add(1);
          |    $idx = 0;
          |    ${columnAssigns.mkString("", "\n", "\n")}
          |  }
@@ -204,12 +224,5 @@ class GpuColumnarToRowExec(child: SparkPlan) extends ColumnarToRowExec(child) wi
        |  $nextBatchFuncName();
        |}
      """.stripMargin
-  }
-
-  override def equals(other: Any): Boolean = {
-    if (!super.equals(other)) {
-      return false
-    }
-    other.isInstanceOf[GpuColumnarToRowExec]
   }
 }
