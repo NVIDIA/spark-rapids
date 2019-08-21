@@ -25,14 +25,15 @@ import ai.rapids.cudf.Table
 import ai.rapids.spark.GpuExpressionsUtils.evaluateBoundExpressions
 
 import org.apache.spark.rdd.RDD
-import org.apache.spark.sql.catalyst.expressions.{Attribute, Expression, NullOrdering, NullsFirst, NullsLast, SortDirection, SortOrder}
+import org.apache.spark.sql.catalyst.expressions.{Ascending, Attribute, Expression, NullOrdering, NullsFirst, NullsLast, RowOrdering, SortDirection, SortOrder}
 import org.apache.spark.sql.execution.{SparkPlan, UnaryExecNode}
-import org.apache.spark.sql.types.StructType
+import org.apache.spark.sql.types.{DataType, StructType}
 import org.apache.spark.sql.vectorized.ColumnarBatch
 import org.apache.spark.TaskContext
 import org.apache.spark.sql.catalyst.plans.physical.{Distribution, OrderedDistribution, Partitioning, UnspecifiedDistribution}
 import org.apache.spark.sql.catalyst.InternalRow
-import org.apache.spark.sql.execution.metric.SQLMetrics
+import org.apache.spark.sql.catalyst.analysis.TypeCheckResult
+import org.apache.spark.sql.execution.metric.{SQLMetric, SQLMetrics}
 
 case class GpuSortExec(
     sortOrder: Seq[GpuSortOrder],
@@ -41,18 +42,20 @@ case class GpuSortExec(
     testSpillFrequency: Int = 0)
   extends UnaryExecNode with GpuExec {
 
+  private val sparkSortOrder = sortOrder.map(_.toSortOrder)
+
   override def output: Seq[Attribute] = child.output
 
-  override def outputOrdering: Seq[SortOrder] = sortOrder
+  override def outputOrdering: Seq[SortOrder] = sparkSortOrder
 
   // sort performed is local within a given partition so will retain
   // child operator's partitioning
   override def outputPartitioning: Partitioning = child.outputPartitioning
 
   override def requiredChildDistribution: Seq[Distribution] =
-    if (global) OrderedDistribution(sortOrder) :: Nil else UnspecifiedDistribution :: Nil
+    if (global) OrderedDistribution(sparkSortOrder) :: Nil else UnspecifiedDistribution :: Nil
 
-  override lazy val metrics = Map(
+  override lazy val metrics: Map[String, SQLMetric] = Map(
     "sortTime" -> SQLMetrics.createTimingMetric(sparkContext, "sort time"),
     "peakMemory" -> SQLMetrics.createSizeMetric(sparkContext, "peak memory"),
     "spillSize" -> SQLMetrics.createSizeMetric(sparkContext, "spill size"))
@@ -218,9 +221,31 @@ class GpuColumnarBatchSorter(
  * ordering already matches for things like inserting shuffles and optimizing out redundant sorts
  * and as long as the plugin isn't acting differently then the CPU that should just work.
  */
-class GpuSortOrder(
+case class GpuSortOrder(
     child: Expression,
     direction: SortDirection,
     nullOrdering: NullOrdering,
     sameOrderExpressions: Set[Expression])
-  extends SortOrder(child, direction, nullOrdering, sameOrderExpressions) with GpuUnevaluable
+  extends GpuUnevaluableUnaryExpression {
+
+  /** Sort order is not foldable because we don't have an eval for it. */
+  override def foldable: Boolean = false
+
+  override def checkInputDataTypes(): TypeCheckResult = {
+    if (RowOrdering.isOrderable(dataType)) {
+      TypeCheckResult.TypeCheckSuccess
+    } else {
+      TypeCheckResult.TypeCheckFailure(s"cannot sort data type ${dataType.catalogString}")
+    }
+  }
+
+  override def dataType: DataType = child.dataType
+  override def nullable: Boolean = child.nullable
+
+  override def toString: String = s"$child ${direction.sql} ${nullOrdering.sql}"
+  override def sql: String = child.sql + " " + direction.sql + " " + nullOrdering.sql
+
+  def isAscending: Boolean = direction == Ascending
+
+  def toSortOrder: SortOrder = SortOrder(child, direction, nullOrdering, sameOrderExpressions)
+}
