@@ -422,7 +422,6 @@ object Main {
 
     val session = SparkSession.builder
       .appName("MortgageJob")
-      .enableHiveSupport()
       .getOrCreate()
 
     try {
