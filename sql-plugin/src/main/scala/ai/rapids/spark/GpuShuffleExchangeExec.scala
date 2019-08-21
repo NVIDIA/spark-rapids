@@ -79,7 +79,7 @@ case class GpuShuffleExchangeExec(
   /**
    * Caches the created ShuffleBatchRDD so we can reuse that.
    */
-  private var cachedShuffleRDD: ShuffledBatchRDD = _
+  private var cachedShuffleRDD: ShuffledBatchRDD = null
 
   protected override def doExecute(): RDD[InternalRow] =
     throw new IllegalStateException(s"Row-based execution should not occur for $this")
@@ -115,7 +115,7 @@ object GpuShuffleExchangeExec {
       rdd.mapPartitions { iter =>
         val getParts = getPartitioned
         new AbstractIterator[Product2[Int, ColumnarBatch]] {
-          private var partitioned : Array[(ColumnarBatch, Int)] = _
+          private var partitioned : Array[(ColumnarBatch, Int)] = null
           private var at = 0
           private val mutablePair = new MutablePair[Int, ColumnarBatch]()
           private def partNextBatch(): Unit = {

@@ -65,8 +65,8 @@ case class GpuColumnarToRowExec(child: SparkPlan) extends UnaryExecNode
       val toUnsafe = UnsafeProjection.create(localOutput, localOutput)
       new Iterator[InternalRow] {
         // GPU batches read in must be closed by the receiver (us)
-        @transient var cb: ColumnarBatch = _
-        var it: java.util.Iterator[InternalRow] = _
+        @transient var cb: ColumnarBatch = null
+        var it: java.util.Iterator[InternalRow] = null
 
         TaskContext.get().addTaskCompletionListener[Unit](_ => closeCurrentBatch())
 

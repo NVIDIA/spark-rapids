@@ -296,8 +296,6 @@ case class GpuRowToColumnarExec(child: SparkPlan) extends UnaryExecNode with Gpu
     TrampolineUtil.doExecuteBroadcast(child)
   }
 
-  override def supportsColumnar: Boolean = true
-
   override lazy val metrics: Map[String, SQLMetric] = Map(
     "numInputRows" -> SQLMetrics.createMetric(sparkContext, "number of input rows"),
     "numOutputBatches" -> SQLMetrics.createMetric(sparkContext, "number of output batches")
