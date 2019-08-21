@@ -26,12 +26,13 @@ import scala.collection.JavaConverters._
 import scala.collection.mutable.ArrayBuffer
 
 import ai.rapids.cudf.{ColumnVector, DType, HostMemoryBuffer, ORCOptions, Table, TimeUnit}
-import ai.rapids.spark.GpuOrcPartitionReader.OrcOutputStripe
+import ai.rapids.spark.GpuOrcPartitionReader.{OrcOutputStripe, OrcPartitionReaderContext}
 import com.google.protobuf25.CodedOutputStream
 import org.apache.commons.io.IOUtils
 import org.apache.hadoop.conf.Configuration
 import org.apache.hadoop.fs.{FileSystem, Path}
-import org.apache.orc.{CompressionKind, DataReader, OrcConf, OrcFile, OrcProto, PhysicalWriter, Reader, StripeInformation, TypeDescription}
+import org.apache.orc.{DataReader, OrcConf, OrcFile, OrcProto, PhysicalWriter, Reader, StripeInformation,
+TypeDescription}
 import org.apache.orc.impl.{BufferChunk, DataReaderProperties, OrcCodecPool, OutStream, RecordReaderImpl, RecordReaderUtils, SchemaEvolution}
 import org.apache.orc.impl.RecordReaderImpl.SargApplier
 import org.apache.orc.mapred.OrcInputFormat
@@ -122,6 +123,7 @@ case class GpuOrcPartitionReaderFactory(
     @transient rapidsConf: RapidsConf) extends FilePartitionReaderFactory {
   private val isCaseSensitive = sqlConf.caseSensitiveAnalysis
   private val debugDumpPrefix = rapidsConf.orcDebugDumpPrefix
+  private val maxReadBatchSize: Integer = rapidsConf.maxReadBatchSize
 
   override def supportColumnarReads(partition: InputPartition): Boolean = true
 
@@ -137,7 +139,7 @@ case class GpuOrcPartitionReaderFactory(
 
     val fullSchema = StructType(dataSchema ++ partitionSchema)
     val reader = new GpuOrcPartitionReader(conf, partFile, dataSchema, readDataSchema,
-      fullSchema, pushedFilters, debugDumpPrefix)
+      fullSchema, pushedFilters, debugDumpPrefix, maxReadBatchSize)
     ColumnarPartitionReaderWithPartitionValues.newReader(partFile, reader, partitionSchema)
   }
 }
@@ -163,6 +165,19 @@ object GpuOrcPartitionReader {
     OrcProto.Stream.Kind.BLOOM_FILTER,
     OrcProto.Stream.Kind.BLOOM_FILTER_UTF8,
     OrcProto.Stream.Kind.ROW_INDEX)
+
+  /**
+    * This class holds fields needed to read and iterate over the OrcFile
+    *
+    * @param updatedReadSchema read schema mapped to the file's field names
+    * @param evolution ORC SchemaEvolution
+    * @param dataReader ORC DataReader
+    * @param orcReader ORC Input File Reader
+    * @param blockIterator An iterator over the ORC output stripes
+    */
+  private case class OrcPartitionReaderContext(updatedReadSchema: TypeDescription,
+    evolution: SchemaEvolution, dataReader: DataReader, orcReader: Reader,
+    blockIterator: BufferedIterator[OrcOutputStripe])
 }
 
 /**
@@ -185,16 +200,42 @@ class GpuOrcPartitionReader(
     readDataSchema: StructType,
     fullSchema: StructType,
     pushedFilters: Array[Filter],
-    debugDumpPrefix: String) extends PartitionReader[ColumnarBatch] with Logging {
+    debugDumpPrefix: String,
+    maxReadBatchSize: Integer) extends PartitionReader[ColumnarBatch] with Logging {
   private var batch: Option[ColumnarBatch] = None
-  private var isExhausted: Boolean = false
+  private val ctx = initializeOrcReaders
+
+  private def initializeOrcReaders: OrcPartitionReaderContext = {
+    val filePath = new Path(new URI(partFile.filePath))
+    val fs = filePath.getFileSystem(conf)
+    val orcFileReaderOpts = OrcFile.readerOptions(conf).filesystem(fs)
+    val orcReader = OrcFile.createReader(filePath, orcFileReaderOpts)
+    val readerOpts = OrcInputFormat.buildOptions(
+      conf, orcReader, partFile.start, partFile.length)
+    // create the search argument if we have pushed filters
+    OrcFilters.createFilter(fullSchema, pushedFilters).foreach { f =>
+      readerOpts.searchArgument(f, fullSchema.fieldNames)
+    }
+    val updatedReadSchema = checkSchemaCompatibility(
+      orcReader.getSchema, readerOpts.getSchema,
+      readerOpts.getIsSchemaEvolutionCaseAware)
+    val evolution = new SchemaEvolution(orcReader.getSchema, readerOpts.getSchema, readerOpts)
+    val dataReader = getDataReader(orcReader, readerOpts, filePath, fs, conf)
+    val (sargApp, sargColumns) = getSearchApplier(orcReader, readerOpts, evolution,
+      orcFileReaderOpts.getUseUTCTimestamp)
+    val splitStripes = orcReader.getStripes.asScala.filter(s =>
+      s.getOffset >= partFile.start && s.getOffset < partFile.start + partFile.length)
+    val stripes = buildOutputStripes(splitStripes, evolution,
+      sargApp, sargColumns, OrcConf.IGNORE_NON_UTF8_BLOOM_FILTERS.getBoolean(conf),
+      orcReader.getWriterVersion, dataReader)
+    OrcPartitionReaderContext(updatedReadSchema, evolution, dataReader, orcReader,
+      stripes.iterator.buffered)
+  }
 
   override def next(): Boolean = {
     batch.foreach(_.close())
     batch = None
-    if (!isExhausted) {
-      // We only support a single batch
-      isExhausted = true
+    if (ctx.blockIterator.hasNext) {
       batch = readBatch()
     }
     batch.isDefined
@@ -209,27 +250,17 @@ class GpuOrcPartitionReader(
   override def close(): Unit = {
     batch.foreach(_.close())
     batch = None
-    isExhausted = true
+    ctx.dataReader.close()
   }
 
   private def readBatch(): Option[ColumnarBatch] = {
-    val filePath = new Path(new URI(partFile.filePath))
-    val fs = filePath.getFileSystem(conf)
-    val orcFileReaderOpts = OrcFile.readerOptions(conf).filesystem(fs)
-    val orcReader = OrcFile.createReader(filePath, orcFileReaderOpts)
-    val splitStripes = orcReader.getStripes.asScala.filter(s =>
-      s.getOffset >= partFile.start && s.getOffset < partFile.start + partFile.length)
-
+    val currentStripes = populateCurrentBlockChunk()
     if (readDataSchema.isEmpty) {
       // not reading any data, so return a degenerate ColumnarBatch with the row count
-      val numRows = splitStripes.map(_.getNumberOfRows).sum
-      if (numRows > Integer.MAX_VALUE) {
-        throw new UnsupportedOperationException(s"Too many rows in split $partFile")
-      }
+      val numRows = currentStripes.map(_.infoBuilder.getNumberOfRows).sum
       Some(new ColumnarBatch(Array.empty, numRows.toInt))
     } else {
-      val table = readToTable(filePath, fs, orcReader, splitStripes,
-        orcFileReaderOpts.getUseUTCTimestamp)
+      val table = readToTable(currentStripes)
       try {
         table.map(GpuColumnVector.from)
       } finally {
@@ -371,9 +402,7 @@ class GpuOrcPartitionReader(
     OrcOutputStripe(infoBuilder, outputStripeFooter, rangeCreator.get)
   }
 
-  private def estimateOutputSize(
-      stripes: Seq[GpuOrcPartitionReader.OrcOutputStripe],
-      inputTail: OrcProto.FileTail): Long = {
+  private def estimateOutputSize(stripes: Seq[OrcOutputStripe]): Long = {
     // start with header magic
     var size: Long = OrcFile.MAGIC.length
 
@@ -386,8 +415,8 @@ class GpuOrcPartitionReader(
     }
 
     // the original file's footer and postscript should be worst-case
-    size += inputTail.getPostscript.getFooterLength
-    size += inputTail.getPostscriptLength
+    size += ctx.orcReader.getFileTail.getPostscript.getFooterLength
+    size += ctx.orcReader.getFileTail.getPostscriptLength
 
     // and finally the single-byte postscript length at the end of the file
     size += 1
@@ -414,12 +443,7 @@ class GpuOrcPartitionReader(
 
   private def writeOrcOutputFile(
       rawOut: HostMemoryOutputStream,
-      schema: TypeDescription,
-      stripes: Seq[GpuOrcPartitionReader.OrcOutputStripe],
-      compression: CompressionKind,
-      bufferSize: Int,
-      inputPostScript: OrcProto.PostScript,
-      dataReader: DataReader): Unit = {
+      stripes: Seq[OrcOutputStripe]): Unit = {
     val outChannel = Channels.newChannel(rawOut)
     val outReceiver = new PhysicalWriter.OutputReceiver {
       override def output(buffer: ByteBuffer): Unit = outChannel.write(buffer)
@@ -432,9 +456,10 @@ class GpuOrcPartitionReader(
     dataOut.writeBytes(OrcFile.MAGIC)
     dataOut.flush()
 
-    val codec = OrcCodecPool.getCodec(compression)
+    val codec = OrcCodecPool.getCodec(ctx.orcReader.getCompressionKind)
     try {
-      val codecStream = new OutStream(getClass.getSimpleName, bufferSize, codec, outReceiver)
+      val codecStream = new OutStream(getClass.getSimpleName, ctx.orcReader.getCompressionSize,
+        codec, outReceiver)
       val protoWriter = CodedOutputStream.newInstance(codecStream)
       var numRows = 0L
       val fileFooterBuilder = OrcProto.Footer.newBuilder
@@ -442,7 +467,7 @@ class GpuOrcPartitionReader(
       // write the stripes
       stripes.foreach { stripe =>
         stripe.infoBuilder.setOffset(rawOut.getPos)
-        copyStripeData(outChannel, stripe.inputDataRanges, dataReader)
+        copyStripeData(outChannel, stripe.inputDataRanges, ctx.dataReader)
         val stripeFooterStartOffset = rawOut.getPos
         stripe.footer.writeTo(protoWriter)
         protoWriter.flush()
@@ -452,14 +477,10 @@ class GpuOrcPartitionReader(
         numRows += stripe.infoBuilder.getNumberOfRows
       }
 
-      if (numRows > Integer.MAX_VALUE) {
-        throw new UnsupportedOperationException(s"Too many rows in split $partFile")
-      }
-
       // write the footer
       val footer = fileFooterBuilder.setHeaderLength(OrcFile.MAGIC.length)
           .setContentLength(rawOut.getPos)
-          .addAllTypes(org.apache.orc.OrcUtils.getOrcTypes(schema))
+          .addAllTypes(org.apache.orc.OrcUtils.getOrcTypes(ctx.evolution.getReaderSchema))
           .setNumberOfRows(numRows)
           .build()
       val footerStartOffset = rawOut.getPos
@@ -469,7 +490,7 @@ class GpuOrcPartitionReader(
       val postScriptStartOffset = rawOut.getPos
 
       // write the postscript (uncompressed)
-      val postscript = OrcProto.PostScript.newBuilder(inputPostScript)
+      val postscript = OrcProto.PostScript.newBuilder(ctx.orcReader.getFileTail.getPostscript)
           .setFooterLength(postScriptStartOffset - footerStartOffset)
           .setMetadataLength(0)
           .build()
@@ -480,7 +501,7 @@ class GpuOrcPartitionReader(
       }
       rawOut.write(postScriptLength.toInt)
     } finally {
-      OrcCodecPool.returnCodec(compression, codec)
+      OrcCodecPool.returnCodec(ctx.orcReader.getCompressionKind, codec)
     }
   }
 
@@ -584,60 +605,30 @@ class GpuOrcPartitionReader(
     }
   }
 
-  private def readPartFile(
-      filePath: Path,
-      fs: FileSystem,
-      orcReader: Reader,
-      readerOpts: Reader.Options,
-      splitStripes: Seq[StripeInformation],
-      useUTCTimestamp: Boolean): (HostMemoryBuffer, Long) = {
-    val evolution = new SchemaEvolution(orcReader.getSchema, readerOpts.getSchema, readerOpts)
-    val (sargApp, sargColumns) = getSearchApplier(orcReader, readerOpts, evolution, useUTCTimestamp)
-    val dataReader = getDataReader(orcReader, readerOpts, filePath, fs, conf)
-    try {
-      val stripes = buildOutputStripes(splitStripes, evolution,
-        sargApp, sargColumns, OrcConf.IGNORE_NON_UTF8_BLOOM_FILTERS.getBoolean(conf),
-        orcReader.getWriterVersion, dataReader)
-      if (stripes.isEmpty) {
-        return (null, 0L)
-      }
-      val hostBufferSize = estimateOutputSize(stripes, orcReader.getFileTail)
+  private def readPartFile(stripes: Seq[OrcOutputStripe]):
+    (HostMemoryBuffer, Long) = {
+    if (stripes.isEmpty) {
+      return (null, 0L)
+    }
+    val hostBufferSize = estimateOutputSize(stripes)
 
-      var succeeded = false
-      val hmb = HostMemoryBuffer.allocate(hostBufferSize)
-      try {
-        val out = new HostMemoryOutputStream(hmb)
-        writeOrcOutputFile(out, evolution.getReaderSchema, stripes, orcReader.getCompressionKind,
-          orcReader.getCompressionSize, orcReader.getFileTail.getPostscript, dataReader)
-        succeeded = true
-        (hmb, out.getPos)
-      } finally {
-        if (!succeeded) {
-          hmb.close()
-        }
-      }
+    var succeeded = false
+    val hmb = HostMemoryBuffer.allocate(hostBufferSize)
+    try {
+      val out = new HostMemoryOutputStream(hmb)
+      writeOrcOutputFile(out, stripes)
+      succeeded = true
+      (hmb, out.getPos)
     } finally {
-      dataReader.close()
+      if (!succeeded) {
+        hmb.close()
+      }
     }
   }
 
-  private def readToTable(
-      filePath: Path,
-      fs: FileSystem,
-      orcReader: Reader,
-      splitStripes: Seq[StripeInformation],
-      useUTCTimestamp: Boolean): Option[Table] = {
-    val readerOpts = OrcInputFormat.buildOptions(conf, orcReader, partFile.start, partFile.length)
-    // create the search argument if we have pushed filters
-    OrcFilters.createFilter(fullSchema, pushedFilters).foreach { f =>
-      readerOpts.searchArgument(f, fullSchema.fieldNames)
-    }
+  private def readToTable(stripes: Seq[OrcOutputStripe]): Option[Table] = {
 
-    val updatedReadSchema = checkSchemaCompatibility(orcReader.getSchema, readerOpts.getSchema,
-      readerOpts.getIsSchemaEvolutionCaseAware)
-
-    val (dataBuffer, dataSize) = readPartFile(filePath, fs, orcReader, readerOpts,
-      splitStripes, useUTCTimestamp)
+    val (dataBuffer, dataSize) = readPartFile(stripes)
     try {
       if (dataSize == 0) {
         None
@@ -645,7 +636,7 @@ class GpuOrcPartitionReader(
         if (debugDumpPrefix != null) {
           dumpOrcData(dataBuffer, dataSize)
         }
-        val includedColumns = updatedReadSchema.getFieldNames.asScala
+        val includedColumns = ctx.updatedReadSchema.getFieldNames.asScala
         val parseOpts = ORCOptions.builder().withNumPyTypes(false)
             .includeColumn(includedColumns:_*).build()
         val table = Table.readORC(parseOpts, dataBuffer, 0, dataSize)
@@ -662,6 +653,25 @@ class GpuOrcPartitionReader(
         dataBuffer.close()
       }
     }
+  }
+
+  private def populateCurrentBlockChunk(): Seq[OrcOutputStripe] = {
+    val currentChunk = new ArrayBuffer[OrcOutputStripe]
+    if (ctx.blockIterator.hasNext) {
+      // return at least one block even if it is larger than the configured limit
+      currentChunk += ctx.blockIterator.next
+      var numRows = currentChunk.head.infoBuilder.getNumberOfRows
+      if (numRows > Integer.MAX_VALUE) {
+        throw new UnsupportedOperationException("Too many rows in split")
+      }
+
+      while (ctx.blockIterator.hasNext
+        && ctx.blockIterator.head.infoBuilder.getNumberOfRows + numRows <= maxReadBatchSize) {
+        currentChunk += ctx.blockIterator.next
+        numRows += currentChunk.last.infoBuilder.getNumberOfRows
+      }
+    }
+    currentChunk
   }
 
   // The GPU ORC reader always returns timestamps in milliseconds.
