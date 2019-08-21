@@ -19,10 +19,8 @@ package ai.rapids.spark
 import java.util.TimeZone
 
 import scala.reflect.ClassTag
-
 import ai.rapids.cudf.{Cuda, Rmm, RmmAllocationMode}
 import ai.rapids.spark
-
 import org.apache.spark.internal.Logging
 import org.apache.spark.sql.SparkSessionExtensions
 import org.apache.spark.sql.catalyst.expressions._
@@ -41,6 +39,7 @@ import org.apache.spark.sql.sources.v2.reader.Scan
 import org.apache.spark.sql.types._
 import org.apache.spark.{ExecutorPlugin, SparkEnv}
 import org.apache.spark.sql.execution.joins.{BroadcastHashJoinExec, BuildLeft, BuildRight, ShuffledHashJoinExec, SortMergeJoinExec}
+import org.apache.spark.sql.rapids.{GpuAggregateExpression, GpuAggregateFunction, GpuAverage, GpuCount, GpuFirst, GpuLast, GpuMax, GpuMin, GpuSum}
 
 trait GpuExec extends SparkPlan {
   override def supportsColumnar = true
