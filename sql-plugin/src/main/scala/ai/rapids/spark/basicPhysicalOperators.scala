@@ -21,7 +21,7 @@ import ai.rapids.cudf.DType
 
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.expressions.{Attribute, AttributeReference, Expression, IsNotNull, NamedExpression, NullIntolerant, PredicateHelper, SortOrder}
-import org.apache.spark.sql.execution.{ProjectExec, SparkPlan, TrampolineUtil, UnaryExecNode}
+import org.apache.spark.sql.execution.{SparkPlan, TrampolineUtil, UnaryExecNode}
 import org.apache.spark.sql.vectorized.{ColumnarBatch, ColumnVector}
 import scala.collection.mutable.ArrayBuffer
 
@@ -50,11 +50,19 @@ object GpuProjectExec {
   }
 }
 
-class GpuProjectExec(projectList: Seq[GpuExpression], child: SparkPlan)
-  extends ProjectExec(projectList.asInstanceOf[Seq[NamedExpression]], child) with GpuExec {
+case class GpuProjectExec(projectList: Seq[GpuExpression], child: SparkPlan)
+  extends UnaryExecNode with GpuExec {
 
-  // Disable code generation for now...
-  override def supportCodegen: Boolean = false
+  private val sparkProjectList = projectList.asInstanceOf[Seq[NamedExpression]]
+
+  override def output: Seq[Attribute] = sparkProjectList.map(_.toAttribute)
+
+  override def outputOrdering: Seq[SortOrder] = child.outputOrdering
+
+  override def outputPartitioning: Partitioning = child.outputPartitioning
+
+  override def doExecute(): RDD[InternalRow] =
+    throw new IllegalStateException("Row-based execution should not occur for this class")
 
   override def doExecuteColumnar() : RDD[ColumnarBatch] = {
     val boundProjectList = GpuBindReferences.bindReferences(projectList, child.output)
