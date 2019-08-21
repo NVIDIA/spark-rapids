@@ -196,7 +196,8 @@ case class GpuMax(child: Expression) extends GpuDeclarativeAggregate {
     TypeUtils.checkForOrderingExpr(child.dataType, "function gpu max")
 }
 
-case class GpuSum(child: Expression) extends GpuDeclarativeAggregate with ImplicitCastInputTypes {
+case class GpuSum(child: Expression)
+  extends GpuDeclarativeAggregate with ImplicitCastInputTypes {
   private lazy val resultType = child.dataType match {
     case _: DoubleType => DoubleType
     case _ => LongType
@@ -284,7 +285,8 @@ case class GpuAverage(child: Expression) extends GpuDeclarativeAggregate {
  * So this adds a "max" of that, and currently sends it to the GPU. The CPU version uses it
  * to check if the value was set (if we don't ignore nulls, valueSet is true, that's what we do here).
  */
-case class GpuFirst(child: Expression, ignoreNullsExpr: Expression) extends GpuDeclarativeAggregate with ImplicitCastInputTypes {
+case class GpuFirst(child: Expression, ignoreNullsExpr: Expression)
+  extends GpuDeclarativeAggregate with ImplicitCastInputTypes {
   private lazy val cudfMax = new GpuAttributeReference("cudf_max", child.dataType)()
   private lazy val valueSet = new GpuAttributeReference("valueSet", BooleanType)()
 
@@ -322,7 +324,8 @@ case class GpuFirst(child: Expression, ignoreNullsExpr: Expression) extends GpuD
   override def toString: String = s"gpufirst($child)${if (ignoreNulls) " ignore nulls"}"
 }
 
-case class GpuLast(child: Expression, ignoreNullsExpr: Expression) extends GpuDeclarativeAggregate {
+case class GpuLast(child: Expression, ignoreNullsExpr: Expression)
+  extends GpuDeclarativeAggregate with ImplicitCastInputTypes {
   private lazy val cudfMax = new GpuAttributeReference("cudf_max", child.dataType)()
   private lazy val valueSet = new GpuAttributeReference("valueSet", BooleanType)()
 
@@ -338,7 +341,7 @@ case class GpuLast(child: Expression, ignoreNullsExpr: Expression) extends GpuDe
     new GpuLiteral(false, BooleanType))
 
   // Copied from Last
-  // protected: SQL override def inputTypes: Seq[AbstractDataType] = Seq(AnyDataType, BooleanType)
+  override def inputTypes: Seq[AbstractDataType] = Seq(AnyDataType, BooleanType)
   override def nullable: Boolean = true
   override def dataType: DataType = child.dataType
   override def children: Seq[Expression] = child :: ignoreNullsExpr :: Nil
