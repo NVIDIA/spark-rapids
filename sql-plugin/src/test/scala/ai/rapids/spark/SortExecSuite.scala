@@ -60,11 +60,11 @@ class SortExecSuite extends SparkQueryCompareTestSuite {
     dataType <- DataTypeTestUtils.atomicTypes ++ Set(NullType) -- Set(FloatType, StringType, NullType, DoubleType, DecimalType.USER_DEFAULT,
       DecimalType(20, 5), DecimalType.SYSTEM_DEFAULT, BinaryType);
     nullable <- Seq(true, false);
-    sortOrder <- Seq('a.asc :: Nil, 'a.asc_nullsLast :: Nil, 'a.desc :: Nil, 'a.desc_nullsFirst :: Nil)
+    sortOrder <- Seq(col("a").asc, col("a").asc_nulls_last, col("a").desc, col("a").desc_nulls_first)
   ) {
     val inputDf = generateData(dataType, nullable, 10)
     testSparkResultsAreEqual(s"sorting on $dataType with nullable=$nullable, sortOrder=$sortOrder",  inputDf, allowNonGpu=false, execsAllowedNonGpu = Seq("RDDScanExec", "AttributeReference")) {
-      frame => frame.sortWithinPartitions("a")
+      frame => frame.sortWithinPartitions(sortOrder)
     }
   }
 
