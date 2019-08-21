@@ -24,7 +24,11 @@ pipeline {
     agent {label 'vanilla'}
 
     triggers {
-        cron('H 3 * * *')
+        cron('H/15 * * * *')
+    }
+
+    options {
+        buildDiscarder(logRotator(numToKeepStr: '6'))
     }
 
     parameters
