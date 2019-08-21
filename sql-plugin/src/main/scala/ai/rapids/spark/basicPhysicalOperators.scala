@@ -20,10 +20,14 @@ import ai.rapids.cudf
 import ai.rapids.cudf.DType
 
 import org.apache.spark.rdd.RDD
-import org.apache.spark.sql.catalyst.expressions.{Expression, NamedExpression}
-import org.apache.spark.sql.execution.{FilterExec, ProjectExec, SparkPlan, UnionExec}
+import org.apache.spark.sql.catalyst.expressions.{Attribute, Expression, IsNotNull, NamedExpression, NullIntolerant, PredicateHelper, SortOrder}
+import org.apache.spark.sql.execution.{ProjectExec, SparkPlan, UnaryExecNode, UnionExec}
 import org.apache.spark.sql.vectorized.{ColumnarBatch, ColumnVector}
 import scala.collection.mutable.ArrayBuffer
+
+import org.apache.spark.sql.catalyst.InternalRow
+import org.apache.spark.sql.catalyst.plans.physical.Partitioning
+import org.apache.spark.sql.execution.metric.SQLMetrics
 
 object GpuProjectExec {
   def projectAndClose[A <: GpuExpression](cb: ColumnarBatch, boundExprs: Seq[A]): ColumnarBatch =
@@ -59,11 +63,43 @@ class GpuProjectExec(projectList: Seq[GpuExpression], child: SparkPlan)
   }
 }
 
-class GpuFilterExec(condition: Expression, child: SparkPlan)
-  extends FilterExec(condition, child) with GpuExec {
+case class GpuFilterExec(condition: Expression, child: SparkPlan)
+  extends UnaryExecNode with PredicateHelper with GpuExec {
 
-  // Disable code generation for now...
-  override def supportCodegen: Boolean = false
+  // Split out all the IsNotNulls from condition.
+  private val (notNullPreds, _) = splitConjunctivePredicates(condition).partition {
+    case IsNotNull(a) => isNullIntolerant(a) && a.references.subsetOf(child.outputSet)
+    case _ => false
+  }
+
+  // If one expression and its children are null intolerant, it is null intolerant.
+  private def isNullIntolerant(expr: Expression): Boolean = expr match {
+    case e: NullIntolerant => e.children.forall(isNullIntolerant)
+    case _ => false
+  }
+
+  // The columns that will filtered out by `IsNotNull` could be considered as not nullable.
+  private val notNullAttributes = notNullPreds.flatMap(_.references).distinct.map(_.exprId)
+
+  override def output: Seq[Attribute] = {
+    child.output.map { a =>
+      if (a.nullable && notNullAttributes.contains(a.exprId)) {
+        a.withNullability(false)
+      } else {
+        a
+      }
+    }
+  }
+
+  override def outputOrdering: Seq[SortOrder] = child.outputOrdering
+
+  override def outputPartitioning: Partitioning = child.outputPartitioning
+
+  override lazy val metrics = Map(
+    "numOutputRows" -> SQLMetrics.createMetric(sparkContext, "number of output rows"))
+
+  override protected def doExecute(): RDD[InternalRow] =
+    throw new IllegalStateException("Row-based execution should not occur for this class")
 
   override def doExecuteColumnar(): RDD[ColumnarBatch] = {
     val numOutputRows = longMetric("numOutputRows")
@@ -80,7 +116,7 @@ class GpuFilterExec(condition: Expression, child: SparkPlan)
           col.getBase.getType match {
             // filter does not work on strings, so turn them to categories
             // TODO we need a faster way to work with these values!!!
-            case DType.STRING => {
+            case DType.STRING =>
               val catCv = col.getBase.asStringCategories
               var successFrom = false
               try {
@@ -88,10 +124,9 @@ class GpuFilterExec(condition: Expression, child: SparkPlan)
                 successFrom = true
               } finally {
                 if (!successFrom) {
-                  catCv.close
+                  catCv.close()
                 }
               }
-            }
             case _ => cols += col.incRefCount()
           }
         }
@@ -101,15 +136,14 @@ class GpuFilterExec(condition: Expression, child: SparkPlan)
           // this foreach will not throw
           cols.foreach(col => {
             try {
-              col.close
+              col.close()
             } catch {
-              case t: Throwable => {
+              case t: Throwable =>
                 if (error == null) {
                   error = t
                 } else {
                   error.addSuppressed(t)
                 }
-              }
             }
           })
         }
@@ -134,16 +168,15 @@ class GpuFilterExec(condition: Expression, child: SparkPlan)
         (Seq(filtered, tbl, filterConditionCv, batch) ++ cols).foreach (toClose => {
           try {
             if (toClose != null) {
-              toClose.close
+              toClose.close()
             }
           } catch {
-            case t: Throwable => {
+            case t: Throwable =>
               if (error == null) {
                 error = t
               } else {
                 error.addSuppressed(t)
               }
-            }
           }
         })
         if (error != null) {
