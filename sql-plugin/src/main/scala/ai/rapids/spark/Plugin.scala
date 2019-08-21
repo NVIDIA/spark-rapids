@@ -19,10 +19,8 @@ package ai.rapids.spark
 import java.util.TimeZone
 
 import scala.reflect.ClassTag
-
 import ai.rapids.cudf.{Cuda, Rmm, RmmAllocationMode}
 import ai.rapids.spark
-
 import org.apache.spark.internal.Logging
 import org.apache.spark.sql.SparkSessionExtensions
 import org.apache.spark.sql.catalyst.expressions._
@@ -41,6 +39,7 @@ import org.apache.spark.sql.sources.v2.reader.Scan
 import org.apache.spark.sql.types._
 import org.apache.spark.{ExecutorPlugin, SparkEnv}
 import org.apache.spark.sql.execution.joins.{BroadcastHashJoinExec, BuildLeft, BuildRight, ShuffledHashJoinExec, SortMergeJoinExec}
+import org.apache.spark.sql.rapids.{GpuAggregateExpression, GpuAggregateFunction, GpuAverage, GpuCount, GpuFirst, GpuLast, GpuMax, GpuMin, GpuSum}
 
 trait GpuExec extends SparkPlan {
   override def supportsColumnar = true
@@ -780,16 +779,15 @@ object GpuOverrides {
       .desc("The backend for the union operator")
       .build(),
     exec[HashAggregateExec]
-      .convert((hashAgg, overrides) => {
-        new GpuHashAggregateExec(
+      .convert((hashAgg, overrides) =>
+        GpuHashAggregateExec(
           hashAgg.requiredChildDistributionExpressions.map(_.map(overrides.replaceWithGpuExpression)),
           hashAgg.groupingExpressions.map(overrides.replaceWithGpuExpression),
           hashAgg.aggregateExpressions.map(overrides.replaceWithGpuExpression).asInstanceOf[Seq[GpuAggregateExpression]],
           hashAgg.aggregateAttributes.map(overrides.replaceWithGpuExpression).asInstanceOf[Seq[GpuAttributeReference]],
           hashAgg.initialInputBufferOffset,
-          hashAgg.resultExpressions.map(overrides.replaceWithGpuExpression),
-          overrides.replaceWithGpuPlan(hashAgg.child))
-      })
+          hashAgg.resultExpressions.map(overrides.replaceWithGpuExpression).asInstanceOf[Seq[NamedExpression]],
+          overrides.replaceWithGpuPlan(hashAgg.child)))
       .assertIsAllowed((hashAgg, conf) => {
         // The StringType check was added due to core dump in the latest branch while running the mortgage tests
         // in ~NVStrings.
@@ -874,17 +872,17 @@ object GpuOverrides {
           throw new CannotReplaceException("only count(*) or count(1) supported")
         })
       .convert((count, overrides) =>
-        new GpuCount(count.children.map(overrides.replaceWithGpuExpression)))
+        GpuCount(count.children.map(overrides.replaceWithGpuExpression)))
       .desc("count aggregate operator")
       .build(),
     agg[Max]
       .convert((max, overrides) =>
-        new GpuMax(overrides.replaceWithGpuExpression(max.child)))
+        GpuMax(overrides.replaceWithGpuExpression(max.child)))
       .desc("max aggregate operator")
       .build(),
     agg[Min]
       .convert((min, overrides) =>
-        new GpuMin(overrides.replaceWithGpuExpression(min.child)))
+        GpuMin(overrides.replaceWithGpuExpression(min.child)))
       .desc("min aggregate operator")
       .build(),
     agg[First]
@@ -893,8 +891,8 @@ object GpuOverrides {
           throw new CannotReplaceException("including nulls is not supported, use first(col, true)")
         })
       .convert((first, overrides) =>
-        new GpuFirst(overrides.replaceWithGpuExpression(first.child),
-          isIgnoreNulls = overrides.replaceWithGpuExpression(first.ignoreNullsExpr)))
+        GpuFirst(overrides.replaceWithGpuExpression(first.child),
+          ignoreNullsExpr = overrides.replaceWithGpuExpression(first.ignoreNullsExpr)))
       .desc("first aggregate operator")
       .build(),
     agg[Last]
@@ -903,18 +901,18 @@ object GpuOverrides {
           throw new CannotReplaceException("including nulls is not supported, use last(col, true)")
         })
       .convert((last, overrides) =>
-        new GpuLast(overrides.replaceWithGpuExpression(last.child),
-          isIgnoreNulls = overrides.replaceWithGpuExpression(last.ignoreNullsExpr)))
+        GpuLast(overrides.replaceWithGpuExpression(last.child),
+          ignoreNullsExpr = overrides.replaceWithGpuExpression(last.ignoreNullsExpr)))
       .desc("last aggregate operator")
       .build(),
     agg[Sum]
       .convert((sum, overrides) =>
-        new GpuSum(overrides.replaceWithGpuExpression(sum.child)))
+        GpuSum(overrides.replaceWithGpuExpression(sum.child)))
       .desc("sum aggregate operator")
       .build(),
     agg[Average]
       .convert((avg, overrides) =>
-        new GpuAverage(overrides.replaceWithGpuExpression(avg.child)))
+        GpuAverage(overrides.replaceWithGpuExpression(avg.child)))
       .desc("average aggregate operator")
       .build(),
   )
