@@ -82,7 +82,7 @@ case class GpuShuffleExchangeExec(
   private var cachedShuffleRDD: ShuffledBatchRDD = _
 
   protected override def doExecute(): RDD[InternalRow] =
-    throw new IllegalStateException("Row-based execution should not occur for this class")
+    throw new IllegalStateException(s"Row-based execution should not occur for $this")
 
   protected override def doExecuteColumnar(): RDD[ColumnarBatch] = attachTree(this, "execute") {
     // Returns the same ShuffleRowRDD if this plan is used by multiple plans.

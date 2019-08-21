@@ -62,7 +62,7 @@ case class GpuProjectExec(projectList: Seq[GpuExpression], child: SparkPlan)
   override def outputPartitioning: Partitioning = child.outputPartitioning
 
   override def doExecute(): RDD[InternalRow] =
-    throw new IllegalStateException("Row-based execution should not occur for this class")
+    throw new IllegalStateException(s"Row-based execution should not occur for $this")
 
   override def doExecuteColumnar() : RDD[ColumnarBatch] = {
     val boundProjectList = GpuBindReferences.bindReferences(projectList, child.output)
@@ -107,7 +107,7 @@ case class GpuFilterExec(condition: Expression, child: SparkPlan)
     "numOutputRows" -> SQLMetrics.createMetric(sparkContext, "number of output rows"))
 
   override def doExecute(): RDD[InternalRow] =
-    throw new IllegalStateException("Row-based execution should not occur for this class")
+    throw new IllegalStateException(s"Row-based execution should not occur for $this")
 
   override def doExecuteColumnar(): RDD[ColumnarBatch] = {
     val numOutputRows = longMetric("numOutputRows")
@@ -214,7 +214,7 @@ case class GpuUnionExec(children: Seq[SparkPlan]) extends SparkPlan with GpuExec
   }
 
   override def doExecute(): RDD[InternalRow] =
-    throw new IllegalStateException("Row-based execution should not occur for this class")
+    throw new IllegalStateException(s"Row-based execution should not occur for $this")
 
   override def doExecuteColumnar(): RDD[ColumnarBatch] =
     sparkContext.union(children.map(_.executeColumnar()))
