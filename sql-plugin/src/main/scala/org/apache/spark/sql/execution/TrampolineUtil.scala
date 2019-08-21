@@ -19,13 +19,14 @@ package org.apache.spark.sql.execution
 import org.apache.spark.broadcast.Broadcast
 import org.apache.spark.sql.catalyst.plans.physical.BroadcastMode
 import org.apache.spark.sql.execution.joins.HashedRelationBroadcastMode
+import org.apache.spark.sql.types.{DataType, StructType}
 
 object TrampolineUtil {
-  def doExecuteBroadcast[T](child: SparkPlan): Broadcast[T] = {
-    child.doExecuteBroadcast()
-  }
+  def doExecuteBroadcast[T](child: SparkPlan): Broadcast[T] = child.doExecuteBroadcast()
 
   def isHashedRelation(mode: BroadcastMode): Boolean = {
     mode.isInstanceOf[HashedRelationBroadcastMode]
   }
+
+  def structTypeMerge(left: DataType, right: DataType): DataType = StructType.merge(left, right)
 }

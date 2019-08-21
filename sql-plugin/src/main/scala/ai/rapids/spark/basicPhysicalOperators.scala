@@ -20,8 +20,8 @@ import ai.rapids.cudf
 import ai.rapids.cudf.DType
 
 import org.apache.spark.rdd.RDD
-import org.apache.spark.sql.catalyst.expressions.{Attribute, Expression, IsNotNull, NamedExpression, NullIntolerant, PredicateHelper, SortOrder}
-import org.apache.spark.sql.execution.{ProjectExec, SparkPlan, UnaryExecNode, UnionExec}
+import org.apache.spark.sql.catalyst.expressions.{Attribute, AttributeReference, Expression, IsNotNull, NamedExpression, NullIntolerant, PredicateHelper, SortOrder}
+import org.apache.spark.sql.execution.{ProjectExec, SparkPlan, TrampolineUtil, UnaryExecNode}
 import org.apache.spark.sql.vectorized.{ColumnarBatch, ColumnVector}
 import scala.collection.mutable.ArrayBuffer
 
@@ -98,7 +98,7 @@ case class GpuFilterExec(condition: Expression, child: SparkPlan)
   override lazy val metrics = Map(
     "numOutputRows" -> SQLMetrics.createMetric(sparkContext, "number of output rows"))
 
-  override protected def doExecute(): RDD[InternalRow] =
+  override def doExecute(): RDD[InternalRow] =
     throw new IllegalStateException("Row-based execution should not occur for this class")
 
   override def doExecuteColumnar(): RDD[ColumnarBatch] = {
@@ -189,7 +189,25 @@ case class GpuFilterExec(condition: Expression, child: SparkPlan)
   }
 }
 
-class GpuUnionExec(children: Seq[SparkPlan]) extends UnionExec(children) with GpuExec {
+case class GpuUnionExec(children: Seq[SparkPlan]) extends SparkPlan with GpuExec {
+  // updating nullability to make all the children consistent
+  override def output: Seq[Attribute] = {
+    children.map(_.output).transpose.map { attrs =>
+      val firstAttr = attrs.head
+      val nullable = attrs.exists(_.nullable)
+      val newDt = attrs.map(_.dataType).reduce(TrampolineUtil.structTypeMerge)
+      if (firstAttr.dataType == newDt) {
+        firstAttr.withNullability(nullable)
+      } else {
+        AttributeReference(firstAttr.name, newDt, nullable, firstAttr.metadata)(
+          firstAttr.exprId, firstAttr.qualifier)
+      }
+    }
+  }
+
+  override def doExecute(): RDD[InternalRow] =
+    throw new IllegalStateException("Row-based execution should not occur for this class")
+
   override def doExecuteColumnar(): RDD[ColumnarBatch] =
     sparkContext.union(children.map(_.executeColumnar()))
 }
