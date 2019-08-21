@@ -41,12 +41,6 @@ case class GpuAggregateExpression(aggregateFunction: GpuAggregateFunction,
                                   isDistinct: Boolean,
                                   resultId: ExprId)
   extends GpuExpression with GpuUnevaluable {
-  override def equals(other: Any): Boolean = {
-    if (!super.equals(other)) {
-      return false
-    }
-    other.isInstanceOf[GpuAggregateExpression]
-  }
 
   //
   // Overrides form AggregateExpression
