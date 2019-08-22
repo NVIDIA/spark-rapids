@@ -25,6 +25,27 @@ import org.apache.spark.sql.execution.{FilterExec, ProjectExec, SparkPlan, Union
 import org.apache.spark.sql.vectorized.{ColumnarBatch, ColumnVector}
 import scala.collection.mutable.ArrayBuffer
 
+object GpuProjectExec {
+  def projectAndClose[A <: GpuExpression](cb: ColumnarBatch, boundExprs: Seq[A]): ColumnarBatch =
+    try {
+      project(cb, boundExprs)
+    } finally {
+      cb.close()
+    }
+
+  def project[A <: GpuExpression](cb: ColumnarBatch, boundExprs: Seq[A]): ColumnarBatch = {
+    val newColumns = boundExprs.map(
+      expr => {
+        val result = expr.asInstanceOf[GpuExpression].columnarEval(cb)
+        result match {
+          case cv: ColumnVector => cv
+          case other => GpuColumnVector.from(GpuScalar.from(other), cb.numRows())
+        }
+      }).toArray
+    new ColumnarBatch(newColumns, cb.numRows())
+  }
+}
+
 class GpuProjectExec(projectList: Seq[GpuExpression], child: SparkPlan)
   extends ProjectExec(projectList.asInstanceOf[Seq[NamedExpression]], child) with GpuExec {
 
@@ -32,21 +53,9 @@ class GpuProjectExec(projectList: Seq[GpuExpression], child: SparkPlan)
   override def supportCodegen: Boolean = false
 
   override def doExecuteColumnar() : RDD[ColumnarBatch] = {
-    val boundProjectList: Seq[Any] = GpuBindReferences.bindReferences(projectList, child.output)
+    val boundProjectList = GpuBindReferences.bindReferences(projectList, child.output)
     val rdd = child.executeColumnar()
-    rdd.map(cb => try {
-      val newColumns = boundProjectList.map(
-        expr => {
-          val result = expr.asInstanceOf[GpuExpression].columnarEval(cb)
-          result match {
-            case cv: ColumnVector => cv
-            case other => GpuColumnVector.from(GpuScalar.from(other), cb.numRows())
-          }
-        }).toArray
-      new ColumnarBatch(newColumns, cb.numRows())
-    } finally {
-      cb.close()
-    })
+    rdd.map(cb => GpuProjectExec.projectAndClose(cb, boundProjectList))
   }
 }
 
@@ -83,7 +92,7 @@ class GpuFilterExec(condition: Expression, child: SparkPlan)
                 }
               }
             }
-            case _ => cols += col.inRefCount()
+            case _ => cols += col.incRefCount()
           }
         }
         success = true

@@ -16,10 +16,9 @@
 
 package ai.rapids.spark
 
-import org.apache.spark.sql.functions.{abs, col, exp, log, pow, sqrt}
-import org.scalatest.{BeforeAndAfterEach, FunSuite}
+import org.apache.spark.sql.functions._
 
-class ArithmeticOperatorsSuite extends FunSuite with BeforeAndAfterEach with SparkQueryCompareTestSuite {
+class ArithmeticOperatorsSuite extends SparkQueryCompareTestSuite {
 
   testSparkResultsAreEqual("Test scalar addition", longsDf) {
     frame => frame.select(col("longs") + 100)

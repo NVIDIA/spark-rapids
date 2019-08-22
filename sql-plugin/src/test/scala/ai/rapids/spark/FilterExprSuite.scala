@@ -16,9 +16,7 @@
 
 package ai.rapids.spark
 
-import org.scalatest.{BeforeAndAfterEach, FunSuite}
-
-class FilterExprSuite extends FunSuite with BeforeAndAfterEach with SparkQueryCompareTestSuite {
+class FilterExprSuite extends SparkQueryCompareTestSuite {
 
   testSparkResultsAreEqual("filter is not null", nullableFloatCsvDf) {
     frame => frame.filter("floats is not null")

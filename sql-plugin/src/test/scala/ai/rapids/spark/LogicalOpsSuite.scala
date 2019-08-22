@@ -17,9 +17,8 @@
 package ai.rapids.spark
 
 import org.apache.spark.sql.functions.col
-import org.scalatest.{BeforeAndAfterEach, FunSuite}
 
-class LogicalOpsSuite extends FunSuite with BeforeAndAfterEach with SparkQueryCompareTestSuite {
+class LogicalOpsSuite extends SparkQueryCompareTestSuite {
   //////////////////
   // LOGICAL TESTS
   /////////////////

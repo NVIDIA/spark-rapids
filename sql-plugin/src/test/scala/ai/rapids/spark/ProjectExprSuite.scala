@@ -18,9 +18,8 @@ package ai.rapids.spark
 
 import org.apache.spark.SparkConf
 import org.apache.spark.sql.functions.{col, lit}
-import org.scalatest.{BeforeAndAfterEach, FunSuite}
 
-class ProjectExprSuite extends FunSuite with BeforeAndAfterEach with SparkQueryCompareTestSuite {
+class ProjectExprSuite extends SparkQueryCompareTestSuite {
   def forceHostColumnarToGpu(): SparkConf = {
     // turns off BatchScanExec, so we get a CPU BatchScanExec together with a HostColumnarToGpu
     new SparkConf().set("spark.rapids.sql.exec.BatchScanExec", "false")

@@ -16,6 +16,7 @@
 
 package ai.rapids.spark
 
+import org.apache.spark.sql.catalyst.expressions.Expression
 import org.apache.spark.sql.catalyst.optimizer.NormalizeNaNAndZero
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
@@ -23,7 +24,8 @@ import org.apache.spark.sql.vectorized.ColumnarBatch
 //  - input NaNs become Float.NaN, or Double.NaN
 //  - that -0.0f and -0.0d becomes 0.0f, and 0.0d respectively
 // TODO: need coalesce as a feature request in cudf
-class GpuNormalizeNaNAndZero(child: GpuExpression) extends NormalizeNaNAndZero(child)
+class GpuNormalizeNaNAndZero(child: Expression) extends NormalizeNaNAndZero(child)
   with GpuExpression {
-  override def columnarEval(input: ColumnarBatch): Any = child.columnarEval(input)
+  override def columnarEval(input: ColumnarBatch): Any =
+    child.asInstanceOf[GpuExpression].columnarEval(input)
 }

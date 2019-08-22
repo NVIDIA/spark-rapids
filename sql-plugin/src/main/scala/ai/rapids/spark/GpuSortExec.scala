@@ -163,7 +163,7 @@ class GpuColumnarBatchSorter(
       resultCvs ++= evaluateBoundExpressions(batch, childExprs)
       for (i <- 0 until numBatchCols) {
         val origGcv = GpuColumnVector.from(batch.column(i).asInstanceOf[GpuColumnVector].getBase)
-        origGcv.inRefCount()
+        origGcv.incRefCount()
         resultCvs += origGcv
       }
     } catch {

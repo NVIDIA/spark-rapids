@@ -17,9 +17,8 @@
 package ai.rapids.spark
 
 import org.apache.spark.sql.functions._
-import org.scalatest.{BeforeAndAfterEach, FunSuite}
 
-class UnaryOperatorsSuite extends FunSuite with BeforeAndAfterEach with SparkQueryCompareTestSuite {
+class UnaryOperatorsSuite extends SparkQueryCompareTestSuite {
 
   testSparkResultsAreEqual("Test acos doubles", doubleDf) {
     frame => frame.select(acos(col("doubles")), acos(col("more_doubles")))
