@@ -16,9 +16,12 @@
 
 package ai.rapids.spark
 
+import java.util.TimeZone
+
 import org.apache.spark.sql.functions.col
 import org.apache.spark.sql.types._
 import org.apache.spark.SparkConf
+import org.apache.spark.sql.DataFrame
 
 class CastOpSuite extends SparkQueryCompareTestSuite {
   private val timestampDatesMsecParquet = frameFromParquet("timestamp-date-test-msec.parquet")
@@ -73,9 +76,8 @@ class CastOpSuite extends SparkQueryCompareTestSuite {
       col("date").cast(TimestampType))
    }
 
-  testSparkResultsAreEqual("Test cast from timestamp", timestampDatesMsecParquet,
-      conf = new SparkConf().set(RapidsConf.TIMESTAMP_READER_MSEC.key, "true")) {
-    frame => frame.select(
+  private val timestampCastFn = { frame: DataFrame =>
+    frame.select(
       col("time"),
       col("time").cast(BooleanType),
       col("time").cast(ByteType),
@@ -86,6 +88,21 @@ class CastOpSuite extends SparkQueryCompareTestSuite {
       col("time").cast(DoubleType),
       col("time").cast(LongType),
       col("time").cast(DateType))
+  }
+
+  testSparkResultsAreEqual("Test cast from timestamp", timestampDatesMsecParquet,
+      conf = new SparkConf().set(RapidsConf.TIMESTAMP_READER_MSEC.key, "true"))(timestampCastFn)
+
+  test("Test cast from timestamp in UTC-equivalent timezone") {
+    val oldtz = TimeZone.getDefault
+    try {
+      TimeZone.setDefault(TimeZone.getTimeZone("Etc/UTC-0"))
+      val (fromCpu, fromGpu) = runOnCpuAndGpu(timestampDatesMsecParquet, timestampCastFn,
+        conf = new SparkConf().set(RapidsConf.TIMESTAMP_READER_MSEC.key, "true"))
+      compareResults(sort=false, 0, fromCpu, fromGpu)
+    } finally {
+      TimeZone.setDefault(oldtz)
+    }
   }
 
   //  testSparkResultsAreEqual("Test cast from strings", doubleStringsDf) {
