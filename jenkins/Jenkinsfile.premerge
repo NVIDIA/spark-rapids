@@ -24,6 +24,7 @@ pipeline {
 
     stages {
         stage('Ubuntu16 CUDA10.0') {
+            updateGitlabCommitStatus(name: 'Jenkins CI', state: "running")
             agent {
                 dockerfile {
                     label 'docker-gpu'
@@ -36,7 +37,6 @@ pipeline {
                 }
             }
             steps {
-                updateGitlabCommitStatus(name: 'Jenkins CI', state: "running")
                 script {
                     echo 'buiding ubuntu16 cuda10.0 ...'
                     sh 'mvn clean package'
