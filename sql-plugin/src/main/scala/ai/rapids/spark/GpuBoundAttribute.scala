@@ -66,6 +66,6 @@ class GpuBoundReference(ordinal: Int, dataType: DataType, nullable: Boolean)
   extends BoundReference(ordinal, dataType, nullable) with GpuExpression {
 
   override def columnarEval(batch: ColumnarBatch): Any = {
-    batch.column(ordinal).asInstanceOf[GpuColumnVector].inRefCount()
+    batch.column(ordinal).asInstanceOf[GpuColumnVector].incRefCount()
   }
 }

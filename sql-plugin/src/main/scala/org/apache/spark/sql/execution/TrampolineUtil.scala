@@ -14,21 +14,14 @@
  * limitations under the License.
  */
 
-package ai.rapids.spark
+package org.apache.spark.sql.execution
 
-import org.apache.spark.sql.functions.col
+import org.apache.spark.sql.catalyst.plans.physical.BroadcastMode
+import org.apache.spark.sql.execution.joins.HashedRelationBroadcastMode
 
-class UnionExprSuite extends SparkQueryCompareTestSuite {
+object TrampolineUtil {
 
-  testSparkResultsAreEqual("Test union doubles", doubleDf) {
-    frame => frame.union(frame)
-  }
-
-  testSparkResultsAreEqual("Test unionAll doubles", doubleDf) {
-    frame => frame.unionAll(frame)
-  }
-
-  testSparkResultsAreEqual("Test unionByName doubles", doubleDf) {
-    frame => frame.unionByName(frame.select(col("more_doubles"), col("doubles")))
+  def isHashedRelation(mode: BroadcastMode): Boolean = {
+    mode.isInstanceOf[HashedRelationBroadcastMode]
   }
 }

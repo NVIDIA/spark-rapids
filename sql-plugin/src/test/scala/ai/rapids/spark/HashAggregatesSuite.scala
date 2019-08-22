@@ -18,9 +18,8 @@ package ai.rapids.spark
 
 import org.apache.spark.SparkConf
 import org.apache.spark.sql.functions._
-import org.scalatest.{BeforeAndAfterEach, FunSuite}
 
-class HashAggregatesSuite extends FunSuite with BeforeAndAfterEach with SparkQueryCompareTestSuite {
+class HashAggregatesSuite extends SparkQueryCompareTestSuite {
   def makeBatched(batchSize: Int): SparkConf = {
     // forces ColumnarBatch of batchSize rows to be handed to the hash aggregate
     // which is useful to test concatenation

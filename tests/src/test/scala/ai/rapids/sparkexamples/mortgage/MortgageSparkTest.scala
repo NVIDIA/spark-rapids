@@ -18,20 +18,22 @@ package ai.rapids.sparkexamples.mortgage
 
 import org.apache.spark.sql.SparkSession
 import org.apache.spark.sql.functions._
-import org.scalatest.{FlatSpec, Matchers}
+import org.scalatest.FunSuite
 
-class MortgageSparkTest extends FlatSpec with Matchers {
-  it should "extract mortgage data" in {
-    val session = SparkSession.builder
+class MortgageSparkTest extends FunSuite {
+  lazy val  session: SparkSession = {
+    SparkSession.builder
       .master("local[2]")
-      .appName("UnitTest")
+      .appName("MortgageTests")
+      .config("spark.sql.shuffle.partitions", 2)
       .config("spark.sql.extensions", "ai.rapids.spark.Plugin")
       .config("spark.executor.plugins", "ai.rapids.spark.GpuResourceManager")
       .config("ai.rapids.gpu.incompatible_ops", true)
+      .config("spark.sql.join.preferSortMergeJoin", false)
       .getOrCreate()
+  }
 
-    session.sparkContext.setLogLevel("warn")
-
+  test("extract mortgage data") {
     val df = Run.csv(
       session,
       "src/test/resources/Performance_2007Q3.txt_0",
@@ -41,15 +43,7 @@ class MortgageSparkTest extends FlatSpec with Matchers {
     assert(df.count() === 10000)
   }
 
-  it should "convert data to parquet" in {
-    val session = SparkSession.builder
-      .master("local[2]")
-      .appName("UnitTest")
-      .config("spark.sql.extensions", "ai.rapids.spark.Plugin")
-      .config("spark.executor.plugins", "ai.rapids.spark.GpuResourceManager")
-      .getOrCreate()
-
-    session.sparkContext.setLogLevel("warn")
+  test("convert data to parquet") {
     ReadPerformanceCsv(session, "src/test/resources/Performance_2007Q3.txt_0")
       .write.mode("overwrite").parquet("target/test_output/perf")
 
@@ -57,16 +51,7 @@ class MortgageSparkTest extends FlatSpec with Matchers {
       .write.mode("overwrite").parquet("target/test_output/acq")
   }
 
-  it should "run on parquet data" in {
-    val session = SparkSession.builder
-      .master("local[2]")
-      .appName("UnitTest")
-      .config("spark.sql.extensions", "ai.rapids.spark.Plugin")
-      .config("spark.executor.plugins", "ai.rapids.spark.GpuResourceManager")
-      .getOrCreate()
-
-    session.sparkContext.setLogLevel("warn")
-
+  test("run on parquet data") {
     val df = Run.parquet(
       session,
       "src/test/resources/parquet_perf",
@@ -76,16 +61,7 @@ class MortgageSparkTest extends FlatSpec with Matchers {
     assert(df.count() === 10000)
   }
 
-  it should "compute some basic aggregates" in {
-    val session = SparkSession.builder
-      .master("local[2]")
-      .appName("UnitTest")
-      .config("spark.sql.extensions", "ai.rapids.spark.Plugin")
-      .config("spark.executor.plugins", "ai.rapids.spark.GpuResourceManager")
-      .getOrCreate()
-
-    session.sparkContext.setLogLevel("warn")
-
+  test("compute some basic aggregates") {
     val df = SimpleAggregates.csv(
       session,
       "src/test/resources/Performance_2007Q3.txt_0",
@@ -95,16 +71,7 @@ class MortgageSparkTest extends FlatSpec with Matchers {
     assert(df.count() === 1660)
   }
 
-  it should "compute aggregates with percentiles" in {
-    val session = SparkSession.builder
-      .master("local[2]")
-      .appName("UnitTest")
-      .config("spark.sql.extensions", "ai.rapids.spark.Plugin")
-      .config("spark.executor.plugins", "ai.rapids.spark.GpuResourceManager")
-      .getOrCreate()
-
-    session.sparkContext.setLogLevel("warn")
-
+  test("compute aggregates with percentiles") {
     val df = AggregatesWithPercentiles.csv(
       session,
       "src/test/resources/Performance_2007Q3.txt_0"
@@ -113,16 +80,7 @@ class MortgageSparkTest extends FlatSpec with Matchers {
     assert(df.count() === 177)
   }
 
-  it should "compute aggregates with joins" in {
-    val session = SparkSession.builder
-      .master("local[2]")
-      .appName("UnitTest")
-      .config("spark.sql.extensions", "ai.rapids.spark.Plugin")
-      .config("spark.executor.plugins", "ai.rapids.spark.GpuResourceManager")
-      .getOrCreate()
-
-    session.sparkContext.setLogLevel("warn")
-
+  test("compute aggregates with joins") {
     val df = AggregatesWithJoin.csv(
       session,
       "src/test/resources/Performance_2007Q3.txt_0",
