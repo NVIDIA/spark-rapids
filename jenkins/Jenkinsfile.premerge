@@ -11,6 +11,7 @@ pipeline {
         ansiColor('xterm')
         timeout(time: 120, unit: 'MINUTES')
         buildDiscarder(logRotator(numToKeepStr: '10'))
+        gitLabConnection('GitLab Master')
     }
 
     parameters {
@@ -35,6 +36,7 @@ pipeline {
                 }
             }
             steps {
+                updateGitlabCommitStatus(name: 'Jenkins CI', state: "running")
                 script {
                     echo 'buiding ubuntu16 cuda10.0 ...'
                     sh 'mvn clean package'
