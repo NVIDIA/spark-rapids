@@ -11,6 +11,7 @@ pipeline {
         ansiColor('xterm')
         timeout(time: 120, unit: 'MINUTES')
         buildDiscarder(logRotator(numToKeepStr: '10'))
+        gitLabConnection('GitLab Master')
     }
 
     parameters {
