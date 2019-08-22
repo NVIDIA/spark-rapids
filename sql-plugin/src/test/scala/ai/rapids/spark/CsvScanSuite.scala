@@ -17,12 +17,9 @@
 package ai.rapids.spark
 
 import org.apache.spark.SparkConf
-import org.apache.spark.sql.{DataFrame, SparkSession}
 import org.apache.spark.sql.functions.col
-import org.scalatest.{BeforeAndAfterEach, FunSuite}
 
-
-class CsvScanSuite extends FunSuite with BeforeAndAfterEach with SparkQueryCompareTestSuite {
+class CsvScanSuite extends SparkQueryCompareTestSuite {
 
   testSparkResultsAreEqual("Test CSV", intsFromCsv) {
     frame => frame.select(col("ints_1"), col("ints_3"), col("ints_5"))

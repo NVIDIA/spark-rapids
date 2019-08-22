@@ -42,7 +42,7 @@ public class SlicedGpuColumnVector extends ColumnVector {
     assert start >= 0;
     assert end > start; // we don't support empty slices, it should be a null
     assert end <= w.getBase().getRowCount();
-    w.inRefCount();
+    w.incRefCount();
   }
 
   @Override

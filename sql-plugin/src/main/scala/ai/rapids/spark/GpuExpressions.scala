@@ -63,7 +63,7 @@ trait GpuExpression extends Expression {
     if (!super.equals(other)) {
       return false
     }
-    return other.isInstanceOf[GpuExpression]
+    other.isInstanceOf[GpuExpression]
   }
 
   override def hashCode(): Int = super.hashCode()

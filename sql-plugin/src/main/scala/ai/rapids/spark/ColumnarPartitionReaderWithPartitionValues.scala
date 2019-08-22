@@ -44,7 +44,7 @@ class ColumnarPartitionReaderWithPartitionValues(
         val fileBatchCols = (0 until fileBatch.numCols).map(fileBatch.column)
         val resultCols = fileBatchCols ++ partitionColumns
         val result = new ColumnarBatch(resultCols.toArray, fileBatch.numRows)
-        fileBatchCols.foreach(_.asInstanceOf[GpuColumnVector].inRefCount())
+        fileBatchCols.foreach(_.asInstanceOf[GpuColumnVector].incRefCount())
         partitionColumns = null
         result
       } finally {

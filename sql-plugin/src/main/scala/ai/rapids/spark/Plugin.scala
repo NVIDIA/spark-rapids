@@ -25,16 +25,17 @@ import org.apache.spark.internal.Logging
 import org.apache.spark.sql.SparkSessionExtensions
 import org.apache.spark.sql.catalyst.expressions._
 import org.apache.spark.sql.catalyst.expressions.aggregate._
+import org.apache.spark.sql.catalyst.optimizer._
 import org.apache.spark.sql.catalyst.plans.physical.{HashPartitioning, Partitioning}
 import org.apache.spark.sql.catalyst.rules.Rule
 import org.apache.spark.sql.execution._
 import org.apache.spark.sql.execution.aggregate.HashAggregateExec
-import org.apache.spark.sql.catalyst.optimizer._
 import org.apache.spark.sql.execution.datasources.v2.BatchScanExec
 import org.apache.spark.sql.execution.datasources.v2.csv.CSVScan
 import org.apache.spark.sql.execution.datasources.v2.orc.OrcScan
 import org.apache.spark.sql.execution.datasources.v2.parquet.ParquetScan
-import org.apache.spark.sql.execution.exchange.ShuffleExchangeExec
+import org.apache.spark.sql.execution.exchange.{BroadcastExchangeExec, ShuffleExchangeExec}
+import org.apache.spark.sql.execution.joins._
 import org.apache.spark.sql.sources.v2.reader.Scan
 import org.apache.spark.sql.types._
 import org.apache.spark.{ExecutorPlugin, SparkEnv}
@@ -48,7 +49,7 @@ trait GpuExec extends SparkPlan {
     if (!super.equals(other)) {
       return false
     }
-    return other.isInstanceOf[GpuExec]
+    other.isInstanceOf[GpuExec]
   }
 
   override def hashCode(): Int = super.hashCode()
@@ -59,7 +60,7 @@ trait GpuPartitioning extends Partitioning {
     if (!super.equals(other)) {
       return false
     }
-    return other.isInstanceOf[GpuPartitioning]
+    other.isInstanceOf[GpuPartitioning]
   }
 
   override def hashCode(): Int = super.hashCode()
@@ -78,6 +79,7 @@ abstract class ReplacementRule[INPUT, INPUT_BASE, OUTPUT](
     final val isIncompat: Boolean,
     final val incompatDoc: String,
     final val desc: String,
+    final val context: String, // Only do the replacement if the contexts match
     final val tag: ClassTag[INPUT]) {
 
   private var confKeyCache: String = null
@@ -118,6 +120,7 @@ abstract class ReplacementRuleBuilder[INPUT, OUTPUT] {
   protected var isIncompat = false
   protected var incompatDoc: String = null
   protected var desc: String = null
+  protected var context: String = null
 
   /**
    * Add the conversion function to the expression rule. This converts the original
@@ -163,6 +166,16 @@ abstract class ReplacementRuleBuilder[INPUT, OUTPUT] {
     this.desc = str
     this
   }
+
+  /**
+   * Set the context that this operator is allowed to be replaced under.
+   * @param str the context
+   * @return this for chaining.
+   */
+  final def context(str: String): this.type = {
+    this.context = str
+    this
+  }
 }
 
 /**
@@ -174,9 +187,10 @@ class ExprRule[INPUT <: Expression](
     isIncompat: Boolean,
     incompatDoc: String,
     desc: String,
+    context: String,
     tag: ClassTag[INPUT])
   extends ReplacementRule[INPUT, Expression, GpuExpression](doConvert,
-    doAssertIsAllowed, isIncompat, incompatDoc, desc, tag) {
+    doAssertIsAllowed, isIncompat, incompatDoc, desc, context, tag) {
 
   override val confKeyPart = "expression"
   override val operationName = "Expression"
@@ -290,7 +304,7 @@ class ExprRuleBuilder[INPUT <: Expression](implicit val tag: ClassTag[INPUT])
       throw new IllegalStateException(s"Conversion function for ${tag} was not set")
     }
     (tag.runtimeClass.asSubclass(classOf[Expression]),
-      new ExprRule[INPUT](doConvert, doAssertIsAllowed, isIncompat, incompatDoc, desc, tag))
+      new ExprRule[INPUT](doConvert, doAssertIsAllowed, isIncompat, incompatDoc, desc, context, tag))
   }
 }
 
@@ -304,9 +318,10 @@ class ScanRule[INPUT <: Scan](
     isIncompat: Boolean,
     incompatDoc: String,
     desc: String,
+    context: String,
     tag: ClassTag[INPUT])
   extends ReplacementRule[INPUT, Scan, Scan](doConvert,
-    doAssertIsAllowed, isIncompat, incompatDoc, desc, tag) {
+    doAssertIsAllowed, isIncompat, incompatDoc, desc, context, tag) {
 
   override val confKeyPart: String = "input"
   override val operationName: String = "input"
@@ -330,7 +345,7 @@ class ScanRuleBuilder[INPUT <: Scan](implicit val tag: ClassTag[INPUT])
       throw new IllegalStateException(s"Conversion function for ${tag} was not set")
     }
     (tag.runtimeClass.asSubclass(classOf[Scan]),
-      new ScanRule[INPUT](doConvert, doAssertIsAllowed, isIncompat, incompatDoc, desc, tag))
+      new ScanRule[INPUT](doConvert, doAssertIsAllowed, isIncompat, incompatDoc, desc, context, tag))
   }
 }
 
@@ -343,9 +358,10 @@ class PartRule[INPUT <: Partitioning](
     isIncompat: Boolean,
     incompatDoc: String,
     desc: String,
+    context: String,
     tag: ClassTag[INPUT])
   extends ReplacementRule[INPUT, Partitioning, GpuPartitioning](doConvert,
-    doAssertIsAllowed, isIncompat, incompatDoc, desc, tag) {
+    doAssertIsAllowed, isIncompat, incompatDoc, desc, context, tag) {
 
   override val confKeyPart: String = "partitioning"
   override val operationName: String = "partitioning"
@@ -369,7 +385,7 @@ class PartRuleBuilder[INPUT <: Partitioning](implicit val tag: ClassTag[INPUT])
       throw new IllegalStateException(s"Conversion function for ${tag} was not set")
     }
     (tag.runtimeClass.asSubclass(classOf[Partitioning]),
-      new PartRule[INPUT](doConvert, doAssertIsAllowed, isIncompat, incompatDoc, desc, tag))
+      new PartRule[INPUT](doConvert, doAssertIsAllowed, isIncompat, incompatDoc, desc, context, tag))
   }
 }
 
@@ -382,9 +398,10 @@ class ExecRule[INPUT <: SparkPlan](
     isIncompat: Boolean,
     incompatDoc: String,
     desc: String,
+    context: String,
     tag: ClassTag[INPUT])
   extends ReplacementRule[INPUT, SparkPlan, GpuExec](doConvert,
-    doAssertIsAllowed, isIncompat, incompatDoc, desc, tag){
+    doAssertIsAllowed, isIncompat, incompatDoc, desc, context, tag){
 
   override val confKeyPart: String = "exec"
   override val operationName: String = "operator"
@@ -408,7 +425,7 @@ class ExecRuleBuilder[INPUT <: SparkPlan](implicit val tag: ClassTag[INPUT])
       throw new IllegalStateException(s"Conversion function for ${tag} was not set")
     }
     (tag.runtimeClass.asSubclass(classOf[SparkPlan]),
-      new ExecRule[INPUT](doConvert, doAssertIsAllowed, isIncompat, incompatDoc, desc, tag))
+      new ExecRule[INPUT](doConvert, doAssertIsAllowed, isIncompat, incompatDoc, desc, context, tag))
   }
 }
 
@@ -421,9 +438,10 @@ class AggRule[INPUT <: AggregateFunction](
     isIncompat: Boolean,
     incompatDoc: String,
     desc: String,
+    context: String,
     tag: ClassTag[INPUT])
   extends ReplacementRule[INPUT, AggregateFunction, GpuAggregateFunction](doConvert,
-    doAssertIsAllowed, isIncompat, incompatDoc, desc, tag){
+    doAssertIsAllowed, isIncompat, incompatDoc, desc, context, tag){
 
   override val confKeyPart: String = "agg"
   override val operationName: String = "aggregation"
@@ -446,7 +464,7 @@ class AggRuleBuilder[INPUT <: AggregateFunction](implicit val tag: ClassTag[INPU
       throw new IllegalStateException(s"Conversion function for ${tag} was not set")
     }
     (tag.runtimeClass.asSubclass(classOf[AggregateFunction]),
-      new AggRule[INPUT](doConvert, doAssertIsAllowed, isIncompat, incompatDoc, desc, tag))
+      new AggRule[INPUT](doConvert, doAssertIsAllowed, isIncompat, incompatDoc, desc, context, tag))
   }
 }
 
@@ -738,6 +756,8 @@ object GpuOverrides {
       .build()
   )
 
+  private val GPU_BROADCAST_HASH_JOIN_CONTEXT = "GpuBroadcastHashJoinExec"
+
   val execs : Map[Class[_ <: SparkPlan], ExecRule[_ <: SparkPlan]] = Map(
     exec[ProjectExec]
       .convert((plan, overrides) =>
@@ -775,8 +795,70 @@ object GpuOverrides {
       .build(),
     exec[UnionExec]
       .convert((union, overrides) =>
-        new GpuUnionExec(union.children.map(overrides.replaceWithGpuPlan)))
+        new GpuUnionExec(union.children.map(overrides.replaceWithGpuPlan(_))))
       .desc("The backend for the union operator")
+      .build(),
+    exec[BroadcastExchangeExec]
+      .convert((exchange, overrides) => new GpuBroadcastExchangeExec(exchange.mode, exchange.child))
+      .desc("The backend for broadcast exchange of data")
+      .assertIsAllowed((exec, conf) => {
+        if (!TrampolineUtil.isHashedRelation(exec.mode)) {
+          throw new CannotReplaceException("Broadcast exchange is only supported for HashedJoin")
+        }
+      })
+      .context(GPU_BROADCAST_HASH_JOIN_CONTEXT)
+      .build(),
+    exec[BroadcastHashJoinExec]
+      .convert((join, overrides) => {
+        val left = overrides.replaceWithGpuPlan(join.left, GPU_BROADCAST_HASH_JOIN_CONTEXT)
+        val right = overrides.replaceWithGpuPlan(join.right, GPU_BROADCAST_HASH_JOIN_CONTEXT)
+        // The broadcast part of this must be a BroadcastExchangeExec
+        val buildSide = join.buildSide match {
+          case BuildLeft => left
+          case BuildRight => right
+        }
+        if (!buildSide.isInstanceOf[GpuBroadcastExchangeExec]) {
+          throw new CannotReplaceException("the broadcast must be on the GPU too")
+        }
+        new GpuBroadcastHashJoinExec(
+          join.leftKeys.map(overrides.replaceWithGpuExpression),
+          join.rightKeys.map(overrides.replaceWithGpuExpression),
+          join.joinType, join.buildSide,
+          join.condition.map(overrides.replaceWithGpuExpression),
+          left, right)
+      })
+      .desc("Implementation of join using broadcast data")
+      .assertIsAllowed((exec, conf) => {
+        GpuHashJoin.assertJoinTypeAllowed(exec.joinType)
+        if (exec.output.map(_.dataType).contains(StringType)) {
+          throw new CannotReplaceException("strings are not supported in a hash join.")
+        } else if (exec.condition != None) {
+          throw new CannotReplaceException("Conditional joins are not currently supported")
+        }
+      })
+      .incompat("GPU required on the driver and joins with empty batches may fail")
+      .build(),
+    exec[ShuffledHashJoinExec]
+      .convert((join, overrides) => {
+        val left = overrides.replaceWithGpuPlan(join.left)
+        val right = overrides.replaceWithGpuPlan(join.right)
+        new GpuShuffledHashJoinExec(
+          join.leftKeys.map(overrides.replaceWithGpuExpression),
+          join.rightKeys.map(overrides.replaceWithGpuExpression),
+          join.joinType, join.buildSide,
+          join.condition.map(overrides.replaceWithGpuExpression),
+          left, right)
+      })
+      .desc("Implementation of join using hashed shuffled data")
+      .assertIsAllowed((exec, conf) => {
+        GpuHashJoin.assertJoinTypeAllowed(exec.joinType)
+        if (exec.output.map(_.dataType).contains(StringType)) {
+          throw new CannotReplaceException("strings are not supported in a hash join.")
+        } else if (exec.condition != None) {
+          throw new CannotReplaceException("Conditional joins are not currently supported")
+        }
+      })
+      .incompat("joins with empty batches may fail")
       .build(),
     exec[HashAggregateExec]
       .convert((hashAgg, overrides) =>
@@ -1026,11 +1108,16 @@ case class GpuOverrides() extends Rule[SparkPlan] with Logging {
     rule.convert(part, this)
   }
 
-  def replaceWithGpuPlan(plan: SparkPlan): SparkPlan =
+  def replaceWithGpuPlan(plan: SparkPlan, context: String = ""): SparkPlan =
     try {
       val rule = GpuOverrides.execs.getOrElse(plan.getClass,
         throw new CannotReplaceException(s"no GPU enabled version of operator" +
           s" ${plan.getClass.getName} could be found"))
+
+      if (rule.context != null && !context.equals(rule.context)) {
+        throw new CannotReplaceException(s"the operator ${plan.getClass} can only be replaced in" +
+          s" the context of ${rule.context}")
+      }
 
       if (!conf.isOperatorEnabled(rule.confKey, rule.isIncompat)) {
         if (rule.isIncompat && !conf.isIncompatEnabled) {
@@ -1064,7 +1151,7 @@ case class GpuOverrides() extends Rule[SparkPlan] with Logging {
           logWarning(s"${plan.getClass.getSimpleName} will not run on a GPU" +
             s" because ${exp.getMessage}")
         }
-        plan.withNewChildren(plan.children.map(replaceWithGpuPlan))
+        plan.withNewChildren(plan.children.map(replaceWithGpuPlan(_)))
     }
 
   def replaceWithGpuAggregate(agg: AggregateFunction): GpuAggregateFunction = {

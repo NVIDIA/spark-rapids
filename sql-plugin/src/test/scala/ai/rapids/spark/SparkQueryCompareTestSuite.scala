@@ -18,7 +18,8 @@ package ai.rapids.spark
 import java.sql.Date
 import java.util.{Locale, TimeZone}
 
-import org.scalatest.{BeforeAndAfterEach, FunSuite}
+import org.scalatest.FunSuite
+
 import org.apache.spark.sql.{DataFrame, Row, SparkSession}
 import org.apache.spark.SparkConf
 import org.apache.spark.sql.types._
@@ -26,7 +27,7 @@ import org.apache.spark.sql.types._
 /**
  * Set of tests that compare the output using the CPU version of spark vs our GPU version.
  */
-trait SparkQueryCompareTestSuite extends FunSuite with BeforeAndAfterEach {
+trait SparkQueryCompareTestSuite extends FunSuite {
   // Timezone is fixed to UTC to allow timestamps to work by default
   TimeZone.setDefault(TimeZone.getTimeZone("UTC"))
 
@@ -45,7 +46,7 @@ trait SparkQueryCompareTestSuite extends FunSuite with BeforeAndAfterEach {
   def withSparkSession[U](appName: String, conf: SparkConf, f: SparkSession => U): U = {
     cleanupAnyExistingSession()
     val session = SparkSession.builder()
-      .master("local[2]")
+      .master("local[1]")
       .appName(appName)
       .config(conf)
       .getOrCreate()
@@ -208,6 +209,18 @@ trait SparkQueryCompareTestSuite extends FunSuite with BeforeAndAfterEach {
       allowNonGpu=true)(fun)
   }
 
+  def IGNORE_ORDER_ALLOW_NON_GPU_testSparkResultsAreEqual(
+      testName: String,
+      df: SparkSession => DataFrame,
+      repart: Integer = 1,
+      conf: SparkConf = new SparkConf())(fun: DataFrame => DataFrame): Unit = {
+    testSparkResultsAreEqual(testName, df,
+      conf=conf,
+      repart=repart,
+      sort=true,
+      allowNonGpu=true)(fun)
+  }
+
   def IGNORE_ORDER_testSparkResultsAreEqual(
       testName: String,
       df: SparkSession => DataFrame,
@@ -250,22 +263,50 @@ trait SparkQueryCompareTestSuite extends FunSuite with BeforeAndAfterEach {
           return false
         }
 
-        return if ((v1, v2) match {
-          case (i1: Int, i2:Int) => i1 < i2
-          case (i1: Long, i2:Long) => i1 < i2
-          case (i1: Float, i2:Float) => i1 < i2
-          case (i1: Date, i2:Date) => i1.before(i2)
-          case (i1: Double, i2:Double) => i1 < i2
-          case (i1: Short, i2:Short) => i1 < i2
+        (v1, v2) match {
+          case (i1: Int, i2: Int) => if (i1 < i2) {
+            return true
+          } else if (i1 > i2) {
+            return false
+          }// else equal go on
+          case (i1: Long, i2: Long) => if (i1 < i2) {
+            return true
+          } else if (i1 > i2) {
+            return false
+          } // else equal go on
+          case (i1: Float, i2: Float) => if (i1 < i2) {
+            return true
+          } else if (i1 > i2) {
+            return false
+          } // else equal go on
+          case (i1: Date, i2: Date) => if (i1.before(i2)) {
+            return true
+          } else if (i1.after(i2)) {
+            return false
+          } // else equal go on
+          case (i1: Double, i2: Double) => if (i1 < i2) {
+            return true
+          } else if (i1 > i2) {
+            return false
+          } // else equal go on
+          case (i1: Short, i2: Short) => if (i1 < i2) {
+            return true
+          } else if (i1 > i2) {
+            return false
+          } // else equal go on
+          case (s1: String, s2: String) =>
+            val cmp = s1.compareTo(s2)
+            if (cmp < 0) {
+              return true
+            } else if (cmp > 0) {
+              return false
+            } // else equal go on
           case (o1, o2) => throw new UnsupportedOperationException(o1.getClass + " is not supported yet")
-        }) {
-          true
-        } else {
-          false
         }
       }
     }
-    return false
+    // They are equal...
+    false
   }
 
   def setupTestConfAndQualifierName(
@@ -352,7 +393,7 @@ trait SparkQueryCompareTestSuite extends FunSuite with BeforeAndAfterEach {
       setupTestConfAndQualifierName(testName, incompat, sort, allowNonGpu, conf, execsAllowedNonGpu)
 
     test(qualifiedTestName) {
-      var (fromCpu, fromGpu) = runOnCpuAndGpu(df, fun,
+      val (fromCpu, fromGpu) = runOnCpuAndGpu(df, fun,
         conf = testConf,
         repart = repart)
 
@@ -377,10 +418,70 @@ trait SparkQueryCompareTestSuite extends FunSuite with BeforeAndAfterEach {
       setupTestConfAndQualifierName(testName, incompat, sort, allowNonGpu, conf, execsAllowedNonGpu)
 
     test(qualifiedTestName) {
-      var (fromCpu, fromGpu) = runOnCpuAndGpu2(dfA, dfB, fun, conf = testConf, repart = repart)
-
+      val (fromCpu, fromGpu) = runOnCpuAndGpu2(dfA, dfB, fun, conf = testConf, repart = repart)
       compareResults(sort, maxFloatDiff, fromCpu, fromGpu)
     }
+  }
+
+  def INCOMPAT_testSparkResultsAreEqual2(
+      testName: String,
+      dfA: SparkSession => DataFrame,
+      dfB: SparkSession => DataFrame,
+      repart: Integer = 1,
+      conf: SparkConf = new SparkConf())(fun: (DataFrame, DataFrame) => DataFrame): Unit = {
+    testSparkResultsAreEqual2("INCOMPAT: " + testName, dfA, dfB,
+      conf=conf.set(RapidsConf.INCOMPATIBLE_OPS.key, "true"),
+      repart=repart)(fun)
+  }
+
+  def INCOMPAT_IGNORE_ORDER_testSparkResultsAreEqual2(
+      testName: String,
+      dfA: SparkSession => DataFrame,
+      dfB: SparkSession => DataFrame,
+      repart: Integer = 1,
+      conf: SparkConf = new SparkConf())(fun: (DataFrame, DataFrame) => DataFrame): Unit = {
+    testSparkResultsAreEqual2("INCOMPAT, IGNORE ORDER: " + testName, dfA, dfB,
+      conf=conf.set(RapidsConf.INCOMPATIBLE_OPS.key, "true"),
+      repart=repart,
+      sort=true)(fun)
+  }
+
+  def IGNORE_ORDER_testSparkResultsAreEqual2(
+      testName: String,
+      dfA: SparkSession => DataFrame,
+      dfB: SparkSession => DataFrame,
+      repart: Integer = 1,
+      conf: SparkConf = new SparkConf())(fun: (DataFrame, DataFrame) => DataFrame): Unit = {
+    testSparkResultsAreEqual2("IGNORE ORDER: " + testName, dfA, dfB,
+      conf=conf,
+      repart=repart,
+      sort=true)(fun)
+  }
+
+  def mixedDf(session: SparkSession): DataFrame = {
+    import session.sqlContext.implicits._
+    Seq(
+      (99, 100L, 1.0),
+      (98, 200L, 2.0),
+      (97,300L, 3.0),
+      (99, 400L, 4.0),
+      (98, 500L, 5.0),
+      (97, -100L, 6.0),
+      (96, -500L, 0.0)
+    ).toDF("ints", "longs", "doubles")
+  }
+
+  def mixedDfWithNulls(session: SparkSession): DataFrame = {
+    import session.sqlContext.implicits._
+    Seq[(java.lang.Long, java.lang.Double, java.lang.Integer)](
+      (100L, 1.0, 99),
+      (200L, 2.0, 98),
+      (300L, null, 97),
+      (400L, 4.0, null),
+      (500L, 5.0, 98),
+      (null, 6.0, 97),
+      (-500L, null, 96)
+    ).toDF("longs", "doubles", "ints")
   }
 
   def booleanDf(session: SparkSession): DataFrame = {
@@ -406,6 +507,20 @@ trait SparkQueryCompareTestSuite extends FunSuite with BeforeAndAfterEach {
     ).toDF("dates", "more_dates")
   }
 
+  def stringsAndLongsDf(session: SparkSession): DataFrame = {
+    import session.sqlContext.implicits._
+    Seq(
+      ("A", 1L),
+      ("B", 2L),
+      ("C", 3L),
+      ("D", 4L),
+      ("E", 5L),
+      ("F", 6L),
+      ("G", 0L),
+      ("A", 10L)
+    ).toDF("strings", "longs")
+  }
+
   def longsDf(session: SparkSession): DataFrame = {
     import session.sqlContext.implicits._
     Seq(
@@ -417,6 +532,47 @@ trait SparkQueryCompareTestSuite extends FunSuite with BeforeAndAfterEach {
       (-100L, 6L),
       (-500L, 0L),
       (0x123400L, 7L)
+    ).toDF("longs", "more_longs")
+  }
+
+  def biggerLongsDf(session: SparkSession): DataFrame = {
+    import session.sqlContext.implicits._
+    Seq(
+      (100L, 1L),
+      (200L, 2L),
+      (300L, 3L),
+      (400L, 4L),
+      (500L, 5L),
+      (-100L, 6L),
+      (-500L, 0L),
+      (100L, 1L),
+      (200L, 2L),
+      (300L, 3L),
+      (400L, 4L),
+      (500L, 5L),
+      (-100L, 6L),
+      (-500L, 0L),
+      (100L, 1L),
+      (200L, 2L),
+      (300L, 3L),
+      (400L, 4L),
+      (500L, 5L),
+      (-100L, 6L),
+      (-500L, 0L),
+      (100L, 1L),
+      (200L, 2L),
+      (300L, 3L),
+      (400L, 4L),
+      (500L, 5L),
+      (-100L, 6L),
+      (-500L, 0L),
+      (100L, 1L),
+      (200L, 2L),
+      (300L, 3L),
+      (400L, 4L),
+      (500L, 5L),
+      (-100L, 6L),
+      (-500L, 0L)
     ).toDF("longs", "more_longs")
   }
 

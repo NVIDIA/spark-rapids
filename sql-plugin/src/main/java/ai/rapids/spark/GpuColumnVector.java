@@ -20,6 +20,7 @@ import ai.rapids.cudf.DType;
 import ai.rapids.cudf.Scalar;
 import ai.rapids.cudf.Table;
 import ai.rapids.cudf.TimeUnit;
+import org.apache.spark.sql.catalyst.expressions.Attribute;
 import org.apache.spark.sql.execution.vectorized.WritableColumnVector;
 import org.apache.spark.sql.types.*;
 import org.apache.spark.sql.vectorized.ColumnVector;
@@ -27,6 +28,8 @@ import org.apache.spark.sql.vectorized.ColumnarArray;
 import org.apache.spark.sql.vectorized.ColumnarBatch;
 import org.apache.spark.sql.vectorized.ColumnarMap;
 import org.apache.spark.unsafe.types.UTF8String;
+
+import java.util.List;
 
 /**
  * A GPU accelerated version of the Spark ColumnVector.
@@ -219,6 +222,21 @@ public final class GpuColumnVector extends ColumnVector {
     }
   }
 
+  public static ColumnarBatch emptyBatch(List<Attribute> format) {
+    StructType schema = new StructType();
+    for (Attribute attribute: format) {
+      schema = schema.add(new StructField(attribute.name(),
+          attribute.dataType(),
+          attribute.nullable(),
+          null));
+    }
+    return new GpuColumnarBatchBuilder(schema, 0, null).build(0);
+  }
+
+  public static Table from(ColumnarBatch batch) {
+    return new Table(extractBases(batch));
+  }
+
   public static ColumnarBatch from(Table table) {
     return from(table, 0, table.getNumberOfColumns());
   }
@@ -268,6 +286,24 @@ public final class GpuColumnVector extends ColumnVector {
     return from(ai.rapids.cudf.ColumnVector.fromScalar(scalar, count));
   }
 
+  public static ai.rapids.cudf.ColumnVector[] extractBases(ColumnarBatch batch) {
+    int numColumns = batch.numCols();
+    ai.rapids.cudf.ColumnVector[] vectors = new ai.rapids.cudf.ColumnVector[numColumns];
+    for (int i = 0; i < vectors.length; i++) {
+      vectors[i] = ((GpuColumnVector)batch.column(i)).getBase();
+    }
+    return vectors;
+  }
+
+  public static GpuColumnVector[] extractColumns(ColumnarBatch batch) {
+    int numColumns = batch.numCols();
+    GpuColumnVector[] vectors = new GpuColumnVector[numColumns];
+    for (int i = 0; i < vectors.length; i++) {
+      vectors[i] = ((GpuColumnVector)batch.column(i));
+    }
+    return vectors;
+  }
+
   private final ai.rapids.cudf.ColumnVector cudfCv;
 
   /**
@@ -279,7 +315,7 @@ public final class GpuColumnVector extends ColumnVector {
     this.cudfCv = cudfCv;
   }
 
-  public GpuColumnVector inRefCount() {
+  public GpuColumnVector incRefCount() {
     // Just pass through the reference counting
     cudfCv.incRefCount();
     return this;
