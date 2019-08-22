@@ -50,10 +50,8 @@ pipeline {
             script {
                 if (currentBuild.currentResult == "SUCCESS") {
                     updateGitlabCommitStatus(name: 'Jenkins CI', state: "success")
-                    addGitLabMRComment(comment: "Success")
                 } else {
                     updateGitlabCommitStatus(name: 'Jenkins CI', state: "failed")
-                    addGitLabMRComment(comment: "Pipeline is complete with errors.")
                 }
             }
         }
