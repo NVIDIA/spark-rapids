@@ -18,7 +18,7 @@ package ai.rapids.spark
 
 import scala.collection.mutable.ArrayBuffer
 
-import ai.rapids.cudf.{BinaryOp, BinaryOperable, DType, Scalar, TimeUnit, UnaryOp}
+import ai.rapids.cudf.{BinaryOp, BinaryOperable, DType, Scalar, UnaryOp}
 
 import org.apache.spark.sql.catalyst.expressions.{BinaryExpression, Expression, UnaryExpression, Unevaluable}
 import org.apache.spark.sql.vectorized.{ColumnarBatch, ColumnVector}
@@ -74,8 +74,14 @@ trait GpuUnevaluable extends Unevaluable with GpuExpression {
     throw new UnsupportedOperationException(s"Cannot columnar evaluate expression: $this")
 }
 
+abstract class GpuUnevaluableUnaryExpression extends GpuUnaryExpression with GpuUnevaluable {
+  final override def doColumnar(input: GpuColumnVector): GpuColumnVector =
+    throw new UnsupportedOperationException(s"Cannot columnar evaluate expression: $this")
+}
+
 trait GpuUnaryExpression extends UnaryExpression with GpuExpression {
-  def doColumnar(input: GpuColumnVector): GpuColumnVector
+  protected def doColumnar(input: GpuColumnVector): GpuColumnVector
+
   def outputTypeOverride: DType = null
 
   override def columnarEval(batch: ColumnarBatch): Any = {

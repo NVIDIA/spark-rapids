@@ -27,8 +27,9 @@ import org.apache.spark.serializer.Serializer
 import org.apache.spark.sql.catalyst.errors._
 import org.apache.spark.sql.catalyst.expressions.Attribute
 import org.apache.spark.sql.catalyst.plans.physical.{HashPartitioning, Partitioning}
+import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.execution.{BatchPartitionIdPassthrough, ShuffledBatchRDD, SparkPlan}
-import org.apache.spark.sql.execution.exchange.ShuffleExchangeExec
+import org.apache.spark.sql.execution.exchange.{Exchange, ShuffleExchangeExec}
 import org.apache.spark.sql.execution.metric._
 import org.apache.spark.sql.vectorized.ColumnarBatch
 import org.apache.spark.util.MutablePair
@@ -36,14 +37,13 @@ import org.apache.spark.util.MutablePair
 /**
  * Performs a shuffle that will result in the desired partitioning.
  */
-class GpuShuffleExchangeExec(
+case class GpuShuffleExchangeExec(
     override val outputPartitioning: Partitioning,
     child: SparkPlan,
-    override val canChangeNumPartitions: Boolean) extends
-  ShuffleExchangeExec(outputPartitioning, child, canChangeNumPartitions) with GpuExec {
+    canChangeNumPartitions: Boolean = true) extends Exchange with GpuExec {
 
   private lazy val writeMetrics =
-  SQLShuffleWriteMetricsReporter.createShuffleWriteMetrics(sparkContext)
+    SQLShuffleWriteMetricsReporter.createShuffleWriteMetrics(sparkContext)
   private lazy val readMetrics =
     SQLShuffleReadMetricsReporter.createShuffleReadMetrics(sparkContext)
   override lazy val metrics = Map(
@@ -81,6 +81,9 @@ class GpuShuffleExchangeExec(
    */
   private var cachedShuffleRDD: ShuffledBatchRDD = null
 
+  protected override def doExecute(): RDD[InternalRow] =
+    throw new IllegalStateException(s"Row-based execution should not occur for $this")
+
   protected override def doExecuteColumnar(): RDD[ColumnarBatch] = attachTree(this, "execute") {
     // Returns the same ShuffleRowRDD if this plan is used by multiple plans.
     if (cachedShuffleRDD == null) {
@@ -100,22 +103,22 @@ object GpuShuffleExchangeExec {
       serializer: Serializer,
       writeMetrics: Map[String, SQLMetric])
   : ShuffleDependency[Int, ColumnarBatch, ColumnarBatch] = {
-    def getPartitioned(): ColumnarBatch => Any = newPartitioning match {
+    def getPartitioned: ColumnarBatch => Any = newPartitioning match {
       case h: GpuHashPartitioning =>
-        val boundH = GpuBindReferences.bindReferences(h :: Nil, outputAttributes)(0)
-        (batch) => boundH.columnarEval(batch)
+        val boundH = GpuBindReferences.bindReferences(h :: Nil, outputAttributes).head
+        batch => boundH.columnarEval(batch)
 
       case _ => sys.error(s"Exchange not implemented for $newPartitioning")
     }
     // We already know it is always going to be hash
     val rddWithPartitionIds: RDD[Product2[Int, ColumnarBatch]] = {
-      rdd.mapPartitions((iter) => {
-        val getParts = getPartitioned()
+      rdd.mapPartitions { iter =>
+        val getParts = getPartitioned
         new AbstractIterator[Product2[Int, ColumnarBatch]] {
           private var partitioned : Array[(ColumnarBatch, Int)] = null
           private var at = 0
           private val mutablePair = new MutablePair[Int, ColumnarBatch]()
-          private def partNextBatch: Unit = {
+          private def partNextBatch(): Unit = {
             if (partitioned != null) {
               partitioned.foreach(_._1.close())
               partitioned = null
@@ -130,7 +133,7 @@ object GpuShuffleExchangeExec {
 
           override def hasNext: Boolean = {
             if (partitioned == null || at >= partitioned.length) {
-              partNextBatch
+              partNextBatch()
             }
 
             partitioned != null && at < partitioned.length
@@ -138,7 +141,7 @@ object GpuShuffleExchangeExec {
 
           override def next(): Product2[Int, ColumnarBatch] = {
             if (partitioned == null || at >= partitioned.length) {
-              partNextBatch
+              partNextBatch()
             }
             if (partitioned == null || at >= partitioned.length) {
               throw new NoSuchElementException("Walked off of the end...")
@@ -149,7 +152,7 @@ object GpuShuffleExchangeExec {
             mutablePair
           }
         }
-      })
+      }
     }
 
     // Now, we manually create a ShuffleDependency. Because pairs in rddWithPartitionIds
@@ -183,7 +186,7 @@ class GpuHashPartitioning(expressions: Seq[GpuExpression], numPartitions: Int)
   }
 
   def insertDedupe(indexesOut: Array[Int], colsIn: Array[GpuColumnVector], dedupedData: ArrayBuffer[ColumnVector]): Unit = {
-    indexesOut.indices.foreach((i) => {
+    indexesOut.indices.foreach { i =>
       val b = colsIn(i).getBase
       val idx = dedupedData.indexOf(b)
       if (idx < 0) {
@@ -192,7 +195,7 @@ class GpuHashPartitioning(expressions: Seq[GpuExpression], numPartitions: Int)
       } else {
         indexesOut(i) = idx
       }
-    })
+    }
   }
 
   def dedupe(keyCols: Array[GpuColumnVector], dataCols: Array[GpuColumnVector]):
@@ -217,12 +220,12 @@ class GpuHashPartitioning(expressions: Seq[GpuExpression], numPartitions: Int)
 
       val (keys, dataIndexes, table) = dedupe(gpuKeyColumns, gpuDataColumns)
       // Don't need the batch any more table has all we need in it.
-      batch.close
+      batch.close()
 
       val partedTable = table.onColumns(keys: _*).partition(numPartitions, HashFunction.MURMUR3)
       table.close()
       val parts = partedTable.getPartitions
-      val columns = dataIndexes.map((idx) => GpuColumnVector.from(partedTable.getColumn(idx).incRefCount()))
+      val columns = dataIndexes.map(idx => GpuColumnVector.from(partedTable.getColumn(idx).incRefCount()))
       partedTable.close()
       (parts, columns)
     } finally {
@@ -237,7 +240,7 @@ class GpuHashPartitioning(expressions: Seq[GpuExpression], numPartitions: Int)
     var ret: ColumnarBatch = null
     val count = end - start
     if (count > 0) {
-      ret = new ColumnarBatch(vectors.map((vec) => new SlicedGpuColumnVector(vec, start, end)))
+      ret = new ColumnarBatch(vectors.map(vec => new SlicedGpuColumnVector(vec, start, end)))
       ret.setNumRows(count)
     }
     ret

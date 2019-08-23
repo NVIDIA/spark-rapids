@@ -18,25 +18,37 @@ package ai.rapids.spark
 
 import java.util.concurrent.TimeUnit.NANOSECONDS
 
-import ai.rapids.cudf.Table
-
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.plans.JoinType
 import org.apache.spark.sql.execution.joins.{BuildSide, ShuffledHashJoinExec}
-import org.apache.spark.sql.execution.SparkPlan
+import org.apache.spark.sql.execution.{BinaryExecNode, ConcatAndConsumeAll, SparkPlan}
 import org.apache.spark.sql.vectorized.ColumnarBatch
 import org.apache.spark.TaskContext
-import org.apache.spark.sql.catalyst.expressions.Attribute
+import org.apache.spark.sql.catalyst.plans.physical.{Distribution, HashClusteredDistribution}
+import org.apache.spark.sql.catalyst.InternalRow
+import org.apache.spark.sql.execution.metric.SQLMetrics
 
-class GpuShuffledHashJoinExec(
+case class GpuShuffledHashJoinExec(
     leftKeys: Seq[GpuExpression],
     rightKeys: Seq[GpuExpression],
     joinType: JoinType,
     buildSide: BuildSide,
     condition: Option[GpuExpression],
     left: SparkPlan,
-    right: SparkPlan) extends ShuffledHashJoinExec(leftKeys, rightKeys, joinType,
-  buildSide, condition, left, right) with GpuHashJoin {
+    right: SparkPlan) extends BinaryExecNode with GpuHashJoin {
+
+  override lazy val metrics = Map(
+    "numOutputRows" -> SQLMetrics.createMetric(sparkContext, "number of output rows"),
+    "buildDataSize" -> SQLMetrics.createSizeMetric(sparkContext, "data size of build side"),
+    "buildTime" -> SQLMetrics.createTimingMetric(sparkContext, "time to build hash map"))
+
+  override def requiredChildDistribution: Seq[Distribution] =
+    HashClusteredDistribution(leftKeys) :: HashClusteredDistribution(rightKeys) :: Nil
+
+  override protected def doExecute(): RDD[InternalRow] = {
+    throw new UnsupportedOperationException(
+      "GpuShuffledHashJoin does not support the execute() code path.")
+  }
 
   override def doExecuteColumnar() : RDD[ColumnarBatch] = {
     val numOutputRows = longMetric("numOutputRows")
