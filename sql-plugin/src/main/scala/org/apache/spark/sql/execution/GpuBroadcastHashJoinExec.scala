@@ -14,32 +14,48 @@
  * limitations under the License.
  */
 
-package ai.rapids.spark
+package org.apache.spark.sql.execution
+
+import ai.rapids.spark._
 
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.plans.JoinType
-import org.apache.spark.sql.execution.joins._
-import org.apache.spark.sql.execution.SparkPlan
+import org.apache.spark.sql.catalyst.plans.physical.{BroadcastDistribution, Distribution, UnspecifiedDistribution}
+import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.execution.exchange.ReusedExchangeExec
+import org.apache.spark.sql.execution.joins._
+import org.apache.spark.sql.execution.metric.SQLMetrics
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
-class GpuBroadcastHashJoinExec(
+case class GpuBroadcastHashJoinExec(
     leftKeys: Seq[GpuExpression],
     rightKeys: Seq[GpuExpression],
     joinType: JoinType,
     buildSide: BuildSide,
     condition: Option[GpuExpression],
     left: SparkPlan,
-    right: SparkPlan) extends BroadcastHashJoinExec(leftKeys, rightKeys, joinType, buildSide, condition, left, right)
-  with GpuHashJoin {
+    right: SparkPlan) extends BinaryExecNode with GpuHashJoin {
 
-  // Disable code generation for now...
-  override def supportCodegen: Boolean = false
+  override lazy val metrics = Map(
+    "numOutputRows" -> SQLMetrics.createMetric(sparkContext, "number of output rows"))
+
+  override def requiredChildDistribution: Seq[Distribution] = {
+    val mode = HashedRelationBroadcastMode(buildKeys)
+    buildSide match {
+      case BuildLeft =>
+        BroadcastDistribution(mode) :: UnspecifiedDistribution :: Nil
+      case BuildRight =>
+        UnspecifiedDistribution :: BroadcastDistribution(mode) :: Nil
+    }
+  }
 
   def broadcastExchange: GpuBroadcastExchangeExec = buildPlan match {
     case gpu: GpuBroadcastExchangeExec => gpu
     case reused: ReusedExchangeExec => reused.child.asInstanceOf[GpuBroadcastExchangeExec]
   }
+
+  override def doExecute(): RDD[InternalRow] =
+    throw new IllegalStateException("GpuBroadcastHashJoin does not support row-based processing")
 
   override def doExecuteColumnar() : RDD[ColumnarBatch] = {
     val numOutputRows = longMetric("numOutputRows")

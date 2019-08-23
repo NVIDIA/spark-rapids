@@ -14,24 +14,26 @@
  * limitations under the License.
  */
 
-package ai.rapids.spark
+package org.apache.spark.sql.execution
 
 import java.io.{ObjectInputStream, ObjectOutputStream}
-import java.util.concurrent.{Callable, Future, LinkedBlockingQueue, ThreadFactory, ThreadPoolExecutor, TimeoutException, TimeUnit}
+import java.util.concurrent._
 import java.util.UUID
 
 import scala.concurrent.{ExecutionContext, Promise}
 import scala.util.control.NonFatal
 
 import ai.rapids.cudf.{JCudfSerialization, Table}
+import ai.rapids.spark.{GpuColumnVector, GpuExec}
 import com.google.common.util.concurrent.ThreadFactoryBuilder
 
 import org.apache.spark.{broadcast, SparkException}
 import org.apache.spark.launcher.SparkLauncher
+import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.expressions.Attribute
-import org.apache.spark.sql.catalyst.plans.physical.BroadcastMode
-import org.apache.spark.sql.execution.exchange.BroadcastExchangeExec
-import org.apache.spark.sql.execution.{SparkPlan, SQLExecution}
+import org.apache.spark.sql.catalyst.plans.physical.{BroadcastMode, BroadcastPartitioning, Partitioning}
+import org.apache.spark.sql.catalyst.InternalRow
+import org.apache.spark.sql.execution.exchange.Exchange
 import org.apache.spark.sql.execution.metric.SQLMetrics
 import org.apache.spark.sql.internal.{SQLConf, StaticSQLConf}
 import org.apache.spark.sql.vectorized.ColumnarBatch
@@ -140,9 +142,17 @@ class SerializableGpuColumnarBatch(var batch: ColumnarBatch, val closeAfterSeria
   }
 }
 
-class GpuBroadcastExchangeExec(
+case class GpuBroadcastExchangeExec(
     mode: BroadcastMode,
-    child: SparkPlan) extends BroadcastExchangeExec(mode, child) with GpuExec {
+    child: SparkPlan) extends Exchange with GpuExec {
+
+  override lazy val metrics = Map(
+    "dataSize" -> SQLMetrics.createSizeMetric(sparkContext, "data size"),
+    "collectTime" -> SQLMetrics.createTimingMetric(sparkContext, "time to collect"),
+    "buildTime" -> SQLMetrics.createTimingMetric(sparkContext, "time to build"),
+    "broadcastTime" -> SQLMetrics.createTimingMetric(sparkContext, "time to broadcast"))
+
+  override def outputPartitioning: Partitioning = BroadcastPartitioning(mode)
 
   override def doCanonicalize(): SparkPlan = {
     new GpuBroadcastExchangeExec(mode.canonicalized, child.canonicalized)
@@ -156,15 +166,15 @@ class GpuBroadcastExchangeExec(
    * Note that calling this field will not start the execution of broadcast job.
    */
   @transient
-  override lazy val completionFuture: scala.concurrent.Future[broadcast.Broadcast[Any]] = promise.future
+  lazy val completionFuture: scala.concurrent.Future[broadcast.Broadcast[Any]] = promise.future
 
   @transient
   private val timeout: Long = SQLConf.get.broadcastTimeout
 
-  override val runId: UUID = UUID.randomUUID
+  val runId: UUID = UUID.randomUUID
 
   @transient
-  override lazy val relationFuture: Future[broadcast.Broadcast[Any]] = {
+  lazy val relationFuture: Future[broadcast.Broadcast[Any]] = {
     // relationFuture is used in "doExecute". Therefore we can get the execution id correctly here.
     val executionId = sparkContext.getLocalProperty(SQLExecution.EXECUTION_ID_KEY)
     val task = new Callable[broadcast.Broadcast[Any]]() {
@@ -255,6 +265,32 @@ class GpuBroadcastExchangeExec(
     GpuBroadcastExchangeExec.executionContext.submit[broadcast.Broadcast[Any]](task)
   }
 
+  override protected def doPrepare(): Unit = {
+    // Materialize the future.
+    relationFuture
+  }
+
+  override protected def doExecute(): RDD[InternalRow] = {
+    throw new UnsupportedOperationException(
+      "GpuBroadcastExchange does not support the execute() code path.")
+  }
+
+  override protected[sql] def doExecuteBroadcast[T](): broadcast.Broadcast[T] = {
+    try {
+      relationFuture.get(timeout, TimeUnit.SECONDS).asInstanceOf[broadcast.Broadcast[T]]
+    } catch {
+      case ex: TimeoutException =>
+        logError(s"Could not execute broadcast in $timeout secs.", ex)
+        if (!relationFuture.isDone) {
+          sparkContext.cancelJobGroup(runId.toString)
+          relationFuture.cancel(true)
+        }
+        throw new SparkException(s"Could not execute broadcast in $timeout secs. " +
+          s"You can increase the timeout for broadcasts via ${SQLConf.BROADCAST_TIMEOUT.key} or " +
+          s"disable broadcast join by setting ${SQLConf.AUTO_BROADCASTJOIN_THRESHOLD.key} to -1",
+          ex)
+    }
+  }
 
   final def executeColumnarBroadcast[T](): broadcast.Broadcast[T] = {
     if (isCanonicalizedPlan) {

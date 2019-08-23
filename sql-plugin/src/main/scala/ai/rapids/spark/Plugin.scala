@@ -35,7 +35,6 @@ import org.apache.spark.sql.execution.datasources.v2.csv.CSVScan
 import org.apache.spark.sql.execution.datasources.v2.orc.OrcScan
 import org.apache.spark.sql.execution.datasources.v2.parquet.ParquetScan
 import org.apache.spark.sql.execution.exchange.{BroadcastExchangeExec, ShuffleExchangeExec}
-import org.apache.spark.sql.execution.joins._
 import org.apache.spark.sql.sources.v2.reader.Scan
 import org.apache.spark.sql.types._
 import org.apache.spark.{ExecutorPlugin, SparkEnv}
@@ -703,7 +702,7 @@ object GpuOverrides {
   val scans : Map[Class[_ <: Scan], ScanRule[_ <: Scan]] = Map(
     scan[CSVScan]
       .convert((scan, overrides) =>
-        new GpuCSVScan(scan.sparkSession,
+        GpuCSVScan(scan.sparkSession,
           scan.fileIndex,
           scan.dataSchema,
           scan.readDataSchema,
@@ -715,7 +714,7 @@ object GpuOverrides {
       .build(),
     scan[ParquetScan]
       .convert((scan, overrides) =>
-        new GpuParquetScan(scan.sparkSession,
+        GpuParquetScan(scan.sparkSession,
           scan.hadoopConf,
           scan.fileIndex,
           scan.dataSchema,
@@ -729,7 +728,7 @@ object GpuOverrides {
       .build(),
     scan[OrcScan]
       .convert((scan, overrides) =>
-        new GpuOrcScan(scan.sparkSession,
+        GpuOrcScan(scan.sparkSession,
           scan.hadoopConf,
           scan.fileIndex,
           scan.dataSchema,
@@ -761,7 +760,7 @@ object GpuOverrides {
   val execs : Map[Class[_ <: SparkPlan], ExecRule[_ <: SparkPlan]] = Map(
     exec[ProjectExec]
       .convert((plan, overrides) =>
-        new GpuProjectExec(plan.projectList.map(overrides.replaceWithGpuExpression),
+        GpuProjectExec(plan.projectList.map(overrides.replaceWithGpuExpression),
               overrides.replaceWithGpuPlan(plan.child)))
       .desc("The backend for most select, withColumn and dropColumn statements")
       .assertIsAllowed((proj, conf) =>
@@ -771,20 +770,20 @@ object GpuOverrides {
       .build(),
     exec[BatchScanExec]
       .convert((exec, overrides) =>
-        new GpuBatchScanExec(exec.output.map(
+        GpuBatchScanExec(exec.output.map(
           (exec) => overrides.replaceWithGpuExpression(exec).asInstanceOf[AttributeReference]),
           overrides.replaceWithGpuScan(exec.scan)))
       .desc("The backend for most file input")
       .build(),
     exec[FilterExec]
       .convert((filter, overrides) =>
-        new GpuFilterExec(overrides.replaceWithGpuExpression(filter.condition),
+        GpuFilterExec(overrides.replaceWithGpuExpression(filter.condition),
           overrides.replaceWithGpuPlan(filter.child)))
       .desc("The backend for most filter statements")
       .build(),
     exec[ShuffleExchangeExec]
       .convert((shuffle, overrides) =>
-        new GpuShuffleExchangeExec(overrides.replaceWithGpuPartitioning(shuffle.outputPartitioning),
+        GpuShuffleExchangeExec(overrides.replaceWithGpuPartitioning(shuffle.outputPartitioning),
           overrides.replaceWithGpuPlan(shuffle.child), shuffle.canChangeNumPartitions))
       .desc("The backend for most data being exchanged between processes")
       .assertIsAllowed((shuffle, conf) => {
@@ -795,11 +794,11 @@ object GpuOverrides {
       .build(),
     exec[UnionExec]
       .convert((union, overrides) =>
-        new GpuUnionExec(union.children.map(overrides.replaceWithGpuPlan(_))))
+        GpuUnionExec(union.children.map(overrides.replaceWithGpuPlan(_))))
       .desc("The backend for the union operator")
       .build(),
     exec[BroadcastExchangeExec]
-      .convert((exchange, overrides) => new GpuBroadcastExchangeExec(exchange.mode, exchange.child))
+      .convert((exchange, overrides) => GpuBroadcastExchangeExec(exchange.mode, exchange.child))
       .desc("The backend for broadcast exchange of data")
       .assertIsAllowed((exec, conf) => {
         if (!TrampolineUtil.isHashedRelation(exec.mode)) {
@@ -820,7 +819,7 @@ object GpuOverrides {
         if (!buildSide.isInstanceOf[GpuBroadcastExchangeExec]) {
           throw new CannotReplaceException("the broadcast must be on the GPU too")
         }
-        new GpuBroadcastHashJoinExec(
+        GpuBroadcastHashJoinExec(
           join.leftKeys.map(overrides.replaceWithGpuExpression),
           join.rightKeys.map(overrides.replaceWithGpuExpression),
           join.joinType, join.buildSide,
@@ -842,7 +841,7 @@ object GpuOverrides {
       .convert((join, overrides) => {
         val left = overrides.replaceWithGpuPlan(join.left)
         val right = overrides.replaceWithGpuPlan(join.right)
-        new GpuShuffledHashJoinExec(
+        GpuShuffledHashJoinExec(
           join.leftKeys.map(overrides.replaceWithGpuExpression),
           join.rightKeys.map(overrides.replaceWithGpuExpression),
           join.joinType, join.buildSide,
@@ -912,7 +911,7 @@ object GpuOverrides {
       .build(),
     exec[SortExec]
       .convert((sort, overrides) =>
-        new GpuSortExec(sort.sortOrder.map(overrides.replaceWithGpuExpression).asInstanceOf[Seq[GpuSortOrder]],
+        GpuSortExec(sort.sortOrder.map(overrides.replaceWithGpuExpression).asInstanceOf[Seq[GpuSortOrder]],
           sort.global,
           overrides.replaceWithGpuPlan(sort.child)))
       .assertIsAllowed((sort, conf) => {
@@ -1247,9 +1246,9 @@ case class GpuOverrides() extends Rule[SparkPlan] with Logging {
 case class GpuTransitionOverrides() extends Rule[SparkPlan] {
   def optimizeGpuPlanTransitions(plan: SparkPlan): SparkPlan = plan match {
     case HostColumnarToGpu(r2c: RowToColumnarExec) =>
-      new GpuRowToColumnarExec(optimizeGpuPlanTransitions(r2c.child))
+      GpuRowToColumnarExec(optimizeGpuPlanTransitions(r2c.child))
     case ColumnarToRowExec(bb: GpuBringBackToHost) =>
-      new GpuColumnarToRowExec(optimizeGpuPlanTransitions(bb.child))
+      GpuColumnarToRowExec(optimizeGpuPlanTransitions(bb.child))
     case p =>
       p.withNewChildren(p.children.map(optimizeGpuPlanTransitions))
   }
