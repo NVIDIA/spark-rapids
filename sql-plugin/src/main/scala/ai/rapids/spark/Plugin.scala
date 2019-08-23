@@ -883,8 +883,17 @@ object GpuOverrides {
         if (isAnyStringLit(hashAgg.groupingExpressions)) {
           throw new CannotReplaceException("string literal values are not supported in a hash aggregate")
         }
-        if (hashAgg.groupingExpressions.map(_.dataType).contains(StringType)) {
+        val groupingExpressionTypes = hashAgg.groupingExpressions.map(_.dataType)
+        val aggregateExpressionTypes = hashAgg.aggregateExpressions.map(_.dataType)
+        if (groupingExpressionTypes.contains(StringType)) {
           throw new CannotReplaceException("strings are not supported as grouping keys for hash aggregation.")
+        }
+        if (conf.hasNans &&
+          (groupingExpressionTypes.contains(FloatType) ||
+            groupingExpressionTypes.contains(DoubleType))) {
+          throw new CannotReplaceException("grouping expressions over floating point columns " +
+            "that may contain -0.0 and NaN are disabled. You can bypass this by setting " +
+            "spark.rapids.sql.hasNans=false")
         }
         if (hashAgg.resultExpressions.isEmpty) {
           throw new CannotReplaceException("result expressions is empty")
