@@ -458,6 +458,11 @@ trait SparkQueryCompareTestSuite extends FunSuite {
       sort=true)(fun)
   }
 
+  def makeBatched(batchSize: Int, conf: SparkConf = new SparkConf()): SparkConf = {
+    // forces ColumnarBatch of batchSize rows
+    conf.set("spark.sql.inMemoryColumnarStorage.batchSize", batchSize.toString)
+  }
+
   def mixedDf(session: SparkSession): DataFrame = {
     import session.sqlContext.implicits._
     Seq(
