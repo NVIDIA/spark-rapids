@@ -17,29 +17,18 @@
 package ai.rapids.spark
 
 import org.apache.spark.SparkConf
-import org.apache.spark.sql.{DataFrame, SparkSession}
 import org.apache.spark.sql.functions._
 
 class HashAggregatesSuite extends SparkQueryCompareTestSuite {
-  def replaceHashAggMode(mode: String, conf: SparkConf = new SparkConf()): SparkConf = {
-    // configures whether Plugin will replace certain aggregate exec nodes
-    conf.set("spark.rapids.sql.exec.hash-agg-mode-to-replace", mode)
+  def makeBatched(batchSize: Int): SparkConf = {
+    // forces ColumnarBatch of batchSize rows to be handed to the hash aggregate
+    // which is useful to test concatenation
+    new SparkConf().set("spark.sql.inMemoryColumnarStorage.batchSize", batchSize.toString)
   }
 
-  def FLOAT_TEST_testSparkResultsAreEqual(testName: String,
-                                          df: SparkSession => DataFrame,
-                                          conf: SparkConf = new SparkConf(),
-                                          batchSize: Int = 0,
-                                          repart: Int = 1,
-                                          allowNonGpu: Boolean = false)
-                                         (fn: DataFrame => DataFrame) {
-    if (batchSize > 0) {
-      makeBatched(batchSize, conf)
-    }
-    conf.set(RapidsConf.HAS_NANS.key, "false")
-    testSparkResultsAreEqual(testName, df,
-      conf = conf, allowNonGpu = allowNonGpu, repart = repart,
-      incompat = true, sort = true)(fn)
+  def replaceHashAggMode(mode: String): SparkConf = {
+    // configures whether Plugin will replace certain aggregate exec nodes
+    new SparkConf().set("spark.rapids.sql.exec.hash-agg-mode-to-replace", mode)
   }
 
   IGNORE_ORDER_testSparkResultsAreEqual("test hash agg with shuffle", longsFromCSVDf, repart = 2) {
@@ -76,7 +65,8 @@ class HashAggregatesSuite extends SparkQueryCompareTestSuite {
       (max("more_longs") - min("more_longs")) * 3.0)
   }
 
-  FLOAT_TEST_testSparkResultsAreEqual("float basic aggregates group by floats", floatCsvDf) {
+  INCOMPAT_IGNORE_ORDER_testSparkResultsAreEqual("float basic aggregates group by floats", floatCsvDf,
+    conf = makeBatched(3)) {
     frame => frame.groupBy("floats").agg(
       lit(456f),
       min(col("floats")) + lit(123),
@@ -89,7 +79,8 @@ class HashAggregatesSuite extends SparkQueryCompareTestSuite {
       count("*"))
   }
 
-  FLOAT_TEST_testSparkResultsAreEqual("float basic aggregates group by more_floats", floatCsvDf) {
+  INCOMPAT_IGNORE_ORDER_testSparkResultsAreEqual("float basic aggregates group by more_floats", floatCsvDf,
+    conf = makeBatched(3)) {
     frame => frame.groupBy("floats").agg(
       lit(456f),
       min(col("floats")) + lit(123),
@@ -102,8 +93,10 @@ class HashAggregatesSuite extends SparkQueryCompareTestSuite {
       count("*"))
   }
 
-  FLOAT_TEST_testSparkResultsAreEqual("partial on gpu: float basic aggregates group by more_floats", floatCsvDf,
+  testSparkResultsAreEqual("partial on gpu: float basic aggregates group by more_floats", floatCsvDf,
     conf = replaceHashAggMode("partial"),
+    incompat = true,
+    sort = true,
     allowNonGpu = true) {
     frame => frame.groupBy("more_floats").agg(
       lit(456f),
@@ -117,8 +110,10 @@ class HashAggregatesSuite extends SparkQueryCompareTestSuite {
       count("*"))
   }
 
-  FLOAT_TEST_testSparkResultsAreEqual("final on gpu: float basic aggregates group by more_floats", floatCsvDf,
+  testSparkResultsAreEqual("final on gpu: float basic aggregates group by more_floats", floatCsvDf,
     conf = replaceHashAggMode("final"),
+    incompat = true,
+    sort = true,
     allowNonGpu = true) {
     frame => frame.groupBy("more_floats").agg(
       lit(456f),
@@ -132,7 +127,7 @@ class HashAggregatesSuite extends SparkQueryCompareTestSuite {
       count("*"))
   }
 
-  FLOAT_TEST_testSparkResultsAreEqual("nullable float basic aggregates group by more_floats", nullableFloatCsvDf,
+  INCOMPAT_IGNORE_ORDER_testSparkResultsAreEqual("nullable float basic aggregates group by more_floats", nullableFloatCsvDf,
     conf = makeBatched(3)) {
     frame => frame.groupBy("more_floats").agg(
       lit(456f),
@@ -216,7 +211,7 @@ class HashAggregatesSuite extends SparkQueryCompareTestSuite {
       count("*"))
   }
 
-  FLOAT_TEST_testSparkResultsAreEqual("doubles basic aggregates group by doubles", doubleCsvDf,
+  INCOMPAT_IGNORE_ORDER_testSparkResultsAreEqual("doubles basic aggregates group by doubles", doubleCsvDf,
     conf = makeBatched(3)) {
     frame => frame.groupBy("doubles").agg(
       lit(456f),
@@ -230,7 +225,7 @@ class HashAggregatesSuite extends SparkQueryCompareTestSuite {
       count("*"))
   }
 
-  FLOAT_TEST_testSparkResultsAreEqual("doubles basic aggregates group by more_doubles", doubleCsvDf,
+  INCOMPAT_IGNORE_ORDER_testSparkResultsAreEqual("doubles basic aggregates group by more_doubles", doubleCsvDf,
     conf = makeBatched(3)) {
     frame => frame.groupBy("more_doubles").agg(
       lit(456f),
@@ -264,15 +259,15 @@ class HashAggregatesSuite extends SparkQueryCompareTestSuite {
       .agg(max("ints").as("max_ints_by_month"))
   }
 
-  FLOAT_TEST_testSparkResultsAreEqual("sum(floats) group by more_floats 2 partitions", floatCsvDf, repart = 2) {
+  INCOMPAT_IGNORE_ORDER_testSparkResultsAreEqual("sum(floats) group by more_floats 2 partitions", floatCsvDf, repart = 2) {
     frame => frame.groupBy("more_floats").sum("floats")
   }
 
-  FLOAT_TEST_testSparkResultsAreEqual("avg(floats) group by more_floats 4 partitions", floatCsvDf, repart = 4) {
+  INCOMPAT_IGNORE_ORDER_testSparkResultsAreEqual("avg(floats) group by more_floats 4 partitions", floatCsvDf, repart = 4) {
     frame => frame.groupBy("more_floats").avg("floats")
   }
 
-  FLOAT_TEST_testSparkResultsAreEqual("avg(floats),count(floats) group by more_floats 4 partitions", floatCsvDf, repart = 4) {
+  INCOMPAT_IGNORE_ORDER_testSparkResultsAreEqual("avg(floats),count(floats) group by more_floats 4 partitions", floatCsvDf, repart = 4) {
     frame => frame
       .groupBy("more_floats")
       .agg(avg("floats"), count("*"))
@@ -309,11 +304,11 @@ class HashAggregatesSuite extends SparkQueryCompareTestSuite {
       first("five", true), last("six", true))
   }
 
-  FLOAT_TEST_testSparkResultsAreEqual("empty df: reduction count", floatCsvDf) {
+  IGNORE_ORDER_testSparkResultsAreEqual("empty df: reduction count", floatCsvDf) {
     frame => frame.filter("floats > 10000000.0").agg(count("*"))
   }
 
-  FLOAT_TEST_testSparkResultsAreEqual("empty df: reduction aggs", floatCsvDf) {
+  IGNORE_ORDER_testSparkResultsAreEqual("empty df: reduction aggs", floatCsvDf) {
     frame => frame.filter("floats > 10000000.0").agg(
       lit(456f),
       min(col("floats")) + lit(123),
@@ -328,23 +323,27 @@ class HashAggregatesSuite extends SparkQueryCompareTestSuite {
       count("*"))
   }
 
-  FLOAT_TEST_testSparkResultsAreEqual("empty df: grouped count", floatCsvDf) {
+  INCOMPAT_IGNORE_ORDER_testSparkResultsAreEqual("empty df: grouped count", floatCsvDf) {
     frame => frame.filter("floats > 10000000.0").groupBy("floats").agg(count("*"))
   }
 
-  FLOAT_TEST_testSparkResultsAreEqual("partial on gpu: empty df: grouped count", floatCsvDf,
+  testSparkResultsAreEqual("partial on gpu: empty df: grouped count", floatCsvDf,
+    incompat = true,
+    sort = true,
     allowNonGpu = true,
     conf = replaceHashAggMode("partial")) {
     frame => frame.filter("floats > 10000000.0").groupBy("floats").agg(count("*"))
   }
 
-  FLOAT_TEST_testSparkResultsAreEqual("final on gpu: empty df: grouped count", floatCsvDf,
+  testSparkResultsAreEqual("final on gpu: empty df: grouped count", floatCsvDf,
+    incompat = true,
+    sort = true,
     allowNonGpu = true,
     conf = replaceHashAggMode("final")) {
     frame => frame.filter("floats > 10000000.0").groupBy("floats").agg(count("*"))
   }
 
-  FLOAT_TEST_testSparkResultsAreEqual("empty df: float basic aggregates group by floats", floatCsvDf) {
+  INCOMPAT_IGNORE_ORDER_testSparkResultsAreEqual("empty df: float basic aggregates group by floats", floatCsvDf) {
     frame => frame.filter("floats > 10000000.0").groupBy("floats").agg(
       lit(456f),
       min(col("floats")) + lit(123),
@@ -359,7 +358,9 @@ class HashAggregatesSuite extends SparkQueryCompareTestSuite {
       count("*"))
   }
 
-  FLOAT_TEST_testSparkResultsAreEqual("partial on gpu: empty df: float basic aggregates group by floats", floatCsvDf,
+  testSparkResultsAreEqual("partial on gpu: empty df: float basic aggregates group by floats", floatCsvDf,
+    incompat = true,
+    sort = true,
     allowNonGpu = true,
     conf = replaceHashAggMode("partial")) {
     frame => frame.filter("floats > 10000000.0").groupBy("floats").agg(
@@ -376,7 +377,9 @@ class HashAggregatesSuite extends SparkQueryCompareTestSuite {
       count("*"))
   }
 
-  FLOAT_TEST_testSparkResultsAreEqual("final on gpu: empty df: float basic aggregates group by floats", floatCsvDf,
+  testSparkResultsAreEqual("final on gpu: empty df: float basic aggregates group by floats", floatCsvDf,
+    incompat = true,
+    sort = true,
     allowNonGpu = true,
     conf = replaceHashAggMode("final")) {
     frame => frame.filter("floats > 10000000.0").groupBy("floats").agg(
