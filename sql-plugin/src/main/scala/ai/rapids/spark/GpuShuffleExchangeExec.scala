@@ -40,7 +40,7 @@ import org.apache.spark.util.MutablePair
 case class GpuShuffleExchangeExec(
     override val outputPartitioning: Partitioning,
     child: SparkPlan,
-    canChangeNumPartitions: Boolean) extends Exchange with GpuExec {
+    canChangeNumPartitions: Boolean = true) extends Exchange with GpuExec {
 
   private lazy val writeMetrics =
     SQLShuffleWriteMetricsReporter.createShuffleWriteMetrics(sparkContext)
