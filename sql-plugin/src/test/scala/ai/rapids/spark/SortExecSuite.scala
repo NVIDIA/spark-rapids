@@ -58,7 +58,7 @@ class SortExecSuite extends SparkQueryCompareTestSuite {
   // individually as we add support
   for (
     dataType <- DataTypeTestUtils.atomicTypes ++ Set(NullType) -- Set(FloatType, StringType, NullType, DoubleType, DecimalType.USER_DEFAULT,
-      DecimalType(20, 5), DecimalType.SYSTEM_DEFAULT, BinaryType, TimestampType /*disabled due to concatenate issue*/);
+      DecimalType(20, 5), DecimalType.SYSTEM_DEFAULT, BinaryType);
     nullable <- Seq(true, false);
     sortOrder <- Seq(col("a").asc, col("a").asc_nulls_last, col("a").desc, col("a").desc_nulls_first)
   ) {

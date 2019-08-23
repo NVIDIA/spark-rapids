@@ -805,10 +805,6 @@ object GpuOverrides {
         if (!TrampolineUtil.isHashedRelation(exec.mode)) {
           throw new CannotReplaceException("Broadcast exchange is only supported for HashedJoin")
         }
-        if (exec.output.map(_.dataType).contains(TimestampType)) {
-          // turning off because of concatenation
-          throw new CannotReplaceException("timestamps are not supported in a broadcast exchange.")
-        }
       })
       .context(GPU_BROADCAST_HASH_JOIN_CONTEXT)
       .build(),
@@ -856,10 +852,6 @@ object GpuOverrides {
       .desc("Implementation of join using hashed shuffled data")
       .assertIsAllowed((exec, conf) => {
         GpuHashJoin.assertJoinTypeAllowed(exec.joinType)
-        if (exec.output.map(_.dataType).contains(TimestampType)) {
-          // turning off because of concatenation
-          throw new CannotReplaceException("timestamps are not supported in a hash join.")
-        }
         if (exec.output.map(_.dataType).contains(StringType)) {
           throw new CannotReplaceException("strings are not supported in a hash join.")
         } else if (exec.condition != None) {
@@ -893,14 +885,8 @@ object GpuOverrides {
         }
         val groupingExpressionTypes = hashAgg.groupingExpressions.map(_.dataType)
         val aggregateExpressionTypes = hashAgg.aggregateExpressions.map(_.dataType)
-        val allTypes = groupingExpressionTypes ++ aggregateExpressionTypes
         if (groupingExpressionTypes.contains(StringType)) {
-          // turning off because of concatenation
           throw new CannotReplaceException("strings are not supported as grouping keys for hash aggregation.")
-        }
-        if (allTypes.contains(TimestampType)) {
-          // turning off because of concatenation
-          throw new CannotReplaceException("timestamps are not supported for gpu hash aggregation.")
         }
         if (conf.hasNans &&
           (groupingExpressionTypes.contains(FloatType) ||
@@ -946,10 +932,6 @@ object GpuOverrides {
         val schemaDataTypes = sort.schema.map(_.dataType)
         if (schemaDataTypes.contains(StringType)) {
           throw new CannotReplaceException("strings are not supported in sort.")
-        }
-        if (schemaDataTypes.contains(TimestampType)) {
-          // turning off because of concatenation
-          throw new CannotReplaceException("timestamps are not supported in sort.")
         }
         val keyDataTypes = sort.sortOrder.map(_.dataType)
         if ((keyDataTypes.contains(FloatType) || keyDataTypes.contains(DoubleType)) && conf.hasNans) {
