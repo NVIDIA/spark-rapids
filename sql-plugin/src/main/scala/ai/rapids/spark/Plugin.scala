@@ -927,7 +927,7 @@ object GpuOverrides {
         val keyDataTypes = sort.sortOrder.map(_.dataType)
         if ((keyDataTypes.contains(FloatType) || keyDataTypes.contains(DoubleType)) && conf.hasNans) {
           throw new CannotReplaceException("floats/doubles are not supported in sort, due to " +
-            "incompatibility with NaN. If you don't have any NaN's in your data you can set " +
+            "incompatibility with NaN. If you don't have any NaNs in your data you can set " +
             "spark.rapids.sql.hasNans=false to bypass this.")
         }
         val nullOrderings = sort.sortOrder.map(o => o.nullOrdering)
