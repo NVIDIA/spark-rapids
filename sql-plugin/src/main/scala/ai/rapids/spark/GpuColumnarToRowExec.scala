@@ -149,7 +149,23 @@ class GpuColumnarToRowExec(child: SparkPlan) extends ColumnarToRowExec(child) wi
     val numInputBatches = metricTerm(ctx, "numInputBatches")
 
     val columnarBatchClz = classOf[ColumnarBatch].getName
-    val batch = ctx.addMutableState(columnarBatchClz, "batch")
+    val initTCListener = ctx.freshName("initTCListener")
+    val batch = ctx.addMutableState(columnarBatchClz, "batch",
+    v => {
+      val initTCListenerFuncName = ctx.addNewFunction(initTCListener,
+        s"""
+           | private void $initTCListener() {
+           |   org.apache.spark.TaskContext.get().addTaskCompletionListener(
+           |      new org.apache.spark.util.TaskCompletionListener() {
+           |        @Override
+           |        public void onTaskCompletion(TaskContext context) {
+           |          if ($v != null) {
+           |            $v.close(); }
+           |        }
+           |    });
+           | }
+           """.stripMargin.trim)
+      s"$initTCListenerFuncName();" }, forceInline=true)
 
     val idx = ctx.addMutableState(CodeGenerator.JAVA_INT, "batchIdx") // init as batchIdx = 0
     val columnVectorClzs = child.vectorTypes.getOrElse(
