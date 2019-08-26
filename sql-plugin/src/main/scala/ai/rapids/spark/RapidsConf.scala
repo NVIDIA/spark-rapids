@@ -162,6 +162,12 @@ object RapidsConf {
     .booleanConf
     .createWithDefault(true)
 
+  val GPU_BATCH_SIZE_ROWS = conf("spark.rapids.sql.batchSizeRows")
+    .doc("Set the target number of rows for a GPU batch. Splits sizes for input data" +
+      " is covered by separate configs.")
+    .integerConf
+    .createWithDefault(1000000)
+
   val TEST_CONF = conf("spark.rapids.sql.testing")
     .doc("Intended to be used by unit tests, if enabled all operations must run on the GPU" +
       " or an error happens.")
@@ -260,6 +266,8 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
   lazy val isMemDebugEnabled: Boolean = get(MEM_DEBUG)
 
   lazy val hasNans: Boolean = get(HAS_NANS)
+
+  lazy val gpuTargetBatchSizeRows: Integer = get(GPU_BATCH_SIZE_ROWS)
 
   lazy val explain: Boolean = get(EXPLAIN)
 

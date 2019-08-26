@@ -58,7 +58,12 @@ trait GpuHashJoin extends GpuExec with HashJoin {
       val streamedKeysBatch = GpuProjectExec.project(streamedBatch, gpuStreamedKeys)
       try {
         val combined =  combine(streamedKeysBatch, streamedBatch)
-        GpuColumnVector.from(combined)
+        val asStringCat = GpuColumnVector.convertToStringCategoriesIfNeeded(combined)
+        try {
+          GpuColumnVector.from(asStringCat)
+        } finally {
+          asStringCat.close()
+        }
       } finally {
         streamedKeysBatch.close()
       }

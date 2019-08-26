@@ -39,6 +39,13 @@ class JoinsSuite extends SparkQueryCompareTestSuite {
     (A, B) => A.join(B, A("ints") === B("ints"))
   }
 
+  INCOMPAT_IGNORE_ORDER_testSparkResultsAreEqual2("Test broadcast hash join on string with mixed fields",
+    mixedDf, mixedDfWithNulls,
+    conf = new SparkConf()
+      .set("spark.sql.autoBroadcastJoinThreshold", "10MB")) {
+    (A, B) => A.join(B, A("strings") === B("strings"))
+  }
+
   // For spark to insert a shuffled hash join it has to be enabled with
   // "spark.sql.join.preferSortMergeJoin" = "false" and both sides have to
   // be larger than a broadcast hash join would want

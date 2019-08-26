@@ -24,7 +24,7 @@ import scala.concurrent.{ExecutionContext, Promise}
 import scala.util.control.NonFatal
 
 import ai.rapids.cudf.{JCudfSerialization, Table}
-import ai.rapids.spark.{GpuColumnVector, GpuExec}
+import ai.rapids.spark.{ConcatAndConsumeAll, GpuColumnVector, GpuExec}
 import com.google.common.util.concurrent.ThreadFactoryBuilder
 
 import org.apache.spark.{broadcast, SparkException}
@@ -37,51 +37,6 @@ import org.apache.spark.sql.execution.exchange.Exchange
 import org.apache.spark.sql.execution.metric.SQLMetrics
 import org.apache.spark.sql.internal.{SQLConf, StaticSQLConf}
 import org.apache.spark.sql.vectorized.ColumnarBatch
-
-/**
- * Consumes an Iterator of ColumnarBatches and concatenates them into a single ColumnarBatch.
- * The batches will be closed with this operation is done.
- */
-object ConcatAndConsumeAll {
-  private def conversionForConcat(cb: ColumnarBatch): Table = try {
-    GpuColumnVector.from(cb)
-  } finally {
-    cb.close()
-  }
-
-  private def buildBatch(arrayOfBatches: Array[ColumnarBatch]): ColumnarBatch = {
-    // TODO if this fails in the middle we may leak column vectors.
-    val tables = arrayOfBatches.map(conversionForConcat)
-    try {
-      val combined = Table.concatenate(tables: _*)
-      try {
-        GpuColumnVector.from(combined)
-      } finally {
-        combined.close()
-      }
-    } finally {
-      tables.foreach(_.close())
-    }
-  }
-
-  def apply(batches: Iterator[ColumnarBatch], format: Seq[Attribute]): ColumnarBatch = {
-    import collection.JavaConverters._
-    val arrayOfBatches = batches.toArray
-    if (arrayOfBatches.length <= 0) {
-      GpuColumnVector.emptyBatch(format.asJava)
-    } else if (arrayOfBatches.length == 1) {
-      // Need to convert the strings to string categories to be consistent.
-      val table = conversionForConcat(arrayOfBatches(0))
-      try {
-        GpuColumnVector.from(table)
-      } finally {
-        table.close()
-      }
-    } else {
-      buildBatch(arrayOfBatches)
-    }
-  }
-}
 
 @SerialVersionUID(100L)
 class SerializableGpuColumnarBatch(var batch: ColumnarBatch, val closeAfterSerialize: Boolean)

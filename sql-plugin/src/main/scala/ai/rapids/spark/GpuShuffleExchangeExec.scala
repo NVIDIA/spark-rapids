@@ -19,7 +19,7 @@ package ai.rapids.spark
 import scala.collection.AbstractIterator
 import scala.collection.mutable.ArrayBuffer
 
-import ai.rapids.cudf.{ColumnVector, HashFunction, Table}
+import ai.rapids.cudf.{ColumnVector, DType, HashFunction, Table}
 
 import org.apache.spark.ShuffleDependency
 import org.apache.spark.rdd.RDD
@@ -41,6 +41,11 @@ case class GpuShuffleExchangeExec(
     override val outputPartitioning: Partitioning,
     child: SparkPlan,
     canChangeNumPartitions: Boolean = true) extends Exchange with GpuExec {
+
+  /**
+   * Lots of small output batches we want to group together.
+   */
+  override def coalesceAfter: Boolean = true
 
   private lazy val writeMetrics =
     SQLShuffleWriteMetricsReporter.createShuffleWriteMetrics(sparkContext)
@@ -173,17 +178,19 @@ class GpuHashPartitioning(expressions: Seq[GpuExpression], numPartitions: Int)
   extends HashPartitioning(expressions, numPartitions) with GpuExpression with GpuPartitioning {
 
   def getGpuKeyColumns(batch: ColumnarBatch) : Array[GpuColumnVector] = {
-    expressions.map(_.columnarEval(batch).asInstanceOf[GpuColumnVector]).toArray
+    // TODO need some kind of safe map to ensure things are closed on failure
+    expressions.map(expr => {
+      val vec = expr.columnarEval(batch).asInstanceOf[GpuColumnVector]
+      try {
+        vec.convertToStringCategoriesIfNeeded()
+      } finally {
+        vec.close()
+      }
+    }).toArray
   }
 
-  def getGpuDataColumns(batch: ColumnarBatch) : Array[GpuColumnVector] = {
-    val cols = batch.numCols()
-    val ret = new Array[GpuColumnVector](cols)
-    for (i <- 0 until cols) {
-      ret(i) = batch.column(i).asInstanceOf[GpuColumnVector]
-    }
-    ret
-  }
+  def getGpuDataColumns(batch: ColumnarBatch) : Array[GpuColumnVector] =
+    GpuColumnVector.convertToStringCategoriesArrayIfNeeded(batch)
 
   def insertDedupe(indexesOut: Array[Int], colsIn: Array[GpuColumnVector], dedupedData: ArrayBuffer[ColumnVector]): Unit = {
     indexesOut.indices.foreach { i =>
@@ -211,7 +218,6 @@ class GpuHashPartitioning(expressions: Seq[GpuExpression], numPartitions: Int)
   }
 
   def partitionInternal(batch: ColumnarBatch): (Array[Int], Array[GpuColumnVector]) = {
-
     var gpuKeyColumns : Array[GpuColumnVector] = null
     var gpuDataColumns : Array[GpuColumnVector] = null
     try {
@@ -220,6 +226,10 @@ class GpuHashPartitioning(expressions: Seq[GpuExpression], numPartitions: Int)
 
       val (keys, dataIndexes, table) = dedupe(gpuKeyColumns, gpuDataColumns)
       // Don't need the batch any more table has all we need in it.
+      gpuDataColumns.foreach(_.close())
+      gpuDataColumns = null
+      gpuKeyColumns.foreach(_.close())
+      gpuKeyColumns = null
       batch.close()
 
       val partedTable = table.onColumns(keys: _*).partition(numPartitions, HashFunction.MURMUR3)
@@ -229,9 +239,11 @@ class GpuHashPartitioning(expressions: Seq[GpuExpression], numPartitions: Int)
       partedTable.close()
       (parts, columns)
     } finally {
-      // We didn't inc any reference counts on the data columns...
+      if (gpuDataColumns != null) {
+        gpuDataColumns.foreach(_.close())
+      }
       if (gpuKeyColumns != null) {
-        gpuKeyColumns.foreach(_.close)
+        gpuKeyColumns.foreach(_.close())
       }
     }
   }

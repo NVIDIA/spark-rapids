@@ -304,6 +304,26 @@ public final class GpuColumnVector extends ColumnVector {
     return vectors;
   }
 
+  /**
+   * Convert an entire batch to string categories if needed.  The input batch must be closed
+   * when done.
+   */
+  public static GpuColumnVector[] convertToStringCategoriesArrayIfNeeded(ColumnarBatch batch) {
+    GpuColumnVector[] columns = extractColumns(batch);
+    for (int i = 0; i < columns.length; i++) {
+      columns[i] = columns[i].convertToStringCategoriesIfNeeded();
+    }
+    return columns;
+  }
+
+  /**
+   * Convert an entire batch to string categories if needed.  The input batch must be closed
+   * when done.
+   */
+  public static ColumnarBatch convertToStringCategoriesIfNeeded(ColumnarBatch batch) {
+    return new ColumnarBatch(convertToStringCategoriesArrayIfNeeded(batch), batch.numRows());
+  }
+
   private final ai.rapids.cudf.ColumnVector cudfCv;
 
   /**
@@ -406,6 +426,14 @@ public final class GpuColumnVector extends ColumnVector {
   @Override
   public ColumnVector getChild(int ordinal) {
     throw new IllegalStateException("Struct and struct like types are currently not supported by rapids cudf");
+  }
+
+  public GpuColumnVector convertToStringCategoriesIfNeeded() {
+    if (cudfCv.getType() == DType.STRING) {
+      return from(cudfCv.asStringCategories());
+    } else {
+      return this.incRefCount();
+    }
   }
 
   public ai.rapids.cudf.ColumnVector getBase() {

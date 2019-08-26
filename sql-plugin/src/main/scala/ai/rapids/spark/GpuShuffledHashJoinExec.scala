@@ -20,8 +20,8 @@ import java.util.concurrent.TimeUnit.NANOSECONDS
 
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.plans.JoinType
-import org.apache.spark.sql.execution.joins.{BuildSide, ShuffledHashJoinExec}
-import org.apache.spark.sql.execution.{BinaryExecNode, ConcatAndConsumeAll, SparkPlan}
+import org.apache.spark.sql.execution.{BinaryExecNode, SparkPlan}
+import org.apache.spark.sql.execution.joins.{BuildLeft, BuildRight, BuildSide}
 import org.apache.spark.sql.vectorized.ColumnarBatch
 import org.apache.spark.TaskContext
 import org.apache.spark.sql.catalyst.plans.physical.{Distribution, HashClusteredDistribution}
@@ -50,6 +50,11 @@ case class GpuShuffledHashJoinExec(
       "GpuShuffledHashJoin does not support the execute() code path.")
   }
 
+  override def childrenCoalesceGoal: Seq[CoalesceGoal] = buildSide match {
+    case BuildLeft => Seq(RequireSingleBatch, null)
+    case BuildRight => Seq(null, RequireSingleBatch)
+  }
+
   override def doExecuteColumnar() : RDD[ColumnarBatch] = {
     val numOutputRows = longMetric("numOutputRows")
     val buildDataSize = longMetric("buildDataSize")
@@ -59,7 +64,7 @@ case class GpuShuffledHashJoinExec(
       (streamIter, buildIter) => {
         var combinedSize = 0
         val start = System.nanoTime()
-        val buildBatch = ConcatAndConsumeAll(buildIter, localBuildOutput)
+        val buildBatch = ConcatAndConsumeAll.verifyGotSingleBatch(buildIter, localBuildOutput)
         val builtTable = try {
           val keys = GpuProjectExec.project(buildBatch, gpuBuildKeys)
           try {
