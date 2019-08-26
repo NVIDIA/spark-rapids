@@ -24,7 +24,7 @@ import java.util.Collections
 import scala.collection.JavaConverters._
 import scala.collection.mutable.ArrayBuffer
 
-import ai.rapids.cudf.{ColumnVector, DType, HostMemoryBuffer, ParquetOptions, Table, TimeUnit}
+import ai.rapids.cudf.{HostMemoryBuffer, ParquetOptions, Table, TimeUnit}
 import org.apache.commons.io.output.{CountingOutputStream, NullOutputStream}
 import org.apache.commons.io.IOUtils
 import org.apache.hadoop.conf.Configuration
@@ -49,7 +49,7 @@ import org.apache.spark.sql.execution.datasources.parquet.{ParquetFilters, Parqu
 import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.sources.Filter
 import org.apache.spark.sql.sources.v2.reader.{InputPartition, PartitionReader, PartitionReaderFactory}
-import org.apache.spark.sql.types.{StructType, TimestampType}
+import org.apache.spark.sql.types.StructType
 import org.apache.spark.sql.util.CaseInsensitiveStringMap
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
@@ -91,12 +91,6 @@ object GpuParquetScan {
     for (field <- schema) {
       if (!GpuColumnVector.isSupportedType(field.dataType)) {
         throw new CannotReplaceException(s"GpuParquetScan does not support fields of type ${field.dataType}")
-      }
-
-      if (field.dataType == TimestampType && !conf.isTimestampReaderMsec) {
-        throw new CannotReplaceException("GpuParquetScan cannot support timestamps at microsecond"
-            + s" precision. Set ${RapidsConf.TIMESTAMP_READER_MSEC.key}=true if millisecond"
-            + " precision is sufficient.")
       }
     }
 
@@ -383,7 +377,9 @@ class ParquetPartitionReader(
         if (debugDumpPrefix != null) {
           dumpParquetData(dataBuffer, dataSize)
         }
-        val parseOpts = ParquetOptions.builder().includeColumn(readDataSchema.fieldNames:_*).build()
+        val parseOpts = ParquetOptions.builder()
+            .withTimeUnit(TimeUnit.MICROSECONDS)
+            .includeColumn(readDataSchema.fieldNames:_*).build()
         val table = Table.readParquet(parseOpts, dataBuffer, 0, dataSize)
         val numColumns = table.getNumberOfColumns
         if (readDataSchema.length != numColumns) {
@@ -391,46 +387,10 @@ class ParquetPartitionReader(
           throw new QueryExecutionException(s"Expected ${readDataSchema.length} columns " +
               s"but read ${table.getNumberOfColumns} from $filePath")
         }
-        Some(handleDate64Casts(table))
+        Some(table)
       }
     } finally {
       dataBuffer.close()
-    }
-  }
-
-
-  // The GPU Parquet reader always casts timestamp columns to DATE64.
-  // Cast DATE64 columns back to TIMESTAMP
-  private def handleDate64Casts(table: Table): Table = {
-    var columns: ArrayBuffer[ColumnVector] = null
-    // If we have to create a new column from the cast, we need to close it after adding it to the
-    // table, which will increment its reference count
-    var toClose = new ArrayBuffer[ColumnVector]()
-    try {
-      for (i <- 0 until table.getNumberOfColumns) {
-        val column = table.getColumn(i)
-        if (column.getType == DType.DATE64) {
-          if (columns == null) {
-            columns = (0 until table.getNumberOfColumns).map(table.getColumn).to[ArrayBuffer]
-          }
-          val rapidsType = GpuColumnVector.getRapidsType(readDataSchema.fields(i).dataType)
-          columns(i) = columns(i).castTo(rapidsType, TimeUnit.MICROSECONDS)
-          toClose += columns(i)
-        }
-      }
-
-      var result = table
-      if (columns != null) {
-        try {
-          result = new Table(columns: _*)
-        } finally {
-          table.close()
-        }
-      }
-
-      result
-    } finally {
-      toClose.foreach(_.close())
     }
   }
 

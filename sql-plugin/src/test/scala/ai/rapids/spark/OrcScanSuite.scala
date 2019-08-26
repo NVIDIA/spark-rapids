@@ -53,8 +53,7 @@ class OrcScanSuite extends SparkQueryCompareTestSuite {
   }
 
   testSparkResultsAreEqual("Test ORC msec timestamps and dates",
-      frameFromOrc("timestamp-date-test-msec.orc"),
-      conf = new SparkConf().set(RapidsConf.TIMESTAMP_READER_MSEC.key, "true")) {
+      frameFromOrc("timestamp-date-test-msec.orc")) {
     frame => frame.select(col("*"))
   }
 

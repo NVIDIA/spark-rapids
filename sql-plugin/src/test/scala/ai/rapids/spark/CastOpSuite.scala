@@ -20,7 +20,6 @@ import java.util.TimeZone
 
 import org.apache.spark.sql.functions.col
 import org.apache.spark.sql.types._
-import org.apache.spark.SparkConf
 import org.apache.spark.sql.DataFrame
 
 class CastOpSuite extends SparkQueryCompareTestSuite {
@@ -90,15 +89,13 @@ class CastOpSuite extends SparkQueryCompareTestSuite {
       col("time").cast(DateType))
   }
 
-  testSparkResultsAreEqual("Test cast from timestamp", timestampDatesMsecParquet,
-      conf = new SparkConf().set(RapidsConf.TIMESTAMP_READER_MSEC.key, "true"))(timestampCastFn)
+  testSparkResultsAreEqual("Test cast from timestamp", timestampDatesMsecParquet)(timestampCastFn)
 
   test("Test cast from timestamp in UTC-equivalent timezone") {
     val oldtz = TimeZone.getDefault
     try {
       TimeZone.setDefault(TimeZone.getTimeZone("Etc/UTC-0"))
-      val (fromCpu, fromGpu) = runOnCpuAndGpu(timestampDatesMsecParquet, timestampCastFn,
-        conf = new SparkConf().set(RapidsConf.TIMESTAMP_READER_MSEC.key, "true"))
+      val (fromCpu, fromGpu) = runOnCpuAndGpu(timestampDatesMsecParquet, timestampCastFn)
       compareResults(sort=false, 0, fromCpu, fromGpu)
     } finally {
       TimeZone.setDefault(oldtz)

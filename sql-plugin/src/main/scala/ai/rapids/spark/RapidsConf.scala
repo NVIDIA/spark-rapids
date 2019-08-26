@@ -193,14 +193,6 @@ object RapidsConf {
     .integerConf
     .createWithDefault(Integer.MAX_VALUE)
 
-  val TIMESTAMP_READER_MSEC = conf("spark.rapids.sql.timestamps.reader-msec-precision")
-      .doc("GPU data readers (e.g.: ORC, Parquet, etc.) only support millisecond precision" +
-        " for timestamps while Spark supports microseconds. If millisecond precision is" +
-        " sufficient for the workload then set this to true to allow data sources containing" +
-        " timestamps to be loaded by GPU")
-      .booleanConf
-      .createWithDefault(false)
-
   val PARQUET_DEBUG_DUMP_PREFIX = conf("spark.rapids.sql.parquet.debug-dump-prefix")
       .doc("A path prefix where Parquet split file data is dumped for debugging.")
       .internal()
@@ -264,8 +256,6 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
   lazy val explain: Boolean = get(EXPLAIN)
 
   lazy val maxReadBatchSize: Int = get(MAX_READER_BATCH_SIZE)
-
-  lazy val isTimestampReaderMsec: Boolean = get(TIMESTAMP_READER_MSEC)
 
   lazy val parquetDebugDumpPrefix: String = get(PARQUET_DEBUG_DUMP_PREFIX)
 
