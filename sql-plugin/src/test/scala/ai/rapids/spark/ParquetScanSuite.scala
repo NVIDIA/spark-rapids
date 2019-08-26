@@ -58,8 +58,7 @@ class ParquetScanSuite extends SparkQueryCompareTestSuite {
   }
 
   testSparkResultsAreEqual("Test Parquet msec timestamps and dates",
-      frameFromParquet("timestamp-date-test-msec.parquet"),
-      conf = new SparkConf().set(RapidsConf.TIMESTAMP_READER_MSEC.key, "true")) {
+      frameFromParquet("timestamp-date-test-msec.parquet")) {
     frame => frame.select(col("*"))
   }
 

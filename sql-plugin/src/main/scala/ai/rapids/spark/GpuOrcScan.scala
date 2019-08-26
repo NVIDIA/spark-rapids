@@ -25,7 +25,7 @@ import java.util
 import scala.collection.JavaConverters._
 import scala.collection.mutable.ArrayBuffer
 
-import ai.rapids.cudf.{ColumnVector, DType, HostMemoryBuffer, ORCOptions, Table, TimeUnit}
+import ai.rapids.cudf.{HostMemoryBuffer, ORCOptions, Table, TimeUnit}
 import ai.rapids.spark.GpuOrcPartitionReader.{OrcOutputStripe, OrcPartitionReaderContext}
 import com.google.protobuf25.CodedOutputStream
 import org.apache.commons.io.IOUtils
@@ -52,7 +52,7 @@ import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.rapids.OrcFilters
 import org.apache.spark.sql.sources.Filter
 import org.apache.spark.sql.sources.v2.reader.{InputPartition, PartitionReader, PartitionReaderFactory}
-import org.apache.spark.sql.types.{StructType, TimestampType}
+import org.apache.spark.sql.types.StructType
 import org.apache.spark.sql.util.CaseInsensitiveStringMap
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
@@ -102,12 +102,6 @@ object GpuOrcScan {
     schema.foreach { field =>
       if (!GpuColumnVector.isSupportedType(field.dataType)) {
         throw new CannotReplaceException(s"GpuOrcScan does not support fields of type ${field.dataType}")
-      }
-
-      if (field.dataType == TimestampType && !conf.isTimestampReaderMsec) {
-        throw new CannotReplaceException("GpuOrcScan cannot support timestamps at microsecond"
-            + s" precision. Set ${RapidsConf.TIMESTAMP_READER_MSEC.key}=true if millisecond"
-          + " precision is sufficient.")
       }
     }
   }
@@ -637,7 +631,9 @@ class GpuOrcPartitionReader(
           dumpOrcData(dataBuffer, dataSize)
         }
         val includedColumns = ctx.updatedReadSchema.getFieldNames.asScala
-        val parseOpts = ORCOptions.builder().withNumPyTypes(false)
+        val parseOpts = ORCOptions.builder()
+            .withTimeUnit(TimeUnit.MICROSECONDS)
+            .withNumPyTypes(false)
             .includeColumn(includedColumns:_*).build()
         val table = Table.readORC(parseOpts, dataBuffer, 0, dataSize)
         val numColumns = table.getNumberOfColumns
@@ -646,7 +642,7 @@ class GpuOrcPartitionReader(
           throw new QueryExecutionException(s"Expected ${readDataSchema.length} columns " +
               s"but read ${table.getNumberOfColumns} from $partFile")
         }
-        Some(handleTimestampCasts(table))
+        Some(table)
       }
     } finally {
       if (dataBuffer != null) {
@@ -672,41 +668,6 @@ class GpuOrcPartitionReader(
       }
     }
     currentChunk
-  }
-
-  // The GPU ORC reader always returns timestamps in milliseconds.
-  // See https://github.com/rapidsai/cudf/issues/2497.
-  // This casts any timestamp columns to microseconds that need it.
-  private def handleTimestampCasts(table: Table): Table = {
-    var columns: ArrayBuffer[ColumnVector] = null
-    // If we have to create a new column from the cast, we need to close it after adding it to the
-    // table, which will increment its reference count
-    var toClose = new ArrayBuffer[ColumnVector]()
-    try {
-      for (i <- 0 until table.getNumberOfColumns) {
-        val column = table.getColumn(i)
-        if (column.getType == DType.TIMESTAMP && column.getTimeUnit != TimeUnit.MICROSECONDS) {
-          if (columns == null) {
-            columns = (0 until table.getNumberOfColumns).map(table.getColumn).to[ArrayBuffer]
-          }
-          columns(i) = columns(i).castTo(DType.TIMESTAMP, TimeUnit.MICROSECONDS)
-          toClose += columns(i)
-        }
-      }
-
-      var result = table
-      if (columns != null) {
-        try {
-          result = new Table(columns: _*)
-        } finally {
-          table.close()
-        }
-      }
-
-      result
-    } finally {
-      toClose.foreach(_.close())
-    }
   }
 
   private def dumpOrcData(hmb: HostMemoryBuffer, dataLength: Long): Unit = {
