@@ -338,7 +338,7 @@ class ParquetPartitionReader(
           column.getEncodingStats,
           column.getEncodings,
           column.getStatistics,
-          column.getFirstDataPageOffset + offsetAdjustment,
+          column.getStartingPos + offsetAdjustment,
           newDictOffset,
           column.getValueCount,
           column.getTotalSize,
