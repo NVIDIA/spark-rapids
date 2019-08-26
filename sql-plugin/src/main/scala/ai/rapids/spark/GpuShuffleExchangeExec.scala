@@ -31,6 +31,7 @@ import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.execution.{BatchPartitionIdPassthrough, ShuffledBatchRDD, SparkPlan}
 import org.apache.spark.sql.execution.exchange.{Exchange, ShuffleExchangeExec}
 import org.apache.spark.sql.execution.metric._
+import org.apache.spark.sql.types.StringType
 import org.apache.spark.sql.vectorized.ColumnarBatch
 import org.apache.spark.util.MutablePair
 
@@ -182,7 +183,12 @@ class GpuHashPartitioning(expressions: Seq[GpuExpression], numPartitions: Int)
     expressions.map(expr => {
       val vec = expr.columnarEval(batch).asInstanceOf[GpuColumnVector]
       try {
-        vec.convertToStringCategoriesIfNeeded()
+        if (vec.dataType() == StringType) {
+          // TODO GPU partitioning has a bug when working with strings so hash them directly here instead...
+          GpuColumnVector.from(vec.getBase().hash())
+        } else {
+          vec.incRefCount()
+        }
       } finally {
         vec.close()
       }

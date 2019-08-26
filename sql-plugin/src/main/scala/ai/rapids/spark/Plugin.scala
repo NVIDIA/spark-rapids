@@ -764,10 +764,6 @@ object GpuOverrides {
       .convert((hp, overrides) =>
         new GpuHashPartitioning(
           hp.expressions.map(overrides.replaceWithGpuExpression), hp.numPartitions))
-      .assertIsAllowed((hp, conf) =>
-        if (hp.expressions.map(_.dataType).contains(StringType)) {
-          throw new CannotReplaceException("strings are not supported as the keys for hash partitioning.")
-        })
       .desc("Hash based partitioning")
       .build()
   )
