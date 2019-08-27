@@ -1,0 +1,31 @@
+###
+#
+# Arguments: CUDA_VER=9.2 or 10.0
+#
+###
+ARG CUDA_VER=10.0
+
+FROM nvidia/cuda:${CUDA_VER}-runtime-ubuntu16.04
+
+#Install java-8, maven, docker image
+RUN apt-get update -y && \
+    apt-get install -y maven \
+    openjdk-8-jdk
+
+# Download the latest Spark3.0 tgz
+RUN mvn org.apache.maven.plugins:maven-dependency-plugin:2.8:get \
+    -DremoteRepositories=http://gpuwa.nvidia.com/artifactory/sw-spark-maven-local \
+    -DgroupId=org.apache -DartifactId=spark -Dversion=3.0.0-SNAPSHOT \
+    -Dpackaging=tar.gz -Ddest=/usr/local && \
+    tar zxf /usr/local/spark-3.0.0-SNAPSHOT.tar.gz -C /usr/local && \
+    rm -f /usr/local/spark-3.0.0-SNAPSHOT.tar.gz
+
+# Change log level to ‘WARN’ for easily parsing the logs
+# Add all access to 'logs' and 'work' dir
+RUN mkdir /usr/local/spark-3.0.0-SNAPSHOT-bin-3.2.0/logs && \
+    chmod 777 /usr/local/spark-3.0.0-SNAPSHOT-bin-3.2.0/logs && \
+    mkdir /usr/local/spark-3.0.0-SNAPSHOT-bin-3.2.0/logs/work && \
+    chmod 777 /usr/local/spark-3.0.0-SNAPSHOT-bin-3.2.0/logs/work
+
+ENV SPARK_HOME "/usr/local/spark-3.0.0-SNAPSHOT-bin-3.2.0"
+ENV PATH "$SPARK_HOME/bin:$SPARK_HOME/sbin:$PATH"
