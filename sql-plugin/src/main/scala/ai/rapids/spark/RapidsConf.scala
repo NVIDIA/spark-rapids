@@ -168,6 +168,14 @@ object RapidsConf {
     .integerConf
     .createWithDefault(1000000)
 
+  val ALLOW_FLOAT_AGG = conf("spark.rapids.sql.allowVariableFloatAgg")
+    .doc("Spark assumes that all operations produce the exact same result each time. " +
+      "This is not true for some floating point aggregations, which can produce slightly " +
+      "different results on the GPU as the aggregation is done in parallel.  This can enable " +
+      "those operations if you know the query is only computing it once.")
+    .booleanConf
+    .createWithDefault(false)
+
   val TEST_CONF = conf("spark.rapids.sql.testing")
     .doc("Intended to be used by unit tests, if enabled all operations must run on the GPU" +
       " or an error happens.")
@@ -198,14 +206,6 @@ object RapidsConf {
     .doc("Maximum number of rows the reader reads at a time")
     .integerConf
     .createWithDefault(Integer.MAX_VALUE)
-
-  val TIMESTAMP_READER_MSEC = conf("spark.rapids.sql.timestamps.reader-msec-precision")
-      .doc("GPU data readers (e.g.: ORC, Parquet, etc.) only support millisecond precision" +
-        " for timestamps while Spark supports microseconds. If millisecond precision is" +
-        " sufficient for the workload then set this to true to allow data sources containing" +
-        " timestamps to be loaded by GPU")
-      .booleanConf
-      .createWithDefault(false)
 
   val PARQUET_DEBUG_DUMP_PREFIX = conf("spark.rapids.sql.parquet.debug-dump-prefix")
       .doc("A path prefix where Parquet split file data is dumped for debugging.")
@@ -269,11 +269,11 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
 
   lazy val gpuTargetBatchSizeRows: Integer = get(GPU_BATCH_SIZE_ROWS)
 
+  lazy val allowFloatAgg: Boolean = get(ALLOW_FLOAT_AGG)
+
   lazy val explain: Boolean = get(EXPLAIN)
 
   lazy val maxReadBatchSize: Int = get(MAX_READER_BATCH_SIZE)
-
-  lazy val isTimestampReaderMsec: Boolean = get(TIMESTAMP_READER_MSEC)
 
   lazy val parquetDebugDumpPrefix: String = get(PARQUET_DEBUG_DUMP_PREFIX)
 
