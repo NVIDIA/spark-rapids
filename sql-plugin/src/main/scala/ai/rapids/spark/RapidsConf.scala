@@ -162,6 +162,14 @@ object RapidsConf {
     .booleanConf
     .createWithDefault(true)
 
+  val ALLOW_FLOAT_AGG = conf("spark.rapids.sql.allowVariableFloatAgg")
+    .doc("Spark assumes that all operations produce the exact same result each time. " +
+      "This is not true for some floating point aggregations, which can produce slightly " +
+      "different results on the GPU as the aggregation is done in parallel.  This can enable " +
+      "those operations if you know the query is only computing it once.")
+    .booleanConf
+    .createWithDefault(false)
+
   val TEST_CONF = conf("spark.rapids.sql.testing")
     .doc("Intended to be used by unit tests, if enabled all operations must run on the GPU" +
       " or an error happens.")
@@ -252,6 +260,8 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
   lazy val isMemDebugEnabled: Boolean = get(MEM_DEBUG)
 
   lazy val hasNans: Boolean = get(HAS_NANS)
+
+  lazy val allowFloatAgg: Boolean = get(ALLOW_FLOAT_AGG)
 
   lazy val explain: Boolean = get(EXPLAIN)
 

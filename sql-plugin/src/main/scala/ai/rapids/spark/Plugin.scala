@@ -690,7 +690,7 @@ object GpuOverrides {
       .incompat(DIVIDE_BY_ZERO_INCOMPAT)
       .build(),
     expr[AggregateExpression]
-      .aggregate(new GpuAggregateExpression(_, _, _, _))
+      .aggregate(GpuAggregateExpression(_, _, _, _))
       .desc("aggregate expression")
       .build(),
     expr[SortOrder]
@@ -998,11 +998,30 @@ object GpuOverrides {
     agg[Sum]
       .convert((sum, overrides) =>
         GpuSum(overrides.replaceWithGpuExpression(sum.child)))
+      .assertIsAllowed((sum, conf) => {
+        val dataType = sum.child.dataType
+        if (!conf.allowFloatAgg && (dataType == DoubleType || dataType == FloatType)) {
+          throw new CannotReplaceException("the GPU will sum floating point values in" +
+            " parallel and the result is not always identical each time. This can cause some Spark" +
+            s" queries to produce an incorrect answer if the value is computed more than once" +
+            s" as part of the same query.  To enable this anyways set" +
+            s" ${RapidsConf.ALLOW_FLOAT_AGG} to true.")
+        }
+      })
       .desc("sum aggregate operator")
       .build(),
     agg[Average]
       .convert((avg, overrides) =>
         GpuAverage(overrides.replaceWithGpuExpression(avg.child)))
+      .assertIsAllowed((avg, conf) => {
+        if (!conf.allowFloatAgg) {
+          throw new CannotReplaceException("the GPU will sum floating point values in" +
+            " parallel to compute an average and the result is not always identical each time." +
+            " This can cause some Spark queries to produce an incorrect answer if the value is" +
+            " computed more than once as part of the same query. To enable this anyways set" +
+            s" ${RapidsConf.ALLOW_FLOAT_AGG} to true")
+        }
+      })
       .desc("average aggregate operator")
       .build(),
   )
