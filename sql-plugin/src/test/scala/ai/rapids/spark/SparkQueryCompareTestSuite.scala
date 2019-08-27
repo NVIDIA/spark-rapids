@@ -460,7 +460,7 @@ trait SparkQueryCompareTestSuite extends FunSuite {
 
   def makeBatched(batchSize: Int, conf: SparkConf = new SparkConf()): SparkConf = {
     // forces ColumnarBatch of batchSize rows
-    conf.set("spark.sql.inMemoryColumnarStorage.batchSize", batchSize.toString)
+    conf.set(RapidsConf.GPU_BATCH_SIZE_ROWS.key, batchSize.toString)
   }
 
   def mixedDf(session: SparkSession): DataFrame = {

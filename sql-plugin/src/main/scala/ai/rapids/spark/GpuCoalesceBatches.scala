@@ -164,15 +164,11 @@ case class CoalesceIterator(iter: Iterator[ColumnarBatch],
         collectStart = System.nanoTime()
       }
       val cb = iter.next()
-      if (numInputBatches != null) {
-        numInputBatches += 1
-      }
+      numInputBatches += 1
       val rows = cb.numRows()
       if (rows > 0) {
         onDeck = Some(cb)
-        if (numInputRows != null) {
-          numInputRows += rows
-        }
+        numInputRows += rows
       } else {
         cb.close()
       }
@@ -200,31 +196,30 @@ case class CoalesceIterator(iter: Iterator[ColumnarBatch],
       }
       val cb = iter.next()
       val nextRows = cb.numRows()
-      if (numInputBatches != null) {
-        numInputBatches += 1
+      numInputBatches += 1
+      if (nextRows > 0) {
         numInputRows += nextRows
-      }
-      val wouldBeRows = nextRows + numRows
-      if (wouldBeRows > goal.maxSize) {
-        goal.whenMaxExceeded(wouldBeRows)
-        onDeck = Some(cb)
+        val wouldBeRows = nextRows + numRows
+        if (wouldBeRows > goal.maxSize) {
+          goal.whenMaxExceeded(wouldBeRows)
+          onDeck = Some(cb)
+        } else {
+          buffer += cb
+          numRows = wouldBeRows
+        }
       } else {
-        buffer += cb
-        numRows = wouldBeRows
+        // Empty batch just close it now...
+        cb.close()
       }
     }
-    if (numOutputRows != null) {
-      numOutputRows += numRows
-      numOutputBatches += 1
-    }
+    numOutputRows += numRows
+    numOutputBatches += 1
     val collectEnd = System.nanoTime()
     val arr = buffer.toArray
     val ret = ConcatAndConsumeAll.buildBatchNoEmpty(arr)
     val end = System.nanoTime()
-    if (collectTime != null) {
-      collectTime += TimeUnit.NANOSECONDS.toMillis(collectEnd - collectStart)
-      concatTime += TimeUnit.NANOSECONDS.toMillis(end - collectEnd)
-    }
+    collectTime += TimeUnit.NANOSECONDS.toMillis(collectEnd - collectStart)
+    concatTime += TimeUnit.NANOSECONDS.toMillis(end - collectEnd)
     collectStart = -1
     ret
   }
@@ -234,12 +229,12 @@ case class GpuCoalesceBatches(child: SparkPlan, goal: CoalesceGoal)
   extends UnaryExecNode with GpuExec {
 
   override lazy val metrics: Map[String, SQLMetric] = Map(
-    "numInputRows" -> SQLMetrics.createMetric(sparkContext, "number of input rows"),
-    "numOutputRows" -> SQLMetrics.createMetric(sparkContext, "number of output rows"),
-    "numInputBatches" -> SQLMetrics.createMetric(sparkContext, "number of Input batches"),
-    "numOutputBatches" -> SQLMetrics.createMetric(sparkContext, "number of output batches"),
-    "collectTime" -> SQLMetrics.createTimingMetric(sparkContext, "how long taken to collect batches"),
-    "concatTime" -> SQLMetrics.createTimingMetric(sparkContext, "how long taken to concat batches")
+    "numInputRows" -> SQLMetrics.createMetric(sparkContext, "input rows"),
+    "numOutputRows" -> SQLMetrics.createMetric(sparkContext, "output rows"),
+    "numInputBatches" -> SQLMetrics.createMetric(sparkContext, "input batches"),
+    "numOutputBatches" -> SQLMetrics.createMetric(sparkContext, "output batches"),
+    "collectTime" -> SQLMetrics.createTimingMetric(sparkContext, "collect batch time"),
+    "concatTime" -> SQLMetrics.createTimingMetric(sparkContext, "concat batch time")
   )
 
   override protected def doExecute(): RDD[InternalRow] = {
