@@ -19,8 +19,11 @@ package ai.rapids.spark
 import java.time.ZoneId
 
 import scala.reflect.ClassTag
+
 import ai.rapids.cudf.{Cuda, Rmm, RmmAllocationMode}
 import ai.rapids.spark
+
+import org.apache.spark.{ExecutorPlugin, SparkEnv}
 import org.apache.spark.internal.Logging
 import org.apache.spark.sql.SparkSessionExtensions
 import org.apache.spark.sql.catalyst.expressions._
@@ -35,13 +38,27 @@ import org.apache.spark.sql.execution.datasources.v2.csv.CSVScan
 import org.apache.spark.sql.execution.datasources.v2.orc.OrcScan
 import org.apache.spark.sql.execution.datasources.v2.parquet.ParquetScan
 import org.apache.spark.sql.execution.exchange.{BroadcastExchangeExec, ShuffleExchangeExec}
+import org.apache.spark.sql.execution.joins._
+import org.apache.spark.sql.rapids._
 import org.apache.spark.sql.sources.v2.reader.Scan
 import org.apache.spark.sql.types._
-import org.apache.spark.{ExecutorPlugin, SparkEnv}
-import org.apache.spark.sql.execution.joins.{BroadcastHashJoinExec, BuildLeft, BuildRight, ShuffledHashJoinExec, SortMergeJoinExec}
-import org.apache.spark.sql.rapids.{GpuAggregateExpression, GpuAggregateFunction, GpuAverage, GpuCount, GpuFirst, GpuLast, GpuMax, GpuMin, GpuSum}
 
 trait GpuExec extends SparkPlan {
+  /**
+   * If true is returned batches after this will be coalesced.  This should
+   * really be used in cases where it is known that the size of a batch may
+   * shrink a lot.
+   */
+  def coalesceAfter: Boolean = false
+
+  /**
+   * A goal to coalesce batches as the input to this operation.  In some cases an
+   * operation will only work if all of the data is in a single batch.  In other
+   * cases it may be much faster if it is in a single batch, but can tolerate multiple
+   * batches.  This provides a way to express those desires.
+   */
+  def childrenCoalesceGoal: Seq[CoalesceGoal] = Seq.fill(children.size)(null)
+
   override def supportsColumnar = true
 
   override def equals(other: Any): Boolean = {
@@ -747,10 +764,6 @@ object GpuOverrides {
       .convert((hp, overrides) =>
         new GpuHashPartitioning(
           hp.expressions.map(overrides.replaceWithGpuExpression), hp.numPartitions))
-      .assertIsAllowed((hp, conf) =>
-        if (hp.expressions.map(_.dataType).contains(StringType)) {
-          throw new CannotReplaceException("strings are not supported as the keys for hash partitioning.")
-        })
       .desc("Hash based partitioning")
       .build()
   )
@@ -786,11 +799,6 @@ object GpuOverrides {
         GpuShuffleExchangeExec(overrides.replaceWithGpuPartitioning(shuffle.outputPartitioning),
           overrides.replaceWithGpuPlan(shuffle.child), shuffle.canChangeNumPartitions))
       .desc("The backend for most data being exchanged between processes")
-      .assertIsAllowed((shuffle, conf) => {
-        if (shuffle.output.map(_.dataType).contains(StringType)) {
-          throw new CannotReplaceException("Strings are not currently supported for shuffling on GPU")
-        }
-      })
       .build(),
     exec[UnionExec]
       .convert((union, overrides) =>
@@ -829,9 +837,7 @@ object GpuOverrides {
       .desc("Implementation of join using broadcast data")
       .assertIsAllowed((exec, conf) => {
         GpuHashJoin.assertJoinTypeAllowed(exec.joinType)
-        if (exec.output.map(_.dataType).contains(StringType)) {
-          throw new CannotReplaceException("strings are not supported in a hash join.")
-        } else if (exec.condition != None) {
+        if (exec.condition != None) {
           throw new CannotReplaceException("Conditional joins are not currently supported")
         }
       })
@@ -851,9 +857,7 @@ object GpuOverrides {
       .desc("Implementation of join using hashed shuffled data")
       .assertIsAllowed((exec, conf) => {
         GpuHashJoin.assertJoinTypeAllowed(exec.joinType)
-        if (exec.output.map(_.dataType).contains(StringType)) {
-          throw new CannotReplaceException("strings are not supported in a hash join.")
-        } else if (exec.condition != None) {
+        if (exec.condition != None) {
           throw new CannotReplaceException("Conditional joins are not currently supported")
         }
       })
@@ -1272,14 +1276,54 @@ case class GpuOverrides() extends Rule[SparkPlan] with Logging {
   }
 }
 
-case class GpuTransitionOverrides() extends Rule[SparkPlan] {
+class GpuTransitionOverrides extends Rule[SparkPlan] {
+  var conf: RapidsConf = null
+
   def optimizeGpuPlanTransitions(plan: SparkPlan): SparkPlan = plan match {
     case HostColumnarToGpu(r2c: RowToColumnarExec) =>
-      GpuRowToColumnarExec(optimizeGpuPlanTransitions(r2c.child))
+      GpuRowToColumnarExec(optimizeGpuPlanTransitions(r2c.child),
+        TargetSize(conf.gpuTargetBatchSizeRows.toLong))
     case ColumnarToRowExec(bb: GpuBringBackToHost) =>
       GpuColumnarToRowExec(optimizeGpuPlanTransitions(bb.child))
     case p =>
       p.withNewChildren(p.children.map(optimizeGpuPlanTransitions))
+  }
+
+  def optimizeCoalesce(plan: SparkPlan): SparkPlan = plan match {
+    case c2r: GpuColumnarToRowExec if c2r.child.isInstanceOf[GpuCoalesceBatches] =>
+      // Don't build a batch if we are just going to go back to ROWS
+      val co = c2r.child.asInstanceOf[GpuCoalesceBatches]
+      c2r.withNewChildren(co.children.map(optimizeCoalesce))
+    case GpuCoalesceBatches(r2c: GpuRowToColumnarExec, goal: TargetSize) =>
+      // TODO in the future we should support this for all goals, but
+      // GpuRowToColumnarExec preallocates all of the memory, and the builder does not
+      // support growing the sizes dynamically....
+
+      // Don't build batches and then coalesce, just build the right sized batch
+      GpuRowToColumnarExec(optimizeCoalesce(r2c.child), CoalesceGoal.max(goal, r2c.goal))
+    case GpuCoalesceBatches(co: GpuCoalesceBatches, goal) =>
+      GpuCoalesceBatches(optimizeCoalesce(co.child), CoalesceGoal.max(goal, co.goal))
+    case p =>
+      p.withNewChildren(p.children.map(optimizeCoalesce))
+  }
+
+  private def insertCoalesce(plans: Seq[SparkPlan], goals: Seq[CoalesceGoal]): Seq[SparkPlan] = {
+    plans.zip(goals).map {
+      case (plan, null) => insertCoalesce(plan)
+      case (plan, goal) => GpuCoalesceBatches(insertCoalesce(plan), goal)
+    }
+  }
+
+  private def insertCoalesce(plan: SparkPlan): SparkPlan = plan match {
+    case exec: GpuExec =>
+      val tmp = exec.withNewChildren(insertCoalesce(exec.children, exec.childrenCoalesceGoal))
+      if (exec.coalesceAfter) {
+        GpuCoalesceBatches(tmp, TargetSize(conf.gpuTargetBatchSizeRows.toLong))
+      } else {
+        tmp
+      }
+    case p =>
+      p.withNewChildren(p.children.map(insertCoalesce))
   }
 
   /**
@@ -1336,10 +1380,10 @@ case class GpuTransitionOverrides() extends Rule[SparkPlan] {
   }
 
   override def apply(plan: SparkPlan): SparkPlan = {
-    val conf = new RapidsConf(plan.conf)
+    this.conf = new RapidsConf(plan.conf)
     if (conf.isSqlEnabled) {
-      val tmp = insertColumnarFromGpu(plan)
-      val ret = optimizeGpuPlanTransitions(tmp)
+      val tmp = insertCoalesce(insertColumnarFromGpu(plan))
+      val ret = optimizeCoalesce(optimizeGpuPlanTransitions(tmp))
       if (conf.isTestEnabled) {
         assertIsOnTheGpu(ret, conf)
       }
@@ -1352,7 +1396,7 @@ case class GpuTransitionOverrides() extends Rule[SparkPlan] {
 
 case class ColumnarOverrideRules() extends ColumnarRule with Logging {
   val overrides = GpuOverrides()
-  val overrideTransitions = GpuTransitionOverrides()
+  val overrideTransitions = new GpuTransitionOverrides()
 
   override def preColumnarTransitions : Rule[SparkPlan] = overrides
 

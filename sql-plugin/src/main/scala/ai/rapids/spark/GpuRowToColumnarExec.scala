@@ -281,7 +281,9 @@ private object GpuRowToColumnConverter {
 /**
  * GPU version of row to columnar transition.
  */
-case class GpuRowToColumnarExec(child: SparkPlan) extends UnaryExecNode with GpuExec {
+case class GpuRowToColumnarExec(child: SparkPlan, goal: CoalesceGoal)
+  extends UnaryExecNode with GpuExec {
+
   override def output: Seq[Attribute] = child.output
 
   override def outputPartitioning: Partitioning = child.outputPartitioning
@@ -306,7 +308,7 @@ case class GpuRowToColumnarExec(child: SparkPlan) extends UnaryExecNode with Gpu
     // variable length operations.
     val numInputRows = longMetric("numInputRows")
     val numOutputBatches = longMetric("numOutputBatches")
-    val numRows = conf.columnBatchSize
+    val targetRows = goal.targetSize
     val localSchema = schema
     val converters = new GpuRowToColumnConverter(localSchema)
     val rowBased = child.execute()
@@ -315,13 +317,18 @@ case class GpuRowToColumnarExec(child: SparkPlan) extends UnaryExecNode with Gpu
         override def hasNext: Boolean = rowIter.hasNext
 
         override def next(): ColumnarBatch = {
-          val builders = new GpuColumnarBatchBuilder(localSchema, numRows, null)
+          // TODO eventually we should be smarter about allocating memory for these batches
+          // so we can support building large batches with all of the data.
+          val builders = new GpuColumnarBatchBuilder(localSchema, targetRows.toInt, null)
           try {
             var rowCount = 0
-            while (rowCount < numRows && rowIter.hasNext) {
+            while (rowCount < targetRows && rowIter.hasNext) {
               val row = rowIter.next()
               converters.convert(row, builders)
               rowCount += 1
+            }
+            if (rowIter.hasNext && (rowCount + 1L) > goal.maxSize) {
+              goal.whenMaxExceeded(rowCount + 1L)
             }
             val ret = builders.build(rowCount)
             numInputRows += rowCount

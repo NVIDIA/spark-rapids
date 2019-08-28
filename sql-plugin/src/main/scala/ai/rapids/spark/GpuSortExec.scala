@@ -44,6 +44,8 @@ case class GpuSortExec(
 
   private val sparkSortOrder = sortOrder.map(_.toSortOrder)
 
+  override def childrenCoalesceGoal: Seq[CoalesceGoal] = Seq(PreferSingleBatch)
+
   override def output: Seq[Attribute] = child.output
 
   override def outputOrdering: Seq[SortOrder] = sparkSortOrder

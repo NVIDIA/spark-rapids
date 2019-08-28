@@ -115,7 +115,7 @@ class SortExecSuite extends SparkQueryCompareTestSuite {
     (dfA, dfB) => dfA.join(dfB, dfA("longs") === dfB("longs"))
   }
 
-  private val sortJoinMultiBatchConf = sortJoinConf.set("spark.sql.inMemoryColumnarStorage.batchSize", "3")
+  private val sortJoinMultiBatchConf = sortJoinConf.set(RapidsConf.GPU_BATCH_SIZE_ROWS.key, "3")
 
   testSparkResultsAreEqual2("join longs multiple batches", longsDf, longsDf,
       conf = sortJoinMultiBatchConf, allowNonGpu = true, sort = true) {

@@ -460,33 +460,33 @@ trait SparkQueryCompareTestSuite extends FunSuite {
 
   def makeBatched(batchSize: Int, conf: SparkConf = new SparkConf()): SparkConf = {
     // forces ColumnarBatch of batchSize rows
-    conf.set("spark.sql.inMemoryColumnarStorage.batchSize", batchSize.toString)
+    conf.set(RapidsConf.GPU_BATCH_SIZE_ROWS.key, batchSize.toString)
   }
 
   def mixedDf(session: SparkSession): DataFrame = {
     import session.sqlContext.implicits._
     Seq(
-      (99, 100L, 1.0),
-      (98, 200L, 2.0),
-      (97,300L, 3.0),
-      (99, 400L, 4.0),
-      (98, 500L, 5.0),
-      (97, -100L, 6.0),
-      (96, -500L, 0.0)
-    ).toDF("ints", "longs", "doubles")
+      (99, 100L, 1.0, "A"),
+      (98, 200L, 2.0, "B"),
+      (97,300L, 3.0, "C"),
+      (99, 400L, 4.0, "D"),
+      (98, 500L, 5.0, "E"),
+      (97, -100L, 6.0, "F"),
+      (96, -500L, 0.0, "G")
+    ).toDF("ints", "longs", "doubles", "strings")
   }
 
   def mixedDfWithNulls(session: SparkSession): DataFrame = {
     import session.sqlContext.implicits._
-    Seq[(java.lang.Long, java.lang.Double, java.lang.Integer)](
-      (100L, 1.0, 99),
-      (200L, 2.0, 98),
-      (300L, null, 97),
-      (400L, 4.0, null),
-      (500L, 5.0, 98),
-      (null, 6.0, 97),
-      (-500L, null, 96)
-    ).toDF("longs", "doubles", "ints")
+    Seq[(java.lang.Long, java.lang.Double, java.lang.Integer, String)](
+      (100L, 1.0, 99, "A"),
+      (200L, 2.0, 98, "A"),
+      (300L, null, 97, "B"),
+      (400L, 4.0, null, "B"),
+      (500L, 5.0, 98, "C"),
+      (null, 6.0, 97, "C"),
+      (-500L, null, 96, null)
+    ).toDF("longs", "doubles", "ints", "strings")
   }
 
   def booleanDf(session: SparkSession): DataFrame = {

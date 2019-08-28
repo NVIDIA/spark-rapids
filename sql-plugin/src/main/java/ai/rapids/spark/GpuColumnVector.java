@@ -222,6 +222,10 @@ public final class GpuColumnVector extends ColumnVector {
     }
   }
 
+  /**
+   * Create an empty batch from the given format.  This should be used very sparingly because
+   * returning an empty batch from an operator is almost always the wrong thing to do.
+   */
   public static ColumnarBatch emptyBatch(List<Attribute> format) {
     StructType schema = new StructType();
     for (Attribute attribute: format) {
@@ -233,17 +237,29 @@ public final class GpuColumnVector extends ColumnVector {
     return new GpuColumnarBatchBuilder(schema, 0, null).build(0);
   }
 
+  /**
+   * Convert a ColumnarBatch to a table. The table will increment the reference count for all of
+   * the columns in the batch, so you will need to close both the batch passed in and the table
+   * returned to avoid any memory leaks.
+   */
   public static Table from(ColumnarBatch batch) {
     return new Table(extractBases(batch));
   }
 
+  /**
+   * Convert a Table to a ColumnarBatch.  The columns in the table will have their reference counts
+   * incremented so you will need to close both the table passed in and the batch returned to
+   * not have any leaks.
+   */
   public static ColumnarBatch from(Table table) {
     return from(table, 0, table.getNumberOfColumns());
   }
 
   /**
-   * Get a ColumnarBatch from a set of columns from the Table. This gets the columns
-   * starting at startColIndex and going until but not including untilColIndex.
+   * Get a ColumnarBatch from a set of columns in the Table. This gets the columns
+   * starting at startColIndex and going until but not including untilColIndex. This will
+   * increment the reference count for all columns converted so you will need to close
+   * both the table that is passed in and the batch returned to be sure that there are no leaks.
    *
    * @param table  - a table of vectors
    * @param startColIndex - index of the first vector you want in the final ColumnarBatch
@@ -278,6 +294,11 @@ public final class GpuColumnVector extends ColumnVector {
     }
   }
 
+  /**
+   * Converts a cudf internal vector to a spark compatible vector. No reference counts
+   * are incremented so you need to either close the returned value or the input value,
+   * but not both.
+   */
   public static GpuColumnVector from(ai.rapids.cudf.ColumnVector cudfCv) {
     return new GpuColumnVector(getSparkType(cudfCv.getType()), cudfCv);
   }
@@ -286,6 +307,11 @@ public final class GpuColumnVector extends ColumnVector {
     return from(ai.rapids.cudf.ColumnVector.fromScalar(scalar, count));
   }
 
+  /**
+   * Get the underlying cudf columns from the batch.  This does not increment any
+   * reference counts so if you want to use these columns after the batch is closed
+   * you will need to do that on your own.
+   */
   public static ai.rapids.cudf.ColumnVector[] extractBases(ColumnarBatch batch) {
     int numColumns = batch.numCols();
     ai.rapids.cudf.ColumnVector[] vectors = new ai.rapids.cudf.ColumnVector[numColumns];
@@ -295,9 +321,15 @@ public final class GpuColumnVector extends ColumnVector {
     return vectors;
   }
 
+  /**
+   * Get the underlying spark compatible columns from the batch.  This does not increment any
+   * reference counts so if you want to use these columns after the batch is closed
+   * you will need to do that on your own.
+   */
   public static GpuColumnVector[] extractColumns(ColumnarBatch batch) {
     int numColumns = batch.numCols();
     GpuColumnVector[] vectors = new GpuColumnVector[numColumns];
+
     for (int i = 0; i < vectors.length; i++) {
       vectors[i] = ((GpuColumnVector)batch.column(i));
     }
@@ -305,20 +337,35 @@ public final class GpuColumnVector extends ColumnVector {
   }
 
   /**
-   * Convert an entire batch to string categories if needed.  The input batch must be closed
-   * when done.
+   * Convert an entire batch to string categories if needed.  The resulting vectors will either be
+   * new or have their reference counts incremented so to avoid leaks the input batch must be closed
+   * when done and the output vectors must also be closed.
    */
   public static GpuColumnVector[] convertToStringCategoriesArrayIfNeeded(ColumnarBatch batch) {
     GpuColumnVector[] columns = extractColumns(batch);
-    for (int i = 0; i < columns.length; i++) {
-      columns[i] = columns[i].convertToStringCategoriesIfNeeded();
+    GpuColumnVector[] ret = new GpuColumnVector[columns.length];
+    boolean success = false;
+    try {
+      for (int i = 0; i < columns.length; i++) {
+        ret[i] = columns[i].convertToStringCategoriesIfNeeded();
+      }
+      success = true;
+      return ret;
+    } finally {
+      if (!success) {
+        for (GpuColumnVector c: ret) {
+          if (c != null) {
+            c.close();
+          }
+        }
+      }
     }
-    return columns;
   }
 
   /**
-   * Convert an entire batch to string categories if needed.  The input batch must be closed
-   * when done.
+   * Convert an entire batch to string categories if needed.  The resulting vectors will either be
+   * new or have their reference counts incremented so to avoid leaks the input batch must be closed
+   * when done and the output batch must also be closed.
    */
   public static ColumnarBatch convertToStringCategoriesIfNeeded(ColumnarBatch batch) {
     return new ColumnarBatch(convertToStringCategoriesArrayIfNeeded(batch), batch.numRows());

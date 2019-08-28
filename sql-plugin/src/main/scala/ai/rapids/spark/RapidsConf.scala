@@ -150,8 +150,8 @@ object RapidsConf {
     .createWithDefault(true)
 
   val INCOMPATIBLE_OPS = conf("spark.rapids.sql.incompatible_ops")
-    .doc("For operations that work, but are not 100% compatible with the Spark equivalent" +
-      " set if they should be enabled by default or disabled by default.")
+    .doc("For operations that work, but are not 100% compatible with the Spark equivalent   " +
+      "set if they should be enabled by default or disabled by default.")
     .booleanConf
     .createWithDefault(false)
 
@@ -161,6 +161,12 @@ object RapidsConf {
       "data and it runs on the GPU.")
     .booleanConf
     .createWithDefault(true)
+
+  val GPU_BATCH_SIZE_ROWS = conf("spark.rapids.sql.batchSizeRows")
+    .doc("Set the target number of rows for a GPU batch. Splits sizes for input data " +
+      "is covered by separate configs.")
+    .integerConf
+    .createWithDefault(1000000)
 
   val ALLOW_INCOMPAT_UTF8_STRINGS = conf("spark.rapids.sql.allowIncompatUTF8Strings")
     .doc("Config to allow GPU operations that are incompatible for UTF8 strings. Only " +
@@ -178,8 +184,8 @@ object RapidsConf {
     .createWithDefault(false)
 
   val TEST_CONF = conf("spark.rapids.sql.testing")
-    .doc("Intended to be used by unit tests, if enabled all operations must run on the GPU" +
-      " or an error happens.")
+    .doc("Intended to be used by unit tests, if enabled all operations must run on the GPU " +
+      "or an error happens.")
     .internal()
     .booleanConf
     .createWithDefault(false)
@@ -198,8 +204,8 @@ object RapidsConf {
     .createWithDefault(true)
 
   val MEM_DEBUG = conf("spark.rapids.memory_debug")
-    .doc("If memory management is enabled and this is true GPU memory allocations are" +
-      " tracked and printed out when the process exits.  This should not be used in production.")
+    .doc("If memory management is enabled and this is true GPU memory allocations are " +
+      "tracked and printed out when the process exits.  This should not be used in production.")
     .booleanConf
     .createWithDefault(false)
 
@@ -267,6 +273,8 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
   lazy val isMemDebugEnabled: Boolean = get(MEM_DEBUG)
 
   lazy val hasNans: Boolean = get(HAS_NANS)
+
+  lazy val gpuTargetBatchSizeRows: Integer = get(GPU_BATCH_SIZE_ROWS)
 
   lazy val allowIncompatUTF8Strings: Boolean = get(ALLOW_INCOMPAT_UTF8_STRINGS)
 
