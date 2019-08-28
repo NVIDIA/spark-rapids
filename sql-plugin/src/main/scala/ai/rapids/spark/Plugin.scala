@@ -928,15 +928,16 @@ object GpuOverrides {
         if (isAnyStringLit(sort.sortOrder)) {
           throw new CannotReplaceException("string literal values are not supported in a sort")
         }
-        val schemaDataTypes = sort.schema.map(_.dataType)
-        if (schemaDataTypes.contains(StringType)) {
-          throw new CannotReplaceException("strings are not supported in sort.")
-        }
         val keyDataTypes = sort.sortOrder.map(_.dataType)
         if ((keyDataTypes.contains(FloatType) || keyDataTypes.contains(DoubleType)) && conf.hasNans) {
           throw new CannotReplaceException("floats/doubles are not supported in sort, due to " +
             "incompatibility with NaN. If you don't have any NaNs in your data you can set " +
             "spark.rapids.sql.hasNans=false to bypass this.")
+        }
+        if (keyDataTypes.contains(StringType) && !conf.allowIncompatUTF8Strings) {
+          throw new CannotReplaceException("strings are not supported in sort if you have UTF-8 " +
+            "characters in your strings. See spark.rapids.sql.allowIncompatUTF8Strings to allow " +
+            "if you don't have UTF-8 characters in your strings.")
         }
         val nullOrderings = sort.sortOrder.map(o => o.nullOrdering)
         if (!nullOrderings.forall(_ == nullOrderings.head)) {

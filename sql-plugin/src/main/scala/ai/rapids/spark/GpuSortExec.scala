@@ -21,7 +21,7 @@ import java.util.concurrent.TimeUnit.NANOSECONDS
 import scala.collection.mutable.ArrayBuffer
 
 import ai.rapids.cudf
-import ai.rapids.cudf.Table
+import ai.rapids.cudf.{DType, Table}
 import ai.rapids.spark.GpuExpressionsUtils.evaluateBoundExpressions
 
 import org.apache.spark.rdd.RDD
@@ -177,21 +177,22 @@ class GpuColumnarBatchSorter(
       batch: ColumnarBatch,
       boundInputReferences: Seq[GpuSortOrder]): Seq[GpuColumnVector] = {
     val numBatchCols = batch.numCols()
-    val resultCvs = new ArrayBuffer[GpuColumnVector](numSortCols)
+    val sortCvs = new ArrayBuffer[GpuColumnVector](numSortCols)
+    val cvsWithCategories = new ArrayBuffer[GpuColumnVector](numBatchCols)
+    var batchWithCategories: ColumnarBatch = null
     try {
+      batchWithCategories = GpuColumnVector.convertToStringCategoriesIfNeeded(batch)
       val childExprs = boundInputReferences.map(_.child.asInstanceOf[GpuExpression])
-      resultCvs ++= evaluateBoundExpressions(batch, childExprs)
-      for (i <- 0 until numBatchCols) {
-        val origGcv = GpuColumnVector.from(batch.column(i).asInstanceOf[GpuColumnVector].getBase)
-        origGcv.incRefCount()
-        resultCvs += origGcv
-      }
+      sortCvs ++= evaluateBoundExpressions(batchWithCategories, childExprs)
     } catch {
       case t: Throwable =>
-        resultCvs.foreach(_.close())
+        sortCvs.foreach(_.close())
+        if (batchWithCategories != null) {
+          batchWithCategories.close()
+        }
         throw t
     }
-    resultCvs
+    sortCvs ++ GpuColumnVector.extractColumns(batchWithCategories)
   }
 
   private def areNullsSmallest: Boolean = {

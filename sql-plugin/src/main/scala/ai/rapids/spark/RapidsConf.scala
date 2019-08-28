@@ -162,6 +162,13 @@ object RapidsConf {
     .booleanConf
     .createWithDefault(true)
 
+  val ALLOW_INCOMPAT_UTF8_STRINGS = conf("spark.rapids.sql.allowIncompatUTF8Strings")
+    .doc("Config to allow GPU operations that are incompatible for UTF8 strings. Only " +
+      "turn to true if your data is ASCII compatible. If you do have UTF8 strings in your data " +
+      "and you set this to true, it can cause data corruption/loss if doing a sort merge join.")
+    .booleanConf
+    .createWithDefault(false)
+
   val ALLOW_FLOAT_AGG = conf("spark.rapids.sql.allowVariableFloatAgg")
     .doc("Spark assumes that all operations produce the exact same result each time. " +
       "This is not true for some floating point aggregations, which can produce slightly " +
@@ -260,6 +267,8 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
   lazy val isMemDebugEnabled: Boolean = get(MEM_DEBUG)
 
   lazy val hasNans: Boolean = get(HAS_NANS)
+
+  lazy val allowIncompatUTF8Strings: Boolean = get(ALLOW_INCOMPAT_UTF8_STRINGS)
 
   lazy val allowFloatAgg: Boolean = get(ALLOW_FLOAT_AGG)
 
