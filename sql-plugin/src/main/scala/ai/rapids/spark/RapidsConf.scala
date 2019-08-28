@@ -150,8 +150,8 @@ object RapidsConf {
     .createWithDefault(true)
 
   val INCOMPATIBLE_OPS = conf("spark.rapids.sql.incompatible_ops")
-    .doc("For operations that work, but are not 100% compatible with the Spark equivalent" +
-      " set if they should be enabled by default or disabled by default.")
+    .doc("For operations that work, but are not 100% compatible with the Spark equivalent   " +
+      "set if they should be enabled by default or disabled by default.")
     .booleanConf
     .createWithDefault(false)
 
@@ -163,8 +163,8 @@ object RapidsConf {
     .createWithDefault(true)
 
   val GPU_BATCH_SIZE_ROWS = conf("spark.rapids.sql.batchSizeRows")
-    .doc("Set the target number of rows for a GPU batch. Splits sizes for input data" +
-      " is covered by separate configs.")
+    .doc("Set the target number of rows for a GPU batch. Splits sizes for input data " +
+      "is covered by separate configs.")
     .integerConf
     .createWithDefault(1000000)
 
@@ -177,8 +177,8 @@ object RapidsConf {
     .createWithDefault(false)
 
   val TEST_CONF = conf("spark.rapids.sql.testing")
-    .doc("Intended to be used by unit tests, if enabled all operations must run on the GPU" +
-      " or an error happens.")
+    .doc("Intended to be used by unit tests, if enabled all operations must run on the GPU " +
+      "or an error happens.")
     .internal()
     .booleanConf
     .createWithDefault(false)
@@ -197,8 +197,8 @@ object RapidsConf {
     .createWithDefault(true)
 
   val MEM_DEBUG = conf("spark.rapids.memory_debug")
-    .doc("If memory management is enabled and this is true GPU memory allocations are" +
-      " tracked and printed out when the process exits.  This should not be used in production.")
+    .doc("If memory management is enabled and this is true GPU memory allocations are " +
+      "tracked and printed out when the process exits.  This should not be used in production.")
     .booleanConf
     .createWithDefault(false)
 

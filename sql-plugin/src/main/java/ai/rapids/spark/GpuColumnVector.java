@@ -238,7 +238,7 @@ public final class GpuColumnVector extends ColumnVector {
   }
 
   /**
-   * Convert a ColumnarBatch to a table. The table will increment teh reference count for all of
+   * Convert a ColumnarBatch to a table. The table will increment the reference count for all of
    * the columns in the batch, so you will need to close both the batch passed in and the table
    * returned to avoid any memory leaks.
    */
@@ -309,7 +309,7 @@ public final class GpuColumnVector extends ColumnVector {
 
   /**
    * Get the underlying cudf columns from the batch.  This does not increment any
-   * reference counts so if you want to use these columns after teh batch is closed
+   * reference counts so if you want to use these columns after the batch is closed
    * you will need to do that on your own.
    */
   public static ai.rapids.cudf.ColumnVector[] extractBases(ColumnarBatch batch) {
@@ -323,12 +323,13 @@ public final class GpuColumnVector extends ColumnVector {
 
   /**
    * Get the underlying spark compatible columns from the batch.  This does not increment any
-   * reference counts so if you want to use these columns after teh batch is closed
+   * reference counts so if you want to use these columns after the batch is closed
    * you will need to do that on your own.
    */
   public static GpuColumnVector[] extractColumns(ColumnarBatch batch) {
     int numColumns = batch.numCols();
     GpuColumnVector[] vectors = new GpuColumnVector[numColumns];
+
     for (int i = 0; i < vectors.length; i++) {
       vectors[i] = ((GpuColumnVector)batch.column(i));
     }
@@ -342,10 +343,23 @@ public final class GpuColumnVector extends ColumnVector {
    */
   public static GpuColumnVector[] convertToStringCategoriesArrayIfNeeded(ColumnarBatch batch) {
     GpuColumnVector[] columns = extractColumns(batch);
-    for (int i = 0; i < columns.length; i++) {
-      columns[i] = columns[i].convertToStringCategoriesIfNeeded();
+    GpuColumnVector[] ret = new GpuColumnVector[columns.length];
+    boolean success = false;
+    try {
+      for (int i = 0; i < columns.length; i++) {
+        ret[i] = columns[i].convertToStringCategoriesIfNeeded();
+      }
+      success = true;
+      return ret;
+    } finally {
+      if (!success) {
+        for (GpuColumnVector c: ret) {
+          if (c != null) {
+            c.close();
+          }
+        }
+      }
     }
-    return columns;
   }
 
   /**

@@ -178,22 +178,22 @@ object GpuShuffleExchangeExec {
 class GpuHashPartitioning(expressions: Seq[GpuExpression], numPartitions: Int)
   extends HashPartitioning(expressions, numPartitions) with GpuExpression with GpuPartitioning {
 
-  def getGpuKeyColumns(batch: ColumnarBatch) : Array[GpuColumnVector] = {
-    // TODO need some kind of safe map to ensure things are closed on failure
-    expressions.map(expr => {
-      val vec = expr.columnarEval(batch).asInstanceOf[GpuColumnVector]
-      try {
-        if (vec.dataType() == StringType) {
-          // TODO GPU partitioning has a bug when working with strings so hash them directly here instead...
-          GpuColumnVector.from(vec.getBase().hash())
-        } else {
-          vec.incRefCount()
+  def getGpuKeyColumns(batch: ColumnarBatch) : Array[GpuColumnVector] =
+    expressions.map {
+      expr => {
+        val vec = expr.columnarEval(batch).asInstanceOf[GpuColumnVector]
+        try {
+          if (vec.dataType() == StringType) {
+            // TODO GPU partitioning has a bug when working with strings so hash them directly here instead...
+            GpuColumnVector.from(vec.getBase().hash())
+          } else {
+            vec.incRefCount()
+          }
+        } finally {
+          vec.close()
         }
-      } finally {
-        vec.close()
       }
-    }).toArray
-  }
+    }.toArray
 
   def getGpuDataColumns(batch: ColumnarBatch) : Array[GpuColumnVector] =
     GpuColumnVector.convertToStringCategoriesArrayIfNeeded(batch)

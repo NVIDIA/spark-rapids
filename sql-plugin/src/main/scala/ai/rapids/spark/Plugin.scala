@@ -1307,10 +1307,10 @@ class GpuTransitionOverrides extends Rule[SparkPlan] {
   }
 
   private def insertCoalesce(plans: Seq[SparkPlan], goals: Seq[CoalesceGoal]): Seq[SparkPlan] = {
-    plans.zip(goals).map(c => c match {
+    plans.zip(goals).map {
       case (plan, null) => insertCoalesce(plan)
       case (plan, goal) => GpuCoalesceBatches(insertCoalesce(plan), goal)
-    })
+    }
   }
 
   private def insertCoalesce(plan: SparkPlan): SparkPlan = plan match {

@@ -64,7 +64,7 @@ case class GpuShuffledHashJoinExec(
       (streamIter, buildIter) => {
         var combinedSize = 0
         val start = System.nanoTime()
-        val buildBatch = ConcatAndConsumeAll.verifyGotSingleBatch(buildIter, localBuildOutput)
+        val buildBatch = ConcatAndConsumeAll.getSingleBatchWithVerification(buildIter, localBuildOutput)
         val builtTable = try {
           val keys = GpuProjectExec.project(buildBatch, gpuBuildKeys)
           try {

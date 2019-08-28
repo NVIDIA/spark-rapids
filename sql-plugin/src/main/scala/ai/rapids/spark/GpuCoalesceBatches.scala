@@ -32,7 +32,7 @@ import org.apache.spark.sql.execution.metric.{SQLMetric, SQLMetrics}
 
 /**
  * Consumes an Iterator of ColumnarBatches and concatenates them into a single ColumnarBatch.
- * The batches will be closed with this operation is done.
+ * The batches will be closed when this operation is done.
  */
 object ConcatAndConsumeAll {
   private def conversionForConcat(cb: ColumnarBatch): Table = try {
@@ -46,7 +46,14 @@ object ConcatAndConsumeAll {
     cb.close()
   }
 
-  def buildBatchNoEmpty(arrayOfBatches: Array[ColumnarBatch]): ColumnarBatch = {
+  /**
+   * Build a single batch from the batches collected so far. If array is empty this will likely
+   * blow up.
+   * @param arrayOfBatches the batches to concat. This will be consumed and you do not need to
+   *                       close any of the batches after this is called.
+   * @return a single batch with all of them concated together.
+   */
+  def buildNonEmptyBatch(arrayOfBatches: Array[ColumnarBatch]): ColumnarBatch = {
     if (arrayOfBatches.length == 1) {
       // Need to convert the strings to string categories to be consistent.
       val table = conversionForConcat(arrayOfBatches(0))
@@ -56,7 +63,6 @@ object ConcatAndConsumeAll {
         table.close()
       }
     } else {
-      // TODO if this fails in the middle we may leak column vectors.
       val tables = arrayOfBatches.map(conversionForConcat)
       try {
         val combined = Table.concatenate(tables: _*)
@@ -71,16 +77,16 @@ object ConcatAndConsumeAll {
     }
   }
 
-  def buildBatch(arrayOfBatches: Array[ColumnarBatch], format: Seq[Attribute]): ColumnarBatch = {
-    import collection.JavaConverters._
-    if (arrayOfBatches.length <= 0) {
-      GpuColumnVector.emptyBatch(format.asJava)
-    } else {
-      buildBatchNoEmpty(arrayOfBatches)
-    }
-  }
-
-  def verifyGotSingleBatch(batches: Iterator[ColumnarBatch], format: Seq[Attribute]): ColumnarBatch = {
+  /**
+   * Verify that a single batch was returned from the iterator, or if it is empty return an empty
+   * batch.
+   * @param batches batches to be consumed.
+   * @param format the format of the batches in case we need to return an empty batch.  Typically
+   *               this is the output of your exec.
+   * @return the single batch or an empty batch if needed.  Please be careful that your exec
+   *         does not return empty batches as part of an RDD.
+   */
+  def getSingleBatchWithVerification(batches: Iterator[ColumnarBatch], format: Seq[Attribute]): ColumnarBatch = {
     import collection.JavaConverters._
     if (!batches.hasNext) {
       GpuColumnVector.emptyBatch(format.asJava)
@@ -94,8 +100,23 @@ object ConcatAndConsumeAll {
     }
   }
 
+  /**
+   * Concat batches into a single batch.
+   * @param batches iterator of batches to be consumed and concatenated
+   * @param format the format of the data in case the iterator is empty and we need to return an
+   *               empty batch.  This will typically be output from your executor.
+   * @return the resulting batch, even if it is empty.  Please be careful you should not return
+   *         empty batches as part of an RDD.  This is here so it is simple to use in other
+   *         operations, like join or sort.
+   */
   def apply(batches: Iterator[ColumnarBatch], format: Seq[Attribute]): ColumnarBatch = {
-    buildBatch(batches.toArray, format)
+    val arrayOfBatches = batches.toArray
+    import collection.JavaConverters._
+    if (arrayOfBatches.length <= 0) {
+      GpuColumnVector.emptyBatch(format.asJava)
+    } else {
+      buildNonEmptyBatch(arrayOfBatches)
+    }
   }
 }
 
@@ -177,51 +198,57 @@ case class CoalesceIterator(iter: Iterator[ColumnarBatch],
   }
 
   override def next(): ColumnarBatch = {
-    val buffer = ArrayBuffer[ColumnarBatch]()
-    var numRows: Long = 0 // to avoid overflows
-    if (onDeck.isDefined) {
-      val cb = onDeck.get
-      val rows = cb.numRows()
-      if (rows > goal.maxSize) {
-        goal.whenMaxExceeded(rows)
-      }
-      buffer += cb
-      onDeck = None
-      numRows += rows
-    }
-
-    while (numRows < goal.targetSize && onDeck.isEmpty && iter.hasNext) {
-      if (collectStart < 0) {
-        collectStart = System.nanoTime()
-      }
-      val cb = iter.next()
-      val nextRows = cb.numRows()
-      numInputBatches += 1
-      if (nextRows > 0) {
-        numInputRows += nextRows
-        val wouldBeRows = nextRows + numRows
-        if (wouldBeRows > goal.maxSize) {
-          goal.whenMaxExceeded(wouldBeRows)
-          onDeck = Some(cb)
-        } else {
-          buffer += cb
-          numRows = wouldBeRows
+    var batches = ArrayBuffer[ColumnarBatch]()
+    try {
+      var numRows: Long = 0 // to avoid overflows
+      if (onDeck.isDefined) {
+        val cb = onDeck.get
+        val rows = cb.numRows()
+        if (rows > goal.maxSize) {
+          goal.whenMaxExceeded(rows)
         }
-      } else {
-        // Empty batch just close it now...
-        cb.close()
+        batches += cb
+        onDeck = None
+        numRows += rows
       }
+
+      while (numRows < goal.targetSize && onDeck.isEmpty && iter.hasNext) {
+        if (collectStart < 0) {
+          collectStart = System.nanoTime()
+        }
+        val cb = iter.next()
+        val nextRows = cb.numRows()
+        numInputBatches += 1
+        if (nextRows > 0) {
+          numInputRows += nextRows
+          val wouldBeRows = nextRows + numRows
+          if (wouldBeRows > goal.maxSize) {
+            goal.whenMaxExceeded(wouldBeRows)
+            onDeck = Some(cb)
+          } else {
+            batches += cb
+            numRows = wouldBeRows
+          }
+        } else {
+          // Empty batch just close it now...
+          cb.close()
+        }
+      }
+      numOutputRows += numRows
+      numOutputBatches += 1
+      val collectEnd = System.nanoTime()
+      val arr = batches.toArray
+      val ret = ConcatAndConsumeAll.buildNonEmptyBatch(arr)
+      // Clear the buffer so we don't close it again (buildNonEmptyBatch closed it for us).
+      batches = ArrayBuffer.empty
+      val end = System.nanoTime()
+      collectTime += TimeUnit.NANOSECONDS.toMillis(collectEnd - collectStart)
+      concatTime += TimeUnit.NANOSECONDS.toMillis(end - collectEnd)
+      collectStart = -1
+      ret
+    } finally {
+      batches.foreach(_.close())
     }
-    numOutputRows += numRows
-    numOutputBatches += 1
-    val collectEnd = System.nanoTime()
-    val arr = buffer.toArray
-    val ret = ConcatAndConsumeAll.buildBatchNoEmpty(arr)
-    val end = System.nanoTime()
-    collectTime += TimeUnit.NANOSECONDS.toMillis(collectEnd - collectStart)
-    concatTime += TimeUnit.NANOSECONDS.toMillis(end - collectEnd)
-    collectStart = -1
-    ret
   }
 }
 
@@ -252,8 +279,9 @@ case class GpuCoalesceBatches(child: SparkPlan, goal: CoalesceGoal)
     val concatTime = longMetric("concatTime")
 
     val batches = child.executeColumnar()
-    batches.mapPartitions(iter =>
+    batches.mapPartitions { iter =>
       CoalesceIterator(iter, goal,
-        numInputRows, numInputBatches, numOutputRows, numOutputBatches, collectTime, concatTime))
+        numInputRows, numInputBatches, numOutputRows, numOutputBatches, collectTime, concatTime)
+    }
   }
 }
