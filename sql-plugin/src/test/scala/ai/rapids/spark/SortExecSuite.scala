@@ -19,9 +19,9 @@ import scala.util.Random
 
 import org.apache.spark.SparkConf
 import org.apache.spark.sql.functions._
-import org.apache.spark.sql.catalyst.dsl.expressions._
 import org.apache.spark.sql.{DataFrame, RandomDataGenerator, Row, SparkSession}
 import org.apache.spark.sql.types._
+import org.apache.spark.sql.RandomDataGenerator.MAX_STR_LEN
 
 class SortExecSuite extends SparkQueryCompareTestSuite {
 
@@ -42,11 +42,23 @@ class SortExecSuite extends SparkQueryCompareTestSuite {
     ).toDF("longs", "more_longs")
   }
 
-  def generateData(dataType: DataType, nullable: Boolean, size: Int): (SparkSession => DataFrame) = {
-    val generator = RandomDataGenerator.forType(dataType, nullable).get
+  def generateData(
+      dataType: DataType,
+      nullable: Boolean,
+      size: Int,
+      conf: SparkConf): (SparkSession => DataFrame) = {
+    val rapidsConf = new RapidsConf(conf.clone())
+    val generator = if (dataType == StringType) {
+      // Once CUDF properly supports sorting UTF8 strings, remove this
+      // https://github.com/rapidsai/custrings/issues/402
+      val rand = new Random
+      val alphaRand: () => Any = () => Random.alphanumeric.take(MAX_STR_LEN).mkString("")
+      alphaRand
+    } else {
+      RandomDataGenerator.forType(dataType, nullable).get
+    }
     val inputData = Seq.fill(size)(generator())
     (session: SparkSession) => {
-      import session.sqlContext.implicits._
       session.createDataFrame(
         session.sparkContext.parallelize(Random.shuffle(inputData).map(v => Row(v))),
         StructType(StructField("a", dataType, nullable = true) :: Nil)
@@ -54,17 +66,20 @@ class SortExecSuite extends SparkQueryCompareTestSuite {
     }
   }
 
+  // allow UTF8 strings because we generate strings with alphanumeric
+  private val allowUTF8Conf = makeBatched(3).set("spark.rapids.sql.allowIncompatUTF8Strings", "true")
+
   // Note I -- out the set of Types that aren't supported with Sort right now so we can explicitly see them and remove
   // individually as we add support
   for (
-    dataType <- DataTypeTestUtils.atomicTypes ++ Set(NullType) -- Set(FloatType, StringType, NullType, DoubleType, DecimalType.USER_DEFAULT,
+    dataType <- DataTypeTestUtils.atomicTypes ++ Set(NullType) -- Set(FloatType, NullType, DoubleType, DecimalType.USER_DEFAULT,
       DecimalType(20, 5), DecimalType.SYSTEM_DEFAULT, BinaryType);
     nullable <- Seq(true, false);
     sortOrder <- Seq(col("a").asc, col("a").asc_nulls_last, col("a").desc, col("a").desc_nulls_first)
   ) {
-    val inputDf = generateData(dataType, nullable, 10)
+    val inputDf = generateData(dataType, nullable, 60, allowUTF8Conf)
     testSparkResultsAreEqual(s"sorting on $dataType with nullable=$nullable, sortOrder=$sortOrder",  inputDf,
-      conf = makeBatched(3),
+      conf = allowUTF8Conf,
       allowNonGpu=false,
       execsAllowedNonGpu = Seq("RDDScanExec", "AttributeReference")) {
       frame => frame.sortWithinPartitions(sortOrder)
@@ -85,6 +100,10 @@ class SortExecSuite extends SparkQueryCompareTestSuite {
 
   testSparkResultsAreEqual("sort 2 cols longs nulls last desc/desc", nullableLongsDfWithDuplicates) {
     frame => frame.sortWithinPartitions(col("longs").desc_nulls_last, col("more_longs").desc_nulls_last)
+  }
+
+  testSparkResultsAreEqual("sort long column carrying string col", stringsAndLongsDf) {
+    frame => frame.sortWithinPartitions(col("longs"))
   }
 
   // force a sortMergeJoin
