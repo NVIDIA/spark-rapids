@@ -20,6 +20,7 @@ import scala.collection.AbstractIterator
 import scala.collection.mutable.ArrayBuffer
 
 import ai.rapids.cudf.{ColumnVector, DType, HashFunction, NvtxColor, NvtxRange, Table}
+import ai.rapids.spark.RapidsPluginImplicits._
 
 import org.apache.spark.ShuffleDependency
 import org.apache.spark.rdd.RDD
@@ -126,7 +127,7 @@ object GpuShuffleExchangeExec {
           private val mutablePair = new MutablePair[Int, ColumnarBatch]()
           private def partNextBatch(): Unit = {
             if (partitioned != null) {
-              partitioned.foreach(_._1.close())
+              partitioned.map(_._1).safeClose()
               partitioned = null
               at = 0
             }
@@ -264,10 +265,10 @@ case class GpuHashPartitioning(expressions: Seq[GpuExpression], numPartitions: I
       (parts, columns)
     } finally {
       if (gpuDataColumns != null) {
-        gpuDataColumns.foreach(_.close())
+        gpuDataColumns.safeClose()
       }
       if (gpuKeyColumns != null) {
-        gpuKeyColumns.foreach(_.close())
+        gpuKeyColumns.safeClose()
       }
     }
   }
@@ -318,7 +319,7 @@ case class GpuHashPartitioning(expressions: Seq[GpuExpression], numPartitions: I
           sliceRange.close()
         }
       }
-      partitionColumns.foreach(_.close)
+      partitionColumns.safeClose()
       // Close the partition columns we copied them as a part of the slice
       ret.zipWithIndex.filter(_._1 != null)
     } finally {

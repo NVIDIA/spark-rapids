@@ -94,7 +94,7 @@ class SerializableGpuColumnarBatch(var batch: ColumnarBatch, val closeAfterSeria
   }
 
   override def close(): Unit = {
-    columns.foreach(_.close())
+    columns.safeClose()
   }
 }
 

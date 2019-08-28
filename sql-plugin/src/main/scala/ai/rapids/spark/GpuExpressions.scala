@@ -19,6 +19,7 @@ package ai.rapids.spark
 import scala.collection.mutable.ArrayBuffer
 
 import ai.rapids.cudf.{BinaryOp, BinaryOperable, DType, Scalar, UnaryOp}
+import ai.rapids.spark.RapidsPluginImplicits._
 
 import org.apache.spark.sql.catalyst.expressions.{BinaryExpression, BinaryOperator, Expression, UnaryExpression, Unevaluable}
 import org.apache.spark.sql.vectorized.{ColumnarBatch, ColumnVector}
@@ -37,7 +38,7 @@ object GpuExpressionsUtils {
       }
     } catch {
       case t: Throwable =>
-        resultCvs.foreach(_.close())
+        resultCvs.safeClose()
         throw t
     }
     resultCvs

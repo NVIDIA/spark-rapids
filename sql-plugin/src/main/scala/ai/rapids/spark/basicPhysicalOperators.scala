@@ -45,14 +45,14 @@ object GpuProjectExec {
   }
 
   def project[A <: GpuExpression](cb: ColumnarBatch, boundExprs: Seq[A]): ColumnarBatch = {
-    val newColumns = boundExprs.map(
+    val newColumns = boundExprs.safeMap {
       expr => {
         val result = expr.columnarEval(cb)
         result match {
           case cv: ColumnVector => cv
           case other => GpuColumnVector.from(GpuScalar.from(other), cb.numRows())
         }
-      }).toArray
+      }}.toArray
     new ColumnarBatch(newColumns, cb.numRows())
   }
 }

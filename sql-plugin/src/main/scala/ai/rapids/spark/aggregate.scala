@@ -18,6 +18,7 @@ package ai.rapids.spark
 
 import ai.rapids.cudf
 import ai.rapids.cudf.{NvtxColor, NvtxRange}
+import ai.rapids.spark.RapidsPluginImplicits._
 
 import org.apache.spark.TaskContext
 import org.apache.spark.rdd.RDD
@@ -173,7 +174,7 @@ case class GpuHashAggregateExec(requiredChildDistributionExpressions: Option[Seq
             aggregatedInputCb = computeAggregate(childCvs, finalMode, groupingExpressions,
               if (finalMode) boundMergeAgg else boundUpdateAgg)
 
-            childCvs.foreach(_.close)
+            childCvs.safeClose()
             childCvs = null
 
             if (aggregatedCb == null) {
@@ -198,7 +199,7 @@ case class GpuHashAggregateExec(requiredChildDistributionExpressions: Option[Seq
               // 3) Compute aggregate. In subsequent iterations we'll use this result
               //    to concatenate against incoming batches (step 2)
               aggregatedCb = computeAggregate(concatCvs, merge = true, groupingExpressions, boundMergeAgg)
-              concatCvs.foreach(_.close)
+              concatCvs.safeClose()
               concatCvs = null
             }
           } finally {
@@ -290,27 +291,13 @@ case class GpuHashAggregateExec(requiredChildDistributionExpressions: Option[Seq
       } finally {
         if (!success) {
           if (resultCvs != null) {
-            resultCvs.foreach(_.close)
+            resultCvs.safeClose()
           }
         }
-        if (batch != null) {
-          batch.close()
-        }
-        if (childCvs != null) {
-          childCvs.foreach(_.close)
-        }
-        if (aggregatedInputCb != null) {
-          aggregatedInputCb.close()
-        }
-        if (aggregatedCb != null) {
-          aggregatedCb.close()
-        }
-        if (concatCvs != null) {
-          concatCvs.foreach(_.close)
-        }
-        if (finalCb != null) {
-          finalCb.close()
-        }
+        childCvs.safeClose()
+        concatCvs.safeClose()
+        (Seq(batch, aggregatedInputCb, aggregatedCb, finalCb))
+          .safeClose()
       }
     }}
   }

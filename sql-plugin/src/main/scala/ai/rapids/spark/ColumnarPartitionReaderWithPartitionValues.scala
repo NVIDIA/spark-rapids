@@ -17,6 +17,7 @@
 package ai.rapids.spark
 
 import ai.rapids.cudf.Scalar
+import ai.rapids.spark.RapidsPluginImplicits._
 
 import org.apache.spark.sql.execution.datasources.PartitionedFile
 import org.apache.spark.sql.sources.v2.reader.PartitionReader
@@ -52,7 +53,7 @@ class ColumnarPartitionReaderWithPartitionValues(
           fileBatch.close()
         }
         if (partitionColumns != null) {
-          partitionColumns.foreach(_.close())
+          partitionColumns.safeClose()
         }
       }
     }
@@ -71,7 +72,7 @@ class ColumnarPartitionReaderWithPartitionValues(
       result
     } finally {
       if (!succeeded) {
-        result.filter(_ != null).foreach(_.close())
+        result.filter(_ != null).safeClose()
       }
     }
   }

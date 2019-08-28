@@ -388,6 +388,7 @@ class ParquetPartitionReader(
           dumpParquetData(dataBuffer, dataSize)
         }
         val parseOpts = ParquetOptions.builder()
+            .withTimeUnit(TimeUnit.MICROSECONDS)
             .includeColumn(readDataSchema.fieldNames:_*).build()
         val table = Table.readParquet(parseOpts, dataBuffer, 0, dataSize)
         val numColumns = table.getNumberOfColumns
