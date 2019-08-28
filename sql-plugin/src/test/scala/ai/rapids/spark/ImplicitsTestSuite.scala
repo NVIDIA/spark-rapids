@@ -50,9 +50,8 @@ class ImplicitsTestSuite extends FlatSpec with Matchers {
     val resources = (0 until 10).map(new Test(_, false))
 
     assertThrows[Throwable] {
-      resources.zipWithIndex.safeMap { 
+      resources.zipWithIndex.safeMap {
         case (res, i) =>
-          println(s"mapping away $i")
           if (i > 5) {
             throw new Exception("bad! " + i)
           }
@@ -67,7 +66,6 @@ class ImplicitsTestSuite extends FlatSpec with Matchers {
     val resources = (0 until 10).map(new Test(_, true))
     try {
       resources.zipWithIndex.safeMap { case (res, i) => {
-        println("howdy")
         if (i > 5) {
           throw new Exception("bad!")
         }
@@ -157,8 +155,37 @@ class ImplicitsTestSuite extends FlatSpec with Matchers {
       colIx = colIx + 1
       res.incRefCount()
     })
+    assert(resources.forall(_.refCount == 1))
     batch.close
     result.safeClose
+    assert(resources.forall(!_.leaked))
+  }
+
+  it should "handle safeMap on array" in {
+    val resources = (0 until 10).map(new Test(_, false))
+
+    assertThrows[Throwable] {
+      resources.toArray.zipWithIndex.safeMap {
+        case (res, i) =>
+          if (i > 5) {
+            throw new Exception("bad! " + i)
+          }
+          res.incRefCount()
+      }
+    }
+    assert(resources.forall(!_.leaked))
+  }
+
+  it should "handle safeMap in the successful case" in {
+    val resources = (0 until 10).map(new Test(_, false))
+
+    val out = resources.toArray.zipWithIndex.safeMap {
+      case (res, i) =>
+        res.incRefCount()
+    }
+
+    assert(resources.forall(_.refCount == 1))
+    out.safeClose()
     assert(resources.forall(!_.leaked))
   }
 }
