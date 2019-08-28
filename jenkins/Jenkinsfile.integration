@@ -127,10 +127,28 @@ pipeline {
         always {
             script {
                 def status = "failed"
-                if (currentBuild.currentResult == "SUCCESS")
+                if (currentBuild.currentResult == "SUCCESS") {
                     status = "success"
+                    slack("#rapidsai-spark-cicd", "Success", color: "#33CC33")
+                }
+                else {
+                    slack("#rapidsai-spark-cicd", "Failed", color: "#FF0000")
+                }
             }
             echo 'Pipeline finished!'
         }
     }
 } // end of pipeline
+
+void slack(Map params = [:], String channel, String message) {
+    Map defaultParams = [
+            color: "#000000",
+            baseUrl: "https://nvidia.slack.com/services/hooks/jenkins-ci/",
+            tokenCredentialId: "slack_token"
+    ]
+
+    params["channel"] = channel
+    params["message"] = "${BUILD_URL}\n" + message
+
+    slackSend(defaultParams << params)
+}
