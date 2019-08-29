@@ -139,7 +139,7 @@ object RapidsPluginImplicits {
     def safeMap(fn: A => B): Array[B] = super.safeMap(in, fn)
   }
 
-  implicit class AutoCloseableProducingBatch(val in: ColumnarBatch) extends MapsSafely {
+  implicit class AutoCloseableFromBatchColumns(val in: ColumnarBatch) extends MapsSafely {
     /**
       * safeMap: Is an implicit on ColumnarBatch, that lets you map over the columns
       * of a batch as if the batch was a Seq[GpuColumnVector], iff safeMap's body is producing AutoCloseable
