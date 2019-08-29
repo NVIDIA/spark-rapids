@@ -132,41 +132,29 @@ object CoalesceGoal {
 }
 
 sealed abstract class CoalesceGoal extends Serializable {
-  val maxSize: Long
   val targetSize: Long
 
-  def whenMaxExceeded(actualSize: Long): Unit = {}
+  def whenTargetExceeded(actualSize: Long): Unit = {}
 }
 
 object RequireSingleBatch extends CoalesceGoal {
-  override val maxSize: Long = Integer.MAX_VALUE
   override val targetSize: Long = Integer.MAX_VALUE
 
-  override def whenMaxExceeded(actualSize: Long): Unit = {
+  override def whenTargetExceeded(actualSize: Long): Unit = {
     throw new IllegalStateException("A single batch is required for this operation." +
       " Please try increasing your partition count.")
   }
 }
 
 object PreferSingleBatch extends CoalesceGoal {
-  override val maxSize: Long = Integer.MAX_VALUE
   override val targetSize: Long = Integer.MAX_VALUE
 }
 
 case class TargetSize(override val targetSize: Long) extends CoalesceGoal {
   assert(targetSize <= Integer.MAX_VALUE)
-
-  override val maxSize: Long = {
-    val tmp = targetSize * 1.1
-    if (tmp > Integer.MAX_VALUE) {
-      Integer.MAX_VALUE
-    } else {
-      tmp.asInstanceOf[Long]
-    }
-  }
 }
 
-case class CoalesceIterator(iter: Iterator[ColumnarBatch],
+abstract class AbstractGpuCoalesceIterator(iter: Iterator[ColumnarBatch],
     goal: CoalesceGoal,
     numInputRows: SQLMetric,
     numInputBatches: SQLMetric,
@@ -197,17 +185,41 @@ case class CoalesceIterator(iter: Iterator[ColumnarBatch],
     onDeck.isDefined
   }
 
+  /**
+   * Called first to initialize any state needed for a new batch to be created.
+   */
+  def initNewBatch(): Unit
+
+  /**
+   * Called to add a new batch to the final output batch. The batch passed in will
+   * not be closed.  If it needs to be closed it is the responsibility of the child class
+   * to do it.
+   * @param batch the batch to add in.
+   */
+  def addBatchToConcat(batch: ColumnarBatch): Unit
+
+  /**
+   * Called after all of the batches have been added in.
+   * @return the concated batches on the GPU.
+   */
+  def concatAllAndPutOnGPU(): ColumnarBatch
+
+  /**
+   * Called to cleanup any state when a batch is done (even if there was a failure)
+   */
+  def cleanupConcatIsDone(): Unit
+
   override def next(): ColumnarBatch = {
-    var batches = ArrayBuffer[ColumnarBatch]()
+    initNewBatch()
     try {
       var numRows: Long = 0 // to avoid overflows
       if (onDeck.isDefined) {
         val cb = onDeck.get
         val rows = cb.numRows()
-        if (rows > goal.maxSize) {
-          goal.whenMaxExceeded(rows)
+        if (rows > goal.targetSize) {
+          goal.whenTargetExceeded(rows)
         }
-        batches += cb
+        addBatchToConcat(cb)
         onDeck = None
         numRows += rows
       }
@@ -222,11 +234,11 @@ case class CoalesceIterator(iter: Iterator[ColumnarBatch],
         if (nextRows > 0) {
           numInputRows += nextRows
           val wouldBeRows = nextRows + numRows
-          if (wouldBeRows > goal.maxSize) {
-            goal.whenMaxExceeded(wouldBeRows)
+          if (wouldBeRows > goal.targetSize) {
+            goal.whenTargetExceeded(wouldBeRows)
             onDeck = Some(cb)
           } else {
-            batches += cb
+            addBatchToConcat(cb)
             numRows = wouldBeRows
           }
         } else {
@@ -237,19 +249,51 @@ case class CoalesceIterator(iter: Iterator[ColumnarBatch],
       numOutputRows += numRows
       numOutputBatches += 1
       val collectEnd = System.nanoTime()
-      val arr = batches.toArray
-      val ret = ConcatAndConsumeAll.buildNonEmptyBatch(arr)
-      // Clear the buffer so we don't close it again (buildNonEmptyBatch closed it for us).
-      batches = ArrayBuffer.empty
+      val ret = concatAllAndPutOnGPU()
       val end = System.nanoTime()
       collectTime += TimeUnit.NANOSECONDS.toMillis(collectEnd - collectStart)
       concatTime += TimeUnit.NANOSECONDS.toMillis(end - collectEnd)
       collectStart = -1
       ret
     } finally {
-      batches.foreach(_.close())
+      cleanupConcatIsDone()
     }
   }
+}
+
+class GpuCoalesceIterator(iter: Iterator[ColumnarBatch],
+    goal: CoalesceGoal,
+    numInputRows: SQLMetric,
+    numInputBatches: SQLMetric,
+    numOutputRows: SQLMetric,
+    numOutputBatches: SQLMetric,
+    collectTime: SQLMetric,
+    concatTime: SQLMetric)
+  extends AbstractGpuCoalesceIterator(iter,
+    goal,
+    numInputRows,
+    numInputBatches,
+    numOutputRows,
+    numOutputBatches,
+    collectTime,
+    concatTime) {
+
+  private var batches: ArrayBuffer[ColumnarBatch] = ArrayBuffer.empty
+
+  override def initNewBatch(): Unit =
+    batches = ArrayBuffer[ColumnarBatch]()
+
+  override def addBatchToConcat(batch: ColumnarBatch): Unit =
+    batches += batch
+
+  override def concatAllAndPutOnGPU(): ColumnarBatch = {
+    val ret = ConcatAndConsumeAll.buildNonEmptyBatch(batches.toArray)
+    // Clear the buffer so we don't close it again (buildNonEmptyBatch closed it for us).
+    batches = ArrayBuffer.empty
+    ret
+  }
+
+  override def cleanupConcatIsDone(): Unit = batches.foreach(_.close())
 }
 
 case class GpuCoalesceBatches(child: SparkPlan, goal: CoalesceGoal)
@@ -280,7 +324,7 @@ case class GpuCoalesceBatches(child: SparkPlan, goal: CoalesceGoal)
 
     val batches = child.executeColumnar()
     batches.mapPartitions { iter =>
-      CoalesceIterator(iter, goal,
+      new GpuCoalesceIterator(iter, goal,
         numInputRows, numInputBatches, numOutputRows, numOutputBatches, collectTime, concatTime)
     }
   }
