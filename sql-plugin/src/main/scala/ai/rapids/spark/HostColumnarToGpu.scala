@@ -16,26 +16,19 @@
 
 package ai.rapids.spark
 
+import scala.collection.mutable.ArrayBuffer
+
 import ai.rapids.cudf.DType
 
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.expressions.Attribute
 import org.apache.spark.sql.execution.{SparkPlan, UnaryExecNode}
+import org.apache.spark.sql.execution.metric.{SQLMetric, SQLMetrics}
+import org.apache.spark.sql.types.StructType
 import org.apache.spark.sql.vectorized.{ColumnarBatch, ColumnVector}
 
-/**
- * Put columnar formatted data on the GPU.
- */
-case class HostColumnarToGpu(child: SparkPlan) extends UnaryExecNode with GpuExec {
-  override def output: Seq[Attribute] = child.output
-
-  override def supportsColumnar: Boolean = true
-
-  override protected def doExecute(): RDD[InternalRow] = {
-    child.execute()
-  }
-
+object HostColumnarToGpu {
   def columnarCopy(cv: ColumnVector, b: ai.rapids.cudf.ColumnVector.Builder,
       nullable: Boolean, rows: Int): Unit = {
     (GpuColumnVector.getRapidsType(cv.dataType()), nullable) match {
@@ -127,6 +120,79 @@ case class HostColumnarToGpu(child: SparkPlan) extends UnaryExecNode with GpuExe
         throw new UnsupportedOperationException(s"Converting to GPU for ${t} is not currently supported")
     }
   }
+}
+
+class HostToGpuCoalesceIterator(iter: Iterator[ColumnarBatch],
+    goal: CoalesceGoal,
+    schema: StructType,
+    numInputRows: SQLMetric,
+    numInputBatches: SQLMetric,
+    numOutputRows: SQLMetric,
+    numOutputBatches: SQLMetric,
+    collectTime: SQLMetric,
+    concatTime: SQLMetric)
+  extends AbstractGpuCoalesceIterator(iter,
+    goal,
+    numInputRows,
+    numInputBatches,
+    numOutputRows,
+    numOutputBatches,
+    collectTime,
+    concatTime) {
+
+  var batchBuilder: GpuColumnVector.GpuColumnarBatchBuilder = null
+  var totalRows = 0
+
+  override def initNewBatch(): Unit = {
+    if (batchBuilder != null) {
+      batchBuilder.close()
+      batchBuilder = null
+    }
+    batchBuilder = new GpuColumnVector.GpuColumnarBatchBuilder(schema, goal.targetSize.toInt, null)
+    totalRows = 0
+  }
+
+  override def addBatchToConcat(batch: ColumnarBatch): Unit = {
+    val rows = batch.numRows()
+    for (i <- 0 until batch.numCols()) {
+      HostColumnarToGpu.columnarCopy(batch.column(i), batchBuilder.builder(i), schema.fields(i).nullable, rows)
+    }
+    totalRows += rows
+  }
+
+  override def concatAllAndPutOnGPU(): ColumnarBatch =
+    batchBuilder.build(totalRows)
+
+
+  override def cleanupConcatIsDone(): Unit = {
+    if (batchBuilder != null) {
+      batchBuilder.close()
+      batchBuilder = null
+    }
+    totalRows = 0
+  }
+}
+
+/**
+ * Put columnar formatted data on the GPU.
+ */
+case class HostColumnarToGpu(child: SparkPlan, goal: CoalesceGoal) extends UnaryExecNode with GpuExec {
+  override lazy val metrics: Map[String, SQLMetric] = Map(
+    "numInputRows" -> SQLMetrics.createMetric(sparkContext, "input rows"),
+    "numOutputRows" -> SQLMetrics.createMetric(sparkContext, "output rows"),
+    "numInputBatches" -> SQLMetrics.createMetric(sparkContext, "input batches"),
+    "numOutputBatches" -> SQLMetrics.createMetric(sparkContext, "output batches"),
+    "collectTime" -> SQLMetrics.createTimingMetric(sparkContext, "collect batch time"),
+    "concatTime" -> SQLMetrics.createTimingMetric(sparkContext, "concat batch time")
+  )
+
+  override def output: Seq[Attribute] = child.output
+
+  override def supportsColumnar: Boolean = true
+
+  override protected def doExecute(): RDD[InternalRow] = {
+    child.execute()
+  }
 
   /**
     * Returns an RDD[ColumnarBatch] that when mapped over will produce GPU-side column vectors
@@ -138,24 +204,18 @@ case class HostColumnarToGpu(child: SparkPlan) extends UnaryExecNode with GpuExe
     * @return an RDD of [[ColumnarBatch]]
     */
   override protected def doExecuteColumnar(): RDD[ColumnarBatch] = {
-    child.executeColumnar().mapPartitions { cbIter =>
-      new Iterator[ColumnarBatch] {
-        override def hasNext: Boolean = cbIter.hasNext
 
-        override def next(): ColumnarBatch = {
-          val b = cbIter.next()
-          val rows = b.numRows()
-          val batchBuilder = new GpuColumnVector.GpuColumnarBatchBuilder(schema, rows, b)
-          try {
-            for (i <- 0 until b.numCols()) {
-              columnarCopy(b.column(i), batchBuilder.builder(i), schema.fields(i).nullable, rows)
-            }
-            batchBuilder.build(rows)
-          } finally {
-            batchBuilder.close()
-          }
-        }
-      }
+    val numInputRows = longMetric("numInputRows")
+    val numInputBatches = longMetric("numInputBatches")
+    val numOutputRows = longMetric("numOutputRows")
+    val numOutputBatches = longMetric("numOutputBatches")
+    val collectTime = longMetric("collectTime")
+    val concatTime = longMetric("concatTime")
+
+    val batches = child.executeColumnar()
+    batches.mapPartitions { iter =>
+      new HostToGpuCoalesceIterator(iter, goal, schema,
+        numInputRows, numInputBatches, numOutputRows, numOutputBatches, collectTime, concatTime)
     }
   }
 }

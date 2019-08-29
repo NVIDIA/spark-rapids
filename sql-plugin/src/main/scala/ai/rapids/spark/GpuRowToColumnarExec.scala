@@ -327,8 +327,8 @@ case class GpuRowToColumnarExec(child: SparkPlan, goal: CoalesceGoal)
               converters.convert(row, builders)
               rowCount += 1
             }
-            if (rowIter.hasNext && (rowCount + 1L) > goal.maxSize) {
-              goal.whenMaxExceeded(rowCount + 1L)
+            if (rowIter.hasNext && (rowCount + 1L) > goal.targetSize) {
+              goal.whenTargetExceeded(rowCount + 1L)
             }
             val ret = builders.build(rowCount)
             numInputRows += rowCount
