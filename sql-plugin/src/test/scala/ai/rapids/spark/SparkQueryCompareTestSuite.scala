@@ -124,6 +124,7 @@ trait SparkQueryCompareTestSuite extends FunSuite {
       fun: DataFrame => DataFrame,
       conf: SparkConf = new SparkConf(),
       repart: Integer = 1): (Array[Row], Array[Row]) = {
+    conf.setIfMissing("spark.sql.shuffle.partitions", "2")
     val fromCpu = withCpuSparkSession((session) => {
       var data = df(session)
       if (repart > 0) {
