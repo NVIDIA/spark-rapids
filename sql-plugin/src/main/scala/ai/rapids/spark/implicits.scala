@@ -70,7 +70,39 @@ object RapidsPluginImplicits {
       * safeMap has the added safety net that as you produce AutoCloseable values they are tracked, and if an
       * exception were to occur within the maps's body, it will make every attempt to close each produced value.
       *
-      * Note: safeMap will close regardless of the reference count of the elements produced by fn.
+      * Note: safeMap will close in case of errors, without any knowledge of whether it should or not.
+      * Use safeMap only in these circumstances:
+      *
+      * a) if [[fn]] increases the reference count:
+      *    seq.safeMap(x => {...; x.incRefCount})
+      * b) if [[fn]] produces an auto closeable and is not tracked anywhere else:
+      *    seq.safeMap(x => GpuColumnVector.from(...))
+      *
+      * Usage of safeMap chained with other maps is a bit confusing:
+      *
+      * seq.map(GpuColumnVector.from).safeMap(couldThrow)
+      *
+      * Will close the column vectors produced from couldThrow up until the time where safeMap throws.
+      * The correct pattern of usage in cases like this is:
+      *
+      *   val closeTheseLater = seq.safeMap(GpuColumnVector.from)
+      *   closeTheseLater.safeMap(x => {
+      *     var success = false
+      *     try {
+      *       val res = couldThrow(x.incRefCount()) // produces an AutoCloseable
+      *       success = true
+      *       res // return a ref count of 2
+      *     } finally {
+      *       // in case of an error, we close x as part of normal error handling
+      *       // the exception will be caught by the safeMap, and it will close all
+      *       // AutoCloseables produced before x
+      *       if (!success) {
+      *         x.close() // x now has a ref count of 1
+      *       }
+      *     }
+      *   })
+      *
+      *   closeTheseLater.safeClose() // finally go from 1 to 0 in the ref count
       *
       * @param in - the Seq[A] to map on
       * @param fn - a function that takes A, and produces B (a subclass of AutoCloseable)

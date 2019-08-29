@@ -188,5 +188,23 @@ class ImplicitsTestSuite extends FlatSpec with Matchers {
     out.safeClose()
     assert(resources.forall(!_.leaked))
   }
+
+  it should "safeMap on a lazy sequence (Stream) with errors" in {
+    val resources: Stream[Test] = (0 until 10).toStream.map(i => { println("starting stream for " + i); new Test(i, false) })
+
+    assertThrows[Throwable] {
+      resources.zipWithIndex.safeMap {
+        case (x, ix) => {
+          println("at safe map for " + x);
+          if (ix > 5) {
+            throw new Exception("bad! " + ix)
+          }
+          println("increasing ref count for " + x)
+          x.incRefCount()
+        }
+      }
+    }
+    assert(resources.forall(!_.leaked))
+  }
 }
 
