@@ -106,6 +106,14 @@ class SortExecSuite extends SparkQueryCompareTestSuite {
     frame => frame.sortWithinPartitions(col("longs"))
   }
 
+  testSparkResultsAreEqual("sort 2 cols longs nulls last desc/null first asc", nullableLongsDfWithDuplicates) {
+    frame => frame.sortWithinPartitions(col("longs").desc_nulls_last, col("more_longs").asc_nulls_first)
+  }
+
+  testSparkResultsAreEqual("sort 2 cols longs nulls first desc/null last asc", nullableLongsDfWithDuplicates) {
+    frame => frame.sortWithinPartitions(col("longs").desc_nulls_first, col("more_longs").asc_nulls_last)
+  }
+
   // force a sortMergeJoin
   private val sortJoinConf = new SparkConf().set("spark.sql.autoBroadcastJoinThreshold", "-1").
     set("spark.sql.join.preferSortMergeJoin", "true").set("spark.sql.exchange.reuse", "false")
