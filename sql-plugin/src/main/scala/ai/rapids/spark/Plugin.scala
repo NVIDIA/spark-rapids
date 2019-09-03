@@ -943,7 +943,14 @@ object GpuOverrides {
             "characters in your strings. See spark.rapids.sql.allowIncompatUTF8Strings to allow " +
             "if you don't have UTF-8 characters in your strings.")
         }
-        val nullOrderings = sort.sortOrder.map(o => o.nullOrdering)
+
+        def areNullsSmallest(o: SortOrder): Boolean = {
+          (o.isAscending && o.nullOrdering == NullsFirst) ||
+            (!o.isAscending && o.nullOrdering == NullsLast)
+        }
+        // need to see if the ordering of all columns is such that either nulls are all smallest
+        // or all nulls are largest
+        val nullOrderings = sort.sortOrder.map(o => areNullsSmallest(o))
         if (!nullOrderings.forall(_ == nullOrderings.head)) {
           // ERROR we can't handle this right now since only 1 parameter for areNullsSmallest
           // to Table.orderBy
