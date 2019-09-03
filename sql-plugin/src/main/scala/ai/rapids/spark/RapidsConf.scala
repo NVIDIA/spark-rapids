@@ -235,6 +235,12 @@ object RapidsConf {
     .stringConf
     .createWithDefault("all")
 
+  val ENABLE_TOTAL_ORDER_SORT = conf("spark.rapids.sql.enableTotalOrderSort")
+    .doc("Allow for total ordering sort where the partitioning runs on CPU and " +
+      "sort runs on GPU.")
+    .booleanConf
+    .createWithDefault(false)
+
   def help(): Unit = {
     println("Rapids Configs:")
     registeredConfs.foreach(_.help())
@@ -289,6 +295,8 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
   lazy val orcDebugDumpPrefix: String = get(ORC_DEBUG_DUMP_PREFIX)
 
   lazy val hashAggReplaceMode: String = get(HASH_AGG_REPLACE_MODE)
+
+  lazy val enableTotalOrderSort: Boolean = get(ENABLE_TOTAL_ORDER_SORT)
 
   def isOperatorEnabled(key: String, incompat: Boolean): Boolean = {
     val default = !incompat || (incompat && isIncompatEnabled)

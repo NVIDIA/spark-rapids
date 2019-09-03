@@ -17,6 +17,8 @@ package ai.rapids.spark
 
 import scala.util.Random
 
+import ai.rapids.spark.RapidsConf.{ALLOW_INCOMPAT_UTF8_STRINGS, ENABLE_TOTAL_ORDER_SORT}
+
 import org.apache.spark.SparkConf
 import org.apache.spark.sql.functions._
 import org.apache.spark.sql.{DataFrame, RandomDataGenerator, Row, SparkSession}
@@ -46,7 +48,8 @@ class SortExecSuite extends SparkQueryCompareTestSuite {
       dataType: DataType,
       nullable: Boolean,
       size: Int,
-      conf: SparkConf): (SparkSession => DataFrame) = {
+      conf: SparkConf,
+      numParts: Int = 1): (SparkSession => DataFrame) = {
     val rapidsConf = new RapidsConf(conf.clone())
     val generator = if (dataType == StringType) {
       // Once CUDF properly supports sorting UTF8 strings, remove this
@@ -60,14 +63,14 @@ class SortExecSuite extends SparkQueryCompareTestSuite {
     val inputData = Seq.fill(size)(generator())
     (session: SparkSession) => {
       session.createDataFrame(
-        session.sparkContext.parallelize(Random.shuffle(inputData).map(v => Row(v))),
+        session.sparkContext.parallelize(Random.shuffle(inputData).map(v => Row(v)), numParts),
         StructType(StructField("a", dataType, nullable = true) :: Nil)
       )
     }
   }
 
   // allow UTF8 strings because we generate strings with alphanumeric
-  private val allowUTF8Conf = makeBatched(3).set("spark.rapids.sql.allowIncompatUTF8Strings", "true")
+  private val allowUTF8Conf = makeBatched(3).set(ALLOW_INCOMPAT_UTF8_STRINGS.key, "true")
 
   // Note I -- out the set of Types that aren't supported with Sort right now so we can explicitly see them and remove
   // individually as we add support
@@ -78,11 +81,27 @@ class SortExecSuite extends SparkQueryCompareTestSuite {
     sortOrder <- Seq(col("a").asc, col("a").asc_nulls_last, col("a").desc, col("a").desc_nulls_first)
   ) {
     val inputDf = generateData(dataType, nullable, 60, allowUTF8Conf)
-    testSparkResultsAreEqual(s"sorting on $dataType with nullable=$nullable, sortOrder=$sortOrder",  inputDf,
+    testSparkResultsAreEqual(s"sorting in partition on $dataType with nullable=$nullable, sortOrder=$sortOrder",  inputDf,
       conf = allowUTF8Conf,
       allowNonGpu=false,
       execsAllowedNonGpu = Seq("RDDScanExec", "AttributeReference")) {
       frame => frame.sortWithinPartitions(sortOrder)
+    }
+  }
+
+  // Do it for total order sort - do it on a subset of types to keep testing time down.
+  private val allowTotalOrdering = allowUTF8Conf.set(ENABLE_TOTAL_ORDER_SORT.key, "true")
+  for (
+    dataType <- Seq(StringType, LongType);
+    nullable <- Seq(true, false);
+    sortOrder <- Seq(col("a").asc, col("a").asc_nulls_last, col("a").desc, col("a").desc_nulls_first)
+  ) {
+    val inputDf = generateData(dataType, nullable, 60, allowTotalOrdering)
+    testSparkResultsAreEqual(s"sorting on $dataType with nullable=$nullable, sortOrder=$sortOrder",  inputDf,
+      conf = allowTotalOrdering,
+      allowNonGpu=false,
+      execsAllowedNonGpu = Seq("RDDScanExec", "AttributeReference")) {
+      frame => frame.sort(sortOrder)
     }
   }
 

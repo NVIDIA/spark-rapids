@@ -956,11 +956,9 @@ object GpuOverrides {
           // to Table.orderBy
           throw new CannotReplaceException(s"GPU cudf can't handle multiple null orderings!")
         }
-        // note that dataframe.sort always sets this to true
-        if (sort.global == true) {
+        if (sort.global && !conf.enableTotalOrderSort) {
           throw new CannotReplaceException(s"Don't support total ordering on GPU yet")
         }
-
       })
       .desc("The backend for the sort operator")
       .build()
