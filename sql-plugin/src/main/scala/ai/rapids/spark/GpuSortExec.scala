@@ -206,7 +206,9 @@ class GpuColumnarBatchSorter(
     } catch {
       case t: Throwable =>
         sortCvs.safeClose()
-        batchWithCategories.safeClose()
+        if (batchWithCategories != null) {
+          batchWithCategories.safeClose()
+        }
         throw t
     }
     sortCvs ++ GpuColumnVector.extractColumns(batchWithCategories)
