@@ -21,10 +21,6 @@ pipeline {
         JENKINS_ROOT  = 'jenkins'
     }
 
-    triggers {
-        cron('H 0 * * *')
-    }
-
     stages {
         stage('Ubuntu16 CUDA10.0') {
             agent {
