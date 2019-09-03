@@ -20,7 +20,7 @@ import scala.collection.mutable.ArrayBuffer
 
 import ai.rapids.cudf.{BinaryOp, BinaryOperable, DType, Scalar, UnaryOp}
 
-import org.apache.spark.sql.catalyst.expressions.{BinaryExpression, Expression, UnaryExpression, Unevaluable}
+import org.apache.spark.sql.catalyst.expressions.{BinaryExpression, BinaryOperator, Expression, UnaryExpression, Unevaluable}
 import org.apache.spark.sql.vectorized.{ColumnarBatch, ColumnVector}
 
 
@@ -33,8 +33,7 @@ object GpuExpressionsUtils {
     try {
       for (i <- 0 until numCols) {
         val ref = boundExprs(i)
-        resultCvs += ref.asInstanceOf[GpuExpression].columnarEval(cb).
-          asInstanceOf[GpuColumnVector]
+        resultCvs += ref.columnarEval(cb).asInstanceOf[GpuColumnVector]
       }
     } catch {
       case t: Throwable =>
@@ -45,7 +44,11 @@ object GpuExpressionsUtils {
   }
 }
 
-trait GpuExpression extends Expression {
+/**
+ * An Expression that cannot be evaluated in the traditional row-by-row sense (hence Unevaluable)
+ * but instead can be evaluated on an entire column batch at once.
+ */
+trait GpuExpression extends Expression with Unevaluable {
   /**
    * Returns the result of evaluating this expression on the entire
    * [[ColumnarBatch]]. The result of calling this may be a single [[GpuColumnVector]] or a scalar
@@ -58,18 +61,13 @@ trait GpuExpression extends Expression {
    * temporary value.
    */
   def columnarEval(batch: ColumnarBatch): Any
-
-  override def equals(other: Any): Boolean = {
-    if (!super.equals(other)) {
-      return false
-    }
-    other.isInstanceOf[GpuExpression]
-  }
-
-  override def hashCode(): Int = super.hashCode()
 }
 
-trait GpuUnevaluable extends Unevaluable with GpuExpression {
+abstract class GpuLeafExpression extends GpuExpression {
+  override final def children: Seq[Expression] = Nil
+}
+
+trait GpuUnevaluable extends GpuExpression {
   final override def columnarEval(batch: ColumnarBatch): Any =
     throw new UnsupportedOperationException(s"Cannot columnar evaluate expression: $this")
 }
@@ -79,7 +77,7 @@ abstract class GpuUnevaluableUnaryExpression extends GpuUnaryExpression with Gpu
     throw new UnsupportedOperationException(s"Cannot columnar evaluate expression: $this")
 }
 
-trait GpuUnaryExpression extends UnaryExpression with GpuExpression {
+abstract class GpuUnaryExpression extends UnaryExpression with GpuExpression {
   protected def doColumnar(input: GpuColumnVector): GpuColumnVector
 
   def outputTypeOverride: DType = null
@@ -105,8 +103,8 @@ trait GpuUnaryExpression extends UnaryExpression with GpuExpression {
               tmp.close()
             }
           }
-        case v if (v != null) => nullSafeEval(v)
-        case _ => null
+        case _ => throw new IllegalStateException(
+          s"Unary expression $this should only see a column result from child eval")
       }
     } finally {
       if (input != null && input.isInstanceOf[ColumnVector]) {
@@ -154,6 +152,7 @@ trait GpuBinaryExpression extends BinaryExpression with GpuExpression {
   }
 }
 
+trait GpuBinaryOperator extends BinaryOperator with GpuBinaryExpression
 
 trait CudfBinaryExpression extends GpuBinaryExpression {
   def binaryOp: BinaryOp
@@ -187,3 +186,5 @@ trait CudfBinaryExpression extends GpuBinaryExpression {
     GpuColumnVector.from(lBase.binaryOp(binaryOp, rhs, outType))
   }
 }
+
+abstract class CudfBinaryOperator extends GpuBinaryOperator with CudfBinaryExpression

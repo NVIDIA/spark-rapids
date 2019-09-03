@@ -110,7 +110,7 @@ case class GpuBroadcastExchangeExec(
   override def outputPartitioning: Partitioning = BroadcastPartitioning(mode)
 
   override def doCanonicalize(): SparkPlan = {
-    new GpuBroadcastExchangeExec(mode.canonicalized, child.canonicalized)
+    GpuBroadcastExchangeExec(mode.canonicalized, child.canonicalized)
   }
 
   @transient

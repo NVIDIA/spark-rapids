@@ -17,7 +17,7 @@
 package ai.rapids.spark
 
 import org.apache.spark.internal.Logging
-import org.apache.spark.sql.catalyst.expressions.{AttributeReference, AttributeSeq, BoundReference}
+import org.apache.spark.sql.catalyst.expressions.AttributeSeq
 import org.apache.spark.sql.types.DataType
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
@@ -28,7 +28,7 @@ object GpuBindReferences extends Logging {
       expression: A,
       input: AttributeSeq,
       allowFailures: Boolean = false): A = {
-    expression.transform { case a: AttributeReference =>
+    expression.transform { case a: GpuAttributeReference =>
       val ordinal = input.indexOf(a.exprId)
       if (ordinal == -1) {
         if (allowFailures) {
@@ -37,7 +37,7 @@ object GpuBindReferences extends Logging {
           sys.error(s"Couldn't find $a in ${input.attrs.mkString("[", ",", "]")}")
         }
       } else {
-        new GpuBoundReference(ordinal, a.dataType, input(ordinal).nullable)
+        GpuBoundReference(ordinal, a.dataType, input(ordinal).nullable)
       }
     }.asInstanceOf[A]
   }
@@ -56,14 +56,16 @@ object GpuBindReferences extends Logging {
    * A version of [[bindReferences]] that takes AttributeSeq as its expressions
    */
   def bindReferences(expressions: AttributeSeq, input: AttributeSeq): Seq[GpuExpression] = {
-    bindReferences(expressions.attrs.map(ref => new GpuAttributeReference(
+    bindReferences(expressions.attrs.map(ref => GpuAttributeReference(
       ref.name, ref.dataType, ref.nullable, ref.metadata)(ref.exprId, ref.qualifier)),
       input)
   }
 }
 
-class GpuBoundReference(ordinal: Int, dataType: DataType, nullable: Boolean)
-  extends BoundReference(ordinal, dataType, nullable) with GpuExpression {
+case class GpuBoundReference(ordinal: Int, dataType: DataType, nullable: Boolean)
+  extends GpuLeafExpression {
+
+  override def toString: String = s"input[$ordinal, ${dataType.simpleString}, $nullable]"
 
   override def columnarEval(batch: ColumnarBatch): Any = {
     batch.column(ordinal).asInstanceOf[GpuColumnVector].incRefCount()

@@ -16,12 +16,12 @@
 
 package ai.rapids.spark
 
-import org.apache.spark.sql.catalyst.expressions.KnownFloatingPointNormalized
+import org.apache.spark.sql.catalyst.expressions.TaggingExpression
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
 // this is a TaggingExpression in spark, which gets matched in NormalizeFloatingNumbers (which is a Rule)
 // TODO: need coalesce as a feature request in cudf
-class GpuKnownFloatingPointNormalized(child: GpuExpression) extends KnownFloatingPointNormalized(child)
-  with GpuExpression {
+case class GpuKnownFloatingPointNormalized(child: GpuExpression) extends TaggingExpression
+    with GpuExpression {
   override def columnarEval(batch: ColumnarBatch): Any = child.columnarEval(batch)
 }

@@ -14,18 +14,27 @@
  * limitations under the License.
  */
 
-package ai.rapids.spark
+package org.apache.spark.sql.rapids
 
-import org.apache.spark.sql.catalyst.expressions.Expression
-import org.apache.spark.sql.catalyst.optimizer.NormalizeNaNAndZero
+import ai.rapids.spark.{GpuColumnVector, GpuExpression, GpuUnaryExpression}
+
+import org.apache.spark.sql.catalyst.expressions.ExpectsInputTypes
+import org.apache.spark.sql.types.{AbstractDataType, DataType, DoubleType, FloatType, TypeCollection}
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
 // This will ensure that:
 //  - input NaNs become Float.NaN, or Double.NaN
 //  - that -0.0f and -0.0d becomes 0.0f, and 0.0d respectively
 // TODO: need coalesce as a feature request in cudf
-class GpuNormalizeNaNAndZero(child: Expression) extends NormalizeNaNAndZero(child)
-  with GpuExpression {
-  override def columnarEval(input: ColumnarBatch): Any =
-    child.asInstanceOf[GpuExpression].columnarEval(input)
+case class GpuNormalizeNaNAndZero(child: GpuExpression) extends GpuUnaryExpression
+    with ExpectsInputTypes {
+
+  override def dataType: DataType = child.dataType
+
+  override def inputTypes: Seq[AbstractDataType] = Seq(TypeCollection(FloatType, DoubleType))
+
+  override def columnarEval(input: ColumnarBatch): Any = child.columnarEval(input)
+
+  override def doColumnar(input: GpuColumnVector): GpuColumnVector =
+    throw new IllegalStateException("doColumnar should not be called for $this")
 }

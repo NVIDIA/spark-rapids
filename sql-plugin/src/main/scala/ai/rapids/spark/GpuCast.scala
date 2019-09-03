@@ -18,7 +18,8 @@ package ai.rapids.spark
 
 import ai.rapids.cudf.{DType, Scalar}
 
-import org.apache.spark.sql.catalyst.expressions.{Cast, Expression}
+import org.apache.spark.sql.catalyst.analysis.TypeCheckResult
+import org.apache.spark.sql.catalyst.expressions.{Cast, NullIntolerant, TimeZoneAwareExpression}
 import org.apache.spark.sql.types._
 
 object GpuCast {
@@ -55,8 +56,39 @@ object GpuCast {
 /**
  * Casts using the GPU
  */
-class GpuCast(child: Expression, dataType: DataType, timeZoneId: Option[String] = None)
-  extends Cast(child, dataType, timeZoneId) with GpuUnaryExpression {
+case class GpuCast(child: GpuExpression, dataType: DataType, timeZoneId: Option[String] = None)
+  extends GpuUnaryExpression with TimeZoneAwareExpression with NullIntolerant {
+
+  override def toString: String = s"cast($child as ${dataType.simpleString})"
+
+  override def checkInputDataTypes(): TypeCheckResult = {
+    if (Cast.canCast(child.dataType, dataType)) {
+      TypeCheckResult.TypeCheckSuccess
+    } else {
+      TypeCheckResult.TypeCheckFailure(
+        s"cannot cast ${child.dataType.catalogString} to ${dataType.catalogString}")
+    }
+  }
+
+  override def nullable: Boolean = Cast.forceNullable(child.dataType, dataType) || child.nullable
+
+  override def withTimeZone(timeZoneId: String): TimeZoneAwareExpression =
+    copy(timeZoneId = Option(timeZoneId))
+
+  // When this cast involves TimeZone, it's only resolved if the timeZoneId is set;
+  // Otherwise behave like Expression.resolved.
+  override lazy val resolved: Boolean =
+    childrenResolved && checkInputDataTypes().isSuccess && (!needsTimeZone || timeZoneId.isDefined)
+
+  private[this] def needsTimeZone: Boolean = Cast.needsTimeZone(child.dataType, dataType)
+
+  override def sql: String = dataType match {
+    // HiveQL doesn't allow casting to complex types. For logical plans translated from HiveQL, this
+    // type of casting can only be introduced by the analyzer, and can be omitted when converting
+    // back to SQL query string.
+    case _: ArrayType | _: MapType | _: StructType => child.sql
+    case _ => s"CAST(${child.sql} AS ${dataType.sql})"
+  }
 
   override def doColumnar(input: GpuColumnVector): GpuColumnVector = {
     val cudfType = GpuColumnVector.getRapidsType(dataType)

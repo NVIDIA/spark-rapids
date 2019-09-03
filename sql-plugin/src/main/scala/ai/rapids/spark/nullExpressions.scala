@@ -16,19 +16,27 @@
 
 package ai.rapids.spark
 
-import org.apache.spark.sql.catalyst.expressions.{Expression, IsNotNull, IsNull}
+import org.apache.spark.sql.catalyst.expressions.Predicate
 
 /*
  * IsNull and IsNotNull should eventually become CpuUnaryExpressions, with corresponding
  * UnaryOp
  */
 
-class GpuIsNull(child: Expression) extends IsNull(child) with GpuUnaryExpression {
+case class GpuIsNull(child: GpuExpression) extends GpuUnaryExpression with Predicate {
+  override def nullable: Boolean = false
+
+  override def sql: String = s"(${child.sql} IS NULL)"
+
   override def doColumnar(input: GpuColumnVector): GpuColumnVector =
     GpuColumnVector.from(input.getBase.isNull)
 }
 
-class GpuIsNotNull(child: Expression) extends IsNotNull(child) with GpuUnaryExpression {
+case class GpuIsNotNull(child: GpuExpression) extends GpuUnaryExpression with Predicate {
+  override def nullable: Boolean = false
+
+  override def sql: String = s"(${child.sql} IS NOT NULL)"
+
   override def doColumnar(input: GpuColumnVector): GpuColumnVector =
     GpuColumnVector.from(input.getBase.isNotNull)
 }
