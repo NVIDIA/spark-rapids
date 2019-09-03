@@ -31,7 +31,6 @@ import org.apache.hadoop.io.compress.CompressionCodecFactory
 import org.apache.spark.broadcast.Broadcast
 import org.apache.spark.internal.Logging
 import org.apache.spark.rdd.RDD
-import org.apache.spark.sql.catalyst.expressions.AttributeReference
 import org.apache.spark.sql.execution.datasources.{HadoopFileLinesReader, PartitionedFile, PartitioningAwareFileIndex}
 import org.apache.spark.sql.execution.datasources.v2.{DataSourceRDD, DataSourceV2ScanExecBase, FilePartitionReaderFactory, TextBasedFileScan}
 import org.apache.spark.sql.sources.v2.reader.{InputPartition, PartitionReader, PartitionReaderFactory, Scan}
@@ -39,6 +38,7 @@ import org.apache.spark.sql.types.{StructField, StructType, TimestampType}
 import org.apache.spark.sql.SparkSession
 import org.apache.spark.sql.catalyst.csv.CSVOptions
 import org.apache.spark.sql.catalyst.InternalRow
+import org.apache.spark.sql.catalyst.expressions.AttributeReference
 import org.apache.spark.sql.catalyst.plans.QueryPlan
 import org.apache.spark.sql.catalyst.util.PermissiveMode
 import org.apache.spark.sql.execution.datasources.v2.csv.CSVScan

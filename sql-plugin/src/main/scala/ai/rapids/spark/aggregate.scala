@@ -17,6 +17,7 @@
 package ai.rapids.spark
 
 import ai.rapids.cudf
+
 import org.apache.spark.TaskContext
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.InternalRow
@@ -27,9 +28,9 @@ import org.apache.spark.sql.catalyst.util.truncatedString
 import org.apache.spark.sql.execution.{SparkPlan, UnaryExecNode}
 import org.apache.spark.sql.execution.metric.{SQLMetric, SQLMetrics}
 import org.apache.spark.sql.rapids.{CudfAggregate, GpuAggregateExpression, GpuDeclarativeAggregate}
-import org.apache.spark.sql.vectorized.{ColumnVector, ColumnarBatch}
-
+import org.apache.spark.sql.vectorized.{ColumnarBatch, ColumnVector}
 import scala.collection.mutable.ArrayBuffer
+
 /**
   * GpuHashAggregateExec - is the GPU version of HashAggregateExec, with some major differences:
   * - it doesn't support spilling to disk
@@ -609,19 +610,7 @@ case class GpuHashAggregateExec(requiredChildDistributionExpressions: Option[Seq
     }
   }
 
-  override def output: Seq[Attribute] = {
-    // TODO: once we get a GpuNamedExpression
-    // this map should go away, and should be replaced with
-    // resultExpressions.map(_.toAttribute), where resultExpressions is a Seq[GpuNamedExpression]
-
-    // Without this hack, as the code currently stands, resultExpressions could become cpu-only, making
-    // calls to GpuBindReferences.bindReferences fail, this is a temporary hack to get around that,
-    // until we finalize the expression tree cleanup
-    resultExpressions.map(exp => {
-      new GpuAttributeReference(exp.name, exp.dataType, exp.nullable,
-        exp.metadata)(exp.exprId, exp.qualifier).toAttribute
-    })
-  }
+  override def output: Seq[Attribute] = resultExpressions.map(_.toAttribute)
 
   override def doExecute(): RDD[InternalRow] = throw new IllegalStateException(
     "Row-based execution should not occur for this class")

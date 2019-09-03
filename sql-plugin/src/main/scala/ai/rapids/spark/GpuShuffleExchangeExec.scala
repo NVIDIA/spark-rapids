@@ -25,13 +25,13 @@ import org.apache.spark.ShuffleDependency
 import org.apache.spark.rdd.RDD
 import org.apache.spark.serializer.Serializer
 import org.apache.spark.sql.catalyst.errors._
-import org.apache.spark.sql.catalyst.expressions.Attribute
-import org.apache.spark.sql.catalyst.plans.physical.{HashPartitioning, Partitioning}
+import org.apache.spark.sql.catalyst.expressions.{Attribute, Expression, Unevaluable}
+import org.apache.spark.sql.catalyst.plans.physical.{ClusteredDistribution, Distribution, HashClusteredDistribution, Partitioning}
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.execution.{BatchPartitionIdPassthrough, ShuffledBatchRDD, SparkPlan}
 import org.apache.spark.sql.execution.exchange.{Exchange, ShuffleExchangeExec}
 import org.apache.spark.sql.execution.metric._
-import org.apache.spark.sql.types.StringType
+import org.apache.spark.sql.types.{DataType, IntegerType, StringType}
 import org.apache.spark.sql.vectorized.ColumnarBatch
 import org.apache.spark.util.MutablePair
 
@@ -175,8 +175,26 @@ object GpuShuffleExchangeExec {
   }
 }
 
-class GpuHashPartitioning(expressions: Seq[GpuExpression], numPartitions: Int)
-  extends HashPartitioning(expressions, numPartitions) with GpuExpression with GpuPartitioning {
+case class GpuHashPartitioning(expressions: Seq[GpuExpression], numPartitions: Int)
+  extends GpuExpression with GpuPartitioning {
+
+  override def children: Seq[Expression] = expressions
+  override def nullable: Boolean = false
+  override def dataType: DataType = IntegerType
+
+  override def satisfies0(required: Distribution): Boolean = {
+    super.satisfies0(required) || {
+      required match {
+        case h: HashClusteredDistribution =>
+          expressions.length == h.expressions.length && expressions.zip(h.expressions).forall {
+            case (l, r) => l.semanticEquals(r)
+          }
+        case ClusteredDistribution(requiredClustering, _) =>
+          expressions.forall(x => requiredClustering.exists(_.semanticEquals(x)))
+        case _ => false
+      }
+    }
+  }
 
   def getGpuKeyColumns(batch: ColumnarBatch) : Array[GpuColumnVector] =
     expressions.map {

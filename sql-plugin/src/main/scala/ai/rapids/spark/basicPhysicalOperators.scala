@@ -40,7 +40,7 @@ object GpuProjectExec {
   def project[A <: GpuExpression](cb: ColumnarBatch, boundExprs: Seq[A]): ColumnarBatch = {
     val newColumns = boundExprs.map(
       expr => {
-        val result = expr.asInstanceOf[GpuExpression].columnarEval(cb)
+        val result = expr.columnarEval(cb)
         result match {
           case cv: ColumnVector => cv
           case other => GpuColumnVector.from(GpuScalar.from(other), cb.numRows())
@@ -71,7 +71,7 @@ case class GpuProjectExec(projectList: Seq[GpuExpression], child: SparkPlan)
   }
 }
 
-case class GpuFilterExec(condition: Expression, child: SparkPlan)
+case class GpuFilterExec(condition: GpuExpression, child: SparkPlan)
   extends UnaryExecNode with PredicateHelper with GpuExec {
 
   // Split out all the IsNotNulls from condition.
@@ -116,7 +116,7 @@ case class GpuFilterExec(condition: Expression, child: SparkPlan)
 
   override def doExecuteColumnar(): RDD[ColumnarBatch] = {
     val numOutputRows = longMetric("numOutputRows")
-    val boundCondition = GpuBindReferences.bindReference(condition.asInstanceOf[GpuExpression], child.output)
+    val boundCondition = GpuBindReferences.bindReference(condition, child.output)
     val rdd = child.executeColumnar()
 
     rdd.map(batch => {

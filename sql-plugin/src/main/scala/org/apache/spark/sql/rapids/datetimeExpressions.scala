@@ -14,27 +14,33 @@
  * limitations under the License.
  */
 
-package ai.rapids.spark
+package org.apache.spark.sql.rapids
 
 import ai.rapids.cudf.DType
+import ai.rapids.spark.{GpuColumnVector, GpuUnaryExpression}
 
-import org.apache.spark.sql.catalyst.expressions.{DayOfMonth, Expression, Month, Year}
+import org.apache.spark.sql.catalyst.expressions.{Expression, ImplicitCastInputTypes}
+import org.apache.spark.sql.types.{AbstractDataType, DataType, DateType, IntegerType}
 
-trait GpuDateTimeUnaryExpression extends GpuUnaryExpression {
+trait GpuDateTimeUnaryExpression extends GpuUnaryExpression with ImplicitCastInputTypes {
+  override def inputTypes: Seq[AbstractDataType] = Seq(DateType)
+
+  override def dataType: DataType = IntegerType
+
   override def outputTypeOverride = DType.INT32
 }
 
-class GpuYear(child: Expression) extends Year(child) with GpuDateTimeUnaryExpression {
+case class GpuYear(child: Expression) extends GpuDateTimeUnaryExpression {
   override def doColumnar(input: GpuColumnVector): GpuColumnVector =
     GpuColumnVector.from(input.getBase.year())
 }
 
-class GpuMonth(child: Expression) extends Month(child) with GpuDateTimeUnaryExpression {
+case class GpuMonth(child: Expression) extends GpuDateTimeUnaryExpression {
   override def doColumnar(input: GpuColumnVector): GpuColumnVector =
     GpuColumnVector.from(input.getBase.month())
 }
 
-class GpuDayOfMonth(child: Expression) extends DayOfMonth(child) with GpuDateTimeUnaryExpression {
+case class GpuDayOfMonth(child: Expression) extends GpuDateTimeUnaryExpression {
   override def doColumnar(input: GpuColumnVector): GpuColumnVector =
     GpuColumnVector.from(input.getBase.day())
 }

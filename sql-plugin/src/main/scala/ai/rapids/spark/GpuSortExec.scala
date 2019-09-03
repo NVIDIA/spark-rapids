@@ -184,7 +184,7 @@ class GpuColumnarBatchSorter(
     var batchWithCategories: ColumnarBatch = null
     try {
       batchWithCategories = GpuColumnVector.convertToStringCategoriesIfNeeded(batch)
-      val childExprs = boundInputReferences.map(_.child.asInstanceOf[GpuExpression])
+      val childExprs = boundInputReferences.map(_.child)
       sortCvs ++= evaluateBoundExpressions(batchWithCategories, childExprs)
     } catch {
       case t: Throwable =>
@@ -225,7 +225,7 @@ class GpuColumnarBatchSorter(
  * and as long as the plugin isn't acting differently then the CPU that should just work.
  */
 case class GpuSortOrder(
-    child: Expression,
+    child: GpuExpression,
     direction: SortDirection,
     nullOrdering: NullOrdering,
     sameOrderExpressions: Set[Expression])

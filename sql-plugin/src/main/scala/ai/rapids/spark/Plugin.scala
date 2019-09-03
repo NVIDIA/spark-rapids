@@ -526,23 +526,23 @@ object GpuOverrides {
 
   val expressions : Map[Class[_ <: Expression], ExprRule[_ <: Expression]] = Map(
     expr[Literal]
-      .convert((lit, overrides) => new GpuLiteral(lit.value, lit.dataType))
+      .convert((lit, overrides) => GpuLiteral(lit.value, lit.dataType))
       .desc("holds a static value from the query")
       .build(),
     expr[Alias]
       .convert((a, overrides) =>
-        new GpuAlias(overrides.replaceWithGpuExpression(a.child), a.name)(
+        GpuAlias(overrides.replaceWithGpuExpression(a.child), a.name)(
           a.exprId, a.qualifier, a.explicitMetadata))
       .desc("gives a column a name")
       .build(),
     expr[AttributeReference]
       .convert((att, overrides) =>
-        new GpuAttributeReference(att.name, att.dataType, att.nullable,
+        GpuAttributeReference(att.name, att.dataType, att.nullable,
           att.metadata)(att.exprId, att.qualifier))
       .desc("references an input column")
       .build(),
     expr[Cast]
-      .fullUnary((cast, child) => new GpuCast(child, cast.dataType, cast.timeZoneId))
+      .fullUnary((cast, child) => GpuCast(child, cast.dataType, cast.timeZoneId))
       .assertIsAllowed((cast, conf) =>
         if (!GpuCast.canCast(cast.child.dataType, cast.dataType)) {
           throw new CannotReplaceException(s"casting from ${cast.child.dataType} " +
@@ -551,158 +551,158 @@ object GpuOverrides {
       .desc("convert a column of one type of data into another type")
       .build(),
     expr[UnaryMinus]
-      .unary(new GpuUnaryMinus(_))
+      .unary(GpuUnaryMinus(_))
       .desc("negate a numeric value")
       .build(),
     expr[UnaryPositive]
-      .unary(new GpuUnaryPositive(_))
+      .unary(GpuUnaryPositive(_))
       .desc("a numeric value with a + in front of it")
       .build(),
     expr[Year]
-      .unary(new GpuYear(_))
+      .unary(GpuYear(_))
       .desc("get the year from a date or timestamp")
       .build(),
     expr[Month]
-      .unary(new GpuMonth(_))
+      .unary(GpuMonth(_))
       .desc("get the month from a date or timestamp")
       .build(),
     expr[DayOfMonth]
-      .unary(new GpuDayOfMonth(_))
+      .unary(GpuDayOfMonth(_))
       .desc("get the day of the month from a date or timestamp")
       .build(),
     expr[Abs]
-      .unary(new GpuAbs(_))
+      .unary(GpuAbs(_))
       .desc("absolute value")
       .build(),
     expr[Acos]
-      .unary(new GpuAcos(_))
+      .unary(GpuAcos(_))
       .desc("inverse cosine")
       .build(),
     expr[Asin]
-      .unary(new GpuAsin(_))
+      .unary(GpuAsin(_))
       .desc("inverse sine")
       .build(),
     expr[Sqrt]
-      .unary(new GpuSqrt(_))
+      .unary(GpuSqrt(_))
       .desc("square root")
       .build(),
     expr[Floor]
-      .unary(new GpuFloor(_))
+      .unary(GpuFloor(_))
       .desc("floor of a number")
       .build(),
     expr[Ceil]
-      .unary(new GpuCeil(_))
+      .unary(GpuCeil(_))
       .desc("ceiling of a number")
       .build(),
     expr[Not]
-      .unary(new GpuNot(_))
+      .unary(GpuNot(_))
       .desc("boolean not operator")
       .build(),
     expr[IsNull]
-      .unary(new GpuIsNull(_))
+      .unary(GpuIsNull(_))
       .desc("checks if a value is null")
       .build(),
     expr[IsNotNull]
-      .unary(new GpuIsNotNull(_))
+      .unary(GpuIsNotNull(_))
       .desc("checks if a value is not null")
       .build(),
     expr[Atan]
-      .unary(new GpuAtan(_))
+      .unary(GpuAtan(_))
       .desc("inverse tangent")
       .incompat(FLOAT_DIFFERS_INCOMPAT)
       .build(),
     expr[Cos]
-      .unary(new GpuCos(_))
+      .unary(GpuCos(_))
       .desc("cosine")
       .incompat(FLOAT_DIFFERS_INCOMPAT)
       .build(),
     expr[Exp]
-      .unary(new GpuExp(_))
+      .unary(GpuExp(_))
       .desc("Euler's number e raised to a power")
       .incompat(FLOAT_DIFFERS_INCOMPAT)
       .build(),
     expr[Log]
-      .unary(new GpuLog(_))
+      .unary(GpuLog(_))
       .desc("natural log")
       .incompat(FLOAT_DIFFERS_INCOMPAT)
       .build(),
     expr[Sin]
-      .unary(new GpuSin(_))
+      .unary(GpuSin(_))
       .desc("sine")
       .incompat(FLOAT_DIFFERS_INCOMPAT)
       .build(),
     expr[Tan]
-      .unary(new GpuTan(_))
+      .unary(GpuTan(_))
       .desc("tangent")
       .incompat(FLOAT_DIFFERS_INCOMPAT)
       .build(),
     expr[NormalizeNaNAndZero]
-      .unary(new GpuNormalizeNaNAndZero(_))
+      .unary(GpuNormalizeNaNAndZero(_))
       .desc("normalize nan and zero")
       .incompat(FLOAT_DIFFERS_GROUP_INCOMPAT)
       .build(),
     expr[KnownFloatingPointNormalized]
-      .unary(new GpuKnownFloatingPointNormalized(_))
+      .unary(GpuKnownFloatingPointNormalized(_))
       .desc("tag to prevent redundant normalization")
       .incompat(FLOAT_DIFFERS_GROUP_INCOMPAT)
       .build(),
     expr[Add]
-      .binary(new GpuAdd(_, _))
+      .binary(GpuAdd(_, _))
       .desc("addition")
       .build(),
     expr[Subtract]
-      .binary(new GpuSubtract(_, _))
+      .binary(GpuSubtract(_, _))
       .desc("subtraction")
       .build(),
     expr[Multiply]
-      .binary(new GpuMultiply(_, _))
+      .binary(GpuMultiply(_, _))
       .desc("multiplication")
       .build(),
     expr[And]
-      .binary(new GpuAnd(_, _))
+      .binary(GpuAnd(_, _))
       .desc("logical and")
       .build(),
     expr[Or]
-      .binary(new GpuOr(_, _))
+      .binary(GpuOr(_, _))
       .desc("logical or")
       .build(),
     expr[EqualTo]
-      .binary(new GpuEqualTo(_, _))
+      .binary(GpuEqualTo(_, _))
       .desc("check if the values are equal")
       .build(),
     expr[GreaterThan]
-      .binary(new GpuGreaterThan(_, _))
+      .binary(GpuGreaterThan(_, _))
       .desc("> operator")
       .build(),
     expr[GreaterThanOrEqual]
-      .binary(new GpuGreaterThanOrEqual(_, _))
+      .binary(GpuGreaterThanOrEqual(_, _))
       .desc(">= operator")
       .build(),
     expr[LessThan]
-      .binary(new GpuLessThan(_, _))
+      .binary(GpuLessThan(_, _))
       .desc("< operator")
       .build(),
     expr[LessThanOrEqual]
-      .binary(new GpuLessThanOrEqual(_, _))
+      .binary(GpuLessThanOrEqual(_, _))
       .desc("<= operator")
       .build(),
     expr[Pow]
-      .binary(new GpuPow(_, _))
+      .binary(GpuPow(_, _))
       .desc("lhs ^ rhs")
       .incompat(FLOAT_DIFFERS_INCOMPAT)
       .build(),
     expr[Divide]
-      .binary(new GpuDivide(_, _))
+      .binary(GpuDivide(_, _))
       .desc("division")
       .incompat(DIVIDE_BY_ZERO_INCOMPAT)
       .build(),
     expr[IntegralDivide]
-      .binary(new GpuIntegralDivide(_, _))
+      .binary(GpuIntegralDivide(_, _))
       .desc("division with a integer result")
       .incompat(DIVIDE_BY_ZERO_INCOMPAT)
       .build(),
     expr[Remainder]
-      .binary(new GpuRemainder(_, _))
+      .binary(GpuRemainder(_, _))
       .desc("remainder or modulo")
       .incompat(DIVIDE_BY_ZERO_INCOMPAT)
       .build(),
@@ -711,7 +711,7 @@ object GpuOverrides {
       .desc("aggregate expression")
       .build(),
     expr[SortOrder]
-      .unarySort(new GpuSortOrder(_, _, _, _))
+      .unarySort(GpuSortOrder(_, _, _, _))
       .desc("sort order")
       .build()
   )
@@ -762,7 +762,7 @@ object GpuOverrides {
   val parts : Map[Class[_ <: Partitioning], PartRule[_ <: Partitioning]] = Map(
     part[HashPartitioning]
       .convert((hp, overrides) =>
-        new GpuHashPartitioning(
+        GpuHashPartitioning(
           hp.expressions.map(overrides.replaceWithGpuExpression), hp.numPartitions))
       .desc("Hash based partitioning")
       .build()
@@ -783,8 +783,7 @@ object GpuOverrides {
       .build(),
     exec[BatchScanExec]
       .convert((exec, overrides) =>
-        GpuBatchScanExec(exec.output.map(
-          (exec) => overrides.replaceWithGpuExpression(exec).asInstanceOf[AttributeReference]),
+        GpuBatchScanExec(exec.output,
           overrides.replaceWithGpuScan(exec.scan)))
       .desc("The backend for most file input")
       .build(),
@@ -1378,7 +1377,12 @@ class GpuTransitionOverrides extends Rule[SparkPlan] {
           !conf.testingAllowedNonGpu.contains(getBaseNameFromClass(other.getClass.toString))) {
           throw new IllegalArgumentException(s"Part of the plan is not columnar ${plan.getClass}\n${plan}")
         }
-        plan.expressions.foreach(assertIsOnTheGpu(_, conf))
+        // filter out the output expressions since those are not GPU expressions
+        val planOutput = plan.output.toSet
+        plan.expressions.filter(_  match {
+          case a: Attribute => !planOutput.contains(a)
+          case _ => true
+        }).foreach(assertIsOnTheGpu(_, conf))
     }
     plan.children.foreach(assertIsOnTheGpu(_, conf))
   }
