@@ -190,16 +190,19 @@ class ImplicitsTestSuite extends FlatSpec with Matchers {
   }
 
   it should "safeMap on a lazy sequence (Stream) with errors" in {
-    val resources: Stream[Test] = (0 until 10).toStream.map(i => { println("starting stream for " + i); new Test(i, false) })
+    // Not used in the plugin, but illustrates how this works for a lazy sequence
+    // a) a new Test(i) gets produced,
+    // b) the body of the safeMap executes then (interleaved with the first map)
+    // c) if the body of the safeMap throws, it cleans at that point.
+    // d) the safeMap stops executing in case of error, but the first map goes until the end of the stream
+    val resources: Stream[Test] = (0 until 10).toStream.map(i => new Test(i, false))
 
     assertThrows[Throwable] {
       resources.zipWithIndex.safeMap {
         case (x, ix) => {
-          println("at safe map for " + x);
           if (ix > 5) {
             throw new Exception("bad! " + ix)
           }
-          println("increasing ref count for " + x)
           x.incRefCount()
         }
       }

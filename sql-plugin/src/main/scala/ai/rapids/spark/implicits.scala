@@ -71,12 +71,10 @@ object RapidsPluginImplicits {
       * exception were to occur within the maps's body, it will make every attempt to close each produced value.
       *
       * Note: safeMap will close in case of errors, without any knowledge of whether it should or not.
-      * Use safeMap only in these circumstances:
-      *
-      * a) if [[fn]] increases the reference count:
-      *    seq.safeMap(x => {...; x.incRefCount})
-      * b) if [[fn]] produces an auto closeable and is not tracked anywhere else:
-      *    seq.safeMap(x => GpuColumnVector.from(...))
+      * Use safeMap only in these circumstances if [[fn]] increases the reference count,
+      * producing an AutoCloseable, and nothing else is tracking these references:
+      *    a) seq.safeMap(x => {...; x.incRefCount; x})
+      *    b) seq.safeMap(x => GpuColumnVector.from(...))
       *
       * Usage of safeMap chained with other maps is a bit confusing:
       *
@@ -89,20 +87,21 @@ object RapidsPluginImplicits {
       *   closeTheseLater.safeMap(x => {
       *     var success = false
       *     try {
-      *       val res = couldThrow(x.incRefCount()) // produces an AutoCloseable
+      *       val res = couldThrow(x.incRefCount())
       *       success = true
       *       res // return a ref count of 2
       *     } finally {
-      *       // in case of an error, we close x as part of normal error handling
-      *       // the exception will be caught by the safeMap, and it will close all
-      *       // AutoCloseables produced before x
       *       if (!success) {
-      *         x.close() // x now has a ref count of 1
+      *         // in case of an error, we close x as part of normal error handling
+      *         // the exception will be caught by the safeMap, and it will close all
+      *         // AutoCloseables produced before x
+      *         // - Sequence looks like: [2, 2, 2, ..., 2] + x, which has also has a refcount of 2
+      *         x.close() // x now has a ref count of 1, the rest of the sequence has 2s
       *       }
       *     }
-      *   })
+      *   }) // safeMap cleaned, and now everything has 1s for ref counts (as they were before)
       *
-      *   closeTheseLater.safeClose() // finally go from 1 to 0 in the ref count
+      *   closeTheseLater.safeClose() // go from 1 to 0 in all things inside closeTheseLater
       *
       * @param in - the Seq[A] to map on
       * @param fn - a function that takes A, and produces B (a subclass of AutoCloseable)
