@@ -24,7 +24,7 @@ import java.util.Collections
 import scala.collection.JavaConverters._
 import scala.collection.mutable.ArrayBuffer
 
-import ai.rapids.cudf.{HostMemoryBuffer, ParquetOptions, Table, TimeUnit}
+import ai.rapids.cudf.{HostMemoryBuffer, NvtxColor, NvtxRange, ParquetOptions, Table, TimeUnit}
 import org.apache.commons.io.output.{CountingOutputStream, NullOutputStream}
 import org.apache.commons.io.IOUtils
 import org.apache.hadoop.conf.Configuration
@@ -225,27 +225,32 @@ class ParquetPartitionReader(
   }
 
   private def readPartFile(blocks: Seq[BlockMetaData]): (HostMemoryBuffer, Long) = {
-    val in = filePath.getFileSystem(conf).open(filePath)
+    val nvtxRange = new NvtxRange("Build file split", NvtxColor.YELLOW)
     try {
-      var succeeded = false
-      val hmb = HostMemoryBuffer.allocate(calculateParquetOutputSize(blocks))
+      val in = filePath.getFileSystem(conf).open(filePath)
       try {
-        val out = new HostMemoryOutputStream(hmb)
-        out.write(ParquetPartitionReader.PARQUET_MAGIC)
-        val outputBlocks = copyBlocksData(in, out, blocks)
-        val footerPos = out.getPos
-        writeFooter(out, outputBlocks)
-        BytesUtils.writeIntLittleEndian(out, (out.getPos - footerPos).toInt)
-        out.write(ParquetPartitionReader.PARQUET_MAGIC)
-        succeeded = true
-        (hmb, out.getPos)
-      } finally {
-        if (!succeeded) {
-          hmb.close()
+        var succeeded = false
+        val hmb = HostMemoryBuffer.allocate(calculateParquetOutputSize(blocks))
+        try {
+          val out = new HostMemoryOutputStream(hmb)
+          out.write(ParquetPartitionReader.PARQUET_MAGIC)
+          val outputBlocks = copyBlocksData(in, out, blocks)
+          val footerPos = out.getPos
+          writeFooter(out, outputBlocks)
+          BytesUtils.writeIntLittleEndian(out, (out.getPos - footerPos).toInt)
+          out.write(ParquetPartitionReader.PARQUET_MAGIC)
+          succeeded = true
+          (hmb, out.getPos)
+        } finally {
+          if (!succeeded) {
+            hmb.close()
+          }
         }
+      } finally {
+        in.close()
       }
     } finally {
-      in.close()
+      nvtxRange.close()
     }
   }
 
@@ -345,22 +350,27 @@ class ParquetPartitionReader(
   }
 
   private def readBatch(): Option[ColumnarBatch] = {
-    val currentChunkedBlocks = populateCurrentBlockChunk()
-    if (readDataSchema.isEmpty) {
-      // not reading any data, so return a degenerate ColumnarBatch with the row count
-      val numRows = currentChunkedBlocks.map(_.getRowCount).sum.toInt
-      if (numRows == 0) {
-        None
+    val nvtxRange = new NvtxRange("Parquet readBatch", NvtxColor.GREEN)
+    try {
+      val currentChunkedBlocks = populateCurrentBlockChunk()
+      if (readDataSchema.isEmpty) {
+        // not reading any data, so return a degenerate ColumnarBatch with the row count
+        val numRows = currentChunkedBlocks.map(_.getRowCount).sum.toInt
+        if (numRows == 0) {
+          None
+        } else {
+          Some(new ColumnarBatch(Array.empty, numRows.toInt))
+        }
       } else {
-        Some(new ColumnarBatch(Array.empty, numRows.toInt))
+        val table = readToTable(currentChunkedBlocks)
+        try {
+          table.map(GpuColumnVector.from)
+        } finally {
+          table.foreach(_.close())
+        }
       }
-    } else {
-      val table = readToTable(currentChunkedBlocks)
-      try {
-        table.map(GpuColumnVector.from)
-      } finally {
-        table.foreach(_.close())
-      }
+    } finally {
+      nvtxRange.close()
     }
   }
 

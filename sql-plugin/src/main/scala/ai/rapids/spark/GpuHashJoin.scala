@@ -1,6 +1,6 @@
 package ai.rapids.spark
 
-import ai.rapids.cudf.Table
+import ai.rapids.cudf.{NvtxColor, NvtxRange, Table}
 
 import org.apache.spark.sql.catalyst.expressions.Attribute
 import org.apache.spark.sql.catalyst.plans.{Inner, JoinType, LeftOuter}
@@ -54,29 +54,34 @@ trait GpuHashJoin extends GpuExec with HashJoin {
 
   def doJoin(builtTable: Table,
       streamedBatch: ColumnarBatch): ColumnarBatch = {
-    val streamedTable = try {
-      val streamedKeysBatch = GpuProjectExec.project(streamedBatch, gpuStreamedKeys)
-      try {
-        val combined =  combine(streamedKeysBatch, streamedBatch)
-        val asStringCat = GpuColumnVector.convertToStringCategoriesIfNeeded(combined)
+    val nvtxRange = new NvtxRange("hash join", NvtxColor.ORANGE)
+    try {
+      val streamedTable = try {
+        val streamedKeysBatch = GpuProjectExec.project(streamedBatch, gpuStreamedKeys)
         try {
-          GpuColumnVector.from(asStringCat)
+          val combined = combine(streamedKeysBatch, streamedBatch)
+          val asStringCat = GpuColumnVector.convertToStringCategoriesIfNeeded(combined)
+          try {
+            GpuColumnVector.from(asStringCat)
+          } finally {
+            asStringCat.close()
+          }
         } finally {
-          asStringCat.close()
+          streamedKeysBatch.close()
         }
       } finally {
-        streamedKeysBatch.close()
+        streamedBatch.close()
+      }
+      try {
+        buildSide match {
+          case BuildLeft => doJoinLeftRight(builtTable, streamedTable)
+          case BuildRight => doJoinLeftRight(streamedTable, builtTable)
+        }
+      } finally {
+        streamedTable.close()
       }
     } finally {
-      streamedBatch.close()
-    }
-    try {
-      buildSide match {
-        case BuildLeft => doJoinLeftRight(builtTable, streamedTable)
-        case BuildRight => doJoinLeftRight(streamedTable, builtTable)
-      }
-    } finally {
-      streamedTable.close()
+      nvtxRange.close()
     }
   }
 

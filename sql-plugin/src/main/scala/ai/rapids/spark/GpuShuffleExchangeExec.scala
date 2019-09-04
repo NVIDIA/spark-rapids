@@ -19,7 +19,7 @@ package ai.rapids.spark
 import scala.collection.AbstractIterator
 import scala.collection.mutable.ArrayBuffer
 
-import ai.rapids.cudf.{ColumnVector, DType, HashFunction, Table}
+import ai.rapids.cudf.{ColumnVector, DType, HashFunction, NvtxColor, NvtxRange, Table}
 
 import org.apache.spark.ShuffleDependency
 import org.apache.spark.rdd.RDD
@@ -300,11 +300,30 @@ case class GpuHashPartitioning(expressions: Seq[GpuExpression], numPartitions: I
   override def columnarEval(batch: ColumnarBatch): Any = {
     //  We are doing this here because the cudf partition command is at this level
 
-    val (partitionIndexes, partitionColumns) = partitionInternal(batch)
-    val ret = sliceInternal(batch, partitionIndexes, partitionColumns)
-    partitionColumns.foreach(_.close)
-    // Close the partition columns we copied them as a part of the slice
-    ret.zipWithIndex.filter(_._1 != null)
+    val totalRange = new NvtxRange("Hash partition", NvtxColor.PURPLE)
+    try {
+      val (partitionIndexes, partitionColumns) = {
+        val partitionRange = new NvtxRange("partition", NvtxColor.BLUE)
+        try {
+          partitionInternal(batch)
+        } finally {
+          partitionRange.close()
+        }
+      }
+      val ret = {
+        val sliceRange = new NvtxRange("slice", NvtxColor.CYAN)
+        try {
+          sliceInternal(batch, partitionIndexes, partitionColumns)
+        } finally {
+          sliceRange.close()
+        }
+      }
+      partitionColumns.foreach(_.close)
+      // Close the partition columns we copied them as a part of the slice
+      ret.zipWithIndex.filter(_._1 != null)
+    } finally {
+      totalRange.close()
+    }
   }
 }
 

@@ -25,14 +25,13 @@ import java.util
 import scala.collection.JavaConverters._
 import scala.collection.mutable.ArrayBuffer
 
-import ai.rapids.cudf.{HostMemoryBuffer, ORCOptions, Table, TimeUnit}
+import ai.rapids.cudf.{HostMemoryBuffer, NvtxColor, NvtxRange, ORCOptions, Table, TimeUnit}
 import ai.rapids.spark.GpuOrcPartitionReader.{OrcOutputStripe, OrcPartitionReaderContext}
 import com.google.protobuf25.CodedOutputStream
 import org.apache.commons.io.IOUtils
 import org.apache.hadoop.conf.Configuration
 import org.apache.hadoop.fs.{FileSystem, Path}
-import org.apache.orc.{DataReader, OrcConf, OrcFile, OrcProto, PhysicalWriter, Reader, StripeInformation,
-TypeDescription}
+import org.apache.orc.{DataReader, OrcConf, OrcFile, OrcProto, PhysicalWriter, Reader, StripeInformation, TypeDescription}
 import org.apache.orc.impl.{BufferChunk, DataReaderProperties, OrcCodecPool, OutStream, RecordReaderImpl, RecordReaderUtils, SchemaEvolution}
 import org.apache.orc.impl.RecordReaderImpl.SargApplier
 import org.apache.orc.mapred.OrcInputFormat
@@ -248,18 +247,23 @@ class GpuOrcPartitionReader(
   }
 
   private def readBatch(): Option[ColumnarBatch] = {
-    val currentStripes = populateCurrentBlockChunk()
-    if (readDataSchema.isEmpty) {
-      // not reading any data, so return a degenerate ColumnarBatch with the row count
-      val numRows = currentStripes.map(_.infoBuilder.getNumberOfRows).sum
-      Some(new ColumnarBatch(Array.empty, numRows.toInt))
-    } else {
-      val table = readToTable(currentStripes)
-      try {
-        table.map(GpuColumnVector.from)
-      } finally {
-        table.foreach(_.close())
+    val nvtxRange = new NvtxRange("ORC readBatch", NvtxColor.GREEN)
+    try {
+      val currentStripes = populateCurrentBlockChunk()
+      if (readDataSchema.isEmpty) {
+        // not reading any data, so return a degenerate ColumnarBatch with the row count
+        val numRows = currentStripes.map(_.infoBuilder.getNumberOfRows).sum
+        Some(new ColumnarBatch(Array.empty, numRows.toInt))
+      } else {
+        val table = readToTable(currentStripes)
+        try {
+          table.map(GpuColumnVector.from)
+        } finally {
+          table.foreach(_.close())
+        }
       }
+    } finally {
+      nvtxRange.close()
     }
   }
 
@@ -599,29 +603,32 @@ class GpuOrcPartitionReader(
     }
   }
 
-  private def readPartFile(stripes: Seq[OrcOutputStripe]):
-    (HostMemoryBuffer, Long) = {
-    if (stripes.isEmpty) {
-      return (null, 0L)
-    }
-    val hostBufferSize = estimateOutputSize(stripes)
-
-    var succeeded = false
-    val hmb = HostMemoryBuffer.allocate(hostBufferSize)
+  private def readPartFile(stripes: Seq[OrcOutputStripe]): (HostMemoryBuffer, Long) = {
+    val nvtxRange = new NvtxRange("Build file split", NvtxColor.YELLOW)
     try {
-      val out = new HostMemoryOutputStream(hmb)
-      writeOrcOutputFile(out, stripes)
-      succeeded = true
-      (hmb, out.getPos)
-    } finally {
-      if (!succeeded) {
-        hmb.close()
+      if (stripes.isEmpty) {
+        return (null, 0L)
       }
+
+      val hostBufferSize = estimateOutputSize(stripes)
+      var succeeded = false
+      val hmb = HostMemoryBuffer.allocate(hostBufferSize)
+      try {
+        val out = new HostMemoryOutputStream(hmb)
+        writeOrcOutputFile(out, stripes)
+        succeeded = true
+        (hmb, out.getPos)
+      } finally {
+        if (!succeeded) {
+          hmb.close()
+        }
+      }
+    } finally {
+      nvtxRange.close()
     }
   }
 
   private def readToTable(stripes: Seq[OrcOutputStripe]): Option[Table] = {
-
     val (dataBuffer, dataSize) = readPartFile(stripes)
     try {
       if (dataSize == 0) {

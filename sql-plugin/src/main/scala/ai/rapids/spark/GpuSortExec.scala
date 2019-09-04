@@ -21,7 +21,7 @@ import java.util.concurrent.TimeUnit.NANOSECONDS
 import scala.collection.mutable.ArrayBuffer
 
 import ai.rapids.cudf
-import ai.rapids.cudf.{DType, Table}
+import ai.rapids.cudf.{NvtxColor, NvtxRange, Table}
 import ai.rapids.spark.GpuExpressionsUtils.evaluateBoundExpressions
 
 import org.apache.spark.rdd.RDD
@@ -109,36 +109,52 @@ class GpuColumnarBatchSorter(
       try {
         while (batchIter.hasNext) {
           val batch = batchIter.next()
+          val nvtxRange = new NvtxRange("sort input batch", NvtxColor.WHITE)
           try {
-            numRows += batch.numRows
-            if (numRows > Integer.MAX_VALUE) {
-              throw new UnsupportedOperationException(s"Too many rows to sort")
+            try {
+              numRows += batch.numRows
+              if (numRows > Integer.MAX_VALUE) {
+                throw new UnsupportedOperationException(s"Too many rows to sort")
+              }
+              inputCvs = getGpuCvsAndBindReferences(batch, sortOrder)
+              inputTbls += new cudf.Table(inputCvs.map(_.getBase): _*)
+            } finally {
+              inputCvs.foreach(_.close())
+              batch.close()
             }
-            inputCvs = getGpuCvsAndBindReferences(batch, sortOrder)
-            inputTbls += new cudf.Table(inputCvs.map(_.getBase): _*)
           } finally {
-            inputCvs.foreach(_.close())
-            batch.close()
+            nvtxRange.close()
           }
         }
-        if (numRows == 0 || inputTbls.isEmpty) return Iterator.empty
-        if (inputTbls.length > 1) {
-          concatTbl = Table.concatenate(inputTbls: _*)
-        } else {
-          concatTbl = inputTbls.remove(0)
+        val nvtxRange = new NvtxRange("sort concatenate", NvtxColor.YELLOW)
+        try {
+          if (numRows == 0 || inputTbls.isEmpty) return Iterator.empty
+          if (inputTbls.length > 1) {
+            concatTbl = Table.concatenate(inputTbls: _*)
+          } else {
+            concatTbl = inputTbls.remove(0)
+          }
+        } finally {
+          nvtxRange.close()
         }
       } finally {
         inputTbls.foreach(_.close())
       }
 
-      val orderByArgs = sortOrder.zipWithIndex.map { case (order, index) =>
-        if (order.isAscending) Table.asc(index) else Table.desc(index)
+      val nvtxRange = new NvtxRange("sort", NvtxColor.ORANGE)
+      try {
+        val orderByArgs = sortOrder.zipWithIndex.map { case (order, index) =>
+          if (order.isAscending) Table.asc(index) else Table.desc(index)
+        }
+
+        val startTimestamp = System.nanoTime
+        resultCb = doGpuSort(concatTbl, orderByArgs)
+        totalSortTimeNanos += System.nanoTime - startTimestamp
+        success = true
+      } finally {
+        nvtxRange.close()
       }
 
-      val startTimestamp = System.nanoTime
-      resultCb = doGpuSort(concatTbl, orderByArgs)
-      totalSortTimeNanos += System.nanoTime - startTimestamp
-      success = true
       new Iterator[ColumnarBatch] {
 
         TaskContext.get().addTaskCompletionListener[Unit](_ => closeBatch())
@@ -178,9 +194,7 @@ class GpuColumnarBatchSorter(
   private def getGpuCvsAndBindReferences(
       batch: ColumnarBatch,
       boundInputReferences: Seq[GpuSortOrder]): Seq[GpuColumnVector] = {
-    val numBatchCols = batch.numCols()
     val sortCvs = new ArrayBuffer[GpuColumnVector](numSortCols)
-    val cvsWithCategories = new ArrayBuffer[GpuColumnVector](numBatchCols)
     var batchWithCategories: ColumnarBatch = null
     try {
       batchWithCategories = GpuColumnVector.convertToStringCategoriesIfNeeded(batch)
