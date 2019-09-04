@@ -21,10 +21,6 @@ pipeline {
         JENKINS_ROOT  = 'jenkins'
     }
 
-    triggers {
-        cron('H 0 * * *')
-    }
-
     stages {
         stage('Ubuntu16 CUDA10.0') {
             agent {
@@ -51,6 +47,11 @@ pipeline {
         always {
             script {
                 if (currentBuild.currentResult == "SUCCESS") {
+                    build(job: 'spark/plugin_integration',
+                          parameters: [string(name: 'REF', value: 'master'),
+                                       string(name: 'CUDF_VER', value: '0.9-SNAPSHOT'),
+                                       booleanParam(name: 'BUILD_CENTOS7', value: false),])
+
                     updateGitlabCommitStatus(name: 'Jenkins CI', state: "success")
                     slack("#rapidsai-spark-cicd", "Success", color: "#33CC33")
                 } else {
