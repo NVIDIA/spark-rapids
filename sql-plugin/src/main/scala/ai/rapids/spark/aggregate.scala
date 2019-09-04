@@ -17,6 +17,7 @@
 package ai.rapids.spark
 
 import ai.rapids.cudf
+import ai.rapids.cudf.{NvtxColor, NvtxRange}
 
 import org.apache.spark.TaskContext
 import org.apache.spark.rdd.RDD
@@ -157,46 +158,51 @@ case class GpuHashAggregateExec(requiredChildDistributionExpressions: Option[Seq
           //    obtaining ColumnVectors that can be aggregated
           batch = cbIter.next()
 
-          childCvs = processIncomingBatch(batch, boundInputReferences)
+          val nvtxRange = new NvtxRange("Hash Aggregate Batch", NvtxColor.YELLOW)
+          try {
+            childCvs = processIncomingBatch(batch, boundInputReferences)
 
-          // done with the batch, clean it as soon as possible
-          batch.close()
-          batch = null
+            // done with the batch, clean it as soon as possible
+            batch.close()
+            batch = null
 
-          // 2) When a partition gets multiple batches, we need to do two things:
-          //     a) if this is the first batch, run aggregation and store the aggregated result
-          //     b) if this is a subsequent batch, we need to merge the previously aggregated results
-          //        with the incoming batch
-          aggregatedInputCb = computeAggregate(childCvs, finalMode, groupingExpressions,
-            if (finalMode) boundMergeAgg else boundUpdateAgg)
+            // 2) When a partition gets multiple batches, we need to do two things:
+            //     a) if this is the first batch, run aggregation and store the aggregated result
+            //     b) if this is a subsequent batch, we need to merge the previously aggregated results
+            //        with the incoming batch
+            aggregatedInputCb = computeAggregate(childCvs, finalMode, groupingExpressions,
+              if (finalMode) boundMergeAgg else boundUpdateAgg)
 
-          childCvs.foreach(_.close)
-          childCvs = null
+            childCvs.foreach(_.close)
+            childCvs = null
 
-          if (aggregatedCb == null) {
-            // this is the first batch, regardless of mode.
-            aggregatedCb = aggregatedInputCb
-            aggregatedInputCb = null
-          } else {
-            // this is a subsequent batch, and we must:
-            // 1) concatenate aggregatedInputCb with the prior result (aggregatedCb)
-            // 2) perform a merge aggregate on the concatenated columns
-            //
-            // In the future, we could plugin in spilling here, where if the concatenated
-            // batch sizes would go over a threshold, we'd spill the aggregatedCb,
-            // and perform aggregation on the new batch (which would need to be merged, with the
-            // spilled aggregates)
-            concatCvs = concatenateBatches(aggregatedInputCb, aggregatedCb)
-            aggregatedCb.close()
-            aggregatedCb = null
-            aggregatedInputCb.close()
-            aggregatedInputCb = null
+            if (aggregatedCb == null) {
+              // this is the first batch, regardless of mode.
+              aggregatedCb = aggregatedInputCb
+              aggregatedInputCb = null
+            } else {
+              // this is a subsequent batch, and we must:
+              // 1) concatenate aggregatedInputCb with the prior result (aggregatedCb)
+              // 2) perform a merge aggregate on the concatenated columns
+              //
+              // In the future, we could plugin in spilling here, where if the concatenated
+              // batch sizes would go over a threshold, we'd spill the aggregatedCb,
+              // and perform aggregation on the new batch (which would need to be merged, with the
+              // spilled aggregates)
+              concatCvs = concatenateBatches(aggregatedInputCb, aggregatedCb)
+              aggregatedCb.close()
+              aggregatedCb = null
+              aggregatedInputCb.close()
+              aggregatedInputCb = null
 
-            // 3) Compute aggregate. In subsequent iterations we'll use this result
-            //    to concatenate against incoming batches (step 2)
-            aggregatedCb = computeAggregate(concatCvs, merge = true, groupingExpressions, boundMergeAgg)
-            concatCvs.foreach(_.close)
-            concatCvs = null
+              // 3) Compute aggregate. In subsequent iterations we'll use this result
+              //    to concatenate against incoming batches (step 2)
+              aggregatedCb = computeAggregate(concatCvs, merge = true, groupingExpressions, boundMergeAgg)
+              concatCvs.foreach(_.close)
+              concatCvs = null
+            }
+          } finally {
+            nvtxRange.close()
           }
         }
 
@@ -349,21 +355,26 @@ case class GpuHashAggregateExec(requiredChildDistributionExpressions: Option[Seq
     * @return Seq[GpuColumnVector] with concatenated vectors
     */
   private def concatenateBatches(aggregatedInputCb: ColumnarBatch, aggregatedCb: ColumnarBatch): Seq[GpuColumnVector] = {
-    // get tuples of columns to concatenate
+    val nvtxRange = new NvtxRange("concatenateBatches", NvtxColor.BLUE)
+    try {
+      // get tuples of columns to concatenate
 
-    val zipped = (0 until aggregatedCb.numCols()).map { i =>
-      (aggregatedInputCb.column(i), aggregatedCb.column(i))
-    }
-
-    val concatCvs = zipped.map {
-      case (col1, col2) =>
-        GpuColumnVector.from(
-          cudf.ColumnVector.concatenate(
-            col1.asInstanceOf[GpuColumnVector].getBase,
-            col2.asInstanceOf[GpuColumnVector].getBase))
+      val zipped = (0 until aggregatedCb.numCols()).map { i =>
+        (aggregatedInputCb.column(i), aggregatedCb.column(i))
       }
 
-    concatCvs
+      val concatCvs = zipped.map {
+        case (col1, col2) =>
+          GpuColumnVector.from(
+            cudf.ColumnVector.concatenate(
+              col1.asInstanceOf[GpuColumnVector].getBase,
+              col2.asInstanceOf[GpuColumnVector].getBase))
+      }
+
+      concatCvs
+    } finally {
+      nvtxRange.close()
+    }
   }
 
   // this will need to change when we support distinct aggregates
@@ -479,97 +490,102 @@ case class GpuHashAggregateExec(requiredChildDistributionExpressions: Option[Seq
                        merge: Boolean,
                        groupingExpressions: Seq[GpuExpression],
                        aggregates: Seq[CudfAggregate]): ColumnarBatch  = {
-    if (groupingExpressions.nonEmpty) {
-      // Perform group by aggregation
-      var tbl: cudf.Table = null
-      var result: cudf.Table = null
-      try {
-        // Create a cudf Table, which we use as the base of aggregations.
-        // At this point we are getting the cudf aggregate's merge or update version
-        //
-        // For example: GpuAverage has an update version of: (CudfSum, CudfCount)
-        // and CudfCount has an update version of AggregateOp.COUNT and a
-        // merge version of AggregateOp.COUNT.
-        var cudfAggregates = aggregates.map { agg => {
-          if (merge) {
-            agg.mergeAggregate
-          } else {
-            agg.updateAggregate
-          }
-        }}
-
-        tbl = new cudf.Table(toAggregateCvs.map(_.getBase): _*)
-
-        if (cudfAggregates.isEmpty) {
-          // we can't have empty aggregates, so pick a dummy max
-          // could be caused by something like: select 1 from table group by awesome_key
-          cudfAggregates = Seq(cudf.Table.max(0))
-        }
-
-        result = tbl.groupBy(groupingExpressions.indices: _*).aggregate(cudfAggregates: _*)
-
-        // Turn aggregation into a ColumnarBatch for the result evaluation
-        // Note that the resulting ColumnarBatch has the following shape:
-        //
-        //   [key1, key2, ..., keyN, cudfAgg1, cudfAgg2, ..., cudfAggN]
-        //
-        // where cudfAgg_i can be multiple columns foreach Spark aggregate
-        // (i.e. partial_gpuavg => cudf sum and cudf count)
-        //
-        // The type of the columns returned by aggregate depends on cudf. A count of a long column
-        // may return a 32bit column, which is bad if you are trying to concatenate batches
-        // later. Cast here to the type that the aggregate expects (e.g. Long in case of count)
-        if (aggregates.nonEmpty) {
-          val dataTypes =
-            groupingExpressions.map(_.dataType) ++ aggregates.map(_.dataType)
-
-          val resCols = new ArrayBuffer[ColumnVector](result.getNumberOfColumns)
-          for (i <- 0 until result.getNumberOfColumns) {
-            val castedCol = {
-              val resCol = result.getColumn(i)
-              val rapidsType = GpuColumnVector.getRapidsType(dataTypes(i))
-              val timeUnit = GpuColumnVector.getTimeUnits(dataTypes(i))
-              resCol.castTo(rapidsType, timeUnit) // just does refCount++ for same type
+    val nvtxRange = new NvtxRange("computeAggregate", NvtxColor.CYAN)
+    try {
+      if (groupingExpressions.nonEmpty) {
+        // Perform group by aggregation
+        var tbl: cudf.Table = null
+        var result: cudf.Table = null
+        try {
+          // Create a cudf Table, which we use as the base of aggregations.
+          // At this point we are getting the cudf aggregate's merge or update version
+          //
+          // For example: GpuAverage has an update version of: (CudfSum, CudfCount)
+          // and CudfCount has an update version of AggregateOp.COUNT and a
+          // merge version of AggregateOp.COUNT.
+          var cudfAggregates = aggregates.map { agg =>
+            if (merge) {
+              agg.mergeAggregate
+            } else {
+              agg.updateAggregate
             }
-            var success = false
-            try {
-              resCols += GpuColumnVector.from(castedCol)
-              success = true
-            } finally {
-              if (!success) {
-                castedCol.close()
+          }
+
+          tbl = new cudf.Table(toAggregateCvs.map(_.getBase): _*)
+
+          if (cudfAggregates.isEmpty) {
+            // we can't have empty aggregates, so pick a dummy max
+            // could be caused by something like: select 1 from table group by awesome_key
+            cudfAggregates = Seq(cudf.Table.max(0))
+          }
+
+          result = tbl.groupBy(groupingExpressions.indices: _*).aggregate(cudfAggregates: _*)
+
+          // Turn aggregation into a ColumnarBatch for the result evaluation
+          // Note that the resulting ColumnarBatch has the following shape:
+          //
+          //   [key1, key2, ..., keyN, cudfAgg1, cudfAgg2, ..., cudfAggN]
+          //
+          // where cudfAgg_i can be multiple columns foreach Spark aggregate
+          // (i.e. partial_gpuavg => cudf sum and cudf count)
+          //
+          // The type of the columns returned by aggregate depends on cudf. A count of a long column
+          // may return a 32bit column, which is bad if you are trying to concatenate batches
+          // later. Cast here to the type that the aggregate expects (e.g. Long in case of count)
+          if (aggregates.nonEmpty) {
+            val dataTypes =
+              groupingExpressions.map(_.dataType) ++ aggregates.map(_.dataType)
+
+            val resCols = new ArrayBuffer[ColumnVector](result.getNumberOfColumns)
+            for (i <- 0 until result.getNumberOfColumns) {
+              val castedCol = {
+                val resCol = result.getColumn(i)
+                val rapidsType = GpuColumnVector.getRapidsType(dataTypes(i))
+                val timeUnit = GpuColumnVector.getTimeUnits(dataTypes(i))
+                resCol.castTo(rapidsType, timeUnit) // just does refCount++ for same type
+              }
+              var success = false
+              try {
+                resCols += GpuColumnVector.from(castedCol)
+                success = true
+              } finally {
+                if (!success) {
+                  castedCol.close()
+                }
               }
             }
+            new ColumnarBatch(resCols.toArray, result.getRowCount.toInt)
+          } else {
+            // the types of the aggregate columns didn't change
+            // because there are no aggregates, so just return the original result
+            GpuColumnVector.from(result)
           }
-          new ColumnarBatch(resCols.toArray, result.getRowCount.toInt)
-        } else {
-          // the types of the aggregate columns didn't change
-          // because there are no aggregates, so just return the original result
-          GpuColumnVector.from(result)
+        } finally {
+          if (tbl != null) {
+            tbl.close()
+          }
+          if (result != null) {
+            result.close()
+          }
         }
-      } finally {
-        if (tbl != null) {
-          tbl.close()
-        }
-        if (result != null) {
-          result.close()
-        }
-      }
-    } else {
-      // Reduction aggregate
-      // we ask the appropriate merge or update CudfAggregates, what their
-      // reduction merge or update aggregates functions are
-      val cvs = aggregates.map { agg => {
-        val aggFn = if (merge) {
-          agg.mergeReductionAggregate
-        } else {
-          agg.updateReductionAggregate
-        }
+      } else {
+        // Reduction aggregate
+        // we ask the appropriate merge or update CudfAggregates, what their
+        // reduction merge or update aggregates functions are
+        val cvs = aggregates.map { agg =>
+          val aggFn = if (merge) {
+            agg.mergeReductionAggregate
+          } else {
+            agg.updateReductionAggregate
+          }
 
-        val res = aggFn(toAggregateCvs(agg.getOrdinal(agg.ref)).getBase)
-        GpuColumnVector.from(cudf.ColumnVector.fromScalar(res, 1))
-      }}
-      new ColumnarBatch(cvs.toArray, cvs.head.getBase.getRowCount.toInt)
+          val res = aggFn(toAggregateCvs(agg.getOrdinal(agg.ref)).getBase)
+          GpuColumnVector.from(cudf.ColumnVector.fromScalar(res, 1))
+        }
+        new ColumnarBatch(cvs.toArray, cvs.head.getBase.getRowCount.toInt)
+      }
+    } finally {
+      nvtxRange.close()
     }
   }
 

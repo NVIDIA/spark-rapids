@@ -16,6 +16,8 @@
 
 package ai.rapids.spark
 
+import ai.rapids.cudf.{NvtxColor, NvtxRange}
+
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.expressions.{Attribute, SortOrder, UnsafeProjection}
@@ -84,15 +86,20 @@ case class GpuColumnarToRowExec(child: SparkPlan) extends UnaryExecNode
           }
           if (batches.hasNext) {
             cb = batches.next()
-            (0 until cb.numCols()).foreach(
-              i => cb.column(i).asInstanceOf[GpuColumnVector].getBase.ensureOnHost())
-            it = cb.rowIterator()
-            numInputBatches += 1
-            // In order to match the numOutputRows metric in the generated code we update
-            // numOutputRows for each batch. This is less accurate than doing it at output
-            // because it will over count the number of rows output in the case of a limit,
-            // but it is more efficient.
-            numOutputRows += cb.numRows()
+            val nvtxRange = new NvtxRange("ColumnarToRow batch", NvtxColor.RED)
+            try {
+              (0 until cb.numCols()).foreach(
+                i => cb.column(i).asInstanceOf[GpuColumnVector].getBase.ensureOnHost())
+              it = cb.rowIterator()
+              numInputBatches += 1
+              // In order to match the numOutputRows metric in the generated code we update
+              // numOutputRows for each batch. This is less accurate than doing it at output
+              // because it will over count the number of rows output in the case of a limit,
+              // but it is more efficient.
+              numOutputRows += cb.numRows()
+            } finally {
+              nvtxRange.close()
+            }
           }
         }
 

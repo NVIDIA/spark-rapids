@@ -22,7 +22,7 @@ import java.nio.charset.StandardCharsets
 import scala.collection.JavaConverters._
 import scala.util.control.NonFatal
 
-import ai.rapids.cudf.{HostMemoryBuffer, Table}
+import ai.rapids.cudf.{HostMemoryBuffer, NvtxColor, NvtxRange, Table}
 import ai.rapids.cudf
 import org.apache.hadoop.conf.Configuration
 import org.apache.hadoop.fs.Path
@@ -309,50 +309,60 @@ class CSVPartitionReader(
   }
 
   private def readPartFile(): (HostMemoryBuffer, Long) = {
-    isFirstChunkForIterator = false
-    val separator = parsedOptions.lineSeparatorInRead.getOrElse(Array('\n'.toByte))
-    var succeeded = false
-    var totalSize: Long = 0L
-    var totalRows: Integer = 0
-    var hmb = HostMemoryBuffer.allocate(estimatedHostBufferSize)
+    val nvtxRange = new NvtxRange("Build file split", NvtxColor.YELLOW)
     try {
-      while (lineReader.hasNext && totalRows != maxRowsPerChunk) {
-        val line = lineReader.next()
-        val lineSize = line.getLength
-        val newTotal = totalSize + lineSize + separator.length
-        if (newTotal > hmb.getLength) {
-          hmb = growHostBuffer(hmb, newTotal)
+      isFirstChunkForIterator = false
+      val separator = parsedOptions.lineSeparatorInRead.getOrElse(Array('\n'.toByte))
+      var succeeded = false
+      var totalSize: Long = 0L
+      var totalRows: Integer = 0
+      var hmb = HostMemoryBuffer.allocate(estimatedHostBufferSize)
+      try {
+        while (lineReader.hasNext && totalRows != maxRowsPerChunk) {
+          val line = lineReader.next()
+          val lineSize = line.getLength
+          val newTotal = totalSize + lineSize + separator.length
+          if (newTotal > hmb.getLength) {
+            hmb = growHostBuffer(hmb, newTotal)
+          }
+          // Can have an empty line, do not write this to buffer but add the separator and totalRows
+          if (lineSize != 0) {
+            hmb.setBytes(totalSize, line.getBytes, 0, lineSize)
+          }
+          hmb.setBytes(totalSize + lineSize, separator, 0, separator.length)
+          totalRows += 1
+          totalSize = newTotal
         }
-        // Can have an empty line, do not write this to buffer but add the separator and totalRows
-        if (lineSize != 0) {
-          hmb.setBytes(totalSize, line.getBytes, 0, lineSize)
+        //Indicate this is the last chunk
+        isExhausted = !lineReader.hasNext
+        succeeded = true
+      } finally {
+        if (!succeeded) {
+          hmb.close()
         }
-        hmb.setBytes(totalSize + lineSize, separator, 0, separator.length)
-        totalRows += 1
-        totalSize = newTotal
       }
-      //Indicate this is the last chunk
-      isExhausted = !lineReader.hasNext
-      succeeded = true
+      (hmb, totalSize)
     } finally {
-      if (!succeeded) {
-        hmb.close()
-      }
+      nvtxRange.close()
     }
-    (hmb, totalSize)
   }
 
   private def readBatch(): Option[ColumnarBatch] = {
-    val hasHeader = partFile.start == 0 && isFirstChunkForIterator && parsedOptions.headerFlag
-    val table = readToTable(hasHeader)
+    val nvtxRange = new NvtxRange("CSV readBatch", NvtxColor.GREEN)
     try {
-      if (readDataSchema.isEmpty) {
-        table.map(t => new ColumnarBatch(Array.empty, t.getRowCount.toInt))
-      } else {
-        table.map(GpuColumnVector.from)
+      val hasHeader = partFile.start == 0 && isFirstChunkForIterator && parsedOptions.headerFlag
+      val table = readToTable(hasHeader)
+      try {
+        if (readDataSchema.isEmpty) {
+          table.map(t => new ColumnarBatch(Array.empty, t.getRowCount.toInt))
+        } else {
+          table.map(GpuColumnVector.from)
+        }
+      } finally {
+        table.foreach(_.close())
       }
     } finally {
-      table.foreach(_.close())
+      nvtxRange.close()
     }
   }
 

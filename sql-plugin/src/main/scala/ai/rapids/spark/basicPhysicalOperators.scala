@@ -17,7 +17,7 @@
 package ai.rapids.spark
 
 import ai.rapids.cudf
-import ai.rapids.cudf.DType
+import ai.rapids.cudf.{DType, NvtxColor, NvtxRange}
 
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.expressions.{Attribute, AttributeReference, Expression, IsNotNull, NamedExpression, NullIntolerant, PredicateHelper, SortOrder}
@@ -27,15 +27,21 @@ import scala.collection.mutable.ArrayBuffer
 
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.plans.physical.Partitioning
-import org.apache.spark.sql.execution.metric.SQLMetrics
+import org.apache.spark.sql.execution.metric.{SQLMetric, SQLMetrics}
 
 object GpuProjectExec {
-  def projectAndClose[A <: GpuExpression](cb: ColumnarBatch, boundExprs: Seq[A]): ColumnarBatch =
+  def projectAndClose[A <: GpuExpression](cb: ColumnarBatch, boundExprs: Seq[A]): ColumnarBatch = {
+    val nvtxRange = new NvtxRange("ProjectExec", NvtxColor.WHITE)
     try {
-      project(cb, boundExprs)
+      try {
+        project(cb, boundExprs)
+      } finally {
+        cb.close()
+      }
     } finally {
-      cb.close()
+      nvtxRange.close()
     }
+  }
 
   def project[A <: GpuExpression](cb: ColumnarBatch, boundExprs: Seq[A]): ColumnarBatch = {
     val newColumns = boundExprs.map(
@@ -119,70 +125,50 @@ case class GpuFilterExec(condition: GpuExpression, child: SparkPlan)
     val boundCondition = GpuBindReferences.bindReference(condition, child.output)
     val rdd = child.executeColumnar()
 
-    rdd.map(batch => {
-      val cols = new ArrayBuffer[GpuColumnVector](batch.numCols)
-      var success = false
-      var error: Throwable = null
+    rdd.map { batch =>
+      val nvtxRange = new NvtxRange("filter batch", NvtxColor.YELLOW)
       try {
-        for (i <- 0 until batch.numCols) {
-          val col = batch.column(i).asInstanceOf[GpuColumnVector]
-          col.getBase.getType match {
-            // filter does not work on strings, so turn them to categories
-            // TODO we need a faster way to work with these values!!!
-            case DType.STRING =>
-              val catCv = col.getBase.asStringCategories
-              var successFrom = false
-              try {
-                cols += GpuColumnVector.from(catCv)
-                successFrom = true
-              } finally {
-                if (!successFrom) {
-                  catCv.close()
-                }
-              }
-            case _ => cols += col.incRefCount()
-          }
-        }
-        success = true
+        filterBatch(batch, boundCondition, numOutputRows)
       } finally {
-        if (!success) {
-          // this foreach will not throw
-          cols.foreach(col => {
+        nvtxRange.close()
+      }
+    }
+  }
+
+  private def filterBatch(
+      batch: ColumnarBatch,
+      boundCondition: GpuExpression,
+      numOutputRows: SQLMetric): ColumnarBatch = {
+    val cols = new ArrayBuffer[GpuColumnVector](batch.numCols)
+    var success = false
+    var error: Throwable = null
+    try {
+      for (i <- 0 until batch.numCols) {
+        val col = batch.column(i).asInstanceOf[GpuColumnVector]
+        col.getBase.getType match {
+          // filter does not work on strings, so turn them to categories
+          // TODO we need a faster way to work with these values!!!
+          case DType.STRING =>
+            val catCv = col.getBase.asStringCategories
+            var successFrom = false
             try {
-              col.close()
-            } catch {
-              case t: Throwable =>
-                if (error == null) {
-                  error = t
-                } else {
-                  error.addSuppressed(t)
-                }
+              cols += GpuColumnVector.from(catCv)
+              successFrom = true
+            } finally {
+              if (!successFrom) {
+                catCv.close()
+              }
             }
-          })
-        }
-        // throw error if there were problems closing
-        if (error != null) {
-          throw error
+          case _ => cols += col.incRefCount()
         }
       }
-
-      var filterConditionCv: GpuColumnVector = null
-      var tbl: cudf.Table = null
-      var filtered: cudf.Table = null
-      val filteredBatch = try {
-        val batchWithCategories = new ColumnarBatch(cols.toArray, batch.numRows)
-        filterConditionCv = boundCondition.columnarEval(batchWithCategories).asInstanceOf[GpuColumnVector]
-        tbl = new cudf.Table(cols.map(_.getBase): _*)
-        filtered = tbl.filter(filterConditionCv.getBase)
-        numOutputRows += filtered.getRowCount
-        GpuColumnVector.from(filtered)
-      } finally {
+      success = true
+    } finally {
+      if (!success) {
         // this foreach will not throw
-        (Seq(filtered, tbl, filterConditionCv, batch) ++ cols).foreach (toClose => {
+        cols.foreach(col => {
           try {
-            if (toClose != null) {
-              toClose.close()
-            }
+            col.close()
           } catch {
             case t: Throwable =>
               if (error == null) {
@@ -192,13 +178,45 @@ case class GpuFilterExec(condition: GpuExpression, child: SparkPlan)
               }
           }
         })
-        if (error != null) {
-          throw error
-        }
       }
+      // throw error if there were problems closing
+      if (error != null) {
+        throw error
+      }
+    }
 
-      filteredBatch
-    })
+    var filterConditionCv: GpuColumnVector = null
+    var tbl: cudf.Table = null
+    var filtered: cudf.Table = null
+    val filteredBatch = try {
+      val batchWithCategories = new ColumnarBatch(cols.toArray, batch.numRows)
+      filterConditionCv = boundCondition.columnarEval(batchWithCategories).asInstanceOf[GpuColumnVector]
+      tbl = new cudf.Table(cols.map(_.getBase): _*)
+      filtered = tbl.filter(filterConditionCv.getBase)
+      numOutputRows += filtered.getRowCount
+      GpuColumnVector.from(filtered)
+    } finally {
+      // this foreach will not throw
+      (Seq(filtered, tbl, filterConditionCv, batch) ++ cols).foreach (toClose => {
+        try {
+          if (toClose != null) {
+            toClose.close()
+          }
+        } catch {
+          case t: Throwable =>
+            if (error == null) {
+              error = t
+            } else {
+              error.addSuppressed(t)
+            }
+        }
+      })
+      if (error != null) {
+        throw error
+      }
+    }
+
+    filteredBatch
   }
 }
 

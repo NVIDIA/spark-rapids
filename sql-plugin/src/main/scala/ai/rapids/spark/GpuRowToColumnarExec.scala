@@ -16,6 +16,7 @@
 
 package ai.rapids.spark
 
+import ai.rapids.cudf.{NvtxColor, NvtxRange}
 import ai.rapids.spark.GpuColumnVector.GpuColumnarBatchBuilder
 
 import org.apache.spark.broadcast.Broadcast
@@ -317,6 +318,18 @@ case class GpuRowToColumnarExec(child: SparkPlan, goal: CoalesceGoal)
         override def hasNext: Boolean = rowIter.hasNext
 
         override def next(): ColumnarBatch = {
+          if (!rowIter.hasNext) {
+            throw new NoSuchElementException
+          }
+          val nvtxRange = new NvtxRange("RowToColumnar batch", NvtxColor.RED)
+          try {
+            buildBatch()
+          } finally {
+            nvtxRange.close()
+          }
+        }
+
+        private def buildBatch(): ColumnarBatch = {
           // TODO eventually we should be smarter about allocating memory for these batches
           // so we can support building large batches with all of the data.
           val builders = new GpuColumnarBatchBuilder(localSchema, targetRows.toInt, null)

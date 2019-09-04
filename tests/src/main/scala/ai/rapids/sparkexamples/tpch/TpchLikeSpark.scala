@@ -217,6 +217,18 @@ object TpchLikeSpark {
 
   def setupSupplierParquet(spark: SparkSession, path: String): Unit =
     spark.read.parquet(path).createOrReplaceTempView("supplier")
+
+  def main(args: Array[String]): Unit = {
+    System.setProperty("ai.rapids.nvtx.enabled", "true")
+    val spark = SparkSession.builder.appName("TpchLike")
+        .config("spark.sql.shuffle.partitions", 1)
+        .config("spark.rapids.sql.allowVariableFloatAgg", "true")
+        .getOrCreate()
+    setupAllParquet(spark, args(0))
+    Q2Like(spark).collect()
+    Q2Like(spark).collect()
+    Q6Like(spark).collect()
+  }
 }
 
 object Q1Like {
