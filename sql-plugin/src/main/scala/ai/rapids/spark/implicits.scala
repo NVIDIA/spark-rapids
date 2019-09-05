@@ -32,14 +32,14 @@ object RapidsPluginImplicits {
   implicit class AutoCloseableSeq[A <: AutoCloseable](val in: SeqLike[A, _]) {
     /**
       * safeClose: Is an implicit on a sequence of AutoCloseable classes that tries to close each element
-      * of the sequence, even if prior close calls fail. In case of failure in any of the close calls, an Exception
-      * is thrown containing the suppressed exceptions (getSuppressed), if any.
+      * of the sequence, even if prior close calls fail. In case of failure in any of the close calls, an
+      * Exception is thrown containing the suppressed exceptions (getSuppressed), if any.
       *
       * @return - Unit
       */
     def safeClose(): Unit = if (in != null) {
       var closeException: Throwable = null
-      in.foreach(element => {
+      in.foreach { element =>
         if (element != null) {
           try {
             element.close()
@@ -48,7 +48,7 @@ object RapidsPluginImplicits {
             case e: Throwable => closeException.addSuppressed(e)
           }
         }
-      })
+      }
       if (closeException != null) {
         // an exception happened while we were trying to safely close
         // resources, throw the exception to alert the caller
@@ -68,7 +68,8 @@ object RapidsPluginImplicits {
       * safeMap: safeMap implementation that is leveraged by other type-specific implicits.
       *
       * safeMap has the added safety net that as you produce AutoCloseable values they are tracked, and if an
-      * exception were to occur within the maps's body, it will make every attempt to close each produced value.
+      * exception were to occur within the maps's body, it will make every attempt to close each produced 
+      * value.
       *
       * Note: safeMap will close in case of errors, without any knowledge of whether it should or not.
       * Use safeMap only in these circumstances if [[fn]] increases the reference count,
@@ -84,7 +85,7 @@ object RapidsPluginImplicits {
       * The correct pattern of usage in cases like this is:
       *
       *   val closeTheseLater = seq.safeMap(GpuColumnVector.from)
-      *   closeTheseLater.safeMap(x => {
+      *   closeTheseLater.safeMap{ x =>
       *     var success = false
       *     try {
       *       val res = couldThrow(x.incRefCount())
@@ -99,7 +100,7 @@ object RapidsPluginImplicits {
       *         x.close() // x now has a ref count of 1, the rest of the sequence has 2s
       *       }
       *     }
-      *   }) // safeMap cleaned, and now everything has 1s for ref counts (as they were before)
+      *   } // safeMap cleaned, and now everything has 1s for ref counts (as they were before)
       *
       *   closeTheseLater.safeClose() // go from 1 to 0 in all things inside closeTheseLater
       *
@@ -111,8 +112,10 @@ object RapidsPluginImplicits {
       * @tparam That - the type of the output collection (needed by builder)
       * @return - a sequence of B, in the success case
       */
-    def safeMap[A, B <: AutoCloseable, Repr, That](in: SeqLike[A, Repr], fn: A => B)
-                                                  (implicit bf: CanBuildFrom[Repr, B, That]): That = {
+    def safeMap[A, B <: AutoCloseable, Repr, That](
+      in: SeqLike[A, Repr], 
+      fn: A => B)
+      (implicit bf: CanBuildFrom[Repr, B, That]): That = {
       def builder: mutable.Builder[B, That] = {
         val b = bf(in.asInstanceOf[Repr])
         b.sizeHint(in)

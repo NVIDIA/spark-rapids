@@ -23,8 +23,8 @@ import org.scalatest.{FlatSpec, Matchers}
 
 import scala.collection.mutable.ArrayBuffer
 
-class ImplicitsTestSuite extends FlatSpec with Matchers {
-  private class Test (i: Int, throwOnClose: Boolean) extends AutoCloseable {
+class ImplicitsRefCountTestSuite extends FlatSpec with Matchers {
+  private class RefCountTest (i: Int, throwOnClose: Boolean) extends AutoCloseable {
     var closeAttempted: Boolean = false
     var refCount: Int = 0
     override def close(): Unit = {
@@ -37,7 +37,7 @@ class ImplicitsTestSuite extends FlatSpec with Matchers {
         throw new Exception(s"cannot close $i")
       }
     }
-    def incRefCount(): Test = {
+    def incRefCount(): RefCountTest = {
       refCount = refCount + 1
       this
     }
@@ -47,7 +47,7 @@ class ImplicitsTestSuite extends FlatSpec with Matchers {
   }
 
   it should "handle exceptions within safeMap body" in {
-    val resources = (0 until 10).map(new Test(_, false))
+    val resources = (0 until 10).map(new RefCountTest(_, false))
 
     assertThrows[Throwable] {
       resources.zipWithIndex.safeMap {
@@ -63,7 +63,7 @@ class ImplicitsTestSuite extends FlatSpec with Matchers {
 
   it should "handle exceptions while closing safeMap" in {
     var threw = false
-    val resources = (0 until 10).map(new Test(_, true))
+    val resources = (0 until 10).map(new RefCountTest(_, true))
     try {
       resources.zipWithIndex.safeMap { case (res, i) => {
         if (i > 5) {
@@ -82,12 +82,12 @@ class ImplicitsTestSuite extends FlatSpec with Matchers {
   }
 
   it should "handle an error in a safeMap from a ColumnarBatch" in {
-    val resources = new ArrayBuffer[Test]()
-    val batch = new ColumnarBatch((0 until 10).map { ix => {
+    val resources = new ArrayBuffer[RefCountTest]()
+    val batch = new ColumnarBatch((0 until 10).map { ix =>
       val col = GpuColumnVector.from(GpuScalar.from(ix, IntegerType), 5)
-      resources += new Test(ix, false)
+      resources += new RefCountTest(ix, false)
       col
-    }}.toArray)
+    }.toArray)
 
     var colIx = 0
     assertThrows[java.lang.Exception] {
@@ -100,15 +100,15 @@ class ImplicitsTestSuite extends FlatSpec with Matchers {
         res.incRefCount()
       })
     }
-    batch.close
+    batch.close()
     assert(resources.forall(!_.leaked))
   }
 
   it should "handle an error while closing in a safeMap from a ColumnarBatch" in {
-    val resources = new ArrayBuffer[Test]()
+    val resources = new ArrayBuffer[RefCountTest]()
     val batch = new ColumnarBatch((0 until 10).map { ix => {
       val col = GpuColumnVector.from(GpuScalar.from(ix, IntegerType), 5)
-      resources += new Test(ix, true)
+      resources += new RefCountTest(ix, true)
       col
     }}.toArray)
 
@@ -129,23 +129,23 @@ class ImplicitsTestSuite extends FlatSpec with Matchers {
         assert(t.getSuppressed().size == 5)
       }
     }
-    batch.close
+    batch.close()
     assert(threw)
     assert(resources.forall(!_.leaked))
   }
 
   it should "safeMap/safeClose handle the success case" in {
-    val resources = (0 until 10).map(new Test(_, false))
+    val resources = (0 until 10).map(new RefCountTest(_, false))
     val extraReferences = resources.safeMap(_.incRefCount)
-    extraReferences.safeClose
+    extraReferences.safeClose()
     assert(resources.forall(!_.leaked))
   }
 
   it should "handle the successful case from a ColumnarBatch" in {
-    val resources = new ArrayBuffer[Test]()
+    val resources = new ArrayBuffer[RefCountTest]()
     val batch = new ColumnarBatch((0 until 10).map { ix => {
       val col = GpuColumnVector.from(GpuScalar.from(ix, IntegerType), 5)
-      resources += new Test(ix, false)
+      resources += new RefCountTest(ix, false)
       col
     }}.toArray)
 
@@ -156,13 +156,13 @@ class ImplicitsTestSuite extends FlatSpec with Matchers {
       res.incRefCount()
     })
     assert(resources.forall(_.refCount == 1))
-    batch.close
-    result.safeClose
+    batch.close()
+    result.safeClose()
     assert(resources.forall(!_.leaked))
   }
 
   it should "handle safeMap on array" in {
-    val resources = (0 until 10).map(new Test(_, false))
+    val resources = (0 until 10).map(new RefCountTest(_, false))
 
     assertThrows[Throwable] {
       resources.toArray.zipWithIndex.safeMap {
@@ -177,7 +177,7 @@ class ImplicitsTestSuite extends FlatSpec with Matchers {
   }
 
   it should "handle safeMap in the successful case" in {
-    val resources = (0 until 10).map(new Test(_, false))
+    val resources = (0 until 10).map(new RefCountTest(_, false))
 
     val out = resources.toArray.zipWithIndex.safeMap {
       case (res, i) =>
@@ -191,11 +191,11 @@ class ImplicitsTestSuite extends FlatSpec with Matchers {
 
   it should "safeMap on a lazy sequence (Stream) with errors" in {
     // Not used in the plugin, but illustrates how this works for a lazy sequence
-    // a) a new Test(i) gets produced,
+    // a) a new RefCountTest(i) gets produced,
     // b) the body of the safeMap executes then (interleaved with the first map)
     // c) if the body of the safeMap throws, it cleans at that point.
     // d) the safeMap stops executing in case of error, but the first map goes until the end of the stream
-    val resources: Stream[Test] = (0 until 10).toStream.map(i => new Test(i, false))
+    val resources: Stream[RefCountTest] = (0 until 10).toStream.map(i => new RefCountTest(i, false))
 
     assertThrows[Throwable] {
       resources.zipWithIndex.safeMap {

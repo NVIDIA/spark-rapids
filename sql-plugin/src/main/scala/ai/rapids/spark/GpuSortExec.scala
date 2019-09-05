@@ -207,7 +207,7 @@ class GpuColumnarBatchSorter(
       case t: Throwable =>
         sortCvs.safeClose()
         if (batchWithCategories != null) {
-          batchWithCategories.safeClose()
+          batchWithCategories.close()
         }
         throw t
     }
