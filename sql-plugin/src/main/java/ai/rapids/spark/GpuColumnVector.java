@@ -17,6 +17,8 @@
 package ai.rapids.spark;
 
 import ai.rapids.cudf.DType;
+import ai.rapids.cudf.NvtxColor;
+import ai.rapids.cudf.NvtxRange;
 import ai.rapids.cudf.Scalar;
 import ai.rapids.cudf.Table;
 import ai.rapids.cudf.TimeUnit;
@@ -477,7 +479,9 @@ public final class GpuColumnVector extends ColumnVector {
 
   public GpuColumnVector convertToStringCategoriesIfNeeded() {
     if (cudfCv.getType() == DType.STRING) {
-      return from(cudfCv.asStringCategories());
+      try (NvtxRange nvtxRange = new NvtxRange("to string category", NvtxColor.RED)) {
+        return from(cudfCv.asStringCategories());
+      }
     } else {
       return this.incRefCount();
     }
