@@ -18,6 +18,7 @@ package ai.rapids.spark
 
 import ai.rapids.cudf
 import ai.rapids.cudf.{DType, NvtxColor, NvtxRange}
+import ai.rapids.spark.RapidsPluginImplicits._
 
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.expressions.{Attribute, AttributeReference, Expression, IsNotNull, NamedExpression, NullIntolerant, PredicateHelper, SortOrder}
@@ -44,14 +45,14 @@ object GpuProjectExec {
   }
 
   def project[A <: GpuExpression](cb: ColumnarBatch, boundExprs: Seq[A]): ColumnarBatch = {
-    val newColumns = boundExprs.map(
+    val newColumns = boundExprs.safeMap {
       expr => {
         val result = expr.columnarEval(cb)
         result match {
           case cv: ColumnVector => cv
           case other => GpuColumnVector.from(GpuScalar.from(other), cb.numRows())
         }
-      }).toArray
+      }}.toArray
     new ColumnarBatch(newColumns, cb.numRows())
   }
 }
@@ -156,24 +157,7 @@ case class GpuFilterExec(condition: GpuExpression, child: SparkPlan)
       numOutputRows += filtered.getRowCount
       GpuColumnVector.from(filtered)
     } finally {
-      // this foreach will not throw
-      Seq(filtered, tbl, filterConditionCv, batchWithCategories).foreach { toClose =>
-        try {
-          if (toClose != null) {
-            toClose.close()
-          }
-        } catch {
-          case t: Throwable =>
-            if (error == null) {
-              error = t
-            } else {
-              error.addSuppressed(t)
-            }
-        }
-      }
-      if (error != null) {
-        throw error
-      }
+      Seq(filtered, tbl, filterConditionCv, batchWithCategories).safeClose()
     }
 
     filteredBatch
