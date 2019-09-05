@@ -31,7 +31,7 @@ import org.apache.spark.sql.execution.metric.{SQLMetric, SQLMetrics}
 
 object GpuProjectExec {
   def projectAndClose[A <: GpuExpression](cb: ColumnarBatch, boundExprs: Seq[A]): ColumnarBatch = {
-    val nvtxRange = new NvtxRange("ProjectExec", NvtxColor.WHITE)
+    val nvtxRange = new NvtxRange("ProjectExec", NvtxColor.CYAN)
     try {
       try {
         project(cb, boundExprs)
@@ -139,65 +139,25 @@ case class GpuFilterExec(condition: GpuExpression, child: SparkPlan)
       batch: ColumnarBatch,
       boundCondition: GpuExpression,
       numOutputRows: SQLMetric): ColumnarBatch = {
-    val cols = new ArrayBuffer[GpuColumnVector](batch.numCols)
-    var success = false
-    var error: Throwable = null
-    try {
-      for (i <- 0 until batch.numCols) {
-        val col = batch.column(i).asInstanceOf[GpuColumnVector]
-        col.getBase.getType match {
-          // filter does not work on strings, so turn them to categories
-          // TODO we need a faster way to work with these values!!!
-          case DType.STRING =>
-            val catCv = col.getBase.asStringCategories
-            var successFrom = false
-            try {
-              cols += GpuColumnVector.from(catCv)
-              successFrom = true
-            } finally {
-              if (!successFrom) {
-                catCv.close()
-              }
-            }
-          case _ => cols += col.incRefCount()
-        }
-      }
-      success = true
+    val batchWithCategories = try {
+      GpuColumnVector.convertToStringCategoriesIfNeeded(batch)
     } finally {
-      if (!success) {
-        // this foreach will not throw
-        cols.foreach(col => {
-          try {
-            col.close()
-          } catch {
-            case t: Throwable =>
-              if (error == null) {
-                error = t
-              } else {
-                error.addSuppressed(t)
-              }
-          }
-        })
-      }
-      // throw error if there were problems closing
-      if (error != null) {
-        throw error
-      }
+      batch.close()
     }
 
     var filterConditionCv: GpuColumnVector = null
     var tbl: cudf.Table = null
     var filtered: cudf.Table = null
+    var error: Throwable = null
     val filteredBatch = try {
-      val batchWithCategories = new ColumnarBatch(cols.toArray, batch.numRows)
       filterConditionCv = boundCondition.columnarEval(batchWithCategories).asInstanceOf[GpuColumnVector]
-      tbl = new cudf.Table(cols.map(_.getBase): _*)
+      tbl = GpuColumnVector.from(batchWithCategories)
       filtered = tbl.filter(filterConditionCv.getBase)
       numOutputRows += filtered.getRowCount
       GpuColumnVector.from(filtered)
     } finally {
       // this foreach will not throw
-      (Seq(filtered, tbl, filterConditionCv, batch) ++ cols).foreach (toClose => {
+      Seq(filtered, tbl, filterConditionCv, batchWithCategories).foreach { toClose =>
         try {
           if (toClose != null) {
             toClose.close()
@@ -210,7 +170,7 @@ case class GpuFilterExec(condition: GpuExpression, child: SparkPlan)
               error.addSuppressed(t)
             }
         }
-      })
+      }
       if (error != null) {
         throw error
       }
