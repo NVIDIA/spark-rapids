@@ -132,7 +132,6 @@ case class GpuFilterExec(condition: GpuExpression, child: SparkPlan)
         filterBatch(batch, boundCondition, numOutputRows)
       } finally {
         nvtxRange.close()
-        (Seq(filtered, tbl, filterConditionCv, batch) ++ cols).safeClose()
       }
     }
   }

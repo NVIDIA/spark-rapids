@@ -125,8 +125,6 @@ class GpuColumnarBatchSorter(
             }
           } finally {
             nvtxRange.close()
-            inputCvs.safeClose()
-            batch.close()
           }
         }
         val nvtxRange = new NvtxRange("sort concatenate", NvtxColor.YELLOW)
