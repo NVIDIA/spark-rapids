@@ -113,9 +113,9 @@ object RapidsPluginImplicits {
       * @return - a sequence of B, in the success case
       */
     def safeMap[A, B <: AutoCloseable, Repr, That](
-      in: SeqLike[A, Repr], 
-      fn: A => B)
-      (implicit bf: CanBuildFrom[Repr, B, That]): That = {
+        in: SeqLike[A, Repr], 
+        fn: A => B)
+        (implicit bf: CanBuildFrom[Repr, B, That]): That = {
       def builder: mutable.Builder[B, That] = {
         val b = bf(in.asInstanceOf[Repr])
         b.sizeHint(in)
