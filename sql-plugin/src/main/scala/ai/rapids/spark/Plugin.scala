@@ -22,6 +22,7 @@ import scala.reflect.ClassTag
 
 import ai.rapids.cudf.{Cuda, Rmm, RmmAllocationMode}
 import ai.rapids.spark
+import ai.rapids.spark.GpuMetricNames._
 
 import org.apache.spark.{ExecutorPlugin, SparkEnv}
 import org.apache.spark.internal.Logging
@@ -39,6 +40,7 @@ import org.apache.spark.sql.execution.datasources.v2.orc.OrcScan
 import org.apache.spark.sql.execution.datasources.v2.parquet.ParquetScan
 import org.apache.spark.sql.execution.exchange.{BroadcastExchangeExec, ShuffleExchangeExec}
 import org.apache.spark.sql.execution.joins._
+import org.apache.spark.sql.execution.metric.{SQLMetric, SQLMetrics}
 import org.apache.spark.sql.rapids._
 import org.apache.spark.sql.sources.v2.reader.Scan
 import org.apache.spark.sql.types._
@@ -69,6 +71,20 @@ trait GpuExec extends SparkPlan {
   }
 
   override def hashCode(): Int = super.hashCode()
+
+  override lazy val metrics: Map[String, SQLMetric] = Map(
+    NUM_OUTPUT_ROWS -> SQLMetrics.createMetric(sparkContext, "number of output rows"),
+    NUM_OUTPUT_BATCHES -> SQLMetrics.createMetric(sparkContext, "number of output columnar batches"),
+    TOTAL_TIME -> SQLMetrics.createNanoTimingMetric(sparkContext,
+      "total time")) ++ additionalMetrics
+
+  val additionalMetrics: Map[String, SQLMetric] = Map.empty
+}
+
+object GpuMetricNames {
+  val NUM_OUTPUT_ROWS =  "numOutputRows"
+  val NUM_OUTPUT_BATCHES = "numOutputBatches"
+  val TOTAL_TIME = "totalTime"
 }
 
 trait GpuPartitioning extends Partitioning {

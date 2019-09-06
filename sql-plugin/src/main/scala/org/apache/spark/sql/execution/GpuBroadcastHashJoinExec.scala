@@ -18,13 +18,14 @@ package org.apache.spark.sql.execution
 
 import ai.rapids.spark._
 
+import ai.rapids.spark.GpuMetricNames._
+
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.plans.JoinType
 import org.apache.spark.sql.catalyst.plans.physical.{BroadcastDistribution, Distribution, UnspecifiedDistribution}
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.execution.exchange.ReusedExchangeExec
 import org.apache.spark.sql.execution.joins._
-import org.apache.spark.sql.execution.metric.SQLMetrics
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
 case class GpuBroadcastHashJoinExec(
@@ -35,9 +36,6 @@ case class GpuBroadcastHashJoinExec(
     condition: Option[GpuExpression],
     left: SparkPlan,
     right: SparkPlan) extends BinaryExecNode with GpuHashJoin {
-
-  override lazy val metrics = Map(
-    "numOutputRows" -> SQLMetrics.createMetric(sparkContext, "number of output rows"))
 
   override def requiredChildDistribution: Seq[Distribution] = {
     val mode = HashedRelationBroadcastMode(buildKeys)
@@ -58,8 +56,9 @@ case class GpuBroadcastHashJoinExec(
     throw new IllegalStateException("GpuBroadcastHashJoin does not support row-based processing")
 
   override def doExecuteColumnar() : RDD[ColumnarBatch] = {
-    val numOutputRows = longMetric("numOutputRows")
-
+    val numOutputRows = longMetric(NUM_OUTPUT_ROWS)
+    val numOutputBatches = longMetric(NUM_OUTPUT_BATCHES)
+    val totalTime = longMetric(TOTAL_TIME)
     val broadcastRelation = broadcastExchange
       .executeColumnarBroadcast[SerializableGpuColumnarBatch]()
 
@@ -71,6 +70,7 @@ case class GpuBroadcastHashJoinExec(
         val combined = combine(keys, broadcastRelation.value.batch)
         val asStringCat = GpuColumnVector.convertToStringCategoriesIfNeeded(combined)
         val ret = GpuColumnVector.from(asStringCat)
+        numOutputBatches += 1
         // Don't warn for a leak, because we cannot control when we are done with this
         (0 until ret.getNumberOfColumns).foreach(ret.getColumn(_).noWarnLeakExpected())
         ret
@@ -80,7 +80,9 @@ case class GpuBroadcastHashJoinExec(
 
       override def next(): ColumnarBatch = {
         val cb = it.next()
+        val startTime = System.nanoTime()
         val ret = doJoin(builtTable, cb)
+        totalTime += (System.nanoTime() - startTime)
         numOutputRows += ret.numRows()
         ret
       }

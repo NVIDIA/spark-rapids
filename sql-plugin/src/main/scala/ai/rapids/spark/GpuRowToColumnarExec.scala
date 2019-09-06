@@ -18,6 +18,7 @@ package ai.rapids.spark
 
 import ai.rapids.cudf.{NvtxColor, NvtxRange}
 import ai.rapids.spark.GpuColumnVector.GpuColumnarBatchBuilder
+import ai.rapids.spark.GpuMetricNames._
 
 import org.apache.spark.broadcast.Broadcast
 import org.apache.spark.rdd.RDD
@@ -299,16 +300,18 @@ case class GpuRowToColumnarExec(child: SparkPlan, goal: CoalesceGoal)
     TrampolineUtil.doExecuteBroadcast(child)
   }
 
-  override lazy val metrics: Map[String, SQLMetric] = Map(
+  override val additionalMetrics: Map[String, SQLMetric] = Map(
     "numInputRows" -> SQLMetrics.createMetric(sparkContext, "number of input rows"),
-    "numOutputBatches" -> SQLMetrics.createMetric(sparkContext, "number of output batches")
+    "buildTime" -> SQLMetrics.createNanoTimingMetric(sparkContext, "build time")
   )
 
   override def doExecuteColumnar(): RDD[ColumnarBatch] = {
     // TODO need to add in the GPU accelerated unsafe row translation when there is no
     // variable length operations.
     val numInputRows = longMetric("numInputRows")
-    val numOutputBatches = longMetric("numOutputBatches")
+    val numOutputBatches = longMetric(NUM_OUTPUT_BATCHES)
+    val totalTime = longMetric(TOTAL_TIME)
+    val buildTime = longMetric("buildTime")
     val targetRows = goal.targetSize
     val localSchema = schema
     val converters = new GpuRowToColumnConverter(localSchema)
@@ -333,6 +336,7 @@ case class GpuRowToColumnarExec(child: SparkPlan, goal: CoalesceGoal)
           // TODO eventually we should be smarter about allocating memory for these batches
           // so we can support building large batches with all of the data.
           val builders = new GpuColumnarBatchBuilder(localSchema, targetRows.toInt, null)
+          val nvtxRange = new NvtxWithMetrics("Build Batch", NvtxColor.DARK_GREEN, totalTime)
           try {
             var rowCount = 0
             while (rowCount < targetRows && rowIter.hasNext) {
@@ -343,13 +347,19 @@ case class GpuRowToColumnarExec(child: SparkPlan, goal: CoalesceGoal)
             if (rowIter.hasNext && (rowCount + 1L) > goal.targetSize) {
               goal.whenTargetExceeded(rowCount + 1L)
             }
-            val ret = builders.build(rowCount)
+            val buildRange = new NvtxWithMetrics("Build Time", NvtxColor.GREEN, buildTime)
+            val ret = try {
+              builders.build(rowCount)
+            } finally {
+              buildRange.close()
+            }
             numInputRows += rowCount
             numOutputBatches += 1
             // The returned batch will be closed by the consumer of it
             ret
           } finally {
             builders.close()
+            nvtxRange.close()
           }
         }
       }

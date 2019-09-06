@@ -17,22 +17,23 @@
 package ai.rapids.spark
 
 import ai.rapids.cudf
-import ai.rapids.cudf.{DType, NvtxColor, NvtxRange}
+import ai.rapids.cudf.NvtxColor
 import ai.rapids.spark.RapidsPluginImplicits._
+import ai.rapids.spark.GpuMetricNames._
 
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.expressions.{Attribute, AttributeReference, Expression, IsNotNull, NamedExpression, NullIntolerant, PredicateHelper, SortOrder}
 import org.apache.spark.sql.execution.{SparkPlan, TrampolineUtil, UnaryExecNode}
 import org.apache.spark.sql.vectorized.{ColumnarBatch, ColumnVector}
-import scala.collection.mutable.ArrayBuffer
 
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.plans.physical.Partitioning
-import org.apache.spark.sql.execution.metric.{SQLMetric, SQLMetrics}
+import org.apache.spark.sql.execution.metric.SQLMetric
 
 object GpuProjectExec {
-  def projectAndClose[A <: GpuExpression](cb: ColumnarBatch, boundExprs: Seq[A]): ColumnarBatch = {
-    val nvtxRange = new NvtxRange("ProjectExec", NvtxColor.CYAN)
+  def projectAndClose[A <: GpuExpression](cb: ColumnarBatch, boundExprs: Seq[A],
+      totalTime: SQLMetric): ColumnarBatch = {
+    val nvtxRange = new NvtxWithMetrics("ProjectExec", NvtxColor.CYAN, totalTime)
     try {
       try {
         project(cb, boundExprs)
@@ -72,9 +73,16 @@ case class GpuProjectExec(projectList: Seq[GpuExpression], child: SparkPlan)
     throw new IllegalStateException(s"Row-based execution should not occur for $this")
 
   override def doExecuteColumnar() : RDD[ColumnarBatch] = {
+    val numOutputRows = longMetric(NUM_OUTPUT_ROWS)
+    val numOutputBatches = longMetric(NUM_OUTPUT_BATCHES)
+    val totalTime = longMetric(TOTAL_TIME)
     val boundProjectList = GpuBindReferences.bindReferences(projectList, child.output)
     val rdd = child.executeColumnar()
-    rdd.map(cb => GpuProjectExec.projectAndClose(cb, boundProjectList))
+    rdd.map { cb =>
+      numOutputBatches += 1
+      numOutputRows += cb.numRows()
+      GpuProjectExec.projectAndClose(cb, boundProjectList, totalTime)
+    }
   }
 }
 
@@ -115,21 +123,20 @@ case class GpuFilterExec(condition: GpuExpression, child: SparkPlan)
 
   override def outputPartitioning: Partitioning = child.outputPartitioning
 
-  override lazy val metrics = Map(
-    "numOutputRows" -> SQLMetrics.createMetric(sparkContext, "number of output rows"))
-
   override def doExecute(): RDD[InternalRow] =
     throw new IllegalStateException(s"Row-based execution should not occur for $this")
 
   override def doExecuteColumnar(): RDD[ColumnarBatch] = {
-    val numOutputRows = longMetric("numOutputRows")
+    val numOutputRows = longMetric(NUM_OUTPUT_ROWS)
+    val numOutputBatches = longMetric(NUM_OUTPUT_BATCHES)
+    val totalTime = longMetric(TOTAL_TIME)
     val boundCondition = GpuBindReferences.bindReference(condition, child.output)
     val rdd = child.executeColumnar()
 
     rdd.map { batch =>
-      val nvtxRange = new NvtxRange("filter batch", NvtxColor.YELLOW)
+      val nvtxRange = new NvtxWithMetrics("filter batch", NvtxColor.YELLOW, totalTime)
       try {
-        filterBatch(batch, boundCondition, numOutputRows)
+        filterBatch(batch, boundCondition, numOutputRows, numOutputBatches)
       } finally {
         nvtxRange.close()
       }
@@ -139,7 +146,8 @@ case class GpuFilterExec(condition: GpuExpression, child: SparkPlan)
   private def filterBatch(
       batch: ColumnarBatch,
       boundCondition: GpuExpression,
-      numOutputRows: SQLMetric): ColumnarBatch = {
+      numOutputRows: SQLMetric,
+      numOutputBatches: SQLMetric): ColumnarBatch = {
     val batchWithCategories = try {
       GpuColumnVector.convertToStringCategoriesIfNeeded(batch)
     } finally {
@@ -160,6 +168,8 @@ case class GpuFilterExec(condition: GpuExpression, child: SparkPlan)
       Seq(filtered, tbl, filterConditionCv, batchWithCategories).safeClose()
     }
 
+    numOutputBatches += 1
+    numOutputRows += filteredBatch.numRows()
     filteredBatch
   }
 }

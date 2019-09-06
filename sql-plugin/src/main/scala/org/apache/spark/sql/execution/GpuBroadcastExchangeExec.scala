@@ -23,15 +23,15 @@ import java.util.UUID
 import scala.concurrent.{ExecutionContext, Promise}
 import scala.util.control.NonFatal
 
-import ai.rapids.cudf.{JCudfSerialization, Table}
+import ai.rapids.cudf.JCudfSerialization
 import ai.rapids.spark.{ConcatAndConsumeAll, GpuColumnVector, GpuExec}
+import ai.rapids.spark.GpuMetricNames._
 import ai.rapids.spark.RapidsPluginImplicits._
 import com.google.common.util.concurrent.ThreadFactoryBuilder
 
 import org.apache.spark.{broadcast, SparkException}
 import org.apache.spark.launcher.SparkLauncher
 import org.apache.spark.rdd.RDD
-import org.apache.spark.sql.catalyst.expressions.Attribute
 import org.apache.spark.sql.catalyst.plans.physical.{BroadcastMode, BroadcastPartitioning, Partitioning}
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.execution.exchange.Exchange
@@ -102,11 +102,11 @@ case class GpuBroadcastExchangeExec(
     mode: BroadcastMode,
     child: SparkPlan) extends Exchange with GpuExec {
 
-  override lazy val metrics = Map(
+  override val additionalMetrics = Map(
     "dataSize" -> SQLMetrics.createSizeMetric(sparkContext, "data size"),
-    "collectTime" -> SQLMetrics.createTimingMetric(sparkContext, "time to collect"),
-    "buildTime" -> SQLMetrics.createTimingMetric(sparkContext, "time to build"),
-    "broadcastTime" -> SQLMetrics.createTimingMetric(sparkContext, "time to broadcast"))
+    "collectTime" -> SQLMetrics.createNanoTimingMetric(sparkContext, "time to collect"),
+    "buildTime" -> SQLMetrics.createNanoTimingMetric(sparkContext, "time to build"),
+    "broadcastTime" -> SQLMetrics.createNanoTimingMetric(sparkContext, "time to broadcast"))
 
   override def outputPartitioning: Partitioning = BroadcastPartitioning(mode)
 
@@ -133,6 +133,9 @@ case class GpuBroadcastExchangeExec(
   lazy val relationFuture: Future[broadcast.Broadcast[Any]] = {
     // relationFuture is used in "doExecute". Therefore we can get the execution id correctly here.
     val executionId = sparkContext.getLocalProperty(SQLExecution.EXECUTION_ID_KEY)
+    val numOutputBatches = longMetric(NUM_OUTPUT_BATCHES)
+    val numOutputRows = longMetric(NUM_OUTPUT_ROWS)
+    val totalTime = longMetric(TOTAL_TIME)
     val task = new Callable[broadcast.Broadcast[Any]]() {
       override def call(): broadcast.Broadcast[Any] = {
         // This will run in another thread. Set the execution id so that we can connect these jobs
@@ -168,9 +171,11 @@ case class GpuBroadcastExchangeExec(
               throw new SparkException(
                 s"Cannot broadcast the table with 512 million or more rows: $numRows rows")
             }
+            numOutputBatches += 1
+            numOutputRows += numRows
             val beforeBuild = System.nanoTime()
-            longMetric("collectTime") +=
-              TimeUnit.NANOSECONDS.toMillis(beforeBuild - beforeCollect)
+            val collectTime = beforeBuild - beforeCollect
+            longMetric("collectTime") += collectTime
 
             //we only support hashjoin so this is a noop val relation = mode.transform(input, Some(numRows))
 
@@ -184,12 +189,13 @@ case class GpuBroadcastExchangeExec(
             }
 
             val beforeBroadcast = System.nanoTime()
-            longMetric("buildTime") += TimeUnit.NANOSECONDS.toMillis(beforeBroadcast - beforeBuild)
+            val buildTime = beforeBroadcast - beforeBuild
+            longMetric("buildTime") += buildTime
 
             // Broadcast the relation
             val broadcasted = sparkContext.broadcast(batch.asInstanceOf[Any])
-            longMetric("broadcastTime") += TimeUnit.NANOSECONDS.toMillis(
-              System.nanoTime() - beforeBroadcast)
+            totalTime += (System.nanoTime() - beforeBroadcast) + collectTime + buildTime
+            longMetric("broadcastTime") += System.nanoTime() - beforeBroadcast
 
             SQLMetrics.postDriverMetricUpdates(sparkContext, executionId, metrics.values.toSeq)
             promise.success(broadcasted)
