@@ -59,7 +59,7 @@ object TpchLikeSpark {
     StructField("o_custkey", LongType),
     StructField("o_orderstatus", StringType),
     StructField("o_totalprice", DoubleType),
-    StructField("o_orderdate", StringType), //TODO should this be a date type??
+    StructField("o_orderdate", DateType),
     StructField("o_orderpriority", StringType),
     StructField("o_clerk", StringType),
     StructField("o_shippriority", LongType),
@@ -87,9 +87,9 @@ object TpchLikeSpark {
     StructField("l_tax", DoubleType),
     StructField("l_returnflag", StringType),
     StructField("l_linestatus", StringType),
-    StructField("l_shipdate", StringType), //TODO should this be a date type??
-    StructField("l_commitdate", StringType), //TODO should this be a date type??
-    StructField("l_receiptdate", StringType), //TODO should this be a date type??
+    StructField("l_shipdate", DateType),
+    StructField("l_commitdate", DateType),
+    StructField("l_receiptdate", DateType),
     StructField("l_shipinstruct", StringType),
     StructField("l_shipmode", StringType),
     StructField("l_comment", StringType)
