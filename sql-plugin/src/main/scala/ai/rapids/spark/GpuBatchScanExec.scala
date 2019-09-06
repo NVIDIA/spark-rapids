@@ -24,6 +24,7 @@ import scala.util.control.NonFatal
 
 import ai.rapids.cudf.{HostMemoryBuffer, NvtxColor, NvtxRange, Table}
 import ai.rapids.cudf
+import ai.rapids.spark.GpuMetricNames._
 import org.apache.hadoop.conf.Configuration
 import org.apache.hadoop.fs.Path
 import org.apache.hadoop.io.compress.CompressionCodecFactory
@@ -44,6 +45,7 @@ import org.apache.spark.sql.catalyst.util.PermissiveMode
 import org.apache.spark.sql.execution.datasources.v2.csv.CSVScan
 import org.apache.spark.sql.execution.QueryExecutionException
 import org.apache.spark.sql.execution.datasources.csv.CSVDataSource
+import org.apache.spark.sql.execution.metric.SQLMetric
 import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.util.CaseInsensitiveStringMap
 import org.apache.spark.sql.vectorized.ColumnarBatch
@@ -83,6 +85,11 @@ case class GpuBatchScanExec(
 
   override def supportsColumnar = true
 
+  scan match {
+    case s: ScanWithMetrics => s.metrics = metrics
+    case _ =>
+  }
+
   override lazy val partitions: Seq[InputPartition] = batch.planInputPartitions()
 
   override lazy val readerFactory: PartitionReaderFactory = batch.createReaderFactory()
@@ -94,6 +101,11 @@ case class GpuBatchScanExec(
   override def doCanonicalize(): GpuBatchScanExec = {
     this.copy(output = output.map(QueryPlan.normalizeExpressions(_, output)))
   }
+}
+
+trait ScanWithMetrics {
+  //this is initialized by the exec post creation
+  var metrics : Map[String, SQLMetric] = Map.empty
 }
 
 object GpuCSVScan {
@@ -189,7 +201,8 @@ case class GpuCSVScan(
     readPartitionSchema: StructType, // schema for the parts that come from the file path
     options: CaseInsensitiveStringMap,
     maxReaderBatchSize: Integer)
-  extends TextBasedFileScan(sparkSession, fileIndex, readDataSchema, readPartitionSchema, options) {
+  extends TextBasedFileScan(sparkSession, fileIndex, readDataSchema, readPartitionSchema, options)
+  with ScanWithMetrics {
 
   private lazy val parsedOptions: CSVOptions = new CSVOptions(
     options.asScala.toMap,
@@ -218,7 +231,7 @@ case class GpuCSVScan(
       new GpuSerializableConfiguration(hadoopConf))
 
     GpuCSVPartitionReaderFactory(sparkSession.sessionState.conf, broadcastedConf,
-      dataSchema, readDataSchema, readPartitionSchema, parsedOptions, maxReaderBatchSize)
+      dataSchema, readDataSchema, readPartitionSchema, parsedOptions, maxReaderBatchSize, metrics)
   }
 }
 
@@ -229,7 +242,8 @@ case class GpuCSVPartitionReaderFactory(
     readDataSchema: StructType,
     partitionSchema: StructType, // TODO need to filter these out, or support pulling them in. These are values from the file name/path itself
     parsedOptions: CSVOptions,
-    maxReaderBatchSize: Integer) extends FilePartitionReaderFactory {
+    maxReaderBatchSize: Integer,
+    metrics: Map[String, SQLMetric]) extends FilePartitionReaderFactory {
 
   override def buildReader(partitionedFile: PartitionedFile): PartitionReader[InternalRow] = {
     throw new IllegalStateException("ROW BASED PARSING IS NOT SUPPORTED ON THE GPU...")
@@ -237,7 +251,8 @@ case class GpuCSVPartitionReaderFactory(
 
   override def buildColumnarReader(partFile: PartitionedFile): PartitionReader[ColumnarBatch] = {
     val conf = broadcastedConf.value.value
-    val reader = new CSVPartitionReader(conf, partFile, dataSchema, readDataSchema, parsedOptions, maxReaderBatchSize)
+    val reader = new CSVPartitionReader(conf, partFile, dataSchema, readDataSchema, parsedOptions,
+      maxReaderBatchSize, metrics)
     ColumnarPartitionReaderWithPartitionValues.newReader(partFile, reader, partitionSchema)
   }
 }
@@ -249,11 +264,16 @@ class CSVPartitionReader(
     dataSchema: StructType,
     readDataSchema: StructType,
     parsedOptions: CSVOptions,
-    maxRowsPerChunk: Integer) extends PartitionReader[ColumnarBatch] {
+    maxRowsPerChunk: Integer,
+    execMetrics: Map[String, SQLMetric])
+  extends PartitionReader[ColumnarBatch] with ScanWithMetrics {
+
   private var batch: Option[ColumnarBatch] = None
   private val lineReader = new HadoopFileLinesReader(partFile, parsedOptions.lineSeparatorInRead, conf)
   private var isFirstChunkForIterator: Boolean = true
   private var isExhausted: Boolean = false
+
+  metrics = execMetrics
 
   private lazy val estimatedHostBufferSize: Long = {
     val rawPath = new Path(partFile.filePath)
@@ -348,7 +368,7 @@ class CSVPartitionReader(
   }
 
   private def readBatch(): Option[ColumnarBatch] = {
-    val nvtxRange = new NvtxRange("CSV readBatch", NvtxColor.GREEN)
+    val nvtxRange = new NvtxWithMetrics("CSV readBatch", NvtxColor.GREEN, metrics(TOTAL_TIME))
     try {
       val hasHeader = partFile.start == 0 && isFirstChunkForIterator && parsedOptions.headerFlag
       val table = readToTable(hasHeader)
@@ -359,6 +379,7 @@ class CSVPartitionReader(
           table.map(GpuColumnVector.from)
         }
       } finally {
+        metrics(NUM_OUTPUT_BATCHES) += 1
         table.foreach(_.close())
       }
     } finally {

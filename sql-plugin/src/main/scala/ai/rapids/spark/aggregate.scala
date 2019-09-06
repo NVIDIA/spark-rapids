@@ -17,7 +17,8 @@
 package ai.rapids.spark
 
 import ai.rapids.cudf
-import ai.rapids.cudf.{NvtxColor, NvtxRange}
+import ai.rapids.cudf.NvtxColor
+import ai.rapids.spark.GpuMetricNames._
 import ai.rapids.spark.RapidsPluginImplicits._
 
 import org.apache.spark.TaskContext
@@ -77,7 +78,11 @@ case class GpuHashAggregateExec(requiredChildDistributionExpressions: Option[Seq
   //       because it detected a spill
   //    d) sort based aggregation is then the mode forward, and not covered in this.
   override def doExecuteColumnar(): RDD[ColumnarBatch] = {
-    val numOutputRows = longMetric("numOutputRows")
+    val numOutputRows = longMetric(NUM_OUTPUT_ROWS)
+    val numOutputBatches = longMetric(NUM_OUTPUT_BATCHES)
+    val totalTime = longMetric(TOTAL_TIME)
+    val computeAggTime = longMetric("computeAggTime")
+    val concatTime = longMetric("concatTime")
     // These metrics are supported by the cpu hash aggregate
     //
     // We should eventually have gpu versions of:
@@ -99,7 +104,7 @@ case class GpuHashAggregateExec(requiredChildDistributionExpressions: Option[Seq
     //
     val rdd = child.executeColumnar()
     rdd.mapPartitions { cbIter => {
-      var batch: ColumnarBatch = null // incoming bach
+      var batch: ColumnarBatch = null // incoming batch
       //
       // aggregated[Input]Cb
       // This is the equivalent of the aggregation buffer for the cpu case with the grouping key.
@@ -159,7 +164,7 @@ case class GpuHashAggregateExec(requiredChildDistributionExpressions: Option[Seq
           //    obtaining ColumnVectors that can be aggregated
           batch = cbIter.next()
 
-          val nvtxRange = new NvtxRange("Hash Aggregate Batch", NvtxColor.YELLOW)
+          val nvtxRange = new NvtxWithMetrics("Hash Aggregate Batch", NvtxColor.YELLOW, totalTime)
           try {
             childCvs = processIncomingBatch(batch, boundInputReferences)
 
@@ -171,8 +176,9 @@ case class GpuHashAggregateExec(requiredChildDistributionExpressions: Option[Seq
             //     a) if this is the first batch, run aggregation and store the aggregated result
             //     b) if this is a subsequent batch, we need to merge the previously aggregated results
             //        with the incoming batch
+            //     c) also update total time and aggTime metrics
             aggregatedInputCb = computeAggregate(childCvs, finalMode, groupingExpressions,
-              if (finalMode) boundMergeAgg else boundUpdateAgg)
+              if (finalMode) boundMergeAgg else boundUpdateAgg, computeAggTime)
 
             childCvs.safeClose()
             childCvs = null
@@ -190,7 +196,7 @@ case class GpuHashAggregateExec(requiredChildDistributionExpressions: Option[Seq
               // batch sizes would go over a threshold, we'd spill the aggregatedCb,
               // and perform aggregation on the new batch (which would need to be merged, with the
               // spilled aggregates)
-              concatCvs = concatenateBatches(aggregatedInputCb, aggregatedCb)
+              concatCvs = concatenateBatches(aggregatedInputCb, aggregatedCb, concatTime)
               aggregatedCb.close()
               aggregatedCb = null
               aggregatedInputCb.close()
@@ -198,7 +204,8 @@ case class GpuHashAggregateExec(requiredChildDistributionExpressions: Option[Seq
 
               // 3) Compute aggregate. In subsequent iterations we'll use this result
               //    to concatenate against incoming batches (step 2)
-              aggregatedCb = computeAggregate(concatCvs, merge = true, groupingExpressions, boundMergeAgg)
+              aggregatedCb = computeAggregate(concatCvs, merge = true, groupingExpressions,
+                boundMergeAgg, computeAggTime)
               concatCvs.safeClose()
               concatCvs = null
             }
@@ -212,81 +219,87 @@ case class GpuHashAggregateExec(requiredChildDistributionExpressions: Option[Seq
         // We need to return a single row, that contains the initial values of each
         // aggregator.
         // Note: for grouped aggregates, we will eventually return an empty iterator.
-        if (aggregatedCb == null && groupingExpressions.isEmpty) {
-          val aggregateFunctions = aggregateExpressions.map(_.aggregateFunction)
-          val defaultValues = aggregateFunctions.asInstanceOf[Seq[GpuDeclarativeAggregate]].flatMap(_.initialValues)
-          val vecs = defaultValues.map(ref =>
-            GpuColumnVector.from(GpuScalar.from(ref.asInstanceOf[GpuLiteral].value, ref.dataType), 1))
-          aggregatedCb = new ColumnarBatch(vecs.toArray, 1)
-        }
-
-        // 4) Finally, project the result to the expected layout that Spark expects
-        //    i.e.: select avg(foo) from bar group by baz will produce:
-        //       Partial mode: 3 columns => [bar, sum(foo) as sum_foo, count(foo) as count_foo]
-        //       Final mode:   2 columns => [bar, sum(sum_foo) / sum(count_foo)]
-        finalCb = if (boundFinalProjections.isDefined) { 
-          if (aggregatedCb != null) {
-            val finalCvs =
-              boundFinalProjections.get.map { ref =>
-                // aggregatedCb is made up of ColumnVectors
-                // and the final projections from the aggregates won't change that,
-                // so we can assume they will be vectors after we eval
-                ref.columnarEval(aggregatedCb).asInstanceOf[GpuColumnVector]
-              }
-            aggregatedCb.close()
-            aggregatedCb = null
-            new ColumnarBatch(finalCvs.toArray, finalCvs.head.getRowCount.toInt)
-          } else {
-            null // this was a grouped aggregate, with an empty input
+        val finalNvtxRange = new NvtxWithMetrics("Final column eval", NvtxColor.YELLOW,
+          totalTime)
+        try {
+          if (aggregatedCb == null && groupingExpressions.isEmpty) {
+            val aggregateFunctions = aggregateExpressions.map(_.aggregateFunction)
+            val defaultValues = aggregateFunctions.asInstanceOf[Seq[GpuDeclarativeAggregate]].flatMap(_.initialValues)
+            val vecs = defaultValues.map(ref =>
+              GpuColumnVector.from(GpuScalar.from(ref.asInstanceOf[GpuLiteral].value, ref.dataType), 1))
+            aggregatedCb = new ColumnarBatch(vecs.toArray, 1)
           }
-        } else {
-          aggregatedCb
-        }
 
-        aggregatedCb = null
-
-        if (finalCb != null) {
-          // Perform the last project to get the correct shape that Spark expects. Note this will add things like
-          // literals, that were not part of the aggregate into the batch.
-          resultCvs = boundResultReferences.map { ref =>
-            val result = ref.columnarEval(finalCb)
-            // Result references can be virtually anything, we need to coerce
-            // them to be vectors since this is going into a ColumnarBatch
-            result match {
-              case cv: ColumnVector => cv.asInstanceOf[GpuColumnVector]
-              case _ => GpuColumnVector.from(GpuScalar.from(result), finalCb.numRows)
+          // 4) Finally, project the result to the expected layout that Spark expects
+          //    i.e.: select avg(foo) from bar group by baz will produce:
+          //       Partial mode: 3 columns => [bar, sum(foo) as sum_foo, count(foo) as count_foo]
+          //       Final mode:   2 columns => [bar, sum(sum_foo) / sum(count_foo)]
+          finalCb = if (boundFinalProjections.isDefined) {
+            if (aggregatedCb != null) {
+              val finalCvs =
+                boundFinalProjections.get.map { ref =>
+                  // aggregatedCb is made up of ColumnVectors
+                  // and the final projections from the aggregates won't change that,
+                  // so we can assume they will be vectors after we eval
+                  ref.columnarEval(aggregatedCb).asInstanceOf[GpuColumnVector]
+                }
+              aggregatedCb.close()
+              aggregatedCb = null
+              new ColumnarBatch(finalCvs.toArray, finalCvs.head.getRowCount.toInt)
+            } else {
+              null // this was a grouped aggregate, with an empty input
             }
-          }
-
-          finalCb.close()
-          finalCb = null
-
-          resultCb = if (resultCvs.isEmpty) {
-            new ColumnarBatch(Seq().toArray, 0)
           } else {
-            numOutputRows += resultCvs.head.getBase.getRowCount
-            new ColumnarBatch(resultCvs.toArray, resultCvs.head.getBase.getRowCount.toInt)
+            aggregatedCb
           }
-          success = true
-          new Iterator[ColumnarBatch] {
-            TaskContext.get().addTaskCompletionListener[Unit] { _ =>
-              if (resultCb != null) {
-                resultCb.close()
+
+          aggregatedCb = null
+
+          if (finalCb != null) {
+            // Perform the last project to get the correct shape that Spark expects. Note this will add things like
+            // literals, that were not part of the aggregate into the batch.
+            resultCvs = boundResultReferences.map { ref =>
+              val result = ref.columnarEval(finalCb)
+              // Result references can be virtually anything, we need to coerce
+              // them to be vectors since this is going into a ColumnarBatch
+              result match {
+                case cv: ColumnVector => cv.asInstanceOf[GpuColumnVector]
+                case _ => GpuColumnVector.from(GpuScalar.from(result), finalCb.numRows)
+              }
+            }
+
+            finalCb.close()
+            finalCb = null
+            resultCb = if (resultCvs.isEmpty) {
+              new ColumnarBatch(Seq().toArray, 0)
+            } else {
+              numOutputRows += resultCvs.head.getBase.getRowCount
+              new ColumnarBatch(resultCvs.toArray, resultCvs.head.getBase.getRowCount.toInt)
+            }
+            numOutputBatches += 1
+            success = true
+            new Iterator[ColumnarBatch] {
+              TaskContext.get().addTaskCompletionListener[Unit] { _ =>
+                if (resultCb != null) {
+                  resultCb.close()
+                  resultCb = null
+                }
+              }
+
+              override def hasNext: Boolean = resultCb != null
+
+              override def next(): ColumnarBatch = {
+                val out = resultCb
                 resultCb = null
+                out
               }
             }
-
-            override def hasNext: Boolean = resultCb != null
-
-            override def next(): ColumnarBatch = {
-              val out = resultCb
-              resultCb = null
-              out
-            }
+          } else {
+            // we had a grouped aggregate, without input
+            Iterator.empty
           }
-        } else {
-          // we had a grouped aggregate, without input
-          Iterator.empty
+        } finally {
+          finalNvtxRange.close()
         }
       } finally {
         if (!success) {
@@ -341,8 +354,9 @@ case class GpuHashAggregateExec(requiredChildDistributionExpressions: Option[Seq
     * @param aggregatedCb - this is a batch that was kept for concatenation
     * @return Seq[GpuColumnVector] with concatenated vectors
     */
-  private def concatenateBatches(aggregatedInputCb: ColumnarBatch, aggregatedCb: ColumnarBatch): Seq[GpuColumnVector] = {
-    val nvtxRange = new NvtxRange("concatenateBatches", NvtxColor.BLUE)
+  private def concatenateBatches(aggregatedInputCb: ColumnarBatch, aggregatedCb: ColumnarBatch,
+      concatTime: SQLMetric): Seq[GpuColumnVector] = {
+    val nvtxRange = new NvtxWithMetrics("concatenateBatches", NvtxColor.BLUE, concatTime)
     try {
       // get tuples of columns to concatenate
 
@@ -476,8 +490,9 @@ case class GpuHashAggregateExec(requiredChildDistributionExpressions: Option[Seq
   def computeAggregate(toAggregateCvs: Seq[GpuColumnVector],
                        merge: Boolean,
                        groupingExpressions: Seq[GpuExpression],
-                       aggregates: Seq[CudfAggregate]): ColumnarBatch  = {
-    val nvtxRange = new NvtxRange("computeAggregate", NvtxColor.CYAN)
+                       aggregates: Seq[CudfAggregate],
+                       computeAggTime: SQLMetric): ColumnarBatch  = {
+    val nvtxRange = new NvtxWithMetrics("computeAggregate", NvtxColor.CYAN, computeAggTime)
     try {
       if (groupingExpressions.nonEmpty) {
         // Perform group by aggregation
@@ -576,16 +591,15 @@ case class GpuHashAggregateExec(requiredChildDistributionExpressions: Option[Seq
     }
   }
 
-  //TODO: add metrics specific for the gpu hash aggregate
-  override lazy val metrics: Map[String, SQLMetric] = Map(
-    "numOutputRows" -> SQLMetrics.createMetric(sparkContext, "number of output rows"),
-
+  override val additionalMetrics = Map(
     // not supported in GPU
     "peakMemory" -> SQLMetrics.createSizeMetric(sparkContext, "peak memory"),
     "spillSize" -> SQLMetrics.createSizeMetric(sparkContext, "spill size"),
-    "aggTime" -> SQLMetrics.createTimingMetric(sparkContext, "time in aggregation build"),
     "avgHashProbe" ->
-      SQLMetrics.createAverageMetric(sparkContext, "avg hash probe bucket list iters"))
+      SQLMetrics.createAverageMetric(sparkContext, "avg hash probe bucket list iters"),
+    "computeAggTime"-> SQLMetrics.createNanoTimingMetric(sparkContext, "time in compute agg"),
+    "concatTime"-> SQLMetrics.createNanoTimingMetric(sparkContext, "time in batch concat")
+  )
 
   //
   // This section is derived (copied in most cases) from HashAggregateExec

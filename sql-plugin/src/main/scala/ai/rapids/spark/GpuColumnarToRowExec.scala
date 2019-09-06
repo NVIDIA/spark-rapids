@@ -16,7 +16,8 @@
 
 package ai.rapids.spark
 
-import ai.rapids.cudf.{NvtxColor, NvtxRange}
+import ai.rapids.cudf.NvtxColor
+import ai.rapids.spark.GpuMetricNames._
 
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.InternalRow
@@ -45,8 +46,7 @@ case class GpuColumnarToRowExec(child: SparkPlan) extends UnaryExecNode
   // codegen stage and needs to do the limit check.
   protected override def canCheckLimitNotReached: Boolean = true
 
-  override lazy val metrics: Map[String, SQLMetric] = Map(
-    "numOutputRows" -> SQLMetrics.createMetric(sparkContext, "number of output rows"),
+  override val additionalMetrics: Map[String, SQLMetric] = Map(
     "numInputBatches" -> SQLMetrics.createMetric(sparkContext, "number of input batches")
   )
 
@@ -55,8 +55,9 @@ case class GpuColumnarToRowExec(child: SparkPlan) extends UnaryExecNode
   }
 
   override def doExecute(): RDD[InternalRow] = {
-    val numOutputRows = longMetric("numOutputRows")
+    val numOutputRows = longMetric(NUM_OUTPUT_ROWS)
     val numInputBatches = longMetric("numInputBatches")
+    val totalTime = longMetric(TOTAL_TIME)
 
     // This avoids calling `output` in the RDD closure, so that we don't need to include the entire
     // plan (this) in the closure.
@@ -86,7 +87,7 @@ case class GpuColumnarToRowExec(child: SparkPlan) extends UnaryExecNode
           }
           if (batches.hasNext) {
             cb = batches.next()
-            val nvtxRange = new NvtxRange("ColumnarToRow batch", NvtxColor.RED)
+            val nvtxRange = new NvtxWithMetrics("ColumnarToRow batch", NvtxColor.RED, totalTime)
             try {
               (0 until cb.numCols()).foreach(
                 i => cb.column(i).asInstanceOf[GpuColumnVector].getBase.ensureOnHost())

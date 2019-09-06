@@ -25,6 +25,7 @@ import scala.collection.JavaConverters._
 import scala.collection.mutable.ArrayBuffer
 
 import ai.rapids.cudf.{HostMemoryBuffer, NvtxColor, NvtxRange, ParquetOptions, Table, TimeUnit}
+import ai.rapids.spark.GpuMetricNames._
 import org.apache.commons.io.output.{CountingOutputStream, NullOutputStream}
 import org.apache.commons.io.IOUtils
 import org.apache.hadoop.conf.Configuration
@@ -46,6 +47,7 @@ import org.apache.spark.sql.execution.datasources.v2.parquet.ParquetScan
 import org.apache.spark.sql.execution.datasources.v2.{FilePartitionReaderFactory, FileScan}
 import org.apache.spark.sql.execution.QueryExecutionException
 import org.apache.spark.sql.execution.datasources.parquet.{ParquetFilters, ParquetReadSupport}
+import org.apache.spark.sql.execution.metric.SQLMetric
 import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.sources.Filter
 import org.apache.spark.sql.sources.v2.reader.{InputPartition, PartitionReader, PartitionReaderFactory}
@@ -63,7 +65,8 @@ case class GpuParquetScan(
     pushedFilters: Array[Filter],
     options: CaseInsensitiveStringMap,
     rapidsConf: RapidsConf)
-  extends FileScan(sparkSession, fileIndex, readDataSchema, readPartitionSchema) {
+  extends FileScan(sparkSession, fileIndex, readDataSchema, readPartitionSchema)
+  with ScanWithMetrics {
 
   override def isSplitable(path: Path): Boolean = true
 
@@ -71,7 +74,7 @@ case class GpuParquetScan(
     val broadcastedConf = sparkSession.sparkContext.broadcast(
       new GpuSerializableConfiguration(hadoopConf))
     GpuParquetPartitionReaderFactory(sparkSession.sessionState.conf, broadcastedConf,
-      dataSchema, readDataSchema, readPartitionSchema, pushedFilters, rapidsConf)
+      dataSchema, readDataSchema, readPartitionSchema, pushedFilters, rapidsConf, metrics)
   }
 
   override def equals(obj: Any): Boolean = obj match {
@@ -116,7 +119,8 @@ case class GpuParquetPartitionReaderFactory(
     readDataSchema: StructType,
     partitionSchema: StructType,
     filters: Array[Filter],
-    @transient rapidsConf: RapidsConf) extends FilePartitionReaderFactory {
+    @transient rapidsConf: RapidsConf,
+    metrics: Map[String, SQLMetric]) extends FilePartitionReaderFactory {
   private val isCaseSensitive = sqlConf.caseSensitiveAnalysis
   private val enableParquetFilterPushDown: Boolean = sqlConf.parquetFilterPushDown
   private val pushDownDate = sqlConf.parquetFilterPushDownDate
@@ -165,7 +169,7 @@ case class GpuParquetPartitionReaderFactory(
     val columnPaths = clippedSchema.getPaths.asScala.map(x => ColumnPath.get(x:_*))
     val clippedBlocks = ParquetPartitionReader.clipBlocks(columnPaths, blocks.asScala)
     new ParquetPartitionReader(conf, file, filePath, clippedBlocks, clippedSchema,
-        readDataSchema, debugDumpPrefix, maxReadBatchSize)
+        readDataSchema, debugDumpPrefix, maxReadBatchSize, metrics)
   }
 }
 
@@ -194,10 +198,14 @@ class ParquetPartitionReader(
     clippedParquetSchema: MessageType,
     readDataSchema: StructType,
     debugDumpPrefix: String,
-    maxReadBatchSize: Integer) extends PartitionReader[ColumnarBatch] with Logging {
+    maxReadBatchSize: Integer,
+    execMetrics: Map[String, SQLMetric]) extends PartitionReader[ColumnarBatch] with Logging
+  with ScanWithMetrics {
   private var isExhausted: Boolean = false
   private var batch: Option[ColumnarBatch] = None
   private val blockIterator :  BufferedIterator[BlockMetaData] = clippedBlocks.iterator.buffered
+
+  metrics = execMetrics
 
   override def next(): Boolean = {
     batch.foreach(_.close())
@@ -350,7 +358,7 @@ class ParquetPartitionReader(
   }
 
   private def readBatch(): Option[ColumnarBatch] = {
-    val nvtxRange = new NvtxRange("Parquet readBatch", NvtxColor.GREEN)
+    val nvtxRange = new NvtxWithMetrics("Parquet readBatch", NvtxColor.GREEN, metrics(TOTAL_TIME))
     try {
       val currentChunkedBlocks = populateCurrentBlockChunk()
       if (readDataSchema.isEmpty) {
@@ -397,6 +405,7 @@ class ParquetPartitionReader(
           throw new QueryExecutionException(s"Expected ${readDataSchema.length} columns " +
               s"but read ${table.getNumberOfColumns} from $filePath")
         }
+        metrics(NUM_OUTPUT_BATCHES) += 1
         Some(table)
       }
     } finally {

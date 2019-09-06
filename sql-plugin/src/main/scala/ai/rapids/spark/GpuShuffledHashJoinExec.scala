@@ -16,8 +16,7 @@
 
 package ai.rapids.spark
 
-import java.util.concurrent.TimeUnit.NANOSECONDS
-
+import ai.rapids.spark.GpuMetricNames._
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.plans.JoinType
 import org.apache.spark.sql.execution.{BinaryExecNode, SparkPlan}
@@ -26,7 +25,7 @@ import org.apache.spark.sql.vectorized.ColumnarBatch
 import org.apache.spark.TaskContext
 import org.apache.spark.sql.catalyst.plans.physical.{Distribution, HashClusteredDistribution}
 import org.apache.spark.sql.catalyst.InternalRow
-import org.apache.spark.sql.execution.metric.SQLMetrics
+import org.apache.spark.sql.execution.metric.{SQLMetric, SQLMetrics}
 
 case class GpuShuffledHashJoinExec(
     leftKeys: Seq[GpuExpression],
@@ -37,10 +36,9 @@ case class GpuShuffledHashJoinExec(
     left: SparkPlan,
     right: SparkPlan) extends BinaryExecNode with GpuHashJoin {
 
-  override lazy val metrics = Map(
-    "numOutputRows" -> SQLMetrics.createMetric(sparkContext, "number of output rows"),
+  override val additionalMetrics: Map[String, SQLMetric] = Map(
     "buildDataSize" -> SQLMetrics.createSizeMetric(sparkContext, "data size of build side"),
-    "buildTime" -> SQLMetrics.createTimingMetric(sparkContext, "time to build hash map"))
+    "buildTime" -> SQLMetrics.createNanoTimingMetric(sparkContext, "time to build hash map"))
 
   override def requiredChildDistribution: Seq[Distribution] =
     HashClusteredDistribution(leftKeys) :: HashClusteredDistribution(rightKeys) :: Nil
@@ -56,14 +54,16 @@ case class GpuShuffledHashJoinExec(
   }
 
   override def doExecuteColumnar() : RDD[ColumnarBatch] = {
-    val numOutputRows = longMetric("numOutputRows")
     val buildDataSize = longMetric("buildDataSize")
+    val numOutputRows = longMetric(NUM_OUTPUT_ROWS)
+    val numOutputBatches = longMetric(NUM_OUTPUT_BATCHES)
+    val totalTime = longMetric(TOTAL_TIME)
     val buildTime = longMetric("buildTime")
 
     streamedPlan.executeColumnar().zipPartitions(buildPlan.executeColumnar()) {
       (streamIter, buildIter) => {
         var combinedSize = 0
-        val start = System.nanoTime()
+        val startTime = System.nanoTime()
         val buildBatch = ConcatAndConsumeAll.getSingleBatchWithVerification(buildIter, localBuildOutput)
         val asStringCatBatch = try {
           GpuColumnVector.convertToStringCategoriesIfNeeded(buildBatch)
@@ -84,15 +84,20 @@ case class GpuShuffledHashJoinExec(
           asStringCatBatch.close()
         }
 
-        buildTime += NANOSECONDS.toMillis(System.nanoTime() - start)
+        val delta = System.nanoTime() - startTime
+        buildTime += delta
+        totalTime += delta
         //TODO this does not take into account strings correctly.
         buildDataSize += combinedSize
         val context = TaskContext.get()
         context.addTaskCompletionListener[Unit](_ => builtTable.close())
 
         streamIter.map(cb => {
+          val startTime = System.nanoTime()
           val ret = doJoin(builtTable, cb)
+          totalTime += (System.nanoTime() - startTime)
           numOutputRows += ret.numRows()
+          numOutputBatches += 1
           ret
         })
       }

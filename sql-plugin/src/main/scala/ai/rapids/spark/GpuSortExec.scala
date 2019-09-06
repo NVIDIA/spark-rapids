@@ -16,13 +16,12 @@
 
 package ai.rapids.spark
 
-import java.util.concurrent.TimeUnit.NANOSECONDS
-
 import scala.collection.mutable.ArrayBuffer
 
 import ai.rapids.cudf
-import ai.rapids.cudf.{NvtxColor, NvtxRange, Table}
+import ai.rapids.cudf.{NvtxColor, Table}
 import ai.rapids.spark.GpuExpressionsUtils.evaluateBoundExpressions
+import ai.rapids.spark.GpuMetricNames._
 import ai.rapids.spark.RapidsPluginImplicits._
 
 import org.apache.spark.rdd.RDD
@@ -34,7 +33,7 @@ import org.apache.spark.TaskContext
 import org.apache.spark.sql.catalyst.plans.physical.{Distribution, OrderedDistribution, Partitioning, UnspecifiedDistribution}
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.analysis.TypeCheckResult
-import org.apache.spark.sql.execution.metric.{SQLMetric, SQLMetrics}
+import org.apache.spark.sql.execution.metric.SQLMetrics
 
 case class GpuSortExec(
     sortOrder: Seq[GpuSortOrder],
@@ -58,13 +57,13 @@ case class GpuSortExec(
   override def requiredChildDistribution: Seq[Distribution] =
     if (global) OrderedDistribution(sparkSortOrder) :: Nil else UnspecifiedDistribution :: Nil
 
-  override lazy val metrics: Map[String, SQLMetric] = Map(
-    "sortTime" -> SQLMetrics.createTimingMetric(sparkContext, "sort time"),
-    "peakMemory" -> SQLMetrics.createSizeMetric(sparkContext, "peak memory"),
-    "spillSize" -> SQLMetrics.createSizeMetric(sparkContext, "spill size"))
-
   override def doExecute(): RDD[InternalRow] =
     throw new IllegalStateException(s"Row-based execution should not occur for $this")
+
+  override val additionalMetrics = Map(
+    "sortTime" -> SQLMetrics.createNanoTimingMetric(sparkContext, "sort time"),
+    "peakMemory" -> SQLMetrics.createSizeMetric(sparkContext, "peak memory"),
+    "spillSize" -> SQLMetrics.createSizeMetric(sparkContext, "spill size"))
 
   override def doExecuteColumnar(): RDD[ColumnarBatch] = {
     val sortTime = longMetric("sortTime")
@@ -73,23 +72,27 @@ case class GpuSortExec(
     crdd.mapPartitions { cbIter =>
       val sorter = createBatchGpuSorter()
       val sortedIterator = sorter.sort(cbIter)
-      sortTime += NANOSECONDS.toMillis(sorter.getSortTimeNanos)
+      sortTime += sorter.getSortTimeNanos
       sortedIterator
     }
   }
 
   private def createBatchGpuSorter(): GpuColumnarBatchSorter = {
     val boundSortExprs = GpuBindReferences.bindReferences(sortOrder, output)
-    new GpuColumnarBatchSorter(schema, boundSortExprs)
+    new GpuColumnarBatchSorter(schema, boundSortExprs, this)
   }
 }
 
 class GpuColumnarBatchSorter(
     schema: StructType,
-    sortOrder: Seq[GpuSortOrder]) {
+    sortOrder: Seq[GpuSortOrder],
+    exec: GpuExec) {
 
   private var totalSortTimeNanos = 0L
   private val numSortCols = sortOrder.length
+  private val totalTime = exec.longMetric(TOTAL_TIME)
+  private val numOutputBatches = exec.longMetric(NUM_OUTPUT_BATCHES)
+  private val numOutputRows = exec.longMetric(NUM_OUTPUT_ROWS)
 
   def getSortTimeNanos: Long = totalSortTimeNanos
 
@@ -110,7 +113,7 @@ class GpuColumnarBatchSorter(
       try {
         while (batchIter.hasNext) {
           val batch = batchIter.next()
-          val nvtxRange = new NvtxRange("sort input batch", NvtxColor.WHITE)
+          val nvtxRange = new NvtxWithMetrics("sort input batch", NvtxColor.WHITE, totalTime)
           try {
             try {
               numRows += batch.numRows
@@ -127,9 +130,10 @@ class GpuColumnarBatchSorter(
             nvtxRange.close()
           }
         }
-        val nvtxRange = new NvtxRange("sort concatenate", NvtxColor.YELLOW)
+        val nvtxRange = new NvtxWithMetrics("sort concatenate", NvtxColor.YELLOW, totalTime)
         try {
           if (numRows == 0 || inputTbls.isEmpty) return Iterator.empty
+          numOutputRows += numRows
           if (inputTbls.length > 1) {
             concatTbl = Table.concatenate(inputTbls: _*)
           } else {
@@ -142,14 +146,15 @@ class GpuColumnarBatchSorter(
         inputTbls.safeClose()
       }
 
-      val nvtxRange = new NvtxRange("sort", NvtxColor.ORANGE)
+      val nvtxRange = new NvtxWithMetrics("sort", NvtxColor.ORANGE, totalTime)
       try {
         val orderByArgs = sortOrder.zipWithIndex.map { case (order, index) =>
           if (order.isAscending) Table.asc(index) else Table.desc(index)
         }
 
-        val startTimestamp = System.nanoTime
+        val startTimestamp = System.nanoTime()
         resultCb = doGpuSort(concatTbl, orderByArgs)
+        numOutputBatches += 1
         totalSortTimeNanos += System.nanoTime - startTimestamp
         success = true
       } finally {

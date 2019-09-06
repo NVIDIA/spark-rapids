@@ -27,6 +27,7 @@ import scala.collection.mutable.ArrayBuffer
 
 import ai.rapids.cudf.{HostMemoryBuffer, NvtxColor, NvtxRange, ORCOptions, Table, TimeUnit}
 import ai.rapids.spark.GpuOrcPartitionReader.{OrcOutputStripe, OrcPartitionReaderContext}
+import ai.rapids.spark.GpuMetricNames._
 import com.google.protobuf25.CodedOutputStream
 import org.apache.commons.io.IOUtils
 import org.apache.hadoop.conf.Configuration
@@ -47,6 +48,7 @@ import org.apache.spark.sql.execution.datasources.v2.orc.OrcScan
 import org.apache.spark.sql.execution.datasources.v2.{FilePartitionReaderFactory, FileScan}
 import org.apache.spark.sql.execution.QueryExecutionException
 import org.apache.spark.sql.execution.datasources.orc.OrcUtils
+import org.apache.spark.sql.execution.metric.SQLMetric
 import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.rapids.OrcFilters
 import org.apache.spark.sql.sources.Filter
@@ -65,7 +67,8 @@ case class GpuOrcScan(
     options: CaseInsensitiveStringMap,
     pushedFilters: Array[Filter],
     rapidsConf: RapidsConf)
-  extends FileScan(sparkSession, fileIndex, readDataSchema, readPartitionSchema) {
+  extends FileScan(sparkSession, fileIndex, readDataSchema, readPartitionSchema)
+  with ScanWithMetrics {
 
   override def isSplitable(path: Path): Boolean = true
 
@@ -77,7 +80,7 @@ case class GpuOrcScan(
     val broadcastedConf = sparkSession.sparkContext.broadcast(
       new GpuSerializableConfiguration(hadoopConf))
     GpuOrcPartitionReaderFactory(sparkSession.sessionState.conf, broadcastedConf,
-      dataSchema, readDataSchema, readPartitionSchema, pushedFilters, rapidsConf)
+      dataSchema, readDataSchema, readPartitionSchema, pushedFilters, rapidsConf, metrics)
   }
 
   override def equals(obj: Any): Boolean = obj match {
@@ -113,7 +116,8 @@ case class GpuOrcPartitionReaderFactory(
     readDataSchema: StructType,
     partitionSchema: StructType,
     pushedFilters: Array[Filter],
-    @transient rapidsConf: RapidsConf) extends FilePartitionReaderFactory {
+    @transient rapidsConf: RapidsConf,
+    metrics : Map[String, SQLMetric]) extends FilePartitionReaderFactory {
   private val isCaseSensitive = sqlConf.caseSensitiveAnalysis
   private val debugDumpPrefix = rapidsConf.orcDebugDumpPrefix
   private val maxReadBatchSize: Integer = rapidsConf.maxReadBatchSize
@@ -132,7 +136,7 @@ case class GpuOrcPartitionReaderFactory(
 
     val fullSchema = StructType(dataSchema ++ partitionSchema)
     val reader = new GpuOrcPartitionReader(conf, partFile, dataSchema, readDataSchema,
-      fullSchema, pushedFilters, debugDumpPrefix, maxReadBatchSize)
+      fullSchema, pushedFilters, debugDumpPrefix, maxReadBatchSize, metrics)
     ColumnarPartitionReaderWithPartitionValues.newReader(partFile, reader, partitionSchema)
   }
 }
@@ -194,9 +198,13 @@ class GpuOrcPartitionReader(
     fullSchema: StructType,
     pushedFilters: Array[Filter],
     debugDumpPrefix: String,
-    maxReadBatchSize: Integer) extends PartitionReader[ColumnarBatch] with Logging {
+    maxReadBatchSize: Integer,
+    execMetrics : Map[String, SQLMetric]) extends PartitionReader[ColumnarBatch] with Logging
+  with ScanWithMetrics {
   private var batch: Option[ColumnarBatch] = None
   private val ctx = initializeOrcReaders
+
+  metrics = execMetrics
 
   private def initializeOrcReaders: OrcPartitionReaderContext = {
     val filePath = new Path(new URI(partFile.filePath))
@@ -247,7 +255,7 @@ class GpuOrcPartitionReader(
   }
 
   private def readBatch(): Option[ColumnarBatch] = {
-    val nvtxRange = new NvtxRange("ORC readBatch", NvtxColor.GREEN)
+    val nvtxRange = new NvtxWithMetrics("ORC readBatch", NvtxColor.GREEN, metrics(TOTAL_TIME))
     try {
       val currentStripes = populateCurrentBlockChunk()
       if (readDataSchema.isEmpty) {
@@ -649,6 +657,7 @@ class GpuOrcPartitionReader(
           throw new QueryExecutionException(s"Expected ${readDataSchema.length} columns " +
               s"but read ${table.getNumberOfColumns} from $partFile")
         }
+        metrics(NUM_OUTPUT_BATCHES) += 1
         Some(table)
       }
     } finally {
