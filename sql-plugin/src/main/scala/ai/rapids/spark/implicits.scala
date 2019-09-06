@@ -63,7 +63,7 @@ object RapidsPluginImplicits {
     }
   }
 
-  class MapsSafely {
+  class MapsSafely[A, Repr] {
     /**
       * safeMap: safeMap implementation that is leveraged by other type-specific implicits.
       *
@@ -106,14 +106,14 @@ object RapidsPluginImplicits {
       *
       * @param in - the Seq[A] to map on
       * @param fn - a function that takes A, and produces B (a subclass of AutoCloseable)
-      * @tparam A - the type of the elements in Seq
-      * @tparam B - the type of the elements produced in the safeMap (should be subclasses of AutoCloseable)
+      * @tparam A    - the type of the elements in Seq
+      * @tparam B    - the type of the elements produced in the safeMap (should be subclasses of AutoCloseable)
       * @tparam Repr - the type of the input collection (needed by builder)
       * @tparam That - the type of the output collection (needed by builder)
       * @return - a sequence of B, in the success case
       */
-    def safeMap[A, B <: AutoCloseable, Repr, That](
-        in: SeqLike[A, Repr], 
+    protected def safeMap[B <: AutoCloseable, That](
+        in: SeqLike[A, Repr],
         fn: A => B)
         (implicit bf: CanBuildFrom[Repr, B, That]): That = {
       def builder: mutable.Builder[B, That] = {
@@ -121,7 +121,6 @@ object RapidsPluginImplicits {
         b.sizeHint(in)
         b
       }
-
       val b = builder
       for (x <- in) {
         var success = false
@@ -146,8 +145,7 @@ object RapidsPluginImplicits {
     }
   }
 
-
-  implicit class AutoCloseableProducingSeq[A, B <: AutoCloseable](val in: Seq[A]) extends MapsSafely {
+  implicit class AutoCloseableProducingSeq[A](val in: Seq[A]) extends MapsSafely[A, Seq[A]] {
     /**
       * safeMap: implicit map on a Seq[A] that produces Seq[B], where B is a subclass of AutoCloseable.
       * See [[MapsSafely.safeMap]] for a more detailed explanation.
@@ -157,10 +155,10 @@ object RapidsPluginImplicits {
       * @tparam B - the type of the elements produced in the safeMap (should be subclasses of AutoCloseable)
       * @return - a sequence of B, in the success case
       */
-    def safeMap(fn: A => B): Seq[B] = super.safeMap(in, fn)
+    def safeMap[B <: AutoCloseable](fn: A => B): Seq[B] = super.safeMap(in, fn)
   }
 
-  implicit class AutoCloseableProducingArray[A, B <: AutoCloseable : ClassTag](val in: Array[A]) extends MapsSafely {
+  implicit class AutoCloseableProducingArray[A](val in: Array[A]) extends MapsSafely[A, Array[A]] {
     /**
       * safeMap: implicit map on a Seq[A] that produces Seq[B], where B is a subclass of AutoCloseable.
       * See [[MapsSafely.safeMap]] for a more detailed explanation.
@@ -170,10 +168,10 @@ object RapidsPluginImplicits {
       * @tparam B - the type of the elements produced in the safeMap (should be subclasses of AutoCloseable)
       * @return - a sequence of B, in the success case
       */
-    def safeMap(fn: A => B): Array[B] = super.safeMap(in, fn)
+    def safeMap[B <: AutoCloseable : ClassTag](fn: A => B): Array[B] = super.safeMap(in, fn)
   }
 
-  implicit class AutoCloseableFromBatchColumns(val in: ColumnarBatch) extends MapsSafely {
+  implicit class AutoCloseableFromBatchColumns(val in: ColumnarBatch) extends MapsSafely[Int, Seq[Int]] {
     /**
       * safeMap: Is an implicit on ColumnarBatch, that lets you map over the columns
       * of a batch as if the batch was a Seq[GpuColumnVector], iff safeMap's body is producing AutoCloseable
@@ -190,5 +188,4 @@ object RapidsPluginImplicits {
       super.safeMap(colIds, (i: Int) => fn(in.column(i).asInstanceOf[GpuColumnVector]))
     }
   }
-
 }

@@ -23,7 +23,7 @@ import org.scalatest.{FlatSpec, Matchers}
 
 import scala.collection.mutable.ArrayBuffer
 
-class ImplicitsRefCountTestSuite extends FlatSpec with Matchers {
+class ImplicitsTestSuite extends FlatSpec with Matchers {
   private class RefCountTest (i: Int, throwOnClose: Boolean) extends AutoCloseable {
     var closeAttempted: Boolean = false
     var refCount: Int = 0
