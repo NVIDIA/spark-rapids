@@ -540,6 +540,12 @@ object GpuOverrides {
     new AggRuleBuilder[INPUT]()
   }
 
+  def assertNoStringChildren(expr: Expression, conf: RapidsConf): Unit = {
+    if (expr.children.filter(_.dataType == StringType).nonEmpty) {
+      throw new CannotReplaceException(s"Strings are not supported for ${expr.getClass.getSimpleName}")
+    }
+  }
+
   val expressions : Map[Class[_ <: Expression], ExprRule[_ <: Expression]] = Map(
     expr[Literal]
       .convert((lit, overrides) => GpuLiteral(lit.value, lit.dataType))
@@ -689,18 +695,22 @@ object GpuOverrides {
     expr[GreaterThan]
       .binary(GpuGreaterThan(_, _))
       .desc("> operator")
+      .assertIsAllowed(assertNoStringChildren)
       .build(),
     expr[GreaterThanOrEqual]
       .binary(GpuGreaterThanOrEqual(_, _))
       .desc(">= operator")
+      .assertIsAllowed(assertNoStringChildren)
       .build(),
     expr[LessThan]
       .binary(GpuLessThan(_, _))
       .desc("< operator")
+      .assertIsAllowed(assertNoStringChildren)
       .build(),
     expr[LessThanOrEqual]
       .binary(GpuLessThanOrEqual(_, _))
       .desc("<= operator")
+      .assertIsAllowed(assertNoStringChildren)
       .build(),
     expr[Pow]
       .binary(GpuPow(_, _))
