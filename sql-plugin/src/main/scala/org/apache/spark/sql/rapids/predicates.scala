@@ -17,7 +17,7 @@
 package org.apache.spark.sql.rapids
 
 import ai.rapids.cudf.{BinaryOp, DType, UnaryOp}
-import ai.rapids.spark.{CudfBinaryOperator, CudfUnaryExpression}
+import ai.rapids.spark.{CudfBinaryOperator, CudfUnaryExpression, GpuColumnVector}
 
 import org.apache.spark.sql.catalyst.analysis.TypeCheckResult
 import org.apache.spark.sql.catalyst.expressions.{Expression, ImplicitCastInputTypes, NullIntolerant, Predicate}
@@ -72,6 +72,9 @@ case class GpuEqualTo(left: Expression, right: Expression) extends CudfBinaryCom
   override def symbol: String = "="
   override def outputTypeOverride: DType = DType.BOOL8
   override def binaryOp: BinaryOp = BinaryOp.EQUAL
+
+  override def fixupInputIfNeeded(vec: GpuColumnVector): GpuColumnVector =
+    fixupInputAsStringCat(vec)
 }
 
 case class GpuGreaterThan(left: Expression, right: Expression) extends CudfBinaryComparison

@@ -53,6 +53,10 @@ class ProjectExprSuite extends SparkQueryCompareTestSuite {
     frame => frame.selectExpr("strings is null OR more_strings is null")
   }
 
+  testSparkResultsAreEqual("equals strings", nullableStringsDf) {
+    frame => frame.selectExpr("strings = \"500.0\"")
+  }
+
   testSparkResultsAreEqual("project time", frameFromParquet("timestamp-date-test.parquet"),
     conf = forceHostColumnarToGpu(),
     allowNonGpu = true) {
