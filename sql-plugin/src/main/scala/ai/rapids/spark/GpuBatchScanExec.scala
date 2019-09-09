@@ -34,7 +34,7 @@ import org.apache.spark.internal.Logging
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.execution.datasources.{HadoopFileLinesReader, PartitionedFile, PartitioningAwareFileIndex}
 import org.apache.spark.sql.execution.datasources.v2.{DataSourceRDD, DataSourceV2ScanExecBase, FilePartitionReaderFactory, TextBasedFileScan}
-import org.apache.spark.sql.sources.v2.reader.{InputPartition, PartitionReader, PartitionReaderFactory, Scan}
+import org.apache.spark.sql.sources.v2.reader.{Batch, InputPartition, PartitionReader, PartitionReaderFactory, Scan}
 import org.apache.spark.sql.types.{StructField, StructType, TimestampType}
 import org.apache.spark.sql.SparkSession
 import org.apache.spark.sql.catalyst.csv.CSVOptions
@@ -81,7 +81,7 @@ case class GpuBatchScanExec(
     output: Seq[AttributeReference],
     @transient scan: Scan) extends DataSourceV2ScanExecBase with GpuExec {
 
-  @transient lazy val batch = scan.toBatch
+  @transient lazy val batch: Batch = scan.toBatch
 
   override def supportsColumnar = true
 
@@ -109,7 +109,8 @@ trait ScanWithMetrics {
 }
 
 object GpuCSVScan {
-  def assertCanSupport(scan: CSVScan) : Unit = {
+  def tagSupport(scanMeta: ScanMeta[CSVScan]) : Unit = {
+    val scan = scanMeta.wrapped
     val options = scan.options
     val sparkSession = scan.sparkSession
     val parsedOptions: CSVOptions = new CSVOptions(
@@ -119,33 +120,33 @@ object GpuCSVScan {
       sparkSession.sessionState.conf.columnNameOfCorruptRecord)
 
     if (!parsedOptions.enforceSchema) {
-      throw new CannotReplaceException("GpuCSVScan always enforces schemas")
+      scanMeta.willNotWorkOnGpu("GpuCSVScan always enforces schemas")
     }
 
     if (scan.dataSchema == null || scan.dataSchema.isEmpty) {
-      throw new CannotReplaceException("GpuCSVScan requires a specified data schema")
+      scanMeta.willNotWorkOnGpu("GpuCSVScan requires a specified data schema")
     }
 
     // TODO: Add an incompat override flag to specify no timezones appear in timestamp types?
     if (scan.dataSchema.map(_.dataType).contains(TimestampType)) {
-      throw new CannotReplaceException("GpuCSVScan does not support parsing timestamp types")
+      scanMeta.willNotWorkOnGpu("GpuCSVScan does not support parsing timestamp types")
     }
 
     if (parsedOptions.delimiter > 127) {
-      throw new CannotReplaceException(s"GpuCSVScan does not support non-ASCII deliminators")
+      scanMeta.willNotWorkOnGpu("GpuCSVScan does not support non-ASCII deliminators")
     }
 
     if (parsedOptions.quote > 127) {
-      throw new CannotReplaceException(s"GpuCSVScan does not support non-ASCII quote chars")
+      scanMeta.willNotWorkOnGpu("GpuCSVScan does not support non-ASCII quote chars")
     }
 
     if (parsedOptions.comment > 127) {
-      throw new CannotReplaceException(s"GpuCSVScan does not support non-ASCII comment chars")
+      scanMeta.willNotWorkOnGpu("GpuCSVScan does not support non-ASCII comment chars")
     }
 
     if (parsedOptions.escape != '\\') {
       // TODO need to fix this
-      throw new CannotReplaceException(s"GpuCSVScan does not support modified escape chars")
+      scanMeta.willNotWorkOnGpu("GpuCSVScan does not support modified escape chars")
     }
 
     // TODO charToEscapeQuoteEscaping???
@@ -153,31 +154,31 @@ object GpuCSVScan {
 
     if (StandardCharsets.UTF_8.name() != parsedOptions.charset &&
       StandardCharsets.US_ASCII.name() != parsedOptions.charset) {
-      throw new CannotReplaceException(s"GpuCSVScan only supports UTF8 encoded data")
+      scanMeta.willNotWorkOnGpu("GpuCSVScan only supports UTF8 encoded data")
     }
 
     if (parsedOptions.ignoreLeadingWhiteSpaceInRead) {
       // TODO need to fix this (or at least verify that it is doing the right thing)
-      throw new CannotReplaceException(s"GpuCSVScan does not support ignoring leading white space")
+      scanMeta.willNotWorkOnGpu("GpuCSVScan does not support ignoring leading white space")
     }
 
     if (parsedOptions.ignoreTrailingWhiteSpaceInRead) {
       // TODO need to fix this (or at least verify that it is doing the right thing)
-      throw new CannotReplaceException(s"GpuCSVScan does not support ignoring trailing white space")
+      scanMeta.willNotWorkOnGpu("GpuCSVScan does not support ignoring trailing white space")
     }
 
     if (parsedOptions.multiLine) {
       // TODO should we support this
-      throw new CannotReplaceException(s"GpuCSVScan does not support multi-line")
+      scanMeta.willNotWorkOnGpu("GpuCSVScan does not support multi-line")
     }
 
     if (parsedOptions.lineSeparator.getOrElse("\n") != "\n") {
       // TODO should we support this
-      throw new CannotReplaceException("GpuCSVScan only supports \"\\n\" as a line separator")
+      scanMeta.willNotWorkOnGpu("GpuCSVScan only supports \"\\n\" as a line separator")
     }
 
     if (parsedOptions.parseMode != PermissiveMode) {
-      throw new CannotReplaceException("GpuCSVScan only supports Permissive CSV parsing")
+      scanMeta.willNotWorkOnGpu("GpuCSVScan only supports Permissive CSV parsing")
     }
     // TODO parsedOptions.columnNameOfCorruptRecord
     // TODO parsedOptions.nanValue This is here by default so we need to be able to support it

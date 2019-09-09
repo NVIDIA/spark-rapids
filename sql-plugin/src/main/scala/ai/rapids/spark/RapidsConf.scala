@@ -201,7 +201,7 @@ object RapidsConf {
   val EXPLAIN = conf("spark.rapids.sql.explain")
     .doc("Explain why some parts of a query were not placed on a GPU")
     .booleanConf
-    .createWithDefault(true)
+    .createWithDefault(false)
 
   val MEM_DEBUG = conf("spark.rapids.memory_debug")
     .doc("If memory management is enabled and this is true GPU memory allocations are " +
@@ -248,7 +248,6 @@ object RapidsConf {
     GpuOverrides.execs.values.foreach(_.confHelp())
     GpuOverrides.scans.values.foreach(_.confHelp())
     GpuOverrides.parts.values.foreach(_.confHelp())
-    GpuOverrides.aggs.values.foreach(_.confHelp())
   }
 }
 

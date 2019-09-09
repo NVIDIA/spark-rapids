@@ -24,7 +24,7 @@ import scala.concurrent.{ExecutionContext, Promise}
 import scala.util.control.NonFatal
 
 import ai.rapids.cudf.JCudfSerialization
-import ai.rapids.spark.{ConcatAndConsumeAll, GpuColumnVector, GpuExec}
+import ai.rapids.spark.{ConcatAndConsumeAll, ConfKeysAndIncompat, GpuColumnVector, GpuExec, RapidsConf, RapidsMeta, SparkPlanMeta}
 import ai.rapids.spark.GpuMetricNames._
 import ai.rapids.spark.RapidsPluginImplicits._
 import com.google.common.util.concurrent.ThreadFactoryBuilder
@@ -34,7 +34,8 @@ import org.apache.spark.launcher.SparkLauncher
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.plans.physical.{BroadcastMode, BroadcastPartitioning, Partitioning}
 import org.apache.spark.sql.catalyst.InternalRow
-import org.apache.spark.sql.execution.exchange.Exchange
+import org.apache.spark.sql.execution.exchange.{BroadcastExchangeExec, Exchange, ShuffleExchangeExec}
+import org.apache.spark.sql.execution.joins.BroadcastHashJoinExec
 import org.apache.spark.sql.execution.metric.SQLMetrics
 import org.apache.spark.sql.internal.{SQLConf, StaticSQLConf}
 import org.apache.spark.sql.vectorized.ColumnarBatch
@@ -96,6 +97,27 @@ class SerializableGpuColumnarBatch(var batch: ColumnarBatch, val closeAfterSeria
   override def close(): Unit = {
     columns.safeClose()
   }
+}
+
+class GpuBroadcastMeta(
+    exchange: BroadcastExchangeExec,
+    conf: RapidsConf,
+    parent: Option[RapidsMeta[_, _, _]],
+    rule: ConfKeysAndIncompat) extends
+  SparkPlanMeta[BroadcastExchangeExec](exchange, conf, parent, rule) {
+
+  override def tagPlanForGpu(): Unit = {
+    if (!TrampolineUtil.isHashedRelation(exchange.mode)) {
+      willNotWorkOnGpu("Broadcast exchange is only supported for HashedJoin")
+    }
+    if (!isParentInstanceOf[BroadcastHashJoinExec]) {
+      willNotWorkOnGpu("BroadcastExchange only works on the GPU if being used " +
+        "with a GPU version of BroadcastHashJoinExec")
+    }
+  }
+
+  override def convertToGpu(): GpuExec =
+    GpuBroadcastExchangeExec(exchange.mode, childPlans(0).convertIfNeeded())
 }
 
 case class GpuBroadcastExchangeExec(

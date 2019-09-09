@@ -36,6 +36,24 @@ import org.apache.spark.sql.types.{DataType, IntegerType, StringType}
 import org.apache.spark.sql.vectorized.ColumnarBatch
 import org.apache.spark.util.MutablePair
 
+class GpuShuffleMeta(
+    shuffle: ShuffleExchangeExec,
+    conf: RapidsConf,
+    parent: Option[RapidsMeta[_, _, _]],
+    rule: ConfKeysAndIncompat)
+  extends SparkPlanMeta[ShuffleExchangeExec](shuffle, conf, parent, rule) {
+  // Some kinds of Partitioning are a type of expression, but Partitioning itself is not
+  // so don't let them leak through as expressions
+  override val childExprs: scala.Seq[ExprMeta[_]] = Seq.empty
+  override val childParts: scala.Seq[PartMeta[_]] =
+    Seq(GpuOverrides.wrapPart(shuffle.outputPartitioning, conf, Some(this)))
+
+  override def convertToGpu(): GpuExec =
+    GpuShuffleExchangeExec(childParts(0).convertToGpu(),
+      childPlans(0).convertIfNeeded(),
+      shuffle.canChangeNumPartitions)
+}
+
 /**
  * Performs a shuffle that will result in the desired partitioning.
  */

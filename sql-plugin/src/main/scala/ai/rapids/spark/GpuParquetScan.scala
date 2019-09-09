@@ -89,11 +89,12 @@ case class GpuParquetScan(
 }
 
 object GpuParquetScan {
-  def assertCanSupport(scan: ParquetScan, conf: RapidsConf): Unit = {
+  def tagSupport(scanMeta: ScanMeta[ParquetScan]): Unit = {
+    val scan = scanMeta.wrapped
     val schema = StructType(scan.readDataSchema ++ scan.readPartitionSchema)
     for (field <- schema) {
       if (!GpuColumnVector.isSupportedType(field.dataType)) {
-        throw new CannotReplaceException(s"GpuParquetScan does not support fields of type ${field.dataType}")
+        scanMeta.willNotWorkOnGpu(s"GpuParquetScan does not support fields of type ${field.dataType}")
       }
     }
 
@@ -107,7 +108,7 @@ object GpuParquetScan {
     // Essentially this should boil down to a vector subtract of the scalar delta
     // between the configured timezone's delta from UTC on the timestamp data.
     if (scan.sparkSession.sessionState.conf.isParquetINT96TimestampConversion) {
-      throw new CannotReplaceException("GpuParquetScan does not support int96 timestamp conversion")
+      scanMeta.willNotWorkOnGpu("GpuParquetScan does not support int96 timestamp conversion")
     }
   }
 }
