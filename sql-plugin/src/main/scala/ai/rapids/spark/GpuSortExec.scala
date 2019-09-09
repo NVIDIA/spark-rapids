@@ -26,14 +26,61 @@ import ai.rapids.spark.RapidsPluginImplicits._
 
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.expressions.{Ascending, Attribute, Expression, NullOrdering, NullsFirst, NullsLast, RowOrdering, SortDirection, SortOrder}
-import org.apache.spark.sql.execution.{SparkPlan, UnaryExecNode}
-import org.apache.spark.sql.types.{DataType, StructType}
+import org.apache.spark.sql.execution.{SortExec, SparkPlan, UnaryExecNode}
+import org.apache.spark.sql.types.{DataType, DoubleType, FloatType, StringType, StructType}
 import org.apache.spark.sql.vectorized.ColumnarBatch
 import org.apache.spark.TaskContext
 import org.apache.spark.sql.catalyst.plans.physical.{Distribution, OrderedDistribution, Partitioning, UnspecifiedDistribution}
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.analysis.TypeCheckResult
 import org.apache.spark.sql.execution.metric.SQLMetrics
+
+class GpuSortMeta(
+    sort: SortExec,
+    conf: RapidsConf,
+    parent: Option[RapidsMeta[_, _, _]],
+    rule: ConfKeysAndIncompat)
+  extends SparkPlanMeta[SortExec](sort, conf, parent, rule) {
+  override def convertToGpu(): GpuExec =
+    GpuSortExec(childExprs.map(_.convertToGpu()).asInstanceOf[Seq[GpuSortOrder]],
+      sort.global,
+      childPlans(0).convertIfNeeded())
+
+  override def tagPlanForGpu(): Unit = {
+    if (GpuOverrides.isAnyStringLit(sort.sortOrder)) {
+      willNotWorkOnGpu("string literal values are not supported in a sort")
+    }
+    val keyDataTypes = sort.sortOrder.map(_.dataType)
+    if ((keyDataTypes.contains(FloatType) || keyDataTypes.contains(DoubleType)) && conf.hasNans) {
+      willNotWorkOnGpu("floats/doubles are not supported in sort, due to " +
+        "incompatibility with NaN. If you don't have any NaNs in your data you can set " +
+        "spark.rapids.sql.hasNans=false to bypass this.")
+    }
+    if (keyDataTypes.contains(StringType) && !conf.allowIncompatUTF8Strings) {
+      willNotWorkOnGpu("strings are not supported in sort if you have UTF-8 " +
+        "characters in your strings. See spark.rapids.sql.allowIncompatUTF8Strings to allow " +
+        "if you don't have UTF-8 characters in your strings.")
+    }
+    def areNullsSmallest(o: SortOrder): Boolean = {
+      (o.isAscending && o.nullOrdering == NullsFirst) ||
+        (!o.isAscending && o.nullOrdering == NullsLast)
+    }
+
+    // need to see if the ordering of all columns is such that either nulls are all smallest
+    // or all nulls are largest
+    val nullOrderings = sort.sortOrder.map(o => areNullsSmallest(o))
+
+    if (!nullOrderings.forall(_ == nullOrderings.head)) {
+      // ERROR we can't handle this right now since only 1 parameter for areNullsSmallest
+      // to Table.orderBy
+      willNotWorkOnGpu(s"GPU cudf can't handle multiple null orderings!")
+    }
+    // note that dataframe.sort always sets this to true
+    if (sort.global && !conf.enableTotalOrderSort) {
+      willNotWorkOnGpu(s"Don't support total ordering on GPU yet")
+    }
+  }
+}
 
 case class GpuSortExec(
     sortOrder: Seq[GpuSortOrder],

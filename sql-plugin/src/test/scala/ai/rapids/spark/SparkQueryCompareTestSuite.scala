@@ -64,6 +64,7 @@ trait SparkQueryCompareTestSuite extends FunSuite {
     var c = conf.clone()
       .set("spark.sql.extensions", "ai.rapids.spark.Plugin")
       .set("spark.executor.plugins", "ai.rapids.spark.GpuResourceManager")
+      .set(RapidsConf.EXPLAIN.key, "true")
 
     if (c.getOption(RapidsConf.TEST_CONF.key).isEmpty) {
        c = c.set(RapidsConf.TEST_CONF.key, "true")

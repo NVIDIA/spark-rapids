@@ -30,6 +30,7 @@ class MortgageSparkTest extends FunSuite {
       .config("spark.executor.plugins", "ai.rapids.spark.GpuResourceManager")
       .config("ai.rapids.gpu.incompatible_ops", true)
       .config("spark.sql.join.preferSortMergeJoin", false)
+      .config("spark.rapids.sql.explain", true)
       .getOrCreate()
   }
 

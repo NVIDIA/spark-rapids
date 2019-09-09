@@ -8,10 +8,10 @@ import org.apache.spark.sql.execution.joins.{BuildLeft, BuildRight, HashJoin}
 import org.apache.spark.sql.vectorized.{ColumnarBatch, ColumnVector}
 
 object GpuHashJoin {
-  def assertJoinTypeAllowed(joinType: JoinType): Unit = joinType match {
-    case LeftOuter => ()
-    case Inner => ()
-    case _ => throw new CannotReplaceException(s" ${joinType} is not currently supported")
+  def isJoinTypeAllowed(joinType: JoinType): Boolean = joinType match {
+    case LeftOuter => true
+    case Inner => true
+    case _ => false
   }
 }
 

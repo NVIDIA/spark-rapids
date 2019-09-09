@@ -99,11 +99,12 @@ case class GpuOrcScan(
 }
 
 object GpuOrcScan {
-  def assertCanSupport(scan: OrcScan, conf: RapidsConf): Unit = {
+  def tagSupport(scanMeta: ScanMeta[OrcScan]): Unit = {
+    val scan = scanMeta.wrapped
     val schema = StructType(scan.readDataSchema ++ scan.readPartitionSchema)
     schema.foreach { field =>
       if (!GpuColumnVector.isSupportedType(field.dataType)) {
-        throw new CannotReplaceException(s"GpuOrcScan does not support fields of type ${field.dataType}")
+        scanMeta.willNotWorkOnGpu(s"GpuOrcScan does not support fields of type ${field.dataType}")
       }
     }
   }

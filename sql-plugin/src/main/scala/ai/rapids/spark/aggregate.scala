@@ -34,6 +34,91 @@ import org.apache.spark.sql.rapids.{CudfAggregate, GpuAggregateExpression, GpuDe
 import org.apache.spark.sql.vectorized.{ColumnarBatch, ColumnVector}
 import scala.collection.mutable.ArrayBuffer
 
+import org.apache.spark.sql.execution.aggregate.HashAggregateExec
+import org.apache.spark.sql.types.{DoubleType, FloatType, StringType}
+
+class GpuHashAggregateMeta(
+    agg: HashAggregateExec,
+    conf: RapidsConf,
+    parent: Option[RapidsMeta[_, _, _]],
+    rule: ConfKeysAndIncompat)
+  extends SparkPlanMeta[HashAggregateExec](agg, conf, parent, rule) {
+
+  private val requiredChildDistributionExpressions: Option[Seq[ExprMeta[_]]] =
+    agg.requiredChildDistributionExpressions.map(_.map(GpuOverrides.wrapExpr(_, conf, Some(this))))
+  private val groupingExpressions: Seq[ExprMeta[_]] =
+    agg.groupingExpressions.map(GpuOverrides.wrapExpr(_, conf, Some(this)))
+  private val aggregateExpressions: Seq[ExprMeta[_]] =
+    agg.aggregateExpressions.map(GpuOverrides.wrapExpr(_, conf, Some(this)))
+  private val aggregateAttributes: Seq[ExprMeta[_]] =
+    agg.aggregateAttributes.map(GpuOverrides.wrapExpr(_, conf, Some(this)))
+  private val resultExpressions: Seq[ExprMeta[_]] =
+    agg.resultExpressions.map(GpuOverrides.wrapExpr(_, conf, Some(this)))
+
+  override val childExprs: Seq[ExprMeta[_]] =
+    requiredChildDistributionExpressions.getOrElse(Seq.empty) ++
+      groupingExpressions ++
+      aggregateExpressions ++
+      aggregateAttributes ++
+      resultExpressions
+
+  override def tagPlanForGpu(): Unit = {
+    // The StringType check was added due to core dump in the latest branch while running the mortgage tests
+    // in ~NVStrings.
+    //
+    // Note that we replace only if resultExpressions is non empty. This is due to a case
+    // where HashAggregateExec nodes can be added with empty result expression (the MortgageTest exposes this).
+    // The only choice should be to group by the grouping expressions, and use the grouping
+    // key + the aggregate expressions as the result, but for now lets not handle it until
+    // we can shed some light (in our tests the HashAggregateExec node without result expression appears
+    // to go away after the plugin anyway)
+    if (GpuOverrides.isAnyStringLit(agg.groupingExpressions)) {
+      willNotWorkOnGpu("string literal values are not supported in a hash aggregate")
+    }
+    val groupingExpressionTypes = agg.groupingExpressions.map(_.dataType)
+    if (groupingExpressionTypes.contains(StringType)) {
+      willNotWorkOnGpu("strings are not supported as grouping keys for hash aggregation.")
+    }
+    if (conf.hasNans &&
+      (groupingExpressionTypes.contains(FloatType) ||
+        groupingExpressionTypes.contains(DoubleType))) {
+      willNotWorkOnGpu("grouping expressions over floating point columns " +
+        "that may contain -0.0 and NaN are disabled. You can bypass this by setting " +
+        "spark.rapids.sql.hasNans=false")
+    }
+    if (agg.resultExpressions.isEmpty) {
+      willNotWorkOnGpu("result expressions is empty")
+    }
+    val hashAggMode = agg.aggregateExpressions.map(_.mode).distinct
+    val hashAggReplaceMode = conf.hashAggReplaceMode.toLowerCase
+    if (!hashAggReplaceMode.equals("all")) {
+      hashAggReplaceMode match {
+        case "partial" => if (hashAggMode.contains(Final)) {
+          // replacing only Partial hash aggregates, so a Final one should not replace
+          willNotWorkOnGpu("Replacing Final hash aggregates disabled")
+        }
+        case "final" => if (hashAggMode.contains(Partial)) {
+          // replacing only Final hash aggregates, so a Partial one should not replace
+          willNotWorkOnGpu("Replacing Partial aggregates disabled")
+        }
+        case _ =>
+          throw new IllegalArgumentException(s"The hash aggregate replacement mode ${hashAggReplaceMode} " +
+            "is not valid. Valid options are: \"partial\", \"final\", or \"all\"")
+      }
+    }
+  }
+
+  override def convertToGpu(): GpuExec =
+    GpuHashAggregateExec(
+      requiredChildDistributionExpressions.map(_.map(_.convertToGpu())),
+      groupingExpressions.map(_.convertToGpu()),
+      aggregateExpressions.map(_.convertToGpu()).asInstanceOf[Seq[GpuAggregateExpression]],
+      aggregateAttributes.map(_.convertToGpu()).asInstanceOf[Seq[GpuAttributeReference]],
+      agg.initialInputBufferOffset,
+      resultExpressions.map(_.convertToGpu()).asInstanceOf[Seq[NamedExpression]],
+      childPlans(0).convertIfNeeded())
+}
+
 /**
   * GpuHashAggregateExec - is the GPU version of HashAggregateExec, with some major differences:
   * - it doesn't support spilling to disk

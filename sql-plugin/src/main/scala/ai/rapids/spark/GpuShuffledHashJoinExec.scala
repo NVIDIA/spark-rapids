@@ -17,15 +17,49 @@
 package ai.rapids.spark
 
 import ai.rapids.spark.GpuMetricNames._
+
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.plans.JoinType
 import org.apache.spark.sql.execution.{BinaryExecNode, SparkPlan}
-import org.apache.spark.sql.execution.joins.{BuildLeft, BuildRight, BuildSide}
+import org.apache.spark.sql.execution.joins.{BuildLeft, BuildRight, BuildSide, ShuffledHashJoinExec}
 import org.apache.spark.sql.vectorized.ColumnarBatch
 import org.apache.spark.TaskContext
 import org.apache.spark.sql.catalyst.plans.physical.{Distribution, HashClusteredDistribution}
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.execution.metric.{SQLMetric, SQLMetrics}
+
+class GpuShuffledHashJoinMeta(
+    join: ShuffledHashJoinExec,
+    conf: RapidsConf,
+    parent: Option[RapidsMeta[_, _, _]],
+    rule: ConfKeysAndIncompat)
+  extends SparkPlanMeta[ShuffledHashJoinExec](join, conf, parent, rule) {
+  val leftKeys: Seq[ExprMeta[_]] = join.leftKeys.map(GpuOverrides.wrapExpr(_, conf, Some(this)))
+  val rightKeys: Seq[ExprMeta[_]] = join.rightKeys.map(GpuOverrides.wrapExpr(_, conf, Some(this)))
+  val condition: Option[ExprMeta[_]] = join.condition.map(GpuOverrides.wrapExpr(_, conf, Some(this)))
+
+  override val childExprs: Seq[ExprMeta[_]] = leftKeys ++ rightKeys ++ condition
+
+  override def tagPlanForGpu(): Unit = {
+    if (!GpuHashJoin.isJoinTypeAllowed(join.joinType)) {
+      willNotWorkOnGpu(s" ${join.joinType} is not currently supported")
+    }
+
+    if (join.condition.isDefined) {
+      willNotWorkOnGpu("Conditional joins are not currently supported")
+    }
+  }
+
+  override def convertToGpu(): GpuExec =
+    GpuShuffledHashJoinExec(
+      leftKeys.map(_.convertToGpu()),
+      rightKeys.map(_.convertToGpu()),
+      join.joinType,
+      join.buildSide,
+      condition.map(_.convertToGpu()),
+      childPlans(0).convertIfNeeded(),
+      childPlans(1).convertIfNeeded())
+}
 
 case class GpuShuffledHashJoinExec(
     leftKeys: Seq[GpuExpression],
