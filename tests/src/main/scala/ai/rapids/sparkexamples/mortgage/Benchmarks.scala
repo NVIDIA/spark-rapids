@@ -48,7 +48,7 @@ object ETL {
     val session = Benchmark.session
 
     Run.csv(session, jobArgs.perfPath, jobArgs.acqPath)
-      .write.option("overwrite", "true").csv(jobArgs.output)
+      .write.mode("overwrite").csv(jobArgs.output)
   }
 }
 
@@ -73,7 +73,7 @@ object AggregatesCsv {
     val session = Benchmark.session
 
     SimpleAggregates.csv(session, jobArgs.perfPath, jobArgs.acqPath)
-      .write.option("overwrite", "true").parquet(jobArgs.output)
+      .write.mode("overwrite").parquet(jobArgs.output)
   }
 }
 
@@ -84,7 +84,7 @@ object AggregatesWithPercentilesCsv {
     val session = Benchmark.session
 
     AggregatesWithPercentiles.csv(session, jobArgs.perfPath)
-      .write.option("overwrite", "true").parquet(jobArgs.output)
+      .write.mode("overwrite").parquet(jobArgs.output)
   }
 }
 
@@ -95,6 +95,6 @@ object AggregatesWithJoinCsv {
     val session = Benchmark.session
 
     AggregatesWithJoin.csv(session, jobArgs.perfPath, jobArgs.acqPath)
-      .write.option("overwrite", "true").parquet(jobArgs.output)
+      .write.mode("overwrite").parquet(jobArgs.output)
   }
 }
