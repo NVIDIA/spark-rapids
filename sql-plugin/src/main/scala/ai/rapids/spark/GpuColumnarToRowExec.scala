@@ -46,9 +46,11 @@ case class GpuColumnarToRowExec(child: SparkPlan) extends UnaryExecNode
   // codegen stage and needs to do the limit check.
   protected override def canCheckLimitNotReached: Boolean = true
 
-  override val additionalMetrics: Map[String, SQLMetric] = Map(
-    "numInputBatches" -> SQLMetrics.createMetric(sparkContext, "number of input batches")
-  )
+  // Override the original metrics to remove NUM_OUTPUT_BATCHES, which makes no sense.
+  override lazy val metrics: Map[String, SQLMetric] = Map(
+    NUM_OUTPUT_ROWS -> SQLMetrics.createMetric(sparkContext, "number of output rows"),
+    TOTAL_TIME -> SQLMetrics.createNanoTimingMetric(sparkContext, "total time"),
+    "numInputBatches" -> SQLMetrics.createMetric(sparkContext, "number of input batches"))
 
   override def inputRDDs(): Seq[RDD[InternalRow]] = {
     Seq(child.executeColumnar().asInstanceOf[RDD[InternalRow]]) // Hack because of type erasure

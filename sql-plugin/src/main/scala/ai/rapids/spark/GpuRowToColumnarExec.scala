@@ -310,6 +310,7 @@ case class GpuRowToColumnarExec(child: SparkPlan, goal: CoalesceGoal)
     // variable length operations.
     val numInputRows = longMetric("numInputRows")
     val numOutputBatches = longMetric(NUM_OUTPUT_BATCHES)
+    val numOutputRows = longMetric(NUM_OUTPUT_ROWS)
     val totalTime = longMetric(TOTAL_TIME)
     val buildTime = longMetric("buildTime")
     val targetRows = goal.targetSize
@@ -354,6 +355,7 @@ case class GpuRowToColumnarExec(child: SparkPlan, goal: CoalesceGoal)
               buildRange.close()
             }
             numInputRows += rowCount
+            numOutputRows += rowCount
             numOutputBatches += 1
             // The returned batch will be closed by the consumer of it
             ret

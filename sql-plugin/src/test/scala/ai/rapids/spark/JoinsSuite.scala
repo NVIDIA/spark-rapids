@@ -32,6 +32,12 @@ class JoinsSuite extends SparkQueryCompareTestSuite {
     (A, B) => A.join(B, (A("longs") - A("more_longs")) === (B("longs") - B("more_longs")))
   }
 
+  INCOMPAT_testSparkResultsAreEqual2("Test broadcast hash join with conditional", longsDf, nonZeroLongsDf,
+    conf=new SparkConf()
+      .set("spark.sql.autoBroadcastJoinThreshold", "10MB")) {
+    (A, B) => A.join(B, A("longs") === B("longs") && A("more_longs") >= B("more_longs"))
+  }
+
   INCOMPAT_IGNORE_ORDER_testSparkResultsAreEqual2("Test broadcast hash join with mixed fields",
     mixedDf, mixedDfWithNulls,
     conf = new SparkConf()

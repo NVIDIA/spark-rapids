@@ -5,6 +5,7 @@ import ai.rapids.cudf.{NvtxColor, NvtxRange, Table}
 import org.apache.spark.sql.catalyst.expressions.Attribute
 import org.apache.spark.sql.catalyst.plans.{Inner, JoinType, LeftOuter}
 import org.apache.spark.sql.execution.joins.{BuildLeft, BuildRight, HashJoin}
+import org.apache.spark.sql.execution.metric.SQLMetric
 import org.apache.spark.sql.vectorized.{ColumnarBatch, ColumnVector}
 
 object GpuHashJoin {
@@ -53,35 +54,50 @@ trait GpuHashJoin extends GpuExec with HashJoin {
   })
 
   def doJoin(builtTable: Table,
-      streamedBatch: ColumnarBatch): ColumnarBatch = {
-    val nvtxRange = new NvtxRange("hash join", NvtxColor.ORANGE)
-    try {
-      val streamedTable = try {
-        val streamedKeysBatch = GpuProjectExec.project(streamedBatch, gpuStreamedKeys)
-        try {
-          val combined = combine(streamedKeysBatch, streamedBatch)
-          val asStringCat = GpuColumnVector.convertToStringCategoriesIfNeeded(combined)
-          try {
-            GpuColumnVector.from(asStringCat)
-          } finally {
-            asStringCat.close()
-          }
-        } finally {
-          streamedKeysBatch.close()
-        }
-      } finally {
-        streamedBatch.close()
-      }
+      streamedBatch: ColumnarBatch,
+      condition: Option[GpuExpression],
+      numOutputRows: SQLMetric,
+      numJoinOutputRows: SQLMetric,
+      numOutputBatches: SQLMetric,
+      joinTime: SQLMetric,
+      filterTime: SQLMetric): ColumnarBatch = {
+
+    val streamedTable = try {
+      val streamedKeysBatch = GpuProjectExec.project(streamedBatch, gpuStreamedKeys)
       try {
-        buildSide match {
-          case BuildLeft => doJoinLeftRight(builtTable, streamedTable)
-          case BuildRight => doJoinLeftRight(streamedTable, builtTable)
+        val combined = combine(streamedKeysBatch, streamedBatch)
+        val asStringCat = GpuColumnVector.convertToStringCategoriesIfNeeded(combined)
+        try {
+          GpuColumnVector.from(asStringCat)
+        } finally {
+          asStringCat.close()
         }
       } finally {
-        streamedTable.close()
+        streamedKeysBatch.close()
       }
     } finally {
+      streamedBatch.close()
+    }
+
+    val nvtxRange = new NvtxWithMetrics("hash join", NvtxColor.ORANGE, joinTime)
+    val joined = try {
+      buildSide match {
+        case BuildLeft => doJoinLeftRight(builtTable, streamedTable)
+        case BuildRight => doJoinLeftRight(streamedTable, builtTable)
+      }
+    } finally {
+      streamedTable.close()
       nvtxRange.close()
+    }
+
+    numJoinOutputRows += joined.numRows()
+
+    if (condition.isDefined) {
+      GpuFilter(joined, condition.get, numOutputRows, numOutputBatches, filterTime)
+    } else {
+      numOutputRows += joined.numRows()
+      numOutputBatches += 1
+      joined
     }
   }
 

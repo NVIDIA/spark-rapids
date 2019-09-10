@@ -251,7 +251,9 @@ abstract class AbstractGpuCoalesceIterator(iter: Iterator[ColumnarBatch],
       val collectEnd = System.nanoTime()
       val ret = concatAllAndPutOnGPU()
       val end = System.nanoTime()
-      collectTime += TimeUnit.NANOSECONDS.toMillis(collectEnd - collectStart)
+      if (collectStart > 0) {
+        collectTime += TimeUnit.NANOSECONDS.toMillis(collectEnd - collectStart)
+      }
       concatTime += TimeUnit.NANOSECONDS.toMillis(end - collectEnd)
       collectStart = -1
       ret

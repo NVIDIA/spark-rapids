@@ -35,12 +35,9 @@ object GpuProjectExec {
       totalTime: SQLMetric): ColumnarBatch = {
     val nvtxRange = new NvtxWithMetrics("ProjectExec", NvtxColor.CYAN, totalTime)
     try {
-      try {
         project(cb, boundExprs)
-      } finally {
-        cb.close()
-      }
     } finally {
+      cb.close()
       nvtxRange.close()
     }
   }
@@ -82,6 +79,45 @@ case class GpuProjectExec(projectList: Seq[GpuExpression], child: SparkPlan)
       numOutputBatches += 1
       numOutputRows += cb.numRows()
       GpuProjectExec.projectAndClose(cb, boundProjectList, totalTime)
+    }
+  }
+}
+
+/**
+ * Run a filter on a batch.  The batch will be consumed.
+ */
+object GpuFilter {
+  def apply(
+      batch: ColumnarBatch,
+      boundCondition: GpuExpression,
+      numOutputRows: SQLMetric,
+      numOutputBatches: SQLMetric,
+      filterTime: SQLMetric): ColumnarBatch = {
+    val nvtxRange = new NvtxWithMetrics("filter batch", NvtxColor.YELLOW, filterTime)
+    try {
+      val batchWithCategories = try {
+        GpuColumnVector.convertToStringCategoriesIfNeeded(batch)
+      } finally {
+        batch.close()
+      }
+
+      var filterConditionCv: GpuColumnVector = null
+      var tbl: cudf.Table = null
+      var filtered: cudf.Table = null
+      val filteredBatch = try {
+        filterConditionCv = boundCondition.columnarEval(batchWithCategories).asInstanceOf[GpuColumnVector]
+        tbl = GpuColumnVector.from(batchWithCategories)
+        filtered = tbl.filter(filterConditionCv.getBase)
+        GpuColumnVector.from(filtered)
+      } finally {
+        Seq(filtered, tbl, filterConditionCv, batchWithCategories).safeClose()
+      }
+
+      numOutputBatches += 1
+      numOutputRows += filteredBatch.numRows()
+      filteredBatch
+    } finally {
+      nvtxRange.close()
     }
   }
 }
@@ -134,43 +170,8 @@ case class GpuFilterExec(condition: GpuExpression, child: SparkPlan)
     val rdd = child.executeColumnar()
 
     rdd.map { batch =>
-      val nvtxRange = new NvtxWithMetrics("filter batch", NvtxColor.YELLOW, totalTime)
-      try {
-        filterBatch(batch, boundCondition, numOutputRows, numOutputBatches)
-      } finally {
-        nvtxRange.close()
-      }
+        GpuFilter(batch, boundCondition, numOutputRows, numOutputBatches, totalTime)
     }
-  }
-
-  private def filterBatch(
-      batch: ColumnarBatch,
-      boundCondition: GpuExpression,
-      numOutputRows: SQLMetric,
-      numOutputBatches: SQLMetric): ColumnarBatch = {
-    val batchWithCategories = try {
-      GpuColumnVector.convertToStringCategoriesIfNeeded(batch)
-    } finally {
-      batch.close()
-    }
-
-    var filterConditionCv: GpuColumnVector = null
-    var tbl: cudf.Table = null
-    var filtered: cudf.Table = null
-    var error: Throwable = null
-    val filteredBatch = try {
-      filterConditionCv = boundCondition.columnarEval(batchWithCategories).asInstanceOf[GpuColumnVector]
-      tbl = GpuColumnVector.from(batchWithCategories)
-      filtered = tbl.filter(filterConditionCv.getBase)
-      numOutputRows += filtered.getRowCount
-      GpuColumnVector.from(filtered)
-    } finally {
-      Seq(filtered, tbl, filterConditionCv, batchWithCategories).safeClose()
-    }
-
-    numOutputBatches += 1
-    numOutputRows += filteredBatch.numRows()
-    filteredBatch
   }
 }
 
