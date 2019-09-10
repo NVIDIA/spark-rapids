@@ -43,6 +43,11 @@ class HashAggregatesSuite extends SparkQueryCompareTestSuite {
       incompat = true, sort = true)(fn)
   }
 
+  def enableStringHashGroupBy(): SparkConf = {
+    // configures whether Plugin will replace certain aggregate exec nodes
+    new SparkConf().set(RapidsConf.STRING_GPU_HASH_GROUP_BY_ENABLED.key, "true")
+  }
+
   IGNORE_ORDER_testSparkResultsAreEqual("test hash agg with shuffle", longsFromCSVDf, repart = 2) {
     frame => frame.groupBy(col("longs")).agg(sum(col("more_longs")))
   }
@@ -70,6 +75,26 @@ class HashAggregatesSuite extends SparkQueryCompareTestSuite {
       count("*"),
       avg("longs"),
       avg(col("more_longs") * lit("10")))
+  }
+
+  IGNORE_ORDER_testSparkResultsAreEqual("group by string", nullableStringsIntsDf,
+    conf = enableStringHashGroupBy().set(RapidsConf.ALLOW_FLOAT_AGG.key, "true")) {
+    frame => frame.groupBy("strings").agg(
+      max("ints"), 
+      min("ints"), 
+      avg("ints"), 
+      sum("ints"), 
+      count("*"))
+  }
+
+  IGNORE_ORDER_testSparkResultsAreEqual("group by utf8 strings", utf8RepeatedDf,
+    conf = enableStringHashGroupBy().set(RapidsConf.ALLOW_FLOAT_AGG.key, "true")) {
+    frame => frame.groupBy("strings").agg(
+      max("ints"),
+      min("ints"),
+      avg("ints"),
+      sum("ints"),
+      count("*"))
   }
 
   IGNORE_ORDER_testSparkResultsAreEqual("test count, sum, max, min with shuffle", longsFromCSVDf, repart = 2) {
