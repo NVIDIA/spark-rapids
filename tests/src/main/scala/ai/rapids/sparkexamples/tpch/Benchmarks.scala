@@ -16,6 +16,8 @@
 
 package ai.rapids.sparkexamples.tpch
 
+import java.util.concurrent.TimeUnit
+
 import org.apache.spark.sql.SparkSession
 
 object Benchmarks {
@@ -63,7 +65,10 @@ object Benchmarks {
         case "21" => Q21Like(session)
         case "22" => Q22Like(session)
       }
+      val start = System.nanoTime()
       df.write.mode("overwrite").csv(output + "/" + query)
+      val end = System.nanoTime()
+      System.err.println(s"QUERY: ${query} took ${TimeUnit.NANOSECONDS.toMillis(end - start)} ms")
     })
   }
 }

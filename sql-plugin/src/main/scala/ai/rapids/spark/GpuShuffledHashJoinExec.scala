@@ -44,10 +44,6 @@ class GpuShuffledHashJoinMeta(
     if (!GpuHashJoin.isJoinTypeAllowed(join.joinType)) {
       willNotWorkOnGpu(s" ${join.joinType} is not currently supported")
     }
-
-    if (join.condition.isDefined) {
-      willNotWorkOnGpu("Conditional joins are not currently supported")
-    }
   }
 
   override def convertToGpu(): GpuExec =
@@ -71,8 +67,11 @@ case class GpuShuffledHashJoinExec(
     right: SparkPlan) extends BinaryExecNode with GpuHashJoin {
 
   override val additionalMetrics: Map[String, SQLMetric] = Map(
-    "buildDataSize" -> SQLMetrics.createSizeMetric(sparkContext, "data size of build side"),
-    "buildTime" -> SQLMetrics.createNanoTimingMetric(sparkContext, "time to build hash map"))
+    "buildDataSize" -> SQLMetrics.createSizeMetric(sparkContext, "build side size"),
+    "buildTime" -> SQLMetrics.createNanoTimingMetric(sparkContext, "build time"),
+    "joinTime" -> SQLMetrics.createNanoTimingMetric(sparkContext, "join time"),
+    "joinOutputRows" -> SQLMetrics.createMetric(sparkContext, "join output rows"),
+    "filterTime" -> SQLMetrics.createNanoTimingMetric(sparkContext, "filter time"))
 
   override def requiredChildDistribution: Seq[Distribution] =
     HashClusteredDistribution(leftKeys) :: HashClusteredDistribution(rightKeys) :: Nil
@@ -93,6 +92,11 @@ case class GpuShuffledHashJoinExec(
     val numOutputBatches = longMetric(NUM_OUTPUT_BATCHES)
     val totalTime = longMetric(TOTAL_TIME)
     val buildTime = longMetric("buildTime")
+    val joinTime = longMetric("joinTime")
+    val filterTime = longMetric("filterTime")
+    val joinOutputRows = longMetric("joinOutputRows")
+
+    val boundCondition = condition.map(GpuBindReferences.bindReference(_, output))
 
     streamedPlan.executeColumnar().zipPartitions(buildPlan.executeColumnar()) {
       (streamIter, buildIter) => {
@@ -128,10 +132,9 @@ case class GpuShuffledHashJoinExec(
 
         streamIter.map(cb => {
           val startTime = System.nanoTime()
-          val ret = doJoin(builtTable, cb)
+          val ret = doJoin(builtTable, cb, boundCondition, joinOutputRows, numOutputRows,
+            numOutputBatches, joinTime, filterTime)
           totalTime += (System.nanoTime() - startTime)
-          numOutputRows += ret.numRows()
-          numOutputBatches += 1
           ret
         })
       }

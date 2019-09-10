@@ -25,6 +25,7 @@ import org.apache.spark.sql.catalyst.plans.physical.{BroadcastDistribution, Dist
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.execution.exchange.ReusedExchangeExec
 import org.apache.spark.sql.execution.joins._
+import org.apache.spark.sql.execution.metric.{SQLMetric, SQLMetrics}
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
 class GpuBroadcastHashJoinMeta(
@@ -43,10 +44,6 @@ class GpuBroadcastHashJoinMeta(
   override def tagPlanForGpu(): Unit = {
     if (!GpuHashJoin.isJoinTypeAllowed(join.joinType)) {
       willNotWorkOnGpu(s" ${join.joinType} is not currently supported")
-    }
-
-    if (join.condition.isDefined) {
-      willNotWorkOnGpu("Conditional joins are not currently supported")
     }
 
     val buildSide = join.buildSide match {
@@ -92,6 +89,11 @@ case class GpuBroadcastHashJoinExec(
     left: SparkPlan,
     right: SparkPlan) extends BinaryExecNode with GpuHashJoin {
 
+  override val additionalMetrics: Map[String, SQLMetric] = Map(
+    "joinOutputRows" -> SQLMetrics.createMetric(sparkContext, "join output rows"),
+    "joinTime" -> SQLMetrics.createNanoTimingMetric(sparkContext, "join time"),
+    "filterTime" -> SQLMetrics.createNanoTimingMetric(sparkContext, "filter time"))
+
   override def requiredChildDistribution: Seq[Distribution] = {
     val mode = HashedRelationBroadcastMode(buildKeys)
     buildSide match {
@@ -114,8 +116,14 @@ case class GpuBroadcastHashJoinExec(
     val numOutputRows = longMetric(NUM_OUTPUT_ROWS)
     val numOutputBatches = longMetric(NUM_OUTPUT_BATCHES)
     val totalTime = longMetric(TOTAL_TIME)
+    val joinTime = longMetric("joinTime")
+    val filterTime = longMetric("filterTime")
+    val joinOutputRows = longMetric("joinOutputRows")
+
     val broadcastRelation = broadcastExchange
       .executeColumnarBroadcast[SerializableGpuColumnarBatch]()
+
+    val boundCondition = condition.map(GpuBindReferences.bindReference(_, output))
 
     val rdd = streamedPlan.executeColumnar()
     rdd.mapPartitions(it => new Iterator[ColumnarBatch] {
@@ -125,7 +133,6 @@ case class GpuBroadcastHashJoinExec(
         val combined = combine(keys, broadcastRelation.value.batch)
         val asStringCat = GpuColumnVector.convertToStringCategoriesIfNeeded(combined)
         val ret = GpuColumnVector.from(asStringCat)
-        numOutputBatches += 1
         // Don't warn for a leak, because we cannot control when we are done with this
         (0 until ret.getNumberOfColumns).foreach(ret.getColumn(_).noWarnLeakExpected())
         ret
@@ -136,9 +143,9 @@ case class GpuBroadcastHashJoinExec(
       override def next(): ColumnarBatch = {
         val cb = it.next()
         val startTime = System.nanoTime()
-        val ret = doJoin(builtTable, cb)
+        val ret = doJoin(builtTable, cb, boundCondition, numOutputRows, numOutputBatches,
+          joinOutputRows, joinTime, filterTime)
         totalTime += (System.nanoTime() - startTime)
-        numOutputRows += ret.numRows()
         ret
       }
     })
