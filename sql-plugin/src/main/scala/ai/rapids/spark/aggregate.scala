@@ -42,8 +42,7 @@ class GpuHashAggregateMeta(
     conf: RapidsConf,
     parent: Option[RapidsMeta[_, _, _]],
     rule: ConfKeysAndIncompat)
-  extends SparkPlanMeta[HashAggregateExec](agg, conf, parent, rule) {
-
+  extends SparkPlanMeta[HashAggregateExec](agg, conf, parent, rule) { 
   private val requiredChildDistributionExpressions: Option[Seq[ExprMeta[_]]] =
     agg.requiredChildDistributionExpressions.map(_.map(GpuOverrides.wrapExpr(_, conf, Some(this))))
   private val groupingExpressions: Seq[ExprMeta[_]] =
@@ -63,21 +62,12 @@ class GpuHashAggregateMeta(
       resultExpressions
 
   override def tagPlanForGpu(): Unit = {
-    // The StringType check was added due to core dump in the latest branch while running the mortgage tests
-    // in ~NVStrings.
-    //
-    // Note that we replace only if resultExpressions is non empty. This is due to a case
-    // where HashAggregateExec nodes can be added with empty result expression (the MortgageTest exposes this).
-    // The only choice should be to group by the grouping expressions, and use the grouping
-    // key + the aggregate expressions as the result, but for now lets not handle it until
-    // we can shed some light (in our tests the HashAggregateExec node without result expression appears
-    // to go away after the plugin anyway)
     if (GpuOverrides.isAnyStringLit(agg.groupingExpressions)) {
       willNotWorkOnGpu("string literal values are not supported in a hash aggregate")
     }
     val groupingExpressionTypes = agg.groupingExpressions.map(_.dataType)
-    if (groupingExpressionTypes.contains(StringType)) {
-      willNotWorkOnGpu("strings are not supported as grouping keys for hash aggregation.")
+    if (!conf.stringHashGroupByEnabled && groupingExpressionTypes.contains(StringType)) {
+      willNotWorkOnGpu("strings are not enabled as grouping keys for hash aggregation.")
     }
     if (conf.hasNans &&
       (groupingExpressionTypes.contains(FloatType) ||
@@ -412,6 +402,8 @@ case class GpuHashAggregateExec(requiredChildDistributionExpressions: Option[Seq
           case _ => GpuColumnVector.from(GpuScalar.from(in), batch.numRows)
         }
         val childCvCasted = if (childCv.dataType != ref.dataType) {
+          // note that for string categories, childCv.dataType == StringType
+          // so we are not going to cast them to string unnecessarily here,
           val newCv = GpuColumnVector.from(
             childCv.asInstanceOf[GpuColumnVector].getBase.castTo(
               GpuColumnVector.getRapidsType(childCv.dataType),
@@ -598,7 +590,13 @@ case class GpuHashAggregateExec(requiredChildDistributionExpressions: Option[Seq
             }
           }
 
-          tbl = new cudf.Table(toAggregateCvs.map(_.getBase): _*)
+          var aggregateCvsWithCategories = Seq[GpuColumnVector]()
+          try { 
+            aggregateCvsWithCategories = toAggregateCvs.safeMap(_.convertToStringCategoriesIfNeeded())
+            tbl = new cudf.Table(aggregateCvsWithCategories.map(_.getBase): _*)
+          } finally {
+            aggregateCvsWithCategories.safeClose()
+          }
 
           if (cudfAggregates.isEmpty) {
             // we can't have empty aggregates, so pick a dummy max
@@ -629,7 +627,13 @@ case class GpuHashAggregateExec(requiredChildDistributionExpressions: Option[Seq
                 val resCol = result.getColumn(i)
                 val rapidsType = GpuColumnVector.getRapidsType(dataTypes(i))
                 val timeUnit = GpuColumnVector.getTimeUnits(dataTypes(i))
-                resCol.castTo(rapidsType, timeUnit) // just does refCount++ for same type
+                if (rapidsType == cudf.DType.STRING && 
+                  resCol.getType() == cudf.DType.STRING_CATEGORY) {
+                  // don't cast to string unnecesarily here, keep string categories as such
+                  resCol.incRefCount()
+                } else {
+                  resCol.castTo(rapidsType, timeUnit) // just does refCount++ for same type
+                }
               }
               var success = false
               try {

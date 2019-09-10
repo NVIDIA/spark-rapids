@@ -713,6 +713,30 @@ trait SparkQueryCompareTestSuite extends FunSuite {
     ).toDF("strings", "more_strings")
   }
 
+  def nullableStringsIntsDf(session: SparkSession): DataFrame = {
+    import session.sqlContext.implicits._
+    Seq[(String, Integer)](
+      ("100.0", 1),
+      (null, 2),
+      (null, 10),
+      ("300.0", 3),
+      ("400.0", null),
+      ("500.0", 5),
+      ("500.0", 7),
+      ("-100.0", null),
+      ("-100.0", 27),
+      ("-500.0", 0)
+    ).toDF("strings", "ints")
+  }
+
+  def utf8RepeatedDf(session: SparkSession): DataFrame = {
+    import session.sqlContext.implicits._
+    var utf8Chars = (0 until 256 /*65536*/).map(i => (i.toChar.toString, i))
+    utf8Chars = utf8Chars ++ utf8Chars
+    utf8Chars.toDF("strings", "ints")
+  }
+
+
   def nullableStringsFromCsv = {
     fromCsvDf("strings.csv", StructType(Array(
       StructField("strings", StringType, true),

@@ -183,6 +183,12 @@ object RapidsConf {
     .booleanConf
     .createWithDefault(false)
 
+  val STRING_GPU_HASH_GROUP_BY_ENABLED = conf("spark.rapids.sql.enableStringHashGroupBy")
+    .doc("Config to allow grouping by strings using the GPU in the hash aggregate. Currently they are " +
+      "really slow")
+    .booleanConf
+    .createWithDefault(false)
+
   val TEST_CONF = conf("spark.rapids.sql.testing")
     .doc("Intended to be used by unit tests, if enabled all operations must run on the GPU " +
       "or an error happens.")
@@ -284,6 +290,8 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
   lazy val allowIncompatUTF8Strings: Boolean = get(ALLOW_INCOMPAT_UTF8_STRINGS)
 
   lazy val allowFloatAgg: Boolean = get(ALLOW_FLOAT_AGG)
+
+  lazy val stringHashGroupByEnabled: Boolean = get(STRING_GPU_HASH_GROUP_BY_ENABLED)
 
   lazy val explain: Boolean = get(EXPLAIN)
 

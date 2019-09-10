@@ -31,6 +31,7 @@ class TpchLikeSparkTest extends FunSuite with BeforeAndAfterAll {
       .config("ai.rapids.gpu.incompatible_ops", true)
       .config("spark.sql.join.preferSortMergeJoin", false)
       .config("spark.rapids.sql.explain", true)
+      .config("spark.rapids.sql.enableStringHashGroupBy", true)
       .getOrCreate()
   }
 
