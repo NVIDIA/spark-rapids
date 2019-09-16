@@ -24,7 +24,7 @@ import org.apache.spark.sql.catalyst.plans.physical.Partitioning
 import org.apache.spark.sql.execution.SparkPlan
 import org.apache.spark.sql.execution.exchange.ShuffleExchangeExec
 import org.apache.spark.sql.execution.joins.{BroadcastHashJoinExec, BuildLeft, BuildRight, ShuffledHashJoinExec, SortMergeJoinExec}
-import org.apache.spark.sql.sources.v2.reader.Scan
+import org.apache.spark.sql.connector.read.Scan
 
 trait ConfKeysAndIncompat {
   val operationName: String
