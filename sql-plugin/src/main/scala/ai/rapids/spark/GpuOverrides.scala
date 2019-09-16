@@ -35,7 +35,7 @@ import org.apache.spark.sql.execution.datasources.v2.parquet.ParquetScan
 import org.apache.spark.sql.execution.exchange.{BroadcastExchangeExec, ShuffleExchangeExec}
 import org.apache.spark.sql.execution.joins.{BroadcastHashJoinExec, ShuffledHashJoinExec}
 import org.apache.spark.sql.rapids._
-import org.apache.spark.sql.sources.v2.reader.Scan
+import org.apache.spark.sql.connector.read.Scan
 import org.apache.spark.sql.types._
 
 /**
