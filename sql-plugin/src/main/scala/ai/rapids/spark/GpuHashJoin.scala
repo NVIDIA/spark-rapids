@@ -1,6 +1,6 @@
 package ai.rapids.spark
 
-import ai.rapids.cudf.{NvtxColor, NvtxRange, Table}
+import ai.rapids.cudf.{NvtxColor, Table}
 
 import org.apache.spark.sql.catalyst.expressions.Attribute
 import org.apache.spark.sql.catalyst.plans.{Inner, JoinType, LeftOuter}
@@ -43,15 +43,8 @@ trait GpuHashJoin extends GpuExec with HashJoin {
   val joinKeyIndices: Range = gpuBuildKeys.indices
 
   val localBuildOutput: Seq[Attribute] = buildPlan.output
-  val numLeftBatchColumns: Int = left.output.size
-  // The middle columns are the ones we joined on and need to remove
-  val joinIndices: Seq[Int] = output.indices.map(v => {
-    if (v < numLeftBatchColumns) {
-      v
-    } else {
-      v + joinKeyIndices.length
-    }
-  })
+  // The first columns are the ones we joined on and need to remove
+  val joinIndices: Seq[Int] = output.indices.map(v => v + joinKeyIndices.length)
 
   def doJoin(builtTable: Table,
       streamedBatch: ColumnarBatch,
@@ -110,7 +103,6 @@ trait GpuHashJoin extends GpuExec with HashJoin {
       case _ => throw new NotImplementedError(s"Joint Type ${joinType.getClass} is not currently" +
         s" supported")
     }
-    // TODO java is returning INVALID type for empty join results.
     try {
       val result = joinIndices.map(joinIndex =>
         GpuColumnVector.from(joinedTable.getColumn(joinIndex).incRefCount()))

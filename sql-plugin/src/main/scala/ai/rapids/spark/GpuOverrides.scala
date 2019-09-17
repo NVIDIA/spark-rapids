@@ -750,11 +750,10 @@ object GpuOverrides {
     exec[BroadcastHashJoinExec](
       "Implementation of join using broadcast data",
       (join, conf, p, r) => new GpuBroadcastHashJoinMeta(join, conf, p, r))
-      .incompat("GPU required on the driver and joins with empty batches may fail"),
+      .incompat("GPU required on the driver"),
     exec[ShuffledHashJoinExec](
       "Implementation of join using hashed shuffled data",
-      (join, conf, p, r) => new GpuShuffledHashJoinMeta(join, conf, p, r))
-      .incompat("joins with empty batches may fail"),
+      (join, conf, p, r) => new GpuShuffledHashJoinMeta(join, conf, p, r)),
     exec[HashAggregateExec](
       "The backend for hash based aggregations",
       (agg, conf, p, r) => new GpuHashAggregateMeta(agg, conf, p, r)),
