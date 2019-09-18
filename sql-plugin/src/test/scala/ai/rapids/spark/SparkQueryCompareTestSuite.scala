@@ -170,7 +170,7 @@ trait SparkQueryCompareTestSuite extends FunSuite {
         dataB = dataB.repartition(repart)
       }
       fun(dataA, dataB).collect()
-    })
+    }, conf)
 
     val fromGpu = withGpuSparkSession((session) => {
       var dataA = dfA(session)
