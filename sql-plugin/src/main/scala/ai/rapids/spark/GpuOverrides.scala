@@ -24,7 +24,7 @@ import org.apache.spark.internal.Logging
 import org.apache.spark.sql.catalyst.expressions._
 import org.apache.spark.sql.catalyst.expressions.aggregate._
 import org.apache.spark.sql.catalyst.optimizer.NormalizeNaNAndZero
-import org.apache.spark.sql.catalyst.plans.physical.{HashPartitioning, Partitioning}
+import org.apache.spark.sql.catalyst.plans.physical._
 import org.apache.spark.sql.catalyst.rules.Rule
 import org.apache.spark.sql.execution._
 import org.apache.spark.sql.execution.aggregate.HashAggregateExec
@@ -33,7 +33,7 @@ import org.apache.spark.sql.execution.datasources.v2.csv.CSVScan
 import org.apache.spark.sql.execution.datasources.v2.orc.OrcScan
 import org.apache.spark.sql.execution.datasources.v2.parquet.ParquetScan
 import org.apache.spark.sql.execution.exchange.{BroadcastExchangeExec, ShuffleExchangeExec}
-import org.apache.spark.sql.execution.joins.{BroadcastHashJoinExec, ShuffledHashJoinExec}
+import org.apache.spark.sql.execution.joins.{BroadcastHashJoinExec, ShuffledHashJoinExec, SortMergeJoinExec}
 import org.apache.spark.sql.rapids._
 import org.apache.spark.sql.connector.read.Scan
 import org.apache.spark.sql.types._
@@ -174,8 +174,7 @@ class ExecRule[INPUT <: SparkPlan](
     incompatDoc: Option[String],
     desc: String,
     tag: ClassTag[INPUT])
-  extends ReplacementRule[INPUT, SparkPlan,
-    SparkPlanMeta[INPUT]](doWrap, incompatDoc, desc, tag){
+  extends ReplacementRule[INPUT, SparkPlan, SparkPlanMeta[INPUT]](doWrap, incompatDoc, desc, tag) {
 
   override val confKeyPart: String = "exec"
   override val operationName: String = "Exec"
@@ -531,7 +530,7 @@ object GpuOverrides {
       "sort order",
       (a, conf, p, r) => new UnaryExprMeta[SortOrder](a, conf, p, r) {
         override def convertToGpu(child: GpuExpression): GpuExpression =
-          GpuSortOrder(child, a.direction, a.nullOrdering, a.sameOrderExpressions)
+          GpuSortOrder(child, a.direction, a.nullOrdering, a.sameOrderExpressions, a.child)
       }),
     expr[Count](
       "count aggregate operator",
@@ -754,6 +753,9 @@ object GpuOverrides {
     exec[ShuffledHashJoinExec](
       "Implementation of join using hashed shuffled data",
       (join, conf, p, r) => new GpuShuffledHashJoinMeta(join, conf, p, r)),
+    exec[SortMergeJoinExec](
+      "Sort merge join, replacing with shuffled hash join",
+      (join, conf, p, r) => new GpuSortMergeJoinMeta(join, conf, p, r)),
     exec[HashAggregateExec](
       "The backend for hash based aggregations",
       (agg, conf, p, r) => new GpuHashAggregateMeta(agg, conf, p, r)),
@@ -772,9 +774,51 @@ case class GpuOverrides() extends Rule[SparkPlan] with Logging {
       if (conf.explain) {
         logWarning(s"\n${wrap}")
       }
-      wrap.convertIfNeeded()
+      val convertedPlan = wrap.convertIfNeeded()
+      addSortsIfNeeded(convertedPlan, conf)
     } else {
       plan
+    }
+  }
+
+  private final class SortConfKeysAndIncompat extends ConfKeysAndIncompat {
+    override val operationName: String = "Exec"
+    override def confKey = "spark.rapids.sql.exec.SortExec"
+  }
+
+  // copied from Spark EnsureRequirements but only does the ordering checks and
+  // check to convert any SortExec added to GpuSortExec
+  private def ensureOrdering(operator: SparkPlan, conf: RapidsConf): SparkPlan = {
+    val requiredChildOrderings: Seq[Seq[SortOrder]] = operator.requiredChildOrdering
+    var children: Seq[SparkPlan] = operator.children
+    assert(requiredChildOrderings.length == children.length)
+
+    // Now that we've performed any necessary shuffles, add sorts to guarantee output orderings:
+    children = children.zip(requiredChildOrderings).map { case (child, requiredOrdering) =>
+      // If child.outputOrdering already satisfies the requiredOrdering, we do not need to sort.
+      val childOrdering = child.outputOrdering
+      if (SortOrder.orderingSatisfies(child.outputOrdering, requiredOrdering)) {
+        child
+      } else {
+        val sort = SortExec(requiredOrdering, global = false, child = child)
+        // just specifically check Sort to see if we can change Sort to GPUSort
+        val sortMeta = new GpuSortMeta(sort, conf, None, new SortConfKeysAndIncompat)
+        sortMeta.initReasons()
+        sortMeta.tagPlanForGpu()
+        if (sortMeta.canThisBeReplaced) {
+          sortMeta.convertToGpu()
+        } else {
+          sort
+        }
+      }
+    }
+    operator.withNewChildren(children)
+  }
+
+  def addSortsIfNeeded(plan: SparkPlan, conf: RapidsConf): SparkPlan = {
+    plan.transformUp {
+      case operator: SparkPlan =>
+        ensureOrdering(operator, conf)
     }
   }
 }

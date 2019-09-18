@@ -59,12 +59,26 @@ class JoinsSuite extends SparkQueryCompareTestSuite {
   // than the number of splits * broadcast threshold and also be at least
   // 3 times smaller than the other side.  So it is not likely to happen
   // unless we can give it some help.
-  INCOMPAT_testSparkResultsAreEqual2("Test hash join", longsDf, biggerLongsDf,
-    conf=new SparkConf()
+  INCOMPAT_IGNORE_ORDER_testSparkResultsAreEqual2("Test hash join", longsDf, biggerLongsDf,
+    conf = new SparkConf()
       .set("spark.sql.autoBroadcastJoinThreshold", "160")
       .set("spark.sql.join.preferSortMergeJoin", "false")
       .set("spark.sql.shuffle.partitions", "2")) { // hack to try and work around bug in cudf
     (A, B) => A.join(B, A("longs") === B("more_longs"))
   }
 
+  // test replacement of sort merge join with hash join
+  // make sure broadcast size small enough it doesn't get used
+  testSparkResultsAreEqual2("Test replace sort merge join with hash join",
+    longsDf, biggerLongsDf,
+    conf = new SparkConf()
+      .set("spark.sql.autoBroadcastJoinThreshold", "-1")
+      .set("spark.sql.join.preferSortMergeJoin", "true")
+      .set("spark.sql.shuffle.partitions", "2"), // hack to try and work around bug in cudf
+    incompat = true,
+    allowNonGpu = false,
+    sort = true,
+    execsAllowedNonGpu = Seq("SortExec", "SortOrder")) {
+    (A, B) => A.join(B, A("longs") === B("longs"))
+  }
 }

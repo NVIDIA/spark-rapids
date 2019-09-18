@@ -290,12 +290,19 @@ class GpuColumnarBatchSorter(
  * As far as I can tell the sameOrderExpressions can stay as is. It's used to see if the
  * ordering already matches for things like inserting shuffles and optimizing out redundant sorts
  * and as long as the plugin isn't acting differently then the CPU that should just work.
+ *
+ * Keep the original child Expression around so that when we convert back to a SortOrder we
+ * can pass that in. If we don't do that then GpuExpressions will end up being used to
+ * check if the sort order satisfies the child order and things won't match up (specifically
+ * AttributeReference.semanticEquals won't match GpuAttributeReference.
+ *
  */
 case class GpuSortOrder(
     child: GpuExpression,
     direction: SortDirection,
     nullOrdering: NullOrdering,
-    sameOrderExpressions: Set[Expression])
+    sameOrderExpressions: Set[Expression],
+    private val origChild: Expression)
   extends GpuUnevaluableUnaryExpression {
 
   /** Sort order is not foldable because we don't have an eval for it. */
@@ -317,5 +324,5 @@ case class GpuSortOrder(
 
   def isAscending: Boolean = direction == Ascending
 
-  def toSortOrder: SortOrder = SortOrder(child, direction, nullOrdering, sameOrderExpressions)
+  def toSortOrder: SortOrder = SortOrder(origChild, direction, nullOrdering, sameOrderExpressions)
 }

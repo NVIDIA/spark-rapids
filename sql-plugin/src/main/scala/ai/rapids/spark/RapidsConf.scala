@@ -247,6 +247,11 @@ object RapidsConf {
     .booleanConf
     .createWithDefault(false)
 
+  val ENABLE_REPLACE_SORTMERGEJOIN = conf("spark.rapids.sql.enableReplaceSortMergeJoin")
+    .doc("Allow replacing sortMergeJoin with HashJoin")
+    .booleanConf
+    .createWithDefault(true)
+
   def help(): Unit = {
     println("Rapids Configs:")
     registeredConfs.foreach(_.help())
@@ -304,6 +309,8 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
   lazy val hashAggReplaceMode: String = get(HASH_AGG_REPLACE_MODE)
 
   lazy val enableTotalOrderSort: Boolean = get(ENABLE_TOTAL_ORDER_SORT)
+
+  lazy val enableReplaceSortMergeJoin: Boolean = get(ENABLE_REPLACE_SORTMERGEJOIN)
 
   def isOperatorEnabled(key: String, incompat: Boolean): Boolean = {
     val default = !incompat || (incompat && isIncompatEnabled)
