@@ -19,7 +19,7 @@ package ai.rapids.spark
 import ai.rapids.cudf.{Cuda, Rmm, RmmAllocationMode}
 import ai.rapids.spark
 
-import org.apache.spark.{ExecutorPlugin, SparkEnv}
+import org.apache.spark.{ExecutorPlugin, ExecutorPluginContext, SparkEnv}
 import org.apache.spark.internal.Logging
 import org.apache.spark.sql.SparkSessionExtensions
 import org.apache.spark.sql.catalyst.plans.physical.Partitioning
@@ -69,7 +69,7 @@ class Plugin extends Function1[SparkSessionExtensions, Unit] with Logging {
 class GpuResourceManager extends ExecutorPlugin with Logging {
   var loggingEnabled = false
 
-  override def init(): Unit = synchronized {
+  override def init(pluginContext: ExecutorPluginContext): Unit = synchronized {
     // We eventually will need a way to know which GPU to use/etc, but for now, we will just
     // go with the default GPU.
     if (!Rmm.isInitialized) {
