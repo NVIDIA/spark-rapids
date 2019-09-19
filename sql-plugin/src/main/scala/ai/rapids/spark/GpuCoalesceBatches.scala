@@ -16,11 +16,9 @@
 
 package ai.rapids.spark
 
-import java.util.concurrent.TimeUnit
-
 import scala.collection.mutable.ArrayBuffer
 
-import ai.rapids.cudf.Table
+import ai.rapids.cudf.{NvtxColor, Table}
 
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.expressions.Attribute
@@ -154,36 +152,52 @@ case class TargetSize(override val targetSize: Long) extends CoalesceGoal {
   assert(targetSize <= Integer.MAX_VALUE)
 }
 
-abstract class AbstractGpuCoalesceIterator(iter: Iterator[ColumnarBatch],
+class RemoveEmptyBatchIterator(iter: Iterator[ColumnarBatch],
+    numFiltered: SQLMetric) extends Iterator[ColumnarBatch] {
+  private var onDeck: Option[ColumnarBatch] = None
+
+  TaskContext.get().addTaskCompletionListener[Unit](_ => onDeck.foreach(_.close()))
+
+  override def hasNext: Boolean = {
+    while (onDeck.isEmpty && iter.hasNext) {
+      val cb = iter.next()
+      val rows = cb.numRows()
+      if (rows > 0) {
+        onDeck = Some(cb)
+      } else {
+        numFiltered += 1
+        cb.close()
+      }
+    }
+    onDeck.isDefined
+  }
+
+  override def next(): ColumnarBatch =
+    if (onDeck.isDefined || hasNext) {
+      val ret = onDeck.get
+      onDeck = None
+      ret
+    } else {
+      throw new NoSuchElementException()
+    }
+}
+
+abstract class AbstractGpuCoalesceIterator(origIter: Iterator[ColumnarBatch],
     goal: CoalesceGoal,
     numInputRows: SQLMetric,
     numInputBatches: SQLMetric,
     numOutputRows: SQLMetric,
     numOutputBatches: SQLMetric,
     collectTime: SQLMetric,
-    concatTime: SQLMetric) extends Iterator[ColumnarBatch] {
+    concatTime: SQLMetric,
+    totalTime: SQLMetric,
+    opName: String) extends Iterator[ColumnarBatch] {
+  private val iter = new RemoveEmptyBatchIterator(origIter, numInputBatches)
   private var onDeck: Option[ColumnarBatch] = None
-  private var collectStart: Long = -1
 
   TaskContext.get().addTaskCompletionListener[Unit](_ => onDeck.foreach(_.close()))
 
-  override def hasNext: Boolean = {
-    while (onDeck.isEmpty && iter.hasNext) {
-      if (collectStart < 0) {
-        collectStart = System.nanoTime()
-      }
-      val cb = iter.next()
-      numInputBatches += 1
-      val rows = cb.numRows()
-      if (rows > 0) {
-        onDeck = Some(cb)
-        numInputRows += rows
-      } else {
-        cb.close()
-      }
-    }
-    onDeck.isDefined
-  }
+  override def hasNext: Boolean = iter.hasNext
 
   /**
    * Called first to initialize any state needed for a new batch to be created.
@@ -210,8 +224,9 @@ abstract class AbstractGpuCoalesceIterator(iter: Iterator[ColumnarBatch],
   def cleanupConcatIsDone(): Unit
 
   override def next(): ColumnarBatch = {
-    initNewBatch()
+    val total = new MetricRange(totalTime)
     try {
+      initNewBatch()
       var numRows: Long = 0 // to avoid overflows
       if (onDeck.isDefined) {
         val cb = onDeck.get
@@ -224,41 +239,43 @@ abstract class AbstractGpuCoalesceIterator(iter: Iterator[ColumnarBatch],
         numRows += rows
       }
 
-      while (numRows < goal.targetSize && onDeck.isEmpty && iter.hasNext) {
-        if (collectStart < 0) {
-          collectStart = System.nanoTime()
-        }
-        val cb = iter.next()
-        val nextRows = cb.numRows()
-        numInputBatches += 1
-        if (nextRows > 0) {
+      val collect = new MetricRange(collectTime)
+      try {
+        while (numRows < goal.targetSize && onDeck.isEmpty && iter.hasNext) {
+          val cb = iter.next()
+          val nextRows = cb.numRows()
+          numInputBatches += 1
           numInputRows += nextRows
           val wouldBeRows = nextRows + numRows
           if (wouldBeRows > goal.targetSize) {
             goal.whenTargetExceeded(wouldBeRows)
-            onDeck = Some(cb)
+            // If numRows == 0, this is the first batch so we really should just do it.
+            if (numRows == 0) {
+              addBatchToConcat(cb)
+              numRows = wouldBeRows
+            } else {
+              onDeck = Some(cb)
+            }
           } else {
             addBatchToConcat(cb)
             numRows = wouldBeRows
           }
-        } else {
-          // Empty batch just close it now...
-          cb.close()
         }
+        numOutputRows += numRows
+        numOutputBatches += 1
+      } finally {
+        collect.close()
       }
-      numOutputRows += numRows
-      numOutputBatches += 1
-      val collectEnd = System.nanoTime()
-      val ret = concatAllAndPutOnGPU()
-      val end = System.nanoTime()
-      if (collectStart > 0) {
-        collectTime += TimeUnit.NANOSECONDS.toMillis(collectEnd - collectStart)
+      val concatRange = new NvtxWithMetrics(s"$opName concat", NvtxColor.CYAN, concatTime)
+      val ret = try {
+        concatAllAndPutOnGPU()
+      } finally {
+        concatRange.close()
       }
-      concatTime += TimeUnit.NANOSECONDS.toMillis(end - collectEnd)
-      collectStart = -1
       ret
     } finally {
       cleanupConcatIsDone()
+      total.close()
     }
   }
 }
@@ -270,7 +287,9 @@ class GpuCoalesceIterator(iter: Iterator[ColumnarBatch],
     numOutputRows: SQLMetric,
     numOutputBatches: SQLMetric,
     collectTime: SQLMetric,
-    concatTime: SQLMetric)
+    concatTime: SQLMetric,
+    totalTime: SQLMetric,
+    opName: String)
   extends AbstractGpuCoalesceIterator(iter,
     goal,
     numInputRows,
@@ -278,7 +297,9 @@ class GpuCoalesceIterator(iter: Iterator[ColumnarBatch],
     numOutputRows,
     numOutputBatches,
     collectTime,
-    concatTime) {
+    concatTime,
+    totalTime,
+    opName) {
 
   private var batches: ArrayBuffer[ColumnarBatch] = ArrayBuffer.empty
 
@@ -300,14 +321,13 @@ class GpuCoalesceIterator(iter: Iterator[ColumnarBatch],
 
 case class GpuCoalesceBatches(child: SparkPlan, goal: CoalesceGoal)
   extends UnaryExecNode with GpuExec {
+  import GpuMetricNames._
 
-  override lazy val metrics: Map[String, SQLMetric] = Map(
+  override lazy val additionalMetrics: Map[String, SQLMetric] = Map(
     "numInputRows" -> SQLMetrics.createMetric(sparkContext, "input rows"),
-    "numOutputRows" -> SQLMetrics.createMetric(sparkContext, "output rows"),
     "numInputBatches" -> SQLMetrics.createMetric(sparkContext, "input batches"),
-    "numOutputBatches" -> SQLMetrics.createMetric(sparkContext, "output batches"),
-    "collectTime" -> SQLMetrics.createTimingMetric(sparkContext, "collect batch time"),
-    "concatTime" -> SQLMetrics.createTimingMetric(sparkContext, "concat batch time")
+    "collectTime" -> SQLMetrics.createNanoTimingMetric(sparkContext, "collect batch time"),
+    "concatTime" -> SQLMetrics.createNanoTimingMetric(sparkContext, "concat batch time")
   )
 
   override protected def doExecute(): RDD[InternalRow] = {
@@ -319,15 +339,16 @@ case class GpuCoalesceBatches(child: SparkPlan, goal: CoalesceGoal)
   override def doExecuteColumnar(): RDD[ColumnarBatch] = {
     val numInputRows = longMetric("numInputRows")
     val numInputBatches = longMetric("numInputBatches")
-    val numOutputRows = longMetric("numOutputRows")
-    val numOutputBatches = longMetric("numOutputBatches")
+    val numOutputRows = longMetric(NUM_OUTPUT_ROWS)
+    val numOutputBatches = longMetric(NUM_OUTPUT_BATCHES)
     val collectTime = longMetric("collectTime")
     val concatTime = longMetric("concatTime")
+    val totalTime = longMetric(TOTAL_TIME)
 
     val batches = child.executeColumnar()
     batches.mapPartitions { iter =>
       new GpuCoalesceIterator(iter, goal,
-        numInputRows, numInputBatches, numOutputRows, numOutputBatches, collectTime, concatTime)
+        numInputRows, numInputBatches, numOutputRows, numOutputBatches, collectTime, concatTime, totalTime, "GpuCoalesceBatches")
     }
   }
 }

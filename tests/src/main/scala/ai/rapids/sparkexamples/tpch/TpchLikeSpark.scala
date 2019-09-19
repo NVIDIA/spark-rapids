@@ -18,6 +18,7 @@ package ai.rapids.sparkexamples.tpch
 
 import org.apache.spark.sql.{DataFrame, SparkSession}
 import org.apache.spark.sql.types._
+import ai.rapids.sparkexamples.DebugRange
 
 object TpchLikeSpark {
   def csvToParquet(spark: SparkSession, basePath: String, baseOutput: String): Unit = {
@@ -219,15 +220,22 @@ object TpchLikeSpark {
     spark.read.parquet(path).createOrReplaceTempView("supplier")
 
   def main(args: Array[String]): Unit = {
-    System.setProperty("ai.rapids.nvtx.enabled", "true")
+    System.setProperty("ai.rapids.cudf.nvtx.enabled", "true")
     val spark = SparkSession.builder.appName("TpchLike")
-        .config("spark.sql.shuffle.partitions", 1)
-        .config("spark.rapids.sql.allowVariableFloatAgg", "true")
-        .getOrCreate()
+      .config("spark.rapids.sql.allowVariableFloatAgg", "true")
+      .config("spark.ui.showConsoleProgress", "false")
+      .config("spark.sql.join.preferSortMergeJoin", "false")
+      .config("spark.rapids.sql.incompatible_ops", "true")
+      .config("spark.rapids.sql.explain", "true")
+      .config("spark.rapids.sql.input.ParquetScan","false")
+      .getOrCreate()
     setupAllParquet(spark, args(0))
-    Q2Like(spark).collect()
-    Q2Like(spark).collect()
-    Q6Like(spark).collect()
+    var range = new DebugRange("QUERY")
+    spark.time(Q4Like(spark).collect())
+    range.close()
+    range = new DebugRange("QUERY")
+    spark.time(Q4Like(spark).collect())
+    range.close()
   }
 }
 
@@ -864,7 +872,6 @@ object Q18Debug {
       |""".stripMargin)
 }
 
-// TODO not getting the right answer out on larger dataset.  Need to dig in more.
 object Q18Like {
   def apply(spark: SparkSession): DataFrame = spark.sql(
     """

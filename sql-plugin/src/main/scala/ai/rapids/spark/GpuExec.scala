@@ -51,5 +51,5 @@ trait GpuExec extends SparkPlan {
     TOTAL_TIME -> SQLMetrics.createNanoTimingMetric(sparkContext,
       "total time")) ++ additionalMetrics
 
-  val additionalMetrics: Map[String, SQLMetric] = Map.empty
+  lazy val additionalMetrics: Map[String, SQLMetric] = Map.empty
 }

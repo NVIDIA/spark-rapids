@@ -21,7 +21,7 @@ import java.nio.ByteBuffer
 
 import scala.reflect.ClassTag
 
-import ai.rapids.cudf.{ColumnVector, JCudfSerialization}
+import ai.rapids.cudf.{ColumnVector, JCudfSerialization, NvtxColor, NvtxRange}
 
 import org.apache.spark.serializer.{DeserializationStream, SerializationStream, Serializer, SerializerInstance}
 import org.apache.spark.sql.execution.metric.SQLMetric
@@ -53,7 +53,7 @@ private class GpuColumnarBatchSerializerInstance(
       val numColumns = batch.numCols()
       val columns: Array[ColumnVector] = new Array(numColumns)
       var startRow = 0
-      var numRows = batch.numRows()
+      val numRows = batch.numRows()
       val firstCol = batch.column(0)
       if (firstCol.isInstanceOf[SlicedGpuColumnVector]) {
         // We don't have control over ColumnarBatch to put in the slice, so we have to do it
@@ -71,7 +71,12 @@ private class GpuColumnarBatchSerializerInstance(
       if (dataSize != null) {
         dataSize.add(JCudfSerialization.getSerializedSizeInBytes(columns, startRow, numRows))
       }
-      JCudfSerialization.writeToStream(columns, dOut, startRow, numRows)
+      val range = new NvtxRange("Serialize Batch", NvtxColor.YELLOW)
+      try {
+        JCudfSerialization.writeToStream(columns, dOut, startRow, numRows)
+      } finally {
+        range.close()
+      }
       this
     }
 
@@ -115,15 +120,20 @@ private class GpuColumnarBatchSerializerInstance(
           })
 
           def tryReadNext(): Option[ColumnarBatch] = {
-            val table = JCudfSerialization.readTableFrom(dIn)
-            if (table == null) {
-              None
-            } else {
-              try {
-                Some(GpuColumnVector.from(table))
-              } finally {
-                table.close()
+            val range = new NvtxRange("Deserialize Batch", NvtxColor.YELLOW)
+            try {
+              val table = JCudfSerialization.readTableFrom(dIn)
+              if (table == null) {
+                None
+              } else {
+                try {
+                  Some(GpuColumnVector.from(table))
+                } finally {
+                  table.close()
+                }
               }
+            } finally {
+              range.close()
             }
           }
 
@@ -161,10 +171,18 @@ private class GpuColumnarBatchSerializerInstance(
       }
 
       override def readValue[T]()(implicit classType: ClassTag[T]): T = {
-        val table = JCudfSerialization.readTableFrom(dIn)
-        val cb = GpuColumnVector.from(table)
-        table.close()
-        cb.asInstanceOf[T]
+        val range = new NvtxRange("Deserialize Batch", NvtxColor.YELLOW)
+        try {
+          val table = JCudfSerialization.readTableFrom(dIn)
+          val cb = try {
+            GpuColumnVector.from(table)
+          } finally {
+            table.close()
+          }
+          cb.asInstanceOf[T]
+        } finally {
+          range.close()
+        }
       }
 
       override def readObject[T]()(implicit classType: ClassTag[T]): T = {

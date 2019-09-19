@@ -680,7 +680,7 @@ case class GpuHashAggregateExec(requiredChildDistributionExpressions: Option[Seq
     }
   }
 
-  override val additionalMetrics = Map(
+  override lazy val additionalMetrics = Map(
     // not supported in GPU
     "peakMemory" -> SQLMetrics.createSizeMetric(sparkContext, "peak memory"),
     "spillSize" -> SQLMetrics.createSizeMetric(sparkContext, "spill size"),

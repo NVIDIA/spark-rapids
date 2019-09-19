@@ -33,3 +33,11 @@ class NvtxWithMetrics(name: String, color: NvtxColor, val metric: SQLMetric)
     super.close()
   }
 }
+
+class MetricRange(val metric: SQLMetric) extends AutoCloseable {
+  private val start = System.nanoTime()
+
+  override def close(): Unit = {
+    metric += (System.nanoTime() - start)
+  }
+}
