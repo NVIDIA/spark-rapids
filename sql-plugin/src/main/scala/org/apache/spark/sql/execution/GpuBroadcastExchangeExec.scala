@@ -23,8 +23,8 @@ import java.util.UUID
 import scala.concurrent.{ExecutionContext, Promise}
 import scala.util.control.NonFatal
 
-import ai.rapids.cudf.JCudfSerialization
-import ai.rapids.spark.{ConcatAndConsumeAll, ConfKeysAndIncompat, GpuColumnVector, GpuExec, RapidsConf, RapidsMeta, SparkPlanMeta}
+import ai.rapids.cudf.{JCudfSerialization, NvtxColor, NvtxRange}
+import ai.rapids.spark.{ConcatAndConsumeAll, ConfKeysAndIncompat, GpuColumnVector, GpuExec, MetricRange, NvtxWithMetrics, RapidsConf, RapidsMeta, SparkPlanMeta}
 import ai.rapids.spark.GpuMetricNames._
 import ai.rapids.spark.RapidsPluginImplicits._
 import com.google.common.util.concurrent.ThreadFactoryBuilder
@@ -60,27 +60,37 @@ class SerializableGpuColumnarBatch(var batch: ColumnarBatch, val closeAfterSeria
   }
 
   private def writeObject(out: ObjectOutputStream): Unit = {
-    columns.foreach(_.ensureOnHost())
-    JCudfSerialization.writeToStream(columns, out, 0, batch.numRows)
-    // In some cases, like an RDD, we want to close the batch once it is serialized out or we will
-    // leak GPU memory (technically it will just wait for GC to release it and probably not a lot
-    // because this is used for a broadcast that really should be small)
-    // In the case of broadcast the life cycle of the object is tied to GC and there is no clean
-    // way to separate the two right now.  So we accept the leak.
-    if (closeAfterSerialize) {
-      batch.close()
-      batch = null
-      columns = null
+    val range = new NvtxRange("SerializeBatch", NvtxColor.PURPLE)
+    try {
+      columns.foreach(_.ensureOnHost())
+      JCudfSerialization.writeToStream(columns, out, 0, batch.numRows)
+      // In some cases, like an RDD, we want to close the batch once it is serialized out or we will
+      // leak GPU memory (technically it will just wait for GC to release it and probably not a lot
+      // because this is used for a broadcast that really should be small)
+      // In the case of broadcast the life cycle of the object is tied to GC and there is no clean
+      // way to separate the two right now.  So we accept the leak.
+      if (closeAfterSerialize) {
+        batch.close()
+        batch = null
+        columns = null
+      }
+    } finally {
+      range.close()
     }
   }
 
   private def readObject(in: ObjectInputStream): Unit = {
-    val table = JCudfSerialization.readTableFrom(in)
+    val range = new NvtxRange("DeserializeBatch", NvtxColor.PURPLE)
     try {
-      this.batch = GpuColumnVector.from(table)
-      columns = GpuColumnVector.extractBases(batch)
+      val table = JCudfSerialization.readTableFrom(in)
+      try {
+        this.batch = GpuColumnVector.from(table)
+        columns = GpuColumnVector.extractBases(batch)
+      } finally {
+        table.close()
+      }
     } finally {
-      table.close()
+      range.close()
     }
   }
 
@@ -124,7 +134,7 @@ case class GpuBroadcastExchangeExec(
     mode: BroadcastMode,
     child: SparkPlan) extends Exchange with GpuExec {
 
-  override val additionalMetrics = Map(
+  override lazy val additionalMetrics = Map(
     "dataSize" -> SQLMetrics.createSizeMetric(sparkContext, "data size"),
     "collectTime" -> SQLMetrics.createNanoTimingMetric(sparkContext, "time to collect"),
     "buildTime" -> SQLMetrics.createNanoTimingMetric(sparkContext, "time to build"),
@@ -158,34 +168,43 @@ case class GpuBroadcastExchangeExec(
     val numOutputBatches = longMetric(NUM_OUTPUT_BATCHES)
     val numOutputRows = longMetric(NUM_OUTPUT_ROWS)
     val totalTime = longMetric(TOTAL_TIME)
+    val collectTime = longMetric("collectTime")
+    val buildTime = longMetric("buildTime")
+    val broadcastTime = longMetric("broadcastTime")
+
     val task = new Callable[broadcast.Broadcast[Any]]() {
       override def call(): broadcast.Broadcast[Any] = {
         // This will run in another thread. Set the execution id so that we can connect these jobs
         // with the correct execution.
         SQLExecution.withExecutionId(sqlContext.sparkSession, executionId) {
+          val totalRange = new MetricRange(totalTime)
           try {
             // Setup a job group here so later it may get cancelled by groupId if necessary.
             sparkContext.setJobGroup(runId.toString, s"broadcast exchange (runId $runId)",
               interruptOnCancel = true)
-            val beforeCollect = System.nanoTime()
-            val data = child.executeColumnar().map(cb => try {
-              new SerializableGpuColumnarBatch(cb, true)
+            val collectRange = new NvtxWithMetrics("broadcast collect", NvtxColor.GREEN, collectTime)
+            val batch = try {
+              val data = child.executeColumnar().map(cb => try {
+                new SerializableGpuColumnarBatch(cb, true)
+              } finally {
+                cb.close()
+              })
+              // TODO this requires a GPU on the driver, which we do not want.  We should have a way
+              // to deserialize to just host memory.
+              val v = data.collect()
+              if (v.length == 1) {
+                val b = v(0).batch
+                // Wrap it in a new Serializable batch because they are single use
+                val ret = new SerializableGpuColumnarBatch(b, false)
+                b.close()
+                ret
+              } else {
+                val justBatches = v.map(_.batch).iterator
+                val c = ConcatAndConsumeAll(justBatches, output)
+                new SerializableGpuColumnarBatch(c, false)
+              }
             } finally {
-              cb.close()
-            })
-            // TODO this requires a GPU on the driver, which we do not want.  We should have a way
-            // to deserialize to just host memory.
-            val v = data.collect()
-            val batch = if (v.length == 1) {
-              val b = v(0).batch
-              // Wrap it in a new Serializable batch because they are single use
-              val ret = new SerializableGpuColumnarBatch(b, false)
-              b.close()
-              ret
-            } else {
-              val justBatches = v.map(_.batch).iterator
-              val c = ConcatAndConsumeAll(justBatches, output)
-              new SerializableGpuColumnarBatch(c, false)
+              collectRange.close()
             }
 
             val numRows = batch.batch.numRows()
@@ -195,29 +214,29 @@ case class GpuBroadcastExchangeExec(
             }
             numOutputBatches += 1
             numOutputRows += numRows
-            val beforeBuild = System.nanoTime()
-            val collectTime = beforeBuild - beforeCollect
-            longMetric("collectTime") += collectTime
 
-            //we only support hashjoin so this is a noop val relation = mode.transform(input, Some(numRows))
+            val buildRange = new NvtxWithMetrics("broadcast build", NvtxColor.DARK_GREEN, buildTime)
+            try {
+              //we only support hashjoin so this is a noop val relation = mode.transform(input, Some(numRows))
 
-            batch.ensureOnHost()
-            val dataSize = batch.dataSize
+              batch.ensureOnHost()
+              val dataSize = batch.dataSize
 
-            longMetric("dataSize") += dataSize
-            if (dataSize >= (8L << 30)) {
-              throw new SparkException(
-                s"Cannot broadcast the table that is larger than 8GB: ${dataSize >> 30} GB")
+              longMetric("dataSize") += dataSize
+              if (dataSize >= (8L << 30)) {
+                throw new SparkException(
+                  s"Cannot broadcast the table that is larger than 8GB: ${dataSize >> 30} GB")
+              }
+            } finally {
+              buildRange.close()
             }
-
-            val beforeBroadcast = System.nanoTime()
-            val buildTime = beforeBroadcast - beforeBuild
-            longMetric("buildTime") += buildTime
-
-            // Broadcast the relation
-            val broadcasted = sparkContext.broadcast(batch.asInstanceOf[Any])
-            totalTime += (System.nanoTime() - beforeBroadcast) + collectTime + buildTime
-            longMetric("broadcastTime") += System.nanoTime() - beforeBroadcast
+            val broadcastRange = new NvtxWithMetrics("broadcast", NvtxColor.CYAN, broadcastTime)
+            val broadcasted = try {
+              // Broadcast the relation
+              sparkContext.broadcast(batch.asInstanceOf[Any])
+            } finally {
+              broadcastRange.close()
+            }
 
             SQLMetrics.postDriverMetricUpdates(sparkContext, executionId, metrics.values.toSeq)
             promise.success(broadcasted)
@@ -242,6 +261,8 @@ case class GpuBroadcastExchangeExec(
             case e: Throwable =>
               promise.failure(e)
               throw e
+          } finally {
+            totalRange.close()
           }
         }
       }

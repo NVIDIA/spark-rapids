@@ -89,7 +89,7 @@ case class GpuColumnarToRowExec(child: SparkPlan) extends UnaryExecNode
           }
           if (batches.hasNext) {
             cb = batches.next()
-            val nvtxRange = new NvtxWithMetrics("ColumnarToRow batch", NvtxColor.RED, totalTime)
+            val nvtxRange = new NvtxWithMetrics("ColumnarToRow: batch", NvtxColor.RED, totalTime)
             try {
               (0 until cb.numCols()).foreach(
                 i => cb.column(i).asInstanceOf[GpuColumnVector].getBase.ensureOnHost())
@@ -175,7 +175,8 @@ case class GpuColumnarToRowExec(child: SparkPlan) extends UnaryExecNode
       v => s"$v = inputs[0];")
 
     // metrics
-    val numOutputRows = metricTerm(ctx, "numOutputRows")
+    val numOutputRows = metricTerm(ctx, NUM_OUTPUT_ROWS)
+    val totalTime = metricTerm(ctx, TOTAL_TIME)
     val numInputBatches = metricTerm(ctx, "numInputBatches")
 
     val columnarBatchClz = classOf[ColumnarBatch].getName
@@ -206,6 +207,8 @@ case class GpuColumnarToRowExec(child: SparkPlan) extends UnaryExecNode
         (name, s"$name = ($columnVectorClz) $batch.column($i); $name.getBase().ensureOnHost();")
     }.unzip
 
+    val convertStart = ctx.freshName("convertStart")
+    val convertRange = ctx.freshName("convertRange")
     val nextBatch = ctx.freshName("nextBatch")
     val nextBatchFuncName = ctx.addNewFunction(nextBatch,
       s"""
@@ -215,7 +218,11 @@ case class GpuColumnarToRowExec(child: SparkPlan) extends UnaryExecNode
          |    $numOutputRows.add($batch.numRows());
          |    $numInputBatches.add(1);
          |    $idx = 0;
+         |    long $convertStart = System.nanoTime();
+         |    ai.rapids.cudf.NvtxRange $convertRange = new ai.rapids.cudf.NvtxRange("ColumnarToRow: convert", ai.rapids.cudf.NvtxColor.CYAN);
          |    ${columnAssigns.mkString("", "\n", "\n")}
+         |    $convertRange.close();
+         |    $totalTime.add(System.nanoTime() - $convertStart);
          |  }
          |}""".stripMargin)
 

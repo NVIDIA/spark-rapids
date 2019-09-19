@@ -300,9 +300,8 @@ case class GpuRowToColumnarExec(child: SparkPlan, goal: CoalesceGoal)
     TrampolineUtil.doExecuteBroadcast(child)
   }
 
-  override val additionalMetrics: Map[String, SQLMetric] = Map(
+  override lazy val additionalMetrics: Map[String, SQLMetric] = Map(
     "numInputRows" -> SQLMetrics.createMetric(sparkContext, "number of input rows"),
-    "buildTime" -> SQLMetrics.createNanoTimingMetric(sparkContext, "build time")
   )
 
   override def doExecuteColumnar(): RDD[ColumnarBatch] = {
@@ -312,7 +311,6 @@ case class GpuRowToColumnarExec(child: SparkPlan, goal: CoalesceGoal)
     val numOutputBatches = longMetric(NUM_OUTPUT_BATCHES)
     val numOutputRows = longMetric(NUM_OUTPUT_ROWS)
     val totalTime = longMetric(TOTAL_TIME)
-    val buildTime = longMetric("buildTime")
     val targetRows = goal.targetSize
     val localSchema = schema
     val converters = new GpuRowToColumnConverter(localSchema)
@@ -325,19 +323,13 @@ case class GpuRowToColumnarExec(child: SparkPlan, goal: CoalesceGoal)
           if (!rowIter.hasNext) {
             throw new NoSuchElementException
           }
-          val nvtxRange = new NvtxRange("RowToColumnar batch", NvtxColor.RED)
-          try {
-            buildBatch()
-          } finally {
-            nvtxRange.close()
-          }
+          buildBatch()
         }
 
         private def buildBatch(): ColumnarBatch = {
           // TODO eventually we should be smarter about allocating memory for these batches
           // so we can support building large batches with all of the data.
           val builders = new GpuColumnarBatchBuilder(localSchema, targetRows.toInt, null)
-          val nvtxRange = new NvtxWithMetrics("Build Batch", NvtxColor.DARK_GREEN, totalTime)
           try {
             var rowCount = 0
             while (rowCount < targetRows && rowIter.hasNext) {
@@ -348,7 +340,7 @@ case class GpuRowToColumnarExec(child: SparkPlan, goal: CoalesceGoal)
             if (rowIter.hasNext && (rowCount + 1L) > goal.targetSize) {
               goal.whenTargetExceeded(rowCount + 1L)
             }
-            val buildRange = new NvtxWithMetrics("Build Time", NvtxColor.GREEN, buildTime)
+            val buildRange = new NvtxWithMetrics("RowToColumnar", NvtxColor.GREEN, totalTime)
             val ret = try {
               builders.build(rowCount)
             } finally {
@@ -361,7 +353,6 @@ case class GpuRowToColumnarExec(child: SparkPlan, goal: CoalesceGoal)
             ret
           } finally {
             builders.close()
-            nvtxRange.close()
           }
         }
       }

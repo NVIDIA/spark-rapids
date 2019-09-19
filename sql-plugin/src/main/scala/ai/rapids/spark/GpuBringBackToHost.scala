@@ -16,6 +16,8 @@
 
 package ai.rapids.spark
 
+import ai.rapids.cudf.{NvtxColor, NvtxRange}
+
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.expressions.Attribute
 import org.apache.spark.sql.catalyst.InternalRow
@@ -37,8 +39,13 @@ case class GpuBringBackToHost(child: SparkPlan) extends UnaryExecNode with GpuEx
   override protected def doExecuteColumnar(): RDD[ColumnarBatch] = {
     // Both GPU and CPU code expects this to close the incoming batch.
     AutoCloseColumnBatchIterator.map[ColumnarBatch](child.executeColumnar(), b => {
-      for (i <- 0 until b.numCols()) {
-        b.column(i).asInstanceOf[GpuColumnVector].getBase.ensureOnHost()
+      val range = new NvtxRange("BringBackToHost", NvtxColor.RED)
+      try {
+        for (i <- 0 until b.numCols()) {
+          b.column(i).asInstanceOf[GpuColumnVector].getBase.ensureOnHost()
+        }
+      } finally {
+        range.close()
       }
       b
     })

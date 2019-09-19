@@ -16,8 +16,6 @@
 
 package ai.rapids.spark
 
-import scala.collection.mutable.ArrayBuffer
-
 import ai.rapids.cudf.DType
 
 import org.apache.spark.rdd.RDD
@@ -130,7 +128,9 @@ class HostToGpuCoalesceIterator(iter: Iterator[ColumnarBatch],
     numOutputRows: SQLMetric,
     numOutputBatches: SQLMetric,
     collectTime: SQLMetric,
-    concatTime: SQLMetric)
+    concatTime: SQLMetric,
+    totalTime: SQLMetric,
+    opName: String)
   extends AbstractGpuCoalesceIterator(iter,
     goal,
     numInputRows,
@@ -138,7 +138,9 @@ class HostToGpuCoalesceIterator(iter: Iterator[ColumnarBatch],
     numOutputRows,
     numOutputBatches,
     collectTime,
-    concatTime) {
+    concatTime,
+    totalTime,
+    opName) {
 
   var batchBuilder: GpuColumnVector.GpuColumnarBatchBuilder = null
   var totalRows = 0
@@ -160,9 +162,7 @@ class HostToGpuCoalesceIterator(iter: Iterator[ColumnarBatch],
     totalRows += rows
   }
 
-  override def concatAllAndPutOnGPU(): ColumnarBatch =
-    batchBuilder.build(totalRows)
-
+  override def concatAllAndPutOnGPU(): ColumnarBatch = batchBuilder.build(totalRows)
 
   override def cleanupConcatIsDone(): Unit = {
     if (batchBuilder != null) {
@@ -177,13 +177,13 @@ class HostToGpuCoalesceIterator(iter: Iterator[ColumnarBatch],
  * Put columnar formatted data on the GPU.
  */
 case class HostColumnarToGpu(child: SparkPlan, goal: CoalesceGoal) extends UnaryExecNode with GpuExec {
-  override lazy val metrics: Map[String, SQLMetric] = Map(
+  import GpuMetricNames._
+
+  override lazy val additionalMetrics: Map[String, SQLMetric] = Map(
     "numInputRows" -> SQLMetrics.createMetric(sparkContext, "input rows"),
-    "numOutputRows" -> SQLMetrics.createMetric(sparkContext, "output rows"),
     "numInputBatches" -> SQLMetrics.createMetric(sparkContext, "input batches"),
-    "numOutputBatches" -> SQLMetrics.createMetric(sparkContext, "output batches"),
-    "collectTime" -> SQLMetrics.createTimingMetric(sparkContext, "collect batch time"),
-    "concatTime" -> SQLMetrics.createTimingMetric(sparkContext, "concat batch time")
+    "collectTime" -> SQLMetrics.createNanoTimingMetric(sparkContext, "collect batch time"),
+    "concatTime" -> SQLMetrics.createNanoTimingMetric(sparkContext, "concat batch time")
   )
 
   override def output: Seq[Attribute] = child.output
@@ -207,15 +207,17 @@ case class HostColumnarToGpu(child: SparkPlan, goal: CoalesceGoal) extends Unary
 
     val numInputRows = longMetric("numInputRows")
     val numInputBatches = longMetric("numInputBatches")
-    val numOutputRows = longMetric("numOutputRows")
-    val numOutputBatches = longMetric("numOutputBatches")
+    val numOutputRows = longMetric(NUM_OUTPUT_ROWS)
+    val numOutputBatches = longMetric(NUM_OUTPUT_BATCHES)
     val collectTime = longMetric("collectTime")
     val concatTime = longMetric("concatTime")
+    val totalTime = longMetric(TOTAL_TIME)
 
     val batches = child.executeColumnar()
     batches.mapPartitions { iter =>
       new HostToGpuCoalesceIterator(iter, goal, schema,
-        numInputRows, numInputBatches, numOutputRows, numOutputBatches, collectTime, concatTime)
+        numInputRows, numInputBatches, numOutputRows, numOutputBatches, collectTime, concatTime,
+        totalTime, "HostColumnarToGpu")
     }
   }
 }
