@@ -361,10 +361,53 @@ abstract class SparkPlanMeta[INPUT <: SparkPlan](plan: INPUT,
     }
   }
 
-  private def fixUpJoinConsistencyIfNeeded(): Unit = wrapped match {
-    case _: ShuffledHashJoinExec => makeShuffleConsistent()
-    case _: SortMergeJoinExec => makeShuffleConsistent()
-    case _ => ()
+  private def fixUpJoinConsistencyIfNeeded(): Unit = {
+    childPlans.foreach(_.fixUpJoinConsistencyIfNeeded())
+    wrapped match {
+      case _: ShuffledHashJoinExec => makeShuffleConsistent()
+      case _: SortMergeJoinExec => makeShuffleConsistent()
+      case _ => ()
+    }
+  }
+
+  private def fixUpExchangeOverhead(): Unit = {
+    childPlans.foreach(_.fixUpExchangeOverhead())
+    if (wrapped.isInstanceOf[ShuffleExchangeExec] &&
+      (parent.filter(_.canThisBeReplaced).isEmpty &&
+        childPlans.filter(_.canThisBeReplaced).isEmpty)) {
+      willNotWorkOnGpu("Columnar exchange without columnar children is inefficient")
+    }
+  }
+
+  /**
+   * Run rules that happen for the entire tree after it has been tagged initially.
+   */
+  def runAfterTagRules(): Unit = {
+    // In the first pass tagSelfForGpu will deal with each operator individually.
+    // Children will be tagged first and then their parents will be tagged.  This gives
+    // flexibility when tagging yourself to look at your children and disable yourself if your
+    // children are not all on the GPU.  In some cases we need to be able to disable our
+    // children too, or in this case run a rule that will disable operations when looking at
+    // more of the tree.  These exceptions should be documented here.  We need to take special care
+    // that we take into account all side-effects of these changes, because we are **not**
+    // re-triggering the rules associated with parents, grandparents, etc.  If things get too
+    // complicated we may need to update this to have something with triggers, but then we would
+    // have to be very careful to avoid loops in the rules.
+
+    // RULES:
+    // 1) BroadcastHashJoin can disable the Broadcast directly feeding it, if the join itself cannot
+    // be translated for some reason.  This is okay because it is the joins immediate parent, so
+    // it can keep everything consistent.
+    // 2) For ShuffledHashJoin and SortMergeJoin we need to verify that all of the exchanges feeding
+    // them are either all on the GPU or all on the CPU, because the hashing is not consistent
+    // between the two implementations. This is okay because it is only impacting shuffled exchanges.
+    // So broadcast exchanges are not impacted which could have an impact on BroadcastHashJoin, and
+    // shuffled exchanges are not used to disable anything downstream.
+    // 3) If a shuffled exchange is not columnar on at least one side don't do it.  This must happen
+    // before the join consistency or we risk running into issues with disabling one exchange that
+    // would make a join inconsistent
+    fixUpExchangeOverhead()
+    fixUpJoinConsistencyIfNeeded()
   }
 
   override final def tagSelfForGpu(): Unit = {
@@ -391,25 +434,6 @@ abstract class SparkPlanMeta[INPUT <: SparkPlan](plan: INPUT,
     }
 
     tagPlanForGpu()
-
-    // In general children will be tagged first and then their parents will be tagged.  This gives
-    // flexibility when tagging yourself to look at your children and disable yourself if your
-    // children are not all on the GPU.  But in some cases we need to be able to disable our
-    // children too.  These exceptions should be documented here.  We need to take special care
-    // that we take into account all side-effects of these changes, because we are **not**
-    // re-triggering the rules associated with parents, grandparents, etc.  If things get too
-    // complicated we may need to update this to have something with triggers, but then we would
-    // have to be very careful to avoid loops in the rules.
-    // RULES:
-    // 1) BroadcastHashJoin can disable the Broadcast directly feeding it, if the join itself cannot
-    // be translated for some reason.  This is okay because it is the joins immediate parent, so
-    // it can keep everything consistent.
-    // 2) For ShuffledHashJoin and SortMergeJoin we need to verify that all of the exchanges feeding
-    // them are either all on the GPU or all on the CPU, because the hashing is not consistent
-    // between the two implementations. This is okay because it is only impacting shuffled exchanges.
-    // So broadcast exchanges are not impacted which could have an impact on BroadcastHashJoin, and
-    // shuffled exchanges are not used to disable anything downstream.
-    fixUpJoinConsistencyIfNeeded()
   }
 
   /**
