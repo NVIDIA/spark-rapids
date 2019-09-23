@@ -139,7 +139,9 @@ case class GpuLiteral (value: Any, dataType: DataType) extends GpuLeafExpression
         case _ => v + "D"
       }
     case (v: Decimal, t: DecimalType) => v + "BD"
-    case (v: Int, DateType) => s"DATE '${DateFormatter().format(v)}'"
+    case (v: Int, DateType) =>
+      val formatter = DateFormatter(DateTimeUtils.getZoneId(SQLConf.get.sessionLocalTimeZone))
+      s"DATE '${formatter.format(v)}'"
     case (v: Long, TimestampType) =>
       val formatter = TimestampFormatter.getFractionFormatter(
         DateTimeUtils.getZoneId(SQLConf.get.sessionLocalTimeZone))
