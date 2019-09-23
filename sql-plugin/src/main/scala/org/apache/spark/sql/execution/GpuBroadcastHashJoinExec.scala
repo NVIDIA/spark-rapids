@@ -143,8 +143,8 @@ case class GpuBroadcastHashJoinExec(
       override def next(): ColumnarBatch = {
         val cb = it.next()
         val startTime = System.nanoTime()
-        val ret = doJoin(builtTable, cb, boundCondition, numOutputRows, numOutputBatches,
-          joinOutputRows, joinTime, filterTime)
+        val ret = doJoin(builtTable, cb, boundCondition, numOutputRows, joinOutputRows,
+          numOutputBatches, joinTime, filterTime)
         totalTime += (System.nanoTime() - startTime)
         ret
       }
