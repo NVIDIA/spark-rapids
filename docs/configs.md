@@ -4,8 +4,7 @@ The following is the list of options that `rapids-plugin-4-spark` supports.
 On startup use: `--conf [conf key]=[conf value]`. For example:
 
 ```
-${SPARK_HOME}/bin/spark --jars
-'rapids-4-spark-0.1-SNAPSHOT.jar,cudf-0.10-SNAPSHOT-cuda10.jar' \
+${SPARK_HOME}/bin/spark --jars 'rapids-4-spark-0.1-SNAPSHOT.jar,cudf-0.10-SNAPSHOT-cuda10.jar' \
 --conf spark.sql.extensions=ai.rapids.spark.Plugin \
 --conf spark.rapids.sql.incompatible_ops=true
 ```
@@ -15,7 +14,8 @@ At runtime use: `spark.conf.set("[conf key]", [conf value])`. For example:
 ```
 scala> spark.conf.set("spark.rapids.sql.incompatible_ops", true)
 ```
-##General Configuration
+
+## General Configuration
 Name | Description | Default Value
 -----|-------------|--------------
 spark.rapids.memory_debug|If memory management is enabled and this is true GPU memory allocations are tracked and printed out when the process exits.  This should not be used in production.|false
@@ -30,9 +30,10 @@ spark.rapids.sql.explain|Explain why some parts of a query were not placed on a 
 spark.rapids.sql.hasNans|Config to indicate if your data has NaN's. Cudf doesn't currently support NaN's properly so you can get corrupt data if you have NaN's in your data and it runs on the GPU.|true
 spark.rapids.sql.incompatible_ops|For operations that work, but are not 100% compatible with the Spark equivalent   set if they should be enabled by default or disabled by default.|false
 spark.rapids.sql.maxReaderBatchSize|Maximum number of rows the reader reads at a time|2147483647
-##Fine Tunning
+
+## Fine Tunning
 _Rapids Plugin 4 Spark_ can be further configured to enable or disable specific
-expressions and |to control what parts of the query execute using the GPU or
+expressions and to control what parts of the query execute using the GPU or
 the CPU.
 
 Please leverage the `spark.rapids.sql.explain` setting to get feeback from the
@@ -41,7 +42,8 @@ plugin as to why parts of a query may not be executing in the GPU.
 **NOTE:** Setting `spark.rapids.sql.incompatible_ops=true` will enable all
 the settings in the table below which are not enabled by default due to
 incompatibilities.
-###Expressions
+
+### Expressions
 Name | Description | Default Value | Incompatibilities
 -----|-------------|---------------|------------------
 org.apache.spark.sql.catalyst.expressions.Abs|absolute value|true|None|
@@ -93,7 +95,8 @@ org.apache.spark.sql.catalyst.expressions.aggregate.Max|max aggregate operator|t
 org.apache.spark.sql.catalyst.expressions.aggregate.Min|min aggregate operator|true|None|
 org.apache.spark.sql.catalyst.expressions.aggregate.Sum|sum aggregate operator|true|None|
 org.apache.spark.sql.catalyst.optimizer.NormalizeNaNAndZero|normalize nan and zero|false|This is not 100% compatible with the Spark version because when enabling these, there may be extra groups produced for floating point grouping keys (e.g. -0.0, and 0.0)|
-###Execution
+
+### Execution
 Name | Description | Default Value | Incompatibilities
 -----|-------------|---------------|------------------
 org.apache.spark.sql.execution.FilterExec|The backend for most filter statements|true|None|
@@ -107,13 +110,15 @@ org.apache.spark.sql.execution.exchange.ShuffleExchangeExec|The backend for most
 org.apache.spark.sql.execution.joins.BroadcastHashJoinExec|Implementation of join using broadcast data|false|This is not 100% compatible with the Spark version because GPU required on the driver|
 org.apache.spark.sql.execution.joins.ShuffledHashJoinExec|Implementation of join using hashed shuffled data|true|None|
 org.apache.spark.sql.execution.joins.SortMergeJoinExec|Sort merge join, replacing with shuffled hash join|true|None|
-###Scans
+
+### Scans
 Name | Description | Default Value | Incompatibilities
 -----|-------------|---------------|------------------
 org.apache.spark.sql.execution.datasources.v2.csv.CSVScan|CSV parsing|true|None|
 org.apache.spark.sql.execution.datasources.v2.orc.OrcScan|ORC parsing|true|None|
 org.apache.spark.sql.execution.datasources.v2.parquet.ParquetScan|Parquet parsing|true|None|
-###Partitioning
+
+### Partitioning
 Name | Description | Default Value | Incompatibilities
 -----|-------------|---------------|------------------
 org.apache.spark.sql.catalyst.plans.physical.HashPartitioning|Hash based partitioning|true|None|
