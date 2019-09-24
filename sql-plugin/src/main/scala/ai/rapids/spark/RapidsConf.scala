@@ -58,7 +58,7 @@ abstract class ConfEntry[T](val key: String, val converter: String => T,
     val doc: String, val isInternal: Boolean) {
 
   def get(conf: Map[String, String]): T
-  def help(): Unit
+  def help(asTable: Boolean = false): Unit
 
   override def toString: String = key
 }
@@ -71,12 +71,16 @@ class ConfEntryWithDefault[T](key: String, converter: String => T, doc: String,
     conf.get(key).map(converter).getOrElse(defaultValue)
   }
 
-  override def help(): Unit = {
+  override def help(asTable: Boolean = false): Unit = {
     if (!isInternal) {
-      println(s"${key}:")
-      println(s"\t${doc}")
-      println(s"\tdefault ${defaultValue}")
-      println()
+      if (asTable) {
+        println(s"${key}|${doc}|${defaultValue}")
+      } else {
+        println(s"${key}:")
+        println(s"\t${doc}")
+        println(s"\tdefault ${defaultValue}")
+        println()
+      }
     }
   }
 }
@@ -252,13 +256,66 @@ object RapidsConf {
     .booleanConf
     .createWithDefault(true)
 
-  def help(): Unit = {
-    println("Rapids Configs:")
-    registeredConfs.foreach(_.help())
-    GpuOverrides.expressions.values.foreach(_.confHelp())
-    GpuOverrides.execs.values.foreach(_.confHelp())
-    GpuOverrides.scans.values.foreach(_.confHelp())
-    GpuOverrides.parts.values.foreach(_.confHelp())
+  private def printToggleHeader(category: String): Unit = {
+    println(s"###${category}")
+    println("Name | Description | Default Value | Incompatibilities")
+    println("-----|-------------|---------------|------------------")
+  }
+
+  def help(asTable: Boolean = false): Unit = {
+    if (asTable) {
+      println("""# Rapids Plugin 4 Spark Configuration
+        |The following is the list of options that `rapids-plugin-4-spark` supports. 
+        | 
+        |On startup use: `--conf [conf key]=[conf value]`. For example:
+        |
+        |```
+        |${SPARK_HOME}/bin/spark --jars 'rapids-4-spark-0.1-SNAPSHOT.jar,cudf-0.10-SNAPSHOT-cuda10.jar' \
+        |--conf spark.sql.extensions=ai.rapids.spark.Plugin \
+        |--conf spark.rapids.sql.incompatible_ops=true
+        |```
+        |
+        |At runtime use: `spark.conf.set("[conf key]", [conf value])`. For example:
+        |
+        |```
+        |scala> spark.conf.set("spark.rapids.sql.incompatible_ops", true)
+        |```""".stripMargin)
+
+      println("##General Configuration")
+      println("Name | Description | Default Value")
+      println("-----|-------------|--------------")
+    } else {
+      println("Rapids Configs:")
+    }
+    registeredConfs.sortBy(_.key).foreach(_.help(asTable))
+    if (asTable) {
+      println("""##Fine Tunning
+        |_Rapids Plugin 4 Spark_ can be further configured to enable or disable specific
+        |expressions and to control what parts of the query execute using the GPU or 
+        |the CPU. 
+        |
+        |Please leverage the `spark.rapids.sql.explain` setting to get feeback from the 
+        |plugin as to why parts of a query may not be executing in the GPU.
+        |
+        |**NOTE:** Setting `spark.rapids.sql.incompatible_ops=true` will enable all 
+        |the settings in the table below which are not enabled by default due to 
+        |incompatibilities.""".stripMargin)
+
+      printToggleHeader("Expressions")
+    }
+    GpuOverrides.expressions.values.toSeq.sortBy(_.tag.toString).foreach(_.confHelp(asTable))
+    if (asTable) {
+      printToggleHeader("Execution")
+    }
+    GpuOverrides.execs.values.toSeq.sortBy(_.tag.toString).foreach(_.confHelp(asTable))
+    if (asTable) {
+      printToggleHeader("Scans")
+    }
+    GpuOverrides.scans.values.toSeq.sortBy(_.tag.toString).foreach(_.confHelp(asTable))
+    if (asTable) {
+      printToggleHeader("Partitioning")
+    }
+    GpuOverrides.parts.values.toSeq.sortBy(_.tag.toString).foreach(_.confHelp(asTable))
   }
 }
 
