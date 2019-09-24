@@ -41,7 +41,7 @@ See documentation for [configs](docs/configs.md).
 
 ## Downloading
 
-You can get the [rapids-4-spark](https://gpuwa.nvidia.com/artifactory/sw-spark-maven-local/ai/rapids/rapids-4-spark/0.2-SNAPSHOT/) and [cudf](http://gpuwa.nvidia.com/artifactory/sw-spark-maven-local/ai/rapids/cudf/) jars in artifactory.
+You can get the [rapids-4-spark](https://gpuwa.nvidia.com/artifactory/sw-spark-maven-local/ai/rapids/rapids-4-spark/) and [cudf](http://gpuwa.nvidia.com/artifactory/sw-spark-maven-local/ai/rapids/cudf/) jars in artifactory.
 
 ## Monitoring
 
