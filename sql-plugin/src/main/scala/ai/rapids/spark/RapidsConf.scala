@@ -257,7 +257,7 @@ object RapidsConf {
     .createWithDefault(true)
 
   private def printToggleHeader(category: String): Unit = {
-    println(s"###${category}")
+    println(s"\n### ${category}")
     println("Name | Description | Default Value | Incompatibilities")
     println("-----|-------------|---------------|------------------")
   }
@@ -281,7 +281,7 @@ object RapidsConf {
         |scala> spark.conf.set("spark.rapids.sql.incompatible_ops", true)
         |```""".stripMargin)
 
-      println("##General Configuration")
+      println("\n## General Configuration")
       println("Name | Description | Default Value")
       println("-----|-------------|--------------")
     } else {
@@ -289,7 +289,8 @@ object RapidsConf {
     }
     registeredConfs.sortBy(_.key).foreach(_.help(asTable))
     if (asTable) {
-      println("""##Fine Tunning
+      println("")
+      println("""## Fine Tunning
         |_Rapids Plugin 4 Spark_ can be further configured to enable or disable specific
         |expressions and to control what parts of the query execute using the GPU or 
         |the CPU. 
