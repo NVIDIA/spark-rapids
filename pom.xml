@@ -143,6 +143,28 @@
     <build>
         <pluginManagement>
             <plugins>
+		<plugin>
+                  <groupId>org.apache.maven.plugins</groupId>
+                  <artifactId>maven-antrun-plugin</artifactId>
+                  <executions>
+                    <execution>
+                      <phase>generate-resources</phase>
+                      <configuration>
+                        <!-- Execute the shell script to generate the plugin build information. -->
+                        <target>
+                          <mkdir dir="${project.build.directory}/extra-resources"/>
+                          <exec executable="bash" output="${project.build.directory}/extra-resources/rapids4spark-version-info.properties">
+                            <arg value="${project.basedir}/../build/build-info"/>
+                            <arg value="${project.version}"/>
+                          </exec>
+                        </target>
+                      </configuration>
+                      <goals>
+                        <goal>run</goal>
+                      </goals>
+                    </execution>
+                  </executions>
+                </plugin>
                 <plugin>
                   <artifactId>maven-antrun-plugin</artifactId>
                   <version>1.8</version>
