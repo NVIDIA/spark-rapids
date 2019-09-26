@@ -16,8 +16,8 @@ pipeline {
     }
 
     parameters {
-        string(name: 'CUDF_VER', defaultValue: '0.9-SNAPSHOT',
-            description: '-Dcudf.version=0.9-SNAPSHOT\n\n Default for cudf version')
+        string(name: 'CUDF_VER', defaultValue: '0.10-SNAPSHOT',
+            description: '-Dcudf.version=0.10-SNAPSHOT\n\n Default for cudf version')
         booleanParam(name: 'BUILD_CENTOS7', defaultValue: false,
             description: 'Whether enable centos7 build or not')
     }
