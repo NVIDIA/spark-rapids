@@ -197,7 +197,7 @@ abstract class AbstractGpuCoalesceIterator(origIter: Iterator[ColumnarBatch],
 
   TaskContext.get().addTaskCompletionListener[Unit](_ => onDeck.foreach(_.close()))
 
-  override def hasNext: Boolean = iter.hasNext
+  override def hasNext: Boolean = onDeck.isDefined || iter.hasNext
 
   /**
    * Called first to initialize any state needed for a new batch to be created.
