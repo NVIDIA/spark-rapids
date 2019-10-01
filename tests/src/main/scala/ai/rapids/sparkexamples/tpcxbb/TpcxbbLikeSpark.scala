@@ -38,6 +38,11 @@ object TpcxbbLikeSpark {
     readWebReturnsCSV(spark, basePath + "/web_returns/").write.parquet(baseOutput + "/web_returns/")
     readWarehouseCSV(spark, basePath + "/warehouse/").write.parquet(baseOutput + "/warehouse/")
     readPromotionCSV(spark, basePath + "/promotion/").write.parquet(baseOutput + "/promotion/")
+    readStoreReturnsCSV(spark, basePath + "/store_returns/").write.parquet(baseOutput + "/store_returns/")
+    readInventoryCSV(spark, basePath + "/inventory/").write.parquet(baseOutput + "/inventory/")
+    readMarketPricesCSV(spark, basePath + "/item_marketprices/").write.parquet(baseOutput + "/item_marketprices/")
+
+
   }
 
   def csvToOrc(spark: SparkSession, basePath: String, baseOutput: String): Unit = {
@@ -57,6 +62,10 @@ object TpcxbbLikeSpark {
     readWebReturnsCSV(spark, basePath + "/web_returns/").write.orc(baseOutput + "/web_returns/")
     readWarehouseCSV(spark, basePath + "/warehouse/").write.orc(baseOutput + "/warehouse/")
     readPromotionCSV(spark, basePath + "/promotion/").write.orc(baseOutput + "/promotion/")
+    readStoreReturnsCSV(spark, basePath + "/store_returns/").write.orc(baseOutput + "/store_returns/")
+    readInventoryCSV(spark, basePath + "/inventory/").write.orc(baseOutput + "/inventory/")
+    readMarketPricesCSV(spark, basePath + "/item_marketprices/").write.orc(baseOutput + "/item_marketprices/")
+
   }
 
   def setupAllCSV(spark: SparkSession, basePath: String): Unit = {
@@ -76,6 +85,9 @@ object TpcxbbLikeSpark {
     setupWebReturnsCSV(spark, basePath + "/web_returns/")
     setupWarehouseCSV(spark, basePath + "/warehouse/")
     setupPromotionCSV(spark, basePath + "/promotion/")
+    setupStoreReturnsCSV(spark, basePath + "/store_returns/")
+    setupInventoryCSV(spark, basePath + "/inventory/")
+    setupMarketPricesCSV(spark, basePath + "/item_marketprices/")
 
   }
 
@@ -96,6 +108,9 @@ object TpcxbbLikeSpark {
     setupWebReturnsParquet(spark, basePath + "/web_returns/")
     setupWarehouseParquet(spark, basePath + "/warehouse/")
     setupPromotionParquet(spark, basePath + "/promotion/")
+    setupStoreReturnsParquet(spark, basePath + "/store_returns/")
+    setupInventoryParquet(spark, basePath + "/inventory/")
+    setupMarketPricesParquet(spark, basePath + "/item_marketprices/")
 
   }
 
@@ -116,9 +131,11 @@ object TpcxbbLikeSpark {
     setupWebReturnsOrc(spark, basePath + "/web_returns/")
     setupWarehouseOrc(spark, basePath + "/warehouse/")
     setupPromotionOrc(spark, basePath + "/promotion/")
+    setupStoreReturnsOrc(spark, basePath + "/store_returns/")
+    setupInventoryOrc(spark, basePath + "/inventory/")
+    setupMarketPricesOrc(spark, basePath + "/item_marketprices/")
 
   }
-
 
   // CUSTOMER
   val customerSchema = StructType(Array(
@@ -652,18 +669,101 @@ object TpcxbbLikeSpark {
   def setupPromotionOrc(spark: SparkSession, path: String): Unit =
     spark.read.orc(path).createOrReplaceTempView("promotion")
 
+  // STORE RETURNS
+  val storeReturnsSchema = StructType(Array(
+    StructField("sr_returned_date_sk", LongType),
+    StructField("sr_return_time_sk", LongType),
+    StructField("sr_item_sk", LongType, false),
+    StructField("sr_customer_sk", LongType),
+    StructField("sr_cdemo_sk", LongType),
+    StructField("sr_hdemo_sk", LongType),
+    StructField("sr_addr_sk", LongType),
+    StructField("sr_store_sk", LongType),
+    StructField("sr_reason_sk", LongType),
+    StructField("sr_ticket_number", LongType, false),
+    StructField("sr_return_quantity", IntegerType),
+    StructField("sr_return_amt", DoubleType),
+    StructField("sr_return_tax", DoubleType),
+    StructField("sr_return_amt_inc_tax", DoubleType),
+    StructField("sr_fee", DoubleType),
+    StructField("sr_return_ship_cost", DoubleType),
+    StructField("sr_refunded_cash", DoubleType),
+    StructField("sr_reversed_charge", DoubleType),
+    StructField("sr_store_credit", DoubleType),
+    StructField("sr_net_loss", DoubleType)
+  ))
+
+  def readStoreReturnsCSV(spark: SparkSession, path: String): DataFrame =
+    spark.read.option("delimiter", "|").schema(storeReturnsSchema).csv(path)
+
+  def setupStoreReturnsCSV(spark: SparkSession, path: String): Unit =
+    readStoreReturnsCSV(spark, path).createOrReplaceTempView("store_returns")
+
+  def setupStoreReturnsParquet(spark: SparkSession, path: String): Unit =
+    spark.read.parquet(path).createOrReplaceTempView("store_returns")
+
+  def setupStoreReturnsOrc(spark: SparkSession, path: String): Unit =
+    spark.read.orc(path).createOrReplaceTempView("store_returns")
+
+  // INVENTORY
+  val inventorySchema = StructType(Array(
+    StructField("inv_date_sk", LongType, false),
+    StructField("inv_item_sk", LongType, false),
+    StructField("inv_warehouse_sk", LongType, false),
+    StructField("inv_quantity_on_hand", IntegerType)
+  ))
+
+  def readInventoryCSV(spark: SparkSession, path: String): DataFrame =
+    spark.read.option("delimiter", "|").schema(inventorySchema).csv(path)
+
+  def setupInventoryCSV(spark: SparkSession, path: String): Unit =
+    readInventoryCSV(spark, path).createOrReplaceTempView("inventory")
+
+  def setupInventoryParquet(spark: SparkSession, path: String): Unit =
+    spark.read.parquet(path).createOrReplaceTempView("inventory")
+
+  def setupInventoryOrc(spark: SparkSession, path: String): Unit =
+    spark.read.orc(path).createOrReplaceTempView("inventory")
+
+  // MARKET PRICES
+  val marketPricesSchema = StructType(Array(
+    StructField("imp_sk", LongType, false),
+    StructField("imp_item_sk", LongType, false),
+    StructField("imp_competitor", StringType),
+    StructField("imp_competitor_price", DoubleType),
+    StructField("imp_start_date", LongType),
+    StructField("imp_end_date", LongType)
+  ))
+
+  def readMarketPricesCSV(spark: SparkSession, path: String): DataFrame =
+    spark.read.option("delimiter", "|").schema(marketPricesSchema).csv(path)
+
+  def setupMarketPricesCSV(spark: SparkSession, path: String): Unit =
+    readMarketPricesCSV(spark, path).createOrReplaceTempView("item_marketprices")
+
+  def setupMarketPricesParquet(spark: SparkSession, path: String): Unit =
+    spark.read.parquet(path).createOrReplaceTempView("item_marketprices")
+
+  def setupMarketPricesOrc(spark: SparkSession, path: String): Unit =
+    spark.read.orc(path).createOrReplaceTempView("item_marketprices")
+
 }
 
-
+/*
+ * -- TASK: (Based, but not equal to tpc-ds q6)
+ * -- List top 10 states in descending order with at least 10 customers who during
+ * -- a given month bought products with the price tag at least 20% higher than the
+ * -- average price of products in the same category.
+ */
 object Q7Like {
   def apply(spark: SparkSession): DataFrame = {
 
-    spark.sql("DROP TABLE IF EXISTS q7temp_table")
+    spark.sql("DROP TABLE IF EXISTS q7_temp_table")
 
     // -- helper table: items with 20% higher then avg prices of product from same category
     spark.sql(
       """
-        |CREATE TABLE q7temp_table as
+        |CREATE TABLE q7_temp_table as
         |-- "price tag at least 20% higher than the average price of products in the same category."
         |
         |SELECT
@@ -694,7 +794,7 @@ object Q7Like {
         |  customer_address a,
         |  customer c,
         |  store_sales s,
-        |  q7temp_table highPriceItems
+        |  q7_temp_table highPriceItems
         |WHERE a.ca_address_sk = c.c_current_addr_sk
         |AND c.c_customer_sk = s.ss_customer_sk
         |AND ca_state IS NOT NULL
@@ -779,6 +879,17 @@ object Q9Like {
 }
 
 /*
+// Uses UDF
+//
+// Query 10 sets the following hive optimization configs that we need to investigate more:
+// -- This query requires parallel order by for fast and deterministic global ordering of final result
+// set hive.optimize.sampling.orderby=${hiveconf:bigbench.spark.sql.optimize.sampling.orderby};
+// set hive.optimize.sampling.orderby.number=${hiveconf:bigbench.spark.sql.optimize.sampling.orderby.number};
+// set hive.optimize.sampling.orderby.percent=${hiveconf:bigbench.spark.sql.optimize.sampling.orderby.percent};
+// --debug print
+// set hive.optimize.sampling.orderby;
+// set hive.optimize.sampling.orderby.number;
+// set hive.optimize.sampling.orderby.percent;
 object Q10Like {
   def apply(spark: SparkSession): DataFrame = {
 
@@ -842,6 +953,17 @@ object Q11Like {
   }
 }
 
+// Query 12 sets the following hive optimization configs that we need to investigate more if they
+// actually apply to spark
+//
+// -- This query requires parallel order by for fast and deterministic global ordering of final result
+// set hive.optimize.sampling.orderby=${hiveconf:bigbench.spark.sql.optimize.sampling.orderby};
+// set hive.optimize.sampling.orderby.number=${hiveconf:bigbench.spark.sql.optimize.sampling.orderby.number};
+// set hive.optimize.sampling.orderby.percent=${hiveconf:bigbench.spark.sql.optimize.sampling.orderby.percent};
+// --debug print
+// set hive.optimize.sampling.orderby;
+// set hive.optimize.sampling.orderby.number;
+// set hive.optimize.sampling.orderby.percent;
 object Q12Like {
   def apply(spark: SparkSession): DataFrame = {
 
@@ -1098,5 +1220,488 @@ object Q17Like {
         |LIMIT 100 -- kinda useless, result is one line with two numbers, but original tpc-ds query has it too.
         |
         |""".stripMargin)
+  }
+}
+
+// uses UDF
+// object Q18Like {}
+
+// uses UDF
+// object Q19Like {}
+
+
+/*
+ * Do these matter for Spark?
+ *
+ * -- This query requires parallel order by for fast and deterministic global ordering of final result
+ * set hive.optimize.sampling.orderby=${hiveconf:bigbench.spark.sql.optimize.sampling.orderby};
+ * set hive.optimize.sampling.orderby.number=${hiveconf:bigbench.spark.sql.optimize.sampling.orderby.number};
+ * set hive.optimize.sampling.orderby.percent=${hiveconf:bigbench.spark.sql.optimize.sampling.orderby.percent};
+ * --debug print
+ * set hive.optimize.sampling.orderby;
+ * set hive.optimize.sampling.orderby.number;
+ * set hive.optimize.sampling.orderby.percent;
+ */
+object Q20Like {
+  def apply(spark: SparkSession): DataFrame = {
+
+    spark.sql(
+      """
+        |-- TASK:
+        |-- Customer segmentation for return analysis: Customers are separated
+        |-- along the following dimensions: return frequency, return order ratio (total
+        |-- number of orders partially or fully returned versus the total number of orders),
+        |-- return item ratio (total number of items returned versus the number of items
+        |-- purchased), return amount ration (total monetary amount of items returned versus
+        |-- the amount purchased), return order ratio. Consider the store returns during
+        |-- a given year for the computation.
+        |
+        |-- IMPLEMENTATION NOTICE:
+        |-- hive provides the input for the clustering program
+        |-- The input format for the clustering is:
+        |--   user surrogate key,
+        |--   order ratio (number of returns / number of orders),
+        |--   item ratio (number of returned items / number of ordered items),
+        |--   money ratio (returned money / payed money),
+        |--   number of returns
+        |
+        |SELECT
+        |  ss_customer_sk AS user_sk,
+        |  round(CASE WHEN ((returns_count IS NULL) OR (orders_count IS NULL) OR ((returns_count / orders_count) IS NULL) ) THEN 0.0 ELSE (returns_count / orders_count) END, 7) AS orderRatio,
+        |  round(CASE WHEN ((returns_items IS NULL) OR (orders_items IS NULL) OR ((returns_items / orders_items) IS NULL) ) THEN 0.0 ELSE (returns_items / orders_items) END, 7) AS itemsRatio,
+        |  round(CASE WHEN ((returns_money IS NULL) OR (orders_money IS NULL) OR ((returns_money / orders_money) IS NULL) ) THEN 0.0 ELSE (returns_money / orders_money) END, 7) AS monetaryRatio,
+        |  round(CASE WHEN ( returns_count IS NULL                                                                        ) THEN 0.0 ELSE  returns_count                 END, 0) AS frequency
+        |FROM
+        |  (
+        |    SELECT
+        |      ss_customer_sk,
+        |      -- return order ratio
+        |      COUNT(distinct(ss_ticket_number)) AS orders_count,
+        |      -- return ss_item_sk ratio
+        |      COUNT(ss_item_sk) AS orders_items,
+        |      -- return monetary amount ratio
+        |      SUM( ss_net_paid ) AS orders_money
+        |    FROM store_sales s
+        |    GROUP BY ss_customer_sk
+        |  ) orders
+        |  LEFT OUTER JOIN
+        |  (
+        |    SELECT
+        |      sr_customer_sk,
+        |      -- return order ratio
+        |      count(distinct(sr_ticket_number)) as returns_count,
+        |      -- return ss_item_sk ratio
+        |      COUNT(sr_item_sk) as returns_items,
+        |      -- return monetary amount ratio
+        |      SUM( sr_return_amt ) AS returns_money
+        |    FROM store_returns
+        |    GROUP BY sr_customer_sk
+        |  ) returned ON ss_customer_sk=sr_customer_sk
+        |ORDER BY user_sk
+        |
+        |
+        |""".stripMargin)
+  }
+}
+
+object Q21Like {
+  def apply(spark: SparkSession): DataFrame = {
+
+    spark.sql(
+      """
+        |-- based on tpc-ds q29
+        |-- Get all items that were sold in stores in a given month
+        |-- and year and which were returned in the next 6 months and re-purchased by
+        |-- the returning customer afterwards through the web sales channel in the following
+        |-- three years. For those items, compute the total quantity sold through the
+        |-- store, the quantity returned and the quantity purchased through the web. Group
+        |-- this information by item and store.
+        |
+        |SELECT
+        |  part_i.i_item_id AS i_item_id,
+        |  part_i.i_item_desc AS i_item_desc,
+        |  part_s.s_store_id AS s_store_id,
+        |  part_s.s_store_name AS s_store_name,
+        |  SUM(part_ss.ss_quantity) AS store_sales_quantity,
+        |  SUM(part_sr.sr_return_quantity) AS store_returns_quantity,
+        |  SUM(part_ws.ws_quantity) AS web_sales_quantity
+        |FROM (
+        |        SELECT
+        |          sr_item_sk,
+        |          sr_customer_sk,
+        |          sr_ticket_number,
+        |          sr_return_quantity
+        |        FROM
+        |          store_returns sr,
+        |          date_dim d2
+        |        WHERE d2.d_year = 2003
+        |        AND d2.d_moy BETWEEN 1 AND 1 + 6 --which were returned in the next six months
+        |        AND sr.sr_returned_date_sk = d2.d_date_sk
+        |) part_sr
+        |INNER JOIN (
+        |  SELECT
+        |    ws_item_sk,
+        |    ws_bill_customer_sk,
+        |    ws_quantity
+        |  FROM
+        |    web_sales ws,
+        |    date_dim d3
+        |  WHERE d3.d_year BETWEEN 2003 AND 2003 + 2 -- in the following three years (re-purchased by the returning customer afterwards through the web sales channel)
+        |  AND ws.ws_sold_date_sk = d3.d_date_sk
+        |) part_ws ON (
+        |  part_sr.sr_item_sk = part_ws.ws_item_sk
+        |  AND part_sr.sr_customer_sk = part_ws.ws_bill_customer_sk
+        |)
+        |INNER JOIN (
+        |  SELECT
+        |    ss_item_sk,
+        |    ss_store_sk,
+        |    ss_customer_sk,
+        |    ss_ticket_number,
+        |    ss_quantity
+        |  FROM
+        |    store_sales ss,
+        |    date_dim d1
+        |  WHERE d1.d_year = 2003
+        |  AND d1.d_moy = 1
+        |  AND ss.ss_sold_date_sk = d1.d_date_sk
+        |) part_ss ON (
+        |  part_ss.ss_ticket_number = part_sr.sr_ticket_number
+        |  AND part_ss.ss_item_sk = part_sr.sr_item_sk
+        |  AND part_ss.ss_customer_sk = part_sr.sr_customer_sk
+        |)
+        |INNER JOIN store part_s ON (
+        |  part_s.s_store_sk = part_ss.ss_store_sk
+        |)
+        |INNER JOIN item part_i ON (
+        |  part_i.i_item_sk = part_ss.ss_item_sk
+        |)
+        |GROUP BY
+        |  part_i.i_item_id,
+        |  part_i.i_item_desc,
+        |  part_s.s_store_id,
+        |  part_s.s_store_name
+        |ORDER BY
+        |  part_i.i_item_id,
+        |  part_i.i_item_desc,
+        |  part_s.s_store_id,
+        |  part_s.s_store_name
+        |LIMIT 100
+        |
+        |""".stripMargin)
+  }
+}
+
+object Q22Like {
+  def apply(spark: SparkSession): DataFrame = {
+
+    spark.sql(
+      """
+        |-- based on tpc-ds q21
+        |-- For all items whose price was changed on a given date,
+        |-- compute the percentage change in inventory between the 30-day period BEFORE
+        |-- the price change and the 30-day period AFTER the change. Group this
+        |-- information by warehouse.
+        |SELECT
+        |  w_warehouse_name,
+        |  i_item_id,
+        |  SUM( CASE WHEN datediff(d_date, '2001-05-08') < 0
+        |    THEN inv_quantity_on_hand
+        |    ELSE 0 END
+        |  ) AS inv_before,
+        |  SUM( CASE WHEN datediff(d_date, '2001-05-08') >= 0
+        |    THEN inv_quantity_on_hand
+        |    ELSE 0 END
+        |  ) AS inv_after
+        |FROM inventory inv,
+        |  item i,
+        |  warehouse w,
+        |  date_dim d
+        |WHERE i_current_price BETWEEN 0.98 AND 1.5
+        |AND i_item_sk        = inv_item_sk
+        |AND inv_warehouse_sk = w_warehouse_sk
+        |AND inv_date_sk      = d_date_sk
+        |AND datediff(d_date, '2001-05-08') >= -30
+        |AND datediff(d_date, '2001-05-08') <= 30
+        |
+        |GROUP BY w_warehouse_name, i_item_id
+        |HAVING inv_before > 0
+        |AND inv_after / inv_before >= 2.0 / 3.0
+        |AND inv_after / inv_before <= 3.0 / 2.0
+        |ORDER BY w_warehouse_name, i_item_id
+        |LIMIT 100
+        |
+        |""".stripMargin)
+  }
+}
+
+/*
+ * investigate if needed:
+ * -- This query requires parallel order by for fast and deterministic global ordering of final result
+ * set hive.optimize.sampling.orderby=true;
+ * set hive.optimize.sampling.orderby.number=20000;
+ * set hive.optimize.sampling.orderby.percent=0.1;
+ * --debug print
+ * set hive.optimize.sampling.orderby;
+ * set hive.optimize.sampling.orderby.number;
+ * set hive.optimize.sampling.orderby.percent;
+ */
+object Q23Like {
+  def apply(spark: SparkSession): DataFrame = {
+
+    spark.sql("DROP TABLE IF EXISTS q23_temp_table")
+
+    spark.sql(
+      """
+        |-- based on tpc-ds q39
+        |-- This query contains multiple, related iterations:
+        |-- Iteration 1: Calculate the coefficient of variation and mean of every item
+        |-- and warehouse of the given and the consecutive month
+        |-- Iteration 2: Find items that had a coefficient of variation of 1.3 or larger
+        |-- in the given and the consecutive month
+        |
+        |CREATE TABLE q23_temp_table AS
+        |SELECT
+        |  inv_warehouse_sk,
+        | -- w_warehouse_name,
+        |  inv_item_sk,
+        |  d_moy,
+        |  cast( ( stdev / mean ) as decimal(15,5)) cov
+        |FROM (
+        |   --Iteration 1: Calculate the coefficient of variation and mean of every item
+        |   -- and warehouse of the given and the consecutive month
+        |  SELECT
+        |    inv_warehouse_sk,
+        |    inv_item_sk,
+        |    d_moy,
+        |    -- implicit group by d_moy using CASE filters inside the stddev_samp() and avg() UDF's. This saves us from requiring a self join for correlation of d_moy and d_moy+1 later on.
+        |    cast( stddev_samp( inv_quantity_on_hand ) as decimal(15,5)) stdev,
+        |    cast(         avg( inv_quantity_on_hand ) as decimal(15,5)) mean
+        |
+        |  FROM inventory inv
+        |  JOIN date_dim d
+        |       ON (inv.inv_date_sk = d.d_date_sk
+        |       AND d.d_year = 2001
+        |       AND d_moy between 1 AND (1 + 1)
+        |       )
+        |  GROUP BY
+        |    inv_warehouse_sk,
+        |    inv_item_sk,
+        |    d_moy
+        |) q23_tmp_inv_part
+        |--JOIN warehouse w ON inv_warehouse_sk = w.w_warehouse_sk
+        |WHERE mean > 0 --avoid "div by 0"
+        |  AND stdev/mean >= 1.3
+        |
+      """.stripMargin)
+
+    spark.sql(
+      """
+        |-- Begin: the real query part
+        |-- Iteration 2: Find items that had a coefficient of variation of 1.5 or larger
+        |-- in the given and the consecutive month
+        |SELECT
+        |  inv1.inv_warehouse_sk,
+        |  inv1.inv_item_sk,
+        |  inv1.d_moy,
+        |  inv1.cov,
+        |  inv2.d_moy,
+        |  inv2.cov
+        |FROM q23_temp_table inv1
+        |JOIN q23_temp_table inv2
+        |    ON(   inv1.inv_warehouse_sk=inv2.inv_warehouse_sk
+        |      AND inv1.inv_item_sk =  inv2.inv_item_sk
+        |      AND inv1.d_moy = 1
+        |      AND inv2.d_moy = 1 + 1
+        |    )
+        |ORDER BY
+        | inv1.inv_warehouse_sk,
+        | inv1.inv_item_sk
+        |
+        |""".stripMargin)
+  }
+}
+
+object Q24Like {
+  def apply(spark: SparkSession): DataFrame = {
+
+    spark.sql("DROP TABLE IF EXISTS q24_temp_table")
+
+
+    spark.sql(
+      """
+        |--For a given product, measure the effect of competitor's prices on
+        |--products' in-store and online sales. (Compute the cross-price elasticity of demand
+        |--for a given product.)
+        |-- Step1 :
+        |--Calculating the Percentage Change in Quantity Demanded of Good X : [QDemand(NEW) - QDemand(OLD)] / QDemand(OLD)
+        |--Step 2:
+        |-- Calculating the Percentage Change in Price of Good Y: [Price(NEW) - Price(OLD)] / Price(OLD)
+        |-- Step 3 final:
+        |--Cross-Price Elasticity of Demand (CPEoD) is given by: CPEoD = (% Change in Quantity Demand for Good X)/(% Change in Price for Good Y))
+        |
+        |-- compute the price change % for the competitor items
+        |-- will give a list of competitor prices changes
+        |
+        |CREATE TABLE q24_temp_table AS
+        |SELECT
+        |  i_item_sk,
+        |  imp_sk,
+        |  --imp_competitor,
+        |  (imp_competitor_price - i_current_price)/i_current_price AS price_change,
+        |  imp_start_date,
+        |  (imp_end_date - imp_start_date) AS no_days_comp_price
+        |FROM item i ,item_marketprices imp
+        |WHERE i.i_item_sk = imp.imp_item_sk
+        |AND i.i_item_sk = 10000
+        |-- AND imp.imp_competitor_price < i.i_current_price --consider all price changes not just where competitor is cheaper
+        |ORDER BY i_item_sk,
+        |         imp_sk,
+        |         --imp_competitor, --add to compute cross_price_elasticity per competitor is instead of a single number
+        |         imp_start_date
+        |
+        |
+        |""".stripMargin)
+
+    spark.sql(
+      """
+        |SELECT ws_item_sk,
+        |       --ws.imp_competitor, --add to compute cross_price_elasticity per competitor is instead of a single number
+        |       avg ( (current_ss_quant + current_ws_quant - prev_ss_quant - prev_ws_quant) / ((prev_ss_quant + prev_ws_quant) * ws.price_change)) AS cross_price_elasticity
+        |FROM
+        |    ( --websales items sold quantity before and after competitor price change
+        |      SELECT
+        |        ws_item_sk,
+        |        imp_sk,
+        |        --imp_competitor, --add to compute cross_price_elasticity per competitor is instead of a single number
+        |        price_change,
+        |        SUM( CASE WHEN  ( (ws_sold_date_sk >= c.imp_start_date) AND (ws_sold_date_sk < (c.imp_start_date + c.no_days_comp_price))) THEN ws_quantity ELSE 0 END ) AS current_ws_quant,
+        |        SUM( CASE WHEN  ( (ws_sold_date_sk >= (c.imp_start_date - c.no_days_comp_price)) AND (ws_sold_date_sk < c.imp_start_date)) THEN ws_quantity ELSE 0 END ) AS prev_ws_quant
+        |      FROM web_sales ws
+        |      JOIN q24_temp_table c ON ws.ws_item_sk = c.i_item_sk
+        |      GROUP BY ws_item_sk,
+        |              imp_sk,
+        |              --imp_competitor,
+        |              price_change
+        |    ) ws
+        |JOIN
+        |    (--storesales items sold quantity before and after competitor price change
+        |      SELECT
+        |        ss_item_sk,
+        |        imp_sk,
+        |        --imp_competitor, --add to compute cross_price_elasticity per competitor is instead of a single number
+        |        price_change,
+        |        SUM( CASE WHEN ((ss_sold_date_sk >= c.imp_start_date) AND (ss_sold_date_sk < (c.imp_start_date + c.no_days_comp_price))) THEN ss_quantity ELSE 0 END) AS current_ss_quant,
+        |        SUM( CASE WHEN ((ss_sold_date_sk >= (c.imp_start_date - c.no_days_comp_price)) AND (ss_sold_date_sk < c.imp_start_date)) THEN ss_quantity ELSE 0 END) AS prev_ss_quant
+        |      FROM store_sales ss
+        |      JOIN q24_temp_table c ON c.i_item_sk = ss.ss_item_sk
+        |      GROUP BY ss_item_sk,
+        |              imp_sk,
+        |              --imp_competitor, --add to compute cross_price_elasticity per competitor is instead of a single number
+        |              price_change
+        |    ) ss
+        | ON (ws.ws_item_sk = ss.ss_item_sk and ws.imp_sk = ss.imp_sk)
+        |GROUP BY  ws.ws_item_sk
+        |--uncomment below to compute cross_price_elasticity per competitor is instead of a single number (requires ordering)
+        |         --,ws.imp_competitor
+        |--ORDER BY ws.ws_item_sk,
+        |--         ws.imp_competitor
+        |
+      """.stripMargin)
+  }
+}
+
+/*
+ * investigate:
+ * -- This query requires parallel order by for fast and deterministic global ordering of final result
+ * set hive.optimize.sampling.orderby=true;
+ * set hive.optimize.sampling.orderby.number=20000;
+ * set hive.optimize.sampling.orderby.percent=0.1;
+ * --debug print
+ * set hive.optimize.sampling.orderby;
+ * set hive.optimize.sampling.orderby.number;
+ * set hive.optimize.sampling.orderby.percent;
+ */
+object Q25Like {
+  def apply(spark: SparkSession): DataFrame = {
+
+    spark.sql("DROP TABLE IF EXISTS q25_temp_table")
+
+    spark.sql(
+      """
+        |-- TASK:
+        |-- Customer segmentation analysis: Customers are separated along the
+        |-- following key shopping dimensions: recency of last visit, frequency of visits and
+        |-- monetary amount. Use the store and online purchase data during a given year
+        |-- to compute. After model of separation is build,
+        |-- report for the analysed customers to which "group" they where assigned
+        |
+        |-- IMPLEMENTATION NOTICE:
+        |-- hive provides the input for the clustering program
+        |-- The input format for the clustering is:
+        |--   customer ID,
+        |--   flag if customer bought something within the last 60 days (integer 0 or 1),
+        |--   number of orders,
+        |--   total amount spent
+        |CREATE TABLE q25_temp_table (
+        |  cid               BIGINT,
+        |  frequency         BIGINT,
+        |  most_recent_date  BIGINT,
+        |  amount            decimal(15,2)
+        |)
+        |
+        |""".stripMargin)
+
+    spark.sql(
+      """
+        |-- Add store sales data
+        |INSERT INTO TABLE q25_temp_table
+        |SELECT
+        |  ss_customer_sk                     AS cid,
+        |  count(distinct ss_ticket_number)   AS frequency,
+        |  max(ss_sold_date_sk)               AS most_recent_date,
+        |  SUM(ss_net_paid)                   AS amount
+        |FROM store_sales ss
+        |JOIN date_dim d ON ss.ss_sold_date_sk = d.d_date_sk
+        |WHERE d.d_date > '2002-01-02'
+        |AND ss_customer_sk IS NOT NULL
+        |GROUP BY ss_customer_sk
+        |
+      """.stripMargin)
+
+    spark.sql(
+      """
+        |-- Add web sales data
+        |INSERT INTO TABLE q25_temp_table
+        |SELECT
+        |  ws_bill_customer_sk             AS cid,
+        |  count(distinct ws_order_number) AS frequency,
+        |  max(ws_sold_date_sk)            AS most_recent_date,
+        |  SUM(ws_net_paid)                AS amount
+        |FROM web_sales ws
+        |JOIN date_dim d ON ws.ws_sold_date_sk = d.d_date_sk
+        |WHERE d.d_date > '2002-01-02'
+        |AND ws_bill_customer_sk IS NOT NULL
+        |GROUP BY ws_bill_customer_sk
+        |
+      """.stripMargin)
+
+    spark.sql(
+      """
+        |SELECT
+        |  -- rounding of values not necessary
+        |  cid            AS cid,
+        |  CASE WHEN 37621 - max(most_recent_date) < 60 THEN 1.0 ELSE 0.0 END
+        |                 AS recency, -- 37621 == 2003-01-02
+        |  SUM(frequency) AS frequency, --total frequency
+        |  SUM(amount)    AS totalspend --total amount
+        |FROM q25_temp_table
+        |GROUP BY cid
+        |--CLUSTER BY cid --cluster by preceded by group by is silently ignored by hive but fails in spark
+        |--no total ordering with ORDER BY required, further processed by clustering algorithm
+        |ORDER BY cid
+        |
+        |
+      """.stripMargin)
   }
 }
