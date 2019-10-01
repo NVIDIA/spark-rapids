@@ -749,12 +749,22 @@ object TpcxbbLikeSpark {
 
 }
 
-/*
- * -- TASK: (Based, but not equal to tpc-ds q6)
- * -- List top 10 states in descending order with at least 10 customers who during
- * -- a given month bought products with the price tag at least 20% higher than the
- * -- average price of products in the same category.
- */
+// has UDTF
+//  object Q1Like {}
+
+// has UDTF
+// object Q2Like {}
+
+// calls python
+// object Q3Like {}
+
+// calls python
+// object Q4Like {}
+
+// object Q5Like {}
+
+// object Q6Like {}
+
 object Q7Like {
   def apply(spark: SparkSession): DataFrame = {
 
@@ -763,6 +773,11 @@ object Q7Like {
     // -- helper table: items with 20% higher then avg prices of product from same category
     spark.sql(
       """
+        |-- TASK: (Based, but not equal to tpc-ds q6)
+        |-- List top 10 states in descending order with at least 10 customers who during
+        |-- a given month bought products with the price tag at least 20% higher than the
+        |-- average price of products in the same category.
+        |
         |CREATE TABLE q7_temp_table as
         |-- "price tag at least 20% higher than the average price of products in the same category."
         |
@@ -816,10 +831,16 @@ object Q7Like {
   }
 }
 
+// Calls python
+// object Q8Like {}
+
 object Q9Like {
   def apply(spark: SparkSession): DataFrame = {
     spark.sql(
       """
+        |-- Aggregate total amount of sold items over different given types of combinations of customers based on selected groups of
+        |-- marital status, education status, sales price  and   different combinations of state and sales profit.
+        |
         |SELECT SUM(ss1.ss_quantity)
         |FROM store_sales ss1, date_dim dd,customer_address ca1, store s, customer_demographics cd
         |-- select date range
@@ -914,6 +935,10 @@ object Q11Like {
 
     spark.sql(
       """
+        |-- For a given product, measure the correlation of sentiments, including
+        |-- the number of reviews and average review ratings, on product monthly revenues
+        |-- within a given time frame.
+        |
         |SELECT corr(reviews_count,avg_rating)
         |FROM (
         |  SELECT
@@ -969,6 +994,10 @@ object Q12Like {
 
     spark.sql(
       """
+        |-- Find all customers who viewed items of a given category on the web
+        |-- in a given month and year that was followed by an in-store purchase of an item from the same category in the three
+        |-- consecutive months.
+        |
         |SELECT DISTINCT wcs_user_sk -- Find all customers
         |-- TODO check if 37134 is first day of the month
         |FROM
@@ -1011,6 +1040,17 @@ object Q13Like {
     // used temporary view here instead of permanent view
     spark.sql(
       """
+        |-- based on tpc-ds q74
+        |-- Display customers with both store and web sales in
+        |-- consecutive years for whom the increase in web sales exceeds the increase in
+        |-- store sales for a specified year.
+        |
+        |-- Implementation notice:
+        |-- loosely based on implementation of tpc-ds q74 - Query description in tpcds_1.1.0.pdf does NOT match implementation in tpc-ds qgen\query_templates\query74.tpl
+        |-- This version:
+        |--    * avoids union of 2 sub-queries followed by 4 self joins and replaces them with only one join by creating two distinct views with better pre-filters and aggregations for store/web-sales first and second year
+        |--    * introduces a more logical sorting by reporting the top 100 customers ranked by their web_sales increase ratio instead of just reporting random 100 customers
+        |
         |CREATE TEMPORARY VIEW q13_temp_table1 AS
         |SELECT
         |    ss.ss_customer_sk AS customer_sk,
@@ -1077,6 +1117,12 @@ object Q14Like {
 
     spark.sql(
       """
+        |-- based on tpc-ds q90
+        |-- What is the ratio between the number of items sold over
+        |-- the internet in the morning (7 to 8am) to the number of items sold in the evening
+        |-- (7 to 8pm) of customers with a specified number of dependents. Consider only
+        |-- websites with a high amount of content.
+        |
         |SELECT CASE WHEN pmc > 0 THEN amc/pmc  ELSE -1.00 END AS am_pm_ratio
         | FROM (
         |        SELECT SUM(amc1) AS amc, SUM(pmc1) AS pmc
@@ -1100,6 +1146,9 @@ object Q15Like {
 
     spark.sql(
       """
+        |-- Find the categories with flat or declining sales for in store purchases
+        |-- during a given year for a given store.
+        |
         |SELECT *
         |FROM (
         |  SELECT
@@ -1161,6 +1210,12 @@ object Q16Like {
 
     spark.sql(
       """
+        |-- based on tpc-ds q40
+        |-- Compute the impact of an item price change on the
+        |-- store sales by computing the total sales for items in a 30 day period before and
+        |-- after the price change. Group the items by location of warehouse where they
+        |-- were delivered from.
+        |
         |SELECT w_state, i_item_id,
         |  SUM(
         |    CASE WHEN (unix_timestamp(d_date,'yyyy-MM-dd') < unix_timestamp('2001-03-16','yyyy-MM-dd'))
@@ -1197,6 +1252,11 @@ object Q17Like {
 
     spark.sql(
       """
+        |-- based on tpc-ds q61
+        |-- Find the ratio of items sold with and without promotions
+        |-- in a given month and year. Only items in certain categories sold to customers
+        |-- living in a specific time zone are considered.
+        |
         |SELECT sum(promotional) as promotional, sum(total) as total,
         |       CASE WHEN sum(total) > 0 THEN 100*sum(promotional)/sum(total)
         |                                ELSE 0.0 END as promo_percent
