@@ -19,6 +19,7 @@ import scala.collection.mutable.ListBuffer
 
 import org.apache.spark.SparkConf
 import org.apache.spark.internal.Logging
+import org.apache.spark.network.util.{ByteUnit, JavaUtils}
 import org.apache.spark.sql.internal.SQLConf
 
 object ConfHelper {
@@ -52,6 +53,15 @@ object ConfHelper {
     v.map(stringConverter).mkString(",")
   }
 
+  def byteFromString(str: String, unit: ByteUnit, key: String): Long = {
+    val (input, multiplier) =
+      if (str.length() > 0 && str.charAt(0) == '-') {
+        (str.substring(1), -1)
+      } else {
+        (str, 1)
+      }
+    multiplier * JavaUtils.byteStringAs(input, unit)
+  }
 }
 
 abstract class ConfEntry[T](val key: String, val converter: String => T,
@@ -128,6 +138,10 @@ class ConfBuilder(val key: String, val register: ConfEntry[_] => Unit) {
     new TypedConfBuilder[Boolean](this, toBoolean(_, key))
   }
 
+  def bytesConf(unit: ByteUnit): TypedConfBuilder[Long] = {
+    new TypedConfBuilder[Long](this, byteFromString(_, unit, key))
+  }
+
   def integerConf: TypedConfBuilder[Integer] = {
     new TypedConfBuilder[Integer](this, toInteger(_, key))
   }
@@ -158,6 +172,12 @@ object RapidsConf {
       "set if they should be enabled by default or disabled by default.")
     .booleanConf
     .createWithDefault(false)
+
+  val PINNED_POOL_SIZE = conf("spark.rapids.sql.pinned-pool-size")
+      .doc("The size of the pinned memory pool in bytes unless otherwise specified. " +
+          "Use 0 to disable the pool.")
+      .bytesConf(ByteUnit.BYTE)
+      .createWithDefault(0)
 
   val HAS_NANS = conf("spark.rapids.sql.hasNans")
     .doc("Config to indicate if your data has NaN's. Cudf doesn't " +
@@ -339,6 +359,8 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
   lazy val isSqlEnabled: Boolean = get(SQL_ENABLED)
 
   lazy val isIncompatEnabled: Boolean = get(INCOMPATIBLE_OPS)
+
+  lazy val pinnedPoolSize: Long = get(PINNED_POOL_SIZE)
 
   lazy val isTestEnabled: Boolean = get(TEST_CONF)
 
