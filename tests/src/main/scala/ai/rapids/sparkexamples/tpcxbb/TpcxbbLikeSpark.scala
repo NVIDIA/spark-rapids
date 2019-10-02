@@ -978,8 +978,7 @@ object Q11Like {
   }
 }
 
-// Query 12 sets the following hive optimization configs that we need to investigate more if they
-// actually apply to spark
+// query had the following set but we aren't using Hive so shouldn't matter
 //
 // -- This query requires parallel order by for fast and deterministic global ordering of final result
 // set hive.optimize.sampling.orderby=${hiveconf:bigbench.spark.sql.optimize.sampling.orderby};
@@ -1291,7 +1290,7 @@ object Q17Like {
 
 
 /*
- * Do these matter for Spark?
+ * query had the following set but we aren't using Hive so shouldn't matter
  *
  * -- This query requires parallel order by for fast and deterministic global ordering of final result
  * set hive.optimize.sampling.orderby=${hiveconf:bigbench.spark.sql.optimize.sampling.orderby};
@@ -1496,7 +1495,8 @@ object Q22Like {
 }
 
 /*
- * investigate if needed:
+ * query had the following set but we aren't using Hive so shouldn't matter
+ *
  * -- This query requires parallel order by for fast and deterministic global ordering of final result
  * set hive.optimize.sampling.orderby=true;
  * set hive.optimize.sampling.orderby.number=20000;
@@ -1587,7 +1587,6 @@ object Q24Like {
 
     spark.sql("DROP TABLE IF EXISTS q24_temp_table")
 
-
     spark.sql(
       """
         |--For a given product, measure the effect of competitor's prices on
@@ -1672,7 +1671,8 @@ object Q24Like {
 }
 
 /*
- * investigate:
+ * query had the following set but we aren't using Hive so shouldn't matter
+ *
  * -- This query requires parallel order by for fast and deterministic global ordering of final result
  * set hive.optimize.sampling.orderby=true;
  * set hive.optimize.sampling.orderby.number=20000;
