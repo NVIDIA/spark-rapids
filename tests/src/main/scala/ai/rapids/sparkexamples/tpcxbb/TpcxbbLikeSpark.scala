@@ -749,21 +749,169 @@ object TpcxbbLikeSpark {
 
 }
 
-// has UDTF
-//  object Q1Like {}
+object Q1Like {
+  def apply(spark: SparkSession): DataFrame = {
+    throw new UnsupportedOperationException("Q1 uses UDTF")
+  }
+}
 
-// has UDTF
-// object Q2Like {}
+object Q2Like {
+  def apply(spark: SparkSession): DataFrame = {
+    throw new UnsupportedOperationException("Q2 uses UDTF")
+  }
+}
 
-// calls python
-// object Q3Like {}
+object Q3Like {
+  def apply(spark: SparkSession): DataFrame = {
+    throw new UnsupportedOperationException("Q3 calls python")
+  }
+}
 
-// calls python
-// object Q4Like {}
+object Q4Like {
+  def apply(spark: SparkSession): DataFrame = {
+    throw new UnsupportedOperationException("Q4 calls python")
+  }
+}
 
-// object Q5Like {}
+object Q5Like {
+  def apply(spark: SparkSession): DataFrame = {
+    spark.sql(
+      """
+        |-- TASK:
+        |-- Build a model using logistic regression for a visitor to an online store: based on existing users online
+        |-- activities (interest in items of different categories) and demographics.
+        |-- This model will be used to predict if the visitor is interested in a given item category.
+        |-- Output the precision, accuracy and confusion matrix of model.
+        |-- Note: no need to actually classify existing users, as it will be later used to predict interests of unknown visitors.
+        |
+        |-- input vectors to the machine learning algorithm are:
+        |--  clicks_in_category BIGINT, -- used as label - number of clicks in specified category "q05_i_category"
+        |--  college_education  BIGINT, -- has college education [0,1]
+        |--  male               BIGINT, -- isMale [0,1]
+        |--  clicks_in_1        BIGINT, -- number of clicks in category id 1
+        |--  clicks_in_2        BIGINT, -- number of clicks in category id 2
+        |--  clicks_in_3        BIGINT, -- number of clicks in category id 3
+        |--  clicks_in_4        BIGINT, -- number of clicks in category id 4
+        |--  clicks_in_5        BIGINT, -- number of clicks in category id 5
+        |--  clicks_in_6        BIGINT  -- number of clicks in category id 6
+        |--  clicks_in_7        BIGINT  -- number of clicks in category id 7
+        |
+        |SELECT
+        |  --wcs_user_sk,
+        |  clicks_in_category,
+        |  CASE WHEN cd_education_status IN ('Advanced Degree', 'College', '4 yr Degree', '2 yr Degree') THEN 1 ELSE 0 END AS college_education,
+        |  CASE WHEN cd_gender = 'M' THEN 1 ELSE 0 END AS male,
+        |  clicks_in_1,
+        |  clicks_in_2,
+        |  clicks_in_3,
+        |  clicks_in_4,
+        |  clicks_in_5,
+        |  clicks_in_6,
+        |  clicks_in_7
+        |FROM(
+        |  SELECT
+        |    wcs_user_sk,
+        |    SUM( CASE WHEN i_category = 'Books' THEN 1 ELSE 0 END) AS clicks_in_category,
+        |    SUM( CASE WHEN i_category_id = 1 THEN 1 ELSE 0 END) AS clicks_in_1,
+        |    SUM( CASE WHEN i_category_id = 2 THEN 1 ELSE 0 END) AS clicks_in_2,
+        |    SUM( CASE WHEN i_category_id = 3 THEN 1 ELSE 0 END) AS clicks_in_3,
+        |    SUM( CASE WHEN i_category_id = 4 THEN 1 ELSE 0 END) AS clicks_in_4,
+        |    SUM( CASE WHEN i_category_id = 5 THEN 1 ELSE 0 END) AS clicks_in_5,
+        |    SUM( CASE WHEN i_category_id = 6 THEN 1 ELSE 0 END) AS clicks_in_6,
+        |    SUM( CASE WHEN i_category_id = 7 THEN 1 ELSE 0 END) AS clicks_in_7
+        |  FROM web_clickstreams
+        |  INNER JOIN item it ON (wcs_item_sk = i_item_sk
+        |                     AND wcs_user_sk IS NOT NULL)
+        |  GROUP BY  wcs_user_sk
+        |)q05_user_clicks_in_cat
+        |INNER JOIN customer ct ON wcs_user_sk = c_customer_sk
+        |INNER JOIN customer_demographics ON c_current_cdemo_sk = cd_demo_sk
+        |
+      """.stripMargin)
+  }
+}
 
-// object Q6Like {}
+object Q6Like {
+  def apply(spark: SparkSession): DataFrame = {
+
+    spark.sql("DROP TABLE IF EXISTS q6_temp_table1")
+    spark.sql("DROP TABLE IF EXISTS q6_temp_table2")
+
+
+    spark.sql(
+      """
+        |-- TASK:
+        |-- Identifies customers shifting their purchase habit from store to web sales.
+        |-- Find customers who spend in relation more money in the second year following a given year in the web_sales channel then in the store sales channel.
+        |-- Hint: web second_year_total/first_year_total > store second_year_total/first_year_total
+        |-- Report customers details: first name, last name, their country of origin, login name and email address) and identify if they are preferred customer, for the top 100 customers with the highest increase in their second year web purchase ratio.
+        |-- Implementation notice:
+        |-- loosely based on implementation of tpc-ds q4 - Query description in tpcds_1.1.0.pdf does NOT match implementation in tpc-ds qgen\query_templates\query4.tpl
+        |-- This version:
+        |--    * does not have the catalog_sales table (there is none in our dataset). Web_sales plays the role of catalog_sales.
+        |--    * avoids the 4 self joins and replaces them with only one by creating two distinct views with better pre-filters and aggregations for store/web-sales first and second year
+        |--    * introduces a more logical sorting by reporting the top 100 customers ranked by their web_sales increase instead of just reporting random 100 customers
+        |
+        |CREATE VIEW q6_temp_table1 AS
+        |SELECT ss_customer_sk AS customer_sk,
+        |       sum( case when (d_year = 2001)   THEN (((ss_ext_list_price-ss_ext_wholesale_cost-ss_ext_discount_amt)+ss_ext_sales_price)/2)  ELSE 0 END) first_year_total,
+        |       sum( case when (d_year = 2001+1) THEN (((ss_ext_list_price-ss_ext_wholesale_cost-ss_ext_discount_amt)+ss_ext_sales_price)/2)  ELSE 0 END) second_year_total
+        |FROM  store_sales
+        |     ,date_dim
+        |WHERE ss_sold_date_sk = d_date_sk
+        |AND   d_year BETWEEN 2001 AND 2001 +1
+        |GROUP BY ss_customer_sk
+        |HAVING first_year_total > 0  -- required to avoid division by 0, because later we will divide by this value
+        |
+      """.stripMargin)
+
+    spark.sql(
+      """
+        |-- customer web sales
+        |CREATE  VIEW ${hiveconf:TEMP_TABLE2} AS
+        |SELECT ws_bill_customer_sk AS customer_sk ,
+        |       sum( case when (d_year = 2001)   THEN (((ws_ext_list_price-ws_ext_wholesale_cost-ws_ext_discount_amt)+ws_ext_sales_price)/2)   ELSE 0 END) first_year_total,
+        |       sum( case when (d_year = 2001+1) THEN (((ws_ext_list_price-ws_ext_wholesale_cost-ws_ext_discount_amt)+ws_ext_sales_price)/2)   ELSE 0 END) second_year_total
+        |FROM web_sales
+        |    ,date_dim
+        |WHERE ws_sold_date_sk = d_date_sk
+        |AND   d_year BETWEEN 2001 AND 2001 +1
+        |GROUP BY ws_bill_customer_sk
+        |HAVING first_year_total > 0  -- required to avoid division by 0, because later we will divide by this value
+        |
+      """.stripMargin)
+
+    spark.sql(
+      """
+        |SELECT
+        |      (web.second_year_total / web.first_year_total) AS web_sales_increase_ratio,
+        |      c_customer_sk,
+        |      c_first_name,
+        |      c_last_name,
+        |      c_preferred_cust_flag,
+        |      c_birth_country,
+        |      c_login,
+        |      c_email_address
+        |FROM ${hiveconf:TEMP_TABLE1} store,
+        |     ${hiveconf:TEMP_TABLE2} web,
+        |     customer c
+        |WHERE store.customer_sk = web.customer_sk
+        |AND   web.customer_sk = c_customer_sk
+        |-- if customer has sales in first year for both store and websales, select him only if web second_year_total/first_year_total ratio is bigger then his store second_year_total/first_year_total ratio.
+        |AND   (web.second_year_total / web.first_year_total)  >  (store.second_year_total / store.first_year_total)
+        |ORDER BY
+        |  web_sales_increase_ratio DESC,
+        |  c_customer_sk,
+        |  c_first_name,
+        |  c_last_name,
+        |  c_preferred_cust_flag,
+        |  c_birth_country,
+        |  c_login
+        |LIMIT 100;
+        |
+      """.stripMargin)
+  }
+}
 
 object Q7Like {
   def apply(spark: SparkSession): DataFrame = {
@@ -831,8 +979,11 @@ object Q7Like {
   }
 }
 
-// Calls python
-// object Q8Like {}
+object Q8Like {
+  def apply(spark: SparkSession): DataFrame = {
+    throw new UnsupportedOperationException("Q8 calls python")
+  }
+}
 
 object Q9Like {
   def apply(spark: SparkSession): DataFrame = {
@@ -899,8 +1050,7 @@ object Q9Like {
   }
 }
 
-/*
-// Uses UDF
+
 //
 // Query 10 sets the following hive optimization configs that we need to investigate more:
 // -- This query requires parallel order by for fast and deterministic global ordering of final result
@@ -913,22 +1063,9 @@ object Q9Like {
 // set hive.optimize.sampling.orderby.percent;
 object Q10Like {
   def apply(spark: SparkSession): DataFrame = {
-
-    // TOOD - requires UDF
-    // CREATE TEMPORARY FUNCTION extract_sentiment AS 'io.bigdatabenchmark.v1.queries.q10.SentimentUDF';
-    spark.sql(
-      """
-        |SELECT item_sk, review_sentence, sentiment, sentiment_word
-        |FROM (--wrap in additional FROM(), because Sorting/distribute by with UDTF in select clause is not allowed
-        |  SELECT extract_sentiment(pr_item_sk, pr_review_content) AS (item_sk, review_sentence, sentiment, sentiment_word)
-        |  FROM product_reviews
-        |) extracted
-        |ORDER BY item_sk,review_sentence,sentiment,sentiment_word
-        |
-        |""".stripMargin)
+    throw new UnsupportedOperationException("Q10 uses UDF")
   }
 }
-*/
 
 object Q11Like {
   def apply(spark: SparkSession): DataFrame = {
@@ -1282,11 +1419,17 @@ object Q17Like {
   }
 }
 
-// uses UDF
-// object Q18Like {}
+object Q18Like {
+  def apply(spark: SparkSession): DataFrame = {
+    throw new UnsupportedOperationException("Q18 uses UDF")
+  }
+}
 
-// uses UDF
-// object Q19Like {}
+object Q19Like {
+  def apply(spark: SparkSession): DataFrame = {
+    throw new UnsupportedOperationException("Q19 uses UDF")
+  }
+}
 
 
 /*
@@ -1763,5 +1906,131 @@ object Q25Like {
         |
         |
       """.stripMargin)
+  }
+}
+
+object Q26Like {
+  def apply(spark: SparkSession): DataFrame = {
+
+    spark.sql(
+      """
+        |-- TASK:
+        |-- Cluster customers into book buddies/club groups based on their in
+        |-- store book purchasing histories. After model of separation is build,
+        |-- report for the analysed customers to which "group" they where assigned
+        |
+        |-- IMPLEMENTATION NOTICE:
+        |-- hive provides the input for the clustering program
+        |-- The input format for the clustering is:
+        |--   customer ID,
+        |--   sum of store sales in the item class ids [1,15]
+        |
+        |SELECT
+        |  ss.ss_customer_sk AS cid,
+        |  count(CASE WHEN i.i_class_id=1  THEN 1 ELSE NULL END) AS id1,
+        |  count(CASE WHEN i.i_class_id=2  THEN 1 ELSE NULL END) AS id2,
+        |  count(CASE WHEN i.i_class_id=3  THEN 1 ELSE NULL END) AS id3,
+        |  count(CASE WHEN i.i_class_id=4  THEN 1 ELSE NULL END) AS id4,
+        |  count(CASE WHEN i.i_class_id=5  THEN 1 ELSE NULL END) AS id5,
+        |  count(CASE WHEN i.i_class_id=6  THEN 1 ELSE NULL END) AS id6,
+        |  count(CASE WHEN i.i_class_id=7  THEN 1 ELSE NULL END) AS id7,
+        |  count(CASE WHEN i.i_class_id=8  THEN 1 ELSE NULL END) AS id8,
+        |  count(CASE WHEN i.i_class_id=9  THEN 1 ELSE NULL END) AS id9,
+        |  count(CASE WHEN i.i_class_id=10 THEN 1 ELSE NULL END) AS id10,
+        |  count(CASE WHEN i.i_class_id=11 THEN 1 ELSE NULL END) AS id11,
+        |  count(CASE WHEN i.i_class_id=12 THEN 1 ELSE NULL END) AS id12,
+        |  count(CASE WHEN i.i_class_id=13 THEN 1 ELSE NULL END) AS id13,
+        |  count(CASE WHEN i.i_class_id=14 THEN 1 ELSE NULL END) AS id14,
+        |  count(CASE WHEN i.i_class_id=15 THEN 1 ELSE NULL END) AS id15
+        |FROM store_sales ss
+        |INNER JOIN item i
+        |  ON (ss.ss_item_sk = i.i_item_sk
+        |  AND i.i_category IN ('Books')
+        |  AND ss.ss_customer_sk IS NOT NULL
+        |)
+        |GROUP BY ss.ss_customer_sk
+        |HAVING count(ss.ss_item_sk) > 5
+        |--CLUSTER BY cid --cluster by preceded by group by is silently ignored by hive but fails in spark
+        |ORDER BY cid
+        |
+        |""".stripMargin)
+  }
+}
+
+object Q27Like {
+  def apply(spark: SparkSession): DataFrame = {
+    throw new UnsupportedOperationException("Q27 uses UDF")
+  }
+}
+
+// Not setting hive.optimize.sample.orderby settings
+//
+// NOTE - this was inserting into 2 different tables, need to figure out what we want to do here
+//
+// This currently fails on the GPU due to inserts
+object Q28Like {
+  def apply(spark: SparkSession): DataFrame = {
+
+    spark.sql("DROP TABLE IF EXISTS q28_temp_table1")
+
+    spark.sql(
+      """
+        |CREATE TABLE q28_temp_table1 (
+        |  pr_review_sk      BIGINT,
+        |  pr_rating         INT,
+        |  pr_review_content STRING
+        |)
+      """.stripMargin)
+
+    spark.sql("DROP TABLE IF EXISTS q28_temp_table2")
+
+    spark.sql(
+      """
+        |CREATE TABLE q28_temp_table2 (
+        |  pr_review_sk      BIGINT,
+        |  pr_rating         INT,
+        |  pr_review_content STRING
+        |)
+      """.stripMargin)
+
+    spark.sql(
+      """
+        |-- TASK
+        |-- Build text classifier for online review sentiment classification (Positive,
+        |-- Negative, Neutral), using 90% of available reviews for training and the remaining
+        |-- 40% for testing. Display classifier accuracy on testing data
+        |-- and classification result for the 10% testing data: <reviewSK>,<originalRating>,<classificationResult>
+        |
+        |--Split reviews table into training and testing
+        |FROM (
+        |  SELECT
+        |    pr_review_sk,
+        |    pr_review_rating,
+        |    pr_review_content
+        |  FROM product_reviews
+        |  ORDER BY pr_review_sk
+        |)p
+        |INSERT OVERWRITE TABLE q28_temp_table1
+        |  SELECT *
+        |  WHERE pmod(pr_review_sk, 10) IN (1,2,3,4,5,6,7,8,9) -- 90% are training
+        |
+        |INSERT OVERWRITE TABLE q28_temp_table2
+        |  SELECT *
+        |  WHERE pmod(pr_review_sk, 10) IN (0) -- 10% are testing
+        |
+        |
+        |""".stripMargin)
+  }
+}
+
+object Q29Like {
+  def apply(spark: SparkSession): DataFrame = {
+    throw new UnsupportedOperationException("Q29 uses UDTF")
+  }
+}
+
+object Q30Like {
+  def apply(spark: SparkSession): DataFrame = {
+    throw new UnsupportedOperationException("Q30 uses UDTF")
   }
 }
