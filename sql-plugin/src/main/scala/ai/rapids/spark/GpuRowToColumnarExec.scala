@@ -307,6 +307,9 @@ case class GpuRowToColumnarExec(child: SparkPlan, goal: CoalesceGoal)
   override def doExecuteColumnar(): RDD[ColumnarBatch] = {
     // TODO need to add in the GPU accelerated unsafe row translation when there is no
     // variable length operations.
+
+    // use local variables instead of class global variables to prevent the entire
+    // object from having to be serialized
     val numInputRows = longMetric("numInputRows")
     val numOutputBatches = longMetric(NUM_OUTPUT_BATCHES)
     val numOutputRows = longMetric(NUM_OUTPUT_ROWS)
@@ -314,6 +317,7 @@ case class GpuRowToColumnarExec(child: SparkPlan, goal: CoalesceGoal)
     val targetRows = goal.targetSize
     val localSchema = schema
     val converters = new GpuRowToColumnConverter(localSchema)
+    val localGoal = goal
     val rowBased = child.execute()
     rowBased.mapPartitions { rowIter =>
       new Iterator[ColumnarBatch]() {
@@ -337,8 +341,8 @@ case class GpuRowToColumnarExec(child: SparkPlan, goal: CoalesceGoal)
               converters.convert(row, builders)
               rowCount += 1
             }
-            if (rowIter.hasNext && (rowCount + 1L) > goal.targetSize) {
-              goal.whenTargetExceeded(rowCount + 1L)
+            if (rowIter.hasNext && (rowCount + 1L) > localGoal.targetSize) {
+              localGoal.whenTargetExceeded(rowCount + 1L)
             }
             val buildRange = new NvtxWithMetrics("RowToColumnar", NvtxColor.GREEN, totalTime)
             val ret = try {
