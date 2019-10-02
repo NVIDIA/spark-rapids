@@ -41,8 +41,6 @@ object TpcxbbLikeSpark {
     readStoreReturnsCSV(spark, basePath + "/store_returns/").write.parquet(baseOutput + "/store_returns/")
     readInventoryCSV(spark, basePath + "/inventory/").write.parquet(baseOutput + "/inventory/")
     readMarketPricesCSV(spark, basePath + "/item_marketprices/").write.parquet(baseOutput + "/item_marketprices/")
-
-
   }
 
   def csvToOrc(spark: SparkSession, basePath: String, baseOutput: String): Unit = {
@@ -65,7 +63,6 @@ object TpcxbbLikeSpark {
     readStoreReturnsCSV(spark, basePath + "/store_returns/").write.orc(baseOutput + "/store_returns/")
     readInventoryCSV(spark, basePath + "/inventory/").write.orc(baseOutput + "/inventory/")
     readMarketPricesCSV(spark, basePath + "/item_marketprices/").write.orc(baseOutput + "/item_marketprices/")
-
   }
 
   def setupAllCSV(spark: SparkSession, basePath: String): Unit = {
@@ -88,7 +85,6 @@ object TpcxbbLikeSpark {
     setupStoreReturnsCSV(spark, basePath + "/store_returns/")
     setupInventoryCSV(spark, basePath + "/inventory/")
     setupMarketPricesCSV(spark, basePath + "/item_marketprices/")
-
   }
 
   def setupAllParquet(spark: SparkSession, basePath: String): Unit = {
@@ -111,7 +107,6 @@ object TpcxbbLikeSpark {
     setupStoreReturnsParquet(spark, basePath + "/store_returns/")
     setupInventoryParquet(spark, basePath + "/inventory/")
     setupMarketPricesParquet(spark, basePath + "/item_marketprices/")
-
   }
 
   def setupAllOrc(spark: SparkSession, basePath: String): Unit = {
@@ -134,7 +129,6 @@ object TpcxbbLikeSpark {
     setupStoreReturnsOrc(spark, basePath + "/store_returns/")
     setupInventoryOrc(spark, basePath + "/inventory/")
     setupMarketPricesOrc(spark, basePath + "/item_marketprices/")
-
   }
 
   // CUSTOMER
@@ -831,12 +825,12 @@ object Q5Like {
   }
 }
 
+// use temporary view here
 object Q6Like {
   def apply(spark: SparkSession): DataFrame = {
 
-    spark.sql("DROP TABLE IF EXISTS q6_temp_table1")
-    spark.sql("DROP TABLE IF EXISTS q6_temp_table2")
-
+    spark.sql("DROP VIEW IF EXISTS q6_temp_table1")
+    spark.sql("DROP VIEW IF EXISTS q6_temp_table2")
 
     spark.sql(
       """
@@ -852,7 +846,7 @@ object Q6Like {
         |--    * avoids the 4 self joins and replaces them with only one by creating two distinct views with better pre-filters and aggregations for store/web-sales first and second year
         |--    * introduces a more logical sorting by reporting the top 100 customers ranked by their web_sales increase instead of just reporting random 100 customers
         |
-        |CREATE VIEW q6_temp_table1 AS
+        |CREATE TEMPORARY VIEW q6_temp_table1 AS
         |SELECT ss_customer_sk AS customer_sk,
         |       sum( case when (d_year = 2001)   THEN (((ss_ext_list_price-ss_ext_wholesale_cost-ss_ext_discount_amt)+ss_ext_sales_price)/2)  ELSE 0 END) first_year_total,
         |       sum( case when (d_year = 2001+1) THEN (((ss_ext_list_price-ss_ext_wholesale_cost-ss_ext_discount_amt)+ss_ext_sales_price)/2)  ELSE 0 END) second_year_total
@@ -868,7 +862,7 @@ object Q6Like {
     spark.sql(
       """
         |-- customer web sales
-        |CREATE  VIEW ${hiveconf:TEMP_TABLE2} AS
+        |CREATE TEMPORARY VIEW q6_temp_table2 AS
         |SELECT ws_bill_customer_sk AS customer_sk ,
         |       sum( case when (d_year = 2001)   THEN (((ws_ext_list_price-ws_ext_wholesale_cost-ws_ext_discount_amt)+ws_ext_sales_price)/2)   ELSE 0 END) first_year_total,
         |       sum( case when (d_year = 2001+1) THEN (((ws_ext_list_price-ws_ext_wholesale_cost-ws_ext_discount_amt)+ws_ext_sales_price)/2)   ELSE 0 END) second_year_total
@@ -892,8 +886,8 @@ object Q6Like {
         |      c_birth_country,
         |      c_login,
         |      c_email_address
-        |FROM ${hiveconf:TEMP_TABLE1} store,
-        |     ${hiveconf:TEMP_TABLE2} web,
+        |FROM q6_temp_table1 store,
+        |     q6_temp_table2 web,
         |     customer c
         |WHERE store.customer_sk = web.customer_sk
         |AND   web.customer_sk = c_customer_sk
@@ -907,7 +901,7 @@ object Q6Like {
         |  c_preferred_cust_flag,
         |  c_birth_country,
         |  c_login
-        |LIMIT 100;
+        |LIMIT 100
         |
       """.stripMargin)
   }
