@@ -16,7 +16,7 @@
 
 package ai.rapids.spark
 
-import ai.rapids.cudf.{Cuda, Rmm, RmmAllocationMode}
+import ai.rapids.cudf.{Cuda, PinnedMemoryPool, Rmm, RmmAllocationMode}
 import ai.rapids.spark
 
 import org.apache.spark.{ExecutorPlugin, ExecutorPluginContext, SparkEnv}
@@ -83,6 +83,11 @@ class GpuResourceManager extends ExecutorPlugin with Logging {
         Rmm.initialize(RmmAllocationMode.POOL, loggingEnabled, initialAllocation)
       } catch {
         case e: Exception => logError("Could not initialize RMM", e)
+      }
+
+      if (conf.pinnedPoolSize > 0) {
+        logInfo(s"Initializing pinned memory pool, size=${conf.pinnedPoolSize}")
+        PinnedMemoryPool.initialize(conf.pinnedPoolSize)
       }
     }
   }
