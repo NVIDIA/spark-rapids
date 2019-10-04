@@ -19,7 +19,6 @@ scala> spark.conf.set("spark.rapids.sql.incompatible_ops", true)
 Name | Description | Default Value
 -----|-------------|--------------
 spark.rapids.memory_debug|If memory management is enabled and this is true GPU memory allocations are tracked and printed out when the process exits.  This should not be used in production.|false
-spark.rapids.sql.allowIncompatUTF8Strings|Config to allow GPU operations that are incompatible for UTF8 strings. Only turn to true if your data is ASCII compatible. If you do have UTF8 strings in your data and you set this to true, it can cause data corruption/loss if doing a sort merge join.|false
 spark.rapids.sql.allowVariableFloatAgg|Spark assumes that all operations produce the exact same result each time. This is not true for some floating point aggregations, which can produce slightly different results on the GPU as the aggregation is done in parallel.  This can enable those operations if you know the query is only computing it once.|false
 spark.rapids.sql.batchSizeRows|Set the target number of rows for a GPU batch. Splits sizes for input data is covered by separate configs.|1000000
 spark.rapids.sql.enableReplaceSortMergeJoin|Allow replacing sortMergeJoin with HashJoin|true
