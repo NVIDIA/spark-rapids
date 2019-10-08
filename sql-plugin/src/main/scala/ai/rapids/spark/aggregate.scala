@@ -33,6 +33,7 @@ import org.apache.spark.sql.execution.metric.{SQLMetric, SQLMetrics}
 import org.apache.spark.sql.rapids.{CudfAggregate, GpuAggregateExpression, GpuDeclarativeAggregate}
 import org.apache.spark.sql.vectorized.{ColumnarBatch, ColumnVector}
 import scala.collection.mutable.ArrayBuffer
+import scala.math.max
 
 import org.apache.spark.sql.execution.aggregate.HashAggregateExec
 import org.apache.spark.sql.types.{DoubleType, FloatType, StringType}
@@ -158,6 +159,8 @@ case class GpuHashAggregateExec(requiredChildDistributionExpressions: Option[Seq
     val totalTime = longMetric(TOTAL_TIME)
     val computeAggTime = longMetric("computeAggTime")
     val concatTime = longMetric("concatTime")
+    var peakMemory = longMetric("peakMemory")
+    var maximum:Long = 0
     // These metrics are supported by the cpu hash aggregate
     //
     // We should eventually have gpu versions of:
@@ -243,6 +246,7 @@ case class GpuHashAggregateExec(requiredChildDistributionExpressions: Option[Seq
           try {
             childCvs = processIncomingBatch(batch, boundInputReferences)
 
+            maximum = max(childCvs.head.getSize(batch), maximum)
             // done with the batch, clean it as soon as possible
             batch.close()
             batch = null
@@ -272,6 +276,7 @@ case class GpuHashAggregateExec(requiredChildDistributionExpressions: Option[Seq
               // and perform aggregation on the new batch (which would need to be merged, with the
               // spilled aggregates)
               concatCvs = concatenateBatches(aggregatedInputCb, aggregatedCb, concatTime)
+              maximum = max(concatCvs.head.getSize(aggregatedCb), maximum)
               aggregatedCb.close()
               aggregatedCb = null
               aggregatedInputCb.close()
@@ -281,6 +286,7 @@ case class GpuHashAggregateExec(requiredChildDistributionExpressions: Option[Seq
               //    to concatenate against incoming batches (step 2)
               aggregatedCb = computeAggregate(concatCvs, merge = true, groupingExpressions,
                 boundMergeAgg, computeAggTime)
+              maximum = max(concatCvs.head.getSize(aggregatedCb), maximum)
               concatCvs.safeClose()
               concatCvs = null
             }
@@ -318,6 +324,7 @@ case class GpuHashAggregateExec(requiredChildDistributionExpressions: Option[Seq
                   // so we can assume they will be vectors after we eval
                   ref.columnarEval(aggregatedCb).asInstanceOf[GpuColumnVector]
                 }
+              maximum = max(finalCvs.head.getSize(aggregatedCb), maximum)
               aggregatedCb.close()
               aggregatedCb = null
               new ColumnarBatch(finalCvs.toArray, finalCvs.head.getRowCount.toInt)
@@ -343,6 +350,7 @@ case class GpuHashAggregateExec(requiredChildDistributionExpressions: Option[Seq
               }
             }
 
+            maximum = max(resultCvs.head.getSize(finalCb), maximum)
             finalCb.close()
             finalCb = null
             resultCb = if (resultCvs.isEmpty) {
@@ -376,12 +384,15 @@ case class GpuHashAggregateExec(requiredChildDistributionExpressions: Option[Seq
         } finally {
           finalNvtxRange.close()
         }
+
       } finally {
         if (!success) {
           if (resultCvs != null) {
             resultCvs.safeClose()
           }
         }
+        peakMemory.reset()
+        peakMemory.add(maximum)
         childCvs.safeClose()
         concatCvs.safeClose()
         (Seq(batch, aggregatedInputCb, aggregatedCb, finalCb))

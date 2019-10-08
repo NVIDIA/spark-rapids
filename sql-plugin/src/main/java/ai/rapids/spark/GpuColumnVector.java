@@ -390,6 +390,7 @@ public final class GpuColumnVector extends ColumnVector {
     return this;
   }
 
+
   @Override
   public void close() {
     // Just pass through the reference counting
@@ -475,6 +476,16 @@ public final class GpuColumnVector extends ColumnVector {
   @Override
   public ColumnVector getChild(int ordinal) {
     throw new IllegalStateException("Struct and struct like types are currently not supported by rapids cudf");
+  }
+
+  public long getSize(ColumnarBatch batch) {
+    int sum = 0;
+    ai.rapids.cudf.ColumnVector vector;
+    for (int i = 0; i < batch.numCols(); i++) {
+      vector = ((GpuColumnVector) batch.column(i)).getBase();
+      sum += vector.getDeviceMemorySize();
+    }
+    return sum;
   }
 
   public GpuColumnVector convertToStringCategoriesIfNeeded() {
