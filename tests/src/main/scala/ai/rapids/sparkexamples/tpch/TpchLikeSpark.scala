@@ -32,6 +32,17 @@ object TpchLikeSpark {
     readSupplierCSV(spark, basePath + "/supplier.tbl").write.parquet(baseOutput + "/supplier.tbl")
   }
 
+  def csvToOrc(spark: SparkSession, basePath: String, baseOutput: String): Unit = {
+    readOrdersCSV(spark, basePath + "/orders.tbl").write.orc(baseOutput + "/orders.tbl")
+    readLineitemCSV(spark, basePath + "/lineitem.tbl").write.orc(baseOutput + "/lineitem.tbl")
+    readCustomerCSV(spark, basePath + "/customer.tbl").write.orc(baseOutput + "/customer.tbl")
+    readNationCSV(spark, basePath + "/nation.tbl").write.orc(baseOutput + "/nation.tbl")
+    readPartCSV(spark, basePath + "/part.tbl").write.orc(baseOutput + "/part.tbl")
+    readPartsuppCSV(spark, basePath + "/partsupp.tbl").write.orc(baseOutput + "/partsupp.tbl")
+    readRegionCSV(spark, basePath + "/region.tbl").write.orc(baseOutput + "/region.tbl")
+    readSupplierCSV(spark, basePath + "/supplier.tbl").write.orc(baseOutput + "/supplier.tbl")
+  }
+
   def setupAllCSV(spark: SparkSession, basePath: String): Unit = {
     setupOrdersCSV(spark, basePath + "/orders.tbl")
     setupLineitemCSV(spark, basePath + "/lineitem.tbl")
@@ -52,6 +63,17 @@ object TpchLikeSpark {
     setupPartsuppParquet(spark, basePath + "/partsupp.tbl")
     setupRegionParquet(spark, basePath + "/region.tbl")
     setupSupplierParquet(spark, basePath + "/supplier.tbl")
+  }
+
+  def setupAllOrc(spark: SparkSession, basePath: String): Unit = {
+    setupOrdersOrc(spark, basePath + "/orders.tbl")
+    setupLineitemOrc(spark, basePath + "/lineitem.tbl")
+    setupCustomerOrc(spark, basePath + "/customer.tbl")
+    setupNationOrc(spark, basePath + "/nation.tbl")
+    setupPartOrc(spark, basePath + "/part.tbl")
+    setupPartsuppOrc(spark, basePath + "/partsupp.tbl")
+    setupRegionOrc(spark, basePath + "/region.tbl")
+    setupSupplierOrc(spark, basePath + "/supplier.tbl")
   }
 
   // ORDERS
@@ -75,6 +97,9 @@ object TpchLikeSpark {
 
   def setupOrdersParquet(spark: SparkSession, path: String): Unit =
     spark.read.parquet(path).createOrReplaceTempView("orders")
+
+  def setupOrdersOrc(spark: SparkSession, path: String): Unit =
+    spark.read.orc(path).createOrReplaceTempView("orders")
 
   // LINEITEM
   val lineitemSchema = StructType(Array(
@@ -105,6 +130,9 @@ object TpchLikeSpark {
   def setupLineitemParquet(spark: SparkSession, path: String): Unit =
     spark.read.parquet(path).createOrReplaceTempView("lineitem")
 
+  def setupLineitemOrc(spark: SparkSession, path: String): Unit =
+    spark.read.orc(path).createOrReplaceTempView("lineitem")
+
   // CUSTOMER
   val customerSchema = StructType(Array(
     StructField("c_custkey", LongType),
@@ -126,6 +154,9 @@ object TpchLikeSpark {
   def setupCustomerParquet(spark: SparkSession, path: String): Unit =
     spark.read.parquet(path).createOrReplaceTempView("customer")
 
+  def setupCustomerOrc(spark: SparkSession, path: String): Unit =
+    spark.read.orc(path).createOrReplaceTempView("customer")
+
   // NATION
   val nationSchema = StructType(Array(
     StructField("n_nationkey", LongType),
@@ -142,6 +173,9 @@ object TpchLikeSpark {
 
   def setupNationParquet(spark: SparkSession, path: String): Unit =
     spark.read.parquet(path).createOrReplaceTempView("nation")
+
+  def setupNationOrc(spark: SparkSession, path: String): Unit =
+    spark.read.orc(path).createOrReplaceTempView("nation")
 
   // PART
   val partSchema = StructType(Array(
@@ -165,6 +199,9 @@ object TpchLikeSpark {
   def setupPartParquet(spark: SparkSession, path: String): Unit =
     spark.read.parquet(path).createOrReplaceTempView("part")
 
+  def setupPartOrc(spark: SparkSession, path: String): Unit =
+    spark.read.orc(path).createOrReplaceTempView("part")
+
   // PARTSUPP
   val partsuppSchema = StructType(Array(
     StructField("ps_partkey", LongType),
@@ -183,6 +220,9 @@ object TpchLikeSpark {
   def setupPartsuppParquet(spark: SparkSession, path: String): Unit =
     spark.read.parquet(path).createOrReplaceTempView("partsupp")
 
+  def setupPartsuppOrc(spark: SparkSession, path: String): Unit =
+    spark.read.orc(path).createOrReplaceTempView("partsupp")
+
   // REGION
   val regionSchema = StructType(Array(
     StructField("r_regionkey", LongType),
@@ -198,6 +238,9 @@ object TpchLikeSpark {
 
   def setupRegionParquet(spark: SparkSession, path: String): Unit =
     spark.read.parquet(path).createOrReplaceTempView("region")
+
+  def setupRegionOrc(spark: SparkSession, path: String): Unit =
+    spark.read.orc(path).createOrReplaceTempView("region")
 
   // SUPPLIER
   val supplierSchema = StructType(Array(
@@ -218,6 +261,9 @@ object TpchLikeSpark {
 
   def setupSupplierParquet(spark: SparkSession, path: String): Unit =
     spark.read.parquet(path).createOrReplaceTempView("supplier")
+
+  def setupSupplierOrc(spark: SparkSession, path: String): Unit =
+    spark.read.orc(path).createOrReplaceTempView("supplier")
 
   def main(args: Array[String]): Unit = {
     System.setProperty("ai.rapids.cudf.nvtx.enabled", "true")

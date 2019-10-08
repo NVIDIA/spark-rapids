@@ -56,11 +56,6 @@ class GpuSortMeta(
         "incompatibility with NaN. If you don't have any NaNs in your data you can set " +
         "spark.rapids.sql.hasNans=false to bypass this.")
     }
-    if (keyDataTypes.contains(StringType) && !conf.allowIncompatUTF8Strings) {
-      willNotWorkOnGpu("strings are not supported in sort if you have UTF-8 " +
-        "characters in your strings. See spark.rapids.sql.allowIncompatUTF8Strings to allow " +
-        "if you don't have UTF-8 characters in your strings.")
-    }
     def areNullsSmallest(o: SortOrder): Boolean = {
       (o.isAscending && o.nullOrdering == NullsFirst) ||
         (!o.isAscending && o.nullOrdering == NullsLast)

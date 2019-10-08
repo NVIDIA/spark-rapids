@@ -100,15 +100,32 @@ abstract class ReplacementRule[INPUT <: BASE, BASE, WRAP_TYPE <: RapidsMeta[INPU
     confKeyCache
   }
 
-  def confHelp(): Unit = {
-    println(s"${confKey}:")
-    println(s"\tEnable (true) or disable (false) the ${tag} ${operationName}.")
-    println(s"\t${desc}")
-    if (incompatDoc.isDefined) {
-      println(s"\tThis is not 100% compatible with the Spark version because ${incompatDoc.get}")
+  private def isIncompatMsg(): Option[String] = if (incompatDoc.isDefined) {
+    Some(s"This is not 100% compatible with the Spark version because ${incompatDoc.get}")
+  } else {
+    None
+  }
+
+  def confHelp(asTable: Boolean = false): Unit = {
+    val incompatMsg = isIncompatMsg()
+    if (asTable) {
+      print(s"${tag}|${desc}|${incompatMsg.isEmpty}|")
+      if (incompatMsg.isDefined) {
+        print(s"${incompatMsg.get}")
+      } else {
+        print("None")
+      }
+      println("|")
+    } else {
+      println(s"${confKey}:")
+      println(s"\tEnable (true) or disable (false) the ${tag} ${operationName}.")
+      println(s"\t${desc}")
+      if (incompatMsg.isDefined) {
+        println(s"\t${incompatMsg.get}")
+      }
+      println(s"\tdefault: ${incompatDoc.isEmpty}")
+      println()
     }
-    println(s"\tdefault: ${incompatDoc.isEmpty}")
-    println()
   }
 
   final def wrap(op: BASE,
@@ -462,32 +479,24 @@ object GpuOverrides {
     expr[GreaterThan](
       "> operator",
       (a, conf, p, r) => new BinaryExprMeta[GreaterThan](a, conf, p, r) {
-        override def tagExprForGpu(): Unit = tagNoStringChildren(this)
-
         override def convertToGpu(lhs: GpuExpression, rhs: GpuExpression): GpuExpression =
           GpuGreaterThan(lhs, rhs)
       }),
     expr[GreaterThanOrEqual](
       ">= operator",
       (a, conf, p, r) => new BinaryExprMeta[GreaterThanOrEqual](a, conf, p, r) {
-        override def tagExprForGpu(): Unit = tagNoStringChildren(this)
-
         override def convertToGpu(lhs: GpuExpression, rhs: GpuExpression): GpuExpression =
           GpuGreaterThanOrEqual(lhs, rhs)
       }),
     expr[LessThan](
       "< operator",
       (a, conf, p, r) => new BinaryExprMeta[LessThan](a, conf, p, r) {
-        override def tagExprForGpu(): Unit = tagNoStringChildren(this)
-
         override def convertToGpu(lhs: GpuExpression, rhs: GpuExpression): GpuExpression =
           GpuLessThan(lhs, rhs)
       }),
     expr[LessThanOrEqual](
       "<= operator",
       (a, conf, p, r) => new BinaryExprMeta[LessThanOrEqual](a, conf, p, r) {
-        override def tagExprForGpu(): Unit = tagNoStringChildren(this)
-
         override def convertToGpu(lhs: GpuExpression, rhs: GpuExpression): GpuExpression =
           GpuLessThanOrEqual(lhs, rhs)
       }),

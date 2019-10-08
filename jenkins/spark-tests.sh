@@ -2,7 +2,7 @@
 set -e
 CUDF_VER=$1
 if [ "$CUDF_VER"x == x ];then
-    CUDF_VER="0.9-SNAPSHOT"
+    CUDF_VER="0.10-SNAPSHOT"
 fi
 
 CUDA_VER=$2

@@ -19,6 +19,7 @@ import scala.collection.mutable.ListBuffer
 
 import org.apache.spark.SparkConf
 import org.apache.spark.internal.Logging
+import org.apache.spark.network.util.{ByteUnit, JavaUtils}
 import org.apache.spark.sql.internal.SQLConf
 
 object ConfHelper {
@@ -52,13 +53,22 @@ object ConfHelper {
     v.map(stringConverter).mkString(",")
   }
 
+  def byteFromString(str: String, unit: ByteUnit, key: String): Long = {
+    val (input, multiplier) =
+      if (str.length() > 0 && str.charAt(0) == '-') {
+        (str.substring(1), -1)
+      } else {
+        (str, 1)
+      }
+    multiplier * JavaUtils.byteStringAs(input, unit)
+  }
 }
 
 abstract class ConfEntry[T](val key: String, val converter: String => T,
     val doc: String, val isInternal: Boolean) {
 
   def get(conf: Map[String, String]): T
-  def help(): Unit
+  def help(asTable: Boolean = false): Unit
 
   override def toString: String = key
 }
@@ -71,12 +81,16 @@ class ConfEntryWithDefault[T](key: String, converter: String => T, doc: String,
     conf.get(key).map(converter).getOrElse(defaultValue)
   }
 
-  override def help(): Unit = {
+  override def help(asTable: Boolean = false): Unit = {
     if (!isInternal) {
-      println(s"${key}:")
-      println(s"\t${doc}")
-      println(s"\tdefault ${defaultValue}")
-      println()
+      if (asTable) {
+        println(s"${key}|${doc}|${defaultValue}")
+      } else {
+        println(s"${key}:")
+        println(s"\t${doc}")
+        println(s"\tdefault ${defaultValue}")
+        println()
+      }
     }
   }
 }
@@ -124,6 +138,10 @@ class ConfBuilder(val key: String, val register: ConfEntry[_] => Unit) {
     new TypedConfBuilder[Boolean](this, toBoolean(_, key))
   }
 
+  def bytesConf(unit: ByteUnit): TypedConfBuilder[Long] = {
+    new TypedConfBuilder[Long](this, byteFromString(_, unit, key))
+  }
+
   def integerConf: TypedConfBuilder[Integer] = {
     new TypedConfBuilder[Integer](this, toInteger(_, key))
   }
@@ -155,6 +173,12 @@ object RapidsConf {
     .booleanConf
     .createWithDefault(false)
 
+  val PINNED_POOL_SIZE = conf("spark.rapids.sql.pinned-pool-size")
+      .doc("The size of the pinned memory pool in bytes unless otherwise specified. " +
+          "Use 0 to disable the pool.")
+      .bytesConf(ByteUnit.BYTE)
+      .createWithDefault(0)
+
   val HAS_NANS = conf("spark.rapids.sql.hasNans")
     .doc("Config to indicate if your data has NaN's. Cudf doesn't " +
       "currently support NaN's properly so you can get corrupt data if you have NaN's in your " +
@@ -167,13 +191,6 @@ object RapidsConf {
       "is covered by separate configs.")
     .integerConf
     .createWithDefault(1000000)
-
-  val ALLOW_INCOMPAT_UTF8_STRINGS = conf("spark.rapids.sql.allowIncompatUTF8Strings")
-    .doc("Config to allow GPU operations that are incompatible for UTF8 strings. Only " +
-      "turn to true if your data is ASCII compatible. If you do have UTF8 strings in your data " +
-      "and you set this to true, it can cause data corruption/loss if doing a sort merge join.")
-    .booleanConf
-    .createWithDefault(false)
 
   val ALLOW_FLOAT_AGG = conf("spark.rapids.sql.allowVariableFloatAgg")
     .doc("Spark assumes that all operations produce the exact same result each time. " +
@@ -252,13 +269,67 @@ object RapidsConf {
     .booleanConf
     .createWithDefault(true)
 
-  def help(): Unit = {
-    println("Rapids Configs:")
-    registeredConfs.foreach(_.help())
-    GpuOverrides.expressions.values.foreach(_.confHelp())
-    GpuOverrides.execs.values.foreach(_.confHelp())
-    GpuOverrides.scans.values.foreach(_.confHelp())
-    GpuOverrides.parts.values.foreach(_.confHelp())
+  private def printToggleHeader(category: String): Unit = {
+    println(s"\n### ${category}")
+    println("Name | Description | Default Value | Incompatibilities")
+    println("-----|-------------|---------------|------------------")
+  }
+
+  def help(asTable: Boolean = false): Unit = {
+    if (asTable) {
+      println("""# Rapids Plugin 4 Spark Configuration
+        |The following is the list of options that `rapids-plugin-4-spark` supports. 
+        | 
+        |On startup use: `--conf [conf key]=[conf value]`. For example:
+        |
+        |```
+        |${SPARK_HOME}/bin/spark --jars 'rapids-4-spark-0.1-SNAPSHOT.jar,cudf-0.10-SNAPSHOT-cuda10.jar' \
+        |--conf spark.sql.extensions=ai.rapids.spark.Plugin \
+        |--conf spark.rapids.sql.incompatible_ops=true
+        |```
+        |
+        |At runtime use: `spark.conf.set("[conf key]", [conf value])`. For example:
+        |
+        |```
+        |scala> spark.conf.set("spark.rapids.sql.incompatible_ops", true)
+        |```""".stripMargin)
+
+      println("\n## General Configuration")
+      println("Name | Description | Default Value")
+      println("-----|-------------|--------------")
+    } else {
+      println("Rapids Configs:")
+    }
+    registeredConfs.sortBy(_.key).foreach(_.help(asTable))
+    if (asTable) {
+      println("")
+      println("""## Fine Tunning
+        |_Rapids Plugin 4 Spark_ can be further configured to enable or disable specific
+        |expressions and to control what parts of the query execute using the GPU or 
+        |the CPU. 
+        |
+        |Please leverage the `spark.rapids.sql.explain` setting to get feeback from the 
+        |plugin as to why parts of a query may not be executing in the GPU.
+        |
+        |**NOTE:** Setting `spark.rapids.sql.incompatible_ops=true` will enable all 
+        |the settings in the table below which are not enabled by default due to 
+        |incompatibilities.""".stripMargin)
+
+      printToggleHeader("Expressions")
+    }
+    GpuOverrides.expressions.values.toSeq.sortBy(_.tag.toString).foreach(_.confHelp(asTable))
+    if (asTable) {
+      printToggleHeader("Execution")
+    }
+    GpuOverrides.execs.values.toSeq.sortBy(_.tag.toString).foreach(_.confHelp(asTable))
+    if (asTable) {
+      printToggleHeader("Scans")
+    }
+    GpuOverrides.scans.values.toSeq.sortBy(_.tag.toString).foreach(_.confHelp(asTable))
+    if (asTable) {
+      printToggleHeader("Partitioning")
+    }
+    GpuOverrides.parts.values.toSeq.sortBy(_.tag.toString).foreach(_.confHelp(asTable))
   }
 }
 
@@ -282,6 +353,8 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
 
   lazy val isIncompatEnabled: Boolean = get(INCOMPATIBLE_OPS)
 
+  lazy val pinnedPoolSize: Long = get(PINNED_POOL_SIZE)
+
   lazy val isTestEnabled: Boolean = get(TEST_CONF)
 
   lazy val testingAllowedNonGpu: Seq[String] = get(TEST_ALLOWED_NONGPU)
@@ -291,8 +364,6 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
   lazy val hasNans: Boolean = get(HAS_NANS)
 
   lazy val gpuTargetBatchSizeRows: Integer = get(GPU_BATCH_SIZE_ROWS)
-
-  lazy val allowIncompatUTF8Strings: Boolean = get(ALLOW_INCOMPAT_UTF8_STRINGS)
 
   lazy val allowFloatAgg: Boolean = get(ALLOW_FLOAT_AGG)
 
