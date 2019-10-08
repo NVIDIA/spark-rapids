@@ -390,7 +390,6 @@ public final class GpuColumnVector extends ColumnVector {
     return this;
   }
 
-
   @Override
   public void close() {
     // Just pass through the reference counting
