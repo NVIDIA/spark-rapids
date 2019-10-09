@@ -477,14 +477,20 @@ public final class GpuColumnVector extends ColumnVector {
     throw new IllegalStateException("Struct and struct like types are currently not supported by rapids cudf");
   }
 
-  public long getSize(ColumnarBatch batch) {
-    int sum = 0;
-    ai.rapids.cudf.ColumnVector vector;
+  public static long getSize(ColumnarBatch batch) {
+    long sum = 0;
     for (int i = 0; i < batch.numCols(); i++) {
-      vector = ((GpuColumnVector) batch.column(i)).getBase();
-      sum += vector.getDeviceMemorySize();
+      sum += ((GpuColumnVector) batch.column(i)).getBase().getDeviceMemorySize();
     }
     return sum;
+  }
+
+  public static long getSize(GpuColumnVector[] CV) {
+    long max=0;
+    for (int i = 0; i < CV.length; i++){
+      max = CV[i].getBase().getDeviceMemorySize() > max ? CV[i].getBase().getDeviceMemorySize(): max;
+    }
+    return max;
   }
 
   public GpuColumnVector convertToStringCategoriesIfNeeded() {
