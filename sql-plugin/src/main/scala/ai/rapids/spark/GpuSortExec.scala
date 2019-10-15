@@ -188,7 +188,7 @@ class GpuColumnarBatchSorter(
           numOutputRows += numRows
           if (inputTbls.length > 1) {
             concatTbl = Table.concatenate(inputTbls: _*)
-            maximum = max(maximum, GpuColumnVector.getTotalDeviceMemoryUsed(GpuColumnVector.from(concatTbl)))
+            maximum = max(maximum, GpuColumnVector.getTotalDeviceMemoryUsed(concatTbl))
           } else {
             concatTbl = inputTbls.remove(0)
           }

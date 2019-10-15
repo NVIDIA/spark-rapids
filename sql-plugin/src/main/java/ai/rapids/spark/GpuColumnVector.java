@@ -493,6 +493,14 @@ public final class GpuColumnVector extends ColumnVector {
     return sum;
   }
 
+  public static long getTotalDeviceMemoryUsed(Table tb) {
+    ColumnarBatch cb = from(tb);
+    long sum = getTotalDeviceMemoryUsed(cb);
+    if (cb != null)
+      cb.close();
+    return sum;
+  }
+
   public GpuColumnVector convertToStringCategoriesIfNeeded() {
     if (cudfCv.getType() == DType.STRING) {
       try (NvtxRange nvtxRange = new NvtxRange("to string category", NvtxColor.RED)) {
