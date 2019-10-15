@@ -324,7 +324,7 @@ class ParquetPartitionReader(
       out: HostMemoryOutputStream,
       blocks: Seq[BlockMetaData]): Seq[BlockMetaData] = {
     var totalRows: Long = 0
-    val copyBuffer = new Array[Byte](128 * 1024)
+    val copyBuffer = new Array[Byte](8 * 1024 * 1024)
     val outputBlocks = new ArrayBuffer[BlockMetaData](blocks.length)
     blocks.foreach { block =>
       totalRows += block.getRowCount
