@@ -1120,7 +1120,7 @@ case class CatalystExpressionBuilder(private val function: AnyRef) {
       visited: Set[BB] = Set()): Option[Expression] = {
     val basicBlock::rest = worklist
     val state = states(basicBlock)
-    val newState = (state /: basicBlock.instructionTable) { (st, i) =>
+    val newState = basicBlock.instructionTable.foldLeft(state) { (st, i) =>
       i._2(basicBlock, st)
     }
     val newStates = basicBlock.propagateCond(states + (basicBlock -> newState))
@@ -1129,7 +1129,7 @@ case class CatalystExpressionBuilder(private val function: AnyRef) {
     } else {
       val newVisited = visited + basicBlock
       val (readySucc, newPending) =
-        ((List[BB](), pending) /: cfg.succ(basicBlock)) { case (x@(r, np), s) =>
+        cfg.succ(basicBlock).foldLeft((List[BB](), pending)) { case (x@(r, np), s) =>
           if (newVisited(s)) {
             x
           } else {
@@ -1305,7 +1305,7 @@ case class CatalystExpressionBuilder(private val function: AnyRef) {
         children: Seq[Expression]): State = {
       val max = lambdaReflection.getMaxLocals
       val params = lambdaReflection.getParameters.view.zip(children)
-      val (locals, _) = ((new Array[Expression](max), 0) /: params) { (l, p) =>
+      val (locals, _) = params.foldLeft((new Array[Expression](max), 0)) { (l, p) =>
         val (locals, index) = l
         val (param, arg) = p
         val newIndex = param.getKind match {
@@ -1635,7 +1635,7 @@ case class CatalystExpressionBuilder(private val function: AnyRef) {
         val instructions = instructionTable
         val bb = BB(instructions)
         ((bb+:basicBlocks).reverse,
-         (offsetToBB /: instructions) { case (offsetToBB, (offset, _)) =>
+         instructions.foldLeft(offsetToBB) { case (offsetToBB, (offset, _)) =>
            offsetToBB + (offset -> bb)
          })
       } else {
@@ -1643,7 +1643,7 @@ case class CatalystExpressionBuilder(private val function: AnyRef) {
         val bb = BB(instructions)
         createBasicBlocks(
           labels.tail, rest, bb+:basicBlocks,
-          (offsetToBB /: instructions) { case (offsetToBB, (offset, _)) =>
+          instructions.foldLeft(offsetToBB) { case (offsetToBB, (offset, _)) =>
             offsetToBB + (offset -> bb)
           })
       }
@@ -1671,7 +1671,7 @@ case class CatalystExpressionBuilder(private val function: AnyRef) {
           rest,
           offsetToBB,
           edges,
-          (pred /: dst) { (p, l) => (p + (l -> (src::p(l)))) },
+          dst.foldLeft(pred) { (p, l) => (p + (l -> (src::p(l)))) },
           succ + (src -> dst))
       }
     }
@@ -1786,7 +1786,7 @@ case class CatalystExpressionBuilder(private val function: AnyRef) {
     byte & 0xff
   }
   private def bytesToInt(bytes: Array[Byte]): Int = {
-    (byteToUnsigned(bytes.head) /: bytes.tail) { (i, b) =>
+    bytes.tail.foldLeft(byteToUnsigned(bytes.head)) { (i, b) =>
       (i << 8) | byteToUnsigned(b)
     }
   }
