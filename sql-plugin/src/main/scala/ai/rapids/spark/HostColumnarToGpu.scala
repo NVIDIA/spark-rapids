@@ -186,7 +186,7 @@ case class HostColumnarToGpu(child: SparkPlan, goal: CoalesceGoal) extends Unary
     "numInputBatches" -> SQLMetrics.createMetric(sparkContext, "input batches"),
     "collectTime" -> SQLMetrics.createNanoTimingMetric(sparkContext, "collect batch time"),
     "concatTime" -> SQLMetrics.createNanoTimingMetric(sparkContext, "concat batch time"),
-    "peakDevMemory" ->SQLMetrics.createMetric(sparkContext, "peak dev memory")
+    "peakDevMemory" ->SQLMetrics.createMetric(sparkContext, "peak device memory")
   )
 
   override def output: Seq[Attribute] = child.output

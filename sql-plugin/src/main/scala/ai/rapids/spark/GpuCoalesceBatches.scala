@@ -336,7 +336,7 @@ case class GpuCoalesceBatches(child: SparkPlan, goal: CoalesceGoal)
     "numInputBatches" -> SQLMetrics.createMetric(sparkContext, "input batches"),
     "collectTime" -> SQLMetrics.createNanoTimingMetric(sparkContext, "collect batch time"),
     "concatTime" -> SQLMetrics.createNanoTimingMetric(sparkContext, "concat batch time"),
-    "peakDevMemory" -> SQLMetrics.createSizeMetric(sparkContext, "peak dev memory")
+    "peakDevMemory" -> SQLMetrics.createSizeMetric(sparkContext, "peak device memory")
   )
 
   override protected def doExecute(): RDD[InternalRow] = {

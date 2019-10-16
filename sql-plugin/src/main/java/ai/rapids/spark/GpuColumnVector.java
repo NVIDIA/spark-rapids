@@ -485,19 +485,20 @@ public final class GpuColumnVector extends ColumnVector {
     return sum;
   }
 
-  public static long getTotalDeviceMemoryUsed(GpuColumnVector[] CV) {
+  public static long getTotalDeviceMemoryUsed(GpuColumnVector[] cv) {
     long sum = 0;
-    for (int i = 0; i < CV.length; i++){
-      sum += CV[i].getBase().getDeviceMemorySize();
+    for (int i = 0; i < cv.length; i++){
+      sum += cv[i].getBase().getDeviceMemorySize();
     }
     return sum;
   }
 
   public static long getTotalDeviceMemoryUsed(Table tb) {
-    ColumnarBatch cb = from(tb);
-    long sum = getTotalDeviceMemoryUsed(cb);
-    if (cb != null)
-      cb.close();
+    long sum = 0;
+    int len = tb.getNumberOfColumns();
+    for (int i = 0; i < len; i++) {
+      sum += tb.getColumn(i).getDeviceMemorySize();
+    }
     return sum;
   }
 

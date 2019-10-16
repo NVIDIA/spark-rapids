@@ -73,7 +73,7 @@ case class GpuShuffledHashJoinExec(
     "joinTime" -> SQLMetrics.createNanoTimingMetric(sparkContext, "join time"),
     "joinOutputRows" -> SQLMetrics.createMetric(sparkContext, "join output rows"),
     "filterTime" -> SQLMetrics.createNanoTimingMetric(sparkContext, "filter time"),
-    "peakDevMemory" -> SQLMetrics.createSizeMetric(sparkContext, "peak dev memory"))
+    "peakDevMemory" -> SQLMetrics.createSizeMetric(sparkContext, "peak device memory"))
 
   override def requiredChildDistribution: Seq[Distribution] =
     HashClusteredDistribution(leftKeys) :: HashClusteredDistribution(rightKeys) :: Nil

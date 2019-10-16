@@ -385,7 +385,6 @@ case class GpuHashAggregateExec(requiredChildDistributionExpressions: Option[Seq
         } finally {
           finalNvtxRange.close()
         }
-
       } finally {
         if (!success) {
           if (resultCvs != null) {
@@ -693,7 +692,7 @@ case class GpuHashAggregateExec(requiredChildDistributionExpressions: Option[Seq
 
   override lazy val additionalMetrics = Map(
     // not supported in GPU
-    "peakDevMemory" -> SQLMetrics.createSizeMetric(sparkContext, "peak dev memory"),
+    "peakDevMemory" -> SQLMetrics.createSizeMetric(sparkContext, "peak device memory"),
     "spillSize" -> SQLMetrics.createSizeMetric(sparkContext, "spill size"),
     "avgHashProbe" ->
       SQLMetrics.createAverageMetric(sparkContext, "avg hash probe bucket list iters"),
