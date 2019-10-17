@@ -214,6 +214,7 @@ class ParquetPartitionReader(
   private var isExhausted: Boolean = false
   private var batch: Option[ColumnarBatch] = None
   private val blockIterator :  BufferedIterator[BlockMetaData] = clippedBlocks.iterator.buffered
+  private val copyBufferSize = conf.getInt("parquet.read.allocation.size", 8 * 1024 * 1024)
 
   metrics = execMetrics
 
@@ -380,7 +381,7 @@ class ParquetPartitionReader(
     if (currentCopyEnd != currentCopyStart) {
       copyRanges.append(CopyRange(currentCopyStart, currentCopyEnd - currentCopyStart))
     }
-    val copyBuffer = new Array[Byte](8 * 1024 * 1024)
+    val copyBuffer = new Array[Byte](copyBufferSize)
     copyRanges.foreach(copyRange => copyDataRange(copyRange, in, out, copyBuffer))
     outputBlocks
   }
