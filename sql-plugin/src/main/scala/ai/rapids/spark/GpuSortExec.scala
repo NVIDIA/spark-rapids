@@ -34,7 +34,6 @@ import org.apache.spark.sql.catalyst.plans.physical.{Distribution, OrderedDistri
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.analysis.TypeCheckResult
 import org.apache.spark.sql.execution.metric.SQLMetrics
-import scala.math.max
 
 class GpuSortMeta(
     sort: SortExec,
@@ -105,21 +104,17 @@ case class GpuSortExec(
 
   override lazy val additionalMetrics = Map(
     "sortTime" -> SQLMetrics.createNanoTimingMetric(sparkContext, "sort time"),
-    "peakDevMemory" -> SQLMetrics.createSizeMetric(sparkContext, "peak device memory"),
+    "peakMemory" -> SQLMetrics.createSizeMetric(sparkContext, "peak memory"),
     "spillSize" -> SQLMetrics.createSizeMetric(sparkContext, "spill size"))
 
   override def doExecuteColumnar(): RDD[ColumnarBatch] = {
     val sortTime = longMetric("sortTime")
-    val peakDevMemory = longMetric("peakDevMemory")
-    var maximum: Long = 0
 
     val crdd = child.executeColumnar()
     crdd.mapPartitions { cbIter =>
       val sorter = createBatchGpuSorter()
       val sortedIterator = sorter.sort(cbIter)
       sortTime += sorter.getSortTimeNanos
-      maximum = max(maximum, sorter.getPeakMemoryUsage)
-      peakDevMemory.set(maximum)
       sortedIterator
     }
   }
@@ -136,15 +131,12 @@ class GpuColumnarBatchSorter(
     exec: GpuExec) {
 
   private var totalSortTimeNanos = 0L
-  private var maximum = 0L
   private val numSortCols = sortOrder.length
   private val totalTime = exec.longMetric(TOTAL_TIME)
   private val numOutputBatches = exec.longMetric(NUM_OUTPUT_BATCHES)
   private val numOutputRows = exec.longMetric(NUM_OUTPUT_ROWS)
 
   def getSortTimeNanos: Long = totalSortTimeNanos
-
-  def getPeakMemoryUsage: Long = maximum
 
   def sort(batchIter: Iterator[ColumnarBatch]): Iterator[ColumnarBatch]  = {
 
@@ -163,7 +155,6 @@ class GpuColumnarBatchSorter(
       try {
         while (batchIter.hasNext) {
           val batch = batchIter.next()
-          maximum = GpuColumnVector.getTotalDeviceMemoryUsed(batch)
           val nvtxRange = new NvtxWithMetrics("sort input batch", NvtxColor.WHITE, totalTime)
           try {
             try {
@@ -172,7 +163,6 @@ class GpuColumnarBatchSorter(
                 throw new UnsupportedOperationException(s"Too many rows to sort")
               }
               inputCvs = getGpuCvsAndBindReferences(batch, sortOrder)
-              maximum = max(GpuColumnVector.getTotalDeviceMemoryUsed(inputCvs.toArray), maximum)
               inputTbls += new cudf.Table(inputCvs.map(_.getBase): _*)
             } finally {
               inputCvs.foreach(_.close())
@@ -188,7 +178,6 @@ class GpuColumnarBatchSorter(
           numOutputRows += numRows
           if (inputTbls.length > 1) {
             concatTbl = Table.concatenate(inputTbls: _*)
-            maximum = max(maximum, GpuColumnVector.getTotalDeviceMemoryUsed(concatTbl))
           } else {
             concatTbl = inputTbls.remove(0)
           }
@@ -209,7 +198,6 @@ class GpuColumnarBatchSorter(
         resultCb = doGpuSort(concatTbl, orderByArgs)
         numOutputBatches += 1
         totalSortTimeNanos += System.nanoTime - startTimestamp
-        maximum = max(maximum, GpuColumnVector.getTotalDeviceMemoryUsed(resultCb))
         success = true
       } finally {
         nvtxRange.close()
