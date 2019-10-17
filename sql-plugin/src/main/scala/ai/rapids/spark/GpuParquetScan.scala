@@ -32,12 +32,12 @@ import org.apache.commons.io.IOUtils
 import org.apache.hadoop.conf.Configuration
 import org.apache.hadoop.fs.{FSDataInputStream, Path}
 import org.apache.parquet.bytes.BytesUtils
-import org.apache.parquet.filter2.compat.{FilterCompat, RowGroupFilter}
 import org.apache.parquet.filter2.predicate.FilterApi
 import org.apache.parquet.format.converter.ParquetMetadataConverter
-import org.apache.parquet.hadoop.ParquetFileReader
+import org.apache.parquet.hadoop.{ParquetFileReader, ParquetInputFormat}
 import org.apache.parquet.hadoop.metadata.{BlockMetaData, ColumnChunkMetaData, ColumnPath, FileMetaData, ParquetMetadata}
 import org.apache.parquet.schema.MessageType
+import org.apache.parquet.column.ColumnDescriptor
 
 import org.apache.spark.broadcast.Broadcast
 import org.apache.spark.internal.Logging
@@ -160,8 +160,16 @@ case class GpuParquetPartitionReaderFactory(
     }
 
     val blocks = if (pushedFilters.isDefined) {
+      // Use the ParquetFileReader to perform dictionary-level filtering
+      ParquetInputFormat.setFilterPredicate(conf, pushedFilters.get)
       //noinspection ScalaDeprecation
-      RowGroupFilter.filterRowGroups(FilterCompat.get(pushedFilters.get), footer.getBlocks, fileSchema)
+      val parquetReader = new ParquetFileReader(conf, footer.getFileMetaData, filePath,
+        footer.getBlocks, Collections.emptyList[ColumnDescriptor])
+      try {
+        parquetReader.getRowGroups
+      } finally {
+        parquetReader.close()
+      }
     } else {
       footer.getBlocks
     }
