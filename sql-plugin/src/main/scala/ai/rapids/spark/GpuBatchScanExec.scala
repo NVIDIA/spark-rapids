@@ -132,8 +132,12 @@ object GpuCSVScan {
       scanMeta.willNotWorkOnGpu("GpuCSVScan does not support parsing timestamp types")
     }
 
-    if (parsedOptions.delimiter > 127) {
-      scanMeta.willNotWorkOnGpu("GpuCSVScan does not support non-ASCII deliminators")
+    if (parsedOptions.delimiter.length > 1) {
+      scanMeta.willNotWorkOnGpu("GpuCSVScan does not support multi-character delimiters")
+    }
+
+    if (parsedOptions.delimiter.codePointAt(0) > 127) {
+      scanMeta.willNotWorkOnGpu("GpuCSVScan does not support non-ASCII delimiters")
     }
 
     if (parsedOptions.quote > 127) {
@@ -300,7 +304,7 @@ class CSVPartitionReader(
      schema: StructType,
      hasHeader: Boolean): cudf.CSVOptions = {
     val builder = cudf.CSVOptions.builder()
-    builder.withDelim(parsedOptions.delimiter)
+    builder.withDelim(parsedOptions.delimiter.charAt(0))
     builder.hasHeader(hasHeader)
     // TODO parsedOptions.parseMode
     builder.withQuote(parsedOptions.quote)
