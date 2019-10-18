@@ -150,7 +150,11 @@ object GpuShuffleExchangeExec {
               at = 0
             }
             if (iter.hasNext) {
-              val batch = iter.next()
+              var batch = iter.next()
+              while (batch.numRows == 0 && iter.hasNext) {
+                batch.close()
+                batch = iter.next()
+              }
               partitioned = getParts(batch).asInstanceOf[Array[(ColumnarBatch, Int)]]
               at = 0
             }
