@@ -86,7 +86,7 @@ case class GpuBatchScanExec(
   override def supportsColumnar = true
 
   override lazy val additionalMetrics = Map(
-    "buildTime" -> SQLMetrics.createNanoTimingMetric(sparkContext, "build time")
+    "bufferTime" -> SQLMetrics.createNanoTimingMetric(sparkContext, "buffer time")
   )
 
   scan match {
@@ -338,8 +338,8 @@ class CSVPartitionReader(
   }
 
   private def readPartFile(): (HostMemoryBuffer, Long) = {
-    val nvtxRange = new NvtxWithMetrics("Build file split", NvtxColor.YELLOW,
-      metrics("buildTime"))
+    val nvtxRange = new NvtxWithMetrics("Buffer file split", NvtxColor.YELLOW,
+      metrics("bufferTime"))
     try {
       isFirstChunkForIterator = false
       val separator = parsedOptions.lineSeparatorInRead.getOrElse(Array('\n'.toByte))

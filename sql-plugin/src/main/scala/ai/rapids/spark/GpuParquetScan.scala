@@ -234,8 +234,8 @@ class ParquetPartitionReader(
   }
 
   private def readPartFile(blocks: Seq[BlockMetaData]): (HostMemoryBuffer, Long) = {
-    val nvtxRange = new NvtxWithMetrics("Build file split", NvtxColor.YELLOW,
-      metrics("buildTime"))
+    val nvtxRange = new NvtxWithMetrics("Buffer file split", NvtxColor.YELLOW,
+      metrics("bufferTime"))
     try {
       val in = filePath.getFileSystem(conf).open(filePath)
       try {
