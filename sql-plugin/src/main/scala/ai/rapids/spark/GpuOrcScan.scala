@@ -613,7 +613,8 @@ class GpuOrcPartitionReader(
   }
 
   private def readPartFile(stripes: Seq[OrcOutputStripe]): (HostMemoryBuffer, Long) = {
-    val nvtxRange = new NvtxRange("Build file split", NvtxColor.YELLOW)
+    val nvtxRange = new NvtxWithMetrics("Buffer file split", NvtxColor.YELLOW,
+      metrics("bufferTime"))
     try {
       if (stripes.isEmpty) {
         return (null, 0L)
