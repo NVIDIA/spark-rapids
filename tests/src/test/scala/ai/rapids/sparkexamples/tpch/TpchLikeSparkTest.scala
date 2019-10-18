@@ -16,6 +16,7 @@
 
 package ai.rapids.sparkexamples.tpch
 
+import ai.rapids.spark.ColumnarRdd
 import org.scalatest.{BeforeAndAfterAll, FunSuite}
 
 import org.apache.spark.sql.SparkSession
@@ -38,6 +39,44 @@ class TpchLikeSparkTest extends FunSuite with BeforeAndAfterAll {
   override def beforeAll(): Unit = {
     super.beforeAll()
     TpchLikeSpark.setupAllParquet(session, "src/test/resources/tpch/")
+  }
+
+  test("GPU data export with conversion") {
+    val df = session.sql(
+      """
+        | select l_orderkey, SUM(l_quantity), SUM(l_discount), SUM(l_tax) from lineitem group by l_orderkey
+        """.stripMargin)
+    val rdd = ColumnarRdd(df)
+    assert(rdd != null)
+    assert(255.0 == rdd.map(table => try {
+      table.getRowCount
+    } finally {
+      table.close
+    }).sum())
+    // max order key
+    assert(999 == rdd.map(table => try {
+      table.getColumn(0).max().getLong
+    } finally {
+      table.close()
+    }).max())
+  }
+
+  test("zero copy GPU data export") {
+    val df = session.sql("""select l_orderkey, l_quantity, l_discount, l_tax from lineitem""")
+    val rdd = ColumnarRdd(df)
+    assert(rdd != null)
+    assert(1000.0 == rdd.map(table => try {
+      table.getRowCount
+    } finally {
+      table.close()
+    }).sum())
+
+    // Max order key
+    assert(999 == rdd.map(table => try {
+      table.getColumn(0).max().getLong
+    } finally {
+      table.close()
+    }).max())
   }
 
   test("Something like TPCH Query 1") {

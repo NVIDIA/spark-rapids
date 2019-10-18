@@ -17,8 +17,9 @@
 package ai.rapids.spark
 
 import org.apache.spark.sql.catalyst.expressions.{Attribute, AttributeReference, Expression}
+import org.apache.spark.sql.catalyst.expressions.objects.CreateExternalRow
 import org.apache.spark.sql.catalyst.rules.Rule
-import org.apache.spark.sql.execution.{ColumnarToRowExec, LocalTableScanExec, RowToColumnarExec, SparkPlan}
+import org.apache.spark.sql.execution.{ColumnarToRowExec, DeserializeToObjectExec, LocalTableScanExec, RowToColumnarExec, SparkPlan}
 import org.apache.spark.sql.execution.exchange.ShuffleExchangeExec
 
 /**
@@ -132,11 +133,22 @@ class GpuTransitionOverrides extends Rule[SparkPlan] {
     plan.children.foreach(assertIsOnTheGpu(_, conf))
   }
 
+  def detectAndTagFinalColumnarOutput(plan: SparkPlan): SparkPlan = plan match {
+    case DeserializeToObjectExec(_: CreateExternalRow, _, child: GpuColumnarToRowExec) =>
+      plan.withNewChildren(Seq(GpuColumnarToRowExec(child.child, true)))
+    case _ => plan
+  }
+
   override def apply(plan: SparkPlan): SparkPlan = {
     this.conf = new RapidsConf(plan.conf)
     if (conf.isSqlEnabled) {
       val tmp = insertCoalesce(insertColumnarFromGpu(plan))
-      val ret = optimizeCoalesce(optimizeGpuPlanTransitions(tmp))
+      val tmp2 = optimizeCoalesce(optimizeGpuPlanTransitions(tmp))
+      val ret = if (conf.exportColumnarRdd) {
+        detectAndTagFinalColumnarOutput(tmp2)
+      } else {
+        tmp2
+      }
       if (conf.isTestEnabled) {
         assertIsOnTheGpu(ret, conf)
       }

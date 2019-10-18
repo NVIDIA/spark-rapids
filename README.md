@@ -8,7 +8,7 @@ many SQL and dataframe operations so that they are accelerated using GPUs. The p
 RDD operations. The plugin requires no API changes from the user, and it will replace SQL operations 
 it supports with GPU operations. If the plugin doesn't support an operation,
 it will fall back to using the Spark CPU version.  The plugin currently does not support spilling, so any
-operation that runs on the GPU requires each task's data fit into GPU memory. If it doesn't fit it will
+operation that runs on the GPU requires that each task's data fit into GPU memory. If it doesn't fit it will
 error out, and the user will have to repartition data or change the parallelism configs such that it will fit.
 
 To enable this GPU acceleration you will need:
@@ -20,6 +20,24 @@ To enable this GPU acceleration you will need:
 ```
 > spark-shell --jars 'rapids-4-spark-0.8-SNAPSHOT.jar,cudf-0.8-SNAPSHOT-cuda10.jar' --conf spark.sql.extensions=ai.rapids.spark.Plugin
 ```
+
+## <a name="MEMORY"></a>Memory
+
+One of the slowest parts of processing data on the GPU is moving the data from host memory to GPU
+memory and allocating GPU memory. To improve the performance of these operations Rapids uses RMM to
+as a user level GPU memory allocator/cache and this plugin will allocate and reuse pinned memory
+where possible to speed up CPU to GPU and GPU to CPU data transfers.
+
+To enable RMM you need to set the config `spark.executor.plugins` to 
+`ai.rapids.spark.GpuResourceManager` when launching your cluster.  To enable pinned memory you also
+need to set `spark.rapids.sql.pinned-pool-size` to the amount of pinned memory you want to use.
+Because this is used for data transfers it typically should be about 1/4 to 1/2 of the amount of
+GPU memory you have. You also need to enable it by setting the java System property 
+`ai.rapids.cudf.prefer-pinned` to `true`.
+
+If you are running Spark under YARN or kubernetes you need to be sure that you are adding in the
+overhead for this memory in addition to what you normally would ask for as this memory is not
+currently tracked by spark.
 
 ## Configuration
 
@@ -94,3 +112,36 @@ Q1Like(spark).count()
 ```
 They generally follow TPCH but are not guaranteed to be the same.
 `Q1Like(spark)` will return a dataframe that can be executed to run the corresponding query.
+
+## Advanced Operations
+
+### Zero Copy Exporting of GPU data.
+There are cases where you may want to get access to the raw data on the GPU, preferably without
+copying it. One use case for this is exporting the data to an ML framework after doing feature
+extraction. To do this we provide a simple Scala utility `ai.rapids.spark.ColumnarRdd` that can
+be used to convert a `DataFrame` to an `RDD[ai.rapids.cudf.Table]`. Each Table will have the same
+schema as the `DataFrame` passed in.
+
+`Table` is not a typical thing in an `RDD` so special care needs to be taken when working with it.
+By default it is not serializable so repartitioning the `RDD` or any other operator that involves
+a shuffle will not work. This is because it is relatively expensive to serialize and
+deserialize GPU data using a conventional spark shuffle. In addition most of the memory associated
+with the Table is on the GPU itself, so each table must be closed when it is no longer needed to
+avoid running out of GPU memory. By convention it is the responsibility of the one consuming the
+data to close it when they no longer need it.
+
+```scala
+val df = spark.sql("""select my_column from my_table""")
+val rdd: RDD[Table] = ColumnarRdd(df)
+// Compute the max of the first column
+val maxValue = rdd.map(table => {
+  val max = table.getColumn(0).max().getLong
+  // Close the table to avoid leaks
+  table.close()
+  max
+}).max()
+```
+
+You may need to disable [RMM](#memory) caching when exporting data to an ML library as that library
+will likely want to use all of the GPU's memory and if it is not aware of RMM it will not have
+access to any of the memory that RMM is holding. 

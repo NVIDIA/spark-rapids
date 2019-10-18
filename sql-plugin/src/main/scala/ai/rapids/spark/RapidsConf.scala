@@ -162,13 +162,20 @@ object RapidsConf {
     new ConfBuilder(key, register)
   }
 
+  val EXPORT_COLUMNAR_RDD = conf("spark.sql.rapids.export_columnar_rdd")
+    .doc("Spark has no simply way to export columnar RDD data.  This turns on special " +
+      "processing/tagging that allows the RDD to be picked back apart into a Columnar RDD.")
+    .internal()
+    .booleanConf
+    .createWithDefault(false)
+
   val SQL_ENABLED = conf("spark.rapids.sql.enabled")
     .doc("Enable (true) or disable (false) sql operations on the GPU")
     .booleanConf
     .createWithDefault(true)
 
   val INCOMPATIBLE_OPS = conf("spark.rapids.sql.incompatible_ops")
-    .doc("For operations that work, but are not 100% compatible with the Spark equivalent   " +
+    .doc("For operations that work, but are not 100% compatible with the Spark equivalent " +
       "set if they should be enabled by default or disabled by default.")
     .booleanConf
     .createWithDefault(false)
@@ -278,8 +285,8 @@ object RapidsConf {
   def help(asTable: Boolean = false): Unit = {
     if (asTable) {
       println("""# Rapids Plugin 4 Spark Configuration
-        |The following is the list of options that `rapids-plugin-4-spark` supports. 
-        | 
+        |The following is the list of options that `rapids-plugin-4-spark` supports.
+        |
         |On startup use: `--conf [conf key]=[conf value]`. For example:
         |
         |```
@@ -305,14 +312,14 @@ object RapidsConf {
       println("")
       println("""## Fine Tunning
         |_Rapids Plugin 4 Spark_ can be further configured to enable or disable specific
-        |expressions and to control what parts of the query execute using the GPU or 
-        |the CPU. 
+        |expressions and to control what parts of the query execute using the GPU or
+        |the CPU.
         |
-        |Please leverage the `spark.rapids.sql.explain` setting to get feeback from the 
+        |Please leverage the `spark.rapids.sql.explain` setting to get feeback from the
         |plugin as to why parts of a query may not be executing in the GPU.
         |
-        |**NOTE:** Setting `spark.rapids.sql.incompatible_ops=true` will enable all 
-        |the settings in the table below which are not enabled by default due to 
+        |**NOTE:** Setting `spark.rapids.sql.incompatible_ops=true` will enable all
+        |the settings in the table below which are not enabled by default due to
         |incompatibilities.""".stripMargin)
 
       printToggleHeader("Expressions")
@@ -350,6 +357,8 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
   }
 
   lazy val isSqlEnabled: Boolean = get(SQL_ENABLED)
+
+  lazy val exportColumnarRdd: Boolean = get(EXPORT_COLUMNAR_RDD)
 
   lazy val isIncompatEnabled: Boolean = get(INCOMPATIBLE_OPS)
 

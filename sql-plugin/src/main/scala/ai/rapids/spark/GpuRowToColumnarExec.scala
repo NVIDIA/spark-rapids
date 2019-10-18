@@ -30,7 +30,6 @@ import org.apache.spark.sql.execution.metric.{SQLMetric, SQLMetrics}
 import org.apache.spark.sql.types._
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
-
 private class GpuRowToColumnConverter(schema: StructType) extends Serializable {
   private val converters = schema.fields.map {
     f => GpuRowToColumnConverter.getConverterForType(f.dataType, f.nullable)
@@ -280,6 +279,56 @@ private object GpuRowToColumnConverter {
 //  }
 }
 
+class RowToColumnarIterator(
+    rowIter: Iterator[InternalRow],
+    localSchema: StructType,
+    localGoal: CoalesceGoal,
+    converters: GpuRowToColumnConverter,
+    totalTime: SQLMetric,
+    numInputRows: SQLMetric,
+    numOutputRows: SQLMetric,
+    numOutputBatches: SQLMetric) extends Iterator[ColumnarBatch] {
+  val targetRows = localGoal.targetSize.toInt
+  override def hasNext: Boolean = rowIter.hasNext
+
+  override def next(): ColumnarBatch = {
+    if (!rowIter.hasNext) {
+      throw new NoSuchElementException
+    }
+    buildBatch()
+  }
+
+  private def buildBatch(): ColumnarBatch = {
+    // TODO eventually we should be smarter about allocating memory for these batches
+    // so we can support building large batches with all of the data.
+    val builders = new GpuColumnarBatchBuilder(localSchema, targetRows, null)
+    try {
+      var rowCount = 0
+      while (rowCount < targetRows && rowIter.hasNext) {
+        val row = rowIter.next()
+        converters.convert(row, builders)
+        rowCount += 1
+      }
+      if (rowIter.hasNext && (rowCount + 1L) > localGoal.targetSize) {
+        localGoal.whenTargetExceeded(rowCount + 1L)
+      }
+      val buildRange = new NvtxWithMetrics("RowToColumnar", NvtxColor.GREEN, totalTime)
+      val ret = try {
+        builders.build(rowCount)
+      } finally {
+        buildRange.close()
+      }
+      numInputRows += rowCount
+      numOutputRows += rowCount
+      numOutputBatches += 1
+      // The returned batch will be closed by the consumer of it
+      ret
+    } finally {
+      builders.close()
+    }
+  }
+}
+
 /**
  * GPU version of row to columnar transition.
  */
@@ -314,52 +363,12 @@ case class GpuRowToColumnarExec(child: SparkPlan, goal: CoalesceGoal)
     val numOutputBatches = longMetric(NUM_OUTPUT_BATCHES)
     val numOutputRows = longMetric(NUM_OUTPUT_ROWS)
     val totalTime = longMetric(TOTAL_TIME)
-    val targetRows = goal.targetSize
     val localSchema = schema
     val converters = new GpuRowToColumnConverter(localSchema)
     val localGoal = goal
     val rowBased = child.execute()
-    rowBased.mapPartitions { rowIter =>
-      new Iterator[ColumnarBatch]() {
-        override def hasNext: Boolean = rowIter.hasNext
-
-        override def next(): ColumnarBatch = {
-          if (!rowIter.hasNext) {
-            throw new NoSuchElementException
-          }
-          buildBatch()
-        }
-
-        private def buildBatch(): ColumnarBatch = {
-          // TODO eventually we should be smarter about allocating memory for these batches
-          // so we can support building large batches with all of the data.
-          val builders = new GpuColumnarBatchBuilder(localSchema, targetRows.toInt, null)
-          try {
-            var rowCount = 0
-            while (rowCount < targetRows && rowIter.hasNext) {
-              val row = rowIter.next()
-              converters.convert(row, builders)
-              rowCount += 1
-            }
-            if (rowIter.hasNext && (rowCount + 1L) > localGoal.targetSize) {
-              localGoal.whenTargetExceeded(rowCount + 1L)
-            }
-            val buildRange = new NvtxWithMetrics("RowToColumnar", NvtxColor.GREEN, totalTime)
-            val ret = try {
-              builders.build(rowCount)
-            } finally {
-              buildRange.close()
-            }
-            numInputRows += rowCount
-            numOutputRows += rowCount
-            numOutputBatches += 1
-            // The returned batch will be closed by the consumer of it
-            ret
-          } finally {
-            builders.close()
-          }
-        }
-      }
-    }
+    rowBased.mapPartitions(rowIter => new RowToColumnarIterator(rowIter,
+      localSchema, localGoal, converters,
+      totalTime, numInputRows, numOutputRows, numOutputBatches))
   }
 }
