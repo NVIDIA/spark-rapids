@@ -26,17 +26,18 @@ import scala.collection.mutable.ArrayBuffer
 
 import ai.rapids.cudf.{HostMemoryBuffer, NvtxColor, NvtxRange, ParquetOptions, Table, TimeUnit}
 import ai.rapids.spark.GpuMetricNames._
+import ai.rapids.spark.ParquetPartitionReader.CopyRange
 import org.apache.commons.io.output.{CountingOutputStream, NullOutputStream}
 import org.apache.commons.io.IOUtils
 import org.apache.hadoop.conf.Configuration
 import org.apache.hadoop.fs.{FSDataInputStream, Path}
 import org.apache.parquet.bytes.BytesUtils
-import org.apache.parquet.filter2.compat.{FilterCompat, RowGroupFilter}
 import org.apache.parquet.filter2.predicate.FilterApi
 import org.apache.parquet.format.converter.ParquetMetadataConverter
-import org.apache.parquet.hadoop.ParquetFileReader
+import org.apache.parquet.hadoop.{ParquetFileReader, ParquetInputFormat}
 import org.apache.parquet.hadoop.metadata.{BlockMetaData, ColumnChunkMetaData, ColumnPath, FileMetaData, ParquetMetadata}
 import org.apache.parquet.schema.MessageType
+import org.apache.parquet.column.ColumnDescriptor
 
 import org.apache.spark.broadcast.Broadcast
 import org.apache.spark.internal.Logging
@@ -159,8 +160,16 @@ case class GpuParquetPartitionReaderFactory(
     }
 
     val blocks = if (pushedFilters.isDefined) {
+      // Use the ParquetFileReader to perform dictionary-level filtering
+      ParquetInputFormat.setFilterPredicate(conf, pushedFilters.get)
       //noinspection ScalaDeprecation
-      RowGroupFilter.filterRowGroups(FilterCompat.get(pushedFilters.get), footer.getBlocks, fileSchema)
+      val parquetReader = new ParquetFileReader(conf, footer.getFileMetaData, filePath,
+        footer.getBlocks, Collections.emptyList[ColumnDescriptor])
+      try {
+        parquetReader.getRowGroups
+      } finally {
+        parquetReader.close()
+      }
     } else {
       footer.getBlocks
     }
@@ -205,6 +214,7 @@ class ParquetPartitionReader(
   private var isExhausted: Boolean = false
   private var batch: Option[ColumnarBatch] = None
   private val blockIterator :  BufferedIterator[BlockMetaData] = clippedBlocks.iterator.buffered
+  private val copyBufferSize = conf.getInt("parquet.read.allocation.size", 8 * 1024 * 1024)
 
   metrics = execMetrics
 
@@ -291,15 +301,15 @@ class ParquetPartitionReader(
     org.apache.parquet.format.Util.writeFileMetaData(meta, out)
   }
 
-  private def copyColumnData(
-      column: ColumnChunkMetaData,
+  private def copyDataRange(
+      range: CopyRange,
       in: FSDataInputStream,
       out: OutputStream,
       copyBuffer: Array[Byte]): Unit = {
-    if (in.getPos != column.getStartingPos) {
-      in.seek(column.getStartingPos)
+    if (in.getPos != range.offset) {
+      in.seek(range.offset)
     }
-    var bytesLeft = column.getTotalSize
+    var bytesLeft = range.length
     while (bytesLeft > 0) {
       // downcast is safe because copyBuffer.length is an int
       val readLength = Math.min(bytesLeft, copyBuffer.length).toInt
@@ -324,15 +334,18 @@ class ParquetPartitionReader(
       out: HostMemoryOutputStream,
       blocks: Seq[BlockMetaData]): Seq[BlockMetaData] = {
     var totalRows: Long = 0
-    val copyBuffer = new Array[Byte](128 * 1024)
     val outputBlocks = new ArrayBuffer[BlockMetaData](blocks.length)
+    val copyRanges = new ArrayBuffer[CopyRange]
+    var currentCopyStart = 0L
+    var currentCopyEnd = 0L
+    var totalBytesToCopy = 0L
     blocks.foreach { block =>
       totalRows += block.getRowCount
       val columns = block.getColumns.asScala
       val outputColumns = new ArrayBuffer[ColumnChunkMetaData](columns.length)
       columns.foreach { column =>
         // update column metadata to reflect new position in the output file
-        val offsetAdjustment = out.getPos - column.getStartingPos
+        val offsetAdjustment = out.getPos + totalBytesToCopy - column.getStartingPos
         val newDictOffset = if (column.getDictionaryPageOffset > 0) {
           column.getDictionaryPageOffset + offsetAdjustment
         } else {
@@ -351,10 +364,25 @@ class ParquetPartitionReader(
           column.getValueCount,
           column.getTotalSize,
           column.getTotalUncompressedSize)
-        copyColumnData(column, in, out, copyBuffer)
+
+        if (currentCopyEnd != column.getStartingPos) {
+          if (currentCopyEnd != 0) {
+            copyRanges.append(CopyRange(currentCopyStart, currentCopyEnd - currentCopyStart))
+          }
+          currentCopyStart = column.getStartingPos
+          currentCopyEnd = currentCopyStart
+        }
+        currentCopyEnd += column.getTotalSize
+        totalBytesToCopy += column.getTotalSize
       }
       outputBlocks += ParquetPartitionReader.newParquetBlock(block.getRowCount, outputColumns)
     }
+
+    if (currentCopyEnd != currentCopyStart) {
+      copyRanges.append(CopyRange(currentCopyStart, currentCopyEnd - currentCopyStart))
+    }
+    val copyBuffer = new Array[Byte](copyBufferSize)
+    copyRanges.foreach(copyRange => copyDataRange(copyRange, in, out, copyBuffer))
     outputBlocks
   }
 
@@ -451,6 +479,8 @@ object ParquetPartitionReader {
   private val PARQUET_MAGIC = "PAR1".getBytes(StandardCharsets.US_ASCII)
   private val PARQUET_CREATOR = "RAPIDS Spark Plugin"
   private val PARQUET_VERSION = 1
+
+  private case class CopyRange(offset: Long, length: Long)
 
   /**
     * Build a new BlockMetaData
