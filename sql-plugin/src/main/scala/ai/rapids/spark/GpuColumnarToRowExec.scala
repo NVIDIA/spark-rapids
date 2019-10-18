@@ -24,14 +24,14 @@ import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.expressions.{Attribute, SortOrder, UnsafeProjection}
 import org.apache.spark.sql.catalyst.expressions.codegen.Block._
 import org.apache.spark.sql.catalyst.expressions.codegen.{CodegenContext, CodeGenerator, ExprCode, FalseLiteral, JavaCode}
-import org.apache.spark.sql.execution.{CodegenSupport, SparkPlan, UnaryExecNode}
+import org.apache.spark.sql.execution.{CodegenSupport, GpuColumnToRowMapPartitionsRDD, SparkPlan, UnaryExecNode}
 import org.apache.spark.sql.types.DataType
 import org.apache.spark.sql.vectorized.{ColumnarBatch, ColumnVector}
 import org.apache.spark.TaskContext
 import org.apache.spark.sql.catalyst.plans.physical.Partitioning
 import org.apache.spark.sql.execution.metric.{SQLMetric, SQLMetrics}
 
-case class GpuColumnarToRowExec(child: SparkPlan) extends UnaryExecNode
+case class GpuColumnarToRowExec(child: SparkPlan, exportColumnarRdd: Boolean = false) extends UnaryExecNode
     with CodegenSupport with GpuExec {
   // We need to do this so the assertions don't fail
   override def supportsColumnar = false
@@ -45,6 +45,8 @@ case class GpuColumnarToRowExec(child: SparkPlan) extends UnaryExecNode
   // `GpuColumnarToRowExec` processes the input RDD directly, which is kind of a leaf node in the
   // codegen stage and needs to do the limit check.
   protected override def canCheckLimitNotReached: Boolean = true
+
+  override def supportCodegen: Boolean = !exportColumnarRdd
 
   // Override the original metrics to remove NUM_OUTPUT_BATCHES, which makes no sense.
   override lazy val metrics: Map[String, SQLMetric] = Map(
@@ -65,7 +67,7 @@ case class GpuColumnarToRowExec(child: SparkPlan) extends UnaryExecNode
     // plan (this) in the closure.
     val localOutput = this.output
 
-    child.executeColumnar().mapPartitions { batches => {
+    val f = (batches: Iterator[ColumnarBatch]) => {
       // UnsafeProjection is not serializable so do it on the executor side
       val toUnsafe = UnsafeProjection.create(localOutput, localOutput)
       new Iterator[InternalRow] {
@@ -131,6 +133,14 @@ case class GpuColumnarToRowExec(child: SparkPlan) extends UnaryExecNode
         // be UnsafeRow
       }.map(toUnsafe)
     }
+
+    val cdata = child.executeColumnar()
+    if (exportColumnarRdd) {
+      // If we are exporting columnar rdd we need an easy way for the code that walks the
+      // RDDs to know where the columnar to row transition is happening.
+      GpuColumnToRowMapPartitionsRDD.mapPartitions(cdata, f)
+    } else {
+      cdata.mapPartitions(f)
     }
   }
 
