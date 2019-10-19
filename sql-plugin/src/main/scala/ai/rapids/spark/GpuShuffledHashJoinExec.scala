@@ -27,6 +27,7 @@ import org.apache.spark.TaskContext
 import org.apache.spark.sql.catalyst.plans.physical.{Distribution, HashClusteredDistribution}
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.execution.metric.{SQLMetric, SQLMetrics}
+import scala.math.max
 
 class GpuShuffledHashJoinMeta(
     join: ShuffledHashJoinExec,
@@ -71,7 +72,8 @@ case class GpuShuffledHashJoinExec(
     "buildTime" -> SQLMetrics.createNanoTimingMetric(sparkContext, "build time"),
     "joinTime" -> SQLMetrics.createNanoTimingMetric(sparkContext, "join time"),
     "joinOutputRows" -> SQLMetrics.createMetric(sparkContext, "join output rows"),
-    "filterTime" -> SQLMetrics.createNanoTimingMetric(sparkContext, "filter time"))
+    "filterTime" -> SQLMetrics.createNanoTimingMetric(sparkContext, "filter time"),
+    "peakDevMemory" -> SQLMetrics.createSizeMetric(sparkContext, "peak device memory"))
 
   override def requiredChildDistribution: Seq[Distribution] =
     HashClusteredDistribution(leftKeys) :: HashClusteredDistribution(rightKeys) :: Nil
@@ -95,6 +97,8 @@ case class GpuShuffledHashJoinExec(
     val joinTime = longMetric("joinTime")
     val filterTime = longMetric("filterTime")
     val joinOutputRows = longMetric("joinOutputRows")
+    var peakDevMemory = longMetric("peakDevMemory")
+    var maximum:Long = 0
 
     val boundCondition = condition.map(GpuBindReferences.bindReference(_, output))
 
@@ -103,6 +107,7 @@ case class GpuShuffledHashJoinExec(
         var combinedSize = 0
         val startTime = System.nanoTime()
         val buildBatch = ConcatAndConsumeAll.getSingleBatchWithVerification(buildIter, localBuildOutput)
+        maximum = max(GpuColumnVector.getTotalDeviceMemoryUsed(buildBatch), maximum)
         val asStringCatBatch = try {
           GpuColumnVector.convertToStringCategoriesIfNeeded(buildBatch)
         } finally {
@@ -114,6 +119,7 @@ case class GpuShuffledHashJoinExec(
             // Combine does not inc any reference counting
             val combined = combine(keys, asStringCatBatch)
             combinedSize = GpuColumnVector.extractColumns(combined).map(_.dataType().defaultSize).sum * combined.numRows
+            maximum = max(GpuColumnVector.getTotalDeviceMemoryUsed(combined), maximum)
             GpuColumnVector.from(combined)
           } finally {
             keys.close()
@@ -135,6 +141,7 @@ case class GpuShuffledHashJoinExec(
           val ret = doJoin(builtTable, cb, boundCondition, joinOutputRows, numOutputRows,
             numOutputBatches, joinTime, filterTime)
           totalTime += (System.nanoTime() - startTime)
+          peakDevMemory.set(max(GpuColumnVector.getTotalDeviceMemoryUsed(ret), maximum))
           ret
         })
       }
