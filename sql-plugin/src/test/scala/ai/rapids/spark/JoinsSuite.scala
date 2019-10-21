@@ -20,32 +20,32 @@ import org.apache.spark.SparkConf
 
 class JoinsSuite extends SparkQueryCompareTestSuite {
 
-  INCOMPAT_testSparkResultsAreEqual2("Test broadcast hash join", longsDf, nonZeroLongsDf,
+  testSparkResultsAreEqual2("Test broadcast hash join", longsDf, nonZeroLongsDf,
     conf=new SparkConf()
       .set("spark.sql.autoBroadcastJoinThreshold", "10MB")) {
     (A, B) => A.join(B, A("longs") === B("more_longs"))
   }
 
-  INCOMPAT_testSparkResultsAreEqual2("Test broadcast hash join with ops", longsDf, nonZeroLongsDf,
+  testSparkResultsAreEqual2("Test broadcast hash join with ops", longsDf, nonZeroLongsDf,
     conf=new SparkConf()
       .set("spark.sql.autoBroadcastJoinThreshold", "10MB")) {
     (A, B) => A.join(B, (A("longs") - A("more_longs")) === (B("longs") - B("more_longs")))
   }
 
-  INCOMPAT_testSparkResultsAreEqual2("Test broadcast hash join with conditional", longsDf, nonZeroLongsDf,
+  testSparkResultsAreEqual2("Test broadcast hash join with conditional", longsDf, nonZeroLongsDf,
     conf=new SparkConf()
       .set("spark.sql.autoBroadcastJoinThreshold", "10MB")) {
     (A, B) => A.join(B, A("longs") === B("longs") && A("more_longs") >= B("more_longs"))
   }
 
-  INCOMPAT_IGNORE_ORDER_testSparkResultsAreEqual2("Test broadcast hash join with mixed fields",
+  IGNORE_ORDER_testSparkResultsAreEqual2("Test broadcast hash join with mixed fields",
     mixedDf, mixedDfWithNulls,
     conf = new SparkConf()
       .set("spark.sql.autoBroadcastJoinThreshold", "10MB")) {
     (A, B) => A.join(B, A("ints") === B("ints"))
   }
 
-  INCOMPAT_IGNORE_ORDER_testSparkResultsAreEqual2("Test broadcast hash join on string with mixed fields",
+  IGNORE_ORDER_testSparkResultsAreEqual2("Test broadcast hash join on string with mixed fields",
     mixedDf, mixedDfWithNulls,
     conf = new SparkConf()
       .set("spark.sql.autoBroadcastJoinThreshold", "10MB")) {
@@ -59,7 +59,7 @@ class JoinsSuite extends SparkQueryCompareTestSuite {
   // than the number of splits * broadcast threshold and also be at least
   // 3 times smaller than the other side.  So it is not likely to happen
   // unless we can give it some help.
-  INCOMPAT_IGNORE_ORDER_testSparkResultsAreEqual2("Test hash join", longsDf, biggerLongsDf,
+  IGNORE_ORDER_testSparkResultsAreEqual2("Test hash join", longsDf, biggerLongsDf,
     conf = new SparkConf()
       .set("spark.sql.autoBroadcastJoinThreshold", "160")
       .set("spark.sql.join.preferSortMergeJoin", "false")

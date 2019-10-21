@@ -121,7 +121,7 @@ case class GpuBroadcastHashJoinExec(
     val joinOutputRows = longMetric("joinOutputRows")
 
     val broadcastRelation = broadcastExchange
-      .executeColumnarBroadcast[SerializableGpuColumnarBatch]()
+      .executeColumnarBroadcast[SerializeConcatHostBuffersDeserializeBatch]()
 
     val boundCondition = condition.map(GpuBindReferences.bindReference(_, output))
 

@@ -757,8 +757,7 @@ object GpuOverrides {
       (exchange, conf, p, r) => new GpuBroadcastMeta(exchange, conf, p, r)),
     exec[BroadcastHashJoinExec](
       "Implementation of join using broadcast data",
-      (join, conf, p, r) => new GpuBroadcastHashJoinMeta(join, conf, p, r))
-      .incompat("GPU required on the driver"),
+      (join, conf, p, r) => new GpuBroadcastHashJoinMeta(join, conf, p, r)),
     exec[ShuffledHashJoinExec](
       "Implementation of join using hashed shuffled data",
       (join, conf, p, r) => new GpuShuffledHashJoinMeta(join, conf, p, r)),
