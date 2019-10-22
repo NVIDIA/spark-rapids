@@ -1686,7 +1686,7 @@ case class CatalystExpressionBuilder(private val function: AnyRef) {
   }
 
   //
-  // JVMCI
+  // Reflection using SerializedLambda and javassist
   //
   case class LambdaReflection(private val classPool: ClassPool,
                               private val serializedLambda: SerializedLambda) {
