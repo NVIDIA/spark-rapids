@@ -27,7 +27,6 @@ import org.apache.spark.TaskContext
 import org.apache.spark.sql.catalyst.plans.physical.{Distribution, HashClusteredDistribution}
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.execution.metric.{SQLMetric, SQLMetrics}
-import scala.math.max
 
 class GpuShuffledHashJoinMeta(
     join: ShuffledHashJoinExec,
@@ -72,8 +71,8 @@ case class GpuShuffledHashJoinExec(
     "buildTime" -> SQLMetrics.createNanoTimingMetric(sparkContext, "build time"),
     "joinTime" -> SQLMetrics.createNanoTimingMetric(sparkContext, "join time"),
     "joinOutputRows" -> SQLMetrics.createMetric(sparkContext, "join output rows"),
-    "filterTime" -> SQLMetrics.createNanoTimingMetric(sparkContext, "filter time"),
-    "peakDevMemory" -> SQLMetrics.createSizeMetric(sparkContext, "peak device memory"))
+    "filterTime" -> SQLMetrics.createNanoTimingMetric(sparkContext, "filter time")
+  )
 
   override def requiredChildDistribution: Seq[Distribution] =
     HashClusteredDistribution(leftKeys) :: HashClusteredDistribution(rightKeys) :: Nil
