@@ -13,8 +13,11 @@ else
     CUDF_JAR="$WORKSPACE/.m2/ai/rapids/cudf/$CUDF_VER/cudf-$CUDF_VER-$CUDA_VER.jar"
 fi
 
-RAPIDS_PLUGIN_JAR="$WORKSPACE/sql-plugin/target/rapids-4-spark-$CUDF_VER.jar"
-RAPIDS_TEST_JAR="$WORKSPACE/tests/target/rapids-4-spark-tests-$CUDF_VER.jar"
+if [ "$PROJECT_VER"x == x ];then
+    PROJECT_VER="0.1-SNAPSHOT"
+fi
+RAPIDS_PLUGIN_JAR="$WORKSPACE/sql-plugin/target/rapids-4-spark-$PROJECT_VER.jar"
+RAPIDS_TEST_JAR="$WORKSPACE/tests/target/rapids-4-spark-tests-$PROJECT_VER.jar"
 
 PARQUET_PERF="$WORKSPACE/tests/src/test/resources/parquet_perf"
 PARQUET_ACQ="$WORKSPACE/tests/src/test/resources/parquet_acq"
