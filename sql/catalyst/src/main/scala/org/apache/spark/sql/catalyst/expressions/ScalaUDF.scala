@@ -1088,16 +1088,18 @@ case class ScalaUDF(
 
 case class CatalystExpressionBuilder(private val function: AnyRef) {
 
-  import com.sun.tools.classfile.Opcode
-  import java.lang.reflect.Method
-  import jdk.vm.ci.meta.ConstantPool
-  import jdk.vm.ci.meta.JavaKind
-  import jdk.vm.ci.meta.PrimitiveConstant
-  import jdk.vm.ci.meta.ResolvedJavaMethod.Parameter
-  import jdk.vm.ci.hotspot.HotSpotJVMCIRuntime
-  import jdk.vm.ci.hotspot.HotSpotObjectConstant
-  import jdk.vm.ci.hotspot.HotSpotResolvedJavaMethod
+  import java.lang.invoke.SerializedLambda
+  import javassist.ClassClassPath
+  import javassist.ClassPool
+  import javassist.CtClass
+  import javassist.CtField
+  import javassist.CtMethod
+  import javassist.bytecode.CodeIterator
+  import javassist.bytecode.ConstPool
+  import javassist.bytecode.Descriptor
+  import javassist.bytecode.Opcode
   import org.apache.spark.sql.types._
+  import org.apache.spark.util.Utils.classForName
   import scala.annotation.tailrec
   import scala.collection.immutable.IntMap
   import scala.collection.immutable.SortedMap
@@ -1180,7 +1182,7 @@ case class CatalystExpressionBuilder(private val function: AnyRef) {
                  c2@LessThan(s2, Literal(v2, t2))) if s1 == s2 && t1 == t2 => {
                    t1 match {
                      case DoubleType =>
-                       if (v1.asInstanceOf[Double] <= v2.asInstanceOf[Double]) {
+                       if (v1.asInstanceOf[Double] < v2.asInstanceOf[Double]) {
                          c1
                        } else {
                          c2
@@ -1303,15 +1305,17 @@ case class CatalystExpressionBuilder(private val function: AnyRef) {
     def apply(
         lambdaReflection: LambdaReflection,
         children: Seq[Expression]): State = {
-      val max = lambdaReflection.getMaxLocals
-      val params = lambdaReflection.getParameters.view.zip(children)
+      val max = lambdaReflection.maxLocals
+      val params = lambdaReflection.parameters.view.zip(children)
       val (locals, _) = params.foldLeft((new Array[Expression](max), 0)) { (l, p) =>
         val (locals, index) = l
         val (param, arg) = p
-        val newIndex = param.getKind match {
-          case JavaKind.Double => index + 2
-          case JavaKind.Long => index + 2
-          case _ => index + 1
+        val newIndex = {
+          if (param == CtClass.doubleType || param == CtClass.longType) {
+            index + 2
+          } else {
+            index + 1
+          }
         }
         (locals.updated(index, arg), newIndex)
       }
@@ -1322,7 +1326,7 @@ case class CatalystExpressionBuilder(private val function: AnyRef) {
   //
   // CFG
   //
-  case class Instruction(val opcode: Opcode, operands: Array[Byte]) {
+  case class Instruction(val opcode: Int, operand: Int) {
     def apply(basicBlock: BB, state: State): State = {
       opcode match {
         case Opcode.ALOAD_0 | Opcode.DLOAD_0 | Opcode.FLOAD_0 |
@@ -1334,7 +1338,7 @@ case class CatalystExpressionBuilder(private val function: AnyRef) {
         case Opcode.ALOAD_3 | Opcode.DLOAD_3 | Opcode.FLOAD_3 |
              Opcode.ILOAD_3 | Opcode.LLOAD_3 => load(state, 3)
         case Opcode.ALOAD | Opcode.DLOAD | Opcode.FLOAD |
-             Opcode.ILOAD | Opcode.LLOAD => load(state, bytesToInt(operands))
+             Opcode.ILOAD | Opcode.LLOAD => load(state, operand)
         case Opcode.ASTORE_0 | Opcode.DSTORE_0 | Opcode.FSTORE_0 |
              Opcode.ISTORE_0 | Opcode.LSTORE_0 => store(state, 0)
         case Opcode.ASTORE_1 | Opcode.DSTORE_1 | Opcode.FSTORE_1 |
@@ -1344,14 +1348,14 @@ case class CatalystExpressionBuilder(private val function: AnyRef) {
         case Opcode.ASTORE_3 | Opcode.DSTORE_3 | Opcode.FSTORE_3 |
              Opcode.ISTORE_3 | Opcode.LSTORE_3 => store(state, 3)
         case Opcode.DCONST_0 | Opcode.DCONST_1 =>
-          const(state, (opcode.opcode - Opcode.DCONST_0.opcode).asInstanceOf[Double])
+          const(state, (opcode - Opcode.DCONST_0).asInstanceOf[Double])
         case Opcode.FCONST_0 | Opcode.FCONST_1 | Opcode.FCONST_2 =>
-          const(state, (opcode.opcode - Opcode.FCONST_0.opcode).asInstanceOf[Float])
+          const(state, (opcode - Opcode.FCONST_0).asInstanceOf[Float])
         case Opcode.ICONST_0 | Opcode.ICONST_1 | Opcode.ICONST_2 |
              Opcode.ICONST_3 | Opcode.ICONST_4 | Opcode.ICONST_5 =>
-          const(state, (opcode.opcode - Opcode.ICONST_0.opcode).asInstanceOf[Int])
+          const(state, (opcode - Opcode.ICONST_0).asInstanceOf[Int])
         case Opcode.LCONST_0 | Opcode.LCONST_1 =>
-          const(state, (opcode.opcode - Opcode.LCONST_0.opcode).asInstanceOf[Long])
+          const(state, (opcode - Opcode.LCONST_0).asInstanceOf[Long])
         case Opcode.DADD | Opcode.FADD | Opcode.IADD | Opcode.LADD => add(state)
         case Opcode.DSUB | Opcode.FSUB | Opcode.ISUB | Opcode.LSUB => sub(state)
         case Opcode.DMUL | Opcode.FMUL | Opcode.IMUL | Opcode.LMUL => mul(state)
@@ -1386,8 +1390,6 @@ case class CatalystExpressionBuilder(private val function: AnyRef) {
         case _ => throw new SparkException("Unsupported instruction: " + opcode)
       }
     }
-
-    def size: Int = Instruction.size(opcode)
 
     def isReturn: Boolean = opcode match {
       case Opcode.IRETURN | Opcode.LRETURN | Opcode.FRETURN | Opcode.DRETURN |
@@ -1430,8 +1432,7 @@ case class CatalystExpressionBuilder(private val function: AnyRef) {
 
     private def ldc(state: State): State = {
       val State(locals, stack, cond, expr) = state
-      val constPoolIndex = bytesToInt(operands)
-      val constant = Literal(lambdaReflection.lookupConstant(constPoolIndex))
+      val constant = Literal(lambdaReflection.lookupConstant(operand))
       State(locals, constant::stack, cond, expr)
     }
 
@@ -1442,9 +1443,7 @@ case class CatalystExpressionBuilder(private val function: AnyRef) {
 
     private def getstatic(state: State): State = {
       val State(locals, stack, cond, expr) = state
-      val constPoolIndex = bytesToInt(operands)
-      val field = lambdaReflection.lookupField(constPoolIndex, opcode)
-      State(locals, Literal(field.getName)::stack, cond, expr)
+      State(locals, Literal(operand)::stack, cond, expr)
     }
 
     private def dcmp(state: State): State = {
@@ -1476,11 +1475,17 @@ case class CatalystExpressionBuilder(private val function: AnyRef) {
 
     private def invokevirtual(state: State): State = {
       val State(locals, stack, cond, expr) = state
-      val constPoolIndex = bytesToInt(operands)
-      val method = lambdaReflection.lookupMethod(constPoolIndex, opcode)
-      val signature = method.getSignature
-      val (args, rest) = stack.splitAt(signature.getParameterCount(true))
-      if (method.getDeclaringClass.toClassName.equals("scala.math.package$")) {
+      val method = lambdaReflection.lookupMethod(operand)
+      val paramTypes = method.getParameterTypes
+      val (args, objrefIndex::rest) = stack.splitAt(paramTypes.length)
+      val objref = objrefIndex match {
+        case Literal(index, IntegerType) =>
+          lambdaReflection.lookupField(index.asInstanceOf[Int])
+        case _ =>
+          throw new SparkException(
+            "Unsupported instruction: " + Opcode.INVOKEVIRTUAL)
+      }
+      if (objref.getType.getName.equals("scala.math.package$")) {
         // Math functions
         val ret = method.getName match {
           case "abs" => Abs(args(0))
@@ -1510,19 +1515,24 @@ case class CatalystExpressionBuilder(private val function: AnyRef) {
     }
   }
   object Instruction {
-    def size(opcode: Opcode) : Int = {
-      opcode match {
-        case Opcode.GOTO | Opcode.LDC_W | Opcode.LDC2_W |
+    def apply(codeIterator: CodeIterator, offset: Int): Instruction = {
+      val opcode = codeIterator.byteAt(offset)
+      val operand = opcode match {
+        case Opcode.ALOAD | Opcode.DLOAD | Opcode.FLOAD |
+             Opcode.ILOAD | Opcode.LLOAD | Opcode.LDC =>
+          codeIterator.byteAt(offset + 1)
+        case Opcode.LDC_W | Opcode.LDC2_W |
+             Opcode.INVOKESTATIC | Opcode.INVOKEVIRTUAL | Opcode.INVOKEINTERFACE |
+             Opcode.GETSTATIC =>
+          codeIterator.u16bitAt(offset + 1)
+        case Opcode.GOTO |
              Opcode.IFEQ | Opcode.IFNE | Opcode.IFLT |
              Opcode.IFGE | Opcode.IFGT | Opcode.IFLE |
-             Opcode.IFNULL | Opcode.IFNONNULL |
-             Opcode.INVOKESTATIC | Opcode.INVOKEVIRTUAL |
-             Opcode.GETSTATIC => 3
-        case Opcode.ALOAD | Opcode.DLOAD | Opcode.FLOAD |
-             Opcode.ILOAD | Opcode.LLOAD | Opcode.LDC => 2
-        case Opcode.INVOKEINTERFACE => 5
-        case _ => 1
+             Opcode.IFNULL | Opcode.IFNONNULL =>
+          codeIterator.s16bitAt(offset + 1)
+        case _ => 0
       }
+      Instruction(opcode, operand)
     }
   }
 
@@ -1563,9 +1573,11 @@ case class CatalystExpressionBuilder(private val function: AnyRef) {
     succ: Map[BB, List[BB]])
   object CFG {
     def apply(lambdaReflection: LambdaReflection): CFG = {
-      val code = lambdaReflection.getCode
-      val (labels, edges) = collectLabelsAndEdges(code)
-      val instructionTable = createInstructionTable(code)
+      val codeIterator = lambdaReflection.codeIterator
+      codeIterator.begin()
+      val (labels, edges) = collectLabelsAndEdges(codeIterator)
+      codeIterator.begin()
+      val instructionTable = createInstructionTable(codeIterator)
       val (basicBlocks, offsetToBB) = createBasicBlocks(labels,
                                                         instructionTable)
       val (pred, succ) = connectBasicBlocks(basicBlocks, offsetToBB, edges)
@@ -1574,33 +1586,31 @@ case class CatalystExpressionBuilder(private val function: AnyRef) {
 
     @tailrec
     private def collectLabelsAndEdges(
-        code: Array[Byte],
-        offset: Int = 0,
+        codeIterator: CodeIterator,
         labels: SortedSet[Int] = SortedSet(),
         edges: SortedMap[Int, List[Int]] = SortedMap())
         : (SortedSet[Int], SortedMap[Int, List[Int]]) = {
-      if (offset < code.length) {
-        val opcode = Opcode.get(byteToUnsigned(code(offset)))
-        val nextOffset = offset + Instruction.size(opcode)
+      if (codeIterator.hasNext) {
+        val offset = codeIterator.next
+        val nextOffset = codeIterator.lookAhead
+        val opcode = codeIterator.byteAt(offset)
         opcode match {
           case Opcode.IFEQ | Opcode.IFNE | Opcode.IFLT | Opcode.IFGE |
                Opcode.IFGT | Opcode.IFLE | Opcode.IFNULL | Opcode.IFNONNULL => {
             val falseOffset = nextOffset
-            val trueOffset = offset + bytesToInt(Array(code(offset + 1),
-                                                       code(offset + 2)))
+            val trueOffset = offset + codeIterator.s16bitAt(offset + 1)
             collectLabelsAndEdges(
-              code, nextOffset,
+              codeIterator,
               labels + falseOffset + trueOffset,
               edges + (offset -> List(falseOffset, trueOffset)))
           }
           case Opcode.GOTO =>
-            val labelOffset = offset + bytesToInt(Array(code(offset + 1),
-                                                        code(offset + 2)))
+            val labelOffset = offset + codeIterator.s16bitAt(offset + 1)
             collectLabelsAndEdges(
-              code, nextOffset,
+              codeIterator,
               labels + labelOffset,
               edges + (offset -> List(labelOffset)))
-          case _ => collectLabelsAndEdges(code, nextOffset, labels, edges)
+          case _ => collectLabelsAndEdges(codeIterator, labels, edges)
         }
       } else {
         (labels, edges)
@@ -1609,16 +1619,14 @@ case class CatalystExpressionBuilder(private val function: AnyRef) {
 
     @tailrec
     private def createInstructionTable(
-        code: Array[Byte],
-        offset: Int = 0,
+        codeIterator: CodeIterator,
         instructionTable: SortedMap[Int, Instruction] = SortedMap())
         : SortedMap[Int, Instruction] = {
-      if (offset < code.length) {
-        val opcode = Opcode.get(byteToUnsigned(code(offset)))
-        val nextOffset = offset + Instruction.size(opcode)
-        val instruction = Instruction(opcode,
-                                      code.slice(offset + 1, nextOffset))
-        createInstructionTable(code, nextOffset,
+      if (codeIterator.hasNext) {
+        val offset = codeIterator.next
+        val nextOffset = codeIterator.lookAhead
+        val instruction = Instruction(codeIterator, offset)
+        createInstructionTable(codeIterator,
                                instructionTable + (offset -> instruction))
       } else {
         instructionTable
@@ -1675,119 +1683,82 @@ case class CatalystExpressionBuilder(private val function: AnyRef) {
           succ + (src -> dst))
       }
     }
-
   }
 
   //
   // JVMCI
   //
-  case class LambdaReflection(private val anonfun: HotSpotResolvedJavaMethod) {
+  case class LambdaReflection(private val classPool: ClassPool,
+                              private val serializedLambda: SerializedLambda) {
     def lookupConstant(constPoolIndex: Int): Any = {
-      val constant = anonfun.getConstantPool.lookupConstant(constPoolIndex)
-      if (constant.isInstanceOf[PrimitiveConstant]) {
-        constant.asInstanceOf[PrimitiveConstant].asBoxedPrimitive
-      } else if (constant.isInstanceOf[HotSpotObjectConstant]) {
-        val objectConstant = constant.asInstanceOf[HotSpotObjectConstant]
-        if (objectConstant.isInternedString) {
-          objectConstant.asObject(classOf[String])
-        } else {
-          throw new SparkException(
-            "Unsupported object constant: " + objectConstant)
-        }
-      } else {
-        throw new SparkException("Unsupported constant: " + constant)
+      constPool.getTag(constPoolIndex) match {
+        case ConstPool.CONST_Integer => constPool.getIntegerInfo(constPoolIndex)
+        case ConstPool.CONST_Long => constPool.getLongInfo(constPoolIndex)
+        case ConstPool.CONST_Float => constPool.getFloatInfo(constPoolIndex)
+        case ConstPool.CONST_Double => constPool.getDoubleInfo(constPoolIndex)
+        case ConstPool.CONST_String => constPool.getStringInfo(constPoolIndex)
+        case _ => throw new SparkException("Unsupported constant")
       }
     }
 
-    def lookupField(constPoolIndex: Int, opcode: Opcode): jdk.vm.ci.meta.JavaField = {
-      anonfun.getConstantPool.lookupField(constPoolIndex, anonfun, opcode.opcode)
+    def lookupField(constPoolIndex: Int): CtField = {
+      if (constPool.getTag(constPoolIndex) != ConstPool.CONST_Fieldref) {
+        throw new SparkException("Unexpected index for field reference")
+      }
+      val fieldName = constPool.getFieldrefName(constPoolIndex)
+      val descriptor = constPool.getFieldrefType(constPoolIndex)
+      val className = constPool.getFieldrefClassName(constPoolIndex)
+      classPool.getCtClass(className).getField(fieldName, descriptor)
     }
 
-    def lookupMethod(constPoolIndex: Int, opcode: Opcode): jdk.vm.ci.meta.JavaMethod = {
-      anonfun.getConstantPool.lookupMethod(constPoolIndex, opcode.opcode)
+    def lookupMethod(constPoolIndex: Int): CtMethod = {
+      if (constPool.getTag(constPoolIndex) != ConstPool.CONST_Methodref) {
+        throw new SparkException("Unexpected index for method reference")
+      }
+      val methodName = constPool.getMethodrefName(constPoolIndex)
+      val descriptor = constPool.getMethodrefType(constPoolIndex)
+      val className = constPool.getMethodrefClassName(constPoolIndex)
+      classPool.getCtClass(className)
+               .getDeclaredMethod(methodName,
+                                  Descriptor.getParameterTypes(descriptor,
+                                                               classPool))
     }
-    // scalastyle:off
-    def getCode = anonfun.getCode
 
-    def getParameters = anonfun.getParameters
+    private val ctClass = {
+      val name = serializedLambda.getCapturingClass.replace('/', '.')
+      classPool.insertClassPath(new ClassClassPath(classForName(name)))
+      classPool.getCtClass(name)
+    }
 
-    def getMaxLocals = anonfun.getMaxLocals
-    // scalastyle:on
+    private val ctMethod = {
+      val lambdaImplName = serializedLambda.getImplMethodName
+      ctClass.getDeclaredMethod(lambdaImplName.stripSuffix("$adapted"))
+    }
+
+    private val methodInfo = ctMethod.getMethodInfo
+
+    private val constPool = methodInfo.getConstPool
+
+    private val codeAttribute = methodInfo.getCodeAttribute
+
+    lazy val codeIterator = codeAttribute.iterator
+
+    lazy val parameters = ctMethod.getParameterTypes
+
+    lazy val maxLocals = codeAttribute.getMaxLocals
   }
   object LambdaReflection {
     def apply(function: AnyRef): LambdaReflection = {
+      // Reference for the use of SerialziedLambda to detect the lambda body:
+      // getSerializedLambda in
+      // spark/core/src/main/scala/org/apache/spark/util/ClosureCleaner.scala
       val functionClass = function.getClass
-      val applyMethod = functionClass.getMethods.find { x =>
-        x.getName.equals("apply") && x.getReturnType == classOf[Any]
-      }.get
-      LambdaReflection(getAnonfun(applyMethod, functionClass))
-    }
-
-    @tailrec
-    private def getAnonfun(
-        method: Method,
-        lambdaClass: Class[_]): HotSpotResolvedJavaMethod = {
-      val hsmap = HotSpotJVMCIRuntime.runtime.getHostJVMCIBackend.getMetaAccess
-      val name = method.getName
-      val hsMethod = hsmap.lookupJavaMethod(method)
-                          .asInstanceOf[HotSpotResolvedJavaMethod]
-      if (name.startsWith("$anonfun$") && !name.endsWith("adapted")) {
-        hsMethod
-      } else {
-        getAnonfun(
-          getTarget(
-            lambdaClass,
-            (x: Int) => byteToUnsigned(hsMethod.getCode()(x)),
-            hsMethod.getConstantPool,
-            0),
-          lambdaClass)
-      }
-    }
-
-    @tailrec
-    private def getTarget(
-        lambdaClass: Class[_],
-        getByte: Int => Int,
-        constantPool: ConstantPool,
-        offset: Int): Method = {
-      val opcode = Opcode.get(getByte(offset))
-      opcode match {
-        case Opcode.INVOKESTATIC |
-             Opcode.INVOKEINTERFACE |
-             Opcode.INVOKEVIRTUAL => {
-          val constPoolIndex = (getByte(offset + 1) << 8) | getByte(offset + 2)
-          val hsMethod = constantPool.lookupMethod(constPoolIndex,
-                                                   opcode.opcode)
-          val targetName = hsMethod.getName
-          if (targetName.startsWith("$anonfun$")) {
-            val declaringClassName = hsMethod.getDeclaringClass.toJavaName
-            // scalastyle:off classforname
-            Class.forName(declaringClassName, true, lambdaClass.getClassLoader)
-                 .getMethods.find(_.getName.equals(targetName))
-                 .get
-            // scalastyle:on classforname
-          } else if (targetName.startsWith("apply")) {
-            lambdaClass.getMethods.find(_.getName.equals(targetName)).get
-          } else {
-            getTarget(lambdaClass, getByte, constantPool,
-                      offset + Instruction.size(opcode))
-          }
-        }
-        case _ => getTarget(lambdaClass, getByte, constantPool,
-                            offset + Instruction.size(opcode))
-      }
-    }
-  }
-
-  //
-  // Helper functions
-  //
-  private def byteToUnsigned(byte: Byte): Int = {
-    byte & 0xff
-  }
-  private def bytesToInt(bytes: Array[Byte]): Int = {
-    bytes.tail.foldLeft(byteToUnsigned(bytes.head)) { (i, b) =>
-      (i << 8) | byteToUnsigned(b)
+      val writeReplace = functionClass.getDeclaredMethod("writeReplace")
+      writeReplace.setAccessible(true)
+      val serializedLambda = writeReplace.invoke(function)
+                                         .asInstanceOf[SerializedLambda]
+      val classPool = ClassPool.getDefault
+      LambdaReflection(classPool, serializedLambda)
     }
   }
 }

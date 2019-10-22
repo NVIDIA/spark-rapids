@@ -117,18 +117,6 @@ abstract class AbstractCommandBuilder {
       }
     }
 
-    cmd.addAll(Arrays.asList(
-      "-XX:+UnlockExperimentalVMOptions",
-      "-XX:+EnableJVMCI",
-      "-XX:+UseJVMCICompiler",
-      "--add-modules",
-      "jdk.internal.vm.ci",
-      "--add-exports",
-      "jdk.internal.vm.ci/jdk.vm.ci.hotspot=ALL-UNNAMED",
-      "--add-exports",
-      "jdk.internal.vm.ci/jdk.vm.ci.meta=ALL-UNNAMED",
-      "--add-exports",
-      "jdk.internal.vm.ci/jdk.vm.ci.runtime=ALL-UNNAMED"));
     cmd.add("-cp");
     cmd.add(join(File.pathSeparator, buildClassPath(extraClassPath)));
     return cmd;
