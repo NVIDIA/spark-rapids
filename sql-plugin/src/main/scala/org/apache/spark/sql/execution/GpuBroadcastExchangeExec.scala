@@ -16,15 +16,15 @@
 
 package org.apache.spark.sql.execution
 
-import java.io.{ObjectInputStream, ObjectOutputStream}
+import java.io._
 import java.util.concurrent._
 import java.util.UUID
 
 import scala.concurrent.{ExecutionContext, Promise}
 import scala.util.control.NonFatal
 
-import ai.rapids.cudf.{JCudfSerialization, NvtxColor, NvtxRange}
-import ai.rapids.spark.{ConcatAndConsumeAll, ConfKeysAndIncompat, GpuColumnVector, GpuExec, MetricRange, NvtxWithMetrics, RapidsConf, RapidsMeta, SparkPlanMeta}
+import ai.rapids.cudf.{HostMemoryBuffer, JCudfSerialization, NvtxColor, NvtxRange}
+import ai.rapids.spark._
 import ai.rapids.spark.GpuMetricNames._
 import ai.rapids.spark.RapidsPluginImplicits._
 import com.google.common.util.concurrent.ThreadFactoryBuilder
@@ -34,42 +34,119 @@ import org.apache.spark.launcher.SparkLauncher
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.plans.physical.{BroadcastMode, BroadcastPartitioning, Partitioning}
 import org.apache.spark.sql.catalyst.InternalRow
-import org.apache.spark.sql.execution.exchange.{BroadcastExchangeExec, Exchange, ShuffleExchangeExec}
+import org.apache.spark.sql.catalyst.expressions.Attribute
+import org.apache.spark.sql.execution.exchange.{BroadcastExchangeExec, Exchange}
 import org.apache.spark.sql.execution.joins.BroadcastHashJoinExec
 import org.apache.spark.sql.execution.metric.SQLMetrics
 import org.apache.spark.sql.internal.{SQLConf, StaticSQLConf}
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
 @SerialVersionUID(100L)
-class SerializableGpuColumnarBatch(var batch: ColumnarBatch, val closeAfterSerialize: Boolean)
+class SerializeConcatHostBuffersDeserializeBatch(
+    private val data: Array[SerializeBatchDeserializeHostBuffer],
+    private val output: Seq[Attribute])
   extends Serializable with AutoCloseable {
+  @transient private val headers = data.map(_.header)
+  @transient private val buffers = data.map(_.buffer)
+  @transient private var batchInternal: ColumnarBatch = null
 
+  def batch: ColumnarBatch = {
+    if (batchInternal == null) {
+      // TODO we should come up with a better way for this to happen directly...
+      val out = new ByteArrayOutputStream()
+      val oout = new ObjectOutputStream(out)
+      writeObject(oout)
+      val barr = out.toByteArray
+      val oin = new ObjectInputStream(new ByteArrayInputStream(barr))
+      readObject(oin)
+    }
+    batchInternal
+  }
+
+  private def writeObject(out: ObjectOutputStream): Unit = {
+    if (headers.length == 0) {
+      import scala.collection.JavaConverters._
+      // We didn't get any data back, but we need to write out an empty table that matches
+      val empty = GpuColumnVector.emptyBatch(output.asJava)
+      try {
+        JCudfSerialization.writeToStream(GpuColumnVector.extractBases(empty), out, 0, 0)
+      } finally {
+        empty.close()
+      }
+    } else {
+      JCudfSerialization.writeConcatedStream(headers, buffers, out)
+    }
+  }
+
+  private def readObject(in: ObjectInputStream): Unit = {
+    val range = new NvtxRange("DeserializeBatch", NvtxColor.PURPLE)
+    try {
+      val table = JCudfSerialization.readTableFrom(in)
+      try {
+        // This is read as part of the broadcast join so we expect it to leak.
+        (0 until table.getNumberOfColumns).foreach(table.getColumn(_).noWarnLeakExpected())
+        this.batchInternal = GpuColumnVector.from(table)
+      } finally {
+        table.close()
+      }
+    } finally {
+      range.close()
+    }
+  }
+
+  def numRows: Int = {
+    if (batchInternal != null) {
+      batchInternal.numRows()
+    } else {
+      headers.map(_.getNumRows).sum
+    }
+  }
+
+  def dataSize: Long = {
+    if (batchInternal != null) {
+      val bases = GpuColumnVector.extractBases(batchInternal)
+      try {
+        JCudfSerialization.getSerializedSizeInBytes(bases, 0, batchInternal.numRows())
+      } finally {
+        bases.safeClose()
+      }
+    } else {
+      buffers.map(_.getLength).sum
+    }
+  }
+
+  override def close(): Unit = {
+    data.safeClose()
+    buffers.safeClose()
+    if (batchInternal != null) {
+      batchInternal.close()
+    }
+  }
+}
+
+@SerialVersionUID(100L)
+class SerializeBatchDeserializeHostBuffer(var batch: ColumnarBatch)
+  extends Serializable with AutoCloseable {
   @transient private var columns = GpuColumnVector.extractBases(batch)
+  @transient var header: JCudfSerialization.SerializedTableHeader = null
+  @transient var buffer: HostMemoryBuffer = null
 
   // Don't want them to be closed before we get a chance to read them
-  incRefCount()
-  if (!closeAfterSerialize) {
-    // We are going to leak because we will not close the batch after serializeing, so don't
-    // warn about it.
-    columns.foreach(_.noWarnLeakExpected())
-  }
-
-  def incRefCount(): SerializableGpuColumnarBatch = {
-    columns.foreach(_.incRefCount())
-    this
-  }
+  columns.foreach(_.incRefCount())
 
   private def writeObject(out: ObjectOutputStream): Unit = {
     val range = new NvtxRange("SerializeBatch", NvtxColor.PURPLE)
     try {
-      columns.foreach(_.ensureOnHost())
-      JCudfSerialization.writeToStream(columns, out, 0, batch.numRows)
-      // In some cases, like an RDD, we want to close the batch once it is serialized out or we will
-      // leak GPU memory (technically it will just wait for GC to release it and probably not a lot
-      // because this is used for a broadcast that really should be small)
-      // In the case of broadcast the life cycle of the object is tied to GC and there is no clean
-      // way to separate the two right now.  So we accept the leak.
-      if (closeAfterSerialize) {
+      if (buffer != null) {
+        throw new IllegalStateException("Cannot re-serialize a batch this way...")
+      } else {
+        columns.foreach(_.ensureOnHost())
+        JCudfSerialization.writeToStream(columns, out, 0, batch.numRows)
+        // In this case an RDD, we want to close the batch once it is serialized out or we will
+        // leak GPU memory (technically it will just wait for GC to release it and probably not a lot
+        // because this is used for a broadcast that really should be small)
+        // In the case of broadcast the life cycle of the object is tied to GC and there is no clean
+        // way to separate the two right now.  So we accept the leak.
         batch.close()
         batch = null
         columns = null
@@ -80,14 +157,23 @@ class SerializableGpuColumnarBatch(var batch: ColumnarBatch, val closeAfterSeria
   }
 
   private def readObject(in: ObjectInputStream): Unit = {
-    val range = new NvtxRange("DeserializeBatch", NvtxColor.PURPLE)
+    val range = new NvtxRange("HostDeserializeBatch", NvtxColor.PURPLE)
     try {
-      val table = JCudfSerialization.readTableFrom(in)
-      try {
-        this.batch = GpuColumnVector.from(table)
-        columns = GpuColumnVector.extractBases(batch)
-      } finally {
-        table.close()
+      val din = new DataInputStream(in)
+      header = new JCudfSerialization.SerializedTableHeader(din)
+      if (!header.wasInitialized()) {
+        throw new IllegalStateException("Could not read data")
+      }
+      buffer = HostMemoryBuffer.allocate(header.getDataLen)
+      // This one is a little odd. When deserialized this object is passed to
+      // SerializeConcatHostBuffersDeserializeBatch.  But we cannot close this (the input data)
+      // after serializing it because in local mode it is up to spark and GC if it is the same
+      // object, or if it tries to deserialize it, so that means we have to rely on GC to clean up
+      // this buffer too.
+      buffer.noWarnLeakExpected()
+      JCudfSerialization.readTableIntoBuffer(din, header, buffer)
+      if (!header.wasDataRead()) {
+        throw new IllegalStateException("Could not read data")
       }
     } finally {
       range.close()
@@ -106,6 +192,9 @@ class SerializableGpuColumnarBatch(var batch: ColumnarBatch, val closeAfterSeria
 
   override def close(): Unit = {
     columns.safeClose()
+    if (buffer != null) {
+      buffer.close()
+    }
   }
 }
 
@@ -185,29 +274,17 @@ case class GpuBroadcastExchangeExec(
             val collectRange = new NvtxWithMetrics("broadcast collect", NvtxColor.GREEN, collectTime)
             val batch = try {
               val data = child.executeColumnar().map(cb => try {
-                new SerializableGpuColumnarBatch(cb, true)
+                new SerializeBatchDeserializeHostBuffer(cb)
               } finally {
                 cb.close()
               })
-              // TODO this requires a GPU on the driver, which we do not want.  We should have a way
-              // to deserialize to just host memory.
-              val v = data.collect()
-              if (v.length == 1) {
-                val b = v(0).batch
-                // Wrap it in a new Serializable batch because they are single use
-                val ret = new SerializableGpuColumnarBatch(b, false)
-                b.close()
-                ret
-              } else {
-                val justBatches = v.map(_.batch).iterator
-                val c = ConcatAndConsumeAll(justBatches, output)
-                new SerializableGpuColumnarBatch(c, false)
-              }
+              val d = data.collect()
+              new SerializeConcatHostBuffersDeserializeBatch(d, output)
             } finally {
               collectRange.close()
             }
 
-            val numRows = batch.batch.numRows()
+            val numRows = batch.numRows
             if (numRows >= 512000000) {
               throw new SparkException(
                 s"Cannot broadcast the table with 512 million or more rows: $numRows rows")
@@ -218,8 +295,6 @@ case class GpuBroadcastExchangeExec(
             val buildRange = new NvtxWithMetrics("broadcast build", NvtxColor.DARK_GREEN, buildTime)
             try {
               //we only support hashjoin so this is a noop val relation = mode.transform(input, Some(numRows))
-
-              batch.ensureOnHost()
               val dataSize = batch.dataSize
 
               longMetric("dataSize") += dataSize
