@@ -23,6 +23,7 @@ import java.util.Collections
 
 import scala.collection.JavaConverters._
 import scala.collection.mutable.ArrayBuffer
+import scala.math.max
 
 import ai.rapids.cudf.{HostMemoryBuffer, NvtxColor, NvtxRange, ParquetOptions, Table, TimeUnit}
 import ai.rapids.spark.GpuMetricNames._
@@ -418,6 +419,7 @@ class ParquetPartitionReader(
     }
 
     val (dataBuffer, dataSize) = readPartFile(currentChunkedBlocks)
+    var maximum:Long = 0
     try {
       if (dataSize == 0) {
         None
@@ -428,7 +430,9 @@ class ParquetPartitionReader(
         val parseOpts = ParquetOptions.builder()
             .withTimeUnit(TimeUnit.MICROSECONDS)
             .includeColumn(readDataSchema.fieldNames:_*).build()
+
         val table = Table.readParquet(parseOpts, dataBuffer, 0, dataSize)
+        maximum = max(GpuColumnVector.getTotalDeviceMemoryUsed(table), maximum)
         val numColumns = table.getNumberOfColumns
         if (readDataSchema.length != numColumns) {
           table.close()
@@ -439,6 +443,7 @@ class ParquetPartitionReader(
         Some(table)
       }
     } finally {
+      metrics("peakDevMemory") += maximum
       dataBuffer.close()
     }
   }
