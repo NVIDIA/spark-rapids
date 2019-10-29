@@ -27,7 +27,31 @@ SPARK_SUBMIT_ARGS=" --class ai.rapids.sparkexamples.mortgage.Main \
     --jars $CUDF_JAR,$RAPIDS_PLUGIN_JAR \
     $RAPIDS_TEST_JAR"
 
-TEST_PARAMS="Spark3.0-ITs $PARQUET_PERF $PARQUET_ACQ $OUTPUT"
+if [ "$SPARK_VER"x == x ];then
+    SPARK_VER="3.0.0-SNAPSHOT"
+fi
+
+TEST_PARAMS="$SPARK_VER $PARQUET_PERF $PARQUET_ACQ $OUTPUT"
+
+# Download the latest Spark tgz file
+SPARK_ROOT="$WORKSPACE/spark"
+rm -rf $SPARK_ROOT
+mkdir -p $SPARK_ROOT
+#default maven server gpuwa
+if [ "$SERVER_URL"x == x ]; then
+    SERVER_URL="https://gpuwa.nvidia.com/artifactory/sw-spark-maven"
+fi
+SPARK_FILENAME="spark-$SPARK_VER-bin-hadoop3"
+SPARK_HOME="$SPARK_ROOT/$SPARK_FILENAME"
+mvn org.apache.maven.plugins:maven-dependency-plugin:2.8:get \
+    -B -Dmaven.repo.local=$WORKSPACE/.m2 \
+    -DremoteRepositories=$SERVER_URL \
+    -DgroupId=org.apache -DartifactId=spark -Dversion=$SPARK_VER \
+    -Dclassifier=bin-hadoop3 -Dpackaging=tar.gz -Ddest=$SPARK_ROOT && \
+    tar zxf $SPARK_HOME.tar.gz -C $SPARK_ROOT && \
+    rm -f $SPARK_HOME.tar.gz
+
+export PATH="$SPARK_HOME/bin:$SPARK_HOME/sbin:$PATH"
 
 #stop and restart SPARK ETL
 stop-slave.sh

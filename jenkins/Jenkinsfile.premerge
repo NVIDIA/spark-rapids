@@ -39,7 +39,7 @@ pipeline {
                 updateGitlabCommitStatus(name: 'Jenkins CI', state: "running")
                 script {
                     echo 'buiding ubuntu16 cuda10.0 ...'
-                    sh 'mvn -U clean package'
+                    sh 'mvn -U -B clean package'
                 }
             }
         }

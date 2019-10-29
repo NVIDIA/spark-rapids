@@ -37,7 +37,7 @@ pipeline {
             steps {
                 script {
                     echo 'buiding ubuntu16 cuda10.0 ...'
-                    sh 'mvn -U clean deploy'
+                    sh 'mvn -U -B clean deploy'
                 }
             }
         }
@@ -48,6 +48,7 @@ pipeline {
             script {
                 if (currentBuild.currentResult == "SUCCESS") {
                     build(job: 'spark/cudf10_plugin_integration',
+                          propagate: false,
                           parameters: [string(name: 'REF', value: 'branch-0.1'),
                                        string(name: 'CUDF_VER', value: '0.10-SNAPSHOT'),
                                        booleanParam(name: 'BUILD_CENTOS7', value: false),])
