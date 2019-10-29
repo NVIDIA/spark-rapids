@@ -20,8 +20,12 @@ pipeline {
             description: '-Dcudf.version=0.10-SNAPSHOT\n\n Default for cudf version')
         string(name: 'PROJECT_VER', defaultValue: '0.1-SNAPSHOT',
             description: 'Default project version 0.1-SNAPSHOT')
+        string(name: 'SPARK_VER', defaultValue: '3.0.0-SNAPSHOT',
+            description: 'Default spark version 3.0.0-SNAPSHOT')
         booleanParam(name: 'BUILD_CENTOS7', defaultValue: false,
             description: 'Whether enable centos7 build or not')
+        string(name: 'SERVER_URL', defaultValue: 'https://gpuwa.nvidia.com/artifactory/sw-spark-maven',
+            description: 'Default maven repo URL where to download Spark3.0 tar file.')
     }
 
     environment {
@@ -46,7 +50,7 @@ pipeline {
                     steps {
                         script {
                             echo 'Buiding rapids-plugin'
-                            sh "mvn clean package -Dmaven.repo.local=$WORKSPACE/.m2 -DskipTests"
+                            sh "mvn -U -B clean package -Dmaven.repo.local=$WORKSPACE/.m2 -DskipTests"
                             echo "Running integration tests on ubuntu16 cuda10.0"
                             sh "bash $TEST_SCRIPT $CUDF_VER cuda10"
                         }
@@ -67,7 +71,7 @@ pipeline {
                     steps {
                         script {
                             echo 'Buiding rapids-plugin'
-                            sh "mvn clean package -Dmaven.repo.local=$WORKSPACE/.m2 -DskipTests"
+                            sh "mvn -U -B clean package -Dmaven.repo.local=$WORKSPACE/.m2 -DskipTests"
                             echo "Running integration tests on ubuntu16 cuda9.2"
                             sh "bash $TEST_SCRIPT $CUDF_VER"
                         }
@@ -92,7 +96,7 @@ pipeline {
                     steps {
                         script {
                             echo 'Buiding rapids-plugin'
-                            sh "mvn clean package -Dmaven.repo.local=$WORKSPACE/.m2 -DskipTests"
+                            sh "mvn -U -B clean package -Dmaven.repo.local=$WORKSPACE/.m2 -DskipTests"
                             echo "Running integration tests on centos7 cuda10.0"
                             sh "bash $TEST_SCRIPT $CUDF_VER cuda10"
                         }
@@ -116,7 +120,7 @@ pipeline {
                     steps {
                         script {
                             echo 'Buiding rapids-plugin'
-                            sh "mvn clean package -Dmaven.repo.local=$WORKSPACE/.m2 -DskipTests"
+                            sh "mvn -U -B clean package -Dmaven.repo.local=$WORKSPACE/.m2 -DskipTests"
                             echo "Running integration tests on centos7 cuda9.2"
                             sh "bash $TEST_SCRIPT $CUDF_VER"
                         }

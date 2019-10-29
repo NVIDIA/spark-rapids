@@ -11,21 +11,3 @@ FROM nvidia/cuda:${CUDA_VER}-runtime-ubuntu16.04
 RUN apt-get update -y && \
     apt-get install -y maven \
     openjdk-8-jdk
-
-# Download the latest Spark3.0 tgz
-RUN mvn org.apache.maven.plugins:maven-dependency-plugin:2.8:get \
-    -DremoteRepositories=https://gpuwa.nvidia.com/artifactory/sw-spark-maven \
-    -DgroupId=org.apache -DartifactId=spark -Dversion=3.0.0-SNAPSHOT \
-    -Dclassifier=bin-hadoop3 -Dpackaging=tar.gz -Ddest=/usr/local && \
-    tar zxf /usr/local/spark-3.0.0-SNAPSHOT-bin-hadoop3.tar.gz -C /usr/local && \
-    rm -f /usr/local/spark-3.0.0-SNAPSHOT-bin-hadoop3.tar.gz
-
-# Change log level to ‘WARN’ for easily parsing the logs
-# Add all access to 'logs' and 'work' dir
-RUN mkdir /usr/local/spark-3.0.0-SNAPSHOT-bin-hadoop3/logs && \
-    chmod 777 /usr/local/spark-3.0.0-SNAPSHOT-bin-hadoop3/logs && \
-    mkdir /usr/local/spark-3.0.0-SNAPSHOT-bin-hadoop3/work && \
-    chmod 777 /usr/local/spark-3.0.0-SNAPSHOT-bin-hadoop3/work
-
-ENV SPARK_HOME "/usr/local/spark-3.0.0-SNAPSHOT-bin-hadoop3"
-ENV PATH "$SPARK_HOME/bin:$SPARK_HOME/sbin:$PATH"
