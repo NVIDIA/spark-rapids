@@ -22,7 +22,7 @@ spark.rapids.memory.gpu.debug|If memory management is enabled and this is true G
 spark.rapids.memory.pinnedPool.size|The size of the pinned memory pool in bytes unless otherwise specified. Use 0 to disable the pool.|0
 spark.rapids.sql.batchSizeRows|Set the target number of rows for a GPU batch. Splits sizes for input data is covered by separate configs.|1000000
 spark.rapids.sql.enabled|Enable (true) or disable (false) sql operations on the GPU|true
-spark.rapids.sql.explain|Explain why some parts of a query were not placed on a GPU|false
+spark.rapids.sql.explain|Explain why some parts of a query were not placed on a GPU or not. Possible values are ALL: print everything, NONE: print nothing, NOT_ON_GPU: print only did not go on the GPU|NONE
 spark.rapids.sql.hasNans|Config to indicate if your data has NaN's. Cudf doesn't currently support NaN's properly so you can get corrupt data if you have NaN's in your data and it runs on the GPU.|true
 spark.rapids.sql.incompatibleOps.enabled|For operations that work, but are not 100% compatible with the Spark equivalent set if they should be enabled by default or disabled by default.|false
 spark.rapids.sql.reader.batchSizeRows|Maximum number of rows the reader reads at a time|2147483647
