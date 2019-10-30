@@ -70,11 +70,12 @@ class GpuResourceManager extends ExecutorPlugin with Logging {
   var loggingEnabled = false
 
   override def init(pluginContext: ExecutorPluginContext): Unit = synchronized {
+    val env = SparkEnv.get
+    val conf = new spark.RapidsConf(env.conf)
+
     // We eventually will need a way to know which GPU to use/etc, but for now, we will just
     // go with the default GPU.
     if (!Rmm.isInitialized) {
-      val env = SparkEnv.get
-      val conf = new spark.RapidsConf(env.conf)
       loggingEnabled = conf.isMemDebugEnabled
       val info = Cuda.memGetInfo()
       val initialAllocation = info.free / 4
@@ -90,11 +91,15 @@ class GpuResourceManager extends ExecutorPlugin with Logging {
         PinnedMemoryPool.initialize(conf.pinnedPoolSize)
       }
     }
+
+    GpuSemaphore.initialize(conf.concurrentGpuTasks)
   }
 
   override def shutdown(): Unit = {
     if (loggingEnabled) {
       logWarning(s"RMM LOG\n${Rmm.getLog}")
     }
+
+    GpuSemaphore.shutdown()
   }
 }

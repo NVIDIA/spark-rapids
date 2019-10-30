@@ -56,6 +56,7 @@ import org.apache.spark.sql.connector.read.{InputPartition, PartitionReader, Par
 import org.apache.spark.sql.types.StructType
 import org.apache.spark.sql.util.CaseInsensitiveStringMap
 import org.apache.spark.sql.vectorized.ColumnarBatch
+import org.apache.spark.TaskContext
 
 case class GpuOrcScan(
     sparkSession: SparkSession,
@@ -652,6 +653,10 @@ class GpuOrcPartitionReader(
             .withTimeUnit(TimeUnit.MICROSECONDS)
             .withNumPyTypes(false)
             .includeColumn(includedColumns:_*).build()
+
+        // about to start using the GPU
+        GpuSemaphore.acquireIfNecessary(TaskContext.get())
+
         val table = Table.readORC(parseOpts, dataBuffer, 0, dataSize)
         val numColumns = table.getNumberOfColumns
         if (readDataSchema.length != numColumns) {

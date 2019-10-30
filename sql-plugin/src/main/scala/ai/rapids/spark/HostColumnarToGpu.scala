@@ -25,6 +25,7 @@ import org.apache.spark.sql.execution.{SparkPlan, UnaryExecNode}
 import org.apache.spark.sql.execution.metric.{SQLMetric, SQLMetrics}
 import org.apache.spark.sql.types.StructType
 import org.apache.spark.sql.vectorized.{ColumnarBatch, ColumnVector}
+import org.apache.spark.TaskContext
 
 object HostColumnarToGpu {
   def columnarCopy(cv: ColumnVector, b: ai.rapids.cudf.ColumnVector.Builder,
@@ -162,7 +163,12 @@ class HostToGpuCoalesceIterator(iter: Iterator[ColumnarBatch],
     totalRows += rows
   }
 
-  override def concatAllAndPutOnGPU(): ColumnarBatch = batchBuilder.build(totalRows)
+  override def concatAllAndPutOnGPU(): ColumnarBatch = {
+    // About to place data back on the GPU
+    GpuSemaphore.acquireIfNecessary(TaskContext.get())
+
+    batchBuilder.build(totalRows)
+  }
 
   override def cleanupConcatIsDone(): Unit = {
     if (batchBuilder != null) {

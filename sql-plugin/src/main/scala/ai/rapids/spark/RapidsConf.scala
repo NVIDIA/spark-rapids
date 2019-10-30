@@ -176,6 +176,14 @@ object RapidsConf {
     .booleanConf
     .createWithDefault(false)
 
+  val CONCURRENT_GPU_TASKS = conf("spark.rapids.sql.concurrentGpuTasks")
+      .doc("Set the number of tasks that can execute concurrently per GPU. " +
+          "Tasks may temporarily block when the number of concurrent tasks in the executor " +
+          "exceeds this amount. Allowing too many concurrent tasks on the same GPU may lead to " +
+          "GPU out of memory errors.")
+      .integerConf
+      .createWithDefault(1)
+
   val GPU_BATCH_SIZE_ROWS = conf("spark.rapids.sql.batchSizeRows")
     .doc("Set the target number of rows for a GPU batch. Splits sizes for input data " +
       "is covered by separate configs.")
@@ -320,13 +328,13 @@ object RapidsConf {
     registeredConfs.sortBy(_.key).foreach(_.help(asTable))
     if (asTable) {
       println("")
-      println("""## Fine Tunning
+      println("""## Fine Tuning
         |_Rapids Plugin 4 Spark_ can be further configured to enable or disable specific
         |expressions and to control what parts of the query execute using the GPU or
         |the CPU.
         |
-        |Please leverage the `spark.rapids.sql.explain` setting to get feeback from the
-        |plugin as to why parts of a query may not be executing in the GPU.
+        |Please leverage the `spark.rapids.sql.explain` setting to get feedback from the
+        |plugin as to why parts of a query may not be executing on the GPU.
         |
         |**NOTE:** Setting `spark.rapids.sql.incompatibleOps.enabled=true` will enable all
         |the settings in the table below which are not enabled by default due to
@@ -373,6 +381,8 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
   lazy val isIncompatEnabled: Boolean = get(INCOMPATIBLE_OPS)
 
   lazy val pinnedPoolSize: Long = get(PINNED_POOL_SIZE)
+
+  lazy val concurrentGpuTasks: Int = get(CONCURRENT_GPU_TASKS)
 
   lazy val isTestEnabled: Boolean = get(TEST_CONF)
 

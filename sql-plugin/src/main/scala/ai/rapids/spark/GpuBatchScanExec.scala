@@ -49,6 +49,7 @@ import org.apache.spark.sql.execution.metric.{SQLMetric, SQLMetrics}
 import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.util.CaseInsensitiveStringMap
 import org.apache.spark.sql.vectorized.ColumnarBatch
+import org.apache.spark.TaskContext
 
 
 class GpuSerializableConfiguration(@transient var value: Configuration)
@@ -412,6 +413,10 @@ class CSVPartitionReader(
           readDataSchema
         }
         val csvOpts = buildCsvOptions(parsedOptions, newReadDataSchema, hasHeader)
+
+        // about to start using the GPU
+        GpuSemaphore.acquireIfNecessary(TaskContext.get())
+
         val table = Table.readCSV(csvSchemaBuilder.build(), csvOpts, dataBuffer, 0, dataSize)
         val numColumns = table.getNumberOfColumns
         if (newReadDataSchema.length != numColumns) {
