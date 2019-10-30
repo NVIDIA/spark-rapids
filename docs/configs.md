@@ -21,6 +21,7 @@ Name | Description | Default Value
 spark.rapids.memory.gpu.debug|If memory management is enabled and this is true GPU memory allocations are tracked and printed out when the process exits.  This should not be used in production.|false
 spark.rapids.memory.pinnedPool.size|The size of the pinned memory pool in bytes unless otherwise specified. Use 0 to disable the pool.|0
 spark.rapids.sql.batchSizeRows|Set the target number of rows for a GPU batch. Splits sizes for input data is covered by separate configs.|1000000
+spark.rapids.sql.concurrentGpuTasks|Set the number of tasks that can execute concurrently per GPU. Tasks may temporarily block when the number of concurrent tasks in the executor exceeds this amount. Allowing too many concurrent tasks on the same GPU may lead to GPU out of memory errors.|1
 spark.rapids.sql.enabled|Enable (true) or disable (false) sql operations on the GPU|true
 spark.rapids.sql.explain|Explain why some parts of a query were not placed on a GPU|false
 spark.rapids.sql.hasNans|Config to indicate if your data has NaN's. Cudf doesn't currently support NaN's properly so you can get corrupt data if you have NaN's in your data and it runs on the GPU.|true
@@ -31,13 +32,13 @@ spark.rapids.sql.stringHashGroupBy.enabled|Config to allow grouping by strings u
 spark.rapids.sql.totalOrderSort.enabled|Allow for total ordering sort where the partitioning runs on CPU and sort runs on GPU.|false
 spark.rapids.sql.variableFloatAgg.enabled|Spark assumes that all operations produce the exact same result each time. This is not true for some floating point aggregations, which can produce slightly different results on the GPU as the aggregation is done in parallel.  This can enable those operations if you know the query is only computing it once.|false
 
-## Fine Tunning
+## Fine Tuning
 _Rapids Plugin 4 Spark_ can be further configured to enable or disable specific
 expressions and to control what parts of the query execute using the GPU or
 the CPU.
 
-Please leverage the `spark.rapids.sql.explain` setting to get feeback from the
-plugin as to why parts of a query may not be executing in the GPU.
+Please leverage the `spark.rapids.sql.explain` setting to get feedback from the
+plugin as to why parts of a query may not be executing on the GPU.
 
 **NOTE:** Setting `spark.rapids.sql.incompatibleOps.enabled=true` will enable all
 the settings in the table below which are not enabled by default due to

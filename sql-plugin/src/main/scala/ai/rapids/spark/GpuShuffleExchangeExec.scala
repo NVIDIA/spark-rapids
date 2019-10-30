@@ -22,7 +22,7 @@ import scala.collection.mutable.ArrayBuffer
 import ai.rapids.cudf.{ColumnVector, DType, HashFunction, NvtxColor, NvtxRange, Table}
 import ai.rapids.spark.RapidsPluginImplicits._
 
-import org.apache.spark.ShuffleDependency
+import org.apache.spark.{ShuffleDependency, TaskContext}
 import org.apache.spark.rdd.RDD
 import org.apache.spark.serializer.Serializer
 import org.apache.spark.sql.catalyst.errors._
@@ -308,7 +308,11 @@ case class GpuHashPartitioning(expressions: Seq[GpuExpression], numPartitions: I
   def sliceInternal(batch: ColumnarBatch, partitionIndexes: Array[Int],
       partitionColumns: Array[GpuColumnVector]): Array[ColumnarBatch] = {
     // We are slicing the data but keeping the old in place, so copy to the CPU now
-    partitionColumns.foreach(_.getBase.ensureOnHost())
+    partitionColumns.foreach(_.getBase.dropDeviceData())
+
+    // Leaving the GPU for a while
+    GpuSemaphore.releaseIfNecessary(TaskContext.get())
+
     val ret = new Array[ColumnarBatch](numPartitions)
     var start = 0
     for (i <- 1 until numPartitions) {

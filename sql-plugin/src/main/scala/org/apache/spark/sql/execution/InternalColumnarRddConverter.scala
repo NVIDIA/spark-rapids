@@ -17,7 +17,7 @@
 package org.apache.spark.sql.execution
 
 import ai.rapids.cudf.Table
-import ai.rapids.spark.{CoalesceGoal, GpuColumnVector, GpuOverrides, RapidsConf, TargetSize}
+import ai.rapids.spark.{CoalesceGoal, GpuColumnVector, GpuOverrides, GpuSemaphore, RapidsConf, TargetSize}
 import ai.rapids.spark.GpuColumnVector.GpuColumnarBatchBuilder
 
 import org.apache.spark.rdd.{MapPartitionsRDD, RDD}
@@ -308,6 +308,9 @@ private class ExternalRowToColumnarIterator(
       if (rowIter.hasNext && (rowCount + 1L) > localGoal.targetSize) {
         localGoal.whenTargetExceeded(rowCount + 1L)
       }
+
+      // About to place data back on the GPU
+      GpuSemaphore.acquireIfNecessary(TaskContext.get())
 
       val ret = builders.build(rowCount)
       // The returned batch will be closed by the consumer of it
