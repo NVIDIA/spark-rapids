@@ -162,29 +162,52 @@ object RapidsConf {
     new ConfBuilder(key, register)
   }
 
-  val EXPORT_COLUMNAR_RDD = conf("spark.sql.rapids.export_columnar_rdd")
+  // Resource Configuration
+
+  val PINNED_POOL_SIZE = conf("spark.rapids.memory.pinnedPool.size")
+    .doc("The size of the pinned memory pool in bytes unless otherwise specified. " +
+      "Use 0 to disable the pool.")
+    .bytesConf(ByteUnit.BYTE)
+    .createWithDefault(0)
+
+  val MEM_DEBUG = conf("spark.rapids.memory.gpu.debug")
+    .doc("If memory management is enabled and this is true GPU memory allocations are " +
+      "tracked and printed out when the process exits.  This should not be used in production.")
+    .booleanConf
+    .createWithDefault(false)
+
+  val GPU_BATCH_SIZE_ROWS = conf("spark.rapids.sql.batchSizeRows")
+    .doc("Set the target number of rows for a GPU batch. Splits sizes for input data " +
+      "is covered by separate configs.")
+    .integerConf
+    .createWithDefault(1000000)
+
+  val MAX_READER_BATCH_SIZE = conf("spark.rapids.sql.reader.batchSizeRows")
+    .doc("Maximum number of rows the reader reads at a time")
+    .integerConf
+    .createWithDefault(Integer.MAX_VALUE)
+
+  // Internal Features
+
+  val EXPORT_COLUMNAR_RDD = conf("spark.rapids.sql.exportColumnarRdd")
     .doc("Spark has no simply way to export columnar RDD data.  This turns on special " +
       "processing/tagging that allows the RDD to be picked back apart into a Columnar RDD.")
     .internal()
     .booleanConf
     .createWithDefault(false)
 
+  // ENABLE/DISABLE PROCESSING
+
   val SQL_ENABLED = conf("spark.rapids.sql.enabled")
     .doc("Enable (true) or disable (false) sql operations on the GPU")
     .booleanConf
     .createWithDefault(true)
 
-  val INCOMPATIBLE_OPS = conf("spark.rapids.sql.incompatible_ops")
+  val INCOMPATIBLE_OPS = conf("spark.rapids.sql.incompatibleOps.enabled")
     .doc("For operations that work, but are not 100% compatible with the Spark equivalent " +
       "set if they should be enabled by default or disabled by default.")
     .booleanConf
     .createWithDefault(false)
-
-  val PINNED_POOL_SIZE = conf("spark.rapids.sql.pinned-pool-size")
-      .doc("The size of the pinned memory pool in bytes unless otherwise specified. " +
-          "Use 0 to disable the pool.")
-      .bytesConf(ByteUnit.BYTE)
-      .createWithDefault(0)
 
   val HAS_NANS = conf("spark.rapids.sql.hasNans")
     .doc("Config to indicate if your data has NaN's. Cudf doesn't " +
@@ -193,13 +216,7 @@ object RapidsConf {
     .booleanConf
     .createWithDefault(true)
 
-  val GPU_BATCH_SIZE_ROWS = conf("spark.rapids.sql.batchSizeRows")
-    .doc("Set the target number of rows for a GPU batch. Splits sizes for input data " +
-      "is covered by separate configs.")
-    .integerConf
-    .createWithDefault(1000000)
-
-  val ALLOW_FLOAT_AGG = conf("spark.rapids.sql.allowVariableFloatAgg")
+  val ENABLE_FLOAT_AGG = conf("spark.rapids.sql.variableFloatAgg.enabled")
     .doc("Spark assumes that all operations produce the exact same result each time. " +
       "This is not true for some floating point aggregations, which can produce slightly " +
       "different results on the GPU as the aggregation is done in parallel.  This can enable " +
@@ -207,13 +224,26 @@ object RapidsConf {
     .booleanConf
     .createWithDefault(false)
 
-  val STRING_GPU_HASH_GROUP_BY_ENABLED = conf("spark.rapids.sql.enableStringHashGroupBy")
-    .doc("Config to allow grouping by strings using the GPU in the hash aggregate. Currently they are " +
-      "really slow")
+  val STRING_GPU_HASH_GROUP_BY_ENABLED = conf("spark.rapids.sql.stringHashGroupBy.enabled")
+    .doc("Config to allow grouping by strings using the GPU in the hash aggregate. " +
+      "Currently they are really slow")
     .booleanConf
     .createWithDefault(false)
 
-  val TEST_CONF = conf("spark.rapids.sql.testing")
+  val ENABLE_TOTAL_ORDER_SORT = conf("spark.rapids.sql.totalOrderSort.enabled")
+    .doc("Allow for total ordering sort where the partitioning runs on CPU and " +
+      "sort runs on GPU.")
+    .booleanConf
+    .createWithDefault(false)
+
+  val ENABLE_REPLACE_SORTMERGEJOIN = conf("spark.rapids.sql.replaceSortMergeJoin.enabled")
+    .doc("Allow replacing sortMergeJoin with HashJoin")
+    .booleanConf
+    .createWithDefault(true)
+
+  // INTERNAL TEST AND DEBUG CONFIGS
+
+  val TEST_CONF = conf("spark.rapids.sql.test.enabled")
     .doc("Intended to be used by unit tests, if enabled all operations must run on the GPU " +
       "or an error happens.")
     .internal()
@@ -228,35 +258,19 @@ object RapidsConf {
     .toSequence
     .createWithDefault(Nil)
 
-  val EXPLAIN = conf("spark.rapids.sql.explain")
-    .doc("Explain why some parts of a query were not placed on a GPU")
-    .booleanConf
-    .createWithDefault(false)
-
-  val MEM_DEBUG = conf("spark.rapids.memory_debug")
-    .doc("If memory management is enabled and this is true GPU memory allocations are " +
-      "tracked and printed out when the process exits.  This should not be used in production.")
-    .booleanConf
-    .createWithDefault(false)
-
-  val MAX_READER_BATCH_SIZE = conf("spark.rapids.sql.maxReaderBatchSize")
-    .doc("Maximum number of rows the reader reads at a time")
-    .integerConf
-    .createWithDefault(Integer.MAX_VALUE)
-
-  val PARQUET_DEBUG_DUMP_PREFIX = conf("spark.rapids.sql.parquet.debug-dump-prefix")
+  val PARQUET_DEBUG_DUMP_PREFIX = conf("spark.rapids.sql.parquet.debug.dumpPrefix")
       .doc("A path prefix where Parquet split file data is dumped for debugging.")
       .internal()
       .stringConf
       .createWithDefault(null)
 
-  val ORC_DEBUG_DUMP_PREFIX = conf("spark.rapids.sql.orc.debug-dump-prefix")
+  val ORC_DEBUG_DUMP_PREFIX = conf("spark.rapids.sql.orc.debug.dumpPrefix")
       .doc("A path prefix where ORC split file data is dumped for debugging.")
       .internal()
       .stringConf
       .createWithDefault(null)
 
-  val HASH_AGG_REPLACE_MODE = conf("spark.rapids.sql.exec.hash-agg-mode-to-replace")
+  val HASH_AGG_REPLACE_MODE = conf("spark.rapids.sql.hashAgg.replaceMode")
     .doc("Only when hash aggregate exec has these modes (\"all\" by default): " +
       "\"all\" (try to replace all aggregates, default), " +
       "\"partial\" (exclusively replace partial aggregates), " +
@@ -265,16 +279,12 @@ object RapidsConf {
     .stringConf
     .createWithDefault("all")
 
-  val ENABLE_TOTAL_ORDER_SORT = conf("spark.rapids.sql.enableTotalOrderSort")
-    .doc("Allow for total ordering sort where the partitioning runs on CPU and " +
-      "sort runs on GPU.")
+  // USER FACING DEBUG CONFIGS
+
+  val EXPLAIN = conf("spark.rapids.sql.explain")
+    .doc("Explain why some parts of a query were not placed on a GPU")
     .booleanConf
     .createWithDefault(false)
-
-  val ENABLE_REPLACE_SORTMERGEJOIN = conf("spark.rapids.sql.enableReplaceSortMergeJoin")
-    .doc("Allow replacing sortMergeJoin with HashJoin")
-    .booleanConf
-    .createWithDefault(true)
 
   private def printToggleHeader(category: String): Unit = {
     println(s"\n### ${category}")
@@ -292,13 +302,13 @@ object RapidsConf {
         |```
         |${SPARK_HOME}/bin/spark --jars 'rapids-4-spark-0.1-SNAPSHOT.jar,cudf-0.10-SNAPSHOT-cuda10.jar' \
         |--conf spark.sql.extensions=ai.rapids.spark.Plugin \
-        |--conf spark.rapids.sql.incompatible_ops=true
+        |--conf spark.rapids.sql.incompatibleOps.enabled=true
         |```
         |
         |At runtime use: `spark.conf.set("[conf key]", [conf value])`. For example:
         |
         |```
-        |scala> spark.conf.set("spark.rapids.sql.incompatible_ops", true)
+        |scala> spark.conf.set("spark.rapids.sql.incompatibleOps.enabled", true)
         |```""".stripMargin)
 
       println("\n## General Configuration")
@@ -318,7 +328,7 @@ object RapidsConf {
         |Please leverage the `spark.rapids.sql.explain` setting to get feeback from the
         |plugin as to why parts of a query may not be executing in the GPU.
         |
-        |**NOTE:** Setting `spark.rapids.sql.incompatible_ops=true` will enable all
+        |**NOTE:** Setting `spark.rapids.sql.incompatibleOps.enabled=true` will enable all
         |the settings in the table below which are not enabled by default due to
         |incompatibilities.""".stripMargin)
 
@@ -374,7 +384,7 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
 
   lazy val gpuTargetBatchSizeRows: Integer = get(GPU_BATCH_SIZE_ROWS)
 
-  lazy val allowFloatAgg: Boolean = get(ALLOW_FLOAT_AGG)
+  lazy val isFloatAggEnabled: Boolean = get(ENABLE_FLOAT_AGG)
 
   lazy val stringHashGroupByEnabled: Boolean = get(STRING_GPU_HASH_GROUP_BY_ENABLED)
 

@@ -97,8 +97,8 @@ object RunQ {
       inputPath = <path to 10GB TPCH data>
     }
     spark.conf.set("spark.rapids.sql.hasNans", false)
-    spark.conf.set("spark.rapids.sql.incompatible_ops", true)
-    spark.conf.set("spark.rapids.sql.allowVariableFloatAgg", true)
+    spark.conf.set("spark.rapids.sql.incompatibleOps.enabled", true)
+    spark.conf.set("spark.rapids.sql.variableFloatAgg.enabled", true)
     spark.conf.set("spark.rapids.sql.allowIncompatUTF8Strings", true)
     spark.conf.set("spark.rapids.sql.explain", true)
     spark.conf.set("spark.sql.shuffle.partitions", parts)
