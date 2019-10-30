@@ -74,7 +74,7 @@ class GpuHashAggregateMeta(
         groupingExpressionTypes.contains(DoubleType))) {
       willNotWorkOnGpu("grouping expressions over floating point columns " +
         "that may contain -0.0 and NaN are disabled. You can bypass this by setting " +
-        "spark.rapids.sql.hasNans=false")
+        s"${RapidsConf.HAS_NANS}=false")
     }
     if (agg.resultExpressions.isEmpty) {
       willNotWorkOnGpu("result expressions is empty")

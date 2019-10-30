@@ -35,7 +35,7 @@ class ParquetScanSuite extends SparkQueryCompareTestSuite {
   }
 
   testSparkResultsAreEqual("Test Parquet with chunks", fileSplitsParquet,
-    conf = new SparkConf().set("spark.rapids.sql.maxReaderBatchSize", "100")) {
+    conf = new SparkConf().set(RapidsConf.MAX_READER_BATCH_SIZE.key, "100")) {
     frame => frame.select(col("*"))
   }
 

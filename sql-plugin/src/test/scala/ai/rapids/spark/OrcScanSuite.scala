@@ -66,10 +66,10 @@ class OrcScanSuite extends SparkQueryCompareTestSuite {
   //  frame => frame.select(col("*"))
   //}
   testSparkResultsAreEqual("Test ORC chunks", fileSplitsOrc,
-    new SparkConf().set("spark.rapids.sql.maxReaderBatchSize", "2048")) {
+    new SparkConf().set(RapidsConf.MAX_READER_BATCH_SIZE.key, "2048")) {
     frame => frame.select(col("loan_id"), col("orig_interest_rate"), col("zip"))
   }
 
   testSparkResultsAreEqual("Test ORC count chunked", fileSplitsOrc,
-    new SparkConf().set("spark.rapids.sql.maxReaderBatchSize", "2048"))(frameCount)
+    new SparkConf().set(RapidsConf.MAX_READER_BATCH_SIZE.key, "2048"))(frameCount)
 }

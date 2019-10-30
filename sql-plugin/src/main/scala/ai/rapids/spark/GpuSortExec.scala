@@ -54,7 +54,7 @@ class GpuSortMeta(
     if ((keyDataTypes.contains(FloatType) || keyDataTypes.contains(DoubleType)) && conf.hasNans) {
       willNotWorkOnGpu("floats/doubles are not supported in sort, due to " +
         "incompatibility with NaN. If you don't have any NaNs in your data you can set " +
-        "spark.rapids.sql.hasNans=false to bypass this.")
+        s"${RapidsConf.HAS_NANS}=false to bypass this.")
     }
     def areNullsSmallest(o: SortOrder): Boolean = {
       (o.isAscending && o.nullOrdering == NullsFirst) ||
