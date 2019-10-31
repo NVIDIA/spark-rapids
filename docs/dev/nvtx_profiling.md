@@ -1,10 +1,10 @@
 # Using NVTX Ranges with the RAPIDS Plugin for Spark
 NVTX ranges are typically used to profile applications that use the GPU. Such NVTX profiles,
-once captured can be visually analyzed using NSight developer tools
-(https://developer.nvidia.com/nsight-systems).
+once captured can be visually analyzed using
+[NVIDIA NSight Systems](https://developer.nvidia.com/nsight-systems).
 This document is specific to the RAPIDS Spark Plugin profiling.
 
-###STEP 1:
+### STEP 1:
 
 In order to get NVTX ranges to work you need to recompile your cuDF with NVTX flag enabled:
 
@@ -18,7 +18,7 @@ If you are using the java cuDF layer, recompile your jar as usual using maven.
 ```
 mvn clean package -DskipTests
 ```
-###STEP 2:
+### STEP 2:
 
 We need to pass a flag to the spark executors / driver in order to enable NVTX collection.
 This can be done for spark shell by adding the following configuration keys:
@@ -43,7 +43,7 @@ Replace `exec "${CMD[@]}"` with `nsys profile exec "${CMD[@]}"`
 
 You should have a *.qdrep file once the trace completes. This can now be opened in NSight UI.
 
-##How to add NVTX ranges to your code?
+## How to add NVTX ranges to your code?
 
 If you are in Java or Scala land you can do the following:
 
@@ -66,4 +66,6 @@ To use CPU profiling features, run the following command before running `nsys pr
 ```
 sudo sh -c 'echo [level] >/proc/sys/kernel/perf_event_paranoid'
 ```
-where valid values are { 1, 2 }. Refer to NSight documentation for further details.
+where valid values are { 1, 2 }. Refer to
+[NVIDIA Nsight Systems documentation](https://docs.nvidia.com/nsight-systems/)
+for further details.
