@@ -1,3 +1,4 @@
+#!/usr/local/env groovy
 /**
 *
 * Jenkinsfile for rapids-plugin building ubuntu cuda10 versions
@@ -24,22 +25,19 @@ pipeline {
 
     stages {
         stage('Ubuntu16 CUDA10.0') {
-            agent {
-                dockerfile {
-                    label 'docker-gpu'
-                    filename 'Dockerfile.ubuntu16'
-                    dir "$JENKINS_ROOT"
-                    args '--runtime=nvidia -v ${HOME}/.m2:${HOME}/.m2:rw \
-                        -v ${HOME}/.zinc:${HOME}/.zinc:rw \
-                        -v /etc/passwd:/etc/passwd -v /etc/group:/etc/group'
-                    additionalBuildArgs  '--build-arg CUDA_VER=10.0'
-                }
-            }
+            agent { label 'docker-gpu' }
             steps {
-                updateGitlabCommitStatus(name: 'Jenkins CI', state: "running")
                 script {
-                    echo 'buiding ubuntu16 cuda10.0 ...'
-                    sh 'mvn -U -B clean package'
+                    def dockerImage = docker.build("rapids-plugin/spark3.0:ubuntu16-cuda10.0",
+                        "-f $JENKINS_ROOT/Dockerfile.ubuntu16 \
+                        --build-arg CUDA_VER=10.0 $JENKINS_ROOT")
+
+                    dockerImage.inside("--runtime=nvidia -v ${HOME}/.m2:${HOME}/.m2:rw \
+                        -v ${HOME}/.zinc:${HOME}/.zinc:rw \
+                        -v /etc/passwd:/etc/passwd -v /etc/group:/etc/group") {
+                        echo 'Buiding in ubuntu16 cuda10.0 ...'
+                        sh 'mvn -U -B clean package'
+                    }
                 }
             }
         }

@@ -1,4 +1,4 @@
-
+#!/usr/local/env groovy
 /**
 *
 * Jenkins file for running spark3.0 integration tests
@@ -37,68 +37,60 @@ pipeline {
         stage ('build and test') {
             parallel {
                 stage('ubuntu16 cuda10.0') {
-                    agent {
-                        dockerfile {
-                            label 'docker-gpu'
-                            filename 'Dockerfile.integration.ubuntu16'
-                            dir "$JENKINS_ROOT"
-                            args '--runtime=nvidia -v ${HOME}/.zinc:${HOME}/.zinc:rw \
-                                -v /etc/passwd:/etc/passwd -v /etc/group:/etc/group'
-                            additionalBuildArgs  '--build-arg CUDA_VER=10.0 -t spark3.0-ubuntu16-cuda10'
-                        }
-                    }
+                    agent { label 'docker-gpu' }
                     steps {
                         script {
-                            echo 'Buiding rapids-plugin'
-                            sh "mvn -U -B clean package -Dmaven.repo.local=$WORKSPACE/.m2 -DskipTests"
-                            echo "Running integration tests on ubuntu16 cuda10.0"
-                            sh "bash $TEST_SCRIPT $CUDF_VER cuda10"
+                            def dockerImage = docker.build("spark3.0/integration:ubuntu16-cuda10.0",
+                                "-f $JENKINS_ROOT/Dockerfile.integration.ubuntu16 \
+                                --build-arg CUDA_VER=10.0 $JENKINS_ROOT")
+
+                            dockerImage.inside("--runtime=nvidia -v ${HOME}/.zinc:${HOME}/.zinc:rw \
+                                -v /etc/passwd:/etc/passwd -v /etc/group:/etc/group") {
+                                echo 'Buiding rapids-plugin in ubuntu16 cuda10.0 ...'
+                                sh 'mvn -U -B clean package -Dmaven.repo.local=$WORKSPACE/.m2 -DskipTests'
+                                echo "Running integration tests on ubuntu16 cuda10.0"
+                                sh "bash $TEST_SCRIPT $CUDF_VER cuda10"
+                            }
                         }
                     }
                 }
-
                 stage('ubuntu16 cuda9.2') {
-                    agent {
-                        dockerfile {
-                            label 'docker-gpu'
-                            filename 'Dockerfile.integration.ubuntu16'
-                            dir "$JENKINS_ROOT"
-                            args '--runtime=nvidia -v ${HOME}/.zinc:${HOME}/.zinc:rw \
-                                -v /etc/passwd:/etc/passwd -v /etc/group:/etc/group'
-                            additionalBuildArgs  '--build-arg CUDA_VER=9.2 -t spark3.0-ubuntu16-cuda9.2'
-                        }
-                    }
+                    agent { label 'docker-gpu' }
                     steps {
                         script {
-                            echo 'Buiding rapids-plugin'
-                            sh "mvn -U -B clean package -Dmaven.repo.local=$WORKSPACE/.m2 -DskipTests"
-                            echo "Running integration tests on ubuntu16 cuda9.2"
-                            sh "bash $TEST_SCRIPT $CUDF_VER"
+                            def dockerImage = docker.build("spark3.0/integration:ubuntu16-cuda9.2",
+                                "-f $JENKINS_ROOT/Dockerfile.integration.ubuntu16 \
+                                --build-arg CUDA_VER=9.2 $JENKINS_ROOT")
+
+                            dockerImage.inside("--runtime=nvidia -v ${HOME}/.zinc:${HOME}/.zinc:rw \
+                                -v /etc/passwd:/etc/passwd -v /etc/group:/etc/group") {
+                                echo 'Buiding rapids-plugin in ubuntu16 cuda9.2 ...'
+                                sh 'mvn -U -B clean package -Dmaven.repo.local=$WORKSPACE/.m2 -DskipTests'
+                                echo "Running integration tests on ubuntu16 cuda9.2"
+                                sh "bash $TEST_SCRIPT $CUDF_VER cuda9"
+                            }
                         }
                     }
                 }
-
                 stage('centos7 cuda10.0') {
                     when {
                         beforeAgent true
                         environment name: 'BUILD_CENTOS7', value: 'true'
                    }
-                    agent {
-                        dockerfile {
-                            label 'docker-gpu'
-                            filename 'Dockerfile.integration.centos7'
-                            dir "$JENKINS_ROOT"
-                            args '--runtime=nvidia -v ${HOME}/.zinc:${HOME}/.zinc:rw \
-                                -v /etc/passwd:/etc/passwd -v /etc/group:/etc/group'
-                            additionalBuildArgs  '--build-arg CUDA_VER=10.0 -t spark3.0-centos7-cuda10'
-                        }
-                    }
+                    agent { label 'docker-gpu' }
                     steps {
                         script {
-                            echo 'Buiding rapids-plugin'
-                            sh "mvn -U -B clean package -Dmaven.repo.local=$WORKSPACE/.m2 -DskipTests"
-                            echo "Running integration tests on centos7 cuda10.0"
-                            sh "bash $TEST_SCRIPT $CUDF_VER cuda10"
+                            def dockerImage = docker.build("spark3.0/integration:centos7-cuda10.0",
+                                "-f $JENKINS_ROOT/Dockerfile.integration.centos7 \
+                                --build-arg CUDA_VER=10.0 $JENKINS_ROOT")
+
+                            dockerImage.inside("--runtime=nvidia -v ${HOME}/.zinc:${HOME}/.zinc:rw \
+                                -v /etc/passwd:/etc/passwd -v /etc/group:/etc/group") {
+                                echo 'Buiding rapids-plugin in centos7 cuda10.0 ...'
+                                sh 'mvn -U -B clean package -Dmaven.repo.local=$WORKSPACE/.m2 -DskipTests'
+                                echo "Running integration tests on centos7 cuda10.0"
+                                sh "bash $TEST_SCRIPT $CUDF_VER cuda10"
+                            }
                         }
                     }
                 }
@@ -107,22 +99,20 @@ pipeline {
                         beforeAgent true
                         environment name: 'BUILD_CENTOS7', value: 'true'
                     }
-                    agent {
-                        dockerfile {
-                            label 'docker-gpu'
-                            filename 'Dockerfile.integration.centos7'
-                            dir "$JENKINS_ROOT"
-                            args '--runtime=nvidia -v ${HOME}/.zinc:${HOME}/.zinc:rw \
-                                -v /etc/passwd:/etc/passwd -v /etc/group:/etc/group'
-                            additionalBuildArgs  '--build-arg CUDA_VER=9.2 -t spark3.0-centos7-cuda9.2'
-                        }
-                    }
+                    agent { label 'docker-gpu' }
                     steps {
                         script {
-                            echo 'Buiding rapids-plugin'
-                            sh "mvn -U -B clean package -Dmaven.repo.local=$WORKSPACE/.m2 -DskipTests"
-                            echo "Running integration tests on centos7 cuda9.2"
-                            sh "bash $TEST_SCRIPT $CUDF_VER"
+                            def dockerImage = docker.build("spark3.0/integration:centos7-cuda9.2",
+                                "-f $JENKINS_ROOT/Dockerfile.integration.centos7 \
+                                --build-arg CUDA_VER=9.2 $JENKINS_ROOT")
+
+                            dockerImage.inside("--runtime=nvidia -v ${HOME}/.zinc:${HOME}/.zinc:rw \
+                                -v /etc/passwd:/etc/passwd -v /etc/group:/etc/group") {
+                                echo 'Buiding rapids-plugin in centos7 cuda9.2 ...'
+                                sh 'mvn -U -B clean package -Dmaven.repo.local=$WORKSPACE/.m2 -DskipTests'
+                                echo "Running integration tests on centos7 cuda9.2"
+                                sh "bash $TEST_SCRIPT $CUDF_VER cuda9"
+                            }
                         }
                     }
                 }
