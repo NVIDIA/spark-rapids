@@ -290,9 +290,11 @@ object RapidsConf {
   // USER FACING DEBUG CONFIGS
 
   val EXPLAIN = conf("spark.rapids.sql.explain")
-    .doc("Explain why some parts of a query were not placed on a GPU")
-    .booleanConf
-    .createWithDefault(false)
+    .doc("Explain why some parts of a query were not placed on a GPU or not. Possible " +
+      "values are ALL: print everything, NONE: print nothing, NOT_ON_GPU: print only did not go " +
+      "on the GPU")
+    .stringConf
+    .createWithDefault("NONE")
 
   private def printToggleHeader(category: String): Unit = {
     println(s"\n### ${category}")
@@ -398,7 +400,7 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
 
   lazy val stringHashGroupByEnabled: Boolean = get(STRING_GPU_HASH_GROUP_BY_ENABLED)
 
-  lazy val explain: Boolean = get(EXPLAIN)
+  lazy val explain: String = get(EXPLAIN)
 
   lazy val maxReadBatchSize: Int = get(MAX_READER_BATCH_SIZE)
 

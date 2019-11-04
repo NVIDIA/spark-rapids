@@ -290,7 +290,7 @@ object GpuOverrides {
         override def convertToGpu(): GpuExpression = GpuLiteral(lit.value, lit.dataType)
 
         // There are so many of these that we don't need to print them out.
-        override def print(append: StringBuilder, depth: Int): Unit = {}
+        override def print(append: StringBuilder, depth: Int, all: Boolean): Unit = {}
       }),
     expr[Alias](
       "gives a column a name",
@@ -306,7 +306,7 @@ object GpuOverrides {
             att.metadata)(att.exprId, att.qualifier)
 
         // There are so many of these that we don't need to print them out.
-        override def print(append: StringBuilder, depth: Int): Unit = {}
+        override def print(append: StringBuilder, depth: Int, all: Boolean): Unit = {}
       }),
     expr[Cast](
       "convert a column of one type of data into another type",
@@ -780,8 +780,9 @@ case class GpuOverrides() extends Rule[SparkPlan] with Logging {
       val wrap = GpuOverrides.wrapPlan(plan, conf, None)
       wrap.tagForGpu()
       wrap.runAfterTagRules()
-      if (conf.explain) {
-        logWarning(s"\n${wrap}")
+      val exp = conf.explain
+      if (!exp.equalsIgnoreCase("NONE")) {
+        logWarning(s"\n${wrap.explain(exp.equalsIgnoreCase("ALL"))}")
       }
       val convertedPlan = wrap.convertIfNeeded()
       addSortsIfNeeded(convertedPlan, conf)

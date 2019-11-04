@@ -211,41 +211,47 @@ abstract class RapidsMeta[INPUT <: BASE, BASE, OUTPUT <: BASE](
 
   /**
    * Create a string representation of this in append.
-   * @param append where to place the string representation.
+   * @param strBuilder where to place the string representation.
    * @param depth how far down the tree this is.
+   * @param all should all the data be printed or just what does not work on the GPU?
    */
-  protected def print(strBuilder: StringBuilder, depth: Int): Unit = {
-    indent(strBuilder, depth)
-    strBuilder.append(if (canThisBeReplaced) "*" else "!")
+  protected def print(strBuilder: StringBuilder, depth: Int, all: Boolean): Unit = {
+    if (all || !canThisBeReplaced) {
+      indent(strBuilder, depth)
+      strBuilder.append(if (canThisBeReplaced) "*" else "!")
 
-    strBuilder.append(operationName)
-      .append(" <")
-      .append(wrapped.getClass.getSimpleName)
-      .append("> ")
+      strBuilder.append(operationName)
+        .append(" <")
+        .append(wrapped.getClass.getSimpleName)
+        .append("> ")
 
-    if (printWrapped) {
-      strBuilder.append(wrapped)
-        .append(" ")
+      if (printWrapped) {
+        strBuilder.append(wrapped)
+          .append(" ")
+      }
+
+      strBuilder.append(willWorkOnGpuInfo).
+        append(willBeRemovedInfo).
+        append("\n")
     }
-
-    strBuilder.append(willWorkOnGpuInfo).
-      append(willBeRemovedInfo).
-      append("\n")
-
-    printChildren(strBuilder, depth)
+    printChildren(strBuilder, depth, all)
   }
 
-  private final def printChildren(append: StringBuilder, depth: Int): Unit = {
-    childScans.foreach(_.print(append, depth + 1))
-    childParts.foreach(_.print(append, depth + 1))
-    childExprs.foreach(_.print(append, depth + 1))
-    childPlans.foreach(_.print(append, depth + 1))
+  private final def printChildren(append: StringBuilder, depth: Int, all: Boolean): Unit = {
+    childScans.foreach(_.print(append, depth + 1, all))
+    childParts.foreach(_.print(append, depth + 1, all))
+    childExprs.foreach(_.print(append, depth + 1, all))
+    childPlans.foreach(_.print(append, depth + 1, all))
+  }
+
+  def explain(all: Boolean): String = {
+    val appender = new StringBuilder()
+    print(appender, 0, all)
+    appender.toString()
   }
 
   override def toString: String = {
-    val appender = new StringBuilder()
-    print(appender, 0)
-    appender.toString()
+    explain(true)
   }
 }
 
