@@ -94,7 +94,7 @@ case class GpuColumnarToRowExec(child: SparkPlan, exportColumnarRdd: Boolean = f
             val nvtxRange = new NvtxWithMetrics("ColumnarToRow: batch", NvtxColor.RED, totalTime)
             try {
               (0 until cb.numCols()).foreach(
-                i => cb.column(i).asInstanceOf[GpuColumnVector].getBase.ensureOnHost())
+                i => cb.column(i).asInstanceOf[GpuColumnVector].getBase.dropDeviceData())
               it = cb.rowIterator()
               numInputBatches += 1
               // In order to match the numOutputRows metric in the generated code we update
@@ -105,6 +105,9 @@ case class GpuColumnarToRowExec(child: SparkPlan, exportColumnarRdd: Boolean = f
             } finally {
               nvtxRange.close()
             }
+
+            // Leaving the GPU for a while
+            GpuSemaphore.releaseIfNecessary(TaskContext.get())
           }
         }
 
@@ -214,7 +217,7 @@ case class GpuColumnarToRowExec(child: SparkPlan, exportColumnarRdd: Boolean = f
     val (colVars, columnAssigns) = columnVectorClzs.zipWithIndex.map {
       case (columnVectorClz, i) =>
         val name = ctx.addMutableState(columnVectorClz, s"colInstance$i")
-        (name, s"$name = ($columnVectorClz) $batch.column($i); $name.getBase().ensureOnHost();")
+        (name, s"$name = ($columnVectorClz) $batch.column($i); $name.getBase().dropDeviceData();")
     }.unzip
 
     val convertStart = ctx.freshName("convertStart")
@@ -233,6 +236,7 @@ case class GpuColumnarToRowExec(child: SparkPlan, exportColumnarRdd: Boolean = f
          |    ${columnAssigns.mkString("", "\n", "\n")}
          |    $convertRange.close();
          |    $totalTime.add(System.nanoTime() - $convertStart);
+         |    ai.rapids.spark.GpuSemaphore$$.MODULE$$.releaseIfNecessary(org.apache.spark.TaskContext.get());
          |  }
          |}""".stripMargin)
 

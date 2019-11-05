@@ -27,12 +27,12 @@ class TpchLikeSparkTest extends FunSuite with BeforeAndAfterAll {
     SparkSession.builder
       .master("local[2]")
       .appName("TPCHLikeTest")
+      .config("spark.sql.join.preferSortMergeJoin", false)
       .config("spark.sql.extensions", "ai.rapids.spark.Plugin")
       .config("spark.executor.plugins", "ai.rapids.spark.GpuResourceManager")
-      .config("ai.rapids.gpu.incompatible_ops", true)
-      .config("spark.sql.join.preferSortMergeJoin", false)
       .config("spark.rapids.sql.explain", true)
-      .config("spark.rapids.sql.enableStringHashGroupBy", true)
+      .config("spark.rapids.sql.incompatibleOps.enabled", true)
+      .config("spark.rapids.sql.stringHashGroupBy.enabled", true)
       .getOrCreate()
   }
 

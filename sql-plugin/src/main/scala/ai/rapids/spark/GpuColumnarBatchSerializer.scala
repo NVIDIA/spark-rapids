@@ -120,6 +120,9 @@ private class GpuColumnarBatchSerializerInstance(
           })
 
           def tryReadNext(): Option[ColumnarBatch] = {
+            // about to start using the GPU in this task
+            GpuSemaphore.acquireIfNecessary(TaskContext.get())
+
             val range = new NvtxRange("Deserialize Batch", NvtxColor.YELLOW)
             try {
               val table = JCudfSerialization.readTableFrom(dIn)
@@ -171,6 +174,9 @@ private class GpuColumnarBatchSerializerInstance(
       }
 
       override def readValue[T]()(implicit classType: ClassTag[T]): T = {
+        // about to start using the GPU in this task
+        GpuSemaphore.acquireIfNecessary(TaskContext.get())
+
         val range = new NvtxRange("Deserialize Batch", NvtxColor.YELLOW)
         try {
           val table = JCudfSerialization.readTableFrom(dIn)

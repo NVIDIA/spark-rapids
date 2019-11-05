@@ -30,7 +30,7 @@ where possible to speed up CPU to GPU and GPU to CPU data transfers.
 
 To enable RMM you need to set the config `spark.executor.plugins` to 
 `ai.rapids.spark.GpuResourceManager` when launching your cluster.  To enable pinned memory you also
-need to set `spark.rapids.sql.pinned-pool-size` to the amount of pinned memory you want to use.
+need to set `spark.rapids.memory.pinnedPool.size` to the amount of pinned memory you want to use.
 Because this is used for data transfers it typically should be about 1/4 to 1/2 of the amount of
 GPU memory you have. You also need to enable it by setting the java System property 
 `ai.rapids.cudf.prefer-pinned` to `true`.

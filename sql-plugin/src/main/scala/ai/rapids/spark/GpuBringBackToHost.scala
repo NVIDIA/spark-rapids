@@ -23,6 +23,7 @@ import org.apache.spark.sql.catalyst.expressions.Attribute
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.execution.{SparkPlan, UnaryExecNode}
 import org.apache.spark.sql.vectorized.ColumnarBatch
+import org.apache.spark.TaskContext
 
 /**
  * Pull back any data on the GPU to the host so the host can access it.
@@ -42,11 +43,14 @@ case class GpuBringBackToHost(child: SparkPlan) extends UnaryExecNode with GpuEx
       val range = new NvtxRange("BringBackToHost", NvtxColor.RED)
       try {
         for (i <- 0 until b.numCols()) {
-          b.column(i).asInstanceOf[GpuColumnVector].getBase.ensureOnHost()
+          b.column(i).asInstanceOf[GpuColumnVector].getBase.dropDeviceData()
         }
       } finally {
         range.close()
       }
+
+      // Leaving the GPU for a while
+      GpuSemaphore.releaseIfNecessary(TaskContext.get())
       b
     })
   }

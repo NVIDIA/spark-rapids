@@ -109,7 +109,7 @@ abstract class ReplacementRule[INPUT <: BASE, BASE, WRAP_TYPE <: RapidsMeta[INPU
   def confHelp(asTable: Boolean = false): Unit = {
     val incompatMsg = isIncompatMsg()
     if (asTable) {
-      print(s"${tag}|${desc}|${incompatMsg.isEmpty}|")
+      print(s"$confKey|$desc|${incompatMsg.isEmpty}|")
       if (incompatMsg.isDefined) {
         print(s"${incompatMsg.get}")
       } else {
@@ -290,7 +290,7 @@ object GpuOverrides {
         override def convertToGpu(): GpuExpression = GpuLiteral(lit.value, lit.dataType)
 
         // There are so many of these that we don't need to print them out.
-        override def print(append: StringBuilder, depth: Int): Unit = {}
+        override def print(append: StringBuilder, depth: Int, all: Boolean): Unit = {}
       }),
     expr[Alias](
       "gives a column a name",
@@ -306,7 +306,7 @@ object GpuOverrides {
             att.metadata)(att.exprId, att.qualifier)
 
         // There are so many of these that we don't need to print them out.
-        override def print(append: StringBuilder, depth: Int): Unit = {}
+        override def print(append: StringBuilder, depth: Int, all: Boolean): Unit = {}
       }),
     expr[Cast](
       "convert a column of one type of data into another type",
@@ -599,12 +599,12 @@ object GpuOverrides {
       (a, conf, p, r) => new AggExprMeta[Sum](a, conf, p, r) {
         override def tagExprForGpu(): Unit = {
           val dataType = a.child.dataType
-          if (!conf.allowFloatAgg && (dataType == DoubleType || dataType == FloatType)) {
+          if (!conf.isFloatAggEnabled && (dataType == DoubleType || dataType == FloatType)) {
             willNotWorkOnGpu("the GPU will sum floating point values in" +
               " parallel and the result is not always identical each time. This can cause some Spark" +
               s" queries to produce an incorrect answer if the value is computed more than once" +
               s" as part of the same query.  To enable this anyways set" +
-              s" ${RapidsConf.ALLOW_FLOAT_AGG} to true.")
+              s" ${RapidsConf.ENABLE_FLOAT_AGG} to true.")
           }
         }
 
@@ -614,12 +614,12 @@ object GpuOverrides {
       "average aggregate operator",
       (a, conf, p, r) => new AggExprMeta[Average](a, conf, p, r) {
         override def tagExprForGpu(): Unit = {
-          if (!conf.allowFloatAgg) {
+          if (!conf.isFloatAggEnabled) {
             willNotWorkOnGpu("the GPU will sum floating point values in" +
               " parallel to compute an average and the result is not always identical each time." +
               " This can cause some Spark queries to produce an incorrect answer if the value is" +
               " computed more than once as part of the same query. To enable this anyways set" +
-              s" ${RapidsConf.ALLOW_FLOAT_AGG} to true")
+              s" ${RapidsConf.ENABLE_FLOAT_AGG} to true")
           }
         }
 
@@ -780,8 +780,9 @@ case class GpuOverrides() extends Rule[SparkPlan] with Logging {
       val wrap = GpuOverrides.wrapPlan(plan, conf, None)
       wrap.tagForGpu()
       wrap.runAfterTagRules()
-      if (conf.explain) {
-        logWarning(s"\n${wrap}")
+      val exp = conf.explain
+      if (!exp.equalsIgnoreCase("NONE")) {
+        logWarning(s"\n${wrap.explain(exp.equalsIgnoreCase("ALL"))}")
       }
       val convertedPlan = wrap.convertIfNeeded()
       addSortsIfNeeded(convertedPlan, conf)

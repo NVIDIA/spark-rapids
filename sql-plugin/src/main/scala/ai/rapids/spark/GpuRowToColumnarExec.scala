@@ -29,6 +29,7 @@ import org.apache.spark.sql.execution.{SparkPlan, TrampolineUtil, UnaryExecNode}
 import org.apache.spark.sql.execution.metric.{SQLMetric, SQLMetrics}
 import org.apache.spark.sql.types._
 import org.apache.spark.sql.vectorized.ColumnarBatch
+import org.apache.spark.TaskContext
 
 private class GpuRowToColumnConverter(schema: StructType) extends Serializable {
   private val converters = schema.fields.map {
@@ -312,6 +313,10 @@ class RowToColumnarIterator(
       if (rowIter.hasNext && (rowCount + 1L) > localGoal.targetSize) {
         localGoal.whenTargetExceeded(rowCount + 1L)
       }
+
+      // About to place data back on the GPU
+      GpuSemaphore.acquireIfNecessary(TaskContext.get())
+
       val buildRange = new NvtxWithMetrics("RowToColumnar", NvtxColor.GREEN, totalTime)
       val ret = try {
         builders.build(rowCount)
