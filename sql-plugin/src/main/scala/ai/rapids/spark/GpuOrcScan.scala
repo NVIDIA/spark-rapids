@@ -24,6 +24,7 @@ import java.util
 
 import scala.collection.JavaConverters._
 import scala.collection.mutable.ArrayBuffer
+import scala.math.max
 
 import ai.rapids.cudf.{HostMemoryBuffer, NvtxColor, NvtxRange, ORCOptions, Table, TimeUnit}
 import ai.rapids.spark.GpuOrcPartitionReader.{OrcOutputStripe, OrcPartitionReaderContext}
@@ -641,6 +642,7 @@ class GpuOrcPartitionReader(
 
   private def readToTable(stripes: Seq[OrcOutputStripe]): Option[Table] = {
     val (dataBuffer, dataSize) = readPartFile(stripes)
+    var maximum:Long = 0
     try {
       if (dataSize == 0) {
         None
@@ -658,6 +660,7 @@ class GpuOrcPartitionReader(
         GpuSemaphore.acquireIfNecessary(TaskContext.get())
 
         val table = Table.readORC(parseOpts, dataBuffer, 0, dataSize)
+        maximum = max(GpuColumnVector.getTotalDeviceMemoryUsed(table), maximum)
         val numColumns = table.getNumberOfColumns
         if (readDataSchema.length != numColumns) {
           table.close()
@@ -668,6 +671,7 @@ class GpuOrcPartitionReader(
         Some(table)
       }
     } finally {
+      metrics("peakDevMemory") += maximum
       if (dataBuffer != null) {
         dataBuffer.close()
       }

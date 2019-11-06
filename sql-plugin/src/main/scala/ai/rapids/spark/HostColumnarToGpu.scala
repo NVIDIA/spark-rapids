@@ -131,6 +131,7 @@ class HostToGpuCoalesceIterator(iter: Iterator[ColumnarBatch],
     collectTime: SQLMetric,
     concatTime: SQLMetric,
     totalTime: SQLMetric,
+    peakDevMemory: SQLMetric,
     opName: String)
   extends AbstractGpuCoalesceIterator(iter,
     goal,
@@ -141,6 +142,7 @@ class HostToGpuCoalesceIterator(iter: Iterator[ColumnarBatch],
     collectTime,
     concatTime,
     totalTime,
+    peakDevMemory,
     opName) {
 
   var batchBuilder: GpuColumnVector.GpuColumnarBatchBuilder = null
@@ -189,7 +191,8 @@ case class HostColumnarToGpu(child: SparkPlan, goal: CoalesceGoal) extends Unary
     "numInputRows" -> SQLMetrics.createMetric(sparkContext, "input rows"),
     "numInputBatches" -> SQLMetrics.createMetric(sparkContext, "input batches"),
     "collectTime" -> SQLMetrics.createNanoTimingMetric(sparkContext, "collect batch time"),
-    "concatTime" -> SQLMetrics.createNanoTimingMetric(sparkContext, "concat batch time")
+    "concatTime" -> SQLMetrics.createNanoTimingMetric(sparkContext, "concat batch time"),
+    "peakDevMemory" ->SQLMetrics.createMetric(sparkContext, "peak device memory")
   )
 
   override def output: Seq[Attribute] = child.output
@@ -218,12 +221,13 @@ case class HostColumnarToGpu(child: SparkPlan, goal: CoalesceGoal) extends Unary
     val collectTime = longMetric("collectTime")
     val concatTime = longMetric("concatTime")
     val totalTime = longMetric(TOTAL_TIME)
+    val peakDevMemory = longMetric("peakDevMemory")
 
     val batches = child.executeColumnar()
     batches.mapPartitions { iter =>
       new HostToGpuCoalesceIterator(iter, goal, schema,
         numInputRows, numInputBatches, numOutputRows, numOutputBatches, collectTime, concatTime,
-        totalTime, "HostColumnarToGpu")
+        totalTime, peakDevMemory, "HostColumnarToGpu")
     }
   }
 }

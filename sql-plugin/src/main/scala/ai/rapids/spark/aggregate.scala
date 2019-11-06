@@ -33,6 +33,7 @@ import org.apache.spark.sql.execution.metric.{SQLMetric, SQLMetrics}
 import org.apache.spark.sql.rapids.{CudfAggregate, GpuAggregateExpression, GpuDeclarativeAggregate}
 import org.apache.spark.sql.vectorized.{ColumnarBatch, ColumnVector}
 import scala.collection.mutable.ArrayBuffer
+import scala.math.max
 
 import org.apache.spark.sql.execution.aggregate.HashAggregateExec
 import org.apache.spark.sql.types.{DoubleType, FloatType, StringType}
@@ -158,13 +159,15 @@ case class GpuHashAggregateExec(requiredChildDistributionExpressions: Option[Seq
     val totalTime = longMetric(TOTAL_TIME)
     val computeAggTime = longMetric("computeAggTime")
     val concatTime = longMetric("concatTime")
+    val peakDevMemory = longMetric("peakDevMemory")
+    var maximum:Long = 0
     // These metrics are supported by the cpu hash aggregate
+    // We have the corresponding gpu versions of:
+    //    val peakDevMemory = longMetric("peakDevMemory")
+    //    This is the gpu version of peakMemory.
+    //    Max memory used by ColumnarBatches and GpuColumnVectors at a given time.
     //
     // We should eventually have gpu versions of:
-    //
-    //   This is the peak memory used max of what the hash map has used
-    //   and what the external sorter has used
-    //    val peakMemory = longMetric("peakMemory")
     //
     //   Byte amount spilled.
     //    val spillSize = longMetric("spillSize")
@@ -242,7 +245,7 @@ case class GpuHashAggregateExec(requiredChildDistributionExpressions: Option[Seq
           val nvtxRange = new NvtxWithMetrics("Hash Aggregate Batch", NvtxColor.YELLOW, totalTime)
           try {
             childCvs = processIncomingBatch(batch, boundInputReferences)
-
+            maximum = max(GpuColumnVector.getTotalDeviceMemoryUsed(batch), maximum)
             // done with the batch, clean it as soon as possible
             batch.close()
             batch = null
@@ -272,6 +275,7 @@ case class GpuHashAggregateExec(requiredChildDistributionExpressions: Option[Seq
               // and perform aggregation on the new batch (which would need to be merged, with the
               // spilled aggregates)
               concatCvs = concatenateBatches(aggregatedInputCb, aggregatedCb, concatTime)
+              maximum = max(GpuColumnVector.getTotalDeviceMemoryUsed(concatCvs.toArray), maximum)
               aggregatedCb.close()
               aggregatedCb = null
               aggregatedInputCb.close()
@@ -281,6 +285,7 @@ case class GpuHashAggregateExec(requiredChildDistributionExpressions: Option[Seq
               //    to concatenate against incoming batches (step 2)
               aggregatedCb = computeAggregate(concatCvs, merge = true, groupingExpressions,
                 boundMergeAgg, computeAggTime)
+              maximum = max(GpuColumnVector.getTotalDeviceMemoryUsed(aggregatedCb), maximum)
               concatCvs.safeClose()
               concatCvs = null
             }
@@ -318,6 +323,8 @@ case class GpuHashAggregateExec(requiredChildDistributionExpressions: Option[Seq
                   // so we can assume they will be vectors after we eval
                   ref.columnarEval(aggregatedCb).asInstanceOf[GpuColumnVector]
                 }
+              maximum = max(max(GpuColumnVector.getTotalDeviceMemoryUsed(aggregatedCb),
+                GpuColumnVector.getTotalDeviceMemoryUsed(finalCvs.toArray)), maximum)
               aggregatedCb.close()
               aggregatedCb = null
               new ColumnarBatch(finalCvs.toArray, finalCvs.head.getRowCount.toInt)
@@ -343,6 +350,8 @@ case class GpuHashAggregateExec(requiredChildDistributionExpressions: Option[Seq
               }
             }
 
+            maximum = max(max(GpuColumnVector.getTotalDeviceMemoryUsed(finalCb),
+              GpuColumnVector.getTotalDeviceMemoryUsed(resultCvs.toArray)), maximum)
             finalCb.close()
             finalCb = null
             resultCb = if (resultCvs.isEmpty) {
@@ -382,6 +391,7 @@ case class GpuHashAggregateExec(requiredChildDistributionExpressions: Option[Seq
             resultCvs.safeClose()
           }
         }
+        peakDevMemory.set(maximum)
         childCvs.safeClose()
         concatCvs.safeClose()
         (Seq(batch, aggregatedInputCb, aggregatedCb, finalCb))
@@ -682,7 +692,7 @@ case class GpuHashAggregateExec(requiredChildDistributionExpressions: Option[Seq
 
   override lazy val additionalMetrics = Map(
     // not supported in GPU
-    "peakMemory" -> SQLMetrics.createSizeMetric(sparkContext, "peak memory"),
+    "peakDevMemory" -> SQLMetrics.createSizeMetric(sparkContext, "peak device memory"),
     "spillSize" -> SQLMetrics.createSizeMetric(sparkContext, "spill size"),
     "avgHashProbe" ->
       SQLMetrics.createAverageMetric(sparkContext, "avg hash probe bucket list iters"),
