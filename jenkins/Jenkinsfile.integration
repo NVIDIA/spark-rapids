@@ -34,8 +34,8 @@ pipeline {
     }
 
     stages {
-        stage ('build and test') {
-            parallel {
+        //stage ('build and test') {
+            //parallel {
                 stage('ubuntu16 cuda10.0') {
                     agent { label 'docker-gpu' }
                     steps {
@@ -116,8 +116,8 @@ pipeline {
                         }
                     }
                 }
-            }//end of parallel
-        }//end of stage
+            //}//end of parallel
+        //}//end of stage
     } // end of stages
     post {
         always {
