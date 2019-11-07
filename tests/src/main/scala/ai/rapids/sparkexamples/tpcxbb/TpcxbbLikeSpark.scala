@@ -729,8 +729,10 @@ object TpcxbbLikeSpark {
     StructField("imp_end_date", LongType)
   ))
 
+  // The market prices directory has .dat files and separate audit .csv files,
+  // so filter the path to only read the .dat files.
   def readMarketPricesCSV(spark: SparkSession, path: String): DataFrame =
-    spark.read.option("delimiter", "|").schema(marketPricesSchema).csv(path)
+    spark.read.option("delimiter", "|").schema(marketPricesSchema).csv(path + "/*.dat")
 
   def setupMarketPricesCSV(spark: SparkSession, path: String): Unit =
     readMarketPricesCSV(spark, path).createOrReplaceTempView("item_marketprices")
