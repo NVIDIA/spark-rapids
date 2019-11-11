@@ -16,11 +16,7 @@
 
 package ai.rapids.sparkexamples.tpcxbb
 
-import java.text.SimpleDateFormat
-import java.util.Date
 import java.util.concurrent.TimeUnit.NANOSECONDS
-
-import org.apache.hadoop.fs.Path
 
 import org.apache.spark.internal.Logging
 import org.apache.spark.sql.{DataFrame, SparkSession}
@@ -29,45 +25,33 @@ import org.apache.spark.sql.{DataFrame, SparkSession}
 object TpcxbbLikeBench extends Logging {
   def runBench(
       spark: SparkSession,
-      output: String,
       queryRunner: SparkSession => DataFrame): Unit = {
-    val path = new Path(output)
-    val fs = path.getFileSystem(spark.sparkContext.hadoopConfiguration)
-    fs.delete(path, true)
-
     var start = System.nanoTime()
     queryRunner(spark).collect
     var end = System.nanoTime()
     println(s"*** Cold run 1 msec: ${NANOSECONDS.toMillis(end - start)}")
-    fs.delete(path, true)
 
     println("*** Start hot run 1:")
     start = System.nanoTime()
     queryRunner(spark).collect
     end = System.nanoTime()
     println(s"*** Hot run 1 msec: ${NANOSECONDS.toMillis(end - start)}")
-    fs.delete(path, true)
 
     println("*** Start hot run 2:")
     start = System.nanoTime()
     queryRunner(spark).collect
     end = System.nanoTime()
     println(s"*** Hot run 2 msec: ${NANOSECONDS.toMillis(end - start)}")
-    fs.delete(path, true)
 
     println("*** Start hot run 3:")
     start = System.nanoTime()
     queryRunner(spark).collect
     end = System.nanoTime()
     println(s"*** Hot run 3 msec: ${NANOSECONDS.toMillis(end - start)}")
-    fs.delete(path, true)
   }
 
   def main(args: Array[String]): Unit = {
     val input = args(0)
-
-    val timestamp = new SimpleDateFormat("yyyy-MM-dd-HH:mm:ss").format(new Date())
-    val output = s"$input/tpcxbb-bench-output-$timestamp"
     val queryIndex = args(1).toInt
 
     val spark = SparkSession.builder.appName("TPCxBB Bench").getOrCreate()
@@ -108,6 +92,6 @@ object TpcxbbLikeBench extends Logging {
     }
 
     println(s"*** RUNNING TPCx-BB QUERY $queryIndex")
-    runBench(spark, output, queryRunner)
+    runBench(spark, queryRunner)
   }
 }
