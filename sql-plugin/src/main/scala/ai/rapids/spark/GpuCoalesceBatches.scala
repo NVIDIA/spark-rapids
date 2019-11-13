@@ -97,25 +97,6 @@ object ConcatAndConsumeAll {
       batch
     }
   }
-
-  /**
-   * Concat batches into a single batch.
-   * @param batches iterator of batches to be consumed and concatenated
-   * @param format the format of the data in case the iterator is empty and we need to return an
-   *               empty batch.  This will typically be output from your executor.
-   * @return the resulting batch, even if it is empty.  Please be careful you should not return
-   *         empty batches as part of an RDD.  This is here so it is simple to use in other
-   *         operations, like join or sort.
-   */
-  def apply(batches: Iterator[ColumnarBatch], format: Seq[Attribute]): ColumnarBatch = {
-    val arrayOfBatches = batches.toArray
-    import collection.JavaConverters._
-    if (arrayOfBatches.length <= 0) {
-      GpuColumnVector.emptyBatch(format.asJava)
-    } else {
-      buildNonEmptyBatch(arrayOfBatches)
-    }
-  }
 }
 
 object CoalesceGoal {

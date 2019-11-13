@@ -20,6 +20,7 @@ import ai.rapids.cudf.DType;
 import ai.rapids.cudf.NvtxColor;
 import ai.rapids.cudf.NvtxRange;
 import ai.rapids.cudf.Scalar;
+import ai.rapids.cudf.Schema;
 import ai.rapids.cudf.Table;
 import ai.rapids.cudf.TimeUnit;
 import org.apache.spark.sql.catalyst.expressions.Attribute;
@@ -237,6 +238,17 @@ public final class GpuColumnVector extends ColumnVector {
           null));
     }
     return new GpuColumnarBatchBuilder(schema, 0, null).build(0);
+  }
+
+  /**
+   * Convert a spark schema into a cudf schema
+   * @param input the spark schema to convert
+   * @return the cudf schema
+   */
+  public static Schema from(StructType input) {
+    Schema.Builder builder = Schema.builder();
+    input.foreach(f -> builder.column(GpuColumnVector.getRapidsType(f.dataType()), f.name()));
+    return builder.build();
   }
 
   /**
