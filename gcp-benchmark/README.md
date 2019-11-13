@@ -64,7 +64,7 @@ As an example, here is how to run a spark shell with the Rapids Plugin with the 
 ```
 $SPARK_HOME/bin/spark-shell --driver-memory=$DRIVER_MEMORY --master $MASTER \
  --conf "spark.executor.memory=$EXECUTOR_MEMORY" --conf "spark.executor.cores=$EXECUTOR_CORES" \
- --num-executors $NUM_EXECUTORS --conf "spark.executor.plugins=ai.rapids.spark.GpuResourceManager" \
+ --num-executors $NUM_EXECUTORS --conf "spark.plugins=ai.rapids.spark.RapidsSparkPlugin" \
  --conf spark.dynamicAllocation.enabled=false \
  --conf spark.hadoop.fs.AbstractFileSystem.gs.impl=com.google.cloud.hadoop.fs.gcs.GoogleHadoopFS \
  --conf spark.hadoop.fs.gs.impl=com.google.cloud.hadoop.fs.gcs.GoogleHadoopFileSystem \
