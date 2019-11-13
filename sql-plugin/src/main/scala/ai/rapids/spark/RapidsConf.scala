@@ -15,6 +15,9 @@
  */
 package ai.rapids.spark
 
+import java.util
+
+import scala.collection.JavaConverters._
 import scala.collection.mutable.ListBuffer
 
 import org.apache.spark.SparkConf
@@ -420,6 +423,9 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
   def get[T](entry: ConfEntry[T]): T = {
     entry.get(conf)
   }
+
+  lazy val rapidsConfMap: util.Map[String, String] = conf.filterKeys(
+    _.startsWith("spark.rapids.")).asJava
 
   lazy val isSqlEnabled: Boolean = get(SQL_ENABLED)
 

@@ -18,7 +18,7 @@ To enable this GPU acceleration you will need:
   * Set the config `spark.sql.extensions` to `ai.rapids.spark.Plugin`.
 
 ```
-> spark-shell --jars 'rapids-4-spark-0.8-SNAPSHOT.jar,cudf-0.8-SNAPSHOT-cuda10.jar' --conf spark.sql.extensions=ai.rapids.spark.Plugin
+> spark-shell --jars 'rapids-4-spark-0.8-SNAPSHOT.jar,cudf-0.8-SNAPSHOT-cuda10.jar' --conf spark.sql.extensions=ai.rapids.spark.Plugin --conf spark.plugins=ai.rapids.spark.RapidsSparkPlugin
 ```
 
 ## <a name="MEMORY"></a>Memory
@@ -28,8 +28,8 @@ memory and allocating GPU memory. To improve the performance of these operations
 as a user level GPU memory allocator/cache and this plugin will allocate and reuse pinned memory
 where possible to speed up CPU to GPU and GPU to CPU data transfers.
 
-To enable RMM you need to set the config `spark.executor.plugins` to 
-`ai.rapids.spark.GpuResourceManager` when launching your cluster.  To enable pinned memory you also
+To enable RMM you need to set the config `spark.rapids.memory.gpu.pooling.enabled` to
+`true` when launching your cluster.  To enable pinned memory you also
 need to set `spark.rapids.memory.pinnedPool.size` to the amount of pinned memory you want to use.
 Because this is used for data transfers it typically should be about 1/4 to 1/2 of the amount of
 GPU memory you have. You also need to enable it by setting the java System property 
@@ -48,7 +48,7 @@ just adding the ability to turn on and off different operators.
 Pooled GPU memory allocation can be enabled to improve performance, but this should not be used
 if you want to use operators that also use GPU memory like XGBoost or Tensorflow, as the pool
 it allocates cannot be used by other tools.
-To enable pool GPU memory allocation set config `spark.executor.plugins` to `ai.rapids.spark.GpuResourceManager`
+To enable pool GPU memory allocation set config `spark.rapids.memory.gpu.pooling.enabled` to `true`.
 
 See documentation for [configs](docs/configs.md).
 

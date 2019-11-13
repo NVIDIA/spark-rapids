@@ -16,15 +16,17 @@
 
 package ai.rapids.spark
 
+import java.util
 import java.util.concurrent.atomic.{AtomicLong, AtomicReference}
 
+import scala.collection.JavaConverters._
 import scala.collection.mutable.ArrayBuffer
 
 import ai.rapids.cudf._
-import ai.rapids.spark
 import org.apache.commons.lang3.mutable.MutableLong
 
-import org.apache.spark.{ExecutorPlugin, ExecutorPluginContext, SparkEnv, TaskContext}
+import org.apache.spark.{SparkContext, TaskContext}
+import org.apache.spark.api.plugin.{DriverPlugin, ExecutorPlugin, PluginContext, SparkPlugin}
 import org.apache.spark.internal.Logging
 import org.apache.spark.sql.SparkSessionExtensions
 import org.apache.spark.sql.catalyst.plans.physical.Partitioning
@@ -260,19 +262,26 @@ object GpuResourceManager extends MemoryListener with Logging {
 }
 
 /**
- * Config to enable pooled GPU memory allocation which can improve performance.  This should be off
- * if you want to use operators that also use GPU memory like XGBoost or Tensorflow, as the pool
- * it allocates cannot be used by other tools.
- *
- * To enable this set spark.executor.plugins to ai.rapids.spark.GpuResourceManager
+ * The Spark driver plugin provided by the RAPIDS Spark plugin.
  */
-class GpuResourceManager extends ExecutorPlugin with Logging {
+class RapidsDriverPlugin extends DriverPlugin with Logging {
+  override def init(sc: SparkContext, pluginContext: PluginContext): util.Map[String, String] = {
+    val conf = new RapidsConf(pluginContext.conf)
+    conf.rapidsConfMap
+  }
+}
+
+/**
+ * The Spark executor plugin provided by the RAPIDS Spark plugin.
+ */
+class RapidsExecutorPlugin extends ExecutorPlugin with Logging {
   var loggingEnabled = false
 
-  override def init(pluginContext: ExecutorPluginContext): Unit = synchronized {
+  override def init(
+      ctx: PluginContext,
+      extraConf: util.Map[String, String]): Unit = {
+    val conf = new RapidsConf(extraConf.asScala.toMap)
     MemoryListener.registerDeviceListener(GpuResourceManager)
-    val env = SparkEnv.get
-    val conf = new spark.RapidsConf(env.conf)
     val info = Cuda.memGetInfo()
     val async = (conf.rmmAsyncSpillPct * info.total).toLong
     val stop = (conf.rmmSpillPct * info.total).toLong
@@ -322,4 +331,13 @@ class GpuResourceManager extends ExecutorPlugin with Logging {
 
     GpuSemaphore.shutdown()
   }
+}
+
+/**
+ * The RAPIDS plugin for Spark.
+ * To enable this plugin, set the config "spark.plugins" to ai.rapids.spark.RapidsSparkPlugin
+ */
+class RapidsSparkPlugin extends SparkPlugin with Logging {
+  override def driverPlugin(): DriverPlugin = new RapidsDriverPlugin
+  override def executorPlugin(): ExecutorPlugin = new RapidsExecutorPlugin
 }
