@@ -25,15 +25,15 @@ import java.util
 import scala.collection.JavaConverters._
 import scala.collection.mutable.ArrayBuffer
 
-import ai.rapids.cudf.{HostMemoryBuffer, NvtxColor, NvtxRange, ORCOptions, Table, TimeUnit}
-import ai.rapids.spark.GpuOrcPartitionReader.{OrcOutputStripe, OrcPartitionReaderContext}
+import ai.rapids.cudf._
 import ai.rapids.spark.GpuMetricNames._
+import ai.rapids.spark.GpuOrcPartitionReader.{OrcOutputStripe, OrcPartitionReaderContext}
 import com.google.protobuf25.CodedOutputStream
 import org.apache.commons.io.IOUtils
 import org.apache.hadoop.conf.Configuration
 import org.apache.hadoop.fs.{FileSystem, Path}
 import org.apache.orc.{DataReader, OrcConf, OrcFile, OrcProto, PhysicalWriter, Reader, StripeInformation, TypeDescription}
-import org.apache.orc.impl.{BufferChunk, DataReaderProperties, OrcCodecPool, OutStream, RecordReaderImpl, RecordReaderUtils, SchemaEvolution}
+import org.apache.orc.impl._
 import org.apache.orc.impl.RecordReaderImpl.SargApplier
 import org.apache.orc.mapred.OrcInputFormat
 import org.apache.orc.storage.common.io.DiskRangeList
@@ -43,16 +43,16 @@ import org.apache.spark.internal.Logging
 import org.apache.spark.sql.SparkSession
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.util.CaseInsensitiveMap
+import org.apache.spark.sql.connector.read.{InputPartition, PartitionReader, PartitionReaderFactory}
 import org.apache.spark.sql.execution.datasources.{PartitionedFile, PartitioningAwareFileIndex}
-import org.apache.spark.sql.execution.datasources.v2.orc.OrcScan
 import org.apache.spark.sql.execution.datasources.v2.{FilePartitionReaderFactory, FileScan}
+import org.apache.spark.sql.execution.datasources.v2.orc.OrcScan
 import org.apache.spark.sql.execution.QueryExecutionException
 import org.apache.spark.sql.execution.datasources.orc.OrcUtils
 import org.apache.spark.sql.execution.metric.SQLMetric
 import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.rapids.OrcFilters
 import org.apache.spark.sql.sources.Filter
-import org.apache.spark.sql.connector.read.{InputPartition, PartitionReader, PartitionReaderFactory}
 import org.apache.spark.sql.types.StructType
 import org.apache.spark.sql.util.CaseInsensitiveStringMap
 import org.apache.spark.sql.vectorized.ColumnarBatch
@@ -410,6 +410,9 @@ class GpuOrcPartitionReader(
     OrcOutputStripe(infoBuilder, outputStripeFooter, rangeCreator.get)
   }
 
+  private def estimateRowCount(stripes: Seq[OrcOutputStripe]): Long =
+    stripes.map(_.infoBuilder.getNumberOfRows).sum
+
   private def estimateOutputSize(stripes: Seq[OrcOutputStripe]): Long = {
     // start with header magic
     var size: Long = OrcFile.MAGIC.length
@@ -613,12 +616,12 @@ class GpuOrcPartitionReader(
     }
   }
 
-  private def readPartFile(stripes: Seq[OrcOutputStripe]): (HostMemoryBuffer, Long) = {
+  private def readPartFile(stripes: Seq[OrcOutputStripe]): (HostMemoryBuffer, Long, Long) = {
     val nvtxRange = new NvtxWithMetrics("Buffer file split", NvtxColor.YELLOW,
       metrics("bufferTime"))
     try {
       if (stripes.isEmpty) {
-        return (null, 0L)
+        return (null, 0L, 0)
       }
 
       val hostBufferSize = estimateOutputSize(stripes)
@@ -628,7 +631,7 @@ class GpuOrcPartitionReader(
         val out = new HostMemoryOutputStream(hmb)
         writeOrcOutputFile(out, stripes)
         succeeded = true
-        (hmb, out.getPos)
+        (hmb, out.getPos, estimateRowCount(stripes))
       } finally {
         if (!succeeded) {
           hmb.close()
@@ -640,7 +643,7 @@ class GpuOrcPartitionReader(
   }
 
   private def readToTable(stripes: Seq[OrcOutputStripe]): Option[Table] = {
-    val (dataBuffer, dataSize) = readPartFile(stripes)
+    val (dataBuffer, dataSize, rowCount) = readPartFile(stripes)
     try {
       if (dataSize == 0) {
         None
@@ -648,11 +651,14 @@ class GpuOrcPartitionReader(
         if (debugDumpPrefix != null) {
           dumpOrcData(dataBuffer, dataSize)
         }
+        val cudfSchema = GpuColumnVector.from(readDataSchema)
         val includedColumns = ctx.updatedReadSchema.getFieldNames.asScala
         val parseOpts = ORCOptions.builder()
-            .withTimeUnit(TimeUnit.MICROSECONDS)
-            .withNumPyTypes(false)
-            .includeColumn(includedColumns:_*).build()
+          .withTimeUnit(TimeUnit.MICROSECONDS)
+          .withNumPyTypes(false)
+          .includeColumn(includedColumns:_*)
+          .withOutputSizeGuess(cudfSchema.guessTableSize(rowCount.toInt))
+          .build()
 
         // about to start using the GPU
         GpuSemaphore.acquireIfNecessary(TaskContext.get())

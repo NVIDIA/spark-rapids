@@ -276,10 +276,10 @@ object TpchLikeSpark {
       .getOrCreate()
     setupAllParquet(spark, args(0))
     var range = new DebugRange("QUERY")
-    spark.time(Q4Like(spark).collect())
+    spark.time(Q5Like(spark).collect())
     range.close()
     range = new DebugRange("QUERY")
-    spark.time(Q4Like(spark).collect())
+    spark.time(Q5Like(spark).collect())
     range.close()
   }
 }

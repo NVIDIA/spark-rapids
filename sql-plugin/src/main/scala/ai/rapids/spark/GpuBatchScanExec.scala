@@ -305,9 +305,10 @@ class CSVPartitionReader(
   }
 
   def buildCsvOptions(
-     parsedOptions: CSVOptions,
-     schema: StructType,
-     hasHeader: Boolean): cudf.CSVOptions = {
+      parsedOptions: CSVOptions,
+      schema: StructType,
+      hasHeader: Boolean,
+      sizeGuess: Long): cudf.CSVOptions = {
     val builder = cudf.CSVOptions.builder()
     builder.withDelim(parsedOptions.delimiter.charAt(0))
     builder.hasHeader(hasHeader)
@@ -315,6 +316,7 @@ class CSVPartitionReader(
     builder.withQuote(parsedOptions.quote)
     builder.withComment(parsedOptions.comment)
     builder.withNullValue(parsedOptions.nullValue)
+    builder.withOutputSizeGuess(sizeGuess)
     builder.includeColumn(schema.fields.map(_.name): _*)
     builder.build
   }
@@ -338,7 +340,7 @@ class CSVPartitionReader(
     result
   }
 
-  private def readPartFile(): (HostMemoryBuffer, Long) = {
+  private def readPartFile(): (HostMemoryBuffer, Long, Integer) = {
     val nvtxRange = new NvtxWithMetrics("Buffer file split", NvtxColor.YELLOW,
       metrics("bufferTime"))
     try {
@@ -372,7 +374,7 @@ class CSVPartitionReader(
           hmb.close()
         }
       }
-      (hmb, totalSize)
+      (hmb, totalSize, totalRows)
     } finally {
       nvtxRange.close()
     }
@@ -399,25 +401,29 @@ class CSVPartitionReader(
   }
 
   private def readToTable(hasHeader: Boolean): Option[Table] = {
-    val (dataBuffer, dataSize) = readPartFile()
+    val (dataBuffer, dataSize, totalRows) = readPartFile()
     try {
       if (dataSize == 0) {
         None
       } else {
-        val csvSchemaBuilder = ai.rapids.cudf.Schema.builder
-        dataSchema.foreach(f => csvSchemaBuilder.column(GpuColumnVector.getRapidsType(f.dataType), f.name))
         val newReadDataSchema: StructType = if (readDataSchema.isEmpty) {
           val smallestField = dataSchema.min(Ordering.by[StructField, Integer](_.dataType.defaultSize))
           StructType(Seq(smallestField))
         } else {
           readDataSchema
         }
-        val csvOpts = buildCsvOptions(parsedOptions, newReadDataSchema, hasHeader)
-
+        val cudfSchema = GpuColumnVector.from(dataSchema)
+        val csvOpts = buildCsvOptions(parsedOptions, newReadDataSchema, hasHeader, cudfSchema.guessTableSize(totalRows))
         // about to start using the GPU
         GpuSemaphore.acquireIfNecessary(TaskContext.get())
 
-        val table = Table.readCSV(csvSchemaBuilder.build(), csvOpts, dataBuffer, 0, dataSize)
+        // The buffer that is sent down
+        val bufferTracking = GpuResourceManager.rawBuffer(dataSize, "CSV INPUT BUFFER")
+        val table = try {
+          Table.readCSV(cudfSchema, csvOpts, dataBuffer, 0, dataSize)
+        } finally {
+          bufferTracking.close()
+        }
         val numColumns = table.getNumberOfColumns
         if (newReadDataSchema.length != numColumns) {
           table.close()

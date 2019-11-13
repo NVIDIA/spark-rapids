@@ -244,7 +244,7 @@ class ParquetPartitionReader(
     isExhausted = true
   }
 
-  private def readPartFile(blocks: Seq[BlockMetaData]): (HostMemoryBuffer, Long) = {
+  private def readPartFile(blocks: Seq[BlockMetaData]): (HostMemoryBuffer, Long, Long) = {
     val nvtxRange = new NvtxWithMetrics("Buffer file split", NvtxColor.YELLOW,
       metrics("bufferTime"))
     try {
@@ -261,7 +261,7 @@ class ParquetPartitionReader(
           BytesUtils.writeIntLittleEndian(out, (out.getPos - footerPos).toInt)
           out.write(ParquetPartitionReader.PARQUET_MAGIC)
           succeeded = true
-          (hmb, out.getPos)
+          (hmb, out.getPos, estimateRowCount(blocks))
         } finally {
           if (!succeeded) {
             hmb.close()
@@ -274,6 +274,9 @@ class ParquetPartitionReader(
       nvtxRange.close()
     }
   }
+
+  private def estimateRowCount(currentChunkedBlocks: Seq[BlockMetaData]): Long =
+    currentChunkedBlocks.map(_.getRowCount).sum
 
   private def calculateParquetOutputSize(currentChunkedBlocks: Seq[BlockMetaData]): Long = {
     // start with the size of Parquet magic (at start+end) and footer length values
@@ -418,7 +421,7 @@ class ParquetPartitionReader(
       return None
     }
 
-    val (dataBuffer, dataSize) = readPartFile(currentChunkedBlocks)
+    val (dataBuffer, dataSize, rowCount) = readPartFile(currentChunkedBlocks)
     try {
       if (dataSize == 0) {
         None
@@ -426,9 +429,11 @@ class ParquetPartitionReader(
         if (debugDumpPrefix != null) {
           dumpParquetData(dataBuffer, dataSize)
         }
+        val cudfSchema = GpuColumnVector.from(readDataSchema)
         val parseOpts = ParquetOptions.builder()
-            .withTimeUnit(TimeUnit.MICROSECONDS)
-            .includeColumn(readDataSchema.fieldNames:_*).build()
+          .withTimeUnit(TimeUnit.MICROSECONDS)
+          .withOutputSizeGuess(cudfSchema.guessTableSize(rowCount.toInt))
+          .includeColumn(readDataSchema.fieldNames:_*).build()
 
         // about to start using the GPU
         GpuSemaphore.acquireIfNecessary(TaskContext.get())
