@@ -21,7 +21,6 @@ import java.nio.charset.StandardCharsets
 
 import scala.collection.JavaConverters._
 import scala.util.control.NonFatal
-import scala.math.max
 
 import ai.rapids.cudf.{HostMemoryBuffer, NvtxColor, Table}
 import ai.rapids.cudf

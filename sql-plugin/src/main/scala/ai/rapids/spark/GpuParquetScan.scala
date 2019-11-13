@@ -23,7 +23,6 @@ import java.util.Collections
 
 import scala.collection.JavaConverters._
 import scala.collection.mutable.ArrayBuffer
-import scala.math.max
 
 import ai.rapids.cudf.{HostMemoryBuffer, NvtxColor, NvtxRange, ParquetOptions, Table, TimeUnit}
 import ai.rapids.spark.GpuMetricNames._
