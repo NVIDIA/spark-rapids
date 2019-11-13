@@ -195,7 +195,7 @@ abstract class AbstractGpuCoalesceIterator(origIter: Iterator[ColumnarBatch],
     opName: String) extends Iterator[ColumnarBatch] {
   private val iter = new RemoveEmptyBatchIterator(origIter, numInputBatches)
   private var onDeck: Option[ColumnarBatch] = None
-  private var maximum: Long = 0
+  private var maxDeviceMemory: Long = 0
 
   TaskContext.get().addTaskCompletionListener[Unit](_ => onDeck.foreach(_.close()))
 
@@ -233,7 +233,7 @@ abstract class AbstractGpuCoalesceIterator(origIter: Iterator[ColumnarBatch],
       if (onDeck.isDefined) {
         val cb = onDeck.get
         val rows = cb.numRows()
-        maximum = scala.math.max(maximum, GpuColumnVector.getTotalDeviceMemoryUsed(cb))
+        maxDeviceMemory = scala.math.max(maxDeviceMemory, GpuColumnVector.getTotalDeviceMemoryUsed(cb))
         if (rows > goal.targetSize) {
           goal.whenTargetExceeded(rows)
         }
@@ -246,7 +246,7 @@ abstract class AbstractGpuCoalesceIterator(origIter: Iterator[ColumnarBatch],
       try {
         while (numRows < goal.targetSize && onDeck.isEmpty && iter.hasNext) {
           val cb = iter.next()
-          maximum = scala.math.max(maximum, GpuColumnVector.getTotalDeviceMemoryUsed(cb))
+          maxDeviceMemory = scala.math.max(maxDeviceMemory, GpuColumnVector.getTotalDeviceMemoryUsed(cb))
           val nextRows = cb.numRows()
           numInputBatches += 1
           numInputRows += nextRows
@@ -278,7 +278,7 @@ abstract class AbstractGpuCoalesceIterator(origIter: Iterator[ColumnarBatch],
       }
       ret
     } finally {
-      peakDevMemory.set(scala.math.max(peakDevMemory.value, maximum))
+      peakDevMemory.set(scala.math.max(peakDevMemory.value, maxDeviceMemory))
       cleanupConcatIsDone()
       total.close()
     }

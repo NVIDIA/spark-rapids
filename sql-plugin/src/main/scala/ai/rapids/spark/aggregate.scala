@@ -160,7 +160,7 @@ case class GpuHashAggregateExec(requiredChildDistributionExpressions: Option[Seq
     val computeAggTime = longMetric("computeAggTime")
     val concatTime = longMetric("concatTime")
     val peakDevMemory = longMetric("peakDevMemory")
-    var maximum:Long = 0
+    var maxDeviceMemory:Long = 0
     // These metrics are supported by the cpu hash aggregate
     // We have the corresponding gpu versions of:
     //    val peakDevMemory = longMetric("peakDevMemory")
@@ -245,7 +245,7 @@ case class GpuHashAggregateExec(requiredChildDistributionExpressions: Option[Seq
           val nvtxRange = new NvtxWithMetrics("Hash Aggregate Batch", NvtxColor.YELLOW, totalTime)
           try {
             childCvs = processIncomingBatch(batch, boundInputReferences)
-            maximum = max(GpuColumnVector.getTotalDeviceMemoryUsed(batch), maximum)
+            maxDeviceMemory = max(GpuColumnVector.getTotalDeviceMemoryUsed(batch), maxDeviceMemory)
             // done with the batch, clean it as soon as possible
             batch.close()
             batch = null
@@ -275,7 +275,7 @@ case class GpuHashAggregateExec(requiredChildDistributionExpressions: Option[Seq
               // and perform aggregation on the new batch (which would need to be merged, with the
               // spilled aggregates)
               concatCvs = concatenateBatches(aggregatedInputCb, aggregatedCb, concatTime)
-              maximum = max(GpuColumnVector.getTotalDeviceMemoryUsed(concatCvs.toArray), maximum)
+              maxDeviceMemory = max(GpuColumnVector.getTotalDeviceMemoryUsed(concatCvs.toArray), maxDeviceMemory)
               aggregatedCb.close()
               aggregatedCb = null
               aggregatedInputCb.close()
@@ -285,7 +285,7 @@ case class GpuHashAggregateExec(requiredChildDistributionExpressions: Option[Seq
               //    to concatenate against incoming batches (step 2)
               aggregatedCb = computeAggregate(concatCvs, merge = true, groupingExpressions,
                 boundMergeAgg, computeAggTime)
-              maximum = max(GpuColumnVector.getTotalDeviceMemoryUsed(aggregatedCb), maximum)
+              maxDeviceMemory = max(GpuColumnVector.getTotalDeviceMemoryUsed(aggregatedCb), maxDeviceMemory)
               concatCvs.safeClose()
               concatCvs = null
             }
@@ -323,8 +323,8 @@ case class GpuHashAggregateExec(requiredChildDistributionExpressions: Option[Seq
                   // so we can assume they will be vectors after we eval
                   ref.columnarEval(aggregatedCb).asInstanceOf[GpuColumnVector]
                 }
-              maximum = max(max(GpuColumnVector.getTotalDeviceMemoryUsed(aggregatedCb),
-                GpuColumnVector.getTotalDeviceMemoryUsed(finalCvs.toArray)), maximum)
+              maxDeviceMemory = max(max(GpuColumnVector.getTotalDeviceMemoryUsed(aggregatedCb),
+                GpuColumnVector.getTotalDeviceMemoryUsed(finalCvs.toArray)), maxDeviceMemory)
               aggregatedCb.close()
               aggregatedCb = null
               new ColumnarBatch(finalCvs.toArray, finalCvs.head.getRowCount.toInt)
@@ -350,8 +350,8 @@ case class GpuHashAggregateExec(requiredChildDistributionExpressions: Option[Seq
               }
             }
 
-            maximum = max(max(GpuColumnVector.getTotalDeviceMemoryUsed(finalCb),
-              GpuColumnVector.getTotalDeviceMemoryUsed(resultCvs.toArray)), maximum)
+            maxDeviceMemory = max(max(GpuColumnVector.getTotalDeviceMemoryUsed(finalCb),
+              GpuColumnVector.getTotalDeviceMemoryUsed(resultCvs.toArray)), maxDeviceMemory)
             finalCb.close()
             finalCb = null
             resultCb = if (resultCvs.isEmpty) {
@@ -391,7 +391,7 @@ case class GpuHashAggregateExec(requiredChildDistributionExpressions: Option[Seq
             resultCvs.safeClose()
           }
         }
-        peakDevMemory.set(maximum)
+        peakDevMemory.set(maxDeviceMemory)
         childCvs.safeClose()
         concatCvs.safeClose()
         (Seq(batch, aggregatedInputCb, aggregatedCb, finalCb))

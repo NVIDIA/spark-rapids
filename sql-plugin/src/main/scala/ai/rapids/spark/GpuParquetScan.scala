@@ -420,7 +420,7 @@ class ParquetPartitionReader(
     }
 
     val (dataBuffer, dataSize) = readPartFile(currentChunkedBlocks)
-    var maximum:Long = 0
+    var maxDeviceMemory: Long = 0
     try {
       if (dataSize == 0) {
         None
@@ -436,7 +436,7 @@ class ParquetPartitionReader(
         GpuSemaphore.acquireIfNecessary(TaskContext.get())
 
         val table = Table.readParquet(parseOpts, dataBuffer, 0, dataSize)
-        maximum = max(GpuColumnVector.getTotalDeviceMemoryUsed(table), maximum)
+        maxDeviceMemory = GpuColumnVector.getTotalDeviceMemoryUsed(table)
         val numColumns = table.getNumberOfColumns
         if (readDataSchema.length != numColumns) {
           table.close()
@@ -447,7 +447,7 @@ class ParquetPartitionReader(
         Some(table)
       }
     } finally {
-      metrics("peakDevMemory") += maximum
+      metrics("peakDevMemory") += maxDeviceMemory
       dataBuffer.close()
     }
   }

@@ -22,6 +22,7 @@ import java.nio.charset.StandardCharsets
 import scala.collection.JavaConverters._
 import scala.util.control.NonFatal
 import scala.math.max
+
 import ai.rapids.cudf.{HostMemoryBuffer, NvtxColor, Table}
 import ai.rapids.cudf
 import ai.rapids.spark.GpuMetricNames._
@@ -401,7 +402,7 @@ class CSVPartitionReader(
 
   private def readToTable(hasHeader: Boolean): Option[Table] = {
     val (dataBuffer, dataSize) = readPartFile()
-    var maximum:Long = 0
+    var maxDeviceMemory:Long = 0
     try {
       if (dataSize == 0) {
         None
@@ -420,7 +421,7 @@ class CSVPartitionReader(
         GpuSemaphore.acquireIfNecessary(TaskContext.get())
 
         val table = Table.readCSV(csvSchemaBuilder.build(), csvOpts, dataBuffer, 0, dataSize)
-        maximum = max(GpuColumnVector.getTotalDeviceMemoryUsed(table), maximum)
+        maxDeviceMemory = GpuColumnVector.getTotalDeviceMemoryUsed(table)
         val numColumns = table.getNumberOfColumns
         if (newReadDataSchema.length != numColumns) {
           table.close()
@@ -430,7 +431,7 @@ class CSVPartitionReader(
         Some(table)
       }
     } finally {
-      metrics("peakDevMemory") += maximum
+      metrics("peakDevMemory") += maxDeviceMemory
       dataBuffer.close()
     }
   }
