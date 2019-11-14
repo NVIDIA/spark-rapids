@@ -20,6 +20,9 @@ import ai.rapids.spark.GpuMetricNames._
 
 import org.apache.spark.sql.execution.metric.{SQLMetric, SQLMetrics}
 import org.apache.spark.sql.execution.SparkPlan
+import org.apache.spark.util.AccumulatorV2
+
+import scala.math.max
 
 object GpuMetricNames {
   val NUM_OUTPUT_ROWS =  "numOutputRows"
@@ -52,4 +55,31 @@ trait GpuExec extends SparkPlan {
       "total time")) ++ additionalMetrics
 
   lazy val additionalMetrics: Map[String, SQLMetric] = Map.empty
+}
+
+case class MaxAccumulator(var _value:Long) extends AccumulatorV2[Long,Long] {
+
+  override def add(newval: Long): Unit = {
+    _value = max(_value, newval)
+  }
+
+  override def copy(): MaxAccumulator = {
+    new MaxAccumulator(_value)
+  }
+
+  override def isZero(): Boolean = {
+    _value == 0
+  }
+
+  override def merge(other: AccumulatorV2[Long, Long]): Unit = {
+    add(other.value)
+  }
+
+  override def reset(): Unit = {
+    _value = 0
+  }
+
+  override def value(): Long = {
+    _value
+  }
 }
