@@ -152,6 +152,7 @@
 		<plugin>
                   <groupId>org.apache.maven.plugins</groupId>
                   <artifactId>maven-antrun-plugin</artifactId>
+                  <version>1.8</version>
                   <executions>
                     <execution>
                       <phase>generate-resources</phase>
@@ -170,10 +171,6 @@
                       </goals>
                     </execution>
                   </executions>
-                </plugin>
-                <plugin>
-                  <artifactId>maven-antrun-plugin</artifactId>
-                  <version>1.8</version>
                 </plugin>
                 <plugin>
                   <groupId>org.apache.maven.plugins</groupId>
