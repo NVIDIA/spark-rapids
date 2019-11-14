@@ -15,6 +15,9 @@
  */
 package ai.rapids.spark
 
+import java.util
+
+import scala.collection.JavaConverters._
 import scala.collection.mutable.ListBuffer
 
 import org.apache.spark.SparkConf
@@ -35,6 +38,15 @@ object ConfHelper {
   def toInteger(s: String, key: String): Integer = {
     try {
       s.trim.toInt
+    } catch {
+      case _: IllegalArgumentException =>
+        throw new IllegalArgumentException(s"$key should be integer, but was $s")
+    }
+  }
+
+  def toDouble(s: String, key: String): Double = {
+    try {
+      s.trim.toDouble
     } catch {
       case _: IllegalArgumentException =>
         throw new IllegalArgumentException(s"$key should be integer, but was $s")
@@ -146,6 +158,10 @@ class ConfBuilder(val key: String, val register: ConfEntry[_] => Unit) {
     new TypedConfBuilder[Integer](this, toInteger(_, key))
   }
 
+  def doubleConf: TypedConfBuilder[Double] = {
+    new TypedConfBuilder(this, toDouble(_, key))
+  }
+
   def stringConf: TypedConfBuilder[String] = {
     new TypedConfBuilder[String](this, identity[String])
   }
@@ -170,9 +186,41 @@ object RapidsConf {
     .bytesConf(ByteUnit.BYTE)
     .createWithDefault(0)
 
-  val MEM_DEBUG = conf("spark.rapids.memory.gpu.debug")
+  val RMM_DEBUG = conf("spark.rapids.memory.gpu.debug.enabled")
     .doc("If memory management is enabled and this is true GPU memory allocations are " +
-      "tracked and printed out when the process exits.  This should not be used in production.")
+      "tracked and printed out when the process exits. This should not be used in production.")
+    .booleanConf
+    .createWithDefault(false)
+
+  val RMM_ASYNC_SPILL_PCT = conf("spark.rapids.memory.gpu.asyncSpillPct")
+    .doc("When reported GPU memory usage is above this percentage, " +
+      "cached data will spill asynchronously.")
+    .doubleConf
+    .createWithDefault(0.75)
+
+  val RMM_SPILL_PCT = conf("spark.rapids.memory.gpu.spillPct")
+    .doc("When reported GPU memory usage is above this percentage, " +
+      "the allocator thread will block until spilling of cached data has completed.")
+    .doubleConf
+    .createWithDefault(0.85)
+
+  val RMM_ALLOC_PCT = conf("spark.rapids.memory.gpu.allocPct")
+    .doc("The percentage of total GPU memory that should be initially allocated " +
+      "for pooled memory. Extra memory will be allocated as needed, but it may " +
+      "result in more fragmentation.")
+    .doubleConf
+    .createWithDefault(0.9)
+
+  val POOLED_MEM = conf("spark.rapids.memory.gpu.pooling.enabled")
+    .doc("Should RMM act as a pooling allocator for GPU memory, or should it just pass " +
+      "through to CUDA memory allocation directly.")
+    .booleanConf
+    .createWithDefault(true)
+
+  val UVM_ENABLED = conf("spark.rapids.memory.uvm.enabled")
+    .doc("UVM or universal memory can allow main host memory to act essentially as swap " +
+      "for device(GPU) memory. This allows the GPU to process more data than fits in memory, but " +
+      "can result in slower processing. This is an experimental feature.")
     .booleanConf
     .createWithDefault(false)
 
@@ -376,6 +424,9 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
     entry.get(conf)
   }
 
+  lazy val rapidsConfMap: util.Map[String, String] = conf.filterKeys(
+    _.startsWith("spark.rapids.")).asJava
+
   lazy val isSqlEnabled: Boolean = get(SQL_ENABLED)
 
   lazy val exportColumnarRdd: Boolean = get(EXPORT_COLUMNAR_RDD)
@@ -390,7 +441,17 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
 
   lazy val testingAllowedNonGpu: Seq[String] = get(TEST_ALLOWED_NONGPU)
 
-  lazy val isMemDebugEnabled: Boolean = get(MEM_DEBUG)
+  lazy val isRmmDebugEnabled: Boolean = get(RMM_DEBUG)
+
+  lazy val isUvmEnabled: Boolean = get(UVM_ENABLED)
+
+  lazy val isPooledMemEnabled: Boolean = get(POOLED_MEM)
+
+  lazy val rmmSpillPct: Double = get(RMM_SPILL_PCT)
+
+  lazy val rmmAsyncSpillPct: Double = get(RMM_ASYNC_SPILL_PCT)
+
+  lazy val rmmAllocPct: Double = get(RMM_ALLOC_PCT)
 
   lazy val hasNans: Boolean = get(HAS_NANS)
 
