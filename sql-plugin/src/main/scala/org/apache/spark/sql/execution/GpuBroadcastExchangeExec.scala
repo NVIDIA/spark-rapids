@@ -209,7 +209,7 @@ class GpuBroadcastMeta(
     if (!TrampolineUtil.isHashedRelation(exchange.mode)) {
       willNotWorkOnGpu("Broadcast exchange is only supported for HashedJoin")
     }
-    if (!isParentInstanceOf[BroadcastHashJoinExec]) {
+    if (!parent.exists(_.wrapped.isInstanceOf[BroadcastHashJoinExec])) {
       willNotWorkOnGpu("BroadcastExchange only works on the GPU if being used " +
         "with a GPU version of BroadcastHashJoinExec")
     }
