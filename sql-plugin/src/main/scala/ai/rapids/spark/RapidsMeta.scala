@@ -109,8 +109,6 @@ abstract class RapidsMeta[INPUT <: BASE, BASE, OUTPUT <: BASE](
   final def shouldBeRemoved(because: String): Unit =
     shouldBeRemovedReasons.get.add(because)
 
-  def isParentInstanceOf[A]: Boolean = parent.exists(_.wrapped.isInstanceOf[A])
-
   /**
    * Returns true if this node should be removed.
    */
