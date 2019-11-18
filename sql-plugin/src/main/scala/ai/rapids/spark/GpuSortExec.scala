@@ -110,17 +110,13 @@ case class GpuSortExec(
 
   override def doExecuteColumnar(): RDD[ColumnarBatch] = {
     val sortTime = longMetric("sortTime")
-    val peakDevMemory = longMetric("peakDevMemory")
-    var maxDeviceMemory: Long = 0
-
 
     val crdd = child.executeColumnar()
     crdd.mapPartitions { cbIter =>
       val sorter = createBatchGpuSorter()
       val sortedIterator = sorter.sort(cbIter)
       sortTime += sorter.getSortTimeNanos
-      maxDeviceMemory = max(maxDeviceMemory, sorter.getPeakMemoryUsage)
-      peakDevMemory.set(maxDeviceMemory)
+      metrics("peakDevMemory") += sorter.getPeakMemoryUsage
       sortedIterator
     }
   }
@@ -158,13 +154,13 @@ class GpuColumnarBatchSorter(
     var success = false
     var numRows = 0L
     var concatTbl: Table = null
+    var concatTblSize: Long = 0
 
     try {
       val inputTbls = new ArrayBuffer[Table]()
       try {
         while (batchIter.hasNext) {
           val batch = batchIter.next()
-          maxDeviceMemory = GpuColumnVector.getTotalDeviceMemoryUsed(batch)
           val nvtxRange = new NvtxWithMetrics("sort input batch", NvtxColor.WHITE, totalTime)
           try {
             try {
@@ -173,7 +169,6 @@ class GpuColumnarBatchSorter(
                 throw new UnsupportedOperationException(s"Too many rows to sort")
               }
               inputCvs = getGpuCvsAndBindReferences(batch, sortOrder)
-              maxDeviceMemory = max(GpuColumnVector.getTotalDeviceMemoryUsed(inputCvs.toArray), maxDeviceMemory)
               inputTbls += new cudf.Table(inputCvs.map(_.getBase): _*)
             } finally {
               inputCvs.foreach(_.close())
@@ -189,7 +184,8 @@ class GpuColumnarBatchSorter(
           numOutputRows += numRows
           if (inputTbls.length > 1) {
             concatTbl = Table.concatenate(inputTbls: _*)
-            maxDeviceMemory = max(maxDeviceMemory, GpuColumnVector.getTotalDeviceMemoryUsed(concatTbl))
+            concatTblSize = GpuColumnVector.getTotalDeviceMemoryUsed(concatTbl)
+            maxDeviceMemory = max(maxDeviceMemory, concatTblSize)
           } else {
             concatTbl = inputTbls.remove(0)
           }
@@ -210,7 +206,7 @@ class GpuColumnarBatchSorter(
         resultCb = doGpuSort(concatTbl, orderByArgs)
         numOutputBatches += 1
         totalSortTimeNanos += System.nanoTime - startTimestamp
-        maxDeviceMemory = max(maxDeviceMemory, GpuColumnVector.getTotalDeviceMemoryUsed(resultCb))
+        maxDeviceMemory = max(maxDeviceMemory, GpuColumnVector.getTotalDeviceMemoryUsed(resultCb) + concatTblSize)
         success = true
       } finally {
         nvtxRange.close()

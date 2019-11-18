@@ -227,7 +227,6 @@ abstract class AbstractGpuCoalesceIterator(origIter: Iterator[ColumnarBatch],
       try {
         while (numRows < goal.targetSize && onDeck.isEmpty && iter.hasNext) {
           val cb = iter.next()
-          maxDeviceMemory = scala.math.max(maxDeviceMemory, GpuColumnVector.getTotalDeviceMemoryUsed(cb))
           val nextRows = cb.numRows()
           numInputBatches += 1
           numInputRows += nextRows
@@ -243,6 +242,7 @@ abstract class AbstractGpuCoalesceIterator(origIter: Iterator[ColumnarBatch],
             }
           } else {
             addBatchToConcat(cb)
+            maxDeviceMemory = scala.math.max(maxDeviceMemory, GpuColumnVector.getTotalDeviceMemoryUsed(cb))
             numRows = wouldBeRows
           }
         }
@@ -257,6 +257,7 @@ abstract class AbstractGpuCoalesceIterator(origIter: Iterator[ColumnarBatch],
       } finally {
         concatRange.close()
       }
+      maxDeviceMemory = scala.math.max(maxDeviceMemory, GpuColumnVector.getTotalDeviceMemoryUsed(ret))
       ret
     } finally {
       peakDevMemory.set(scala.math.max(peakDevMemory.value, maxDeviceMemory))
@@ -299,7 +300,6 @@ class GpuCoalesceIterator(iter: Iterator[ColumnarBatch],
 
   override def concatAllAndPutOnGPU(): ColumnarBatch = {
     val ret = ConcatAndConsumeAll.buildNonEmptyBatch(batches.toArray)
-    peakDevMemory.set(GpuColumnVector.getTotalDeviceMemoryUsed(ret))
     // Clear the buffer so we don't close it again (buildNonEmptyBatch closed it for us).
     batches = ArrayBuffer.empty
     ret
