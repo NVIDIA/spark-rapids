@@ -423,10 +423,10 @@ class CSVPartitionReader(
         val bufferTracking = GpuResourceManager.rawBuffer(dataSize, "CSV INPUT BUFFER")
         val table = try {
           Table.readCSV(cudfSchema, csvOpts, dataBuffer, 0, dataSize)
+          maxDeviceMemory = GpuColumnVector.getTotalDeviceMemoryUsed(table)
         } finally {
           bufferTracking.close()
         }
-        maxDeviceMemory = GpuColumnVector.getTotalDeviceMemoryUsed(table)
         val numColumns = table.getNumberOfColumns
         if (newReadDataSchema.length != numColumns) {
           table.close()

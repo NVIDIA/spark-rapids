@@ -110,15 +110,17 @@ case class GpuSortExec(
 
   override def doExecuteColumnar(): RDD[ColumnarBatch] = {
     val sortTime = longMetric("sortTime")
-    val maxDeviceMemory = new MaxAccumulator(0)
-    sparkContext.register(maxDeviceMemory,"GpuSortExec-peakDevMemory")
+    val peakDevMemory = longMetric("peakDevMemory")
+    var maxDeviceMemory: Long = 0
+
 
     val crdd = child.executeColumnar()
     crdd.mapPartitions { cbIter =>
       val sorter = createBatchGpuSorter()
       val sortedIterator = sorter.sort(cbIter)
       sortTime += sorter.getSortTimeNanos
-      maxDeviceMemory.add(sorter.getPeakMemoryUsage)
+      maxDeviceMemory = max(maxDeviceMemory, sorter.getPeakMemoryUsage)
+      peakDevMemory.set(maxDeviceMemory)
       sortedIterator
     }
   }
