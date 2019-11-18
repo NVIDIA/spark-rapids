@@ -24,6 +24,7 @@ import java.util
 
 import scala.collection.JavaConverters._
 import scala.collection.mutable.ArrayBuffer
+import scala.math.max
 
 import ai.rapids.cudf._
 import ai.rapids.spark.GpuMetricNames._
@@ -205,6 +206,7 @@ class GpuOrcPartitionReader(
   with ScanWithMetrics {
   private var batch: Option[ColumnarBatch] = None
   private val ctx = initializeOrcReaders
+  private var maxDeviceMemory: Long  = 0
 
   metrics = execMetrics
 
@@ -240,6 +242,8 @@ class GpuOrcPartitionReader(
     batch = None
     if (ctx.blockIterator.hasNext) {
       batch = readBatch()
+    } else {
+      metrics("peakDevMemory") += maxDeviceMemory
     }
     batch.isDefined
   }
@@ -644,7 +648,6 @@ class GpuOrcPartitionReader(
 
   private def readToTable(stripes: Seq[OrcOutputStripe]): Option[Table] = {
     val (dataBuffer, dataSize, rowCount) = readPartFile(stripes)
-    var maxDeviceMemory: Long = 0
     try {
       if (dataSize == 0) {
         None
@@ -665,7 +668,7 @@ class GpuOrcPartitionReader(
         GpuSemaphore.acquireIfNecessary(TaskContext.get())
 
         val table = Table.readORC(parseOpts, dataBuffer, 0, dataSize)
-        maxDeviceMemory = GpuColumnVector.getTotalDeviceMemoryUsed(table)
+        maxDeviceMemory = max(GpuColumnVector.getTotalDeviceMemoryUsed(table), maxDeviceMemory)
         val numColumns = table.getNumberOfColumns
         if (readDataSchema.length != numColumns) {
           table.close()
@@ -676,7 +679,6 @@ class GpuOrcPartitionReader(
         Some(table)
       }
     } finally {
-      metrics("peakDevMemory") += maxDeviceMemory
       if (dataBuffer != null) {
         dataBuffer.close()
       }

@@ -21,6 +21,7 @@ import java.nio.charset.StandardCharsets
 
 import scala.collection.JavaConverters._
 import scala.util.control.NonFatal
+import scala.math.max
 
 import ai.rapids.cudf.{HostMemoryBuffer, NvtxColor, Table}
 import ai.rapids.cudf
@@ -283,6 +284,7 @@ class CSVPartitionReader(
   private val lineReader = new HadoopFileLinesReader(partFile, parsedOptions.lineSeparatorInRead, conf)
   private var isFirstChunkForIterator: Boolean = true
   private var isExhausted: Boolean = false
+  private var maxDeviceMemory:Long = 0
 
   metrics = execMetrics
 
@@ -403,7 +405,6 @@ class CSVPartitionReader(
 
   private def readToTable(hasHeader: Boolean): Option[Table] = {
     val (dataBuffer, dataSize, totalRows) = readPartFile()
-    var maxDeviceMemory:Long = 0
     try {
       if (dataSize == 0) {
         None
@@ -423,10 +424,10 @@ class CSVPartitionReader(
         val bufferTracking = GpuResourceManager.rawBuffer(dataSize, "CSV INPUT BUFFER")
         val table = try {
           Table.readCSV(cudfSchema, csvOpts, dataBuffer, 0, dataSize)
-          maxDeviceMemory = GpuColumnVector.getTotalDeviceMemoryUsed(table)
         } finally {
           bufferTracking.close()
         }
+        maxDeviceMemory = max(GpuColumnVector.getTotalDeviceMemoryUsed(table), maxDeviceMemory)
         val numColumns = table.getNumberOfColumns
         if (newReadDataSchema.length != numColumns) {
           table.close()
@@ -436,14 +437,16 @@ class CSVPartitionReader(
         Some(table)
       }
     } finally {
-      metrics("peakDevMemory") += maxDeviceMemory
       dataBuffer.close()
     }
   }
 
   override def next(): Boolean = {
     batch.foreach(_.close())
-    batch = if (isExhausted) None else readBatch()
+    batch = if (isExhausted) {
+      metrics("peakDevMemory") += maxDeviceMemory
+      None
+    } else readBatch()
     batch.isDefined
   }
 
