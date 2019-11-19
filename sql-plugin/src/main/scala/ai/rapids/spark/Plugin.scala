@@ -283,8 +283,8 @@ class RapidsExecutorPlugin extends ExecutorPlugin with Logging {
     val conf = new RapidsConf(extraConf.asScala.toMap)
     MemoryListener.registerDeviceListener(GpuResourceManager)
     val info = Cuda.memGetInfo()
-    val async = (conf.rmmAsyncSpillPct * info.total).toLong
-    val stop = (conf.rmmSpillPct * info.total).toLong
+    val async = (conf.rmmAsyncSpillFraction * info.total).toLong
+    val stop = (conf.rmmSpillFraction * info.total).toLong
     GpuResourceManager.setCutoffs(async, stop)
 
     // We eventually will need a way to know which GPU to use/etc, but for now, we will just
@@ -292,7 +292,7 @@ class RapidsExecutorPlugin extends ExecutorPlugin with Logging {
     if (!Rmm.isInitialized) {
       loggingEnabled = conf.isRmmDebugEnabled
       val info = Cuda.memGetInfo()
-      val initialAllocation = (conf.rmmAllocPct * info.total).toLong
+      val initialAllocation = (conf.rmmAllocFraction * info.total).toLong
       if (initialAllocation > info.free) {
         logWarning(s"Initial RMM allocation(${initialAllocation / 1024 / 1024.0} MB) is " +
           s"larger than free memory(${info.free / 1024 /1024.0} MB)")
