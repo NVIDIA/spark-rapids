@@ -444,9 +444,11 @@ class CSVPartitionReader(
   override def next(): Boolean = {
     batch.foreach(_.close())
     batch = if (isExhausted) {
-      metrics("peakDevMemory") += maxDeviceMemory
+      metrics("peakDevMemory").set(maxDeviceMemory)
       None
-    } else readBatch()
+    } else {
+      readBatch()
+    }
     batch.isDefined
   }
 

@@ -206,7 +206,7 @@ class GpuOrcPartitionReader(
   with ScanWithMetrics {
   private var batch: Option[ColumnarBatch] = None
   private val ctx = initializeOrcReaders
-  private var maxDeviceMemory: Long  = 0
+  private var maxDeviceMemory: Long = 0
 
   metrics = execMetrics
 
