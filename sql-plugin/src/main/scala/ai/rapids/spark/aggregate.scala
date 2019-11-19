@@ -245,7 +245,6 @@ case class GpuHashAggregateExec(requiredChildDistributionExpressions: Option[Seq
           val nvtxRange = new NvtxWithMetrics("Hash Aggregate Batch", NvtxColor.YELLOW, totalTime)
           try {
             childCvs = processIncomingBatch(batch, boundInputReferences)
-            maxDeviceMemory = max(GpuColumnVector.getTotalDeviceMemoryUsed(batch), maxDeviceMemory)
             // done with the batch, clean it as soon as possible
             batch.close()
             batch = null

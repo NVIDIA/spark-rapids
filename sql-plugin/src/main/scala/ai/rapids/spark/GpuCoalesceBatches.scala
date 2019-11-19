@@ -248,6 +248,8 @@ abstract class AbstractGpuCoalesceIterator(origIter: Iterator[ColumnarBatch],
         }
         numOutputRows += numRows
         numOutputBatches += 1
+
+
       } finally {
         collect.close()
       }
@@ -260,7 +262,7 @@ abstract class AbstractGpuCoalesceIterator(origIter: Iterator[ColumnarBatch],
       maxDeviceMemory = scala.math.max(maxDeviceMemory, GpuColumnVector.getTotalDeviceMemoryUsed(ret))
       ret
     } finally {
-      peakDevMemory.set(scala.math.max(peakDevMemory.value, maxDeviceMemory))
+      peakDevMemory.set(maxDeviceMemory)
       cleanupConcatIsDone()
       total.close()
     }
