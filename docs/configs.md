@@ -79,6 +79,7 @@ spark.rapids.sql.expression.LessThan|< operator|true|None|
 spark.rapids.sql.expression.LessThanOrEqual|<= operator|true|None|
 spark.rapids.sql.expression.Literal|holds a static value from the query|true|None|
 spark.rapids.sql.expression.Log|natural log|false|This is not 100% compatible with the Spark version because floating point results in some cases may differ with the JVM version by a small amount|
+spark.rapids.sql.expression.Lower|String lowercase operator|false|This is not 100% compatible with the Spark version because in some cases unicode characters change byte width when changing the case. The GPU string conversion does not support these characters. For a full list of unsupported characters see https://github.com/rapidsai/cudf/issues/3132|
 spark.rapids.sql.expression.Month|get the month from a date or timestamp|true|None|
 spark.rapids.sql.expression.Multiply|multiplication|true|None|
 spark.rapids.sql.expression.Not|boolean not operator|true|None|
@@ -92,6 +93,7 @@ spark.rapids.sql.expression.Subtract|subtraction|true|None|
 spark.rapids.sql.expression.Tan|tangent|false|This is not 100% compatible with the Spark version because floating point results in some cases may differ with the JVM version by a small amount|
 spark.rapids.sql.expression.UnaryMinus|negate a numeric value|true|None|
 spark.rapids.sql.expression.UnaryPositive|a numeric value with a + in front of it|true|None|
+spark.rapids.sql.expression.Upper|String uppercase operator|false|This is not 100% compatible with the Spark version because in some cases unicode characters change byte width when changing the case. The GPU string conversion does not support these characters. For a full list of unsupported characters see https://github.com/rapidsai/cudf/issues/3132|
 spark.rapids.sql.expression.Year|get the year from a date or timestamp|true|None|
 spark.rapids.sql.expression.AggregateExpression|aggregate expression|true|None|
 spark.rapids.sql.expression.Average|average aggregate operator|true|None|

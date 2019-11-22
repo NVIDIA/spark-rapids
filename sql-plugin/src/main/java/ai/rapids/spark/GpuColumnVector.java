@@ -499,6 +499,16 @@ public final class GpuColumnVector extends ColumnVector {
     }
   }
 
+  public GpuColumnVector convertToStringsIfNeeded() {
+    if (cudfCv.getType() == DType.STRING_CATEGORY) {
+      try (NvtxRange nvtxRange = new NvtxRange("to strings from category", NvtxColor.RED)) {
+        return from(cudfCv.asStrings());
+      }
+    } else {
+      return this.incRefCount();
+    }
+  }
+
   public ai.rapids.cudf.ColumnVector getBase() {
     return cudfCv;
   }
