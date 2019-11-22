@@ -203,6 +203,10 @@ object GpuOverrides {
   val FLOAT_DIFFERS_GROUP_INCOMPAT =
     "when enabling these, there may be extra groups produced for floating point grouping keys (e.g. -0.0, and 0.0)"
   val DIVIDE_BY_ZERO_INCOMPAT = "divide by 0 does not result in null"
+  val CASE_MODIFICATION_INCOMPAT =
+    "in some cases unicode characters change byte width when changing the case. The GPU string " +
+    "conversion does not support these characters. For a full list of unsupported characters " +
+    "see https://github.com/rapidsai/cudf/issues/3132"
   private val UTC_TIMEZONE_ID = ZoneId.of("UTC").normalized()
 
   @scala.annotation.tailrec
@@ -624,7 +628,19 @@ object GpuOverrides {
         }
 
         override def convertToGpu(child: GpuExpression): GpuExpression = GpuAverage(child)
+      }),
+    expr[Upper](
+      "String uppercase operator",
+      (a, conf, p, r) => new UnaryExprMeta[Upper](a, conf, p, r) {
+        override def convertToGpu(child: GpuExpression): GpuExpression = GpuUpper(child)
       })
+      .incompat(CASE_MODIFICATION_INCOMPAT),
+    expr[Lower](
+      "String lowercase operator",
+      (a, conf, p, r) => new UnaryExprMeta[Lower](a, conf, p, r) {
+        override def convertToGpu(child: GpuExpression): GpuExpression = GpuLower(child)
+      })
+      .incompat(CASE_MODIFICATION_INCOMPAT)
   ).map(r => (r.getClassFor.asSubclass(classOf[Expression]), r)).toMap
 
   def wrapScan[INPUT <: Scan](

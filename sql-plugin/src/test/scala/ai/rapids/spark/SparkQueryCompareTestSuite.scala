@@ -398,7 +398,6 @@ trait SparkQueryCompareTestSuite extends FunSuite {
       val (fromCpu, fromGpu) = runOnCpuAndGpu(df, fun,
         conf = testConf,
         repart = repart)
-
       compareResults(sort, maxFloatDiff, fromCpu, fromGpu)
     }
   }
@@ -735,7 +734,6 @@ trait SparkQueryCompareTestSuite extends FunSuite {
     utf8Chars = utf8Chars ++ utf8Chars
     utf8Chars.toDF("strings", "ints")
   }
-
 
   def nullableStringsFromCsv = {
     fromCsvDf("strings.csv", StructType(Array(
