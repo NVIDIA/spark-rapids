@@ -284,7 +284,7 @@ class CSVPartitionReader(
   private val lineReader = new HadoopFileLinesReader(partFile, parsedOptions.lineSeparatorInRead, conf)
   private var isFirstChunkForIterator: Boolean = true
   private var isExhausted: Boolean = false
-  private var maxDeviceMemory:Long = 0
+  private var maxDeviceMemory: Long = 0
 
   metrics = execMetrics
 

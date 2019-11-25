@@ -241,7 +241,6 @@ abstract class AbstractGpuCoalesceIterator(origIter: Iterator[ColumnarBatch],
             }
           } else {
             addBatchToConcat(cb)
-            maxDeviceMemory = scala.math.max(maxDeviceMemory, GpuColumnVector.getTotalDeviceMemoryUsed(cb))
             numRows = wouldBeRows
           }
         }
