@@ -255,10 +255,8 @@ abstract class AbstractGpuCoalesceIterator(origIter: Iterator[ColumnarBatch],
       } finally {
         concatRange.close()
       }
-      maxDeviceMemory = scala.math.max(maxDeviceMemory, GpuColumnVector.getTotalDeviceMemoryUsed(ret))
       ret
     } finally {
-      peakDevMemory.set(maxDeviceMemory)
       cleanupConcatIsDone()
       total.close()
     }
@@ -289,6 +287,7 @@ class GpuCoalesceIterator(iter: Iterator[ColumnarBatch],
     opName) {
 
   private var batches: ArrayBuffer[ColumnarBatch] = ArrayBuffer.empty
+  private var maxDeviceMemory: Long = 0
 
   override def initNewBatch(): Unit =
     batches = ArrayBuffer[ColumnarBatch]()
@@ -298,12 +297,17 @@ class GpuCoalesceIterator(iter: Iterator[ColumnarBatch],
 
   override def concatAllAndPutOnGPU(): ColumnarBatch = {
     val ret = ConcatAndConsumeAll.buildNonEmptyBatch(batches.toArray)
+    // sum of current batches and concatenating batches. Approximately sizeof(ret * 2).
+    maxDeviceMemory = GpuColumnVector.getTotalDeviceMemoryUsed(ret) * 2
     // Clear the buffer so we don't close it again (buildNonEmptyBatch closed it for us).
     batches = ArrayBuffer.empty
     ret
   }
 
-  override def cleanupConcatIsDone(): Unit = batches.foreach(_.close())
+  override def cleanupConcatIsDone(): Unit = {
+    peakDevMemory.set(maxDeviceMemory)
+    batches.foreach(_.close())
+  }
 }
 
 case class GpuCoalesceBatches(child: SparkPlan, goal: CoalesceGoal)

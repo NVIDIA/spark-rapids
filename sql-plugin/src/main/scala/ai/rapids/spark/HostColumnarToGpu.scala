@@ -147,6 +147,7 @@ class HostToGpuCoalesceIterator(iter: Iterator[ColumnarBatch],
 
   var batchBuilder: GpuColumnVector.GpuColumnarBatchBuilder = null
   var totalRows = 0
+  var maxDeviceMemory: Long = 0
 
   override def initNewBatch(): Unit = {
     if (batchBuilder != null) {
@@ -169,7 +170,9 @@ class HostToGpuCoalesceIterator(iter: Iterator[ColumnarBatch],
     // About to place data back on the GPU
     GpuSemaphore.acquireIfNecessary(TaskContext.get())
 
-    batchBuilder.build(totalRows)
+    val ret = batchBuilder.build(totalRows)
+    maxDeviceMemory = GpuColumnVector.getTotalDeviceMemoryUsed(ret)
+    ret
   }
 
   override def cleanupConcatIsDone(): Unit = {
@@ -178,6 +181,7 @@ class HostToGpuCoalesceIterator(iter: Iterator[ColumnarBatch],
       batchBuilder = null
     }
     totalRows = 0
+    peakDevMemory.set(maxDeviceMemory)
   }
 }
 
