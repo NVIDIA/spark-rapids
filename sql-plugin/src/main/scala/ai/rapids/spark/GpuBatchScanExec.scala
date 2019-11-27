@@ -49,34 +49,9 @@ import org.apache.spark.sql.execution.metric.{SQLMetric, SQLMetrics}
 import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.util.CaseInsensitiveStringMap
 import org.apache.spark.sql.vectorized.ColumnarBatch
+import org.apache.spark.util.SerializableConfiguration
 import org.apache.spark.TaskContext
 
-
-class GpuSerializableConfiguration(@transient var value: Configuration)
-  extends Serializable with Logging {
-  def tryOrIOException[T](block: => T): T = {
-    try {
-      block
-    } catch {
-      case e: IOException =>
-        logError("Exception encountered", e)
-        throw e
-      case NonFatal(e) =>
-        logError("Exception encountered", e)
-        throw new IOException(e)
-    }
-  }
-
-  private def writeObject(out: ObjectOutputStream): Unit = tryOrIOException {
-    out.defaultWriteObject()
-    value.write(out)
-  }
-
-  private def readObject(in: ObjectInputStream): Unit = tryOrIOException {
-    value = new Configuration(false)
-    value.readFields(in)
-  }
-}
 
 case class GpuBatchScanExec(
     output: Seq[AttributeReference],
@@ -238,7 +213,7 @@ case class GpuCSVScan(
     // Hadoop Configurations are case sensitive.
     val hadoopConf = sparkSession.sessionState.newHadoopConfWithOptions(caseSensitiveMap)
     val broadcastedConf = sparkSession.sparkContext.broadcast(
-      new GpuSerializableConfiguration(hadoopConf))
+      new SerializableConfiguration(hadoopConf))
 
     GpuCSVPartitionReaderFactory(sparkSession.sessionState.conf, broadcastedConf,
       dataSchema, readDataSchema, readPartitionSchema, parsedOptions, maxReaderBatchSize, metrics)
@@ -247,7 +222,7 @@ case class GpuCSVScan(
 
 case class GpuCSVPartitionReaderFactory(
     sqlConf: SQLConf,
-    broadcastedConf: Broadcast[GpuSerializableConfiguration],
+    broadcastedConf: Broadcast[SerializableConfiguration],
     dataSchema: StructType,
     readDataSchema: StructType,
     partitionSchema: StructType, // TODO need to filter these out, or support pulling them in. These are values from the file name/path itself

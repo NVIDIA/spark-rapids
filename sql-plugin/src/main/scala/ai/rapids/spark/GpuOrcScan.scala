@@ -56,6 +56,7 @@ import org.apache.spark.sql.sources.Filter
 import org.apache.spark.sql.types.StructType
 import org.apache.spark.sql.util.CaseInsensitiveStringMap
 import org.apache.spark.sql.vectorized.ColumnarBatch
+import org.apache.spark.util.SerializableConfiguration
 import org.apache.spark.TaskContext
 
 case class GpuOrcScan(
@@ -79,7 +80,7 @@ case class GpuOrcScan(
     hadoopConf.unset(OrcConf.KRYO_SARG.getAttribute)
 
     val broadcastedConf = sparkSession.sparkContext.broadcast(
-      new GpuSerializableConfiguration(hadoopConf))
+      new SerializableConfiguration(hadoopConf))
     GpuOrcPartitionReaderFactory(sparkSession.sessionState.conf, broadcastedConf,
       dataSchema, readDataSchema, readPartitionSchema, pushedFilters, rapidsConf, metrics)
   }
@@ -113,7 +114,7 @@ object GpuOrcScan {
 
 case class GpuOrcPartitionReaderFactory(
     @transient sqlConf: SQLConf,
-    broadcastedConf: Broadcast[GpuSerializableConfiguration],
+    broadcastedConf: Broadcast[SerializableConfiguration],
     dataSchema: StructType,
     readDataSchema: StructType,
     partitionSchema: StructType,

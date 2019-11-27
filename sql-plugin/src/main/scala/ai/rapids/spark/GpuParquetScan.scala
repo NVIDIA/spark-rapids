@@ -56,6 +56,7 @@ import org.apache.spark.sql.types.StructType
 import org.apache.spark.sql.util.CaseInsensitiveStringMap
 import org.apache.spark.sql.vectorized.ColumnarBatch
 import org.apache.spark.TaskContext
+import org.apache.spark.util.SerializableConfiguration
 
 case class GpuParquetScan(
     sparkSession: SparkSession,
@@ -74,7 +75,7 @@ case class GpuParquetScan(
 
   override def createReaderFactory(): PartitionReaderFactory = {
     val broadcastedConf = sparkSession.sparkContext.broadcast(
-      new GpuSerializableConfiguration(hadoopConf))
+      new SerializableConfiguration(hadoopConf))
     GpuParquetPartitionReaderFactory(sparkSession.sessionState.conf, broadcastedConf,
       dataSchema, readDataSchema, readPartitionSchema, pushedFilters, rapidsConf, metrics)
   }
@@ -117,7 +118,7 @@ object GpuParquetScan {
 
 case class GpuParquetPartitionReaderFactory(
     @transient sqlConf: SQLConf,
-    broadcastedConf: Broadcast[GpuSerializableConfiguration],
+    broadcastedConf: Broadcast[SerializableConfiguration],
     dataSchema: StructType,
     readDataSchema: StructType,
     partitionSchema: StructType,
