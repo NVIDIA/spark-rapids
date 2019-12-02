@@ -36,6 +36,8 @@ import org.apache.spark.sql.execution.exchange.{BroadcastExchangeExec, ShuffleEx
 import org.apache.spark.sql.execution.joins.{BroadcastHashJoinExec, ShuffledHashJoinExec, SortMergeJoinExec}
 import org.apache.spark.sql.rapids._
 import org.apache.spark.sql.connector.read.Scan
+import org.apache.spark.sql.execution.command.{DataWritingCommand, DataWritingCommandExec}
+import org.apache.spark.sql.execution.datasources.InsertIntoHadoopFsRelationCommand
 import org.apache.spark.sql.types._
 
 /**
@@ -197,6 +199,21 @@ class ExecRule[INPUT <: SparkPlan](
   override val operationName: String = "Exec"
 }
 
+/**
+ * Holds everything that is needed to replace a [[DataWritingCommand]] with a GPU enabled version.
+ */
+class DataWritingCommandRule[INPUT <: DataWritingCommand](
+    doWrap: (INPUT, RapidsConf, Option[RapidsMeta[_, _, _]], ConfKeysAndIncompat) => DataWritingCommandMeta[INPUT],
+    incompatDoc: Option[String],
+    desc: String,
+    tag: ClassTag[INPUT])
+    extends ReplacementRule[INPUT, DataWritingCommand, DataWritingCommandMeta[INPUT]](
+      doWrap, incompatDoc, desc, tag) {
+
+  override val confKeyPart: String = "output"
+  override val operationName: String = "Output"
+}
+
 object GpuOverrides {
   val FLOAT_DIFFERS_INCOMPAT =
     "floating point results in some cases may differ with the JVM version by a small amount"
@@ -277,6 +294,15 @@ object GpuOverrides {
     assert(desc != null)
     assert(doWrap != null)
     new ExecRule[INPUT](doWrap, None, desc, tag)
+  }
+
+  def dataWriteCmd[INPUT <: DataWritingCommand](
+      desc: String,
+      doWrap: (INPUT, RapidsConf, Option[RapidsMeta[_, _, _]], ConfKeysAndIncompat) => DataWritingCommandMeta[INPUT])
+    (implicit tag: ClassTag[INPUT]): DataWritingCommandRule[INPUT] = {
+    assert(desc != null)
+    assert(doWrap != null)
+    new DataWritingCommandRule[INPUT](doWrap, None, desc, tag)
   }
 
   def wrapExpr[INPUT <: Expression](
@@ -655,7 +681,7 @@ object GpuOverrides {
     scan[CSVScan](
       "CSV parsing",
       (a, conf, p, r) => new ScanMeta[CSVScan](a, conf, p, r) {
-        GpuCSVScan.tagSupport(this)
+        override def tagSelfForGpu(): Unit = GpuCSVScan.tagSupport(this)
 
         override def convertToGpu(): Scan =
           GpuCSVScan(a.sparkSession,
@@ -721,6 +747,37 @@ object GpuOverrides {
       })
   ).map(r => (r.getClassFor.asSubclass(classOf[Partitioning]), r)).toMap
 
+  def wrapDataWriteCmds[INPUT <: DataWritingCommand](
+      writeCmd: INPUT,
+      conf: RapidsConf,
+      parent: Option[RapidsMeta[_, _, _]]): DataWritingCommandMeta[INPUT] =
+    dataWriteCmds.get(writeCmd.getClass)
+      .map(r => r.wrap(writeCmd, conf, parent, r).asInstanceOf[DataWritingCommandMeta[INPUT]])
+      .getOrElse(new RuleNotFoundDataWritingCommandMeta(writeCmd, conf, parent))
+
+  val dataWriteCmds: Map[Class[_ <: DataWritingCommand], DataWritingCommandRule[_ <: DataWritingCommand]] = Seq(
+    dataWriteCmd[InsertIntoHadoopFsRelationCommand](
+      "Write to Hadoop FileSystem",
+      (a, conf, p, r) => new DataWritingCommandMeta[InsertIntoHadoopFsRelationCommand](a, conf, p, r) {
+        override def tagSelfForGpu(): Unit = GpuInsertIntoHadoopFsRelationCommand.tagSupport(this)
+
+        override def convertToGpu(): GpuDataWritingCommand =
+          GpuInsertIntoHadoopFsRelationCommand(
+            a.outputPath,
+            a.staticPartitions,
+            a.ifPartitionNotExists,
+            a.partitionColumns,
+            a.bucketSpec,
+            GpuInsertIntoHadoopFsRelationCommand.toColumnarOutputWriterFactory(a.fileFormat),
+            a.options,
+            a.query,
+            a.mode,
+            a.catalogTable,
+            a.fileIndex,
+            a.outputColumnNames)
+      })
+  ).map(r => (r.getClassFor.asSubclass(classOf[DataWritingCommand]), r)).toMap
+
   def wrapPlan[INPUT <: SparkPlan](
       plan: INPUT,
       conf: RapidsConf,
@@ -752,6 +809,15 @@ object GpuOverrides {
 
         override def convertToGpu(): GpuExec =
           GpuBatchScanExec(p.output, childScans(0).convertToGpu())
+      }),
+    exec[DataWritingCommandExec](
+      "Writing data",
+      (p, conf, parent, r) => new SparkPlanMeta[DataWritingCommandExec](p, conf, parent, r) {
+        override val childDataWriteCmds: scala.Seq[DataWritingCommandMeta[_]] =
+          Seq(GpuOverrides.wrapDataWriteCmds(p.cmd, conf, Some(this)))
+
+        override def convertToGpu(): GpuExec =
+          GpuDataWritingCommandExec(childDataWriteCmds.head.convertToGpu(), p.child)
       }),
     exec[FilterExec](
       "The backend for most filter statements",
