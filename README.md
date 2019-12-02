@@ -21,7 +21,7 @@ To enable this GPU acceleration you will need:
 > spark-shell --jars 'rapids-4-spark-0.8-SNAPSHOT.jar,cudf-0.8-SNAPSHOT-cuda10.jar' --conf spark.sql.extensions=ai.rapids.spark.Plugin --conf spark.plugins=ai.rapids.spark.RapidsSparkPlugin
 ```
 
-Note if you are using the KryoSerializer with Spark (`--conf spark.serializer=org.apache.spark.serializer.KryoSerializer`) you will have to register the GpuBroadcastRegistrator class: `--conf spark.kryo.registrator=org.apache.spark.sql.execution.GpuBroadcastRegistrator`
+Note if you are using the KryoSerializer with Spark (`--conf spark.serializer=org.apache.spark.serializer.KryoSerializer`) you will have to register the GpuKryoRegistrator class: `--conf spark.kryo.registrator=ai.rapids.spark.GpuKryoRegistrator`.
 
 ## <a name="MEMORY"></a>Memory
 
