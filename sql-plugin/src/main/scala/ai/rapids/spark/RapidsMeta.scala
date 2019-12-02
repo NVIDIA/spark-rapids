@@ -25,6 +25,7 @@ import org.apache.spark.sql.execution.SparkPlan
 import org.apache.spark.sql.execution.exchange.ShuffleExchangeExec
 import org.apache.spark.sql.execution.joins.{BroadcastHashJoinExec, BuildLeft, BuildRight, ShuffledHashJoinExec, SortMergeJoinExec}
 import org.apache.spark.sql.connector.read.Scan
+import org.apache.spark.sql.execution.command.DataWritingCommand
 
 trait ConfKeysAndIncompat {
   val operationName: String
@@ -83,6 +84,11 @@ abstract class RapidsMeta[INPUT <: BASE, BASE, OUTPUT <: BASE](
   val childParts: Seq[PartMeta[_]]
 
   /**
+   * The wrapped data writing commands that should be examined
+   */
+  val childDataWriteCmds: Seq[DataWritingCommandMeta[_]]
+
+  /**
    * Convert what this wraps to a GPU enabled version.
    */
   def convertToGpu(): OUTPUT
@@ -134,6 +140,11 @@ abstract class RapidsMeta[INPUT <: BASE, BASE, OUTPUT <: BASE](
    */
   def canPartsBeReplaced: Boolean = childParts.forall(_.canThisBeReplaced)
 
+  /**
+   * Returns true iff all of the data writing commands can be replaced.
+   */
+  def canDataWriteCmdsBeReplaced: Boolean = childDataWriteCmds.forall(_.canThisBeReplaced)
+
   def confKey: String = rule.confKey
   final val operationName: String = rule.operationName
   final val incompatDoc: Option[String] = rule.incompatDoc
@@ -153,6 +164,7 @@ abstract class RapidsMeta[INPUT <: BASE, BASE, OUTPUT <: BASE](
     childScans.foreach(_.tagForGpu())
     childParts.foreach(_.tagForGpu())
     childExprs.foreach(_.tagForGpu())
+    childDataWriteCmds.foreach(_.tagForGpu())
     childPlans.foreach(_.tagForGpu())
 
     initReasons()
@@ -239,6 +251,7 @@ abstract class RapidsMeta[INPUT <: BASE, BASE, OUTPUT <: BASE](
     childScans.foreach(_.print(append, depth + 1, all))
     childParts.foreach(_.print(append, depth + 1, all))
     childExprs.foreach(_.print(append, depth + 1, all))
+    childDataWriteCmds.foreach(_.print(append, depth + 1, all))
     childPlans.foreach(_.print(append, depth + 1, all))
   }
 
@@ -267,6 +280,7 @@ abstract class PartMeta[INPUT <: Partitioning](part: INPUT,
   override val childExprs: Seq[ExprMeta[_]] = Seq.empty
   override val childScans: Seq[ScanMeta[_]] = Seq.empty
   override val childParts: Seq[PartMeta[_]] = Seq.empty
+  override val childDataWriteCmds: Seq[DataWritingCommandMeta[_]] = Seq.empty
 
   override final def tagSelfForGpu(): Unit = {
     if (!canExprTreeBeReplaced) {
@@ -308,6 +322,7 @@ abstract class ScanMeta[INPUT <: Scan](scan: INPUT,
   override val childExprs: Seq[ExprMeta[_]] = Seq.empty
   override val childScans: Seq[ScanMeta[_]] = Seq.empty
   override val childParts: Seq[PartMeta[_]] = Seq.empty
+  override val childDataWriteCmds: Seq[DataWritingCommandMeta[_]] = Seq.empty
 
   override def tagSelfForGpu(): Unit = {}
 }
@@ -330,6 +345,42 @@ final class RuleNotFoundScanMeta[INPUT <: Scan](
 }
 
 /**
+ * Base class for metadata around [[DataWritingCommand]].
+ */
+abstract class DataWritingCommandMeta[INPUT <: DataWritingCommand](
+    cmd: INPUT,
+    conf: RapidsConf,
+    parent: Option[RapidsMeta[_, _, _]],
+    rule: ConfKeysAndIncompat)
+    extends RapidsMeta[INPUT, DataWritingCommand, GpuDataWritingCommand](cmd, conf, parent, rule) {
+
+  override val childPlans: Seq[SparkPlanMeta[_]] = Seq.empty
+  override val childExprs: Seq[ExprMeta[_]] = Seq.empty
+  override val childScans: Seq[ScanMeta[_]] = Seq.empty
+  override val childParts: Seq[PartMeta[_]] = Seq.empty
+  override val childDataWriteCmds: Seq[DataWritingCommandMeta[_]] = Seq.empty
+
+  override def tagSelfForGpu(): Unit = {}
+}
+
+/**
+ * Metadata for [[DataWritingCommand]] with no rule found
+ */
+final class RuleNotFoundDataWritingCommandMeta[INPUT <: DataWritingCommand](
+    cmd: INPUT,
+    conf: RapidsConf,
+    parent: Option[RapidsMeta[_, _, _]])
+    extends DataWritingCommandMeta[INPUT](cmd, conf, parent, new NoRuleConfKeysAndIncompat) {
+
+  override def tagSelfForGpu(): Unit = {
+    willNotWorkOnGpu(s"no GPU enabled version of command ${cmd.getClass} could be found")
+  }
+
+  override def convertToGpu(): GpuDataWritingCommand =
+    throw new IllegalStateException("Cannot be converted to GPU")
+}
+
+/**
  * Base class for metadata around [[SparkPlan]].
  */
 abstract class SparkPlanMeta[INPUT <: SparkPlan](plan: INPUT,
@@ -342,6 +393,7 @@ abstract class SparkPlanMeta[INPUT <: SparkPlan](plan: INPUT,
   override val childExprs: Seq[ExprMeta[_]] = plan.expressions.map(GpuOverrides.wrapExpr(_, conf, Some(this)))
   override val childScans: Seq[ScanMeta[_]] = Seq.empty
   override val childParts: Seq[PartMeta[_]] = Seq.empty
+  override val childDataWriteCmds: Seq[DataWritingCommandMeta[_]] = Seq.empty
 
   override def convertToCpu(): SparkPlan = {
     wrapped.withNewChildren(childPlans.map(_.convertIfNeeded()))
@@ -437,6 +489,10 @@ abstract class SparkPlanMeta[INPUT <: SparkPlan](plan: INPUT,
       willNotWorkOnGpu("not all partitioning can be replaced")
     }
 
+    if (!canDataWriteCmdsBeReplaced) {
+      willNotWorkOnGpu("not all data writing commands can be replaced")
+    }
+
     tagPlanForGpu()
   }
 
@@ -500,6 +556,7 @@ abstract class ExprMeta[INPUT <: Expression](
   override val childExprs: Seq[ExprMeta[_]] = expr.children.map(GpuOverrides.wrapExpr(_, conf, Some(this)))
   override val childScans: Seq[ScanMeta[_]] = Seq.empty
   override val childParts: Seq[PartMeta[_]] = Seq.empty
+  override val childDataWriteCmds: Seq[DataWritingCommandMeta[_]] = Seq.empty
 
   override val printWrapped: Boolean = true
 
