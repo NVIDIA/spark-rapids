@@ -48,6 +48,14 @@
           <classifier>${orc.classifier}</classifier>
         </dependency>
         <dependency>
+          <groupId>org.apache.hive</groupId>
+          <artifactId>hive-storage-api</artifactId>
+        </dependency>
+        <dependency>
+          <groupId>com.google.protobuf</groupId>
+          <artifactId>protobuf-java</artifactId>
+        </dependency>
+        <dependency>
             <groupId>org.scalatest</groupId>
             <artifactId>scalatest_${scala.binary.version}</artifactId>
             <scope>test</scope>
@@ -112,6 +120,8 @@
                     <include>org.apache.orc:orc-core</include>
                     <include>org.apache.orc:orc-mapreduce</include>
                     <include>org.apache.orc:orc-shims</include>
+                    <include>org.apache.hive:hive-storage-api</include>
+                    <include>com.google.protobuf:protobuf-java</include>
                   </includes>
                 </artifactSet>
                 <relocations>
@@ -120,7 +130,15 @@
                     <shadedPattern>${rapids.shade.package}.orc</shadedPattern>
                   </relocation>
                   <relocation>
-                    <pattern>com.google.protobuf25</pattern>
+                    <pattern>org.apache.hadoop.hive</pattern>
+                    <shadedPattern>${rapids.shade.package}.hadoop.hive</shadedPattern>
+                  </relocation>
+                  <relocation>
+                    <pattern>org.apache.hive</pattern>
+                    <shadedPattern>${rapids.shade.package}.hive</shadedPattern>
+                  </relocation>
+                  <relocation>
+                    <pattern>com.google.protobuf</pattern>
                     <shadedPattern>${rapids.shade.package}.protobuf25</shadedPattern>
                   </relocation>
                 </relocations>
