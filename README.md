@@ -21,6 +21,8 @@ To enable this GPU acceleration you will need:
 > spark-shell --jars 'rapids-4-spark-0.8-SNAPSHOT.jar,cudf-0.8-SNAPSHOT-cuda10.jar' --conf spark.sql.extensions=ai.rapids.spark.Plugin --conf spark.plugins=ai.rapids.spark.RapidsSparkPlugin
 ```
 
+Note if you are using the KryoSerializer with Spark (`--conf spark.serializer=org.apache.spark.serializer.KryoSerializer`) you will have to register the GpuKryoRegistrator class: `--conf spark.kryo.registrator=ai.rapids.spark.GpuKryoRegistrator`.
+
 ## <a name="MEMORY"></a>Memory
 
 One of the slowest parts of processing data on the GPU is moving the data from host memory to GPU
@@ -144,4 +146,4 @@ val maxValue = rdd.map(table => {
 
 You may need to disable [RMM](#memory) caching when exporting data to an ML library as that library
 will likely want to use all of the GPU's memory and if it is not aware of RMM it will not have
-access to any of the memory that RMM is holding. 
+access to any of the memory that RMM is holding.
