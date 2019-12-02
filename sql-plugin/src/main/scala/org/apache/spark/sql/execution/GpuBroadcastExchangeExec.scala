@@ -27,11 +27,14 @@ import ai.rapids.cudf.{HostMemoryBuffer, JCudfSerialization, NvtxColor, NvtxRang
 import ai.rapids.spark._
 import ai.rapids.spark.GpuMetricNames._
 import ai.rapids.spark.RapidsPluginImplicits._
+import com.esotericsoftware.kryo.Kryo
+import com.esotericsoftware.kryo.serializers.{JavaSerializer => KryoJavaSerializer}
 import com.google.common.util.concurrent.ThreadFactoryBuilder
 
 import org.apache.spark.{broadcast, SparkException}
 import org.apache.spark.launcher.SparkLauncher
 import org.apache.spark.rdd.RDD
+import org.apache.spark.serializer.KryoRegistrator
 import org.apache.spark.sql.catalyst.plans.physical.{BroadcastMode, BroadcastPartitioning, Partitioning}
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.expressions.Attribute
@@ -40,6 +43,14 @@ import org.apache.spark.sql.execution.joins.BroadcastHashJoinExec
 import org.apache.spark.sql.execution.metric.SQLMetrics
 import org.apache.spark.sql.internal.{SQLConf, StaticSQLConf}
 import org.apache.spark.sql.vectorized.ColumnarBatch
+
+
+class GpuBroadcastRegistrator extends KryoRegistrator {
+  override def registerClasses(kryo: Kryo): Unit = {
+    kryo.register(classOf[SerializeConcatHostBuffersDeserializeBatch], new KryoJavaSerializer())
+    kryo.register(classOf[SerializeBatchDeserializeHostBuffer], new KryoJavaSerializer())
+  }
+}
 
 @SerialVersionUID(100L)
 class SerializeConcatHostBuffersDeserializeBatch(
