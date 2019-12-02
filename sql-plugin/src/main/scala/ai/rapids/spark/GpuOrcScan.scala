@@ -28,15 +28,15 @@ import scala.collection.mutable.ArrayBuffer
 import ai.rapids.cudf._
 import ai.rapids.spark.GpuMetricNames._
 import ai.rapids.spark.GpuOrcPartitionReader.{OrcOutputStripe, OrcPartitionReaderContext}
-import com.google.protobuf25.CodedOutputStream
+import com.google.protobuf.CodedOutputStream
 import org.apache.commons.io.IOUtils
 import org.apache.hadoop.conf.Configuration
 import org.apache.hadoop.fs.{FileSystem, Path}
+import org.apache.hadoop.hive.common.io.DiskRangeList
 import org.apache.orc.{DataReader, OrcConf, OrcFile, OrcProto, PhysicalWriter, Reader, StripeInformation, TypeDescription}
 import org.apache.orc.impl._
 import org.apache.orc.impl.RecordReaderImpl.SargApplier
 import org.apache.orc.mapred.OrcInputFormat
-import org.apache.orc.storage.common.io.DiskRangeList
 
 import org.apache.spark.broadcast.Broadcast
 import org.apache.spark.internal.Logging

@@ -20,8 +20,8 @@
         <cuda.version>cuda10</cuda.version>
         <scala.binary.version>2.12</scala.binary.version>
         <scala.version>2.12.8</scala.version>
-        <orc.version>1.5.7</orc.version>
-        <orc.classifier>nohive</orc.classifier>
+        <orc.version>1.5.8</orc.version>
+        <orc.classifier></orc.classifier>
         <rapids.shade.package>ai.rapids.spark.shaded</rapids.shade.package>
         <test.exclude.tags></test.exclude.tags>
         <test.include.tags></test.include.tags>
@@ -123,6 +123,16 @@
                   <artifactId>hadoop-hdfs</artifactId>
                 </exclusion>
               </exclusions>
+            </dependency>
+            <dependency>
+              <groupId>org.apache.hive</groupId>
+              <artifactId>hive-storage-api</artifactId>
+              <version>2.6.0</version>
+            </dependency>
+            <dependency>
+              <groupId>com.google.protobuf</groupId>
+              <artifactId>protobuf-java</artifactId>
+              <version>2.5.0</version>
             </dependency>
             <!-- WE CANNOT SUPPORT XGBOOST YET BECAUSE OF A MISMATCH IN SCALA VERSIONS
             <dependency>
