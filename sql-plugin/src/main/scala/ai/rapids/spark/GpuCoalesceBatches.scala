@@ -172,9 +172,11 @@ abstract class AbstractGpuCoalesceIterator(origIter: Iterator[ColumnarBatch],
     collectTime: SQLMetric,
     concatTime: SQLMetric,
     totalTime: SQLMetric,
+    peakDevMemory: SQLMetric,
     opName: String) extends Iterator[ColumnarBatch] {
   private val iter = new RemoveEmptyBatchIterator(origIter, numInputBatches)
   private var onDeck: Option[ColumnarBatch] = None
+  private var maxDeviceMemory: Long = 0
 
   TaskContext.get().addTaskCompletionListener[Unit](_ => onDeck.foreach(_.close()))
 
@@ -270,6 +272,7 @@ class GpuCoalesceIterator(iter: Iterator[ColumnarBatch],
     collectTime: SQLMetric,
     concatTime: SQLMetric,
     totalTime: SQLMetric,
+    peakDevMemory: SQLMetric,
     opName: String)
   extends AbstractGpuCoalesceIterator(iter,
     goal,
@@ -280,9 +283,11 @@ class GpuCoalesceIterator(iter: Iterator[ColumnarBatch],
     collectTime,
     concatTime,
     totalTime,
+    peakDevMemory,
     opName) {
 
   private var batches: ArrayBuffer[ColumnarBatch] = ArrayBuffer.empty
+  private var maxDeviceMemory: Long = 0
 
   override def initNewBatch(): Unit =
     batches = ArrayBuffer[ColumnarBatch]()
@@ -292,12 +297,17 @@ class GpuCoalesceIterator(iter: Iterator[ColumnarBatch],
 
   override def concatAllAndPutOnGPU(): ColumnarBatch = {
     val ret = ConcatAndConsumeAll.buildNonEmptyBatch(batches.toArray)
+    // sum of current batches and concatenating batches. Approximately sizeof(ret * 2).
+    maxDeviceMemory = GpuColumnVector.getTotalDeviceMemoryUsed(ret) * 2
     // Clear the buffer so we don't close it again (buildNonEmptyBatch closed it for us).
     batches = ArrayBuffer.empty
     ret
   }
 
-  override def cleanupConcatIsDone(): Unit = batches.foreach(_.close())
+  override def cleanupConcatIsDone(): Unit = {
+    peakDevMemory.set(maxDeviceMemory)
+    batches.foreach(_.close())
+  }
 }
 
 case class GpuCoalesceBatches(child: SparkPlan, goal: CoalesceGoal)
@@ -308,7 +318,8 @@ case class GpuCoalesceBatches(child: SparkPlan, goal: CoalesceGoal)
     "numInputRows" -> SQLMetrics.createMetric(sparkContext, "input rows"),
     "numInputBatches" -> SQLMetrics.createMetric(sparkContext, "input batches"),
     "collectTime" -> SQLMetrics.createNanoTimingMetric(sparkContext, "collect batch time"),
-    "concatTime" -> SQLMetrics.createNanoTimingMetric(sparkContext, "concat batch time")
+    "concatTime" -> SQLMetrics.createNanoTimingMetric(sparkContext, "concat batch time"),
+    "peakDevMemory" -> SQLMetrics.createSizeMetric(sparkContext, "peak device memory")
   )
 
   override protected def doExecute(): RDD[InternalRow] = {
@@ -325,11 +336,13 @@ case class GpuCoalesceBatches(child: SparkPlan, goal: CoalesceGoal)
     val collectTime = longMetric("collectTime")
     val concatTime = longMetric("concatTime")
     val totalTime = longMetric(TOTAL_TIME)
+    val peakDevMemory = longMetric("peakDevMemory")
 
     val batches = child.executeColumnar()
     batches.mapPartitions { iter =>
       new GpuCoalesceIterator(iter, goal,
-        numInputRows, numInputBatches, numOutputRows, numOutputBatches, collectTime, concatTime, totalTime, "GpuCoalesceBatches")
+        numInputRows, numInputBatches, numOutputRows, numOutputBatches, collectTime, concatTime, totalTime,
+        peakDevMemory, "GpuCoalesceBatches")
     }
   }
 }

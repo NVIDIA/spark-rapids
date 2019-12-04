@@ -17,6 +17,7 @@
 package ai.rapids.spark
 
 import scala.collection.mutable.ArrayBuffer
+import scala.math.max
 
 import ai.rapids.cudf
 import ai.rapids.cudf.{NvtxColor, Table}
@@ -104,7 +105,7 @@ case class GpuSortExec(
 
   override lazy val additionalMetrics = Map(
     "sortTime" -> SQLMetrics.createNanoTimingMetric(sparkContext, "sort time"),
-    "peakMemory" -> SQLMetrics.createSizeMetric(sparkContext, "peak memory"),
+    "peakDevMemory" -> SQLMetrics.createSizeMetric(sparkContext, "peak device memory"),
     "spillSize" -> SQLMetrics.createSizeMetric(sparkContext, "spill size"))
 
   override def doExecuteColumnar(): RDD[ColumnarBatch] = {
@@ -115,6 +116,7 @@ case class GpuSortExec(
       val sorter = createBatchGpuSorter()
       val sortedIterator = sorter.sort(cbIter)
       sortTime += sorter.getSortTimeNanos
+      metrics("peakDevMemory") += sorter.getPeakMemoryUsage
       sortedIterator
     }
   }
@@ -131,12 +133,15 @@ class GpuColumnarBatchSorter(
     exec: GpuExec) {
 
   private var totalSortTimeNanos = 0L
+  private var maxDeviceMemory = 0L
   private val numSortCols = sortOrder.length
   private val totalTime = exec.longMetric(TOTAL_TIME)
   private val numOutputBatches = exec.longMetric(NUM_OUTPUT_BATCHES)
   private val numOutputRows = exec.longMetric(NUM_OUTPUT_ROWS)
 
   def getSortTimeNanos: Long = totalSortTimeNanos
+
+  def getPeakMemoryUsage: Long = maxDeviceMemory
 
   def sort(batchIter: Iterator[ColumnarBatch]): Iterator[ColumnarBatch]  = {
 
@@ -149,6 +154,7 @@ class GpuColumnarBatchSorter(
     var success = false
     var numRows = 0L
     var concatTbl: Table = null
+    var concatTblSize: Long = 0
 
     try {
       val inputTbls = new ArrayBuffer[Table]()
@@ -178,6 +184,8 @@ class GpuColumnarBatchSorter(
           numOutputRows += numRows
           if (inputTbls.length > 1) {
             concatTbl = Table.concatenate(inputTbls: _*)
+            concatTblSize = GpuColumnVector.getTotalDeviceMemoryUsed(concatTbl)
+            maxDeviceMemory = max(maxDeviceMemory, concatTblSize)
           } else {
             concatTbl = inputTbls.remove(0)
           }
@@ -198,6 +206,7 @@ class GpuColumnarBatchSorter(
         resultCb = doGpuSort(concatTbl, orderByArgs)
         numOutputBatches += 1
         totalSortTimeNanos += System.nanoTime - startTimestamp
+        maxDeviceMemory = max(maxDeviceMemory, GpuColumnVector.getTotalDeviceMemoryUsed(resultCb) + concatTblSize)
         success = true
       } finally {
         nvtxRange.close()

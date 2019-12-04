@@ -23,6 +23,7 @@ import java.util.Collections
 
 import scala.collection.JavaConverters._
 import scala.collection.mutable.ArrayBuffer
+import scala.math.max
 
 import ai.rapids.cudf.{HostMemoryBuffer, NvtxColor, NvtxRange, ParquetOptions, Table, TimeUnit}
 import ai.rapids.spark.GpuMetricNames._
@@ -214,6 +215,7 @@ class ParquetPartitionReader(
     execMetrics: Map[String, SQLMetric]) extends PartitionReader[ColumnarBatch] with Logging
   with ScanWithMetrics {
   private var isExhausted: Boolean = false
+  private var maxDeviceMemory: Long  = 0
   private var batch: Option[ColumnarBatch] = None
   private val blockIterator :  BufferedIterator[BlockMetaData] = clippedBlocks.iterator.buffered
   private val copyBufferSize = conf.getInt("parquet.read.allocation.size", 8 * 1024 * 1024)
@@ -226,6 +228,7 @@ class ParquetPartitionReader(
     if (!isExhausted) {
       if (!blockIterator.hasNext) {
         isExhausted = true
+        metrics("peakDevMemory") += maxDeviceMemory
       } else {
         batch = readBatch()
       }
@@ -440,6 +443,7 @@ class ParquetPartitionReader(
         GpuSemaphore.acquireIfNecessary(TaskContext.get())
 
         val table = Table.readParquet(parseOpts, dataBuffer, 0, dataSize)
+        maxDeviceMemory = max(GpuColumnVector.getTotalDeviceMemoryUsed(table), maxDeviceMemory)
         val numColumns = table.getNumberOfColumns
         if (readDataSchema.length != numColumns) {
           table.close()

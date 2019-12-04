@@ -21,6 +21,7 @@ import java.nio.charset.StandardCharsets
 
 import scala.collection.JavaConverters._
 import scala.util.control.NonFatal
+import scala.math.max
 
 import ai.rapids.cudf.{HostMemoryBuffer, NvtxColor, Table}
 import ai.rapids.cudf
@@ -62,7 +63,8 @@ case class GpuBatchScanExec(
   override def supportsColumnar = true
 
   override lazy val additionalMetrics = Map(
-    "bufferTime" -> SQLMetrics.createNanoTimingMetric(sparkContext, "buffer time")
+    "bufferTime" -> SQLMetrics.createNanoTimingMetric(sparkContext, "buffer time"),
+    "peakDevMemory" -> SQLMetrics.createSizeMetric(sparkContext, "peak device memory")
   )
 
   scan match {
@@ -257,6 +259,7 @@ class CSVPartitionReader(
   private val lineReader = new HadoopFileLinesReader(partFile, parsedOptions.lineSeparatorInRead, conf)
   private var isFirstChunkForIterator: Boolean = true
   private var isExhausted: Boolean = false
+  private var maxDeviceMemory: Long = 0
 
   metrics = execMetrics
 
@@ -399,6 +402,7 @@ class CSVPartitionReader(
         } finally {
           bufferTracking.close()
         }
+        maxDeviceMemory = max(GpuColumnVector.getTotalDeviceMemoryUsed(table), maxDeviceMemory)
         val numColumns = table.getNumberOfColumns
         if (newReadDataSchema.length != numColumns) {
           table.close()
@@ -414,7 +418,12 @@ class CSVPartitionReader(
 
   override def next(): Boolean = {
     batch.foreach(_.close())
-    batch = if (isExhausted) None else readBatch()
+    batch = if (isExhausted) {
+      metrics("peakDevMemory").set(maxDeviceMemory)
+      None
+    } else {
+      readBatch()
+    }
     batch.isDefined
   }
 
