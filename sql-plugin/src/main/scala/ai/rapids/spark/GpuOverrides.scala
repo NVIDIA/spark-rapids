@@ -817,7 +817,7 @@ object GpuOverrides {
           Seq(GpuOverrides.wrapDataWriteCmds(p.cmd, conf, Some(this)))
 
         override def convertToGpu(): GpuExec =
-          GpuDataWritingCommandExec(childDataWriteCmds.head.convertToGpu(), p.child)
+          GpuDataWritingCommandExec(childDataWriteCmds.head.convertToGpu(), childPlans.head.convertIfNeeded())
       }),
     exec[FilterExec](
       "The backend for most filter statements",

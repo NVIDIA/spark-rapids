@@ -76,4 +76,7 @@ case class GpuDataWritingCommandExec(cmd: GpuDataWritingCommand, child: SparkPla
   override protected def doExecuteColumnar(): RDD[ColumnarBatch] = {
     sqlContext.sparkContext.parallelize(sideEffectResult, 1)
   }
+
+  // Need single batch until large file write support is added
+  override def childrenCoalesceGoal: Seq[CoalesceGoal] = Seq(RequireSingleBatch)
 }
