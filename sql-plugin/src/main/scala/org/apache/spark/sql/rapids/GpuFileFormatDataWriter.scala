@@ -77,13 +77,15 @@ abstract class GpuFileFormatDataWriter(
     WriteTaskResult(committer.commitTask(taskAttemptContext), summary)
   }
 
-  def abort(): Unit = {
+  override def abort(): Unit = {
     try {
       releaseResources()
     } finally {
       committer.abortTask(taskAttemptContext)
     }
   }
+
+  override def close(): Unit = {}
 }
 
 /** GPU data writer for empty partitions */
