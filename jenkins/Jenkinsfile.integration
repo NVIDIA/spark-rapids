@@ -16,8 +16,8 @@ pipeline {
     }
 
     parameters {
-        string(name: 'CUDF_VER', defaultValue: '0.11-SNAPSHOT',
-            description: '-Dcudf.version=0.11-SNAPSHOT\n\n Default for cudf version')
+        string(name: 'CUDF_VER', defaultValue: '0.12-SNAPSHOT',
+            description: '-Dcudf.version=0.12-SNAPSHOT\n\n Default for cudf version')
         string(name: 'PROJECT_VER', defaultValue: '0.1-SNAPSHOT',
             description: 'Default project version 0.1-SNAPSHOT')
         string(name: 'SPARK_VER', defaultValue: '3.0.0-SNAPSHOT',
