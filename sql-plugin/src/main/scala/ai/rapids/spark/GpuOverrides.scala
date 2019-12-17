@@ -38,7 +38,13 @@ import org.apache.spark.sql.rapids._
 import org.apache.spark.sql.connector.read.Scan
 import org.apache.spark.sql.execution.command.{DataWritingCommand, DataWritingCommandExec}
 import org.apache.spark.sql.execution.datasources.InsertIntoHadoopFsRelationCommand
+import org.apache.spark.sql.execution.datasources.csv.CSVFileFormat
+import org.apache.spark.sql.execution.datasources.json.JsonFileFormat
+import org.apache.spark.sql.execution.datasources.orc.OrcFileFormat
+import org.apache.spark.sql.execution.datasources.parquet.ParquetFileFormat
+import org.apache.spark.sql.execution.datasources.text.TextFileFormat
 import org.apache.spark.sql.types._
+import org.apache.spark.sql.SparkSession
 
 /**
  * Base class for all ReplacementRules
@@ -212,6 +218,63 @@ class DataWritingCommandRule[INPUT <: DataWritingCommand](
 
   override val confKeyPart: String = "output"
   override val operationName: String = "Output"
+}
+
+final class InsertIntoHadoopFsRelationCommandMeta(
+    cmd: InsertIntoHadoopFsRelationCommand,
+    conf: RapidsConf,
+    parent: Option[RapidsMeta[_, _, _]],
+    rule: ConfKeysAndIncompat)
+    extends DataWritingCommandMeta[InsertIntoHadoopFsRelationCommand](cmd, conf, parent, rule) {
+
+  private var fileFormat: Option[ColumnarFileFormat] = None
+
+  override def tagSelfForGpu(): Unit = {
+    if (cmd.partitionColumns.nonEmpty || cmd.bucketSpec.isDefined) {
+      willNotWorkOnGpu("partitioning or bucketing is not supported")
+    }
+
+     val spark = SparkSession.active
+
+    fileFormat = cmd.fileFormat match {
+      case _: CSVFileFormat =>
+        willNotWorkOnGpu("CSV output is not supported")
+        None
+      case _: JsonFileFormat =>
+        willNotWorkOnGpu("JSON output is not supported")
+        None
+      case _: OrcFileFormat =>
+        willNotWorkOnGpu("ORC output is not supported")
+        None
+      case _: ParquetFileFormat =>
+        willNotWorkOnGpu("Parquet output is not supported")
+        None
+      case _: TextFileFormat =>
+        willNotWorkOnGpu("text output is not supported")
+        None
+      case f =>
+        willNotWorkOnGpu(s"unknown file format: ${f.getClass.getCanonicalName}")
+        None
+    }
+  }
+
+  override def convertToGpu(): GpuDataWritingCommand = {
+    val format = fileFormat.getOrElse(throw new IllegalStateException("fileFormat missing, tagSelfForGpu not called?"))
+
+    GpuInsertIntoHadoopFsRelationCommand(
+      cmd.outputPath,
+      cmd.staticPartitions,
+      cmd.ifPartitionNotExists,
+      cmd.partitionColumns,
+      cmd.bucketSpec,
+      format,
+      cmd.options,
+      cmd.query,
+      cmd.mode,
+      cmd.catalogTable,
+      cmd.fileIndex,
+      cmd.outputColumnNames)
+  }
 }
 
 object GpuOverrides {
@@ -758,24 +821,7 @@ object GpuOverrides {
   val dataWriteCmds: Map[Class[_ <: DataWritingCommand], DataWritingCommandRule[_ <: DataWritingCommand]] = Seq(
     dataWriteCmd[InsertIntoHadoopFsRelationCommand](
       "Write to Hadoop FileSystem",
-      (a, conf, p, r) => new DataWritingCommandMeta[InsertIntoHadoopFsRelationCommand](a, conf, p, r) {
-        override def tagSelfForGpu(): Unit = GpuInsertIntoHadoopFsRelationCommand.tagSupport(this)
-
-        override def convertToGpu(): GpuDataWritingCommand =
-          GpuInsertIntoHadoopFsRelationCommand(
-            a.outputPath,
-            a.staticPartitions,
-            a.ifPartitionNotExists,
-            a.partitionColumns,
-            a.bucketSpec,
-            GpuInsertIntoHadoopFsRelationCommand.toColumnarOutputWriterFactory(a.fileFormat),
-            a.options,
-            a.query,
-            a.mode,
-            a.catalogTable,
-            a.fileIndex,
-            a.outputColumnNames)
-      })
+      (a, conf, p, r) => new InsertIntoHadoopFsRelationCommandMeta(a, conf, p, r))
   ).map(r => (r.getClassFor.asSubclass(classOf[DataWritingCommand]), r)).toMap
 
   def wrapPlan[INPUT <: SparkPlan](

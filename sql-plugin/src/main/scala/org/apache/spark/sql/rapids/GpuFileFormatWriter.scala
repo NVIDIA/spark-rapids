@@ -18,7 +18,7 @@ package org.apache.spark.sql.rapids
 
 import java.util.{Date, UUID}
 
-import ai.rapids.spark.{ColumnarOutputWriterFactory, GpuAttributeReference, GpuExpression, GpuProjectExec}
+import ai.rapids.spark.{ColumnarFileFormat, GpuAttributeReference, GpuExpression, GpuProjectExec}
 import org.apache.hadoop.conf.Configuration
 import org.apache.hadoop.fs.Path
 import org.apache.hadoop.mapreduce.{Job, TaskAttemptContext, TaskAttemptID, TaskID, TaskType}
@@ -31,7 +31,6 @@ import org.apache.spark.sql.SparkSession
 import org.apache.spark.sql.catalyst.catalog.BucketSpec
 import org.apache.spark.sql.catalyst.expressions.{Attribute, AttributeReference, AttributeSet}
 import org.apache.spark.sql.catalyst.InternalRow
-import org.apache.spark.sql.catalyst.plans.physical.HashPartitioning
 import org.apache.spark.sql.catalyst.util.{CaseInsensitiveMap, DateTimeUtils}
 import org.apache.spark.sql.execution.{SparkPlan, SQLExecution}
 import org.apache.spark.sql.execution.datasources.FileFormatWriter.OutputSpec
@@ -61,7 +60,7 @@ object GpuFileFormatWriter extends Logging {
   def write(
       sparkSession: SparkSession,
       plan: SparkPlan,
-      writerFactory: ColumnarOutputWriterFactory,
+      fileFormat: ColumnarFileFormat,
       committer: FileCommitProtocol,
       outputSpec: OutputSpec,
       hadoopConf: Configuration,
@@ -122,10 +121,14 @@ object GpuFileFormatWriter extends Logging {
     // or just rely on not having write node replaced in plan?
     //DataSourceUtils.verifySchema(fileFormat, dataSchema)
 
+    // NOTE: prepareWrite has side effects as it modifies the job configuration.
+    val outputWriterFactory =
+      fileFormat.prepareWrite(sparkSession, job, caseInsensitiveOptions, dataSchema)
+
     val description = new GpuWriteJobDescription(
       uuid = UUID.randomUUID().toString,
       serializableHadoopConf = new SerializableConfiguration(job.getConfiguration),
-      outputWriterFactory = writerFactory,
+      outputWriterFactory = outputWriterFactory,
       allColumns = outputSpec.outputColumns,
       dataColumns = dataColumns,
       partitionColumns = partitionColumns,

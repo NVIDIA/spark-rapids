@@ -18,7 +18,7 @@ package org.apache.spark.sql.rapids
 
 import java.io.IOException
 
-import ai.rapids.spark.{ColumnarOutputWriterFactory, DataWritingCommandMeta, GpuDataWritingCommand}
+import ai.rapids.spark.{ColumnarFileFormat, GpuDataWritingCommand}
 import org.apache.hadoop.fs.{FileSystem, Path}
 
 import org.apache.spark.internal.io.FileCommitProtocol
@@ -29,14 +29,9 @@ import org.apache.spark.sql.catalyst.catalog.ExternalCatalogUtils.escapePathName
 import org.apache.spark.sql.catalyst.expressions.Attribute
 import org.apache.spark.sql.catalyst.plans.logical.LogicalPlan
 import org.apache.spark.sql.catalyst.util.CaseInsensitiveMap
-import org.apache.spark.sql.execution.datasources.{FileFormat, FileFormatWriter, FileIndex, InsertIntoHadoopFsRelationCommand, PartitioningUtils}
+import org.apache.spark.sql.execution.datasources.{FileFormatWriter, FileIndex, PartitioningUtils}
 import org.apache.spark.sql.execution.SparkPlan
 import org.apache.spark.sql.execution.command.{AlterTableAddPartitionCommand, AlterTableDropPartitionCommand, CommandUtils}
-import org.apache.spark.sql.execution.datasources.csv.CSVFileFormat
-import org.apache.spark.sql.execution.datasources.json.JsonFileFormat
-import org.apache.spark.sql.execution.datasources.orc.OrcFileFormat
-import org.apache.spark.sql.execution.datasources.parquet.ParquetFileFormat
-import org.apache.spark.sql.execution.datasources.text.TextFileFormat
 import org.apache.spark.sql.internal.SQLConf.PartitionOverwriteMode
 import org.apache.spark.sql.util.SchemaUtils
 import org.apache.spark.sql.vectorized.ColumnarBatch
@@ -47,7 +42,7 @@ case class GpuInsertIntoHadoopFsRelationCommand(
     ifPartitionNotExists: Boolean,
     partitionColumns: Seq[Attribute],
     bucketSpec: Option[BucketSpec],
-    writerFactory: ColumnarOutputWriterFactory,
+    fileFormat: ColumnarFileFormat,
     options: Map[String, String],
     query: LogicalPlan,
     mode: SaveMode,
@@ -160,7 +155,7 @@ case class GpuInsertIntoHadoopFsRelationCommand(
         GpuFileFormatWriter.write(
           sparkSession = sparkSession,
           plan = child,
-          writerFactory = writerFactory,
+          fileFormat = fileFormat,
           committer = committer,
           outputSpec = FileFormatWriter.OutputSpec(
             qualifiedOutputPath.toString, customPartitionLocations, outputColumns),
@@ -261,32 +256,5 @@ case class GpuInsertIntoHadoopFsRelationCommand(
         None
       }
     }.toMap
-  }
-}
-
-object GpuInsertIntoHadoopFsRelationCommand {
-  def tagSupport(cmdMeta: DataWritingCommandMeta[InsertIntoHadoopFsRelationCommand]): Unit = {
-    val writeCmd = cmdMeta.wrapped
-    val options = writeCmd.options
-
-    if (writeCmd.partitionColumns.nonEmpty || writeCmd.bucketSpec.isDefined) {
-      cmdMeta.willNotWorkOnGpu("partitioning or bucketing is not supported")
-    }
-
-    writeCmd.fileFormat match {
-      case f: CSVFileFormat => cmdMeta.willNotWorkOnGpu("CSV output is not supported")
-      case f: JsonFileFormat => cmdMeta.willNotWorkOnGpu("JSON output is not supported")
-      case f: OrcFileFormat => cmdMeta.willNotWorkOnGpu("ORC output is not supported")
-      case f: ParquetFileFormat => cmdMeta.willNotWorkOnGpu("Parquet output is not supported")
-      case f: TextFileFormat => cmdMeta.willNotWorkOnGpu("text output is not supported")
-      case f => cmdMeta.willNotWorkOnGpu(s"unknown file format: ${f.getClass.getCanonicalName}")
-    }
-  }
-
-  def toColumnarOutputWriterFactory(format: FileFormat): ColumnarOutputWriterFactory = {
-    format match {
-      case f => throw new UnsupportedOperationException(
-        s"Unknown file format class ${f.getClass.getCanonicalName}")
-    }
   }
 }
