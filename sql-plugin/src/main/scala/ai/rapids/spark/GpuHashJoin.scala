@@ -3,7 +3,7 @@ package ai.rapids.spark
 import ai.rapids.cudf.{NvtxColor, Table}
 
 import org.apache.spark.sql.catalyst.expressions.Attribute
-import org.apache.spark.sql.catalyst.plans.{Inner, JoinType, LeftOuter}
+import org.apache.spark.sql.catalyst.plans.{Inner, JoinType, LeftAnti, LeftOuter, LeftSemi}
 import org.apache.spark.sql.execution.joins.{BuildLeft, BuildRight, HashJoin}
 import org.apache.spark.sql.execution.metric.SQLMetric
 import org.apache.spark.sql.vectorized.{ColumnarBatch, ColumnVector}
@@ -12,6 +12,8 @@ object GpuHashJoin {
   def isJoinTypeAllowed(joinType: JoinType): Boolean = joinType match {
     case LeftOuter => true
     case Inner => true
+    case LeftSemi => true
+    case LeftAnti => true
     case _ => false
   }
 }
@@ -95,6 +97,10 @@ trait GpuHashJoin extends GpuExec with HashJoin {
         .leftJoin(rightTable.onColumns(joinKeyIndices: _*))
       case Inner =>
         leftTable.onColumns(joinKeyIndices: _*).innerJoin(rightTable.onColumns(joinKeyIndices: _*))
+      case LeftSemi =>
+        leftTable.onColumns(joinKeyIndices: _*).leftSemiJoin(rightTable.onColumns(joinKeyIndices: _*))
+      case LeftAnti =>
+        leftTable.onColumns(joinKeyIndices: _*).leftAntiJoin(rightTable.onColumns(joinKeyIndices: _*))
       case _ => throw new NotImplementedError(s"Joint Type ${joinType.getClass} is not currently" +
         s" supported")
     }
