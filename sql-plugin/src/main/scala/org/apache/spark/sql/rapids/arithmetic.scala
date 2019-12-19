@@ -16,7 +16,7 @@
 
 package org.apache.spark.sql.rapids
 
-import ai.rapids.cudf.{BinaryOp, Scalar, UnaryOp}
+import ai.rapids.cudf.{BinaryOp, ColumnVector, DType, Scalar, UnaryOp}
 import ai.rapids.spark.{CudfBinaryOperator, CudfUnaryExpression, GpuColumnVector, GpuUnaryExpression}
 
 import org.apache.spark.sql.catalyst.expressions.{ExpectsInputTypes, Expression, NullIntolerant}
@@ -92,10 +92,98 @@ case class GpuMultiply(left: Expression, right: Expression) extends CudfBinaryAr
   override def binaryOp: BinaryOp = BinaryOp.MUL
 }
 
-// This is for doubles and floats...
-case class GpuDivide(left: Expression, right: Expression) extends CudfBinaryArithmetic {
+trait GpuDivModLike extends CudfBinaryArithmetic {
   override def nullable: Boolean = true
 
+  override def doColumnar(lhs: GpuColumnVector, rhs: GpuColumnVector): GpuColumnVector = {
+    val replaced = replaceZeroWithNull(rhs)
+    try {
+      super.doColumnar(lhs, replaced)
+    } finally {
+      replaced.close()
+    }
+  }
+
+  override def doColumnar(lhs: Scalar, rhs: GpuColumnVector): GpuColumnVector = {
+    val replaced = replaceZeroWithNull(rhs)
+    try {
+      super.doColumnar(lhs, replaced)
+    } finally {
+      replaced.close()
+    }
+  }
+
+  override def doColumnar(lhs: GpuColumnVector, rhs: Scalar): GpuColumnVector = {
+    if (isScalarZero(rhs)) {
+      val nullScalar = Scalar.fromNull(lhs.getBase.getType)
+      try {
+        GpuColumnVector.from(ColumnVector.fromScalar(nullScalar, lhs.getRowCount.toInt))
+      } finally {
+        // TODO: Need this when Scalars require closing
+        // nullScalar.close()
+      }
+    } else {
+      super.doColumnar(lhs, rhs)
+    }
+  }
+
+  private def replaceZeroWithNull(v: GpuColumnVector): GpuColumnVector = {
+    var zeroScalar: Scalar = null
+    var nullScalar: Scalar = null
+    var zeroVec: ColumnVector = null
+    var nullVec: ColumnVector = null
+    try {
+      val dtype = v.getBase.getType
+      zeroScalar = makeZeroScalar(dtype)
+      nullScalar = Scalar.fromNull(dtype)
+      zeroVec = ColumnVector.fromScalar(zeroScalar, 1)
+      nullVec = ColumnVector.fromScalar(nullScalar, 1)
+      GpuColumnVector.from(v.getBase.findAndReplaceAll(zeroVec, nullVec))
+    } finally {
+      if (zeroScalar != null) {
+        // TODO: Need this when Scalars require closing
+        // zeroScalar.close()
+      }
+      if (nullScalar != null) {
+        // TODO: Need this when Scalars require closing
+        // nullScalar.close()
+      }
+      if (zeroVec != null) {
+        zeroVec.close()
+      }
+      if (nullVec != null) {
+        nullVec.close()
+      }
+    }
+  }
+
+  private def isScalarZero(s: Scalar): Boolean = {
+    s.getType match {
+      case DType.INT8 => s.getByte == 0
+      case DType.INT16 => s.getShort == 0
+      case DType.INT32 => s.getInt == 0
+      case DType.INT64 => s.getLong == 0
+      case DType.FLOAT32 => s.getFloat == 0f
+      case DType.FLOAT64 => s.getDouble == 0
+      case t => throw new IllegalArgumentException(s"Unexpected type: $t")
+    }
+  }
+
+  private def makeZeroScalar(dtype: DType): Scalar = {
+    dtype match {
+      case DType.INT8 => Scalar.fromByte(0.toByte)
+      case DType.INT16 => Scalar.fromShort(0.toShort)
+      case DType.INT32 => Scalar.fromInt(0)
+      case DType.INT64 => Scalar.fromLong(0L)
+      case DType.FLOAT32 => Scalar.fromFloat(0f)
+      case DType.FLOAT64 => Scalar.fromDouble(0)
+      case t => throw new IllegalArgumentException(s"Unexpected type: $t")
+    }
+  }
+}
+
+// This is for doubles and floats...
+case class GpuDivide(left: Expression, right: Expression) extends GpuDivModLike {
   override def inputType: AbstractDataType = TypeCollection(DoubleType, DecimalType)
 
   override def symbol: String = "/"
@@ -103,9 +191,7 @@ case class GpuDivide(left: Expression, right: Expression) extends CudfBinaryArit
   override def binaryOp: BinaryOp = BinaryOp.TRUE_DIV
 }
 
-case class GpuIntegralDivide(left: Expression, right: Expression) extends CudfBinaryArithmetic {
-  override def nullable: Boolean = true
-
+case class GpuIntegralDivide(left: Expression, right: Expression) extends GpuDivModLike {
   override def inputType: AbstractDataType = IntegralType
 
   override def dataType: DataType = if (SQLConf.get.integralDivideReturnLong) {
@@ -119,9 +205,7 @@ case class GpuIntegralDivide(left: Expression, right: Expression) extends CudfBi
   override def binaryOp: BinaryOp = BinaryOp.DIV
 }
 
-case class GpuRemainder(left: Expression, right: Expression) extends CudfBinaryArithmetic {
-  override def nullable: Boolean = true
-
+case class GpuRemainder(left: Expression, right: Expression) extends GpuDivModLike {
   override def inputType: AbstractDataType = NumericType
 
   override def symbol: String = "%"

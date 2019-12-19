@@ -282,7 +282,6 @@ object GpuOverrides {
     "floating point results in some cases may differ with the JVM version by a small amount"
   val FLOAT_DIFFERS_GROUP_INCOMPAT =
     "when enabling these, there may be extra groups produced for floating point grouping keys (e.g. -0.0, and 0.0)"
-  val DIVIDE_BY_ZERO_INCOMPAT = "divide by 0 does not result in null"
   val CASE_MODIFICATION_INCOMPAT =
     "in some cases unicode characters change byte width when changing the case. The GPU string " +
     "conversion does not support these characters. For a full list of unsupported characters " +
@@ -605,22 +604,19 @@ object GpuOverrides {
       (a, conf, p, r) => new BinaryExprMeta[Divide](a, conf, p, r) {
         override def convertToGpu(lhs: GpuExpression, rhs: GpuExpression): GpuExpression =
           GpuDivide(lhs, rhs)
-      })
-      .incompat(DIVIDE_BY_ZERO_INCOMPAT),
+      }),
     expr[IntegralDivide](
       "division with a integer result",
       (a, conf, p, r) => new BinaryExprMeta[IntegralDivide](a, conf, p, r) {
         override def convertToGpu(lhs: GpuExpression, rhs: GpuExpression): GpuExpression =
           GpuIntegralDivide(lhs, rhs)
-      })
-      .incompat(DIVIDE_BY_ZERO_INCOMPAT),
+      }),
     expr[Remainder](
       "remainder or modulo",
       (a, conf, p, r) => new BinaryExprMeta[Remainder](a, conf, p, r) {
         override def convertToGpu(lhs: GpuExpression, rhs: GpuExpression): GpuExpression =
           GpuRemainder(lhs, rhs)
-      })
-      .incompat(DIVIDE_BY_ZERO_INCOMPAT),
+      }),
     expr[AggregateExpression](
       "aggregate expression",
       (a, conf, p, r) => new ExprMeta[AggregateExpression](a, conf, p, r) {
