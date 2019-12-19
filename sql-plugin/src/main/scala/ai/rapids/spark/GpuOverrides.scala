@@ -856,6 +856,12 @@ object GpuOverrides {
         override def convertToGpu(): GpuExec =
           GpuBatchScanExec(p.output, childScans(0).convertToGpu())
       }),
+    exec[CoalesceExec](
+      "The backend for the dataframe coalesce method",
+      (coalesce, conf, parent, r) => new SparkPlanMeta[CoalesceExec](coalesce, conf, parent, r) {
+        override def convertToGpu(): GpuExec =
+          GpuCoalesceExec(coalesce.numPartitions, childPlans.head.convertIfNeeded())
+      }),
     exec[DataWritingCommandExec](
       "Writing data",
       (p, conf, parent, r) => new SparkPlanMeta[DataWritingCommandExec](p, conf, parent, r) {
