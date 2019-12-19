@@ -25,10 +25,10 @@ import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.expressions.{Attribute, AttributeReference, Expression, IsNotNull, NamedExpression, NullIntolerant, PredicateHelper, SortOrder}
 import org.apache.spark.sql.execution.{SparkPlan, TrampolineUtil, UnaryExecNode}
 import org.apache.spark.sql.vectorized.{ColumnarBatch, ColumnVector}
-
 import org.apache.spark.sql.catalyst.InternalRow
-import org.apache.spark.sql.catalyst.plans.physical.Partitioning
+import org.apache.spark.sql.catalyst.plans.physical.{Partitioning, SinglePartition, UnknownPartitioning}
 import org.apache.spark.sql.execution.metric.SQLMetric
+import org.apache.spark.{Partition, SparkContext, TaskContext}
 
 object GpuProjectExec {
   def projectAndClose[A <: GpuExpression](cb: ColumnarBatch, boundExprs: Seq[A],
@@ -196,4 +196,44 @@ case class GpuUnionExec(children: Seq[SparkPlan]) extends SparkPlan with GpuExec
 
   override def doExecuteColumnar(): RDD[ColumnarBatch] =
     sparkContext.union(children.map(_.executeColumnar()))
+}
+
+case class GpuCoalesceExec(numPartitions: Int, child: SparkPlan)
+    extends UnaryExecNode with GpuExec {
+  override def output: Seq[Attribute] = child.output
+
+  override def outputPartitioning: Partitioning = {
+    if (numPartitions == 1) SinglePartition
+    else UnknownPartitioning(numPartitions)
+  }
+
+  protected override def doExecute(): RDD[InternalRow] = throw new UnsupportedOperationException(
+    s"${getClass.getCanonicalName} does not support row-based execution")
+
+  override protected def doExecuteColumnar(): RDD[ColumnarBatch] = {
+    if (numPartitions == 1 && child.execute().getNumPartitions < 1) {
+      // Make sure we don't output an RDD with 0 partitions, when claiming that we have a
+      // `SinglePartition`.
+      new GpuCoalesceExec.EmptyRDDWithPartitions(sparkContext, numPartitions)
+    } else {
+      child.executeColumnar().coalesce(numPartitions, shuffle = false)
+    }
+  }
+}
+
+object GpuCoalesceExec {
+  /** A simple RDD with no data, but with the given number of partitions. */
+  class EmptyRDDWithPartitions(
+      @transient private val sc: SparkContext,
+      numPartitions: Int) extends RDD[ColumnarBatch](sc, Nil) {
+
+    override def getPartitions: Array[Partition] =
+      Array.tabulate(numPartitions)(i => EmptyPartition(i))
+
+    override def compute(split: Partition, context: TaskContext): Iterator[ColumnarBatch] = {
+      Iterator.empty
+    }
+  }
+
+  case class EmptyPartition(index: Int) extends Partition
 }
