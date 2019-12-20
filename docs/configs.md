@@ -66,13 +66,13 @@ spark.rapids.sql.expression.Cast|convert a column of one type of data into anoth
 spark.rapids.sql.expression.Ceil|ceiling of a number|true|None|
 spark.rapids.sql.expression.Cos|cosine|false|This is not 100% compatible with the Spark version because floating point results in some cases may differ with the JVM version by a small amount|
 spark.rapids.sql.expression.DayOfMonth|get the day of the month from a date or timestamp|true|None|
-spark.rapids.sql.expression.Divide|division|false|This is not 100% compatible with the Spark version because divide by 0 does not result in null|
+spark.rapids.sql.expression.Divide|division|true|None|
 spark.rapids.sql.expression.EqualTo|check if the values are equal|true|None|
 spark.rapids.sql.expression.Exp|Euler's number e raised to a power|false|This is not 100% compatible with the Spark version because floating point results in some cases may differ with the JVM version by a small amount|
 spark.rapids.sql.expression.Floor|floor of a number|true|None|
 spark.rapids.sql.expression.GreaterThan|> operator|true|None|
 spark.rapids.sql.expression.GreaterThanOrEqual|>= operator|true|None|
-spark.rapids.sql.expression.IntegralDivide|division with a integer result|false|This is not 100% compatible with the Spark version because divide by 0 does not result in null|
+spark.rapids.sql.expression.IntegralDivide|division with a integer result|true|None|
 spark.rapids.sql.expression.IsNotNull|checks if a value is not null|true|None|
 spark.rapids.sql.expression.IsNull|checks if a value is null|true|None|
 spark.rapids.sql.expression.KnownFloatingPointNormalized|tag to prevent redundant normalization|false|This is not 100% compatible with the Spark version because when enabling these, there may be extra groups produced for floating point grouping keys (e.g. -0.0, and 0.0)|
@@ -86,7 +86,7 @@ spark.rapids.sql.expression.Multiply|multiplication|true|None|
 spark.rapids.sql.expression.Not|boolean not operator|true|None|
 spark.rapids.sql.expression.Or|logical or|true|None|
 spark.rapids.sql.expression.Pow|lhs ^ rhs|false|This is not 100% compatible with the Spark version because floating point results in some cases may differ with the JVM version by a small amount|
-spark.rapids.sql.expression.Remainder|remainder or modulo|false|This is not 100% compatible with the Spark version because divide by 0 does not result in null|
+spark.rapids.sql.expression.Remainder|remainder or modulo|true|None|
 spark.rapids.sql.expression.Sin|sine|false|This is not 100% compatible with the Spark version because floating point results in some cases may differ with the JVM version by a small amount|
 spark.rapids.sql.expression.SortOrder|sort order|true|None|
 spark.rapids.sql.expression.Sqrt|square root|true|None|
@@ -109,11 +109,13 @@ spark.rapids.sql.expression.NormalizeNaNAndZero|normalize nan and zero|false|Thi
 ### Execution
 Name | Description | Default Value | Incompatibilities
 -----|-------------|---------------|------------------
+spark.rapids.sql.exec.CoalesceExec|The backend for the dataframe coalesce method|true|None|
 spark.rapids.sql.exec.FilterExec|The backend for most filter statements|true|None|
 spark.rapids.sql.exec.ProjectExec|The backend for most select, withColumn and dropColumn statements|true|None|
 spark.rapids.sql.exec.SortExec|The backend for the sort operator|true|None|
 spark.rapids.sql.exec.UnionExec|The backend for the union operator|true|None|
 spark.rapids.sql.exec.HashAggregateExec|The backend for hash based aggregations|true|None|
+spark.rapids.sql.exec.DataWritingCommandExec|Writing data|true|None|
 spark.rapids.sql.exec.BatchScanExec|The backend for most file input|true|None|
 spark.rapids.sql.exec.BroadcastExchangeExec|The backend for broadcast exchange of data|true|None|
 spark.rapids.sql.exec.ShuffleExchangeExec|The backend for most data being exchanged between processes|true|None|

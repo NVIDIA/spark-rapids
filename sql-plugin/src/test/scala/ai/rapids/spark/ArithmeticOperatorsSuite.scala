@@ -60,30 +60,27 @@ class ArithmeticOperatorsSuite extends SparkQueryCompareTestSuite {
     frame => frame.select(col("longs") * col("more_longs"))
   }
 
-  INCOMPAT_testSparkResultsAreEqual("Test scalar divide", doubleDf) {
+  testSparkResultsAreEqual("Test scalar divide", doubleDf) {
     frame => frame.select(col("doubles") / 100.0)
   }
 
-  // Divide by 0 results in null for spark, but -Infinity for cudf...
-  INCOMPAT_testSparkResultsAreEqual("Test divide", nonZeroDoubleDf) {
+  testSparkResultsAreEqual("Test divide", doubleDf) {
     frame => frame.select(col("doubles") / col("more_doubles"))
   }
 
-  INCOMPAT_testSparkResultsAreEqual("Test scalar int divide", longsDf) {
+  testSparkResultsAreEqual("Test scalar int divide", longsDf) {
     frame => frame.selectExpr("longs DIV 100")
   }
 
-  // Divide by 0 results in null for spark, but -1 for cudf...
-  INCOMPAT_testSparkResultsAreEqual("Test int divide", nonZeroLongsDf) {
+  testSparkResultsAreEqual("Test int divide", longsDf) {
     frame => frame.selectExpr("longs DIV more_longs")
   }
 
-  INCOMPAT_testSparkResultsAreEqual("Test scalar remainder", longsDf) {
+  testSparkResultsAreEqual("Test scalar remainder", longsDf) {
     frame => frame.selectExpr("longs % 100")
   }
 
-  // Divide by 0 results in null for spark, but -1 for cudf...
-  INCOMPAT_testSparkResultsAreEqual("Test remainder", nonZeroLongsDf) {
+  testSparkResultsAreEqual("Test remainder", longsDf) {
     frame => frame.selectExpr("longs % more_longs")
   }
 
