@@ -315,6 +315,12 @@ object RapidsConf {
     .booleanConf
     .createWithDefault(true)
 
+  val ENABLE_HASH_OPTIMIZE_SORT = conf("spark.rapids.sql.hashOptimizeSort.enabled")
+      .doc("Whether sorts should be inserted after some hashed operations to improve " +
+          "output ordering. This can improve output file sizes when saving to columnar formats.")
+      .booleanConf
+      .createWithDefault(false)
+
   // INTERNAL TEST AND DEBUG CONFIGS
 
   val TEST_CONF = conf("spark.rapids.sql.test.enabled")
@@ -493,6 +499,8 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
   lazy val enableTotalOrderSort: Boolean = get(ENABLE_TOTAL_ORDER_SORT)
 
   lazy val enableReplaceSortMergeJoin: Boolean = get(ENABLE_REPLACE_SORTMERGEJOIN)
+
+  lazy val enableHashOptimizeSort: Boolean = get(ENABLE_HASH_OPTIMIZE_SORT)
 
   def isOperatorEnabled(key: String, incompat: Boolean): Boolean = {
     val default = !incompat || (incompat && isIncompatEnabled)

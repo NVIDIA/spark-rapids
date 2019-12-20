@@ -16,10 +16,10 @@
 
 package ai.rapids.spark
 
-import org.apache.spark.sql.catalyst.expressions.{Attribute, AttributeReference, Expression}
+import org.apache.spark.sql.catalyst.expressions.{Ascending, Attribute, AttributeReference, Expression}
 import org.apache.spark.sql.catalyst.expressions.objects.CreateExternalRow
 import org.apache.spark.sql.catalyst.rules.Rule
-import org.apache.spark.sql.execution.{ColumnarToRowExec, DeserializeToObjectExec, LocalTableScanExec, RowToColumnarExec, SparkPlan}
+import org.apache.spark.sql.execution.{ColumnarToRowExec, DeserializeToObjectExec, GpuBroadcastHashJoinExec, LocalTableScanExec, RowToColumnarExec, SparkPlan}
 import org.apache.spark.sql.execution.exchange.ShuffleExchangeExec
 
 /**
@@ -97,6 +97,44 @@ class GpuTransitionOverrides extends Rule[SparkPlan] {
     }
   }
 
+  private def insertHashOptimizeSorts(plan: SparkPlan): SparkPlan = {
+    if (conf.enableHashOptimizeSort) {
+      // Insert a sort after the last hash join before the query result if there are no
+      // intermediate nodes that have a specified sort order.
+      plan match {
+        case p: GpuBroadcastHashJoinExec =>
+          val sortOrder = getOptimizedSortOrder(plan)
+          GpuSortExec(sortOrder, false, plan, TargetSize(conf.gpuTargetBatchSizeRows.toLong))
+        case p: GpuShuffledHashJoinExec =>
+          val sortOrder = getOptimizedSortOrder(plan)
+          GpuSortExec(sortOrder, false, plan, TargetSize(conf.gpuTargetBatchSizeRows.toLong))
+        case p =>
+          if (p.outputOrdering.isEmpty) {
+            plan.withNewChildren(plan.children.map(insertHashOptimizeSorts))
+          } else {
+            plan
+          }
+      }
+    } else {
+      plan
+    }
+  }
+
+  private def getOptimizedSortOrder(plan: SparkPlan): Seq[GpuSortOrder] = {
+    plan.output.map { expr =>
+      val wrapped = GpuOverrides.wrapExpr(expr, conf, None)
+      wrapped.tagForGpu()
+      assert(wrapped.canThisBeReplaced)
+      GpuSortOrder(
+        wrapped.convertToGpu(),
+        Ascending,
+        Ascending.defaultNullOrdering,
+        Set.empty,
+        expr
+      )
+    }
+  }
+
   private def getBaseNameFromClass(planClassStr: String): String = {
     val firstDotIndex = planClassStr.lastIndexOf(".")
     if (firstDotIndex != -1) planClassStr.substring(firstDotIndex + 1) else planClassStr
@@ -142,17 +180,16 @@ class GpuTransitionOverrides extends Rule[SparkPlan] {
   override def apply(plan: SparkPlan): SparkPlan = {
     this.conf = new RapidsConf(plan.conf)
     if (conf.isSqlEnabled) {
-      val tmp = insertCoalesce(insertColumnarFromGpu(plan))
-      val tmp2 = optimizeCoalesce(optimizeGpuPlanTransitions(tmp))
-      val ret = if (conf.exportColumnarRdd) {
-        detectAndTagFinalColumnarOutput(tmp2)
-      } else {
-        tmp2
+      var updatedPlan = insertHashOptimizeSorts(plan)
+      updatedPlan = insertCoalesce(insertColumnarFromGpu(updatedPlan))
+      updatedPlan = optimizeCoalesce(optimizeGpuPlanTransitions(updatedPlan))
+      if (conf.exportColumnarRdd) {
+        updatedPlan = detectAndTagFinalColumnarOutput(updatedPlan)
       }
       if (conf.isTestEnabled) {
-        assertIsOnTheGpu(ret, conf)
+        assertIsOnTheGpu(updatedPlan, conf)
       }
-      ret
+      updatedPlan
     } else {
       plan
     }
