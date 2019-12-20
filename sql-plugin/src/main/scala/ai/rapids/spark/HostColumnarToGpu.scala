@@ -55,7 +55,7 @@ object HostColumnarToGpu {
         for (i <- 0 until rows) {
           b.append(cv.getShort(i))
         }
-      case (DType.INT32 | DType.DATE32, true) =>
+      case (DType.INT32 | DType.TIMESTAMP_DAYS, true) =>
         for (i <- 0 until rows) {
           if (cv.isNullAt(i)) {
             b.appendNull()
@@ -63,11 +63,12 @@ object HostColumnarToGpu {
             b.append(cv.getInt(i))
           }
         }
-      case (DType.INT32 | DType.DATE32, false) =>
+      case (DType.INT32 | DType.TIMESTAMP_DAYS, false) =>
         for (i <- 0 until rows) {
           b.append(cv.getInt(i))
         }
-      case (DType.INT64 | DType.DATE64 | DType.TIMESTAMP, true) =>
+      case (DType.INT64 | DType.TIMESTAMP_SECONDS | DType.TIMESTAMP_MILLISECONDS
+            | DType.TIMESTAMP_MICROSECONDS | DType.TIMESTAMP_NANOSECONDS, true) =>
         for (i <- 0 until rows) {
           if (cv.isNullAt(i)) {
             b.appendNull()
@@ -75,7 +76,8 @@ object HostColumnarToGpu {
             b.append(cv.getLong(i))
           }
         }
-      case (DType.INT64 | DType.DATE64 | DType.TIMESTAMP, false) =>
+      case (DType.INT64 | DType.TIMESTAMP_SECONDS | DType.TIMESTAMP_MILLISECONDS
+            | DType.TIMESTAMP_MICROSECONDS | DType.TIMESTAMP_NANOSECONDS, false) =>
         for (i <- 0 until rows) {
           b.append(cv.getLong(i))
         }

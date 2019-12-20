@@ -659,7 +659,7 @@ class GpuOrcPartitionReader(
         val cudfSchema = GpuColumnVector.from(readDataSchema)
         val includedColumns = ctx.updatedReadSchema.getFieldNames.asScala
         val parseOpts = ORCOptions.builder()
-          .withTimeUnit(TimeUnit.MICROSECONDS)
+          .withTimeUnit(DType.TIMESTAMP_MICROSECONDS)
           .withNumPyTypes(false)
           .includeColumn(includedColumns:_*)
           .withOutputSizeGuess(cudfSchema.guessTableSize(rowCount.toInt))

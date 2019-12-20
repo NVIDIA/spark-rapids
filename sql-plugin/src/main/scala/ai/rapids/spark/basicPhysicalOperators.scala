@@ -95,22 +95,16 @@ object GpuFilter {
       filterTime: SQLMetric): ColumnarBatch = {
     val nvtxRange = new NvtxWithMetrics("filter batch", NvtxColor.YELLOW, filterTime)
     try {
-      val batchWithCategories = try {
-        GpuColumnVector.convertToStringCategoriesIfNeeded(batch)
-      } finally {
-        batch.close()
-      }
-
       var filterConditionCv: GpuColumnVector = null
       var tbl: cudf.Table = null
       var filtered: cudf.Table = null
       val filteredBatch = try {
-        filterConditionCv = boundCondition.columnarEval(batchWithCategories).asInstanceOf[GpuColumnVector]
-        tbl = GpuColumnVector.from(batchWithCategories)
+        filterConditionCv = boundCondition.columnarEval(batch).asInstanceOf[GpuColumnVector]
+        tbl = GpuColumnVector.from(batch)
         filtered = tbl.filter(filterConditionCv.getBase)
         GpuColumnVector.from(filtered)
       } finally {
-        Seq(filtered, tbl, filterConditionCv, batchWithCategories).safeClose()
+        Seq(filtered, tbl, filterConditionCv, batch).safeClose()
       }
 
       numOutputBatches += 1

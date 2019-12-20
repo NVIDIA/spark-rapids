@@ -406,8 +406,7 @@ case class GpuHashAggregateExec(requiredChildDistributionExpressions: Option[Seq
           // so we are not going to cast them to string unnecessarily here,
           val newCv = GpuColumnVector.from(
             childCv.asInstanceOf[GpuColumnVector].getBase.castTo(
-              GpuColumnVector.getRapidsType(childCv.dataType),
-              GpuColumnVector.getTimeUnits(ref.dataType)))
+              GpuColumnVector.getRapidsType(childCv.dataType)))
           // out with the old, in with the new
           childCv.close()
           newCv
@@ -590,13 +589,7 @@ case class GpuHashAggregateExec(requiredChildDistributionExpressions: Option[Seq
             }
           }
 
-          var aggregateCvsWithCategories = Seq[GpuColumnVector]()
-          try { 
-            aggregateCvsWithCategories = toAggregateCvs.safeMap(_.convertToStringCategoriesIfNeeded())
-            tbl = new cudf.Table(aggregateCvsWithCategories.map(_.getBase): _*)
-          } finally {
-            aggregateCvsWithCategories.safeClose()
-          }
+          tbl = new cudf.Table(toAggregateCvs.map(_.getBase): _*)
 
           if (cudfAggregates.isEmpty) {
             // we can't have empty aggregates, so pick a dummy max
@@ -623,18 +616,9 @@ case class GpuHashAggregateExec(requiredChildDistributionExpressions: Option[Seq
 
             val resCols = new ArrayBuffer[ColumnVector](result.getNumberOfColumns)
             for (i <- 0 until result.getNumberOfColumns) {
-              val castedCol = {
-                val resCol = result.getColumn(i)
-                val rapidsType = GpuColumnVector.getRapidsType(dataTypes(i))
-                val timeUnit = GpuColumnVector.getTimeUnits(dataTypes(i))
-                if (rapidsType == cudf.DType.STRING && 
-                  resCol.getType() == cudf.DType.STRING_CATEGORY) {
-                  // don't cast to string unnecesarily here, keep string categories as such
-                  resCol.incRefCount()
-                } else {
-                  resCol.castTo(rapidsType, timeUnit) // just does refCount++ for same type
-                }
-              }
+              val rapidsType = GpuColumnVector.getRapidsType(dataTypes(i))
+              // cast will be cheap if type matches, only does refCount++ in that case
+              val castedCol = result.getColumn(i).castTo(rapidsType)
               var success = false
               try {
                 resCols += GpuColumnVector.from(castedCol)

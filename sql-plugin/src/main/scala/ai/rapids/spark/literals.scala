@@ -19,7 +19,7 @@ package ai.rapids.spark
 import java.util
 import java.util.Objects
 
-import ai.rapids.cudf.Scalar
+import ai.rapids.cudf.{DType, Scalar}
 import javax.xml.bind.DatatypeConverter
 import org.json4s.JsonAST.{JField, JNull, JString}
 
@@ -31,8 +31,22 @@ import org.apache.spark.sql.vectorized.ColumnarBatch
 import org.apache.spark.unsafe.types.UTF8String
 
 object GpuScalar {
+  def scalaTypeToDType(v: Any): DType = {
+    v match {
+      case _: Long => DType.INT64
+      case _: Double => DType.FLOAT64
+      case _: Int => DType.INT32
+      case _: Float => DType.FLOAT32
+      case _: Short => DType.INT16
+      case _: Byte => DType.INT8
+      case _: Boolean => DType.BOOL8
+      case _: String | _: UTF8String => DType.STRING
+      case _ => throw new IllegalArgumentException(s"${v.getClass} '$v' is not supported as a scalar yet")
+    }
+  }
+
   def from(v: Any): Scalar = v match {
-    case _ if (v == null) => Scalar.NULL
+    case _ if v == null => Scalar.fromNull(scalaTypeToDType(v))
     case l: Long => Scalar.fromLong(l)
     case d: Double => Scalar.fromDouble(d)
     case i: Int => Scalar.fromInt(i)
@@ -49,13 +63,13 @@ object GpuScalar {
     case _ if v == null => Scalar.fromNull(GpuColumnVector.getRapidsType(t))
     case l: Long => t match {
       case LongType => Scalar.fromLong(l)
-      case TimestampType => Scalar.timestampFromLong(l)
+      case TimestampType => Scalar.timestampFromLong(DType.TIMESTAMP_MICROSECONDS, l)
       case _ => throw new IllegalArgumentException(s"$t not supported for long values")
     }
     case d: Double => Scalar.fromDouble(d)
     case i: Int => t match {
       case IntegerType => Scalar.fromInt(i)
-      case DateType => Scalar.dateFromInt(i)
+      case DateType => Scalar.timestampDaysFromInt(i)
       case _ => throw new IllegalArgumentException(s"$t not supported for int values")
     }
     case f: Float => Scalar.fromFloat(f)

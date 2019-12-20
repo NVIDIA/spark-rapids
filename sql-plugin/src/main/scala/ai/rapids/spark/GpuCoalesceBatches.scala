@@ -33,17 +33,6 @@ import org.apache.spark.sql.execution.metric.{SQLMetric, SQLMetrics}
  * The batches will be closed when this operation is done.
  */
 object ConcatAndConsumeAll {
-  private def conversionForConcat(cb: ColumnarBatch): Table = try {
-    val asStringCat = GpuColumnVector.convertToStringCategoriesIfNeeded(cb)
-    try {
-      GpuColumnVector.from(asStringCat)
-    } finally {
-      asStringCat.close()
-    }
-  } finally {
-    cb.close()
-  }
-
   /**
    * Build a single batch from the batches collected so far. If array is empty this will likely
    * blow up.
@@ -53,15 +42,14 @@ object ConcatAndConsumeAll {
    */
   def buildNonEmptyBatch(arrayOfBatches: Array[ColumnarBatch]): ColumnarBatch = {
     if (arrayOfBatches.length == 1) {
-      // Need to convert the strings to string categories to be consistent.
-      val table = conversionForConcat(arrayOfBatches(0))
+      val table = GpuColumnVector.from(arrayOfBatches(0))
       try {
         GpuColumnVector.from(table)
       } finally {
         table.close()
       }
     } else {
-      val tables = arrayOfBatches.map(conversionForConcat)
+      val tables = arrayOfBatches.map(GpuColumnVector.from)
       try {
         val combined = Table.concatenate(tables: _*)
         try {

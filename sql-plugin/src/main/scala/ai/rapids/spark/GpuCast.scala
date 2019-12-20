@@ -92,7 +92,6 @@ case class GpuCast(child: GpuExpression, dataType: DataType, timeZoneId: Option[
 
   override def doColumnar(input: GpuColumnVector): GpuColumnVector = {
     val cudfType = GpuColumnVector.getRapidsType(dataType)
-    val cudfTimeUnit = GpuColumnVector.getTimeUnits(dataType)
 
     (input.dataType(), dataType) match {
       case (_: NumericType | TimestampType, BooleanType) =>
@@ -110,14 +109,14 @@ case class GpuCast(child: GpuExpression, dataType: DataType, timeZoneId: Option[
         // the output type before the divide.  https://github.com/rapidsai/cudf/issues/2574
         val cv = input.getBase.floorDiv(GpuCast.MICROS_PER_SEC_INT, DType.INT64)
         try {
-          GpuColumnVector.from(cv.castTo(cudfType, cudfTimeUnit))
+          GpuColumnVector.from(cv.castTo(cudfType))
         } finally {
           cv.close()
         }
       case (TimestampType, _: NumericType) =>
         GpuColumnVector.from(input.getBase.floorDiv(GpuCast.MICROS_PER_SEC_INT, cudfType))
       case _ =>
-        GpuColumnVector.from(input.getBase.castTo(cudfType, cudfTimeUnit))
+        GpuColumnVector.from(input.getBase.castTo(cudfType))
     }
   }
 }

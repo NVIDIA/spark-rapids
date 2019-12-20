@@ -16,13 +16,15 @@
 
 package ai.rapids.spark
 
+import java.io.Closeable
+
 import scala.collection.mutable.ArrayBuffer
 
 import ai.rapids.cudf.{BinaryOp, BinaryOperable, DType, Scalar, UnaryOp}
 import ai.rapids.spark.RapidsPluginImplicits._
 
 import org.apache.spark.sql.catalyst.expressions.{BinaryExpression, BinaryOperator, Expression, UnaryExpression, Unevaluable}
-import org.apache.spark.sql.vectorized.{ColumnarBatch, ColumnVector}
+import org.apache.spark.sql.vectorized.ColumnarBatch
 
 
 object GpuExpressionsUtils {
@@ -92,8 +94,7 @@ abstract class GpuUnaryExpression extends UnaryExpression with GpuExpression {
           try {
             val base = tmp.getBase
             if (outputTypeOverride != null && outputTypeOverride != base.getType) {
-              GpuColumnVector.from(base.castTo(outputTypeOverride,
-                GpuColumnVector.getTimeUnits(outputTypeOverride)))
+              GpuColumnVector.from(base.castTo(outputTypeOverride))
             } else {
               val r = tmp
               tmp = null
@@ -108,8 +109,8 @@ abstract class GpuUnaryExpression extends UnaryExpression with GpuExpression {
           s"Unary expression $this should only see a column result from child eval")
       }
     } finally {
-      if (input != null && input.isInstanceOf[ColumnVector]) {
-        input.asInstanceOf[ColumnVector].close()
+      if (input != null && input.isInstanceOf[Closeable]) {
+        input.asInstanceOf[Closeable].close()
       }
     }
   }
@@ -143,11 +144,11 @@ trait GpuBinaryExpression extends BinaryExpression with GpuExpression {
         case _ => null
       }
     } finally {
-      if (lhs != null && lhs.isInstanceOf[ColumnVector]) {
-        lhs.asInstanceOf[ColumnVector].close()
+      if (lhs != null && lhs.isInstanceOf[Closeable]) {
+        lhs.asInstanceOf[Closeable].close()
       }
-      if (rhs != null && rhs.isInstanceOf[ColumnVector]) {
-        rhs.asInstanceOf[ColumnVector].close()
+      if (rhs != null && rhs.isInstanceOf[Closeable]) {
+        rhs.asInstanceOf[Closeable].close()
       }
     }
   }
@@ -168,53 +169,23 @@ trait CudfBinaryExpression extends GpuBinaryExpression {
     }
   }
 
-  final def fixupInputAsStringCat(vec: GpuColumnVector): GpuColumnVector =
-    vec.convertToStringCategoriesIfNeeded()
-
-  /**
-   * Provides an API that can be used to fixup anything about an input vector.  This is designed
-   * to provide an option to switch a string to a string category if needed and
-   * [[fixupInputAsStringCat()]] is provided for this purpose.
-   */
-  def fixupInputIfNeeded(vec: GpuColumnVector): GpuColumnVector = vec.incRefCount()
-
   override def doColumnar(lhs: GpuColumnVector, rhs: GpuColumnVector): GpuColumnVector = {
-    var lTmp: GpuColumnVector = null
-    var rTmp: GpuColumnVector = null
-    try {
-      lTmp = fixupInputIfNeeded(lhs)
-      rTmp = fixupInputIfNeeded(rhs)
-      val lBase = lTmp.getBase
-      val rBase = rTmp.getBase
-      val outType = outputType(lBase, rBase)
-      GpuColumnVector.from(lBase.binaryOp(binaryOp, rBase, outType))
-    } finally {
-      Seq(lTmp, rTmp).safeClose()
-    }
+    val lBase = lhs.getBase
+    val rBase = rhs.getBase
+    val outType = outputType(lBase, rBase)
+    GpuColumnVector.from(lBase.binaryOp(binaryOp, rBase, outType))
   }
 
   override def doColumnar(lhs: Scalar, rhs: GpuColumnVector): GpuColumnVector = {
-    var rTmp: GpuColumnVector = null
-    try {
-      rTmp = fixupInputIfNeeded(rhs)
-      val rBase = rTmp.getBase
-      val outType = outputType(lhs, rBase)
-      GpuColumnVector.from(lhs.binaryOp(binaryOp, rBase, outType))
-    } finally {
-      Seq(rTmp).safeClose()
-    }
+    val rBase = rhs.getBase
+    val outType = outputType(lhs, rBase)
+    GpuColumnVector.from(lhs.binaryOp(binaryOp, rBase, outType))
   }
 
   override def doColumnar(lhs: GpuColumnVector, rhs: Scalar): GpuColumnVector = {
-    var lTmp: GpuColumnVector = null
-    try {
-      lTmp = fixupInputIfNeeded(lhs)
-      val lBase = lTmp.getBase
-      val outType = outputType(lBase, rhs)
-      GpuColumnVector.from(lBase.binaryOp(binaryOp, rhs, outType))
-    } finally {
-      Seq(lTmp).safeClose()
-    }
+    val lBase = lhs.getBase
+    val outType = outputType(lBase, rhs)
+    GpuColumnVector.from(lBase.binaryOp(binaryOp, rhs, outType))
   }
 }
 
