@@ -48,7 +48,13 @@ object GpuProjectExec {
         val result = expr.columnarEval(cb)
         result match {
           case cv: ColumnVector => cv
-          case other => GpuColumnVector.from(GpuScalar.from(other), cb.numRows())
+          case other =>
+            val scalar = GpuScalar.from(other)
+            try {
+              GpuColumnVector.from(scalar, cb.numRows())
+            } finally {
+              scalar.close()
+            }
         }
       }}.toArray
     new ColumnarBatch(newColumns, cb.numRows())

@@ -84,7 +84,12 @@ class ImplicitsTestSuite extends FlatSpec with Matchers {
   it should "handle an error in a safeMap from a ColumnarBatch" in {
     val resources = new ArrayBuffer[RefCountTest]()
     val batch = new ColumnarBatch((0 until 10).map { ix =>
-      val col = GpuColumnVector.from(GpuScalar.from(ix, IntegerType), 5)
+      val scalar = GpuScalar.from(ix, IntegerType)
+      val col = try {
+        GpuColumnVector.from(scalar, 5)
+      } finally {
+        scalar.close()
+      }
       resources += new RefCountTest(ix, false)
       col
     }.toArray)
@@ -107,7 +112,12 @@ class ImplicitsTestSuite extends FlatSpec with Matchers {
   it should "handle an error while closing in a safeMap from a ColumnarBatch" in {
     val resources = new ArrayBuffer[RefCountTest]()
     val batch = new ColumnarBatch((0 until 10).map { ix => {
-      val col = GpuColumnVector.from(GpuScalar.from(ix, IntegerType), 5)
+      val scalar = GpuScalar.from(ix, IntegerType)
+      val col = try {
+        GpuColumnVector.from(scalar, 5)
+      } finally {
+        scalar.close()
+      }
       resources += new RefCountTest(ix, true)
       col
     }}.toArray)
@@ -144,7 +154,12 @@ class ImplicitsTestSuite extends FlatSpec with Matchers {
   it should "handle the successful case from a ColumnarBatch" in {
     val resources = new ArrayBuffer[RefCountTest]()
     val batch = new ColumnarBatch((0 until 10).map { ix => {
-      val col = GpuColumnVector.from(GpuScalar.from(ix, IntegerType), 5)
+      val scalar = GpuScalar.from(ix, IntegerType)
+      val col = try {
+        GpuColumnVector.from(scalar, 5)
+      } finally {
+        scalar.close()
+      }
       resources += new RefCountTest(ix, false)
       col
     }}.toArray)

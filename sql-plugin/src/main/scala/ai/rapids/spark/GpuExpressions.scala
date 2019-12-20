@@ -138,8 +138,20 @@ trait GpuBinaryExpression extends BinaryExpression with GpuExpression {
 
       (lhs, rhs) match {
         case (l: GpuColumnVector, r: GpuColumnVector) => doColumnar(l, r)
-        case (l, r: GpuColumnVector) => doColumnar(GpuScalar.from(l), r)
-        case (l: GpuColumnVector, r) => doColumnar(l, GpuScalar.from(r))
+        case (l, r: GpuColumnVector) =>
+          val scalar = GpuScalar.from(l)
+          try {
+            doColumnar(scalar, r)
+          } finally {
+            scalar.close()
+          }
+        case (l: GpuColumnVector, r) =>
+          val scalar = GpuScalar.from(r)
+          try {
+            doColumnar(l, scalar)
+          } finally {
+            scalar.close()
+          }
         case (l, r) if (l != null && r != null) => nullSafeEval(l, r)
         case _ => null
       }
