@@ -226,7 +226,9 @@ class GpuColumnarBatchSorter(
     val sortCvs = new ArrayBuffer[GpuColumnVector](numSortCols)
     val childExprs = boundInputReferences.map(_.child)
     sortCvs ++= evaluateBoundExpressions(batch, childExprs)
-    sortCvs ++ GpuColumnVector.extractColumns(batch)
+    val originalColumns = GpuColumnVector.extractColumns(batch)
+    originalColumns.foreach(_.incRefCount())
+    sortCvs ++ originalColumns
   }
 
   private def doGpuSort(
