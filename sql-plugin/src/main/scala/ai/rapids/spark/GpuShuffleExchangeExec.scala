@@ -259,7 +259,7 @@ case class GpuHashPartitioning(expressions: Seq[GpuExpression], numPartitions: I
 
       val (keys, dataIndexes, table) = dedupe(gpuKeyColumns, gpuDataColumns)
       // Don't need the batch any more table has all we need in it.
-      gpuDataColumns.foreach(_.close())
+      // gpuDataColumns did not increment the reference count when we got them, so don't close them.
       gpuDataColumns = null
       gpuKeyColumns.foreach(_.close())
       gpuKeyColumns = null
@@ -293,6 +293,9 @@ case class GpuHashPartitioning(expressions: Seq[GpuExpression], numPartitions: I
 
   def sliceInternal(batch: ColumnarBatch, partitionIndexes: Array[Int],
       partitionColumns: Array[GpuColumnVector]): Array[ColumnarBatch] = {
+    // We need to make sure that we have a null count calculated ahead of time.
+    // This should be a temp work around.
+    partitionColumns.foreach(_.getBase.getNullCount)
     // We are slicing the data but keeping the old in place, so copy to the CPU now
     partitionColumns.foreach(_.getBase.dropDeviceData())
 
