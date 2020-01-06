@@ -607,12 +607,20 @@ case class GpuHashAggregateExec(requiredChildDistributionExpressions: Option[Seq
             }
           }
 
-          tbl = new cudf.Table(toAggregateCvs.map(_.getBase): _*)
-
           if (cudfAggregates.isEmpty) {
+            // TODO this is ugly but it works.  Checking in for now, but need to see if we
+            // can get away without any aggregates...
+            val one = GpuScalar.from(1)
+            val cv = ai.rapids.cudf.ColumnVector.fromScalar(one, toAggregateCvs(0).getRowCount.toInt)
+            one.close()
+            val bases = toAggregateCvs.map(_.getBase) :+ cv
+            tbl = new cudf.Table(bases : _*)
+            cv.close()
             // we can't have empty aggregates, so pick a dummy max
             // could be caused by something like: select 1 from table group by awesome_key
-            cudfAggregates = Seq(cudf.Table.max(0))
+            cudfAggregates = Seq(cudf.Table.max(bases.length - 1))
+          } else {
+            tbl = new cudf.Table(toAggregateCvs.map(_.getBase): _*)
           }
 
           result = tbl.groupBy(groupingExpressions.indices: _*).aggregate(cudfAggregates: _*)
@@ -649,9 +657,17 @@ case class GpuHashAggregateExec(requiredChildDistributionExpressions: Option[Seq
             }
             new ColumnarBatch(resCols.toArray, result.getRowCount.toInt)
           } else {
+            // TODO this is still untested
+            // We added in an aggregate to make this work, so now drop that aggregate from the
+            // resulting table, because we don't care what it is.
             // the types of the aggregate columns didn't change
             // because there are no aggregates, so just return the original result
-            GpuColumnVector.from(result)
+            val t = new cudf.Table((0 until (result.getNumberOfColumns - 1)).map(result.getColumn(_)) :_*)
+            try {
+              GpuColumnVector.from(t)
+            } finally {
+              t.close()
+            }
           }
         } finally {
           if (tbl != null) {
