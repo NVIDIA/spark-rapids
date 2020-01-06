@@ -17,6 +17,7 @@
     <properties>
         <maven.compiler.source>1.8</maven.compiler.source>
         <maven.compiler.target>1.8</maven.compiler.target>
+        <spark.version>3.0.0-SNAPSHOT</spark.version>
         <cuda.version>cuda10</cuda.version>
         <scala.binary.version>2.12</scala.binary.version>
         <scala.version>2.12.8</scala.version>
@@ -48,12 +49,12 @@
             <dependency>
               <groupId>org.apache.spark</groupId>
               <artifactId>spark-sql_${scala.binary.version}</artifactId>
-              <version>3.0.0-SNAPSHOT</version>
+              <version>${spark.version}</version>
             </dependency>
             <dependency>
               <groupId>org.apache.spark</groupId>
               <artifactId>spark-catalyst_${scala.binary.version}</artifactId>
-              <version>3.0.0-SNAPSHOT</version>
+              <version>${spark.version}</version>
               <type>test-jar</type>
               <scope>test</scope>
             </dependency>
