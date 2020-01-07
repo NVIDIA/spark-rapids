@@ -111,6 +111,7 @@ case class GpuShuffledHashJoinExec(
           GpuColumnVector.from(combined)
         } finally {
           keys.close()
+          buildBatch.close()
         }
 
         val delta = System.nanoTime() - startTime
