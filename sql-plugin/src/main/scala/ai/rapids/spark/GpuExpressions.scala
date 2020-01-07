@@ -16,8 +16,6 @@
 
 package ai.rapids.spark
 
-import java.io.Closeable
-
 import scala.collection.mutable.ArrayBuffer
 
 import ai.rapids.cudf.{BinaryOp, BinaryOperable, DType, Scalar, UnaryOp}
@@ -109,8 +107,8 @@ abstract class GpuUnaryExpression extends UnaryExpression with GpuExpression {
           s"Unary expression $this should only see a column result from child eval")
       }
     } finally {
-      if (input != null && input.isInstanceOf[Closeable]) {
-        input.asInstanceOf[Closeable].close()
+      if (input != null && input.isInstanceOf[AutoCloseable]) {
+        input.asInstanceOf[AutoCloseable].close()
       }
     }
   }
@@ -156,11 +154,11 @@ trait GpuBinaryExpression extends BinaryExpression with GpuExpression {
         case _ => null
       }
     } finally {
-      if (lhs != null && lhs.isInstanceOf[Closeable]) {
-        lhs.asInstanceOf[Closeable].close()
+      if (lhs != null && lhs.isInstanceOf[AutoCloseable]) {
+        lhs.asInstanceOf[AutoCloseable].close()
       }
-      if (rhs != null && rhs.isInstanceOf[Closeable]) {
-        rhs.asInstanceOf[Closeable].close()
+      if (rhs != null && rhs.isInstanceOf[AutoCloseable]) {
+        rhs.asInstanceOf[AutoCloseable].close()
       }
     }
   }

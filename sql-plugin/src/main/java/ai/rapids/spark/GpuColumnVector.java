@@ -460,4 +460,9 @@ public final class GpuColumnVector extends ColumnVector {
   }
 
   public long getRowCount() { return cudfCv.getRowCount(); }
+
+  @Override
+  public String toString() {
+    return getBase().toString();
+  }
 }

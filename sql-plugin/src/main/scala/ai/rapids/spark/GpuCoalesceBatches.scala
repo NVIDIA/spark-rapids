@@ -42,12 +42,7 @@ object ConcatAndConsumeAll {
    */
   def buildNonEmptyBatch(arrayOfBatches: Array[ColumnarBatch]): ColumnarBatch = {
     if (arrayOfBatches.length == 1) {
-      val table = GpuColumnVector.from(arrayOfBatches(0))
-      try {
-        GpuColumnVector.from(table)
-      } finally {
-        table.close()
-      }
+      arrayOfBatches(0)
     } else {
       val tables = arrayOfBatches.map(GpuColumnVector.from)
       try {
