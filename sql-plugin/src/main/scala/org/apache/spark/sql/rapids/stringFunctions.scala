@@ -16,10 +16,9 @@
 
 package org.apache.spark.sql.rapids
 
-import ai.rapids.cudf.DType
 import ai.rapids.spark.{GpuColumnVector, GpuUnaryExpression}
 
-import org.apache.spark.sql.catalyst.expressions.{ExpectsInputTypes, Expression, UnaryExpression}
+import org.apache.spark.sql.catalyst.expressions.{ExpectsInputTypes, Expression}
 import org.apache.spark.sql.types.{AbstractDataType, DataType, StringType}
 
 abstract class GpuUnaryString2StringExpression extends GpuUnaryExpression with ExpectsInputTypes {
@@ -32,26 +31,14 @@ case class GpuUpper(child: Expression) extends GpuUnaryString2StringExpression {
 
   override def toString: String = s"upper($child)"
 
-  override def doColumnar(input: GpuColumnVector): GpuColumnVector = {
-    val asStrings = input.convertToStringsIfNeeded()
-    try {
-      GpuColumnVector.from(asStrings.getBase.upper())
-    } finally {
-      asStrings.close()
-    }
-  }
+  override def doColumnar(input: GpuColumnVector): GpuColumnVector =
+    GpuColumnVector.from(input.getBase.upper())
 }
 
 case class GpuLower(child: Expression) extends GpuUnaryString2StringExpression {
 
   override def toString: String = s"lower($child)"
 
-  override def doColumnar(input: GpuColumnVector): GpuColumnVector = {
-    val asStrings = input.convertToStringsIfNeeded()
-    try {
-      GpuColumnVector.from(asStrings.getBase.lower())
-    } finally {
-      asStrings.close()
-    }
-  }
+  override def doColumnar(input: GpuColumnVector): GpuColumnVector =
+    GpuColumnVector.from(input.getBase.lower())
 }

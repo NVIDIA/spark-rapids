@@ -103,23 +103,14 @@ case class GpuShuffledHashJoinExec(
         var combinedSize = 0
         val startTime = System.nanoTime()
         val buildBatch = ConcatAndConsumeAll.getSingleBatchWithVerification(buildIter, localBuildOutput)
-        val asStringCatBatch = try {
-          GpuColumnVector.convertToStringCategoriesIfNeeded(buildBatch)
-        } finally {
-          buildBatch.close()
-        }
+        val keys = GpuProjectExec.project(buildBatch, gpuBuildKeys)
         val builtTable = try {
-          val keys = GpuProjectExec.project(asStringCatBatch, gpuBuildKeys)
-          try {
-            // Combine does not inc any reference counting
-            val combined = combine(keys, asStringCatBatch)
-            combinedSize = GpuColumnVector.extractColumns(combined).map(_.dataType().defaultSize).sum * combined.numRows
-            GpuColumnVector.from(combined)
-          } finally {
-            keys.close()
-          }
+          // Combine does not inc any reference counting
+          val combined = combine(keys, buildBatch)
+          combinedSize = GpuColumnVector.extractColumns(combined).map(_.dataType().defaultSize).sum * combined.numRows
+          GpuColumnVector.from(combined)
         } finally {
-          asStringCatBatch.close()
+          keys.close()
         }
 
         val delta = System.nanoTime() - startTime

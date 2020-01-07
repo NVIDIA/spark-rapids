@@ -23,9 +23,6 @@ import org.apache.spark.sql.catalyst.expressions.{Cast, NullIntolerant, TimeZone
 import org.apache.spark.sql.types._
 
 object GpuCast {
-  private val MICROS_PER_SEC_DOUBLE = Scalar.fromDouble(1000000)
-  private val MICROS_PER_SEC_INT = Scalar.fromInt(1000000)
-
   /**
    * Returns true iff we can cast `from` to `to` using the GPU.
    *
@@ -92,32 +89,62 @@ case class GpuCast(child: GpuExpression, dataType: DataType, timeZoneId: Option[
 
   override def doColumnar(input: GpuColumnVector): GpuColumnVector = {
     val cudfType = GpuColumnVector.getRapidsType(dataType)
-    val cudfTimeUnit = GpuColumnVector.getTimeUnits(dataType)
 
     (input.dataType(), dataType) match {
-      case (_: NumericType | TimestampType, BooleanType) =>
-        // normally a straightforward cast could be used, but due to the problem reported in
-        // https://github.com/rapidsai/cudf/issues/2575 a workaround is used here.
-        GpuColumnVector.from(input.getBase.notEqualTo(Scalar.fromLong(0L)))
       case (DateType, BooleanType | _: NumericType) =>
         // casts from date type to numerics are always null
-        GpuColumnVector.from(GpuScalar.from(null, dataType), input.getBase.getRowCount.toInt)
+        val scalar = GpuScalar.from(null, dataType)
+        try {
+          GpuColumnVector.from(scalar, input.getBase.getRowCount.toInt)
+        } finally {
+          scalar.close()
+        }
       case (TimestampType, FloatType|DoubleType) =>
-        // Use trueDiv to ensure cast to double before division for full precision
-        GpuColumnVector.from(input.getBase.trueDiv(GpuCast.MICROS_PER_SEC_DOUBLE, cudfType))
+        val asLongs = input.getBase.castTo(DType.INT64)
+        try {
+          val microsPerSec = Scalar.fromDouble(1000000)
+          try {
+            // Use trueDiv to ensure cast to double before division for full precision
+            GpuColumnVector.from(asLongs.trueDiv(microsPerSec, cudfType))
+          } finally {
+            microsPerSec.close()
+          }
+        } finally {
+          asLongs.close()
+        }
       case (TimestampType, ByteType | ShortType | IntegerType) =>
         // normally we would just do a floordiv here, but cudf downcasts the operands to
         // the output type before the divide.  https://github.com/rapidsai/cudf/issues/2574
-        val cv = input.getBase.floorDiv(GpuCast.MICROS_PER_SEC_INT, DType.INT64)
+        val asLongs = input.getBase.castTo(DType.INT64)
         try {
-          GpuColumnVector.from(cv.castTo(cudfType, cudfTimeUnit))
+          val microsPerSec = Scalar.fromInt(1000000)
+          try {
+            val cv = asLongs.floorDiv(microsPerSec, DType.INT64)
+            try {
+              GpuColumnVector.from(cv.castTo(cudfType))
+            } finally {
+              cv.close()
+            }
+          } finally {
+            microsPerSec.close()
+          }
         } finally {
-          cv.close()
+          asLongs.close()
         }
       case (TimestampType, _: NumericType) =>
-        GpuColumnVector.from(input.getBase.floorDiv(GpuCast.MICROS_PER_SEC_INT, cudfType))
+        val asLongs = input.getBase.castTo(DType.INT64)
+        try {
+          val microsPerSec = Scalar.fromInt(1000000)
+          try {
+            GpuColumnVector.from(asLongs.floorDiv(microsPerSec, cudfType))
+          } finally {
+            microsPerSec.close()
+          }
+        } finally {
+          asLongs.close()
+        }
       case _ =>
-        GpuColumnVector.from(input.getBase.castTo(cudfType, cudfTimeUnit))
+        GpuColumnVector.from(input.getBase.castTo(cudfType))
     }
   }
 }

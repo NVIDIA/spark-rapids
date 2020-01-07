@@ -300,8 +300,14 @@ case class GpuHashAggregateExec(requiredChildDistributionExpressions: Option[Seq
           if (aggregatedCb == null && groupingExpressions.isEmpty) {
             val aggregateFunctions = aggregateExpressions.map(_.aggregateFunction)
             val defaultValues = aggregateFunctions.asInstanceOf[Seq[GpuDeclarativeAggregate]].flatMap(_.initialValues)
-            val vecs = defaultValues.map(ref =>
-              GpuColumnVector.from(GpuScalar.from(ref.asInstanceOf[GpuLiteral].value, ref.dataType), 1))
+            val vecs = defaultValues.map { ref =>
+              val scalar = GpuScalar.from(ref.asInstanceOf[GpuLiteral].value, ref.dataType)
+              try {
+                GpuColumnVector.from(scalar, 1)
+              } finally {
+                scalar.close()
+              }
+            }
             aggregatedCb = new ColumnarBatch(vecs.toArray, 1)
           }
 
@@ -339,7 +345,13 @@ case class GpuHashAggregateExec(requiredChildDistributionExpressions: Option[Seq
               // them to be vectors since this is going into a ColumnarBatch
               result match {
                 case cv: ColumnVector => cv.asInstanceOf[GpuColumnVector]
-                case _ => GpuColumnVector.from(GpuScalar.from(result), finalCb.numRows)
+                case _ =>
+                  val scalar = GpuScalar.from(result)
+                  try {
+                    GpuColumnVector.from(scalar, finalCb.numRows)
+                  } finally {
+                    scalar.close()
+                  }
               }
             }
 
@@ -399,15 +411,20 @@ case class GpuHashAggregateExec(requiredChildDistributionExpressions: Option[Seq
         val in = ref.columnarEval(batch)
         val childCv = in match {
           case cv: ColumnVector => cv.asInstanceOf[GpuColumnVector]
-          case _ => GpuColumnVector.from(GpuScalar.from(in), batch.numRows)
+          case _ =>
+            val scalar = GpuScalar.from(in)
+            try {
+              GpuColumnVector.from(scalar, batch.numRows)
+            } finally {
+              scalar.close()
+            }
         }
         val childCvCasted = if (childCv.dataType != ref.dataType) {
           // note that for string categories, childCv.dataType == StringType
           // so we are not going to cast them to string unnecessarily here,
           val newCv = GpuColumnVector.from(
             childCv.asInstanceOf[GpuColumnVector].getBase.castTo(
-              GpuColumnVector.getRapidsType(childCv.dataType),
-              GpuColumnVector.getTimeUnits(ref.dataType)))
+              GpuColumnVector.getRapidsType(childCv.dataType)))
           // out with the old, in with the new
           childCv.close()
           newCv
@@ -590,13 +607,7 @@ case class GpuHashAggregateExec(requiredChildDistributionExpressions: Option[Seq
             }
           }
 
-          var aggregateCvsWithCategories = Seq[GpuColumnVector]()
-          try { 
-            aggregateCvsWithCategories = toAggregateCvs.safeMap(_.convertToStringCategoriesIfNeeded())
-            tbl = new cudf.Table(aggregateCvsWithCategories.map(_.getBase): _*)
-          } finally {
-            aggregateCvsWithCategories.safeClose()
-          }
+          tbl = new cudf.Table(toAggregateCvs.map(_.getBase): _*)
 
           if (cudfAggregates.isEmpty) {
             // we can't have empty aggregates, so pick a dummy max
@@ -623,18 +634,9 @@ case class GpuHashAggregateExec(requiredChildDistributionExpressions: Option[Seq
 
             val resCols = new ArrayBuffer[ColumnVector](result.getNumberOfColumns)
             for (i <- 0 until result.getNumberOfColumns) {
-              val castedCol = {
-                val resCol = result.getColumn(i)
-                val rapidsType = GpuColumnVector.getRapidsType(dataTypes(i))
-                val timeUnit = GpuColumnVector.getTimeUnits(dataTypes(i))
-                if (rapidsType == cudf.DType.STRING && 
-                  resCol.getType() == cudf.DType.STRING_CATEGORY) {
-                  // don't cast to string unnecesarily here, keep string categories as such
-                  resCol.incRefCount()
-                } else {
-                  resCol.castTo(rapidsType, timeUnit) // just does refCount++ for same type
-                }
-              }
+              val rapidsType = GpuColumnVector.getRapidsType(dataTypes(i))
+              // cast will be cheap if type matches, only does refCount++ in that case
+              val castedCol = result.getColumn(i).castTo(rapidsType)
               var success = false
               try {
                 resCols += GpuColumnVector.from(castedCol)
@@ -671,7 +673,11 @@ case class GpuHashAggregateExec(requiredChildDistributionExpressions: Option[Seq
           }
 
           val res = aggFn(toAggregateCvs(agg.getOrdinal(agg.ref)).getBase)
-          GpuColumnVector.from(cudf.ColumnVector.fromScalar(res, 1))
+          try {
+            GpuColumnVector.from(cudf.ColumnVector.fromScalar(res, 1))
+          } finally {
+            res.close()
+          }
         }
         new ColumnarBatch(cvs.toArray, cvs.head.getBase.getRowCount.toInt)
       }

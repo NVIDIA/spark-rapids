@@ -131,8 +131,7 @@ case class GpuBroadcastHashJoinExec(
         // TODO clean up intermediate results...
         val keys = GpuProjectExec.project(broadcastRelation.value.batch, gpuBuildKeys)
         val combined = combine(keys, broadcastRelation.value.batch)
-        val asStringCat = GpuColumnVector.convertToStringCategoriesIfNeeded(combined)
-        val ret = GpuColumnVector.from(asStringCat)
+        val ret = GpuColumnVector.from(combined)
         // Don't warn for a leak, because we cannot control when we are done with this
         (0 until ret.getNumberOfColumns).foreach(ret.getColumn(_).noWarnLeakExpected())
         ret

@@ -19,20 +19,20 @@ package ai.rapids.spark
 import scala.collection.AbstractIterator
 import scala.collection.mutable.ArrayBuffer
 
-import ai.rapids.cudf.{ColumnVector, DType, HashFunction, NvtxColor, NvtxRange, Table}
+import ai.rapids.cudf.{ColumnVector, NvtxColor, NvtxRange, Table}
 import ai.rapids.spark.RapidsPluginImplicits._
 
 import org.apache.spark.{ShuffleDependency, TaskContext}
 import org.apache.spark.rdd.RDD
 import org.apache.spark.serializer.Serializer
 import org.apache.spark.sql.catalyst.errors._
-import org.apache.spark.sql.catalyst.expressions.{Attribute, Expression, Unevaluable}
+import org.apache.spark.sql.catalyst.expressions.{Attribute, Expression}
 import org.apache.spark.sql.catalyst.plans.physical.{ClusteredDistribution, Distribution, HashClusteredDistribution, Partitioning}
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.execution.{BatchPartitionIdPassthrough, ShuffledBatchRDD, SparkPlan}
 import org.apache.spark.sql.execution.exchange.{Exchange, ShuffleExchangeExec}
 import org.apache.spark.sql.execution.metric._
-import org.apache.spark.sql.types.{DataType, IntegerType, StringType}
+import org.apache.spark.sql.types.{DataType, IntegerType}
 import org.apache.spark.sql.vectorized.ColumnarBatch
 import org.apache.spark.util.MutablePair
 
@@ -220,24 +220,10 @@ case class GpuHashPartitioning(expressions: Seq[GpuExpression], numPartitions: I
   }
 
   def getGpuKeyColumns(batch: ColumnarBatch) : Array[GpuColumnVector] =
-    expressions.map {
-      expr => {
-        val vec = expr.columnarEval(batch).asInstanceOf[GpuColumnVector]
-        try {
-          if (vec.dataType() == StringType) {
-            // TODO GPU partitioning has a bug when working with strings so hash them directly here instead...
-            GpuColumnVector.from(vec.getBase().hash())
-          } else {
-            vec.incRefCount()
-          }
-        } finally {
-          vec.close()
-        }
-      }
-    }.toArray
+    expressions.map(_.columnarEval(batch).asInstanceOf[GpuColumnVector]).toArray
 
   def getGpuDataColumns(batch: ColumnarBatch) : Array[GpuColumnVector] =
-    GpuColumnVector.convertToStringCategoriesArrayIfNeeded(batch)
+    GpuColumnVector.extractColumns(batch)
 
   def insertDedupe(indexesOut: Array[Int], colsIn: Array[GpuColumnVector], dedupedData: ArrayBuffer[ColumnVector]): Unit = {
     indexesOut.indices.foreach { i =>
@@ -273,13 +259,13 @@ case class GpuHashPartitioning(expressions: Seq[GpuExpression], numPartitions: I
 
       val (keys, dataIndexes, table) = dedupe(gpuKeyColumns, gpuDataColumns)
       // Don't need the batch any more table has all we need in it.
-      gpuDataColumns.foreach(_.close())
+      // gpuDataColumns did not increment the reference count when we got them, so don't close them.
       gpuDataColumns = null
       gpuKeyColumns.foreach(_.close())
       gpuKeyColumns = null
       batch.close()
 
-      val partedTable = table.onColumns(keys: _*).partition(numPartitions, HashFunction.MURMUR3)
+      val partedTable = table.onColumns(keys: _*).partition(numPartitions)
       table.close()
       val parts = partedTable.getPartitions
       val columns = dataIndexes.map(idx => GpuColumnVector.from(partedTable.getColumn(idx).incRefCount()))
@@ -307,6 +293,9 @@ case class GpuHashPartitioning(expressions: Seq[GpuExpression], numPartitions: I
 
   def sliceInternal(batch: ColumnarBatch, partitionIndexes: Array[Int],
       partitionColumns: Array[GpuColumnVector]): Array[ColumnarBatch] = {
+    // We need to make sure that we have a null count calculated ahead of time.
+    // This should be a temp work around.
+    partitionColumns.foreach(_.getBase.getNullCount)
     // We are slicing the data but keeping the old in place, so copy to the CPU now
     partitionColumns.foreach(_.getBase.dropDeviceData())
 

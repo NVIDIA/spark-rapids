@@ -25,7 +25,7 @@ import scala.collection.JavaConverters._
 import scala.collection.mutable.ArrayBuffer
 import scala.math.max
 
-import ai.rapids.cudf.{HostMemoryBuffer, NvtxColor, NvtxRange, ParquetOptions, Table, TimeUnit}
+import ai.rapids.cudf.{DType, HostMemoryBuffer, NvtxColor, ParquetOptions, Table}
 import ai.rapids.spark.GpuMetricNames._
 import ai.rapids.spark.ParquetPartitionReader.CopyRange
 import org.apache.commons.io.output.{CountingOutputStream, NullOutputStream}
@@ -435,7 +435,7 @@ class ParquetPartitionReader(
         }
         val cudfSchema = GpuColumnVector.from(readDataSchema)
         val parseOpts = ParquetOptions.builder()
-          .withTimeUnit(TimeUnit.MICROSECONDS)
+          .withTimeUnit(DType.TIMESTAMP_MICROSECONDS)
           .withOutputSizeGuess(cudfSchema.guessTableSize(rowCount.toInt))
           .includeColumn(readDataSchema.fieldNames:_*).build()
 
