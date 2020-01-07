@@ -412,7 +412,7 @@ case class GpuHashAggregateExec(requiredChildDistributionExpressions: Option[Seq
         val childCv = in match {
           case cv: ColumnVector => cv.asInstanceOf[GpuColumnVector]
           case _ =>
-            val scalar = GpuScalar.from(in)
+            val scalar = GpuScalar.from(in, ref.dataType)
             try {
               GpuColumnVector.from(scalar, batch.numRows)
             } finally {
@@ -606,14 +606,7 @@ case class GpuHashAggregateExec(requiredChildDistributionExpressions: Option[Seq
               agg.updateAggregate
             }
           }
-
           tbl = new cudf.Table(toAggregateCvs.map(_.getBase): _*)
-
-          if (cudfAggregates.isEmpty) {
-            // we can't have empty aggregates, so pick a dummy max
-            // could be caused by something like: select 1 from table group by awesome_key
-            cudfAggregates = Seq(cudf.Table.max(0))
-          }
 
           result = tbl.groupBy(groupingExpressions.indices: _*).aggregate(cudfAggregates: _*)
 
@@ -628,31 +621,25 @@ case class GpuHashAggregateExec(requiredChildDistributionExpressions: Option[Seq
           // The type of the columns returned by aggregate depends on cudf. A count of a long column
           // may return a 32bit column, which is bad if you are trying to concatenate batches
           // later. Cast here to the type that the aggregate expects (e.g. Long in case of count)
-          if (aggregates.nonEmpty) {
-            val dataTypes =
-              groupingExpressions.map(_.dataType) ++ aggregates.map(_.dataType)
+          val dataTypes =
+          groupingExpressions.map(_.dataType) ++ aggregates.map(_.dataType)
 
-            val resCols = new ArrayBuffer[ColumnVector](result.getNumberOfColumns)
-            for (i <- 0 until result.getNumberOfColumns) {
-              val rapidsType = GpuColumnVector.getRapidsType(dataTypes(i))
-              // cast will be cheap if type matches, only does refCount++ in that case
-              val castedCol = result.getColumn(i).castTo(rapidsType)
-              var success = false
-              try {
-                resCols += GpuColumnVector.from(castedCol)
-                success = true
-              } finally {
-                if (!success) {
-                  castedCol.close()
-                }
+          val resCols = new ArrayBuffer[ColumnVector](result.getNumberOfColumns)
+          for (i <- 0 until result.getNumberOfColumns) {
+            val rapidsType = GpuColumnVector.getRapidsType(dataTypes(i))
+            // cast will be cheap if type matches, only does refCount++ in that case
+            val castedCol = result.getColumn(i).castTo(rapidsType)
+            var success = false
+            try {
+              resCols += GpuColumnVector.from(castedCol)
+              success = true
+            } finally {
+              if (!success) {
+                castedCol.close()
               }
             }
-            new ColumnarBatch(resCols.toArray, result.getRowCount.toInt)
-          } else {
-            // the types of the aggregate columns didn't change
-            // because there are no aggregates, so just return the original result
-            GpuColumnVector.from(result)
           }
+          new ColumnarBatch(resCols.toArray, result.getRowCount.toInt)
         } finally {
           if (tbl != null) {
             tbl.close()
