@@ -54,6 +54,7 @@ object ConcatAndConsumeAll {
         }
       } finally {
         tables.foreach(_.close())
+        arrayOfBatches.foreach(_.close())
       }
     }
   }
