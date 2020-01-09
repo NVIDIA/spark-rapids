@@ -1,0 +1,14 @@
+<settings>
+    <profiles>
+        <profile>
+            <id>mirror-apache-to-gpuwa</id>
+            <repositories>
+                <repository>
+                    <id>apache.snapshots</id>
+                    <name>sw-spark-maven</name>
+                    <url>https://gpuwa.nvidia.com/artifactory/sw-spark-maven</url>
+                </repository>
+            </repositories>
+        </profile>
+    </profiles>
+</settings>
