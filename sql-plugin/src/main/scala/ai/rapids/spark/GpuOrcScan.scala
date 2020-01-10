@@ -42,6 +42,7 @@ import org.apache.orc.mapred.OrcInputFormat
 import org.apache.spark.broadcast.Broadcast
 import org.apache.spark.internal.Logging
 import org.apache.spark.sql.SparkSession
+import org.apache.spark.sql.catalyst.expressions.Expression
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.util.CaseInsensitiveMap
 import org.apache.spark.sql.connector.read.{InputPartition, PartitionReader, PartitionReaderFactory}
@@ -69,9 +70,9 @@ case class GpuOrcScan(
     readPartitionSchema: StructType,
     options: CaseInsensitiveStringMap,
     pushedFilters: Array[Filter],
+    partitionFilters: Seq[Expression] = Seq.empty,
     rapidsConf: RapidsConf)
-  extends FileScan(sparkSession, fileIndex, readDataSchema, readPartitionSchema)
-  with ScanWithMetrics {
+  extends FileScan with ScanWithMetrics {
 
   override def isSplitable(path: Path): Boolean = true
 
@@ -88,17 +89,19 @@ case class GpuOrcScan(
 
   override def equals(obj: Any): Boolean = obj match {
     case o: GpuOrcScan =>
-      fileIndex == o.fileIndex && dataSchema == o.dataSchema &&
-      readDataSchema == o.readDataSchema && readPartitionSchema == o.readPartitionSchema &&
-      options == o.options && equivalentFilters(pushedFilters, o.pushedFilters)
+      super.equals(o) && dataSchema == o.dataSchema && options == o.options &&
+        equivalentFilters(pushedFilters, o.pushedFilters) && rapidsConf == o.rapidsConf
     case _ => false
   }
 
   override def hashCode(): Int = getClass.hashCode()
 
   override def description(): String = {
-    super.description() + ", PushedFilters: " + pushedFilters.mkString("[", ", ", "]")
+    super.description() + ", PushedFilters: " + seqToString(pushedFilters)
   }
+
+  override def withPartitionFilters(partitionFilters: Seq[Expression]): FileScan =
+    this.copy(partitionFilters = partitionFilters)
 }
 
 object GpuOrcScan {
