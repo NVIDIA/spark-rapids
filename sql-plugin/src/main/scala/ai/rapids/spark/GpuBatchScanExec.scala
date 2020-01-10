@@ -34,10 +34,11 @@ import org.apache.spark.broadcast.Broadcast
 import org.apache.spark.internal.Logging
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.execution.datasources.{HadoopFileLinesReader, PartitionedFile, PartitioningAwareFileIndex}
-import org.apache.spark.sql.execution.datasources.v2.{DataSourceRDD, DataSourceV2ScanExecBase, FilePartitionReaderFactory, TextBasedFileScan}
+import org.apache.spark.sql.execution.datasources.v2.{DataSourceRDD, DataSourceV2ScanExecBase, FilePartitionReaderFactory, FileScan, TextBasedFileScan}
 import org.apache.spark.sql.connector.read.{Batch, InputPartition, PartitionReader, PartitionReaderFactory, Scan}
 import org.apache.spark.sql.types.{StructField, StructType, TimestampType}
 import org.apache.spark.sql.SparkSession
+import org.apache.spark.sql.catalyst.expressions.Expression
 import org.apache.spark.sql.catalyst.csv.CSVOptions
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.expressions.AttributeReference
@@ -187,9 +188,9 @@ case class GpuCSVScan(
     readDataSchema: StructType, // schema that is for the data being read in (including dropped columns)
     readPartitionSchema: StructType, // schema for the parts that come from the file path
     options: CaseInsensitiveStringMap,
+    partitionFilters: Seq[Expression] = Seq.empty,
     maxReaderBatchSize: Integer)
-  extends TextBasedFileScan(sparkSession, fileIndex, readDataSchema, readPartitionSchema, options)
-  with ScanWithMetrics {
+  extends TextBasedFileScan(sparkSession, options) with ScanWithMetrics {
 
   private lazy val parsedOptions: CSVOptions = new CSVOptions(
     options.asScala.toMap,
@@ -220,6 +221,18 @@ case class GpuCSVScan(
     GpuCSVPartitionReaderFactory(sparkSession.sessionState.conf, broadcastedConf,
       dataSchema, readDataSchema, readPartitionSchema, parsedOptions, maxReaderBatchSize, metrics)
   }
+
+  override def withPartitionFilters(partitionFilters: Seq[Expression]): FileScan =
+    this.copy(partitionFilters = partitionFilters)
+
+  override def equals(obj: Any): Boolean = obj match {
+    case c: GpuCSVScan =>
+      super.equals(c) && dataSchema == c.dataSchema && options == c.options &&
+      maxReaderBatchSize == c.maxReaderBatchSize
+    case _ => false
+  }
+
+  override def hashCode(): Int = super.hashCode()
 }
 
 case class GpuCSVPartitionReaderFactory(
