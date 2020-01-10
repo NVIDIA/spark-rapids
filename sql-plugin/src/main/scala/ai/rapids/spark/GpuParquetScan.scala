@@ -43,6 +43,7 @@ import org.apache.parquet.column.ColumnDescriptor
 import org.apache.spark.broadcast.Broadcast
 import org.apache.spark.internal.Logging
 import org.apache.spark.sql.SparkSession
+import org.apache.spark.sql.catalyst.expressions.Expression
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.execution.datasources.{PartitionedFile, PartitioningAwareFileIndex}
 import org.apache.spark.sql.execution.datasources.v2.parquet.ParquetScan
@@ -68,9 +69,9 @@ case class GpuParquetScan(
     readPartitionSchema: StructType,
     pushedFilters: Array[Filter],
     options: CaseInsensitiveStringMap,
+    partitionFilters: Seq[Expression] = Seq.empty,
     rapidsConf: RapidsConf)
-  extends FileScan(sparkSession, fileIndex, readDataSchema, readPartitionSchema)
-  with ScanWithMetrics {
+  extends FileScan with ScanWithMetrics {
 
   override def isSplitable(path: Path): Boolean = true
 
@@ -83,13 +84,19 @@ case class GpuParquetScan(
 
   override def equals(obj: Any): Boolean = obj match {
     case p: GpuParquetScan =>
-      fileIndex == p.fileIndex && dataSchema == p.dataSchema &&
-        readDataSchema == p.readDataSchema && readPartitionSchema == p.readPartitionSchema &&
-        options == p.options && equivalentFilters(pushedFilters, p.pushedFilters)
+      super.equals(p) && dataSchema == p.dataSchema && options == p.options &&
+        equivalentFilters(pushedFilters, p.pushedFilters) && rapidsConf == p.rapidsConf
     case _ => false
   }
 
   override def hashCode(): Int = getClass.hashCode()
+
+  override def description(): String = {
+    super.description() + ", PushedFilters: " + seqToString(pushedFilters)
+  }
+
+  override def withPartitionFilters(partitionFilters: Seq[Expression]): FileScan =
+    this.copy(partitionFilters = partitionFilters)
 }
 
 object GpuParquetScan {

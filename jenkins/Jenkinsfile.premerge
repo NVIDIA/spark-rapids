@@ -21,6 +21,8 @@ pipeline {
 
     environment {
         JENKINS_ROOT  = 'jenkins'
+        //Temporary work around for the unit tests error 'std::logic_error'
+        LIBCUDF_INCLUDE_DIR='/tmp'
     }
 
     stages {

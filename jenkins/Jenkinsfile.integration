@@ -31,6 +31,8 @@ pipeline {
     environment {
         JENKINS_ROOT  = 'jenkins'
         TEST_SCRIPT = '$JENKINS_ROOT/spark-tests.sh'
+        //Temporary work around for the unit tests error 'std::logic_error' 
+        LIBCUDF_INCLUDE_DIR='/tmp'
     }
 
     stages {
