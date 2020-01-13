@@ -959,6 +959,18 @@ object GpuOverrides {
             wrapped.tableIdentifier)
         }
       }),
+    exec[LocalLimitExec](
+      "The backend for most local limit statements",
+      (localLimitExec, conf, p, r) => new SparkPlanMeta[LocalLimitExec](localLimitExec, conf, p, r) {
+        override def convertToGpu(): GpuExec =
+          GpuLocalLimitExec(localLimitExec.limit, childPlans(0).convertIfNeeded())
+      }),
+    exec[GlobalLimitExec](
+      "The backend for most global limit statements",
+      (globalLimitExec, conf, p, r) => new SparkPlanMeta[GlobalLimitExec](globalLimitExec, conf, p, r) {
+        override def convertToGpu(): GpuExec =
+          GpuGlobalLimitExec(globalLimitExec.limit, childPlans(0).convertIfNeeded())
+      }),
     exec[FilterExec](
       "The backend for most filter statements",
       (filter, conf, p, r) => new SparkPlanMeta[FilterExec](filter, conf, p, r) {
