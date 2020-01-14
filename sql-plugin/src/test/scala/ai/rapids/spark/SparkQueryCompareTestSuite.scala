@@ -15,6 +15,7 @@
  */
 package ai.rapids.spark
 
+import java.io.File
 import java.sql.Date
 import java.util.{Locale, TimeZone}
 
@@ -246,6 +247,57 @@ trait SparkQueryCompareTestSuite extends FunSuite {
       sort=true)(fun)
   }
 
+  /**
+   * Writes and reads a dataframe to a file using the CPU and the GPU.
+   *
+   * @param df     - the DataFrame to use as input
+   * @param writer - the function to write the data to a file
+   * @param reader - the function to read the data from a file
+   * @param conf   - spark conf
+   * @return       - tuple of (cpu results, gpu results) as arrays of Row
+   */
+  def writeWithCpuAndGpu(
+      df: SparkSession => DataFrame,
+      writer: (DataFrame, String) => Unit,
+      reader: (SparkSession, String) => DataFrame,
+      conf: SparkConf = new SparkConf()): (Array[Row], Array[Row]) = {
+    conf.setIfMissing("spark.sql.shuffle.partitions", "2")
+    var tempCpuFile: File = null
+    var tempGpuFile: File = null
+    try {
+      tempCpuFile = File.createTempFile("testdata", "cpu")
+      // remove the empty file to prevent "file already exists" from writers
+      tempCpuFile.delete()
+      withCpuSparkSession(session => {
+        val data = df(session)
+        writer(data, tempCpuFile.getAbsolutePath)
+      }, conf)
+
+      tempGpuFile = File.createTempFile("testdata", "gpu")
+      // remove the empty file to prevent "file already exists" from writers
+      tempGpuFile.delete()
+      withGpuSparkSession(session => {
+        val data = df(session)
+        writer(data, tempGpuFile.getAbsolutePath)
+      }, conf)
+
+      val (fromCpu, fromGpu) = withCpuSparkSession(session => {
+        val cpuData = reader(session, tempCpuFile.getAbsolutePath)
+        val gpuData = reader(session, tempGpuFile.getAbsolutePath)
+        (cpuData.collect, gpuData.collect)
+      }, conf)
+
+      (fromCpu, fromGpu)
+    } finally {
+      if (tempCpuFile != null) {
+        tempCpuFile.delete()
+      }
+      if (tempGpuFile != null) {
+        tempGpuFile.delete()
+      }
+    }
+  }
+
   // we guarantee that the types will be the same
   private def seqLt(a: Seq[Any], b: Seq[Any]): Boolean = {
     if (a.length < b.length) {
@@ -457,6 +509,21 @@ trait SparkQueryCompareTestSuite extends FunSuite {
       conf=conf,
       repart=repart,
       sort=true)(fun)
+  }
+
+  def testSparkWritesAreEqual(
+      testName: String,
+      df: SparkSession => DataFrame,
+      writer: (DataFrame, String) => Unit,
+      reader: (SparkSession, String) => DataFrame,
+      conf: SparkConf = new SparkConf()): Unit = {
+    val (testConf, qualifiedTestName) =
+      setupTestConfAndQualifierName(testName, false, false, false, conf, Nil)
+
+    test(qualifiedTestName) {
+      val (fromCpu, fromGpu) = writeWithCpuAndGpu(df, writer, reader, conf)
+      compareResults(false, 0, fromCpu, fromGpu)
+    }
   }
 
   def makeBatched(batchSize: Int, conf: SparkConf = new SparkConf()): SparkConf = {

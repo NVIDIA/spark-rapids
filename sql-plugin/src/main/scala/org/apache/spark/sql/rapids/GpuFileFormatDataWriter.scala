@@ -94,7 +94,9 @@ class GpuEmptyDirectoryDataWriter(
     taskAttemptContext: TaskAttemptContext,
     committer: FileCommitProtocol
 ) extends GpuFileFormatDataWriter(description, taskAttemptContext, committer) {
-  override def write(batch: ColumnarBatch): Unit = {}
+  override def write(batch: ColumnarBatch): Unit = {
+    batch.close()
+  }
 }
 
 /** Writes data to a single directory (used for non-dynamic-partition writes). */
@@ -127,18 +129,28 @@ class GpuSingleDirectoryDataWriter(
   }
 
   override def write(batch: ColumnarBatch): Unit = {
-    // TODO: This does not handle batch splitting to make sure maxRecordsPerFile is not exceeded.
-    if (description.maxRecordsPerFile > 0 && recordsInFile >= description.maxRecordsPerFile) {
-      fileCounter += 1
-      assert(fileCounter < MAX_FILE_COUNTER,
-        s"File counter $fileCounter is beyond max value $MAX_FILE_COUNTER")
+    var needToCloseBatch = true
+    try {
+      // TODO: This does not handle batch splitting to make sure maxRecordsPerFile is not exceeded.
+      if (description.maxRecordsPerFile > 0 && recordsInFile >= description.maxRecordsPerFile) {
+        fileCounter += 1
+        assert(fileCounter < MAX_FILE_COUNTER,
+          s"File counter $fileCounter is beyond max value $MAX_FILE_COUNTER")
 
-      newOutputWriter()
+        newOutputWriter()
+      }
+
+      statsTrackers.foreach(_.newBatch(batch))
+      recordsInFile += batch.numRows
+      needToCloseBatch = false
+    } finally {
+      if (needToCloseBatch) {
+        batch.close()
+      }
     }
 
-    currentWriter.write(batch)
-    statsTrackers.foreach(_.newBatch(batch))
-    recordsInFile += batch.numRows
+    // It is the responsibility of the writer to close the batch.
+    currentWriter.write(batch, statsTrackers)
   }
 }
 

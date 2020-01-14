@@ -162,7 +162,7 @@ case class GpuInsertIntoHadoopFsRelationCommand(
           hadoopConf = hadoopConf,
           partitionColumns = partitionColumns,
           bucketSpec = bucketSpec,
-          statsTrackers = Seq(basicColumnarWriteJobStatsTracker(hadoopConf)),
+          statsTrackers = Seq(gpuWriteJobStatsTracker(hadoopConf)),
           options = options)
 
 
