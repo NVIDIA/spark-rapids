@@ -45,17 +45,13 @@ fi
 RAPIDS_PLUGIN_JAR="$ARTF_ROOT/rapids-4-spark-$PROJECT_VER.jar"
 RAPIDS_TEST_JAR="$ARTF_ROOT/rapids-4-spark-tests-$PROJECT_VER.jar"
 
-if [ "$SPARK_VER" == "3.0.0-SNAPSHOT" ];then
 $MVN_GET_CMD \
     -DgroupId=org.apache -DartifactId=spark -Dversion=$SPARK_VER -Dclassifier=bin-hadoop3 -Dpackaging=tar.gz
-    SPARK_HOME="$ARTF_ROOT/spark-$SPARK_VER-bin-hadoop3"
-    export PATH="$SPARK_HOME/bin:$SPARK_HOME/sbin:$PATH"
-    tar zxf $SPARK_HOME.tar.gz -C $ARTF_ROOT && \
-        rm -f $SPARK_HOME.tar.gz
-else
-    # Using Spark3.0 release version instead of SNAPSHOT version
-    echo "$SPARK_VER: $SPARK_VER"
-fi
+
+SPARK_HOME="$ARTF_ROOT/spark-$SPARK_VER-bin-hadoop3"
+export PATH="$SPARK_HOME/bin:$SPARK_HOME/sbin:$PATH"
+tar zxf $SPARK_HOME.tar.gz -C $ARTF_ROOT && \
+    rm -f $SPARK_HOME.tar.gz
 
 PARQUET_PERF="$WORKSPACE/tests/src/test/resources/parquet_perf"
 PARQUET_ACQ="$WORKSPACE/tests/src/test/resources/parquet_acq"
