@@ -35,17 +35,19 @@ pipeline {
     }
 
     stages {
-        stage('centos7 cuda10.0') {
+        stage('centos7 cuda10') {
             agent { label 'docker-gpu' }
             steps {
                 script {
-                    def dockerImage = docker.build("spark3.0/integration:centos7-cuda10.0",
-                        "-f $JENKINS_ROOT/Dockerfile.integration.centos7 \
-                        --build-arg CUDA_VER=10.0 $JENKINS_ROOT")
+                    def DOCKER_TAG="cuda10.0"
+                    if ("$CUDA_CLASSIFIER" == "cuda10-1") {
+                         DOCKER_TAG="cuda10.1"
+                    }
+                    def IMAGE_NAME="xgbci/rapids-plugin-integration:centos7-$DOCKER_TAG"
 
-                    dockerImage.inside("--runtime=nvidia -v ${HOME}/.zinc:${HOME}/.zinc:rw \
+                    docker.image(IMAGE_NAME).inside("--runtime=nvidia -v ${HOME}/.zinc:${HOME}/.zinc:rw \
                         -v /etc/passwd:/etc/passwd -v /etc/group:/etc/group") {
-                        echo "Running integration tests on centos7 cuda10.0"
+                        echo "Running integration tests on centos7 $DOCKER_TAG"
                         sh "bash $TEST_SCRIPT"
                     }
                 }
