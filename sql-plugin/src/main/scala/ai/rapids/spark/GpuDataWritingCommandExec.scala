@@ -26,23 +26,25 @@ import org.apache.spark.sql.execution.metric.SQLMetric
 import org.apache.spark.sql.vectorized.ColumnarBatch
 import org.apache.spark.sql.{Row, SparkSession}
 import org.apache.spark.sql.catalyst.InternalRow
-import org.apache.spark.sql.rapids.BasicColumnarWriteJobStatsTracker
+import org.apache.spark.sql.rapids.GpuWriteJobStatsTracker
 import org.apache.spark.util.SerializableConfiguration
 
 /**
  * An extension of [[DataWritingCommand]] that allows columnar execution.
  */
 trait GpuDataWritingCommand extends DataWritingCommand {
+  override lazy val metrics: Map[String, SQLMetric] = GpuWriteJobStatsTracker.metrics
+
   override final def run(sparkSession: SparkSession, child: SparkPlan): Seq[Row] =
     throw new UnsupportedOperationException(
       s"${getClass.getCanonicalName} does not support row-based execution")
 
   def runColumnar(sparkSession: SparkSession, child: SparkPlan): Seq[ColumnarBatch]
 
-  def basicColumnarWriteJobStatsTracker(
-      hadoopConf: Configuration): BasicColumnarWriteJobStatsTracker = {
+  def gpuWriteJobStatsTracker(
+      hadoopConf: Configuration): GpuWriteJobStatsTracker = {
     val serializableHadoopConf = new SerializableConfiguration(hadoopConf)
-    new BasicColumnarWriteJobStatsTracker(serializableHadoopConf, metrics)
+    GpuWriteJobStatsTracker(serializableHadoopConf)
   }
 }
 
