@@ -23,6 +23,7 @@ pipeline {
         JENKINS_ROOT  = 'jenkins'
         //Temporary work around for the unit tests error 'std::logic_error'
         LIBCUDF_INCLUDE_DIR='/tmp'
+        MVN_GPUWA_MIRROR='-s jenkins/settings.xml -P mirror-apache-to-gpuwa'
     }
 
     stages {
@@ -38,7 +39,7 @@ pipeline {
                         -v ${HOME}/.zinc:${HOME}/.zinc:rw \
                         -v /etc/passwd:/etc/passwd -v /etc/group:/etc/group") {
                         echo 'Buiding in ubuntu16 cuda10.0 ...'
-                        sh 'mvn -U -B clean package'
+                        sh 'mvn -U -B clean package $MVN_GPUWA_MIRROR'
                     }
                 }
             }
