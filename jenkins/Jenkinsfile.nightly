@@ -15,7 +15,7 @@ pipeline {
     }
 
     parameters {
-        string(name: 'REF', defaultValue: 'branch-0.1', description: 'Commit to build')
+        string(name: 'REF', defaultValue: 'cudf++', description: 'Commit to build')
     }
 
     environment {
@@ -30,34 +30,13 @@ pipeline {
             agent { label 'docker-gpu' }
             steps {
                 script {
-                    def dockerImage = docker.build("rapids-plugin/spark3.0:ubuntu16-cuda10.0",
-                        "-f $JENKINS_ROOT/Dockerfile.ubuntu16 \
-                        --build-arg CUDA_VER=10.0 $JENKINS_ROOT")
-
-                    dockerImage.inside("--runtime=nvidia -v ${HOME}/.m2:${HOME}/.m2:rw \
+                    def IMAGE_NAME="xgbci/rapids-plugin-build:ubuntu16-cuda10.0"
+                    sh "docker pull $IMAGE_NAME"
+                    docker.image(IMAGE_NAME).inside("--runtime=nvidia -v ${HOME}/.m2:${HOME}/.m2:rw \
                         -v ${HOME}/.zinc:${HOME}/.zinc:rw \
                         -v /etc/passwd:/etc/passwd -v /etc/group:/etc/group") {
                         echo 'Buiding in ubuntu16 cuda10.0 ...'
                         sh "mvn -U -B clean deploy $MVN_GPUWA_MIRROR"
-                    }
-                }
-            }
-        }
-        stage('Ubuntu16 CUDA10.0 Preview2') {
-            agent { label 'docker-gpu' }
-            steps {
-                script {
-                    def dockerImage = docker.build("rapids-plugin/spark3.0:ubuntu16-cuda10.0",
-                        "-f $JENKINS_ROOT/Dockerfile.ubuntu16 \
-                        --build-arg CUDA_VER=10.0 $JENKINS_ROOT")
-
-                    dockerImage.inside("--runtime=nvidia -v ${HOME}/.m2:${HOME}/.m2:rw \
-                        -v ${HOME}/.zinc:${HOME}/.zinc:rw \
-                        -v /etc/passwd:/etc/passwd -v /etc/group:/etc/group") {
-                        echo 'Buiding in ubuntu16 cuda10.0 for spark 3.0.0-preview2 ...'
-                        sh 'mvn versions:set -DnewVersion=0.1-preview2-SNAPSHOT'
-                        sh "mvn -U -B clean deploy -Dspark.version=3.0.0-preview2 $MVN_GPUWA_MIRROR"
-                        sh 'mvn versions:revert'
                     }
                 }
             }
@@ -70,7 +49,7 @@ pipeline {
                 if (currentBuild.currentResult == "SUCCESS") {
                     build(job: 'spark/plugin_integration',
                           propagate: false,
-                          parameters: [string(name: 'REF', value: 'branch-0.1'),
+                          parameters: [string(name: 'REF', value: 'cudf++'),
                                        string(name: 'CUDF_VER', value: '0.12-SNAPSHOT'),
                                        booleanParam(name: 'BUILD_CENTOS7', value: false),])
 
