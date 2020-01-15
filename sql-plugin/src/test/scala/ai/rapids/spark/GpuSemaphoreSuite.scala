@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019, NVIDIA CORPORATION.
+ * Copyright (c) 2019-2020, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -44,6 +44,7 @@ class GpuSemaphoreSuite extends FunSuite
   }
 
   test("Double release is not an error") {
+    GpuDeviceManager.setRmmTaskInitEnabled(false)
     val context = mockContext(1)
     GpuSemaphore.acquireIfNecessary(context)
     GpuSemaphore.acquireIfNecessary(context)

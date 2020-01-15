@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019, NVIDIA CORPORATION.
+ * Copyright (c) 2019-2020, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -118,6 +118,7 @@ private final class GpuSemaphore(tasksPerGpu: Int) extends Logging {
           activeTasks.put(taskAttemptId, new MutableInt(1))
           context.addTaskCompletionListener[Unit](completeTask)
         }
+        GpuDeviceManager.initialize()
       }
     } finally {
       nvtxRange.close()
