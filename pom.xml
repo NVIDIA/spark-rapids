@@ -6,7 +6,7 @@
 
     <groupId>ai.rapids</groupId>
     <artifactId>rapids-4-spark-parent</artifactId>
-    <version>0.1-SNAPSHOT</version>
+    <version>0.1-cudfxx-SNAPSHOT</version>
     <packaging>pom</packaging>
 
     <modules>
@@ -18,7 +18,7 @@
         <maven.compiler.source>1.8</maven.compiler.source>
         <maven.compiler.target>1.8</maven.compiler.target>
         <spark.version>3.0.0-SNAPSHOT</spark.version>
-        <cuda.version>cuda10</cuda.version>
+        <cuda.version></cuda.version>
         <scala.binary.version>2.12</scala.binary.version>
         <scala.version>2.12.8</scala.version>
         <orc.version>1.5.8</orc.version>
