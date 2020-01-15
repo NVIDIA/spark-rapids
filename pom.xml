@@ -33,7 +33,7 @@
             <dependency>
                 <groupId>ai.rapids</groupId>
                 <artifactId>cudf</artifactId>
-                <version>0.12-SNAPSHOT</version>
+                <version>0.12-frankenbranch-SNAPSHOT</version>
                 <classifier>${cuda.version}</classifier>
             </dependency>
             <dependency>
