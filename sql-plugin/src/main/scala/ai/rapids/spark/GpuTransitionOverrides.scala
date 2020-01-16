@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019, NVIDIA CORPORATION.
+ * Copyright (c) 2019-2020, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -20,7 +20,9 @@ import org.apache.spark.sql.catalyst.expressions.{Ascending, Attribute, Attribut
 import org.apache.spark.sql.catalyst.expressions.objects.CreateExternalRow
 import org.apache.spark.sql.catalyst.rules.Rule
 import org.apache.spark.sql.execution.{ColumnarToRowExec, DeserializeToObjectExec, GpuBroadcastHashJoinExec, LocalTableScanExec, RowToColumnarExec, SparkPlan}
+import org.apache.spark.sql.execution.command.{CreateDataSourceTableCommand, DropTableCommand, ExecutedCommandExec}
 import org.apache.spark.sql.execution.exchange.ShuffleExchangeExec
+import org.apache.spark.sql.rapids.GpuFileSourceScanExec
 
 /**
  * Rules that run after the row to columnar and columnar to row transitions have been inserted.
@@ -156,6 +158,8 @@ class GpuTransitionOverrides extends Rule[SparkPlan] {
         }
       case _: GpuColumnarToRowExec => () // Ignored
       case _: ShuffleExchangeExec => () // Ignored for now
+      case ExecutedCommandExec(_: CreateDataSourceTableCommand) => () // Ignored
+      case ExecutedCommandExec(_: DropTableCommand) => () // Ignored
       case other =>
         if (!plan.supportsColumnar &&
           !conf.testingAllowedNonGpu.contains(getBaseNameFromClass(other.getClass.toString))) {
@@ -163,10 +167,14 @@ class GpuTransitionOverrides extends Rule[SparkPlan] {
         }
         // filter out the output expressions since those are not GPU expressions
         val planOutput = plan.output.toSet
-        plan.expressions.filter(_  match {
-          case a: Attribute => !planOutput.contains(a)
-          case _ => true
-        }).foreach(assertIsOnTheGpu(_, conf))
+        // avoid checking expressions of GpuFileSourceScanExec since all expressions are
+        // processed by driver and not run on GPU.
+        if (!plan.isInstanceOf[GpuFileSourceScanExec]) {
+          plan.expressions.filter(_ match {
+            case a: Attribute => !planOutput.contains(a)
+            case _ => true
+          }).foreach(assertIsOnTheGpu(_, conf))
+        }
     }
     plan.children.foreach(assertIsOnTheGpu(_, conf))
   }

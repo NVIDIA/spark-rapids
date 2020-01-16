@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019, NVIDIA CORPORATION.
+ * Copyright (c) 2019-2020, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -20,7 +20,6 @@ import java.util
 import java.util.concurrent.atomic.{AtomicLong, AtomicReference}
 
 import scala.collection.JavaConverters._
-import scala.collection.mutable.ArrayBuffer
 
 import ai.rapids.cudf._
 import org.apache.commons.lang3.mutable.MutableLong
@@ -281,44 +280,12 @@ class RapidsExecutorPlugin extends ExecutorPlugin with Logging {
       ctx: PluginContext,
       extraConf: util.Map[String, String]): Unit = {
     val conf = new RapidsConf(extraConf.asScala.toMap)
-    MemoryListener.registerDeviceListener(GpuResourceManager)
-    val info = Cuda.memGetInfo()
-    val async = (conf.rmmAsyncSpillFraction * info.total).toLong
-    val stop = (conf.rmmSpillFraction * info.total).toLong
-    GpuResourceManager.setCutoffs(async, stop)
 
-    // We eventually will need a way to know which GPU to use/etc, but for now, we will just
-    // go with the default GPU.
-    if (!Rmm.isInitialized) {
-      loggingEnabled = conf.isRmmDebugEnabled
-      val info = Cuda.memGetInfo()
-      val initialAllocation = (conf.rmmAllocFraction * info.total).toLong
-      if (initialAllocation > info.free) {
-        logWarning(s"Initial RMM allocation(${initialAllocation / 1024 / 1024.0} MB) is " +
-          s"larger than free memory(${info.free / 1024 /1024.0} MB)")
-      }
-      var init = RmmAllocationMode.CUDA_DEFAULT
-      val features = ArrayBuffer[String]()
-      if (conf.isPooledMemEnabled) {
-        init = init | RmmAllocationMode.POOL
-        features += "POOLED"
-      }
-      if (conf.isUvmEnabled) {
-        init = init | RmmAllocationMode.CUDA_MANAGED_MEMORY
-        features += "UVM"
-      }
-
-      logInfo(s"Initializing RMM${features.mkString(" "," ","")} ${initialAllocation / 1024 / 1024.0} MB")
-      try {
-        Rmm.initialize(init, loggingEnabled, initialAllocation)
-      } catch {
-        case e: Exception => logError("Could not initialize RMM", e)
-      }
-
-      if (conf.pinnedPoolSize > 0) {
-        logInfo(s"Initializing pinned memory pool (${conf.pinnedPoolSize / 1024 / 1024.0} MB)")
-        PinnedMemoryPool.initialize(conf.pinnedPoolSize)
-      }
+    // If we are in isolated env and using default device we can initialize here, otherwise
+    // it has to happen at the task level when spark assigns the GPU to the task.
+    if (!GpuDeviceManager.rmmTaskInitEnabled) {
+      logWarning("Initializing RMM and memory in plugin")
+      GpuDeviceManager.initializeMemory(-1, Some(conf))
     }
 
     GpuSemaphore.initialize(conf.concurrentGpuTasks)

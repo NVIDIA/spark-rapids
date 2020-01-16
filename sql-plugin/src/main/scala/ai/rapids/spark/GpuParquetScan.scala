@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019, NVIDIA CORPORATION.
+ * Copyright (c) 2019-2020, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -103,9 +103,16 @@ object GpuParquetScan {
   def tagSupport(scanMeta: ScanMeta[ParquetScan]): Unit = {
     val scan = scanMeta.wrapped
     val schema = StructType(scan.readDataSchema ++ scan.readPartitionSchema)
-    for (field <- schema) {
+    tagSupport(scan.sparkSession, schema, scanMeta)
+  }
+
+  def tagSupport(
+      sparkSession: SparkSession,
+      readSchema: StructType,
+      meta: RapidsMeta[_, _, _]): Unit = {
+    for (field <- readSchema) {
       if (!GpuColumnVector.isSupportedType(field.dataType)) {
-        scanMeta.willNotWorkOnGpu(s"GpuParquetScan does not support fields of type ${field.dataType}")
+        meta.willNotWorkOnGpu(s"GpuParquetScan does not support fields of type ${field.dataType}")
       }
     }
 
@@ -118,8 +125,8 @@ object GpuParquetScan {
     //     were written in that timezone and convert them to UTC timestamps.
     // Essentially this should boil down to a vector subtract of the scalar delta
     // between the configured timezone's delta from UTC on the timestamp data.
-    if (scan.sparkSession.sessionState.conf.isParquetINT96TimestampConversion) {
-      scanMeta.willNotWorkOnGpu("GpuParquetScan does not support int96 timestamp conversion")
+    if (sparkSession.sessionState.conf.isParquetINT96TimestampConversion) {
+      meta.willNotWorkOnGpu("GpuParquetScan does not support int96 timestamp conversion")
     }
   }
 }
