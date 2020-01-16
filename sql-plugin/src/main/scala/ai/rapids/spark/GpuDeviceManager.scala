@@ -137,7 +137,7 @@ object GpuDeviceManager extends Logging {
   def initializeMemory(gpuId: Int, rapidsConf: Option[RapidsConf] = None): Unit = {
     if (singletonMemoryInitialized == false) {
       // Memory or memory related components that only need to be initialized once per executor.
-      // This synchronize multiple tasks from trying to initialize them at the same time.
+      // This synchronize prevents multiple tasks from trying to initialize these at the same time.
       GpuDeviceManager.synchronized {
         if (singletonMemoryInitialized == false) {
           registerMemoryListener(rapidsConf)
