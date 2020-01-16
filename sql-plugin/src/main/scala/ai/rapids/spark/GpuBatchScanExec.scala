@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019, NVIDIA CORPORATION.
+ * Copyright (c) 2019-2020, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,11 +16,9 @@
 
 package ai.rapids.spark
 
-import java.io.{IOException, ObjectInputStream, ObjectOutputStream}
 import java.nio.charset.StandardCharsets
 
 import scala.collection.JavaConverters._
-import scala.util.control.NonFatal
 import scala.math.max
 
 import ai.rapids.cudf.{HostMemoryBuffer, NvtxColor, Table}
@@ -31,17 +29,15 @@ import org.apache.hadoop.fs.Path
 import org.apache.hadoop.io.compress.CompressionCodecFactory
 
 import org.apache.spark.broadcast.Broadcast
-import org.apache.spark.internal.Logging
 import org.apache.spark.rdd.RDD
+import org.apache.spark.sql.connector.read._
 import org.apache.spark.sql.execution.datasources.{HadoopFileLinesReader, PartitionedFile, PartitioningAwareFileIndex}
-import org.apache.spark.sql.execution.datasources.v2.{DataSourceRDD, DataSourceV2ScanExecBase, FilePartitionReaderFactory, FileScan, TextBasedFileScan}
-import org.apache.spark.sql.connector.read.{Batch, InputPartition, PartitionReader, PartitionReaderFactory, Scan}
+import org.apache.spark.sql.execution.datasources.v2._
 import org.apache.spark.sql.types.{StructField, StructType, TimestampType}
 import org.apache.spark.sql.SparkSession
-import org.apache.spark.sql.catalyst.expressions.Expression
 import org.apache.spark.sql.catalyst.csv.CSVOptions
 import org.apache.spark.sql.catalyst.InternalRow
-import org.apache.spark.sql.catalyst.expressions.AttributeReference
+import org.apache.spark.sql.catalyst.expressions.{AttributeReference, Expression}
 import org.apache.spark.sql.catalyst.plans.QueryPlan
 import org.apache.spark.sql.catalyst.util.PermissiveMode
 import org.apache.spark.sql.execution.datasources.v2.csv.CSVScan
@@ -94,78 +90,88 @@ trait ScanWithMetrics {
 object GpuCSVScan {
   def tagSupport(scanMeta: ScanMeta[CSVScan]) : Unit = {
     val scan = scanMeta.wrapped
-    val options = scan.options
-    val sparkSession = scan.sparkSession
+    tagSupport(
+      scan.sparkSession,
+      scan.dataSchema,
+      scan.options.asScala.toMap,
+      scanMeta)
+  }
+
+  def tagSupport(
+      sparkSession: SparkSession,
+      dataSchema: StructType,
+      options: Map[String, String],
+      meta: RapidsMeta[_, _, _]): Unit = {
     val parsedOptions: CSVOptions = new CSVOptions(
-      options.asScala.toMap,
+      options,
       columnPruning = sparkSession.sessionState.conf.csvColumnPruning,
       sparkSession.sessionState.conf.sessionLocalTimeZone,
       sparkSession.sessionState.conf.columnNameOfCorruptRecord)
 
     if (!parsedOptions.enforceSchema) {
-      scanMeta.willNotWorkOnGpu("GpuCSVScan always enforces schemas")
+      meta.willNotWorkOnGpu("GpuCSVScan always enforces schemas")
     }
 
-    if (scan.dataSchema == null || scan.dataSchema.isEmpty) {
-      scanMeta.willNotWorkOnGpu("GpuCSVScan requires a specified data schema")
+    if (dataSchema == null || dataSchema.isEmpty) {
+      meta.willNotWorkOnGpu("GpuCSVScan requires a specified data schema")
     }
 
     // TODO: Add an incompat override flag to specify no timezones appear in timestamp types?
-    if (scan.dataSchema.map(_.dataType).contains(TimestampType)) {
-      scanMeta.willNotWorkOnGpu("GpuCSVScan does not support parsing timestamp types")
+    if (dataSchema.map(_.dataType).contains(TimestampType)) {
+      meta.willNotWorkOnGpu("GpuCSVScan does not support parsing timestamp types")
     }
 
     if (parsedOptions.delimiter.length > 1) {
-      scanMeta.willNotWorkOnGpu("GpuCSVScan does not support multi-character delimiters")
+      meta.willNotWorkOnGpu("GpuCSVScan does not support multi-character delimiters")
     }
 
     if (parsedOptions.delimiter.codePointAt(0) > 127) {
-      scanMeta.willNotWorkOnGpu("GpuCSVScan does not support non-ASCII delimiters")
+      meta.willNotWorkOnGpu("GpuCSVScan does not support non-ASCII delimiters")
     }
 
     if (parsedOptions.quote > 127) {
-      scanMeta.willNotWorkOnGpu("GpuCSVScan does not support non-ASCII quote chars")
+      meta.willNotWorkOnGpu("GpuCSVScan does not support non-ASCII quote chars")
     }
 
     if (parsedOptions.comment > 127) {
-      scanMeta.willNotWorkOnGpu("GpuCSVScan does not support non-ASCII comment chars")
+      meta.willNotWorkOnGpu("GpuCSVScan does not support non-ASCII comment chars")
     }
 
     if (parsedOptions.escape != '\\') {
       // TODO need to fix this
-      scanMeta.willNotWorkOnGpu("GpuCSVScan does not support modified escape chars")
+      meta.willNotWorkOnGpu("GpuCSVScan does not support modified escape chars")
     }
 
     // TODO charToEscapeQuoteEscaping???
 
 
     if (StandardCharsets.UTF_8.name() != parsedOptions.charset &&
-      StandardCharsets.US_ASCII.name() != parsedOptions.charset) {
-      scanMeta.willNotWorkOnGpu("GpuCSVScan only supports UTF8 encoded data")
+        StandardCharsets.US_ASCII.name() != parsedOptions.charset) {
+      meta.willNotWorkOnGpu("GpuCSVScan only supports UTF8 encoded data")
     }
 
     if (parsedOptions.ignoreLeadingWhiteSpaceInRead) {
       // TODO need to fix this (or at least verify that it is doing the right thing)
-      scanMeta.willNotWorkOnGpu("GpuCSVScan does not support ignoring leading white space")
+      meta.willNotWorkOnGpu("GpuCSVScan does not support ignoring leading white space")
     }
 
     if (parsedOptions.ignoreTrailingWhiteSpaceInRead) {
       // TODO need to fix this (or at least verify that it is doing the right thing)
-      scanMeta.willNotWorkOnGpu("GpuCSVScan does not support ignoring trailing white space")
+      meta.willNotWorkOnGpu("GpuCSVScan does not support ignoring trailing white space")
     }
 
     if (parsedOptions.multiLine) {
       // TODO should we support this
-      scanMeta.willNotWorkOnGpu("GpuCSVScan does not support multi-line")
+      meta.willNotWorkOnGpu("GpuCSVScan does not support multi-line")
     }
 
     if (parsedOptions.lineSeparator.getOrElse("\n") != "\n") {
       // TODO should we support this
-      scanMeta.willNotWorkOnGpu("GpuCSVScan only supports \"\\n\" as a line separator")
+      meta.willNotWorkOnGpu("GpuCSVScan only supports \"\\n\" as a line separator")
     }
 
     if (parsedOptions.parseMode != PermissiveMode) {
-      scanMeta.willNotWorkOnGpu("GpuCSVScan only supports Permissive CSV parsing")
+      meta.willNotWorkOnGpu("GpuCSVScan only supports Permissive CSV parsing")
     }
     // TODO parsedOptions.columnNameOfCorruptRecord
     // TODO parsedOptions.nanValue This is here by default so we need to be able to support it

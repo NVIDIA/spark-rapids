@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019, NVIDIA CORPORATION.
+ * Copyright (c) 2019-2020, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -108,9 +108,16 @@ object GpuOrcScan {
   def tagSupport(scanMeta: ScanMeta[OrcScan]): Unit = {
     val scan = scanMeta.wrapped
     val schema = StructType(scan.readDataSchema ++ scan.readPartitionSchema)
+    tagSupport(scan.sparkSession, schema, scanMeta)
+  }
+
+  def tagSupport(
+      sparkSession: SparkSession,
+      schema: StructType,
+      meta: RapidsMeta[_, _, _]): Unit = {
     schema.foreach { field =>
       if (!GpuColumnVector.isSupportedType(field.dataType)) {
-        scanMeta.willNotWorkOnGpu(s"GpuOrcScan does not support fields of type ${field.dataType}")
+        meta.willNotWorkOnGpu(s"GpuOrcScan does not support fields of type ${field.dataType}")
       }
     }
   }
