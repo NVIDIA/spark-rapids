@@ -42,6 +42,7 @@ object GpuDeviceManager extends Logging {
 
   private val threadGpuInitialized = new ThreadLocal[Boolean]()
   @volatile private var memoryListenerInitialized: Boolean = false
+  @volatile private var singletonMemoryInitialized: Boolean = false
 
   /**
    * Set the GPU assigned by Spark and initialize the RMM.
@@ -134,8 +135,17 @@ object GpuDeviceManager extends Logging {
   }
 
   def initializeMemory(gpuId: Int, rapidsConf: Option[RapidsConf] = None): Unit = {
-    registerMemoryListener(rapidsConf)
-    initializeRmm(rapidsConf)
-    allocatePinnedMemory(gpuId, rapidsConf)
+    if (singletonMemoryInitialized == false) {
+      // Memory or memory related components that only need to be initialized once per executor.
+      // This synchronize prevents multiple tasks from trying to initialize these at the same time.
+      GpuDeviceManager.synchronized {
+        if (singletonMemoryInitialized == false) {
+          registerMemoryListener(rapidsConf)
+          initializeRmm(rapidsConf)
+          allocatePinnedMemory(gpuId, rapidsConf)
+          singletonMemoryInitialized = true
+        }
+      }
+    }
   }
 }
