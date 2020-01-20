@@ -16,6 +16,9 @@
 
 package ai.rapids.spark
 
+import org.scalatest.Ignore
+
+@Ignore
 class FilterExprSuite extends SparkQueryCompareTestSuite {
 
   testSparkResultsAreEqual("filter is not null", nullableFloatCsvDf) {
