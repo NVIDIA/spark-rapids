@@ -41,6 +41,20 @@
         </dependency>
     </dependencies>
 
+    <profiles>
+      <profile>
+        <id>alpha-features</id>
+        <dependencies>
+          <dependency>
+              <groupId>ai.rapids</groupId>
+              <artifactId>rapids-4-spark-shuffle</artifactId>
+              <version>0.1-cudfxx-SNAPSHOT</version>
+              <scope>test</scope>
+          </dependency>
+        </dependencies>
+      </profile>
+    </profiles>
+
     <build>
         <plugins>
             <!-- disable surefire as we are using scalatest only -->

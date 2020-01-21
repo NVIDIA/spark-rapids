@@ -34,6 +34,7 @@ import org.apache.spark.sql.execution.exchange.{Exchange, ShuffleExchangeExec}
 import org.apache.spark.sql.execution.metric._
 import org.apache.spark.sql.types.{DataType, IntegerType}
 import org.apache.spark.sql.vectorized.ColumnarBatch
+import org.apache.spark.sql.{GpuShuffleDependency, GpuShuffleEnv}
 import org.apache.spark.util.MutablePair
 
 class GpuShuffleMeta(
@@ -71,7 +72,7 @@ case class GpuShuffleExchangeExec(
     SQLShuffleWriteMetricsReporter.createShuffleWriteMetrics(sparkContext)
   private lazy val readMetrics =
     SQLShuffleReadMetricsReporter.createShuffleReadMetrics(sparkContext)
-  override lazy val metrics = Map(
+  override lazy val additionalMetrics : Map[String, SQLMetric] = Map(
     "dataSize" -> SQLMetrics.createSizeMetric(sparkContext, "data size")
   ) ++ readMetrics ++ writeMetrics
 
@@ -94,11 +95,12 @@ case class GpuShuffleExchangeExec(
       child.output,
       outputPartitioning,
       serializer,
+      metrics,
       writeMetrics)
   }
 
   def createShuffledBatchRDD(partitionStartIndices: Option[Array[Int]]): ShuffledBatchRDD = {
-    new ShuffledBatchRDD(shuffleBatchDependency, readMetrics, partitionStartIndices)
+    new ShuffledBatchRDD(shuffleBatchDependency, metrics ++ readMetrics, partitionStartIndices)
   }
 
   /**
@@ -119,13 +121,12 @@ case class GpuShuffleExchangeExec(
 }
 
 object GpuShuffleExchangeExec {
-
-
   def prepareBatchShuffleDependency(
       rdd: RDD[ColumnarBatch],
       outputAttributes: Seq[Attribute],
       newPartitioning: Partitioning,
       serializer: Serializer,
+      metrics: Map[String, SQLMetric],
       writeMetrics: Map[String, SQLMetric])
   : ShuffleDependency[Int, ColumnarBatch, ColumnarBatch] = {
     def getPartitioned: ColumnarBatch => Any = newPartitioning match {
@@ -156,6 +157,10 @@ object GpuShuffleExchangeExec {
                 batch = iter.next()
               }
               partitioned = getParts(batch).asInstanceOf[Array[(ColumnarBatch, Int)]]
+              partitioned.foreach(batches => {
+                metrics(GpuMetricNames.NUM_OUTPUT_ROWS) += batches._1.numRows()
+              })
+              metrics(GpuMetricNames.NUM_OUTPUT_BATCHES) += partitioned.length
               at = 0
             }
           }
@@ -184,11 +189,13 @@ object GpuShuffleExchangeExec {
       }
     }
 
-    // Now, we manually create a ShuffleDependency. Because pairs in rddWithPartitionIds
+    // Now, we manually create a GpuShuffleDependency. Because pairs in rddWithPartitionIds
     // are in the form of (partitionId, row) and every partitionId is in the expected range
     // [0, part.numPartitions - 1]. The partitioner of this is a PartitionIdPassthrough.
+    // We do a GPU version because it allows us to know that the data is on the GPU so we can
+    // detect it and do further processing if needed.
     val dependency =
-    new ShuffleDependency[Int, ColumnarBatch, ColumnarBatch](
+    new GpuShuffleDependency[Int, ColumnarBatch, ColumnarBatch](
       rddWithPartitionIds,
       new BatchPartitionIdPassthrough(newPartitioning.numPartitions),
       serializer,
@@ -291,14 +298,13 @@ case class GpuHashPartitioning(expressions: Seq[GpuExpression], numPartitions: I
     ret
   }
 
-  def sliceInternal(batch: ColumnarBatch, partitionIndexes: Array[Int],
+  def sliceInternalOnCpu(batch: ColumnarBatch, partitionIndexes: Array[Int],
       partitionColumns: Array[GpuColumnVector]): Array[ColumnarBatch] = {
     // We need to make sure that we have a null count calculated ahead of time.
     // This should be a temp work around.
     partitionColumns.foreach(_.getBase.getNullCount)
     // We are slicing the data but keeping the old in place, so copy to the CPU now
     partitionColumns.foreach(_.getBase.dropDeviceData())
-
     // Leaving the GPU for a while
     GpuSemaphore.releaseIfNecessary(TaskContext.get())
 
@@ -313,9 +319,36 @@ case class GpuHashPartitioning(expressions: Seq[GpuExpression], numPartitions: I
     ret
   }
 
+  def sliceInternal(batch: ColumnarBatch, partitionIndexes: Array[Int], partitionColumns: Array[GpuColumnVector]): Array[ColumnarBatch] = {
+    // The first index will always be 0, so we need to skip it.
+    val batches = if (batch.numRows > 0) {
+      val parts = partitionIndexes.slice(1, partitionIndexes.length)
+      val splits = partitionColumns.map(c => {
+        c.getBase.split(parts: _*)
+      })
+      (0 until numPartitions).map(idx => {
+          val columns = splits.map(_(idx))
+          val start = partitionIndexes(idx)
+          val end = if ((idx + 1) < partitionIndexes.length) {
+            partitionIndexes(idx + 1)
+          } else {
+            batch.numRows()
+          }
+          val rowCount = end - start
+          assert(columns.head.getRowCount == rowCount,
+            s"Counts don't match ${columns.head.getRowCount} != $rowCount")
+          new ColumnarBatch(columns.map(GpuColumnVector.from(_)), rowCount)
+        }).toArray
+    } else {
+      Seq(batch).toArray
+    }
+
+    GpuSemaphore.releaseIfNecessary(TaskContext.get())
+    batches
+  }
+
   override def columnarEval(batch: ColumnarBatch): Any = {
     //  We are doing this here because the cudf partition command is at this level
-
     val totalRange = new NvtxRange("Hash partition", NvtxColor.PURPLE)
     try {
       val (partitionIndexes, partitionColumns) = {
@@ -327,9 +360,26 @@ case class GpuHashPartitioning(expressions: Seq[GpuExpression], numPartitions: I
         }
       }
       val ret = {
-        val sliceRange = new NvtxRange("slice", NvtxColor.CYAN)
+        val rapidsShuffleEnabled = GpuShuffleEnv.isRapidsShuffleEnabled
+        val sliceRange = new NvtxRange(
+          if (rapidsShuffleEnabled) {
+            "sliceInternal"
+          } else {
+            "sliceInternalOnCpu"
+          }, NvtxColor.CYAN)
+
         try {
-          sliceInternal(batch, partitionIndexes, partitionColumns)
+          // If we are not using the Rapids shuffle we fall back to CPU spilts way to avoid the hit
+          // for large number of small splits.
+          if (rapidsShuffleEnabled) {
+            if (batch.numRows() == 0) {
+              Array[ColumnarBatch]()
+            } else {
+              sliceInternal(batch, partitionIndexes, partitionColumns)
+            }
+          } else {
+            sliceInternalOnCpu(batch, partitionIndexes, partitionColumns)
+          }
         } finally {
           sliceRange.close()
         }

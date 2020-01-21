@@ -19,6 +19,8 @@ package org.apache.spark.sql.execution
 
 import java.util
 
+import ai.rapids.cudf.NvtxColor
+import ai.rapids.spark.{GpuMetricNames, NvtxWithMetrics}
 import org.apache.spark._
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.execution.metric.{SQLMetric, SQLShuffleReadMetricsReporter}
@@ -161,7 +163,14 @@ class ShuffledBatchRDD(
       shuffledRowPartition.endPreShufflePartitionIndex,
       context,
       sqlMetricsReporter)
-    reader.read().asInstanceOf[Iterator[Product2[Int, ColumnarBatch]]].map(_._2)
+    var ret : Iterator[ColumnarBatch] = null
+    val nvtxRange = new NvtxWithMetrics("Shuffle getPartitions", NvtxColor.DARK_GREEN, metrics(GpuMetricNames.TOTAL_TIME))
+    try {
+      ret = reader.read().asInstanceOf[Iterator[Product2[Int, ColumnarBatch]]].map(_._2)
+    } finally {
+      nvtxRange.close()
+    }
+    ret
   }
 
   override def clearDependencies() {

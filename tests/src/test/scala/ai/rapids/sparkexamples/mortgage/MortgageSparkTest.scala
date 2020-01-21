@@ -22,7 +22,7 @@ import org.scalatest.FunSuite
 
 class MortgageSparkTest extends FunSuite {
   lazy val  session: SparkSession = {
-    SparkSession.builder
+    var builder = SparkSession.builder
       .master("local[2]")
       .appName("MortgageTests")
       .config("spark.sql.join.preferSortMergeJoin", false)
@@ -32,7 +32,15 @@ class MortgageSparkTest extends FunSuite {
       .config("spark.rapids.sql.explain", true)
       .config("spark.rapids.sql.incompatibleOps.enabled", true)
       .config("spark.rapids.sql.stringHashGroupBy.enabled", true)
-      .getOrCreate()
+    val rapidsShuffle = "org.apache.spark.sql.RapidsShuffleManager"
+    val prop = System.getProperty("rapids.shuffle.manager.override", "false")
+    if (prop.equalsIgnoreCase("true")) {
+      println("RAPIDS SHUFFLE MANAGER ACTIVE")
+      builder = builder.config("spark.shuffle.manager", rapidsShuffle)
+    } else {
+      println("RAPIDS SHUFFLE MANAGER INACTIVE")
+    }
+    builder.getOrCreate()
   }
 
   test("extract mortgage data") {
