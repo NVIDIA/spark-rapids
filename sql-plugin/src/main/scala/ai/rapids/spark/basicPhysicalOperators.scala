@@ -35,7 +35,7 @@ object GpuProjectExec {
       totalTime: SQLMetric): ColumnarBatch = {
     val nvtxRange = new NvtxWithMetrics("ProjectExec", NvtxColor.CYAN, totalTime)
     try {
-        project(cb, boundExprs)
+      project(cb, boundExprs)
     } finally {
       cb.close()
       nvtxRange.close()

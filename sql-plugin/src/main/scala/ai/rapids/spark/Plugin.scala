@@ -31,6 +31,7 @@ import org.apache.spark.sql.SparkSessionExtensions
 import org.apache.spark.sql.catalyst.plans.physical.Partitioning
 import org.apache.spark.sql.catalyst.rules.Rule
 import org.apache.spark.sql.execution._
+import org.apache.spark.sql.vectorized.ColumnarBatch
 import org.apache.spark.util.TaskCompletionListener
 
 trait GpuPartitioning extends Partitioning {
@@ -100,6 +101,9 @@ object GpuResourceManager extends MemoryListener with Logging {
       logDebug(s"CLOSE BUFFER: $size TOTAL: $tots T: $totalUsedAndReserved ($note)")
     }
   }
+
+  def deviceMemoryUsed(cb: ColumnarBatch): Long =
+    GpuColumnVector.extractBases(cb).map(_.getDeviceMemorySize).sum
 
   def register(spiller: GpuSpillable): Unit =
     spillers.getAndUpdate(s => s + spiller)

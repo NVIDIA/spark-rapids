@@ -35,6 +35,7 @@ spark.rapids.sql.incompatibleOps.enabled|For operations that work, but are not 1
 spark.rapids.sql.reader.batchSizeRows|Maximum number of rows the reader reads at a time|2147483647
 spark.rapids.sql.replaceSortMergeJoin.enabled|Allow replacing sortMergeJoin with HashJoin|true
 spark.rapids.sql.replaceSortMergeJoin.sort.enabled|Whether a post-join sort should be performed after replacing sortMergeJoin with HashJoin|false
+spark.rapids.sql.shuffle.spillThreads|Number of threads used to spill shuffle data to disk in the background.|6
 spark.rapids.sql.stringHashGroupBy.enabled|Config to allow grouping by strings using the GPU in the hash aggregate. Currently they are really slow|false
 spark.rapids.sql.totalOrderSort.enabled|Allow for total ordering sort where the partitioning runs on CPU and sort runs on GPU.|false
 spark.rapids.sql.variableFloatAgg.enabled|Spark assumes that all operations produce the exact same result each time. This is not true for some floating point aggregations, which can produce slightly different results on the GPU as the aggregation is done in parallel.  This can enable those operations if you know the query is only computing it once.|false
