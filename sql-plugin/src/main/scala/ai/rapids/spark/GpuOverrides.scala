@@ -749,6 +749,7 @@ object GpuOverrides {
             a.readPartitionSchema,
             a.options,
             a.partitionFilters,
+            a.dataFilters,
             conf.maxReadBatchSize)
       }),
     scan[ParquetScan](
@@ -766,6 +767,7 @@ object GpuOverrides {
             a.pushedFilters,
             a.options,
             a.partitionFilters,
+            a.dataFilters,
             conf)
       }),
     scan[OrcScan](
@@ -784,6 +786,7 @@ object GpuOverrides {
             a.options,
             a.pushedFilters,
             a.partitionFilters,
+            a.dataFilters,
             conf)
       }),
   ).map(r => (r.getClassFor.asSubclass(classOf[Scan]), r)).toMap

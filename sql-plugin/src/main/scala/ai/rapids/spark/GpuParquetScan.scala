@@ -69,7 +69,8 @@ case class GpuParquetScan(
     readPartitionSchema: StructType,
     pushedFilters: Array[Filter],
     options: CaseInsensitiveStringMap,
-    partitionFilters: Seq[Expression] = Seq.empty,
+    partitionFilters: Seq[Expression],
+    dataFilters: Seq[Expression],
     rapidsConf: RapidsConf)
   extends FileScan with ScanWithMetrics {
 
@@ -95,8 +96,9 @@ case class GpuParquetScan(
     super.description() + ", PushedFilters: " + seqToString(pushedFilters)
   }
 
-  override def withPartitionFilters(partitionFilters: Seq[Expression]): FileScan =
-    this.copy(partitionFilters = partitionFilters)
+  override def withFilters(
+      partitionFilters: Seq[Expression], dataFilters: Seq[Expression]): FileScan =
+    this.copy(partitionFilters = partitionFilters, dataFilters = dataFilters)
 }
 
 object GpuParquetScan {
