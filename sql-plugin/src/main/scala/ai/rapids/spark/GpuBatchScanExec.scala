@@ -194,7 +194,8 @@ case class GpuCSVScan(
     readDataSchema: StructType, // schema that is for the data being read in (including dropped columns)
     readPartitionSchema: StructType, // schema for the parts that come from the file path
     options: CaseInsensitiveStringMap,
-    partitionFilters: Seq[Expression] = Seq.empty,
+    partitionFilters: Seq[Expression],
+    dataFilters: Seq[Expression],
     maxReaderBatchSize: Integer)
   extends TextBasedFileScan(sparkSession, options) with ScanWithMetrics {
 
@@ -228,8 +229,9 @@ case class GpuCSVScan(
       dataSchema, readDataSchema, readPartitionSchema, parsedOptions, maxReaderBatchSize, metrics)
   }
 
-  override def withPartitionFilters(partitionFilters: Seq[Expression]): FileScan =
-    this.copy(partitionFilters = partitionFilters)
+  override def withFilters(
+      partitionFilters: Seq[Expression], dataFilters: Seq[Expression]): FileScan =
+    this.copy(partitionFilters = partitionFilters, dataFilters = dataFilters)
 
   override def equals(obj: Any): Boolean = obj match {
     case c: GpuCSVScan =>
