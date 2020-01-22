@@ -772,6 +772,29 @@ class RapidsShuffleManager(conf: SparkConf, isDriver: Boolean) extends ShuffleMa
     }
   }
 
+  override def getReaderForRange[K, C](handle:  ShuffleHandle,
+       startMapIndex:  Int, endMapIndex:  Int, startPartition:  Int, endPartition:  Int,
+       context:  TaskContext, metrics:  ShuffleReadMetricsReporter): ShuffleReader[K, C] = {
+    handle match {
+      case gpu: GpuShuffleHandle[_, _] =>
+        logInfo(s"Asking map output tracker for map range output sizes for: ${gpu.shuffleId}, " +
+          s"mapIndices=$startMapIndex-$endMapIndex, parts=$startPartition-$endPartition")
+        val nvtxRange = new NvtxRange("getMapSizesByExecId", NvtxColor.CYAN)
+        val blocksByAddress = env.mapOutputTracker.getMapSizesByRange(gpu.shuffleId, startMapIndex, endPartition,
+          startPartition, endPartition)
+        nvtxRange.close()
+        new RapidsCachingReader(rapidsConf, localBlockManagerId,
+          blocksByAddress,
+          gpu,
+          context,
+          metrics,
+          ucx)
+      case other => {
+        wrapped.getReaderForRange(unwrapHandle(other), startMapIndex, endMapIndex,
+          startPartition, endPartition, context, metrics)
+      }
+    }
+  }
 
   override def getReader[K, C](handle: ShuffleHandle, startPartition: Int, endPartition: Int,
        context: TaskContext, metrics: ShuffleReadMetricsReporter): ShuffleReader[K, C] = {
@@ -791,13 +814,6 @@ class RapidsShuffleManager(conf: SparkConf, isDriver: Boolean) extends ShuffleMa
         wrapped.getReader(unwrapHandle(other), startPartition, endPartition, context, metrics)
       }
     }
-  }
-
-  override def getReaderForOneMapper[K, C](handle: ShuffleHandle, mapIndex: Int, startPartition: Int,
-      endPartition: Int, context: TaskContext, metrics: ShuffleReadMetricsReporter): ShuffleReader[K, C] = {
-    //TODO follow on to make this work like getReader does
-    val wrappedHandle = unwrapHandle(handle)
-    getReaderForOneMapper(wrappedHandle, mapIndex, startPartition, endPartition, context, metrics)
   }
 
   override def unregisterShuffle(shuffleId: Int): Boolean = {
