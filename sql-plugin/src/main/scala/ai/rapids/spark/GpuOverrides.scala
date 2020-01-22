@@ -294,6 +294,11 @@ object GpuOverrides {
     case _ => false
   }
 
+  def unwrapAliases(exp: Expression): Expression = exp match {
+    case a: Alias => unwrapAliases(a.child)
+    case e => e
+  }
+
   def areAllSupportedTypes(types: DataType*): Boolean = {
     types.forall {
       case BooleanType => true
@@ -578,6 +583,41 @@ object GpuOverrides {
       (a, conf, p, r) => new BinaryExprMeta[GreaterThanOrEqual](a, conf, p, r) {
         override def convertToGpu(lhs: GpuExpression, rhs: GpuExpression): GpuExpression =
           GpuGreaterThanOrEqual(lhs, rhs)
+      }),
+    expr[In](
+      "IN operator",
+      (in, conf, p, r) => new ExprMeta[In](in, conf, p, r) {
+        override def tagExprForGpu(): Unit = {
+          val unaliased = in.list.map(unwrapAliases)
+          if (!unaliased.forall(_.isInstanceOf[Literal])) {
+            willNotWorkOnGpu("only literals are supported")
+          }
+          val hasNullLiteral = unaliased.exists {
+            case l: Literal => l.value == null
+            case _ => false
+          }
+          if (hasNullLiteral) {
+            willNotWorkOnGpu("nulls are not supported")
+          }
+        }
+        override def convertToGpu(): GpuExpression =
+          GpuInSet(childExprs.head.convertToGpu(), in.list.asInstanceOf[Seq[Literal]])
+      }),
+    expr[InSet](
+      "INSET operator",
+      (in, conf, p, r) => new ExprMeta[InSet](in, conf, p, r) {
+        override def tagExprForGpu(): Unit = {
+          if (in.hset.contains(null)) {
+            willNotWorkOnGpu("nulls are not supported")
+          }
+          val literalTypes = in.hset.map(Literal(_).dataType).toSeq
+          if (!GpuOverrides.areAllSupportedTypes(literalTypes:_*)) {
+            val unsupported = literalTypes.filter(!GpuOverrides.areAllSupportedTypes(_)).mkString(", ")
+            willNotWorkOnGpu(s"unsupported literal types: $unsupported")
+          }
+        }
+        override def convertToGpu(): GpuExpression =
+          GpuInSet(childExprs.head.convertToGpu(), in.hset.map(Literal(_)).toSeq)
       }),
     expr[LessThan](
       "< operator",

@@ -107,7 +107,7 @@ abstract class GpuUnaryExpression extends UnaryExpression with GpuExpression {
           s"Unary expression $this should only see a column result from child eval")
       }
     } finally {
-      if (input != null && input.isInstanceOf[AutoCloseable]) {
+      if (input.isInstanceOf[AutoCloseable]) {
         input.asInstanceOf[AutoCloseable].close()
       }
     }
@@ -154,10 +154,10 @@ trait GpuBinaryExpression extends BinaryExpression with GpuExpression {
         case _ => null
       }
     } finally {
-      if (lhs != null && lhs.isInstanceOf[AutoCloseable]) {
+      if (lhs.isInstanceOf[AutoCloseable]) {
         lhs.asInstanceOf[AutoCloseable].close()
       }
-      if (rhs != null && rhs.isInstanceOf[AutoCloseable]) {
+      if (rhs.isInstanceOf[AutoCloseable]) {
         rhs.asInstanceOf[AutoCloseable].close()
       }
     }

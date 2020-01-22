@@ -346,7 +346,7 @@ case class GpuHashAggregateExec(requiredChildDistributionExpressions: Option[Seq
               result match {
                 case cv: ColumnVector => cv.asInstanceOf[GpuColumnVector]
                 case _ =>
-                  val scalar = GpuScalar.from(result)
+                  val scalar = GpuScalar.from(result, ref.dataType)
                   try {
                     GpuColumnVector.from(scalar, finalCb.numRows)
                   } finally {
