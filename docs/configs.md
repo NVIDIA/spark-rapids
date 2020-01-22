@@ -26,15 +26,25 @@ spark.rapids.memory.gpu.pooling.enabled|Should RMM act as a pooling allocator fo
 spark.rapids.memory.gpu.spillFraction|When reported GPU memory usage divided by total GPU memory is above this ratio, the allocator thread will block until spilling of cached data has completed.|0.85
 spark.rapids.memory.pinnedPool.size|The size of the pinned memory pool in bytes unless otherwise specified. Use 0 to disable the pool.|0
 spark.rapids.memory.uvm.enabled|UVM or universal memory can allow main host memory to act essentially as swap for device(GPU) memory. This allows the GPU to process more data than fits in memory, but can result in slower processing. This is an experimental feature.|false
+spark.rapids.shuffle.ucx.enabled|When set to true, enable the UCX transfer method for shuffle files.|false
+spark.rapids.shuffle.ucx.fetch.wait.period|Maximum value of the Initial time to waitin sending fetch requests|50
+spark.rapids.shuffle.ucx.handleLocalShuffle|When set to true, allow UCX to transfer host-local shuffle files.|true
+spark.rapids.shuffle.ucx.handleRemoteShuffle|When set to true, allow UCX to transfer remote shuffle files.|false
+spark.rapids.shuffle.ucx.managementServerHost|The host to be used to start the management server|null
+spark.rapids.shuffle.ucx.receive.async|Decides if fetches should be async|false
+spark.rapids.shuffle.ucx.throttle.enabled|When set to true, enable the UCX throttle on send.|false
+spark.rapids.shuffle.ucx.useWakeup|When set to true, use UCX's event-based progress (epoll) in order to wake up the progress thread when needed, instead of a hot loop.|false
+spark.rapids.shuffle.ucx.wait.period|Initial time to wait in ms for requests that cannot be processed by the shuffle manager|5
+spark.rapids.shuffle.ucx.wait.period.update.enabled|Decides if wait period should be updates based on transaction stats|false
 spark.rapids.sql.batchSizeRows|Set the target number of rows for a GPU batch. Splits sizes for input data is covered by separate configs.|1000000
 spark.rapids.sql.concurrentGpuTasks|Set the number of tasks that can execute concurrently per GPU. Tasks may temporarily block when the number of concurrent tasks in the executor exceeds this amount. Allowing too many concurrent tasks on the same GPU may lead to GPU out of memory errors.|1
 spark.rapids.sql.enabled|Enable (true) or disable (false) sql operations on the GPU|true
 spark.rapids.sql.explain|Explain why some parts of a query were not placed on a GPU or not. Possible values are ALL: print everything, NONE: print nothing, NOT_ON_GPU: print only did not go on the GPU|NONE
 spark.rapids.sql.hasNans|Config to indicate if your data has NaN's. Cudf doesn't currently support NaN's properly so you can get corrupt data if you have NaN's in your data and it runs on the GPU.|true
+spark.rapids.sql.hashOptimizeSort.enabled|Whether sorts should be inserted after some hashed operations to improve output ordering. This can improve output file sizes when saving to columnar formats.|false
 spark.rapids.sql.incompatibleOps.enabled|For operations that work, but are not 100% compatible with the Spark equivalent set if they should be enabled by default or disabled by default.|false
 spark.rapids.sql.reader.batchSizeRows|Maximum number of rows the reader reads at a time|2147483647
 spark.rapids.sql.replaceSortMergeJoin.enabled|Allow replacing sortMergeJoin with HashJoin|true
-spark.rapids.sql.replaceSortMergeJoin.sort.enabled|Whether a post-join sort should be performed after replacing sortMergeJoin with HashJoin|false
 spark.rapids.sql.shuffle.spillThreads|Number of threads used to spill shuffle data to disk in the background.|6
 spark.rapids.sql.stringHashGroupBy.enabled|Config to allow grouping by strings using the GPU in the hash aggregate. Currently they are really slow|false
 spark.rapids.sql.totalOrderSort.enabled|Allow for total ordering sort where the partitioning runs on CPU and sort runs on GPU.|false
@@ -111,6 +121,7 @@ spark.rapids.sql.expression.NormalizeNaNAndZero|normalize nan and zero|false|Thi
 Name | Description | Default Value | Incompatibilities
 -----|-------------|---------------|------------------
 spark.rapids.sql.exec.CoalesceExec|The backend for the dataframe coalesce method|true|None|
+spark.rapids.sql.exec.FileSourceScanExec|Reading data from files, often from Hive tables|true|None|
 spark.rapids.sql.exec.FilterExec|The backend for most filter statements|true|None|
 spark.rapids.sql.exec.ProjectExec|The backend for most select, withColumn and dropColumn statements|true|None|
 spark.rapids.sql.exec.SortExec|The backend for the sort operator|true|None|
