@@ -193,8 +193,14 @@ class Transaction(conn: Connection,
         conn.callbackService.execute(() =>
         try {
           if (!error){
-            // this state is meant for UCX internal only, the
-            // callers really only care about Complete
+            // Success is not a terminal state. It indicates that 
+            // from the UCX perspective the transfer was successful and not an error. 
+            // In the caller's callback, make sure that the transaction is marked as Success,
+            // else handle it (retry, or let Spark know about it so it can re-schedule).
+            //
+            // This is set before we call the callback function. Once that callback is done,
+            // we mark the request Complete (signaling the condition variable `notComplete`)
+            // which will unblock a thread that has called `waitForCompletion`.
             tx.status = TransactionStatus.Success
             tx.stop()
           }
