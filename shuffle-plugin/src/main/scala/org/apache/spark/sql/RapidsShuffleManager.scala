@@ -775,6 +775,7 @@ class RapidsShuffleManager(conf: SparkConf, isDriver: Boolean) extends ShuffleMa
   override def getReaderForRange[K, C](handle:  ShuffleHandle,
        startMapIndex:  Int, endMapIndex:  Int, startPartition:  Int, endPartition:  Int,
        context:  TaskContext, metrics:  ShuffleReadMetricsReporter): ShuffleReader[K, C] = {
+    /*
     handle match {
       case gpu: GpuShuffleHandle[_, _] =>
         logInfo(s"Asking map output tracker for map range output sizes for: ${gpu.shuffleId}, " +
@@ -790,10 +791,10 @@ class RapidsShuffleManager(conf: SparkConf, isDriver: Boolean) extends ShuffleMa
           metrics,
           ucx)
       case other => {
-        wrapped.getReaderForRange(unwrapHandle(other), startMapIndex, endMapIndex,
-          startPartition, endPartition, context, metrics)
-      }
-    }
+     */
+    //TODO: not enabling the code above yet until we understand the new shuffle protocol
+    wrapped.getReaderForRange(unwrapHandle(handle), startMapIndex, endMapIndex,
+      startPartition, endPartition, context, metrics)
   }
 
   override def getReader[K, C](handle: ShuffleHandle, startPartition: Int, endPartition: Int,
