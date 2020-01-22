@@ -966,7 +966,7 @@ object GpuOverrides {
           GpuLocalLimitExec(localLimitExec.limit, childPlans(0).convertIfNeeded())
       }),
     exec[GlobalLimitExec](
-      "The backend for most global limit statements",
+      "Limiting of results across partitions",
       (globalLimitExec, conf, p, r) => new SparkPlanMeta[GlobalLimitExec](globalLimitExec, conf, p, r) {
         override def convertToGpu(): GpuExec =
           GpuGlobalLimitExec(globalLimitExec.limit, childPlans(0).convertIfNeeded())
