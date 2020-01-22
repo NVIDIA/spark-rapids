@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019, NVIDIA CORPORATION.
+ * Copyright (c) 2019-2020, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -58,25 +58,25 @@ class ParquetWriterSuite extends SparkQueryCompareTestSuite {
         val blocks = parquetMeta.getBlocks
         assertResult(1) { blocks.size }
         val block = blocks.get(0)
-        assertResult(7) { block.getRowCount }
+        assertResult(11) { block.getRowCount }
         val cols = block.getColumns
         assertResult(4) { cols.size }
 
-        assertResult(1) { cols.get(0).getStatistics.getNumNulls }
-        assertResult(-500L) { cols.get(0).getStatistics.genericGetMin }
-        assertResult(500L) { cols.get(0).getStatistics.genericGetMax }
+        assertResult(3) { cols.get(0).getStatistics.getNumNulls }
+        assertResult(-700L) { cols.get(0).getStatistics.genericGetMin }
+        assertResult(1200L) { cols.get(0).getStatistics.genericGetMax }
 
-        assertResult(2) { cols.get(1).getStatistics.getNumNulls }
+        assertResult(4) { cols.get(1).getStatistics.getNumNulls }
         assertResult(1.0) { cols.get(1).getStatistics.genericGetMin }
-        assertResult(6.0) { cols.get(1).getStatistics.genericGetMax }
+        assertResult(9.0) { cols.get(1).getStatistics.genericGetMax }
 
-        assertResult(1) { cols.get(2).getStatistics.getNumNulls }
-        assertResult(96) { cols.get(2).getStatistics.genericGetMin }
+        assertResult(4) { cols.get(2).getStatistics.getNumNulls }
+        assertResult(90) { cols.get(2).getStatistics.genericGetMin }
         assertResult(99) { cols.get(2).getStatistics.genericGetMax }
 
         assertResult(1) { cols.get(3).getStatistics.getNumNulls }
         assertResult("A") { new String(cols.get(3).getStatistics.getMinBytes, StandardCharsets.UTF_8) }
-        assertResult("C") { new String(cols.get(3).getStatistics.getMaxBytes, StandardCharsets.UTF_8) }
+        assertResult("\ud720\ud721") { new String(cols.get(3).getStatistics.getMaxBytes, StandardCharsets.UTF_8) }
       })
     } finally {
       tempFile.delete()

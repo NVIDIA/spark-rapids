@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019, NVIDIA CORPORATION.
+ * Copyright (c) 2019-2020, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,6 +18,7 @@ package ai.rapids.spark
 
 import org.apache.spark.SparkConf
 import org.apache.spark.sql.functions.{col, lit}
+import org.apache.spark.sql.{DataFrame, SparkSession}
 
 class ProjectExprSuite extends SparkQueryCompareTestSuite {
   def forceHostColumnarToGpu(): SparkConf = {
@@ -91,5 +92,149 @@ class ProjectExprSuite extends SparkQueryCompareTestSuite {
     conf = forceHostColumnarToGpu(),
     allowNonGpu = true) {
     frame => frame.selectExpr("day(time)")
+  }
+
+  def booleanWithNullsDf(session: SparkSession): DataFrame = {
+    import session.sqlContext.implicits._
+    Seq[java.lang.Boolean](
+      true,
+      false,
+      true,
+      false,
+      null,
+      null,
+      true,
+      false
+    ).toDF("bools")
+  }
+
+  testSparkResultsAreEqual("SQL IN booleans", booleanDf) {
+    frame => frame.selectExpr("bools IN (false)")
+  }
+
+  testSparkResultsAreEqual("SQL IN nullable booleans", booleanWithNullsDf) {
+    frame => frame.selectExpr("bools IN (false)")
+  }
+
+  def bytesDf(session: SparkSession): DataFrame = {
+    import session.sqlContext.implicits._
+    Seq[Byte](
+      0.toByte,
+      2.toByte,
+      3.toByte,
+      (-1).toByte,
+      (-10).toByte,
+      (-128).toByte,
+      127.toByte
+    ).toDF("bytes")
+  }
+
+  def bytesWithNullsDf(session: SparkSession): DataFrame = {
+    import session.sqlContext.implicits._
+    Seq[java.lang.Byte](
+      0.toByte,
+      2.toByte,
+      3.toByte,
+      (-1).toByte,
+      (-10).toByte,
+      (-128).toByte,
+      127.toByte,
+      null,
+      null,
+      0.toByte
+    ).toDF("bytes")
+  }
+
+  testSparkResultsAreEqual("SQL IN bytes", bytesDf) {
+    frame => frame.selectExpr("bytes IN (-128, 127, 0)")
+  }
+
+  testSparkResultsAreEqual("SQL IN nullable bytes", bytesWithNullsDf) {
+    frame => frame.selectExpr("bytes IN (-128, 127, 0, -5)")
+  }
+
+  def shortsDf(session: SparkSession): DataFrame = {
+    import session.sqlContext.implicits._
+    Seq[Short](
+      0.toShort,
+      23456.toShort,
+      3.toShort,
+      (-1).toShort,
+      (-10240).toShort,
+      (-32768).toShort,
+      32767.toShort
+    ).toDF("shorts")
+  }
+
+  def shortsWithNullsDf(session: SparkSession): DataFrame = {
+    import session.sqlContext.implicits._
+    Seq[java.lang.Short](
+      0.toShort,
+      23456.toShort,
+      3.toShort,
+      (-1).toShort,
+      (-10240).toShort,
+      (-32768).toShort,
+      32767.toShort,
+      null,
+      null,
+      0.toShort
+    ).toDF("shorts")
+  }
+
+  testSparkResultsAreEqual("SQL IN shorts", shortsDf) {
+    frame => frame.selectExpr("shorts IN (-10240, 23456, 100, 3)")
+  }
+
+  testSparkResultsAreEqual("SQL IN nullable shorts", shortsWithNullsDf) {
+    frame => frame.selectExpr("shorts IN (-10240, 23456, 100, 3)")
+  }
+
+  testSparkResultsAreEqual("SQL IN ints", mixedDf) {
+    frame => frame.selectExpr("ints IN (-200, 96, 98)")
+  }
+
+  testSparkResultsAreEqual("SQL IN nullable ints", mixedDfWithNulls) {
+    frame => frame.selectExpr("ints IN (-200, 96, 98)")
+  }
+
+  testSparkResultsAreEqual("SQL IN longs", mixedDf) {
+    frame => frame.selectExpr("longs IN (1000, 200, -500)")
+  }
+
+  testSparkResultsAreEqual("SQL IN nullable longs", mixedDfWithNulls) {
+    frame => frame.selectExpr("longs IN (1000, 200, -500)")
+  }
+
+  testSparkResultsAreEqual("SQL IN floats", floatDf) {
+    frame => frame.selectExpr("floats IN (12345, -100.0, -500.0)")
+  }
+
+  testSparkResultsAreEqual("SQL IN nullable floats", nullableFloatDf) {
+    frame => frame.selectExpr("floats IN (12345, 5.0, 0.0)")
+  }
+
+  testSparkResultsAreEqual("SQL IN doubles", mixedDf) {
+    frame => frame.selectExpr("doubles IN (12345, 5.0, 0.0)")
+  }
+
+  testSparkResultsAreEqual("SQL IN nullable doubles", mixedDfWithNulls) {
+    frame => frame.selectExpr("doubles IN (12345, 5.0, 0.0)")
+  }
+
+  testSparkResultsAreEqual("SQL IN strings", mixedDf) {
+    frame => frame.selectExpr("strings IN ('B', 'C', 'Z', 'IJ\"\u0100\u0101\u0500\u0501', 'E')")
+  }
+
+  testSparkResultsAreEqual("SQL IN nullable strings", mixedDfWithNulls) {
+    frame => frame.selectExpr("strings IN ('B', 'C', 'Z', 'E\u0480\u0481', 'E')")
+  }
+
+  testSparkResultsAreEqual("SQL IN dates", datesDf) {
+    frame => frame.selectExpr("""dates IN (DATE '1900-2-2', DATE '2020-5-5')""")
+  }
+
+  testSparkResultsAreEqual("SQL IN timestamps", frameFromParquet("timestamp-date-test.parquet")) {
+    frame => frame.selectExpr("""time IN (TIMESTAMP '1900-05-05 12:34:56.108', TIMESTAMP '1900-05-05 12:34:56.118')""")
   }
 }

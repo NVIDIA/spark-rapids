@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019, NVIDIA CORPORATION.
+ * Copyright (c) 2019-2020, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -540,7 +540,11 @@ trait SparkQueryCompareTestSuite extends FunSuite {
       (99, 400L, 4.0, "D"),
       (98, 500L, 5.0, "E"),
       (97, -100L, 6.0, "F"),
-      (96, -500L, 0.0, "G")
+      (96, -500L, 0.0, "G"),
+      (95, -700L, 8.0, "E\u0480\u0481"),
+      (94, -900L, 9.0, "g\nH"),
+      (92, -1200L, 12.0, "IJ\"\u0100\u0101\u0500\u0501"),
+      (90, 1500L, 15.0, "\ud720\ud721")
     ).toDF("ints", "longs", "doubles", "strings")
   }
 
@@ -553,7 +557,11 @@ trait SparkQueryCompareTestSuite extends FunSuite {
       (400L, 4.0, null, "B"),
       (500L, 5.0, 98, "C"),
       (null, 6.0, 97, "C"),
-      (-500L, null, 96, null)
+      (-500L, null, 96, null),
+      (-700L, 8.0, null, "E\u0480\u0481"),
+      (null, 9.0, 90, "g\nH"),
+      (1200L, null, null, "IJ\"\u0100\u0101\u0500\u0501"),
+      (null, null, null, "\ud720\ud721")
     ).toDF("longs", "doubles", "ints", "strings")
   }
 

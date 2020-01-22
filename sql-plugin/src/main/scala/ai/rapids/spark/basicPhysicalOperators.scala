@@ -49,7 +49,7 @@ object GpuProjectExec {
         result match {
           case cv: ColumnVector => cv
           case other =>
-            val scalar = GpuScalar.from(other)
+            val scalar = GpuScalar.from(other, expr.dataType)
             try {
               GpuColumnVector.from(scalar, cb.numRows())
             } finally {
