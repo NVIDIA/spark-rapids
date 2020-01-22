@@ -960,7 +960,7 @@ object GpuOverrides {
         }
       }),
     exec[LocalLimitExec](
-      "The backend for most local limit statements",
+      "Per-partition limiting of results",
       (localLimitExec, conf, p, r) => new SparkPlanMeta[LocalLimitExec](localLimitExec, conf, p, r) {
         override def convertToGpu(): GpuExec =
           GpuLocalLimitExec(localLimitExec.limit, childPlans(0).convertIfNeeded())
