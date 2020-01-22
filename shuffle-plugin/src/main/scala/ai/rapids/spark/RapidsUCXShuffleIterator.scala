@@ -308,17 +308,10 @@ class RapidsUCXShuffleIterator(rapidsConf: RapidsConf, localId: BlockManagerId) 
     logDebug(s"Incoming batches in ${this} from tx $receiveTx")
   }
 
-  var lastShuffleId: Int = -1
-
   var threadStarted = new AtomicBoolean(false)
   def fetch(localId: BlockManagerId, ucx: UCX,
       blockManagerId: BlockManagerId, blockInfos: Seq[(BlockId, Long, Int)]) : Unit = {
     val sid = blockInfos.head._1.asInstanceOf[org.apache.spark.storage.ShuffleBlockId].shuffleId
-    if (lastShuffleId == -1) {
-      lastShuffleId = sid
-    } else if (lastShuffleId != sid) {
-      throw new IllegalStateException(s"oh man $lastShuffleId vs $sid")
-    }
     val start = System.nanoTime()
     logInfo(s"UCX BLOCK! [block_infos=$blockInfos, block_manager_id=$blockManagerId]")
     val ucxPort: Int = blockManagerId.topologyInfo.get.split("=")(1).toInt
