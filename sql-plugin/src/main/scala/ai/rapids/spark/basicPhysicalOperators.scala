@@ -211,7 +211,7 @@ case class GpuCoalesceExec(numPartitions: Int, child: SparkPlan)
     s"${getClass.getCanonicalName} does not support row-based execution")
 
   override protected def doExecuteColumnar(): RDD[ColumnarBatch] = {
-    if (numPartitions == 1 && child.execute().getNumPartitions < 1) {
+    if (numPartitions == 1 && child.executeColumnar().getNumPartitions < 1) {
       // Make sure we don't output an RDD with 0 partitions, when claiming that we have a
       // `SinglePartition`.
       new GpuCoalesceExec.EmptyRDDWithPartitions(sparkContext, numPartitions)

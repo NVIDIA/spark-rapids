@@ -28,22 +28,22 @@ class CoalesceExecSuite  extends SparkQueryCompareTestSuite {
   }
 
   testSparkResultsAreEqual("Test coalesce to 2", intsFromCsv, conf=smallSplitsConf) {
-    frame => frame.coalesce(2)
+    frame => frame.filter("ints_1 == 1").distinct().coalesce(2)
   }
 
   testSparkResultsAreEqual("Test coalesce to 2000", intsFromCsv, conf=smallSplitsConf) {
-    frame => frame.coalesce(2000)
+    frame => frame.distinct().filter("ints_1 == 1").coalesce(2000)
   }
 
   testSparkResultsAreEqual("Test coalesce to 1", intsFromCsv, conf=smallSplitsConf) {
-    frame => frame.coalesce(1)
+    frame => frame.distinct().filter("ints_1 == 1").coalesce(1)
   }
 
   testSparkResultsAreEqual("Test empty coalesce to 1", emptyDf, conf=smallSplitsConf) {
-    frame => frame.coalesce(1)
+    frame => frame.distinct().filter("ints == 1").coalesce(1)
   }
 
   testSparkResultsAreEqual("Test empty coalesce to 10", emptyDf, conf=smallSplitsConf) {
-    frame => frame.coalesce(10)
+    frame => frame.distinct().filter("ints == 1").coalesce(10)
   }
 }
