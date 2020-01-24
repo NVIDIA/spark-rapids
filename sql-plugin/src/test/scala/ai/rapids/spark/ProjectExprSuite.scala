@@ -39,7 +39,7 @@ class ProjectExprSuite extends SparkQueryCompareTestSuite {
   }
 
   testSparkResultsAreEqual("Test literal values in select", floatDf) {
-    frame => frame.select(col("floats"), lit(100))
+    frame => frame.select(col("floats"), lit(100), lit("hello, world!"))
   }
 
   testSparkResultsAreEqual("IsNotNull strings", nullableStringsDf) {

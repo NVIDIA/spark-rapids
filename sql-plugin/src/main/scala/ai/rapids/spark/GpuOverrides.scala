@@ -321,11 +321,6 @@ object GpuOverrides {
   def isAnyStringLit(expressions: Seq[Expression]): Boolean =
     expressions.exists(isStringLit)
 
-  def tagNoStringChildren(expr: ExprMeta[_ <: Expression]): Unit =
-    if (expr.wrapped.children.filter(_.dataType == StringType).nonEmpty) {
-      expr.willNotWorkOnGpu(s"Strings are not supported for ${expr.wrapped.getClass.getSimpleName}")
-    }
-
   def expr[INPUT <: Expression](
       desc: String,
       doWrap: (INPUT, RapidsConf, Option[RapidsMeta[_, _, _]], ConfKeysAndIncompat) => ExprMeta[INPUT])
@@ -910,12 +905,6 @@ object GpuOverrides {
       "The backend for most select, withColumn and dropColumn statements",
       (proj, conf, p, r) => {
         new SparkPlanMeta[ProjectExec](proj, conf, p, r) {
-          override def tagPlanForGpu(): Unit = {
-            if (isAnyStringLit(wrapped.expressions)) {
-              willNotWorkOnGpu("string literal values are not supported in a projection")
-            }
-          }
-
           override def convertToGpu(): GpuExec =
             GpuProjectExec(childExprs.map(_.convertToGpu()), childPlans(0).convertIfNeeded())
         }
