@@ -16,8 +16,8 @@
 
 package ai.rapids.spark
 
+import ai.rapids.cudf.Table
 import ai.rapids.spark.RapidsPluginImplicits._
-import org.apache.spark.TaskContext
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.expressions.{Attribute, SortOrder}
@@ -45,39 +45,47 @@ trait GpuBaseLimitExec extends LimitExec with GpuExec {
     val crdd = child.executeColumnar()
     crdd.mapPartitions { cbIter =>
       new Iterator[ColumnarBatch] {
-        var iterator = cbIter
         var remainingLimit = limit
 
-        TaskContext.get().addTaskCompletionListener[Unit] { _ =>
-          iterator = null
-        }
-
-        override def hasNext: Boolean = remainingLimit <= limit && iterator.hasNext
+        override def hasNext: Boolean = remainingLimit > 0 && cbIter.hasNext
 
         override def next(): ColumnarBatch = {
-          val batch = iterator.next()
-          val resultCVs = new ListBuffer[GpuColumnVector]
-          // if batch > remainingLimit, then slice and add to the resultBatches, break
-          if (batch.numRows() > remainingLimit) {
-            val table = GpuColumnVector.from(batch)
-            val exception: Throwable = null
-            try {
-              for (i <- 0 until table.getNumberOfColumns) {
-                val slices = table.getColumn(i).slice(0, remainingLimit)
-                assert(slices.length > 0)
-                resultCVs.append(GpuColumnVector.from(slices(0)))
-              }
-              remainingLimit = 0
-              new ColumnarBatch(resultCVs.toArray, resultCVs(0).getRowCount.toInt)
-            } finally {
-              // close the table
-              table.safeClose(exception)
-              // close the batch
-              batch.safeClose(exception)
-            }
+          val batch = cbIter.next()
+          val result = if (batch.numRows() > remainingLimit) {
+            sliceBatch(batch)
           } else {
-            remainingLimit -= batch.numRows()
             batch
+          }
+          remainingLimit -= result.numRows()
+          result
+        }
+
+        def sliceBatch(batch: ColumnarBatch): ColumnarBatch = {
+          val resultCVs = new ListBuffer[GpuColumnVector]
+          var exception: Throwable = null
+          var table: Table = null
+          var succeeded = false
+          try {
+            table = GpuColumnVector.from(batch)
+            for (i <- 0 until table.getNumberOfColumns) {
+              val slices = table.getColumn(i).slice(0, remainingLimit)
+              assert(slices.length > 0)
+              resultCVs.append(GpuColumnVector.from(slices(0)))
+            }
+            remainingLimit = 0
+            succeeded = true
+            new ColumnarBatch(resultCVs.toArray, resultCVs(0).getRowCount.toInt)
+          } catch {
+            case e: Throwable => exception = e
+              throw e
+          } finally {
+            if (!succeeded) {
+              resultCVs.foreach(gpuVector => gpuVector.safeClose(exception))
+            }
+            if (table != null) {
+              table.safeClose(exception)
+            }
+            batch.safeClose(exception)
           }
         }
       }
