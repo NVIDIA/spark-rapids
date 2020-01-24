@@ -34,16 +34,7 @@ import org.apache.spark.sql.execution._
 import org.apache.spark.sql.vectorized.ColumnarBatch
 import org.apache.spark.util.TaskCompletionListener
 
-trait GpuPartitioning extends Partitioning {
-  override def equals(other: Any): Boolean = {
-    if (!super.equals(other)) {
-      return false
-    }
-    other.isInstanceOf[GpuPartitioning]
-  }
-
-  override def hashCode(): Int = super.hashCode()
-}
+trait GpuPartitioning extends Partitioning {}
 
 case class ColumnarOverrideRules() extends ColumnarRule with Logging {
   val overrides = GpuOverrides()
