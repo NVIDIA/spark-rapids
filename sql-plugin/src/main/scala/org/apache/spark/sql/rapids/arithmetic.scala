@@ -35,7 +35,7 @@ case class GpuUnaryMinus(child: Expression) extends GpuUnaryExpression
   override def sql: String = s"(- ${child.sql})"
 
   override def doColumnar(input: GpuColumnVector) : GpuColumnVector = {
-    val scalar = Scalar.fromByte(0)
+    val scalar = Scalar.fromByte(0.toByte)
     try {
       GpuColumnVector.from(scalar.sub(input.getBase))
     } finally {

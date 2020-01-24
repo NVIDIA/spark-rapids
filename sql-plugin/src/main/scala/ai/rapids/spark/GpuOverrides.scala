@@ -631,6 +631,38 @@ object GpuOverrides {
         override def convertToGpu(lhs: GpuExpression, rhs: GpuExpression): GpuExpression =
           GpuLessThanOrEqual(lhs, rhs)
       }),
+    expr[CaseWhen](
+      "CASE WHEN expression",
+      (a, conf, p, r) => new ExprMeta[CaseWhen](a, conf, p, r) {
+        override def tagExprForGpu(): Unit = {
+          val unaliased = a.branches.map { case (predicate, _) => unwrapAliases(predicate) }
+          if (unaliased.exists(_.isInstanceOf[Literal])) {
+            willNotWorkOnGpu("literal predicates are not supported")
+          }
+        }
+        override def convertToGpu(): GpuExpression = {
+          val branches = childExprs.grouped(2).flatMap {
+            case Seq(cond, value) => Some((cond.convertToGpu(), value.convertToGpu()))
+            case Seq(_) => None
+          }.toArray.toSeq  // force materialization to make the seq serializable
+          val elseValue = if (childExprs.size % 2 != 0) Some(childExprs.last.convertToGpu()) else None
+          GpuCaseWhen(branches, elseValue)
+        }
+      }),
+    expr[If](
+      "IF expression",
+      (a, conf, p, r) => new ExprMeta[If](a, conf, p, r) {
+        override def tagExprForGpu(): Unit = {
+          val unaliased = unwrapAliases(a.predicate)
+          if (unaliased.isInstanceOf[Literal]) {
+            willNotWorkOnGpu(s"literal predicate ${a.predicate} is not supported")
+          }
+        }
+        override def convertToGpu(): GpuExpression = {
+          val boolExpr :: trueExpr :: falseExpr :: Nil = childExprs.map(_.convertToGpu())
+          GpuIf(boolExpr, trueExpr, falseExpr)
+        }
+      }),
     expr[Pow](
       "lhs ^ rhs",
       (a, conf, p, r) => new BinaryExprMeta[Pow](a, conf, p, r) {

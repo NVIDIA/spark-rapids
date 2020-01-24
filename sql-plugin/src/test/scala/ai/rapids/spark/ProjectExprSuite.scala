@@ -237,4 +237,197 @@ class ProjectExprSuite extends SparkQueryCompareTestSuite {
   testSparkResultsAreEqual("SQL IN timestamps", frameFromParquet("timestamp-date-test.parquet")) {
     frame => frame.selectExpr("""time IN (TIMESTAMP '1900-05-05 12:34:56.108', TIMESTAMP '1900-05-05 12:34:56.118')""")
   }
+
+  testSparkResultsAreEqual("SQL IF booleans", booleanDf) {
+    frame => frame.selectExpr("IF(bools, 'true', 'false')")
+  }
+
+  testSparkResultsAreEqual("SQL IF nullable booleans", booleanWithNullsDf) {
+    frame => frame.selectExpr("IF(bools, 'true', 'false')")
+  }
+
+  testSparkResultsAreEqual("SQL IF bytes", bytesDf) {
+    frame => frame.selectExpr("IF(bytes < 2, 7, 11)")
+  }
+
+  testSparkResultsAreEqual("SQL IF nullable bytes", bytesWithNullsDf) {
+    frame => frame.selectExpr("IF(bytes < 2, 7, 11)")
+  }
+
+  testSparkResultsAreEqual("SQL IF shorts", shortsDf) {
+    frame => frame.selectExpr("IF(shorts - 5 > 0, 'hello', 'world')")
+  }
+
+  testSparkResultsAreEqual("SQL IF nullable shorts", shortsWithNullsDf) {
+    frame => frame.selectExpr("IF(shorts - 5 > 0, 'hello', 'world')")
+  }
+
+  testSparkResultsAreEqual("SQL IF ints", mixedDf) {
+    frame => frame.selectExpr("IF(ints == -200, ints + 4, ints - 3)")
+  }
+
+  testSparkResultsAreEqual("SQL IF nullable ints", mixedDfWithNulls) {
+    frame => frame.selectExpr("IF(ints == -200, ints + 4, ints - 3)")
+  }
+
+  testSparkResultsAreEqual("SQL IF longs", mixedDf) {
+    frame => frame.selectExpr("IF(longs * 2 == 400, 'hello', 'world')")
+  }
+
+  testSparkResultsAreEqual("SQL IF nullable longs", mixedDfWithNulls) {
+    frame => frame.selectExpr("IF(longs * 2 == 400, 'hello', 'world')")
+  }
+
+  testSparkResultsAreEqual("SQL IF floats", floatDf) {
+    frame => frame.selectExpr("IF(floats > 5, floats * 5, -1234567)")
+  }
+
+  testSparkResultsAreEqual("SQL IF nullable floats", nullableFloatDf) {
+    frame => frame.selectExpr("IF(floats > 5, floats * 5, -1234567)")
+  }
+
+  testSparkResultsAreEqual("SQL IF doubles", mixedDf) {
+    frame => frame.selectExpr("IF(doubles / 5 > 1, doubles * 2, doubles / 4)")
+  }
+
+  testSparkResultsAreEqual("SQL IF nullable doubles", mixedDfWithNulls) {
+    frame => frame.selectExpr("IF(doubles / 5 > 1, doubles * 2, doubles / 4)")
+  }
+
+  testSparkResultsAreEqual("SQL IF strings", mixedDf) {
+    frame => frame.selectExpr("IF(strings > 'E', 'hello', 'world')")
+  }
+
+  testSparkResultsAreEqual("SQL IF nullable strings", mixedDfWithNulls) {
+    frame => frame.selectExpr("IF(strings > 'E', 'hello', 'world')")
+  }
+
+  testSparkResultsAreEqual("SQL IF dates", datesDf) {
+    frame => frame.selectExpr("IF(dates == DATE '1900-2-2', DATE '2020-5-5', dates)")
+  }
+
+  testSparkResultsAreEqual("SQL IF timestamps", frameFromParquet("timestamp-date-test.parquet")) {
+    frame => frame.selectExpr("IF(time != TIMESTAMP '1900-05-05 12:34:56.108', time, TIMESTAMP '1900-05-05 12:34:56.118')")
+  }
+
+  testSparkResultsAreEqual("SQL CASE WHEN booleans", booleanDf) {
+    frame => frame.selectExpr("CASE WHEN NOT bools THEN TRUE END")
+  }
+
+  testSparkResultsAreEqual("SQL CASE WHEN nullable booleans", booleanWithNullsDf) {
+    frame => frame.selectExpr("CASE WHEN bools THEN NOT bools ELSE bools END")
+  }
+
+  testSparkResultsAreEqual("SQL CASE WHEN bytes", bytesDf) {
+    frame => frame.selectExpr("CASE WHEN bytes = 2 THEN bytes + 3 WHEN bytes > 2 THEN bytes - 3 ELSE 0 END")
+  }
+
+  testSparkResultsAreEqual("SQL CASE WHEN nullable bytes", bytesWithNullsDf) {
+    frame => frame.selectExpr("CASE WHEN bytes = 2 THEN bytes + 3 WHEN bytes > 2 THEN bytes - 3 END")
+  }
+
+  testSparkResultsAreEqual("SQL CASE WHEN shorts", shortsDf) {
+    frame => frame.selectExpr(
+      """CASE WHEN shorts = 2 THEN shorts + 3
+        | WHEN shorts > 2 THEN shorts - 3
+        | WHEN shorts / 2 < -10 THEN 5 ELSE 0 END""".stripMargin)
+  }
+
+  testSparkResultsAreEqual("SQL CASE WHEN nullable shorts", shortsWithNullsDf) {
+    frame => frame.selectExpr(
+      """CASE WHEN shorts = 2 THEN shorts + 3
+        | WHEN shorts > 2 THEN shorts - 3
+        | WHEN shorts / 2 < -10 THEN 5 ELSE 0 END""".stripMargin)
+  }
+
+  testSparkResultsAreEqual("SQL CASE WHEN ints", mixedDf) {
+    frame => frame.selectExpr(
+      """CASE WHEN ints = 92 THEN ints + 3
+        | WHEN ints >= 98 THEN 100
+        | WHEN ints / 9 > 10 THEN 5 END""".stripMargin)
+  }
+
+  testSparkResultsAreEqual("SQL CASE WHEN nullable ints", mixedDfWithNulls) {
+    frame => frame.selectExpr(
+      """CASE WHEN ints = 92 THEN ints + 3
+        | WHEN ints >= 98 THEN 100
+        | WHEN ints / 9 > 10 THEN 5 END""".stripMargin)
+  }
+
+  testSparkResultsAreEqual("SQL CASE WHEN longs", mixedDf) {
+    frame => frame.selectExpr(
+      """CASE WHEN longs IN (300, 400, 500) THEN longs * longs
+        | WHEN longs >= 98 THEN 100
+        | WHEN longs / 9 > 10 THEN longs END""".stripMargin)
+  }
+
+  testSparkResultsAreEqual("SQL CASE WHEN nullable longs", mixedDfWithNulls) {
+    frame => frame.selectExpr(
+      """CASE WHEN longs IN (300, 400, 500) THEN longs * longs
+        | WHEN longs >= 98 THEN 100
+        | WHEN longs / 9 > 10 THEN longs
+        | ELSE 0 END""".stripMargin)
+  }
+
+  testSparkResultsAreEqual("SQL CASE WHEN floats", floatDf) {
+    frame => frame.selectExpr(
+      """CASE WHEN more_floats < 5 THEN floats * 2
+        | WHEN floats >= 300 THEN more_floats * 2
+        | ELSE floats * more_floats END""".stripMargin)
+  }
+
+  testSparkResultsAreEqual("SQL CASE WHEN nullable floats", nullableFloatDf) {
+    frame => frame.selectExpr(
+      """CASE WHEN more_floats < 5 THEN floats * 2
+        | WHEN floats >= 300 THEN more_floats * 2
+        | ELSE floats * more_floats END""".stripMargin)
+  }
+
+  testSparkResultsAreEqual("SQL CASE WHEN doubles", mixedDf) {
+    frame => frame.selectExpr(
+      """CASE WHEN longs IN (300, 400, 500) THEN doubles * longs
+        | WHEN longs >= 98 THEN doubles
+        | WHEN doubles > 8 THEN (doubles * doubles) / 8 END""".stripMargin)
+  }
+
+  testSparkResultsAreEqual("SQL CASE WHEN nullable doubles", mixedDfWithNulls) {
+    frame => frame.selectExpr(
+      """CASE WHEN longs IN (300, 400, 500) THEN doubles * longs
+        | WHEN longs >= 98 THEN doubles
+        | WHEN doubles > 8 THEN (doubles * doubles) / 8 END""".stripMargin)
+  }
+
+  testSparkResultsAreEqual("SQL CASE WHEN strings", mixedDf) {
+    frame => frame.selectExpr(
+      """CASE WHEN strings >= 'E' AND strings < 'F' THEN strings
+        | WHEN strings = 'B' THEN 'hello'
+        | WHEN strings = 'C' THEN 'world'
+        | WHEN strings = 'G' THEN 'how'
+        | WHEN strings = 'D' THEN 'are'
+        | WHEN strings = 'A' THEN 'you'
+        | ELSE NULL END""".stripMargin)
+  }
+
+  testSparkResultsAreEqual("SQL CASE WHEN nullable strings", mixedDfWithNulls) {
+    frame => frame.selectExpr(
+      """CASE WHEN strings >= 'E' AND strings < 'F' THEN strings
+        | WHEN strings = 'B' THEN 'hello'
+        | WHEN strings = 'C' THEN 'world'
+        | WHEN strings = 'G' THEN 'how'
+        | WHEN strings = 'D' THEN 'are'
+        | WHEN strings = 'A' THEN 'you'
+        | ELSE 'null' END""".stripMargin)
+  }
+
+  testSparkResultsAreEqual("SQL CASE WHEN dates", datesDf) {
+    frame => frame.selectExpr(
+      """CASE WHEN dates == DATE '1900-2-2' THEN DATE '2020-5-5'
+        | ELSE dates END""".stripMargin)
+  }
+
+  testSparkResultsAreEqual("SQL CASE WHEN timestamps", frameFromParquet("timestamp-date-test.parquet")) {
+    frame => frame.selectExpr(
+      """CASE WHEN time <= TIMESTAMP '1900-05-05 12:34:56.108' THEN time
+        | ELSE NULL END""".stripMargin)
+  }
 }
