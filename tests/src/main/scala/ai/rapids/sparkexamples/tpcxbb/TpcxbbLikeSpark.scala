@@ -109,6 +109,41 @@ object TpcxbbLikeSpark {
     setupMarketPricesParquet(spark, basePath + "/item_marketprices/")
   }
 
+  def setupAllParquetWithMetastore(spark: SparkSession, basePath: String): Unit = {
+    setupParquetTableWithMetastore(spark, "customer", basePath + "/customer/")
+    setupParquetTableWithMetastore(spark, "customer_address", basePath + "/customer_address/")
+    setupParquetTableWithMetastore(spark, "item", basePath + "/item/")
+    setupParquetTableWithMetastore(spark, "store_sales", basePath + "/store_sales/")
+    setupParquetTableWithMetastore(spark, "date_dim", basePath + "/date_dim/")
+    setupParquetTableWithMetastore(spark, "store", basePath + "/store/")
+    setupParquetTableWithMetastore(spark, "customer_demographics", basePath + "/customer_demographics/")
+    setupParquetTableWithMetastore(spark, "product_reviews", basePath + "/product_reviews/")
+    setupParquetTableWithMetastore(spark, "web_sales", basePath + "/web_sales/")
+    setupParquetTableWithMetastore(spark, "web_clickstreams", basePath + "/web_clickstreams/")
+    setupParquetTableWithMetastore(spark, "household_demographics", basePath + "/household_demographics/")
+    setupParquetTableWithMetastore(spark, "web_page", basePath + "/web_page/")
+    setupParquetTableWithMetastore(spark, "time_dim", basePath + "/time_dim/")
+    setupParquetTableWithMetastore(spark, "web_returns", basePath + "/web_returns/")
+    setupParquetTableWithMetastore(spark, "warehouse", basePath + "/warehouse/")
+    setupParquetTableWithMetastore(spark, "promotion", basePath + "/promotion/")
+    setupParquetTableWithMetastore(spark, "store_returns", basePath + "/store_returns/")
+    setupParquetTableWithMetastore(spark, "inventory", basePath + "/inventory/")
+    setupParquetTableWithMetastore(spark, "item_marketprices", basePath + "/item_marketprices/")
+
+    spark.sql("SHOW TABLES").show
+  }
+
+  def setupParquetTableWithMetastore(spark: SparkSession, table: String, path: String): Unit = {
+    setupTableWithMetastore(spark, table, "PARQUET", path)
+  }
+
+  def setupTableWithMetastore(spark: SparkSession, table: String, format: String, path: String): Unit = {
+    // Yes there are SQL injection vulnerabilities here, so don't exploit it, this is just test code
+    spark.catalog.dropTempView(table)
+    spark.sql(s"DROP TABLE IF EXISTS ${table}")
+    spark.sql(s"CREATE TABLE ${table} USING ${format} LOCATION '${path}'")
+  }
+
   def setupAllOrc(spark: SparkSession, basePath: String): Unit = {
     setupCustomerOrc(spark, basePath + "/customer/")
     setupCustomerAddressOrc(spark, basePath + "/customer_address/")
