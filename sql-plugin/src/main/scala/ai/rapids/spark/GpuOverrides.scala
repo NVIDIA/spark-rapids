@@ -44,6 +44,7 @@ import org.apache.spark.sql.execution.datasources.json.JsonFileFormat
 import org.apache.spark.sql.execution.datasources.orc.OrcFileFormat
 import org.apache.spark.sql.execution.datasources.parquet.ParquetFileFormat
 import org.apache.spark.sql.execution.datasources.text.TextFileFormat
+import org.apache.spark.sql.execution.window.WindowExec
 import org.apache.spark.sql.types._
 import org.apache.spark.sql.{GpuInputFileBlockLength, GpuInputFileBlockStart, GpuInputFileName}
 import org.apache.spark.unsafe.types.UTF8String
@@ -340,6 +341,8 @@ object GpuOverrides {
       case DateType => true
       case TimestampType => ZoneId.systemDefault().normalized() == GpuOverrides.UTC_TIMEZONE_ID
       case StringType => true
+      case NullType => true             // TODO: Review: This is required to support `CURRENT ROW`, in Window Functions.
+      case CalendarIntervalType => true // TODO: Review: This is required to support `RANGE` frame, in Window Functions.
       case _ => false
     }
 
@@ -457,6 +460,29 @@ object GpuOverrides {
       (a, conf, p, r) => new UnaryExprMeta[ToRadians](a, conf, p, r) {
         override def convertToGpu(child: GpuExpression): GpuToRadians = GpuToRadians(child)
       }).incompat(FLOAT_DIFFERS_INCOMPAT),
+    expr[WindowExpression](
+      "Window Expression",
+      (windowExpression, conf, p, r) => new GpuWindowExpressionMeta(windowExpression, conf, p, r)),
+    expr[SpecifiedWindowFrame](
+      "Specified Window Frame, for rolling windows.",
+      (windowFrame, conf, p, r) => new GpuSpecifiedWindowFrameMeta(windowFrame, conf, p, r) ),
+    expr[WindowSpecDefinition](
+      "Window Spec Definition ",
+      (windowSpec, conf, p, r) => new GpuWindowSpecDefinitionMeta(windowSpec, conf, p, r)),
+    /*
+    expr[SpecialFrameBoundary](
+      "Special Window bounds, indicating UNBOUNDED PRECEDING/FOLLOWING, or CURRENT ROW",
+      (frameBoundary, conf, p, r) => new ExprMeta[SpecialFrameBoundary](frameBoundary, conf, p, r) {
+        override def convertToGpu(): GpuExpression = GpuSpecialFrameBoundary(frameBoundary)
+      }
+    ),
+     */
+    expr[CurrentRow.type](
+      "Special Window bounds, indicating stopping at the current row",
+      (currentRow, conf, p, r) => new ExprMeta[CurrentRow.type](currentRow, conf, p, r) {
+        override def convertToGpu(): GpuExpression = GpuSpecialFrameBoundary(currentRow)
+      }
+    ),
     expr[UnaryMinus](
       "negate a numeric value",
       (a, conf, p, r) => new UnaryExprMeta[UnaryMinus](a, conf, p, r) {
@@ -1446,7 +1472,12 @@ object GpuOverrides {
       (sort, conf, p, r) => new GpuSortMeta(sort, conf, p, r)),
     exec[ExpandExec](
       "The backend for the expand operator",
-      (expand, conf, p, r) => new GpuExpandExecMeta(expand, conf, p, r))
+      (expand, conf, p, r) => new GpuExpandExecMeta(expand, conf, p, r)),
+    exec[WindowExec](
+      "Window-operator backend",
+      (windowOp, conf, p, r) =>
+        new GpuWindowExecMeta(windowOp, conf, p, r)
+    )
   ).map(r => (r.getClassFor.asSubclass(classOf[SparkPlan]), r)).toMap
 }
 
