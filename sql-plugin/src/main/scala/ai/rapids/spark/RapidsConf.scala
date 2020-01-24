@@ -19,8 +19,8 @@ import java.util
 
 import scala.collection.JavaConverters._
 import scala.collection.mutable.ListBuffer
-import org.apache.spark.{SparkConf, SparkEnv}
-import org.apache.spark.internal.{Logging, config}
+import org.apache.spark.SparkConf
+import org.apache.spark.internal.Logging
 import org.apache.spark.network.util.{ByteUnit, JavaUtils}
 import org.apache.spark.sql.internal.SQLConf
 
@@ -302,12 +302,6 @@ object RapidsConf {
     .booleanConf
     .createWithDefault(false)
 
-  val STRING_GPU_HASH_GROUP_BY_ENABLED = conf("spark.rapids.sql.stringHashGroupBy.enabled")
-    .doc("Config to allow grouping by strings using the GPU in the hash aggregate. " +
-      "Currently they are really slow")
-    .booleanConf
-    .createWithDefault(false)
-
   val ENABLE_TOTAL_ORDER_SORT = conf("spark.rapids.sql.totalOrderSort.enabled")
     .doc("Allow for total ordering sort where the partitioning runs on CPU and " +
       "sort runs on GPU.")
@@ -541,8 +535,6 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
   lazy val gpuTargetBatchSizeRows: Integer = get(GPU_BATCH_SIZE_ROWS)
 
   lazy val isFloatAggEnabled: Boolean = get(ENABLE_FLOAT_AGG)
-
-  lazy val stringHashGroupByEnabled: Boolean = get(STRING_GPU_HASH_GROUP_BY_ENABLED)
 
   lazy val explain: String = get(EXPLAIN)
 
