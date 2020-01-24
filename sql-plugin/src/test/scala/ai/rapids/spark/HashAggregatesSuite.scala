@@ -77,6 +77,14 @@ class HashAggregatesSuite extends SparkQueryCompareTestSuite {
       avg(col("more_longs") * lit("10")))
   }
 
+  IGNORE_ORDER_testSparkResultsAreEqual("distinct", datesCsvDf) {
+    frame => frame.distinct()
+  }
+
+  IGNORE_ORDER_testSparkResultsAreEqual("distinct should not reorder columns", intsFromCsv) {
+    frame => frame.distinct()
+  }
+
   IGNORE_ORDER_testSparkResultsAreEqual("group by string", nullableStringsIntsDf,
     conf = enableStringHashGroupBy().set(RapidsConf.ENABLE_FLOAT_AGG.key, "true")) {
     frame => frame.groupBy("strings").agg(
