@@ -18,6 +18,7 @@ package ai.rapids.spark
 
 import org.apache.hadoop.mapreduce.TaskAttemptContext
 
+import org.apache.spark.sql.rapids.ColumnarWriteTaskStatsTracker
 import org.apache.spark.sql.types.StructType
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
@@ -56,8 +57,9 @@ abstract class ColumnarOutputWriter {
   /**
    * Persists a column batch. Invoked on the executor side. When writing to dynamically partitioned
    * tables, dynamic partition columns are not included in columns to be written.
+   * NOTE: It is the writer's responsibility to close the batch.
    */
-  def write(batch: ColumnarBatch): Unit
+  def write(batch: ColumnarBatch, statsTrackers: Seq[ColumnarWriteTaskStatsTracker]): Unit
 
   /**
    * Closes the [[ColumnarOutputWriter]]. Invoked on the executor side after all columnar batches
