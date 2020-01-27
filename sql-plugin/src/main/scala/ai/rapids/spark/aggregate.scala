@@ -228,8 +228,7 @@ case class GpuHashAggregateExec(requiredChildDistributionExpressions: Option[Seq
            boundMergeAgg,
            boundFinalProjections,
            boundResultReferences) =
-      setupReferences(
-        finalMode, child.output, groupingExpressions, aggregateExpressions)
+      setupReferences(child.output, groupingExpressions, aggregateExpressions)
       try {
         while (cbIter.hasNext) {
           // 1) Consume the raw incoming batch, evaluating nested expressions (e.g. avg(col1 + col2)),
@@ -469,13 +468,9 @@ case class GpuHashAggregateExec(requiredChildDistributionExpressions: Option[Seq
     }
   }
 
-  // this will need to change when we support distinct aggregates
-  // because in this case, a hash aggregate exec could be both a "final" (merge)
-  // and partial
-  private lazy val finalMode = {
-    val modes = aggregateExpressions.map(_.mode).distinct
-    modes.contains(Final) || modes.contains(Complete)
-  }
+  private lazy val modes = aggregateExpressions.map(_.mode).distinct
+  private lazy val partialMode = modes.contains(Partial) || modes.contains(PartialMerge)
+  private lazy val finalMode = modes.contains(Final) || modes.contains(Complete)
 
   /**
     * getCudfAggregates returns a sequence of [[cudf.Aggregate]], given the current mode
@@ -491,8 +486,7 @@ case class GpuHashAggregateExec(requiredChildDistributionExpressions: Option[Seq
     * @return - Seq of [[cudf.Aggregate]], with one or more aggregates that correspond to each expression
     *         in allExpressions
     */
-  def setupReferences(finalMode: Boolean,
-                      childAttr: AttributeSeq,
+  def setupReferences(childAttr: AttributeSeq,
                       groupingExpressions: Seq[GpuExpression],
                       aggregateExpressions: Seq[GpuAggregateExpression]):
     (Seq[GpuExpression], Seq[CudfAggregate], Seq[CudfAggregate], Option[Seq[GpuExpression]], Seq[GpuExpression]) = {
@@ -547,28 +541,28 @@ case class GpuHashAggregateExec(requiredChildDistributionExpressions: Option[Seq
       None
     }
 
-    // boundResultReferences is used to project the aggregated input batch(es) for the result.
-    // - Partial mode: it's a pass through. We take whatever was aggregated and let it come
-    //   out of the node as is.
-    // - Final mode: we use resultExpressions to pick out the correct columns that finalReferences
-    //   has pre-processed for us
-    var boundResultReferences: Seq[GpuExpression] = null
-
     // allAttributes can be different things, depending on aggregation mode:
     // - Partial mode: grouping key + cudf aggregates (e.g. no avg, intead sum::count
     // - Final mode: grouping key + spark aggregates (e.g. avg)
     val finalAttributes = groupingAttributes ++ aggregateAttributes
 
-    if (finalMode) {
-      boundResultReferences =
-        GpuBindReferences.bindReferences(
-          resultExpressions.asInstanceOf[Seq[GpuExpression]],
-          finalAttributes.asInstanceOf[Seq[GpuAttributeReference]])
+    // boundResultReferences is used to project the aggregated input batch(es) for the result.
+    // - Partial mode: it's a pass through. We take whatever was aggregated and let it come
+    //   out of the node as is.
+    // - Final mode: we use resultExpressions to pick out the correct columns that finalReferences
+    //   has pre-processed for us
+    val boundResultReferences = if (partialMode) {
+      GpuBindReferences.bindReferences(
+        resultExpressions.asInstanceOf[Seq[GpuExpression]],
+        resultExpressions.map(_.toAttribute))
+    } else if (finalMode) {
+      GpuBindReferences.bindReferences(
+        resultExpressions.asInstanceOf[Seq[GpuExpression]],
+        finalAttributes.asInstanceOf[Seq[GpuAttributeReference]])
     } else {
-      boundResultReferences =
-        GpuBindReferences.bindReferences(
-          resultExpressions.asInstanceOf[Seq[GpuExpression]],
-          resultExpressions.map(_.toAttribute))
+      GpuBindReferences.bindReferences(
+        resultExpressions.asInstanceOf[Seq[GpuExpression]],
+        groupingAttributes.asInstanceOf[Seq[GpuAttributeReference]])
     }
 
     (boundInputReferences,
