@@ -46,7 +46,6 @@ spark.rapids.sql.incompatibleOps.enabled|For operations that work, but are not 1
 spark.rapids.sql.reader.batchSizeRows|Maximum number of rows the reader reads at a time|2147483647
 spark.rapids.sql.replaceSortMergeJoin.enabled|Allow replacing sortMergeJoin with HashJoin|true
 spark.rapids.sql.shuffle.spillThreads|Number of threads used to spill shuffle data to disk in the background.|6
-spark.rapids.sql.stringHashGroupBy.enabled|Config to allow grouping by strings using the GPU in the hash aggregate. Currently they are really slow|false
 spark.rapids.sql.totalOrderSort.enabled|Allow for total ordering sort where the partitioning runs on CPU and sort runs on GPU.|false
 spark.rapids.sql.variableFloatAgg.enabled|Spark assumes that all operations produce the exact same result each time. This is not true for some floating point aggregations, which can produce slightly different results on the GPU as the aggregation is done in parallel.  This can enable those operations if you know the query is only computing it once.|false
 
@@ -73,6 +72,7 @@ spark.rapids.sql.expression.And|logical and|true|None|
 spark.rapids.sql.expression.Asin|inverse sine|true|None|
 spark.rapids.sql.expression.Atan|inverse tangent|false|This is not 100% compatible with the Spark version because floating point results in some cases may differ with the JVM version by a small amount|
 spark.rapids.sql.expression.AttributeReference|references an input column|true|None|
+spark.rapids.sql.expression.CaseWhen|CASE WHEN expression|true|None|
 spark.rapids.sql.expression.Cast|convert a column of one type of data into another type|true|None|
 spark.rapids.sql.expression.Ceil|ceiling of a number|true|None|
 spark.rapids.sql.expression.Cos|cosine|false|This is not 100% compatible with the Spark version because floating point results in some cases may differ with the JVM version by a small amount|
@@ -83,6 +83,9 @@ spark.rapids.sql.expression.Exp|Euler's number e raised to a power|false|This is
 spark.rapids.sql.expression.Floor|floor of a number|true|None|
 spark.rapids.sql.expression.GreaterThan|> operator|true|None|
 spark.rapids.sql.expression.GreaterThanOrEqual|>= operator|true|None|
+spark.rapids.sql.expression.If|IF expression|true|None|
+spark.rapids.sql.expression.In|IN operator|true|None|
+spark.rapids.sql.expression.InSet|INSET operator|true|None|
 spark.rapids.sql.expression.IntegralDivide|division with a integer result|true|None|
 spark.rapids.sql.expression.IsNotNull|checks if a value is not null|true|None|
 spark.rapids.sql.expression.IsNull|checks if a value is null|true|None|

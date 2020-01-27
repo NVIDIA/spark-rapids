@@ -66,9 +66,6 @@ class GpuHashAggregateMeta(
       willNotWorkOnGpu("string literal values are not supported in a hash aggregate")
     }
     val groupingExpressionTypes = agg.groupingExpressions.map(_.dataType)
-    if (!conf.stringHashGroupByEnabled && groupingExpressionTypes.contains(StringType)) {
-      willNotWorkOnGpu("strings are not enabled as grouping keys for hash aggregation.")
-    }
     if (conf.hasNans &&
       (groupingExpressionTypes.contains(FloatType) ||
         groupingExpressionTypes.contains(DoubleType))) {
