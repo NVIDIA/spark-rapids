@@ -78,17 +78,17 @@ class JoinsSuite extends SparkQueryCompareTestSuite {
 
   IGNORE_ORDER_testSparkResultsAreEqual2("Test hash join", longsDf, biggerLongsDf,
     conf = shuffledJoinConf) {
-    (A, B) => A.join(B, A("longs") === B("more_longs"))
+    (A, B) => A.join(B, A("longs") === B("longs"))
   }
 
   IGNORE_ORDER_testSparkResultsAreEqual2("Test hash semi join", longsDf, biggerLongsDf,
     conf = shuffledJoinConf) {
-    (A, B) => A.join(B, A("longs") === B("more_longs"), "LeftSemi")
+    (A, B) => A.join(B, A("longs") === B("longs"), "LeftSemi")
   }
 
   IGNORE_ORDER_testSparkResultsAreEqual2("Test hash anti join", longsDf, biggerLongsDf,
     conf = shuffledJoinConf) {
-    (A, B) => A.join(B, A("longs") === B("more_longs"), "LeftAnti")
+    (A, B) => A.join(B, A("longs") === B("longs"), "LeftAnti")
   }
 
   // test replacement of sort merge join with hash join
@@ -118,11 +118,11 @@ class JoinsSuite extends SparkQueryCompareTestSuite {
 
   testSparkResultsAreEqual2("Test left semi join with nulls",
     mixedDfWithNulls, mixedDf) {
-    (A, B) => A.join(B, A("longs") === B("longs") && A("strings") == B("strings"), "LeftSemi")
+    (A, B) => A.join(B, A("longs") === B("longs") && A("strings") === B("strings"), "LeftSemi")
   }
 
   testSparkResultsAreEqual2("Test left anti join with nulls",
     mixedDfWithNulls, mixedDf) {
-    (A, B) => A.join(B, A("longs") === B("longs") && A("strings") == B("strings"), "LeftAnti")
+    (A, B) => A.join(B, A("longs") === B("longs") && A("strings") === B("strings"), "LeftAnti")
   }
 }
