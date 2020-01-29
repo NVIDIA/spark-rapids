@@ -40,11 +40,11 @@ trait GpuHashJoin extends GpuExec with HashJoin {
   }
 
   // TODO eventually dedupe the keys
-  val joinKeyIndices: Range = gpuBuildKeys.indices
+  lazy val joinKeyIndices: Range = gpuBuildKeys.indices
 
   val localBuildOutput: Seq[Attribute] = buildPlan.output
   // The first columns are the ones we joined on and need to remove
-  val joinIndices: Seq[Int] = output.indices.map(v => v + joinKeyIndices.length)
+  lazy val joinIndices: Seq[Int] = output.indices.map(v => v + joinKeyIndices.length)
 
   def doJoin(builtTable: Table,
       streamedBatch: ColumnarBatch,
