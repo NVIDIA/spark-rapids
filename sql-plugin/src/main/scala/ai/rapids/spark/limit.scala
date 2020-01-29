@@ -25,7 +25,7 @@ import org.apache.spark.sql.catalyst.plans.physical.{AllTuples, Distribution, Pa
 import org.apache.spark.sql.execution.{LimitExec, SparkPlan}
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
-import scala.collection.mutable.{ArrayBuffer, ListBuffer}
+import scala.collection.mutable.ArrayBuffer
 
 /**
  * Helper trait which defines methods that are shared by both
