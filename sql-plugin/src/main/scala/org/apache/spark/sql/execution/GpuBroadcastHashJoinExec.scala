@@ -42,9 +42,7 @@ class GpuBroadcastHashJoinMeta(
   override val childExprs: Seq[ExprMeta[_]] = leftKeys ++ rightKeys ++ condition
 
   override def tagPlanForGpu(): Unit = {
-    if (!GpuHashJoin.isJoinTypeAllowed(join.joinType)) {
-      willNotWorkOnGpu(s" ${join.joinType} is not currently supported")
-    }
+    GpuHashJoin.tagJoin(this, join.joinType, join.condition)
 
     val buildSide = join.buildSide match {
       case BuildLeft => childPlans(0)
