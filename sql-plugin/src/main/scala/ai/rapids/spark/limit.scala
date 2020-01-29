@@ -25,7 +25,7 @@ import org.apache.spark.sql.catalyst.plans.physical.{AllTuples, Distribution, Pa
 import org.apache.spark.sql.execution.{LimitExec, SparkPlan}
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
-import scala.collection.mutable.ListBuffer
+import scala.collection.mutable.{ArrayBuffer, ListBuffer}
 
 /**
  * Helper trait which defines methods that are shared by both
@@ -61,10 +61,9 @@ trait GpuBaseLimitExec extends LimitExec with GpuExec {
         }
 
         def sliceBatch(batch: ColumnarBatch): ColumnarBatch = {
-          val resultCVs = new ListBuffer[GpuColumnVector]
+          val resultCVs = new ArrayBuffer[GpuColumnVector](remainingLimit)
           var exception: Throwable = null
           var table: Table = null
-          var succeeded = false
           try {
             table = GpuColumnVector.from(batch)
             for (i <- 0 until table.getNumberOfColumns) {
@@ -72,14 +71,12 @@ trait GpuBaseLimitExec extends LimitExec with GpuExec {
               assert(slices.length > 0)
               resultCVs.append(GpuColumnVector.from(slices(0)))
             }
-            remainingLimit = 0
-            succeeded = true
             new ColumnarBatch(resultCVs.toArray, resultCVs(0).getRowCount.toInt)
           } catch {
             case e: Throwable => exception = e
               throw e
           } finally {
-            if (!succeeded) {
+            if (exception != null) {
               resultCVs.foreach(gpuVector => gpuVector.safeClose(exception))
             }
             if (table != null) {

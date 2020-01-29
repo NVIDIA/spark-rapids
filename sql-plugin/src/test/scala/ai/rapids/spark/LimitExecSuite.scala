@@ -16,22 +16,18 @@
 
 package ai.rapids.spark
 
-class LimitExprSuite extends SparkQueryCompareTestSuite {
+class LimitExecSuite extends SparkQueryCompareTestSuite {
 
   testSparkResultsAreEqual("limit more than rows", intCsvDf) {
       frame => frame.limit(10).repartition(2)
   }
 
-  testSparkResultsAreEqual("limit less than rows", intCsvDf) {
-    frame => frame.limit(1).repartition(2)
-  }
-
-  testSparkResultsAreEqual("limit batchSize", intCsvDf,
+  testSparkResultsAreEqual("limit less than rows equal to batchSize", intCsvDf,
     conf = makeBatched(1)) {
     frame => frame.limit(1).repartition(2)
   }
 
-  testSparkResultsAreEqual("limit results per batch", intCsvDf,
+  testSparkResultsAreEqual("limit less than rows applied with batches pending", intCsvDf,
     conf = makeBatched(3)) {
     frame => frame.limit(2).repartition(2)
   }
