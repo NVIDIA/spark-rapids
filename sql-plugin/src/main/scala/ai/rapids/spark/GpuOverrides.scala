@@ -875,6 +875,25 @@ object GpuOverrides {
 
         override def convertToGpu(): GpuPartitioning =
           GpuHashPartitioning(childExprs.map(_.convertToGpu()), hp.numPartitions)
+      }),
+    part[RangePartitioning]( "Range Partitioning",
+      (rp, conf, p, r) => new PartMeta[RangePartitioning](rp, conf, p, r) {
+        override val childExprs: Seq[ExprMeta[_]] =
+          rp.ordering.map(GpuOverrides.wrapExpr(_, conf, Some(this)))
+        override def convertToGpu(): GpuPartitioning = {
+          if (rp.numPartitions > 1) {
+            GpuRangePartitioning(childExprs.map(_.convertToGpu()).asInstanceOf[Seq[GpuSortOrder]], rp.numPartitions, new GpuRangePartitioner)
+          } else {
+            GpuSinglePartitioning(childExprs.map(_.convertToGpu()))
+          }
+        }
+      }),
+    part[SinglePartition.type]( "Single Partitioning",
+      (sp, conf, p, r) => new PartMeta[SinglePartition.type](sp, conf, p, r) {
+        override val childExprs: Seq[ExprMeta[_]] = Seq.empty[ExprMeta[_]]
+        override def convertToGpu(): GpuPartitioning = {
+          GpuSinglePartitioning(childExprs.map(_.convertToGpu()))
+        }
       })
   ).map(r => (r.getClassFor.asSubclass(classOf[Partitioning]), r)).toMap
 

@@ -17,15 +17,15 @@
 package ai.rapids.spark
 
 import scala.collection.mutable
-
 import org.apache.spark.sql.catalyst.expressions.aggregate.AggregateFunction
-import org.apache.spark.sql.catalyst.expressions.{BinaryExpression, Expression, UnaryExpression}
-import org.apache.spark.sql.catalyst.plans.physical.Partitioning
+import org.apache.spark.sql.catalyst.expressions.{BinaryExpression, Expression, NullsFirst, NullsLast, SortOrder, UnaryExpression}
+import org.apache.spark.sql.catalyst.plans.physical.{Partitioning, RangePartitioning}
 import org.apache.spark.sql.execution.SparkPlan
 import org.apache.spark.sql.execution.exchange.ShuffleExchangeExec
 import org.apache.spark.sql.execution.joins.{BroadcastHashJoinExec, BuildLeft, BuildRight, ShuffledHashJoinExec, SortMergeJoinExec}
 import org.apache.spark.sql.connector.read.Scan
 import org.apache.spark.sql.execution.command.DataWritingCommand
+import org.apache.spark.sql.types.{DoubleType, FloatType}
 
 trait ConfKeysAndIncompat {
   val operationName: String
@@ -289,7 +289,16 @@ abstract class PartMeta[INPUT <: Partitioning](part: INPUT,
     tagPartForGpu()
   }
 
-  def tagPartForGpu(): Unit = {}
+  def tagPartForGpu(): Unit = {
+    part match {
+      case rp : RangePartitioning =>
+        val keyDataTypes = rp.ordering.map(_.dataType)
+        if ((keyDataTypes.contains(FloatType) || keyDataTypes.contains(DoubleType)) && conf.hasNans) {
+          this.willNotWorkOnGpu("NaNs in RangePartitioning are not supported")
+        }
+      case _ =>
+    }
+  }
 }
 
 /**
