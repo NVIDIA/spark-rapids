@@ -17,24 +17,20 @@
 package ai.rapids.spark
 
 import scala.collection.AbstractIterator
-import scala.collection.mutable.ArrayBuffer
-
-import ai.rapids.cudf.{ColumnVector, NvtxColor, NvtxRange, Table}
 import ai.rapids.spark.RapidsPluginImplicits._
-
-import org.apache.spark.{ShuffleDependency, TaskContext}
+import org.apache.spark.ShuffleDependency
 import org.apache.spark.rdd.RDD
 import org.apache.spark.serializer.Serializer
 import org.apache.spark.sql.catalyst.errors._
-import org.apache.spark.sql.catalyst.expressions.{Attribute, Expression}
-import org.apache.spark.sql.catalyst.plans.physical.{ClusteredDistribution, Distribution, HashClusteredDistribution, Partitioning}
+import org.apache.spark.sql.catalyst.expressions.Attribute
+import org.apache.spark.sql.catalyst.plans.physical.Partitioning
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.execution.{BatchPartitionIdPassthrough, ShuffledBatchRDD, SparkPlan}
 import org.apache.spark.sql.execution.exchange.{Exchange, ShuffleExchangeExec}
 import org.apache.spark.sql.execution.metric._
-import org.apache.spark.sql.types.{DataType, IntegerType}
+import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.vectorized.ColumnarBatch
-import org.apache.spark.sql.{GpuShuffleDependency, GpuShuffleEnv}
+import org.apache.spark.sql.GpuShuffleDependency
 import org.apache.spark.util.MutablePair
 
 class GpuShuffleMeta(
@@ -84,7 +80,7 @@ case class GpuShuffleExchangeExec(
   @transient lazy val inputBatchRDD: RDD[ColumnarBatch] = child.executeColumnar()
 
   /**
-   * A [[ShuffleDependency]] that will partition rows of its child based on
+   * A [[ShuffleDependency]] that will partition columnar batches of its child based on
    * the partitioning scheme defined in `newPartitioning`. Those partitions of
    * the returned ShuffleDependency will be the input of shuffle.
    */
@@ -129,19 +125,28 @@ object GpuShuffleExchangeExec {
       metrics: Map[String, SQLMetric],
       writeMetrics: Map[String, SQLMetric])
   : ShuffleDependency[Int, ColumnarBatch, ColumnarBatch] = {
-    def getPartitioned: ColumnarBatch => Any = newPartitioning match {
+    val partitioner: GpuExpression = newPartitioning match {
       case h: GpuHashPartitioning =>
-        val boundH = GpuBindReferences.bindReferences(h :: Nil, outputAttributes).head
-        batch => boundH.columnarEval(batch)
-
+        GpuBindReferences.bindReferences(h :: Nil, outputAttributes).head
+      case r: GpuRangePartitioning =>
+        r.part.createRangeBounds(r.numPartitions, r.gpuOrdering, rdd, outputAttributes,
+          SQLConf.get.rangeExchangeSampleSizePerPartition)
+        val boundR = GpuBindReferences.bindReferences(r :: Nil, outputAttributes).head
+        boundR
+      case s : GpuSinglePartitioning =>
+        GpuBindReferences.bindReferences(s :: Nil, outputAttributes).head
       case _ => sys.error(s"Exchange not implemented for $newPartitioning")
     }
-    // We already know it is always going to be hash
+
+    def getPartitioned: ColumnarBatch => Any = {
+      batch => partitioner.columnarEval(batch)
+    }
+
     val rddWithPartitionIds: RDD[Product2[Int, ColumnarBatch]] = {
       rdd.mapPartitions { iter =>
         val getParts = getPartitioned
         new AbstractIterator[Product2[Int, ColumnarBatch]] {
-          private var partitioned : Array[(ColumnarBatch, Int)] = null
+          private var partitioned : Array[(ColumnarBatch, Int)] = _
           private var at = 0
           private val mutablePair = new MutablePair[Int, ColumnarBatch]()
           private def partNextBatch(): Unit = {
@@ -204,192 +209,3 @@ object GpuShuffleExchangeExec {
     dependency
   }
 }
-
-case class GpuHashPartitioning(expressions: Seq[GpuExpression], numPartitions: Int)
-  extends GpuExpression with GpuPartitioning {
-
-  override def children: Seq[Expression] = expressions
-  override def nullable: Boolean = false
-  override def dataType: DataType = IntegerType
-
-  override def satisfies0(required: Distribution): Boolean = {
-    super.satisfies0(required) || {
-      required match {
-        case h: HashClusteredDistribution =>
-          expressions.length == h.expressions.length && expressions.zip(h.expressions).forall {
-            case (l, r) => l.semanticEquals(r)
-          }
-        case ClusteredDistribution(requiredClustering, _) =>
-          expressions.forall(x => requiredClustering.exists(_.semanticEquals(x)))
-        case _ => false
-      }
-    }
-  }
-
-  def getGpuKeyColumns(batch: ColumnarBatch) : Array[GpuColumnVector] =
-    expressions.map(_.columnarEval(batch).asInstanceOf[GpuColumnVector]).toArray
-
-  def getGpuDataColumns(batch: ColumnarBatch) : Array[GpuColumnVector] =
-    GpuColumnVector.extractColumns(batch)
-
-  def insertDedupe(indexesOut: Array[Int], colsIn: Array[GpuColumnVector], dedupedData: ArrayBuffer[ColumnVector]): Unit = {
-    indexesOut.indices.foreach { i =>
-      val b = colsIn(i).getBase
-      val idx = dedupedData.indexOf(b)
-      if (idx < 0) {
-        indexesOut(i) = dedupedData.size
-        dedupedData += b
-      } else {
-        indexesOut(i) = idx
-      }
-    }
-  }
-
-  def dedupe(keyCols: Array[GpuColumnVector], dataCols: Array[GpuColumnVector]):
-  (Array[Int], Array[Int], Table) = {
-    val base = new ArrayBuffer[ColumnVector](keyCols.length + dataCols.length)
-    val keys = new Array[Int](keyCols.length)
-    val data = new Array[Int](dataCols.length)
-
-    insertDedupe(keys, keyCols, base)
-    insertDedupe(data, dataCols, base)
-
-    (keys, data, new Table(base: _*))
-  }
-
-  def partitionInternal(batch: ColumnarBatch): (Array[Int], Array[GpuColumnVector]) = {
-    var gpuKeyColumns : Array[GpuColumnVector] = null
-    var gpuDataColumns : Array[GpuColumnVector] = null
-    try {
-      gpuKeyColumns = getGpuKeyColumns(batch)
-      gpuDataColumns = getGpuDataColumns(batch)
-
-      val (keys, dataIndexes, table) = dedupe(gpuKeyColumns, gpuDataColumns)
-      // Don't need the batch any more table has all we need in it.
-      // gpuDataColumns did not increment the reference count when we got them, so don't close them.
-      gpuDataColumns = null
-      gpuKeyColumns.foreach(_.close())
-      gpuKeyColumns = null
-      batch.close()
-
-      val partedTable = table.onColumns(keys: _*).partition(numPartitions)
-      table.close()
-      val parts = partedTable.getPartitions
-      val columns = dataIndexes.map(idx => GpuColumnVector.from(partedTable.getColumn(idx).incRefCount()))
-      partedTable.close()
-      (parts, columns)
-    } finally {
-      if (gpuDataColumns != null) {
-        gpuDataColumns.safeClose()
-      }
-      if (gpuKeyColumns != null) {
-        gpuKeyColumns.safeClose()
-      }
-    }
-  }
-
-  def sliceBatch(vectors: Array[GpuColumnVector], start: Int, end: Int): ColumnarBatch = {
-    var ret: ColumnarBatch = null
-    val count = end - start
-    if (count > 0) {
-      ret = new ColumnarBatch(vectors.map(vec => new SlicedGpuColumnVector(vec, start, end)))
-      ret.setNumRows(count)
-    }
-    ret
-  }
-
-  def sliceInternalOnCpu(batch: ColumnarBatch, partitionIndexes: Array[Int],
-      partitionColumns: Array[GpuColumnVector]): Array[ColumnarBatch] = {
-    // We need to make sure that we have a null count calculated ahead of time.
-    // This should be a temp work around.
-    partitionColumns.foreach(_.getBase.getNullCount)
-    // We are slicing the data but keeping the old in place, so copy to the CPU now
-    partitionColumns.foreach(_.getBase.dropDeviceData())
-    // Leaving the GPU for a while
-    GpuSemaphore.releaseIfNecessary(TaskContext.get())
-
-    val ret = new Array[ColumnarBatch](numPartitions)
-    var start = 0
-    for (i <- 1 until numPartitions) {
-      val idx = partitionIndexes(i)
-      ret(i - 1) = sliceBatch(partitionColumns, start, idx)
-      start = idx
-    }
-    ret(numPartitions - 1) = sliceBatch(partitionColumns, start, batch.numRows())
-    ret
-  }
-
-  def sliceInternal(batch: ColumnarBatch, partitionIndexes: Array[Int], partitionColumns: Array[GpuColumnVector]): Array[ColumnarBatch] = {
-    // The first index will always be 0, so we need to skip it.
-    val batches = if (batch.numRows > 0) {
-      val parts = partitionIndexes.slice(1, partitionIndexes.length)
-      val splits = partitionColumns.map(c => {
-        c.getBase.split(parts: _*)
-      })
-      (0 until numPartitions).map(idx => {
-          val columns = splits.map(_(idx))
-          val start = partitionIndexes(idx)
-          val end = if ((idx + 1) < partitionIndexes.length) {
-            partitionIndexes(idx + 1)
-          } else {
-            batch.numRows()
-          }
-          val rowCount = end - start
-          assert(columns.head.getRowCount == rowCount,
-            s"Counts don't match ${columns.head.getRowCount} != $rowCount")
-          new ColumnarBatch(columns.map(GpuColumnVector.from(_)), rowCount)
-        }).toArray
-    } else {
-      Seq(batch).toArray
-    }
-
-    GpuSemaphore.releaseIfNecessary(TaskContext.get())
-    batches
-  }
-
-  override def columnarEval(batch: ColumnarBatch): Any = {
-    //  We are doing this here because the cudf partition command is at this level
-    val totalRange = new NvtxRange("Hash partition", NvtxColor.PURPLE)
-    try {
-      val (partitionIndexes, partitionColumns) = {
-        val partitionRange = new NvtxRange("partition", NvtxColor.BLUE)
-        try {
-          partitionInternal(batch)
-        } finally {
-          partitionRange.close()
-        }
-      }
-      val ret = {
-        val rapidsShuffleEnabled = GpuShuffleEnv.isRapidsShuffleEnabled
-        val sliceRange = new NvtxRange(
-          if (rapidsShuffleEnabled) {
-            "sliceInternal"
-          } else {
-            "sliceInternalOnCpu"
-          }, NvtxColor.CYAN)
-
-        try {
-          // If we are not using the Rapids shuffle we fall back to CPU spilts way to avoid the hit
-          // for large number of small splits.
-          if (rapidsShuffleEnabled) {
-            if (batch.numRows() == 0) {
-              Array[ColumnarBatch]()
-            } else {
-              sliceInternal(batch, partitionIndexes, partitionColumns)
-            }
-          } else {
-            sliceInternalOnCpu(batch, partitionIndexes, partitionColumns)
-          }
-        } finally {
-          sliceRange.close()
-        }
-      }
-      partitionColumns.safeClose()
-      // Close the partition columns we copied them as a part of the slice
-      ret.zipWithIndex.filter(_._1 != null)
-    } finally {
-      totalRange.close()
-    }
-  }
-}
-

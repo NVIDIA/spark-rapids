@@ -27,14 +27,97 @@ import org.apache.commons.lang3.mutable.MutableLong
 import org.apache.spark.{SparkContext, TaskContext}
 import org.apache.spark.api.plugin.{DriverPlugin, ExecutorPlugin, PluginContext, SparkPlugin}
 import org.apache.spark.internal.Logging
-import org.apache.spark.sql.SparkSessionExtensions
+import org.apache.spark.sql.{GpuShuffleEnv, SparkSessionExtensions}
 import org.apache.spark.sql.catalyst.plans.physical.Partitioning
 import org.apache.spark.sql.catalyst.rules.Rule
 import org.apache.spark.sql.execution._
 import org.apache.spark.sql.vectorized.ColumnarBatch
 import org.apache.spark.util.TaskCompletionListener
 
-trait GpuPartitioning extends Partitioning {}
+trait GpuPartitioning extends Partitioning {
+
+  def sliceBatch(vectors: Array[GpuColumnVector], start: Int, end: Int): ColumnarBatch = {
+    var ret: ColumnarBatch = null
+    val count = end - start
+    if (count > 0) {
+      ret = new ColumnarBatch(vectors.map(vec => new SlicedGpuColumnVector(vec, start, end)))
+      ret.setNumRows(count)
+    }
+    ret
+  }
+
+  def sliceInternalOnGpu(batch: ColumnarBatch, partitionIndexes: Array[Int],
+      partitionColumns: Array[GpuColumnVector]): Array[ColumnarBatch] = {
+    // The first index will always be 0, so we need to skip it.
+    val batches = if (batch.numRows > 0) {
+      val parts = partitionIndexes.slice(1, partitionIndexes.length)
+      val splits = partitionColumns.map(c => {
+        c.getBase.split(parts: _*)
+      })
+      (0 until numPartitions).map(idx => {
+        val columns = splits.map(_(idx))
+        val start = partitionIndexes(idx)
+        val end = if ((idx + 1) < partitionIndexes.length) {
+          partitionIndexes(idx + 1)
+        } else {
+          batch.numRows()
+        }
+        val rowCount = end - start
+        assert(columns.head.getRowCount == rowCount,
+          s"Counts don't match ${columns.head.getRowCount} != $rowCount")
+        new ColumnarBatch(columns.map(GpuColumnVector.from), rowCount)
+      }).toArray
+    } else {
+      Array[ColumnarBatch]()
+    }
+
+    GpuSemaphore.releaseIfNecessary(TaskContext.get())
+    batches
+  }
+
+  def sliceInternalOnCpu(batch: ColumnarBatch, partitionIndexes: Array[Int],
+      partitionColumns: Array[GpuColumnVector]): Array[ColumnarBatch] = {
+    // We need to make sure that we have a null count calculated ahead of time.
+    // This should be a temp work around.
+    partitionColumns.foreach(_.getBase.getNullCount)
+    // We are slicing the data but keeping the old in place, so copy to the CPU now
+    partitionColumns.foreach(_.getBase.dropDeviceData())
+    // Leaving the GPU for a while
+    GpuSemaphore.releaseIfNecessary(TaskContext.get())
+
+    val ret = new Array[ColumnarBatch](numPartitions)
+    var start = 0
+    for (i <- 1 until numPartitions) {
+      val idx = partitionIndexes(i)
+      ret(i - 1) = sliceBatch(partitionColumns, start, idx)
+      start = idx
+    }
+    ret(numPartitions - 1) = sliceBatch(partitionColumns, start, batch.numRows())
+    ret
+  }
+
+  def sliceInternalGpuOrCpu(batch: ColumnarBatch, partitionIndexes: Array[Int],
+      partitionColumns: Array[GpuColumnVector]): Array[ColumnarBatch] = {
+    val rapidsShuffleEnabled = GpuShuffleEnv.isRapidsShuffleEnabled
+    val nvtxRangeKey = if (rapidsShuffleEnabled) {
+      "sliceInternalOnGpu"
+    } else {
+      "sliceInternalOnCpu"
+    }
+    // If we are not using the Rapids shuffle we fall back to CPU splits way to avoid the hit
+    // for large number of small splits.
+    val sliceRange = new NvtxRange(nvtxRangeKey, NvtxColor.CYAN)
+    try {
+      if (rapidsShuffleEnabled) {
+        sliceInternalOnGpu(batch, partitionIndexes, partitionColumns)
+      } else {
+        sliceInternalOnCpu(batch, partitionIndexes, partitionColumns)
+      }
+    } finally {
+      sliceRange.close()
+    }
+  }
+}
 
 case class ColumnarOverrideRules() extends ColumnarRule with Logging {
   val overrides = GpuOverrides()

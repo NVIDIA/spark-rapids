@@ -302,12 +302,6 @@ object RapidsConf {
     .booleanConf
     .createWithDefault(false)
 
-  val ENABLE_TOTAL_ORDER_SORT = conf("spark.rapids.sql.totalOrderSort.enabled")
-    .doc("Allow for total ordering sort where the partitioning runs on CPU and " +
-      "sort runs on GPU.")
-    .booleanConf
-    .createWithDefault(false)
-
   val ENABLE_REPLACE_SORTMERGEJOIN = conf("spark.rapids.sql.replaceSortMergeJoin.enabled")
     .doc("Allow replacing sortMergeJoin with HashJoin")
     .booleanConf
@@ -545,8 +539,6 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
   lazy val orcDebugDumpPrefix: String = get(ORC_DEBUG_DUMP_PREFIX)
 
   lazy val hashAggReplaceMode: String = get(HASH_AGG_REPLACE_MODE)
-
-  lazy val enableTotalOrderSort: Boolean = get(ENABLE_TOTAL_ORDER_SORT)
 
   lazy val enableReplaceSortMergeJoin: Boolean = get(ENABLE_REPLACE_SORTMERGEJOIN)
 

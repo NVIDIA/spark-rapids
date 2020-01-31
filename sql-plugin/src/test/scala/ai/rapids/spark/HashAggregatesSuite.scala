@@ -47,6 +47,13 @@ class HashAggregatesSuite extends SparkQueryCompareTestSuite {
     frame => frame.groupBy(col("longs")).agg(sum(col("more_longs")))
   }
 
+  IGNORE_ORDER_testSparkResultsAreEqual("test hash agg with Single partitioning",
+    longsFromCSVDf, repart = 2, conf = new SparkConf().set("spark.sql.shuffle.partitions", "1")) {
+    frame => {
+      frame.agg(count("*"))
+    }
+  }
+
   /*
    * HASH AGGREGATE TESTS
    */

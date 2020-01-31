@@ -17,8 +17,6 @@ package ai.rapids.spark
 
 import scala.util.Random
 
-import ai.rapids.spark.RapidsConf.ENABLE_TOTAL_ORDER_SORT
-
 import org.apache.spark.SparkConf
 import org.apache.spark.sql.functions._
 import org.apache.spark.sql.{DataFrame, RandomDataGenerator, Row, SparkSession}
@@ -60,7 +58,7 @@ class SortExecSuite extends SparkQueryCompareTestSuite {
     }
   }
 
-  private val batch3 = makeBatched(3)
+  private val batch3 = makeBatched(3).set(RapidsConf.HAS_NANS.key, "false")
 
   // Note I -- out the set of Types that aren't supported with Sort right now so we can explicitly see them and remove
   // individually as we add support
@@ -79,16 +77,15 @@ class SortExecSuite extends SparkQueryCompareTestSuite {
     }
   }
 
-  // Do it for total order sort - do it on a subset of types to keep testing time down.
-  private val allowTotalOrdering = batch3.set(ENABLE_TOTAL_ORDER_SORT.key, "true")
+  // total sort order with gpu range partitioner
   for (
     dataType <- Seq(StringType, LongType);
     nullable <- Seq(true, false);
     sortOrder <- Seq(col("a").asc, col("a").asc_nulls_last, col("a").desc, col("a").desc_nulls_first)
   ) {
-    val inputDf = generateData(dataType, nullable, 60, allowTotalOrdering)
+    val inputDf = generateData(dataType, nullable, 60, batch3)
     testSparkResultsAreEqual(s"sorting on $dataType with nullable=$nullable, sortOrder=$sortOrder",  inputDf,
-      conf = allowTotalOrdering,
+      conf = batch3,
       allowNonGpu=false,
       execsAllowedNonGpu = Seq("RDDScanExec", "AttributeReference")) {
       frame => frame.sort(sortOrder)
@@ -99,8 +96,34 @@ class SortExecSuite extends SparkQueryCompareTestSuite {
     frame => frame.sortWithinPartitions("longs", "more_longs")
   }
 
+  testSparkResultsAreEqual("sort 2 cols longs nulls with GPU Range partitioner",
+    nullableLongsDfWithDuplicates, new SparkConf().set(RapidsConf.HAS_NANS.key, "false")) {
+    frame => frame.sortWithinPartitions("longs", "more_longs")
+  }
+
+  testSparkResultsAreEqual("sort 2 cols longs nulls total", nullableLongsDfWithDuplicates, batch3) {
+    frame => frame.sort("longs", "more_longs")
+  }
+
+  testSparkResultsAreEqual("sort 2 cols longs nulls total with GPU Range partitioner",
+    nullableLongsDfWithDuplicates, batch3) {
+    frame => frame.sort(col("longs") + 1, col("more_longs"))
+  }
+
   testSparkResultsAreEqual("sort 2 cols longs expr", longsDf) {
     frame => frame.sortWithinPartitions(col("longs") + 1, col("more_longs"))
+  }
+
+  testSparkResultsAreEqual("sort 2 cols longs expr total", longsDf, batch3) {
+    frame => frame.sortWithinPartitions(col("longs") + 1, col("more_longs"))
+  }
+
+  testSparkResultsAreEqual("sort 2 cols longs expr part 2", longsDf, batch3) {
+    frame => frame.sort(col("longs") + 1, col("more_longs") + 1)
+  }
+
+  testSparkResultsAreEqual("sort 2 cols longs expr part 3", longsDf, batch3) {
+    frame => frame.sort(col("longs"), col("more_longs") + 1)
   }
 
   testSparkResultsAreEqual("sort 2 cols longs nulls desc/desc", nullableLongsDfWithDuplicates) {

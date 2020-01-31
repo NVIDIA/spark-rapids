@@ -16,13 +16,9 @@
 
 package ai.rapids.spark
 
-import scala.collection.mutable.ArrayBuffer
-
 import ai.rapids.cudf
 import ai.rapids.cudf.{NvtxColor, Table}
-import ai.rapids.spark.GpuExpressionsUtils.evaluateBoundExpressions
 import ai.rapids.spark.GpuMetricNames._
-import ai.rapids.spark.RapidsPluginImplicits._
 
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.expressions.{Ascending, Attribute, Expression, NullOrdering, NullsFirst, NullsLast, RowOrdering, SortDirection, SortOrder}
@@ -55,11 +51,6 @@ class GpuSortMeta(
       willNotWorkOnGpu("floats/doubles are not supported in sort, due to " +
         "incompatibility with NaN. If you don't have any NaNs in your data you can set " +
         s"${RapidsConf.HAS_NANS}=false to bypass this.")
-    }
-
-    // note that dataframe.sort always sets this to true
-    if (sort.global && !conf.enableTotalOrderSort) {
-      willNotWorkOnGpu(s"Don't support total ordering on GPU yet")
     }
   }
 }
@@ -163,7 +154,7 @@ class GpuColumnarBatchSorter(
       private def sortBatch(inputBatch: ColumnarBatch): ColumnarBatch = {
         val nvtxRange = new NvtxWithMetrics("sort batch", NvtxColor.WHITE, totalTime)
         try {
-          val inputCvs = getGpuCvsAndBindReferences(inputBatch, sortOrder)
+          val inputCvs = SortUtils.getGpuColVectorsAndBindReferences(inputBatch, sortOrder)
           val inputTbl = try {
             new cudf.Table(inputCvs.map(_.getBase): _*)
           } finally {
@@ -213,22 +204,6 @@ class GpuColumnarBatchSorter(
         ret
       }
     }
-  }
-
-  /*
-   * This function takes the input batch and the bound sort order references and
-   * evaluates each column in case its an expression. It then appends the original columns
-   * after the sort key columns. The sort key columns will be dropped after sorting.
-   */
-  private def getGpuCvsAndBindReferences(
-      batch: ColumnarBatch,
-      boundInputReferences: Seq[GpuSortOrder]): Seq[GpuColumnVector] = {
-    val sortCvs = new ArrayBuffer[GpuColumnVector](numSortCols)
-    val childExprs = boundInputReferences.map(_.child)
-    sortCvs ++= evaluateBoundExpressions(batch, childExprs)
-    val originalColumns = GpuColumnVector.extractColumns(batch)
-    originalColumns.foreach(_.incRefCount())
-    sortCvs ++ originalColumns
   }
 
   private def doGpuSort(
