@@ -45,7 +45,7 @@
         <maven.compiler.source>1.8</maven.compiler.source>
         <maven.compiler.target>1.8</maven.compiler.target>
         <spark.version>3.0.0-SNAPSHOT</spark.version>
-        <cuda.version></cuda.version>
+        <cuda.version>cuda10</cuda.version>
         <scala.binary.version>2.12</scala.binary.version>
         <scala.version>2.12.8</scala.version>
         <orc.version>1.5.8</orc.version>
@@ -61,7 +61,7 @@
             <dependency>
                 <groupId>ai.rapids</groupId>
                 <artifactId>cudf</artifactId>
-                <version>0.12-frankenbranch-SNAPSHOT</version>
+                <version>0.13-SNAPSHOT</version>
                 <classifier>${cuda.version}</classifier>
             </dependency>
             <dependency>
