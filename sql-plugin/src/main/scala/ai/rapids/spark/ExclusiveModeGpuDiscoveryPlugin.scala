@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019-2020, NVIDIA CORPORATION.
+ * Copyright (c) 2020, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -43,16 +43,18 @@ class ExclusiveModeGpuDiscoveryPlugin extends ResourceDiscoveryPlugin with Loggi
       request: ResourceRequest,
       sparkconf: SparkConf): Optional[ResourceInformation] = {
 
-    if (!request.id.resourceName.equals("gpu")) {
-      logWarning("ExclusiveModeGpuDiscoveryPlugin only handles gpu allocations")
+    val resourceName = request.id.resourceName
+    if (!resourceName.equals("gpu")) {
+      logInfo("ExclusiveModeGpuDiscoveryPlugin only handles gpu allocations, " +
+        s"skipping $resourceName")
       return Optional.empty()
     }
     val ngpusRequested = request.amount
     val deviceCount: Int = Cuda.getDeviceCount()
     logInfo(s"Running ExclusiveModeGpuDiscoveryPlugin to acquire $ngpusRequested GPU(s), " +
-      s" host has $deviceCount GPU(s)")
+      s"host has $deviceCount GPU(s)")
     // loop multiple times in case we have a race condition with another executor
-    var numIters = ngpusRequested * 2
+    var numIters = deviceCount * 2
     val allocatedAddrs = ArrayBuffer[String]()
     val addrsToTry = ArrayBuffer.empty ++= (0 to (deviceCount - 1))
     while (numIters > 0 && allocatedAddrs.size < ngpusRequested && addrsToTry.size > 0) {
