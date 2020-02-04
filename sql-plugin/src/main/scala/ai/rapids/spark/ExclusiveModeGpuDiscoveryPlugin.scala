@@ -69,6 +69,7 @@ class ExclusiveModeGpuDiscoveryPlugin extends ResourceDiscoveryPlugin with Loggi
       numIters -= 1
     }
     if (allocatedAddrs.size < ngpusRequested) {
+      // log warning here, Spark will throw exception if we return not enough
       logWarning(s"ExclusiveModeGpuDiscoveryPlugin did not find enough gpus, " +
         s"requested: $ngpusRequested found: ${allocatedAddrs.size}")
     }
