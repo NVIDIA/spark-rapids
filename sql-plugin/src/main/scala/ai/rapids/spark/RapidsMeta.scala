@@ -17,6 +17,7 @@
 package ai.rapids.spark
 
 import scala.collection.mutable
+
 import org.apache.spark.sql.catalyst.expressions.aggregate.AggregateFunction
 import org.apache.spark.sql.catalyst.expressions.{BinaryExpression, Expression, NullsFirst, NullsLast, SortOrder, UnaryExpression}
 import org.apache.spark.sql.catalyst.plans.physical.{Partitioning, RangePartitioning}
@@ -25,7 +26,7 @@ import org.apache.spark.sql.execution.exchange.ShuffleExchangeExec
 import org.apache.spark.sql.execution.joins.{BroadcastHashJoinExec, BuildLeft, BuildRight, ShuffledHashJoinExec, SortMergeJoinExec}
 import org.apache.spark.sql.connector.read.Scan
 import org.apache.spark.sql.execution.command.DataWritingCommand
-import org.apache.spark.sql.types.{DoubleType, FloatType}
+import org.apache.spark.sql.types.{DataType, DoubleType, FloatType}
 
 trait ConfKeysAndIncompat {
   val operationName: String
@@ -265,7 +266,6 @@ abstract class RapidsMeta[INPUT <: BASE, BASE, OUTPUT <: BASE](
     explain(true)
   }
 }
-
 
 /**
  * Base class for metadata around [[Partitioning]].
@@ -573,9 +573,14 @@ abstract class ExprMeta[INPUT <: Expression](
     canThisBeReplaced && super.canExprTreeBeReplaced
 
   final override def tagSelfForGpu(): Unit = {
-    if (!GpuOverrides.areAllSupportedTypes(expr.dataType)) {
-      willNotWorkOnGpu(s"expression ${expr.getClass.getSimpleName} ${expr} " +
-        s"produces an unsupported type ${expr.dataType}")
+    try {
+      if (!GpuOverrides.areAllSupportedTypes(expr.dataType)) {
+        willNotWorkOnGpu(s"expression ${expr.getClass.getSimpleName} ${expr} " +
+          s"produces an unsupported type ${expr.dataType}")
+      }
+    } catch {
+      //if an expression like Window does not support a datatype we should skip this test
+      case _: UnsupportedOperationException => //Ignored,
     }
     tagExprForGpu()
   }

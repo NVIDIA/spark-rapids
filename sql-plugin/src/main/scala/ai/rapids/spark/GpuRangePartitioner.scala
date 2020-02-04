@@ -222,11 +222,8 @@ class GpuRangePartitioner extends Serializable {
         converters.convert(row.asInstanceOf[InternalRow], builders)
         rowCount += 1
       }
-      val ret = try {
-        builders.build(rowCount)
-      }
       // The returned batch will be closed by the consumer of it
-      ret
+      builders.build(rowCount)
     } finally {
       builders.close()
     }
