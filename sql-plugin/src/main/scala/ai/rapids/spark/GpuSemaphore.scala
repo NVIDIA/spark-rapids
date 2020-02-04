@@ -118,7 +118,7 @@ private final class GpuSemaphore(tasksPerGpu: Int) extends Logging {
           activeTasks.put(taskAttemptId, new MutableInt(1))
           context.addTaskCompletionListener[Unit](completeTask)
         }
-        GpuDeviceManager.initialize()
+        GpuDeviceManager.initializeFromTask()
       }
     } finally {
       nvtxRange.close()
