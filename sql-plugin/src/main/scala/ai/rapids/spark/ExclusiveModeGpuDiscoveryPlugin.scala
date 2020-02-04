@@ -58,7 +58,6 @@ class ExclusiveModeGpuDiscoveryPlugin extends ResourceDiscoveryPlugin with Loggi
     val allocatedAddrs = ArrayBuffer[String]()
     val addrsToTry = ArrayBuffer.empty ++= (0 to (deviceCount - 1))
     while (numIters > 0 && allocatedAddrs.size < ngpusRequested && addrsToTry.size > 0) {
-      logWarning(s"looping iteration $numIters")
       val gpuAllocated = addrsToTry.find(addr => GpuDeviceManager.tryToSetGpuDeviceAndAcquire(addr))
       gpuAllocated match {
         case Some(addr) =>
