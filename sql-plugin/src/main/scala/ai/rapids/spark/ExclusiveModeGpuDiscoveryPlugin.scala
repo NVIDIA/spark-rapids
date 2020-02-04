@@ -54,18 +54,22 @@ class ExclusiveModeGpuDiscoveryPlugin extends ResourceDiscoveryPlugin with Loggi
     logInfo(s"Running ExclusiveModeGpuDiscoveryPlugin to acquire $ngpusRequested GPU(s), " +
       s"host has $deviceCount GPU(s)")
     // loop multiple times in case we have a race condition with another executor
-    var numIters = deviceCount * 2
+    var numRetries = 3
     val allocatedAddrs = ArrayBuffer[String]()
     val addrsToTry = ArrayBuffer.empty ++= (0 to (deviceCount - 1))
-    while (numIters > 0 && allocatedAddrs.size < ngpusRequested && addrsToTry.size > 0) {
-      val gpuAllocated = addrsToTry.find(addr => GpuDeviceManager.tryToSetGpuDeviceAndAcquire(addr))
-      gpuAllocated match {
-        case Some(addr) =>
-          addrsToTry -= addr
+    while (numRetries > 0 && allocatedAddrs.size < ngpusRequested && addrsToTry.size > 0) {
+      logWarning(s"looping iteration $numRetries")
+      var addrLoc = 0
+      val allAddrs = addrsToTry.size
+      while (addrLoc < allAddrs && allocatedAddrs.size < ngpusRequested) {
+        val addr = addrsToTry(addrLoc)
+        if (GpuDeviceManager.tryToSetGpuDeviceAndAcquire(addr)) {
           allocatedAddrs += addr.toString
-        case None =>
+        }
+        addrLoc += 1
       }
-      numIters -= 1
+      addrsToTry --= allocatedAddrs.map(_.toInt)
+      numRetries -= 1
     }
     if (allocatedAddrs.size < ngpusRequested) {
       // log warning here, Spark will throw exception if we return not enough
