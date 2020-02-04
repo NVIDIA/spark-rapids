@@ -58,7 +58,6 @@ class ExclusiveModeGpuDiscoveryPlugin extends ResourceDiscoveryPlugin with Loggi
     val allocatedAddrs = ArrayBuffer[String]()
     val addrsToTry = ArrayBuffer.empty ++= (0 to (deviceCount - 1))
     while (numRetries > 0 && allocatedAddrs.size < ngpusRequested && addrsToTry.size > 0) {
-      logWarning(s"looping iteration $numRetries")
       var addrLoc = 0
       val allAddrs = addrsToTry.size
       while (addrLoc < allAddrs && allocatedAddrs.size < ngpusRequested) {
