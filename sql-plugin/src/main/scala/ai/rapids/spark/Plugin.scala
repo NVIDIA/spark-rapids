@@ -359,11 +359,11 @@ class RapidsExecutorPlugin extends ExecutorPlugin with Logging {
       extraConf: util.Map[String, String]): Unit = {
     val conf = new RapidsConf(extraConf.asScala.toMap)
 
-    // If we are in isolated env and using default device we can initialize here, otherwise
-    // it has to happen at the task level when spark assigns the GPU to the task.
+    // we rely on the Rapids Plugin being run with 1 GPU per executor so we can initialize
+    // on executor startup.
     if (!GpuDeviceManager.rmmTaskInitEnabled) {
-      logWarning("Initializing RMM and memory in plugin")
-      GpuDeviceManager.initializeMemory(-1, Some(conf))
+      logInfo("Initializing memory from Executor Plugin")
+      GpuDeviceManager.initializeGpuAndMemory(ctx.resources().asScala.toMap)
     }
 
     GpuSemaphore.initialize(conf.concurrentGpuTasks)
