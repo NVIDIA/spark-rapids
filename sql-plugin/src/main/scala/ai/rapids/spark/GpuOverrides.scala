@@ -920,6 +920,9 @@ object GpuOverrides {
       .getOrElse(new RuleNotFoundSparkPlanMeta(plan, conf, parent))
 
   val execs: Map[Class[_ <: SparkPlan], ExecRule[_ <: SparkPlan]] = Seq(
+    exec[GenerateExec] (
+      "The backend for operations that generate more output rows than input rows like explode.",
+      (gen, conf, p, r) => new GpuGenerateExecSparkPlanMeta(gen, conf, p, r)),
     exec[ProjectExec](
       "The backend for most select, withColumn and dropColumn statements",
       (proj, conf, p, r) => {
