@@ -17,6 +17,7 @@
 package ai.rapids.spark
 
 import scala.collection.mutable.ArrayBuffer
+import scala.util.control.NonFatal
 
 import ai.rapids.cudf._
 
@@ -42,6 +43,18 @@ object GpuDeviceManager extends Logging {
   private val threadGpuInitialized = new ThreadLocal[Boolean]()
   @volatile private var memoryListenerInitialized: Boolean = false
   @volatile private var singletonMemoryInitialized: Boolean = false
+
+  // Attempt to set and acquire the gpu, return true if acquired, false otherwise
+  def tryToSetGpuDeviceAndAcquire(addr: Int): Boolean = {
+    try {
+      GpuDeviceManager.setGpuDeviceAndAcquire(addr)
+    } catch {
+      case NonFatal(e) =>
+        // we may have lost a race trying to acquire this addr or GPU is already busy
+        return false
+    }
+    return true
+  }
 
   def setGpuDeviceAndAcquire(addr: Int): Int = {
     logInfo(s"Initializing GPU device ID to $addr")
