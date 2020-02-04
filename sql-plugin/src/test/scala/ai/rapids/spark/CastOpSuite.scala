@@ -34,7 +34,8 @@ class CastOpSuite extends SparkQueryCompareTestSuite {
       col("more_longs").cast(ByteType),
       col("longs").cast(ShortType),
       col("longs").cast(FloatType),
-      col("longs").cast(DoubleType))
+      col("longs").cast(DoubleType),
+      col("longs").cast(TimestampType))
   }
 
   testSparkResultsAreEqual("Test cast from double", doubleDf) {
@@ -46,7 +47,8 @@ class CastOpSuite extends SparkQueryCompareTestSuite {
       col("more_doubles").cast(ByteType),
       col("doubles").cast(ShortType),
       col("doubles").cast(FloatType),
-      col("doubles").cast(DoubleType))
+      col("doubles").cast(DoubleType),
+      col("doubles").cast(TimestampType))
   }
 
   testSparkResultsAreEqual("Test cast from boolean", booleanDf) {
@@ -101,6 +103,14 @@ class CastOpSuite extends SparkQueryCompareTestSuite {
       TimeZone.setDefault(oldtz)
     }
   }
+
+  testSparkResultsAreEqual("Test cast to timestamp", mixedDfWithNulls) {
+    frame => frame.select(
+      col("ints").cast(TimestampType),
+      col("longs").cast(TimestampType),
+      col("doubles").cast(TimestampType))
+  }
+
 
   //  testSparkResultsAreEqual("Test cast from strings", doubleStringsDf) {
   //    frame => frame.select(

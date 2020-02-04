@@ -37,6 +37,7 @@ object GpuCast {
 
     case (_: NumericType, BooleanType) => true
     case (_: NumericType, _: NumericType) => true
+    case (_: NumericType, TimestampType) => true
 
     case (DateType, BooleanType) => true
     case (DateType, _: NumericType) => true
@@ -142,6 +143,15 @@ case class GpuCast(child: GpuExpression, dataType: DataType, timeZoneId: Option[
           }
         } finally {
           asLongs.close()
+        }
+      case (_: NumericType, TimestampType) =>
+        // Spark casting to timestamp assumes value is in seconds, but timestamps
+        // are tracked in milliseconds.
+        val timestampSecs = input.getBase.castTo(DType.TIMESTAMP_SECONDS)
+        try {
+          GpuColumnVector.from(timestampSecs.castTo(cudfType))
+        } finally {
+          timestampSecs.close();
         }
       case _ =>
         GpuColumnVector.from(input.getBase.castTo(cudfType))
