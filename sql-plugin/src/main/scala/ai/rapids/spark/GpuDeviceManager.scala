@@ -23,16 +23,15 @@ import ai.rapids.cudf._
 import org.apache.spark.SparkEnv
 import org.apache.spark.TaskContext
 import org.apache.spark.internal.Logging
+import org.apache.spark.resource.ResourceInformation
 
 object GpuDeviceManager extends Logging {
+  // This config controls whether RMM/Pinned memory are initialized from the task
+  // or from the executor side plugin. The default is to initialize from the
+  // executor plugin.
   // var for testing purposes only!
   var rmmTaskInitEnabled = {
-    val propstr = System.getProperty("ai.rapids.spark.memory.gpu.rmm.init.task")
-    if (propstr != null) {
-      java.lang.Boolean.parseBoolean(propstr)
-    } else {
-      true
-    }
+    java.lang.Boolean.getBoolean("ai.rapids.spark.memory.gpu.rmm.init.task")
   }
 
   // for testing only
@@ -44,38 +43,67 @@ object GpuDeviceManager extends Logging {
   @volatile private var memoryListenerInitialized: Boolean = false
   @volatile private var singletonMemoryInitialized: Boolean = false
 
+  def setGpuDeviceAndAcquire(addr: Int): Int = {
+    logInfo(s"Initializing GPU device ID to $addr")
+    Cuda.setDevice(addr.toInt)
+    // cudaFree(0) to actually allocate the set device - no process exclusive required
+    // since we are relying on Spark to schedule it properly and not give it to multiple
+    // executors
+    Cuda.freeZero()
+    addr
+  }
+
+  def getGPUAddrFromResources(resources: Map[String, ResourceInformation]): Option[Int] = {
+    if (resources.contains("gpu")) {
+      val addrs = resources("gpu").addresses
+      if (addrs.size > 1) {
+        // Throw an exception since we assume one GPU per executor.
+        // If multiple GPUs are allocated by spark, then different tasks could get assigned
+        // different GPUs but RMM would only be initialized for 1. We could also just get
+        // weird results that are hard to debug.
+        throw new IllegalArgumentException("Spark GPU Plugin only supports 1 gpu per executor")
+      }
+      Some(addrs.head.toInt)
+    } else {
+      None
+    }
+  }
+
+  // Initializes the GPU if Spark assigned one.
+  // Returns either the GPU addr Spark assigned or None if Spark didn't assign one.
+  def initializeGpu(resources: Map[String, ResourceInformation]): Option[Int] = {
+    getGPUAddrFromResources(resources).map(setGpuDeviceAndAcquire(_))
+  }
+
+  def initializeGpuAndMemory(resources: Map[String, ResourceInformation]): Unit = {
+    // Set the GPU before RMM is initialized if spark provided the GPU address so that RMM
+    // uses that GPU. We only need to initialize RMM once per Executor because we are relying on
+    // only 1 GPU per executor.
+    // If Spark didn't provide the address we just use the default GPU.
+    val addr = initializeGpu(resources)
+    initializeMemory(addr)
+  }
+
+  def getResourcesFromTaskContext: Map[String, ResourceInformation] = {
+    val tc = TaskContext.get()
+    if (tc == null) Map.empty[String, ResourceInformation] else tc.resources()
+  }
+
   /**
-   * Set the GPU assigned by Spark and initialize the RMM.
+   * Always set the GPU if it was assigned by Spark and initialize the RMM if its configured
+   * to do so in the task.
    * We expect the plugin to be run with 1 task and 1 GPU per executor.
    */
-  def initialize(): Unit = {
-    if (rmmTaskInitEnabled) {
-      if (threadGpuInitialized.get() == false) {
-        val tc = TaskContext.get()
-        if (tc != null && tc.resources().contains("gpu")) {
-          val addrs = tc.resources()("gpu").addresses
-          if (addrs.size > 1) {
-            throw new IllegalArgumentException("Spark GPU Plugin only supports 1 gpu per executor")
-          }
-          val addr = addrs.head
-          logInfo(s"Initializing gpu device to id: $addr")
-          Cuda.setDevice(addr.toInt)
-          // cudaFree(0) to actually allocate the set device - no process exclusive required
-          // since we are relying on Spark to schedule it properly and not give it to multiple
-          // executors
-          Cuda.freeZero()
-          // Set gpu before RMM initialized so RMM uses that GPU.
-          // We only need to initialize RMM once per Executor because are relying on
-          // only 1 GPU per executor, we just need to set the GPU for each task.
-          initializeMemory(addr.toInt)
-        } else {
-          // here we assume Spark GPU scheduling is not enabled and we rely on GPU being
-          // in process exclusive mode
-          logInfo("No GPU assigned by Spark, just initializing RMM and memory")
-          initializeMemory(-1)
-        }
-        threadGpuInitialized.set(true)
+  def initializeFromTask(): Unit = {
+    if (threadGpuInitialized.get() == false) {
+      val resources = getResourcesFromTaskContext
+      if (rmmTaskInitEnabled) {
+        initializeGpuAndMemory(resources)
+      } else {
+        // just set the device if provided so task thread uses right GPU
+        initializeGpu(resources)
       }
+      threadGpuInitialized.set(true)
     }
   }
 
@@ -126,15 +154,15 @@ object GpuDeviceManager extends Logging {
     }
   }
 
-  private def allocatePinnedMemory(gpuId: Int, rapidsConf: Option[RapidsConf] = None): Unit = {
+  private def allocatePinnedMemory(gpuId: Option[Int], rapidsConf: Option[RapidsConf] = None): Unit = {
     val conf = rapidsConf.getOrElse(new RapidsConf(SparkEnv.get.conf))
     if (!PinnedMemoryPool.isInitialized && conf.pinnedPoolSize > 0) {
       logInfo(s"Initializing pinned memory pool (${conf.pinnedPoolSize / 1024 / 1024.0} MB)")
-      PinnedMemoryPool.initialize(conf.pinnedPoolSize, gpuId)
+      PinnedMemoryPool.initialize(conf.pinnedPoolSize, gpuId.getOrElse(-1))
     }
   }
 
-  def initializeMemory(gpuId: Int, rapidsConf: Option[RapidsConf] = None): Unit = {
+  def initializeMemory(gpuId: Option[Int], rapidsConf: Option[RapidsConf] = None): Unit = {
     if (singletonMemoryInitialized == false) {
       // Memory or memory related components that only need to be initialized once per executor.
       // This synchronize prevents multiple tasks from trying to initialize these at the same time.
