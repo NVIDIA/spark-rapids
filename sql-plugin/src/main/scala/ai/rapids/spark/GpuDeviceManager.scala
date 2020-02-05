@@ -57,7 +57,7 @@ object GpuDeviceManager extends Logging {
   }
 
   def setGpuDeviceAndAcquire(addr: Int): Int = {
-    logInfo(s"Attempting to initialize GPU device ID to $addr")
+    logDebug(s"Initializing GPU device ID to $addr")
     Cuda.setDevice(addr.toInt)
     // cudaFree(0) to actually allocate the set device - no process exclusive required
     // since we are relying on Spark to schedule it properly and not give it to multiple
