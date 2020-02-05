@@ -54,6 +54,36 @@ To enable pool GPU memory allocation set config `spark.rapids.memory.gpu.pooling
 
 See documentation for [configs](docs/configs.md).
 
+## GPU Scheduling
+
+Spark 3.0 adds support for scheduling GPUs. The exact configs vary depending on the cluster manager you
+are running - YARN, Kubernetes, Standalone. The scheduling features and scripts that come with Spark
+rely on the executors running in an isolated environment (e.g.: Docker that ensures only your container sees 
+the assigned GPU) on YARN and Kubernetes.
+If you are running in Standalone mode or in an isolated environment you can use GPU scheduling by
+adding configs like below. See the Spark 3.0 documentation for more specifics.
+
+```
+--conf spark.executor.resource.gpu.amount=1
+--conf spark.task.resource.gpu.amount=1 
+--conf spark.executor.resource.gpu.discoveryScript=./getGpusResources.sh
+--conf spark.executor.resource.gpu.vendor=nvidia.com // only needed on Kubernetes
+```
+Note that the discoveryScript above has to be shipped with your job or present on the node the
+executors run on. There is a sample script in the Spark code base.
+
+If the cluster you are running on does not support running in isolated environment then you need
+a different way to discover the GPUs. One solution for this is to put all the GPUs on the node
+into process exclusive mode and use ai.rapids.spark.ExclusiveModeGpuDiscoveryPlugin as the discovery
+plugin with Spark. This class will iterate through all the GPUs on the node and allocate one that
+is not being used by another process.
+
+To enable it, add the following config to your Spark configurations:
+
+```
+--conf spark.resourceDiscovery.plugin=ai.rapids.spark.ExclusiveModeGpuDiscoveryPlugin
+```
+
 ## Releases
 
 | Version | Description |
