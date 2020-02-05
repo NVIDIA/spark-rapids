@@ -22,11 +22,11 @@
     <parent>
         <groupId>ai.rapids</groupId>
         <artifactId>rapids-4-spark-parent</artifactId>
-        <version>0.1-cudfxx-SNAPSHOT</version>
+        <version>0.1-SNAPSHOT</version>
     </parent>
     <groupId>ai.rapids</groupId>
     <artifactId>rapids-4-spark</artifactId>
-    <version>0.1-cudfxx-SNAPSHOT</version>
+    <version>0.1-SNAPSHOT</version>
 
     <dependencies>
         <dependency>

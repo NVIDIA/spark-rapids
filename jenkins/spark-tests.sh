@@ -11,7 +11,7 @@ if [ "$CUDA_CLASSIFIER"x != x ] && [ "$CUDA_CLASSIFIER" != "cuda10-1" ];then
 fi
 
 if [ "$PROJECT_VER"x == x ];then
-    PROJECT_VER="0.1-cudfxx-SNAPSHOT"
+    PROJECT_VER="0.1-SNAPSHOT"
 fi
 
 if [ "$SPARK_VER"x == x ];then

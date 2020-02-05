@@ -15,7 +15,7 @@ pipeline {
     }
 
     parameters {
-        string(name: 'REF', defaultValue: 'cudf++', description: 'Commit to build')
+        string(name: 'REF', defaultValue: 'branch-0.1', description: 'Commit to build')
     }
 
     environment {
@@ -46,7 +46,19 @@ pipeline {
     post {
         always {
             script {
-                echo "Build result: $currentBuild.currentResult"
+                if (currentBuild.currentResult == "SUCCESS") {
+                    build(job: 'spark/plugin_integration',
+                          propagate: false,
+                          parameters: [string(name: 'REF', value: 'branch-0.1'),
+                                       string(name: 'CUDF_VER', value: '0.13-SNAPSHOT'),
+                                       booleanParam(name: 'BUILD_CENTOS7', value: false),])
+
+                    updateGitlabCommitStatus(name: 'Jenkins CI', state: "success")
+                    slack("#rapidsai-spark-cicd", "Success", color: "#33CC33")
+                } else {
+                    updateGitlabCommitStatus(name: 'Jenkins CI', state: "failed")
+                    slack("#rapidsai-spark-cicd", "Failed", color: "#FF0000")
+                }
             }
         }
     }
