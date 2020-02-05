@@ -58,8 +58,8 @@ See documentation for [configs](docs/configs.md).
 
 Spark 3.0 adds support for scheduling GPUs. The exact configs vary depending on the cluster manager you
 are running - YARN, Kubernetes, Standalone. The scheduling features and scripts that come with Spark
-rely on the executors running in an isolated environment (Docker that ensures only your containers sees 
-a GPU) on YARN and Kubernetes.
+rely on the executors running in an isolated environment (e.g.: Docker that ensures only your container sees 
+the assigned GPU) on YARN and Kubernetes.
 If you are running in Standalone mode or in an isolated environment you can use GPU scheduling by
 adding configs like below. See the Spark 3.0 documentation for more specifics.
 
