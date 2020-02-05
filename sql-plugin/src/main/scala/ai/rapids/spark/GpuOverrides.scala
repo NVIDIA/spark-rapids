@@ -481,6 +481,11 @@ object GpuOverrides {
       (a, conf, p, r) => new UnaryExprMeta[IsNotNull](a, conf, p, r) {
         override def convertToGpu(child: GpuExpression): GpuExpression = GpuIsNotNull(child)
       }),
+    expr[IsNaN](
+      "checks if a value is NaN",
+      (a, conf, p, r) => new UnaryExprMeta[IsNaN](a, conf, p, r) {
+        override def convertToGpu(child: GpuExpression): GpuExpression = GpuIsNan(child)
+      }),
     expr[Atan](
       "inverse tangent",
       (a, conf, p, r) => new UnaryExprMeta[Atan](a, conf, p, r) {

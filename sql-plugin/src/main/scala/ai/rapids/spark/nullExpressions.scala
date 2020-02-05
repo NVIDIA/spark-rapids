@@ -40,3 +40,12 @@ case class GpuIsNotNull(child: GpuExpression) extends GpuUnaryExpression with Pr
   override def doColumnar(input: GpuColumnVector): GpuColumnVector =
     GpuColumnVector.from(input.getBase.isNotNull)
 }
+
+case class GpuIsNan(child: GpuExpression) extends GpuUnaryExpression with Predicate {
+  override def nullable: Boolean = false
+
+  override def sql: String = s"(${child.sql} IS NAN)"
+
+  override def doColumnar(input: GpuColumnVector): GpuColumnVector =
+    GpuColumnVector.from(input.getBase.isNan)
+}
