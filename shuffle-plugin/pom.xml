@@ -1,0 +1,168 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Copyright (c) 2020, NVIDIA CORPORATION.
+
+  Licensed under the Apache License, Version 2.0 (the "License");
+  you may not use this file except in compliance with the License.
+  You may obtain a copy of the License at
+
+     http://www.apache.org/licenses/LICENSE-2.0
+
+  Unless required by applicable law or agreed to in writing, software
+  distributed under the License is distributed on an "AS IS" BASIS,
+  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+  See the License for the specific language governing permissions and
+  limitations under the License.
+-->
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <parent>
+        <groupId>ai.rapids</groupId>
+        <artifactId>rapids-4-spark-parent</artifactId>
+        <version>0.1-SNAPSHOT</version>
+    </parent>
+
+    <groupId>ai.rapids</groupId>
+    <artifactId>rapids-4-spark-shuffle</artifactId>
+
+    <dependencies>
+        <dependency>
+            <groupId>ai.rapids</groupId>
+            <artifactId>cudf</artifactId>
+            <classifier>${cuda.version}</classifier>
+            <scope>provided</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.scala-lang</groupId>
+            <artifactId>scala-library</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>commons-logging</groupId>
+            <artifactId>commons-logging</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.apache.spark</groupId>
+            <artifactId>spark-sql_${scala.binary.version}</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.apache.spark</groupId>
+            <artifactId>spark-catalyst_${scala.binary.version}</artifactId>
+            <type>test-jar</type>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.scalatest</groupId>
+            <artifactId>scalatest_${scala.binary.version}</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>ai.rapids</groupId>
+            <artifactId>rapids-4-spark</artifactId>
+            <version>0.1-SNAPSHOT</version>
+            <scope>provided</scope>
+        </dependency>
+        <dependency>
+          <groupId>org.openucx</groupId>
+          <artifactId>jucx</artifactId>
+          <version>1.8.0</version>
+          <scope>compile</scope>
+        </dependency>
+        <dependency>
+          <groupId>com.google.flatbuffers</groupId>
+          <artifactId>flatbuffers-java</artifactId>
+          <version>1.11.0</version>
+          <scope>compile</scope>
+        </dependency>
+    </dependencies>
+
+    <build>
+        <resources>
+          <resource>
+            <!-- Include the properties file to provide the build information. -->
+            <directory>${project.build.directory}/extra-resources</directory>
+            <filtering>true</filtering>
+          </resource>
+          <resource>
+            <directory>${project.basedir}/..</directory>
+            <targetPath>META-INF</targetPath>
+            <includes>
+              <!-- The NOTICE will be taken care of by the antrun task below -->
+              <include>LICENSE</include>
+            </includes>
+          </resource>
+        </resources>
+        <plugins>
+            <plugin>
+              <artifactId>maven-antrun-plugin</artifactId>
+              <executions>
+                <execution>
+                  <id>copy-notice</id>
+                  <goals>
+                    <goal>run</goal>
+                  </goals>
+                  <phase>process-resources</phase>
+                  <configuration>
+                    <target>
+                      <!-- copy NOTICE-binary to NOTICE -->
+                      <copy
+                          todir="${project.build.directory}/classes/META-INF/"
+                          verbose="true">
+                        <fileset dir="${project.basedir}/..">
+                          <include name="NOTICE-binary"/>
+                        </fileset>
+                        <mapper type="glob" from="*-binary" to="*"/>
+                      </copy>
+                    </target>
+                  </configuration>
+                </execution>
+              </executions>
+            </plugin>
+            <!-- disable surefire as we are using scalatest only -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-surefire-plugin</artifactId>
+                <configuration>
+                    <skipTests>true</skipTests>
+                </configuration>
+            </plugin>
+            <plugin>
+                <groupId>net.alchim31.maven</groupId>
+                <artifactId>scala-maven-plugin</artifactId>
+            </plugin>
+            <plugin>
+                <groupId>org.scalatest</groupId>
+                <artifactId>scalatest-maven-plugin</artifactId>
+            </plugin>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-shade-plugin</artifactId>
+                <configuration>
+                    <shadedArtifactAttached>false</shadedArtifactAttached>
+                    <createDependencyReducedPom>true</createDependencyReducedPom>
+                    <artifactSet>
+                        <includes>
+                            <include>com.google.flatbuffers:flatbuffers-java</include>
+                        </includes>
+                    </artifactSet>
+                    <relocations>
+                        <relocation>
+                            <pattern>com.google.flatbuffers</pattern>
+                            <shadedPattern>${rapids.shade.package}.flatbuffers-java</shadedPattern>
+                        </relocation>
+                    </relocations>
+                </configuration>
+                <executions>
+                    <execution>
+                        <phase>package</phase>
+                        <goals>
+                            <goal>shade</goal>
+                        </goals>
+                    </execution>
+                </executions>
+            </plugin>
+        </plugins>
+    </build>
+</project>

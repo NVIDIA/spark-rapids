@@ -59,7 +59,10 @@ class ColumnarPartitionReaderWithPartitionValues(
     }
   }
 
-  override def close(): Unit = fileReader.close()
+  override def close(): Unit = {
+    fileReader.close()
+    partitionValues.foreach(_.close())
+  }
 
   private def buildPartitionColumns(numRows: Int): Array[GpuColumnVector] = {
     var succeeded = false

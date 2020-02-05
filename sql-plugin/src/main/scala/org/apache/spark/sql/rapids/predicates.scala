@@ -72,9 +72,6 @@ case class GpuEqualTo(left: Expression, right: Expression) extends CudfBinaryCom
   override def symbol: String = "="
   override def outputTypeOverride: DType = DType.BOOL8
   override def binaryOp: BinaryOp = BinaryOp.EQUAL
-
-  override def fixupInputIfNeeded(vec: GpuColumnVector): GpuColumnVector =
-    fixupInputAsStringCat(vec)
 }
 
 case class GpuGreaterThan(left: Expression, right: Expression) extends CudfBinaryComparison

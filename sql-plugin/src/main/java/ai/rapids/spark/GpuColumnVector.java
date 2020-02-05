@@ -17,12 +17,9 @@
 package ai.rapids.spark;
 
 import ai.rapids.cudf.DType;
-import ai.rapids.cudf.NvtxColor;
-import ai.rapids.cudf.NvtxRange;
 import ai.rapids.cudf.Scalar;
 import ai.rapids.cudf.Schema;
 import ai.rapids.cudf.Table;
-import ai.rapids.cudf.TimeUnit;
 import org.apache.spark.sql.catalyst.expressions.Attribute;
 import org.apache.spark.sql.execution.vectorized.WritableColumnVector;
 import org.apache.spark.sql.types.*;
@@ -64,7 +61,6 @@ public final class GpuColumnVector extends ColumnVector {
         for (int i = 0; i < len; i++) {
           StructField field = fields[i];
           DType type = getRapidsType(field);
-          TimeUnit units = getTimeUnits(field);
           if (type == DType.STRING) {
             // If we cannot know the exact size, assume the string is small and allocate
             // 8 bytes per row.  The buffer of the builder will grow as needed if it is
@@ -82,7 +78,7 @@ public final class GpuColumnVector extends ColumnVector {
             }
             builders[i] = ai.rapids.cudf.ColumnVector.builder(type, rows, bufferSize);
           } else {
-            builders[i] = ai.rapids.cudf.ColumnVector.builder(type, units, rows);
+            builders[i] = ai.rapids.cudf.ColumnVector.builder(type, rows);
           }
           success = true;
         }
@@ -135,25 +131,6 @@ public final class GpuColumnVector extends ColumnVector {
     }
   }
 
-  public static TimeUnit getTimeUnits(StructField field) {
-    DataType type = field.dataType();
-    return getTimeUnits(type);
-  }
-
-  public static TimeUnit getTimeUnits(DataType type) {
-    if (type instanceof TimestampType) {
-      return TimeUnit.MICROSECONDS;
-    }
-    return TimeUnit.NONE;
-  }
-
-  public static TimeUnit getTimeUnits(DType type) {
-    if (type == DType.TIMESTAMP) {
-      return TimeUnit.MICROSECONDS;
-    }
-    return TimeUnit.NONE;
-  }
-
   private static DType toRapidsOrNull(DataType type) {
     if (type instanceof LongType) {
       return DType.INT64;
@@ -170,11 +147,11 @@ public final class GpuColumnVector extends ColumnVector {
     } else if (type instanceof FloatType) {
       return DType.FLOAT32;
     } else if (type instanceof DateType) {
-      return DType.DATE32;
+      return DType.TIMESTAMP_DAYS;
     } else if (type instanceof TimestampType) {
-      return DType.TIMESTAMP;
+      return DType.TIMESTAMP_MICROSECONDS;
     } else if (type instanceof StringType) {
-      return DType.STRING; // TODO what do we want to do about STRING_CATEGORY???
+      return DType.STRING;
     }
     return null;
   }
@@ -212,12 +189,11 @@ public final class GpuColumnVector extends ColumnVector {
         return DataTypes.FloatType;
       case FLOAT64:
         return DataTypes.DoubleType;
-      case DATE32:
+      case TIMESTAMP_DAYS:
         return DataTypes.DateType;
-      case TIMESTAMP:
+      case TIMESTAMP_MICROSECONDS:
         return DataTypes.TimestampType; // TODO need to verify that the TimeUnits are correct
-      case STRING: //Fall through
-      case STRING_CATEGORY:
+      case STRING:
         return DataTypes.StringType;
       default:
         throw new IllegalArgumentException(type + " is not supported by spark yet.");
@@ -350,41 +326,6 @@ public final class GpuColumnVector extends ColumnVector {
     return vectors;
   }
 
-  /**
-   * Convert an entire batch to string categories if needed.  The resulting vectors will either be
-   * new or have their reference counts incremented so to avoid leaks the input batch must be closed
-   * when done and the output vectors must also be closed.
-   */
-  public static GpuColumnVector[] convertToStringCategoriesArrayIfNeeded(ColumnarBatch batch) {
-    GpuColumnVector[] columns = extractColumns(batch);
-    GpuColumnVector[] ret = new GpuColumnVector[columns.length];
-    boolean success = false;
-    try {
-      for (int i = 0; i < columns.length; i++) {
-        ret[i] = columns[i].convertToStringCategoriesIfNeeded();
-      }
-      success = true;
-      return ret;
-    } finally {
-      if (!success) {
-        for (GpuColumnVector c: ret) {
-          if (c != null) {
-            c.close();
-          }
-        }
-      }
-    }
-  }
-
-  /**
-   * Convert an entire batch to string categories if needed.  The resulting vectors will either be
-   * new or have their reference counts incremented so to avoid leaks the input batch must be closed
-   * when done and the output batch must also be closed.
-   */
-  public static ColumnarBatch convertToStringCategoriesIfNeeded(ColumnarBatch batch) {
-    return new ColumnarBatch(convertToStringCategoriesArrayIfNeeded(batch), batch.numRows());
-  }
-
   private final ai.rapids.cudf.ColumnVector cudfCv;
 
   /**
@@ -514,29 +455,14 @@ public final class GpuColumnVector extends ColumnVector {
     return sum;
   }
 
-  public GpuColumnVector convertToStringCategoriesIfNeeded() {
-    if (cudfCv.getType() == DType.STRING) {
-      try (NvtxRange nvtxRange = new NvtxRange("to string category", NvtxColor.RED)) {
-        return from(cudfCv.asStringCategories());
-      }
-    } else {
-      return this.incRefCount();
-    }
-  }
-
-  public GpuColumnVector convertToStringsIfNeeded() {
-    if (cudfCv.getType() == DType.STRING_CATEGORY) {
-      try (NvtxRange nvtxRange = new NvtxRange("to strings from category", NvtxColor.RED)) {
-        return from(cudfCv.asStrings());
-      }
-    } else {
-      return this.incRefCount();
-    }
-  }
-
   public ai.rapids.cudf.ColumnVector getBase() {
     return cudfCv;
   }
 
   public long getRowCount() { return cudfCv.getRowCount(); }
+
+  @Override
+  public String toString() {
+    return getBase().toString();
+  }
 }

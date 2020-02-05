@@ -2,17 +2,23 @@ package ai.rapids.spark
 
 import ai.rapids.cudf.{NvtxColor, Table}
 
-import org.apache.spark.sql.catalyst.expressions.Attribute
-import org.apache.spark.sql.catalyst.plans.{Inner, JoinType, LeftOuter}
+import org.apache.spark.sql.catalyst.expressions.{Attribute, Expression}
+import org.apache.spark.sql.catalyst.plans.{Inner, JoinType, LeftAnti, LeftOuter, LeftSemi}
 import org.apache.spark.sql.execution.joins.{BuildLeft, BuildRight, HashJoin}
 import org.apache.spark.sql.execution.metric.SQLMetric
 import org.apache.spark.sql.vectorized.{ColumnarBatch, ColumnVector}
 
 object GpuHashJoin {
-  def isJoinTypeAllowed(joinType: JoinType): Boolean = joinType match {
-    case LeftOuter => true
-    case Inner => true
-    case _ => false
+  def tagJoin(
+      meta: RapidsMeta[_, _, _],
+      joinType: JoinType,
+      condition: Option[Expression]): Unit = joinType match {
+    case LeftOuter | Inner =>
+    case LeftSemi | LeftAnti =>
+      if (condition.isDefined) {
+        meta.willNotWorkOnGpu(s"$joinType joins currently do not support conditions")
+      }
+    case _ => meta.willNotWorkOnGpu(s"$joinType currently is not supported")
   }
 }
 
@@ -40,11 +46,11 @@ trait GpuHashJoin extends GpuExec with HashJoin {
   }
 
   // TODO eventually dedupe the keys
-  val joinKeyIndices: Range = gpuBuildKeys.indices
+  lazy val joinKeyIndices: Range = gpuBuildKeys.indices
 
   val localBuildOutput: Seq[Attribute] = buildPlan.output
   // The first columns are the ones we joined on and need to remove
-  val joinIndices: Seq[Int] = output.indices.map(v => v + joinKeyIndices.length)
+  lazy val joinIndices: Seq[Int] = output.indices.map(v => v + joinKeyIndices.length)
 
   def doJoin(builtTable: Table,
       streamedBatch: ColumnarBatch,
@@ -59,12 +65,7 @@ trait GpuHashJoin extends GpuExec with HashJoin {
       val streamedKeysBatch = GpuProjectExec.project(streamedBatch, gpuStreamedKeys)
       try {
         val combined = combine(streamedKeysBatch, streamedBatch)
-        val asStringCat = GpuColumnVector.convertToStringCategoriesIfNeeded(combined)
-        try {
-          GpuColumnVector.from(asStringCat)
-        } finally {
-          asStringCat.close()
-        }
+        GpuColumnVector.from(combined)
       } finally {
         streamedKeysBatch.close()
       }
@@ -100,6 +101,10 @@ trait GpuHashJoin extends GpuExec with HashJoin {
         .leftJoin(rightTable.onColumns(joinKeyIndices: _*))
       case Inner =>
         leftTable.onColumns(joinKeyIndices: _*).innerJoin(rightTable.onColumns(joinKeyIndices: _*))
+      case LeftSemi =>
+        leftTable.onColumns(joinKeyIndices: _*).leftSemiJoin(rightTable.onColumns(joinKeyIndices: _*))
+      case LeftAnti =>
+        leftTable.onColumns(joinKeyIndices: _*).leftAntiJoin(rightTable.onColumns(joinKeyIndices: _*))
       case _ => throw new NotImplementedError(s"Joint Type ${joinType.getClass} is not currently" +
         s" supported")
     }

@@ -50,7 +50,7 @@ pipeline {
                     build(job: 'spark/plugin_integration',
                           propagate: false,
                           parameters: [string(name: 'REF', value: 'branch-0.1'),
-                                       string(name: 'CUDF_VER', value: '0.12-SNAPSHOT'),
+                                       string(name: 'CUDF_VER', value: '0.13-SNAPSHOT'),
                                        booleanParam(name: 'BUILD_CENTOS7', value: false),])
 
                     updateGitlabCommitStatus(name: 'Jenkins CI', state: "success")

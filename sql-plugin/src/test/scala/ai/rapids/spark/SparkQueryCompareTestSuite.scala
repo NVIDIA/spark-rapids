@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019, NVIDIA CORPORATION.
+ * Copyright (c) 2019-2020, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,6 +15,7 @@
  */
 package ai.rapids.spark
 
+import java.io.File
 import java.sql.Date
 import java.util.{Locale, TimeZone}
 
@@ -246,6 +247,57 @@ trait SparkQueryCompareTestSuite extends FunSuite {
       sort=true)(fun)
   }
 
+  /**
+   * Writes and reads a dataframe to a file using the CPU and the GPU.
+   *
+   * @param df     - the DataFrame to use as input
+   * @param writer - the function to write the data to a file
+   * @param reader - the function to read the data from a file
+   * @param conf   - spark conf
+   * @return       - tuple of (cpu results, gpu results) as arrays of Row
+   */
+  def writeWithCpuAndGpu(
+      df: SparkSession => DataFrame,
+      writer: (DataFrame, String) => Unit,
+      reader: (SparkSession, String) => DataFrame,
+      conf: SparkConf = new SparkConf()): (Array[Row], Array[Row]) = {
+    conf.setIfMissing("spark.sql.shuffle.partitions", "2")
+    var tempCpuFile: File = null
+    var tempGpuFile: File = null
+    try {
+      tempCpuFile = File.createTempFile("testdata", "cpu")
+      // remove the empty file to prevent "file already exists" from writers
+      tempCpuFile.delete()
+      withCpuSparkSession(session => {
+        val data = df(session)
+        writer(data, tempCpuFile.getAbsolutePath)
+      }, conf)
+
+      tempGpuFile = File.createTempFile("testdata", "gpu")
+      // remove the empty file to prevent "file already exists" from writers
+      tempGpuFile.delete()
+      withGpuSparkSession(session => {
+        val data = df(session)
+        writer(data, tempGpuFile.getAbsolutePath)
+      }, conf)
+
+      val (fromCpu, fromGpu) = withCpuSparkSession(session => {
+        val cpuData = reader(session, tempCpuFile.getAbsolutePath)
+        val gpuData = reader(session, tempGpuFile.getAbsolutePath)
+        (cpuData.collect, gpuData.collect)
+      }, conf)
+
+      (fromCpu, fromGpu)
+    } finally {
+      if (tempCpuFile != null) {
+        tempCpuFile.delete()
+      }
+      if (tempGpuFile != null) {
+        tempGpuFile.delete()
+      }
+    }
+  }
+
   // we guarantee that the types will be the same
   private def seqLt(a: Seq[Any], b: Seq[Any]): Boolean = {
     if (a.length < b.length) {
@@ -459,6 +511,21 @@ trait SparkQueryCompareTestSuite extends FunSuite {
       sort=true)(fun)
   }
 
+  def testSparkWritesAreEqual(
+      testName: String,
+      df: SparkSession => DataFrame,
+      writer: (DataFrame, String) => Unit,
+      reader: (SparkSession, String) => DataFrame,
+      conf: SparkConf = new SparkConf()): Unit = {
+    val (testConf, qualifiedTestName) =
+      setupTestConfAndQualifierName(testName, false, false, false, conf, Nil)
+
+    test(qualifiedTestName) {
+      val (fromCpu, fromGpu) = writeWithCpuAndGpu(df, writer, reader, conf)
+      compareResults(false, 0, fromCpu, fromGpu)
+    }
+  }
+
   def makeBatched(batchSize: Int, conf: SparkConf = new SparkConf()): SparkConf = {
     // forces ColumnarBatch of batchSize rows
     conf.set(RapidsConf.GPU_BATCH_SIZE_ROWS.key, batchSize.toString)
@@ -473,7 +540,11 @@ trait SparkQueryCompareTestSuite extends FunSuite {
       (99, 400L, 4.0, "D"),
       (98, 500L, 5.0, "E"),
       (97, -100L, 6.0, "F"),
-      (96, -500L, 0.0, "G")
+      (96, -500L, 0.0, "G"),
+      (95, -700L, 8.0, "E\u0480\u0481"),
+      (94, -900L, 9.0, "g\nH"),
+      (92, -1200L, 12.0, "IJ\"\u0100\u0101\u0500\u0501"),
+      (90, 1500L, 15.0, "\ud720\ud721")
     ).toDF("ints", "longs", "doubles", "strings")
   }
 
@@ -486,7 +557,11 @@ trait SparkQueryCompareTestSuite extends FunSuite {
       (400L, 4.0, null, "B"),
       (500L, 5.0, 98, "C"),
       (null, 6.0, 97, "C"),
-      (-500L, null, 96, null)
+      (-500L, null, 96, null),
+      (-700L, 8.0, null, "E\u0480\u0481"),
+      (null, 9.0, 90, "g\nH"),
+      (1200L, null, null, "IJ\"\u0100\u0101\u0500\u0501"),
+      (null, null, null, "\ud720\ud721")
     ).toDF("longs", "doubles", "ints", "strings")
   }
 

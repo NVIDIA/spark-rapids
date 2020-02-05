@@ -24,7 +24,7 @@ import org.apache.spark.sql.SparkSession
 class TpchLikeSparkTest extends FunSuite with BeforeAndAfterAll {
 
   lazy val  session: SparkSession = {
-    SparkSession.builder
+    var builder = SparkSession.builder
       .master("local[2]")
       .appName("TPCHLikeTest")
       .config("spark.sql.join.preferSortMergeJoin", false)
@@ -34,7 +34,16 @@ class TpchLikeSparkTest extends FunSuite with BeforeAndAfterAll {
       .config("spark.rapids.sql.explain", true)
       .config("spark.rapids.sql.incompatibleOps.enabled", true)
       .config("spark.rapids.sql.stringHashGroupBy.enabled", true)
-      .getOrCreate()
+    val rapidsShuffle = "org.apache.spark.sql.RapidsShuffleManager"
+    val prop = System.getProperty("rapids.shuffle.manager.override", "false")
+    if (prop.equalsIgnoreCase("true")) {
+      println("RAPIDS SHUFFLE MANAGER ACTIVE")
+      builder = builder.config("spark.shuffle.manager", rapidsShuffle)
+    } else {
+      println("RAPIDS SHUFFLE MANAGER INACTIVE")
+    }
+
+    builder.getOrCreate()
   }
 
   override def beforeAll(): Unit = {

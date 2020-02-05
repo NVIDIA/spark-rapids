@@ -1,0 +1,249 @@
+/*
+ * Copyright (c) 2020, NVIDIA CORPORATION.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+package ai.rapids.spark
+
+import ai.rapids.cudf.Scalar
+
+import org.apache.spark.sql.catalyst.analysis.{TypeCheckResult, TypeCoercion}
+import org.apache.spark.sql.catalyst.expressions.{ComplexTypeMergingExpression, Expression}
+import org.apache.spark.sql.types.{BooleanType, DataType}
+import org.apache.spark.sql.vectorized.ColumnarBatch
+
+abstract class GpuConditionalExpression extends ComplexTypeMergingExpression with GpuExpression {
+  private def computePredicate(
+      batch: ColumnarBatch,
+      predicateExpr: GpuExpression): GpuColumnVector = {
+    val predicate: Any = predicateExpr.columnarEval(batch)
+    try {
+      if (!predicate.isInstanceOf[GpuColumnVector]) {
+        throw new IllegalStateException("Predicate result is not a column")
+      }
+      val p = predicate.asInstanceOf[GpuColumnVector]
+
+      // TODO: This null replacement is no longer necessary when
+      // https://github.com/rapidsai/cudf/issues/3856 is fixed.
+      val falseScalar = Scalar.fromBool(false)
+      try {
+        GpuColumnVector.from(p.getBase.replaceNulls(falseScalar))
+      } finally {
+        falseScalar.close()
+      }
+    } finally {
+      predicate match {
+        case c: AutoCloseable => c.close()
+        case _ =>
+      }
+    }
+  }
+
+  protected def computeIfElse(
+      batch: ColumnarBatch,
+      predicateExpr: GpuExpression,
+      trueExpr: GpuExpression,
+      falseValues: GpuColumnVector): GpuColumnVector = {
+    val predicate = computePredicate(batch, predicateExpr)
+    try {
+      val trueResult: Any = trueExpr.columnarEval(batch)
+      try {
+        val result = trueResult match {
+          case t: GpuColumnVector => predicate.getBase.ifElse(t.getBase, falseValues.getBase)
+          case t: Scalar => predicate.getBase.ifElse(t, falseValues.getBase)
+          case t =>
+            val tscalar = GpuScalar.from(t, trueExpr.dataType)
+            try {
+              predicate.getBase.ifElse(tscalar, falseValues.getBase)
+            } finally {
+              tscalar.close()
+            }
+        }
+        GpuColumnVector.from(result)
+      } finally {
+        trueResult match {
+          case a: AutoCloseable => a.close()
+          case _ =>
+        }
+      }
+    } finally {
+      predicate.close()
+    }
+  }
+
+  protected def computeIfElse(
+      batch: ColumnarBatch,
+      predicateExpr: GpuExpression,
+      trueExpr: GpuExpression,
+      falseValue: Scalar): GpuColumnVector = {
+    val predicate = computePredicate(batch, predicateExpr)
+    try {
+      val trueResult: Any = trueExpr.columnarEval(batch)
+      try {
+        val result = trueResult match {
+          case t: GpuColumnVector => predicate.getBase.ifElse(t.getBase, falseValue)
+          case t: Scalar => predicate.getBase.ifElse(t, falseValue)
+          case t =>
+            val tscalar = GpuScalar.from(t, trueExpr.dataType)
+            try {
+              predicate.getBase.ifElse(tscalar, falseValue)
+            } finally {
+              tscalar.close()
+            }
+        }
+        GpuColumnVector.from(result)
+      } finally {
+        trueResult match {
+          case a: AutoCloseable => a.close()
+          case _ =>
+        }
+      }
+    } finally {
+      predicate.close()
+    }
+  }
+
+  protected def computeIfElse(
+      batch: ColumnarBatch,
+      predicateExpr: GpuExpression,
+      trueExpr: GpuExpression,
+      falseExpr: GpuExpression): GpuColumnVector = {
+    val falseResult: Any = falseExpr.columnarEval(batch)
+    try {
+      falseResult match {
+        case f: GpuColumnVector => computeIfElse(batch, predicateExpr, trueExpr, f)
+        case f: Scalar => computeIfElse(batch, predicateExpr, trueExpr, f)
+        case f =>
+          val scalar = GpuScalar.from(f, falseExpr.dataType)
+          try {
+            computeIfElse(batch, predicateExpr, trueExpr, scalar)
+          } finally {
+            scalar.close()
+          }
+      }
+    } finally {
+      falseResult match {
+        case a: AutoCloseable => a.close()
+        case _ =>
+      }
+    }
+  }
+}
+
+case class GpuIf(
+    predicateExpr: GpuExpression,
+    trueExpr: GpuExpression,
+    falseExpr: GpuExpression) extends GpuConditionalExpression {
+
+  @transient
+  override lazy val inputTypesForMerging: Seq[DataType] = {
+    Seq(trueExpr.dataType, falseExpr.dataType)
+  }
+
+  override def children: Seq[Expression] = predicateExpr :: trueExpr :: falseExpr :: Nil
+  override def nullable: Boolean = trueExpr.nullable || falseExpr.nullable
+
+  override def checkInputDataTypes(): TypeCheckResult = {
+    if (predicateExpr.dataType != BooleanType) {
+      TypeCheckResult.TypeCheckFailure(
+        "type of predicate expression in If should be boolean, " +
+          s"not ${predicateExpr.dataType.catalogString}")
+    } else if (!TypeCoercion.haveSameType(inputTypesForMerging)) {
+      TypeCheckResult.TypeCheckFailure(s"differing types in '$sql' " +
+        s"(${trueExpr.dataType.catalogString} and ${falseExpr.dataType.catalogString}).")
+    } else {
+      TypeCheckResult.TypeCheckSuccess
+    }
+  }
+
+  override def columnarEval(batch: ColumnarBatch): Any = computeIfElse(batch, predicateExpr, trueExpr, falseExpr)
+
+  override def toString: String = s"if ($predicateExpr) $trueExpr else $falseExpr"
+
+  override def sql: String = s"(IF(${predicateExpr.sql}, ${trueExpr.sql}, ${falseExpr.sql}))"
+}
+
+
+case class GpuCaseWhen(
+    branches: Seq[(GpuExpression, GpuExpression)],
+    elseValue: Option[GpuExpression] = None) extends GpuConditionalExpression with Serializable {
+
+  override def children: Seq[Expression] = branches.flatMap(b => b._1 :: b._2 :: Nil) ++ elseValue
+
+  // both then and else expressions should be considered.
+  @transient
+  override lazy val inputTypesForMerging: Seq[DataType] = {
+    branches.map(_._2.dataType) ++ elseValue.map(_.dataType)
+  }
+
+  override def nullable: Boolean = {
+    // Result is nullable if any of the branch is nullable, or if the else value is nullable
+    branches.exists(_._2.nullable) || elseValue.map(_.nullable).getOrElse(true)
+  }
+
+  override def checkInputDataTypes(): TypeCheckResult = {
+    if (TypeCoercion.haveSameType(inputTypesForMerging)) {
+      // Make sure all branch conditions are boolean types.
+      if (branches.forall(_._1.dataType == BooleanType)) {
+        TypeCheckResult.TypeCheckSuccess
+      } else {
+        val index = branches.indexWhere(_._1.dataType != BooleanType)
+        TypeCheckResult.TypeCheckFailure(
+          s"WHEN expressions in CaseWhen should all be boolean type, " +
+            s"but the ${index + 1}th when expression's type is ${branches(index)._1}")
+      }
+    } else {
+      val branchesStr = branches.map(_._2.dataType).map(dt => s"WHEN ... THEN ${dt.catalogString}")
+        .mkString(" ")
+      val elseStr = elseValue.map(expr => s" ELSE ${expr.dataType.catalogString}").getOrElse("")
+      TypeCheckResult.TypeCheckFailure(
+        "THEN and ELSE expressions should all be same type or coercible to a common type," +
+          s" got CASE $branchesStr$elseStr END")
+    }
+  }
+
+  override def columnarEval(batch: ColumnarBatch): Any = {
+    val elseExpr = elseValue.getOrElse(GpuLiteral(null, branches.last._2.dataType))
+    try {
+      branches.foldRight[Any](elseExpr) { case ((predicateExpr, trueExpr), falseObj) =>
+        falseObj match {
+          case v: GpuColumnVector =>
+            try {
+              computeIfElse(batch, predicateExpr, trueExpr, v)
+            } finally {
+              v.close()
+            }
+          case e: GpuExpression => computeIfElse(batch, predicateExpr, trueExpr, e)
+        }
+      }
+    } finally {
+      elseExpr match {
+        case a: AutoCloseable => a.close()
+        case _ =>
+      }
+    }
+  }
+
+  override def toString: String = {
+    val cases = branches.map { case (c, v) => s" WHEN $c THEN $v" }.mkString
+    val elseCase = elseValue.map(" ELSE " + _).getOrElse("")
+    "CASE" + cases + elseCase + " END"
+  }
+
+  override def sql: String = {
+    val cases = branches.map { case (c, v) => s" WHEN ${c.sql} THEN ${v.sql}" }.mkString
+    val elseCase = elseValue.map(" ELSE " + _.sql).getOrElse("")
+    "CASE" + cases + elseCase + " END"
+  }
+}

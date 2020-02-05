@@ -15,4 +15,5 @@ FROM nvidia/cuda:${CUDA_VER}-runtime-ubuntu16.04
 RUN apt update -y && \
     apt install -y maven \
     openjdk-8-jdk \
-    tzdata
+    tzdata \
+    git

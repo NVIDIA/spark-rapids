@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019, NVIDIA CORPORATION.
+ * Copyright (c) 2019-2020, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -28,6 +28,28 @@ import scala.reflect.ClassTag
   */
 object RapidsPluginImplicits {
   import scala.language.implicitConversions
+
+  implicit class AutoCloseableColumn[A <: AutoCloseable](autoCloseable: AutoCloseable) {
+
+    /**
+     * safeClose: Is an implicit on AutoCloseable class that tries to close the resource, if an Exception was thrown
+     * prior to this close, it adds the new exception to the suppressed exceptions, otherwise just throws
+     *
+     * @param e - Exception which we don't want to suppress
+     * @return - Unit
+     */
+    def safeClose(e: Throwable = null): Unit = {
+      if (e != null) {
+        try {
+          autoCloseable.close()
+        } catch {
+          case suppressed: Throwable => e.addSuppressed(suppressed)
+        }
+      } else {
+        autoCloseable.close()
+      }
+    }
+  }
 
   implicit class AutoCloseableSeq[A <: AutoCloseable](val in: SeqLike[A, _]) {
     /**

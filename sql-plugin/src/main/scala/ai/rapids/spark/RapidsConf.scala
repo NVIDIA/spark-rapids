@@ -19,7 +19,6 @@ import java.util
 
 import scala.collection.JavaConverters._
 import scala.collection.mutable.ListBuffer
-
 import org.apache.spark.SparkConf
 import org.apache.spark.internal.Logging
 import org.apache.spark.network.util.{ByteUnit, JavaUtils}
@@ -250,6 +249,11 @@ object RapidsConf {
       .integerConf
       .createWithDefault(1)
 
+  val SHUFFLE_SPILL_THREADS = conf("spark.rapids.sql.shuffle.spillThreads")
+    .doc("Number of threads used to spill shuffle data to disk in the background.")
+    .integerConf
+    .createWithDefault(6)
+
   val GPU_BATCH_SIZE_ROWS = conf("spark.rapids.sql.batchSizeRows")
     .doc("Set the target number of rows for a GPU batch. Splits sizes for input data " +
       "is covered by separate configs.")
@@ -295,18 +299,6 @@ object RapidsConf {
       "This is not true for some floating point aggregations, which can produce slightly " +
       "different results on the GPU as the aggregation is done in parallel.  This can enable " +
       "those operations if you know the query is only computing it once.")
-    .booleanConf
-    .createWithDefault(false)
-
-  val STRING_GPU_HASH_GROUP_BY_ENABLED = conf("spark.rapids.sql.stringHashGroupBy.enabled")
-    .doc("Config to allow grouping by strings using the GPU in the hash aggregate. " +
-      "Currently they are really slow")
-    .booleanConf
-    .createWithDefault(false)
-
-  val ENABLE_TOTAL_ORDER_SORT = conf("spark.rapids.sql.totalOrderSort.enabled")
-    .doc("Allow for total ordering sort where the partitioning runs on CPU and " +
-      "sort runs on GPU.")
     .booleanConf
     .createWithDefault(false)
 
@@ -358,6 +350,58 @@ object RapidsConf {
     .internal()
     .stringConf
     .createWithDefault("all")
+
+  // USER FACING SHUFFLE CONFIGS
+  val SHUFFLE_UCX_ENABLE = conf("spark.rapids.shuffle.ucx.enabled")
+    .doc("When set to true, enable the UCX transfer method for shuffle files.")
+    .booleanConf
+    .createWithDefault(false)
+
+  val SHUFFLE_UCX_USE_WAKEUP = conf("spark.rapids.shuffle.ucx.useWakeup")
+    .doc("When set to true, use UCX's event-based progress (epoll) in order to wake up " +
+      "the progress thread when needed, instead of a hot loop.")
+    .booleanConf
+    .createWithDefault(false)
+
+  val SHUFFLE_UCX_THROTTLE_ENABLE = conf("spark.rapids.shuffle.ucx.throttle.enabled")
+    .doc("When set to true, enable the UCX throttle on send.")
+    .booleanConf
+    .createWithDefault(false)
+
+  val SHUFFLE_UCX_WAIT_PERIOD_UPDATE_ENABLE = conf("spark.rapids.shuffle.ucx.wait.period.update.enabled")
+    .doc("Decides if wait period should be updates based on transaction stats")
+    .booleanConf
+    .createWithDefault(false)
+
+  val SHUFFLE_UCX_RECV_ASYNC = conf("spark.rapids.shuffle.ucx.receive.async")
+    .doc("Decides if fetches should be async")
+    .booleanConf
+    .createWithDefault(false)
+
+  val SHUFFLE_UCX_WAIT_PERIOD = conf("spark.rapids.shuffle.ucx.wait.period")
+    .doc("Initial time to wait in ms for requests that cannot be processed by the shuffle manager")
+    .integerConf
+    .createWithDefault(5)
+
+  val SHUFFLE_UCX_MAX_FETCH_WAIT_PERIOD = conf("spark.rapids.shuffle.ucx.fetch.wait.period")
+    .doc("Maximum value of the Initial time to waitin sending fetch requests")
+    .integerConf
+    .createWithDefault(50)
+
+  val SHUFFLE_UCX_HANDLE_LOCAL = conf("spark.rapids.shuffle.ucx.handleLocalShuffle")
+    .doc("When set to true, allow UCX to transfer host-local shuffle files.")
+    .booleanConf
+    .createWithDefault(true)
+
+  val SHUFFLE_UCX_HANDLE_REMOTE = conf("spark.rapids.shuffle.ucx.handleRemoteShuffle")
+    .doc("When set to true, allow UCX to transfer remote shuffle files.")
+    .booleanConf
+    .createWithDefault(false)
+
+  val SHUFFLE_UCX_MGMT_SERVER_HOST = conf("spark.rapids.shuffle.ucx.managementServerHost")
+    .doc("The host to be used to start the management server")
+    .stringConf
+    .createWithDefault(null)
 
   // USER FACING DEBUG CONFIGS
 
@@ -462,6 +506,8 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
 
   lazy val concurrentGpuTasks: Int = get(CONCURRENT_GPU_TASKS)
 
+  lazy val shuffleSpillThreads: Int = get(SHUFFLE_SPILL_THREADS)
+
   lazy val isTestEnabled: Boolean = get(TEST_CONF)
 
   lazy val testingAllowedNonGpu: Seq[String] = get(TEST_ALLOWED_NONGPU)
@@ -484,8 +530,6 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
 
   lazy val isFloatAggEnabled: Boolean = get(ENABLE_FLOAT_AGG)
 
-  lazy val stringHashGroupByEnabled: Boolean = get(STRING_GPU_HASH_GROUP_BY_ENABLED)
-
   lazy val explain: String = get(EXPLAIN)
 
   lazy val maxReadBatchSize: Int = get(MAX_READER_BATCH_SIZE)
@@ -496,11 +540,29 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
 
   lazy val hashAggReplaceMode: String = get(HASH_AGG_REPLACE_MODE)
 
-  lazy val enableTotalOrderSort: Boolean = get(ENABLE_TOTAL_ORDER_SORT)
-
   lazy val enableReplaceSortMergeJoin: Boolean = get(ENABLE_REPLACE_SORTMERGEJOIN)
 
   lazy val enableHashOptimizeSort: Boolean = get(ENABLE_HASH_OPTIMIZE_SORT)
+
+  lazy val shuffleUcxEnable: Boolean = get(SHUFFLE_UCX_ENABLE)
+
+  lazy val shuffleUcxUseWakeup: Boolean = get(SHUFFLE_UCX_USE_WAKEUP)
+
+  lazy val shuffleUcxThrottleEnable: Boolean = get(SHUFFLE_UCX_THROTTLE_ENABLE)
+
+  lazy val shuffleUcxRecvAsync: Boolean = get(SHUFFLE_UCX_RECV_ASYNC)
+
+  lazy val shuffleUcxUpdateWaitPeriod: Boolean = get(SHUFFLE_UCX_WAIT_PERIOD_UPDATE_ENABLE)
+
+  lazy val shuffleUcxWaitPeriod: Int = get(SHUFFLE_UCX_WAIT_PERIOD)
+
+  lazy val shuffleUcxMaxFetchWaitPeriod: Int = get(SHUFFLE_UCX_MAX_FETCH_WAIT_PERIOD)
+
+  lazy val shuffleUcxHandleLocal: Boolean = get(SHUFFLE_UCX_HANDLE_LOCAL)
+
+  lazy val shuffleUcxHandleRemote: Boolean = get(SHUFFLE_UCX_HANDLE_REMOTE)
+
+  lazy val shuffleUcxMgmtHost: String = get(SHUFFLE_UCX_MGMT_SERVER_HOST)
 
   def isOperatorEnabled(key: String, incompat: Boolean): Boolean = {
     val default = !incompat || (incompat && isIncompatEnabled)

@@ -35,7 +35,7 @@ object GpuProjectExec {
       totalTime: SQLMetric): ColumnarBatch = {
     val nvtxRange = new NvtxWithMetrics("ProjectExec", NvtxColor.CYAN, totalTime)
     try {
-        project(cb, boundExprs)
+      project(cb, boundExprs)
     } finally {
       cb.close()
       nvtxRange.close()
@@ -48,7 +48,13 @@ object GpuProjectExec {
         val result = expr.columnarEval(cb)
         result match {
           case cv: ColumnVector => cv
-          case other => GpuColumnVector.from(GpuScalar.from(other), cb.numRows())
+          case other =>
+            val scalar = GpuScalar.from(other, expr.dataType)
+            try {
+              GpuColumnVector.from(scalar, cb.numRows())
+            } finally {
+              scalar.close()
+            }
         }
       }}.toArray
     new ColumnarBatch(newColumns, cb.numRows())
@@ -95,22 +101,16 @@ object GpuFilter {
       filterTime: SQLMetric): ColumnarBatch = {
     val nvtxRange = new NvtxWithMetrics("filter batch", NvtxColor.YELLOW, filterTime)
     try {
-      val batchWithCategories = try {
-        GpuColumnVector.convertToStringCategoriesIfNeeded(batch)
-      } finally {
-        batch.close()
-      }
-
       var filterConditionCv: GpuColumnVector = null
       var tbl: cudf.Table = null
       var filtered: cudf.Table = null
       val filteredBatch = try {
-        filterConditionCv = boundCondition.columnarEval(batchWithCategories).asInstanceOf[GpuColumnVector]
-        tbl = GpuColumnVector.from(batchWithCategories)
+        filterConditionCv = boundCondition.columnarEval(batch).asInstanceOf[GpuColumnVector]
+        tbl = GpuColumnVector.from(batch)
         filtered = tbl.filter(filterConditionCv.getBase)
         GpuColumnVector.from(filtered)
       } finally {
-        Seq(filtered, tbl, filterConditionCv, batchWithCategories).safeClose()
+        Seq(filtered, tbl, filterConditionCv, batch).safeClose()
       }
 
       numOutputBatches += 1
@@ -211,7 +211,7 @@ case class GpuCoalesceExec(numPartitions: Int, child: SparkPlan)
     s"${getClass.getCanonicalName} does not support row-based execution")
 
   override protected def doExecuteColumnar(): RDD[ColumnarBatch] = {
-    if (numPartitions == 1 && child.execute().getNumPartitions < 1) {
+    if (numPartitions == 1 && child.executeColumnar().getNumPartitions < 1) {
       // Make sure we don't output an RDD with 0 partitions, when claiming that we have a
       // `SinglePartition`.
       new GpuCoalesceExec.EmptyRDDWithPartitions(sparkContext, numPartitions)

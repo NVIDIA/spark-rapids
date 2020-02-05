@@ -247,8 +247,7 @@ final class InsertIntoHadoopFsRelationCommandMeta(
         willNotWorkOnGpu("ORC output is not supported")
         None
       case _: ParquetFileFormat =>
-        willNotWorkOnGpu("Parquet output is not supported")
-        None
+        GpuParquetFileFormat.tagGpuSupport(this, spark, cmd.options)
       case _: TextFileFormat =>
         willNotWorkOnGpu("text output is not supported")
         None
@@ -295,6 +294,11 @@ object GpuOverrides {
     case _ => false
   }
 
+  def unwrapAliases(exp: Expression): Expression = exp match {
+    case a: Alias => unwrapAliases(a.child)
+    case e => e
+  }
+
   def areAllSupportedTypes(types: DataType*): Boolean = {
     types.forall {
       case BooleanType => true
@@ -316,11 +320,6 @@ object GpuOverrides {
    */
   def isAnyStringLit(expressions: Seq[Expression]): Boolean =
     expressions.exists(isStringLit)
-
-  def tagNoStringChildren(expr: ExprMeta[_ <: Expression]): Unit =
-    if (expr.wrapped.children.filter(_.dataType == StringType).nonEmpty) {
-      expr.willNotWorkOnGpu(s"Strings are not supported for ${expr.wrapped.getClass.getSimpleName}")
-    }
 
   def expr[INPUT <: Expression](
       desc: String,
@@ -580,6 +579,41 @@ object GpuOverrides {
         override def convertToGpu(lhs: GpuExpression, rhs: GpuExpression): GpuExpression =
           GpuGreaterThanOrEqual(lhs, rhs)
       }),
+    expr[In](
+      "IN operator",
+      (in, conf, p, r) => new ExprMeta[In](in, conf, p, r) {
+        override def tagExprForGpu(): Unit = {
+          val unaliased = in.list.map(unwrapAliases)
+          if (!unaliased.forall(_.isInstanceOf[Literal])) {
+            willNotWorkOnGpu("only literals are supported")
+          }
+          val hasNullLiteral = unaliased.exists {
+            case l: Literal => l.value == null
+            case _ => false
+          }
+          if (hasNullLiteral) {
+            willNotWorkOnGpu("nulls are not supported")
+          }
+        }
+        override def convertToGpu(): GpuExpression =
+          GpuInSet(childExprs.head.convertToGpu(), in.list.asInstanceOf[Seq[Literal]])
+      }),
+    expr[InSet](
+      "INSET operator",
+      (in, conf, p, r) => new ExprMeta[InSet](in, conf, p, r) {
+        override def tagExprForGpu(): Unit = {
+          if (in.hset.contains(null)) {
+            willNotWorkOnGpu("nulls are not supported")
+          }
+          val literalTypes = in.hset.map(Literal(_).dataType).toSeq
+          if (!GpuOverrides.areAllSupportedTypes(literalTypes:_*)) {
+            val unsupported = literalTypes.filter(!GpuOverrides.areAllSupportedTypes(_)).mkString(", ")
+            willNotWorkOnGpu(s"unsupported literal types: $unsupported")
+          }
+        }
+        override def convertToGpu(): GpuExpression =
+          GpuInSet(childExprs.head.convertToGpu(), in.hset.map(Literal(_)).toSeq)
+      }),
     expr[LessThan](
       "< operator",
       (a, conf, p, r) => new BinaryExprMeta[LessThan](a, conf, p, r) {
@@ -591,6 +625,38 @@ object GpuOverrides {
       (a, conf, p, r) => new BinaryExprMeta[LessThanOrEqual](a, conf, p, r) {
         override def convertToGpu(lhs: GpuExpression, rhs: GpuExpression): GpuExpression =
           GpuLessThanOrEqual(lhs, rhs)
+      }),
+    expr[CaseWhen](
+      "CASE WHEN expression",
+      (a, conf, p, r) => new ExprMeta[CaseWhen](a, conf, p, r) {
+        override def tagExprForGpu(): Unit = {
+          val unaliased = a.branches.map { case (predicate, _) => unwrapAliases(predicate) }
+          if (unaliased.exists(_.isInstanceOf[Literal])) {
+            willNotWorkOnGpu("literal predicates are not supported")
+          }
+        }
+        override def convertToGpu(): GpuExpression = {
+          val branches = childExprs.grouped(2).flatMap {
+            case Seq(cond, value) => Some((cond.convertToGpu(), value.convertToGpu()))
+            case Seq(_) => None
+          }.toArray.toSeq  // force materialization to make the seq serializable
+          val elseValue = if (childExprs.size % 2 != 0) Some(childExprs.last.convertToGpu()) else None
+          GpuCaseWhen(branches, elseValue)
+        }
+      }),
+    expr[If](
+      "IF expression",
+      (a, conf, p, r) => new ExprMeta[If](a, conf, p, r) {
+        override def tagExprForGpu(): Unit = {
+          val unaliased = unwrapAliases(a.predicate)
+          if (unaliased.isInstanceOf[Literal]) {
+            willNotWorkOnGpu(s"literal predicate ${a.predicate} is not supported")
+          }
+        }
+        override def convertToGpu(): GpuExpression = {
+          val boolExpr :: trueExpr :: falseExpr :: Nil = childExprs.map(_.convertToGpu())
+          GpuIf(boolExpr, trueExpr, falseExpr)
+        }
       }),
     expr[Pow](
       "lhs ^ rhs",
@@ -809,6 +875,34 @@ object GpuOverrides {
 
         override def convertToGpu(): GpuPartitioning =
           GpuHashPartitioning(childExprs.map(_.convertToGpu()), hp.numPartitions)
+      }),
+    part[RangePartitioning]( "Range Partitioning",
+      (rp, conf, p, r) => new PartMeta[RangePartitioning](rp, conf, p, r) {
+        override def tagPartForGpu(): Unit = {
+          willNotWorkOnGpu("GPU support for range partitioning is disabled until a bug can be fixed")
+          val keyDataTypes = rp.ordering.map(_.dataType)
+          if ((keyDataTypes.contains(FloatType) || keyDataTypes.contains(DoubleType)) && conf.hasNans) {
+            this.willNotWorkOnGpu(s"NaNs in RangePartitioning are not supported, " +
+              s"if there are no NaNs in your data set ${RapidsConf.HAS_NANS} to false")
+          }
+        }
+
+        override val childExprs: Seq[ExprMeta[_]] =
+          rp.ordering.map(GpuOverrides.wrapExpr(_, conf, Some(this)))
+        override def convertToGpu(): GpuPartitioning = {
+          if (rp.numPartitions > 1) {
+            GpuRangePartitioning(childExprs.map(_.convertToGpu()).asInstanceOf[Seq[GpuSortOrder]], rp.numPartitions, new GpuRangePartitioner)
+          } else {
+            GpuSinglePartitioning(childExprs.map(_.convertToGpu()))
+          }
+        }
+      }),
+    part[SinglePartition.type]( "Single Partitioning",
+      (sp, conf, p, r) => new PartMeta[SinglePartition.type](sp, conf, p, r) {
+        override val childExprs: Seq[ExprMeta[_]] = Seq.empty[ExprMeta[_]]
+        override def convertToGpu(): GpuPartitioning = {
+          GpuSinglePartitioning(childExprs.map(_.convertToGpu()))
+        }
       })
   ).map(r => (r.getClassFor.asSubclass(classOf[Partitioning]), r)).toMap
 
@@ -835,16 +929,13 @@ object GpuOverrides {
       .getOrElse(new RuleNotFoundSparkPlanMeta(plan, conf, parent))
 
   val execs: Map[Class[_ <: SparkPlan], ExecRule[_ <: SparkPlan]] = Seq(
+    exec[GenerateExec] (
+      "The backend for operations that generate more output rows than input rows like explode.",
+      (gen, conf, p, r) => new GpuGenerateExecSparkPlanMeta(gen, conf, p, r)),
     exec[ProjectExec](
       "The backend for most select, withColumn and dropColumn statements",
       (proj, conf, p, r) => {
         new SparkPlanMeta[ProjectExec](proj, conf, p, r) {
-          override def tagPlanForGpu(): Unit = {
-            if (isAnyStringLit(wrapped.expressions)) {
-              willNotWorkOnGpu("string literal values are not supported in a projection")
-            }
-          }
-
           override def convertToGpu(): GpuExec =
             GpuProjectExec(childExprs.map(_.convertToGpu()), childPlans(0).convertIfNeeded())
         }
@@ -898,6 +989,18 @@ object GpuOverrides {
             wrapped.dataFilters,
             wrapped.tableIdentifier)
         }
+      }),
+    exec[LocalLimitExec](
+      "Per-partition limiting of results",
+      (localLimitExec, conf, p, r) => new SparkPlanMeta[LocalLimitExec](localLimitExec, conf, p, r) {
+        override def convertToGpu(): GpuExec =
+          GpuLocalLimitExec(localLimitExec.limit, childPlans(0).convertIfNeeded())
+      }),
+    exec[GlobalLimitExec](
+      "Limiting of results across partitions",
+      (globalLimitExec, conf, p, r) => new SparkPlanMeta[GlobalLimitExec](globalLimitExec, conf, p, r) {
+        override def convertToGpu(): GpuExec =
+          GpuGlobalLimitExec(globalLimitExec.limit, childPlans(0).convertIfNeeded())
       }),
     exec[FilterExec](
       "The backend for most filter statements",

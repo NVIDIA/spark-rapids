@@ -43,13 +43,15 @@ class HashAggregatesSuite extends SparkQueryCompareTestSuite {
       incompat = true, sort = true)(fn)
   }
 
-  def enableStringHashGroupBy(): SparkConf = {
-    // configures whether Plugin will replace certain aggregate exec nodes
-    new SparkConf().set(RapidsConf.STRING_GPU_HASH_GROUP_BY_ENABLED.key, "true")
-  }
-
   IGNORE_ORDER_testSparkResultsAreEqual("test hash agg with shuffle", longsFromCSVDf, repart = 2) {
     frame => frame.groupBy(col("longs")).agg(sum(col("more_longs")))
+  }
+
+  IGNORE_ORDER_testSparkResultsAreEqual("test hash agg with Single partitioning",
+    longsFromCSVDf, repart = 2, conf = new SparkConf().set("spark.sql.shuffle.partitions", "1")) {
+    frame => {
+      frame.agg(count("*"))
+    }
   }
 
   /*
@@ -77,8 +79,16 @@ class HashAggregatesSuite extends SparkQueryCompareTestSuite {
       avg(col("more_longs") * lit("10")))
   }
 
+  IGNORE_ORDER_testSparkResultsAreEqual("distinct", datesCsvDf) {
+    frame => frame.distinct()
+  }
+
+  IGNORE_ORDER_testSparkResultsAreEqual("distinct should not reorder columns", intsFromCsv) {
+    frame => frame.distinct()
+  }
+
   IGNORE_ORDER_testSparkResultsAreEqual("group by string", nullableStringsIntsDf,
-    conf = enableStringHashGroupBy().set(RapidsConf.ENABLE_FLOAT_AGG.key, "true")) {
+    conf = new SparkConf().set(RapidsConf.ENABLE_FLOAT_AGG.key, "true")) {
     frame => frame.groupBy("strings").agg(
       max("ints"), 
       min("ints"), 
@@ -88,7 +98,7 @@ class HashAggregatesSuite extends SparkQueryCompareTestSuite {
   }
 
   IGNORE_ORDER_testSparkResultsAreEqual("group by utf8 strings", utf8RepeatedDf,
-    conf = enableStringHashGroupBy().set(RapidsConf.ENABLE_FLOAT_AGG.key, "true")) {
+    conf = new SparkConf().set(RapidsConf.ENABLE_FLOAT_AGG.key, "true")) {
     frame => frame.groupBy("strings").agg(
       max("ints"),
       min("ints"),

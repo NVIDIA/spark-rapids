@@ -16,13 +16,9 @@
 
 package ai.rapids.spark
 
-import scala.collection.mutable.ArrayBuffer
-
 import ai.rapids.cudf
 import ai.rapids.cudf.{NvtxColor, Table}
-import ai.rapids.spark.GpuExpressionsUtils.evaluateBoundExpressions
 import ai.rapids.spark.GpuMetricNames._
-import ai.rapids.spark.RapidsPluginImplicits._
 
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.expressions.{Ascending, Attribute, Expression, NullOrdering, NullsFirst, NullsLast, RowOrdering, SortDirection, SortOrder}
@@ -55,24 +51,6 @@ class GpuSortMeta(
       willNotWorkOnGpu("floats/doubles are not supported in sort, due to " +
         "incompatibility with NaN. If you don't have any NaNs in your data you can set " +
         s"${RapidsConf.HAS_NANS}=false to bypass this.")
-    }
-    def areNullsSmallest(o: SortOrder): Boolean = {
-      (o.isAscending && o.nullOrdering == NullsFirst) ||
-        (!o.isAscending && o.nullOrdering == NullsLast)
-    }
-
-    // need to see if the ordering of all columns is such that either nulls are all smallest
-    // or all nulls are largest
-    val nullOrderings = sort.sortOrder.map(o => areNullsSmallest(o))
-
-    if (!nullOrderings.forall(_ == nullOrderings.head)) {
-      // ERROR we can't handle this right now since only 1 parameter for areNullsSmallest
-      // to Table.orderBy
-      willNotWorkOnGpu(s"GPU cudf can't handle multiple null orderings!")
-    }
-    // note that dataframe.sort always sets this to true
-    if (sort.global && !conf.enableTotalOrderSort) {
-      willNotWorkOnGpu(s"Don't support total ordering on GPU yet")
     }
   }
 }
@@ -176,7 +154,7 @@ class GpuColumnarBatchSorter(
       private def sortBatch(inputBatch: ColumnarBatch): ColumnarBatch = {
         val nvtxRange = new NvtxWithMetrics("sort batch", NvtxColor.WHITE, totalTime)
         try {
-          val inputCvs = getGpuCvsAndBindReferences(inputBatch, sortOrder)
+          val inputCvs = SortUtils.getGpuColVectorsAndBindReferences(inputBatch, sortOrder)
           val inputTbl = try {
             new cudf.Table(inputCvs.map(_.getBase): _*)
           } finally {
@@ -184,7 +162,11 @@ class GpuColumnarBatchSorter(
           }
           try {
             val orderByArgs = sortOrder.zipWithIndex.map { case (order, index) =>
-              if (order.isAscending) Table.asc(index) else Table.desc(index)
+              if (order.isAscending) {
+                Table.asc(index, order.nullOrdering == NullsFirst)
+              } else {
+                Table.desc(index, order.nullOrdering == NullsLast)
+              }
             }
 
             val startTimestamp = System.nanoTime()
@@ -224,42 +206,12 @@ class GpuColumnarBatchSorter(
     }
   }
 
-  /*
-   * This function takes the input batch and the bound sort order references and
-   * evaluates each column in case its an expression. It then appends the original columns
-   * after the sort key columns. The sort key columns will be dropped after sorting.
-   */
-  private def getGpuCvsAndBindReferences(
-      batch: ColumnarBatch,
-      boundInputReferences: Seq[GpuSortOrder]): Seq[GpuColumnVector] = {
-    val sortCvs = new ArrayBuffer[GpuColumnVector](numSortCols)
-    var batchWithCategories: ColumnarBatch = null
-    try {
-      batchWithCategories = GpuColumnVector.convertToStringCategoriesIfNeeded(batch)
-      val childExprs = boundInputReferences.map(_.child)
-      sortCvs ++= evaluateBoundExpressions(batchWithCategories, childExprs)
-    } catch {
-      case t: Throwable =>
-        sortCvs.safeClose()
-        if (batchWithCategories != null) {
-          batchWithCategories.close()
-        }
-        throw t
-    }
-    sortCvs ++ GpuColumnVector.extractColumns(batchWithCategories)
-  }
-
-  private def areNullsSmallest: Boolean = {
-    (sortOrder.head.isAscending && sortOrder.head.nullOrdering == NullsFirst) ||
-      (!sortOrder.head.isAscending && sortOrder.head.nullOrdering == NullsLast)
-  }
-
   private def doGpuSort(
       tbl: Table,
       orderByArgs: Seq[Table.OrderByArg]): ColumnarBatch = {
     var resultTbl: cudf.Table = null
     try {
-      resultTbl = tbl.orderBy(areNullsSmallest, orderByArgs: _*)
+      resultTbl = tbl.orderBy(orderByArgs: _*)
       GpuColumnVector.from(resultTbl, numSortCols, resultTbl.getNumberOfColumns)
     } finally {
       if (resultTbl != null) {

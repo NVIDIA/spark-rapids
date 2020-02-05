@@ -35,8 +35,12 @@ case class GpuUnaryMinus(child: Expression) extends GpuUnaryExpression
   override def sql: String = s"(- ${child.sql})"
 
   override def doColumnar(input: GpuColumnVector) : GpuColumnVector = {
-    GpuColumnVector.from(Scalar.fromByte(0)
-      .sub(input.getBase))
+    val scalar = Scalar.fromByte(0.toByte)
+    try {
+      GpuColumnVector.from(scalar.sub(input.getBase))
+    } finally {
+      scalar.close()
+    }
   }
 }
 
@@ -119,8 +123,7 @@ trait GpuDivModLike extends CudfBinaryArithmetic {
       try {
         GpuColumnVector.from(ColumnVector.fromScalar(nullScalar, lhs.getRowCount.toInt))
       } finally {
-        // TODO: Need this when Scalars require closing
-        // nullScalar.close()
+        nullScalar.close()
       }
     } else {
       super.doColumnar(lhs, rhs)
@@ -141,12 +144,10 @@ trait GpuDivModLike extends CudfBinaryArithmetic {
       GpuColumnVector.from(v.getBase.findAndReplaceAll(zeroVec, nullVec))
     } finally {
       if (zeroScalar != null) {
-        // TODO: Need this when Scalars require closing
-        // zeroScalar.close()
+        zeroScalar.close()
       }
       if (nullScalar != null) {
-        // TODO: Need this when Scalars require closing
-        // nullScalar.close()
+        nullScalar.close()
       }
       if (zeroVec != null) {
         zeroVec.close()

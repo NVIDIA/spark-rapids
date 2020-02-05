@@ -42,9 +42,7 @@ class GpuBroadcastHashJoinMeta(
   override val childExprs: Seq[ExprMeta[_]] = leftKeys ++ rightKeys ++ condition
 
   override def tagPlanForGpu(): Unit = {
-    if (!GpuHashJoin.isJoinTypeAllowed(join.joinType)) {
-      willNotWorkOnGpu(s" ${join.joinType} is not currently supported")
-    }
+    GpuHashJoin.tagJoin(this, join.joinType, join.condition)
 
     val buildSide = join.buildSide match {
       case BuildLeft => childPlans(0)
@@ -131,8 +129,7 @@ case class GpuBroadcastHashJoinExec(
         // TODO clean up intermediate results...
         val keys = GpuProjectExec.project(broadcastRelation.value.batch, gpuBuildKeys)
         val combined = combine(keys, broadcastRelation.value.batch)
-        val asStringCat = GpuColumnVector.convertToStringCategoriesIfNeeded(combined)
-        val ret = GpuColumnVector.from(asStringCat)
+        val ret = GpuColumnVector.from(combined)
         // Don't warn for a leak, because we cannot control when we are done with this
         (0 until ret.getNumberOfColumns).foreach(ret.getColumn(_).noWarnLeakExpected())
         ret
