@@ -289,16 +289,7 @@ abstract class PartMeta[INPUT <: Partitioning](part: INPUT,
     tagPartForGpu()
   }
 
-  def tagPartForGpu(): Unit = {
-    part match {
-      case rp : RangePartitioning =>
-        val keyDataTypes = rp.ordering.map(_.dataType)
-        if ((keyDataTypes.contains(FloatType) || keyDataTypes.contains(DoubleType)) && conf.hasNans) {
-          this.willNotWorkOnGpu("NaNs in RangePartitioning are not supported")
-        }
-      case _ =>
-    }
-  }
+  def tagPartForGpu(): Unit = {}
 }
 
 /**

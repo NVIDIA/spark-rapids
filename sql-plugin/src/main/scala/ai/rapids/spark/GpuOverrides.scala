@@ -878,6 +878,15 @@ object GpuOverrides {
       }),
     part[RangePartitioning]( "Range Partitioning",
       (rp, conf, p, r) => new PartMeta[RangePartitioning](rp, conf, p, r) {
+        override def tagPartForGpu(): Unit = {
+          willNotWorkOnGpu("GPU support for range partitioning is disabled until a bug can be fixed")
+          val keyDataTypes = rp.ordering.map(_.dataType)
+          if ((keyDataTypes.contains(FloatType) || keyDataTypes.contains(DoubleType)) && conf.hasNans) {
+            this.willNotWorkOnGpu(s"NaNs in RangePartitioning are not supported, " +
+              s"if there are no NaNs in your data set ${RapidsConf.HAS_NANS} to false")
+          }
+        }
+
         override val childExprs: Seq[ExprMeta[_]] =
           rp.ordering.map(GpuOverrides.wrapExpr(_, conf, Some(this)))
         override def convertToGpu(): GpuPartitioning = {
