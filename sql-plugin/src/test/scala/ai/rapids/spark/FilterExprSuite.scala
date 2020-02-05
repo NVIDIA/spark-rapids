@@ -16,6 +16,8 @@
 
 package ai.rapids.spark
 
+import org.apache.spark.sql.functions.col
+
 class FilterExprSuite extends SparkQueryCompareTestSuite {
 
   testSparkResultsAreEqual("filter is not null", nullableFloatCsvDf) {
@@ -69,5 +71,9 @@ class FilterExprSuite extends SparkQueryCompareTestSuite {
 
   ALLOW_NON_GPU_testSparkResultsAreEqual("filter strings less than", nullableStringsFromCsv) {
     frame => frame.filter("strings < 'Bar'")
+  }
+
+  testSparkResultsAreEqual("isNan filter", frameFromParquet("two_doubles_with_nan.parquet")) {
+    frame => frame.where(col("dbl").isNaN)
   }
 }
