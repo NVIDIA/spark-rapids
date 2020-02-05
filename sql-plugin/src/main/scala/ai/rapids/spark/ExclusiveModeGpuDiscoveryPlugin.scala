@@ -30,8 +30,8 @@ import org.apache.spark.resource.{ResourceInformation, ResourceRequest}
 /**
  *  A Spark Resource Discovery Plugin that relies on the Nvidia GPUs being in PROCESS_EXCLUSIVE
  *  mode so that it can discover free GPUs.
- *  This plugin iterates through all the GPUs on the node and tries to acquire them
- *  by doing a cudaFree(0) on each one. When the GPUs are in process exclusive mode this
+ *  This plugin iterates through all the GPUs on the node and tries to initialize a CUDA context
+ *  on each one. When the GPUs are in process exclusive mode this
  *  will result in that GPU being assigned to the specific process running this plugin and
  *  other executors will not be able to use it.
  *
@@ -53,8 +53,9 @@ class ExclusiveModeGpuDiscoveryPlugin extends ResourceDiscoveryPlugin with Loggi
     val deviceCount: Int = Cuda.getDeviceCount()
     logInfo(s"Running ExclusiveModeGpuDiscoveryPlugin to acquire $ngpusRequested GPU(s), " +
       s"host has $deviceCount GPU(s)")
-    // loop multiple times in case we have a race condition with another executor
-    var numRetries = 3
+    // loop multiple times to see if a GPU was released or something unexpected happened that
+    // we couldn't acquire on first try
+    var numRetries = 2
     val allocatedAddrs = ArrayBuffer[String]()
     val addrsToTry = ArrayBuffer.empty ++= (0 to (deviceCount - 1))
     while (numRetries > 0 && allocatedAddrs.size < ngpusRequested && addrsToTry.size > 0) {
