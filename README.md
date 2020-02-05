@@ -74,7 +74,7 @@ executors run on. There is a sample script in the Spark code base.
 
 If the cluster you are running on does not support running in isolated environment then you need
 a different way to discover the GPUs. One solution for this is to put all the GPUs on the node
-into process exclusive mode and use the ai.rapids.spark.ExclusiveModeGpuDiscoveryPlugin as the discovery
+into process exclusive mode and use ai.rapids.spark.ExclusiveModeGpuDiscoveryPlugin as the discovery
 plugin with Spark. This class will iterate through all the GPUs on the node and allocate one that
 is not being used by another process.
 
