@@ -41,9 +41,7 @@ class GpuShuffledHashJoinMeta(
   override val childExprs: Seq[ExprMeta[_]] = leftKeys ++ rightKeys ++ condition
 
   override def tagPlanForGpu(): Unit = {
-    if (!GpuHashJoin.isJoinTypeAllowed(join.joinType)) {
-      willNotWorkOnGpu(s" ${join.joinType} is not currently supported")
-    }
+    GpuHashJoin.tagJoin(this, join.joinType, join.condition)
   }
 
   override def convertToGpu(): GpuExec =

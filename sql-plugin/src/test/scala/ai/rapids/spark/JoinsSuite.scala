@@ -26,6 +26,18 @@ class JoinsSuite extends SparkQueryCompareTestSuite {
     (A, B) => A.join(B, A("longs") === B("more_longs"))
   }
 
+  testSparkResultsAreEqual2("Test broadcast hash semi join", longsDf, nonZeroLongsDf,
+    conf=new SparkConf()
+        .set("spark.sql.autoBroadcastJoinThreshold", "10MB")) {
+    (A, B) => A.join(B, A("longs") === B("more_longs"), "LeftSemi")
+  }
+
+  testSparkResultsAreEqual2("Test broadcast hash anti join", longsDf, nonZeroLongsDf,
+    conf=new SparkConf()
+        .set("spark.sql.autoBroadcastJoinThreshold", "10MB")) {
+    (A, B) => A.join(B, A("longs") === B("more_longs"), "LeftAnti")
+  }
+
   testSparkResultsAreEqual2("Test broadcast hash join with ops", longsDf, nonZeroLongsDf,
     conf=new SparkConf()
       .set("spark.sql.autoBroadcastJoinThreshold", "10MB")) {
@@ -59,12 +71,24 @@ class JoinsSuite extends SparkQueryCompareTestSuite {
   // than the number of splits * broadcast threshold and also be at least
   // 3 times smaller than the other side.  So it is not likely to happen
   // unless we can give it some help.
-  IGNORE_ORDER_testSparkResultsAreEqual2("Test hash join", longsDf, biggerLongsDf,
-    conf = new SparkConf()
+  lazy val shuffledJoinConf = new SparkConf()
       .set("spark.sql.autoBroadcastJoinThreshold", "160")
       .set("spark.sql.join.preferSortMergeJoin", "false")
-      .set("spark.sql.shuffle.partitions", "2")) { // hack to try and work around bug in cudf
-    (A, B) => A.join(B, A("longs") === B("more_longs"))
+      .set("spark.sql.shuffle.partitions", "2") // hack to try and work around bug in cudf
+
+  IGNORE_ORDER_testSparkResultsAreEqual2("Test hash join", longsDf, biggerLongsDf,
+    conf = shuffledJoinConf) {
+    (A, B) => A.join(B, A("longs") === B("longs"))
+  }
+
+  IGNORE_ORDER_testSparkResultsAreEqual2("Test hash semi join", longsDf, biggerLongsDf,
+    conf = shuffledJoinConf) {
+    (A, B) => A.join(B, A("longs") === B("longs"), "LeftSemi")
+  }
+
+  IGNORE_ORDER_testSparkResultsAreEqual2("Test hash anti join", longsDf, biggerLongsDf,
+    conf = shuffledJoinConf) {
+    (A, B) => A.join(B, A("longs") === B("longs"), "LeftAnti")
   }
 
   // test replacement of sort merge join with hash join
@@ -80,5 +104,25 @@ class JoinsSuite extends SparkQueryCompareTestSuite {
     sort = true,
     execsAllowedNonGpu = Seq("SortExec", "SortOrder")) {
     (A, B) => A.join(B, A("longs") === B("longs"))
+  }
+
+  testSparkResultsAreEqual2("Test left semi self join with nulls",
+    mixedDfWithNulls, mixedDfWithNulls) {
+    (A, B) => A.join(B, A("longs") === B("longs"), "LeftSemi")
+  }
+
+  testSparkResultsAreEqual2("Test left anti self join with nulls",
+    mixedDfWithNulls, mixedDfWithNulls) {
+    (A, B) => A.join(B, A("longs") === B("longs"), "LeftAnti")
+  }
+
+  testSparkResultsAreEqual2("Test left semi join with nulls",
+    mixedDfWithNulls, mixedDf) {
+    (A, B) => A.join(B, A("longs") === B("longs") && A("strings") === B("strings"), "LeftSemi")
+  }
+
+  testSparkResultsAreEqual2("Test left anti join with nulls",
+    mixedDfWithNulls, mixedDf) {
+    (A, B) => A.join(B, A("longs") === B("longs") && A("strings") === B("strings"), "LeftAnti")
   }
 }
