@@ -67,7 +67,10 @@ adding configs like below. See the Spark 3.0 documentation for more specifics.
 --conf spark.executor.resource.gpu.amount=1
 --conf spark.task.resource.gpu.amount=1 
 --conf spark.executor.resource.gpu.discoveryScript=./getGpusResources.sh
+--conf spark.executor.resource.gpu.vendor=nvidia.com // only needed on Kubernetes
 ```
+Note that the discoveryScript above has to be shipped with your job or present on the node the
+executors run on. There is a sample script in the Spark code base.
 
 If the cluster you are running on does not support running in isolated environment then you need
 a different way to discover the GPUs. One solution for this is to put all the GPUs on the node
