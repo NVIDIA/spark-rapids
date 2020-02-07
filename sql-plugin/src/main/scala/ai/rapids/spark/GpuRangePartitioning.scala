@@ -78,27 +78,28 @@ case class GpuRangePartitioning(gpuOrdering: Seq[GpuSortOrder], numPartitions: I
     var rangesTbl: Table = null
     var sortedTbl: Table = null
     var slicedSortedTbl: Table = null
+    var finalSortedCb: ColumnarBatch = null
     var retCv: ColumnVector = null
     var inputCvs: Seq[GpuColumnVector] = null
     var inputTbl: Table = null
     var partitionColumns: Array[GpuColumnVector] = null
     var parts: Array[Int] = Array(0)
     var slicedCb: Array[ColumnarBatch] = null
-
-    val numSortCols = gpuOrdering.length
     val descFlags = new ArrayBuffer[Boolean]()
-    val orderByArgs = gpuOrdering.zipWithIndex.map { case (order, index) =>
+    val nullFlags = new ArrayBuffer[Boolean]()
+    val numSortCols = gpuOrdering.length
+
+    val orderByArgs: Seq[Table.OrderByArg] = gpuOrdering.zipWithIndex.map { case (order, index) =>
+      val nullsSmallest = SortUtils.areNullsSmallest(order)
       if (order.isAscending) {
         descFlags += false
-        Table.asc(index)
+        nullFlags += nullsSmallest
+        Table.asc(index, nullsSmallest)
       } else {
         descFlags += true
-        Table.desc(index)
+        nullFlags += nullsSmallest
+        Table.desc(index, nullsSmallest)
       }
-    }
-    val nullFlags = new Array[Boolean](gpuOrdering.length)
-    for (i <- gpuOrdering.indices) {
-      nullFlags(i) = SortUtils.areNullsSmallest(gpuOrdering, i)
     }
 
     try {
@@ -110,17 +111,20 @@ case class GpuRangePartitioning(gpuOrdering: Seq[GpuSortOrder], numPartitions: I
       rangesTbl = GpuColumnVector.from(rangesBatch)
       //sort incoming batch to compare with ranges
       sortedTbl = inputTbl.orderBy(orderByArgs: _*)
-      val columns = (0 until numSortCols).map(sortedTbl.getColumn(_))
+      val sortColumns = (0 until numSortCols).map(sortedTbl.getColumn(_))
       //get the table for upper bound calculation
-      slicedSortedTbl = new Table(columns: _*)
+      slicedSortedTbl = new Table(sortColumns: _*)
+      //get the final column batch, remove the sort order sortColumns
+      finalSortedCb = GpuColumnVector.from(sortedTbl, numSortCols, sortedTbl.getNumberOfColumns)
       //get upper bounds
-      retCv = slicedSortedTbl.upperBound(nullFlags, rangesTbl, descFlags.toArray)
+      retCv = slicedSortedTbl.upperBound(nullFlags.toArray, rangesTbl, descFlags.toArray)
       retCv.ensureOnHost()
       //partition indices based on upper bounds
       parts = parts ++ (0 until retCv.getRowCount.toInt).map(i => retCv.getInt(i)).toArray[Int]
-      partitionColumns = GpuColumnVector.extractColumns(batch)
-      slicedCb = sliceInternalGpuOrCpu(batch, parts, partitionColumns)
+      partitionColumns = GpuColumnVector.extractColumns(finalSortedCb)
+      slicedCb = sliceInternalGpuOrCpu(finalSortedCb, parts, partitionColumns)
     } finally {
+      batch.close()
       if (inputCvs != null) {
         inputCvs.safeClose()
       }
