@@ -113,10 +113,11 @@ class GpuColumnarBatchSorter(
 
   private var totalSortTimeNanos = 0L
   private var maxDeviceMemory = 0L
+  private var haveSortedBatch = false
   private val numSortCols = sortOrder.length
-  private val totalTime = exec.longMetric(TOTAL_TIME)
-  private val numOutputBatches = exec.longMetric(NUM_OUTPUT_BATCHES)
-  private val numOutputRows = exec.longMetric(NUM_OUTPUT_ROWS)
+  private val totalTimeMetric = exec.longMetric(TOTAL_TIME)
+  private val outputBatchesMetric = exec.longMetric(NUM_OUTPUT_BATCHES)
+  private val outputRowsMetric = exec.longMetric(NUM_OUTPUT_ROWS)
 
   def getSortTimeNanos: Long = totalSortTimeNanos
 
@@ -137,9 +138,10 @@ class GpuColumnarBatchSorter(
 
       private def loadNextBatch(): Option[ColumnarBatch] = {
         if (batchIter.hasNext) {
-          if (singleBatchOnly && numOutputRows.value > 0) {
+          if (singleBatchOnly && haveSortedBatch) {
             throw new UnsupportedOperationException("Expected single batch to sort")
           }
+          haveSortedBatch = true
           val inputBatch = batchIter.next()
           try {
             Some(sortBatch(inputBatch))
@@ -152,7 +154,7 @@ class GpuColumnarBatchSorter(
       }
 
       private def sortBatch(inputBatch: ColumnarBatch): ColumnarBatch = {
-        val nvtxRange = new NvtxWithMetrics("sort batch", NvtxColor.WHITE, totalTime)
+        val nvtxRange = new NvtxWithMetrics("sort batch", NvtxColor.WHITE, totalTimeMetric)
         try {
           val inputCvs = SortUtils.getGpuColVectorsAndBindReferences(inputBatch, sortOrder)
           val inputTbl = try {
@@ -172,8 +174,8 @@ class GpuColumnarBatchSorter(
             val startTimestamp = System.nanoTime()
             val batch = doGpuSort(inputTbl, orderByArgs)
             totalSortTimeNanos += System.nanoTime - startTimestamp
-            numOutputBatches += 1
-            numOutputRows += batch.numRows
+            outputBatchesMetric += 1
+            outputRowsMetric += batch.numRows
             val devMemUsed = GpuColumnVector.getTotalDeviceMemoryUsed(inputTbl)
               + GpuColumnVector.getTotalDeviceMemoryUsed(batch)
             maxDeviceMemory = scala.math.max(maxDeviceMemory, devMemUsed)
