@@ -41,8 +41,8 @@ object SortUtils {
   /*
   * Return true if nulls are needed first and ordering is ascending and vice versa
    */
-  def areNullsSmallest(gpuOrdering: Seq[GpuSortOrder], i: Int): Boolean = {
-    (gpuOrdering(i).isAscending && gpuOrdering(i).nullOrdering == NullsFirst) ||
-      (!gpuOrdering(i).isAscending && gpuOrdering(i).nullOrdering == NullsLast)
+  def areNullsSmallest(order: GpuSortOrder): Boolean = {
+    (order.isAscending && order.nullOrdering == NullsFirst) ||
+      (!order.isAscending && order.nullOrdering == NullsLast)
   }
 }

@@ -47,7 +47,6 @@ class SortExecSuite extends SparkQueryCompareTestSuite {
       size: Int,
       conf: SparkConf,
       numParts: Int = 1): (SparkSession => DataFrame) = {
-    val rapidsConf = new RapidsConf(conf.clone())
     val generator = RandomDataGenerator.forType(dataType, nullable).get
     val inputData = Seq.fill(size)(generator())
     (session: SparkSession) => {
