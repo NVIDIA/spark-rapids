@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019, NVIDIA CORPORATION.
+ * Copyright (c) 2019-2020, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -325,9 +325,15 @@ case class GpuCoalesceBatches(child: SparkPlan, goal: CoalesceGoal)
 
     val batches = child.executeColumnar()
     batches.mapPartitions { iter =>
-      new GpuCoalesceIterator(iter, goal,
-        numInputRows, numInputBatches, numOutputRows, numOutputBatches, collectTime, concatTime, totalTime,
-        peakDevMemory, "GpuCoalesceBatches")
+      if (child.schema.nonEmpty) {
+        new GpuCoalesceIterator(iter, goal,
+          numInputRows, numInputBatches, numOutputRows, numOutputBatches, collectTime, concatTime, totalTime,
+          peakDevMemory, "GpuCoalesceBatches")
+      } else {
+        val numRows = iter.map(_.numRows).sum
+        val combinedCb = new ColumnarBatch(Array.empty, numRows)
+        Iterator.single(combinedCb)
+      }
     }
   }
 }

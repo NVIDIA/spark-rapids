@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019, NVIDIA CORPORATION.
+ * Copyright (c) 2019-2020, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -19,14 +19,13 @@ package ai.rapids.spark
 import scala.collection.mutable
 
 import org.apache.spark.sql.catalyst.expressions.aggregate.AggregateFunction
-import org.apache.spark.sql.catalyst.expressions.{BinaryExpression, Expression, NullsFirst, NullsLast, SortOrder, TernaryExpression, UnaryExpression}
-import org.apache.spark.sql.catalyst.plans.physical.{Partitioning, RangePartitioning}
+import org.apache.spark.sql.catalyst.expressions.{BinaryExpression, Expression, TernaryExpression, UnaryExpression}
+import org.apache.spark.sql.catalyst.plans.physical.Partitioning
 import org.apache.spark.sql.execution.SparkPlan
 import org.apache.spark.sql.execution.exchange.ShuffleExchangeExec
 import org.apache.spark.sql.execution.joins.{BroadcastHashJoinExec, BuildLeft, BuildRight, ShuffledHashJoinExec, SortMergeJoinExec}
 import org.apache.spark.sql.connector.read.Scan
 import org.apache.spark.sql.execution.command.DataWritingCommand
-import org.apache.spark.sql.types.{DataType, DoubleType, FloatType}
 
 trait ConfKeysAndIncompat {
   val operationName: String

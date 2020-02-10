@@ -193,58 +193,68 @@ trait SparkQueryCompareTestSuite extends FunSuite {
       maxFloatDiff: Double = 0.0,
       conf: SparkConf = new SparkConf(),
       sort: Boolean = false,
-      repart: Integer = 1)
+      repart: Integer = 1,
+      sortBeforeRepart: Boolean = false)
     (fun: DataFrame => DataFrame): Unit = {
     testSparkResultsAreEqual(testName, df,
       conf=conf,
       repart=repart,
       sort=sort,
       maxFloatDiff=maxFloatDiff,
-      incompat=true)(fun)
+      incompat=true,
+      sortBeforeRepart = sortBeforeRepart)(fun)
   }
 
   def ALLOW_NON_GPU_testSparkResultsAreEqual(
       testName: String,
       df: SparkSession => DataFrame,
-      conf: SparkConf = new SparkConf())(fun: DataFrame => DataFrame): Unit = {
+      conf: SparkConf = new SparkConf(),
+      sortBeforeRepart: Boolean = false)(fun: DataFrame => DataFrame): Unit = {
     testSparkResultsAreEqual(testName, df,
       conf=conf,
-      allowNonGpu=true)(fun)
+      allowNonGpu=true,
+      sortBeforeRepart = sortBeforeRepart)(fun)
   }
 
   def IGNORE_ORDER_ALLOW_NON_GPU_testSparkResultsAreEqual(
       testName: String,
       df: SparkSession => DataFrame,
       repart: Integer = 1,
-      conf: SparkConf = new SparkConf())(fun: DataFrame => DataFrame): Unit = {
+      conf: SparkConf = new SparkConf(),
+      sortBeforeRepart: Boolean = false)(fun: DataFrame => DataFrame): Unit = {
     testSparkResultsAreEqual(testName, df,
       conf=conf,
       repart=repart,
       sort=true,
-      allowNonGpu=true)(fun)
+      allowNonGpu=true,
+      sortBeforeRepart = sortBeforeRepart)(fun)
   }
 
   def IGNORE_ORDER_testSparkResultsAreEqual(
       testName: String,
       df: SparkSession => DataFrame,
       repart: Integer = 1,
-      conf: SparkConf = new SparkConf())(fun: DataFrame => DataFrame): Unit = {
+      conf: SparkConf = new SparkConf(),
+      sortBeforeRepart: Boolean = false)(fun: DataFrame => DataFrame): Unit = {
     testSparkResultsAreEqual(testName, df,
       conf=conf,
       repart=repart,
-      sort=true)(fun)
+      sort=true,
+      sortBeforeRepart = sortBeforeRepart)(fun)
   }
 
   def INCOMPAT_IGNORE_ORDER_testSparkResultsAreEqual(
       testName: String,
       df: SparkSession => DataFrame,
       repart: Integer = 1,
-      conf: SparkConf = new SparkConf())(fun: DataFrame => DataFrame): Unit = {
+      conf: SparkConf = new SparkConf(),
+      sortBeforeRepart: Boolean = false)(fun: DataFrame => DataFrame): Unit = {
     testSparkResultsAreEqual(testName, df,
       conf=conf,
       repart=repart,
       incompat=true,
-      sort=true)(fun)
+      sort=true,
+      sortBeforeRepart = sortBeforeRepart)(fun)
   }
 
   /**
@@ -369,7 +379,8 @@ trait SparkQueryCompareTestSuite extends FunSuite {
       sort: Boolean,
       allowNonGpu: Boolean,
       conf: SparkConf,
-      execsAllowedNonGpu: Seq[String]): (SparkConf, String) = {
+      execsAllowedNonGpu: Seq[String],
+      sortBeforeRepart: Boolean): (SparkConf, String) = {
 
     var qualifiers = Set[String]()
     var testConf = conf
@@ -389,6 +400,8 @@ trait SparkQueryCompareTestSuite extends FunSuite {
       testConf = testConf.clone().set(RapidsConf.TEST_ALLOWED_NONGPU.key, execStr)
       qualifiers = qualifiers + s"NOT ON GPU[$execStr]"
     }
+
+    testConf.set("spark.sql.execution.sortBeforeRepartition", sortBeforeRepart.toString)
     val qualifiedTestName = qualifiers.mkString("", ", ",
       (if (qualifiers.nonEmpty) ": " else "") + testName)
     (testConf, qualifiedTestName)
@@ -440,12 +453,13 @@ trait SparkQueryCompareTestSuite extends FunSuite {
       maxFloatDiff: Double = 0.0,
       incompat: Boolean = false,
       allowNonGpu: Boolean = false,
-      execsAllowedNonGpu: Seq[String] = Seq.empty)
+      execsAllowedNonGpu: Seq[String] = Seq.empty,
+      sortBeforeRepart: Boolean = false)
       (fun: DataFrame => DataFrame): Unit = {
 
     val (testConf, qualifiedTestName) =
-      setupTestConfAndQualifierName(testName, incompat, sort, allowNonGpu, conf, execsAllowedNonGpu)
-
+      setupTestConfAndQualifierName(testName, incompat, sort, allowNonGpu, conf, execsAllowedNonGpu,
+        sortBeforeRepart = sortBeforeRepart)
     test(qualifiedTestName) {
       val (fromCpu, fromGpu) = runOnCpuAndGpu(df, fun,
         conf = testConf,
@@ -464,12 +478,15 @@ trait SparkQueryCompareTestSuite extends FunSuite {
       maxFloatDiff: Double = 0.0,
       incompat: Boolean = false,
       allowNonGpu: Boolean = false,
-      execsAllowedNonGpu: Seq[String] = Seq.empty)
+      execsAllowedNonGpu: Seq[String] = Seq.empty,
+      sortBeforeRepart: Boolean = false)
     (fun: (DataFrame, DataFrame) => DataFrame): Unit = {
 
     val (testConf, qualifiedTestName) =
-      setupTestConfAndQualifierName(testName, incompat, sort, allowNonGpu, conf, execsAllowedNonGpu)
+      setupTestConfAndQualifierName(testName, incompat, sort, allowNonGpu, conf, execsAllowedNonGpu,
+        sortBeforeRepart = sortBeforeRepart)
 
+    testConf.set("spark.sql.execution.sortBeforeRepartition", sortBeforeRepart.toString)
     test(qualifiedTestName) {
       val (fromCpu, fromGpu) = runOnCpuAndGpu2(dfA, dfB, fun, conf = testConf, repart = repart)
       compareResults(sort, maxFloatDiff, fromCpu, fromGpu)
@@ -481,10 +498,11 @@ trait SparkQueryCompareTestSuite extends FunSuite {
       dfA: SparkSession => DataFrame,
       dfB: SparkSession => DataFrame,
       repart: Integer = 1,
-      conf: SparkConf = new SparkConf())(fun: (DataFrame, DataFrame) => DataFrame): Unit = {
+      conf: SparkConf = new SparkConf(),
+      sortBeforeRepart: Boolean = false)(fun: (DataFrame, DataFrame) => DataFrame): Unit = {
     testSparkResultsAreEqual2("INCOMPAT: " + testName, dfA, dfB,
       conf=conf.set(RapidsConf.INCOMPATIBLE_OPS.key, "true"),
-      repart=repart)(fun)
+      repart=repart, sortBeforeRepart = sortBeforeRepart)(fun)
   }
 
   def INCOMPAT_IGNORE_ORDER_testSparkResultsAreEqual2(
@@ -492,11 +510,13 @@ trait SparkQueryCompareTestSuite extends FunSuite {
       dfA: SparkSession => DataFrame,
       dfB: SparkSession => DataFrame,
       repart: Integer = 1,
-      conf: SparkConf = new SparkConf())(fun: (DataFrame, DataFrame) => DataFrame): Unit = {
+      conf: SparkConf = new SparkConf(),
+      sortBeforeRepart: Boolean = false)(fun: (DataFrame, DataFrame) => DataFrame): Unit = {
     testSparkResultsAreEqual2("INCOMPAT, IGNORE ORDER: " + testName, dfA, dfB,
       conf=conf.set(RapidsConf.INCOMPATIBLE_OPS.key, "true"),
       repart=repart,
-      sort=true)(fun)
+      sort=true,
+      sortBeforeRepart = sortBeforeRepart)(fun)
   }
 
   def IGNORE_ORDER_testSparkResultsAreEqual2(
@@ -504,11 +524,13 @@ trait SparkQueryCompareTestSuite extends FunSuite {
       dfA: SparkSession => DataFrame,
       dfB: SparkSession => DataFrame,
       repart: Integer = 1,
-      conf: SparkConf = new SparkConf())(fun: (DataFrame, DataFrame) => DataFrame): Unit = {
+      conf: SparkConf = new SparkConf(),
+      sortBeforeRepart: Boolean = false)(fun: (DataFrame, DataFrame) => DataFrame): Unit = {
     testSparkResultsAreEqual2("IGNORE ORDER: " + testName, dfA, dfB,
       conf=conf,
       repart=repart,
-      sort=true)(fun)
+      sort=true,
+      sortBeforeRepart = sortBeforeRepart)(fun)
   }
 
   def testSparkWritesAreEqual(
@@ -516,9 +538,11 @@ trait SparkQueryCompareTestSuite extends FunSuite {
       df: SparkSession => DataFrame,
       writer: (DataFrame, String) => Unit,
       reader: (SparkSession, String) => DataFrame,
-      conf: SparkConf = new SparkConf()): Unit = {
+      conf: SparkConf = new SparkConf(),
+      sortBeforeRepart: Boolean = false): Unit = {
     val (testConf, qualifiedTestName) =
-      setupTestConfAndQualifierName(testName, false, false, false, conf, Nil)
+      setupTestConfAndQualifierName(testName, false, false, false, conf, Nil,
+        sortBeforeRepart = sortBeforeRepart)
 
     test(qualifiedTestName) {
       val (fromCpu, fromGpu) = writeWithCpuAndGpu(df, writer, reader, conf)

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019, NVIDIA CORPORATION.
+ * Copyright (c) 2019-2020, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -49,6 +49,13 @@ class HashAggregatesSuite extends SparkQueryCompareTestSuite {
 
   IGNORE_ORDER_testSparkResultsAreEqual("test hash agg with Single partitioning",
     longsFromCSVDf, repart = 2, conf = new SparkConf().set("spark.sql.shuffle.partitions", "1")) {
+    frame => {
+      frame.agg(count("*"))
+    }
+  }
+
+  IGNORE_ORDER_testSparkResultsAreEqual("test hash agg with Single partitioning with partition sort",
+    longsFromCSVDf, repart = 2, conf = new SparkConf().set("spark.sql.shuffle.partitions", "1"), sortBeforeRepart = true) {
     frame => {
       frame.agg(count("*"))
     }

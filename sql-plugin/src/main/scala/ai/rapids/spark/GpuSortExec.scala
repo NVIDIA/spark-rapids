@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019, NVIDIA CORPORATION.
+ * Copyright (c) 2019-2020, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,7 +17,7 @@
 package ai.rapids.spark
 
 import ai.rapids.cudf
-import ai.rapids.cudf.{NvtxColor, Table}
+import ai.rapids.cudf.{NvtxColor, NvtxRange, Table}
 import ai.rapids.spark.GpuMetricNames._
 
 import org.apache.spark.rdd.RDD
@@ -29,7 +29,7 @@ import org.apache.spark.TaskContext
 import org.apache.spark.sql.catalyst.plans.physical.{Distribution, OrderedDistribution, Partitioning, UnspecifiedDistribution}
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.analysis.TypeCheckResult
-import org.apache.spark.sql.execution.metric.SQLMetrics
+import org.apache.spark.sql.execution.metric.{SQLMetric, SQLMetrics}
 
 class GpuSortMeta(
     sort: SortExec,
@@ -109,26 +109,31 @@ case class GpuSortExec(
 class GpuColumnarBatchSorter(
     sortOrder: Seq[GpuSortOrder],
     exec: GpuExec,
-    singleBatchOnly: Boolean) {
+    singleBatchOnly: Boolean,
+    shouldUpdateMetrics: Boolean = true) extends Serializable {
 
   private var totalSortTimeNanos = 0L
   private var maxDeviceMemory = 0L
   private var haveSortedBatch = false
   private val numSortCols = sortOrder.length
-  private val totalTimeMetric = exec.longMetric(TOTAL_TIME)
-  private val outputBatchesMetric = exec.longMetric(NUM_OUTPUT_BATCHES)
-  private val outputRowsMetric = exec.longMetric(NUM_OUTPUT_ROWS)
+  private val totalTimeMetric : Option[SQLMetric] = initMetric(TOTAL_TIME)
+  private val outputBatchesMetric : Option[SQLMetric] = initMetric(NUM_OUTPUT_BATCHES)
+  private val outputRowsMetric : Option[SQLMetric] = initMetric(NUM_OUTPUT_ROWS)
+
+  private def initMetric(metricName: String): Option[SQLMetric] = if (shouldUpdateMetrics) {
+    Some(exec.longMetric(metricName))
+  } else {
+    None
+  }
 
   def getSortTimeNanos: Long = totalSortTimeNanos
 
   def getPeakMemoryUsage: Long = maxDeviceMemory
 
   def sort(batchIter: Iterator[ColumnarBatch]): Iterator[ColumnarBatch]  = {
-    if (sortOrder.isEmpty) {
-      // shouldn't ever get here as catalyst seems to optimize out but just in case
-      return batchIter
-    }
 
+    // Sort order shouldn't be empty for Sort exec,
+    // in any other case empty sort order translates to an ascending sort on all columns with nulls as smallest
     new Iterator[ColumnarBatch] {
       var resultBatch: Option[ColumnarBatch] = None
 
@@ -144,7 +149,11 @@ class GpuColumnarBatchSorter(
           haveSortedBatch = true
           val inputBatch = batchIter.next()
           try {
-            Some(sortBatch(inputBatch))
+            if (inputBatch.numCols() > 0) {
+              Some(sortBatch(inputBatch))
+            } else {
+              Some(new ColumnarBatch(Array.empty, inputBatch.numRows()))
+            }
           } finally {
             inputBatch.close()
           }
@@ -154,34 +163,27 @@ class GpuColumnarBatchSorter(
       }
 
       private def sortBatch(inputBatch: ColumnarBatch): ColumnarBatch = {
-        val nvtxRange = new NvtxWithMetrics("sort batch", NvtxColor.WHITE, totalTimeMetric)
+        val nvtxRange = initNvtxRange
         try {
-          val inputCvs = SortUtils.getGpuColVectorsAndBindReferences(inputBatch, sortOrder)
-          val inputTbl = try {
-            new cudf.Table(inputCvs.map(_.getBase): _*)
-          } finally {
-            inputCvs.foreach(_.close())
-          }
+          var inputTbl: Table = null
+          var inputCvs: Seq[GpuColumnVector] = Nil
           try {
-            val orderByArgs = sortOrder.zipWithIndex.map { case (order, index) =>
-              if (order.isAscending) {
-                Table.asc(index, order.nullOrdering == NullsFirst)
-              } else {
-                Table.desc(index, order.nullOrdering == NullsLast)
-              }
+            if (sortOrder.nonEmpty) {
+              inputCvs = SortUtils.getGpuColVectorsAndBindReferences(inputBatch, sortOrder)
+              inputTbl = new cudf.Table(inputCvs.map(_.getBase): _*)
+            } else if (inputBatch.numCols() > 0) {
+              inputTbl = GpuColumnVector.from(inputBatch)
             }
-
+            val orderByArgs = getOrderArgs(inputTbl)
             val startTimestamp = System.nanoTime()
             val batch = doGpuSort(inputTbl, orderByArgs)
-            totalSortTimeNanos += System.nanoTime - startTimestamp
-            outputBatchesMetric += 1
-            outputRowsMetric += batch.numRows
-            val devMemUsed = GpuColumnVector.getTotalDeviceMemoryUsed(inputTbl)
-              + GpuColumnVector.getTotalDeviceMemoryUsed(batch)
-            maxDeviceMemory = scala.math.max(maxDeviceMemory, devMemUsed)
+            updateMetricValues(inputTbl, startTimestamp, batch)
             batch
           } finally {
-            inputTbl.close()
+            inputCvs.foreach(_.close())
+            if (inputTbl != null) {
+              inputTbl.close()
+            }
           }
         } finally {
           nvtxRange.close()
@@ -205,6 +207,42 @@ class GpuColumnarBatchSorter(
         resultBatch = None
         ret
       }
+    }
+  }
+
+  private def getOrderArgs(inputTbl: Table): Seq[Table.OrderByArg] = {
+    val orderByArgs = if (sortOrder.nonEmpty) {
+      sortOrder.zipWithIndex.map { case (order, index) =>
+        if (order.isAscending) {
+          Table.asc(index, order.nullOrdering == NullsFirst)
+        } else {
+          Table.desc(index, order.nullOrdering == NullsLast)
+        }
+      }
+    } else {
+      (0 until inputTbl.getNumberOfColumns).map { index =>
+        Table.asc(index, true)
+      }
+    }
+    orderByArgs
+  }
+
+  private def updateMetricValues(inputTbl: Table, startTimestamp: Long,
+    batch: ColumnarBatch): Unit = {
+    if (shouldUpdateMetrics) {
+      totalSortTimeNanos += System.nanoTime - startTimestamp
+      outputBatchesMetric.get += 1
+      outputRowsMetric.get += batch.numRows
+      val devMemUsed = GpuColumnVector.getTotalDeviceMemoryUsed(inputTbl) + GpuColumnVector.getTotalDeviceMemoryUsed(batch)
+      maxDeviceMemory = scala.math.max(maxDeviceMemory, devMemUsed)
+    }
+  }
+
+  private def initNvtxRange = {
+    if (shouldUpdateMetrics) {
+      new NvtxWithMetrics("sort batch", NvtxColor.WHITE, totalTimeMetric.get)
+    } else {
+      new NvtxRange("sort batch", NvtxColor.WHITE)
     }
   }
 

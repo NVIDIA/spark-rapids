@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019, NVIDIA CORPORATION.
+ * Copyright (c) 2019-2020, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -111,8 +111,18 @@ class JoinsSuite extends SparkQueryCompareTestSuite {
     (A, B) => A.join(B, A("longs") === B("longs"), "LeftSemi")
   }
 
+  IGNORE_ORDER_testSparkResultsAreEqual2("Test left semi self join with nulls sort part",
+    mixedDfWithNulls, mixedDfWithNulls, sortBeforeRepart = true) {
+    (A, B) => A.join(B, A("longs") === B("longs"), "LeftSemi")
+  }
+
   testSparkResultsAreEqual2("Test left anti self join with nulls",
     mixedDfWithNulls, mixedDfWithNulls) {
+    (A, B) => A.join(B, A("longs") === B("longs"), "LeftAnti")
+  }
+
+  IGNORE_ORDER_testSparkResultsAreEqual2("Test left anti self join with nulls with partition sort",
+    mixedDfWithNulls, mixedDfWithNulls, sortBeforeRepart = true) {
     (A, B) => A.join(B, A("longs") === B("longs"), "LeftAnti")
   }
 

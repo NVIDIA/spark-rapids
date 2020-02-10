@@ -19,8 +19,6 @@ package ai.rapids.spark
 import ai.rapids.cudf.{ColumnVector, NvtxColor, NvtxRange, Table}
 import ai.rapids.spark.RapidsPluginImplicits._
 
-import org.apache.spark.TaskContext
-import org.apache.spark.sql.GpuShuffleEnv
 import org.apache.spark.sql.catalyst.expressions.Expression
 import org.apache.spark.sql.catalyst.plans.physical.{ClusteredDistribution, Distribution, HashClusteredDistribution}
 import org.apache.spark.sql.types.{DataType, IntegerType}
