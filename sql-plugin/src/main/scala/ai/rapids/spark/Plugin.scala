@@ -20,6 +20,7 @@ import java.util
 import java.util.concurrent.atomic.{AtomicLong, AtomicReference}
 
 import scala.collection.JavaConverters._
+import scala.collection.mutable.ArrayBuffer
 
 import ai.rapids.cudf._
 import org.apache.commons.lang3.mutable.MutableLong
@@ -51,22 +52,24 @@ trait GpuPartitioning extends Partitioning {
     // The first index will always be 0, so we need to skip it.
     val batches = if (batch.numRows > 0) {
       val parts = partitionIndexes.slice(1, partitionIndexes.length)
-      val splits = partitionColumns.map(c => {
-        c.getBase.split(parts: _*)
-      })
-      (0 until numPartitions).map(idx => {
-        val columns = splits.map(_(idx))
-        val start = partitionIndexes(idx)
-        val end = if ((idx + 1) < partitionIndexes.length) {
-          partitionIndexes(idx + 1)
-        } else {
-          batch.numRows()
+      val splits = new ArrayBuffer[ColumnarBatch](numPartitions)
+      val table = new Table(partitionColumns.map(_.getBase).toArray: _*)
+      val contiguousTables = try {
+        table.contiguousSplit(parts: _*)
+      } finally {
+        table.close()
+      }
+      var succeeded = false
+      try {
+        contiguousTables.foreach { ct => splits.append(GpuColumnVector.from(ct.getTable)) }
+        succeeded = true
+      } finally {
+        contiguousTables.foreach(_.close())
+        if (!succeeded) {
+          splits.foreach(_.close())
         }
-        val rowCount = end - start
-        assert(columns.head.getRowCount == rowCount,
-          s"Counts don't match ${columns.head.getRowCount} != $rowCount")
-        new ColumnarBatch(columns.map(GpuColumnVector.from), rowCount)
-      }).toArray
+      }
+      splits.toArray
     } else {
       Array[ColumnarBatch]()
     }
