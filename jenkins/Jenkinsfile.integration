@@ -16,8 +16,8 @@ pipeline {
     }
 
     parameters {
-        string(name: 'CUDF_VER', defaultValue: '0.12-SNAPSHOT',
-            description: '-Dcudf.version=0.12-SNAPSHOT\n\n Default for cudf version')
+        string(name: 'CUDF_VER', defaultValue: '0.13-SNAPSHOT',
+            description: '-Dcudf.version= \n\n Default for cudf version')
         string(name: 'CUDA_CLASSIFIER', defaultValue: '',
             description: '-Dclassifier=\n\n Empty as cuda10.0 calssifier, cuda10-1 as cuda10.1 classifier')
         string(name: 'PROJECT_VER', defaultValue: '0.1-SNAPSHOT',
