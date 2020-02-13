@@ -494,6 +494,19 @@ object GpuOverrides {
           GpuAtLeastNNonNulls(a.n, childExprs.map(_.convertToGpu()))
         }
       }),
+    expr[NaNvl](
+      "evaluates to `left` iff left is not NaN, `right` otherwise.",
+      (a, conf, p, r) => new BinaryExprMeta[NaNvl](a, conf, p, r) {
+        override def convertToGpu(lhs: GpuExpression, rhs: GpuExpression): GpuExpression =
+          GpuNaNvl(lhs, rhs)
+      }
+    ),
+    expr[Coalesce] (
+      "Returns the first non-null argument if exists. Otherwise, null.",
+      (a, conf, p, r) => new ExprMeta[Coalesce](a, conf, p, r) {
+        override def convertToGpu(): GpuExpression = GpuCoalesce(childExprs.map(_.convertToGpu()))
+      }
+    ),
     expr[Atan](
       "inverse tangent",
       (a, conf, p, r) => new UnaryExprMeta[Atan](a, conf, p, r) {

@@ -666,7 +666,8 @@ trait SparkQueryCompareTestSuite extends FunSuite {
       (400L, 4L),
       (500L, 5L),
       (-100L, 6L),
-      (-500L, 50L)
+      (-500L, 50L),
+      (100L, 100L)
     ).toDF("longs", "more_longs")
   }
 
@@ -757,7 +758,8 @@ trait SparkQueryCompareTestSuite extends FunSuite {
       ("400.0", "4.0"),
       ("500.0", "5.0"),
       ("-100.0", "6.0"),
-      ("-500.0", "0.0")
+      ("-500.0", "0.0"),
+      ("50.0", "50.0")
     ).toDF("doubles", "more_doubles")
   }
 
@@ -770,6 +772,19 @@ trait SparkQueryCompareTestSuite extends FunSuite {
       (null, 4.0f),
       (500.0f, null),
       (null, 6.0f),
+      (-500.0f, 50.5f)
+    ).toDF("floats", "more_floats")
+  }
+
+  def floatWithNansDf(session: SparkSession): DataFrame = {
+    import session.sqlContext.implicits._
+    Seq[(java.lang.Float, java.lang.Float)](
+      (100.0f, 1.0f),
+      (200.0f, Float.NaN),
+      (300.0f, 3.0f),
+      (Float.NaN, 4.0f),
+      (500.0f, Float.NaN),
+      (Float.NaN, 6.0f),
       (-500.0f, 50.5f)
     ).toDF("floats", "more_floats")
   }
