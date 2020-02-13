@@ -17,13 +17,89 @@
 package ai.rapids.spark
 
 import org.apache.spark.SparkConf
-import org.apache.spark.sql.functions.{col, lit}
+import org.apache.spark.sql.functions.{col, lit, nanvl, coalesce}
 import org.apache.spark.sql.{DataFrame, SparkSession}
 
 class ProjectExprSuite extends SparkQueryCompareTestSuite {
   def forceHostColumnarToGpu(): SparkConf = {
     // turns off BatchScanExec, so we get a CPU BatchScanExec together with a HostColumnarToGpu
     new SparkConf().set("spark.rapids.sql.exec.BatchScanExec", "false")
+  }
+
+  testSparkResultsAreEqual("nanvl lit col", floatWithNansDf) {
+    frame => frame.select(nanvl(lit(Float.NaN), col("floats")))
+  }
+
+  testSparkResultsAreEqual("nanvl col col", floatWithNansDf) {
+    frame => frame.select(nanvl(col("floats"), col("more_floats")))
+  }
+
+  testSparkResultsAreEqual("nanvl col lit", floatWithNansDf) {
+    frame => frame.select(nanvl(col("floats"), lit(1.0)))
+  }
+
+  testSparkResultsAreEqual("coalesce col lit", nullableFloatDf) {
+    frame => frame.select(coalesce(col("floats"), lit(1.0)))
+  }
+
+  testSparkResultsAreEqual("coalesce lit col lit", nullableFloatDf) {
+    frame => frame.select(coalesce(lit(null), col("floats"), lit(1.0)))
+  }
+
+  testSparkResultsAreEqual("coalesce col col", nullableFloatDf) {
+    frame => frame.select(coalesce(col("more_floats"), col("floats")))
+  }
+
+  testSparkResultsAreEqual("coalesce string string", nullableStringsDf) {
+    frame => frame.select(coalesce(col("more_strings"), col("strings")))
+  }
+
+  testSparkResultsAreEqual("nvl col col", nullableFloatDf) {
+    frame => frame.selectExpr("nvl(floats, more_floats)")
+  }
+
+  testSparkResultsAreEqual("nvl null col", nullableFloatDf) {
+    frame => frame.selectExpr("nvl(NULL, more_floats)")
+  }
+
+  testSparkResultsAreEqual("nvl col lit", nullableFloatDf) {
+    frame => frame.selectExpr("nvl(floats, 1.0)")
+  }
+
+  testSparkResultsAreEqual("nvl2 col col lit", nullableFloatDf) {
+    frame => frame.selectExpr("nvl2(floats, more_floats, 2.0)")
+  }
+
+  testSparkResultsAreEqual("nvl2 null col lit", nullableFloatDf) {
+    frame => frame.selectExpr("nvl2(NULL, more_floats, 2.0)")
+  }
+
+  testSparkResultsAreEqual("ifnull col col", nullableFloatDf) {
+    frame => frame.selectExpr("ifnull(floats, more_floats)")
+  }
+
+  testSparkResultsAreEqual("ifnull null col", nullableFloatDf) {
+    frame => frame.selectExpr("ifnull(NULL, more_floats)")
+  }
+
+  testSparkResultsAreEqual("ifnull col lit", nullableFloatDf) {
+    frame => frame.selectExpr("ifnull(floats, 1.0)")
+  }
+
+  testSparkResultsAreEqual("nullif col lit - string", doubleStringsDf) {
+    frame => frame.selectExpr("nullif(doubles, \"400.0\")")
+  }
+
+  testSparkResultsAreEqual("nullif col col - string", doubleStringsDf) {
+    frame => frame.selectExpr("nullif(doubles, more_doubles)")
+  }
+
+  testSparkResultsAreEqual("nullif col lit - long", nonZeroLongsDf) {
+    frame => frame.selectExpr("nullif(longs, 400)")
+  }
+
+  testSparkResultsAreEqual("nullif col col - long", nonZeroLongsDf) {
+    frame => frame.selectExpr("nullif(longs, more_longs)")
   }
 
   testSparkResultsAreEqual("project is not null", nullableFloatDf) {

@@ -45,6 +45,20 @@ object GpuScalar {
     }
   }
 
+  def extract(v: Scalar): Any = v.getType match {
+    case DType.BOOL8 => v.getBoolean
+    case DType.FLOAT32 => v.getFloat
+    case DType.FLOAT64 => v.getDouble
+    case DType.INT8 => v.getByte
+    case DType.INT16 => v.getShort
+    case DType.INT32 => v.getInt
+    case DType.INT64 => v.getLong
+    case DType.TIMESTAMP_DAYS => v.getInt
+    case DType.TIMESTAMP_MICROSECONDS => v.getLong
+    case DType.STRING => v.getJavaString
+    case t => throw new IllegalStateException(s"$t is not a supported rapids scalar type yet")
+  }
+
   def from(v: Any): Scalar = v match {
     case _ if v == null => Scalar.fromNull(scalaTypeToDType(v))
     case l: Long => Scalar.fromLong(l)

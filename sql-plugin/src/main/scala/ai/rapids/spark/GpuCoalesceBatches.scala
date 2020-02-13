@@ -280,11 +280,12 @@ class GpuCoalesceIterator(iter: Iterator[ColumnarBatch],
     batches += batch
 
   override def concatAllAndPutOnGPU(): ColumnarBatch = {
-    val ret = ConcatAndConsumeAll.buildNonEmptyBatch(batches.toArray)
-    // sum of current batches and concatenating batches. Approximately sizeof(ret * 2).
-    maxDeviceMemory = GpuColumnVector.getTotalDeviceMemoryUsed(ret) * 2
+    val tmp = batches.toArray
     // Clear the buffer so we don't close it again (buildNonEmptyBatch closed it for us).
     batches = ArrayBuffer.empty
+    val ret = ConcatAndConsumeAll.buildNonEmptyBatch(tmp)
+    // sum of current batches and concatenating batches. Approximately sizeof(ret * 2).
+    maxDeviceMemory = GpuColumnVector.getTotalDeviceMemoryUsed(ret) * 2
     ret
   }
 

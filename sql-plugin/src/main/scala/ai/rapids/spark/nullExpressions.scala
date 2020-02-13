@@ -16,14 +16,103 @@
 
 package ai.rapids.spark
 
+import scala.collection.mutable
+
 import ai.rapids.cudf.{ColumnVector, DType, Scalar}
 import ai.rapids.spark.RapidsPluginImplicits._
 
-import org.apache.spark.sql.catalyst.expressions.{Expression, Predicate}
-import org.apache.spark.sql.types.IntegerType
+import org.apache.spark.sql.catalyst.expressions.{ComplexTypeMergingExpression, Expression, Predicate}
+import org.apache.spark.sql.types.{DataType, IntegerType}
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
-import scala.collection.mutable
+object GpuNvl {
+  def apply(lhs: GpuColumnVector, rhs: GpuColumnVector): GpuColumnVector = {
+    val isLhsNotNull = lhs.getBase.isNotNull
+    try {
+      GpuColumnVector.from(isLhsNotNull.ifElse(lhs.getBase, rhs.getBase))
+    } finally {
+      isLhsNotNull.close()
+    }
+  }
+
+  def apply(lhs: GpuColumnVector, rhs: Scalar): GpuColumnVector = {
+    val isLhsNotNull = lhs.getBase.isNotNull
+    try {
+      GpuColumnVector.from(isLhsNotNull.ifElse(lhs.getBase, rhs))
+    } finally {
+      isLhsNotNull.close()
+    }
+  }
+}
+
+case class GpuCoalesce(children: Seq[GpuExpression]) extends GpuExpression with
+  ComplexTypeMergingExpression {
+
+  override def columnarEval(batch: ColumnarBatch): Any = {
+    // runningResult has precedence over runningScalar
+    var runningResult: GpuColumnVector = null
+    var runningScalar: Scalar = null
+    try {
+      children.reverse.foreach(expr => {
+        expr.columnarEval(batch) match {
+          case data: GpuColumnVector =>
+            try {
+              if (runningResult != null) {
+                val tmp = GpuNvl(data, runningResult)
+                runningResult.close()
+                runningResult = tmp
+              } else if (runningScalar != null) {
+                runningResult = GpuNvl(data, runningScalar)
+              } else {
+                // They are both null
+                runningResult = data.incRefCount()
+              }
+            } finally {
+              data.close()
+            }
+          case other =>
+            if (other == null) {
+              // NOOP does not matter the current state is unchanged
+            } else {
+              // Other is NOT null so it now takes over
+              if (runningResult != null) {
+                runningResult.close()
+                runningResult = null
+              }
+
+              if (runningScalar != null) {
+                runningScalar.close()
+                runningScalar = null
+              }
+
+              runningScalar = GpuScalar.from(other, expr.dataType)
+            }
+        }
+      })
+
+      if (runningResult != null) {
+        runningResult.incRefCount()
+      } else if (runningScalar != null) {
+        GpuScalar.extract(runningScalar)
+      } else {
+        null
+      }
+    } finally {
+      if (runningResult != null) {
+        runningResult.close()
+      }
+      if (runningScalar != null) {
+        runningScalar.close()
+      }
+    }
+  }
+
+  // Coalesce is nullable if all of its children are nullable, or there are no children
+  override def nullable: Boolean = children.forall(_.nullable)
+
+  // Coalesce is foldable if all children are foldable.
+  override def foldable: Boolean = children.forall(_.foldable)
+}
 
 /*
  * IsNull and IsNotNull should eventually become CpuUnaryExpressions, with corresponding
@@ -150,4 +239,53 @@ case class GpuAtLeastNNonNulls(n: Int, exprs: Seq[GpuExpression]) extends GpuExp
       }
     }
   }
+}
+
+case class GpuNaNvl(left: GpuExpression, right: GpuExpression) extends GpuBinaryExpression {
+  override def doColumnar(lhs: GpuColumnVector, rhs: GpuColumnVector): GpuColumnVector = {
+    var islhsNotNan: ColumnVector = null
+    try {
+      val lhsBase = lhs.getBase
+      islhsNotNan = lhsBase.isNotNan // By definition null is not nan
+      GpuColumnVector.from(islhsNotNan.ifElse(lhsBase, rhs.getBase))
+    } finally {
+      if (islhsNotNan != null) {
+        islhsNotNan.close()
+      }
+    }
+  }
+
+  override def doColumnar(lhs: Scalar, rhs: GpuColumnVector): GpuColumnVector = {
+    val isNull = !lhs.isValid
+    val isNan = lhs.getType match {
+      case DType.FLOAT32 => lhs.getFloat.isNaN
+      case DType.FLOAT64 => lhs.getDouble.isNaN
+      case t => throw new IllegalStateException(s"Something very bad happened and " +
+        s"a scalar of type $t showed up when only floats and doubles are supported")
+    }
+    if (isNull || !isNan) {
+      GpuColumnVector.from(ColumnVector.fromScalar(lhs, rhs.getRowCount.toInt))
+    } else {
+      rhs.incRefCount()
+    }
+  }
+
+  override def doColumnar(lhs: GpuColumnVector, rhs: Scalar): GpuColumnVector = {
+    var islhsNotNan: ColumnVector = null
+    try {
+      val lhsBase = lhs.getBase
+      islhsNotNan = lhsBase.isNotNan // By definition null is not nan
+      GpuColumnVector.from(islhsNotNan.ifElse(lhsBase, rhs))
+    } finally {
+      if (islhsNotNan != null) {
+        islhsNotNan.close()
+      }
+    }
+  }
+
+  override def dataType: DataType = left.dataType
+
+  // Access to AbstractDataType is not allowed, and not really needed here
+//  override def inputTypes: Seq[AbstractDataType] =
+//    Seq(TypeCollection(DoubleType, FloatType), TypeCollection(DoubleType, FloatType))
 }
