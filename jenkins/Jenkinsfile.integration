@@ -40,7 +40,7 @@ pipeline {
             steps {
                 script {
                     def DOCKER_TAG="cuda10.0"
-                    if ("$CUDA_CLASSIFIER" == "cuda10-1") {
+                    if (params.CUDA_CLASSIFIER == "cuda10-1") {
                          DOCKER_TAG="cuda10.1"
                     }
                     def IMAGE_NAME="xgbci/rapids-plugin-integration:centos7-$DOCKER_TAG"
