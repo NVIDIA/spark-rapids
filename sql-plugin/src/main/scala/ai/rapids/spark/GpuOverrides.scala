@@ -486,6 +486,14 @@ object GpuOverrides {
       (a, conf, p, r) => new UnaryExprMeta[IsNaN](a, conf, p, r) {
         override def convertToGpu(child: GpuExpression): GpuExpression = GpuIsNan(child)
       }),
+    expr[AtLeastNNonNulls](
+      "checks if number of non null/Nan values is greater than a given value",
+      (a, conf, p, r) => new ExprMeta[AtLeastNNonNulls](a, conf, p, r) {
+        override val childExprs: Seq[ExprMeta[_]] = a.children.map(GpuOverrides.wrapExpr(_, conf, Some(this)))
+        def convertToGpu(): GpuExpression = {
+          GpuAtLeastNNonNulls(a.n, childExprs.map(_.convertToGpu()))
+        }
+      }),
     expr[Atan](
       "inverse tangent",
       (a, conf, p, r) => new UnaryExprMeta[Atan](a, conf, p, r) {
