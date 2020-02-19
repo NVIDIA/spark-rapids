@@ -486,6 +486,13 @@ object GpuOverrides {
       (a, conf, p, r) => new UnaryExprMeta[IsNaN](a, conf, p, r) {
         override def convertToGpu(child: GpuExpression): GpuExpression = GpuIsNan(child)
       }),
+    expr[BitwiseNot](
+      "Returns the bitwise NOT of the operands",
+      (a, conf, p, r) => new UnaryExprMeta[BitwiseNot](a, conf, p, r) {
+        override def convertToGpu(child: GpuExpression): GpuExpression = {
+          GpuBitwiseNot(child)
+        }
+      }),
     expr[AtLeastNNonNulls](
       "checks if number of non null/Nan values is greater than a given value",
       (a, conf, p, r) => new ExprMeta[AtLeastNNonNulls](a, conf, p, r) {
@@ -499,6 +506,27 @@ object GpuOverrides {
       (a, conf, p, r) => new BinaryExprMeta[NaNvl](a, conf, p, r) {
         override def convertToGpu(lhs: GpuExpression, rhs: GpuExpression): GpuExpression =
           GpuNaNvl(lhs, rhs)
+      }
+    ),
+    expr[BitwiseAnd](
+      "Returns the bitwise AND of the operands",
+      (a, conf, p, r) => new BinaryExprMeta[BitwiseAnd](a, conf, p, r) {
+        override def convertToGpu(lhs: GpuExpression, rhs: GpuExpression): GpuExpression =
+          GpuBitwiseAnd(lhs, rhs)
+      }
+    ),
+    expr[BitwiseOr](
+      "Returns the bitwise OR of the operands",
+      (a, conf, p, r) => new BinaryExprMeta[BitwiseOr](a, conf, p, r) {
+        override def convertToGpu(lhs: GpuExpression, rhs: GpuExpression): GpuExpression =
+          GpuBitwiseOr(lhs, rhs)
+      }
+    ),
+    expr[BitwiseXor](
+      "Returns the bitwise XOR of the operands",
+      (a, conf, p, r) => new BinaryExprMeta[BitwiseXor](a, conf, p, r) {
+        override def convertToGpu(lhs: GpuExpression, rhs: GpuExpression): GpuExpression =
+          GpuBitwiseXor(lhs, rhs)
       }
     ),
     expr[Coalesce] (
