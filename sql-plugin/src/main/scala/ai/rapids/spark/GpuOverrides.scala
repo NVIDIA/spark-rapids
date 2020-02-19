@@ -557,6 +557,11 @@ object GpuOverrides {
           GpuKnownFloatingPointNormalized(child)
       })
       .incompat(FLOAT_DIFFERS_GROUP_INCOMPAT),
+    expr[DateDiff]("datediff", (a, conf, p, r) => new BinaryExprMeta[DateDiff](a, conf, p, r) {
+      override def convertToGpu(lhs: GpuExpression, rhs: GpuExpression): GpuExpression = {
+        GpuDateDiff(lhs, rhs)
+      }
+    }),
     expr[Add](
       "addition",
       (a, conf, p, r) => new BinaryExprMeta[Add](a, conf, p, r) {
