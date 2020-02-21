@@ -164,46 +164,13 @@ class GpuParquetWriter(
     dataSchema: StructType,
     context: TaskAttemptContext) extends ColumnarOutputWriter {
   /**
-   * Persists a column batch. Invoked on the executor side. When writing to dynamically partitioned
-   * tables, dynamic partition columns are not included in columns to be written.
-   */
-  override def write(
-      batch: ColumnarBatch,
-      statsTrackers: Seq[ColumnarWriteTaskStatsTracker]): Unit = {
-    var needToCloseBatch = true
-    try {
-      val writeStartTimestamp = System.nanoTime
-      val writeRange = new NvtxRange("Parquet write", NvtxColor.YELLOW)
-      val gpuTime = try {
-        needToCloseBatch = false
-        writeBatch(batch)
-      } finally {
-        writeRange.close()
-      }
-
-      // Update statistics
-      val writeTime = System.nanoTime - writeStartTimestamp
-      statsTrackers.foreach {
-        case gpuTracker: GpuWriteTaskStatsTracker =>
-          gpuTracker.addWriteTime(writeTime)
-          gpuTracker.addGpuTime(gpuTime)
-        case _ =>
-      }
-    } finally {
-      if (needToCloseBatch) {
-        batch.close()
-      }
-    }
-  }
-
-  /**
    * Closes the [[ColumnarOutputWriter]]. Invoked on the executor side after all columnar batches
    * are persisted, before the task output is committed.
    */
   override def close(): Unit = {}
 
   // write a batch and return the time spent on the GPU
-  private def writeBatch(batch: ColumnarBatch): Long = {
+  override def writeBatch(batch: ColumnarBatch): Long = {
     var needToCloseBatch = true
     var tempFile: Option[File] = None
     try {

@@ -16,9 +16,9 @@
 
 package ai.rapids.spark
 
+import ai.rapids.cudf.{NvtxColor, NvtxRange}
 import org.apache.hadoop.mapreduce.TaskAttemptContext
-
-import org.apache.spark.sql.rapids.ColumnarWriteTaskStatsTracker
+import org.apache.spark.sql.rapids.{ColumnarWriteTaskStatsTracker, GpuWriteTaskStatsTracker}
 import org.apache.spark.sql.types.StructType
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
@@ -59,7 +59,34 @@ abstract class ColumnarOutputWriter {
    * tables, dynamic partition columns are not included in columns to be written.
    * NOTE: It is the writer's responsibility to close the batch.
    */
-  def write(batch: ColumnarBatch, statsTrackers: Seq[ColumnarWriteTaskStatsTracker]): Unit
+  def write(batch: ColumnarBatch, statsTrackers: Seq[ColumnarWriteTaskStatsTracker]): Unit = {
+    var needToCloseBatch = true
+    try {
+      val writeStartTimestamp = System.nanoTime
+      val writeRange = new NvtxRange("File write", NvtxColor.YELLOW)
+      val gpuTime = try {
+        needToCloseBatch = false
+        writeBatch(batch)
+      } finally {
+        writeRange.close()
+      }
+
+      // Update statistics
+      val writeTime = System.nanoTime - writeStartTimestamp
+      statsTrackers.foreach {
+        case gpuTracker: GpuWriteTaskStatsTracker =>
+          gpuTracker.addWriteTime(writeTime)
+          gpuTracker.addGpuTime(gpuTime)
+        case _ =>
+      }
+    } finally {
+      if (needToCloseBatch) {
+        batch.close()
+      }
+    }
+  }
+
+  def writeBatch(batch: ColumnarBatch): Long
 
   /**
    * Closes the [[ColumnarOutputWriter]]. Invoked on the executor side after all columnar batches
