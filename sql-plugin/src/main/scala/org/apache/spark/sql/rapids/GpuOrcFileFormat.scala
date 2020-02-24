@@ -118,7 +118,12 @@ class GpuOrcFileFormat extends ColumnarFileFormat with Logging {
       }
 
       override def getFileExtension(context: TaskAttemptContext): String = {
-        orcOptions.compressionCodec + ".orc"
+        val compressionExtension: String = {
+          val name = context.getConfiguration.get(COMPRESS.getAttribute)
+          OrcUtils.extensionsForCompressionCodecNames.getOrElse(name, "")
+        }
+
+        compressionExtension + ".orc"
       }
     }
   }
