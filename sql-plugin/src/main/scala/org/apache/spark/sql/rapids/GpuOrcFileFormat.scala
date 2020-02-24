@@ -35,18 +35,19 @@ import org.apache.spark.sql.types.StructType
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
 object GpuOrcFileFormat {
-  def tagGpuSupport(
-      meta: RapidsMeta[_, _, _],
-      spark: SparkSession,
-      options: Map[String, String]): Option[GpuOrcFileFormat] = {
+  def tagGpuSupport(meta: RapidsMeta[_, _, _],
+                    spark: SparkSession,
+                    options: Map[String, String]): Option[GpuOrcFileFormat] = {
     val sqlConf = spark.sessionState.conf
 
     val parameters = CaseInsensitiveMap(options)
 
-    def tagIfOrcOrHiveConfNotSupported(params: (OrcConf, Any, String)) = {
-      val conf = params._1
-      val defaultValue = params._2
-      val message = params._3
+    case class ConfDataForTagging(orcConf: OrcConf, defaultValue: Any, message: String)
+
+    def tagIfOrcOrHiveConfNotSupported(params: ConfDataForTagging) = {
+      val conf = params.orcConf
+      val defaultValue = params.defaultValue
+      val message = params.message
       val confValue = parameters.get(conf.getAttribute)
         .orElse(parameters.get(conf.getHiveConfName))
       if (confValue.isDefined && confValue.get != defaultValue) {
@@ -61,13 +62,14 @@ object GpuOrcFileFormat {
     }
 
     // hard coding the default value as it could change in future
-    val supportedConf = Map(STRIPE_SIZE.ordinal() -> ((STRIPE_SIZE, 67108864L, "only 64MB stripe size is supported")),
-      BLOCK_SIZE.ordinal() -> ((BLOCK_SIZE, 268435456L, "only 256KB block size is supported")),
-      ROW_INDEX_STRIDE.ordinal() -> ((ROW_INDEX_STRIDE, 10000, "only 10,000 row index stride is supported")),
-      BLOCK_PADDING.ordinal() -> ((BLOCK_PADDING, true, "Block padding isn't supported")))
+    val supportedConf = Map(STRIPE_SIZE.ordinal() -> ConfDataForTagging(STRIPE_SIZE, 67108864L, "only 64MB stripe size is supported"),
+      BLOCK_SIZE.ordinal() -> ConfDataForTagging(BLOCK_SIZE, 268435456L, "only 256KB block size is supported"),
+      ROW_INDEX_STRIDE.ordinal() -> ConfDataForTagging(ROW_INDEX_STRIDE, 10000, "only 10,000 row index stride is supported"),
+      BLOCK_PADDING.ordinal() -> ConfDataForTagging(BLOCK_PADDING, true, "Block padding isn't supported"))
 
     OrcConf.values().foreach(conf => {
-      if (supportedConf.contains(conf.ordinal())) {;
+      if (supportedConf.contains(conf.ordinal())) {
+        ;
         tagIfOrcOrHiveConfNotSupported(supportedConf(conf.ordinal()))
       } else {
         if (conf.getHiveConfName != null && parameters.contains(conf.getHiveConfName) || parameters.contains(conf.getAttribute)) {
@@ -92,11 +94,10 @@ class GpuOrcFileFormat extends ColumnarFileFormat with Logging {
    * preparation can be put here.  For example, user defined output committer can be configured here
    * by setting the output committer class in the conf of spark.sql.sources.outputCommitterClass.
    */
-  override def prepareWrite(
-      sparkSession: SparkSession,
-      job: Job,
-      options: Map[String, String],
-      dataSchema: StructType): ColumnarOutputWriterFactory = {
+  override def prepareWrite(sparkSession: SparkSession,
+                            job: Job,
+                            options: Map[String, String],
+                            dataSchema: StructType): ColumnarOutputWriterFactory = {
 
     val orcOptions = new OrcOptions(options, sparkSession.sessionState.conf)
 
@@ -110,10 +111,9 @@ class GpuOrcFileFormat extends ColumnarFileFormat with Logging {
       .setOutputFormat(classOf[org.apache.orc.mapred.OrcOutputFormat[OrcStruct]])
 
     new ColumnarOutputWriterFactory {
-        override def newInstance(
-          path: String,
-          dataSchema: StructType,
-          context: TaskAttemptContext): ColumnarOutputWriter = {
+      override def newInstance(path: String,
+                               dataSchema: StructType,
+                               context: TaskAttemptContext): ColumnarOutputWriter = {
         new GpuOrcWriter(path, dataSchema, context)
       }
 
@@ -129,10 +129,9 @@ class GpuOrcFileFormat extends ColumnarFileFormat with Logging {
   }
 }
 
-class GpuOrcWriter(
-                    path: String,
-                    dataSchema: StructType,
-                    context: TaskAttemptContext) extends ColumnarOutputWriter {
+class GpuOrcWriter(path: String,
+                   dataSchema: StructType,
+                   context: TaskAttemptContext) extends ColumnarOutputWriter {
   /**
    * Closes the [[ColumnarOutputWriter]]. Invoked on the executor side after all columnar batches
    * are persisted, before the task output is committed.
