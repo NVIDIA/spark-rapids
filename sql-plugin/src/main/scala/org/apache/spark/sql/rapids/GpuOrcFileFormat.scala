@@ -24,6 +24,7 @@ import org.apache.hadoop.fs.{FileUtil, Path}
 import org.apache.hadoop.mapred.JobConf
 import org.apache.hadoop.mapreduce.{Job, TaskAttemptContext}
 import org.apache.orc.OrcConf
+import org.apache.spark.sql.execution.datasources.orc.OrcUtils
 import org.apache.orc.OrcConf._
 import org.apache.orc.mapred.OrcStruct
 import org.apache.spark.TaskContext
@@ -69,7 +70,6 @@ object GpuOrcFileFormat {
 
     OrcConf.values().foreach(conf => {
       if (supportedConf.contains(conf.ordinal())) {
-        ;
         tagIfOrcOrHiveConfNotSupported(supportedConf(conf.ordinal()))
       } else {
         if (conf.getHiveConfName != null && parameters.contains(conf.getHiveConfName) || parameters.contains(conf.getAttribute)) {
