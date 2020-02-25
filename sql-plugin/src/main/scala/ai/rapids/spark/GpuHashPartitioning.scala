@@ -95,7 +95,7 @@ case class GpuHashPartitioning(expressions: Seq[GpuExpression], numPartitions: I
       gpuKeyColumns = null
       batch.close()
 
-      val partedTable = table.onColumns(keys: _*).partition(numPartitions)
+      val partedTable = table.onColumns(keys: _*).hashPartition(numPartitions)
       table.close()
       val parts = partedTable.getPartitions
       val columns = dataIndexes.map(idx => GpuColumnVector.from(partedTable.getColumn(idx).incRefCount()))

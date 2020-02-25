@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019, NVIDIA CORPORATION.
+ * Copyright (c) 2019-2020, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -42,16 +42,15 @@ case class GpuBringBackToHost(child: SparkPlan) extends UnaryExecNode with GpuEx
     AutoCloseColumnBatchIterator.map[ColumnarBatch](child.executeColumnar(), b => {
       val range = new NvtxRange("BringBackToHost", NvtxColor.RED)
       try {
-        for (i <- 0 until b.numCols()) {
-          b.column(i).asInstanceOf[GpuColumnVector].getBase.dropDeviceData()
-        }
+        val hostColumns = (0 until b.numCols()).map(
+          i => b.column(i).asInstanceOf[GpuColumnVector].copyToHost())
+        new ColumnarBatch(hostColumns.toArray)
       } finally {
         range.close()
+        b.close()
+        // Leaving the GPU for a while
+        GpuSemaphore.releaseIfNecessary(TaskContext.get())
       }
-
-      // Leaving the GPU for a while
-      GpuSemaphore.releaseIfNecessary(TaskContext.get())
-      b
     })
   }
 }

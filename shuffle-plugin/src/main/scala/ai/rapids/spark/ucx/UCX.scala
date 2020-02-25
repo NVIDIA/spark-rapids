@@ -876,7 +876,7 @@ class UCX(executorId: Int = -1, usingWakeupFeature: Boolean = false) extends Aut
     os.flush()
   }
 
-  private def addPending(tag: Long, cb: UCXTagCallback, msg: UcxRequest): Unit = {
+  private def addPending(tag: Long, cb: UCXTagCallback, msg: UcpRequest): Unit = {
     if (msg.isCompleted) {
       logDebug("Pending UCX message finished early")
     }
@@ -885,7 +885,7 @@ class UCX(executorId: Int = -1, usingWakeupFeature: Boolean = false) extends Aut
     }
   }
 
-  private def handlePendingSend(pendingSend: PendingSend, numTries: Int = 0): UcxRequest = {
+  private def handlePendingSend(pendingSend: PendingSend, numTries: Int = 0): UcpRequest = {
     var pendingSendRange = new NvtxRange("UCX handlePendingSend", NvtxColor.PURPLE)
 
     val ucxCb = new UcxCallback {
@@ -898,7 +898,7 @@ class UCX(executorId: Int = -1, usingWakeupFeature: Boolean = false) extends Aut
         pendingSend.callback.onError(pendingSend.tag, ucsStatus, errorMsg)
       }
 
-      override def onSuccess(request: UcxRequest): Unit = {
+      override def onSuccess(request: UcpRequest): Unit = {
         if (pendingSendRange != null) {
           pendingSendRange.close()
           pendingSendRange = null
@@ -915,7 +915,7 @@ class UCX(executorId: Int = -1, usingWakeupFeature: Boolean = false) extends Aut
     ucxMsg
   }
 
-  private def handlePendingReceive(pendingReceive: PendingReceive): UcxRequest = {
+  private def handlePendingReceive(pendingReceive: PendingReceive): UcpRequest = {
     logTrace(s"Starting handlePendingReceive ${pendingReceive} for tag ${RapidsUcxUtil.formatTag(pendingReceive.tag)}")
     //val pendingReceiveRange = new NvtxRange("UCX handlePendingReceive", NvtxColor.PURPLE)
 
@@ -926,7 +926,7 @@ class UCX(executorId: Int = -1, usingWakeupFeature: Boolean = false) extends Aut
         pendingReceive.callback.onError(pendingReceive.tag, ucsStatus, errorMsg)
       }
 
-      override def onSuccess(request: UcxRequest): Unit = {
+      override def onSuccess(request: UcpRequest): Unit = {
         if (called) {
           logInfo(s"onSuccess already called for request... early case?")
         } else {
