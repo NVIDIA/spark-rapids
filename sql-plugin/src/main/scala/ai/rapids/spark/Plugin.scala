@@ -23,6 +23,7 @@ import scala.collection.JavaConverters._
 import scala.collection.mutable.ArrayBuffer
 
 import ai.rapids.cudf._
+import ai.rapids.spark.RapidsPluginImplicits._
 import org.apache.commons.lang3.mutable.MutableLong
 
 import org.apache.spark.{SparkContext, TaskContext}
@@ -37,7 +38,7 @@ import org.apache.spark.util.TaskCompletionListener
 
 trait GpuPartitioning extends Partitioning {
 
-  def sliceBatch(vectors: Array[GpuColumnVector], start: Int, end: Int): ColumnarBatch = {
+  def sliceBatch(vectors: Array[RapidsHostColumnVector], start: Int, end: Int): ColumnarBatch = {
     var ret: ColumnarBatch = null
     val count = end - start
     if (count > 0) {
@@ -83,20 +84,24 @@ trait GpuPartitioning extends Partitioning {
     // We need to make sure that we have a null count calculated ahead of time.
     // This should be a temp work around.
     partitionColumns.foreach(_.getBase.getNullCount)
-    // We are slicing the data but keeping the old in place, so copy to the CPU now
-    partitionColumns.foreach(_.getBase.dropDeviceData())
-    // Leaving the GPU for a while
-    GpuSemaphore.releaseIfNecessary(TaskContext.get())
 
-    val ret = new Array[ColumnarBatch](numPartitions)
-    var start = 0
-    for (i <- 1 until numPartitions) {
-      val idx = partitionIndexes(i)
-      ret(i - 1) = sliceBatch(partitionColumns, start, idx)
-      start = idx
+    val hostPartColumns = partitionColumns.map(_.copyToHost())
+    try {
+      // Leaving the GPU for a while
+      GpuSemaphore.releaseIfNecessary(TaskContext.get())
+
+      val ret = new Array[ColumnarBatch](numPartitions)
+      var start = 0
+      for (i <- 1 until numPartitions) {
+        val idx = partitionIndexes(i)
+        ret(i - 1) = sliceBatch(hostPartColumns, start, idx)
+        start = idx
+      }
+      ret(numPartitions - 1) = sliceBatch(hostPartColumns, start, batch.numRows())
+      ret
+    } finally {
+      hostPartColumns.safeClose()
     }
-    ret(numPartitions - 1) = sliceBatch(partitionColumns, start, batch.numRows())
-    ret
   }
 
   def sliceInternalGpuOrCpu(batch: ColumnarBatch, partitionIndexes: Array[Int],

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019, NVIDIA CORPORATION.
+ * Copyright (c) 2019-2020, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,28 +16,30 @@
 
 package org.apache.spark.sql
 
-import java.io.{BufferedOutputStream, FileOutputStream, OutputStream, PrintWriter, StringWriter}
+import java.io._
 import java.nio.ByteBuffer
-import java.util.concurrent.{ConcurrentHashMap, ExecutorService, Executors, Future}
+import java.util.concurrent.{ConcurrentHashMap, Executors, ExecutorService, Future}
 import java.util.concurrent.atomic.{AtomicBoolean, AtomicLong}
 
 import scala.collection.mutable.ArrayBuffer
-import ai.rapids.cudf.{BaseDeviceMemoryBuffer, ColumnVector, CudfColumnVector, DType, JCudfSerialization, NvtxColor, NvtxRange, Table}
+
+import ai.rapids.cudf._
+import ai.rapids.spark._
 import ai.rapids.spark.format.{MetadataRequest, MetadataResponse}
-import ai.rapids.spark.ucx.{Connection, RapidsUcxUtil, TransactionStatus, UCX, UCXConnectionCallback}
-import ai.rapids.spark.{GpuColumnVector, GpuResourceManager, GpuSpillable, RapidsConf, ShuffleMetadata}
+import ai.rapids.spark.ucx._
 import com.google.common.util.concurrent.AtomicDouble
-import org.apache.spark.shuffle._
+import org.openucx.jucx.UcxUtils
+
 import org.apache.spark.{ShuffleDependency, SparkConf, SparkEnv, TaskContext}
-import org.apache.spark.internal.{Logging, config}
+import org.apache.spark.internal.{config, Logging}
 import org.apache.spark.io.CompressionCodec
 import org.apache.spark.network.buffer.ManagedBuffer
 import org.apache.spark.scheduler.MapStatus
+import org.apache.spark.shuffle._
 import org.apache.spark.shuffle.sort.SortShuffleManager
 import org.apache.spark.sql.vectorized.ColumnarBatch
-import org.apache.spark.storage.{BlockId, BlockManager, BlockManagerId, ShuffleBlockBatchId, ShuffleBlockId}
+import org.apache.spark.storage._
 import org.apache.spark.util.Utils
-import org.openucx.jucx.UcxUtils
 
 class GpuShuffleHandle[K, V](
     val wrapped: ShuffleHandle,
@@ -93,10 +95,7 @@ class PartitionCache(val shuffleId: Int, val mapId: Long, val partId: Int) exten
       try {
         // TODO this must be kept in sync with GpuColumnarBatchSerializer and as follow on work
         // should probably move there.
-        // Don't drop device data as we want to read it from there if possible
-        (0 until table.getNumberOfColumns).foreach(table.getColumn(_).ensureOnHost())
         JCudfSerialization.writeToStream(table, outputStream, 0, table.getRowCount)
-        (0 until table.getNumberOfColumns).foreach(table.getColumn(_).dropHostData())
       } finally {
         table.close()
       }
@@ -665,7 +664,6 @@ class RapidsShuffleManager(conf: SparkConf, isDriver: Boolean) extends ShuffleMa
           case Some(pc: PartitionCache) =>
             val cbIter = pc.read
             val tableIter: Iterator[Table] = cbIter.filter(cb => cb.numRows() > 0).map(cb => {
-              (0 until cb.numCols()).foreach(i => cb.column(i).asInstanceOf[GpuColumnVector].getBase.ensureOnDevice())
               GpuColumnVector.from(cb)
             })
             // TODO: need to signal around here that we need those blocks static wherever they reside
@@ -694,8 +692,8 @@ class RapidsShuffleManager(conf: SparkConf, isDriver: Boolean) extends ShuffleMa
         val column = responseTables(i).getColumn(j)
         val columnMeta = resp.tableMeta(i).columnMetas(j)
 
-        val cvDataAddr: BaseDeviceMemoryBuffer = column.getDeviceBufferFor(ColumnVector.BufferType.DATA)
-        val cvValidityAddr: BaseDeviceMemoryBuffer = column.getDeviceBufferFor(ColumnVector.BufferType.VALIDITY)
+        val cvDataAddr: BaseDeviceMemoryBuffer = column.getDeviceBufferFor(BufferType.DATA)
+        val cvValidityAddr: BaseDeviceMemoryBuffer = column.getDeviceBufferFor(BufferType.VALIDITY)
 
         //check device buffer pointer address here - typecast may not be the answer
         val data = columnMeta.data()
@@ -704,7 +702,7 @@ class RapidsShuffleManager(conf: SparkConf, isDriver: Boolean) extends ShuffleMa
         data.mutateTag(tagData)
 
         if (column.getType == DType.STRING) {
-          val offsets = column.getDeviceBufferFor(ColumnVector.BufferType.OFFSET)
+          val offsets = column.getDeviceBufferFor(BufferType.OFFSET)
           val offsetTag = tx.registerForSend(CudfColumnVector.getAddress(offsets), offsets.getLength)
 
           // offsets

@@ -16,7 +16,7 @@
 
 package ai.rapids.spark
 
-import ai.rapids.cudf.{ColumnVector, DType}
+import ai.rapids.cudf.{ColumnVector, DType, HostColumnVector}
 
 import org.apache.spark.sql.catalyst.expressions.{Expression, Literal, Predicate}
 import org.apache.spark.TaskContext
@@ -79,9 +79,9 @@ case class GpuInSet(
       ColumnVector.timestampMicroSecondsFromBoxedLongs(timestamps:_*)
     case StringType =>
       val strings = values.asInstanceOf[Seq[UTF8String]]
-      val builder = ColumnVector.builder(DType.STRING, strings.size)
+      val builder = HostColumnVector.builder(DType.STRING, strings.size)
       strings.foreach(s => builder.appendUTF8String(s.getBytes))
-      builder.build()
+      builder.buildAndPutOnDevice()
     case _ =>
       throw new UnsupportedOperationException(s"Unsupported list type: ${child.dataType}")
     }

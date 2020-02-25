@@ -18,16 +18,15 @@ package ai.rapids.spark
 
 import java.nio.{ByteBuffer, ByteOrder}
 
-import ai.rapids.cudf.{BaseDeviceMemoryBuffer, ColumnVector, DType, Table}
+import ai.rapids.cudf.{BufferType, DType, Table}
 import ai.rapids.spark.format._
 import com.google.flatbuffers.FlatBufferBuilder
-import org.apache.spark.storage.{BlockId, ShuffleBlockBatchId, ShuffleBlockId}
 
-import scala.collection.mutable.ArrayBuffer
+import org.apache.spark.storage.{BlockId, ShuffleBlockId}
 
 class DirectByteBufferFactory extends FlatBufferBuilder.ByteBufferFactory {
   override def newByteBuffer(capacity : Int) : ByteBuffer = {
-    ByteBuffer.allocateDirect(capacity).order(ByteOrder.LITTLE_ENDIAN);
+    ByteBuffer.allocateDirect(capacity).order(ByteOrder.LITTLE_ENDIAN)
   }
 }
 
@@ -54,9 +53,9 @@ object ShuffleMetadata {
           val columnVector = table.getColumn(i)
           val dType: DType = table.getColumn(i).getType
 
-          val dataBuffer = columnVector.getDeviceBufferFor(ColumnVector.BufferType.DATA)
-          val validityBuffer = columnVector.getDeviceBufferFor(ColumnVector.BufferType.VALIDITY)
-          val offsetBuffer = columnVector.getDeviceBufferFor(ColumnVector.BufferType.OFFSET)
+          val dataBuffer = columnVector.getDeviceBufferFor(BufferType.DATA)
+          val validityBuffer = columnVector.getDeviceBufferFor(BufferType.VALIDITY)
+          val offsetBuffer = columnVector.getDeviceBufferFor(BufferType.OFFSET)
 
           dataMetaRefs(i) = BufMeta.createBufMeta(fbb, r.nextInt(), dataBuffer.getLength)
           if (validityBuffer != null) {

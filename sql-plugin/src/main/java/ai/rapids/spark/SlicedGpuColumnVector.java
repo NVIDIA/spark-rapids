@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019, NVIDIA CORPORATION.
+ * Copyright (c) 2019-2020, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -27,14 +27,14 @@ import org.apache.spark.unsafe.types.UTF8String;
  * during shuffle after the data is partitioned and before it is serialized.
  */
 public class SlicedGpuColumnVector extends ColumnVector {
-  private final GpuColumnVector wrap;
+  private final RapidsHostColumnVector wrap;
   private final int start;
   private final int end;
 
   /**
    * Sets up the data type of this column vector.
    */
-  protected SlicedGpuColumnVector(GpuColumnVector w, int start, int end) {
+  protected SlicedGpuColumnVector(RapidsHostColumnVector w, int start, int end) {
     super(w.dataType());
     this.wrap = w;
     this.start = start;
@@ -145,7 +145,7 @@ public class SlicedGpuColumnVector extends ColumnVector {
     throw new UnsupportedOperationException("Children for a slice are not currently supported...");
   }
 
-  public ai.rapids.cudf.ColumnVector getBase() {
+  public ai.rapids.cudf.HostColumnVector getBase() {
     return wrap.getBase();
   }
 

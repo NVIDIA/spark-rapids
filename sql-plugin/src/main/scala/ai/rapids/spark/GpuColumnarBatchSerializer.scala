@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019, NVIDIA CORPORATION.
+ * Copyright (c) 2019-2020, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,12 +16,14 @@
 
 package ai.rapids.spark
 
-import java.io.{BufferedInputStream, BufferedOutputStream, DataInputStream, DataOutputStream, EOFException, InputStream, OutputStream}
+import java.io._
 import java.nio.ByteBuffer
 
+import scala.collection.mutable.ArrayBuffer
 import scala.reflect.ClassTag
 
-import ai.rapids.cudf.{ColumnVector, JCudfSerialization, NvtxColor, NvtxRange}
+import ai.rapids.cudf.{HostColumnVector, JCudfSerialization, NvtxColor, NvtxRange}
+import ai.rapids.spark.RapidsPluginImplicits._
 
 import org.apache.spark.serializer.{DeserializationStream, SerializationStream, Serializer, SerializerInstance}
 import org.apache.spark.sql.execution.metric.SQLMetric
@@ -51,31 +53,43 @@ private class GpuColumnarBatchSerializerInstance(
     override def writeValue[T: ClassTag](value: T): SerializationStream = {
       val batch = value.asInstanceOf[ColumnarBatch]
       val numColumns = batch.numCols()
-      val columns: Array[ColumnVector] = new Array(numColumns)
-      var startRow = 0
-      val numRows = batch.numRows()
-      val firstCol = batch.column(0)
-      if (firstCol.isInstanceOf[SlicedGpuColumnVector]) {
-        // We don't have control over ColumnarBatch to put in the slice, so we have to do it
-        // for each column.  In this case we are using the first column.
-        startRow = firstCol.asInstanceOf[SlicedGpuColumnVector].getStart
-        for (i <- 0 until numColumns) {
-          columns(i) = batch.column(i).asInstanceOf[SlicedGpuColumnVector].getBase
-        }
-      } else {
-        for (i <- 0 until numColumns) {
-          columns(i) = batch.column(i).asInstanceOf[GpuColumnVector].getBase
-        }
-      }
-
-      if (dataSize != null) {
-        dataSize.add(JCudfSerialization.getSerializedSizeInBytes(columns, startRow, numRows))
-      }
-      val range = new NvtxRange("Serialize Batch", NvtxColor.YELLOW)
+      val columns: Array[HostColumnVector] = new Array(numColumns)
+      val toClose = new ArrayBuffer[AutoCloseable]()
       try {
-        JCudfSerialization.writeToStream(columns, dOut, startRow, numRows)
+        var startRow = 0
+        val numRows = batch.numRows()
+        val firstCol = batch.column(0)
+        if (firstCol.isInstanceOf[SlicedGpuColumnVector]) {
+          // We don't have control over ColumnarBatch to put in the slice, so we have to do it
+          // for each column.  In this case we are using the first column.
+          startRow = firstCol.asInstanceOf[SlicedGpuColumnVector].getStart
+          for (i <- 0 until numColumns) {
+            columns(i) = batch.column(i).asInstanceOf[SlicedGpuColumnVector].getBase
+          }
+        } else {
+          for (i <- 0 until numColumns) {
+            batch.column(i) match {
+              case gpu: GpuColumnVector =>
+                val cpu = gpu.copyToHost()
+                toClose += cpu
+                columns(i) = cpu.getBase
+              case cpu: RapidsHostColumnVector =>
+                columns(i) = cpu.getBase
+            }
+          }
+        }
+
+        if (dataSize != null) {
+          dataSize.add(JCudfSerialization.getSerializedSizeInBytes(columns, startRow, numRows))
+        }
+        val range = new NvtxRange("Serialize Batch", NvtxColor.YELLOW)
+        try {
+          JCudfSerialization.writeToStream(columns, dOut, startRow, numRows)
+        } finally {
+          range.close()
+        }
       } finally {
-        range.close()
+        toClose.safeClose()
       }
       this
     }

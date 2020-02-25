@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019, NVIDIA CORPORATION.
+ * Copyright (c) 2019-2020, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -28,7 +28,7 @@ import org.apache.spark.sql.vectorized.{ColumnarBatch, ColumnVector}
 import org.apache.spark.TaskContext
 
 object HostColumnarToGpu {
-  def columnarCopy(cv: ColumnVector, b: ai.rapids.cudf.ColumnVector.Builder,
+  def columnarCopy(cv: ColumnVector, b: ai.rapids.cudf.HostColumnVector.Builder,
       nullable: Boolean, rows: Int): Unit = {
     (GpuColumnVector.getRapidsType(cv.dataType()), nullable) match {
       case (DType.INT8 | DType.BOOL8, true) =>

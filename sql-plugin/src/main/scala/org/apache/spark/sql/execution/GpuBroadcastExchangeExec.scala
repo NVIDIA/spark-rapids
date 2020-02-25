@@ -104,7 +104,7 @@ class SerializeConcatHostBuffersDeserializeBatch(
 
   def dataSize: Long = {
     if (batchInternal != null) {
-      val bases = GpuColumnVector.extractBases(batchInternal)
+      val bases = GpuColumnVector.extractBases(batchInternal).map(_.copyToHost())
       try {
         JCudfSerialization.getSerializedSizeInBytes(bases, 0, batchInternal.numRows())
       } finally {
@@ -125,14 +125,12 @@ class SerializeConcatHostBuffersDeserializeBatch(
 }
 
 @SerialVersionUID(100L)
-class SerializeBatchDeserializeHostBuffer(var batch: ColumnarBatch)
+class SerializeBatchDeserializeHostBuffer(batch: ColumnarBatch)
   extends Serializable with AutoCloseable {
-  @transient private var columns = GpuColumnVector.extractBases(batch)
+  @transient private var columns = GpuColumnVector.extractBases(batch).map(_.copyToHost())
   @transient var header: JCudfSerialization.SerializedTableHeader = null
   @transient var buffer: HostMemoryBuffer = null
-
-  // Don't want them to be closed before we get a chance to read them
-  columns.foreach(_.incRefCount())
+  @transient private val numRows = batch.numRows()
 
   private def writeObject(out: ObjectOutputStream): Unit = {
     val range = new NvtxRange("SerializeBatch", NvtxColor.PURPLE)
@@ -140,15 +138,13 @@ class SerializeBatchDeserializeHostBuffer(var batch: ColumnarBatch)
       if (buffer != null) {
         throw new IllegalStateException("Cannot re-serialize a batch this way...")
       } else {
-        columns.foreach(_.ensureOnHost())
-        JCudfSerialization.writeToStream(columns, out, 0, batch.numRows)
+        JCudfSerialization.writeToStream(columns, out, 0, numRows)
         // In this case an RDD, we want to close the batch once it is serialized out or we will
         // leak GPU memory (technically it will just wait for GC to release it and probably not a lot
         // because this is used for a broadcast that really should be small)
         // In the case of broadcast the life cycle of the object is tied to GC and there is no clean
         // way to separate the two right now.  So we accept the leak.
-        batch.close()
-        batch = null
+        columns.safeClose()
         columns = null
       }
     } finally {
@@ -180,14 +176,8 @@ class SerializeBatchDeserializeHostBuffer(var batch: ColumnarBatch)
     }
   }
 
-  def ensureOnHost(): Unit = {
-    (0 until batch.numCols()).foreach {
-      batch.column(_).asInstanceOf[GpuColumnVector].getBase.ensureOnHost()
-    }
-  }
-
   def dataSize: Long = {
-    JCudfSerialization.getSerializedSizeInBytes(columns, 0, batch.numRows())
+    JCudfSerialization.getSerializedSizeInBytes(columns, 0, numRows)
   }
 
   override def close(): Unit = {

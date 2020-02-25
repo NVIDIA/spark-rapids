@@ -175,9 +175,12 @@ class GpuRangePartitioner extends Serializable {
           def loadNextBatch(): Unit = {
             closeCurrentBatch()
             if (batches.hasNext) {
-              cb = batches.next()
-              (0 until cb.numCols()).foreach(
-                i => cb.column(i).asInstanceOf[GpuColumnVector].getBase.ensureOnHost())
+              val devCb = batches.next()
+              cb = try {
+                new ColumnarBatch(GpuColumnVector.extractColumns(devCb).map(_.copyToHost()), devCb.numRows())
+              } finally {
+                devCb.close()
+              }
               it = cb.rowIterator()
             }
           }

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019, NVIDIA CORPORATION.
+ * Copyright (c) 2019-2020, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -40,7 +40,7 @@ import java.util.List;
 public final class GpuColumnVector extends ColumnVector {
 
   public static final class GpuColumnarBatchBuilder implements AutoCloseable {
-    private final ai.rapids.cudf.ColumnVector.Builder[] builders;
+    private final ai.rapids.cudf.HostColumnVector.Builder[] builders;
     private final StructField[] fields;
 
     /**
@@ -55,7 +55,7 @@ public final class GpuColumnVector extends ColumnVector {
     public GpuColumnarBatchBuilder(StructType schema, int rows, ColumnarBatch batch) {
       fields = schema.fields();
       int len = fields.length;
-      builders = new ai.rapids.cudf.ColumnVector.Builder[len];
+      builders = new ai.rapids.cudf.HostColumnVector.Builder[len];
       boolean success = false;
       try {
         for (int i = 0; i < len; i++) {
@@ -76,15 +76,15 @@ public final class GpuColumnVector extends ColumnVector {
                 }
               }
             }
-            builders[i] = ai.rapids.cudf.ColumnVector.builder(type, rows, bufferSize);
+            builders[i] = ai.rapids.cudf.HostColumnVector.builder(rows, bufferSize);
           } else {
-            builders[i] = ai.rapids.cudf.ColumnVector.builder(type, rows);
+            builders[i] = ai.rapids.cudf.HostColumnVector.builder(type, rows);
           }
           success = true;
         }
       } finally {
         if (!success) {
-          for (ai.rapids.cudf.ColumnVector.Builder b: builders) {
+          for (ai.rapids.cudf.HostColumnVector.Builder b: builders) {
             if (b != null) {
               b.close();
             }
@@ -93,7 +93,7 @@ public final class GpuColumnVector extends ColumnVector {
       }
     }
 
-    public ai.rapids.cudf.ColumnVector.Builder builder(int i) {
+    public ai.rapids.cudf.HostColumnVector.Builder builder(int i) {
       return builders[i];
     }
 
@@ -102,9 +102,8 @@ public final class GpuColumnVector extends ColumnVector {
       boolean success = false;
       try {
         for (int i = 0; i < builders.length; i++) {
-          ai.rapids.cudf.ColumnVector cv = builders[i].build();
+          ai.rapids.cudf.ColumnVector cv = builders[i].buildAndPutOnDevice();
           vectors[i] = new GpuColumnVector(fields[i].dataType(), cv);
-          cv.ensureOnDevice();
           builders[i] = null;
         }
         ColumnarBatch ret = new ColumnarBatch(vectors, rows);
@@ -123,7 +122,7 @@ public final class GpuColumnVector extends ColumnVector {
 
     @Override
     public void close() {
-      for (ai.rapids.cudf.ColumnVector.Builder b: builders) {
+      for (ai.rapids.cudf.HostColumnVector.Builder b: builders) {
         if (b != null) {
           b.close();
         }
@@ -331,7 +330,7 @@ public final class GpuColumnVector extends ColumnVector {
   /**
    * Sets up the data type of this column vector.
    */
-  private GpuColumnVector(DataType type, ai.rapids.cudf.ColumnVector cudfCv) {
+  GpuColumnVector(DataType type, ai.rapids.cudf.ColumnVector cudfCv) {
     super(type);
     // TODO need some checks to be sure everything matches
     this.cudfCv = cudfCv;
@@ -359,75 +358,76 @@ public final class GpuColumnVector extends ColumnVector {
     return (int) cudfCv.getNullCount();
   }
 
+  private static String BAD_ACCESS = "DATA ACCESS MUST BE ON A HOST VECTOR";
+
   @Override
   public boolean isNullAt(int rowId) {
-    return cudfCv.isNull(rowId);
+    throw new IllegalStateException(BAD_ACCESS);
   }
 
   @Override
   public boolean getBoolean(int rowId) {
-    return cudfCv.getBoolean(rowId);
+    throw new IllegalStateException(BAD_ACCESS);
   }
 
   @Override
   public byte getByte(int rowId) {
-    return cudfCv.getByte(rowId);
+    throw new IllegalStateException(BAD_ACCESS);
   }
 
   @Override
   public short getShort(int rowId) {
-    return cudfCv.getShort(rowId);
+    throw new IllegalStateException(BAD_ACCESS);
   }
 
   @Override
   public int getInt(int rowId) {
-    return cudfCv.getInt(rowId);
+    throw new IllegalStateException(BAD_ACCESS);
   }
 
   @Override
   public long getLong(int rowId) {
-    return cudfCv.getLong(rowId);
+    throw new IllegalStateException(BAD_ACCESS);
   }
 
   @Override
   public float getFloat(int rowId) {
-    return cudfCv.getFloat(rowId);
+    throw new IllegalStateException(BAD_ACCESS);
   }
 
   @Override
   public double getDouble(int rowId) {
-    return cudfCv.getDouble(rowId);
+    throw new IllegalStateException(BAD_ACCESS);
   }
 
   @Override
   public ColumnarArray getArray(int rowId) {
-    throw new IllegalStateException("Arrays are currently not supported by rapids cudf");
+    throw new IllegalStateException(BAD_ACCESS);
   }
 
   @Override
   public ColumnarMap getMap(int ordinal) {
-    throw new IllegalStateException("Maps are currently not supported by rapids cudf");
+    throw new IllegalStateException(BAD_ACCESS);
   }
 
   @Override
   public Decimal getDecimal(int rowId, int precision, int scale) {
-    throw new IllegalStateException("The decimal type is currently not supported by rapids cudf");
+    throw new IllegalStateException(BAD_ACCESS);
   }
 
   @Override
   public UTF8String getUTF8String(int rowId) {
-    // TODO need a cheaper way to go directly to the String
-    return UTF8String.fromString(cudfCv.getJavaString(rowId));
+    throw new IllegalStateException(BAD_ACCESS);
   }
 
   @Override
   public byte[] getBinary(int rowId) {
-    throw new IllegalStateException("Binary data access is currently not supported by rapids cudf");
+    throw new IllegalStateException(BAD_ACCESS);
   }
 
   @Override
   public ColumnVector getChild(int ordinal) {
-    throw new IllegalStateException("Struct and struct like types are currently not supported by rapids cudf");
+    throw new IllegalStateException(BAD_ACCESS);
   }
 
   public static long getTotalDeviceMemoryUsed(ColumnarBatch batch) {
@@ -460,6 +460,10 @@ public final class GpuColumnVector extends ColumnVector {
   }
 
   public long getRowCount() { return cudfCv.getRowCount(); }
+
+  public RapidsHostColumnVector copyToHost() {
+    return new RapidsHostColumnVector(type, cudfCv.copyToHost());
+  }
 
   @Override
   public String toString() {

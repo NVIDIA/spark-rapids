@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019, NVIDIA CORPORATION.
+ * Copyright (c) 2019-2020, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -22,8 +22,8 @@ import ai.rapids.spark.GpuMetricNames._
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.expressions.{Attribute, SortOrder, UnsafeProjection}
+import org.apache.spark.sql.catalyst.expressions.codegen._
 import org.apache.spark.sql.catalyst.expressions.codegen.Block._
-import org.apache.spark.sql.catalyst.expressions.codegen.{CodegenContext, CodeGenerator, ExprCode, FalseLiteral, JavaCode}
 import org.apache.spark.sql.execution.{CodegenSupport, GpuColumnToRowMapPartitionsRDD, SparkPlan, UnaryExecNode}
 import org.apache.spark.sql.types.DataType
 import org.apache.spark.sql.vectorized.{ColumnarBatch, ColumnVector}
@@ -90,11 +90,10 @@ case class GpuColumnarToRowExec(child: SparkPlan, exportColumnarRdd: Boolean = f
             it = null
           }
           if (batches.hasNext) {
-            cb = batches.next()
+            val devCb = batches.next()
             val nvtxRange = new NvtxWithMetrics("ColumnarToRow: batch", NvtxColor.RED, totalTime)
             try {
-              (0 until cb.numCols()).foreach(
-                i => cb.column(i).asInstanceOf[GpuColumnVector].getBase.dropDeviceData())
+              cb = new ColumnarBatch(GpuColumnVector.extractColumns(devCb).map(_.copyToHost()), devCb.numRows())
               it = cb.rowIterator()
               numInputBatches += 1
               // In order to match the numOutputRows metric in the generated code we update
@@ -103,11 +102,11 @@ case class GpuColumnarToRowExec(child: SparkPlan, exportColumnarRdd: Boolean = f
               // but it is more efficient.
               numOutputRows += cb.numRows()
             } finally {
+              devCb.close()
+              // Leaving the GPU for a while
+              GpuSemaphore.releaseIfNecessary(TaskContext.get())
               nvtxRange.close()
             }
-
-            // Leaving the GPU for a while
-            GpuSemaphore.releaseIfNecessary(TaskContext.get())
           }
         }
 
@@ -194,7 +193,8 @@ case class GpuColumnarToRowExec(child: SparkPlan, exportColumnarRdd: Boolean = f
 
     val columnarBatchClz = classOf[ColumnarBatch].getName
     val initTCListener = ctx.freshName("initTCListener")
-    val batch = ctx.addMutableState(columnarBatchClz, "batch",
+    val devBatch = ctx.freshName("devBatch")
+    val hostBatch = ctx.addMutableState(columnarBatchClz, "hostBatch",
     v => {
       val initTCListenerFuncName = ctx.addNewFunction(initTCListener,
         s"""
@@ -214,12 +214,14 @@ case class GpuColumnarToRowExec(child: SparkPlan, exportColumnarRdd: Boolean = f
     val idx = ctx.addMutableState(CodeGenerator.JAVA_INT, "batchIdx") // init as batchIdx = 0
     val columnVectorClzs = child.vectorTypes.getOrElse(
       Seq.fill(output.indices.size)(classOf[GpuColumnVector].getName))
+    val hostClz = classOf[RapidsHostColumnVector].getName
     val (colVars, columnAssigns) = columnVectorClzs.zipWithIndex.map {
       case (columnVectorClz, i) =>
-        val name = ctx.addMutableState(columnVectorClz, s"colInstance$i")
-        (name, s"$name = ($columnVectorClz) $batch.column($i); $name.getBase().dropDeviceData();")
+        val hostName = ctx.addMutableState(hostClz, s"hostColInstance$i")
+        (hostName, s"$hostName = (($columnVectorClz) $devBatch.column($i)).copyToHost();")
     }.unzip
 
+    val batchArray = ctx.freshName("batchArray")
     val convertStart = ctx.freshName("convertStart")
     val convertRange = ctx.freshName("convertRange")
     val nextBatch = ctx.freshName("nextBatch")
@@ -227,8 +229,8 @@ case class GpuColumnarToRowExec(child: SparkPlan, exportColumnarRdd: Boolean = f
       s"""
          |private void $nextBatch() throws java.io.IOException {
          |  if ($input.hasNext()) {
-         |    $batch = ($columnarBatchClz)$input.next();
-         |    $numOutputRows.add($batch.numRows());
+         |    $columnarBatchClz $devBatch = ($columnarBatchClz)$input.next();
+         |    $numOutputRows.add($devBatch.numRows());
          |    $numInputBatches.add(1);
          |    $idx = 0;
          |    long $convertStart = System.nanoTime();
@@ -236,6 +238,9 @@ case class GpuColumnarToRowExec(child: SparkPlan, exportColumnarRdd: Boolean = f
          |    ${columnAssigns.mkString("", "\n", "\n")}
          |    $convertRange.close();
          |    $totalTime.add(System.nanoTime() - $convertStart);
+         |    org.apache.spark.sql.vectorized.ColumnVector[] $batchArray = new org.apache.spark.sql.vectorized.ColumnVector[] {${colVars.mkString("", ", ", "")}};
+         |    $hostBatch = new org.apache.spark.sql.vectorized.ColumnarBatch($batchArray, $devBatch.numRows());
+         |    $devBatch.close();
          |    ai.rapids.spark.GpuSemaphore$$.MODULE$$.releaseIfNecessary(org.apache.spark.TaskContext.get());
          |  }
          |}""".stripMargin)
@@ -254,11 +259,11 @@ case class GpuColumnarToRowExec(child: SparkPlan, exportColumnarRdd: Boolean = f
       "// shouldStop check is eliminated"
     }
     s"""
-       |if ($batch == null) {
+       |if ($hostBatch == null) {
        |  $nextBatchFuncName();
        |}
-       |while ($limitNotReachedCond $batch != null) {
-       |  int $numRows = $batch.numRows();
+       |while ($limitNotReachedCond $hostBatch != null) {
+       |  int $numRows = $hostBatch.numRows();
        |  int $localEnd = $numRows - $idx;
        |  for (int $localIdx = 0; $localIdx < $localEnd; $localIdx++) {
        |    int $rowidx = $idx + $localIdx;
@@ -266,8 +271,8 @@ case class GpuColumnarToRowExec(child: SparkPlan, exportColumnarRdd: Boolean = f
        |    $shouldStop
        |  }
        |  $idx = $numRows;
-       |  $batch.close();
-       |  $batch = null;
+       |  $hostBatch.close();
+       |  $hostBatch = null;
        |  $nextBatchFuncName();
        |}
      """.stripMargin

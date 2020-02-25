@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019, NVIDIA CORPORATION. All rights reserved.
+ * Copyright (c) 2019-2020, NVIDIA CORPORATION. All rights reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -46,7 +46,7 @@ private class GpuExternalRowToColumnConverter(schema: StructType) extends Serial
 
 private object GpuExternalRowToColumnConverter {
   private abstract class TypeConverter extends Serializable {
-    def append(row: Row, column: Int, builder: ai.rapids.cudf.ColumnVector.Builder): Unit
+    def append(row: Row, column: Int, builder: ai.rapids.cudf.HostColumnVector.Builder): Unit
   }
 
   private def getConverterForType(dataType: DataType, nullable: Boolean): TypeConverter = {
@@ -84,7 +84,7 @@ private object GpuExternalRowToColumnConverter {
   }
 
   private object BooleanConverter extends TypeConverter {
-    override def append(row: Row, column: Int, builder: ai.rapids.cudf.ColumnVector.Builder): Unit =
+    override def append(row: Row, column: Int, builder: ai.rapids.cudf.HostColumnVector.Builder): Unit =
       if (row.isNullAt(column)) {
         builder.appendNull()
       } else {
@@ -93,12 +93,12 @@ private object GpuExternalRowToColumnConverter {
   }
 
   private object NotNullBooleanConverter extends TypeConverter {
-    override def append(row: Row, column: Int, builder: ai.rapids.cudf.ColumnVector.Builder): Unit =
+    override def append(row: Row, column: Int, builder: ai.rapids.cudf.HostColumnVector.Builder): Unit =
       builder.append(if (row.getBoolean(column)) 1.toByte else 0.toByte)
   }
 
   private object ByteConverter extends TypeConverter {
-    override def append(row: Row, column: Int, builder: ai.rapids.cudf.ColumnVector.Builder): Unit =
+    override def append(row: Row, column: Int, builder: ai.rapids.cudf.HostColumnVector.Builder): Unit =
       if (row.isNullAt(column)) {
         builder.appendNull()
       } else {
@@ -107,12 +107,12 @@ private object GpuExternalRowToColumnConverter {
   }
 
   private object NotNullByteConverter extends TypeConverter {
-    override def append(row: Row, column: Int, builder: ai.rapids.cudf.ColumnVector.Builder): Unit =
+    override def append(row: Row, column: Int, builder: ai.rapids.cudf.HostColumnVector.Builder): Unit =
       builder.append(row.getByte(column))
   }
 
   private object ShortConverter extends TypeConverter {
-    override def append(row: Row, column: Int, builder: ai.rapids.cudf.ColumnVector.Builder): Unit =
+    override def append(row: Row, column: Int, builder: ai.rapids.cudf.HostColumnVector.Builder): Unit =
       if (row.isNullAt(column)) {
         builder.appendNull()
       } else {
@@ -121,12 +121,12 @@ private object GpuExternalRowToColumnConverter {
   }
 
   private object NotNullShortConverter extends TypeConverter {
-    override def append(row: Row, column: Int, builder: ai.rapids.cudf.ColumnVector.Builder): Unit =
+    override def append(row: Row, column: Int, builder: ai.rapids.cudf.HostColumnVector.Builder): Unit =
       builder.append(row.getShort(column))
   }
 
   private object IntConverter extends TypeConverter {
-    override def append(row: Row, column: Int, builder: ai.rapids.cudf.ColumnVector.Builder): Unit =
+    override def append(row: Row, column: Int, builder: ai.rapids.cudf.HostColumnVector.Builder): Unit =
       if (row.isNullAt(column)) {
         builder.appendNull()
       } else {
@@ -135,12 +135,12 @@ private object GpuExternalRowToColumnConverter {
   }
 
   private object NotNullIntConverter extends TypeConverter {
-    override def append(row: Row, column: Int, builder: ai.rapids.cudf.ColumnVector.Builder): Unit =
+    override def append(row: Row, column: Int, builder: ai.rapids.cudf.HostColumnVector.Builder): Unit =
       builder.append(row.getInt(column))
   }
 
   private object FloatConverter extends TypeConverter {
-    override def append(row: Row, column: Int, builder: ai.rapids.cudf.ColumnVector.Builder): Unit =
+    override def append(row: Row, column: Int, builder: ai.rapids.cudf.HostColumnVector.Builder): Unit =
       if (row.isNullAt(column)) {
         builder.appendNull()
       } else {
@@ -149,12 +149,12 @@ private object GpuExternalRowToColumnConverter {
   }
 
   private object NotNullFloatConverter extends TypeConverter {
-    override def append(row: Row, column: Int, builder: ai.rapids.cudf.ColumnVector.Builder): Unit =
+    override def append(row: Row, column: Int, builder: ai.rapids.cudf.HostColumnVector.Builder): Unit =
       builder.append(row.getFloat(column))
   }
 
   private object LongConverter extends TypeConverter {
-    override def append(row: Row, column: Int, builder: ai.rapids.cudf.ColumnVector.Builder): Unit =
+    override def append(row: Row, column: Int, builder: ai.rapids.cudf.HostColumnVector.Builder): Unit =
       if (row.isNullAt(column)) {
         builder.appendNull()
       } else {
@@ -163,12 +163,12 @@ private object GpuExternalRowToColumnConverter {
   }
 
   private object NotNullLongConverter extends TypeConverter {
-    override def append(row: Row, column: Int, builder: ai.rapids.cudf.ColumnVector.Builder): Unit =
+    override def append(row: Row, column: Int, builder: ai.rapids.cudf.HostColumnVector.Builder): Unit =
       builder.append(row.getLong(column))
   }
 
   private object DoubleConverter extends TypeConverter {
-    override def append(row: Row, column: Int, builder: ai.rapids.cudf.ColumnVector.Builder): Unit =
+    override def append(row: Row, column: Int, builder: ai.rapids.cudf.HostColumnVector.Builder): Unit =
       if (row.isNullAt(column)) {
         builder.appendNull()
       } else {
@@ -177,12 +177,12 @@ private object GpuExternalRowToColumnConverter {
   }
 
   private object NotNullDoubleConverter extends TypeConverter {
-    override def append(row: Row, column: Int, builder: ai.rapids.cudf.ColumnVector.Builder): Unit =
+    override def append(row: Row, column: Int, builder: ai.rapids.cudf.HostColumnVector.Builder): Unit =
       builder.append(row.getDouble(column))
   }
 
   private object StringConverter extends TypeConverter {
-    override def append(row: Row, column: Int, builder: ai.rapids.cudf.ColumnVector.Builder): Unit =
+    override def append(row: Row, column: Int, builder: ai.rapids.cudf.HostColumnVector.Builder): Unit =
       if (row.isNullAt(column)) {
         builder.appendNull()
       } else {
@@ -191,12 +191,12 @@ private object GpuExternalRowToColumnConverter {
   }
 
   private object NotNullStringConverter extends TypeConverter {
-    override def append(row: Row, column: Int, builder: ai.rapids.cudf.ColumnVector.Builder): Unit =
+    override def append(row: Row, column: Int, builder: ai.rapids.cudf.HostColumnVector.Builder): Unit =
       builder.appendUTF8String(row.getString(column).getBytes)
   }
   //
   //  private object CalendarConverter extends TypeConverter {
-  //    override def append(row: SpecializedGetters, column: Int, builder: ai.rapids.cudf.ColumnVector.Builder): Unit = {
+  //    override def append(row: SpecializedGetters, column: Int, builder: ai.rapids.cudf.HostColumnVector.Builder): Unit = {
   //      if (row.isNullAt(column)) {
   //        builder.appendNull()
   //      } else {
@@ -209,7 +209,7 @@ private object GpuExternalRowToColumnConverter {
   //  }
   //
   //  private case class ArrayConverter(childConverter: TypeConverter) extends TypeConverter {
-  //    override def append(row: SpecializedGetters, column: Int, builder: ai.rapids.cudf.ColumnVector.Builder): Unit = {
+  //    override def append(row: SpecializedGetters, column: Int, builder: ai.rapids.cudf.HostColumnVector.Builder): Unit = {
   //      if (row.isNullAt(column)) {
   //        builder.appendNull()
   //      } else {
@@ -225,7 +225,7 @@ private object GpuExternalRowToColumnConverter {
   //  }
   //
   //  private case class StructConverter(childConverters: Array[TypeConverter]) extends TypeConverter {
-  //    override def append(row: SpecializedGetters, column: Int, builder: ai.rapids.cudf.ColumnVector.Builder): Unit = {
+  //    override def append(row: SpecializedGetters, column: Int, builder: ai.rapids.cudf.HostColumnVector.Builder): Unit = {
   //      if (row.isNullAt(column)) {
   //        builder.appendNull()
   //      } else {
@@ -239,7 +239,7 @@ private object GpuExternalRowToColumnConverter {
   //  }
   //
   //  private case class DecimalConverter(dt: DecimalType) extends TypeConverter {
-  //    override def append(row: SpecializedGetters, column: Int, builder: ai.rapids.cudf.ColumnVector.Builder): Unit = {
+  //    override def append(row: SpecializedGetters, column: Int, builder: ai.rapids.cudf.HostColumnVector.Builder): Unit = {
   //      if (row.isNullAt(column)) {
   //        builder.appendNull()
   //      } else {
@@ -259,7 +259,7 @@ private object GpuExternalRowToColumnConverter {
   //
   //  private case class MapConverter(keyConverter: TypeConverter, valueConverter: TypeConverter)
   //      extends TypeConverter {
-  //    override def append(row: SpecializedGetters, column: Int, builder: ai.rapids.cudf.ColumnVector.Builder): Unit = {
+  //    override def append(row: SpecializedGetters, column: Int, builder: ai.rapids.cudf.HostColumnVector.Builder): Unit = {
   //      if (row.isNullAt(column)) {
   //        builder.appendNull()
   //      } else {

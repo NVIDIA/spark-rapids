@@ -118,10 +118,14 @@ case class GpuRangePartitioning(gpuOrdering: Seq[GpuSortOrder], numPartitions: I
       finalSortedCb = GpuColumnVector.from(sortedTbl, numSortCols, sortedTbl.getNumberOfColumns)
       //get upper bounds
       retCv = slicedSortedTbl.upperBound(nullFlags.toArray, rangesTbl, descFlags.toArray)
-      retCv.ensureOnHost()
-      //partition indices based on upper bounds
-      parts = parts ++ (0 until retCv.getRowCount.toInt).map(i => retCv.getInt(i)).toArray[Int]
-      partitionColumns = GpuColumnVector.extractColumns(finalSortedCb)
+      val hostCv = retCv.copyToHost()
+      try {
+        //partition indices based on upper bounds
+        parts = parts ++ (0 until hostCv.getRowCount.toInt).map(i => hostCv.getInt(i)).toArray[Int]
+        partitionColumns = GpuColumnVector.extractColumns(finalSortedCb)
+      } finally {
+        hostCv.close()
+      }
       slicedCb = sliceInternalGpuOrCpu(finalSortedCb, parts, partitionColumns)
     } finally {
       batch.close()
