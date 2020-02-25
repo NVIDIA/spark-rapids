@@ -16,7 +16,8 @@
 
 package org.apache.spark.sql.rapids
 
-import ai.rapids.spark.{GpuColumnVector, GpuUnaryExpression}
+import ai.rapids.cudf.Scalar
+import ai.rapids.spark.{GpuBinaryExpression, GpuColumnVector, GpuExpression, GpuUnaryExpression}
 
 import org.apache.spark.sql.catalyst.expressions.{ExpectsInputTypes, Expression}
 import org.apache.spark.sql.types.{AbstractDataType, DataType, StringType}
@@ -41,4 +42,50 @@ case class GpuLower(child: Expression) extends GpuUnaryString2StringExpression {
 
   override def doColumnar(input: GpuColumnVector): GpuColumnVector =
     GpuColumnVector.from(input.getBase.lower())
+}
+
+case class GpuStartsWith(left: GpuExpression, right: GpuExpression) extends GpuBinaryExpression {
+
+  override def toString: String = s"gpustartswith($left, $right)"
+
+  def doColumnar(lhs: GpuColumnVector, rhs: Scalar): GpuColumnVector = {
+    if (rhs.getJavaString.isEmpty) {
+      createAllTrueColumnVector(lhs)
+    } else {
+      GpuColumnVector.from(lhs.getBase.startsWith(rhs))
+    }
+  }
+
+  override def doColumnar(lhs: GpuColumnVector,
+    rhs: GpuColumnVector): GpuColumnVector = throw new IllegalStateException("Really should not be here, " +
+    "Cannot have two column vectors as input in StartsWith")
+
+  override def doColumnar(lhs: Scalar,
+    rhs: GpuColumnVector): GpuColumnVector = throw new IllegalStateException("Really should not be here," +
+    "Cannot have a scalar as left side operand in StartsWith")
+
+  override def dataType: DataType = left.dataType
+}
+
+case class GpuEndsWith(left: GpuExpression, right: GpuExpression) extends GpuBinaryExpression {
+
+  override def toString: String = s"gpuendswith($left, $right)"
+
+  def doColumnar(lhs: GpuColumnVector, rhs: Scalar): GpuColumnVector = {
+    if (rhs.getJavaString.isEmpty) {
+      createAllTrueColumnVector(lhs)
+    } else {
+      GpuColumnVector.from(lhs.getBase.endsWith(rhs))
+    }
+  }
+
+  override def doColumnar(lhs: GpuColumnVector,
+    rhs: GpuColumnVector): GpuColumnVector = throw new IllegalStateException("Really should not be here, " +
+    "Cannot have two column vectors as input in EndsWith")
+
+  override def doColumnar(lhs: Scalar,
+    rhs: GpuColumnVector): GpuColumnVector = throw new IllegalStateException("Really should not be here, " +
+    "Cannot have a scalar as left side operand in EndsWith")
+
+  override def dataType: DataType = left.dataType
 }

@@ -89,6 +89,40 @@ class StringOperatorsSuite extends SparkQueryCompareTestSuite {
   INCOMPAT_testSparkResultsAreEqual("Test compatible values lower case modifier", lowercaseCompatibleUtf8Df) {
     frame => frame.select(lower(col("strings")))
   }
+
+  testSparkResultsAreEqual("String StartsWith", nullableStringsFromCsv) {
+    frame => frame.filter(col("strings").startsWith("F"))
+  }
+
+  ALLOW_NON_GPU_testSparkResultsAreEqual("String StartsWith Col", nullableStringsFromCsv) {
+    frame => frame.filter(col("strings").startsWith(col("more_strings")))
+  }
+
+  testSparkResultsAreEqual("String StartsWith Empty", nullableStringsFromCsv) {
+    frame => frame.filter(col("strings").startsWith(""))
+  }
+
+  testSparkResultsAreEqual("String StartsWith Null", nullableStringsFromCsv) {
+    val str : String = null
+    frame => frame.filter(col("strings").startsWith(str))
+  }
+
+  testSparkResultsAreEqual("String EndsWith", nullableStringsFromCsv) {
+    frame => frame.filter(col("strings").endsWith("oo"))
+  }
+
+  ALLOW_NON_GPU_testSparkResultsAreEqual("String EndsWith Col", nullableStringsFromCsv) {
+    frame => frame.filter(col("strings").endsWith(col("more_strings")))
+  }
+
+  testSparkResultsAreEqual("String EndWith Empty", nullableStringsFromCsv) {
+    frame => frame.filter(col("strings").endsWith(""))
+  }
+
+  testSparkResultsAreEqual("String EndWith Null", nullableStringsFromCsv) {
+            val str : String = null
+    frame => frame.filter(col("strings").endsWith(str))
+  }
 }
 
 /*
