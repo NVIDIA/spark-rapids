@@ -88,7 +88,7 @@ abstract class ColumnarOutputWriter {
 
   /**
    * Writes the columnar batch and returns the time in ns taken to write
-   * @param batch
+   * @param batch - Columnar batch that needs to be written
    * @return - time in ns taken to write the batch
    */
   def writeBatch(batch: ColumnarBatch): Long
