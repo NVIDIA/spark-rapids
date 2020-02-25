@@ -24,18 +24,17 @@ import org.apache.hadoop.fs.{FileUtil, Path}
 import org.apache.hadoop.mapred.JobConf
 import org.apache.hadoop.mapreduce.{Job, TaskAttemptContext}
 import org.apache.orc.OrcConf
-import org.apache.spark.sql.execution.datasources.orc.OrcUtils
 import org.apache.orc.OrcConf._
 import org.apache.orc.mapred.OrcStruct
 import org.apache.spark.TaskContext
 import org.apache.spark.internal.Logging
 import org.apache.spark.sql.SparkSession
 import org.apache.spark.sql.catalyst.util.CaseInsensitiveMap
-import org.apache.spark.sql.execution.datasources.orc.{OrcFileFormat, OrcOptions}
+import org.apache.spark.sql.execution.datasources.orc.{OrcFileFormat, OrcOptions, OrcUtils}
 import org.apache.spark.sql.types.StructType
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
-object GpuOrcFileFormat {
+object GpuOrcFileFormat extends Logging {
   def tagGpuSupport(meta: RapidsMeta[_, _, _],
                     spark: SparkSession,
                     options: Map[String, String]): Option[GpuOrcFileFormat] = {
@@ -52,7 +51,7 @@ object GpuOrcFileFormat {
       val confValue = parameters.get(conf.getAttribute)
         .orElse(parameters.get(conf.getHiveConfName))
       if (confValue.isDefined && confValue.get != defaultValue) {
-        meta.willNotWorkOnGpu(message)
+        logWarning(message)
       }
     }
 
@@ -64,7 +63,7 @@ object GpuOrcFileFormat {
 
     // hard coding the default value as it could change in future
     val supportedConf = Map(STRIPE_SIZE.ordinal() -> ConfDataForTagging(STRIPE_SIZE, 67108864L, "only 64MB stripe size is supported"),
-      BLOCK_SIZE.ordinal() -> ConfDataForTagging(BLOCK_SIZE, 268435456L, "only 256KB block size is supported"),
+      BUFFER_SIZE.ordinal() -> ConfDataForTagging(BUFFER_SIZE, 262144, "only 256KB block size is supported"),
       ROW_INDEX_STRIDE.ordinal() -> ConfDataForTagging(ROW_INDEX_STRIDE, 10000, "only 10,000 row index stride is supported"),
       BLOCK_PADDING.ordinal() -> ConfDataForTagging(BLOCK_PADDING, true, "Block padding isn't supported"))
 
@@ -75,7 +74,7 @@ object GpuOrcFileFormat {
         if (conf.getHiveConfName != null && parameters.contains(conf.getHiveConfName) || parameters.contains(conf.getAttribute)) {
           // these configurations are implementation specific and don't apply to cudf
           // The user has set them so we can't run on GPU
-          meta.willNotWorkOnGpu(s"${conf.name()} is unsupported configuration")
+          logWarning(s"${conf.name()} is unsupported configuration")
         }
       }
     })
