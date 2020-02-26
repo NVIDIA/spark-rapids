@@ -366,6 +366,7 @@ class RapidsExecutorPlugin extends ExecutorPlugin with Logging {
       ctx: PluginContext,
       extraConf: util.Map[String, String]): Unit = {
     val conf = new RapidsConf(extraConf.asScala.toMap)
+    loggingEnabled = conf.isRmmDebugEnabled
 
     // we rely on the Rapids Plugin being run with 1 GPU per executor so we can initialize
     // on executor startup.

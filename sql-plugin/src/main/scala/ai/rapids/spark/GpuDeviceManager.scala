@@ -141,6 +141,8 @@ object GpuDeviceManager extends Logging {
         features += "UVM"
       }
 
+      if (loggingEnabled) features += "LOGGING"
+
       logInfo(s"Initializing RMM${features.mkString(" ", " ", "")} ${initialAllocation / 1024 / 1024.0} MB")
       try {
         Rmm.initialize(init, loggingEnabled, initialAllocation)
