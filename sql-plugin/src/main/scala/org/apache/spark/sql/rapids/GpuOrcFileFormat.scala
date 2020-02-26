@@ -51,7 +51,7 @@ object GpuOrcFileFormat extends Logging {
       val confValue = parameters.get(conf.getAttribute)
         .orElse(parameters.get(conf.getHiveConfName))
       if (confValue.isDefined && confValue.get != defaultValue) {
-        logWarning(message)
+        logInfo(message)
       }
     }
 
@@ -74,7 +74,7 @@ object GpuOrcFileFormat extends Logging {
         if (conf.getHiveConfName != null && parameters.contains(conf.getHiveConfName) || parameters.contains(conf.getAttribute)) {
           // these configurations are implementation specific and don't apply to cudf
           // The user has set them so we can't run on GPU
-          logWarning(s"${conf.name()} is unsupported configuration")
+          logInfo(s"${conf.name()} is unsupported configuration")
         }
       }
     })
