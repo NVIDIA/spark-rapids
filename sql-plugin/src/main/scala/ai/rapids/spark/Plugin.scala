@@ -92,7 +92,7 @@ trait GpuPartitioning extends Partitioning {
 
       val ret = new Array[ColumnarBatch](numPartitions)
       var start = 0
-      for (i <- 1 until numPartitions) {
+      for (i <- 1 until Math.min(numPartitions, partitionIndexes.length)) {
         val idx = partitionIndexes(i)
         ret(i - 1) = sliceBatch(hostPartColumns, start, idx)
         start = idx
