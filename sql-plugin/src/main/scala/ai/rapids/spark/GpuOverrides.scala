@@ -244,8 +244,7 @@ final class InsertIntoHadoopFsRelationCommandMeta(
         willNotWorkOnGpu("JSON output is not supported")
         None
       case _: OrcFileFormat =>
-        willNotWorkOnGpu("ORC output is not supported")
-        None
+        GpuOrcFileFormat.tagGpuSupport(this, spark, cmd.options)
       case _: ParquetFileFormat =>
         GpuParquetFileFormat.tagGpuSupport(this, spark, cmd.options)
       case _: TextFileFormat =>

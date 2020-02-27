@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019, NVIDIA CORPORATION.
+ * Copyright (c) 2019-2020, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,9 +16,9 @@
 
 package ai.rapids.spark
 
+import ai.rapids.cudf.{NvtxColor, NvtxRange}
 import org.apache.hadoop.mapreduce.TaskAttemptContext
-
-import org.apache.spark.sql.rapids.ColumnarWriteTaskStatsTracker
+import org.apache.spark.sql.rapids.{ColumnarWriteTaskStatsTracker, GpuWriteTaskStatsTracker}
 import org.apache.spark.sql.types.StructType
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
@@ -59,7 +59,39 @@ abstract class ColumnarOutputWriter {
    * tables, dynamic partition columns are not included in columns to be written.
    * NOTE: It is the writer's responsibility to close the batch.
    */
-  def write(batch: ColumnarBatch, statsTrackers: Seq[ColumnarWriteTaskStatsTracker]): Unit
+  def write(batch: ColumnarBatch, statsTrackers: Seq[ColumnarWriteTaskStatsTracker]): Unit = {
+    var needToCloseBatch = true
+    try {
+      val writeStartTimestamp = System.nanoTime
+      val writeRange = new NvtxRange("File write", NvtxColor.YELLOW)
+      val gpuTime = try {
+        needToCloseBatch = false
+        writeBatch(batch)
+      } finally {
+        writeRange.close()
+      }
+
+      // Update statistics
+      val writeTime = System.nanoTime - writeStartTimestamp
+      statsTrackers.foreach {
+        case gpuTracker: GpuWriteTaskStatsTracker =>
+          gpuTracker.addWriteTime(writeTime)
+          gpuTracker.addGpuTime(gpuTime)
+        case _ =>
+      }
+    } finally {
+      if (needToCloseBatch) {
+        batch.close()
+      }
+    }
+  }
+
+  /**
+   * Writes the columnar batch and returns the time in ns taken to write
+   * @param batch - Columnar batch that needs to be written
+   * @return - time in ns taken to write the batch
+   */
+  def writeBatch(batch: ColumnarBatch): Long
 
   /**
    * Closes the [[ColumnarOutputWriter]]. Invoked on the executor side after all columnar batches
