@@ -162,6 +162,7 @@ trait GpuBinaryExpression extends BinaryExpression with GpuExpression {
       }
     }
   }
+}
 
 trait GpuBinaryOperator extends BinaryOperator with GpuBinaryExpression
 
