@@ -16,11 +16,10 @@
 
 package org.apache.spark.sql.rapids
 
-import ai.rapids.cudf.Scalar
+import ai.rapids.cudf.{ColumnVector, Scalar}
 import ai.rapids.spark.{GpuBinaryExpression, GpuColumnVector, GpuExpression, GpuUnaryExpression}
-
-import org.apache.spark.sql.catalyst.expressions.{ExpectsInputTypes, Expression}
-import org.apache.spark.sql.types.{AbstractDataType, DataType, StringType}
+import org.apache.spark.sql.catalyst.expressions.{ExpectsInputTypes, Expression, ImplicitCastInputTypes, NullIntolerant, Predicate}
+import org.apache.spark.sql.types.{AbstractDataType, BooleanType, DataType, StringType}
 
 abstract class GpuUnaryString2StringExpression extends GpuUnaryExpression with ExpectsInputTypes {
   override def inputTypes: Seq[AbstractDataType] = Seq(StringType)
@@ -44,13 +43,27 @@ case class GpuLower(child: Expression) extends GpuUnaryString2StringExpression {
     GpuColumnVector.from(input.getBase.lower())
 }
 
-case class GpuStartsWith(left: GpuExpression, right: GpuExpression) extends GpuBinaryExpression {
+case class GpuStartsWith(left: GpuExpression, right: GpuExpression)
+  extends GpuBinaryExpression with Predicate with ImplicitCastInputTypes with NullIntolerant {
+
+  override def inputTypes: Seq[DataType] = Seq(StringType)
+
+  override def sql: String = {
+    val inputSQL = left.sql
+    val listSQL = right.sql.toString
+    s"($inputSQL STARTSWITH ($listSQL))"
+  }
 
   override def toString: String = s"gpustartswith($left, $right)"
 
   def doColumnar(lhs: GpuColumnVector, rhs: Scalar): GpuColumnVector = {
     if (rhs.getJavaString.isEmpty) {
-      createAllTrueColumnVector(lhs)
+      val boolScalar = Scalar.fromBool(true)
+      try {
+        GpuColumnVector.from(ColumnVector.fromScalar(boolScalar, lhs.getRowCount.toInt))
+      } finally {
+        boolScalar.close()
+      }
     } else {
       GpuColumnVector.from(lhs.getBase.startsWith(rhs))
     }
@@ -63,17 +76,29 @@ case class GpuStartsWith(left: GpuExpression, right: GpuExpression) extends GpuB
   override def doColumnar(lhs: Scalar,
     rhs: GpuColumnVector): GpuColumnVector = throw new IllegalStateException("Really should not be here," +
     "Cannot have a scalar as left side operand in StartsWith")
-
-  override def dataType: DataType = left.dataType
 }
 
-case class GpuEndsWith(left: GpuExpression, right: GpuExpression) extends GpuBinaryExpression {
+case class GpuEndsWith(left: GpuExpression, right: GpuExpression)
+  extends GpuBinaryExpression with Predicate with ImplicitCastInputTypes with NullIntolerant {
+
+  override def inputTypes: Seq[DataType] = Seq(StringType)
+
+  override def sql: String = {
+    val inputSQL = left.sql
+    val listSQL = right.sql.toString
+    s"($inputSQL ENDSWITH ($listSQL))"
+  }
 
   override def toString: String = s"gpuendswith($left, $right)"
 
   def doColumnar(lhs: GpuColumnVector, rhs: Scalar): GpuColumnVector = {
     if (rhs.getJavaString.isEmpty) {
-      createAllTrueColumnVector(lhs)
+      val boolScalar = Scalar.fromBool(true)
+      try {
+        GpuColumnVector.from(ColumnVector.fromScalar(boolScalar, lhs.getRowCount.toInt))
+      } finally {
+        boolScalar.close()
+      }
     } else {
       GpuColumnVector.from(lhs.getBase.endsWith(rhs))
     }
@@ -86,6 +111,4 @@ case class GpuEndsWith(left: GpuExpression, right: GpuExpression) extends GpuBin
   override def doColumnar(lhs: Scalar,
     rhs: GpuColumnVector): GpuColumnVector = throw new IllegalStateException("Really should not be here, " +
     "Cannot have a scalar as left side operand in EndsWith")
-
-  override def dataType: DataType = left.dataType
 }

@@ -855,8 +855,8 @@ object GpuOverrides {
       "Starts With",
       (a, conf, p, r) => new BinaryExprMeta[StartsWith](a, conf, p, r) {
         override def tagExprForGpu(): Unit = {
-          if (!a.right.isInstanceOf[Literal]) {
-            willNotWorkOnGpu(" only literals are supported for startsWith")
+          if (!isStringLit(a.right)) {
+            willNotWorkOnGpu("only literals are supported for startsWith")
           }
         }
         override def convertToGpu(lhs: GpuExpression, rhs: GpuExpression): GpuExpression = GpuStartsWith(lhs, rhs)
@@ -865,8 +865,8 @@ object GpuOverrides {
       "Ends With",
       (a, conf, p, r) => new BinaryExprMeta[EndsWith](a, conf, p, r) {
         override def tagExprForGpu(): Unit = {
-          if (!a.right.isInstanceOf[Literal]) {
-            willNotWorkOnGpu(" only literals are supported for endsWith")
+          if (!isStringLit(a.right)) {
+            willNotWorkOnGpu("only literals are supported for endsWith")
           }
         }
         override def convertToGpu(lhs: GpuExpression, rhs: GpuExpression): GpuExpression = GpuEndsWith(lhs, rhs)
