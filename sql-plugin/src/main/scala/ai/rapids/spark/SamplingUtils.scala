@@ -18,12 +18,10 @@
 package ai.rapids.spark
 
 import scala.reflect.ClassTag
-import scala.util.hashing.{MurmurHash3, byteswap32}
+import scala.util.hashing.MurmurHash3
 import scala.util.Random
 
-import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.expressions.UnsafeRow
-import org.apache.spark.sql.catalyst.InternalRow
 
 import java.nio.ByteBuffer
 import java.util.{Random => JavaRandom}
@@ -62,42 +60,19 @@ object SamplingUtils {
       var l = i.toLong
       val rand = new XORShiftRandom(seed)
       while (input.hasNext) {
-        val item = input.next()
+        val item = input.next().asInstanceOf[UnsafeRow].copy()
         l += 1
         // There are k elements in the reservoir, and the l-th element has been
         // consumed. It should be chosen with probability k/l. The expression
         // below is a random long chosen uniformly from [0,l)
         val replacementIndex = (rand.nextDouble() * l).toLong
         if (replacementIndex < k) {
-          reservoir(replacementIndex.toInt) = item
+          reservoir(replacementIndex.toInt) = item.asInstanceOf[T]
         }
       }
       (reservoir, l)
     }
   }
-
-  /**
-    * Sketches the input RDD via reservoir sampling on each partition.
-    *
-    * @param rdd                    the input RDD to sketch
-    * @param sampleSizePerPartition max sample size per partition
-    * @return (total number of items, an array of (partitionId, number of items, sample))
-    */
-  def sketch[K: ClassTag](
-                           rdd: RDD[K],
-                           sampleSizePerPartition: Int): (Long, Array[(Int, Long, Array[K])]) = {
-    val shift = rdd.id
-    val sketched = rdd.mapPartitionsWithIndex { (idx, iter) =>
-      iter.map(unsafeRow => unsafeRow.asInstanceOf[InternalRow])
-      val seed = byteswap32(idx ^ (shift << 16))
-      val (sample, n) = SamplingUtils.reservoirSampleAndCount(
-        iter, sampleSizePerPartition, seed)
-      Iterator((idx, n, sample))
-    }.collect()
-    val numItems = sketched.map(_._2).sum
-    (numItems, sketched)
-  }
-
 }
 
 

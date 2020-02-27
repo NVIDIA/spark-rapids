@@ -175,6 +175,7 @@ case class GpuHashAggregateExec(requiredChildDistributionExpressions: Option[Seq
     //    val avgHashProbe = longMetric("avgHashProbe")
     //
     val rdd = child.executeColumnar()
+
     rdd.mapPartitions { cbIter => {
       var batch: ColumnarBatch = null // incoming batch
       //
@@ -234,54 +235,58 @@ case class GpuHashAggregateExec(requiredChildDistributionExpressions: Option[Seq
           // 1) Consume the raw incoming batch, evaluating nested expressions (e.g. avg(col1 + col2)),
           //    obtaining ColumnVectors that can be aggregated
           batch = cbIter.next()
-
-          val nvtxRange = new NvtxWithMetrics("Hash Aggregate Batch", NvtxColor.YELLOW, totalTime)
-          try {
-            childCvs = processIncomingBatch(batch, boundInputReferences)
-
-            // done with the batch, clean it as soon as possible
+          if (batch.numRows() == 0) {
             batch.close()
             batch = null
+          } else {
+            val nvtxRange = new NvtxWithMetrics("Hash Aggregate Batch", NvtxColor.YELLOW, totalTime)
+            try {
+              childCvs = processIncomingBatch(batch, boundInputReferences)
 
-            // 2) When a partition gets multiple batches, we need to do two things:
-            //     a) if this is the first batch, run aggregation and store the aggregated result
-            //     b) if this is a subsequent batch, we need to merge the previously aggregated results
-            //        with the incoming batch
-            //     c) also update total time and aggTime metrics
-            aggregatedInputCb = computeAggregate(childCvs, finalMode, groupingExpressions,
-              if (finalMode) boundMergeAgg else boundUpdateAgg, computeAggTime)
+              // done with the batch, clean it as soon as possible
+              batch.close()
+              batch = null
 
-            childCvs.safeClose()
-            childCvs = null
+              // 2) When a partition gets multiple batches, we need to do two things:
+              //     a) if this is the first batch, run aggregation and store the aggregated result
+              //     b) if this is a subsequent batch, we need to merge the previously aggregated results
+              //        with the incoming batch
+              //     c) also update total time and aggTime metrics
+              aggregatedInputCb = computeAggregate(childCvs, finalMode, groupingExpressions,
+                if (finalMode) boundMergeAgg else boundUpdateAgg, computeAggTime)
 
-            if (aggregatedCb == null) {
-              // this is the first batch, regardless of mode.
-              aggregatedCb = aggregatedInputCb
-              aggregatedInputCb = null
-            } else {
-              // this is a subsequent batch, and we must:
-              // 1) concatenate aggregatedInputCb with the prior result (aggregatedCb)
-              // 2) perform a merge aggregate on the concatenated columns
-              //
-              // In the future, we could plugin in spilling here, where if the concatenated
-              // batch sizes would go over a threshold, we'd spill the aggregatedCb,
-              // and perform aggregation on the new batch (which would need to be merged, with the
-              // spilled aggregates)
-              concatCvs = concatenateBatches(aggregatedInputCb, aggregatedCb, concatTime)
-              aggregatedCb.close()
-              aggregatedCb = null
-              aggregatedInputCb.close()
-              aggregatedInputCb = null
+              childCvs.safeClose()
+              childCvs = null
 
-              // 3) Compute aggregate. In subsequent iterations we'll use this result
-              //    to concatenate against incoming batches (step 2)
-              aggregatedCb = computeAggregate(concatCvs, merge = true, groupingExpressions,
-                boundMergeAgg, computeAggTime)
-              concatCvs.safeClose()
-              concatCvs = null
+              if (aggregatedCb == null) {
+                // this is the first batch, regardless of mode.
+                aggregatedCb = aggregatedInputCb
+                aggregatedInputCb = null
+              } else {
+                // this is a subsequent batch, and we must:
+                // 1) concatenate aggregatedInputCb with the prior result (aggregatedCb)
+                // 2) perform a merge aggregate on the concatenated columns
+                //
+                // In the future, we could plugin in spilling here, where if the concatenated
+                // batch sizes would go over a threshold, we'd spill the aggregatedCb,
+                // and perform aggregation on the new batch (which would need to be merged, with the
+                // spilled aggregates)
+                concatCvs = concatenateBatches(aggregatedInputCb, aggregatedCb, concatTime)
+                aggregatedCb.close()
+                aggregatedCb = null
+                aggregatedInputCb.close()
+                aggregatedInputCb = null
+
+                // 3) Compute aggregate. In subsequent iterations we'll use this result
+                //    to concatenate against incoming batches (step 2)
+                aggregatedCb = computeAggregate(concatCvs, merge = true, groupingExpressions,
+                  boundMergeAgg, computeAggTime)
+                concatCvs.safeClose()
+                concatCvs = null
+              }
+            } finally {
+              nvtxRange.close()
             }
-          } finally {
-            nvtxRange.close()
           }
         }
 
