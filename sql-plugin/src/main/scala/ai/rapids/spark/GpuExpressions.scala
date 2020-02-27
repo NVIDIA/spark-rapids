@@ -163,20 +163,6 @@ trait GpuBinaryExpression extends BinaryExpression with GpuExpression {
     }
   }
 
-  def createAllTrueColumnVector(lhs: GpuColumnVector) : GpuColumnVector = {
-    var ret : GpuColumnVector = null
-    var b : ColumnVector.Builder = null
-      try {
-        b = ColumnVector.builder(DType.BOOL8, lhs.getRowCount.toInt)
-        (0 until lhs.getRowCount.toInt).foreach(i => b.append(true))
-        ret = GpuColumnVector.from(b.build())
-      } finally {
-      b.close()
-    }
-    ret
-  }
-}
-
 trait GpuBinaryOperator extends BinaryOperator with GpuBinaryExpression
 
 trait CudfBinaryExpression extends GpuBinaryExpression {
