@@ -876,7 +876,27 @@ object GpuOverrides {
       (a, conf, p, r) => new UnaryExprMeta[Lower](a, conf, p, r) {
         override def convertToGpu(child: GpuExpression): GpuExpression = GpuLower(child)
       })
-      .incompat(CASE_MODIFICATION_INCOMPAT)
+      .incompat(CASE_MODIFICATION_INCOMPAT),
+    expr[StartsWith](
+      "Starts With",
+      (a, conf, p, r) => new BinaryExprMeta[StartsWith](a, conf, p, r) {
+        override def tagExprForGpu(): Unit = {
+          if (!isStringLit(a.right)) {
+            willNotWorkOnGpu("only literals are supported for startsWith")
+          }
+        }
+        override def convertToGpu(lhs: GpuExpression, rhs: GpuExpression): GpuExpression = GpuStartsWith(lhs, rhs)
+      }),
+    expr[EndsWith](
+      "Ends With",
+      (a, conf, p, r) => new BinaryExprMeta[EndsWith](a, conf, p, r) {
+        override def tagExprForGpu(): Unit = {
+          if (!isStringLit(a.right)) {
+            willNotWorkOnGpu("only literals are supported for endsWith")
+          }
+        }
+        override def convertToGpu(lhs: GpuExpression, rhs: GpuExpression): GpuExpression = GpuEndsWith(lhs, rhs)
+      })
   ).map(r => (r.getClassFor.asSubclass(classOf[Expression]), r)).toMap
 
   def wrapScan[INPUT <: Scan](
