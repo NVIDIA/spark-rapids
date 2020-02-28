@@ -18,8 +18,9 @@ package ai.rapids.spark
 
 import java.time.ZoneId
 
-import scala.reflect.ClassTag
+import ai.rapids.spark.DateUtils.TimestampFormatConversionException
 
+import scala.reflect.ClassTag
 import org.apache.spark.internal.Logging
 import org.apache.spark.sql.catalyst.expressions._
 import org.apache.spark.sql.catalyst.expressions.aggregate._
@@ -589,6 +590,32 @@ object GpuOverrides {
         GpuDateDiff(lhs, rhs)
       }
     }),
+    expr[FromUnixTime](
+      "get the String from a unix timestamp",
+      (a, conf, p, r) => new BinaryExprMeta[FromUnixTime](a, conf, p, r) {
+        var strfFormat: String = null
+        override def tagExprForGpu(): Unit = {
+          try {
+            if (ZoneId.of(a.timeZoneId.get).normalized() != UTC_TIMEZONE_ID) {
+              willNotWorkOnGpu("Only UTC zone id is supported")
+            }
+            if(isStringLit(a.right)) {
+              strfFormat = DateUtils.toStrf(a.right.eval().toString)
+            } else {
+              willNotWorkOnGpu("rhs has to be a String literal")
+            }
+          } catch {
+            case x: TimestampFormatConversionException => {
+              willNotWorkOnGpu(x.getMessage)
+            }
+          }
+        }
+
+        override def convertToGpu(lhs: GpuExpression, rhs: GpuExpression): GpuExpression = {
+          // passing the already converted strf string for a little optimization
+          GpuFromUnixTime(lhs, rhs, strfFormat)
+        }
+      }),
     expr[Add](
       "addition",
       (a, conf, p, r) => new BinaryExprMeta[Add](a, conf, p, r) {
