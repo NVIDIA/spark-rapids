@@ -17,9 +17,10 @@
 package org.apache.spark.sql.rapids
 
 import ai.rapids.cudf.{DType, Scalar}
-import ai.rapids.spark.{GpuBinaryExpression, GpuColumnVector, GpuUnaryExpression}
-import org.apache.spark.sql.catalyst.expressions.{Expression, ImplicitCastInputTypes}
-import org.apache.spark.sql.types.{AbstractDataType, DataType, DateType, IntegerType}
+import ai.rapids.spark._
+import org.apache.spark.sql.catalyst.expressions.{Expression, ImplicitCastInputTypes, TimeZoneAwareExpression}
+import org.apache.spark.sql.catalyst.util.TimestampFormatter
+import org.apache.spark.sql.types._
 
 trait GpuDateTimeUnaryExpression extends GpuUnaryExpression with ImplicitCastInputTypes {
   override def inputTypes: Seq[AbstractDataType] = Seq(DateType)
@@ -96,4 +97,35 @@ case class GpuMonth(child: Expression) extends GpuDateTimeUnaryExpression {
 case class GpuDayOfMonth(child: Expression) extends GpuDateTimeUnaryExpression {
   override def doColumnar(input: GpuColumnVector): GpuColumnVector =
     GpuColumnVector.from(input.getBase.day())
+}
+
+case class GpuFromUnixTime(sec: GpuExpression, format: GpuExpression, strfFormat: String, timeZoneId: Option[String] = None)
+  extends GpuBinaryExpression with TimeZoneAwareExpression with ImplicitCastInputTypes {
+  override def doColumnar(lhs: GpuColumnVector, rhs: GpuColumnVector): GpuColumnVector = {
+    throw new IllegalArgumentException("rhs has to be a scalar for the from_unixtime to work")
+  }
+
+  override def doColumnar(lhs: Scalar, rhs: GpuColumnVector): GpuColumnVector = {
+    throw new IllegalArgumentException("lhs has to be a vector and rhs has to be a scalar for the from_unixtime to work")
+  }
+
+  override def doColumnar(lhs: GpuColumnVector, rhs: Scalar): GpuColumnVector = {
+    // we aren't using rhs as it was already converted in the GpuOverrides while creating the
+    // expressions map and passed down here as strfFormat
+    GpuColumnVector.from(lhs.getBase.asTimestampSeconds.asStrings(strfFormat))
+  }
+
+  override def withTimeZone(timeZoneId: String): TimeZoneAwareExpression = copy(timeZoneId = Option(timeZoneId))
+
+  override def inputTypes: Seq[AbstractDataType] = Seq(LongType, StringType)
+
+  override def left: GpuExpression = sec
+
+  // we aren't using this "right" GpuExpression, as it was already converted in the GpuOverrides while creating the
+  // expressions map and passed down here as strfFormat
+  override def right: GpuExpression = format
+
+  override def dataType: DataType = StringType
+
+  override lazy val resolved: Boolean = childrenResolved && checkInputDataTypes().isSuccess
 }
