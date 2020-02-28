@@ -16,10 +16,10 @@
 
 package org.apache.spark.sql.rapids
 
-import ai.rapids.cudf.{DType, Scalar}
-import ai.rapids.spark._
+import ai.rapids.cudf.{ColumnVector, DType, Scalar}
+import ai.rapids.spark.{GpuBinaryExpression, GpuExpression, GpuColumnVector, GpuUnaryExpression}
+
 import org.apache.spark.sql.catalyst.expressions.{Expression, ImplicitCastInputTypes, TimeZoneAwareExpression}
-import org.apache.spark.sql.catalyst.util.TimestampFormatter
 import org.apache.spark.sql.types._
 
 trait GpuDateTimeUnaryExpression extends GpuUnaryExpression with ImplicitCastInputTypes {
@@ -112,7 +112,16 @@ case class GpuFromUnixTime(sec: GpuExpression, format: GpuExpression, strfFormat
   override def doColumnar(lhs: GpuColumnVector, rhs: Scalar): GpuColumnVector = {
     // we aren't using rhs as it was already converted in the GpuOverrides while creating the
     // expressions map and passed down here as strfFormat
-    GpuColumnVector.from(lhs.getBase.asTimestampSeconds.asStrings(strfFormat))
+    var tsVector: ColumnVector = null
+    try {
+      tsVector = lhs.getBase.asTimestampSeconds
+      val strVector = tsVector.asStrings(strfFormat)
+      GpuColumnVector.from(strVector)
+    } finally {
+      if (tsVector != null) {
+        tsVector.close()
+      }
+    }
   }
 
   override def withTimeZone(timeZoneId: String): TimeZoneAwareExpression = copy(timeZoneId = Option(timeZoneId))
