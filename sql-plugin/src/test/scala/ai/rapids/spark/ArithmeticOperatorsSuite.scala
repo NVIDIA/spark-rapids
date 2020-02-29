@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019, NVIDIA CORPORATION.
+ * Copyright (c) 2019-2020, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -98,6 +98,14 @@ class ArithmeticOperatorsSuite extends SparkQueryCompareTestSuite {
 
   INCOMPAT_testSparkResultsAreEqual("Test exp floats", smallFloatDf, 0.00001) {
     frame => frame.select(exp(col("floats")), exp(col("more_floats")))
+  }
+
+  INCOMPAT_testSparkResultsAreEqual("Test expm1 doubles", smallDoubleDf, 0.00001) {
+    frame => frame.select(expm1(col("doubles")), expm1(col("more_doubles")))
+  }
+
+  INCOMPAT_testSparkResultsAreEqual("Test expm1 floats", smallFloatDf, 0.00001) {
+    frame => frame.select(expm1(col("floats")), expm1(col("more_floats")))
   }
 
   testSparkResultsAreEqual("Test sqrt doubles", doubleDf) {
