@@ -90,6 +90,34 @@ class StringOperatorsSuite extends SparkQueryCompareTestSuite {
     frame => frame.select(lower(col("strings")))
   }
 
+  testSparkResultsAreEqual("Substring location function", nullableStringsFromCsv) {
+    frame => frame.selectExpr("POSITION('r' IN strings)")
+  }
+
+  testSparkResultsAreEqual("Substring location function with offset", nullableStringsFromCsv) {
+    frame => frame.selectExpr("locate('o', strings, 3)")
+  }
+
+  testSparkResultsAreEqual("Substring location function miss", nullableStringsFromCsv) {
+    frame => frame.selectExpr("locate('t', strings, 1000)")
+  }
+
+  testSparkResultsAreEqual("Substring location function null offset", nullableStringsFromCsv) {
+    frame => frame.selectExpr("locate('t', strings, null)")
+  }
+
+  testSparkResultsAreEqual("Substring location function null substring", nullableStringsFromCsv) {
+    frame => frame.selectExpr("locate(null, strings, 1)")
+  }
+
+  testSparkResultsAreEqual("Substring location function empty string", nullableStringsFromCsv) {
+    frame => frame.selectExpr("POSITION('' IN strings)")
+  }
+
+  testSparkResultsAreEqual("Substring location function invalid offset", nullableStringsFromCsv) {
+    frame => frame.selectExpr("locate('', strings, 0)")
+  }
+
   testSparkResultsAreEqual("String StartsWith", nullableStringsFromCsv) {
     frame => frame.filter(col("strings").startsWith("F"))
   }

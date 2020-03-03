@@ -19,7 +19,7 @@ package ai.rapids.spark
 import scala.collection.mutable
 
 import org.apache.spark.sql.catalyst.expressions.aggregate.AggregateFunction
-import org.apache.spark.sql.catalyst.expressions.{BinaryExpression, Expression, NullsFirst, NullsLast, SortOrder, UnaryExpression}
+import org.apache.spark.sql.catalyst.expressions.{BinaryExpression, Expression, NullsFirst, NullsLast, SortOrder, TernaryExpression, UnaryExpression}
 import org.apache.spark.sql.catalyst.plans.physical.{Partitioning, RangePartitioning}
 import org.apache.spark.sql.execution.SparkPlan
 import org.apache.spark.sql.execution.exchange.ShuffleExchangeExec
@@ -629,6 +629,24 @@ abstract class BinaryExprMeta[INPUT <: BinaryExpression](
     convertToGpu(childExprs(0).convertToGpu(), childExprs(1).convertToGpu())
 
   def convertToGpu(lhs: GpuExpression, rhs: GpuExpression): GpuExpression
+}
+
+/**
+ * Base class for metadata around [[TernaryExpression]].
+ */
+abstract class TernaryExprMeta[INPUT <: TernaryExpression](
+    expr: INPUT,
+    conf: RapidsConf,
+    parent: Option[RapidsMeta[_, _, _]],
+    rule: ConfKeysAndIncompat)
+  extends ExprMeta[INPUT](expr, conf, parent, rule) {
+
+  override final def convertToGpu(): GpuExpression =
+    convertToGpu(childExprs(0).convertToGpu(), childExprs(1).convertToGpu(),
+                 childExprs(2).convertToGpu())
+
+  def convertToGpu(val0: GpuExpression, val1: GpuExpression,
+                   val2: GpuExpression): GpuExpression
 }
 
 /**
