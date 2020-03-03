@@ -97,7 +97,7 @@ trait SparkQueryCompareTestSuite extends FunSuite {
     case (a: Double, b: Double) if maxFloatDiff <= 0 =>
       java.lang.Double.doubleToRawLongBits(a) == java.lang.Double.doubleToRawLongBits(b)
     case (a: Double, b: Double) if maxFloatDiff > 0 =>
-      val ret = (Math.abs(a - b) <= maxFloatDiff)
+      val ret = (Math.abs(a - b) <= maxFloatDiff) || (a.isNaN && b.isNaN)
       if (!ret) {
         System.err.println(s"\n\nABS(${a} - ${b}) == ${Math.abs(a - b)} is not <= ${maxFloatDiff} (double)")
       }
@@ -105,7 +105,7 @@ trait SparkQueryCompareTestSuite extends FunSuite {
     case (a: Float, b: Float) if maxFloatDiff <= 0 =>
       java.lang.Float.floatToRawIntBits(a) == java.lang.Float.floatToRawIntBits(b)
     case (a: Float, b: Float) if maxFloatDiff > 0 =>
-      val ret = (Math.abs(a - b) <= maxFloatDiff)
+      val ret = (Math.abs(a - b) <= maxFloatDiff) || (a.isNaN && b.isNaN)
       if (!ret) {
         System.err.println(s"\n\nABS(${a} - ${b}) == ${Math.abs(a - b)} is not <= ${maxFloatDiff} (float)")
       }
