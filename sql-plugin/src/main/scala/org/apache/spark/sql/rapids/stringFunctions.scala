@@ -16,12 +16,11 @@
 
 package org.apache.spark.sql.rapids
 
-import ai.rapids.cudf.{ColumnVector, Scalar}
-
-import ai.rapids.spark.{GpuBinaryExpression, GpuColumnVector, GpuExpression, GpuUnaryExpression}
+import ai.rapids.cudf.{ColumnVector, BinaryOp, DType, Scalar}
+import ai.rapids.spark.{GpuBinaryExpression, GpuColumnVector, GpuExpression, GpuLiteral, GpuScalar, GpuTernaryExpression, GpuUnaryExpression}
 
 import org.apache.spark.sql.catalyst.expressions.{ExpectsInputTypes, Expression, ImplicitCastInputTypes, NullIntolerant, Predicate}
-import org.apache.spark.sql.types.{AbstractDataType, DataType, StringType}
+import org.apache.spark.sql.types.{AbstractDataType, DataType, StringType, IntegerType}
 
 abstract class GpuUnaryString2StringExpression extends GpuUnaryExpression with ExpectsInputTypes {
   override def inputTypes: Seq[AbstractDataType] = Seq(StringType)
@@ -43,6 +42,86 @@ case class GpuLower(child: Expression) extends GpuUnaryString2StringExpression {
 
   override def doColumnar(input: GpuColumnVector): GpuColumnVector =
     GpuColumnVector.from(input.getBase.lower())
+}
+
+case class GpuStringLocate(substr: Expression, col: Expression, start: Expression)
+  extends GpuTernaryExpression with ImplicitCastInputTypes {
+
+  override def dataType: DataType = IntegerType
+  override def inputTypes: Seq[DataType] = Seq(StringType, StringType, IntegerType)
+  override def children: Seq[Expression] = Seq(substr, col, start)
+
+  def this(substr: Expression, col: Expression) = {
+    this(substr, col, GpuLiteral(1, IntegerType))
+  }
+
+  override def doColumnar(val0: GpuColumnVector, val1: GpuColumnVector, val2: GpuColumnVector): GpuColumnVector =
+    throw new UnsupportedOperationException(s"Cannot columnar evaluate expression: $this")
+  override def doColumnar(val0: Scalar, val1: GpuColumnVector, val2: GpuColumnVector): GpuColumnVector =
+    throw new UnsupportedOperationException(s"Cannot columnar evaluate expression: $this")
+  override def doColumnar(val0: Scalar, val1: Scalar, val2: GpuColumnVector): GpuColumnVector =
+    throw new UnsupportedOperationException(s"Cannot columnar evaluate expression: $this")
+  override def doColumnar(val0: Scalar, val1: GpuColumnVector, val2: Scalar): GpuColumnVector = {
+    if (!val2.isValid()) {
+      val zeroScalar = GpuScalar.from(0, IntegerType)
+      try {
+        GpuColumnVector.from(zeroScalar, val1.getRowCount().toInt)
+      } finally {
+        zeroScalar.close()
+      }
+    } else if (!val0.isValid()) { //if null substring // or null column? <-- needs to be looked for/tested
+      val nullScalar = GpuScalar.from(null, IntegerType)
+      try {
+        GpuColumnVector.from(nullScalar, val1.getRowCount().toInt)
+      } finally {
+        nullScalar.close()
+      }
+    } else if (val2.getInt() < 1 || val0.getJavaString().isEmpty()) {
+      val isNotNullColumn = val1.getBase.isNotNull()
+      try {
+        val nullScalar = GpuScalar.from(null, IntegerType)
+        try {
+          if (val2.getInt() >= 1) {
+            val sv1 = GpuScalar.from(1, IntegerType)
+            try {
+              GpuColumnVector.from(isNotNullColumn.ifElse(sv1, nullScalar))
+            } finally {
+              sv1.close()
+            }
+          } else {
+            val sv0 = GpuScalar.from(0, IntegerType)
+            try {
+              GpuColumnVector.from(isNotNullColumn.ifElse(sv0, nullScalar))
+            } finally {
+              sv0.close()
+            }
+          }
+        } finally {
+          nullScalar.close()
+        }
+      } finally {
+        isNotNullColumn.close()
+      }
+    } else {
+      val skewedResult = val1.getBase.stringLocate(val0, val2.getInt() - 1, -1)
+      try {
+        val sv1 = GpuScalar.from(1, IntegerType)
+        try {
+          GpuColumnVector.from(skewedResult.add(sv1))
+        } finally {
+          sv1.close()
+        }
+      } finally {
+        skewedResult.close()
+      }
+    }
+  }
+  override def doColumnar(val0: GpuColumnVector, val1: Scalar, val2: GpuColumnVector): GpuColumnVector =
+    throw new UnsupportedOperationException(s"Cannot columnar evaluate expression: $this")
+  override def doColumnar(val0: GpuColumnVector, val1: Scalar, val2: Scalar): GpuColumnVector =
+    throw new UnsupportedOperationException(s"Cannot columnar evaluate expression: $this")
+  override def doColumnar(val0: GpuColumnVector, val1: GpuColumnVector, val2: Scalar): GpuColumnVector =
+    throw new UnsupportedOperationException(s"Cannot columnar evaluate expression: $this")
 }
 
 case class GpuStartsWith(left: GpuExpression, right: GpuExpression)

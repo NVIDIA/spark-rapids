@@ -21,7 +21,7 @@ import scala.collection.mutable.ArrayBuffer
 import ai.rapids.cudf.{BinaryOp, BinaryOperable, DType, Scalar, UnaryOp}
 import ai.rapids.spark.RapidsPluginImplicits._
 
-import org.apache.spark.sql.catalyst.expressions.{BinaryExpression, BinaryOperator, Expression, UnaryExpression, Unevaluable}
+import org.apache.spark.sql.catalyst.expressions.{BinaryExpression, BinaryOperator, Expression, TernaryExpression, UnaryExpression, Unevaluable}
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
 
@@ -200,3 +200,91 @@ trait CudfBinaryExpression extends GpuBinaryExpression {
 }
 
 abstract class CudfBinaryOperator extends GpuBinaryOperator with CudfBinaryExpression
+
+trait GpuTernaryExpression extends TernaryExpression with GpuExpression {
+
+  def doColumnar(val0: GpuColumnVector, val1: GpuColumnVector, val2: GpuColumnVector): GpuColumnVector
+  def doColumnar(val0: Scalar, val1: GpuColumnVector, val2: GpuColumnVector): GpuColumnVector
+  def doColumnar(val0: Scalar, val1: Scalar, val2: GpuColumnVector): GpuColumnVector
+  def doColumnar(val0: Scalar, val1: GpuColumnVector, val2: Scalar): GpuColumnVector
+  def doColumnar(val0: GpuColumnVector, val1: Scalar, val2: GpuColumnVector): GpuColumnVector
+  def doColumnar(val0: GpuColumnVector, val1: Scalar, val2: Scalar): GpuColumnVector
+  def doColumnar(val0: GpuColumnVector, val1: GpuColumnVector, val2: Scalar): GpuColumnVector
+
+  override def columnarEval(batch: ColumnarBatch): Any = {
+    var val0: Any = null
+    var val1: Any = null
+    var val2: Any = null
+    try {
+      val0 = children(0).asInstanceOf[GpuExpression].columnarEval(batch)
+      val1 = children(1).asInstanceOf[GpuExpression].columnarEval(batch)
+      val2 = children(2).asInstanceOf[GpuExpression].columnarEval(batch)
+
+      (val0, val1, val2) match {
+        case (v0: GpuColumnVector, v1: GpuColumnVector, v2: GpuColumnVector) =>
+          doColumnar(v0, v1, v2)
+        case (v0, v1: GpuColumnVector, v2: GpuColumnVector) =>
+          val scalar0 = GpuScalar.from(v0, children(0).dataType)
+          try {
+            doColumnar(scalar0, v1, v2)
+          } finally {
+            scalar0.close()
+          }
+        case (v0: GpuColumnVector, v1, v2: GpuColumnVector) =>
+          val scalar1 = GpuScalar.from(v1, children(1).dataType)
+          try {
+            doColumnar(v0, scalar1, v2)
+          } finally {
+            scalar1.close()
+          }
+        case (v0: GpuColumnVector, v1: GpuColumnVector, v2) =>
+          val scalar2 = GpuScalar.from(v2, children(2).dataType)
+          try {
+            doColumnar(v0, v1, scalar2)
+          } finally {
+            scalar2.close()
+          }
+        case (v0, v1, v2: GpuColumnVector) =>
+          val scalar0 = GpuScalar.from(v0, children(0).dataType)
+          val scalar1 = GpuScalar.from(v1, children(1).dataType)
+          try {
+            doColumnar(scalar0, scalar1, v2)
+          } finally {
+            scalar0.close()
+            scalar1.close()
+          }
+        case (v0, v1: GpuColumnVector, v2) =>
+          val scalar0 = GpuScalar.from(v0, children(0).dataType)
+          val scalar2 = GpuScalar.from(v2, children(2).dataType)
+          try {
+            doColumnar(scalar0, v1, scalar2)
+          } finally {
+            scalar0.close()
+            scalar2.close()
+          }
+        case (v0: GpuColumnVector, v1, v2) =>
+          val scalar1 = GpuScalar.from(v1, children(1).dataType)
+          val scalar2 = GpuScalar.from(v2, children(2).dataType)
+          try {
+            doColumnar(v0, scalar1, scalar2)
+          } finally {
+            scalar1.close()
+            scalar2.close()
+          }
+        case (v0, v1, v2) if (v0 != null && v1 != null && v2 != null) =>
+          nullSafeEval(v0, v1, v2)
+        case _ => null
+      }
+    } finally {
+      if (val0.isInstanceOf[AutoCloseable]) {
+        val0.asInstanceOf[AutoCloseable].close()
+      }
+      if (val1.isInstanceOf[AutoCloseable]) {
+        val1.asInstanceOf[AutoCloseable].close()
+      }
+      if (val2.isInstanceOf[AutoCloseable]) {
+        val2.asInstanceOf[AutoCloseable].close()
+      }
+    }
+  }
+}
