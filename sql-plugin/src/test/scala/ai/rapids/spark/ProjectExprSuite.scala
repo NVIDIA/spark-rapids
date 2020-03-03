@@ -17,13 +17,28 @@
 package ai.rapids.spark
 
 import org.apache.spark.SparkConf
-import org.apache.spark.sql.functions.{col, lit, nanvl, coalesce}
 import org.apache.spark.sql.{DataFrame, SparkSession}
+import org.apache.spark.sql.functions._
 
 class ProjectExprSuite extends SparkQueryCompareTestSuite {
   def forceHostColumnarToGpu(): SparkConf = {
     // turns off BatchScanExec, so we get a CPU BatchScanExec together with a HostColumnarToGpu
     new SparkConf().set("spark.rapids.sql.exec.BatchScanExec", "false")
+  }
+
+  test("rand is okay") {
+    // We cannot test that the results are exactly equal because our random number
+    // generator is not identical to spark, so just make sure it does not crash
+    // and all of the numbers are in the proper range
+    withGpuSparkSession(session => {
+      val df = nullableFloatCsvDf(session)
+      val data = df.select(col("floats"), rand().as("RANDOM")).collect()
+      data.foreach(row => {
+        val d = row.getDouble(1)
+        assert(d < 1.0)
+        assert(d >= 0.0)
+      })
+    })
   }
 
   testSparkResultsAreEqual("nanvl lit col", floatWithNansDf) {
