@@ -865,6 +865,11 @@ object GpuOverrides {
 
         override def convertToGpu(child: GpuExpression): GpuExpression = GpuAverage(child)
       }),
+    expr[Rand](
+      "Generate a random column with i.i.d. uniformly distributed values in [0, 1)",
+      (a, conf, p, r) => new UnaryExprMeta[Rand](a, conf, p, r) {
+        override def convertToGpu(child: GpuExpression): GpuExpression = GpuRand(child)
+      }),
     expr[Upper](
       "String uppercase operator",
       (a, conf, p, r) => new UnaryExprMeta[Upper](a, conf, p, r) {
