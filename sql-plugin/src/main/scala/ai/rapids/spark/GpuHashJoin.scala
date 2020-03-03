@@ -13,8 +13,8 @@ object GpuHashJoin {
       meta: RapidsMeta[_, _, _],
       joinType: JoinType,
       condition: Option[Expression]): Unit = joinType match {
-    case LeftOuter | Inner =>
-    case LeftSemi | LeftAnti =>
+    case Inner =>
+    case LeftOuter | LeftSemi | LeftAnti =>
       if (condition.isDefined) {
         meta.willNotWorkOnGpu(s"$joinType joins currently do not support conditions")
       }
