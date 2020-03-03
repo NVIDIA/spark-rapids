@@ -36,6 +36,30 @@ class UnaryOperatorsSuite extends SparkQueryCompareTestSuite {
     frame => frame.select(asin(col("floats")), asin(col("more_floats")))
   }
 
+  INCOMPAT_testSparkResultsAreEqual("Test asinh floats", floatDf, 0.00001) {
+    frame => frame.selectExpr("asinh(floats)")
+  }
+
+  INCOMPAT_testSparkResultsAreEqual("Test asinh doubles", doubleDf, 0.00001) {
+    frame => frame.selectExpr("asinh(doubles)")
+  }
+
+  INCOMPAT_testSparkResultsAreEqual("Test acosh floats", floatDf, 0.00001) {
+    frame => frame.selectExpr("acosh(floats)")
+  }
+
+  INCOMPAT_testSparkResultsAreEqual("Test acosh doubles", doubleDf, 0.00001) {
+    frame => frame.selectExpr("acosh(doubles)")
+  }
+
+  INCOMPAT_testSparkResultsAreEqual("Test atanh floats", floatDf, 0.00001) {
+    frame => frame.selectExpr("atanh(floats)")
+  }
+
+  INCOMPAT_testSparkResultsAreEqual("Test atanh doubles", doubleDf, 0.00001) {
+    frame => frame.selectExpr("atanh(doubles)")
+  }
+
   INCOMPAT_testSparkResultsAreEqual("Test atan doubles", doubleDf, 0.00001) {
     frame => frame.select(atan(col("doubles")), atan(col("more_doubles")))
   }

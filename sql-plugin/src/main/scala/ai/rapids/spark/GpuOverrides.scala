@@ -446,11 +446,23 @@ object GpuOverrides {
       (a, conf, p, r) => new UnaryExprMeta[Acos](a, conf, p, r) {
         override def convertToGpu(child: GpuExpression): GpuExpression = GpuAcos(child)
       }),
+    expr[Acosh](
+      "inverse hyperbolic cosine",
+      (a, conf, p, r) => new UnaryExprMeta[Acosh](a, conf, p, r) {
+        override def convertToGpu(child: GpuExpression): GpuExpression = GpuAcosh(child)
+      })
+    .incompat(FLOAT_DIFFERS_INCOMPAT),
     expr[Asin](
       "inverse sine",
       (a, conf, p, r) => new UnaryExprMeta[Asin](a, conf, p, r) {
         override def convertToGpu(child: GpuExpression): GpuExpression = GpuAsin(child)
       }),
+    expr[Asinh](
+      "inverse hyperbolic sine",
+      (a, conf, p, r) => new UnaryExprMeta[Asinh](a, conf, p, r) {
+        override def convertToGpu(child: GpuExpression): GpuExpression = GpuAsinh(child)
+      })
+    .incompat(FLOAT_DIFFERS_INCOMPAT),
     expr[Sqrt](
       "square root",
       (a, conf, p, r) => new UnaryExprMeta[Sqrt](a, conf, p, r) {
@@ -539,6 +551,12 @@ object GpuOverrides {
       "inverse tangent",
       (a, conf, p, r) => new UnaryExprMeta[Atan](a, conf, p, r) {
         override def convertToGpu(child: GpuExpression): GpuExpression = GpuAtan(child)
+      })
+      .incompat(FLOAT_DIFFERS_INCOMPAT),
+    expr[Atanh](
+      "inverse hyperbolic tangent",
+      (a, conf, p, r) => new UnaryExprMeta[Atanh](a, conf, p, r) {
+        override def convertToGpu(child: GpuExpression): GpuExpression = GpuAtanh(child)
       })
       .incompat(FLOAT_DIFFERS_INCOMPAT),
     expr[Cos](
