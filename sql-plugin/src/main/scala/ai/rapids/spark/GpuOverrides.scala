@@ -571,6 +571,12 @@ object GpuOverrides {
         override def convertToGpu(child: GpuExpression): GpuExpression = GpuExp(child)
       })
       .incompat(FLOAT_DIFFERS_INCOMPAT),
+    expr[Expm1](
+      "Euler's number e raised to a power minus 1",
+      (a, conf, p, r) => new UnaryExprMeta[Expm1](a, conf, p, r) {
+        override def convertToGpu(child: GpuExpression): GpuExpression = GpuExpm1(child)
+      })
+      .incompat(FLOAT_DIFFERS_INCOMPAT),
     expr[Log](
       "natural log",
       (a, conf, p, r) => new UnaryExprMeta[Log](a, conf, p, r) {

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019, NVIDIA CORPORATION.
+ * Copyright (c) 2019-2020, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,11 +16,10 @@
 
 package org.apache.spark.sql.rapids
 
-import ai.rapids.cudf.{BinaryOp, DType, UnaryOp}
-import ai.rapids.spark.{CudfBinaryExpression, CudfUnaryExpression}
-
+import ai.rapids.cudf.{BinaryOp, DType, Scalar, UnaryOp}
+import ai.rapids.spark.{CudfBinaryExpression, CudfUnaryExpression, GpuColumnVector}
 import org.apache.spark.sql.catalyst.expressions.{Expression, ImplicitCastInputTypes}
-import org.apache.spark.sql.types.{AbstractDataType, DataType, DecimalType, DoubleType, LongType, TypeCollection}
+import org.apache.spark.sql.types._
 
 abstract class CudfUnaryMathExpression(name: String) extends CudfUnaryExpression
     with Serializable with ImplicitCastInputTypes {
@@ -84,6 +83,25 @@ case class GpuCos(child: Expression) extends CudfUnaryMathExpression("COS") {
 case class GpuExp(child: Expression) extends CudfUnaryMathExpression("EXP") {
   override def unaryOp: UnaryOp = UnaryOp.EXP
   override def outputTypeOverride: DType = DType.FLOAT64
+}
+
+case class GpuExpm1(child: Expression) extends CudfUnaryMathExpression("EXPM1") {
+  override def unaryOp: UnaryOp = UnaryOp.EXP
+  override def outputTypeOverride: DType = DType.FLOAT64
+
+  override def doColumnar(input: GpuColumnVector): GpuColumnVector = {
+    val cv = input.getBase.unaryOp(unaryOp)
+    try {
+      val sc = Scalar.fromInt(1)
+      try {
+        GpuColumnVector.from(cv.binaryOp(BinaryOp.SUB, sc, outputTypeOverride))
+      } finally {
+        sc.close()
+      }
+    } finally {
+      cv.close()
+    }
+  }
 }
 
 case class GpuFloor(child: Expression) extends CudfUnaryMathExpression("FLOOR") {
