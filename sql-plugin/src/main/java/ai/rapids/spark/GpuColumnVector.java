@@ -256,6 +256,7 @@ public final class GpuColumnVector extends ColumnVector {
    * @return       - a ColumnarBatch of the vectors from the table
    */
   public static ColumnarBatch from(Table table, int startColIndex, int untilColIndex) {
+    assert table != null : "Table cannot be null";
     int numColumns = untilColIndex - startColIndex;
     ColumnVector[] columns = new ColumnVector[numColumns];
     int finalLoc = 0;

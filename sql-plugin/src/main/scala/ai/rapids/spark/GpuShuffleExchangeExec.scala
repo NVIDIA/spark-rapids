@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019, NVIDIA CORPORATION.
+ * Copyright (c) 2019-2020, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -125,25 +125,35 @@ object GpuShuffleExchangeExec {
       metrics: Map[String, SQLMetric],
       writeMetrics: Map[String, SQLMetric])
   : ShuffleDependency[Int, ColumnarBatch, ColumnarBatch] = {
-    val partitioner: GpuExpression = newPartitioning match {
-      case h: GpuHashPartitioning =>
-        GpuBindReferences.bindReferences(h :: Nil, outputAttributes).head
-      case r: GpuRangePartitioning =>
-        r.part.createRangeBounds(r.numPartitions, r.gpuOrdering, rdd, outputAttributes,
-          SQLConf.get.rangeExchangeSampleSizePerPartition)
-        val boundR = GpuBindReferences.bindReferences(r :: Nil, outputAttributes).head
-        boundR
-      case s : GpuSinglePartitioning =>
-        GpuBindReferences.bindReferences(s :: Nil, outputAttributes).head
-      case _ => sys.error(s"Exchange not implemented for $newPartitioning")
+    val isRoundRobin = newPartitioning match {
+      case _: GpuRoundRobinPartitioning => true
+      case _ => false
     }
 
+    /**
+      * Analogous to how spark config for sorting before repartition works, the GPU implementation
+      * here sorts on the GPU over all columns of the table in ascending order and nulls as smallest.
+      * This essentially means the results are not one to one w.r.t. the row hashcode based sort.
+      * As long as we don't mix and match repartition() between CPU and GPU this should not be a concern.
+      * Latest spark behavior does not even require this sort as it fails the upstream task when indeterminate
+      * tasks re-run.
+     */
+    val newRdd = if (isRoundRobin && SQLConf.get.sortBeforeRepartition) {
+      val sorter = new GpuColumnarBatchSorter(Seq.empty[GpuSortOrder],
+        null, false, false)
+      rdd.mapPartitions { cbIter =>
+        val sortedIterator = sorter.sort(cbIter)
+        sortedIterator
+      }
+    } else {
+      rdd
+    }
+    val partitioner: GpuExpression = getPartitioner(newRdd, outputAttributes, newPartitioning)
     def getPartitioned: ColumnarBatch => Any = {
       batch => partitioner.columnarEval(batch)
     }
-
     val rddWithPartitionIds: RDD[Product2[Int, ColumnarBatch]] = {
-      rdd.mapPartitions { iter =>
+      newRdd.mapPartitions { iter =>
         val getParts = getPartitioned
         new AbstractIterator[Product2[Int, ColumnarBatch]] {
           private var partitioned : Array[(ColumnarBatch, Int)] = _
@@ -207,5 +217,25 @@ object GpuShuffleExchangeExec {
       shuffleWriterProcessor = ShuffleExchangeExec.createShuffleWriteProcessor(writeMetrics))
 
     dependency
+  }
+
+  private def getPartitioner(
+    rdd: RDD[ColumnarBatch],
+    outputAttributes: Seq[Attribute],
+    newPartitioning: Partitioning): GpuExpression with GpuPartitioning = {
+    newPartitioning match {
+      case h: GpuHashPartitioning =>
+        GpuBindReferences.bindReferences(h :: Nil, outputAttributes).head
+      case r: GpuRangePartitioning =>
+        r.part.createRangeBounds(r.numPartitions, r.gpuOrdering, rdd, outputAttributes,
+          SQLConf.get.rangeExchangeSampleSizePerPartition)
+        val boundR = GpuBindReferences.bindReferences(r :: Nil, outputAttributes).head
+        boundR
+      case s: GpuSinglePartitioning =>
+        GpuBindReferences.bindReferences(s :: Nil, outputAttributes).head
+      case rrp: GpuRoundRobinPartitioning =>
+        GpuBindReferences.bindReferences(rrp :: Nil, outputAttributes).head
+      case _ => sys.error(s"Exchange not implemented for $newPartitioning")
+    }
   }
 }

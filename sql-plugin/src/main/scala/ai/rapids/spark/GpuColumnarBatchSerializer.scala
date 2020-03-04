@@ -58,35 +58,44 @@ private class GpuColumnarBatchSerializerInstance(
       try {
         var startRow = 0
         val numRows = batch.numRows()
-        val firstCol = batch.column(0)
-        if (firstCol.isInstanceOf[SlicedGpuColumnVector]) {
-          // We don't have control over ColumnarBatch to put in the slice, so we have to do it
-          // for each column.  In this case we are using the first column.
-          startRow = firstCol.asInstanceOf[SlicedGpuColumnVector].getStart
-          for (i <- 0 until numColumns) {
-            columns(i) = batch.column(i).asInstanceOf[SlicedGpuColumnVector].getBase
-          }
-        } else {
-          for (i <- 0 until numColumns) {
-            batch.column(i) match {
-              case gpu: GpuColumnVector =>
-                val cpu = gpu.copyToHost()
-                toClose += cpu
-                columns(i) = cpu.getBase
-              case cpu: RapidsHostColumnVector =>
-                columns(i) = cpu.getBase
+        if (batch.numCols() > 0) {
+          val firstCol = batch.column(0)
+          if (firstCol.isInstanceOf[SlicedGpuColumnVector]) {
+            // We don't have control over ColumnarBatch to put in the slice, so we have to do it
+            // for each column.  In this case we are using the first column.
+            startRow = firstCol.asInstanceOf[SlicedGpuColumnVector].getStart
+            for (i <- 0 until numColumns) {
+              columns(i) = batch.column(i).asInstanceOf[SlicedGpuColumnVector].getBase
+            }
+          } else {
+            for (i <- 0 until numColumns) {
+              batch.column(i) match {
+                case gpu: GpuColumnVector =>
+                  val cpu = gpu.copyToHost()
+                  toClose += cpu
+                  columns(i) = cpu.getBase
+                case cpu: RapidsHostColumnVector =>
+                  columns(i) = cpu.getBase
+              }
             }
           }
-        }
 
-        if (dataSize != null) {
-          dataSize.add(JCudfSerialization.getSerializedSizeInBytes(columns, startRow, numRows))
-        }
-        val range = new NvtxRange("Serialize Batch", NvtxColor.YELLOW)
-        try {
-          JCudfSerialization.writeToStream(columns, dOut, startRow, numRows)
-        } finally {
-          range.close()
+          if (dataSize != null) {
+            dataSize.add(JCudfSerialization.getSerializedSizeInBytes(columns, startRow, numRows))
+          }
+          val range = new NvtxRange("Serialize Batch", NvtxColor.YELLOW)
+          try {
+            JCudfSerialization.writeToStream(columns, dOut, startRow, numRows)
+          } finally {
+            range.close()
+          }
+        }  else {
+          val range = new NvtxRange("Serialize Row Only Batch", NvtxColor.YELLOW)
+          try {
+            JCudfSerialization.writeRowsToStream(dOut, numRows)
+          } finally {
+            range.close()
+          }
         }
       } finally {
         toClose.safeClose()
@@ -139,15 +148,20 @@ private class GpuColumnarBatchSerializerInstance(
 
             val range = new NvtxRange("Deserialize Batch", NvtxColor.YELLOW)
             try {
-              val table = JCudfSerialization.readTableFrom(dIn)
-              if (table == null) {
-                None
-              } else {
-                try {
-                  Some(GpuColumnVector.from(table))
-                } finally {
-                  table.close()
+              val tableInfo: JCudfSerialization.TableAndRowCountPair = JCudfSerialization.readTableFrom(dIn)
+              try {
+                val table = tableInfo.getTable
+                if (table == null && tableInfo.getNumRows == 0) {
+                  None
+                } else {
+                  if (table != null) {
+                    Some(GpuColumnVector.from(table))
+                  } else {
+                    Some(new ColumnarBatch(Array.empty, tableInfo.getNumRows))
+                  }
                 }
+              } finally {
+                tableInfo.close()
               }
             } finally {
               range.close()
@@ -193,11 +207,16 @@ private class GpuColumnarBatchSerializerInstance(
 
         val range = new NvtxRange("Deserialize Batch", NvtxColor.YELLOW)
         try {
-          val table = JCudfSerialization.readTableFrom(dIn)
+          val tableInfo: JCudfSerialization.TableAndRowCountPair = JCudfSerialization.readTableFrom(dIn)
           val cb = try {
-            GpuColumnVector.from(table)
+            val table = tableInfo.getTable
+            if (table != null) {
+              Some(GpuColumnVector.from(table))
+            } else {
+              Some(new ColumnarBatch(Array.empty, tableInfo.getNumRows))
+            }
           } finally {
-            table.close()
+            tableInfo.close()
           }
           cb.asInstanceOf[T]
         } finally {

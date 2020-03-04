@@ -1036,6 +1036,12 @@ object GpuOverrides {
           }
         }
       }),
+    part[RoundRobinPartitioning]( "Round Robin Partitioning",
+      (rrp, conf, p, r) => new PartMeta[RoundRobinPartitioning](rrp, conf, p, r) {
+        override def convertToGpu(): GpuPartitioning = {
+          GpuRoundRobinPartitioning(rrp.numPartitions)
+        }
+      }),
     part[SinglePartition.type]( "Single Partitioning",
       (sp, conf, p, r) => new PartMeta[SinglePartition.type](sp, conf, p, r) {
         override val childExprs: Seq[ExprMeta[_]] = Seq.empty[ExprMeta[_]]

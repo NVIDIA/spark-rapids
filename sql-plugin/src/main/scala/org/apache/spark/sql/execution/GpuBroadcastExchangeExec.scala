@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019, NVIDIA CORPORATION.
+ * Copyright (c) 2019-2020, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -81,13 +81,14 @@ class SerializeConcatHostBuffersDeserializeBatch(
   private def readObject(in: ObjectInputStream): Unit = {
     val range = new NvtxRange("DeserializeBatch", NvtxColor.PURPLE)
     try {
-      val table = JCudfSerialization.readTableFrom(in)
+      val tableInfo: JCudfSerialization.TableAndRowCountPair = JCudfSerialization.readTableFrom(in)
       try {
+        val table = tableInfo.getTable
         // This is read as part of the broadcast join so we expect it to leak.
         (0 until table.getNumberOfColumns).foreach(table.getColumn(_).noWarnLeakExpected())
         this.batchInternal = GpuColumnVector.from(table)
       } finally {
-        table.close()
+        tableInfo.close()
       }
     } finally {
       range.close()
