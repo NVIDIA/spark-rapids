@@ -77,40 +77,49 @@ trait SparkQueryCompareTestSuite extends FunSuite {
     withSparkSession("cpu-sql-test", conf, f)
   }
 
-  private def compare(obj1: Any, obj2: Any, maxFloatDiff: Double = 0.0): Boolean = (obj1, obj2) match {
-    case (null, null) => true
-    case (null, _) => false
-    case (_, null) => false
-    case (a: Array[_], b: Array[_]) =>
-      a.length == b.length && a.zip(b).forall { case (l, r) => compare(l, r, maxFloatDiff)}
-    case (a: Map[_, _], b: Map[_, _]) =>
-      a.size == b.size && a.keys.forall { aKey =>
-        b.keys.find(bKey => compare(aKey, bKey)).exists(bKey => compare(a(aKey), b(bKey), maxFloatDiff))
+  private def compare(expected: Any, actual: Any, epsilon: Double = 0.0): Boolean = {
+    def isEqualWithEpsilon(expected: Double, actual: Double): Boolean = {
+      if (expected != 0) {
+        Math.abs((expected - actual) / expected) <= epsilon
+      } else {
+        Math.abs(expected - actual) <= epsilon
       }
-    case (a: Iterable[_], b: Iterable[_]) =>
-      a.size == b.size && a.zip(b).forall { case (l, r) => compare(l, r, maxFloatDiff)}
-    case (a: Product, b: Product) =>
-      compare(a.productIterator.toSeq, b.productIterator.toSeq, maxFloatDiff)
-    case (a: Row, b: Row) =>
-      compare(a.toSeq, b.toSeq, maxFloatDiff)
-    // 0.0 == -0.0, turn float/double to bits before comparison, to distinguish 0.0 and -0.0.
-    case (a: Double, b: Double) if maxFloatDiff <= 0 =>
-      java.lang.Double.doubleToRawLongBits(a) == java.lang.Double.doubleToRawLongBits(b)
-    case (a: Double, b: Double) if maxFloatDiff > 0 =>
-      val ret = (Math.abs(a - b) <= maxFloatDiff) || (a.isNaN && b.isNaN)
-      if (!ret) {
-        System.err.println(s"\n\nABS(${a} - ${b}) == ${Math.abs(a - b)} is not <= ${maxFloatDiff} (double)")
-      }
-      ret
-    case (a: Float, b: Float) if maxFloatDiff <= 0 =>
-      java.lang.Float.floatToRawIntBits(a) == java.lang.Float.floatToRawIntBits(b)
-    case (a: Float, b: Float) if maxFloatDiff > 0 =>
-      val ret = (Math.abs(a - b) <= maxFloatDiff) || (a.isNaN && b.isNaN)
-      if (!ret) {
-        System.err.println(s"\n\nABS(${a} - ${b}) == ${Math.abs(a - b)} is not <= ${maxFloatDiff} (float)")
-      }
-      ret
-    case (a, b) => a == b
+    }
+    (expected, actual) match {
+      case (null, null) => true
+      case (null, _) => false
+      case (_, null) => false
+      case (a: Array[_], b: Array[_]) =>
+        a.length == b.length && a.zip(b).forall { case (l, r) => compare(l, r, epsilon) }
+      case (a: Map[_, _], b: Map[_, _]) =>
+        a.size == b.size && a.keys.forall { aKey =>
+          b.keys.find(bKey => compare(aKey, bKey)).exists(bKey => compare(a(aKey), b(bKey), epsilon))
+        }
+      case (a: Iterable[_], b: Iterable[_]) =>
+        a.size == b.size && a.zip(b).forall { case (l, r) => compare(l, r, epsilon) }
+      case (a: Product, b: Product) =>
+        compare(a.productIterator.toSeq, b.productIterator.toSeq, epsilon)
+      case (a: Row, b: Row) =>
+        compare(a.toSeq, b.toSeq, epsilon)
+      // 0.0 == -0.0, turn float/double to bits before comparison, to distinguish 0.0 and -0.0.
+      case (a: Double, b: Double) if epsilon <= 0 =>
+        java.lang.Double.doubleToRawLongBits(a) == java.lang.Double.doubleToRawLongBits(b)
+      case (a: Double, b: Double) if epsilon > 0 =>
+        val ret = isEqualWithEpsilon(a, b) || (a.isNaN && b.isNaN)
+        if (!ret) {
+          System.err.println(s"\n\nABS(${a} - ${b}) / ABS(${a}) == ${Math.abs(a - b) / Math.abs(a)} is not <= ${epsilon} (double)")
+        }
+        ret
+      case (a: Float, b: Float) if epsilon <= 0 =>
+        java.lang.Float.floatToRawIntBits(a) == java.lang.Float.floatToRawIntBits(b)
+      case (a: Float, b: Float) if epsilon > 0 =>
+        val ret = isEqualWithEpsilon(a, b) || (a.isNaN && b.isNaN)
+        if (!ret) {
+          System.err.println(s"\n\nABS(${a} - ${b}) / ABS(${a}) == ${Math.abs(a - b) / Math.abs(a)} is not <= ${epsilon} (float)")
+        }
+        ret
+      case (a, b) => a == b
+    }
   }
 
   /**
