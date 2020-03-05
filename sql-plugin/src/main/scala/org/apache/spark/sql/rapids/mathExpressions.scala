@@ -129,6 +129,21 @@ case class GpuSin(child: Expression) extends CudfUnaryMathExpression("SIN") {
   override def outputTypeOverride: DType = DType.FLOAT64
 }
 
+case class GpuTanh(child: Expression) extends CudfUnaryMathExpression("TANH") {
+  override def unaryOp: UnaryOp = UnaryOp.TANH
+  override def outputTypeOverride: DType = DType.FLOAT64
+}
+
+case class GpuCosh(child: Expression) extends CudfUnaryMathExpression("COSH") {
+  override def unaryOp: UnaryOp = UnaryOp.COSH
+  override def outputTypeOverride: DType = DType.FLOAT64
+}
+
+case class GpuSinh(child: Expression) extends CudfUnaryMathExpression("SINH") {
+  override def unaryOp: UnaryOp = UnaryOp.SINH
+  override def outputTypeOverride: DType = DType.FLOAT64
+}
+
 case class GpuSqrt(child: Expression) extends CudfUnaryMathExpression("SQRT") {
   override def unaryOp: UnaryOp = UnaryOp.SQRT
   override def outputTypeOverride: DType = DType.FLOAT64

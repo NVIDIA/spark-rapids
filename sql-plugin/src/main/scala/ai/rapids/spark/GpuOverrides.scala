@@ -589,6 +589,24 @@ object GpuOverrides {
         override def convertToGpu(child: GpuExpression): GpuExpression = GpuSin(child)
       })
       .incompat(FLOAT_DIFFERS_INCOMPAT),
+    expr[Sinh](
+      "hyperbolic sine",
+      (a, conf, p, r) => new UnaryExprMeta[Sinh](a, conf, p, r) {
+        override def convertToGpu(child: GpuExpression): GpuExpression = GpuSinh(child)
+      })
+      .incompat(FLOAT_DIFFERS_INCOMPAT),
+    expr[Cosh](
+      "hyperbolic cosine",
+      (a, conf, p, r) => new UnaryExprMeta[Cosh](a, conf, p, r) {
+        override def convertToGpu(child: GpuExpression): GpuExpression = GpuCosh(child)
+      })
+      .incompat(FLOAT_DIFFERS_INCOMPAT),
+    expr[Tanh](
+      "hyperbolic tangent",
+      (a, conf, p, r) => new UnaryExprMeta[Tanh](a, conf, p, r) {
+        override def convertToGpu(child: GpuExpression): GpuExpression = GpuTanh(child)
+      })
+      .incompat(FLOAT_DIFFERS_INCOMPAT),
     expr[Tan](
       "tangent",
       (a, conf, p, r) => new UnaryExprMeta[Tan](a, conf, p, r) {
