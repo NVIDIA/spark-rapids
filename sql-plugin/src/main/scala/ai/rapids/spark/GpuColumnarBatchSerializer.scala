@@ -140,6 +140,7 @@ private class GpuColumnarBatchSerializerInstance(
           TaskContext.get().addTaskCompletionListener[Unit]((tc: TaskContext) => {
             toBeReturned.foreach(_.close())
             toBeReturned = None
+            dIn.close()
           })
 
           def tryReadNext(): Option[ColumnarBatch] = {
@@ -152,6 +153,7 @@ private class GpuColumnarBatchSerializerInstance(
               try {
                 val table = tableInfo.getTable
                 if (table == null && tableInfo.getNumRows == 0) {
+                  dIn.close()
                   None
                 } else {
                   if (table != null) {
