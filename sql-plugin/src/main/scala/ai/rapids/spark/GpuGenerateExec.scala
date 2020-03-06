@@ -37,7 +37,7 @@ class GpuGenerateExecSparkPlanMeta(
     r: ConfKeysAndIncompat) extends SparkPlanMeta[GenerateExec](gen, conf, p, r) {
 
   override val childExprs: Seq[ExprMeta[_]] = gen.generator match {
-    case PosExplode(CreateArray(exprs)) =>
+    case PosExplode(CreateArray(exprs, _)) =>
       // This bypasses the check to see if we can support an array or not.
       // and the posexplode which is going to be built into this one...
       exprs.map(GpuOverrides.wrapExpr(_, conf, Some(this)))
@@ -48,7 +48,7 @@ class GpuGenerateExecSparkPlanMeta(
     // We can only run on the GPU if we are doing a posexplode of an array we are generating
     // right now
     gen.generator match {
-      case PosExplode(CreateArray(_)) => //Nothing
+      case PosExplode(CreateArray(_, _)) => //Nothing
       case _ => willNotWorkOnGpu("Only posexplode of a created array is currently supported")
     }
 
