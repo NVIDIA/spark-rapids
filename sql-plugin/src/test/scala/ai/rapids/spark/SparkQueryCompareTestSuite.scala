@@ -25,6 +25,8 @@ import org.apache.spark.sql.{DataFrame, Row, SparkSession}
 import org.apache.spark.SparkConf
 import org.apache.spark.sql.types._
 
+import scala.util.{Failure, Try}
+
 /**
  * Set of tests that compare the output using the CPU version of spark vs our GPU version.
  */
@@ -475,6 +477,42 @@ trait SparkQueryCompareTestSuite extends FunSuite {
         repart = repart)
       compareResults(sort, maxFloatDiff, fromCpu, fromGpu)
     }
+  }
+
+  def testExpectedExceptionStartsWith[T <: Throwable](
+      testName: String,
+      exceptionClass: Class[T],
+      expectedException: String,
+      df: SparkSession => DataFrame,
+      conf: SparkConf = new SparkConf(),
+      repart: Integer = 1,
+      sort: Boolean = false,
+      maxFloatDiff: Double = 0.0,
+      incompat: Boolean = false,
+      allowNonGpu: Boolean = false,
+      execsAllowedNonGpu: Seq[String] = Seq.empty,
+      sortBeforeRepart: Boolean = false)
+           (fun: DataFrame => DataFrame): Unit = {
+
+    val (testConf, qualifiedTestName) =
+      setupTestConfAndQualifierName(testName, incompat, sort, allowNonGpu, conf, execsAllowedNonGpu,
+        sortBeforeRepart = sortBeforeRepart)
+
+      test(qualifiedTestName) {
+        val t = Try({
+          val (fromCpu, fromGpu) = runOnCpuAndGpu(df, fun,
+            conf = testConf,
+            repart = repart)
+          compareResults(sort, maxFloatDiff, fromCpu, fromGpu)
+        })
+        t match {
+          case Failure(e) if e.getClass == exceptionClass => {
+            assert(e.getMessage != null && e.getMessage.startsWith(expectedException))
+          }
+          case Failure(e) => throw e
+          case _ => fail("Expected an exception")
+        }
+      }
   }
 
   def testSparkResultsAreEqual2(
@@ -962,6 +1000,14 @@ trait SparkQueryCompareTestSuite extends FunSuite {
       StructField("floats", FloatType, false),
       StructField("more_floats", FloatType, false)
     )))(_)
+  }
+
+  def mixedTypesFromCsvWithHeader = {
+    fromCsvDf("mixed-types.csv", StructType(Array(
+      StructField("c_string", StringType),
+      StructField("c_int", IntegerType),
+      StructField("c_timestamp", TimestampType)
+    )), hasHeader = true)(_)
   }
 
   def frameCount(frame: DataFrame): DataFrame = {
