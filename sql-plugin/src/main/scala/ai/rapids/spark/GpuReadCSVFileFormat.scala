@@ -77,6 +77,7 @@ object GpuReadCSVFileFormat {
     GpuCSVScan.tagSupport(
       fsse.sqlContext.sparkSession,
       fsse.relation.dataSchema,
+      fsse.output.toStructType,
       fsse.relation.options,
       meta
     )

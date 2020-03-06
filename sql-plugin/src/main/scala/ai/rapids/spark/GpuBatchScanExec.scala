@@ -93,6 +93,7 @@ object GpuCSVScan {
     tagSupport(
       scan.sparkSession,
       scan.dataSchema,
+      scan.readDataSchema,
       scan.options.asScala.toMap,
       scanMeta)
   }
@@ -100,6 +101,7 @@ object GpuCSVScan {
   def tagSupport(
       sparkSession: SparkSession,
       dataSchema: StructType,
+      readSchema: StructType,
       options: Map[String, String],
       meta: RapidsMeta[_, _, _]): Unit = {
     val parsedOptions: CSVOptions = new CSVOptions(
@@ -117,7 +119,7 @@ object GpuCSVScan {
     }
 
     // TODO: Add an incompat override flag to specify no timezones appear in timestamp types?
-    if (dataSchema.map(_.dataType).contains(TimestampType)) {
+    if (readSchema.map(_.dataType).contains(TimestampType)) {
       meta.willNotWorkOnGpu("GpuCSVScan does not support parsing timestamp types")
     }
 

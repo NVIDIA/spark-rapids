@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019, NVIDIA CORPORATION.
+ * Copyright (c) 2019-2020, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -23,6 +23,17 @@ class CsvScanSuite extends SparkQueryCompareTestSuite {
 
   testSparkResultsAreEqual("Test CSV", intsFromCsv) {
     frame => frame.select(col("ints_1"), col("ints_3"), col("ints_5"))
+  }
+
+  testExpectedExceptionStartsWith("Test CSV projection including unsupported types",
+      classOf[IllegalArgumentException],
+      "Part of the plan is not columnar class org.apache.spark.sql.execution.FileSourceScanExec",
+      mixedTypesFromCsvWithHeader) {
+    frame => frame.select(col("c_string"), col("c_int"), col("c_timestamp"))
+  }
+
+  testSparkResultsAreEqual("Test CSV projection excluding unsupported types", mixedTypesFromCsvWithHeader) {
+    frame => frame.select(col("c_string"), col("c_int"))
   }
 
   testSparkResultsAreEqual("Test CSV count", intsFromCsv)(frameCount)
