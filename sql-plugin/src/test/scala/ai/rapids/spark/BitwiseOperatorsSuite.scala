@@ -17,6 +17,9 @@ package ai.rapids.spark
 
 import org.apache.spark.sql.functions.col
 import org.apache.spark.sql.functions.bitwiseNOT
+import org.apache.spark.sql.functions.shiftLeft
+import org.apache.spark.sql.functions.shiftRight
+import org.apache.spark.sql.functions.shiftRightUnsigned
 
 class BitwiseOperatorsSuite extends SparkQueryCompareTestSuite {
 
@@ -36,4 +39,15 @@ class BitwiseOperatorsSuite extends SparkQueryCompareTestSuite {
     frame => frame.select(bitwiseNOT(col("longs")))
   }
 
+  testSparkResultsAreEqual("Bitwise shift left", intsDf) {
+    frame => frame.select(shiftLeft(col("ints"), 2))
+  }
+
+  testSparkResultsAreEqual("Bitwise shift right", longsDf) {
+    frame => frame.select(shiftRight(col("longs"), 2))
+  }
+
+  testSparkResultsAreEqual("Bitwise shift right unsigned", longsDf) {
+    frame => frame.select(shiftRightUnsigned(col("longs"), 4))
+  }
 }

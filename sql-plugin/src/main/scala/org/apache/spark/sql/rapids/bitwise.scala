@@ -17,9 +17,38 @@
 package org.apache.spark.sql.rapids
 
 import ai.rapids.cudf.{BinaryOp, UnaryOp}
-import ai.rapids.spark.{GpuColumnVector, GpuUnaryExpression}
-import org.apache.spark.sql.catalyst.expressions.{ExpectsInputTypes, Expression}
-import org.apache.spark.sql.types.{AbstractDataType, DataType, IntegralType}
+import ai.rapids.spark.{CudfBinaryExpression, GpuColumnVector, GpuUnaryExpression}
+import org.apache.spark.sql.catalyst.expressions.{ExpectsInputTypes, Expression, ImplicitCastInputTypes}
+import org.apache.spark.sql.types._
+
+case class GpuShiftLeft(left: Expression, right: Expression) extends CudfBinaryExpression with ImplicitCastInputTypes {
+  override def inputTypes: Seq[AbstractDataType] =
+    Seq(TypeCollection(IntegerType, LongType), IntegerType)
+
+  override def binaryOp: BinaryOp = BinaryOp.SHIFT_LEFT
+
+  override def dataType: DataType = left.dataType
+}
+
+case class GpuShiftRight(left: Expression, right: Expression) extends CudfBinaryExpression with ImplicitCastInputTypes {
+  override def inputTypes: Seq[AbstractDataType] =
+    Seq(TypeCollection(IntegerType, LongType), IntegerType)
+
+  override def binaryOp: BinaryOp = BinaryOp.SHIFT_RIGHT
+
+  override def dataType: DataType = left.dataType
+
+}
+
+case class GpuShiftRightUnsigned(left: Expression, right: Expression) extends CudfBinaryExpression
+  with ImplicitCastInputTypes {
+  override def inputTypes: Seq[AbstractDataType] =
+    Seq(TypeCollection(IntegerType, LongType), IntegerType)
+
+  override def binaryOp: BinaryOp = BinaryOp.SHIFT_RIGHT_UNSINGED
+
+  override def dataType: DataType = left.dataType
+}
 
 case class GpuBitwiseAnd(left: Expression, right: Expression) extends CudfBinaryArithmetic {
   override def inputType: AbstractDataType = IntegralType
