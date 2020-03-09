@@ -153,4 +153,11 @@ class UnaryOperatorsSuite extends SparkQueryCompareTestSuite {
       dayofmonth(col("more_dates")))
   }
 
+  INCOMPAT_testSparkResultsAreEqual("Test cube root floats", floatDf, 0.0001) {
+    frame => frame.select(cbrt(col("floats")), cbrt(col("more_floats")))
+  }
+
+  INCOMPAT_testSparkResultsAreEqual("Test cube root doubles", doubleDf, 0.0001) {
+    frame => frame.select(cbrt(col("doubles")), cbrt(col("more_doubles")))
+  }
 }
