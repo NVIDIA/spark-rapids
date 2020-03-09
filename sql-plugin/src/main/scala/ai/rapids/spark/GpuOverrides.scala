@@ -468,6 +468,12 @@ object GpuOverrides {
       (a, conf, p, r) => new UnaryExprMeta[Sqrt](a, conf, p, r) {
         override def convertToGpu(child: GpuExpression): GpuExpression = GpuSqrt(child)
       }),
+    expr[Cbrt](
+      "cube root",
+      (a, conf, p, r) => new UnaryExprMeta[Cbrt](a, conf, p, r) {
+        override def convertToGpu(child: GpuExpression): GpuExpression = GpuCbrt(child)
+      })
+    .incompat(FLOAT_DIFFERS_INCOMPAT),
     expr[Floor](
       "floor of a number",
       (a, conf, p, r) => new UnaryExprMeta[Floor](a, conf, p, r) {
