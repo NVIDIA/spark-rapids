@@ -19,8 +19,11 @@ package ai.rapids.spark
 import java.io.File
 import java.nio.charset.StandardCharsets
 
+import collection.JavaConverters._
+
 import org.apache.hadoop.fs.Path
 import org.apache.parquet.hadoop.ParquetFileReader
+import org.apache.parquet.hadoop.util.HadoopInputFile
 
 import org.apache.spark.sql.{DataFrame, SparkSession}
 
@@ -38,6 +41,24 @@ class ParquetWriterSuite extends SparkQueryCompareTestSuite {
 
   testSparkWritesAreEqual("simple Parquet write with nulls",
     mixedDfWithNulls, writeParquet, readParquet)
+
+  test("write with no compression") {
+    val compression = "none"
+    val expectedFileExt = ".parquet"
+    val cpuCodecs = withCpuSparkSession(spark => getCompressionCodecs(spark, compression, expectedFileExt))
+    val gpuCodecs = withGpuSparkSession(spark => getCompressionCodecs(spark, compression, expectedFileExt))
+    assert(cpuCodecs.forall(_ == "UNCOMPRESSED"))
+    assert(gpuCodecs.forall(_ == "UNCOMPRESSED"))
+  }
+
+  test("write with snappy compression") {
+    val compression = "snappy"
+    val expectedFileExt = ".snappy.parquet"
+    val cpuCodecs = withCpuSparkSession(spark => getCompressionCodecs(spark, compression, expectedFileExt))
+    val gpuCodecs = withGpuSparkSession(spark => getCompressionCodecs(spark, compression, expectedFileExt))
+    assert(cpuCodecs.contains("SNAPPY"))
+    assert(gpuCodecs.contains("SNAPPY"))
+  }
 
   test("file metadata") {
     val tempFile = File.createTempFile("stats", ".parquet")
@@ -78,6 +99,39 @@ class ParquetWriterSuite extends SparkQueryCompareTestSuite {
         assertResult("A") { new String(cols.get(3).getStatistics.getMinBytes, StandardCharsets.UTF_8) }
         assertResult("\ud720\ud721") { new String(cols.get(3).getStatistics.getMaxBytes, StandardCharsets.UTF_8) }
       })
+    } finally {
+      tempFile.delete()
+    }
+  }
+
+  private def getCompressionCodecs(spark: SparkSession, compression: String, expectedExt: String): Seq[String] = {
+    val tempFile = File.createTempFile(s"compression-$compression-test", ".parquet")
+
+    try {
+      val df = mixedDfWithNulls(spark)
+      df.write
+        .mode("overwrite")
+        .option("compression", compression)
+        .parquet(tempFile.getAbsolutePath)
+
+      val files = new File(tempFile.getAbsolutePath)
+        .list()
+        .filter { filename =>
+          val i = filename.indexOf('.')
+          i != -1 && filename.substring(i) == expectedExt
+        }
+
+      assert(files.length > 0)
+
+      val file = HadoopInputFile.fromPath(new Path(new File(tempFile, files.head).getAbsolutePath),
+        spark.sparkContext.hadoopConfiguration)
+
+      val fileReader = ParquetFileReader.open(file)
+
+      fileReader.getRowGroups.asScala
+        .flatMap(_.getColumns.asScala
+          .map(_.getCodec.toString))
+
     } finally {
       tempFile.delete()
     }
