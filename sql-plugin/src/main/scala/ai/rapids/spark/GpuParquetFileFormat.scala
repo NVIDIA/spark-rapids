@@ -18,7 +18,7 @@ package ai.rapids.spark
 
 import java.io.{File, IOException}
 
-import ai.rapids.cudf.{NvtxColor, NvtxRange, ParquetWriterOptions}
+import ai.rapids.cudf.{CompressionType, NvtxColor, NvtxRange, ParquetWriterOptions}
 import org.apache.hadoop.fs.{FileUtil, Path}
 import org.apache.hadoop.mapreduce.{Job, OutputCommitter, TaskAttemptContext}
 import org.apache.parquet.hadoop.codec.CodecConfig
@@ -33,7 +33,6 @@ import org.apache.spark.sql.vectorized.ColumnarBatch
 import org.apache.spark.sql.{Row, SparkSession}
 import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.internal.SQLConf.ParquetOutputTimestampType
-import org.apache.spark.sql.rapids.{ColumnarWriteTaskStatsTracker, GpuWriteTaskStatsTracker}
 import org.apache.spark.TaskContext
 
 object GpuParquetFileFormat {
@@ -44,10 +43,8 @@ object GpuParquetFileFormat {
     val sqlConf = spark.sessionState.conf
     val parquetOptions = new ParquetOptions(options, sqlConf)
 
-    parquetOptions.compressionCodecClassName match {
-      case "NONE" | "UNCOMPRESSED" | "SNAPPY" =>
-      case c => meta.willNotWorkOnGpu(s"compression codec $c is not supported")
-    }
+    parseCompressionType(parquetOptions.compressionCodecClassName)
+      .getOrElse(meta.willNotWorkOnGpu(s"compression codec ${parquetOptions.compressionCodecClassName} is not supported"))
 
     if (sqlConf.writeLegacyParquetFormat) {
       meta.willNotWorkOnGpu(s"Spark legacy format is not supported")
@@ -63,6 +60,14 @@ object GpuParquetFileFormat {
       Some(new GpuParquetFileFormat)
     } else {
       None
+    }
+  }
+
+  def parseCompressionType(compressionType: String): Option[CompressionType] = {
+    compressionType match {
+      case "NONE" | "UNCOMPRESSED" => Some(CompressionType.NONE)
+      case "SNAPPY" => Some(CompressionType.SNAPPY)
+      case _ => None
     }
   }
 }
@@ -130,6 +135,9 @@ class GpuParquetFileFormat extends ColumnarFileFormat with Logging {
     // Sets compression scheme
     conf.set(ParquetOutputFormat.COMPRESSION, parquetOptions.compressionCodecClassName)
 
+    val compressionType = GpuParquetFileFormat.parseCompressionType(parquetOptions.compressionCodecClassName)
+      .getOrElse(throw new UnsupportedOperationException(s"compression codec ${parquetOptions.compressionCodecClassName} is not supported"))
+
     // SPARK-15719: Disables writing Parquet summary files by default.
     if (conf.get(ParquetOutputFormat.JOB_SUMMARY_LEVEL) == null
         && conf.get(ParquetOutputFormat.ENABLE_JOB_SUMMARY) == null) {
@@ -149,7 +157,7 @@ class GpuParquetFileFormat extends ColumnarFileFormat with Logging {
           path: String,
           dataSchema: StructType,
           context: TaskAttemptContext): ColumnarOutputWriter = {
-        new GpuParquetWriter(path, dataSchema, context)
+        new GpuParquetWriter(path, dataSchema, compressionType, context)
       }
 
       override def getFileExtension(context: TaskAttemptContext): String = {
@@ -162,6 +170,7 @@ class GpuParquetFileFormat extends ColumnarFileFormat with Logging {
 class GpuParquetWriter(
     path: String,
     dataSchema: StructType,
+    compressionType: CompressionType,
     context: TaskAttemptContext) extends ColumnarOutputWriter {
   /**
    * Closes the [[ColumnarOutputWriter]]. Invoked on the executor side after all columnar batches
@@ -179,6 +188,7 @@ class GpuParquetWriter(
       val options = ParquetWriterOptions.builder()
           .withColumnNames(dataSchema.map(_.name):_*)
           .withMetadata(writeContext.getExtraMetaData)
+          .withCompressionType(compressionType)
           .build()
       tempFile = Some(File.createTempFile("gpu", ".parquet"))
       tempFile.get.getParentFile.mkdirs()
