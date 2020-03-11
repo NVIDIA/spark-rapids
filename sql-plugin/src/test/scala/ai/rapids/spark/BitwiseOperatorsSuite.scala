@@ -40,11 +40,11 @@ class BitwiseOperatorsSuite extends SparkQueryCompareTestSuite {
   }
 
   testSparkResultsAreEqual("Bitwise shift left", intsDf) {
-    frame => frame.select(shiftLeft(col("ints"), 2))
+    frame => frame.selectExpr("shiftLeft(ints, more_ints)")
   }
 
   testSparkResultsAreEqual("Bitwise shift right", longsDf) {
-    frame => frame.select(shiftRight(col("longs"), 2))
+    frame => frame.selectExpr("shiftRight(longs, more_longs)")
   }
 
   testSparkResultsAreEqual("Bitwise shift right unsigned", longsDf) {
