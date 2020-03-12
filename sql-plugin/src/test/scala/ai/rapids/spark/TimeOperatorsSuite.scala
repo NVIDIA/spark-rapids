@@ -41,15 +41,7 @@ class TimeOperatorsSuite extends SparkQueryCompareTestSuite {
     frame => frame.select(from_unixtime(col("dates"),"dd/MM/yyyy"))
   }
 
-  testSparkResultsAreEqual("Test from_unixtime with time with fraction", datesPostEpochDf) {
-    frame => frame.select(from_unixtime(col("dates"),"dd/LL/uuuu HH:mm:ss.SSSSSS"))
-  }
-
   testSparkResultsAreEqual("Test from_unixtime with alternative month and two digit year", datesPostEpochDf) {
     frame => frame.select(from_unixtime(col("dates"),"dd/LL/uu HH:mm:ss.SSSSSS"))
-  }
-
-  testSparkResultsAreEqual("Test from_unixtime with alternate two digit year", datesPostEpochDf) {
-    frame => frame.select(from_unixtime(col("dates"),"dd/LL/yy HH:mm:ss.SSSSSS"))
   }
 }
