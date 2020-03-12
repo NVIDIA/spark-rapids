@@ -504,6 +504,11 @@ object GpuOverrides {
       (a, conf, p, r) => new UnaryExprMeta[IsNaN](a, conf, p, r) {
         override def convertToGpu(child: GpuExpression): GpuExpression = GpuIsNan(child)
       }),
+    expr[Rint](
+      "Rounds up a double value to the nearest double equal to an integer",
+      (a, conf, p, r) => new UnaryExprMeta[Rint](a, conf, p, r) {
+        override def convertToGpu(child: GpuExpression): GpuExpression = GpuRint(child)
+      }),
     expr[BitwiseNot](
       "Returns the bitwise NOT of the operands",
       (a, conf, p, r) => new UnaryExprMeta[BitwiseNot](a, conf, p, r) {

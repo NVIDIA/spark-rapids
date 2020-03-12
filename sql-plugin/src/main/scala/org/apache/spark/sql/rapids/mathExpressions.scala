@@ -172,3 +172,8 @@ case class GpuPow(left: Expression, right: Expression)
   override def binaryOp: BinaryOp = BinaryOp.POW
   override def outputTypeOverride: DType = DType.FLOAT64
 }
+
+case class GpuRint(child: Expression) extends CudfUnaryMathExpression("ROUND") {
+  override def unaryOp: UnaryOp = UnaryOp.RINT
+  override def outputTypeOverride: DType = DType.FLOAT64
+}

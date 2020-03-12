@@ -80,11 +80,17 @@ trait SparkQueryCompareTestSuite extends FunSuite {
   }
 
   private def compare(expected: Any, actual: Any, epsilon: Double = 0.0): Boolean = {
-    def isEqualWithEpsilon(expected: Double, actual: Double): Boolean = {
-      if (expected != 0) {
-        Math.abs((expected - actual) / expected) <= epsilon
+    def doublesAreEqualWithinPercentage(expected: Double, actual: Double): (String, Boolean) = {
+      if (!compare(expected, actual)) {
+        if (expected != 0) {
+          val v = Math.abs((expected - actual) / expected)
+          (s"\n\nABS($expected - $actual) / ABS($actual) == $v is not <= $epsilon ",  v <= epsilon)
+        } else {
+          val v = Math.abs(expected - actual)
+          (s"\n\nABS($expected - $actual) == $v is not <= $epsilon ",  v <= epsilon)
+        }
       } else {
-        Math.abs(expected - actual) <= epsilon
+        ("SUCESS", true)
       }
     }
     (expected, actual) match {
@@ -107,19 +113,19 @@ trait SparkQueryCompareTestSuite extends FunSuite {
       case (a: Double, b: Double) if epsilon <= 0 =>
         java.lang.Double.doubleToRawLongBits(a) == java.lang.Double.doubleToRawLongBits(b)
       case (a: Double, b: Double) if epsilon > 0 =>
-        val ret = isEqualWithEpsilon(a, b) || (a.isNaN && b.isNaN)
-        if (!ret) {
-          System.err.println(s"\n\nABS(${a} - ${b}) / ABS(${a}) == ${Math.abs(a - b) / Math.abs(a)} is not <= ${epsilon} (double)")
+        val ret = doublesAreEqualWithinPercentage(a, b)
+        if (!ret._2) {
+          System.err.println(ret._1 + " (double)")
         }
-        ret
+        ret._2
       case (a: Float, b: Float) if epsilon <= 0 =>
         java.lang.Float.floatToRawIntBits(a) == java.lang.Float.floatToRawIntBits(b)
       case (a: Float, b: Float) if epsilon > 0 =>
-        val ret = isEqualWithEpsilon(a, b) || (a.isNaN && b.isNaN)
-        if (!ret) {
-          System.err.println(s"\n\nABS(${a} - ${b}) / ABS(${a}) == ${Math.abs(a - b) / Math.abs(a)} is not <= ${epsilon} (float)")
+        val ret = doublesAreEqualWithinPercentage(a, b)
+        if (!ret._2) {
+          System.err.println(ret._1 + " (float)")
         }
-        ret
+        ret._2
       case (a, b) => a == b
     }
   }
@@ -765,39 +771,39 @@ trait SparkQueryCompareTestSuite extends FunSuite {
   def smallDoubleDf(session: SparkSession): DataFrame = {
     import session.sqlContext.implicits._
     Seq(
-      (1.0, 1.0),
-      (2.0, 2.0),
-      (3.0, 3.0),
-      (4.0, 4.0),
-      (5.0, 5.0),
-      (-1.0, 6.0),
-      (-5.0, 0.0)
+      (1.4, 1.134),
+      (2.1, 2.4),
+      (3.0, 3.42),
+      (4.4, 4.5),
+      (5.345, 5.2),
+      (-1.3, 6.0),
+      (-5.14, 0.0)
     ).toDF("doubles", "more_doubles")
   }
 
   def doubleDf(session: SparkSession): DataFrame = {
     import session.sqlContext.implicits._
     Seq(
-      (100.0, 1.0),
-      (200.0, 2.0),
-      (300.0, 3.0),
-      (400.0, 4.0),
-      (500.0, 5.0),
-      (-100.0, 6.0),
-      (-500.0, 0.0)
+      (24854.55893, 90770.74881),
+      (79946.87288, -15456.4335),
+      (7967.43488, 32213.22119),
+      (-86099.68377, 36223.96138),
+      (63477.14374, 98993.65544),
+      (13763380.78173, 19869268.744),
+      (8677894.99092, 4029109.83562)
     ).toDF("doubles", "more_doubles")
   }
 
   def nonZeroDoubleDf(session: SparkSession): DataFrame = {
     import session.sqlContext.implicits._
     Seq(
-      (100.0, 1.0),
-      (200.0, 2.0),
-      (300.0, 3.0),
-      (400.0, 4.0),
-      (500.0, 5.0),
-      (-100.0, 6.0),
-      (-500.0, 50.5)
+      (100.3, 1.09),
+      (200.1, 2.12),
+      (300.5, 3.5),
+      (400.0, 4.32),
+      (500.5, 5.0),
+      (-100.1, 6.4),
+      (-500.934, 50.5)
     ).toDF("doubles", "more_doubles")
   }
 
@@ -830,39 +836,39 @@ trait SparkQueryCompareTestSuite extends FunSuite {
   def nonZeroFloatDf(session: SparkSession): DataFrame = {
     import session.sqlContext.implicits._
     Seq(
-      (100.0f, 1.0f),
-      (200.0f, 2.0f),
-      (300.0f, 3.0f),
-      (400.0f, 4.0f),
-      (500.0f, 5.0f),
-      (-100.0f, 6.0f),
-      (-500.0f, 50.5f)
+      (100.20f, 1.0f),
+      (200.0f, 2.04f),
+      (300.430f, 3.40f),
+      (400.02f, 4.0f),
+      (500.09f, 5.03f),
+      (-100.2f, 6.102f),
+      (-500.3f, 50.5f)
     ).toDF("floats", "more_floats")
   }
 
   def doubleStringsDf(session: SparkSession): DataFrame = {
     import session.sqlContext.implicits._
     Seq(
-      ("100.0", "1.0"),
-      ("200.0", "2.0"),
-      ("300.0", "3.0"),
-      ("400.0", "4.0"),
-      ("500.0", "5.0"),
-      ("-100.0", "6.0"),
-      ("-500.0", "0.0"),
-      ("50.0", "50.0")
+      ("100.23", "1.0"),
+      ("200.65", "2.3"),
+      ("300.12", "3.6"),
+      ("400.43", "4.1"),
+      ("500.09", "5.0009"),
+      ("-100.124", "6.234"),
+      ("-500.13", "0.23"),
+      ("50.65", "50.5")
     ).toDF("doubles", "more_doubles")
   }
 
   def nullableFloatDf(session: SparkSession): DataFrame = {
     import session.sqlContext.implicits._
     Seq[(java.lang.Float, java.lang.Float)](
-      (100.0f, 1.0f),
-      (200.0f, null),
-      (300.0f, 3.0f),
+      (100.44f, 1.046f),
+      (200.2f, null),
+      (300.230f, 3.04f),
       (null, 4.0f),
-      (500.0f, null),
-      (null, 6.0f),
+      (500.09f, null),
+      (null, 6.10f),
       (-500.0f, 50.5f)
     ).toDF("floats", "more_floats")
   }
@@ -870,9 +876,9 @@ trait SparkQueryCompareTestSuite extends FunSuite {
   def floatWithNansDf(session: SparkSession): DataFrame = {
     import session.sqlContext.implicits._
     Seq[(java.lang.Float, java.lang.Float)](
-      (100.0f, 1.0f),
-      (200.0f, Float.NaN),
-      (300.0f, 3.0f),
+      (100.50f, 1.0f),
+      (200.80f, Float.NaN),
+      (300.30f, 3.0f),
       (Float.NaN, 4.0f),
       (500.0f, Float.NaN),
       (Float.NaN, 6.0f),
