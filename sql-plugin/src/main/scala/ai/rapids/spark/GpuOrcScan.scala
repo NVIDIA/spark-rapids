@@ -486,7 +486,15 @@ class GpuOrcPartitionReader(
 
     val codec = OrcCodecPool.getCodec(ctx.orcReader.getCompressionKind)
     try {
-      val codecStream = new OutStream(getClass.getSimpleName, ctx.orcReader.getCompressionSize,
+
+      // buffer size must be greater than zero or writes hang (ORC-381)
+      val orcBufferSize = if (ctx.orcReader.getCompressionSize > 0) {
+        ctx.orcReader.getCompressionSize
+      } else {
+        16*1024
+      }
+
+      val codecStream = new OutStream(getClass.getSimpleName, orcBufferSize,
         codec, outReceiver)
       val protoWriter = CodedOutputStream.newInstance(codecStream)
       var numRows = 0L
