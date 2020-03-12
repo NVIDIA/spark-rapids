@@ -16,8 +16,7 @@
 
 package ai.rapids.spark
 
-import ai.rapids.cudf.{DType, Scalar}
-
+import ai.rapids.cudf.{ColumnVector, DType, Scalar}
 import org.apache.spark.sql.catalyst.analysis.TypeCheckResult
 import org.apache.spark.sql.catalyst.expressions.{Cast, NullIntolerant, TimeZoneAwareExpression}
 import org.apache.spark.sql.types._
@@ -90,7 +89,7 @@ case class GpuCast(child: GpuExpression, dataType: DataType, timeZoneId: Option[
   }
 
   override def doColumnar(input: GpuColumnVector): GpuColumnVector = {
-    val cudfType = GpuColumnVector.getRapidsType(dataType)
+   val cudfType = GpuColumnVector.getRapidsType(dataType)
 
     (input.dataType(), dataType) match {
       case (DateType, BooleanType | _: NumericType) =>
@@ -145,14 +144,27 @@ case class GpuCast(child: GpuExpression, dataType: DataType, timeZoneId: Option[
         } finally {
           asLongs.close()
         }
+      case (FloatType|DoubleType, TimestampType) =>
+        // Spark casting to timestamp from double assumes value is in microseconds
+        val microsPerSec = Scalar.fromInt(1000000) // 1000_000
+        try {
+          val doubleTimesMicrosCv = input.getBase.mul(microsPerSec, DType.FLOAT64)
+          try {
+            GpuColumnVector.from(doubleTimesMicrosCv.castTo(DType.TIMESTAMP_MICROSECONDS))
+          } finally {
+            doubleTimesMicrosCv.close()
+          }
+        } finally {
+          microsPerSec.close()
+        }
       case (_: NumericType, TimestampType) =>
         // Spark casting to timestamp assumes value is in seconds, but timestamps
-        // are tracked in milliseconds.
-        val timestampSecs = input.getBase.castTo(DType.TIMESTAMP_SECONDS)
+        // are tracked in microseconds.
+        val timestamp = input.getBase.castTo(DType.TIMESTAMP_SECONDS)
         try {
-          GpuColumnVector.from(timestampSecs.castTo(cudfType))
+          GpuColumnVector.from(timestamp.castTo(cudfType))
         } finally {
-          timestampSecs.close();
+          timestamp.close();
         }
       case _ =>
         GpuColumnVector.from(input.getBase.castTo(cudfType))
