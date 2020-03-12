@@ -491,7 +491,8 @@ class GpuOrcPartitionReader(
       val orcBufferSize = if (ctx.orcReader.getCompressionSize > 0) {
         ctx.orcReader.getCompressionSize
       } else {
-        16*1024
+        // note that this buffer is just for writing meta-data
+        OrcConf.BUFFER_SIZE.getDefaultValue.asInstanceOf[Int]
       }
 
       val codecStream = new OutStream(getClass.getSimpleName, orcBufferSize,
