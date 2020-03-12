@@ -151,6 +151,14 @@ class StringOperatorsSuite extends SparkQueryCompareTestSuite {
             val str : String = null
     frame => frame.filter(col("strings").endsWith(str))
   }
+
+  testSparkResultsAreEqual("String Like to Contains", nullableStringsFromCsv) {
+    frame => frame.filter(col("strings").like("%o%"))
+  }
+
+  testSparkResultsAreEqual("String Like to Contains Empty", nullableStringsFromCsv) {
+    frame => frame.filter(col("strings").like(""))
+  }
 }
 
 /*

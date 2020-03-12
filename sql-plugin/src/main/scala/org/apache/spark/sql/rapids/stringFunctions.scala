@@ -193,3 +193,38 @@ case class GpuEndsWith(left: GpuExpression, right: GpuExpression)
     rhs: GpuColumnVector): GpuColumnVector = throw new IllegalStateException("Really should not be here, " +
     "Cannot have a scalar as left side operand in EndsWith")
 }
+
+case class GpuContains(left: GpuExpression, right: GpuExpression) extends GpuBinaryExpression
+  with Predicate with ImplicitCastInputTypes with NullIntolerant {
+
+  override def inputTypes: Seq[DataType] = Seq(StringType)
+
+  override def sql: String = {
+    val inputSQL = left.sql
+    val listSQL = right.sql.toString
+    s"($inputSQL CONTAINS ($listSQL))"
+  }
+
+  override def toString: String = s"gpucontains($left, $right)"
+
+  def doColumnar(lhs: GpuColumnVector, rhs: Scalar): GpuColumnVector = {
+    if (rhs.getJavaString.isEmpty) {
+      val boolScalar = Scalar.fromBool(true)
+      try {
+        GpuColumnVector.from(ColumnVector.fromScalar(boolScalar, lhs.getRowCount.toInt))
+      } finally {
+        boolScalar.close()
+      }
+    } else {
+      GpuColumnVector.from(lhs.getBase.stringContains(rhs))
+    }
+  }
+
+  override def doColumnar(lhs: GpuColumnVector,
+    rhs: GpuColumnVector): GpuColumnVector = throw new IllegalStateException("Really should not be here, " +
+    "Cannot have two column vectors as input in Contains")
+
+  override def doColumnar(lhs: Scalar,
+    rhs: GpuColumnVector): GpuColumnVector = throw new IllegalStateException("Really should not be here," +
+    "Cannot have a scalar as left side operand in Contains")
+}
