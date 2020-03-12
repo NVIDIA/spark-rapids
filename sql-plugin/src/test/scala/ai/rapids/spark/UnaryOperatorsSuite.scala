@@ -160,4 +160,8 @@ class UnaryOperatorsSuite extends SparkQueryCompareTestSuite {
   INCOMPAT_testSparkResultsAreEqual("Test cube root doubles", doubleDf, 0.0001) {
     frame => frame.select(cbrt(col("doubles")), cbrt(col("more_doubles")))
   }
+
+  testSparkResultsAreEqual("Test rint", doubleDf) {
+    frame => frame.select(rint(col("doubles")), rint(col("more_doubles")))
+  }
 }

@@ -37,6 +37,7 @@ object GpuCast {
 
     case (_: NumericType, BooleanType) => true
     case (_: NumericType, _: NumericType) => true
+    case (DoubleType, TimestampType) => false
     case (_: NumericType, TimestampType) => true
 
     case (DateType, BooleanType) => true
