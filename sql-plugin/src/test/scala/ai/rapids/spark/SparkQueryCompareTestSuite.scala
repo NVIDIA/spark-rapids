@@ -810,26 +810,26 @@ trait SparkQueryCompareTestSuite extends FunSuite {
   def smallFloatDf(session: SparkSession): DataFrame = {
     import session.sqlContext.implicits._
     Seq(
-      (1.23f, 1.80f),
-      (2.90f, 2.70f),
-      (3.04f, 3.0f),
-      (4.50f, 4.20f),
-      (5.60f, 5.60f),
-      (-1.30f, 6.50f),
-      (-5.05f, 0.50f)
+      (1.0f, 1.0f),
+      (2.0f, 2.0f),
+      (3.0f, 3.0f),
+      (4.0f, 4.0f),
+      (5.0f, 5.0f),
+      (-1.0f, 6.0f),
+      (-5.0f, 0.0f)
     ).toDF("floats", "more_floats")
   }
 
   def floatDf(session: SparkSession): DataFrame = {
     import session.sqlContext.implicits._
     Seq(
-      (100.320f, 1.32f),
-      (200.650f, 2.09f),
-      (300.034f, 3.120f),
-      (400.0f, 4.04f),
-      (500.0f, 5.50f),
-      (-100.50f, 6.0f),
-      (-500.60f, 0.0f)
+      (100.0f, 1.0f),
+      (200.0f, 2.0f),
+      (300.0f, 3.0f),
+      (400.0f, 4.0f),
+      (500.0f, 5.0f),
+      (-100.0f, 6.0f),
+      (-500.0f, 0.0f)
     ).toDF("floats", "more_floats")
   }
 
