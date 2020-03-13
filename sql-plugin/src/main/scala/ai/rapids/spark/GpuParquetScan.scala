@@ -150,7 +150,8 @@ case class GpuParquetPartitionReaderFactory(
   private val pushDownStringStartWith = sqlConf.parquetFilterPushDownStringStartWith
   private val pushDownInFilterThreshold = sqlConf.parquetFilterPushDownInFilterThreshold
   private val debugDumpPrefix = rapidsConf.parquetDebugDumpPrefix
-  private val maxReadBatchSize = rapidsConf.maxReadBatchSize
+  private val maxReadBatchSizeRows = rapidsConf.maxReadBatchSizeRows
+  private val maxReadBatchSizeBytes = rapidsConf.maxReadBatchSizeBytes
 
   override def supportColumnarReads(partition: InputPartition): Boolean = true
 
@@ -198,7 +199,7 @@ case class GpuParquetPartitionReaderFactory(
     val columnPaths = clippedSchema.getPaths.asScala.map(x => ColumnPath.get(x:_*))
     val clippedBlocks = ParquetPartitionReader.clipBlocks(columnPaths, blocks.asScala)
     new ParquetPartitionReader(conf, file, filePath, clippedBlocks, clippedSchema,
-        readDataSchema, debugDumpPrefix, maxReadBatchSize, metrics)
+        readDataSchema, debugDumpPrefix, maxReadBatchSizeRows, maxReadBatchSizeBytes, metrics)
   }
 }
 
@@ -227,7 +228,8 @@ class ParquetPartitionReader(
     clippedParquetSchema: MessageType,
     readDataSchema: StructType,
     debugDumpPrefix: String,
-    maxReadBatchSize: Integer,
+    maxReadBatchSizeRows: Integer,
+    maxReadBatchSizeBytes: Long,
     execMetrics: Map[String, SQLMetric]) extends PartitionReader[ColumnarBatch] with Logging
   with ScanWithMetrics {
   private var isExhausted: Boolean = false
@@ -483,11 +485,15 @@ class ParquetPartitionReader(
       if (numRows > Integer.MAX_VALUE) {
         throw new UnsupportedOperationException("Too many rows in split")
       }
+      var numBytes = currentChunk.head.getTotalByteSize
 
       while (blockIterator.hasNext
-        && blockIterator.head.getRowCount + numRows <= maxReadBatchSize) {
+        && blockIterator.head.getRowCount + numRows <= maxReadBatchSizeRows
+        && blockIterator.head.getTotalByteSize + numBytes <= maxReadBatchSizeBytes) {
+
         currentChunk += blockIterator.next
         numRows += currentChunk.last.getRowCount
+        numBytes += currentChunk.last.getTotalByteSize
       }
     }
     currentChunk
