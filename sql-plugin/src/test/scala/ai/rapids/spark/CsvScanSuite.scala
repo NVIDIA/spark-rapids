@@ -59,12 +59,15 @@ class CsvScanSuite extends SparkQueryCompareTestSuite {
   }
 
   testSparkResultsAreEqual("Test CSV splits with chunks", floatCsvDf, conf= new SparkConf().set(
-    RapidsConf.MAX_READER_BATCH_SIZE.key, "1")) {
+    RapidsConf.MAX_READER_BATCH_SIZE_ROWS.key, "1")) {
     frame => frame.select(col("floats"))
   }
 
-  testSparkResultsAreEqual("Test CSV count chunked", intsFromCsv, conf= new SparkConf().set(
-    RapidsConf.MAX_READER_BATCH_SIZE.key, "1"))(frameCount)
+  testSparkResultsAreEqual("Test CSV count chunked by rows", intsFromCsv, conf= new SparkConf().set(
+    RapidsConf.MAX_READER_BATCH_SIZE_ROWS.key, "1"))(frameCount)
+
+  testSparkResultsAreEqual("Test CSV count chunked by bytes", intsFromCsv, conf= new SparkConf().set(
+    RapidsConf.MAX_READER_BATCH_SIZE_BYTES.key, "0"))(frameCount)
 
   /**
     * Running with an inferred schema results in running things that are not columnar optimized.

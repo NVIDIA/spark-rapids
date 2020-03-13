@@ -25,7 +25,6 @@ import java.util
 import scala.collection.JavaConverters._
 import scala.collection.mutable.ArrayBuffer
 import scala.math.max
-
 import ai.rapids.cudf._
 import ai.rapids.spark.GpuMetricNames._
 import ai.rapids.spark.GpuOrcPartitionReader.{OrcOutputStripe, OrcPartitionReaderContext}
@@ -34,11 +33,10 @@ import org.apache.commons.io.IOUtils
 import org.apache.hadoop.conf.Configuration
 import org.apache.hadoop.fs.{FileSystem, Path}
 import org.apache.hadoop.hive.common.io.DiskRangeList
-import org.apache.orc.{DataReader, OrcConf, OrcFile, OrcProto, PhysicalWriter, Reader, StripeInformation, TypeDescription}
+import org.apache.orc.{CompressionKind, DataReader, OrcConf, OrcFile, OrcProto, PhysicalWriter, Reader, StripeInformation, TypeDescription}
 import org.apache.orc.impl._
 import org.apache.orc.impl.RecordReaderImpl.SargApplier
 import org.apache.orc.mapred.OrcInputFormat
-
 import org.apache.spark.broadcast.Broadcast
 import org.apache.spark.internal.Logging
 import org.apache.spark.sql.SparkSession
@@ -136,7 +134,9 @@ case class GpuOrcPartitionReaderFactory(
     metrics : Map[String, SQLMetric]) extends FilePartitionReaderFactory {
   private val isCaseSensitive = sqlConf.caseSensitiveAnalysis
   private val debugDumpPrefix = rapidsConf.orcDebugDumpPrefix
-  private val maxReadBatchSize: Integer = rapidsConf.maxReadBatchSize
+  private val maxReadBatchSizeRows: Integer = rapidsConf.maxReadBatchSizeRows
+  private val maxReadBatchSizeBytes: Long = rapidsConf.maxReadBatchSizeBytes
+  private val maxReadBatchSizeCompressedBytes: Long = rapidsConf.maxReadBatchSizeCompressedBytes
 
   override def supportColumnarReads(partition: InputPartition): Boolean = true
 
@@ -152,7 +152,8 @@ case class GpuOrcPartitionReaderFactory(
 
     val fullSchema = StructType(dataSchema ++ partitionSchema)
     val reader = new GpuOrcPartitionReader(conf, partFile, dataSchema, readDataSchema,
-      fullSchema, pushedFilters, debugDumpPrefix, maxReadBatchSize, metrics)
+      fullSchema, pushedFilters, debugDumpPrefix, maxReadBatchSizeRows, maxReadBatchSizeBytes,
+      maxReadBatchSizeCompressedBytes, metrics)
     ColumnarPartitionReaderWithPartitionValues.newReader(partFile, reader, partitionSchema)
   }
 }
@@ -214,7 +215,9 @@ class GpuOrcPartitionReader(
     fullSchema: StructType,
     pushedFilters: Array[Filter],
     debugDumpPrefix: String,
-    maxReadBatchSize: Integer,
+    maxReadBatchSizeRows: Integer,
+    maxReadBatchSizeBytes: Long,
+    maxReadBatchSizeCompressedBytes: Long,
     execMetrics : Map[String, SQLMetric]) extends PartitionReader[ColumnarBatch] with Logging
   with ScanWithMetrics {
   private var batch: Option[ColumnarBatch] = None
@@ -709,6 +712,13 @@ class GpuOrcPartitionReader(
 
   private def populateCurrentBlockChunk(): Seq[OrcOutputStripe] = {
     val currentChunk = new ArrayBuffer[OrcOutputStripe]
+
+    val maxReadBytes = if (ctx.orcReader.getCompressionKind == CompressionKind.NONE) {
+      maxReadBatchSizeBytes
+    } else {
+      maxReadBatchSizeCompressedBytes
+    }
+
     if (ctx.blockIterator.hasNext) {
       // return at least one block even if it is larger than the configured limit
       currentChunk += ctx.blockIterator.next
@@ -716,11 +726,15 @@ class GpuOrcPartitionReader(
       if (numRows > Integer.MAX_VALUE) {
         throw new UnsupportedOperationException("Too many rows in split")
       }
+      var numBytes = currentChunk.head.infoBuilder.getDataLength
 
       while (ctx.blockIterator.hasNext
-        && ctx.blockIterator.head.infoBuilder.getNumberOfRows + numRows <= maxReadBatchSize) {
+        && ctx.blockIterator.head.infoBuilder.getNumberOfRows + numRows <= maxReadBatchSizeRows
+        && ctx.blockIterator.head.infoBuilder.getDataLength + numBytes <= maxReadBytes) {
+
         currentChunk += ctx.blockIterator.next
         numRows += currentChunk.last.infoBuilder.getNumberOfRows
+        numBytes += currentChunk.last.infoBuilder.getDataLength
       }
     }
     currentChunk

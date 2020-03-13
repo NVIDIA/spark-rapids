@@ -1008,7 +1008,8 @@ object GpuOverrides {
             a.options,
             a.partitionFilters,
             a.dataFilters,
-            conf.maxReadBatchSize)
+            conf.maxReadBatchSizeRows,
+            conf.maxReadBatchSizeBytes)
       }),
     scan[ParquetScan](
       "Parquet parsing",

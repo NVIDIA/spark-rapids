@@ -103,12 +103,12 @@ class FileSourceScanExecSuite extends SparkQueryCompareTestSuite {
   }
 
   testSparkResultsAreEqual("Test CSV splits with chunks", fileSourceFloatsCsv, conf= new SparkConf().set(
-    RapidsConf.MAX_READER_BATCH_SIZE.key, "1")) {
+    RapidsConf.MAX_READER_BATCH_SIZE_ROWS.key, "1")) {
     frame => frame.select(col("floats"))
   }
 
   testSparkResultsAreEqual("Test CSV count chunked", fileSourceIntsCsv(), conf= new SparkConf().set(
-    RapidsConf.MAX_READER_BATCH_SIZE.key, "1"))(frameCount)
+    RapidsConf.MAX_READER_BATCH_SIZE_ROWS.key, "1"))(frameCount)
 
   testSparkResultsAreEqual("Test partitioned CSV splits", fileSourcePartitionedIntsCsv, conf=csvSplitsConf) {
     frame => frame.select(col("partKey"), col("ints_1"), col("ints_3"), col("ints_5"))
@@ -124,7 +124,7 @@ class FileSourceScanExecSuite extends SparkQueryCompareTestSuite {
   }
 
   testSparkResultsAreEqual("Test Parquet with chunks", fileSplitsParquet,
-    conf = new SparkConf().set(RapidsConf.MAX_READER_BATCH_SIZE.key, "100")) {
+    conf = new SparkConf().set(RapidsConf.MAX_READER_BATCH_SIZE_ROWS.key, "100")) {
     frame => frame.select(col("*"))
   }
 
@@ -161,7 +161,7 @@ class FileSourceScanExecSuite extends SparkQueryCompareTestSuite {
   }
 
   testSparkResultsAreEqual("Test ORC with chunks", fileSplitsOrc,
-    conf = new SparkConf().set(RapidsConf.MAX_READER_BATCH_SIZE.key, "2048")) {
+    conf = new SparkConf().set(RapidsConf.MAX_READER_BATCH_SIZE_ROWS.key, "2048")) {
     frame => frame.select(col("*"))
   }
 
