@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019, NVIDIA CORPORATION.
+ * Copyright (c) 2019-2020, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -193,17 +193,15 @@ case class GpuDivide(left: Expression, right: Expression) extends GpuDivModLike 
 }
 
 case class GpuIntegralDivide(left: Expression, right: Expression) extends GpuDivModLike {
-  override def inputType: AbstractDataType = IntegralType
+  override def inputType: AbstractDataType = TypeCollection(IntegralType, DecimalType)
 
-  override def dataType: DataType = if (SQLConf.get.integralDivideReturnLong) {
-    LongType
-  } else {
-    left.dataType
-  }
+  override def dataType: DataType = LongType
 
   override def symbol: String = "/"
 
   override def binaryOp: BinaryOp = BinaryOp.DIV
+
+  override def sqlOperator: String = "div"
 }
 
 case class GpuRemainder(left: Expression, right: Expression) extends GpuDivModLike {
