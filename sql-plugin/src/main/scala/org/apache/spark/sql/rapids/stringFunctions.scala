@@ -20,7 +20,7 @@ import ai.rapids.cudf.{ColumnVector, BinaryOp, DType, Scalar}
 import ai.rapids.spark.{GpuBinaryExpression, GpuColumnVector, GpuExpression, GpuLiteral, GpuScalar, GpuTernaryExpression, GpuUnaryExpression}
 
 import org.apache.spark.sql.catalyst.expressions.{ExpectsInputTypes, Expression, ImplicitCastInputTypes, NullIntolerant, Predicate}
-import org.apache.spark.sql.types.{AbstractDataType, DataType, StringType, IntegerType}
+import org.apache.spark.sql.types.{AbstractDataType, DataType, StringType, IntegerType, BinaryType, TypeCollection}
 
 abstract class GpuUnaryString2StringExpression extends GpuUnaryExpression with ExpectsInputTypes {
   override def inputTypes: Seq[AbstractDataType] = Seq(StringType)
@@ -227,4 +227,51 @@ case class GpuContains(left: GpuExpression, right: GpuExpression) extends GpuBin
   override def doColumnar(lhs: Scalar,
     rhs: GpuColumnVector): GpuColumnVector = throw new IllegalStateException("Really should not be here," +
     "Cannot have a scalar as left side operand in Contains")
+}
+
+case class GpuSubString(str: Expression, pos: Expression, len: Expression)
+  extends GpuTernaryExpression with ImplicitCastInputTypes {
+
+  override def dataType: DataType = str.dataType
+
+  override def inputTypes: Seq[AbstractDataType] =
+    Seq(TypeCollection(StringType, BinaryType), IntegerType, IntegerType)
+
+  override def children: Seq[Expression] = Seq(str, pos, len)
+
+  def this(str: Expression, pos: Expression) = {
+    this(str, pos, GpuLiteral(Integer.MAX_VALUE, IntegerType))
+  }
+
+  override def doColumnar(val0: GpuColumnVector, val1: GpuColumnVector, val2: GpuColumnVector)
+  : GpuColumnVector = throw new UnsupportedOperationException(s"Cannot columnar evaluate expression: $this")
+
+  override def doColumnar(val0: Scalar, val1: GpuColumnVector, val2: GpuColumnVector)
+  : GpuColumnVector = throw new UnsupportedOperationException(s"Cannot columnar evaluate expression: $this")
+
+  override def doColumnar(val0: Scalar, val1: Scalar, val2: GpuColumnVector): GpuColumnVector =
+    throw new UnsupportedOperationException(s"Cannot columnar evaluate expression: $this")
+
+  override def doColumnar(val0: Scalar, val1: GpuColumnVector, val2: Scalar): GpuColumnVector =
+    throw new UnsupportedOperationException(s"Cannot columnar evaluate expression: $this")
+
+  override def doColumnar(val0: GpuColumnVector, val1: Scalar, val2: GpuColumnVector)
+  : GpuColumnVector = throw new UnsupportedOperationException(s"Cannot columnar evaluate expression: $this")
+
+  override def doColumnar(val0: GpuColumnVector, val1: Scalar, val2: Scalar): GpuColumnVector = {
+    if (val2.getInt < 0) { // Spark returns empty string if length is negative
+      GpuColumnVector.from(val0.getBase.substring(0, 0))
+    } else if (val1.getInt >= 0) {
+      if (val1.getInt == 0) {
+        GpuColumnVector.from(val0.getBase.substring(val1.getInt, val2.getInt))
+      } else {
+        GpuColumnVector.from(val0.getBase.substring(val1.getInt - 1, val1.getInt + val2.getInt - 1))
+      }
+    } else {
+      GpuColumnVector.from(val0.getBase.substring(val1.getInt, Integer.MAX_VALUE))
+    }
+  }
+
+  override def doColumnar(val0: GpuColumnVector, val1: GpuColumnVector, val2: Scalar)
+  : GpuColumnVector = throw new UnsupportedOperationException(s"Cannot columnar evaluate expression: $this")
 }

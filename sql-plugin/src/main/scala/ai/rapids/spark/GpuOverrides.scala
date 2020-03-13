@@ -948,6 +948,22 @@ object GpuOverrides {
         override def convertToGpu(val0: GpuExpression, val1: GpuExpression, val2: GpuExpression): GpuExpression =
           GpuStringLocate(val0, val1, val2)
       }),
+    expr[Substring](
+      "Substring operator",
+      (in, conf, p, r) => new TernaryExprMeta[Substring](in, conf, p, r) {
+        override def tagExprForGpu(): Unit = {
+          val dataType =
+            if (!in.children(1).isInstanceOf[Literal] || !in.children(2).isInstanceOf[Literal]) {
+              willNotWorkOnGpu("only literal parameters supported for Substring position and " +
+                  "length parameters")
+            } else if (in.children(0).isInstanceOf[Literal]) {
+              willNotWorkOnGpu("only operating on columns supported")
+            }
+        }
+
+        override def convertToGpu(val0: GpuExpression, val1: GpuExpression, val2: GpuExpression): GpuExpression =
+          GpuSubString(val0, val1, val2)
+      }),
     expr[StartsWith](
       "Starts With",
       (a, conf, p, r) => new BinaryExprMeta[StartsWith](a, conf, p, r) {
