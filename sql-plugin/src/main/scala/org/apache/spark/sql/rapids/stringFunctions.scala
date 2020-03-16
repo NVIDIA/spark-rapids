@@ -230,7 +230,7 @@ case class GpuContains(left: GpuExpression, right: GpuExpression) extends GpuBin
 }
 
 case class GpuSubString(str: Expression, pos: Expression, len: Expression)
-  extends GpuTernaryExpression with ImplicitCastInputTypes {
+  extends GpuTernaryExpression with ImplicitCastInputTypes with NullIntolerant {
 
   override def dataType: DataType = str.dataType
 
