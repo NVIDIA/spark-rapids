@@ -294,6 +294,13 @@ object GpuOverrides {
     case _ => false
   }
 
+  @scala.annotation.tailrec
+  def isLit(exp: Expression): Boolean = exp match {
+    case Literal(_, IntegerType) => true
+    case a: Alias => isLit(a.child)
+    case _ => false
+  }
+
   def unwrapAliases(exp: Expression): Expression = exp match {
     case a: Alias => unwrapAliases(a.child)
     case e => e
@@ -958,16 +965,14 @@ object GpuOverrides {
       (in, conf, p, r) => new TernaryExprMeta[Substring](in, conf, p, r) {
         override def tagExprForGpu(): Unit = {
           val dataType =
-            if (!in.children(1).isInstanceOf[Literal] || !in.children(2).isInstanceOf[Literal]) {
+            if (!isLit(in.children(1)) || !(isLit(in.children(2)))) {
               willNotWorkOnGpu("only literal parameters supported for Substring position and " +
                   "length parameters")
-            } else if (in.children(0).isInstanceOf[Literal]) {
-              willNotWorkOnGpu("only operating on columns supported")
             }
         }
 
-        override def convertToGpu(val0: GpuExpression, val1: GpuExpression, val2: GpuExpression): GpuExpression =
-          GpuSubString(val0, val1, val2)
+        override def convertToGpu(column: GpuExpression, position: GpuExpression, length: GpuExpression): GpuExpression =
+          GpuSubString(column, position, length)
       }),
     expr[StartsWith](
       "Starts With",

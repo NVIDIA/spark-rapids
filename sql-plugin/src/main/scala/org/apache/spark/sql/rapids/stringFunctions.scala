@@ -20,7 +20,7 @@ import ai.rapids.cudf.{ColumnVector, BinaryOp, DType, Scalar}
 import ai.rapids.spark.{GpuBinaryExpression, GpuColumnVector, GpuExpression, GpuLiteral, GpuScalar, GpuTernaryExpression, GpuUnaryExpression}
 
 import org.apache.spark.sql.catalyst.expressions.{ExpectsInputTypes, Expression, ImplicitCastInputTypes, NullIntolerant, Predicate}
-import org.apache.spark.sql.types.{AbstractDataType, DataType, StringType, IntegerType, BinaryType, TypeCollection}
+import org.apache.spark.sql.types.{AbstractDataType, BinaryType, DataType, IntegerType, StringType, TypeCollection}
 
 abstract class GpuUnaryString2StringExpression extends GpuUnaryExpression with ExpectsInputTypes {
   override def inputTypes: Seq[AbstractDataType] = Seq(StringType)
@@ -258,17 +258,19 @@ case class GpuSubString(str: Expression, pos: Expression, len: Expression)
   override def doColumnar(val0: GpuColumnVector, val1: Scalar, val2: GpuColumnVector)
   : GpuColumnVector = throw new UnsupportedOperationException(s"Cannot columnar evaluate expression: $this")
 
-  override def doColumnar(val0: GpuColumnVector, val1: Scalar, val2: Scalar): GpuColumnVector = {
-    if (val2.getInt < 0) { // Spark returns empty string if length is negative
-      GpuColumnVector.from(val0.getBase.substring(0, 0))
-    } else if (val1.getInt >= 0) {
-      if (val1.getInt == 0) {
-        GpuColumnVector.from(val0.getBase.substring(val1.getInt, val2.getInt))
+  override def doColumnar(column: GpuColumnVector, position: Scalar, length: Scalar): GpuColumnVector = {
+    val substringPos = position.getInt
+    val substringLen = length.getInt
+    if (substringLen < 0) { // Spark returns empty string if length is negative
+      GpuColumnVector.from(column.getBase.substring(0, 0))
+    } else if (substringPos >= 0) {
+      if (substringPos == 0) {
+        GpuColumnVector.from(column.getBase.substring(substringPos, substringLen))
       } else {
-        GpuColumnVector.from(val0.getBase.substring(val1.getInt - 1, val1.getInt + val2.getInt - 1))
+        GpuColumnVector.from(column.getBase.substring(substringPos - 1, substringPos + substringLen - 1))
       }
     } else {
-      GpuColumnVector.from(val0.getBase.substring(val1.getInt, Integer.MAX_VALUE))
+      GpuColumnVector.from(column.getBase.substring(substringPos, Integer.MAX_VALUE))
     }
   }
 
