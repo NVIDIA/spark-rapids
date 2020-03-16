@@ -531,6 +531,22 @@ object GpuOverrides {
           GpuNaNvl(lhs, rhs)
       }
     ),
+    expr[ShiftLeft](
+      "Bitwise shift left (<<)",
+      (a, conf, p, r) => new BinaryExprMeta[ShiftLeft](a, conf, p, r) {
+        override def convertToGpu(lhs: GpuExpression, rhs: GpuExpression): GpuExpression = GpuShiftLeft(lhs, rhs)
+      }),
+    expr[ShiftRight](
+      "Bitwise shift right (>>)",
+      (a, conf, p, r) => new BinaryExprMeta[ShiftRight](a, conf, p, r) {
+        override def convertToGpu(lhs: GpuExpression, rhs: GpuExpression): GpuExpression = GpuShiftRight(lhs, rhs)
+      }),
+    expr[ShiftRightUnsigned](
+      "Bitwise unsigned shift right (>>>)",
+      (a, conf, p, r) => new BinaryExprMeta[ShiftRightUnsigned](a, conf, p, r) {
+        override def convertToGpu(lhs: GpuExpression, rhs: GpuExpression): GpuExpression =
+          GpuShiftRightUnsigned(lhs, rhs)
+      }),
     expr[BitwiseAnd](
       "Returns the bitwise AND of the operands",
       (a, conf, p, r) => new BinaryExprMeta[BitwiseAnd](a, conf, p, r) {

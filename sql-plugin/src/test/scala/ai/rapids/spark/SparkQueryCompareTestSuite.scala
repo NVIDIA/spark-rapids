@@ -713,6 +713,20 @@ trait SparkQueryCompareTestSuite extends FunSuite {
     ).toDF("longs", "more_longs")
   }
 
+  def intsDf(session: SparkSession): DataFrame = {
+    import session.sqlContext.implicits._
+    Seq(
+      (100, 1),
+      (200, 2),
+      (300, 3),
+      (400, 4),
+      (500, 5),
+      (-100, 6),
+      (-500, 1),
+      (23, 7)
+    ).toDF("ints", "more_ints")
+  }
+
   def biggerLongsDf(session: SparkSession): DataFrame = {
     import session.sqlContext.implicits._
     Seq(
