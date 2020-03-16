@@ -296,7 +296,13 @@ object GpuOverrides {
 
   @scala.annotation.tailrec
   def isLit(exp: Expression): Boolean = exp match {
+    case Literal(_, ByteType) => true
+    case Literal(_, ShortType) => true
     case Literal(_, IntegerType) => true
+    case Literal(_, LongType) => true
+    case Literal(_, FloatType) => true
+    case Literal(_, DoubleType) => true
+    case Literal(_, DateType) => true
     case a: Alias => isLit(a.child)
     case _ => false
   }
