@@ -38,19 +38,6 @@ class CastOpSuite extends SparkQueryCompareTestSuite {
       col("longs").cast(TimestampType))
   }
 
-  testSparkResultsAreEqual("Test cast from float", floatDf) {
-    frame => frame.select(
-      col("floats").cast(IntegerType),
-      col("floats").cast(LongType),
-      //      col("doubles").cast(StringType),
-      col("more_floats").cast(BooleanType),
-      col("more_floats").cast(ByteType),
-      col("floats").cast(ShortType),
-      col("floats").cast(FloatType),
-      col("floats").cast(DoubleType),
-    col("floats").cast(TimestampType))
-  }
-
   testSparkResultsAreEqual("Test cast from double", doubleDf) {
     frame => frame.select(
       col("doubles").cast(IntegerType),

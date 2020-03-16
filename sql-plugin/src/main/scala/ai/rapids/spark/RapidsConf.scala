@@ -19,6 +19,7 @@ import java.util
 
 import scala.collection.JavaConverters._
 import scala.collection.mutable.ListBuffer
+
 import org.apache.spark.SparkConf
 import org.apache.spark.internal.Logging
 import org.apache.spark.network.util.{ByteUnit, JavaUtils}
@@ -40,6 +41,15 @@ object ConfHelper {
     } catch {
       case _: IllegalArgumentException =>
         throw new IllegalArgumentException(s"$key should be integer, but was $s")
+    }
+  }
+
+  def toLong(s: String, key: String): Long = {
+    try {
+      s.trim.toLong
+    } catch {
+      case _: IllegalArgumentException =>
+        throw new IllegalArgumentException(s"$key should be long, but was $s")
     }
   }
 
@@ -172,6 +182,10 @@ class ConfBuilder(val key: String, val register: ConfEntry[_] => Unit) {
     new TypedConfBuilder[Integer](this, toInteger(_, key))
   }
 
+  def longConf: TypedConfBuilder[Long] = {
+    new TypedConfBuilder[Long](this, toLong(_, key))
+  }
+
   def doubleConf: TypedConfBuilder[Double] = {
     new TypedConfBuilder(this, toDouble(_, key))
   }
@@ -260,10 +274,24 @@ object RapidsConf {
     .integerConf
     .createWithDefault(1000000)
 
-  val MAX_READER_BATCH_SIZE = conf("spark.rapids.sql.reader.batchSizeRows")
-    .doc("Maximum number of rows the reader reads at a time")
+  val MAX_READER_BATCH_SIZE_ROWS = conf("spark.rapids.sql.reader.batchSizeRows")
+    .doc("Soft limit on the maximum number of rows the reader will read per batch. The orc and parquet " +
+      "readers will read row groups until this limit is met or exceeded. The limit is respected by the csv reader.")
     .integerConf
     .createWithDefault(Integer.MAX_VALUE)
+
+  val MAX_READER_BATCH_SIZE_BYTES = conf("spark.rapids.sql.reader.batchSizeBytes")
+    .doc("Soft limit on the maximum number of bytes the reader reads per batch. The readers " +
+      "will read chunks of data until this limit is met or exceeded. Note that the csv and parquet readers use " +
+      "this limit even if the underlying file is compressed.")
+    .longConf
+    .createWithDefault(Integer.MAX_VALUE)
+
+  val MAX_READER_BATCH_SIZE_COMPRESSED_BYTES = conf("spark.rapids.sql.reader.batchSizeCompressedBytes")
+    .doc("Soft limit on the maximum number of bytes the reader reads per batch when reading compressed files. " +
+      "The readers will read chunks of compressed data until this limit is met or exceeded.")
+    .longConf
+    .createWithDefault(Integer.MAX_VALUE/2)
 
   // Internal Features
 
@@ -532,7 +560,11 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
 
   lazy val explain: String = get(EXPLAIN)
 
-  lazy val maxReadBatchSize: Int = get(MAX_READER_BATCH_SIZE)
+  lazy val maxReadBatchSizeRows: Int = get(MAX_READER_BATCH_SIZE_ROWS)
+
+  lazy val maxReadBatchSizeBytes: Long = get(MAX_READER_BATCH_SIZE_BYTES)
+
+  lazy val maxReadBatchSizeCompressedBytes: Long = get(MAX_READER_BATCH_SIZE_COMPRESSED_BYTES)
 
   lazy val parquetDebugDumpPrefix: String = get(PARQUET_DEBUG_DUMP_PREFIX)
 

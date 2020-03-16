@@ -198,7 +198,8 @@ case class GpuCSVScan(
     options: CaseInsensitiveStringMap,
     partitionFilters: Seq[Expression],
     dataFilters: Seq[Expression],
-    maxReaderBatchSize: Integer)
+    maxReaderBatchSizeRows: Integer,
+    maxReaderBatchSizeBytes: Long)
   extends TextBasedFileScan(sparkSession, options) with ScanWithMetrics {
 
   private lazy val parsedOptions: CSVOptions = new CSVOptions(
@@ -228,7 +229,8 @@ case class GpuCSVScan(
       new SerializableConfiguration(hadoopConf))
 
     GpuCSVPartitionReaderFactory(sparkSession.sessionState.conf, broadcastedConf,
-      dataSchema, readDataSchema, readPartitionSchema, parsedOptions, maxReaderBatchSize, metrics)
+      dataSchema, readDataSchema, readPartitionSchema, parsedOptions, maxReaderBatchSizeRows,
+      maxReaderBatchSizeBytes, metrics)
   }
 
   override def withFilters(
@@ -238,7 +240,8 @@ case class GpuCSVScan(
   override def equals(obj: Any): Boolean = obj match {
     case c: GpuCSVScan =>
       super.equals(c) && dataSchema == c.dataSchema && options == c.options &&
-      maxReaderBatchSize == c.maxReaderBatchSize
+      maxReaderBatchSizeRows == c.maxReaderBatchSizeRows &&
+      maxReaderBatchSizeBytes == c.maxReaderBatchSizeBytes
     case _ => false
   }
 
@@ -252,7 +255,8 @@ case class GpuCSVPartitionReaderFactory(
     readDataSchema: StructType,
     partitionSchema: StructType, // TODO need to filter these out, or support pulling them in. These are values from the file name/path itself
     parsedOptions: CSVOptions,
-    maxReaderBatchSize: Integer,
+    maxReaderBatchSizeRows: Integer,
+    maxReaderBatchSizeBytes: Long,
     metrics: Map[String, SQLMetric]) extends FilePartitionReaderFactory {
 
   override def buildReader(partitionedFile: PartitionedFile): PartitionReader[InternalRow] = {
@@ -262,7 +266,7 @@ case class GpuCSVPartitionReaderFactory(
   override def buildColumnarReader(partFile: PartitionedFile): PartitionReader[ColumnarBatch] = {
     val conf = broadcastedConf.value.value
     val reader = new CSVPartitionReader(conf, partFile, dataSchema, readDataSchema, parsedOptions,
-      maxReaderBatchSize, metrics)
+      maxReaderBatchSizeRows, maxReaderBatchSizeBytes, metrics)
     ColumnarPartitionReaderWithPartitionValues.newReader(partFile, reader, partitionSchema)
   }
 }
@@ -275,6 +279,7 @@ class CSVPartitionReader(
     readDataSchema: StructType,
     parsedOptions: CSVOptions,
     maxRowsPerChunk: Integer,
+    maxBytesPerChunk: Long,
     execMetrics: Map[String, SQLMetric])
   extends PartitionReader[ColumnarBatch] with ScanWithMetrics {
 
@@ -352,7 +357,9 @@ class CSVPartitionReader(
       var totalRows: Integer = 0
       var hmb = HostMemoryBuffer.allocate(estimatedHostBufferSize)
       try {
-        while (lineReader.hasNext && totalRows != maxRowsPerChunk) {
+        while (lineReader.hasNext
+          && totalRows != maxRowsPerChunk
+          && totalSize <= maxBytesPerChunk /* soft limit and returns at least one row */) {
           val line = lineReader.next()
           val lineSize = line.getLength
           val newTotal = totalSize + lineSize + separator.length

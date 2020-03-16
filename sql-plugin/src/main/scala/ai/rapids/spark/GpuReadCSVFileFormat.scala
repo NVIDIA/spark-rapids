@@ -59,7 +59,8 @@ class GpuReadCSVFileFormat extends CSVFileFormat {
       requiredSchema,
       partitionSchema,
       csvOpts,
-      rapidsConf.maxReadBatchSize,
+      rapidsConf.maxReadBatchSizeRows,
+      rapidsConf.maxReadBatchSizeBytes,
       PartitionReaderIterator.buildScanMetrics(sparkSession.sparkContext))
     PartitionReaderIterator.buildReader(factory)
   }
