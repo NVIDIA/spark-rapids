@@ -45,7 +45,7 @@ case class GpuShiftRightUnsigned(left: Expression, right: Expression) extends Cu
   override def inputTypes: Seq[AbstractDataType] =
     Seq(TypeCollection(IntegerType, LongType), IntegerType)
 
-  override def binaryOp: BinaryOp = BinaryOp.SHIFT_RIGHT_UNSINGED
+  override def binaryOp: BinaryOp = BinaryOp.SHIFT_RIGHT_UNSIGNED
 
   override def dataType: DataType = left.dataType
 }
