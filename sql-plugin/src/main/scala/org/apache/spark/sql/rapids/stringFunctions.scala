@@ -263,13 +263,13 @@ case class GpuSubString(str: Expression, pos: Expression, len: Expression)
     val substringLen = length.getInt
     if (substringLen < 0) { // Spark returns empty string if length is negative
       GpuColumnVector.from(column.getBase.substring(0, 0))
-    } else if (substringPos >= 0) {
-      if (substringPos == 0) {
+    } else if (substringPos >= 0) { // If position is non negative
+      if (substringPos == 0) {  // calculate substring from first character to length
         GpuColumnVector.from(column.getBase.substring(substringPos, substringLen))
-      } else {
+      } else { // calculate substring from position to length
         GpuColumnVector.from(column.getBase.substring(substringPos - 1, substringPos + substringLen - 1))
       }
-    } else {
+    } else { // If position is negative, evaluate from end.
       GpuColumnVector.from(column.getBase.substring(substringPos, Integer.MAX_VALUE))
     }
   }

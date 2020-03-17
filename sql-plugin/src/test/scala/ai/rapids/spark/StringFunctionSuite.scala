@@ -179,6 +179,10 @@ class StringOperatorsSuite extends SparkQueryCompareTestSuite {
   testSparkResultsAreEqual("Substring max position", nullableStringsFromCsv) {
     frame => frame.selectExpr("substring(strings, 100)")
   }
+
+  testSparkResultsAreEqual("Substring position and length zero", nullableStringsFromCsv) {
+    frame => frame.selectExpr("substring(strings, 0, 0)")
+  }
 }
 
 /*
