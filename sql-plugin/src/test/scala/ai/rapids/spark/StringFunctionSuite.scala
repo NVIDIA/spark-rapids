@@ -159,6 +159,30 @@ class StringOperatorsSuite extends SparkQueryCompareTestSuite {
   testSparkResultsAreEqual("String Like to Contains Empty", nullableStringsFromCsv) {
     frame => frame.filter(col("strings").like(""))
   }
+
+  testSparkResultsAreEqual("Substring valid", nullableStringsFromCsv) {
+    frame => frame.selectExpr("substring(strings, 1, 5)")
+  }
+
+  testSparkResultsAreEqual("Substring length not specified", nullableStringsFromCsv) {
+    frame => frame.selectExpr("substring(strings, 1)")
+  }
+
+  testSparkResultsAreEqual("Substring position from end", nullableStringsFromCsv) {
+    frame => frame.selectExpr("substring(strings, -3)")
+  }
+
+  testSparkResultsAreEqual("Substring negative length ", nullableStringsFromCsv) {
+    frame => frame.selectExpr("substring(strings, 3, -2)")
+  }
+
+  testSparkResultsAreEqual("Substring max position", nullableStringsFromCsv) {
+    frame => frame.selectExpr("substring(strings, 100)")
+  }
+
+  testSparkResultsAreEqual("Substring position and length zero", nullableStringsFromCsv) {
+    frame => frame.selectExpr("substring(strings, 0, 0)")
+  }
 }
 
 /*
