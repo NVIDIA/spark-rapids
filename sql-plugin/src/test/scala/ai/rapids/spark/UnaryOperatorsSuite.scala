@@ -164,4 +164,12 @@ class UnaryOperatorsSuite extends SparkQueryCompareTestSuite {
   testSparkResultsAreEqual("Test rint", doubleDf) {
     frame => frame.select(rint(col("doubles")), rint(col("more_doubles")))
   }
+
+  testSparkResultsAreEqual("Test EulerNumber", singularDoubleDf) {
+    frame => frame.selectExpr("e()")
+  }
+
+  testSparkResultsAreEqual("Test pi", singularDoubleDf) {
+    frame => frame.selectExpr("pi()")
+  }
 }
