@@ -31,4 +31,9 @@ class LimitExecSuite extends SparkQueryCompareTestSuite {
     conf = makeBatched(3)) {
     frame => frame.limit(2).repartition(2)
   }
+
+  testSparkResultsAreEqual("limit with no real columns", intCsvDf,
+    conf = makeBatched(3), repart = 0) {
+    frame => frame.limit(2).selectExpr("pi()")
+  }
 }

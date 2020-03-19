@@ -61,17 +61,22 @@ trait GpuBaseLimitExec extends LimitExec with GpuExec {
         }
 
         def sliceBatch(batch: ColumnarBatch): ColumnarBatch = {
-          val resultCVs = new ArrayBuffer[GpuColumnVector](remainingLimit)
+          val numColumns = batch.numCols()
+          val resultCVs = new ArrayBuffer[GpuColumnVector](numColumns)
           var exception: Throwable = null
           var table: Table = null
           try {
-            table = GpuColumnVector.from(batch)
-            for (i <- 0 until table.getNumberOfColumns) {
-              val slices = table.getColumn(i).slice(0, remainingLimit)
-              assert(slices.length > 0)
-              resultCVs.append(GpuColumnVector.from(slices(0)))
+            if (numColumns > 0) {
+              table = GpuColumnVector.from(batch)
+              (0 until numColumns).foreach(i => {
+                val subVector = table.getColumn(i).subVector(0, remainingLimit)
+                assert(subVector != null)
+                resultCVs.append(GpuColumnVector.from(subVector))
+                assert(subVector.getRowCount == remainingLimit,
+                  s"result rowcount ${subVector.getRowCount} is not equal to the remainingLimit $remainingLimit")
+              })
             }
-            new ColumnarBatch(resultCVs.toArray, resultCVs(0).getRowCount.toInt)
+            new ColumnarBatch(resultCVs.toArray, remainingLimit)
           } catch {
             case e: Throwable => exception = e
               throw e
