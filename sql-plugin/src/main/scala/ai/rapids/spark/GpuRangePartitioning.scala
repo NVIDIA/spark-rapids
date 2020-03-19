@@ -26,6 +26,16 @@ import org.apache.spark.sql.vectorized.ColumnarBatch
 
 import scala.collection.mutable.ArrayBuffer
 
+/**
+  * A GPU accelerated [[org.apache.spark.sql.catalyst.plans.physical.Partitioning]] that partitions
+  * sortable records by range into roughly equal ranges. The ranges are determined by sampling
+  * the content of the RDD passed in.
+  *
+  * @note The actual number of partitions created might not be the same
+  * as the `numPartitions` parameter, in the case where the number of sampled records is less than
+  * the value of `partitions`.
+  */
+
 case class GpuRangePartitioning(gpuOrdering: Seq[GpuSortOrder], numPartitions: Int, part: GpuRangePartitioner)
   extends GpuExpression with GpuPartitioning {
 
@@ -106,9 +116,6 @@ case class GpuRangePartitioning(gpuOrdering: Seq[GpuSortOrder], numPartitions: I
       //get Inputs table bound
       inputCvs = SortUtils.getGpuColVectorsAndBindReferences(batch, gpuOrdering)
       inputTbl = new Table(inputCvs.map(_.getBase): _*)
-      //get the ranges table
-      rangesBatch = part.getRangesBatch(schema, part.rangeBounds)
-      rangesTbl = GpuColumnVector.from(rangesBatch)
       //sort incoming batch to compare with ranges
       sortedTbl = inputTbl.orderBy(orderByArgs: _*)
       val sortColumns = (0 until numSortCols).map(sortedTbl.getColumn(_))
@@ -116,15 +123,24 @@ case class GpuRangePartitioning(gpuOrdering: Seq[GpuSortOrder], numPartitions: I
       slicedSortedTbl = new Table(sortColumns: _*)
       //get the final column batch, remove the sort order sortColumns
       finalSortedCb = GpuColumnVector.from(sortedTbl, numSortCols, sortedTbl.getNumberOfColumns)
-      //get upper bounds
-      retCv = slicedSortedTbl.upperBound(nullFlags.toArray, rangesTbl, descFlags.toArray)
-      val hostCv = retCv.copyToHost()
-      try {
-        //partition indices based on upper bounds
-        parts = parts ++ (0 until hostCv.getRowCount.toInt).map(i => hostCv.getInt(i)).toArray[Int]
-        partitionColumns = GpuColumnVector.extractColumns(finalSortedCb)
-      } finally {
-        hostCv.close()
+      partitionColumns = GpuColumnVector.extractColumns(finalSortedCb)
+      // get the ranges table and get upper bounds if possible
+      // rangeBounds can be empty or of length < numPartitions in cases where the samples are less than
+      // numPartitions. The way Spark handles it is by allowing the returned partitions to be
+      // rangeBounds.length + 1 which is essentially what happens here when we do upperBound on the
+      // ranges table, or return one partition.
+      if (part.rangeBounds.nonEmpty) {
+        rangesBatch = part.getRangesBatch(schema, part.rangeBounds)
+        rangesTbl = GpuColumnVector.from(rangesBatch)
+        retCv = slicedSortedTbl.upperBound(nullFlags.toArray, rangesTbl, descFlags.toArray)
+        val hostCv = retCv.copyToHost()
+        try {
+          //partition indices based on upper bounds
+          parts = parts ++ (0 until hostCv.getRowCount.toInt).map(
+            i => hostCv.getInt(i)).toArray[Int]
+        } finally {
+          hostCv.close()
+        }
       }
       slicedCb = sliceInternalGpuOrCpu(finalSortedCb, parts, partitionColumns)
     } finally {
