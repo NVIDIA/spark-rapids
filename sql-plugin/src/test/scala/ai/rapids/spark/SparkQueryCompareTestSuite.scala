@@ -943,6 +943,11 @@ trait SparkQueryCompareTestSuite extends FunSuite {
     )))(_)
   }
 
+  def singularDoubleDf(session: SparkSession): DataFrame = {
+    import session.sqlContext.implicits._
+    Seq(1.1).toDF("double")
+  }
+
   // Note: some tests here currently use this to force Spark not to
   // push down expressions into the scan (e.g. GpuFilters need this)
   def fromCsvDf(file: String, schema: StructType, hasHeader: Boolean = false)
