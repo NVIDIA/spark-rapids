@@ -160,4 +160,14 @@ class SortExecSuite extends SparkQueryCompareTestSuite {
       conf = sortJoinMultiBatchConf, allowNonGpu = true, sort = true) {
     (dfA, dfB) => dfA.join(dfB, dfA("longs") === dfB("longs"))
   }
+
+  testSparkResultsAreEqual("GpuRangePartitioning with numparts > numvalues v1", longsCsvDf,
+    conf=makeBatched(1)) {
+    df => df.filter(df.col("longs").gt(1)).sort(df.col("longs"))
+  }
+
+  testSparkResultsAreEqual("GpuRangePartitioning with numparts > numvalues v2", longsCsvDf,
+    conf=new SparkConf().set("spark.sql.shuffle.partitions", "4"), repart = 4) {
+    df => df.filter(df.col("longs").lt(-800)).sort(df.col("longs"))
+  }
 }
