@@ -16,23 +16,20 @@
 
 package ai.rapids.spark
 
-import java.io.{File, IOException}
-
-import ai.rapids.cudf.{CompressionType, NvtxColor, NvtxRange, ParquetWriterOptions}
-import org.apache.hadoop.fs.{FileUtil, Path}
+import ai.rapids.cudf._
 import org.apache.hadoop.mapreduce.{Job, OutputCommitter, TaskAttemptContext}
+import org.apache.parquet.hadoop.{ParquetOutputCommitter, ParquetOutputFormat}
 import org.apache.parquet.hadoop.codec.CodecConfig
 import org.apache.parquet.hadoop.util.ContextUtil
-import org.apache.parquet.hadoop.{ParquetOutputCommitter, ParquetOutputFormat}
 import org.apache.parquet.hadoop.ParquetOutputFormat.JobSummaryLevel
 
 import org.apache.spark.internal.Logging
-import org.apache.spark.sql.execution.datasources.parquet.{ParquetOptions, ParquetWriteSupport}
-import org.apache.spark.sql.types.StructType
-import org.apache.spark.sql.vectorized.ColumnarBatch
 import org.apache.spark.sql.{Row, SparkSession}
+import org.apache.spark.sql.execution.datasources.parquet.{ParquetOptions, ParquetWriteSupport}
 import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.internal.SQLConf.ParquetOutputTimestampType
+import org.apache.spark.sql.types.StructType
+import org.apache.spark.sql.vectorized.ColumnarBatch
 import org.apache.spark.TaskContext
 
 object GpuParquetFileFormat {
@@ -171,57 +168,22 @@ class GpuParquetWriter(
     path: String,
     dataSchema: StructType,
     compressionType: CompressionType,
-    context: TaskAttemptContext) extends ColumnarOutputWriter {
-  /**
-   * Closes the [[ColumnarOutputWriter]]. Invoked on the executor side after all columnar batches
-   * are persisted, before the task output is committed.
-   */
-  override def close(): Unit = {}
+    context: TaskAttemptContext)
+  extends ColumnarOutputWriter(path, context, dataSchema, "Parquet") {
 
-  // write a batch and return the time spent on the GPU
-  override def writeBatch(batch: ColumnarBatch): Long = {
-    var needToCloseBatch = true
-    var tempFile: Option[File] = None
-    try {
-      val conf = context.getConfiguration
-      val writeContext = new ParquetWriteSupport().init(conf)
-      val options = ParquetWriterOptions.builder()
-          .withColumnNames(dataSchema.map(_.name):_*)
-          .withMetadata(writeContext.getExtraMetaData)
-          .withCompressionType(compressionType)
-          .build()
-      tempFile = Some(File.createTempFile("gpu", ".parquet"))
-      tempFile.get.getParentFile.mkdirs()
-      val startTimestamp = System.nanoTime
-      val nvtxRange = new NvtxRange("GPU Parquet write", NvtxColor.BLUE)
-      try {
-        val table = GpuColumnVector.from(batch)
-        try {
-          table.writeParquet(options, tempFile.get)
-        } finally {
-          table.close()
-        }
-      } finally {
-        nvtxRange.close()
+  override val tableWriter: TableWriter = {
+    val writeContext = new ParquetWriteSupport().init(conf)
+    val builder = ParquetWriterOptions.builder()
+      .withMetadata(writeContext.getExtraMetaData)
+      .withCompressionType(compressionType)
+    dataSchema.foreach(entry => {
+      if (entry.nullable) {
+        builder.withColumnNames(entry.name)
+      } else {
+        builder.withNotNullableColumnNames(entry.name)
       }
-
-      // Batch is no longer needed, write process from here does not use GPU.
-      batch.close()
-      needToCloseBatch = false
-      GpuSemaphore.releaseIfNecessary(TaskContext.get)
-      val gpuTime = System.nanoTime - startTimestamp
-
-      val hadoopPath = new Path(path)
-      if (!FileUtil.copy(tempFile.get, hadoopPath.getFileSystem(conf), hadoopPath, false, conf)) {
-        throw new IOException(s"Failed to copy data to $hadoopPath")
-      }
-
-      gpuTime
-    } finally {
-      if (needToCloseBatch) {
-        batch.close()
-      }
-      tempFile.foreach(_.delete())
-    }
+    })
+    val options = builder.build()
+    Table.writeParquetChunked(options, this)
   }
 }
