@@ -204,6 +204,14 @@ public final class GpuColumnVector extends ColumnVector {
    * Create an empty batch from the given format.  This should be used very sparingly because
    * returning an empty batch from an operator is almost always the wrong thing to do.
    */
+  public static ColumnarBatch emptyBatch(StructType schema) {
+    return new GpuColumnarBatchBuilder(schema, 0, null).build(0);
+  }
+
+  /**
+   * Create an empty batch from the given format.  This should be used very sparingly because
+   * returning an empty batch from an operator is almost always the wrong thing to do.
+   */
   public static ColumnarBatch emptyBatch(List<Attribute> format) {
     StructType schema = new StructType();
     for (Attribute attribute: format) {
@@ -212,8 +220,9 @@ public final class GpuColumnVector extends ColumnVector {
           attribute.nullable(),
           null));
     }
-    return new GpuColumnarBatchBuilder(schema, 0, null).build(0);
+    return emptyBatch(schema);
   }
+
 
   /**
    * Convert a spark schema into a cudf schema

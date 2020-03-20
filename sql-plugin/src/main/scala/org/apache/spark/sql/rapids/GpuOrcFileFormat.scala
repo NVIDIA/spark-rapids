@@ -16,16 +16,14 @@
 
 package org.apache.spark.sql.rapids
 
-import java.io.{File, IOException}
-
-import ai.rapids.cudf.{CompressionType, NvtxColor, NvtxRange, ORCWriterOptions}
+import ai.rapids.cudf._
 import ai.rapids.spark._
-import org.apache.hadoop.fs.{FileUtil, Path}
 import org.apache.hadoop.mapred.JobConf
 import org.apache.hadoop.mapreduce.{Job, TaskAttemptContext}
 import org.apache.orc.OrcConf
 import org.apache.orc.OrcConf._
 import org.apache.orc.mapred.OrcStruct
+
 import org.apache.spark.TaskContext
 import org.apache.spark.internal.Logging
 import org.apache.spark.sql.SparkSession
@@ -130,55 +128,22 @@ class GpuOrcFileFormat extends ColumnarFileFormat with Logging {
 
 class GpuOrcWriter(path: String,
                    dataSchema: StructType,
-                   context: TaskAttemptContext) extends ColumnarOutputWriter {
-  /**
-   * Closes the [[ColumnarOutputWriter]]. Invoked on the executor side after all columnar batches
-   * are persisted, before the task output is committed.
-   */
-  override def close(): Unit = {}
+                   context: TaskAttemptContext)
+  extends ColumnarOutputWriter(path, context, dataSchema, "ORC") {
 
-  // write a batch and return the time spent on the GPU
-  override def writeBatch(batch: ColumnarBatch): Long = {
-    var needToCloseBatch = true
-    var tempFile: Option[File] = None
-    try {
-      val conf = context.getConfiguration
-      val options = ORCWriterOptions.builder()
-        .withCompressionType(CompressionType.valueOf(OrcConf.COMPRESS.getString(conf)))
-        .withColumnNames(dataSchema.map(_.name): _*)
-        .build()
-      tempFile = Some(File.createTempFile("gpu", ".orc"))
-      tempFile.get.getParentFile.mkdirs()
-      val startTimestamp = System.nanoTime
-      val nvtxRange = new NvtxRange("GPU Orc write", NvtxColor.BLUE)
-      try {
-        val table = GpuColumnVector.from(batch)
-        try {
-          table.writeORC(options, tempFile.get)
-        } finally {
-          table.close()
-        }
-      } finally {
-        nvtxRange.close()
+  override val tableWriter: TableWriter = {
+    val builder= ORCWriterOptions.builder()
+      .withCompressionType(CompressionType.valueOf(OrcConf.COMPRESS.getString(conf)))
+
+    dataSchema.foreach(entry => {
+      if (entry.nullable) {
+        builder.withColumnNames(entry.name)
+      } else {
+        builder.withNotNullableColumnNames(entry.name)
       }
+    })
 
-      // Batch is no longer needed, write process from here does not use GPU.
-      batch.close()
-      needToCloseBatch = false
-      GpuSemaphore.releaseIfNecessary(TaskContext.get)
-      val gpuTime = System.nanoTime - startTimestamp
-
-      val hadoopPath = new Path(path)
-      if (!FileUtil.copy(tempFile.get, hadoopPath.getFileSystem(conf), hadoopPath, false, conf)) {
-        throw new IOException(s"Failed to copy data to $hadoopPath")
-      }
-
-      gpuTime
-    } finally {
-      if (needToCloseBatch) {
-        batch.close()
-      }
-      tempFile.foreach(_.delete())
-    }
+    val options = builder.build()
+    Table.writeORCChunked(options, this)
   }
 }

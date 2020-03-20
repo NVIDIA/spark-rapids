@@ -1,7 +1,7 @@
 #!/bin/bash
 set -e
 if [ "$CUDF_VER"x == x ];then
-    CUDF_VER="0.13-SNAPSHOT"
+    CUDF_VER="0.14-SNAPSHOT"
 fi
 
 # Empty as default cuda10.0 classifier, 'cuda10-1' as cuda10.1 classifier
