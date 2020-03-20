@@ -16,11 +16,17 @@
 
 package ai.rapids.spark
 
-import ai.rapids.cudf.{NvtxColor, NvtxRange}
+import scala.collection.mutable
+
+import ai.rapids.cudf.{HostBufferConsumer, HostMemoryBuffer, NvtxColor, NvtxRange, TableWriter}
+import ai.rapids.spark.RapidsPluginImplicits._
+import org.apache.hadoop.fs.{FSDataOutputStream, Path}
 import org.apache.hadoop.mapreduce.TaskAttemptContext
+
 import org.apache.spark.sql.rapids.{ColumnarWriteTaskStatsTracker, GpuWriteTaskStatsTracker}
 import org.apache.spark.sql.types.StructType
 import org.apache.spark.sql.vectorized.ColumnarBatch
+import org.apache.spark.TaskContext
 
 /**
  * A factory that produces [[ColumnarOutputWriter]]s.  A new [[ColumnarOutputWriterFactory]] is
@@ -53,9 +59,47 @@ abstract class ColumnarOutputWriterFactory extends Serializable {
  * must provide a zero-argument constructor. This is the columnar version of
  * [[org.apache.spark.sql.execution.datasources.OutputWriter]].
  */
-abstract class ColumnarOutputWriter {
+abstract class ColumnarOutputWriter(path: String, context: TaskAttemptContext, dataSchema: StructType, rangeName: String)
+  extends HostBufferConsumer {
+
+  val tableWriter: TableWriter
+  val conf = context.getConfiguration
+
+  private[this] val outputStream: FSDataOutputStream = {
+    val hadoopPath = new Path(path)
+    val fs = hadoopPath.getFileSystem(conf)
+    fs.create(hadoopPath, false)
+  }
+  private[this] val tempBuffer = new Array[Byte](128 * 1024)
+  private[this] var anythingWritten = false
+  private[this] val buffers = mutable.Queue[(HostMemoryBuffer, Long)]()
+
+  override
+  def handleBuffer(buffer: HostMemoryBuffer, len: Long): Unit =
+    buffers += Tuple2(buffer, len)
+
+  def writeBufferedData(): Unit = {
+    val toProcess = buffers.dequeueAll(_ => true)
+    try {
+      toProcess.foreach(ops => {
+        val buffer = ops._1
+        var len = ops._2
+        var offset: Long = 0
+        while (len > 0) {
+          val toCopy = math.min(tempBuffer.length, len).toInt
+          buffer.getBytes(tempBuffer, 0, offset, toCopy)
+          outputStream.write(tempBuffer, 0, toCopy)
+          len = len - toCopy
+          offset = offset + toCopy
+        }
+      })
+    } finally {
+      toProcess.map(_._1).safeClose()
+    }
+  }
+
   /**
-   * Persists a column batch. Invoked on the executor side. When writing to dynamically partitioned
+   * Persists a columnar batch. Invoked on the executor side. When writing to dynamically partitioned
    * tables, dynamic partition columns are not included in columns to be written.
    * NOTE: It is the writer's responsibility to close the batch.
    */
@@ -88,14 +132,52 @@ abstract class ColumnarOutputWriter {
 
   /**
    * Writes the columnar batch and returns the time in ns taken to write
+   *
    * @param batch - Columnar batch that needs to be written
    * @return - time in ns taken to write the batch
    */
-  def writeBatch(batch: ColumnarBatch): Long
+  private[this] def writeBatch(batch: ColumnarBatch): Long = {
+    var needToCloseBatch = true
+    try {
+      val startTimestamp = System.nanoTime
+      val nvtxRange = new NvtxRange(s"GPU $rangeName write", NvtxColor.BLUE)
+      try {
+        val table = GpuColumnVector.from(batch)
+        try {
+          anythingWritten = true
+          tableWriter.write(table)
+        } finally {
+          table.close()
+        }
+      } finally {
+        nvtxRange.close()
+      }
+
+      // Batch is no longer needed, write process from here does not use GPU.
+      batch.close()
+      needToCloseBatch = false
+      GpuSemaphore.releaseIfNecessary(TaskContext.get)
+      val gpuTime = System.nanoTime - startTimestamp
+      writeBufferedData()
+      gpuTime
+    } finally {
+      if (needToCloseBatch) {
+        batch.close()
+      }
+    }
+  }
 
   /**
    * Closes the [[ColumnarOutputWriter]]. Invoked on the executor side after all columnar batches
    * are persisted, before the task output is committed.
    */
-  def close(): Unit
+  def close(): Unit = {
+    if (!anythingWritten) {
+      // This prevents writing out bad files
+      writeBatch(GpuColumnVector.emptyBatch(dataSchema))
+    }
+    tableWriter.close()
+    writeBufferedData()
+    outputStream.close()
+  }
 }
