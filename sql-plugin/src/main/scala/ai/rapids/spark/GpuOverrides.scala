@@ -990,6 +990,20 @@ object GpuOverrides {
         override def convertToGpu(column: GpuExpression, position: GpuExpression, length: GpuExpression): GpuExpression =
           GpuSubString(column, position, length)
       }),
+    expr[StringReplace](
+      "StringReplace operator",
+      (in, conf, p, r) => new TernaryExprMeta[StringReplace](in, conf, p, r) {
+        override def tagExprForGpu(): Unit = {
+          val dataType =
+            if (!isStringLit(in.children(1)) || !(isStringLit(in.children(2)))) {
+              willNotWorkOnGpu("only literal parameters supported for string literal target and " +
+                  "replace parameters")
+            }
+        }
+
+        override def convertToGpu(column: GpuExpression, target: GpuExpression, replace: GpuExpression): GpuExpression =
+          GpuStringReplace(column, target, replace)
+      }),
     expr[StartsWith](
       "Starts With",
       (a, conf, p, r) => new BinaryExprMeta[StartsWith](a, conf, p, r) {
