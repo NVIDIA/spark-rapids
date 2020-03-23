@@ -21,7 +21,6 @@ import ai.rapids.spark.{GpuBinaryExpression, GpuColumnVector, GpuExpression, Gpu
 
 import org.apache.spark.sql.catalyst.expressions.{ExpectsInputTypes, Expression, ImplicitCastInputTypes, NullIntolerant, Predicate}
 import org.apache.spark.sql.types.{AbstractDataType, BinaryType, DataType, IntegerType, StringType, TypeCollection}
-import org.apache.spark.unsafe.types.UTF8String
 
 abstract class GpuUnaryString2StringExpression extends GpuUnaryExpression with ExpectsInputTypes {
   override def inputTypes: Seq[AbstractDataType] = Seq(StringType)
@@ -279,7 +278,7 @@ case class GpuSubString(str: Expression, pos: Expression, len: Expression)
   : GpuColumnVector = throw new UnsupportedOperationException(s"Cannot columnar evaluate expression: $this")
 }
 
-case class GpuStringReplace(srcExpr: Expression, searchExpr: Expression, replaceExpr: Expression)
+case class GpuStringReplace(srcExpr: GpuExpression, searchExpr: GpuExpression, replaceExpr: GpuExpression)
     extends GpuTernaryExpression with ImplicitCastInputTypes {
 
   override def dataType: DataType = srcExpr.dataType
@@ -288,14 +287,10 @@ case class GpuStringReplace(srcExpr: Expression, searchExpr: Expression, replace
 
   override def children: Seq[Expression] = Seq(srcExpr, searchExpr, replaceExpr)
 
-  def this(srcExpr: Expression, searchExpr: Expression) = {
+  def this(srcExpr: GpuExpression, searchExpr: GpuExpression) = {
     this(srcExpr, searchExpr, GpuLiteral("", StringType))
   }
 
-  override def nullSafeEval(srcEval: Any, searchEval: Any, replaceEval: Any): Any = {
-    srcEval.asInstanceOf[UTF8String].replace(
-      searchEval.asInstanceOf[UTF8String], replaceEval.asInstanceOf[UTF8String])
-  }
   override def doColumnar(strExpr: GpuColumnVector, searchExpr: GpuColumnVector, replaceExpr: GpuColumnVector)
   : GpuColumnVector = throw new UnsupportedOperationException(s"Cannot columnar evaluate expression: $this")
 

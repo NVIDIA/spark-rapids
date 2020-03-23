@@ -188,10 +188,10 @@ class StringOperatorsSuite extends SparkQueryCompareTestSuite {
     frame => frame.selectExpr("replace(strings, 'a', 'A')")
   }
 
-  testSparkResultsAreEqual("String empty search ", nullableStringsFromCsv) {
+  testSparkResultsAreEqual("String replace empty search ", nullableStringsFromCsv) {
     frame => frame.selectExpr("replace(strings, '', 'A')")
   }
-  testSparkResultsAreEqual("String empty replace ", nullableStringsFromCsv) {
+  testSparkResultsAreEqual("String replace- No replace parameter", nullableStringsFromCsv) {
     frame => frame.selectExpr("replace(strings, 'a')")
   }
 }
