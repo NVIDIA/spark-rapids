@@ -40,7 +40,7 @@ class GpuCoalesceBatchSuite extends SparkQueryCompareTestSuite {
         .asInstanceOf[GpuCoalesceBatches]
 
       assert(coalesce.goal == RequireSingleBatch)
-      assert(coalesce.goal.targetSize == Integer.MAX_VALUE)
+      assert(coalesce.goal.targetSizeRows == Integer.MAX_VALUE)
 
       // assert the metrics start out at zero
       assert(coalesce.additionalMetrics("numInputBatches").value == 0)
@@ -78,7 +78,7 @@ class GpuCoalesceBatchSuite extends SparkQueryCompareTestSuite {
         .asInstanceOf[GpuCoalesceBatches]
 
       assert(coalesce.goal != RequireSingleBatch)
-      assert(coalesce.goal.targetSize == 1)
+      assert(coalesce.goal.targetSizeRows == 1)
 
       // assert the metrics start out at zero
       assert(coalesce.additionalMetrics("numInputBatches").value == 0)

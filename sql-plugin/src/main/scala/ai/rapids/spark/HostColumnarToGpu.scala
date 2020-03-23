@@ -156,7 +156,7 @@ class HostToGpuCoalesceIterator(iter: Iterator[ColumnarBatch],
       batchBuilder.close()
       batchBuilder = null
     }
-    batchBuilder = new GpuColumnVector.GpuColumnarBatchBuilder(schema, goal.targetSize.toInt, null)
+    batchBuilder = new GpuColumnVector.GpuColumnarBatchBuilder(schema, goal.targetSizeRows.toInt, null)
     totalRows = 0
   }
 
