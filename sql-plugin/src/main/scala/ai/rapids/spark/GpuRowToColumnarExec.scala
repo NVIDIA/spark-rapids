@@ -19,7 +19,6 @@ package ai.rapids.spark
 import ai.rapids.cudf.NvtxColor
 import ai.rapids.spark.GpuColumnVector.GpuColumnarBatchBuilder
 import ai.rapids.spark.GpuMetricNames._
-
 import org.apache.spark.broadcast.Broadcast
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.InternalRow
