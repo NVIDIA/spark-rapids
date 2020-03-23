@@ -24,14 +24,24 @@ import org.apache.spark.sql.types.{DataTypes, StructType}
  */
 object GpuBatchUtils {
 
+  /** Validity buffers are 64 byte aligned */
+  val VALIDITY_BUFFER_BOUNDARY_BYTES = 64
+
+  /** Validity buffers are 64 byte aligned and each byte represents 8 rows */
+  val VALIDITY_BUFFER_BOUNDARY_ROWS = VALIDITY_BUFFER_BOUNDARY_BYTES * 8
+
+  /** Number of bytes per offset (32 bit) */
+  val OFFSET_BYTES = 4
+
   /** Estimate the number of rows required to meet a batch size limit */
-  def estimateRowCount(desiredBatchSizeBytes: Long, currentBatchSize: Long, currentBatchRowCount: Int): Int = {
+  def estimateRowCount(desiredBatchSizeBytes: Long, currentBatchSize: Long, currentBatchRowCount: Long): Int = {
     assert(currentBatchSize > 0, "batch must contain at least one byte")
     assert(currentBatchRowCount > 0, "batch must contain at least one row")
-    if (currentBatchSize > desiredBatchSizeBytes) {
-      return currentBatchRowCount
+    val targetRowCount: Long = if (currentBatchSize > desiredBatchSizeBytes) {
+      currentBatchRowCount
+    } else {
+      ((desiredBatchSizeBytes / currentBatchSize.floatValue()) * currentBatchRowCount).toLong
     }
-    val targetRowCount: Long = ((desiredBatchSizeBytes / currentBatchSize.floatValue()) * currentBatchRowCount).toLong
     targetRowCount.min(Integer.MAX_VALUE).toInt
   }
 

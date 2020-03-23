@@ -286,7 +286,7 @@ private class ExternalRowToColumnarIterator(
     localSchema: StructType,
     localGoal: CoalesceGoal,
     converters: GpuExternalRowToColumnConverter) extends Iterator[ColumnarBatch] {
-  private val targetRows = localGoal.targetSize.toInt
+  private val targetRows = localGoal.targetSizeRows.toInt
   override def hasNext: Boolean = rowIter.hasNext
 
   override def next(): ColumnarBatch = {
@@ -305,7 +305,7 @@ private class ExternalRowToColumnarIterator(
         converters.convert(row, builders)
         rowCount += 1
       }
-      if (rowIter.hasNext && (rowCount + 1L) > localGoal.targetSize) {
+      if (rowIter.hasNext && (rowCount + 1L) > localGoal.targetSizeRows) {
         localGoal.whenTargetExceeded(rowCount + 1L)
       }
 
@@ -399,7 +399,7 @@ object InternalColumnarRddConverter extends Logging {
       // We have to fall back to doing a slow transition.
       val converters = new GpuExternalRowToColumnConverter(schema)
       val conf = new RapidsConf(df.sqlContext.conf)
-      val goal = TargetSize(conf.gpuTargetBatchSizeRows.toInt)
+      val goal = TargetSize(conf.gpuTargetBatchSizeRows.toInt, conf.gpuTargetBatchSizeBytes)
       input.mapPartitions(rowIter => new ExternalRowToColumnarIterator(rowIter, schema, goal, converters))
     })
 

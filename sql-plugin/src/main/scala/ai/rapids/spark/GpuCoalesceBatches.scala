@@ -89,19 +89,27 @@ object CoalesceGoal {
     case (_, RequireSingleBatch) => b
     case (PreferSingleBatch, _) => a
     case (_, PreferSingleBatch) => b
-    case (TargetSize(aSize), TargetSize(bSize)) if aSize > bSize => a
+    case (TargetSize(aSize, _), TargetSize(bSize, _)) if aSize > bSize => a
     case _ => b
   }
 }
 
 sealed abstract class CoalesceGoal extends Serializable {
-  val targetSize: Long
+
+  @deprecated(message = "This will be removed once all operators respect byte limits on batch sizes")
+  val targetSizeRows: Long
+
+  val targetSizeBytes: Long
 
   def whenTargetExceeded(actualSize: Long): Unit = {}
 }
 
 object RequireSingleBatch extends CoalesceGoal {
-  override val targetSize: Long = Integer.MAX_VALUE
+
+  @deprecated(message = "This will be removed once all operators respect byte limits on batch sizes")
+  override val targetSizeRows: Long = Integer.MAX_VALUE
+
+  override val targetSizeBytes: Long = Integer.MAX_VALUE
 
   override def whenTargetExceeded(actualSize: Long): Unit = {
     throw new IllegalStateException("A single batch is required for this operation." +
@@ -110,11 +118,15 @@ object RequireSingleBatch extends CoalesceGoal {
 }
 
 object PreferSingleBatch extends CoalesceGoal {
-  override val targetSize: Long = Integer.MAX_VALUE
+
+  @deprecated(message = "This will be removed once all operators respect byte limits on batch sizes")
+  override val targetSizeRows: Long = Integer.MAX_VALUE
+
+  override val targetSizeBytes: Long = Integer.MAX_VALUE
 }
 
-case class TargetSize(override val targetSize: Long) extends CoalesceGoal {
-  assert(targetSize <= Integer.MAX_VALUE)
+case class TargetSize(override val targetSizeRows: Long, override val targetSizeBytes: Long) extends CoalesceGoal {
+  assert(targetSizeRows <= Integer.MAX_VALUE)
 }
 
 class RemoveEmptyBatchIterator(iter: Iterator[ColumnarBatch],
@@ -198,7 +210,7 @@ abstract class AbstractGpuCoalesceIterator(origIter: Iterator[ColumnarBatch],
       if (onDeck.isDefined) {
         val cb = onDeck.get
         val rows = cb.numRows()
-        if (rows > goal.targetSize) {
+        if (rows > goal.targetSizeRows) {
           goal.whenTargetExceeded(rows)
         }
         addBatchToConcat(cb)
@@ -208,13 +220,13 @@ abstract class AbstractGpuCoalesceIterator(origIter: Iterator[ColumnarBatch],
 
       val collect = new MetricRange(collectTime)
       try {
-        while (numRows < goal.targetSize && onDeck.isEmpty && iter.hasNext) {
+        while (numRows < goal.targetSizeRows && onDeck.isEmpty && iter.hasNext) {
           val cb = iter.next()
           val nextRows = cb.numRows()
           numInputBatches += 1
           numInputRows += nextRows
           val wouldBeRows = nextRows + numRows
-          if (wouldBeRows > goal.targetSize) {
+          if (wouldBeRows > goal.targetSizeRows) {
             goal.whenTargetExceeded(wouldBeRows)
             // If numRows == 0, this is the first batch so we really should just do it.
             if (numRows == 0) {
