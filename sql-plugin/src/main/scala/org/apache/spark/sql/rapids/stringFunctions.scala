@@ -16,11 +16,11 @@
 
 package org.apache.spark.sql.rapids
 
-import ai.rapids.cudf.{ColumnVector, BinaryOp, DType, Scalar}
+import ai.rapids.cudf.{ColumnVector, Scalar}
 import ai.rapids.spark.{GpuBinaryExpression, GpuColumnVector, GpuExpression, GpuLiteral, GpuScalar, GpuTernaryExpression, GpuUnaryExpression}
 
 import org.apache.spark.sql.catalyst.expressions.{ExpectsInputTypes, Expression, ImplicitCastInputTypes, NullIntolerant, Predicate}
-import org.apache.spark.sql.types.{AbstractDataType, BinaryType, DataType, IntegerType, StringType, TypeCollection}
+import org.apache.spark.sql.types._
 
 abstract class GpuUnaryString2StringExpression extends GpuUnaryExpression with ExpectsInputTypes {
   override def inputTypes: Seq[AbstractDataType] = Seq(StringType)
@@ -276,4 +276,75 @@ case class GpuSubString(str: Expression, pos: Expression, len: Expression)
 
   override def doColumnar(val0: GpuColumnVector, val1: GpuColumnVector, val2: Scalar)
   : GpuColumnVector = throw new UnsupportedOperationException(s"Cannot columnar evaluate expression: $this")
+}
+
+
+case class GpuLike(left: GpuExpression, right: GpuExpression, escapeChar: Char)
+  extends GpuBinaryExpression with ImplicitCastInputTypes with NullIntolerant  {
+
+  def this(left: GpuExpression, right: GpuExpression) = this(left, right, '\\')
+
+  override def toString: String = escapeChar match {
+    case '\\' => s"$left gpulike $right"
+    case c => s"$left gpulike $right ESCAPE '$c'"
+  }
+
+  override def doColumnar(lhs: GpuColumnVector,
+    rhs: GpuColumnVector): GpuColumnVector = throw new IllegalStateException("Really should not be here, " +
+    "Cannot have two column vectors as input in Like")
+
+  override def doColumnar(lhs: Scalar,
+    rhs: GpuColumnVector): GpuColumnVector = throw new IllegalStateException("Really should not be here, " +
+    "Cannot have a scalar as left side operand in Like")
+
+  override def doColumnar(lhs: GpuColumnVector, rhs: Scalar): GpuColumnVector = {
+    val regexStr = escapeLikeRegex(rhs.getJavaString, escapeChar)
+    GpuColumnVector.from(lhs.getBase.matchesRe(regexStr))
+  }
+
+  override def inputTypes: Seq[AbstractDataType] = Seq(StringType, StringType)
+
+  override def dataType: DataType = BooleanType
+  /**
+    * Validate and convert SQL 'like' pattern to a cuDF regular expression.
+    *
+    * Underscores (_) are converted to '.' including newlines and percent signs (%)
+    * are converted to '.*' including newlines, other characters are quoted literally or escaped.
+    * An invalid pattern will throw an [[IllegalArgumentException]].
+    *
+    * @param pattern the SQL pattern to convert
+    * @param escapeChar the escape string contains one character.
+    * @return the equivalent cuDF regular expression of the pattern
+    */
+  def escapeLikeRegex(pattern: String, escapeChar: Char): String = {
+    val in = pattern.toIterator
+    val out = new StringBuilder()
+
+    val escapeForCudf = Seq('[', '^', '$', '.', '|', '?', '*','+', '(', ')', '\\', '{', '}')
+    def fail(message: String) = throw new IllegalArgumentException(
+      s"the pattern '$pattern' is invalid, $message")
+
+    def cudfQuote(c: Character): String = c match {
+      case chr if escapeForCudf.contains(chr) => "\\" + chr
+      case chr => Character.toString(chr)
+    }
+
+    while (in.hasNext) {
+      in.next match {
+        case c1 if c1 == escapeChar && in.hasNext =>
+          val c = in.next
+          c match {
+            case '_' | '%' => out ++= cudfQuote(c)
+            // special case for cudf
+            case c if c == escapeChar => out ++= cudfQuote(c)
+            case _ => fail(s"the escape character is not allowed to precede '$c'")
+          }
+        case c if c == escapeChar => fail("it is not allowed to end with the escape character")
+        case '_' => out ++= "(.|\n)"
+        case '%' => out ++= "(.|\n)*"
+        case c => out ++= cudfQuote(c)
+      }
+    }
+    out.result() + "\\Z" // makes this match for cuDF expected format for `matchesRe`
+  }
 }

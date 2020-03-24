@@ -642,6 +642,23 @@ trait SparkQueryCompareTestSuite extends FunSuite {
     ).toDF("ints", "longs", "doubles", "strings")
   }
 
+  def likeDf(session: SparkSession): DataFrame = {
+    import session.sqlContext.implicits._
+    val someDF = Seq(
+      (150, "abc"), (140, "a*c"), (130, "ab"), (120, "ac"), (110, "a|bc"), (100, "a.b"), (90, "b$"),
+      (80, "b$c"), (70, "\r"), (60, "a\rb"), (50, "\roo"), (40, "\n"), (30, "a\nb"), (20, "\noo"),
+      (0, "\roo"), (10, "a\u20ACa") , (-10, "o\\aood"), (-20, "foo"), (-30, "food"),(-40, "foodu"),
+      (-50,"abc%abc"), (-60,"abc%&^abc"), (-70, """"%SystemDrive%\Users\John"""),
+      (-80, """%SystemDrive%\\Users\\John"""), (-90, "aa^def"), (-100, "acna"), (-110, "_"),
+      (-110, "cn"), (-120, "aa[d]abc"), (-130, "aa(d)abc"), (-140, "a?b"), (-150, "a+c"), (-160, "a{3}"),
+      (-170, "aaa"), (-180, """\abc"""))
+    .toDF("number","word")
+    // This persist call makes it so that the plan does not fold operations like filter etc. It is
+    // used here since repartition() doesn't do the trick.
+    // It does leak memory for the lifecycle of the test which is small.
+    someDF.persist
+  }
+
   def mixedDfWithNulls(session: SparkSession): DataFrame = {
     import session.sqlContext.implicits._
     Seq[(java.lang.Long, java.lang.Double, java.lang.Integer, String)](
