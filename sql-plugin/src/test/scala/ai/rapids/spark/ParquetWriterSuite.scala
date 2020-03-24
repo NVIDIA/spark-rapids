@@ -36,11 +36,17 @@ class ParquetWriterSuite extends SparkQueryCompareTestSuite {
 
   def writeParquet(df: DataFrame, path: String): Unit = df.write.parquet(path)
 
+  def writeParquetBucket(colNames: String*): (DataFrame, String) => Unit =
+    (df, path) => df.write.partitionBy(colNames:_*).parquet(path)
+
   testSparkWritesAreEqual("simple Parquet write without nulls",
     mixedDf, writeParquet, readParquet)
 
   testSparkWritesAreEqual("simple Parquet write with nulls",
     mixedDfWithNulls, writeParquet, readParquet)
+
+  testSparkWritesAreEqual("simple partitioned Parquet write",
+    mixedDfWithBuckets, writeParquetBucket("bucket_1", "bucket_2"), readParquet)
 
   test("write with no compression") {
     val compression = "none"

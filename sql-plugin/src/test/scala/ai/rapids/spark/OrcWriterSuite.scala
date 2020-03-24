@@ -27,9 +27,15 @@ class OrcWriterSuite extends SparkQueryCompareTestSuite {
 
   def writeOrc(df: DataFrame, path: String): Unit = df.write.orc(path)
 
+  def writeOrcBucket(colNames: String*): (DataFrame, String) => Unit =
+    (df, path) => df.write.partitionBy(colNames:_*).orc(path)
+
   testSparkWritesAreEqual("simple orc write without nulls",
     mixedDf, writeOrc, readOrc)
 
   testSparkWritesAreEqual("simple orc write with nulls",
     mixedDfWithNulls, writeOrc, readOrc)
+
+  testSparkWritesAreEqual("simple partitioned orc write",
+    mixedDfWithBuckets, writeOrcBucket("bucket_1", "bucket_2"), readOrc)
 }

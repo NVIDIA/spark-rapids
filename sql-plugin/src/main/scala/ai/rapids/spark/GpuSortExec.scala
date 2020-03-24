@@ -303,3 +303,13 @@ case class GpuSortOrder(
 
   def toSortOrder: SortOrder = SortOrder(origChild, direction, nullOrdering, sameOrderExpressions)
 }
+
+object GpuSortOrder {
+  def apply(
+      child: GpuExpression,
+      origChild: Expression,
+      direction: SortDirection,
+      sameOrderExpressions: Set[Expression] = Set.empty): GpuSortOrder = {
+    new GpuSortOrder(child, direction, direction.defaultNullOrdering, sameOrderExpressions, origChild)
+  }
+}

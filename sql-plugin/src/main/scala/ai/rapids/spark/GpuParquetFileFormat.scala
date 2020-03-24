@@ -29,8 +29,6 @@ import org.apache.spark.sql.execution.datasources.parquet.{ParquetOptions, Parqu
 import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.internal.SQLConf.ParquetOutputTimestampType
 import org.apache.spark.sql.types.StructType
-import org.apache.spark.sql.vectorized.ColumnarBatch
-import org.apache.spark.TaskContext
 
 object GpuParquetFileFormat {
   def tagGpuSupport(

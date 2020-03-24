@@ -257,4 +257,11 @@ case class GpuInsertIntoHadoopFsRelationCommand(
       }
     }.toMap
   }
+
+  private val isPartitioned = partitionColumns.nonEmpty
+
+  private val isBucketed = bucketSpec.nonEmpty
+
+  // We need a single batch if we have to sort the data
+  override def requireSingleBatch: Boolean = isPartitioned || isBucketed
 }

@@ -231,8 +231,8 @@ final class InsertIntoHadoopFsRelationCommandMeta(
   private var fileFormat: Option[ColumnarFileFormat] = None
 
   override def tagSelfForGpu(): Unit = {
-    if (cmd.partitionColumns.nonEmpty || cmd.bucketSpec.isDefined) {
-      willNotWorkOnGpu("partitioning or bucketing is not supported")
+    if (cmd.bucketSpec.isDefined) {
+      willNotWorkOnGpu("bucketing is not supported")
     }
 
      val spark = SparkSession.active
