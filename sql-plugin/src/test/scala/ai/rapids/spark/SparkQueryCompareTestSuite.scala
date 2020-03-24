@@ -626,7 +626,7 @@ trait SparkQueryCompareTestSuite extends FunSuite {
 
   def mixedDf(session: SparkSession): DataFrame = {
     import session.sqlContext.implicits._
-    Seq(
+    Seq[(java.lang.Integer, java.lang.Long, java.lang.Double, java.lang.String)](
       (99, 100L, 1.0, "A"),
       (98, 200L, 2.0, "B"),
       (97,300L, 3.0, "C"),
@@ -635,6 +635,9 @@ trait SparkQueryCompareTestSuite extends FunSuite {
       (97, -100L, 6.0, "F"),
       (96, -500L, 0.0, "G"),
       (95, -700L, 8.0, "E\u0480\u0481"),
+      (Int.MaxValue, Long.MinValue, Double.PositiveInfinity, "\u0000"),
+      (Int.MinValue, Long.MaxValue, Double.NaN, "\u0000"),
+      (null, null, null, "actions are judged by intentions"),
       (94, -900L, 9.0, "g\nH"),
       (92, -1200L, 12.0, "IJ\"\u0100\u0101\u0500\u0501"),
       (90, 1500L, 15.0, "\ud720\ud721")
