@@ -172,4 +172,11 @@ class UnaryOperatorsSuite extends SparkQueryCompareTestSuite {
   testSparkResultsAreEqual("Test pi", singularDoubleDf) {
     frame => frame.selectExpr("pi()")
   }
+
+  testSparkResultsAreEqual("Test signum", mixedDf) {
+    frame => frame.select(signum(col("ints")),
+      signum(col("longs")),
+      signum(col("doubles")))
+  }
+
 }

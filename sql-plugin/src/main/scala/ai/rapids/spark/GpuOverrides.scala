@@ -390,6 +390,11 @@ object GpuOverrides {
         // There are so many of these that we don't need to print them out.
         override def print(append: StringBuilder, depth: Int, all: Boolean): Unit = {}
       }),
+    expr[Signum](
+      "Returns -1.0, 0.0 or 1.0 as expr is negative, 0 or positive",
+      (a, conf, p, r) => new UnaryExprMeta[Signum](a, conf, p, r) {
+        override def convertToGpu(child: GpuExpression): GpuExpression = GpuSignum(child)
+      }),
     expr[Alias](
       "gives a column a name",
       (a, conf, p, r) => new UnaryExprMeta[Alias](a, conf, p, r) {
