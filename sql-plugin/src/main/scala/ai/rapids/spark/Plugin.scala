@@ -26,13 +26,15 @@ import ai.rapids.cudf._
 import ai.rapids.spark.RapidsPluginImplicits._
 import org.apache.commons.lang3.mutable.MutableLong
 
-import org.apache.spark.{SparkContext, TaskContext}
+import org.apache.spark.{SparkConf, SparkContext, TaskContext}
 import org.apache.spark.api.plugin.{DriverPlugin, ExecutorPlugin, PluginContext, SparkPlugin}
 import org.apache.spark.internal.Logging
+import org.apache.spark.serializer.{JavaSerializer, KryoSerializer}
 import org.apache.spark.sql.{GpuShuffleEnv, SparkSessionExtensions}
 import org.apache.spark.sql.catalyst.plans.physical.Partitioning
 import org.apache.spark.sql.catalyst.rules.Rule
 import org.apache.spark.sql.execution._
+import org.apache.spark.sql.internal.StaticSQLConf
 import org.apache.spark.sql.vectorized.ColumnarBatch
 import org.apache.spark.util.TaskCompletionListener
 
@@ -137,11 +139,9 @@ case class ColumnarOverrideRules() extends ColumnarRule with Logging {
 }
 
 /**
-  * Extension point to enable GPU processing.
-  *
-  * To run on a GPU set spark.sql.extensions to ai.rapids.spark.Plugin
+  * Extension point to enable GPU SQL processing.
   */
-class Plugin extends Function1[SparkSessionExtensions, Unit] with Logging {
+class SQLExecPlugin extends Function1[SparkSessionExtensions, Unit] with Logging {
   override def apply(extensions: SparkSessionExtensions): Unit = {
     logWarning("Installing extensions to enable rapids GPU SQL support." +
       s" To disable GPU support set `${RapidsConf.SQL_ENABLED}` to false")
@@ -346,13 +346,66 @@ object GpuResourceManager extends MemoryListener with Logging {
   }
 }
 
+object RapidsPluginUtils extends Logging {
+  private val SQL_PLUGIN_NAME = classOf[SQLExecPlugin].getName
+  private val OLD_SQL_PLUGIN_NAME = "ai.rapids.spark.Plugin"
+  private val SQL_PLUGIN_CONF_KEY = StaticSQLConf.SPARK_SESSION_EXTENSIONS.key
+  private val SERIALIZER_CONF_KEY = "spark.serializer"
+  private val JAVA_SERIALIZER_NAME = classOf[JavaSerializer].getName
+  private val KRYO_SERIALIZER_NAME = classOf[KryoSerializer].getName
+  private val KRYO_REGISRATOR_KEY = "spark.kryo.registrator"
+  private val KRYO_REGISRATOR_NAME = classOf[GpuKryoRegistrator].getName
+
+  def fixupConfigs(conf: SparkConf): Unit = {
+    // First add in the SQL executor plugin because that is what we need at a minimum
+    if (conf.contains(SQL_PLUGIN_CONF_KEY)) {
+      val previousValue = conf.get(SQL_PLUGIN_CONF_KEY).split(",")
+        .map(_.trim).map(_ match {
+        case OLD_SQL_PLUGIN_NAME =>
+          logWarning(s"The spark sql extension $OLD_SQL_PLUGIN_NAME is deprecated and " +
+            s"you only need to set the conf spark.plugins to ${classOf[SQLPlugin].getName}")
+          SQL_PLUGIN_NAME
+        case other => other
+      })
+      if (!previousValue.contains(SQL_PLUGIN_NAME)) {
+        conf.set(SQL_PLUGIN_CONF_KEY, previousValue + "," + SQL_PLUGIN_NAME)
+      } else {
+        conf.set(SQL_PLUGIN_CONF_KEY, previousValue.mkString(","))
+      }
+    } else {
+      conf.set(SQL_PLUGIN_CONF_KEY, SQL_PLUGIN_NAME)
+    }
+
+    val serializer = conf.get(SERIALIZER_CONF_KEY, JAVA_SERIALIZER_NAME)
+    if (KRYO_SERIALIZER_NAME.equals(serializer)) {
+      if (conf.contains(KRYO_REGISRATOR_KEY)) {
+        if (!KRYO_REGISRATOR_NAME.equals(conf.get(KRYO_REGISRATOR_KEY)) ) {
+          logWarning("Rapids SQL Plugin when used with Kryo needs to register some " +
+            s"serializers using $KRYO_REGISRATOR_NAME. Please call it from your registrator " +
+            " to let the plugin work properly.")
+        } // else it is set and we are good to go
+      }  else {
+        // We cannot set the kryo key here, it is not early enough to be picked up everywhere
+        throw new UnsupportedOperationException("The Rapids SQL Plugin when used with Kryo needs " +
+          s"to register some serializers. Please set the spark config $KRYO_REGISRATOR_KEY to " +
+          s"$KRYO_REGISRATOR_NAME or some operations may not work properly.")
+      }
+    } else if (!JAVA_SERIALIZER_NAME.equals(serializer)) {
+      throw new UnsupportedOperationException(s"$serializer is not a supported serializer for the " +
+        s"Rapids SQL Plugin. Please disable the rapids plugin or use a supported serializer " +
+        s"serializer ($JAVA_SERIALIZER_NAME, $KRYO_SERIALIZER_NAME).")
+    }
+  }
+}
+
 /**
  * The Spark driver plugin provided by the RAPIDS Spark plugin.
  */
 class RapidsDriverPlugin extends DriverPlugin with Logging {
   override def init(sc: SparkContext, pluginContext: PluginContext): util.Map[String, String] = {
-    val conf = new RapidsConf(pluginContext.conf)
-    conf.rapidsConfMap
+    val sparkConf = pluginContext.conf
+    RapidsPluginUtils.fixupConfigs(sparkConf)
+    new RapidsConf(sparkConf).rapidsConfMap
   }
 }
 
@@ -363,7 +416,7 @@ class RapidsExecutorPlugin extends ExecutorPlugin with Logging {
   var loggingEnabled = false
 
   override def init(
-      ctx: PluginContext,
+      pluginContext: PluginContext,
       extraConf: util.Map[String, String]): Unit = {
     val conf = new RapidsConf(extraConf.asScala.toMap)
     loggingEnabled = conf.isRmmDebugEnabled
@@ -372,7 +425,7 @@ class RapidsExecutorPlugin extends ExecutorPlugin with Logging {
     // on executor startup.
     if (!GpuDeviceManager.rmmTaskInitEnabled) {
       logInfo("Initializing memory from Executor Plugin")
-      GpuDeviceManager.initializeGpuAndMemory(ctx.resources().asScala.toMap)
+      GpuDeviceManager.initializeGpuAndMemory(pluginContext.resources().asScala.toMap)
     }
 
     GpuSemaphore.initialize(conf.concurrentGpuTasks)
@@ -389,9 +442,22 @@ class RapidsExecutorPlugin extends ExecutorPlugin with Logging {
 
 /**
  * The RAPIDS plugin for Spark.
- * To enable this plugin, set the config "spark.plugins" to ai.rapids.spark.RapidsSparkPlugin
+ * To enable this plugin, set the config "spark.plugins" to ai.rapids.spark.SQLPlugin
  */
-class RapidsSparkPlugin extends SparkPlugin with Logging {
+class SQLPlugin extends SparkPlugin with Logging {
   override def driverPlugin(): DriverPlugin = new RapidsDriverPlugin
   override def executorPlugin(): ExecutorPlugin = new RapidsExecutorPlugin
+}
+
+/**
+ * Old version of SQLPlugin kept for backwards compatibility
+ * @deprecated please use SQLPlugin instead
+ */
+@scala.deprecated
+class RapidsSparkPlugin extends SQLPlugin {
+  override def driverPlugin(): DriverPlugin = {
+    logWarning(s"The plugin class ${this.getClass.getName} is deprecated please use " +
+      s"${classOf[SQLPlugin].getName} instead.")
+    super.driverPlugin()
+  }
 }

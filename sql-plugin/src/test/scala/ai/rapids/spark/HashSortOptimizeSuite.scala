@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019, NVIDIA CORPORATION.
+ * Copyright (c) 2019-2020, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -25,8 +25,8 @@ import org.apache.spark.sql.execution.{GpuBroadcastHashJoinExec, SortExec, Spark
 class HashSortOptimizeSuite extends FunSuite {
   private val spark = SparkSession.builder
       .master("local[1]")
-      .config("spark.sql.extensions", classOf[Plugin].getCanonicalName)
-      .config("spark.plugins", classOf[RapidsSparkPlugin].getCanonicalName)
+      .config("spark.sql.extensions", classOf[SQLExecPlugin].getCanonicalName)
+      .config("spark.plugins", classOf[SQLPlugin].getCanonicalName)
       .config(RapidsConf.ENABLE_HASH_OPTIMIZE_SORT.key, "true")
       .config(RapidsConf.EXPLAIN.key, "true")
       .getOrCreate

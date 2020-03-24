@@ -64,12 +64,12 @@ As an example, here is how to run a spark shell with the Rapids Plugin with the 
 ```
 $SPARK_HOME/bin/spark-shell --driver-memory=$DRIVER_MEMORY --master $MASTER \
  --conf "spark.executor.memory=$EXECUTOR_MEMORY" --conf "spark.executor.cores=$EXECUTOR_CORES" \
- --num-executors $NUM_EXECUTORS --conf "spark.plugins=ai.rapids.spark.RapidsSparkPlugin" \
+ --num-executors $NUM_EXECUTORS --conf "spark.plugins=ai.rapids.spark.SQLPlugin" \
  --conf spark.dynamicAllocation.enabled=false \
  --conf spark.hadoop.fs.AbstractFileSystem.gs.impl=com.google.cloud.hadoop.fs.gcs.GoogleHadoopFS \
  --conf spark.hadoop.fs.gs.impl=com.google.cloud.hadoop.fs.gcs.GoogleHadoopFileSystem \
  --jars "${RAPIDS_PLUGIN_JAR_PATH},${CUDF_JAR_PATH},${RAPIDS_PLUGIN_TEST_JAR_PATH},${GCS_CONNECTOR_JAR_PATH}" \
- --conf spark.sql.extensions=ai.rapids.spark.Plugin
+ --conf spark.plugins=ai.rapids.spark.SQLPlugin
 ```
 Create another ssh tunnel for the driver UI as shown below.
 ```
