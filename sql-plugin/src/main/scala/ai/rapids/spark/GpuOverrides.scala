@@ -1019,6 +1019,16 @@ object GpuOverrides {
           }
         }
         override def convertToGpu(lhs: GpuExpression, rhs: GpuExpression): GpuExpression = GpuContains(lhs, rhs)
+      }),
+    expr[Like](
+      "Like",
+      (a, conf, p, r) => new BinaryExprMeta[Like](a, conf, p, r) {
+        override def tagExprForGpu(): Unit = {
+          if (!isStringLit(a.right)) {
+            willNotWorkOnGpu("only literals are supported for Like right hand side search parameter")
+          }
+        }
+        override def convertToGpu(lhs: GpuExpression, rhs: GpuExpression): GpuExpression = GpuLike(lhs, rhs, a.escapeChar)
       })
   ).map(r => (r.getClassFor.asSubclass(classOf[Expression]), r)).toMap
 
