@@ -608,6 +608,23 @@ trait SparkQueryCompareTestSuite extends FunSuite {
     conf.set(RapidsConf.GPU_BATCH_SIZE_ROWS.key, batchSize.toString)
   }
 
+  def mixedDfWithBuckets(session: SparkSession): DataFrame = {
+    import session.sqlContext.implicits._
+    Seq[(java.lang.Integer, java.lang.Long, java.lang.Double, String, java.lang.Integer, String)](
+      (99, 100L, 1.0, "A", 1, "A"),
+      (98, 200L, 2.0, "B", 2, "B"),
+      (97,300L, 3.0, "C", 3, "C"),
+      (99, 400L, 4.0, "D", null, null),
+      (98, 500L, 5.0, "E", 1, "A"),
+      (97, -100L, 6.0, "F", 2, "B"),
+      (96, -500L, 0.0, "G", 3, "C"),
+      (95, -700L, 8.0, "E\u0480\u0481", null, ""),
+      (94, -900L, 9.0, "g\nH", 1, "A"),
+      (92, -1200L, 12.0, "IJ\"\u0100\u0101\u0500\u0501", 2, "B"),
+      (90, 1500L, 15.0, "\ud720\ud721", 3, "C")
+    ).toDF("ints", "longs", "doubles", "strings", "bucket_1", "bucket_2")
+  }
+
   def mixedDf(session: SparkSession): DataFrame = {
     import session.sqlContext.implicits._
     Seq(

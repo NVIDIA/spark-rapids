@@ -17,6 +17,7 @@
 package ai.rapids.spark;
 
 import ai.rapids.cudf.DType;
+import ai.rapids.cudf.HostColumnVector;
 import ai.rapids.cudf.Scalar;
 import ai.rapids.cudf.Schema;
 import ai.rapids.cudf.Table;
@@ -336,6 +337,22 @@ public final class GpuColumnVector extends ColumnVector {
   }
 
   private final ai.rapids.cudf.ColumnVector cudfCv;
+
+  /**
+   * Take an INT32 column vector and return a host side int array.  Don't use this for anything
+   * too large.  Note that this ignores validity totally.
+   */
+  public static int[] toIntArray(ai.rapids.cudf.ColumnVector vec) {
+    assert vec.getType() == DType.INT32;
+    int rowCount = (int)vec.getRowCount();
+    int[] output = new int[rowCount];
+    try (HostColumnVector h = vec.copyToHost()) {
+      for (int i = 0; i < rowCount; i++) {
+        output[i] = h.getInt(i);
+      }
+    }
+    return output;
+  }
 
   /**
    * Sets up the data type of this column vector.

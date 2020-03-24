@@ -24,13 +24,11 @@ import org.apache.orc.OrcConf
 import org.apache.orc.OrcConf._
 import org.apache.orc.mapred.OrcStruct
 
-import org.apache.spark.TaskContext
 import org.apache.spark.internal.Logging
 import org.apache.spark.sql.SparkSession
 import org.apache.spark.sql.catalyst.util.CaseInsensitiveMap
 import org.apache.spark.sql.execution.datasources.orc.{OrcFileFormat, OrcOptions, OrcUtils}
 import org.apache.spark.sql.types.StructType
-import org.apache.spark.sql.vectorized.ColumnarBatch
 
 object GpuOrcFileFormat extends Logging {
   def tagGpuSupport(meta: RapidsMeta[_, _, _],

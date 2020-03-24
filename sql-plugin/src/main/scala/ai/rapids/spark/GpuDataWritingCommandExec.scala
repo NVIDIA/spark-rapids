@@ -46,6 +46,8 @@ trait GpuDataWritingCommand extends DataWritingCommand {
     val serializableHadoopConf = new SerializableConfiguration(hadoopConf)
     GpuWriteJobStatsTracker(serializableHadoopConf)
   }
+
+  def requireSingleBatch: Boolean
 }
 
 case class GpuDataWritingCommandExec(cmd: GpuDataWritingCommand, child: SparkPlan)
@@ -78,4 +80,12 @@ case class GpuDataWritingCommandExec(cmd: GpuDataWritingCommand, child: SparkPla
   override protected def doExecuteColumnar(): RDD[ColumnarBatch] = {
     sqlContext.sparkContext.parallelize(sideEffectResult, 1)
   }
+
+  // Need single batch in some cases, at least until out of core sort is done
+  override def childrenCoalesceGoal: Seq[CoalesceGoal] =
+    if (cmd.requireSingleBatch) {
+      Seq(RequireSingleBatch)
+    } else {
+      Seq(null)
+    }
 }

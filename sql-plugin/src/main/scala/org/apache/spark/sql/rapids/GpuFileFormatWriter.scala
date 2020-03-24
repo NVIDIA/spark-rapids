@@ -18,31 +18,66 @@ package org.apache.spark.sql.rapids
 
 import java.util.{Date, UUID}
 
-import ai.rapids.spark.{ColumnarFileFormat, GpuAttributeReference, GpuExpression, GpuProjectExec}
+import ai.rapids.cudf.ColumnVector
+import ai.rapids.spark._
 import org.apache.hadoop.conf.Configuration
 import org.apache.hadoop.fs.Path
-import org.apache.hadoop.mapreduce.{Job, TaskAttemptContext, TaskAttemptID, TaskID, TaskType}
+import org.apache.hadoop.mapreduce._
 import org.apache.hadoop.mapreduce.lib.output.FileOutputFormat
 import org.apache.hadoop.mapreduce.task.TaskAttemptContextImpl
 
+import org.apache.spark.{SparkException, TaskContext}
 import org.apache.spark.internal.Logging
 import org.apache.spark.internal.io.{FileCommitProtocol, SparkHadoopWriterUtils}
-import org.apache.spark.sql.SparkSession
+import org.apache.spark.shuffle.FetchFailedException
+import org.apache.spark.sql.{AnalysisException, SparkSession}
 import org.apache.spark.sql.catalyst.catalog.BucketSpec
-import org.apache.spark.sql.catalyst.expressions.{Attribute, AttributeReference, AttributeSet}
+import org.apache.spark.sql.catalyst.expressions.{Ascending, Attribute, AttributeSet}
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.util.{CaseInsensitiveMap, DateTimeUtils}
 import org.apache.spark.sql.execution.{SparkPlan, SQLExecution}
-import org.apache.spark.sql.execution.datasources.FileFormatWriter.OutputSpec
 import org.apache.spark.sql.execution.datasources.{WriteJobStatsTracker, WriteTaskResult, WriteTaskStats}
-import org.apache.spark.sql.types.StringType
+import org.apache.spark.sql.execution.datasources.FileFormatWriter.OutputSpec
+import org.apache.spark.sql.types.{DataType, StringType, StructType}
 import org.apache.spark.sql.vectorized.ColumnarBatch
 import org.apache.spark.util.{SerializableConfiguration, Utils}
-import org.apache.spark.{SparkException, TaskContext}
-import org.apache.spark.shuffle.FetchFailedException
 
 /** A helper object for writing columnar data out to a location. */
 object GpuFileFormatWriter extends Logging {
+
+  /** A function that converts the empty string to null for partition values. */
+  case class GpuEmpty2Null(child: GpuExpression) extends GpuUnaryExpression {
+    override def nullable: Boolean = true
+
+    override def doColumnar(input: GpuColumnVector): GpuColumnVector = {
+      var from: ColumnVector = null
+      var to: ColumnVector = null
+      try {
+        from = ColumnVector.fromStrings("")
+        to = ColumnVector.fromStrings(null)
+        GpuColumnVector.from(input.getBase.findAndReplaceAll(from, to))
+      } finally {
+        if (from != null) {
+          from.close()
+        }
+        if (to != null) {
+          to.close()
+        }
+      }
+    }
+
+    override def dataType: DataType = StringType
+  }
+
+  private def verifySchema(format: ColumnarFileFormat, schema: StructType): Unit = {
+    schema.foreach { field =>
+      if (!format.supportDataType(field.dataType)) {
+        throw new AnalysisException(
+          s"$format data source does not support ${field.dataType.catalogString} data type.")
+      }
+    }
+  }
+
   /**
    * Basic work flow of this command is:
    * 1. Driver side setup, including output committer initialization and data source specific
@@ -85,14 +120,10 @@ object GpuFileFormatWriter extends Logging {
     var needConvert = false
     val projectList: Seq[GpuExpression] = plan.output.map {
       case p if partitionSet.contains(p) && p.dataType == StringType && p.nullable =>
+        val gpuAttr = GpuAttributeReference.from(p)
         needConvert = true
-        // TODO: Need to convert string empty columns to nulls here
-        // GpuAlias(Empty2Null(p), p.name)()
-        throw new UnsupportedOperationException("partitioning on strings not supported, "
-            + "missing empty-to-null conversion")
-      case attr: GpuAttributeReference => attr
-      case attr: AttributeReference => GpuAttributeReference(attr.name, attr.dataType, attr.nullable, attr.metadata)(attr.exprId, attr.qualifier)
-      case attr => throw new IllegalStateException(s"Unexpected attribute $attr")
+        GpuAlias(GpuEmpty2Null(gpuAttr), p.name)()
+      case attr => GpuAttributeReference.from(attr)
     }
     val empty2NullPlan = if (needConvert) GpuProjectExec(projectList, plan) else plan
 
@@ -117,9 +148,7 @@ object GpuFileFormatWriter extends Logging {
     val caseInsensitiveOptions = CaseInsensitiveMap(options)
 
     val dataSchema = dataColumns.toStructType
-    // TODO: Do we need to verify schema here,
-    // or just rely on not having write node replaced in plan?
-    //DataSourceUtils.verifySchema(fileFormat, dataSchema)
+    verifySchema(fileFormat, dataSchema)
 
     // NOTE: prepareWrite has side effects as it modifies the job configuration.
     val outputWriterFactory =
@@ -165,16 +194,17 @@ object GpuFileFormatWriter extends Logging {
       val rdd = if (orderingMatched) {
         empty2NullPlan.executeColumnar()
       } else {
-        throw new UnsupportedOperationException("ordering for partitioning/bucketing not supported")
-//        // SPARK-21165: the `requiredOrdering` is based on the attributes from analyzed plan, and
-//        // the physical plan may have different attribute ids due to optimizer removing some
-//        // aliases. Here we bind the expression ahead to avoid potential attribute ids mismatch.
-//        val orderingExpr = bindReferences(
-//          requiredOrdering.map(SortOrder(_, Ascending)), outputSpec.outputColumns)
-//        SortExec(
-//          orderingExpr,
-//          global = false,
-//          child = empty2NullPlan).execute()
+        // SPARK-21165: the `requiredOrdering` is based on the attributes from analyzed plan, and
+        // the physical plan may have different attribute ids due to optimizer removing some
+        // aliases. Here we bind the expression ahead to avoid potential attribute ids mismatch.
+        val orderingExpr = GpuBindReferences.bindReferences(
+          requiredOrdering
+            .map(attr => (GpuAttributeReference.from(attr), attr))
+            .map(both => GpuSortOrder(both._1, both._2, Ascending)), outputSpec.outputColumns)
+        GpuSortExec(
+          orderingExpr,
+          global = false,
+          child = empty2NullPlan).executeColumnar()
       }
 
       // SPARK-23271 If we are attempting to write a zero partition rdd, create a dummy single
@@ -258,8 +288,7 @@ object GpuFileFormatWriter extends Logging {
       } else if (description.partitionColumns.isEmpty && description.bucketIdExpression.isEmpty) {
         new GpuSingleDirectoryDataWriter(description, taskAttemptContext, committer)
       } else {
-        // new GpuDynamicPartitionDataWriter(description, taskAttemptContext, committer)
-        throw new UnsupportedOperationException("dynamic partitioning not supported")
+        new GpuDynamicPartitionDataWriter(description, taskAttemptContext, committer)
       }
 
     try {

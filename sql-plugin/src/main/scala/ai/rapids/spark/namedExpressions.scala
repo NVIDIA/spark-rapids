@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019, NVIDIA CORPORATION.
+ * Copyright (c) 2019-2020, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -93,6 +93,13 @@ case class GpuAlias(child: GpuExpression, name: String)(
     throw new IllegalStateException("GpuAlias should never have doColumnar called")
 }
 
+object GpuAttributeReference {
+  def from(attr: Attribute): GpuAttributeReference = attr match {
+    case attr: GpuAttributeReference => attr
+    case attr: AttributeReference => GpuAttributeReference(attr.name, attr.dataType, attr.nullable, attr.metadata)(attr.exprId, attr.qualifier)
+    case attr => throw new IllegalStateException(s"Unexpected attribute $attr")
+  }
+}
 
 case class GpuAttributeReference(
     name: String,
