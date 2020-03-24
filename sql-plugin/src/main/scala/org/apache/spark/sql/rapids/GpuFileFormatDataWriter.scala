@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019, NVIDIA CORPORATION.
+ * Copyright (c) 2019-2020, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,14 +18,20 @@ package org.apache.spark.sql.rapids
 
 import scala.collection.mutable
 
-import ai.rapids.spark.{ColumnarOutputWriter, ColumnarOutputWriterFactory}
+import ai.rapids.cudf.{ContiguousTable, Table}
+import ai.rapids.spark._
+import ai.rapids.spark.RapidsPluginImplicits._
+import org.apache.hadoop.fs.Path
 import org.apache.hadoop.mapreduce.TaskAttemptContext
 
 import org.apache.spark.internal.io.FileCommitProtocol
 import org.apache.spark.sql.catalyst.catalog.CatalogTypes.TablePartitionSpec
-import org.apache.spark.sql.catalyst.expressions.{Attribute, AttributeSet, Expression}
+import org.apache.spark.sql.catalyst.catalog.ExternalCatalogUtils
+import org.apache.spark.sql.catalyst.expressions.{Ascending, Attribute, AttributeSet, Cast, Concat, Expression, Literal, NullsFirst, ScalaUDF, UnsafeProjection}
+import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.connector.write.DataWriter
-import org.apache.spark.sql.execution.datasources.{ExecutedWriteSummary, WriteTaskResult}
+import org.apache.spark.sql.execution.datasources.{ExecutedWriteSummary, PartitioningUtils, WriteTaskResult}
+import org.apache.spark.sql.types.StringType
 import org.apache.spark.sql.vectorized.ColumnarBatch
 import org.apache.spark.util.SerializableConfiguration
 
@@ -151,6 +157,236 @@ class GpuSingleDirectoryDataWriter(
 
     // It is the responsibility of the writer to close the batch.
     currentWriter.write(batch, statsTrackers)
+  }
+}
+
+/**
+ * Writes data to using dynamic partition writes, meaning this single function can write to
+ * multiple directories (partitions) or files (bucketing).
+ */
+class GpuDynamicPartitionDataWriter(
+    description: GpuWriteJobDescription,
+    taskAttemptContext: TaskAttemptContext,
+    committer: FileCommitProtocol)
+  extends GpuFileFormatDataWriter(description, taskAttemptContext, committer) {
+
+  /** Flag saying whether or not the data to be written out is partitioned. */
+  private val isPartitioned = description.partitionColumns.nonEmpty
+
+  /** Flag saying whether or not the data to be written out is bucketed. */
+  private val isBucketed = description.bucketIdExpression.isDefined
+
+  if (isBucketed) {
+    throw new UnsupportedOperationException("Bucketing is not supported on the GPU yet.")
+  }
+
+  assert(isPartitioned || isBucketed,
+    s"""GpuDynamicPartitionWriteTask should be used for writing out data that's either
+       |partitioned or bucketed. In this case neither is true.
+       |GpuWriteJobDescription: $description
+       """.stripMargin)
+
+  private var fileCounter: Int = _
+  private var recordsInFile: Long = _
+  private var currentPartPath: String = ""
+
+  /** Extracts the partition values out of an input batch. */
+  private lazy val getPartitionColumns: ColumnarBatch => Table = {
+    val expressions = GpuBindReferences.bindReferences(
+      description.partitionColumns,
+      description.allColumns)
+    cb => {
+      val batch = GpuProjectExec.project(cb, expressions)
+      try {
+        GpuColumnVector.from(batch)
+      } finally {
+        batch.close()
+      }
+    }
+  }
+
+  /** Extracts the output values of an input batch. */
+  private lazy val getOutputColumns: ColumnarBatch => Table = {
+    val expressions = GpuBindReferences.bindReferences(
+      description.dataColumns,
+      description.allColumns)
+    cb => {
+      val batch = GpuProjectExec.project(cb, expressions)
+      try {
+        GpuColumnVector.from(batch)
+      } finally {
+        batch.close()
+      }
+    }
+  }
+
+  /**
+   * Expression that given partition columns builds a path string like: col1=val/col2=val/...
+   * This is used after we pull the unique partition values back to the host.
+   */
+  private lazy val partitionPathExpression: Expression = Concat(
+    description.partitionColumns.zipWithIndex.flatMap { case (c, i) =>
+      val partitionName = ScalaUDF(
+        ExternalCatalogUtils.getPartitionPathString _,
+        StringType,
+        Seq(Literal(c.name), Cast(c, StringType, Option(description.timeZoneId))),
+        Seq(false, false))
+      if (i == 0) Seq(partitionName) else Seq(Literal(Path.SEPARATOR), partitionName)
+    })
+
+  /** Evaluates the `partitionPathExpression` above on a row of `partitionValues` and returns
+   * the partition string.
+   */
+  private lazy val getPartitionPath: InternalRow => String = {
+    val proj = UnsafeProjection.create(Seq(partitionPathExpression), description.partitionColumns)
+    row => proj(row).getString(0)
+  }
+
+  private def newOutputWriter(partDir: String): Unit = {
+    recordsInFile = 0
+    releaseResources()
+
+    updatedPartitions.add(partDir)
+
+    // This must be in a form that matches our bucketing format. See BucketingUtils.
+    val ext = f".c$fileCounter%03d" +
+      description.outputWriterFactory.getFileExtension(taskAttemptContext)
+
+    val customPath =
+      description.customPartitionLocations.get(PartitioningUtils.parsePathFragment(partDir))
+
+    val currentPath = if (customPath.isDefined) {
+      committer.newTaskTempFileAbsPath(taskAttemptContext, customPath.get, ext)
+    } else {
+      committer.newTaskTempFile(taskAttemptContext, Some(partDir), ext)
+    }
+
+    currentWriter = description.outputWriterFactory.newInstance(
+      path = currentPath,
+      dataSchema = description.dataColumns.toStructType,
+      context = taskAttemptContext)
+
+    statsTrackers.foreach(_.newFile(currentPath))
+  }
+
+  // All data is sorted ascending with default null ordering
+  private val nullsSmallest = Ascending.defaultNullOrdering == NullsFirst
+
+  // distinct value sorted the same way the input data is sorted.
+  private def distinctAndSort(t: Table): Table = {
+    val columnIds = 0 until t.getNumberOfColumns
+    val distinct = t.groupBy(columnIds: _*).aggregate()
+    try {
+      distinct.orderBy(columnIds.map(Table.asc(_, nullsSmallest)): _*)
+    } finally {
+      distinct.close()
+    }
+  }
+
+  // Get the split indexes for t given the keys we want to split on
+  private def splitIndexes(t: Table, keys: Table): Array[Int] = {
+    val nullsSmallestArray = Array.fill[Boolean](t.getNumberOfColumns)(nullsSmallest)
+    val desc = Array.fill[Boolean](t.getNumberOfColumns)(false)
+    val cv = t.upperBound(nullsSmallestArray, keys, desc)
+    try {
+      GpuColumnVector.toIntArray(cv)
+    } finally {
+      cv.close()
+    }
+  }
+
+  // Convert a table to a ColumnarBatch on the host, so we can iterate through it.
+  private def copyToHostAsBatch(input: Table): ColumnarBatch = {
+    val tmp = GpuColumnVector.from(input)
+    try {
+      new ColumnarBatch(GpuColumnVector.extractColumns(tmp).map(_.copyToHost()), tmp.numRows())
+    } finally {
+      tmp.close()
+    }
+  }
+
+  override def write(cb: ColumnarBatch): Unit = {
+    // We have an entire batch that is sorted, so we need to split it up by key
+    var needToCloseBatch = true
+    var partitionColumns: Table = null
+    var distinctKeys: Table = null
+    var outputColumns: Table = null
+    var splits: Array[ContiguousTable] = null
+    var cbKeys: ColumnarBatch = null
+    try {
+      assert(isPartitioned)
+      assert(!isBucketed)
+
+      partitionColumns = getPartitionColumns(cb)
+      distinctKeys = distinctAndSort(partitionColumns)
+      val partitionIndexes = splitIndexes(partitionColumns, distinctKeys)
+      partitionColumns.close()
+      partitionColumns = null
+
+      // split the original data on the indexes
+      outputColumns = getOutputColumns(cb)
+      cb.close()
+      needToCloseBatch = false
+      splits = outputColumns.contiguousSplit(partitionIndexes: _*)
+      outputColumns.close()
+      outputColumns = null
+
+      cbKeys = copyToHostAsBatch(distinctKeys)
+      distinctKeys.close()
+      distinctKeys = null
+
+      // Use the existing code to convert each row into a path. It would be nice to do this on
+      // the GPU, but the data should be small and there are things we cannot easily support
+      // on the GPU right now
+      import scala.collection.JavaConverters._
+      val paths = cbKeys.rowIterator().asScala.map(getPartitionPath)
+
+      paths.toArray.zip(splits).foreach(combined => {
+        val table = combined._2.getTable
+        val batch = GpuColumnVector.from(table)
+        val partPath = combined._1
+        if (currentPartPath != partPath) {
+          currentPartPath = partPath
+          statsTrackers.foreach(_.newPartition())
+          fileCounter = 0
+          newOutputWriter(currentPartPath)
+        } else if (description.maxRecordsPerFile > 0 &&
+          recordsInFile >= description.maxRecordsPerFile) {
+          // Exceeded the threshold in terms of the number of records per file.
+          // Create a new file by increasing the file counter.
+          fileCounter += 1
+          assert(fileCounter < MAX_FILE_COUNTER,
+            s"File counter $fileCounter is beyond max value $MAX_FILE_COUNTER")
+
+          newOutputWriter(currentPartPath)
+        }
+        statsTrackers.foreach(_.newBatch(batch))
+        recordsInFile += batch.numRows
+        currentWriter.write(batch, statsTrackers)
+      })
+    } finally {
+      if (needToCloseBatch) {
+        cb.close()
+      }
+
+      if (partitionColumns != null) {
+        partitionColumns.close()
+      }
+
+      if (distinctKeys != null) {
+        distinctKeys.close()
+      }
+
+      if (outputColumns != null) {
+        outputColumns.close()
+      }
+
+      splits.safeClose()
+
+      if (cbKeys != null) {
+        cbKeys.close()
+      }
+    }
   }
 }
 

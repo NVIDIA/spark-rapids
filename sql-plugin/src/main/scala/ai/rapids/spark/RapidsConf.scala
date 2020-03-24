@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019, NVIDIA CORPORATION.
+ * Copyright (c) 2019-2020, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -268,11 +268,18 @@ object RapidsConf {
     .integerConf
     .createWithDefault(6)
 
+  @deprecated(message = "This will be removed once all operators respect byte limits on batch sizes")
   val GPU_BATCH_SIZE_ROWS = conf("spark.rapids.sql.batchSizeRows")
     .doc("Set the target number of rows for a GPU batch. Splits sizes for input data " +
       "is covered by separate configs.")
     .integerConf
     .createWithDefault(1000000)
+
+  val GPU_BATCH_SIZE_BYTES = conf("spark.rapids.sql.batchSizeBytes")
+    .doc("Set the target number of bytes for a GPU batch. Splits sizes for input data " +
+      "is covered by separate configs.")
+    .longConf
+    .createWithDefault(Integer.MAX_VALUE)
 
   val MAX_READER_BATCH_SIZE_ROWS = conf("spark.rapids.sql.reader.batchSizeRows")
     .doc("Soft limit on the maximum number of rows the reader will read per batch. The orc and parquet " +
@@ -455,8 +462,8 @@ object RapidsConf {
         |On startup use: `--conf [conf key]=[conf value]`. For example:
         |
         |```
-        |${SPARK_HOME}/bin/spark --jars 'rapids-4-spark-0.1-SNAPSHOT.jar,cudf-0.10-SNAPSHOT-cuda10.jar' \
-        |--conf spark.sql.extensions=ai.rapids.spark.Plugin \
+        |${SPARK_HOME}/bin/spark --jars 'rapids-4-spark-0.1-SNAPSHOT.jar,cudf-0.14-SNAPSHOT-cuda10.jar' \
+        |--conf spark.plugins=ai.rapids.spark.SQLPlugin \
         |--conf spark.rapids.sql.incompatibleOps.enabled=true
         |```
         |
@@ -554,7 +561,10 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
 
   lazy val hasNans: Boolean = get(HAS_NANS)
 
+  @deprecated(message = "This will be removed once all operators respect byte limits on batch sizes")
   lazy val gpuTargetBatchSizeRows: Integer = get(GPU_BATCH_SIZE_ROWS)
+
+  lazy val gpuTargetBatchSizeBytes: Long = get(GPU_BATCH_SIZE_BYTES)
 
   lazy val isFloatAggEnabled: Boolean = get(ENABLE_FLOAT_AGG)
 

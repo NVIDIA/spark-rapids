@@ -65,8 +65,7 @@ trait SparkQueryCompareTestSuite extends FunSuite {
 
   def withGpuSparkSession[U](f: SparkSession => U, conf: SparkConf = new SparkConf()): U = {
     var c = conf.clone()
-      .set("spark.sql.extensions", "ai.rapids.spark.Plugin")
-      .set("spark.plugins", "ai.rapids.spark.RapidsSparkPlugin")
+      .set("spark.plugins", "ai.rapids.spark.SQLPlugin")
       .set(RapidsConf.EXPLAIN.key, "true")
 
     if (c.getOption(RapidsConf.TEST_CONF.key).isEmpty) {
@@ -608,9 +607,26 @@ trait SparkQueryCompareTestSuite extends FunSuite {
     conf.set(RapidsConf.GPU_BATCH_SIZE_ROWS.key, batchSize.toString)
   }
 
+  def mixedDfWithBuckets(session: SparkSession): DataFrame = {
+    import session.sqlContext.implicits._
+    Seq[(java.lang.Integer, java.lang.Long, java.lang.Double, String, java.lang.Integer, String)](
+      (99, 100L, 1.0, "A", 1, "A"),
+      (98, 200L, 2.0, "B", 2, "B"),
+      (97,300L, 3.0, "C", 3, "C"),
+      (99, 400L, 4.0, "D", null, null),
+      (98, 500L, 5.0, "E", 1, "A"),
+      (97, -100L, 6.0, "F", 2, "B"),
+      (96, -500L, 0.0, "G", 3, "C"),
+      (95, -700L, 8.0, "E\u0480\u0481", null, ""),
+      (94, -900L, 9.0, "g\nH", 1, "A"),
+      (92, -1200L, 12.0, "IJ\"\u0100\u0101\u0500\u0501", 2, "B"),
+      (90, 1500L, 15.0, "\ud720\ud721", 3, "C")
+    ).toDF("ints", "longs", "doubles", "strings", "bucket_1", "bucket_2")
+  }
+
   def mixedDf(session: SparkSession): DataFrame = {
     import session.sqlContext.implicits._
-    Seq(
+    Seq[(java.lang.Integer, java.lang.Long, java.lang.Double, java.lang.String)](
       (99, 100L, 1.0, "A"),
       (98, 200L, 2.0, "B"),
       (97,300L, 3.0, "C"),
@@ -619,10 +635,30 @@ trait SparkQueryCompareTestSuite extends FunSuite {
       (97, -100L, 6.0, "F"),
       (96, -500L, 0.0, "G"),
       (95, -700L, 8.0, "E\u0480\u0481"),
+      (Int.MaxValue, Long.MinValue, Double.PositiveInfinity, "\u0000"),
+      (Int.MinValue, Long.MaxValue, Double.NaN, "\u0000"),
+      (null, null, null, "actions are judged by intentions"),
       (94, -900L, 9.0, "g\nH"),
       (92, -1200L, 12.0, "IJ\"\u0100\u0101\u0500\u0501"),
       (90, 1500L, 15.0, "\ud720\ud721")
     ).toDF("ints", "longs", "doubles", "strings")
+  }
+
+  def likeDf(session: SparkSession): DataFrame = {
+    import session.sqlContext.implicits._
+    val someDF = Seq(
+      (150, "abc"), (140, "a*c"), (130, "ab"), (120, "ac"), (110, "a|bc"), (100, "a.b"), (90, "b$"),
+      (80, "b$c"), (70, "\r"), (60, "a\rb"), (50, "\roo"), (40, "\n"), (30, "a\nb"), (20, "\noo"),
+      (0, "\roo"), (10, "a\u20ACa") , (-10, "o\\aood"), (-20, "foo"), (-30, "food"),(-40, "foodu"),
+      (-50,"abc%abc"), (-60,"abc%&^abc"), (-70, """"%SystemDrive%\Users\John"""),
+      (-80, """%SystemDrive%\\Users\\John"""), (-90, "aa^def"), (-100, "acna"), (-110, "_"),
+      (-110, "cn"), (-120, "aa[d]abc"), (-130, "aa(d)abc"), (-140, "a?b"), (-150, "a+c"), (-160, "a{3}"),
+      (-170, "aaa"), (-180, """\abc"""))
+    .toDF("number","word")
+    // This persist call makes it so that the plan does not fold operations like filter etc. It is
+    // used here since repartition() doesn't do the trick.
+    // It does leak memory for the lifecycle of the test which is small.
+    someDF.persist
   }
 
   def mixedDfWithNulls(session: SparkSession): DataFrame = {

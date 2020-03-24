@@ -231,8 +231,8 @@ final class InsertIntoHadoopFsRelationCommandMeta(
   private var fileFormat: Option[ColumnarFileFormat] = None
 
   override def tagSelfForGpu(): Unit = {
-    if (cmd.partitionColumns.nonEmpty || cmd.bucketSpec.isDefined) {
-      willNotWorkOnGpu("partitioning or bucketing is not supported")
+    if (cmd.bucketSpec.isDefined) {
+      willNotWorkOnGpu("bucketing is not supported")
     }
 
      val spark = SparkSession.active
@@ -389,6 +389,11 @@ object GpuOverrides {
 
         // There are so many of these that we don't need to print them out.
         override def print(append: StringBuilder, depth: Int, all: Boolean): Unit = {}
+      }),
+    expr[Signum](
+      "Returns -1.0, 0.0 or 1.0 as expr is negative, 0 or positive",
+      (a, conf, p, r) => new UnaryExprMeta[Signum](a, conf, p, r) {
+        override def convertToGpu(child: GpuExpression): GpuExpression = GpuSignum(child)
       }),
     expr[Alias](
       "gives a column a name",
@@ -1033,6 +1038,16 @@ object GpuOverrides {
           }
         }
         override def convertToGpu(lhs: GpuExpression, rhs: GpuExpression): GpuExpression = GpuContains(lhs, rhs)
+      }),
+    expr[Like](
+      "Like",
+      (a, conf, p, r) => new BinaryExprMeta[Like](a, conf, p, r) {
+        override def tagExprForGpu(): Unit = {
+          if (!isStringLit(a.right)) {
+            willNotWorkOnGpu("only literals are supported for Like right hand side search parameter")
+          }
+        }
+        override def convertToGpu(lhs: GpuExpression, rhs: GpuExpression): GpuExpression = GpuLike(lhs, rhs, a.escapeChar)
       })
   ).map(r => (r.getClassFor.asSubclass(classOf[Expression]), r)).toMap
 

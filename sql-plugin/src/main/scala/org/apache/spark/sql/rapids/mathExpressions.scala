@@ -17,7 +17,7 @@
 package org.apache.spark.sql.rapids
 
 import ai.rapids.cudf.{BinaryOp, DType, Scalar, UnaryOp}
-import ai.rapids.spark.{CudfBinaryExpression, CudfUnaryExpression, GpuColumnVector}
+import ai.rapids.spark.{CudfBinaryExpression, CudfUnaryExpression, GpuColumnVector, GpuExpression, GpuUnaryExpression}
 import org.apache.spark.sql.catalyst.expressions.{Expression, ImplicitCastInputTypes}
 import org.apache.spark.sql.types._
 
@@ -126,6 +126,37 @@ case class GpuLog(child: Expression) extends CudfUnaryMathExpression("LOG") {
 
 case class GpuSin(child: Expression) extends CudfUnaryMathExpression("SIN") {
   override def unaryOp: UnaryOp = UnaryOp.SIN
+  override def outputTypeOverride: DType = DType.FLOAT64
+}
+
+case class GpuSignum(child: GpuExpression) extends GpuUnaryExpression
+  with Serializable with ImplicitCastInputTypes {
+  private val name = "SIGNUM"
+  override def inputTypes: Seq[AbstractDataType] = Seq(DoubleType)
+  override def dataType: DataType = DoubleType
+  override def nullable: Boolean = true
+  override def toString: String = s"$name($child)"
+  override def prettyName: String = name
+
+  override def doColumnar(input: GpuColumnVector): GpuColumnVector = {
+      val num = Scalar.fromDouble(0)
+      try {
+        val hiReplace = Scalar.fromDouble(1)
+        try {
+          val loReplace = Scalar.fromDouble(-1)
+          try {
+            GpuColumnVector.from(input.getBase.clamp(num, loReplace, num, hiReplace))
+          } finally {
+            loReplace.close
+          }
+        } finally {
+          hiReplace.close
+        }
+      } finally {
+        num.close
+      }
+  }
+
   override def outputTypeOverride: DType = DType.FLOAT64
 }
 
