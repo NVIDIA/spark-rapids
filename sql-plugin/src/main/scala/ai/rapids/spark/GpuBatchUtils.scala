@@ -16,7 +16,7 @@
 
 package ai.rapids.spark
 
-import org.apache.spark.sql.types.{DataTypes, StructType}
+import org.apache.spark.sql.types.{DataType, DataTypes, ArrayType, MapType, StructType}
 
 /**
  * Utility class with methods for calculating various metrics about GPU memory usage
@@ -70,6 +70,14 @@ object GpuBatchUtils {
 
   def calculateOffsetBufferSize(rows: Long): Long = {
     (rows+1) * 4 // 32 bit offsets
+  }
+
+  def isFixedWidth(dt: DataType): Boolean = dt match {
+    case DataTypes.StringType | DataTypes.BinaryType => false
+    case _: ArrayType  => false
+    case _: StructType  => false
+    case _: MapType  => false
+    case _ => true
   }
 
   private def roundToBoundary(bytes: Long, boundary: Int): Long = {
