@@ -312,17 +312,9 @@ class RowToColumnarIterator(
     numOutputRows: SQLMetric,
     numOutputBatches: SQLMetric) extends Iterator[ColumnarBatch] {
 
-  private def isFixedWidth(dt: DataType): Boolean = dt match {
-    case DataTypes.StringType | DataTypes.BinaryType => false
-    case _: ArrayType  => false
-    case _: StructType  => false
-    case _: MapType  => false
-    case _ => true
-  }
-
   private val dataTypes: Array[DataType] = localSchema.fields.map(_.dataType)
-  private val variableWidthColumnCount = dataTypes.count(dt => !isFixedWidth(dt))
-  private val fixedWidthDataSizePerRow = dataTypes.filter(isFixedWidth).map(_.defaultSize).sum
+  private val variableWidthColumnCount = dataTypes.count(dt => !GpuBatchUtils.isFixedWidth(dt))
+  private val fixedWidthDataSizePerRow = dataTypes.filter(GpuBatchUtils.isFixedWidth).map(_.defaultSize).sum
   private val nullableColumns = localSchema.fields.count(_.nullable)
   private val targetSizeBytes = localGoal.targetSizeBytes
   private var targetRows = 0
