@@ -5,8 +5,8 @@ The following is the list of options that `rapids-plugin-4-spark` supports.
 On startup use: `--conf [conf key]=[conf value]`. For example:
 
 ```
-${SPARK_HOME}/bin/spark --jars 'rapids-4-spark-0.1-SNAPSHOT.jar,cudf-0.10-SNAPSHOT-cuda10.jar' \
---conf spark.sql.extensions=ai.rapids.spark.Plugin \
+${SPARK_HOME}/bin/spark --jars 'rapids-4-spark-0.1-SNAPSHOT.jar,cudf-0.14-SNAPSHOT-cuda10.jar' \
+--conf spark.plugins=ai.rapids.spark.SQLPlugin \
 --conf spark.rapids.sql.incompatibleOps.enabled=true
 ```
 
@@ -43,10 +43,11 @@ spark.rapids.sql.explain|Explain why some parts of a query were not placed on a 
 spark.rapids.sql.hasNans|Config to indicate if your data has NaN's. Cudf doesn't currently support NaN's properly so you can get corrupt data if you have NaN's in your data and it runs on the GPU.|true
 spark.rapids.sql.hashOptimizeSort.enabled|Whether sorts should be inserted after some hashed operations to improve output ordering. This can improve output file sizes when saving to columnar formats.|false
 spark.rapids.sql.incompatibleOps.enabled|For operations that work, but are not 100% compatible with the Spark equivalent set if they should be enabled by default or disabled by default.|false
-spark.rapids.sql.reader.batchSizeRows|Maximum number of rows the reader reads at a time|2147483647
+spark.rapids.sql.reader.batchSizeBytes|Soft limit on the maximum number of bytes the reader reads per batch. The readers will read chunks of data until this limit is met or exceeded. Note that the csv and parquet readers use this limit even if the underlying file is compressed.|2147483647
+spark.rapids.sql.reader.batchSizeCompressedBytes|Soft limit on the maximum number of bytes the reader reads per batch when reading compressed files. The readers will read chunks of compressed data until this limit is met or exceeded.|1073741823
+spark.rapids.sql.reader.batchSizeRows|Soft limit on the maximum number of rows the reader will read per batch. The orc and parquet readers will read row groups until this limit is met or exceeded. The limit is respected by the csv reader.|2147483647
 spark.rapids.sql.replaceSortMergeJoin.enabled|Allow replacing sortMergeJoin with HashJoin|true
 spark.rapids.sql.shuffle.spillThreads|Number of threads used to spill shuffle data to disk in the background.|6
-spark.rapids.sql.totalOrderSort.enabled|Allow for total ordering sort where the partitioning runs on CPU and sort runs on GPU.|false
 spark.rapids.sql.variableFloatAgg.enabled|Spark assumes that all operations produce the exact same result each time. This is not true for some floating point aggregations, which can produce slightly different results on the GPU as the aggregation is done in parallel.  This can enable those operations if you know the query is only computing it once.|false
 
 ## Fine Tuning
@@ -66,27 +67,44 @@ Name | Description | Default Value | Incompatibilities
 -----|-------------|---------------|------------------
 spark.rapids.sql.expression.Abs|absolute value|true|None|
 spark.rapids.sql.expression.Acos|inverse cosine|true|None|
+spark.rapids.sql.expression.Acosh|inverse hyperbolic cosine|false|This is not 100% compatible with the Spark version because floating point results in some cases may differ with the JVM version by a small amount|
 spark.rapids.sql.expression.Add|addition|true|None|
 spark.rapids.sql.expression.Alias|gives a column a name|true|None|
 spark.rapids.sql.expression.And|logical and|true|None|
 spark.rapids.sql.expression.Asin|inverse sine|true|None|
+spark.rapids.sql.expression.Asinh|inverse hyperbolic sine|false|This is not 100% compatible with the Spark version because floating point results in some cases may differ with the JVM version by a small amount|
+spark.rapids.sql.expression.AtLeastNNonNulls|checks if number of non null/Nan values is greater than a given value|true|None|
 spark.rapids.sql.expression.Atan|inverse tangent|false|This is not 100% compatible with the Spark version because floating point results in some cases may differ with the JVM version by a small amount|
+spark.rapids.sql.expression.Atanh|inverse hyperbolic tangent|false|This is not 100% compatible with the Spark version because floating point results in some cases may differ with the JVM version by a small amount|
 spark.rapids.sql.expression.AttributeReference|references an input column|true|None|
+spark.rapids.sql.expression.BitwiseAnd|Returns the bitwise AND of the operands|true|None|
+spark.rapids.sql.expression.BitwiseNot|Returns the bitwise NOT of the operands|true|None|
+spark.rapids.sql.expression.BitwiseOr|Returns the bitwise OR of the operands|true|None|
+spark.rapids.sql.expression.BitwiseXor|Returns the bitwise XOR of the operands|true|None|
 spark.rapids.sql.expression.CaseWhen|CASE WHEN expression|true|None|
 spark.rapids.sql.expression.Cast|convert a column of one type of data into another type|true|None|
+spark.rapids.sql.expression.Cbrt|cube root|false|This is not 100% compatible with the Spark version because floating point results in some cases may differ with the JVM version by a small amount|
 spark.rapids.sql.expression.Ceil|ceiling of a number|true|None|
+spark.rapids.sql.expression.Coalesce|Returns the first non-null argument if exists. Otherwise, null.|true|None|
+spark.rapids.sql.expression.Contains|Contains|true|None|
 spark.rapids.sql.expression.Cos|cosine|false|This is not 100% compatible with the Spark version because floating point results in some cases may differ with the JVM version by a small amount|
+spark.rapids.sql.expression.Cosh|hyperbolic cosine|false|This is not 100% compatible with the Spark version because floating point results in some cases may differ with the JVM version by a small amount|
+spark.rapids.sql.expression.DateDiff|datediff|true|None|
 spark.rapids.sql.expression.DayOfMonth|get the day of the month from a date or timestamp|true|None|
 spark.rapids.sql.expression.Divide|division|true|None|
+spark.rapids.sql.expression.EndsWith|Ends With|true|None|
 spark.rapids.sql.expression.EqualTo|check if the values are equal|true|None|
 spark.rapids.sql.expression.Exp|Euler's number e raised to a power|false|This is not 100% compatible with the Spark version because floating point results in some cases may differ with the JVM version by a small amount|
+spark.rapids.sql.expression.Expm1|Euler's number e raised to a power minus 1|false|This is not 100% compatible with the Spark version because floating point results in some cases may differ with the JVM version by a small amount|
 spark.rapids.sql.expression.Floor|floor of a number|true|None|
+spark.rapids.sql.expression.FromUnixTime|get the String from a unix timestamp|true|None|
 spark.rapids.sql.expression.GreaterThan|> operator|true|None|
 spark.rapids.sql.expression.GreaterThanOrEqual|>= operator|true|None|
 spark.rapids.sql.expression.If|IF expression|true|None|
 spark.rapids.sql.expression.In|IN operator|true|None|
 spark.rapids.sql.expression.InSet|INSET operator|true|None|
 spark.rapids.sql.expression.IntegralDivide|division with a integer result|true|None|
+spark.rapids.sql.expression.IsNaN|checks if a value is NaN|true|None|
 spark.rapids.sql.expression.IsNotNull|checks if a value is not null|true|None|
 spark.rapids.sql.expression.IsNull|checks if a value is null|true|None|
 spark.rapids.sql.expression.KnownFloatingPointNormalized|tag to prevent redundant normalization|false|This is not 100% compatible with the Spark version because when enabling these, there may be extra groups produced for floating point grouping keys (e.g. -0.0, and 0.0)|
@@ -97,15 +115,26 @@ spark.rapids.sql.expression.Log|natural log|false|This is not 100% compatible wi
 spark.rapids.sql.expression.Lower|String lowercase operator|false|This is not 100% compatible with the Spark version because in some cases unicode characters change byte width when changing the case. The GPU string conversion does not support these characters. For a full list of unsupported characters see https://github.com/rapidsai/cudf/issues/3132|
 spark.rapids.sql.expression.Month|get the month from a date or timestamp|true|None|
 spark.rapids.sql.expression.Multiply|multiplication|true|None|
+spark.rapids.sql.expression.NaNvl|evaluates to `left` iff left is not NaN, `right` otherwise.|true|None|
 spark.rapids.sql.expression.Not|boolean not operator|true|None|
 spark.rapids.sql.expression.Or|logical or|true|None|
 spark.rapids.sql.expression.Pow|lhs ^ rhs|false|This is not 100% compatible with the Spark version because floating point results in some cases may differ with the JVM version by a small amount|
+spark.rapids.sql.expression.Rand|Generate a random column with i.i.d. uniformly distributed values in [0, 1)|true|None|
 spark.rapids.sql.expression.Remainder|remainder or modulo|true|None|
+spark.rapids.sql.expression.Rint|Rounds up a double value to the nearest double equal to an integer|true|None|
+spark.rapids.sql.expression.ShiftLeft|Bitwise shift left (<<)|true|None|
+spark.rapids.sql.expression.ShiftRight|Bitwise shift right (>>)|true|None|
+spark.rapids.sql.expression.ShiftRightUnsigned|Bitwise unsigned shift right (>>>)|true|None|
 spark.rapids.sql.expression.Sin|sine|false|This is not 100% compatible with the Spark version because floating point results in some cases may differ with the JVM version by a small amount|
+spark.rapids.sql.expression.Sinh|hyperbolic sine|false|This is not 100% compatible with the Spark version because floating point results in some cases may differ with the JVM version by a small amount|
 spark.rapids.sql.expression.SortOrder|sort order|true|None|
 spark.rapids.sql.expression.Sqrt|square root|true|None|
+spark.rapids.sql.expression.StartsWith|Starts With|true|None|
+spark.rapids.sql.expression.StringLocate|Substring search operator|true|None|
+spark.rapids.sql.expression.Substring|Substring operator|true|None|
 spark.rapids.sql.expression.Subtract|subtraction|true|None|
 spark.rapids.sql.expression.Tan|tangent|false|This is not 100% compatible with the Spark version because floating point results in some cases may differ with the JVM version by a small amount|
+spark.rapids.sql.expression.Tanh|hyperbolic tangent|false|This is not 100% compatible with the Spark version because floating point results in some cases may differ with the JVM version by a small amount|
 spark.rapids.sql.expression.UnaryMinus|negate a numeric value|true|None|
 spark.rapids.sql.expression.UnaryPositive|a numeric value with a + in front of it|true|None|
 spark.rapids.sql.expression.Upper|String uppercase operator|false|This is not 100% compatible with the Spark version because in some cases unicode characters change byte width when changing the case. The GPU string conversion does not support these characters. For a full list of unsupported characters see https://github.com/rapidsai/cudf/issues/3132|
@@ -126,6 +155,9 @@ Name | Description | Default Value | Incompatibilities
 spark.rapids.sql.exec.CoalesceExec|The backend for the dataframe coalesce method|true|None|
 spark.rapids.sql.exec.FileSourceScanExec|Reading data from files, often from Hive tables|true|None|
 spark.rapids.sql.exec.FilterExec|The backend for most filter statements|true|None|
+spark.rapids.sql.exec.GenerateExec|The backend for operations that generate more output rows than input rows like explode.|true|None|
+spark.rapids.sql.exec.GlobalLimitExec|Limiting of results across partitions|true|None|
+spark.rapids.sql.exec.LocalLimitExec|Per-partition limiting of results|true|None|
 spark.rapids.sql.exec.ProjectExec|The backend for most select, withColumn and dropColumn statements|true|None|
 spark.rapids.sql.exec.SortExec|The backend for the sort operator|true|None|
 spark.rapids.sql.exec.UnionExec|The backend for the union operator|true|None|
@@ -149,3 +181,6 @@ spark.rapids.sql.input.ParquetScan|Parquet parsing|true|None|
 Name | Description | Default Value | Incompatibilities
 -----|-------------|---------------|------------------
 spark.rapids.sql.partitioning.HashPartitioning|Hash based partitioning|true|None|
+spark.rapids.sql.partitioning.RangePartitioning|Range Partitioning|true|None|
+spark.rapids.sql.partitioning.RoundRobinPartitioning|Round Robin Partitioning|true|None|
+spark.rapids.sql.partitioning.SinglePartition$|Single Partitioning|true|None|

@@ -15,10 +15,10 @@ To enable this GPU acceleration you will need:
   * Apache Spark 3.0+
   * Running on cluster that has nodes that comply with the requirements for [CUDF](https://github.com/rapidsai/cudf).
   * Ship the `rapids-4-spark` and `cudf` jars with your job
-  * Set the config `spark.sql.extensions` to `ai.rapids.spark.Plugin`.
+  * Set the config `spark.plugins` to `ai.rapids.spark.SQLPlugin`.
 
 ```
-> spark-shell --jars 'rapids-4-spark-0.8-SNAPSHOT.jar,cudf-0.8-SNAPSHOT-cuda10.jar' --conf spark.sql.extensions=ai.rapids.spark.Plugin --conf spark.plugins=ai.rapids.spark.RapidsSparkPlugin
+> spark-shell --jars 'rapids-4-spark-0.1-SNAPSHOT.jar,cudf-0.14-SNAPSHOT-cuda10.jar' --conf spark.plugins=ai.rapids.spark.SQLPlugin
 ```
 
 Note if you are using the KryoSerializer with Spark (`--conf spark.serializer=org.apache.spark.serializer.KryoSerializer`) you will have to register the GpuKryoRegistrator class: `--conf spark.kryo.registrator=ai.rapids.spark.GpuKryoRegistrator`.
