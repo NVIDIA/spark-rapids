@@ -46,7 +46,8 @@ class ParquetWriterSuite extends SparkQueryCompareTestSuite {
     mixedDfWithNulls, writeParquet, readParquet)
 
   testSparkWritesAreEqual("simple partitioned Parquet write",
-    mixedDfWithBuckets, writeParquetBucket("bucket_1", "bucket_2"), readParquet)
+    mixedDfWithBuckets, writeParquetBucket("bucket_1", "bucket_2"), readParquet,
+    sort = true /*The order the data is read in on the CPU is not deterministic*/)
 
   test("write with no compression") {
     val compression = "none"

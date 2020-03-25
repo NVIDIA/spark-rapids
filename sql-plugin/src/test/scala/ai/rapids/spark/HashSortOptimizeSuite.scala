@@ -28,7 +28,7 @@ class HashSortOptimizeSuite extends FunSuite {
       .config("spark.sql.extensions", classOf[SQLExecPlugin].getCanonicalName)
       .config("spark.plugins", classOf[SQLPlugin].getCanonicalName)
       .config(RapidsConf.ENABLE_HASH_OPTIMIZE_SORT.key, "true")
-      .config(RapidsConf.EXPLAIN.key, "true")
+      .config(RapidsConf.EXPLAIN.key, "ALL")
       .getOrCreate
   import spark.sqlContext.implicits._
 
