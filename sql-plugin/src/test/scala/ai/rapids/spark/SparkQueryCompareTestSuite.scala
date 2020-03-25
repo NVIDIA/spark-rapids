@@ -66,7 +66,7 @@ trait SparkQueryCompareTestSuite extends FunSuite {
   def withGpuSparkSession[U](f: SparkSession => U, conf: SparkConf = new SparkConf()): U = {
     var c = conf.clone()
       .set("spark.plugins", "ai.rapids.spark.SQLPlugin")
-      .set(RapidsConf.EXPLAIN.key, "true")
+      .set(RapidsConf.EXPLAIN.key, "ALL")
 
     if (c.getOption(RapidsConf.TEST_CONF.key).isEmpty) {
        c = c.set(RapidsConf.TEST_CONF.key, "true")
@@ -591,14 +591,15 @@ trait SparkQueryCompareTestSuite extends FunSuite {
       writer: (DataFrame, String) => Unit,
       reader: (SparkSession, String) => DataFrame,
       conf: SparkConf = new SparkConf(),
-      sortBeforeRepart: Boolean = false): Unit = {
+      sortBeforeRepart: Boolean = false,
+      sort: Boolean = false): Unit = {
     val (testConf, qualifiedTestName) =
-      setupTestConfAndQualifierName(testName, false, false, false, conf, Nil,
+      setupTestConfAndQualifierName(testName, false, sort, false, conf, Nil,
         sortBeforeRepart = sortBeforeRepart)
 
     test(qualifiedTestName) {
-      val (fromCpu, fromGpu) = writeWithCpuAndGpu(df, writer, reader, conf)
-      compareResults(false, 0, fromCpu, fromGpu)
+      val (fromCpu, fromGpu) = writeWithCpuAndGpu(df, writer, reader, testConf)
+      compareResults(sort, 0, fromCpu, fromGpu)
     }
   }
 
