@@ -469,14 +469,6 @@ object GpuOverrides {
     expr[WindowSpecDefinition](
       "Window Spec Definition ",
       (windowSpec, conf, p, r) => new GpuWindowSpecDefinitionMeta(windowSpec, conf, p, r)),
-    /*
-    expr[SpecialFrameBoundary](
-      "Special Window bounds, indicating UNBOUNDED PRECEDING/FOLLOWING, or CURRENT ROW",
-      (frameBoundary, conf, p, r) => new ExprMeta[SpecialFrameBoundary](frameBoundary, conf, p, r) {
-        override def convertToGpu(): GpuExpression = GpuSpecialFrameBoundary(frameBoundary)
-      }
-    ),
-     */
     expr[CurrentRow.type](
       "Special Window bounds, indicating stopping at the current row",
       (currentRow, conf, p, r) => new ExprMeta[CurrentRow.type](currentRow, conf, p, r) {
