@@ -155,15 +155,18 @@ class GpuBatchUtilsSuite extends FunSuite {
    */
   private def calculateGpuMemory(schema: StructType, rows: Array[InternalRow]): Long = {
     val builders = new GpuColumnarBatchBuilder(schema, rows.length, null)
-    val actual = try {
+    try {
       val converters = new GpuRowToColumnConverter(schema)
       rows.foreach(row => converters.convert(row, builders))
       val batch = builders.build(rows.length)
-      GpuColumnVector.getTotalDeviceMemoryUsed(batch)
+      try {
+        GpuColumnVector.getTotalDeviceMemoryUsed(batch)
+      } finally {
+        batch.close()
+      }
     } finally {
       builders.close()
     }
-    actual
   }
 
   private def createRows(schema: StructType, rowCount: Int): Array[InternalRow] = {
