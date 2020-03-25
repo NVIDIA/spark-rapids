@@ -229,8 +229,7 @@ class GpuDynamicPartitionDataWriter(
       val partitionName = ScalaUDF(
         ExternalCatalogUtils.getPartitionPathString _,
         StringType,
-        Seq(Literal(c.name), Cast(c, StringType, Option(description.timeZoneId))),
-        Seq(false, false))
+        Seq(Literal(c.name), Cast(c, StringType, Option(description.timeZoneId))))
       if (i == 0) Seq(partitionName) else Seq(Literal(Path.SEPARATOR), partitionName)
     })
 

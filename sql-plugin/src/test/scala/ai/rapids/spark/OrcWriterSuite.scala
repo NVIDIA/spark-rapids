@@ -37,5 +37,6 @@ class OrcWriterSuite extends SparkQueryCompareTestSuite {
     mixedDfWithNulls, writeOrc, readOrc)
 
   testSparkWritesAreEqual("simple partitioned orc write",
-    mixedDfWithBuckets, writeOrcBucket("bucket_1", "bucket_2"), readOrc)
+    mixedDfWithBuckets, writeOrcBucket("bucket_1", "bucket_2"), readOrc,
+    sort = true /*The order the data is read in on the CPU is not deterministic*/)
 }
