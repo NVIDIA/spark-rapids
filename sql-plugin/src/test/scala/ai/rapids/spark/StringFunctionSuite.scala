@@ -184,6 +184,18 @@ class StringOperatorsSuite extends SparkQueryCompareTestSuite {
     frame => frame.selectExpr("substring(strings, 0, 0)")
   }
 
+  testSparkResultsAreEqual("String replace ", nullableStringsFromCsv) {
+    frame => frame.selectExpr("replace(strings, 'a', 'A')")
+  }
+
+  testSparkResultsAreEqual("String replace empty search ", nullableStringsFromCsv) {
+    frame => frame.selectExpr("replace(strings, '', 'A')")
+  }
+
+  testSparkResultsAreEqual("String replace- No replace parameter", nullableStringsFromCsv) {
+    frame => frame.selectExpr("replace(strings, 'a')")
+  }
+  
   testSparkResultsAreEqual("String Like 1", likeDf,
     allowNonGpu = true, execsAllowedNonGpu = Seq("InMemoryTableScanExec")) {
     frame => frame.filter(col("word").like("_"))
