@@ -1,15 +1,31 @@
+/*
+ * Copyright (c) 2020, NVIDIA CORPORATION.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
 package ai.rapids.spark
 
 import ai.rapids.cudf.{Table, WindowAggregate, WindowOptions}
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.InternalRow
-import org.apache.spark.sql.catalyst.expressions.{Alias, Attribute, Expression, FrameType, NamedExpression, RangeFrame, RowFrame, SortOrder}
+import org.apache.spark.sql.catalyst.expressions.{Alias, Attribute, Expression, FrameType, NamedExpression, RangeFrame, SortOrder}
 import org.apache.spark.sql.catalyst.plans.physical.Partitioning
 import org.apache.spark.sql.execution.window.WindowExec
 import org.apache.spark.sql.execution.{SparkPlan, UnaryExecNode}
 import org.apache.spark.sql.rapids.{GpuAggregateExpression, GpuAggregateFunction, GpuCount, GpuMax, GpuMin, GpuSum}
 import org.apache.spark.sql.types.{CalendarIntervalType, IntegerType}
-import org.apache.spark.sql.vectorized.{ColumnVector, ColumnarBatch}
+import org.apache.spark.sql.vectorized.ColumnarBatch
 import org.apache.spark.unsafe.types.CalendarInterval
 
 class GpuWindowExecMeta(windowExec: WindowExec,
