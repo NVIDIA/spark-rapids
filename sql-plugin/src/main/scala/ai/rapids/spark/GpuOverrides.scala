@@ -622,6 +622,12 @@ object GpuOverrides {
         override def convertToGpu(child: GpuExpression): GpuExpression = GpuLog(child)
       })
       .incompat(FLOAT_DIFFERS_INCOMPAT),
+    expr[Log2](
+      "log base 2",
+      (a, conf, p, r) => new UnaryExprMeta[Log2](a, conf, p, r) {
+        override def convertToGpu(child: GpuExpression): GpuExpression = GpuLogBase(child, GpuLiteral(2d, DataTypes.DoubleType))
+      })
+      .incompat(FLOAT_DIFFERS_INCOMPAT),    
     expr[Log10](
       "log base 10",
       (a, conf, p, r) => new UnaryExprMeta[Log10](a, conf, p, r) {
