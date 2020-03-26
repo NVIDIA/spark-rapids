@@ -125,4 +125,29 @@ class ArithmeticOperatorsSuite extends SparkQueryCompareTestSuite {
     // Use ABS to work around incompatibility when input is negative and we also need to skip 0
     frame => frame.select(log(abs(col("floats"))), log(abs(col("more_floats"))))
   }
+
+  INCOMPAT_testSparkResultsAreEqual("Test log10 doubles", nonZeroDoubleDf, 0.00001) {
+    // Use ABS to work around incompatibility when input is negative, and we also need to skip 0
+    frame => frame.select(log10(abs(col("doubles"))), log10(abs(col("more_doubles"))))
+  }
+
+  INCOMPAT_testSparkResultsAreEqual("Test log10 floats with Nan", floatWithNansDf, 0.00001) {
+    // Use ABS to work around incompatibility when input is negative, and we also need to skip 0
+    frame => frame.select(log10(abs(col("floats"))), log10(abs(col("more_floats"))))
+  }
+
+  INCOMPAT_testSparkResultsAreEqual("Test log10 floats with infinity", floatWithInfinityDf, 0.00001) {
+    // Use ABS to work around incompatibility when input is negative, and we also need to skip 0
+    frame => frame.select(log10(abs(col("floats"))), log10(abs(col("more_floats"))))
+  }
+
+  INCOMPAT_testSparkResultsAreEqual("Test log10 floats", nonZeroFloatDf, 0.00001) {
+    // Use ABS to work around incompatibility when input is negative, and we also need to skip 0
+    frame => frame.select(log10(abs(col("floats"))), log10(abs(col("more_floats"))))
+  }
+
+  INCOMPAT_testSparkResultsAreEqual("Test log10 longs", nonZeroLongsDf, 0.00001) {
+    // Use ABS to work around incompatibility when input is negative, and we also need to skip 0
+    frame => frame.select(log10(abs(col("longs"))), log10(abs(col("more_longs"))))
+  }
 }
