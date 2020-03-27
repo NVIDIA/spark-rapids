@@ -21,6 +21,7 @@ import java.net.URI
 import java.nio.charset.StandardCharsets
 import java.util.Collections
 
+import scala.annotation.tailrec
 import scala.collection.JavaConverters._
 import scala.collection.mutable.ArrayBuffer
 import scala.math.max
@@ -428,7 +429,11 @@ class ParquetPartitionReader(
       } else {
         val table = readToTable(currentChunkedBlocks)
         try {
-          table.map(GpuColumnVector.from)
+          val maybeBatch = table.map(GpuColumnVector.from)
+          maybeBatch.foreach(batch => {
+            logDebug(s"GPU batch size: ${GpuResourceManager.deviceMemoryUsed(batch)} bytes")
+          })
+          maybeBatch
         } finally {
           table.foreach(_.close())
         }
@@ -477,25 +482,36 @@ class ParquetPartitionReader(
   }
 
   private def populateCurrentBlockChunk(): Seq[BlockMetaData] = {
+
     val currentChunk = new ArrayBuffer[BlockMetaData]
-    if (blockIterator.hasNext) {
-      // return at least one block even if it is larger than the configured limit
-      currentChunk += blockIterator.next
-      var numRows = currentChunk.head.getRowCount
-      if (numRows > Integer.MAX_VALUE) {
-        throw new UnsupportedOperationException("Too many rows in split")
-      }
-      var numBytes = currentChunk.head.getTotalByteSize
+    var numRows: Long = 0
+    var numBytes: Long = 0
+    var numParquetBytes: Long = 0
 
-      while (blockIterator.hasNext
-        && blockIterator.head.getRowCount + numRows <= maxReadBatchSizeRows
-        && blockIterator.head.getTotalByteSize + numBytes <= maxReadBatchSizeBytes) {
-
-        currentChunk += blockIterator.next
-        numRows += currentChunk.last.getRowCount
-        numBytes += currentChunk.last.getTotalByteSize
+    @tailrec
+    def readNextBatch(): Unit = {
+      if (blockIterator.hasNext) {
+        val peekedRowGroup = blockIterator.head
+        if (peekedRowGroup.getRowCount > Integer.MAX_VALUE) {
+          throw new UnsupportedOperationException("Too many rows in split")
+        }
+        if (numRows == 0 || numRows + peekedRowGroup.getRowCount <= maxReadBatchSizeRows) {
+          val estimatedBytes = GpuBatchUtils.estimateGpuMemory(readDataSchema, peekedRowGroup.getRowCount)
+          if (numBytes == 0 || numBytes + estimatedBytes <= maxReadBatchSizeBytes) {
+            currentChunk += blockIterator.next()
+            numRows += currentChunk.last.getRowCount
+            numParquetBytes += currentChunk.last.getTotalByteSize
+            numBytes += estimatedBytes
+            readNextBatch()
+          }
+        }
       }
     }
+
+    readNextBatch()
+
+    logDebug(s"Loaded $numRows rows from Parquet. Parquet bytes read: $numParquetBytes. Estimated GPU bytes: $numBytes")
+
     currentChunk
   }
 
