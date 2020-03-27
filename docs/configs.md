@@ -36,6 +36,7 @@ spark.rapids.shuffle.ucx.throttle.enabled|When set to true, enable the UCX throt
 spark.rapids.shuffle.ucx.useWakeup|When set to true, use UCX's event-based progress (epoll) in order to wake up the progress thread when needed, instead of a hot loop.|false
 spark.rapids.shuffle.ucx.wait.period|Initial time to wait in ms for requests that cannot be processed by the shuffle manager|5
 spark.rapids.shuffle.ucx.wait.period.update.enabled|Decides if wait period should be updates based on transaction stats|false
+spark.rapids.sql.batchSizeBytes|Set the target number of bytes for a GPU batch. Splits sizes for input data is covered by separate configs.|2147483647
 spark.rapids.sql.batchSizeRows|Set the target number of rows for a GPU batch. Splits sizes for input data is covered by separate configs.|1000000
 spark.rapids.sql.concurrentGpuTasks|Set the number of tasks that can execute concurrently per GPU. Tasks may temporarily block when the number of concurrent tasks in the executor exceeds this amount. Allowing too many concurrent tasks on the same GPU may lead to GPU out of memory errors.|1
 spark.rapids.sql.enabled|Enable (true) or disable (false) sql operations on the GPU|true
@@ -43,8 +44,7 @@ spark.rapids.sql.explain|Explain why some parts of a query were not placed on a 
 spark.rapids.sql.hasNans|Config to indicate if your data has NaN's. Cudf doesn't currently support NaN's properly so you can get corrupt data if you have NaN's in your data and it runs on the GPU.|true
 spark.rapids.sql.hashOptimizeSort.enabled|Whether sorts should be inserted after some hashed operations to improve output ordering. This can improve output file sizes when saving to columnar formats.|false
 spark.rapids.sql.incompatibleOps.enabled|For operations that work, but are not 100% compatible with the Spark equivalent set if they should be enabled by default or disabled by default.|false
-spark.rapids.sql.reader.batchSizeBytes|Soft limit on the maximum number of bytes the reader reads per batch. The readers will read chunks of data until this limit is met or exceeded. Note that the csv and parquet readers use this limit even if the underlying file is compressed.|2147483647
-spark.rapids.sql.reader.batchSizeCompressedBytes|Soft limit on the maximum number of bytes the reader reads per batch when reading compressed files. The readers will read chunks of compressed data until this limit is met or exceeded.|1073741823
+spark.rapids.sql.reader.batchSizeBytes|Soft limit on the maximum number of bytes the reader reads per batch. The readers will read chunks of data until this limit is met or exceeded. Note that the reader may estimate the number of bytes that will be used on the GPU in some cases based on the schema and number of rows in each batch.|2147483647
 spark.rapids.sql.reader.batchSizeRows|Soft limit on the maximum number of rows the reader will read per batch. The orc and parquet readers will read row groups until this limit is met or exceeded. The limit is respected by the csv reader.|2147483647
 spark.rapids.sql.replaceSortMergeJoin.enabled|Allow replacing sortMergeJoin with HashJoin|true
 spark.rapids.sql.shuffle.spillThreads|Number of threads used to spill shuffle data to disk in the background.|6
