@@ -622,16 +622,31 @@ object GpuOverrides {
         override def convertToGpu(child: GpuExpression): GpuExpression = GpuLog(child)
       })
       .incompat(FLOAT_DIFFERS_INCOMPAT),
+    expr[Log1p](
+      "natural log 1 + expr",
+      (a, conf, p, r) => new UnaryExprMeta[Log1p](a, conf, p, r) {
+        override def convertToGpu(child: GpuExpression): GpuExpression = GpuLog(GpuAdd(child, GpuLiteral(1d, DataTypes.DoubleType)))
+      })
+      .incompat(FLOAT_DIFFERS_INCOMPAT),
     expr[Log2](
       "log base 2",
       (a, conf, p, r) => new UnaryExprMeta[Log2](a, conf, p, r) {
-        override def convertToGpu(child: GpuExpression): GpuExpression = GpuLogBase(child, GpuLiteral(2d, DataTypes.DoubleType))
+        override def convertToGpu(child: GpuExpression): GpuExpression = GpuLogarithm(child, GpuLiteral(2d, DataTypes.DoubleType))
       })
-      .incompat(FLOAT_DIFFERS_INCOMPAT),    
+      .incompat(FLOAT_DIFFERS_INCOMPAT),
     expr[Log10](
       "log base 10",
       (a, conf, p, r) => new UnaryExprMeta[Log10](a, conf, p, r) {
-        override def convertToGpu(child: GpuExpression): GpuExpression = GpuLogBase(child, GpuLiteral(10d, DataTypes.DoubleType))
+        override def convertToGpu(child: GpuExpression): GpuExpression = GpuLogarithm(child, GpuLiteral(10d, DataTypes.DoubleType))
+      })
+      .incompat(FLOAT_DIFFERS_INCOMPAT),
+    expr[Logarithm](
+      "log variable base",
+      (a, conf, p, r) => new BinaryExprMeta[Logarithm](a, conf, p, r) {
+        override def convertToGpu(lhs: GpuExpression, rhs: GpuExpression): GpuExpression = {
+          // the order of the parameters is transposed intentionally
+          GpuLogarithm(rhs, lhs)
+        }
       })
       .incompat(FLOAT_DIFFERS_INCOMPAT),
     expr[Sin](

@@ -124,7 +124,7 @@ case class GpuLog(child: Expression) extends CudfUnaryMathExpression("LOG") {
   override def outputTypeOverride: DType = DType.FLOAT64
 }
 
-case class GpuLogBase(left: Expression, right: Expression) extends CudfBinaryMathExpression("LOG_BASE") {
+case class GpuLogarithm(left: Expression, right: Expression) extends CudfBinaryMathExpression("LOG_BASE") {
   override def binaryOp: BinaryOp = BinaryOp.LOG_BASE
   override def outputTypeOverride: DType = DType.FLOAT64
 }
