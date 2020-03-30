@@ -1070,6 +1070,7 @@ object GpuOverrides {
       "Like",
       (a, conf, p, r) => new BinaryExprMeta[Like](a, conf, p, r) {
         override def tagExprForGpu(): Unit = {
+          willNotWorkOnGpu("GPU support for LIKE is broken in cudf, hence disabled.")
           if (!isStringLit(a.right)) {
             willNotWorkOnGpu("only literals are supported for Like right hand side search parameter")
           }
