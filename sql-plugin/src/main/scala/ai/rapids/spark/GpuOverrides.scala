@@ -897,6 +897,12 @@ object GpuOverrides {
     expr[Count](
       "count aggregate operator",
       (count, conf, p, r) => new ExprMeta[Count](count, conf, p, r) {
+        override def tagExprForGpu(): Unit = {
+          if (count.children.size > 1) {
+            willNotWorkOnGpu("count multiple columns not supported")
+          }
+        }
+
         override def convertToGpu(): GpuExpression = GpuCount(childExprs.map(_.convertToGpu()))
       }),
     expr[Max](
