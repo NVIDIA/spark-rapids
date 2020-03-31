@@ -22,6 +22,7 @@ import java.nio.ByteBuffer
 import java.nio.channels.{Channels, WritableByteChannel}
 import java.util
 
+import scala.annotation.tailrec
 import scala.collection.JavaConverters._
 import scala.collection.mutable.ArrayBuffer
 import scala.math.max
@@ -136,7 +137,6 @@ case class GpuOrcPartitionReaderFactory(
   private val debugDumpPrefix = rapidsConf.orcDebugDumpPrefix
   private val maxReadBatchSizeRows: Integer = rapidsConf.maxReadBatchSizeRows
   private val maxReadBatchSizeBytes: Long = rapidsConf.maxReadBatchSizeBytes
-  private val maxReadBatchSizeCompressedBytes: Long = rapidsConf.maxReadBatchSizeCompressedBytes
 
   override def supportColumnarReads(partition: InputPartition): Boolean = true
 
@@ -153,7 +153,7 @@ case class GpuOrcPartitionReaderFactory(
     val fullSchema = StructType(dataSchema ++ partitionSchema)
     val reader = new GpuOrcPartitionReader(conf, partFile, dataSchema, readDataSchema,
       fullSchema, pushedFilters, debugDumpPrefix, maxReadBatchSizeRows, maxReadBatchSizeBytes,
-      maxReadBatchSizeCompressedBytes, metrics)
+      metrics)
     ColumnarPartitionReaderWithPartitionValues.newReader(partFile, reader, partitionSchema)
   }
 }
@@ -217,7 +217,6 @@ class GpuOrcPartitionReader(
     debugDumpPrefix: String,
     maxReadBatchSizeRows: Integer,
     maxReadBatchSizeBytes: Long,
-    maxReadBatchSizeCompressedBytes: Long,
     execMetrics : Map[String, SQLMetric]) extends PartitionReader[ColumnarBatch] with Logging
   with ScanWithMetrics {
   private var batch: Option[ColumnarBatch] = None
@@ -693,7 +692,9 @@ class GpuOrcPartitionReader(
         GpuSemaphore.acquireIfNecessary(TaskContext.get())
 
         val table = Table.readORC(parseOpts, dataBuffer, 0, dataSize)
-        maxDeviceMemory = max(GpuColumnVector.getTotalDeviceMemoryUsed(table), maxDeviceMemory)
+        val batchSizeBytes = GpuColumnVector.getTotalDeviceMemoryUsed(table)
+        logDebug(s"GPU batch size: $batchSizeBytes bytes")
+        maxDeviceMemory = max(batchSizeBytes, maxDeviceMemory)
         val numColumns = table.getNumberOfColumns
         if (readDataSchema.length != numColumns) {
           table.close()
@@ -713,30 +714,34 @@ class GpuOrcPartitionReader(
   private def populateCurrentBlockChunk(): Seq[OrcOutputStripe] = {
     val currentChunk = new ArrayBuffer[OrcOutputStripe]
 
-    val maxReadBytes = if (ctx.orcReader.getCompressionKind == CompressionKind.NONE) {
-      maxReadBatchSizeBytes
-    } else {
-      maxReadBatchSizeCompressedBytes
+    var numRows: Long = 0
+    var numBytes: Long = 0
+    var numOrcBytes: Long = 0
+
+    @tailrec
+    def readNextBatch(): Unit = {
+      if (ctx.blockIterator.hasNext) {
+        val peekedStripe = ctx.blockIterator.head
+        if (peekedStripe.infoBuilder.getNumberOfRows > Integer.MAX_VALUE) {
+          throw new UnsupportedOperationException("Too many rows in split")
+        }
+        if (numRows == 0 || numRows + peekedStripe.infoBuilder.getNumberOfRows <= maxReadBatchSizeRows) {
+          val estimatedBytes = GpuBatchUtils.estimateGpuMemory(readDataSchema, peekedStripe.infoBuilder.getNumberOfRows)
+          if (numBytes == 0 || numBytes + estimatedBytes <= maxReadBatchSizeBytes) {
+            currentChunk += ctx.blockIterator.next()
+            numRows += currentChunk.last.infoBuilder.getNumberOfRows
+            numOrcBytes += currentChunk.last.infoBuilder.getDataLength
+            numBytes += estimatedBytes
+            readNextBatch()
+          }
+        }
+      }
     }
 
-    if (ctx.blockIterator.hasNext) {
-      // return at least one block even if it is larger than the configured limit
-      currentChunk += ctx.blockIterator.next
-      var numRows = currentChunk.head.infoBuilder.getNumberOfRows
-      if (numRows > Integer.MAX_VALUE) {
-        throw new UnsupportedOperationException("Too many rows in split")
-      }
-      var numBytes = currentChunk.head.infoBuilder.getDataLength
+    readNextBatch()
 
-      while (ctx.blockIterator.hasNext
-        && ctx.blockIterator.head.infoBuilder.getNumberOfRows + numRows <= maxReadBatchSizeRows
-        && ctx.blockIterator.head.infoBuilder.getDataLength + numBytes <= maxReadBytes) {
+    logDebug(s"Loaded $numRows rows from Orc. Orc bytes read: $numOrcBytes. Estimated GPU bytes: $numBytes")
 
-        currentChunk += ctx.blockIterator.next
-        numRows += currentChunk.last.infoBuilder.getNumberOfRows
-        numBytes += currentChunk.last.infoBuilder.getDataLength
-      }
-    }
     currentChunk
   }
 

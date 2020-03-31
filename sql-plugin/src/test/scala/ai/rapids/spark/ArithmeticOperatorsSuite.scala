@@ -116,13 +116,4 @@ class ArithmeticOperatorsSuite extends SparkQueryCompareTestSuite {
     frame => frame.select(sqrt(col("floats")), sqrt(col("more_floats")))
   }
 
-  INCOMPAT_testSparkResultsAreEqual("Test log doubles", nonZeroDoubleDf, 0.00001) {
-    // Use ABS to work around incompatibility when input is negative, and we also need to skip 0
-    frame => frame.select(log(abs(col("doubles"))), log(abs(col("more_doubles"))))
-  }
-
-  INCOMPAT_testSparkResultsAreEqual("Test log floats", nonZeroFloatDf, 0.00001) {
-    // Use ABS to work around incompatibility when input is negative and we also need to skip 0
-    frame => frame.select(log(abs(col("floats"))), log(abs(col("more_floats"))))
-  }
 }
