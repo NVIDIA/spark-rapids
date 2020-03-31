@@ -56,6 +56,27 @@ object GpuDeviceManager extends Logging {
     return true
   }
 
+  /**
+   * This is just being extra paranoid when we are running on GPUs in exclusive mode. It is not
+   * clear exactly what cuda interactions cause us to acquire a device, so this will force us
+   * to do an interaction we know will acquire the device.
+   */
+  private def findGpuAndAcquire(): Int = {
+    val deviceCount: Int = Cuda.getDeviceCount()
+    // loop multiple times to see if a GPU was released or something unexpected happened that
+    // we couldn't acquire on first try
+    var numRetries = 2
+    val addrsToTry = ArrayBuffer.empty ++= (0 to (deviceCount - 1))
+    while (numRetries > 0) {
+      val addr = addrsToTry.find(tryToSetGpuDeviceAndAcquire)
+      if (addr.isDefined) {
+        return addr.get
+      }
+      numRetries -= 1
+    }
+    throw new IllegalStateException("Could not find a single GPU to use")
+  }
+
   def setGpuDeviceAndAcquire(addr: Int): Int = {
     logDebug(s"Initializing GPU device ID to $addr")
     Cuda.setDevice(addr.toInt)
@@ -120,7 +141,7 @@ object GpuDeviceManager extends Logging {
     }
   }
 
-  private def initializeRmm(rapidsConf: Option[RapidsConf] = None): Unit = {
+  private def initializeRmm(gpuId: Int, rapidsConf: Option[RapidsConf] = None): Unit = {
     if (!Rmm.isInitialized) {
       val conf = rapidsConf.getOrElse(new RapidsConf(SparkEnv.get.conf))
       val loggingEnabled = conf.isRmmDebugEnabled
@@ -145,7 +166,7 @@ object GpuDeviceManager extends Logging {
 
       logInfo(s"Initializing RMM${features.mkString(" ", " ", "")} ${initialAllocation / 1024 / 1024.0} MB")
       try {
-        Rmm.initialize(init, loggingEnabled, initialAllocation)
+        Rmm.initialize(init, loggingEnabled, initialAllocation, gpuId)
       } catch {
         case e: Exception => logError("Could not initialize RMM", e)
       }
@@ -169,23 +190,31 @@ object GpuDeviceManager extends Logging {
     }
   }
 
-  private def allocatePinnedMemory(gpuId: Option[Int], rapidsConf: Option[RapidsConf] = None): Unit = {
+  private def allocatePinnedMemory(gpuId: Int, rapidsConf: Option[RapidsConf] = None): Unit = {
     val conf = rapidsConf.getOrElse(new RapidsConf(SparkEnv.get.conf))
     if (!PinnedMemoryPool.isInitialized && conf.pinnedPoolSize > 0) {
       logInfo(s"Initializing pinned memory pool (${conf.pinnedPoolSize / 1024 / 1024.0} MB)")
-      PinnedMemoryPool.initialize(conf.pinnedPoolSize, gpuId.getOrElse(-1))
+      PinnedMemoryPool.initialize(conf.pinnedPoolSize, gpuId)
     }
   }
 
+  /**
+   * Initialize the GPU memory for gpuId according to the settings in rapidsConf.  It is assumed
+   * that if gpuId is set then that gpu is already the default device.  If gpuId is not set
+   * this will search all available GPUs starting at 0 looking for the appropriate one.
+   * @param gpuId the id of the gpu to use
+   * @param rapidsConf the config to use.
+   */
   def initializeMemory(gpuId: Option[Int], rapidsConf: Option[RapidsConf] = None): Unit = {
     if (singletonMemoryInitialized == false) {
       // Memory or memory related components that only need to be initialized once per executor.
       // This synchronize prevents multiple tasks from trying to initialize these at the same time.
       GpuDeviceManager.synchronized {
         if (singletonMemoryInitialized == false) {
+          val gpu = gpuId.getOrElse(findGpuAndAcquire())
           registerMemoryListener(rapidsConf)
-          initializeRmm(rapidsConf)
-          allocatePinnedMemory(gpuId, rapidsConf)
+          initializeRmm(gpu, rapidsConf)
+          allocatePinnedMemory(gpu, rapidsConf)
           singletonMemoryInitialized = true
         }
       }

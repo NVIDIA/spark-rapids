@@ -196,222 +196,222 @@ class StringOperatorsSuite extends SparkQueryCompareTestSuite {
     frame => frame.selectExpr("replace(strings, 'a')")
   }
   
-  testSparkResultsAreEqual("String Like 1", likeDf,
-    allowNonGpu = true, execsAllowedNonGpu = Seq("InMemoryTableScanExec")) {
-    frame => frame.filter(col("word").like("_"))
-  }
-
-  testSparkResultsAreEqual("String Like 2", likeDf,
-    allowNonGpu = true, execsAllowedNonGpu = Seq("InMemoryTableScanExec")) {
-    frame => frame.filter(col("word").like("%a%"))
-  }
-
-  testSparkResultsAreEqual("String Like 3", likeDf,
-    allowNonGpu = true, execsAllowedNonGpu = Seq("InMemoryTableScanExec")) {
-    frame => frame.filter(col("word").like("_"))
-  }
-
-  testSparkResultsAreEqual("String Like 4", likeDf,
-    allowNonGpu = true, execsAllowedNonGpu = Seq("InMemoryTableScanExec")) {
-    frame => frame.filter(col("word").like("_oo_"))
-  }
-
-  testSparkResultsAreEqual("String Like 5", likeDf,
-    allowNonGpu = true, execsAllowedNonGpu = Seq("InMemoryTableScanExec")) {
-    frame => frame.filter(col("word").like("_oo%"))
-  }
-
-  testSparkResultsAreEqual("String Like 6", likeDf,
-    allowNonGpu = true, execsAllowedNonGpu = Seq("InMemoryTableScanExec")) {
-    frame => frame.filter(col("word").like("_oo%"))
-  }
-
-  testSparkResultsAreEqual("String Like 7", likeDf,
-    allowNonGpu = true, execsAllowedNonGpu = Seq("InMemoryTableScanExec")) {
-    frame => frame.filter(col("word").like("%oo_"))
-  }
-
-  testSparkResultsAreEqual("String Like 8", likeDf,
-    allowNonGpu = true, execsAllowedNonGpu = Seq("InMemoryTableScanExec")) {
-    frame => frame.filter(col("word").like("%oo_"))
-  }
-
-  testSparkResultsAreEqual("String Like 9", likeDf,
-    allowNonGpu = true, execsAllowedNonGpu = Seq("InMemoryTableScanExec")) {
-    frame => frame.filter(col("word").like("_\u20AC_"))
-  }
-
-  testSparkResultsAreEqual("String Like 10", likeDf,
-    allowNonGpu = true, execsAllowedNonGpu = Seq("InMemoryTableScanExec")) {
-    frame => frame.selectExpr("word like x '256f6f5f'")
-  }
-
-  testSparkResultsAreEqual("String Like 11", likeDf,
-    allowNonGpu = true, execsAllowedNonGpu = Seq("InMemoryTableScanExec")) {
-    frame => frame.selectExpr("word like x '6162632325616263' escape '#'")
-  }
-
-  testSparkResultsAreEqual("String Like 12 without escape char", likeDf,
-    allowNonGpu = true, execsAllowedNonGpu = Seq("InMemoryTableScanExec")) {
-    frame => frame.selectExpr("word like x '61626325616263' escape '#'")
-  }
-
-  testSparkResultsAreEqual("String Like 13", likeDf,
-    allowNonGpu = true, execsAllowedNonGpu = Seq("InMemoryTableScanExec")) {
-    frame => frame.filter(col("word").like("""\%SystemDrive\%\\Users%"""))
-  }
-
-  testSparkResultsAreEqual("String Like 14", likeDf,
-    allowNonGpu = true, execsAllowedNonGpu = Seq("InMemoryTableScanExec")) {
-    frame => frame.filter(col("word").like("""\%SystemDrive\%\\\\Users%"""))
-  }
-
-  val confEscape: SparkConf = new SparkConf().set("spark.sql.parser.escapedStringLiterals", "true")
-
-  testSparkResultsAreEqual("String Like 15 Escape true", likeDf, conf = confEscape,
-    allowNonGpu = true, execsAllowedNonGpu = Seq("InMemoryTableScanExec")) {
-    frame => frame.filter(col("word").like("_oo"))
-  }
-
-  testSparkResultsAreEqual("String Like Empty Escape true", likeDf, conf = confEscape,
-    allowNonGpu = true, execsAllowedNonGpu = Seq("InMemoryTableScanExec")) {
-    frame => frame.filter(col("word").like(""))
-  }
-
-  testSparkResultsAreEqual("String Like 16 Escape true", likeDf, conf = confEscape,
-    allowNonGpu = true, execsAllowedNonGpu = Seq("InMemoryTableScanExec")) {
-    frame => frame.filter(col("word").like("_oo_"))
-  }
-
-  testSparkResultsAreEqual("String Like 17 Escape true", likeDf, conf = confEscape,
-    allowNonGpu = true, execsAllowedNonGpu = Seq("InMemoryTableScanExec")) {
-    frame => frame.filter(col("word").like("_oo%"))
-  }
-
-  testSparkResultsAreEqual("String Like 18 Escape true", likeDf, conf = confEscape,
-    allowNonGpu = true, execsAllowedNonGpu = Seq("InMemoryTableScanExec")) {
-    frame => frame.filter(col("word").like("_oo%"))
-  }
-
-  testSparkResultsAreEqual("String Like 19 Escape true", likeDf, conf = confEscape,
-    allowNonGpu = true, execsAllowedNonGpu = Seq("InMemoryTableScanExec")) {
-    frame => frame.filter(col("word").like("%oo_"))
-  }
-
-  testSparkResultsAreEqual("String Like 20 Escape true", likeDf, conf = confEscape,
-    allowNonGpu = true, execsAllowedNonGpu = Seq("InMemoryTableScanExec")) {
-    frame => frame.filter(col("word").like("%oo_"))
-  }
-
-  testSparkResultsAreEqual("String Like 21 Escape true", likeDf, conf = confEscape,
-    allowNonGpu = true, execsAllowedNonGpu = Seq("InMemoryTableScanExec")) {
-    frame => frame.filter(col("word").like("_\u20AC_"))
-  }
-
-  testSparkResultsAreEqual("String Like 22 Escape true", likeDf, conf = confEscape,
-    allowNonGpu = true, execsAllowedNonGpu = Seq("InMemoryTableScanExec")) {
-    frame => frame.selectExpr("word like x '256f6f5f'")
-  }
-
-  testSparkResultsAreEqual("String Like 23 Escape true", likeDf, conf = confEscape,
-    allowNonGpu = true, execsAllowedNonGpu = Seq("InMemoryTableScanExec")) {
-    frame => frame.selectExpr("word like x '6162632325616263' escape '#'")
-  }
-
-  testSparkResultsAreEqual("String Like 24 without escape char Escape true ", likeDf, conf = confEscape,
-    allowNonGpu = true, execsAllowedNonGpu = Seq("InMemoryTableScanExec")) {
-    frame => frame.selectExpr("word like x '61626325616263' escape '#'")
-  }
-
-  testSparkResultsAreEqual("String Like 25 Escape true", likeDf, conf = confEscape,
-    allowNonGpu = true, execsAllowedNonGpu = Seq("InMemoryTableScanExec")) {
-    frame => frame.filter(col("word").like("""\%SystemDrive\%\\Users%"""))
-  }
-
-  testSparkResultsAreEqual("String Like 26 Escape true", likeDf, conf = confEscape,
-    allowNonGpu = true, execsAllowedNonGpu = Seq("InMemoryTableScanExec")) {
-    frame => frame.filter(col("word").like("""\%SystemDrive\%\\\\Users%"""))
-  }
-
-  testSparkResultsAreEqual("String Like 27", likeDf,
-    allowNonGpu = true, execsAllowedNonGpu = Seq("InMemoryTableScanExec")) {
-    frame => frame.filter("word like '_a^d%' escape 'c'")
-  }
-
-  testSparkResultsAreEqual("String Like 28", likeDf,
-    allowNonGpu = true, execsAllowedNonGpu = Seq("InMemoryTableScanExec")) {
-    frame => frame.filter("word like 'a_a' escape 'c'")
-  }
-
-  testSparkResultsAreEqual("String Like 29", likeDf,
-    allowNonGpu = true, execsAllowedNonGpu = Seq("InMemoryTableScanExec")) {
-    frame => frame.filter("word like 'a%a' escape 'c'")
-  }
-
-  testSparkResultsAreEqual("String Like 30", likeDf,
-    allowNonGpu = true, execsAllowedNonGpu = Seq("InMemoryTableScanExec")) {
-    frame => frame.filter("word like 'c_' escape 'c'")
-  }
-
-  testSparkResultsAreEqual("String Like 31", likeDf,
-    allowNonGpu = true, execsAllowedNonGpu = Seq("InMemoryTableScanExec")) {
-    frame => frame.filter("word like 'c_'")
-  }
-
-  testSparkResultsAreEqual("String Like 32", likeDf,
-    allowNonGpu = true, execsAllowedNonGpu = Seq("InMemoryTableScanExec")) {
-    frame => frame.filter("word like '_a[d]%'")
-  }
-
-  testSparkResultsAreEqual("String Like 33", likeDf,
-    allowNonGpu = true, execsAllowedNonGpu = Seq("InMemoryTableScanExec")) {
-    frame => frame.filter("word like '_a(d)%'")
-  }
-
-  testSparkResultsAreEqual("String Like 34", likeDf,
-    allowNonGpu = true, execsAllowedNonGpu = Seq("InMemoryTableScanExec")) {
-    frame => frame.filter("word like '_$%'")
-  }
-
-  testSparkResultsAreEqual("String Like 35", likeDf,
-    allowNonGpu = true, execsAllowedNonGpu = Seq("InMemoryTableScanExec")) {
-    frame => frame.filter("word like '_$'")
-  }
-
-  testSparkResultsAreEqual("String Like 36", likeDf,
-    allowNonGpu = true, execsAllowedNonGpu = Seq("InMemoryTableScanExec")) {
-    frame => frame.filter("word like '_._'")
-  }
-
-  testSparkResultsAreEqual("String Like 37", likeDf,
-    allowNonGpu = true, execsAllowedNonGpu = Seq("InMemoryTableScanExec")) {
-    frame => frame.filter("word like '_|%'")
-  }
-
-  testSparkResultsAreEqual("String Like 38", likeDf,
-    allowNonGpu = true, execsAllowedNonGpu = Seq("InMemoryTableScanExec")) {
-    frame => frame.filter("word like '_?_'")
-  }
-
-  testSparkResultsAreEqual("String Like 39", likeDf,
-    allowNonGpu = true, execsAllowedNonGpu = Seq("InMemoryTableScanExec")) {
-    frame => frame.filter("word like '%*_'")
-  }
-
-  testSparkResultsAreEqual("String Like 40", likeDf,
-    allowNonGpu = true, execsAllowedNonGpu = Seq("InMemoryTableScanExec")) {
-    frame => frame.filter("word like '%+_'")
-  }
-
-  testSparkResultsAreEqual("String Like 41", likeDf,
-    allowNonGpu = true, execsAllowedNonGpu = Seq("InMemoryTableScanExec")) {
-    frame => frame.filter("word like '%a{3}%'")
-  }
-
-  testSparkResultsAreEqual("String Like 42", likeDf,
-    allowNonGpu = true, execsAllowedNonGpu = Seq("InMemoryTableScanExec")) {
-    frame => frame.filter("word like '%\\ab_'")
-  }
+//  testSparkResultsAreEqual("String Like 1", likeDf,
+//    allowNonGpu = true, execsAllowedNonGpu = Seq("InMemoryTableScanExec")) {
+//    frame => frame.filter(col("word").like("_"))
+//  }
+//
+//  testSparkResultsAreEqual("String Like 2", likeDf,
+//    allowNonGpu = true, execsAllowedNonGpu = Seq("InMemoryTableScanExec")) {
+//    frame => frame.filter(col("word").like("%a%"))
+//  }
+//
+//  testSparkResultsAreEqual("String Like 3", likeDf,
+//    allowNonGpu = true, execsAllowedNonGpu = Seq("InMemoryTableScanExec")) {
+//    frame => frame.filter(col("word").like("_"))
+//  }
+//
+//  testSparkResultsAreEqual("String Like 4", likeDf,
+//    allowNonGpu = true, execsAllowedNonGpu = Seq("InMemoryTableScanExec")) {
+//    frame => frame.filter(col("word").like("_oo_"))
+//  }
+//
+//  testSparkResultsAreEqual("String Like 5", likeDf,
+//    allowNonGpu = true, execsAllowedNonGpu = Seq("InMemoryTableScanExec")) {
+//    frame => frame.filter(col("word").like("_oo%"))
+//  }
+//
+//  testSparkResultsAreEqual("String Like 6", likeDf,
+//    allowNonGpu = true, execsAllowedNonGpu = Seq("InMemoryTableScanExec")) {
+//    frame => frame.filter(col("word").like("_oo%"))
+//  }
+//
+//  testSparkResultsAreEqual("String Like 7", likeDf,
+//    allowNonGpu = true, execsAllowedNonGpu = Seq("InMemoryTableScanExec")) {
+//    frame => frame.filter(col("word").like("%oo_"))
+//  }
+//
+//  testSparkResultsAreEqual("String Like 8", likeDf,
+//    allowNonGpu = true, execsAllowedNonGpu = Seq("InMemoryTableScanExec")) {
+//    frame => frame.filter(col("word").like("%oo_"))
+//  }
+//
+//  testSparkResultsAreEqual("String Like 9", likeDf,
+//    allowNonGpu = true, execsAllowedNonGpu = Seq("InMemoryTableScanExec")) {
+//    frame => frame.filter(col("word").like("_\u20AC_"))
+//  }
+//
+//  testSparkResultsAreEqual("String Like 10", likeDf,
+//    allowNonGpu = true, execsAllowedNonGpu = Seq("InMemoryTableScanExec")) {
+//    frame => frame.selectExpr("word like x '256f6f5f'")
+//  }
+//
+//  testSparkResultsAreEqual("String Like 11", likeDf,
+//    allowNonGpu = true, execsAllowedNonGpu = Seq("InMemoryTableScanExec")) {
+//    frame => frame.selectExpr("word like x '6162632325616263' escape '#'")
+//  }
+//
+//  testSparkResultsAreEqual("String Like 12 without escape char", likeDf,
+//    allowNonGpu = true, execsAllowedNonGpu = Seq("InMemoryTableScanExec")) {
+//    frame => frame.selectExpr("word like x '61626325616263' escape '#'")
+//  }
+//
+//  testSparkResultsAreEqual("String Like 13", likeDf,
+//    allowNonGpu = true, execsAllowedNonGpu = Seq("InMemoryTableScanExec")) {
+//    frame => frame.filter(col("word").like("""\%SystemDrive\%\\Users%"""))
+//  }
+//
+//  testSparkResultsAreEqual("String Like 14", likeDf,
+//    allowNonGpu = true, execsAllowedNonGpu = Seq("InMemoryTableScanExec")) {
+//    frame => frame.filter(col("word").like("""\%SystemDrive\%\\\\Users%"""))
+//  }
+//
+//  val confEscape: SparkConf = new SparkConf().set("spark.sql.parser.escapedStringLiterals", "true")
+//
+//  testSparkResultsAreEqual("String Like 15 Escape true", likeDf, conf = confEscape,
+//    allowNonGpu = true, execsAllowedNonGpu = Seq("InMemoryTableScanExec")) {
+//    frame => frame.filter(col("word").like("_oo"))
+//  }
+//
+//  testSparkResultsAreEqual("String Like Empty Escape true", likeDf, conf = confEscape,
+//    allowNonGpu = true, execsAllowedNonGpu = Seq("InMemoryTableScanExec")) {
+//    frame => frame.filter(col("word").like(""))
+//  }
+//
+//  testSparkResultsAreEqual("String Like 16 Escape true", likeDf, conf = confEscape,
+//    allowNonGpu = true, execsAllowedNonGpu = Seq("InMemoryTableScanExec")) {
+//    frame => frame.filter(col("word").like("_oo_"))
+//  }
+//
+//  testSparkResultsAreEqual("String Like 17 Escape true", likeDf, conf = confEscape,
+//    allowNonGpu = true, execsAllowedNonGpu = Seq("InMemoryTableScanExec")) {
+//    frame => frame.filter(col("word").like("_oo%"))
+//  }
+//
+//  testSparkResultsAreEqual("String Like 18 Escape true", likeDf, conf = confEscape,
+//    allowNonGpu = true, execsAllowedNonGpu = Seq("InMemoryTableScanExec")) {
+//    frame => frame.filter(col("word").like("_oo%"))
+//  }
+//
+//  testSparkResultsAreEqual("String Like 19 Escape true", likeDf, conf = confEscape,
+//    allowNonGpu = true, execsAllowedNonGpu = Seq("InMemoryTableScanExec")) {
+//    frame => frame.filter(col("word").like("%oo_"))
+//  }
+//
+//  testSparkResultsAreEqual("String Like 20 Escape true", likeDf, conf = confEscape,
+//    allowNonGpu = true, execsAllowedNonGpu = Seq("InMemoryTableScanExec")) {
+//    frame => frame.filter(col("word").like("%oo_"))
+//  }
+//
+//  testSparkResultsAreEqual("String Like 21 Escape true", likeDf, conf = confEscape,
+//    allowNonGpu = true, execsAllowedNonGpu = Seq("InMemoryTableScanExec")) {
+//    frame => frame.filter(col("word").like("_\u20AC_"))
+//  }
+//
+//  testSparkResultsAreEqual("String Like 22 Escape true", likeDf, conf = confEscape,
+//    allowNonGpu = true, execsAllowedNonGpu = Seq("InMemoryTableScanExec")) {
+//    frame => frame.selectExpr("word like x '256f6f5f'")
+//  }
+//
+//  testSparkResultsAreEqual("String Like 23 Escape true", likeDf, conf = confEscape,
+//    allowNonGpu = true, execsAllowedNonGpu = Seq("InMemoryTableScanExec")) {
+//    frame => frame.selectExpr("word like x '6162632325616263' escape '#'")
+//  }
+//
+//  testSparkResultsAreEqual("String Like 24 without escape char Escape true ", likeDf, conf = confEscape,
+//    allowNonGpu = true, execsAllowedNonGpu = Seq("InMemoryTableScanExec")) {
+//    frame => frame.selectExpr("word like x '61626325616263' escape '#'")
+//  }
+//
+//  testSparkResultsAreEqual("String Like 25 Escape true", likeDf, conf = confEscape,
+//    allowNonGpu = true, execsAllowedNonGpu = Seq("InMemoryTableScanExec")) {
+//    frame => frame.filter(col("word").like("""\%SystemDrive\%\\Users%"""))
+//  }
+//
+//  testSparkResultsAreEqual("String Like 26 Escape true", likeDf, conf = confEscape,
+//    allowNonGpu = true, execsAllowedNonGpu = Seq("InMemoryTableScanExec")) {
+//    frame => frame.filter(col("word").like("""\%SystemDrive\%\\\\Users%"""))
+//  }
+//
+//  testSparkResultsAreEqual("String Like 27", likeDf,
+//    allowNonGpu = true, execsAllowedNonGpu = Seq("InMemoryTableScanExec")) {
+//    frame => frame.filter("word like '_a^d%' escape 'c'")
+//  }
+//
+//  testSparkResultsAreEqual("String Like 28", likeDf,
+//    allowNonGpu = true, execsAllowedNonGpu = Seq("InMemoryTableScanExec")) {
+//    frame => frame.filter("word like 'a_a' escape 'c'")
+//  }
+//
+//  testSparkResultsAreEqual("String Like 29", likeDf,
+//    allowNonGpu = true, execsAllowedNonGpu = Seq("InMemoryTableScanExec")) {
+//    frame => frame.filter("word like 'a%a' escape 'c'")
+//  }
+//
+//  testSparkResultsAreEqual("String Like 30", likeDf,
+//    allowNonGpu = true, execsAllowedNonGpu = Seq("InMemoryTableScanExec")) {
+//    frame => frame.filter("word like 'c_' escape 'c'")
+//  }
+//
+//  testSparkResultsAreEqual("String Like 31", likeDf,
+//    allowNonGpu = true, execsAllowedNonGpu = Seq("InMemoryTableScanExec")) {
+//    frame => frame.filter("word like 'c_'")
+//  }
+//
+//  testSparkResultsAreEqual("String Like 32", likeDf,
+//    allowNonGpu = true, execsAllowedNonGpu = Seq("InMemoryTableScanExec")) {
+//    frame => frame.filter("word like '_a[d]%'")
+//  }
+//
+//  testSparkResultsAreEqual("String Like 33", likeDf,
+//    allowNonGpu = true, execsAllowedNonGpu = Seq("InMemoryTableScanExec")) {
+//    frame => frame.filter("word like '_a(d)%'")
+//  }
+//
+//  testSparkResultsAreEqual("String Like 34", likeDf,
+//    allowNonGpu = true, execsAllowedNonGpu = Seq("InMemoryTableScanExec")) {
+//    frame => frame.filter("word like '_$%'")
+//  }
+//
+//  testSparkResultsAreEqual("String Like 35", likeDf,
+//    allowNonGpu = true, execsAllowedNonGpu = Seq("InMemoryTableScanExec")) {
+//    frame => frame.filter("word like '_$'")
+//  }
+//
+//  testSparkResultsAreEqual("String Like 36", likeDf,
+//    allowNonGpu = true, execsAllowedNonGpu = Seq("InMemoryTableScanExec")) {
+//    frame => frame.filter("word like '_._'")
+//  }
+//
+//  testSparkResultsAreEqual("String Like 37", likeDf,
+//    allowNonGpu = true, execsAllowedNonGpu = Seq("InMemoryTableScanExec")) {
+//    frame => frame.filter("word like '_|%'")
+//  }
+//
+//  testSparkResultsAreEqual("String Like 38", likeDf,
+//    allowNonGpu = true, execsAllowedNonGpu = Seq("InMemoryTableScanExec")) {
+//    frame => frame.filter("word like '_?_'")
+//  }
+//
+//  testSparkResultsAreEqual("String Like 39", likeDf,
+//    allowNonGpu = true, execsAllowedNonGpu = Seq("InMemoryTableScanExec")) {
+//    frame => frame.filter("word like '%*_'")
+//  }
+//
+//  testSparkResultsAreEqual("String Like 40", likeDf,
+//    allowNonGpu = true, execsAllowedNonGpu = Seq("InMemoryTableScanExec")) {
+//    frame => frame.filter("word like '%+_'")
+//  }
+//
+//  testSparkResultsAreEqual("String Like 41", likeDf,
+//    allowNonGpu = true, execsAllowedNonGpu = Seq("InMemoryTableScanExec")) {
+//    frame => frame.filter("word like '%a{3}%'")
+//  }
+//
+//  testSparkResultsAreEqual("String Like 42", likeDf,
+//    allowNonGpu = true, execsAllowedNonGpu = Seq("InMemoryTableScanExec")) {
+//    frame => frame.filter("word like '%\\ab_'")
+//  }
 }
 
 /*

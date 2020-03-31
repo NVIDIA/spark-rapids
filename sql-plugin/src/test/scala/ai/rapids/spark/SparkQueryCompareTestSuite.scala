@@ -93,6 +93,8 @@ trait SparkQueryCompareTestSuite extends FunSuite {
       }
     }
     (expected, actual) match {
+      case (a: Float, b: Float) if a.isNaN && b.isNaN => true
+      case (a: Double, b: Double) if a.isNaN && b.isNaN => true
       case (null, null) => true
       case (null, _) => false
       case (_, null) => false
@@ -933,6 +935,20 @@ trait SparkQueryCompareTestSuite extends FunSuite {
       (Float.NaN, 4.0f),
       (500.0f, Float.NaN),
       (Float.NaN, 6.0f),
+      (-500.0f, 50.5f)
+    ).toDF("floats", "more_floats")
+  }
+
+
+  def floatWithInfinityDf(session: SparkSession): DataFrame = {
+    import session.sqlContext.implicits._
+    Seq[(java.lang.Float, java.lang.Float)](
+      (100.50f, 1.0f),
+      (200.80f, Float.NegativeInfinity),
+      (300.30f, 3.0f),
+      (Float.PositiveInfinity, 4.0f),
+      (500.0f, Float.NegativeInfinity),
+      (Float.PositiveInfinity, 6.0f),
       (-500.0f, 50.5f)
     ).toDF("floats", "more_floats")
   }
