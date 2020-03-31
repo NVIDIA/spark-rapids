@@ -899,7 +899,7 @@ object GpuOverrides {
       (count, conf, p, r) => new ExprMeta[Count](count, conf, p, r) {
         override def tagExprForGpu(): Unit = {
           if (count.children.size > 1) {
-            willNotWorkOnGpu("count multiple columns not supported")
+            willNotWorkOnGpu("count of multiple columns not supported")
           }
         }
 

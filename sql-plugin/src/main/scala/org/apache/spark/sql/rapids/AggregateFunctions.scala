@@ -134,8 +134,8 @@ abstract case class CudfAggregate(ref: GpuExpression) extends GpuUnevaluable {
 }
 
 class CudfCount(ref: GpuExpression) extends CudfAggregate(ref) {
-  // include null in count aggregate if expr is instance of Literal. Ex: count(*) or count(1)
-  val includeNulls = ref.isInstanceOf[Literal]
+  // includeNulls set to false in count aggregate to exclude nulls while calculating count(column)
+  val includeNulls = false
   override val updateReductionAggregate: cudf.ColumnVector => cudf.Scalar =
     (col: cudf.ColumnVector) => cudf.Scalar.fromLong(col.getRowCount - col.getNullCount)
   override val mergeReductionAggregate: cudf.ColumnVector => cudf.Scalar =
