@@ -16,112 +16,54 @@
 
 package ai.rapids.spark
 
+import org.apache.spark.SparkConf
+import org.apache.spark.sql.DataFrame
 import org.apache.spark.sql.functions._
 
 class LogOperatorsSuite extends SparkQueryCompareTestSuite {
 
-  INCOMPAT_testSparkResultsAreEqual("Test log doubles", nonZeroDoubleDf, 0.00001) {
-    // Use ABS to work around incompatibility when input is negative, and we also need to skip 0
-    frame => frame.select(log(abs(col("doubles"))), log(abs(col("more_doubles"))))
+  testLog("log") {
+    frame: DataFrame => frame.select(log(col("n")))
   }
 
-  INCOMPAT_testSparkResultsAreEqual("Test log floats", nonZeroFloatDf, 0.00001) {
-    // Use ABS to work around incompatibility when input is negative and we also need to skip 0
-    frame => frame.select(log(abs(col("floats"))), log(abs(col("more_floats"))))
+  testLog("log2") {
+    frame: DataFrame => frame.select(log2(col("n")))
   }
 
-  INCOMPAT_testSparkResultsAreEqual("Test log2 doubles", nonZeroDoubleDf, 0.00001) {
-    // Use ABS to work around incompatibility when input is negative, and we also need to skip 0
-    frame => frame.select(log2(abs(col("doubles"))), log2(abs(col("more_doubles"))))
+  testLog("log10") {
+    frame: DataFrame => frame.select(log10(col("n")))
   }
 
-  INCOMPAT_testSparkResultsAreEqual("Test log1p floats with Nan", floatWithNansDf, 0.00001) {
-    // Use ABS to work around incompatibility when input is negative, and we also need to skip 0
-    frame => frame.select(log1p(abs(col("floats"))), log1p(abs(col("more_floats"))))
+  testLog("log1p") {
+    frame: DataFrame => frame.select(log1p(col("n")))
   }
 
-  INCOMPAT_testSparkResultsAreEqual("Test log1p floats with infinity", floatWithInfinityDf, 0.00001) {
-    // Use ABS to work around incompatibility when input is negative, and we also need to skip 0
-    frame => frame.select(log1p(abs(col("floats"))), log1p(abs(col("more_floats"))))
+  testLog("log with variable base") {
+    frame: DataFrame => frame.select(log(base = Math.PI, a = col("n")))
   }
 
-  INCOMPAT_testSparkResultsAreEqual("Test log1p floats", nonZeroFloatDf, 0.00001) {
-    // Use ABS to work around incompatibility when input is negative, and we also need to skip 0
-    frame => frame.select(log1p(abs(col("floats"))), log1p(abs(col("more_floats"))))
+  private def testLog(testName: String,
+    maxFloatDiff: Double = 0.00001,
+    conf: SparkConf = new SparkConf(),
+    sort: Boolean = false,
+    repart: Integer = 1,
+    sortBeforeRepart: Boolean = false,
+    incompat: Boolean = true,
+    allowNonGpu: Boolean = false,
+    execsAllowedNonGpu: Seq[String] = Seq.empty)(f: DataFrame => DataFrame): Unit = {
+
+    val (testConf, qualifiedTestName) =
+      setupTestConfAndQualifierName(testName, incompat, sort, allowNonGpu, conf, execsAllowedNonGpu,
+        sortBeforeRepart)
+
+    test(qualifiedTestName) {
+      testUnaryFunction(testConf,(1 to 20), maxFloatDiff = maxFloatDiff)(f)
+      testUnaryFunction(testConf, (1 to 20).map(_ * 0.1f), maxFloatDiff = maxFloatDiff)(f)
+      testUnaryFunction(testConf, (1 to 20).map(_ * 0.1d), maxFloatDiff = maxFloatDiff)(f)
+      testUnaryFunction(testConf, (-5 to 0).map(_ * 1.0), maxFloatDiff = maxFloatDiff)(f)
+      testUnaryFunction(testConf, Seq(Float.NaN, Float.NegativeInfinity, Float.PositiveInfinity), maxFloatDiff = maxFloatDiff)(f)
+      testUnaryFunction(testConf, Seq(Double.NaN, Double.NegativeInfinity, Double.PositiveInfinity), maxFloatDiff = maxFloatDiff)(f)
+    }
   }
 
-  INCOMPAT_testSparkResultsAreEqual("Test log1p longs", nonZeroLongsDf, 0.00001) {
-    // Use ABS to work around incompatibility when input is negative, and we also need to skip 0
-    frame => frame.select(log1p(abs(col("longs"))), log1p(abs(col("more_longs"))))
-  }
-
-  INCOMPAT_testSparkResultsAreEqual("Test log2 floats with Nan", floatWithNansDf, 0.00001) {
-    // Use ABS to work around incompatibility when input is negative, and we also need to skip 0
-    frame => frame.select(log2(abs(col("floats"))), log2(abs(col("more_floats"))))
-  }
-
-  INCOMPAT_testSparkResultsAreEqual("Test log2 floats with infinity", floatWithInfinityDf, 0.00001) {
-    // Use ABS to work around incompatibility when input is negative, and we also need to skip 0
-    frame => frame.select(log2(abs(col("floats"))), log2(abs(col("more_floats"))))
-  }
-
-  INCOMPAT_testSparkResultsAreEqual("Test log2 floats", nonZeroFloatDf, 0.00001) {
-    // Use ABS to work around incompatibility when input is negative, and we also need to skip 0
-    frame => frame.select(log2(abs(col("floats"))), log2(abs(col("more_floats"))))
-  }
-
-  INCOMPAT_testSparkResultsAreEqual("Test log2 longs", nonZeroLongsDf, 0.00001) {
-    // Use ABS to work around incompatibility when input is negative, and we also need to skip 0
-    frame => frame.select(log2(abs(col("longs"))), log2(abs(col("more_longs"))))
-  }
-
-  INCOMPAT_testSparkResultsAreEqual("Test log10 doubles", nonZeroDoubleDf, 0.00001) {
-    // Use ABS to work around incompatibility when input is negative, and we also need to skip 0
-    frame => frame.select(log10(abs(col("doubles"))), log10(abs(col("more_doubles"))))
-  }
-
-  INCOMPAT_testSparkResultsAreEqual("Test log10 floats with Nan", floatWithNansDf, 0.00001) {
-    // Use ABS to work around incompatibility when input is negative, and we also need to skip 0
-    frame => frame.select(log10(abs(col("floats"))), log10(abs(col("more_floats"))))
-  }
-
-  INCOMPAT_testSparkResultsAreEqual("Test log10 floats with infinity", floatWithInfinityDf, 0.00001) {
-    // Use ABS to work around incompatibility when input is negative, and we also need to skip 0
-    frame => frame.select(log10(abs(col("floats"))), log10(abs(col("more_floats"))))
-  }
-
-  INCOMPAT_testSparkResultsAreEqual("Test log10 floats", nonZeroFloatDf, 0.00001) {
-    // Use ABS to work around incompatibility when input is negative, and we also need to skip 0
-    frame => frame.select(log10(abs(col("floats"))), log10(abs(col("more_floats"))))
-  }
-
-  INCOMPAT_testSparkResultsAreEqual("Test log10 longs", nonZeroLongsDf, 0.00001) {
-    // Use ABS to work around incompatibility when input is negative, and we also need to skip 0
-    frame => frame.select(log10(abs(col("longs"))), log10(abs(col("more_longs"))))
-  }
-
-  INCOMPAT_testSparkResultsAreEqual("Test log variable base doubles", nonZeroDoubleDf, 0.00001) {
-    // Use ABS to work around incompatibility when input is negative, and we also need to skip 0
-    frame => frame.select(log(1.23, abs(col("doubles"))), log(1.23, abs(col("more_doubles"))))
-  }
-
-  INCOMPAT_testSparkResultsAreEqual("Test log variable base floats with Nan", floatWithNansDf, 0.00001) {
-    // Use ABS to work around incompatibility when input is negative, and we also need to skip 0
-    frame => frame.select(log(1.23, abs(col("floats"))), log(1.23, abs(col("more_floats"))))
-  }
-
-  INCOMPAT_testSparkResultsAreEqual("Test log variable base floats with infinity", floatWithInfinityDf, 0.00001) {
-    // Use ABS to work around incompatibility when input is negative, and we also need to skip 0
-    frame => frame.select(log(1.23, abs(col("floats"))), log(1.23, abs(col("more_floats"))))
-  }
-
-  INCOMPAT_testSparkResultsAreEqual("Test log variable base floats", nonZeroFloatDf, 0.00001) {
-    // Use ABS to work around incompatibility when input is negative, and we also need to skip 0
-    frame => frame.select(log(1.23, abs(col("floats"))), log(1.23, abs(col("more_floats"))))
-  }
-
-  INCOMPAT_testSparkResultsAreEqual("Test log variable base longs", nonZeroLongsDf, 0.00001) {
-    // Use ABS to work around incompatibility when input is negative, and we also need to skip 0
-    frame => frame.select(log(7, abs(col("longs"))), log(7, abs(col("more_longs"))))
-  }
 }
