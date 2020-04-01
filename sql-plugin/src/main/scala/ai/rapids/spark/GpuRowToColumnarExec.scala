@@ -349,7 +349,8 @@ class RowToColumnarIterator(
     try {
       var rowCount = 0
       var byteCount: Long = variableWidthColumnCount * 4 // offset bytes
-      while (rowCount < targetRows && byteCount < targetSizeBytes  && rowIter.hasNext) {
+      // read at least one row
+      while (rowIter.hasNext && (rowCount == 0 || rowCount < targetRows && byteCount < targetSizeBytes)) {
         val row = rowIter.next()
         val variableWidthDataBytes = converters.convert(row, builders)
         byteCount += fixedWidthDataSizePerRow // fixed-width data bytes
@@ -363,7 +364,7 @@ class RowToColumnarIterator(
 
       // enforce RequireSingleBatch limit
       if (rowIter.hasNext && localGoal == RequireSingleBatch) {
-        localGoal.whenTargetExceeded(rowCount + 1L)
+        localGoal.whenTargetExceeded(byteCount)
       }
 
       // About to place data back on the GPU

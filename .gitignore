@@ -20,6 +20,7 @@
 .pydevproject
 .scala_dependencies
 .settings
+hs_err*.log
 dependency-reduced-pom.xml
 scalastyle-on-compile.generated.xml
 scalastyle-output.xml
