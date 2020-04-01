@@ -16,11 +16,15 @@
 
 package org.apache.spark.sql.rapids
 
-import ai.rapids.cudf.{ColumnVector, Scalar}
-import ai.rapids.spark.{GpuBinaryExpression, GpuColumnVector, GpuExpression, GpuLiteral, GpuScalar, GpuTernaryExpression, GpuUnaryExpression}
+import ai.rapids.cudf.{ColumnVector, BinaryOp, DType, Scalar}
+import ai.rapids.spark.{GpuBinaryExpression, GpuColumnVector, GpuExpression, GpuLiteral, GpuScalar, GpuTernaryExpression, GpuUnaryExpression, GpuComplexTypeMergingExpression}
 
 import org.apache.spark.sql.catalyst.expressions.{ExpectsInputTypes, Expression, ImplicitCastInputTypes, NullIntolerant, Predicate}
 import org.apache.spark.sql.types._
+import org.apache.spark.unsafe.types.UTF8String
+import org.apache.spark.sql.vectorized.ColumnarBatch
+
+import scala.collection.mutable.ArrayBuffer
 
 abstract class GpuUnaryString2StringExpression extends GpuUnaryExpression with ExpectsInputTypes {
   override def inputTypes: Seq[AbstractDataType] = Seq(StringType)
@@ -192,6 +196,54 @@ case class GpuEndsWith(left: GpuExpression, right: GpuExpression)
   override def doColumnar(lhs: Scalar,
     rhs: GpuColumnVector): GpuColumnVector = throw new IllegalStateException("Really should not be here, " +
     "Cannot have a scalar as left side operand in EndsWith")
+}
+
+case class GpuConcat(children: Seq[GpuExpression]) extends GpuComplexTypeMergingExpression {
+  override def dataType = StringType
+  override def nullable: Boolean = children.head.nullable
+
+  override def columnarEval(batch: ColumnarBatch): Any = {
+    val childEvals: ArrayBuffer[Any] = scala.collection.mutable.ArrayBuffer.empty[Any]
+    try {
+      children.foreach(childEvals += _.columnarEval(batch))
+      val columns: ArrayBuffer[ColumnVector] = scala.collection.mutable.ArrayBuffer.empty[ColumnVector]
+      val rows = batch.numRows()
+
+      childEvals.foreach(col => {
+        if(col.isInstanceOf[GpuColumnVector]) {
+          columns += col.asInstanceOf[GpuColumnVector].getBase
+        } else if(col == null) {
+          val nullStrScalar: Scalar = GpuScalar.from(null, StringType)
+          try {
+            columns += GpuColumnVector.from(nullStrScalar, rows).getBase
+          } finally {
+            nullStrScalar.close()
+          }
+        } else {
+          val stringScalar: Scalar = GpuScalar.from(col.asInstanceOf[UTF8String].toString, StringType)
+          try {
+            columns += GpuColumnVector.from(stringScalar, rows).getBase
+          } finally {
+            stringScalar.close()
+          }
+        }
+      })
+
+      val nullStrScalar: Scalar = GpuScalar.from(null, StringType)
+      try {
+        val emptyStrScalar: Scalar = GpuScalar.from("", StringType)
+        try {
+          GpuColumnVector.from(ColumnVector.stringConcatenate(emptyStrScalar, nullStrScalar, columns.toArray[ColumnVector]))
+        } finally {
+          emptyStrScalar.close()
+        }
+      } finally {
+        nullStrScalar.close()
+      }
+    } finally {
+      childEvals.filter(_.isInstanceOf[AutoCloseable]).foreach(_.asInstanceOf[AutoCloseable].close())
+    }
+  }
 }
 
 case class GpuContains(left: GpuExpression, right: GpuExpression) extends GpuBinaryExpression
@@ -387,3 +439,4 @@ case class GpuLike(left: GpuExpression, right: GpuExpression, escapeChar: Char)
     out.result() + "\\Z" // makes this match for cuDF expected format for `matchesRe`
   }
 }
+

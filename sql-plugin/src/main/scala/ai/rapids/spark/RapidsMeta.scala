@@ -19,7 +19,7 @@ package ai.rapids.spark
 import scala.collection.mutable
 
 import org.apache.spark.sql.catalyst.expressions.aggregate.AggregateFunction
-import org.apache.spark.sql.catalyst.expressions.{BinaryExpression, Expression, TernaryExpression, UnaryExpression}
+import org.apache.spark.sql.catalyst.expressions.{BinaryExpression, Expression, TernaryExpression, UnaryExpression, ComplexTypeMergingExpression}
 import org.apache.spark.sql.catalyst.plans.physical.Partitioning
 import org.apache.spark.sql.execution.SparkPlan
 import org.apache.spark.sql.execution.exchange.ShuffleExchangeExec
@@ -646,6 +646,21 @@ abstract class TernaryExprMeta[INPUT <: TernaryExpression](
 
   def convertToGpu(val0: GpuExpression, val1: GpuExpression,
                    val2: GpuExpression): GpuExpression
+}
+
+/**
+ * Base class for metadata around [[ComplexTypeMergingExpression]].
+ */
+abstract class ComplexTypeMergingExprMeta[INPUT <: ComplexTypeMergingExpression](
+    expr: INPUT,
+    conf: RapidsConf,
+    parent: Option[RapidsMeta[_, _, _]],
+    rule: ConfKeysAndIncompat)
+  extends ExprMeta[INPUT](expr, conf, parent, rule) {
+  override final def convertToGpu(): GpuExpression =
+    convertToGpu(childExprs.map(_.convertToGpu()))
+
+  def convertToGpu(childExprs: Seq[GpuExpression]): GpuExpression
 }
 
 /**
