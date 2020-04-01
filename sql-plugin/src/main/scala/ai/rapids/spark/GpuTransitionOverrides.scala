@@ -69,7 +69,7 @@ class GpuTransitionOverrides extends Rule[SparkPlan] {
     case exec: GpuExec =>
       val tmp = exec.withNewChildren(insertCoalesce(exec.children, exec.childrenCoalesceGoal))
       if (exec.coalesceAfter) {
-        GpuCoalesceBatches(tmp, TargetSize(conf.gpuTargetBatchSizeRows.toLong, conf.gpuTargetBatchSizeBytes))
+        GpuCoalesceBatches(tmp, TargetSize(conf.gpuTargetBatchSizeBytes))
       } else {
         tmp
       }
@@ -93,7 +93,7 @@ class GpuTransitionOverrides extends Rule[SparkPlan] {
    */
   private def insertColumnarToGpu(plan: SparkPlan): SparkPlan = {
     if (plan.supportsColumnar && !plan.isInstanceOf[GpuExec]) {
-      HostColumnarToGpu(insertColumnarFromGpu(plan), TargetSize(conf.gpuTargetBatchSizeRows.toLong, conf.gpuTargetBatchSizeBytes))
+      HostColumnarToGpu(insertColumnarFromGpu(plan), TargetSize(conf.gpuTargetBatchSizeBytes))
     } else {
       plan.withNewChildren(plan.children.map(insertColumnarToGpu))
     }
@@ -106,10 +106,10 @@ class GpuTransitionOverrides extends Rule[SparkPlan] {
       plan match {
         case p: GpuBroadcastHashJoinExec =>
           val sortOrder = getOptimizedSortOrder(plan)
-          GpuSortExec(sortOrder, false, plan, TargetSize(conf.gpuTargetBatchSizeRows.toLong, conf.gpuTargetBatchSizeBytes))
+          GpuSortExec(sortOrder, false, plan, TargetSize(conf.gpuTargetBatchSizeBytes))
         case p: GpuShuffledHashJoinExec =>
           val sortOrder = getOptimizedSortOrder(plan)
-          GpuSortExec(sortOrder, false, plan, TargetSize(conf.gpuTargetBatchSizeRows.toLong, conf.gpuTargetBatchSizeBytes))
+          GpuSortExec(sortOrder, false, plan, TargetSize(conf.gpuTargetBatchSizeBytes))
         case p =>
           if (p.outputOrdering.isEmpty) {
             plan.withNewChildren(plan.children.map(insertHashOptimizeSorts))
