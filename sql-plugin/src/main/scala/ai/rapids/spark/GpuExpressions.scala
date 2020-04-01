@@ -21,7 +21,7 @@ import scala.collection.mutable.ArrayBuffer
 import ai.rapids.cudf.{BinaryOp, BinaryOperable, DType, Scalar, UnaryOp}
 import ai.rapids.spark.RapidsPluginImplicits._
 
-import org.apache.spark.sql.catalyst.expressions.{BinaryExpression, BinaryOperator, Expression, TernaryExpression, UnaryExpression, Unevaluable}
+import org.apache.spark.sql.catalyst.expressions.{BinaryExpression, BinaryOperator, Expression, TernaryExpression, UnaryExpression, Unevaluable, ComplexTypeMergingExpression}
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
 
@@ -287,4 +287,8 @@ trait GpuTernaryExpression extends TernaryExpression with GpuExpression {
       }
     }
   }
+}
+
+trait GpuComplexTypeMergingExpression extends ComplexTypeMergingExpression with GpuExpression {
+  def columnarEval(batch: ColumnarBatch): Any
 }

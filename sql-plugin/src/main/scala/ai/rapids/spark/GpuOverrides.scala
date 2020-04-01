@@ -1068,6 +1068,12 @@ object GpuOverrides {
         }
         override def convertToGpu(lhs: GpuExpression, rhs: GpuExpression): GpuExpression = GpuEndsWith(lhs, rhs)
       }),
+    expr[Concat](
+      "String Concatenate NO separator",
+      (a, conf, p, r) => new ComplexTypeMergingExprMeta[Concat](a, conf, p, r) {
+        override def tagExprForGpu(): Unit = {}
+        override def convertToGpu(child: Seq[GpuExpression]): GpuExpression = GpuConcat(child)
+      }),
     expr[Contains](
       "Contains",
       (a, conf, p, r) => new BinaryExprMeta[Contains](a, conf, p, r) {
