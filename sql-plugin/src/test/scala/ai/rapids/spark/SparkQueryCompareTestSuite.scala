@@ -899,6 +899,21 @@ trait SparkQueryCompareTestSuite extends FunSuite {
     ).toDF("floats", "more_floats")
   }
 
+  def intnullableFloatWithNullAndNanDf(session: SparkSession): DataFrame = {
+    import session.sqlContext.implicits._
+    Seq[(java.lang.Integer, java.lang.Float)](
+      (100, 1.0f),
+      (200, 2.04f),
+      (300, 3.40f),
+      (400, 4.20f),
+      (100, Float.NaN),
+      (200, null),
+      (300, -0.0f),
+      (400, -Float.NaN),
+      (-500, 50.5f)
+    ).toDF("ints", "floats")
+  }
+
   def doubleStringsDf(session: SparkSession): DataFrame = {
     import session.sqlContext.implicits._
     Seq(
