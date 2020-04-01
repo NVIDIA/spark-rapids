@@ -486,6 +486,25 @@ trait SparkQueryCompareTestSuite extends FunSuite {
     }
   }
 
+  /** Create a DataFrame from a sequence of values and execution a transformation on CPU and GPU and compare results */
+  def testUnaryFunction(
+    conf: SparkConf,
+    values: Seq[Any],
+    expectNull: Boolean = false,
+    maxFloatDiff: Double = 0.0,
+    sort: Boolean = false,
+    repart: Integer = 1,
+    sortBeforeRepart: Boolean = false)(fun: DataFrame => DataFrame): Unit = {
+
+    val df: SparkSession => DataFrame = (sparkSession: SparkSession) => createDataFrame(sparkSession, values)
+
+    val (fromCpu, fromGpu) = runOnCpuAndGpu(df, fun,
+      conf,
+      repart = repart)
+
+    compareResults(sort, maxFloatDiff, fromCpu, fromGpu)
+  }
+
   def testExpectedExceptionStartsWith[T <: Throwable](
       testName: String,
       exceptionClass: Class[T],
@@ -1134,4 +1153,28 @@ trait SparkQueryCompareTestSuite extends FunSuite {
     val path = this.getClass.getClassLoader.getResource(filename)
     s: SparkSession => s.read.orc(path.toString)
   }
+
+  /** Transform a sequence of values into a DataFrame with one column */
+  def createDataFrame(session: SparkSession, values: Seq[Any]) : DataFrame = {
+    import scala.collection.JavaConverters._
+    val sparkType = getSparkType(values)
+    val rows: Seq[Row] = values.map(v => Row.fromSeq(Seq(v)))
+    session.createDataFrame(rows.asJava, StructType(Seq(StructField("n", sparkType))))
+  }
+
+  /** Determine the Spark data type for the given sequence of values */
+  def getSparkType(values: Seq[Any]) = {
+    values.filterNot(v => v == null).headOption match {
+      case Some(v) => v match {
+        case _: Byte => DataTypes.ByteType
+        case _: Short => DataTypes.ShortType
+        case _: Integer => DataTypes.IntegerType
+        case _: Long => DataTypes.LongType
+        case _: Float => DataTypes.FloatType
+        case _: Double => DataTypes.DoubleType
+      }
+      case _ => throw new IllegalArgumentException("There must be at least one non-null value")
+    }
+  }
+
 }
