@@ -114,6 +114,13 @@ class HashAggregatesSuite extends SparkQueryCompareTestSuite {
       count("ints"))
   }
 
+  IGNORE_ORDER_testSparkResultsAreEqual("group by float with Nans and null", intnullableFloatWithNullAndNanDf,
+    conf = new SparkConf().set(RapidsConf.ENABLE_FLOAT_AGG.key, "true")) {
+    frame => frame.groupBy("ints").agg(
+      count("floats"),
+      count(lit(null)));
+  }
+
   IGNORE_ORDER_testSparkResultsAreEqual("group by utf8 strings", utf8RepeatedDf,
     conf = new SparkConf().set(RapidsConf.ENABLE_FLOAT_AGG.key, "true")) {
     frame => frame.groupBy("strings").agg(
