@@ -183,8 +183,8 @@ class HostToGpuCoalesceIterator(iter: Iterator[ColumnarBatch],
     totalRows += rows
   }
 
-  override def getBatchSize(batch: ColumnarBatch): Long = {
-    GpuBatchUtils.estimateGpuMemory(schema, batchRowLimit)
+  override def getColumnSizes(batch: ColumnarBatch): Array[Long] = {
+    schema.fields.indices.map(GpuBatchUtils.estimateGpuMemory(schema, _, batchRowLimit)).toArray
   }
 
   override def concatAllAndPutOnGPU(): ColumnarBatch = {
