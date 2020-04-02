@@ -28,7 +28,7 @@ import org.apache.spark.sql.vectorized.ColumnarBatch
 import org.apache.spark.TaskContext
 import org.apache.spark.internal.Logging
 import org.apache.spark.sql.execution.metric.{SQLMetric, SQLMetrics}
-import org.apache.spark.sql.types.StructType
+import org.apache.spark.sql.types.{DataTypes, StructType}
 
 /**
  * Consumes an Iterator of ColumnarBatches and concatenates them into a single ColumnarBatch.
@@ -120,7 +120,8 @@ class RemoveEmptyBatchIterator(iter: Iterator[ColumnarBatch],
     numFiltered: SQLMetric) extends Iterator[ColumnarBatch] {
   private var onDeck: Option[ColumnarBatch] = None
 
-  TaskContext.get().addTaskCompletionListener[Unit](_ => onDeck.foreach(_.close()))
+  // note that TaskContext.get() can return null during unit testing so we wrap it in an option here
+  Option(TaskContext.get()).foreach(_.addTaskCompletionListener[Unit](_ => onDeck.foreach(_.close())))
 
   override def hasNext: Boolean = {
     while (onDeck.isEmpty && iter.hasNext) {
@@ -162,10 +163,16 @@ abstract class AbstractGpuCoalesceIterator(origIter: Iterator[ColumnarBatch],
   private var onDeck: Option[ColumnarBatch] = None
   private var batchInitialized: Boolean = false
 
+  /** We need to track the sizes of string columns to make sure we don't exceed 2GB */
+  private val stringFieldIndices: Array[Int] = schema.fields.zipWithIndex
+    .filter(_._1.dataType == DataTypes.StringType)
+    .map(_._2)
+
   /** Optional row limit */
   var batchRowLimit: Int = 0
 
-  TaskContext.get().addTaskCompletionListener[Unit](_ => onDeck.foreach(_.close()))
+  // note that TaskContext.get() can return null during unit testing so we wrap it in an option here
+  Option(TaskContext.get()).foreach(_.addTaskCompletionListener[Unit](_ => onDeck.foreach(_.close())))
 
   override def hasNext: Boolean = onDeck.isDefined || iter.hasNext
 
@@ -183,10 +190,10 @@ abstract class AbstractGpuCoalesceIterator(origIter: Iterator[ColumnarBatch],
   def addBatchToConcat(batch: ColumnarBatch): Unit
 
   /**
-   * Calculate (or estimate) the size of a batch in bytes.
-   * @return Batch size in bytes
+   * Calculate (or estimate) the size of each column in a batch in bytes.
+   * @return Array of column sizes in bytes
    */
-  def getBatchSize(batch: ColumnarBatch): Long
+  def getColumnSizes(batch: ColumnarBatch): Array[Long]
 
   /**
    * Called after all of the batches have been added in.
@@ -220,6 +227,7 @@ abstract class AbstractGpuCoalesceIterator(origIter: Iterator[ColumnarBatch],
     try {
       var numRows: Long = 0 // to avoid overflows
       var numBytes: Long = 0
+      var columnSizes: Array[Long] = schema.fields.indices.map(_ => 0L).toArray
       var numBatches = 0
 
       // check if there is a batch "on deck" from a previous call to next()
@@ -229,14 +237,15 @@ abstract class AbstractGpuCoalesceIterator(origIter: Iterator[ColumnarBatch],
         onDeck = None
         numBatches += 1
         numRows += batch.numRows()
-        numBytes += getBatchSize(batch)
+        columnSizes = getColumnSizes(batch)
+        numBytes += columnSizes.sum
       }
 
       val collect = new MetricRange(collectTime)
       try {
 
         // there is a hard limit of 2^31 rows
-        while (numRows < Integer.MAX_VALUE && onDeck.isEmpty && iter.hasNext) {
+        while (numRows < Int.MaxValue && onDeck.isEmpty && iter.hasNext) {
 
           val cb = iter.next()
           val nextRows = cb.numRows()
@@ -245,20 +254,35 @@ abstract class AbstractGpuCoalesceIterator(origIter: Iterator[ColumnarBatch],
           // filter out empty batches
           if (nextRows > 0) {
             numInputRows += nextRows
-            val nextBytes = getBatchSize(cb)
+            val nextColumnSizes = getColumnSizes(cb)
+            val nextBytes = nextColumnSizes.sum
+
+            // calculate the new sizes based on this input batch being added to the current output batch
             val wouldBeRows = numRows + nextRows
             val wouldBeBytes = numBytes + nextBytes
-            if (wouldBeRows > Integer.MAX_VALUE) {
+            val wouldBeColumnSizes = columnSizes.zip(nextColumnSizes).map(pair => pair._1 + pair._2)
+
+            // CuDF has a hard limit on the size of string data in a column so we check to make sure that the string
+            // columns each use no more than Int.MaxValue bytes. This check is overly cautious because the calculated
+            // size includes the offset bytes. When nested types are supported, this logic will need to be enhanced to
+            // take offset and validity buffers into account since they could account for a larger percentage of
+            // overall memory usage.
+            val wouldBeStringColumnSizes = stringFieldIndices.map(wouldBeColumnSizes)
+
+            if (wouldBeRows > Int.MaxValue) {
               onDeck = Some(cb)
             } else if (batchRowLimit > 0 && wouldBeRows > batchRowLimit) {
               onDeck = Some(cb)
             } else if (wouldBeBytes > goal.targetSizeBytes && numBytes > 0) {
+              onDeck = Some(cb)
+            } else if (wouldBeStringColumnSizes.exists(size => size > Int.MaxValue)) {
               onDeck = Some(cb)
             } else {
               addBatch(cb)
               numBatches += 1
               numRows = wouldBeRows
               numBytes = wouldBeBytes
+              columnSizes = wouldBeColumnSizes
             }
           } else {
             cb.close()
@@ -336,7 +360,7 @@ class GpuCoalesceIterator(iter: Iterator[ColumnarBatch],
   override def addBatchToConcat(batch: ColumnarBatch): Unit =
     batches += batch
 
-  override def getBatchSize(batch: ColumnarBatch): Long = GpuResourceManager.deviceMemoryUsed(batch)
+  override def getColumnSizes(cb: ColumnarBatch): Array[Long] = GpuColumnVector.extractBases(cb).map(_.getDeviceMemorySize)
 
   override def concatAllAndPutOnGPU(): ColumnarBatch = {
     val tmp = batches.toArray

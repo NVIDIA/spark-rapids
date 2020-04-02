@@ -19,13 +19,15 @@ import java.io.File
 import java.sql.Date
 import java.util.{Locale, TimeZone}
 
+import ai.rapids.spark.GpuColumnVector.GpuColumnarBatchBuilder
 import org.scalatest.FunSuite
 
 import org.apache.spark.sql.{DataFrame, Row, SparkSession}
 import org.apache.spark.SparkConf
 import org.apache.spark.sql.types._
+import org.apache.spark.sql.vectorized.ColumnarBatch
 
-import scala.util.{Failure, Try}
+import scala.util.{Failure, Random, Try}
 
 /**
  * Set of tests that compare the output using the CPU version of spark vs our GPU version.
@@ -1175,6 +1177,30 @@ trait SparkQueryCompareTestSuite extends FunSuite {
       }
       case _ => throw new IllegalArgumentException("There must be at least one non-null value")
     }
+  }
+
+  /** Creates a ColumnarBatch with random data based on the given schema */
+  def createRandomizedColumnarBatch(schema: StructType, rowCount: Int, maxStringLen: Int, seed: Long = 0) : ColumnarBatch = {
+    val r = new Random(seed)
+    val builders = new GpuColumnarBatchBuilder(schema, rowCount, null)
+    schema.fields.zipWithIndex.foreach {
+      case (field, i) =>
+        val builder = builders.builder(i)
+        val rows = 0 until rowCount
+        field.dataType match {
+          case DataTypes.IntegerType =>
+            rows.foreach(_ => builder.append(r.nextInt()))
+          case DataTypes.LongType =>
+            rows.foreach(_ => builder.append(r.nextLong()))
+          case DataTypes.FloatType =>
+            rows.foreach(_ => builder.append(r.nextFloat()))
+          case DataTypes.DoubleType =>
+            rows.foreach(_ => builder.append(r.nextDouble()))
+          case DataTypes.StringType =>
+            rows.foreach(_ => builder.append(r.nextString(maxStringLen)))
+        }
+    }
+    builders.build(rowCount)
   }
 
 }

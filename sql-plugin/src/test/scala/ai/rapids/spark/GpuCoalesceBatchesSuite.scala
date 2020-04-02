@@ -18,9 +18,68 @@ package ai.rapids.spark
 
 import java.io.File
 
+import org.apache.spark.sql.execution.metric.SQLMetric
+import org.apache.spark.sql.types.{DataTypes, StructField, StructType}
+import org.apache.spark.sql.vectorized.ColumnarBatch
 import org.sparkproject.guava.io.Files
 
 class GpuCoalesceBatchesSuite extends SparkQueryCompareTestSuite {
+
+  test("limit batches by string size") {
+
+    val schema = new StructType(Array(
+      StructField("a", DataTypes.DoubleType),
+      StructField("b", DataTypes.StringType)
+    ))
+
+    // create input with 2 rows where the combined string length is > Integer.MAX_VALUE
+    val input = new BatchIterator(schema, rowCount = 2)
+
+    val numInputRows = createMetric()
+    val numInputBatches = createMetric()
+    val numOutputRows = createMetric()
+    val numOutputBatches = createMetric()
+    val collectTime = createMetric()
+    val concatTime = createMetric()
+    val totalTime = createMetric()
+    val peakDevMemory = createMetric()
+
+    val it = new GpuCoalesceIterator(input,
+      schema,
+      TargetSize(Long.MaxValue),
+      numInputRows,
+      numInputBatches,
+      numOutputRows,
+      numOutputBatches,
+      collectTime,
+      concatTime,
+      totalTime,
+      peakDevMemory,
+      opName = "opname"
+    ) {
+      // override for this test so we can mock the response to make it look the strings are large
+      override def getColumnSizes(cb: ColumnarBatch): Array[Long] = Array(64, Int.MaxValue/4*3)
+    }
+
+    while (it.hasNext) {
+      val batch = it.next()
+      batch.close()
+    }
+
+    assert(numInputBatches.value == 2)
+    assert(numOutputBatches.value == 2)
+  }
+
+  private def createMetric() = new SQLMetric("sum")
+
+  class BatchIterator(schema: StructType, var rowCount: Int) extends Iterator[ColumnarBatch] {
+    override def hasNext: Boolean = {
+      val hasNext = rowCount > 0
+      rowCount -= 1
+      hasNext
+    }
+    override def next(): ColumnarBatch = createRandomizedColumnarBatch(schema, 3, 64)
+  }
 
   test("require single batch") {
 
