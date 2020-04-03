@@ -1,4 +1,4 @@
-// Copyright (c) 2019, NVIDIA CORPORATION.
+// Copyright (c) 2020, NVIDIA CORPORATION.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -12,15 +12,26 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-include "ShuffleTableMetadata.fbs";
+namespace ai.rapids.spark.format;
 
-namespace ai.rapids.spark.format.legacy;
+table BufferTransferRequest {
+  /// ID of table to transfer
+  buffer_id: int;
 
-/// Flat buffer for Rapids UCX Shuffle Metadata Request. The request includes blockIds it needs to fetch along with the
-/// UCX message tag for the associated UCX response.
-table MetadataRequest {
-  responseTag: long; 
-  blockIds : [BlockIdMeta];
+  /// UCX tag that will receive the transfer
+  tag: long;
 }
 
-root_type MetadataRequest;
+/// Flat buffer for Rapids UCX Shuffle Transfer Request.
+table TransferRequest {
+  /// peer executor id to send response to
+  executor_id: long;
+
+  /// UCX message tag to use when sending the response
+  response_tag: long;
+
+  /// array of table requests to transfer
+  requests : [BufferTransferRequest];
+}
+
+root_type TransferRequest;
