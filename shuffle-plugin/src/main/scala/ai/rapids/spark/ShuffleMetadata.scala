@@ -19,7 +19,7 @@ package ai.rapids.spark
 import java.nio.{ByteBuffer, ByteOrder}
 
 import ai.rapids.cudf.{BufferType, DType, Table}
-import ai.rapids.spark.format._
+import ai.rapids.spark.format.legacy._
 import com.google.flatbuffers.FlatBufferBuilder
 
 import org.apache.spark.storage.{BlockId, ShuffleBlockId}

@@ -24,7 +24,7 @@ import ai.rapids.cudf.{BaseDeviceMemoryBuffer, CudfColumnVector, DType, DeviceMe
 import org.apache.spark.sql.vectorized.ColumnarBatch
 import org.apache.spark.storage.{BlockId, BlockManagerId}
 import ai.rapids.spark.ShuffleMetadata.materializeResponse
-import ai.rapids.spark.format.MetadataResponse
+import ai.rapids.spark.format.legacy.MetadataResponse
 import ai.rapids.spark.ucx.{Connection, Transaction, TransactionStatus, UCX}
 import org.apache.spark.internal.Logging
 import org.openucx.jucx.UcxUtils

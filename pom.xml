@@ -173,6 +173,11 @@
             </dependency>
             -->
             <dependency>
+                <groupId>com.google.flatbuffers</groupId>
+                <artifactId>flatbuffers-java</artifactId>
+                <version>1.11.0</version>
+            </dependency>
+            <dependency>
                 <groupId>org.scalatest</groupId>
                 <artifactId>scalatest_${scala.binary.version}</artifactId>
                 <version>3.0.5</version>

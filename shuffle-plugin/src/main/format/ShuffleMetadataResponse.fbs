@@ -14,7 +14,7 @@
 
 include "ShuffleTableMetadata.fbs";
 
-namespace ai.rapids.spark.format;
+namespace ai.rapids.spark.format.legacy;
 
 /// Flat buffer for Rapids UCX Shuffle Metadata Response. The response includes
 /// tableMeta : metadata information on the tables that will be sent as part of the subsequent messages for this request-response pair.
