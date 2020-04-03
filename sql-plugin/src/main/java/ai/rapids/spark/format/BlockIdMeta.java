@@ -9,7 +9,7 @@ import com.google.flatbuffers.*;
 
 @SuppressWarnings("unused")
 /**
- * Metadata about blocksIds to fetch
+ * Metadata about block IDs to fetch
  */
 public final class BlockIdMeta extends Table {
   public static BlockIdMeta getRootAsBlockIdMeta(ByteBuffer _bb) { return getRootAsBlockIdMeta(_bb, new BlockIdMeta()); }
@@ -18,24 +18,24 @@ public final class BlockIdMeta extends Table {
   public BlockIdMeta __assign(int _i, ByteBuffer _bb) { __init(_i, _bb); return this; }
 
   public int shuffleId() { int o = __offset(4); return o != 0 ? bb.getInt(o + bb_pos) : 0; }
-  public boolean mutateShuffleId(int shuffleId) { int o = __offset(4); if (o != 0) { bb.putInt(o + bb_pos, shuffleId); return true; } else { return false; } }
+  public boolean mutateShuffleId(int shuffle_id) { int o = __offset(4); if (o != 0) { bb.putInt(o + bb_pos, shuffle_id); return true; } else { return false; } }
   public long mapId() { int o = __offset(6); return o != 0 ? bb.getLong(o + bb_pos) : 0L; }
-  public boolean mutateMapId(long mapId) { int o = __offset(6); if (o != 0) { bb.putLong(o + bb_pos, mapId); return true; } else { return false; } }
+  public boolean mutateMapId(long map_id) { int o = __offset(6); if (o != 0) { bb.putLong(o + bb_pos, map_id); return true; } else { return false; } }
   public int startReduceId() { int o = __offset(8); return o != 0 ? bb.getInt(o + bb_pos) : 0; }
-  public boolean mutateStartReduceId(int startReduceId) { int o = __offset(8); if (o != 0) { bb.putInt(o + bb_pos, startReduceId); return true; } else { return false; } }
+  public boolean mutateStartReduceId(int start_reduce_id) { int o = __offset(8); if (o != 0) { bb.putInt(o + bb_pos, start_reduce_id); return true; } else { return false; } }
   public int endReduceId() { int o = __offset(10); return o != 0 ? bb.getInt(o + bb_pos) : 0; }
-  public boolean mutateEndReduceId(int endReduceId) { int o = __offset(10); if (o != 0) { bb.putInt(o + bb_pos, endReduceId); return true; } else { return false; } }
+  public boolean mutateEndReduceId(int end_reduce_id) { int o = __offset(10); if (o != 0) { bb.putInt(o + bb_pos, end_reduce_id); return true; } else { return false; } }
 
   public static int createBlockIdMeta(FlatBufferBuilder builder,
-      int shuffleId,
-      long mapId,
-      int startReduceId,
-      int endReduceId) {
+      int shuffle_id,
+      long map_id,
+      int start_reduce_id,
+      int end_reduce_id) {
     builder.startObject(4);
-    BlockIdMeta.addMapId(builder, mapId);
-    BlockIdMeta.addEndReduceId(builder, endReduceId);
-    BlockIdMeta.addStartReduceId(builder, startReduceId);
-    BlockIdMeta.addShuffleId(builder, shuffleId);
+    BlockIdMeta.addMapId(builder, map_id);
+    BlockIdMeta.addEndReduceId(builder, end_reduce_id);
+    BlockIdMeta.addStartReduceId(builder, start_reduce_id);
+    BlockIdMeta.addShuffleId(builder, shuffle_id);
     return BlockIdMeta.endBlockIdMeta(builder);
   }
 

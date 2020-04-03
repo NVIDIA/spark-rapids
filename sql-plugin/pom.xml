@@ -35,6 +35,11 @@
             <classifier>${cuda.version}</classifier>
         </dependency>
         <dependency>
+            <groupId>com.google.flatbuffers</groupId>
+            <artifactId>flatbuffers-java</artifactId>
+            <scope>compile</scope>
+        </dependency>
+        <dependency>
             <groupId>org.scala-lang</groupId>
             <artifactId>scala-library</artifactId>
         </dependency>
@@ -132,6 +137,7 @@
                 <createDependencyReducedPom>true</createDependencyReducedPom>
                 <artifactSet>
                   <includes>
+                    <include>com.google.flatbuffers:flatbuffers-java</include>
                     <include>org.apache.orc:orc-core</include>
                     <include>org.apache.orc:orc-mapreduce</include>
                     <include>org.apache.orc:orc-shims</include>
@@ -140,6 +146,10 @@
                   </includes>
                 </artifactSet>
                 <relocations>
+                  <relocation>
+                    <pattern>com.google.flatbuffers</pattern>
+                    <shadedPattern>${rapids.shade.package}.flatbuffers</shadedPattern>
+                  </relocation>
                   <relocation>
                     <pattern>org.apache.orc</pattern>
                     <shadedPattern>${rapids.shade.package}.orc</shadedPattern>
