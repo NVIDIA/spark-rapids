@@ -23,17 +23,17 @@ class LimitExecSuite extends SparkQueryCompareTestSuite {
   }
 
   testSparkResultsAreEqual("limit less than rows equal to batchSize", intCsvDf,
-    conf = makeBatched(1)) {
+    conf = makeBatchedBytes(1)) {
     frame => frame.limit(1).repartition(2)
   }
 
   testSparkResultsAreEqual("limit less than rows applied with batches pending", intCsvDf,
-    conf = makeBatched(3)) {
+    conf = makeBatchedBytes(3)) {
     frame => frame.limit(2).repartition(2)
   }
 
   testSparkResultsAreEqual("limit with no real columns", intCsvDf,
-    conf = makeBatched(3), repart = 0) {
+    conf = makeBatchedBytes(3), repart = 0) {
     frame => frame.limit(2).selectExpr("pi()")
   }
 }

@@ -47,9 +47,19 @@ object GpuBatchUtils {
 
   /** Estimate the amount of GPU memory a batch of rows will occupy once converted */
   def estimateGpuMemory(schema: StructType, rowCount: Long): Long = {
-    val dataTypes = schema.fields.map(field => field.dataType)
-    val validityBufferSize = calculateValidityBufferSize(rowCount) * schema.fields.count(_.nullable)
-    val dataSizes : Array[Long] = dataTypes.map {
+    schema.fields.indices.map(estimateGpuMemory(schema, _, rowCount)).sum
+  }
+
+  /** Estimate the amount of GPU memory a batch of rows will occupy once converted */
+  def estimateGpuMemory(schema: StructType, columnIndex: Int, rowCount: Long): Long = {
+    val field = schema.fields(columnIndex)
+    val dataType = field.dataType
+    val validityBufferSize = if (field.nullable) {
+      calculateValidityBufferSize(rowCount)
+    } else {
+      0
+    }
+    val dataSize = dataType match {
       case dt@DataTypes.BinaryType =>
         val offsetBufferSize = calculateOffsetBufferSize(rowCount)
         val dataSize = dt.defaultSize * rowCount
@@ -61,7 +71,7 @@ object GpuBatchUtils {
       case dt =>
         dt.defaultSize * rowCount
     }
-    dataSizes.sum + validityBufferSize
+    dataSize + validityBufferSize
   }
 
   def calculateValidityBufferSize(rows: Long): Long = {
