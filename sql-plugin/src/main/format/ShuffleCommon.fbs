@@ -1,4 +1,4 @@
-// Copyright (c) 2019, NVIDIA CORPORATION.
+// Copyright (c) 2020, NVIDIA CORPORATION.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -12,15 +12,23 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-include "ShuffleTableMetadata.fbs";
+namespace ai.rapids.spark.format;
 
-namespace ai.rapids.spark.format.legacy;
-
-/// Flat buffer for Rapids UCX Shuffle Metadata Request. The request includes blockIds it needs to fetch along with the
-/// UCX message tag for the associated UCX response.
-table MetadataRequest {
-  responseTag: long; 
-  blockIds : [BlockIdMeta];
+enum CodecType : byte {
+  /// no compression codec was used on the data
+  UNCOMPRESSED = 0
 }
 
-root_type MetadataRequest;
+table BufferMeta {
+  /// ID of this buffer
+  id: int;
+
+  /// size of the uncompressed buffer data in bytes
+  actual_size: long;
+
+  /// size of the compressed buffer data if a codec is used
+  compressed_size: long;
+
+  /// type of compression codec used
+  codec: CodecType;
+}

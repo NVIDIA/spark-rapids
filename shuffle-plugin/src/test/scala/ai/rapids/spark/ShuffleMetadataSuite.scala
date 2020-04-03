@@ -16,7 +16,7 @@
 package ai.rapids.spark
 
 import ai.rapids.cudf.{BufferType, ColumnVector, DType, Table}
-import ai.rapids.spark.format.ColumnMeta
+import ai.rapids.spark.format.legacy.ColumnMeta
 import org.scalatest.FunSuite
 
 class ShuffleMetadataSuite extends FunSuite {

@@ -25,7 +25,7 @@ import scala.collection.mutable.ArrayBuffer
 
 import ai.rapids.cudf._
 import ai.rapids.spark._
-import ai.rapids.spark.format.{MetadataRequest, MetadataResponse}
+import ai.rapids.spark.format.legacy.{MetadataRequest, MetadataResponse}
 import ai.rapids.spark.ucx._
 import com.google.common.util.concurrent.AtomicDouble
 import org.openucx.jucx.UcxUtils
