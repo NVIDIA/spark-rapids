@@ -110,7 +110,7 @@ class HashAggregatesSuite extends SparkQueryCompareTestSuite {
     frame => frame.distinct()
   }
 
-  IGNORE_ORDER_testSparkResultsAreEqual("group by string", nullableStringsIntsDf,
+  IGNORE_ORDER_testSparkResultsAreEqual("group by string include nulls in count aggregate", nullableStringsIntsDf,
     conf = floatAggConf) {
     frame => frame.groupBy("strings").agg(
       max("ints"), 
@@ -118,6 +118,23 @@ class HashAggregatesSuite extends SparkQueryCompareTestSuite {
       avg("ints"), 
       sum("ints"), 
       count("*"))
+  }
+
+  IGNORE_ORDER_testSparkResultsAreEqual("group by strings exclude nulls in count aggregate", nullableStringsIntsDf,
+    conf = floatAggConf) {
+    frame => frame.groupBy("strings").agg(
+      max("ints"),
+      min("ints"),
+      avg("ints"),
+      sum("ints"),
+      count("ints"))
+  }
+
+  IGNORE_ORDER_testSparkResultsAreEqual("group by float with NaNs and null", intnullableFloatWithNullAndNanDf,
+    conf = floatAggConf) {
+    frame => frame.groupBy("ints").agg(
+      count("floats"),
+      count(lit(null)));
   }
 
   IGNORE_ORDER_testSparkResultsAreEqual("group by utf8 strings", utf8RepeatedDf,
