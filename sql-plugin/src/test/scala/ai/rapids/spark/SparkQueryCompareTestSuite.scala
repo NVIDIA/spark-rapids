@@ -927,17 +927,21 @@ trait SparkQueryCompareTestSuite extends FunSuite {
     // If the argument is any value in the range 0x7f800001 through 0x7fffffff or
     // in the range 0xff800001 through 0xffffffff, the result is a NaN
     // </quote>
-    val POSITIVE_NaN = java.lang.Float.intBitsToFloat(0x7f800001)
-    val NEGATIVE_NaN = java.lang.Float.intBitsToFloat(0xff800001)
+    val MIN_PLUS_NaN = java.lang.Float.intBitsToFloat(0x7f800001)
+    val MAX_PLUS_NaN = java.lang.Float.intBitsToFloat(0x7fffffff)
+    val MIN_MINUS_NaN = java.lang.Float.intBitsToFloat(0xff800001)
+    val MAX_MINUS_NaN = java.lang.Float.intBitsToFloat(0xffffffff)
     Seq[(java.lang.Integer, java.lang.Float)](
       (100, 1.0f),
       (200, 2.04f),
       (300, 3.40f),
       (400, 4.20f),
-      (100, POSITIVE_NaN),
+      (500, MIN_PLUS_NaN),
+      (100, MAX_PLUS_NaN),
       (200, null),
       (300, -0.0f),
-      (400, NEGATIVE_NaN),
+      (400, MIN_MINUS_NaN),
+      (500, MAX_MINUS_NaN),
       (-500, 50.5f)
     ).toDF("ints", "floats")
   }
