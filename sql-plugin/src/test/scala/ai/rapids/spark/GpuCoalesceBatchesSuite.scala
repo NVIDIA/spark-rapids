@@ -16,12 +16,77 @@
 
 package ai.rapids.spark
 
-class GpuCoalesceBatchSuite extends SparkQueryCompareTestSuite {
+import java.io.File
+
+import org.apache.spark.sql.execution.metric.SQLMetric
+import org.apache.spark.sql.types.{DataTypes, StructField, StructType}
+import org.apache.spark.sql.vectorized.ColumnarBatch
+import org.sparkproject.guava.io.Files
+
+class GpuCoalesceBatchesSuite extends SparkQueryCompareTestSuite {
+
+  test("limit batches by string size") {
+
+    val schema = new StructType(Array(
+      StructField("a", DataTypes.DoubleType),
+      StructField("b", DataTypes.StringType)
+    ))
+
+    // create input with 2 rows where the combined string length is > Integer.MAX_VALUE
+    val input = new BatchIterator(schema, rowCount = 2)
+
+    val numInputRows = createMetric()
+    val numInputBatches = createMetric()
+    val numOutputRows = createMetric()
+    val numOutputBatches = createMetric()
+    val collectTime = createMetric()
+    val concatTime = createMetric()
+    val totalTime = createMetric()
+    val peakDevMemory = createMetric()
+
+    val it = new GpuCoalesceIterator(input,
+      schema,
+      TargetSize(Long.MaxValue),
+      numInputRows,
+      numInputBatches,
+      numOutputRows,
+      numOutputBatches,
+      collectTime,
+      concatTime,
+      totalTime,
+      peakDevMemory,
+      opName = "opname"
+    ) {
+      // override for this test so we can mock the response to make it look the strings are large
+      override def getColumnSizes(cb: ColumnarBatch): Array[Long] = Array(64, Int.MaxValue/4*3)
+    }
+
+    while (it.hasNext) {
+      val batch = it.next()
+      batch.close()
+    }
+
+    assert(numInputBatches.value == 2)
+    assert(numOutputBatches.value == 2)
+  }
+
+  private def createMetric() = new SQLMetric("sum")
+
+  class BatchIterator(schema: StructType, var rowCount: Int) extends Iterator[ColumnarBatch] {
+    override def hasNext: Boolean = {
+      val hasNext = rowCount > 0
+      rowCount -= 1
+      hasNext
+    }
+    override def next(): ColumnarBatch = createRandomizedColumnarBatch(schema, 3, 64)
+  }
 
   test("require single batch") {
 
-    val conf = makeBatched(1)
+    val conf = makeBatchedBytes(1)
       .set(RapidsConf.MAX_READER_BATCH_SIZE_ROWS.key, "1")
+      .set(RapidsConf.MAX_READER_BATCH_SIZE_BYTES.key, "1")
+      .set(RapidsConf.GPU_BATCH_SIZE_BYTES.key, "50000")
       .set("spark.sql.shuffle.partitions", "1")
 
     withGpuSparkSession(spark => {
@@ -33,14 +98,12 @@ class GpuCoalesceBatchSuite extends SparkQueryCompareTestSuite {
       val df2 = df
         .sort(df.col("longs"))
 
-      df2.explain()
-
       val coalesce = df2.queryExecution.executedPlan
         .find(_.isInstanceOf[GpuCoalesceBatches]).get
         .asInstanceOf[GpuCoalesceBatches]
 
       assert(coalesce.goal == RequireSingleBatch)
-      assert(coalesce.goal.targetSizeRows == Integer.MAX_VALUE)
+      assert(coalesce.goal.targetSizeBytes == Long.MaxValue)
 
       // assert the metrics start out at zero
       assert(coalesce.additionalMetrics("numInputBatches").value == 0)
@@ -56,10 +119,58 @@ class GpuCoalesceBatchSuite extends SparkQueryCompareTestSuite {
     }, conf)
   }
 
+  test("coalesce HostColumnarToGpu") {
+
+    val conf = makeBatchedBytes(1)
+      .set(RapidsConf.MAX_READER_BATCH_SIZE_ROWS.key, "1")
+      .set(RapidsConf.MAX_READER_BATCH_SIZE_BYTES.key, "1")
+      .set(RapidsConf.GPU_BATCH_SIZE_BYTES.key, "50000")
+      .set(RapidsConf.TEST_ALLOWED_NONGPU.key, "FileSourceScanExec")
+      .set("spark.rapids.sql.exec.FileSourceScanExec", "false") // force Parquet read onto CPU
+      .set("spark.sql.shuffle.partitions", "1")
+
+    val dir = Files.createTempDir()
+    val path = new File(dir, s"HostColumnarToGpu-${System.currentTimeMillis()}.parquet").getAbsolutePath
+
+    try {
+      // convert csv test data to parquet
+      withCpuSparkSession(spark => {
+        longsCsvDf(spark).write.parquet(path)
+      }, conf)
+
+      withGpuSparkSession(spark => {
+        val df = spark.read.parquet(path)
+        val df2 = df
+          .sort(df.col("longs"))
+
+        // ensure that the plan does include the HostColumnarToGpu step
+        val hostColumnarToGpu = df2.queryExecution.executedPlan
+          .find(_.isInstanceOf[HostColumnarToGpu]).get
+          .asInstanceOf[HostColumnarToGpu]
+
+        assert(hostColumnarToGpu.goal == TargetSize(50000))
+
+        val gpuCoalesceBatches = df2.queryExecution.executedPlan
+          .find(_.isInstanceOf[GpuCoalesceBatches]).get
+          .asInstanceOf[GpuCoalesceBatches]
+
+        assert(gpuCoalesceBatches.goal == RequireSingleBatch)
+        assert(gpuCoalesceBatches.goal.targetSizeBytes == Long.MaxValue)
+
+        // execute the plan
+        df2.collect()
+
+      }, conf)
+    } finally {
+      dir.delete()
+    }
+  }
+
   test("not require single batch") {
 
-    val conf = makeBatched(1)
+    val conf = makeBatchedBytes(1)
       .set(RapidsConf.MAX_READER_BATCH_SIZE_ROWS.key, "1")
+      .set(RapidsConf.MAX_READER_BATCH_SIZE_BYTES.key, "1")
       .set("spark.sql.shuffle.partitions", "1")
 
     withGpuSparkSession(spark => {
@@ -78,7 +189,7 @@ class GpuCoalesceBatchSuite extends SparkQueryCompareTestSuite {
         .asInstanceOf[GpuCoalesceBatches]
 
       assert(coalesce.goal != RequireSingleBatch)
-      assert(coalesce.goal.targetSizeRows == 1)
+      assert(coalesce.goal.targetSizeBytes == 1)
 
       // assert the metrics start out at zero
       assert(coalesce.additionalMetrics("numInputBatches").value == 0)
@@ -93,6 +204,5 @@ class GpuCoalesceBatchSuite extends SparkQueryCompareTestSuite {
 
     }, conf)
   }
-
 
 }

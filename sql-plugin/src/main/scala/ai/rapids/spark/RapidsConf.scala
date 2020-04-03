@@ -268,13 +268,6 @@ object RapidsConf {
     .integerConf
     .createWithDefault(6)
 
-  @deprecated(message = "This will be removed once all operators respect byte limits on batch sizes")
-  val GPU_BATCH_SIZE_ROWS = conf("spark.rapids.sql.batchSizeRows")
-    .doc("Set the target number of rows for a GPU batch. Splits sizes for input data " +
-      "is covered by separate configs.")
-    .integerConf
-    .createWithDefault(1000000)
-
   val GPU_BATCH_SIZE_BYTES = conf("spark.rapids.sql.batchSizeBytes")
     .doc("Set the target number of bytes for a GPU batch. Splits sizes for input data " +
       "is covered by separate configs.")
@@ -555,9 +548,6 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
   lazy val rmmAllocFraction: Double = get(RMM_ALLOC_FRACTION)
 
   lazy val hasNans: Boolean = get(HAS_NANS)
-
-  @deprecated(message = "This will be removed once all operators respect byte limits on batch sizes")
-  lazy val gpuTargetBatchSizeRows: Integer = get(GPU_BATCH_SIZE_ROWS)
 
   lazy val gpuTargetBatchSizeBytes: Long = get(GPU_BATCH_SIZE_BYTES)
 

@@ -286,14 +286,19 @@ case class GpuAverage(child: GpuExpression) extends GpuDeclarativeAggregate {
   private lazy val cudfCount = GpuAttributeReference("cudf_count", LongType)()
 
   override lazy val inputProjection: Seq[GpuExpression] = Seq(child,
-    if (child.isInstanceOf[GpuLiteral]) {
-      child
-    } else {
-      // takes any column and turns it into 1 for non null, and 0 for null
-      // a sum of this == the count
-      GpuCast(GpuIsNotNull(child), LongType)
+    child match {
+      case literal : GpuLiteral => GpuLiteral(if (literal.value != null) 1L else 0L, LongType)
+      case _ =>
+        // takes any column and turns it into 1 for non null, and 0 for null
+        // a sum of this == the count
+        GpuCast(GpuIsNotNull(child), LongType)
     })
   override lazy val mergeExpressions: Seq[GpuExpression] = Seq(new CudfSum(cudfSum), new CudfSum(cudfCount))
+  // The count input projection will need to be collected as a sum (of counts) instead of counts (of counts)
+  // as the GpuIsNotNull o/p is casted to count=0 for null and 1 otherwise, and the total count can be
+  // correctly evaluated only by summing them. eg. avg(col(null, 27)) should be 27, with
+  // count column projection as (0, 1) and total count for dividing the average = (0 + 1) and not 2
+  // which is the rowcount of the projected column.
   override lazy val updateExpressions: Seq[GpuExpression] = Seq(new CudfSum(cudfSum), new CudfSum(cudfCount))
   override lazy val evaluateExpression: GpuExpression = GpuDivide(
     GpuCast(cudfSum, DoubleType),

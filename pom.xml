@@ -48,6 +48,7 @@
         <cuda.version>cuda10</cuda.version>
         <scala.binary.version>2.12</scala.binary.version>
         <scala.version>2.12.8</scala.version>
+        <scoverage.plugin.version>1.4.0</scoverage.plugin.version>
         <orc.version>1.5.8</orc.version>
         <orc.classifier></orc.classifier>
         <rapids.shade.package>ai.rapids.spark.shaded</rapids.shade.package>
@@ -310,6 +311,14 @@
                             </goals>
                         </execution>
                     </executions>
+                </plugin>
+                <plugin>
+                    <groupId>org.scoverage</groupId>
+                    <artifactId>scoverage-maven-plugin</artifactId>
+                    <version>${scoverage.plugin.version}</version>
+                    <configuration>
+                        <aggregateOnly>true</aggregateOnly>
+                    </configuration>
                 </plugin>
             </plugins>
         </pluginManagement>

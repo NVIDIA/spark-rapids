@@ -152,6 +152,22 @@ class StringOperatorsSuite extends SparkQueryCompareTestSuite {
     frame => frame.filter(col("strings").endsWith(str))
   }
 
+  testSparkResultsAreEqual("String CONCAT no separator", nullableStringsFromCsv) {
+    frame => frame.selectExpr("CONCAT(more_strings, more_strings)")
+  }
+
+  testSparkResultsAreEqual("String CONCAT no separator with nulls", nullableStringsFromCsv) {
+    frame => frame.selectExpr("CONCAT(strings, more_strings)")
+  }
+
+  testSparkResultsAreEqual("String CONCAT no separator with scalar", nullableStringsFromCsv) {
+    frame => frame.selectExpr("CONCAT(strings, 'scalar')")
+  }
+
+  testSparkResultsAreEqual("String CONCAT no separator with null scalar", nullableStringsFromCsv) {
+    frame => frame.selectExpr("CONCAT(more_strings, null)")
+  }
+
   testSparkResultsAreEqual("String Like to Contains", nullableStringsFromCsv) {
     frame => frame.filter(col("strings").like("%o%"))
   }

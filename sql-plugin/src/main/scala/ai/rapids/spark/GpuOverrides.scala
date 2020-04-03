@@ -983,6 +983,18 @@ object GpuOverrides {
       (a, conf, p, r) => new UnaryExprMeta[Rand](a, conf, p, r) {
         override def convertToGpu(child: GpuExpression): GpuExpression = GpuRand(child)
       }),
+    expr[SparkPartitionID] (
+      "Returns the current partition id.",
+      (a, conf, p, r) => new ExprMeta[SparkPartitionID](a, conf, p, r) {
+        override def convertToGpu(): GpuExpression = GpuSparkPartitionID()
+      }
+    ),
+    expr[MonotonicallyIncreasingID] (
+      "Returns monotonically increasing 64-bit integers.",
+      (a, conf, p, r) => new ExprMeta[MonotonicallyIncreasingID](a, conf, p, r) {
+        override def convertToGpu(): GpuExpression = GpuMonotonicallyIncreasingID()
+      }
+    ),
     expr[Upper](
       "String uppercase operator",
       (a, conf, p, r) => new UnaryExprMeta[Upper](a, conf, p, r) {
@@ -1055,6 +1067,12 @@ object GpuOverrides {
           }
         }
         override def convertToGpu(lhs: GpuExpression, rhs: GpuExpression): GpuExpression = GpuEndsWith(lhs, rhs)
+      }),
+    expr[Concat](
+      "String Concatenate NO separator",
+      (a, conf, p, r) => new ComplexTypeMergingExprMeta[Concat](a, conf, p, r) {
+        override def tagExprForGpu(): Unit = {}
+        override def convertToGpu(child: Seq[GpuExpression]): GpuExpression = GpuConcat(child)
       }),
     expr[Contains](
       "Contains",

@@ -26,7 +26,9 @@ import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.execution.{SparkPlan, UnaryExecNode}
 import org.apache.spark.sql.vectorized.ColumnarBatch
 import org.apache.spark.TaskContext
+import org.apache.spark.internal.Logging
 import org.apache.spark.sql.execution.metric.{SQLMetric, SQLMetrics}
+import org.apache.spark.sql.types.{DataTypes, StructType}
 
 /**
  * Consumes an Iterator of ColumnarBatches and concatenates them into a single ColumnarBatch.
@@ -87,53 +89,39 @@ object CoalesceGoal {
   def max(a: CoalesceGoal, b: CoalesceGoal): CoalesceGoal = (a, b) match {
     case (RequireSingleBatch, _) => a
     case (_, RequireSingleBatch) => b
-    case (PreferSingleBatch, _) => a
-    case (_, PreferSingleBatch) => b
-    case (TargetSize(aSize, _), TargetSize(bSize, _)) if aSize > bSize => a
+    case (TargetSize(aSize), TargetSize(bSize)) if aSize > bSize => a
     case _ => b
   }
 }
 
 sealed abstract class CoalesceGoal extends Serializable {
 
-  @deprecated(message = "This will be removed once all operators respect byte limits on batch sizes")
-  val targetSizeRows: Long
-
-  val targetSizeBytes: Long
+  val targetSizeBytes: Long = Integer.MAX_VALUE
 
   def whenTargetExceeded(actualSize: Long): Unit = {}
 }
 
 object RequireSingleBatch extends CoalesceGoal {
 
-  @deprecated(message = "This will be removed once all operators respect byte limits on batch sizes")
-  override val targetSizeRows: Long = Integer.MAX_VALUE
-
-  override val targetSizeBytes: Long = Integer.MAX_VALUE
+  override val targetSizeBytes = Long.MaxValue
 
   override def whenTargetExceeded(actualSize: Long): Unit = {
     throw new IllegalStateException("A single batch is required for this operation." +
       " Please try increasing your partition count.")
   }
+
+  /** Override toString to improve readability of Spark explain output */
+  override def toString: String = "RequireSingleBatch"
 }
 
-object PreferSingleBatch extends CoalesceGoal {
-
-  @deprecated(message = "This will be removed once all operators respect byte limits on batch sizes")
-  override val targetSizeRows: Long = Integer.MAX_VALUE
-
-  override val targetSizeBytes: Long = Integer.MAX_VALUE
-}
-
-case class TargetSize(override val targetSizeRows: Long, override val targetSizeBytes: Long) extends CoalesceGoal {
-  assert(targetSizeRows <= Integer.MAX_VALUE)
-}
+case class TargetSize(override val targetSizeBytes: Long) extends CoalesceGoal
 
 class RemoveEmptyBatchIterator(iter: Iterator[ColumnarBatch],
     numFiltered: SQLMetric) extends Iterator[ColumnarBatch] {
   private var onDeck: Option[ColumnarBatch] = None
 
-  TaskContext.get().addTaskCompletionListener[Unit](_ => onDeck.foreach(_.close()))
+  // note that TaskContext.get() can return null during unit testing so we wrap it in an option here
+  Option(TaskContext.get()).foreach(_.addTaskCompletionListener[Unit](_ => onDeck.foreach(_.close())))
 
   override def hasNext: Boolean = {
     while (onDeck.isEmpty && iter.hasNext) {
@@ -160,6 +148,7 @@ class RemoveEmptyBatchIterator(iter: Iterator[ColumnarBatch],
 }
 
 abstract class AbstractGpuCoalesceIterator(origIter: Iterator[ColumnarBatch],
+    schema: StructType,
     goal: CoalesceGoal,
     numInputRows: SQLMetric,
     numInputBatches: SQLMetric,
@@ -169,12 +158,21 @@ abstract class AbstractGpuCoalesceIterator(origIter: Iterator[ColumnarBatch],
     concatTime: SQLMetric,
     totalTime: SQLMetric,
     peakDevMemory: SQLMetric,
-    opName: String) extends Iterator[ColumnarBatch] {
+    opName: String) extends Iterator[ColumnarBatch] with Logging {
   private val iter = new RemoveEmptyBatchIterator(origIter, numInputBatches)
   private var onDeck: Option[ColumnarBatch] = None
-  private var maxDeviceMemory: Long = 0
+  private var batchInitialized: Boolean = false
 
-  TaskContext.get().addTaskCompletionListener[Unit](_ => onDeck.foreach(_.close()))
+  /** We need to track the sizes of string columns to make sure we don't exceed 2GB */
+  private val stringFieldIndices: Array[Int] = schema.fields.zipWithIndex
+    .filter(_._1.dataType == DataTypes.StringType)
+    .map(_._2)
+
+  /** Optional row limit */
+  var batchRowLimit: Int = 0
+
+  // note that TaskContext.get() can return null during unit testing so we wrap it in an option here
+  Option(TaskContext.get()).foreach(_.addTaskCompletionListener[Unit](_ => onDeck.foreach(_.close())))
 
   override def hasNext: Boolean = onDeck.isDefined || iter.hasNext
 
@@ -192,6 +190,12 @@ abstract class AbstractGpuCoalesceIterator(origIter: Iterator[ColumnarBatch],
   def addBatchToConcat(batch: ColumnarBatch): Unit
 
   /**
+   * Calculate (or estimate) the size of each column in a batch in bytes.
+   * @return Array of column sizes in bytes
+   */
+  def getColumnSizes(batch: ColumnarBatch): Array[Long]
+
+  /**
    * Called after all of the batches have been added in.
    * @return the concated batches on the GPU.
    */
@@ -202,49 +206,103 @@ abstract class AbstractGpuCoalesceIterator(origIter: Iterator[ColumnarBatch],
    */
   def cleanupConcatIsDone(): Unit
 
+  /**
+   * Each call to next() will combine incoming batches up to the limit specified
+   * by [[RapidsConf.GPU_BATCH_SIZE_BYTES]]. However, if any incoming batch is greater
+   * than this size it will be passed through unmodified.
+   *
+   * If the coalesce goal is `RequireSingleBatch` then an exception will be thrown if there
+   * is remaining data after the first batch is produced.
+   *
+   * @return The coalesced batch
+   */
   override def next(): ColumnarBatch = {
+
     val total = new MetricRange(totalTime)
+
+    // reset batch state
+    batchInitialized = false
+    batchRowLimit = 0
+
     try {
-      initNewBatch()
       var numRows: Long = 0 // to avoid overflows
+      var numBytes: Long = 0
+      var columnSizes: Array[Long] = schema.fields.indices.map(_ => 0L).toArray
+      var numBatches = 0
+
+      // check if there is a batch "on deck" from a previous call to next()
       if (onDeck.isDefined) {
-        val cb = onDeck.get
-        val rows = cb.numRows()
-        if (rows > goal.targetSizeRows) {
-          goal.whenTargetExceeded(rows)
-        }
-        addBatchToConcat(cb)
+        val batch = onDeck.get
+        addBatch(batch)
         onDeck = None
-        numRows += rows
+        numBatches += 1
+        numRows += batch.numRows()
+        columnSizes = getColumnSizes(batch)
+        numBytes += columnSizes.sum
       }
 
       val collect = new MetricRange(collectTime)
       try {
-        while (numRows < goal.targetSizeRows && onDeck.isEmpty && iter.hasNext) {
+
+        // there is a hard limit of 2^31 rows
+        while (numRows < Int.MaxValue && onDeck.isEmpty && iter.hasNext) {
+
           val cb = iter.next()
           val nextRows = cb.numRows()
           numInputBatches += 1
-          numInputRows += nextRows
-          val wouldBeRows = nextRows + numRows
-          if (wouldBeRows > goal.targetSizeRows) {
-            goal.whenTargetExceeded(wouldBeRows)
-            // If numRows == 0, this is the first batch so we really should just do it.
-            if (numRows == 0) {
-              addBatchToConcat(cb)
-              numRows = wouldBeRows
-            } else {
+
+          // filter out empty batches
+          if (nextRows > 0) {
+            numInputRows += nextRows
+            val nextColumnSizes = getColumnSizes(cb)
+            val nextBytes = nextColumnSizes.sum
+
+            // calculate the new sizes based on this input batch being added to the current output batch
+            val wouldBeRows = numRows + nextRows
+            val wouldBeBytes = numBytes + nextBytes
+            val wouldBeColumnSizes = columnSizes.zip(nextColumnSizes).map(pair => pair._1 + pair._2)
+
+            // CuDF has a hard limit on the size of string data in a column so we check to make sure that the string
+            // columns each use no more than Int.MaxValue bytes. This check is overly cautious because the calculated
+            // size includes the offset bytes. When nested types are supported, this logic will need to be enhanced to
+            // take offset and validity buffers into account since they could account for a larger percentage of
+            // overall memory usage.
+            val wouldBeStringColumnSizes = stringFieldIndices.map(wouldBeColumnSizes)
+
+            if (wouldBeRows > Int.MaxValue) {
               onDeck = Some(cb)
+            } else if (batchRowLimit > 0 && wouldBeRows > batchRowLimit) {
+              onDeck = Some(cb)
+            } else if (wouldBeBytes > goal.targetSizeBytes && numBytes > 0) {
+              onDeck = Some(cb)
+            } else if (wouldBeStringColumnSizes.exists(size => size > Int.MaxValue)) {
+              onDeck = Some(cb)
+            } else {
+              addBatch(cb)
+              numBatches += 1
+              numRows = wouldBeRows
+              numBytes = wouldBeBytes
+              columnSizes = wouldBeColumnSizes
             }
           } else {
-            addBatchToConcat(cb)
-            numRows = wouldBeRows
+            cb.close()
           }
         }
+
+        // enforce single batch limit when appropriate
+        if (goal == RequireSingleBatch && (onDeck.isDefined || iter.hasNext)) {
+          goal.whenTargetExceeded(numBytes)
+        }
+
         numOutputRows += numRows
         numOutputBatches += 1
+
+        logDebug(s"Combined $numBatches input batches containing $numRows rows and $numBytes bytes")
+
       } finally {
         collect.close()
       }
+
       val concatRange = new NvtxWithMetrics(s"$opName concat", NvtxColor.CYAN, concatTime)
       val ret = try {
         concatAllAndPutOnGPU()
@@ -257,9 +315,19 @@ abstract class AbstractGpuCoalesceIterator(origIter: Iterator[ColumnarBatch],
       total.close()
     }
   }
+
+  private def addBatch(batch: ColumnarBatch): Unit = {
+    if (!batchInitialized) {
+      initNewBatch()
+      batchInitialized = true
+    }
+    addBatchToConcat(batch)
+  }
+
 }
 
 class GpuCoalesceIterator(iter: Iterator[ColumnarBatch],
+    schema: StructType,
     goal: CoalesceGoal,
     numInputRows: SQLMetric,
     numInputBatches: SQLMetric,
@@ -271,6 +339,7 @@ class GpuCoalesceIterator(iter: Iterator[ColumnarBatch],
     peakDevMemory: SQLMetric,
     opName: String)
   extends AbstractGpuCoalesceIterator(iter,
+    schema,
     goal,
     numInputRows,
     numInputBatches,
@@ -290,6 +359,8 @@ class GpuCoalesceIterator(iter: Iterator[ColumnarBatch],
 
   override def addBatchToConcat(batch: ColumnarBatch): Unit =
     batches += batch
+
+  override def getColumnSizes(cb: ColumnarBatch): Array[Long] = GpuColumnVector.extractBases(cb).map(_.getDeviceMemorySize)
 
   override def concatAllAndPutOnGPU(): ColumnarBatch = {
     val tmp = batches.toArray
@@ -338,7 +409,7 @@ case class GpuCoalesceBatches(child: SparkPlan, goal: CoalesceGoal)
     val batches = child.executeColumnar()
     batches.mapPartitions { iter =>
       if (child.schema.nonEmpty) {
-        new GpuCoalesceIterator(iter, goal,
+        new GpuCoalesceIterator(iter, schema, goal,
           numInputRows, numInputBatches, numOutputRows, numOutputBatches, collectTime, concatTime, totalTime,
           peakDevMemory, "GpuCoalesceBatches")
       } else {

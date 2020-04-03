@@ -273,6 +273,14 @@ class ProjectExprSuite extends SparkQueryCompareTestSuite {
     ).toDF("shorts")
   }
 
+  testSparkResultsAreEqual("monotonically_increasing_id", shortsDf) {
+    frame => frame.select(col("shorts"), monotonically_increasing_id())
+  }
+
+  testSparkResultsAreEqual("spark_partition_id", shortsDf) {
+    frame => frame.select(col("shorts"), spark_partition_id())
+  }
+
   testSparkResultsAreEqual("SQL IN shorts", shortsDf) {
     frame => frame.selectExpr("shorts IN (-10240, 23456, 100, 3)")
   }

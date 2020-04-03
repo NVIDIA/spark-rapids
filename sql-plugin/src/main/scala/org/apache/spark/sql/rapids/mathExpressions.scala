@@ -20,6 +20,7 @@ import ai.rapids.cudf.{BinaryOp, DType, Scalar, UnaryOp}
 import ai.rapids.spark.{CudfBinaryExpression, CudfUnaryExpression, GpuColumnVector, GpuExpression, GpuUnaryExpression}
 import org.apache.spark.sql.catalyst.expressions.{Expression, ImplicitCastInputTypes}
 import org.apache.spark.sql.types._
+import org.apache.spark.sql.vectorized.ColumnarBatch
 
 abstract class CudfUnaryMathExpression(name: String) extends CudfUnaryExpression
     with Serializable with ImplicitCastInputTypes {
@@ -119,14 +120,66 @@ case class GpuFloor(child: Expression) extends CudfUnaryMathExpression("FLOOR") 
   override def outputTypeOverride: DType = DType.INT64
 }
 
-case class GpuLog(child: Expression) extends CudfUnaryMathExpression("LOG") {
+case class GpuLog(child: GpuExpression) extends CudfUnaryMathExpression("LOG") {
   override def unaryOp: UnaryOp = UnaryOp.LOG
   override def outputTypeOverride: DType = DType.FLOAT64
+  override def doColumnar(input: GpuColumnVector): GpuColumnVector = {
+    val normalized = GpuLogarithm.normalize(input)
+    try {
+      super.doColumnar(normalized)
+    } finally {
+      normalized.close()
+    }
+  }
 }
 
-case class GpuLogarithm(left: Expression, right: Expression) extends CudfBinaryMathExpression("LOG_BASE") {
+object GpuLogarithm {
+
+  /**
+   * Replace negative values with nulls. Note that the caller is responsible for closing the
+   * returned GpuColumnVector.
+   */
+  def normalize(input: GpuColumnVector): GpuColumnVector = {
+    val zero = Scalar.fromDouble(0)
+    try {
+      val zeroOrLess = input.getBase.binaryOp(BinaryOp.LESS_EQUAL, zero, DType.BOOL8)
+      try {
+        val nullScalar = Scalar.fromNull(DType.FLOAT64)
+        try {
+          GpuColumnVector.from(zeroOrLess.ifElse(nullScalar, input.getBase))
+        } finally {
+          nullScalar.close()
+        }
+      } finally {
+        zeroOrLess.close()
+      }
+    } finally {
+      zero.close()
+    }
+  }
+}
+
+case class GpuLogarithm(left: GpuExpression, right: GpuExpression) extends CudfBinaryMathExpression("LOG_BASE") {
   override def binaryOp: BinaryOp = BinaryOp.LOG_BASE
   override def outputTypeOverride: DType = DType.FLOAT64
+
+  override def columnarEval(batch: ColumnarBatch): Any = {
+    var lhs: GpuColumnVector = null
+    try {
+      lhs = left.asInstanceOf[GpuExpression].columnarEval(batch).asInstanceOf[GpuColumnVector]
+      try {
+        val rhs = right.asInstanceOf[GpuExpression].columnarEval(batch).asInstanceOf[Double]
+        val base = Scalar.fromDouble(rhs)
+        try {
+          super.doColumnar(GpuLogarithm.normalize(lhs), base)
+        } finally {
+          base.close()
+        }
+      } finally {
+        lhs.close()
+      }
+    }
+  }
 }
 
 case class GpuSin(child: Expression) extends CudfUnaryMathExpression("SIN") {

@@ -353,9 +353,9 @@ private class ExternalRowToColumnarIterator(
         rowCount += 1
       }
 
-      // enforce RequireSingleBatch limit
+      // enforce single batch limit when appropriate
       if (rowIter.hasNext && localGoal == RequireSingleBatch) {
-        localGoal.whenTargetExceeded(rowCount + 1L)
+        localGoal.whenTargetExceeded(byteCount)
       }
 
       // About to place data back on the GPU
@@ -456,7 +456,7 @@ object InternalColumnarRddConverter extends Logging {
       // We have to fall back to doing a slow transition.
       val converters = new GpuExternalRowToColumnConverter(schema)
       val conf = new RapidsConf(df.sqlContext.conf)
-      val goal = TargetSize(conf.gpuTargetBatchSizeRows.toInt, conf.gpuTargetBatchSizeBytes)
+      val goal = TargetSize(conf.gpuTargetBatchSizeBytes)
       input.mapPartitions(rowIter => new ExternalRowToColumnarIterator(rowIter, schema, goal, converters))
     })
 
