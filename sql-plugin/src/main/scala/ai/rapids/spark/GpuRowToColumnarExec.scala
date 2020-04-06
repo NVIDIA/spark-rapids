@@ -368,7 +368,8 @@ class RowToColumnarIterator(
       }
 
       // About to place data back on the GPU
-      GpuSemaphore.acquireIfNecessary(TaskContext.get())
+      // note that TaskContext.get() can return null during unit testing so we wrap it in an option here
+      Option(TaskContext.get()).foreach(GpuSemaphore.acquireIfNecessary)
 
       val buildRange = new NvtxWithMetrics("RowToColumnar", NvtxColor.GREEN, totalTime)
       val ret = try {
@@ -416,7 +417,7 @@ case class GpuRowToColumnarExec(child: SparkPlan, goal: CoalesceGoal)
   }
 
   override lazy val additionalMetrics: Map[String, SQLMetric] = Map(
-    "numInputRows" -> SQLMetrics.createMetric(sparkContext, "number of input rows"),
+    NUM_INPUT_ROWS -> SQLMetrics.createMetric(sparkContext, "number of input rows"),
   )
 
   override def doExecuteColumnar(): RDD[ColumnarBatch] = {
@@ -425,7 +426,7 @@ case class GpuRowToColumnarExec(child: SparkPlan, goal: CoalesceGoal)
 
     // use local variables instead of class global variables to prevent the entire
     // object from having to be serialized
-    val numInputRows = longMetric("numInputRows")
+    val numInputRows = longMetric(NUM_INPUT_ROWS)
     val numOutputBatches = longMetric(NUM_OUTPUT_BATCHES)
     val numOutputRows = longMetric(NUM_OUTPUT_ROWS)
     val totalTime = longMetric(TOTAL_TIME)
