@@ -15,7 +15,7 @@ if [ "$PROJECT_VER"x == x ];then
 fi
 
 if [ "$SPARK_VER"x == x ];then
-    SPARK_VER="3.0.0-SNAPSHOT"
+    SPARK_VER="3.0.1-SNAPSHOT"
 fi
 
 #default maven server gpuwa
