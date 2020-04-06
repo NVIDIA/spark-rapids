@@ -217,8 +217,8 @@ case class HostColumnarToGpu(child: SparkPlan, goal: CoalesceGoal) extends Unary
   import GpuMetricNames._
 
   override lazy val additionalMetrics: Map[String, SQLMetric] = Map(
-    "numInputRows" -> SQLMetrics.createMetric(sparkContext, "input rows"),
-    "numInputBatches" -> SQLMetrics.createMetric(sparkContext, "input batches"),
+    NUM_INPUT_ROWS -> SQLMetrics.createMetric(sparkContext, "input rows"),
+    NUM_INPUT_BATCHES -> SQLMetrics.createMetric(sparkContext, "input batches"),
     "collectTime" -> SQLMetrics.createNanoTimingMetric(sparkContext, "collect batch time"),
     "concatTime" -> SQLMetrics.createNanoTimingMetric(sparkContext, "concat batch time"),
     "peakDevMemory" ->SQLMetrics.createMetric(sparkContext, "peak device memory")
@@ -243,8 +243,8 @@ case class HostColumnarToGpu(child: SparkPlan, goal: CoalesceGoal) extends Unary
     */
   override protected def doExecuteColumnar(): RDD[ColumnarBatch] = {
 
-    val numInputRows = longMetric("numInputRows")
-    val numInputBatches = longMetric("numInputBatches")
+    val numInputRows = longMetric(NUM_INPUT_ROWS)
+    val numInputBatches = longMetric(NUM_INPUT_BATCHES)
     val numOutputRows = longMetric(NUM_OUTPUT_ROWS)
     val numOutputBatches = longMetric(NUM_OUTPUT_BATCHES)
     val collectTime = longMetric("collectTime")

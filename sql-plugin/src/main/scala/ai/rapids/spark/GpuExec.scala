@@ -22,6 +22,8 @@ import org.apache.spark.sql.execution.metric.{SQLMetric, SQLMetrics}
 import org.apache.spark.sql.execution.SparkPlan
 
 object GpuMetricNames {
+  val NUM_INPUT_ROWS =  "numInputRows"
+  val NUM_INPUT_BATCHES = "numInputBatches"
   val NUM_OUTPUT_ROWS =  "numOutputRows"
   val NUM_OUTPUT_BATCHES = "numOutputBatches"
   val TOTAL_TIME = "totalTime"
