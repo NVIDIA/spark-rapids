@@ -18,12 +18,40 @@ package ai.rapids.spark
 
 import java.io.File
 
+import org.apache.spark.metrics.source.MockTaskContext
 import org.apache.spark.sql.execution.metric.SQLMetric
 import org.apache.spark.sql.types.{DataTypes, StructField, StructType}
 import org.apache.spark.sql.vectorized.ColumnarBatch
 import org.sparkproject.guava.io.Files
 
 class GpuCoalesceBatchesSuite extends SparkQueryCompareTestSuite {
+
+  test("test with small input batches") {
+    withGpuSparkSession(spark => {
+      val testData = doubleCsvDf(spark).coalesce(1)
+      val gpuRowToColumnarExec = GpuRowToColumnarExec(testData.queryExecution.sparkPlan, TargetSize(1))
+      val gpuCoalesceBatches = GpuCoalesceBatches(gpuRowToColumnarExec, TargetSize(100000))
+      val rdd = gpuCoalesceBatches.doExecuteColumnar()
+      val part = rdd.partitions.head
+      val context = new MockTaskContext(taskAttemptId = 1, partitionId = 0)
+      val batches = rdd.compute(part, context)
+
+      // assert final results are correct
+      assert(batches.hasNext)
+      val batch = batches.next()
+      assert(batch.numCols() == 2)
+      assert(batch.numRows() == 14)
+      assert(!batches.hasNext)
+
+      // assert metrics are correct
+      assert(gpuRowToColumnarExec.metrics(GpuMetricNames.NUM_OUTPUT_ROWS).value == 14)
+      assert(gpuRowToColumnarExec.metrics(GpuMetricNames.NUM_OUTPUT_BATCHES).value == 14)
+      assert(gpuCoalesceBatches.metrics(GpuMetricNames.NUM_INPUT_ROWS).value == 14)
+      assert(gpuCoalesceBatches.metrics(GpuMetricNames.NUM_INPUT_BATCHES).value == 14)
+      assert(gpuCoalesceBatches.metrics(GpuMetricNames.NUM_OUTPUT_ROWS).value == 14)
+      assert(gpuCoalesceBatches.metrics(GpuMetricNames.NUM_OUTPUT_BATCHES).value == 1)
+    })
+  }
 
   test("limit batches by string size") {
 

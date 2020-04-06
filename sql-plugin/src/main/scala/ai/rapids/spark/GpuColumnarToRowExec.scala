@@ -52,7 +52,7 @@ case class GpuColumnarToRowExec(child: SparkPlan, exportColumnarRdd: Boolean = f
   override lazy val metrics: Map[String, SQLMetric] = Map(
     NUM_OUTPUT_ROWS -> SQLMetrics.createMetric(sparkContext, "number of output rows"),
     TOTAL_TIME -> SQLMetrics.createNanoTimingMetric(sparkContext, "total time"),
-    "numInputBatches" -> SQLMetrics.createMetric(sparkContext, "number of input batches"))
+    NUM_INPUT_BATCHES -> SQLMetrics.createMetric(sparkContext, "number of input batches"))
 
   override def inputRDDs(): Seq[RDD[InternalRow]] = {
     Seq(child.executeColumnar().asInstanceOf[RDD[InternalRow]]) // Hack because of type erasure
@@ -60,7 +60,7 @@ case class GpuColumnarToRowExec(child: SparkPlan, exportColumnarRdd: Boolean = f
 
   override def doExecute(): RDD[InternalRow] = {
     val numOutputRows = longMetric(NUM_OUTPUT_ROWS)
-    val numInputBatches = longMetric("numInputBatches")
+    val numInputBatches = longMetric(NUM_INPUT_BATCHES)
     val totalTime = longMetric(TOTAL_TIME)
 
     // This avoids calling `output` in the RDD closure, so that we don't need to include the entire
@@ -189,7 +189,7 @@ case class GpuColumnarToRowExec(child: SparkPlan, exportColumnarRdd: Boolean = f
     // metrics
     val numOutputRows = metricTerm(ctx, NUM_OUTPUT_ROWS)
     val totalTime = metricTerm(ctx, TOTAL_TIME)
-    val numInputBatches = metricTerm(ctx, "numInputBatches")
+    val numInputBatches = metricTerm(ctx, NUM_INPUT_BATCHES)
 
     val columnarBatchClz = classOf[ColumnarBatch].getName
     val initTCListener = ctx.freshName("initTCListener")
