@@ -21,6 +21,7 @@ import org.apache.spark.sql.catalyst.analysis.TypeCheckResult
 import org.apache.spark.sql.catalyst.analysis.TypeCheckResult.{TypeCheckFailure, TypeCheckSuccess}
 import org.apache.spark.sql.catalyst.expressions.aggregate.{AggregateExpression, AggregateFunction, Count, Max, Min, Sum}
 import org.apache.spark.sql.catalyst.expressions.{CurrentRow, Expression, FrameType, Literal, RangeFrame, RowFrame, SortOrder, SpecialFrameBoundary, SpecifiedWindowFrame, UnaryMinus, UnboundedFollowing, UnboundedPreceding, WindowExpression, WindowFrame, WindowSpecDefinition}
+import org.apache.spark.sql.rapids.{GpuAggregateExpression, GpuCount}
 import org.apache.spark.sql.types.{CalendarIntervalType, DataType, DateType, IntegerType, NullType, TimestampType}
 
 class GpuWindowExpressionMeta(
@@ -77,7 +78,12 @@ case class GpuWindowExpression(
 
   override def children: Seq[Expression] = windowFunction :: windowSpec :: Nil
 
-  override def dataType: DataType = windowFunction.dataType
+  // Special-case for COUNT(1)/COUNT(*).
+  // GpuCount aggregation expects to return LongType, but CUDF returns IntType for COUNT() window function.
+  override def dataType: DataType
+    = if (windowFunction.asInstanceOf[GpuAggregateExpression].aggregateFunction.isInstanceOf[GpuCount])
+        IntegerType
+      else windowFunction.dataType
 
   override def foldable: Boolean = windowFunction.foldable
 
