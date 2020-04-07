@@ -107,7 +107,7 @@ class GpuCoalesceBatchesSuite extends SparkQueryCompareTestSuite {
       rowCount -= 1
       hasNext
     }
-    override def next(): ColumnarBatch = createRandomizedColumnarBatch(schema, 3, 64)
+    override def next(): ColumnarBatch = FuzzerUtils.createColumnarBatch(schema, 3, 64)
   }
 
   test("require single batch") {

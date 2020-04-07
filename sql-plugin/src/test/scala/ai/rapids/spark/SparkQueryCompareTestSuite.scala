@@ -80,7 +80,7 @@ trait SparkQueryCompareTestSuite extends FunSuite {
     withSparkSession("cpu-sql-test", conf, f)
   }
 
-  private def compare(expected: Any, actual: Any, epsilon: Double = 0.0): Boolean = {
+  def compare(expected: Any, actual: Any, epsilon: Double = 0.0): Boolean = {
     def doublesAreEqualWithinPercentage(expected: Double, actual: Double): (String, Boolean) = {
       if (!compare(expected, actual)) {
         if (expected != 0) {
@@ -1223,30 +1223,6 @@ trait SparkQueryCompareTestSuite extends FunSuite {
       }
       case _ => throw new IllegalArgumentException("There must be at least one non-null value")
     }
-  }
-
-  /** Creates a ColumnarBatch with random data based on the given schema */
-  def createRandomizedColumnarBatch(schema: StructType, rowCount: Int, maxStringLen: Int, seed: Long = 0) : ColumnarBatch = {
-    val r = new Random(seed)
-    val builders = new GpuColumnarBatchBuilder(schema, rowCount, null)
-    schema.fields.zipWithIndex.foreach {
-      case (field, i) =>
-        val builder = builders.builder(i)
-        val rows = 0 until rowCount
-        field.dataType match {
-          case DataTypes.IntegerType =>
-            rows.foreach(_ => builder.append(r.nextInt()))
-          case DataTypes.LongType =>
-            rows.foreach(_ => builder.append(r.nextLong()))
-          case DataTypes.FloatType =>
-            rows.foreach(_ => builder.append(r.nextFloat()))
-          case DataTypes.DoubleType =>
-            rows.foreach(_ => builder.append(r.nextDouble()))
-          case DataTypes.StringType =>
-            rows.foreach(_ => builder.append(r.nextString(maxStringLen)))
-        }
-    }
-    builders.build(rowCount)
   }
 
 }
