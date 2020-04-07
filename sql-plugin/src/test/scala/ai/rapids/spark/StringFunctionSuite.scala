@@ -24,71 +24,157 @@ import org.apache.spark.sql.{DataFrame, Row, SparkSession}
 import org.apache.spark.SparkConf
 import org.apache.spark.sql.types._
 
-object incompatibleUtf8Chars {
-  val uppercaseIncompatibleChars = List(223, 329, 453, 456, 459, 496, 498, 604, 609, 618, 620, 647,
-                                        669, 670, 912, 944, 1011, 1321, 1323, 1325, 1327, 1415, 5112,
-                                        5113, 5114, 5115, 5116, 5117, 7296, 7297, 7298, 7299, 7300,
-                                        7301, 7302, 7303, 7304, 7830, 7831, 7832, 7833, 7834, 8016,
-                                        8018, 8020, 8022, 8064, 8065, 8066, 8067, 8068, 8069, 8070,
-                                        8071, 8072, 8073, 8074, 8075, 8076, 8077, 8078, 8079, 8080,
-                                        8081, 8082, 8083, 8084, 8085, 8086, 8087, 8088, 8089, 8090,
-                                        8091, 8092, 8093, 8094, 8095, 8096, 8097, 8098, 8099, 8100,
-                                        8101, 8102, 8103, 8104, 8105, 8106, 8107, 8108, 8109, 8110,
-                                        8111, 8114, 8115, 8116, 8118, 8119, 8124, 8130, 8131, 8132,
-                                        8134, 8135, 8140, 8146, 8147, 8150, 8151, 8162, 8163, 8164,
-                                        8166, 8167, 8178, 8179, 8180, 8182, 8183, 8188, 42649, 42651,
-                                        42903, 42905, 42907, 42909, 42911, 42933, 42935, 43859, 43888,
-                                        43889, 43890, 43891, 43892, 43893, 43894, 43895, 43896, 43897,
-                                        43898, 43899, 43900, 43901, 43902, 43903, 43904, 43905, 43906,
-                                        43907, 43908, 43909, 43910, 43911, 43912, 43913, 43914, 43915,
-                                        43916, 43917, 43918, 43919, 43920, 43921, 43922, 43923, 43924,
-                                        43925, 43926, 43927, 43928, 43929, 43930, 43931, 43932, 43933,
-                                        43934, 43935, 43936, 43937, 43938, 43939, 43940, 43941, 43942,
-                                        43943, 43944, 43945, 43946, 43947, 43948, 43949, 43950, 43951,
-                                        43952, 43953, 43954, 43955, 43956, 43957, 43958, 43959, 43960,
-                                        43961, 43962, 43963, 43964, 43965, 43966, 43967, 64256, 64257,
-                                        64258, 64259, 64260, 64261, 64262, 64275, 64276, 64277, 64278,
-                                        64279)
+import java.util.Locale
+import java.nio.charset.Charset
+import java.lang.Character
 
-  val lowercaseIncompatibleChars = List(304, 453, 456, 459, 498, 895, 1320, 1322, 1324, 1326, 5024,
-                                        5025, 5026, 5027, 5028, 5029, 5030, 5031, 5032, 5033, 5034,
-                                        5035, 5036, 5037, 5038, 5039, 5040, 5041, 5042, 5043, 5044,
-                                        5045, 5046, 5047, 5048, 5049, 5050, 5051, 5052, 5053, 5054,
-                                        5055, 5056, 5057, 5058, 5059, 5060, 5061, 5062, 5063, 5064,
-                                        5065, 5066, 5067, 5068, 5069, 5070, 5071, 5072, 5073, 5074,
-                                        5075, 5076, 5077, 5078, 5079, 5080, 5081, 5082, 5083, 5084,
-                                        5085, 5086, 5087, 5088, 5089, 5090, 5091, 5092, 5093, 5094,
-                                        5095, 5096, 5097, 5098, 5099, 5100, 5101, 5102, 5103, 5104,
-                                        5105, 5106, 5107, 5108, 5109, 8072, 8073, 8074, 8075, 8076,
-                                        8077, 8078, 8079, 8088, 8089, 8090, 8091, 8092, 8093, 8094,
-                                        8095, 8104, 8105, 8106, 8107, 8108, 8109, 8110, 8111, 8124,
-                                        8140, 8188, 42648, 42650, 42902, 42904, 42906, 42908, 42910,
-                                        42923, 42924, 42925, 42926, 42928, 42929, 42930, 42931,
-                                        42932, 42934)
+ /* 
+ * Different versions of Java support different versions of Unicode. 
+ *
+ * java 8  :  unicode 6.2
+ * java 9  :  unicode 8.0     (unsupported)
+ * java 10 :  unicode 8.0     (unsupported)
+ * java 11 :  unicode 10.0
+ * java 12 :  unicode 11.0    (unsupported)
+ * java 13 :  unicode 12.1
+ *
+ */
+object SupportedUnicodeVersion extends Enumeration {
+  val UNICODE_6 = 0
+  val UNICODE_10 = 1
+  val UNICODE_12 = 2  
+  
+  val NUM_UNICODE_VERSIONS = 3  
+  val UNICODE_UNSUPPORTED = 4
+
+  val currentSupportedVersion = UNICODE_12
 }
 
-class StringOperatorsSuite extends SparkQueryCompareTestSuite {
-  def uppercaseCompatibleUtf8Df(session: SparkSession): DataFrame = {
-    import session.sqlContext.implicits._
-    var utf8Chars = ((0 until 65536) diff incompatibleUtf8Chars.uppercaseIncompatibleChars).map(i => (i.toChar.toString, i))
-    utf8Chars = utf8Chars
-    utf8Chars.toDF("strings", "ints")
+/*
+ * Cudf only supports a single version of Unicode (currently, 12.1). However, people running various 
+ * versions of Java that support different unicode versions will see different results from Spark cpu.
+ * The lists below represent characters which we know will come up 'incorrect' during a test, depending
+ * on Java/unicode version.  To work around this, we maintain lists of known bad characters for earlier
+ * versions of Java/unicode so that the tests don't break.
+ * 
+ */
+object CudfIncompatibleCodepoints {     
+  val uppercaseIncompatible = Array[List[Int]](
+                                  // Java 8 / unicode 6.2
+                                  List( 604,   609,   618,   620,   642,   647,   669,   670,  1011,  4304,
+                                        4305,  4306,  4307,  4308,  4309,  4310,  4311,  4312,  4313,  4314,
+                                        4315,  4316,  4317,  4318,  4319,  4320,  4321,  4322,  4323,  4324,
+                                        4325,  4326,  4327,  4328,  4329,  4330,  4331,  4332,  4333,  4334,
+                                        4335,  4336,  4337,  4338,  4339,  4340,  4341,  4342,  4343,  4344,
+                                        4345,  4346,  4349,  4350,  4351,  7566),
+
+                                  // java 11, unicode 10
+                                  List( 642,  4304,  4305,  4306,  4307,  4308,  4309,  4310,  4311,  4312,
+                                        4313,  4314,  4315,  4316,  4317,  4318,  4319,  4320,  4321,  4322,
+                                        4323,  4324,  4325,  4326,  4327,  4328,  4329,  4330,  4331,  4332,
+                                        4333,  4334,  4335,  4336,  4337,  4338,  4339,  4340,  4341,  4342,
+                                        4343,  4344,  4345,  4346,  4349,  4350,  4351,  7566, 42900),
+
+                                  // java 13, unicode 12
+                                  List())
+
+  val lowercaseIncompatible = Array[List[Int]](
+                                  // Java 8 / unicode 6.2
+                                  List( 5024,  5025,  5026,  5027,  5028,  5029,  5030,  5031,  5032,  5033,
+                                        5034,  5035,  5036,  5037,  5038,  5039,  5040,  5041,  5042,  5043,
+                                        5044,  5045,  5046,  5047,  5048,  5049,  5050,  5051,  5052,  5053,
+                                        5054,  5055,  5056,  5057,  5058,  5059,  5060,  5061,  5062,  5063,
+                                        5064,  5065,  5066,  5067,  5068,  5069,  5070,  5071,  5072,  5073,
+                                        5074,  5075,  5076,  5077,  5078,  5079,  5080,  5081,  5082,  5083,
+                                        5084,  5085,  5086,  5087,  5088,  5089,  5090,  5091,  5092,  5093,
+                                        5094,  5095,  5096,  5097,  5098,  5099,  5100,  5101,  5102,  5103,
+                                        5104,  5105,  5106,  5107,  5108),
+
+                                  // java 11, unicode 10
+                                  List(),
+
+                                  // java 13, unicode 12
+                                  List())
+}
+
+/* 
+ * Different versions of Java support different versions of Unicode.  this class provides
+ * the valid list of codepoints for whatever version of Java is being run.  It also 
+ * provides filtered lists of codepoints that are known to be broken in cudf.
+ *
+ * java 8  :  unicode 6.2
+ * java 9  :  unicode 8.0     (unsupported)
+ * java 10 :  unicode 8.0     (unsupported)
+ * java 11 :  unicode 10.0
+ * java 12 :  unicode 11.0    (unsupported)
+ * java 13 :  unicode 12.1
+ *
+ */
+object TestCodepoints {
+  val validCodepoints = (0 until 65536).filter(Character.isDefined).map(i => (i, i.toChar.toString))
+  val validCodepointIndices = validCodepoints.map(tuple => tuple._1)
+
+  // determine what 'supported' version of unicode we're using, if any
+  def getActiveUnicodeVersion(): Int = {       
+    val vp = System.getProperties().getProperty("java.specification.version").split('.')    
+
+    // java <= 8
+    if (vp(0).toInt == 1 && vp.length > 1) {
+      if(vp(1).toInt == 8){
+        return SupportedUnicodeVersion.UNICODE_6
+      }
+      return SupportedUnicodeVersion.UNICODE_UNSUPPORTED
+    } 
+
+    // java 9+
+    vp(0).toInt match {
+      case 11 => SupportedUnicodeVersion.UNICODE_10
+      case 13 => SupportedUnicodeVersion.UNICODE_12
+      case _ => SupportedUnicodeVersion.UNICODE_UNSUPPORTED
+    }    
+  }
+  // print out a warning if we're on an unsupported version
+  if (getActiveUnicodeVersion() == SupportedUnicodeVersion.UNICODE_UNSUPPORTED) {
+    printf("WARNING : Unsupported version of Java (%s). You may encounted unexpected test failures\n", System.getProperties().getProperty("java.specification.version"))
   }
 
-  def lowercaseCompatibleUtf8Df(session: SparkSession): DataFrame = {
+  // get the unicode index to use. if we are on an unknown/unsupported version, just default to unicode 12
+  def getUnicodeIncompatibleIndex(): Int = {            
+    val version = getActiveUnicodeVersion()  
+    if (version == SupportedUnicodeVersion.UNICODE_UNSUPPORTED) SupportedUnicodeVersion.UNICODE_12 else version
+  }  
+    
+  // all unicode codepoints valid for this particular version of Java/Unicode.
+  def validCodepointCharsDF(session: SparkSession): DataFrame = {
     import session.sqlContext.implicits._
-    var utf8Chars = ((0 until 65536) diff incompatibleUtf8Chars.lowercaseIncompatibleChars).map(i => (i.toChar.toString, i))
-    utf8Chars = utf8Chars
-    utf8Chars.toDF("strings", "ints")
+    validCodepoints.toDF("indices", "strings")
   }
 
-  INCOMPAT_testSparkResultsAreEqual("Test compatible values upper case modifier", uppercaseCompatibleUtf8Df) {
+  // codepoint chars that we know should be working.  known issues in cudf are filtered out here
+  def uppercaseCompatibleCharsDF(session: SparkSession): DataFrame = {
+    import session.sqlContext.implicits._
+    val version = getUnicodeIncompatibleIndex()
+    val utf8Chars = (validCodepointIndices diff CudfIncompatibleCodepoints.uppercaseIncompatible(version)).map(i => i.toChar.toString)
+    utf8Chars.toDF("strings")
+  }
+
+  // codepoint chars that we know should be working.  known issues in cudf are filtered out here
+  def lowercaseCompatibleCharsDF(session: SparkSession): DataFrame = {
+    import session.sqlContext.implicits._
+    val version = getUnicodeIncompatibleIndex()
+    val utf8Chars = (validCodepointIndices diff CudfIncompatibleCodepoints.lowercaseIncompatible(version)).map(i => i.toChar.toString)
+    utf8Chars.toDF("strings")
+  }  
+}
+
+class StringOperatorsSuite extends SparkQueryCompareTestSuite {         
+  INCOMPAT_testSparkResultsAreEqual("Test compatible values upper case modifier", TestCodepoints.uppercaseCompatibleCharsDF) {    
     frame => frame.select(upper(col("strings")))
   }
 
-  INCOMPAT_testSparkResultsAreEqual("Test compatible values lower case modifier", lowercaseCompatibleUtf8Df) {
+  INCOMPAT_testSparkResultsAreEqual("Test compatible values lower case modifier", TestCodepoints.lowercaseCompatibleCharsDF) {
     frame => frame.select(lower(col("strings")))
-  }
+  }  
 
   testSparkResultsAreEqual("Substring location function", nullableStringsFromCsv) {
     frame => frame.selectExpr("POSITION('r' IN strings)")
@@ -431,31 +517,136 @@ class StringOperatorsSuite extends SparkQueryCompareTestSuite {
 }
 
 /*
- * The underlying cuDF functions have missing functionality for some characters. Either the mappings do not match
- * between CPU and GPU or the upper/lower case version of the character maps to a multiple character set. This
- * issue can be tracked at github.com/rapidsai/cudf/issues/3132
- */
+* This isn't actually a test.  It's just useful to help visualize what's going on when there are
+* differences present.
+*/
 @Ignore
-class StringOperatorsSuiteProblematicCharacters extends SparkQueryCompareTestSuite {
-  def uppercaseIncompatibleUtf8Df(session: SparkSession): DataFrame = {
-    import session.sqlContext.implicits._
-    var utf8Chars = incompatibleUtf8Chars.uppercaseIncompatibleChars.map(i => (i.toChar.toString, i))
-    utf8Chars = utf8Chars
-    utf8Chars.toDF("strings", "ints")
+class StringOperatorsDiagnostics extends SparkQueryCompareTestSuite {  
+  def generateResults(gen : org.apache.spark.sql.Column => org.apache.spark.sql.Column): (Array[Row], Array[Row]) = {
+    val (testConf, qualifiedTestName) = setupTestConfAndQualifierName("", true, false, false,
+                                                                        new SparkConf(), Seq.empty, false)
+    runOnCpuAndGpu(TestCodepoints.validCodepointCharsDF, frame => frame.select(gen(col("strings"))), testConf)
   }
+ 
+  // utility function to print out detailed information on differences
+  def generateUnicodeDiffs(title  : String,
+                          gen       : () => (Array[Row], Array[Row])): Unit = {
+    val (fromCpu, fromGpu) = gen()
+   
+    println(s"$title ----------------------------------------")
 
-  def lowercaseIncompatibleUtf8Df(session: SparkSession): DataFrame = {
-    import session.sqlContext.implicits._
-    var utf8Chars = incompatibleUtf8Chars.lowercaseIncompatibleChars.map(i => (i.toChar.toString, i))
-    utf8Chars = utf8Chars
-    utf8Chars.toDF("strings", "ints")
-  }
+    println("\u001b[1;36mSummary of diffs:\u001b[0m")
+    println("\u001b[1;36mCodepoint:\u001b[0m ")    
+    // for ( i <- 0 until fromCpu.length ) { if(fromCpu(i) != fromGpu(i)){ print(f"$i[$i%04x], ", i, i ) } }    
+    for (i <- 0 until fromCpu.length) { 
+      if (fromCpu(i) != fromGpu(i)) { 
+        val codepoint = TestCodepoints.validCodepointIndices(i)
+        print(f"$codepoint%5d, ")  
+      }
+    }
+    print("\n\n")
 
-  INCOMPAT_testSparkResultsAreEqual("Test incompatible values upper case modifier", uppercaseIncompatibleUtf8Df) {
-    frame => frame.select(upper(col("strings")))
-  }
+    println("\u001b[1;36mDetails:")
+    println("Codepoint       CPU               GPU")
+    println("single -> single mappings\u001b[0m");
+    for (i <- 0 until fromCpu.length) {
+      if (fromCpu(i) != fromGpu(i) && fromCpu(i).getString(0).length == 1) {
+        val codepoint = TestCodepoints.validCodepointIndices(i)
 
-  INCOMPAT_testSparkResultsAreEqual("Test incompatible values lower case modifier", lowercaseIncompatibleUtf8Df) {
-    frame => frame.select(lower(col("strings")))
-  }
+        print(f"(${codepoint.toChar.toString} $codepoint%5d[$codepoint%04x] (${fromCpu(i).getString(0)}")
+        print(f"${fromCpu(i).getString(0)(0).toInt}%5d[${fromCpu(i).getString(0)(0).toInt}%04x]) ")
+        println(f"${fromGpu(i).getString(0)(0).toInt}%5d[${fromGpu(i).getString(0)(0).toInt}%04x])")
+      }
+    }
+    println("\u001b[1;36msingle -> multi mappings\u001b[0m");
+    for (i <- 0 until fromCpu.length) {
+      if (fromCpu(i) != fromGpu(i) && fromCpu(i).getString(0).length > 1) {
+        var cpu_str = fromCpu(i).getString(0)
+        var gpu_str = fromGpu(i).getString(0)
+
+        val codepoint = TestCodepoints.validCodepointIndices(i)
+        print(f"(${codepoint.toChar.toString} $codepoint[$codepoint%04x]) ($cpu_str ")        
+        print(f"${cpu_str.map(_.toInt.formatted("%d")).mkString(",")}")
+        print("[")        
+        print(f"${cpu_str.map(_.toInt.formatted("%04x")).mkString(",")}")
+        print(f"]) ($gpu_str ")
+        print(f"${gpu_str.map(_.toInt.formatted("%d")).mkString(",")}")        
+        print("[");
+        print(f"${gpu_str.map(_.toInt.formatted("%04x")).mkString(",")}")
+        println("])");
+      }
+    }
+    println("---------------------------------------------")
+  }  
+  // generateUnicodeDiffs("UPPER", () => generateResults(upper))
+  // generateUnicodeDiffs("LOWER", () => generateResults(lower))
+  
+  // generates special case character mapping hash table generation input data.
+  def generateCharMappings(): Unit = {    
+    class char_mapping {
+      var   num_upper = 0
+      var   upper = Array(0, 0, 0)
+      var   num_lower = 0
+      var   lower = Array(0, 0, 0)
+    }    
+    var mapping = Array.fill[char_mapping](65536)(new char_mapping())
+            
+    // upper results
+    val (fromCpuUpper, fromGpuUpper) = generateResults(upper)
+    for (i <- 0 until fromCpuUpper.length) {
+      if (fromCpuUpper(i) != fromGpuUpper(i) && fromGpuUpper(i).getString(0).length == 1) {
+        val codepoint = TestCodepoints.validCodepointIndices(i)
+        
+        val cpu_str = fromCpuUpper(i).getString(0)        
+        mapping(codepoint).num_upper = cpu_str.length
+        for (c <- 0 until cpu_str.length) { mapping(codepoint).upper(c) = cpu_str(c).toInt }          
+      }
+    }
+
+    // lower results
+    val (fromCpuLower, fromGpuLower) = generateResults(lower)
+    for (i <- 0 until fromCpuLower.length) {
+      if (fromCpuLower(i) != fromGpuLower(i) && fromGpuLower(i).getString(0).length == 1) {
+        val codepoint = TestCodepoints.validCodepointIndices(i)
+        
+        val cpu_str = fromCpuLower(i).getString(0)
+        mapping(codepoint).num_lower = cpu_str.length
+        for (c <- 0 until cpu_str.length) { mapping(codepoint).lower(c) = cpu_str(c).toInt }          
+      }
+    }
+
+    // struct declaration
+    println("struct special_case_mapping_in {")
+    println("   uint16_t num_upper_chars;")
+    println("   uint16_t upper[3];")
+    println("   uint16_t num_lower_chars;")
+    println("   uint16_t lower[3];")
+    println("};")
+            
+    // mappings
+    println("constexpr special_case_mapping_in codepoint_mapping_in[] = {")
+    for (i <- 0 until 65536) {
+      val mc = mapping(i)
+      if (mc.num_upper != 0 || mc.num_lower != 0) {
+        println(s"   { ${mc.num_upper} {${mc.upper(0)}, ${mc.upper(1)}, ${mc.upper(2)}}, ${mc.num_lower}, {${mc.lower(0)}, ${mc.lower(1)}, ${mc.lower(2)}} },")                
+      }
+    }
+    println("};")
+
+    // codepoints
+    println("constexpr uint16_t codepoints_in[] = {\n")
+    var count = 0
+    for (i <- 0 until 65536) {
+      val mc = mapping(i)
+      if (mc.num_upper != 0 || mc.num_lower != 0) {
+        print(s"   $i,")
+        count = count + 1
+        if (count > 0 && count % 10 == 0) {
+          println("")
+        }
+      }
+    }
+    println("\n};")
+  }  
+  // generateCharMappings()  
 }
