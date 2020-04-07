@@ -49,7 +49,7 @@ object GpuExpressionsUtils {
  * An Expression that cannot be evaluated in the traditional row-by-row sense (hence Unevaluable)
  * but instead can be evaluated on an entire column batch at once.
  */
-trait GpuExpression extends Expression with Unevaluable {
+trait GpuExpression extends Expression with Unevaluable with Arm {
   /**
    * Override this if your expression cannot allow combining of data from multiple files
    * into a single batch before it operates on them. These are for things like getting
