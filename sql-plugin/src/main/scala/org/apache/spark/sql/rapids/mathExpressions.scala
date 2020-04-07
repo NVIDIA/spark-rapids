@@ -155,7 +155,9 @@ case class GpuLogarithm(left: GpuExpression, right: GpuExpression) extends CudfB
     withResource(left.asInstanceOf[GpuExpression].columnarEval(batch).asInstanceOf[GpuColumnVector]) { lhs =>
       val rhs = right.asInstanceOf[GpuExpression].columnarEval(batch).asInstanceOf[Double]
       withResource(Scalar.fromDouble(rhs)) { base =>
-        super.doColumnar(GpuLogarithm.normalize(lhs), base)
+        withResource(GpuLogarithm.normalize(lhs)) { normalized =>
+          super.doColumnar(normalized, base)
+        }
       }
     }
   }
