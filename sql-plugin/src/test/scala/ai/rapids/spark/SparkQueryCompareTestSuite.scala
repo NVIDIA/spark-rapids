@@ -1050,6 +1050,19 @@ trait SparkQueryCompareTestSuite extends FunSuite {
 
   // Note: some tests here currently use this to force Spark not to
   // push down expressions into the scan (e.g. GpuFilters need this)
+  def fromCsvPatternDf(base: String, pattern: String, schema: StructType, hasHeader: Boolean = false)
+    (session: SparkSession): DataFrame = {
+    val resource = this.getClass.getClassLoader.getResource(base).toString + "/" + pattern
+    val df = if (hasHeader) {
+      session.read.format("csv").option("header", "true")
+    } else {
+      session.read.format("csv")
+    }
+    df.schema(schema).load(resource).toDF()
+  }
+
+  // Note: some tests here currently use this to force Spark not to
+  // push down expressions into the scan (e.g. GpuFilters need this)
   def fromCsvDf(file: String, schema: StructType, hasHeader: Boolean = false)
                (session: SparkSession): DataFrame = {
     val resource = this.getClass.getClassLoader.getResource(file).toString
@@ -1098,6 +1111,13 @@ trait SparkQueryCompareTestSuite extends FunSuite {
       StructField("ints_3", IntegerType),
       StructField("ints_4", IntegerType),
       StructField("ints_5", IntegerType)
+    )))(_)
+  }
+
+  def longsFromMultipleCSVDf = {
+    fromCsvPatternDf("./", "lots_o_longs*.csv", StructType(Array(
+      StructField("longs", LongType, true),
+      StructField("more_longs", LongType, true)
     )))(_)
   }
 

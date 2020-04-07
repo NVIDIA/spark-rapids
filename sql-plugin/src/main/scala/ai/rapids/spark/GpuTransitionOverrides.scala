@@ -16,12 +16,13 @@
 
 package ai.rapids.spark
 
-import org.apache.spark.sql.catalyst.expressions.{Ascending, Attribute, AttributeReference, Expression}
+import org.apache.spark.sql.catalyst.expressions.{Ascending, Attribute, AttributeReference, Expression, InputFileBlockLength, InputFileBlockStart, InputFileName}
 import org.apache.spark.sql.catalyst.expressions.objects.CreateExternalRow
 import org.apache.spark.sql.catalyst.rules.Rule
-import org.apache.spark.sql.execution.{ColumnarToRowExec, DeserializeToObjectExec, GpuBroadcastHashJoinExec, LocalTableScanExec, RowToColumnarExec, SparkPlan}
+import org.apache.spark.sql.execution._
 import org.apache.spark.sql.execution.command.{CreateDataSourceTableCommand, DropTableCommand, ExecutedCommandExec}
-import org.apache.spark.sql.execution.exchange.ShuffleExchangeExec
+import org.apache.spark.sql.execution.datasources.v2.DataSourceV2ScanExecBase
+import org.apache.spark.sql.execution.exchange.{Exchange, ShuffleExchangeExec}
 import org.apache.spark.sql.rapids.GpuFileSourceScanExec
 
 /**
@@ -58,23 +59,86 @@ class GpuTransitionOverrides extends Rule[SparkPlan] {
       p.withNewChildren(p.children.map(optimizeCoalesce))
   }
 
-  private def insertCoalesce(plans: Seq[SparkPlan], goals: Seq[CoalesceGoal]): Seq[SparkPlan] = {
+  private def insertCoalesce(plans: Seq[SparkPlan], goals: Seq[CoalesceGoal], disableUntilInput: Boolean): Seq[SparkPlan] = {
     plans.zip(goals).map {
-      case (plan, null) => insertCoalesce(plan)
-      case (plan, goal) => GpuCoalesceBatches(insertCoalesce(plan), goal)
+      case (plan, null) =>
+        // No coalesce requested
+        insertCoalesce(plan, disableUntilInput)
+      case (plan, goal @ RequireSingleBatch) =>
+        // Even if coalesce is disabled a single batch is required to make this operator work
+        // This should not cause bugs because we require a single batch in situations where
+        // Spark also buffers data, so any operator that needs coalesce disabled would also
+        // get an incorrect answer in regular Spark
+        GpuCoalesceBatches(insertCoalesce(plan, disableUntilInput), goal)
+      case (plan, _) if disableUntilInput =>
+        // We wanted to coalesce the input but cannot because it could cause errors
+        insertCoalesce(plan, disableUntilInput)
+      case (plan, goal) =>
+        GpuCoalesceBatches(insertCoalesce(plan, disableUntilInput), goal)
     }
   }
 
-  private def insertCoalesce(plan: SparkPlan): SparkPlan = plan match {
+  /**
+   * Essentially check if this plan is in the same task as a file input.
+   */
+  private def hasDirectLineToInput(plan: SparkPlan): Boolean = plan match {
+    case _: Exchange => false
+    case _: DataSourceScanExec => true
+    case _: DataSourceV2ScanExecBase => true
+    case _: RDDScanExec => true // just in case an RDD was reading in data
+    case p => p.children.exists(hasDirectLineToInput)
+  }
+
+  /**
+   * Essentially check if we have hit a boundary of a task.
+   */
+  private def shouldEnableCoalesce(plan: SparkPlan): Boolean = plan match {
+    case _: Exchange => true
+    case _: DataSourceScanExec => true
+    case _: DataSourceV2ScanExecBase => true
+    case _: RDDScanExec => true // just in case an RDD was reading in data
+    case _ => false
+  }
+
+  /**
+   * Because we cannot change the executors in spark itself we need to try and account for
+   * the ones that might have issues with coalesce here.
+   */
+  private def disableCoalesceUntilInput(exec: Expression): Boolean = exec match {
+    case _: InputFileName => true
+    case _: InputFileBlockStart => true
+    case _: InputFileBlockLength => true
+    case e => e.children.exists(disableCoalesceUntilInput)
+  }
+
+  /**
+   * Because we cannot change the executors in spark itself we need to try and account for
+   * the ones that might have issues with coalesce here.
+   */
+  private def disableCoalesceUntilInput(plan: SparkPlan): Boolean = {
+    plan.expressions.exists(disableCoalesceUntilInput)
+  }
+
+  // This walks from the output to the input so disableUntilInput can walk its way from when
+  // we hit something that cannot allow for coalesce up until the input
+  private def insertCoalesce(plan: SparkPlan, disableUntilInput: Boolean = false): SparkPlan = plan match {
     case exec: GpuExec =>
-      val tmp = exec.withNewChildren(insertCoalesce(exec.children, exec.childrenCoalesceGoal))
-      if (exec.coalesceAfter) {
+      // We will disable coalesce if it is already disabled and we cannot re-enable it
+      val shouldDisable = (disableUntilInput && !shouldEnableCoalesce(exec)) ||
+        //or if we should disable it and it is in a stage with a file input that would matter
+        (exec.disableCoalesceUntilInput() && hasDirectLineToInput(exec))
+      val tmp = exec.withNewChildren(insertCoalesce(exec.children, exec.childrenCoalesceGoal, shouldDisable))
+      if (exec.coalesceAfter && !shouldDisable) {
         GpuCoalesceBatches(tmp, TargetSize(conf.gpuTargetBatchSizeBytes))
       } else {
         tmp
       }
     case p =>
-      p.withNewChildren(p.children.map(insertCoalesce))
+      // We will disable coalesce if it is already disabled and we cannot re-enable it
+      val shouldDisable = disableUntilInput && !shouldEnableCoalesce(p)  ||
+        //or if we should disable it and it is in a stage with a file input that would matter
+        (disableCoalesceUntilInput(p) && hasDirectLineToInput(p))
+      p.withNewChildren(p.children.map(c => insertCoalesce(c, shouldDisable)))
   }
 
   /**

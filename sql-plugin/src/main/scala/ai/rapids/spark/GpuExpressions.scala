@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019, NVIDIA CORPORATION.
+ * Copyright (c) 2019-2020, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -50,6 +50,18 @@ object GpuExpressionsUtils {
  * but instead can be evaluated on an entire column batch at once.
  */
 trait GpuExpression extends Expression with Unevaluable {
+  /**
+   * Override this if your expression cannot allow combining of data from multiple files
+   * into a single batch before it operates on them. These are for things like getting
+   * the input file name. Which for spark is stored in a thread local variable which means
+   * we have to jump through some hoops to make this work.
+   */
+  def disableCoalesceUntilInput(): Boolean =
+    children.exists{
+      case c: GpuExpression => c.disableCoalesceUntilInput()
+      case _ => false // This path should never really happen
+    }
+
   /**
    * Returns the result of evaluating this expression on the entire
    * [[ColumnarBatch]]. The result of calling this may be a single [[GpuColumnVector]] or a scalar
