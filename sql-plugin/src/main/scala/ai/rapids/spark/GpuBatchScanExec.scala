@@ -454,6 +454,9 @@ class CSVPartitionReader(
     } else {
       readBatch()
     }
+    // This is odd, but some operators return data even when there is no input so we need to
+    // be sure that we grab the GPU
+    GpuSemaphore.acquireIfNecessary(TaskContext.get())
     batch.isDefined
   }
 
