@@ -145,6 +145,10 @@ Q1Like(spark).count()
 They generally follow TPCH but are not guaranteed to be the same.
 `Q1Like(spark)` will return a dataframe that can be executed to run the corresponding query.
 
+Unicode operation results may differ when compared against CPU-generated data from different versions of Java (different versions of Java support different Unicode standards : http://www.herongyang.com/Unicode/Java-Unicode-Version-Supported-in-Java-History.html 
+https://bugs.java.com/bugdatabase/view_bug.do?bug_id=JDK-8221431).
+Character differences between Unicode versions can be found at http://www.unicode.org/versions/
+
 ## Advanced Operations
 
 ### Zero Copy Exporting of GPU data.
