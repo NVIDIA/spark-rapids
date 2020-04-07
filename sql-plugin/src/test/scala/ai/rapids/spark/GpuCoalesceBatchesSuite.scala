@@ -42,6 +42,7 @@ class GpuCoalesceBatchesSuite extends SparkQueryCompareTestSuite {
       assert(batch.numCols() == 2)
       assert(batch.numRows() == 14)
       assert(!batches.hasNext)
+      batch.close()
 
       // assert metrics are correct
       assert(gpuRowToColumnarExec.metrics(GpuMetricNames.NUM_OUTPUT_ROWS).value == 14)

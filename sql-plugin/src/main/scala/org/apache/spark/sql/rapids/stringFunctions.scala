@@ -16,8 +16,9 @@
 
 package org.apache.spark.sql.rapids
 
-import ai.rapids.cudf.{ColumnVector, BinaryOp, DType, Scalar}
+import ai.rapids.cudf.{ColumnVector, Scalar}
 import ai.rapids.spark.{GpuBinaryExpression, GpuColumnVector, GpuExpression, GpuLiteral, GpuScalar, GpuTernaryExpression, GpuUnaryExpression, GpuComplexTypeMergingExpression}
+import ai.rapids.spark.RapidsPluginImplicits._
 
 import org.apache.spark.sql.catalyst.expressions.{ExpectsInputTypes, Expression, ImplicitCastInputTypes, NullIntolerant, Predicate}
 import org.apache.spark.sql.types._
@@ -203,45 +204,38 @@ case class GpuConcat(children: Seq[GpuExpression]) extends GpuComplexTypeMerging
   override def nullable: Boolean = children.head.nullable
 
   override def columnarEval(batch: ColumnarBatch): Any = {
-    val childEvals: ArrayBuffer[Any] = scala.collection.mutable.ArrayBuffer.empty[Any]
+    var nullStrScalar: Scalar = null
+    var emptyStrScalar: Scalar = null
+    val rows = batch.numRows()
+    val childEvals: ArrayBuffer[Any] = new ArrayBuffer[Any](children.length)
+    val columns: ArrayBuffer[ColumnVector] = new ArrayBuffer[ColumnVector]()
     try {
+      nullStrScalar = GpuScalar.from(null, StringType)
       children.foreach(childEvals += _.columnarEval(batch))
-      val columns: ArrayBuffer[ColumnVector] = scala.collection.mutable.ArrayBuffer.empty[ColumnVector]
-      val rows = batch.numRows()
-
-      childEvals.foreach(col => {
-        if(col.isInstanceOf[GpuColumnVector]) {
-          columns += col.asInstanceOf[GpuColumnVector].getBase
-        } else if(col == null) {
-          val nullStrScalar: Scalar = GpuScalar.from(null, StringType)
-          try {
-            columns += GpuColumnVector.from(nullStrScalar, rows).getBase
-          } finally {
-            nullStrScalar.close()
-          }
+      childEvals.foreach {
+        case vector: GpuColumnVector =>
+          columns += vector.getBase
+        case col => if (col == null) {
+          columns += GpuColumnVector.from(nullStrScalar, rows).getBase
         } else {
-          val stringScalar: Scalar = GpuScalar.from(col.asInstanceOf[UTF8String].toString, StringType)
+          val stringScalar = GpuScalar.from(col.asInstanceOf[UTF8String].toString, StringType)
           try {
             columns += GpuColumnVector.from(stringScalar, rows).getBase
           } finally {
             stringScalar.close()
           }
         }
-      })
-
-      val nullStrScalar: Scalar = GpuScalar.from(null, StringType)
-      try {
-        val emptyStrScalar: Scalar = GpuScalar.from("", StringType)
-        try {
-          GpuColumnVector.from(ColumnVector.stringConcatenate(emptyStrScalar, nullStrScalar, columns.toArray[ColumnVector]))
-        } finally {
-          emptyStrScalar.close()
-        }
-      } finally {
+      }
+      emptyStrScalar = GpuScalar.from("", StringType)
+      GpuColumnVector.from(ColumnVector.stringConcatenate(emptyStrScalar, nullStrScalar, columns.toArray[ColumnVector]))
+    } finally {
+      columns.safeClose()
+      if (emptyStrScalar != null) {
+        emptyStrScalar.close()
+      }
+      if (nullStrScalar != null) {
         nullStrScalar.close()
       }
-    } finally {
-      childEvals.filter(_.isInstanceOf[AutoCloseable]).foreach(_.asInstanceOf[AutoCloseable].close())
     }
   }
 }
