@@ -19,8 +19,8 @@ package ai.rapids.spark
 import java.time.ZoneId
 
 import ai.rapids.spark.DateUtils.TimestampFormatConversionException
-
 import scala.reflect.ClassTag
+
 import org.apache.spark.internal.Logging
 import org.apache.spark.sql.catalyst.expressions._
 import org.apache.spark.sql.catalyst.expressions.aggregate._
@@ -45,7 +45,7 @@ import org.apache.spark.sql.execution.datasources.orc.OrcFileFormat
 import org.apache.spark.sql.execution.datasources.parquet.ParquetFileFormat
 import org.apache.spark.sql.execution.datasources.text.TextFileFormat
 import org.apache.spark.sql.types._
-import org.apache.spark.sql.SparkSession
+import org.apache.spark.sql.{GpuInputFileBlockLength, GpuInputFileBlockStart, GpuInputFileName, SparkSession}
 
 /**
  * Base class for all ReplacementRules
@@ -993,6 +993,24 @@ object GpuOverrides {
       "Returns monotonically increasing 64-bit integers.",
       (a, conf, p, r) => new ExprMeta[MonotonicallyIncreasingID](a, conf, p, r) {
         override def convertToGpu(): GpuExpression = GpuMonotonicallyIncreasingID()
+      }
+    ),
+    expr[InputFileName] (
+      "Returns the name of the file being read, or empty string if not available.",
+      (a, conf, p, r) => new ExprMeta[InputFileName](a, conf, p, r) {
+        override def convertToGpu(): GpuExpression = GpuInputFileName()
+      }
+    ),
+    expr[InputFileBlockStart] (
+      "Returns the start offset of the block being read, or -1 if not available.",
+      (a, conf, p, r) => new ExprMeta[InputFileBlockStart](a, conf, p, r) {
+        override def convertToGpu(): GpuExpression = GpuInputFileBlockStart()
+      }
+    ),
+    expr[InputFileBlockLength] (
+      "Returns the length of the block being read, or -1 if not available.",
+      (a, conf, p, r) => new ExprMeta[InputFileBlockLength](a, conf, p, r) {
+        override def convertToGpu(): GpuExpression = GpuInputFileBlockLength()
       }
     ),
     expr[Upper](

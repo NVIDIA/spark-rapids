@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019, NVIDIA CORPORATION.
+ * Copyright (c) 2019-2020, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -52,4 +52,14 @@ trait GpuExec extends SparkPlan {
       "total time")) ++ additionalMetrics
 
   lazy val additionalMetrics: Map[String, SQLMetric] = Map.empty
+
+  /**
+   * Returns true if there is something in the exec that cannot work when batches between
+   * multiple file partitions are combined into a single batch (coalesce).
+   */
+  def disableCoalesceUntilInput(): Boolean =
+    expressions.exists {
+      case c: GpuExpression => c.disableCoalesceUntilInput()
+      case _ => false
+    }
 }

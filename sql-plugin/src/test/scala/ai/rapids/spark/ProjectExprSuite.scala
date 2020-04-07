@@ -273,6 +273,21 @@ class ProjectExprSuite extends SparkQueryCompareTestSuite {
     ).toDF("shorts")
   }
 
+  testSparkResultsAreEqual("input_file_name", longsFromMultipleCSVDf, repart = 0) {
+    // The filter forces a coalesce so we can test that we have disabled coalesce properly in this case
+    frame => frame.filter(col("longs") > 0).select(col("longs"), input_file_name())
+  }
+
+  testSparkResultsAreEqual("input_file_block_start", longsFromMultipleCSVDf, repart = 0) {
+    // The filter forces a coalesce so we can test that we have disabled coalesce properly in this case
+    frame => frame.filter(col("longs") > 0).selectExpr("longs", "input_file_block_start()")
+  }
+
+  testSparkResultsAreEqual("input_file_block_length", longsFromMultipleCSVDf, repart = 0) {
+    // The filter forces a coalesce so we can test that we have disabled coalesce properly in this case
+    frame => frame.filter(col("longs") > 0).selectExpr("longs", "input_file_block_length()")
+  }
+
   testSparkResultsAreEqual("monotonically_increasing_id", shortsDf) {
     frame => frame.select(col("shorts"), monotonically_increasing_id())
   }
