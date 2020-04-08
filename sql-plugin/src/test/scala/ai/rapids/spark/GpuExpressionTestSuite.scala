@@ -1,6 +1,6 @@
 package ai.rapids.spark
 
-import org.apache.spark.sql.types.{DataTypes, StructType}
+import org.apache.spark.sql.types.{DataType, DataTypes, StructType}
 
 abstract class GpuExpressionTestSuite extends SparkQueryCompareTestSuite {
 
@@ -13,54 +13,52 @@ abstract class GpuExpressionTestSuite extends SparkQueryCompareTestSuite {
    * @param rowCount Number of rows of random to generate
    * @param maxFloatDiff Maximum acceptable difference between expected and actual results
    */
-  def checkEvaluateGpuUnaryMathExpression(inputExpr: GpuExpression,
-    expectedFun: Double => Option[Double],
+  def checkEvaluateGpuUnaryExpression(inputExpr: GpuExpression,
+    inputType: DataType,
+    outputType: DataType,
+    expectedFun: Any => Option[Any],
     schema: StructType,
-    rowCount: Int = 4,
+    rowCount: Int = 50,
     seed: Long = 0,
     maxFloatDiff: Double = 0.00001): Unit = {
 
     // generate batch
-    val batch = FuzzerUtils.createColumnarBatch(schema, rowCount, seed = seed)
-    try {
+    withResource(FuzzerUtils.createColumnarBatch(schema, rowCount, seed = seed)) { batch =>
       // evaluate expression
-      val result = inputExpr.columnarEval(batch).asInstanceOf[GpuColumnVector]
-      try {
+      withResource(inputExpr.columnarEval(batch).asInstanceOf[GpuColumnVector]) { result =>
         // bring gpu data onto host
-        val hostInput = batch.column(0).asInstanceOf[GpuColumnVector].copyToHost()
-        try {
-          val hostResult = result.copyToHost()
-          try {
+        withResource(batch.column(0).asInstanceOf[GpuColumnVector].copyToHost()) { hostInput =>
+          withResource(result.copyToHost()) { hostResult =>
             // compare results
             assert(result.getRowCount == rowCount)
             for (i <- 0 until result.getRowCount.toInt) {
-              val inputValue = if (hostInput.isNullAt(i)) {
-                None
-              } else {
-                Some(hostInput.getDouble(i))
-              }
-              val actual = if (hostResult.isNullAt(i)) {
-                null
-              } else {
-                hostResult.getDouble(i)
-              }
-              val expected = inputValue.flatMap(v => expectedFun(v)).getOrElse(null)
+              val inputValue = getAs(hostInput, i, inputType)
+              val actual = getAs(hostResult, i, outputType).orNull
+              val expected = inputValue.flatMap(v => expectedFun(v)).orNull
               if (!compare(expected, actual, maxFloatDiff)) {
                 throw new IllegalStateException(s"Expected: $expected. Actual: $actual. Input value: $inputValue")
               }
             }
-          } finally {
-            hostResult.close()
           }
-        } finally {
-          hostInput.close()
         }
-      } finally {
-        result.close()
       }
-    } finally {
-      batch.close()
     }
   }
 
+  private def getAs(column: RapidsHostColumnVector, index: Int, dataType: DataType): Option[Any] = {
+    if (column.isNullAt(index)) {
+      None
+    } else {
+      Some(dataType match {
+        case DataTypes.ByteType => column.getByte(index)
+        case DataTypes.ShortType => column.getShort(index)
+        case DataTypes.IntegerType => column.getInt(index)
+        case DataTypes.LongType => column.getLong(index)
+        case DataTypes.FloatType => column.getFloat(index)
+        case DataTypes.DoubleType => column.getDouble(index)
+        case DataTypes.StringType => column.getUTF8String(index).toString
+      })
+    }
+
+  }
 }
