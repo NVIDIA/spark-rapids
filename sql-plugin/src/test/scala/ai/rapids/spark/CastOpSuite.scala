@@ -22,14 +22,38 @@ import org.apache.spark.sql.functions.col
 import org.apache.spark.sql.types._
 import org.apache.spark.sql.DataFrame
 
-class CastOpSuite extends SparkQueryCompareTestSuite {
+class CastOpSuite extends GpuExpressionTestSuite {
   private val timestampDatesMsecParquet = frameFromParquet("timestamp-date-test-msec.parquet")
+
+  val castToStringExpectedFun = (d: Any) => Some(String.valueOf(d))
+
+  test("cast byte to string") {
+    testCastToString(DataTypes.ByteType)
+  }
+
+  test("cast short to string") {
+    testCastToString(DataTypes.ShortType)
+  }
+
+  test("cast int to string") {
+    testCastToString(DataTypes.IntegerType)
+  }
+
+  test("cast long to string") {
+    testCastToString(DataTypes.LongType)
+  }
+
+  private def testCastToString(dataType: DataType) {
+    val schema = FuzzerUtils.createSchema(Seq(dataType))
+    val childExpr: GpuBoundReference = GpuBoundReference(0, dataType, nullable = false)
+    checkEvaluateGpuUnaryExpression(GpuCast(childExpr, DataTypes.StringType), dataType, DataTypes.StringType, castToStringExpectedFun, schema)
+  }
 
   testSparkResultsAreEqual("Test cast from long", longsDf) {
     frame => frame.select(
       col("longs").cast(IntegerType),
       col("longs").cast(LongType),
-      //col("longs").cast(StringType),
+      col("longs").cast(StringType),
       col("more_longs").cast(BooleanType),
       col("more_longs").cast(ByteType),
       col("longs").cast(ShortType),

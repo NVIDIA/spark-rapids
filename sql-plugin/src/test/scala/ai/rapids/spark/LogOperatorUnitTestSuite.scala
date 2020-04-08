@@ -1,7 +1,7 @@
 package ai.rapids.spark
 
 import org.apache.spark.sql.rapids.{GpuAdd, GpuLog, GpuLogarithm}
-import org.apache.spark.sql.types.DataTypes
+import org.apache.spark.sql.types.{DataType, DataTypes, StructType}
 
 class LogOperatorUnitTestSuite extends GpuExpressionTestSuite {
 
@@ -76,5 +76,19 @@ class LogOperatorUnitTestSuite extends GpuExpressionTestSuite {
     checkEvaluateGpuUnaryMathExpression(GpuLogarithm(childExpr, GpuLiteral(base, DataTypes.DoubleType)), expectedFun, schema)
   }
 
+  private def checkEvaluateGpuUnaryMathExpression(inputExpr: GpuExpression,
+    expectedFun: Double => Option[Double],
+    schema: StructType): Unit = {
+
+    val fun = (input: Any) => {
+      if (input == null) {
+        null
+      } else {
+        expectedFun(input.asInstanceOf[Double])
+      }
+    }
+
+    super.checkEvaluateGpuUnaryExpression(inputExpr, DataTypes.DoubleType, DataTypes.DoubleType, fun, schema)
+  }
 }
 
