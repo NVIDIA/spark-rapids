@@ -32,7 +32,7 @@ import scala.util.{Failure, Random, Try}
 /**
  * Set of tests that compare the output using the CPU version of spark vs our GPU version.
  */
-trait SparkQueryCompareTestSuite extends FunSuite {
+trait SparkQueryCompareTestSuite extends FunSuite with Arm {
   // Timezone is fixed to UTC to allow timestamps to work by default
   TimeZone.setDefault(TimeZone.getTimeZone("UTC"))
 
@@ -766,6 +766,8 @@ trait SparkQueryCompareTestSuite extends FunSuite {
       (200L, 2L),
       (300L, 3L),
       (400L, 4L),
+      (Long.MinValue, 4L),
+      (Long.MaxValue, 4L),
       (500L, 5L),
       (-100L, 6L),
       (-500L, 0L),

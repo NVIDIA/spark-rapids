@@ -32,6 +32,20 @@ object FuzzerUtils {
         val builder = builders.builder(i)
         val rows = 0 until rowCount
         field.dataType match {
+          case DataTypes.ByteType =>
+            rows.foreach(_ => {
+              maybeNull(rand, r.nextByte()) match {
+                case Some(value) => builder.append(value)
+                case None => builder.appendNull()
+              }
+            })
+          case DataTypes.ShortType =>
+            rows.foreach(_ => {
+              maybeNull(rand, r.nextShort) match {
+                case Some(value) => builder.append(value)
+                case None => builder.appendNull()
+              }
+            })
           case DataTypes.IntegerType =>
             rows.foreach(_ => {
               maybeNull(rand, r.nextInt()) match {
@@ -138,21 +152,43 @@ object FuzzerUtils {
  */
 class EnhancedRandom(r: Random, val maxStringLen: Int) {
 
+  def nextByte(): Byte = {
+    r.nextInt(5) match {
+      case 0 => Byte.MinValue
+      case 1 => Byte.MaxValue
+      case 2 => (r.nextDouble() * Byte.MinValue).toByte
+      case 3 => (r.nextDouble() * Byte.MaxValue).toByte
+      case _ => 0
+    }
+  }
+
+  def nextShort(): Short = {
+    r.nextInt(5) match {
+      case 0 => Short.MinValue
+      case 1 => Short.MaxValue
+      case 2 => (r.nextDouble() * Short.MinValue).toShort
+      case 3 => (r.nextDouble() * Short.MaxValue).toShort
+      case _ => 0
+    }
+  }
+
   def nextInt(): Int = {
-    r.nextInt(4) match {
+    r.nextInt(5) match {
       case 0 => Int.MinValue
       case 1 => Int.MaxValue
       case 2 => (r.nextDouble() * Int.MinValue).toInt
-      case _ => (r.nextDouble() * Int.MaxValue).toInt
+      case 3 => (r.nextDouble() * Int.MaxValue).toInt
+      case _ => 0
     }
   }
 
   def nextLong(): Long = {
-    r.nextInt(4) match {
+    r.nextInt(5) match {
       case 0 => Long.MinValue
       case 1 => Long.MaxValue
       case 2 => (r.nextDouble() * Long.MinValue).toLong
-      case _ => (r.nextDouble() * Long.MaxValue).toLong
+      case 3 => (r.nextDouble() * Long.MaxValue).toLong
+      case _ => 0
     }
   }
 
