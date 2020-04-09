@@ -19,15 +19,30 @@ import java.io.File
 import java.sql.Date
 import java.util.{Locale, TimeZone}
 
-import ai.rapids.spark.GpuColumnVector.GpuColumnarBatchBuilder
+import scala.util.{Failure, Try}
+
 import org.scalatest.FunSuite
 
 import org.apache.spark.sql.{DataFrame, Row, SparkSession}
 import org.apache.spark.SparkConf
 import org.apache.spark.sql.types._
-import org.apache.spark.sql.vectorized.ColumnarBatch
 
-import scala.util.{Failure, Random, Try}
+
+object TestResourceFinder {
+  private [this] var resourcePrefix: String = _
+
+  def setPrefix(prefix: String): Unit = {
+    resourcePrefix = prefix
+  }
+
+  def getResourcePath(path: String): String = {
+    if (resourcePrefix == null) {
+      this.getClass.getClassLoader.getResource(path).toString
+    } else {
+      resourcePrefix + "/" + path
+    }
+  }
+}
 
 /**
  * Set of tests that compare the output using the CPU version of spark vs our GPU version.
@@ -1054,7 +1069,7 @@ trait SparkQueryCompareTestSuite extends FunSuite with Arm {
   // push down expressions into the scan (e.g. GpuFilters need this)
   def fromCsvPatternDf(base: String, pattern: String, schema: StructType, hasHeader: Boolean = false)
     (session: SparkSession): DataFrame = {
-    val resource = this.getClass.getClassLoader.getResource(base).toString + "/" + pattern
+    val resource = TestResourceFinder.getResourcePath(base) + "/" + pattern
     val df = if (hasHeader) {
       session.read.format("csv").option("header", "true")
     } else {
@@ -1067,7 +1082,7 @@ trait SparkQueryCompareTestSuite extends FunSuite with Arm {
   // push down expressions into the scan (e.g. GpuFilters need this)
   def fromCsvDf(file: String, schema: StructType, hasHeader: Boolean = false)
                (session: SparkSession): DataFrame = {
-    val resource = this.getClass.getClassLoader.getResource(file).toString
+    val resource = TestResourceFinder.getResourcePath(file)
     val df = if (hasHeader) {
       session.read.format("csv").option("header", "true")
     } else {
@@ -1131,8 +1146,8 @@ trait SparkQueryCompareTestSuite extends FunSuite with Arm {
   }
 
   def intsFromCsvInferredSchema(session: SparkSession): DataFrame = {
-    val path = this.getClass.getClassLoader.getResource("test.csv")
-    session.read.option("inferSchema", "true").csv(path.toString)
+    val path = TestResourceFinder.getResourcePath("test.csv")
+    session.read.option("inferSchema", "true").csv(path)
   }
 
   def nullableFloatCsvDf = {
@@ -1195,13 +1210,13 @@ trait SparkQueryCompareTestSuite extends FunSuite with Arm {
   }
 
   def frameFromParquet(filename: String): SparkSession => DataFrame = {
-    val path = this.getClass.getClassLoader.getResource(filename)
-    s: SparkSession => s.read.parquet(path.toString)
+    val path = TestResourceFinder.getResourcePath(filename)
+    s: SparkSession => s.read.parquet(path)
   }
 
   def frameFromOrc(filename: String): SparkSession => DataFrame = {
-    val path = this.getClass.getClassLoader.getResource(filename)
-    s: SparkSession => s.read.orc(path.toString)
+    val path = TestResourceFinder.getResourcePath(filename)
+    s: SparkSession => s.read.orc(path)
   }
 
   /** Transform a sequence of values into a DataFrame with one column */
