@@ -364,7 +364,8 @@ class RowToColumnarIterator(
 
       // enforce RequireSingleBatch limit
       if (rowIter.hasNext && localGoal == RequireSingleBatch) {
-        localGoal.whenTargetExceeded(byteCount)
+        throw new IllegalStateException("A single batch is required for this operation." +
+          " Please try increasing your partition count.")
       }
 
       // About to place data back on the GPU
