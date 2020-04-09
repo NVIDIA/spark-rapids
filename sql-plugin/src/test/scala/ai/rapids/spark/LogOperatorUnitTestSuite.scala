@@ -11,7 +11,6 @@ class LogOperatorUnitTestSuite extends GpuExpressionTestSuite {
   test("log") {
 
     val expectedFun = (d: Double) => {
-      println(d)
       if (d <= 0d) {
         None
       } else {
