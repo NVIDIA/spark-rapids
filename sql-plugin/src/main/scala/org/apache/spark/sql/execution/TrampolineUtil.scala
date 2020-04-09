@@ -22,6 +22,8 @@ import org.apache.spark.broadcast.Broadcast
 import org.apache.spark.sql.catalyst.plans.physical.BroadcastMode
 import org.apache.spark.sql.execution.joins.HashedRelationBroadcastMode
 import org.apache.spark.sql.types.{DataType, StructType}
+import org.apache.spark.util.Utils
+import org.apache.spark.{SparkContext, SparkEnv}
 
 object TrampolineUtil {
   def doExecuteBroadcast[T](child: SparkPlan): Broadcast[T] = child.doExecuteBroadcast()
@@ -33,4 +35,16 @@ object TrampolineUtil {
   def structTypeMerge(left: DataType, right: DataType): DataType = StructType.merge(left, right)
 
   def jsonValue(dataType: DataType): JsonAST.JValue = dataType.jsonValue
+
+  /** Get a human-readable string, e.g.: "4.0 MiB", for a value in bytes. */
+  def bytesToString(size: Long): String = Utils.bytesToString(size)
+
+  /** Returns true if called from code running on the Spark driver. */
+  def isDriver(env: SparkEnv): Boolean = {
+    if (env != null) {
+      env.executorId == SparkContext.DRIVER_IDENTIFIER
+    } else {
+      false
+    }
+  }
 }
