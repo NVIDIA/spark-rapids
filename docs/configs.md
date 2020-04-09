@@ -20,10 +20,11 @@ scala> spark.conf.set("spark.rapids.sql.incompatibleOps.enabled", true)
 Name | Description | Default Value
 -----|-------------|--------------
 spark.rapids.memory.gpu.allocFraction|The fraction of total GPU memory that should be initially allocated for pooled memory. Extra memory will be allocated as needed, but it may result in more fragmentation.|0.9
-spark.rapids.memory.gpu.asyncSpillFraction|When reported GPU memory usage divided by total GPU memory is above this ratio, cached data will spill asynchronously.|0.75
 spark.rapids.memory.gpu.debug.enabled|If memory management is enabled and this is true GPU memory allocations are tracked and printed out when the process exits. This should not be used in production.|false
 spark.rapids.memory.gpu.pooling.enabled|Should RMM act as a pooling allocator for GPU memory, or should it just pass through to CUDA memory allocation directly.|true
-spark.rapids.memory.gpu.spillFraction|When reported GPU memory usage divided by total GPU memory is above this ratio, the allocator thread will block until spilling of cached data has completed.|0.85
+spark.rapids.memory.gpu.spillAsyncStart|Fraction of device memory utilization at which data will start spilling asynchronously to free up device memory|0.9
+spark.rapids.memory.gpu.spillAsyncStop|Fraction of device memory utilization at which data will stop spilling asynchronously to free up device memory|0.8
+spark.rapids.memory.host.spillStorageSize|Amount of off-heap host memory to use for buffering spilled GPU data before spilling to local disk|1073741824
 spark.rapids.memory.pinnedPool.size|The size of the pinned memory pool in bytes unless otherwise specified. Use 0 to disable the pool.|0
 spark.rapids.memory.uvm.enabled|UVM or universal memory can allow main host memory to act essentially as swap for device(GPU) memory. This allows the GPU to process more data than fits in memory, but can result in slower processing. This is an experimental feature.|false
 spark.rapids.shuffle.ucx.enabled|When set to true, enable the UCX transfer method for shuffle files.|false
@@ -37,7 +38,6 @@ spark.rapids.shuffle.ucx.useWakeup|When set to true, use UCX's event-based progr
 spark.rapids.shuffle.ucx.wait.period|Initial time to wait in ms for requests that cannot be processed by the shuffle manager|5
 spark.rapids.shuffle.ucx.wait.period.update.enabled|Decides if wait period should be updates based on transaction stats|false
 spark.rapids.sql.batchSizeBytes|Set the target number of bytes for a GPU batch. Splits sizes for input data is covered by separate configs.|2147483647
-spark.rapids.sql.batchSizeRows|Set the target number of rows for a GPU batch. Splits sizes for input data is covered by separate configs.|1000000
 spark.rapids.sql.concurrentGpuTasks|Set the number of tasks that can execute concurrently per GPU. Tasks may temporarily block when the number of concurrent tasks in the executor exceeds this amount. Allowing too many concurrent tasks on the same GPU may lead to GPU out of memory errors.|1
 spark.rapids.sql.enabled|Enable (true) or disable (false) sql operations on the GPU|true
 spark.rapids.sql.explain|Explain why some parts of a query were not placed on a GPU or not. Possible values are ALL: print everything, NONE: print nothing, NOT_ON_GPU: print only did not go on the GPU|NONE
@@ -86,6 +86,7 @@ spark.rapids.sql.expression.Cast|convert a column of one type of data into anoth
 spark.rapids.sql.expression.Cbrt|cube root|false|This is not 100% compatible with the Spark version because floating point results in some cases may differ with the JVM version by a small amount|
 spark.rapids.sql.expression.Ceil|ceiling of a number|true|None|
 spark.rapids.sql.expression.Coalesce|Returns the first non-null argument if exists. Otherwise, null.|true|None|
+spark.rapids.sql.expression.Concat|String Concatenate NO separator|true|None|
 spark.rapids.sql.expression.Contains|Contains|true|None|
 spark.rapids.sql.expression.Cos|cosine|false|This is not 100% compatible with the Spark version because floating point results in some cases may differ with the JVM version by a small amount|
 spark.rapids.sql.expression.Cosh|hyperbolic cosine|false|This is not 100% compatible with the Spark version because floating point results in some cases may differ with the JVM version by a small amount|
@@ -110,9 +111,15 @@ spark.rapids.sql.expression.IsNull|checks if a value is null|true|None|
 spark.rapids.sql.expression.KnownFloatingPointNormalized|tag to prevent redundant normalization|false|This is not 100% compatible with the Spark version because when enabling these, there may be extra groups produced for floating point grouping keys (e.g. -0.0, and 0.0)|
 spark.rapids.sql.expression.LessThan|< operator|true|None|
 spark.rapids.sql.expression.LessThanOrEqual|<= operator|true|None|
+spark.rapids.sql.expression.Like|Like|true|None|
 spark.rapids.sql.expression.Literal|holds a static value from the query|true|None|
 spark.rapids.sql.expression.Log|natural log|false|This is not 100% compatible with the Spark version because floating point results in some cases may differ with the JVM version by a small amount|
+spark.rapids.sql.expression.Log10|log base 10|false|This is not 100% compatible with the Spark version because floating point results in some cases may differ with the JVM version by a small amount|
+spark.rapids.sql.expression.Log1p|natural log 1 + expr|false|This is not 100% compatible with the Spark version because floating point results in some cases may differ with the JVM version by a small amount|
+spark.rapids.sql.expression.Log2|log base 2|false|This is not 100% compatible with the Spark version because floating point results in some cases may differ with the JVM version by a small amount|
+spark.rapids.sql.expression.Logarithm|log variable base|false|This is not 100% compatible with the Spark version because floating point results in some cases may differ with the JVM version by a small amount|
 spark.rapids.sql.expression.Lower|String lowercase operator|false|This is not 100% compatible with the Spark version because in some cases unicode characters change byte width when changing the case. The GPU string conversion does not support these characters. For a full list of unsupported characters see https://github.com/rapidsai/cudf/issues/3132|
+spark.rapids.sql.expression.MonotonicallyIncreasingID|Returns monotonically increasing 64-bit integers.|true|None|
 spark.rapids.sql.expression.Month|get the month from a date or timestamp|true|None|
 spark.rapids.sql.expression.Multiply|multiplication|true|None|
 spark.rapids.sql.expression.NaNvl|evaluates to `left` iff left is not NaN, `right` otherwise.|true|None|
@@ -125,12 +132,15 @@ spark.rapids.sql.expression.Rint|Rounds up a double value to the nearest double 
 spark.rapids.sql.expression.ShiftLeft|Bitwise shift left (<<)|true|None|
 spark.rapids.sql.expression.ShiftRight|Bitwise shift right (>>)|true|None|
 spark.rapids.sql.expression.ShiftRightUnsigned|Bitwise unsigned shift right (>>>)|true|None|
+spark.rapids.sql.expression.Signum|Returns -1.0, 0.0 or 1.0 as expr is negative, 0 or positive|true|None|
 spark.rapids.sql.expression.Sin|sine|false|This is not 100% compatible with the Spark version because floating point results in some cases may differ with the JVM version by a small amount|
 spark.rapids.sql.expression.Sinh|hyperbolic sine|false|This is not 100% compatible with the Spark version because floating point results in some cases may differ with the JVM version by a small amount|
 spark.rapids.sql.expression.SortOrder|sort order|true|None|
+spark.rapids.sql.expression.SparkPartitionID|Returns the current partition id.|true|None|
 spark.rapids.sql.expression.Sqrt|square root|true|None|
 spark.rapids.sql.expression.StartsWith|Starts With|true|None|
 spark.rapids.sql.expression.StringLocate|Substring search operator|true|None|
+spark.rapids.sql.expression.StringReplace|StringReplace operator|true|None|
 spark.rapids.sql.expression.Substring|Substring operator|true|None|
 spark.rapids.sql.expression.Subtract|subtraction|true|None|
 spark.rapids.sql.expression.Tan|tangent|false|This is not 100% compatible with the Spark version because floating point results in some cases may differ with the JVM version by a small amount|

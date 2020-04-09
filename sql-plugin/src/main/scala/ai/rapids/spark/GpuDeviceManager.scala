@@ -16,6 +16,8 @@
 
 package ai.rapids.spark
 
+import java.util.concurrent.ThreadFactory
+
 import scala.collection.mutable.ArrayBuffer
 import scala.util.control.NonFatal
 
@@ -25,6 +27,7 @@ import org.apache.spark.SparkEnv
 import org.apache.spark.TaskContext
 import org.apache.spark.internal.Logging
 import org.apache.spark.resource.ResourceInformation
+import org.apache.spark.sql.GpuShuffleEnv
 
 object GpuDeviceManager extends Logging {
   // This config controls whether RMM/Pinned memory are initialized from the task
@@ -43,6 +46,12 @@ object GpuDeviceManager extends Logging {
   private val threadGpuInitialized = new ThreadLocal[Boolean]()
   @volatile private var memoryListenerInitialized: Boolean = false
   @volatile private var singletonMemoryInitialized: Boolean = false
+  @volatile private var deviceId: Option[Int] = None
+
+  /**
+   * Exposes the device id used while initializing the RMM pool
+   */
+  def getDeviceId(): Option[Int] = deviceId
 
   // Attempt to set and acquire the gpu, return true if acquired, false otherwise
   def tryToSetGpuDeviceAndAcquire(addr: Int): Boolean = {
@@ -164,28 +173,15 @@ object GpuDeviceManager extends Logging {
 
       if (loggingEnabled) features += "LOGGING"
 
-      logInfo(s"Initializing RMM${features.mkString(" ", " ", "")} ${initialAllocation / 1024 / 1024.0} MB")
+      deviceId = Some(gpuId)
+
+      logInfo(s"Initializing RMM${features.mkString(" ", " ", "")} ${initialAllocation / 1024 / 1024.0} MB on gpuId $gpuId")
+
       try {
         Rmm.initialize(init, loggingEnabled, initialAllocation, gpuId)
+        GpuShuffleEnv.initStorage(conf, info)
       } catch {
         case e: Exception => logError("Could not initialize RMM", e)
-      }
-    }
-  }
-
-  private def registerMemoryListener(rapidsConf: Option[RapidsConf] = None): Unit = {
-    if (memoryListenerInitialized == false) {
-      GpuDeviceManager.synchronized {
-        if (memoryListenerInitialized == false) {
-          val conf = rapidsConf.getOrElse(new RapidsConf(SparkEnv.get.conf))
-          MemoryListener.registerDeviceListener(GpuResourceManager)
-          val info = Cuda.memGetInfo()
-          val async = (conf.rmmAsyncSpillFraction * info.total).toLong
-          val stop = (conf.rmmSpillFraction * info.total).toLong
-          logInfo(s"MemoryListener setting cutoffs, async: $async stop: $stop")
-          GpuResourceManager.setCutoffs(async, stop)
-          memoryListenerInitialized = true
-        }
       }
     }
   }
@@ -212,12 +208,25 @@ object GpuDeviceManager extends Logging {
       GpuDeviceManager.synchronized {
         if (singletonMemoryInitialized == false) {
           val gpu = gpuId.getOrElse(findGpuAndAcquire())
-          registerMemoryListener(rapidsConf)
           initializeRmm(gpu, rapidsConf)
           allocatePinnedMemory(gpu, rapidsConf)
           singletonMemoryInitialized = true
         }
       }
+    }
+  }
+
+  /** Wrap a thread factory with one that will set the GPU device on each thread created. */
+  def wrapThreadFactory(factory: ThreadFactory): ThreadFactory = new ThreadFactory() {
+    private[this] val devId = getDeviceId.getOrElse {
+      throw new IllegalStateException("Device ID is not set")
+    }
+
+    override def newThread(runnable: Runnable): Thread = {
+      factory.newThread(() => {
+        Cuda.setDevice(devId)
+        runnable.run()
+      })
     }
   }
 }
