@@ -355,7 +355,8 @@ private class ExternalRowToColumnarIterator(
 
       // enforce single batch limit when appropriate
       if (rowIter.hasNext && localGoal == RequireSingleBatch) {
-        localGoal.whenTargetExceeded(byteCount)
+        throw new IllegalStateException("A single batch is required for this operation." +
+          " Please try increasing your partition count.")
       }
 
       // About to place data back on the GPU
@@ -388,7 +389,7 @@ private class ExternalRowToColumnarIterator(
  * not currently support an [[IllegalArgumentException]] will be thrown.
  *
  * The size of each table will be determined by what is producing that table but typically will be
- * about the number of rows set by [[RapidsConf.GPU_BATCH_SIZE_ROWS]].
+ * about the number of bytes set by [[RapidsConf.GPU_BATCH_SIZE_BYTES]].
  *
  * Table is not a typical thing in an RDD so special care needs to be taken when working with it.
  * By default it is not serializable so repartitioning the RDD or any other operator that involves

@@ -87,7 +87,12 @@ class GpuCoalesceBatchesSuite extends SparkQueryCompareTestSuite {
       opName = "opname"
     ) {
       // override for this test so we can mock the response to make it look the strings are large
-      override def getColumnSizes(cb: ColumnarBatch): Array[Long] = Array(64, Int.MaxValue/4*3)
+      override def getColumnSizes(cb: ColumnarBatch): Array[Long] = Array(64, Int.MaxValue)
+
+      override def getColumnDataSize(cb: ColumnarBatch, index: Int): Long = index match {
+        case 0 => 64L
+        case 1 => (Int.MaxValue/4*3).toLong
+      }
     }
 
     while (it.hasNext) {
