@@ -533,7 +533,7 @@ class RapidsShuffleManager(conf: SparkConf, isDriver: Boolean) extends ShuffleMa
 
   GpuResourceManager.register(RapidsShuffleManager)
   private val wrapped = new SortShuffleManager(conf)
-  GpuShuffleEnv.setRapidsShuffleManagerInitialized(true)
+  GpuShuffleEnv.setRapidsShuffleManagerInitialized(true, this.getClass.getCanonicalName)
   logWarning("Rapids Shuffle Plugin Enabled")
 
   //Many of these values like blockManager are not initialized when the constructor is called,

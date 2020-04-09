@@ -220,20 +220,6 @@ object RapidsConf {
     .booleanConf
     .createWithDefault(false)
 
-  val RMM_ASYNC_SPILL_FRACTION = conf("spark.rapids.memory.gpu.asyncSpillFraction")
-    .doc("When reported GPU memory usage divided by total GPU memory is above this ratio, " +
-      "cached data will spill asynchronously.")
-    .doubleConf
-    .checkValue(v => v >= 0 && v <= 1, "The fraction value must be in [0, 1].")
-    .createWithDefault(0.75)
-
-  val RMM_SPILL_FRACTION = conf("spark.rapids.memory.gpu.spillFraction")
-    .doc("When reported GPU memory usage divided by total GPU memory is above this ratio, " +
-      "the allocator thread will block until spilling of cached data has completed.")
-    .doubleConf
-    .checkValue(v => v >= 0 && v <= 1, "The fraction value must be in [0, 1].")
-    .createWithDefault(0.85)
-
   val RMM_ALLOC_FRACTION = conf("spark.rapids.memory.gpu.allocFraction")
     .doc("The fraction of total GPU memory that should be initially allocated " +
       "for pooled memory. Extra memory will be allocated as needed, but it may " +
@@ -241,6 +227,26 @@ object RapidsConf {
     .doubleConf
     .checkValue(v => v >= 0 && v <= 1, "The fraction value must be in [0, 1].")
     .createWithDefault(0.9)
+
+  val RMM_SPILL_ASYNC_START = conf("spark.rapids.memory.gpu.spillAsyncStart")
+    .doc("Fraction of device memory utilization at which data will start " +
+        "spilling asynchronously to free up device memory")
+    .doubleConf
+    .checkValue(v => v >= 0 && v <= 1, "The fraction value must be in [0, 1].")
+    .createWithDefault(0.9)
+
+  val RMM_SPILL_ASYNC_STOP = conf("spark.rapids.memory.gpu.spillAsyncStop")
+    .doc("Fraction of device memory utilization at which data will stop " +
+        "spilling asynchronously to free up device memory")
+    .doubleConf
+    .checkValue(v => v >= 0 && v <= 1, "The fraction value must be in [0, 1].")
+    .createWithDefault(0.8)
+
+  val HOST_SPILL_STORAGE_SIZE = conf("spark.rapids.memory.host.spillStorageSize")
+    .doc("Amount of off-heap host memory to use for buffering spilled GPU data " +
+        "before spilling to local disk")
+    .bytesConf(ByteUnit.BYTE)
+    .createWithDefault(ByteUnit.GiB.toBytes(1))
 
   val POOLED_MEM = conf("spark.rapids.memory.gpu.pooling.enabled")
     .doc("Should RMM act as a pooling allocator for GPU memory, or should it just pass " +
@@ -541,11 +547,13 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
 
   lazy val isPooledMemEnabled: Boolean = get(POOLED_MEM)
 
-  lazy val rmmSpillFraction: Double = get(RMM_SPILL_FRACTION)
-
-  lazy val rmmAsyncSpillFraction: Double = get(RMM_ASYNC_SPILL_FRACTION)
-
   lazy val rmmAllocFraction: Double = get(RMM_ALLOC_FRACTION)
+
+  lazy val rmmSpillAsyncStart: Double = get(RMM_SPILL_ASYNC_START)
+
+  lazy val rmmSpillAsyncStop: Double = get(RMM_SPILL_ASYNC_STOP)
+
+  lazy val hostSpillStorageSize: Long = get(HOST_SPILL_STORAGE_SIZE)
 
   lazy val hasNans: Boolean = get(HAS_NANS)
 
