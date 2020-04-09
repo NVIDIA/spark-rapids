@@ -29,7 +29,7 @@ class FileSourceScanExecSuite extends SparkQueryCompareTestSuite {
       options: Map[String, String] = Map.empty): SparkSession => DataFrame = {
     s: SparkSession => {
       s.sql(s"DROP TABLE IF EXISTS `$tableName`")
-      val resource = this.getClass.getClassLoader.getResource(resourceName).toString
+      val resource = TestResourceFinder.getResourcePath(resourceName)
       s.catalog.createTable(tableName, "csv", schema, options ++ Map("path" -> resource))
     }
   }
@@ -69,12 +69,12 @@ class FileSourceScanExecSuite extends SparkQueryCompareTestSuite {
   }
 
   private def fileSourceParquet(filename: String): SparkSession => DataFrame = {
-    val path = this.getClass.getClassLoader.getResource(filename)
+    val path = TestResourceFinder.getResourcePath(filename)
     s: SparkSession => s.sql(s"select * from parquet.`$path`")
   }
 
   private def fileSourceOrc(filename: String): SparkSession => DataFrame = {
-    val path = this.getClass.getClassLoader.getResource(filename)
+    val path = TestResourceFinder.getResourcePath(filename)
     s: SparkSession => s.sql(s"select * from orc.`$path`")
   }
 
