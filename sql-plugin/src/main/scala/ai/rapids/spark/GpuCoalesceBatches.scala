@@ -18,7 +18,7 @@ package ai.rapids.spark
 
 import scala.collection.mutable.ArrayBuffer
 
-import ai.rapids.cudf.{NvtxColor, Table}
+import ai.rapids.cudf.{BufferType, NvtxColor, Table}
 
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.expressions.Attribute
@@ -97,18 +97,11 @@ object CoalesceGoal {
 sealed abstract class CoalesceGoal extends Serializable {
 
   val targetSizeBytes: Long = Integer.MAX_VALUE
-
-  def whenTargetExceeded(actualSize: Long): Unit = {}
 }
 
 object RequireSingleBatch extends CoalesceGoal {
 
   override val targetSizeBytes = Long.MaxValue
-
-  override def whenTargetExceeded(actualSize: Long): Unit = {
-    throw new IllegalStateException("A single batch is required for this operation." +
-      " Please try increasing your partition count.")
-  }
 
   /** Override toString to improve readability of Spark explain output */
   override def toString: String = "RequireSingleBatch"
@@ -207,6 +200,20 @@ abstract class AbstractGpuCoalesceIterator(origIter: Iterator[ColumnarBatch],
   def cleanupConcatIsDone(): Unit
 
   /**
+   * Gets the size in bytes of the data buffer for a given column
+   */
+  def getColumnDataSize(cb: ColumnarBatch, index: Int): Long = {
+    cb.column(index) match {
+      case g: GpuColumnVector =>
+        val buff = g.getBase.getDeviceBufferFor(BufferType.DATA)
+        if (buff == null) 0 else buff.getLength
+      case h: RapidsHostColumnVector =>
+        val buff = h.getBase.getHostBufferFor(BufferType.DATA)
+        if (buff == null) 0 else buff.getLength
+    }
+  }
+
+  /**
    * Each call to next() will combine incoming batches up to the limit specified
    * by [[RapidsConf.GPU_BATCH_SIZE_BYTES]]. However, if any incoming batch is greater
    * than this size it will be passed through unmodified.
@@ -228,6 +235,7 @@ abstract class AbstractGpuCoalesceIterator(origIter: Iterator[ColumnarBatch],
       var numRows: Long = 0 // to avoid overflows
       var numBytes: Long = 0
       var columnSizes: Array[Long] = schema.fields.indices.map(_ => 0L).toArray
+      var stringColumnSizes: Array[Long] = stringFieldIndices.map(_ => 0L)
       var numBatches = 0
 
       // check if there is a batch "on deck" from a previous call to next()
@@ -267,15 +275,28 @@ abstract class AbstractGpuCoalesceIterator(origIter: Iterator[ColumnarBatch],
             // size includes the offset bytes. When nested types are supported, this logic will need to be enhanced to
             // take offset and validity buffers into account since they could account for a larger percentage of
             // overall memory usage.
-            val wouldBeStringColumnSizes = stringFieldIndices.map(wouldBeColumnSizes)
+            val wouldBeStringColumnSizes = stringFieldIndices.map(i => getColumnDataSize(cb, i))
+              .zip(stringColumnSizes)
+              .map(pair => pair._1 + pair._2)
 
             if (wouldBeRows > Int.MaxValue) {
+              if (goal == RequireSingleBatch) {
+                throw new IllegalStateException("A single batch is required for this operation," +
+                  s" but cuDF only supports ${Int.MaxValue} rows. At least $wouldBeRows are in" +
+                  s" this partition. Please try increasing your partition count.")
+              }
               onDeck = Some(cb)
             } else if (batchRowLimit > 0 && wouldBeRows > batchRowLimit) {
               onDeck = Some(cb)
             } else if (wouldBeBytes > goal.targetSizeBytes && numBytes > 0) {
               onDeck = Some(cb)
             } else if (wouldBeStringColumnSizes.exists(size => size > Int.MaxValue)) {
+              if (goal == RequireSingleBatch) {
+                throw new IllegalStateException("A single batch is required for this operation," +
+                  s" but cuDF only supports ${Int.MaxValue} bytes in a single string column." +
+                  s" At least ${wouldBeStringColumnSizes.max} are in a single column in this" +
+                  s" partition. Please try increasing your partition count.")
+              }
               onDeck = Some(cb)
             } else {
               addBatch(cb)
@@ -283,6 +304,7 @@ abstract class AbstractGpuCoalesceIterator(origIter: Iterator[ColumnarBatch],
               numRows = wouldBeRows
               numBytes = wouldBeBytes
               columnSizes = wouldBeColumnSizes
+              stringColumnSizes = wouldBeStringColumnSizes
             }
           } else {
             cb.close()
@@ -291,7 +313,8 @@ abstract class AbstractGpuCoalesceIterator(origIter: Iterator[ColumnarBatch],
 
         // enforce single batch limit when appropriate
         if (goal == RequireSingleBatch && (onDeck.isDefined || iter.hasNext)) {
-          goal.whenTargetExceeded(numBytes)
+          throw new IllegalStateException("A single batch is required for this operation." +
+            " Please try increasing your partition count.")
         }
 
         numOutputRows += numRows
