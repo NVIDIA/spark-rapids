@@ -211,8 +211,6 @@ class GpuCoalesceBatchesSuite extends SparkQueryCompareTestSuite {
       val df2 = df
         .filter(df.col("six").gt(5))
 
-      df2.explain()
-
       val coalesce = df2.queryExecution.executedPlan
         .find(_.isInstanceOf[GpuCoalesceBatches]).get
         .asInstanceOf[GpuCoalesceBatches]
