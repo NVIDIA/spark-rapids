@@ -86,7 +86,7 @@ object TpchLikeSpark {
     StructField("o_orderpriority", StringType),
     StructField("o_clerk", StringType),
     StructField("o_shippriority", LongType),
-    StructField("o_comment", StringType),
+    StructField("o_comment", StringType)
   ))
 
   def readOrdersCSV(spark: SparkSession, path: String): DataFrame =

@@ -1096,7 +1096,7 @@ trait SparkQueryCompareTestSuite extends FunSuite with Arm {
       StructField("shorts", ShortType),
       StructField("more_shorts", ShortType),
       StructField("five", ShortType),
-      StructField("six", ShortType),
+      StructField("six", ShortType)
     )))(_)
   }
 
