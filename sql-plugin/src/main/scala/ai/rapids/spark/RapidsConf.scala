@@ -214,11 +214,13 @@ object RapidsConf {
     .bytesConf(ByteUnit.BYTE)
     .createWithDefault(0)
 
-  val RMM_DEBUG = conf("spark.rapids.memory.gpu.debug.enabled")
-    .doc("If memory management is enabled and this is true GPU memory allocations are " +
-      "tracked and printed out when the process exits. This should not be used in production.")
-    .booleanConf
-    .createWithDefault(false)
+  val RMM_DEBUG = conf("spark.rapids.memory.gpu.debug")
+    .doc("Provides a log of GPU memory allocations and frees. If set to " +
+      "STDOUT or STDERR the logging will go there. Setting it to NONE disables logging. " +
+      "All other values are reserved for possible future expansion and in the mean time will " +
+      "disable logging.")
+    .stringConf
+    .createWithDefault("NONE")
 
   val RMM_ALLOC_FRACTION = conf("spark.rapids.memory.gpu.allocFraction")
     .doc("The fraction of total GPU memory that should be initially allocated " +
@@ -337,10 +339,10 @@ object RapidsConf {
     .createWithDefault(true)
 
   val ENABLE_HASH_OPTIMIZE_SORT = conf("spark.rapids.sql.hashOptimizeSort.enabled")
-      .doc("Whether sorts should be inserted after some hashed operations to improve " +
-          "output ordering. This can improve output file sizes when saving to columnar formats.")
-      .booleanConf
-      .createWithDefault(false)
+    .doc("Whether sorts should be inserted after some hashed operations to improve " +
+      "output ordering. This can improve output file sizes when saving to columnar formats.")
+    .booleanConf
+    .createWithDefault(false)
 
   // INTERNAL TEST AND DEBUG CONFIGS
 
@@ -360,16 +362,16 @@ object RapidsConf {
     .createWithDefault(Nil)
 
   val PARQUET_DEBUG_DUMP_PREFIX = conf("spark.rapids.sql.parquet.debug.dumpPrefix")
-      .doc("A path prefix where Parquet split file data is dumped for debugging.")
-      .internal()
-      .stringConf
-      .createWithDefault(null)
+    .doc("A path prefix where Parquet split file data is dumped for debugging.")
+    .internal()
+    .stringConf
+    .createWithDefault(null)
 
   val ORC_DEBUG_DUMP_PREFIX = conf("spark.rapids.sql.orc.debug.dumpPrefix")
-      .doc("A path prefix where ORC split file data is dumped for debugging.")
-      .internal()
-      .stringConf
-      .createWithDefault(null)
+    .doc("A path prefix where ORC split file data is dumped for debugging.")
+    .internal()
+    .stringConf
+    .createWithDefault(null)
 
   val HASH_AGG_REPLACE_MODE = conf("spark.rapids.sql.hashAgg.replaceMode")
     .doc("Only when hash aggregate exec has these modes (\"all\" by default): " +
@@ -541,7 +543,7 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
 
   lazy val testingAllowedNonGpu: Seq[String] = get(TEST_ALLOWED_NONGPU)
 
-  lazy val isRmmDebugEnabled: Boolean = get(RMM_DEBUG)
+  lazy val rmmDebugLocation: String = get(RMM_DEBUG)
 
   lazy val isUvmEnabled: Boolean = get(UVM_ENABLED)
 
