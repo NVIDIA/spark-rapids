@@ -23,8 +23,7 @@ import scala.util.control.NonFatal
 
 import ai.rapids.cudf._
 
-import org.apache.spark.SparkEnv
-import org.apache.spark.TaskContext
+import org.apache.spark.{SparkEnv, TaskContext}
 import org.apache.spark.internal.Logging
 import org.apache.spark.resource.ResourceInformation
 import org.apache.spark.sql.GpuShuffleEnv
@@ -153,7 +152,6 @@ object GpuDeviceManager extends Logging {
   private def initializeRmm(gpuId: Int, rapidsConf: Option[RapidsConf] = None): Unit = {
     if (!Rmm.isInitialized) {
       val conf = rapidsConf.getOrElse(new RapidsConf(SparkEnv.get.conf))
-      val loggingEnabled = conf.isRmmDebugEnabled
       val info = Cuda.memGetInfo()
       val initialAllocation = (conf.rmmAllocFraction * info.total).toLong
       if (initialAllocation > info.free) {
@@ -171,14 +169,25 @@ object GpuDeviceManager extends Logging {
         features += "UVM"
       }
 
-      if (loggingEnabled) features += "LOGGING"
+      val logConf: Rmm.LogConf = conf.rmmDebugLocation match {
+        case c if "none".equalsIgnoreCase(c) => null
+        case c if "stdout".equalsIgnoreCase(c) =>
+          features += "LOG: STDOUT"
+          Rmm.logToStdout()
+        case c if "stderr".equalsIgnoreCase(c) =>
+          features += "LOG: STDERR"
+          Rmm.logToStdout()
+        case c =>
+          logWarning(s"RMM logging set to '$c' is not supported and is being ignored.")
+          null
+      }
 
       deviceId = Some(gpuId)
 
       logInfo(s"Initializing RMM${features.mkString(" ", " ", "")} ${initialAllocation / 1024 / 1024.0} MB on gpuId $gpuId")
 
       try {
-        Rmm.initialize(init, loggingEnabled, initialAllocation, gpuId)
+        Rmm.initialize(init, logConf, initialAllocation, gpuId)
         GpuShuffleEnv.initStorage(conf, info)
       } catch {
         case e: Exception => logError("Could not initialize RMM", e)
