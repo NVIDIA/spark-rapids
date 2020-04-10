@@ -514,6 +514,12 @@ class StringOperatorsSuite extends SparkQueryCompareTestSuite {
     allowNonGpu = true, execsAllowedNonGpu = Seq("InMemoryTableScanExec")) {
     frame => frame.filter("word like '%\\ab_'")
   }
+
+  testSparkResultsAreEqual("titlize string", sparkSession => {
+    import sparkSession.sqlContext.implicits._
+    Seq("sPArk", "sql", null, "lowercase", "UPPERCASE").toDF("words")} ) {
+    frame => frame.select(initcap(col("words")))
+  }
 }
 
 /*
