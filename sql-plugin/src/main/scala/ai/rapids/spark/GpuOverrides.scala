@@ -616,6 +616,10 @@ object GpuOverrides {
         override def convertToGpu(child: GpuExpression): GpuExpression = GpuExpm1(child)
       })
       .incompat(FLOAT_DIFFERS_INCOMPAT),
+    expr[InitCap]("Returns str with the first letter of each word in uppercase. All other letters are in lowercase",
+      (a, conf, p, r) => new UnaryExprMeta[InitCap](a, conf, p, r) {
+        override def convertToGpu(child: GpuExpression): GpuExpression = GpuInitCap(child)
+      }),
     expr[Log](
       "natural log",
       (a, conf, p, r) => new UnaryExprMeta[Log](a, conf, p, r) {
