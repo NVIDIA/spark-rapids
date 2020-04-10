@@ -1180,7 +1180,7 @@ object GpuOverrides {
             a.partitionFilters,
             a.dataFilters,
             conf)
-      }),
+      })
   ).map(r => (r.getClassFor.asSubclass(classOf[Scan]), r)).toMap
 
   def wrapPart[INPUT <: Partitioning](
