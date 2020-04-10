@@ -20,7 +20,7 @@ scala> spark.conf.set("spark.rapids.sql.incompatibleOps.enabled", true)
 Name | Description | Default Value
 -----|-------------|--------------
 spark.rapids.memory.gpu.allocFraction|The fraction of total GPU memory that should be initially allocated for pooled memory. Extra memory will be allocated as needed, but it may result in more fragmentation.|0.9
-spark.rapids.memory.gpu.debug.enabled|If memory management is enabled and this is true GPU memory allocations are tracked and printed out when the process exits. This should not be used in production.|false
+spark.rapids.memory.gpu.debug|Provides a log of GPU memory allocations and frees. If set to STDOUT or STDERR the logging will go there. Setting it to NONE disables logging. All other values are reserved for possible future expansion and in the mean time will disable logging.|NONE
 spark.rapids.memory.gpu.pooling.enabled|Should RMM act as a pooling allocator for GPU memory, or should it just pass through to CUDA memory allocation directly.|true
 spark.rapids.memory.gpu.spillAsyncStart|Fraction of device memory utilization at which data will start spilling asynchronously to free up device memory|0.9
 spark.rapids.memory.gpu.spillAsyncStop|Fraction of device memory utilization at which data will stop spilling asynchronously to free up device memory|0.8
@@ -104,6 +104,10 @@ spark.rapids.sql.expression.GreaterThanOrEqual|>= operator|true|None|
 spark.rapids.sql.expression.If|IF expression|true|None|
 spark.rapids.sql.expression.In|IN operator|true|None|
 spark.rapids.sql.expression.InSet|INSET operator|true|None|
+spark.rapids.sql.expression.InitCap|Returns str with the first letter of each word in uppercase. All other letters are in lowercase|true|None|
+spark.rapids.sql.expression.InputFileBlockLength|Returns the length of the block being read, or -1 if not available.|true|None|
+spark.rapids.sql.expression.InputFileBlockStart|Returns the start offset of the block being read, or -1 if not available.|true|None|
+spark.rapids.sql.expression.InputFileName|Returns the name of the file being read, or empty string if not available.|true|None|
 spark.rapids.sql.expression.IntegralDivide|division with a integer result|true|None|
 spark.rapids.sql.expression.IsNaN|checks if a value is NaN|true|None|
 spark.rapids.sql.expression.IsNotNull|checks if a value is not null|true|None|
