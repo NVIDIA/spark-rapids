@@ -60,7 +60,7 @@ case class GpuSortExec(
     global: Boolean,
     child: SparkPlan,
     coalesceGoal: CoalesceGoal = RequireSingleBatch,
-    testSpillFrequency: Int = 0,
+    testSpillFrequency: Int = 0
 )
   extends UnaryExecNode with GpuExec {
 

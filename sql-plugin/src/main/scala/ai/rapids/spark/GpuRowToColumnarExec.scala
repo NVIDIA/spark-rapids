@@ -418,7 +418,7 @@ case class GpuRowToColumnarExec(child: SparkPlan, goal: CoalesceGoal)
   }
 
   override lazy val additionalMetrics: Map[String, SQLMetric] = Map(
-    NUM_INPUT_ROWS -> SQLMetrics.createMetric(sparkContext, "number of input rows"),
+    NUM_INPUT_ROWS -> SQLMetrics.createMetric(sparkContext, "number of input rows")
   )
 
   override def doExecuteColumnar(): RDD[ColumnarBatch] = {
