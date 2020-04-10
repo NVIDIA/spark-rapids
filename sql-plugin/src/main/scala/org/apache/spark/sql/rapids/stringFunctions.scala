@@ -16,10 +16,10 @@
 
 package org.apache.spark.sql.rapids
 
-import ai.rapids.cudf.{ColumnVector, Scalar}
-import ai.rapids.spark.{GpuBinaryExpression, GpuColumnVector, GpuExpression, GpuLiteral, GpuScalar, GpuTernaryExpression, GpuUnaryExpression, GpuComplexTypeMergingExpression}
 import ai.rapids.spark.RapidsPluginImplicits._
 
+import ai.rapids.cudf.{ColumnVector, Scalar}
+import ai.rapids.spark.{GpuBinaryExpression, GpuColumnVector, GpuComplexTypeMergingExpression, GpuExpression, GpuLiteral, GpuScalar, GpuTernaryExpression, GpuUnaryExpression}
 import org.apache.spark.sql.catalyst.expressions.{ExpectsInputTypes, Expression, ImplicitCastInputTypes, NullIntolerant, Predicate}
 import org.apache.spark.sql.types._
 import org.apache.spark.unsafe.types.UTF8String
@@ -322,6 +322,14 @@ case class GpuSubString(str: Expression, pos: Expression, len: Expression)
 
   override def doColumnar(val0: GpuColumnVector, val1: GpuColumnVector, val2: Scalar)
   : GpuColumnVector = throw new UnsupportedOperationException(s"Cannot columnar evaluate expression: $this")
+}
+
+case class GpuInitCap(child: GpuExpression) extends GpuUnaryExpression with ImplicitCastInputTypes {
+  override def inputTypes: Seq[DataType] = Seq(StringType)
+  override def dataType: DataType = StringType
+  override protected def doColumnar(input: GpuColumnVector): GpuColumnVector = {
+    GpuColumnVector.from(input.getBase.toTitle)
+  }
 }
 
 case class GpuStringReplace(srcExpr: GpuExpression, searchExpr: GpuExpression, replaceExpr: GpuExpression)
