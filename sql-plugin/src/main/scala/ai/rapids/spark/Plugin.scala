@@ -413,13 +413,10 @@ class RapidsDriverPlugin extends DriverPlugin with Logging {
  * The Spark executor plugin provided by the RAPIDS Spark plugin.
  */
 class RapidsExecutorPlugin extends ExecutorPlugin with Logging {
-  var loggingEnabled = false
-
   override def init(
       pluginContext: PluginContext,
       extraConf: util.Map[String, String]): Unit = {
     val conf = new RapidsConf(extraConf.asScala.toMap)
-    loggingEnabled = conf.isRmmDebugEnabled
 
     // we rely on the Rapids Plugin being run with 1 GPU per executor so we can initialize
     // on executor startup.
@@ -432,10 +429,6 @@ class RapidsExecutorPlugin extends ExecutorPlugin with Logging {
   }
 
   override def shutdown(): Unit = {
-    if (loggingEnabled) {
-      logWarning(s"RMM LOG\n${Rmm.getLog}")
-    }
-
     GpuSemaphore.shutdown()
   }
 }
