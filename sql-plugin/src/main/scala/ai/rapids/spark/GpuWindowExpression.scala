@@ -221,17 +221,28 @@ class GpuSpecifiedWindowFrameMeta(
     }
 
     if (windowFrame.frameType.equals(RowFrame)) {
-      if (!windowFrame.lower.isInstanceOf[Literal]
-        || !windowFrame.lower.asInstanceOf[Literal].value.isInstanceOf[Int]) {
-        willNotWorkOnGpu("Lower-bound of window-frame should be an INT literal. " +
-          s"Found ${windowFrame.lower.prettyName}")
+
+      windowFrame.lower match {
+        case literal : Literal if !literal.value.isInstanceOf[Int] =>
+          willNotWorkOnGpu(because = s"Literal Lower-bound of ROWS window-frame must be of INT type. " +
+            s"Found ${literal.dataType}")
+        case UnboundedPreceding =>
+        case CurrentRow =>
+        case _ =>
+          willNotWorkOnGpu(because = s"Lower-bound of ROWS window-frame must be an INT literal," +
+            s"UNBOUNDED PRECEDING, or CURRENT ROW. Found unexpected bound: ${windowFrame.lower.prettyName}")
       }
 
-      if (!windowFrame.upper.isInstanceOf[Literal]
-        || !windowFrame.upper.asInstanceOf[Literal].value.isInstanceOf[Int]) {
-        willNotWorkOnGpu("Upper-bound of window-frame should be an INT literal. " +
-          s"Found ${windowFrame.upper.prettyName}")
+      windowFrame.upper match {
+        case literal : Literal if !literal.value.isInstanceOf[Int] =>
+          willNotWorkOnGpu(because = s"Literal Upper-bound of ROWS window-frame must be of INT type. " +
+            s"Found ${literal.dataType}")
+        case UnboundedFollowing =>
+        case CurrentRow =>
+        case _ => willNotWorkOnGpu(because = s"Upper-bound of ROWS window-frame must be an INT literal," +
+          s"UNBOUNDED FOLLOWING, or CURRENT ROW. Found unexpected bound: ${windowFrame.upper.prettyName}")
       }
+
     }
 
     // TODO: Add protections for foldable expressions with l>u, etc.
@@ -354,7 +365,7 @@ case class GpuSpecialFrameBoundary(boundary : SpecialFrameBoundary) extends GpuE
 
   def value : Int = {
     boundary match {
-      case UnboundedPreceding => Int.MinValue
+      case UnboundedPreceding => Int.MinValue + 1 // Account for CUDF counting current row as part of preceding window.
       case UnboundedFollowing => Int.MaxValue
       case CurrentRow => 0
       case anythingElse =>  throw new UnsupportedOperationException(s"Unsupported window-bound ${anythingElse}!")
