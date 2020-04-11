@@ -475,6 +475,18 @@ object GpuOverrides {
         override def convertToGpu(): GpuExpression = GpuSpecialFrameBoundary(currentRow)
       }
     ),
+    expr[UnboundedPreceding.type](
+      "Special Window bounds, indicating all rows preceding the current row",
+      (unboundedPreceding, conf, p, r) => new ExprMeta[UnboundedPreceding.type](unboundedPreceding, conf, p, r) {
+        override def convertToGpu(): GpuExpression = GpuSpecialFrameBoundary(unboundedPreceding)
+      }
+    ),
+    expr[UnboundedFollowing.type](
+      "Special Window bounds, indicating all rows preceding the current row",
+      (unboundedFollowing, conf, p, r) => new ExprMeta[UnboundedFollowing.type](unboundedFollowing, conf, p, r) {
+        override def convertToGpu(): GpuExpression = GpuSpecialFrameBoundary(unboundedFollowing)
+      }
+    ),
     expr[UnaryMinus](
       "negate a numeric value",
       (a, conf, p, r) => new UnaryExprMeta[UnaryMinus](a, conf, p, r) {
