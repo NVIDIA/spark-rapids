@@ -28,7 +28,7 @@ import org.apache.spark.sql.catalyst.optimizer.NormalizeNaNAndZero
 import org.apache.spark.sql.catalyst.plans.physical._
 import org.apache.spark.sql.catalyst.rules.Rule
 import org.apache.spark.sql.execution._
-import org.apache.spark.sql.execution.aggregate.HashAggregateExec
+import org.apache.spark.sql.execution.aggregate.{HashAggregateExec, SortAggregateExec}
 import org.apache.spark.sql.execution.datasources.v2.BatchScanExec
 import org.apache.spark.sql.execution.datasources.v2.csv.CSVScan
 import org.apache.spark.sql.execution.datasources.v2.orc.OrcScan
@@ -1361,6 +1361,9 @@ object GpuOverrides {
     exec[HashAggregateExec](
       "The backend for hash based aggregations",
       (agg, conf, p, r) => new GpuHashAggregateMeta(agg, conf, p, r)),
+    exec[SortAggregateExec](
+      "The backend for sort based aggregations",
+      (agg, conf, p, r) => new GpuSortAggregateMeta(agg, conf, p, r)),
     exec[SortExec](
       "The backend for the sort operator",
       (sort, conf, p, r) => new GpuSortMeta(sort, conf, p, r))
@@ -1400,7 +1403,6 @@ case class GpuOverrides() extends Rule[SparkPlan] with Logging {
     // Now that we've performed any necessary shuffles, add sorts to guarantee output orderings:
     children = children.zip(requiredChildOrderings).map { case (child, requiredOrdering) =>
       // If child.outputOrdering already satisfies the requiredOrdering, we do not need to sort.
-      val childOrdering = child.outputOrdering
       if (SortOrder.orderingSatisfies(child.outputOrdering, requiredOrdering)) {
         child
       } else {

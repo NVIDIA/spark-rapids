@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019, NVIDIA CORPORATION.
+ * Copyright (c) 2019-2020, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,7 +17,6 @@
 package ai.rapids.spark
 
 import ai.rapids.cudf.{BinaryOp, DType, Scalar}
-
 import org.apache.spark.sql.catalyst.analysis.TypeCheckResult
 import org.apache.spark.sql.catalyst.expressions.{Cast, NullIntolerant, TimeZoneAwareExpression}
 import org.apache.spark.sql.types._
@@ -39,7 +38,6 @@ object GpuCast {
 
     case (_: NumericType, BooleanType) => true
     case (_: NumericType, _: NumericType) => true
-    case (DoubleType, TimestampType) => false
     case (_: NumericType, TimestampType) => true
 
     case (DateType, BooleanType) => true
@@ -103,7 +101,7 @@ case class GpuCast(child: GpuExpression, dataType: DataType, timeZoneId: Option[
         } finally {
           scalar.close()
         }
-      case (TimestampType, FloatType|DoubleType) =>
+      case (TimestampType, FloatType | DoubleType) =>
         val asLongs = input.getBase.castTo(DType.INT64)
         try {
           val microsPerSec = Scalar.fromDouble(1000000)
@@ -147,14 +145,31 @@ case class GpuCast(child: GpuExpression, dataType: DataType, timeZoneId: Option[
         } finally {
           asLongs.close()
         }
+      case (FloatType | DoubleType, TimestampType) =>
+        // Spark casting to timestamp from double assumes value is in microseconds
+        withResource(Scalar.fromInt(1000000)) { microsPerSec =>
+          withResource(FloatUtils.nansToNulls(input.getBase)) { inputWithNansToNull =>
+            withResource(FloatUtils.infinityToNulls(inputWithNansToNull)) { inputWithoutNanAndInfinity =>
+              withResource(inputWithoutNanAndInfinity.mul(microsPerSec)) { inputTimesMicrosCv =>
+                GpuColumnVector.from(inputTimesMicrosCv.castTo(DType.TIMESTAMP_MICROSECONDS))
+              }
+            }
+          }
+        }
       case (_: NumericType, TimestampType) =>
         // Spark casting to timestamp assumes value is in seconds, but timestamps
-        // are tracked in milliseconds.
+        // are tracked in microseconds.
         val timestampSecs = input.getBase.castTo(DType.TIMESTAMP_SECONDS)
         try {
           GpuColumnVector.from(timestampSecs.castTo(cudfType))
         } finally {
           timestampSecs.close();
+        }
+        // Float.NaN => Int is casted to a zero but float.NaN => Long returns a small negative number
+        // Double.NaN => Int | Long, returns a small negative number so Nans have to be converted to zero first
+      case (FloatType, LongType) | (DoubleType, IntegerType | LongType) =>
+        withResource(FloatUtils.nanToZero(input.getBase)) { inputWithNansToZero =>
+          GpuColumnVector.from(inputWithNansToZero.castTo(cudfType))
         }
       case (ByteType, StringType) =>
         castIntegralTypeToString(input, Scalar.fromByte(Byte.MinValue), String.valueOf(Byte.MinValue))
