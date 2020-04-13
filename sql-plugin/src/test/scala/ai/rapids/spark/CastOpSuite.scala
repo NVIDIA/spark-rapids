@@ -62,7 +62,20 @@ class CastOpSuite extends GpuExpressionTestSuite {
       col("longs").cast(TimestampType))
   }
 
-  testSparkResultsAreEqual("Test cast from double", doubleDf) {
+  testSparkResultsAreEqual("Test cast from float", floatWithNansDf) {
+    frame => frame.select(
+      col("floats").cast(IntegerType),
+      col("floats").cast(LongType),
+      //      col("doubles").cast(StringType),
+      col("more_floats").cast(BooleanType),
+      col("more_floats").cast(ByteType),
+      col("floats").cast(ShortType),
+      col("floats").cast(FloatType),
+      col("floats").cast(DoubleType),
+    col("floats").cast(TimestampType))
+  }
+
+  testSparkResultsAreEqual("Test cast from double", doubleWithNansDf) {
     frame => frame.select(
       col("doubles").cast(IntegerType),
       col("doubles").cast(LongType),
@@ -71,10 +84,8 @@ class CastOpSuite extends GpuExpressionTestSuite {
       col("more_doubles").cast(ByteType),
       col("doubles").cast(ShortType),
       col("doubles").cast(FloatType),
-      col("doubles").cast(DoubleType))
-      // There is a bug in the way we are casting doubles to timestamp.
-      // https://gitlab-master.nvidia.com/nvspark/rapids-plugin-4-spark/issues/47
-//      col("doubles").cast(TimestampType))
+      col("doubles").cast(DoubleType),
+      col("doubles").cast(TimestampType))
   }
 
   testSparkResultsAreEqual("Test cast from boolean", booleanDf) {
