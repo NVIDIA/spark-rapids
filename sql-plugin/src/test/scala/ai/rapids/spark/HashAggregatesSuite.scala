@@ -155,6 +155,46 @@ class HashAggregatesSuite extends SparkQueryCompareTestSuite {
       (max("more_longs") - min("more_longs")) * 3.0)
   }
 
+  FLOAT_TEST_testSparkResultsAreEqual("float basic aggregates group by string literal", floatCsvDf) {
+    frame => frame.groupBy(lit("2019-02-10")).agg(
+      min(col("floats")) + lit(123),
+      sum(col("more_floats") + lit(123.0)),
+      max(col("floats") * col("more_floats")),
+      max("floats") - min("more_floats"),
+      max("more_floats") - min("floats"),
+      sum("floats") + sum("more_floats"),
+      avg("floats"),
+      count("*"))
+  }
+
+  FLOAT_TEST_testSparkResultsAreEqual("float basic aggregates group by float and string literal", floatCsvDf) {
+    frame => {
+      val feature_window_end_time = date_format(lit("2018-02-01"), "yyyy-MM-dd HH:mm:ss")
+      val frameWithCol = frame.withColumn("timestamp_lit", feature_window_end_time)
+      frameWithCol.groupBy("floats", "timestamp_lit").agg(
+        when(col("timestamp_lit") > "2018-02-01 00:00:00", 1).otherwise(2),
+        lit(456f),
+        min(col("floats")) + lit(123),
+        sum(col("more_floats") + lit(123.0)),
+        max(col("floats") * col("more_floats")),
+        max("floats") - min("more_floats"),
+        max("more_floats") - min("floats"),
+        sum("floats") + sum("more_floats"),
+        avg("floats"),
+        count("*"))
+    }
+  }
+
+  IGNORE_ORDER_testSparkResultsAreEqual("aggregates with timestamp and string literal", timestampsDf) {
+  frame => {
+      val feature_window_end_time = date_format(lit("2018-02-01"), "yyyy-MM-dd HH:mm:ss")
+      val frameWithCol = frame.withColumn("timestamp_lit", feature_window_end_time)
+      frameWithCol.groupBy("more_timestamps", "timestamp_lit").agg(
+        sum(when(col("timestamp_lit") > col("timestamps"), 1).otherwise(2))
+      )
+    }
+  }
+
   FLOAT_TEST_testSparkResultsAreEqual("float basic aggregates group by floats", floatCsvDf) {
     frame => frame.groupBy("floats").agg(
       lit(456f),
