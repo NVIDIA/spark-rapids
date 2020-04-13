@@ -17,8 +17,11 @@
 package ai.rapids.spark
 
 import org.apache.spark.SparkConf
+import org.apache.spark.sql.execution.WholeStageCodegenExec
+import org.apache.spark.sql.execution.aggregate.SortAggregateExec
 import org.apache.spark.sql.{DataFrame, SparkSession}
 import org.apache.spark.sql.functions._
+import org.apache.spark.sql.types.DataTypes
 
 class HashAggregatesSuite extends SparkQueryCompareTestSuite {
   private val floatAggConf: SparkConf = new SparkConf().set(RapidsConf.ENABLE_FLOAT_AGG.key, "true")
@@ -42,6 +45,81 @@ class HashAggregatesSuite extends SparkQueryCompareTestSuite {
     testSparkResultsAreEqual(testName, df,
       conf = conf, allowNonGpu = allowNonGpu, repart = repart,
       incompat = true, sort = true)(fn)
+  }
+
+  def firstDf(spark: SparkSession): DataFrame = {
+    val options = FuzzerOptions(asciiStringsOnly = true, numbersAsStrings = false, maxStringLen = 4)
+    val schema = FuzzerUtils.createSchema(Seq(DataTypes.StringType, DataTypes.IntegerType))
+    FuzzerUtils.generateDataFrame(spark, schema, 100, options, seed = 0)
+      .withColumn("c2", col("c1").mod(lit(10)))
+  }
+
+  IGNORE_ORDER_testSparkResultsAreEqual("test sort agg with first and last string deterministic case", firstDf, repart = 2) {
+    frame => frame
+        .coalesce(1)
+        .sort(col("c2").asc, col("c0").asc) // force deterministic use case
+        .groupBy(col("c2"))
+        .agg(first(col("c0"), ignoreNulls = true), last(col("c0"), ignoreNulls = true))
+  }
+
+  test("SortAggregateExec is translated correctly ENABLE_HASH_OPTIMIZE_SORT=false") {
+
+    val conf = new SparkConf()
+      .set(RapidsConf.ENABLE_HASH_OPTIMIZE_SORT.key, "false")
+
+    withGpuSparkSession(spark => {
+      val df = firstDf(spark)
+        .coalesce(1)
+        .sort(col("c2").asc, col("c0").asc) // force deterministic use case
+        .groupBy(col("c2"))
+        .agg(first(col("c0"), ignoreNulls = true), last(col("c0"), ignoreNulls = true))
+
+      val cpuPlan = df.queryExecution.sparkPlan
+      assert(cpuPlan.find(_.isInstanceOf[SortAggregateExec]).isDefined)
+
+      val gpuPlan = df.queryExecution.executedPlan
+
+      gpuPlan match {
+        case WholeStageCodegenExec(GpuColumnarToRowExec(plan, _)) =>
+          assert(plan.children.head.isInstanceOf[GpuHashAggregateExec])
+          assert(gpuPlan.find(_.isInstanceOf[SortAggregateExec]).isEmpty)
+          assert(gpuPlan.children.forall(exec => exec.isInstanceOf[GpuExec]))
+
+        case _ =>
+          fail("Incorrect plan")
+      }
+
+    }, conf)
+  }
+  test("SortAggregateExec is translated correctly ENABLE_HASH_OPTIMIZE_SORT=true") {
+
+    val conf = new SparkConf()
+        .set(RapidsConf.ENABLE_HASH_OPTIMIZE_SORT.key, "true")
+
+    withGpuSparkSession(spark => {
+      val df = firstDf(spark)
+        .coalesce(1)
+        .sort(col("c2").asc, col("c0").asc) // force deterministic use case
+        .groupBy(col("c2"))
+        .agg(first(col("c0"), ignoreNulls = true), last(col("c0"), ignoreNulls = true))
+
+      val cpuPlan = df.queryExecution.sparkPlan
+      assert(cpuPlan.find(_.isInstanceOf[SortAggregateExec]).isDefined)
+
+      val gpuPlan = df.queryExecution.executedPlan
+
+      gpuPlan match {
+        case WholeStageCodegenExec(GpuColumnarToRowExec(plan, _)) =>
+          assert(plan.children.head.isInstanceOf[GpuSortExec])
+          assert(gpuPlan.find(_.isInstanceOf[SortAggregateExec]).isEmpty)
+          assert(gpuPlan.find(_.isInstanceOf[GpuHashAggregateExec]).isDefined)
+          assert(gpuPlan.children.forall(exec => exec.isInstanceOf[GpuExec]))
+
+        case _ =>
+          fail("Incorrect plan")
+      }
+
+    }, conf)
   }
 
   IGNORE_ORDER_testSparkResultsAreEqual("test hash agg with shuffle", longsFromCSVDf, repart = 2) {

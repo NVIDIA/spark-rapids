@@ -165,13 +165,11 @@ class GpuTransitionOverrides extends Rule[SparkPlan] {
 
   private def insertHashOptimizeSorts(plan: SparkPlan): SparkPlan = {
     if (conf.enableHashOptimizeSort) {
-      // Insert a sort after the last hash join before the query result if there are no
-      // intermediate nodes that have a specified sort order.
+      // Insert a sort after the last hash-based op before the query result if there are no
+      // intermediate nodes that have a specified sort order. This helps with the size of
+      // Parquet and Orc files
       plan match {
-        case p: GpuBroadcastHashJoinExec =>
-          val sortOrder = getOptimizedSortOrder(plan)
-          GpuSortExec(sortOrder, false, plan, TargetSize(conf.gpuTargetBatchSizeBytes))
-        case p: GpuShuffledHashJoinExec =>
+        case _: GpuHashJoin | _: GpuHashAggregateExec =>
           val sortOrder = getOptimizedSortOrder(plan)
           GpuSortExec(sortOrder, false, plan, TargetSize(conf.gpuTargetBatchSizeBytes))
         case p =>
