@@ -331,15 +331,15 @@ case class GpuAverage(child: GpuExpression) extends GpuDeclarativeAggregate {
  */
 case class GpuFirst(child: GpuExpression, ignoreNullsExpr: GpuExpression)
   extends GpuDeclarativeAggregate with ImplicitCastInputTypes {
-  private lazy val cudfMax = GpuAttributeReference("cudf_max", child.dataType)()
+  private lazy val cudfMin = GpuAttributeReference("cudf_min", child.dataType)()
   private lazy val valueSet = GpuAttributeReference("valueSet", BooleanType)()
 
   override lazy val inputProjection: Seq[GpuExpression] = Seq(child, GpuLiteral(!ignoreNulls, BooleanType))
-  override lazy val updateExpressions: Seq[GpuExpression] = Seq(new CudfMax(cudfMax), new CudfMax(valueSet))
-  override lazy val mergeExpressions: Seq[GpuExpression] = Seq(new CudfMax(cudfMax), new CudfMax(valueSet))
-  override lazy val evaluateExpression: GpuExpression = cudfMax
+  override lazy val updateExpressions: Seq[GpuExpression] = Seq(new CudfMin(cudfMin), new CudfMin(valueSet))
+  override lazy val mergeExpressions: Seq[GpuExpression] = Seq(new CudfMin(cudfMin), new CudfMin(valueSet))
+  override lazy val evaluateExpression: GpuExpression = cudfMin
 
-  override lazy val aggBufferAttributes: Seq[GpuAttributeReference] = cudfMax :: valueSet :: Nil
+  override lazy val aggBufferAttributes: Seq[GpuAttributeReference] = cudfMin :: valueSet :: Nil
 
   override lazy val initialValues: Seq[GpuLiteral] = Seq(
     GpuLiteral(null, child.dataType),
