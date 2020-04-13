@@ -14,6 +14,14 @@ import scala.collection.JavaConverters._
 object FuzzerUtils {
 
   /**
+   * Default options when generating random data.
+   */
+  private val DEFAULT_OPTIONS = FuzzerOptions(
+    numbersAsStrings = true,
+    asciiStringsOnly = false,
+    maxStringLen = 64)
+
+  /**
    * Create a schema with the specified data types.
    */
   def createSchema(dataTypes: Seq[DataType]): StructType = {
@@ -23,9 +31,9 @@ object FuzzerUtils {
   /**
    * Creates a ColumnarBatch with random data based on the given schema.
    */
-  def createColumnarBatch(schema: StructType, rowCount: Int, maxStringLen: Int = 64, seed: Long = 0): ColumnarBatch = {
+  def createColumnarBatch(schema: StructType, rowCount: Int, maxStringLen: Int = 64, options: FuzzerOptions = DEFAULT_OPTIONS, seed: Long = 0): ColumnarBatch = {
     val rand = new Random(seed)
-    val r = new EnhancedRandom(rand, maxStringLen)
+    val r = new EnhancedRandom(rand, options)
     val builders = new GpuColumnarBatchBuilder(schema, rowCount, null)
     schema.fields.zipWithIndex.foreach {
       case (field, i) =>
@@ -119,17 +127,17 @@ object FuzzerUtils {
   /**
    * Creates a DataFrame with random data based on the given schema.
    */
-  def generateDataFrame(spark: SparkSession, schema: StructType, rowCount: Int, maxStringLen: Int = 64, seed: Long = 0): DataFrame = {
+  def generateDataFrame(spark: SparkSession, schema: StructType, rowCount: Int, options: FuzzerOptions = DEFAULT_OPTIONS, seed: Long = 0): DataFrame = {
     val r = new Random(seed)
-    val rows: Seq[Row] = (0 until rowCount).map(_ => generateRow(schema.fields, r, maxStringLen))
+    val rows: Seq[Row] = (0 until rowCount).map(_ => generateRow(schema.fields, r, options))
     spark.createDataFrame(rows.asJava, schema)
   }
 
   /**
    * Creates a Row with random data based on the given field definitions.
    */
-  def generateRow(fields: Array[StructField], rand: Random, maxStringLen: Int) = {
-    val r = new EnhancedRandom(rand, maxStringLen)
+  def generateRow(fields: Array[StructField], rand: Random, options: FuzzerOptions) = {
+    val r = new EnhancedRandom(rand, options)
     Row.fromSeq(fields.map { field =>
       if (field.nullable && r.nextFloat() < 0.2) {
         null
@@ -144,13 +152,13 @@ object FuzzerUtils {
       }
     })
   }
-  
+
 }
 
 /**
  * Wrapper around Random that generates more useful data for unit testing.
  */
-class EnhancedRandom(r: Random, val maxStringLen: Int) {
+class EnhancedRandom(r: Random, options: FuzzerOptions) {
 
   def nextByte(): Byte = {
     r.nextInt(5) match {
@@ -173,22 +181,20 @@ class EnhancedRandom(r: Random, val maxStringLen: Int) {
   }
 
   def nextInt(): Int = {
-    r.nextInt(5) match {
+    r.nextInt(4) match {
       case 0 => Int.MinValue
       case 1 => Int.MaxValue
       case 2 => (r.nextDouble() * Int.MinValue).toInt
-      case 3 => (r.nextDouble() * Int.MaxValue).toInt
-      case _ => 0
+      case _ => (r.nextDouble() * Int.MaxValue).toInt
     }
   }
 
   def nextLong(): Long = {
-    r.nextInt(5) match {
+    r.nextInt(4) match {
       case 0 => Long.MinValue
       case 1 => Long.MaxValue
       case 2 => (r.nextDouble() * Long.MinValue).toLong
-      case 3 => (r.nextDouble() * Long.MaxValue).toLong
-      case _ => 0
+      case _ => (r.nextDouble() * Long.MaxValue).toLong
     }
   }
 
@@ -219,12 +225,33 @@ class EnhancedRandom(r: Random, val maxStringLen: Int) {
   }
 
   def nextString(): String = {
-    r.nextInt(5) match {
-      case 0 => String.valueOf(r.nextInt())
-      case 1 => String.valueOf(r.nextLong())
-      case 2 => String.valueOf(r.nextFloat())
-      case 3 => String.valueOf(r.nextDouble())
-      case _ => r.nextString(r.nextInt(maxStringLen))
+    if (options.numbersAsStrings) {
+      r.nextInt(5) match {
+        case 0 => String.valueOf(r.nextInt())
+        case 1 => String.valueOf(r.nextLong())
+        case 2 => String.valueOf(r.nextFloat())
+        case 3 => String.valueOf(r.nextDouble())
+        case _ => generateString()
+      }
+    } else {
+      generateString()
     }
   }
-} 
+
+  private def generateString(): String = {
+    if (options.asciiStringsOnly) {
+      val b = new StringBuilder()
+      for (_ <- 0 until options.maxStringLen) {
+        b.append(ASCII_CHARS.charAt(r.nextInt(ASCII_CHARS.length)))
+      }
+      b.toString
+    } else {
+      r.nextString(r.nextInt(options.maxStringLen))
+    }
+
+  }
+
+  private val ASCII_CHARS = "abcdefghijklmnopqrstuvwxyz"
+}
+
+case class FuzzerOptions(numbersAsStrings: Boolean = true, asciiStringsOnly: Boolean = false, maxStringLen: Int = 64)
