@@ -901,26 +901,26 @@ trait SparkQueryCompareTestSuite extends FunSuite with Arm {
   def smallFloatDf(session: SparkSession): DataFrame = {
     import session.sqlContext.implicits._
     Seq(
-      (1.0f, 1.0f),
-      (2.0f, 2.0f),
-      (3.0f, 3.0f),
-      (4.0f, 4.0f),
-      (5.0f, 5.0f),
-      (-1.0f, 6.0f),
-      (-5.0f, 0.0f)
+      (1.23f, 1.80f),
+      (2.90f, 2.70f),
+      (3.04f, 3.0f),
+      (4.50f, 4.20f),
+      (5.60f, 5.60f),
+      (-1.30f, 6.50f),
+      (-5.05f, 0.50f)
     ).toDF("floats", "more_floats")
   }
 
-  def floatDf(session: SparkSession): DataFrame = {
+ def floatDf(session: SparkSession): DataFrame = {
     import session.sqlContext.implicits._
-    Seq(
-      (100.0f, 1.0f),
-      (200.0f, 2.0f),
-      (300.0f, 3.0f),
-      (400.0f, 4.0f),
-      (500.0f, 5.0f),
-      (-100.0f, 6.0f),
-      (-500.0f, 0.0f)
+    Seq[(java.lang.Float, java.lang.Float)](
+      (100.320f, 1.32f),
+      (200.650f, 2.09f),
+      (300.034f, 3.120f),
+      (400.0f, 4.04f),
+      (500.0f, 5.50f),
+      (-100.50f, 6.0f),
+      (-500.60f, 0.0f)
     ).toDF("floats", "more_floats")
   }
 
@@ -990,6 +990,24 @@ trait SparkQueryCompareTestSuite extends FunSuite with Arm {
     ).toDF("floats", "more_floats")
   }
 
+  def doubleWithNansDf(session: SparkSession): DataFrame = {
+    import session.sqlContext.implicits._
+    Seq[(java.lang.Double, java.lang.Double)](
+      (100.50d, 1.0d),
+      (200.80d, Double.NaN),
+      (300.30d, 3.0d),
+      (Double.NaN, 4.0d),
+      (500.0d, Double.NaN),
+      (Double.NaN, 6.0d),
+      (-500.0d, 50.5d),
+      (Double.NegativeInfinity, Double.NaN),
+      (Double.PositiveInfinity, 1.2d),
+      (Double.NaN, 3.2d),
+      (null, null)
+    ).toDF("doubles", "more_doubles")
+
+  }
+
   def floatWithNansDf(session: SparkSession): DataFrame = {
     import session.sqlContext.implicits._
     Seq[(java.lang.Float, java.lang.Float)](
@@ -999,8 +1017,13 @@ trait SparkQueryCompareTestSuite extends FunSuite with Arm {
       (Float.NaN, 4.0f),
       (500.0f, Float.NaN),
       (Float.NaN, 6.0f),
-      (-500.0f, 50.5f)
+      (-500.0f, 50.5f),
+      (Float.NegativeInfinity, Float.NaN),
+      (Float.PositiveInfinity, 1.2f),
+      (Float.NaN, 3.2f),
+      (null, null)
     ).toDF("floats", "more_floats")
+
   }
 
 
