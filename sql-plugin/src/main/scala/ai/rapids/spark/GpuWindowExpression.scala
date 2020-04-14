@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019, NVIDIA CORPORATION.
+ * Copyright (c) 2020, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -23,6 +23,7 @@ import org.apache.spark.sql.catalyst.expressions.aggregate.{AggregateExpression,
 import org.apache.spark.sql.catalyst.expressions.{CurrentRow, Expression, FrameType, Literal, RangeFrame, RowFrame, SortOrder, SpecialFrameBoundary, SpecifiedWindowFrame, UnaryMinus, UnboundedFollowing, UnboundedPreceding, WindowExpression, WindowFrame, WindowSpecDefinition}
 import org.apache.spark.sql.rapids.{GpuAggregateExpression, GpuCount}
 import org.apache.spark.sql.types.{CalendarIntervalType, DataType, DateType, IntegerType, NullType, TimestampType}
+import org.apache.spark.unsafe.types.CalendarInterval
 
 class GpuWindowExpressionMeta(
           windowExpression: WindowExpression,
@@ -39,7 +40,6 @@ class GpuWindowExpressionMeta(
     if (wrapped.children.size != 2) {
       willNotWorkOnGpu("Unsupported children in WindowExpression. " +
         "Expected only WindowFunction, and WindowSpecDefinition")
-      return
     }
 
     if (!wrapped.windowFunction.isInstanceOf[AggregateExpression]) {
@@ -204,18 +204,18 @@ class GpuSpecifiedWindowFrameMeta(
       val upper = windowFrame.upper
       upper match {
         case literal: Literal 
-          if !(upper.dataType.equals(CalendarIntervalType) 
-            && literal.value.toString.toLowerCase.endsWith("days"))
-              => willNotWorkOnGpu("Range-based window-frames must be specified in DAYS")
+          if (!upper.dataType.equals(CalendarIntervalType)
+            || literal.value.asInstanceOf[CalendarInterval].days == 0)
+              => willNotWorkOnGpu("Upper bound literals for Range-based window frames must be specified in DAYS")
         case _ =>
       }
       
       val lower = windowFrame.lower
       lower match {
         case literal: Literal
-          if !(lower.dataType.equals(CalendarIntervalType)
-            && literal.value.toString.toLowerCase.endsWith("days"))
-        => willNotWorkOnGpu("Range-based window-frames must be specified in DAYS")
+          if (!lower.dataType.equals(CalendarIntervalType)
+            || literal.value.asInstanceOf[CalendarInterval].days == 0)
+        => willNotWorkOnGpu("Lower bound literals for Range-based window frames must be specified in DAYS")
         case _ =>
       }
     }
@@ -244,8 +244,6 @@ class GpuSpecifiedWindowFrameMeta(
       }
 
     }
-
-    // TODO: Add protections for foldable expressions with l>u, etc.
   }
 
   override def convertToGpu(): GpuExpression =
@@ -263,6 +261,7 @@ trait GpuWindowFrame extends GpuExpression with GpuUnevaluable {
 
 case object GpuUnspecifiedFrame extends GpuWindowFrame // Placeholder, to handle UnspecifiedFrame
 
+// This class closely follows what's done in SpecifiedWindowFrame.
 case class GpuSpecifiedWindowFrame(
                                     frameType: FrameType,
                                     lower: GpuExpression,
@@ -329,9 +328,10 @@ case class GpuSpecifiedWindowFrame(
   // Check whether the left boundary value is greater than the right boundary value. It's required
   // that the both expressions have the same data type.
   // Since CalendarIntervalType is not comparable, we only compare expressions that are AtomicType.
+  //
+  // Note: This check is currently skipped for GpuSpecifiedWindowFrame,
+  // because: AtomicType has protected access in Spark. It is not available here.
   private def isGreaterThan(l: Expression, r: Expression): Boolean = l.dataType match {
-    // TODO: Uncomment. AtomicType is protected-access.
-    // TODO: Expressions may be Unevaluable. Figure out how to evaluate `GreaterThan`.
     // case _: org.apache.spark.sql.types.AtomicType => GreaterThan(l, r).eval().asInstanceOf[Boolean]
     case _ => false
   }
@@ -340,7 +340,9 @@ case class GpuSpecifiedWindowFrame(
     case _: GpuSpecialFrameBoundary => TypeCheckSuccess
     case e: Expression if !e.foldable =>
       TypeCheckFailure(s"Window frame $location bound '$e' is not a literal.")
-    // TODO: Uncomment. AbstractDataType::acceptsType() has protected access.
+    // Skipping type checks, because AbstractDataType::acceptsType() has protected access.
+    // This should have been checked already.
+    //
     // case e: Expression if !frameType.inputType.acceptsType(e.dataType) =>
     //   TypeCheckFailure(
     //     s"The data type of the $location bound '${e.dataType.catalogString}' does not match " +
