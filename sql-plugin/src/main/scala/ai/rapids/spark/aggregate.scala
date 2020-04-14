@@ -33,7 +33,7 @@ import org.apache.spark.sql.execution.metric.{SQLMetric, SQLMetrics}
 import org.apache.spark.sql.rapids.{CudfAggregate, GpuAggregateExpression, GpuDeclarativeAggregate}
 import org.apache.spark.sql.vectorized.{ColumnarBatch, ColumnVector}
 import org.apache.spark.sql.execution.aggregate.{HashAggregateExec, SortAggregateExec}
-import org.apache.spark.sql.types.{DoubleType, FloatType, StringType}
+import org.apache.spark.sql.types.{DoubleType, FloatType}
 
 import scala.collection.mutable.ArrayBuffer
 
@@ -62,9 +62,6 @@ class GpuHashAggregateMeta(
       resultExpressions
 
   override def tagPlanForGpu(): Unit = {
-    if (GpuOverrides.isAnyStringLit(agg.groupingExpressions)) {
-      willNotWorkOnGpu("string literal values are not supported in a hash aggregate")
-    }
     val groupingExpressionTypes = agg.groupingExpressions.map(_.dataType)
     if (conf.hasNans &&
       (groupingExpressionTypes.contains(FloatType) ||

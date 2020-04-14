@@ -16,7 +16,7 @@
 package ai.rapids.spark
 
 import java.io.File
-import java.sql.Date
+import java.sql.{Date, Timestamp}
 import java.util.{Locale, TimeZone}
 
 import scala.util.{Failure, Try}
@@ -393,6 +393,11 @@ trait SparkQueryCompareTestSuite extends FunSuite with Arm {
           } else if (i1 > i2) {
             return false
           } // else equal go on
+          case (i1: Timestamp, i2: Timestamp) => if (i1.before(i2)) {
+            return true
+          } else if (i1.after(i2)) {
+            return false
+          } // else equal go on
           case (s1: String, s2: String) =>
             val cmp = s1.compareTo(s2)
             if (cmp < 0) {
@@ -738,6 +743,22 @@ trait SparkQueryCompareTestSuite extends FunSuite with Arm {
       (Date.valueOf("2020-5-5"), Date.valueOf("2019-6-19")),
       (Date.valueOf("2050-10-30"), Date.valueOf("0100-5-28"))
     ).toDF("dates", "more_dates")
+  }
+
+  def timestampsDf(session: SparkSession): DataFrame = {
+    import session.sqlContext.implicits._
+
+    Seq(
+      (Timestamp.valueOf("0100-1-1 23:00:01"), Timestamp.valueOf("2100-1-1 23:12:01")),
+      (Timestamp.valueOf("0211-1-1 03:00:01"), Timestamp.valueOf("1492-4-7 07:00:01")),
+      (Timestamp.valueOf("1900-2-2 01:10:01"), Timestamp.valueOf("1776-7-4 05:22:52")),
+      (Timestamp.valueOf("1989-3-3 11:04:10"), Timestamp.valueOf("1808-11-12 21:00:33")),
+      (Timestamp.valueOf("2010-4-4 13:00:56"), Timestamp.valueOf("2100-12-30 02:54:10")),
+      (Timestamp.valueOf("2019-6-5 06:24:24"), Timestamp.valueOf("2019-6-19 16:00:01")),
+      (Timestamp.valueOf("2020-2-5 06:24:24"), Timestamp.valueOf("2019-6-19 16:00:01")),
+      (Timestamp.valueOf("2020-5-5 06:24:24"), Timestamp.valueOf("2100-12-30 02:54:10")),
+      (Timestamp.valueOf("2050-10-30 08:44:30"), Timestamp.valueOf("0100-5-28 08:23:12"))
+    ).toDF("timestamps", "more_timestamps")
   }
 
   def datesPostEpochDf(session: SparkSession): DataFrame = {
