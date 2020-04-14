@@ -171,41 +171,9 @@ case class GpuCast(child: GpuExpression, dataType: DataType, timeZoneId: Option[
         withResource(FloatUtils.nanToZero(input.getBase)) { inputWithNansToZero =>
           GpuColumnVector.from(inputWithNansToZero.castTo(cudfType))
         }
-      case (ByteType, StringType) =>
-        castIntegralTypeToString(input, Scalar.fromByte(Byte.MinValue), String.valueOf(Byte.MinValue))
-      case (ShortType, StringType) =>
-        castIntegralTypeToString(input, Scalar.fromShort(Short.MinValue), String.valueOf(Short.MinValue))
-      case (IntegerType, StringType) =>
-        castIntegralTypeToString(input, Scalar.fromInt(Int.MinValue), String.valueOf(Int.MinValue))
-      case (LongType, StringType) =>
-        castIntegralTypeToString(input, Scalar.fromLong(Long.MinValue), String.valueOf(Long.MinValue))
       case _ =>
         GpuColumnVector.from(input.getBase.castTo(cudfType))
     }
   }
 
-  /**
-   * Due to https://github.com/rapidsai/cudf/issues/4818 it is necessary to perform an additional step
-   * to handle MinValue of each integral type
-   *
-   * @param input Vector to cast
-   * @param minValue Scalar value for MinValue, which is closed within this method
-   * @param minValueStr String representing MinValue
-   * @return GpuColumnVector representing `if (isMinValue) { minValueStr }  else { cudfCast }`
-   */
-  private def castIntegralTypeToString(input: GpuColumnVector, minValue: Scalar, minValueStr: String): GpuColumnVector = {
-    // build isMinValue and then free the minValue scalar
-    val isMinValue = withResource(minValue) { minValue =>
-      input.getBase.binaryOp(BinaryOp.EQUAL, minValue, DType.BOOL8)
-    }
-    // if (isMinValue) { minValueStr }  else { cudfCast }
-    withResource(isMinValue) { isMinValue =>
-      withResource(Scalar.fromString(minValueStr)) { minValueStr =>
-        withResource(input.getBase.castTo(DType.STRING)) { cudfCast =>
-          GpuColumnVector.from(isMinValue.ifElse(minValueStr, cudfCast))
-        }
-      }
-    }
-
-  }
 }
