@@ -16,7 +16,7 @@
 
 package ai.rapids.spark
 
-import ai.rapids.cudf.{Table, WindowAggregate, WindowOptions}
+import ai.rapids.cudf.{DType, Table, WindowAggregate, WindowOptions}
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.expressions.{Alias, Attribute, Expression, FrameType, NamedExpression, RangeFrame, SortOrder}
@@ -198,8 +198,16 @@ case class GpuWindowExec(windowExpressionAliases: Seq[GpuAlias],
         )
 
       // Aggregation column is at index `0`
-      val aggColumn = aggResultTable.getColumn(0)
-      aggColumn.incRefCount()
+      // Note: Special-case handling for COUNT(1)/COUNT(*). GpuCount aggregation expects to return LongType,
+      //       but CUDF returns IntType for COUNT() window function.
+      val aggColumn = if (windowFunctions(i).aggregateFunction.isInstanceOf[GpuCount]) {
+        aggResultTable.getColumn(0).castTo(DType.INT64)
+      }
+      else {
+        val origAggColumn = aggResultTable.getColumn(0)
+        origAggColumn.incRefCount()
+        origAggColumn
+      }
 
       GpuColumnVector.from(aggColumn)
     } finally {
