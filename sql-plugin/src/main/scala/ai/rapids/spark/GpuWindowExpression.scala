@@ -21,7 +21,6 @@ import org.apache.spark.sql.catalyst.analysis.TypeCheckResult
 import org.apache.spark.sql.catalyst.analysis.TypeCheckResult.{TypeCheckFailure, TypeCheckSuccess}
 import org.apache.spark.sql.catalyst.expressions.aggregate.{AggregateExpression, AggregateFunction, Count, Max, Min, Sum}
 import org.apache.spark.sql.catalyst.expressions.{CurrentRow, Expression, FrameType, Literal, RangeFrame, RowFrame, SortOrder, SpecialFrameBoundary, SpecifiedWindowFrame, UnaryMinus, UnboundedFollowing, UnboundedPreceding, WindowExpression, WindowFrame, WindowSpecDefinition}
-import org.apache.spark.sql.rapids.{GpuAggregateExpression, GpuCount}
 import org.apache.spark.sql.types.{CalendarIntervalType, DataType, DateType, IntegerType, NullType, TimestampType}
 import org.apache.spark.unsafe.types.CalendarInterval
 
@@ -195,23 +194,29 @@ class GpuSpecifiedWindowFrameMeta(
     if (windowFrame.frameType.equals(RangeFrame)) {
       // Expect either SpecialFrame (UNBOUNDED PRECEDING/FOLLOWING, or CURRENT ROW),
       // or CalendarIntervalType in days.
-      
-      val upper = windowFrame.upper
-      upper match {
-        case literal: Literal 
-          if (!upper.dataType.equals(CalendarIntervalType)
-            || literal.value.asInstanceOf[CalendarInterval].days == 0)
-              => willNotWorkOnGpu("Upper bound literals for Range-based window frames must be specified in DAYS")
-        case _ =>
+
+      // Check that if `bounds` is specified as a Literal, it is specified in DAYS.
+      def isSpecifiedInDays(bounds : Expression) : Boolean = {
+
+        if (!bounds.isInstanceOf[Literal]) {
+          return true // Bounds are likely SpecialFrameBoundaries (CURRENT_ROW, UNBOUNDED PRECEDING/FOLLOWING).
+        }
+
+        if (!bounds.dataType.equals(CalendarIntervalType)) {
+          return false // Expected Literal of CalendarIntervalType
+        }
+
+        val interval = bounds.asInstanceOf[Literal].value.asInstanceOf[CalendarInterval]
+
+        interval.microseconds == 0 && interval.months == 0 // DAYS == 0 is permitted.
       }
-      
-      val lower = windowFrame.lower
-      lower match {
-        case literal: Literal
-          if (!lower.dataType.equals(CalendarIntervalType)
-            || literal.value.asInstanceOf[CalendarInterval].days == 0)
-        => willNotWorkOnGpu("Lower bound literals for Range-based window frames must be specified in DAYS")
-        case _ =>
+
+      if (!isSpecifiedInDays(windowFrame.upper)) {
+        willNotWorkOnGpu("Upper bound literals for Range-based window frames must be specified in DAYS")
+      }
+
+      if (!isSpecifiedInDays(windowFrame.lower)) {
+        willNotWorkOnGpu("Lower bound literals for Range-based window frames must be specified in DAYS")
       }
     }
 
@@ -362,10 +367,10 @@ case class GpuSpecialFrameBoundary(boundary : SpecialFrameBoundary) extends GpuE
 
   def value : Int = {
     boundary match {
-      case UnboundedPreceding => Int.MinValue + 1 // Account for CUDF counting current row as part of preceding window.
+      case UnboundedPreceding => Int.MinValue
       case UnboundedFollowing => Int.MaxValue
       case CurrentRow => 0
-      case anythingElse =>  throw new UnsupportedOperationException(s"Unsupported window-bound ${anythingElse}!")
+      case anythingElse =>  throw new UnsupportedOperationException(s"Unsupported window-bound $anythingElse!")
     }
   }
 }
