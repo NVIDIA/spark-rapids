@@ -78,12 +78,7 @@ case class GpuWindowExpression(
 
   override def children: Seq[Expression] = windowFunction :: windowSpec :: Nil
 
-  // Special-case for COUNT(1)/COUNT(*).
-  // GpuCount aggregation expects to return LongType, but CUDF returns IntType for COUNT() window function.
-  override def dataType: DataType
-    = if (windowFunction.asInstanceOf[GpuAggregateExpression].aggregateFunction.isInstanceOf[GpuCount])
-        IntegerType
-      else windowFunction.dataType
+  override def dataType: DataType = windowFunction.dataType
 
   override def foldable: Boolean = windowFunction.foldable
 
