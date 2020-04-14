@@ -461,28 +461,30 @@ object GpuOverrides {
         override def convertToGpu(child: GpuExpression): GpuToRadians = GpuToRadians(child)
       }).incompat(FLOAT_DIFFERS_INCOMPAT),
     expr[WindowExpression](
-      "Window Expression",
+      "calculates a return value for every input row of a table based on a group (or \"window\") of rows",
       (windowExpression, conf, p, r) => new GpuWindowExpressionMeta(windowExpression, conf, p, r)),
     expr[SpecifiedWindowFrame](
-      "Specified Window Frame, for rolling windows.",
+      "specification of the width of the group (or \"frame\") of input rows " +
+        "around which a window function is evaluated",
       (windowFrame, conf, p, r) => new GpuSpecifiedWindowFrameMeta(windowFrame, conf, p, r) ),
     expr[WindowSpecDefinition](
-      "Window Spec Definition ",
+      "specification of a window function, indicating the partitioning-expression, the row ordering, " +
+        "and the width of the window",
       (windowSpec, conf, p, r) => new GpuWindowSpecDefinitionMeta(windowSpec, conf, p, r)),
     expr[CurrentRow.type](
-      "Special Window bounds, indicating stopping at the current row",
+      "Special boundary for a window frame, indicating stopping at the current row",
       (currentRow, conf, p, r) => new ExprMeta[CurrentRow.type](currentRow, conf, p, r) {
         override def convertToGpu(): GpuExpression = GpuSpecialFrameBoundary(currentRow)
       }
     ),
     expr[UnboundedPreceding.type](
-      "Special Window bounds, indicating all rows preceding the current row",
+      "Special boundary for a window frame, indicating all rows preceding the current row",
       (unboundedPreceding, conf, p, r) => new ExprMeta[UnboundedPreceding.type](unboundedPreceding, conf, p, r) {
         override def convertToGpu(): GpuExpression = GpuSpecialFrameBoundary(unboundedPreceding)
       }
     ),
     expr[UnboundedFollowing.type](
-      "Special Window bounds, indicating all rows preceding the current row",
+      "Special boundary for a window frame, indicating all rows preceding the current row",
       (unboundedFollowing, conf, p, r) => new ExprMeta[UnboundedFollowing.type](unboundedFollowing, conf, p, r) {
         override def convertToGpu(): GpuExpression = GpuSpecialFrameBoundary(unboundedFollowing)
       }

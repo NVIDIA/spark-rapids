@@ -70,9 +70,7 @@ case class GpuWindowExec(windowExpressionAliases: Seq[GpuAlias],
                         ) extends UnaryExecNode with GpuExec {
 
   override def output: Seq[Attribute] = {
-    child.output ++ windowExpressionAliases.map {
-      _.toAttribute
-    }
+    child.output ++ windowExpressionAliases.map(_.toAttribute)
   }
 
   override def outputOrdering: Seq[SortOrder] = child.outputOrdering
@@ -107,11 +105,9 @@ case class GpuWindowExec(windowExpressionAliases: Seq[GpuAlias],
           aggCols      = windowExpressions.indices.toArray.map(evaluateWindowExpression(cb, _))
 
           new ColumnarBatch( originalCols ++ aggCols, cb.numRows() )
-        }
-        finally {
+        } finally {
           cb.close()
         }
-
       }
     }
   }
@@ -156,9 +152,9 @@ case class GpuWindowExec(windowExpressionAliases: Seq[GpuAlias],
       // Aggregation column is at index `0`
       val aggColumn = aggResultTable.getColumn(0)
       aggColumn.incRefCount()
+
       GpuColumnVector.from(aggColumn)
-    }
-    finally {
+    } finally {
       if (groupingColsCB != null) groupingColsCB.close()
       if (aggregationColsCB != null) aggregationColsCB.close()
       if (inputTable != null) inputTable.close()
@@ -204,9 +200,9 @@ case class GpuWindowExec(windowExpressionAliases: Seq[GpuAlias],
       // Aggregation column is at index `0`
       val aggColumn = aggResultTable.getColumn(0)
       aggColumn.incRefCount()
+
       GpuColumnVector.from(aggColumn)
-    }
-    finally {
+    } finally {
       if (groupingColsCB != null) groupingColsCB.close()
       if (sortColsCB != null) sortColsCB.close()
       if (aggregationColsCB != null) aggregationColsCB.close()
