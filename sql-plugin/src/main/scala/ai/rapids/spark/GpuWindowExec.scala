@@ -19,7 +19,7 @@ package ai.rapids.spark
 import ai.rapids.cudf.{DType, Table, WindowAggregate, WindowOptions}
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.InternalRow
-import org.apache.spark.sql.catalyst.expressions.{Alias, Attribute, Expression, FrameType, NamedExpression, RangeFrame, SortOrder}
+import org.apache.spark.sql.catalyst.expressions.{Alias, Attribute, FrameType, NamedExpression, RangeFrame, SortOrder}
 import org.apache.spark.sql.catalyst.plans.physical.Partitioning
 import org.apache.spark.sql.execution.window.WindowExec
 import org.apache.spark.sql.execution.{SparkPlan, UnaryExecNode}
@@ -36,10 +36,6 @@ class GpuWindowExecMeta(windowExec: WindowExec,
 
   val windowExpressions: Seq[ExprMeta[NamedExpression]] =
     windowExec.windowExpression.map(GpuOverrides.wrapExpr(_, conf, Some(this)))
-  val partitionSpec: Seq[ExprMeta[Expression]] =
-    windowExec.partitionSpec.map(GpuOverrides.wrapExpr(_, conf, Some(this)))
-  val orderSpec: Seq[ExprMeta[SortOrder]] =
-    windowExec.orderSpec.map(GpuOverrides.wrapExpr(_, conf, Some(this)))
 
   override def tagPlanForGpu(): Unit = {
 
@@ -50,22 +46,17 @@ class GpuWindowExecMeta(windowExec: WindowExec,
         "cannot convert for GPU execution. " +
         "(Detail: WindowExpression not wrapped in `Alias`.)"))
 
-    // TODO: Detect RANGE window-frames that have `GpuSortOrder` with more than one column.
   }
 
   override def convertToGpu(): GpuExec = {
     GpuWindowExec(
       windowExpressions.map(_.convertToGpu().asInstanceOf[GpuAlias]),
-      partitionSpec.map(_.convertToGpu()),                        // TODO: Verify that this parameter can be removed.
-      orderSpec.map(_.convertToGpu().asInstanceOf[GpuSortOrder]), // TODO: Verify that this parameter can be removed.
       childPlans.head.convertIfNeeded()
     )
   }
 }
 
 case class GpuWindowExec(windowExpressionAliases: Seq[GpuAlias],
-                         partitionSpec: Seq[GpuExpression],
-                         orderSpec: Seq[GpuSortOrder],
                          child: SparkPlan
                         ) extends UnaryExecNode with GpuExec {
 
@@ -84,8 +75,6 @@ case class GpuWindowExec(windowExpressionAliases: Seq[GpuAlias],
   val boundWindowAggregations: Seq[GpuExpression] = GpuBindReferences.bindReferences(unboundWindowFunctionExpressions, child.output)  // One per window expression.
   val boundWindowPartKeys : Seq[Seq[GpuExpression]] = windowExpressions.map(_.windowSpec.partitionSpec).map(GpuBindReferences.bindReferences(_, child.output)) // 1 set of part-keys per window-expression.
   val boundWindowSortKeys : Seq[Seq[GpuExpression]] = windowExpressions.map(_.windowSpec.orderSpec).map(_.map(_.child)).map(GpuBindReferences.bindReferences(_, child.output))
-
-  val deleteme_breakpoint_placeholder_sorry_not_sorry : Int = 0
 
   override protected def doExecute(): RDD[InternalRow]
   = throw new IllegalStateException(s"Row-based execution should not happen, in $this.")
@@ -150,8 +139,16 @@ case class GpuWindowExec(windowExpressionAliases: Seq[GpuAlias],
         )
 
       // Aggregation column is at index `0`
-      val aggColumn = aggResultTable.getColumn(0)
-      aggColumn.incRefCount()
+      // Note: Special-case handling for COUNT(1)/COUNT(*). GpuCount aggregation expects to return LongType,
+      //       but CUDF returns IntType for COUNT() window function.
+      val aggColumn = if (windowFunctions(i).aggregateFunction.isInstanceOf[GpuCount]) {
+        aggResultTable.getColumn(0).castTo(DType.INT64)
+      }
+      else {
+        val origAggColumn = aggResultTable.getColumn(0)
+        origAggColumn.incRefCount()
+        origAggColumn
+      }
 
       GpuColumnVector.from(aggColumn)
     } finally {
@@ -228,16 +225,23 @@ object GpuWindowExec {
                              windowSpec : GpuSpecifiedWindowFrame)
   : WindowAggregate = {
 
-    // FIXME: Assumes `lower` is negative.
+    // FIXME: Currently, only negative or 0 values are supported.
     var lower = getBoundaryValue(windowSpec.lower)
     assert(lower <= 0, "Lower-bounds ahead of current row is not supported.")
-    lower -= 1 // CUDF counts current row against the lower-bound of the window.
+
+    // Now, translate the lower bound value to CUDF semantics:
+    //  1. CUDF requires lower bound value to include the current row.
+    //       i.e. If Spark's lower bound == 3, CUDF's lower bound == 2.
+    //  2. Spark's lower_bound (preceding CURRENT ROW) as a negative offset. CUDF requires a positive number
+    //       Note: UNBOUNDED PRECEDING implies lower == Int.MinValue, which needs special handling for negation.
+    // The following covers both requirements:
+    lower = Math.abs(lower-1)
 
     val upper = getBoundaryValue(windowSpec.upper)
     assert(upper >= 0, "Upper-bounds behind of current row is not supported.")
 
     val windowOption = WindowOptions.builder().minPeriods(1)
-      .window(-lower,upper).build()
+      .window(lower, upper).build()
 
     aggFunction match {
       case GpuCount(_) => WindowAggregate.count(columnIndex, windowOption)
@@ -254,15 +258,20 @@ object GpuWindowExec {
                                windowSpec : GpuSpecifiedWindowFrame)
   : WindowAggregate = {
 
-    // FIXME: Assumes `lower` is negative.
-    val lower = getBoundaryValue(windowSpec.lower)
+    // FIXME: Currently, only negative or 0 values are supported.
+    var lower = getBoundaryValue(windowSpec.lower)
     assert(lower <= 0, "Lower-bounds ahead of current row is not supported.")
+
+    // Now, translate the lower bound value to CUDF semantics:
+    // Spark's lower_bound (preceding CURRENT ROW) as a negative offset. CUDF requires a positive offset.
+    // Note: UNBOUNDED PRECEDING implies lower == Int.MinValue, which needs special handling for negation.
+    lower = if (lower == Int.MinValue) Int.MaxValue else Math.abs(lower)
 
     val upper = getBoundaryValue(windowSpec.upper)
     assert(upper >= 0, "Upper-bounds behind of current row is not supported.")
 
     val windowOption = WindowOptions.builder().minPeriods(1)
-      .window(-lower,upper).timestampColumnIndex(timeColumnIndex).build()
+      .window(lower,upper).timestampColumnIndex(timeColumnIndex).build()
 
     aggFunction match {
       case GpuCount(_) => WindowAggregate.count(aggColumnIndex, windowOption)
