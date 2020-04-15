@@ -179,4 +179,7 @@ class UnaryOperatorsSuite extends SparkQueryCompareTestSuite {
       signum(col("doubles")))
   }
 
+  INCOMPAT_testSparkResultsAreEqual("Test cot", floatWithNansDf, 0.0001) {
+    frame => frame.selectExpr("cot(floats)")
+  }
 }

@@ -690,6 +690,12 @@ object GpuOverrides {
         override def convertToGpu(child: GpuExpression): GpuExpression = GpuCosh(child)
       })
       .incompat(FLOAT_DIFFERS_INCOMPAT),
+    expr[Cot](
+      "Returns the cotangent",
+      (a, conf, p, r) => new UnaryExprMeta[Cot](a, conf, p, r) {
+        override def convertToGpu(child: GpuExpression): GpuExpression = GpuCot(child)
+      })
+      .incompat(FLOAT_DIFFERS_INCOMPAT),
     expr[Tanh](
       "hyperbolic tangent",
       (a, conf, p, r) => new UnaryExprMeta[Tanh](a, conf, p, r) {
