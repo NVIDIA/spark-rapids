@@ -44,13 +44,10 @@ case class GpuDateDiff(endDate: Expression, startDate: Expression)
   override def dataType: DataType = IntegerType
 
   override def doColumnar(lhs: GpuColumnVector, rhs: GpuColumnVector): GpuColumnVector = {
-    // the result type has to be TIMESTAMP_DAYS and casted separately. This is an issue that's being tracked by
-    // https://github.com/rapidsai/cudf/issues/4181
-    val vector = lhs.getBase.sub(rhs.getBase, DType.TIMESTAMP_DAYS)
-    try {
-      GpuColumnVector.from(vector.asInts())
-    } finally {
-      vector.close()
+    withResource(lhs.getBase.asInts()) { lhsDays =>
+      withResource(rhs.getBase.asInts()) { rhsDays =>
+        GpuColumnVector.from(lhsDays.sub(rhsDays))
+      }
     }
   }
 
