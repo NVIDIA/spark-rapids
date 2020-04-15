@@ -70,7 +70,6 @@ class SortExecSuite extends SparkQueryCompareTestSuite {
     val inputDf = generateData(dataType, nullable, 60, sortConfig)
     testSparkResultsAreEqual(s"sorting in partition on $dataType with nullable=$nullable, sortOrder=$sortOrder",  inputDf,
       conf = sortConfig,
-      allowNonGpu=false,
       execsAllowedNonGpu = Seq("RDDScanExec", "AttributeReference")) {
       frame => frame.sortWithinPartitions(sortOrder)
     }
@@ -85,7 +84,6 @@ class SortExecSuite extends SparkQueryCompareTestSuite {
     val inputDf = generateData(dataType, nullable, 60, sortConfig)
     testSparkResultsAreEqual(s"sorting on $dataType with nullable=$nullable, sortOrder=$sortOrder",  inputDf,
       conf = sortConfig,
-      allowNonGpu=false,
       execsAllowedNonGpu = Seq("RDDScanExec", "AttributeReference")) {
       frame => frame.sort(sortOrder)
     }
@@ -150,14 +148,14 @@ class SortExecSuite extends SparkQueryCompareTestSuite {
     set("spark.sql.join.preferSortMergeJoin", "true").set("spark.sql.exchange.reuse", "false")
 
   testSparkResultsAreEqual2("join longs", longsDf, longsDf, conf = sortJoinConf,
-      allowNonGpu = true, sort = true) {
+    sort = true) {
     (dfA, dfB) => dfA.join(dfB, dfA("longs") === dfB("longs"))
   }
 
   private val sortJoinMultiBatchConf = sortJoinConf.set(RapidsConf.GPU_BATCH_SIZE_BYTES.key, "3")
 
   testSparkResultsAreEqual2("join longs multiple batches", longsDf, longsDf,
-      conf = sortJoinMultiBatchConf, allowNonGpu = true, sort = true) {
+      conf = sortJoinMultiBatchConf, sort = true) {
     (dfA, dfB) => dfA.join(dfB, dfA("longs") === dfB("longs"))
   }
 
