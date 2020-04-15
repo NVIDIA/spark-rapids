@@ -20,6 +20,7 @@ import org.apache.spark.sql.catalyst.expressions.{Ascending, Attribute, Attribut
 import org.apache.spark.sql.catalyst.expressions.objects.CreateExternalRow
 import org.apache.spark.sql.catalyst.rules.Rule
 import org.apache.spark.sql.execution._
+import org.apache.spark.sql.execution.columnar.InMemoryTableScanExec
 import org.apache.spark.sql.execution.command.{CreateDataSourceTableCommand, DropTableCommand, ExecutedCommandExec}
 import org.apache.spark.sql.execution.datasources.v2.DataSourceV2ScanExecBase
 import org.apache.spark.sql.execution.exchange.{Exchange, ShuffleExchangeExec}
@@ -207,7 +208,7 @@ class GpuTransitionOverrides extends Rule[SparkPlan] {
   def assertIsOnTheGpu(exp: Expression, conf: RapidsConf): Unit = {
     if (!exp.isInstanceOf[GpuExpression] &&
       !conf.testingAllowedNonGpu.contains(getBaseNameFromClass(exp.getClass.toString))) {
-      throw new IllegalArgumentException(s"The expression ${exp} is not columnar ${exp.getClass}")
+      throw new IllegalArgumentException(s"The expression $exp is not columnar ${exp.getClass}")
     }
   }
 
@@ -218,10 +219,14 @@ class GpuTransitionOverrides extends Rule[SparkPlan] {
           throw new IllegalArgumentException("It looks like some operations were " +
             s"pushed down to LocalTableScanExec ${lts.expressions.mkString(",")}")
         }
+      case imts: InMemoryTableScanExec =>
+        if (!imts.expressions.forall(_.isInstanceOf[AttributeReference])) {
+          throw new IllegalArgumentException("It looks like some operations were " +
+            s"pushed down to InMemoryTableScanExec ${imts.expressions.mkString(",")}")
+        }
       case _: GpuColumnarToRowExec => () // Ignored
-      case _: ShuffleExchangeExec => () // Ignored for now
-      case ExecutedCommandExec(_: CreateDataSourceTableCommand) => () // Ignored
-      case ExecutedCommandExec(_: DropTableCommand) => () // Ignored
+      case _: ExecutedCommandExec => () // Ignored
+      case _: ShuffleExchangeExec => () // Ignored for now, we don't force it to the GPU if children are not on the gpu
       case other =>
         if (!plan.supportsColumnar &&
           !conf.testingAllowedNonGpu.contains(getBaseNameFromClass(other.getClass.toString))) {
