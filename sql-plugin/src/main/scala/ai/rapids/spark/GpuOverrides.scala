@@ -46,6 +46,7 @@ import org.apache.spark.sql.execution.datasources.parquet.ParquetFileFormat
 import org.apache.spark.sql.execution.datasources.text.TextFileFormat
 import org.apache.spark.sql.types._
 import org.apache.spark.sql.{GpuInputFileBlockLength, GpuInputFileBlockStart, GpuInputFileName, SparkSession}
+import org.apache.spark.unsafe.types.UTF8String
 
 /**
  * Base class for all ReplacementRules
@@ -286,6 +287,11 @@ object GpuOverrides {
     "conversion does not support these characters. For a full list of unsupported characters " +
     "see https://github.com/rapidsai/cudf/issues/3132"
   private val UTC_TIMEZONE_ID = ZoneId.of("UTC").normalized()
+  // Based on https://docs.oracle.com/javase/8/docs/api/java/util/regex/Pattern.html
+  private[this] lazy val regexList: Seq[String] = Seq("\\", "\u0000", "\\x", "\t", "\n", "\r", "\f",
+    "\\a", "\\e", "\\cx", "[", "]", "^", "&", ".", "*", "\\d", "\\D", "\\h", "\\H", "\\s", "\\S",
+    "\\v", "\\V", "\\w", "\\w", "\\p", "$", "\\b", "\\B", "\\A", "\\G", "\\Z", "\\z", "\\R", "?",
+    "|", "(", ")", "{", "}", "\\k", "\\Q", "\\E", ":", "!", "<=", ">")
 
   @scala.annotation.tailrec
   def isStringLit(exp: Expression): Boolean = exp match {
@@ -299,6 +305,19 @@ object GpuOverrides {
     case Literal(_, _) => true
     case a: Alias => isLit(a.child)
     case _ => false
+  }
+
+  def isNullOrEmptyOrRegex(exp: Expression): Boolean = {
+    val lit = unwrapAliases(exp)
+    if (!isStringLit(lit)) {
+      false
+    } else {
+      val value = lit.asInstanceOf[Literal].value
+      if (value == null) return true
+      val strLit = value.asInstanceOf[UTF8String].toString
+      if (strLit.isEmpty) return true
+      regexList.exists(pattern => strLit.contains(pattern))
+    }
   }
 
   def unwrapAliases(exp: Expression): Expression = exp match {
@@ -1115,6 +1134,19 @@ object GpuOverrides {
           }
         }
         override def convertToGpu(lhs: GpuExpression, rhs: GpuExpression): GpuExpression = GpuLike(lhs, rhs, a.escapeChar)
+      }),
+    expr[RegExpReplace](
+      "RegExpReplace",
+      (a, conf, p, r) => new TernaryExprMeta[RegExpReplace](a, conf, p, r) {
+        override def tagExprForGpu(): Unit = {
+          if (isNullOrEmptyOrRegex(a.regexp)) {
+            willNotWorkOnGpu(
+              "Only non-null, non-empty String literals that are not regex patterns " +
+                "are supported by RegExpReplace on the GPU")
+          }
+        }
+        override def convertToGpu(lhs: GpuExpression, regexp: GpuExpression,
+          rep: GpuExpression): GpuExpression = GpuStringReplace(lhs, regexp, rep)
       })
   ).map(r => (r.getClassFor.asSubclass(classOf[Expression]), r)).toMap
 
