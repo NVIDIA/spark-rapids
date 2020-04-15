@@ -16,14 +16,18 @@
 
 package org.apache.spark.sql.rapids
 
+import java.io.Serializable
+
 import ai.rapids.cudf.{BinaryOp, DType, Scalar, UnaryOp}
 import ai.rapids.spark.{Arm, CudfBinaryExpression, CudfUnaryExpression, GpuColumnVector, GpuExpression, GpuUnaryExpression}
 import org.apache.spark.sql.catalyst.expressions.{Expression, ImplicitCastInputTypes}
 import org.apache.spark.sql.types._
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
-abstract class CudfUnaryMathExpression(name: String) extends CudfUnaryExpression
-    with Serializable with ImplicitCastInputTypes {
+abstract class CudfUnaryMathExpression(name: String) extends GpuUnaryMathExpression(name) with CudfUnaryExpression
+
+abstract class GpuUnaryMathExpression(name: String) extends GpuUnaryExpression
+  with Serializable with ImplicitCastInputTypes {
   override def inputTypes: Seq[AbstractDataType] = Seq(DoubleType)
   override def dataType: DataType = DoubleType
   override def nullable: Boolean = true
@@ -168,14 +172,7 @@ case class GpuSin(child: Expression) extends CudfUnaryMathExpression("SIN") {
   override def outputTypeOverride: DType = DType.FLOAT64
 }
 
-case class GpuSignum(child: GpuExpression) extends GpuUnaryExpression
-  with Serializable with ImplicitCastInputTypes {
-  private val name = "SIGNUM"
-  override def inputTypes: Seq[AbstractDataType] = Seq(DoubleType)
-  override def dataType: DataType = DoubleType
-  override def nullable: Boolean = true
-  override def toString: String = s"$name($child)"
-  override def prettyName: String = name
+case class GpuSignum(child: GpuExpression) extends GpuUnaryMathExpression("SIGNUM") {
 
   override def doColumnar(input: GpuColumnVector): GpuColumnVector = {
       val num = Scalar.fromDouble(0)
@@ -227,6 +224,17 @@ case class GpuCbrt(child: Expression) extends CudfUnaryMathExpression("CBRT") {
 case class GpuTan(child: Expression) extends CudfUnaryMathExpression("TAN") {
   override def unaryOp: UnaryOp = UnaryOp.TAN
   override def outputTypeOverride: DType = DType.FLOAT64
+}
+
+case class GpuCot(child: GpuExpression) extends GpuUnaryMathExpression("COT") {
+
+  override def doColumnar(input: GpuColumnVector): GpuColumnVector = {
+    withResource(Scalar.fromInt(1)) { one =>
+      withResource(input.getBase.unaryOp(UnaryOp.TAN)) { tan =>
+        GpuColumnVector.from(one.div(tan))
+      }
+    }
+  }
 }
 
 abstract class CudfBinaryMathExpression(name: String) extends CudfBinaryExpression
