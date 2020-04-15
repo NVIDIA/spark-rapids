@@ -168,13 +168,13 @@ object TestCodepoints {
 }
 
 class StringOperatorsSuite extends SparkQueryCompareTestSuite {         
-  INCOMPAT_testSparkResultsAreEqual("Test compatible values upper case modifier", TestCodepoints.uppercaseCompatibleCharsDF) {    
+  INCOMPAT_testSparkResultsAreEqual("Test compatible values upper case modifier", TestCodepoints.uppercaseCompatibleCharsDF) {
     frame => frame.select(upper(col("strings")))
   }
 
   INCOMPAT_testSparkResultsAreEqual("Test compatible values lower case modifier", TestCodepoints.lowercaseCompatibleCharsDF) {
     frame => frame.select(lower(col("strings")))
-  }  
+  }
 
   testSparkResultsAreEqual("Substring location function", nullableStringsFromCsv) {
     frame => frame.selectExpr("POSITION('r' IN strings)")
@@ -297,7 +297,7 @@ class StringOperatorsSuite extends SparkQueryCompareTestSuite {
   testSparkResultsAreEqual("String replace- No replace parameter", nullableStringsFromCsv) {
     frame => frame.selectExpr("replace(strings, 'a')")
   }
-  
+
   testSparkResultsAreEqual("String Like 1", likeDf,
     allowNonGpu = true, execsAllowedNonGpu = Seq("InMemoryTableScanExec")) {
     frame => frame.filter(col("word").like("_"))
@@ -519,6 +519,72 @@ class StringOperatorsSuite extends SparkQueryCompareTestSuite {
     import sparkSession.sqlContext.implicits._
     Seq("sPArk", "sql", null, "lowercase", "UPPERCASE").toDF("words")} ) {
     frame => frame.select(initcap(col("words")))
+  }
+
+  testSparkResultsAreEqual("String regexp_replace 1", nullableStringsFromCsv) {
+    frame => frame.selectExpr("regexp_replace(strings,'a','D')")
+  }
+
+  testSparkResultsAreEqual("String regexp_replace 2", nullableStringsFromCsv) {
+    frame => frame.selectExpr("regexp_replace(strings,'a','%^[]')")
+  }
+
+  testSparkResultsAreEqual("String regexp_replace replaced empty",
+    nullableStringsFromCsv) {
+    frame => frame.selectExpr("regexp_replace(strings,'a','')")
+  }
+
+  testSparkResultsAreEqual("String regexp_replace null cpu fall back",
+    nullableStringsFromCsv, execsAllowedNonGpu = Seq("ProjectExec", "Alias")) {
+    frame => frame.selectExpr("regexp_replace(strings,null,'D')")
+  }
+
+  testSparkResultsAreEqual("String regexp_replace input empty cpu fall back",
+    nullableStringsFromCsv, execsAllowedNonGpu = Seq("ProjectExec", "Alias")) {
+    frame => frame.selectExpr("regexp_replace(strings,'','D')")
+  }
+
+  testSparkResultsAreEqual("String regexp_replace regex 1 cpu fall back",
+    nullableStringsFromCsv, execsAllowedNonGpu = Seq("ProjectExec", "Alias")) {
+    frame => val result = frame.selectExpr("regexp_replace(strings,'.*','D')")
+      assert(!result.queryExecution.executedPlan.toString().contains("GpuProject"))
+      result
+  }
+
+  testSparkResultsAreEqual("String regexp_replace regex 2 cpu fall back",
+    nullableStringsFromCsv, execsAllowedNonGpu = Seq("ProjectExec", "Alias")) {
+    frame => val result =  frame.selectExpr("regexp_replace(strings,'[a-z]+','D')")
+      assert(!result.queryExecution.executedPlan.toString().contains("GpuProject"))
+      result
+  }
+
+  testSparkResultsAreEqual("String regexp_replace regex 3 cpu fall back",
+    nullableStringsFromCsv, execsAllowedNonGpu = Seq("ProjectExec", "Alias")) {
+    frame => val result = frame.selectExpr("regexp_replace(strings,'foo$','D')")
+      assert(!result.queryExecution.executedPlan.toString().contains("GpuProject"))
+      result
+  }
+
+  testSparkResultsAreEqual("String regexp_replace regex 4 cpu fall back",
+    nullableStringsFromCsv, execsAllowedNonGpu = Seq("ProjectExec", "Alias")) {
+    frame => val result = frame.selectExpr("regexp_replace(strings,'^foo','D')")
+      assert(!result.queryExecution.executedPlan.toString().contains("GpuProject"))
+      result
+  }
+
+  testSparkResultsAreEqual("String regexp_replace regex 5 cpu fall back",
+    nullableStringsFromCsv, execsAllowedNonGpu = Seq("ProjectExec", "Alias")) {
+    frame => val result = frame.selectExpr("regexp_replace(strings,'(foo)','D')")
+      assert(!result.queryExecution.executedPlan.toString().contains("GpuProject"))
+      result
+  }
+
+
+  testSparkResultsAreEqual("String regexp_replace regex 6 cpu fall back",
+    nullableStringsFromCsv, execsAllowedNonGpu = Seq("ProjectExec", "Alias")) {
+    frame => val result = frame.selectExpr("regexp_replace(strings,'\\(foo\\)','D')")
+      assert(!result.queryExecution.executedPlan.toString().contains("GpuProject"))
+      result
   }
 }
 
