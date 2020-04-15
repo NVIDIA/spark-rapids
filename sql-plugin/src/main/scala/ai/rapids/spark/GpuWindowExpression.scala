@@ -223,9 +223,11 @@ class GpuSpecifiedWindowFrameMeta(
     if (windowFrame.frameType.equals(RowFrame)) {
 
       windowFrame.lower match {
-        case literal : Literal if !literal.value.isInstanceOf[Int] =>
-          willNotWorkOnGpu(because = s"Literal Lower-bound of ROWS window-frame must be of INT type. " +
-            s"Found ${literal.dataType}")
+        case literal : Literal =>
+          if (!literal.value.isInstanceOf[Int]) {
+            willNotWorkOnGpu(because = s"Literal Lower-bound of ROWS window-frame must be of INT type. " +
+              s"Found ${literal.dataType}")
+          }
         case UnboundedPreceding =>
         case CurrentRow =>
         case _ =>
@@ -234,9 +236,11 @@ class GpuSpecifiedWindowFrameMeta(
       }
 
       windowFrame.upper match {
-        case literal : Literal if !literal.value.isInstanceOf[Int] =>
-          willNotWorkOnGpu(because = s"Literal Upper-bound of ROWS window-frame must be of INT type. " +
-            s"Found ${literal.dataType}")
+        case literal : Literal =>
+          if (!literal.value.isInstanceOf[Int]) {
+            willNotWorkOnGpu(because = s"Literal Upper-bound of ROWS window-frame must be of INT type. " +
+              s"Found ${literal.dataType}")
+          }
         case UnboundedFollowing =>
         case CurrentRow =>
         case _ => willNotWorkOnGpu(because = s"Upper-bound of ROWS window-frame must be an INT literal," +
