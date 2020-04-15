@@ -83,11 +83,8 @@ trait SparkQueryCompareTestSuite extends FunSuite with Arm {
   def withGpuSparkSession[U](f: SparkSession => U, conf: SparkConf = new SparkConf()): U = {
     var c = conf.clone()
       .set("spark.plugins", "ai.rapids.spark.SQLPlugin")
+      .set(RapidsConf.TEST_CONF.key, "true")
       .set(RapidsConf.EXPLAIN.key, "ALL")
-
-    if (c.getOption(RapidsConf.TEST_CONF.key).isEmpty) {
-       c = c.set(RapidsConf.TEST_CONF.key, "true")
-    }
     withSparkSession("gpu-sql-test", c, f)
   }
 
@@ -162,7 +159,7 @@ trait SparkQueryCompareTestSuite extends FunSuite with Arm {
       conf: SparkConf = new SparkConf(),
       repart: Integer = 1): (Array[Row], Array[Row]) = {
     conf.setIfMissing("spark.sql.shuffle.partitions", "2")
-    val fromCpu = withCpuSparkSession((session) => {
+    val fromCpu = withCpuSparkSession( session => {
       var data = df(session)
       if (repart > 0) {
         // repartition the data so it is turned into a projection, not folded into the table scan exec
@@ -171,7 +168,7 @@ trait SparkQueryCompareTestSuite extends FunSuite with Arm {
       fun(data).collect()
     }, conf)
 
-    val fromGpu = withGpuSparkSession((session) => {
+    val fromGpu = withGpuSparkSession( session => {
       var data = df(session)
       if (repart > 0) {
         // repartition the data so it is turned into a projection, not folded into the table scan exec
@@ -243,25 +240,27 @@ trait SparkQueryCompareTestSuite extends FunSuite with Arm {
   def ALLOW_NON_GPU_testSparkResultsAreEqual(
       testName: String,
       df: SparkSession => DataFrame,
+      execsAllowedNonGpu: Seq[String],
       conf: SparkConf = new SparkConf(),
       sortBeforeRepart: Boolean = false)(fun: DataFrame => DataFrame): Unit = {
     testSparkResultsAreEqual(testName, df,
       conf=conf,
-      allowNonGpu=true,
+      execsAllowedNonGpu=execsAllowedNonGpu,
       sortBeforeRepart = sortBeforeRepart)(fun)
   }
 
   def IGNORE_ORDER_ALLOW_NON_GPU_testSparkResultsAreEqual(
       testName: String,
       df: SparkSession => DataFrame,
+      execsAllowedNonGpu: Seq[String],
       repart: Integer = 1,
       conf: SparkConf = new SparkConf(),
       sortBeforeRepart: Boolean = false)(fun: DataFrame => DataFrame): Unit = {
     testSparkResultsAreEqual(testName, df,
       conf=conf,
+      execsAllowedNonGpu=execsAllowedNonGpu,
       repart=repart,
       sort=true,
-      allowNonGpu=true,
       sortBeforeRepart = sortBeforeRepart)(fun)
   }
 
@@ -417,7 +416,6 @@ trait SparkQueryCompareTestSuite extends FunSuite with Arm {
       testName: String,
       incompat: Boolean,
       sort: Boolean,
-      allowNonGpu: Boolean,
       conf: SparkConf,
       execsAllowedNonGpu: Seq[String],
       sortBeforeRepart: Boolean): (SparkConf, String) = {
@@ -430,10 +428,6 @@ trait SparkQueryCompareTestSuite extends FunSuite with Arm {
     }
     if (sort) {
       qualifiers = qualifiers + "IGNORE ORDER"
-    }
-    if (allowNonGpu) {
-      testConf = testConf.clone().set(RapidsConf.TEST_CONF.key, "false")
-      qualifiers = qualifiers + "NOT ALL ON GPU"
     }
     if (execsAllowedNonGpu.nonEmpty) {
       val execStr = execsAllowedNonGpu.mkString(",")
@@ -492,13 +486,12 @@ trait SparkQueryCompareTestSuite extends FunSuite with Arm {
       sort: Boolean = false,
       maxFloatDiff: Double = 0.0,
       incompat: Boolean = false,
-      allowNonGpu: Boolean = false,
       execsAllowedNonGpu: Seq[String] = Seq.empty,
       sortBeforeRepart: Boolean = false)
       (fun: DataFrame => DataFrame): Unit = {
 
     val (testConf, qualifiedTestName) =
-      setupTestConfAndQualifierName(testName, incompat, sort, allowNonGpu, conf, execsAllowedNonGpu,
+      setupTestConfAndQualifierName(testName, incompat, sort, conf, execsAllowedNonGpu,
         sortBeforeRepart = sortBeforeRepart)
     test(qualifiedTestName) {
       val (fromCpu, fromGpu) = runOnCpuAndGpu(df, fun,
@@ -537,13 +530,12 @@ trait SparkQueryCompareTestSuite extends FunSuite with Arm {
       sort: Boolean = false,
       maxFloatDiff: Double = 0.0,
       incompat: Boolean = false,
-      allowNonGpu: Boolean = false,
       execsAllowedNonGpu: Seq[String] = Seq.empty,
       sortBeforeRepart: Boolean = false)
            (fun: DataFrame => DataFrame): Unit = {
 
     val (testConf, qualifiedTestName) =
-      setupTestConfAndQualifierName(testName, incompat, sort, allowNonGpu, conf, execsAllowedNonGpu,
+      setupTestConfAndQualifierName(testName, incompat, sort, conf, execsAllowedNonGpu,
         sortBeforeRepart = sortBeforeRepart)
 
       test(qualifiedTestName) {
@@ -572,13 +564,12 @@ trait SparkQueryCompareTestSuite extends FunSuite with Arm {
       sort: Boolean = false,
       maxFloatDiff: Double = 0.0,
       incompat: Boolean = false,
-      allowNonGpu: Boolean = false,
       execsAllowedNonGpu: Seq[String] = Seq.empty,
       sortBeforeRepart: Boolean = false)
     (fun: (DataFrame, DataFrame) => DataFrame): Unit = {
 
     val (testConf, qualifiedTestName) =
-      setupTestConfAndQualifierName(testName, incompat, sort, allowNonGpu, conf, execsAllowedNonGpu,
+      setupTestConfAndQualifierName(testName, incompat, sort, conf, execsAllowedNonGpu,
         sortBeforeRepart = sortBeforeRepart)
 
     testConf.set("spark.sql.execution.sortBeforeRepartition", sortBeforeRepart.toString)
@@ -637,7 +628,7 @@ trait SparkQueryCompareTestSuite extends FunSuite with Arm {
       sortBeforeRepart: Boolean = false,
       sort: Boolean = false): Unit = {
     val (testConf, qualifiedTestName) =
-      setupTestConfAndQualifierName(testName, false, sort, false, conf, Nil,
+      setupTestConfAndQualifierName(testName, false, sort, conf, Nil,
         sortBeforeRepart = sortBeforeRepart)
 
     test(qualifiedTestName) {
@@ -690,7 +681,7 @@ trait SparkQueryCompareTestSuite extends FunSuite with Arm {
 
   def likeDf(session: SparkSession): DataFrame = {
     import session.sqlContext.implicits._
-    val someDF = Seq(
+    Seq(
       (150, "abc"), (140, "a*c"), (130, "ab"), (120, "ac"), (110, "a|bc"), (100, "a.b"), (90, "b$"),
       (80, "b$c"), (70, "\r"), (60, "a\rb"), (50, "\roo"), (40, "\n"), (30, "a\nb"), (20, "\noo"),
       (0, "\roo"), (10, "a\u20ACa") , (-10, "o\\aood"), (-20, "foo"), (-30, "food"),(-40, "foodu"),
@@ -699,10 +690,6 @@ trait SparkQueryCompareTestSuite extends FunSuite with Arm {
       (-110, "cn"), (-120, "aa[d]abc"), (-130, "aa(d)abc"), (-140, "a?b"), (-150, "a+c"), (-160, "a{3}"),
       (-170, "aaa"), (-180, """\abc"""))
     .toDF("number","word")
-    // This persist call makes it so that the plan does not fold operations like filter etc. It is
-    // used here since repartition() doesn't do the trick.
-    // It does leak memory for the lifecycle of the test which is small.
-    someDF.persist
   }
 
   def mixedDfWithNulls(session: SparkSession): DataFrame = {

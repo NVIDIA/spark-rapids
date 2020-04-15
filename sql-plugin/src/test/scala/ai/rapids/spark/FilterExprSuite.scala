@@ -57,19 +57,19 @@ class FilterExprSuite extends SparkQueryCompareTestSuite {
   }
 
   // these are ALLOW_NON_GPU because you can't project a string
-  ALLOW_NON_GPU_testSparkResultsAreEqual("filter strings are not null", nullableStringsFromCsv) {
+  testSparkResultsAreEqual("filter strings are not null", nullableStringsFromCsv) {
     frame => frame.filter("strings is not null or more_strings is not null")
   }
 
-  ALLOW_NON_GPU_testSparkResultsAreEqual("filter strings equality", nullableStringsFromCsv) {
+  testSparkResultsAreEqual("filter strings equality", nullableStringsFromCsv) {
     frame => frame.filter("strings = 'Bar'")
   }
 
-  ALLOW_NON_GPU_testSparkResultsAreEqual("filter strings greater than", nullableStringsFromCsv) {
+  testSparkResultsAreEqual("filter strings greater than", nullableStringsFromCsv) {
     frame => frame.filter("strings > 'Bar'")
   }
 
-  ALLOW_NON_GPU_testSparkResultsAreEqual("filter strings less than", nullableStringsFromCsv) {
+  testSparkResultsAreEqual("filter strings less than", nullableStringsFromCsv) {
     frame => frame.filter("strings < 'Bar'")
   }
 
