@@ -16,17 +16,11 @@
 
 package ai.rapids.spark
 
-import org.apache.spark.sql.functions._
 import org.scalatest.Ignore
 
-import org.scalatest.FunSuite
 import org.apache.spark.sql.{DataFrame, Row, SparkSession}
+import org.apache.spark.sql.functions._
 import org.apache.spark.SparkConf
-import org.apache.spark.sql.types._
-
-import java.util.Locale
-import java.nio.charset.Charset
-import java.lang.Character
 
  /* 
  * Different versions of Java support different versions of Unicode. 
@@ -208,7 +202,8 @@ class StringOperatorsSuite extends SparkQueryCompareTestSuite {
     frame => frame.filter(col("strings").startsWith("F"))
   }
 
-  ALLOW_NON_GPU_testSparkResultsAreEqual("String StartsWith Col", nullableStringsFromCsv) {
+  testSparkResultsAreEqual("String StartsWith Col fall back", nullableStringsFromCsv,
+    execsAllowedNonGpu = Seq("FilterExec", "And", "IsNotNull", "StartsWith")) {
     frame => frame.filter(col("strings").startsWith(col("more_strings")))
   }
 
@@ -225,7 +220,8 @@ class StringOperatorsSuite extends SparkQueryCompareTestSuite {
     frame => frame.filter(col("strings").endsWith("oo"))
   }
 
-  ALLOW_NON_GPU_testSparkResultsAreEqual("String EndsWith Col", nullableStringsFromCsv) {
+  testSparkResultsAreEqual("String EndsWith Col fall back", nullableStringsFromCsv,
+    execsAllowedNonGpu = Seq("FilterExec", "And", "IsNotNull", "EndsWith")) {
     frame => frame.filter(col("strings").endsWith(col("more_strings")))
   }
 
@@ -298,220 +294,180 @@ class StringOperatorsSuite extends SparkQueryCompareTestSuite {
     frame => frame.selectExpr("replace(strings, 'a')")
   }
 
-  testSparkResultsAreEqual("String Like 1", likeDf,
-    allowNonGpu = true, execsAllowedNonGpu = Seq("InMemoryTableScanExec")) {
+  testSparkResultsAreEqual("String Like 1", likeDf) {
     frame => frame.filter(col("word").like("_"))
   }
 
-  testSparkResultsAreEqual("String Like 2", likeDf,
-    allowNonGpu = true, execsAllowedNonGpu = Seq("InMemoryTableScanExec")) {
+  testSparkResultsAreEqual("String Like 2", likeDf) {
     frame => frame.filter(col("word").like("%a%"))
   }
 
-  testSparkResultsAreEqual("String Like 3", likeDf,
-    allowNonGpu = true, execsAllowedNonGpu = Seq("InMemoryTableScanExec")) {
+  testSparkResultsAreEqual("String Like 3", likeDf) {
     frame => frame.filter(col("word").like("_"))
   }
 
-  testSparkResultsAreEqual("String Like 4", likeDf,
-    allowNonGpu = true, execsAllowedNonGpu = Seq("InMemoryTableScanExec")) {
+  testSparkResultsAreEqual("String Like 4", likeDf) {
     frame => frame.filter(col("word").like("_oo_"))
   }
 
-  testSparkResultsAreEqual("String Like 5", likeDf,
-    allowNonGpu = true, execsAllowedNonGpu = Seq("InMemoryTableScanExec")) {
+  testSparkResultsAreEqual("String Like 5", likeDf) {
     frame => frame.filter(col("word").like("_oo%"))
   }
 
-  testSparkResultsAreEqual("String Like 6", likeDf,
-    allowNonGpu = true, execsAllowedNonGpu = Seq("InMemoryTableScanExec")) {
+  testSparkResultsAreEqual("String Like 6", likeDf) {
     frame => frame.filter(col("word").like("_oo%"))
   }
 
-  testSparkResultsAreEqual("String Like 7", likeDf,
-    allowNonGpu = true, execsAllowedNonGpu = Seq("InMemoryTableScanExec")) {
+  testSparkResultsAreEqual("String Like 7", likeDf) {
     frame => frame.filter(col("word").like("%oo_"))
   }
 
-  testSparkResultsAreEqual("String Like 8", likeDf,
-    allowNonGpu = true, execsAllowedNonGpu = Seq("InMemoryTableScanExec")) {
+  testSparkResultsAreEqual("String Like 8", likeDf) {
     frame => frame.filter(col("word").like("%oo_"))
   }
 
-  testSparkResultsAreEqual("String Like 9", likeDf,
-    allowNonGpu = true, execsAllowedNonGpu = Seq("InMemoryTableScanExec")) {
+  testSparkResultsAreEqual("String Like 9", likeDf) {
     frame => frame.filter(col("word").like("_\u20AC_"))
   }
 
-  testSparkResultsAreEqual("String Like 10", likeDf,
-    allowNonGpu = true, execsAllowedNonGpu = Seq("InMemoryTableScanExec")) {
+  testSparkResultsAreEqual("String Like 10", likeDf) {
     frame => frame.selectExpr("word like x '256f6f5f'")
   }
 
-  testSparkResultsAreEqual("String Like 11", likeDf,
-    allowNonGpu = true, execsAllowedNonGpu = Seq("InMemoryTableScanExec")) {
+  testSparkResultsAreEqual("String Like 11", likeDf) {
     frame => frame.selectExpr("word like x '6162632325616263' escape '#'")
   }
 
-  testSparkResultsAreEqual("String Like 12 without escape char", likeDf,
-    allowNonGpu = true, execsAllowedNonGpu = Seq("InMemoryTableScanExec")) {
-    frame => frame.selectExpr("word like x '61626325616263' escape '#'")
-  }
+  // TODO this is turned into a startsWith, endsWith and a length >= 6 we don't support length yet
+//  testSparkResultsAreEqual("String Like 12 without escape char", likeDf) {
+//    frame => frame.selectExpr("word like x '61626325616263' escape '#'")
+//  }
 
-  testSparkResultsAreEqual("String Like 13", likeDf,
-    allowNonGpu = true, execsAllowedNonGpu = Seq("InMemoryTableScanExec")) {
+  testSparkResultsAreEqual("String Like 13", likeDf) {
     frame => frame.filter(col("word").like("""\%SystemDrive\%\\Users%"""))
   }
 
-  testSparkResultsAreEqual("String Like 14", likeDf,
-    allowNonGpu = true, execsAllowedNonGpu = Seq("InMemoryTableScanExec")) {
+  testSparkResultsAreEqual("String Like 14", likeDf) {
     frame => frame.filter(col("word").like("""\%SystemDrive\%\\\\Users%"""))
   }
 
   val confEscape: SparkConf = new SparkConf().set("spark.sql.parser.escapedStringLiterals", "true")
 
-  testSparkResultsAreEqual("String Like 15 Escape true", likeDf, conf = confEscape,
-    allowNonGpu = true, execsAllowedNonGpu = Seq("InMemoryTableScanExec")) {
+  testSparkResultsAreEqual("String Like 15 Escape true", likeDf, conf = confEscape) {
     frame => frame.filter(col("word").like("_oo"))
   }
 
-  testSparkResultsAreEqual("String Like Empty Escape true", likeDf, conf = confEscape,
-    allowNonGpu = true, execsAllowedNonGpu = Seq("InMemoryTableScanExec")) {
+  testSparkResultsAreEqual("String Like Empty Escape true", likeDf, conf = confEscape) {
     frame => frame.filter(col("word").like(""))
   }
 
-  testSparkResultsAreEqual("String Like 16 Escape true", likeDf, conf = confEscape,
-    allowNonGpu = true, execsAllowedNonGpu = Seq("InMemoryTableScanExec")) {
+  testSparkResultsAreEqual("String Like 16 Escape true", likeDf, conf = confEscape) {
     frame => frame.filter(col("word").like("_oo_"))
   }
 
-  testSparkResultsAreEqual("String Like 17 Escape true", likeDf, conf = confEscape,
-    allowNonGpu = true, execsAllowedNonGpu = Seq("InMemoryTableScanExec")) {
+  testSparkResultsAreEqual("String Like 17 Escape true", likeDf, conf = confEscape) {
     frame => frame.filter(col("word").like("_oo%"))
   }
 
-  testSparkResultsAreEqual("String Like 18 Escape true", likeDf, conf = confEscape,
-    allowNonGpu = true, execsAllowedNonGpu = Seq("InMemoryTableScanExec")) {
+  testSparkResultsAreEqual("String Like 18 Escape true", likeDf, conf = confEscape) {
     frame => frame.filter(col("word").like("_oo%"))
   }
 
-  testSparkResultsAreEqual("String Like 19 Escape true", likeDf, conf = confEscape,
-    allowNonGpu = true, execsAllowedNonGpu = Seq("InMemoryTableScanExec")) {
+  testSparkResultsAreEqual("String Like 19 Escape true", likeDf, conf = confEscape) {
     frame => frame.filter(col("word").like("%oo_"))
   }
 
-  testSparkResultsAreEqual("String Like 20 Escape true", likeDf, conf = confEscape,
-    allowNonGpu = true, execsAllowedNonGpu = Seq("InMemoryTableScanExec")) {
+  testSparkResultsAreEqual("String Like 20 Escape true", likeDf, conf = confEscape) {
     frame => frame.filter(col("word").like("%oo_"))
   }
 
-  testSparkResultsAreEqual("String Like 21 Escape true", likeDf, conf = confEscape,
-    allowNonGpu = true, execsAllowedNonGpu = Seq("InMemoryTableScanExec")) {
+  testSparkResultsAreEqual("String Like 21 Escape true", likeDf, conf = confEscape) {
     frame => frame.filter(col("word").like("_\u20AC_"))
   }
 
-  testSparkResultsAreEqual("String Like 22 Escape true", likeDf, conf = confEscape,
-    allowNonGpu = true, execsAllowedNonGpu = Seq("InMemoryTableScanExec")) {
+  testSparkResultsAreEqual("String Like 22 Escape true", likeDf, conf = confEscape) {
     frame => frame.selectExpr("word like x '256f6f5f'")
   }
 
-  testSparkResultsAreEqual("String Like 23 Escape true", likeDf, conf = confEscape,
-    allowNonGpu = true, execsAllowedNonGpu = Seq("InMemoryTableScanExec")) {
+  testSparkResultsAreEqual("String Like 23 Escape true", likeDf, conf = confEscape) {
     frame => frame.selectExpr("word like x '6162632325616263' escape '#'")
   }
 
-  testSparkResultsAreEqual("String Like 24 without escape char Escape true ", likeDf, conf = confEscape,
-    allowNonGpu = true, execsAllowedNonGpu = Seq("InMemoryTableScanExec")) {
-    frame => frame.selectExpr("word like x '61626325616263' escape '#'")
-  }
+  // TODO this is turned into a startsWith, endsWith and a length >= 6 we don't support length yet
+//  testSparkResultsAreEqual("String Like 24 without escape char Escape true ", likeDf,
+//    conf = confEscape) {
+//    frame => frame.selectExpr("word like x '61626325616263' escape '#'")
+//  }
 
-  testSparkResultsAreEqual("String Like 25 Escape true", likeDf, conf = confEscape,
-    allowNonGpu = true, execsAllowedNonGpu = Seq("InMemoryTableScanExec")) {
+  testSparkResultsAreEqual("String Like 25 Escape true", likeDf, conf = confEscape) {
     frame => frame.filter(col("word").like("""\%SystemDrive\%\\Users%"""))
   }
 
-  testSparkResultsAreEqual("String Like 26 Escape true", likeDf, conf = confEscape,
-    allowNonGpu = true, execsAllowedNonGpu = Seq("InMemoryTableScanExec")) {
+  testSparkResultsAreEqual("String Like 26 Escape true", likeDf, conf = confEscape) {
     frame => frame.filter(col("word").like("""\%SystemDrive\%\\\\Users%"""))
   }
 
-  testSparkResultsAreEqual("String Like 27", likeDf,
-    allowNonGpu = true, execsAllowedNonGpu = Seq("InMemoryTableScanExec")) {
+  testSparkResultsAreEqual("String Like 27", likeDf) {
     frame => frame.filter("word like '_a^d%' escape 'c'")
   }
 
-  testSparkResultsAreEqual("String Like 28", likeDf,
-    allowNonGpu = true, execsAllowedNonGpu = Seq("InMemoryTableScanExec")) {
+  testSparkResultsAreEqual("String Like 28", likeDf) {
     frame => frame.filter("word like 'a_a' escape 'c'")
   }
 
-  testSparkResultsAreEqual("String Like 29", likeDf,
-    allowNonGpu = true, execsAllowedNonGpu = Seq("InMemoryTableScanExec")) {
+  testSparkResultsAreEqual("String Like 29", likeDf) {
     frame => frame.filter("word like 'a%a' escape 'c'")
   }
 
-  testSparkResultsAreEqual("String Like 30", likeDf,
-    allowNonGpu = true, execsAllowedNonGpu = Seq("InMemoryTableScanExec")) {
+  testSparkResultsAreEqual("String Like 30", likeDf) {
     frame => frame.filter("word like 'c_' escape 'c'")
   }
 
-  testSparkResultsAreEqual("String Like 31", likeDf,
-    allowNonGpu = true, execsAllowedNonGpu = Seq("InMemoryTableScanExec")) {
+  testSparkResultsAreEqual("String Like 31", likeDf) {
     frame => frame.filter("word like 'c_'")
   }
 
-  testSparkResultsAreEqual("String Like 32", likeDf,
-    allowNonGpu = true, execsAllowedNonGpu = Seq("InMemoryTableScanExec")) {
+  testSparkResultsAreEqual("String Like 32", likeDf) {
     frame => frame.filter("word like '_a[d]%'")
   }
 
-  testSparkResultsAreEqual("String Like 33", likeDf,
-    allowNonGpu = true, execsAllowedNonGpu = Seq("InMemoryTableScanExec")) {
+  testSparkResultsAreEqual("String Like 33", likeDf) {
     frame => frame.filter("word like '_a(d)%'")
   }
 
-  testSparkResultsAreEqual("String Like 34", likeDf,
-    allowNonGpu = true, execsAllowedNonGpu = Seq("InMemoryTableScanExec")) {
+  testSparkResultsAreEqual("String Like 34", likeDf) {
     frame => frame.filter("word like '_$%'")
   }
 
-  testSparkResultsAreEqual("String Like 35", likeDf,
-    allowNonGpu = true, execsAllowedNonGpu = Seq("InMemoryTableScanExec")) {
+  testSparkResultsAreEqual("String Like 35", likeDf) {
     frame => frame.filter("word like '_$'")
   }
 
-  testSparkResultsAreEqual("String Like 36", likeDf,
-    allowNonGpu = true, execsAllowedNonGpu = Seq("InMemoryTableScanExec")) {
+  testSparkResultsAreEqual("String Like 36", likeDf) {
     frame => frame.filter("word like '_._'")
   }
 
-  testSparkResultsAreEqual("String Like 37", likeDf,
-    allowNonGpu = true, execsAllowedNonGpu = Seq("InMemoryTableScanExec")) {
+  testSparkResultsAreEqual("String Like 37", likeDf) {
     frame => frame.filter("word like '_|%'")
   }
 
-  testSparkResultsAreEqual("String Like 38", likeDf,
-    allowNonGpu = true, execsAllowedNonGpu = Seq("InMemoryTableScanExec")) {
+  testSparkResultsAreEqual("String Like 38", likeDf) {
     frame => frame.filter("word like '_?_'")
   }
 
-  testSparkResultsAreEqual("String Like 39", likeDf,
-    allowNonGpu = true, execsAllowedNonGpu = Seq("InMemoryTableScanExec")) {
+  testSparkResultsAreEqual("String Like 39", likeDf) {
     frame => frame.filter("word like '%*_'")
   }
 
-  testSparkResultsAreEqual("String Like 40", likeDf,
-    allowNonGpu = true, execsAllowedNonGpu = Seq("InMemoryTableScanExec")) {
+  testSparkResultsAreEqual("String Like 40", likeDf) {
     frame => frame.filter("word like '%+_'")
   }
 
-  testSparkResultsAreEqual("String Like 41", likeDf,
-    allowNonGpu = true, execsAllowedNonGpu = Seq("InMemoryTableScanExec")) {
+  testSparkResultsAreEqual("String Like 41", likeDf) {
     frame => frame.filter("word like '%a{3}%'")
   }
 
-  testSparkResultsAreEqual("String Like 42", likeDf,
-    allowNonGpu = true, execsAllowedNonGpu = Seq("InMemoryTableScanExec")) {
+  testSparkResultsAreEqual("String Like 42", likeDf) {
     frame => frame.filter("word like '%\\ab_'")
   }
 
@@ -595,7 +551,7 @@ class StringOperatorsSuite extends SparkQueryCompareTestSuite {
 @Ignore
 class StringOperatorsDiagnostics extends SparkQueryCompareTestSuite {  
   def generateResults(gen : org.apache.spark.sql.Column => org.apache.spark.sql.Column): (Array[Row], Array[Row]) = {
-    val (testConf, qualifiedTestName) = setupTestConfAndQualifierName("", true, false, false,
+    val (testConf, qualifiedTestName) = setupTestConfAndQualifierName("", true, false,
                                                                         new SparkConf(), Seq.empty, false)
     runOnCpuAndGpu(TestCodepoints.validCodepointCharsDF, frame => frame.select(gen(col("strings"))), testConf)
   }
@@ -657,11 +613,11 @@ class StringOperatorsDiagnostics extends SparkQueryCompareTestSuite {
   def generateCharMappings(): Unit = {    
     class char_mapping {
       var   num_upper = 0
-      var   upper = Array(0, 0, 0)
+      val   upper = Array(0, 0, 0)
       var   num_lower = 0
-      var   lower = Array(0, 0, 0)
+      val   lower = Array(0, 0, 0)
     }    
-    var mapping = Array.fill[char_mapping](65536)(new char_mapping())
+    val mapping = Array.fill[char_mapping](65536)(new char_mapping())
             
     // upper results
     val (fromCpuUpper, fromGpuUpper) = generateResults(upper)

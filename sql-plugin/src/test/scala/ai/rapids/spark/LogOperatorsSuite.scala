@@ -46,14 +46,12 @@ class LogOperatorsSuite extends SparkQueryCompareTestSuite {
     maxFloatDiff: Double = 0.00001,
     conf: SparkConf = new SparkConf(),
     sort: Boolean = false,
-    repart: Integer = 1,
     sortBeforeRepart: Boolean = false,
     incompat: Boolean = true,
-    allowNonGpu: Boolean = false,
     execsAllowedNonGpu: Seq[String] = Seq.empty)(f: DataFrame => DataFrame): Unit = {
 
     val (testConf, qualifiedTestName) =
-      setupTestConfAndQualifierName(testName, incompat, sort, allowNonGpu, conf, execsAllowedNonGpu,
+      setupTestConfAndQualifierName(testName, incompat, sort, conf, execsAllowedNonGpu,
         sortBeforeRepart)
 
     test(qualifiedTestName) {

@@ -150,38 +150,32 @@ class ProjectExprSuite extends SparkQueryCompareTestSuite {
   }
 
   testSparkResultsAreEqual("project time", frameFromParquet("timestamp-date-test.parquet"),
-    conf = forceHostColumnarToGpu(),
-    allowNonGpu = true) {
+    conf = forceHostColumnarToGpu()) {
     frame => frame.select("time")
   }
 
   testSparkResultsAreEqual("IsNull timestamp", frameFromParquet("timestamp-date-test.parquet"),
-    conf = forceHostColumnarToGpu(),
-    allowNonGpu = true) {
+    conf = forceHostColumnarToGpu()) {
     frame => frame.selectExpr("time is null")
   }
 
   testSparkResultsAreEqual("IsNotNull timestamp", frameFromParquet("timestamp-date-test.parquet"),
-    conf = forceHostColumnarToGpu(),
-    allowNonGpu = true) {
+    conf = forceHostColumnarToGpu()) {
     frame => frame.selectExpr("time is not null")
   }
 
   testSparkResultsAreEqual("year timestamp", frameFromParquet("timestamp-date-test.parquet"),
-    conf = forceHostColumnarToGpu(),
-    allowNonGpu = true) {
+    conf = forceHostColumnarToGpu()) {
     frame => frame.selectExpr("year(time)")
   }
 
   testSparkResultsAreEqual("month timestamp", frameFromParquet("timestamp-date-test.parquet"),
-    conf = forceHostColumnarToGpu(),
-    allowNonGpu = true) {
+    conf = forceHostColumnarToGpu()) {
     frame => frame.selectExpr("month(time)")
   }
 
   testSparkResultsAreEqual("day timestamp", frameFromParquet("timestamp-date-test.parquet"),
-    conf = forceHostColumnarToGpu(),
-    allowNonGpu = true) {
+    conf = forceHostColumnarToGpu()) {
     frame => frame.selectExpr("day(time)")
   }
 
