@@ -32,6 +32,7 @@ pipeline {
     environment {
         JENKINS_ROOT  = 'jenkins'
         TEST_SCRIPT = '$JENKINS_ROOT/spark-tests.sh'
+        LIBCUDF_KERNEL_CACHE_PATH='/tmp'
     }
 
     stages {
@@ -48,7 +49,6 @@ pipeline {
                     docker.image(IMAGE_NAME).inside("--runtime=nvidia -v ${HOME}/.zinc:${HOME}/.zinc:rw \
                         -v /etc/passwd:/etc/passwd -v /etc/group:/etc/group") {
                         echo "Running integration tests on centos7 $DOCKER_TAG"
-                        export LIBCUDF_KERNEL_CACHE_PATH=/tmp
                         sh "bash $TEST_SCRIPT"
                     }
                 }
