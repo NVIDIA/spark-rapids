@@ -22,6 +22,7 @@ pipeline {
     environment {
         JENKINS_ROOT  = 'jenkins'
         MVN_GPUWA_MIRROR='-s jenkins/settings.xml -P mirror-apache-to-gpuwa'
+        LIBCUDF_KERNEL_CACHE_PATH='/tmp'
     }
 
     stages {
@@ -35,7 +36,6 @@ pipeline {
                         -v ${HOME}/.zinc:${HOME}/.zinc:rw \
                         -v /etc/passwd:/etc/passwd -v /etc/group:/etc/group") {
                         echo 'Building in ubuntu16 cuda10.0 ...'
-                        export LIBCUDF_KERNEL_CACHE_PATH=/tmp
                         sh 'mvn -U -B clean package $MVN_GPUWA_MIRROR'
                     }
                 }
