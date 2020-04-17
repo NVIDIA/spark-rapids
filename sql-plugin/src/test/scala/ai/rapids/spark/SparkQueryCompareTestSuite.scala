@@ -748,9 +748,33 @@ trait SparkQueryCompareTestSuite extends FunSuite with Arm {
     ).toDF("timestamps", "more_timestamps")
   }
 
+  def epochDf(session: SparkSession): DataFrame = {
+    import session.sqlContext.implicits._
+    Seq(
+      -1586549475L, //1919-09-23 3:48:45 AM
+      1435708800L, //2015-07-01 12:00:00 (the day after leap second was added)
+      118800L, //1970-01-02 09:00:00
+      1293901860L, //2011-01-01 17:11:00
+      318402000L, //1980-02-03 05:00:00
+      604996200L, //1989-03-04 06:30:00
+      -12586549L, //1969-08-08 7:44:11 AM
+      1270413572L, //2010-04-04 20:39:32
+      1588734621L, //2020-05-06 03:10:21
+      2550814152L, //2050-10-31 07:29:12
+      4102518778L, //2100-01-01 20:32:58
+      702696234, //1992-04-08 01:23:54
+      6516816203L, //2176-07-05 02:43:23
+      26472091292L, //2808-11-12 22:41:32
+      4133857172L, //2100-12-30 01:39:32
+      1560948892, //2019-06-19 12:54:52
+      4115217600L //2100-05-28 20:00:00
+    ).toDF("dates")
+  }
+
   def datesPostEpochDf(session: SparkSession): DataFrame = {
     import session.sqlContext.implicits._
     Seq(
+      1435708800L, //2015-07-01 12:00:00 (the day after leap second was added)
       118800L, //1970-01-02 09:00:00
       1293901860L, //2011-01-01 17:11:00
       318402000L, //1980-02-03 05:00:00

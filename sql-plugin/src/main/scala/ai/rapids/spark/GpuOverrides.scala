@@ -45,8 +45,10 @@ import org.apache.spark.sql.execution.datasources.orc.OrcFileFormat
 import org.apache.spark.sql.execution.datasources.parquet.ParquetFileFormat
 import org.apache.spark.sql.execution.datasources.text.TextFileFormat
 import org.apache.spark.sql.types._
-import org.apache.spark.sql.{GpuInputFileBlockLength, GpuInputFileBlockStart, GpuInputFileName, SparkSession}
+import org.apache.spark.sql.{GpuInputFileBlockLength, GpuInputFileBlockStart, GpuInputFileName}
 import org.apache.spark.unsafe.types.UTF8String
+import org.apache.spark.sql.SparkSession
+import org.apache.spark.unsafe.types.CalendarInterval
 
 /**
  * Base class for all ReplacementRules
@@ -325,8 +327,9 @@ object GpuOverrides {
     case e => e
   }
 
-  def areAllSupportedTypes(types: DataType*): Boolean = {
-    types.forall {
+  def areAllSupportedTypes(types: DataType*): Boolean = types.forall(isSupportedType)
+
+  def isSupportedType(dataType: DataType): Boolean = dataType match {
       case BooleanType => true
       case ByteType => true
       case ShortType => true
@@ -339,7 +342,7 @@ object GpuOverrides {
       case StringType => true
       case _ => false
     }
-  }
+
 
   /**
    * Checks to see if any expressions are a String Literal
@@ -408,6 +411,13 @@ object GpuOverrides {
 
         // There are so many of these that we don't need to print them out.
         override def print(append: StringBuilder, depth: Int, all: Boolean): Unit = {}
+
+        /** We are overriding this method because currently we only support CalendarIntervalType as a Literal */
+        override def areAllSupportedTypes(types: DataType*): Boolean = types.forall {
+            case CalendarIntervalType => true
+            case x => isSupportedType(x)
+          }
+
       }),
     expr[Signum](
       "Returns -1.0, 0.0 or 1.0 as expr is negative, 0 or positive",
@@ -555,6 +565,30 @@ object GpuOverrides {
           GpuAtLeastNNonNulls(a.n, childExprs.map(_.convertToGpu()))
         }
       }),
+    expr[TimeSub](
+      "Subtracts interval from timestamp",
+      (a, conf, p, r) => new BinaryExprMeta[TimeSub](a, conf, p, r) {
+        override def tagExprForGpu(): Unit = {
+          if (conf.dataContainsNegativeTimestamps) {
+            willNotWorkOnGpu("Negative timestamps aren't supported i.e. timestamps prior to Jan 1st 1970." +
+              s" To enable this anyways set ${RapidsConf.DATA_CONTAINS_NEGATIVE_TIMESTAMPS} to false.")
+          }
+          a.interval match {
+            case Literal(intvl: CalendarInterval, DataTypes.CalendarIntervalType) =>
+              if (intvl.months != 0) {
+                willNotWorkOnGpu("interval months isn't supported")
+              }
+            case _ =>
+              willNotWorkOnGpu("only literals are supported for intervals")
+          }
+          if (ZoneId.of(a.timeZoneId.get).normalized() != UTC_TIMEZONE_ID) {
+            willNotWorkOnGpu("Only UTC zone id is supported")
+          }
+        }
+
+        override def convertToGpu(lhs: GpuExpression, rhs: GpuExpression): GpuExpression = GpuTimeSub(lhs, rhs)
+      }
+    ),
     expr[NaNvl](
       "evaluates to `left` iff left is not NaN, `right` otherwise.",
       (a, conf, p, r) => new BinaryExprMeta[NaNvl](a, conf, p, r) {
@@ -828,8 +862,8 @@ object GpuOverrides {
             willNotWorkOnGpu("nulls are not supported")
           }
           val literalTypes = in.hset.map(Literal(_).dataType).toSeq
-          if (!GpuOverrides.areAllSupportedTypes(literalTypes:_*)) {
-            val unsupported = literalTypes.filter(!GpuOverrides.areAllSupportedTypes(_)).mkString(", ")
+          if (!areAllSupportedTypes(literalTypes:_*)) {
+            val unsupported = literalTypes.filter(!areAllSupportedTypes(_)).mkString(", ")
             willNotWorkOnGpu(s"unsupported literal types: $unsupported")
           }
         }

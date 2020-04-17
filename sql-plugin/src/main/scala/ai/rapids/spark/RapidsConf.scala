@@ -462,6 +462,12 @@ object RapidsConf {
 
   // USER FACING DEBUG CONFIGS
 
+  val DATA_CONTAINS_NEGATIVE_TIMESTAMPS = conf("spark.rapids.sql.contains.negative.timestamps")
+    .doc("Whether the data contains negative timestamps i.e. timestamps prior to Jan 1st 1970. " +
+      "When set to true operators using timestamps will not be accelerated")
+    .booleanConf
+    .createWithDefault(false)
+
   val EXPLAIN = conf("spark.rapids.sql.explain")
     .doc("Explain why some parts of a query were not placed on a GPU or not. Possible " +
       "values are ALL: print everything, NONE: print nothing, NOT_ON_GPU: print only did not go " +
@@ -589,6 +595,8 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
   lazy val isFloatAggEnabled: Boolean = get(ENABLE_FLOAT_AGG)
 
   lazy val explain: String = get(EXPLAIN)
+
+  lazy val dataContainsNegativeTimestamps: Boolean = get(DATA_CONTAINS_NEGATIVE_TIMESTAMPS)
 
   lazy val maxReadBatchSizeRows: Int = get(MAX_READER_BATCH_SIZE_ROWS)
 
