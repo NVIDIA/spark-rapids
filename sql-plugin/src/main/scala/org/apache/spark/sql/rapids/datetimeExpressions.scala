@@ -17,10 +17,11 @@
 package org.apache.spark.sql.rapids
 
 import ai.rapids.cudf.{ColumnVector, DType, Scalar}
-import ai.rapids.spark.{GpuBinaryExpression, GpuExpression, GpuColumnVector, GpuUnaryExpression}
-
-import org.apache.spark.sql.catalyst.expressions.{Expression, ImplicitCastInputTypes, TimeZoneAwareExpression}
+import ai.rapids.spark.{Arm, GpuBinaryExpression, GpuColumnVector, GpuExpression, GpuUnaryExpression}
+import org.apache.spark.sql.catalyst.expressions.{BinaryExpression, ExpectsInputTypes, Expression, ImplicitCastInputTypes, TimeZoneAwareExpression}
 import org.apache.spark.sql.types._
+import org.apache.spark.sql.vectorized.ColumnarBatch
+import org.apache.spark.unsafe.types.CalendarInterval
 
 trait GpuDateTimeUnaryExpression extends GpuUnaryExpression with ImplicitCastInputTypes {
   override def inputTypes: Seq[AbstractDataType] = Seq(DateType)
@@ -33,6 +34,59 @@ trait GpuDateTimeUnaryExpression extends GpuUnaryExpression with ImplicitCastInp
 case class GpuYear(child: Expression) extends GpuDateTimeUnaryExpression {
   override def doColumnar(input: GpuColumnVector): GpuColumnVector =
     GpuColumnVector.from(input.getBase.year())
+}
+
+case class GpuTimeSub(start: GpuExpression, interval: GpuExpression, timeZoneId: Option[String] = None)
+  extends BinaryExpression with GpuExpression with TimeZoneAwareExpression with ExpectsInputTypes {
+
+  def this(start: GpuExpression, interval: GpuExpression) = this(start, interval, None)
+
+  override def left: GpuExpression = start
+  override def right: GpuExpression = interval
+
+  override def toString: String = s"$left - $right"
+  override def sql: String = s"${left.sql} - ${right.sql}"
+  override def inputTypes: Seq[AbstractDataType] = Seq(TimestampType, CalendarIntervalType)
+
+  override def dataType: DataType = TimestampType
+
+  override lazy val resolved: Boolean = childrenResolved && checkInputDataTypes().isSuccess
+
+  override def withTimeZone(timeZoneId: String): TimeZoneAwareExpression = copy(timeZoneId = Option(timeZoneId))
+
+  override def columnarEval(batch: ColumnarBatch): Any = {
+    var lhs: Any = null
+    var rhs: Any = null
+    try {
+      lhs = left.columnarEval(batch)
+      rhs = right.columnarEval(batch)
+
+      (lhs, rhs) match {
+        case (l: GpuColumnVector, intvl: CalendarInterval) =>
+          if (intvl.months != 0) {
+            throw new UnsupportedOperationException("Months aren't supported at the moment")
+          }
+          val usToSub = intvl.days * 24 * 60 * 60 * 1000 * 1000L + intvl.microseconds
+          if (usToSub > 0) {
+            withResource(Scalar.fromLong(usToSub)) { us_s =>
+              withResource(l.getBase.castTo(DType.INT64)) { us =>
+                withResource(us.sub(us_s)) {longResult =>
+                  GpuColumnVector.from(longResult.castTo(DType.TIMESTAMP_MICROSECONDS))
+                }
+              }
+            }
+          }
+        case _ => throw new UnsupportedOperationException("GpuTimeSub takes column and interval as an argument only")
+      }
+    } finally {
+      if (lhs.isInstanceOf[AutoCloseable]) {
+        lhs.asInstanceOf[AutoCloseable].close()
+      }
+      if (rhs.isInstanceOf[AutoCloseable]) {
+        rhs.asInstanceOf[AutoCloseable].close()
+      }
+    }
+  }
 }
 
 case class GpuDateDiff(endDate: Expression, startDate: Expression)
