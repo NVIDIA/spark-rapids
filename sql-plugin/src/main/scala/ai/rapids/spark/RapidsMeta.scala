@@ -17,15 +17,15 @@
 package ai.rapids.spark
 
 import scala.collection.mutable
-
 import org.apache.spark.sql.catalyst.expressions.aggregate.AggregateFunction
-import org.apache.spark.sql.catalyst.expressions.{BinaryExpression, Expression, TernaryExpression, UnaryExpression, ComplexTypeMergingExpression}
+import org.apache.spark.sql.catalyst.expressions.{BinaryExpression, ComplexTypeMergingExpression, Expression, TernaryExpression, UnaryExpression}
 import org.apache.spark.sql.catalyst.plans.physical.Partitioning
 import org.apache.spark.sql.execution.SparkPlan
 import org.apache.spark.sql.execution.exchange.ShuffleExchangeExec
 import org.apache.spark.sql.execution.joins.{BroadcastHashJoinExec, BuildLeft, BuildRight, ShuffledHashJoinExec, SortMergeJoinExec}
 import org.apache.spark.sql.connector.read.Scan
 import org.apache.spark.sql.execution.command.DataWritingCommand
+import org.apache.spark.sql.types.{CalendarIntervalType, DataType, DataTypes}
 
 trait ConfKeysAndIncompat {
   val operationName: String
@@ -92,6 +92,13 @@ abstract class RapidsMeta[INPUT <: BASE, BASE, OUTPUT <: BASE](
    * Convert what this wraps to a GPU enabled version.
    */
   def convertToGpu(): OUTPUT
+
+  /**
+   * Check if all the types are supported in this Meta
+   */
+  def areAllSupportedTypes(types: DataType*): Boolean = {
+    GpuOverrides.areAllSupportedTypes(types: _*)
+  }
 
   /**
    * Keep this on the CPU, but possibly convert its children under it to run on the GPU if enabled.
@@ -466,13 +473,13 @@ abstract class SparkPlanMeta[INPUT <: SparkPlan](plan: INPUT,
   }
 
   override final def tagSelfForGpu(): Unit = {
-    if (!GpuOverrides.areAllSupportedTypes(plan.output.map(_.dataType) :_*)) {
-      val unsupported = plan.output.map(_.dataType).filter(!GpuOverrides.areAllSupportedTypes(_)).toSet
+    if (!areAllSupportedTypes(plan.output.map(_.dataType) :_*)) {
+      val unsupported = plan.output.map(_.dataType).filter(!areAllSupportedTypes(_)).toSet
       willNotWorkOnGpu(s"unsupported data types in output: ${unsupported.mkString(", ")}")
     }
-    if (!GpuOverrides.areAllSupportedTypes(plan.children.flatMap(_.output.map(_.dataType)) :_*)) {
+    if (!areAllSupportedTypes(plan.children.flatMap(_.output.map(_.dataType)) :_*)) {
       val unsupported = plan.children.flatMap(_.output.map(_.dataType))
-        .filter(!GpuOverrides.areAllSupportedTypes(_)).toSet
+        .filter(!areAllSupportedTypes(_)).toSet
       willNotWorkOnGpu(s"unsupported data types in input: ${unsupported.mkString(", ")}")
     }
 
@@ -564,7 +571,7 @@ abstract class ExprMeta[INPUT <: Expression](
 
   final override def tagSelfForGpu(): Unit = {
     try {
-      if (!GpuOverrides.areAllSupportedTypes(expr.dataType)) {
+      if (!areAllSupportedTypes(expr.dataType)) {
         willNotWorkOnGpu(s"expression ${expr.getClass.getSimpleName} ${expr} " +
           s"produces an unsupported type ${expr.dataType}")
       }
