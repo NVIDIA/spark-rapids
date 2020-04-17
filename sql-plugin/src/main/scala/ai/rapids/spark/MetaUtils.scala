@@ -16,13 +16,14 @@
 
 package ai.rapids.spark
 
-import java.nio.ByteBuffer
+import java.nio.{ByteBuffer, ByteOrder}
 
 import scala.collection.mutable.ArrayBuffer
-
 import ai.rapids.cudf._
-import ai.rapids.spark.format.{BufferMeta, CodecType, ColumnMeta, SubBufferMeta, TableMeta}
+import ai.rapids.spark.format.{BlockIdMeta, BufferMeta, BufferTransferRequest, BufferTransferResponse, CodecType, ColumnMeta, MetadataRequest, MetadataResponse, SubBufferMeta, TableMeta, TransferRequest, TransferResponse, TransferState}
 import com.google.flatbuffers.FlatBufferBuilder
+import org.apache.spark.internal.Logging
+import org.apache.spark.storage.ShuffleBlockBatchId
 
 object MetaUtils {
   /**
@@ -89,5 +90,223 @@ object MetaUtils {
       baseAddress: Long,
       buffer: BaseDeviceMemoryBuffer): Int = {
     SubBufferMeta.createSubBufferMeta(fbb, buffer.getAddress - baseAddress, buffer.getLength)
+  }
+}
+
+class DirectByteBufferFactory extends FlatBufferBuilder.ByteBufferFactory {
+  override def newByteBuffer(capacity : Int) : ByteBuffer = {
+    ByteBuffer.allocateDirect(capacity).order(ByteOrder.LITTLE_ENDIAN)
+  }
+}
+
+object ShuffleMetadata extends Logging{
+
+  val bbFactory = new DirectByteBufferFactory
+
+  /**
+    * Given a sequence of [[TableMeta]], re-lay the metas using the flat buffer builder in [[fbb]].
+    * @param fbb - builder to use
+    * @param tables - sequence of [[TableMeta]] to copy
+    * @return - an array of flat buffer offsets for the copied [[TableMeta]]s
+    */
+  def copyTables(fbb: FlatBufferBuilder, tables: Seq[TableMeta]): Array[Int] = {
+    tables.map { tableMeta =>
+      val buffMeta = tableMeta.bufferMeta()
+      val buffMetaOffset =
+        BufferMeta.createBufferMeta(fbb, buffMeta.id(), buffMeta.actualSize(), buffMeta.compressedSize(), buffMeta.codec())
+
+      val columnMetaOffsets = (0 until tableMeta.columnMetasLength()).map { c =>
+        val col = tableMeta.columnMetas(c)
+        val data = col.data()
+        val validity = col.validity()
+        val offsets = col.offsets()
+        var dataOffset, validityOffset, offsetsOffset = -1
+
+        ColumnMeta.startColumnMeta(fbb)
+        ColumnMeta.addNullCount(fbb, col.nullCount())
+        ColumnMeta.addRowCount(fbb, col.rowCount())
+        if (data != null) {
+          dataOffset = SubBufferMeta.createSubBufferMeta(fbb, data.offset(), data.length())
+          ColumnMeta.addData(fbb, dataOffset)
+        }
+        if (validity != null) {
+          validityOffset = SubBufferMeta.createSubBufferMeta(fbb, validity.offset(), validity.length())
+          ColumnMeta.addValidity(fbb, validityOffset)
+        }
+
+        if (offsets != null) {
+          offsetsOffset = SubBufferMeta.createSubBufferMeta(fbb, offsets.offset(), offsets.length())
+          ColumnMeta.addOffsets(fbb, offsetsOffset)
+        }
+        ColumnMeta.addDtype(fbb, col.dtype())
+        ColumnMeta.endColumnMeta(fbb)
+      }
+
+      val columnMetaOffset = TableMeta.createColumnMetasVector(fbb, columnMetaOffsets.toArray)
+      TableMeta.createTableMeta(fbb, buffMetaOffset, columnMetaOffset, tableMeta.rowCount())
+    }.toArray
+  }
+
+  def buildMetaResponse(tables: Seq[TableMeta], maximumResponseSize: Long): ByteBuffer = {
+    val fbb = new FlatBufferBuilder(1024, bbFactory)
+    val tableOffsets = copyTables(fbb, tables)
+    val tableMetasOffset = MetadataResponse.createTableMetasVector(fbb, tableOffsets)
+    val finIndex = MetadataResponse.createMetadataResponse(fbb, 0, tableMetasOffset)
+    fbb.finish(finIndex)
+    val bb = fbb.dataBuffer()
+    val responseSize = bb.remaining()
+    if (responseSize > maximumResponseSize) {
+      throw new IllegalStateException("response size is bigger than what receiver wants")
+    }
+    val materializedResponse = ShuffleMetadata.getMetadataResponse(bb)
+    materializedResponse.mutateFullResponseSize(responseSize)
+    bb
+  }
+
+  def buildShuffleMetadataRequest(executorId: Long,
+                                  responseTag: Long,
+                                  blockIds : Seq[ShuffleBlockBatchId],
+                                  maxResponseSize: Long) : ByteBuffer = {
+    val fbb = new FlatBufferBuilder(1024, bbFactory)
+    val blockIdOffsets = blockIds.map { case blockId =>
+      BlockIdMeta.createBlockIdMeta(fbb,
+        blockId.shuffleId,
+        blockId.mapId,
+        blockId.startReduceId,
+        blockId.endReduceId)
+    }
+    val blockIdVectorOffset = MetadataRequest.createBlockIdsVector(fbb, blockIdOffsets.toArray)
+    val finIndex = MetadataRequest.createMetadataRequest(fbb, executorId, responseTag,
+      maxResponseSize, blockIdVectorOffset)
+    fbb.finish(finIndex)
+    fbb.dataBuffer()
+  }
+
+  def getBuilder = new FlatBufferBuilder(1024, bbFactory)
+
+  def getHeapBuilder = new FlatBufferBuilder(1024)
+
+  def getMetadataRequest(byteBuffer: ByteBuffer): MetadataRequest = {
+    MetadataRequest.getRootAsMetadataRequest(byteBuffer)
+  }
+
+  def getMetadataResponse(byteBuffer: ByteBuffer): MetadataResponse = {
+    MetadataResponse.getRootAsMetadataResponse(byteBuffer)
+  }
+
+  def getTransferResponse(resp: ByteBuffer): TransferResponse = {
+    TransferResponse.getRootAsTransferResponse(resp)
+  }
+
+  def getTransferRequest(transferRequest: ByteBuffer): TransferRequest = {
+    TransferRequest.getRootAsTransferRequest(transferRequest)
+  }
+
+  def buildBufferTransferRequest(fbb: FlatBufferBuilder, bufferId: Int, tag: Long): Int = {
+    BufferTransferRequest.createBufferTransferRequest(fbb, bufferId, tag)
+  }
+
+  def buildBufferTransferResponse(bufferMetas: Seq[BufferMeta]): ByteBuffer = {
+    val fbb = new FlatBufferBuilder(1024, bbFactory)
+    val responses = bufferMetas.map( bm => {
+      val buffMetaOffset = BufferMeta.createBufferMeta(fbb, bm.id(), bm.actualSize(), bm.compressedSize(), bm.codec())
+      BufferTransferResponse.createBufferTransferResponse(fbb, bm.id(), TransferState.STARTED, buffMetaOffset)
+    }).toArray
+    val responsesVector = TransferResponse.createResponsesVector(fbb, responses)
+    val root = TransferResponse.createTransferResponse(fbb, responsesVector)
+    fbb.finish(root)
+    fbb.dataBuffer()
+  }
+
+  def buildTransferRequest(localExecutorId: Long, responseTag: Long, toIssue: Seq[(TableMeta, Long)]): ByteBuffer = {
+    val fbb = ShuffleMetadata.getBuilder
+    val requestIds = new ArrayBuffer[Int](toIssue.size)
+    toIssue.foreach { case (tableMeta, tag) =>
+      requestIds.append(
+        ShuffleMetadata.buildBufferTransferRequest(
+          fbb,
+          tableMeta.bufferMeta().id(),
+          tag))
+    }
+    val requestVec = TransferRequest.createRequestsVector(fbb, requestIds.toArray)
+    val transferRequestOffset = TransferRequest.createTransferRequest(fbb, localExecutorId, responseTag, requestVec)
+    fbb.finish(transferRequestOffset)
+    fbb.dataBuffer()
+  }
+
+  def printResponse(state: String, res: MetadataResponse): String = {
+    val out = new StringBuilder
+    out.append(s"----------------------- METADATA RESPONSE ${state} --------------------------\n")
+    out.append(s"${res.tableMetasLength()} tables\n")
+    out.append("------------------------------------------------------------------------------\n")
+    for (tableIndex <- 0 until res.tableMetasLength()) {
+      val tableMeta = res.tableMetas(tableIndex)
+      out.append(s"table: $tableIndex [cols=${tableMeta.columnMetasLength()}, rows=${tableMeta.rowCount}, full_content_size=${res.fullResponseSize()}]\n")
+      for (i <- 0 until tableMeta.columnMetasLength()) {
+        val columnMeta = tableMeta.columnMetas(i)
+
+        val validityLen = if (columnMeta.validity() == null) {
+          -1
+        } else {
+          columnMeta.validity().length()
+        }
+
+        // TODO: Need to expose native ID in cudf
+        if (DType.STRING == DType.fromNative(columnMeta.dtype())) {
+          val offsetLenStr = columnMeta.offsets().length().toString
+          val validityLen = if (columnMeta.validity() == null) {
+            -1
+          } else {
+            columnMeta.validity().length()
+          }
+          out.append(s"column: $i [rows=${columnMeta.rowCount}, data_len=${columnMeta.data().length()}, offset_len=${offsetLenStr}, " +
+            s"validity_len=$validityLen, type=${DType.fromNative(columnMeta.dtype())}, " +
+            s"null_count=${columnMeta.nullCount()}]\n")
+        } else {
+          val offsetLenStr = "NC"
+
+          val validityLen = if (columnMeta.validity() == null) {
+            -1
+          } else {
+            columnMeta.validity().length()
+          }
+
+          out.append(s"column: $i [rows=${columnMeta.rowCount}, data_len=${columnMeta.data().length()}, offset_len=${offsetLenStr}, " +
+            s"validity_len=$validityLen, type=${DType.fromNative(columnMeta.dtype())}, " +
+            s"null_count=${columnMeta.nullCount()}]\n")
+        }
+      }
+    }
+    out.append(s"----------------------- END METADATA RESPONSE ${state} ----------------------\n")
+    out.toString()
+  }
+
+
+  def printRequest(req: MetadataRequest): String = {
+    val out = new StringBuilder
+    out.append("----------------------- METADATA REQUEST --------------------------\n")
+    out.append(s"blockId length: ${req.blockIdsLength()}\n")
+    for (i <- 0 until req.blockIdsLength()) {
+      out.append(s"block_id = [shuffle_id=${req.blockIds(i).shuffleId()}, " +
+        s"map_id=${req.blockIds(i).mapId()}, start_reduce_id=${req.blockIds(i).startReduceId()} , " +
+        s"end_reduce_id=${req.blockIds(i).endReduceId()}]\n")
+    }
+    out.append("----------------------- END METADATA REQUEST ----------------------\n")
+    out.toString()
+  }
+
+
+  /**
+    * Utility function to transfer a [[TableMeta]] to the heap,
+    * TODO: I would like to look for an easier way, perhaps just a memcpy will do.
+    *
+    * @param meta - [[TableMeta]] to copy
+    * @return - a copy of [[meta]] on the JVM heap
+    */
+  def copyTableMetaToHeap(meta: TableMeta): TableMeta = {
+    val fbb = ShuffleMetadata.getHeapBuilder
+    val tables = ShuffleMetadata.copyTables(fbb, Seq(meta))
+    fbb.finish(tables.head)
+    TableMeta.getRootAsTableMeta(fbb.dataBuffer())
   }
 }

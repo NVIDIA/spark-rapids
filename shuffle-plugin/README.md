@@ -37,28 +37,3 @@ make -j10 && make install
 ```
 mvn install:install-file -Dfile=[INSTALL PATH]/lib/jucx-1.8.0.jar -DgroupId=org.openucx -DartifactId=jucx -Dversion=1.8.0 -Dpackaging=jar
 ```
-
-Flatbuffers
------------
-
-If you need to regenerate the java flat buffer clases, please build the compiler 1.11.0 version: 
-
-```
-git clone https://github.com/google/flatbuffers.git
-cd flatbuffers
-git checkout 1.11.0
-mkdir build
-cd build
-cmake ..
-make
-```
-
-You can install it, or otherwise use `flatbuffers/build/flatc`
-
-Call it like so:
-
-From the `shuffle-plugin/src/main/format` call:
-
-```
-flatc --java -o ../java/ --gen-mutable *.fbs
-```
