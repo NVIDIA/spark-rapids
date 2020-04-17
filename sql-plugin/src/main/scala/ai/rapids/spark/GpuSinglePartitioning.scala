@@ -33,7 +33,22 @@ case class GpuSinglePartitioning(expressions: Seq[GpuExpression]) extends GpuExp
     * temporary value.
     */
   override def columnarEval(batch: ColumnarBatch): Any = {
-    Array(batch).zipWithIndex
+    if (batch.numCols == 0) {
+      Array(batch).zipWithIndex
+    } else {
+      try {
+        // Need to produce a contiguous table. Until there's a direct way to do this, using
+        // contiguous split as a workaround, closing any degenerate table after the first one.
+        val sliced = sliceInternalGpuOrCpu(
+          batch,
+          Array(0, batch.numRows),
+          GpuColumnVector.extractColumns(batch))
+        sliced.drop(1).foreach(_.close())
+        sliced.take(1).zipWithIndex
+      } finally {
+        batch.close()
+      }
+    }
   }
 
   override def nullable: Boolean = false

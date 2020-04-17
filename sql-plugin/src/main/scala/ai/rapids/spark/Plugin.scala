@@ -57,14 +57,14 @@ trait GpuPartitioning extends Partitioning {
       val parts = partitionIndexes.slice(1, partitionIndexes.length)
       val splits = new ArrayBuffer[ColumnarBatch](numPartitions)
       val table = new Table(partitionColumns.map(_.getBase).toArray: _*)
-      val contiguousTables = try {
+      val contiguousTables: Array[ContiguousTable] = try {
         table.contiguousSplit(parts: _*)
       } finally {
         table.close()
       }
       var succeeded = false
       try {
-        contiguousTables.foreach { ct => splits.append(GpuColumnVector.from(ct.getTable)) }
+        contiguousTables.foreach { ct => splits.append(GpuColumnVectorFromBuffer.from(ct)) }
         succeeded = true
       } finally {
         contiguousTables.foreach(_.close())
