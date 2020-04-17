@@ -38,7 +38,7 @@ import java.util.List;
  * is on the host, and we want to keep as much of the data on the device as possible.
  * We also provide GPU accelerated versions of the transitions to and from rows.
  */
-public final class GpuColumnVector extends ColumnVector {
+public class GpuColumnVector extends ColumnVector {
 
   public static final class GpuColumnarBatchBuilder implements AutoCloseable {
     private final ai.rapids.cudf.HostColumnVector.Builder[] builders;
@@ -131,7 +131,7 @@ public final class GpuColumnVector extends ColumnVector {
     }
   }
 
-  private static DType toRapidsOrNull(DataType type) {
+  private static final DType toRapidsOrNull(DataType type) {
     if (type instanceof LongType) {
       return DType.INT64;
     } else if (type instanceof DoubleType) {
@@ -156,16 +156,16 @@ public final class GpuColumnVector extends ColumnVector {
     return null;
   }
 
-  public static boolean isSupportedType(DataType type) {
+  public static final boolean isSupportedType(DataType type) {
     return toRapidsOrNull(type) != null;
   }
 
-  public static DType getRapidsType(StructField field) {
+  public static final DType getRapidsType(StructField field) {
     DataType type = field.dataType();
     return getRapidsType(type);
   }
 
-  public static DType getRapidsType(DataType type) {
+  public static final DType getRapidsType(DataType type) {
     DType result = toRapidsOrNull(type);
     if (result == null) {
       throw new IllegalArgumentException(type + " is not supported for GPU processing yet.");
@@ -173,7 +173,7 @@ public final class GpuColumnVector extends ColumnVector {
     return result;
   }
 
-  private static DataType getSparkType(DType type) {
+  protected static final DataType getSparkType(DType type) {
     switch (type) {
       case BOOL8:
         return DataTypes.BooleanType;
@@ -205,7 +205,7 @@ public final class GpuColumnVector extends ColumnVector {
    * Create an empty batch from the given format.  This should be used very sparingly because
    * returning an empty batch from an operator is almost always the wrong thing to do.
    */
-  public static ColumnarBatch emptyBatch(StructType schema) {
+  public static final ColumnarBatch emptyBatch(StructType schema) {
     return new GpuColumnarBatchBuilder(schema, 0, null).build(0);
   }
 
@@ -213,7 +213,7 @@ public final class GpuColumnVector extends ColumnVector {
    * Create an empty batch from the given format.  This should be used very sparingly because
    * returning an empty batch from an operator is almost always the wrong thing to do.
    */
-  public static ColumnarBatch emptyBatch(List<Attribute> format) {
+  public static final ColumnarBatch emptyBatch(List<Attribute> format) {
     StructType schema = new StructType();
     for (Attribute attribute: format) {
       schema = schema.add(new StructField(attribute.name(),
@@ -230,7 +230,7 @@ public final class GpuColumnVector extends ColumnVector {
    * @param input the spark schema to convert
    * @return the cudf schema
    */
-  public static Schema from(StructType input) {
+  public static final Schema from(StructType input) {
     Schema.Builder builder = Schema.builder();
     input.foreach(f -> builder.column(GpuColumnVector.getRapidsType(f.dataType()), f.name()));
     return builder.build();
@@ -241,7 +241,7 @@ public final class GpuColumnVector extends ColumnVector {
    * the columns in the batch, so you will need to close both the batch passed in and the table
    * returned to avoid any memory leaks.
    */
-  public static Table from(ColumnarBatch batch) {
+  public static final Table from(ColumnarBatch batch) {
     return new Table(extractBases(batch));
   }
 
@@ -250,7 +250,7 @@ public final class GpuColumnVector extends ColumnVector {
    * incremented so you will need to close both the table passed in and the batch returned to
    * not have any leaks.
    */
-  public static ColumnarBatch from(Table table) {
+  public static final ColumnarBatch from(Table table) {
     return from(table, 0, table.getNumberOfColumns());
   }
 
@@ -265,7 +265,7 @@ public final class GpuColumnVector extends ColumnVector {
    * @param untilColIndex - until index of the columns. (ie doesn't include that column num)
    * @return       - a ColumnarBatch of the vectors from the table
    */
-  public static ColumnarBatch from(Table table, int startColIndex, int untilColIndex) {
+  public static final ColumnarBatch from(Table table, int startColIndex, int untilColIndex) {
     assert table != null : "Table cannot be null";
     int numColumns = untilColIndex - startColIndex;
     ColumnVector[] columns = new ColumnVector[numColumns];
@@ -299,11 +299,11 @@ public final class GpuColumnVector extends ColumnVector {
    * are incremented so you need to either close the returned value or the input value,
    * but not both.
    */
-  public static GpuColumnVector from(ai.rapids.cudf.ColumnVector cudfCv) {
+  public static final GpuColumnVector from(ai.rapids.cudf.ColumnVector cudfCv) {
     return new GpuColumnVector(getSparkType(cudfCv.getType()), cudfCv);
   }
 
-  public static GpuColumnVector from(Scalar scalar, int count) {
+  public static final GpuColumnVector from(Scalar scalar, int count) {
     return from(ai.rapids.cudf.ColumnVector.fromScalar(scalar, count));
   }
 
@@ -312,7 +312,7 @@ public final class GpuColumnVector extends ColumnVector {
    * reference counts so if you want to use these columns after the batch is closed
    * you will need to do that on your own.
    */
-  public static ai.rapids.cudf.ColumnVector[] extractBases(ColumnarBatch batch) {
+  public static final ai.rapids.cudf.ColumnVector[] extractBases(ColumnarBatch batch) {
     int numColumns = batch.numCols();
     ai.rapids.cudf.ColumnVector[] vectors = new ai.rapids.cudf.ColumnVector[numColumns];
     for (int i = 0; i < vectors.length; i++) {
@@ -326,7 +326,7 @@ public final class GpuColumnVector extends ColumnVector {
    * reference counts so if you want to use these columns after the batch is closed
    * you will need to do that on your own.
    */
-  public static GpuColumnVector[] extractColumns(ColumnarBatch batch) {
+  public static final GpuColumnVector[] extractColumns(ColumnarBatch batch) {
     int numColumns = batch.numCols();
     GpuColumnVector[] vectors = new GpuColumnVector[numColumns];
 
@@ -342,7 +342,7 @@ public final class GpuColumnVector extends ColumnVector {
    * Take an INT32 column vector and return a host side int array.  Don't use this for anything
    * too large.  Note that this ignores validity totally.
    */
-  public static int[] toIntArray(ai.rapids.cudf.ColumnVector vec) {
+  public static final int[] toIntArray(ai.rapids.cudf.ColumnVector vec) {
     assert vec.getType() == DType.INT32;
     int rowCount = (int)vec.getRowCount();
     int[] output = new int[rowCount];
@@ -363,101 +363,101 @@ public final class GpuColumnVector extends ColumnVector {
     this.cudfCv = cudfCv;
   }
 
-  public GpuColumnVector incRefCount() {
+  public final GpuColumnVector incRefCount() {
     // Just pass through the reference counting
     cudfCv.incRefCount();
     return this;
   }
 
   @Override
-  public void close() {
+  public final void close() {
     // Just pass through the reference counting
     cudfCv.close();
   }
 
   @Override
-  public boolean hasNull() {
+  public final boolean hasNull() {
     return cudfCv.hasNulls();
   }
 
   @Override
-  public int numNulls() {
+  public final int numNulls() {
     return (int) cudfCv.getNullCount();
   }
 
-  private static String BAD_ACCESS = "DATA ACCESS MUST BE ON A HOST VECTOR";
+  private final static String BAD_ACCESS = "DATA ACCESS MUST BE ON A HOST VECTOR";
 
   @Override
-  public boolean isNullAt(int rowId) {
+  public final boolean isNullAt(int rowId) {
     throw new IllegalStateException(BAD_ACCESS);
   }
 
   @Override
-  public boolean getBoolean(int rowId) {
+  public final boolean getBoolean(int rowId) {
     throw new IllegalStateException(BAD_ACCESS);
   }
 
   @Override
-  public byte getByte(int rowId) {
+  public final byte getByte(int rowId) {
     throw new IllegalStateException(BAD_ACCESS);
   }
 
   @Override
-  public short getShort(int rowId) {
+  public final short getShort(int rowId) {
     throw new IllegalStateException(BAD_ACCESS);
   }
 
   @Override
-  public int getInt(int rowId) {
+  public final int getInt(int rowId) {
     throw new IllegalStateException(BAD_ACCESS);
   }
 
   @Override
-  public long getLong(int rowId) {
+  public final long getLong(int rowId) {
     throw new IllegalStateException(BAD_ACCESS);
   }
 
   @Override
-  public float getFloat(int rowId) {
+  public final float getFloat(int rowId) {
     throw new IllegalStateException(BAD_ACCESS);
   }
 
   @Override
-  public double getDouble(int rowId) {
+  public final double getDouble(int rowId) {
     throw new IllegalStateException(BAD_ACCESS);
   }
 
   @Override
-  public ColumnarArray getArray(int rowId) {
+  public final ColumnarArray getArray(int rowId) {
     throw new IllegalStateException(BAD_ACCESS);
   }
 
   @Override
-  public ColumnarMap getMap(int ordinal) {
+  public final ColumnarMap getMap(int ordinal) {
     throw new IllegalStateException(BAD_ACCESS);
   }
 
   @Override
-  public Decimal getDecimal(int rowId, int precision, int scale) {
+  public final Decimal getDecimal(int rowId, int precision, int scale) {
     throw new IllegalStateException(BAD_ACCESS);
   }
 
   @Override
-  public UTF8String getUTF8String(int rowId) {
+  public final UTF8String getUTF8String(int rowId) {
     throw new IllegalStateException(BAD_ACCESS);
   }
 
   @Override
-  public byte[] getBinary(int rowId) {
+  public final byte[] getBinary(int rowId) {
     throw new IllegalStateException(BAD_ACCESS);
   }
 
   @Override
-  public ColumnVector getChild(int ordinal) {
+  public final ColumnVector getChild(int ordinal) {
     throw new IllegalStateException(BAD_ACCESS);
   }
 
-  public static long getTotalDeviceMemoryUsed(ColumnarBatch batch) {
+  public static final long getTotalDeviceMemoryUsed(ColumnarBatch batch) {
     long sum = 0;
     for (int i = 0; i < batch.numCols(); i++) {
       sum += ((GpuColumnVector) batch.column(i)).getBase().getDeviceMemorySize();
@@ -465,7 +465,7 @@ public final class GpuColumnVector extends ColumnVector {
     return sum;
   }
 
-  public static long getTotalDeviceMemoryUsed(GpuColumnVector[] cv) {
+  public static final long getTotalDeviceMemoryUsed(GpuColumnVector[] cv) {
     long sum = 0;
     for (int i = 0; i < cv.length; i++){
       sum += cv[i].getBase().getDeviceMemorySize();
@@ -473,7 +473,7 @@ public final class GpuColumnVector extends ColumnVector {
     return sum;
   }
 
-  public static long getTotalDeviceMemoryUsed(Table tb) {
+  public static final long getTotalDeviceMemoryUsed(Table tb) {
     long sum = 0;
     int len = tb.getNumberOfColumns();
     for (int i = 0; i < len; i++) {
@@ -482,18 +482,18 @@ public final class GpuColumnVector extends ColumnVector {
     return sum;
   }
 
-  public ai.rapids.cudf.ColumnVector getBase() {
+  public final ai.rapids.cudf.ColumnVector getBase() {
     return cudfCv;
   }
 
-  public long getRowCount() { return cudfCv.getRowCount(); }
+  public final long getRowCount() { return cudfCv.getRowCount(); }
 
-  public RapidsHostColumnVector copyToHost() {
+  public final RapidsHostColumnVector copyToHost() {
     return new RapidsHostColumnVector(type, cudfCv.copyToHost());
   }
 
   @Override
-  public String toString() {
+  public final String toString() {
     return getBase().toString();
   }
 }

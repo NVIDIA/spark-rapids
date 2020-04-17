@@ -27,16 +27,10 @@ spark.rapids.memory.gpu.spillAsyncStop|Fraction of device memory utilization at 
 spark.rapids.memory.host.spillStorageSize|Amount of off-heap host memory to use for buffering spilled GPU data before spilling to local disk|1073741824
 spark.rapids.memory.pinnedPool.size|The size of the pinned memory pool in bytes unless otherwise specified. Use 0 to disable the pool.|0
 spark.rapids.memory.uvm.enabled|UVM or universal memory can allow main host memory to act essentially as swap for device(GPU) memory. This allows the GPU to process more data than fits in memory, but can result in slower processing. This is an experimental feature.|false
-spark.rapids.shuffle.ucx.enabled|When set to true, enable the UCX transfer method for shuffle files.|false
-spark.rapids.shuffle.ucx.fetch.wait.period|Maximum value of the Initial time to waitin sending fetch requests|50
-spark.rapids.shuffle.ucx.handleLocalShuffle|When set to true, allow UCX to transfer host-local shuffle files.|true
-spark.rapids.shuffle.ucx.handleRemoteShuffle|When set to true, allow UCX to transfer remote shuffle files.|false
+spark.rapids.shuffle.transport.enabled|When set to true, enable the Rapids Shuffle Transport for accelerated shuffle.|false
+spark.rapids.shuffle.transport.maxReceiveInflightBytes|Maximum aggregate amount of bytes that be fetched at any given time from peers during shuffle|1073741824
 spark.rapids.shuffle.ucx.managementServerHost|The host to be used to start the management server|null
-spark.rapids.shuffle.ucx.receive.async|Decides if fetches should be async|false
-spark.rapids.shuffle.ucx.throttle.enabled|When set to true, enable the UCX throttle on send.|false
-spark.rapids.shuffle.ucx.useWakeup|When set to true, use UCX's event-based progress (epoll) in order to wake up the progress thread when needed, instead of a hot loop.|false
-spark.rapids.shuffle.ucx.wait.period|Initial time to wait in ms for requests that cannot be processed by the shuffle manager|5
-spark.rapids.shuffle.ucx.wait.period.update.enabled|Decides if wait period should be updates based on transaction stats|false
+spark.rapids.shuffle.ucx.useWakeup|When set to true, use UCX's event-based progress (epoll) in order to wake up the progress thread when needed, instead of a hot loop.|true
 spark.rapids.sql.batchSizeBytes|Set the target number of bytes for a GPU batch. Splits sizes for input data is covered by separate configs.|2147483647
 spark.rapids.sql.concurrentGpuTasks|Set the number of tasks that can execute concurrently per GPU. Tasks may temporarily block when the number of concurrent tasks in the executor exceeds this amount. Allowing too many concurrent tasks on the same GPU may lead to GPU out of memory errors.|1
 spark.rapids.sql.enabled|Enable (true) or disable (false) sql operations on the GPU|true
