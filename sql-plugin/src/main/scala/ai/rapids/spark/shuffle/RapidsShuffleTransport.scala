@@ -1,0 +1,594 @@
+/*
+ * Copyright (c) 2020, NVIDIA CORPORATION.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+package ai.rapids.spark.shuffle
+
+import java.nio.ByteBuffer
+import java.util.concurrent.ConcurrentLinkedQueue
+import java.util.concurrent.atomic.AtomicInteger
+
+import ai.rapids.cudf.{CudaUtil, DeviceMemoryBuffer, MemoryBuffer, NvtxColor, NvtxRange}
+import ai.rapids.spark.RapidsConf
+import org.apache.spark.internal.Logging
+import org.apache.spark.storage.{BlockManagerId, RapidsStorageUtils, StorageUtils}
+
+/**
+  * This case class is a bit bloated, with memory buffers and rapids buffers.
+  * @param address - the raw native address, used for transfers (from/to this buffer)
+  * @param length - the amount of bytes used to indicate to the transport how much to send/receive
+  * @param tag - a numeric tag identifying this buffer
+  * @param memoryBuffer - an optional MemoryBuffer
+  */
+class AddressLengthTag(val address: Long, var length: Long, val tag: Long,
+    var memoryBuffer: Option[MemoryBuffer] = None) extends AutoCloseable with Logging {
+  /**
+    * If this is a device memory buffer, we return true here.
+    * @return - whether this is a device memory buffer
+    */
+  def isDeviceBuffer(): Boolean = {
+    require(memoryBuffer.nonEmpty,
+      s"$this does not have a memory buffer")
+    memoryBuffer.get.isInstanceOf[DeviceMemoryBuffer]
+  }
+
+  /**
+    * Get a device memory buffer, this function will throw if it is not backed by a [[DeviceMemoryBuffer]]
+    * @return - the backing [[DeviceMemoryBuffer]]
+    */
+  def releaseDeviceMemoryBuffer(): DeviceMemoryBuffer = {
+    require(isDeviceBuffer(),
+      s"$this does not have a device memory buffer")
+    val result = memoryBuffer.get
+    memoryBuffer = None
+    result.asInstanceOf[DeviceMemoryBuffer]
+  }
+
+  /**
+    * Copy to a destination [[AddressLengthTag]]
+    * @param dstAlt - the destination [[AddressLengthTag]]
+    * @param srcOffset - the offset to start copying from
+    * @param toCopy - amount to copy to [[dstAlt]]
+    * @return - amount of bytes copied
+    */
+  def cudaCopyTo(dstAlt: AddressLengthTag, srcOffset: Long, toCopy: Long): Long = {
+    require(srcOffset + toCopy <= length,
+      "Attempting to copy more bytes than the source buffer provides")
+    require(toCopy <= length,
+      "Attempting to copy more than this buffer can hold.")
+    CudaUtil.copy(
+      memoryBuffer.get,
+      srcOffset,
+      dstAlt.memoryBuffer.get,
+      0,
+      toCopy)
+    toCopy
+  }
+
+  /**
+    * Copy from a source [[AddressLengthTag]]
+    * @param srcAlt - the source [[AddressLengthTag]]
+    * @param dstOffset - the offset in which to start copying from
+    * @return - amount of bytes copied
+    */
+  def cudaCopyFrom(srcAlt: AddressLengthTag, dstOffset: Long): Long = {
+    require(dstOffset + srcAlt.length <= length,
+      s"Attempting to copy to a buffer that isn't big enough! $dstOffset + ${srcAlt.length} (${dstOffset+srcAlt.length}) <= ${length}")
+    // TODO: replace this with an async copy on target stream
+    CudaUtil.copy(
+      srcAlt.memoryBuffer.get,
+      0,
+      memoryBuffer.get,
+      dstOffset,
+      srcAlt.length)
+    srcAlt.length
+  }
+
+  /**
+    * A bounce buffer at the end of the transfer needs to be sized with the remaining
+    * amount. This method is used to communicate that last length.
+    * @param newLength - the truncated length of this buffer for the transfer
+    */
+  def resetLength(newLength: Long): Unit = {
+    length = newLength
+  }
+
+  /**
+    * Reset the length to the length supported by the backing buffer.
+    */
+  def resetLength(): Unit = {
+    require(memoryBuffer.nonEmpty,
+      "Attempted to reset using an undefined memory buffer")
+    length = memoryBuffer.get.getLength
+  }
+
+  override def toString: String = {
+    s"AddressLengthTag[address=$address, length=$length, tag=${TransportUtils.formatTag(tag)}]"
+  }
+
+  /**
+    * The Server will call close as the memory buffer stored here is owned by this [[AddressLengthTag]]
+    */
+  override def close(): Unit = {
+    memoryBuffer.foreach(_.close())
+  }
+}
+
+object AddressLengthTag {
+  /**
+    * Construct an [[AddressLengthTag]] given a [[MemoryBuffer]] that is on the device, or host.
+    * @param memoryBuffer - the buffer the [[AddressLengthTag]] should point to
+    * @param tag - the transport tag to use to send/receive this buffer
+    * @return - an instance of [[AddressLengthTag]]
+    */
+  def from(memoryBuffer: MemoryBuffer, tag: Long): AddressLengthTag = {
+    new AddressLengthTag(
+      memoryBuffer.getAddress,
+      memoryBuffer.getLength,
+      tag,
+      Some(memoryBuffer))
+  }
+
+  /**
+    * Construct an [[AddressLengthTag]] given a [[ByteBuffer]]
+    * This is used for metadata messages, and the buffers are direct.
+    * @param byteBuffer - the buffer the [[AddressLengthTag]] should point to
+    * @param tag - the transport tag to use to send/receive this buffer
+    * @return - an instance of [[AddressLengthTag]]
+    */
+  def from(byteBuffer: ByteBuffer, tag: Long): AddressLengthTag = {
+    new AddressLengthTag(
+      TransportUtils.getAddress(byteBuffer),
+      byteBuffer.remaining(),
+      tag)
+  }
+}
+
+trait TransactionCallback {
+  def apply(tx: Transaction): Unit
+}
+
+trait MemoryRegistrationCallback {
+  def apply(success: Boolean)
+}
+
+/**
+  * A server-side interface to the transport.
+  *
+  * The [[RapidsShuffleServer]] uses a [[ServerConnection]] to start the management port
+  * in the transport (in order to allow for incoming connections)
+  *
+  * Note that [[ServerConnection]] is a [[Connection]], and so it inherits methods to send/receive
+  * messages.
+  */
+trait ServerConnection extends Connection {
+  /**
+    * Starts a TCP management port, bound to [[host]], on an ephemeral port (returned)
+    * @param host - host to bind to
+    * @return - integer ephemeral port that was bound
+    */
+  def startManagementPort(host: String): Int
+
+  /**
+    * Function to send bounce buffers to a peer
+    * @param peerExecutorId - peer's executor id to target
+    * @param bounceBuffers - bounce buffers to send
+    * @param cb - callback to trigger once done
+    * @return - the [[Transaction]], which can be used to block wait for this send.
+    */
+  def send(peerExecutorId: Long,
+           bounceBuffers: Seq[AddressLengthTag],
+           cb: TransactionCallback): Transaction
+
+  /**
+    * Function to send bounce buffers to a peer
+    * @param peerExecutorId - peer's executor id to target
+    * @param header - an [[AddressLengthTag]] containing a metadata message to send
+    * @param cb - callback to trigger once done
+    * @return - the [[Transaction]], which can be used to block wait for this send.
+    */
+  def send(peerExecutorId: Long,
+           header: AddressLengthTag,
+           cb: TransactionCallback): Transaction
+}
+
+/**
+  * Currently supported request types in the transport
+  */
+object RequestType extends Enumeration {
+  /**
+    * A client will issue: [[ai.rapids.spark.format.MetadataRequest]]
+    * A server will respond with: [[ai.rapids.spark.format.MetadataResponse]]
+    */
+  val MetadataRequest = Value
+
+  /**
+    * A client will issue: [[ai.rapids.spark.format.TransferRequest]]
+    * A server will respond with: [[ai.rapids.spark.format.TransferResponse]]
+    */
+  val TransferRequest = Value
+}
+
+/**
+  * Trait used by the clients to interact with the transport.
+  *
+  * Note that this subclasses from [[Connection]].
+  */
+trait ClientConnection extends Connection {
+  /**
+    * Perform an asynchronous request, where the callback [[cb]] is triggered
+    * when the response is received at the response's tag.
+    * @param request - [[AddressLengthTag]] describing request message
+    * @param response - [[AddressLengthTag]] describing response message
+    * @param cb - a callback to tell the caller that the transaction is done ([[response]] should have the result)
+    * @return - [[Transaction]] object. It can be used to block for this requst to complete.
+    */
+  def request(request: AddressLengthTag,
+              response: AddressLengthTag,
+              cb: TransactionCallback): Transaction
+
+  /**
+    * This function assigns tags that are valid for responses in this connection.
+    * @return - a Long tag to use for a response
+    */
+  def assignResponseTag: Long
+
+  /**
+    * This function assigns tags for individual buffers to be received in this connection.
+    * @param msgId - an application-level id that should be unique to the peer.
+    * @return - a Long tag to use for a buffer
+    */
+  def assignBufferTag(msgId: Int): Long
+
+  /**
+    * Get a long representing the executorId for the peer of this connection.
+    * @return - the executorId as a long
+    */
+  def getPeerExecutorId: Long
+}
+
+/**
+  * [[Connection]] trait defines what a "connection" must support.
+  *
+  * [[ServerConnection]] and [[ClientConnection]] extend this, adding a few methods needed
+  * in each case.
+  */
+trait Connection {
+  /**
+    * Both the client and the server need to compose request tags depending on the
+    * type of request being sent or handled.
+    *
+    * Note it is up to the implemented to compose the tag in whatever way makes
+    * most sense for the underlying transport.
+    *
+    * @param requestType - the type of request this tag is for
+    * @return - a Long tag to be used for this request
+    */
+  def composeRequestTag(requestType: RequestType.Value): Long
+
+  /**
+    * Function to receive a buffer
+    * @param header - an [[AddressLengthTag]] to receive a metadata message
+    * @param cb - callback to trigger once this receive completes
+    * @return - a [[Transaction]] that can be used to block while this transaction is not done
+    */
+  def receive(header: AddressLengthTag,
+              cb: TransactionCallback): Transaction
+
+  /**
+    * Function to receive a buffer
+    * @param bounceBuffers - a sequence of [[AddressLengthTag]] where to receive data
+    * @param cb - callback to trigger once this receive completes
+    * @return - a [[Transaction]] that can be used to block while this transaction is not done
+    */
+  def receive(bounceBuffers: Seq[AddressLengthTag],
+              cb: TransactionCallback): Transaction
+}
+
+object TransactionStatus extends Enumeration {
+  val NotStarted, InProgress, Complete, Success, Error, Cancelled = Value
+}
+
+/**
+  * Case class representing stats for the a transaction
+  * @param txTimeMs - amount of time this [[Transaction]] took
+  * @param sendSize - amount of bytes sent
+  * @param receiveSize - amount of bytes received
+  * @param sendThroughput - send throughput in GB/sec
+  * @param recvThroughput - receive throughput in GB/sec
+  */
+case class TransactionStats(txTimeMs: Double,
+                            sendSize: Long,
+                            receiveSize: Long,
+                            sendThroughput: Double,
+                            recvThroughput: Double)
+
+/**
+  * This trait represents a shuffle "transaction", and it is specific to a transfer (or set of transfers).
+  *
+  * It is useful in that it groups a set of sends and receives requires in order to carry an action
+  * against a peer. It can be used to find statistics about the transfer (bytes send/received, throughput),
+  * and it also can be waited on, for blocking clients.
+  *
+  * NOTE: a Transaction is thread safe w.r.t. a connection's callback. Calling methods on the transaction
+  * outside of [[waitForCompletion]] produces undefined behavior.
+  */
+trait Transaction extends AutoCloseable {
+  /**
+    * Get the status this transaction is in. Callbacks use this to handle various transaction states
+    * (e.g. success, error, etc.)
+    * @return - The current status
+    */
+  def getStatus: TransactionStatus.Value
+
+  /**
+    * Get error messages that could have occurred during the transaction.
+    * @return - returns an optional error message
+    */
+  def getErrorMessage: Option[String]
+
+  /**
+    * Get the statistics object (bytes sent/recv, tx time, and throughput are available)
+    * @return
+    */
+  def getStats: TransactionStats
+
+  /**
+    * Block until this transaction is completed.
+    *
+    * NOTE: not only does this include the transaction time, but it also includes the
+    * code performed in the callback. If the callback would block, you could end up in a situation of
+    * deadlock.
+    */
+  def waitForCompletion(): Unit
+}
+
+/**
+  * This defines what a "transport" should support. The intention is to allow for
+  * various transport implementations to exist, for different communication frameworks.
+  *
+  * It is an [[AutoCloseable]] and so the caller should close when the transport is no longer needed.
+  */
+trait RapidsShuffleTransport extends AutoCloseable {
+  /**
+    * This function will connect (if not connected already) to a peer
+    * described by [[blockManagerId]]. Connections are cached.
+    *
+    * @param localExecutorId - the local executor id
+    * @param blockManagerId - the peer's block manager id
+    * @return - A [[RapidsShuffleClient]] instance that can be used to interact with the peer
+    */
+  def makeClient(localExecutorId: Long,
+                 blockManagerId: BlockManagerId): RapidsShuffleClient
+
+  /**
+    * This function should only be needed once. The caller creates *a* server and it is used
+    * for the duration of the process.
+    * @param requestHandler - used to get metadata info, and acquire tables used in the shuffle.
+    * @return - the server instance
+    */
+  def makeServer(requestHandler: RapidsShuffleRequestHandler): RapidsShuffleServer
+
+  /**
+    * Returns a wrapped buffer of size Long. The buffer may or may not be pooled.
+    *
+    * The caller should call .close() on the returned [[RefCountedDirectByteBuffer]]
+    * when done.
+    *
+    * @param size - size of buffer required
+    * @return - the ref counted buffer
+    */
+  def getMetaBuffer(size: Long): RefCountedDirectByteBuffer
+
+  /**
+    * (throttle) Adds a set of requests to be throttled as limits allowed.
+    * @param reqs - requests to add to the throttle queue
+    */
+  def queuePending(reqs: Seq[PendingTransferRequest])
+
+  /**
+    * (throttle) Signals that [[bytesCompleted]] are done, allowing more requests through the throttle.
+    * @param bytesCompleted - amount of bytes handled
+    */
+  def doneBytesInFlight(bytesCompleted: Long): Unit
+
+  // Bounce Buffer Management
+
+  /**
+    * Get receive bounce buffers needed for [[remaining]] bytes. [[totalRequired]] limits the
+    * number of buffers that should be returned.
+    * @param remaining - amount of bytes remaining in the receive
+    * @param totalRequired - maximum no. of buffers that should be returned
+    * @return - a sequence of bounce buffers
+    */
+  def getReceiveBounceBuffers(remaining: Long, totalRequired: Int): Seq[MemoryBuffer]
+
+  /**
+    * Free receive bounce buffers. These may be pooled and so reused by other requests.
+    * @param bounceBuffers - the bounce buffers to free
+    */
+  def freeReceiveBounceBuffers(bounceBuffers: Seq[MemoryBuffer]): Unit
+
+  /**
+    * Get send bounce buffers needed for [[remaining]] bytes. [[totalRequired]] limits the
+    * number of buffers that should be returned.
+    * @param deviceMemory - if true, return [[DeviceMemoryBuffer]] else, return [[HostMemoryBuffer]]
+    * @param remaining - amount of bytes remaining in the receive
+    * @param totalRequired - maximum no. of buffers that should be returned
+    * @return - a sequence of bounce buffers
+    */
+  def getSendBounceBuffers(deviceMemory: Boolean, remaining: Long, totalRequired: Int): Seq[MemoryBuffer]
+
+  /**
+    * Free send bounce buffers. These may be pooled and so reused by other requests.
+    * @param bounceBuffers - the bounce buffers to free
+    */
+  def freeSendBounceBuffers(bounceBuffers: Seq[MemoryBuffer]): Unit
+}
+
+/**
+  * A pool of direct byte buffers, sized to be [[bufferSize]].
+  * This is a controlled leak at the moment, there is no reclaiming of buffers.
+  *
+  * NOTE: this is used for metadata messages.
+  *
+  * @param bufferSize - the size of direct [[ByteBuffer]] to allocate.
+  */
+class DirectByteBufferPool(bufferSize: Long) extends Logging {
+  val buffers = new ConcurrentLinkedQueue[RefCountedDirectByteBuffer]()
+  val high = new AtomicInteger(0)
+
+  def getBuffer(size: Long): RefCountedDirectByteBuffer = {
+    if (size > bufferSize) {
+      throw new IllegalStateException(s"Buffers of size $bufferSize are the only ones supported, asked for $size")
+    }
+    var buff = buffers.poll()
+    if (buff == null) {
+      high.incrementAndGet()
+      logInfo(s"Allocating new direct buffer, high watermark = $high")
+      buff = new RefCountedDirectByteBuffer(ByteBuffer.allocateDirect(bufferSize.toInt), Some(this))
+    }
+    buff.getBuffer().clear()
+    buff
+  }
+
+  def releaseBuffer(buff: RefCountedDirectByteBuffer): Boolean = {
+    logInfo(s"Free direct buffers ${buffers.size()}")
+    buffers.offer(buff)
+  }
+}
+
+/**
+  * [[RefCountedDirectByteBuffer]] is a simple wrapper on top of a [[ByteBuffer]] that has been allocated
+  * in direct mode. The pool is used to return the [[ByteBuffer]] to be reused, but not all
+  * of these buffers are pooled (hence the argument is optional)
+  *
+  * The user should always .close() a [[RefCountedDirectByteBuffer]]. The close could hard destroy
+  * the buffer, or return the object to the pool
+  *
+  * @param bb - buffer to wrap
+  * @param pool - optional pool
+  */
+class RefCountedDirectByteBuffer(bb: ByteBuffer, pool: Option[DirectByteBufferPool] = None) extends AutoCloseable {
+  assert(bb.isDirect, "Only direct buffers are supported")
+
+  var refCount: Int = 0
+
+  /**
+    * Adds one to the ref count. Caller should call .close() when done
+    * @return - wrapped buffer
+    */
+  def acquire(): ByteBuffer = synchronized {
+    refCount = refCount + 1
+    bb
+  }
+
+  /**
+    * Peeks into the wrapped buffer, without changing the ref count.
+    * @return - wrapped buffer
+    */
+  def getBuffer(): ByteBuffer = bb
+
+  /**
+    * Decrements the ref count. If the ref count reaches 0, the buffer is
+    * either returned to the (optional) pool or destroyed.
+    */
+  override def close(): Unit = synchronized {
+    refCount = refCount - 1
+    if (refCount <= 0) {
+      if (pool.isDefined) {
+        pool.get.releaseBuffer(this)
+      } else {
+        unsafeDestroy() // not pooled, should disappear
+      }
+    }
+  }
+
+  /**
+    * Destroys the direct byte buffer forcefully, rather than wait for GC
+    * to do it later. This helps with fragmentation issues with nearly depleted
+    * native heap.
+    */
+  def unsafeDestroy(): Unit = synchronized {
+    RapidsStorageUtils.dispose(bb)
+  }
+
+  override def toString: String = {
+    s"RefCountedDirectByteBuffer[bb=$bb, ref_count=$refCount]"
+  }
+}
+
+/**
+  * A set of util functions used throughout
+  */
+object TransportUtils {
+  def formatTag(tag: Long): String = {
+    f"0x$tag%016X"
+  }
+
+  def copyBuffer(src: ByteBuffer, dst: ByteBuffer, size: Int): Unit = {
+    val copyMetaRange = new NvtxRange("Transport.CopyBuffer", NvtxColor.RED)
+    try {
+      val ro = src.asReadOnlyBuffer()
+      ro.limit(ro.position() + size) // make sure we only copy size bytes
+      // copy from position to remaining = (limit - position)
+      dst.put(ro) // bulk put
+    } finally {
+      copyMetaRange.close()
+    }
+  }
+
+  def getAddress(byteBuffer: ByteBuffer): Long = synchronized {
+    require(byteBuffer.isDirect, "Only direct ByteBuffers supported in getAddress")
+    val db = byteBuffer.asInstanceOf[sun.nio.ch.DirectBuffer]
+    db.address() + byteBuffer.position()
+  }
+
+  def timeDiffMs(startTimeMs: Long): Long = {
+    System.currentTimeMillis() - startTimeMs
+  }
+}
+
+object RapidsShuffleTransport extends Logging {
+  /**
+    * Used in [[BlockManagerId]]s handled by the [[RapidsShuffleTransport]], in the topology property.
+    */
+  val BLOCK_MANAGER_ID_TOPO_PREFIX: String = "rapids"
+
+  /**
+    * Returns an instance of [[RapidsShuffleTransport]]. This only knows about UCX right now.
+    * @param shuffleServerId - this is the original [[BlockManagerId]] that Spark has for this executor
+    * @param rapidsConf - instance of [[RapidsConf]]
+    * @return - a [[RapidsShuffleTransport]] instance to be used to create a server and clients.
+    */
+  def makeTransport(shuffleServerId: BlockManagerId, rapidsConf: RapidsConf): RapidsShuffleTransport = {
+    val transportClass = try {
+      Class.forName(rapidsConf.shuffleTransportClassName)
+    } catch {
+      case classNotFoundException: ClassNotFoundException =>
+        logError(s"Unable to find RapidsShuffleTransport class ${rapidsConf.shuffleTransportClassName}." +
+          "Please ensure the appropriate jars have been added to the classpath.", classNotFoundException)
+        throw classNotFoundException
+    }
+    try {
+      val ctr = transportClass.getConstructors()(0)
+      ctr.newInstance(shuffleServerId, rapidsConf).asInstanceOf[RapidsShuffleTransport]
+    } catch {
+      case t: Throwable =>
+        logError(s"Found class for ${rapidsConf.shuffleTransportClassName}, but failed to instantiate", t)
+        throw t
+    }
+  }
+}

@@ -383,56 +383,82 @@ object RapidsConf {
     .createWithDefault("all")
 
   // USER FACING SHUFFLE CONFIGS
-  val SHUFFLE_UCX_ENABLE = conf("spark.rapids.shuffle.ucx.enabled")
-    .doc("When set to true, enable the UCX transfer method for shuffle files.")
+  val SHUFFLE_TRANSPORT_ENABLE = conf("spark.rapids.shuffle.transport.enabled")
+    .doc("When set to true, enable the Rapids Shuffle Transport for accelerated shuffle.")
     .booleanConf
     .createWithDefault(false)
+
+  val SHUFFLE_TRANSPORT_CLASS_NAME = conf("spark.rapids.shuffle.transport.class")
+    .doc("The class of the specific RapidsShuffleTransport to use during the shuffle.")
+    .internal()
+    .stringConf
+    .createWithDefault("ai.rapids.spark.shuffle.ucx.UCXShuffleTransport")
+
+  val SHUFFLE_TRANSPORT_MAX_RECEIVE_INFLIGHT_BYTES = conf("spark.rapids.shuffle.transport.maxReceiveInflightBytes")
+    .doc("Maximum aggregate amount of bytes that be fetched at any given time from peers during shuffle")
+    .bytesConf(ByteUnit.BYTE)
+    .createWithDefault(1024 * 1024 * 1024)
 
   val SHUFFLE_UCX_USE_WAKEUP = conf("spark.rapids.shuffle.ucx.useWakeup")
     .doc("When set to true, use UCX's event-based progress (epoll) in order to wake up " +
       "the progress thread when needed, instead of a hot loop.")
     .booleanConf
-    .createWithDefault(false)
-
-  val SHUFFLE_UCX_THROTTLE_ENABLE = conf("spark.rapids.shuffle.ucx.throttle.enabled")
-    .doc("When set to true, enable the UCX throttle on send.")
-    .booleanConf
-    .createWithDefault(false)
-
-  val SHUFFLE_UCX_WAIT_PERIOD_UPDATE_ENABLE = conf("spark.rapids.shuffle.ucx.wait.period.update.enabled")
-    .doc("Decides if wait period should be updates based on transaction stats")
-    .booleanConf
-    .createWithDefault(false)
-
-  val SHUFFLE_UCX_RECV_ASYNC = conf("spark.rapids.shuffle.ucx.receive.async")
-    .doc("Decides if fetches should be async")
-    .booleanConf
-    .createWithDefault(false)
-
-  val SHUFFLE_UCX_WAIT_PERIOD = conf("spark.rapids.shuffle.ucx.wait.period")
-    .doc("Initial time to wait in ms for requests that cannot be processed by the shuffle manager")
-    .integerConf
-    .createWithDefault(5)
-
-  val SHUFFLE_UCX_MAX_FETCH_WAIT_PERIOD = conf("spark.rapids.shuffle.ucx.fetch.wait.period")
-    .doc("Maximum value of the Initial time to waitin sending fetch requests")
-    .integerConf
-    .createWithDefault(50)
-
-  val SHUFFLE_UCX_HANDLE_LOCAL = conf("spark.rapids.shuffle.ucx.handleLocalShuffle")
-    .doc("When set to true, allow UCX to transfer host-local shuffle files.")
-    .booleanConf
     .createWithDefault(true)
-
-  val SHUFFLE_UCX_HANDLE_REMOTE = conf("spark.rapids.shuffle.ucx.handleRemoteShuffle")
-    .doc("When set to true, allow UCX to transfer remote shuffle files.")
-    .booleanConf
-    .createWithDefault(false)
 
   val SHUFFLE_UCX_MGMT_SERVER_HOST = conf("spark.rapids.shuffle.ucx.managementServerHost")
     .doc("The host to be used to start the management server")
     .stringConf
     .createWithDefault(null)
+
+  val SHUFFLE_UCX_BOUNCE_BUFFERS_SIZE = conf("spark.rapids.shuffle.ucx.bounceBuffers.size")
+    .doc("The size of bounce buffer to use in bytes. Note that this size will be the same for device and host memory")
+    .internal()
+    .bytesConf(ByteUnit.BYTE)
+    .createWithDefault(4 * 1024  * 1024)
+
+  val SHUFFLE_UCX_BOUNCE_BUFFERS_DEVICE_COUNT = conf("spark.rapids.shuffle.ucx.bounceBuffers.device.count")
+    .doc("The number of bounce buffers to pre-allocate from device memory")
+    .internal()
+    .integerConf
+    .createWithDefault(32)
+
+  val SHUFFLE_UCX_BOUNCE_BUFFERS_HOST_COUNT = conf("spark.rapids.shuffle.ucx.bounceBuffers.host.count")
+    .doc("The number of bounce buffers to pre-allocate from host memory")
+    .internal()
+    .integerConf
+    .createWithDefault(32)
+
+  val SHUFFLE_MAX_CLIENT_THREADS = conf("spark.rapids.shuffle.maxClientThreads")
+    .doc("The maximum number of threads that the shuffle client should be allowed to start")
+    .internal()
+    .integerConf
+    .createWithDefault(50)
+
+  val SHUFFLE_MAX_CLIENT_TASKS = conf("spark.rapids.shuffle.maxClientTasks")
+    .doc("The maximum number of tasks shuffle clients will queue before adding threads " +
+      s"(up to spark.rapids.shuffle.maxClientThreads), or slowing down the transport")
+    .internal()
+    .integerConf
+    .createWithDefault(100)
+
+  val SHUFFLE_CLIENT_THREAD_KEEPALIVE = conf("spark.rapids.shuffle.clientThreadKeepAlive")
+    .doc("The number of seconds that the ThreadPoolExecutor will allow an idle client shuffle thread to " +
+      "stay alive, before reclaiming.")
+    .internal()
+    .integerConf
+    .createWithDefault(30)
+
+  val SHUFFLE_MAX_SERVER_TASKS = conf("spark.rapids.shuffle.maxServerTasks")
+    .doc("The maximum number of tasks the shuffle server will queue up for its thread")
+    .internal()
+    .integerConf
+    .createWithDefault(1000)
+
+  val SHUFFLE_MAX_METADATA_SIZE = conf("spark.rapids.shuffle.maxMetadataSize")
+    .doc("The maximum size of a metadata message used in the shuffle.")
+    .internal()
+    .longConf
+    .createWithDefault(50 * 1024)
 
   // USER FACING DEBUG CONFIGS
 
@@ -509,6 +535,7 @@ object RapidsConf {
 }
 
 class RapidsConf(conf: Map[String, String]) extends Logging {
+
   import RapidsConf._
   import ConfHelper._
 
@@ -536,8 +563,6 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
   lazy val pinnedPoolSize: Long = get(PINNED_POOL_SIZE)
 
   lazy val concurrentGpuTasks: Int = get(CONCURRENT_GPU_TASKS)
-
-  lazy val shuffleSpillThreads: Int = get(SHUFFLE_SPILL_THREADS)
 
   lazy val isTestEnabled: Boolean = get(TEST_CONF)
 
@@ -579,25 +604,31 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
 
   lazy val enableHashOptimizeSort: Boolean = get(ENABLE_HASH_OPTIMIZE_SORT)
 
-  lazy val shuffleUcxEnable: Boolean = get(SHUFFLE_UCX_ENABLE)
+  lazy val shuffleTransportEnabled: Boolean = get(SHUFFLE_TRANSPORT_ENABLE)
+
+  lazy val shuffleTransportClassName: String = get(SHUFFLE_TRANSPORT_CLASS_NAME)
+
+  lazy val shuffleTransportMaxReceiveInflightBytes: Long = get(SHUFFLE_TRANSPORT_MAX_RECEIVE_INFLIGHT_BYTES)
 
   lazy val shuffleUcxUseWakeup: Boolean = get(SHUFFLE_UCX_USE_WAKEUP)
 
-  lazy val shuffleUcxThrottleEnable: Boolean = get(SHUFFLE_UCX_THROTTLE_ENABLE)
-
-  lazy val shuffleUcxRecvAsync: Boolean = get(SHUFFLE_UCX_RECV_ASYNC)
-
-  lazy val shuffleUcxUpdateWaitPeriod: Boolean = get(SHUFFLE_UCX_WAIT_PERIOD_UPDATE_ENABLE)
-
-  lazy val shuffleUcxWaitPeriod: Int = get(SHUFFLE_UCX_WAIT_PERIOD)
-
-  lazy val shuffleUcxMaxFetchWaitPeriod: Int = get(SHUFFLE_UCX_MAX_FETCH_WAIT_PERIOD)
-
-  lazy val shuffleUcxHandleLocal: Boolean = get(SHUFFLE_UCX_HANDLE_LOCAL)
-
-  lazy val shuffleUcxHandleRemote: Boolean = get(SHUFFLE_UCX_HANDLE_REMOTE)
-
   lazy val shuffleUcxMgmtHost: String = get(SHUFFLE_UCX_MGMT_SERVER_HOST)
+
+  lazy val shuffleUcxBounceBuffersSize: Long = get(SHUFFLE_UCX_BOUNCE_BUFFERS_SIZE)
+
+  lazy val shuffleUcxDeviceBounceBuffersCount: Int = get(SHUFFLE_UCX_BOUNCE_BUFFERS_DEVICE_COUNT)
+
+  lazy val shuffleUcxHostBounceBuffersCount: Int = get(SHUFFLE_UCX_BOUNCE_BUFFERS_HOST_COUNT)
+
+  lazy val shuffleMaxClientThreads: Int = get(SHUFFLE_MAX_CLIENT_THREADS)
+
+  lazy val shuffleMaxClientTasks: Int = get(SHUFFLE_MAX_CLIENT_TASKS)
+
+  lazy val shuffleClientThreadKeepAliveTime: Int = get(SHUFFLE_CLIENT_THREAD_KEEPALIVE)
+
+  lazy val shuffleMaxServerTasks: Int = get(SHUFFLE_MAX_SERVER_TASKS)
+
+  lazy val shuffleMaxMetadataSize: Long = get(SHUFFLE_MAX_METADATA_SIZE)
 
   def isOperatorEnabled(key: String, incompat: Boolean): Boolean = {
     val default = !incompat || (incompat && isIncompatEnabled)

@@ -230,7 +230,7 @@ object GpuDeviceManager extends Logging {
     private[this] val devId = getDeviceId.getOrElse {
       throw new IllegalStateException("Device ID is not set")
     }
-
+    
     override def newThread(runnable: Runnable): Thread = {
       factory.newThread(() => {
         Cuda.setDevice(devId)
