@@ -1404,7 +1404,10 @@ object GpuOverrides {
       (agg, conf, p, r) => new GpuSortAggregateMeta(agg, conf, p, r)),
     exec[SortExec](
       "The backend for the sort operator",
-      (sort, conf, p, r) => new GpuSortMeta(sort, conf, p, r))
+      (sort, conf, p, r) => new GpuSortMeta(sort, conf, p, r)),
+    exec[ExpandExec](
+      "The backend for the expand operator",
+      (expand, conf, p, r) => new GpuExpandExecMeta(expand, conf, p, r))
   ).map(r => (r.getClassFor.asSubclass(classOf[SparkPlan]), r)).toMap
 }
 

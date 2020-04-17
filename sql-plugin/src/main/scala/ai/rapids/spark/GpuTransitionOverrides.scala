@@ -21,7 +21,7 @@ import org.apache.spark.sql.catalyst.expressions.objects.CreateExternalRow
 import org.apache.spark.sql.catalyst.rules.Rule
 import org.apache.spark.sql.execution._
 import org.apache.spark.sql.execution.columnar.InMemoryTableScanExec
-import org.apache.spark.sql.execution.command.{CreateDataSourceTableCommand, DropTableCommand, ExecutedCommandExec}
+import org.apache.spark.sql.execution.command.ExecutedCommandExec
 import org.apache.spark.sql.execution.datasources.v2.DataSourceV2ScanExecBase
 import org.apache.spark.sql.execution.exchange.{Exchange, ShuffleExchangeExec}
 import org.apache.spark.sql.rapids.GpuFileSourceScanExec
