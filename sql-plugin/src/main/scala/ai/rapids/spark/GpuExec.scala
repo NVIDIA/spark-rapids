@@ -29,7 +29,7 @@ object GpuMetricNames {
   val TOTAL_TIME = "totalTime"
 }
 
-trait GpuExec extends SparkPlan {
+trait GpuExec extends SparkPlan with Arm {
   /**
    * If true is returned batches after this will be coalesced.  This should
    * really be used in cases where it is known that the size of a batch may

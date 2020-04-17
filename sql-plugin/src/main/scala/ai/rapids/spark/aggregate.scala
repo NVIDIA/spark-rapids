@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019, NVIDIA CORPORATION.
+ * Copyright (c) 2019-2020, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -474,42 +474,26 @@ case class GpuHashAggregateExec(requiredChildDistributionExpressions: Option[Seq
   }
 
   private def processIncomingBatch(batch: ColumnarBatch,
-                                   boundInputReferences: Seq[GpuExpression]): Seq[GpuColumnVector] = {
-    boundInputReferences.map { ref => {
-      val childCv: GpuColumnVector = null
-      var success = false
-      try {
-        val in = ref.columnarEval(batch)
-        val childCv = in match {
-          case cv: ColumnVector => cv.asInstanceOf[GpuColumnVector]
-          case _ =>
-            val scalar = GpuScalar.from(in, ref.dataType)
-            try {
-              GpuColumnVector.from(scalar, batch.numRows)
-            } finally {
-              scalar.close()
-            }
-        }
-        val childCvCasted = if (childCv.dataType != ref.dataType) {
-          // note that for string categories, childCv.dataType == StringType
-          // so we are not going to cast them to string unnecessarily here,
-          val newCv = GpuColumnVector.from(
-            childCv.asInstanceOf[GpuColumnVector].getBase.castTo(
-              GpuColumnVector.getRapidsType(childCv.dataType)))
-          // out with the old, in with the new
-          childCv.close()
-          newCv
-        } else {
-          childCv
-        }
-        success = true
-        childCvCasted
-      } finally {
-        if (!success && childCv != null) {
-          childCv.close()
+      boundInputReferences: Seq[GpuExpression]): Seq[GpuColumnVector] = {
+
+    boundInputReferences.safeMap { ref =>
+      val in = ref.columnarEval(batch)
+      val childCv = in match {
+        case cv: ColumnVector => cv.asInstanceOf[GpuColumnVector]
+        case _ =>
+          withResource(GpuScalar.from(in, ref.dataType)) { scalar =>
+            GpuColumnVector.from(scalar, batch.numRows)
+          }
+      }
+      if (childCv.dataType == ref.dataType) {
+        childCv
+      } else {
+        withResource(childCv) { childCv =>
+          val rapidsType = GpuColumnVector.getRapidsType(childCv.dataType)
+          GpuColumnVector.from(childCv.getBase.castTo(rapidsType))
         }
       }
-    }}
+    }
   }
 
   /**
