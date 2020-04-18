@@ -275,7 +275,7 @@ case class GpuSpecifiedWindowFrame(
   override def children: Seq[Expression] = lower :: upper :: Nil
 
   lazy val valueBoundary: Seq[Expression] =
-    children.filterNot(_.isInstanceOf[SpecialFrameBoundary])
+    children.filterNot(_.isInstanceOf[GpuSpecialFrameBoundary])
 
   override def checkInputDataTypes(): TypeCheckResult = {
     // Check lower value.
@@ -292,16 +292,16 @@ case class GpuSpecifiedWindowFrame(
 
     // Check combination (of expressions).
     (lower, upper) match {
-      case (l: Expression, u: Expression) if !isValidFrameBoundary(l, u) =>
+      case (l: GpuExpression, u: GpuExpression) if !isValidFrameBoundary(l, u) =>
         TypeCheckFailure(s"Window frame upper bound '$upper' does not follow the lower bound " +
           s"'$lower'.")
       case (l: GpuSpecialFrameBoundary, _) => TypeCheckSuccess
       case (_, u: GpuSpecialFrameBoundary) => TypeCheckSuccess
-      case (l: Expression, u: Expression) if l.dataType != u.dataType =>
+      case (l: GpuExpression, u: GpuExpression) if l.dataType != u.dataType =>
         TypeCheckFailure(
           s"Window frame bounds '$lower' and '$upper' do no not have the same data type: " +
             s"'${l.dataType.catalogString}' <> '${u.dataType.catalogString}'")
-      case (l: Expression, u: Expression) if isGreaterThan(l, u) =>
+      case (l: GpuExpression, u: GpuExpression) if isGreaterThan(l, u) =>
         TypeCheckFailure(
           "The lower bound of a window frame must be less than or equal to the upper bound")
       case _ => TypeCheckSuccess
@@ -314,7 +314,12 @@ case class GpuSpecifiedWindowFrame(
     s"${frameType.sql} BETWEEN $lowerSql AND $upperSql"
   }
 
-  def isUnbounded: Boolean = lower == UnboundedPreceding && upper == UnboundedFollowing
+  def isUnbounded: Boolean = {
+    (lower, upper) match {
+      case (l:GpuSpecialFrameBoundary, u:GpuSpecialFrameBoundary) => l.boundary == UnboundedPreceding && u.boundary == UnboundedFollowing
+      case _ => false
+    }
+  }
 
   def isValueBound: Boolean = valueBoundary.nonEmpty
 
@@ -354,10 +359,10 @@ case class GpuSpecifiedWindowFrame(
     case _ => TypeCheckSuccess
   }
 
-  private def isValidFrameBoundary(l: Expression, u: Expression): Boolean = {
+  private def isValidFrameBoundary(l: GpuExpression, u: GpuExpression): Boolean = {
     (l, u) match {
-      case (UnboundedFollowing, _) => false
-      case (_, UnboundedPreceding) => false
+      case (low: GpuSpecialFrameBoundary, _) if low.boundary == UnboundedFollowing => false
+      case (_, up: GpuSpecialFrameBoundary)  if  up.boundary == UnboundedPreceding => false
       case _ => true
     }
   }
