@@ -40,6 +40,15 @@ case class GpuAcos(child: Expression) extends CudfUnaryMathExpression("ACOS") {
   override def outputTypeOverride: DType = DType.FLOAT64
 }
 
+case class GpuToRadians(child: GpuExpression) extends GpuUnaryMathExpression("RADIANS") {
+
+  override def doColumnar(input: GpuColumnVector): GpuColumnVector = {
+    withResource(Scalar.fromDouble(Math.PI / 180d)) { multiplier =>
+      GpuColumnVector.from(input.getBase.mul(multiplier))
+    }
+  }
+}
+
 case class GpuAcosh(child: Expression) extends CudfUnaryMathExpression("ACOSH") {
   override def unaryOp: UnaryOp = UnaryOp.ARCCOSH
   override def outputTypeOverride: DType = DType.FLOAT64
