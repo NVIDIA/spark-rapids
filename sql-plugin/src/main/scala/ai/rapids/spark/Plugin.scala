@@ -416,16 +416,26 @@ class RapidsExecutorPlugin extends ExecutorPlugin with Logging {
   override def init(
       pluginContext: PluginContext,
       extraConf: util.Map[String, String]): Unit = {
-    val conf = new RapidsConf(extraConf.asScala.toMap)
+    try {
+      val conf = new RapidsConf(extraConf.asScala.toMap)
 
-    // we rely on the Rapids Plugin being run with 1 GPU per executor so we can initialize
-    // on executor startup.
-    if (!GpuDeviceManager.rmmTaskInitEnabled) {
-      logInfo("Initializing memory from Executor Plugin")
-      GpuDeviceManager.initializeGpuAndMemory(pluginContext.resources().asScala.toMap)
+      // we rely on the Rapids Plugin being run with 1 GPU per executor so we can initialize
+      // on executor startup.
+      if (!GpuDeviceManager.rmmTaskInitEnabled) {
+        logInfo("Initializing memory from Executor Plugin")
+        GpuDeviceManager.initializeGpuAndMemory(pluginContext.resources().asScala.toMap)
+      }
+
+      GpuSemaphore.initialize(conf.concurrentGpuTasks)
+    } catch {
+      case e: Throwable => {
+        // Exceptions in executor plugin can cause a single thread to die but the executor process
+        // sticks around without any useful info until it hearbeat times out. Print what happened
+        // and exit immediately.
+        logError("Exception in the executor plugin", e)
+        System.exit(1)
+      }
     }
-
-    GpuSemaphore.initialize(conf.concurrentGpuTasks)
   }
 
   override def shutdown(): Unit = {
