@@ -24,6 +24,10 @@ pipeline {
         LIBCUDF_KERNEL_CACHE_PATH='/tmp'
     }
 
+    triggers {
+        cron('H 5 * * *')
+    }
+
     stages {
         stage('Ubuntu16 CUDA10.0') {
             agent { label 'docker-gpu' }
