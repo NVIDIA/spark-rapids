@@ -20,7 +20,7 @@ import ai.rapids.spark.GpuOverrides.wrapExpr
 import org.apache.spark.sql.catalyst.analysis.TypeCheckResult
 import org.apache.spark.sql.catalyst.analysis.TypeCheckResult.{TypeCheckFailure, TypeCheckSuccess}
 import org.apache.spark.sql.catalyst.expressions.aggregate.{AggregateExpression, AggregateFunction, Count, Max, Min, Sum}
-import org.apache.spark.sql.catalyst.expressions.{CurrentRow, Expression, FrameType, Literal, RangeFrame, RowFrame, SortOrder, SpecialFrameBoundary, SpecifiedWindowFrame, UnaryMinus, UnboundedFollowing, UnboundedPreceding, WindowExpression, WindowFrame, WindowSpecDefinition}
+import org.apache.spark.sql.catalyst.expressions.{CurrentRow, Descending, Expression, FrameType, Literal, RangeFrame, RowFrame, SortOrder, SpecialFrameBoundary, SpecifiedWindowFrame, UnaryMinus, UnboundedFollowing, UnboundedPreceding, WindowExpression, WindowFrame, WindowSpecDefinition}
 import org.apache.spark.sql.types.{CalendarIntervalType, DataType, DateType, IntegerType, NullType, TimestampType}
 import org.apache.spark.unsafe.types.CalendarInterval
 
@@ -53,9 +53,16 @@ class GpuWindowExpressionMeta(
       case _ => willNotWorkOnGpu(s"Expression not supported in windowing.")
     }
 
-    if (!wrapped.windowSpec.frameSpecification.isInstanceOf[SpecifiedWindowFrame]) {
+    val spec = wrapped.windowSpec
+    if (!spec.frameSpecification.isInstanceOf[SpecifiedWindowFrame]) {
       willNotWorkOnGpu(s"Only SpecifiedWindowFrame is a supported window-frame specification. " +
-        s"Found ${wrapped.windowSpec.frameSpecification.prettyName}")
+        s"Found ${spec.frameSpecification.prettyName}")
+    }
+
+    // FIXME: Currently, CUDF does not support Range windows with DESC ordering.
+    val windowFrame = spec.frameSpecification.asInstanceOf[SpecifiedWindowFrame]
+    if (windowFrame.frameType.equals(RangeFrame) && spec.orderSpec.head.direction.equals(Descending)) {
+      willNotWorkOnGpu(s"Range window-frames do not currently support ordering in DESC")
     }
   }
 
