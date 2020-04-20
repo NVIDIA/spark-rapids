@@ -1046,6 +1046,8 @@ trait SparkQueryCompareTestSuite extends FunSuite with Arm {
       (100.50f, 1.0f),
       (200.80f, Float.NaN),
       (300.30f, 3.0f),
+      (Float.PositiveInfinity, Float.NegativeInfinity),
+      (Float.NegativeInfinity, Float.PositiveInfinity),
       (Float.NaN, 4.0f),
       (Float.PositiveInfinity, 4.0f),
       (Float.NegativeInfinity, 4.0f),
