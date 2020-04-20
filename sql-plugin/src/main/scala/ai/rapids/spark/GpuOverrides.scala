@@ -341,8 +341,6 @@ object GpuOverrides {
       case DateType => true
       case TimestampType => ZoneId.systemDefault().normalized() == GpuOverrides.UTC_TIMEZONE_ID
       case StringType => true
-      case NullType => true             // TODO: Review: This is required to support `CURRENT ROW`, in Window Functions.
-      case CalendarIntervalType => true // TODO: Review: This is required to support `RANGE` frame, in Window Functions.
       case _ => false
     }
 
@@ -475,18 +473,36 @@ object GpuOverrides {
       "Special boundary for a window frame, indicating stopping at the current row",
       (currentRow, conf, p, r) => new ExprMeta[CurrentRow.type](currentRow, conf, p, r) {
         override def convertToGpu(): GpuExpression = GpuSpecialFrameBoundary(currentRow)
+
+        // CURRENT ROW needs to support NullType.
+        override def areAllSupportedTypes(types: DataType*): Boolean = types.forall {
+          case _: NullType => true
+          case anythingElse => isSupportedType(anythingElse)
+        }
       }
     ),
     expr[UnboundedPreceding.type](
       "Special boundary for a window frame, indicating all rows preceding the current row",
       (unboundedPreceding, conf, p, r) => new ExprMeta[UnboundedPreceding.type](unboundedPreceding, conf, p, r) {
         override def convertToGpu(): GpuExpression = GpuSpecialFrameBoundary(unboundedPreceding)
+
+        // UnboundedPreceding needs to support NullType.
+        override def areAllSupportedTypes(types: DataType*): Boolean = types.forall {
+          case _: NullType => true
+          case anythingElse => isSupportedType(anythingElse)
+        }
       }
     ),
     expr[UnboundedFollowing.type](
       "Special boundary for a window frame, indicating all rows preceding the current row",
       (unboundedFollowing, conf, p, r) => new ExprMeta[UnboundedFollowing.type](unboundedFollowing, conf, p, r) {
         override def convertToGpu(): GpuExpression = GpuSpecialFrameBoundary(unboundedFollowing)
+
+        // UnboundedFollowing needs to support NullType.
+        override def areAllSupportedTypes(types: DataType*): Boolean = types.forall {
+          case _: NullType => true
+          case anythingElse => isSupportedType(anythingElse)
+        }
       }
     ),
     expr[UnaryMinus](
