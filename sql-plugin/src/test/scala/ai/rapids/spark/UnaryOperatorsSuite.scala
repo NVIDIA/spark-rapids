@@ -182,4 +182,12 @@ class UnaryOperatorsSuite extends SparkQueryCompareTestSuite {
   INCOMPAT_testSparkResultsAreEqual("Test cot", floatWithNansDf, 0.0001) {
     frame => frame.selectExpr("cot(floats)")
   }
+
+  INCOMPAT_testSparkResultsAreEqual("Test ToRadians doubles", nonZeroDoubleDf, 0.0001) {
+    frame => frame.select(radians(col("doubles")))
+  }
+
+  INCOMPAT_testSparkResultsAreEqual("Test ToRadians floats", floatWithNansDf, 0.0001) {
+    frame => frame.select(radians(col("floats")))
+  }
 }
