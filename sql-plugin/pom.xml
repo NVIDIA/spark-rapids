@@ -51,7 +51,7 @@
             <groupId>org.apache.spark</groupId>
             <artifactId>spark-sql_${scala.binary.version}</artifactId>
         </dependency>
-	 <dependency>
+        <dependency>
             <groupId>org.apache.spark</groupId>
             <artifactId>spark-catalyst_${scala.binary.version}</artifactId>
             <type>test-jar</type>
@@ -197,6 +197,18 @@
             <plugin>
                 <groupId>org.scalastyle</groupId>
                 <artifactId>scalastyle-maven-plugin</artifactId>
+            </plugin>
+            <plugin>
+                <groupId>org.apache.rat</groupId>
+                <artifactId>apache-rat-plugin</artifactId>
+                <configuration>
+                    <excludes>
+                        <exclude>dependency-reduced-pom.xml</exclude>
+                        <exclude>src/main/format/README.md</exclude>
+                        <exclude>src/main/java/ai/rapids/spark/format/*</exclude>
+                        <exclude>src/test/resources/**</exclude>
+                    </excludes>
+                </configuration>
             </plugin>
         </plugins>
     </build>
