@@ -26,7 +26,8 @@
     </parent>
 
     <groupId>ai.rapids</groupId>
-    <artifactId>rapids-4-spark-shuffle</artifactId>
+    <artifactId>rapids-4-spark-shuffle_2.12</artifactId>
+    <version>0.1-SNAPSHOT</version>
 
     <dependencies>
         <dependency>
@@ -60,8 +61,8 @@
         </dependency>
         <dependency>
             <groupId>ai.rapids</groupId>
-            <artifactId>rapids-4-spark</artifactId>
-            <version>0.1-SNAPSHOT</version>
+            <artifactId>rapids-4-spark_${scala.binary.version}</artifactId>
+            <version>${project.version}</version>
             <scope>provided</scope>
         </dependency>
         <dependency>
