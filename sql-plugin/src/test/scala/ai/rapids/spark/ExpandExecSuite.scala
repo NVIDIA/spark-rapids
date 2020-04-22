@@ -102,6 +102,16 @@ class ExpandExecSuite extends SparkQueryCompareTestSuite {
     }
   }
 
+  testExpectedExceptionStartsWith("Variable-width types not supported",
+    classOf[IllegalArgumentException],
+    "Part of the plan is not columnar",
+    stringsAndLongsDf) {
+    frame => {
+      import frame.sparkSession.implicits._
+      frame.rollup($"strings", $"longs").count()
+    }
+  }
+
   private def createDataFrame(spark: SparkSession): DataFrame = {
     val schema = StructType(Seq(
       StructField("key", DataTypes.IntegerType),
