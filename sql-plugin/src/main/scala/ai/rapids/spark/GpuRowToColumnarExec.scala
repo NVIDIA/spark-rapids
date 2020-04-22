@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019, NVIDIA CORPORATION.
+ * Copyright (c) 2019-2020, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -383,7 +383,7 @@ class RowToColumnarIterator(
       numOutputBatches += 1
 
       // refine the targetRows estimate based on the average of all batches processed so far
-      totalOutputBytes += GpuResourceManager.deviceMemoryUsed(ret)
+      totalOutputBytes += GpuColumnVector.getTotalDeviceMemoryUsed(ret)
       totalOutputRows += rowCount
       if (totalOutputRows > 0 && totalOutputBytes > 0) {
         targetRows = GpuBatchUtils.estimateRowCount(targetSizeBytes, totalOutputBytes, totalOutputRows)
