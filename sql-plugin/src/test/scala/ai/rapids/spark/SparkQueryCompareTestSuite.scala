@@ -1392,6 +1392,12 @@ trait SparkQueryCompareTestSuite extends FunSuite with Arm {
     )))(_)
   }
 
+  def windowTestDfOrc : SparkSession => DataFrame = {
+    frameFromOrc(
+      filename="window-function-test.orc"
+    )(_)
+  }
+
   def frameFromParquet(filename: String): SparkSession => DataFrame = {
     val path = TestResourceFinder.getResourcePath(filename)
     s: SparkSession => s.read.parquet(path)
