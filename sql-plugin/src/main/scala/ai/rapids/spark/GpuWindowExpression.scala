@@ -202,28 +202,44 @@ class GpuSpecifiedWindowFrameMeta(
       // Expect either SpecialFrame (UNBOUNDED PRECEDING/FOLLOWING, or CURRENT ROW),
       // or CalendarIntervalType in days.
 
-      // Check that if `bounds` is specified as a Literal, it is specified in DAYS.
-      def isSpecifiedInDays(bounds : Expression) : Boolean = {
+      // Check that:
+      //  1. if `bounds` is specified as a Literal, it is specified in DAYS.
+      //  2. if `bounds` is a  lower-bound, it can't be ahead of the current row.
+      //  3. if `bounds` is an upper-bound, it can't be behind the current row.
+      def checkIfInvalid(bounds : Expression, isLower : Boolean) : Option[String] = {
 
         if (!bounds.isInstanceOf[Literal]) {
-          return true // Bounds are likely SpecialFrameBoundaries (CURRENT_ROW, UNBOUNDED PRECEDING/FOLLOWING).
+          return None // Bounds are likely SpecialFrameBoundaries (CURRENT_ROW, UNBOUNDED PRECEDING/FOLLOWING).
         }
 
         if (!bounds.dataType.equals(CalendarIntervalType)) {
-          return false // Expected Literal of CalendarIntervalType
+          return Some(s"Bounds for Range-based window frames must be specified in DAYS. Found ${bounds.dataType}")
         }
 
         val interval = bounds.asInstanceOf[Literal].value.asInstanceOf[CalendarInterval]
+        if (interval.microseconds != 0 || interval.months != 0) { // DAYS == 0 is permitted.
+          return Some(s"Bounds for Range-based window frames must be specified only in DAYS. Found $interval")
+        }
 
-        interval.microseconds == 0 && interval.months == 0 // DAYS == 0 is permitted.
+        if (isLower && interval.days > 0) {
+          Some(s"Lower-bounds ahead of current row is not supported. Found: ${interval.days}")
+        }
+        else if (!isLower && interval.days < 0) {
+          Some(s"Upper-bounds behind current row is not supported. Found: ${interval.days}")
+        }
+        else {
+          None
+        }
       }
 
-      if (!isSpecifiedInDays(windowFrame.upper)) {
-        willNotWorkOnGpu("Upper bound literals for Range-based window frames must be specified in DAYS")
+      val invalidUpper = checkIfInvalid(windowFrame.upper, isLower = false)
+      if (invalidUpper.nonEmpty) {
+        willNotWorkOnGpu(invalidUpper.get)
       }
 
-      if (!isSpecifiedInDays(windowFrame.lower)) {
-        willNotWorkOnGpu("Lower bound literals for Range-based window frames must be specified in DAYS")
+      val invalidLower = checkIfInvalid(windowFrame.lower, isLower = true)
+      if (invalidLower.nonEmpty) {
+        willNotWorkOnGpu(invalidLower.get)
       }
     }
 
@@ -234,6 +250,9 @@ class GpuSpecifiedWindowFrameMeta(
           if (!literal.value.isInstanceOf[Int]) {
             willNotWorkOnGpu(because = s"Literal Lower-bound of ROWS window-frame must be of INT type. " +
               s"Found ${literal.dataType}")
+          }
+          else if (literal.value.asInstanceOf[Int] > 0) {
+            willNotWorkOnGpu(because = s"Lower-bounds ahead of current row is not supported. Found ${literal.value}")
           }
         case UnboundedPreceding =>
         case CurrentRow =>
@@ -247,6 +266,9 @@ class GpuSpecifiedWindowFrameMeta(
           if (!literal.value.isInstanceOf[Int]) {
             willNotWorkOnGpu(because = s"Literal Upper-bound of ROWS window-frame must be of INT type. " +
               s"Found ${literal.dataType}")
+          }
+          else if (literal.value.asInstanceOf[Int] < 0) {
+            willNotWorkOnGpu(because = s"Upper-bounds behind of current row is not supported. Found ${literal.value}")
           }
         case UnboundedFollowing =>
         case CurrentRow =>
