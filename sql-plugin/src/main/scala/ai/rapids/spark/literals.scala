@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019, NVIDIA CORPORATION.
+ * Copyright (c) 2019-2020, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -93,6 +93,15 @@ object GpuScalar {
     case s: String => Scalar.fromString(s)
     case s: UTF8String => Scalar.fromString(s.toString)
     case _ => throw new IllegalStateException(s"${v.getClass} '${v}' is not supported as a scalar yet")
+  }
+
+  def isNan(s: Scalar): Boolean = {
+    if (s == null) throw new NullPointerException("Null scalar passed")
+    s.getType match {
+      case DType.FLOAT32 => s.isValid && s.getFloat.isNaN()
+      case DType.FLOAT64 => s.isValid && s.getDouble.isNaN()
+      case t => throw new IllegalStateException(s"$t is doesn't support NaNs")
+    }
   }
 }
 

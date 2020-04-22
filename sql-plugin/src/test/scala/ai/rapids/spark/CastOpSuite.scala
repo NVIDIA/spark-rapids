@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019, NVIDIA CORPORATION.
+ * Copyright (c) 2019-2020, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -62,7 +62,7 @@ class CastOpSuite extends GpuExpressionTestSuite {
       col("longs").cast(TimestampType))
   }
 
-  testSparkResultsAreEqual("Test cast from float", floatWithNansDf) {
+  testSparkResultsAreEqual("Test cast from float", mixedFloatDf) {
     frame => frame.select(
       col("floats").cast(IntegerType),
       col("floats").cast(LongType),

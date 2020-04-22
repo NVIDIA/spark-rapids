@@ -491,7 +491,7 @@ object GpuOverrides {
       "inverse cosine",
       (a, conf, p, r) => new UnaryExprMeta[Acos](a, conf, p, r) {
         override def convertToGpu(child: GpuExpression): GpuExpression = GpuAcos(child)
-      }),
+      }).incompat(FLOAT_DIFFERS_INCOMPAT),
     expr[Acosh](
       "inverse hyperbolic cosine",
       (a, conf, p, r) => new UnaryExprMeta[Acosh](a, conf, p, r) {
