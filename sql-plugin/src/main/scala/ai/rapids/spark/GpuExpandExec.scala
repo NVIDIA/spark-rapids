@@ -17,6 +17,7 @@ package ai.rapids.spark
 
 import ai.rapids.cudf.Table
 import ai.rapids.spark.GpuMetricNames.NUM_OUTPUT_ROWS
+import ai.rapids.spark.RapidsPluginImplicits._
 
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.InternalRow
@@ -25,6 +26,8 @@ import org.apache.spark.sql.catalyst.plans.physical.{Partitioning, UnknownPartit
 import org.apache.spark.sql.execution.{ExpandExec, SparkPlan, UnaryExecNode}
 import org.apache.spark.sql.execution.metric.SQLMetrics
 import org.apache.spark.sql.vectorized.ColumnarBatch
+
+import scala.collection.mutable.ListBuffer
 
 class GpuExpandExecMeta(
     expand: ExpandExec,
@@ -84,23 +87,38 @@ case class GpuExpandExec(
     val rdd = child.executeColumnar()
     val boundProjections = projections.map(projection => GpuBindReferences.bindReferences(projection, child.output))
     rdd.map { cb =>
-      val projectedColumns: Seq[Seq[GpuColumnVector]] = boundProjections.map(projection => projection.map(expr => {
-        expr.columnarEval(cb) match {
-          case cv: GpuColumnVector => cv
-          case lit: GpuLiteral =>
-            withResource(GpuScalar.from(lit.value, lit.dataType)) { scalar =>
-              GpuColumnVector.from(scalar, cb.numRows())
-            }
-          case other =>
-            withResource(GpuScalar.from(other, expr.dataType)) { scalar =>
-              GpuColumnVector.from(scalar, cb.numRows())
-            }
-        }
-      }))
 
-      val interleaved: Seq[GpuColumnVector] = projectedColumns.head.indices.map(i => {
-        withResource(new Table(projectedColumns.map(p => p(i).getBase): _*)) { table =>
-          GpuColumnVector.from(table.interleaveColumns())
+      val projectedColumns = new ListBuffer[Seq[GpuColumnVector]]()
+      var success = false
+      try {
+        boundProjections.foreach(projection =>
+          projectedColumns += projection.safeMap(expr => {
+            expr.columnarEval(cb) match {
+              case cv: GpuColumnVector => cv
+              case lit: GpuLiteral =>
+                withResource(GpuScalar.from(lit.value, lit.dataType)) { scalar =>
+                  GpuColumnVector.from(scalar, cb.numRows())
+                }
+              case other =>
+                withResource(GpuScalar.from(other, expr.dataType)) { scalar =>
+                  GpuColumnVector.from(scalar, cb.numRows())
+                }
+            }
+          })
+        )
+        success = true
+
+      } finally {
+        if (!success) {
+          projectedColumns.foreach(_.safeClose())
+        }
+      }
+
+      val interleaved = projectedColumns.head.indices.map(i => {
+        withResource(projectedColumns.map(p => p(i).getBase)) { vectors =>
+          withResource(new Table(vectors: _*)) { table =>
+            GpuColumnVector.from(table.interleaveColumns())
+          }
         }
       })
 
