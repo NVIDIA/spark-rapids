@@ -17,7 +17,7 @@
 package org.apache.spark.sql.execution
 
 import ai.rapids.cudf.Table
-import ai.rapids.spark.{CoalesceGoal, GpuBatchUtils, GpuColumnVector, GpuOverrides, GpuResourceManager, GpuSemaphore, RapidsConf, RequireSingleBatch, TargetSize}
+import ai.rapids.spark.{CoalesceGoal, GpuBatchUtils, GpuColumnVector, GpuOverrides, GpuSemaphore, RapidsConf, RequireSingleBatch, TargetSize}
 import ai.rapids.spark.GpuColumnVector.GpuColumnarBatchBuilder
 import org.apache.spark.rdd.{MapPartitionsRDD, RDD}
 import org.apache.spark.sql.{DataFrame, Row}
@@ -365,7 +365,7 @@ private class ExternalRowToColumnarIterator(
       val ret = builders.build(rowCount)
 
       // refine the targetRows estimate based on the average of all batches processed so far
-      totalOutputBytes += GpuResourceManager.deviceMemoryUsed(ret)
+      totalOutputBytes += GpuColumnVector.getTotalDeviceMemoryUsed(ret)
       totalOutputRows += rowCount
       if (totalOutputRows > 0 && totalOutputBytes > 0) {
         targetRows = GpuBatchUtils.estimateRowCount(targetSizeBytes, totalOutputBytes, totalOutputRows)

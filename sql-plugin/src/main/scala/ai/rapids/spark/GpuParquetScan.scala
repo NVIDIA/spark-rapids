@@ -433,9 +433,9 @@ class ParquetPartitionReader(
         val table = readToTable(currentChunkedBlocks)
         try {
           val maybeBatch = table.map(GpuColumnVector.from)
-          maybeBatch.foreach(batch => {
-            logDebug(s"GPU batch size: ${GpuResourceManager.deviceMemoryUsed(batch)} bytes")
-          })
+          maybeBatch.foreach { batch =>
+            logDebug(s"GPU batch size: ${GpuColumnVector.getTotalDeviceMemoryUsed(batch)} bytes")
+          }
           maybeBatch
         } finally {
           table.foreach(_.close())
@@ -462,7 +462,6 @@ class ParquetPartitionReader(
         val cudfSchema = GpuColumnVector.from(readDataSchema)
         val parseOpts = ParquetOptions.builder()
           .withTimeUnit(DType.TIMESTAMP_MICROSECONDS)
-          .withOutputSizeGuess(cudfSchema.guessTableSize(rowCount.toInt))
           .includeColumn(readDataSchema.fieldNames:_*).build()
 
         // about to start using the GPU
