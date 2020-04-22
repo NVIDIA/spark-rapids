@@ -82,6 +82,8 @@ object GpuBatchUtils {
     (rows+1) * 4 // 32 bit offsets
   }
 
+  def isVariableWidth(dt: DataType): Boolean = !isFixedWidth(dt)
+
   def isFixedWidth(dt: DataType): Boolean = dt match {
     case DataTypes.StringType | DataTypes.BinaryType => false
     case _: ArrayType  => false
