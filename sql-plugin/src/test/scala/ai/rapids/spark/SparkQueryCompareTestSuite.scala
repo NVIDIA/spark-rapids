@@ -1015,7 +1015,7 @@ trait SparkQueryCompareTestSuite extends FunSuite with Arm {
       (-50.6053004384d, null),
       (-7880.7542578934d, -0.7078783860d),
       (-20.5882386034d, -70.9667587507d),
-      (-0.6467140578d, -838600.5867225748d),
+      (-0.6467140578d, -838600.5867225748d)
     ).toDF("doubles", "more_doubles")
   }
 
@@ -1104,7 +1104,7 @@ trait SparkQueryCompareTestSuite extends FunSuite with Arm {
       (-50.6053004384f, null),
       (-7880.7542578934f, -0.7078783860f),
       (-20.5882386034f, -70.9667587507f),
-      (-0.6467140578f, -838600.5867225748f),
+      (-0.6467140578f, -838600.5867225748f)
     ).toDF("floats", "more_floats")
   }
 
