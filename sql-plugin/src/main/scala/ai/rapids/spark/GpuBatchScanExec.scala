@@ -313,8 +313,7 @@ class CSVPartitionReader(
   def buildCsvOptions(
       parsedOptions: CSVOptions,
       schema: StructType,
-      hasHeader: Boolean,
-      sizeGuess: Long): cudf.CSVOptions = {
+      hasHeader: Boolean): cudf.CSVOptions = {
     val builder = cudf.CSVOptions.builder()
     builder.withDelim(parsedOptions.delimiter.charAt(0))
     builder.hasHeader(hasHeader)
@@ -322,7 +321,6 @@ class CSVPartitionReader(
     builder.withQuote(parsedOptions.quote)
     builder.withComment(parsedOptions.comment)
     builder.withNullValue(parsedOptions.nullValue)
-    builder.withOutputSizeGuess(sizeGuess)
     builder.includeColumn(schema.fields.map(_.name): _*)
     builder.build
   }
@@ -421,17 +419,12 @@ class CSVPartitionReader(
           readDataSchema
         }
         val cudfSchema = GpuColumnVector.from(dataSchema)
-        val csvOpts = buildCsvOptions(parsedOptions, newReadDataSchema, hasHeader, cudfSchema.guessTableSize(totalRows))
+        val csvOpts = buildCsvOptions(parsedOptions, newReadDataSchema, hasHeader)
         // about to start using the GPU
         GpuSemaphore.acquireIfNecessary(TaskContext.get())
 
         // The buffer that is sent down
-        val bufferTracking = GpuResourceManager.rawBuffer(dataSize, "CSV INPUT BUFFER")
-        val table = try {
-          Table.readCSV(cudfSchema, csvOpts, dataBuffer, 0, dataSize)
-        } finally {
-          bufferTracking.close()
-        }
+        val table = Table.readCSV(cudfSchema, csvOpts, dataBuffer, 0, dataSize)
         maxDeviceMemory = max(GpuColumnVector.getTotalDeviceMemoryUsed(table), maxDeviceMemory)
         val numColumns = table.getNumberOfColumns
         if (newReadDataSchema.length != numColumns) {

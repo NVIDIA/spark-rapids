@@ -688,7 +688,6 @@ class GpuOrcPartitionReader(
           .withTimeUnit(DType.TIMESTAMP_MICROSECONDS)
           .withNumPyTypes(false)
           .includeColumn(includedColumns:_*)
-          .withOutputSizeGuess(cudfSchema.guessTableSize(rowCount.toInt))
           .build()
 
         // about to start using the GPU
