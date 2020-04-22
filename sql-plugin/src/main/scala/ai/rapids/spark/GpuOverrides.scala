@@ -44,6 +44,7 @@ import org.apache.spark.sql.execution.datasources.json.JsonFileFormat
 import org.apache.spark.sql.execution.datasources.orc.OrcFileFormat
 import org.apache.spark.sql.execution.datasources.parquet.ParquetFileFormat
 import org.apache.spark.sql.execution.datasources.text.TextFileFormat
+import org.apache.spark.sql.execution.window.WindowExec
 import org.apache.spark.sql.types._
 import org.apache.spark.sql.{GpuInputFileBlockLength, GpuInputFileBlockStart, GpuInputFileName}
 import org.apache.spark.unsafe.types.UTF8String
@@ -457,6 +458,53 @@ object GpuOverrides {
       (a, conf, p, r) => new UnaryExprMeta[ToRadians](a, conf, p, r) {
         override def convertToGpu(child: GpuExpression): GpuToRadians = GpuToRadians(child)
       }).incompat(FLOAT_DIFFERS_INCOMPAT),
+    expr[WindowExpression](
+      "calculates a return value for every input row of a table based on a group (or \"window\") of rows",
+      (windowExpression, conf, p, r) => new GpuWindowExpressionMeta(windowExpression, conf, p, r)),
+    expr[SpecifiedWindowFrame](
+      "specification of the width of the group (or \"frame\") of input rows " +
+        "around which a window function is evaluated",
+      (windowFrame, conf, p, r) => new GpuSpecifiedWindowFrameMeta(windowFrame, conf, p, r) ),
+    expr[WindowSpecDefinition](
+      "specification of a window function, indicating the partitioning-expression, the row ordering, " +
+        "and the width of the window",
+      (windowSpec, conf, p, r) => new GpuWindowSpecDefinitionMeta(windowSpec, conf, p, r)),
+    expr[CurrentRow.type](
+      "Special boundary for a window frame, indicating stopping at the current row",
+      (currentRow, conf, p, r) => new ExprMeta[CurrentRow.type](currentRow, conf, p, r) {
+        override def convertToGpu(): GpuExpression = GpuSpecialFrameBoundary(currentRow)
+
+        // CURRENT ROW needs to support NullType.
+        override def areAllSupportedTypes(types: DataType*): Boolean = types.forall {
+          case _: NullType => true
+          case anythingElse => isSupportedType(anythingElse)
+        }
+      }
+    ),
+    expr[UnboundedPreceding.type](
+      "Special boundary for a window frame, indicating all rows preceding the current row",
+      (unboundedPreceding, conf, p, r) => new ExprMeta[UnboundedPreceding.type](unboundedPreceding, conf, p, r) {
+        override def convertToGpu(): GpuExpression = GpuSpecialFrameBoundary(unboundedPreceding)
+
+        // UnboundedPreceding needs to support NullType.
+        override def areAllSupportedTypes(types: DataType*): Boolean = types.forall {
+          case _: NullType => true
+          case anythingElse => isSupportedType(anythingElse)
+        }
+      }
+    ),
+    expr[UnboundedFollowing.type](
+      "Special boundary for a window frame, indicating all rows preceding the current row",
+      (unboundedFollowing, conf, p, r) => new ExprMeta[UnboundedFollowing.type](unboundedFollowing, conf, p, r) {
+        override def convertToGpu(): GpuExpression = GpuSpecialFrameBoundary(unboundedFollowing)
+
+        // UnboundedFollowing needs to support NullType.
+        override def areAllSupportedTypes(types: DataType*): Boolean = types.forall {
+          case _: NullType => true
+          case anythingElse => isSupportedType(anythingElse)
+        }
+      }
+    ),
     expr[UnaryMinus](
       "negate a numeric value",
       (a, conf, p, r) => new UnaryExprMeta[UnaryMinus](a, conf, p, r) {
@@ -1446,7 +1494,12 @@ object GpuOverrides {
       (sort, conf, p, r) => new GpuSortMeta(sort, conf, p, r)),
     exec[ExpandExec](
       "The backend for the expand operator",
-      (expand, conf, p, r) => new GpuExpandExecMeta(expand, conf, p, r))
+      (expand, conf, p, r) => new GpuExpandExecMeta(expand, conf, p, r)),
+    exec[WindowExec](
+      "Window-operator backend",
+      (windowOp, conf, p, r) =>
+        new GpuWindowExecMeta(windowOp, conf, p, r)
+    )
   ).map(r => (r.getClassFor.asSubclass(classOf[SparkPlan]), r)).toMap
 }
 

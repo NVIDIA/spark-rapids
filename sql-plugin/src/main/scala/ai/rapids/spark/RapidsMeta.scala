@@ -566,6 +566,8 @@ abstract class ExprMeta[INPUT <: Expression](
 
   override val printWrapped: Boolean = true
 
+  val ignoreUnsetDataTypes = false
+
   override def canExprTreeBeReplaced: Boolean =
     canThisBeReplaced && super.canExprTreeBeReplaced
 
@@ -575,9 +577,13 @@ abstract class ExprMeta[INPUT <: Expression](
         willNotWorkOnGpu(s"expression ${expr.getClass.getSimpleName} ${expr} " +
           s"produces an unsupported type ${expr.dataType}")
       }
-    } catch {
-      //if an expression like Window does not support a datatype we should skip this test
-      case _: UnsupportedOperationException => //Ignored,
+    }
+    catch {
+      case _ : java.lang.UnsupportedOperationException =>
+        if (!ignoreUnsetDataTypes) {
+          willNotWorkOnGpu(s"expression ${expr.getClass.getSimpleName} ${expr} " +
+            s" does not have a corresponding dataType.")
+        }
     }
     tagExprForGpu()
   }
