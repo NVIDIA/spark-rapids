@@ -142,6 +142,7 @@ class CudfCount(ref: GpuExpression) extends CudfAggregate(ref) {
     (col: cudf.ColumnVector) => col.sum
   override lazy val updateAggregate: cudf.Aggregate = cudf.Table.count(getOrdinal(ref), includeNulls)
   override lazy val mergeAggregate: cudf.Aggregate = cudf.Table.sum(getOrdinal(ref))
+  override def toString(): String = "CudfCount"
 }
 
 class CudfSum(ref: GpuExpression) extends CudfAggregate(ref) {
@@ -151,6 +152,7 @@ class CudfSum(ref: GpuExpression) extends CudfAggregate(ref) {
     (col: cudf.ColumnVector) => col.sum
   override lazy val updateAggregate: cudf.Aggregate = cudf.Table.sum(getOrdinal(ref))
   override lazy val mergeAggregate: cudf.Aggregate = cudf.Table.sum(getOrdinal(ref))
+  override def toString(): String = "CudfSum"
 }
 
 class CudfMax(ref: GpuExpression) extends CudfAggregate(ref) {
@@ -160,6 +162,7 @@ class CudfMax(ref: GpuExpression) extends CudfAggregate(ref) {
     (col: cudf.ColumnVector) => col.max
   override lazy val updateAggregate: cudf.Aggregate = cudf.Table.max(getOrdinal(ref))
   override lazy val mergeAggregate: cudf.Aggregate = cudf.Table.max(getOrdinal(ref))
+  override def toString(): String = "CudfMax"
 }
 
 class CudfMin(ref: GpuExpression) extends CudfAggregate(ref) {
@@ -169,6 +172,7 @@ class CudfMin(ref: GpuExpression) extends CudfAggregate(ref) {
     (col: cudf.ColumnVector) => col.min
   override lazy val updateAggregate: cudf.Aggregate = cudf.Table.min(getOrdinal(ref))
   override lazy val mergeAggregate: cudf.Aggregate = cudf.Table.min(getOrdinal(ref))
+  override def toString(): String = "CudfMin"
 }
 
 abstract class GpuDeclarativeAggregate extends GpuAggregateFunction with GpuUnevaluable {
