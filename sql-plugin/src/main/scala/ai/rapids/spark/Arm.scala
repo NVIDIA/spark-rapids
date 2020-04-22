@@ -15,6 +15,8 @@
  */
 package ai.rapids.spark
 
+import ai.rapids.spark.RapidsPluginImplicits._
+
 /** Implementation of the automatic-resource-management pattern */
 trait Arm {
 
@@ -24,6 +26,15 @@ trait Arm {
       block(r)
     } finally {
       r.close()
+    }
+  }
+
+  /** Executes the provided code block and then closes the sequence of resources */
+  def withResource[T <: AutoCloseable, V](r: Seq[T])(block: Seq[T] => V): V = {
+    try {
+      block(r)
+    } finally {
+      r.safeClose()
     }
   }
 }
