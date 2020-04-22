@@ -19,7 +19,7 @@ package org.apache.spark.sql.rapids
 import java.io.Serializable
 
 import ai.rapids.cudf.{BinaryOp, DType, Scalar, UnaryOp}
-import ai.rapids.spark.{Arm, CudfBinaryExpression, CudfUnaryExpression, GpuColumnVector, GpuExpression, GpuUnaryExpression}
+import ai.rapids.spark.{Arm, CudfBinaryExpression, CudfUnaryExpression, FloatUtils, GpuColumnVector, GpuExpression, GpuUnaryExpression}
 import org.apache.spark.sql.catalyst.expressions.{Expression, ImplicitCastInputTypes}
 import org.apache.spark.sql.types._
 import org.apache.spark.sql.vectorized.ColumnarBatch
@@ -87,6 +87,16 @@ case class GpuCeil(child: Expression) extends CudfUnaryMathExpression("CEIL") {
 
   override def unaryOp: UnaryOp = UnaryOp.CEIL
   override def outputTypeOverride: DType = DType.INT64
+
+  override def doColumnar(input: GpuColumnVector): GpuColumnVector = {
+    if (input.dataType() == DoubleType) {
+      withResource(FloatUtils.nanToZero(input.getBase())) { inputWithNansToZero =>
+        super.doColumnar(GpuColumnVector.from(inputWithNansToZero))
+      }
+    } else {
+      super.doColumnar(input)
+    }
+  }
 }
 
 case class GpuCos(child: Expression) extends CudfUnaryMathExpression("COS") {
@@ -130,7 +140,18 @@ case class GpuFloor(child: Expression) extends CudfUnaryMathExpression("FLOOR") 
     Seq(TypeCollection(DoubleType, DecimalType, LongType))
 
   override def unaryOp: UnaryOp = UnaryOp.FLOOR
+
   override def outputTypeOverride: DType = DType.INT64
+
+  override def doColumnar(input: GpuColumnVector): GpuColumnVector = {
+    if (input.dataType() == DoubleType) {
+      withResource(FloatUtils.nanToZero(input.getBase())) { inputWithNansToZero =>
+        super.doColumnar(GpuColumnVector.from(inputWithNansToZero))
+      }
+    } else {
+      super.doColumnar(input)
+    }
+  }
 }
 
 case class GpuLog(child: GpuExpression) extends CudfUnaryMathExpression("LOG") {

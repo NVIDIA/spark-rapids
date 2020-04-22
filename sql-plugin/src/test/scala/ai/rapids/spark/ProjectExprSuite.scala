@@ -41,27 +41,27 @@ class ProjectExprSuite extends SparkQueryCompareTestSuite {
     })
   }
 
-  testSparkResultsAreEqual("nanvl lit col", floatWithNansDf) {
+  testSparkResultsAreEqual("nanvl lit col", mixedFloatDf) {
     frame => frame.select(nanvl(lit(Float.NaN), col("floats")))
   }
 
-  testSparkResultsAreEqual("nanvl col col", floatWithNansDf) {
+  testSparkResultsAreEqual("nanvl col col", mixedFloatDf) {
     frame => frame.select(nanvl(col("floats"), col("more_floats")))
   }
 
-  testSparkResultsAreEqual("nanvl col lit", floatWithNansDf) {
+  testSparkResultsAreEqual("nanvl col lit", mixedFloatDf) {
     frame => frame.select(nanvl(col("floats"), lit(1.0)))
   }
 
-  testSparkResultsAreEqual("coalesce col lit", nullableFloatDf) {
+  testSparkResultsAreEqual("coalesce col lit", mixedFloatDf) {
     frame => frame.select(coalesce(col("floats"), lit(1.0)))
   }
 
-  testSparkResultsAreEqual("coalesce lit col lit", nullableFloatDf) {
+  testSparkResultsAreEqual("coalesce lit col lit", mixedFloatDf) {
     frame => frame.select(coalesce(lit(null), col("floats"), lit(1.0)))
   }
 
-  testSparkResultsAreEqual("coalesce col col", nullableFloatDf) {
+  testSparkResultsAreEqual("coalesce col col", mixedFloatDf) {
     frame => frame.select(coalesce(col("more_floats"), col("floats")))
   }
 
@@ -69,35 +69,35 @@ class ProjectExprSuite extends SparkQueryCompareTestSuite {
     frame => frame.select(coalesce(col("more_strings"), col("strings")))
   }
 
-  testSparkResultsAreEqual("nvl col col", nullableFloatDf) {
+  testSparkResultsAreEqual("nvl col col", mixedFloatDf) {
     frame => frame.selectExpr("nvl(floats, more_floats)")
   }
 
-  testSparkResultsAreEqual("nvl null col", nullableFloatDf) {
+  testSparkResultsAreEqual("nvl null col", mixedFloatDf) {
     frame => frame.selectExpr("nvl(NULL, more_floats)")
   }
 
-  testSparkResultsAreEqual("nvl col lit", nullableFloatDf) {
+  testSparkResultsAreEqual("nvl col lit", mixedFloatDf) {
     frame => frame.selectExpr("nvl(floats, 1.0)")
   }
 
-  testSparkResultsAreEqual("nvl2 col col lit", nullableFloatDf) {
+  testSparkResultsAreEqual("nvl2 col col lit", mixedFloatDf) {
     frame => frame.selectExpr("nvl2(floats, more_floats, 2.0)")
   }
 
-  testSparkResultsAreEqual("nvl2 null col lit", nullableFloatDf) {
+  testSparkResultsAreEqual("nvl2 null col lit", mixedFloatDf) {
     frame => frame.selectExpr("nvl2(NULL, more_floats, 2.0)")
   }
 
-  testSparkResultsAreEqual("ifnull col col", nullableFloatDf) {
+  testSparkResultsAreEqual("ifnull col col", mixedFloatDf) {
     frame => frame.selectExpr("ifnull(floats, more_floats)")
   }
 
-  testSparkResultsAreEqual("ifnull null col", nullableFloatDf) {
+  testSparkResultsAreEqual("ifnull null col", mixedFloatDf) {
     frame => frame.selectExpr("ifnull(NULL, more_floats)")
   }
 
-  testSparkResultsAreEqual("ifnull col lit", nullableFloatDf) {
+  testSparkResultsAreEqual("ifnull col lit", mixedFloatDf) {
     frame => frame.selectExpr("ifnull(floats, 1.0)")
   }
 
@@ -117,19 +117,19 @@ class ProjectExprSuite extends SparkQueryCompareTestSuite {
     frame => frame.selectExpr("nullif(longs, more_longs)")
   }
 
-  testSparkResultsAreEqual("project is not null", nullableFloatDf) {
+  testSparkResultsAreEqual("project is not null", mixedFloatDf) {
     frame => frame.selectExpr("floats is not null")
   }
 
-  testSparkResultsAreEqual("project is null", nullableFloatDf) {
+  testSparkResultsAreEqual("project is null", mixedFloatDf) {
     frame => frame.selectExpr("floats is null")
   }
 
-  testSparkResultsAreEqual("project is null col1 OR is null col2", nullableFloatDf) {
+  testSparkResultsAreEqual("project is null col1 OR is null col2", mixedFloatDf) {
     frame => frame.selectExpr("floats is null OR more_floats is null")
   }
 
-  testSparkResultsAreEqual("Test literal values in select", floatDf) {
+  testSparkResultsAreEqual("Test literal values in select", mixedFloatDf) {
     frame => frame.select(col("floats"), lit(100), lit("hello, world!"))
   }
 
@@ -314,11 +314,11 @@ class ProjectExprSuite extends SparkQueryCompareTestSuite {
     frame => frame.selectExpr("longs IN (1000, 200, -500)")
   }
 
-  testSparkResultsAreEqual("SQL IN floats", floatDf) {
+  testSparkResultsAreEqual("SQL IN floats", mixedFloatDf) {
     frame => frame.selectExpr("floats IN (12345, -100.0, -500.0)")
   }
 
-  testSparkResultsAreEqual("SQL IN nullable floats", nullableFloatDf) {
+  testSparkResultsAreEqual("SQL IN nullable floats", mixedFloatDf) {
     frame => frame.selectExpr("floats IN (12345, 5.0, 0.0)")
   }
 
@@ -384,14 +384,6 @@ class ProjectExprSuite extends SparkQueryCompareTestSuite {
 
   testSparkResultsAreEqual("SQL IF nullable longs", mixedDfWithNulls) {
     frame => frame.selectExpr("IF(longs * 2 == 400, 'hello', 'world')")
-  }
-
-  testSparkResultsAreEqual("SQL IF floats", floatDf) {
-    frame => frame.selectExpr("IF(floats > 5, floats * 5, -1234567)")
-  }
-
-  testSparkResultsAreEqual("SQL IF nullable floats", nullableFloatDf) {
-    frame => frame.selectExpr("IF(floats > 5, floats * 5, -1234567)")
   }
 
   testSparkResultsAreEqual("SQL IF doubles", mixedDf) {
@@ -477,14 +469,14 @@ class ProjectExprSuite extends SparkQueryCompareTestSuite {
         | ELSE 0 END""".stripMargin)
   }
 
-  testSparkResultsAreEqual("SQL CASE WHEN floats", floatDf) {
+  testSparkResultsAreEqual("SQL CASE WHEN floats", mixedFloatDf) {
     frame => frame.selectExpr(
       """CASE WHEN more_floats < 5 THEN floats * 2
         | WHEN floats >= 300 THEN more_floats * 2
         | ELSE floats * more_floats END""".stripMargin)
   }
 
-  testSparkResultsAreEqual("SQL CASE WHEN nullable floats", nullableFloatDf) {
+  testSparkResultsAreEqual("SQL CASE WHEN nullable floats", mixedFloatDf) {
     frame => frame.selectExpr(
       """CASE WHEN more_floats < 5 THEN floats * 2
         | WHEN floats >= 300 THEN more_floats * 2
@@ -537,5 +529,175 @@ class ProjectExprSuite extends SparkQueryCompareTestSuite {
     frame => frame.selectExpr(
       """CASE WHEN time <= TIMESTAMP '1900-05-05 12:34:56.108' THEN time
         | ELSE NULL END""".stripMargin)
+  }
+
+  def mixedFloatSingleSeq(): Seq[java.lang.Float] = {
+    Seq[java.lang.Float](
+      Float.PositiveInfinity,
+      Float.NegativeInfinity,
+      0.8435376941f,
+      23.1927672582f,
+      2309.4430349398f,
+      Float.NaN,
+      null,
+      -0.7078783860f,
+      -70.9667587507f,
+      -838600.5867225748f
+    )
+  }
+
+  def mixedFloatSingleDf(session: SparkSession): DataFrame = {
+    import session.sqlContext.implicits._
+    mixedDoubleSingleSeq().toDF("floats")
+  }
+
+  def mixedDoubleSingleSeq(): Seq[java.lang.Double] = {
+    Seq[java.lang.Double](
+      Double.PositiveInfinity,
+      Double.NegativeInfinity,
+      0.8435376941d,
+      23.1927672582d,
+      2309.4430349398d,
+      Double.NaN,
+      null,
+      -0.7078783860d,
+      -70.9667587507d,
+      -838600.5867225748d
+    )
+  }
+
+  def mixedDoubleSingleDf(session: SparkSession): DataFrame = {
+    import session.sqlContext.implicits._
+    mixedDoubleSingleSeq().toDF("doubles")
+  }
+
+  testSparkResultsAreEqual("SQL IF floats eq more_floats", mixedFloatDf) {
+    frame => frame.selectExpr("IF(floats = more_floats, floats * 5, -1234567)")
+  }
+
+  testSparkResultsAreEqual("SQL IF doubles eq more_doubles", mixedDoubleDf) {
+    frame => frame.selectExpr("IF(doubles = more_doubles, doubles * 5, -1234567)")
+  }
+
+  // Float comparisons
+  for (d <- mixedFloatSingleSeq()) {
+    testSparkResultsAreEqual("SQL IF float('%f') = floats".format(d), mixedFloatSingleDf) {
+      frame => frame.selectExpr("IF(float('%f') = floats, floats * 5, -1234567)".format(d))
+    }
+  }
+
+  for (d <- mixedFloatSingleSeq()) {
+    testSparkResultsAreEqual("SQL IF float('%f') > floats".format(d), mixedFloatSingleDf) {
+      frame => frame.selectExpr("IF(float('%f') > floats, floats * 5, -1234567)".format(d))
+    }
+  }
+
+  for (d <- mixedFloatSingleSeq()) {
+    testSparkResultsAreEqual("SQL IF float('%f') >= floats".format(d), mixedFloatSingleDf) {
+      frame => frame.selectExpr("IF(float('%f') >= floats, floats * 5, -1234567)".format(d))
+    }
+  }
+
+  for (d <- mixedFloatSingleSeq()) {
+    testSparkResultsAreEqual("SQL IF float('%f') < floats".format(d), mixedFloatSingleDf) {
+      frame => frame.selectExpr("IF(float('%f') < floats, floats * 5, -1234567)".format(d))
+    }
+  }
+
+  for (d <- mixedFloatSingleSeq()) {
+    testSparkResultsAreEqual("SQL IF float('%f') <= floats".format(d), mixedFloatSingleDf) {
+      frame => frame.selectExpr("IF(float('%f') <= floats, floats * 5, -1234567)".format(d))
+    }
+  }
+
+  for (d <- mixedFloatSingleSeq()) {
+    testSparkResultsAreEqual("SQL IF floats eq float('%f')".format(d), mixedFloatSingleDf) {
+      frame => frame.selectExpr("IF(floats = float('%f'), floats * 5, -1234567)".format(d))
+    }
+  }
+
+  for (d <- mixedFloatSingleSeq()) {
+    testSparkResultsAreEqual("SQL IF floats > float('%f')".format(d), mixedFloatSingleDf) {
+      frame => frame.selectExpr("IF(floats > float('%f'), floats * 5, -1234567)".format(d))
+    }
+  }
+
+  for (d <- mixedFloatSingleSeq()) {
+    testSparkResultsAreEqual("SQL IF floats >= float('%f')".format(d), mixedFloatSingleDf) {
+      frame => frame.selectExpr("IF(floats >= float('%f'), floats * 5, -1234567)".format(d))
+    }
+  }
+
+  for (d <- mixedFloatSingleSeq()) {
+    testSparkResultsAreEqual("SQL IF floats < float('%f')".format(d), mixedFloatSingleDf) {
+      frame => frame.selectExpr("IF(floats < float('%f'), floats * 5, -1234567)".format(d))
+    }
+  }
+
+  for (d <- mixedFloatSingleSeq()) {
+    testSparkResultsAreEqual("SQL IF floats <= float('%f')".format(d), mixedFloatSingleDf) {
+      frame => frame.selectExpr("IF(floats <= float('%f'), floats * 5, -1234567)".format(d))
+    }
+  }
+
+  // Double comparisons
+  for (d <- mixedDoubleSingleSeq()) {
+    testSparkResultsAreEqual("SQL IF double('%f') = doubles".format(d), mixedDoubleSingleDf) {
+      frame => frame.selectExpr("IF(double('%f') = doubles, doubles * 5, -1234567)".format(d))
+    }
+  }
+
+  for (d <- mixedDoubleSingleSeq()) {
+    testSparkResultsAreEqual("SQL IF double('%f') > doubles".format(d), mixedDoubleSingleDf) {
+      frame => frame.selectExpr("IF(double('%f') > doubles, doubles * 5, -1234567)".format(d))
+    }
+  }
+
+  for (d <- mixedDoubleSingleSeq()) {
+    testSparkResultsAreEqual("SQL IF double('%f') >= doubles".format(d), mixedDoubleSingleDf) {
+      frame => frame.selectExpr("IF(double('%f') >= doubles, doubles * 5, -1234567)".format(d))
+    }
+  }
+
+  for (d <- mixedDoubleSingleSeq()) {
+    testSparkResultsAreEqual("SQL IF double('%f') < doubles".format(d), mixedDoubleSingleDf) {
+      frame => frame.selectExpr("IF(double('%f') < doubles, doubles * 5, -1234567)".format(d))
+    }
+  }
+
+  for (d <- mixedDoubleSingleSeq()) {
+    testSparkResultsAreEqual("SQL IF double('%f') <= doubles".format(d), mixedDoubleSingleDf) {
+      frame => frame.selectExpr("IF(double('%f') <= doubles, doubles * 5, -1234567)".format(d))
+    }
+  }
+
+  for (d <- mixedDoubleSingleSeq()) {
+    testSparkResultsAreEqual("SQL IF doubles eq double('%f')".format(d), mixedDoubleSingleDf) {
+      frame => frame.selectExpr("IF(doubles = double('%f'), doubles * 5, -1234567)".format(d))
+    }
+  }
+
+  for (d <- mixedDoubleSingleSeq()) {
+    testSparkResultsAreEqual("SQL IF doubles > double('%f')".format(d), mixedDoubleSingleDf) {
+      frame => frame.selectExpr("IF(doubles > double('%f'), doubles * 5, -1234567)".format(d))
+    }
+  }
+
+  for (d <- mixedDoubleSingleSeq()) {
+    testSparkResultsAreEqual("SQL IF doubles >= double('%f')".format(d), mixedDoubleSingleDf) {
+      frame => frame.selectExpr("IF(doubles >= double('%f'), doubles * 5, -1234567)".format(d))
+    }
+  }
+
+  for (d <- mixedDoubleSingleSeq()) {
+    testSparkResultsAreEqual("SQL IF doubles < double('%f')".format(d), mixedDoubleSingleDf) {
+      frame => frame.selectExpr("IF(doubles < double('%f'), doubles * 5, -1234567)".format(d))
+    }
+  }
+
+  for (d <- mixedDoubleSingleSeq()) {
+    testSparkResultsAreEqual("SQL IF doubles <= double('%f')".format(d), mixedDoubleSingleDf) {
+      frame => frame.selectExpr("IF(doubles <= double('%f'), doubles * 5, -1234567)".format(d))
+    }
   }
 }
