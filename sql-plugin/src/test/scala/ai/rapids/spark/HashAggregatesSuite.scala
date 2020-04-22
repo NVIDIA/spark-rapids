@@ -24,19 +24,29 @@ import org.apache.spark.sql.functions._
 import org.apache.spark.sql.types.DataTypes
 
 class HashAggregatesSuite extends SparkQueryCompareTestSuite {
-  private val floatAggConf: SparkConf = new SparkConf().set(RapidsConf.ENABLE_FLOAT_AGG.key, "true")
+  private val floatAggConf: SparkConf = new SparkConf().set(
+    RapidsConf.ENABLE_FLOAT_AGG.key, "true").set(RapidsConf.HAS_NANS.key, "false")
+
+  private val execsAllowedNonGpu: Seq[String] =
+    Seq("HashAggregateExec", "AggregateExpression", "AttributeReference", "Alias")
   def replaceHashAggMode(mode: String, conf: SparkConf = new SparkConf()): SparkConf = {
     // configures whether Plugin will replace certain aggregate exec nodes
     conf.set("spark.rapids.sql.hashAgg.replaceMode", mode)
   }
 
+  private def checkExecNode(result: DataFrame) = {
+    if (result.sparkSession.sqlContext.getAllConfs("spark.app.name").contains("gpu")) {
+      assert(result.queryExecution.executedPlan.find(_.isInstanceOf[GpuHashAggregateExec]).isDefined)
+    }
+  }
+
   def FLOAT_TEST_testSparkResultsAreEqual(testName: String,
-                                          df: SparkSession => DataFrame,
-                                          conf: SparkConf = new SparkConf(),
-                                          execsAllowedNonGpu: Seq[String] = Seq.empty,
-                                          batchSize: Int = 0,
-                                          repart: Int = 1)
-                                         (fn: DataFrame => DataFrame) {
+    df: SparkSession => DataFrame,
+    conf: SparkConf = new SparkConf(),
+    execsAllowedNonGpu: Seq[String] = Seq.empty,
+    batchSize: Int = 0,
+    repart: Int = 1)
+    (fn: DataFrame => DataFrame) {
     if (batchSize > 0) {
       makeBatchedBytes(batchSize, conf)
     }
@@ -57,10 +67,10 @@ class HashAggregatesSuite extends SparkQueryCompareTestSuite {
 
   IGNORE_ORDER_testSparkResultsAreEqual("test sort agg with first and last string deterministic case", firstDf, repart = 2) {
     frame => frame
-        .coalesce(1)
-        .sort(col("c2").asc, col("c0").asc) // force deterministic use case
-        .groupBy(col("c2"))
-        .agg(first(col("c0"), ignoreNulls = true), last(col("c0"), ignoreNulls = true))
+      .coalesce(1)
+      .sort(col("c2").asc, col("c0").asc) // force deterministic use case
+      .groupBy(col("c2"))
+      .agg(first(col("c0"), ignoreNulls = true), last(col("c0"), ignoreNulls = true))
   }
 
   test("SortAggregateExec is translated correctly ENABLE_HASH_OPTIMIZE_SORT=false") {
@@ -95,7 +105,7 @@ class HashAggregatesSuite extends SparkQueryCompareTestSuite {
   test("SortAggregateExec is translated correctly ENABLE_HASH_OPTIMIZE_SORT=true") {
 
     val conf = new SparkConf()
-        .set(RapidsConf.ENABLE_HASH_OPTIMIZE_SORT.key, "true")
+      .set(RapidsConf.ENABLE_HASH_OPTIMIZE_SORT.key, "true")
 
     withGpuSparkSession(spark => {
       val df = firstDf(spark)
@@ -192,10 +202,20 @@ class HashAggregatesSuite extends SparkQueryCompareTestSuite {
   IGNORE_ORDER_testSparkResultsAreEqual("group by string include nulls in count aggregate", nullableStringsIntsDf,
     conf = floatAggConf) {
     frame => frame.groupBy("strings").agg(
-      max("ints"), 
-      min("ints"), 
-      avg("ints"), 
-      sum("ints"), 
+      max("ints"),
+      min("ints"),
+      avg("ints"),
+      sum("ints"),
+      count("*"))
+  }
+
+  IGNORE_ORDER_testSparkResultsAreEqual("group by string include nulls in count aggregate small batches",
+    nullableStringsIntsDf, conf = floatAggConf.set(RapidsConf.GPU_BATCH_SIZE_BYTES.key, "10")) {
+    frame => frame.groupBy("strings").agg(
+      max("ints"),
+      min("ints"),
+      avg("ints"),
+      sum("ints"),
       count("*"))
   }
 
@@ -265,7 +285,7 @@ class HashAggregatesSuite extends SparkQueryCompareTestSuite {
   }
 
   IGNORE_ORDER_testSparkResultsAreEqual("aggregates with timestamp and string literal", timestampsDf) {
-  frame => {
+    frame => {
       val feature_window_end_time = date_format(lit("2018-02-01"), "yyyy-MM-dd HH:mm:ss")
       val frameWithCol = frame.withColumn("timestamp_lit", feature_window_end_time)
       frameWithCol.groupBy("more_timestamps", "timestamp_lit").agg(
@@ -302,7 +322,7 @@ class HashAggregatesSuite extends SparkQueryCompareTestSuite {
 
   FLOAT_TEST_testSparkResultsAreEqual("partial on gpu: float basic aggregates group by more_floats", floatCsvDf,
     conf = replaceHashAggMode("partial"),
-    execsAllowedNonGpu = Seq("HashAggregateExec", "AggregateExpression", "AttributeReference", "Alias")) {
+    execsAllowedNonGpu = execsAllowedNonGpu) {
     frame => frame.groupBy("more_floats").agg(
       lit(456f),
       min(col("floats")) + lit(123),
@@ -317,7 +337,7 @@ class HashAggregatesSuite extends SparkQueryCompareTestSuite {
 
   FLOAT_TEST_testSparkResultsAreEqual("final on gpu: float basic aggregates group by more_floats", floatCsvDf,
     conf = replaceHashAggMode("final"),
-    execsAllowedNonGpu = Seq("HashAggregateExec", "AggregateExpression", "AttributeReference", "Alias")) {
+    execsAllowedNonGpu = execsAllowedNonGpu) {
     frame => frame.groupBy("more_floats").agg(
       lit(456f),
       min(col("floats")) + lit(123),
@@ -543,13 +563,13 @@ class HashAggregatesSuite extends SparkQueryCompareTestSuite {
 
   FLOAT_TEST_testSparkResultsAreEqual("partial on gpu: empty df: grouped count", floatCsvDf,
     conf = replaceHashAggMode("partial"),
-    execsAllowedNonGpu = Seq("HashAggregateExec", "AggregateExpression", "AttributeReference", "Alias")) {
+    execsAllowedNonGpu = execsAllowedNonGpu) {
     frame => frame.filter("floats > 10000000.0").groupBy("floats").agg(count("*"))
   }
 
   FLOAT_TEST_testSparkResultsAreEqual("final on gpu: empty df: grouped count", floatCsvDf,
     conf = replaceHashAggMode("final"),
-    execsAllowedNonGpu = Seq("HashAggregateExec", "AggregateExpression", "AttributeReference", "Alias")) {
+    execsAllowedNonGpu = execsAllowedNonGpu) {
     frame => frame.filter("floats > 10000000.0").groupBy("floats").agg(count("*"))
   }
 
@@ -570,7 +590,7 @@ class HashAggregatesSuite extends SparkQueryCompareTestSuite {
 
   FLOAT_TEST_testSparkResultsAreEqual("partial on gpu: empty df: float basic aggregates group by floats", floatCsvDf,
     conf = replaceHashAggMode("partial"),
-    execsAllowedNonGpu = Seq("HashAggregateExec", "AggregateExpression", "AttributeReference", "Alias")) {
+    execsAllowedNonGpu = execsAllowedNonGpu) {
     frame => frame.filter("floats > 10000000.0").groupBy("floats").agg(
       lit(456f),
       min(col("floats")) + lit(123),
@@ -587,7 +607,7 @@ class HashAggregatesSuite extends SparkQueryCompareTestSuite {
 
   FLOAT_TEST_testSparkResultsAreEqual("final on gpu: empty df: float basic aggregates group by floats", floatCsvDf,
     conf = replaceHashAggMode("final"),
-    execsAllowedNonGpu = Seq("HashAggregateExec", "AggregateExpression", "AttributeReference", "Alias")) {
+    execsAllowedNonGpu = execsAllowedNonGpu) {
     frame => frame.filter("floats > 10000000.0").groupBy("floats").agg(
       lit(456f),
       min(col("floats")) + lit(123),
@@ -603,7 +623,490 @@ class HashAggregatesSuite extends SparkQueryCompareTestSuite {
   }
 
   testSparkResultsAreEqual("Agg expression with filter fall back", longsFromCSVDf,
-    execsAllowedNonGpu = Seq("HashAggregateExec", "AggregateExpression", "AttributeReference")) {
+    execsAllowedNonGpu = execsAllowedNonGpu) {
     frame => frame.selectExpr("count(1) filter (where longs > 20)")
+  }
+
+  testSparkResultsAreEqual("PartMerge:countDistinct:sum", longsFromCSVDf,
+    conf = floatAggConf, repart = 2) {
+    frame => val result = frame.agg(countDistinct("longs"), sum("more_longs"))
+      checkExecNode(result)
+      result
+  }
+
+  testSparkResultsAreEqual("PartMerge:countDistinct:avg", longsFromCSVDf,
+    conf = floatAggConf, repart = 2) {
+    frame => val result = frame.agg(countDistinct("longs"), avg("more_longs"))
+      checkExecNode(result)
+      result
+  }
+
+  testSparkResultsAreEqual("PartMerge:countDistinct:all", longsFromCSVDf,
+    conf = floatAggConf, repart = 2) {
+    frame => val result = frame.agg(countDistinct("longs"),
+      avg("more_longs"),
+      count("longs"),
+      min("more_longs"),
+      max("more_longs"),
+      sum("longs"))
+      checkExecNode(result)
+      result
+  }
+
+  testSparkResultsAreEqual("PartMerge:countDistinct:min", longsFromCSVDf,
+    conf = floatAggConf, repart = 2) {
+    frame => val result = frame.agg(countDistinct("longs"), min("more_longs"))
+      checkExecNode(result)
+      result
+  }
+
+  testSparkResultsAreEqual("PartMerge:countDistinct:max", longsFromCSVDf,
+    conf = floatAggConf, repart = 2) {
+    frame => val result = frame.agg(countDistinct("longs"), max("more_longs"))
+      checkExecNode(result)
+      result
+  }
+
+  IGNORE_ORDER_testSparkResultsAreEqual("PartMerge:groupBy:countDistinct:sum",
+    longsFromCSVDf, conf = floatAggConf, repart = 2) {
+    frame => val result = frame.groupBy("longs").agg(countDistinct("longs"),
+      sum("more_longs"))
+      checkExecNode(result)
+      result
+  }
+
+  IGNORE_ORDER_testSparkResultsAreEqual("PartMerge:groupBy:countDistinct:avg",
+    longsFromCSVDf, conf = floatAggConf, repart = 2) {
+    frame => val result = frame.groupBy("longs").agg(countDistinct("longs"),
+      avg("more_longs"))
+      checkExecNode(result)
+      result
+  }
+
+  IGNORE_ORDER_testSparkResultsAreEqual("PartMerge:groupBy:countDistinct:all", longsFromCSVDf,
+    conf = floatAggConf, repart = 2) {
+    frame => val result = frame.groupBy("longs").agg(countDistinct("longs"),
+      avg("more_longs"),
+      count("longs"),
+      min("more_longs"),
+      max("more_longs"),
+      sum("longs"))
+      checkExecNode(result)
+      result
+  }
+
+  IGNORE_ORDER_testSparkResultsAreEqual("PartMerge:groupBy:avg:countDistinct:max",
+    longsFromCSVDf, conf = floatAggConf, repart = 2) {
+    frame => val result = frame.groupBy("longs").agg(avg("more_longs"),
+      countDistinct("longs"), max("longs"))
+      checkExecNode(result)
+      result
+  }
+
+  IGNORE_ORDER_testSparkResultsAreEqual("PartMerge:groupBy:avg:max:countDistinct",
+    longsFromCSVDf, repart = 2, conf = floatAggConf) {
+    frame => val result = frame.groupBy("longs").agg(avg("more_longs"),
+      max("longs"), countDistinct("longs"))
+      checkExecNode(result)
+      result
+  }
+
+  IGNORE_ORDER_testSparkResultsAreEqual("PartMerge:groupBy:countDistinct:last",
+    longsFromCSVDf, conf = floatAggConf, repart = 2) {
+    frame => val result = frame.groupBy("longs").agg(countDistinct("longs"),
+      last("more_longs", true))
+      checkExecNode(result)
+      result
+  }
+
+  IGNORE_ORDER_testSparkResultsAreEqual("PartMerge:groupBy:countDistinct:min",
+    longsFromCSVDf, conf = floatAggConf, repart = 2) {
+    frame => val result = frame.groupBy("longs").agg(countDistinct("longs"),
+      min("more_longs"))
+      checkExecNode(result)
+      result
+  }
+
+  IGNORE_ORDER_testSparkResultsAreEqual("PartMerge:groupBy:countDistinct:max",
+    longsFromCSVDf, conf = floatAggConf, repart = 2) {
+    frame => val result = frame.groupBy("longs").agg(countDistinct("longs"),
+      max("more_longs"))
+      checkExecNode(result)
+      result
+  }
+
+  IGNORE_ORDER_testSparkResultsAreEqual("PartMerge:groupBy_2:countDistinct:sum",
+    longsFromCSVDf, conf = floatAggConf, repart = 2) {
+    frame => val result = frame.groupBy("more_longs").agg(countDistinct("longs"),
+      sum("more_longs"))
+      checkExecNode(result)
+      result
+  }
+
+  IGNORE_ORDER_testSparkResultsAreEqual("PartMerge:groupBy_2:countDistinct:avg",
+    longsFromCSVDf,
+    conf = floatAggConf, repart = 2) {
+    frame => val result = frame.groupBy("more_longs").agg(countDistinct("longs"),
+      avg("more_longs"))
+      checkExecNode(result)
+      result
+  }
+
+  IGNORE_ORDER_testSparkResultsAreEqual("PartMerge:groupBy_2:countDistinct:min",
+    longsFromCSVDf, conf = floatAggConf, repart = 2) {
+    frame => val result = frame.groupBy("more_longs").agg(countDistinct("longs"),
+      min("more_longs"))
+      checkExecNode(result)
+      result
+  }
+
+  IGNORE_ORDER_testSparkResultsAreEqual("PartMerge:groupBy_2:countDistinct:max",
+    longsFromCSVDf, conf = floatAggConf, repart = 2) {
+    frame => val result = frame.groupBy("more_longs").agg(countDistinct("longs"),
+      max("more_longs"))
+      checkExecNode(result)
+      result
+  }
+
+  private val partialOnlyConf = replaceHashAggMode("partial").set(
+    RapidsConf.ENABLE_FLOAT_AGG.key, "true").set(RapidsConf.HAS_NANS.key, "false")
+  private val finalOnlyConf = replaceHashAggMode("final").set(
+    RapidsConf.ENABLE_FLOAT_AGG.key, "true").set(RapidsConf.HAS_NANS.key, "false")
+
+  IGNORE_ORDER_ALLOW_NON_GPU_testSparkResultsAreEqual(
+    "PartMerge:countDistinct:sum:partOnly", longsFromCSVDf,
+    execsAllowedNonGpu = execsAllowedNonGpu, conf = partialOnlyConf, repart = 2) {
+    frame => val result = frame.agg(countDistinct("longs"),
+      sum("more_longs"))
+      checkExecNode(result)
+      result
+  }
+
+  IGNORE_ORDER_ALLOW_NON_GPU_testSparkResultsAreEqual(
+    "PartMerge:countDistinct:avg:partOnly",
+    longsFromCSVDf, execsAllowedNonGpu = execsAllowedNonGpu, conf = partialOnlyConf, repart = 2) {
+    frame => val result = frame.agg(countDistinct("longs"),
+      avg("more_longs"))
+      checkExecNode(result)
+      result
+  }
+
+  IGNORE_ORDER_ALLOW_NON_GPU_testSparkResultsAreEqual(
+    "PartMerge:countDistinct:min:partOnly", longsFromCSVDf,
+    execsAllowedNonGpu = execsAllowedNonGpu, conf = partialOnlyConf, repart = 2) {
+    frame => val result = frame.agg(countDistinct("longs"),
+      min("more_longs"))
+      checkExecNode(result)
+      result
+  }
+
+  IGNORE_ORDER_ALLOW_NON_GPU_testSparkResultsAreEqual(
+    "PartMerge:countDistinct:max:partOnly", longsFromCSVDf,
+    execsAllowedNonGpu = execsAllowedNonGpu, conf = partialOnlyConf, repart = 2) {
+    frame => val result = frame.agg(countDistinct("longs"),
+      max("more_longs"))
+      checkExecNode(result)
+      result
+  }
+
+  IGNORE_ORDER_ALLOW_NON_GPU_testSparkResultsAreEqual(
+    "PartMerge:countDistinct:sum:finOnly", longsFromCSVDf,
+    execsAllowedNonGpu = execsAllowedNonGpu, conf = finalOnlyConf, repart = 2) {
+    frame => val result = frame.agg(countDistinct("longs"),
+      sum("more_longs"))
+      checkExecNode(result)
+      result
+  }
+
+  IGNORE_ORDER_ALLOW_NON_GPU_testSparkResultsAreEqual(
+    "PartMerge:countDistinct:avg:finOnly", longsFromCSVDf,
+    execsAllowedNonGpu = execsAllowedNonGpu, conf = finalOnlyConf, repart = 2) {
+    frame => val result = frame.agg(countDistinct("longs"),
+      avg("more_longs"))
+      checkExecNode(result)
+      result
+  }
+
+  IGNORE_ORDER_ALLOW_NON_GPU_testSparkResultsAreEqual(
+    "PartMerge:countDistinct:min:finOnly", longsFromCSVDf,
+    execsAllowedNonGpu = execsAllowedNonGpu, conf = finalOnlyConf, repart = 2) {
+    frame => val result = frame.agg(countDistinct("longs"),
+      min("more_longs"))
+      checkExecNode(result)
+      result
+  }
+
+  IGNORE_ORDER_ALLOW_NON_GPU_testSparkResultsAreEqual(
+    "PartMerge:countDistinct:max:finOnly", longsFromCSVDf,
+    execsAllowedNonGpu = execsAllowedNonGpu, conf = finalOnlyConf, repart = 2) {
+    frame => val result = frame.agg(countDistinct("longs"),
+      max("more_longs"))
+      checkExecNode(result)
+      result
+  }
+
+  IGNORE_ORDER_ALLOW_NON_GPU_testSparkResultsAreEqual(
+    "PartMerge:groupBy:countDistinct:sum:partOnly", longsFromCSVDf,
+    execsAllowedNonGpu = execsAllowedNonGpu, conf = partialOnlyConf, repart = 2) {
+    frame => val result = frame.groupBy("longs").agg(countDistinct("longs"),
+      sum("more_longs"))
+      checkExecNode(result)
+      result
+  }
+
+  IGNORE_ORDER_ALLOW_NON_GPU_testSparkResultsAreEqual(
+    "PartMerge:groupBy:countDistinct:avg:partOnly", longsFromCSVDf,
+    execsAllowedNonGpu = execsAllowedNonGpu, conf = partialOnlyConf, repart = 2) {
+    frame => val result = frame.groupBy("longs").agg(countDistinct("longs"),
+      avg("more_longs"))
+      checkExecNode(result)
+      result
+  }
+
+  IGNORE_ORDER_ALLOW_NON_GPU_testSparkResultsAreEqual(
+    "PartMerge:groupBy:countDistinct:min:partOnly", longsFromCSVDf,
+    execsAllowedNonGpu = execsAllowedNonGpu, conf = partialOnlyConf, repart = 2) {
+    frame => val result = frame.groupBy("longs").agg(countDistinct("longs"),
+      min("more_longs"))
+      checkExecNode(result)
+      result
+  }
+
+  IGNORE_ORDER_ALLOW_NON_GPU_testSparkResultsAreEqual(
+    "PartMerge:groupBy:countDistinct:max:partOnly", longsFromCSVDf,
+    execsAllowedNonGpu = execsAllowedNonGpu, conf = partialOnlyConf, repart = 2) {
+    frame => val result = frame.groupBy("longs").agg(countDistinct("longs"),
+      max("more_longs"))
+      checkExecNode(result)
+      result
+  }
+
+  IGNORE_ORDER_ALLOW_NON_GPU_testSparkResultsAreEqual(
+    "PartMerge:groupBy_2:countDistinct:sum:partOnly", longsFromCSVDf,
+    execsAllowedNonGpu = execsAllowedNonGpu, conf = partialOnlyConf, repart = 2) {
+    frame => val result = frame.groupBy("more_longs").agg(countDistinct("longs"),
+      sum("more_longs"))
+      checkExecNode(result)
+      result
+  }
+
+  IGNORE_ORDER_ALLOW_NON_GPU_testSparkResultsAreEqual(
+    "PartMerge:groupBy_2:countDistinct:avg:partOnly", longsFromCSVDf,
+    execsAllowedNonGpu = execsAllowedNonGpu, conf = partialOnlyConf, repart = 2) {
+    frame => val result = frame.groupBy("more_longs").agg(countDistinct("longs"),
+      avg("more_longs"))
+      checkExecNode(result)
+      result
+  }
+
+  IGNORE_ORDER_ALLOW_NON_GPU_testSparkResultsAreEqual(
+    "PartMerge:groupBy_2:countDistinct:min:partOnly", longsFromCSVDf,
+    execsAllowedNonGpu = execsAllowedNonGpu, conf = partialOnlyConf, repart = 2) {
+    frame => val result = frame.groupBy("more_longs").agg(countDistinct("longs"),
+      min("more_longs"))
+      checkExecNode(result)
+      result
+  }
+
+  IGNORE_ORDER_ALLOW_NON_GPU_testSparkResultsAreEqual(
+    "PartMerge:groupBy_2:countDistinct:max:partOnly", longsFromCSVDf,
+    execsAllowedNonGpu = execsAllowedNonGpu, conf = partialOnlyConf, repart = 2) {
+    frame => val result = frame.groupBy("more_longs").agg(countDistinct("longs"),
+      max("more_longs"))
+      checkExecNode(result)
+      result
+  }
+  IGNORE_ORDER_ALLOW_NON_GPU_testSparkResultsAreEqual(
+    "PartMerge:groupBy:countDistinct:sum:finOnly", longsFromCSVDf,
+    execsAllowedNonGpu = execsAllowedNonGpu, conf = finalOnlyConf, repart = 2) {
+    frame => val result = frame.groupBy("longs").agg(countDistinct("longs"),
+      sum("more_longs"))
+      checkExecNode(result)
+      result
+  }
+
+  IGNORE_ORDER_ALLOW_NON_GPU_testSparkResultsAreEqual(
+    "PartMerge:groupBy:countDistinct:avg:finOnly", longsFromCSVDf,
+    execsAllowedNonGpu = execsAllowedNonGpu, conf = finalOnlyConf, repart = 2) {
+    frame => val result = frame.groupBy("longs").agg(countDistinct("longs"),
+      avg("more_longs"))
+      checkExecNode(result)
+      result
+  }
+
+  IGNORE_ORDER_ALLOW_NON_GPU_testSparkResultsAreEqual(
+    "PartMerge:groupBy:countDistinct:min:finOnly", longsFromCSVDf,
+    execsAllowedNonGpu = execsAllowedNonGpu, conf = finalOnlyConf, repart = 2) {
+    frame => val result = frame.groupBy("longs").agg(countDistinct("longs"),
+      min("more_longs"))
+      checkExecNode(result)
+      result
+  }
+
+  IGNORE_ORDER_ALLOW_NON_GPU_testSparkResultsAreEqual(
+    "PartMerge:groupBy:countDistinct:max:finOnly", longsFromCSVDf,
+    execsAllowedNonGpu = execsAllowedNonGpu, conf = finalOnlyConf, repart = 2) {
+    frame => val result = frame.groupBy("longs").agg(countDistinct("longs"),
+      max("more_longs"))
+      checkExecNode(result)
+      result
+  }
+
+  IGNORE_ORDER_ALLOW_NON_GPU_testSparkResultsAreEqual(
+    "PartMerge:groupBy_2:countDistinct:sum:finOnly", longsFromCSVDf,
+    execsAllowedNonGpu = execsAllowedNonGpu, conf = finalOnlyConf, repart = 2) {
+    frame => val result = frame.groupBy("more_longs").agg(countDistinct("longs"),
+      sum("more_longs"))
+      checkExecNode(result)
+      result
+  }
+
+  IGNORE_ORDER_ALLOW_NON_GPU_testSparkResultsAreEqual(
+    "PartMerge:groupBy_2:countDistinct:avg:finOnly", longsFromCSVDf,
+    execsAllowedNonGpu = execsAllowedNonGpu, conf = finalOnlyConf, repart = 2) {
+    frame => val result = frame.groupBy("more_longs").agg(countDistinct("longs"),
+      avg("more_longs"))
+      checkExecNode(result)
+      result
+  }
+
+  IGNORE_ORDER_ALLOW_NON_GPU_testSparkResultsAreEqual(
+    "PartMerge:groupBy_2:countDistinct:min:finOnly", longsFromCSVDf,
+    execsAllowedNonGpu = execsAllowedNonGpu, conf = finalOnlyConf, repart = 2) {
+    frame => val result = frame.groupBy("more_longs").agg(countDistinct("longs"),
+      min("more_longs"))
+      checkExecNode(result)
+      result
+  }
+
+  IGNORE_ORDER_ALLOW_NON_GPU_testSparkResultsAreEqual(
+    "PartMerge:groupBy_2:countDistinct:max:finOnly", longsFromCSVDf,
+    execsAllowedNonGpu = execsAllowedNonGpu, conf = finalOnlyConf, repart = 2) {
+    frame => val result = frame.groupBy("more_longs").agg(countDistinct("longs"),
+      max("more_longs"))
+      checkExecNode(result)
+      result
+  }
+
+  IGNORE_ORDER_ALLOW_NON_GPU_testSparkResultsAreEqual(
+    "PartMerge:groupBy_2:countDistinctOnly:finOnly", longsFromCSVDf,
+    execsAllowedNonGpu = execsAllowedNonGpu, conf = finalOnlyConf, repart = 2) {
+    frame => val result =frame.groupBy("more_longs").agg(countDistinct("longs"))
+      checkExecNode(result)
+      result
+  }
+
+  IGNORE_ORDER_ALLOW_NON_GPU_testSparkResultsAreEqual(
+    "PartMerge:groupBy:countDistinctOnly:finOnly", longsFromCSVDf,
+    execsAllowedNonGpu = execsAllowedNonGpu, conf = finalOnlyConf, repart = 2) {
+    frame => val result = frame.groupBy("longs").agg(countDistinct("longs"))
+      checkExecNode(result)
+      result
+  }
+
+  IGNORE_ORDER_ALLOW_NON_GPU_testSparkResultsAreEqual(
+    "PartMerge:groupBy_2:countDistinctOnly:partOnly", longsFromCSVDf,
+    execsAllowedNonGpu = execsAllowedNonGpu, conf = partialOnlyConf, repart = 2) {
+    frame => val result = frame.groupBy("more_longs").agg(countDistinct("longs"))
+      checkExecNode(result)
+      result
+  }
+
+  IGNORE_ORDER_ALLOW_NON_GPU_testSparkResultsAreEqual(
+    "PartMerge:groupBy:countDistinctOnly:partOnly", longsFromCSVDf,
+    execsAllowedNonGpu = execsAllowedNonGpu, conf = partialOnlyConf, repart = 2) {
+    frame => val result = frame.groupBy("longs").agg(countDistinct("longs"))
+      checkExecNode(result)
+      result
+  }
+
+  testSparkResultsAreEqual("PartMerge:countDistinctOnly", longsFromCSVDf,
+    conf = floatAggConf, repart = 2) {
+    frame => val result = frame.agg(countDistinct("longs"))
+      checkExecNode(result)
+      result
+  }
+
+  testSparkResultsAreEqual("PartMerge:countDistinctOnly_2", longsFromCSVDf,
+    conf = floatAggConf, repart = 2) {
+    frame => val result = frame.agg(countDistinct("longs"),
+      countDistinct("more_longs"))
+      checkExecNode(result)
+      result
+  }
+
+  testSparkResultsAreEqual("PartMerge:countDistinct:count", longsFromCSVDf,
+    conf = floatAggConf, repart = 2) {
+    frame => val result = frame.selectExpr("count(distinct longs)", "count(longs)")
+      checkExecNode(result)
+      result
+  }
+
+  testSparkResultsAreEqual("PartMerge:avgDistinct:count", longsFromCSVDf,
+    conf = floatAggConf, repart = 2) {
+    frame => val result = frame.selectExpr("avg(distinct longs)","count(longs)")
+      checkExecNode(result)
+      result
+  }
+
+  testSparkResultsAreEqual("PartMerge:avgDistinct:count:2cols", longsFromCSVDf,
+    conf = floatAggConf, repart = 2) {
+    frame => val result = frame.selectExpr("avg(distinct longs)","count(more_longs)")
+      checkExecNode(result)
+      result
+  }
+
+  testSparkResultsAreEqual("PartMerge:avgDistinct:avg:2cols", longsFromCSVDf,
+    conf = floatAggConf, repart = 2) {
+    frame => val result = frame.selectExpr("avg(distinct longs)","avg(more_longs)")
+      checkExecNode(result)
+      result
+  }
+
+  IGNORE_ORDER_ALLOW_NON_GPU_testSparkResultsAreEqual(
+    "PartMerge:avgDistinct:count:PartOnly", longsFromCSVDf,
+    execsAllowedNonGpu = execsAllowedNonGpu, conf = partialOnlyConf, repart = 2) {
+    frame => val result = frame.selectExpr("avg(distinct longs)","count(longs)")
+      checkExecNode(result)
+      result
+  }
+
+  IGNORE_ORDER_ALLOW_NON_GPU_testSparkResultsAreEqual(
+    "PartMerge:avgDistinct:count:FinOnly", longsFromCSVDf,
+    execsAllowedNonGpu = execsAllowedNonGpu, conf = finalOnlyConf, repart = 2) {
+    frame => val result = frame.selectExpr("avg(distinct longs)","count(longs)")
+      checkExecNode(result)
+      result
+  }
+
+  IGNORE_ORDER_ALLOW_NON_GPU_testSparkResultsAreEqual(
+    "PartMerge:avgDistinct:count:2cols:PartOnly", longsFromCSVDf,
+    execsAllowedNonGpu = execsAllowedNonGpu, conf = partialOnlyConf, repart = 2) {
+    frame => val result = frame.selectExpr("avg(distinct longs)","count(more_longs)")
+      checkExecNode(result)
+      result
+  }
+
+  IGNORE_ORDER_ALLOW_NON_GPU_testSparkResultsAreEqual(
+    "PartMerge:avgDistinct:count:2cols:FinOnly", longsFromCSVDf,
+    execsAllowedNonGpu = execsAllowedNonGpu, conf = finalOnlyConf,
+    repart = 2) {
+    frame => val result = frame.selectExpr("avg(distinct longs)","count(more_longs)")
+      checkExecNode(result)
+      result
+  }
+
+  testSparkResultsAreEqual("PartMerge:avgDistinctOnly", longsFromCSVDf,
+    conf = floatAggConf, repart = 2) {
+    frame => val result = frame.selectExpr("avg(distinct longs)")
+      checkExecNode(result)
+      result
+  }
+
+  testSparkResultsAreEqual("PartMerge:avgDistinctOnly_2", longsFromCSVDf,
+    conf = floatAggConf, repart = 2) {
+    frame => val result = frame.selectExpr("avg(distinct longs)", "avg(distinct more_longs)")
+      checkExecNode(result)
+      result
   }
 }

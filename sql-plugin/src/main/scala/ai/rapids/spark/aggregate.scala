@@ -25,7 +25,7 @@ import org.apache.spark.TaskContext
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.expressions.aggregate._
-import org.apache.spark.sql.catalyst.expressions.{Ascending, Attribute, AttributeSeq, AttributeSet, NamedExpression}
+import org.apache.spark.sql.catalyst.expressions.{Attribute, AttributeSeq, AttributeSet, NamedExpression}
 import org.apache.spark.sql.catalyst.plans.physical.{AllTuples, ClusteredDistribution, Distribution, Partitioning, UnspecifiedDistribution}
 import org.apache.spark.sql.catalyst.util.truncatedString
 import org.apache.spark.sql.execution.{SparkPlan, UnaryExecNode}
@@ -42,7 +42,7 @@ class GpuHashAggregateMeta(
     conf: RapidsConf,
     parent: Option[RapidsMeta[_, _, _]],
     rule: ConfKeysAndIncompat)
-  extends SparkPlanMeta[HashAggregateExec](agg, conf, parent, rule) { 
+  extends SparkPlanMeta[HashAggregateExec](agg, conf, parent, rule) {
   private val requiredChildDistributionExpressions: Option[Seq[ExprMeta[_]]] =
     agg.requiredChildDistributionExpressions.map(_.map(GpuOverrides.wrapExpr(_, conf, Some(this))))
   private val groupingExpressions: Seq[ExprMeta[_]] =
@@ -89,6 +89,10 @@ class GpuHashAggregateMeta(
           throw new IllegalArgumentException(s"The hash aggregate replacement mode ${hashAggReplaceMode} " +
             "is not valid. Valid options are: \"partial\", \"final\", or \"all\"")
       }
+    }
+    if (!conf.partialMergeDistinctEnabled && hashAggMode.contains(PartialMerge)) {
+      willNotWorkOnGpu("Replacing Partial Merge aggregates disabled. " +
+        s"Set ${conf.partialMergeDistinctEnabled} to true if desired")
     }
   }
 
@@ -198,8 +202,12 @@ case class GpuHashAggregateExec(requiredChildDistributionExpressions: Option[Seq
                            aggregateAttributes: Seq[GpuAttributeReference],
                            initialInputBufferOffset: Int,
                            resultExpressions: Seq[NamedExpression], //TODO: make this a GpuNamedExpression
-                           child: SparkPlan) extends UnaryExecNode with GpuExec {
+                           child: SparkPlan) extends UnaryExecNode with GpuExec with Arm {
 
+  case class BoundExpressionsModeAggregates(boundInputReferences: Seq[GpuExpression] ,
+    boundFinalProjections: Option[scala.Seq[GpuExpression]],
+    boundResultReferences: scala.Seq[GpuExpression] ,
+    aggModeCudfAggregates: scala.Seq[(AggregateMode, scala.Seq[CudfAggregate])])
   // This handles GPU hash aggregation without spilling.
   //
   // The CPU version of this is (assume no fallback to sort-based aggregation)
@@ -294,12 +302,7 @@ case class GpuHashAggregateExec(requiredChildDistributionExpressions: Option[Seq
       //  2. boundMergeAgg: perform merges of incoming, and subsequent batches if required.
       //  3. boundFinalProjections: on merged batches, finalize aggregates (GpuAverage => CudfSum/CudfCount)
       //  4. boundResultReferences: project the result expressions Spark expects in the output.
-      val (boundInputReferences,
-           boundUpdateAgg,
-           boundMergeAgg,
-           boundFinalProjections,
-           boundResultReferences) =
-      setupReferences(child.output, groupingExpressions, aggregateExpressions)
+      val boundExpression = setupReferences(child.output, groupingExpressions, aggregateExpressions)
       try {
         while (cbIter.hasNext) {
           // 1) Consume the raw incoming batch, evaluating nested expressions (e.g. avg(col1 + col2)),
@@ -311,7 +314,7 @@ case class GpuHashAggregateExec(requiredChildDistributionExpressions: Option[Seq
           } else {
             val nvtxRange = new NvtxWithMetrics("Hash Aggregate Batch", NvtxColor.YELLOW, totalTime)
             try {
-              childCvs = processIncomingBatch(batch, boundInputReferences)
+              childCvs = processIncomingBatch(batch, boundExpression.boundInputReferences)
 
               // done with the batch, clean it as soon as possible
               batch.close()
@@ -322,8 +325,8 @@ case class GpuHashAggregateExec(requiredChildDistributionExpressions: Option[Seq
               //     b) if this is a subsequent batch, we need to merge the previously aggregated results
               //        with the incoming batch
               //     c) also update total time and aggTime metrics
-              aggregatedInputCb = computeAggregate(childCvs, finalMode, groupingExpressions,
-                if (finalMode) boundMergeAgg else boundUpdateAgg, computeAggTime)
+              aggregatedInputCb = computeAggregate(childCvs, allModes,
+                groupingExpressions, boundExpression.aggModeCudfAggregates, false, computeAggTime)
 
               childCvs.safeClose()
               childCvs = null
@@ -349,8 +352,8 @@ case class GpuHashAggregateExec(requiredChildDistributionExpressions: Option[Seq
 
                 // 3) Compute aggregate. In subsequent iterations we'll use this result
                 //    to concatenate against incoming batches (step 2)
-                aggregatedCb = computeAggregate(concatCvs, merge = true, groupingExpressions,
-                  boundMergeAgg, computeAggTime)
+                aggregatedCb = computeAggregate(concatCvs, allModes,
+                  groupingExpressions, boundExpression.aggModeCudfAggregates, true, computeAggTime)
                 concatCvs.safeClose()
                 concatCvs = null
               }
@@ -386,10 +389,10 @@ case class GpuHashAggregateExec(requiredChildDistributionExpressions: Option[Seq
           //    i.e.: select avg(foo) from bar group by baz will produce:
           //       Partial mode: 3 columns => [bar, sum(foo) as sum_foo, count(foo) as count_foo]
           //       Final mode:   2 columns => [bar, sum(sum_foo) / sum(count_foo)]
-          finalCb = if (boundFinalProjections.isDefined) {
+          finalCb = if (boundExpression.boundFinalProjections.isDefined) {
             if (aggregatedCb != null) {
               val finalCvs =
-                boundFinalProjections.get.map { ref =>
+                boundExpression.boundFinalProjections.get.map { ref =>
                   // aggregatedCb is made up of ColumnVectors
                   // and the final projections from the aggregates won't change that,
                   // so we can assume they will be vectors after we eval
@@ -410,7 +413,7 @@ case class GpuHashAggregateExec(requiredChildDistributionExpressions: Option[Seq
           if (finalCb != null) {
             // Perform the last project to get the correct shape that Spark expects. Note this will add things like
             // literals, that were not part of the aggregate into the batch.
-            resultCvs = boundResultReferences.map { ref =>
+            resultCvs = boundExpression.boundResultReferences.map { ref =>
               val result = ref.columnarEval(finalCb)
               // Result references can be virtually anything, we need to coerce
               // them to be vectors since this is going into a ColumnarBatch
@@ -425,7 +428,6 @@ case class GpuHashAggregateExec(requiredChildDistributionExpressions: Option[Seq
                   }
               }
             }
-
             finalCb.close()
             finalCb = null
             resultCb = if (resultCvs.isEmpty) {
@@ -527,9 +529,10 @@ case class GpuHashAggregateExec(requiredChildDistributionExpressions: Option[Seq
     }
   }
 
-  private lazy val modes = aggregateExpressions.map(_.mode).distinct
-  private lazy val partialMode = modes.contains(Partial) || modes.contains(PartialMerge)
-  private lazy val finalMode = modes.contains(Final) || modes.contains(Complete)
+  private lazy val allModes: Seq[AggregateMode] = aggregateExpressions.map(_.mode)
+  private lazy val uniqueModes: Seq[AggregateMode] = allModes.distinct
+  private lazy val partialMode = uniqueModes.contains(Partial) || uniqueModes.contains(PartialMerge)
+  private lazy val finalMode = uniqueModes.contains(Final) || uniqueModes.contains(Complete)
 
   /**
     * getCudfAggregates returns a sequence of [[cudf.Aggregate]], given the current mode
@@ -547,55 +550,115 @@ case class GpuHashAggregateExec(requiredChildDistributionExpressions: Option[Seq
     */
   def setupReferences(childAttr: AttributeSeq,
                       groupingExpressions: Seq[GpuExpression],
-                      aggregateExpressions: Seq[GpuAggregateExpression]):
-    (Seq[GpuExpression], Seq[CudfAggregate], Seq[CudfAggregate], Option[Seq[GpuExpression]], Seq[GpuExpression]) = {
+                      aggregateExpressions: Seq[GpuAggregateExpression]): BoundExpressionsModeAggregates = {
 
     val groupingAttributes = groupingExpressions.map(_.asInstanceOf[NamedExpression].toAttribute)
+    val aggBufferAttributes = groupingAttributes ++
+      aggregateExpressions.flatMap(_.aggregateFunction.aggBufferAttributes)
+
     //
     // update expressions are those performed on the raw input data
     // e.g. for count it's count, and for average it's sum and count.
     //
-    val updateExpressions =
-      aggregateExpressions.flatMap(_.aggregateFunction.asInstanceOf[GpuDeclarativeAggregate].updateExpressions)
-
-    val updateAggBufferAttributes = groupingAttributes ++
-      aggregateExpressions.flatMap(_.aggregateFunction.aggBufferAttributes)
-
-    val boundUpdateAgg = GpuBindReferences.bindReferences(updateExpressions, updateAggBufferAttributes)
-
+    val updateExpressionsSeq =
+      aggregateExpressions.map(
+        _.aggregateFunction.asInstanceOf[GpuDeclarativeAggregate].updateExpressions)
     //
     // merge expressions are used while merging multiple batches, or while on final mode
     // e.g. for count it's sum, and for average it's sum and sum.
     //
-    val mergeExpressions =
-      aggregateExpressions.flatMap(_.aggregateFunction.asInstanceOf[GpuDeclarativeAggregate].mergeExpressions)
+    val mergeExpressionsSeq =
+      aggregateExpressions.map(
+        _.aggregateFunction.asInstanceOf[GpuDeclarativeAggregate].mergeExpressions)
 
-    val mergeAggBufferAttributes = groupingAttributes ++
-      aggregateExpressions.flatMap(_.aggregateFunction.aggBufferAttributes)
-
-    val boundMergeAgg = GpuBindReferences.bindReferences(mergeExpressions, mergeAggBufferAttributes)
+    val aggModeCudfAggregates = aggregateExpressions.zipWithIndex.map { case (expr, modeIndex) =>
+      val cudfAggregates = if (expr.mode == Partial) {
+        GpuBindReferences.bindReferences(updateExpressionsSeq(modeIndex), aggBufferAttributes)
+          .asInstanceOf[Seq[CudfAggregate]]
+      } else {
+        GpuBindReferences.bindReferences(mergeExpressionsSeq(modeIndex), aggBufferAttributes)
+          .asInstanceOf[Seq[CudfAggregate]]
+      }
+      (expr.mode, cudfAggregates)
+    }
 
     //
-    // expressions to pick input to the aggregate, and finalize the output to the result projection
+    // expressions to pick input to the aggregate, and finalize the output to the result projection.
     //
-    val inputProjections =
-      groupingExpressions ++ aggregateExpressions.flatMap(_.aggregateFunction.inputProjection)
+    // Pick update distinct attributes or input projections for Partial
+    val (distinctAggExpressions, nonDistinctAggExpressions) = aggregateExpressions.partition(
+      _.isDistinct)
+    val updateExpressionsDistinct =
+      distinctAggExpressions.flatMap(
+        _.aggregateFunction.asInstanceOf[GpuDeclarativeAggregate].updateExpressions)
+    val updateAttributesDistinct =
+      distinctAggExpressions.flatMap(_.aggregateFunction.aggBufferAttributes)
+    val inputProjectionsDistinct =
+      distinctAggExpressions.flatMap(_.aggregateFunction.inputProjection)
 
-    val finalProjections =
-      groupingExpressions ++
-        aggregateExpressions.map(_.aggregateFunction.asInstanceOf[GpuDeclarativeAggregate].evaluateExpression)
+    // Pick merge non-distinct for PartialMerge
+    val mergeExpressionsNonDistinct =
+      nonDistinctAggExpressions
+        .flatMap(_.aggregateFunction.asInstanceOf[GpuDeclarativeAggregate].mergeExpressions)
+        .map(_.asInstanceOf[CudfAggregate].ref)
+    val mergeAttributesNonDistinct =
+      nonDistinctAggExpressions.flatMap(
+        _.aggregateFunction.aggBufferAttributes)
 
-    // boundInputReferences is used to pick out of the input batch the appropriate columns for aggregation
-    // - Partial mode: we use the aggregateExpressions to pick out the correct columns.
+    // Partial with no distinct or when modes are empty
+    val inputProjections: Seq[GpuExpression] = groupingExpressions ++ aggregateExpressions
+      .flatMap(_.aggregateFunction.inputProjection)
+
+    var distinctAttributes = Seq[Attribute]()
+    var distinctExpressions = Seq[GpuExpression]()
+    var nonDistinctAttributes = Seq[Attribute]()
+    var nonDistinctExpressions = Seq[GpuExpression]()
+    uniqueModes.foreach {
+      case PartialMerge =>
+        nonDistinctAttributes = mergeAttributesNonDistinct
+        nonDistinctExpressions = mergeExpressionsNonDistinct
+      case Partial =>
+        // Partial with distinct case
+        val updateExpressionsCudfAggsDistinct =
+          updateExpressionsDistinct.filter(_.isInstanceOf[CudfAggregate])
+            .map(_.asInstanceOf[CudfAggregate].ref)
+        if (inputProjectionsDistinct.exists(p => !p.isInstanceOf[NamedExpression])) {
+          // Case of distinct average we need to evaluate the "GpuCast isNotNull as longs" columns
+          distinctAttributes = inputProjectionsDistinct.filter(projection =>
+            projection.isInstanceOf[NamedExpression])
+            .map(_.asInstanceOf[NamedExpression].toAttribute)
+          distinctExpressions = inputProjectionsDistinct
+        } else {
+          distinctAttributes = updateAttributesDistinct
+          distinctExpressions = updateExpressionsCudfAggsDistinct
+        }
+      case _ =>
+    }
+    val inputBindExpressions = groupingExpressions ++ nonDistinctExpressions ++ distinctExpressions
+    val resultingBindAttributes = groupingAttributes ++ distinctAttributes ++ nonDistinctAttributes
+
+    val finalProjections = groupingExpressions ++
+        aggregateExpressions.map(_.aggregateFunction.asInstanceOf[GpuDeclarativeAggregate]
+          .evaluateExpression)
+
+    // boundInputReferences is used to pick out of the input batch the appropriate columns
+    // for aggregation
+    // - Partial Merge mode: we use the inputBindExpressions which can be only
+    //   non distinct merge expressions.
+    // - Partial mode: we use the inputProjections or distinct update expressions.
+    // - Partial, PartialMerge mode: we use the inputProjections or distinct update expressions
+    //   for Partial and non distinct merge expressions for PartialMerge.
     // - Final mode: we pick the columns in the order as handed to us.
-    val boundInputReferences = if (finalMode) {
+    val boundInputReferences = if (uniqueModes.contains(PartialMerge)) {
+      GpuBindReferences.bindReferences(inputBindExpressions, resultingBindAttributes)
+    } else if (finalMode) {
       GpuBindReferences.bindReferences(childAttr, childAttr)
     } else {
       GpuBindReferences.bindReferences(inputProjections, childAttr)
     }
 
     val boundFinalProjections = if (finalMode) {
-      Some(GpuBindReferences.bindReferences(finalProjections, mergeAggBufferAttributes))
+      Some(GpuBindReferences.bindReferences(finalProjections, aggBufferAttributes))
     } else {
       None
     }
@@ -623,18 +686,15 @@ case class GpuHashAggregateExec(requiredChildDistributionExpressions: Option[Seq
         resultExpressions.asInstanceOf[Seq[GpuExpression]],
         groupingAttributes.asInstanceOf[Seq[GpuAttributeReference]])
     }
-
-    (boundInputReferences,
-      boundUpdateAgg.asInstanceOf[Seq[CudfAggregate]],
-      boundMergeAgg.asInstanceOf[Seq[CudfAggregate]],
-      boundFinalProjections,
-      boundResultReferences)
+    BoundExpressionsModeAggregates(boundInputReferences, boundFinalProjections, boundResultReferences,
+      aggModeCudfAggregates)
   }
 
   def computeAggregate(toAggregateCvs: Seq[GpuColumnVector],
-                       merge: Boolean,
+                       modes: Seq[AggregateMode],
                        groupingExpressions: Seq[GpuExpression],
-                       aggregates: Seq[CudfAggregate],
+                       aggModeCudfAggregates : Seq[(AggregateMode, Seq[CudfAggregate])],
+                       merge : Boolean,
                        computeAggTime: SQLMetric): ColumnarBatch  = {
     val nvtxRange = new NvtxWithMetrics("computeAggregate", NvtxColor.CYAN, computeAggTime)
     try {
@@ -649,11 +709,12 @@ case class GpuHashAggregateExec(requiredChildDistributionExpressions: Option[Seq
           // For example: GpuAverage has an update version of: (CudfSum, CudfCount)
           // and CudfCount has an update version of AggregateOp.COUNT and a
           // merge version of AggregateOp.COUNT.
-          var cudfAggregates = aggregates.map { agg =>
-            if (merge) {
-              agg.mergeAggregate
+          val aggregates = aggModeCudfAggregates.flatMap(_._2)
+          val cudfAggregates = aggModeCudfAggregates.flatMap { case (mode, aggregates) =>
+            if (mode == Partial && !merge) {
+              aggregates.map(a => a.updateAggregate)
             } else {
-              agg.updateAggregate
+              aggregates.map(a => a.mergeAggregate)
             }
           }
           tbl = new cudf.Table(toAggregateCvs.map(_.getBase): _*)
@@ -702,20 +763,25 @@ case class GpuHashAggregateExec(requiredChildDistributionExpressions: Option[Seq
         // Reduction aggregate
         // we ask the appropriate merge or update CudfAggregates, what their
         // reduction merge or update aggregates functions are
-        val cvs = aggregates.map { agg =>
-          val aggFn = if (merge) {
-            agg.mergeReductionAggregate
-          } else {
-            agg.updateReductionAggregate
-          }
-
-          val res = aggFn(toAggregateCvs(agg.getOrdinal(agg.ref)).getBase)
-          try {
-            GpuColumnVector.from(cudf.ColumnVector.fromScalar(res, 1))
-          } finally {
-            res.close()
-          }
-        }
+        val cvs = ArrayBuffer[GpuColumnVector]()
+        aggModeCudfAggregates.foreach { case (mode, aggs) =>
+         aggs.foreach {agg =>
+           val aggFn = if (mode == Partial && !merge) {
+             agg.updateReductionAggregate
+           } else {
+             agg.mergeReductionAggregate
+           }
+           val res = aggFn(toAggregateCvs(agg.getOrdinal(agg.ref)).getBase)
+           try {
+             val rapidsType = GpuColumnVector.getRapidsType(agg.dataType)
+             withResource(cudf.ColumnVector.fromScalar(res, 1)) { cv =>
+               cvs += GpuColumnVector.from(cv.castTo(rapidsType))
+             }
+           } finally {
+             res.close()
+           }
+         }
+       }
         new ColumnarBatch(cvs.toArray, cvs.head.getBase.getRowCount.toInt)
       }
     } finally {
