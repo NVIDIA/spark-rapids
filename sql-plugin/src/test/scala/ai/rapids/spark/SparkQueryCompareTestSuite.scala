@@ -930,42 +930,181 @@ trait SparkQueryCompareTestSuite extends FunSuite with Arm {
     ).toDF("doubles", "more_doubles")
   }
 
-  def smallFloatDf(session: SparkSession): DataFrame = {
+  def mixedDoubleDf(session: SparkSession): DataFrame = {
     import session.sqlContext.implicits._
-    Seq(
-      (1.23f, 1.80f),
-      (2.90f, 2.70f),
-      (3.04f, 3.0f),
-      (4.50f, 4.20f),
-      (5.60f, 5.60f),
-      (-1.30f, 6.50f),
-      (-5.05f, 0.50f)
-    ).toDF("floats", "more_floats")
+    Seq[(java.lang.Double, java.lang.Double)](
+      (Double.PositiveInfinity, Double.PositiveInfinity),
+      (Double.PositiveInfinity, Double.NegativeInfinity),
+      (Double.PositiveInfinity, 0.8435376941d),
+      (Double.PositiveInfinity, 23.1927672582d),
+      (Double.PositiveInfinity, 2309.4430349398d),
+      (Double.PositiveInfinity, Double.NaN),
+      (Double.PositiveInfinity, -Double.NaN),
+      (Double.PositiveInfinity, null),
+      (Double.PositiveInfinity, -0.7078783860d),
+      (Double.PositiveInfinity, -70.9667587507d),
+      (Double.PositiveInfinity, -838600.5867225748d),
+
+      (Double.NegativeInfinity, Double.PositiveInfinity),
+      (Double.NegativeInfinity, Double.NegativeInfinity),
+      (Double.NegativeInfinity, 0.8435376941d),
+      (Double.NegativeInfinity, 23.1927672582d),
+      (Double.NegativeInfinity, 2309.4430349398d),
+      (Double.NegativeInfinity, Double.NaN),
+      (Double.NegativeInfinity, -Double.NaN),
+      (Double.NegativeInfinity, null),
+      (Double.NegativeInfinity, -0.7078783860d),
+      (Double.NegativeInfinity, -70.9667587507d),
+      (Double.NegativeInfinity, -838600.5867225748d),
+
+      (30.0922503207d, Double.PositiveInfinity),
+      (0.3547166487d, Double.NegativeInfinity),
+      (430.0986947541d, 0.8435376941d),
+      (40.2292464632d, 23.1927672582d),
+      (0.0684630071d, 2309.4430349398d),
+      (24310.3764726531d, Double.NaN),
+      (0.0917656668d, -Double.NaN),
+      (50.6053004384d, null),
+      (7880.7542578934d, -0.7078783860d),
+      (20.5882386034d, -70.9667587507d),
+      (0.6467140578d, -838600.5867225748d),
+
+      (Double.NaN, Double.PositiveInfinity),
+      (Double.NaN, Double.NegativeInfinity),
+      (Double.NaN, 0.8435376941d),
+      (Double.NaN, 23.1927672582d),
+      (Double.NaN, 2309.4430349398d),
+      (Double.NaN, Double.NaN),
+      (Double.NaN, -Double.NaN),
+      (Double.NaN, null),
+      (Double.NaN, -0.7078783860d),
+      (Double.NaN, -70.9667587507d),
+      (Double.NaN, -838600.5867225748d),
+
+      (-Double.NaN, Double.PositiveInfinity),
+      (-Double.NaN, Double.NegativeInfinity),
+      (-Double.NaN, 0.8435376941d),
+      (-Double.NaN, 23.1927672582d),
+      (-Double.NaN, 2309.4430349398d),
+      (-Double.NaN, Double.NaN),
+      (-Double.NaN, -Double.NaN),
+      (-Double.NaN, null),
+      (-Double.NaN, -0.7078783860d),
+      (-Double.NaN, -70.9667587507d),
+      (-Double.NaN, -838600.5867225748d),
+
+      (null, Double.PositiveInfinity),
+      (null, Double.NegativeInfinity),
+      (null, 0.8435376941d),
+      (null, 23.1927672582d),
+      (null, 2309.4430349398d),
+      (null, Double.NaN),
+      (null, -Double.NaN),
+      (null, null),
+      (null, -0.7078783860d),
+      (null, -70.9667587507d),
+      (null, -838600.5867225748d),
+
+      (-30.0922503207d, Double.PositiveInfinity),
+      (-0.3547166487d, Double.NegativeInfinity),
+      (-430.0986947541d, 0.8435376941d),
+      (-40.2292464632d, 23.1927672582d),
+      (-0.0684630071d, 2309.4430349398d),
+      (-24310.3764726531d, Double.NaN),
+      (-0.0917656668d, -Double.NaN),
+      (-50.6053004384d, null),
+      (-7880.7542578934d, -0.7078783860d),
+      (-20.5882386034d, -70.9667587507d),
+      (-0.6467140578d, -838600.5867225748d),
+    ).toDF("doubles", "more_doubles")
   }
 
- def floatDf(session: SparkSession): DataFrame = {
+  def mixedFloatDf(session: SparkSession): DataFrame = {
     import session.sqlContext.implicits._
     Seq[(java.lang.Float, java.lang.Float)](
-      (100.320f, 1.32f),
-      (200.650f, 2.09f),
-      (300.034f, 3.120f),
-      (400.0f, 4.04f),
-      (500.0f, 5.50f),
-      (-100.50f, 6.0f),
-      (-500.60f, 0.0f)
-    ).toDF("floats", "more_floats")
-  }
+      (Float.PositiveInfinity, Float.PositiveInfinity),
+      (Float.PositiveInfinity, Float.NegativeInfinity),
+      (Float.PositiveInfinity, 0.8435376941f),
+      (Float.PositiveInfinity, 23.1927672582f),
+      (Float.PositiveInfinity, 2309.4430349398f),
+      (Float.PositiveInfinity, Float.NaN),
+      (Float.PositiveInfinity, -Float.NaN),
+      (Float.PositiveInfinity, null),
+      (Float.PositiveInfinity, -0.7078783860f),
+      (Float.PositiveInfinity, -70.9667587507f),
+      (Float.PositiveInfinity, -838600.5867225748f),
 
-  def nonZeroFloatDf(session: SparkSession): DataFrame = {
-    import session.sqlContext.implicits._
-    Seq(
-      (100.20f, 1.0f),
-      (200.0f, 2.04f),
-      (300.430f, 3.40f),
-      (400.02f, 4.0f),
-      (500.09f, 5.03f),
-      (-100.2f, 6.102f),
-      (-500.3f, 50.5f)
+      (Float.NegativeInfinity, Float.PositiveInfinity),
+      (Float.NegativeInfinity, Float.NegativeInfinity),
+      (Float.NegativeInfinity, 0.8435376941f),
+      (Float.NegativeInfinity, 23.1927672582f),
+      (Float.NegativeInfinity, 2309.4430349398f),
+      (Float.NegativeInfinity, Float.NaN),
+      (Float.NegativeInfinity, -Float.NaN),
+      (Float.NegativeInfinity, null),
+      (Float.NegativeInfinity, -0.7078783860f),
+      (Float.NegativeInfinity, -70.9667587507f),
+      (Float.NegativeInfinity, -838600.5867225748f),
+
+      (30.0922503207f, Float.PositiveInfinity),
+      (0.3547166487f, Float.NegativeInfinity),
+      (430.0986947541f, 0.8435376941f),
+      (40.2292464632f, 23.1927672582f),
+      (0.0684630071f, 2309.4430349398f),
+      (24310.3764726531f, Float.NaN),
+      (0.0917656668f, -Float.NaN),
+      (50.6053004384f, null),
+      (7880.7542578934f, -0.7078783860f),
+      (20.5882386034f, -70.9667587507f),
+      (0.6467140578f, -838600.5867225748f),
+
+      (Float.NaN, Float.PositiveInfinity),
+      (Float.NaN, Float.NegativeInfinity),
+      (Float.NaN, 0.8435376941f),
+      (Float.NaN, 23.1927672582f),
+      (Float.NaN, 2309.4430349398f),
+      (Float.NaN, Float.NaN),
+      (Float.NaN, -Float.NaN),
+      (Float.NaN, null),
+      (Float.NaN, -0.7078783860f),
+      (Float.NaN, -70.9667587507f),
+      (Float.NaN, -838600.5867225748f),
+
+      (-Float.NaN, Float.PositiveInfinity),
+      (-Float.NaN, Float.NegativeInfinity),
+      (-Float.NaN, 0.8435376941f),
+      (-Float.NaN, 23.1927672582f),
+      (-Float.NaN, 2309.4430349398f),
+      (-Float.NaN, Float.NaN),
+      (-Float.NaN, -Float.NaN),
+      (-Float.NaN, null),
+      (-Float.NaN, -0.7078783860f),
+      (-Float.NaN, -70.9667587507f),
+      (-Float.NaN, -838600.5867225748f),
+
+      (null, Float.PositiveInfinity),
+      (null, Float.NegativeInfinity),
+      (null, 0.8435376941f),
+      (null, 23.1927672582f),
+      (null, 2309.4430349398f),
+      (null, Float.NaN),
+      (null, -Float.NaN),
+      (null, null),
+      (null, -0.7078783860f),
+      (null, -70.9667587507f),
+      (null, -838600.5867225748f),
+
+      (-30.0922503207f, Float.PositiveInfinity),
+      (-0.3547166487f, Float.NegativeInfinity),
+      (-430.0986947541f, 0.8435376941f),
+      (-40.2292464632f, 23.1927672582f),
+      (-0.0684630071f, 2309.4430349398f),
+      (-24310.3764726531f, Float.NaN),
+      (-0.0917656668f, -Float.NaN),
+      (-50.6053004384f, null),
+      (-7880.7542578934f, -0.7078783860f),
+      (-20.5882386034f, -70.9667587507f),
+      (-0.6467140578f, -838600.5867225748f),
     ).toDF("floats", "more_floats")
   }
 
@@ -1037,7 +1176,6 @@ trait SparkQueryCompareTestSuite extends FunSuite with Arm {
       (Double.NaN, 3.2d),
       (null, null)
     ).toDF("doubles", "more_doubles")
-
   }
 
   def floatWithNansDf(session: SparkSession): DataFrame = {
@@ -1059,21 +1197,6 @@ trait SparkQueryCompareTestSuite extends FunSuite with Arm {
       (Float.PositiveInfinity, 1.2f),
       (Float.NaN, 3.2f),
       (null, null)
-    ).toDF("floats", "more_floats")
-
-  }
-
-
-  def floatWithInfinityDf(session: SparkSession): DataFrame = {
-    import session.sqlContext.implicits._
-    Seq[(java.lang.Float, java.lang.Float)](
-      (100.50f, 1.0f),
-      (200.80f, Float.NegativeInfinity),
-      (300.30f, 3.0f),
-      (Float.PositiveInfinity, 4.0f),
-      (500.0f, Float.NegativeInfinity),
-      (Float.PositiveInfinity, 6.0f),
-      (-500.0f, 50.5f)
     ).toDF("floats", "more_floats")
   }
 
