@@ -18,6 +18,8 @@ if [ "$SPARK_VER"x == x ];then
     SPARK_VER="3.0.1-SNAPSHOT"
 fi
 
+SCALA_BINARY_VER=${SCALA_BINARY_VER:-2.12}
+
 #default maven server gpuwa
 if [ "$SERVER_URL"x == x ]; then
     SERVER_URL="https://gpuwa.nvidia.com/artifactory/sw-spark-maven"
@@ -34,16 +36,16 @@ rm -rf $ARTF_ROOT && mkdir -p $ARTF_ROOT
 $MVN_GET_CMD \
     -DgroupId=ai.rapids -DartifactId=cudf -Dversion=$CUDF_VER -Dclassifier=$CUDA_CLASSIFIER
 $MVN_GET_CMD \
-    -DgroupId=ai.rapids -DartifactId=rapids-4-spark -Dversion=$PROJECT_VER
+    -DgroupId=ai.rapids -DartifactId=rapids-4-spark_$SCALA_BINARY_VER -Dversion=$PROJECT_VER
 $MVN_GET_CMD \
-    -DgroupId=ai.rapids -DartifactId=rapids-4-spark-tests -Dversion=$PROJECT_VER
+    -DgroupId=ai.rapids -DartifactId=rapids-4-spark-tests_$SCALA_BINARY_VER -Dversion=$PROJECT_VER
 if [ "$CUDA_CLASSIFIER"x == x ];then
     CUDF_JAR="$ARTF_ROOT/cudf-$CUDF_VER.jar"
 else
     CUDF_JAR="$ARTF_ROOT/cudf-$CUDF_VER-$CUDA_CLASSIFIER.jar"
 fi
-RAPIDS_PLUGIN_JAR="$ARTF_ROOT/rapids-4-spark-$PROJECT_VER.jar"
-RAPIDS_TEST_JAR="$ARTF_ROOT/rapids-4-spark-tests-$PROJECT_VER.jar"
+RAPIDS_PLUGIN_JAR="$ARTF_ROOT/rapids-4-spark_${SCALA_BINARY_VER}-$PROJECT_VER.jar"
+RAPIDS_TEST_JAR="$ARTF_ROOT/rapids-4-spark-tests_${SCALA_BINARY_VER}-$PROJECT_VER.jar"
 
 $MVN_GET_CMD \
     -DgroupId=org.apache -DartifactId=spark -Dversion=$SPARK_VER -Dclassifier=bin-hadoop3 -Dpackaging=tar.gz

@@ -18,7 +18,7 @@ To enable this GPU acceleration you will need:
   * Set the config `spark.plugins` to `ai.rapids.spark.SQLPlugin`.
 
 ```
-> spark-shell --jars 'rapids-4-spark-0.1-SNAPSHOT.jar,cudf-0.14-SNAPSHOT-cuda10.jar' --conf spark.plugins=ai.rapids.spark.SQLPlugin
+> spark-shell --jars 'rapids-4-spark_2.12-0.1-SNAPSHOT.jar,cudf-0.14-SNAPSHOT-cuda10.jar' --conf spark.plugins=ai.rapids.spark.SQLPlugin
 ```
 
 Note if you are using the KryoSerializer with Spark (`--conf spark.serializer=org.apache.spark.serializer.KryoSerializer`) you will have to register the GpuKryoRegistrator class: `--conf spark.kryo.registrator=ai.rapids.spark.GpuKryoRegistrator`.
@@ -91,7 +91,7 @@ To enable it, add the following config to your Spark configurations:
 
 ## Downloading
 
-You can get the [rapids-4-spark](https://gpuwa.nvidia.com/artifactory/sw-spark-maven-local/ai/rapids/rapids-4-spark/) and [cudf](http://gpuwa.nvidia.com/artifactory/sw-spark-maven-local/ai/rapids/cudf/) jars in artifactory.
+You can get the [rapids-4-spark](https://gpuwa.nvidia.com/artifactory/sw-spark-maven-local/ai/rapids/rapids-4-spark_2.12/) and [cudf](http://gpuwa.nvidia.com/artifactory/sw-spark-maven-local/ai/rapids/cudf/) jars in artifactory.
 
 ## Monitoring
 
@@ -131,7 +131,7 @@ The other is based off of TPCH. You can use the TPCH `dbgen` tool to generate da
 in the ai.rapids.sparkexamples.tpch package. dbgen has various options, one way to generate the data is like
 `dbgen -b dists.dss -s 10`.
 
-You can include the test jar (`rapids-plugin-4-spark/tests/target/rapids-4-spark-tests-0.9-SNAPSHOT.jar`) with the
+You can include the test jar (`rapids-plugin-4-spark/tests/target/rapids-4-spark_2.12-tests-0.9-SNAPSHOT.jar`) with the
 Spark --jars option to get the Tpch tests. To setup for the queries you can run `TpchLikeSpark.setupAllCSV`
 for CSV formatted data or `TpchLikeSpark.setupAllParquet` for parquet formatted data.  Both of those take
  the spark session and a path to the dbgen generated data.  After that each query has its own object.
@@ -171,7 +171,7 @@ to tell the tests where they are.
 Once you have that ready you can launch a `spark-shell` and add in the test jar, scala-test and scalactic.  You can find scala-test and scalactic under `~/.m2/repository`.
 
 ```
-spark-shell --jars ./rapids-4-spark-0.1-SNAPSHOT-tests.jar,scalatest_2.12-3.0.5.jar,scalactic_2.12-3.0.5.jar
+spark-shell --jars ./rapids-4-spark_2.12-0.1-SNAPSHOT-tests.jar,scalatest_2.12-3.0.5.jar,scalactic_2.12-3.0.5.jar
 ```
 
 Once in the shell you can run scala tests using the ScalaTest shell http://www.scalatest.org/user_guide/using_the_scalatest_shell
