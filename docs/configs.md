@@ -5,7 +5,7 @@ The following is the list of options that `rapids-plugin-4-spark` supports.
 On startup use: `--conf [conf key]=[conf value]`. For example:
 
 ```
-${SPARK_HOME}/bin/spark --jars 'rapids-4-spark-0.1-SNAPSHOT.jar,cudf-0.14-SNAPSHOT-cuda10.jar' \
+${SPARK_HOME}/bin/spark --jars 'rapids-4-spark_2.12-0.1-SNAPSHOT.jar,cudf-0.14-SNAPSHOT-cuda10.jar' \
 --conf spark.plugins=ai.rapids.spark.SQLPlugin \
 --conf spark.rapids.sql.incompatibleOps.enabled=true
 ```
@@ -84,6 +84,7 @@ spark.rapids.sql.expression.Concat|String Concatenate NO separator|true|None|
 spark.rapids.sql.expression.Contains|Contains|true|None|
 spark.rapids.sql.expression.Cos|cosine|false|This is not 100% compatible with the Spark version because floating point results in some cases may differ with the JVM version by a small amount|
 spark.rapids.sql.expression.Cosh|hyperbolic cosine|false|This is not 100% compatible with the Spark version because floating point results in some cases may differ with the JVM version by a small amount|
+spark.rapids.sql.expression.Cot|Returns the cotangent|false|This is not 100% compatible with the Spark version because floating point results in some cases may differ with the JVM version by a small amount|
 spark.rapids.sql.expression.DateDiff|datediff|true|None|
 spark.rapids.sql.expression.DayOfMonth|get the day of the month from a date or timestamp|true|None|
 spark.rapids.sql.expression.Divide|division|true|None|
@@ -125,6 +126,7 @@ spark.rapids.sql.expression.Not|boolean not operator|true|None|
 spark.rapids.sql.expression.Or|logical or|true|None|
 spark.rapids.sql.expression.Pow|lhs ^ rhs|false|This is not 100% compatible with the Spark version because floating point results in some cases may differ with the JVM version by a small amount|
 spark.rapids.sql.expression.Rand|Generate a random column with i.i.d. uniformly distributed values in [0, 1)|true|None|
+spark.rapids.sql.expression.RegExpReplace|RegExpReplace|true|None|
 spark.rapids.sql.expression.Remainder|remainder or modulo|true|None|
 spark.rapids.sql.expression.Rint|Rounds up a double value to the nearest double equal to an integer|true|None|
 spark.rapids.sql.expression.ShiftLeft|Bitwise shift left (<<)|true|None|
@@ -170,6 +172,7 @@ spark.rapids.sql.exec.ProjectExec|The backend for most select, withColumn and dr
 spark.rapids.sql.exec.SortExec|The backend for the sort operator|true|None|
 spark.rapids.sql.exec.UnionExec|The backend for the union operator|true|None|
 spark.rapids.sql.exec.HashAggregateExec|The backend for hash based aggregations|true|None|
+spark.rapids.sql.exec.SortAggregateExec|The backend for sort based aggregations|true|None|
 spark.rapids.sql.exec.DataWritingCommandExec|Writing data|true|None|
 spark.rapids.sql.exec.BatchScanExec|The backend for most file input|true|None|
 spark.rapids.sql.exec.BroadcastExchangeExec|The backend for broadcast exchange of data|true|None|
