@@ -45,6 +45,19 @@ class GpuExpandExecMeta(
   override val childExprs: Seq[ExprMeta[_]] = gpuProjections.flatten ++ outputAttributes
 
   /**
+   * Called to verify that this plan will work on the GPU. Generic checks will have already been
+   * done. In general this method should only tag this operator as bad.  If it needs to tag
+   * one of its children please take special care to update the comment inside [[tagSelfForGpu()]]
+   * so we don't end up with something that could be cyclical.
+   */
+  override def tagPlanForGpu(): Unit = {
+    val dataTypes = expand.projections.flatMap(_.map(_.dataType)).distinct
+    if (dataTypes.exists(GpuBatchUtils.isVariableWidth)) {
+      willNotWorkOnGpu("GpuExpandExec does not support variable-width types")
+    }
+  }
+
+  /**
    * Convert what this wraps to a GPU enabled version.
    */
   override def convertToGpu(): GpuExec = {
