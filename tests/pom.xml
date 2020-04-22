@@ -25,7 +25,7 @@
         <version>0.1-SNAPSHOT</version>
     </parent>
     <groupId>ai.rapids</groupId>
-    <artifactId>rapids-4-spark-tests</artifactId>
+    <artifactId>rapids-4-spark-tests_2.12</artifactId>
     <version>0.1-SNAPSHOT</version>
 
     <dependencies>
@@ -50,8 +50,8 @@
         </dependency>
         <dependency>
             <groupId>ai.rapids</groupId>
-            <artifactId>rapids-4-spark</artifactId>
-            <version>0.1-SNAPSHOT</version>
+            <artifactId>rapids-4-spark_${scala.binary.version}</artifactId>
+            <version>${project.version}</version>
             <scope>test</scope>
         </dependency>
     </dependencies>
@@ -62,8 +62,8 @@
         <dependencies>
           <dependency>
               <groupId>ai.rapids</groupId>
-              <artifactId>rapids-4-spark-shuffle</artifactId>
-              <version>0.1-SNAPSHOT</version>
+              <artifactId>rapids-4-spark-shuffle_${scala.binary.version}</artifactId>
+              <version>${project.version}</version>
               <scope>test</scope>
           </dependency>
         </dependencies>
