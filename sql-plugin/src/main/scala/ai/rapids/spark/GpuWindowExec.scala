@@ -227,7 +227,9 @@ object GpuWindowExec {
 
     // FIXME: Currently, only negative or 0 values are supported.
     var lower = getBoundaryValue(windowSpec.lower)
-    assert(lower <= 0, "Lower-bounds ahead of current row is not supported.")
+    if(lower > 0) {
+      throw new IllegalStateException(s"Lower-bounds ahead of current row is not supported. Found $lower")
+    }
 
     // Now, translate the lower bound value to CUDF semantics:
     //  1. CUDF requires lower bound value to include the current row.
@@ -238,7 +240,9 @@ object GpuWindowExec {
     lower = Math.abs(lower-1)
 
     val upper = getBoundaryValue(windowSpec.upper)
-    assert(upper >= 0, "Upper-bounds behind of current row is not supported.")
+    if (upper < 0) {
+      throw new IllegalStateException(s"Upper-bounds behind of current row is not supported. Found $upper")
+    }
 
     val windowOption = WindowOptions.builder().minPeriods(1)
       .window(lower, upper).build()
@@ -260,7 +264,9 @@ object GpuWindowExec {
 
     // FIXME: Currently, only negative or 0 values are supported.
     var lower = getBoundaryValue(windowSpec.lower)
-    assert(lower <= 0, "Lower-bounds ahead of current row is not supported.")
+    if (lower > 0) {
+      throw new IllegalStateException(s"Lower-bounds ahead of current row is not supported. Found: $lower")
+    }
 
     // Now, translate the lower bound value to CUDF semantics:
     // Spark's lower_bound (preceding CURRENT ROW) as a negative offset. CUDF requires a positive offset.
@@ -268,7 +274,9 @@ object GpuWindowExec {
     lower = if (lower == Int.MinValue) Int.MaxValue else Math.abs(lower)
 
     val upper = getBoundaryValue(windowSpec.upper)
-    assert(upper >= 0, "Upper-bounds behind of current row is not supported.")
+    if(upper < 0) {
+      throw new IllegalStateException(s"Upper-bounds behind current row is not supported. Found: $upper")
+    }
 
     val windowOption = WindowOptions.builder().minPeriods(1)
       .window(lower,upper).timestampColumnIndex(timeColumnIndex).build()
