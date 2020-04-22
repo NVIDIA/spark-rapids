@@ -43,7 +43,6 @@ object GpuDeviceManager extends Logging {
   }
 
   private val threadGpuInitialized = new ThreadLocal[Boolean]()
-  @volatile private var memoryListenerInitialized: Boolean = false
   @volatile private var singletonMemoryInitialized: Boolean = false
   @volatile private var deviceId: Option[Int] = None
 

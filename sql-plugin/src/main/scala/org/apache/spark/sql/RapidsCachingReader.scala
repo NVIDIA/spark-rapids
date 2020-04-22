@@ -18,14 +18,14 @@ package org.apache.spark.sql
 
 import ai.rapids.cudf.{NvtxColor, NvtxRange}
 import ai.rapids.spark.shuffle.{RapidsShuffleIterator, RapidsShuffleTransport}
-import ai.rapids.spark.{GpuResourceManager, GpuSemaphore, RapidsConf, ShuffleBufferCatalog, ShuffleBufferId}
+import ai.rapids.spark.{GpuColumnVector, GpuSemaphore, RapidsConf, ShuffleBufferCatalog, ShuffleBufferId}
+
 import org.apache.spark.internal.Logging
-import org.apache.spark.shuffle.{BaseShuffleHandle, BlockStoreShuffleReader, ShuffleReadMetricsReporter, ShuffleReader}
+import org.apache.spark.shuffle.{ShuffleReader, ShuffleReadMetricsReporter}
 import org.apache.spark.sql.vectorized.ColumnarBatch
 import org.apache.spark.storage.{BlockId, BlockManagerId, ShuffleBlockBatchId, ShuffleBlockId}
 import org.apache.spark.util.CompletionIterator
 import org.apache.spark.{InterruptibleIterator, TaskContext}
-
 import scala.collection.mutable.ArrayBuffer
 
 trait ShuffleMetricsUpdater {
@@ -131,7 +131,7 @@ class RapidsCachingReader[K, C](
       try {
         val cachedIt = cachedBatches.iterator.map(cb => {
           GpuSemaphore.acquireIfNecessary(context)
-          val cachedBytesRead = GpuResourceManager.deviceMemoryUsed(cb)
+          val cachedBytesRead = GpuColumnVector.getTotalDeviceMemoryUsed(cb)
           metrics.incLocalBytesRead(cachedBytesRead)
           metrics.incRecordsRead(cb.numRows())
           (0, cb)
