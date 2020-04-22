@@ -382,6 +382,12 @@ object RapidsConf {
     .stringConf
     .createWithDefault("all")
 
+  val PARTIAL_MERGE_DISTINCT_ENABLED = conf("spark.rapids.sql.partialMerge.distinct.enabled")
+    .doc("Enables aggregates that are in PartialMerge mode to run on the GPU if true")
+    .internal()
+    .booleanConf
+    .createWithDefault(true)
+
   // USER FACING SHUFFLE CONFIGS
   val SHUFFLE_TRANSPORT_ENABLE = conf("spark.rapids.shuffle.transport.enabled")
     .doc("When set to true, enable the Rapids Shuffle Transport for accelerated shuffle.")
@@ -607,6 +613,8 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
   lazy val orcDebugDumpPrefix: String = get(ORC_DEBUG_DUMP_PREFIX)
 
   lazy val hashAggReplaceMode: String = get(HASH_AGG_REPLACE_MODE)
+
+  lazy val partialMergeDistinctEnabled: Boolean = get(PARTIAL_MERGE_DISTINCT_ENABLED)
 
   lazy val enableReplaceSortMergeJoin: Boolean = get(ENABLE_REPLACE_SORTMERGEJOIN)
 
