@@ -96,7 +96,7 @@ class ArithmeticOperatorsSuite extends SparkQueryCompareTestSuite {
     frame => frame.select(exp(col("doubles")), exp(col("more_doubles")))
   }
 
-  INCOMPAT_testSparkResultsAreEqual("Test exp floats", smallFloatDf, 0.00001) {
+  INCOMPAT_testSparkResultsAreEqual("Test exp floats", mixedFloatDf, 0.00001) {
     frame => frame.select(exp(col("floats")), exp(col("more_floats")))
   }
 
@@ -104,7 +104,7 @@ class ArithmeticOperatorsSuite extends SparkQueryCompareTestSuite {
     frame => frame.select(expm1(col("doubles")), expm1(col("more_doubles")))
   }
 
-  INCOMPAT_testSparkResultsAreEqual("Test expm1 floats", smallFloatDf, 0.00001) {
+  INCOMPAT_testSparkResultsAreEqual("Test expm1 floats", mixedFloatDf, 0.00001) {
     frame => frame.select(expm1(col("floats")), expm1(col("more_floats")))
   }
 
@@ -112,7 +112,7 @@ class ArithmeticOperatorsSuite extends SparkQueryCompareTestSuite {
     frame => frame.select(sqrt(col("doubles")), sqrt(col("more_doubles")))
   }
 
-  testSparkResultsAreEqual("Test sqrt floats", floatDf) {
+  testSparkResultsAreEqual("Test sqrt floats", mixedFloatDf) {
     frame => frame.select(sqrt(col("floats")), sqrt(col("more_floats")))
   }
 
