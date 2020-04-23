@@ -25,7 +25,9 @@
         <version>0.1-SNAPSHOT</version>
     </parent>
     <groupId>ai.rapids</groupId>
-    <artifactId>rapids-4-spark_2.12</artifactId>
+    <artifactId>rapids-4-spark-sql_2.12</artifactId>
+    <name>RAPIDS for Apache Spark SQL Plugin</name>
+    <description>The RAPIDS SQL plugin for Apache Spark</description>
     <version>0.1-SNAPSHOT</version>
 
     <dependencies>
@@ -44,10 +46,6 @@
             <artifactId>scala-library</artifactId>
         </dependency>
         <dependency>
-            <groupId>commons-logging</groupId>
-            <artifactId>commons-logging</artifactId>
-        </dependency>
-        <dependency>
             <groupId>org.apache.spark</groupId>
             <artifactId>spark-sql_${scala.binary.version}</artifactId>
         </dependency>
@@ -61,15 +59,33 @@
           <groupId>org.apache.orc</groupId>
           <artifactId>orc-core</artifactId>
           <classifier>${orc.classifier}</classifier>
+          <exclusions>
+            <exclusion>
+              <groupId>org.slf4j</groupId>
+              <artifactId>slf4j-api</artifactId>
+            </exclusion>
+          </exclusions>
         </dependency>
         <dependency>
           <groupId>org.apache.orc</groupId>
           <artifactId>orc-mapreduce</artifactId>
           <classifier>${orc.classifier}</classifier>
+          <exclusions>
+            <exclusion>
+              <groupId>com.google.code.findbugs</groupId>
+              <artifactId>jsr305</artifactId>
+            </exclusion>
+          </exclusions>
         </dependency>
         <dependency>
           <groupId>org.apache.hive</groupId>
           <artifactId>hive-storage-api</artifactId>
+          <exclusions>
+            <exclusion>
+              <groupId>org.slf4j</groupId>
+              <artifactId>slf4j-api</artifactId>
+            </exclusion>
+          </exclusions>
         </dependency>
         <dependency>
           <groupId>com.google.protobuf</groupId>
@@ -131,54 +147,6 @@
                       </copy>
                     </target>
                   </configuration>
-                </execution>
-              </executions>
-            </plugin>
-            <plugin>
-              <groupId>org.apache.maven.plugins</groupId>
-              <artifactId>maven-shade-plugin</artifactId>
-              <configuration>
-                <shadedArtifactAttached>false</shadedArtifactAttached>
-                <createDependencyReducedPom>true</createDependencyReducedPom>
-                <artifactSet>
-                  <includes>
-                    <include>com.google.flatbuffers:flatbuffers-java</include>
-                    <include>org.apache.orc:orc-core</include>
-                    <include>org.apache.orc:orc-mapreduce</include>
-                    <include>org.apache.orc:orc-shims</include>
-                    <include>org.apache.hive:hive-storage-api</include>
-                    <include>com.google.protobuf:protobuf-java</include>
-                  </includes>
-                </artifactSet>
-                <relocations>
-                  <relocation>
-                    <pattern>com.google.flatbuffers</pattern>
-                    <shadedPattern>${rapids.shade.package}.flatbuffers</shadedPattern>
-                  </relocation>
-                  <relocation>
-                    <pattern>org.apache.orc</pattern>
-                    <shadedPattern>${rapids.shade.package}.orc</shadedPattern>
-                  </relocation>
-                  <relocation>
-                    <pattern>org.apache.hadoop.hive</pattern>
-                    <shadedPattern>${rapids.shade.package}.hadoop.hive</shadedPattern>
-                  </relocation>
-                  <relocation>
-                    <pattern>org.apache.hive</pattern>
-                    <shadedPattern>${rapids.shade.package}.hive</shadedPattern>
-                  </relocation>
-                  <relocation>
-                    <pattern>com.google.protobuf</pattern>
-                    <shadedPattern>${rapids.shade.package}.protobuf25</shadedPattern>
-                  </relocation>
-                </relocations>
-              </configuration>
-              <executions>
-                <execution>
-                  <phase>package</phase>
-                  <goals>
-                    <goal>shade</goal>
-                  </goals>
                 </execution>
               </executions>
             </plugin>
