@@ -25,8 +25,8 @@ import org.scalatest.FunSuite
 
 import org.apache.spark.sql.{DataFrame, Row, SparkSession}
 import org.apache.spark.SparkConf
+import org.apache.spark.internal.Logging
 import org.apache.spark.sql.types._
-
 
 object TestResourceFinder {
   private [this] var resourcePrefix: String = _
@@ -44,52 +44,65 @@ object TestResourceFinder {
   }
 }
 
+object SparkSessionHolder extends Logging {
+  val spark = {
+    // Timezone is fixed to UTC to allow timestamps to work by default
+    TimeZone.setDefault(TimeZone.getTimeZone("UTC"))
+    // Add Locale setting
+    Locale.setDefault(Locale.US)
+    SparkSession.builder()
+      .master("local[1]")
+      .config("spark.rapids.sql.enabled", "false")
+      .config("spark.rapids.sql.test.enabled", "false")
+      .config("spark.plugins", "ai.rapids.spark.SQLPlugin")
+      .appName("rapids spark plugin integration tests (scala)")
+      .getOrCreate()
+  }
+
+  private[this] val origConf = spark.conf.getAll
+  private[this] val origConfKeys = origConf.keys.toSet
+
+  private def setAllConfs(confs: Array[(String, String)]): Unit = confs.foreach {
+    case (key, value) if spark.conf.get(key, null) != value =>
+      spark.conf.set(key, value)
+    case _ => // No need to modify it
+  }
+
+  def resetSparkSessionConf(): Unit = {
+    setAllConfs(origConf.toArray)
+    val currentKeys = spark.conf.getAll.keys.toSet
+    val toRemove = currentKeys -- origConfKeys
+    toRemove.foreach(spark.conf.unset)
+    logDebug(s"RESET CONF TO: ${spark.conf.getAll}")
+  }
+
+  def withSparkSession[U](conf: SparkConf, f: SparkSession => U): U = {
+    resetSparkSessionConf
+    logDebug(s"SETTING  CONF: ${conf.getAll.toMap}")
+    setAllConfs(conf.getAll)
+    logDebug(s"RUN WITH CONF: ${spark.conf.getAll}\n")
+    f(spark)
+  }
+}
+
 /**
  * Set of tests that compare the output using the CPU version of spark vs our GPU version.
  */
 trait SparkQueryCompareTestSuite extends FunSuite with Arm {
-  // Timezone is fixed to UTC to allow timestamps to work by default
-  TimeZone.setDefault(TimeZone.getTimeZone("UTC"))
-
-  // Add Locale setting
-  Locale.setDefault(Locale.US)
-
-  private def cleanupAnyExistingSession(): Unit = {
-    val session = SparkSession.getActiveSession.orElse(SparkSession.getDefaultSession)
-    if (session.isDefined) {
-      session.get.stop()
-      SparkSession.clearActiveSession()
-      SparkSession.clearDefaultSession()
-    }
-  }
-
-  def withSparkSession[U](appName: String, conf: SparkConf, f: SparkSession => U): U = {
-    cleanupAnyExistingSession()
-    val session = SparkSession.builder()
-      .master("local[1]")
-      .appName(appName)
-      .config(conf)
-      .getOrCreate()
-
-    try {
-      f(session)
-    } finally {
-      session.stop()
-      SparkSession.clearActiveSession()
-      SparkSession.clearDefaultSession()
-    }
-  }
+  import SparkSessionHolder.withSparkSession
 
   def withGpuSparkSession[U](f: SparkSession => U, conf: SparkConf = new SparkConf()): U = {
-    var c = conf.clone()
-      .set("spark.plugins", "ai.rapids.spark.SQLPlugin")
+    val c = conf.clone()
+      .set(RapidsConf.SQL_ENABLED.key, "true")
       .set(RapidsConf.TEST_CONF.key, "true")
       .set(RapidsConf.EXPLAIN.key, "ALL")
-    withSparkSession("gpu-sql-test", c, f)
+    withSparkSession(c, f)
   }
 
   def withCpuSparkSession[U](f: SparkSession => U, conf: SparkConf = new SparkConf()): U = {
-    withSparkSession("cpu-sql-test", conf, f)
+    val c = conf.clone()
+      .set(RapidsConf.SQL_ENABLED.key, "false") // Just to be sure
+    withSparkSession(c, f)
   }
 
   def compare(expected: Any, actual: Any, epsilon: Double = 0.0): Boolean = {

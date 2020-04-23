@@ -102,7 +102,7 @@ class WindowFunctionSuite extends SparkQueryCompareTestSuite {
 
   def testAllWindowAggregations(windowClause : String): DataFrame => DataFrame =
     (df : DataFrame) => {
-      df.createTempView("mytable")
+      df.createOrReplaceTempView("mytable")
       df.sparkSession.sql(
         s"""
            | SELECT

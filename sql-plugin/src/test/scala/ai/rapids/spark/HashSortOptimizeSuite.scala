@@ -23,16 +23,16 @@ import org.apache.spark.sql.execution.{GpuBroadcastHashJoinExec, SortExec, Spark
 
 /** Test plan modifications to add optimizing sorts after hash joins in the plan */
 class HashSortOptimizeSuite extends FunSuite {
-  private val spark = SparkSession.builder
-      .master("local[1]")
-      .config("spark.sql.extensions", classOf[SQLExecPlugin].getCanonicalName)
-      .config("spark.plugins", classOf[SQLPlugin].getCanonicalName)
-      .config(RapidsConf.ENABLE_HASH_OPTIMIZE_SORT.key, "true")
-      .config(RapidsConf.EXPLAIN.key, "ALL")
-      .getOrCreate
-  import spark.sqlContext.implicits._
+  import SparkSessionHolder.spark
 
-  private val rapidsConf = new RapidsConf(spark.sqlContext.getAllConfs)
+  // Setup the conf for the spark session
+  SparkSessionHolder.resetSparkSessionConf()
+  // Turn on the GPU
+  spark.conf.set(RapidsConf.SQL_ENABLED.key, "true")
+  // Turn on hash optimized sort
+  spark.conf.set(RapidsConf.ENABLE_HASH_OPTIMIZE_SORT.key, "true")
+
+  import spark.sqlContext.implicits._
 
   private val df1 = Seq(
     (1, 2, 3),
