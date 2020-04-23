@@ -27,15 +27,17 @@ abstract class GpuExpressionTestSuite extends SparkQueryCompareTestSuite {
    * @param expectedFun Function that produces expected results
    * @param schema Schema to use for generated data
    * @param rowCount Number of rows of random to generate
+   * @param comparisonFunc Optional function to compare results
    * @param maxFloatDiff Maximum acceptable difference between expected and actual results
    */
-  def checkEvaluateGpuUnaryExpression(inputExpr: GpuExpression,
+  def checkEvaluateGpuUnaryExpression[T, U](inputExpr: GpuExpression,
     inputType: DataType,
     outputType: DataType,
-    expectedFun: Any => Option[Any],
+    expectedFun: T => Option[U],
     schema: StructType,
     rowCount: Int = 50,
     seed: Long = 0,
+    comparisonFunc: Option[(U, U) => Boolean] = None,
     maxFloatDiff: Double = 0.00001): Unit = {
 
     // generate batch
@@ -49,15 +51,54 @@ abstract class GpuExpressionTestSuite extends SparkQueryCompareTestSuite {
             assert(result.getRowCount == rowCount)
             for (i <- 0 until result.getRowCount.toInt) {
               val inputValue = getAs(hostInput, i, inputType)
-              val actual = getAs(hostResult, i, outputType).orNull
-              val expected = inputValue.flatMap(v => expectedFun(v)).orNull
-              if (!compare(expected, actual, maxFloatDiff)) {
-                throw new IllegalStateException(s"Expected: $expected. Actual: $actual. Input value: $inputValue")
+              val actualOption: Option[U] = getAs(hostResult, i, outputType).map(_.asInstanceOf[U])
+              val expectedOption: Option[U] = inputValue.flatMap(v => expectedFun(v.asInstanceOf[T]))
+              (expectedOption, actualOption) match {
+                case (Some(expected), Some(actual)) if comparisonFunc.isDefined =>
+                  if (!comparisonFunc.get(expected, actual)) {
+                    throw new IllegalStateException(s"Expected: $expected. Actual: $actual. Input value: $inputValue")
+                  }
+                case (Some(expected), Some(actual)) =>
+                  if (!compare(expected, actual, maxFloatDiff)) {
+                    throw new IllegalStateException(s"Expected: $expected. Actual: $actual. Input value: $inputValue")
+                  }
+                case (None, None) =>
+                case _ => throw new IllegalStateException(s"Expected: $expectedOption. Actual: $actualOption. Input value: $inputValue")
               }
             }
           }
         }
       }
+    }
+  }
+
+  def compareStringifiedFloats(expected: String, actual: String): Boolean = {
+
+    // handle exact matches first
+    if (expected == actual) {
+      return true
+    }
+
+    // need to split into mantissa and exponent
+    def parse(s: String): (Double, Int) = s match {
+      case s if s == "Inf" => (Double.PositiveInfinity, 0)
+      case s if s == "-Inf" => (Double.NegativeInfinity, 0)
+      case s if s.contains('E') =>
+        val parts = s.split('E')
+        (parts.head.toDouble, parts(1).toInt)
+      case _ =>
+        (s.toDouble, 0)
+    }
+
+    val (expectedMantissa, expectedExponent) = parse(expected)
+    val (actualMantissa, actualExponent) = parse(actual)
+
+    if (expectedExponent == actualExponent) {
+      // mantissas need to be within tolerance
+      compare(expectedMantissa, actualMantissa, 0.00001)
+    } else {
+      // whole number need to be within tolerance
+      compare(expected.toDouble, actual.toDouble, 0.00001)
     }
   }
 

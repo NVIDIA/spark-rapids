@@ -32,6 +32,7 @@ spark.rapids.shuffle.transport.maxReceiveInflightBytes|Maximum aggregate amount 
 spark.rapids.shuffle.ucx.managementServerHost|The host to be used to start the management server|null
 spark.rapids.shuffle.ucx.useWakeup|When set to true, use UCX's event-based progress (epoll) in order to wake up the progress thread when needed, instead of a hot loop.|true
 spark.rapids.sql.batchSizeBytes|Set the target number of bytes for a GPU batch. Splits sizes for input data is covered by separate configs.|2147483647
+spark.rapids.sql.castFloatToString.enabled|Casting from floating point types to string on the GPU returns results that have a different precision than the default Java toString behavior.|false
 spark.rapids.sql.concurrentGpuTasks|Set the number of tasks that can execute concurrently per GPU. Tasks may temporarily block when the number of concurrent tasks in the executor exceeds this amount. Allowing too many concurrent tasks on the same GPU may lead to GPU out of memory errors.|1
 spark.rapids.sql.contains.negative.timestamps|Whether the data contains negative timestamps i.e. timestamps prior to Jan 1st 1970. When set to true operators using timestamps will not be accelerated|false
 spark.rapids.sql.enabled|Enable (true) or disable (false) sql operations on the GPU|true
