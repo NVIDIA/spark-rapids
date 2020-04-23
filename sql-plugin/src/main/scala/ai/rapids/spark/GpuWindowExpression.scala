@@ -44,13 +44,13 @@ class GpuWindowExpressionMeta(
     if (!wrapped.windowFunction.isInstanceOf[AggregateExpression]) {
       willNotWorkOnGpu("Only AggregateExpressions are supported on GPU as WindowFunctions. " +
         s"Found ${wrapped.windowFunction.prettyName}")
-    }
-
-    wrapped.windowFunction.asInstanceOf[AggregateExpression].aggregateFunction match {
-      case Count(_) | Sum(_) | Min(_) | Max(_) => // Supported.
-      case other: AggregateFunction => willNotWorkOnGpu(s"AggregateFunction ${other.prettyName} " +
-        s"is not supported in windowing.")
-      case _ => willNotWorkOnGpu(s"Expression not supported in windowing.")
+    } else {
+      wrapped.windowFunction.asInstanceOf[AggregateExpression].aggregateFunction match {
+        case Count(_) | Sum(_) | Min(_) | Max(_) => // Supported.
+        case other: AggregateFunction => willNotWorkOnGpu(s"AggregateFunction ${other.prettyName} " +
+          s"is not supported in windowing.")
+        case _ => willNotWorkOnGpu(s"Expression not supported in windowing.")
+      }
     }
 
     val spec = wrapped.windowSpec
