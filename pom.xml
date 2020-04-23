@@ -21,10 +21,14 @@
 
     <groupId>ai.rapids</groupId>
     <artifactId>rapids-4-spark-parent</artifactId>
+    <name>RAPIDS for Apache Spark Root Project</name>
+    <description>The root project of the RAPIDS plugin for Apache Spark</description>
     <version>0.1-SNAPSHOT</version>
     <packaging>pom</packaging>
 
     <modules>
+        <module>dist</module>
+        <module>shuffle-plugin</module>
         <module>sql-plugin</module>
         <module>tests</module>
     </modules>
@@ -32,9 +36,6 @@
     <profiles>
         <profile>
             <id>alpha-features</id>
-            <modules>
-                <module>shuffle-plugin</module>
-            </modules>
             <properties>
                 <rapids.shuffle.manager.override>true</rapids.shuffle.manager.override>
             </properties>
@@ -66,21 +67,19 @@
                 <artifactId>cudf</artifactId>
                 <version>0.14-SNAPSHOT</version>
                 <classifier>${cuda.version}</classifier>
+                <scope>provided</scope>
             </dependency>
             <dependency>
                 <groupId>org.scala-lang</groupId>
                 <artifactId>scala-library</artifactId>
                 <version>${scala.version}</version>
-            </dependency>
-            <dependency>
-                <groupId>commons-logging</groupId>
-                <artifactId>commons-logging</artifactId>
-                <version>1.1.1</version>
+                <scope>provided</scope>
             </dependency>
             <dependency>
               <groupId>org.apache.spark</groupId>
               <artifactId>spark-sql_${scala.binary.version}</artifactId>
               <version>${spark.version}</version>
+              <scope>provided</scope>
             </dependency>
             <dependency>
               <groupId>org.apache.spark</groupId>
@@ -202,7 +201,7 @@
     <build>
         <pluginManagement>
             <plugins>
-		<plugin>
+                <plugin>
                   <groupId>org.apache.maven.plugins</groupId>
                   <artifactId>maven-antrun-plugin</artifactId>
                   <version>1.8</version>
