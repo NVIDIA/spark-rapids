@@ -167,18 +167,26 @@ Character differences between Unicode versions can be found at http://www.unicod
 
 ### Integration Tests
 
-We have a large number of integration tests that currently run as a part of the unit tests for the sql-plugin.
-We plan to migrate these to a stand alone set of tests that can be run against any cluster to verify that 
+There is an integration test framework based off of pytest and pyspark in the integration_tests directory.
+The tests will run as a part of the build if you have the env variable `SPARK_HOME` set.  If you have
+`SPARK_CONF_DIR` also set the tests will try to use whatever cluster you have configured.
+
+To run the tests separate from the build go to the integration_tests directory and submit `run_tests.py`
+through `spark-submit`.  Be sure to include the necessary jars for the RAPIDS plugin either with
+`spark-submit` or with the cluster when it is launched. The command line arguments to `run_tests.py` are
+the same as for [pytest](https://docs.pytest.org/en/latest/usage.html).
+
+We also have a large number of integration tests that currently run as a part of the unit tests for the sql-plugin.
+We plan to migrate these to the integration_tests package so they can be run against any cluster to verify that 
 the plugin works as expected against different distributions based off of Apache Spark.  For now you can run
-the integration tests by building the sql plugin test jar.
+these tests manually by building the sql plugin test jar.
 
 ```
 mvn package jar:test-jar
 ```
 
-After this you can launch a cluster with the plugin jars on the classpath, but not configured on. The tests will
-turn on and off the plugin launching a separate application each time, but to turn it off it assumes the default
-setting is to have the SQL plugin disabled.
+After this you can launch a cluster with the plugin jars on the classpath. The tests will
+enable and disable the plugin as they run.
 
 Now you need to copy over some test files to whatever distributed file system you are using.  The test files are
 everything under `./sql-plugin/src/test/resources/`  Be sure to note where you placed them because you will need

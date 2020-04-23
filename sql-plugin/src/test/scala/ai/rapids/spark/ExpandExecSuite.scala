@@ -80,7 +80,7 @@ class ExpandExecSuite extends SparkQueryCompareTestSuite {
 
   IGNORE_ORDER_testSparkResultsAreEqual("sql with grouping expressions", createDataFrame, repart = 2) {
     frame => {
-      frame.createTempView("t0")
+      frame.createOrReplaceTempView("t0")
       val sql =
         """SELECT key, cat1, cat2, COUNT(DISTINCT value)
       FROM t0
@@ -92,7 +92,7 @@ class ExpandExecSuite extends SparkQueryCompareTestSuite {
 
   IGNORE_ORDER_testSparkResultsAreEqual("sql with different shape grouping expressions", createDataFrame, repart = 2) {
     frame => {
-      frame.createTempView("t0")
+      frame.createOrReplaceTempView("t0")
       val sql =
         """SELECT key, cat1, cat2, COUNT(DISTINCT value)
       FROM t0

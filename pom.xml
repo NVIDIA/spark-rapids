@@ -31,6 +31,7 @@
         <module>shuffle-plugin</module>
         <module>sql-plugin</module>
         <module>tests</module>
+        <module>integration_tests</module>
     </modules>
 
     <profiles>
@@ -380,6 +381,7 @@
                         <exclude>.gitattributes</exclude>
                         <exclude>.gitignore</exclude>
                         <exclude>.git/**</exclude>
+                        <exclude>.pytest_cache/**</exclude>
                         <exclude>.github/pull_request_template.md</exclude>
                         <exclude>**/*.md</exclude>
                         <exclude>NOTICE-binary</exclude>

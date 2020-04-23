@@ -226,6 +226,7 @@ class GpuTransitionOverrides extends Rule[SparkPlan] {
         }
       case _: GpuColumnarToRowExec => () // Ignored
       case _: ExecutedCommandExec => () // Ignored
+      case _: RDDScanExec => () // Ignored
       case _: ShuffleExchangeExec => () // Ignored for now, we don't force it to the GPU if children are not on the gpu
       case other =>
         if (!plan.supportsColumnar &&
