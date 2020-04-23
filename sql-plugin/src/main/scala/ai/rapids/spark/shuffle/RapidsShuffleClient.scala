@@ -18,9 +18,12 @@ package ai.rapids.spark.shuffle
 
 import java.util.concurrent.{Executor, RejectedExecutionException}
 
+import scala.collection.mutable.ArrayBuffer
+
 import ai.rapids.cudf.{DeviceMemoryBuffer, NvtxColor, NvtxRange}
 import ai.rapids.spark._
 import ai.rapids.spark.format.{CodecType, MetadataResponse, TableMeta, TransferState}
+
 import org.apache.spark.internal.Logging
 import org.apache.spark.sql.GpuShuffleEnv
 import org.apache.spark.storage.ShuffleBlockBatchId
@@ -620,16 +623,24 @@ class RapidsShuffleClient(
 
     logInfo(s"Queueing transfer requests for ${allTables} tables from ${connection.getPeerExecutorId}")
 
-    val ptrs = (0 until allTables).map { t =>
-      val tableMeta = metaResponse.tableMetas(t)
-      PendingTransferRequest(
-        this,
-        ShuffleMetadata.copyTableMetaToHeap(tableMeta),
-        connection.assignBufferTag(tableMeta.bufferMeta().id),
-        handler)
+    val ptrs = new ArrayBuffer[PendingTransferRequest](allTables)
+    (0 until allTables).foreach { i =>
+      val tableMeta = metaResponse.tableMetas(i)
+      if (tableMeta.columnMetasLength > 0 && tableMeta.rowCount > 0) {
+        ptrs += PendingTransferRequest(
+          this,
+          ShuffleMetadata.copyTableMetaToHeap(tableMeta),
+          connection.assignBufferTag(tableMeta.bufferMeta().id),
+          handler)
+      } else {
+        // Degenerate buffer (no device data) so no more data to request
+        track(null, tableMeta)
+      }
     }
 
-    transport.queuePending(ptrs)
+    if (ptrs.nonEmpty) {
+      transport.queuePending(ptrs)
+    }
   }
 
   /**
@@ -692,12 +703,17 @@ class RapidsShuffleClient(
     * @return - the [[RapidsBufferId]] to be used to look up the buffer from catalog
     */
   private def track(buffer: DeviceMemoryBuffer, meta: TableMeta): RapidsBufferId = {
-    // add the buffer to the catalog so it is available for spill
-    val devStorage = GpuShuffleEnv.getDeviceStorage
     val catalog = GpuShuffleEnv.getReceivedCatalog
     val id: ShuffleReceivedBufferId = catalog.nextShuffleReceivedBufferId()
     logInfo(s"Adding buffer id ${id} to catalog")
-    devStorage.addBuffer(id, buffer, meta, SpillPriorities.INPUT_FROM_SHUFFLE_PRIORITY)
+    if (buffer != null) {
+      // add the buffer to the catalog so it is available for spill
+      val devStorage = GpuShuffleEnv.getDeviceStorage
+      devStorage.addBuffer(id, buffer, meta, SpillPriorities.INPUT_FROM_SHUFFLE_PRIORITY)
+    } else {
+      // no device data, just tracking metadata
+      catalog.registerNewBuffer(new DegenerateRapidsBuffer(id, meta))
+    }
     id
   }
 }

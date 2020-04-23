@@ -16,9 +16,7 @@
 
 package org.apache.spark.sql
 
-import java.io.OutputStream
-
-import ai.rapids.cudf.{JCudfSerialization, NvtxColor, NvtxRange}
+import ai.rapids.cudf.{NvtxColor, NvtxRange}
 import ai.rapids.spark._
 import ai.rapids.spark.format.TableMeta
 import ai.rapids.spark.shuffle.{RapidsShuffleRequestHandler, RapidsShuffleServer, RapidsShuffleTransport}
@@ -31,8 +29,6 @@ import org.apache.spark.shuffle.sort.SortShuffleManager
 import org.apache.spark.sql.vectorized.ColumnarBatch
 import org.apache.spark.storage._
 import org.apache.spark.{ShuffleDependency, SparkConf, SparkEnv, TaskContext}
-
-import scala.collection.mutable.ArrayBuffer
 
 class GpuShuffleHandle[K, V](
     val wrapped: ShuffleHandle,
@@ -102,30 +98,33 @@ class RapidsCachingWriter[K, V](
         recordsWritten = recordsWritten + batch.numRows()
         bytesWritten = bytesWritten + partSize
         sizes(partId) += partSize
-        // The size of the data is really only used to tell if the data should be shuffled or not
-        // a 0 indicates that we should not shuffle anything.  This is here for the special case
-        // where we have no columns, because of predicate push down, but we have a row count as
-        // metadata.  We still want to shuffle it. The 100 is an arbitrary number and can be really
-        // any non-zero number that is not too large
-        if (batch.numRows() > 0) {
-          sizes(partId) += 100
-
-          val blockId = ShuffleBlockId(handle.shuffleId, mapId, partId)
-          val buffer = if (batch.numCols() > 0) {
+        val blockId = ShuffleBlockId(handle.shuffleId, mapId, partId)
+        val bufferId = catalog.nextShuffleBufferId(blockId)
+        if (batch.numRows > 0 && batch.numCols > 0) {
+          val buffer = {
             val buff = batch.column(0).asInstanceOf[GpuColumnVectorFromBuffer].getBuffer
-            Some(buff.slice(0, buff.getLength))
-          } else {
-            None
+            buff.slice(0, buff.getLength)
           }
 
           // Add the table to the shuffle store
           shuffleStorage.addTable(
-            catalog.nextShuffleBufferId(blockId),
+            bufferId,
             GpuColumnVector.from(batch),
-            buffer.get, // TODO: deal with this
+            buffer,
             SpillPriorities.OUTPUT_FOR_SHUFFLE_INITIAL_PRIORITY)
         } else {
-          logWarning(s"Not caching 0 row batch for shuffle_id=${handle.shuffleId}, mapId $mapId, partId: $partId")
+          // no device data, tracking only metadata
+          val tableMeta = MetaUtils.buildDegenerateTableMeta(bufferId.tableId, batch)
+          catalog.registerNewBuffer(new DegenerateRapidsBuffer(bufferId, tableMeta))
+
+          // The size of the data is really only used to tell if the data should be shuffled or not
+          // a 0 indicates that we should not shuffle anything.  This is here for the special case
+          // where we have no columns, because of predicate push down, but we have a row count as
+          // metadata.  We still want to shuffle it. The 100 is an arbitrary number and can be really
+          // any non-zero number that is not too large
+          if (batch.numRows > 0) {
+            sizes(partId) += 100
+          }
         }
       }
       metrics.incBytesWritten(bytesWritten)

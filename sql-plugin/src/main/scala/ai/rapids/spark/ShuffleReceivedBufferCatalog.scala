@@ -73,6 +73,12 @@ class ShuffleReceivedBufferCatalog(
   }
 
   /**
+   * Register a new buffer with the catalog. An exception will be thrown if an
+   * existing buffer was registered with the same buffer ID.
+   */
+  def registerNewBuffer(buffer: RapidsBuffer): Unit = catalog.registerNewBuffer(buffer)
+
+  /**
    * Lookup the shuffle buffer that corresponds to the specified shuffle buffer ID and acquire it.
    * NOTE: It is the responsibility of the caller to close the buffer.
    * @param id shuffle buffer identifier
