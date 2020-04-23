@@ -372,7 +372,9 @@ trait SparkQueryCompareTestSuite extends FunSuite with Arm {
           } else if (i1 > i2) {
             return false
           } // else equal go on
-          case (i1: Float, i2: Float) => if (i1 < i2) {
+          case (i1: Float, i2: Float) => if (i1.isNaN() && !i2.isNaN()) return false
+          else if (!i1.isNaN() && i2.isNaN()) return true
+          else if (i1 < i2) {
             return true
           } else if (i1 > i2) {
             return false
@@ -382,7 +384,9 @@ trait SparkQueryCompareTestSuite extends FunSuite with Arm {
           } else if (i1.after(i2)) {
             return false
           } // else equal go on
-          case (i1: Double, i2: Double) => if (i1 < i2) {
+          case (i1: Double, i2: Double) => if (i1.isNaN() && !i2.isNaN()) return false
+          else if (!i1.isNaN() && i2.isNaN()) return true
+          else if (i1 < i2) {
             return true
           } else if (i1 > i2) {
             return false
