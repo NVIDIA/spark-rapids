@@ -21,11 +21,6 @@
 *
 */
 
-def DEPLOY_TO_MAP = [
-    'Gpuwa': '',
-    'Local': '-P deploy-to-sh04'
-]
-
 pipeline {
     agent { label 'vanilla' }
 
@@ -45,7 +40,6 @@ pipeline {
         JENKINS_ROOT  = 'jenkins'
         MVN_GPUWA_MIRROR='-s jenkins/settings.xml -P mirror-apache-to-gpuwa'
         LIBCUDF_KERNEL_CACHE_PATH='/tmp'
-        MVN_DEPLOY_TO="${DEPLOY_TO_MAP."$DEPLOY_TO"}"
     }
 
     triggers {
@@ -62,7 +56,7 @@ pipeline {
                     docker.image(IMAGE_NAME).inside("--runtime=nvidia -v ${HOME}/.m2:${HOME}/.m2:rw \
                         -v ${HOME}/.zinc:${HOME}/.zinc:rw \
                         -v /etc/passwd:/etc/passwd -v /etc/group:/etc/group") {
-                        sh "mvn -U -B clean deploy $MVN_GPUWA_MIRROR $MVN_DEPLOY_TO"
+                        sh "mvn -U -B clean deploy $MVN_GPUWA_MIRROR"
                     }
                 }
             }
