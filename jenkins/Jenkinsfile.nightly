@@ -49,7 +49,7 @@ pipeline {
             agent { label 'docker-gpu' }
             steps {
                 script {
-                    def IMAGE_NAME="xgbci/rapids-plugin-build:ubuntu16-cuda10.0"
+                    def IMAGE_NAME="xgbci/rapids-plugin-build:ubuntu16-cuda10.1"
                     sh "docker pull $IMAGE_NAME"
                     docker.image(IMAGE_NAME).inside("--runtime=nvidia -v ${HOME}/.m2:${HOME}/.m2:rw \
                         -v ${HOME}/.zinc:${HOME}/.zinc:rw \
