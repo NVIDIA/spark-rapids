@@ -46,7 +46,7 @@
         <maven.compiler.source>1.8</maven.compiler.source>
         <maven.compiler.target>1.8</maven.compiler.target>
         <spark.version>3.0.1-SNAPSHOT</spark.version>
-        <cuda.version>cuda10</cuda.version>
+        <cuda.version>cuda10-1</cuda.version>
         <scala.binary.version>2.12</scala.binary.version>
         <scala.version>2.12.8</scala.version>
         <scoverage.plugin.version>1.4.0</scoverage.plugin.version>
