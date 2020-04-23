@@ -33,6 +33,7 @@ object GpuCast {
     case (fromType, toType) if fromType == toType => true
 
     case (ByteType|ShortType|IntegerType|LongType, _: StringType) => true
+    case (FloatType|DoubleType, _: StringType) => true
 
     case (BooleanType, _: NumericType) => true
 
@@ -171,9 +172,31 @@ case class GpuCast(child: GpuExpression, dataType: DataType, timeZoneId: Option[
         withResource(FloatUtils.nanToZero(input.getBase)) { inputWithNansToZero =>
           GpuColumnVector.from(inputWithNansToZero.castTo(cudfType))
         }
+      case (FloatType|DoubleType, StringType) =>
+        castFloatingTypeToString(input)
       case _ =>
         GpuColumnVector.from(input.getBase.castTo(cudfType))
     }
   }
 
+  private def castFloatingTypeToString(input: GpuColumnVector): GpuColumnVector = {
+    withResource(input.getBase.castTo(DType.STRING)) { cudfCast =>
+
+      // replace "e+" with "E"
+      val replaceExponent = withResource(Scalar.fromString("e+")) { cudfExponent =>
+        withResource(Scalar.fromString("E")) { sparkExponent =>
+          cudfCast.stringReplace(cudfExponent, sparkExponent)
+        }
+      }
+
+      // replace "Inf" with "Infinity"
+      withResource(replaceExponent) { replaceExponent =>
+        withResource(Scalar.fromString("Inf")) { cudfInf =>
+          withResource(Scalar.fromString("Infinity")) { sparkInfinity =>
+            GpuColumnVector.from(replaceExponent.stringReplace(cudfInf, sparkInfinity))
+          }
+        }
+      }
+    }
+  }
 }

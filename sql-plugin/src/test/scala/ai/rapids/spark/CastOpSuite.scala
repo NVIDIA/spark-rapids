@@ -18,6 +18,7 @@ package ai.rapids.spark
 
 import java.util.TimeZone
 
+import org.apache.spark.SparkConf
 import org.apache.spark.sql.functions.col
 import org.apache.spark.sql.types._
 import org.apache.spark.sql.DataFrame
@@ -25,28 +26,40 @@ import org.apache.spark.sql.DataFrame
 class CastOpSuite extends GpuExpressionTestSuite {
   private val timestampDatesMsecParquet = frameFromParquet("timestamp-date-test-msec.parquet")
 
-  val castToStringExpectedFun = (d: Any) => Some(String.valueOf(d))
+  private def castToStringExpectedFun[T]: T => Option[String] = (d: T) => Some(String.valueOf(d))
 
   test("cast byte to string") {
-    testCastToString(DataTypes.ByteType)
+    testCastToString[Byte](DataTypes.ByteType)
   }
 
   test("cast short to string") {
-    testCastToString(DataTypes.ShortType)
+    testCastToString[Short](DataTypes.ShortType)
   }
 
   test("cast int to string") {
-    testCastToString(DataTypes.IntegerType)
+    testCastToString[Int](DataTypes.IntegerType)
   }
 
   test("cast long to string") {
-    testCastToString(DataTypes.LongType)
+    testCastToString[Long](DataTypes.LongType)
   }
 
-  private def testCastToString(dataType: DataType) {
+  test("cast float to string") {
+    testCastToString[Float](DataTypes.FloatType, comparisonFunc = Some(compareStringifiedFloats))
+  }
+
+  test("cast double to string") {
+    testCastToString[Double](DataTypes.DoubleType, comparisonFunc = Some(compareStringifiedFloats))
+  }
+
+  private def testCastToString[T](dataType: DataType, comparisonFunc: Option[(String, String) => Boolean] = None) {
+    assert(GpuCast.canCast(dataType, DataTypes.StringType))
     val schema = FuzzerUtils.createSchema(Seq(dataType))
     val childExpr: GpuBoundReference = GpuBoundReference(0, dataType, nullable = false)
-    checkEvaluateGpuUnaryExpression(GpuCast(childExpr, DataTypes.StringType), dataType, DataTypes.StringType, castToStringExpectedFun, schema)
+    checkEvaluateGpuUnaryExpression(GpuCast(childExpr, DataTypes.StringType), dataType, DataTypes.StringType,
+      expectedFun = castToStringExpectedFun[T],
+      schema = schema,
+      comparisonFunc = comparisonFunc)
   }
 
   testSparkResultsAreEqual("Test cast from long", longsDf) {
@@ -86,6 +99,29 @@ class CastOpSuite extends GpuExpressionTestSuite {
       col("doubles").cast(FloatType),
       col("doubles").cast(DoubleType),
       col("doubles").cast(TimestampType))
+  }
+
+  test("Test cast from double to string") {
+
+    //NOTE that the testSparkResultsAreEqual method isn't adequate in this case because we need to use
+    // a specialized comparison function
+
+    val conf = new SparkConf()
+      .set(RapidsConf.ENABLE_CAST_FLOAT_TO_STRING.key, "true")
+
+    val (cpu, gpu) = runOnCpuAndGpu(doubleDf, frame => frame.select(
+      col("doubles").cast(StringType))
+      .orderBy(col("doubles")), conf)
+
+    val fromCpu = cpu.map(row => row.getAs[String](0))
+    val fromGpu = gpu.map(row => row.getAs[String](0))
+
+    fromCpu.zip(fromGpu).foreach {
+      case (c, g) =>
+        if (!compareStringifiedFloats(c, g)) {
+          fail(s"Running on the GPU and on the CPU did not match: CPU value: $c. GPU value: $g.")
+        }
+    }
   }
 
   testSparkResultsAreEqual("Test cast from boolean", booleanDf) {
