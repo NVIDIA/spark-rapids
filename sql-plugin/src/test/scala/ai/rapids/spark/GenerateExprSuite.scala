@@ -19,7 +19,7 @@ package ai.rapids.spark
 import org.apache.spark.sql.functions._
 
 class GenerateExprSuite extends SparkQueryCompareTestSuite {
-  IGNORE_ORDER_testSparkResultsAreEqual("posexplode(array(floats, more_floats))", nullableFloatDf) {
+  IGNORE_ORDER_testSparkResultsAreEqual("posexplode(array(floats, more_floats))", mixedFloatDf) {
     frame => frame.select(posexplode(array(col("floats"), col("more_floats") + 100)))
   }
 
