@@ -196,6 +196,7 @@ case class GpuIntegralDivide(left: Expression, right: Expression) extends GpuDiv
   override def inputType: AbstractDataType = TypeCollection(IntegralType, DecimalType)
 
   override def dataType: DataType = LongType
+  override def outputTypeOverride: DType = DType.INT64
 
   override def symbol: String = "/"
 
