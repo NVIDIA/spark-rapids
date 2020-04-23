@@ -20,12 +20,6 @@ if [ "$CUDF_VER"x == x ];then
     CUDF_VER="0.14-SNAPSHOT"
 fi
 
-# Empty as default cuda10.0 classifier, 'cuda10-1' as cuda10.1 classifier
-if [ "$CUDA_CLASSIFIER"x != x ] && [ "$CUDA_CLASSIFIER" != "cuda10-1" ];then
-    echo "Error!!! CUDA_CLASSIFIER: $CUDA_CLASSIFIER -- neither default nor cuda10-1, reset to default"
-    CUDA_CLASSIFIER=""
-fi
-
 if [ "$PROJECT_VER"x == x ];then
     PROJECT_VER="0.1-SNAPSHOT"
 fi
@@ -40,6 +34,9 @@ SCALA_BINARY_VER=${SCALA_BINARY_VER:-2.12}
 if [ "$SERVER_URL"x == x ]; then
     SERVER_URL="https://gpuwa.nvidia.com/artifactory/sw-spark-maven"
 fi
+
+echo "CUDF_VER: $CUDF_VER, CUDA_CLASSIFIER: $CUDA_CLASSIFIER, PROJECT_VER: $PROJECT_VER \
+        SPARK_VER: $SPARK_VER, SCALA_BINARY_VER: $SCALA_BINARY_VER, SERVER_URL: $SERVER_URL"
 
 ARTF_ROOT=$WORKSPACE/jars
 MVN_GET_CMD="mvn org.apache.maven.plugins:maven-dependency-plugin:2.8:get -B \

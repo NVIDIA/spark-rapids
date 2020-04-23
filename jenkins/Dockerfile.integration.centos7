@@ -16,10 +16,10 @@
 
 ###
 #
-# Arguments: CUDA_VER=9.2 or 10.0
+# Arguments: CUDA_VER=10.1 or 10.2
 #
 ###
-ARG CUDA_VER=10.0
+ARG CUDA_VER=10.1
 
 FROM nvidia/cuda:${CUDA_VER}-runtime-centos7
 
