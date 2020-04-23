@@ -17,13 +17,14 @@
 package ai.rapids.spark
 
 import java.io.File
+import java.util.Optional
 
-import ai.rapids.cudf.MemoryBuffer
+import ai.rapids.cudf.{DType, MemoryBuffer}
 import ai.rapids.spark.StorageTier.StorageTier
-import ai.rapids.spark.format.TableMeta
+import ai.rapids.spark.format.{ColumnMeta, TableMeta}
 
 import org.apache.spark.sql.rapids.RapidsDiskBlockManager
-import org.apache.spark.sql.vectorized.ColumnarBatch
+import org.apache.spark.sql.vectorized.{ColumnarBatch, ColumnVector}
 
 /**
  * An identifier for a RAPIDS buffer that can be automatically spilled between buffer stores.
@@ -115,4 +116,48 @@ trait RapidsBuffer extends AutoCloseable {
    * @param priority new priority value for this buffer
    */
   def setSpillPriority(priority: Long): Unit
+}
+
+/**
+ * A buffer with no corresponding device data (zero rows or columns).
+ * These buffers are not tracked in buffer stores since they have no
+ * device memory. They are only tracked in the catalog and provide
+ * a representative [[ColumnarBatch]] but cannot provide a
+ * [[MemoryBuffer]].
+ * @param id buffer ID to associate with the buffer
+ * @param meta schema metadata
+ */
+sealed class DegenerateRapidsBuffer(
+    override val id: RapidsBufferId,
+    override val meta: TableMeta) extends RapidsBuffer {
+  override val size: Long = 0L
+  override val storageTier: StorageTier = StorageTier.DEVICE
+
+  override def getColumnarBatch: ColumnarBatch = {
+    val rowCount = meta.rowCount
+    val nullCount = Optional.of(java.lang.Long.valueOf(0))
+    val columnMeta = new ColumnMeta
+    val columns = new Array[ColumnVector](meta.columnMetasLength)
+    (0 until meta.columnMetasLength).foreach { i =>
+      meta.columnMetas(columnMeta, i)
+      assert(columnMeta.childrenLength == 0, "child columns are not yet supported")
+      val dtype = DType.fromNative(columnMeta.dtype)
+      columns(i) = GpuColumnVector.from(new ai.rapids.cudf.ColumnVector(
+        dtype, rowCount, nullCount, null, null, null))
+    }
+    new ColumnarBatch(columns, rowCount.toInt)
+  }
+
+  override def free(): Unit = {}
+
+  override def getMemoryBuffer: MemoryBuffer =
+    throw new UnsupportedOperationException("degenerate buffer has no memory buffer")
+
+  override def addReference(): Boolean = true
+
+  override def getSpillPriority: Long = Long.MaxValue
+
+  override def setSpillPriority(priority: Long): Unit = {}
+
+  override def close(): Unit = {}
 }

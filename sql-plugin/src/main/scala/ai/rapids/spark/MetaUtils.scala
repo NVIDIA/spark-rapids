@@ -19,10 +19,13 @@ package ai.rapids.spark
 import java.nio.{ByteBuffer, ByteOrder}
 
 import scala.collection.mutable.ArrayBuffer
+
 import ai.rapids.cudf._
 import ai.rapids.spark.format.{BlockIdMeta, BufferMeta, BufferTransferRequest, BufferTransferResponse, CodecType, ColumnMeta, MetadataRequest, MetadataResponse, SubBufferMeta, TableMeta, TransferRequest, TransferResponse, TransferState}
 import com.google.flatbuffers.FlatBufferBuilder
+
 import org.apache.spark.internal.Logging
+import org.apache.spark.sql.vectorized.ColumnarBatch
 import org.apache.spark.storage.ShuffleBlockBatchId
 
 object MetaUtils {
@@ -55,6 +58,38 @@ object MetaUtils {
     TableMeta.addBufferMeta(fbb, bufferMetaOffset)
     TableMeta.addRowCount(fbb, table.getRowCount)
     TableMeta.addColumnMetas(fbb, columnMetasOffset)
+    fbb.finish(TableMeta.endTableMeta(fbb))
+    // copy the message to trim the backing array to only what is needed
+    TableMeta.getRootAsTableMeta(ByteBuffer.wrap(fbb.sizedByteArray()))
+  }
+
+  /**
+   * Build a TableMeta message for a degenerate table (zero columns or rows)
+   * @param tableId the ID to use for this table
+   * @param batch the degenerate columnar batch
+   * @return heap-based flatbuffer message
+   */
+  def buildDegenerateTableMeta(tableId: Int, batch: ColumnarBatch): TableMeta = {
+    require(batch.numRows == 0 || batch.numCols == 0, "batch not degenerate")
+    val fbb = new FlatBufferBuilder(1024)
+    val columnMetaOffset = if (batch.numCols > 0) {
+      val columns = GpuColumnVector.extractBases(batch)
+      val columnMetaOffsets = new ArrayBuffer[Int](batch.numCols)
+      for (i <- 0 until batch.numCols) {
+        ColumnMeta.startColumnMeta(fbb)
+        ColumnMeta.addNullCount(fbb, 0)
+        ColumnMeta.addRowCount(fbb, batch.numRows)
+        ColumnMeta.addDtype(fbb, columns(i).getType.getNativeId)
+        columnMetaOffsets.append(ColumnMeta.endColumnMeta(fbb))
+      }
+      Some(TableMeta.createColumnMetasVector(fbb, columnMetaOffsets.toArray))
+    } else {
+      None
+    }
+
+    TableMeta.startTableMeta(fbb)
+    TableMeta.addRowCount(fbb, batch.numRows)
+    columnMetaOffset.foreach(c => TableMeta.addColumnMetas(fbb, c))
     fbb.finish(TableMeta.endTableMeta(fbb))
     // copy the message to trim the backing array to only what is needed
     TableMeta.getRootAsTableMeta(ByteBuffer.wrap(fbb.sizedByteArray()))
