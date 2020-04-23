@@ -26,6 +26,8 @@
     </parent>
     <groupId>ai.rapids</groupId>
     <artifactId>rapids-4-spark-tests_2.12</artifactId>
+    <name>RAPIDS for Apache Spark Tests</name>
+    <description>RAPIDS plugin for Apache Spark integration tests</description>
     <version>0.1-SNAPSHOT</version>
 
     <dependencies>
@@ -50,25 +52,17 @@
         </dependency>
         <dependency>
             <groupId>ai.rapids</groupId>
+            <artifactId>cudf</artifactId>
+            <classifier>${cuda.version}</classifier>
+	    <scope>provided</scope>
+        </dependency>
+        <dependency>
+            <groupId>ai.rapids</groupId>
             <artifactId>rapids-4-spark_${scala.binary.version}</artifactId>
             <version>${project.version}</version>
             <scope>test</scope>
         </dependency>
     </dependencies>
-
-    <profiles>
-      <profile>
-        <id>alpha-features</id>
-        <dependencies>
-          <dependency>
-              <groupId>ai.rapids</groupId>
-              <artifactId>rapids-4-spark-shuffle_${scala.binary.version}</artifactId>
-              <version>${project.version}</version>
-              <scope>test</scope>
-          </dependency>
-        </dependencies>
-      </profile>
-    </profiles>
 
     <build>
         <plugins>
