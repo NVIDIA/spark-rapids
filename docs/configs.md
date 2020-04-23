@@ -33,6 +33,7 @@ spark.rapids.shuffle.ucx.managementServerHost|The host to be used to start the m
 spark.rapids.shuffle.ucx.useWakeup|When set to true, use UCX's event-based progress (epoll) in order to wake up the progress thread when needed, instead of a hot loop.|true
 spark.rapids.sql.batchSizeBytes|Set the target number of bytes for a GPU batch. Splits sizes for input data is covered by separate configs.|2147483647
 spark.rapids.sql.concurrentGpuTasks|Set the number of tasks that can execute concurrently per GPU. Tasks may temporarily block when the number of concurrent tasks in the executor exceeds this amount. Allowing too many concurrent tasks on the same GPU may lead to GPU out of memory errors.|1
+spark.rapids.sql.contains.negative.timestamps|Whether the data contains negative timestamps i.e. timestamps prior to Jan 1st 1970. When set to true operators using timestamps will not be accelerated|false
 spark.rapids.sql.enabled|Enable (true) or disable (false) sql operations on the GPU|true
 spark.rapids.sql.explain|Explain why some parts of a query were not placed on a GPU or not. Possible values are ALL: print everything, NONE: print nothing, NOT_ON_GPU: print only did not go on the GPU|NONE
 spark.rapids.sql.hasNans|Config to indicate if your data has NaN's. Cudf doesn't currently support NaN's properly so you can get corrupt data if you have NaN's in your data and it runs on the GPU.|true
@@ -60,7 +61,7 @@ incompatibilities.
 Name | Description | Default Value | Incompatibilities
 -----|-------------|---------------|------------------
 spark.rapids.sql.expression.Abs|absolute value|true|None|
-spark.rapids.sql.expression.Acos|inverse cosine|true|None|
+spark.rapids.sql.expression.Acos|inverse cosine|false|This is not 100% compatible with the Spark version because floating point results in some cases may differ with the JVM version by a small amount|
 spark.rapids.sql.expression.Acosh|inverse hyperbolic cosine|false|This is not 100% compatible with the Spark version because floating point results in some cases may differ with the JVM version by a small amount|
 spark.rapids.sql.expression.Add|addition|true|None|
 spark.rapids.sql.expression.Alias|gives a column a name|true|None|
@@ -85,6 +86,7 @@ spark.rapids.sql.expression.Contains|Contains|true|None|
 spark.rapids.sql.expression.Cos|cosine|false|This is not 100% compatible with the Spark version because floating point results in some cases may differ with the JVM version by a small amount|
 spark.rapids.sql.expression.Cosh|hyperbolic cosine|false|This is not 100% compatible with the Spark version because floating point results in some cases may differ with the JVM version by a small amount|
 spark.rapids.sql.expression.Cot|Returns the cotangent|false|This is not 100% compatible with the Spark version because floating point results in some cases may differ with the JVM version by a small amount|
+spark.rapids.sql.expression.CurrentRow$|Special boundary for a window frame, indicating stopping at the current row|true|None|
 spark.rapids.sql.expression.DateDiff|datediff|true|None|
 spark.rapids.sql.expression.DayOfMonth|get the day of the month from a date or timestamp|true|None|
 spark.rapids.sql.expression.Divide|division|true|None|
@@ -137,6 +139,7 @@ spark.rapids.sql.expression.Sin|sine|false|This is not 100% compatible with the 
 spark.rapids.sql.expression.Sinh|hyperbolic sine|false|This is not 100% compatible with the Spark version because floating point results in some cases may differ with the JVM version by a small amount|
 spark.rapids.sql.expression.SortOrder|sort order|true|None|
 spark.rapids.sql.expression.SparkPartitionID|Returns the current partition id.|true|None|
+spark.rapids.sql.expression.SpecifiedWindowFrame|specification of the width of the group (or "frame") of input rows around which a window function is evaluated|true|None|
 spark.rapids.sql.expression.Sqrt|square root|true|None|
 spark.rapids.sql.expression.StartsWith|Starts With|true|None|
 spark.rapids.sql.expression.StringLocate|Substring search operator|true|None|
@@ -145,9 +148,15 @@ spark.rapids.sql.expression.Substring|Substring operator|true|None|
 spark.rapids.sql.expression.Subtract|subtraction|true|None|
 spark.rapids.sql.expression.Tan|tangent|false|This is not 100% compatible with the Spark version because floating point results in some cases may differ with the JVM version by a small amount|
 spark.rapids.sql.expression.Tanh|hyperbolic tangent|false|This is not 100% compatible with the Spark version because floating point results in some cases may differ with the JVM version by a small amount|
+spark.rapids.sql.expression.TimeSub|Subtracts interval from timestamp|true|None|
+spark.rapids.sql.expression.ToRadians|Converts degrees to radians|false|This is not 100% compatible with the Spark version because floating point results in some cases may differ with the JVM version by a small amount|
 spark.rapids.sql.expression.UnaryMinus|negate a numeric value|true|None|
 spark.rapids.sql.expression.UnaryPositive|a numeric value with a + in front of it|true|None|
+spark.rapids.sql.expression.UnboundedFollowing$|Special boundary for a window frame, indicating all rows preceding the current row|true|None|
+spark.rapids.sql.expression.UnboundedPreceding$|Special boundary for a window frame, indicating all rows preceding the current row|true|None|
 spark.rapids.sql.expression.Upper|String uppercase operator|false|This is not 100% compatible with the Spark version because in some cases unicode characters change byte width when changing the case. The GPU string conversion does not support these characters. For a full list of unsupported characters see https://github.com/rapidsai/cudf/issues/3132|
+spark.rapids.sql.expression.WindowExpression|calculates a return value for every input row of a table based on a group (or "window") of rows|true|None|
+spark.rapids.sql.expression.WindowSpecDefinition|specification of a window function, indicating the partitioning-expression, the row ordering, and the width of the window|true|None|
 spark.rapids.sql.expression.Year|get the year from a date or timestamp|true|None|
 spark.rapids.sql.expression.AggregateExpression|aggregate expression|true|None|
 spark.rapids.sql.expression.Average|average aggregate operator|true|None|
@@ -163,6 +172,7 @@ spark.rapids.sql.expression.NormalizeNaNAndZero|normalize nan and zero|false|Thi
 Name | Description | Default Value | Incompatibilities
 -----|-------------|---------------|------------------
 spark.rapids.sql.exec.CoalesceExec|The backend for the dataframe coalesce method|true|None|
+spark.rapids.sql.exec.ExpandExec|The backend for the expand operator|true|None|
 spark.rapids.sql.exec.FileSourceScanExec|Reading data from files, often from Hive tables|true|None|
 spark.rapids.sql.exec.FilterExec|The backend for most filter statements|true|None|
 spark.rapids.sql.exec.GenerateExec|The backend for operations that generate more output rows than input rows like explode.|true|None|
@@ -180,6 +190,7 @@ spark.rapids.sql.exec.ShuffleExchangeExec|The backend for most data being exchan
 spark.rapids.sql.exec.BroadcastHashJoinExec|Implementation of join using broadcast data|true|None|
 spark.rapids.sql.exec.ShuffledHashJoinExec|Implementation of join using hashed shuffled data|true|None|
 spark.rapids.sql.exec.SortMergeJoinExec|Sort merge join, replacing with shuffled hash join|true|None|
+spark.rapids.sql.exec.WindowExec|Window-operator backend|true|None|
 
 ### Scans
 Name | Description | Default Value | Incompatibilities
