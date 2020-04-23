@@ -17,7 +17,7 @@
 
 /**
 *
-* Jenkinsfile for rapids-plugin building ubuntu cuda10 versions
+* Jenkinsfile for building rapids-plugin
 *
 */
 
@@ -42,7 +42,7 @@ pipeline {
     }
 
     stages {
-        stage('Ubuntu16 CUDA10.0') {
+        stage('Ubuntu16 CUDA10.1') {
             agent { label 'docker-gpu' }
             steps {
                 script {
@@ -51,8 +51,7 @@ pipeline {
                     docker.image(IMAGE_NAME).inside("--runtime=nvidia -v ${HOME}/.m2:${HOME}/.m2:rw \
                         -v ${HOME}/.zinc:${HOME}/.zinc:rw \
                         -v /etc/passwd:/etc/passwd -v /etc/group:/etc/group") {
-                        echo 'Building in ubuntu16 cuda10.0 ...'
-                        sh 'mvn -U -B clean verify $MVN_GPUWA_MIRROR'
+                        sh "mvn -U -B clean verify $MVN_GPUWA_MIRROR"
                     }
                 }
             }

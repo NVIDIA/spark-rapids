@@ -26,5 +26,11 @@
                 </repository>
             </repositories>
         </profile>
+        <profile>
+            <id>deploy-to-sh04</id>
+            <properties>
+                <altDeploymentRepository>sh04-release-repo::default::http://apt-sh04:8081/repository/xgboost-spark-release</altDeploymentRepository>
+            </properties>
+        </profile>
     </profiles>
 </settings>
