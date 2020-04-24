@@ -326,6 +326,7 @@ class RapidsShuffleClient(
     connection: ClientConnection,
     transport: RapidsShuffleTransport,
     exec: Executor,
+    clientCopyExecutor: Executor,
     maximumMetadataSize: Long) extends Logging {
 
   object ShuffleClientOps {
@@ -400,13 +401,18 @@ class RapidsShuffleClient(
   }
 
   private[this] def asyncOrBlock(op: Any): Unit = {
-    try {
-      exec.execute(() => handleOp(op))
-    } catch {
-      case ree: RejectedExecutionException =>
-        logError(s"Client's executor rejected execution of ${op}", ree)
-        throw ree
-    }
+    exec.execute(() => handleOp(op))
+  }
+
+  /**
+    * Pushes a task onto the queue to be handled by the client's copy executor.
+    *
+    * @note - at this stage, tasks in this pool can block (it will grow as needed)
+    *
+    * @param op - One of the case classes in [[ShuffleClientOps]]
+    */
+  private[this] def asyncOnCopyThread(op: Any): Unit = {
+    clientCopyExecutor.execute(() => handleOp(op))
   }
 
   /**
@@ -520,7 +526,7 @@ class RapidsShuffleClient(
     * @param bufferReceiveState - object tracking the state of pending TransferRequests
     */
   def issueBufferReceives(bufferReceiveState: BufferReceiveState): Unit = {
-    asyncOrBlock(IssueBufferReceives(bufferReceiveState))
+    asyncOnCopyThread(IssueBufferReceives(bufferReceiveState))
   }
 
   /**
@@ -551,14 +557,9 @@ class RapidsShuffleClient(
 
     connection.receive(buffersToReceive,
       tx => {
-        // TODO: if the bounce buffers are exhausted, and we queue this, we end up in a deadlock situation (
-        //   can't let go of the buffers, but have no buffers left, so all threads are waiting), in the case
-        //   where the thread pool is bounded, so for now doing this in the progress thread, but this is not ideal.
-
-        // TODO 2: during code review we agreed to make this receive per buffer, s.t. buffers could begin
+        // TODO: during code review we agreed to make this receive per buffer, s.t. buffers could begin
         //   go get freed earlier and likely out of order.
-        //asyncOrBlock(HandleBounceBufferReceive(tx, bufferReceiveState, currentRequest, buffersToReceive))
-        doHandleBounceBufferReceive(tx, bufferReceiveState, currentRequest, buffersToReceive)
+        asyncOnCopyThread(HandleBounceBufferReceive(tx, bufferReceiveState, currentRequest, buffersToReceive))
       })
   }
 
@@ -687,7 +688,7 @@ class RapidsShuffleClient(
         s" ${stats.txTimeMs} ms @ bw: [recv: ${stats.recvThroughput}] GB/sec")
 
       if (!bufferReceiveState.isDone) {
-        asyncOrBlock(IssueBufferReceives(bufferReceiveState))
+        asyncOnCopyThread(IssueBufferReceives(bufferReceiveState))
       }
     } finally {
       nvtxRange.close()
