@@ -154,7 +154,7 @@ abstract class RapidsBufferStore(
 
   /**
    * Specify another store that can be used when this store needs to spill.
-   * NOTE: Only one spill store can be registered. This will throw if a
+   * @note Only one spill store can be registered. This will throw if a
    * spill store has already been registered.
    */
   def setSpillStore(store: RapidsBufferStore): Unit = {
@@ -167,8 +167,6 @@ abstract class RapidsBufferStore(
    * have an active reference by the caller and needs to be eventually closed by the caller
    * (i.e.: this method will not take ownership of the incoming buffer object).
    * This does not need to update the catalog, the caller is responsible for that.
-   * <p>
-   * NOTE: The copy may not occur
    * @param buffer data from another store
    * @param stream CUDA stream to use for copy or null
    * @return new buffer that was created
@@ -279,7 +277,7 @@ abstract class RapidsBufferStore(
    * Create a new buffer from an existing buffer in another store.
    * If the data transfer will be performed asynchronously, this method is responsible for
    * adding a reference to the existing buffer and later closing it when the transfer completes.
-   * NOTE: DO NOT close the buffer unless adding a reference!
+   * @note DO NOT close the buffer unless adding a reference!
    * @param buffer data from another store
    * @param stream CUDA stream to use or null
    * @return new buffer tracking the data in this store
@@ -363,7 +361,7 @@ abstract class RapidsBufferStore(
 
     /**
      * Determine if a buffer is currently acquired.
-     * <p>NOTE: Unless this is called by the thread that currently "owns" an
+     * @note Unless this is called by the thread that currently "owns" an
      * acquired buffer, the acquisition state could be changing
      * asynchronously, and therefore the result cannot always be used as a
      * proxy for the result obtained from the addReference method.
@@ -390,8 +388,11 @@ abstract class RapidsBufferStore(
       isValid
     }
 
-    override def getColumnarBatch: ColumnarBatch = synchronized {
-      require(refcount > 0, "Retrieving batch from unowned buffer")
+    override def getColumnarBatch: ColumnarBatch = {
+      // NOTE: Cannot hold a lock on this buffer here because memory is being
+      // allocated. Allocations can trigger synchronous spills which can
+      // deadlock if another thread holds the device store lock and is trying
+      // to spill to this store.
       val deviceBuffer = DeviceMemoryBuffer.allocate(size)
       try {
         val buffer = getMemoryBuffer
@@ -426,7 +427,7 @@ abstract class RapidsBufferStore(
 
     /**
      * Mark the buffer as freed and no longer valid.
-     * NOTE: The resources may not be immediately released if the buffer has outstanding references.
+     * @note The resources may not be immediately released if the buffer has outstanding references.
      * In that case the resources will be released when the reference count reaches zero.
      */
     override def free(): Unit = synchronized {
