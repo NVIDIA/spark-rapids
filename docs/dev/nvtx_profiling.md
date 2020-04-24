@@ -36,10 +36,18 @@ To capture the process’ profile run :
 where command can be your Spark shell / Java program etc.
 This works typically in non-distributed mode.
 
-To make it run in Spark’s distributed mode - you need to change the exec command in spark-class
-Script
+To make it run in Spark’s distributed mode, start the worker with "nsys profile " in front of the
+worker start command.
+Here is an example that starts up a slave in standalone mode, profiles it and the shell
+until the shell exits (using Ctrl+D) while stopping the slave process at the end."
+```
+nsys profile bash -c " \
+CUDA_VISIBLE_DEVICES=0 ${SPARK_HOME}/sbin/start-slave.sh $master_url & \
+$SPARK_HOME/bin/spark-shell; \
+${SPARK_HOME}/sbin/stop-slave.sh"
 
-Replace `exec "${CMD[@]}"` with `nsys profile exec "${CMD[@]}"`
+```
+If you need to kill the worker process that is being traced, do not use `kill -9`.
 
 You should have a *.qdrep file once the trace completes. This can now be opened in NSight UI.
 
