@@ -72,21 +72,25 @@ trait RapidsBuffer extends AutoCloseable {
   val storageTier: StorageTier
 
   /**
-   * Get the columnar batch within this buffer.
-   * NOTE: It is the responsibility of the caller to close the batch.
+   * Get the columnar batch within this buffer. The caller must have
+   * successfully acquired the buffer beforehand.
+   * @see [[addReference]]
+   * @note It is the responsibility of the caller to close the batch.
    */
   def getColumnarBatch: ColumnarBatch
 
   /**
    * Get the underlying memory buffer. This may be either a HostMemoryBuffer
    * or a DeviceMemoryBuffer depending on where the buffer currently resides.
-   * NOTE: It is the responsibility of the caller to close the buffer.
+   * The caller must have successfully acquired the buffer beforehand.
+   * @see [[addReference]]
+   * @note It is the responsibility of the caller to close the buffer.
    */
   def getMemoryBuffer: MemoryBuffer
 
   /**
-   * Add a reference to this buffer.
-   * NOTE: The close method must be called for every successfully obtained reference.
+   * Try to add a reference to this buffer to acquire it.
+   * @note The close method must be called for every successfully obtained reference.
    * @return true if the reference was added or false if this buffer is no longer valid
    */
   def addReference(): Boolean
