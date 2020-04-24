@@ -461,6 +461,11 @@ object GpuOverrides {
         override def convertToGpu(child: GpuExpression): GpuExpression =
           GpuCast(child, cast.dataType, cast.timeZoneId)
       }),
+    expr[ToDegrees](
+      "Converts radians to degrees",
+      (a, conf, p, r) => new UnaryExprMeta[ToDegrees](a, conf, p, r) {
+        override def convertToGpu(child: GpuExpression): GpuToDegrees = GpuToDegrees(child)
+      }).incompat(FLOAT_DIFFERS_INCOMPAT),
     expr[ToRadians](
       "Converts degrees to radians",
       (a, conf, p, r) => new UnaryExprMeta[ToRadians](a, conf, p, r) {

@@ -91,6 +91,27 @@ object SparkSessionHolder extends Logging {
 trait SparkQueryCompareTestSuite extends FunSuite with Arm {
   import SparkSessionHolder.withSparkSession
 
+  //  @see java.lang.Float#intBitsToFloat
+  // <quote>
+  // If the argument is any value in the range 0x7f800001 through 0x7fffffff or
+  // in the range 0xff800001 through 0xffffffff, the result is a NaN
+  // </quote>
+  val FLOAT_POSITIVE_NAN_LOWER_RANGE = java.lang.Float.intBitsToFloat(0x7f800001)
+  val FLOAT_POSITIVE_NAN_UPPER_RANGE = java.lang.Float.intBitsToFloat(0x7fffffff)
+  val FLOAT_NEGATIVE_NAN_LOWER_RANGE = java.lang.Float.intBitsToFloat(0xff800001)
+  val FLOAT_NEGATIVE_NAN_UPPER_RANGE = java.lang.Float.intBitsToFloat(0xffffffff)
+
+  // see java.lang.Double#longBitsToDouble
+  // <quote>
+  // <p>If the argument is any value in the range {@code 0x7ff0000000000001L} through
+  // {@code 0x7fffffffffffffffL} or in the range
+  // {@code 0xfff0000000000001L} through
+  // {@code 0xffffffffffffffffL}, the result is a NaN
+  val DOUBLE_POSITIVE_NAN_LOWER_RANGE = java.lang.Double.longBitsToDouble(0x7ff0000000000001L)
+  val DOUBLE_POSITIVE_NAN_UPPER_RANGE = java.lang.Double.longBitsToDouble(0x7fffffffffffffffL)
+  val DOUBLE_NEGATIVE_NAN_LOWER_RANGE = java.lang.Double.longBitsToDouble(0xfff0000000000001L)
+  val DOUBLE_NEGATIVE_NAN_UPPER_RANGE = java.lang.Double.longBitsToDouble(0xffffffffffffffffL)
+
   def withGpuSparkSession[U](f: SparkSession => U, conf: SparkConf = new SparkConf()): U = {
     val c = conf.clone()
       .set(RapidsConf.SQL_ENABLED.key, "true")
@@ -956,7 +977,7 @@ trait SparkQueryCompareTestSuite extends FunSuite with Arm {
       (Double.PositiveInfinity, 23.1927672582d),
       (Double.PositiveInfinity, 2309.4430349398d),
       (Double.PositiveInfinity, Double.NaN),
-      (Double.PositiveInfinity, -Double.NaN),
+      (Double.PositiveInfinity, DOUBLE_NEGATIVE_NAN_UPPER_RANGE),
       (Double.PositiveInfinity, null),
       (Double.PositiveInfinity, -0.7078783860d),
       (Double.PositiveInfinity, -70.9667587507d),
@@ -968,7 +989,7 @@ trait SparkQueryCompareTestSuite extends FunSuite with Arm {
       (Double.NegativeInfinity, 23.1927672582d),
       (Double.NegativeInfinity, 2309.4430349398d),
       (Double.NegativeInfinity, Double.NaN),
-      (Double.NegativeInfinity, -Double.NaN),
+      (Double.NegativeInfinity, DOUBLE_NEGATIVE_NAN_LOWER_RANGE),
       (Double.NegativeInfinity, null),
       (Double.NegativeInfinity, -0.7078783860d),
       (Double.NegativeInfinity, -70.9667587507d),
@@ -980,7 +1001,7 @@ trait SparkQueryCompareTestSuite extends FunSuite with Arm {
       (40.2292464632d, 23.1927672582d),
       (0.0684630071d, 2309.4430349398d),
       (24310.3764726531d, Double.NaN),
-      (0.0917656668d, -Double.NaN),
+      (0.0917656668d, DOUBLE_NEGATIVE_NAN_UPPER_RANGE),
       (50.6053004384d, null),
       (7880.7542578934d, -0.7078783860d),
       (20.5882386034d, -70.9667587507d),
@@ -992,23 +1013,23 @@ trait SparkQueryCompareTestSuite extends FunSuite with Arm {
       (Double.NaN, 23.1927672582d),
       (Double.NaN, 2309.4430349398d),
       (Double.NaN, Double.NaN),
-      (Double.NaN, -Double.NaN),
+      (Double.NaN, DOUBLE_NEGATIVE_NAN_LOWER_RANGE),
       (Double.NaN, null),
       (Double.NaN, -0.7078783860d),
       (Double.NaN, -70.9667587507d),
       (Double.NaN, -838600.5867225748d),
 
-      (-Double.NaN, Double.PositiveInfinity),
-      (-Double.NaN, Double.NegativeInfinity),
-      (-Double.NaN, 0.8435376941d),
-      (-Double.NaN, 23.1927672582d),
-      (-Double.NaN, 2309.4430349398d),
-      (-Double.NaN, Double.NaN),
-      (-Double.NaN, -Double.NaN),
-      (-Double.NaN, null),
-      (-Double.NaN, -0.7078783860d),
-      (-Double.NaN, -70.9667587507d),
-      (-Double.NaN, -838600.5867225748d),
+      (DOUBLE_NEGATIVE_NAN_UPPER_RANGE, Double.PositiveInfinity),
+      (DOUBLE_NEGATIVE_NAN_UPPER_RANGE, Double.NegativeInfinity),
+      (DOUBLE_NEGATIVE_NAN_UPPER_RANGE, 0.8435376941d),
+      (DOUBLE_NEGATIVE_NAN_UPPER_RANGE, 23.1927672582d),
+      (DOUBLE_NEGATIVE_NAN_UPPER_RANGE, 2309.4430349398d),
+      (DOUBLE_NEGATIVE_NAN_UPPER_RANGE, Double.NaN),
+      (DOUBLE_NEGATIVE_NAN_UPPER_RANGE, DOUBLE_NEGATIVE_NAN_UPPER_RANGE),
+      (DOUBLE_NEGATIVE_NAN_UPPER_RANGE, null),
+      (DOUBLE_NEGATIVE_NAN_UPPER_RANGE, -0.7078783860d),
+      (DOUBLE_NEGATIVE_NAN_UPPER_RANGE, -70.9667587507d),
+      (DOUBLE_NEGATIVE_NAN_UPPER_RANGE, -838600.5867225748d),
 
       (null, Double.PositiveInfinity),
       (null, Double.NegativeInfinity),
@@ -1016,7 +1037,7 @@ trait SparkQueryCompareTestSuite extends FunSuite with Arm {
       (null, 23.1927672582d),
       (null, 2309.4430349398d),
       (null, Double.NaN),
-      (null, -Double.NaN),
+      (null, DOUBLE_NEGATIVE_NAN_UPPER_RANGE),
       (null, null),
       (null, -0.7078783860d),
       (null, -70.9667587507d),
@@ -1028,12 +1049,26 @@ trait SparkQueryCompareTestSuite extends FunSuite with Arm {
       (-40.2292464632d, 23.1927672582d),
       (-0.0684630071d, 2309.4430349398d),
       (-24310.3764726531d, Double.NaN),
-      (-0.0917656668d, -Double.NaN),
+      (-0.0917656668d, DOUBLE_NEGATIVE_NAN_UPPER_RANGE),
       (-50.6053004384d, null),
       (-7880.7542578934d, -0.7078783860d),
       (-20.5882386034d, -70.9667587507d),
       (-0.6467140578d, -838600.5867225748d)
     ).toDF("doubles", "more_doubles")
+  }
+
+  def mixedSingleColumnDoubleDf(session: SparkSession): DataFrame = {
+    import session.sqlContext.implicits._
+    Seq[java.lang.Double](Double.PositiveInfinity, Double.NegativeInfinity, 0.8435376941d, 23.1927672582d, 2309.4430349398d,
+      Double.NaN, DOUBLE_POSITIVE_NAN_LOWER_RANGE, DOUBLE_POSITIVE_NAN_UPPER_RANGE, DOUBLE_NEGATIVE_NAN_LOWER_RANGE,
+      DOUBLE_NEGATIVE_NAN_UPPER_RANGE, null, -0.7078783860d, -70.9667587507d, -838600.5867225748d).toDF("doubles")
+  }
+
+  def mixedSingleColumnFloatDf(session: SparkSession): DataFrame = {
+    import session.sqlContext.implicits._
+    Seq[java.lang.Float](Float.PositiveInfinity, Float.NegativeInfinity, 0.8435376941f, 23.1927672582f, 2309.4430349398f,
+      Float.NaN, FLOAT_POSITIVE_NAN_LOWER_RANGE, FLOAT_NEGATIVE_NAN_LOWER_RANGE, FLOAT_POSITIVE_NAN_UPPER_RANGE,
+      FLOAT_NEGATIVE_NAN_UPPER_RANGE, null, -0.7078783860f, -70.9667587507f, -838600.5867225748f).toDF("floats")
   }
 
   def mixedFloatDf(session: SparkSession): DataFrame = {
@@ -1045,7 +1080,7 @@ trait SparkQueryCompareTestSuite extends FunSuite with Arm {
       (Float.PositiveInfinity, 23.1927672582f),
       (Float.PositiveInfinity, 2309.4430349398f),
       (Float.PositiveInfinity, Float.NaN),
-      (Float.PositiveInfinity, -Float.NaN),
+      (Float.PositiveInfinity, FLOAT_NEGATIVE_NAN_UPPER_RANGE),
       (Float.PositiveInfinity, null),
       (Float.PositiveInfinity, -0.7078783860f),
       (Float.PositiveInfinity, -70.9667587507f),
@@ -1057,7 +1092,7 @@ trait SparkQueryCompareTestSuite extends FunSuite with Arm {
       (Float.NegativeInfinity, 23.1927672582f),
       (Float.NegativeInfinity, 2309.4430349398f),
       (Float.NegativeInfinity, Float.NaN),
-      (Float.NegativeInfinity, -Float.NaN),
+      (Float.NegativeInfinity, FLOAT_NEGATIVE_NAN_LOWER_RANGE),
       (Float.NegativeInfinity, null),
       (Float.NegativeInfinity, -0.7078783860f),
       (Float.NegativeInfinity, -70.9667587507f),
@@ -1069,7 +1104,7 @@ trait SparkQueryCompareTestSuite extends FunSuite with Arm {
       (40.2292464632f, 23.1927672582f),
       (0.0684630071f, 2309.4430349398f),
       (24310.3764726531f, Float.NaN),
-      (0.0917656668f, -Float.NaN),
+      (0.0917656668f, FLOAT_NEGATIVE_NAN_UPPER_RANGE),
       (50.6053004384f, null),
       (7880.7542578934f, -0.7078783860f),
       (20.5882386034f, -70.9667587507f),
@@ -1081,7 +1116,7 @@ trait SparkQueryCompareTestSuite extends FunSuite with Arm {
       (Float.NaN, 23.1927672582f),
       (Float.NaN, 2309.4430349398f),
       (Float.NaN, Float.NaN),
-      (Float.NaN, -Float.NaN),
+      (Float.NaN, FLOAT_NEGATIVE_NAN_LOWER_RANGE),
       (Float.NaN, null),
       (Float.NaN, -0.7078783860f),
       (Float.NaN, -70.9667587507f),
@@ -1093,7 +1128,7 @@ trait SparkQueryCompareTestSuite extends FunSuite with Arm {
       (-Float.NaN, 23.1927672582f),
       (-Float.NaN, 2309.4430349398f),
       (-Float.NaN, Float.NaN),
-      (-Float.NaN, -Float.NaN),
+      (-Float.NaN, FLOAT_NEGATIVE_NAN_LOWER_RANGE),
       (-Float.NaN, null),
       (-Float.NaN, -0.7078783860f),
       (-Float.NaN, -70.9667587507f),
@@ -1105,7 +1140,7 @@ trait SparkQueryCompareTestSuite extends FunSuite with Arm {
       (null, 23.1927672582f),
       (null, 2309.4430349398f),
       (null, Float.NaN),
-      (null, -Float.NaN),
+      (null, FLOAT_NEGATIVE_NAN_UPPER_RANGE),
       (null, null),
       (null, -0.7078783860f),
       (null, -70.9667587507f),
@@ -1117,7 +1152,7 @@ trait SparkQueryCompareTestSuite extends FunSuite with Arm {
       (-40.2292464632f, 23.1927672582f),
       (-0.0684630071f, 2309.4430349398f),
       (-24310.3764726531f, Float.NaN),
-      (-0.0917656668f, -Float.NaN),
+      (-0.0917656668f, FLOAT_NEGATIVE_NAN_LOWER_RANGE),
       (-50.6053004384f, null),
       (-7880.7542578934f, -0.7078783860f),
       (-20.5882386034f, -70.9667587507f),
@@ -1127,26 +1162,17 @@ trait SparkQueryCompareTestSuite extends FunSuite with Arm {
 
   def intnullableFloatWithNullAndNanDf(session: SparkSession): DataFrame = {
     import session.sqlContext.implicits._
-    //  @see java.lang.Float#intBitsToFloat
-    // <quote>
-    // If the argument is any value in the range 0x7f800001 through 0x7fffffff or
-    // in the range 0xff800001 through 0xffffffff, the result is a NaN
-    // </quote>
-    val MIN_PLUS_NaN = java.lang.Float.intBitsToFloat(0x7f800001)
-    val MAX_PLUS_NaN = java.lang.Float.intBitsToFloat(0x7fffffff)
-    val MIN_MINUS_NaN = java.lang.Float.intBitsToFloat(0xff800001)
-    val MAX_MINUS_NaN = java.lang.Float.intBitsToFloat(0xffffffff)
     Seq[(java.lang.Integer, java.lang.Float)](
       (100, 1.0f),
       (200, 2.04f),
       (300, 3.40f),
       (400, 4.20f),
-      (500, MIN_PLUS_NaN),
-      (100, MAX_PLUS_NaN),
+      (500, FLOAT_POSITIVE_NAN_LOWER_RANGE),
+      (100, FLOAT_POSITIVE_NAN_UPPER_RANGE),
       (200, null),
       (300, -0.0f),
-      (400, MIN_MINUS_NaN),
-      (500, MAX_MINUS_NaN),
+      (400, FLOAT_NEGATIVE_NAN_LOWER_RANGE),
+      (500, FLOAT_NEGATIVE_NAN_UPPER_RANGE),
       (-500, 50.5f)
     ).toDF("ints", "floats")
   }
