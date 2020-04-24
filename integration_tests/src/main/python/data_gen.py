@@ -178,7 +178,7 @@ def _make_gen_from(schema):
     else:
         raise RuntimeError('Unsupported data type {}'.format(type(schema)))
 
-def random_df_from_schema(spark, schema, length = 2048, seed=0):
+def random_df_from_schema(spark, schema, length=2048, seed=0):
     # We always want to produce the same result for the same schema and length
     random.seed(seed)
     gen = _make_gen_from(schema)
