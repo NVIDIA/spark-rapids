@@ -16,11 +16,12 @@
 
 package ai.rapids.spark.shuffle
 
-import java.util.concurrent.{ArrayBlockingQueue, Executor, RejectedExecutionException}
+import java.util.concurrent.{ArrayBlockingQueue, Executor, Executors, RejectedExecutionException}
 
 import ai.rapids.cudf.{MemoryBuffer, NvtxColor, NvtxRange}
 import ai.rapids.spark._
 import ai.rapids.spark.format.{BufferMeta, TableMeta}
+import com.google.common.util.concurrent.ThreadFactoryBuilder
 import org.apache.spark.internal.Logging
 import org.apache.spark.storage.{BlockManagerId, ShuffleBlockBatchId}
 
@@ -63,16 +64,10 @@ class RapidsShuffleServer(transport: RapidsShuffleTransport,
                           val originalShuffleServerId: BlockManagerId,
                           requestHandler: RapidsShuffleRequestHandler,
                           exec: Executor,
+                          copyExec: Executor,
                           rapidsConf: RapidsConf) extends Logging {
 
   private object ShuffleServerOps {
-    /**
-      * Used to post a receive message against the connection for one of the types
-      * in [[RequestType]]
-      * @param requestType - the type of request as specified by [[RequestType]]
-      */
-    case class IssueReceive(requestType: RequestType.Value)
-
     /**
       * When a transfer request is received during a callback, the handle code is offloaded via this
       * event to the server thread.
@@ -115,15 +110,13 @@ class RapidsShuffleServer(transport: RapidsShuffleTransport,
   def start(): Unit = {
     port = serverConnection.startManagementPort(originalShuffleServerId.host)
     // kick off our first receives
-    asyncOrBlock(IssueReceive(RequestType.MetadataRequest))
-    asyncOrBlock(IssueReceive(RequestType.TransferRequest))
+    doIssueReceive(RequestType.MetadataRequest)
+    doIssueReceive(RequestType.TransferRequest)
   }
 
   def handleOp(serverTask: Any): Unit = {
     try {
       serverTask match {
-        case IssueReceive(rt) =>
-          doIssueReceive(rt)
         case HandleMeta(tx, metaRequestBuffer) =>
           doHandleMeta(tx, metaRequestBuffer)
         case HandleTransferRequest(wt: BufferSendState) =>
@@ -135,6 +128,7 @@ class RapidsShuffleServer(transport: RapidsShuffleTransport,
       }
     }
   }
+
   /**
     * Pushes a task onto the queue to be handled by the server executor.
     *
@@ -144,18 +138,25 @@ class RapidsShuffleServer(transport: RapidsShuffleTransport,
     * @param op - One of the case classes in [[ShuffleServerOps]]
     */
   def asyncOrBlock(op: Any): Unit = {
-    try {
-      exec.execute(() => handleOp(op))
-    } catch {
-      case ree: RejectedExecutionException =>
-        logError(s"Server's executor rejected execution of ${op}", ree)
-        throw ree
-    }
+    exec.execute(() => handleOp(op))
+  }
+
+  /**
+    * Pushes a task onto the queue to be handled by the server's copy executor.
+    *
+    * @note - at this stage, tasks in this pool can block (it will grow as needed)
+    *
+    * @param op - One of the case classes in [[ShuffleServerOps]]
+    */
+  private[this] def asyncOnCopyThread(op: Any): Unit = {
+    copyExec.execute(() => handleOp(op))
   }
 
   /**
     * Handler for a metadata request. It queues request handlers for either [[RequestType.MetadataRequest]],
     * or [[RequestType.TransferRequest]], and re-issues receives for either type of request.
+    *
+    * NOTE: This call must be non-blocking. It is called from the progress thread.
     *
     * @param requestType - The request type received
     */
@@ -173,11 +174,11 @@ class RapidsShuffleServer(transport: RapidsShuffleTransport,
         try {
           if (requestType == RequestType.MetadataRequest) {
             asyncOrBlock(HandleMeta(tx, metaRequest))
-            asyncOrBlock(IssueReceive(RequestType.MetadataRequest))
+            doIssueReceive(RequestType.MetadataRequest)
           } else {
             logInfo(s"Got a transfer request ${tx}")
-            asyncOrBlock(HandleTransferRequest(new BufferSendState(tx, metaRequest)))
-            asyncOrBlock(IssueReceive(RequestType.TransferRequest))
+            asyncOnCopyThread(HandleTransferRequest(new BufferSendState(tx, metaRequest)))
+            doIssueReceive(RequestType.TransferRequest)
           }
         } finally {
           handleMetaRange.close()
@@ -525,7 +526,7 @@ class RapidsShuffleServer(transport: RapidsShuffleTransport,
 
             if (!bufferSendState.isDone) {
               // continue issuing sends.
-              asyncOrBlock(HandleTransferRequest(bufferSendState))
+              asyncOnCopyThread(HandleTransferRequest(bufferSendState))
             } else {
               val transferResponse = bufferSendState.getTransferResponse()
               // send the transfer response

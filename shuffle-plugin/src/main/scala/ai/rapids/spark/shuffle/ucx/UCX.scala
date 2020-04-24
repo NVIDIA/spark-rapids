@@ -329,10 +329,11 @@ class UCX(executorId: Int, usingWakeupFeature: Boolean = true) extends AutoClose
     * @return UcpEndpoint - returns a [[UcpEndpoint]] that can later be used to send on (from the progress thread)
     */
   private[ucx] def setupEndpoint(endpointId: Long, workerAddress: WorkerAddress): UcpEndpoint = {
-    logInfo(s"Starting an endpoint to $workerAddress with id $endpointId")
+    logInfo(s"Starting/reusing an endpoint to $workerAddress with id $endpointId")
     // create an UCX endpoint using workerAddress
     endpoints.computeIfAbsent(endpointId,
       (_: Long) => {
+        logInfo(s"No endpoint found for $endpointId. Adding it.")
         worker.newEndpoint(
           new UcpEndpointParams()
             .setUcpAddress(workerAddress.address))
