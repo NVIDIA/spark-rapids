@@ -94,7 +94,8 @@ case class GpuCeil(child: Expression) extends CudfUnaryMathExpression("CEIL") {
         super.doColumnar(GpuColumnVector.from(inputWithNansToZero))
       }
     } else {
-      super.doColumnar(input)
+      // Long is a noop in spark, but for cudf it is not.
+      input.incRefCount()
     }
   }
 }
@@ -149,7 +150,8 @@ case class GpuFloor(child: Expression) extends CudfUnaryMathExpression("FLOOR") 
         super.doColumnar(GpuColumnVector.from(inputWithNansToZero))
       }
     } else {
-      super.doColumnar(input)
+      // Long is a noop in spark, but for cudf it is not.
+      input.incRefCount()
     }
   }
 }
