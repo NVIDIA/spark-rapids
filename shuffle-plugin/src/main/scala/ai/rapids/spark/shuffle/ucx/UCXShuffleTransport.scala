@@ -181,15 +181,15 @@ class UCXShuffleTransport(shuffleServerId: BlockManagerId, rapidsConf: RapidsCon
     toBounceBuffersIfNecessary(deviceReceiveBuffMgr, numBuffs)
   }
 
-  def toBounceBuffersIfNecessary[T <: MemoryBuffer](
+  private def toBounceBuffersIfNecessary[T <: MemoryBuffer](
       bounceBuffMgr: BounceBufferManager[T],
-      numBuffs: Integer): Seq[MemoryBuffer] = bounceBuffMgr.synchronized {
+      numBuffs: Integer): Seq[MemoryBuffer] = {
     val nvtx = new NvtxRange("Getting bounce buffer", NvtxColor.YELLOW)
     try {
       // if the # of buffers requested is more than what the pool has, we would deadlock
       // this ensures we only get as many buffers as the pool could possibly give us.
       val possibleNumBuffers = Math.min(bounceBuffMgr.numBuffers, numBuffs)
-      val bounceBuffers: Seq[MemoryBuffer] = (0 until possibleNumBuffers).map(_ => bounceBuffMgr.acquireBuffer())
+      val bounceBuffers: Seq[MemoryBuffer] = bounceBuffMgr.acquireBuffers(possibleNumBuffers)
       logDebug(s"Got $possibleNumBuffers bounce buffers from pool out of ${numBuffs} requested.")
       bounceBuffers
     } finally {
@@ -237,6 +237,14 @@ class UCXShuffleTransport(shuffleServerId: BlockManagerId, rapidsConf: RapidsCon
     // if we can't hand off because we are too busy, block the caller (in UCX's case, the progress thread)
     new CallerRunsAndLogs())
 
+  // This was added as a workaround for shuffle hangs with larger queries
+  // It is meant for blocking tasks
+  private[this] val clientCopyExecutor = Executors.newCachedThreadPool(GpuDeviceManager.wrapThreadFactory(
+    new ThreadFactoryBuilder()
+      .setNameFormat("shuffle-client-copy-thread-%d")
+      .setDaemon(true)
+      .build))
+
   override def makeClient(localExecutorId: Long,
                  blockManagerId: BlockManagerId): RapidsShuffleClient = {
     val peerExecutorId = blockManagerId.executorId.toLong
@@ -247,19 +255,26 @@ class UCXShuffleTransport(shuffleServerId: BlockManagerId, rapidsConf: RapidsCon
         clientConnection,
         this,
         clientExecutor,
+        clientCopyExecutor,
         rapidsConf.shuffleMaxMetadataSize)
     })
   }
 
-  private[this] val threadFactory = GpuDeviceManager.wrapThreadFactory(
+  // NOTE: this is a single thread for the executor, nothing prevents us from having a pool here.
+  // This will likely change.
+  private[this] val serverExecutor = Executors.newSingleThreadExecutor(GpuDeviceManager.wrapThreadFactory(
     new ThreadFactoryBuilder()
       .setNameFormat(s"shuffle-server-conn-thread-${executorId}-%d")
       .setDaemon(true)
-      .build)
+      .build))
 
-  // NOTE: this is a single thread for the executor, nothing prevents us from having a pool here.
-  // This will likely change.
-  private[this] val serverExecutor = Executors.newSingleThreadExecutor(threadFactory)
+  // This was added as a workaround for shuffle hangs with larger queries
+  // It is meant for blocking tasks
+  private[this] val serverCopyExecutor = Executors.newCachedThreadPool(GpuDeviceManager.wrapThreadFactory(
+    new ThreadFactoryBuilder()
+      .setNameFormat(s"shuffle-server-copy-thread-%d")
+      .setDaemon(true)
+      .build))
 
   /**
     * Construct a server instance
@@ -273,6 +288,7 @@ class UCXShuffleTransport(shuffleServerId: BlockManagerId, rapidsConf: RapidsCon
       shuffleServerId,
       requestHandler,
       serverExecutor,
+      serverCopyExecutor,
       rapidsConf)
   }
 
@@ -293,7 +309,7 @@ class UCXShuffleTransport(shuffleServerId: BlockManagerId, rapidsConf: RapidsCon
       inflightSize = inflightSize + neededAmount
       logDebug(s"New inflight size ${inflightSize} after adding = ${neededAmount}")
     } else {
-      logDebug(s"Did not update inflight size ${inflightSize}: ${neededAmount} + ${inflightSize} > ${inflightLimit}")
+      logTrace(s"Did not update inflight size ${inflightSize}: ${neededAmount} + ${inflightSize} > ${inflightLimit}")
     }
 
     didFit

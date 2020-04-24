@@ -32,6 +32,7 @@ import org.apache.spark.internal.Logging
   */
 class BounceBufferManager[T <: MemoryBuffer](poolName: String, val bufferSize: Long, val numBuffers: Int,
                                              allocator: Long => T) extends AutoCloseable with Logging {
+
   private[this] val freeBufferMap = new util.BitSet(numBuffers)
 
   private[this] val rootBuffer = allocator(bufferSize * numBuffers)
@@ -40,9 +41,11 @@ class BounceBufferManager[T <: MemoryBuffer](poolName: String, val bufferSize: L
 
   /**
     * Acquires a [[MemoryBuffer]] from the pool. Blocks if the pool is empty.
+    *
+    * @note calls to this function should have a lock on this [[BounceBufferManager]]
     * @return - the acquired memory buffer
     */
-  def acquireBuffer(): MemoryBuffer = synchronized {
+  private def acquireBuffer(): MemoryBuffer = {
     val start = System.currentTimeMillis()
     var bufferIndex = freeBufferMap.nextSetBit(0)
     while (bufferIndex < 0) {
@@ -56,6 +59,15 @@ class BounceBufferManager[T <: MemoryBuffer](poolName: String, val bufferSize: L
     val res = rootBuffer.slice(bufferIndex * bufferSize, bufferSize)
     logDebug(s"It took ${System.currentTimeMillis() - start} ms to allocBuffer in $poolName")
     res
+  }
+
+  /**
+    * Acquire [[possibleNumBuffers]] buffers from the pool
+    * @param possibleNumBuffers - number of buffers to acquire
+    * @return - a sequence of MemoryBuffers
+    */
+  def acquireBuffers(possibleNumBuffers: Int): Seq[MemoryBuffer] = synchronized {
+    (0 until possibleNumBuffers).map(_ => acquireBuffer())
   }
 
   /**
