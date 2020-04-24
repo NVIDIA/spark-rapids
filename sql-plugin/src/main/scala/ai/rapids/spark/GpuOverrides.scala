@@ -1046,12 +1046,6 @@ object GpuOverrides {
         val ignoreNulls: ExprMeta[_] = GpuOverrides.wrapExpr(a.ignoreNullsExpr, conf, Some(this))
         override val childExprs: Seq[ExprMeta[_]] = Seq(child, ignoreNulls)
 
-        override def tagExprForGpu(): Unit = {
-          if (a.ignoreNullsExpr.semanticEquals(Literal(false))) {
-            willNotWorkOnGpu("including nulls is not supported, use first(col, true)")
-          }
-        }
-
         override def convertToGpu(): GpuExpression =
           GpuFirst(child.convertToGpu(), ignoreNulls.convertToGpu())
       }),
@@ -1061,12 +1055,6 @@ object GpuOverrides {
         val child: ExprMeta[_] = GpuOverrides.wrapExpr(a.child, conf, Some(this))
         val ignoreNulls: ExprMeta[_] = GpuOverrides.wrapExpr(a.ignoreNullsExpr, conf, Some(this))
         override val childExprs: Seq[ExprMeta[_]] = Seq(child, ignoreNulls)
-
-        override def tagExprForGpu(): Unit = {
-          if (a.ignoreNullsExpr.semanticEquals(Literal(false))) {
-            willNotWorkOnGpu("including nulls is not supported, use last(col, true)")
-          }
-        }
 
         override def convertToGpu(): GpuExpression =
           GpuLast(child.convertToGpu(), ignoreNulls.convertToGpu())

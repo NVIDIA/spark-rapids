@@ -21,7 +21,7 @@ import org.apache.spark.sql.execution.WholeStageCodegenExec
 import org.apache.spark.sql.execution.aggregate.SortAggregateExec
 import org.apache.spark.sql.{DataFrame, SparkSession}
 import org.apache.spark.sql.functions._
-import org.apache.spark.sql.types.DataTypes
+import org.apache.spark.sql.types.{DataType, DataTypes}
 
 class HashAggregatesSuite extends SparkQueryCompareTestSuite {
   private val floatAggConf: SparkConf = new SparkConf().set(
@@ -533,9 +533,97 @@ class HashAggregatesSuite extends SparkQueryCompareTestSuite {
     frame => frame.groupBy(col("more_longs") + col("longs")).agg(min("longs"))
   }
 
-  IGNORE_ORDER_testSparkResultsAreEqual("first/last aggregates", intCsvDf) {
+  testExpectedExceptionStartsWith("first without grouping",
+    classOf[IllegalArgumentException],
+    "Part of the plan is not columnar",
+    intCsvDf) {
+    frame => frame.agg(first("ints", false))
+  }
+
+  testExpectedExceptionStartsWith("last without grouping",
+    classOf[IllegalArgumentException],
+    "Part of the plan is not columnar",
+    intCsvDf) {
+    frame => frame.agg(first("ints", false))
+  }
+
+  IGNORE_ORDER_testSparkResultsAreEqual("first ignoreNulls=false", intCsvDf) {
+    frame => frame.groupBy(col("more_ints")).agg(first("ints", false))
+  }
+
+  IGNORE_ORDER_testSparkResultsAreEqual("last ignoreNulls=false", intCsvDf) {
+    frame => frame.groupBy(col("more_ints")).agg(last("ints", false))
+  }
+
+  IGNORE_ORDER_testSparkResultsAreEqual("first/last ints column", intCsvDf) {
     frame => frame.groupBy(col("more_ints")).agg(
-      first("five", true), last("six", true))
+      first("ints", ignoreNulls = false),
+      last("ints", ignoreNulls = false))
+  }
+
+  IGNORE_ORDER_testSparkResultsAreEqual("first hand-picked longs ignoreNulls=true", firstLastLongsDf) {
+    frame => frame.groupBy(col("c0")).agg(first("c1", ignoreNulls = true))
+  }
+
+  IGNORE_ORDER_testSparkResultsAreEqual("first hand-picked longs ignoreNulls=false", firstLastLongsDf) {
+    frame => frame.groupBy(col("c0")).agg(first("c1", ignoreNulls = false))
+  }
+
+  IGNORE_ORDER_testSparkResultsAreEqual("first/last hand-picked longs ignoreNulls=false", firstLastLongsDf) {
+    frame => frame.groupBy(col("c0")).agg(
+      first("c1", ignoreNulls = false),
+      last("c1", ignoreNulls = false))
+  }
+
+  IGNORE_ORDER_testSparkResultsAreEqual("first/last random ints ignoreNulls=false", randomDF(DataTypes.IntegerType)) {
+    frame => frame.groupBy(col("c0")).agg(
+      first("c1", ignoreNulls = false),
+      last("c1", ignoreNulls = false))
+  }
+
+  IGNORE_ORDER_testSparkResultsAreEqual("first/last random longs ignoreNulls=false", randomDF(DataTypes.LongType)) {
+    frame => frame.groupBy(col("c0")).agg(
+      first("c1", ignoreNulls = false),
+      last("c1", ignoreNulls = false))
+  }
+
+  IGNORE_ORDER_testSparkResultsAreEqual("first random strings ignoreNulls=false", randomDF(DataTypes.StringType)) {
+    frame => frame.groupBy(col("c0")).agg(first("c1", ignoreNulls = false))
+  }
+
+  IGNORE_ORDER_testSparkResultsAreEqual("last random strings ignoreNulls=false", randomDF(DataTypes.StringType)) {
+    frame => frame.groupBy(col("c0")).agg(last("c1", ignoreNulls = false))
+  }
+
+  IGNORE_ORDER_testSparkResultsAreEqual("first/last random strings ignoreNulls=false", randomDF(DataTypes.StringType)) {
+    frame => frame.groupBy(col("c0")).agg(
+      first("c1", ignoreNulls = false),
+      last("c1", ignoreNulls = false))
+  }
+
+  private def firstLastLongsDf(spark: SparkSession): DataFrame = {
+    import spark.sqlContext.implicits._
+    Seq[(java.lang.String, java.lang.Long)](
+      ("aa", null),
+      ("aa", Long.MinValue),
+      ("bb", Long.MaxValue),
+      ("bb", Long.MinValue),
+      ("cc", Long.MinValue),
+      ("cc", Long.MaxValue),
+      ("dd", -0L),
+      ("dd", 0L),
+      ("ee", 0L),
+      ("ee", -0L),
+      ("ff", null),
+      ("ff", Long.MaxValue),
+      ("ff", null)
+    ).toDF("c0", "c1")
+  }
+
+  private def randomDF(dataType: DataType)(spark: SparkSession) : DataFrame = {
+    val schema = FuzzerUtils.createSchema(Seq(DataTypes.StringType, dataType))
+    FuzzerUtils.generateDataFrame(spark, schema, rowCount = 1000,
+      options = FuzzerOptions(numbersAsStrings = false, asciiStringsOnly = true, maxStringLen = 2))
   }
 
   FLOAT_TEST_testSparkResultsAreEqual("empty df: reduction count", floatCsvDf) {
@@ -552,8 +640,9 @@ class HashAggregatesSuite extends SparkQueryCompareTestSuite {
       max("more_floats") - min("floats"),
       sum("floats") + sum("more_floats"),
       avg("floats"),
-      first("floats", true),
-      last("floats", true),
+      // first/last are disabled on GPU for now since we need CuDF changes to support nth_element reductions
+//      first("floats", true),
+//      last("floats", true),
       count("*"))
   }
 
