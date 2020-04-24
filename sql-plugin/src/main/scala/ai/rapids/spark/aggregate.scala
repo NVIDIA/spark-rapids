@@ -62,6 +62,12 @@ class GpuHashAggregateMeta(
       resultExpressions
 
   override def tagPlanForGpu(): Unit = {
+    if (agg.groupingExpressions.isEmpty) {
+      // first/last reductions not supported yet
+      if (agg.aggregateExpressions.exists(e => e.aggregateFunction.isInstanceOf[First] || e.aggregateFunction.isInstanceOf[Last])) {
+        willNotWorkOnGpu("First/Last reductions are not supported on GPU")
+      }
+    }
     val groupingExpressionTypes = agg.groupingExpressions.map(_.dataType)
     if (conf.hasNans &&
       (groupingExpressionTypes.contains(FloatType) ||
