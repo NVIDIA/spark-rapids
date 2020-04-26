@@ -627,15 +627,16 @@ class RapidsShuffleClient(
     val ptrs = new ArrayBuffer[PendingTransferRequest](allTables)
     (0 until allTables).foreach { i =>
       val tableMeta = metaResponse.tableMetas(i)
-      if (tableMeta.columnMetasLength > 0 && tableMeta.rowCount > 0) {
+      if (tableMeta.bufferMeta() != null) {
         ptrs += PendingTransferRequest(
           this,
           ShuffleMetadata.copyTableMetaToHeap(tableMeta),
           connection.assignBufferTag(tableMeta.bufferMeta().id),
           handler)
       } else {
-        // Degenerate buffer (no device data) so no more data to request
-        track(null, tableMeta)
+        // Degenerate buffer (no device data) so no more data to request.
+        // We need to trigger call in interator, otherwise this batch is never handled.
+        handler.batchReceived(track(null, tableMeta).asInstanceOf[ShuffleReceivedBufferId])
       }
     }
 
