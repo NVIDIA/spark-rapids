@@ -16,6 +16,7 @@
 package ai.rapids.spark
 
 import java.io.File
+import java.nio.file.Files
 import java.sql.{Date, Timestamp}
 import java.util.{Locale, TimeZone}
 
@@ -55,6 +56,7 @@ object SparkSessionHolder extends Logging {
       .config("spark.rapids.sql.enabled", "false")
       .config("spark.rapids.sql.test.enabled", "false")
       .config("spark.plugins", "ai.rapids.spark.SQLPlugin")
+      .config("spark.sql.warehouse.dir", sparkWarehouseDir().getAbsolutePath)
       .appName("rapids spark plugin integration tests (scala)")
       .getOrCreate()
   }
@@ -82,6 +84,13 @@ object SparkSessionHolder extends Logging {
     setAllConfs(conf.getAll)
     logDebug(s"RUN WITH CONF: ${spark.conf.getAll}\n")
     f(spark)
+  }
+
+  private def sparkWarehouseDir(): File = {
+    val path = Files.createTempDirectory("spark-warehouse")
+    val file = new File(path.toString)
+    file.deleteOnExit()
+    file
   }
 }
 

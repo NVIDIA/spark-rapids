@@ -459,7 +459,19 @@ object GpuOverrides {
         }
 
         override def convertToGpu(child: GpuExpression): GpuExpression =
-          GpuCast(child, cast.dataType, cast.timeZoneId)
+          GpuCast(child, cast.dataType, ansiMode = false, cast.timeZoneId)
+      }),
+    expr[AnsiCast](
+      "convert a column of one type of data into another type",
+      (cast, conf, p, r) => new UnaryExprMeta[AnsiCast](cast, conf, p, r) {
+        override def tagExprForGpu(): Unit =
+          if (!GpuCast.canCast(cast.child.dataType, cast.dataType, ansiMode = true)) {
+            willNotWorkOnGpu(s"ansi_cast from ${cast.child.dataType} " +
+              s"to ${cast.dataType} is not currently supported on the GPU")
+          }
+
+        override def convertToGpu(child: GpuExpression): GpuExpression =
+          GpuCast(child, cast.dataType, ansiMode = true, cast.timeZoneId)
       }),
     expr[ToRadians](
       "Converts degrees to radians",
