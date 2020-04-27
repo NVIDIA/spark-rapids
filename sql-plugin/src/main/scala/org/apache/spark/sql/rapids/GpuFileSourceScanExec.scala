@@ -80,10 +80,10 @@ case class GpuFileSourceScanExec(
     }
 
     s"""
-       |(${ExplainUtils.getOpId(this)}) $nodeName ${ExplainUtils.getCodegenId(this)}
-       |Output: ${producedAttributes.mkString("[", ", ", "]")}
+       |$formattedNodeName
+       |${ExplainUtils.generateFieldString("Output", output)}
        |${metadataStr.mkString("\n")}
-     """.stripMargin
+       |""".stripMargin
   }
 
   override def inputRDDs(): Seq[RDD[InternalRow]] = {
