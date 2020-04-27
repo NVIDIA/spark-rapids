@@ -182,7 +182,7 @@ object ShuffleMetadata extends Logging{
         ColumnMeta.endColumnMeta(fbb)
       }
 
-      val columnMetaOffset = if (columnMetaOffsets.size > 0) {
+      val columnMetaOffset = if (columnMetaOffsets.nonEmpty) {
         Some(TableMeta.createColumnMetasVector(fbb, columnMetaOffsets.toArray))
       } else {
         None
