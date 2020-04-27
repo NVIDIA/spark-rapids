@@ -147,8 +147,13 @@ object ShuffleMetadata extends Logging{
   def copyTables(fbb: FlatBufferBuilder, tables: Seq[TableMeta]): Array[Int] = {
     tables.map { tableMeta =>
       val buffMeta = tableMeta.bufferMeta()
-      val buffMetaOffset =
-        BufferMeta.createBufferMeta(fbb, buffMeta.id(), buffMeta.actualSize(), buffMeta.compressedSize(), buffMeta.codec())
+
+      val buffMetaOffset = if (buffMeta != null) {
+        Some(BufferMeta.createBufferMeta(fbb, buffMeta.id(), buffMeta.actualSize(),
+          buffMeta.compressedSize(), buffMeta.codec()))
+      } else {
+        None
+      }
 
       val columnMetaOffsets = (0 until tableMeta.columnMetasLength()).map { c =>
         val col = tableMeta.columnMetas(c)
@@ -177,8 +182,21 @@ object ShuffleMetadata extends Logging{
         ColumnMeta.endColumnMeta(fbb)
       }
 
-      val columnMetaOffset = TableMeta.createColumnMetasVector(fbb, columnMetaOffsets.toArray)
-      TableMeta.createTableMeta(fbb, buffMetaOffset, columnMetaOffset, tableMeta.rowCount())
+      val columnMetaOffset = if (columnMetaOffsets.nonEmpty) {
+        Some(TableMeta.createColumnMetasVector(fbb, columnMetaOffsets.toArray))
+      } else {
+        None
+      }
+
+      TableMeta.startTableMeta(fbb)
+      if (buffMetaOffset.isDefined) {
+        TableMeta.addBufferMeta(fbb, buffMetaOffset.get)
+      }
+      if (columnMetaOffset.isDefined) {
+        TableMeta.addColumnMetas(fbb, columnMetaOffset.get)
+      }
+      TableMeta.addRowCount(fbb, tableMeta.rowCount())
+      TableMeta.endTableMeta(fbb)
     }.toArray
   }
 
