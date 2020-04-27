@@ -22,44 +22,71 @@ import org.apache.spark.sql.catalyst.expressions.{Cast, NullIntolerant, TimeZone
 import org.apache.spark.sql.types._
 
 object GpuCast {
+
   /**
    * Returns true iff we can cast `from` to `to` using the GPU.
    *
    * Eventually we will need to match what is supported by spark proper
    * https://github.com/apache/spark/blob/master/sql/catalyst/src/main/scala/org/apache/spark/sql/catalyst/expressions/Cast.scala#L37-L95
    */
-  def canCast(from: DataType, to: DataType): Boolean =
-    (from, to) match {
-    case (fromType, toType) if fromType == toType => true
+  def canCast(from: DataType, to: DataType, ansiMode: Boolean = false): Boolean = {
+    if (ansiMode) {
+      (from, to) match {
+        case (fromType, toType) if fromType == toType => true
 
-    case (ByteType|ShortType|IntegerType|LongType, _: StringType) => true
-    case (FloatType|DoubleType, _: StringType) => true
+        // some conversions need no special handling when ansi mode is enabled
+        // because no overflow or underflow can occur
 
-    case (BooleanType, _: NumericType) => true
+        // casting any numeric to floating point is safe because there is no overflow, just potential loss of precision
+        case (ByteType|ShortType|IntegerType|LongType, FloatType|DoubleType) => true
+        case (FloatType|DoubleType, FloatType|DoubleType) => true
 
-    case (_: NumericType, BooleanType) => true
-    case (_: NumericType, _: NumericType) => true
-    case (_: NumericType, TimestampType) => true
+        // casting small integer types to larger integer types is safe
+        case (ByteType, ShortType|IntegerType|LongType) => true
+        case (ShortType, IntegerType|LongType) => true
+        case (IntegerType, LongType) => true
 
-    case (DateType, BooleanType) => true
-    case (DateType, _: NumericType) => true
-    case (DateType, TimestampType) => true
+        // other casts need specific support to honor ansi mode
+        case _ => false
+      }
+    } else {
+      (from, to) match {
+        case (fromType, toType) if fromType == toType => true
 
-    case (TimestampType, BooleanType) => true
-    case (TimestampType, _: NumericType) => true
-    case (TimestampType, DateType) => true
+        case (ByteType|ShortType|IntegerType|LongType, _: StringType) => true
+        case (FloatType|DoubleType, _: StringType) => true
 
-    case _ => false
+        case (BooleanType, _: NumericType) => true
+
+        case (_: NumericType, BooleanType) => true
+        case (_: NumericType, _: NumericType) => true
+        case (_: NumericType, TimestampType) => true
+
+        case (DateType, BooleanType) => true
+        case (DateType, _: NumericType) => true
+        case (DateType, TimestampType) => true
+
+        case (TimestampType, BooleanType) => true
+        case (TimestampType, _: NumericType) => true
+        case (TimestampType, DateType) => true
+
+        case _ => false
+      }
+    }
   }
 }
 
 /**
  * Casts using the GPU
  */
-case class GpuCast(child: GpuExpression, dataType: DataType, timeZoneId: Option[String] = None)
+case class GpuCast(child: GpuExpression, dataType: DataType, ansiMode: Boolean = false, timeZoneId: Option[String] = None)
   extends GpuUnaryExpression with TimeZoneAwareExpression with NullIntolerant {
 
-  override def toString: String = s"cast($child as ${dataType.simpleString})"
+  override def toString: String = if (ansiMode) {
+    s"ansi_cast($child as ${dataType.simpleString})"
+  } else {
+    s"cast($child as ${dataType.simpleString})"
+  }
 
   override def checkInputDataTypes(): TypeCheckResult = {
     if (Cast.canCast(child.dataType, dataType)) {

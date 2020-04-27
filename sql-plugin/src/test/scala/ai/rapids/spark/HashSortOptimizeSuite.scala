@@ -16,22 +16,13 @@
 
 package ai.rapids.spark
 
-import org.scalatest.FunSuite
+import org.scalatest.{BeforeAndAfterAll, FunSuite}
 
-import org.apache.spark.sql.SparkSession
 import org.apache.spark.sql.execution.{GpuBroadcastHashJoinExec, SortExec, SparkPlan}
 
 /** Test plan modifications to add optimizing sorts after hash joins in the plan */
-class HashSortOptimizeSuite extends FunSuite {
+class HashSortOptimizeSuite extends FunSuite with BeforeAndAfterAll {
   import SparkSessionHolder.spark
-
-  // Setup the conf for the spark session
-  SparkSessionHolder.resetSparkSessionConf()
-  // Turn on the GPU
-  spark.conf.set(RapidsConf.SQL_ENABLED.key, "true")
-  // Turn on hash optimized sort
-  spark.conf.set(RapidsConf.ENABLE_HASH_OPTIMIZE_SORT.key, "true")
-
   import spark.sqlContext.implicits._
 
   private val df1 = Seq(
@@ -45,6 +36,15 @@ class HashSortOptimizeSuite extends FunSuite {
     (5, 14),
     (7, 17)
   ).toDF("x", "y")
+
+  override def beforeAll(): Unit = {
+    // Setup the conf for the spark session
+    SparkSessionHolder.resetSparkSessionConf()
+    // Turn on the GPU
+    spark.conf.set(RapidsConf.SQL_ENABLED.key, "true")
+    // Turn on hash optimized sort
+    spark.conf.set(RapidsConf.ENABLE_HASH_OPTIMIZE_SORT.key, "true")
+  }
 
   /**
    * Find the first GPU optimize sort in the plan and verify it has been inserted after the
