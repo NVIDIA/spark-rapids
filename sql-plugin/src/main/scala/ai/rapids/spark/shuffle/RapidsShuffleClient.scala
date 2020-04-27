@@ -635,7 +635,7 @@ class RapidsShuffleClient(
           handler)
       } else {
         // Degenerate buffer (no device data) so no more data to request.
-        // We need to trigger call in interator, otherwise this batch is never handled.
+        // We need to trigger call in iterator, otherwise this batch is never handled.
         handler.batchReceived(track(null, tableMeta).asInstanceOf[ShuffleReceivedBufferId])
       }
     }
