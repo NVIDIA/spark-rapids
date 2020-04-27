@@ -182,12 +182,19 @@ object ShuffleMetadata extends Logging{
         ColumnMeta.endColumnMeta(fbb)
       }
 
-      val columnMetaOffset = TableMeta.createColumnMetasVector(fbb, columnMetaOffsets.toArray)
+      val columnMetaOffset = if (columnMetaOffsets.size > 0) {
+        Some(TableMeta.createColumnMetasVector(fbb, columnMetaOffsets.toArray))
+      } else {
+        None
+      }
+
       TableMeta.startTableMeta(fbb)
       if (buffMetaOffset.isDefined) {
         TableMeta.addBufferMeta(fbb, buffMetaOffset.get)
       }
-      TableMeta.addColumnMetas(fbb, columnMetaOffset)
+      if (columnMetaOffset.isDefined) {
+        TableMeta.addColumnMetas(fbb, columnMetaOffset.get)
+      }
       TableMeta.addRowCount(fbb, tableMeta.rowCount())
       TableMeta.endTableMeta(fbb)
     }.toArray
