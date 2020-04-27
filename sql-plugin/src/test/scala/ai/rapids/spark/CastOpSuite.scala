@@ -53,7 +53,7 @@ class CastOpSuite extends GpuExpressionTestSuite {
   }
 
   private def testCastToString[T](dataType: DataType, comparisonFunc: Option[(String, String) => Boolean] = None) {
-    assert(GpuCast.canCast(dataType, DataTypes.StringType))
+    assert(GpuCast.canCast(dataType, DataTypes.StringType, false))
     val schema = FuzzerUtils.createSchema(Seq(dataType))
     val childExpr: GpuBoundReference = GpuBoundReference(0, dataType, nullable = false)
     checkEvaluateGpuUnaryExpression(GpuCast(childExpr, DataTypes.StringType), dataType, DataTypes.StringType,
