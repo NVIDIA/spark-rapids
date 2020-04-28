@@ -17,7 +17,7 @@
 package ai.rapids.spark
 
 import org.apache.spark.SparkConf
-import org.apache.spark.sql.catalyst.expressions.{Alias, AnsiCast, Cast}
+import org.apache.spark.sql.catalyst.expressions.{Alias, AnsiCast, Cast, CastBase}
 import org.apache.spark.sql.execution.{ExplainMode, ProjectExec, SimpleMode}
 import org.apache.spark.sql.{DataFrame, SparkSession}
 import org.apache.spark.sql.functions._
@@ -239,10 +239,8 @@ class AnsiCastOpSuite extends GpuExpressionTestSuite {
     var count = 0
     df.queryExecution.sparkPlan.foreach {
       case p: ProjectExec => count += p.projectList.count {
-        case _: AnsiCast => true
-        case Alias(_: AnsiCast, _) => true
-        case c: Cast => c.toString().contains("ansi_cast") // ansiEnabled is protected
-        case Alias(c: Cast, _) => c.toString().contains("ansi_cast") // ansiEnabled is protected
+        case c: CastBase => c.toString().startsWith("ansi_cast") // ansiEnabled is protected
+        case Alias(c: CastBase, _) => c.toString().startsWith("ansi_cast") // ansiEnabled is protected
         case _ => false
       }
       case p: GpuProjectExec => count += p.projectList.count {
