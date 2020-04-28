@@ -12,177 +12,209 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import random
 from pyspark.sql.types import *
+import random
+import sre_yield
+import struct
 
-def gen_null():
-    return None
-
-def make_equal_choice(choices):
-    return lambda : random.choice(choices)()
-
-def make_weighted_choice(weighted_choices):
+class DataGen:
     """
-    Returns a data gen function that will choose between different gen functions
-    based off of the weight given them.
-
-    make_weights_choice([(0.01, gen_null), (0.99, gen_long)])
-
-    Will return a data gen function that inserts null/None 1% of the time
+    Base class for data generation
     """
-    total = float(sum(weight for weight,gen in weighted_choices))
-    normalized_choices = [(weight/total, gen) for weight,gen in weighted_choices]
-    def choose_one():
-        pick = random.random()
-        total = 0
-        for (weight, gen) in normalized_choices:
-            total += weight
-            if total >= pick:
-                return gen()
-        raise RuntimeError('Random did not pick something we expected')
-    return choose_one
 
-def make_std_nullable(gen):
-    return make_weighted_choice([(0.05, gen_null), (0.95, gen)])
+    def __repr__(self):
+        return self.__class__.__name__[:-3]
 
-BYTE_MIN = -128
-BYTE_MAX = 127
-# Bytes are a small enough range we don't have to worry about not getting
-# enough coverage and inserting in corner cases
-def gen_byte():
-    return random.randint(BYTE_MIN, BYTE_MAX)
+    def __hash__(self):
+        return hash(str(self))
 
-SHORT_MIN = -32768
-SHORT_MAX = 32767
-def gen_short_basic():
-    return random.randint(SHORT_MIN, SHORT_MAX)
+    def __eq__(self, other):
+        return isinstance(other, self.__class__) and self.__dict__ == other.__dict__
 
-gen_short = make_weighted_choice([
-    (0.01, lambda : SHORT_MIN),
-    (0.01, lambda : SHORT_MAX),
-    (0.01, lambda : 0),
-    (0.01, lambda : 1),
-    (0.01, lambda : -1),
-    (0.95, gen_short_basic)])
+    def __ne__(self, other):
+        return not self.__eq__(other)
 
-INT_MIN = -2147483648
-INT_MAX = 2147483647
-def gen_int_basic():
-    return random.randint(INT_MIN, INT_MAX)
+    def __init__(self, data_type, nullable=True):
+        self.data_type = data_type
+        self.nullable = nullable
+        self._special_cases = []
+        if nullable:
+            self.with_special_case(None, weight=5.0)
 
-gen_int = make_weighted_choice([
-    (0.01, lambda : INT_MIN),
-    (0.01, lambda : INT_MAX),
-    (0.01, lambda : 0),
-    (0.01, lambda : 1),
-    (0.01, lambda : -1),
-    (0.95, gen_int_basic)])
+    def with_special_case(self, special_case, weight=1.0):
+        if callable(special_case):
+            sc = special_case
+        else:
+            sc = lambda rand: special_case
+        self._special_cases.append((weight, sc))
+        return self
 
-LONG_MIN = -922337203685477580
-LONG_MAX = 9223372036854775807
-def gen_long_basic():
-    return random.randint(LONG_MIN, LONG_MAX)
+    def start(self, rand):
+        raise TypeError('Children should implement this method and call _start')
 
-gen_long = make_weighted_choice([
-    (0.01, lambda : LONG_MIN),
-    (0.01, lambda : LONG_MAX),
-    (0.01, lambda : 0),
-    (0.01, lambda : 1),
-    (0.01, lambda : -1),
-    (0.95, gen_long_basic)])
+    def _start(self, rand, gen_func):
+        if not self._special_cases:
+            self._gen_func = gen_func
+        else:
+            weighted_choices = [(100.0, lambda rand: gen_func())]
+            weighted_choices.extend(self._special_cases)
+            total = float(sum(weight for weight,gen in weighted_choices))
+            normalized_choices = [(weight/total, gen) for weight,gen in weighted_choices]
 
-FLOAT_MIN = -3.4028235E38
-FLOAT_MAX = 3.4028235E38
-def gen_float_basic():
-    return random.uniform(FLOAT_MIN, FLOAT_MAX)
+            def choose_one():
+                pick = rand.random()
+                total = 0
+                for (weight, gen) in normalized_choices:
+                    total += weight
+                    if total >= pick:
+                        return gen(rand)
+                raise RuntimeError('Random did not pick something we expected')
+            self._gen_func = choose_one
 
-gen_float = make_weighted_choice([
-    (0.01, lambda : FLOAT_MIN),
-    (0.01, lambda : FLOAT_MAX),
-    (0.01, lambda : 0.0),
-    (0.01, lambda : 1.0),
-    (0.01, lambda : -1.0),
-    (0.01, lambda : float('inf')),
-    (0.01, lambda : float('-inf')),
-    (0.01, lambda : float('nan')),
-    (0.92, gen_float_basic)])
+    def gen(self):
+        if not self._gen_func:
+            raise RuntimeError('start must be called before generateing any data')
+        return self._gen_func()
 
-DOUBLE_MIN = -1.7976931348623157E308
-DOUBLE_MAX = 1.7976931348623157E308
-def gen_double_basic():
-    return random.uniform(DOUBLE_MIN, DOUBLE_MAX)
+_MAX_CHOICES = 1 << 64
+class StringGen(DataGen):
+    def __init__(self, pattern="(.|\n){1,30}", flags=0, charset=sre_yield.CHARSET, nullable=True):
+        super().__init__(StringType(), nullable=nullable)
+        self.base_strs = sre_yield.AllStrings(pattern, flags=flags, charset=charset, max_count=_MAX_CHOICES)
 
-gen_double = make_weighted_choice([
-    (0.01, lambda : DOUBLE_MIN),
-    (0.01, lambda : DOUBLE_MAX),
-    (0.01, lambda : 0.0),
-    (0.01, lambda : 1.0),
-    (0.01, lambda : -1.0),
-    (0.01, lambda : float('inf')),
-    (0.01, lambda : float('-inf')),
-    (0.01, lambda : float('nan')),
-    (0.92, gen_double_basic)])
+    def with_special_pattern(self, special_pattern, flags=0, charset=sre_yield.CHARSET, weight=1.0):
+        strs = sre_yield.AllStrings(pattern, flags=flags, charset=charset, max_count=_MAX_CHOICES)
+        try:
+            length = int(len(strs))
+        except OverflowError:
+            length = _MAX_CHOICES
+        return self.with_special_case(lambda rand : strs[rand.randint(0, length)], weight=weight)
 
-def _make_nullable_if_needed(gen, nullable):
-    if (nullable):
-        return make_std_nullable(gen)
-    else:
-        return gen
+    def start(self, rand):
+        strs = self.base_strs
+        try:
+            length = int(len(strs))
+        except OverflowError:
+            length = _MAX_CHOICES
+        self._start(rand, lambda : strs[rand.randint(0, length)])
 
-class StructFieldWithDataGen(StructField):
-    def __init__(self, gen, name, data_type, nullable=True, metadata=None, add_nullgen_when_nullable = True):
-        super().__init__(name, data_type, nullable, metadata)
-        self.gen = _make_nullable_if_needed(gen, nullable and add_nullgen_when_nullable)
+_BYTE_MIN = -(1 << 7)
+_BYTE_MAX = (1 << 7) - 1
+class ByteGen(DataGen):
+    def __init__(self, nullable=True):
+        super().__init__(ByteType(), nullable=nullable)
 
-# TODO class ArrayTypeWithDataGen
+    def start(self, rand):
+        self._start(rand, lambda : rand.randint(_BYTE_MIN, _BYTE_MAX))
 
-# TODO class MapTypeWithDataGen
+_SHORT_MIN = -(1 << 15)
+_SHORT_MAX = (1 << 15) - 1
+class ShortGen(DataGen):
+    def __init__(self, nullable=True):
+        super().__init__(ShortType(), nullable=nullable)
+        self.with_special_case(_SHORT_MIN)
+        self.with_special_case(_SHORT_MAX)
+        self.with_special_case(0)
+        self.with_special_case(1)
+        self.with_special_case(-1)
 
-def _make_gen_from(schema):
-    if isinstance(schema, StructFieldWithDataGen):
-        # nullability already included in generator
-        return schema.gen
-    elif isinstance(schema, StructField):
-        gen = _make_gen_from(schema.dataType)
-        return _make_nullable_if_needed(gen, schema.nullable)
-    elif isinstance(schema, StructType):
-        sub_gens = [_make_gen_from(sub) for sub in schema.fields]
+    def start(self, rand):
+        self._start(rand, lambda : rand.randint(_SHORT_MIN, _SHORT_MAX))
+
+_INT_MIN = -(1 << 31)
+_INT_MAX = (1 << 31) - 1
+class IntegerGen(DataGen):
+    def __init__(self, nullable=True):
+        super().__init__(IntegerType(), nullable=nullable)
+        self.with_special_case(_INT_MIN)
+        self.with_special_case(_INT_MAX)
+        self.with_special_case(0)
+        self.with_special_case(1)
+        self.with_special_case(-1)
+
+    def start(self, rand):
+        self._start(rand, lambda : rand.randint(_INT_MIN, _INT_MAX))
+
+_LONG_MIN = -(1 << 63)
+_LONG_MAX = (1 << 63) - 1
+class LongGen(DataGen):
+    def __init__(self, nullable=True):
+        super().__init__(LongType(), nullable=nullable)
+        self.with_special_case(_LONG_MIN)
+        self.with_special_case(_LONG_MAX)
+        self.with_special_case(0)
+        self.with_special_case(1)
+        self.with_special_case(-1)
+
+    def start(self, rand):
+        self._start(rand, lambda : rand.randint(_LONG_MIN, _LONG_MAX))
+
+_FLOAT_MIN = -3.4028235E38
+_FLOAT_MAX = 3.4028235E38
+_NEG_FLOAT_NAN = struct.unpack('f', struct.pack('I', 0xfff00001))[0]
+class FloatGen(DataGen):
+    def __init__(self, nullable=True):
+        super().__init__(FloatType(), nullable=nullable)
+        self.with_special_case(_FLOAT_MIN)
+        self.with_special_case(_FLOAT_MAX)
+        self.with_special_case(0.0)
+        self.with_special_case(1.0)
+        self.with_special_case(-1.0)
+        self.with_special_case(float('inf'))
+        self.with_special_case(float('-inf'))
+        self.with_special_case(float('nan'))
+        self.with_special_case(_NEG_FLOAT_NAN)
+
+    def start(self, rand):
+        def gen_float():
+            i = rand.randint(_INT_MIN, _INT_MAX)
+            p = struct.pack('i', i)
+            return struct.unpack('f', p)[0]
+        self._start(rand, gen_float)
+
+_DOUBLE_MIN = -1.7976931348623157E308
+_DOUBLE_MAX = 1.7976931348623157E308
+_NEG_DOUBLE_NAN = struct.unpack('d', struct.pack('L', 0xfff0000000000001))[0]
+class DoubleGen(DataGen):
+    def __init__(self, nullable=True):
+        super().__init__(DoubleType(), nullable=nullable)
+        self.with_special_case(_DOUBLE_MIN)
+        self.with_special_case(_DOUBLE_MAX)
+        self.with_special_case(0.0)
+        self.with_special_case(1.0)
+        self.with_special_case(-1.0)
+        self.with_special_case(float('inf'))
+        self.with_special_case(float('-inf'))
+        self.with_special_case(float('nan'))
+        self.with_special_case(_NEG_DOUBLE_NAN)
+
+    def start(self, rand):
+        def gen_double():
+            i = rand.randint(_LONG_MIN, _LONG_MAX)
+            p = struct.pack('l', i)
+            return struct.unpack('d', p)[0]
+        self._start(rand, gen_double)
+
+class StructGen(DataGen):
+    def __init__(self, children, nullable=False):
+        tmp = [StructField(name, child.data_type, nullable=child.nullable) for name, child in children]
+        super().__init__(StructType(tmp), nullable=nullable)
+        self.children = children
+
+    def start(self, rand):
+        for name, child in self.children:
+            child.start(rand)
         def make_tuple():
-            data = [gen() for gen in sub_gens]
+            data = [child.gen() for name, child in self.children]
             return tuple(data)
-        # nullability handled by StructField, MapType or ArrayType
-        return make_tuple
-    elif isinstance(schema, ByteType):
-        # nullability handled by StructField, MapType or ArrayType
-        return gen_byte
-    elif isinstance(schema, ShortType):
-        # nullability handled by StructField, MapType or ArrayType
-        global gen_short
-        return gen_short
-    elif isinstance(schema, IntegerType):
-        # nullability handled by StructField, MapType or ArrayType
-        global gen_int
-        return gen_int
-    elif isinstance(schema, LongType):
-        # nullability handled by StructField, MapType or ArrayType
-        global gen_long
-        return gen_long
-    elif isinstance(schema, FloatType):
-        # nullability handled by StructField, MapType or ArrayType
-        global gen_float
-        return gen_float
-    elif isinstance(schema, DoubleType):
-        # nullability handled by StructField, MapType or ArrayType
-        global gen_double
-        return gen_double
-    else:
-        raise RuntimeError('Unsupported data type {}'.format(type(schema)))
+        self._start(rand, make_tuple)
 
-def random_df_from_schema(spark, schema, length=2048, seed=0):
-    # We always want to produce the same result for the same schema and length
-    random.seed(seed)
-    gen = _make_gen_from(schema)
-    data = []
-    for index in range(0, length):
-        data.append(gen())
-    return spark.createDataFrame(data, schema)
+def gen_df(spark, data_gen, length=2048, seed=0):
+    if isinstance(data_gen, list):
+        src = StructGen(data_gen)
+    else:
+        src = data_gen
+    rand = random.Random(seed)
+    src.start(rand)
+    data = [src.gen() for index in range(0, length)]
+    return spark.createDataFrame(data, src.data_type)
