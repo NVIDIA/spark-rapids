@@ -159,11 +159,14 @@ object FuzzerUtils {
         null
       } else {
         field.dataType match {
+          case DataTypes.ByteType => r.nextByte()
+          case DataTypes.ShortType => r.nextShort()
           case DataTypes.IntegerType => r.nextInt()
           case DataTypes.LongType => r.nextLong()
           case DataTypes.FloatType => r.nextFloat()
           case DataTypes.DoubleType => r.nextDouble()
           case DataTypes.StringType => r.nextString()
+          case _ => throw new IllegalStateException(s"fuzzer does not support data type ${field.dataType}")
         }
       }
     })
@@ -182,7 +185,7 @@ class EnhancedRandom(r: Random, options: FuzzerOptions) {
       case 1 => Byte.MaxValue
       case 2 => (r.nextDouble() * Byte.MinValue).toByte
       case 3 => (r.nextDouble() * Byte.MaxValue).toByte
-      case _ => 0
+      case 4 => 0
     }
   }
 
@@ -192,30 +195,32 @@ class EnhancedRandom(r: Random, options: FuzzerOptions) {
       case 1 => Short.MaxValue
       case 2 => (r.nextDouble() * Short.MinValue).toShort
       case 3 => (r.nextDouble() * Short.MaxValue).toShort
-      case _ => 0
+      case 4 => 0
     }
   }
 
   def nextInt(): Int = {
-    r.nextInt(4) match {
+    r.nextInt(5) match {
       case 0 => Int.MinValue
       case 1 => Int.MaxValue
       case 2 => (r.nextDouble() * Int.MinValue).toInt
-      case _ => (r.nextDouble() * Int.MaxValue).toInt
+      case 3 => (r.nextDouble() * Int.MaxValue).toInt
+      case 4 => 0
     }
   }
 
   def nextLong(): Long = {
-    r.nextInt(4) match {
+    r.nextInt(5) match {
       case 0 => Long.MinValue
       case 1 => Long.MaxValue
       case 2 => (r.nextDouble() * Long.MinValue).toLong
-      case _ => (r.nextDouble() * Long.MaxValue).toLong
+      case 3 => (r.nextDouble() * Long.MaxValue).toLong
+      case 4 => 0
     }
   }
 
   def nextFloat(): Float = {
-    r.nextInt(8) match {
+    r.nextInt(9) match {
       case 0 => Float.NaN
       case 1 => Float.PositiveInfinity
       case 2 => Float.NegativeInfinity
@@ -223,12 +228,13 @@ class EnhancedRandom(r: Random, options: FuzzerOptions) {
       case 4 => r.nextFloat() * Float.MaxValue
       case 5 => 0 - r.nextFloat()
       case 6 => r.nextFloat()
-      case _ => 0f
+      case 7 => 0f
+      case 8 => -0f
     }
   }
 
   def nextDouble(): Double = {
-    r.nextInt(8) match {
+    r.nextInt(9) match {
       case 0 => Double.NaN
       case 1 => Double.PositiveInfinity
       case 2 => Double.NegativeInfinity
@@ -236,7 +242,8 @@ class EnhancedRandom(r: Random, options: FuzzerOptions) {
       case 4 => r.nextDouble() * Double.MaxValue
       case 5 => 0 - r.nextDouble()
       case 6 => r.nextDouble()
-      case _ => 0d
+      case 7 => 0d
+      case 8 => -0d
     }
   }
 
@@ -247,7 +254,7 @@ class EnhancedRandom(r: Random, options: FuzzerOptions) {
         case 1 => String.valueOf(r.nextLong())
         case 2 => String.valueOf(r.nextFloat())
         case 3 => String.valueOf(r.nextDouble())
-        case _ => generateString()
+        case 4 => generateString()
       }
     } else {
       generateString()

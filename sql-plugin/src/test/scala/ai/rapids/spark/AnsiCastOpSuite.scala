@@ -20,36 +20,136 @@ import org.apache.spark.SparkConf
 import org.apache.spark.sql.{DataFrame, SparkSession}
 import org.apache.spark.sql.types._
 
+import scala.annotation.tailrec
+
 class AnsiCastOpSuite extends GpuExpressionTestSuite {
 
   private val sparkConf = new SparkConf()
     .set("spark.sql.ansi.enabled", "true")
     .set("spark.sql.storeAssignmentPolicy", "ANSI") // note this is the default in 3.0.0
 
-  testNotSupportedOnGpu("Write doubles to long", testData(DataTypes.DoubleType), sparkConf) {
-    // ansi cast from double to long is not yet implemented on GPU
-    frame => doTableInsert(frame, "BIGINT")
-  }
-
   testSparkResultsAreEqual("Write ints to long", testData(DataTypes.IntegerType), sparkConf) {
-    frame => doTableInsert(frame, "BIGINT")
+    frame => doTableInsert(frame, HIVE_LONG_SQL_TYPE)
   }
 
-  testSparkResultsAreEqual("Write long to float", testData(DataTypes.LongType), sparkConf) {
-    frame => doTableInsert(frame, "BIGINT")
+  testSparkResultsAreEqual("Write longs to int (values within range)", intsAsLongs, sparkConf) {
+    frame => doTableInsert(frame, HIVE_INT_SQL_TYPE)
   }
 
-  testNotSupportedOnGpu("Copy doubles to long", testData(DataTypes.DoubleType), sparkConf) {
-    // ansi cast from double to long is not yet implemented on GPU
-    frame => doTableCopy(frame, "DOUBLE", "BIGINT")
+  testSparkResultsAreEqual("Write longs to short (values within range)", shortsAsLongs, sparkConf) {
+    frame => doTableInsert(frame, HIVE_SHORT_SQL_TYPE)
+  }
+
+  testSparkResultsAreEqual("Write longs to byte (values within range)", bytesAsLongs, sparkConf) {
+    frame => doTableInsert(frame, HIVE_BYTE_SQL_TYPE)
+  }
+
+  testSparkResultsAreEqual("Write ints to short (values within range)", shortsAsInts, sparkConf) {
+    frame => doTableInsert(frame, HIVE_SHORT_SQL_TYPE)
+  }
+
+  testSparkResultsAreEqual("Write ints to byte (values within range)", bytesAsInts, sparkConf) {
+    frame => doTableInsert(frame, HIVE_BYTE_SQL_TYPE)
+  }
+
+  testSparkResultsAreEqual("Write shorts to byte (values within range)", bytesAsShorts, sparkConf) {
+    frame => doTableInsert(frame, HIVE_BYTE_SQL_TYPE)
+  }
+
+  testSparkResultsAreEqual("Write floats to long (values within range)", longsAsFloats, sparkConf) {
+    frame => doTableInsert(frame, HIVE_LONG_SQL_TYPE)
+  }
+
+  testSparkResultsAreEqual("Write floats to int (values within range)", intsAsFloats, sparkConf) {
+    frame => doTableInsert(frame, HIVE_INT_SQL_TYPE)
+  }
+
+  testSparkResultsAreEqual("Write floats to short (values within range)", shortsAsFloats, sparkConf) {
+    frame => doTableInsert(frame, HIVE_SHORT_SQL_TYPE)
+  }
+
+  testSparkResultsAreEqual("Write floats to byte (values within range)", bytesAsFloats, sparkConf) {
+    frame => doTableInsert(frame, HIVE_BYTE_SQL_TYPE)
+  }
+
+  testSparkResultsAreEqual("Write doubles to long (values within range)", longsAsDoubles, sparkConf) {
+    frame => doTableInsert(frame, HIVE_LONG_SQL_TYPE)
+  }
+
+  testSparkResultsAreEqual("Write doubles to int (values within range)", intsAsDoubles, sparkConf) {
+    frame => doTableInsert(frame, HIVE_LONG_SQL_TYPE)
+  }
+
+  testSparkResultsAreEqual("Write doubles to short (values within range)", shortsAsDoubles, sparkConf) {
+    frame => doTableInsert(frame, HIVE_LONG_SQL_TYPE)
+  }
+
+  testSparkResultsAreEqual("Write doubles to byte (values within range)", bytesAsDoubles, sparkConf) {
+    frame => doTableInsert(frame, HIVE_LONG_SQL_TYPE)
+  }
+
+  testCastFailsForBadInputs("Detect overflow from long to int", testData(DataTypes.LongType), sparkConf) {
+    frame => doTableInsert(frame, HIVE_INT_SQL_TYPE)
+  }
+
+  testCastFailsForBadInputs("Detect overflow from long to short", testData(DataTypes.LongType), sparkConf) {
+    frame => doTableInsert(frame, HIVE_SHORT_SQL_TYPE)
+  }
+
+  testCastFailsForBadInputs("Detect overflow from long to byte", testData(DataTypes.LongType), sparkConf) {
+    frame => doTableInsert(frame, HIVE_BYTE_SQL_TYPE)
+  }
+
+  testCastFailsForBadInputs("Detect overflow from int to short", testData(DataTypes.IntegerType), sparkConf) {
+    frame => doTableInsert(frame, HIVE_SHORT_SQL_TYPE)
+  }
+
+  testCastFailsForBadInputs("Detect overflow from int to byte", testData(DataTypes.IntegerType), sparkConf) {
+    frame => doTableInsert(frame, HIVE_BYTE_SQL_TYPE)
+  }
+
+  testCastFailsForBadInputs("Detect overflow from short to byte", testData(DataTypes.ShortType), sparkConf) {
+    frame => doTableInsert(frame, HIVE_BYTE_SQL_TYPE)
+  }
+
+  testCastFailsForBadInputs("Detect overflow from float to long", testData(DataTypes.FloatType), sparkConf) {
+    frame => doTableInsert(frame, HIVE_INT_SQL_TYPE)
+  }
+
+  testCastFailsForBadInputs("Detect overflow from float to int", testData(DataTypes.FloatType), sparkConf) {
+    frame => doTableInsert(frame, HIVE_SHORT_SQL_TYPE)
+  }
+
+  testCastFailsForBadInputs("Detect overflow from float to short", testData(DataTypes.FloatType), sparkConf) {
+    frame => doTableInsert(frame, HIVE_LONG_SQL_TYPE)
+  }
+
+  testCastFailsForBadInputs("Detect overflow from float to byte", testData(DataTypes.FloatType), sparkConf) {
+    frame => doTableInsert(frame, HIVE_BYTE_SQL_TYPE)
+  }
+
+  testCastFailsForBadInputs("Detect overflow from double to long", testData(DataTypes.DoubleType), sparkConf) {
+    frame => doTableInsert(frame, HIVE_LONG_SQL_TYPE)
+  }
+
+  testCastFailsForBadInputs("Detect overflow from double to int", testData(DataTypes.DoubleType), sparkConf) {
+    frame => doTableInsert(frame, HIVE_INT_SQL_TYPE)
+  }
+
+  testCastFailsForBadInputs("Detect overflow from double to short", testData(DataTypes.DoubleType), sparkConf) {
+    frame => doTableInsert(frame, HIVE_SHORT_SQL_TYPE)
+  }
+
+  testCastFailsForBadInputs("Detect overflow from double to byte", testData(DataTypes.DoubleType), sparkConf) {
+    frame => doTableInsert(frame, HIVE_BYTE_SQL_TYPE)
   }
 
   testSparkResultsAreEqual("Copy ints to long", testData(DataTypes.IntegerType), sparkConf) {
-    frame => doTableCopy(frame, "INT", "BIGINT")
+    frame => doTableCopy(frame, HIVE_INT_SQL_TYPE, HIVE_LONG_SQL_TYPE)
   }
 
   testSparkResultsAreEqual("Copy long to float", testData(DataTypes.LongType), sparkConf) {
-    frame => doTableCopy(frame, "BIGINT", "FLOAT")
+    frame => doTableCopy(frame, HIVE_LONG_SQL_TYPE, HIVE_FLOAT_SQL_TYPE)
   }
 
   /**
@@ -85,6 +185,7 @@ class AnsiCastOpSuite extends GpuExpressionTestSuite {
     spark.sql(s"SELECT c0 FROM $t3")
   }
 
+  /** Test that a transformation is not supported on GPU */
   private def testNotSupportedOnGpu(testName: String, frame: SparkSession => DataFrame, sparkConf: SparkConf)(transformation: DataFrame => DataFrame): Unit = {
     test(testName) {
       try {
@@ -99,6 +200,115 @@ class AnsiCastOpSuite extends GpuExpressionTestSuite {
       }
     }
   }
+
+  /** Perform a transformation that is expected to fail due to values not being valid for an ansi_cast */
+  private def testCastFailsForBadInputs(testName: String, frame: SparkSession => DataFrame, sparkConf: SparkConf)(transformation: DataFrame => DataFrame): Unit = {
+    test(testName) {
+      try {
+        withGpuSparkSession(spark => {
+          val input = frame(spark).repartition(1)
+          transformation(input).collect()
+        }, sparkConf)
+        fail("should have thrown an exception due to input values that are not safe for an ansi_cast")
+      } catch {
+        case e: Exception =>
+          assert(exceptionContains(e, "Column contains at least one value that is not in the required range"))
+      }
+    }
+  }
+
+  @tailrec
+  private def exceptionContains(e: Throwable, message: String): Boolean = {
+    if (e.getMessage.contains(message)) {
+      true
+    } else if (e.getCause != null) {
+      exceptionContains(e.getCause, message)
+    } else {
+      false
+    }
+  }
+
+  def bytesAsShorts(session: SparkSession): DataFrame = {
+    import session.sqlContext.implicits._
+    byteValues.map(_.toShort).toDF("c0")
+  }
+
+  def bytesAsInts(session: SparkSession): DataFrame = {
+    import session.sqlContext.implicits._
+    byteValues.map(_.toInt).toDF("c0")
+  }
+
+  def bytesAsLongs(session: SparkSession): DataFrame = {
+    import session.sqlContext.implicits._
+    byteValues.map(_.toLong).toDF("c0")
+  }
+
+  def bytesAsFloats(session: SparkSession): DataFrame = {
+    import session.sqlContext.implicits._
+    byteValues.map(_.toFloat).toDF("c0")
+  }
+
+  def bytesAsDoubles(session: SparkSession): DataFrame = {
+    import session.sqlContext.implicits._
+    byteValues.map(_.toDouble).toDF("c0")
+  }
+
+  def shortsAsInts(session: SparkSession): DataFrame = {
+    import session.sqlContext.implicits._
+    shortValues.map(_.toInt).toDF("c0")
+  }
+
+  def shortsAsLongs(session: SparkSession): DataFrame = {
+    import session.sqlContext.implicits._
+    shortValues.map(_.toLong).toDF("c0")
+  }
+
+  def shortsAsFloats(session: SparkSession): DataFrame = {
+    import session.sqlContext.implicits._
+    shortValues.map(_.toFloat).toDF("c0")
+  }
+
+  def shortsAsDoubles(session: SparkSession): DataFrame = {
+    import session.sqlContext.implicits._
+    shortValues.map(_.toDouble).toDF("c0")
+  }
+
+  def intsAsLongs(session: SparkSession): DataFrame = {
+    import session.sqlContext.implicits._
+    intValues.map(_.toLong).toDF("c0")
+  }
+
+  def intsAsFloats(session: SparkSession): DataFrame = {
+    import session.sqlContext.implicits._
+    intValues.map(_.toFloat).toDF("c0")
+  }
+
+  def intsAsDoubles(session: SparkSession): DataFrame = {
+    import session.sqlContext.implicits._
+    intValues.map(_.toDouble).toDF("c0")
+  }
+
+  def longsAsFloats(session: SparkSession): DataFrame = {
+    import session.sqlContext.implicits._
+    longValues.map(_.toFloat).toDF("c0")
+  }
+
+  def longsAsDoubles(session: SparkSession): DataFrame = {
+    import session.sqlContext.implicits._
+    longValues.map(_.toDouble).toDF("c0")
+  }
+
+  private val byteValues: Seq[Byte] = Seq(Byte.MinValue, Byte.MaxValue, 0, -0, -1, 1)
+  private val shortValues: Seq[Short] = Seq(Short.MinValue, Short.MaxValue, 0, -0, -1, 1)
+  private val intValues: Seq[Int] = Seq(Int.MinValue, Int.MaxValue, 0, -0, -1, 1)
+  private val longValues: Seq[Long] = Seq(Long.MinValue, Long.MaxValue, 0, -0, -1, 1)
+
+  private val HIVE_LONG_SQL_TYPE = "BIGINT"
+  private val HIVE_INT_SQL_TYPE = "INT"
+  private val HIVE_SHORT_SQL_TYPE = "SMALLINT"
+  private val HIVE_BYTE_SQL_TYPE = "TINYINT"
+  private val HIVE_FLOAT_SQL_TYPE = "FLOAT"
+  private val HIVE_DOUBLE_SQL_TYPE = "DOUBLE"
 
   private def testData(dt: DataType)(spark: SparkSession) = {
     val schema = FuzzerUtils.createSchema(Seq(dt))
