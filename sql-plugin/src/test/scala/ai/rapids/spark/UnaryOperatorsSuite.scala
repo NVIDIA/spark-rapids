@@ -28,7 +28,7 @@ class UnaryOperatorsSuite extends SparkQueryCompareTestSuite {
     frame => frame.select(acos(col("floats")), acos(col("more_floats")))
   }
 
-  testSparkResultsAreEqual("Test asin doubles", doubleDf) {
+  INCOMPAT_testSparkResultsAreEqual("Test asin doubles", doubleDf, 0.0001) {
     frame => frame.select(asin(col("doubles")), asin(col("more_doubles")))
   }
 
@@ -56,7 +56,7 @@ class UnaryOperatorsSuite extends SparkQueryCompareTestSuite {
     frame => frame.select(tanh(col("doubles")), tanh(col("more_doubles")))
   }
 
-  testSparkResultsAreEqual("Test asin floats", mixedFloatDf) {
+  INCOMPAT_testSparkResultsAreEqual("Test asin floats", mixedFloatDf, 0.0001) {
     frame => frame.select(asin(col("floats")), asin(col("more_floats")))
   }
 

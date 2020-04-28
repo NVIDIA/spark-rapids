@@ -570,18 +570,19 @@ object GpuOverrides {
       (a, conf, p, r) => new UnaryExprMeta[Acosh](a, conf, p, r) {
         override def convertToGpu(child: GpuExpression): GpuExpression = GpuAcosh(child)
       })
-    .incompat(FLOAT_DIFFERS_INCOMPAT),
+      .incompat(FLOAT_DIFFERS_INCOMPAT),
     expr[Asin](
       "inverse sine",
       (a, conf, p, r) => new UnaryExprMeta[Asin](a, conf, p, r) {
         override def convertToGpu(child: GpuExpression): GpuExpression = GpuAsin(child)
-      }),
+      })
+      .incompat(FLOAT_DIFFERS_INCOMPAT),
     expr[Asinh](
       "inverse hyperbolic sine",
       (a, conf, p, r) => new UnaryExprMeta[Asinh](a, conf, p, r) {
         override def convertToGpu(child: GpuExpression): GpuExpression = GpuAsinh(child)
       })
-    .incompat(FLOAT_DIFFERS_INCOMPAT),
+      .incompat(FLOAT_DIFFERS_INCOMPAT),
     expr[Sqrt](
       "square root",
       (a, conf, p, r) => new UnaryExprMeta[Sqrt](a, conf, p, r) {
@@ -592,7 +593,7 @@ object GpuOverrides {
       (a, conf, p, r) => new UnaryExprMeta[Cbrt](a, conf, p, r) {
         override def convertToGpu(child: GpuExpression): GpuExpression = GpuCbrt(child)
       })
-    .incompat(FLOAT_DIFFERS_INCOMPAT),
+      .incompat(FLOAT_DIFFERS_INCOMPAT),
     expr[Floor](
       "floor of a number",
       (a, conf, p, r) => new UnaryExprMeta[Floor](a, conf, p, r) {
