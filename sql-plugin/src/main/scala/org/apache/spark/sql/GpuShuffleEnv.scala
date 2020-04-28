@@ -17,14 +17,15 @@
 package org.apache.spark.sql
 
 import ai.rapids.cudf.{CudaMemInfo, Rmm}
-import ai.rapids.spark.{DeviceMemoryEventHandler, RapidsBufferCatalog, RapidsConf, RapidsDeviceMemoryStore, RapidsDiskStore, RapidsHostMemoryStore, ShuffleBufferCatalog, ShuffleReceivedBufferCatalog}
+import ai.rapids.spark.{DeviceMemoryEventHandler, RapidsBufferCatalog, RapidsConf, RapidsDeviceMemoryStore, RapidsDiskStore, RapidsHostMemoryStore, RapidsShuffleManager, ShuffleBufferCatalog, ShuffleReceivedBufferCatalog}
+
 import org.apache.spark.{SparkConf, SparkEnv}
 import org.apache.spark.internal.Logging
 import org.apache.spark.sql.rapids.RapidsDiskBlockManager
 import org.apache.spark.util.Utils
 
 object GpuShuffleEnv extends Logging {
-  private val RAPIDS_SHUFFLE_CLASS = "org.apache.spark.sql.RapidsShuffleManager"
+  private val RAPIDS_SHUFFLE_CLASS = classOf[RapidsShuffleManager].getCanonicalName
   private var isRapidsShuffleManagerInitialized: Boolean  = false
 
   private val catalog = new RapidsBufferCatalog
