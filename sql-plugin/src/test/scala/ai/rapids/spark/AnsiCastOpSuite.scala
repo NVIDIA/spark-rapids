@@ -32,7 +32,7 @@ class AnsiCastOpSuite extends GpuExpressionTestSuite {
     .set("spark.sql.storeAssignmentPolicy", "ANSI") // note this is the default in 3.0.0
 
   testSparkResultsAreEqual("ansi_cast timestamps to long", testData(DataTypes.TimestampType), sparkConf) {
-    frame => assertIsAnsiCast(frame.withColumn("x", col("c0").cast(DataTypes.LongType)))
+    frame => assertContainsAnsiCast(frame.withColumn("c1", col("c0").cast(DataTypes.LongType)))
   }
 
   testSparkResultsAreEqual("Write ints to long", testData(DataTypes.IntegerType), sparkConf) {
@@ -169,7 +169,7 @@ class AnsiCastOpSuite extends GpuExpressionTestSuite {
     val t2 = s"AnsiCastOpSuite_doTableInsert_${sqlDataType}_t2_$now"
     frame.createOrReplaceTempView(t1)
     spark.sql(s"CREATE TABLE $t2 (a $sqlDataType)")
-    assertIsAnsiCast(spark.sql(s"INSERT INTO $t2 SELECT c0 AS a FROM $t1"))
+    assertContainsAnsiCast(spark.sql(s"INSERT INTO $t2 SELECT c0 AS a FROM $t1"))
     spark.sql(s"SELECT a FROM $t2")
   }
 
@@ -186,7 +186,7 @@ class AnsiCastOpSuite extends GpuExpressionTestSuite {
     spark.sql(s"CREATE TABLE $t2 (c0 $sqlSourceType)")
     spark.sql(s"CREATE TABLE $t3 (c0 $sqlDestType)")
     // insert into t2
-    assertIsAnsiCast(spark.sql(s"INSERT INTO $t2 SELECT c0 AS a FROM $t1"))
+    assertContainsAnsiCast(spark.sql(s"INSERT INTO $t2 SELECT c0 AS a FROM $t1"))
     // copy from t2 to t1, with an ansi_cast()
     spark.sql(s"INSERT INTO $t3 SELECT c0 FROM $t2")
     spark.sql(s"SELECT c0 FROM $t3")
@@ -235,7 +235,7 @@ class AnsiCastOpSuite extends GpuExpressionTestSuite {
     }
   }
 
-  private def assertIsAnsiCast(df: DataFrame): DataFrame = {
+  private def assertContainsAnsiCast(df: DataFrame, expected: Int = 1): DataFrame = {
     var count = 0
     df.queryExecution.sparkPlan.foreach {
       case p: ProjectExec => count += p.projectList.count {
@@ -251,8 +251,8 @@ class AnsiCastOpSuite extends GpuExpressionTestSuite {
       }
       case _ =>
     }
-    if (count == 0) {
-      throw new IllegalStateException("Plan does not contain any ansi_cast expressions")
+    if (count != expected) {
+      throw new IllegalStateException("Plan does not contain the expected number of ansi_cast expressions")
     }
     df
   }
