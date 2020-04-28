@@ -17,7 +17,6 @@
 package ai.rapids.spark
 
 import org.apache.spark.SparkConf
-import org.apache.spark.sql.catalyst.expressions.{Alias, AnsiCast, Cast}
 import org.apache.spark.sql.execution.{ExplainMode, ProjectExec, SimpleMode}
 import org.apache.spark.sql.{DataFrame, SparkSession}
 import org.apache.spark.sql.functions._
