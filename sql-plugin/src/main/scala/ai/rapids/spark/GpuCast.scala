@@ -16,7 +16,7 @@
 
 package ai.rapids.spark
 
-import ai.rapids.cudf.{BinaryOp, DType, Scalar}
+import ai.rapids.cudf.{BinaryOp, ColumnVector, DType, Scalar}
 import org.apache.spark.sql.catalyst.analysis.TypeCheckResult
 import org.apache.spark.sql.catalyst.expressions.{Cast, NullIntolerant, TimeZoneAwareExpression}
 import org.apache.spark.sql.types._
@@ -41,10 +41,11 @@ object GpuCast {
         case (ByteType|ShortType|IntegerType|LongType, FloatType|DoubleType) => true
         case (FloatType|DoubleType, FloatType|DoubleType) => true
 
-        // casting small integer types to larger integer types is safe
-        case (ByteType, ShortType|IntegerType|LongType) => true
-        case (ShortType, IntegerType|LongType) => true
-        case (IntegerType, LongType) => true
+        // ansi casts between integral types are supported
+        case (ByteType|ShortType|IntegerType|LongType, ByteType|ShortType|IntegerType|LongType) => true
+
+        // ansi casts from floating-point to integral types are supported
+        case (FloatType|DoubleType, ByteType|ShortType|IntegerType|LongType) => true
 
         // other casts need specific support to honor ansi mode
         case _ => false
@@ -173,6 +174,42 @@ case class GpuCast(child: GpuExpression, dataType: DataType, ansiMode: Boolean =
         } finally {
           asLongs.close()
         }
+
+      // ansi cast from larger-than-integer integral types, to integer
+      case (LongType, IntegerType) if ansiMode =>
+        assertValuesInRange(input.getBase, Scalar.fromInt(Int.MinValue), Scalar.fromInt(Int.MaxValue))
+        GpuColumnVector.from(input.getBase.castTo(cudfType))
+
+      // ansi cast from larger-than-short integral types, to short
+      case (LongType|IntegerType, ShortType) if ansiMode =>
+        assertValuesInRange(input.getBase, Scalar.fromShort(Short.MinValue), Scalar.fromShort(Short.MaxValue))
+        GpuColumnVector.from(input.getBase.castTo(cudfType))
+
+      // ansi cast from larger-than-byte integral types, to byte
+      case (LongType|IntegerType|ShortType, ByteType) if ansiMode =>
+        assertValuesInRange(input.getBase, Scalar.fromByte(Byte.MinValue), Scalar.fromByte(Byte.MaxValue))
+        GpuColumnVector.from(input.getBase.castTo(cudfType))
+
+      // ansi cast from floating-point types, to byte
+      case (FloatType|DoubleType, ByteType) if ansiMode =>
+        assertValuesInRange(input.getBase, Scalar.fromByte(Byte.MinValue), Scalar.fromByte(Byte.MaxValue))
+        GpuColumnVector.from(input.getBase.castTo(cudfType))
+
+      // ansi cast from floating-point types, to short
+      case (FloatType|DoubleType, ShortType) if ansiMode =>
+        assertValuesInRange(input.getBase, Scalar.fromShort(Short.MinValue), Scalar.fromShort(Short.MaxValue))
+        GpuColumnVector.from(input.getBase.castTo(cudfType))
+
+      // ansi cast from floating-point types, to integer
+      case (FloatType|DoubleType, IntegerType) if ansiMode =>
+        assertValuesInRange(input.getBase, Scalar.fromInt(Int.MinValue), Scalar.fromInt(Int.MaxValue))
+        GpuColumnVector.from(input.getBase.castTo(cudfType))
+
+      // ansi cast from floating-point types, to long
+      case (FloatType|DoubleType, LongType) if ansiMode =>
+        assertValuesInRange(input.getBase, Scalar.fromLong(Long.MinValue), Scalar.fromLong(Long.MaxValue))
+        GpuColumnVector.from(input.getBase.castTo(cudfType))
+
       case (FloatType | DoubleType, TimestampType) =>
         // Spark casting to timestamp from double assumes value is in microseconds
         withResource(Scalar.fromInt(1000000)) { microsPerSec =>
@@ -203,6 +240,37 @@ case class GpuCast(child: GpuExpression, dataType: DataType, ansiMode: Boolean =
         castFloatingTypeToString(input)
       case _ =>
         GpuColumnVector.from(input.getBase.castTo(cudfType))
+    }
+  }
+
+  /**
+   * Asserts that all values in a column are within the specfied range.
+   *
+   * @param values ColumnVector
+   * @param minValue Named parameter for function to create Scalar representing range minimum value
+   * @param maxValue Named parameter for function to create Scalar representing range maximum value
+   * @throws IllegalStateException if any values in the column are not within the specified range
+   */
+  private def assertValuesInRange(values: ColumnVector,
+    minValue: => Scalar,
+    maxValue: => Scalar): Unit = {
+
+    def throwIfAny(cv: ColumnVector): Unit = {
+      withResource(cv) { cv =>
+        withResource(cv.any()) { isAny =>
+          if (isAny.getBoolean) {
+            throw new IllegalStateException("Column contains at least one value that is not in the required range")
+          }
+        }
+      }
+    }
+
+    withResource(minValue) { minValue =>
+      throwIfAny(values.lessThan(minValue))
+    }
+
+    withResource(maxValue) { maxValue =>
+      throwIfAny(values.greaterThan(maxValue))
     }
   }
 
