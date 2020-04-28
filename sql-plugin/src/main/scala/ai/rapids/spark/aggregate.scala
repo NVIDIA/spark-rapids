@@ -83,17 +83,21 @@ class GpuHashAggregateMeta(
     val hashAggReplaceMode = conf.hashAggReplaceMode.toLowerCase
     if (!hashAggReplaceMode.equals("all")) {
       hashAggReplaceMode match {
-        case "partial" => if (hashAggMode.contains(Final)) {
-          // replacing only Partial hash aggregates, so a Final one should not replace
-          willNotWorkOnGpu("Replacing Final hash aggregates disabled")
+        case "partial" => if (hashAggMode.contains(Final) || hashAggMode.contains(Complete)) {
+          // replacing only Partial hash aggregates, so a Final or Complete one should not replace
+          willNotWorkOnGpu("Replacing Final or Complete hash aggregates disabled")
+         }
+        case "final" => if (hashAggMode.contains(Partial) || hashAggMode.contains(Complete)) {
+          // replacing only Final hash aggregates, so a Partial or Complete one should not replace
+          willNotWorkOnGpu("Replacing Partial or Complete hash aggregates disabled")
         }
-        case "final" => if (hashAggMode.contains(Partial)) {
-          // replacing only Final hash aggregates, so a Partial one should not replace
-          willNotWorkOnGpu("Replacing Partial aggregates disabled")
+        case "complete" => if (hashAggMode.contains(Partial) || hashAggMode.contains(Final)) {
+          // replacing only Complete hash aggregates, so a Partial or Final one should not replace
+          willNotWorkOnGpu("Replacing Partial or Final hash aggregates disabled")
         }
         case _ =>
           throw new IllegalArgumentException(s"The hash aggregate replacement mode ${hashAggReplaceMode} " +
-            "is not valid. Valid options are: \"partial\", \"final\", or \"all\"")
+            "is not valid. Valid options are: \"partial\", \"final\", \"complete\", or \"all\"")
       }
     }
     if (!conf.partialMergeDistinctEnabled && hashAggMode.contains(PartialMerge)) {
@@ -156,17 +160,21 @@ class GpuSortAggregateMeta(
     val hashAggReplaceMode = conf.hashAggReplaceMode.toLowerCase
     if (!hashAggReplaceMode.equals("all")) {
       hashAggReplaceMode match {
-        case "partial" => if (hashAggMode.contains(Final)) {
-          // replacing only Partial hash aggregates, so a Final one should not replace
-          willNotWorkOnGpu("Replacing Final hash aggregates disabled")
+        case "partial" => if (hashAggMode.contains(Final) || hashAggMode.contains(Complete)) {
+          // replacing only Partial hash aggregates, so a Final or Commplete one should not replace
+          willNotWorkOnGpu("Replacing Final or Complete hash aggregates disabled")
+         }
+        case "final" => if (hashAggMode.contains(Partial) || hashAggMode.contains(Complete)) {
+          // replacing only Final hash aggregates, so a Partial or Complete one should not replace
+          willNotWorkOnGpu("Replacing Partial or Complete hash aggregates disabled")
         }
-        case "final" => if (hashAggMode.contains(Partial)) {
-          // replacing only Final hash aggregates, so a Partial one should not replace
-          willNotWorkOnGpu("Replacing Partial aggregates disabled")
+        case "complete" => if (hashAggMode.contains(Partial) || hashAggMode.contains(Final)) {
+          // replacing only Complete hash aggregates, so a Partial or Final one should not replace
+          willNotWorkOnGpu("Replacing Partial or Final hash aggregates disabled")
         }
         case _ =>
           throw new IllegalArgumentException(s"The hash aggregate replacement mode ${hashAggReplaceMode} " +
-            "is not valid. Valid options are: \"partial\", \"final\", or \"all\"")
+            "is not valid. Valid options are: \"partial\", \"final\", \"complete\", or \"all\"")
       }
     }
   }
@@ -331,8 +339,8 @@ case class GpuHashAggregateExec(requiredChildDistributionExpressions: Option[Seq
               //     b) if this is a subsequent batch, we need to merge the previously aggregated results
               //        with the incoming batch
               //     c) also update total time and aggTime metrics
-              aggregatedInputCb = computeAggregate(childCvs, allModes,
-                groupingExpressions, boundExpression.aggModeCudfAggregates, false, computeAggTime)
+              aggregatedInputCb = computeAggregate(childCvs, groupingExpressions,
+                boundExpression.aggModeCudfAggregates, false, computeAggTime)
 
               childCvs.safeClose()
               childCvs = null
@@ -358,8 +366,8 @@ case class GpuHashAggregateExec(requiredChildDistributionExpressions: Option[Seq
 
                 // 3) Compute aggregate. In subsequent iterations we'll use this result
                 //    to concatenate against incoming batches (step 2)
-                aggregatedCb = computeAggregate(concatCvs, allModes,
-                  groupingExpressions, boundExpression.aggModeCudfAggregates, true, computeAggTime)
+                aggregatedCb = computeAggregate(concatCvs, groupingExpressions,
+                  boundExpression.aggModeCudfAggregates, true, computeAggTime)
                 concatCvs.safeClose()
                 concatCvs = null
               }
@@ -538,7 +546,8 @@ case class GpuHashAggregateExec(requiredChildDistributionExpressions: Option[Seq
   private lazy val allModes: Seq[AggregateMode] = aggregateExpressions.map(_.mode)
   private lazy val uniqueModes: Seq[AggregateMode] = allModes.distinct
   private lazy val partialMode = uniqueModes.contains(Partial) || uniqueModes.contains(PartialMerge)
-  private lazy val finalMode = uniqueModes.contains(Final) || uniqueModes.contains(Complete)
+  private lazy val finalMode = uniqueModes.contains(Final)
+  private lazy val completeMode = uniqueModes.contains(Complete)
 
   /**
     * getCudfAggregates returns a sequence of [[cudf.Aggregate]], given the current mode
@@ -578,7 +587,7 @@ case class GpuHashAggregateExec(requiredChildDistributionExpressions: Option[Seq
         _.aggregateFunction.asInstanceOf[GpuDeclarativeAggregate].mergeExpressions)
 
     val aggModeCudfAggregates = aggregateExpressions.zipWithIndex.map { case (expr, modeIndex) =>
-      val cudfAggregates = if (expr.mode == Partial) {
+      val cudfAggregates = if (expr.mode == Partial || expr.mode == Complete) {
         GpuBindReferences.bindReferences(updateExpressionsSeq(modeIndex), aggBufferAttributes)
           .asInstanceOf[Seq[CudfAggregate]]
       } else {
@@ -651,7 +660,7 @@ case class GpuHashAggregateExec(requiredChildDistributionExpressions: Option[Seq
     // for aggregation
     // - Partial Merge mode: we use the inputBindExpressions which can be only
     //   non distinct merge expressions.
-    // - Partial mode: we use the inputProjections or distinct update expressions.
+    // - Partial or Complete mode: we use the inputProjections or distinct update expressions.
     // - Partial, PartialMerge mode: we use the inputProjections or distinct update expressions
     //   for Partial and non distinct merge expressions for PartialMerge.
     // - Final mode: we pick the columns in the order as handed to us.
@@ -663,7 +672,7 @@ case class GpuHashAggregateExec(requiredChildDistributionExpressions: Option[Seq
       GpuBindReferences.bindReferences(inputProjections, childAttr)
     }
 
-    val boundFinalProjections = if (finalMode) {
+    val boundFinalProjections = if (finalMode || completeMode) {
       Some(GpuBindReferences.bindReferences(finalProjections, aggBufferAttributes))
     } else {
       None
@@ -677,13 +686,13 @@ case class GpuHashAggregateExec(requiredChildDistributionExpressions: Option[Seq
     // boundResultReferences is used to project the aggregated input batch(es) for the result.
     // - Partial mode: it's a pass through. We take whatever was aggregated and let it come
     //   out of the node as is.
-    // - Final mode: we use resultExpressions to pick out the correct columns that finalReferences
+    // - Final or Complete mode: we use resultExpressions to pick out the correct columns that finalReferences
     //   has pre-processed for us
     val boundResultReferences = if (partialMode) {
       GpuBindReferences.bindReferences(
         resultExpressions.asInstanceOf[Seq[GpuExpression]],
         resultExpressions.map(_.toAttribute))
-    } else if (finalMode) {
+    } else if (finalMode || completeMode) {
       GpuBindReferences.bindReferences(
         resultExpressions.asInstanceOf[Seq[GpuExpression]],
         finalAttributes.asInstanceOf[Seq[GpuAttributeReference]])
@@ -697,7 +706,6 @@ case class GpuHashAggregateExec(requiredChildDistributionExpressions: Option[Seq
   }
 
   def computeAggregate(toAggregateCvs: Seq[GpuColumnVector],
-                       modes: Seq[AggregateMode],
                        groupingExpressions: Seq[GpuExpression],
                        aggModeCudfAggregates : Seq[(AggregateMode, Seq[CudfAggregate])],
                        merge : Boolean,
@@ -717,7 +725,7 @@ case class GpuHashAggregateExec(requiredChildDistributionExpressions: Option[Seq
           // merge version of AggregateOp.COUNT.
           val aggregates = aggModeCudfAggregates.flatMap(_._2)
           val cudfAggregates = aggModeCudfAggregates.flatMap { case (mode, aggregates) =>
-            if (mode == Partial && !merge) {
+            if ((mode == Partial || mode == Complete) && !merge) {
               aggregates.map(a => a.updateAggregate)
             } else {
               aggregates.map(a => a.mergeAggregate)
