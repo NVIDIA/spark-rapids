@@ -49,6 +49,7 @@ def _set_all_confs(conf):
             spark.conf.set(key, value)
 
 def reset_spark_session_conf():
+    """Reset all of the configs for a given spark session."""
     _set_all_confs(_orig_conf)
     # Have to reach into a private member to get access to the API we need
     current_keys = _from_scala_map(spark.conf._jconf.getAll()).keys()
@@ -57,16 +58,23 @@ def reset_spark_session_conf():
             spark.conf.unset(key)
 
 def with_spark_session(func, conf={}):
+    """Run func that takes a spark session as input with the given configs set."""
     reset_spark_session_conf()
     _set_all_confs(conf)
     return func(spark)
 
 def with_cpu_session(func, conf={}):
+    """Run func that takes a spark session as input with the given configs set on the CPU."""
     copy = dict(conf)
     copy['spark.rapids.sql.enabled'] = 'false'
     return with_spark_session(func, conf=copy)
 
 def with_gpu_session(func, conf={}, non_gpu_allowed=None):
+    """
+    Run func that takes a spark session as input with the given configs set on the GPU.
+    Note that currently this forces you into test mode.  It is not a requirement, but is
+    simplest for right now.
+    """
     copy = dict(conf)
     copy['spark.rapids.sql.enabled'] = 'true'
     copy['spark.rapids.sql.test.enabled'] = 'true'
