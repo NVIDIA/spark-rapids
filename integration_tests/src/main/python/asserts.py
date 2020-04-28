@@ -74,6 +74,7 @@ def _assert_equal(cpu, gpu, incompat, path):
         assert False, "Found unexpected type {} at {}".format(t, path)
 
 def assert_equal(cpu, gpu):
+    """Verify that the result from the CPU and the GPU are equal"""
     _assert_equal(cpu, gpu, incompat=is_incompat(), path=[])
 
 def _has_incompat_conf(conf):
@@ -85,6 +86,7 @@ def _assert_gpu_and_cpu_are_equal(func,
         conf={},
         sort_result=False,
         non_gpu_allowed=None):
+    assert not sort_result, "sorting results is not supported yet"
     #TODO sort first if needed
     if should_collect:
         bring_back = lambda spark: func(spark).collect()
@@ -117,6 +119,11 @@ def assert_gpu_and_cpu_are_equal_collect(func,
         conf={},
         sort_result=False,
         non_gpu_allowed=None):
+    """
+    Assert when running func on both the CPU and the GPU that the results are equal.
+    In this case the data is collected back to the driver and compared here, so be
+    careful about the amount of data returned.
+    """
     _assert_gpu_and_cpu_are_equal(func, True,
             conf=conf,
             sort_result=sort_result,
@@ -126,6 +133,11 @@ def assert_gpu_and_cpu_are_equal_iterator(func,
         conf={},
         sort_result=False,
         non_gpu_allowed=None):
+    """
+    Assert when running func on both the CPU and the GPU that the results are equal.
+    In this case the data is pulled back to the driver in chunks and compared here
+    so any amount of data can work, just be careful about how long it might take.
+    """
     _assert_gpu_and_cpu_are_equal(func, False,
             conf=conf,
             sort_result=sort_result,

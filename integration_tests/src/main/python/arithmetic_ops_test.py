@@ -20,14 +20,14 @@ from pyspark.sql.types import *
 import pyspark.sql.functions as f
 
 def two_col_df(spark, a_gen, b_gen, length=2048, seed=0):
-    gen = StructGen([('a', a_gen),('b', b_gen)])
+    gen = StructGen([('a', a_gen),('b', b_gen)], nullable=False)
     return gen_df(spark, gen, length=length, seed=seed)
 
 def binary_op_df(spark, gen, length=2048, seed=0):
     return two_col_df(spark, gen, gen, length=length, seed=seed)
 
 def unary_op_df(spark, gen, length=2048, seed=0):
-    return gen_df(spark, StructGen([('a', gen)]), length=length, seed=seed)
+    return gen_df(spark, StructGen([('a', gen)], nullable=False), length=length, seed=seed)
 
 def to_cast_string(spark_type):
     if isinstance(spark_type, ByteType):
@@ -44,13 +44,6 @@ def to_cast_string(spark_type):
         return 'DOUBLE'
     else:
         raise RuntimeError('CAST TO TYPE {} NOT SUPPORTED YET'.format(spark_type))
-
-def debug_df(df):
-    print('COLLECTED\n{}'.format(df.collect()))
-    return df
-
-def idfn(val):
-    return str(val)
 
 numeric_gens = [ByteGen(), ShortGen(), IntegerGen(), LongGen(), FloatGen(), DoubleGen()]
 integral_gens = [ByteGen(), ShortGen(), IntegerGen(), LongGen()]
@@ -201,7 +194,6 @@ def test_columnar_rint(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : unary_op_df(spark, data_gen).selectExpr('rint(a)'))
 
-
 @pytest.mark.parametrize('data_gen', int_n_long_gens, ids=idfn)
 def test_scalar_shift_left(data_gen):
     string_type = to_cast_string(data_gen.data_type)
@@ -234,7 +226,7 @@ def test_columnar_shift_right(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : two_col_df(spark, data_gen, IntegerGen()).selectExpr('shiftright(a, b)'))
 
-@pytest.mark.parametrize('data_gen', [pytest.param(LongGen(), marks=pytest.mark.xfail(reason='https://github.com/rapidsai/cudf/issues/5015')), IntegerGen()], ids=idfn)
+@pytest.mark.parametrize('data_gen', int_n_long_gens, ids=idfn)
 def test_scalar_shift_right_unsigned(data_gen):
     string_type = to_cast_string(data_gen.data_type)
     assert_gpu_and_cpu_are_equal_collect(
@@ -311,7 +303,6 @@ def test_columnar_bit_not(data_gen):
 def test_columnar_radians(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : unary_op_df(spark, data_gen).selectExpr('radians(a)'))
-
 
 @pytest.mark.usefixtures('incompat')
 @pytest.mark.parametrize('data_gen', double_gens, ids=idfn)
