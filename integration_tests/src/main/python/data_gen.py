@@ -18,9 +18,7 @@ import sre_yield
 import struct
 
 class DataGen:
-    """
-    Base class for data generation
-    """
+    """Base class for data generation"""
 
     def __repr__(self):
         return self.__class__.__name__[:-3]
@@ -42,6 +40,13 @@ class DataGen:
             self.with_special_case(None, weight=5.0)
 
     def with_special_case(self, special_case, weight=1.0):
+        """
+        Add in a special case with a given weight. A special case can either be
+        a function that takes an instance of Random and returns the generated data
+        or it can be a constant.  By default the weight is 1.0, and the default
+        number generation's weight is 100.0.  The number of lines that are generate in
+        the data set should be proportional to the its weight/sum weights
+        """
         if callable(special_case):
             sc = special_case
         else:
@@ -50,9 +55,11 @@ class DataGen:
         return self
 
     def start(self, rand):
+        """Start data generation using the given rand"""
         raise TypeError('Children should implement this method and call _start')
 
     def _start(self, rand, gen_func):
+        """Start internally, but use the given gen_func as the base"""
         if not self._special_cases:
             self._gen_func = gen_func
         else:
@@ -72,17 +79,23 @@ class DataGen:
             self._gen_func = choose_one
 
     def gen(self):
+        """generate the next line"""
         if not self._gen_func:
-            raise RuntimeError('start must be called before generateing any data')
+            raise RuntimeError('start must be called before generating any data')
         return self._gen_func()
 
 _MAX_CHOICES = 1 << 64
 class StringGen(DataGen):
+    """Generate strings that match a pattern"""
     def __init__(self, pattern="(.|\n){1,30}", flags=0, charset=sre_yield.CHARSET, nullable=True):
         super().__init__(StringType(), nullable=nullable)
         self.base_strs = sre_yield.AllStrings(pattern, flags=flags, charset=charset, max_count=_MAX_CHOICES)
 
     def with_special_pattern(self, special_pattern, flags=0, charset=sre_yield.CHARSET, weight=1.0):
+        """
+        Like with_special_case but you can provide a regexp pattern
+        instead of a hard coded string value.
+        """
         strs = sre_yield.AllStrings(pattern, flags=flags, charset=charset, max_count=_MAX_CHOICES)
         try:
             length = int(len(strs))
@@ -101,6 +114,7 @@ class StringGen(DataGen):
 _BYTE_MIN = -(1 << 7)
 _BYTE_MAX = (1 << 7) - 1
 class ByteGen(DataGen):
+    """Generate Bytes"""
     def __init__(self, nullable=True):
         super().__init__(ByteType(), nullable=nullable)
 
@@ -110,6 +124,7 @@ class ByteGen(DataGen):
 _SHORT_MIN = -(1 << 15)
 _SHORT_MAX = (1 << 15) - 1
 class ShortGen(DataGen):
+    """Generate Shorts, which some built in corner cases."""
     def __init__(self, nullable=True):
         super().__init__(ShortType(), nullable=nullable)
         self.with_special_case(_SHORT_MIN)
@@ -124,6 +139,7 @@ class ShortGen(DataGen):
 _INT_MIN = -(1 << 31)
 _INT_MAX = (1 << 31) - 1
 class IntegerGen(DataGen):
+    """Generate Ints, which some built in corner cases."""
     def __init__(self, nullable=True):
         super().__init__(IntegerType(), nullable=nullable)
         self.with_special_case(_INT_MIN)
@@ -138,6 +154,7 @@ class IntegerGen(DataGen):
 _LONG_MIN = -(1 << 63)
 _LONG_MAX = (1 << 63) - 1
 class LongGen(DataGen):
+    """Generate Longs, which some built in corner cases."""
     def __init__(self, nullable=True):
         super().__init__(LongType(), nullable=nullable)
         self.with_special_case(_LONG_MIN)
@@ -153,11 +170,13 @@ _FLOAT_MIN = -3.4028235E38
 _FLOAT_MAX = 3.4028235E38
 _NEG_FLOAT_NAN = struct.unpack('f', struct.pack('I', 0xfff00001))[0]
 class FloatGen(DataGen):
+    """Generate floats, which some built in corner cases."""
     def __init__(self, nullable=True):
         super().__init__(FloatType(), nullable=nullable)
         self.with_special_case(_FLOAT_MIN)
         self.with_special_case(_FLOAT_MAX)
         self.with_special_case(0.0)
+        self.with_special_case(-0.0)
         self.with_special_case(1.0)
         self.with_special_case(-1.0)
         self.with_special_case(float('inf'))
@@ -176,11 +195,13 @@ _DOUBLE_MIN = -1.7976931348623157E308
 _DOUBLE_MAX = 1.7976931348623157E308
 _NEG_DOUBLE_NAN = struct.unpack('d', struct.pack('L', 0xfff0000000000001))[0]
 class DoubleGen(DataGen):
+    """Generate doubles, which some built in corner cases."""
     def __init__(self, nullable=True):
         super().__init__(DoubleType(), nullable=nullable)
         self.with_special_case(_DOUBLE_MIN)
         self.with_special_case(_DOUBLE_MAX)
         self.with_special_case(0.0)
+        self.with_special_case(-0.0)
         self.with_special_case(1.0)
         self.with_special_case(-1.0)
         self.with_special_case(float('inf'))
@@ -196,7 +217,14 @@ class DoubleGen(DataGen):
         self._start(rand, gen_double)
 
 class StructGen(DataGen):
-    def __init__(self, children, nullable=False):
+    """Generate a Struct"""
+    def __init__(self, children, nullable=True):
+        """
+        Initialize the struct with children.  The children should be of the form:
+        [('name', Gen),('name_2', Gen2)]
+        Where name is the name of the strict field and Gens are Generators of
+        the type for that entry.
+        """
         tmp = [StructField(name, child.data_type, nullable=child.nullable) for name, child in children]
         super().__init__(StructType(tmp), nullable=nullable)
         self.children = children
@@ -210,11 +238,25 @@ class StructGen(DataGen):
         self._start(rand, make_tuple)
 
 def gen_df(spark, data_gen, length=2048, seed=0):
+    """Generate a spark dataframe from the given data generators."""
     if isinstance(data_gen, list):
-        src = StructGen(data_gen)
+        src = StructGen(data_gen, nullable=False)
     else:
         src = data_gen
+        # we cannot create a data frame from a nullable struct
+        assert not data_gen.nullable
     rand = random.Random(seed)
     src.start(rand)
     data = [src.gen() for index in range(0, length)]
     return spark.createDataFrame(data, src.data_type)
+
+def debug_df(df):
+    """print out the contents of a dataframe for debugging."""
+    print('COLLECTED\n{}'.format(df.collect()))
+    return df
+
+def idfn(val):
+    """Provide an API to provide display names for data type generators."""
+    return str(val)
+
+
