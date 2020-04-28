@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019, NVIDIA CORPORATION. All rights reserved.
+ * Copyright (c) 2019-2020, NVIDIA CORPORATION. All rights reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,6 +16,8 @@
 
 package ai.rapids.sparkexamples.mortgage
 
+import ai.rapids.spark.RapidsShuffleManager
+
 import org.apache.spark.sql.SparkSession
 import org.apache.spark.sql.functions._
 import org.scalatest.FunSuite
@@ -30,8 +32,7 @@ class MortgageSparkTest extends FunSuite {
       .config("spark.plugins", "ai.rapids.spark.SQLPlugin")
       .config("spark.rapids.sql.explain", true)
       .config("spark.rapids.sql.incompatibleOps.enabled", true)
-      .config("spark.rapids.sql.stringHashGroupBy.enabled", true)
-    val rapidsShuffle = "org.apache.spark.sql.RapidsShuffleManager"
+    val rapidsShuffle = classOf[RapidsShuffleManager].getCanonicalName
     val prop = System.getProperty("rapids.shuffle.manager.override", "false")
     if (prop.equalsIgnoreCase("true")) {
       println("RAPIDS SHUFFLE MANAGER ACTIVE")

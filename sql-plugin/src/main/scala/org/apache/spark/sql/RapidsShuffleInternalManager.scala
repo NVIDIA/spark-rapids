@@ -61,7 +61,7 @@ class GpuShuffleBlockResolver(private val wrapped: ShuffleBlockResolver,
 }
 
 
-object RapidsShuffleManager extends Logging {
+object RapidsShuffleInternalManager extends Logging {
   def unwrapHandle(handle: ShuffleHandle): ShuffleHandle = handle match {
     case gh: GpuShuffleHandle[_, _] => gh.wrapped
     case other => other
@@ -164,11 +164,16 @@ class RapidsCachingWriter[K, V](
 }
 
 /**
- * A shuffle manager optimized for the Rapids Plugin For Apache Spark.
+ * A shuffle manager optimized for the RAPIDS Plugin For Apache Spark.
+ * @note This is an internal class to obtain access to the private
+ *       [[ShuffleManager]] and [[SortShuffleManager]] classes. When configuring
+ *       Apache Spark to use the RAPIDS shuffle manager,
+ *       [[ai.rapids.spark.RapidsShuffleManager]] should be used as that is
+ *       the public class.
  */
-class RapidsShuffleManager(conf: SparkConf, isDriver: Boolean) extends ShuffleManager with Logging {
+class RapidsShuffleInternalManager(conf: SparkConf, isDriver: Boolean) extends ShuffleManager with Logging {
 
-  import RapidsShuffleManager._
+  import RapidsShuffleInternalManager._
 
   private val rapidsConf = new RapidsConf(conf)
 
