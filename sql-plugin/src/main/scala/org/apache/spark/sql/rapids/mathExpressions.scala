@@ -35,7 +35,7 @@ abstract class GpuUnaryMathExpression(name: String) extends GpuUnaryExpression
   override def prettyName: String = name
 }
 
-case class GpuAcos(child: Expression) extends CudfUnaryMathExpression("ACOS") {
+case class GpuAcos(child: GpuExpression) extends CudfUnaryMathExpression("ACOS") {
   override def unaryOp: UnaryOp = UnaryOp.ARCCOS
   override def outputTypeOverride: DType = DType.FLOAT64
 }
@@ -58,32 +58,32 @@ case class GpuToRadians(child: GpuExpression) extends GpuUnaryMathExpression("RA
   }
 }
 
-case class GpuAcosh(child: Expression) extends CudfUnaryMathExpression("ACOSH") {
+case class GpuAcosh(child: GpuExpression) extends CudfUnaryMathExpression("ACOSH") {
   override def unaryOp: UnaryOp = UnaryOp.ARCCOSH
   override def outputTypeOverride: DType = DType.FLOAT64
 }
 
-case class GpuAsin(child: Expression) extends CudfUnaryMathExpression("ASIN") {
+case class GpuAsin(child: GpuExpression) extends CudfUnaryMathExpression("ASIN") {
   override def unaryOp: UnaryOp = UnaryOp.ARCSIN
   override def outputTypeOverride: DType = DType.FLOAT64
 }
 
-case class GpuAsinh(child: Expression) extends CudfUnaryMathExpression("ASINH") {
+case class GpuAsinh(child: GpuExpression) extends CudfUnaryMathExpression("ASINH") {
   override def unaryOp: UnaryOp = UnaryOp.ARCSINH
   override def outputTypeOverride: DType = DType.FLOAT64
 }
 
-case class GpuAtan(child: Expression) extends CudfUnaryMathExpression("ATAN") {
+case class GpuAtan(child: GpuExpression) extends CudfUnaryMathExpression("ATAN") {
   override def unaryOp: UnaryOp = UnaryOp.ARCTAN
   override def outputTypeOverride: DType = DType.FLOAT64
 }
 
-case class GpuAtanh(child: Expression) extends CudfUnaryMathExpression("ATANH") {
+case class GpuAtanh(child: GpuExpression) extends CudfUnaryMathExpression("ATANH") {
   override def unaryOp: UnaryOp = UnaryOp.ARCTANH
   override def outputTypeOverride: DType = DType.FLOAT64
 }
 
-case class GpuCeil(child: Expression) extends CudfUnaryMathExpression("CEIL") {
+case class GpuCeil(child: GpuExpression) extends CudfUnaryMathExpression("CEIL") {
   override def dataType: DataType = child.dataType match {
     case dt @ DecimalType.Fixed(_, 0) => dt
     case DecimalType.Fixed(precision, scale) =>
@@ -109,17 +109,17 @@ case class GpuCeil(child: Expression) extends CudfUnaryMathExpression("CEIL") {
   }
 }
 
-case class GpuCos(child: Expression) extends CudfUnaryMathExpression("COS") {
+case class GpuCos(child: GpuExpression) extends CudfUnaryMathExpression("COS") {
   override def unaryOp: UnaryOp = UnaryOp.COS
   override def outputTypeOverride: DType = DType.FLOAT64
 }
 
-case class GpuExp(child: Expression) extends CudfUnaryMathExpression("EXP") {
+case class GpuExp(child: GpuExpression) extends CudfUnaryMathExpression("EXP") {
   override def unaryOp: UnaryOp = UnaryOp.EXP
   override def outputTypeOverride: DType = DType.FLOAT64
 }
 
-case class GpuExpm1(child: Expression) extends CudfUnaryMathExpression("EXPM1") {
+case class GpuExpm1(child: GpuExpression) extends CudfUnaryMathExpression("EXPM1") {
   override def unaryOp: UnaryOp = UnaryOp.EXP
   override def outputTypeOverride: DType = DType.FLOAT64
 
@@ -138,7 +138,7 @@ case class GpuExpm1(child: Expression) extends CudfUnaryMathExpression("EXPM1") 
   }
 }
 
-case class GpuFloor(child: Expression) extends CudfUnaryMathExpression("FLOOR") {
+case class GpuFloor(child: GpuExpression) extends CudfUnaryMathExpression("FLOOR") {
   override def dataType: DataType = child.dataType match {
     case dt @ DecimalType.Fixed(_, 0) => dt
     case DecimalType.Fixed(precision, scale) =>
@@ -169,7 +169,7 @@ case class GpuLog(child: GpuExpression) extends CudfUnaryMathExpression("LOG") {
   override def unaryOp: UnaryOp = UnaryOp.LOG
   override def outputTypeOverride: DType = DType.FLOAT64
   override def doColumnar(input: GpuColumnVector): GpuColumnVector = {
-    withResource(GpuLogarithm.normalize(input)) { normalized =>
+    withResource(GpuLogarithm.fixUpLhs(input)) { normalized =>
       super.doColumnar(normalized)
     }
   }
@@ -181,7 +181,7 @@ object GpuLogarithm extends Arm {
    * Replace negative values with nulls. Note that the caller is responsible for closing the
    * returned GpuColumnVector.
    */
-  def normalize(input: GpuColumnVector): GpuColumnVector = {
+  def fixUpLhs(input: GpuColumnVector): GpuColumnVector = {
     withResource(Scalar.fromDouble(0)) { zero =>
       withResource(input.getBase.binaryOp(BinaryOp.LESS_EQUAL, zero, DType.BOOL8)) { zeroOrLess =>
         withResource(Scalar.fromNull(DType.FLOAT64)) { nullScalar =>
@@ -190,25 +190,44 @@ object GpuLogarithm extends Arm {
       }
     }
   }
+
+  /**
+   * Replace negative values with nulls. Note that the caller is responsible for closing the
+   * returned Scalar.
+   */
+  def fixUpLhs(input: Scalar): Scalar = {
+    if (input.isValid && input.getDouble <= 0) {
+      Scalar.fromNull(DType.FLOAT64)
+    } else {
+      input.incRefCount()
+    }
+  }
 }
 
 case class GpuLogarithm(left: GpuExpression, right: GpuExpression) extends CudfBinaryMathExpression("LOG_BASE") {
   override def binaryOp: BinaryOp = BinaryOp.LOG_BASE
   override def outputTypeOverride: DType = DType.FLOAT64
 
-  override def columnarEval(batch: ColumnarBatch): Any = {
-    withResource(left.asInstanceOf[GpuExpression].columnarEval(batch).asInstanceOf[GpuColumnVector]) { lhs =>
-      val rhs = right.asInstanceOf[GpuExpression].columnarEval(batch).asInstanceOf[Double]
-      withResource(Scalar.fromDouble(rhs)) { base =>
-        withResource(GpuLogarithm.normalize(lhs)) { normalized =>
-          super.doColumnar(normalized, base)
-        }
-      }
+  override def doColumnar(lhs: GpuColumnVector, rhs: GpuColumnVector): GpuColumnVector = {
+    withResource(GpuLogarithm.fixUpLhs(lhs)) { fixedLhs =>
+      super.doColumnar(fixedLhs, rhs)
+    }
+  }
+
+  override def doColumnar(lhs: Scalar, rhs: GpuColumnVector): GpuColumnVector = {
+    withResource(GpuLogarithm.fixUpLhs(lhs)) { fixedLhs =>
+      super.doColumnar(fixedLhs, rhs)
+    }
+  }
+
+  override def doColumnar(lhs: GpuColumnVector, rhs: Scalar): GpuColumnVector = {
+    withResource(GpuLogarithm.fixUpLhs(lhs)) { fixedLhs =>
+      super.doColumnar(fixedLhs, rhs)
     }
   }
 }
 
-case class GpuSin(child: Expression) extends CudfUnaryMathExpression("SIN") {
+case class GpuSin(child: GpuExpression) extends CudfUnaryMathExpression("SIN") {
   override def unaryOp: UnaryOp = UnaryOp.SIN
   override def outputTypeOverride: DType = DType.FLOAT64
 }
@@ -237,32 +256,32 @@ case class GpuSignum(child: GpuExpression) extends GpuUnaryMathExpression("SIGNU
   override def outputTypeOverride: DType = DType.FLOAT64
 }
 
-case class GpuTanh(child: Expression) extends CudfUnaryMathExpression("TANH") {
+case class GpuTanh(child: GpuExpression) extends CudfUnaryMathExpression("TANH") {
   override def unaryOp: UnaryOp = UnaryOp.TANH
   override def outputTypeOverride: DType = DType.FLOAT64
 }
 
-case class GpuCosh(child: Expression) extends CudfUnaryMathExpression("COSH") {
+case class GpuCosh(child: GpuExpression) extends CudfUnaryMathExpression("COSH") {
   override def unaryOp: UnaryOp = UnaryOp.COSH
   override def outputTypeOverride: DType = DType.FLOAT64
 }
 
-case class GpuSinh(child: Expression) extends CudfUnaryMathExpression("SINH") {
+case class GpuSinh(child: GpuExpression) extends CudfUnaryMathExpression("SINH") {
   override def unaryOp: UnaryOp = UnaryOp.SINH
   override def outputTypeOverride: DType = DType.FLOAT64
 }
 
-case class GpuSqrt(child: Expression) extends CudfUnaryMathExpression("SQRT") {
+case class GpuSqrt(child: GpuExpression) extends CudfUnaryMathExpression("SQRT") {
   override def unaryOp: UnaryOp = UnaryOp.SQRT
   override def outputTypeOverride: DType = DType.FLOAT64
 }
 
-case class GpuCbrt(child: Expression) extends CudfUnaryMathExpression("CBRT") {
+case class GpuCbrt(child: GpuExpression) extends CudfUnaryMathExpression("CBRT") {
   override def unaryOp: UnaryOp = UnaryOp.CBRT
   override def outputTypeOverride: DType = DType.FLOAT64
 }
 
-case class GpuTan(child: Expression) extends CudfUnaryMathExpression("TAN") {
+case class GpuTan(child: GpuExpression) extends CudfUnaryMathExpression("TAN") {
   override def unaryOp: UnaryOp = UnaryOp.TAN
   override def outputTypeOverride: DType = DType.FLOAT64
 }
@@ -286,13 +305,13 @@ abstract class CudfBinaryMathExpression(name: String) extends CudfBinaryExpressi
   override def dataType: DataType = DoubleType
 }
 
-case class GpuPow(left: Expression, right: Expression)
+case class GpuPow(left: GpuExpression, right: GpuExpression)
     extends CudfBinaryMathExpression("POWER") {
   override def binaryOp: BinaryOp = BinaryOp.POW
   override def outputTypeOverride: DType = DType.FLOAT64
 }
 
-case class GpuRint(child: Expression) extends CudfUnaryMathExpression("ROUND") {
+case class GpuRint(child: GpuExpression) extends CudfUnaryMathExpression("ROUND") {
   override def unaryOp: UnaryOp = UnaryOp.RINT
   override def outputTypeOverride: DType = DType.FLOAT64
 }

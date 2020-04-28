@@ -17,14 +17,14 @@
 package org.apache.spark.sql.rapids
 
 import ai.rapids.cudf.{BinaryOp, ColumnVector, DType, Scalar, UnaryOp}
-import ai.rapids.spark.{CudfBinaryOperator, CudfUnaryExpression, GpuColumnVector, GpuUnaryExpression}
+import ai.rapids.spark.{CudfBinaryOperator, CudfUnaryExpression, GpuColumnVector, GpuExpression, GpuUnaryExpression}
 
 import org.apache.spark.sql.catalyst.expressions.{ExpectsInputTypes, Expression, NullIntolerant}
 import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.types.{AbstractDataType, DataType, DecimalType, DoubleType, IntegralType, LongType, NumericType, TypeCollection}
 
 
-case class GpuUnaryMinus(child: Expression) extends GpuUnaryExpression
+case class GpuUnaryMinus(child: GpuExpression) extends GpuUnaryExpression
     with ExpectsInputTypes with NullIntolerant {
   override def inputTypes: Seq[AbstractDataType] = Seq(TypeCollection.NumericAndInterval)
 
@@ -44,7 +44,7 @@ case class GpuUnaryMinus(child: Expression) extends GpuUnaryExpression
   }
 }
 
-case class GpuUnaryPositive(child: Expression) extends GpuUnaryExpression
+case class GpuUnaryPositive(child: GpuExpression) extends GpuUnaryExpression
     with ExpectsInputTypes with NullIntolerant {
   override def prettyName: String = "positive"
 
@@ -57,7 +57,7 @@ case class GpuUnaryPositive(child: Expression) extends GpuUnaryExpression
   override def doColumnar(input: GpuColumnVector) : GpuColumnVector = input
 }
 
-case class GpuAbs(child: Expression) extends CudfUnaryExpression
+case class GpuAbs(child: GpuExpression) extends CudfUnaryExpression
     with ExpectsInputTypes with NullIntolerant {
   override def inputTypes: Seq[AbstractDataType] = Seq(NumericType)
 
@@ -72,7 +72,7 @@ abstract class CudfBinaryArithmetic extends CudfBinaryOperator with NullIntolera
   override lazy val resolved: Boolean = childrenResolved && checkInputDataTypes().isSuccess
 }
 
-case class GpuAdd(left: Expression, right: Expression) extends CudfBinaryArithmetic {
+case class GpuAdd(left: GpuExpression, right: GpuExpression) extends CudfBinaryArithmetic {
   override def inputType: AbstractDataType = TypeCollection.NumericAndInterval
 
   override def symbol: String = "+"
@@ -80,7 +80,7 @@ case class GpuAdd(left: Expression, right: Expression) extends CudfBinaryArithme
   override def binaryOp: BinaryOp = BinaryOp.ADD
 }
 
-case class GpuSubtract(left: Expression, right: Expression) extends CudfBinaryArithmetic {
+case class GpuSubtract(left: GpuExpression, right: GpuExpression) extends CudfBinaryArithmetic {
   override def inputType: AbstractDataType = TypeCollection.NumericAndInterval
 
   override def symbol: String = "-"
@@ -88,7 +88,7 @@ case class GpuSubtract(left: Expression, right: Expression) extends CudfBinaryAr
   override def binaryOp: BinaryOp = BinaryOp.SUB
 }
 
-case class GpuMultiply(left: Expression, right: Expression) extends CudfBinaryArithmetic {
+case class GpuMultiply(left: GpuExpression, right: GpuExpression) extends CudfBinaryArithmetic {
   override def inputType: AbstractDataType = NumericType
 
   override def symbol: String = "*"
@@ -184,7 +184,7 @@ trait GpuDivModLike extends CudfBinaryArithmetic {
 }
 
 // This is for doubles and floats...
-case class GpuDivide(left: Expression, right: Expression) extends GpuDivModLike {
+case class GpuDivide(left: GpuExpression, right: GpuExpression) extends GpuDivModLike {
   override def inputType: AbstractDataType = TypeCollection(DoubleType, DecimalType)
 
   override def symbol: String = "/"
@@ -192,7 +192,7 @@ case class GpuDivide(left: Expression, right: Expression) extends GpuDivModLike 
   override def binaryOp: BinaryOp = BinaryOp.TRUE_DIV
 }
 
-case class GpuIntegralDivide(left: Expression, right: Expression) extends GpuDivModLike {
+case class GpuIntegralDivide(left: GpuExpression, right: GpuExpression) extends GpuDivModLike {
   override def inputType: AbstractDataType = TypeCollection(IntegralType, DecimalType)
 
   override def dataType: DataType = LongType
@@ -205,7 +205,7 @@ case class GpuIntegralDivide(left: Expression, right: Expression) extends GpuDiv
   override def sqlOperator: String = "div"
 }
 
-case class GpuRemainder(left: Expression, right: Expression) extends GpuDivModLike {
+case class GpuRemainder(left: GpuExpression, right: GpuExpression) extends GpuDivModLike {
   override def inputType: AbstractDataType = NumericType
 
   override def symbol: String = "%"

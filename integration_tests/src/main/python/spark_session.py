@@ -70,7 +70,6 @@ def with_gpu_session(func, conf={}, non_gpu_allowed=None):
     copy = dict(conf)
     copy['spark.rapids.sql.enabled'] = 'true'
     copy['spark.rapids.sql.test.enabled'] = 'true'
-    copy['spark.rapids.sql.explain'] = 'ALL'
     if (non_gpu_allowed):
         copy['spark.rapids.sql.test.allowedNonGpu'] = ",".join(non_gpu_allowed)
     return with_spark_session(func, conf=copy)
