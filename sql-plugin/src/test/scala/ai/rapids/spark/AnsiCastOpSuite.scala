@@ -17,6 +17,7 @@
 package ai.rapids.spark
 
 import org.apache.spark.SparkConf
+import org.apache.spark.sql.catalyst.expressions.{Alias, AnsiCast, Cast}
 import org.apache.spark.sql.execution.{ExplainMode, ProjectExec, SimpleMode}
 import org.apache.spark.sql.{DataFrame, SparkSession}
 import org.apache.spark.sql.functions._
@@ -235,8 +236,22 @@ class AnsiCastOpSuite extends GpuExpressionTestSuite {
   }
 
   private def assertIsAnsiCast(df: DataFrame): DataFrame = {
-    val explain = df.queryExecution.explainString(ExplainMode.fromString(SimpleMode.name))
-    if (!explain.contains("ansi_cast")) {
+    var count = 0
+    df.queryExecution.sparkPlan.foreach {
+      case p: ProjectExec => count += p.projectList.count {
+        case _: AnsiCast => true
+        case Alias(_: AnsiCast, _) => true
+        case c: Cast => c.toString().contains("ansi_cast") // ansiEnabled is protected
+        case Alias(c: Cast, _) => c.toString().contains("ansi_cast") // ansiEnabled is protected
+        case _ => false
+      }
+      case p: GpuProjectExec => count += p.projectList.count {
+        case c: GpuCast => c.ansiMode
+        case _ => false
+      }
+      case _ =>
+    }
+    if (count == 0) {
       throw new IllegalStateException("Plan does not contain any ansi_cast expressions")
     }
     df
