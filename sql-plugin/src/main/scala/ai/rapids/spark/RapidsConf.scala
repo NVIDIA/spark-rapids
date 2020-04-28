@@ -382,6 +382,7 @@ object RapidsConf {
   val HASH_AGG_REPLACE_MODE = conf("spark.rapids.sql.hashAgg.replaceMode")
     .doc("Only when hash aggregate exec has these modes (\"all\" by default): " +
       "\"all\" (try to replace all aggregates, default), " +
+      "\"complete\" (exclusively replace complete aggregates), " +
       "\"partial\" (exclusively replace partial aggregates), " +
       "\"final\" (exclusively replace final aggregates)")
     .internal()
