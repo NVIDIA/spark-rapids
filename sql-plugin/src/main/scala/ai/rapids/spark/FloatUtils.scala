@@ -30,14 +30,6 @@ object FloatUtils extends Arm {
     }
   }
 
-  def nansToNulls(vec: ColumnVector): ColumnVector = {
-    withResource(vec.isNan()) { isNan =>
-      withResource(Scalar.fromNull(vec.getType)) { nullScalar =>
-        isNan.ifElse(nullScalar, vec)
-      }
-    }
-  }
-
   def infinityToNulls(vec: ColumnVector): ColumnVector = {
     def getInfinityVector: ColumnVector = {
       if (vec.getType == DType.FLOAT64) ColumnVector.fromDoubles(Double.PositiveInfinity, Double.NegativeInfinity)
