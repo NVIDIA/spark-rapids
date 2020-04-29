@@ -611,13 +611,13 @@ class StringOperatorsDiagnostics extends SparkQueryCompareTestSuite {
   
   // generates special case character mapping hash table generation input data.
   def generateCharMappings(): Unit = {    
-    class char_mapping {
+    class charMapping {
       var   num_upper = 0
       val   upper = Array(0, 0, 0)
       var   num_lower = 0
       val   lower = Array(0, 0, 0)
     }    
-    val mapping = Array.fill[char_mapping](65536)(new char_mapping())
+    val mapping = Array.fill[charMapping](65536)(new charMapping())
             
     // upper results
     val (fromCpuUpper, fromGpuUpper) = generateResults(upper)
