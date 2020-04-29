@@ -57,12 +57,12 @@ class SortExecSuite extends SparkQueryCompareTestSuite {
     }
   }
 
-  private val sortConfig = makeBatchedBytes(Integer.MAX_VALUE).set(RapidsConf.HAS_NANS.key, "false")
+  private val sortConfig = makeBatchedBytes(Integer.MAX_VALUE)
 
   // Note I -- out the set of Types that aren't supported with Sort right now so we can explicitly see them and remove
   // individually as we add support
   for (
-    dataType <- DataTypeTestUtils.atomicTypes ++ Set(NullType) -- Set(FloatType, NullType, DoubleType, DecimalType.USER_DEFAULT,
+    dataType <- DataTypeTestUtils.atomicTypes ++ Set(NullType) -- Set(NullType, DecimalType.USER_DEFAULT,
       DecimalType(20, 5), DecimalType.SYSTEM_DEFAULT, BinaryType);
     nullable <- Seq(true, false);
     sortOrder <- Seq(col("a").asc, col("a").asc_nulls_last, col("a").desc, col("a").desc_nulls_first)
@@ -94,7 +94,7 @@ class SortExecSuite extends SparkQueryCompareTestSuite {
   }
 
   testSparkResultsAreEqual("sort 2 cols longs nulls with GPU Range partitioner",
-    nullableLongsDfWithDuplicates, new SparkConf().set(RapidsConf.HAS_NANS.key, "false")) {
+    nullableLongsDfWithDuplicates, new SparkConf()) {
     frame => frame.sortWithinPartitions("longs", "more_longs")
   }
 
