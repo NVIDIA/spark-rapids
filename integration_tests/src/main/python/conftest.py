@@ -18,11 +18,25 @@ _incompat = False
 
 @pytest.fixture
 def incompat():
+    """Marks a test as using an incompat operator"""
     global _incompat 
     _incompat = True
-    yield
+    yield _incompat
     _incompat = False
 
 def is_incompat():
     return _incompat
+
+_ignore_order = False
+
+@pytest.fixture
+def ignore_order():
+    """Marks a test as producing a different order that the CPU version."""
+    global _ignore_order
+    _ignore_order = True
+    yield _ignore_order
+    _ignore_order = False
+
+def is_order_ignored():
+    return _ignore_order
 
