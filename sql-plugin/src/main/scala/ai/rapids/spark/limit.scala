@@ -17,12 +17,15 @@
 package ai.rapids.spark
 
 import ai.rapids.cudf.Table
+import ai.rapids.spark.GpuMetricNames._
 import ai.rapids.spark.RapidsPluginImplicits._
 import org.apache.spark.rdd.RDD
+import org.apache.spark.serializer.Serializer
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.expressions.{Attribute, SortOrder}
-import org.apache.spark.sql.catalyst.plans.physical.{AllTuples, Distribution, Partitioning}
-import org.apache.spark.sql.execution.{LimitExec, SparkPlan}
+import org.apache.spark.sql.catalyst.plans.physical.{AllTuples, Distribution, Partitioning, SinglePartition}
+import org.apache.spark.sql.execution.metric.{SQLMetric, SQLMetrics, SQLShuffleReadMetricsReporter, SQLShuffleWriteMetricsReporter}
+import org.apache.spark.sql.execution.{CollectLimitExec, LimitExec, ShuffledBatchRDD, ShuffledRowRDD, SparkPlan, UnaryExecNode, UnsafeRowSerializer}
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
 import scala.collection.mutable.ArrayBuffer
@@ -105,4 +108,47 @@ case class GpuLocalLimitExec(limit: Int, child: SparkPlan) extends GpuBaseLimitE
  */
 case class GpuGlobalLimitExec(limit: Int, child: SparkPlan) extends GpuBaseLimitExec {
   override def requiredChildDistribution: List[Distribution] = AllTuples :: Nil
+}
+
+class GpuCollectLimitMeta(
+                      collectLimit: CollectLimitExec,
+                      conf: RapidsConf,
+                      parent: Option[RapidsMeta[_, _, _]],
+                      rule: ConfKeysAndIncompat)
+  extends SparkPlanMeta[CollectLimitExec](collectLimit, conf, parent, rule) {
+  override val childParts: scala.Seq[PartMeta[_]] =
+    Seq(GpuOverrides.wrapPart(collectLimit.outputPartitioning, conf, Some(this)))
+
+  override def convertToGpu(): GpuExec =
+    GpuCollectLimitExec(collectLimit.limit, childParts(0).convertToGpu(),
+      GpuLocalLimitExec(collectLimit.limit,
+        GpuShuffleExchangeExec(GpuSinglePartitioning(Seq.empty), childPlans(0).convertIfNeeded())))
+}
+
+case class GpuCollectLimitExec(limit: Int, partitioning: GpuPartitioning, child: SparkPlan) extends GpuBaseLimitExec {
+
+  private val serializer: Serializer = new GpuColumnarBatchSerializer(child.output.size)
+
+  private lazy val writeMetrics =
+    SQLShuffleWriteMetricsReporter.createShuffleWriteMetrics(sparkContext)
+  private lazy val readMetrics =
+    SQLShuffleReadMetricsReporter.createShuffleReadMetrics(sparkContext)
+
+  lazy val shuffleMetrics = readMetrics ++ writeMetrics
+
+  override def doExecuteColumnar(): RDD[ColumnarBatch] = {
+    val locallyLimited: RDD[ColumnarBatch] = super.doExecuteColumnar()
+
+    val shuffleDependency = GpuShuffleExchangeExec.prepareBatchShuffleDependency(
+      locallyLimited,
+      child.output,
+      partitioning,
+      serializer,
+      metrics ++ shuffleMetrics,
+      metrics ++ writeMetrics)
+
+    val shuffled = new ShuffledBatchRDD(shuffleDependency, metrics ++ shuffleMetrics, None)
+    shuffled.mapPartitions(_.take(limit))
+  }
+
 }
