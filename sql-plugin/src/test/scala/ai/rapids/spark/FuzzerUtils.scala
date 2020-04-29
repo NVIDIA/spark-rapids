@@ -16,6 +16,8 @@
 
 package ai.rapids.spark
 
+import java.sql.Timestamp
+
 import ai.rapids.spark.GpuColumnVector.GpuColumnarBatchBuilder
 import org.apache.spark.sql.{DataFrame, Row, SparkSession}
 import org.apache.spark.sql.types.{DataType, DataTypes, StructField, StructType}
@@ -166,6 +168,7 @@ object FuzzerUtils {
           case DataTypes.FloatType => r.nextFloat()
           case DataTypes.DoubleType => r.nextDouble()
           case DataTypes.StringType => r.nextString()
+          case DataTypes.TimestampType => r.nextTimestamp()
           case _ => throw new IllegalStateException(s"fuzzer does not support data type ${field.dataType}")
         }
       }
@@ -259,6 +262,17 @@ class EnhancedRandom(r: Random, options: FuzzerOptions) {
     } else {
       generateString()
     }
+  }
+
+  def nextTimestamp(): Timestamp = {
+    val year = 1970 + r.nextInt(200)
+    val month = r.nextInt(12)
+    val date = 1 + r.nextInt(28)
+    val hour = r.nextInt(24)
+    val minute = r.nextInt(60)
+    val seconds = r.nextInt(60)
+    val nanos = r.nextInt(1000000000)
+    new Timestamp(year, month, date, hour, minute, seconds, nanos)
   }
 
   private def generateString(): String = {

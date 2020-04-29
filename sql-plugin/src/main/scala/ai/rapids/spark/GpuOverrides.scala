@@ -445,7 +445,7 @@ object GpuOverrides {
       "convert a column of one type of data into another type",
       (cast, conf, p, r) => new UnaryExprMeta[Cast](cast, conf, p, r) {
         override def tagExprForGpu(): Unit = {
-          if (!GpuCast.canCast(cast.child.dataType, cast.dataType)) {
+          if (!GpuCast.canCast(cast.child.dataType, cast.dataType, SparkSession.active.sessionState.conf.ansiEnabled)) {
             willNotWorkOnGpu(s"casting from ${cast.child.dataType} " +
               s"to ${cast.dataType} is not currently supported on the GPU")
           }
@@ -459,7 +459,7 @@ object GpuOverrides {
         }
 
         override def convertToGpu(child: GpuExpression): GpuExpression =
-          GpuCast(child, cast.dataType, ansiMode = false, cast.timeZoneId)
+          GpuCast(child, cast.dataType, SparkSession.active.sessionState.conf.ansiEnabled, cast.timeZoneId)
       }),
     expr[AnsiCast](
       "convert a column of one type of data into another type",
