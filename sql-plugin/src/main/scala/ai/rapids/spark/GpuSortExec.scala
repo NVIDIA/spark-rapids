@@ -46,12 +46,6 @@ class GpuSortMeta(
     if (GpuOverrides.isAnyStringLit(sort.sortOrder)) {
       willNotWorkOnGpu("string literal values are not supported in a sort")
     }
-    val keyDataTypes = sort.sortOrder.map(_.dataType)
-    if ((keyDataTypes.contains(FloatType) || keyDataTypes.contains(DoubleType)) && conf.hasNans) {
-      willNotWorkOnGpu("floats/doubles are not supported in sort, due to " +
-        "incompatibility with NaN. If you don't have any NaNs in your data you can set " +
-        s"${RapidsConf.HAS_NANS}=false to bypass this.")
-    }
   }
 }
 
