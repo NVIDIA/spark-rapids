@@ -47,6 +47,9 @@ object GpuCast {
         // ansi casts from floating-point to integral types are supported
         case (FloatType|DoubleType, ByteType|ShortType|IntegerType|LongType) => true
 
+        // ansi casts from timestamp to long is supported and requires no special handling
+        case (TimestampType, LongType) => true
+
         // other casts need specific support to honor ansi mode
         case _ => false
       }

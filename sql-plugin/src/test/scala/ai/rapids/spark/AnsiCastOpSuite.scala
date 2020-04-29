@@ -17,7 +17,10 @@
 package ai.rapids.spark
 
 import org.apache.spark.SparkConf
+import org.apache.spark.sql.catalyst.expressions.{Alias, AnsiCast, Cast, CastBase}
+import org.apache.spark.sql.execution.{ExplainMode, ProjectExec, SimpleMode}
 import org.apache.spark.sql.{DataFrame, SparkSession}
+import org.apache.spark.sql.functions._
 import org.apache.spark.sql.types._
 
 import scala.annotation.tailrec
@@ -27,6 +30,10 @@ class AnsiCastOpSuite extends GpuExpressionTestSuite {
   private val sparkConf = new SparkConf()
     .set("spark.sql.ansi.enabled", "true")
     .set("spark.sql.storeAssignmentPolicy", "ANSI") // note this is the default in 3.0.0
+
+  testSparkResultsAreEqual("ansi_cast timestamps to long", testData(DataTypes.TimestampType), sparkConf) {
+    frame => assertContainsAnsiCast(frame.withColumn("c1", col("c0").cast(DataTypes.LongType)))
+  }
 
   testSparkResultsAreEqual("Write ints to long", testData(DataTypes.IntegerType), sparkConf) {
     frame => doTableInsert(frame, HIVE_LONG_SQL_TYPE)
@@ -162,7 +169,7 @@ class AnsiCastOpSuite extends GpuExpressionTestSuite {
     val t2 = s"AnsiCastOpSuite_doTableInsert_${sqlDataType}_t2_$now"
     frame.createOrReplaceTempView(t1)
     spark.sql(s"CREATE TABLE $t2 (a $sqlDataType)")
-    spark.sql(s"INSERT INTO $t2 SELECT c0 AS a FROM $t1")
+    assertContainsAnsiCast(spark.sql(s"INSERT INTO $t2 SELECT c0 AS a FROM $t1"))
     spark.sql(s"SELECT a FROM $t2")
   }
 
@@ -179,7 +186,7 @@ class AnsiCastOpSuite extends GpuExpressionTestSuite {
     spark.sql(s"CREATE TABLE $t2 (c0 $sqlSourceType)")
     spark.sql(s"CREATE TABLE $t3 (c0 $sqlDestType)")
     // insert into t2
-    spark.sql(s"INSERT INTO $t2 SELECT c0 AS a FROM $t1")
+    assertContainsAnsiCast(spark.sql(s"INSERT INTO $t2 SELECT c0 AS a FROM $t1"))
     // copy from t2 to t1, with an ansi_cast()
     spark.sql(s"INSERT INTO $t3 SELECT c0 FROM $t2")
     spark.sql(s"SELECT c0 FROM $t3")
@@ -226,6 +233,26 @@ class AnsiCastOpSuite extends GpuExpressionTestSuite {
     } else {
       false
     }
+  }
+
+  private def assertContainsAnsiCast(df: DataFrame, expected: Int = 1): DataFrame = {
+    var count = 0
+    df.queryExecution.sparkPlan.foreach {
+      case p: ProjectExec => count += p.projectList.count {
+        case c: CastBase => c.toString().startsWith("ansi_cast") // ansiEnabled is protected
+        case Alias(c: CastBase, _) => c.toString().startsWith("ansi_cast") // ansiEnabled is protected
+        case _ => false
+      }
+      case p: GpuProjectExec => count += p.projectList.count {
+        case c: GpuCast => c.ansiMode
+        case _ => false
+      }
+      case _ =>
+    }
+    if (count != expected) {
+      throw new IllegalStateException("Plan does not contain the expected number of ansi_cast expressions")
+    }
+    df
   }
 
   def bytesAsShorts(session: SparkSession): DataFrame = {
