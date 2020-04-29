@@ -216,6 +216,14 @@ class DoubleGen(DataGen):
             return struct.unpack('d', p)[0]
         self._start(rand, gen_double)
 
+class BooleanGen(DataGen):
+    """Generate Bools (True/False)"""
+    def __init__(self, nullable=True):
+        super().__init__(BooleanType(), nullable=nullable)
+
+    def start(self, rand):
+        self._start(rand, lambda : bool(rand.getrandbits(1)))
+
 class StructGen(DataGen):
     """Generate a Struct"""
     def __init__(self, children, nullable=True):

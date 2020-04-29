@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from conftest import is_incompat
+from conftest import is_incompat, is_order_ignored
 import math
 from pyspark.sql import Row
 import pytest
@@ -86,13 +86,22 @@ def _assert_gpu_and_cpu_are_equal(func,
         conf={},
         sort_result=False,
         non_gpu_allowed=None):
-    assert not sort_result, "sorting results is not supported yet"
-    #TODO sort first if needed
+    if sort_result:
+        def with_sorted(spark):
+            df = func(spark)
+            #TODO if we ever start to support maps we need to come up with a new plan
+            # because maps are not supported for sort
+            return df.sort(df.columns)
+
+        sorted_func = with_sorted
+    else:
+        sorted_func = func
+
     if should_collect:
-        bring_back = lambda spark: func(spark).collect()
+        bring_back = lambda spark: sorted_func(spark).collect()
         collect_type = 'COLLECT'
     else:
-        bring_back = lambda spark: func(spark).toLocalIterator()
+        bring_back = lambda spark: sorted_func(spark).toLocalIterator()
         collect_type = 'ITERATOR'
 
     if is_incompat():
@@ -117,7 +126,6 @@ def _assert_gpu_and_cpu_are_equal(func,
 
 def assert_gpu_and_cpu_are_equal_collect(func,
         conf={},
-        sort_result=False,
         non_gpu_allowed=None):
     """
     Assert when running func on both the CPU and the GPU that the results are equal.
@@ -126,12 +134,11 @@ def assert_gpu_and_cpu_are_equal_collect(func,
     """
     _assert_gpu_and_cpu_are_equal(func, True,
             conf=conf,
-            sort_result=sort_result,
+            sort_result=is_order_ignored(),
             non_gpu_allowed=non_gpu_allowed)
 
 def assert_gpu_and_cpu_are_equal_iterator(func,
         conf={},
-        sort_result=False,
         non_gpu_allowed=None):
     """
     Assert when running func on both the CPU and the GPU that the results are equal.
@@ -140,5 +147,5 @@ def assert_gpu_and_cpu_are_equal_iterator(func,
     """
     _assert_gpu_and_cpu_are_equal(func, False,
             conf=conf,
-            sort_result=sort_result,
+            sort_result=is_order_ignored(),
             non_gpu_allowed=non_gpu_allowed)
