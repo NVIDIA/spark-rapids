@@ -213,7 +213,7 @@ case class GpuCast(child: GpuExpression, dataType: DataType, ansiMode: Boolean =
       case (FloatType | DoubleType, TimestampType) =>
         // Spark casting to timestamp from double assumes value is in microseconds
         withResource(Scalar.fromInt(1000000)) { microsPerSec =>
-          withResource(FloatUtils.nansToNulls(input.getBase)) { inputWithNansToNull =>
+          withResource(input.getBase.nansToNulls()) { inputWithNansToNull =>
             withResource(FloatUtils.infinityToNulls(inputWithNansToNull)) { inputWithoutNanAndInfinity =>
               withResource(inputWithoutNanAndInfinity.mul(microsPerSec)) { inputTimesMicrosCv =>
                 GpuColumnVector.from(inputTimesMicrosCv.castTo(DType.TIMESTAMP_MICROSECONDS))
