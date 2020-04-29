@@ -73,6 +73,23 @@ class HashAggregatesSuite extends SparkQueryCompareTestSuite {
       .agg(first(col("c0"), ignoreNulls = true), last(col("c0"), ignoreNulls = true))
   }
 
+  testExpectedExceptionStartsWith("test unsorted agg with first and last no grouping",
+    classOf[IllegalArgumentException],
+    "Part of the plan is not columnar", firstDf, repart = 2) {
+    frame => frame
+      .coalesce(1)
+      .agg(first(col("c0"), ignoreNulls = true), last(col("c0"), ignoreNulls = true))
+  }
+
+  testExpectedExceptionStartsWith("test sorted agg with first and last no grouping",
+    classOf[IllegalArgumentException],
+    "Part of the plan is not columnar", firstDf, repart = 2) {
+    frame => frame
+      .coalesce(1)
+      .sort(col("c2").asc, col("c0").asc) // force deterministic use case
+      .agg(first(col("c0"), ignoreNulls = true), last(col("c0"), ignoreNulls = true))
+  }
+
   test("SortAggregateExec is translated correctly ENABLE_HASH_OPTIMIZE_SORT=false") {
 
     val conf = new SparkConf()
