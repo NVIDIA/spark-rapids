@@ -16,6 +16,9 @@
 
 package ai.rapids.spark
 
+import org.apache.spark.sql.{DataFrame, Row, SparkSession}
+import org.apache.spark.sql.types.DataTypes
+
 class LimitExecSuite extends SparkQueryCompareTestSuite {
 
   testSparkResultsAreEqual("limit more than rows", intCsvDf) {
@@ -35,5 +38,24 @@ class LimitExecSuite extends SparkQueryCompareTestSuite {
   testSparkResultsAreEqual("limit with no real columns", intCsvDf,
     conf = makeBatchedBytes(3), repart = 0) {
     frame => frame.limit(2).selectExpr("pi()")
+  }
+
+  testSparkResultsAreEqual("collect with limit", testData) {
+    frame => {
+      import frame.sparkSession.implicits._
+      val results: Array[Row] = frame.limit(16).repartition(2).collect()
+      results.map(row => if (row.isNullAt(0)) 0 else row.getInt(0)).toSeq.toDF("c0")
+    }
+  }
+  testSparkResultsAreEqual("collect with limit, repart=4", testData, repart = 4) {
+    frame => {
+      import frame.sparkSession.implicits._
+      val results: Array[Row] = frame.limit(16).collect()
+      results.map(row => if (row.isNullAt(0)) 0 else row.getInt(0)).toSeq.toDF("c0")
+    }
+  }
+
+  private def testData(spark: SparkSession): DataFrame = {
+    FuzzerUtils.generateDataFrame(spark, FuzzerUtils.createSchema(Seq(DataTypes.IntegerType)), 100)
   }
 }
