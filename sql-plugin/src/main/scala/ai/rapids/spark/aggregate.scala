@@ -142,6 +142,12 @@ class GpuSortAggregateMeta(
       resultExpressions
 
   override def tagPlanForGpu(): Unit = {
+    if (agg.groupingExpressions.isEmpty) {
+      // first/last reductions not supported yet
+      if (agg.aggregateExpressions.exists(e => e.aggregateFunction.isInstanceOf[First] || e.aggregateFunction.isInstanceOf[Last])) {
+        willNotWorkOnGpu("First/Last reductions are not supported on GPU")
+      }
+    }
     if (GpuOverrides.isAnyStringLit(agg.groupingExpressions)) {
       willNotWorkOnGpu("string literal values are not supported in a hash aggregate")
     }
