@@ -44,6 +44,21 @@ object GpuCast {
         // ansi casts from integral types to string are supported and require no special handling
         case (ByteType|ShortType|IntegerType|LongType, StringType) => true
 
+        // ansi casts from boolean to numeric types requires no special handling
+        case (BooleanType, ByteType|ShortType|IntegerType|LongType|FloatType|DoubleType) => true
+        // ansi casts from boolean to timestamp requires no special handling
+        case (BooleanType, TimestampType) => true
+        // ansi casts from boolean to string requires no special handling
+        case (BooleanType, StringType) => true
+
+        // ansi casts from numeric types to boolean requires no special handling
+        case (ByteType|ShortType|IntegerType|LongType|FloatType|DoubleType, BooleanType) => true
+        // ansi casts from timestamp to boolean requires no special handling
+        case (TimestampType, BooleanType) => true
+
+        // ansi cast from string to boolean is not yet supported
+        case (StringType, BooleanType) => false
+
         // ansi casts between integral types are supported
         case (ByteType|ShortType|IntegerType|LongType, ByteType|ShortType|IntegerType|LongType) => true
 
