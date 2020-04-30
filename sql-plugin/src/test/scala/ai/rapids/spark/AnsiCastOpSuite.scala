@@ -35,35 +35,35 @@ class AnsiCastOpSuite extends GpuExpressionTestSuite {
   // Ansi cast from boolean
   ///////////////////////////////////////////////////////////////////////////
 
-  testSparkResultsAreEqual("ansi_cast bool to string", testData(DataTypes.BooleanType), sparkConf) {
+  testSparkResultsAreEqual("ansi_cast bool to string", testBools, sparkConf) {
     frame => testCastTo(DataTypes.StringType)(frame)
   }
 
-  testSparkResultsAreEqual("ansi_cast bool to byte", testData(DataTypes.BooleanType), sparkConf) {
+  testSparkResultsAreEqual("ansi_cast bool to byte", testBools, sparkConf) {
     frame => testCastTo(DataTypes.ByteType)(frame)
   }
 
-  testSparkResultsAreEqual("ansi_cast bool to short", testData(DataTypes.BooleanType), sparkConf) {
+  testSparkResultsAreEqual("ansi_cast bool to short", testBools, sparkConf) {
     frame => testCastTo(DataTypes.ShortType)(frame)
   }
 
-  testSparkResultsAreEqual("ansi_cast bool to int", testData(DataTypes.BooleanType), sparkConf) {
+  testSparkResultsAreEqual("ansi_cast bool to int", testBools, sparkConf) {
     frame => testCastTo(DataTypes.IntegerType)(frame)
   }
 
-  testSparkResultsAreEqual("ansi_cast bool to long", testData(DataTypes.BooleanType), sparkConf) {
+  testSparkResultsAreEqual("ansi_cast bool to long", testBools, sparkConf) {
     frame => testCastTo(DataTypes.LongType)(frame)
   }
 
-  testSparkResultsAreEqual("ansi_cast bool to float", testData(DataTypes.BooleanType), sparkConf) {
+  testSparkResultsAreEqual("ansi_cast bool to float", testBools, sparkConf) {
     frame => testCastTo(DataTypes.FloatType)(frame)
   }
 
-  testSparkResultsAreEqual("ansi_cast bool to double", testData(DataTypes.BooleanType), sparkConf) {
+  testSparkResultsAreEqual("ansi_cast bool to double", testBools, sparkConf) {
     frame => testCastTo(DataTypes.DoubleType)(frame)
   }
 
-  testSparkResultsAreEqual("ansi_cast bool to timestamp", testData(DataTypes.BooleanType), sparkConf) {
+  testSparkResultsAreEqual("ansi_cast bool to timestamp", testBools, sparkConf) {
     frame => testCastTo(DataTypes.TimestampType)(frame)
   }
 
@@ -71,31 +71,47 @@ class AnsiCastOpSuite extends GpuExpressionTestSuite {
   // Ansi cast to boolean
   ///////////////////////////////////////////////////////////////////////////
 
-  testSparkResultsAreEqual("ansi_cast byte to bool", testData(DataTypes.ByteType), sparkConf) {
+  testSparkResultsAreEqual("ansi_cast byte to bool", testBytes, sparkConf) {
     frame => testCastTo(DataTypes.BooleanType)(frame)
   }
 
-  testSparkResultsAreEqual("ansi_cast short to bool", testData(DataTypes.ShortType), sparkConf) {
+  testSparkResultsAreEqual("ansi_cast short to bool", testShorts, sparkConf) {
     frame => testCastTo(DataTypes.BooleanType)(frame)
   }
 
-  testSparkResultsAreEqual("ansi_cast int to bool", testData(DataTypes.IntegerType), sparkConf) {
+  testSparkResultsAreEqual("ansi_cast int to bool", testInts, sparkConf) {
     frame => testCastTo(DataTypes.BooleanType)(frame)
   }
 
-  testSparkResultsAreEqual("ansi_cast long to bool", testData(DataTypes.LongType), sparkConf) {
+  testSparkResultsAreEqual("ansi_cast long to bool", testLongs, sparkConf) {
     frame => testCastTo(DataTypes.BooleanType)(frame)
   }
 
-  testSparkResultsAreEqual("ansi_cast float to bool", testData(DataTypes.FloatType), sparkConf) {
+  testSparkResultsAreEqual("ansi_cast float to bool", testFloats, sparkConf) {
     frame => testCastTo(DataTypes.BooleanType)(frame)
   }
 
-  testSparkResultsAreEqual("ansi_cast double to bool", testData(DataTypes.DoubleType), sparkConf) {
+  testSparkResultsAreEqual("ansi_cast double to bool", testDoubles, sparkConf) {
     frame => testCastTo(DataTypes.BooleanType)(frame)
   }
 
-  testSparkResultsAreEqual("ansi_cast timestamp to bool", testData(DataTypes.TimestampType), sparkConf) {
+  testSparkResultsAreEqual("ansi_cast timestamp to bool", testTimestamps, sparkConf) {
+    frame => testCastTo(DataTypes.BooleanType)(frame)
+  }
+
+  testSparkResultsAreEqual("ansi_cast string to bool", validBoolStrings, sparkConf) {
+    frame => testCastTo(DataTypes.BooleanType)(frame)
+  }
+
+  private def validBoolStrings(spark: SparkSession): DataFrame = {
+    import spark.implicits._
+    val boolStrings: Seq[String] = Seq("t", "true", "y", "yes", "1") ++
+      Seq("f", "false", "n", "no", "0")
+    boolStrings.toDF("c0")
+  }
+
+  testCastFailsForBadInputs("ansi_cast string to bool (invalid values)", testStrings,
+    sparkConf) {
     frame => testCastTo(DataTypes.BooleanType)(frame)
   }
 
@@ -103,7 +119,7 @@ class AnsiCastOpSuite extends GpuExpressionTestSuite {
   // Ansi cast from timestamp to integral types
   ///////////////////////////////////////////////////////////////////////////
 
-  testSparkResultsAreEqual("ansi_cast timestamps to long", testData(DataTypes.TimestampType), sparkConf) {
+  testSparkResultsAreEqual("ansi_cast timestamps to long", testTimestamps, sparkConf) {
     frame => testCastTo(DataTypes.LongType)(frame)
   }
 
@@ -111,79 +127,93 @@ class AnsiCastOpSuite extends GpuExpressionTestSuite {
   // Writing to Hive tables, which has special rules
   ///////////////////////////////////////////////////////////////////////////
 
-  testSparkResultsAreEqual("Write bytes to string", testData(DataTypes.ByteType), sparkConf) {
+  testSparkResultsAreEqual("Write bytes to string", testBytes, sparkConf) {
     frame => doTableInsert(frame, HIVE_STRING_SQL_TYPE)
   }
 
-  testSparkResultsAreEqual("Write shorts to string", testData(DataTypes.ShortType), sparkConf) {
+  testSparkResultsAreEqual("Write shorts to string", testShorts, sparkConf) {
     frame => doTableInsert(frame, HIVE_STRING_SQL_TYPE)
   }
 
-  testSparkResultsAreEqual("Write ints to string", testData(DataTypes.IntegerType), sparkConf) {
+  testSparkResultsAreEqual("Write ints to string", testInts, sparkConf) {
     frame => doTableInsert(frame, HIVE_STRING_SQL_TYPE)
   }
 
-  testSparkResultsAreEqual("Write longs to string", testData(DataTypes.LongType), sparkConf) {
+  testSparkResultsAreEqual("Write longs to string", testLongs, sparkConf) {
     frame => doTableInsert(frame, HIVE_STRING_SQL_TYPE)
   }
 
-  testSparkResultsAreEqual("Write ints to long", testData(DataTypes.IntegerType), sparkConf) {
+  testSparkResultsAreEqual("Write ints to long", testInts, sparkConf) {
     frame => doTableInsert(frame, HIVE_LONG_SQL_TYPE)
   }
 
-  testSparkResultsAreEqual("Write longs to int (values within range)", intsAsLongs, sparkConf) {
+  testSparkResultsAreEqual("Write longs to int (values within range)", intsAsLongs,
+    sparkConf) {
     frame => doTableInsert(frame, HIVE_INT_SQL_TYPE)
   }
 
-  testSparkResultsAreEqual("Write longs to short (values within range)", shortsAsLongs, sparkConf) {
+  testSparkResultsAreEqual("Write longs to short (values within range)", shortsAsLongs,
+    sparkConf) {
     frame => doTableInsert(frame, HIVE_SHORT_SQL_TYPE)
   }
 
-  testSparkResultsAreEqual("Write longs to byte (values within range)", bytesAsLongs, sparkConf) {
+  testSparkResultsAreEqual("Write longs to byte (values within range)", bytesAsLongs,
+    sparkConf) {
     frame => doTableInsert(frame, HIVE_BYTE_SQL_TYPE)
   }
 
-  testSparkResultsAreEqual("Write ints to short (values within range)", shortsAsInts, sparkConf) {
+  testSparkResultsAreEqual("Write ints to short (values within range)", shortsAsInts,
+    sparkConf) {
     frame => doTableInsert(frame, HIVE_SHORT_SQL_TYPE)
   }
 
-  testSparkResultsAreEqual("Write ints to byte (values within range)", bytesAsInts, sparkConf) {
+  testSparkResultsAreEqual("Write ints to byte (values within range)", bytesAsInts,
+    sparkConf) {
     frame => doTableInsert(frame, HIVE_BYTE_SQL_TYPE)
   }
 
-  testSparkResultsAreEqual("Write shorts to byte (values within range)", bytesAsShorts, sparkConf) {
+  testSparkResultsAreEqual("Write shorts to byte (values within range)", bytesAsShorts,
+    sparkConf) {
     frame => doTableInsert(frame, HIVE_BYTE_SQL_TYPE)
   }
 
-  testSparkResultsAreEqual("Write floats to long (values within range)", longsAsFloats, sparkConf) {
+  testSparkResultsAreEqual("Write floats to long (values within range)", longsAsFloats,
+    sparkConf) {
     frame => doTableInsert(frame, HIVE_LONG_SQL_TYPE)
   }
 
-  testSparkResultsAreEqual("Write floats to int (values within range)", intsAsFloats, sparkConf) {
+  testSparkResultsAreEqual("Write floats to int (values within range)", intsAsFloats,
+    sparkConf) {
     frame => doTableInsert(frame, HIVE_INT_SQL_TYPE)
   }
 
-  testSparkResultsAreEqual("Write floats to short (values within range)", shortsAsFloats, sparkConf) {
+  testSparkResultsAreEqual("Write floats to short (values within range)", shortsAsFloats,
+    sparkConf) {
     frame => doTableInsert(frame, HIVE_SHORT_SQL_TYPE)
   }
 
-  testSparkResultsAreEqual("Write floats to byte (values within range)", bytesAsFloats, sparkConf) {
+  testSparkResultsAreEqual("Write floats to byte (values within range)", bytesAsFloats,
+    sparkConf) {
     frame => doTableInsert(frame, HIVE_BYTE_SQL_TYPE)
   }
 
-  testSparkResultsAreEqual("Write doubles to long (values within range)", longsAsDoubles, sparkConf) {
+  testSparkResultsAreEqual("Write doubles to long (values within range)", longsAsDoubles,
+    sparkConf) {
     frame => doTableInsert(frame, HIVE_LONG_SQL_TYPE)
   }
 
-  testSparkResultsAreEqual("Write doubles to int (values within range)", intsAsDoubles, sparkConf) {
+  testSparkResultsAreEqual("Write doubles to int (values within range)", intsAsDoubles,
+    sparkConf) {
     frame => doTableInsert(frame, HIVE_LONG_SQL_TYPE)
   }
 
-  testSparkResultsAreEqual("Write doubles to short (values within range)", shortsAsDoubles, sparkConf) {
+  testSparkResultsAreEqual("Write doubles to short (values within range)",
+    shortsAsDoubles, sparkConf) {
     frame => doTableInsert(frame, HIVE_LONG_SQL_TYPE)
   }
 
-  testSparkResultsAreEqual("Write doubles to byte (values within range)", bytesAsDoubles, sparkConf) {
+  testSparkResultsAreEqual("Write doubles to byte (values within range)", bytesAsDoubles,
+    sparkConf) {
     frame => doTableInsert(frame, HIVE_LONG_SQL_TYPE)
   }
 
@@ -191,59 +221,65 @@ class AnsiCastOpSuite extends GpuExpressionTestSuite {
   // Test for exceptions when casting out of range values
   ///////////////////////////////////////////////////////////////////////////
 
-  testCastFailsForBadInputs("Detect overflow from long to int", testData(DataTypes.LongType), sparkConf) {
+  testCastFailsForBadInputs("Detect overflow from long to int", testLongs, sparkConf) {
     frame => doTableInsert(frame, HIVE_INT_SQL_TYPE)
   }
 
-  testCastFailsForBadInputs("Detect overflow from long to short", testData(DataTypes.LongType), sparkConf) {
+  testCastFailsForBadInputs("Detect overflow from long to short", testLongs, sparkConf) {
     frame => doTableInsert(frame, HIVE_SHORT_SQL_TYPE)
   }
 
-  testCastFailsForBadInputs("Detect overflow from long to byte", testData(DataTypes.LongType), sparkConf) {
+  testCastFailsForBadInputs("Detect overflow from long to byte", testLongs, sparkConf) {
     frame => doTableInsert(frame, HIVE_BYTE_SQL_TYPE)
   }
 
-  testCastFailsForBadInputs("Detect overflow from int to short", testData(DataTypes.IntegerType), sparkConf) {
+  testCastFailsForBadInputs("Detect overflow from int to short", testInts, sparkConf) {
     frame => doTableInsert(frame, HIVE_SHORT_SQL_TYPE)
   }
 
-  testCastFailsForBadInputs("Detect overflow from int to byte", testData(DataTypes.IntegerType), sparkConf) {
+  testCastFailsForBadInputs("Detect overflow from int to byte", testInts, sparkConf) {
     frame => doTableInsert(frame, HIVE_BYTE_SQL_TYPE)
   }
 
-  testCastFailsForBadInputs("Detect overflow from short to byte", testData(DataTypes.ShortType), sparkConf) {
+  testCastFailsForBadInputs("Detect overflow from short to byte", testShorts, sparkConf) {
     frame => doTableInsert(frame, HIVE_BYTE_SQL_TYPE)
   }
 
-  testCastFailsForBadInputs("Detect overflow from float to long", testData(DataTypes.FloatType), sparkConf) {
+  testCastFailsForBadInputs("Detect overflow from float to long", testFloats, sparkConf) {
     frame => doTableInsert(frame, HIVE_INT_SQL_TYPE)
   }
 
-  testCastFailsForBadInputs("Detect overflow from float to int", testData(DataTypes.FloatType), sparkConf) {
+  testCastFailsForBadInputs("Detect overflow from float to int", testFloats, sparkConf) {
     frame => doTableInsert(frame, HIVE_SHORT_SQL_TYPE)
   }
 
-  testCastFailsForBadInputs("Detect overflow from float to short", testData(DataTypes.FloatType), sparkConf) {
+  testCastFailsForBadInputs("Detect overflow from float to short", testFloats,
+    sparkConf) {
     frame => doTableInsert(frame, HIVE_LONG_SQL_TYPE)
   }
 
-  testCastFailsForBadInputs("Detect overflow from float to byte", testData(DataTypes.FloatType), sparkConf) {
+  testCastFailsForBadInputs("Detect overflow from float to byte", testFloats,
+    sparkConf) {
     frame => doTableInsert(frame, HIVE_BYTE_SQL_TYPE)
   }
 
-  testCastFailsForBadInputs("Detect overflow from double to long", testData(DataTypes.DoubleType), sparkConf) {
+  testCastFailsForBadInputs("Detect overflow from double to long", testDoubles,
+    sparkConf) {
     frame => doTableInsert(frame, HIVE_LONG_SQL_TYPE)
   }
 
-  testCastFailsForBadInputs("Detect overflow from double to int", testData(DataTypes.DoubleType), sparkConf) {
+  testCastFailsForBadInputs("Detect overflow from double to int", testDoubles,
+    sparkConf) {
     frame => doTableInsert(frame, HIVE_INT_SQL_TYPE)
   }
 
-  testCastFailsForBadInputs("Detect overflow from double to short", testData(DataTypes.DoubleType), sparkConf) {
+  testCastFailsForBadInputs("Detect overflow from double to short", testDoubles,
+    sparkConf) {
     frame => doTableInsert(frame, HIVE_SHORT_SQL_TYPE)
   }
 
-  testCastFailsForBadInputs("Detect overflow from double to byte", testData(DataTypes.DoubleType), sparkConf) {
+  testCastFailsForBadInputs("Detect overflow from double to byte", testDoubles,
+    sparkConf) {
     frame => doTableInsert(frame, HIVE_BYTE_SQL_TYPE)
   }
 
@@ -251,11 +287,11 @@ class AnsiCastOpSuite extends GpuExpressionTestSuite {
   // Copying between Hive tables, which has special rules
   ///////////////////////////////////////////////////////////////////////////
 
-  testSparkResultsAreEqual("Copy ints to long", testData(DataTypes.IntegerType), sparkConf) {
+  testSparkResultsAreEqual("Copy ints to long", testInts, sparkConf) {
     frame => doTableCopy(frame, HIVE_INT_SQL_TYPE, HIVE_LONG_SQL_TYPE)
   }
 
-  testSparkResultsAreEqual("Copy long to float", testData(DataTypes.LongType), sparkConf) {
+  testSparkResultsAreEqual("Copy long to float", testLongs, sparkConf) {
     frame => doTableCopy(frame, HIVE_LONG_SQL_TYPE, HIVE_FLOAT_SQL_TYPE)
   }
 
@@ -280,7 +316,10 @@ class AnsiCastOpSuite extends GpuExpressionTestSuite {
   /**
    * Copy data between two tables, causing ansi_cast() expressions to be inserted into the plan.
    */
-  private def doTableCopy(frame: DataFrame, sqlSourceType: String, sqlDestType: String): DataFrame = {
+  private def doTableCopy(frame: DataFrame,
+    sqlSourceType: String,
+    sqlDestType: String): DataFrame = {
+
     val spark = frame.sparkSession
     val now = System.currentTimeMillis()
     val t1 = s"AnsiCastOpSuite_doTableCopy_${sqlSourceType}_${sqlDestType}_t1_$now"
@@ -297,7 +336,9 @@ class AnsiCastOpSuite extends GpuExpressionTestSuite {
   }
 
   /** Test that a transformation is not supported on GPU */
-  private def testNotSupportedOnGpu(testName: String, frame: SparkSession => DataFrame, sparkConf: SparkConf)(transformation: DataFrame => DataFrame): Unit = {
+  private def testNotSupportedOnGpu(testName: String, frame: SparkSession => DataFrame,
+    sparkConf: SparkConf)(transformation: DataFrame => DataFrame): Unit = {
+
     test(testName) {
       try {
         withGpuSparkSession(spark => {
@@ -312,18 +353,25 @@ class AnsiCastOpSuite extends GpuExpressionTestSuite {
     }
   }
 
-  /** Perform a transformation that is expected to fail due to values not being valid for an ansi_cast */
-  private def testCastFailsForBadInputs(testName: String, frame: SparkSession => DataFrame, sparkConf: SparkConf)(transformation: DataFrame => DataFrame): Unit = {
+  /**
+   * Perform a transformation that is expected to fail due to values not being valid for
+   * an ansi_cast
+   */
+  private def testCastFailsForBadInputs(testName: String, frame: SparkSession => DataFrame,
+    sparkConf: SparkConf)(transformation: DataFrame => DataFrame): Unit = {
+
     test(testName) {
       try {
         withGpuSparkSession(spark => {
           val input = frame(spark).repartition(1)
           transformation(input).collect()
         }, sparkConf)
-        fail("should have thrown an exception due to input values that are not safe for an ansi_cast")
+        fail("should have thrown an exception due to input values that are not safe " +
+          "for an ansi_cast")
       } catch {
         case e: Exception =>
-          assert(exceptionContains(e, "Column contains at least one value that is not in the required range"))
+          assert(exceptionContains(e, "Column contains at least one value that is not " +
+            "in the required range"))
       }
     }
   }
@@ -343,8 +391,9 @@ class AnsiCastOpSuite extends GpuExpressionTestSuite {
     var count = 0
     df.queryExecution.sparkPlan.foreach {
       case p: ProjectExec => count += p.projectList.count {
-        case c: CastBase => c.toString().startsWith("ansi_cast") // ansiEnabled is protected
-        case Alias(c: CastBase, _) => c.toString().startsWith("ansi_cast") // ansiEnabled is protected
+        // ansiEnabled is protected so we rely on CastBase.toString
+        case c: CastBase => c.toString().startsWith("ansi_cast")
+        case Alias(c: CastBase, _) => c.toString().startsWith("ansi_cast")
         case _ => false
       }
       case p: GpuProjectExec => count += p.projectList.count {
@@ -354,7 +403,8 @@ class AnsiCastOpSuite extends GpuExpressionTestSuite {
       case _ =>
     }
     if (count != expected) {
-      throw new IllegalStateException("Plan does not contain the expected number of ansi_cast expressions")
+      throw new IllegalStateException("Plan does not contain the expected number of " +
+        "ansi_cast expressions")
     }
     df
   }
@@ -429,11 +479,22 @@ class AnsiCastOpSuite extends GpuExpressionTestSuite {
     longValues.map(_.toDouble).toDF("c0")
   }
 
+  private def testBools = testData(DataTypes.BooleanType)(_)
+  private def testBytes = testData(DataTypes.ByteType)(_)
+  private def testShorts = testData(DataTypes.ShortType)(_)
+  private def testInts = testData(DataTypes.IntegerType)(_)
+  private def testLongs = testData(DataTypes.LongType)(_)
+  private def testFloats = testData(DataTypes.FloatType)(_)
+  private def testDoubles = testData(DataTypes.DoubleType)(_)
+  private def testStrings = testData(DataTypes.StringType)(_)
+  private def testTimestamps = testData(DataTypes.TimestampType)(_)
+
   private val byteValues: Seq[Byte] = Seq(Byte.MinValue, Byte.MaxValue, 0, -0, -1, 1)
   private val shortValues: Seq[Short] = Seq(Short.MinValue, Short.MaxValue, 0, -0, -1, 1)
   private val intValues: Seq[Int] = Seq(Int.MinValue, Int.MaxValue, 0, -0, -1, 1)
   private val longValues: Seq[Long] = Seq(Long.MinValue, Long.MaxValue, 0, -0, -1, 1)
 
+  private val HIVE_BOOL_SQL_TYPE = "BOOLEAN"
   private val HIVE_LONG_SQL_TYPE = "BIGINT"
   private val HIVE_INT_SQL_TYPE = "INT"
   private val HIVE_SHORT_SQL_TYPE = "SMALLINT"
