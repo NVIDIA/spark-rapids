@@ -161,6 +161,7 @@ object FuzzerUtils {
         null
       } else {
         field.dataType match {
+          case DataTypes.BooleanType => r.nextBoolean()
           case DataTypes.ByteType => r.nextByte()
           case DataTypes.ShortType => r.nextShort()
           case DataTypes.IntegerType => r.nextInt()
@@ -181,6 +182,8 @@ object FuzzerUtils {
  * Wrapper around Random that generates more useful data for unit testing.
  */
 class EnhancedRandom(r: Random, options: FuzzerOptions) {
+
+  def nextBoolean(): Boolean = r.nextBoolean()
 
   def nextByte(): Byte = {
     r.nextInt(5) match {
