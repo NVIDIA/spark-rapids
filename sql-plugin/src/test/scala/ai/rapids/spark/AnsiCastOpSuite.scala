@@ -35,6 +35,22 @@ class AnsiCastOpSuite extends GpuExpressionTestSuite {
     frame => assertContainsAnsiCast(frame.withColumn("c1", col("c0").cast(DataTypes.LongType)))
   }
 
+  testSparkResultsAreEqual("Write bytes to string", testData(DataTypes.ByteType), sparkConf) {
+    frame => doTableInsert(frame, HIVE_STRING_SQL_TYPE)
+  }
+
+  testSparkResultsAreEqual("Write shorts to string", testData(DataTypes.ShortType), sparkConf) {
+    frame => doTableInsert(frame, HIVE_STRING_SQL_TYPE)
+  }
+
+  testSparkResultsAreEqual("Write ints to string", testData(DataTypes.IntegerType), sparkConf) {
+    frame => doTableInsert(frame, HIVE_STRING_SQL_TYPE)
+  }
+
+  testSparkResultsAreEqual("Write longs to string", testData(DataTypes.LongType), sparkConf) {
+    frame => doTableInsert(frame, HIVE_STRING_SQL_TYPE)
+  }
+
   testSparkResultsAreEqual("Write ints to long", testData(DataTypes.IntegerType), sparkConf) {
     frame => doTableInsert(frame, HIVE_LONG_SQL_TYPE)
   }
@@ -336,6 +352,7 @@ class AnsiCastOpSuite extends GpuExpressionTestSuite {
   private val HIVE_BYTE_SQL_TYPE = "TINYINT"
   private val HIVE_FLOAT_SQL_TYPE = "FLOAT"
   private val HIVE_DOUBLE_SQL_TYPE = "DOUBLE"
+  private val HIVE_STRING_SQL_TYPE = "STRING"
 
   private def testData(dt: DataType)(spark: SparkSession) = {
     val schema = FuzzerUtils.createSchema(Seq(dt))
