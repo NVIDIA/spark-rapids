@@ -41,6 +41,9 @@ object GpuCast {
         case (ByteType|ShortType|IntegerType|LongType, FloatType|DoubleType) => true
         case (FloatType|DoubleType, FloatType|DoubleType) => true
 
+        // ansi casts from integral types to string are supported and require no special handling
+        case (ByteType|ShortType|IntegerType|LongType, StringType) => true
+
         // ansi casts between integral types are supported
         case (ByteType|ShortType|IntegerType|LongType, ByteType|ShortType|IntegerType|LongType) => true
 
