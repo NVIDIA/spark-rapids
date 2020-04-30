@@ -17,6 +17,7 @@
 package ai.rapids.spark
 
 import ai.rapids.cudf.{BinaryOp, ColumnVector, DType, Scalar}
+
 import org.apache.spark.sql.catalyst.analysis.TypeCheckResult
 import org.apache.spark.sql.catalyst.expressions.{Cast, NullIntolerant, TimeZoneAwareExpression}
 import org.apache.spark.sql.types._
@@ -32,43 +33,37 @@ object GpuCast {
   def canCast(from: DataType, to: DataType, ansiMode: Boolean = false): Boolean = {
     if (ansiMode) {
       (from, to) match {
+        ///////////////////////////////////////////////////////////////////////////
+        // Casts which require no special handling when ansi mode is enabled
+        ///////////////////////////////////////////////////////////////////////////
         case (fromType, toType) if fromType == toType => true
 
-        // some conversions need no special handling when ansi mode is enabled
-        // because no overflow or underflow can occur
-
-        // casting any numeric to floating point is safe because there is no overflow, just potential loss of precision
-        case (ByteType|ShortType|IntegerType|LongType, FloatType|DoubleType) => true
-        case (FloatType|DoubleType, FloatType|DoubleType) => true
-
-        // ansi casts from integral types to string are supported and require no special handling
-        case (ByteType|ShortType|IntegerType|LongType, StringType) => true
-
-        // ansi casts from boolean to numeric types requires no special handling
         case (BooleanType, ByteType|ShortType|IntegerType|LongType|FloatType|DoubleType) => true
-        // ansi casts from boolean to timestamp requires no special handling
         case (BooleanType, TimestampType) => true
-        // ansi casts from boolean to string requires no special handling
         case (BooleanType, StringType) => true
 
-        // ansi casts from numeric types to boolean requires no special handling
-        case (ByteType|ShortType|IntegerType|LongType|FloatType|DoubleType, BooleanType) => true
-        // ansi casts from timestamp to boolean requires no special handling
+        case (ByteType|ShortType|IntegerType|LongType, BooleanType) => true
+        case (ByteType|ShortType|IntegerType|LongType, FloatType|DoubleType) => true
+        case (ByteType|ShortType|IntegerType|LongType, StringType) => true
+
+        case (FloatType|DoubleType, FloatType|DoubleType) => true
+        case (FloatType|DoubleType, BooleanType) => true
+
         case (TimestampType, BooleanType) => true
-
-        // ansi cast from string to boolean is not yet supported
-        case (StringType, BooleanType) => false
-
-        // ansi casts between integral types are supported
-        case (ByteType|ShortType|IntegerType|LongType, ByteType|ShortType|IntegerType|LongType) => true
-
-        // ansi casts from floating-point to integral types are supported
-        case (FloatType|DoubleType, ByteType|ShortType|IntegerType|LongType) => true
-
-        // ansi casts from timestamp to long is supported and requires no special handling
         case (TimestampType, LongType) => true
 
-        // other casts need specific support to honor ansi mode
+        ///////////////////////////////////////////////////////////////////////////
+        // Casts which require special handling or are not supported yet
+        ///////////////////////////////////////////////////////////////////////////
+
+        // ansi casts from numeric to integral types check for underflow/overflow
+        case (ByteType|ShortType|IntegerType|LongType,
+          ByteType|ShortType|IntegerType|LongType) => true
+        case (FloatType|DoubleType, ByteType|ShortType|IntegerType|LongType) => true
+
+        // ansi cast from string to boolean checks for non-boolean values
+        case (StringType, BooleanType) => true
+
         case _ => false
       }
     } else {
@@ -91,6 +86,8 @@ object GpuCast {
         case (TimestampType, BooleanType) => true
         case (TimestampType, _: NumericType) => true
         case (TimestampType, DateType) => true
+
+        case (StringType, BooleanType) => true
 
         case _ => false
       }
@@ -259,6 +256,8 @@ case class GpuCast(child: GpuExpression, dataType: DataType, ansiMode: Boolean =
         }
       case (FloatType|DoubleType, StringType) =>
         castFloatingTypeToString(input)
+      case (StringType, BooleanType) =>
+        castStringToBool(input, ansiMode)
       case _ =>
         GpuColumnVector.from(input.getBase.castTo(cudfType))
     }
@@ -310,6 +309,39 @@ case class GpuCast(child: GpuExpression, dataType: DataType, ansiMode: Boolean =
         withResource(Scalar.fromString("Inf")) { cudfInf =>
           withResource(Scalar.fromString("Infinity")) { sparkInfinity =>
             GpuColumnVector.from(replaceExponent.stringReplace(cudfInf, sparkInfinity))
+          }
+        }
+      }
+    }
+  }
+
+  private def castStringToBool(input: GpuColumnVector, ansiEnabled: Boolean): GpuColumnVector = {
+    val trueStrings = Seq("t", "true", "y", "yes", "1")
+    val falseStrings = Seq("f", "false", "n", "no", "0")
+    val boolStrings = trueStrings ++ falseStrings
+
+    // remove whitespace first
+    withResource(input.getBase().strip()) { input =>
+      // determine which values are valid bool strings
+      withResource(ColumnVector.fromStrings(boolStrings: _*)) { boolStrings =>
+        withResource(input.contains(boolStrings)) { validBools =>
+          // in ansi mode, fail if any values are not valid bool strings
+          if (ansiEnabled) {
+            withResource(validBools.all()) { isAllBool =>
+              if (!isAllBool.getBoolean) {
+                throw new IllegalStateException(
+                  "Column contains at least one value that is not in the required range")
+              }
+            }
+          }
+          // replace non-boolean values with null
+          withResource(Scalar.fromNull(DType.STRING)) { nullString =>
+            withResource(validBools.ifElse(input, nullString)) { sanitizedInput =>
+              // return true, false, or null, as appropriate
+              withResource(ColumnVector.fromStrings(trueStrings: _*)) { cvTrue =>
+                GpuColumnVector.from(sanitizedInput.contains(cvTrue))
+              }
+            }
           }
         }
       }
