@@ -21,7 +21,7 @@ import java.util.TimeZone
 import org.apache.spark.SparkConf
 import org.apache.spark.sql.functions.col
 import org.apache.spark.sql.types._
-import org.apache.spark.sql.DataFrame
+import org.apache.spark.sql.{DataFrame, SparkSession}
 
 class CastOpSuite extends GpuExpressionTestSuite {
   private val timestampDatesMsecParquet = frameFromParquet("timestamp-date-test-msec.parquet")
@@ -149,6 +149,18 @@ class CastOpSuite extends GpuExpressionTestSuite {
       col("date").cast(LongType),
       col("date").cast(TimestampType))
    }
+
+  testSparkResultsAreEqual("Test cast from string to bool", maybeBoolStrings) {
+    frame => frame.select(col("maybe_bool").cast(BooleanType))
+  }
+
+  private def maybeBoolStrings(spark: SparkSession): DataFrame = {
+    import spark.implicits._
+    val trueStrings = Seq("t", "true", "y", "yes", "1")
+    val falseStrings = Seq("f", "false", "n", "no", "0")
+    val maybeBool: Seq[String] = trueStrings ++ falseStrings ++ Seq("maybe", " true ", " false ", null, "", "12")
+    maybeBool.toDF("maybe_bool")
+  }
 
   private val timestampCastFn = { frame: DataFrame =>
     frame.select(
