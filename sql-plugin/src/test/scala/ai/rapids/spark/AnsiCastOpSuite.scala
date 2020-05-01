@@ -32,6 +32,42 @@ class AnsiCastOpSuite extends GpuExpressionTestSuite {
     .set("spark.sql.storeAssignmentPolicy", "ANSI") // note this is the default in 3.0.0
 
   ///////////////////////////////////////////////////////////////////////////
+  // Ansi cast from date
+  ///////////////////////////////////////////////////////////////////////////
+
+  testSparkResultsAreEqual("ansi_cast date to bool", testDates, sparkConf) {
+    frame => testCastTo(DataTypes.BooleanType)(frame)
+  }
+
+  testSparkResultsAreEqual("ansi_cast date to byte", testDates, sparkConf) {
+    frame => testCastTo(DataTypes.ByteType)(frame)
+  }
+
+  testSparkResultsAreEqual("ansi_cast date to short", testDates, sparkConf) {
+    frame => testCastTo(DataTypes.ShortType)(frame)
+  }
+
+  testSparkResultsAreEqual("ansi_cast date to int", testDates, sparkConf) {
+    frame => testCastTo(DataTypes.IntegerType)(frame)
+  }
+
+  testSparkResultsAreEqual("ansi_cast date to long", testDates, sparkConf) {
+    frame => testCastTo(DataTypes.LongType)(frame)
+  }
+
+  testSparkResultsAreEqual("ansi_cast date to float", testDates, sparkConf) {
+    frame => testCastTo(DataTypes.FloatType)(frame)
+  }
+
+  testSparkResultsAreEqual("ansi_cast date to double", testDates, sparkConf) {
+    frame => testCastTo(DataTypes.DoubleType)(frame)
+  }
+
+  testSparkResultsAreEqual("ansi_cast date to timestamp", testDates, sparkConf) {
+    frame => testCastTo(DataTypes.TimestampType)(frame)
+  }
+
+  //////////////////////////////////////////////////////////////////////////
   // Ansi cast from boolean
   ///////////////////////////////////////////////////////////////////////////
 
@@ -488,6 +524,7 @@ class AnsiCastOpSuite extends GpuExpressionTestSuite {
   private def testDoubles = testData(DataTypes.DoubleType)(_)
   private def testStrings = testData(DataTypes.StringType)(_)
   private def testTimestamps = testData(DataTypes.TimestampType)(_)
+  private def testDates = testData(DataTypes.DateType)(_)
 
   private val byteValues: Seq[Byte] = Seq(Byte.MinValue, Byte.MaxValue, 0, -0, -1, 1)
   private val shortValues: Seq[Short] = Seq(Short.MinValue, Short.MaxValue, 0, -0, -1, 1)

@@ -16,7 +16,7 @@
 
 package ai.rapids.spark
 
-import java.sql.Timestamp
+import java.sql.{Date, Timestamp}
 
 import ai.rapids.spark.GpuColumnVector.GpuColumnarBatchBuilder
 import org.apache.spark.sql.{DataFrame, Row, SparkSession}
@@ -170,6 +170,7 @@ object FuzzerUtils {
           case DataTypes.DoubleType => r.nextDouble()
           case DataTypes.StringType => r.nextString()
           case DataTypes.TimestampType => r.nextTimestamp()
+          case DataTypes.DateType => r.nextDate()
           case _ => throw new IllegalStateException(s"fuzzer does not support data type ${field.dataType}")
         }
       }
@@ -265,6 +266,11 @@ class EnhancedRandom(r: Random, options: FuzzerOptions) {
     } else {
       generateString()
     }
+  }
+
+  def nextDate(): Date = {
+    val futureDate = 6321706291000L // Upper limit Sunday, April 29, 2170 9:31:31 PM
+    new Date((futureDate * r.nextDouble()).toLong);
   }
 
   def nextTimestamp(): Timestamp = {
