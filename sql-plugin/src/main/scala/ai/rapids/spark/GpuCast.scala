@@ -32,6 +32,8 @@ object GpuCast {
    */
   def canCast(from: DataType, to: DataType, ansiMode: Boolean = false): Boolean = {
     if (ansiMode) {
+      // TODO merge the ansiMode branches into a single branch by perhaps if-guarding if needed. Spark
+      // doesn't take ansiMode into account in their canCast method
       (from, to) match {
         ///////////////////////////////////////////////////////////////////////////
         // Casts which require no special handling when ansi mode is enabled
@@ -63,6 +65,11 @@ object GpuCast {
 
         // ansi cast from string to boolean checks for non-boolean values
         case (StringType, BooleanType) => true
+
+        // no special handling required.
+        case (DateType, BooleanType) => true
+        case (DateType, _: NumericType) => true
+        case (DateType, TimestampType) => true
 
         case _ => false
       }
