@@ -133,13 +133,9 @@ class GpuBatchUtilsSuite extends FunSuite {
     assert(e.getMessage == "assertion failed: batch must contain at least one row")
   }
 
-  test("Batch size calculations assertion batch size") {
-    val e = intercept[AssertionError] {
-      GpuBatchUtils.estimateRowCount(200, 0, 1)
-    }
-    assert(e.getMessage == "assertion failed: batch must contain at least one byte")
+  test("Batch size calculations with 0 data size") {
+    assert(GpuBatchUtils.estimateRowCount(200, 0, 1) == 1)
   }
-
 
   private def compareEstimateWithActual(schema: StructType, rowCount: Int) {
     val rows = createRows(schema, rowCount)
