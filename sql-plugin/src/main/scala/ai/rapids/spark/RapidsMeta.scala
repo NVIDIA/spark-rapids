@@ -18,14 +18,14 @@ package ai.rapids.spark
 
 import scala.collection.mutable
 import org.apache.spark.sql.catalyst.expressions.aggregate.AggregateFunction
-import org.apache.spark.sql.catalyst.expressions.{BinaryExpression, ComplexTypeMergingExpression, Expression, TernaryExpression, UnaryExpression}
+import org.apache.spark.sql.catalyst.expressions.{BinaryExpression, ComplexTypeMergingExpression, Expression, String2TrimExpression, TernaryExpression, UnaryExpression}
 import org.apache.spark.sql.catalyst.plans.physical.Partitioning
 import org.apache.spark.sql.execution.SparkPlan
 import org.apache.spark.sql.execution.exchange.ShuffleExchangeExec
 import org.apache.spark.sql.execution.joins.{BroadcastHashJoinExec, BuildLeft, BuildRight, ShuffledHashJoinExec, SortMergeJoinExec}
 import org.apache.spark.sql.connector.read.Scan
 import org.apache.spark.sql.execution.command.DataWritingCommand
-import org.apache.spark.sql.types.{CalendarIntervalType, DataType, DataTypes}
+import org.apache.spark.sql.types.{CalendarIntervalType, DataType, DataTypes, StringType}
 
 trait ConfKeysAndIncompat {
   val operationName: String
@@ -659,6 +659,26 @@ abstract class TernaryExprMeta[INPUT <: TernaryExpression](
 
   def convertToGpu(val0: GpuExpression, val1: GpuExpression,
                    val2: GpuExpression): GpuExpression
+}
+
+abstract class String2TrimExpressionMeta[INPUT <: String2TrimExpression](
+    expr: INPUT,
+    conf: RapidsConf,
+    parent: Option[RapidsMeta[_, _, _]],
+    rule: ConfKeysAndIncompat)
+    extends ExprMeta[INPUT](expr, conf, parent, rule) {
+
+  override final def convertToGpu(): GpuExpression = {
+    val trimParam = if (childExprs.size > 1) {
+      Some(childExprs(1).convertToGpu())
+    } else {
+      None
+    }
+
+    convertToGpu(childExprs(0).convertToGpu(), trimParam)
+  }
+
+  def convertToGpu(lhs: GpuExpression, rhs: Option[GpuExpression] = None): GpuExpression
 }
 
 /**

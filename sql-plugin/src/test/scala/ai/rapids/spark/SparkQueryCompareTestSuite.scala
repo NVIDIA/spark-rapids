@@ -1288,6 +1288,17 @@ trait SparkQueryCompareTestSuite extends FunSuite with Arm {
     utf8Chars.toDF("strings", "ints")
   }
 
+  def utf8StringsDf(session: SparkSession): DataFrame = {
+    import session.sqlContext.implicits._
+    Seq[(String)](
+      ("Foo"),
+      ("Bar"),
+      ("B\ud720\ud721  "),
+      (" B\u0480\u0481"),
+      (" Baz")
+    ).toDF("strings")
+  }
+
   def nullableStringsFromCsv = {
     fromCsvDf("strings.csv", StructType(Array(
       StructField("strings", StringType, true),
