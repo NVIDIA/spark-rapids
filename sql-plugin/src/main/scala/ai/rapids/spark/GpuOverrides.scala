@@ -1196,6 +1196,18 @@ object GpuOverrides {
         override def convertToGpu(column: GpuExpression, target: GpuExpression, replace: GpuExpression): GpuExpression =
           GpuStringReplace(column, target, replace)
       }),
+    expr[StringTrim](
+      "StringTrim operator",
+      (in, conf, p, r) => new String2TrimExpressionMeta[StringTrim](in, conf, p, r) {
+        override def tagExprForGpu(): Unit = {
+          if (in.trimStr != None && !isStringLit(in.trimStr.get)) {
+            willNotWorkOnGpu("only literal parameters supported for string literal trimStr parameter")
+          }
+        }
+        override def convertToGpu(column: GpuExpression, target: Option[GpuExpression] = None): GpuExpression = {
+          GpuStringTrim(column, target)
+        }
+      }),
     expr[StartsWith](
       "Starts With",
       (a, conf, p, r) => new BinaryExprMeta[StartsWith](a, conf, p, r) {

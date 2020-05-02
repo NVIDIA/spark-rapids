@@ -198,6 +198,30 @@ class StringOperatorsSuite extends SparkQueryCompareTestSuite {
     frame => frame.selectExpr("locate('', strings, 0)")
   }
 
+  testSparkResultsAreEqual("StringTrim valid strings", nullableStringsFromCsv) {
+    frame => frame.select(trim(frame("strings"), "aB"))
+  }
+
+  testSparkResultsAreEqual("StringTrim empty string", nullableStringsFromCsv) {
+    frame => frame.select(trim(frame("strings"), ""))
+  }
+
+  testSparkResultsAreEqual("StringTrim test null", nullableStringsFromCsv) {
+    frame => frame.select(trim(frame("strings"), null))
+  }
+
+  testSparkResultsAreEqual("StringTrim no trimString - default whitespace", nullableStringsFromCsv) {
+    frame => frame.select(trim(frame("strings")))
+  }
+
+  testSparkResultsAreEqual("StringTrim utf8 strings", utf8StringsDf) {
+    frame => frame.select(trim(frame("strings"), "B"))
+  }
+
+  testSparkResultsAreEqual("StringTrim utf8 strings with utf8 trim", utf8StringsDf) {
+    frame => frame.select(trim(frame("strings"), " B\ud720"))
+  }
+
   testSparkResultsAreEqual("String StartsWith", nullableStringsFromCsv) {
     frame => frame.filter(col("strings").startsWith("F"))
   }
