@@ -104,6 +104,9 @@ object GpuCast {
         case (DateType, _: NumericType) => true
         case (DateType, TimestampType) => true
 
+        // ansi casts from timestamp to Integral types is supported
+        case (TimestampType, LongType|IntegerType|ShortType|ByteType) => true
+
         // all other casts are not yet supported in ansi mode
         case _ => false
       }
@@ -211,6 +214,13 @@ case class GpuCast(child: GpuExpression, dataType: DataType, ansiMode: Boolean =
           try {
             val cv = asLongs.floorDiv(microsPerSec, DType.INT64)
             try {
+              if (ansiMode) {
+                dataType match {
+                  case IntegerType => assertValuesInRange(cv, Scalar.fromInt(Int.MinValue), Scalar.fromInt(Int.MaxValue))
+                  case ShortType => assertValuesInRange(cv, Scalar.fromShort(Short.MinValue), Scalar.fromShort(Short.MaxValue))
+                  case ByteType => assertValuesInRange(cv, Scalar.fromByte(Byte.MinValue), Scalar.fromByte(Byte.MaxValue))
+                }
+              }
               GpuColumnVector.from(cv.castTo(cudfType))
             } finally {
               cv.close()
