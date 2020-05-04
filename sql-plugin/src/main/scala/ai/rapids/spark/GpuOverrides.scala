@@ -443,36 +443,11 @@ object GpuOverrides {
       }),
     expr[Cast](
       "convert a column of one type of data into another type",
-      (cast, conf, p, r) => new UnaryExprMeta[Cast](cast, conf, p, r) {
-        override def tagExprForGpu(): Unit = {
-          if (!GpuCast.canCast(cast.child.dataType, cast.dataType, SparkSession.active.sessionState.conf.ansiEnabled)) {
-            willNotWorkOnGpu(s"casting from ${cast.child.dataType} " +
-              s"to ${cast.dataType} is not currently supported on the GPU")
-          }
-          if (!conf.isCastToFloatEnabled && cast.dataType == DataTypes.StringType &&
-            (cast.child.dataType == DataTypes.FloatType || cast.child.dataType == DataTypes.DoubleType)) {
-            willNotWorkOnGpu("the GPU will use different precision than Java's toString method when " +
-              "converting floating point data types to strings and this can produce results that differ from " +
-              "the default behavior in Spark.  To enable this operation on the GPU, set" +
-              s" ${RapidsConf.ENABLE_CAST_FLOAT_TO_STRING} to true.")
-          }
-        }
-
-        override def convertToGpu(child: GpuExpression): GpuExpression =
-          GpuCast(child, cast.dataType, SparkSession.active.sessionState.conf.ansiEnabled, cast.timeZoneId)
-      }),
+      (cast, conf, p, r) => new CastExprMeta[Cast](cast, SparkSession.active.sessionState.conf
+        .ansiEnabled, conf, p, r)),
     expr[AnsiCast](
       "convert a column of one type of data into another type",
-      (cast, conf, p, r) => new UnaryExprMeta[AnsiCast](cast, conf, p, r) {
-        override def tagExprForGpu(): Unit =
-          if (!GpuCast.canCast(cast.child.dataType, cast.dataType, ansiMode = true)) {
-            willNotWorkOnGpu(s"ansi_cast from ${cast.child.dataType} " +
-              s"to ${cast.dataType} is not currently supported on the GPU")
-          }
-
-        override def convertToGpu(child: GpuExpression): GpuExpression =
-          GpuCast(child, cast.dataType, ansiMode = true, cast.timeZoneId)
-      }),
+      (cast, conf, p, r) => new CastExprMeta[AnsiCast](cast, true, conf, p, r)),
     expr[ToDegrees](
       "Converts radians to degrees",
       (a, conf, p, r) => new UnaryExprMeta[ToDegrees](a, conf, p, r) {
