@@ -202,7 +202,7 @@ abstract class AbstractGpuCoalesceIterator(origIter: Iterator[ColumnarBatch],
   /**
    * Gets the size in bytes of the data buffer for a given column
    */
-  def getColumnDataSize(cb: ColumnarBatch, index: Int): Long = {
+  def getColumnDataSize(cb: ColumnarBatch, index: Int, defaultSize: Long): Long = {
     cb.column(index) match {
       case g: GpuColumnVector =>
         val buff = g.getBase.getDeviceBufferFor(BufferType.DATA)
@@ -210,6 +210,8 @@ abstract class AbstractGpuCoalesceIterator(origIter: Iterator[ColumnarBatch],
       case h: RapidsHostColumnVector =>
         val buff = h.getBase.getHostBufferFor(BufferType.DATA)
         if (buff == null) 0 else buff.getLength
+      case _ =>
+        defaultSize
     }
   }
 
@@ -275,7 +277,7 @@ abstract class AbstractGpuCoalesceIterator(origIter: Iterator[ColumnarBatch],
             // size includes the offset bytes. When nested types are supported, this logic will need to be enhanced to
             // take offset and validity buffers into account since they could account for a larger percentage of
             // overall memory usage.
-            val wouldBeStringColumnSizes = stringFieldIndices.map(i => getColumnDataSize(cb, i))
+            val wouldBeStringColumnSizes = stringFieldIndices.map(i => getColumnDataSize(cb, i, wouldBeColumnSizes(i)))
               .zip(stringColumnSizes)
               .map(pair => pair._1 + pair._2)
 

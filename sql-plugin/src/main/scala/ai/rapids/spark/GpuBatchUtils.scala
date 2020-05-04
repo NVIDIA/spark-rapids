@@ -35,9 +35,11 @@ object GpuBatchUtils {
 
   /** Estimate the number of rows required to meet a batch size limit */
   def estimateRowCount(desiredBatchSizeBytes: Long, currentBatchSize: Long, currentBatchRowCount: Long): Int = {
-    assert(currentBatchSize > 0, "batch must contain at least one byte")
     assert(currentBatchRowCount > 0, "batch must contain at least one row")
     val targetRowCount: Long = if (currentBatchSize > desiredBatchSizeBytes) {
+      currentBatchRowCount
+    } else if (currentBatchSize == 0) {
+      //  batch size can be 0 when doing a count() operation and the actual data isn't needed
       currentBatchRowCount
     } else {
       ((desiredBatchSizeBytes / currentBatchSize.floatValue()) * currentBatchRowCount).toLong
