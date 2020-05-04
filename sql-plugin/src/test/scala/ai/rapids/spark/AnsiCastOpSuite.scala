@@ -17,11 +17,11 @@
 package ai.rapids.spark
 
 import org.apache.spark.SparkConf
-import org.apache.spark.sql.catalyst.expressions.{Alias, AnsiCast, Cast, CastBase}
-import org.apache.spark.sql.execution.{ExplainMode, ProjectExec, SimpleMode}
-import org.apache.spark.sql.{DataFrame, SparkSession}
+import org.apache.spark.sql.catalyst.expressions.{Alias, CastBase}
+import org.apache.spark.sql.execution.ProjectExec
 import org.apache.spark.sql.functions._
 import org.apache.spark.sql.types._
+import org.apache.spark.sql.{DataFrame, SparkSession}
 
 import scala.annotation.tailrec
 
@@ -30,6 +30,7 @@ class AnsiCastOpSuite extends GpuExpressionTestSuite {
   private val sparkConf = new SparkConf()
     .set("spark.sql.ansi.enabled", "true")
     .set("spark.sql.storeAssignmentPolicy", "ANSI") // note this is the default in 3.0.0
+    .set(RapidsConf.ENABLE_CAST_FLOAT_TO_STRING.key, "true")
 
   ///////////////////////////////////////////////////////////////////////////
   // Ansi cast from date
@@ -149,6 +150,35 @@ class AnsiCastOpSuite extends GpuExpressionTestSuite {
   testCastFailsForBadInputs("ansi_cast string to bool (invalid values)", testStrings,
     sparkConf) {
     frame => testCastTo(DataTypes.BooleanType)(frame)
+  }
+
+  ///////////////////////////////////////////////////////////////////////////
+  // Ansi cast from floating point to string
+  ///////////////////////////////////////////////////////////////////////////
+
+  test("ansi_cast float to string") {
+    testCastToString[Float](DataTypes.FloatType, ansiMode = true,
+      comparisonFunc = Some(compareStringifiedFloats))
+  }
+
+  test("ansi_cast double to string") {
+    testCastToString[Double](DataTypes.DoubleType, ansiMode = true,
+      comparisonFunc = Some(compareStringifiedFloats))
+  }
+
+  private def castToStringExpectedFun[T]: T => Option[String] = (d: T) => Some(String.valueOf(d))
+
+  private def testCastToString[T](dataType: DataType, ansiMode: Boolean,
+      comparisonFunc: Option[(String, String) => Boolean] = None) {
+    assert(GpuCast.canCast(dataType, DataTypes.StringType, ansiMode = true))
+    val schema = FuzzerUtils.createSchema(Seq(dataType))
+    val childExpr: GpuBoundReference = GpuBoundReference(0, dataType, nullable = false)
+    checkEvaluateGpuUnaryExpression(GpuCast(childExpr, DataTypes.StringType, ansiMode = true),
+      dataType,
+      DataTypes.StringType,
+      expectedFun = castToStringExpectedFun[T],
+      schema = schema,
+      comparisonFunc = comparisonFunc)
   }
 
   ///////////////////////////////////////////////////////////////////////////

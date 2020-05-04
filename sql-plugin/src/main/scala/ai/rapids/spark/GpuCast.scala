@@ -16,11 +16,40 @@
 
 package ai.rapids.spark
 
-import ai.rapids.cudf.{BinaryOp, ColumnVector, DType, Scalar}
+import ai.rapids.cudf.{ColumnVector, DType, Scalar}
 
 import org.apache.spark.sql.catalyst.analysis.TypeCheckResult
-import org.apache.spark.sql.catalyst.expressions.{Cast, NullIntolerant, TimeZoneAwareExpression}
+import org.apache.spark.sql.catalyst.expressions.{Cast, CastBase, NullIntolerant, TimeZoneAwareExpression}
 import org.apache.spark.sql.types._
+
+/** Meta-data for cast and ansi_cast. */
+class CastExprMeta[INPUT <: CastBase](
+    cast: INPUT,
+    ansiEnabled: Boolean,
+    conf: RapidsConf,
+    parent: Option[RapidsMeta[_, _, _]],
+    rule: ConfKeysAndIncompat)
+  extends UnaryExprMeta[INPUT](cast, conf, parent, rule) {
+
+  private val castExpr = if (ansiEnabled) "ansi_cast" else "cast"
+
+  override def tagExprForGpu(): Unit = {
+    if (!GpuCast.canCast(cast.child.dataType, cast.dataType, ansiEnabled)) {
+      willNotWorkOnGpu(s"$castExpr from ${cast.child.dataType} " +
+        s"to ${cast.dataType} is not currently supported on the GPU")
+    }
+    if (!conf.isCastToFloatEnabled && cast.dataType == DataTypes.StringType &&
+      (cast.child.dataType == DataTypes.FloatType || cast.child.dataType == DataTypes.DoubleType)) {
+      willNotWorkOnGpu("the GPU will use different precision than Java's toString method when " +
+        "converting floating point data types to strings and this can produce results that differ " +
+        "from the default behavior in Spark.  To enable this operation on the GPU, set" +
+        s" ${RapidsConf.ENABLE_CAST_FLOAT_TO_STRING} to true.")
+    }
+  }
+
+  override def convertToGpu(child: GpuExpression): GpuExpression =
+    GpuCast(child, cast.dataType, ansiEnabled, cast.timeZoneId)
+}
 
 object GpuCast {
 
@@ -31,6 +60,7 @@ object GpuCast {
    * https://github.com/apache/spark/blob/master/sql/catalyst/src/main/scala/org/apache/spark/sql/catalyst/expressions/Cast.scala#L37-L95
    */
   def canCast(from: DataType, to: DataType, ansiMode: Boolean = false): Boolean = {
+
     if (ansiMode) {
       // TODO merge the ansiMode branches into a single branch by perhaps if-guarding if needed. Spark
       // doesn't take ansiMode into account in their canCast method
@@ -50,6 +80,7 @@ object GpuCast {
 
         case (FloatType|DoubleType, FloatType|DoubleType) => true
         case (FloatType|DoubleType, BooleanType) => true
+        case (FloatType|DoubleType, StringType) => true
 
         case (TimestampType, BooleanType) => true
         case (TimestampType, LongType) => true
@@ -57,7 +88,7 @@ object GpuCast {
         case (ByteType|ShortType|IntegerType|LongType, TimestampType) => true
 
         ///////////////////////////////////////////////////////////////////////////
-        // Casts which require special handling or are not supported yet
+        // Ansi casts which require special handling or are not supported yet
         ///////////////////////////////////////////////////////////////////////////
 
         // ansi casts from numeric to integral types check for underflow/overflow
@@ -73,6 +104,7 @@ object GpuCast {
         case (DateType, _: NumericType) => true
         case (DateType, TimestampType) => true
 
+        // all other casts are not yet supported in ansi mode
         case _ => false
       }
     } else {
