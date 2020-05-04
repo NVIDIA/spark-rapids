@@ -340,8 +340,8 @@ case class GpuAverage(child: GpuExpression) extends GpuDeclarativeAggregate {
     GpuCast(cudfCount, DoubleType))
 
   override lazy val initialValues: Seq[GpuLiteral] = Seq(
-    GpuLiteral(null, DoubleType),
-    GpuLiteral(null, LongType))
+    GpuLiteral(0.0, DoubleType),
+    GpuLiteral(0l, LongType))
 
   override lazy val aggBufferAttributes: Seq[GpuAttributeReference] = cudfSum :: cudfCount :: Nil
 
