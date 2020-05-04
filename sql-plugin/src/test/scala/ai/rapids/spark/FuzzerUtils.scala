@@ -274,14 +274,8 @@ class EnhancedRandom(r: Random, options: FuzzerOptions) {
   }
 
   def nextTimestamp(): Timestamp = {
-    val year = 1970 + r.nextInt(200)
-    val month = r.nextInt(12)
-    val date = 1 + r.nextInt(28)
-    val hour = r.nextInt(24)
-    val minute = r.nextInt(60)
-    val seconds = r.nextInt(60)
-    val nanos = r.nextInt(1000000000)
-    new Timestamp(year, month, date, hour, minute, seconds, nanos)
+    val futureDate = 6321706291000L // Upper limit Sunday, April 29, 2170 9:31:31 PM
+    new Timestamp((futureDate * r.nextDouble()).toLong)
   }
 
   private def generateString(): String = {
