@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+from conftest import allowing_any_non_gpu
 from pyspark.sql import SparkSession
 
 def _spark__init():
@@ -72,12 +73,22 @@ def with_cpu_session(func, conf={}):
 def with_gpu_session(func, conf={}, non_gpu_allowed=None):
     """
     Run func that takes a spark session as input with the given configs set on the GPU.
-    Note that currently this forces you into test mode.  It is not a requirement, but is
+    Note that this forces you into test mode unless.  It is not a requirement, but is
     simplest for right now.
     """
     copy = dict(conf)
     copy['spark.rapids.sql.enabled'] = 'true'
     copy['spark.rapids.sql.test.enabled'] = 'true'
-    if (non_gpu_allowed):
-        copy['spark.rapids.sql.test.allowedNonGpu'] = ",".join(non_gpu_allowed)
+    if allowing_any_non_gpu():
+        print("!!! ALLOWING CPU NODES IN THE PLAN !!!")
+        copy['spark.rapids.sql.test.enabled'] = 'false'
+    else:
+        if (non_gpu_allowed):
+            copy['spark.rapids.sql.test.allowedNonGpu'] = ",".join(non_gpu_allowed)
     return with_spark_session(func, conf=copy)
+
+def get_jvm_session(spark):
+    return spark._jsparkSession
+
+def get_jvm(spark):
+    return spark.sparkContext._jvm
