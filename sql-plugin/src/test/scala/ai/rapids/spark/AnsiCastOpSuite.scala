@@ -124,6 +124,26 @@ class AnsiCastOpSuite extends GpuExpressionTestSuite {
   }
 
   ///////////////////////////////////////////////////////////////////////////
+  // Ansi cast integral types to timestamp
+  ///////////////////////////////////////////////////////////////////////////
+
+  testSparkResultsAreEqual("ansi_cast bytes to timestamp", testBytes, sparkConf) {
+    frame => testCastTo(DataTypes.TimestampType)(frame)
+  }
+
+  testSparkResultsAreEqual("ansi_cast shorts to timestamp", testShorts, sparkConf) {
+    frame => testCastTo(DataTypes.TimestampType)(frame)
+  }
+
+  testSparkResultsAreEqual("ansi_cast ints to timestamp", testInts, sparkConf) {
+    frame => testCastTo(DataTypes.TimestampType)(frame)
+  }
+
+  testSparkResultsAreEqual("ansi_cast longs to timestamp", testLongs, sparkConf) {
+    frame => testCastTo(DataTypes.TimestampType)(frame)
+  }
+
+  ///////////////////////////////////////////////////////////////////////////
   // Writing to Hive tables, which has special rules
   ///////////////////////////////////////////////////////////////////////////
 
