@@ -40,3 +40,25 @@ def ignore_order():
 def is_order_ignored():
     return _ignore_order
 
+_allow_any_non_gpu = False
+
+@pytest.fixture
+def allow_any_non_gpu():
+    """Changes environment to not allow any non gpu operation"""
+    global _allow_any_non_gpu
+    _allow_any_non_gpu = True
+    yield _allow_any_non_gpu
+    _allow_any_non_gpu = False
+
+def allowing_any_non_gpu():
+    return _allow_any_non_gpu
+
+def pytest_addoption(parser):
+    """Pytest hook to define command line options for pytest"""
+    parser.addoption(
+        "--tpcxbb_format", action="store", default="parquet", help="format of TPCXbb data"
+    )
+    parser.addoption(
+        "--tpcxbb_path", action="store", default=None, help="path to TPCXbb data"
+    )
+
