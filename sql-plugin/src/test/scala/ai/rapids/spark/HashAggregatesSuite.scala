@@ -1215,4 +1215,11 @@ class HashAggregatesSuite extends SparkQueryCompareTestSuite {
       checkExecNode(result)
       result
   }
+
+  IGNORE_ORDER_ALLOW_NON_GPU_testSparkResultsAreEqual("PartMerge:reduction_avg_partOnly",
+    intCsvDf, execsAllowedNonGpu = execsAllowedNonGpu, conf = partialOnlyConf, repart = 8) {
+    frame => val result = frame.agg(avg("ints"))
+      checkExecNode(result)
+      result
+  }
 }
