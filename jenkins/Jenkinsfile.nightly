@@ -57,6 +57,8 @@ pipeline {
                         -v ${HOME}/.zinc:${HOME}/.zinc:rw \
                         -v /etc/passwd:/etc/passwd -v /etc/group:/etc/group") {
                         sh "mvn -U -B clean deploy $MVN_GPUWA_MIRROR"
+                        sh "jenkins/printJarVersion.sh 'CUDFVersion' '${HOME}/.m2/repository/ai/rapids/cudf/0.14-SNAPSHOT' 'cudf-0.14-' '-cuda10-1.jar'"
+                        sh "jenkins/printJarVersion.sh 'SPARKVersion' '${HOME}/.m2/repository/org/apache/spark/spark-core_2.12/3.0.1-SNAPSHOT' 'spark-core_2.12-3.0.1-' '.jar'"
                     }
                 }
             }
