@@ -54,6 +54,8 @@ object GpuCast {
         case (TimestampType, BooleanType) => true
         case (TimestampType, LongType) => true
 
+        case (ByteType|ShortType|IntegerType|LongType, TimestampType) => true
+
         ///////////////////////////////////////////////////////////////////////////
         // Casts which require special handling or are not supported yet
         ///////////////////////////////////////////////////////////////////////////
