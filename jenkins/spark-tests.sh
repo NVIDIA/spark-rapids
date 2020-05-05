@@ -61,6 +61,13 @@ RAPIDS_PLUGIN_JAR="$ARTF_ROOT/rapids-4-spark_${SCALA_BINARY_VER}-$PROJECT_VER.ja
 RAPIDS_TEST_JAR="$ARTF_ROOT/rapids-4-spark-tests_${SCALA_BINARY_VER}-$PROJECT_VER.jar"
 
 $MVN_GET_CMD \
+    -DgroupId=ai.rapids -DartifactId=rapids-4-spark-integration-tests -Dversion=$PROJECT_VER -Dclassifier=pytest -Dpackaging=tar.gz
+
+RAPIDS_INT_TESTS_HOME="$ARTF_ROOT/integration_tests/"
+RAPDIS_INT_TESTS_TGZ="$ARTF_ROOT/rapids-4-spark-integration-tests-$PROJECT_VER-pytest.tar.gz"
+tar xzf "$RAPDIS_INT_TESTS_TGZ" -C $ARTF_ROOT && rm -f "$RAPDIS_INT_TESTS_TGZ"
+
+$MVN_GET_CMD \
     -DgroupId=org.apache -DartifactId=spark -Dversion=$SPARK_VER -Dclassifier=bin-hadoop3 -Dpackaging=tar.gz
 
 SPARK_HOME="$ARTF_ROOT/spark-$SPARK_VER-bin-hadoop3"
@@ -71,9 +78,12 @@ tar zxf $SPARK_HOME.tar.gz -C $ARTF_ROOT && \
 PARQUET_PERF="$WORKSPACE/tests/src/test/resources/parquet_perf"
 PARQUET_ACQ="$WORKSPACE/tests/src/test/resources/parquet_acq"
 OUTPUT="$WORKSPACE/output"
-SPARK_SUBMIT_ARGS=" --class ai.rapids.sparkexamples.mortgage.Main \
-    --master spark://$HOSTNAME:7077 --executor-memory 32G \
+BASE_SPARK_SUBMIT_ARGS="--master spark://$HOSTNAME:7077 --executor-memory 32G \
     --jars $CUDF_JAR,$RAPIDS_PLUGIN_JAR \
+    --conf 'spark.driver.extraJavaOptions=-Duser.timezone=GMT' \
+    --conf 'spark.executor.extraJavaOptions=-Duser.timezone=GMT' \
+    --conf 'spark.sql.session.timeZone=UTC'"
+MORTGAGE_SPARK_SUBMIT_ARGS=" --class ai.rapids.sparkexamples.mortgage.Main \
     $RAPIDS_TEST_JAR"
 
 TEST_PARAMS="$SPARK_VER $PARQUET_PERF $PARQUET_ACQ $OUTPUT"
@@ -89,4 +99,5 @@ jps
 
 echo "----------------------------START TEST------------------------------------"
 rm -rf $OUTPUT
-spark-submit $SPARK_SUBMIT_ARGS $TEST_PARAMS
+spark-submit $BASE_SPARK_SUBMIT_ARGS $MORTGAGE_SPARK_SUBMIT_ARGS $TEST_PARAMS
+cd $RAPIDS_INT_TESTS_HOME && spark-submit $BASE_SPARK_SUBMIT_ARGS --conf 'spark.sql.shuffle.partitions=12' ./runtests.py -v -rfExXs
