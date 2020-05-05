@@ -126,12 +126,16 @@ trait SparkQueryCompareTestSuite extends FunSuite with Arm {
       .set(RapidsConf.SQL_ENABLED.key, "true")
       .set(RapidsConf.TEST_CONF.key, "true")
       .set(RapidsConf.EXPLAIN.key, "ALL")
+      // temp work around to unsupported timestamp type
+      .set("spark.sql.parquet.outputTimestampType", "TIMESTAMP_MICROS")
     withSparkSession(c, f)
   }
 
   def withCpuSparkSession[U](f: SparkSession => U, conf: SparkConf = new SparkConf()): U = {
     val c = conf.clone()
       .set(RapidsConf.SQL_ENABLED.key, "false") // Just to be sure
+      // temp work around to unsupported timestamp type
+      .set("spark.sql.parquet.outputTimestampType", "TIMESTAMP_MICROS")
     withSparkSession(c, f)
   }
 
@@ -146,7 +150,7 @@ trait SparkQueryCompareTestSuite extends FunSuite with Arm {
           (s"\n\nABS($expected - $actual) == $v is not <= $epsilon ",  v <= epsilon)
         }
       } else {
-        ("SUCESS", true)
+        ("SUCCESS", true)
       }
     }
     (expected, actual) match {
