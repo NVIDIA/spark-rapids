@@ -12,12 +12,10 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from conftest import allowing_any_non_gpu
+from conftest import is_allowing_any_non_gpu
 from pyspark.sql import SparkSession
 
 def _spark__init():
-    #TODO force or check that the time zone is UTC and that the local is set to the US
-
     #Force the RapidsPlugin to be enabled, so it blows up if the classpath is not set properly
     # DO NOT SET ANY OTHER CONFIGS HERE!!!
     # due to bugs in pyspark/pytest it looks like any configs set here
@@ -79,8 +77,7 @@ def with_gpu_session(func, conf={}, non_gpu_allowed=None):
     copy = dict(conf)
     copy['spark.rapids.sql.enabled'] = 'true'
     copy['spark.rapids.sql.test.enabled'] = 'true'
-    if allowing_any_non_gpu():
-        print("!!! ALLOWING CPU NODES IN THE PLAN !!!")
+    if is_allowing_any_non_gpu():
         copy['spark.rapids.sql.test.enabled'] = 'false'
     else:
         if (non_gpu_allowed):

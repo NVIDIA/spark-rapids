@@ -15,6 +15,7 @@
 import pytest
 
 from asserts import assert_gpu_and_cpu_are_equal_collect
+from marks import incompat, ignore_order, allow_any_non_gpu
 from spark_session import spark, get_jvm, get_jvm_session
 from pyspark.sql.dataframe import DataFrame
 
@@ -55,22 +56,26 @@ def tpcxbb(request):
   else:
     yield TpcxbbRunner(tpcxbb_format, tpcxbb_path)
 
-@pytest.mark.usefixtures('ignore_order')
+@ignore_order
 def test_tpcxbb_q5(tpcxbb):
   assert_gpu_and_cpu_are_equal_collect(
           lambda spark : tpcxbb.do_test_query("q5"))
 
-@pytest.mark.usefixtures('incompat', 'allow_any_non_gpu', 'ignore_order')
+@incompat
+@ignore_order
+@allow_any_non_gpu
 def test_tpcxbb_q16(tpcxbb):
   assert_gpu_and_cpu_are_equal_collect(
           lambda spark : tpcxbb.do_test_query("q16"))
 
-@pytest.mark.usefixtures('allow_any_non_gpu', 'ignore_order')
+@ignore_order
+@allow_any_non_gpu
 def test_tpcxbb_q21(tpcxbb):
   assert_gpu_and_cpu_are_equal_collect(
           lambda spark : tpcxbb.do_test_query("q21"))
 
-@pytest.mark.usefixtures('allow_any_non_gpu', 'ignore_order')
+@ignore_order
+@allow_any_non_gpu
 def test_tpcxbb_q22(tpcxbb):
   assert_gpu_and_cpu_are_equal_collect(
           lambda spark : tpcxbb.do_test_query("q22"))
