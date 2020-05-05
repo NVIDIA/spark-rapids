@@ -38,14 +38,14 @@ object DateUtils {
   /**
    * This function converts a java time format string to a strf format string
    * Supports %m,%p,%j,%d,%I,%H,%M,%S,%y,%Y,%f format specifiers.
-   * %d 	Day of the month: 01-31
-   * %m 	Month of the year: 01-12
-   * %y 	Year without century: 00-99c
-   * %Y 	Year with century: 0001-9999
-   * %H 	24-hour of the day: 00-23
-   * %M 	Minute of the hour: 00-59
-   * %S 	Second of the minute: 00-59
-   * %f 	6-digit microsecond: 000000-999999
+   * %d Day of the month: 01-31
+   * %m Month of the year: 01-12
+   * %y Year without century: 00-99c
+   * %Y Year with century: 0001-9999
+   * %H 24-hour of the day: 00-23
+   * %M Minute of the hour: 00-59
+   * %S Second of the minute: 00-59
+   * %f 6-digit microsecond: 000000-999999
    *
    * reported bugs
    * https://github.com/rapidsai/cudf/issues/4160 after the bug is fixed this method should also support

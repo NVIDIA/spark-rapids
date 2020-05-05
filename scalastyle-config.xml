@@ -34,6 +34,8 @@ You can also disable only one rule, by specifying its rule id, as specified in:
 <scalastyle>
     <name>Scalastyle standard configuration</name>
 
+    <check level="error" class="org.scalastyle.file.FileTabChecker" enabled="true"></check>
+
     <check level="error" class="org.scalastyle.scalariform.ClassNamesChecker" enabled="true">
         <parameters><parameter name="regex"><![CDATA[[A-Z][A-Za-z]*]]></parameter></parameters>
     </check>
