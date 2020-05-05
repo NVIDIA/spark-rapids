@@ -12,7 +12,10 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+from datetime import date, datetime, timedelta, timezone
+import math
 from pyspark.sql.types import *
+import pytest
 import random
 import sre_yield
 import struct
@@ -83,6 +86,10 @@ class DataGen:
         if not self._gen_func:
             raise RuntimeError('start must be called before generating any data')
         return self._gen_func()
+
+    def contains_ts(self):
+        """Checks if this contains a TimestampGen"""
+        return False
 
 _MAX_CHOICES = 1 << 64
 class StringGen(DataGen):
@@ -245,6 +252,106 @@ class StructGen(DataGen):
             return tuple(data)
         self._start(rand, make_tuple)
 
+    def contains_ts(self):
+        return any(child[1].contains_ts() for child in self.children)
+
+class DateGen(DataGen):
+    """Generate Dates in a given range"""
+    def __init__(self, start=None, end=None, nullable=True):
+        super().__init__(DateType(), nullable=nullable)
+        if start is None:
+            # spark supports times starting at
+            # "0001-01-01 00:00:00.000000"
+            start = date(1, 1, 1)
+        elif not isinstance(start, date):
+            raise RuntimeError('Unsupported type passed in for start {}'.format(start))
+
+        if end is None:
+            # spark supports time through
+            # "9999-12-31 23:59:59.999999"
+            end = date(9999, 12, 31)
+        elif isinstance(end, timedelta):
+            end = start + end
+        elif not isinstance(start, date):
+            raise RuntimeError('Unsupported type passed in for end {}'.format(end))
+
+        self._start_day = self._to_days_since_epoch(start)
+        self._end_day = self._to_days_since_epoch(end)
+        
+        self.with_special_case(start)
+        self.with_special_case(end)
+
+        # we want a few around the leap year if possible
+        step = int((end.year - start.year) / 5.0)
+        if (step != 0):
+            years = {self._guess_leap_year(y) for y in range(start.year, end.year, step)}
+            for y in years:
+                leap_day = date(y, 2, 29)
+                if (leap_day > start and leap_day < end):
+                    self.with_special_case(leap_day)
+                next_day = date(y, 3, 1)
+                if (next_day > start and next_day < end):
+                    self.with_special_case(next_day)
+
+    @staticmethod
+    def _guess_leap_year(t):
+        y = int(math.ceil(t/4.0)) * 4
+        if ((y % 100) == 0) and ((y % 400) != 0):
+            y = y + 4
+        return y
+
+    _epoch = date(1970, 1, 1)
+    _days = timedelta(days=1)
+    def _to_days_since_epoch(self, val):
+        return int((val - self._epoch)/self._days)
+
+    def _from_days_since_epoch(self, days):
+        return self._epoch + timedelta(days=days)
+
+    def start(self, rand):
+        start = self._start_day
+        end = self._end_day
+        self._start(rand, lambda : self._from_days_since_epoch(rand.randint(start, end)))
+
+class TimestampGen(DataGen):
+    """Generate Timestamps in a given range. All timezones are UTC by default."""
+    def __init__(self, start=None, end=None, nullable=True):
+        super().__init__(TimestampType(), nullable=nullable)
+        if start is None:
+            # spark supports times starting at
+            # "0001-01-01 00:00:00.000000"
+            start = datetime(1, 1, 1, tzinfo=timezone.utc)
+        elif not isinstance(start, datetime):
+            raise RuntimeError('Unsupported type passed in for start {}'.format(start))
+
+        if end is None:
+            # spark supports time through
+            # "9999-12-31 23:59:59.999999"
+            end = datetime(9999, 12, 31, 23, 59, 59, 999999, tzinfo=timezone.utc)
+        elif isinstance(end, timedelta):
+            end = start + end
+        elif not isinstance(start, date):
+            raise RuntimeError('Unsupported type passed in for end {}'.format(end))
+
+        self._start_time = self._to_ms_since_epoch(start)
+        self._end_time = self._to_ms_since_epoch(end)
+
+    _epoch = datetime(1970, 1, 1, tzinfo=timezone.utc)
+    _ms = timedelta(milliseconds=1)
+    def _to_ms_since_epoch(self, val):
+        return int((val - self._epoch)/self._ms)
+
+    def _from_ms_since_epoch(self, ms):
+        return self._epoch + timedelta(milliseconds=ms)
+
+    def start(self, rand):
+        start = self._start_time
+        end = self._end_time
+        self._start(rand, lambda : self._from_ms_since_epoch(rand.randint(start, end)))
+
+    def contains_ts(self):
+        return True
+
 def gen_df(spark, data_gen, length=2048, seed=0):
     """Generate a spark dataframe from the given data generators."""
     if isinstance(data_gen, list):
@@ -253,6 +360,16 @@ def gen_df(spark, data_gen, length=2048, seed=0):
         src = data_gen
         # we cannot create a data frame from a nullable struct
         assert not data_gen.nullable
+
+    # Before we get too far we need to verify that we can run with timestamps
+    if src.contains_ts():
+        # Now we have to do some kind of ugly internal java stuff
+        jvm = spark.sparkContext._jvm
+        utc = jvm.java.time.ZoneId.of('UTC').normalized()
+        sys_tz = jvm.java.time.ZoneId.systemDefault().normalized()
+        if (utc != sys_tz):
+            pytest.skip('The java system time zone is not set to UTC but is {}'.format(sys_tz))
+
     rand = random.Random(seed)
     src.start(rand)
     data = [src.gen() for index in range(0, length)]
