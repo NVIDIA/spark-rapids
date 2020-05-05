@@ -24,7 +24,7 @@ import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.expressions._
 import org.apache.spark.sql.catalyst.plans.physical.{Partitioning, UnknownPartitioning}
 import org.apache.spark.sql.execution.{ExpandExec, SparkPlan, UnaryExecNode}
-import org.apache.spark.sql.execution.metric.SQLMetrics
+import org.apache.spark.sql.execution.metric.{SQLMetric, SQLMetrics}
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
 import scala.collection.mutable.ListBuffer
@@ -81,7 +81,7 @@ case class GpuExpandExec(
                        child: SparkPlan)
   extends UnaryExecNode with GpuExec {
 
-  override lazy val metrics = Map(
+  override lazy val metrics: Map[String, SQLMetric] = Map(
     GpuMetricNames.NUM_OUTPUT_ROWS -> SQLMetrics.createMetric(sparkContext, "number of output rows"))
 
   // The GroupExpressions can output data with arbitrary partitioning, so set it
@@ -100,51 +100,52 @@ case class GpuExpandExec(
     val rdd = child.executeColumnar()
     val boundProjections = projections.map(projection => GpuBindReferences.bindReferences(projection, child.output))
     rdd.map { cb =>
+      withResource(cb) { batch =>
+        val projectedColumns = new ListBuffer[Seq[GpuColumnVector]]()
+        var success = false
+        try {
+          boundProjections.foreach(projection =>
+            projectedColumns += projection.safeMap(expr => {
+              expr.columnarEval(batch) match {
+                case cv: GpuColumnVector => cv
+                case lit: GpuLiteral =>
+                  withResource(GpuScalar.from(lit.value, lit.dataType)) { scalar =>
+                    GpuColumnVector.from(scalar, batch.numRows())
+                  }
+                case other =>
+                  withResource(GpuScalar.from(other, expr.dataType)) { scalar =>
+                    GpuColumnVector.from(scalar, batch.numRows())
+                  }
+              }
+            })
+          )
+          success = true
 
-      val projectedColumns = new ListBuffer[Seq[GpuColumnVector]]()
-      var success = false
-      try {
-        boundProjections.foreach(projection =>
-          projectedColumns += projection.safeMap(expr => {
-            expr.columnarEval(cb) match {
-              case cv: GpuColumnVector => cv
-              case lit: GpuLiteral =>
-                withResource(GpuScalar.from(lit.value, lit.dataType)) { scalar =>
-                  GpuColumnVector.from(scalar, cb.numRows())
-                }
-              case other =>
-                withResource(GpuScalar.from(other, expr.dataType)) { scalar =>
-                  GpuColumnVector.from(scalar, cb.numRows())
-                }
-            }
-          })
-        )
-        success = true
-
-      } finally {
-        if (!success) {
-          projectedColumns.foreach(_.safeClose())
-        }
-      }
-
-      val interleaved = projectedColumns.head.indices.map(i => {
-        withResource(projectedColumns.map(p => p(i).getBase)) { vectors =>
-          withResource(new Table(vectors: _*)) { table =>
-            GpuColumnVector.from(table.interleaveColumns())
+        } finally {
+          if (!success) {
+            projectedColumns.foreach(_.safeClose())
           }
         }
-      })
 
-      if (interleaved.head.getRowCount > Integer.MAX_VALUE) {
-        throw new IllegalStateException("GpuExpandExec produced more than Integer.MAX_VALUE rows." +
-          " Please try increasing your partition count.")
+        val interleaved = projectedColumns.head.indices.map(i => {
+          withResource(projectedColumns.map(p => p(i).getBase)) { vectors =>
+            withResource(new Table(vectors: _*)) { table =>
+              GpuColumnVector.from(table.interleaveColumns())
+            }
+          }
+        })
+
+        if (interleaved.head.getRowCount > Integer.MAX_VALUE) {
+          throw new IllegalStateException("GpuExpandExec produced more than Integer.MAX_VALUE rows." +
+            " Please try increasing your partition count.")
+        }
+
+        val interleavedRowCount = interleaved.head.getRowCount.toInt
+
+        numOutputRows += interleavedRowCount
+
+        new ColumnarBatch(interleaved.toArray, interleavedRowCount)
       }
-
-      val interleavedRowCount = interleaved.head.getRowCount.toInt
-
-      numOutputRows += interleavedRowCount
-
-      new ColumnarBatch(interleaved.toArray, interleavedRowCount)
     }
   }
 
