@@ -16,6 +16,7 @@ import pytest
 
 from asserts import assert_gpu_and_cpu_are_equal_collect, assert_gpu_and_cpu_are_equal_iterator
 from data_gen import *
+from marks import incompat
 from pyspark.sql.types import *
 import pyspark.sql.functions as f
 
@@ -168,7 +169,7 @@ def test_columnar_abs(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : unary_op_df(spark, data_gen).selectExpr('abs(a)'))
 
-@pytest.mark.usefixtures('incompat')
+@incompat
 @pytest.mark.parametrize('data_gen', double_gens, ids=idfn)
 def test_columnar_asin(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
@@ -242,7 +243,7 @@ def test_columnar_shift_right_unsigned(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : two_col_df(spark, data_gen, IntegerGen()).selectExpr('shiftrightunsigned(a, b)'))
 
-@pytest.mark.usefixtures('incompat')
+@incompat
 @pytest.mark.parametrize('data_gen', double_gens, ids=idfn)
 def test_columnar_cbrt(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
@@ -298,112 +299,112 @@ def test_columnar_bit_not(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : unary_op_df(spark, data_gen).selectExpr('~a'))
 
-@pytest.mark.usefixtures('incompat')
+@incompat
 @pytest.mark.parametrize('data_gen', double_gens, ids=idfn)
 def test_columnar_radians(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : unary_op_df(spark, data_gen).selectExpr('radians(a)'))
 
-@pytest.mark.usefixtures('incompat')
+@incompat
 @pytest.mark.parametrize('data_gen', double_gens, ids=idfn)
 def test_columnar_cos(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : unary_op_df(spark, data_gen).selectExpr('cos(a)'))
 
-@pytest.mark.usefixtures('incompat')
+@incompat
 @pytest.mark.parametrize('data_gen', double_gens, ids=idfn)
 def test_columnar_acos(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : unary_op_df(spark, data_gen).selectExpr('acos(a)'))
 
+@incompat
 @pytest.mark.xfail(reason='SPAR-1124')
-@pytest.mark.usefixtures('incompat')
 @pytest.mark.parametrize('data_gen', double_gens, ids=idfn)
 def test_columnar_acosh(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : unary_op_df(spark, data_gen).selectExpr('acosh(a)'))
 
-@pytest.mark.usefixtures('incompat')
+@incompat
 @pytest.mark.parametrize('data_gen', double_gens, ids=idfn)
 def test_columnar_sin(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : unary_op_df(spark, data_gen).selectExpr('sin(a)'))
 
-@pytest.mark.usefixtures('incompat')
+@incompat
 @pytest.mark.parametrize('data_gen', double_gens, ids=idfn)
 def test_columnar_asin(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : unary_op_df(spark, data_gen).selectExpr('asin(a)'))
 
+@incompat
 @pytest.mark.xfail(reason='SPAR-1124')
-@pytest.mark.usefixtures('incompat')
 @pytest.mark.parametrize('data_gen', double_gens, ids=idfn)
 def test_columnar_asinh(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : unary_op_df(spark, data_gen).selectExpr('asinh(a)'))
 
-@pytest.mark.usefixtures('incompat')
+@incompat
 @pytest.mark.parametrize('data_gen', double_gens, ids=idfn)
 def test_columnar_tan(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : unary_op_df(spark, data_gen).selectExpr('tan(a)'))
 
-@pytest.mark.usefixtures('incompat')
+@incompat
 @pytest.mark.parametrize('data_gen', double_gens, ids=idfn)
 def test_columnar_atan(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : unary_op_df(spark, data_gen).selectExpr('atan(a)'))
 
-@pytest.mark.usefixtures('incompat')
+@incompat
 @pytest.mark.parametrize('data_gen', double_gens, ids=idfn)
 def test_columnar_atanh(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : unary_op_df(spark, data_gen).selectExpr('atanh(a)'))
 
-@pytest.mark.usefixtures('incompat')
+@incompat
 @pytest.mark.parametrize('data_gen', double_gens, ids=idfn)
 def test_columnar_cot(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : unary_op_df(spark, data_gen).selectExpr('cot(a)'))
 
-@pytest.mark.usefixtures('incompat')
+@incompat
 @pytest.mark.parametrize('data_gen', double_gens, ids=idfn)
 def test_columnar_exp(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : unary_op_df(spark, data_gen).selectExpr('exp(a)'))
 
-@pytest.mark.usefixtures('incompat')
+@incompat
 @pytest.mark.parametrize('data_gen', double_gens, ids=idfn)
 def test_columnar_expm1(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : unary_op_df(spark, data_gen).selectExpr('expm1(a)'))
 
-@pytest.mark.usefixtures('incompat')
+@incompat
 @pytest.mark.parametrize('data_gen', double_gens, ids=idfn)
 def test_columnar_log(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : unary_op_df(spark, data_gen).selectExpr('log(a)'))
 
-@pytest.mark.usefixtures('incompat')
+@incompat
 @pytest.mark.parametrize('data_gen', double_gens, ids=idfn)
 def test_columnar_log1p(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : unary_op_df(spark, data_gen).selectExpr('log1p(a)'))
 
-@pytest.mark.usefixtures('incompat')
+@incompat
 @pytest.mark.parametrize('data_gen', double_gens, ids=idfn)
 def test_columnar_log2(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : unary_op_df(spark, data_gen).selectExpr('log2(a)'))
 
-@pytest.mark.usefixtures('incompat')
+@incompat
 @pytest.mark.parametrize('data_gen', double_gens, ids=idfn)
 def test_columnar_log10(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : unary_op_df(spark, data_gen).selectExpr('log10(a)'))
 
+@incompat
 @pytest.mark.xfail(reason='SPAR-1125')
-@pytest.mark.usefixtures('incompat')
 def test_scalar_logarithm():
     # For the 'b' field include a lot more values that we would expect customers to use as a part of a log
     data_gen = [('a', DoubleGen()),('b', DoubleGen().with_special_case(lambda rand: float(rand.randint(-16, 16)), weight=100.0))]
@@ -415,14 +416,14 @@ def test_scalar_logarithm():
                 'log(cast(null as {}), b)'.format(string_type),
                 'log(a, cast(null as {}))'.format(string_type)))
 
+@incompat
 @pytest.mark.xfail(reason='SPAR-1125')
-@pytest.mark.usefixtures('incompat')
 @pytest.mark.parametrize('data_gen', double_gens, ids=idfn)
 def test_columnar_logarithm(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : binary_op_df(spark, data_gen).selectExpr('log(a, b)'))
 
-@pytest.mark.usefixtures('incompat')
+@incompat
 def test_scalar_pow():
     # For the 'b' field include a lot more values that we would expect customers to use as a part of a pow
     data_gen = [('a', DoubleGen()),('b', DoubleGen().with_special_case(lambda rand: float(rand.randint(-16, 16)), weight=100.0))]
@@ -434,8 +435,8 @@ def test_scalar_pow():
                 'pow(cast(null as {}), a)'.format(string_type),
                 'pow(b, cast(null as {}))'.format(string_type)))
 
+@incompat
 @pytest.mark.xfail(reason='SPAR-1125')
-@pytest.mark.usefixtures('incompat')
 @pytest.mark.parametrize('data_gen', double_gens, ids=idfn)
 def test_columnar_pow(data_gen):
     assert_gpu_and_cpu_are_equal_collect(

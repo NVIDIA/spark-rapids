@@ -24,7 +24,8 @@ else
     echo "WILL RUN TESTS WITH SPARK_HOME: ${SPARK_HOME}"
     CUDF_JARS=$(echo ./target/dependency/cudf-*.jar)
     PLUGIN_JARS=$(echo ../dist/target/rapids-4-spark*.jar)
-    ALL_JARS="$CUDF_JARS $PLUGIN_JARS"
+    TEST_JARS=$(echo ../tests/target/rapids-4-spark-*.jar)
+    ALL_JARS="$CUDF_JARS $PLUGIN_JARS $TEST_JARS"
     echo "AND PLUGIN JARS: $ALL_JARS"
-    "$SPARK_HOME"/bin/spark-submit --jars "${ALL_JARS// /,}" ./runtests.py -v
+    "$SPARK_HOME"/bin/spark-submit --jars "${ALL_JARS// /,}" --conf 'spark.driver.extraJavaOptions=-Duser.timezone=GMT' --conf 'spark.executor.extraJavaOptions=-Duser.timezone=GMT' --conf 'spark.sql.session.timeZone=UTC' --conf 'spark.sql.shuffle.partitions=12' ./runtests.py -v -rfExXs "$@"
 fi

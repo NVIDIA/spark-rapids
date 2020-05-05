@@ -16,42 +16,51 @@ import pytest
 
 _incompat = False
 
-@pytest.fixture
-def incompat():
-    """Marks a test as using an incompat operator"""
-    global _incompat 
-    _incompat = True
-    yield _incompat
-    _incompat = False
-
 def is_incompat():
     return _incompat
 
 _ignore_order = False
-
-@pytest.fixture
-def ignore_order():
-    """Marks a test as producing a different order that the CPU version."""
-    global _ignore_order
-    _ignore_order = True
-    yield _ignore_order
-    _ignore_order = False
 
 def is_order_ignored():
     return _ignore_order
 
 _allow_any_non_gpu = False
 
-@pytest.fixture
-def allow_any_non_gpu():
-    """Changes environment to not allow any non gpu operation"""
-    global _allow_any_non_gpu
-    _allow_any_non_gpu = True
-    yield _allow_any_non_gpu
-    _allow_any_non_gpu = False
-
-def allowing_any_non_gpu():
+def is_allowing_any_non_gpu():
     return _allow_any_non_gpu
+
+def pytest_runtest_setup(item):
+    global _ignore_order
+    if item.get_closest_marker('ignore_order'):
+        _ignore_order = True
+    else:
+        _ignore_order = False
+
+    global _incompat
+    if item.get_closest_marker('incompat'):
+        _incompat = True
+    else:
+        _incompat = False
+
+    global _allow_any_non_gpu
+    if item.get_closest_marker('allow_any_non_gpu'):
+        _allow_any_non_gpu = True
+    else:
+        _allow_any_non_gpu = False
+
+def pytest_collection_modifyitems(config, items):
+    for item in items:
+        extras = []
+        if item.get_closest_marker('ignore_order'):
+            extras.append('IGNORE_ORDER')
+        if item.get_closest_marker('incompat'):
+            extras.append('INCOMPAT')
+        if item.get_closest_marker('allow_any_non_gpu'):
+            extras.append('ALLOW_ANY_NON_GPU')
+
+        if extras:
+            # This is not ideal because we are reaching into an internal value
+            item._nodeid = item.nodeid + '[' + ', '.join(extras) + ']'
 
 def pytest_addoption(parser):
     """Pytest hook to define command line options for pytest"""

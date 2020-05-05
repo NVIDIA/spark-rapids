@@ -37,9 +37,20 @@ If just want to verify the SQL replacement is working you will need to add the `
 
 You don't have to enable the plugin for this to work, the test framework will do that for you.
 
+All of the tests will run in a single application.  They just enable and disable the plugin as needed.
+
 You do need to have access to a compatible GPU with the needed CUDA drivers. The exact details of how to set this up are beyond the scope of this document, but the Spark feature for scheduling GPUs does make this very simple if you have it configured.
 
-All of the tests will run in a single application.  They just enable and disable the plugin as needed.
+### timezone
+
+The RAPIDS plugin currently only supports the UTC time zone. Spark uses the default system time zone unless explicitly set otherwise.
+To make sure that the tests work properly you need to configure your cluster or application to run with UTC.
+The python framework cannot always do this for you because it risks overwriting other java options in the config.
+Please be sure that the following configs are set when running the tests.
+
+  * `spark.driver.extraJavaOptions` should include `-Duser.timezone=GMT`
+  * `spark.executor.extraJavaOptions` should include `-Duser.timezone=GMT`
+  * `spark.sql.session.timeZone`=`UTC`
 
 ### Enabling TPCxBB Tests
 
