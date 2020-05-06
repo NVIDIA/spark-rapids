@@ -303,7 +303,7 @@ object UCXConnection extends Logging {
     var read = 0
     val buff = new Array[Byte](lengthToRead)
     while (read >= 0 && bytesRead < lengthToRead) {
-      logInfo(s"Reading ${lengthToRead}. Currently at ${bytesRead}")
+      logTrace(s"Reading ${lengthToRead}. Currently at ${bytesRead}")
       read = is.read(buff, bytesRead, lengthToRead - bytesRead)
       if (read > 0) {
         bytesRead = bytesRead + read
