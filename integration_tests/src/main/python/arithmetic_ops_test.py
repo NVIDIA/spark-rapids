@@ -55,104 +55,78 @@ double_n_long_gens = [DoubleGen(), LongGen()]
 int_n_long_gens = [IntegerGen(), LongGen()]
 
 @pytest.mark.parametrize('data_gen', numeric_gens, ids=idfn)
-def test_scalar_addition(data_gen):
+def test_addition(data_gen):
     data_type = data_gen.data_type
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : binary_op_df(spark, data_gen).select(
                 f.col('a') + f.lit(100).cast(data_type),
                 f.lit(-12).cast(data_type) + f.col('b'),
                 f.lit(None).cast(data_type) + f.col('a'),
-                f.col('b') + f.lit(None).cast(data_type)))
+                f.col('b') + f.lit(None).cast(data_type),
+                f.col('a') + f.col('b')))
 
 @pytest.mark.parametrize('data_gen', numeric_gens, ids=idfn)
-def test_columnar_addition(data_gen):
-    # Using iterator for now just so some test covers this path
-    # this should really only be used for tests that produce a lot of data
-    assert_gpu_and_cpu_are_equal_iterator(
-            lambda spark : binary_op_df(spark, data_gen).selectExpr('a + b'))
-
-@pytest.mark.parametrize('data_gen', numeric_gens, ids=idfn)
-def test_scalar_subtraction(data_gen):
+def test_subtraction(data_gen):
     data_type = data_gen.data_type
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : binary_op_df(spark, data_gen).select(
                 f.col('a') - f.lit(100).cast(data_type),
                 f.lit(-12).cast(data_type) - f.col('b'),
                 f.lit(None).cast(data_type) - f.col('a'),
-                f.col('b') - f.lit(None).cast(data_type)))
+                f.col('b') - f.lit(None).cast(data_type),
+                f.col('a') - f.col('b')))
 
 @pytest.mark.parametrize('data_gen', numeric_gens, ids=idfn)
-def test_columnar_subtraction(data_gen):
-    assert_gpu_and_cpu_are_equal_collect(
-            lambda spark : binary_op_df(spark, data_gen).selectExpr('a - b'))
-
-@pytest.mark.parametrize('data_gen', numeric_gens, ids=idfn)
-def test_scalar_multiplication(data_gen):
+def test_multiplication(data_gen):
     data_type = data_gen.data_type
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : binary_op_df(spark, data_gen).select(
                 f.col('a') * f.lit(100).cast(data_type),
                 f.lit(-12).cast(data_type) * f.col('b'),
                 f.lit(None).cast(data_type) * f.col('a'),
-                f.col('b') * f.lit(None).cast(data_type)))
+                f.col('b') * f.lit(None).cast(data_type),
+                f.col('a') * f.col('b')))
 
 @pytest.mark.parametrize('data_gen', numeric_gens, ids=idfn)
-def test_columnar_multiplication(data_gen):
-    assert_gpu_and_cpu_are_equal_collect(
-            lambda spark : binary_op_df(spark, data_gen).selectExpr('a * b'))
-
-@pytest.mark.parametrize('data_gen', numeric_gens, ids=idfn)
-def test_scalar_division(data_gen):
+def test_division(data_gen):
     data_type = data_gen.data_type
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : binary_op_df(spark, data_gen).select(
                 f.col('a') / f.lit(100).cast(data_type),
                 f.lit(-12).cast(data_type) / f.col('b'),
                 f.lit(None).cast(data_type) / f.col('a'),
-                f.col('b') / f.lit(None).cast(data_type)))
-
-@pytest.mark.parametrize('data_gen', numeric_gens, ids=idfn)
-def test_columnar_division(data_gen):
-    assert_gpu_and_cpu_are_equal_collect(
-            lambda spark : binary_op_df(spark, data_gen).selectExpr('a / b'))
+                f.col('b') / f.lit(None).cast(data_type),
+                f.col('a') / f.col('b')))
 
 @pytest.mark.parametrize('data_gen', integral_gens, ids=idfn)
-def test_scalar_int_division(data_gen):
+def test_int_division(data_gen):
     string_type = to_cast_string(data_gen.data_type)
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : binary_op_df(spark, data_gen).selectExpr(
                 'a DIV cast(100 as {})'.format(string_type),
                 'cast(-12 as {}) DIV b'.format(string_type),
                 'cast(null as {}) DIV a'.format(string_type),
-                'b DIV cast(null as {})'.format(string_type)))
-
-@pytest.mark.parametrize('data_gen', integral_gens, ids=idfn)
-def test_columnar_int_division(data_gen):
-    assert_gpu_and_cpu_are_equal_collect(
-            lambda spark : binary_op_df(spark, data_gen).selectExpr('a DIV b'))
+                'b DIV cast(null as {})'.format(string_type),
+                'a DIV b'))
 
 @pytest.mark.parametrize('data_gen', numeric_gens, ids=idfn)
-def test_scalar_mod(data_gen):
+def test_mod(data_gen):
     data_type = data_gen.data_type
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : binary_op_df(spark, data_gen).select(
                 f.col('a') % f.lit(100).cast(data_type),
                 f.lit(-12).cast(data_type) % f.col('b'),
                 f.lit(None).cast(data_type) % f.col('a'),
-                f.col('b') % f.lit(None).cast(data_type)))
-
-@pytest.mark.parametrize('data_gen', numeric_gens, ids=idfn)
-def test_columnar_mod(data_gen):
-    assert_gpu_and_cpu_are_equal_collect(
-            lambda spark : binary_op_df(spark, data_gen).selectExpr('a % b'))
+                f.col('b') % f.lit(None).cast(data_type),
+                f.col('a') % f.col('b')))
 
 @pytest.mark.parametrize('data_gen', double_gens, ids=idfn)
-def test_columnar_signum(data_gen):
+def test_signum(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : unary_op_df(spark, data_gen).selectExpr('signum(a)'))
 
 @pytest.mark.parametrize('data_gen', numeric_gens, ids=idfn)
-def test_columnar_unary_minus(data_gen):
+def test_unary_minus(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : unary_op_df(spark, data_gen).selectExpr('-a'))
 
@@ -160,43 +134,43 @@ def test_columnar_unary_minus(data_gen):
 # a unary positive into a plan, because it gets optimized out, but this
 # verifies that we can handle it.
 @pytest.mark.parametrize('data_gen', numeric_gens, ids=idfn)
-def test_columnar_unary_positive(data_gen):
+def test_unary_positive(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : unary_op_df(spark, data_gen).selectExpr('+a'))
 
 @pytest.mark.parametrize('data_gen', numeric_gens, ids=idfn)
-def test_columnar_abs(data_gen):
+def test_abs(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : unary_op_df(spark, data_gen).selectExpr('abs(a)'))
 
 @incompat
 @pytest.mark.parametrize('data_gen', double_gens, ids=idfn)
-def test_columnar_asin(data_gen):
+def test_asin(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : unary_op_df(spark, data_gen).selectExpr('asin(a)'))
 
 @pytest.mark.parametrize('data_gen', double_gens, ids=idfn)
-def test_columnar_sqrt(data_gen):
+def test_sqrt(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : unary_op_df(spark, data_gen).selectExpr('sqrt(a)'))
 
 @pytest.mark.parametrize('data_gen', double_n_long_gens, ids=idfn)
-def test_columnar_floor(data_gen):
+def test_floor(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : unary_op_df(spark, data_gen).selectExpr('floor(a)'))
 
 @pytest.mark.parametrize('data_gen', double_n_long_gens, ids=idfn)
-def test_columnar_ceil(data_gen):
+def test_ceil(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : unary_op_df(spark, data_gen).selectExpr('ceil(a)'))
 
 @pytest.mark.parametrize('data_gen', double_gens, ids=idfn)
-def test_columnar_rint(data_gen):
+def test_rint(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : unary_op_df(spark, data_gen).selectExpr('rint(a)'))
 
 @pytest.mark.parametrize('data_gen', int_n_long_gens, ids=idfn)
-def test_scalar_shift_left(data_gen):
+def test_shift_left(data_gen):
     string_type = to_cast_string(data_gen.data_type)
     assert_gpu_and_cpu_are_equal_collect(
             # The version of shiftLeft exposed to dataFrame does not take a column for num bits
@@ -204,15 +178,11 @@ def test_scalar_shift_left(data_gen):
                 'shiftleft(a, cast(12 as INT))',
                 'shiftleft(cast(-12 as {}), b)'.format(string_type),
                 'shiftleft(cast(null as {}), b)'.format(string_type),
-                'shiftleft(a, cast(null as INT))'))
+                'shiftleft(a, cast(null as INT))',
+                'shiftleft(a, b)'))
 
 @pytest.mark.parametrize('data_gen', int_n_long_gens, ids=idfn)
-def test_columnar_shift_left(data_gen):
-    assert_gpu_and_cpu_are_equal_collect(
-            lambda spark : two_col_df(spark, data_gen, IntegerGen()).selectExpr('shiftleft(a, b)'))
-
-@pytest.mark.parametrize('data_gen', int_n_long_gens, ids=idfn)
-def test_scalar_shift_right(data_gen):
+def test_shift_right(data_gen):
     string_type = to_cast_string(data_gen.data_type)
     assert_gpu_and_cpu_are_equal_collect(
             # The version of shiftRight exposed to dataFrame does not take a column for num bits
@@ -220,15 +190,11 @@ def test_scalar_shift_right(data_gen):
                 'shiftright(a, cast(12 as INT))',
                 'shiftright(cast(-12 as {}), b)'.format(string_type),
                 'shiftright(cast(null as {}), b)'.format(string_type),
-                'shiftright(a, cast(null as INT))'))
+                'shiftright(a, cast(null as INT))',
+                'shiftright(a, b)'))
 
 @pytest.mark.parametrize('data_gen', int_n_long_gens, ids=idfn)
-def test_columnar_shift_right(data_gen):
-    assert_gpu_and_cpu_are_equal_collect(
-            lambda spark : two_col_df(spark, data_gen, IntegerGen()).selectExpr('shiftright(a, b)'))
-
-@pytest.mark.parametrize('data_gen', int_n_long_gens, ids=idfn)
-def test_scalar_shift_right_unsigned(data_gen):
+def test_shift_right_unsigned(data_gen):
     string_type = to_cast_string(data_gen.data_type)
     assert_gpu_and_cpu_are_equal_collect(
             # The version of shiftRightUnsigned exposed to dataFrame does not take a column for num bits
@@ -236,176 +202,160 @@ def test_scalar_shift_right_unsigned(data_gen):
                 'shiftrightunsigned(a, cast(12 as INT))',
                 'shiftrightunsigned(cast(-12 as {}), b)'.format(string_type),
                 'shiftrightunsigned(cast(null as {}), b)'.format(string_type),
-                'shiftrightunsigned(a, cast(null as INT))'))
-
-@pytest.mark.parametrize('data_gen', int_n_long_gens, ids=idfn)
-def test_columnar_shift_right_unsigned(data_gen):
-    assert_gpu_and_cpu_are_equal_collect(
-            lambda spark : two_col_df(spark, data_gen, IntegerGen()).selectExpr('shiftrightunsigned(a, b)'))
+                'shiftrightunsigned(a, cast(null as INT))',
+                'shiftrightunsigned(a, b)'))
 
 @incompat
 @pytest.mark.parametrize('data_gen', double_gens, ids=idfn)
-def test_columnar_cbrt(data_gen):
+def test_cbrt(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : unary_op_df(spark, data_gen).selectExpr('cbrt(a)'))
 
 @pytest.mark.parametrize('data_gen', integral_gens, ids=idfn)
-def test_scalar_bit_and(data_gen):
+def test_bit_and(data_gen):
     string_type = to_cast_string(data_gen.data_type)
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : binary_op_df(spark, data_gen).selectExpr(
                 'a & cast(100 as {})'.format(string_type),
                 'cast(-12 as {}) & b'.format(string_type),
                 'cast(null as {}) & a'.format(string_type),
-                'b & cast(null as {})'.format(string_type)))
+                'b & cast(null as {})'.format(string_type),
+                'a & b'))
 
 @pytest.mark.parametrize('data_gen', integral_gens, ids=idfn)
-def test_columnar_bit_and(data_gen):
-    assert_gpu_and_cpu_are_equal_collect(
-            lambda spark : binary_op_df(spark, data_gen).selectExpr('a & b'))
-
-@pytest.mark.parametrize('data_gen', integral_gens, ids=idfn)
-def test_scalar_bit_or(data_gen):
+def test_bit_or(data_gen):
     string_type = to_cast_string(data_gen.data_type)
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : binary_op_df(spark, data_gen).selectExpr(
                 'a | cast(100 as {})'.format(string_type),
                 'cast(-12 as {}) | b'.format(string_type),
                 'cast(null as {}) | a'.format(string_type),
-                'b | cast(null as {})'.format(string_type)))
+                'b | cast(null as {})'.format(string_type),
+                'a | b'))
 
 @pytest.mark.parametrize('data_gen', integral_gens, ids=idfn)
-def test_columnar_bit_or(data_gen):
-    assert_gpu_and_cpu_are_equal_collect(
-            lambda spark : binary_op_df(spark, data_gen).selectExpr('a | b'))
-
-@pytest.mark.parametrize('data_gen', integral_gens, ids=idfn)
-def test_scalar_bit_xor(data_gen):
+def test_bit_xor(data_gen):
     string_type = to_cast_string(data_gen.data_type)
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : binary_op_df(spark, data_gen).selectExpr(
                 'a ^ cast(100 as {})'.format(string_type),
                 'cast(-12 as {}) ^ b'.format(string_type),
                 'cast(null as {}) ^ a'.format(string_type),
-                'b ^ cast(null as {})'.format(string_type)))
+                'b ^ cast(null as {})'.format(string_type),
+                'a ^ b'))
 
 @pytest.mark.parametrize('data_gen', integral_gens, ids=idfn)
-def test_columnar_bit_xor(data_gen):
-    assert_gpu_and_cpu_are_equal_collect(
-            lambda spark : binary_op_df(spark, data_gen).selectExpr('a ^ b'))
-
-@pytest.mark.parametrize('data_gen', integral_gens, ids=idfn)
-def test_columnar_bit_not(data_gen):
+def test_bit_not(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : unary_op_df(spark, data_gen).selectExpr('~a'))
 
 @incompat
 @pytest.mark.parametrize('data_gen', double_gens, ids=idfn)
-def test_columnar_radians(data_gen):
+def test_radians(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : unary_op_df(spark, data_gen).selectExpr('radians(a)'))
 
 @incompat
 @pytest.mark.parametrize('data_gen', double_gens, ids=idfn)
-def test_columnar_cos(data_gen):
+def test_cos(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : unary_op_df(spark, data_gen).selectExpr('cos(a)'))
 
 @incompat
 @pytest.mark.parametrize('data_gen', double_gens, ids=idfn)
-def test_columnar_acos(data_gen):
+def test_acos(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : unary_op_df(spark, data_gen).selectExpr('acos(a)'))
 
 @incompat
 @pytest.mark.xfail(reason='SPAR-1124')
 @pytest.mark.parametrize('data_gen', double_gens, ids=idfn)
-def test_columnar_acosh(data_gen):
+def test_acosh(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : unary_op_df(spark, data_gen).selectExpr('acosh(a)'))
 
 @incompat
 @pytest.mark.parametrize('data_gen', double_gens, ids=idfn)
-def test_columnar_sin(data_gen):
+def test_sin(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : unary_op_df(spark, data_gen).selectExpr('sin(a)'))
 
 @incompat
 @pytest.mark.parametrize('data_gen', double_gens, ids=idfn)
-def test_columnar_asin(data_gen):
+def test_asin(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : unary_op_df(spark, data_gen).selectExpr('asin(a)'))
 
 @incompat
 @pytest.mark.xfail(reason='SPAR-1124')
 @pytest.mark.parametrize('data_gen', double_gens, ids=idfn)
-def test_columnar_asinh(data_gen):
+def test_asinh(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : unary_op_df(spark, data_gen).selectExpr('asinh(a)'))
 
 @incompat
 @pytest.mark.parametrize('data_gen', double_gens, ids=idfn)
-def test_columnar_tan(data_gen):
+def test_tan(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : unary_op_df(spark, data_gen).selectExpr('tan(a)'))
 
 @incompat
 @pytest.mark.parametrize('data_gen', double_gens, ids=idfn)
-def test_columnar_atan(data_gen):
+def test_atan(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : unary_op_df(spark, data_gen).selectExpr('atan(a)'))
 
 @incompat
 @pytest.mark.parametrize('data_gen', double_gens, ids=idfn)
-def test_columnar_atanh(data_gen):
+def test_atanh(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : unary_op_df(spark, data_gen).selectExpr('atanh(a)'))
 
 @incompat
 @pytest.mark.parametrize('data_gen', double_gens, ids=idfn)
-def test_columnar_cot(data_gen):
+def test_cot(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : unary_op_df(spark, data_gen).selectExpr('cot(a)'))
 
 @incompat
 @pytest.mark.parametrize('data_gen', double_gens, ids=idfn)
-def test_columnar_exp(data_gen):
+def test_exp(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : unary_op_df(spark, data_gen).selectExpr('exp(a)'))
 
 @incompat
 @pytest.mark.parametrize('data_gen', double_gens, ids=idfn)
-def test_columnar_expm1(data_gen):
+def test_expm1(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : unary_op_df(spark, data_gen).selectExpr('expm1(a)'))
 
 @incompat
 @pytest.mark.parametrize('data_gen', double_gens, ids=idfn)
-def test_columnar_log(data_gen):
+def test_log(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : unary_op_df(spark, data_gen).selectExpr('log(a)'))
 
 @incompat
 @pytest.mark.parametrize('data_gen', double_gens, ids=idfn)
-def test_columnar_log1p(data_gen):
+def test_log1p(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : unary_op_df(spark, data_gen).selectExpr('log1p(a)'))
 
 @incompat
 @pytest.mark.parametrize('data_gen', double_gens, ids=idfn)
-def test_columnar_log2(data_gen):
+def test_log2(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : unary_op_df(spark, data_gen).selectExpr('log2(a)'))
 
 @incompat
 @pytest.mark.parametrize('data_gen', double_gens, ids=idfn)
-def test_columnar_log10(data_gen):
+def test_log10(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : unary_op_df(spark, data_gen).selectExpr('log10(a)'))
 
 @incompat
 @pytest.mark.xfail(reason='SPAR-1125')
-def test_scalar_logarithm():
+def test_logarithm():
     # For the 'b' field include a lot more values that we would expect customers to use as a part of a log
     data_gen = [('a', DoubleGen()),('b', DoubleGen().with_special_case(lambda rand: float(rand.randint(-16, 16)), weight=100.0))]
     string_type = 'DOUBLE'
@@ -414,14 +364,8 @@ def test_scalar_logarithm():
                 'log(a, cast(100 as {}))'.format(string_type),
                 'log(cast(-12 as {}), b)'.format(string_type),
                 'log(cast(null as {}), b)'.format(string_type),
-                'log(a, cast(null as {}))'.format(string_type)))
-
-@incompat
-@pytest.mark.xfail(reason='SPAR-1125')
-@pytest.mark.parametrize('data_gen', double_gens, ids=idfn)
-def test_columnar_logarithm(data_gen):
-    assert_gpu_and_cpu_are_equal_collect(
-            lambda spark : binary_op_df(spark, data_gen).selectExpr('log(a, b)'))
+                'log(a, cast(null as {}))'.format(string_type),
+                'log(a, b)'))
 
 @incompat
 def test_scalar_pow():
