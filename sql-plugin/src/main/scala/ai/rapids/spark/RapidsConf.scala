@@ -470,7 +470,7 @@ object RapidsConf {
   val SHUFFLE_MAX_METADATA_SIZE = conf("spark.rapids.shuffle.maxMetadataSize")
     .doc("The maximum size of a metadata message used in the shuffle.")
     .internal()
-    .longConf
+    .bytesConf(ByteUnit.BYTE)
     .createWithDefault(50 * 1024)
 
   // USER FACING DEBUG CONFIGS
