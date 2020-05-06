@@ -153,6 +153,11 @@ class UCXShuffleTransport(shuffleServerId: BlockManagerId, rapidsConf: RapidsCon
     bounceBuffers.foreach(bb => {
       deviceReceiveBuffMgr.freeBuffer(bb)
     })
+
+    // let the throttle know some bounce buffers were freed, so we give it a chance to claim them
+    inflightMonitor.synchronized {
+      inflightMonitor.notify()
+    }
   }
 
   def freeSendBounceBuffers(bounceBuffers: Seq[MemoryBuffer]): Unit = {
@@ -170,31 +175,51 @@ class UCXShuffleTransport(shuffleServerId: BlockManagerId, rapidsConf: RapidsCon
   override def getSendBounceBuffers(deviceMemory: Boolean, remaining: Long, totalRequired: Int): Seq[MemoryBuffer] = {
     val numBuffs = getNumBounceBuffers(remaining, totalRequired)
     if (!deviceMemory) {
-      toBounceBuffersIfNecessary(hostSendBuffMgr, numBuffs)
+      acquireBounceBuffers(hostSendBuffMgr, numBuffs)
     } else {
-      toBounceBuffersIfNecessary(deviceSendBuffMgr, numBuffs)
+      acquireBounceBuffers(deviceSendBuffMgr, numBuffs)
+    }
+  }
+
+  override def tryGetSendBounceBuffers(deviceMemory: Boolean, remaining: Long, totalRequired: Int): Seq[MemoryBuffer] = {
+    val numBuffs = getNumBounceBuffers(remaining, totalRequired)
+    if (!deviceMemory) {
+      tryAcquireBounceBuffers(hostSendBuffMgr, numBuffs)
+    } else {
+      tryAcquireBounceBuffers(deviceSendBuffMgr, numBuffs)
     }
   }
 
   override def getReceiveBounceBuffers(remaining: Long, totalRequired: Int): Seq[MemoryBuffer] = {
     val numBuffs = getNumBounceBuffers(remaining, totalRequired)
-    toBounceBuffersIfNecessary(deviceReceiveBuffMgr, numBuffs)
+    acquireBounceBuffers(deviceReceiveBuffMgr, numBuffs)
   }
 
-  private def toBounceBuffersIfNecessary[T <: MemoryBuffer](
+  def tryGetReceiveBounceBuffers(remaining: Long, totalRequired: Int): Seq[MemoryBuffer] = {
+    val numBuffs = getNumBounceBuffers(remaining, totalRequired)
+    tryAcquireBounceBuffers(deviceReceiveBuffMgr, numBuffs)
+  }
+
+  private def acquireBounceBuffers[T <: MemoryBuffer](
+      bounceBuffMgr: BounceBufferManager[T],
+      numBuffs: Integer) : Seq[MemoryBuffer] = {
+    // if the # of buffers requested is more than what the pool has, we would deadlock
+    // this ensures we only get as many buffers as the pool could possibly give us.
+    val possibleNumBuffers = Math.min(bounceBuffMgr.numBuffers, numBuffs)
+    val bounceBuffers: Seq[MemoryBuffer] = bounceBuffMgr.acquireBuffersBlocking(possibleNumBuffers)
+    logTrace(s"Got ${bounceBuffers.size} bounce buffers from pool out of ${numBuffs} requested.")
+    bounceBuffers
+  }
+
+  private def tryAcquireBounceBuffers[T <: MemoryBuffer](
       bounceBuffMgr: BounceBufferManager[T],
       numBuffs: Integer): Seq[MemoryBuffer] = {
-    val nvtx = new NvtxRange("Getting bounce buffer", NvtxColor.YELLOW)
-    try {
-      // if the # of buffers requested is more than what the pool has, we would deadlock
-      // this ensures we only get as many buffers as the pool could possibly give us.
-      val possibleNumBuffers = Math.min(bounceBuffMgr.numBuffers, numBuffs)
-      val bounceBuffers: Seq[MemoryBuffer] = bounceBuffMgr.acquireBuffers(possibleNumBuffers)
-      logDebug(s"Got $possibleNumBuffers bounce buffers from pool out of ${numBuffs} requested.")
-      bounceBuffers
-    } finally {
-      nvtx.close()
-    }
+    // if the # of buffers requested is more than what the pool has, we would deadlock
+    // this ensures we only get as many buffers as the pool could possibly give us.
+    val possibleNumBuffers = Math.min(bounceBuffMgr.numBuffers, numBuffs)
+    val bounceBuffers: Seq[MemoryBuffer] = bounceBuffMgr.acquireBuffersNonBlocking(possibleNumBuffers)
+    logTrace(s"Got ${bounceBuffers.size} bounce buffers from pool out of ${numBuffs} requested.")
+    bounceBuffers
   }
 
   def connect(peerBlockManagerId: BlockManagerId): ClientConnection = {
@@ -237,9 +262,8 @@ class UCXShuffleTransport(shuffleServerId: BlockManagerId, rapidsConf: RapidsCon
     // if we can't hand off because we are too busy, block the caller (in UCX's case, the progress thread)
     new CallerRunsAndLogs())
 
-  // This was added as a workaround for shuffle hangs with larger queries
-  // It is meant for blocking tasks
-  private[this] val clientCopyExecutor = Executors.newCachedThreadPool(GpuDeviceManager.wrapThreadFactory(
+  // This executor handles any task that would block (e.g. wait for spill synchronously due to OOM)
+  private[this] val clientCopyExecutor = Executors.newSingleThreadExecutor(GpuDeviceManager.wrapThreadFactory(
     new ThreadFactoryBuilder()
       .setNameFormat("shuffle-client-copy-thread-%d")
       .setDaemon(true)
@@ -268,14 +292,21 @@ class UCXShuffleTransport(shuffleServerId: BlockManagerId, rapidsConf: RapidsCon
       .setDaemon(true)
       .build))
 
-  // This was added as a workaround for shuffle hangs with larger queries
-  // It is meant for blocking tasks
-  private[this] val serverCopyExecutor = Executors.newCachedThreadPool(GpuDeviceManager.wrapThreadFactory(
+  // This executor handles any task that would block (e.g. wait for spill synchronously due to OOM)
+  private[this] val serverCopyExecutor = Executors.newSingleThreadExecutor(GpuDeviceManager.wrapThreadFactory(
     new ThreadFactoryBuilder()
       .setNameFormat(s"shuffle-server-copy-thread-%d")
       .setDaemon(true)
       .build))
 
+  // This is used to queue up on the server all the [[BufferSendState]] as the server waits for
+  // bounce buffers to become available (it is the equivalent of the transport's throttle, minus the
+  // inflight limit)
+  private[this] val bssExecutor = Executors.newSingleThreadExecutor(GpuDeviceManager.wrapThreadFactory(
+    new ThreadFactoryBuilder()
+      .setNameFormat(s"shuffle-server-bss-thread-%d")
+      .setDaemon(true)
+      .build))
   /**
     * Construct a server instance
     * @param requestHandler - used to get metadata info, and acquire tables used in the shuffle.
@@ -289,30 +320,34 @@ class UCXShuffleTransport(shuffleServerId: BlockManagerId, rapidsConf: RapidsCon
       requestHandler,
       serverExecutor,
       serverCopyExecutor,
+      bssExecutor,
       rapidsConf)
   }
 
   /**
-    * Returns true if the transport allows for [[neededAmount]] + its inflight tally
-    * to be inflight at this time.
+    * Returns a sequence of bounce buffers if the transport allows for [[neededAmount]] + its inflight tally
+    * to be inflight at this time, and bounce buffers are available.
     *
     * @param neededAmount - amount of bytes needed.
-    * @return - true if amount of bytes needed was allowed into the inflight amount,
-    *         false otherwise (caller should try again)
+    * @return - optional bounce buffers to be used to for the client to receive if amount of bytes needed
+    *         was allowed into the inflight amount, None otherwise (caller should try again)
     */
-  private def markBytesInFlight(neededAmount: Long): Boolean = inflightMonitor.synchronized {
+  private def markBytesInFlight(neededAmount: Long): Option[Seq[MemoryBuffer]] = inflightMonitor.synchronized {
     // if it would fit, or we are sending nothing (protects against the buffer that is bigger than limit),
     // go ahead and allow it
-    var didFit = false
     if (wouldFit(neededAmount)) {
-      didFit = true
-      inflightSize = inflightSize + neededAmount
-      logDebug(s"New inflight size ${inflightSize} after adding = ${neededAmount}")
+      val bbs = tryGetReceiveBounceBuffers(neededAmount, 2)
+      if (bbs.nonEmpty) {
+        inflightSize = inflightSize + neededAmount
+        logDebug(s"New inflight size ${inflightSize} after adding = ${neededAmount} and ${bbs} bounce buffers.")
+        Some(bbs)
+      } else {
+        None
+      }
     } else {
       logTrace(s"Did not update inflight size ${inflightSize}: ${neededAmount} + ${inflightSize} > ${inflightLimit}")
+      None
     }
-
-    didFit
   }
 
   // NOTE: this function is called from within monitor.synchronized blocks always
@@ -344,10 +379,10 @@ class UCXShuffleTransport(shuffleServerId: BlockManagerId, rapidsConf: RapidsCon
   exec.execute(() => {
     while (inflightStarted) {
       try {
-        var perClientReq = mutable.Map[RapidsShuffleClient, Seq[PendingTransferRequest]]()
+        var perClientReq = mutable.Map[RapidsShuffleClient, BufferReceiveState]()
         var removed = false
         inflightMonitor.synchronized {
-          var head = altList.peek()
+          var head: PendingTransferRequest = altList.peek()
           if (head == null) {
             val waitRange = new NvtxRange("Transport throttling", NvtxColor.RED)
             try {
@@ -356,11 +391,30 @@ class UCXShuffleTransport(shuffleServerId: BlockManagerId, rapidsConf: RapidsCon
               waitRange.close()
             }
           } else {
-            while (head != null && markBytesInFlight(head.getLength)) {
-              altList.remove(head)
-              removed = true
-              perClientReq +=
-                (head.client -> (perClientReq.getOrElse(head.client, Seq.empty) :+ head))
+            var keepAttempting = true
+            while (head != null && keepAttempting) {
+              val existingReq: Option[BufferReceiveState] = perClientReq.get(head.client)
+              if (existingReq.isEmpty) {
+                // need to get bounce buffers
+                val bounceBuffers = if (head != null) {
+                  markBytesInFlight(head.getLength)
+                } else {
+                  None
+                }
+                if (bounceBuffers.isEmpty) {
+                  inflightMonitor.wait(100)
+                  keepAttempting = false
+                } else {
+                  val brs = new BufferReceiveState(this, bounceBuffers.get)
+                  brs.addRequest(head)
+                  perClientReq += head.client -> brs
+                  altList.remove(head)
+                }
+              } else {
+                // bounce buffers already acquired
+                existingReq.foreach(_.addRequest(head))
+                altList.remove(head)
+              }
               head = altList.peek()
             }
           }
@@ -368,8 +422,8 @@ class UCXShuffleTransport(shuffleServerId: BlockManagerId, rapidsConf: RapidsCon
         if (perClientReq.nonEmpty) {
           logDebug(s"Issuing client req ${perClientReq.size}")
         }
-        perClientReq.foreach { case (client, reqs) => {
-          client.issueBufferReceives(new BufferReceiveState(reqs, this))
+        perClientReq.foreach { case (client, brs) => {
+          client.issueBufferReceives(brs)
         }}
       } catch {
         case t: Throwable =>
@@ -386,7 +440,9 @@ class UCXShuffleTransport(shuffleServerId: BlockManagerId, rapidsConf: RapidsCon
   }
 
   override def close(): Unit = {
+    logInfo("UCX transport closing")
     exec.shutdown()
+    bssExecutor.shutdown()
     clientExecutor.shutdown()
     serverExecutor.shutdown()
 
@@ -402,7 +458,10 @@ class UCXShuffleTransport(shuffleServerId: BlockManagerId, rapidsConf: RapidsCon
       logError("UCX Shuffle Client failed to terminate correctly")
     }
     if (!serverExecutor.awaitTermination(500, TimeUnit.MILLISECONDS)) {
-      logError("UCX Shuffle Server failed to terminate correctly")
+      logError("UCX Shuffle Server main executor failed to terminate correctly")
+    }
+    if (!bssExecutor.awaitTermination(500, TimeUnit.MILLISECONDS)) {
+      logError("UCX Shuffle Server BufferSendState executor failed to terminate correctly")
     }
 
     ucx.close()
