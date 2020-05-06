@@ -49,25 +49,47 @@ class BounceBufferManager[T <: MemoryBuffer](poolName: String, val bufferSize: L
     val start = System.currentTimeMillis()
     var bufferIndex = freeBufferMap.nextSetBit(0)
     while (bufferIndex < 0) {
-      logInfo(s"Buffer pool $poolName exhausted. Waiting...")
+      logDebug(s"Buffer pool $poolName exhausted. Waiting...")
       wait()
       bufferIndex = freeBufferMap.nextSetBit(0)
     }
 
-    logInfo(s"$poolName: Buffer index: ${bufferIndex}")
+    logDebug(s"$poolName: Buffer index: ${bufferIndex}")
     freeBufferMap.clear(bufferIndex)
     val res = rootBuffer.slice(bufferIndex * bufferSize, bufferSize)
     logDebug(s"It took ${System.currentTimeMillis() - start} ms to allocBuffer in $poolName")
     res
   }
 
+  private def numFree(): Int = synchronized {
+    freeBufferMap.cardinality()
+  }
+
   /**
-    * Acquire [[possibleNumBuffers]] buffers from the pool
+    * Acquire [[possibleNumBuffers]] buffers from the pool. This method will not block.
+    * @param possibleNumBuffers - number of buffers to acquire
+    * @return - a sequence of MemoryBuffers, or empty if the request can't be satisfied
+    */
+  def acquireBuffersNonBlocking(possibleNumBuffers: Int): Seq[MemoryBuffer] = synchronized {
+    if (numFree < possibleNumBuffers) {
+      // would block
+      logTrace(s"$poolName at capacity. numFree: ${numFree}, buffers required ${possibleNumBuffers}")
+      return Seq.empty
+    }
+    // we won't block, and we are still holding the lock, so get the promised buffers
+    acquireBuffersBlocking(possibleNumBuffers)
+  }
+
+  /**
+    * Acquire [[possibleNumBuffers]] buffers from the pool. This method will block until
+    * it can get [[possibleNumBuffers]].
     * @param possibleNumBuffers - number of buffers to acquire
     * @return - a sequence of MemoryBuffers
     */
-  def acquireBuffers(possibleNumBuffers: Int): Seq[MemoryBuffer] = synchronized {
-    (0 until possibleNumBuffers).map(_ => acquireBuffer())
+  def acquireBuffersBlocking(possibleNumBuffers: Int): Seq[MemoryBuffer] = synchronized {
+    val res = (0 until possibleNumBuffers).map(_ => acquireBuffer())
+    logDebug(s"$poolName at acquire. Has numFree ${numFree}")
+    res
   }
 
   /**
@@ -82,7 +104,7 @@ class BounceBufferManager[T <: MemoryBuffer](poolName: String, val bufferSize: L
     require(bufferIndex < numBuffers,
       s"$poolName: buffer index invalid $bufferIndex should be less than $numBuffers")
 
-    logInfo(s"$poolName: Free buffer index ${bufferIndex}")
+    logDebug(s"$poolName: Free buffer index ${bufferIndex}")
     buffer.close()
     freeBufferMap.set(bufferIndex.toInt)
     notifyAll()
