@@ -325,6 +325,13 @@ object Run {
     CleanAcquisitionPrime(spark, dfPerf, dfAcq)
   }
 
+  def orc(spark: SparkSession, mortgagePerformance: String, mortgageAcquisition: String): DataFrame = {
+    val dfPerf = CreatePerformanceDelinquency.prepare(spark.read.orc(mortgagePerformance))
+    val dfAcq = spark.read.orc(mortgageAcquisition)
+
+    CleanAcquisitionPrime(spark, dfPerf, dfAcq)
+  }
+
   def apply(spark: SparkSession, mortgagePerformance: String, mortgageAcquisition: String, output: String): Unit = {
     parquet(spark, mortgagePerformance, mortgageAcquisition)
       .write.mode("overwrite").parquet(output)
