@@ -52,9 +52,15 @@ Please be sure that the following configs are set when running the tests.
   * `spark.executor.extraJavaOptions` should include `-Duser.timezone=GMT`
   * `spark.sql.session.timeZone`=`UTC`
 
-### Enabling TPCxBB Tests
+### Enabling TPCxBB/TPCH/Mortgage Tests
 
-The TPCxBB tests in this framework can be enabled by providing a couple of options: `tpcxbb-format` (optional, defaults to "parquet"), and `tpcxbb-path` (required, path to the TPCxBB data). As an example, here is the `spark-submit` command with these parameters:
+The TPCxBB, TPCH, and Mortgage tests in this framework can be enabled by providing a couple of options:
+
+   * TPCxBB `tpcxbb-format` (optional, defaults to "parquet"), and `tpcxbb-path` (required, path to the TPCxBB data).
+   * TPCH `tpch-format` (optional, defaults to "parquet"), and `tpch-path` (required, path to the TPCH data).
+   * Mortgage `mortgage-format` (optional, defaults to "parquet"), and `mortgage-path` (required, path to the Mortgage data).
+
+As an example, here is the `spark-submit` command with the TPCxBB parameters:
 
 ```$SPARK_HOME/bin/spark-submit --jars "../dist/target/rapids-4-spark_2.12-0.1-SNAPSHOT.jar,$CUDF/java/target/cudf-0.14-SNAPSHOT.jar,../tests/target/rapids-4-spark-tests_2.12-0.1-SNAPSHOT.jar" ./runtests.py --tpcxbb_format="csv" --tpcxbb_path="/path/to/tpcxbb/csv"```
 

@@ -70,4 +70,15 @@ def pytest_addoption(parser):
     parser.addoption(
         "--tpcxbb_path", action="store", default=None, help="path to TPCXbb data"
     )
-
+    parser.addoption(
+        "--tpch_format", action="store", default="parquet", help="format of TPCH data"
+    )
+    parser.addoption(
+        "--tpch_path", action="store", default=None, help="path to TPCH data"
+    )
+    parser.addoption(
+        "--mortgage_format", action="store", default="parquet", help="format of Mortgage data"
+    )
+    parser.addoption(
+        "--mortgage_path", action="store", default=None, help="path to Mortgage data"
+    )
