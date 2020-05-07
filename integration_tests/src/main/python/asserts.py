@@ -13,6 +13,7 @@
 # limitations under the License.
 
 from conftest import is_incompat, is_order_ignored
+from datetime import date
 import math
 from pyspark.sql import Row
 import pytest
@@ -68,6 +69,10 @@ def _assert_equal(cpu, gpu, incompat, path):
             assert cpu == gpu, "GPU and CPU float values are different at {}".format(path)
     elif isinstance(cpu, str):
         assert cpu == gpu, "GPU and CPU string values are different at {}".format(path)
+    elif isinstance(cpu, date):
+        assert cpu == gpu, "GPU and CPU date values are different at {}".format(path)
+    elif isinstance(cpu, bool):
+        assert cpu == gpu, "GPU and CPU boolean values are different at {}".format(path)
     elif (cpu == None):
         assert cpu == gpu, "GPU and CPU are not both null at {}".format(path)
     else:
