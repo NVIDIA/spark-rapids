@@ -148,7 +148,7 @@ case class GpuWindowExec(windowExpressionAliases: Seq[GpuAlias],
         // Special-case handling for COUNT(1)/COUNT(*):
         // GpuCount aggregation expects to return LongType (INT64), but CUDF returns IntType (INT32) for COUNT() window
         // function. Must cast back up to INT64.
-        case GpuAggregateExpression(GpuCount(_), _, _, _) =>
+        case GpuAggregateExpression(GpuCount(_), _, _, _, _) =>
           aggResultTable.getColumn(0).castTo(DType.INT64) // Aggregation column is at index `0`.
 
         case _ =>
@@ -208,7 +208,7 @@ case class GpuWindowExec(windowExpressionAliases: Seq[GpuAlias],
         // Special-case handling for COUNT(1)/COUNT(*):
         // GpuCount aggregation expects to return LongType (INT64), but CUDF returns IntType (INT32) for COUNT() window
         // function. Must cast back up to INT64.
-        case GpuAggregateExpression(GpuCount(_), _, _, _) =>
+        case GpuAggregateExpression(GpuCount(_), _, _, _, _) =>
           aggResultTable.getColumn(0).castTo(DType.INT64) // Aggregation column is at index `0`
 
         case _ =>
