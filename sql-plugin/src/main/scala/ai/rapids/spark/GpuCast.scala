@@ -59,80 +59,50 @@ object GpuCast {
    * Eventually we will need to match what is supported by spark proper
    * https://github.com/apache/spark/blob/master/sql/catalyst/src/main/scala/org/apache/spark/sql/catalyst/expressions/Cast.scala#L37-L95
    */
-  def canCast(from: DataType, to: DataType, ansiMode: Boolean = false): Boolean = {
-
-    if (ansiMode) {
-      // TODO merge the ansiMode branches into a single branch by perhaps if-guarding if needed. Spark
-      // doesn't take ansiMode into account in their canCast method
-      (from, to) match {
-        ///////////////////////////////////////////////////////////////////////////
-        // Casts which require no special handling when ansi mode is enabled
-        ///////////////////////////////////////////////////////////////////////////
-        case (fromType, toType) if fromType == toType => true
-
-        case (BooleanType, ByteType|ShortType|IntegerType|LongType|FloatType|DoubleType) => true
-        case (BooleanType, TimestampType) => true
-        case (BooleanType, StringType) => true
-
-        case (ByteType|ShortType|IntegerType|LongType, BooleanType) => true
-        case (ByteType|ShortType|IntegerType|LongType, FloatType|DoubleType) => true
-        case (ByteType|ShortType|IntegerType|LongType, StringType) => true
-
-        case (FloatType|DoubleType, FloatType|DoubleType) => true
-        case (FloatType|DoubleType, BooleanType) => true
-        case (FloatType|DoubleType, StringType) => true
-
-        case (TimestampType, BooleanType) => true
-        case (TimestampType, LongType) => true
-
-        case (ByteType|ShortType|IntegerType|LongType, TimestampType) => true
-
-        ///////////////////////////////////////////////////////////////////////////
-        // Ansi casts which require special handling or are not supported yet
-        ///////////////////////////////////////////////////////////////////////////
-
-        // ansi casts from numeric to integral types check for underflow/overflow
-        case (ByteType|ShortType|IntegerType|LongType,
-          ByteType|ShortType|IntegerType|LongType) => true
-        case (FloatType|DoubleType, ByteType|ShortType|IntegerType|LongType) => true
-
-        // ansi cast from string to boolean checks for non-boolean values
-        case (StringType, BooleanType) => true
-
-        // no special handling required.
-        case (DateType, BooleanType) => true
-        case (DateType, _: NumericType) => true
-        case (DateType, TimestampType) => true
-
-        // ansi casts from timestamp to Integral types is supported
-        case (TimestampType, LongType|IntegerType|ShortType|ByteType) => true
-
-        // all other casts are not yet supported in ansi mode
+  def canCast(from: DataType, to: DataType, ansiEnabled: Boolean = false): Boolean = {
+    if (from == to) {
+      return true
+    }
+    from match {
+      case BooleanType => to match {
+        case ByteType | ShortType | IntegerType | LongType => true
+        case FloatType | DoubleType => true
+        case TimestampType => true
+        case StringType => true
         case _ => false
       }
-    } else {
-      (from, to) match {
-        case (fromType, toType) if fromType == toType => true
-
-        case (ByteType|ShortType|IntegerType|LongType, _: StringType) => true
-        case (FloatType|DoubleType, _: StringType) => true
-
-        case (BooleanType, _: NumericType) => true
-
-        case (_: NumericType, BooleanType) => true
-        case (_: NumericType, _: NumericType) => true
-        case (_: NumericType, TimestampType) => true
-
-        case (DateType, BooleanType) => true
-        case (DateType, _: NumericType) => true
-        case (DateType, TimestampType) => true
-
-        case (TimestampType, BooleanType) => true
-        case (TimestampType, _: NumericType) => true
-        case (TimestampType, DateType) => true
-
-        case (StringType, BooleanType) => true
-
+      case ByteType | ShortType | IntegerType | LongType => to match {
+        case BooleanType => true
+        case ByteType | ShortType | IntegerType | LongType => true
+        case FloatType | DoubleType => true
+        case StringType => true
+        case TimestampType => true
+        case _ => false
+      }
+      case FloatType | DoubleType => to match {
+        case BooleanType => true
+        case ByteType | ShortType | IntegerType | LongType => true
+        case FloatType | DoubleType => true
+        case TimestampType => true
+        case _ => false
+      }
+      case DateType => to match {
+        case BooleanType => true
+        case ByteType | ShortType | IntegerType | LongType => true
+        case FloatType | DoubleType => true
+        case TimestampType => true
+        case _ => false
+      }
+      case TimestampType => to match {
+        case BooleanType => true
+        case ByteType | ShortType | IntegerType => true
+        case LongType => true
+        case FloatType | DoubleType => true
+        case DateType => true
+        case _ => false
+      }
+      case StringType => to match {
+        case BooleanType => true
         case _ => false
       }
     }
