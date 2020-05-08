@@ -1002,14 +1002,18 @@ object GpuOverrides {
     expr[AggregateExpression](
       "aggregate expression",
       (a, conf, p, r) => new ExprMeta[AggregateExpression](a, conf, p, r) {
-        override def tagExprForGpu(): Unit = {
-          if (a.filter.isDefined) {
-            willNotWorkOnGpu("Aggregate Expressions with filters are not supported on the GPU")
-          }
+        private val filter: Option[ExprMeta[_]] =
+          a.filter.map(GpuOverrides.wrapExpr(_, conf, Some(this)))
+        private val childrenExprMeta: Seq[ExprMeta[Expression]] =
+          a.children.map(GpuOverrides.wrapExpr(_, conf, Some(this)))
+        override val childExprs: Seq[ExprMeta[_]] = if (filter.isDefined) {
+          childrenExprMeta :+ filter.get
+        } else {
+          childrenExprMeta
         }
         override def convertToGpu(): GpuExpression =
           GpuAggregateExpression(childExprs.head.convertToGpu().asInstanceOf[GpuAggregateFunction],
-            a.mode, a.isDistinct, a.resultId)
+            a.mode, a.isDistinct, filter.map(_.convertToGpu()) ,a.resultId)
       }),
     expr[SortOrder](
       "sort order",
