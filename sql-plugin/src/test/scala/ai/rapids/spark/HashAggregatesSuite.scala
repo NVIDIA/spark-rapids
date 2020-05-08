@@ -19,7 +19,7 @@ package ai.rapids.spark
 import org.apache.spark.SparkConf
 import org.apache.spark.sql.execution.WholeStageCodegenExec
 import org.apache.spark.sql.execution.aggregate.SortAggregateExec
-import org.apache.spark.sql.{DataFrame, SparkSession}
+import org.apache.spark.sql.{AnalysisException, DataFrame, SparkSession}
 import org.apache.spark.sql.functions._
 import org.apache.spark.sql.types.{DataType, DataTypes}
 
@@ -1221,5 +1221,72 @@ class HashAggregatesSuite extends SparkQueryCompareTestSuite {
     frame => val result = frame.agg(avg("ints"))
       checkExecNode(result)
       result
+  }
+
+  testSparkResultsAreEqual("Avg with filter", longsFromCSVDf, conf = floatAggConf) {
+    frame => val res = frame.selectExpr("avg(longs) filter (where longs < 5)")
+      res
+  }
+
+  testSparkResultsAreEqual("Sum with filter", longsFromCSVDf) {
+    frame => val res = frame.selectExpr("sum(longs) filter (where longs < 10)")
+      res
+  }
+
+  IGNORE_ORDER_testSparkResultsAreEqual("Avg with filter grpBy", longsFromCSVDf,
+    conf = floatAggConf) {
+    frame => frame.createOrReplaceTempView("testTable")
+      frame.sparkSession.sql(
+        s"""
+           | SELECT
+           |   avg(longs) filter (where longs < 20)
+           | FROM testTable
+           |   group by more_longs
+           |""".stripMargin)
+  }
+
+  IGNORE_ORDER_testSparkResultsAreEqual("Avg with 2 filter grpBy", longsFromCSVDf,
+    conf = floatAggConf) {
+    frame => frame.createOrReplaceTempView("testTable")
+      frame.sparkSession.sql(
+        s"""
+           | SELECT
+           |   avg(longs) filter (where longs < 20),
+           |   avg(more_longs) filter (where more_longs < 30)
+           | FROM testTable
+           |   group by more_longs
+           |""".stripMargin)
+  }
+
+  IGNORE_ORDER_testSparkResultsAreEqual("Sum with filter grpBy", longsFromCSVDf,
+    conf = floatAggConf) {
+    frame => frame.createOrReplaceTempView("testTable")
+      frame.sparkSession.sql(
+        s"""
+           | SELECT
+           |   sum(longs) filter (where longs < 20)
+           | FROM testTable
+           |   group by more_longs
+           |""".stripMargin)
+  }
+
+  testSparkResultsAreEqual("Count with filter", longsFromCSVDf,
+    conf = floatAggConf) {
+    frame => val res = frame.selectExpr("count(longs) filter (where longs < 5)")
+      res
+  }
+
+  testSparkResultsAreEqual("Max with filter", longsFromCSVDf) {
+    frame => val res = frame.selectExpr("max(longs) filter (where longs < 10)")
+      res
+  }
+
+  // A test that verifies that Distinct with Filter is not supported on the CPU or the GPU.
+  testExpectedExceptionStartsWith("Avg Distinct with filter - unsupported on CPU and GPU",
+    classOf[AnalysisException],
+    "DISTINCT and FILTER cannot be used in aggregate functions at the same time",
+    longsFromCSVDf, conf = floatAggConf) {
+    frame => val res = frame.selectExpr("avg(distinct longs) filter (where longs < 5)")
+      res
   }
 }
