@@ -16,15 +16,174 @@
 
 package ai.rapids.spark
 
+import java.sql.Timestamp
 import java.util.TimeZone
 
 import org.apache.spark.SparkConf
+import org.apache.spark.sql.catalyst.expressions.Cast
 import org.apache.spark.sql.functions.col
 import org.apache.spark.sql.types._
 import org.apache.spark.sql.{DataFrame, SparkSession}
 
 class CastOpSuite extends GpuExpressionTestSuite {
+  import CastOpSuite._
+
   private val timestampDatesMsecParquet = frameFromParquet("timestamp-date-test-msec.parquet")
+
+  /** Data types supported by the plugin. */
+  protected val supportedTypes = Seq(DataTypes.BooleanType,
+    DataTypes.ByteType, DataTypes.ShortType, DataTypes.IntegerType, DataTypes.LongType,
+    DataTypes.FloatType, DataTypes.DoubleType,
+    DataTypes.DateType, DataTypes.TimestampType,
+    DataTypes.StringType
+  )
+
+  /** Produces a matrix of all possible casts. */
+  protected def typeMatrix: Seq[(DataType, DataType)] = {
+    for (from <- supportedTypes; to <- supportedTypes) yield (from, to)
+  }
+
+  test("Test all supported casts with in-range values") {
+
+    // test cast() and ansi_cast()
+    Seq(false, true).foreach { ansiEnabled =>
+
+      val conf = new SparkConf()
+        .set(RapidsConf.ENABLE_CAST_FLOAT_TO_STRING.key, "true")
+        .set("spark.sql.ansi.enabled", String.valueOf(ansiEnabled))
+
+      typeMatrix.foreach {
+        case (from, to) =>
+          // check if Spark supports this cast
+          if (Cast.canCast(from, to)) {
+            // check if plugin supports this cast
+            if (GpuCast.canCast(from, to, ansiEnabled)) {
+              // test the cast
+              try {
+                val (fromCpu, fromGpu) = runOnCpuAndGpu(generateInRangeTestData(from, to, ansiEnabled),
+                  frame => frame.select(col("c0").cast(to))
+                    .orderBy(col("c0")), conf)
+
+                (from, to) match {
+
+                  case (DataTypes.FloatType|DataTypes.DoubleType, DataTypes.StringType) =>
+                    // specific comparison logic required for this cast
+                    fromCpu.zip(fromGpu).foreach {
+                      case (c, g) =>
+                        val cpuValue = c.getAs[String](0)
+                        val gpuValue = g.getAs[String](0)
+                        if (!compareStringifiedFloats(cpuValue, gpuValue)) {
+                          fail(s"Running on the GPU and on the CPU did not match: CPU " +
+                            s"value: $cpuValue. GPU value: $gpuValue.")
+                        }
+                    }
+
+                  case _ =>
+                    compareResults(sort = false, 0.00001, fromCpu, fromGpu)
+                }
+
+              } catch {
+                case e: Exception =>
+                  fail(s"Cast from $from to $to failed; ansi=$ansiEnabled", e)
+              }
+            }
+          } else {
+            // if Spark doesn't support this cast then the plugin shouldn't either
+            assert(!GpuCast.canCast(from, to))
+          }
+      }
+    }
+  }
+
+  test("Test unsupported cast") {
+    // this test tracks currently unsupported casts and will need updating as more casts are
+    // supported
+    val unsupported = getUnsupportedCasts(false)
+    val expected = List((FloatType,StringType),
+      (DoubleType,StringType),
+      (DateType,StringType),
+      (TimestampType,StringType),
+      (StringType,ByteType),
+      (StringType,ShortType),
+      (StringType,IntegerType),
+      (StringType,LongType),
+      (StringType,FloatType),
+      (StringType,DoubleType),
+      (StringType,DateType),
+      (StringType,TimestampType))
+    assert(unsupported == expected)
+  }
+
+  test("Test unsupported ansi_cast") {
+    // this test tracks currently unsupported ansi_casts and will need updating as more casts are
+    // supported
+    val unsupported = getUnsupportedCasts(true)
+    val expected = List((FloatType,StringType),
+      (DoubleType,StringType),
+      (DateType,StringType),
+      (TimestampType,StringType),
+      (StringType,ByteType),
+      (StringType,ShortType),
+      (StringType,IntegerType),
+      (StringType,LongType),
+      (StringType,FloatType),
+      (StringType,DoubleType),
+      (StringType,DateType),
+      (StringType,TimestampType))
+
+    assert(unsupported == expected)
+  }
+
+  private def getUnsupportedCasts(ansiEnabled: Boolean) = {
+    val unsupported = typeMatrix.flatMap {
+      case (from, to) =>
+        if (Cast.canCast(from, to) && !GpuCast.canCast(from, to, ansiEnabled)) {
+          Some((from, to))
+        } else {
+          None
+        }
+    }
+    unsupported
+  }
+
+  protected def generateInRangeTestData(from: DataType,
+    to: DataType,
+    ansiEnabled: Boolean)(spark: SparkSession): DataFrame = {
+
+    // provide test data that won't cause overflows (separate tests exist for overflow cases)
+    (from, to) match {
+
+      case (DataTypes.FloatType, DataTypes.TimestampType) => timestampsAsFloats(spark)
+      case (DataTypes.DoubleType, DataTypes.TimestampType) => timestampsAsDoubles(spark)
+
+      case (DataTypes.TimestampType, DataTypes.ByteType) => bytesAsTimestamps(spark)
+      case (DataTypes.TimestampType, DataTypes.ShortType) => shortsAsTimestamps(spark)
+      case (DataTypes.TimestampType, DataTypes.IntegerType) => intsAsTimestamps(spark)
+      case (DataTypes.TimestampType, DataTypes.LongType) => longsAsTimestamps(spark)
+
+      case (DataTypes.StringType, DataTypes.BooleanType) if ansiEnabled => validBoolStrings(spark)
+
+      case (DataTypes.ShortType, DataTypes.ByteType) if ansiEnabled => bytesAsShorts(spark)
+      case (DataTypes.IntegerType, DataTypes.ByteType) if ansiEnabled => bytesAsInts(spark)
+      case (DataTypes.LongType, DataTypes.ByteType) if ansiEnabled => bytesAsLongs(spark)
+      case (DataTypes.FloatType, DataTypes.ByteType) if ansiEnabled => bytesAsFloats(spark)
+      case (DataTypes.DoubleType, DataTypes.ByteType) if ansiEnabled => bytesAsDoubles(spark)
+
+      case (DataTypes.IntegerType, DataTypes.ShortType) if ansiEnabled => shortsAsInts(spark)
+      case (DataTypes.LongType, DataTypes.ShortType) if ansiEnabled => shortsAsLongs(spark)
+      case (DataTypes.FloatType, DataTypes.ShortType) if ansiEnabled => shortsAsFloats(spark)
+      case (DataTypes.DoubleType, DataTypes.ShortType) if ansiEnabled => shortsAsDoubles(spark)
+
+      case (DataTypes.LongType, DataTypes.IntegerType) if ansiEnabled => intsAsLongs(spark)
+      case (DataTypes.FloatType, DataTypes.IntegerType) if ansiEnabled => intsAsFloats(spark)
+      case (DataTypes.DoubleType, DataTypes.IntegerType) if ansiEnabled => intsAsDoubles(spark)
+
+      case (DataTypes.FloatType, DataTypes.LongType) if ansiEnabled => longsAsFloats(spark)
+      case (DataTypes.DoubleType, DataTypes.LongType) if ansiEnabled => longsAsDoubles(spark)
+
+      case _ => FuzzerUtils.createDataFrame(from)(spark)
+    }
+  }
 
   private def castToStringExpectedFun[T]: T => Option[String] = (d: T) => Some(String.valueOf(d))
 
@@ -44,11 +203,11 @@ class CastOpSuite extends GpuExpressionTestSuite {
     testCastToString[Long](DataTypes.LongType)
   }
 
-  test("cast float to string") {
+  ignore("cast float to string") {
     testCastToString[Float](DataTypes.FloatType, comparisonFunc = Some(compareStringifiedFloats))
   }
 
-  test("cast double to string") {
+  ignore("cast double to string") {
     testCastToString[Double](DataTypes.DoubleType, comparisonFunc = Some(compareStringifiedFloats))
   }
 
@@ -101,7 +260,7 @@ class CastOpSuite extends GpuExpressionTestSuite {
       col("doubles").cast(TimestampType))
   }
 
-  test("Test cast from double to string") {
+  ignore("Test cast from double to string") {
 
     //NOTE that the testSparkResultsAreEqual method isn't adequate in this case because we need to use
     // a specialized comparison function
@@ -198,9 +357,122 @@ class CastOpSuite extends GpuExpressionTestSuite {
       //, col("doubles").cast(TimestampType))
   }
 
+}
 
-  //  testSparkResultsAreEqual("Test cast from strings", doubleStringsDf) {
-  //    frame => frame.select(
-  //      col("doubles").cast(DoubleType))
-  //  }
+/** Data shared between CastOpSuite and AnsiCastOpSuite. */
+object CastOpSuite {
+
+  def bytesAsShorts(session: SparkSession): DataFrame = {
+    import session.sqlContext.implicits._
+    byteValues.map(_.toShort).toDF("c0")
+  }
+
+  def bytesAsInts(session: SparkSession): DataFrame = {
+    import session.sqlContext.implicits._
+    byteValues.map(_.toInt).toDF("c0")
+  }
+
+  def bytesAsLongs(session: SparkSession): DataFrame = {
+    import session.sqlContext.implicits._
+    byteValues.map(_.toLong).toDF("c0")
+  }
+
+  def bytesAsFloats(session: SparkSession): DataFrame = {
+    import session.sqlContext.implicits._
+    byteValues.map(_.toFloat).toDF("c0")
+  }
+
+  def bytesAsDoubles(session: SparkSession): DataFrame = {
+    import session.sqlContext.implicits._
+    byteValues.map(_.toDouble).toDF("c0")
+  }
+
+  def bytesAsTimestamps(session: SparkSession): DataFrame = {
+    import session.sqlContext.implicits._
+    byteValues.map(value => new Timestamp(value)).toDF("c0")
+  }
+
+  def shortsAsInts(session: SparkSession): DataFrame = {
+    import session.sqlContext.implicits._
+    shortValues.map(_.toInt).toDF("c0")
+  }
+
+  def shortsAsLongs(session: SparkSession): DataFrame = {
+    import session.sqlContext.implicits._
+    shortValues.map(_.toLong).toDF("c0")
+  }
+
+  def shortsAsFloats(session: SparkSession): DataFrame = {
+    import session.sqlContext.implicits._
+    shortValues.map(_.toFloat).toDF("c0")
+  }
+
+  def shortsAsDoubles(session: SparkSession): DataFrame = {
+    import session.sqlContext.implicits._
+    shortValues.map(_.toDouble).toDF("c0")
+  }
+
+  def shortsAsTimestamps(session: SparkSession): DataFrame = {
+    import session.sqlContext.implicits._
+    shortValues.map(value => new Timestamp(value)).toDF("c0")
+  }
+
+  def intsAsLongs(session: SparkSession): DataFrame = {
+    import session.sqlContext.implicits._
+    intValues.map(_.toLong).toDF("c0")
+  }
+
+  def intsAsFloats(session: SparkSession): DataFrame = {
+    import session.sqlContext.implicits._
+    intValues.map(_.toFloat).toDF("c0")
+  }
+
+  def intsAsDoubles(session: SparkSession): DataFrame = {
+    import session.sqlContext.implicits._
+    intValues.map(_.toDouble).toDF("c0")
+  }
+
+  def intsAsTimestamps(session: SparkSession): DataFrame = {
+    import session.sqlContext.implicits._
+    intValues.map(value => new Timestamp(value)).toDF("c0")
+  }
+
+  def longsAsFloats(session: SparkSession): DataFrame = {
+    import session.sqlContext.implicits._
+    longValues.map(_.toFloat).toDF("c0")
+  }
+
+  def longsAsDoubles(session: SparkSession): DataFrame = {
+    import session.sqlContext.implicits._
+    longValues.map(_.toDouble).toDF("c0")
+  }
+
+  def longsAsTimestamps(session: SparkSession): DataFrame = {
+    import session.sqlContext.implicits._
+    timestampValues.map(value => new Timestamp(value)).toDF("c0")
+  }
+
+  def timestampsAsFloats(session: SparkSession): DataFrame = {
+    import session.sqlContext.implicits._
+    timestampValues.map(_.toFloat).toDF("c0")
+  }
+
+  def timestampsAsDoubles(session: SparkSession): DataFrame = {
+    import session.sqlContext.implicits._
+    timestampValues.map(_.toDouble).toDF("c0")
+  }
+
+  protected def validBoolStrings(spark: SparkSession): DataFrame = {
+    import spark.implicits._
+    val boolStrings: Seq[String] = Seq("t", "true", "y", "yes", "1") ++
+      Seq("f", "false", "n", "no", "0")
+    boolStrings.toDF("c0")
+  }
+
+  private val byteValues: Seq[Byte] = Seq(Byte.MinValue, Byte.MaxValue, 0, -0, -1, 1)
+  private val shortValues: Seq[Short] = Seq(Short.MinValue, Short.MaxValue, 0, -0, -1, 1)
+  private val intValues: Seq[Int] = Seq(Int.MinValue, Int.MaxValue, 0, -0, -1, 1)
+  private val longValues: Seq[Long] = Seq(Long.MinValue, Long.MaxValue, 0, -0, -1, 1)
+  private val timestampValues: Seq[Long] = Seq(6321706291000L)
+
 }

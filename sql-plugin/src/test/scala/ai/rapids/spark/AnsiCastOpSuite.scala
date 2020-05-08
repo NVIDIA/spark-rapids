@@ -30,6 +30,8 @@ import scala.util.Random
 
 class AnsiCastOpSuite extends GpuExpressionTestSuite {
 
+  import CastOpSuite._
+
   private val sparkConf = new SparkConf()
     .set("spark.sql.ansi.enabled", "true")
     .set("spark.sql.storeAssignmentPolicy", "ANSI") // note this is the default in 3.0.0
@@ -222,12 +224,12 @@ class AnsiCastOpSuite extends GpuExpressionTestSuite {
   // Ansi cast from floating point to string
   ///////////////////////////////////////////////////////////////////////////
 
-  test("ansi_cast float to string") {
+  ignore("ansi_cast float to string") {
     testCastToString[Float](DataTypes.FloatType, ansiMode = true,
       comparisonFunc = Some(compareStringifiedFloats))
   }
 
-  test("ansi_cast double to string") {
+  ignore("ansi_cast double to string") {
     testCastToString[Double](DataTypes.DoubleType, ansiMode = true,
       comparisonFunc = Some(compareStringifiedFloats))
   }
@@ -236,7 +238,7 @@ class AnsiCastOpSuite extends GpuExpressionTestSuite {
 
   private def testCastToString[T](dataType: DataType, ansiMode: Boolean,
       comparisonFunc: Option[(String, String) => Boolean] = None) {
-    assert(GpuCast.canCast(dataType, DataTypes.StringType, ansiMode = true))
+    assert(GpuCast.canCast(dataType, DataTypes.StringType, ansiEnabled = true))
     val schema = FuzzerUtils.createSchema(Seq(dataType))
     val childExpr: GpuBoundReference = GpuBoundReference(0, dataType, nullable = false)
     checkEvaluateGpuUnaryExpression(GpuCast(childExpr, DataTypes.StringType, ansiMode = true),
@@ -553,76 +555,6 @@ class AnsiCastOpSuite extends GpuExpressionTestSuite {
     df
   }
 
-  def bytesAsShorts(session: SparkSession): DataFrame = {
-    import session.sqlContext.implicits._
-    byteValues.map(_.toShort).toDF("c0")
-  }
-
-  def bytesAsInts(session: SparkSession): DataFrame = {
-    import session.sqlContext.implicits._
-    byteValues.map(_.toInt).toDF("c0")
-  }
-
-  def bytesAsLongs(session: SparkSession): DataFrame = {
-    import session.sqlContext.implicits._
-    byteValues.map(_.toLong).toDF("c0")
-  }
-
-  def bytesAsFloats(session: SparkSession): DataFrame = {
-    import session.sqlContext.implicits._
-    byteValues.map(_.toFloat).toDF("c0")
-  }
-
-  def bytesAsDoubles(session: SparkSession): DataFrame = {
-    import session.sqlContext.implicits._
-    byteValues.map(_.toDouble).toDF("c0")
-  }
-
-  def shortsAsInts(session: SparkSession): DataFrame = {
-    import session.sqlContext.implicits._
-    shortValues.map(_.toInt).toDF("c0")
-  }
-
-  def shortsAsLongs(session: SparkSession): DataFrame = {
-    import session.sqlContext.implicits._
-    shortValues.map(_.toLong).toDF("c0")
-  }
-
-  def shortsAsFloats(session: SparkSession): DataFrame = {
-    import session.sqlContext.implicits._
-    shortValues.map(_.toFloat).toDF("c0")
-  }
-
-  def shortsAsDoubles(session: SparkSession): DataFrame = {
-    import session.sqlContext.implicits._
-    shortValues.map(_.toDouble).toDF("c0")
-  }
-
-  def intsAsLongs(session: SparkSession): DataFrame = {
-    import session.sqlContext.implicits._
-    intValues.map(_.toLong).toDF("c0")
-  }
-
-  def intsAsFloats(session: SparkSession): DataFrame = {
-    import session.sqlContext.implicits._
-    intValues.map(_.toFloat).toDF("c0")
-  }
-
-  def intsAsDoubles(session: SparkSession): DataFrame = {
-    import session.sqlContext.implicits._
-    intValues.map(_.toDouble).toDF("c0")
-  }
-
-  def longsAsFloats(session: SparkSession): DataFrame = {
-    import session.sqlContext.implicits._
-    longValues.map(_.toFloat).toDF("c0")
-  }
-
-  def longsAsDoubles(session: SparkSession): DataFrame = {
-    import session.sqlContext.implicits._
-    longValues.map(_.toDouble).toDF("c0")
-  }
-
   private def testBools = testData(DataTypes.BooleanType)(_)
   private def testBytes = testData(DataTypes.ByteType)(_)
   private def testShorts = testData(DataTypes.ShortType)(_)
@@ -633,11 +565,6 @@ class AnsiCastOpSuite extends GpuExpressionTestSuite {
   private def testStrings = testData(DataTypes.StringType)(_)
   private def testTimestamps = testData(DataTypes.TimestampType)(_)
   private def testDates = testData(DataTypes.DateType)(_)
-
-  private val byteValues: Seq[Byte] = Seq(Byte.MinValue, Byte.MaxValue, 0, -0, -1, 1)
-  private val shortValues: Seq[Short] = Seq(Short.MinValue, Short.MaxValue, 0, -0, -1, 1)
-  private val intValues: Seq[Int] = Seq(Int.MinValue, Int.MaxValue, 0, -0, -1, 1)
-  private val longValues: Seq[Long] = Seq(Long.MinValue, Long.MaxValue, 0, -0, -1, 1)
 
   private val HIVE_BOOL_SQL_TYPE = "BOOLEAN"
   private val HIVE_LONG_SQL_TYPE = "BIGINT"

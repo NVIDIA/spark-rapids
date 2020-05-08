@@ -177,6 +177,9 @@ object FuzzerUtils {
     })
   }
 
+  def createDataFrame(dt: DataType)(spark: SparkSession, rowCount: Int = 100) = {
+    generateDataFrame(spark, createSchema(Seq(dt)), rowCount)
+  }
 }
 
 /**
