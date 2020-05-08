@@ -47,12 +47,12 @@ class LogOperatorsSuite extends SparkQueryCompareTestSuite {
     conf: SparkConf = new SparkConf(),
     sort: Boolean = false,
     sortBeforeRepart: Boolean = false,
-    incompat: Boolean = true,
+    incompat: Boolean = false,
     execsAllowedNonGpu: Seq[String] = Seq.empty)(f: DataFrame => DataFrame): Unit = {
 
     val (testConf, qualifiedTestName) =
       setupTestConfAndQualifierName(testName, incompat, sort, conf, execsAllowedNonGpu,
-        sortBeforeRepart)
+        maxFloatDiff, sortBeforeRepart)
 
     test(qualifiedTestName) {
       testUnaryFunction(testConf,(1 to 20), maxFloatDiff = maxFloatDiff)(f)

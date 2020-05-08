@@ -27,8 +27,6 @@ class HashAggregatesSuite extends SparkQueryCompareTestSuite {
   private val floatAggConf: SparkConf = new SparkConf().set(
     RapidsConf.ENABLE_FLOAT_AGG.key, "true").set(RapidsConf.HAS_NANS.key, "false")
 
-  private val execsAllowedNonGpu: Seq[String] =
-    Seq("HashAggregateExec", "AggregateExpression", "AttributeReference", "Alias")
   def replaceHashAggMode(mode: String, conf: SparkConf = new SparkConf()): SparkConf = {
     // configures whether Plugin will replace certain aggregate exec nodes
     conf.set("spark.rapids.sql.hashAgg.replaceMode", mode)
@@ -339,7 +337,9 @@ class HashAggregatesSuite extends SparkQueryCompareTestSuite {
 
   FLOAT_TEST_testSparkResultsAreEqual("partial on gpu: float basic aggregates group by more_floats", floatCsvDf,
     conf = replaceHashAggMode("partial"),
-    execsAllowedNonGpu = execsAllowedNonGpu) {
+    execsAllowedNonGpu = Seq("HashAggregateExec", "AggregateExpression", "AttributeReference",
+      "Alias", "Literal", "Min", "Sum", "Max", "Average", "Add", "Multiply", "Subtract", "Cast",
+      "Count")) {
     frame => frame.groupBy("more_floats").agg(
       lit(456f),
       min(col("floats")) + lit(123),
@@ -354,7 +354,9 @@ class HashAggregatesSuite extends SparkQueryCompareTestSuite {
 
   FLOAT_TEST_testSparkResultsAreEqual("final on gpu: float basic aggregates group by more_floats", floatCsvDf,
     conf = replaceHashAggMode("final"),
-    execsAllowedNonGpu = execsAllowedNonGpu) {
+    execsAllowedNonGpu = Seq("HashAggregateExec", "AggregateExpression", "AttributeReference",
+      "Alias", "Literal", "Min", "Sum", "Max", "Average", "Add", "Multiply", "Subtract", "Cast",
+      "Count", "KnownFloatingPointNormalized", "NormalizeNaNAndZero")) {
     frame => frame.groupBy("more_floats").agg(
       lit(456f),
       min(col("floats")) + lit(123),
@@ -669,13 +671,15 @@ class HashAggregatesSuite extends SparkQueryCompareTestSuite {
 
   FLOAT_TEST_testSparkResultsAreEqual("partial on gpu: empty df: grouped count", floatCsvDf,
     conf = replaceHashAggMode("partial"),
-    execsAllowedNonGpu = execsAllowedNonGpu) {
+    execsAllowedNonGpu = Seq("HashAggregateExec", "AggregateExpression", "AttributeReference",
+      "Alias", "Count", "Literal")) {
     frame => frame.filter("floats > 10000000.0").groupBy("floats").agg(count("*"))
   }
 
   FLOAT_TEST_testSparkResultsAreEqual("final on gpu: empty df: grouped count", floatCsvDf,
     conf = replaceHashAggMode("final"),
-    execsAllowedNonGpu = execsAllowedNonGpu) {
+    execsAllowedNonGpu = Seq("HashAggregateExec", "AggregateExpression", "AttributeReference",
+      "Alias", "Count", "Literal", "KnownFloatingPointNormalized", "NormalizeNaNAndZero")) {
     frame => frame.filter("floats > 10000000.0").groupBy("floats").agg(count("*"))
   }
 
@@ -696,7 +700,9 @@ class HashAggregatesSuite extends SparkQueryCompareTestSuite {
 
   FLOAT_TEST_testSparkResultsAreEqual("partial on gpu: empty df: float basic aggregates group by floats", floatCsvDf,
     conf = replaceHashAggMode("partial"),
-    execsAllowedNonGpu = execsAllowedNonGpu) {
+    execsAllowedNonGpu = Seq("HashAggregateExec", "AggregateExpression", "AttributeReference",
+      "Alias", "Literal", "Min", "Sum", "Max", "Average", "Add", "Multiply", "Subtract", "Cast",
+      "First", "Last", "Count")) {
     frame => frame.filter("floats > 10000000.0").groupBy("floats").agg(
       lit(456f),
       min(col("floats")) + lit(123),
@@ -713,7 +719,9 @@ class HashAggregatesSuite extends SparkQueryCompareTestSuite {
 
   FLOAT_TEST_testSparkResultsAreEqual("final on gpu: empty df: float basic aggregates group by floats", floatCsvDf,
     conf = replaceHashAggMode("final"),
-    execsAllowedNonGpu = execsAllowedNonGpu) {
+    execsAllowedNonGpu = Seq("HashAggregateExec", "AggregateExpression", "AttributeReference",
+      "Alias", "Literal", "Min", "Sum", "Max", "Average", "Add", "Multiply", "Subtract", "Cast",
+      "First", "Last", "Count", "KnownFloatingPointNormalized", "NormalizeNaNAndZero")) {
     frame => frame.filter("floats > 10000000.0").groupBy("floats").agg(
       lit(456f),
       min(col("floats")) + lit(123),
@@ -729,7 +737,8 @@ class HashAggregatesSuite extends SparkQueryCompareTestSuite {
   }
 
   testSparkResultsAreEqual("Agg expression with filter fall back", longsFromCSVDf,
-    execsAllowedNonGpu = execsAllowedNonGpu) {
+    execsAllowedNonGpu = Seq("HashAggregateExec", "AggregateExpression", "AttributeReference",
+      "Alias", "Literal", "Count", "GreaterThan")) {
     frame => frame.selectExpr("count(1) filter (where longs > 20)")
   }
 
@@ -881,7 +890,8 @@ class HashAggregatesSuite extends SparkQueryCompareTestSuite {
 
   IGNORE_ORDER_ALLOW_NON_GPU_testSparkResultsAreEqual(
     "PartMerge:countDistinct:sum:partOnly", longsFromCSVDf,
-    execsAllowedNonGpu = execsAllowedNonGpu, conf = partialOnlyConf, repart = 2) {
+    execsAllowedNonGpu = Seq("HashAggregateExec", "AggregateExpression", "AttributeReference",
+      "Alias", "Sum", "Count"), conf = partialOnlyConf, repart = 2) {
     frame => val result = frame.agg(countDistinct("longs"),
       sum("more_longs"))
       checkExecNode(result)
@@ -890,7 +900,8 @@ class HashAggregatesSuite extends SparkQueryCompareTestSuite {
 
   IGNORE_ORDER_ALLOW_NON_GPU_testSparkResultsAreEqual(
     "PartMerge:countDistinct:avg:partOnly",
-    longsFromCSVDf, execsAllowedNonGpu = execsAllowedNonGpu, conf = partialOnlyConf, repart = 2) {
+    longsFromCSVDf, execsAllowedNonGpu = Seq("HashAggregateExec", "AggregateExpression",
+      "AttributeReference", "Alias", "Average", "Count"), conf = partialOnlyConf, repart = 2) {
     frame => val result = frame.agg(countDistinct("longs"),
       avg("more_longs"))
       checkExecNode(result)
@@ -899,7 +910,8 @@ class HashAggregatesSuite extends SparkQueryCompareTestSuite {
 
   IGNORE_ORDER_ALLOW_NON_GPU_testSparkResultsAreEqual(
     "PartMerge:countDistinct:min:partOnly", longsFromCSVDf,
-    execsAllowedNonGpu = execsAllowedNonGpu, conf = partialOnlyConf, repart = 2) {
+    execsAllowedNonGpu = Seq("HashAggregateExec", "AggregateExpression", "AttributeReference",
+      "Alias", "Count", "Min"), conf = partialOnlyConf, repart = 2) {
     frame => val result = frame.agg(countDistinct("longs"),
       min("more_longs"))
       checkExecNode(result)
@@ -908,7 +920,8 @@ class HashAggregatesSuite extends SparkQueryCompareTestSuite {
 
   IGNORE_ORDER_ALLOW_NON_GPU_testSparkResultsAreEqual(
     "PartMerge:countDistinct:max:partOnly", longsFromCSVDf,
-    execsAllowedNonGpu = execsAllowedNonGpu, conf = partialOnlyConf, repart = 2) {
+    execsAllowedNonGpu = Seq("HashAggregateExec", "AggregateExpression", "AttributeReference",
+      "Alias", "Max", "Count"), conf = partialOnlyConf, repart = 2) {
     frame => val result = frame.agg(countDistinct("longs"),
       max("more_longs"))
       checkExecNode(result)
@@ -917,7 +930,8 @@ class HashAggregatesSuite extends SparkQueryCompareTestSuite {
 
   IGNORE_ORDER_ALLOW_NON_GPU_testSparkResultsAreEqual(
     "PartMerge:countDistinct:sum:finOnly", longsFromCSVDf,
-    execsAllowedNonGpu = execsAllowedNonGpu, conf = finalOnlyConf, repart = 2) {
+    execsAllowedNonGpu = Seq("HashAggregateExec", "AggregateExpression", "AttributeReference",
+      "Alias", "Sum", "Count"), conf = finalOnlyConf, repart = 2) {
     frame => val result = frame.agg(countDistinct("longs"),
       sum("more_longs"))
       checkExecNode(result)
@@ -926,7 +940,8 @@ class HashAggregatesSuite extends SparkQueryCompareTestSuite {
 
   IGNORE_ORDER_ALLOW_NON_GPU_testSparkResultsAreEqual(
     "PartMerge:countDistinct:avg:finOnly", longsFromCSVDf,
-    execsAllowedNonGpu = execsAllowedNonGpu, conf = finalOnlyConf, repart = 2) {
+    execsAllowedNonGpu = Seq("HashAggregateExec", "AggregateExpression", "AttributeReference",
+      "Alias", "Average", "Count"), conf = finalOnlyConf, repart = 2) {
     frame => val result = frame.agg(countDistinct("longs"),
       avg("more_longs"))
       checkExecNode(result)
@@ -935,7 +950,8 @@ class HashAggregatesSuite extends SparkQueryCompareTestSuite {
 
   IGNORE_ORDER_ALLOW_NON_GPU_testSparkResultsAreEqual(
     "PartMerge:countDistinct:min:finOnly", longsFromCSVDf,
-    execsAllowedNonGpu = execsAllowedNonGpu, conf = finalOnlyConf, repart = 2) {
+    execsAllowedNonGpu = Seq("HashAggregateExec", "AggregateExpression", "AttributeReference",
+      "Alias", "Min", "Count"), conf = finalOnlyConf, repart = 2) {
     frame => val result = frame.agg(countDistinct("longs"),
       min("more_longs"))
       checkExecNode(result)
@@ -944,7 +960,8 @@ class HashAggregatesSuite extends SparkQueryCompareTestSuite {
 
   IGNORE_ORDER_ALLOW_NON_GPU_testSparkResultsAreEqual(
     "PartMerge:countDistinct:max:finOnly", longsFromCSVDf,
-    execsAllowedNonGpu = execsAllowedNonGpu, conf = finalOnlyConf, repart = 2) {
+    execsAllowedNonGpu = Seq("HashAggregateExec", "AggregateExpression", "AttributeReference",
+      "Alias", "Max", "Count"), conf = finalOnlyConf, repart = 2) {
     frame => val result = frame.agg(countDistinct("longs"),
       max("more_longs"))
       checkExecNode(result)
@@ -953,7 +970,8 @@ class HashAggregatesSuite extends SparkQueryCompareTestSuite {
 
   IGNORE_ORDER_ALLOW_NON_GPU_testSparkResultsAreEqual(
     "PartMerge:groupBy:countDistinct:sum:partOnly", longsFromCSVDf,
-    execsAllowedNonGpu = execsAllowedNonGpu, conf = partialOnlyConf, repart = 2) {
+    execsAllowedNonGpu = Seq("HashAggregateExec", "AggregateExpression", "AttributeReference",
+      "Alias", "Sum", "Count"), conf = partialOnlyConf, repart = 2) {
     frame => val result = frame.groupBy("longs").agg(countDistinct("longs"),
       sum("more_longs"))
       checkExecNode(result)
@@ -962,7 +980,8 @@ class HashAggregatesSuite extends SparkQueryCompareTestSuite {
 
   IGNORE_ORDER_ALLOW_NON_GPU_testSparkResultsAreEqual(
     "PartMerge:groupBy:countDistinct:avg:partOnly", longsFromCSVDf,
-    execsAllowedNonGpu = execsAllowedNonGpu, conf = partialOnlyConf, repart = 2) {
+    execsAllowedNonGpu = Seq("HashAggregateExec", "AggregateExpression", "AttributeReference",
+      "Alias", "Average", "Count"), conf = partialOnlyConf, repart = 2) {
     frame => val result = frame.groupBy("longs").agg(countDistinct("longs"),
       avg("more_longs"))
       checkExecNode(result)
@@ -971,7 +990,8 @@ class HashAggregatesSuite extends SparkQueryCompareTestSuite {
 
   IGNORE_ORDER_ALLOW_NON_GPU_testSparkResultsAreEqual(
     "PartMerge:groupBy:countDistinct:min:partOnly", longsFromCSVDf,
-    execsAllowedNonGpu = execsAllowedNonGpu, conf = partialOnlyConf, repart = 2) {
+    execsAllowedNonGpu = Seq("HashAggregateExec", "AggregateExpression", "AttributeReference",
+      "Alias", "Min", "Count"), conf = partialOnlyConf, repart = 2) {
     frame => val result = frame.groupBy("longs").agg(countDistinct("longs"),
       min("more_longs"))
       checkExecNode(result)
@@ -980,7 +1000,8 @@ class HashAggregatesSuite extends SparkQueryCompareTestSuite {
 
   IGNORE_ORDER_ALLOW_NON_GPU_testSparkResultsAreEqual(
     "PartMerge:groupBy:countDistinct:max:partOnly", longsFromCSVDf,
-    execsAllowedNonGpu = execsAllowedNonGpu, conf = partialOnlyConf, repart = 2) {
+    execsAllowedNonGpu = Seq("HashAggregateExec", "AggregateExpression", "AttributeReference",
+      "Alias", "Max", "Count"), conf = partialOnlyConf, repart = 2) {
     frame => val result = frame.groupBy("longs").agg(countDistinct("longs"),
       max("more_longs"))
       checkExecNode(result)
@@ -989,7 +1010,8 @@ class HashAggregatesSuite extends SparkQueryCompareTestSuite {
 
   IGNORE_ORDER_ALLOW_NON_GPU_testSparkResultsAreEqual(
     "PartMerge:groupBy_2:countDistinct:sum:partOnly", longsFromCSVDf,
-    execsAllowedNonGpu = execsAllowedNonGpu, conf = partialOnlyConf, repart = 2) {
+    execsAllowedNonGpu = Seq("HashAggregateExec", "AggregateExpression", "AttributeReference",
+      "Alias", "Sum", "Count"), conf = partialOnlyConf, repart = 2) {
     frame => val result = frame.groupBy("more_longs").agg(countDistinct("longs"),
       sum("more_longs"))
       checkExecNode(result)
@@ -998,7 +1020,8 @@ class HashAggregatesSuite extends SparkQueryCompareTestSuite {
 
   IGNORE_ORDER_ALLOW_NON_GPU_testSparkResultsAreEqual(
     "PartMerge:groupBy_2:countDistinct:avg:partOnly", longsFromCSVDf,
-    execsAllowedNonGpu = execsAllowedNonGpu, conf = partialOnlyConf, repart = 2) {
+    execsAllowedNonGpu = Seq("HashAggregateExec", "AggregateExpression", "AttributeReference",
+      "Alias", "Average", "Count"), conf = partialOnlyConf, repart = 2) {
     frame => val result = frame.groupBy("more_longs").agg(countDistinct("longs"),
       avg("more_longs"))
       checkExecNode(result)
@@ -1007,7 +1030,8 @@ class HashAggregatesSuite extends SparkQueryCompareTestSuite {
 
   IGNORE_ORDER_ALLOW_NON_GPU_testSparkResultsAreEqual(
     "PartMerge:groupBy_2:countDistinct:min:partOnly", longsFromCSVDf,
-    execsAllowedNonGpu = execsAllowedNonGpu, conf = partialOnlyConf, repart = 2) {
+    execsAllowedNonGpu = Seq("HashAggregateExec", "AggregateExpression", "AttributeReference",
+      "Alias", "Min", "Count"), conf = partialOnlyConf, repart = 2) {
     frame => val result = frame.groupBy("more_longs").agg(countDistinct("longs"),
       min("more_longs"))
       checkExecNode(result)
@@ -1016,7 +1040,8 @@ class HashAggregatesSuite extends SparkQueryCompareTestSuite {
 
   IGNORE_ORDER_ALLOW_NON_GPU_testSparkResultsAreEqual(
     "PartMerge:groupBy_2:countDistinct:max:partOnly", longsFromCSVDf,
-    execsAllowedNonGpu = execsAllowedNonGpu, conf = partialOnlyConf, repart = 2) {
+    execsAllowedNonGpu = Seq("HashAggregateExec", "AggregateExpression", "AttributeReference",
+      "Alias", "Max", "Count"), conf = partialOnlyConf, repart = 2) {
     frame => val result = frame.groupBy("more_longs").agg(countDistinct("longs"),
       max("more_longs"))
       checkExecNode(result)
@@ -1024,7 +1049,8 @@ class HashAggregatesSuite extends SparkQueryCompareTestSuite {
   }
   IGNORE_ORDER_ALLOW_NON_GPU_testSparkResultsAreEqual(
     "PartMerge:groupBy:countDistinct:sum:finOnly", longsFromCSVDf,
-    execsAllowedNonGpu = execsAllowedNonGpu, conf = finalOnlyConf, repart = 2) {
+    execsAllowedNonGpu = Seq("HashAggregateExec", "AggregateExpression", "AttributeReference",
+      "Alias", "Sum", "Count"), conf = finalOnlyConf, repart = 2) {
     frame => val result = frame.groupBy("longs").agg(countDistinct("longs"),
       sum("more_longs"))
       checkExecNode(result)
@@ -1033,7 +1059,8 @@ class HashAggregatesSuite extends SparkQueryCompareTestSuite {
 
   IGNORE_ORDER_ALLOW_NON_GPU_testSparkResultsAreEqual(
     "PartMerge:groupBy:countDistinct:avg:finOnly", longsFromCSVDf,
-    execsAllowedNonGpu = execsAllowedNonGpu, conf = finalOnlyConf, repart = 2) {
+    execsAllowedNonGpu = Seq("HashAggregateExec", "AggregateExpression", "AttributeReference",
+      "Alias", "Average", "Count"), conf = finalOnlyConf, repart = 2) {
     frame => val result = frame.groupBy("longs").agg(countDistinct("longs"),
       avg("more_longs"))
       checkExecNode(result)
@@ -1042,7 +1069,8 @@ class HashAggregatesSuite extends SparkQueryCompareTestSuite {
 
   IGNORE_ORDER_ALLOW_NON_GPU_testSparkResultsAreEqual(
     "PartMerge:groupBy:countDistinct:min:finOnly", longsFromCSVDf,
-    execsAllowedNonGpu = execsAllowedNonGpu, conf = finalOnlyConf, repart = 2) {
+    execsAllowedNonGpu = Seq("HashAggregateExec", "AggregateExpression", "AttributeReference",
+      "Alias", "Min", "Count"), conf = finalOnlyConf, repart = 2) {
     frame => val result = frame.groupBy("longs").agg(countDistinct("longs"),
       min("more_longs"))
       checkExecNode(result)
@@ -1051,7 +1079,8 @@ class HashAggregatesSuite extends SparkQueryCompareTestSuite {
 
   IGNORE_ORDER_ALLOW_NON_GPU_testSparkResultsAreEqual(
     "PartMerge:groupBy:countDistinct:max:finOnly", longsFromCSVDf,
-    execsAllowedNonGpu = execsAllowedNonGpu, conf = finalOnlyConf, repart = 2) {
+    execsAllowedNonGpu = Seq("HashAggregateExec", "AggregateExpression", "AttributeReference",
+      "Alias", "Max", "Count"), conf = finalOnlyConf, repart = 2) {
     frame => val result = frame.groupBy("longs").agg(countDistinct("longs"),
       max("more_longs"))
       checkExecNode(result)
@@ -1060,7 +1089,8 @@ class HashAggregatesSuite extends SparkQueryCompareTestSuite {
 
   IGNORE_ORDER_ALLOW_NON_GPU_testSparkResultsAreEqual(
     "PartMerge:groupBy_2:countDistinct:sum:finOnly", longsFromCSVDf,
-    execsAllowedNonGpu = execsAllowedNonGpu, conf = finalOnlyConf, repart = 2) {
+    execsAllowedNonGpu = Seq("HashAggregateExec", "AggregateExpression", "AttributeReference",
+      "Alias", "Sum", "Count"), conf = finalOnlyConf, repart = 2) {
     frame => val result = frame.groupBy("more_longs").agg(countDistinct("longs"),
       sum("more_longs"))
       checkExecNode(result)
@@ -1069,7 +1099,8 @@ class HashAggregatesSuite extends SparkQueryCompareTestSuite {
 
   IGNORE_ORDER_ALLOW_NON_GPU_testSparkResultsAreEqual(
     "PartMerge:groupBy_2:countDistinct:avg:finOnly", longsFromCSVDf,
-    execsAllowedNonGpu = execsAllowedNonGpu, conf = finalOnlyConf, repart = 2) {
+    execsAllowedNonGpu = Seq("HashAggregateExec", "AggregateExpression", "AttributeReference",
+      "Alias", "Average", "Count"), conf = finalOnlyConf, repart = 2) {
     frame => val result = frame.groupBy("more_longs").agg(countDistinct("longs"),
       avg("more_longs"))
       checkExecNode(result)
@@ -1078,7 +1109,8 @@ class HashAggregatesSuite extends SparkQueryCompareTestSuite {
 
   IGNORE_ORDER_ALLOW_NON_GPU_testSparkResultsAreEqual(
     "PartMerge:groupBy_2:countDistinct:min:finOnly", longsFromCSVDf,
-    execsAllowedNonGpu = execsAllowedNonGpu, conf = finalOnlyConf, repart = 2) {
+    execsAllowedNonGpu = Seq("HashAggregateExec", "AggregateExpression", "AttributeReference",
+      "Alias", "Min", "Count"), conf = finalOnlyConf, repart = 2) {
     frame => val result = frame.groupBy("more_longs").agg(countDistinct("longs"),
       min("more_longs"))
       checkExecNode(result)
@@ -1087,7 +1119,8 @@ class HashAggregatesSuite extends SparkQueryCompareTestSuite {
 
   IGNORE_ORDER_ALLOW_NON_GPU_testSparkResultsAreEqual(
     "PartMerge:groupBy_2:countDistinct:max:finOnly", longsFromCSVDf,
-    execsAllowedNonGpu = execsAllowedNonGpu, conf = finalOnlyConf, repart = 2) {
+    execsAllowedNonGpu = Seq("HashAggregateExec", "AggregateExpression", "AttributeReference",
+      "Alias", "Max", "Count"), conf = finalOnlyConf, repart = 2) {
     frame => val result = frame.groupBy("more_longs").agg(countDistinct("longs"),
       max("more_longs"))
       checkExecNode(result)
@@ -1096,7 +1129,8 @@ class HashAggregatesSuite extends SparkQueryCompareTestSuite {
 
   IGNORE_ORDER_ALLOW_NON_GPU_testSparkResultsAreEqual(
     "PartMerge:groupBy_2:countDistinctOnly:finOnly", longsFromCSVDf,
-    execsAllowedNonGpu = execsAllowedNonGpu, conf = finalOnlyConf, repart = 2) {
+    execsAllowedNonGpu = Seq("HashAggregateExec", "AggregateExpression", "AttributeReference",
+      "Alias", "Count"), conf = finalOnlyConf, repart = 2) {
     frame => val result =frame.groupBy("more_longs").agg(countDistinct("longs"))
       checkExecNode(result)
       result
@@ -1104,7 +1138,8 @@ class HashAggregatesSuite extends SparkQueryCompareTestSuite {
 
   IGNORE_ORDER_ALLOW_NON_GPU_testSparkResultsAreEqual(
     "PartMerge:groupBy:countDistinctOnly:finOnly", longsFromCSVDf,
-    execsAllowedNonGpu = execsAllowedNonGpu, conf = finalOnlyConf, repart = 2) {
+    execsAllowedNonGpu = Seq("HashAggregateExec", "AggregateExpression", "AttributeReference",
+      "Alias", "Count"), conf = finalOnlyConf, repart = 2) {
     frame => val result = frame.groupBy("longs").agg(countDistinct("longs"))
       checkExecNode(result)
       result
@@ -1112,7 +1147,8 @@ class HashAggregatesSuite extends SparkQueryCompareTestSuite {
 
   IGNORE_ORDER_ALLOW_NON_GPU_testSparkResultsAreEqual(
     "PartMerge:groupBy_2:countDistinctOnly:partOnly", longsFromCSVDf,
-    execsAllowedNonGpu = execsAllowedNonGpu, conf = partialOnlyConf, repart = 2) {
+    execsAllowedNonGpu = Seq("HashAggregateExec", "AggregateExpression", "AttributeReference",
+      "Alias", "Count"), conf = partialOnlyConf, repart = 2) {
     frame => val result = frame.groupBy("more_longs").agg(countDistinct("longs"))
       checkExecNode(result)
       result
@@ -1120,7 +1156,8 @@ class HashAggregatesSuite extends SparkQueryCompareTestSuite {
 
   IGNORE_ORDER_ALLOW_NON_GPU_testSparkResultsAreEqual(
     "PartMerge:groupBy:countDistinctOnly:partOnly", longsFromCSVDf,
-    execsAllowedNonGpu = execsAllowedNonGpu, conf = partialOnlyConf, repart = 2) {
+    execsAllowedNonGpu = Seq("HashAggregateExec", "AggregateExpression", "AttributeReference",
+      "Alias", "Count"), conf = partialOnlyConf, repart = 2) {
     frame => val result = frame.groupBy("longs").agg(countDistinct("longs"))
       checkExecNode(result)
       result
@@ -1171,7 +1208,8 @@ class HashAggregatesSuite extends SparkQueryCompareTestSuite {
 
   IGNORE_ORDER_ALLOW_NON_GPU_testSparkResultsAreEqual(
     "PartMerge:avgDistinct:count:PartOnly", longsFromCSVDf,
-    execsAllowedNonGpu = execsAllowedNonGpu, conf = partialOnlyConf, repart = 2) {
+    execsAllowedNonGpu = Seq("HashAggregateExec", "AggregateExpression", "AttributeReference",
+      "Alias", "Average", "Count"), conf = partialOnlyConf, repart = 2) {
     frame => val result = frame.selectExpr("avg(distinct longs)","count(longs)")
       checkExecNode(result)
       result
@@ -1179,7 +1217,8 @@ class HashAggregatesSuite extends SparkQueryCompareTestSuite {
 
   IGNORE_ORDER_ALLOW_NON_GPU_testSparkResultsAreEqual(
     "PartMerge:avgDistinct:count:FinOnly", longsFromCSVDf,
-    execsAllowedNonGpu = execsAllowedNonGpu, conf = finalOnlyConf, repart = 2) {
+    execsAllowedNonGpu = Seq("HashAggregateExec", "AggregateExpression", "AttributeReference",
+      "Alias", "Average", "Count"), conf = finalOnlyConf, repart = 2) {
     frame => val result = frame.selectExpr("avg(distinct longs)","count(longs)")
       checkExecNode(result)
       result
@@ -1187,7 +1226,8 @@ class HashAggregatesSuite extends SparkQueryCompareTestSuite {
 
   IGNORE_ORDER_ALLOW_NON_GPU_testSparkResultsAreEqual(
     "PartMerge:avgDistinct:count:2cols:PartOnly", longsFromCSVDf,
-    execsAllowedNonGpu = execsAllowedNonGpu, conf = partialOnlyConf, repart = 2) {
+    execsAllowedNonGpu = Seq("HashAggregateExec", "AggregateExpression", "AttributeReference",
+      "Alias", "Average", "Count"), conf = partialOnlyConf, repart = 2) {
     frame => val result = frame.selectExpr("avg(distinct longs)","count(more_longs)")
       checkExecNode(result)
       result
@@ -1195,7 +1235,8 @@ class HashAggregatesSuite extends SparkQueryCompareTestSuite {
 
   IGNORE_ORDER_ALLOW_NON_GPU_testSparkResultsAreEqual(
     "PartMerge:avgDistinct:count:2cols:FinOnly", longsFromCSVDf,
-    execsAllowedNonGpu = execsAllowedNonGpu, conf = finalOnlyConf,
+    execsAllowedNonGpu = Seq("HashAggregateExec", "AggregateExpression", "AttributeReference",
+      "Alias", "Average", "Count"), conf = finalOnlyConf,
     repart = 2) {
     frame => val result = frame.selectExpr("avg(distinct longs)","count(more_longs)")
       checkExecNode(result)
@@ -1217,7 +1258,8 @@ class HashAggregatesSuite extends SparkQueryCompareTestSuite {
   }
 
   IGNORE_ORDER_ALLOW_NON_GPU_testSparkResultsAreEqual("PartMerge:reduction_avg_partOnly",
-    intCsvDf, execsAllowedNonGpu = execsAllowedNonGpu, conf = partialOnlyConf, repart = 8) {
+    intCsvDf, execsAllowedNonGpu = Seq("HashAggregateExec", "AggregateExpression", "AttributeReference",
+      "Alias", "Average", "Cast"), conf = partialOnlyConf, repart = 8) {
     frame => val result = frame.agg(avg("ints"))
       checkExecNode(result)
       result

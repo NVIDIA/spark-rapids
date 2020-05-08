@@ -16,7 +16,7 @@ import pytest
 
 from asserts import assert_gpu_and_cpu_are_equal_collect, assert_gpu_and_cpu_are_equal_iterator
 from data_gen import *
-from marks import incompat
+from marks import incompat, approximate_float
 from pyspark.sql.types import *
 import pyspark.sql.functions as f
 
@@ -143,7 +143,7 @@ def test_abs(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : unary_op_df(spark, data_gen).selectExpr('abs(a)'))
 
-@incompat
+@approximate_float
 @pytest.mark.parametrize('data_gen', double_gens, ids=idfn)
 def test_asin(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
@@ -205,7 +205,7 @@ def test_shift_right_unsigned(data_gen):
                 'shiftrightunsigned(a, cast(null as INT))',
                 'shiftrightunsigned(a, b)'))
 
-@incompat
+@approximate_float
 @pytest.mark.parametrize('data_gen', double_gens, ids=idfn)
 def test_cbrt(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
@@ -249,111 +249,131 @@ def test_bit_not(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : unary_op_df(spark, data_gen).selectExpr('~a'))
 
-@incompat
+@approximate_float
 @pytest.mark.parametrize('data_gen', double_gens, ids=idfn)
 def test_radians(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : unary_op_df(spark, data_gen).selectExpr('radians(a)'))
 
-@incompat
+@approximate_float
 @pytest.mark.parametrize('data_gen', double_gens, ids=idfn)
 def test_cos(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : unary_op_df(spark, data_gen).selectExpr('cos(a)'))
 
-@incompat
+@approximate_float
 @pytest.mark.parametrize('data_gen', double_gens, ids=idfn)
 def test_acos(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : unary_op_df(spark, data_gen).selectExpr('acos(a)'))
 
-@incompat
-@pytest.mark.xfail(reason='SPAR-1124')
+@approximate_float
 @pytest.mark.parametrize('data_gen', double_gens, ids=idfn)
 def test_acosh(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : unary_op_df(spark, data_gen).selectExpr('acosh(a)'))
 
-@incompat
+# The default approximate is 1e-6 or 1 in a million
+# in some cases we need to adjust this because the algorithm is different
+@approximate_float(rel=1e-4, abs=1e-12)
+# Because spark will overflow on large exponents drop to something well below
+# what it fails at, note this is binary exponent, not base 10
+@pytest.mark.parametrize('data_gen', [DoubleGen(min_exp=-20, max_exp=20)], ids=idfn)
+def test_columnar_acosh_improved(data_gen):
+    assert_gpu_and_cpu_are_equal_collect(
+            lambda spark : unary_op_df(spark, data_gen).selectExpr('acosh(a)'),
+            {'spark.rapids.sql.improvedFloatOps.enabled': 'true'})
+
+@approximate_float
 @pytest.mark.parametrize('data_gen', double_gens, ids=idfn)
 def test_sin(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : unary_op_df(spark, data_gen).selectExpr('sin(a)'))
 
-@incompat
+@approximate_float
 @pytest.mark.parametrize('data_gen', double_gens, ids=idfn)
 def test_asin(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : unary_op_df(spark, data_gen).selectExpr('asin(a)'))
 
-@incompat
-@pytest.mark.xfail(reason='SPAR-1124')
+@approximate_float
 @pytest.mark.parametrize('data_gen', double_gens, ids=idfn)
 def test_asinh(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : unary_op_df(spark, data_gen).selectExpr('asinh(a)'))
 
-@incompat
+# The default approximate is 1e-6 or 1 in a million
+# in some cases we need to adjust this because the algorithm is different
+@approximate_float(rel=1e-4, abs=1e-12)
+# Because spark will overflow on large exponents drop to something well below
+# what it fails at, note this is binary exponent, not base 10
+@pytest.mark.parametrize('data_gen', [DoubleGen(min_exp=-20, max_exp=20)], ids=idfn)
+def test_columnar_asinh_improved(data_gen):
+    assert_gpu_and_cpu_are_equal_collect(
+            lambda spark : unary_op_df(spark, data_gen).selectExpr('asinh(a)'),
+            {'spark.rapids.sql.improvedFloatOps.enabled': 'true'})
+
+@approximate_float
 @pytest.mark.parametrize('data_gen', double_gens, ids=idfn)
 def test_tan(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : unary_op_df(spark, data_gen).selectExpr('tan(a)'))
 
-@incompat
+@approximate_float
 @pytest.mark.parametrize('data_gen', double_gens, ids=idfn)
 def test_atan(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : unary_op_df(spark, data_gen).selectExpr('atan(a)'))
 
-@incompat
+@approximate_float
 @pytest.mark.parametrize('data_gen', double_gens, ids=idfn)
 def test_atanh(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : unary_op_df(spark, data_gen).selectExpr('atanh(a)'))
 
-@incompat
+@approximate_float
 @pytest.mark.parametrize('data_gen', double_gens, ids=idfn)
 def test_cot(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : unary_op_df(spark, data_gen).selectExpr('cot(a)'))
 
-@incompat
+@approximate_float
 @pytest.mark.parametrize('data_gen', double_gens, ids=idfn)
 def test_exp(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : unary_op_df(spark, data_gen).selectExpr('exp(a)'))
 
-@incompat
+@approximate_float
 @pytest.mark.parametrize('data_gen', double_gens, ids=idfn)
 def test_expm1(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : unary_op_df(spark, data_gen).selectExpr('expm1(a)'))
 
-@incompat
+@approximate_float
 @pytest.mark.parametrize('data_gen', double_gens, ids=idfn)
 def test_log(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : unary_op_df(spark, data_gen).selectExpr('log(a)'))
 
-@incompat
+@approximate_float
 @pytest.mark.parametrize('data_gen', double_gens, ids=idfn)
 def test_log1p(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : unary_op_df(spark, data_gen).selectExpr('log1p(a)'))
 
-@incompat
+@approximate_float
 @pytest.mark.parametrize('data_gen', double_gens, ids=idfn)
 def test_log2(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : unary_op_df(spark, data_gen).selectExpr('log2(a)'))
 
-@incompat
+@approximate_float
 @pytest.mark.parametrize('data_gen', double_gens, ids=idfn)
 def test_log10(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : unary_op_df(spark, data_gen).selectExpr('log10(a)'))
 
-@incompat
+@approximate_float
 @pytest.mark.xfail(reason='SPAR-1125')
 def test_logarithm():
     # For the 'b' field include a lot more values that we would expect customers to use as a part of a log
@@ -367,7 +387,7 @@ def test_logarithm():
                 'log(a, cast(null as {}))'.format(string_type),
                 'log(a, b)'))
 
-@incompat
+@approximate_float
 def test_scalar_pow():
     # For the 'b' field include a lot more values that we would expect customers to use as a part of a pow
     data_gen = [('a', DoubleGen()),('b', DoubleGen().with_special_case(lambda rand: float(rand.randint(-16, 16)), weight=100.0))]
@@ -379,7 +399,7 @@ def test_scalar_pow():
                 'pow(cast(null as {}), a)'.format(string_type),
                 'pow(b, cast(null as {}))'.format(string_type)))
 
-@incompat
+@approximate_float
 @pytest.mark.xfail(reason='SPAR-1125')
 @pytest.mark.parametrize('data_gen', double_gens, ids=idfn)
 def test_columnar_pow(data_gen):

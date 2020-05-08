@@ -15,7 +15,7 @@
 import pytest
 
 from asserts import assert_gpu_and_cpu_are_equal_iterator
-from marks import incompat, ignore_order, allow_any_non_gpu
+from marks import approximate_float, incompat, ignore_order, allow_non_gpu, limit
 from spark_session import spark, get_jvm, get_jvm_session
 from pyspark.sql.dataframe import DataFrame
 
@@ -51,8 +51,10 @@ def mortgage(request):
     yield MortgageRunner(mortgage_format, mortgage_path)
 
 @incompat
+@approximate_float
+@limit
 @ignore_order
-@allow_any_non_gpu
+@allow_non_gpu(any=True)
 def test_mortgage(mortgage):
   assert_gpu_and_cpu_are_equal_iterator(
           lambda spark : mortgage.do_test_query(spark))

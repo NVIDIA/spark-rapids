@@ -469,6 +469,7 @@ trait SparkQueryCompareTestSuite extends FunSuite with Arm {
       sort: Boolean,
       conf: SparkConf,
       execsAllowedNonGpu: Seq[String],
+      maxFloatDiff: Double,
       sortBeforeRepart: Boolean): (SparkConf, String) = {
 
     var qualifiers = Set[String]()
@@ -476,7 +477,10 @@ trait SparkQueryCompareTestSuite extends FunSuite with Arm {
     if (incompat) {
       testConf = testConf.clone().set(RapidsConf.INCOMPATIBLE_OPS.key, "true")
       qualifiers = qualifiers + "INCOMPAT"
+    } else if (maxFloatDiff > 0.0) {
+      qualifiers = qualifiers + "APPROXIMATE FLOAT"
     }
+
     if (sort) {
       qualifiers = qualifiers + "IGNORE ORDER"
     }
@@ -543,7 +547,7 @@ trait SparkQueryCompareTestSuite extends FunSuite with Arm {
 
     val (testConf, qualifiedTestName) =
       setupTestConfAndQualifierName(testName, incompat, sort, conf, execsAllowedNonGpu,
-        sortBeforeRepart = sortBeforeRepart)
+        maxFloatDiff, sortBeforeRepart)
     test(qualifiedTestName) {
       val (fromCpu, fromGpu) = runOnCpuAndGpu(df, fun,
         conf = testConf,
@@ -587,7 +591,7 @@ trait SparkQueryCompareTestSuite extends FunSuite with Arm {
 
     val (testConf, qualifiedTestName) =
       setupTestConfAndQualifierName(testName, incompat, sort, conf, execsAllowedNonGpu,
-        sortBeforeRepart = sortBeforeRepart)
+        maxFloatDiff, sortBeforeRepart)
 
       test(qualifiedTestName) {
         val t = Try({
@@ -621,7 +625,7 @@ trait SparkQueryCompareTestSuite extends FunSuite with Arm {
 
     val (testConf, qualifiedTestName) =
       setupTestConfAndQualifierName(testName, incompat, sort, conf, execsAllowedNonGpu,
-        sortBeforeRepart = sortBeforeRepart)
+        maxFloatDiff, sortBeforeRepart)
 
     testConf.set("spark.sql.execution.sortBeforeRepartition", sortBeforeRepart.toString)
     test(qualifiedTestName) {
@@ -680,7 +684,7 @@ trait SparkQueryCompareTestSuite extends FunSuite with Arm {
       sort: Boolean = false): Unit = {
     val (testConf, qualifiedTestName) =
       setupTestConfAndQualifierName(testName, false, sort, conf, Nil,
-        sortBeforeRepart = sortBeforeRepart)
+        0.0, sortBeforeRepart)
 
     test(qualifiedTestName) {
       val (fromCpu, fromGpu) = writeWithCpuAndGpu(df, writer, reader, testConf)
