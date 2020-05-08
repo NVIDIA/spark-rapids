@@ -20,7 +20,8 @@ import ai.rapids.spark.GpuOverrides.wrapExpr
 import org.apache.spark.sql.catalyst.analysis.TypeCheckResult
 import org.apache.spark.sql.catalyst.analysis.TypeCheckResult.{TypeCheckFailure, TypeCheckSuccess}
 import org.apache.spark.sql.catalyst.expressions.aggregate.{AggregateExpression, AggregateFunction, Count, Max, Min, Sum}
-import org.apache.spark.sql.catalyst.expressions.{CurrentRow, Descending, Expression, FrameType, Literal, RangeFrame, RowFrame, SortOrder, SpecialFrameBoundary, SpecifiedWindowFrame, UnaryMinus, UnboundedFollowing, UnboundedPreceding, WindowExpression, WindowFrame, WindowSpecDefinition}
+import org.apache.spark.sql.catalyst.expressions.{CurrentRow, Expression, FrameType, Literal, RangeFrame, RowFrame, RowNumber, SortOrder, SpecialFrameBoundary, SpecifiedWindowFrame, UnaryMinus, UnboundedFollowing, UnboundedPreceding, WindowExpression, WindowFrame, WindowSpecDefinition}
+import org.apache.spark.sql.rapids.GpuDeclarativeAggregate
 import org.apache.spark.sql.types.{CalendarIntervalType, DataType, DateType, IntegerType, NullType, TimestampType}
 import org.apache.spark.unsafe.types.CalendarInterval
 
@@ -41,28 +42,29 @@ class GpuWindowExpressionMeta(
         "Expected only WindowFunction, and WindowSpecDefinition")
     }
 
-    if (!wrapped.windowFunction.isInstanceOf[AggregateExpression]) {
-      willNotWorkOnGpu("Only AggregateExpressions are supported on GPU as WindowFunctions. " +
-        s"Found ${wrapped.windowFunction.prettyName}")
-    } else {
-      wrapped.windowFunction.asInstanceOf[AggregateExpression].aggregateFunction match {
-        case Count(_) | Sum(_) | Min(_) | Max(_) => // Supported.
-        case other: AggregateFunction => willNotWorkOnGpu(s"AggregateFunction ${other.prettyName} " +
-          s"is not supported in windowing.")
-        case _ => willNotWorkOnGpu(s"Expression not supported in windowing.")
-      }
+    val windowFunction = wrapped.windowFunction
+
+    windowFunction match {
+      case aggregateExpression : AggregateExpression
+        =>
+        aggregateExpression.aggregateFunction match {
+          case Count(_) | Sum(_) | Min(_) | Max(_) => // Supported.
+          case other: AggregateFunction => willNotWorkOnGpu(s"AggregateFunction ${other.prettyName} " +
+            s"is not supported in windowing.")
+          case anythingElse => willNotWorkOnGpu(s"Expression not supported in windowing. " +
+            s"Found ${anythingElse.prettyName}")
+        }
+
+      case RowNumber() =>
+
+      case _ => willNotWorkOnGpu("Only AggregateExpressions are supported on GPU as WindowFunctions. " +
+        s"Found ${windowFunction.prettyName}")
     }
 
     val spec = wrapped.windowSpec
     if (!spec.frameSpecification.isInstanceOf[SpecifiedWindowFrame]) {
       willNotWorkOnGpu(s"Only SpecifiedWindowFrame is a supported window-frame specification. " +
         s"Found ${spec.frameSpecification.prettyName}")
-    }
-
-    // FIXME: Currently, CUDF does not support Range windows with DESC ordering.
-    val windowFrame = spec.frameSpecification.asInstanceOf[SpecifiedWindowFrame]
-    if (windowFrame.frameType.equals(RangeFrame) && spec.orderSpec.head.direction.equals(Descending)) {
-      willNotWorkOnGpu(s"Range window-frames do not currently support ordering in DESC")
     }
   }
 
@@ -413,3 +415,24 @@ case class GpuSpecialFrameBoundary(boundary : SpecialFrameBoundary) extends GpuE
   }
 }
 
+// GPU Counterpart of AggregateWindowFunction. All windowing specific functions are expected to extend from this.
+trait GpuAggregateWindowFunction extends GpuDeclarativeAggregate with GpuUnevaluable {
+  override lazy val mergeExpressions: Seq[GpuExpression]
+    = throw new UnsupportedOperationException("Window Functions do not support merging.")
+}
+
+case class GpuRowNumber() extends GpuAggregateWindowFunction {
+  override def nullable: Boolean = false
+  override def dataType: DataType = IntegerType
+
+  override def children: Seq[Expression] = Nil
+  protected val zero: GpuLiteral = GpuLiteral(0, IntegerType)
+  protected val one : GpuLiteral = GpuLiteral(1, IntegerType)
+
+  protected val rowNumber : GpuAttributeReference = GpuAttributeReference("rowNumber", IntegerType)()
+  override def aggBufferAttributes: Seq[GpuAttributeReference] =  rowNumber :: Nil
+  override val initialValues: Seq[GpuExpression] = zero :: Nil
+  override val updateExpressions: Seq[GpuExpression] = rowNumber :: one :: Nil
+  override val evaluateExpression : GpuExpression = rowNumber
+  override val inputProjection: Seq[GpuExpression] = Nil
+}
