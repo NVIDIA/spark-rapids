@@ -96,13 +96,21 @@ class GpuHashAggregateMeta(
           willNotWorkOnGpu("Replacing Partial or Final hash aggregates disabled")
         }
         case _ =>
-          throw new IllegalArgumentException(s"The hash aggregate replacement mode ${hashAggReplaceMode} " +
+          throw new IllegalArgumentException(s"The hash aggregate replacement mode $hashAggReplaceMode " +
             "is not valid. Valid options are: \"partial\", \"final\", \"complete\", or \"all\"")
       }
     }
     if (!conf.partialMergeDistinctEnabled && hashAggMode.contains(PartialMerge)) {
       willNotWorkOnGpu("Replacing Partial Merge aggregates disabled. " +
         s"Set ${conf.partialMergeDistinctEnabled} to true if desired")
+    }
+    if (agg.aggregateExpressions.exists(expr => expr.isDistinct)
+      && agg.aggregateExpressions.exists(expr => expr.filter.isDefined)) {
+      // Distinct with Filter is not supported on the CPU currently,
+      // this makes sure that if we end up here, the plan falls back to th CPU,
+      // which will do the right thing.
+      willNotWorkOnGpu(
+        "DISTINCT and FILTER cannot be used in aggregate functions at the same time")
     }
   }
 
@@ -870,7 +878,8 @@ case class GpuHashAggregateExec(requiredChildDistributionExpressions: Option[Seq
     if (verbose) {
       s"GpuHashAggregate(keys=$keyString, functions=$functionString, output=$outputString)"
     } else {
-      s"GpuHashAggregate(keys=$keyString, functions=$functionString)"
+      s"GpuHashAggregate(keys=$keyString, functions=$functionString)," +
+        s" filters=${aggregateExpressions.map(_.filter)})"
     }
   }
   //
