@@ -198,30 +198,59 @@ class FloatGen(DataGen):
             return struct.unpack('f', p)[0]
         self._start(rand, gen_float)
 
+_DOUBLE_MIN_EXP = -1022
+_DOUBLE_MAX_EXP = 1023
+_DOUBLE_MAX_FRACTION = int('1'*52, 2)
 _DOUBLE_MIN = -1.7976931348623157E308
 _DOUBLE_MAX = 1.7976931348623157E308
 _NEG_DOUBLE_NAN = struct.unpack('d', struct.pack('L', 0xfff0000000000001))[0]
 class DoubleGen(DataGen):
     """Generate doubles, which some built in corner cases."""
-    def __init__(self, nullable=True):
+    def __init__(self, min_exp=_DOUBLE_MIN_EXP, max_exp=_DOUBLE_MAX_EXP, nullable=True):
         super().__init__(DoubleType(), nullable=nullable)
-        self.with_special_case(_DOUBLE_MIN)
-        self.with_special_case(_DOUBLE_MAX)
-        self.with_special_case(0.0)
-        self.with_special_case(-0.0)
-        self.with_special_case(1.0)
-        self.with_special_case(-1.0)
+        self._min_exp = min_exp
+        self._max_exp = max_exp
+        self._use_full_range = (self._min_exp == _DOUBLE_MIN_EXP) and (self._max_exp == _DOUBLE_MAX_EXP)
+
+        self.with_special_case(self._make_from(1, self._max_exp, _DOUBLE_MAX_FRACTION))
+        self.with_special_case(self._make_from(0, self._max_exp, _DOUBLE_MAX_FRACTION))
+        self.with_special_case(self._make_from(1, self._min_exp, _DOUBLE_MAX_FRACTION))
+        self.with_special_case(self._make_from(0, self._min_exp, _DOUBLE_MAX_FRACTION))
+        if self._min_exp <= 0 and self._max_exp >= 0:
+            self.with_special_case(0.0)
+            self.with_special_case(-0.0)
+        if self._min_exp <= 3 and self._max_exp >= 3:
+            self.with_special_case(1.0)
+            self.with_special_case(-1.0)
         self.with_special_case(float('inf'))
         self.with_special_case(float('-inf'))
         self.with_special_case(float('nan'))
         self.with_special_case(_NEG_DOUBLE_NAN)
 
+    @staticmethod
+    def _make_from(sign, exp, fraction):
+        sign = sign & 1 # 1 bit
+        exp = (exp + 1023) & 0x7FF # add bias and 11 bits
+        fraction = fraction & _DOUBLE_MAX_FRACTION
+        i = (sign << 63) | (exp << 52) | fraction
+        p = struct.pack('L', i)
+        ret = struct.unpack('d', p)[0]
+        return ret
+
     def start(self, rand):
-        def gen_double():
-            i = rand.randint(_LONG_MIN, _LONG_MAX)
-            p = struct.pack('l', i)
-            return struct.unpack('d', p)[0]
-        self._start(rand, gen_double)
+        if self._use_full_range:
+            def gen_double():
+                i = rand.randint(_LONG_MIN, _LONG_MAX)
+                p = struct.pack('l', i)
+                return struct.unpack('d', p)[0]
+            self._start(rand, gen_double)
+        else:
+            def gen_part_double():
+                sign = rand.getrandbits(1)
+                exp = rand.randint(self._min_exp, self._max_exp)
+                fraction = rand.getrandbits(52)
+                return self._make_from(sign, exp, fraction)
+            self._start(rand, gen_part_double)
 
 class BooleanGen(DataGen):
     """Generate Bools (True/False)"""

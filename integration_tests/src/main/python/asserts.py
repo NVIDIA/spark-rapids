@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from conftest import is_incompat, is_order_ignored
+from conftest import is_incompat, is_order_ignored, get_float_check, get_limit
 from datetime import date
 import math
 from pyspark.sql import Row
@@ -21,20 +21,20 @@ from spark_session import with_cpu_session, with_gpu_session
 import time
 import types as pytypes
 
-def _assert_equal(cpu, gpu, incompat, path):
+def _assert_equal(cpu, gpu, float_check, path):
     t = type(cpu)
     if (t is Row):
         assert len(cpu) == len(gpu), "CPU and GPU row have different lengths at {}".format(path)
         if hasattr(cpu, "__fields__") and hasattr(gpu, "__fields__"):
             for field in cpu.__fields__:
-                _assert_equal(cpu[field], gpu[field], incompat, path + [field])
+                _assert_equal(cpu[field], gpu[field], float_check, path + [field])
         else:
             for index in range(len(cpu)):
-                _assert_equal(cpu[index], gpu[index], incompat, path + [index])
+                _assert_equal(cpu[index], gpu[index], float_check, path + [index])
     elif (t is list):
         assert len(cpu) == len(gpu), "CPU and GPU list have different lengths at {}".format(path)
         for index in range(len(cpu)):
-            _assert_equal(cpu[index], gpu[index], incompat, path + [index])
+            _assert_equal(cpu[index], gpu[index], float_check, path + [index])
     elif (t is pytypes.GeneratorType):
         index = 0
         # generator has no zip :( so we have to do this the hard way
@@ -55,7 +55,7 @@ def _assert_equal(cpu, gpu, incompat, path):
             if done:
                 assert sub_cpu == sub_gpu and sub_cpu == None, "CPU and GPU generators have different lengths at {}".format(path)
             else:
-                _assert_equal(sub_cpu, sub_gpu, incompat, path + [index])
+                _assert_equal(sub_cpu, sub_gpu, float_check, path + [index])
 
             index = index + 1
     elif (t is int):
@@ -63,10 +63,8 @@ def _assert_equal(cpu, gpu, incompat, path):
     elif (t is float):
         if (math.isnan(cpu)):
             assert math.isnan(gpu), "GPU and CPU float values are different at {}".format(path)
-        elif (incompat):
-            assert cpu == pytest.approx(gpu), "GPU and CPU float values are different even with approximation {}".format(path)
         else:
-            assert cpu == gpu, "GPU and CPU float values are different at {}".format(path)
+            assert float_check(cpu, gpu), "GPU and CPU float values are different {}".format(path)
     elif isinstance(cpu, str):
         assert cpu == gpu, "GPU and CPU string values are different at {}".format(path)
     elif isinstance(cpu, date):
@@ -80,7 +78,7 @@ def _assert_equal(cpu, gpu, incompat, path):
 
 def assert_equal(cpu, gpu):
     """Verify that the result from the CPU and the GPU are equal"""
-    _assert_equal(cpu, gpu, incompat=is_incompat(), path=[])
+    _assert_equal(cpu, gpu, float_check=get_float_check(), path=[])
 
 def _has_incompat_conf(conf):
     return ('spark.rapids.sql.incompatibleOps.enabled' in conf and
@@ -88,9 +86,8 @@ def _has_incompat_conf(conf):
 
 def _assert_gpu_and_cpu_are_equal(func,
         should_collect,
-        conf={},
-        sort_result=False,
-        non_gpu_allowed=None):
+        conf={}):
+    sort_result = is_order_ignored()
     if sort_result:
         def with_sorted(spark):
             df = func(spark)
@@ -102,11 +99,20 @@ def _assert_gpu_and_cpu_are_equal(func,
     else:
         sorted_func = func
 
+    limit_val = get_limit()
+    if limit_val > 0:
+        def with_limit(spark):
+            df = sorted_func(spark)
+            return df.limit(limit_val)
+        limit_func = with_limit
+    else:
+        limit_func = sorted_func
+
     if should_collect:
-        bring_back = lambda spark: sorted_func(spark).collect()
+        bring_back = lambda spark: limit_func(spark).collect()
         collect_type = 'COLLECT'
     else:
-        bring_back = lambda spark: sorted_func(spark).toLocalIterator()
+        bring_back = lambda spark: limit_func(spark).toLocalIterator()
         collect_type = 'ITERATOR'
 
     if is_incompat():
@@ -122,35 +128,24 @@ def _assert_gpu_and_cpu_are_equal(func,
     print('### GPU RUN ###')
     gpu_start = time.time()
     from_gpu = with_gpu_session(bring_back,
-            conf=conf,
-            non_gpu_allowed=non_gpu_allowed)
+            conf=conf)
     gpu_end = time.time()
     print('### {}: GPU TOOK {} CPU TOOK {} ###'.format(collect_type, 
         gpu_end - gpu_start, cpu_end - cpu_start))
     assert_equal(from_cpu, from_gpu)
 
-def assert_gpu_and_cpu_are_equal_collect(func,
-        conf={},
-        non_gpu_allowed=None):
+def assert_gpu_and_cpu_are_equal_collect(func, conf={}):
     """
     Assert when running func on both the CPU and the GPU that the results are equal.
     In this case the data is collected back to the driver and compared here, so be
     careful about the amount of data returned.
     """
-    _assert_gpu_and_cpu_are_equal(func, True,
-            conf=conf,
-            sort_result=is_order_ignored(),
-            non_gpu_allowed=non_gpu_allowed)
+    _assert_gpu_and_cpu_are_equal(func, True, conf=conf)
 
-def assert_gpu_and_cpu_are_equal_iterator(func,
-        conf={},
-        non_gpu_allowed=None):
+def assert_gpu_and_cpu_are_equal_iterator(func, conf={}):
     """
     Assert when running func on both the CPU and the GPU that the results are equal.
     In this case the data is pulled back to the driver in chunks and compared here
     so any amount of data can work, just be careful about how long it might take.
     """
-    _assert_gpu_and_cpu_are_equal(func, False,
-            conf=conf,
-            sort_result=is_order_ignored(),
-            non_gpu_allowed=non_gpu_allowed)
+    _assert_gpu_and_cpu_are_equal(func, False, conf=conf)

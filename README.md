@@ -23,6 +23,58 @@ To enable this GPU acceleration you will need:
 
 Note if you are using the KryoSerializer with Spark (`--conf spark.serializer=org.apache.spark.serializer.KryoSerializer`) you will have to register the GpuKryoRegistrator class: `--conf spark.kryo.registrator=ai.rapids.spark.GpuKryoRegistrator`.
 
+## Compatibility
+
+The SQL plugin tries to produce results that are bit for bit identical with Apache Spark.
+There are a number of cases where there are some differences. In most cases operators
+that produce different results are off by default, and you can look at the
+[configs](docs/configs.md) for more information on how to enable them.  In some cases
+we felt that enabling the incompatibility by default was worth the performance gain. All
+of those operators can be disabled through configs if it becomes a problem.
+
+### Ordering of Output
+
+There are some operators where Spark does not guarantee the order of the output.
+These are typically things like aggregates and joins that may use a hash to distribute the work
+load among downstream tasks. In these cases the plugin does not guarantee that it will
+produce the same output order as Spark does. In cases such as an `order by` operation
+where the ordering is explicit the plugin will produce an ordering that is compatible with
+Spark's guarantee. It may not be 100% identical if the ordering is ambiguous.
+
+### Floating Point
+
+For most basic floating point operations like addition, subtraction, multiplication, and division
+the plugin will produce a bit for bit identical result as Spark does. For other functions like `sin`,
+`cos`, etc. the output may be different, but within the rounding error inherent in floating point
+calculations. The ordering of operations to calculate the value may differ between
+the underlying JVM implementation used by the CPU and the C++ standard library implementation
+used by the GPU.
+
+For aggregations the underlying implementation is doing the aggregations in parallel and due to
+race conditions within the computation itself the result may not be the same each time the query is
+run. This is inherent in how the plugin speeds up the calculations and cannot be "fixed." If
+a query joins on a floating point value, which is not wise to do anyways,
+and the value is the result of a floating point aggregation then the join may fail to work
+properly with the plugin but would have worked with plain Spark. Because of this most
+floating point aggregations are off by default but can be enabled with the config
+`spark.rapids.sql.variableFloatAgg.enabled`.
+
+### Unicode
+
+Spark delegates Unicode operations to the underlying JVM. Each version of Java compies with a
+specific version of the Unicode standard. The SQL plugin does not use the JVM for Unicode support
+and is compatible with Unicode version 12.1. Because of this there may be corner cases where
+Spark will produce a different result compared to the plugin.
+
+### CSV Reading
+
+Spark is very strict when reading CSV and if the data does not conform with the expected format
+exactly it will result in a `null` value. The underlying parser that the SQL plugin uses is much
+more lenient. If you have badly formatted CSV data you may get data back instead of nulls.
+If this is a problem you can disable the CSV reader by setting the config 
+`spark.rapids.sql.input.CSVScan` to `false`. Because the speed up is so large and the issues only
+show up in error conditions we felt it was worth having the CSV reader enabled by default.
+
 ## <a name="MEMORY"></a>Memory
 
 One of the slowest parts of processing data on the GPU is moving the data from host memory to GPU
@@ -39,7 +91,7 @@ GPU memory you have. You also need to enable it by setting the java System prope
 
 If you are running Spark under YARN or kubernetes you need to be sure that you are adding in the
 overhead for this memory in addition to what you normally would ask for as this memory is not
-currently tracked by spark.
+currently tracked by Spark.
 
 ## Configuration
 
@@ -150,7 +202,7 @@ in the ai.rapids.sparkexamples.tpch package. dbgen has various options, one way 
 You can include the test jar (`rapids-plugin-4-spark/tests/target/rapids-4-spark_2.12-tests-0.9-SNAPSHOT.jar`) with the
 Spark --jars option to get the Tpch tests. To setup for the queries you can run `TpchLikeSpark.setupAllCSV`
 for CSV formatted data or `TpchLikeSpark.setupAllParquet` for parquet formatted data.  Both of those take
- the spark session and a path to the dbgen generated data.  After that each query has its own object.
+ the Spark session and a path to the dbgen generated data.  After that each query has its own object.
 So you can call like:
 ```
 import ai.rapids.sparkexamples.tpch._
@@ -268,7 +320,7 @@ schema as the `DataFrame` passed in.
 `Table` is not a typical thing in an `RDD` so special care needs to be taken when working with it.
 By default it is not serializable so repartitioning the `RDD` or any other operator that involves
 a shuffle will not work. This is because it is relatively expensive to serialize and
-deserialize GPU data using a conventional spark shuffle. In addition most of the memory associated
+deserialize GPU data using a conventional Spark shuffle. In addition most of the memory associated
 with the Table is on the GPU itself, so each table must be closed when it is no longer needed to
 avoid running out of GPU memory. By convention it is the responsibility of the one consuming the
 data to close it when they no longer need it.

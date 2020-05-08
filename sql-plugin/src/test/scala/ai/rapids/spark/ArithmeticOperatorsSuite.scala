@@ -84,27 +84,27 @@ class ArithmeticOperatorsSuite extends SparkQueryCompareTestSuite {
     frame => frame.selectExpr("longs % more_longs")
   }
 
-  INCOMPAT_testSparkResultsAreEqual("Test scalar pow", longsDf, 0.00001) {
+  testSparkResultsAreEqual("Test scalar pow", longsDf, maxFloatDiff=0.00001) {
     frame => frame.select(pow(col("longs"), 3))
   }
 
-  INCOMPAT_testSparkResultsAreEqual("Test pow", longsDf, 0.00001) {
+  testSparkResultsAreEqual("Test pow", longsDf, maxFloatDiff=0.00001) {
     frame => frame.select(pow(col("longs"), col("more_longs")))
   }
 
-  INCOMPAT_testSparkResultsAreEqual("Test exp doubles", smallDoubleDf, 0.00001) {
+  testSparkResultsAreEqual("Test exp doubles", smallDoubleDf, maxFloatDiff=0.00001) {
     frame => frame.select(exp(col("doubles")), exp(col("more_doubles")))
   }
 
-  INCOMPAT_testSparkResultsAreEqual("Test exp floats", mixedFloatDf, 0.00001) {
+  testSparkResultsAreEqual("Test exp floats", mixedFloatDf, maxFloatDiff=0.00001) {
     frame => frame.select(exp(col("floats")), exp(col("more_floats")))
   }
 
-  INCOMPAT_testSparkResultsAreEqual("Test expm1 doubles", smallDoubleDf, 0.00001) {
+  testSparkResultsAreEqual("Test expm1 doubles", smallDoubleDf, maxFloatDiff=0.00001) {
     frame => frame.select(expm1(col("doubles")), expm1(col("more_doubles")))
   }
 
-  INCOMPAT_testSparkResultsAreEqual("Test expm1 floats", mixedFloatDf, 0.00001) {
+  testSparkResultsAreEqual("Test expm1 floats", mixedFloatDf, maxFloatDiff=0.00001) {
     frame => frame.select(expm1(col("floats")), expm1(col("more_floats")))
   }
 

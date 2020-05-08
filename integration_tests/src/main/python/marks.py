@@ -14,7 +14,9 @@
 
 import pytest
 
-incompat = pytest.mark.incompat
+allow_non_gpu = pytest.mark.allow_non_gpu
+approximate_float = pytest.mark.approximate_float
 ignore_order = pytest.mark.ignore_order
-allow_any_non_gpu = pytest.mark.allow_any_non_gpu
+incompat = pytest.mark.incompat
+limit = pytest.mark.limit
 
