@@ -15,7 +15,7 @@
 import pytest
 
 from asserts import assert_gpu_and_cpu_are_equal_collect
-from marks import incompat, ignore_order, allow_any_non_gpu
+from marks import incompat, ignore_order, allow_non_gpu, approximate_float
 from spark_session import spark, get_jvm, get_jvm_session
 from pyspark.sql.dataframe import DataFrame
 
@@ -62,20 +62,21 @@ def test_tpcxbb_q5(tpcxbb):
           lambda spark : tpcxbb.do_test_query("q5"))
 
 @incompat
+@approximate_float
 @ignore_order
-@allow_any_non_gpu
+@allow_non_gpu(any=True)
 def test_tpcxbb_q16(tpcxbb):
   assert_gpu_and_cpu_are_equal_collect(
           lambda spark : tpcxbb.do_test_query("q16"))
 
 @ignore_order
-@allow_any_non_gpu
+@allow_non_gpu(any=True)
 def test_tpcxbb_q21(tpcxbb):
   assert_gpu_and_cpu_are_equal_collect(
           lambda spark : tpcxbb.do_test_query("q21"))
 
 @ignore_order
-@allow_any_non_gpu
+@allow_non_gpu(any=True)
 def test_tpcxbb_q22(tpcxbb):
   assert_gpu_and_cpu_are_equal_collect(
           lambda spark : tpcxbb.do_test_query("q22"))
