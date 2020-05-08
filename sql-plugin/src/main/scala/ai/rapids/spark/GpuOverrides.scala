@@ -505,6 +505,12 @@ object GpuOverrides {
         }
       }
     ),
+    expr[RowNumber](
+      "Window function that returns the index for the row within the aggregation window",
+      (rowNumber, conf, p, r) => new ExprMeta[RowNumber](rowNumber, conf, p, r) {
+        override def convertToGpu(): GpuExpression = GpuRowNumber()
+      }
+    ),
     expr[UnaryMinus](
       "negate a numeric value",
       (a, conf, p, r) => new UnaryExprMeta[UnaryMinus](a, conf, p, r) {

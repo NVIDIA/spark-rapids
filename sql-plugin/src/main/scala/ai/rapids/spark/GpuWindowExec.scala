@@ -23,7 +23,7 @@ import org.apache.spark.sql.catalyst.expressions.{Alias, Attribute, FrameType, N
 import org.apache.spark.sql.catalyst.plans.physical.Partitioning
 import org.apache.spark.sql.execution.window.WindowExec
 import org.apache.spark.sql.execution.{SparkPlan, UnaryExecNode}
-import org.apache.spark.sql.rapids.{GpuAggregateExpression, GpuAggregateFunction, GpuCount, GpuMax, GpuMin, GpuSum}
+import org.apache.spark.sql.rapids.{GpuAggregateExpression, GpuCount, GpuMax, GpuMin, GpuSum}
 import org.apache.spark.sql.types.{CalendarIntervalType, IntegerType}
 import org.apache.spark.sql.vectorized.ColumnarBatch
 import org.apache.spark.unsafe.types.CalendarInterval
@@ -69,12 +69,17 @@ case class GpuWindowExec(windowExpressionAliases: Seq[GpuAlias],
   override def outputPartitioning: Partitioning = child.outputPartitioning
 
   val windowExpressions: Seq[GpuWindowExpression] = windowExpressionAliases.map(_.child.asInstanceOf[GpuWindowExpression])
-  val windowFunctions: Seq[GpuAggregateExpression] = windowExpressions.map(_.windowFunction.asInstanceOf[GpuAggregateExpression])     // One per window expression.
-  val unboundWindowFunctionExpressions: Seq[GpuExpression] = windowFunctions.map(_.aggregateFunction.inputProjection.head)            // One per window expression.
+  val windowFunctions: Seq[GpuExpression] = windowExpressions.map(_.windowFunction)     // One per window expression.
+  val unboundWindowFunctionExpressions: Seq[GpuExpression] = windowFunctions.map {
+    case aggExpression: GpuAggregateExpression => aggExpression.aggregateFunction.inputProjection.head
+    case _: GpuRowNumber => GpuLiteral(1, IntegerType) // row_number has no arguments. Placeholder for input.
+    case anythingElse => throw new IllegalStateException(s"Unexpected window operation ${anythingElse.prettyName}")
+  } // One per window expression.
   val windowFrameTypes: Seq[FrameType] = windowExpressions.map(_.windowSpec.frameSpecification.asInstanceOf[GpuSpecifiedWindowFrame].frameType)
   val boundWindowAggregations: Seq[GpuExpression] = GpuBindReferences.bindReferences(unboundWindowFunctionExpressions, child.output)  // One per window expression.
   val boundWindowPartKeys : Seq[Seq[GpuExpression]] = windowExpressions.map(_.windowSpec.partitionSpec).map(GpuBindReferences.bindReferences(_, child.output)) // 1 set of part-keys per window-expression.
   val boundWindowSortKeys : Seq[Seq[GpuExpression]] = windowExpressions.map(_.windowSpec.orderSpec).map(_.map(_.child)).map(GpuBindReferences.bindReferences(_, child.output))
+  val windowSortOrderIsAscending : Seq[Seq[Boolean]] = windowExpressions.map(_.windowSpec.orderSpec).map(_.map(_.isAscending))
 
   override protected def doExecute(): RDD[InternalRow]
   = throw new IllegalStateException(s"Row-based execution should not happen, in $this.")
@@ -133,21 +138,23 @@ case class GpuWindowExec(windowExpressionAliases: Seq[GpuAlias],
         .aggregateWindows(
           GpuWindowExec.getRowBasedWindowFrame(
             groupingColsCB.numCols(),
-            windowFunctions(i).aggregateFunction,
+            windowFunctions(i),
             windowExpressions(i).windowSpec.frameSpecification.asInstanceOf[GpuSpecifiedWindowFrame]
           )
         )
 
-      // Aggregation column is at index `0`
-      // Note: Special-case handling for COUNT(1)/COUNT(*). GpuCount aggregation expects to return LongType,
-      //       but CUDF returns IntType for COUNT() window function.
-      val aggColumn = if (windowFunctions(i).aggregateFunction.isInstanceOf[GpuCount]) {
-        aggResultTable.getColumn(0).castTo(DType.INT64)
-      }
-      else {
-        val origAggColumn = aggResultTable.getColumn(0)
-        origAggColumn.incRefCount()
-        origAggColumn
+      val aggColumn = windowFunctions(i) match {
+
+        // Special-case handling for COUNT(1)/COUNT(*):
+        // GpuCount aggregation expects to return LongType (INT64), but CUDF returns IntType (INT32) for COUNT() window
+        // function. Must cast back up to INT64.
+        case GpuAggregateExpression(GpuCount(_), _, _, _) =>
+          aggResultTable.getColumn(0).castTo(DType.INT64) // Aggregation column is at index `0`.
+
+        case _ =>
+          val origAggColumn = aggResultTable.getColumn(0) // Aggregation column is at index `0`.
+          origAggColumn.incRefCount()
+          origAggColumn
       }
 
       GpuColumnVector.from(aggColumn)
@@ -174,6 +181,7 @@ case class GpuWindowExec(windowExpressionAliases: Seq[GpuAlias],
       // Project required column batches.
       groupingColsCB    = GpuProjectExec.project(cb, boundWindowPartKeys(i))
       assert(boundWindowSortKeys(i).size == 1, "Expected a single sort column.")
+      assert(windowSortOrderIsAscending(i).size == 1, "Expected a single sort column.")
       sortColsCB        = GpuProjectExec.project(cb, boundWindowSortKeys(i))
       aggregationColsCB = GpuProjectExec.project(cb, Seq(boundWindowAggregations(i)))
 
@@ -189,21 +197,24 @@ case class GpuWindowExec(windowExpressionAliases: Seq[GpuAlias],
           GpuWindowExec.getRangeBasedWindowFrame(
             groupingColsCB.numCols() + sortColsCB.numCols(),
             groupingColsCB.numCols(),
-            windowFunctions(i).aggregateFunction,
-            windowExpressions(i).windowSpec.frameSpecification.asInstanceOf[GpuSpecifiedWindowFrame]
+            windowFunctions(i),
+            windowExpressions(i).windowSpec.frameSpecification.asInstanceOf[GpuSpecifiedWindowFrame],
+            windowSortOrderIsAscending(i).head
           )
         )
 
-      // Aggregation column is at index `0`
-      // Note: Special-case handling for COUNT(1)/COUNT(*). GpuCount aggregation expects to return LongType,
-      //       but CUDF returns IntType for COUNT() window function.
-      val aggColumn = if (windowFunctions(i).aggregateFunction.isInstanceOf[GpuCount]) {
-        aggResultTable.getColumn(0).castTo(DType.INT64)
-      }
-      else {
-        val origAggColumn = aggResultTable.getColumn(0)
-        origAggColumn.incRefCount()
-        origAggColumn
+      val aggColumn = windowFunctions(i) match {
+
+        // Special-case handling for COUNT(1)/COUNT(*):
+        // GpuCount aggregation expects to return LongType (INT64), but CUDF returns IntType (INT32) for COUNT() window
+        // function. Must cast back up to INT64.
+        case GpuAggregateExpression(GpuCount(_), _, _, _) =>
+          aggResultTable.getColumn(0).castTo(DType.INT64) // Aggregation column is at index `0`
+
+        case _ =>
+          val origAggColumn = aggResultTable.getColumn(0) // Aggregation column is at index `0`
+          origAggColumn.incRefCount()
+          origAggColumn
       }
 
       GpuColumnVector.from(aggColumn)
@@ -221,7 +232,7 @@ case class GpuWindowExec(windowExpressionAliases: Seq[GpuAlias],
 object GpuWindowExec {
 
   def getRowBasedWindowFrame(columnIndex : Int,
-                             aggFunction : GpuAggregateFunction,
+                             aggExpression : GpuExpression,
                              windowSpec : GpuSpecifiedWindowFrame)
   : WindowAggregate = {
 
@@ -247,19 +258,24 @@ object GpuWindowExec {
     val windowOption = WindowOptions.builder().minPeriods(1)
       .window(lower, upper).build()
 
-    aggFunction match {
-      case GpuCount(_) => WindowAggregate.count(columnIndex, windowOption)
-      case GpuSum(_) => WindowAggregate.sum(columnIndex, windowOption)
-      case GpuMin(_) => WindowAggregate.min(columnIndex, windowOption)
-      case GpuMax(_)=> WindowAggregate.max(columnIndex, windowOption)
-      case _ => throw new IllegalStateException("Unsupported aggregation!")
+    aggExpression match {
+      case gpuAggregateExpression : GpuAggregateExpression => gpuAggregateExpression.aggregateFunction match {
+        case GpuCount(_) => WindowAggregate.count(columnIndex, windowOption)
+        case GpuSum(_) => WindowAggregate.sum(columnIndex, windowOption)
+        case GpuMin(_) => WindowAggregate.min(columnIndex, windowOption)
+        case GpuMax(_) => WindowAggregate.max(columnIndex, windowOption)
+        case anythingElse => throw new UnsupportedOperationException(s"Unsupported aggregation: ${anythingElse.prettyName}")
+      }
+      case _: GpuRowNumber => WindowAggregate.row_number(0, windowOption) // ROW_NUMBER does not depend on input column values.
+      case anythingElse => throw new UnsupportedOperationException(s"Unsupported window aggregation: ${anythingElse.prettyName}")
     }
   }
 
   def getRangeBasedWindowFrame(aggColumnIndex : Int,
                                timeColumnIndex : Int,
-                               aggFunction : GpuAggregateFunction,
-                               windowSpec : GpuSpecifiedWindowFrame)
+                               aggExpression : GpuExpression,
+                               windowSpec : GpuSpecifiedWindowFrame,
+                               timestampIsAscending : Boolean)
   : WindowAggregate = {
 
     // FIXME: Currently, only negative or 0 values are supported.
@@ -278,15 +294,28 @@ object GpuWindowExec {
       throw new IllegalStateException(s"Upper-bounds behind current row is not supported. Found: $upper")
     }
 
-    val windowOption = WindowOptions.builder().minPeriods(1)
-      .window(lower,upper).timestampColumnIndex(timeColumnIndex).build()
+    val windowOptionBuilder = WindowOptions.builder()
+                                           .minPeriods(1)
+                                           .window(lower,upper)
+                                           .timestampColumnIndex(timeColumnIndex)
+    if (timestampIsAscending) {
+      windowOptionBuilder.timestampAscending()
+    }
+    else {
+      windowOptionBuilder.timestampDescending()
+    }
 
-    aggFunction match {
-      case GpuCount(_) => WindowAggregate.count(aggColumnIndex, windowOption)
-      case GpuSum(_) => WindowAggregate.sum(aggColumnIndex, windowOption)
-      case GpuMin(_) => WindowAggregate.min(aggColumnIndex, windowOption)
-      case GpuMax(_)=> WindowAggregate.max(aggColumnIndex, windowOption)
-      case _ => throw new IllegalStateException("Unsupported aggregation!")
+    val windowOption = windowOptionBuilder.build()
+
+    aggExpression match {
+      case gpuAggExpression : GpuAggregateExpression => gpuAggExpression.aggregateFunction match {
+        case GpuCount(_) => WindowAggregate.count(aggColumnIndex, windowOption)
+        case GpuSum(_) => WindowAggregate.sum(aggColumnIndex, windowOption)
+        case GpuMin(_) => WindowAggregate.min(aggColumnIndex, windowOption)
+        case GpuMax(_) => WindowAggregate.max(aggColumnIndex, windowOption)
+        case anythingElse => throw new UnsupportedOperationException(s"Unsupported aggregation: ${anythingElse.prettyName}")
+      }
+      case anythingElse => throw new UnsupportedOperationException(s"Unsupported window aggregation: ${anythingElse.prettyName}")
     }
   }
 
