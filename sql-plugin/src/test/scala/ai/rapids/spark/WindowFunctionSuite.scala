@@ -31,6 +31,16 @@ class WindowFunctionSuite extends SparkQueryCompareTestSuite {
       count("*").over(windowSpec)
     )
 
+  def rowNumberAggregationTester(windowSpec: WindowSpec): DataFrame => DataFrame =
+    (df : DataFrame) => df.select(
+      sum("dollars").over(windowSpec),
+      min("dollars").over(windowSpec),
+      max("dollars").over(windowSpec),
+      count("dollars").over(windowSpec),
+      row_number().over(windowSpec),
+      count("*").over(windowSpec)
+    )
+
   testSparkResultsAreEqual("[Window] [ROWS] [-2, 3] ", windowTestDfOrc) {
     val rowsWindow = Window.partitionBy("uid")
                            .orderBy("dateLong")
@@ -87,6 +97,13 @@ class WindowFunctionSuite extends SparkQueryCompareTestSuite {
     windowAggregationTester(rowsWindow)
   }
 
+  testSparkResultsAreEqual("[Window] [ROWS] [UNBOUNDED PRECEDING, CURRENT ROW] [ROW_NUMBER]", windowTestDfOrc) {
+    val rowsWindow = Window.partitionBy("uid")
+      .orderBy("dateLong")
+      .rowsBetween(Window.unboundedPreceding, 0)
+    rowNumberAggregationTester(rowsWindow)
+  }
+
   testSparkResultsAreEqual("[Window] [ROWS] [UNBOUNDED PRECEDING, UNBOUNDED FOLLOWING] ", windowTestDfOrc) {
     val rowsWindow = Window.partitionBy("uid")
                            .orderBy("dateLong")
@@ -116,7 +133,7 @@ class WindowFunctionSuite extends SparkQueryCompareTestSuite {
            |""".stripMargin)
     }
 
-  testSparkResultsAreEqual("[Window] [RANGE] [-2 DAYS, 3 DAYS] ", windowTestDfOrc) {
+  testSparkResultsAreEqual("[Window] [RANGE] [ ASC] [-2 DAYS, 3 DAYS] ", windowTestDfOrc) {
 
     val windowClause =
       """
@@ -128,7 +145,19 @@ class WindowFunctionSuite extends SparkQueryCompareTestSuite {
     testAllWindowAggregations(windowClause)
   }
 
-  testSparkResultsAreEqual("[Window] [RANGE] [-2 DAYS, CURRENT ROW] ", windowTestDfOrc) {
+  testSparkResultsAreEqual("[Window] [RANGE] [DESC] [-2 DAYS, 3 DAYS] ", windowTestDfOrc) {
+
+    val windowClause =
+      """
+        | (PARTITION BY uid
+        | ORDER BY CAST(dateLong AS TIMESTAMP) DESC
+        | RANGE BETWEEN INTERVAL 2 DAYS PRECEDING AND INTERVAL 3 DAYS FOLLOWING)
+        |""".stripMargin
+
+    testAllWindowAggregations(windowClause)
+  }
+
+  testSparkResultsAreEqual("[Window] [RANGE] [ ASC] [-2 DAYS, CURRENT ROW] ", windowTestDfOrc) {
 
     val windowClause =
       """
@@ -140,7 +169,19 @@ class WindowFunctionSuite extends SparkQueryCompareTestSuite {
     testAllWindowAggregations(windowClause)
   }
 
-  testSparkResultsAreEqual("[Window] [RANGE] [-2 DAYS, UNBOUNDED FOLLOWING] ", windowTestDfOrc) {
+  testSparkResultsAreEqual("[Window] [RANGE] [DESC] [-2 DAYS, CURRENT ROW] ", windowTestDfOrc) {
+
+    val windowClause =
+      """
+        | (PARTITION BY uid
+        | ORDER BY CAST(dateLong AS TIMESTAMP) DESC
+        | RANGE BETWEEN INTERVAL 2 DAYS PRECEDING AND CURRENT ROW)
+        |""".stripMargin
+
+    testAllWindowAggregations(windowClause)
+  }
+
+  testSparkResultsAreEqual("[Window] [RANGE] [ ASC] [-2 DAYS, UNBOUNDED FOLLOWING] ", windowTestDfOrc) {
 
     val windowClause =
       """
@@ -152,7 +193,19 @@ class WindowFunctionSuite extends SparkQueryCompareTestSuite {
     testAllWindowAggregations(windowClause)
   }
 
-  testSparkResultsAreEqual("[Window] [RANGE] [CURRENT ROW, 3 DAYS] ", windowTestDfOrc) {
+  testSparkResultsAreEqual("[Window] [RANGE] [DESC] [-2 DAYS, UNBOUNDED FOLLOWING] ", windowTestDfOrc) {
+
+    val windowClause =
+      """
+        | (PARTITION BY uid
+        | ORDER BY CAST(dateLong AS TIMESTAMP) DESC
+        | RANGE BETWEEN INTERVAL 2 DAYS PRECEDING AND UNBOUNDED FOLLOWING)
+        |""".stripMargin
+
+    testAllWindowAggregations(windowClause)
+  }
+
+  testSparkResultsAreEqual("[Window] [RANGE] [ ASC] [CURRENT ROW, 3 DAYS] ", windowTestDfOrc) {
 
     val windowClause =
       """
@@ -164,7 +217,19 @@ class WindowFunctionSuite extends SparkQueryCompareTestSuite {
     testAllWindowAggregations(windowClause)
   }
 
-  testSparkResultsAreEqual("[Window] [RANGE] [CURRENT ROW, CURRENT ROW] ", windowTestDfOrc) {
+  testSparkResultsAreEqual("[Window] [RANGE] [DESC] [CURRENT ROW, 3 DAYS] ", windowTestDfOrc) {
+
+    val windowClause =
+      """
+        | (PARTITION BY uid
+        | ORDER BY CAST(dateLong AS TIMESTAMP) DESC
+        | RANGE BETWEEN CURRENT ROW AND INTERVAL 3 DAYS FOLLOWING)
+        |""".stripMargin
+
+    testAllWindowAggregations(windowClause)
+  }
+
+  testSparkResultsAreEqual("[Window] [RANGE] [ ASC] [CURRENT ROW, CURRENT ROW] ", windowTestDfOrc) {
 
     val windowClause =
       """
@@ -176,7 +241,19 @@ class WindowFunctionSuite extends SparkQueryCompareTestSuite {
     testAllWindowAggregations(windowClause)
   }
 
-  testSparkResultsAreEqual("[Window] [RANGE] [CURRENT ROW, UNBOUNDED FOLLOWING] ", windowTestDfOrc) {
+  testSparkResultsAreEqual("[Window] [RANGE] [DESC] [CURRENT ROW, CURRENT ROW] ", windowTestDfOrc) {
+
+    val windowClause =
+      """
+        | (PARTITION BY uid
+        | ORDER BY CAST(dateLong AS TIMESTAMP) DESC
+        | RANGE BETWEEN CURRENT ROW AND CURRENT ROW)
+        |""".stripMargin
+
+    testAllWindowAggregations(windowClause)
+  }
+
+  testSparkResultsAreEqual("[Window] [RANGE] [ ASC] [CURRENT ROW, UNBOUNDED FOLLOWING] ", windowTestDfOrc) {
 
     val windowClause =
       """
@@ -188,7 +265,19 @@ class WindowFunctionSuite extends SparkQueryCompareTestSuite {
     testAllWindowAggregations(windowClause)
   }
 
-  testSparkResultsAreEqual("[Window] [RANGE] [UNBOUNDED PRECEDING, 3 DAYS] ", windowTestDfOrc) {
+  testSparkResultsAreEqual("[Window] [RANGE] [DESC] [CURRENT ROW, UNBOUNDED FOLLOWING] ", windowTestDfOrc) {
+
+    val windowClause =
+      """
+        | (PARTITION BY uid
+        | ORDER BY CAST(dateLong AS TIMESTAMP) DESC
+        | RANGE BETWEEN CURRENT ROW AND UNBOUNDED FOLLOWING)
+        |""".stripMargin
+
+    testAllWindowAggregations(windowClause)
+  }
+
+  testSparkResultsAreEqual("[Window] [RANGE] [ ASC] [UNBOUNDED PRECEDING, 3 DAYS] ", windowTestDfOrc) {
 
     val windowClause =
       """
@@ -200,7 +289,19 @@ class WindowFunctionSuite extends SparkQueryCompareTestSuite {
     testAllWindowAggregations(windowClause)
   }
 
-  testSparkResultsAreEqual("[Window] [RANGE] [UNBOUNDED PRECEDING, CURRENT ROW] ", windowTestDfOrc) {
+  testSparkResultsAreEqual("[Window] [RANGE] [DESC] [UNBOUNDED PRECEDING, 3 DAYS] ", windowTestDfOrc) {
+
+    val windowClause =
+      """
+        | (PARTITION BY uid
+        | ORDER BY CAST(dateLong AS TIMESTAMP) DESC
+        | RANGE BETWEEN UNBOUNDED PRECEDING AND INTERVAL 3 DAYS FOLLOWING)
+        |""".stripMargin
+
+    testAllWindowAggregations(windowClause)
+  }
+
+  testSparkResultsAreEqual("[Window] [RANGE] [ ASC] [UNBOUNDED PRECEDING, CURRENT ROW] ", windowTestDfOrc) {
 
     val windowClause =
       """
@@ -212,7 +313,19 @@ class WindowFunctionSuite extends SparkQueryCompareTestSuite {
     testAllWindowAggregations(windowClause)
   }
 
-  testSparkResultsAreEqual("[Window] [RANGE] [UNBOUNDED PRECEDING, UNBOUNDED FOLLOWING] ", windowTestDfOrc) {
+  testSparkResultsAreEqual("[Window] [RANGE] [DESC] [UNBOUNDED PRECEDING, CURRENT ROW] ", windowTestDfOrc) {
+
+    val windowClause =
+      """
+        | (PARTITION BY uid
+        | ORDER BY CAST(dateLong AS TIMESTAMP) DESC
+        | RANGE BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW)
+        |""".stripMargin
+
+    testAllWindowAggregations(windowClause)
+  }
+
+  testSparkResultsAreEqual("[Window] [RANGE] [ ASC] [UNBOUNDED PRECEDING, UNBOUNDED FOLLOWING] ", windowTestDfOrc) {
 
     val windowClause =
       """
@@ -224,7 +337,19 @@ class WindowFunctionSuite extends SparkQueryCompareTestSuite {
     testAllWindowAggregations(windowClause)
   }
 
-  testSparkResultsAreEqual("[Window] [RANGE] [Unspecified bounds] ", windowTestDfOrc) {
+  testSparkResultsAreEqual("[Window] [RANGE] [DESC] [UNBOUNDED PRECEDING, UNBOUNDED FOLLOWING] ", windowTestDfOrc) {
+
+    val windowClause =
+      """
+        | (PARTITION BY uid
+        | ORDER BY CAST(dateLong AS TIMESTAMP) DESC
+        | RANGE BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING)
+        |""".stripMargin
+
+    testAllWindowAggregations(windowClause)
+  }
+
+  testSparkResultsAreEqual("[Window] [RANGE] [ ASC] [Unspecified bounds] ", windowTestDfOrc) {
 
     val windowClause =
       """
@@ -233,5 +358,33 @@ class WindowFunctionSuite extends SparkQueryCompareTestSuite {
         |""".stripMargin
 
     testAllWindowAggregations(windowClause)
+  }
+
+  testSparkResultsAreEqual("[Window] [RANGE] [DESC] [Unspecified bounds] ", windowTestDfOrc) {
+
+    val windowClause =
+      """
+        | (PARTITION BY uid
+        | ORDER BY CAST(dateLong AS TIMESTAMP) DESC)
+        |""".stripMargin
+
+    testAllWindowAggregations(windowClause)
+  }
+
+  IGNORE_ORDER_testSparkResultsAreEqual("[Window] [MIXED WINDOW SPECS] ", windowTestDfOrc) {
+    (df : DataFrame) => {
+      df.createOrReplaceTempView("mytable")
+      df.sparkSession.sql(
+        s"""
+           | SELECT
+           |  SUM(dollars)  OVER (PARTITION BY uid   ORDER BY CAST(dateLong AS TIMESTAMP)  ASC  RANGE BETWEEN INTERVAL 2 DAYS PRECEDING AND CURRENT ROW) first,
+           |  MIN(dollars)  OVER (PARTITION BY uid   ORDER BY CAST(dateLong AS TIMESTAMP) DESC  RANGE BETWEEN INTERVAL 2 DAYS PRECEDING AND INTERVAL 3 DAYS FOLLOWING) second,
+           |  MAX(dollars)  OVER (PARTITION BY uname ORDER BY CAST(dateLong AS TIMESTAMP)  ASC  ROWS  BETWEEN 5 PRECEDING and 5 FOLLOWING) third,
+           |  COUNT(*)      OVER (PARTITION BY uname ORDER BY CAST(dateLong AS TIMESTAMP) DESC  ROWS  BETWEEN UNBOUNDED PRECEDING and UNBOUNDED FOLLOWING) fourth,
+           |  ROW_NUMBER()  OVER (PARTITION BY uid   ORDER BY CAST(dateLong AS TIMESTAMP) DESC  ROWS  BETWEEN UNBOUNDED PRECEDING and CURRENT ROW) fifth,
+           |  MAX(dateLong) OVER (PARTITION BY uid   ORDER BY dateLong                     ASC  ROWS  BETWEEN CURRENT ROW and UNBOUNDED FOLLOWING) sixth
+           | FROM mytable
+           |""".stripMargin)
+    }
   }
 }
