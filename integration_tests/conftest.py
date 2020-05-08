@@ -14,6 +14,14 @@
 
 import pytest
 
+_approximate_float_args = None
+
+def get_float_check():
+    if not _approximate_float_args is None:
+        return lambda lhs,rhs: lhs == pytest.approx(rhs, **_approximate_float_args)
+    else:
+        return lambda lhs,rhs: lhs == rhs
+
 _incompat = False
 
 def is_incompat():
@@ -25,9 +33,24 @@ def is_order_ignored():
     return _ignore_order
 
 _allow_any_non_gpu = False
+_non_gpu_allowed = []
 
 def is_allowing_any_non_gpu():
     return _allow_any_non_gpu
+
+def get_non_gpu_allowed():
+    return _non_gpu_allowed
+
+_limit = -1
+
+def get_limit():
+    return _limit
+
+def _get_limit_from_mark(mark):
+    if mark.args:
+        return mark.args[0]
+    else:
+        return mark.kwargs.get('num_rows', 100000)
 
 def pytest_runtest_setup(item):
     global _ignore_order
@@ -42,11 +65,38 @@ def pytest_runtest_setup(item):
     else:
         _incompat = False
 
+    global _approximate_float_args
+    app_f = item.get_closest_marker('approximate_float')
+    if app_f:
+        _approximate_float_args = app_f.kwargs
+    else:
+        _approximate_float_args = None
+
     global _allow_any_non_gpu
-    if item.get_closest_marker('allow_any_non_gpu'):
-        _allow_any_non_gpu = True
+    global _non_gpu_allowed
+    non_gpu = item.get_closest_marker('allow_non_gpu')
+    if non_gpu:
+        if non_gpu.kwargs and non_gpu.kwargs['any']:
+            _allow_any_non_gpu = True
+            _non_gpu_allowed = []
+        elif non_gpu.args:
+            _allow_any_non_gpu = False
+            _non_gpu_allowed = non_gpu.args
+        else:
+            pytest.warn('allow_non_gpu marker without anything allowed')
+            _allow_any_non_gpu = False
+            _non_gpu_allowed = []
     else:
         _allow_any_non_gpu = False
+        _non_gpu_allowed = []
+
+    global _limit
+    limit_mrk = item.get_closest_marker('limit')
+    if limit_mrk:
+        _limit = _get_limit_from_mark(limit_mrk)
+    else:
+        _limit = -1
+
 
 def pytest_collection_modifyitems(config, items):
     for item in items:
@@ -55,8 +105,22 @@ def pytest_collection_modifyitems(config, items):
             extras.append('IGNORE_ORDER')
         if item.get_closest_marker('incompat'):
             extras.append('INCOMPAT')
-        if item.get_closest_marker('allow_any_non_gpu'):
-            extras.append('ALLOW_ANY_NON_GPU')
+        app_f = item.get_closest_marker('approximate_float')
+        if app_f:
+            if app_f.kwargs:
+                extras.append('APPROXIMATE_FLOAT(' + str(app_f.kwargs) + ')')
+            else:
+                extras.append('APPROXIMATE_FLOAT')
+        non_gpu = item.get_closest_marker('allow_non_gpu')
+        if non_gpu:
+            if non_gpu.kwargs and non_gpu.kwargs['any']:
+                extras.append('ALLOW_NON_GPU(ANY)')
+            elif non_gpu.args:
+                extras.append('ALLOW_NON_GPU(' + ','.join(non_gpu.args) + ')')
+
+        limit_mrk = item.get_closest_marker('limit')
+        if limit_mrk:
+            extras.append('LIMIT({})'.format(_get_limit_from_mark(limit_mrk)))
 
         if extras:
             # This is not ideal because we are reaching into an internal value

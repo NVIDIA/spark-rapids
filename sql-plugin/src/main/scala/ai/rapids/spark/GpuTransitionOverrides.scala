@@ -210,6 +210,7 @@ class GpuTransitionOverrides extends Rule[SparkPlan] {
       !conf.testingAllowedNonGpu.contains(getBaseNameFromClass(exp.getClass.toString))) {
       throw new IllegalArgumentException(s"The expression $exp is not columnar ${exp.getClass}")
     }
+    exp.children.foreach(subExp => assertIsOnTheGpu(subExp, conf))
   }
 
   def assertIsOnTheGpu(plan: SparkPlan, conf: RapidsConf): Unit = {

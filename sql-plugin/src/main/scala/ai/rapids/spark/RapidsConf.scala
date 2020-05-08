@@ -318,6 +318,14 @@ object RapidsConf {
     .booleanConf
     .createWithDefault(false)
 
+  val IMPROVED_FLOAT_OPS = conf("spark.rapids.sql.improvedFloatOps.enabled")
+    .doc("For some floating point operations spark uses one way to compute the value " +
+      "and the underlying cudf implementation can use an improved algorithm. " +
+      "In some cases this can result in cudf producing an answer when spark overflows. " +
+      "Because this is not as compatible with spark, we have it disabled by default.")
+    .booleanConf
+    .createWithDefault(false)
+
   val HAS_NANS = conf("spark.rapids.sql.hasNans")
     .doc("Config to indicate if your data has NaN's. Cudf doesn't " +
       "currently support NaN's properly so you can get corrupt data if you have NaN's in your " +
@@ -578,6 +586,8 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
   lazy val exportColumnarRdd: Boolean = get(EXPORT_COLUMNAR_RDD)
 
   lazy val isIncompatEnabled: Boolean = get(INCOMPATIBLE_OPS)
+
+  lazy val includeImprovedFloat: Boolean = get(IMPROVED_FLOAT_OPS)
 
   lazy val pinnedPoolSize: Long = get(PINNED_POOL_SIZE)
 

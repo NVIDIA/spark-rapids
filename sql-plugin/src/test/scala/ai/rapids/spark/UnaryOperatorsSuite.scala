@@ -20,75 +20,75 @@ import org.apache.spark.sql.functions._
 
 class UnaryOperatorsSuite extends SparkQueryCompareTestSuite {
 
-  INCOMPAT_testSparkResultsAreEqual("Test acos doubles", doubleDf, 0.0001) {
+  testSparkResultsAreEqual("Test acos doubles", doubleDf, maxFloatDiff=0.0001) {
     frame => frame.select(acos(col("doubles")), acos(col("more_doubles")))
   }
 
-  INCOMPAT_testSparkResultsAreEqual("Test acos floats", mixedFloatDf, 0.0001) {
+  testSparkResultsAreEqual("Test acos floats", mixedFloatDf, maxFloatDiff=0.0001) {
     frame => frame.select(acos(col("floats")), acos(col("more_floats")))
   }
 
-  INCOMPAT_testSparkResultsAreEqual("Test asin doubles", doubleDf, 0.0001) {
+  testSparkResultsAreEqual("Test asin doubles", doubleDf, maxFloatDiff=0.0001) {
     frame => frame.select(asin(col("doubles")), asin(col("more_doubles")))
   }
 
-  INCOMPAT_testSparkResultsAreEqual("Test sinh floats", mixedFloatDf, 0.0001) {
+  testSparkResultsAreEqual("Test sinh floats", mixedFloatDf, maxFloatDiff=0.0001) {
     frame => frame.select(sinh(col("floats")), sinh(col("more_floats")))
   }
 
-  INCOMPAT_testSparkResultsAreEqual("Test sinh doubles", doubleDf, 0.0001) {
+  testSparkResultsAreEqual("Test sinh doubles", doubleDf, maxFloatDiff=0.0001) {
     frame => frame.select(sinh(col("doubles")), sinh(col("more_doubles")))
   }
 
-  INCOMPAT_testSparkResultsAreEqual("Test cosh floats", mixedFloatDf, 0.0001) {
+  testSparkResultsAreEqual("Test cosh floats", mixedFloatDf, maxFloatDiff=0.0001) {
     frame => frame.select(cosh(col("floats")), cosh(col("more_floats")))
   }
 
-  INCOMPAT_testSparkResultsAreEqual("Test cosh doubles", doubleDf, 0.0001) {
+  testSparkResultsAreEqual("Test cosh doubles", doubleDf, maxFloatDiff=0.0001) {
     frame => frame.select(cosh(col("doubles")), cosh(col("more_doubles")))
   }
 
-  INCOMPAT_testSparkResultsAreEqual("Test tanh floats", mixedFloatDf, 0.0001) {
+  testSparkResultsAreEqual("Test tanh floats", mixedFloatDf, maxFloatDiff=0.0001) {
     frame => frame.select(tanh(col("floats")), tanh(col("more_floats")))
   }
 
-  INCOMPAT_testSparkResultsAreEqual("Test tanh doubles", doubleDf, 0.0001) {
+  testSparkResultsAreEqual("Test tanh doubles", doubleDf, maxFloatDiff=0.0001) {
     frame => frame.select(tanh(col("doubles")), tanh(col("more_doubles")))
   }
 
-  INCOMPAT_testSparkResultsAreEqual("Test asin floats", mixedFloatDf, 0.0001) {
+  testSparkResultsAreEqual("Test asin floats", mixedFloatDf, maxFloatDiff=0.0001) {
     frame => frame.select(asin(col("floats")), asin(col("more_floats")))
   }
 
-  INCOMPAT_testSparkResultsAreEqual("Test asinh floats", mixedFloatDf, 0.00001) {
+  testSparkResultsAreEqual("Test asinh floats", mixedFloatDf, maxFloatDiff=0.00001) {
     frame => frame.selectExpr("asinh(floats)")
   }
 
-  INCOMPAT_testSparkResultsAreEqual("Test asinh doubles", doubleDf, 0.00001) {
+  testSparkResultsAreEqual("Test asinh doubles", doubleDf, maxFloatDiff=0.00001) {
     frame => frame.selectExpr("asinh(doubles)")
   }
 
-  INCOMPAT_testSparkResultsAreEqual("Test acosh floats", mixedFloatDf, 0.00001) {
+  testSparkResultsAreEqual("Test acosh floats", mixedFloatDf, maxFloatDiff=0.00001) {
     frame => frame.selectExpr("acosh(floats)")
   }
 
-  INCOMPAT_testSparkResultsAreEqual("Test acosh doubles", doubleDf, 0.00001) {
+  testSparkResultsAreEqual("Test acosh doubles", doubleDf, maxFloatDiff=0.00001) {
     frame => frame.selectExpr("acosh(doubles)")
   }
 
-  INCOMPAT_testSparkResultsAreEqual("Test atanh floats", mixedFloatDf, 0.00001) {
+  testSparkResultsAreEqual("Test atanh floats", mixedFloatDf, maxFloatDiff=0.00001) {
     frame => frame.selectExpr("atanh(floats)")
   }
 
-  INCOMPAT_testSparkResultsAreEqual("Test atanh doubles", doubleDf, 0.00001) {
+  testSparkResultsAreEqual("Test atanh doubles", doubleDf, maxFloatDiff=0.00001) {
     frame => frame.selectExpr("atanh(doubles)")
   }
 
-  INCOMPAT_testSparkResultsAreEqual("Test atan doubles", doubleDf, 0.00001) {
+  testSparkResultsAreEqual("Test atan doubles", doubleDf, maxFloatDiff=0.00001) {
     frame => frame.select(atan(col("doubles")), atan(col("more_doubles")))
   }
 
-  INCOMPAT_testSparkResultsAreEqual("Test atan floats", mixedFloatDf, 0.00001) {
+  testSparkResultsAreEqual("Test atan floats", mixedFloatDf, maxFloatDiff=0.00001) {
     frame => frame.select(atan(col("floats")), atan(col("more_floats")))
   }
 
@@ -110,11 +110,11 @@ class UnaryOperatorsSuite extends SparkQueryCompareTestSuite {
   //    frame => frame.select(col("floats"), lit("test"))
   //  }
 
-  INCOMPAT_testSparkResultsAreEqual("Test cos doubles", doubleDf, 0.00001) {
+  testSparkResultsAreEqual("Test cos doubles", doubleDf, maxFloatDiff=0.00001) {
     frame => frame.select(cos(col("doubles")), cos(col("more_doubles")))
   }
 
-  INCOMPAT_testSparkResultsAreEqual("Test cos floats", mixedFloatDf, 0.00001) {
+  testSparkResultsAreEqual("Test cos floats", mixedFloatDf, maxFloatDiff=0.00001) {
     frame => frame.select(cos(col("floats")), cos(col("more_floats")))
   }
 
@@ -126,19 +126,19 @@ class UnaryOperatorsSuite extends SparkQueryCompareTestSuite {
     frame => frame.select(floor(col("floats")), floor(col("more_floats")))
   }
 
-  INCOMPAT_testSparkResultsAreEqual("Test sin doubles", doubleDf, 0.00001) {
+  testSparkResultsAreEqual("Test sin doubles", doubleDf, maxFloatDiff=0.00001) {
     frame => frame.select(sin(col("doubles")), sin(col("more_doubles")))
   }
 
-  INCOMPAT_testSparkResultsAreEqual("Test sin floats", mixedFloatDf, 0.00001) {
+  testSparkResultsAreEqual("Test sin floats", mixedFloatDf, maxFloatDiff=0.00001) {
     frame => frame.select(sin(col("floats")), sin(col("more_floats")))
   }
 
-  INCOMPAT_testSparkResultsAreEqual("Test tan doubles", doubleDf, 0.00001) {
+  testSparkResultsAreEqual("Test tan doubles", doubleDf, maxFloatDiff=0.00001) {
     frame => frame.select(tan(col("doubles")), tan(col("more_doubles")))
   }
 
-  INCOMPAT_testSparkResultsAreEqual("Test tan floats", mixedFloatDf, 0.00001) {
+  testSparkResultsAreEqual("Test tan floats", mixedFloatDf, maxFloatDiff=0.00001) {
     frame => frame.select(tan(col("floats")), tan(col("more_floats")))
   }
 
@@ -157,11 +157,11 @@ class UnaryOperatorsSuite extends SparkQueryCompareTestSuite {
       dayofmonth(col("more_dates")))
   }
 
-  INCOMPAT_testSparkResultsAreEqual("Test cube root floats", mixedFloatDf, 0.0001) {
+  testSparkResultsAreEqual("Test cube root floats", mixedFloatDf, maxFloatDiff=0.0001) {
     frame => frame.select(cbrt(col("floats")), cbrt(col("more_floats")))
   }
 
-  INCOMPAT_testSparkResultsAreEqual("Test cube root doubles", doubleDf, 0.0001) {
+  testSparkResultsAreEqual("Test cube root doubles", doubleDf, maxFloatDiff=0.0001) {
     frame => frame.select(cbrt(col("doubles")), cbrt(col("more_doubles")))
   }
 
@@ -183,23 +183,23 @@ class UnaryOperatorsSuite extends SparkQueryCompareTestSuite {
       signum(col("doubles")))
   }
 
-  INCOMPAT_testSparkResultsAreEqual("Test cot", floatWithNansDf, 0.0001) {
+  testSparkResultsAreEqual("Test cot", floatWithNansDf, maxFloatDiff=0.0001) {
     frame => frame.selectExpr("cot(floats)")
   }
 
-  INCOMPAT_testSparkResultsAreEqual("Test ToDegrees doubles", mixedSingleColumnDoubleDf, 0.0001) {
+  testSparkResultsAreEqual("Test ToDegrees doubles", mixedSingleColumnDoubleDf, maxFloatDiff=0.0001) {
     frame => frame.select(degrees(col("doubles")))
   }
 
-  INCOMPAT_testSparkResultsAreEqual("Test ToDegrees floats", mixedSingleColumnFloatDf, 0.0001) {
+  testSparkResultsAreEqual("Test ToDegrees floats", mixedSingleColumnFloatDf, maxFloatDiff=0.0001) {
     frame => frame.select(degrees(col("floats")))
   }
 
-  INCOMPAT_testSparkResultsAreEqual("Test ToRadians doubles", mixedSingleColumnDoubleDf, 0.0001) {
+  testSparkResultsAreEqual("Test ToRadians doubles", mixedSingleColumnDoubleDf, maxFloatDiff=0.0001) {
     frame => frame.select(radians(col("doubles")))
   }
 
-  INCOMPAT_testSparkResultsAreEqual("Test ToRadians floats", mixedSingleColumnFloatDf, 0.0001) {
+  testSparkResultsAreEqual("Test ToRadians floats", mixedSingleColumnFloatDf, maxFloatDiff=0.0001) {
     frame => frame.select(radians(col("floats")))
   }
 }

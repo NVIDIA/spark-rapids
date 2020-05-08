@@ -18,8 +18,9 @@ package org.apache.spark.sql.rapids
 
 import java.io.Serializable
 
-import ai.rapids.cudf.{BinaryOp, DType, Scalar, UnaryOp}
+import ai.rapids.cudf.{BinaryOp, ColumnVector, DType, Scalar, UnaryOp}
 import ai.rapids.spark.{Arm, CudfBinaryExpression, CudfUnaryExpression, FloatUtils, GpuColumnVector, GpuExpression, GpuUnaryExpression}
+
 import org.apache.spark.sql.catalyst.expressions.{Expression, ImplicitCastInputTypes}
 import org.apache.spark.sql.types._
 import org.apache.spark.sql.vectorized.ColumnarBatch
@@ -58,9 +59,32 @@ case class GpuToRadians(child: GpuExpression) extends GpuUnaryMathExpression("RA
   }
 }
 
-case class GpuAcosh(child: GpuExpression) extends CudfUnaryMathExpression("ACOSH") {
+case class GpuAcoshImproved(child: GpuExpression) extends CudfUnaryMathExpression("ACOSH") {
   override def unaryOp: UnaryOp = UnaryOp.ARCCOSH
+}
+
+case class GpuAcoshCompat(child: GpuExpression) extends GpuUnaryMathExpression("ACOSH") {
   override def outputTypeOverride: DType = DType.FLOAT64
+
+  override def doColumnar(input: GpuColumnVector): GpuColumnVector = {
+    // Typically we would just use UnaryOp.ARCCOSH, but there are corner cases where cudf
+    // produces a better result (it does not overflow) than spark does, but our goal is
+    // to match Spark's
+    // StrictMath.log(x + math.sqrt(x * x - 1.0))
+    val base = input.getBase
+    val ret = withResource(base.mul(base)) { squared =>
+      withResource(Scalar.fromDouble(1.0)) { one =>
+        withResource(squared.sub(one)) { squaredMinOne =>
+          withResource(squaredMinOne.sqrt()) { sqrt =>
+            withResource(base.add(sqrt)) { sum =>
+              sum.log()
+            }
+          }
+        }
+      }
+    }
+    GpuColumnVector.from(ret)
+  }
 }
 
 case class GpuAsin(child: GpuExpression) extends CudfUnaryMathExpression("ASIN") {
@@ -68,9 +92,43 @@ case class GpuAsin(child: GpuExpression) extends CudfUnaryMathExpression("ASIN")
   override def outputTypeOverride: DType = DType.FLOAT64
 }
 
-case class GpuAsinh(child: GpuExpression) extends CudfUnaryMathExpression("ASINH") {
+case class GpuAsinhImproved(child: GpuExpression) extends CudfUnaryMathExpression("ASINH") {
   override def unaryOp: UnaryOp = UnaryOp.ARCSINH
+}
+
+case class GpuAsinhCompat(child: GpuExpression) extends GpuUnaryMathExpression("ASINH") {
   override def outputTypeOverride: DType = DType.FLOAT64
+
+  def computeBasic(input: ColumnVector): ColumnVector =
+    withResource(input.mul(input)) { squared =>
+      withResource(Scalar.fromDouble(1.0)) { one =>
+        withResource(squared.add(one)) { squaredPlusOne =>
+          withResource(squaredPlusOne.sqrt()) { sqrt =>
+            withResource(input.add(sqrt)) { sum =>
+              sum.log()
+            }
+          }
+        }
+      }
+    }
+
+  override def doColumnar(input: GpuColumnVector): GpuColumnVector = {
+    // Typically we would just use UnaryOp.ARCSINH, but there are corner cases where cudf
+    // produces a better result (it does not overflow) than spark does, but our goal is
+    // to match Spark's
+    //  x match {
+    //    case Double.NegativeInfinity => Double.NegativeInfinity
+    //    case _ => StrictMath.log(x + math.sqrt(x * x + 1.0)) }
+    val base = input.getBase
+    val ret = withResource(computeBasic(base)) { basic =>
+      withResource(Scalar.fromDouble(Double.NegativeInfinity)) { negInf =>
+        withResource(base.equalTo(negInf)) { eqNegInf =>
+          eqNegInf.ifElse(negInf, basic)
+        }
+      }
+    }
+    GpuColumnVector.from(ret)
+  }
 }
 
 case class GpuAtan(child: GpuExpression) extends CudfUnaryMathExpression("ATAN") {
