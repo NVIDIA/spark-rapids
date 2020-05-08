@@ -67,11 +67,45 @@ trait GpuAggregateFunction extends GpuExpression {
   }
 }
 
-case class GpuAggregateExpression(aggregateFunction: GpuAggregateFunction,
+case class GpuAggregateExpression(origAggregateFunction: GpuAggregateFunction,
                                   mode: AggregateMode,
                                   isDistinct: Boolean,
+                                  filter: Option[GpuExpression],
                                   resultId: ExprId)
   extends GpuExpression with GpuUnevaluable {
+
+  case class WrappedAggFunction(aggregateFunction: GpuAggregateFunction, filter: GpuExpression)
+    extends GpuDeclarativeAggregate {
+    override val inputProjection: Seq[GpuExpression] = {
+      val caseWhenExpressions = aggregateFunction.inputProjection.map {ip =>
+        GpuCaseWhen(Seq((filter, ip)))
+      }
+      caseWhenExpressions
+    }
+    /** Attributes of fields in aggBufferSchema. */
+    override def aggBufferAttributes: Seq[GpuAttributeReference] =
+      aggregateFunction.aggBufferAttributes
+    override def nullable: Boolean = aggregateFunction.nullable
+
+    override def dataType: DataType = aggregateFunction.dataType
+
+    override def children: Seq[Expression] = aggregateFunction.children
+
+    override val initialValues: Seq[GpuExpression] =
+      aggregateFunction.asInstanceOf[GpuDeclarativeAggregate].initialValues
+    override val updateExpressions: Seq[GpuExpression] =
+      aggregateFunction.asInstanceOf[GpuDeclarativeAggregate].updateExpressions
+    override val mergeExpressions: Seq[GpuExpression] =
+      aggregateFunction.asInstanceOf[GpuDeclarativeAggregate].mergeExpressions
+    override val evaluateExpression: GpuExpression =
+      aggregateFunction.asInstanceOf[GpuDeclarativeAggregate].evaluateExpression
+  }
+
+  val aggregateFunction = if (filter.isDefined) {
+    WrappedAggFunction(origAggregateFunction, filter.get)
+  } else {
+    origAggregateFunction
+  }
 
   //
   // Overrides form AggregateExpression
@@ -92,6 +126,7 @@ case class GpuAggregateExpression(aggregateFunction: GpuAggregateFunction,
       normalizedAggFunc.canonicalized.asInstanceOf[GpuAggregateFunction],
       mode,
       isDistinct,
+      filter,
       ExprId(0))
   }
 
@@ -113,7 +148,7 @@ case class GpuAggregateExpression(aggregateFunction: GpuAggregateFunction,
       case PartialMerge => "merge_"
       case Final | Complete => ""
     }
-    prefix + aggregateFunction.toAggString(isDistinct)
+    prefix + origAggregateFunction.toAggString(isDistinct)
   }
 
   override def sql: String = aggregateFunction.sql(isDistinct)
