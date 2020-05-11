@@ -26,15 +26,17 @@ import org.apache.parquet.hadoop.ParquetOutputFormat.JobSummaryLevel
 import org.apache.spark.internal.Logging
 import org.apache.spark.sql.{Row, SparkSession}
 import org.apache.spark.sql.execution.datasources.parquet.{ParquetOptions, ParquetWriteSupport}
+import org.apache.spark.sql.execution.TrampolineUtil
 import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.internal.SQLConf.ParquetOutputTimestampType
-import org.apache.spark.sql.types.StructType
+import org.apache.spark.sql.types.{StructType, TimestampType}
 
 object GpuParquetFileFormat {
   def tagGpuSupport(
       meta: RapidsMeta[_, _, _],
       spark: SparkSession,
-      options: Map[String, String]): Option[GpuParquetFileFormat] = {
+      options: Map[String, String],
+      schema: StructType): Option[GpuParquetFileFormat] = {
     val sqlConf = spark.sessionState.conf
     val parquetOptions = new ParquetOptions(options, sqlConf)
 
@@ -45,10 +47,15 @@ object GpuParquetFileFormat {
       meta.willNotWorkOnGpu(s"Spark legacy format is not supported")
     }
 
-    // TODO: Could support TIMESTAMP_MILLIS by performing cast on all timestamp input columns
-    sqlConf.parquetOutputTimestampType match {
-      case ParquetOutputTimestampType.TIMESTAMP_MICROS =>
-      case t => meta.willNotWorkOnGpu(s"Output timestamp type $t is not supported")
+    val schemaHasTimestamps = schema.exists { field =>
+      TrampolineUtil.dataTypeExistsRecursively(field.dataType, _.isInstanceOf[TimestampType])
+    }
+    if (schemaHasTimestamps) {
+      // TODO: Could support TIMESTAMP_MILLIS by performing cast on all timestamp input columns
+      sqlConf.parquetOutputTimestampType match {
+        case ParquetOutputTimestampType.TIMESTAMP_MICROS =>
+        case t => meta.willNotWorkOnGpu(s"Output timestamp type $t is not supported")
+      }
     }
 
     if (meta.canThisBeReplaced) {
@@ -121,11 +128,14 @@ class GpuParquetFileFormat extends ColumnarFileFormat with Logging {
 
     val outputTimestampType = sparkSession.sessionState.conf.parquetOutputTimestampType
     if (outputTimestampType != ParquetOutputTimestampType.TIMESTAMP_MICROS) {
-      throw new UnsupportedOperationException(s"Unsupported output timestamp type: $outputTimestampType")
+      val hasTimestamps = dataSchema.exists { field =>
+        TrampolineUtil.dataTypeExistsRecursively(field.dataType, _.isInstanceOf[TimestampType])
+      }
+      if (hasTimestamps) {
+        throw new UnsupportedOperationException(s"Unsupported output timestamp type: $outputTimestampType")
+      }
     }
-    conf.set(
-      SQLConf.PARQUET_OUTPUT_TIMESTAMP_TYPE.key,
-      sparkSession.sessionState.conf.parquetOutputTimestampType.toString)
+    conf.set(SQLConf.PARQUET_OUTPUT_TIMESTAMP_TYPE.key, outputTimestampType.toString)
 
     // Sets compression scheme
     conf.set(ParquetOutputFormat.COMPRESSION, parquetOptions.compressionCodecClassName)

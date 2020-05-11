@@ -126,8 +126,6 @@ trait SparkQueryCompareTestSuite extends FunSuite with Arm {
       .set(RapidsConf.SQL_ENABLED.key, "true")
       .set(RapidsConf.TEST_CONF.key, "true")
       .set(RapidsConf.EXPLAIN.key, "ALL")
-      // temp work around to unsupported timestamp type
-      .set("spark.sql.parquet.outputTimestampType", "TIMESTAMP_MICROS")
     withSparkSession(c, f)
   }
 
