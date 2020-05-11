@@ -47,4 +47,10 @@ object TrampolineUtil {
       false
     }
   }
+
+  /**
+   * Return true if the provided predicate function returns true for any
+   * type node within the datatype tree.
+   */
+  def dataTypeExistsRecursively(dt: DataType, f: DataType => Boolean): Boolean = dt.existsRecursively(f)
 }
