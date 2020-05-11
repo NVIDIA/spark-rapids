@@ -75,6 +75,18 @@ If this is a problem you can disable the CSV reader by setting the config
 `spark.rapids.sql.input.CSVScan` to `false`. Because the speed up is so large and the issues only
 show up in error conditions we felt it was worth having the CSV reader enabled by default.
 
+### Timestamps
+
+Spark stores timestamps internally relative to the JVM time zone.  Converting an
+arbitrary timestamp between time zones is not currently supported on the GPU. Therefore operations
+involving timestamps will only be GPU-accelerated if the time zone used by the JVM is UTC.
+
+Apache Spark 3.0 defaults to writing Parquet timestamps in the deprecated INT96 format. The plugin
+does not support writing timestamps in the INT96 format, so by default writing timestamp columns to
+Parquet will not be GPU-accelerated. If the INT96 timestamp format is not required for
+compatibility with other tools then set `spark.sql.parquet.outputTimestampType` to
+`TIMESTAMP_MICROS`.
+
 ## <a name="MEMORY"></a>Memory
 
 One of the slowest parts of processing data on the GPU is moving the data from host memory to GPU
@@ -86,8 +98,7 @@ To enable RMM you need to set the config `spark.rapids.memory.gpu.pooling.enable
 `true` when launching your cluster.  To enable pinned memory you also
 need to set `spark.rapids.memory.pinnedPool.size` to the amount of pinned memory you want to use.
 Because this is used for data transfers it typically should be about 1/4 to 1/2 of the amount of
-GPU memory you have. You also need to enable it by setting the java System property 
-`ai.rapids.cudf.prefer-pinned` to `true`.
+GPU memory you have.
 
 If you are running Spark under YARN or kubernetes you need to be sure that you are adding in the
 overhead for this memory in addition to what you normally would ask for as this memory is not

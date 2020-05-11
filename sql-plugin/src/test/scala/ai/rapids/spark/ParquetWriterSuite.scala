@@ -26,6 +26,7 @@ import org.apache.parquet.hadoop.ParquetFileReader
 import org.apache.parquet.hadoop.util.HadoopInputFile
 
 import org.apache.spark.sql.{DataFrame, SparkSession}
+import org.apache.spark.SparkConf
 
 /**
  * Tests for writing Parquet files with the GPU.
@@ -108,6 +109,20 @@ class ParquetWriterSuite extends SparkQueryCompareTestSuite {
       })
     } finally {
       tempFile.delete()
+    }
+  }
+
+  testExpectedExceptionStartsWith(
+      "int96 timestamps not supported",
+      classOf[IllegalArgumentException],
+      "Part of the plan is not columnar",
+      frameFromParquet("timestamp-date-test-msec.parquet"),
+      new SparkConf().set("spark.sql.parquet.outputTimestampType", "INT96")) {
+    val tempFile = File.createTempFile("int96", "parquet")
+    tempFile.delete()
+    frame => {
+      frame.write.parquet(tempFile.getAbsolutePath)
+      frame
     }
   }
 
