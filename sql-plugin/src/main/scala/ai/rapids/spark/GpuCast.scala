@@ -84,6 +84,7 @@ object GpuCast {
         case ByteType | ShortType | IntegerType | LongType => true
         case FloatType | DoubleType => true
         case TimestampType => true
+        case StringType => true
         case _ => false
       }
       case DateType => to match {
