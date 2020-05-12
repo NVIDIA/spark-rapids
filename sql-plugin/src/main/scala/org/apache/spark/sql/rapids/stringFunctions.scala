@@ -18,8 +18,9 @@ package org.apache.spark.sql.rapids
 
 import ai.rapids.spark.RapidsPluginImplicits._
 import ai.rapids.cudf.{ColumnVector, Scalar}
-import ai.rapids.spark.{GpuAlias, GpuBinaryExpression, GpuColumnVector, GpuComplexTypeMergingExpression, GpuExpression, GpuLiteral, GpuScalar, GpuTernaryExpression, GpuUnaryExpression}
-import org.apache.spark.sql.catalyst.expressions.{ExpectsInputTypes, Expression, ImplicitCastInputTypes, NullIntolerant, Predicate, String2TrimExpression}
+import ai.rapids.spark.{GpuBinaryExpression, GpuColumnVector, GpuComplexTypeMergingExpression, GpuExpression, GpuLiteral,
+  GpuScalar, GpuString2TrimExpression, GpuTernaryExpression, GpuUnaryExpression}
+import org.apache.spark.sql.catalyst.expressions.{ExpectsInputTypes, Expression, ImplicitCastInputTypes, NullIntolerant, Predicate}
 import org.apache.spark.sql.types._
 import org.apache.spark.unsafe.types.UTF8String
 import org.apache.spark.sql.vectorized.ColumnarBatch
@@ -209,56 +210,56 @@ case class GpuEndsWith(left: GpuExpression, right: GpuExpression)
 }
 
 case class GpuStringTrim(column: GpuExpression, trimParameters: Option[GpuExpression] = None)
-    extends String2TrimExpression with GpuExpression with ImplicitCastInputTypes {
+    extends GpuString2TrimExpression with ImplicitCastInputTypes {
 
   override def srcStr: GpuExpression = column
 
-  override def trimStr: Option[GpuExpression] = trimParameters
+  override def trimStr:Option[GpuExpression] = trimParameters
 
   def this(trimParameters: GpuExpression, column: GpuExpression) = this(column, Option(trimParameters))
 
   def this(column: GpuExpression) = this(column, None)
 
-  override def children: Seq[GpuExpression] = srcStr +: trimStr.toSeq
-
-  override def sql: String = if (trimStr.isDefined) {
-    s"TRIM($direction ${trimStr.get.sql} FROM ${srcStr.sql})"
-  } else {
-    super.sql
-  }
-
   override protected def direction: String = "BOTH"
 
-  def getTrimString(): Any = trimStr match {
-    case Some(GpuLiteral(data, StringType)) => data
-    case Some(GpuAlias(GpuLiteral(data, StringType), _)) => data
-    case None => " "
-    case _ => throw new IllegalStateException("Internal Error GPU support for this data type is not implemented and " +
-        "should have been disabled")
+  override def strippedColumnVector(column:GpuColumnVector, t:Scalar): GpuColumnVector = {
+    GpuColumnVector.from(column.getBase.strip(t))
   }
+}
 
-  override def columnarEval(batch: ColumnarBatch): Any = {
-    val trim = getTrimString()
-    val shouldBeColumn = srcStr.columnarEval(batch)
-    try {
-      // We know the first parameter is not a Literal, because trim(Literal, Literal) would already have been optimized out
-      val column = shouldBeColumn.asInstanceOf[GpuColumnVector]
-      if (trim == null) {
-        withResource(GpuScalar.from(null, StringType)) { nullScalar =>
-          GpuColumnVector.from(nullScalar, column.getRowCount().toInt)
-        }
-      } else if (trim.toString.isEmpty) {
-        column.incRefCount() // This is a noop
-      } else {
-        withResource(GpuScalar.from(trim.toString, StringType)) { t =>
-          GpuColumnVector.from(column.getBase.strip(t))
-        }
-      }
-    } finally {
-      if (shouldBeColumn.isInstanceOf[AutoCloseable]) {
-        shouldBeColumn.asInstanceOf[AutoCloseable].close()
-      }
-    }
+case class GpuStringTrimLeft(column: GpuExpression, trimParameters: Option[GpuExpression] = None)
+  extends GpuString2TrimExpression with ImplicitCastInputTypes {
+
+  override def srcStr: GpuExpression = column
+
+  override def trimStr:Option[GpuExpression] = trimParameters
+
+  def this(trimParameters: GpuExpression, column: GpuExpression) = this(column, Option(trimParameters))
+
+  def this(column: GpuExpression) = this(column, None)
+
+  override protected def direction: String = "LEADING"
+
+  override def strippedColumnVector(column:GpuColumnVector, t:Scalar): GpuColumnVector = {
+    GpuColumnVector.from(column.getBase.lstrip(t))
+  }
+}
+
+case class GpuStringTrimRight(column: GpuExpression, trimParameters: Option[GpuExpression] = None)
+    extends GpuString2TrimExpression with ImplicitCastInputTypes {
+
+  override def srcStr: GpuExpression = column
+
+  override def trimStr:Option[GpuExpression] = trimParameters
+
+  def this(trimParameters: GpuExpression, column: GpuExpression) = this(column, Option(trimParameters))
+
+  def this(column: GpuExpression) = this(column, None)
+
+  override protected def direction: String = "TRAILING"
+
+  override def strippedColumnVector(column:GpuColumnVector, t:Scalar): GpuColumnVector = {
+    GpuColumnVector.from(column.getBase.rstrip(t))
   }
 }
 
