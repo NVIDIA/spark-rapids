@@ -25,8 +25,10 @@ FROM nvidia/cuda:${CUDA_VER}-runtime-centos7
 
 #Install java-8, maven, docker image
 RUN yum update -y && \
+    yum install -y centos-release-scl && \
     yum install -y java-1.8.0-openjdk-devel \
-    wget
+    wget rh-python36
+
 
 # The default mvn verision is 3.05 on centos7 docker container.
 # The plugin: net.alchim31.maven requires a higher mvn version.
@@ -35,6 +37,8 @@ RUN wget https://archive.apache.org/dist/maven/maven-3/3.6.3/binaries/apache-mav
     tar xzvf $MAVEN_HOME-bin.tar.gz -C /usr/local && \
     rm -f $MAVEN_HOME-bin.tar.gz
 
+ENV PATH "$MAVEN_HOME/bin:/opt/rh/rh-python36/root/usr/bin/:$PATH"
+RUN python -m pip install pytest sre_yield
+
 # Set ENV for mvn
 ENV JAVA_HOME "/usr/lib/jvm/java-1.8.0-openjdk"
-ENV PATH "$MAVEN_HOME/bin:$PATH"
