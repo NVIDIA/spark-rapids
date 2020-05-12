@@ -21,14 +21,14 @@ import ai.rapids.spark.GpuMetricNames.{NUM_OUTPUT_BATCHES, NUM_OUTPUT_ROWS, TOTA
 import ai.rapids.spark.RapidsPluginImplicits._
 
 import org.apache.spark.rdd.RDD
-import org.apache.spark.sql.catalyst.expressions.{Attribute, AttributeSet, CreateArray, Expression, PosExplode}
+import org.apache.spark.sql.catalyst.expressions.{Alias, Attribute, AttributeSet, CreateArray, Explode, Expression, Literal, PosExplode}
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.plans.physical.Partitioning
 import org.apache.spark.sql.execution.{GenerateExec, SparkPlan, UnaryExecNode}
-import org.apache.spark.sql.execution.metric.{SQLMetric, SQLMetrics}
-import org.apache.spark.sql.types.IntegerType
+import org.apache.spark.sql.types.{ArrayType, DataType, IntegerType}
 import org.apache.spark.sql.vectorized.ColumnarBatch
-
+import org.apache.spark.TaskContext
+import org.apache.spark.sql.catalyst.util.ArrayData
 
 class GpuGenerateExecSparkPlanMeta(
     gen: GenerateExec,
@@ -36,70 +36,60 @@ class GpuGenerateExecSparkPlanMeta(
     p: Option[RapidsMeta[_, _, _]],
     r: ConfKeysAndIncompat) extends SparkPlanMeta[GenerateExec](gen, conf, p, r) {
 
-  override val childExprs: Seq[ExprMeta[_]] = gen.generator match {
+  private def exprsFromArray(data: ArrayData, dataType: DataType): Seq[ExprMeta[Expression]] = {
+    (0 until data.numElements()).map { i =>
+      Literal(data.get(i, dataType), dataType).asInstanceOf[Expression]
+    }.map(GpuOverrides.wrapExpr(_, conf, Some(this)))
+  }
+
+  private val arrayExprs =  gen.generator match {
     case PosExplode(CreateArray(exprs, _)) =>
       // This bypasses the check to see if we can support an array or not.
-      // and the posexplode which is going to be built into this one...
+      // and the posexplode/explode which is going to be built into this one...
       exprs.map(GpuOverrides.wrapExpr(_, conf, Some(this)))
-    case g => Seq(GpuOverrides.wrapExpr[Expression](g, conf, Some(this)))
+    case PosExplode(Literal(data, ArrayType(baseType, _))) =>
+      exprsFromArray(data.asInstanceOf[ArrayData], baseType)
+    case PosExplode(Alias(Literal(data, ArrayType(baseType, _)), _)) =>
+      exprsFromArray(data.asInstanceOf[ArrayData], baseType)
+    case Explode(CreateArray(exprs, _)) =>
+      exprs.map(GpuOverrides.wrapExpr(_, conf, Some(this)))
+    case Explode(Literal(data, ArrayType(baseType, _))) =>
+      exprsFromArray(data.asInstanceOf[ArrayData], baseType)
+    case Explode(Alias(Literal(data, ArrayType(baseType, _)), _)) =>
+      exprsFromArray(data.asInstanceOf[ArrayData], baseType)
+    case _ => Seq.empty
   }
+
+  override val childExprs: Seq[ExprMeta[_]] = arrayExprs
 
   override def tagPlanForGpu(): Unit = {
     // We can only run on the GPU if we are doing a posexplode of an array we are generating
     // right now
     gen.generator match {
-      case PosExplode(CreateArray(_, _)) => //Nothing
+      case PosExplode(CreateArray(_, _)) => // Nothing
+      case PosExplode(Literal(_, ArrayType(_, _))) => // Nothing
+      case PosExplode(Alias(Literal(_, ArrayType(_, _)), _)) => // Nothing
+      case Explode(CreateArray(_, _)) => // Nothing
+      case Explode(Literal(_, ArrayType(_, _))) => // Nothing
+      case Explode(Alias(Literal(_, ArrayType(_, _)), _)) => // Nothing
       case _ => willNotWorkOnGpu("Only posexplode of a created array is currently supported")
     }
 
     if (gen.outer) {
       willNotWorkOnGpu("outer is not currently supported")
     }
-
-    if (!gen.requiredChildOutput.isEmpty) {
-      willNotWorkOnGpu("Cannot support other output besides an exploded array")
-    }
   }
 
   /**
    * Convert what this wraps to a GPU enabled version.
    */
-  override def convertToGpu(): GpuExec =
-    GpuGenerateExec(childExprs.map(_.convertToGpu()),
+  override def convertToGpu(): GpuExec = {
+    GpuGenerateExec(
+      gen.generator.isInstanceOf[PosExplode],
+      arrayExprs.map(_.convertToGpu()),
+      gen.requiredChildOutput,
       gen.generatorOutput,
-      childPlans(0).convertIfNeeded())
-}
-
-object GpuGenerateExec {
-  def createPositionsColumn(numColumns: Integer, numRows: Integer): ColumnVector = {
-    val pos = new Array[ColumnVector](numColumns)
-    try {
-      (0 until numColumns).foreach(i => {
-        val scalar = GpuScalar.from(i, IntegerType)
-        pos(i) = try {
-          ColumnVector.fromScalar(scalar, numRows)
-        } finally {
-          scalar.close()
-        }
-      })
-      ColumnVector.concatenate(pos: _*)
-    } finally {
-      pos.safeClose()
-    }
-  }
-
-  def concatColumnsAndClose(numColumns: Integer, table: Table): ColumnVector = {
-    val col = new Array[ColumnVector](numColumns)
-    try {
-      try {
-        (0 until numColumns).foreach(i => col(i) = table.getColumn(i).incRefCount())
-      } finally {
-        table.close()
-      }
-      ColumnVector.concatenate(col: _*)
-    } finally {
-      col.safeClose()
-    }
+      childPlans.head.convertIfNeeded())
   }
 }
 
@@ -109,12 +99,14 @@ object GpuGenerateExec {
  * where we don't actually need to put the data into an array first.
  */
 case class GpuGenerateExec(
+    includePos: Boolean,
     arrayProject: Seq[GpuExpression],
+    requiredChildOutput: Seq[Attribute],
     generatorOutput: Seq[Attribute],
     child: SparkPlan
 ) extends UnaryExecNode with GpuExec {
 
-  override def output: Seq[Attribute] = generatorOutput
+  override def output: Seq[Attribute] = requiredChildOutput ++ generatorOutput
 
   override def producedAttributes: AttributeSet = AttributeSet(generatorOutput)
 
@@ -123,53 +115,78 @@ case class GpuGenerateExec(
   override def doExecute(): RDD[InternalRow] =
     throw new IllegalStateException(s"Row-based execution should not occur for $this")
 
-  override lazy val additionalMetrics: Map[String, SQLMetric] = Map(
-    "buildArrayTime" -> SQLMetrics.createNanoTimingMetric(sparkContext, "build array time"))
-
   override def doExecuteColumnar(): RDD[ColumnarBatch] = {
     val numOutputRows = longMetric(NUM_OUTPUT_ROWS)
     val numOutputBatches = longMetric(NUM_OUTPUT_BATCHES)
     val totalTime = longMetric(TOTAL_TIME)
-    val projectTime = longMetric("buildArrayTime")
-    val boundProjectList = GpuBindReferences.bindReferences(arrayProject, child.output)
-    val numColumns = boundProjectList.length
-    child.executeColumnar().map { cb =>
-      val nvtxRange = new NvtxWithMetrics("GpuGenerateExec", NvtxColor.PURPLE, totalTime)
-      try {
-        // First we do a project to get the values the array would have had in it.
-        val projOut = GpuProjectExec.projectAndClose(cb, boundProjectList, projectTime)
-        val table = try {
-          GpuColumnVector.from(projOut)
-        } finally {
-          projOut.close()
+    val boundArrayProjectList = GpuBindReferences.bindReferences(arrayProject, child.output).toArray
+    val numArrayColumns = boundArrayProjectList.length
+    val boundOthersProjectList =
+      GpuBindReferences.bindReferences(requiredChildOutput, child.output).toArray
+    val numOtherColumns = boundOthersProjectList.length
+    val numExplodeColumns = if (includePos) 2 else 1
+
+    child.executeColumnar().mapPartitions { it =>
+      new Iterator[ColumnarBatch] {
+        var currentBatch: ColumnarBatch = _
+        var indexIntoData = 0
+
+        private def closeCurrent(): Unit = if (currentBatch != null) {
+          currentBatch.close()
+          currentBatch = null
         }
 
-        val numRows = table.getRowCount.toInt
+        TaskContext.get().addTaskCompletionListener[Unit](_ => closeCurrent())
 
-        var c: ColumnVector = null
-        var p: ColumnVector = null
-        try {
-          c = GpuGenerateExec.concatColumnsAndClose(numColumns, table)
-          p = GpuGenerateExec.createPositionsColumn(numColumns, numRows)
-
-          val result = new Table(p, c)
-          try {
-            numOutputBatches += 1
-            numOutputRows += result.getRowCount
-            GpuColumnVector.from(result)
-          } finally {
-            result.close()
-          }
-        } finally {
-          if (c != null) {
-            c.close()
-          }
-          if (p != null) {
-            p.close()
+        def fetchNextBatch(): Unit = {
+          indexIntoData = 0
+          closeCurrent()
+          if (it.hasNext) {
+            currentBatch = it.next()
           }
         }
-      } finally {
-        nvtxRange.close()
+
+        override def hasNext: Boolean = {
+          if (currentBatch == null || indexIntoData >= numArrayColumns) {
+            fetchNextBatch()
+          }
+          currentBatch != null
+        }
+
+        override def next(): ColumnarBatch = {
+          if (currentBatch == null || indexIntoData >= numArrayColumns) {
+            fetchNextBatch()
+          }
+          withResource(new NvtxWithMetrics("GpuGenerateExec", NvtxColor.PURPLE, totalTime)) { _ =>
+            val result = new Array[ColumnVector](numExplodeColumns + numOtherColumns)
+            try {
+              withResource(GpuProjectExec.project(currentBatch, boundOthersProjectList)) { cb =>
+                (0 until cb.numCols()).foreach { i =>
+                  result(i) = cb.column(i).asInstanceOf[GpuColumnVector].getBase.incRefCount()
+                }
+              }
+              if (includePos) {
+                result(numOtherColumns) = withResource(GpuScalar.from(indexIntoData, IntegerType)) { scalar =>
+                  ColumnVector.fromScalar(scalar, currentBatch.numRows())
+                }
+              }
+              result(numOtherColumns + numExplodeColumns - 1) =
+                withResource(GpuProjectExec.project(currentBatch,
+                  Seq(boundArrayProjectList(indexIntoData)))) { cb =>
+                  cb.column(0).asInstanceOf[GpuColumnVector].getBase.incRefCount()
+                }
+
+              withResource(new Table(result: _*)) { table =>
+                indexIntoData += 1
+                numOutputBatches += 1
+                numOutputRows += table.getRowCount
+                GpuColumnVector.from(table)
+              }
+            } finally {
+              result.safeClose()
+            }
+          }
+        }
       }
     }
   }
