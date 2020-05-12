@@ -566,7 +566,6 @@ class StringOperatorsSuite extends SparkQueryCompareTestSuite {
       result
   }
 
-
   testSparkResultsAreEqual("String regexp_replace regex 6 cpu fall back",
     nullableStringsFromCsv, execsAllowedNonGpu = Seq("ProjectExec", "Alias",
       "RegExpReplace", "AttributeReference", "Literal")) {
@@ -574,6 +573,23 @@ class StringOperatorsSuite extends SparkQueryCompareTestSuite {
       assert(!result.queryExecution.executedPlan.toString().contains("GpuProject"))
       result
   }
+
+  testSparkResultsAreEqual("String char_length select expression syntax with nulls", nullableStringsFromCsv) {
+    frame => frame.selectExpr("char_length(strings)")
+  }
+
+  testSparkResultsAreEqual("String character_length select expression syntax with special characters", likeDf) {
+    frame => frame.selectExpr("character_length(word)")
+  }
+
+  testSparkResultsAreEqual("String length select syntax with nulls", nullableStringsFromCsv) {
+    frame => frame.select(length(col("more_strings")))
+  }
+
+  testSparkResultsAreEqual("String length selectexpression syntax with multibyte characters", TestCodepoints.validCodepointCharsDF) {
+    frame => frame.selectExpr("length(strings)")
+  }
+
 }
 
 /*
