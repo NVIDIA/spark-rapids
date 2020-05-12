@@ -120,6 +120,17 @@ def test_mod(data_gen):
                 f.col('b') % f.lit(None).cast(data_type),
                 f.col('a') % f.col('b')))
 
+@pytest.mark.parametrize('data_gen', numeric_gens, ids=idfn)
+def test_pmod(data_gen):
+    string_type = to_cast_string(data_gen.data_type)
+    assert_gpu_and_cpu_are_equal_collect(
+            lambda spark : binary_op_df(spark, data_gen).selectExpr(
+                'pmod(a, cast(100 as {}))'.format(string_type),
+                'pmod(cast(-12 as {}), b)'.format(string_type),
+                'pmod(cast(null as {}), a)'.format(string_type),
+                'pmod(b, cast(null as {}))'.format(string_type),
+                'pmod(a, b)'))
+
 @pytest.mark.parametrize('data_gen', double_gens, ids=idfn)
 def test_signum(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
