@@ -15,6 +15,7 @@
 from datetime import date, datetime, timedelta, timezone
 import math
 from pyspark.sql.types import *
+import pyspark.sql.functions as f
 import pytest
 import random
 import sre_yield
@@ -381,6 +382,22 @@ class TimestampGen(DataGen):
     def contains_ts(self):
         return True
 
+class ArrayGen(DataGen):
+    """Generate Arrays of data."""
+    def __init__(self, child_gen, min_length=0, max_length=100, nullable=True):
+        super().__init__(ArrayType(child_gen.data_type, containsNull=child_gen.nullable), nullable=nullable)
+        self._min_length = min_length
+        self._max_length = max_length
+        self._child_gen = child_gen
+
+    def start(self, rand):
+        self._child_gen.start(rand)
+        def gen_array():
+            length = rand.randint(self._min_length, self._max_length)
+            return [self._child_gen.gen() for index in range(0, length)]
+        self._start(rand, gen_array)
+
+
 def gen_df(spark, data_gen, length=2048, seed=0):
     """Generate a spark dataframe from the given data generators."""
     if isinstance(data_gen, list):
@@ -404,6 +421,32 @@ def gen_df(spark, data_gen, length=2048, seed=0):
     data = [src.gen() for index in range(0, length)]
     return spark.createDataFrame(data, src.data_type)
 
+def _mark_as_lit(data):
+    # Sadly you cannot create a literal from just an array in pyspark
+    if isinstance(data, list):
+        return f.array([_mark_as_lit(x) for x in data])
+    return f.lit(data)
+
+def gen_scalar(data_gen, seed=0):
+    """Generate a single scalar value."""
+    if isinstance(data_gen, list):
+        src = StructGen(data_gen, nullable=False)
+    else:
+        src = data_gen
+
+    # Before we get too far we need to verify that we can run with timestamps
+    if src.contains_ts():
+        # Now we have to do some kind of ugly internal java stuff
+        jvm = spark.sparkContext._jvm
+        utc = jvm.java.time.ZoneId.of('UTC').normalized()
+        sys_tz = jvm.java.time.ZoneId.systemDefault().normalized()
+        if (utc != sys_tz):
+            pytest.skip('The java system time zone is not set to UTC but is {}'.format(sys_tz))
+
+    rand = random.Random(seed)
+    src.start(rand)
+    return _mark_as_lit(src.gen())
+
 def debug_df(df):
     """print out the contents of a dataframe for debugging."""
     print('COLLECTED\n{}'.format(df.collect()))
@@ -413,4 +456,27 @@ def idfn(val):
     """Provide an API to provide display names for data type generators."""
     return str(val)
 
+def to_cast_string(spark_type):
+    if isinstance(spark_type, ByteType):
+        return 'BYTE'
+    elif isinstance(spark_type, ShortType):
+        return 'SHORT'
+    elif isinstance(spark_type, IntegerType):
+        return 'INT'
+    elif isinstance(spark_type, LongType):
+        return 'LONG'
+    elif isinstance(spark_type, FloatType):
+        return 'FLOAT'
+    elif isinstance(spark_type, DoubleType):
+        return 'DOUBLE'
+    elif isinstance(spark_type, BooleanType):
+        return 'BOOLEAN'
+    elif isinstance(spark_type, DateType):
+        return 'DATE'
+    elif isinstance(spark_type, TimestampType):
+        return 'TIMESTAMP'
+    elif isinstance(spark_type, StringType):
+        return 'STRING'
+    else:
+        raise RuntimeError('CAST TO TYPE {} NOT SUPPORTED YET'.format(spark_type))
 

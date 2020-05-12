@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from conftest import is_incompat, is_order_ignored, get_float_check, get_limit
+from conftest import is_incompat, should_sort_on_spark, should_sort_locally, get_float_check, get_limit
 from datetime import date
 import math
 from pyspark.sql import Row
@@ -84,15 +84,72 @@ def _has_incompat_conf(conf):
     return ('spark.rapids.sql.incompatibleOps.enabled' in conf and
             conf['spark.rapids.sql.incompatibleOps.enabled'].lower() == 'true')
 
+class _RowCmp(object):
+    """Allows for sorting Rows in a consistent way"""
+    def __init__(self, wrapped):
+        #TODO will need others for maps, etc
+        if isinstance(wrapped, Row):
+            self.wrapped = [_RowCmp(c) for c in wrapped]
+        else:
+            self.wrapped = wrapped
+
+        if isinstance(wrapped, float):
+            self.is_nan = math.isnan(wrapped)
+        else:
+            self.is_nan = False
+
+    def cmp(self, other):
+        try:
+            #None comes before anything else
+            #NaN comes next
+            if (self.wrapped is None and other.wrapped is None):
+                return 0
+            elif (self.wrapped is None):
+                return -1
+            elif (other.wrapped is None):
+                return 1
+            elif self.is_nan and other.is_nan:
+                return 0
+            elif self.is_nan:
+                return -1
+            elif other.is_nan:
+                return 1
+            elif self.wrapped == other.wrapped:
+                return 0
+            elif self.wrapped < other.wrapped:
+                return -1
+            else:
+                return 1
+        except TypeError as te:
+            print("ERROR TRYING TO COMPARE {} to {} {}".format(self.wrapped, other.wrapped, te))
+            raise te
+
+
+    def __lt__(self, other):
+        return self.cmp(other) < 0
+
+    def __gt__(self, other):
+        return self.cmp(other) > 0
+           
+    def __eq__(self, other):
+        return self.cmp(other) == 0
+
+    def __le__(self, other):
+        return self.cmp(other) <= 0
+ 
+    def __ge__(self, other):
+        return self.cmp(other) >= 0
+
+    def __ne__(self, other):
+        return self.cmp(other) != 0
+ 
 def _assert_gpu_and_cpu_are_equal(func,
         should_collect,
         conf={}):
-    sort_result = is_order_ignored()
-    if sort_result:
+    sort_locally = should_sort_locally()
+    if should_sort_on_spark():
         def with_sorted(spark):
             df = func(spark)
-            #TODO if we ever start to support maps we need to come up with a new plan
-            # because maps are not supported for sort
             return df.sort(df.columns)
 
         sorted_func = with_sorted
@@ -114,6 +171,8 @@ def _assert_gpu_and_cpu_are_equal(func,
     else:
         bring_back = lambda spark: limit_func(spark).toLocalIterator()
         collect_type = 'ITERATOR'
+        if sort_locally:
+            raise RuntimeError('Local Sort is only supported on a collect')
 
     if is_incompat():
         conf = dict(conf) # Make a copy before we change anything
@@ -132,6 +191,10 @@ def _assert_gpu_and_cpu_are_equal(func,
     gpu_end = time.time()
     print('### {}: GPU TOOK {} CPU TOOK {} ###'.format(collect_type, 
         gpu_end - gpu_start, cpu_end - cpu_start))
+    if sort_locally:
+        from_cpu.sort(key=_RowCmp)
+        from_gpu.sort(key=_RowCmp)
+
     assert_equal(from_cpu, from_gpu)
 
 def assert_gpu_and_cpu_are_equal_collect(func, conf={}):
