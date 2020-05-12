@@ -222,6 +222,54 @@ class StringOperatorsSuite extends SparkQueryCompareTestSuite {
     frame => frame.select(trim(frame("strings"), " B\ud720"))
   }
 
+  testSparkResultsAreEqual("StringTrimLeft valid strings", nullableStringsFromCsv) {
+    frame => frame.select(ltrim(frame("strings"), "aB"))
+  }
+
+  testSparkResultsAreEqual("StringTrimLeft empty string", nullableStringsFromCsv) {
+    frame => frame.select(ltrim(frame("strings"), ""))
+  }
+
+  testSparkResultsAreEqual("StringTrimLeft test null", nullableStringsFromCsv) {
+    frame => frame.select(ltrim(frame("strings"), null))
+  }
+
+  testSparkResultsAreEqual("StringTrimLeft no trimString - default whitespace", nullableStringsFromCsv) {
+    frame => frame.select(ltrim(frame("strings")))
+  }
+
+  testSparkResultsAreEqual("StringTrimLeft utf8 strings", utf8StringsDf) {
+    frame => frame.select(ltrim(frame("strings"), "B"))
+  }
+
+  testSparkResultsAreEqual("StringTrimLeft utf8 strings with utf8 trim", utf8StringsDf) {
+    frame => frame.select(ltrim(frame("strings"), " B\ud720"))
+  }
+
+  testSparkResultsAreEqual("StringTrimRight valid strings", nullableStringsFromCsv) {
+    frame => frame.select(rtrim(frame("strings"), "aB"))
+  }
+
+  testSparkResultsAreEqual("StringTrimRight empty string", nullableStringsFromCsv) {
+    frame => frame.select(rtrim(frame("strings"), ""))
+  }
+
+  testSparkResultsAreEqual("StringTrimRight test null", nullableStringsFromCsv) {
+    frame => frame.select(rtrim(frame("strings"), null))
+  }
+
+  testSparkResultsAreEqual("StringTrimRight no trimString - default whitespace", nullableStringsFromCsv) {
+    frame => frame.select(rtrim(frame("strings")))
+  }
+
+  testSparkResultsAreEqual("StringTrimRight utf8 strings", utf8StringsDf) {
+    frame => frame.select(rtrim(frame("strings"), "B"))
+  }
+
+  testSparkResultsAreEqual("StringTrimRight utf8 strings with utf8 trim", utf8StringsDf) {
+    frame => frame.select(rtrim(frame("strings"), " B\ud720"))
+  }
+
   testSparkResultsAreEqual("String StartsWith", nullableStringsFromCsv) {
     frame => frame.filter(col("strings").startsWith("F"))
   }

@@ -21,8 +21,11 @@ import scala.collection.mutable.ArrayBuffer
 import ai.rapids.cudf.{BinaryOp, BinaryOperable, DType, Scalar, UnaryOp}
 import ai.rapids.spark.RapidsPluginImplicits._
 
-import org.apache.spark.sql.catalyst.expressions.{BinaryExpression, BinaryOperator, Expression, TernaryExpression, UnaryExpression, Unevaluable, ComplexTypeMergingExpression}
+import org.apache.spark.sql.catalyst.expressions.{BinaryExpression, BinaryOperator, ComplexTypeMergingExpression,
+  Expression, String2TrimExpression, TernaryExpression, UnaryExpression, Unevaluable}
+import org.apache.spark.sql.types.StringType
 import org.apache.spark.sql.vectorized.ColumnarBatch
+import org.apache.spark.unsafe.types.UTF8String
 
 
 object GpuExpressionsUtils {
@@ -42,6 +45,27 @@ object GpuExpressionsUtils {
         throw t
     }
     resultCvs
+  }
+
+  def getTrimString(trimStr: Option[GpuExpression]): String = trimStr match {
+    case Some(GpuLiteral(data, StringType)) =>
+      if (data == null) {
+        null
+      } else {
+        data.asInstanceOf[UTF8String].toString
+      }
+
+    case Some(GpuAlias(GpuLiteral(data, StringType), _)) =>
+      if (data == null) {
+        null
+      } else {
+        data.asInstanceOf[UTF8String].toString
+      }
+
+    case None => " "
+
+    case _ => throw new IllegalStateException("Internal Error GPU support for this data type is not implemented and " +
+        "should have been disabled")
   }
 }
 
@@ -212,6 +236,49 @@ trait CudfBinaryExpression extends GpuBinaryExpression {
 }
 
 abstract class CudfBinaryOperator extends GpuBinaryOperator with CudfBinaryExpression
+
+trait GpuString2TrimExpression extends String2TrimExpression with GpuExpression {
+
+  override def srcStr: GpuExpression
+
+  override def trimStr: Option[GpuExpression]
+
+  override def children: Seq[GpuExpression] = srcStr +: trimStr.toSeq
+
+  def strippedColumnVector(value: GpuColumnVector, sclarValue: Scalar): GpuColumnVector
+
+  override def sql: String = if (trimStr.isDefined) {
+    s"TRIM($direction ${trimStr.get.sql} FROM ${srcStr.sql})"
+  } else {
+    super.sql
+
+  }
+
+  override def columnarEval(batch: ColumnarBatch): Any = {
+    val trim = GpuExpressionsUtils.getTrimString(trimStr)
+    val shouldBeColumn = srcStr.columnarEval(batch)
+    try {
+      // We know the first parameter is not a Literal, because trim(Literal, Literal) would already have been
+      // optimized out
+      val column = shouldBeColumn.asInstanceOf[GpuColumnVector]
+      if (trim == null) {
+        withResource(GpuScalar.from(null, StringType)) { nullScalar =>
+          GpuColumnVector.from(nullScalar, column.getRowCount().toInt)
+        }
+      } else if (trim.isEmpty) {
+        column.incRefCount() // This is a noop
+      } else {
+        withResource(GpuScalar.from(trim, StringType)) { t =>
+          strippedColumnVector(column, t)
+        }
+      }
+    } finally {
+      if (shouldBeColumn.isInstanceOf[AutoCloseable]) {
+        shouldBeColumn.asInstanceOf[AutoCloseable].close()
+      }
+    }
+  }
+}
 
 trait GpuTernaryExpression extends TernaryExpression with GpuExpression {
 
