@@ -99,9 +99,7 @@ class CastOpSuite extends GpuExpressionTestSuite {
     // this test tracks currently unsupported casts and will need updating as more casts are
     // supported
     val unsupported = getUnsupportedCasts(false)
-    val expected = List((FloatType,StringType),
-      (DoubleType,StringType),
-      (DateType,StringType),
+    val expected = List((DateType,StringType),
       (TimestampType,StringType),
       (StringType,ByteType),
       (StringType,ShortType),
@@ -118,9 +116,7 @@ class CastOpSuite extends GpuExpressionTestSuite {
     // this test tracks currently unsupported ansi_casts and will need updating as more casts are
     // supported
     val unsupported = getUnsupportedCasts(true)
-    val expected = List((FloatType,StringType),
-      (DoubleType,StringType),
-      (DateType,StringType),
+    val expected = List((DateType,StringType),
       (TimestampType,StringType),
       (StringType,ByteType),
       (StringType,ShortType),
