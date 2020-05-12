@@ -48,6 +48,16 @@ case class GpuLower(child: Expression) extends GpuUnaryString2StringExpression {
     GpuColumnVector.from(input.getBase.lower())
 }
 
+case class GpuLength(child: Expression) extends GpuUnaryExpression with ExpectsInputTypes {
+
+  override def dataType: DataType = IntegerType
+  override def inputTypes: Seq[AbstractDataType] = Seq(StringType)
+  override def toString: String = s"length($child)"
+
+  override def doColumnar(input: GpuColumnVector): GpuColumnVector =
+    GpuColumnVector.from(input.getBase.getCharLengths())
+}
+
 case class GpuStringLocate(substr: Expression, col: Expression, start: Expression)
   extends GpuTernaryExpression with ImplicitCastInputTypes {
 

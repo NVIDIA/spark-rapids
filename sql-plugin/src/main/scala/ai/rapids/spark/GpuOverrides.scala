@@ -1238,6 +1238,11 @@ object GpuOverrides {
         }
         override def convertToGpu(lhs: GpuExpression, regexp: GpuExpression,
           rep: GpuExpression): GpuExpression = GpuStringReplace(lhs, regexp, rep)
+      }),
+    expr[Length](
+      "String Character Length",
+      (a, conf, p, r) => new UnaryExprMeta[Length](a, conf, p, r) {
+        override def convertToGpu(child: GpuExpression): GpuExpression = GpuLength(child)
       })
   ).map(r => (r.getClassFor.asSubclass(classOf[Expression]), r)).toMap
 
