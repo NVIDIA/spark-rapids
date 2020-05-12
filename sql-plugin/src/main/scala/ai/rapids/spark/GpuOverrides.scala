@@ -835,6 +835,12 @@ object GpuOverrides {
           GpuFromUnixTime(lhs, rhs, strfFormat)
         }
       }),
+    expr[Pmod](
+      "pmod",
+      (a, conf, p, r) => new BinaryExprMeta[Pmod](a, conf, p, r) {
+        override def convertToGpu(lhs: GpuExpression, rhs: GpuExpression): GpuExpression =
+          GpuPmod(lhs, rhs)
+      }),
     expr[Add](
       "addition",
       (a, conf, p, r) => new BinaryExprMeta[Add](a, conf, p, r) {
