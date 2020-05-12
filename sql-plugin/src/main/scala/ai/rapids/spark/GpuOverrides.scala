@@ -1170,15 +1170,21 @@ object GpuOverrides {
       }),
     expr[StringTrim](
       "StringTrim operator",
-      (in, conf, p, r) => new String2TrimExpressionMeta[StringTrim](in, conf, p, r) {
-        override def tagExprForGpu(): Unit = {
-          if (in.trimStr != None && !isStringLit(in.trimStr.get)) {
-            willNotWorkOnGpu("only literal parameters supported for string literal trimStr parameter")
-          }
-        }
-        override def convertToGpu(column: GpuExpression, target: Option[GpuExpression] = None): GpuExpression = {
+      (in, conf, p, r) => new String2TrimExpressionMeta[StringTrim](in, in.trimStr, conf, p, r) {
+        override def convertToGpu(column: GpuExpression, target: Option[GpuExpression] = None): GpuExpression =
           GpuStringTrim(column, target)
-        }
+      }),
+    expr[StringTrimLeft](
+      "StringTrimLeft operator",
+      (in, conf, p, r) => new String2TrimExpressionMeta[StringTrimLeft](in, in.trimStr, conf, p, r) {
+        override def convertToGpu(column: GpuExpression, target: Option[GpuExpression] = None): GpuExpression =
+          GpuStringTrimLeft(column, target)
+      }),
+    expr[StringTrimRight](
+      "StringTrimRight operator",
+      (in, conf, p, r) => new String2TrimExpressionMeta[StringTrimRight](in, in.trimStr, conf, p, r) {
+        override def convertToGpu(column: GpuExpression, target: Option[GpuExpression] = None): GpuExpression =
+          GpuStringTrimRight(column, target)
       }),
     expr[StartsWith](
       "Starts With",

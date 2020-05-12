@@ -16,6 +16,8 @@
 
 package ai.rapids.spark
 
+import ai.rapids.spark.GpuOverrides.isStringLit
+
 import scala.collection.mutable
 import org.apache.spark.sql.catalyst.expressions.aggregate.AggregateFunction
 import org.apache.spark.sql.catalyst.expressions.{BinaryExpression, ComplexTypeMergingExpression, Expression, String2TrimExpression, TernaryExpression, UnaryExpression}
@@ -663,10 +665,17 @@ abstract class TernaryExprMeta[INPUT <: TernaryExpression](
 
 abstract class String2TrimExpressionMeta[INPUT <: String2TrimExpression](
     expr: INPUT,
+    trimStr: Option[Expression],
     conf: RapidsConf,
     parent: Option[RapidsMeta[_, _, _]],
     rule: ConfKeysAndIncompat)
     extends ExprMeta[INPUT](expr, conf, parent, rule) {
+
+  override def tagExprForGpu(): Unit = {
+    if (trimStr != None && !isStringLit(trimStr.get)) {
+      willNotWorkOnGpu("only literal parameters supported for string literal trimStr parameter")
+    }
+  }
 
   override final def convertToGpu(): GpuExpression = {
     val trimParam = if (childExprs.size > 1) {
@@ -674,11 +683,10 @@ abstract class String2TrimExpressionMeta[INPUT <: String2TrimExpression](
     } else {
       None
     }
-
     convertToGpu(childExprs(0).convertToGpu(), trimParam)
   }
 
-  def convertToGpu(lhs: GpuExpression, rhs: Option[GpuExpression] = None): GpuExpression
+  def convertToGpu(column: GpuExpression, target: Option[GpuExpression] = None): GpuExpression
 }
 
 /**
