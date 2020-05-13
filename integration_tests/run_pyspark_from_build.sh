@@ -27,5 +27,9 @@ else
     TEST_JARS=$(echo ../tests/target/rapids-4-spark-*.jar)
     ALL_JARS="$CUDF_JARS $PLUGIN_JARS $TEST_JARS"
     echo "AND PLUGIN JARS: $ALL_JARS"
-    "$SPARK_HOME"/bin/spark-submit --jars "${ALL_JARS// /,}" --conf 'spark.driver.extraJavaOptions=-Duser.timezone=GMT' --conf 'spark.executor.extraJavaOptions=-Duser.timezone=GMT' --conf 'spark.sql.session.timeZone=UTC' --conf 'spark.sql.shuffle.partitions=12' $SPARK_SUBMIT_FLAGS ./runtests.py -v -rfExXs "$@"
+    if [[ "${TEST}" != "" ]];
+    then
+        TEST_ARGS="-k $TEST"
+    fi
+    "$SPARK_HOME"/bin/spark-submit --jars "${ALL_JARS// /,}" --conf 'spark.driver.extraJavaOptions=-Duser.timezone=GMT' --conf 'spark.executor.extraJavaOptions=-Duser.timezone=GMT' --conf 'spark.sql.session.timeZone=UTC' --conf 'spark.sql.shuffle.partitions=12' $SPARK_SUBMIT_FLAGS ./runtests.py -v -rfExXs "$TEST_ARGS" $RUN_TEST_PARAMS "$@"
 fi
