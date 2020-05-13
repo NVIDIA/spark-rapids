@@ -49,6 +49,7 @@ pipeline {
         JENKINS_ROOT  = 'jenkins'
         TEST_SCRIPT = '$JENKINS_ROOT/spark-tests.sh'
         LIBCUDF_KERNEL_CACHE_PATH='/tmp'
+        QUAY_IO = credentials("svcngcc_quayio")
     }
 
     stages {
@@ -62,7 +63,12 @@ pipeline {
                     }
                     echo "CUDA_CLASSIFIER: $CUDA_CLASSIFIER, DOCKER_TAG: $DOCKER_TAG"
 
-                    def IMAGE_NAME="xgbci/rapids-plugin-integration:centos7-$DOCKER_TAG"
+                    def IMAGE_NAME="quay.io/nvidia/spark:plugin-integration-centos7-$DOCKER_TAG"
+                    sh """
+                        docker login -u "$QUAY_IO_USR" -p "$QUAY_IO_PSW" https://quay.io
+                        docker pull $IMAGE_NAME
+                    """
+
                     docker.image(IMAGE_NAME).inside("--runtime=nvidia -v ${HOME}/.zinc:${HOME}/.zinc:rw \
                         -v /etc/passwd:/etc/passwd -v /etc/group:/etc/group") {
                         echo "Running integration tests on centos7 $DOCKER_TAG"
