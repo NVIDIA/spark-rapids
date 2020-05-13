@@ -43,13 +43,19 @@ object FuzzerUtils {
    * Create a schema with the specified data types.
    */
   def createSchema(dataTypes: Seq[DataType]): StructType = {
-    new StructType(dataTypes.zipWithIndex.map(pair => StructField(s"c${pair._2}", pair._1)).toArray)
+    new StructType(dataTypes.zipWithIndex
+      .map(pair => StructField(s"c${pair._2}", pair._1)).toArray)
   }
 
   /**
    * Creates a ColumnarBatch with random data based on the given schema.
    */
-  def createColumnarBatch(schema: StructType, rowCount: Int, maxStringLen: Int = 64, options: FuzzerOptions = DEFAULT_OPTIONS, seed: Long = 0): ColumnarBatch = {
+  def createColumnarBatch(
+      schema: StructType,
+      rowCount: Int,
+      maxStringLen: Int = 64,
+      options: FuzzerOptions = DEFAULT_OPTIONS,
+      seed: Long = 0): ColumnarBatch = {
     val rand = new Random(seed)
     val r = new EnhancedRandom(rand, options)
     val builders = new GpuColumnarBatchBuilder(schema, rowCount, null)
@@ -145,7 +151,12 @@ object FuzzerUtils {
   /**
    * Creates a DataFrame with random data based on the given schema.
    */
-  def generateDataFrame(spark: SparkSession, schema: StructType, rowCount: Int, options: FuzzerOptions = DEFAULT_OPTIONS, seed: Long = 0): DataFrame = {
+  def generateDataFrame(
+        spark: SparkSession,
+        schema: StructType,
+        rowCount: Int,
+        options: FuzzerOptions = DEFAULT_OPTIONS,
+        seed: Long = 0): DataFrame = {
     val r = new Random(seed)
     val rows: Seq[Row] = (0 until rowCount).map(_ => generateRow(schema.fields, r, options))
     spark.createDataFrame(rows.asJava, schema)
@@ -171,7 +182,8 @@ object FuzzerUtils {
           case DataTypes.StringType => r.nextString()
           case DataTypes.TimestampType => r.nextTimestamp()
           case DataTypes.DateType => r.nextDate()
-          case _ => throw new IllegalStateException(s"fuzzer does not support data type ${field.dataType}")
+          case _ => throw new IllegalStateException(
+            s"fuzzer does not support data type ${field.dataType}")
         }
       }
     })
@@ -297,4 +309,7 @@ class EnhancedRandom(r: Random, options: FuzzerOptions) {
   private val ASCII_CHARS = "abcdefghijklmnopqrstuvwxyz"
 }
 
-case class FuzzerOptions(numbersAsStrings: Boolean = true, asciiStringsOnly: Boolean = false, maxStringLen: Int = 64)
+case class FuzzerOptions(
+    numbersAsStrings: Boolean = true,
+    asciiStringsOnly: Boolean = false,
+    maxStringLen: Int = 64)
