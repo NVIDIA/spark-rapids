@@ -18,6 +18,7 @@ from pyspark.sql.types import *
 import pyspark.sql.functions as f
 import pytest
 import random
+from spark_session import spark
 import sre_yield
 import struct
 
@@ -82,11 +83,15 @@ class DataGen:
                 raise RuntimeError('Random did not pick something we expected')
             self._gen_func = choose_one
 
-    def gen(self):
+    def gen(self, force_no_nulls=False):
         """generate the next line"""
         if not self._gen_func:
             raise RuntimeError('start must be called before generating any data')
-        return self._gen_func()
+        v = self._gen_func()
+        if force_no_nulls:
+            while v is None:
+                v = self._gen_func()
+        return v
 
     def contains_ts(self):
         """Checks if this contains a TimestampGen"""
@@ -448,8 +453,8 @@ def _mark_as_lit(data):
         return f.array([_mark_as_lit(x) for x in data])
     return f.lit(data)
 
-def gen_scalar(data_gen, seed=0):
-    """Generate a single scalar value."""
+def gen_scalars(data_gen, count, seed=0, force_no_nulls=False):
+    """Generate scalar values."""
     if isinstance(data_gen, list):
         src = StructGen(data_gen, nullable=False)
     else:
@@ -466,7 +471,12 @@ def gen_scalar(data_gen, seed=0):
 
     rand = random.Random(seed)
     src.start(rand)
-    return _mark_as_lit(src.gen())
+    return (_mark_as_lit(src.gen(force_no_nulls=force_no_nulls)) for i in range(0, count))
+
+def gen_scalar(data_gen, seed=0, force_no_nulls=False):
+    """Generate a single scalar value."""
+    v = list(gen_scalars(data_gen, 1, seed=seed, force_no_nulls=force_no_nulls))
+    return v[0]
 
 def debug_df(df):
     """print out the contents of a dataframe for debugging."""
