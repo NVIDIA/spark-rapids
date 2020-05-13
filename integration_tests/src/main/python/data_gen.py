@@ -118,7 +118,7 @@ class StringGen(DataGen):
         super().__init__(StringType(), nullable=nullable)
         self.base_strs = sre_yield.AllStrings(pattern, flags=flags, charset=charset, max_count=_MAX_CHOICES)
 
-    def with_special_pattern(self, special_pattern, flags=0, charset=sre_yield.CHARSET, weight=1.0):
+    def with_special_pattern(self, pattern, flags=0, charset=sre_yield.CHARSET, weight=1.0):
         """
         Like with_special_case but you can provide a regexp pattern
         instead of a hard coded string value.
