@@ -15,7 +15,7 @@
 # limitations under the License.
 #
 
-set -e
+set -ex
 if [ "$CUDF_VER"x == x ];then
     CUDF_VER="0.14-SNAPSHOT"
 fi
@@ -38,7 +38,7 @@ fi
 echo "CUDF_VER: $CUDF_VER, CUDA_CLASSIFIER: $CUDA_CLASSIFIER, PROJECT_VER: $PROJECT_VER \
         SPARK_VER: $SPARK_VER, SCALA_BINARY_VER: $SCALA_BINARY_VER, SERVER_URL: $SERVER_URL"
 
-ARTF_ROOT=$WORKSPACE/jars
+ARTF_ROOT="$WORKSPACE/jars"
 MVN_GET_CMD="mvn org.apache.maven.plugins:maven-dependency-plugin:2.8:get -B \
     -Dmaven.repo.local=$WORKSPACE/.m2 \
     -DremoteRepositories=$SERVER_URL \
@@ -79,11 +79,14 @@ PARQUET_PERF="$WORKSPACE/tests/src/test/resources/parquet_perf"
 PARQUET_ACQ="$WORKSPACE/tests/src/test/resources/parquet_acq"
 OUTPUT="$WORKSPACE/output"
 BASE_SPARK_SUBMIT_ARGS="--master spark://$HOSTNAME:7077 --executor-memory 32G \
-    --jars $CUDF_JAR,$RAPIDS_PLUGIN_JAR \
-    --conf 'spark.driver.extraJavaOptions=-Duser.timezone=GMT' \
-    --conf 'spark.executor.extraJavaOptions=-Duser.timezone=GMT' \
-    --conf 'spark.sql.session.timeZone=UTC'"
-MORTGAGE_SPARK_SUBMIT_ARGS=" --class ai.rapids.sparkexamples.mortgage.Main \
+    --conf spark.sql.shuffle.partitions=12 \
+    --conf spark.driver.extraClassPath=${CUDF_JAR}:${RAPIDS_PLUGIN_JAR} \
+    --conf spark.executor.extraClassPath=${CUDF_JAR}:${RAPIDS_PLUGIN_JAR} \
+    --conf spark.driver.extraJavaOptions=-Duser.timezone=GMT \
+    --conf spark.executor.extraJavaOptions=-Duser.timezone=GMT \
+    --conf spark.sql.session.timeZone=UTC"
+MORTGAGE_SPARK_SUBMIT_ARGS=" --conf spark.plugins=ai.rapids.spark.SQLPlugin \
+    --class ai.rapids.sparkexamples.mortgage.Main \
     $RAPIDS_TEST_JAR"
 
 TEST_PARAMS="$SPARK_VER $PARQUET_PERF $PARQUET_ACQ $OUTPUT"
@@ -100,4 +103,4 @@ jps
 echo "----------------------------START TEST------------------------------------"
 rm -rf $OUTPUT
 spark-submit $BASE_SPARK_SUBMIT_ARGS $MORTGAGE_SPARK_SUBMIT_ARGS $TEST_PARAMS
-cd $RAPIDS_INT_TESTS_HOME && spark-submit $BASE_SPARK_SUBMIT_ARGS --conf 'spark.sql.shuffle.partitions=12' ./runtests.py -v -rfExXs
+cd $RAPIDS_INT_TESTS_HOME && spark-submit $BASE_SPARK_SUBMIT_ARGS --jars $RAPIDS_TEST_JAR ./runtests.py -v -rfExXs
