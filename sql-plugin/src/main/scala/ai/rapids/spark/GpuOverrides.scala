@@ -295,35 +295,37 @@ object GpuOverrides {
     "|", "(", ")", "{", "}", "\\k", "\\Q", "\\E", ":", "!", "<=", ">")
 
   @scala.annotation.tailrec
-  def isStringLit(exp: Expression): Boolean = exp match {
-    case Literal(_, StringType) => true
-    case a: Alias => isStringLit(a.child)
-    case _ => false
+  def extractLit(exp: Expression): Option[Literal] = exp match {
+    case l: Literal => Some(l)
+    case a: Alias => extractLit(a.child)
+    case _ => None
   }
 
-  @scala.annotation.tailrec
-  def isLit(exp: Expression): Boolean = exp match {
-    case Literal(_, _) => true
-    case a: Alias => isLit(a.child)
-    case _ => false
+  def isOfType(l: Option[Literal], t: DataType): Boolean = l.exists(_.dataType == t)
+
+  def isStringLit(exp: Expression): Boolean =
+    isOfType(extractLit(exp), StringType)
+
+  def extractStringLit(exp: Expression): Option[String] = extractLit(exp) match {
+    case Some(Literal(v: UTF8String, StringType)) =>
+      val s = if (v == null) null else v.toString
+      Some(s)
+    case _ => None
   }
+
+  def isLit(exp: Expression): Boolean = extractLit(exp).isDefined
 
   def isNullOrEmptyOrRegex(exp: Expression): Boolean = {
-    val lit = unwrapAliases(exp)
-    if (!isStringLit(lit)) {
+    val lit = extractLit(exp)
+    if (!isOfType(lit, StringType)) {
       false
     } else {
-      val value = lit.asInstanceOf[Literal].value
+      val value = lit.get.value
       if (value == null) return true
       val strLit = value.asInstanceOf[UTF8String].toString
       if (strLit.isEmpty) return true
       regexList.exists(pattern => strLit.contains(pattern))
     }
-  }
-
-  def unwrapAliases(exp: Expression): Expression = exp match {
-    case a: Alias => unwrapAliases(a.child)
-    case e => e
   }
 
   def areAllSupportedTypes(types: DataType*): Boolean = types.forall(isSupportedType)
@@ -341,7 +343,6 @@ object GpuOverrides {
       case StringType => true
       case _ => false
     }
-
 
   /**
    * Checks to see if any expressions are a String Literal
@@ -809,24 +810,55 @@ object GpuOverrides {
         GpuDateDiff(lhs, rhs)
       }
     }),
+    expr[UnixTimestamp](
+      "convert a string date or timestamp to a unix timestamp",
+      (a, conf, p, r) => new BinaryExprMeta[UnixTimestamp](a, conf, p, r) {
+        var strfFormat: String = _
+        override def tagExprForGpu(): Unit = {
+          if (ZoneId.of(a.timeZoneId.get).normalized() != UTC_TIMEZONE_ID) {
+            willNotWorkOnGpu("Only UTC zone id is supported")
+          }
+          // Date and Timestamp work too
+          if (a.right.dataType == StringType) {
+            try {
+              val rightLit = extractStringLit(a.right)
+              if (rightLit.isDefined) {
+                strfFormat = DateUtils.toStrf(rightLit.get)
+              } else {
+                willNotWorkOnGpu("format has to be a string literal")
+              }
+            } catch {
+              case x: TimestampFormatConversionException =>
+                willNotWorkOnGpu(x.getMessage)
+            }
+          }
+        }
+
+        override def convertToGpu(lhs: GpuExpression, rhs: GpuExpression): GpuExpression = {
+          // passing the already converted strf string for a little optimization
+          GpuUnixTimestamp(lhs, rhs, strfFormat)
+        }
+      })
+      .incompat("Incorrectly formatted strings and bogus dates produce garbage data" +
+        " instead of null"),
     expr[FromUnixTime](
       "get the String from a unix timestamp",
       (a, conf, p, r) => new BinaryExprMeta[FromUnixTime](a, conf, p, r) {
-        var strfFormat: String = null
+        var strfFormat: String = _
         override def tagExprForGpu(): Unit = {
           try {
             if (ZoneId.of(a.timeZoneId.get).normalized() != UTC_TIMEZONE_ID) {
               willNotWorkOnGpu("Only UTC zone id is supported")
             }
-            if(isStringLit(a.right)) {
-              strfFormat = DateUtils.toStrf(a.right.eval().toString)
+            val rightLit = extractStringLit(a.right)
+            if (rightLit.isDefined) {
+              strfFormat = DateUtils.toStrf(rightLit.get)
             } else {
-              willNotWorkOnGpu("rhs has to be a String literal")
+              willNotWorkOnGpu("format has to be a string literal")
             }
           } catch {
-            case x: TimestampFormatConversionException => {
+            case x: TimestampFormatConversionException =>
               willNotWorkOnGpu(x.getMessage)
-            }
           }
         }
 
@@ -893,12 +925,12 @@ object GpuOverrides {
       "IN operator",
       (in, conf, p, r) => new ExprMeta[In](in, conf, p, r) {
         override def tagExprForGpu(): Unit = {
-          val unaliased = in.list.map(unwrapAliases)
-          if (!unaliased.forall(_.isInstanceOf[Literal])) {
+          val unaliased = in.list.map(extractLit)
+          if (!unaliased.forall(_.isDefined)) {
             willNotWorkOnGpu("only literals are supported")
           }
           val hasNullLiteral = unaliased.exists {
-            case l: Literal => l.value == null
+            case Some(l) => l.value == null
             case _ => false
           }
           if (hasNullLiteral) {
@@ -940,8 +972,8 @@ object GpuOverrides {
       "CASE WHEN expression",
       (a, conf, p, r) => new ExprMeta[CaseWhen](a, conf, p, r) {
         override def tagExprForGpu(): Unit = {
-          val unaliased = a.branches.map { case (predicate, _) => unwrapAliases(predicate) }
-          if (unaliased.exists(_.isInstanceOf[Literal])) {
+          val anyLit = a.branches.exists { case (predicate, _) => isLit(predicate) }
+          if (anyLit) {
             willNotWorkOnGpu("literal predicates are not supported")
           }
         }
@@ -958,8 +990,7 @@ object GpuOverrides {
       "IF expression",
       (a, conf, p, r) => new ExprMeta[If](a, conf, p, r) {
         override def tagExprForGpu(): Unit = {
-          val unaliased = unwrapAliases(a.predicate)
-          if (unaliased.isInstanceOf[Literal]) {
+          if (isLit(a.predicate)) {
             willNotWorkOnGpu(s"literal predicate ${a.predicate} is not supported")
           }
         }

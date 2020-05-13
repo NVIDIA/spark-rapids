@@ -92,6 +92,25 @@ class DataGen:
         """Checks if this contains a TimestampGen"""
         return False
 
+class ConvertGen(DataGen):
+    """Provides a way to modify the data before it is returned"""
+    def __init__(self, child_gen, func, data_type=None, nullable=True):
+        if data_type is None:
+            data_type = child_gen.data_type
+        super().__init__(data_type, nullable=nullable)
+        self._child_gen = child_gen
+        self._func = func
+
+    def __repr__(self):
+        return super().__repr__() + '(' + str(self._child_gen) + ')'
+
+    def start(self, rand):
+        self._child_gen.start(rand)
+        def modify():
+            return self._func(self._child_gen.gen())
+
+        self._start(rand, modify)
+
 _MAX_CHOICES = 1 << 64
 class StringGen(DataGen):
     """Generate strings that match a pattern"""
@@ -365,6 +384,8 @@ class TimestampGen(DataGen):
 
         self._start_time = self._to_ms_since_epoch(start)
         self._end_time = self._to_ms_since_epoch(end)
+        if (self._epoch >= start and self._epoch <= end):
+            self.with_special_case(self._epoch)
 
     _epoch = datetime(1970, 1, 1, tzinfo=timezone.utc)
     _ms = timedelta(milliseconds=1)
