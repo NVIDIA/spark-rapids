@@ -218,10 +218,10 @@ case class GpuRemainder(left: GpuExpression, right: GpuExpression) extends GpuDi
 
 case class GpuPmod(left: GpuExpression, right: GpuExpression) extends GpuBinaryExpression {
   // Based off of the spark implementation
-//  private def pmod(lhs: Int, rhs: Int): Int = {
-//    val r = lhs % rhs
-//    if (r < 0) {(r + rhs) % rhs} else r
-//  }
+  //  private def pmod(lhs: Int, rhs: Int): Int = {
+  //    val r = lhs % rhs
+  //    if (r < 0) {(r + rhs) % rhs} else r
+  //  }
 
   // For the smaller types we need to cast it up to INT to avoid overflow issues on the add
   // This is to match the spark code.
