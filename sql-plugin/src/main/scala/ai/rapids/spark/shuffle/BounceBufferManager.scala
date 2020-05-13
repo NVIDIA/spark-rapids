@@ -22,16 +22,22 @@ import ai.rapids.cudf.MemoryBuffer
 import org.apache.spark.internal.Logging
 
 /**
-  * This classes manages a set of bounce buffers, that are instances of [[MemoryBuffer]]. The size/quantity
-  * of buffers is configurable, and so is the allocator.
+  * This classes manages a set of bounce buffers, that are instances of [[MemoryBuffer]].
+  * The size/quantity of buffers is configurable, and so is the allocator.
   * @param poolName - a human-friendly name to use for debug logs
   * @param bufferSize - the size of buffer to use
   * @param numBuffers - the number of buffers to allocate on instantiation
   * @param allocator - instance of [[BounceBufferAllocator]] to obtain [[MemoryBuffer]]s.
-  * @tparam T - the specific type of [[MemoryBuffer]] i.e. [[DeviceMemoryBuffer]], [[HostMemoryBuffer]], etc.
+  * @tparam T - the specific type of [[MemoryBuffer]] i.e. [[DeviceMemoryBuffer]],
+ *           [[HostMemoryBuffer]], etc.
   */
-class BounceBufferManager[T <: MemoryBuffer](poolName: String, val bufferSize: Long, val numBuffers: Int,
-                                             allocator: Long => T) extends AutoCloseable with Logging {
+class BounceBufferManager[T <: MemoryBuffer](
+    poolName: String,
+    val bufferSize: Long,
+    val numBuffers: Int,
+    allocator: Long => T)
+  extends AutoCloseable
+  with Logging {
 
   private[this] val freeBufferMap = new util.BitSet(numBuffers)
 
@@ -73,7 +79,8 @@ class BounceBufferManager[T <: MemoryBuffer](poolName: String, val bufferSize: L
   def acquireBuffersNonBlocking(possibleNumBuffers: Int): Seq[MemoryBuffer] = synchronized {
     if (numFree < possibleNumBuffers) {
       // would block
-      logTrace(s"$poolName at capacity. numFree: ${numFree}, buffers required ${possibleNumBuffers}")
+      logTrace(s"$poolName at capacity. numFree: ${numFree}, " +
+        s"buffers required ${possibleNumBuffers}")
       return Seq.empty
     }
     // we won't block, and we are still holding the lock, so get the promised buffers
