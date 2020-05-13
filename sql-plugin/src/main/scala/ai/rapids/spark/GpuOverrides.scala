@@ -63,7 +63,11 @@ import org.apache.spark.unsafe.types.CalendarInterval
  * @tparam WRAP_TYPE base class that should be returned by doWrap.
  */
 abstract class ReplacementRule[INPUT <: BASE, BASE, WRAP_TYPE <: RapidsMeta[INPUT, BASE, _]](
-    protected var doWrap: (INPUT, RapidsConf, Option[RapidsMeta[_, _, _]], ConfKeysAndIncompat) => WRAP_TYPE,
+    protected var doWrap: (
+        INPUT,
+        RapidsConf,
+        Option[RapidsMeta[_, _, _]],
+        ConfKeysAndIncompat) => WRAP_TYPE,
     protected var incomDoc: Option[String],
     protected var desc: String,
     final val tag: ClassTag[INPUT]) extends ConfKeysAndIncompat {
@@ -86,7 +90,11 @@ abstract class ReplacementRule[INPUT <: BASE, BASE, WRAP_TYPE <: RapidsMeta[INPU
    * @param func the function
    * @return this for chaining.
    */
-  final def wrap(func: (INPUT, RapidsConf, Option[RapidsMeta[_, _, _]], ConfKeysAndIncompat) => WRAP_TYPE): this.type = {
+  final def wrap(func: (
+      INPUT,
+      RapidsConf,
+      Option[RapidsMeta[_, _, _]],
+      ConfKeysAndIncompat) => WRAP_TYPE): this.type = {
     doWrap = func
     this
   }
@@ -141,7 +149,8 @@ abstract class ReplacementRule[INPUT <: BASE, BASE, WRAP_TYPE <: RapidsMeta[INPU
     }
   }
 
-  final def wrap(op: BASE,
+  final def wrap(
+      op: BASE,
       conf: RapidsConf,
       parent: Option[RapidsMeta[_, _, _]],
       r: ConfKeysAndIncompat): WRAP_TYPE = {
@@ -155,7 +164,11 @@ abstract class ReplacementRule[INPUT <: BASE, BASE, WRAP_TYPE <: RapidsMeta[INPU
  * Holds everything that is needed to replace an Expression with a GPU enabled version.
  */
 class ExprRule[INPUT <: Expression](
-    doWrap: (INPUT, RapidsConf, Option[RapidsMeta[_, _, _]], ConfKeysAndIncompat) => ExprMeta[INPUT],
+    doWrap: (
+        INPUT,
+        RapidsConf,
+        Option[RapidsMeta[_, _, _]],
+        ConfKeysAndIncompat) => ExprMeta[INPUT],
     incompatDoc: Option[String],
     desc: String,
     tag: ClassTag[INPUT])
@@ -170,7 +183,11 @@ class ExprRule[INPUT <: Expression](
  * Holds everything that is needed to replace a [[Scan]] with a GPU enabled version.
  */
 class ScanRule[INPUT <: Scan](
-    doWrap: (INPUT, RapidsConf, Option[RapidsMeta[_, _, _]], ConfKeysAndIncompat) => ScanMeta[INPUT],
+    doWrap: (
+        INPUT,
+        RapidsConf,
+        Option[RapidsMeta[_, _, _]],
+        ConfKeysAndIncompat) => ScanMeta[INPUT],
     incompatDoc: Option[String],
     desc: String,
     tag: ClassTag[INPUT])
@@ -185,7 +202,11 @@ class ScanRule[INPUT <: Scan](
  * Holds everything that is needed to replace a [[Partitioning]] with a GPU enabled version.
  */
 class PartRule[INPUT <: Partitioning](
-    doWrap: (INPUT, RapidsConf, Option[RapidsMeta[_, _, _]], ConfKeysAndIncompat) => PartMeta[INPUT],
+    doWrap: (
+        INPUT,
+        RapidsConf,
+        Option[RapidsMeta[_, _, _]],
+        ConfKeysAndIncompat) => PartMeta[INPUT],
     incompatDoc: Option[String],
     desc: String,
     tag: ClassTag[INPUT])
@@ -200,7 +221,11 @@ class PartRule[INPUT <: Partitioning](
  * Holds everything that is needed to replace a [[SparkPlan]] with a GPU enabled version.
  */
 class ExecRule[INPUT <: SparkPlan](
-    doWrap: (INPUT, RapidsConf, Option[RapidsMeta[_, _, _]], ConfKeysAndIncompat) => SparkPlanMeta[INPUT],
+    doWrap: (
+        INPUT,
+        RapidsConf,
+        Option[RapidsMeta[_, _, _]],
+        ConfKeysAndIncompat) => SparkPlanMeta[INPUT],
     incompatDoc: Option[String],
     desc: String,
     tag: ClassTag[INPUT])
@@ -214,7 +239,11 @@ class ExecRule[INPUT <: SparkPlan](
  * Holds everything that is needed to replace a [[DataWritingCommand]] with a GPU enabled version.
  */
 class DataWritingCommandRule[INPUT <: DataWritingCommand](
-    doWrap: (INPUT, RapidsConf, Option[RapidsMeta[_, _, _]], ConfKeysAndIncompat) => DataWritingCommandMeta[INPUT],
+    doWrap: (
+        INPUT,
+        RapidsConf,
+        Option[RapidsMeta[_, _, _]],
+        ConfKeysAndIncompat) => DataWritingCommandMeta[INPUT],
     incompatDoc: Option[String],
     desc: String,
     tag: ClassTag[INPUT])
@@ -262,7 +291,8 @@ final class InsertIntoHadoopFsRelationCommandMeta(
   }
 
   override def convertToGpu(): GpuDataWritingCommand = {
-    val format = fileFormat.getOrElse(throw new IllegalStateException("fileFormat missing, tagSelfForGpu not called?"))
+    val format = fileFormat.getOrElse(
+      throw new IllegalStateException("fileFormat missing, tagSelfForGpu not called?"))
 
     GpuInsertIntoHadoopFsRelationCommand(
       cmd.outputPath,
@@ -282,17 +312,18 @@ final class InsertIntoHadoopFsRelationCommandMeta(
 
 object GpuOverrides {
   val FLOAT_DIFFERS_GROUP_INCOMPAT =
-    "when enabling these, there may be extra groups produced for floating point grouping keys (e.g. -0.0, and 0.0)"
+    "when enabling these, there may be extra groups produced for floating point grouping " +
+    "keys (e.g. -0.0, and 0.0)"
   val CASE_MODIFICATION_INCOMPAT =
     "in some cases unicode characters change byte width when changing the case. The GPU string " +
     "conversion does not support these characters. For a full list of unsupported characters " +
     "see https://github.com/rapidsai/cudf/issues/3132"
   private val UTC_TIMEZONE_ID = ZoneId.of("UTC").normalized()
   // Based on https://docs.oracle.com/javase/8/docs/api/java/util/regex/Pattern.html
-  private[this] lazy val regexList: Seq[String] = Seq("\\", "\u0000", "\\x", "\t", "\n", "\r", "\f",
-    "\\a", "\\e", "\\cx", "[", "]", "^", "&", ".", "*", "\\d", "\\D", "\\h", "\\H", "\\s", "\\S",
-    "\\v", "\\V", "\\w", "\\w", "\\p", "$", "\\b", "\\B", "\\A", "\\G", "\\Z", "\\z", "\\R", "?",
-    "|", "(", ")", "{", "}", "\\k", "\\Q", "\\E", ":", "!", "<=", ">")
+  private[this] lazy val regexList: Seq[String] = Seq("\\", "\u0000", "\\x", "\t", "\n", "\r",
+    "\f", "\\a", "\\e", "\\cx", "[", "]", "^", "&", ".", "*", "\\d", "\\D", "\\h", "\\H", "\\s",
+    "\\S", "\\v", "\\V", "\\w", "\\w", "\\p", "$", "\\b", "\\B", "\\A", "\\G", "\\Z", "\\z", "\\R",
+    "?", "|", "(", ")", "{", "}", "\\k", "\\Q", "\\E", ":", "!", "<=", ">")
 
   @scala.annotation.tailrec
   def extractLit(exp: Expression): Option[Literal] = exp match {
@@ -352,7 +383,8 @@ object GpuOverrides {
 
   def expr[INPUT <: Expression](
       desc: String,
-      doWrap: (INPUT, RapidsConf, Option[RapidsMeta[_, _, _]], ConfKeysAndIncompat) => ExprMeta[INPUT])
+      doWrap: (INPUT, RapidsConf, Option[RapidsMeta[_, _, _]], ConfKeysAndIncompat)
+          => ExprMeta[INPUT])
       (implicit tag: ClassTag[INPUT]): ExprRule[INPUT] = {
     assert(desc != null)
     assert(doWrap != null)
@@ -361,7 +393,8 @@ object GpuOverrides {
 
   def scan[INPUT <: Scan](
       desc: String,
-      doWrap: (INPUT, RapidsConf, Option[RapidsMeta[_, _, _]], ConfKeysAndIncompat) => ScanMeta[INPUT])
+      doWrap: (INPUT, RapidsConf, Option[RapidsMeta[_, _, _]], ConfKeysAndIncompat)
+          => ScanMeta[INPUT])
     (implicit tag: ClassTag[INPUT]): ScanRule[INPUT] = {
     assert(desc != null)
     assert(doWrap != null)
@@ -370,7 +403,8 @@ object GpuOverrides {
 
   def part[INPUT <: Partitioning](
       desc: String,
-      doWrap: (INPUT, RapidsConf, Option[RapidsMeta[_, _, _]], ConfKeysAndIncompat) => PartMeta[INPUT])
+      doWrap: (INPUT, RapidsConf, Option[RapidsMeta[_, _, _]], ConfKeysAndIncompat)
+          => PartMeta[INPUT])
     (implicit tag: ClassTag[INPUT]): PartRule[INPUT] = {
     assert(desc != null)
     assert(doWrap != null)
@@ -379,7 +413,8 @@ object GpuOverrides {
 
   def exec[INPUT <: SparkPlan](
       desc: String,
-      doWrap: (INPUT, RapidsConf, Option[RapidsMeta[_, _, _]], ConfKeysAndIncompat) => SparkPlanMeta[INPUT])
+      doWrap: (INPUT, RapidsConf, Option[RapidsMeta[_, _, _]], ConfKeysAndIncompat)
+          => SparkPlanMeta[INPUT])
     (implicit tag: ClassTag[INPUT]): ExecRule[INPUT] = {
     assert(desc != null)
     assert(doWrap != null)
@@ -388,7 +423,8 @@ object GpuOverrides {
 
   def dataWriteCmd[INPUT <: DataWritingCommand](
       desc: String,
-      doWrap: (INPUT, RapidsConf, Option[RapidsMeta[_, _, _]], ConfKeysAndIncompat) => DataWritingCommandMeta[INPUT])
+      doWrap: (INPUT, RapidsConf, Option[RapidsMeta[_, _, _]], ConfKeysAndIncompat)
+        => DataWritingCommandMeta[INPUT])
     (implicit tag: ClassTag[INPUT]): DataWritingCommandRule[INPUT] = {
     assert(desc != null)
     assert(doWrap != null)
@@ -412,7 +448,10 @@ object GpuOverrides {
         // There are so many of these that we don't need to print them out.
         override def print(append: StringBuilder, depth: Int, all: Boolean): Unit = {}
 
-        /** We are overriding this method because currently we only support CalendarIntervalType as a Literal */
+        /**
+         * We are overriding this method because currently we only support CalendarIntervalType
+         * as a Literal
+         */
         override def areAllSupportedTypes(types: DataType*): Boolean = types.forall {
             case CalendarIntervalType => true
             case x => isSupportedType(x)
@@ -458,15 +497,16 @@ object GpuOverrides {
         override def convertToGpu(child: GpuExpression): GpuToRadians = GpuToRadians(child)
       }),
     expr[WindowExpression](
-      "calculates a return value for every input row of a table based on a group (or \"window\") of rows",
+      "calculates a return value for every input row of a table based on a group (or " +
+        "\"window\") of rows",
       (windowExpression, conf, p, r) => new GpuWindowExpressionMeta(windowExpression, conf, p, r)),
     expr[SpecifiedWindowFrame](
       "specification of the width of the group (or \"frame\") of input rows " +
         "around which a window function is evaluated",
       (windowFrame, conf, p, r) => new GpuSpecifiedWindowFrameMeta(windowFrame, conf, p, r) ),
     expr[WindowSpecDefinition](
-      "specification of a window function, indicating the partitioning-expression, the row ordering, " +
-        "and the width of the window",
+      "specification of a window function, indicating the partitioning-expression, the row " +
+        "ordering, and the width of the window",
       (windowSpec, conf, p, r) => new GpuWindowSpecDefinitionMeta(windowSpec, conf, p, r)),
     expr[CurrentRow.type](
       "Special boundary for a window frame, indicating stopping at the current row",
@@ -482,27 +522,29 @@ object GpuOverrides {
     ),
     expr[UnboundedPreceding.type](
       "Special boundary for a window frame, indicating all rows preceding the current row",
-      (unboundedPreceding, conf, p, r) => new ExprMeta[UnboundedPreceding.type](unboundedPreceding, conf, p, r) {
-        override def convertToGpu(): GpuExpression = GpuSpecialFrameBoundary(unboundedPreceding)
+      (unboundedPreceding, conf, p, r) =>
+        new ExprMeta[UnboundedPreceding.type](unboundedPreceding, conf, p, r) {
+          override def convertToGpu(): GpuExpression = GpuSpecialFrameBoundary(unboundedPreceding)
 
-        // UnboundedPreceding needs to support NullType.
-        override def areAllSupportedTypes(types: DataType*): Boolean = types.forall {
-          case _: NullType => true
-          case anythingElse => isSupportedType(anythingElse)
+          // UnboundedPreceding needs to support NullType.
+          override def areAllSupportedTypes(types: DataType*): Boolean = types.forall {
+            case _: NullType => true
+            case anythingElse => isSupportedType(anythingElse)
+          }
         }
-      }
     ),
     expr[UnboundedFollowing.type](
       "Special boundary for a window frame, indicating all rows preceding the current row",
-      (unboundedFollowing, conf, p, r) => new ExprMeta[UnboundedFollowing.type](unboundedFollowing, conf, p, r) {
-        override def convertToGpu(): GpuExpression = GpuSpecialFrameBoundary(unboundedFollowing)
+      (unboundedFollowing, conf, p, r) =>
+        new ExprMeta[UnboundedFollowing.type](unboundedFollowing, conf, p, r) {
+          override def convertToGpu(): GpuExpression = GpuSpecialFrameBoundary(unboundedFollowing)
 
-        // UnboundedFollowing needs to support NullType.
-        override def areAllSupportedTypes(types: DataType*): Boolean = types.forall {
-          case _: NullType => true
-          case anythingElse => isSupportedType(anythingElse)
+          // UnboundedFollowing needs to support NullType.
+          override def areAllSupportedTypes(types: DataType*): Boolean = types.forall {
+            case _: NullType => true
+            case anythingElse => isSupportedType(anythingElse)
+          }
         }
-      }
     ),
     expr[RowNumber](
       "Window function that returns the index for the row within the aggregation window",
@@ -625,7 +667,8 @@ object GpuOverrides {
     expr[AtLeastNNonNulls](
       "checks if number of non null/Nan values is greater than a given value",
       (a, conf, p, r) => new ExprMeta[AtLeastNNonNulls](a, conf, p, r) {
-        override val childExprs: Seq[ExprMeta[_]] = a.children.map(GpuOverrides.wrapExpr(_, conf, Some(this)))
+        override val childExprs: Seq[ExprMeta[_]] = a.children
+          .map(GpuOverrides.wrapExpr(_, conf, Some(this)))
         def convertToGpu(): GpuExpression = {
           GpuAtLeastNNonNulls(a.n, childExprs.map(_.convertToGpu()))
         }
@@ -635,8 +678,9 @@ object GpuOverrides {
       (a, conf, p, r) => new BinaryExprMeta[TimeSub](a, conf, p, r) {
         override def tagExprForGpu(): Unit = {
           if (conf.dataContainsNegativeTimestamps) {
-            willNotWorkOnGpu("Negative timestamps aren't supported i.e. timestamps prior to Jan 1st 1970." +
-              s" To enable this anyways set ${RapidsConf.DATA_CONTAINS_NEGATIVE_TIMESTAMPS} to false.")
+            willNotWorkOnGpu("Negative timestamps aren't supported i.e. timestamps prior to " +
+              "Jan 1st 1970. To enable this anyways set " +
+              s"${RapidsConf.DATA_CONTAINS_NEGATIVE_TIMESTAMPS} to false.")
           }
           a.interval match {
             case Literal(intvl: CalendarInterval, DataTypes.CalendarIntervalType) =>
@@ -651,7 +695,8 @@ object GpuOverrides {
           }
         }
 
-        override def convertToGpu(lhs: GpuExpression, rhs: GpuExpression): GpuExpression = GpuTimeSub(lhs, rhs)
+        override def convertToGpu(lhs: GpuExpression, rhs: GpuExpression): GpuExpression =
+          GpuTimeSub(lhs, rhs)
       }
     ),
     expr[NaNvl](
@@ -664,12 +709,14 @@ object GpuOverrides {
     expr[ShiftLeft](
       "Bitwise shift left (<<)",
       (a, conf, p, r) => new BinaryExprMeta[ShiftLeft](a, conf, p, r) {
-        override def convertToGpu(lhs: GpuExpression, rhs: GpuExpression): GpuExpression = GpuShiftLeft(lhs, rhs)
+        override def convertToGpu(lhs: GpuExpression, rhs: GpuExpression): GpuExpression =
+          GpuShiftLeft(lhs, rhs)
       }),
     expr[ShiftRight](
       "Bitwise shift right (>>)",
       (a, conf, p, r) => new BinaryExprMeta[ShiftRight](a, conf, p, r) {
-        override def convertToGpu(lhs: GpuExpression, rhs: GpuExpression): GpuExpression = GpuShiftRight(lhs, rhs)
+        override def convertToGpu(lhs: GpuExpression, rhs: GpuExpression): GpuExpression =
+          GpuShiftRight(lhs, rhs)
       }),
     expr[ShiftRightUnsigned](
       "Bitwise unsigned shift right (>>>)",
@@ -729,7 +776,8 @@ object GpuOverrides {
       (a, conf, p, r) => new UnaryExprMeta[Expm1](a, conf, p, r) {
         override def convertToGpu(child: GpuExpression): GpuExpression = GpuExpm1(child)
       }),
-    expr[InitCap]("Returns str with the first letter of each word in uppercase. All other letters are in lowercase",
+    expr[InitCap]("Returns str with the first letter of each word in uppercase. " +
+      "All other letters are in lowercase",
       (a, conf, p, r) => new UnaryExprMeta[InitCap](a, conf, p, r) {
         override def convertToGpu(child: GpuExpression): GpuExpression = GpuInitCap(child)
       }),
@@ -741,17 +789,20 @@ object GpuOverrides {
     expr[Log1p](
       "natural log 1 + expr",
       (a, conf, p, r) => new UnaryExprMeta[Log1p](a, conf, p, r) {
-        override def convertToGpu(child: GpuExpression): GpuExpression = GpuLog(GpuAdd(child, GpuLiteral(1d, DataTypes.DoubleType)))
+        override def convertToGpu(child: GpuExpression): GpuExpression =
+          GpuLog(GpuAdd(child, GpuLiteral(1d, DataTypes.DoubleType)))
       }),
     expr[Log2](
       "log base 2",
       (a, conf, p, r) => new UnaryExprMeta[Log2](a, conf, p, r) {
-        override def convertToGpu(child: GpuExpression): GpuExpression = GpuLogarithm(child, GpuLiteral(2d, DataTypes.DoubleType))
+        override def convertToGpu(child: GpuExpression): GpuExpression =
+          GpuLogarithm(child, GpuLiteral(2d, DataTypes.DoubleType))
       }),
     expr[Log10](
       "log base 10",
       (a, conf, p, r) => new UnaryExprMeta[Log10](a, conf, p, r) {
-        override def convertToGpu(child: GpuExpression): GpuExpression = GpuLogarithm(child, GpuLiteral(10d, DataTypes.DoubleType))
+        override def convertToGpu(child: GpuExpression): GpuExpression =
+          GpuLogarithm(child, GpuLiteral(10d, DataTypes.DoubleType))
       }),
     expr[Logarithm](
       "log variable base",
@@ -805,10 +856,11 @@ object GpuOverrides {
           GpuKnownFloatingPointNormalized(child)
       })
       .incompat(FLOAT_DIFFERS_GROUP_INCOMPAT),
-    expr[DateDiff]("datediff", (a, conf, p, r) => new BinaryExprMeta[DateDiff](a, conf, p, r) {
-      override def convertToGpu(lhs: GpuExpression, rhs: GpuExpression): GpuExpression = {
-        GpuDateDiff(lhs, rhs)
-      }
+    expr[DateDiff]("datediff", (a, conf, p, r) =>
+      new BinaryExprMeta[DateDiff](a, conf, p, r) {
+        override def convertToGpu(lhs: GpuExpression, rhs: GpuExpression): GpuExpression = {
+          GpuDateDiff(lhs, rhs)
+        }
     }),
     expr[UnixTimestamp](
       "convert a string date or timestamp to a unix timestamp",
@@ -982,7 +1034,11 @@ object GpuOverrides {
             case Seq(cond, value) => Some((cond.convertToGpu(), value.convertToGpu()))
             case Seq(_) => None
           }.toArray.toSeq  // force materialization to make the seq serializable
-          val elseValue = if (childExprs.size % 2 != 0) Some(childExprs.last.convertToGpu()) else None
+          val elseValue = if (childExprs.size % 2 != 0) {
+            Some(childExprs.last.convertToGpu())
+          } else {
+            None
+          }
           GpuCaseWhen(branches, elseValue)
         }
       }),
@@ -1093,9 +1149,9 @@ object GpuOverrides {
           val dataType = a.child.dataType
           if (!conf.isFloatAggEnabled && (dataType == DoubleType || dataType == FloatType)) {
             willNotWorkOnGpu("the GPU will sum floating point values in" +
-              " parallel and the result is not always identical each time. This can cause some Spark" +
-              s" queries to produce an incorrect answer if the value is computed more than once" +
-              s" as part of the same query.  To enable this anyways set" +
+              " parallel and the result is not always identical each time. This can cause some" +
+              " Spark queries to produce an incorrect answer if the value is computed more than" +
+              " once as part of the same query.  To enable this anyways set" +
               s" ${RapidsConf.ENABLE_FLOAT_AGG} to true.")
           }
         }
@@ -1174,7 +1230,10 @@ object GpuOverrides {
             willNotWorkOnGpu("only operating on columns supported")
           }
         }
-        override def convertToGpu(val0: GpuExpression, val1: GpuExpression, val2: GpuExpression): GpuExpression =
+        override def convertToGpu(
+            val0: GpuExpression,
+            val1: GpuExpression,
+            val2: GpuExpression): GpuExpression =
           GpuStringLocate(val0, val1, val2)
       }),
     expr[Substring](
@@ -1187,7 +1246,10 @@ object GpuOverrides {
           }
         }
 
-        override def convertToGpu(column: GpuExpression, position: GpuExpression, length: GpuExpression): GpuExpression =
+        override def convertToGpu(
+            column: GpuExpression,
+            position: GpuExpression,
+            length: GpuExpression): GpuExpression =
           GpuSubstring(column, position, length)
       }),
     expr[SubstringIndex](
@@ -1203,27 +1265,38 @@ object GpuOverrides {
           }
         }
 
-        override def convertToGpu(column: GpuExpression, target: GpuExpression, replace: GpuExpression): GpuExpression =
+        override def convertToGpu(
+            column: GpuExpression,
+            target: GpuExpression,
+            replace: GpuExpression): GpuExpression =
           GpuStringReplace(column, target, replace)
       }),
     expr[StringTrim](
       "StringTrim operator",
       (in, conf, p, r) => new String2TrimExpressionMeta[StringTrim](in, in.trimStr, conf, p, r) {
-        override def convertToGpu(column: GpuExpression, target: Option[GpuExpression] = None): GpuExpression =
+        override def convertToGpu(
+            column: GpuExpression,
+            target: Option[GpuExpression] = None): GpuExpression =
           GpuStringTrim(column, target)
       }),
     expr[StringTrimLeft](
       "StringTrimLeft operator",
       (in, conf, p, r) => new String2TrimExpressionMeta[StringTrimLeft](in, in.trimStr, conf, p, r) {
-        override def convertToGpu(column: GpuExpression, target: Option[GpuExpression] = None): GpuExpression =
+        override def convertToGpu(
+            column: GpuExpression,
+            target: Option[GpuExpression] = None): GpuExpression =
           GpuStringTrimLeft(column, target)
       }),
     expr[StringTrimRight](
       "StringTrimRight operator",
-      (in, conf, p, r) => new String2TrimExpressionMeta[StringTrimRight](in, in.trimStr, conf, p, r) {
-        override def convertToGpu(column: GpuExpression, target: Option[GpuExpression] = None): GpuExpression =
-          GpuStringTrimRight(column, target)
-      }),
+      (in, conf, p, r) =>
+        new String2TrimExpressionMeta[StringTrimRight](in, in.trimStr, conf, p, r) {
+          override def convertToGpu(
+              column: GpuExpression,
+              target: Option[GpuExpression] = None): GpuExpression =
+            GpuStringTrimRight(column, target)
+        }
+      ),
     expr[StartsWith](
       "Starts With",
       (a, conf, p, r) => new BinaryExprMeta[StartsWith](a, conf, p, r) {
@@ -1232,7 +1305,8 @@ object GpuOverrides {
             willNotWorkOnGpu("only literals are supported for startsWith")
           }
         }
-        override def convertToGpu(lhs: GpuExpression, rhs: GpuExpression): GpuExpression = GpuStartsWith(lhs, rhs)
+        override def convertToGpu(lhs: GpuExpression, rhs: GpuExpression): GpuExpression =
+          GpuStartsWith(lhs, rhs)
       }),
     expr[EndsWith](
       "Ends With",
@@ -1242,7 +1316,8 @@ object GpuOverrides {
             willNotWorkOnGpu("only literals are supported for endsWith")
           }
         }
-        override def convertToGpu(lhs: GpuExpression, rhs: GpuExpression): GpuExpression = GpuEndsWith(lhs, rhs)
+        override def convertToGpu(lhs: GpuExpression, rhs: GpuExpression): GpuExpression =
+          GpuEndsWith(lhs, rhs)
       }),
     expr[Concat](
       "String Concatenate NO separator",
@@ -1255,20 +1330,24 @@ object GpuOverrides {
       (a, conf, p, r) => new BinaryExprMeta[Contains](a, conf, p, r) {
         override def tagExprForGpu(): Unit = {
           if (!isStringLit(a.right)) {
-            willNotWorkOnGpu("only literals are supported for Contains right hand side search parameter")
+            willNotWorkOnGpu("only literals are supported for Contains right hand side search" +
+              " parameter")
           }
         }
-        override def convertToGpu(lhs: GpuExpression, rhs: GpuExpression): GpuExpression = GpuContains(lhs, rhs)
+        override def convertToGpu(lhs: GpuExpression, rhs: GpuExpression): GpuExpression =
+          GpuContains(lhs, rhs)
       }),
     expr[Like](
       "Like",
       (a, conf, p, r) => new BinaryExprMeta[Like](a, conf, p, r) {
         override def tagExprForGpu(): Unit = {
           if (!isStringLit(a.right)) {
-            willNotWorkOnGpu("only literals are supported for Like right hand side search parameter")
+            willNotWorkOnGpu("only literals are supported for Like right hand side search" +
+              " parameter")
           }
         }
-        override def convertToGpu(lhs: GpuExpression, rhs: GpuExpression): GpuExpression = GpuLike(lhs, rhs, a.escapeChar)
+        override def convertToGpu(lhs: GpuExpression, rhs: GpuExpression): GpuExpression =
+          GpuLike(lhs, rhs, a.escapeChar)
       }),
     expr[RegExpReplace](
       "RegExpReplace",
@@ -1379,7 +1458,8 @@ object GpuOverrides {
           rp.ordering.map(GpuOverrides.wrapExpr(_, conf, Some(this)))
         override def convertToGpu(): GpuPartitioning = {
           if (rp.numPartitions > 1) {
-            GpuRangePartitioning(childExprs.map(_.convertToGpu()).asInstanceOf[Seq[GpuSortOrder]], rp.numPartitions, new GpuRangePartitioner)
+            GpuRangePartitioning(childExprs.map(_.convertToGpu())
+              .asInstanceOf[Seq[GpuSortOrder]], rp.numPartitions, new GpuRangePartitioner)
           } else {
             GpuSinglePartitioning(childExprs.map(_.convertToGpu()))
           }
@@ -1408,7 +1488,8 @@ object GpuOverrides {
       .map(r => r.wrap(writeCmd, conf, parent, r).asInstanceOf[DataWritingCommandMeta[INPUT]])
       .getOrElse(new RuleNotFoundDataWritingCommandMeta(writeCmd, conf, parent))
 
-  val dataWriteCmds: Map[Class[_ <: DataWritingCommand], DataWritingCommandRule[_ <: DataWritingCommand]] = Seq(
+  val dataWriteCmds: Map[Class[_ <: DataWritingCommand],
+      DataWritingCommandRule[_ <: DataWritingCommand]] = Seq(
     dataWriteCmd[InsertIntoHadoopFsRelationCommand](
       "Write to Hadoop FileSystem",
       (a, conf, p, r) => new InsertIntoHadoopFsRelationCommandMeta(a, conf, p, r))
@@ -1456,7 +1537,8 @@ object GpuOverrides {
           Seq(GpuOverrides.wrapDataWriteCmds(p.cmd, conf, Some(this)))
 
         override def convertToGpu(): GpuExec =
-          GpuDataWritingCommandExec(childDataWriteCmds.head.convertToGpu(), childPlans.head.convertIfNeeded())
+          GpuDataWritingCommandExec(childDataWriteCmds.head.convertToGpu(),
+            childPlans.head.convertIfNeeded())
       }),
     exec[FileSourceScanExec](
       "Reading data from files, often from Hive tables",
@@ -1486,16 +1568,18 @@ object GpuOverrides {
       }),
     exec[LocalLimitExec](
       "Per-partition limiting of results",
-      (localLimitExec, conf, p, r) => new SparkPlanMeta[LocalLimitExec](localLimitExec, conf, p, r) {
-        override def convertToGpu(): GpuExec =
-          GpuLocalLimitExec(localLimitExec.limit, childPlans(0).convertIfNeeded())
-      }),
+      (localLimitExec, conf, p, r) =>
+        new SparkPlanMeta[LocalLimitExec](localLimitExec, conf, p, r) {
+          override def convertToGpu(): GpuExec =
+            GpuLocalLimitExec(localLimitExec.limit, childPlans(0).convertIfNeeded())
+        }),
     exec[GlobalLimitExec](
       "Limiting of results across partitions",
-      (globalLimitExec, conf, p, r) => new SparkPlanMeta[GlobalLimitExec](globalLimitExec, conf, p, r) {
-        override def convertToGpu(): GpuExec =
-          GpuGlobalLimitExec(globalLimitExec.limit, childPlans(0).convertIfNeeded())
-      }),
+      (globalLimitExec, conf, p, r) =>
+        new SparkPlanMeta[GlobalLimitExec](globalLimitExec, conf, p, r) {
+          override def convertToGpu(): GpuExec =
+            GpuGlobalLimitExec(globalLimitExec.limit, childPlans(0).convertIfNeeded())
+        }),
     exec[CollectLimitExec](
       "Reduce to single partition and apply limit",
       (collectLimitExec, conf, p, r) => new GpuCollectLimitMeta(collectLimitExec, conf, p, r)),
