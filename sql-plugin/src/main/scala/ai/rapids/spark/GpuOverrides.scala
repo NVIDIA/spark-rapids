@@ -1181,25 +1181,26 @@ object GpuOverrides {
       "Substring operator",
       (in, conf, p, r) => new TernaryExprMeta[Substring](in, conf, p, r) {
         override def tagExprForGpu(): Unit = {
-          val dataType =
-            if (!isLit(in.children(1)) || !(isLit(in.children(2)))) {
-              willNotWorkOnGpu("only literal parameters supported for Substring position and " +
-                  "length parameters")
-            }
+          if (!isLit(in.children(1)) || !isLit(in.children(2))) {
+            willNotWorkOnGpu("only literal parameters supported for Substring position and " +
+              "length parameters")
+          }
         }
 
         override def convertToGpu(column: GpuExpression, position: GpuExpression, length: GpuExpression): GpuExpression =
-          GpuSubString(column, position, length)
+          GpuSubstring(column, position, length)
       }),
+    expr[SubstringIndex](
+      "substring_index operator",
+      (in, conf, p, r) => new SubstringIndexMeta(in, conf, p, r)),
     expr[StringReplace](
       "StringReplace operator",
       (in, conf, p, r) => new TernaryExprMeta[StringReplace](in, conf, p, r) {
         override def tagExprForGpu(): Unit = {
-          val dataType =
-            if (!isStringLit(in.children(1)) || !(isStringLit(in.children(2)))) {
-              willNotWorkOnGpu("only literal parameters supported for string literal target and " +
-                  "replace parameters")
-            }
+          if (!isStringLit(in.children(1)) || !isStringLit(in.children(2))) {
+            willNotWorkOnGpu("only literal parameters supported for string literal target and " +
+              "replace parameters")
+          }
         }
 
         override def convertToGpu(column: GpuExpression, target: GpuExpression, replace: GpuExpression): GpuExpression =
