@@ -19,7 +19,10 @@ package ai.rapids.spark
 import org.apache.spark.sql.catalyst.expressions.TaggingExpression
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
-// this is a TaggingExpression in spark, which gets matched in NormalizeFloatingNumbers (which is a Rule)
+/**
+ * This is a TaggingExpression in spark, which gets matched in NormalizeFloatingNumbers (which is
+ * a Rule).
+ */
 // TODO: need coalesce as a feature request in cudf
 case class GpuKnownFloatingPointNormalized(child: GpuExpression) extends TaggingExpression
     with GpuExpression {
