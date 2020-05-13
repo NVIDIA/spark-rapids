@@ -173,6 +173,7 @@ def test_tpch_q18(tpch):
   assert_gpu_and_cpu_are_equal_collect(
           lambda spark : tpch.do_test_query("q18"), conf=_base_conf)
 
+@approximate_float
 def test_tpch_q19(tpch):
   assert_gpu_and_cpu_are_equal_collect(
           lambda spark : tpch.do_test_query("q19"), conf=_base_conf)
