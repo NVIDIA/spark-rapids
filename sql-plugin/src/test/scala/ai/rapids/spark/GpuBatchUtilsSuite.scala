@@ -198,9 +198,9 @@ class GpuBatchUtilsSuite extends FunSuite {
           }
         case dataType@DataTypes.BinaryType =>
           if (field.nullable) {
-            // since we want a deterministic test that compares the estimate with actual
-            // usage we need to make sure the average length of binary values is `dataType.defaultSize`
-            if (i%2 == 0) {
+            // since we want a deterministic test that compares the estimate with actual usage we
+            // need to make sure the average length of binary values is `dataType.defaultSize`
+            if (i % 2 == 0) {
               null
             } else {
               r.nextString(dataType.defaultSize * 2).getBytes
