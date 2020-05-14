@@ -955,6 +955,12 @@ object GpuOverrides {
         override def convertToGpu(lhs: GpuExpression, rhs: GpuExpression): GpuExpression =
           GpuOr(lhs, rhs)
       }),
+    expr[EqualNullSafe](
+      "check if the values are equal including nulls <=>",
+      (a, conf, p, r) => new BinaryExprMeta[EqualNullSafe](a, conf, p, r) {
+        override def convertToGpu(lhs: GpuExpression, rhs: GpuExpression): GpuExpression =
+          GpuEqualNullSafe(lhs, rhs)
+      }),
     expr[EqualTo](
       "check if the values are equal",
       (a, conf, p, r) => new BinaryExprMeta[EqualTo](a, conf, p, r) {

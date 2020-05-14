@@ -764,11 +764,12 @@ trait SparkQueryCompareTestSuite extends FunSuite with Arm {
 
   def booleanDf(session: SparkSession): DataFrame = {
     import session.sqlContext.implicits._
-    Seq[(Boolean, Boolean)](
+    Seq[(java.lang.Boolean, java.lang.Boolean)](
       (true, true),
       (false, true),
       (true, false),
-      (false, false)
+      (false, false),
+      (null, true)
     ).toDF("bools", "more_bools")
   }
 
