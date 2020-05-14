@@ -45,43 +45,47 @@ object SupportedUnicodeVersion extends Enumeration {
 }
 
 /*
- * Cudf only supports a single version of Unicode (currently, 12.1). However, people running various 
- * versions of Java that support different unicode versions will see different results from Spark cpu.
- * The lists below represent characters which we know will come up 'incorrect' during a test, depending
- * on Java/unicode version.  To work around this, we maintain lists of known bad characters for earlier
- * versions of Java/unicode so that the tests don't break.
- * 
+ * Cudf only supports a single version of Unicode (currently, 12.1). However, people running
+ * various versions of Java that support different unicode versions will see different results
+ * from Spark cpu. The lists below represent characters which we know will come up 'incorrect'
+ * during a test, depending on Java/unicode version. To work around this, we maintain lists of
+ * known bad characters for earlier versions of Java/unicode so that the tests don't break.
  */
 object CudfIncompatibleCodepoints {     
   val uppercaseIncompatible = Array[List[Int]](
                                   // Java 8 / unicode 6.2
-                                  List( 604,   609,   618,   620,   642,   647,   669,   670,  1011,  4304,
-                                        4305,  4306,  4307,  4308,  4309,  4310,  4311,  4312,  4313,  4314,
-                                        4315,  4316,  4317,  4318,  4319,  4320,  4321,  4322,  4323,  4324,
-                                        4325,  4326,  4327,  4328,  4329,  4330,  4331,  4332,  4333,  4334,
-                                        4335,  4336,  4337,  4338,  4339,  4340,  4341,  4342,  4343,  4344,
-                                        4345,  4346,  4349,  4350,  4351,  7566),
+                                  List( 604,   609,   618,   620,   642,   647,   669,   670,
+                                        1011,  4304,  4305,  4306,  4307,  4308,  4309,  4310,
+                                        4311,  4312,  4313,  4314,  4315,  4316,  4317,  4318,
+                                        4319,  4320,  4321,  4322,  4323,  4324,  4325,  4326,
+                                        4327,  4328,  4329,  4330,  4331,  4332,  4333,  4334,
+                                        4335,  4336,  4337,  4338,  4339,  4340,  4341,  4342,
+                                        4343,  4344,  4345,  4346,  4349,  4350,  4351,  7566),
 
                                   // java 11, unicode 10
-                                  List( 642,  4304,  4305,  4306,  4307,  4308,  4309,  4310,  4311,  4312,
-                                        4313,  4314,  4315,  4316,  4317,  4318,  4319,  4320,  4321,  4322,
-                                        4323,  4324,  4325,  4326,  4327,  4328,  4329,  4330,  4331,  4332,
-                                        4333,  4334,  4335,  4336,  4337,  4338,  4339,  4340,  4341,  4342,
-                                        4343,  4344,  4345,  4346,  4349,  4350,  4351,  7566, 42900),
+                                  List( 642,   4304,  4305,  4306,  4307,  4308,  4309,  4310,
+                                        4311,  4312,  4313,  4314,  4315,  4316,  4317,  4318,
+                                        4319,  4320,  4321,  4322,  4323,  4324,  4325,  4326,
+                                        4327,  4328,  4329,  4330,  4331,  4332,  4333,  4334,
+                                        4335,  4336,  4337,  4338,  4339,  4340,  4341,  4342,
+                                        4343,  4344,  4345,  4346,  4349,  4350,  4351,  7566,
+                                        42900),
 
                                   // java 13, unicode 12
                                   List())
 
   val lowercaseIncompatible = Array[List[Int]](
                                   // Java 8 / unicode 6.2
-                                  List( 5024,  5025,  5026,  5027,  5028,  5029,  5030,  5031,  5032,  5033,
-                                        5034,  5035,  5036,  5037,  5038,  5039,  5040,  5041,  5042,  5043,
-                                        5044,  5045,  5046,  5047,  5048,  5049,  5050,  5051,  5052,  5053,
-                                        5054,  5055,  5056,  5057,  5058,  5059,  5060,  5061,  5062,  5063,
-                                        5064,  5065,  5066,  5067,  5068,  5069,  5070,  5071,  5072,  5073,
-                                        5074,  5075,  5076,  5077,  5078,  5079,  5080,  5081,  5082,  5083,
-                                        5084,  5085,  5086,  5087,  5088,  5089,  5090,  5091,  5092,  5093,
-                                        5094,  5095,  5096,  5097,  5098,  5099,  5100,  5101,  5102,  5103,
+                                  List( 5024,  5025,  5026,  5027,  5028,  5029,  5030,  5031,
+                                        5032,  5033,  5034,  5035,  5036,  5037,  5038,  5039,
+                                        5040,  5041,  5042,  5043,  5044,  5045,  5046,  5047,
+                                        5048,  5049,  5050,  5051,  5052,  5053,  5054,  5055,
+                                        5056,  5057,  5058,  5059,  5060,  5061,  5062,  5063,
+                                        5064,  5065,  5066,  5067,  5068,  5069,  5070,  5071,
+                                        5072,  5073,  5074,  5075,  5076,  5077,  5078,  5079,
+                                        5080,  5081,  5082,  5083,  5084,  5085,  5086,  5087,
+                                        5088,  5089,  5090,  5091,  5092,  5093,  5094,  5095,
+                                        5096,  5097,  5098,  5099,  5100,  5101,  5102,  5103,
                                         5104,  5105,  5106,  5107,  5108),
 
                                   // java 11, unicode 10
@@ -129,13 +133,19 @@ object TestCodepoints {
   }
   // print out a warning if we're on an unsupported version
   if (getActiveUnicodeVersion() == SupportedUnicodeVersion.UNICODE_UNSUPPORTED) {
-    printf("WARNING : Unsupported version of Java (%s). You may encounted unexpected test failures\n", System.getProperties().getProperty("java.specification.version"))
+    printf("WARNING : Unsupported version of Java (%s). You may encounted unexpected " +
+      "test failures\n", System.getProperties().getProperty("java.specification.version"))
   }
 
-  // get the unicode index to use. if we are on an unknown/unsupported version, just default to unicode 12
+  // get the unicode index to use. if we are on an unknown/unsupported version, just
+  // default to unicode 12
   def getUnicodeIncompatibleIndex(): Int = {            
     val version = getActiveUnicodeVersion()  
-    if (version == SupportedUnicodeVersion.UNICODE_UNSUPPORTED) SupportedUnicodeVersion.UNICODE_12 else version
+    if (version == SupportedUnicodeVersion.UNICODE_UNSUPPORTED) {
+      SupportedUnicodeVersion.UNICODE_12 
+    } else {
+      version
+    }
   }  
     
   // all unicode codepoints valid for this particular version of Java/Unicode.
@@ -148,7 +158,8 @@ object TestCodepoints {
   def uppercaseCompatibleCharsDF(session: SparkSession): DataFrame = {
     import session.sqlContext.implicits._
     val version = getUnicodeIncompatibleIndex()
-    val utf8Chars = (validCodepointIndices diff CudfIncompatibleCodepoints.uppercaseIncompatible(version)).map(i => i.toChar.toString)
+    val utf8Chars = (validCodepointIndices diff
+      CudfIncompatibleCodepoints.uppercaseIncompatible(version)).map(i => i.toChar.toString)
     utf8Chars.toDF("strings")
   }
 
@@ -156,17 +167,20 @@ object TestCodepoints {
   def lowercaseCompatibleCharsDF(session: SparkSession): DataFrame = {
     import session.sqlContext.implicits._
     val version = getUnicodeIncompatibleIndex()
-    val utf8Chars = (validCodepointIndices diff CudfIncompatibleCodepoints.lowercaseIncompatible(version)).map(i => i.toChar.toString)
+    val utf8Chars = (validCodepointIndices diff
+      CudfIncompatibleCodepoints.lowercaseIncompatible(version)).map(i => i.toChar.toString)
     utf8Chars.toDF("strings")
   }  
 }
 
 class StringOperatorsSuite extends SparkQueryCompareTestSuite {         
-  INCOMPAT_testSparkResultsAreEqual("Test compatible values upper case modifier", TestCodepoints.uppercaseCompatibleCharsDF) {
+  INCOMPAT_testSparkResultsAreEqual("Test compatible values upper case modifier",
+    TestCodepoints.uppercaseCompatibleCharsDF) {
     frame => frame.select(upper(col("strings")))
   }
 
-  INCOMPAT_testSparkResultsAreEqual("Test compatible values lower case modifier", TestCodepoints.lowercaseCompatibleCharsDF) {
+  INCOMPAT_testSparkResultsAreEqual("Test compatible values lower case modifier",
+    TestCodepoints.lowercaseCompatibleCharsDF) {
     frame => frame.select(lower(col("strings")))
   }
 
@@ -210,7 +224,8 @@ class StringOperatorsSuite extends SparkQueryCompareTestSuite {
     frame => frame.select(trim(frame("strings"), null))
   }
 
-  testSparkResultsAreEqual("StringTrim no trimString - default whitespace", nullableStringsFromCsv) {
+  testSparkResultsAreEqual("StringTrim no trimString - default whitespace",
+    nullableStringsFromCsv) {
     frame => frame.select(trim(frame("strings")))
   }
 
@@ -234,7 +249,8 @@ class StringOperatorsSuite extends SparkQueryCompareTestSuite {
     frame => frame.select(ltrim(frame("strings"), null))
   }
 
-  testSparkResultsAreEqual("StringTrimLeft no trimString - default whitespace", nullableStringsFromCsv) {
+  testSparkResultsAreEqual("StringTrimLeft no trimString - default whitespace",
+    nullableStringsFromCsv) {
     frame => frame.select(ltrim(frame("strings")))
   }
 
@@ -258,7 +274,8 @@ class StringOperatorsSuite extends SparkQueryCompareTestSuite {
     frame => frame.select(rtrim(frame("strings"), null))
   }
 
-  testSparkResultsAreEqual("StringTrimRight no trimString - default whitespace", nullableStringsFromCsv) {
+  testSparkResultsAreEqual("StringTrimRight no trimString - default whitespace",
+    nullableStringsFromCsv) {
     frame => frame.select(rtrim(frame("strings")))
   }
 
@@ -275,7 +292,8 @@ class StringOperatorsSuite extends SparkQueryCompareTestSuite {
   }
 
   testSparkResultsAreEqual("String StartsWith Col fall back", nullableStringsFromCsv,
-    execsAllowedNonGpu = Seq("FilterExec", "And", "IsNotNull", "StartsWith", "AttributeReference")) {
+    execsAllowedNonGpu =
+      Seq("FilterExec", "And", "IsNotNull", "StartsWith", "AttributeReference")) {
     frame => frame.filter(col("strings").startsWith(col("more_strings")))
   }
 
@@ -622,11 +640,13 @@ class StringOperatorsSuite extends SparkQueryCompareTestSuite {
       result
   }
 
-  testSparkResultsAreEqual("String char_length select expression syntax with nulls", nullableStringsFromCsv) {
+  testSparkResultsAreEqual("String char_length select expression syntax with nulls",
+    nullableStringsFromCsv) {
     frame => frame.selectExpr("char_length(strings)")
   }
 
-  testSparkResultsAreEqual("String character_length select expression syntax with special characters", likeDf) {
+  testSparkResultsAreEqual("String character_length select expression syntax with " +
+    "special characters", likeDf) {
     frame => frame.selectExpr("character_length(word)")
   }
 
@@ -634,7 +654,8 @@ class StringOperatorsSuite extends SparkQueryCompareTestSuite {
     frame => frame.select(length(col("more_strings")))
   }
 
-  testSparkResultsAreEqual("String length selectexpression syntax with multibyte characters", TestCodepoints.validCodepointCharsDF) {
+  testSparkResultsAreEqual("String length selectexpression syntax with multibyte characters",
+    TestCodepoints.validCodepointCharsDF) {
     frame => frame.selectExpr("length(strings)")
   }
 
@@ -646,22 +667,23 @@ class StringOperatorsSuite extends SparkQueryCompareTestSuite {
 */
 @Ignore
 class StringOperatorsDiagnostics extends SparkQueryCompareTestSuite {  
-  def generateResults(gen : org.apache.spark.sql.Column => org.apache.spark.sql.Column): (Array[Row], Array[Row]) = {
+  def generateResults(gen : org.apache.spark.sql.Column => org.apache.spark.sql.Column):
+      (Array[Row], Array[Row]) = {
     val (testConf, qualifiedTestName) = setupTestConfAndQualifierName("", true, false,
-                                                                        new SparkConf(), Seq.empty, 0.0, false)
-    runOnCpuAndGpu(TestCodepoints.validCodepointCharsDF, frame => frame.select(gen(col("strings"))), testConf)
+      new SparkConf(), Seq.empty, 0.0, false)
+    runOnCpuAndGpu(TestCodepoints.validCodepointCharsDF,
+      frame => frame.select(gen(col("strings"))), testConf)
   }
  
   // utility function to print out detailed information on differences
   def generateUnicodeDiffs(title  : String,
-                          gen       : () => (Array[Row], Array[Row])): Unit = {
+      gen: () => (Array[Row], Array[Row])): Unit = {
     val (fromCpu, fromGpu) = gen()
    
     println(s"$title ----------------------------------------")
 
     println("\u001b[1;36mSummary of diffs:\u001b[0m")
     println("\u001b[1;36mCodepoint:\u001b[0m ")    
-    // for ( i <- 0 until fromCpu.length ) { if(fromCpu(i) != fromGpu(i)){ print(f"$i[$i%04x], ", i, i ) } }    
     for (i <- 0 until fromCpu.length) { 
       if (fromCpu(i) != fromGpu(i)) { 
         val codepoint = TestCodepoints.validCodepointIndices(i)
@@ -677,7 +699,8 @@ class StringOperatorsDiagnostics extends SparkQueryCompareTestSuite {
       if (fromCpu(i) != fromGpu(i) && fromCpu(i).getString(0).length == 1) {
         val codepoint = TestCodepoints.validCodepointIndices(i)
 
-        print(f"(${codepoint.toChar.toString} $codepoint%5d[$codepoint%04x] (${fromCpu(i).getString(0)}")
+        print(f"(${codepoint.toChar.toString} $codepoint%5d[$codepoint%04x] " +
+          f"(${fromCpu(i).getString(0)}")
         print(f"${fromCpu(i).getString(0)(0).toInt}%5d[${fromCpu(i).getString(0)(0).toInt}%04x]) ")
         println(f"${fromGpu(i).getString(0)(0).toInt}%5d[${fromGpu(i).getString(0)(0).toInt}%04x])")
       }
@@ -723,7 +746,7 @@ class StringOperatorsDiagnostics extends SparkQueryCompareTestSuite {
         
         val cpu_str = fromCpuUpper(i).getString(0)        
         mapping(codepoint).num_upper = cpu_str.length
-        for (c <- 0 until cpu_str.length) { mapping(codepoint).upper(c) = cpu_str(c).toInt }          
+        for (c <- 0 until cpu_str.length) { mapping(codepoint).upper(c) = cpu_str(c).toInt }
       }
     }
 
@@ -735,7 +758,7 @@ class StringOperatorsDiagnostics extends SparkQueryCompareTestSuite {
         
         val cpu_str = fromCpuLower(i).getString(0)
         mapping(codepoint).num_lower = cpu_str.length
-        for (c <- 0 until cpu_str.length) { mapping(codepoint).lower(c) = cpu_str(c).toInt }          
+        for (c <- 0 until cpu_str.length) { mapping(codepoint).lower(c) = cpu_str(c).toInt }
       }
     }
 
@@ -752,7 +775,8 @@ class StringOperatorsDiagnostics extends SparkQueryCompareTestSuite {
     for (i <- 0 until 65536) {
       val mc = mapping(i)
       if (mc.num_upper != 0 || mc.num_lower != 0) {
-        println(s"   { ${mc.num_upper} {${mc.upper(0)}, ${mc.upper(1)}, ${mc.upper(2)}}, ${mc.num_lower}, {${mc.lower(0)}, ${mc.lower(1)}, ${mc.lower(2)}} },")                
+        println(s"   { ${mc.num_upper} {${mc.upper(0)}, ${mc.upper(1)}, ${mc.upper(2)}}, " +
+          s"${mc.num_lower}, {${mc.lower(0)}, ${mc.lower(1)}, ${mc.lower(2)}} },")                
       }
     }
     println("};")
