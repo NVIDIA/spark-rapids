@@ -34,6 +34,11 @@ case class GpuNot(child: Expression) extends CudfUnaryExpression
   override def unaryOp: UnaryOp = UnaryOp.NOT
 }
 
+object GpuLogicHelper {
+  def eqNullAware(lhs: Scalar, rhs: Boolean): Boolean =
+    lhs.isValid && (lhs.getBoolean == rhs)
+}
+
 case class GpuAnd(left: Expression, right: Expression) extends CudfBinaryOperator with Predicate {
   override def inputType: AbstractDataType = BooleanType
 
@@ -42,6 +47,69 @@ case class GpuAnd(left: Expression, right: Expression) extends CudfBinaryOperato
   override def sqlOperator: String = "AND"
 
   override def binaryOp: BinaryOp = BinaryOp.LOGICAL_AND
+
+  import GpuLogicHelper._
+
+  // The CUDF implementation of `and` will return a null if either input is null
+  // Spark does not.
+  // |LHS/RHS| TRUE  | FALSE | NULL  |
+  // |TRUE   | TRUE  | FALSE | NULL  |
+  // |FALSE  | FALSE | FALSE | FALSE |
+  // |NULL   | NULL  | FALSE | NULL  |
+  // So we have to make some adjustments.
+  //  IF (A <=> FALSE, FALSE,
+  //    IF (B <=> FALSE, FALSE,
+  //      A cudf_and B))
+
+  override def doColumnar(lhs: GpuColumnVector, rhs: GpuColumnVector): GpuColumnVector = {
+    val l = lhs.getBase
+    val r = rhs.getBase
+    withResource(Scalar.fromBool(false)) { falseVal =>
+      val firstPass = withResource(l.and(r)) { lAndR =>
+        withResource(l.equalToNullAware(falseVal)) { lIsFalse =>
+          lIsFalse.ifElse(falseVal, lAndR)
+        }
+      }
+      withResource(firstPass) { firstPass =>
+        withResource(r.equalToNullAware(falseVal)) { rIsFalse =>
+          GpuColumnVector.from(rIsFalse.ifElse(falseVal, firstPass))
+        }
+      }
+    }
+  }
+
+  override def doColumnar(lhs: Scalar, rhs: GpuColumnVector): GpuColumnVector = {
+    val l = lhs
+    val r = rhs.getBase
+    withResource(Scalar.fromBool(false)) { falseVal =>
+      if (eqNullAware(l, false)) {
+        GpuColumnVector.from(ColumnVector.fromScalar(falseVal, r.getRowCount.toInt))
+      } else {
+        withResource(l.and(r)) { lAndR =>
+          withResource(r.equalToNullAware(falseVal)) { rIsFalse =>
+            GpuColumnVector.from(rIsFalse.ifElse(falseVal, lAndR))
+          }
+        }
+      }
+    }
+  }
+
+  override def doColumnar(lhs: GpuColumnVector, rhs: Scalar): GpuColumnVector = {
+    val l = lhs.getBase
+    val r = rhs
+    withResource(Scalar.fromBool(false)) { falseVal =>
+      if (eqNullAware(r, false)) {
+        GpuColumnVector.from(ColumnVector.fromScalar(falseVal, l.getRowCount.toInt))
+      } else {
+        val firstPass = withResource(l.and(r)) { lAndR =>
+          withResource(l.equalToNullAware(falseVal)) { lIsFalse =>
+            lIsFalse.ifElse(falseVal, lAndR)
+          }
+        }
+        GpuColumnVector.from(firstPass)
+      }
+    }
+  }
 }
 
 case class GpuOr(left: Expression, right: Expression) extends CudfBinaryOperator with Predicate {
@@ -52,6 +120,69 @@ case class GpuOr(left: Expression, right: Expression) extends CudfBinaryOperator
   override def sqlOperator: String = "OR"
 
   override def binaryOp: BinaryOp = BinaryOp.LOGICAL_OR
+
+  import GpuLogicHelper._
+
+  // The CUDF implementation of `or` will return a null if either input is null
+  // Spark does not.
+  // |LHS/RHS| TRUE  | FALSE | NULL  |
+  // |TRUE   | TRUE  | TRUE  | TRUE  |
+  // |FALSE  | TRUE  | FALSE | NULL  |
+  // |NULL   | TRUE  | NULL  | NULL  |
+  // So we have to make some adjustments.
+  //  IF (A <=> TRUE, TRUE,
+  //    IF (B <=> TRUE, TRUE,
+  //      A cudf_or B))
+
+  override def doColumnar(lhs: GpuColumnVector, rhs: GpuColumnVector): GpuColumnVector = {
+    val l = lhs.getBase
+    val r = rhs.getBase
+    withResource(Scalar.fromBool(true)) { trueVal =>
+      val firstPass = withResource(l.or(r)) { lOrR =>
+        withResource(l.equalToNullAware(trueVal)) { lIsTrue =>
+          lIsTrue.ifElse(trueVal, lOrR)
+        }
+      }
+      withResource(firstPass) { firstPass =>
+        withResource(r.equalToNullAware(trueVal)) { rIsTrue =>
+          GpuColumnVector.from(rIsTrue.ifElse(trueVal, firstPass))
+        }
+      }
+    }
+  }
+
+  override def doColumnar(lhs: Scalar, rhs: GpuColumnVector): GpuColumnVector = {
+    val l = lhs
+    val r = rhs.getBase
+    withResource(Scalar.fromBool(true)) { trueVal =>
+      if (eqNullAware(l, true)) {
+        GpuColumnVector.from(ColumnVector.fromScalar(trueVal, r.getRowCount.toInt))
+      } else {
+        withResource(l.or(r)) { lOrR =>
+          withResource(r.equalToNullAware(trueVal)) { rIsTrue =>
+            GpuColumnVector.from(rIsTrue.ifElse(trueVal, lOrR))
+          }
+        }
+      }
+    }
+  }
+
+  override def doColumnar(lhs: GpuColumnVector, rhs: Scalar): GpuColumnVector = {
+    val l = lhs.getBase
+    val r = rhs
+    withResource(Scalar.fromBool(true)) { trueVal =>
+      if (eqNullAware(r, true)) {
+        GpuColumnVector.from(ColumnVector.fromScalar(trueVal, l.getRowCount.toInt))
+      } else {
+        val firstPass = withResource(l.or(r)) { lOrR =>
+          withResource(l.equalToNullAware(trueVal)) { lIsFalse =>
+            lIsFalse.ifElse(trueVal, lOrR)
+          }
+        }
+        GpuColumnVector.from(firstPass)
+      }
+    }
+  }
 }
 
 abstract class CudfBinaryComparison extends CudfBinaryOperator with Predicate {
@@ -89,6 +220,64 @@ case class GpuEqualTo(left: Expression, right: Expression) extends CudfBinaryCom
   override def symbol: String = "="
   override def outputTypeOverride: DType = DType.BOOL8
   override def binaryOp: BinaryOp = BinaryOp.EQUAL
+
+  override def doColumnar(lhs: GpuColumnVector, rhs: GpuColumnVector): GpuColumnVector = {
+    val result = super.doColumnar(lhs, rhs)
+    if (hasFloatingPointInputs) {
+      withResource(result) { result =>
+        withResource(lhs.getBase.isNan()) { lhsNan =>
+          withResource(rhs.getBase.isNan()) { rhsNan =>
+            withResource(lhsNan.and(rhsNan)) { lhsNanAndRhsNan =>
+              GpuColumnVector.from(lhsNanAndRhsNan.or(result.getBase))
+            }
+          }
+        }
+      }
+    } else {
+      result
+    }
+  }
+
+  override def doColumnar(lhs: Scalar, rhs: GpuColumnVector): GpuColumnVector = {
+    val result = super.doColumnar(lhs, rhs)
+    if (hasFloatingPointInputs) {
+      withResource(result) { result =>
+        withResource(GpuScalar.from(GpuScalar.isNan(lhs))) { lhsNan =>
+          withResource(rhs.getBase.isNan()) { rhsNan =>
+            withResource(lhsNan.and(rhsNan)) { lhsNanAndRhsNan =>
+              GpuColumnVector.from(lhsNanAndRhsNan.or(result.getBase))
+            }
+          }
+        }
+      }
+    } else {
+      result
+    }
+  }
+
+  override def doColumnar(lhs: GpuColumnVector, rhs: Scalar): GpuColumnVector = {
+    val result = super.doColumnar(lhs, rhs)
+    if (hasFloatingPointInputs) {
+      withResource(result) { result =>
+        withResource(lhs.getBase.isNan()) { lhsNan =>
+          withResource(GpuScalar.from(GpuScalar.isNan(rhs))) { rhsNan =>
+            withResource(lhsNan.and(rhsNan)) { lhsNanAndRhsNan =>
+              GpuColumnVector.from(lhsNanAndRhsNan.or(result.getBase))
+            }
+          }
+        }
+      }
+    } else {
+      result
+    }
+  }
+}
+
+case class GpuEqualNullSafe(left: Expression, right: Expression) extends CudfBinaryComparison
+  with NullIntolerant {
+  override def symbol: String = "="
+  override def outputTypeOverride: DType = DType.BOOL8
+  override def binaryOp: BinaryOp = BinaryOp.NULL_EQUALS
 
   override def doColumnar(lhs: GpuColumnVector, rhs: GpuColumnVector): GpuColumnVector = {
     val result = super.doColumnar(lhs, rhs)
