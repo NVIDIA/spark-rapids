@@ -57,8 +57,9 @@ class AnsiCastOpSuite extends GpuExpressionTestSuite {
   }
 
   ///////////////////////////////////////////////////////////////////////////
-  // Ansi cast from timestamp to integral types
+  // Ansi cast from timestamp to integral types  
   ///////////////////////////////////////////////////////////////////////////
+
 
   testSparkResultsAreEqual("ansi_cast timestamps to long", generateValidValuesTimestampsDF(Short.MinValue, Short.MaxValue), sparkConf) {
     frame => testCastTo(DataTypes.LongType)(frame)
