@@ -118,14 +118,16 @@ object HostColumnarToGpu {
           b.appendUTF8String(cv.getUTF8String(i).getBytes)
         }
       case (t, n) =>
-        throw new UnsupportedOperationException(s"Converting to GPU for ${t} is not currently supported")
+        throw new UnsupportedOperationException(s"Converting to GPU for ${t} is not currently " +
+          s"supported")
     }
   }
 }
 
 /**
- * This iterator builds GPU batches from host batches. The host batches potentially use Spark's UnsafeRow so it
- * is not safe to cache these batches. Rows must be read and immediately written to CuDF builders.
+ * This iterator builds GPU batches from host batches. The host batches potentially use Spark's
+ * UnsafeRow so it is not safe to cache these batches. Rows must be read and immediately written
+ * to CuDF builders.
  */
 class HostToGpuCoalesceIterator(iter: Iterator[ColumnarBatch],
     goal: CoalesceGoal,
@@ -160,17 +162,19 @@ class HostToGpuCoalesceIterator(iter: Iterator[ColumnarBatch],
   var maxDeviceMemory: Long = 0
 
   /**
-   * Initialize the builders using an estimated row count based on the schema and the desired batch size
-   * defined by [[RapidsConf.GPU_BATCH_SIZE_BYTES]].
+   * Initialize the builders using an estimated row count based on the schema and the desired
+   * batch size defined by [[RapidsConf.GPU_BATCH_SIZE_BYTES]].
    */
   override def initNewBatch(): Unit = {
     if (batchBuilder != null) {
       batchBuilder.close()
       batchBuilder = null
     }
-    // when reading host batches it is essential to read the data immediately and pass to a builder and we
-    // need to determine how many rows to allocate in the builder based on the schema and desired batch size
-    batchRowLimit = GpuBatchUtils.estimateRowCount(goal.targetSizeBytes, GpuBatchUtils.estimateGpuMemory(schema, 512), 512)
+    // when reading host batches it is essential to read the data immediately and pass to a
+    // builder and we need to determine how many rows to allocate in the builder based on the
+    // schema and desired batch size
+    batchRowLimit = GpuBatchUtils.estimateRowCount(goal.targetSizeBytes,
+      GpuBatchUtils.estimateGpuMemory(schema, 512), 512)
     batchBuilder = new GpuColumnVector.GpuColumnarBatchBuilder(schema, batchRowLimit, null)
     totalRows = 0
   }
@@ -178,7 +182,8 @@ class HostToGpuCoalesceIterator(iter: Iterator[ColumnarBatch],
   override def addBatchToConcat(batch: ColumnarBatch): Unit = {
     val rows = batch.numRows()
     for (i <- 0 until batch.numCols()) {
-      HostColumnarToGpu.columnarCopy(batch.column(i), batchBuilder.builder(i), schema.fields(i).nullable, rows)
+      HostColumnarToGpu.columnarCopy(batch.column(i), batchBuilder.builder(i),
+        schema.fields(i).nullable, rows)
     }
     totalRows += rows
   }
@@ -195,7 +200,8 @@ class HostToGpuCoalesceIterator(iter: Iterator[ColumnarBatch],
     maxDeviceMemory = GpuColumnVector.getTotalDeviceMemoryUsed(ret)
 
     // refine the estimate for number of rows based on this batch
-    batchRowLimit = GpuBatchUtils.estimateRowCount(goal.targetSizeBytes, maxDeviceMemory, ret.numRows())
+    batchRowLimit = GpuBatchUtils.estimateRowCount(goal.targetSizeBytes, maxDeviceMemory,
+      ret.numRows())
 
     ret
   }
@@ -213,7 +219,9 @@ class HostToGpuCoalesceIterator(iter: Iterator[ColumnarBatch],
 /**
  * Put columnar formatted data on the GPU.
  */
-case class HostColumnarToGpu(child: SparkPlan, goal: CoalesceGoal) extends UnaryExecNode with GpuExec {
+case class HostColumnarToGpu(child: SparkPlan, goal: CoalesceGoal)
+  extends UnaryExecNode
+  with GpuExec {
   import GpuMetricNames._
 
   override lazy val additionalMetrics: Map[String, SQLMetric] = Map(
