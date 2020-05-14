@@ -42,10 +42,12 @@ class UCXServerConnection(ucx: UCX) extends UCXConnection(ucx) with ServerConnec
     ucx.startManagementPort(host)
   }
 
-  override def send(sendPeerExecutorId: Long, bounceBuffers: Seq[AddressLengthTag], cb: TransactionCallback): Transaction =
+  override def send(sendPeerExecutorId: Long, bounceBuffers: Seq[AddressLengthTag],
+    cb: TransactionCallback): Transaction =
     send(sendPeerExecutorId, null, bounceBuffers, cb)
 
-  override def send(sendPeerExecutorId: Long, header: AddressLengthTag, cb: TransactionCallback): Transaction =
+  override def send(sendPeerExecutorId: Long, header: AddressLengthTag,
+    cb: TransactionCallback): Transaction =
     send(sendPeerExecutorId, header, Seq.empty, cb)
 }
 
@@ -69,10 +71,10 @@ class UCXClientConnection(peerExecutorId: Int, peerClientId: Long, ucx: UCX)
   override def getPeerExecutorId: Long = peerExecutorId
 
   /**
-    * This performs a request/response, where the request and response are read from/deposited from memory
-    * This is used when an executor wants to request blocks from a remote executor, it sends a
-    * [[ShuffleMetadataRequest]] in the [[reqAddress]] and expects a [[ShuffleMatadataResponse]] in the
-    * [[respAddress]] at the [[response.tag]].
+    * This performs a request/response, where the request and response are read from/deposited
+    * from memory. This is used when an executor wants to request blocks from a remote executor,
+    * it sends a [[ShuffleMetadataRequest]] in the [[reqAddress]] and expects a
+    * [[ShuffleMatadataResponse]] in the [[respAddress]] at the [[response.tag]].
     *
     * @param cb - callback to call once the response is done
     * @return
@@ -103,7 +105,8 @@ class UCXClientConnection(peerExecutorId: Int, peerClientId: Long, ucx: UCX)
       if (receiveTx.getStatus == TransactionStatus.Success) {
         tx.incrementReceiveSize(response.length)
         if (tx.decrementPendingAndGet <= 0) {
-          logInfo(s"Header request is done on receive: $this, tag: ${TransportUtils.formatTag(response.tag)}")
+          logInfo(s"Header request is done on receive: $this, " +
+            s"tag: ${TransportUtils.formatTag(response.tag)}")
           tx.txCallback(TransactionStatus.Success)
         }
       }
@@ -169,7 +172,8 @@ class UCXConnection(peerExecutorId: Int, ucx: UCX) extends Connection with Loggi
     (peerClientId << 36) | (msgType << 32)
   }
 
-  private[ucx] def send(executorId: Long, alt: AddressLengthTag, ucxCallback: UCXTagCallback): Unit = {
+  private[ucx] def send(executorId: Long, alt: AddressLengthTag,
+    ucxCallback: UCXTagCallback): Unit = {
     val sendRange = new NvtxRange("Connection Send", NvtxColor.PURPLE)
     try {
       ucx.send(executorId, alt, ucxCallback)
@@ -216,13 +220,15 @@ class UCXConnection(peerExecutorId: Int, ucx: UCX) extends Connection with Loggi
 
     // send the header
     if (header != null) {
-      logDebug(s"Sending meta [executor_id=$sendPeerExecutorId, tag=${TransportUtils.formatTag(header.tag)}, size=${header.length}]")
+      logDebug(s"Sending meta [executor_id=$sendPeerExecutorId, " +
+        s"tag=${TransportUtils.formatTag(header.tag)}, size=${header.length}]")
       send(sendPeerExecutorId, header, ucxCallback)
       tx.incrementSendSize(header.length)
     }
 
     buffers.foreach { alt =>
-      logDebug(s"Sending [executor_id=$sendPeerExecutorId, tag=${TransportUtils.formatTag(alt.tag)}, size=${alt.length}]")
+      logDebug(s"Sending [executor_id=$sendPeerExecutorId, " +
+        s"tag=${TransportUtils.formatTag(alt.tag)}, size=${alt.length}]")
       send(sendPeerExecutorId, alt, ucxCallback)
       tx.incrementSendSize(alt.length)
     }
@@ -230,7 +236,8 @@ class UCXConnection(peerExecutorId: Int, ucx: UCX) extends Connection with Loggi
     tx
   }
 
-  override def receive(header: AddressLengthTag, cb: TransactionCallback): Transaction = receive(Seq(header), cb)
+  override def receive(header: AddressLengthTag,
+    cb: TransactionCallback): Transaction = receive(Seq(header), cb)
 
   override def receive(buffers: Seq[AddressLengthTag], cb: TransactionCallback): Transaction = {
     val tx = createTransaction
@@ -295,10 +302,12 @@ class UCXConnection(peerExecutorId: Int, ucx: UCX) extends Connection with Loggi
 
 object UCXConnection extends Logging {
   //
-  // Handshake message code. This, I expect, could be folded into the [[BlockManagerId]], but I have not
-  // tried this. If we did, it would eliminate the extra TCP connection in this class.
+  // Handshake message code. This, I expect, could be folded into the [[BlockManagerId]],
+  // but I have not tried this. If we did, it would eliminate the extra TCP connection
+  // in this class.
   //
-  private def readBytesFromStream(direct: Boolean, is: InputStream, lengthToRead: Int): ByteBuffer = {
+  private def readBytesFromStream(direct: Boolean,
+    is: InputStream, lengthToRead: Int): ByteBuffer = {
     var bytesRead = 0
     var read = 0
     val buff = new Array[Byte](lengthToRead)
@@ -331,7 +340,8 @@ object UCXConnection extends Logging {
 
   /**
     * Handles the input stream, using [[readBytesFromStream]] to read from the
-    * stream: the length of the WorkerAddress + the WorkerAddress + the remote ExecutorId (as an int)
+    * stream: the length of the WorkerAddress + the WorkerAddress +
+    * the remote ExecutorId (as an int)
     *
     * @param is - management port InputStream
     * @return - (WorkerAddress, remoteExecutorId)
@@ -343,7 +353,8 @@ object UCXConnection extends Logging {
     val workerAddressLength = readBytesFromStream(false, is, 4).getInt()
 
     require(workerAddressLength <= maxLen,
-      s"Received an abnormally large (>$maxLen Bytes) WorkerAddress (${workerAddressLength} Bytes), dropping.")
+      s"Received an abnormally large (>$maxLen Bytes) WorkerAddress " +
+        s"(${workerAddressLength} Bytes), dropping.")
 
     val workerAddress = readBytesFromStream(true, is, workerAddressLength)
 
