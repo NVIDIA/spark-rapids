@@ -170,12 +170,14 @@ object ShuffleMetadata extends Logging{
           ColumnMeta.addData(fbb, dataOffset)
         }
         if (validity != null) {
-          validityOffset = SubBufferMeta.createSubBufferMeta(fbb, validity.offset(), validity.length())
+          validityOffset = SubBufferMeta.createSubBufferMeta(fbb, validity.offset(),
+              validity.length())
           ColumnMeta.addValidity(fbb, validityOffset)
         }
 
         if (offsets != null) {
-          offsetsOffset = SubBufferMeta.createSubBufferMeta(fbb, offsets.offset(), offsets.length())
+          offsetsOffset = SubBufferMeta.createSubBufferMeta(fbb, offsets.offset(),
+              offsets.length())
           ColumnMeta.addOffsets(fbb, offsetsOffset)
         }
         ColumnMeta.addDtype(fbb, col.dtype())
@@ -261,17 +263,22 @@ object ShuffleMetadata extends Logging{
 
   def buildBufferTransferResponse(bufferMetas: Seq[BufferMeta]): ByteBuffer = {
     val fbb = new FlatBufferBuilder(1024, bbFactory)
-    val responses = bufferMetas.map( bm => {
-      val buffMetaOffset = BufferMeta.createBufferMeta(fbb, bm.id(), bm.actualSize(), bm.compressedSize(), bm.codec())
-      BufferTransferResponse.createBufferTransferResponse(fbb, bm.id(), TransferState.STARTED, buffMetaOffset)
-    }).toArray
+    val responses = bufferMetas.map { bm =>
+      val buffMetaOffset = BufferMeta.createBufferMeta(fbb, bm.id(), bm.actualSize(),
+          bm.compressedSize(), bm.codec())
+      BufferTransferResponse.createBufferTransferResponse(fbb, bm.id(), TransferState.STARTED,
+          buffMetaOffset)
+    }.toArray
     val responsesVector = TransferResponse.createResponsesVector(fbb, responses)
     val root = TransferResponse.createTransferResponse(fbb, responsesVector)
     fbb.finish(root)
     fbb.dataBuffer()
   }
 
-  def buildTransferRequest(localExecutorId: Long, responseTag: Long, toIssue: Seq[(TableMeta, Long)]): ByteBuffer = {
+  def buildTransferRequest(
+      localExecutorId: Long,
+      responseTag: Long,
+      toIssue: Seq[(TableMeta, Long)]): ByteBuffer = {
     val fbb = ShuffleMetadata.getBuilder
     val requestIds = new ArrayBuffer[Int](toIssue.size)
     toIssue.foreach { case (tableMeta, tag) =>
@@ -282,7 +289,8 @@ object ShuffleMetadata extends Logging{
           tag))
     }
     val requestVec = TransferRequest.createRequestsVector(fbb, requestIds.toArray)
-    val transferRequestOffset = TransferRequest.createTransferRequest(fbb, localExecutorId, responseTag, requestVec)
+    val transferRequestOffset = TransferRequest.createTransferRequest(fbb, localExecutorId,
+        responseTag, requestVec)
     fbb.finish(transferRequestOffset)
     fbb.dataBuffer()
   }
@@ -294,7 +302,8 @@ object ShuffleMetadata extends Logging{
     out.append("------------------------------------------------------------------------------\n")
     for (tableIndex <- 0 until res.tableMetasLength()) {
       val tableMeta = res.tableMetas(tableIndex)
-      out.append(s"table: $tableIndex [cols=${tableMeta.columnMetasLength()}, rows=${tableMeta.rowCount}, full_content_size=${res.fullResponseSize()}]\n")
+      out.append(s"table: $tableIndex [cols=${tableMeta.columnMetasLength()}, " +
+          s"rows=${tableMeta.rowCount}, full_content_size=${res.fullResponseSize()}]\n")
       for (i <- 0 until tableMeta.columnMetasLength()) {
         val columnMeta = tableMeta.columnMetas(i)
 
@@ -312,9 +321,10 @@ object ShuffleMetadata extends Logging{
           } else {
             columnMeta.validity().length()
           }
-          out.append(s"column: $i [rows=${columnMeta.rowCount}, data_len=${columnMeta.data().length()}, offset_len=${offsetLenStr}, " +
-            s"validity_len=$validityLen, type=${DType.fromNative(columnMeta.dtype())}, " +
-            s"null_count=${columnMeta.nullCount()}]\n")
+          out.append(s"column: $i [rows=${columnMeta.rowCount}, " +
+              s"data_len=${columnMeta.data().length()}, offset_len=${offsetLenStr}, " +
+              s"validity_len=$validityLen, type=${DType.fromNative(columnMeta.dtype())}, " +
+              s"null_count=${columnMeta.nullCount()}]\n")
         } else {
           val offsetLenStr = "NC"
 
@@ -324,9 +334,10 @@ object ShuffleMetadata extends Logging{
             columnMeta.validity().length()
           }
 
-          out.append(s"column: $i [rows=${columnMeta.rowCount}, data_len=${columnMeta.data().length()}, offset_len=${offsetLenStr}, " +
-            s"validity_len=$validityLen, type=${DType.fromNative(columnMeta.dtype())}, " +
-            s"null_count=${columnMeta.nullCount()}]\n")
+          out.append(s"column: $i [rows=${columnMeta.rowCount}, " +
+              s"data_len=${columnMeta.data().length()}, offset_len=${offsetLenStr}, " +
+              s"validity_len=$validityLen, type=${DType.fromNative(columnMeta.dtype())}, " +
+              s"null_count=${columnMeta.nullCount()}]\n")
         }
       }
     }
@@ -341,8 +352,9 @@ object ShuffleMetadata extends Logging{
     out.append(s"blockId length: ${req.blockIdsLength()}\n")
     for (i <- 0 until req.blockIdsLength()) {
       out.append(s"block_id = [shuffle_id=${req.blockIds(i).shuffleId()}, " +
-        s"map_id=${req.blockIds(i).mapId()}, start_reduce_id=${req.blockIds(i).startReduceId()} , " +
-        s"end_reduce_id=${req.blockIds(i).endReduceId()}]\n")
+          s"map_id=${req.blockIds(i).mapId()}, " +
+          s"start_reduce_id=${req.blockIds(i).startReduceId()} , " +
+          s"end_reduce_id=${req.blockIds(i).endReduceId()}]\n")
     }
     out.append("----------------------- END METADATA REQUEST ----------------------\n")
     out.toString()
