@@ -46,6 +46,18 @@ def test_eq(data_gen):
                 f.col('a') == f.col('b')))
 
 @pytest.mark.parametrize('data_gen', cmp_gens, ids=idfn)
+def test_eq_ns(data_gen):
+    (s1, s2) = gen_scalars(data_gen, 2, force_no_nulls=True)
+    data_type = data_gen.data_type
+    assert_gpu_and_cpu_are_equal_collect(
+            lambda spark : binary_op_df(spark, data_gen).select(
+                f.col('a').eqNullSafe(s1),
+                s2.eqNullSafe(f.col('b')),
+                f.lit(None).cast(data_type).eqNullSafe(f.col('a')),
+                f.col('b').eqNullSafe(f.lit(None).cast(data_type)),
+                f.col('a').eqNullSafe(f.col('b'))))
+
+@pytest.mark.parametrize('data_gen', cmp_gens, ids=idfn)
 def test_ne(data_gen):
     (s1, s2) = gen_scalars(data_gen, 2, force_no_nulls=True)
     data_type = data_gen.data_type
