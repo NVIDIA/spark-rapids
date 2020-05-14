@@ -49,7 +49,8 @@ class GpuShuffleBlockResolver(private val wrapped: ShuffleBlockResolver,
         catalog.hasActiveShuffle(sbbid.shuffleId)
       case sbid: ShuffleBlockId =>
         catalog.hasActiveShuffle(sbid.shuffleId)
-      case _ => throw new IllegalArgumentException(s"${blockId.getClass} $blockId is not currently supported")
+      case _ => throw new IllegalArgumentException(s"${blockId.getClass} $blockId "
+          + "is not currently supported")
     }
     if (hasActiveShuffle) {
       throw new IllegalStateException(s"The block $blockId is being managed by the catalog")
@@ -93,7 +94,8 @@ class RapidsCachingWriter[K, V](
       records.foreach { p =>
         val partId = p._1.asInstanceOf[Int]
         val batch = p._2.asInstanceOf[ColumnarBatch]
-        logDebug(s"Caching shuffle_id=${handle.shuffleId} map_id=$mapId, partId=$partId, batch=[num_cols=${batch.numCols()}, num_rows=${batch.numRows()}]")
+        logDebug(s"Caching shuffle_id=${handle.shuffleId} map_id=$mapId, partId=$partId, "
+            + s"batch=[num_cols=${batch.numCols()}, num_rows=${batch.numRows()}]")
         val partSize = GpuColumnVector.extractBases(batch).map(_.getDeviceMemorySize).sum
         recordsWritten = recordsWritten + batch.numRows()
         bytesWritten = bytesWritten + partSize
@@ -120,8 +122,8 @@ class RapidsCachingWriter[K, V](
           // The size of the data is really only used to tell if the data should be shuffled or not
           // a 0 indicates that we should not shuffle anything.  This is here for the special case
           // where we have no columns, because of predicate push down, but we have a row count as
-          // metadata.  We still want to shuffle it. The 100 is an arbitrary number and can be really
-          // any non-zero number that is not too large
+          // metadata.  We still want to shuffle it. The 100 is an arbitrary number and can be
+          // any non-zero number that is not too large.
           if (batch.numRows > 0) {
             sizes(partId) += 100
           }
@@ -154,7 +156,8 @@ class RapidsCachingWriter[K, V](
         } else {
           blockManager.shuffleServerId
         }
-        logInfo(s"Done caching shuffle success=$success, server_id=$shuffleServerId, map_id=$mapId, sizes=${sizes.mkString(",")}")
+        logInfo(s"Done caching shuffle success=$success, server_id=$shuffleServerId, "
+            + s"map_id=$mapId, sizes=${sizes.mkString(",")}")
         Some(MapStatus(shuffleServerId, sizes, mapId))
       }
     } finally {
@@ -171,7 +174,8 @@ class RapidsCachingWriter[K, V](
  *       [[ai.rapids.spark.RapidsShuffleManager]] should be used as that is
  *       the public class.
  */
-class RapidsShuffleInternalManager(conf: SparkConf, isDriver: Boolean) extends ShuffleManager with Logging {
+class RapidsShuffleInternalManager(conf: SparkConf, isDriver: Boolean)
+    extends ShuffleManager with Logging {
 
   import RapidsShuffleInternalManager._
 
@@ -214,33 +218,39 @@ class RapidsShuffleInternalManager(conf: SparkConf, isDriver: Boolean) extends S
       catalog)
   }
 
-  private[this] lazy val transport: Option[RapidsShuffleTransport] = if (rapidsConf.shuffleTransportEnabled && !isDriver) {
-    Some(RapidsShuffleTransport.makeTransport(blockManager.shuffleServerId, rapidsConf))
-  } else {
-    None
-  }
-
-  private[this] lazy val server: Option[RapidsShuffleServer] = if (rapidsConf.shuffleTransportEnabled && !isDriver) {
-    val requestHandler = new RapidsShuffleRequestHandler() {
-      override def acquireShuffleBuffer(tableId: Int): RapidsBuffer = {
-        val shuffleBufferId = catalog.getShuffleBufferId(tableId)
-        catalog.acquireBuffer(shuffleBufferId)
-      }
-
-      override def getShuffleBufferMetas(shuffleBlockBatchId: ShuffleBlockBatchId): Seq[TableMeta] = {
-        (shuffleBlockBatchId.startReduceId to shuffleBlockBatchId.endReduceId).flatMap(rid => {
-          catalog.blockIdToMetas(ShuffleBlockId(shuffleBlockBatchId.shuffleId, shuffleBlockBatchId.mapId, rid))
-        })
-      }
+  private[this] lazy val transport: Option[RapidsShuffleTransport] = {
+    if (rapidsConf.shuffleTransportEnabled && !isDriver) {
+      Some(RapidsShuffleTransport.makeTransport(blockManager.shuffleServerId, rapidsConf))
+    } else {
+      None
     }
-    val server = transport.get.makeServer(requestHandler)
-    server.start()
-    Some(server)
-  } else {
-    None
   }
 
-  override def registerShuffle[K, V, C](shuffleId: Int, dependency: ShuffleDependency[K, V, C]): ShuffleHandle = {
+  private[this] lazy val server: Option[RapidsShuffleServer] = {
+    if (rapidsConf.shuffleTransportEnabled && !isDriver) {
+      val requestHandler = new RapidsShuffleRequestHandler() {
+        override def acquireShuffleBuffer(tableId: Int): RapidsBuffer = {
+          val shuffleBufferId = catalog.getShuffleBufferId(tableId)
+          catalog.acquireBuffer(shuffleBufferId)
+        }
+
+        override def getShuffleBufferMetas(sbbId: ShuffleBlockBatchId): Seq[TableMeta] = {
+          (sbbId.startReduceId to sbbId.endReduceId).flatMap(rid => {
+            catalog.blockIdToMetas(ShuffleBlockId(sbbId.shuffleId, sbbId.mapId, rid))
+          })
+        }
+      }
+      val server = transport.get.makeServer(requestHandler)
+      server.start()
+      Some(server)
+    } else {
+      None
+    }
+  }
+
+  override def registerShuffle[K, V, C](
+      shuffleId: Int,
+      dependency: ShuffleDependency[K, V, C]): ShuffleHandle = {
     // Always register with the wrapped handler so we can write to it ourselves if needed
     val orig = wrapped.registerShuffle(shuffleId, dependency)
     if (!shouldFallThroughOnEverything && dependency.isInstanceOf[GpuShuffleDependency[K, V, C]]) {
@@ -251,7 +261,11 @@ class RapidsShuffleInternalManager(conf: SparkConf, isDriver: Boolean) extends S
     }
   }
 
-  override def getWriter[K, V](handle: ShuffleHandle, mapId: Long, context: TaskContext, metrics: ShuffleWriteMetricsReporter): ShuffleWriter[K, V] = {
+  override def getWriter[K, V](
+      handle: ShuffleHandle,
+      mapId: Long,
+      context: TaskContext,
+      metrics: ShuffleWriteMetricsReporter): ShuffleWriter[K, V] = {
     handle match {
       case gpu: GpuShuffleHandle[_, _] =>
         registerGpuShuffle(handle.shuffleId)
@@ -270,26 +284,34 @@ class RapidsShuffleInternalManager(conf: SparkConf, isDriver: Boolean) extends S
     }
   }
 
-  override def getReaderForRange[K, C](handle: ShuffleHandle,
-                                       startMapIndex: Int, endMapIndex: Int, startPartition: Int, endPartition: Int,
-                                       context: TaskContext, metrics: ShuffleReadMetricsReporter): ShuffleReader[K, C] = {
-    // NOTE: This type of reader is not possible for gpu shuffle, as we'd need use the the optimization
-    // within our manager, and we don't.
+  override def getReaderForRange[K, C](
+      handle: ShuffleHandle,
+      startMapIndex: Int,
+      endMapIndex: Int,
+      startPartition: Int,
+      endPartition: Int,
+      context: TaskContext,
+      metrics: ShuffleReadMetricsReporter): ShuffleReader[K, C] = {
+    // NOTE: This type of reader is not possible for gpu shuffle, as we'd need
+    // to use the optimization within our manager, and we don't.
     wrapped.getReaderForRange(unwrapHandle(handle), startMapIndex, endMapIndex,
       startPartition, endPartition, context, metrics)
   }
 
-  override def getReader[K, C](handle: ShuffleHandle, startPartition: Int, endPartition: Int,
-                               context: TaskContext, metrics: ShuffleReadMetricsReporter): ShuffleReader[K, C] = {
+  override def getReader[K, C](
+      handle: ShuffleHandle,
+      startPartition: Int,
+      endPartition: Int,
+      context: TaskContext,
+      metrics: ShuffleReadMetricsReporter): ShuffleReader[K, C] = {
     handle match {
       case gpu: GpuShuffleHandle[_, _] =>
         logInfo(s"Asking map output tracker for dependency ${gpu.dependency}, " +
           s"map output sizes for: ${gpu.shuffleId}, parts=$startPartition-$endPartition")
         if (gpu.dependency.keyOrdering.isDefined) {
           // very unlikely, but just in case
-          throw new IllegalStateException(
-            s"A key ordering was requested for a gpu shuffle dependency ${gpu.dependency.keyOrdering.get}, " +
-              s"this is not supported.")
+          throw new IllegalStateException("A key ordering was requested for a gpu shuffle "
+              + s"dependency ${gpu.dependency.keyOrdering.get}, this is not supported.")
         }
 
         val nvtxRange = new NvtxRange("getMapSizesByExecId", NvtxColor.CYAN)

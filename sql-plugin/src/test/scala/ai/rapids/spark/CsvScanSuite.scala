@@ -32,7 +32,9 @@ class CsvScanSuite extends SparkQueryCompareTestSuite {
     frame => frame.select(col("c_string"), col("c_int"), col("c_timestamp"))
   }
 
-  testSparkResultsAreEqual("Test CSV projection excluding unsupported types", mixedTypesFromCsvWithHeader) {
+  testSparkResultsAreEqual(
+      "Test CSV projection excluding unsupported types",
+      mixedTypesFromCsvWithHeader) {
     frame => frame.select(col("c_string"), col("c_int"))
   }
 
@@ -54,7 +56,10 @@ class CsvScanSuite extends SparkQueryCompareTestSuite {
 
   testSparkResultsAreEqual("Test CSV count with headers", intsFromCsvWitHeader)(frameCount)
 
-  testSparkResultsAreEqual("Test partitioned CSV splits", intsFromPartitionedCsv, conf=smallSplitsConf) {
+  testSparkResultsAreEqual(
+      "Test partitioned CSV splits",
+      intsFromPartitionedCsv,
+      conf=smallSplitsConf) {
     frame => frame.select(col("partKey"), col("ints_1"), col("ints_3"), col("ints_5"))
   }
 
@@ -63,11 +68,19 @@ class CsvScanSuite extends SparkQueryCompareTestSuite {
     frame => frame.select(col("floats"))
   }
 
-  testSparkResultsAreEqual("Test CSV count chunked by rows", intsFromCsv, conf= new SparkConf().set(
-    RapidsConf.MAX_READER_BATCH_SIZE_ROWS.key, "1"))(frameCount)
+  testSparkResultsAreEqual(
+      "Test CSV count chunked by rows",
+      intsFromCsv,
+      conf=new SparkConf().set(RapidsConf.MAX_READER_BATCH_SIZE_ROWS.key, "1")) {
+    frameCount
+  }
 
-  testSparkResultsAreEqual("Test CSV count chunked by bytes", intsFromCsv, conf= new SparkConf().set(
-    RapidsConf.MAX_READER_BATCH_SIZE_BYTES.key, "0"))(frameCount)
+  testSparkResultsAreEqual(
+      "Test CSV count chunked by bytes",
+      intsFromCsv,
+      conf=new SparkConf().set(RapidsConf.MAX_READER_BATCH_SIZE_BYTES.key, "0")) {
+    frameCount
+  }
 
   /**
     * Running with an inferred schema results in running things that are not columnar optimized.

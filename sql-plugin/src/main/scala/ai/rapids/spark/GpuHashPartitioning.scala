@@ -53,7 +53,10 @@ case class GpuHashPartitioning(expressions: Seq[GpuExpression], numPartitions: I
   def getGpuDataColumns(batch: ColumnarBatch) : Array[GpuColumnVector] =
     GpuColumnVector.extractColumns(batch)
 
-  def insertDedupe(indexesOut: Array[Int], colsIn: Array[GpuColumnVector], dedupedData: ArrayBuffer[ColumnVector]): Unit = {
+  def insertDedupe(
+      indexesOut: Array[Int],
+      colsIn: Array[GpuColumnVector],
+      dedupedData: ArrayBuffer[ColumnVector]): Unit = {
     indexesOut.indices.foreach { i =>
       val b = colsIn(i).getBase
       val idx = dedupedData.indexOf(b)
@@ -87,7 +90,8 @@ case class GpuHashPartitioning(expressions: Seq[GpuExpression], numPartitions: I
 
       val (keys, dataIndexes, table) = dedupe(gpuKeyColumns, gpuDataColumns)
       // Don't need the batch any more table has all we need in it.
-      // gpuDataColumns did not increment the reference count when we got them, so don't close them.
+      // gpuDataColumns did not increment the reference count when we got them,
+      // so don't close them.
       gpuDataColumns = null
       gpuKeyColumns.foreach(_.close())
       gpuKeyColumns = null
@@ -96,7 +100,9 @@ case class GpuHashPartitioning(expressions: Seq[GpuExpression], numPartitions: I
       val partedTable = table.onColumns(keys: _*).hashPartition(numPartitions)
       table.close()
       val parts = partedTable.getPartitions
-      val columns = dataIndexes.map(idx => GpuColumnVector.from(partedTable.getColumn(idx).incRefCount()))
+      val columns = dataIndexes.map { idx =>
+        GpuColumnVector.from(partedTable.getColumn(idx).incRefCount())
+      }
       partedTable.close()
       (parts, columns)
     } finally {
@@ -121,7 +127,7 @@ case class GpuHashPartitioning(expressions: Seq[GpuExpression], numPartitions: I
           partitionRange.close()
         }
       }
-      val ret: Array[ColumnarBatch] = sliceInternalGpuOrCpu(batch, partitionIndexes, partitionColumns)
+      val ret = sliceInternalGpuOrCpu(batch, partitionIndexes, partitionColumns)
       partitionColumns.safeClose()
       // Close the partition columns we copied them as a part of the slice
       ret.zipWithIndex.filter(_._1 != null)
