@@ -189,9 +189,9 @@ private[ucx] class UCXTransaction(conn: UCXConnection, val txId: Long)
             errorMessage = Some(s"Callback called multiple times: $this")
             status = TransactionStatus.Error
           }
-          // else, it's cancelled or errored. We could get a lot of calls here from the progress thread,
-          // this drops spurious callbacks in the floor as we already communicated to the user
-          // about the cancel or the error
+          // else, it's cancelled or errored. We could get a lot of calls here from the progress
+          // thread, this drops spurious callbacks in the floor as we already communicated to the
+          // user about the cancel or the error
         } else {
           callbackCalled = true
           if (newStatus == TransactionStatus.Success) {
@@ -209,7 +209,8 @@ private[ucx] class UCXTransaction(conn: UCXConnection, val txId: Long)
             hadError = true
           }
 
-          if (isClosed || status == TransactionStatus.Complete || status == TransactionStatus.NotStarted) {
+          if (isClosed || status == TransactionStatus.Complete ||
+              status == TransactionStatus.NotStarted) {
             logError(s"Transaction $this has invalid status on callback.")
             status = TransactionStatus.Error
           }
