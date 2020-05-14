@@ -69,7 +69,8 @@ class ColumnarPartitionReaderWithPartitionValues(
     val result = new Array[GpuColumnVector](partitionValues.length)
     try {
       for (i <- result.indices) {
-        result(i) = GpuColumnVector.from(ai.rapids.cudf.ColumnVector.fromScalar(partitionValues(i), numRows))
+        result(i) = GpuColumnVector.from(ai.rapids.cudf.ColumnVector.fromScalar(partitionValues(i),
+          numRows))
       }
       succeeded = true
       result
