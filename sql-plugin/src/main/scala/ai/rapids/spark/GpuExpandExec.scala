@@ -15,10 +15,10 @@
  */
 package ai.rapids.spark
 
-import ai.rapids.cudf.Table
 import ai.rapids.spark.GpuMetricNames.NUM_OUTPUT_ROWS
 import ai.rapids.spark.RapidsPluginImplicits._
 
+import org.apache.spark.TaskContext
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.expressions._
@@ -26,8 +26,6 @@ import org.apache.spark.sql.catalyst.plans.physical.{Partitioning, UnknownPartit
 import org.apache.spark.sql.execution.{ExpandExec, SparkPlan, UnaryExecNode}
 import org.apache.spark.sql.execution.metric.{SQLMetric, SQLMetrics}
 import org.apache.spark.sql.vectorized.ColumnarBatch
-
-import scala.collection.mutable.ListBuffer
 
 class GpuExpandExecMeta(
     expand: ExpandExec,
@@ -43,19 +41,6 @@ class GpuExpandExecMeta(
     expand.output.map(GpuOverrides.wrapExpr(_, conf, Some(this)))
 
   override val childExprs: Seq[ExprMeta[_]] = gpuProjections.flatten ++ outputAttributes
-
-  /**
-   * Called to verify that this plan will work on the GPU. Generic checks will have already been
-   * done. In general this method should only tag this operator as bad.  If it needs to tag
-   * one of its children please take special care to update the comment inside [[tagSelfForGpu()]]
-   * so we don't end up with something that could be cyclical.
-   */
-  override def tagPlanForGpu(): Unit = {
-    val dataTypes = expand.projections.flatMap(_.map(_.dataType)).distinct
-    if (dataTypes.exists(GpuBatchUtils.isVariableWidth)) {
-      willNotWorkOnGpu("GpuExpandExec does not support variable-width types")
-    }
-  }
 
   /**
    * Convert what this wraps to a GPU enabled version.
@@ -82,7 +67,8 @@ case class GpuExpandExec(
   extends UnaryExecNode with GpuExec {
 
   override lazy val metrics: Map[String, SQLMetric] = Map(
-    GpuMetricNames.NUM_OUTPUT_ROWS -> SQLMetrics.createMetric(sparkContext, "number of output rows"))
+    GpuMetricNames.NUM_OUTPUT_ROWS -> SQLMetrics.createMetric(sparkContext,
+      "number of output rows"))
 
   // The GroupExpressions can output data with arbitrary partitioning, so set it
   // as UNKNOWN partitioning
@@ -97,55 +83,11 @@ case class GpuExpandExec(
   override protected def doExecuteColumnar(): RDD[ColumnarBatch] = {
     val numOutputRows = longMetric(NUM_OUTPUT_ROWS)
 
-    val rdd = child.executeColumnar()
-    val boundProjections = projections.map(projection => GpuBindReferences.bindReferences(projection, child.output))
-    rdd.map { cb =>
-      withResource(cb) { batch =>
-        val projectedColumns = new ListBuffer[Seq[GpuColumnVector]]()
-        var success = false
-        try {
-          boundProjections.foreach(projection =>
-            projectedColumns += projection.safeMap(expr => {
-              expr.columnarEval(batch) match {
-                case cv: GpuColumnVector => cv
-                case lit: GpuLiteral =>
-                  withResource(GpuScalar.from(lit.value, lit.dataType)) { scalar =>
-                    GpuColumnVector.from(scalar, batch.numRows())
-                  }
-                case other =>
-                  withResource(GpuScalar.from(other, expr.dataType)) { scalar =>
-                    GpuColumnVector.from(scalar, batch.numRows())
-                  }
-              }
-            })
-          )
-          success = true
+    val boundProjections: Seq[Seq[GpuExpression]] =
+      projections.map(GpuBindReferences.bindReferences(_, child.output))
 
-        } finally {
-          if (!success) {
-            projectedColumns.foreach(_.safeClose())
-          }
-        }
-
-        val interleaved = projectedColumns.head.indices.map(i => {
-          withResource(projectedColumns.map(p => p(i).getBase)) { vectors =>
-            withResource(new Table(vectors: _*)) { table =>
-              GpuColumnVector.from(table.interleaveColumns())
-            }
-          }
-        })
-
-        if (interleaved.head.getRowCount > Integer.MAX_VALUE) {
-          throw new IllegalStateException("GpuExpandExec produced more than Integer.MAX_VALUE rows." +
-            " Please try increasing your partition count.")
-        }
-
-        val interleavedRowCount = interleaved.head.getRowCount.toInt
-
-        numOutputRows += interleavedRowCount
-
-        new ColumnarBatch(interleaved.toArray, interleavedRowCount)
-      }
+    child.executeColumnar().mapPartitions { it =>
+      new GpuExpandIterator(boundProjections, numOutputRows, it)
     }
   }
 
@@ -155,3 +97,54 @@ case class GpuExpandExec(
 
 }
 
+class GpuExpandIterator(
+    boundProjections: Seq[Seq[GpuExpression]],
+    numOutputRows: SQLMetric,
+    it: Iterator[ColumnarBatch])
+  extends Iterator[ColumnarBatch]
+  with Arm {
+
+  private var cb: ColumnarBatch = _
+  private var projectionIndex = 0
+
+  Option(TaskContext.get())
+    .foreach(_.addTaskCompletionListener[Unit](_ => Option(cb).foreach(_.close())))
+
+  override def hasNext: Boolean = cb != null || it.hasNext
+
+  override def next(): ColumnarBatch = {
+
+    if (cb == null) {
+      cb = it.next()
+    }
+
+    val projectedColumns = boundProjections(projectionIndex).safeMap(expr => {
+      expr.columnarEval(cb) match {
+        case cv: GpuColumnVector => cv
+        case lit: GpuLiteral =>
+          withResource(GpuScalar.from(lit.value, lit.dataType)) { scalar =>
+            GpuColumnVector.from(scalar, cb.numRows())
+          }
+        case other =>
+          withResource(GpuScalar.from(other, expr.dataType)) { scalar =>
+            GpuColumnVector.from(scalar, cb.numRows())
+          }
+      }
+    })
+
+    val projectedBatch = new ColumnarBatch(projectedColumns.toArray, cb.numRows())
+    numOutputRows += cb.numRows()
+
+    projectionIndex += 1
+    if (projectionIndex == boundProjections.length) {
+      // we have processed all projections against the current batch
+      projectionIndex = 0
+
+      cb.close()
+      cb = null
+    }
+
+    projectedBatch
+  }
+
+}
