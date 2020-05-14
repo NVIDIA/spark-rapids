@@ -70,12 +70,15 @@ case class GpuStringLocate(substr: Expression, col: Expression, start: Expressio
     this(substr, col, GpuLiteral(1, IntegerType))
   }
 
-  override def doColumnar(val0: GpuColumnVector, val1: GpuColumnVector, val2: GpuColumnVector): GpuColumnVector =
+  override def doColumnar(val0: GpuColumnVector, val1: GpuColumnVector,
+      val2: GpuColumnVector): GpuColumnVector = throw new UnsupportedOperationException(
+    s"Cannot columnar evaluate expression: $this")
+  override def doColumnar(val0: Scalar, val1: GpuColumnVector,
+      val2: GpuColumnVector): GpuColumnVector =
     throw new UnsupportedOperationException(s"Cannot columnar evaluate expression: $this")
-  override def doColumnar(val0: Scalar, val1: GpuColumnVector, val2: GpuColumnVector): GpuColumnVector =
-    throw new UnsupportedOperationException(s"Cannot columnar evaluate expression: $this")
-  override def doColumnar(val0: Scalar, val1: Scalar, val2: GpuColumnVector): GpuColumnVector =
-    throw new UnsupportedOperationException(s"Cannot columnar evaluate expression: $this")
+  override def doColumnar(val0: Scalar, val1: Scalar,
+      val2: GpuColumnVector): GpuColumnVector = throw new UnsupportedOperationException(
+    s"Cannot columnar evaluate expression: $this")
   override def doColumnar(val0: Scalar, val1: GpuColumnVector, val2: Scalar): GpuColumnVector = {
     if (!val2.isValid()) {
       val zeroScalar = GpuScalar.from(0, IntegerType)
@@ -84,7 +87,8 @@ case class GpuStringLocate(substr: Expression, col: Expression, start: Expressio
       } finally {
         zeroScalar.close()
       }
-    } else if (!val0.isValid()) { //if null substring // or null column? <-- needs to be looked for/tested
+    } else if (!val0.isValid()) {
+      //if null substring // or null column? <-- needs to be looked for/tested
       val nullScalar = GpuScalar.from(null, IntegerType)
       try {
         GpuColumnVector.from(nullScalar, val1.getRowCount().toInt)
@@ -131,12 +135,15 @@ case class GpuStringLocate(substr: Expression, col: Expression, start: Expressio
       }
     }
   }
-  override def doColumnar(val0: GpuColumnVector, val1: Scalar, val2: GpuColumnVector): GpuColumnVector =
-    throw new UnsupportedOperationException(s"Cannot columnar evaluate expression: $this")
-  override def doColumnar(val0: GpuColumnVector, val1: Scalar, val2: Scalar): GpuColumnVector =
-    throw new UnsupportedOperationException(s"Cannot columnar evaluate expression: $this")
-  override def doColumnar(val0: GpuColumnVector, val1: GpuColumnVector, val2: Scalar): GpuColumnVector =
-    throw new UnsupportedOperationException(s"Cannot columnar evaluate expression: $this")
+  override def doColumnar(val0: GpuColumnVector, val1: Scalar,
+      val2: GpuColumnVector): GpuColumnVector = throw new UnsupportedOperationException(
+    s"Cannot columnar evaluate expression: $this")
+  override def doColumnar(val0: GpuColumnVector, val1: Scalar,
+      val2: Scalar): GpuColumnVector = throw new UnsupportedOperationException(
+    s"Cannot columnar evaluate expression: $this")
+  override def doColumnar(val0: GpuColumnVector, val1: GpuColumnVector,
+      val2: Scalar): GpuColumnVector = throw new UnsupportedOperationException(
+    s"Cannot columnar evaluate expression: $this")
 }
 
 case class GpuStartsWith(left: GpuExpression, right: GpuExpression)
@@ -166,12 +173,12 @@ case class GpuStartsWith(left: GpuExpression, right: GpuExpression)
   }
 
   override def doColumnar(lhs: GpuColumnVector,
-    rhs: GpuColumnVector): GpuColumnVector = throw new IllegalStateException("Really should not be here, " +
-    "Cannot have two column vectors as input in StartsWith")
+    rhs: GpuColumnVector): GpuColumnVector = throw new IllegalStateException(
+    "Really should not be here, cannot have two column vectors as input in StartsWith")
 
   override def doColumnar(lhs: Scalar,
-    rhs: GpuColumnVector): GpuColumnVector = throw new IllegalStateException("Really should not be here," +
-    "Cannot have a scalar as left side operand in StartsWith")
+    rhs: GpuColumnVector): GpuColumnVector = throw new IllegalStateException(
+    "Really should not be here, cannot have a scalar as left side operand in StartsWith")
 }
 
 case class GpuEndsWith(left: GpuExpression, right: GpuExpression)
@@ -201,12 +208,12 @@ case class GpuEndsWith(left: GpuExpression, right: GpuExpression)
   }
 
   override def doColumnar(lhs: GpuColumnVector,
-    rhs: GpuColumnVector): GpuColumnVector = throw new IllegalStateException("Really should not be here, " +
-    "Cannot have two column vectors as input in EndsWith")
+    rhs: GpuColumnVector): GpuColumnVector = throw new IllegalStateException(
+    "Really should not be here, cannot have two column vectors as input in EndsWith")
 
   override def doColumnar(lhs: Scalar,
-    rhs: GpuColumnVector): GpuColumnVector = throw new IllegalStateException("Really should not be here, " +
-    "Cannot have a scalar as left side operand in EndsWith")
+    rhs: GpuColumnVector): GpuColumnVector = throw new IllegalStateException(
+    "Really should not be here, cannot have a scalar as left side operand in EndsWith")
 }
 
 case class GpuStringTrim(column: GpuExpression, trimParameters: Option[GpuExpression] = None)
@@ -216,7 +223,8 @@ case class GpuStringTrim(column: GpuExpression, trimParameters: Option[GpuExpres
 
   override def trimStr:Option[GpuExpression] = trimParameters
 
-  def this(trimParameters: GpuExpression, column: GpuExpression) = this(column, Option(trimParameters))
+  def this(trimParameters: GpuExpression, column: GpuExpression) =
+    this(column, Option(trimParameters))
 
   def this(column: GpuExpression) = this(column, None)
 
@@ -234,7 +242,8 @@ case class GpuStringTrimLeft(column: GpuExpression, trimParameters: Option[GpuEx
 
   override def trimStr:Option[GpuExpression] = trimParameters
 
-  def this(trimParameters: GpuExpression, column: GpuExpression) = this(column, Option(trimParameters))
+  def this(trimParameters: GpuExpression, column: GpuExpression) =
+    this(column, Option(trimParameters))
 
   def this(column: GpuExpression) = this(column, None)
 
@@ -252,7 +261,8 @@ case class GpuStringTrimRight(column: GpuExpression, trimParameters: Option[GpuE
 
   override def trimStr:Option[GpuExpression] = trimParameters
 
-  def this(trimParameters: GpuExpression, column: GpuExpression) = this(column, Option(trimParameters))
+  def this(trimParameters: GpuExpression, column: GpuExpression) =
+    this(column, Option(trimParameters))
 
   def this(column: GpuExpression) = this(column, None)
 
@@ -291,7 +301,8 @@ case class GpuConcat(children: Seq[GpuExpression]) extends GpuComplexTypeMerging
         }
       }
       emptyStrScalar = GpuScalar.from("", StringType)
-      GpuColumnVector.from(ColumnVector.stringConcatenate(emptyStrScalar, nullStrScalar, columns.toArray[ColumnVector]))
+      GpuColumnVector.from(ColumnVector.stringConcatenate(emptyStrScalar, nullStrScalar,
+        columns.toArray[ColumnVector]))
     } finally {
       columns.safeClose()
       if (emptyStrScalar != null) {
