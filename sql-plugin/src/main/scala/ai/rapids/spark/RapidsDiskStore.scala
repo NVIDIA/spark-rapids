@@ -56,7 +56,8 @@ class RapidsDiskStore(
         copyBufferToPath(hostBuffer, path, append = false)
       }
       logDebug(s"Spilled to $path $fileOffset:${incoming.size}")
-      new this.RapidsDiskBuffer(id, fileOffset, incoming.size, incoming.meta, incoming.getSpillPriority)
+      new this.RapidsDiskBuffer(id, fileOffset, incoming.size, incoming.meta,
+        incoming.getSpillPriority)
     } finally {
       incomingBuffer.close()
     }
