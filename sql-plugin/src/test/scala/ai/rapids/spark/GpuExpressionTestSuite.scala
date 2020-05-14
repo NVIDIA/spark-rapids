@@ -52,18 +52,22 @@ abstract class GpuExpressionTestSuite extends SparkQueryCompareTestSuite {
             for (i <- 0 until result.getRowCount.toInt) {
               val inputValue = getAs(hostInput, i, inputType)
               val actualOption: Option[U] = getAs(hostResult, i, outputType).map(_.asInstanceOf[U])
-              val expectedOption: Option[U] = inputValue.flatMap(v => expectedFun(v.asInstanceOf[T]))
+              val expectedOption: Option[U] =
+                inputValue.flatMap(v => expectedFun(v.asInstanceOf[T]))
               (expectedOption, actualOption) match {
                 case (Some(expected), Some(actual)) if comparisonFunc.isDefined =>
                   if (!comparisonFunc.get(expected, actual)) {
-                    throw new IllegalStateException(s"Expected: $expected. Actual: $actual. Input value: $inputValue")
+                    throw new IllegalStateException(s"Expected: $expected. Actual: $actual. " +
+                      s"Input value: $inputValue")
                   }
                 case (Some(expected), Some(actual)) =>
                   if (!compare(expected, actual, maxFloatDiff)) {
-                    throw new IllegalStateException(s"Expected: $expected. Actual: $actual. Input value: $inputValue")
+                    throw new IllegalStateException(s"Expected: $expected. Actual: $actual. " +
+                      s"Input value: $inputValue")
                   }
                 case (None, None) =>
-                case _ => throw new IllegalStateException(s"Expected: $expectedOption. Actual: $actualOption. Input value: $inputValue")
+                case _ => throw new IllegalStateException(s"Expected: $expectedOption. " +
+                  s"Actual: $actualOption. Input value: $inputValue")
               }
             }
           }
