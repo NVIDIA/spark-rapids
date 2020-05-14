@@ -131,12 +131,12 @@ object GpuShuffleExchangeExec {
     }
 
     /**
-      * Analogous to how spark config for sorting before repartition works, the GPU implementation
-      * here sorts on the GPU over all columns of the table in ascending order and nulls as smallest.
-      * This essentially means the results are not one to one w.r.t. the row hashcode based sort.
-      * As long as we don't mix and match repartition() between CPU and GPU this should not be a concern.
-      * Latest spark behavior does not even require this sort as it fails the upstream task when indeterminate
-      * tasks re-run.
+     * Analogous to how spark config for sorting before repartition works, the GPU implementation
+     * here sorts on the GPU over all columns of the table in ascending order and nulls as smallest.
+     * This essentially means the results are not one to one w.r.t. the row hashcode based sort.
+     * As long as we don't mix and match repartition() between CPU and GPU this should not be a
+     * concern. Latest spark behavior does not even require this sort as it fails the upstream
+     * task when indeterminate tasks re-run.
      */
     val newRdd = if (isRoundRobin && SQLConf.get.sortBeforeRepartition) {
       val sorter = new GpuColumnarBatchSorter(Seq.empty[GpuSortOrder],
