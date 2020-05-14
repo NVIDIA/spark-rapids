@@ -275,7 +275,8 @@ case class GpuEqualTo(left: Expression, right: Expression) extends CudfBinaryCom
 
 case class GpuEqualNullSafe(left: Expression, right: Expression) extends CudfBinaryComparison
   with NullIntolerant {
-  override def symbol: String = "="
+  override def symbol: String = "<=>"
+  override def nullable: Boolean = false
   override def outputTypeOverride: DType = DType.BOOL8
   override def binaryOp: BinaryOp = BinaryOp.NULL_EQUALS
 
