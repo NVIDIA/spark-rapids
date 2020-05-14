@@ -76,7 +76,8 @@ trait GpuBaseLimitExec extends LimitExec with GpuExec {
                 assert(subVector != null)
                 resultCVs.append(GpuColumnVector.from(subVector))
                 assert(subVector.getRowCount == remainingLimit,
-                  s"result rowcount ${subVector.getRowCount} is not equal to the remainingLimit $remainingLimit")
+                  s"result rowcount ${subVector.getRowCount} is not equal to the " +
+                    s"remainingLimit $remainingLimit")
               })
             }
             new ColumnarBatch(resultCVs.toArray, remainingLimit)
