@@ -29,7 +29,8 @@ class GpuCoalesceBatchesSuite extends SparkQueryCompareTestSuite {
   test("test with small input batches") {
     withGpuSparkSession(spark => {
       val testData = doubleCsvDf(spark).coalesce(1)
-      val gpuRowToColumnarExec = GpuRowToColumnarExec(testData.queryExecution.sparkPlan, TargetSize(1))
+      val gpuRowToColumnarExec = GpuRowToColumnarExec(testData.queryExecution.sparkPlan,
+        TargetSize(1))
       val gpuCoalesceBatches = GpuCoalesceBatches(gpuRowToColumnarExec, TargetSize(100000))
       val rdd = gpuCoalesceBatches.doExecuteColumnar()
       val part = rdd.partitions.head
@@ -89,10 +90,11 @@ class GpuCoalesceBatchesSuite extends SparkQueryCompareTestSuite {
       // override for this test so we can mock the response to make it look the strings are large
       override def getColumnSizes(cb: ColumnarBatch): Array[Long] = Array(64, Int.MaxValue)
 
-      override def getColumnDataSize(cb: ColumnarBatch, index: Int, default: Long): Long = index match {
-        case 0 => 64L
-        case 1 => (Int.MaxValue/4*3).toLong
-      }
+      override def getColumnDataSize(cb: ColumnarBatch, index: Int, default: Long): Long =
+        index match {
+          case 0 => 64L
+          case 1 => (Int.MaxValue / 4 * 3).toLong
+        }
     }
 
     while (it.hasNext) {
@@ -164,7 +166,8 @@ class GpuCoalesceBatchesSuite extends SparkQueryCompareTestSuite {
       .set("spark.sql.shuffle.partitions", "1")
 
     val dir = Files.createTempDir()
-    val path = new File(dir, s"HostColumnarToGpu-${System.currentTimeMillis()}.parquet").getAbsolutePath
+    val path = new File(dir,
+      s"HostColumnarToGpu-${System.currentTimeMillis()}.parquet").getAbsolutePath
 
     try {
       // convert csv test data to parquet
