@@ -25,10 +25,12 @@ import org.apache.spark.sql.catalyst.expressions.{Expression, ImplicitCastInputT
 import org.apache.spark.sql.types._
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
-abstract class CudfUnaryMathExpression(name: String) extends GpuUnaryMathExpression(name) with CudfUnaryExpression
+abstract class CudfUnaryMathExpression(name: String) extends GpuUnaryMathExpression(name)
+  with CudfUnaryExpression
 
 abstract class GpuUnaryMathExpression(name: String) extends GpuUnaryExpression
   with Serializable with ImplicitCastInputTypes {
+
   override def inputTypes: Seq[AbstractDataType] = Seq(DoubleType)
   override def dataType: DataType = DoubleType
   override def nullable: Boolean = true
@@ -262,7 +264,9 @@ object GpuLogarithm extends Arm {
   }
 }
 
-case class GpuLogarithm(left: GpuExpression, right: GpuExpression) extends CudfBinaryMathExpression("LOG_BASE") {
+case class GpuLogarithm(left: GpuExpression, right: GpuExpression)
+  extends CudfBinaryMathExpression("LOG_BASE") {
+
   override def binaryOp: BinaryOp = BinaryOp.LOG_BASE
   override def outputTypeOverride: DType = DType.FLOAT64
 
