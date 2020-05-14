@@ -32,9 +32,11 @@ class HashAggregatesSuite extends SparkQueryCompareTestSuite {
     conf.set("spark.rapids.sql.hashAgg.replaceMode", mode)
   }
 
-  private def checkExecNode(result: DataFrame) = {
+  private def checkExecNode(result: DataFrame): Unit = {
     if (result.sparkSession.sqlContext.getAllConfs("spark.app.name").contains("gpu")) {
-      assert(result.queryExecution.executedPlan.find(_.isInstanceOf[GpuHashAggregateExec]).isDefined)
+      assert(result.queryExecution.executedPlan.find {
+        _.isInstanceOf[GpuHashAggregateExec]
+      }.isDefined)
     }
   }
 
@@ -57,13 +59,17 @@ class HashAggregatesSuite extends SparkQueryCompareTestSuite {
   }
 
   def firstDf(spark: SparkSession): DataFrame = {
-    val options = FuzzerOptions(asciiStringsOnly = true, numbersAsStrings = false, maxStringLen = 4)
+    val options = FuzzerOptions(asciiStringsOnly = true, numbersAsStrings = false,
+        maxStringLen = 4)
     val schema = FuzzerUtils.createSchema(Seq(DataTypes.StringType, DataTypes.IntegerType))
     FuzzerUtils.generateDataFrame(spark, schema, 100, options, seed = 0)
       .withColumn("c2", col("c1").mod(lit(10)))
   }
 
-  IGNORE_ORDER_testSparkResultsAreEqual("test sort agg with first and last string deterministic case", firstDf, repart = 2) {
+  IGNORE_ORDER_testSparkResultsAreEqual(
+      "test sort agg with first and last string deterministic case",
+      firstDf,
+      repart = 2) {
     frame => frame
       .coalesce(1)
       .sort(col("c2").asc, col("c0").asc) // force deterministic use case
@@ -148,19 +154,28 @@ class HashAggregatesSuite extends SparkQueryCompareTestSuite {
     }, conf)
   }
 
-  IGNORE_ORDER_testSparkResultsAreEqual("test hash agg with shuffle", longsFromCSVDf, repart = 2) {
+  IGNORE_ORDER_testSparkResultsAreEqual(
+      "test hash agg with shuffle",
+      longsFromCSVDf,
+      repart = 2) {
     frame => frame.groupBy(col("longs")).agg(sum(col("more_longs")))
   }
 
-  IGNORE_ORDER_testSparkResultsAreEqual("test hash agg with Single partitioning",
-    longsFromCSVDf, repart = 2, conf = new SparkConf().set("spark.sql.shuffle.partitions", "1")) {
+  IGNORE_ORDER_testSparkResultsAreEqual(
+      "test hash agg with Single partitioning",
+      longsFromCSVDf,
+      repart = 2,
+      conf = new SparkConf().set("spark.sql.shuffle.partitions", "1")) {
     frame => {
       frame.agg(count("*"))
     }
   }
 
-  IGNORE_ORDER_testSparkResultsAreEqual("test hash agg with Single partitioning with partition sort",
-    longsFromCSVDf, repart = 2, conf = new SparkConf().set("spark.sql.shuffle.partitions", "1"), sortBeforeRepart = true) {
+  IGNORE_ORDER_testSparkResultsAreEqual(
+      "test hash agg with Single partitioning with partition sort",
+      longsFromCSVDf,
+      repart = 2,
+      conf = new SparkConf().set("spark.sql.shuffle.partitions", "1"), sortBeforeRepart = true) {
     frame => {
       frame.agg(count("*"))
     }
@@ -169,9 +184,11 @@ class HashAggregatesSuite extends SparkQueryCompareTestSuite {
   /*
    * HASH AGGREGATE TESTS
    */
-  IGNORE_ORDER_testSparkResultsAreEqual("short reduction aggs", shortsFromCsv,
-    // All the literals get turned into doubles, so we need to support avg in those cases
-    conf = floatAggConf) {
+  IGNORE_ORDER_testSparkResultsAreEqual(
+      "short reduction aggs",
+      shortsFromCsv,
+      // All the literals get turned into doubles, so we need to support avg in those cases
+      conf = floatAggConf) {
     frame => frame.agg(
       (max("shorts") - min("more_shorts")) * lit(5),
       sum("shorts"),
@@ -180,9 +197,11 @@ class HashAggregatesSuite extends SparkQueryCompareTestSuite {
       avg(col("more_shorts") * lit("10")))
   }
 
-  IGNORE_ORDER_testSparkResultsAreEqual("reduction aggs", longsCsvDf,
-    // All the literals get turned into doubles, so we need to support avg in those cases
-    conf = makeBatchedBytes(3).set(RapidsConf.ENABLE_FLOAT_AGG.key, "true")) {
+  IGNORE_ORDER_testSparkResultsAreEqual(
+      "reduction aggs",
+      longsCsvDf,
+      // All the literals get turned into doubles, so we need to support avg in those cases
+      conf = makeBatchedBytes(3).set(RapidsConf.ENABLE_FLOAT_AGG.key, "true")) {
     frame => frame.agg(
       (max("longs") - min("more_longs")) * lit(5),
       sum("longs"),
@@ -195,18 +214,21 @@ class HashAggregatesSuite extends SparkQueryCompareTestSuite {
     frame => frame.distinct()
   }
 
-  IGNORE_ORDER_testSparkResultsAreEqual("avg literals", longsFromCSVDf,
-    conf = floatAggConf) {
+  IGNORE_ORDER_testSparkResultsAreEqual("avg literals", longsFromCSVDf, conf = floatAggConf) {
     frame => frame.agg(avg(lit(1.toDouble)),avg(lit(2.toDouble)))
   }
 
-  IGNORE_ORDER_testSparkResultsAreEqual("avg literals with nulls", longsFromCSVDf,
-    conf = floatAggConf) {
+  IGNORE_ORDER_testSparkResultsAreEqual(
+      "avg literals with nulls",
+      longsFromCSVDf,
+      conf = floatAggConf) {
     frame => frame.agg(avg(lit(null)),avg(lit(2.toDouble)))
   }
 
-  IGNORE_ORDER_testSparkResultsAreEqual("avg literals with all nulls", longsFromCSVDf,
-    conf = floatAggConf) {
+  IGNORE_ORDER_testSparkResultsAreEqual(
+      "avg literals with all nulls",
+      longsFromCSVDf,
+      conf = floatAggConf) {
     frame => frame.agg(avg(lit(null)),avg(lit(null)))
   }
 
@@ -214,8 +236,10 @@ class HashAggregatesSuite extends SparkQueryCompareTestSuite {
     frame => frame.distinct()
   }
 
-  IGNORE_ORDER_testSparkResultsAreEqual("group by string include nulls in count aggregate", nullableStringsIntsDf,
-    conf = floatAggConf) {
+  IGNORE_ORDER_testSparkResultsAreEqual(
+      "group by string include nulls in count aggregate",
+      nullableStringsIntsDf,
+      conf = floatAggConf) {
     frame => frame.groupBy("strings").agg(
       max("ints"),
       min("ints"),
@@ -224,8 +248,10 @@ class HashAggregatesSuite extends SparkQueryCompareTestSuite {
       count("*"))
   }
 
-  IGNORE_ORDER_testSparkResultsAreEqual("group by string include nulls in count aggregate small batches",
-    nullableStringsIntsDf, conf = floatAggConf.set(RapidsConf.GPU_BATCH_SIZE_BYTES.key, "10")) {
+  IGNORE_ORDER_testSparkResultsAreEqual(
+      "group by string include nulls in count aggregate small batches",
+      nullableStringsIntsDf,
+      conf = floatAggConf.set(RapidsConf.GPU_BATCH_SIZE_BYTES.key, "10")) {
     frame => frame.groupBy("strings").agg(
       max("ints"),
       min("ints"),
@@ -234,8 +260,10 @@ class HashAggregatesSuite extends SparkQueryCompareTestSuite {
       count("*"))
   }
 
-  IGNORE_ORDER_testSparkResultsAreEqual("group by strings exclude nulls in count aggregate", nullableStringsIntsDf,
-    conf = floatAggConf) {
+  IGNORE_ORDER_testSparkResultsAreEqual(
+      "group by strings exclude nulls in count aggregate",
+      nullableStringsIntsDf,
+      conf = floatAggConf) {
     frame => frame.groupBy("strings").agg(
       max("ints"),
       min("ints"),
@@ -244,15 +272,19 @@ class HashAggregatesSuite extends SparkQueryCompareTestSuite {
       count("ints"))
   }
 
-  IGNORE_ORDER_testSparkResultsAreEqual("group by float with NaNs and null", intnullableFloatWithNullAndNanDf,
-    conf = floatAggConf) {
+  IGNORE_ORDER_testSparkResultsAreEqual(
+      "group by float with NaNs and null",
+      intnullableFloatWithNullAndNanDf,
+      conf = floatAggConf) {
     frame => frame.groupBy("ints").agg(
       count("floats"),
       count(lit(null)));
   }
 
-  IGNORE_ORDER_testSparkResultsAreEqual("group by utf8 strings", utf8RepeatedDf,
-    conf = floatAggConf) {
+  IGNORE_ORDER_testSparkResultsAreEqual(
+      "group by utf8 strings",
+      utf8RepeatedDf,
+      conf = floatAggConf) {
     frame => frame.groupBy("strings").agg(
       max("ints"),
       min("ints"),
@@ -261,7 +293,10 @@ class HashAggregatesSuite extends SparkQueryCompareTestSuite {
       count("*"))
   }
 
-  IGNORE_ORDER_testSparkResultsAreEqual("test count, sum, max, min with shuffle", longsFromCSVDf, repart = 2) {
+  IGNORE_ORDER_testSparkResultsAreEqual(
+      "test count, sum, max, min with shuffle",
+      longsFromCSVDf,
+      repart = 2) {
     frame => frame.groupBy(col("more_longs")).agg(
       count("*"),
       sum("more_longs"),
@@ -269,7 +304,9 @@ class HashAggregatesSuite extends SparkQueryCompareTestSuite {
       (max("more_longs") - min("more_longs")) * 3.0)
   }
 
-  FLOAT_TEST_testSparkResultsAreEqual("float basic aggregates group by string literal", floatCsvDf) {
+  FLOAT_TEST_testSparkResultsAreEqual(
+      "float basic aggregates group by string literal",
+      floatCsvDf) {
     frame => frame.groupBy(lit("2019-02-10")).agg(
       min(col("floats")) + lit(123),
       sum(col("more_floats") + lit(123.0)),
@@ -281,7 +318,9 @@ class HashAggregatesSuite extends SparkQueryCompareTestSuite {
       count("*"))
   }
 
-  FLOAT_TEST_testSparkResultsAreEqual("float basic aggregates group by float and string literal", floatCsvDf) {
+  FLOAT_TEST_testSparkResultsAreEqual(
+      "float basic aggregates group by float and string literal",
+      floatCsvDf) {
     frame => {
       val feature_window_end_time = date_format(lit("2018-02-01"), "yyyy-MM-dd HH:mm:ss")
       val frameWithCol = frame.withColumn("timestamp_lit", feature_window_end_time)
@@ -299,7 +338,9 @@ class HashAggregatesSuite extends SparkQueryCompareTestSuite {
     }
   }
 
-  IGNORE_ORDER_testSparkResultsAreEqual("aggregates with timestamp and string literal", timestampsDf) {
+  IGNORE_ORDER_testSparkResultsAreEqual(
+      "aggregates with timestamp and string literal",
+      timestampsDf) {
     frame => {
       val feature_window_end_time = date_format(lit("2018-02-01"), "yyyy-MM-dd HH:mm:ss")
       val frameWithCol = frame.withColumn("timestamp_lit", feature_window_end_time)
@@ -335,11 +376,13 @@ class HashAggregatesSuite extends SparkQueryCompareTestSuite {
       count("*"))
   }
 
-  FLOAT_TEST_testSparkResultsAreEqual("partial on gpu: float basic aggregates group by more_floats", floatCsvDf,
-    conf = replaceHashAggMode("partial"),
-    execsAllowedNonGpu = Seq("HashAggregateExec", "AggregateExpression", "AttributeReference",
-      "Alias", "Literal", "Min", "Sum", "Max", "Average", "Add", "Multiply", "Subtract", "Cast",
-      "Count")) {
+  FLOAT_TEST_testSparkResultsAreEqual(
+      "partial on gpu: float basic aggregates group by more_floats",
+      floatCsvDf,
+      conf = replaceHashAggMode("partial"),
+      execsAllowedNonGpu = Seq("HashAggregateExec", "AggregateExpression", "AttributeReference",
+          "Alias", "Literal", "Min", "Sum", "Max", "Average", "Add", "Multiply", "Subtract",
+          "Cast", "Count")) {
     frame => frame.groupBy("more_floats").agg(
       lit(456f),
       min(col("floats")) + lit(123),
@@ -352,11 +395,13 @@ class HashAggregatesSuite extends SparkQueryCompareTestSuite {
       count("*"))
   }
 
-  FLOAT_TEST_testSparkResultsAreEqual("final on gpu: float basic aggregates group by more_floats", floatCsvDf,
-    conf = replaceHashAggMode("final"),
-    execsAllowedNonGpu = Seq("HashAggregateExec", "AggregateExpression", "AttributeReference",
-      "Alias", "Literal", "Min", "Sum", "Max", "Average", "Add", "Multiply", "Subtract", "Cast",
-      "Count", "KnownFloatingPointNormalized", "NormalizeNaNAndZero")) {
+  FLOAT_TEST_testSparkResultsAreEqual(
+      "final on gpu: float basic aggregates group by more_floats",
+      floatCsvDf,
+      conf = replaceHashAggMode("final"),
+      execsAllowedNonGpu = Seq("HashAggregateExec", "AggregateExpression", "AttributeReference",
+          "Alias", "Literal", "Min", "Sum", "Max", "Average", "Add", "Multiply", "Subtract",
+          "Cast", "Count", "KnownFloatingPointNormalized", "NormalizeNaNAndZero")) {
     frame => frame.groupBy("more_floats").agg(
       lit(456f),
       min(col("floats")) + lit(123),
@@ -369,8 +414,10 @@ class HashAggregatesSuite extends SparkQueryCompareTestSuite {
       count("*"))
   }
 
-  FLOAT_TEST_testSparkResultsAreEqual("nullable float basic aggregates group by more_floats", nullableFloatCsvDf,
-    conf = makeBatchedBytes(3)) {
+  FLOAT_TEST_testSparkResultsAreEqual(
+      "nullable float basic aggregates group by more_floats",
+      nullableFloatCsvDf,
+      conf = makeBatchedBytes(3)) {
     frame => frame.groupBy("more_floats").agg(
       lit(456f),
       min(col("floats")) + lit(123),
@@ -383,9 +430,11 @@ class HashAggregatesSuite extends SparkQueryCompareTestSuite {
       count("*"))
   }
 
-  INCOMPAT_IGNORE_ORDER_testSparkResultsAreEqual("shorts basic aggregates group by more_shorts", shortsFromCsv,
-    // All the literals get turned into doubles, so we need to support avg in those cases
-    conf = makeBatchedBytes(3).set(RapidsConf.ENABLE_FLOAT_AGG.key, "true")) {
+  INCOMPAT_IGNORE_ORDER_testSparkResultsAreEqual(
+      "shorts basic aggregates group by more_shorts",
+      shortsFromCsv,
+      // All the literals get turned into doubles, so we need to support avg in those cases
+      conf = makeBatchedBytes(3).set(RapidsConf.ENABLE_FLOAT_AGG.key, "true")) {
     frame => frame.groupBy("more_shorts").agg(
       lit(456),
       min(col("shorts")) + lit(123),
@@ -398,9 +447,11 @@ class HashAggregatesSuite extends SparkQueryCompareTestSuite {
       count("*"))
   }
 
-  IGNORE_ORDER_testSparkResultsAreEqual("long basic aggregates group by longs", longsCsvDf,
-    // All the literals get turned into doubles, so we need to support avg in those cases
-    conf = makeBatchedBytes(3).set(RapidsConf.ENABLE_FLOAT_AGG.key, "true")) {
+  IGNORE_ORDER_testSparkResultsAreEqual(
+      "long basic aggregates group by longs",
+      longsCsvDf,
+      // All the literals get turned into doubles, so we need to support avg in those cases
+      conf = makeBatchedBytes(3).set(RapidsConf.ENABLE_FLOAT_AGG.key, "true")) {
     frame => frame.groupBy("longs").agg(
       lit(456f),
       min(col("longs")) + lit(123),
@@ -413,9 +464,11 @@ class HashAggregatesSuite extends SparkQueryCompareTestSuite {
       count("*"))
   }
 
-  IGNORE_ORDER_testSparkResultsAreEqual("long basic aggregates group by more_longs", longsCsvDf,
-    // All the literals get turned into doubles, so we need to support avg in those cases
-    conf = makeBatchedBytes(3).set(RapidsConf.ENABLE_FLOAT_AGG.key, "true")) {
+  IGNORE_ORDER_testSparkResultsAreEqual(
+      "long basic aggregates group by more_longs",
+      longsCsvDf,
+      // All the literals get turned into doubles, so we need to support avg in those cases
+      conf = makeBatchedBytes(3).set(RapidsConf.ENABLE_FLOAT_AGG.key, "true")) {
     frame => frame.groupBy("more_longs").agg(
       lit(456f),
       min(col("longs")) + lit(123),
@@ -428,9 +481,11 @@ class HashAggregatesSuite extends SparkQueryCompareTestSuite {
       count("*"))
   }
 
-  IGNORE_ORDER_testSparkResultsAreEqual("ints basic aggregates group by ints", intCsvDf,
-    // All the literals get turned into doubles, so we need to support avg in those cases
-    conf = makeBatchedBytes(3).set(RapidsConf.ENABLE_FLOAT_AGG.key, "true")) {
+  IGNORE_ORDER_testSparkResultsAreEqual(
+      "ints basic aggregates group by ints",
+      intCsvDf,
+      // All the literals get turned into doubles, so we need to support avg in those cases
+      conf = makeBatchedBytes(3).set(RapidsConf.ENABLE_FLOAT_AGG.key, "true")) {
     frame => frame.groupBy("ints").agg(
       lit(456f),
       min(col("ints")) + lit(123),
@@ -443,9 +498,11 @@ class HashAggregatesSuite extends SparkQueryCompareTestSuite {
       count("*"))
   }
 
-  IGNORE_ORDER_testSparkResultsAreEqual("ints basic aggregates group by more_ints", intCsvDf,
-    // All the literals get turned into doubles, so we need to support avg in those cases
-    conf = makeBatchedBytes(3).set(RapidsConf.ENABLE_FLOAT_AGG.key, "true")) {
+  IGNORE_ORDER_testSparkResultsAreEqual(
+      "ints basic aggregates group by more_ints",
+      intCsvDf,
+      // All the literals get turned into doubles, so we need to support avg in those cases
+      conf = makeBatchedBytes(3).set(RapidsConf.ENABLE_FLOAT_AGG.key, "true")) {
     frame => frame.groupBy("more_ints").agg(
       lit(456f),
       min(col("ints")) + lit(123),
@@ -458,8 +515,10 @@ class HashAggregatesSuite extends SparkQueryCompareTestSuite {
       count("*"))
   }
 
-  FLOAT_TEST_testSparkResultsAreEqual("doubles basic aggregates group by doubles", doubleCsvDf,
-    conf = makeBatchedBytes(3)) {
+  FLOAT_TEST_testSparkResultsAreEqual(
+      "doubles basic aggregates group by doubles",
+      doubleCsvDf,
+      conf = makeBatchedBytes(3)) {
     frame => frame.groupBy("doubles").agg(
       lit(456f),
       min(col("doubles")) + lit(123),
@@ -472,8 +531,10 @@ class HashAggregatesSuite extends SparkQueryCompareTestSuite {
       count("*"))
   }
 
-  FLOAT_TEST_testSparkResultsAreEqual("doubles basic aggregates group by more_doubles", doubleCsvDf,
-    conf = makeBatchedBytes(3)) {
+  FLOAT_TEST_testSparkResultsAreEqual(
+      "doubles basic aggregates group by more_doubles",
+      doubleCsvDf,
+      conf = makeBatchedBytes(3)) {
     frame => frame.groupBy("more_doubles").agg(
       lit(456f),
       min(col("doubles")) + lit(123),
@@ -486,7 +547,9 @@ class HashAggregatesSuite extends SparkQueryCompareTestSuite {
       count("*"))
   }
 
-  IGNORE_ORDER_testSparkResultsAreEqual("sum(longs) multi group by longs, more_longs", longsCsvDf) {
+  IGNORE_ORDER_testSparkResultsAreEqual(
+      "sum(longs) multi group by longs, more_longs",
+      longsCsvDf) {
     frame => frame.groupBy("longs", "more_longs").agg(
       sum("longs"), count("*"))
   }
@@ -506,15 +569,24 @@ class HashAggregatesSuite extends SparkQueryCompareTestSuite {
       .agg(max("ints").as("max_ints_by_month"))
   }
 
-  FLOAT_TEST_testSparkResultsAreEqual("sum(floats) group by more_floats 2 partitions", floatCsvDf, repart = 2) {
+  FLOAT_TEST_testSparkResultsAreEqual(
+      "sum(floats) group by more_floats 2 partitions",
+      floatCsvDf,
+      repart = 2) {
     frame => frame.groupBy("more_floats").sum("floats")
   }
 
-  FLOAT_TEST_testSparkResultsAreEqual("avg(floats) group by more_floats 4 partitions", floatCsvDf, repart = 4) {
+  FLOAT_TEST_testSparkResultsAreEqual(
+      "avg(floats) group by more_floats 4 partitions",
+      floatCsvDf,
+      repart = 4) {
     frame => frame.groupBy("more_floats").avg("floats")
   }
 
-  FLOAT_TEST_testSparkResultsAreEqual("avg(floats),count(floats) group by more_floats 4 partitions", floatCsvDf, repart = 4) {
+  FLOAT_TEST_testSparkResultsAreEqual(
+      "avg(floats),count(floats) group by more_floats 4 partitions",
+      floatCsvDf,
+      repart = 4) {
     frame => frame
       .groupBy("more_floats")
       .agg(avg("floats"), count("*"))
@@ -580,41 +652,57 @@ class HashAggregatesSuite extends SparkQueryCompareTestSuite {
       last("ints", ignoreNulls = false))
   }
 
-  IGNORE_ORDER_testSparkResultsAreEqual("first hand-picked longs ignoreNulls=true", firstLastLongsDf) {
+  IGNORE_ORDER_testSparkResultsAreEqual(
+      "first hand-picked longs ignoreNulls=true",
+      firstLastLongsDf) {
     frame => frame.groupBy(col("c0")).agg(first("c1", ignoreNulls = true))
   }
 
-  IGNORE_ORDER_testSparkResultsAreEqual("first hand-picked longs ignoreNulls=false", firstLastLongsDf) {
+  IGNORE_ORDER_testSparkResultsAreEqual(
+      "first hand-picked longs ignoreNulls=false",
+      firstLastLongsDf) {
     frame => frame.groupBy(col("c0")).agg(first("c1", ignoreNulls = false))
   }
 
-  IGNORE_ORDER_testSparkResultsAreEqual("first/last hand-picked longs ignoreNulls=false", firstLastLongsDf) {
+  IGNORE_ORDER_testSparkResultsAreEqual(
+      "first/last hand-picked longs ignoreNulls=false",
+      firstLastLongsDf) {
     frame => frame.groupBy(col("c0")).agg(
       first("c1", ignoreNulls = false),
       last("c1", ignoreNulls = false))
   }
 
-  IGNORE_ORDER_testSparkResultsAreEqual("first/last random ints ignoreNulls=false", randomDF(DataTypes.IntegerType)) {
+  IGNORE_ORDER_testSparkResultsAreEqual(
+      "first/last random ints ignoreNulls=false",
+      randomDF(DataTypes.IntegerType)) {
     frame => frame.groupBy(col("c0")).agg(
       first("c1", ignoreNulls = false),
       last("c1", ignoreNulls = false))
   }
 
-  IGNORE_ORDER_testSparkResultsAreEqual("first/last random longs ignoreNulls=false", randomDF(DataTypes.LongType)) {
+  IGNORE_ORDER_testSparkResultsAreEqual(
+      "first/last random longs ignoreNulls=false",
+      randomDF(DataTypes.LongType)) {
     frame => frame.groupBy(col("c0")).agg(
       first("c1", ignoreNulls = false),
       last("c1", ignoreNulls = false))
   }
 
-  IGNORE_ORDER_testSparkResultsAreEqual("first random strings ignoreNulls=false", randomDF(DataTypes.StringType)) {
+  IGNORE_ORDER_testSparkResultsAreEqual(
+      "first random strings ignoreNulls=false",
+      randomDF(DataTypes.StringType)) {
     frame => frame.groupBy(col("c0")).agg(first("c1", ignoreNulls = false))
   }
 
-  IGNORE_ORDER_testSparkResultsAreEqual("last random strings ignoreNulls=false", randomDF(DataTypes.StringType)) {
+  IGNORE_ORDER_testSparkResultsAreEqual(
+      "last random strings ignoreNulls=false",
+      randomDF(DataTypes.StringType)) {
     frame => frame.groupBy(col("c0")).agg(last("c1", ignoreNulls = false))
   }
 
-  IGNORE_ORDER_testSparkResultsAreEqual("first/last random strings ignoreNulls=false", randomDF(DataTypes.StringType)) {
+  IGNORE_ORDER_testSparkResultsAreEqual(
+      "first/last random strings ignoreNulls=false",
+      randomDF(DataTypes.StringType)) {
     frame => frame.groupBy(col("c0")).agg(
       first("c1", ignoreNulls = false),
       last("c1", ignoreNulls = false))
@@ -642,7 +730,8 @@ class HashAggregatesSuite extends SparkQueryCompareTestSuite {
   private def randomDF(dataType: DataType)(spark: SparkSession) : DataFrame = {
     val schema = FuzzerUtils.createSchema(Seq(DataTypes.StringType, dataType))
     FuzzerUtils.generateDataFrame(spark, schema, rowCount = 1000,
-      options = FuzzerOptions(numbersAsStrings = false, asciiStringsOnly = true, maxStringLen = 2))
+      options = FuzzerOptions(numbersAsStrings = false, asciiStringsOnly = true,
+          maxStringLen = 2))
   }
 
   FLOAT_TEST_testSparkResultsAreEqual("empty df: reduction count", floatCsvDf) {
@@ -659,9 +748,10 @@ class HashAggregatesSuite extends SparkQueryCompareTestSuite {
       max("more_floats") - min("floats"),
       sum("floats") + sum("more_floats"),
       avg("floats"),
-      // first/last are disabled on GPU for now since we need CuDF changes to support nth_element reductions
-//      first("floats", true),
-//      last("floats", true),
+      // first/last are disabled on GPU for now since we need CuDF changes to support
+      // nth_element reductions
+      //      first("floats", true),
+      //      last("floats", true),
       count("*"))
   }
 
@@ -683,7 +773,9 @@ class HashAggregatesSuite extends SparkQueryCompareTestSuite {
     frame => frame.filter("floats > 10000000.0").groupBy("floats").agg(count("*"))
   }
 
-  FLOAT_TEST_testSparkResultsAreEqual("empty df: float basic aggregates group by floats", floatCsvDf) {
+  FLOAT_TEST_testSparkResultsAreEqual(
+      "empty df: float basic aggregates group by floats",
+      floatCsvDf) {
     frame => frame.filter("floats > 10000000.0").groupBy("floats").agg(
       lit(456f),
       min(col("floats")) + lit(123),
@@ -698,11 +790,13 @@ class HashAggregatesSuite extends SparkQueryCompareTestSuite {
       count("*"))
   }
 
-  FLOAT_TEST_testSparkResultsAreEqual("partial on gpu: empty df: float basic aggregates group by floats", floatCsvDf,
-    conf = replaceHashAggMode("partial"),
-    execsAllowedNonGpu = Seq("HashAggregateExec", "AggregateExpression", "AttributeReference",
-      "Alias", "Literal", "Min", "Sum", "Max", "Average", "Add", "Multiply", "Subtract", "Cast",
-      "First", "Last", "Count")) {
+  FLOAT_TEST_testSparkResultsAreEqual(
+      "partial on gpu: empty df: float basic aggregates group by floats",
+      floatCsvDf,
+      conf = replaceHashAggMode("partial"),
+      execsAllowedNonGpu = Seq("HashAggregateExec", "AggregateExpression", "AttributeReference",
+          "Alias", "Literal", "Min", "Sum", "Max", "Average", "Add", "Multiply", "Subtract",
+          "Cast", "First", "Last", "Count")) {
     frame => frame.filter("floats > 10000000.0").groupBy("floats").agg(
       lit(456f),
       min(col("floats")) + lit(123),
@@ -717,11 +811,14 @@ class HashAggregatesSuite extends SparkQueryCompareTestSuite {
       count("*"))
   }
 
-  FLOAT_TEST_testSparkResultsAreEqual("final on gpu: empty df: float basic aggregates group by floats", floatCsvDf,
-    conf = replaceHashAggMode("final"),
-    execsAllowedNonGpu = Seq("HashAggregateExec", "AggregateExpression", "AttributeReference",
-      "Alias", "Literal", "Min", "Sum", "Max", "Average", "Add", "Multiply", "Subtract", "Cast",
-      "First", "Last", "Count", "KnownFloatingPointNormalized", "NormalizeNaNAndZero")) {
+  FLOAT_TEST_testSparkResultsAreEqual(
+      "final on gpu: empty df: float basic aggregates group by floats",
+      floatCsvDf,
+      conf = replaceHashAggMode("final"),
+      execsAllowedNonGpu = Seq("HashAggregateExec", "AggregateExpression", "AttributeReference",
+          "Alias", "Literal", "Min", "Sum", "Max", "Average", "Add", "Multiply", "Subtract",
+          "Cast", "First", "Last", "Count", "KnownFloatingPointNormalized",
+          "NormalizeNaNAndZero")) {
     frame => frame.filter("floats > 10000000.0").groupBy("floats").agg(
       lit(456f),
       min(col("floats")) + lit(123),
@@ -738,7 +835,7 @@ class HashAggregatesSuite extends SparkQueryCompareTestSuite {
 
   testSparkResultsAreEqual("Agg expression with filter fall back", longsFromCSVDf,
     execsAllowedNonGpu = Seq("HashAggregateExec", "AggregateExpression", "AttributeReference",
-      "Alias", "Literal", "Count", "GreaterThan")) {
+        "Alias", "Literal", "Count", "GreaterThan")) {
     frame => frame.selectExpr("count(1) filter (where longs > 20)")
   }
 
@@ -798,8 +895,10 @@ class HashAggregatesSuite extends SparkQueryCompareTestSuite {
       result
   }
 
-  IGNORE_ORDER_testSparkResultsAreEqual("PartMerge:groupBy:countDistinct:all", longsFromCSVDf,
-    conf = floatAggConf, repart = 2) {
+  IGNORE_ORDER_testSparkResultsAreEqual(
+      "PartMerge:groupBy:countDistinct:all",
+      longsFromCSVDf,
+      conf = floatAggConf, repart = 2) {
     frame => val result = frame.groupBy("longs").agg(countDistinct("longs"),
       avg("more_longs"),
       count("longs"),
@@ -810,73 +909,99 @@ class HashAggregatesSuite extends SparkQueryCompareTestSuite {
       result
   }
 
-  IGNORE_ORDER_testSparkResultsAreEqual("PartMerge:groupBy:avg:countDistinct:max",
-    longsFromCSVDf, conf = floatAggConf, repart = 2) {
+  IGNORE_ORDER_testSparkResultsAreEqual(
+      "PartMerge:groupBy:avg:countDistinct:max",
+      longsFromCSVDf,
+      conf = floatAggConf,
+      repart = 2) {
     frame => val result = frame.groupBy("longs").agg(avg("more_longs"),
       countDistinct("longs"), max("longs"))
       checkExecNode(result)
       result
   }
 
-  IGNORE_ORDER_testSparkResultsAreEqual("PartMerge:groupBy:avg:max:countDistinct",
-    longsFromCSVDf, repart = 2, conf = floatAggConf) {
+  IGNORE_ORDER_testSparkResultsAreEqual(
+      "PartMerge:groupBy:avg:max:countDistinct",
+      longsFromCSVDf,
+      repart = 2,
+      conf = floatAggConf) {
     frame => val result = frame.groupBy("longs").agg(avg("more_longs"),
       max("longs"), countDistinct("longs"))
       checkExecNode(result)
       result
   }
 
-  IGNORE_ORDER_testSparkResultsAreEqual("PartMerge:groupBy:countDistinct:last",
-    longsFromCSVDf, conf = floatAggConf, repart = 2) {
+  IGNORE_ORDER_testSparkResultsAreEqual(
+      "PartMerge:groupBy:countDistinct:last",
+      longsFromCSVDf,
+      conf = floatAggConf,
+      repart = 2) {
     frame => val result = frame.groupBy("longs").agg(countDistinct("longs"),
       last("more_longs", true))
       checkExecNode(result)
       result
   }
 
-  IGNORE_ORDER_testSparkResultsAreEqual("PartMerge:groupBy:countDistinct:min",
-    longsFromCSVDf, conf = floatAggConf, repart = 2) {
+  IGNORE_ORDER_testSparkResultsAreEqual(
+      "PartMerge:groupBy:countDistinct:min",
+      longsFromCSVDf,
+      conf = floatAggConf,
+      repart = 2) {
     frame => val result = frame.groupBy("longs").agg(countDistinct("longs"),
       min("more_longs"))
       checkExecNode(result)
       result
   }
 
-  IGNORE_ORDER_testSparkResultsAreEqual("PartMerge:groupBy:countDistinct:max",
-    longsFromCSVDf, conf = floatAggConf, repart = 2) {
+  IGNORE_ORDER_testSparkResultsAreEqual(
+      "PartMerge:groupBy:countDistinct:max",
+      longsFromCSVDf,
+      conf = floatAggConf,
+      repart = 2) {
     frame => val result = frame.groupBy("longs").agg(countDistinct("longs"),
       max("more_longs"))
       checkExecNode(result)
       result
   }
 
-  IGNORE_ORDER_testSparkResultsAreEqual("PartMerge:groupBy_2:countDistinct:sum",
-    longsFromCSVDf, conf = floatAggConf, repart = 2) {
+  IGNORE_ORDER_testSparkResultsAreEqual(
+      "PartMerge:groupBy_2:countDistinct:sum",
+      longsFromCSVDf,
+      conf = floatAggConf,
+      repart = 2) {
     frame => val result = frame.groupBy("more_longs").agg(countDistinct("longs"),
       sum("more_longs"))
       checkExecNode(result)
       result
   }
 
-  IGNORE_ORDER_testSparkResultsAreEqual("PartMerge:groupBy_2:countDistinct:avg",
-    longsFromCSVDf,
-    conf = floatAggConf, repart = 2) {
+  IGNORE_ORDER_testSparkResultsAreEqual(
+      "PartMerge:groupBy_2:countDistinct:avg",
+      longsFromCSVDf,
+      conf = floatAggConf,
+      repart = 2) {
     frame => val result = frame.groupBy("more_longs").agg(countDistinct("longs"),
       avg("more_longs"))
       checkExecNode(result)
       result
   }
 
-  IGNORE_ORDER_testSparkResultsAreEqual("PartMerge:groupBy_2:countDistinct:min",
-    longsFromCSVDf, conf = floatAggConf, repart = 2) {
+  IGNORE_ORDER_testSparkResultsAreEqual(
+      "PartMerge:groupBy_2:countDistinct:min",
+      longsFromCSVDf,
+      conf = floatAggConf,
+      repart = 2) {
     frame => val result = frame.groupBy("more_longs").agg(countDistinct("longs"),
       min("more_longs"))
       checkExecNode(result)
       result
   }
 
-  IGNORE_ORDER_testSparkResultsAreEqual("PartMerge:groupBy_2:countDistinct:max",
-    longsFromCSVDf, conf = floatAggConf, repart = 2) {
+  IGNORE_ORDER_testSparkResultsAreEqual(
+      "PartMerge:groupBy_2:countDistinct:max",
+      longsFromCSVDf,
+      conf = floatAggConf,
+      repart = 2) {
     frame => val result = frame.groupBy("more_longs").agg(countDistinct("longs"),
       max("more_longs"))
       checkExecNode(result)
@@ -889,9 +1014,12 @@ class HashAggregatesSuite extends SparkQueryCompareTestSuite {
     RapidsConf.ENABLE_FLOAT_AGG.key, "true").set(RapidsConf.HAS_NANS.key, "false")
 
   IGNORE_ORDER_ALLOW_NON_GPU_testSparkResultsAreEqual(
-    "PartMerge:countDistinct:sum:partOnly", longsFromCSVDf,
-    execsAllowedNonGpu = Seq("HashAggregateExec", "AggregateExpression", "AttributeReference",
-      "Alias", "Sum", "Count"), conf = partialOnlyConf, repart = 2) {
+      "PartMerge:countDistinct:sum:partOnly",
+      longsFromCSVDf,
+      execsAllowedNonGpu = Seq("HashAggregateExec", "AggregateExpression", "AttributeReference",
+          "Alias", "Sum", "Count"),
+      conf = partialOnlyConf,
+      repart = 2) {
     frame => val result = frame.agg(countDistinct("longs"),
       sum("more_longs"))
       checkExecNode(result)
@@ -899,9 +1027,12 @@ class HashAggregatesSuite extends SparkQueryCompareTestSuite {
   }
 
   IGNORE_ORDER_ALLOW_NON_GPU_testSparkResultsAreEqual(
-    "PartMerge:countDistinct:avg:partOnly",
-    longsFromCSVDf, execsAllowedNonGpu = Seq("HashAggregateExec", "AggregateExpression",
-      "AttributeReference", "Alias", "Average", "Count"), conf = partialOnlyConf, repart = 2) {
+      "PartMerge:countDistinct:avg:partOnly",
+      longsFromCSVDf,
+      execsAllowedNonGpu = Seq("HashAggregateExec", "AggregateExpression",
+          "AttributeReference", "Alias", "Average", "Count"),
+      conf = partialOnlyConf,
+      repart = 2) {
     frame => val result = frame.agg(countDistinct("longs"),
       avg("more_longs"))
       checkExecNode(result)
@@ -909,9 +1040,12 @@ class HashAggregatesSuite extends SparkQueryCompareTestSuite {
   }
 
   IGNORE_ORDER_ALLOW_NON_GPU_testSparkResultsAreEqual(
-    "PartMerge:countDistinct:min:partOnly", longsFromCSVDf,
-    execsAllowedNonGpu = Seq("HashAggregateExec", "AggregateExpression", "AttributeReference",
-      "Alias", "Count", "Min"), conf = partialOnlyConf, repart = 2) {
+      "PartMerge:countDistinct:min:partOnly",
+      longsFromCSVDf,
+      execsAllowedNonGpu = Seq("HashAggregateExec", "AggregateExpression", "AttributeReference",
+          "Alias", "Count", "Min"),
+      conf = partialOnlyConf,
+      repart = 2) {
     frame => val result = frame.agg(countDistinct("longs"),
       min("more_longs"))
       checkExecNode(result)
@@ -919,9 +1053,12 @@ class HashAggregatesSuite extends SparkQueryCompareTestSuite {
   }
 
   IGNORE_ORDER_ALLOW_NON_GPU_testSparkResultsAreEqual(
-    "PartMerge:countDistinct:max:partOnly", longsFromCSVDf,
-    execsAllowedNonGpu = Seq("HashAggregateExec", "AggregateExpression", "AttributeReference",
-      "Alias", "Max", "Count"), conf = partialOnlyConf, repart = 2) {
+      "PartMerge:countDistinct:max:partOnly",
+      longsFromCSVDf,
+      execsAllowedNonGpu = Seq("HashAggregateExec", "AggregateExpression", "AttributeReference",
+          "Alias", "Max", "Count"),
+      conf = partialOnlyConf,
+      repart = 2) {
     frame => val result = frame.agg(countDistinct("longs"),
       max("more_longs"))
       checkExecNode(result)
@@ -929,9 +1066,12 @@ class HashAggregatesSuite extends SparkQueryCompareTestSuite {
   }
 
   IGNORE_ORDER_ALLOW_NON_GPU_testSparkResultsAreEqual(
-    "PartMerge:countDistinct:sum:finOnly", longsFromCSVDf,
-    execsAllowedNonGpu = Seq("HashAggregateExec", "AggregateExpression", "AttributeReference",
-      "Alias", "Sum", "Count"), conf = finalOnlyConf, repart = 2) {
+      "PartMerge:countDistinct:sum:finOnly",
+      longsFromCSVDf,
+      execsAllowedNonGpu = Seq("HashAggregateExec", "AggregateExpression", "AttributeReference",
+          "Alias", "Sum", "Count"),
+      conf = finalOnlyConf,
+      repart = 2) {
     frame => val result = frame.agg(countDistinct("longs"),
       sum("more_longs"))
       checkExecNode(result)
@@ -939,9 +1079,12 @@ class HashAggregatesSuite extends SparkQueryCompareTestSuite {
   }
 
   IGNORE_ORDER_ALLOW_NON_GPU_testSparkResultsAreEqual(
-    "PartMerge:countDistinct:avg:finOnly", longsFromCSVDf,
-    execsAllowedNonGpu = Seq("HashAggregateExec", "AggregateExpression", "AttributeReference",
-      "Alias", "Average", "Count"), conf = finalOnlyConf, repart = 2) {
+      "PartMerge:countDistinct:avg:finOnly",
+      longsFromCSVDf,
+      execsAllowedNonGpu = Seq("HashAggregateExec", "AggregateExpression", "AttributeReference",
+          "Alias", "Average", "Count"),
+      conf = finalOnlyConf,
+      repart = 2) {
     frame => val result = frame.agg(countDistinct("longs"),
       avg("more_longs"))
       checkExecNode(result)
@@ -949,9 +1092,12 @@ class HashAggregatesSuite extends SparkQueryCompareTestSuite {
   }
 
   IGNORE_ORDER_ALLOW_NON_GPU_testSparkResultsAreEqual(
-    "PartMerge:countDistinct:min:finOnly", longsFromCSVDf,
-    execsAllowedNonGpu = Seq("HashAggregateExec", "AggregateExpression", "AttributeReference",
-      "Alias", "Min", "Count"), conf = finalOnlyConf, repart = 2) {
+      "PartMerge:countDistinct:min:finOnly",
+      longsFromCSVDf,
+      execsAllowedNonGpu = Seq("HashAggregateExec", "AggregateExpression", "AttributeReference",
+          "Alias", "Min", "Count"),
+      conf = finalOnlyConf,
+      repart = 2) {
     frame => val result = frame.agg(countDistinct("longs"),
       min("more_longs"))
       checkExecNode(result)
@@ -959,9 +1105,12 @@ class HashAggregatesSuite extends SparkQueryCompareTestSuite {
   }
 
   IGNORE_ORDER_ALLOW_NON_GPU_testSparkResultsAreEqual(
-    "PartMerge:countDistinct:max:finOnly", longsFromCSVDf,
-    execsAllowedNonGpu = Seq("HashAggregateExec", "AggregateExpression", "AttributeReference",
-      "Alias", "Max", "Count"), conf = finalOnlyConf, repart = 2) {
+      "PartMerge:countDistinct:max:finOnly",
+      longsFromCSVDf,
+      execsAllowedNonGpu = Seq("HashAggregateExec", "AggregateExpression", "AttributeReference",
+          "Alias", "Max", "Count"),
+      conf = finalOnlyConf,
+      repart = 2) {
     frame => val result = frame.agg(countDistinct("longs"),
       max("more_longs"))
       checkExecNode(result)
@@ -969,9 +1118,12 @@ class HashAggregatesSuite extends SparkQueryCompareTestSuite {
   }
 
   IGNORE_ORDER_ALLOW_NON_GPU_testSparkResultsAreEqual(
-    "PartMerge:groupBy:countDistinct:sum:partOnly", longsFromCSVDf,
-    execsAllowedNonGpu = Seq("HashAggregateExec", "AggregateExpression", "AttributeReference",
-      "Alias", "Sum", "Count"), conf = partialOnlyConf, repart = 2) {
+      "PartMerge:groupBy:countDistinct:sum:partOnly",
+      longsFromCSVDf,
+      execsAllowedNonGpu = Seq("HashAggregateExec", "AggregateExpression", "AttributeReference",
+          "Alias", "Sum", "Count"),
+      conf = partialOnlyConf,
+      repart = 2) {
     frame => val result = frame.groupBy("longs").agg(countDistinct("longs"),
       sum("more_longs"))
       checkExecNode(result)
@@ -979,9 +1131,12 @@ class HashAggregatesSuite extends SparkQueryCompareTestSuite {
   }
 
   IGNORE_ORDER_ALLOW_NON_GPU_testSparkResultsAreEqual(
-    "PartMerge:groupBy:countDistinct:avg:partOnly", longsFromCSVDf,
-    execsAllowedNonGpu = Seq("HashAggregateExec", "AggregateExpression", "AttributeReference",
-      "Alias", "Average", "Count"), conf = partialOnlyConf, repart = 2) {
+      "PartMerge:groupBy:countDistinct:avg:partOnly",
+      longsFromCSVDf,
+      execsAllowedNonGpu = Seq("HashAggregateExec", "AggregateExpression", "AttributeReference",
+          "Alias", "Average", "Count"),
+      conf = partialOnlyConf,
+      repart = 2) {
     frame => val result = frame.groupBy("longs").agg(countDistinct("longs"),
       avg("more_longs"))
       checkExecNode(result)
@@ -989,9 +1144,12 @@ class HashAggregatesSuite extends SparkQueryCompareTestSuite {
   }
 
   IGNORE_ORDER_ALLOW_NON_GPU_testSparkResultsAreEqual(
-    "PartMerge:groupBy:countDistinct:min:partOnly", longsFromCSVDf,
-    execsAllowedNonGpu = Seq("HashAggregateExec", "AggregateExpression", "AttributeReference",
-      "Alias", "Min", "Count"), conf = partialOnlyConf, repart = 2) {
+      "PartMerge:groupBy:countDistinct:min:partOnly",
+      longsFromCSVDf,
+      execsAllowedNonGpu = Seq("HashAggregateExec", "AggregateExpression", "AttributeReference",
+          "Alias", "Min", "Count"),
+      conf = partialOnlyConf,
+      repart = 2) {
     frame => val result = frame.groupBy("longs").agg(countDistinct("longs"),
       min("more_longs"))
       checkExecNode(result)
@@ -999,9 +1157,12 @@ class HashAggregatesSuite extends SparkQueryCompareTestSuite {
   }
 
   IGNORE_ORDER_ALLOW_NON_GPU_testSparkResultsAreEqual(
-    "PartMerge:groupBy:countDistinct:max:partOnly", longsFromCSVDf,
-    execsAllowedNonGpu = Seq("HashAggregateExec", "AggregateExpression", "AttributeReference",
-      "Alias", "Max", "Count"), conf = partialOnlyConf, repart = 2) {
+      "PartMerge:groupBy:countDistinct:max:partOnly",
+      longsFromCSVDf,
+      execsAllowedNonGpu = Seq("HashAggregateExec", "AggregateExpression", "AttributeReference",
+          "Alias", "Max", "Count"),
+      conf = partialOnlyConf,
+      repart = 2) {
     frame => val result = frame.groupBy("longs").agg(countDistinct("longs"),
       max("more_longs"))
       checkExecNode(result)
@@ -1009,9 +1170,12 @@ class HashAggregatesSuite extends SparkQueryCompareTestSuite {
   }
 
   IGNORE_ORDER_ALLOW_NON_GPU_testSparkResultsAreEqual(
-    "PartMerge:groupBy_2:countDistinct:sum:partOnly", longsFromCSVDf,
-    execsAllowedNonGpu = Seq("HashAggregateExec", "AggregateExpression", "AttributeReference",
-      "Alias", "Sum", "Count"), conf = partialOnlyConf, repart = 2) {
+      "PartMerge:groupBy_2:countDistinct:sum:partOnly",
+      longsFromCSVDf,
+      execsAllowedNonGpu = Seq("HashAggregateExec", "AggregateExpression", "AttributeReference",
+          "Alias", "Sum", "Count"),
+      conf = partialOnlyConf,
+      repart = 2) {
     frame => val result = frame.groupBy("more_longs").agg(countDistinct("longs"),
       sum("more_longs"))
       checkExecNode(result)
@@ -1019,9 +1183,12 @@ class HashAggregatesSuite extends SparkQueryCompareTestSuite {
   }
 
   IGNORE_ORDER_ALLOW_NON_GPU_testSparkResultsAreEqual(
-    "PartMerge:groupBy_2:countDistinct:avg:partOnly", longsFromCSVDf,
-    execsAllowedNonGpu = Seq("HashAggregateExec", "AggregateExpression", "AttributeReference",
-      "Alias", "Average", "Count"), conf = partialOnlyConf, repart = 2) {
+      "PartMerge:groupBy_2:countDistinct:avg:partOnly",
+      longsFromCSVDf,
+      execsAllowedNonGpu = Seq("HashAggregateExec", "AggregateExpression", "AttributeReference",
+          "Alias", "Average", "Count"),
+      conf = partialOnlyConf,
+      repart = 2) {
     frame => val result = frame.groupBy("more_longs").agg(countDistinct("longs"),
       avg("more_longs"))
       checkExecNode(result)
@@ -1029,9 +1196,12 @@ class HashAggregatesSuite extends SparkQueryCompareTestSuite {
   }
 
   IGNORE_ORDER_ALLOW_NON_GPU_testSparkResultsAreEqual(
-    "PartMerge:groupBy_2:countDistinct:min:partOnly", longsFromCSVDf,
-    execsAllowedNonGpu = Seq("HashAggregateExec", "AggregateExpression", "AttributeReference",
-      "Alias", "Min", "Count"), conf = partialOnlyConf, repart = 2) {
+      "PartMerge:groupBy_2:countDistinct:min:partOnly",
+      longsFromCSVDf,
+      execsAllowedNonGpu = Seq("HashAggregateExec", "AggregateExpression", "AttributeReference",
+          "Alias", "Min", "Count"),
+      conf = partialOnlyConf,
+      repart = 2) {
     frame => val result = frame.groupBy("more_longs").agg(countDistinct("longs"),
       min("more_longs"))
       checkExecNode(result)
@@ -1039,18 +1209,24 @@ class HashAggregatesSuite extends SparkQueryCompareTestSuite {
   }
 
   IGNORE_ORDER_ALLOW_NON_GPU_testSparkResultsAreEqual(
-    "PartMerge:groupBy_2:countDistinct:max:partOnly", longsFromCSVDf,
-    execsAllowedNonGpu = Seq("HashAggregateExec", "AggregateExpression", "AttributeReference",
-      "Alias", "Max", "Count"), conf = partialOnlyConf, repart = 2) {
+      "PartMerge:groupBy_2:countDistinct:max:partOnly",
+      longsFromCSVDf,
+      execsAllowedNonGpu = Seq("HashAggregateExec", "AggregateExpression", "AttributeReference",
+          "Alias", "Max", "Count"),
+      conf = partialOnlyConf,
+      repart = 2) {
     frame => val result = frame.groupBy("more_longs").agg(countDistinct("longs"),
       max("more_longs"))
       checkExecNode(result)
       result
   }
   IGNORE_ORDER_ALLOW_NON_GPU_testSparkResultsAreEqual(
-    "PartMerge:groupBy:countDistinct:sum:finOnly", longsFromCSVDf,
-    execsAllowedNonGpu = Seq("HashAggregateExec", "AggregateExpression", "AttributeReference",
-      "Alias", "Sum", "Count"), conf = finalOnlyConf, repart = 2) {
+      "PartMerge:groupBy:countDistinct:sum:finOnly",
+      longsFromCSVDf,
+      execsAllowedNonGpu = Seq("HashAggregateExec", "AggregateExpression", "AttributeReference",
+          "Alias", "Sum", "Count"),
+      conf = finalOnlyConf,
+      repart = 2) {
     frame => val result = frame.groupBy("longs").agg(countDistinct("longs"),
       sum("more_longs"))
       checkExecNode(result)
@@ -1058,9 +1234,12 @@ class HashAggregatesSuite extends SparkQueryCompareTestSuite {
   }
 
   IGNORE_ORDER_ALLOW_NON_GPU_testSparkResultsAreEqual(
-    "PartMerge:groupBy:countDistinct:avg:finOnly", longsFromCSVDf,
-    execsAllowedNonGpu = Seq("HashAggregateExec", "AggregateExpression", "AttributeReference",
-      "Alias", "Average", "Count"), conf = finalOnlyConf, repart = 2) {
+      "PartMerge:groupBy:countDistinct:avg:finOnly",
+      longsFromCSVDf,
+      execsAllowedNonGpu = Seq("HashAggregateExec", "AggregateExpression", "AttributeReference",
+          "Alias", "Average", "Count"),
+      conf = finalOnlyConf,
+      repart = 2) {
     frame => val result = frame.groupBy("longs").agg(countDistinct("longs"),
       avg("more_longs"))
       checkExecNode(result)
@@ -1068,9 +1247,12 @@ class HashAggregatesSuite extends SparkQueryCompareTestSuite {
   }
 
   IGNORE_ORDER_ALLOW_NON_GPU_testSparkResultsAreEqual(
-    "PartMerge:groupBy:countDistinct:min:finOnly", longsFromCSVDf,
-    execsAllowedNonGpu = Seq("HashAggregateExec", "AggregateExpression", "AttributeReference",
-      "Alias", "Min", "Count"), conf = finalOnlyConf, repart = 2) {
+      "PartMerge:groupBy:countDistinct:min:finOnly",
+      longsFromCSVDf,
+      execsAllowedNonGpu = Seq("HashAggregateExec", "AggregateExpression", "AttributeReference",
+          "Alias", "Min", "Count"),
+      conf = finalOnlyConf,
+      repart = 2) {
     frame => val result = frame.groupBy("longs").agg(countDistinct("longs"),
       min("more_longs"))
       checkExecNode(result)
@@ -1078,9 +1260,12 @@ class HashAggregatesSuite extends SparkQueryCompareTestSuite {
   }
 
   IGNORE_ORDER_ALLOW_NON_GPU_testSparkResultsAreEqual(
-    "PartMerge:groupBy:countDistinct:max:finOnly", longsFromCSVDf,
-    execsAllowedNonGpu = Seq("HashAggregateExec", "AggregateExpression", "AttributeReference",
-      "Alias", "Max", "Count"), conf = finalOnlyConf, repart = 2) {
+      "PartMerge:groupBy:countDistinct:max:finOnly",
+      longsFromCSVDf,
+      execsAllowedNonGpu = Seq("HashAggregateExec", "AggregateExpression", "AttributeReference",
+          "Alias", "Max", "Count"),
+      conf = finalOnlyConf,
+      repart = 2) {
     frame => val result = frame.groupBy("longs").agg(countDistinct("longs"),
       max("more_longs"))
       checkExecNode(result)
@@ -1088,9 +1273,12 @@ class HashAggregatesSuite extends SparkQueryCompareTestSuite {
   }
 
   IGNORE_ORDER_ALLOW_NON_GPU_testSparkResultsAreEqual(
-    "PartMerge:groupBy_2:countDistinct:sum:finOnly", longsFromCSVDf,
-    execsAllowedNonGpu = Seq("HashAggregateExec", "AggregateExpression", "AttributeReference",
-      "Alias", "Sum", "Count"), conf = finalOnlyConf, repart = 2) {
+      "PartMerge:groupBy_2:countDistinct:sum:finOnly",
+      longsFromCSVDf,
+      execsAllowedNonGpu = Seq("HashAggregateExec", "AggregateExpression", "AttributeReference",
+          "Alias", "Sum", "Count"),
+      conf = finalOnlyConf,
+      repart = 2) {
     frame => val result = frame.groupBy("more_longs").agg(countDistinct("longs"),
       sum("more_longs"))
       checkExecNode(result)
@@ -1098,9 +1286,12 @@ class HashAggregatesSuite extends SparkQueryCompareTestSuite {
   }
 
   IGNORE_ORDER_ALLOW_NON_GPU_testSparkResultsAreEqual(
-    "PartMerge:groupBy_2:countDistinct:avg:finOnly", longsFromCSVDf,
-    execsAllowedNonGpu = Seq("HashAggregateExec", "AggregateExpression", "AttributeReference",
-      "Alias", "Average", "Count"), conf = finalOnlyConf, repart = 2) {
+      "PartMerge:groupBy_2:countDistinct:avg:finOnly",
+      longsFromCSVDf,
+      execsAllowedNonGpu = Seq("HashAggregateExec", "AggregateExpression", "AttributeReference",
+          "Alias", "Average", "Count"),
+      conf = finalOnlyConf,
+      repart = 2) {
     frame => val result = frame.groupBy("more_longs").agg(countDistinct("longs"),
       avg("more_longs"))
       checkExecNode(result)
@@ -1108,9 +1299,12 @@ class HashAggregatesSuite extends SparkQueryCompareTestSuite {
   }
 
   IGNORE_ORDER_ALLOW_NON_GPU_testSparkResultsAreEqual(
-    "PartMerge:groupBy_2:countDistinct:min:finOnly", longsFromCSVDf,
-    execsAllowedNonGpu = Seq("HashAggregateExec", "AggregateExpression", "AttributeReference",
-      "Alias", "Min", "Count"), conf = finalOnlyConf, repart = 2) {
+      "PartMerge:groupBy_2:countDistinct:min:finOnly",
+      longsFromCSVDf,
+      execsAllowedNonGpu = Seq("HashAggregateExec", "AggregateExpression", "AttributeReference",
+          "Alias", "Min", "Count"),
+      conf = finalOnlyConf,
+      repart = 2) {
     frame => val result = frame.groupBy("more_longs").agg(countDistinct("longs"),
       min("more_longs"))
       checkExecNode(result)
@@ -1118,9 +1312,12 @@ class HashAggregatesSuite extends SparkQueryCompareTestSuite {
   }
 
   IGNORE_ORDER_ALLOW_NON_GPU_testSparkResultsAreEqual(
-    "PartMerge:groupBy_2:countDistinct:max:finOnly", longsFromCSVDf,
-    execsAllowedNonGpu = Seq("HashAggregateExec", "AggregateExpression", "AttributeReference",
-      "Alias", "Max", "Count"), conf = finalOnlyConf, repart = 2) {
+      "PartMerge:groupBy_2:countDistinct:max:finOnly",
+      longsFromCSVDf,
+      execsAllowedNonGpu = Seq("HashAggregateExec", "AggregateExpression", "AttributeReference",
+          "Alias", "Max", "Count"),
+      conf = finalOnlyConf,
+      repart = 2) {
     frame => val result = frame.groupBy("more_longs").agg(countDistinct("longs"),
       max("more_longs"))
       checkExecNode(result)
@@ -1128,138 +1325,189 @@ class HashAggregatesSuite extends SparkQueryCompareTestSuite {
   }
 
   IGNORE_ORDER_ALLOW_NON_GPU_testSparkResultsAreEqual(
-    "PartMerge:groupBy_2:countDistinctOnly:finOnly", longsFromCSVDf,
-    execsAllowedNonGpu = Seq("HashAggregateExec", "AggregateExpression", "AttributeReference",
-      "Alias", "Count"), conf = finalOnlyConf, repart = 2) {
+      "PartMerge:groupBy_2:countDistinctOnly:finOnly",
+      longsFromCSVDf,
+      execsAllowedNonGpu = Seq("HashAggregateExec", "AggregateExpression", "AttributeReference",
+          "Alias", "Count"),
+      conf = finalOnlyConf,
+      repart = 2) {
     frame => val result =frame.groupBy("more_longs").agg(countDistinct("longs"))
       checkExecNode(result)
       result
   }
 
   IGNORE_ORDER_ALLOW_NON_GPU_testSparkResultsAreEqual(
-    "PartMerge:groupBy:countDistinctOnly:finOnly", longsFromCSVDf,
-    execsAllowedNonGpu = Seq("HashAggregateExec", "AggregateExpression", "AttributeReference",
-      "Alias", "Count"), conf = finalOnlyConf, repart = 2) {
+      "PartMerge:groupBy:countDistinctOnly:finOnly",
+      longsFromCSVDf,
+      execsAllowedNonGpu = Seq("HashAggregateExec", "AggregateExpression", "AttributeReference",
+          "Alias", "Count"),
+      conf = finalOnlyConf,
+      repart = 2) {
     frame => val result = frame.groupBy("longs").agg(countDistinct("longs"))
       checkExecNode(result)
       result
   }
 
   IGNORE_ORDER_ALLOW_NON_GPU_testSparkResultsAreEqual(
-    "PartMerge:groupBy_2:countDistinctOnly:partOnly", longsFromCSVDf,
-    execsAllowedNonGpu = Seq("HashAggregateExec", "AggregateExpression", "AttributeReference",
-      "Alias", "Count"), conf = partialOnlyConf, repart = 2) {
+      "PartMerge:groupBy_2:countDistinctOnly:partOnly",
+      longsFromCSVDf,
+      execsAllowedNonGpu = Seq("HashAggregateExec", "AggregateExpression", "AttributeReference",
+          "Alias", "Count"),
+      conf = partialOnlyConf,
+      repart = 2) {
     frame => val result = frame.groupBy("more_longs").agg(countDistinct("longs"))
       checkExecNode(result)
       result
   }
 
   IGNORE_ORDER_ALLOW_NON_GPU_testSparkResultsAreEqual(
-    "PartMerge:groupBy:countDistinctOnly:partOnly", longsFromCSVDf,
-    execsAllowedNonGpu = Seq("HashAggregateExec", "AggregateExpression", "AttributeReference",
-      "Alias", "Count"), conf = partialOnlyConf, repart = 2) {
+      "PartMerge:groupBy:countDistinctOnly:partOnly",
+      longsFromCSVDf,
+      execsAllowedNonGpu = Seq("HashAggregateExec", "AggregateExpression", "AttributeReference",
+          "Alias", "Count"),
+      conf = partialOnlyConf,
+      repart = 2) {
     frame => val result = frame.groupBy("longs").agg(countDistinct("longs"))
       checkExecNode(result)
       result
   }
 
-  testSparkResultsAreEqual("PartMerge:countDistinctOnly", longsFromCSVDf,
-    conf = floatAggConf, repart = 2) {
+  testSparkResultsAreEqual(
+      "PartMerge:countDistinctOnly",
+      longsFromCSVDf,
+      conf = floatAggConf,
+      repart = 2) {
     frame => val result = frame.agg(countDistinct("longs"))
       checkExecNode(result)
       result
   }
 
-  testSparkResultsAreEqual("PartMerge:countDistinctOnly_2", longsFromCSVDf,
-    conf = floatAggConf, repart = 2) {
+  testSparkResultsAreEqual(
+      "PartMerge:countDistinctOnly_2",
+      longsFromCSVDf,
+      conf = floatAggConf,
+      repart = 2) {
     frame => val result = frame.agg(countDistinct("longs"),
       countDistinct("more_longs"))
       checkExecNode(result)
       result
   }
 
-  testSparkResultsAreEqual("PartMerge:countDistinct:count", longsFromCSVDf,
-    conf = floatAggConf, repart = 2) {
+  testSparkResultsAreEqual(
+      "PartMerge:countDistinct:count",
+      longsFromCSVDf,
+      conf = floatAggConf,
+      repart = 2) {
     frame => val result = frame.selectExpr("count(distinct longs)", "count(longs)")
       checkExecNode(result)
       result
   }
 
-  testSparkResultsAreEqual("PartMerge:avgDistinct:count", longsFromCSVDf,
-    conf = floatAggConf, repart = 2) {
+  testSparkResultsAreEqual(
+      "PartMerge:avgDistinct:count",
+      longsFromCSVDf,
+      conf = floatAggConf,
+      repart = 2) {
     frame => val result = frame.selectExpr("avg(distinct longs)","count(longs)")
       checkExecNode(result)
       result
   }
 
-  testSparkResultsAreEqual("PartMerge:avgDistinct:count:2cols", longsFromCSVDf,
-    conf = floatAggConf, repart = 2) {
+  testSparkResultsAreEqual(
+      "PartMerge:avgDistinct:count:2cols",
+      longsFromCSVDf,
+      conf = floatAggConf,
+      repart = 2) {
     frame => val result = frame.selectExpr("avg(distinct longs)","count(more_longs)")
       checkExecNode(result)
       result
   }
 
-  testSparkResultsAreEqual("PartMerge:avgDistinct:avg:2cols", longsFromCSVDf,
-    conf = floatAggConf, repart = 2) {
+  testSparkResultsAreEqual(
+      "PartMerge:avgDistinct:avg:2cols",
+      longsFromCSVDf,
+      conf = floatAggConf,
+      repart = 2) {
     frame => val result = frame.selectExpr("avg(distinct longs)","avg(more_longs)")
       checkExecNode(result)
       result
   }
 
   IGNORE_ORDER_ALLOW_NON_GPU_testSparkResultsAreEqual(
-    "PartMerge:avgDistinct:count:PartOnly", longsFromCSVDf,
-    execsAllowedNonGpu = Seq("HashAggregateExec", "AggregateExpression", "AttributeReference",
-      "Alias", "Average", "Count"), conf = partialOnlyConf, repart = 2) {
+      "PartMerge:avgDistinct:count:PartOnly",
+      longsFromCSVDf,
+      execsAllowedNonGpu = Seq("HashAggregateExec", "AggregateExpression", "AttributeReference",
+          "Alias", "Average", "Count"),
+      conf = partialOnlyConf,
+      repart = 2) {
     frame => val result = frame.selectExpr("avg(distinct longs)","count(longs)")
       checkExecNode(result)
       result
   }
 
   IGNORE_ORDER_ALLOW_NON_GPU_testSparkResultsAreEqual(
-    "PartMerge:avgDistinct:count:FinOnly", longsFromCSVDf,
-    execsAllowedNonGpu = Seq("HashAggregateExec", "AggregateExpression", "AttributeReference",
-      "Alias", "Average", "Count"), conf = finalOnlyConf, repart = 2) {
+      "PartMerge:avgDistinct:count:FinOnly",
+      longsFromCSVDf,
+      execsAllowedNonGpu = Seq("HashAggregateExec", "AggregateExpression", "AttributeReference",
+          "Alias", "Average", "Count"),
+      conf = finalOnlyConf,
+      repart = 2) {
     frame => val result = frame.selectExpr("avg(distinct longs)","count(longs)")
       checkExecNode(result)
       result
   }
 
   IGNORE_ORDER_ALLOW_NON_GPU_testSparkResultsAreEqual(
-    "PartMerge:avgDistinct:count:2cols:PartOnly", longsFromCSVDf,
-    execsAllowedNonGpu = Seq("HashAggregateExec", "AggregateExpression", "AttributeReference",
-      "Alias", "Average", "Count"), conf = partialOnlyConf, repart = 2) {
+      "PartMerge:avgDistinct:count:2cols:PartOnly",
+      longsFromCSVDf,
+      execsAllowedNonGpu = Seq("HashAggregateExec", "AggregateExpression", "AttributeReference",
+          "Alias", "Average", "Count"),
+      conf = partialOnlyConf,
+      repart = 2) {
     frame => val result = frame.selectExpr("avg(distinct longs)","count(more_longs)")
       checkExecNode(result)
       result
   }
 
   IGNORE_ORDER_ALLOW_NON_GPU_testSparkResultsAreEqual(
-    "PartMerge:avgDistinct:count:2cols:FinOnly", longsFromCSVDf,
-    execsAllowedNonGpu = Seq("HashAggregateExec", "AggregateExpression", "AttributeReference",
-      "Alias", "Average", "Count"), conf = finalOnlyConf,
-    repart = 2) {
+      "PartMerge:avgDistinct:count:2cols:FinOnly",
+      longsFromCSVDf,
+      execsAllowedNonGpu = Seq("HashAggregateExec", "AggregateExpression", "AttributeReference",
+          "Alias", "Average", "Count"),
+      conf = finalOnlyConf,
+      repart = 2) {
     frame => val result = frame.selectExpr("avg(distinct longs)","count(more_longs)")
       checkExecNode(result)
       result
   }
 
-  testSparkResultsAreEqual("PartMerge:avgDistinctOnly", longsFromCSVDf,
-    conf = floatAggConf, repart = 2) {
+  testSparkResultsAreEqual(
+      "PartMerge:avgDistinctOnly",
+      longsFromCSVDf,
+      conf = floatAggConf,
+      repart = 2) {
     frame => val result = frame.selectExpr("avg(distinct longs)")
       checkExecNode(result)
       result
   }
 
-  testSparkResultsAreEqual("PartMerge:avgDistinctOnly_2", longsFromCSVDf,
-    conf = floatAggConf, repart = 2) {
+  testSparkResultsAreEqual(
+      "PartMerge:avgDistinctOnly_2",
+      longsFromCSVDf,
+      conf = floatAggConf,
+      repart = 2) {
     frame => val result = frame.selectExpr("avg(distinct longs)", "avg(distinct more_longs)")
       checkExecNode(result)
       result
   }
 
-  IGNORE_ORDER_ALLOW_NON_GPU_testSparkResultsAreEqual("PartMerge:reduction_avg_partOnly",
-    intCsvDf, execsAllowedNonGpu = Seq("HashAggregateExec", "AggregateExpression", "AttributeReference",
-      "Alias", "Average", "Cast"), conf = partialOnlyConf, repart = 8) {
+  IGNORE_ORDER_ALLOW_NON_GPU_testSparkResultsAreEqual(
+      "PartMerge:reduction_avg_partOnly",
+      intCsvDf,
+      execsAllowedNonGpu = Seq("HashAggregateExec", "AggregateExpression", "AttributeReference",
+          "Alias", "Average", "Cast"),
+      conf = partialOnlyConf,
+      repart = 8) {
     frame => val result = frame.agg(avg("ints"))
       checkExecNode(result)
       result
@@ -1275,8 +1523,10 @@ class HashAggregatesSuite extends SparkQueryCompareTestSuite {
       res
   }
 
-  IGNORE_ORDER_testSparkResultsAreEqual("Avg with filter grpBy", longsFromCSVDf,
-    conf = floatAggConf) {
+  IGNORE_ORDER_testSparkResultsAreEqual(
+      "Avg with filter grpBy",
+      longsFromCSVDf,
+      conf = floatAggConf) {
     frame => frame.createOrReplaceTempView("testTable")
       frame.sparkSession.sql(
         s"""
@@ -1287,8 +1537,10 @@ class HashAggregatesSuite extends SparkQueryCompareTestSuite {
            |""".stripMargin)
   }
 
-  IGNORE_ORDER_testSparkResultsAreEqual("Avg with 2 filter grpBy", longsFromCSVDf,
-    conf = floatAggConf) {
+  IGNORE_ORDER_testSparkResultsAreEqual(
+      "Avg with 2 filter grpBy",
+      longsFromCSVDf,
+      conf = floatAggConf) {
     frame => frame.createOrReplaceTempView("testTable")
       frame.sparkSession.sql(
         s"""
@@ -1300,8 +1552,10 @@ class HashAggregatesSuite extends SparkQueryCompareTestSuite {
            |""".stripMargin)
   }
 
-  IGNORE_ORDER_testSparkResultsAreEqual("Sum with filter grpBy", longsFromCSVDf,
-    conf = floatAggConf) {
+  IGNORE_ORDER_testSparkResultsAreEqual(
+      "Sum with filter grpBy",
+      longsFromCSVDf,
+      conf = floatAggConf) {
     frame => frame.createOrReplaceTempView("testTable")
       frame.sparkSession.sql(
         s"""
@@ -1312,8 +1566,7 @@ class HashAggregatesSuite extends SparkQueryCompareTestSuite {
            |""".stripMargin)
   }
 
-  testSparkResultsAreEqual("Count with filter", longsFromCSVDf,
-    conf = floatAggConf) {
+  testSparkResultsAreEqual("Count with filter", longsFromCSVDf, conf = floatAggConf) {
     frame => val res = frame.selectExpr("count(longs) filter (where longs < 5)")
       res
   }
@@ -1324,10 +1577,11 @@ class HashAggregatesSuite extends SparkQueryCompareTestSuite {
   }
 
   // A test that verifies that Distinct with Filter is not supported on the CPU or the GPU.
-  testExpectedExceptionStartsWith("Avg Distinct with filter - unsupported on CPU and GPU",
-    classOf[AnalysisException],
-    "DISTINCT and FILTER cannot be used in aggregate functions at the same time",
-    longsFromCSVDf, conf = floatAggConf) {
+  testExpectedExceptionStartsWith(
+      "Avg Distinct with filter - unsupported on CPU and GPU",
+      classOf[AnalysisException],
+      "DISTINCT and FILTER cannot be used in aggregate functions at the same time",
+      longsFromCSVDf, conf = floatAggConf) {
     frame => val res = frame.selectExpr("avg(distinct longs) filter (where longs < 5)")
       res
   }
