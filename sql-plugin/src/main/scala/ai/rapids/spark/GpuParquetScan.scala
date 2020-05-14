@@ -160,12 +160,14 @@ case class GpuParquetPartitionReaderFactory(
     throw new IllegalStateException("GPU column parser called to read rows")
   }
 
-  override def buildColumnarReader(partitionedFile: PartitionedFile): PartitionReader[ColumnarBatch] = {
+  override def buildColumnarReader(
+      partitionedFile: PartitionedFile): PartitionReader[ColumnarBatch] = {
     val reader = buildBaseColumnarParquetReader(partitionedFile)
     ColumnarPartitionReaderWithPartitionValues.newReader(partitionedFile, reader, partitionSchema)
   }
 
-  private def buildBaseColumnarParquetReader(file: PartitionedFile): PartitionReader[ColumnarBatch] = {
+  private def buildBaseColumnarParquetReader(
+      file: PartitionedFile): PartitionReader[ColumnarBatch] = {
     val conf = broadcastedConf.value.value
     val filePath = new Path(new URI(file.filePath))
     //noinspection ScalaDeprecation
@@ -498,7 +500,8 @@ class ParquetPartitionReader(
           throw new UnsupportedOperationException("Too many rows in split")
         }
         if (numRows == 0 || numRows + peekedRowGroup.getRowCount <= maxReadBatchSizeRows) {
-          val estimatedBytes = GpuBatchUtils.estimateGpuMemory(readDataSchema, peekedRowGroup.getRowCount)
+          val estimatedBytes = GpuBatchUtils.estimateGpuMemory(readDataSchema,
+            peekedRowGroup.getRowCount)
           if (numBytes == 0 || numBytes + estimatedBytes <= maxReadBatchSizeBytes) {
             currentChunk += blockIterator.next()
             numRows += currentChunk.last.getRowCount
@@ -512,7 +515,8 @@ class ParquetPartitionReader(
 
     readNextBatch()
 
-    logDebug(s"Loaded $numRows rows from Parquet. Parquet bytes read: $numParquetBytes. Estimated GPU bytes: $numBytes")
+    logDebug(s"Loaded $numRows rows from Parquet. Parquet bytes read: $numParquetBytes. " +
+      s"Estimated GPU bytes: $numBytes")
 
     currentChunk
   }
@@ -570,7 +574,8 @@ object ParquetPartitionReader {
     * @param blocks the block metadata from the original Parquet file
     * @return the updated block metadata with undesired column chunks removed
     */
-  private[spark] def clipBlocks(columnPaths: Seq[ColumnPath], blocks: Seq[BlockMetaData]): Seq[BlockMetaData] = {
+  private[spark] def clipBlocks(columnPaths: Seq[ColumnPath],
+      blocks: Seq[BlockMetaData]): Seq[BlockMetaData] = {
     val pathSet = columnPaths.toSet
     blocks.map(oldBlock => {
       //noinspection ScalaDeprecation
