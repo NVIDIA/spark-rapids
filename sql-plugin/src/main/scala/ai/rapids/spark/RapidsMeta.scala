@@ -397,8 +397,10 @@ abstract class SparkPlanMeta[INPUT <: SparkPlan](plan: INPUT,
     rule: ConfKeysAndIncompat)
   extends RapidsMeta[INPUT, SparkPlan, GpuExec](plan, conf, parent, rule) {
 
-  override val childPlans: Seq[SparkPlanMeta[_]] = plan.children.map(GpuOverrides.wrapPlan(_, conf, Some(this)))
-  override val childExprs: Seq[ExprMeta[_]] = plan.expressions.map(GpuOverrides.wrapExpr(_, conf, Some(this)))
+  override val childPlans: Seq[SparkPlanMeta[_]] =
+    plan.children.map(GpuOverrides.wrapPlan(_, conf, Some(this)))
+  override val childExprs: Seq[ExprMeta[_]] =
+    plan.expressions.map(GpuOverrides.wrapExpr(_, conf, Some(this)))
   override val childScans: Seq[ScanMeta[_]] = Seq.empty
   override val childParts: Seq[PartMeta[_]] = Seq.empty
   override val childDataWriteCmds: Seq[DataWritingCommandMeta[_]] = Seq.empty
@@ -462,11 +464,11 @@ abstract class SparkPlanMeta[INPUT <: SparkPlan](plan: INPUT,
     // 1) BroadcastHashJoin can disable the Broadcast directly feeding it, if the join itself cannot
     // be translated for some reason.  This is okay because it is the joins immediate parent, so
     // it can keep everything consistent.
-    // 2) For ShuffledHashJoin and SortMergeJoin we need to verify that all of the exchanges feeding
-    // them are either all on the GPU or all on the CPU, because the hashing is not consistent
-    // between the two implementations. This is okay because it is only impacting shuffled exchanges.
-    // So broadcast exchanges are not impacted which could have an impact on BroadcastHashJoin, and
-    // shuffled exchanges are not used to disable anything downstream.
+    // 2) For ShuffledHashJoin and SortMergeJoin we need to verify that all of the exchanges
+    // feeding them are either all on the GPU or all on the CPU, because the hashing is not
+    // consistent between the two implementations. This is okay because it is only impacting
+    // shuffled exchanges. So broadcast exchanges are not impacted which could have an impact on
+    // BroadcastHashJoin, and shuffled exchanges are not used to disable anything downstream.
     // 3) If a shuffled exchange is not columnar on at least one side don't do it.  This must happen
     // before the join consistency or we risk running into issues with disabling one exchange that
     // would make a join inconsistent
@@ -561,7 +563,8 @@ abstract class ExprMeta[INPUT <: Expression](
   extends RapidsMeta[INPUT, Expression, GpuExpression](expr, conf, parent, rule) {
 
   override val childPlans: Seq[SparkPlanMeta[_]] = Seq.empty
-  override val childExprs: Seq[ExprMeta[_]] = expr.children.map(GpuOverrides.wrapExpr(_, conf, Some(this)))
+  override val childExprs: Seq[ExprMeta[_]] =
+    expr.children.map(GpuOverrides.wrapExpr(_, conf, Some(this)))
   override val childScans: Seq[ScanMeta[_]] = Seq.empty
   override val childParts: Seq[PartMeta[_]] = Seq.empty
   override val childDataWriteCmds: Seq[DataWritingCommandMeta[_]] = Seq.empty
