@@ -52,8 +52,9 @@ class TpchLikeSparkTest extends FunSuite with BeforeAndAfterAll {
   test("GPU data export with conversion") {
     val df = session.sql(
       """
-        | select l_orderkey, SUM(l_quantity), SUM(l_discount), SUM(l_tax) from lineitem group by l_orderkey
-        """.stripMargin)
+        | select l_orderkey, SUM(l_quantity), SUM(l_discount), SUM(l_tax) from lineitem
+        | group by l_orderkey
+      """.stripMargin)
     val rdd = ColumnarRdd(df)
     assert(rdd != null)
     assert(255.0 == rdd.map(table => try {
