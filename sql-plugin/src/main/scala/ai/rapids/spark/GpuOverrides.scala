@@ -1287,12 +1287,13 @@ object GpuOverrides {
       }),
     expr[StringTrimLeft](
       "StringTrimLeft operator",
-      (in, conf, p, r) => new String2TrimExpressionMeta[StringTrimLeft](in, in.trimStr, conf, p, r) {
-        override def convertToGpu(
+      (in, conf, p, r) =>
+        new String2TrimExpressionMeta[StringTrimLeft](in, in.trimStr, conf, p, r) {
+          override def convertToGpu(
             column: GpuExpression,
             target: Option[GpuExpression] = None): GpuExpression =
-          GpuStringTrimLeft(column, target)
-      }),
+            GpuStringTrimLeft(column, target)
+        }),
     expr[StringTrimRight](
       "StringTrimRight operator",
       (in, conf, p, r) =>
