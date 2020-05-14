@@ -59,8 +59,11 @@ class LogOperatorsSuite extends SparkQueryCompareTestSuite {
       testUnaryFunction(testConf, (1 to 20).map(_ * 0.1f), maxFloatDiff = maxFloatDiff)(f)
       testUnaryFunction(testConf, (1 to 20).map(_ * 0.1d), maxFloatDiff = maxFloatDiff)(f)
       testUnaryFunction(testConf, (-5 to 0).map(_ * 1.0), maxFloatDiff = maxFloatDiff)(f)
-      testUnaryFunction(testConf, Seq(Float.NaN, Float.NegativeInfinity, Float.PositiveInfinity), maxFloatDiff = maxFloatDiff)(f)
-      testUnaryFunction(testConf, Seq(Double.NaN, Double.NegativeInfinity, Double.PositiveInfinity), maxFloatDiff = maxFloatDiff)(f)
+      testUnaryFunction(testConf, Seq(Float.NaN, Float.NegativeInfinity, Float.PositiveInfinity),
+        maxFloatDiff = maxFloatDiff)(f)
+      testUnaryFunction(testConf,
+        Seq(Double.NaN, Double.NegativeInfinity, Double.PositiveInfinity),
+        maxFloatDiff = maxFloatDiff)(f)
     }
   }
 
