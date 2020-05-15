@@ -20,6 +20,8 @@ import org.apache.spark.sql.{DataFrame, SparkSession}
 import org.apache.spark.sql.types._
 import ai.rapids.sparkexamples.DebugRange
 
+// scalastyle:off line.size.limit
+
 object TpchLikeSpark {
   def csvToParquet(spark: SparkSession, basePath: String, baseOutput: String): Unit = {
     readOrdersCSV(spark, basePath + "/orders.tbl").write.parquet(baseOutput + "/orders.tbl")
@@ -1143,3 +1145,5 @@ object Q22Like {
       |
       |""".stripMargin)
 }
+
+// scalastyle:on line.size.limit
