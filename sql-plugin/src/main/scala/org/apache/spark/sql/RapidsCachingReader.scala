@@ -32,13 +32,17 @@ trait ShuffleMetricsUpdater {
   /**
     * Trait used as a way to expose the [[ShuffleReadMetricsReporter]] to the iterator.
     * @param fetchWaitTimeInMs - this matches the CPU name (except for the units) but it is actually
-    *                          the aggreagate amount of time a task is blocked, not working on anything,
-    *                          waiting for data.
+    *                          the aggreagate amount of time a task is blocked, not working on
+    *                          anything, waiting for data.
     * @param remoteBlocksFetched - aggregate of number of [[ShuffleBlockId]]s fetched.
     * @param remoteBytesRead - aggregate size of all contiguous buffers received
     * @param rowsFetched - aggregate of number of rows received
     */
-  def update (fetchWaitTimeInMs: Long, remoteBlocksFetched: Long, remoteBytesRead: Long, rowsFetched: Long)
+  def update(
+    fetchWaitTimeInMs: Long,
+    remoteBlocksFetched: Long,
+    remoteBytesRead: Long,
+    rowsFetched: Long)
 }
 
 class RapidsCachingReader[K, C](
@@ -65,7 +69,6 @@ class RapidsCachingReader[K, C](
 
         logDebug("Trying to read block from manager: " + blockManagerId)
         if (blockManagerId.executorId == localId.executorId) {
-          //println(s"[RapidsCachingReader] Reading LOCAL BLOCKS from ${blockManagerId} => ${blockInfos}")
           val readLocalRange = new NvtxRange("Read Local", NvtxColor.GREEN)
           try {
             blockInfos.foreach(
@@ -75,12 +78,14 @@ class RapidsCachingReader[K, C](
                   case sbbid: ShuffleBlockBatchId =>
                     (sbbid.startReduceId to sbbid.endReduceId).flatMap { reduceId =>
                       cachedBlocks.append(blockId)
-                      catalog.blockIdToBuffersIds(ShuffleBlockId(sbbid.shuffleId, sbbid.mapId, reduceId)).toSeq
+                      val sBlockId = ShuffleBlockId(sbbid.shuffleId, sbbid.mapId, reduceId)
+                      catalog.blockIdToBuffersIds(sBlockId).toSeq
                     }
                   case sbid: ShuffleBlockId =>
                     cachedBlocks.append(blockId)
                     catalog.blockIdToBuffersIds(sbid).toSeq
-                  case _ => throw new IllegalArgumentException(s"${blockId.getClass} $blockId is not currently supported")
+                  case _ => throw new IllegalArgumentException(
+                    s"${blockId.getClass} $blockId is not currently supported")
                 }
 
                 shuffleBufferIds.foreach { id =>
@@ -113,8 +118,8 @@ class RapidsCachingReader[K, C](
         s"$blocksForRapidsTransport remote blocks from the RapidsShuffleTransport. ")
 
       if (transport.isEmpty && blocksForRapidsTransport.nonEmpty) {
-        throw new IllegalStateException("Had blocks marked for use with the RapidsShuffleTransport, " +
-          "but the transport was not initialized")
+        throw new IllegalStateException("Had blocks marked for use with the " +
+          "RapidsShuffleTransport, but the transport was not initialized")
       }
 
       val metricsUpdater = new ShuffleMetricsUpdater {

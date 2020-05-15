@@ -16,13 +16,11 @@
 
 package org.apache.spark.sql.rapids
 
-import ai.rapids.cudf.{BinaryOp, ColumnVector, DType, Scalar, UnaryOp}
-import ai.rapids.spark.{CudfBinaryOperator, CudfUnaryExpression, GpuColumnVector, GpuExpression, GpuUnaryExpression}
+import ai.rapids.cudf._
+import ai.rapids.spark._
 
-import org.apache.spark.sql.catalyst.expressions.{ExpectsInputTypes, Expression, NullIntolerant}
-import org.apache.spark.sql.internal.SQLConf
-import org.apache.spark.sql.types.{AbstractDataType, DataType, DecimalType, DoubleType, IntegralType, LongType, NumericType, TypeCollection}
-
+import org.apache.spark.sql.catalyst.expressions.{ExpectsInputTypes, NullIntolerant}
+import org.apache.spark.sql.types._
 
 case class GpuUnaryMinus(child: GpuExpression) extends GpuUnaryExpression
     with ExpectsInputTypes with NullIntolerant {
@@ -96,8 +94,64 @@ case class GpuMultiply(left: GpuExpression, right: GpuExpression) extends CudfBi
   override def binaryOp: BinaryOp = BinaryOp.MUL
 }
 
+object GpuDivModLike {
+  def replaceZeroWithNull(v: GpuColumnVector): GpuColumnVector = {
+    var zeroScalar: Scalar = null
+    var nullScalar: Scalar = null
+    var zeroVec: ColumnVector = null
+    var nullVec: ColumnVector = null
+    try {
+      val dtype = v.getBase.getType
+      zeroScalar = makeZeroScalar(dtype)
+      nullScalar = Scalar.fromNull(dtype)
+      zeroVec = ColumnVector.fromScalar(zeroScalar, 1)
+      nullVec = ColumnVector.fromScalar(nullScalar, 1)
+      GpuColumnVector.from(v.getBase.findAndReplaceAll(zeroVec, nullVec))
+    } finally {
+      if (zeroScalar != null) {
+        zeroScalar.close()
+      }
+      if (nullScalar != null) {
+        nullScalar.close()
+      }
+      if (zeroVec != null) {
+        zeroVec.close()
+      }
+      if (nullVec != null) {
+        nullVec.close()
+      }
+    }
+  }
+
+  def isScalarZero(s: Scalar): Boolean = {
+    s.getType match {
+      case DType.INT8 => s.getByte == 0
+      case DType.INT16 => s.getShort == 0
+      case DType.INT32 => s.getInt == 0
+      case DType.INT64 => s.getLong == 0
+      case DType.FLOAT32 => s.getFloat == 0f
+      case DType.FLOAT64 => s.getDouble == 0
+      case t => throw new IllegalArgumentException(s"Unexpected type: $t")
+    }
+  }
+
+  def makeZeroScalar(dtype: DType): Scalar = {
+    dtype match {
+      case DType.INT8 => Scalar.fromByte(0.toByte)
+      case DType.INT16 => Scalar.fromShort(0.toShort)
+      case DType.INT32 => Scalar.fromInt(0)
+      case DType.INT64 => Scalar.fromLong(0L)
+      case DType.FLOAT32 => Scalar.fromFloat(0f)
+      case DType.FLOAT64 => Scalar.fromDouble(0)
+      case t => throw new IllegalArgumentException(s"Unexpected type: $t")
+    }
+  }
+}
+
 trait GpuDivModLike extends CudfBinaryArithmetic {
   override def nullable: Boolean = true
+
+  import GpuDivModLike._
 
   override def doColumnar(lhs: GpuColumnVector, rhs: GpuColumnVector): GpuColumnVector = {
     val replaced = replaceZeroWithNull(rhs)
@@ -127,58 +181,6 @@ trait GpuDivModLike extends CudfBinaryArithmetic {
       }
     } else {
       super.doColumnar(lhs, rhs)
-    }
-  }
-
-  private def replaceZeroWithNull(v: GpuColumnVector): GpuColumnVector = {
-    var zeroScalar: Scalar = null
-    var nullScalar: Scalar = null
-    var zeroVec: ColumnVector = null
-    var nullVec: ColumnVector = null
-    try {
-      val dtype = v.getBase.getType
-      zeroScalar = makeZeroScalar(dtype)
-      nullScalar = Scalar.fromNull(dtype)
-      zeroVec = ColumnVector.fromScalar(zeroScalar, 1)
-      nullVec = ColumnVector.fromScalar(nullScalar, 1)
-      GpuColumnVector.from(v.getBase.findAndReplaceAll(zeroVec, nullVec))
-    } finally {
-      if (zeroScalar != null) {
-        zeroScalar.close()
-      }
-      if (nullScalar != null) {
-        nullScalar.close()
-      }
-      if (zeroVec != null) {
-        zeroVec.close()
-      }
-      if (nullVec != null) {
-        nullVec.close()
-      }
-    }
-  }
-
-  private def isScalarZero(s: Scalar): Boolean = {
-    s.getType match {
-      case DType.INT8 => s.getByte == 0
-      case DType.INT16 => s.getShort == 0
-      case DType.INT32 => s.getInt == 0
-      case DType.INT64 => s.getLong == 0
-      case DType.FLOAT32 => s.getFloat == 0f
-      case DType.FLOAT64 => s.getDouble == 0
-      case t => throw new IllegalArgumentException(s"Unexpected type: $t")
-    }
-  }
-
-  private def makeZeroScalar(dtype: DType): Scalar = {
-    dtype match {
-      case DType.INT8 => Scalar.fromByte(0.toByte)
-      case DType.INT16 => Scalar.fromShort(0.toShort)
-      case DType.INT32 => Scalar.fromInt(0)
-      case DType.INT64 => Scalar.fromLong(0L)
-      case DType.FLOAT32 => Scalar.fromFloat(0f)
-      case DType.FLOAT64 => Scalar.fromDouble(0)
-      case t => throw new IllegalArgumentException(s"Unexpected type: $t")
     }
   }
 }
@@ -211,4 +213,85 @@ case class GpuRemainder(left: GpuExpression, right: GpuExpression) extends GpuDi
   override def symbol: String = "%"
 
   override def binaryOp: BinaryOp = BinaryOp.MOD
+}
+
+
+case class GpuPmod(left: GpuExpression, right: GpuExpression) extends GpuBinaryExpression {
+  // Based off of the spark implementation
+  //  private def pmod(lhs: Int, rhs: Int): Int = {
+  //    val r = lhs % rhs
+  //    if (r < 0) {(r + rhs) % rhs} else r
+  //  }
+
+  // For the smaller types we need to cast it up to INT to avoid overflow issues on the add
+  // This is to match the spark code.
+  private val tmpType = GpuColumnVector.getRapidsType(left.dataType) match {
+    case DType.INT8 => DType.INT32
+    case DType.INT16 => DType.INT32
+    case other => other
+  }
+
+  import GpuDivModLike._
+  override def doColumnar(lhs: GpuColumnVector, origRhs: GpuColumnVector): GpuColumnVector = {
+    withResource(replaceZeroWithNull(origRhs)) { rhs =>
+      withResource(lhs.getBase.mod(rhs.getBase)) { r =>
+        val fixed = withResource(r.add(rhs.getBase, tmpType)) { sum =>
+          sum.mod(rhs.getBase)
+        }
+        withResource(fixed) { fixed =>
+          withResource(fixed.castTo(lhs.getBase.getType)) { fixedWithType =>
+            withResource(Scalar.fromByte(0.toByte)) { zero =>
+              withResource(r.lessThan(zero)) { ltz =>
+                GpuColumnVector.from(ltz.ifElse(fixedWithType, r))
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+
+  override def doColumnar(lhs: Scalar, origRhs: GpuColumnVector): GpuColumnVector = {
+    withResource(replaceZeroWithNull(origRhs)) { rhs =>
+      withResource(lhs.mod(rhs.getBase)) { r =>
+        val fixed = withResource(r.add(rhs.getBase, tmpType)) { sum =>
+          sum.mod(rhs.getBase)
+        }
+        withResource(fixed) { fixed =>
+          withResource(fixed.castTo(lhs.getType)) { fixedWithType =>
+            withResource(Scalar.fromByte(0.toByte)) { zero =>
+              withResource(r.lessThan(zero)) { ltz =>
+                GpuColumnVector.from(ltz.ifElse(fixedWithType, r))
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+
+  override def doColumnar(lhs: GpuColumnVector, rhs: Scalar): GpuColumnVector = {
+    if (isScalarZero(rhs)) {
+      withResource(Scalar.fromNull(lhs.getBase.getType)) { nullScalar =>
+        GpuColumnVector.from(ColumnVector.fromScalar(nullScalar, lhs.getRowCount.toInt))
+      }
+    } else {
+      withResource(lhs.getBase.mod(rhs)) { r =>
+        val fixed = withResource(r.add(rhs, tmpType)) { sum =>
+          sum.mod(rhs)
+        }
+        withResource(fixed) { fixed =>
+          withResource(fixed.castTo(lhs.getBase.getType)) { fixedWithType =>
+            withResource(Scalar.fromByte(0.toByte)) { zero =>
+              withResource(r.lessThan(zero)) { ltz =>
+                GpuColumnVector.from(ltz.ifElse(fixedWithType, r))
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+
+  override def dataType: DataType = left.dataType
 }

@@ -132,6 +132,7 @@
                             <workingDirectory>./</workingDirectory>
                             <environmentVariables>
                                 <SKIP_TESTS>${skipTests}</SKIP_TESTS>
+                                <TEST>${test}</TEST>
                             </environmentVariables>
                         </configuration>
                     </execution>

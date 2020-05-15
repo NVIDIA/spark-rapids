@@ -15,8 +15,10 @@
 from datetime import date, datetime, timedelta, timezone
 import math
 from pyspark.sql.types import *
+import pyspark.sql.functions as f
 import pytest
 import random
+from spark_session import spark
 import sre_yield
 import struct
 
@@ -81,15 +83,38 @@ class DataGen:
                 raise RuntimeError('Random did not pick something we expected')
             self._gen_func = choose_one
 
-    def gen(self):
+    def gen(self, force_no_nulls=False):
         """generate the next line"""
         if not self._gen_func:
             raise RuntimeError('start must be called before generating any data')
-        return self._gen_func()
+        v = self._gen_func()
+        if force_no_nulls:
+            while v is None:
+                v = self._gen_func()
+        return v
 
     def contains_ts(self):
         """Checks if this contains a TimestampGen"""
         return False
+
+class ConvertGen(DataGen):
+    """Provides a way to modify the data before it is returned"""
+    def __init__(self, child_gen, func, data_type=None, nullable=True):
+        if data_type is None:
+            data_type = child_gen.data_type
+        super().__init__(data_type, nullable=nullable)
+        self._child_gen = child_gen
+        self._func = func
+
+    def __repr__(self):
+        return super().__repr__() + '(' + str(self._child_gen) + ')'
+
+    def start(self, rand):
+        self._child_gen.start(rand)
+        def modify():
+            return self._func(self._child_gen.gen())
+
+        self._start(rand, modify)
 
 _MAX_CHOICES = 1 << 64
 class StringGen(DataGen):
@@ -98,7 +123,7 @@ class StringGen(DataGen):
         super().__init__(StringType(), nullable=nullable)
         self.base_strs = sre_yield.AllStrings(pattern, flags=flags, charset=charset, max_count=_MAX_CHOICES)
 
-    def with_special_pattern(self, special_pattern, flags=0, charset=sre_yield.CHARSET, weight=1.0):
+    def with_special_pattern(self, pattern, flags=0, charset=sre_yield.CHARSET, weight=1.0):
         """
         Like with_special_case but you can provide a regexp pattern
         instead of a hard coded string value.
@@ -364,6 +389,8 @@ class TimestampGen(DataGen):
 
         self._start_time = self._to_ms_since_epoch(start)
         self._end_time = self._to_ms_since_epoch(end)
+        if (self._epoch >= start and self._epoch <= end):
+            self.with_special_case(self._epoch)
 
     _epoch = datetime(1970, 1, 1, tzinfo=timezone.utc)
     _ms = timedelta(milliseconds=1)
@@ -380,6 +407,22 @@ class TimestampGen(DataGen):
 
     def contains_ts(self):
         return True
+
+class ArrayGen(DataGen):
+    """Generate Arrays of data."""
+    def __init__(self, child_gen, min_length=0, max_length=100, nullable=True):
+        super().__init__(ArrayType(child_gen.data_type, containsNull=child_gen.nullable), nullable=nullable)
+        self._min_length = min_length
+        self._max_length = max_length
+        self._child_gen = child_gen
+
+    def start(self, rand):
+        self._child_gen.start(rand)
+        def gen_array():
+            length = rand.randint(self._min_length, self._max_length)
+            return [self._child_gen.gen() for index in range(0, length)]
+        self._start(rand, gen_array)
+
 
 def gen_df(spark, data_gen, length=2048, seed=0):
     """Generate a spark dataframe from the given data generators."""
@@ -404,6 +447,37 @@ def gen_df(spark, data_gen, length=2048, seed=0):
     data = [src.gen() for index in range(0, length)]
     return spark.createDataFrame(data, src.data_type)
 
+def _mark_as_lit(data):
+    # Sadly you cannot create a literal from just an array in pyspark
+    if isinstance(data, list):
+        return f.array([_mark_as_lit(x) for x in data])
+    return f.lit(data)
+
+def gen_scalars(data_gen, count, seed=0, force_no_nulls=False):
+    """Generate scalar values."""
+    if isinstance(data_gen, list):
+        src = StructGen(data_gen, nullable=False)
+    else:
+        src = data_gen
+
+    # Before we get too far we need to verify that we can run with timestamps
+    if src.contains_ts():
+        # Now we have to do some kind of ugly internal java stuff
+        jvm = spark.sparkContext._jvm
+        utc = jvm.java.time.ZoneId.of('UTC').normalized()
+        sys_tz = jvm.java.time.ZoneId.systemDefault().normalized()
+        if (utc != sys_tz):
+            pytest.skip('The java system time zone is not set to UTC but is {}'.format(sys_tz))
+
+    rand = random.Random(seed)
+    src.start(rand)
+    return (_mark_as_lit(src.gen(force_no_nulls=force_no_nulls)) for i in range(0, count))
+
+def gen_scalar(data_gen, seed=0, force_no_nulls=False):
+    """Generate a single scalar value."""
+    v = list(gen_scalars(data_gen, 1, seed=seed, force_no_nulls=force_no_nulls))
+    return v[0]
+
 def debug_df(df):
     """print out the contents of a dataframe for debugging."""
     print('COLLECTED\n{}'.format(df.collect()))
@@ -413,4 +487,27 @@ def idfn(val):
     """Provide an API to provide display names for data type generators."""
     return str(val)
 
+def to_cast_string(spark_type):
+    if isinstance(spark_type, ByteType):
+        return 'BYTE'
+    elif isinstance(spark_type, ShortType):
+        return 'SHORT'
+    elif isinstance(spark_type, IntegerType):
+        return 'INT'
+    elif isinstance(spark_type, LongType):
+        return 'LONG'
+    elif isinstance(spark_type, FloatType):
+        return 'FLOAT'
+    elif isinstance(spark_type, DoubleType):
+        return 'DOUBLE'
+    elif isinstance(spark_type, BooleanType):
+        return 'BOOLEAN'
+    elif isinstance(spark_type, DateType):
+        return 'DATE'
+    elif isinstance(spark_type, TimestampType):
+        return 'TIMESTAMP'
+    elif isinstance(spark_type, StringType):
+        return 'STRING'
+    else:
+        raise RuntimeError('CAST TO TYPE {} NOT SUPPORTED YET'.format(spark_type))
 

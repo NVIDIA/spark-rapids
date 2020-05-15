@@ -72,8 +72,10 @@ class RapidsDeviceMemoryStore(
       buffer: DeviceMemoryBuffer,
       tableMeta: TableMeta,
       initialSpillPriority: Long): Unit = {
-    logDebug(s"Adding receive side table for: [id=$id, size=${buffer.getLength}, meta_id=${tableMeta.bufferMeta().id()}, " +
-      s"meta_size=${tableMeta.bufferMeta().actualSize()}, meta_num_cols=${tableMeta.columnMetasLength()}]")
+    logDebug(s"Adding receive side table for: [id=$id, size=${buffer.getLength}, " +
+        s"meta_id=${tableMeta.bufferMeta().id()}, " +
+        s"meta_size=${tableMeta.bufferMeta().actualSize()}, " +
+        s"meta_num_cols=${tableMeta.columnMetasLength()}]")
 
     val batch = RapidsBufferStore.getBatchFromMeta(buffer, tableMeta) // REFCOUNT 1 + # COLS
     // hold the 1 ref count extra in buffer, it will be removed later in releaseResources

@@ -22,16 +22,19 @@ import scala.collection.mutable.ListBuffer
  * Class for helper functions for Date
  */
 object DateUtils {
-  val unsupportedCharacter = Set( 'k', 'K','z', 'V', 'c', 'F', 'W', 'Q', 'q', 'G', 'A', 'n', 'N', 'O', 'X',
-    'p', '\'', '[', ']', '#', '{', '}', 'Z', 'w', 'e', 'E', 'x', 'Z', 'Y')
+  val unsupportedCharacter = Set(
+    'k', 'K','z', 'V', 'c', 'F', 'W', 'Q', 'q', 'G', 'A', 'n', 'N',
+    'O', 'X', 'p', '\'', '[', ']', '#', '{', '}', 'Z', 'w', 'e', 'E', 'x', 'Z', 'Y')
 
-  val unsupportedWord = Set("u", "uu", "uuu", "uuuu", "uuuuu", "uuuuuu", "uuuuuuu", "uuuuuuuu", "uuuuuuuuu", "uuuuuuuuuu", "y", "yyy",
-    "yyyyy", "yyyyyy", "yyyyyyy", "yyyyyyyy", "yyyyyyyyy", "yyyyyyyyyy", "D", "DD", "DDD",
-    "s", "m", "H", "h", "M", "MMM", "MMMM", "MMMMM", "L", "LLL", "LLLL", "LLLLL",
+  val unsupportedWord = Set(
+    "u", "uu", "uuu", "uuuu", "uuuuu", "uuuuuu", "uuuuuuu", "uuuuuuuu", "uuuuuuuuu", "uuuuuuuuuu",
+    "y", "yyy", "yyyyy", "yyyyyy", "yyyyyyy", "yyyyyyyy", "yyyyyyyyy", "yyyyyyyyyy",
+    "D", "DD", "DDD", "s", "m", "H", "h", "M", "MMM", "MMMM", "MMMMM", "L", "LLL", "LLLL", "LLLLL",
     "d", "S", "SS", "SSS", "SSSS", "SSSSS", "SSSSSSSSS", "SSSSSSS", "SSSSSSSS")
 
-  val conversionMap = Map("MM" -> "%m", "LL" -> "%m",
-    "dd" -> "%d", "mm" -> "%M", "ss" -> "%S", "HH" -> "%H", "yy" -> "%y", "yyyy" -> "%Y", "SSSSSS" -> "%f")
+  val conversionMap = Map(
+    "MM" -> "%m", "LL" -> "%m", "dd" -> "%d", "mm" -> "%M", "ss" -> "%S", "HH" -> "%H",
+    "yy" -> "%y", "yyyy" -> "%Y", "SSSSSS" -> "%f")
 
   case class FormatKeywordToReplace(word: String, startIndex: Int, endIndex: Int)
 
@@ -48,7 +51,8 @@ object DateUtils {
    * %f 6-digit microsecond: 000000-999999
    *
    * reported bugs
-   * https://github.com/rapidsai/cudf/issues/4160 after the bug is fixed this method should also support
+   * https://github.com/rapidsai/cudf/issues/4160 after the bug is fixed this method
+   * should also support
    * "hh" -> "%I" (12 hour clock)
    * "a" -> "%p" ('AM', 'PM')
    * "DDD" -> "%j" (Day of the year)
@@ -58,7 +62,9 @@ object DateUtils {
     replaceFormats(format, javaPatternsToReplace)
   }
 
-  def replaceFormats(format: String, javaPatternsToReplace: ListBuffer[FormatKeywordToReplace]): String = {
+  def replaceFormats(
+      format: String,
+      javaPatternsToReplace: ListBuffer[FormatKeywordToReplace]): String = {
     val strf = new StringBuilder(format.length).append(format)
     for (pattern <- javaPatternsToReplace.reverse) {
       if (conversionMap.contains(pattern.word)) {
@@ -68,20 +74,22 @@ object DateUtils {
     strf.toString
   }
 
-  def identifySupportedFormatsToReplaceElseThrow(format: String): ListBuffer[FormatKeywordToReplace] = {
+  def identifySupportedFormatsToReplaceElseThrow(
+      format: String): ListBuffer[FormatKeywordToReplace] = {
     var sb = new StringBuilder()
     var index = 0;
     val patterns = new ListBuffer[FormatKeywordToReplace]
     format.map(character => {
-      // We are checking to see if this char is a part of a previously read pattern or start of a new one.
+      // We are checking to see if this char is a part of a previously read pattern
+      // or start of a new one.
       if (sb.length == 0 || sb.charAt(sb.length - 1) == character) {
         if (unsupportedCharacter(character)) {
           throw TimestampFormatConversionException(s"Unsupported character: $character")
         }
         sb.append(character)
       } else {
-        // its a new pattern, check if the previous pattern was supported. If its supported, add it to the groups and
-        // add this char as a start of a new pattern else throw exception
+        // its a new pattern, check if the previous pattern was supported. If its supported,
+        // add it to the groups and add this char as a start of a new pattern else throw exception
         val word = sb.toString
         if (unsupportedWord(word)) {
           throw TimestampFormatConversionException(s"Unsupported word: $word")

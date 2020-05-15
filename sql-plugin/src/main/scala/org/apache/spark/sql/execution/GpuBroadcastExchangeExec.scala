@@ -141,8 +141,8 @@ class SerializeBatchDeserializeHostBuffer(batch: ColumnarBatch)
       } else {
         JCudfSerialization.writeToStream(columns, out, 0, numRows)
         // In this case an RDD, we want to close the batch once it is serialized out or we will
-        // leak GPU memory (technically it will just wait for GC to release it and probably not a lot
-        // because this is used for a broadcast that really should be small)
+        // leak GPU memory (technically it will just wait for GC to release it and probably
+        // not a lot because this is used for a broadcast that really should be small)
         // In the case of broadcast the life cycle of the object is tied to GC and there is no clean
         // way to separate the two right now.  So we accept the leak.
         columns.safeClose()
@@ -262,7 +262,8 @@ case class GpuBroadcastExchangeExec(
             // Setup a job group here so later it may get cancelled by groupId if necessary.
             sparkContext.setJobGroup(runId.toString, s"broadcast exchange (runId $runId)",
               interruptOnCancel = true)
-            val collectRange = new NvtxWithMetrics("broadcast collect", NvtxColor.GREEN, collectTime)
+            val collectRange = new NvtxWithMetrics("broadcast collect", NvtxColor.GREEN,
+              collectTime)
             val batch = try {
               val data = child.executeColumnar().map(cb => try {
                 new SerializeBatchDeserializeHostBuffer(cb)
@@ -285,7 +286,8 @@ case class GpuBroadcastExchangeExec(
 
             val buildRange = new NvtxWithMetrics("broadcast build", NvtxColor.DARK_GREEN, buildTime)
             try {
-              //we only support hashjoin so this is a noop val relation = mode.transform(input, Some(numRows))
+              // we only support hashjoin so this is a noop
+              // val relation = mode.transform(input, Some(numRows))
               val dataSize = batch.dataSize
 
               longMetric("dataSize") += dataSize

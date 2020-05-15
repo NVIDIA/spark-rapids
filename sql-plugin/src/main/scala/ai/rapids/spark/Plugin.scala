@@ -202,8 +202,8 @@ object RapidsPluginUtils extends Logging {
           s"$KRYO_REGISRATOR_NAME or some operations may not work properly.")
       }
     } else if (!JAVA_SERIALIZER_NAME.equals(serializer)) {
-      throw new UnsupportedOperationException(s"$serializer is not a supported serializer for the " +
-        s"Rapids SQL Plugin. Please disable the rapids plugin or use a supported serializer " +
+      throw new UnsupportedOperationException(s"$serializer is not a supported serializer for " +
+        s"the Rapids SQL Plugin. Please disable the rapids plugin or use a supported serializer " +
         s"serializer ($JAVA_SERIALIZER_NAME, $KRYO_SERIALIZER_NAME).")
     }
   }

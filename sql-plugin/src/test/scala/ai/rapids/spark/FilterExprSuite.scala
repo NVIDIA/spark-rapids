@@ -96,7 +96,8 @@ class FilterExprSuite extends SparkQueryCompareTestSuite {
     frame => frame.na.drop(1, Array("first_dbl"))
   }
 
-  testSparkResultsAreEqual("drop filter 1 multi column", frameFromParquet("nans_and_nulls.parquet")) {
+  testSparkResultsAreEqual("drop filter 1 multi column",
+    frameFromParquet("nans_and_nulls.parquet")) {
     frame => frame.na.drop(1, Array("first_dbl", "second_dbl"))
   }
 

@@ -22,7 +22,8 @@ import org.apache.spark.sql.types.{DataType, DataTypes, StructType}
 class LogOperatorUnitTestSuite extends GpuExpressionTestSuite {
 
   private val schema = FuzzerUtils.createSchema(Seq(DataTypes.DoubleType))
-  private val childExpr: GpuBoundReference = GpuBoundReference(0, DataTypes.DoubleType, nullable = false)
+  private val childExpr: GpuBoundReference = GpuBoundReference(0, DataTypes.DoubleType,
+    nullable = false)
 
   test("log") {
 
@@ -47,7 +48,8 @@ class LogOperatorUnitTestSuite extends GpuExpressionTestSuite {
       }
     }
 
-    checkEvaluateGpuUnaryMathExpression(GpuLog(GpuAdd(childExpr, GpuLiteral(1d, DataTypes.DoubleType))), expectedFun, schema)
+    checkEvaluateGpuUnaryMathExpression(GpuLog(GpuAdd(childExpr, GpuLiteral(1d,
+      DataTypes.DoubleType))), expectedFun, schema)
   }
 
   test("log2") {
@@ -60,7 +62,8 @@ class LogOperatorUnitTestSuite extends GpuExpressionTestSuite {
       }
     }
 
-    checkEvaluateGpuUnaryMathExpression(GpuLogarithm(childExpr, GpuLiteral(2d, DataTypes.DoubleType)), expectedFun, schema)
+    checkEvaluateGpuUnaryMathExpression(GpuLogarithm(childExpr, GpuLiteral(2d,
+      DataTypes.DoubleType)), expectedFun, schema)
   }
 
   test("log10") {
@@ -73,7 +76,8 @@ class LogOperatorUnitTestSuite extends GpuExpressionTestSuite {
       }
     }
 
-    checkEvaluateGpuUnaryMathExpression(GpuLogarithm(childExpr, GpuLiteral(10d, DataTypes.DoubleType)), expectedFun, schema)
+    checkEvaluateGpuUnaryMathExpression(GpuLogarithm(childExpr, GpuLiteral(10d,
+      DataTypes.DoubleType)), expectedFun, schema)
   }
 
   test("log with variable base") {
@@ -88,7 +92,8 @@ class LogOperatorUnitTestSuite extends GpuExpressionTestSuite {
       }
     }
 
-    checkEvaluateGpuUnaryMathExpression(GpuLogarithm(childExpr, GpuLiteral(base, DataTypes.DoubleType)), expectedFun, schema)
+    checkEvaluateGpuUnaryMathExpression(GpuLogarithm(childExpr, GpuLiteral(base,
+      DataTypes.DoubleType)), expectedFun, schema)
   }
 
   private def checkEvaluateGpuUnaryMathExpression(inputExpr: GpuExpression,
@@ -103,7 +108,8 @@ class LogOperatorUnitTestSuite extends GpuExpressionTestSuite {
       }
     }
 
-    super.checkEvaluateGpuUnaryExpression(inputExpr, DataTypes.DoubleType, DataTypes.DoubleType, fun, schema)
+    super.checkEvaluateGpuUnaryExpression(inputExpr, DataTypes.DoubleType, DataTypes.DoubleType,
+      fun, schema)
   }
 }
 

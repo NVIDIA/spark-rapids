@@ -147,7 +147,8 @@ object GpuFileSourceScanExec {
       case _: CSVFileFormat => new GpuReadCSVFileFormat
       case _: OrcFileFormat => new GpuReadOrcFileFormat
       case _: ParquetFileFormat => new GpuReadParquetFileFormat
-      case f =>throw new IllegalArgumentException(s"${f.getClass.getCanonicalName} is not supported")
+      case f =>
+        throw new IllegalArgumentException(s"${f.getClass.getCanonicalName} is not supported")
     }
   }
 }
