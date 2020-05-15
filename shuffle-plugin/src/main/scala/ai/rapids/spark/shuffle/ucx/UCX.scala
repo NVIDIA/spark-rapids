@@ -35,21 +35,22 @@ import scala.collection.mutable.ArrayBuffer
 case class WorkerAddress(address: ByteBuffer)
 
 /**
-  * The UCX class holds a [[UcpContext]] and [[UcpWorker]]. It opens a TCP port for UCP's Worker Address
-  * to be transmitted from executor to executor in order to create [[UcpEndpoint]]s.
-  *
-  * The current API supported from UCX is the tag based API. A tag is a long that identifies a "topic"
-  * for a particular
-  *
-  * Send and receive methods are exposed here, but should not be used directly (as it deals with raw tags). Instead,
-  * the [[Transaction]] interface should be used.
-  *
-  * Note that we currently use an extra TCP connection to communicate the WorkerAddress and other
-  * pieces to other peers. It would be ideal if this could fit somewhere else (like the [[org.apache.spark.storage.BlockManagerId]])
-  *
-  * @param executorId - unique id that is used as part of the tags from UCX messages
-  * @param usingWakeupFeature - turn on if you want to use polling instead of a hot loop.
-  */
+ * The UCX class holds a [[UcpContext]] and [[UcpWorker]]. It opens a TCP port for UCP's Worker
+ * Address to be transmitted from executor to executor in order to create [[UcpEndpoint]]s.
+ *
+ * The current API supported from UCX is the tag based API. A tag is a long that identifies a
+ * "topic" for a particular
+ *
+ * Send and receive methods are exposed here, but should not be used directly (as it deals with
+ * raw tags). Instead, the [[Transaction]] interface should be used.
+ *
+ * Note that we currently use an extra TCP connection to communicate the WorkerAddress and other
+ * pieces to other peers. It would be ideal if this could fit somewhere else (like the
+ * [[org.apache.spark.storage.BlockManagerId]])
+ *
+ * @param executorId - unique id that is used as part of the tags from UCX messages
+ * @param usingWakeupFeature - turn on if you want to use polling instead of a hot loop.
+ */
 class UCX(executorId: Int, usingWakeupFeature: Boolean = true) extends AutoCloseable with Logging {
   private[this] val context = {
     val contextParams = new UcpParams().requestTagFeature()
@@ -67,7 +68,7 @@ class UCX(executorId: Int, usingWakeupFeature: Boolean = true) extends AutoClose
   // monotonically increasing counter that holds the txId (for debug purposes, at this stage)
   private[this] val txId = new AtomicLong(0L)
 
-  private var worker: UcpWorker = null
+  private var worker: UcpWorker = _
   private val endpoints = new ConcurrentHashMap[Long, UcpEndpoint]()
   private var initialized = false
 
@@ -86,26 +87,28 @@ class UCX(executorId: Int, usingWakeupFeature: Boolean = true) extends AutoClose
         .build))
 
   // management port socket
-  private var serverSocket: ServerSocket = null
+  private var serverSocket: ServerSocket = _
   private val acceptService = Executors.newSingleThreadExecutor(
     new ThreadFactoryBuilder().setNameFormat("ucx-mgmt-thread-%d").build)
 
   private val serverService = Executors.newCachedThreadPool(
     new ThreadFactoryBuilder().setNameFormat("ucx-connection-server-%d").build)
 
-  // The pending queues are used to enqueue [[PendingReceive]] or [[PendingSend]], from executor task threads
-  // and [[progressThread]] will hand them to the UcpWorker thread.
+  // The pending queues are used to enqueue [[PendingReceive]] or [[PendingSend]], from executor
+  // task threads and [[progressThread]] will hand them to the UcpWorker thread.
   private val workerTasks = new ConcurrentLinkedQueue[() => Unit]()
 
-  // Multiple executor threads are going to try to call connect (from the [[RapidsUCXShuffleIterator]])
-  // because they don't know what executors to connect to up until shuffle fetch time.
+  // Multiple executor threads are going to try to call connect (from the
+  // [[RapidsUCXShuffleIterator]]) because they don't know what executors to connect to up until
+  // shuffle fetch time.
   //
-  // This makes sure that all executor threads get the same [[Connection]] object for a specific management
-  // (host, port) key.
+  // This makes sure that all executor threads get the same [[Connection]] object for a specific
+  // management (host, port) key.
   private val connectionCache = new ConcurrentHashMap[Long, ClientConnection]()
   private val executorIdToPeerTag = new ConcurrentHashMap[Long, Long]()
 
-  // holds memory registered against UCX that should be de-register on exit (used for bounce buffers)
+  // holds memory registered against UCX that should be de-register on exit (used for bounce
+  // buffers)
   val registeredMemory = new ArrayBuffer[UcpMemory]
 
   /**
@@ -247,7 +250,9 @@ class UCX(executorId: Int, usingWakeupFeature: Boolean = true) extends AutoClose
     val ucxCb = new UcxCallback {
       override def onError(ucsStatus: Int, errorMsg: String): Unit = {
         if (ucsStatus == UCX.UCS_ERR_CANCELED) {
-          logWarning(s"Cancelled: tag=${TransportUtils.formatTag(alt.tag)}, status=$ucsStatus, msg=$errorMsg")
+          logWarning(
+            s"Cancelled: tag=${TransportUtils.formatTag(alt.tag)}," +
+              s" status=$ucsStatus, msg=$errorMsg")
           cb.onCancel(alt)
         } else {
           logError("error sending : " + ucsStatus + " " + errorMsg)
@@ -278,10 +283,12 @@ class UCX(executorId: Int, usingWakeupFeature: Boolean = true) extends AutoClose
     val ucxCb = new UcxCallback {
       override def onError(ucsStatus: Int, errorMsg: String): Unit = {
         if (ucsStatus == UCX.UCS_ERR_CANCELED) {
-          logWarning(s"Cancelled: tag=${TransportUtils.formatTag(alt.tag)}, status=$ucsStatus, msg=$errorMsg")
+          logWarning(
+            s"Cancelled: tag=${TransportUtils.formatTag(alt.tag)}," +
+              s" status=$ucsStatus, msg=$errorMsg")
           cb.onCancel(alt)
         } else {
-          logError(s"Error receiving: $ucsStatus $errorMsg => ${alt}")
+          logError(s"Error receiving: $ucsStatus $errorMsg => $alt")
           cb.onError(alt, ucsStatus, errorMsg)
         }
       }
@@ -326,7 +333,8 @@ class UCX(executorId: Int, usingWakeupFeature: Boolean = true) extends AutoClose
     * @param endpointId - presently an executorId, it is used to distinguish between endpoints
     *                   when routing messages outbound
     * @param workerAddress - the worker address for the remote endpoint (ucx opaque object)
-    * @return UcpEndpoint - returns a [[UcpEndpoint]] that can later be used to send on (from the progress thread)
+    * @return UcpEndpoint - returns a [[UcpEndpoint]] that can later be used to send on (from the
+   *         progress thread)
     */
   private[ucx] def setupEndpoint(endpointId: Long, workerAddress: WorkerAddress): UcpEndpoint = {
     logDebug(s"Starting/reusing an endpoint to $workerAddress with id $endpointId")
@@ -347,7 +355,9 @@ class UCX(executorId: Int, usingWakeupFeature: Boolean = true) extends AutoClose
     * @param peerMgmtPort management TCP port
     * @return Connection object representing this connection
     */
-  def getConnection(peerExecutorId: Int, peerMgmtHost: String, peerMgmtPort: Int): ClientConnection = {
+  def getConnection(peerExecutorId: Int,
+      peerMgmtHost: String,
+      peerMgmtPort: Int): ClientConnection = {
     connectionCache.computeIfAbsent(peerExecutorId, _ => {
       val connection = new UCXClientConnection(peerExecutorId, peerTag.incrementAndGet(), this)
       startConnection(connection, peerMgmtHost, peerMgmtPort)
@@ -363,7 +373,9 @@ class UCX(executorId: Int, usingWakeupFeature: Boolean = true) extends AutoClose
   }
 
   // client side
-  private def startConnection(connection: UCXClientConnection, peerMgmtHost: String, peerMgmtPort: Int) = {
+  private def startConnection(connection: UCXClientConnection,
+      peerMgmtHost: String,
+      peerMgmtPort: Int) = {
     logInfo(s"Connecting to $peerMgmtHost to $peerMgmtPort")
     val nvtx = new NvtxRange(s"UCX Connect to $peerMgmtHost:$peerMgmtPort", NvtxColor.RED)
     try {
@@ -376,13 +388,14 @@ class UCX(executorId: Int, usingWakeupFeature: Boolean = true) extends AutoClose
         // "this executor id will receive on tmpLocalReceiveTag for this Connection"
         UCXConnection.writeHandshakeHeader(os, ucxWorkerAddress, executorId)
 
-        // "the remote executor will receive on remoteReceiveTag, and expects this executor to receive on localReceiveTag"
+        // "the remote executor will receive on remoteReceiveTag, and expects this executor to
+        // receive on localReceiveTag"
         val (peerWorkerAddress, remoteExecutorId) = UCXConnection.readHandshakeHeader(is)
 
         val peerExecutorId = connection.getPeerExecutorId
         if (remoteExecutorId != peerExecutorId) {
-          throw new IllegalStateException(s"Attempted to reach executor $peerExecutorId, but instead " +
-            s"received reply from $remoteExecutorId")
+          throw new IllegalStateException(s"Attempted to reach executor $peerExecutorId, but" +
+            s" instead received reply from $remoteExecutorId")
         }
 
         onWorkerThreadAsync(() => {
@@ -454,7 +467,7 @@ class UCX(executorId: Int, usingWakeupFeature: Boolean = true) extends AutoClose
         mmapCallback(true)
       } catch {
         case t: Throwable =>
-          logError(s"There was an issue registering ${rootBuffer} against UCX", t)
+          logError(s"There was an issue registering $rootBuffer against UCX", t)
           mmapCallback(false)
       }
     })
@@ -513,7 +526,8 @@ class UCX(executorId: Int, usingWakeupFeature: Boolean = true) extends AutoClose
 object UCX {
   // This is used to distinguish a cancelled request vs. other errors
   // as the callback is the same (onError)
-  private val UCS_ERR_CANCELED = -16 // from https://github.com/openucx/ucx/blob/master/src/ucs/type/status.h
+  // from https://github.com/openucx/ucx/blob/master/src/ucs/type/status.h
+  private val UCS_ERR_CANCELED = -16
 
   // We may consider matching tags partially for different request types
   private val MATCH_FULL_TAG: Long = 0xFFFFFFFFFFFFFFFFL
