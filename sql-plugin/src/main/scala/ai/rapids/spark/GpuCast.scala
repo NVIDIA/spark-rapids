@@ -45,6 +45,14 @@ class CastExprMeta[INPUT <: CastBase](
         "from the default behavior in Spark.  To enable this operation on the GPU, set" +
         s" ${RapidsConf.ENABLE_CAST_FLOAT_TO_STRING} to true.")
     }
+    if (!conf.isCastStringToIntegerEnabled && cast.child.dataType == DataTypes.StringType &&
+    Seq(DataTypes.ByteType, DataTypes.ShortType, DataTypes.IntegerType, DataTypes.LongType)
+      .contains(cast.dataType)) {
+      willNotWorkOnGpu("the GPU will return incorrect results for strings representing" +
+        "values greater than Long.MaxValue or less than Long.MinValue.  To enable this " +
+        "operation on the GPU, set" +
+        s" ${RapidsConf.ENABLE_CAST_STRING_TO_INTEGER} to true.")
+    }
   }
 
   override def convertToGpu(child: GpuExpression): GpuExpression =
@@ -53,6 +61,20 @@ class CastExprMeta[INPUT <: CastBase](
 
 object GpuCast {
 
+  /**
+   * Regex for identifying strings that contain numeric values that can be casted to integral
+   * types. This includes floating point numbers but not numbers containing exponents.
+   */
+  private val CASTABLE_TO_INT_REGEX = "\\s*[+\\-]?[0-9]*(\\.)?[0-9]+\\s*$"
+
+  /**
+   * Regex for identifying strings that contain numeric values that can be casted to integral
+   * types when ansi is enabled.
+   */
+  private val ANSI_CASTABLE_TO_INT_REGEX = "\\s*[+\\-]?[0-9]+\\s*$"
+
+  private val INVALID_INPUT_MESSAGE = "Column contains at least one value that is not in the " +
+    "required range"
   /**
    * Returns true iff we can cast `from` to `to` using the GPU.
    *
@@ -104,6 +126,7 @@ object GpuCast {
       }
       case StringType => to match {
         case BooleanType => true
+        case ByteType | ShortType | IntegerType | LongType => true
         case _ => false
       }
     }
@@ -280,6 +303,47 @@ case class GpuCast(child: GpuExpression, dataType: DataType, ansiMode: Boolean =
         castFloatingTypeToString(input)
       case (StringType, BooleanType) =>
         castStringToBool(input, ansiMode)
+      case (StringType, ByteType|ShortType|IntegerType|LongType) =>
+        // filter out values that are not valid longs or nulls
+        val regex = if (ansiMode) {
+          GpuCast.ANSI_CASTABLE_TO_INT_REGEX
+        } else {
+          GpuCast.CASTABLE_TO_INT_REGEX
+        }
+        val longStrings = withResource(input.getBase.strip()) { trimmed =>
+          withResource(trimmed.matchesRe(regex)) { regexMatches =>
+            if (ansiMode) {
+              withResource(regexMatches.all()) { allRegexMatches => {
+                if (!allRegexMatches.getBoolean) {
+                  throw new NumberFormatException(GpuCast.INVALID_INPUT_MESSAGE)
+                }
+              }}
+            }
+            withResource(Scalar.fromNull(DType.STRING)) { nullString =>
+              regexMatches.ifElse(trimmed, nullString)
+            }
+          }
+        }
+        // cast to specific integral type after filtering out values that are not in range for that type
+        // note that the scalar values here are named parameters so are not created until they are needed
+        withResource(longStrings) { longStrings =>
+          cudfType match {
+            case DType.INT8 =>
+              castStringToIntegralType(longStrings, DType.INT8,
+                Scalar.fromInt(Byte.MinValue), Scalar.fromInt(Byte.MaxValue))
+            case DType.INT16 =>
+              castStringToIntegralType(longStrings, DType.INT16,
+                Scalar.fromInt(Short.MinValue), Scalar.fromInt(Short.MaxValue))
+            case DType.INT32 =>
+              castStringToIntegralType(longStrings, DType.INT32,
+                Scalar.fromInt(Int.MinValue), Scalar.fromInt(Int.MaxValue))
+            case DType.INT64 =>
+              GpuColumnVector.from(longStrings.castTo(DType.INT64))
+            case _ =>
+              throw new IllegalStateException("Invalid integral type")
+          }
+        }
+
       case _ =>
         GpuColumnVector.from(input.getBase.castTo(cudfType))
     }
@@ -301,7 +365,7 @@ case class GpuCast(child: GpuExpression, dataType: DataType, ansiMode: Boolean =
       withResource(cv) { cv =>
         withResource(cv.any()) { isAny =>
           if (isAny.getBoolean) {
-            throw new IllegalStateException("Column contains at least one value that is not in the required range")
+            throw new IllegalStateException(GpuCast.INVALID_INPUT_MESSAGE)
           }
         }
       }
@@ -351,8 +415,7 @@ case class GpuCast(child: GpuExpression, dataType: DataType, ansiMode: Boolean =
           if (ansiEnabled) {
             withResource(validBools.all()) { isAllBool =>
               if (!isAllBool.getBoolean) {
-                throw new IllegalStateException(
-                  "Column contains at least one value that is not in the required range")
+                throw new IllegalStateException(GpuCast.INVALID_INPUT_MESSAGE)
               }
             }
           }
@@ -369,4 +432,62 @@ case class GpuCast(child: GpuExpression, dataType: DataType, ansiMode: Boolean =
       }
     }
   }
+
+  /**
+   * Cast column of long values to a smaller integral type (bytes, short, int).
+   *
+   * @param longStrings Long values in string format
+   * @param castToType Type to cast to
+   * @param minValue Named parameter for function to create Scalar representing range minimum value
+   * @param maxValue Named parameter for function to create Scalar representing range maximum value
+   * @return Values cast to specified integral type
+   */
+  private def castStringToIntegralType(longStrings: ColumnVector,
+      castToType: DType,
+      minValue: => Scalar,
+      maxValue: => Scalar): GpuColumnVector = {
+
+    // evaluate min and max named parameters once since they are used in multiple places
+    withResource(minValue) { minValue: Scalar =>
+      withResource(maxValue) { maxValue: Scalar =>
+        withResource(Scalar.fromNull(DType.INT64)) { nulls =>
+          withResource(longStrings.castTo(DType.INT64)) { values =>
+
+            // replace values less than minValue with null
+            val gtEqMinOrNull = withResource(values.greaterOrEqualTo(minValue)) { isGtEqMin =>
+              if (ansiMode) {
+                withResource(isGtEqMin.all()) { all =>
+                  if (!all.getBoolean) {
+                    throw new NumberFormatException(GpuCast.INVALID_INPUT_MESSAGE)
+                  }
+                }
+              }
+              isGtEqMin.ifElse(values, nulls)
+            }
+
+            // replace values greater than maxValue with null
+            val ltEqMaxOrNull = withResource(gtEqMinOrNull) { gtEqMinOrNull =>
+              withResource(gtEqMinOrNull.lessOrEqualTo(maxValue)) { isLtEqMax =>
+                if (ansiMode) {
+                  withResource(isLtEqMax.all()) { all =>
+                    if (!all.getBoolean) {
+                      throw new NumberFormatException(GpuCast.INVALID_INPUT_MESSAGE)
+                    }
+                  }
+                }
+                isLtEqMax.ifElse(gtEqMinOrNull, nulls)
+              }
+            }
+
+            // cast the final values
+            withResource(ltEqMaxOrNull) { ltEqMaxOrNull =>
+              GpuColumnVector.from(ltEqMaxOrNull.castTo(castToType))
+            }
+          }
+        }
+      }
+
+    }
+  }
+
 }
