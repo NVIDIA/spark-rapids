@@ -53,8 +53,10 @@ class ParquetWriterSuite extends SparkQueryCompareTestSuite {
   test("write with no compression") {
     val compression = "none"
     val expectedFileExt = ".parquet"
-    val cpuCodecs = withCpuSparkSession(spark => getCompressionCodecs(spark, compression, expectedFileExt))
-    val gpuCodecs = withGpuSparkSession(spark => getCompressionCodecs(spark, compression, expectedFileExt))
+    val cpuCodecs = withCpuSparkSession(
+      spark => getCompressionCodecs(spark, compression, expectedFileExt))
+    val gpuCodecs = withGpuSparkSession(
+      spark => getCompressionCodecs(spark, compression, expectedFileExt))
     assert(cpuCodecs.forall(_ == "UNCOMPRESSED"))
     assert(gpuCodecs.forall(_ == "UNCOMPRESSED"))
   }
@@ -62,8 +64,10 @@ class ParquetWriterSuite extends SparkQueryCompareTestSuite {
   test("write with snappy compression") {
     val compression = "snappy"
     val expectedFileExt = ".snappy.parquet"
-    val cpuCodecs = withCpuSparkSession(spark => getCompressionCodecs(spark, compression, expectedFileExt))
-    val gpuCodecs = withGpuSparkSession(spark => getCompressionCodecs(spark, compression, expectedFileExt))
+    val cpuCodecs = withCpuSparkSession(
+      spark => getCompressionCodecs(spark, compression, expectedFileExt))
+    val gpuCodecs = withGpuSparkSession(
+      spark => getCompressionCodecs(spark, compression, expectedFileExt))
     assert(cpuCodecs.contains("SNAPPY"))
     assert(gpuCodecs.contains("SNAPPY"))
   }
@@ -104,8 +108,12 @@ class ParquetWriterSuite extends SparkQueryCompareTestSuite {
         assertResult(99) { cols.get(2).getStatistics.genericGetMax }
 
         assertResult(1) { cols.get(3).getStatistics.getNumNulls }
-        assertResult("A") { new String(cols.get(3).getStatistics.getMinBytes, StandardCharsets.UTF_8) }
-        assertResult("\ud720\ud721") { new String(cols.get(3).getStatistics.getMaxBytes, StandardCharsets.UTF_8) }
+        assertResult("A") {
+          new String(cols.get(3).getStatistics.getMinBytes, StandardCharsets.UTF_8)
+        }
+        assertResult("\ud720\ud721") {
+          new String(cols.get(3).getStatistics.getMaxBytes, StandardCharsets.UTF_8)
+        }
       })
     } finally {
       tempFile.delete()

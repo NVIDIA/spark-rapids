@@ -26,11 +26,13 @@ import org.apache.spark.sql.types.{DataType, IntegerType}
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
 /**
-  * Represents a partitioning where incoming columnar batched rows are distributed evenly across output partitions
-  * by starting from a zero-th partition number and distributing rows in a round-robin
-  * fashion. This partitioning is used when implementing the DataFrame.repartition() operator.
-  */
-case class GpuRoundRobinPartitioning(numPartitions: Int) extends GpuExpression with GpuPartitioning {
+ * Represents a partitioning where incoming columnar batched rows are distributed evenly
+ * across output partitions by starting from a zero-th partition number and distributing rows
+ * in a round-robin fashion. This partitioning is used when implementing the
+ * DataFrame.repartition() operator.
+ */
+case class GpuRoundRobinPartitioning(numPartitions: Int)
+  extends GpuExpression with GpuPartitioning {
   override def children: Seq[GpuExpression] = Nil
 
   override def nullable: Boolean = false
@@ -74,7 +76,8 @@ case class GpuRoundRobinPartitioning(numPartitions: Int) extends GpuExpression w
           partitionRange.close()
         }
       }
-      val ret: Array[ColumnarBatch] = sliceInternalGpuOrCpu(batch, partitionIndexes, partitionColumns)
+      val ret: Array[ColumnarBatch] =
+        sliceInternalGpuOrCpu(batch, partitionIndexes, partitionColumns)
       partitionColumns.safeClose()
       // Close the partition columns we copied them as a part of the slice
       ret.zipWithIndex.filter(_._1 != null)
