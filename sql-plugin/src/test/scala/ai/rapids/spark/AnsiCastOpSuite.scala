@@ -36,6 +36,7 @@ class AnsiCastOpSuite extends GpuExpressionTestSuite {
     .set("spark.sql.ansi.enabled", "true")
     .set("spark.sql.storeAssignmentPolicy", "ANSI") // note this is the default in 3.0.0
     .set(RapidsConf.ENABLE_CAST_FLOAT_TO_STRING.key, "true")
+    .set(RapidsConf.ENABLE_CAST_STRING_TO_INTEGER.key, "true")
 
   def generateOutOfRangeTimestampsDF(
       lowerValue: Long,
@@ -236,6 +237,57 @@ class AnsiCastOpSuite extends GpuExpressionTestSuite {
   testCastFailsForBadInputs("ansi_cast string to bool (invalid values)", testStrings,
     sparkConf) {
     frame => testCastTo(DataTypes.BooleanType)(frame)
+  }
+
+
+  ///////////////////////////////////////////////////////////////////////////
+  // Ansi cast from string to integral types
+  ///////////////////////////////////////////////////////////////////////////
+
+  testSparkResultsAreEqual("ansi_cast string to byte (valid values)", bytesAsStrings,
+    sparkConf) {
+    frame => testCastTo(DataTypes.ByteType)(frame)
+  }
+
+  testSparkResultsAreEqual("ansi_cast string to short (valid values)", shortsAsStrings,
+    sparkConf) {
+    frame => testCastTo(DataTypes.ShortType)(frame)
+  }
+
+  testSparkResultsAreEqual("ansi_cast string to int (valid values)", intsAsStrings,
+    sparkConf) {
+    frame => testCastTo(DataTypes.IntegerType)(frame)
+  }
+
+  testSparkResultsAreEqual("ansi_cast string to long (valid values)", longsAsStrings,
+    sparkConf) {
+    frame => testCastTo(DataTypes.LongType)(frame)
+  }
+
+  testCastFailsForBadInputs("ansi_cast string to byte (invalid values)", shortsAsStrings,
+    sparkConf) {
+    frame => testCastTo(DataTypes.ByteType)(frame)
+  }
+
+  testCastFailsForBadInputs("ansi_cast string to short (invalid values)", intsAsStrings,
+    sparkConf) {
+    frame => testCastTo(DataTypes.ShortType)(frame)
+  }
+
+  testCastFailsForBadInputs("ansi_cast string to long (invalid decimal values)",
+    longsAsDecimalStrings,
+    sparkConf) {
+    frame => testCastTo(DataTypes.LongType)(frame)
+  }
+
+  testCastFailsForBadInputs("ansi_cast string to int (invalid values)", longsAsStrings,
+    sparkConf) {
+    frame => testCastTo(DataTypes.IntegerType)(frame)
+  }
+
+  testCastFailsForBadInputs("ansi_cast string to int (non-numeric values)", testStrings,
+    sparkConf) {
+    frame => testCastTo(DataTypes.IntegerType)(frame)
   }
 
   ///////////////////////////////////////////////////////////////////////////
