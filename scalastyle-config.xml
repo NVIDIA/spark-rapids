@@ -93,4 +93,12 @@ You can also disable only one rule, by specifying its rule id, as specified in:
         <customMessage>Use Javadoc style indentation for multiline comments</customMessage>
     </check>
 
+    <check level="error" class="org.scalastyle.file.FileLineLengthChecker" enabled="false">
+        <parameters>
+            <parameter name="maxLineLength"><![CDATA[100]]></parameter>
+            <parameter name="tabSize"><![CDATA[2]]></parameter>
+            <parameter name="ignoreImports">true</parameter>
+        </parameters>
+    </check>
+    
 </scalastyle>
