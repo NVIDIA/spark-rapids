@@ -358,6 +358,14 @@ object RapidsConf {
     .booleanConf
     .createWithDefault(false)
 
+  val ENABLE_CAST_STRING_TO_INTEGER = conf("spark.rapids.sql.castStringToInteger.enabled")
+    .doc("When set to true, enables casting from strings to integer types (byte, short, int, " +
+      "long) on the GPU. Casting from string to integer types on the GPU returns incorrect " +
+      "results when the string represents a number larger than Long.MaxValue or smaller than " +
+      "Long.MinValue.")
+    .booleanConf
+    .createWithDefault(false)
+
   // INTERNAL TEST AND DEBUG CONFIGS
 
   val TEST_CONF = conf("spark.rapids.sql.test.enabled")
@@ -638,6 +646,8 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
   lazy val enableHashOptimizeSort: Boolean = get(ENABLE_HASH_OPTIMIZE_SORT)
 
   lazy val isCastToFloatEnabled: Boolean = get(ENABLE_CAST_FLOAT_TO_STRING)
+
+  lazy val isCastStringToIntegerEnabled: Boolean = get(ENABLE_CAST_STRING_TO_INTEGER)
 
   lazy val shuffleTransportEnabled: Boolean = get(SHUFFLE_TRANSPORT_ENABLE)
 

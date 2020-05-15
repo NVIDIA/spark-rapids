@@ -50,6 +50,7 @@ class CastOpSuite extends GpuExpressionTestSuite {
 
       val conf = new SparkConf()
         .set(RapidsConf.ENABLE_CAST_FLOAT_TO_STRING.key, "true")
+        .set(RapidsConf.ENABLE_CAST_STRING_TO_INTEGER.key, "true")
         .set("spark.sql.ansi.enabled", String.valueOf(ansiEnabled))
 
       typeMatrix.foreach {
@@ -101,10 +102,6 @@ class CastOpSuite extends GpuExpressionTestSuite {
     val unsupported = getUnsupportedCasts(false)
     val expected = List((DateType,StringType),
       (TimestampType,StringType),
-      (StringType,ByteType),
-      (StringType,ShortType),
-      (StringType,IntegerType),
-      (StringType,LongType),
       (StringType,FloatType),
       (StringType,DoubleType),
       (StringType,DateType),
@@ -118,10 +115,6 @@ class CastOpSuite extends GpuExpressionTestSuite {
     val unsupported = getUnsupportedCasts(true)
     val expected = List((DateType,StringType),
       (TimestampType,StringType),
-      (StringType,ByteType),
-      (StringType,ShortType),
-      (StringType,IntegerType),
-      (StringType,LongType),
       (StringType,FloatType),
       (StringType,DoubleType),
       (StringType,DateType),
@@ -157,7 +150,18 @@ class CastOpSuite extends GpuExpressionTestSuite {
       case (DataTypes.TimestampType, DataTypes.IntegerType) => intsAsTimestamps(spark)
       case (DataTypes.TimestampType, DataTypes.LongType) => longsAsTimestamps(spark)
 
+      case (DataTypes.StringType, DataTypes.BooleanType) => validBoolStrings(spark)
+
       case (DataTypes.StringType, DataTypes.BooleanType) if ansiEnabled => validBoolStrings(spark)
+      case (DataTypes.StringType, DataTypes.ByteType) if ansiEnabled => bytesAsStrings(spark)
+      case (DataTypes.StringType, DataTypes.ShortType) if ansiEnabled => shortsAsStrings(spark)
+      case (DataTypes.StringType, DataTypes.IntegerType) if ansiEnabled => intsAsStrings(spark)
+      case (DataTypes.StringType, DataTypes.LongType)  => if (ansiEnabled) {
+        // ansi_cast does not support decimals
+        longsAsStrings(spark)
+      } else {
+        longsAsDecimalStrings(spark)
+      }
 
       case (DataTypes.ShortType, DataTypes.ByteType) if ansiEnabled => bytesAsShorts(spark)
       case (DataTypes.IntegerType, DataTypes.ByteType) if ansiEnabled => bytesAsInts(spark)
@@ -388,6 +392,11 @@ object CastOpSuite {
     byteValues.map(value => new Timestamp(value)).toDF("c0")
   }
 
+  def bytesAsStrings(session: SparkSession): DataFrame = {
+    import session.sqlContext.implicits._
+    byteValues.map(value => String.valueOf(value)).toDF("c0")
+  }
+
   def shortsAsInts(session: SparkSession): DataFrame = {
     import session.sqlContext.implicits._
     shortValues.map(_.toInt).toDF("c0")
@@ -413,6 +422,11 @@ object CastOpSuite {
     shortValues.map(value => new Timestamp(value)).toDF("c0")
   }
 
+  def shortsAsStrings(session: SparkSession): DataFrame = {
+    import session.sqlContext.implicits._
+    shortValues.map(value => String.valueOf(value)).toDF("c0")
+  }
+
   def intsAsLongs(session: SparkSession): DataFrame = {
     import session.sqlContext.implicits._
     intValues.map(_.toLong).toDF("c0")
@@ -433,6 +447,11 @@ object CastOpSuite {
     intValues.map(value => new Timestamp(value)).toDF("c0")
   }
 
+  def intsAsStrings(session: SparkSession): DataFrame = {
+    import session.sqlContext.implicits._
+    intValues.map(value => String.valueOf(value)).toDF("c0")
+  }
+
   def longsAsFloats(session: SparkSession): DataFrame = {
     import session.sqlContext.implicits._
     longValues.map(_.toFloat).toDF("c0")
@@ -448,6 +467,16 @@ object CastOpSuite {
     timestampValues.map(value => new Timestamp(value)).toDF("c0")
   }
 
+  def longsAsStrings(session: SparkSession): DataFrame = {
+    import session.sqlContext.implicits._
+    longValues.map(value => String.valueOf(value)).toDF("c0")
+  }
+
+  def longsAsDecimalStrings(session: SparkSession): DataFrame = {
+    import session.sqlContext.implicits._
+    longValues.map(value => String.valueOf(value) + ".1").toDF("c0")
+  }
+  
   def timestampsAsFloats(session: SparkSession): DataFrame = {
     import session.sqlContext.implicits._
     timestampValues.map(_.toFloat).toDF("c0")
