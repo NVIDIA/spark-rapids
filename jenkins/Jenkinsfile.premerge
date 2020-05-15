@@ -55,7 +55,8 @@ pipeline {
                     docker.image(IMAGE_NAME).inside("--runtime=nvidia -v ${HOME}/.m2:${HOME}/.m2:rw \
                         -v ${HOME}/.zinc:${HOME}/.zinc:rw \
                         -v /etc/passwd:/etc/passwd -v /etc/group:/etc/group") {
-                        sh "mvn -U -B clean verify $MVN_GPUWA_MIRROR"
+                        sh "mvn -U -B clean verify $MVN_GPUWA_MIRROR scoverage:report"
+                        cobertura coberturaReportFile: 'target/cobertura.xml'
                     }
                 }
             }
