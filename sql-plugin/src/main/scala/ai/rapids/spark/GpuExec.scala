@@ -49,7 +49,8 @@ trait GpuExec extends SparkPlan with Arm {
 
   override lazy val metrics: Map[String, SQLMetric] = Map(
     NUM_OUTPUT_ROWS -> SQLMetrics.createMetric(sparkContext, "number of output rows"),
-    NUM_OUTPUT_BATCHES -> SQLMetrics.createMetric(sparkContext, "number of output columnar batches"),
+    NUM_OUTPUT_BATCHES -> SQLMetrics.createMetric(sparkContext,
+      "number of output columnar batches"),
     TOTAL_TIME -> SQLMetrics.createNanoTimingMetric(sparkContext,
       "total time")) ++ additionalMetrics
 

@@ -41,7 +41,8 @@ object GpuParquetFileFormat {
     val parquetOptions = new ParquetOptions(options, sqlConf)
 
     parseCompressionType(parquetOptions.compressionCodecClassName)
-      .getOrElse(meta.willNotWorkOnGpu(s"compression codec ${parquetOptions.compressionCodecClassName} is not supported"))
+      .getOrElse(meta.willNotWorkOnGpu(
+        s"compression codec ${parquetOptions.compressionCodecClassName} is not supported"))
 
     if (sqlConf.writeLegacyParquetFormat) {
       meta.willNotWorkOnGpu(s"Spark legacy format is not supported")
@@ -77,8 +78,9 @@ object GpuParquetFileFormat {
 class GpuParquetFileFormat extends ColumnarFileFormat with Logging {
   /**
    * Prepares a write job and returns an [[ColumnarOutputWriterFactory]].  Client side job
-   * preparation can be put here.  For example, user defined output committer can be configured here
-   * by setting the output committer class in the conf of spark.sql.sources.outputCommitterClass.
+   * preparation can be put here.  For example, user defined output committer can be configured
+   * here by setting the output committer class in the conf of
+   * spark.sql.sources.outputCommitterClass.
    */
   override def prepareWrite(
       sparkSession: SparkSession,
@@ -99,7 +101,8 @@ class GpuParquetFileFormat extends ColumnarFileFormat with Logging {
       logInfo("Using default output committer for Parquet: " +
           classOf[ParquetOutputCommitter].getCanonicalName)
     } else {
-      logInfo("Using user defined output committer for Parquet: " + committerClass.getCanonicalName)
+      logInfo("Using user defined output committer for Parquet: " +
+        committerClass.getCanonicalName)
     }
 
     conf.setClass(
@@ -132,7 +135,8 @@ class GpuParquetFileFormat extends ColumnarFileFormat with Logging {
         TrampolineUtil.dataTypeExistsRecursively(field.dataType, _.isInstanceOf[TimestampType])
       }
       if (hasTimestamps) {
-        throw new UnsupportedOperationException(s"Unsupported output timestamp type: $outputTimestampType")
+        throw new UnsupportedOperationException(
+          s"Unsupported output timestamp type: $outputTimestampType")
       }
     }
     conf.set(SQLConf.PARQUET_OUTPUT_TIMESTAMP_TYPE.key, outputTimestampType.toString)
@@ -140,8 +144,11 @@ class GpuParquetFileFormat extends ColumnarFileFormat with Logging {
     // Sets compression scheme
     conf.set(ParquetOutputFormat.COMPRESSION, parquetOptions.compressionCodecClassName)
 
-    val compressionType = GpuParquetFileFormat.parseCompressionType(parquetOptions.compressionCodecClassName)
-      .getOrElse(throw new UnsupportedOperationException(s"compression codec ${parquetOptions.compressionCodecClassName} is not supported"))
+    val compressionType =
+      GpuParquetFileFormat.parseCompressionType(parquetOptions.compressionCodecClassName)
+        .getOrElse(
+          throw new UnsupportedOperationException(
+            s"compression codec ${parquetOptions.compressionCodecClassName} is not supported"))
 
     // SPARK-15719: Disables writing Parquet summary files by default.
     if (conf.get(ParquetOutputFormat.JOB_SUMMARY_LEVEL) == null

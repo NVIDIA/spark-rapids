@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019, NVIDIA CORPORATION.
+ * Copyright (c) 2019-2020, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -23,7 +23,11 @@ import org.apache.spark.serializer.KryoRegistrator
 
 class GpuKryoRegistrator extends KryoRegistrator {
   override def registerClasses(kryo: Kryo): Unit = {
-    kryo.register(classOf[org.apache.spark.sql.execution.SerializeConcatHostBuffersDeserializeBatch], new KryoJavaSerializer())
-    kryo.register(classOf[org.apache.spark.sql.execution.SerializeBatchDeserializeHostBuffer], new KryoJavaSerializer())
+    kryo.register(
+      classOf[org.apache.spark.sql.execution.SerializeConcatHostBuffersDeserializeBatch],
+      new KryoJavaSerializer())
+    kryo.register(
+      classOf[org.apache.spark.sql.execution.SerializeBatchDeserializeHostBuffer],
+      new KryoJavaSerializer())
   }
 }
