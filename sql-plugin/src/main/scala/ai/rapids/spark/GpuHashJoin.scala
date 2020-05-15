@@ -42,8 +42,10 @@ trait GpuHashJoin extends GpuExec with HashJoin {
   protected lazy val (gpuBuildKeys, gpuStreamedKeys) = {
     require(leftKeys.map(_.dataType) == rightKeys.map(_.dataType),
       "Join keys from two sides should have same types")
-    val lkeys = GpuBindReferences.bindReferences(leftKeys.asInstanceOf[Seq[GpuExpression]], left.output)
-    val rkeys = GpuBindReferences.bindReferences(rightKeys.asInstanceOf[Seq[GpuExpression]], right.output)
+    val lkeys = GpuBindReferences.bindReferences(leftKeys.asInstanceOf[Seq[GpuExpression]],
+      left.output)
+    val rkeys = GpuBindReferences.bindReferences(rightKeys.asInstanceOf[Seq[GpuExpression]],
+      right.output)
     buildSide match {
       case BuildLeft => (lkeys, rkeys)
       case BuildRight => (rkeys, lkeys)
@@ -117,9 +119,11 @@ trait GpuHashJoin extends GpuExec with HashJoin {
       case Inner =>
         leftTable.onColumns(joinKeyIndices: _*).innerJoin(rightTable.onColumns(joinKeyIndices: _*))
       case LeftSemi =>
-        leftTable.onColumns(joinKeyIndices: _*).leftSemiJoin(rightTable.onColumns(joinKeyIndices: _*))
+        leftTable.onColumns(joinKeyIndices: _*)
+          .leftSemiJoin(rightTable.onColumns(joinKeyIndices: _*))
       case LeftAnti =>
-        leftTable.onColumns(joinKeyIndices: _*).leftAntiJoin(rightTable.onColumns(joinKeyIndices: _*))
+        leftTable.onColumns(joinKeyIndices: _*)
+          .leftAntiJoin(rightTable.onColumns(joinKeyIndices: _*))
       case _ => throw new NotImplementedError(s"Joint Type ${joinType.getClass} is not currently" +
         s" supported")
     }

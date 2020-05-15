@@ -17,7 +17,7 @@
 package org.apache.spark.sql.rapids
 
 import ai.rapids.cudf.{ColumnVector, DType, Scalar}
-import ai.rapids.spark.{Arm, GpuBinaryExpression, GpuColumnVector, GpuExpression, GpuUnaryExpression}
+import ai.rapids.spark.{GpuBinaryExpression, GpuColumnVector, GpuExpression, GpuUnaryExpression}
 import org.apache.spark.sql.catalyst.expressions.{BinaryExpression, ExpectsInputTypes, Expression, ImplicitCastInputTypes, TimeZoneAwareExpression}
 import org.apache.spark.sql.types._
 import org.apache.spark.sql.vectorized.ColumnarBatch
@@ -148,6 +148,60 @@ case class GpuMonth(child: Expression) extends GpuDateTimeUnaryExpression {
 case class GpuDayOfMonth(child: Expression) extends GpuDateTimeUnaryExpression {
   override def doColumnar(input: GpuColumnVector): GpuColumnVector =
     GpuColumnVector.from(input.getBase.day())
+}
+
+case class GpuUnixTimestamp(strTs: GpuExpression, format: GpuExpression, strfFormat: String, timeZoneId: Option[String] = None)
+  extends GpuBinaryExpression with TimeZoneAwareExpression with ExpectsInputTypes {
+
+  override def doColumnar(lhs: GpuColumnVector, rhs: GpuColumnVector): GpuColumnVector = {
+    throw new IllegalArgumentException("rhs has to be a scalar for the unixtimestamp to work")
+  }
+
+  override def doColumnar(lhs: Scalar, rhs: GpuColumnVector): GpuColumnVector = {
+    throw new IllegalArgumentException("lhs has to be a vector and rhs has to be a scalar for the unixtimestamp to work")
+  }
+
+  override def inputTypes: Seq[AbstractDataType] =
+    Seq(TypeCollection(StringType, DateType, TimestampType), StringType)
+
+  override def dataType: DataType = LongType
+  override def nullable: Boolean = true
+
+  override def withTimeZone(timeZoneId: String): TimeZoneAwareExpression = copy(timeZoneId = Option(timeZoneId))
+  override def left: GpuExpression = strTs
+  override def right: GpuExpression = format
+  override lazy val resolved: Boolean = childrenResolved && checkInputDataTypes().isSuccess
+
+  override def doColumnar(lhs: GpuColumnVector, rhs: Scalar): GpuColumnVector = {
+    val tmp = if (lhs.dataType == StringType) {
+      // rhs is ignored we already parsed the format
+      lhs.getBase.asTimestampSeconds(strfFormat)
+    } else if (lhs.dataType() == DateType){
+      lhs.getBase.asTimestampSeconds()
+    } else { // Timestamp
+      // https://github.com/rapidsai/cudf/issues/5166
+      // The time is off by 1 second if the result is < 0
+      val longSecs = withResource(lhs.getBase.asTimestampSeconds()) { secs =>
+        secs.asLongs()
+      }
+      withResource(longSecs) { secs =>
+        val plusOne = withResource(Scalar.fromLong(1)) { one =>
+          secs.add(one)
+        }
+        withResource(plusOne) { plusOne =>
+          withResource(Scalar.fromLong(0)) { zero =>
+            withResource(secs.lessThan(zero)) { neg =>
+              neg.ifElse(plusOne, secs)
+            }
+          }
+        }
+      }
+    }
+    withResource(tmp) { r =>
+      // The type we are returning is a long not an actual timestamp
+      GpuColumnVector.from(r.asLongs())
+    }
+  }
 }
 
 case class GpuFromUnixTime(sec: GpuExpression, format: GpuExpression, strfFormat: String, timeZoneId: Option[String] = None)

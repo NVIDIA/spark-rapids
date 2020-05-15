@@ -147,9 +147,14 @@ case class GpuIsNan(child: GpuExpression) extends GpuUnaryExpression with Predic
 }
 
 /**
-  * A GPU accelerated predicate that is evaluated to be true if there are at least `n` non-null and non-NaN values.
+  * A GPU accelerated predicate that is evaluated to be true if there are at least `n` non-null
+  * and non-NaN values.
   */
-case class GpuAtLeastNNonNulls(n: Int, exprs: Seq[GpuExpression]) extends GpuExpression with Predicate {
+case class GpuAtLeastNNonNulls(
+    n: Int,
+    exprs: Seq[GpuExpression])
+  extends GpuExpression
+  with Predicate {
   override def nullable: Boolean = false
   override def foldable: Boolean = exprs.forall(_.foldable)
   override def toString: String = s"GpuAtLeastNNulls(n, ${children.mkString(",")})"
@@ -157,7 +162,8 @@ case class GpuAtLeastNNonNulls(n: Int, exprs: Seq[GpuExpression]) extends GpuExp
   /**
     * Returns the result of evaluating this expression on the entire
     * [[ColumnarBatch]]. The result of calling this may be a single [[GpuColumnVector]] or a scalar
-    * value. Scalar values typically happen if they are a part of the expression i.e. col("a") + 100.
+    * value. Scalar values typically happen if they are a part of the expression
+    * i.e. col("a") + 100.
     * In this case the 100 is a literal that Add would have to be able to handle.
     *
     * By convention any [[GpuColumnVector]] returned by [[columnarEval]]

@@ -27,10 +27,14 @@ _incompat = False
 def is_incompat():
     return _incompat
 
-_ignore_order = False
+_sort_on_spark = False
+_sort_locally = False
 
-def is_order_ignored():
-    return _ignore_order
+def should_sort_on_spark():
+    return _sort_on_spark
+
+def should_sort_locally():
+    return _sort_locally
 
 _allow_any_non_gpu = False
 _non_gpu_allowed = []
@@ -53,11 +57,19 @@ def _get_limit_from_mark(mark):
         return mark.kwargs.get('num_rows', 100000)
 
 def pytest_runtest_setup(item):
-    global _ignore_order
-    if item.get_closest_marker('ignore_order'):
-        _ignore_order = True
+    global _sort_on_spark
+    global _sort_locally
+    order = item.get_closest_marker('ignore_order')
+    if order:
+        if order.kwargs.get('local', False):
+            _sort_on_spark = False
+            _sort_locally = True
+        else:
+            _sort_on_spark = True
+            _sort_locally = False
     else:
-        _ignore_order = False
+        _sort_on_spark = False
+        _sort_locally = False
 
     global _incompat
     if item.get_closest_marker('incompat'):
@@ -101,8 +113,12 @@ def pytest_runtest_setup(item):
 def pytest_collection_modifyitems(config, items):
     for item in items:
         extras = []
-        if item.get_closest_marker('ignore_order'):
-            extras.append('IGNORE_ORDER')
+        order = item.get_closest_marker('ignore_order')
+        if order:
+            if order.kwargs:
+                extras.append('IGNORE_ORDER(' + str(order.kwargs) + ')')
+            else:
+                extras.append('IGNORE_ORDER')
         if item.get_closest_marker('incompat'):
             extras.append('INCOMPAT')
         app_f = item.get_closest_marker('approximate_float')

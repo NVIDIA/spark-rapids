@@ -37,14 +37,20 @@ class AnsiCastOpSuite extends GpuExpressionTestSuite {
     .set("spark.sql.storeAssignmentPolicy", "ANSI") // note this is the default in 3.0.0
     .set(RapidsConf.ENABLE_CAST_FLOAT_TO_STRING.key, "true")
 
-  def generateOutOfRangeTimestampsDF(lowerValue: Long, upperValue: Long, outOfRangeValue: Long)(session: SparkSession): DataFrame = {
+  def generateOutOfRangeTimestampsDF(
+      lowerValue: Long,
+      upperValue: Long,
+      outOfRangeValue: Long)(
+      session: SparkSession): DataFrame = {
     import session.sqlContext.implicits._
-    // while creating timestamps we multiply the value by 1000 because spark divides it by 1000 before casting it to integral types
-    generateValidValuesTimestampsDF(lowerValue, upperValue)(session).union(Seq[Timestamp](new Timestamp(outOfRangeValue * 1000))
-      .toDF("c0"))
+    // while creating timestamps we multiply the value by 1000 because spark divides it by 1000
+    // before casting it to integral types
+    generateValidValuesTimestampsDF(lowerValue, upperValue)(session)
+      .union(Seq[Timestamp](new Timestamp(outOfRangeValue * 1000)).toDF("c0"))
   }
 
-  def generateValidValuesTimestampsDF(lowerValid: Long, upperValid: Long)(session: SparkSession): DataFrame = {
+  def generateValidValuesTimestampsDF(lowerValid: Long, upperValid: Long)(
+      session: SparkSession): DataFrame = {
     import session.sqlContext.implicits._
     //static seed
     val r = new Random(4135277987418063300L)
@@ -57,47 +63,58 @@ class AnsiCastOpSuite extends GpuExpressionTestSuite {
   }
 
   ///////////////////////////////////////////////////////////////////////////
-  // Ansi cast from timestamp to integral types  
+  // Ansi cast from timestamp to integral types
   ///////////////////////////////////////////////////////////////////////////
 
-
-  testSparkResultsAreEqual("ansi_cast timestamps to long", generateValidValuesTimestampsDF(Short.MinValue, Short.MaxValue), sparkConf) {
+  testSparkResultsAreEqual("ansi_cast timestamps to long",
+    generateValidValuesTimestampsDF(Short.MinValue, Short.MaxValue), sparkConf) {
     frame => testCastTo(DataTypes.LongType)(frame)
   }
 
-  testSparkResultsAreEqual("ansi_cast successful timestamps to shorts", generateValidValuesTimestampsDF(Short.MinValue, Short.MaxValue), sparkConf) {
+  testSparkResultsAreEqual("ansi_cast successful timestamps to shorts",
+    generateValidValuesTimestampsDF(Short.MinValue, Short.MaxValue), sparkConf) {
     frame => testCastTo(DataTypes.ShortType)(frame)
   }
 
-  testSparkResultsAreEqual("ansi_cast successful timestamps to ints", generateValidValuesTimestampsDF(Int.MinValue, Int.MaxValue), sparkConf) {
+  testSparkResultsAreEqual("ansi_cast successful timestamps to ints",
+    generateValidValuesTimestampsDF(Int.MinValue, Int.MaxValue), sparkConf) {
     frame => testCastTo(DataTypes.IntegerType)(frame)
   }
 
-  testSparkResultsAreEqual("ansi_cast successful timestamps to bytes", generateValidValuesTimestampsDF(Byte.MinValue, Byte.MaxValue), sparkConf) {
+  testSparkResultsAreEqual("ansi_cast successful timestamps to bytes",
+    generateValidValuesTimestampsDF(Byte.MinValue, Byte.MaxValue), sparkConf) {
     frame => testCastTo(DataTypes.ByteType)(frame)
   }
 
-  testCastFailsForBadInputs("ansi_cast overflow timestamps to bytes", generateOutOfRangeTimestampsDF(Byte.MinValue, Byte.MaxValue, Byte.MaxValue + 1), sparkConf) {
+  testCastFailsForBadInputs("ansi_cast overflow timestamps to bytes",
+    generateOutOfRangeTimestampsDF(Byte.MinValue, Byte.MaxValue, Byte.MaxValue + 1), sparkConf) {
     frame => testCastTo(DataTypes.ByteType)(frame)
   }
 
-  testCastFailsForBadInputs("ansi_cast underflow timestamps to bytes", generateOutOfRangeTimestampsDF(Byte.MinValue, Byte.MaxValue, Byte.MinValue - 1), sparkConf) {
+  testCastFailsForBadInputs("ansi_cast underflow timestamps to bytes",
+    generateOutOfRangeTimestampsDF(Byte.MinValue, Byte.MaxValue, Byte.MinValue - 1), sparkConf) {
     frame => testCastTo(DataTypes.ByteType)(frame)
   }
 
-  testCastFailsForBadInputs("ansi_cast overflow timestamps to shorts", generateOutOfRangeTimestampsDF(Short.MinValue, Short.MaxValue, Short.MaxValue + 1), sparkConf) {
+  testCastFailsForBadInputs("ansi_cast overflow timestamps to shorts",
+    generateOutOfRangeTimestampsDF(Short.MinValue, Short.MaxValue, Short.MaxValue + 1), sparkConf) {
     frame => testCastTo(DataTypes.ShortType)(frame)
   }
 
-  testCastFailsForBadInputs("ansi_cast underflow timestamps to shorts", generateOutOfRangeTimestampsDF(Short.MinValue, Short.MaxValue, Short.MinValue - 1), sparkConf) {
+  testCastFailsForBadInputs("ansi_cast underflow timestamps to shorts",
+    generateOutOfRangeTimestampsDF(Short.MinValue, Short.MaxValue, Short.MinValue - 1), sparkConf) {
     frame => testCastTo(DataTypes.ShortType)(frame)
   }
 
-  testCastFailsForBadInputs("ansi_cast overflow timestamps to int", generateOutOfRangeTimestampsDF(Int.MinValue, Int.MaxValue, Int.MaxValue.toLong + 1), sparkConf) {
+  testCastFailsForBadInputs("ansi_cast overflow timestamps to int",
+    generateOutOfRangeTimestampsDF(Int.MinValue, Int.MaxValue, Int.MaxValue.toLong + 1),
+    sparkConf) {
     frame => testCastTo(DataTypes.IntegerType)(frame)
   }
 
-  testCastFailsForBadInputs("ansi_cast underflow timestamps to int", generateOutOfRangeTimestampsDF(Int.MinValue, Int.MaxValue, Int.MinValue.toLong - 1), sparkConf) {
+  testCastFailsForBadInputs("ansi_cast underflow timestamps to int",
+    generateOutOfRangeTimestampsDF(Int.MinValue, Int.MaxValue, Int.MinValue.toLong - 1),
+    sparkConf) {
     frame => testCastTo(DataTypes.IntegerType)(frame)
   }
 

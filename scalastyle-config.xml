@@ -32,29 +32,40 @@ You can also disable only one rule, by specifying its rule id, as specified in:
 -->
 
 <scalastyle>
-    <name>Scalastyle standard configuration</name>
+    <name>RAPIDS Plugin for Spark Scalastyle configuration</name>
 
-    <check level="error" class="org.scalastyle.file.FileTabChecker" enabled="true"></check>
+    <!-- ================================================================================ -->
+    <!--                               rules we enforce                                   -->
+    <!-- ================================================================================ -->
+
+    <check level="error" class="org.scalastyle.file.FileTabChecker" enabled="true"/>
 
     <check level="error" class="org.scalastyle.scalariform.ClassNamesChecker" enabled="true">
-        <parameters><parameter name="regex"><![CDATA[[A-Z][A-Za-z]*]]></parameter></parameters>
+        <parameters>
+            <parameter name="regex"><![CDATA[[A-Z][A-Za-z]*]]></parameter>
+        </parameters>
     </check>
 
     <check level="error" class="org.scalastyle.scalariform.ObjectNamesChecker" enabled="true">
-        <parameters><parameter name="regex"><![CDATA[(config|[A-Z][A-Za-z]*)]]></parameter></parameters>
+        <parameters>
+            <parameter name="regex"><![CDATA[(config|[A-Z][A-Za-z]*)]]></parameter>
+        </parameters>
     </check>
 
-    <check level="error" class="org.scalastyle.scalariform.PackageObjectNamesChecker" enabled="true">
-        <parameters><parameter name="regex"><![CDATA[^[a-z][A-Za-z]*$]]></parameter></parameters>
+    <check level="error" class="org.scalastyle.scalariform.PackageObjectNamesChecker"
+           enabled="true">
+        <parameters>
+            <parameter name="regex"><![CDATA[^[a-z][A-Za-z]*$]]></parameter>
+        </parameters>
     </check>
 
-    <check level="error" class="org.scalastyle.scalariform.NoFinalizeChecker" enabled="true"></check>
+    <check level="error" class="org.scalastyle.scalariform.NoFinalizeChecker" enabled="true"/>
 
-    <check level="error" class="org.scalastyle.scalariform.CovariantEqualsChecker" enabled="true"></check>
+    <check level="error" class="org.scalastyle.scalariform.CovariantEqualsChecker" enabled="true"/>
 
-    <check level="error" class="org.scalastyle.scalariform.StructuralTypeChecker" enabled="true"></check>
+    <check level="error" class="org.scalastyle.scalariform.StructuralTypeChecker" enabled="true"/>
 
-    <check level="error" class="org.scalastyle.scalariform.UppercaseLChecker" enabled="true"></check>
+    <check level="error" class="org.scalastyle.scalariform.UppercaseLChecker" enabled="true"/>
 
     <check level="error" class="org.scalastyle.scalariform.IfBraceChecker" enabled="true">
         <parameters>
@@ -64,6 +75,22 @@ You can also disable only one rule, by specifying its rule id, as specified in:
     </check>
 
     <!-- ??? usually shouldn't be checked into the code base. -->
-    <check level="error" class="org.scalastyle.scalariform.NotImplementedErrorUsage" enabled="true"></check>
+    <check level="error" class="org.scalastyle.scalariform.NotImplementedErrorUsage"
+           enabled="true"/>
+
+    <!-- This project uses Javadoc rather than Scaladoc so scaladoc checks are disabled -->
+    <check enabled="false" class="org.scalastyle.scalariform.ScalaDocChecker" level="warning"/>
+
+    <!-- ================================================================================ -->
+    <!--       rules we'd like to enforce, but haven't cleaned up the codebase yet        -->
+    <!-- ================================================================================ -->
+
+    <check customId="NoScalaDoc" level="error" class="org.scalastyle.file.RegexChecker"
+           enabled="false">
+        <parameters>
+            <parameter name="regex">(?m)^(\s*)/[*][*].*$(\r|)\n^\1 [*]</parameter>
+        </parameters>
+        <customMessage>Use Javadoc style indentation for multiline comments</customMessage>
+    </check>
 
 </scalastyle>

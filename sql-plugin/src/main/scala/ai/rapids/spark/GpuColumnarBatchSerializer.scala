@@ -149,7 +149,7 @@ private class GpuColumnarBatchSerializerInstance(
 
             val range = new NvtxRange("Deserialize Batch", NvtxColor.YELLOW)
             try {
-              val tableInfo: JCudfSerialization.TableAndRowCountPair = JCudfSerialization.readTableFrom(dIn)
+              val tableInfo = JCudfSerialization.readTableFrom(dIn)
               try {
                 val table = tableInfo.getTable
                 if (table == null && tableInfo.getNumRows == 0) {
@@ -209,7 +209,7 @@ private class GpuColumnarBatchSerializerInstance(
 
         val range = new NvtxRange("Deserialize Batch", NvtxColor.YELLOW)
         try {
-          val tableInfo: JCudfSerialization.TableAndRowCountPair = JCudfSerialization.readTableFrom(dIn)
+          val tableInfo = JCudfSerialization.readTableFrom(dIn)
           val cb = try {
             val table = tableInfo.getTable
             if (table != null) {

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019, NVIDIA CORPORATION. All rights reserved.
+ * Copyright (c) 2019-2020, NVIDIA CORPORATION. All rights reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,7 +18,16 @@ package ai.rapids.sparkexamples.mortgage
 
 import org.apache.spark.sql.functions._
 import org.apache.spark.sql.types._
-import org.apache.spark.sql.{DataFrame, SparkSession}
+import org.apache.spark.sql.{Column, DataFrame, SparkSession}
+
+object GetQuarterFromCsvFileName {
+  // The format is path/TYPE_yyyy\QQ.txt followed by a (_index)* where index is a single digit number [0-9]
+  // i.e. mortgage/perf/Performance_2003Q4.txt_0_1
+  // So we strip off the .txt and everything after it
+  // and then take everything after the last remaining _
+  def apply(): Column =
+    substring_index(substring_index(input_file_name(), ".", 1), "_", -1)
+}
 
 object ReadPerformanceCsv {
   def apply(spark: SparkSession, path: String): DataFrame = {
@@ -56,10 +65,6 @@ object ReadPerformanceCsv {
       StructField("servicing_activity_indicator", StringType))
     )
 
-    val udf = spark.udf.register("get_quarter", (path: String) => {
-      path.split("\\.").head.split("_").last
-    })
-
     spark.read.format("csv")
       .option("nullValue", "")
       .option("header", "false")
@@ -67,7 +72,7 @@ object ReadPerformanceCsv {
       .option("parserLib", "univocity")
       .schema(performanceSchema)
       .load(path)
-      .withColumn("quarter", udf(input_file_name()))
+      .withColumn("quarter", GetQuarterFromCsvFileName())
   }
 }
 
@@ -101,103 +106,105 @@ object ReadAcquisitionCsv {
       StructField("relocation_mortgage_indicator", StringType))
     )
 
-    val udf = spark.udf.register("get_quarter", (path: String) => {
-      path.split("\\.").head.split("_").last
-    })
-
     spark.read.format("csv")
       .option("header", "false")
       .option("delimiter", "|")
       .schema(acquisitionSchema)
       .load(path)
-      .withColumn("quarter", udf(input_file_name()))
+      .withColumn("quarter", GetQuarterFromCsvFileName())
   }
 }
 
 object NameMapping {
-  def apply(): Map[String, String] = {
-    Map(
-      "WITMER FUNDING, LLC" -> "Witmer",
-      "WELLS FARGO CREDIT RISK TRANSFER SECURITIES TRUST 2015" -> "Wells Fargo",
-      "WELLS FARGO BANK,  NA" -> "Wells Fargo",
-      "WELLS FARGO BANK, N.A." -> "Wells Fargo",
-      "WELLS FARGO BANK, NA" -> "Wells Fargo",
-      "USAA FEDERAL SAVINGS BANK" -> "USAA",
-      "UNITED SHORE FINANCIAL SERVICES, LLC D\\/B\\/A UNITED WHOLESALE MORTGAGE" -> "United Seq(e",
-      "U.S. BANK N.A." -> "US Bank",
-      "SUNTRUST MORTGAGE INC." -> "Suntrust",
-      "STONEGATE MORTGAGE CORPORATION" -> "Stonegate Mortgage",
-      "STEARNS LENDING, LLC" -> "Stearns Lending",
-      "STEARNS LENDING, INC." -> "Stearns Lending",
-      "SIERRA PACIFIC MORTGAGE COMPANY, INC." -> "Sierra Pacific Mortgage",
-      "REGIONS BANK" -> "Regions",
-      "RBC MORTGAGE COMPANY" -> "RBC",
-      "QUICKEN LOANS INC." -> "Quicken Loans",
-      "PULTE MORTGAGE, L.L.C." -> "Pulte Mortgage",
-      "PROVIDENT FUNDING ASSOCIATES, L.P." -> "Provident Funding",
-      "PROSPECT MORTGAGE, LLC" -> "Prospect Mortgage",
-      "PRINCIPAL RESIDENTIAL MORTGAGE CAPITAL RESOURCES, LLC" -> "Principal Residential",
-      "PNC BANK, N.A." -> "PNC",
-      "PMT CREDIT RISK TRANSFER TRUST 2015-2" -> "PennyMac",
-      "PHH MORTGAGE CORPORATION" -> "PHH Mortgage",
-      "PENNYMAC CORP." -> "PennyMac",
-      "PACIFIC UNION FINANCIAL, LLC" -> "Other",
-      "OTHER" -> "Other",
-      "NYCB MORTGAGE COMPANY, LLC" -> "NYCB",
-      "NEW YORK COMMUNITY BANK" -> "NYCB",
-      "NETBANK FUNDING SERVICES" -> "Netbank",
-      "NATIONSTAR MORTGAGE, LLC" -> "Nationstar Mortgage",
-      "METLIFE BANK, NA" -> "Metlife",
-      "LOANDEPOT.COM, LLC" -> "LoanDepot.com",
-      "J.P. MORGAN MADISON AVENUE SECURITIES TRUST, SERIES 2015-1" -> "JP Morgan Chase",
-      "J.P. MORGAN MADISON AVENUE SECURITIES TRUST, SERIES 2014-1" -> "JP Morgan Chase",
-      "JPMORGAN CHASE BANK, NATIONAL ASSOCIATION" -> "JP Morgan Chase",
-      "JPMORGAN CHASE BANK, NA" -> "JP Morgan Chase",
-      "JP MORGAN CHASE BANK, NA" -> "JP Morgan Chase",
-      "IRWIN MORTGAGE, CORPORATION" -> "Irwin Mortgage",
-      "IMPAC MORTGAGE CORP." -> "Impac Mortgage",
-      "HSBC BANK USA, NATIONAL ASSOCIATION" -> "HSBC",
-      "HOMEWARD RESIDENTIAL, INC." -> "Homeward Mortgage",
-      "HOMESTREET BANK" -> "Other",
-      "HOMEBRIDGE FINANCIAL SERVICES, INC." -> "HomeBridge",
-      "HARWOOD STREET FUNDING I, LLC" -> "Harwood Mortgage",
-      "GUILD MORTGAGE COMPANY" -> "Guild Mortgage",
-      "GMAC MORTGAGE, LLC (USAA FEDERAL SAVINGS BANK)" -> "GMAC",
-      "GMAC MORTGAGE, LLC" -> "GMAC",
-      "GMAC (USAA)" -> "GMAC",
-      "FREMONT BANK" -> "Fremont Bank",
-      "FREEDOM MORTGAGE CORP." -> "Freedom Mortgage",
-      "FRANKLIN AMERICAN MORTGAGE COMPANY" -> "Franklin America",
-      "FLEET NATIONAL BANK" -> "Fleet National",
-      "FLAGSTAR CAPITAL MARKETS CORPORATION" -> "Flagstar Bank",
-      "FLAGSTAR BANK, FSB" -> "Flagstar Bank",
-      "FIRST TENNESSEE BANK NATIONAL ASSOCIATION" -> "Other",
-      "FIFTH THIRD BANK" -> "Fifth Third Bank",
-      "FEDERAL HOME LOAN BANK OF CHICAGO" -> "Fedral Home of Chicago",
-      "FDIC, RECEIVER, INDYMAC FEDERAL BANK FSB" -> "FDIC",
-      "DOWNEY SAVINGS AND LOAN ASSOCIATION, F.A." -> "Downey Mortgage",
-      "DITECH FINANCIAL LLC" -> "Ditech",
-      "CITIMORTGAGE, INC." -> "Citi",
-      "CHICAGO MORTGAGE SOLUTIONS DBA INTERFIRST MORTGAGE COMPANY" -> "Chicago Mortgage",
-      "CHICAGO MORTGAGE SOLUTIONS DBA INTERBANK MORTGAGE COMPANY" -> "Chicago Mortgage",
-      "CHASE HOME FINANCE, LLC" -> "JP Morgan Chase",
-      "CHASE HOME FINANCE FRANKLIN AMERICAN MORTGAGE COMPANY" -> "JP Morgan Chase",
-      "CHASE HOME FINANCE (CIE 1)" -> "JP Morgan Chase",
-      "CHASE HOME FINANCE" -> "JP Morgan Chase",
-      "CASHCALL, INC." -> "CashCall",
-      "CAPITAL ONE, NATIONAL ASSOCIATION" -> "Capital One",
-      "CALIBER HOME LOANS, INC." -> "Caliber Funding",
-      "BISHOPS GATE RESIDENTIAL MORTGAGE TRUST" -> "Bishops Gate Mortgage",
-      "BANK OF AMERICA, N.A." -> "Bank of America",
-      "AMTRUST BANK" -> "AmTrust",
-      "AMERISAVE MORTGAGE CORPORATION" -> "Amerisave",
-      "AMERIHOME MORTGAGE COMPANY, LLC" -> "AmeriHome Mortgage",
-      "ALLY BANK" -> "Ally Bank",
-      "ACADEMY MORTGAGE CORPORATION" -> "Academy Mortgage",
-      "NO CASH-OUT REFINANCE" -> "OTHER REFINANCE",
-      "REFINANCE - NOT SPECIFIED" -> "OTHER REFINANCE",
-      "Other REFINANCE" -> "OTHER REFINANCE"
-    )
+  /**
+   * Returns a dataframe with two columns named based off of the column names passed in.
+   * The fromColName has the original name we want to clean up, the toColName
+   * will have the name we want to go to, the unambiguous name.
+   */
+  def apply(spark: SparkSession, fromColName: String, toColName: String): DataFrame = {
+    import spark.sqlContext.implicits._
+    broadcast(Seq(
+      ("WITMER FUNDING, LLC", "Witmer"),
+      ("WELLS FARGO CREDIT RISK TRANSFER SECURITIES TRUST 2015", "Wells Fargo"),
+      ("WELLS FARGO BANK,  NA" , "Wells Fargo"),
+      ("WELLS FARGO BANK, N.A." , "Wells Fargo"),
+      ("WELLS FARGO BANK, NA" , "Wells Fargo"),
+      ("USAA FEDERAL SAVINGS BANK" , "USAA"),
+      ("UNITED SHORE FINANCIAL SERVICES, LLC D\\/B\\/A UNITED WHOLESALE MORTGAGE" , "United Seq(e"),
+      ("U.S. BANK N.A." , "US Bank"),
+      ("SUNTRUST MORTGAGE INC." , "Suntrust"),
+      ("STONEGATE MORTGAGE CORPORATION" , "Stonegate Mortgage"),
+      ("STEARNS LENDING, LLC" , "Stearns Lending"),
+      ("STEARNS LENDING, INC." , "Stearns Lending"),
+      ("SIERRA PACIFIC MORTGAGE COMPANY, INC." , "Sierra Pacific Mortgage"),
+      ("REGIONS BANK" , "Regions"),
+      ("RBC MORTGAGE COMPANY" , "RBC"),
+      ("QUICKEN LOANS INC." , "Quicken Loans"),
+      ("PULTE MORTGAGE, L.L.C." , "Pulte Mortgage"),
+      ("PROVIDENT FUNDING ASSOCIATES, L.P." , "Provident Funding"),
+      ("PROSPECT MORTGAGE, LLC" , "Prospect Mortgage"),
+      ("PRINCIPAL RESIDENTIAL MORTGAGE CAPITAL RESOURCES, LLC" , "Principal Residential"),
+      ("PNC BANK, N.A." , "PNC"),
+      ("PMT CREDIT RISK TRANSFER TRUST 2015-2" , "PennyMac"),
+      ("PHH MORTGAGE CORPORATION" , "PHH Mortgage"),
+      ("PENNYMAC CORP." , "PennyMac"),
+      ("PACIFIC UNION FINANCIAL, LLC" , "Other"),
+      ("OTHER" , "Other"),
+      ("NYCB MORTGAGE COMPANY, LLC" , "NYCB"),
+      ("NEW YORK COMMUNITY BANK" , "NYCB"),
+      ("NETBANK FUNDING SERVICES" , "Netbank"),
+      ("NATIONSTAR MORTGAGE, LLC" , "Nationstar Mortgage"),
+      ("METLIFE BANK, NA" , "Metlife"),
+      ("LOANDEPOT.COM, LLC" , "LoanDepot.com"),
+      ("J.P. MORGAN MADISON AVENUE SECURITIES TRUST, SERIES 2015-1" , "JP Morgan Chase"),
+      ("J.P. MORGAN MADISON AVENUE SECURITIES TRUST, SERIES 2014-1" , "JP Morgan Chase"),
+      ("JPMORGAN CHASE BANK, NATIONAL ASSOCIATION" , "JP Morgan Chase"),
+      ("JPMORGAN CHASE BANK, NA" , "JP Morgan Chase"),
+      ("JP MORGAN CHASE BANK, NA" , "JP Morgan Chase"),
+      ("IRWIN MORTGAGE, CORPORATION" , "Irwin Mortgage"),
+      ("IMPAC MORTGAGE CORP." , "Impac Mortgage"),
+      ("HSBC BANK USA, NATIONAL ASSOCIATION" , "HSBC"),
+      ("HOMEWARD RESIDENTIAL, INC." , "Homeward Mortgage"),
+      ("HOMESTREET BANK" , "Other"),
+      ("HOMEBRIDGE FINANCIAL SERVICES, INC." , "HomeBridge"),
+      ("HARWOOD STREET FUNDING I, LLC" , "Harwood Mortgage"),
+      ("GUILD MORTGAGE COMPANY" , "Guild Mortgage"),
+      ("GMAC MORTGAGE, LLC (USAA FEDERAL SAVINGS BANK)" , "GMAC"),
+      ("GMAC MORTGAGE, LLC" , "GMAC"),
+      ("GMAC (USAA)" , "GMAC"),
+      ("FREMONT BANK" , "Fremont Bank"),
+      ("FREEDOM MORTGAGE CORP." , "Freedom Mortgage"),
+      ("FRANKLIN AMERICAN MORTGAGE COMPANY" , "Franklin America"),
+      ("FLEET NATIONAL BANK" , "Fleet National"),
+      ("FLAGSTAR CAPITAL MARKETS CORPORATION" , "Flagstar Bank"),
+      ("FLAGSTAR BANK, FSB" , "Flagstar Bank"),
+      ("FIRST TENNESSEE BANK NATIONAL ASSOCIATION" , "Other"),
+      ("FIFTH THIRD BANK" , "Fifth Third Bank"),
+      ("FEDERAL HOME LOAN BANK OF CHICAGO" , "Fedral Home of Chicago"),
+      ("FDIC, RECEIVER, INDYMAC FEDERAL BANK FSB" , "FDIC"),
+      ("DOWNEY SAVINGS AND LOAN ASSOCIATION, F.A." , "Downey Mortgage"),
+      ("DITECH FINANCIAL LLC" , "Ditech"),
+      ("CITIMORTGAGE, INC." , "Citi"),
+      ("CHICAGO MORTGAGE SOLUTIONS DBA INTERFIRST MORTGAGE COMPANY" , "Chicago Mortgage"),
+      ("CHICAGO MORTGAGE SOLUTIONS DBA INTERBANK MORTGAGE COMPANY" , "Chicago Mortgage"),
+      ("CHASE HOME FINANCE, LLC" , "JP Morgan Chase"),
+      ("CHASE HOME FINANCE FRANKLIN AMERICAN MORTGAGE COMPANY" , "JP Morgan Chase"),
+      ("CHASE HOME FINANCE (CIE 1)" , "JP Morgan Chase"),
+      ("CHASE HOME FINANCE" , "JP Morgan Chase"),
+      ("CASHCALL, INC." , "CashCall"),
+      ("CAPITAL ONE, NATIONAL ASSOCIATION" , "Capital One"),
+      ("CALIBER HOME LOANS, INC." , "Caliber Funding"),
+      ("BISHOPS GATE RESIDENTIAL MORTGAGE TRUST" , "Bishops Gate Mortgage"),
+      ("BANK OF AMERICA, N.A." , "Bank of America"),
+      ("AMTRUST BANK" , "AmTrust"),
+      ("AMERISAVE MORTGAGE CORPORATION" , "Amerisave"),
+      ("AMERIHOME MORTGAGE COMPANY, LLC" , "AmeriHome Mortgage"),
+      ("ALLY BANK" , "Ally Bank"),
+      ("ACADEMY MORTGAGE CORPORATION" , "Academy Mortgage"),
+      ("NO CASH-OUT REFINANCE" , "OTHER REFINANCE"),
+      ("REFINANCE - NOT SPECIFIED" , "OTHER REFINANCE"),
+      ("Other REFINANCE" , "OTHER REFINANCE")
+    ).toDF(fromColName, toColName))
   }
 }
 
@@ -218,8 +225,6 @@ object CreatePerformanceDelinquency {
   }
 
   def apply(spark: SparkSession, df: DataFrame): DataFrame = {
-    import spark.implicits._
-
     val aggDF = df
       .select(
         col("quarter"),
@@ -258,8 +263,10 @@ object CreatePerformanceDelinquency {
 
     // calculate the 12 month delinquency and upb values
     val months = 12
+    val monthArray = 0.until(12).toArray
     val testDf = joinedDf
-      .crossJoin(0.until(months).toDF("month_y"))
+      // explode on a small amount of data is actually slightly more efficient than a cross join
+      .withColumn("month_y", explode(lit(monthArray)))
       .select(
         col("quarter"),
         floor(((col("timestamp_year") * 12 + col("timestamp_month")) - 24000) / months).alias("josh_mody"),
@@ -278,7 +285,7 @@ object CreatePerformanceDelinquency {
       .groupBy("quarter", "loan_id", "josh_mody_n", "ever_30", "ever_90", "ever_180", "delinquency_30", "delinquency_90", "delinquency_180", "month_y")
       .agg(max("delinquency_12").alias("delinquency_12"), min("upb_12").alias("upb_12"))
       .withColumn("timestamp_year", floor((lit(24000) + (col("josh_mody_n") * lit(months)) + (col("month_y") - 1)) / lit(12)))
-      .withColumn("timestamp_month_tmp", pmod((lit(24000) + (col("josh_mody_n") * lit(months)) + col("month_y")), lit(12)))
+      .withColumn("timestamp_month_tmp", pmod(lit(24000) + (col("josh_mody_n") * lit(months)) + col("month_y"), lit(12)))
       .withColumn("timestamp_month", when(col("timestamp_month_tmp") === lit(0), lit(12)).otherwise(col("timestamp_month_tmp")))
       .withColumn("delinquency_12", ((col("delinquency_12") > 3).cast("int") + (col("upb_12") === 0).cast("int")).alias("delinquency_12"))
       .drop("timestamp_month_tmp", "josh_mody_n", "month_y")
@@ -291,11 +298,15 @@ object CreatePerformanceDelinquency {
 
 object CreateAcquisition {
   def apply(spark: SparkSession, df: DataFrame): DataFrame = {
-    val names = NameMapping()
-    val nameMapping = udf((name: String) => names.getOrElse(name, null))
-    df
+    val nameMapping = NameMapping(spark, "from_seller_name", "to_seller_name")
+    df.join(nameMapping, col("seller_name") === col("from_seller_name"), "left")
+      .drop("from_seller_name")
+      // backup the original name before we replace it
       .withColumn("old_name", col("seller_name"))
-      .withColumn("seller_name", nameMapping(col("seller_name")))
+      // replace seller_name with the new version if we found one in the mapping, or the old version
+      // if we didn't
+      .withColumn("seller_name", coalesce(col("to_seller_name"), col("seller_name")))
+      .drop("to_seller_name")
       .withColumn("orig_date", to_date(col("orig_date"), "MM/yyyy"))
       .withColumn("first_pay_date", to_date(col("first_pay_date"), "MM/yyyy"))
   }
@@ -331,11 +342,6 @@ object Run {
 
     CleanAcquisitionPrime(spark, dfPerf, dfAcq)
   }
-
-  def apply(spark: SparkSession, mortgagePerformance: String, mortgageAcquisition: String, output: String): Unit = {
-    parquet(spark, mortgagePerformance, mortgageAcquisition)
-      .write.mode("overwrite").parquet(output)
-  }
 }
 
 object SimpleAggregates {
@@ -354,11 +360,6 @@ object SimpleAggregates {
     joined.groupBy(col("zip"), col("monthval"))
         .agg(min("max_monthly_rate").as("min_max_monthly_rate"))
   }
-
-  def apply(spark: SparkSession, mortgagePerformance: String, mortgageAcquisition: String, output: String): Unit = {
-    csv(spark, mortgagePerformance, mortgageAcquisition)
-      .write.mode("overwrite").parquet(output)
-  }
 }
 
 object AggregatesWithPercentiles {
@@ -369,7 +370,7 @@ object AggregatesWithPercentiles {
 
     kindOfAnon.createOrReplaceTempView("perf_data")
 
-    val ret = spark.sql(
+    spark.sql(
       """
         select r.loan_id_hash,
           round(min(r.interest_rate), 4) as interest_rate_min,
@@ -382,8 +383,6 @@ object AggregatesWithPercentiles {
         from perf_data r
          group by r.loan_id_hash
       """.stripMargin)
-
-    return ret
   }
 }
 
@@ -401,7 +400,7 @@ object AggregatesWithJoin {
 
     kindOfAnonAcq.createOrReplaceTempView("acq_data")
 
-    val ret = spark.sql(
+    spark.sql(
       """
         select * from (
           select loan_id_hash,
@@ -416,8 +415,6 @@ object AggregatesWithJoin {
           group by loan_id_hash
         ) b on a.loan_id_hash = b.loan_id_hash
       """.stripMargin)
-
-    return ret
   }
 }
 
@@ -431,19 +428,8 @@ object Main {
       .appName("MortgageJob")
       .getOrCreate()
 
-    try {
-      val dfPerf = CreatePerformanceDelinquency.prepare(session.read.parquet(perfPath))
-      val dfAcq = session.read.parquet(acqPath)
-
-      0.until(10).foreach { _ =>
-        CleanAcquisitionPrime(session, dfPerf, dfAcq).write.mode("overwrite").parquet(output)
-      }
-
-      dfPerf.unpersist(true)
-      dfAcq.unpersist(true)
-
-    } finally {
-      session.close()
+    0.until(10).foreach { _ =>
+      Run.parquet(session, perfPath, acqPath).write.mode("overwrite").parquet(output)
     }
   }
 }
