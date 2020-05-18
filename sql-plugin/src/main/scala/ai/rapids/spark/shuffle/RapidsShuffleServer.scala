@@ -303,8 +303,8 @@ class RapidsShuffleServer(transport: RapidsShuffleTransport,
             blockId.startReduceId(), blockId.endReduceId()))
       }
 
-      val metadataResponse = ShuffleMetadata.buildMetaResponse(
-        responseTables, req.maxResponseSize())
+      val metadataResponse = 
+        ShuffleMetadata.buildMetaResponse(responseTables, req.maxResponseSize())
       // Wrap the buffer so we keep a reference to it, and we destroy it later on .close
       val respBuffer = new RefCountedDirectByteBuffer(metadataResponse)
       val materializedResponse = ShuffleMetadata.getMetadataResponse(metadataResponse)
