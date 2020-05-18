@@ -37,10 +37,12 @@ class DataGen:
     def __ne__(self, other):
         return not self.__eq__(other)
 
-    def __init__(self, data_type, nullable=True):
+    def __init__(self, data_type, nullable=True, special_cases =[]):
         self.data_type = data_type
         self.nullable = nullable
         self._special_cases = []
+        for element in special_cases:
+            self.with_special_case(element)
         if nullable:
             self.with_special_case(None, weight=5.0)
 
@@ -147,74 +149,85 @@ _BYTE_MIN = -(1 << 7)
 _BYTE_MAX = (1 << 7) - 1
 class ByteGen(DataGen):
     """Generate Bytes"""
-    def __init__(self, nullable=True):
-        super().__init__(ByteType(), nullable=nullable)
+    def __init__(self, nullable=True, min_val =_BYTE_MIN, max_val = _BYTE_MAX, special_cases=[]):
+        super().__init__(ByteType(), nullable=nullable, special_cases=special_cases)
+        self._min_val = min_val
+        self._max_val = max_val
 
     def start(self, rand):
-        self._start(rand, lambda : rand.randint(_BYTE_MIN, _BYTE_MAX))
+        self._start(rand, lambda : rand.randint(self._min_val, self._max_val))
 
 _SHORT_MIN = -(1 << 15)
 _SHORT_MAX = (1 << 15) - 1
 class ShortGen(DataGen):
     """Generate Shorts, which some built in corner cases."""
-    def __init__(self, nullable=True):
-        super().__init__(ShortType(), nullable=nullable)
-        self.with_special_case(_SHORT_MIN)
-        self.with_special_case(_SHORT_MAX)
-        self.with_special_case(0)
-        self.with_special_case(1)
-        self.with_special_case(-1)
+    def __init__(self, nullable=True, min_val =_SHORT_MIN, max_val = _SHORT_MAX,
+                 special_cases = [_SHORT_MIN, _SHORT_MAX, 0, 1, -1]):
+        super().__init__(ShortType(), nullable=nullable, special_cases=special_cases)
+        self._min_val = min_val
+        self._max_val = max_val
 
     def start(self, rand):
-        self._start(rand, lambda : rand.randint(_SHORT_MIN, _SHORT_MAX))
+        self._start(rand, lambda : rand.randint(self._min_val, self._max_val))
 
 _INT_MIN = -(1 << 31)
 _INT_MAX = (1 << 31) - 1
 class IntegerGen(DataGen):
     """Generate Ints, which some built in corner cases."""
-    def __init__(self, nullable=True):
-        super().__init__(IntegerType(), nullable=nullable)
-        self.with_special_case(_INT_MIN)
-        self.with_special_case(_INT_MAX)
-        self.with_special_case(0)
-        self.with_special_case(1)
-        self.with_special_case(-1)
+    def __init__(self, nullable=True, min_val =_INT_MIN, max_val = _INT_MAX,
+                 special_cases = [_INT_MIN, _INT_MAX, 0, 1, -1]):
+        super().__init__(IntegerType(), nullable=nullable, special_cases=special_cases)
+        self._min_val = min_val
+        self._max_val = max_val
 
     def start(self, rand):
-        self._start(rand, lambda : rand.randint(_INT_MIN, _INT_MAX))
+        self._start(rand, lambda : rand.randint(self._min_val, self._max_val))
 
 _LONG_MIN = -(1 << 63)
 _LONG_MAX = (1 << 63) - 1
 class LongGen(DataGen):
     """Generate Longs, which some built in corner cases."""
-    def __init__(self, nullable=True):
-        super().__init__(LongType(), nullable=nullable)
-        self.with_special_case(_LONG_MIN)
-        self.with_special_case(_LONG_MAX)
-        self.with_special_case(0)
-        self.with_special_case(1)
-        self.with_special_case(-1)
+    def __init__(self, nullable=True, min_val =_LONG_MIN, max_val = _LONG_MAX,
+                 special_cases = [_LONG_MIN, _LONG_MAX, 0, 1, -1]):
+        super().__init__(LongType(), nullable=nullable, special_cases=special_cases)
+        self._min_val = min_val
+        self._max_val = max_val
 
     def start(self, rand):
-        self._start(rand, lambda : rand.randint(_LONG_MIN, _LONG_MAX))
+        self._start(rand, lambda : rand.randint(self._min_val, self._max_val))
+
+class RepeatSeqGen(DataGen):
+    """Generate Repeated seq of `length` random items"""
+    def __init__(self, child, length):
+        super().__init__(child.data_type, nullable=False)
+        self.nullable = child.nullable
+        self._child = child
+        self._vals = []
+        self._length = length
+        self._index = 0
+
+    def _loop_values(self):
+        ret = self._vals[self._index]
+        self._index = (self._index + 1) % self._length
+        return ret
+
+    def start(self, rand):
+        self._index = 0
+        self._child.start(rand)
+        self._start(rand, self._loop_values)
+        self._vals = [self._child.gen() for _ in range(0, self._length)]
 
 _FLOAT_MIN = -3.4028235E38
 _FLOAT_MAX = 3.4028235E38
 _NEG_FLOAT_NAN = struct.unpack('f', struct.pack('I', 0xfff00001))[0]
 class FloatGen(DataGen):
     """Generate floats, which some built in corner cases."""
-    def __init__(self, nullable=True):
-        super().__init__(FloatType(), nullable=nullable)
-        self.with_special_case(_FLOAT_MIN)
-        self.with_special_case(_FLOAT_MAX)
-        self.with_special_case(0.0)
-        self.with_special_case(-0.0)
-        self.with_special_case(1.0)
-        self.with_special_case(-1.0)
-        self.with_special_case(float('inf'))
-        self.with_special_case(float('-inf'))
-        self.with_special_case(float('nan'))
-        self.with_special_case(_NEG_FLOAT_NAN)
+    def __init__(self, nullable=True, min_val =_FLOAT_MIN, max_val = _FLOAT_MAX,
+                 special_cases = [_FLOAT_MIN, _FLOAT_MAX, 0.0, -0.0, 1.0, -1.0,
+                                  float('inf'),float('-inf'), float('nan'), _NEG_FLOAT_NAN]):
+        super().__init__(FloatType(), nullable=nullable, special_cases=special_cases)
+        self._min_val = min_val
+        self._max_val = max_val
 
     def start(self, rand):
         def gen_float():
@@ -231,26 +244,29 @@ _DOUBLE_MAX = 1.7976931348623157E308
 _NEG_DOUBLE_NAN = struct.unpack('d', struct.pack('L', 0xfff0000000000001))[0]
 class DoubleGen(DataGen):
     """Generate doubles, which some built in corner cases."""
-    def __init__(self, min_exp=_DOUBLE_MIN_EXP, max_exp=_DOUBLE_MAX_EXP, nullable=True):
-        super().__init__(DoubleType(), nullable=nullable)
+    def __init__(self, min_exp=_DOUBLE_MIN_EXP, max_exp=_DOUBLE_MAX_EXP, nullable=True,
+                 special_cases = None):
         self._min_exp = min_exp
         self._max_exp = max_exp
         self._use_full_range = (self._min_exp == _DOUBLE_MIN_EXP) and (self._max_exp == _DOUBLE_MAX_EXP)
-
-        self.with_special_case(self._make_from(1, self._max_exp, _DOUBLE_MAX_FRACTION))
-        self.with_special_case(self._make_from(0, self._max_exp, _DOUBLE_MAX_FRACTION))
-        self.with_special_case(self._make_from(1, self._min_exp, _DOUBLE_MAX_FRACTION))
-        self.with_special_case(self._make_from(0, self._min_exp, _DOUBLE_MAX_FRACTION))
-        if self._min_exp <= 0 and self._max_exp >= 0:
-            self.with_special_case(0.0)
-            self.with_special_case(-0.0)
-        if self._min_exp <= 3 and self._max_exp >= 3:
-            self.with_special_case(1.0)
-            self.with_special_case(-1.0)
-        self.with_special_case(float('inf'))
-        self.with_special_case(float('-inf'))
-        self.with_special_case(float('nan'))
-        self.with_special_case(_NEG_DOUBLE_NAN)
+        if special_cases is None:
+            special_cases = [
+                self._make_from(1, self._max_exp, _DOUBLE_MAX_FRACTION),
+                self._make_from(0, self._max_exp, _DOUBLE_MAX_FRACTION),
+                self._make_from(1, self._min_exp, _DOUBLE_MAX_FRACTION),
+                self._make_from(0, self._min_exp, _DOUBLE_MAX_FRACTION)
+            ]
+            if self._min_exp <= 0 and self._max_exp >= 0:
+                special_cases.append(0.0)
+                special_cases.append(-0.0)
+            if self._min_exp <= 3 and self._max_exp >= 3:
+                special_cases.append(1.0)
+                special_cases.append(-1.0)
+            special_cases.append(float('inf'))
+            special_cases.append(float('-inf'))
+            special_cases.append(float('nan'))
+            special_cases.append(_NEG_DOUBLE_NAN)
+        super().__init__(DoubleType(), nullable=nullable, special_cases=special_cases)
 
     @staticmethod
     def _make_from(sign, exp, fraction):
@@ -420,7 +436,7 @@ class ArrayGen(DataGen):
         self._child_gen.start(rand)
         def gen_array():
             length = rand.randint(self._min_length, self._max_length)
-            return [self._child_gen.gen() for index in range(0, length)]
+            return [self._child_gen.gen() for _ in range(0, length)]
         self._start(rand, gen_array)
 
 
@@ -481,11 +497,22 @@ def gen_scalar(data_gen, seed=0, force_no_nulls=False):
 def debug_df(df):
     """print out the contents of a dataframe for debugging."""
     print('COLLECTED\n{}'.format(df.collect()))
+    df.explain()
     return df
 
 def idfn(val):
     """Provide an API to provide display names for data type generators."""
     return str(val)
+
+def two_col_df(spark, a_gen, b_gen, length=2048, seed=0):
+    gen = StructGen([('a', a_gen),('b', b_gen)], nullable=False)
+    return gen_df(spark, gen, length=length, seed=seed)
+
+def binary_op_df(spark, gen, length=2048, seed=0):
+    return two_col_df(spark, gen, gen, length=length, seed=seed)
+
+def unary_op_df(spark, gen, length=2048, seed=0):
+    return gen_df(spark, StructGen([('a', gen)], nullable=False), length=length, seed=seed)
 
 def to_cast_string(spark_type):
     if isinstance(spark_type, ByteType):
@@ -511,3 +538,10 @@ def to_cast_string(spark_type):
     else:
         raise RuntimeError('CAST TO TYPE {} NOT SUPPORTED YET'.format(spark_type))
 
+numeric_gens = [ByteGen(), ShortGen(), IntegerGen(), LongGen(), FloatGen(), DoubleGen()]
+integral_gens = [ByteGen(), ShortGen(), IntegerGen(), LongGen()]
+# A lot of mathematical expressions only support a double as input
+# by parametrizing even for a single param for the test it makes the tests consistent
+double_gens = [DoubleGen()]
+double_n_long_gens = [DoubleGen(), LongGen()]
+int_n_long_gens = [IntegerGen(), LongGen()]

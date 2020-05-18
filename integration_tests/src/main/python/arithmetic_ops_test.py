@@ -20,24 +20,6 @@ from marks import incompat, approximate_float
 from pyspark.sql.types import *
 import pyspark.sql.functions as f
 
-def two_col_df(spark, a_gen, b_gen, length=2048, seed=0):
-    gen = StructGen([('a', a_gen),('b', b_gen)], nullable=False)
-    return gen_df(spark, gen, length=length, seed=seed)
-
-def binary_op_df(spark, gen, length=2048, seed=0):
-    return two_col_df(spark, gen, gen, length=length, seed=seed)
-
-def unary_op_df(spark, gen, length=2048, seed=0):
-    return gen_df(spark, StructGen([('a', gen)], nullable=False), length=length, seed=seed)
-
-numeric_gens = [ByteGen(), ShortGen(), IntegerGen(), LongGen(), FloatGen(), DoubleGen()]
-integral_gens = [ByteGen(), ShortGen(), IntegerGen(), LongGen()]
-# A lot of mathematical expressions only support a double as input
-# by parametrizing even for a single param for the test it makes the tests consistent
-double_gens = [DoubleGen()]
-double_n_long_gens = [DoubleGen(), LongGen()]
-int_n_long_gens = [IntegerGen(), LongGen()]
-
 @pytest.mark.parametrize('data_gen', numeric_gens, ids=idfn)
 def test_addition(data_gen):
     data_type = data_gen.data_type
