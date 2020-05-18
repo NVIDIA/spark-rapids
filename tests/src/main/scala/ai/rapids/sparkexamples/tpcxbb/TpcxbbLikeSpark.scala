@@ -19,6 +19,8 @@ package ai.rapids.sparkexamples.tpcxbb
 import org.apache.spark.sql.{DataFrame, SparkSession}
 import org.apache.spark.sql.types._
 
+// scalastyle:off line.size.limit
+
 // DecimalType to DoubleType, bigint to LongType
 object TpcxbbLikeSpark {
   def csvToParquet(spark: SparkSession, basePath: String, baseOutput: String): Unit = {
@@ -2065,3 +2067,5 @@ object Q30Like {
     throw new UnsupportedOperationException("Q30 uses UDTF")
   }
 }
+
+// scalastyle:on line.size.limit
