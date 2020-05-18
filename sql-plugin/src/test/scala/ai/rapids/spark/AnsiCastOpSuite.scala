@@ -524,7 +524,7 @@ class AnsiCastOpSuite extends GpuExpressionTestSuite {
     val t1 = s"AnsiCastOpSuite_doTableInsert_${sqlDataType}_t1_$now"
     val t2 = s"AnsiCastOpSuite_doTableInsert_${sqlDataType}_t2_$now"
     frame.createOrReplaceTempView(t1)
-    spark.sql(s"CREATE TABLE $t2 (a $sqlDataType)")
+    spark.sql(s"CREATE TABLE $t2 (a $sqlDataType) USING parquet")
     assertContainsAnsiCast(spark.sql(s"INSERT INTO $t2 SELECT c0 AS a FROM $t1"))
     spark.sql(s"SELECT a FROM $t2")
   }
@@ -542,8 +542,8 @@ class AnsiCastOpSuite extends GpuExpressionTestSuite {
     val t2 = s"AnsiCastOpSuite_doTableCopy_${sqlSourceType}_${sqlDestType}_t2_$now"
     val t3 = s"AnsiCastOpSuite_doTableCopy_${sqlSourceType}_${sqlDestType}_t3_$now"
     frame.createOrReplaceTempView(t1)
-    spark.sql(s"CREATE TABLE $t2 (c0 $sqlSourceType)")
-    spark.sql(s"CREATE TABLE $t3 (c0 $sqlDestType)")
+    spark.sql(s"CREATE TABLE $t2 (c0 $sqlSourceType) USING parquet")
+    spark.sql(s"CREATE TABLE $t3 (c0 $sqlDestType) USING parquet")
     // insert into t2
     assertContainsAnsiCast(spark.sql(s"INSERT INTO $t2 SELECT c0 AS a FROM $t1"))
     // copy from t2 to t1, with an ansi_cast()
