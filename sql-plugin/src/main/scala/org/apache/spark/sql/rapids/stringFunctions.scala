@@ -70,15 +70,21 @@ case class GpuStringLocate(substr: Expression, col: Expression, start: Expressio
     this(substr, col, GpuLiteral(1, IntegerType))
   }
 
-  override def doColumnar(val0: GpuColumnVector, val1: GpuColumnVector,
-      val2: GpuColumnVector): GpuColumnVector = throw new UnsupportedOperationException(
-    s"Cannot columnar evaluate expression: $this")
-  override def doColumnar(val0: Scalar, val1: GpuColumnVector,
+  override def doColumnar(
+      val0: GpuColumnVector,
+      val1: GpuColumnVector,
       val2: GpuColumnVector): GpuColumnVector =
-    throw new UnsupportedOperationException(s"Cannot columnar evaluate expression: $this")
-  override def doColumnar(val0: Scalar, val1: Scalar,
-      val2: GpuColumnVector): GpuColumnVector = throw new UnsupportedOperationException(
-    s"Cannot columnar evaluate expression: $this")
+        throw new UnsupportedOperationException(s"Cannot columnar evaluate expression: $this")
+  override def doColumnar(
+      val0: Scalar,
+      val1: GpuColumnVector,
+      val2: GpuColumnVector): GpuColumnVector =
+        throw new UnsupportedOperationException(s"Cannot columnar evaluate expression: $this")
+  override def doColumnar(
+      val0: Scalar,
+      val1: Scalar,
+      val2: GpuColumnVector): GpuColumnVector =
+        throw new UnsupportedOperationException(s"Cannot columnar evaluate expression: $this")
   override def doColumnar(val0: Scalar, val1: GpuColumnVector, val2: Scalar): GpuColumnVector = {
     if (!val2.isValid()) {
       val zeroScalar = GpuScalar.from(0, IntegerType)
@@ -135,15 +141,21 @@ case class GpuStringLocate(substr: Expression, col: Expression, start: Expressio
       }
     }
   }
-  override def doColumnar(val0: GpuColumnVector, val1: Scalar,
-      val2: GpuColumnVector): GpuColumnVector = throw new UnsupportedOperationException(
-    s"Cannot columnar evaluate expression: $this")
-  override def doColumnar(val0: GpuColumnVector, val1: Scalar,
-      val2: Scalar): GpuColumnVector = throw new UnsupportedOperationException(
-    s"Cannot columnar evaluate expression: $this")
-  override def doColumnar(val0: GpuColumnVector, val1: GpuColumnVector,
-      val2: Scalar): GpuColumnVector = throw new UnsupportedOperationException(
-    s"Cannot columnar evaluate expression: $this")
+  override def doColumnar(
+      val0: GpuColumnVector,
+      val1: Scalar,
+      val2: GpuColumnVector): GpuColumnVector =
+        throw new UnsupportedOperationException(s"Cannot columnar evaluate expression: $this")
+  override def doColumnar(
+      val0: GpuColumnVector,
+      val1: Scalar,
+      val2: Scalar): GpuColumnVector =
+        throw new UnsupportedOperationException(s"Cannot columnar evaluate expression: $this")
+  override def doColumnar(
+      val0: GpuColumnVector,
+      val1: GpuColumnVector,
+      val2: Scalar): GpuColumnVector =
+        throw new UnsupportedOperationException(s"Cannot columnar evaluate expression: $this")
 }
 
 case class GpuStartsWith(left: GpuExpression, right: GpuExpression)
@@ -172,13 +184,13 @@ case class GpuStartsWith(left: GpuExpression, right: GpuExpression)
     }
   }
 
-  override def doColumnar(lhs: GpuColumnVector,
-    rhs: GpuColumnVector): GpuColumnVector = throw new IllegalStateException(
-    "Really should not be here, cannot have two column vectors as input in StartsWith")
+  override def doColumnar(lhs: GpuColumnVector, rhs: GpuColumnVector): GpuColumnVector =
+    throw new IllegalStateException(
+      "Really should not be here, cannot have two column vectors as input in StartsWith")
 
-  override def doColumnar(lhs: Scalar,
-    rhs: GpuColumnVector): GpuColumnVector = throw new IllegalStateException(
-    "Really should not be here, cannot have a scalar as left side operand in StartsWith")
+  override def doColumnar(lhs: Scalar, rhs: GpuColumnVector): GpuColumnVector =
+    throw new IllegalStateException(
+      "Really should not be here, cannot have a scalar as left side operand in StartsWith")
 }
 
 case class GpuEndsWith(left: GpuExpression, right: GpuExpression)
@@ -207,13 +219,13 @@ case class GpuEndsWith(left: GpuExpression, right: GpuExpression)
     }
   }
 
-  override def doColumnar(lhs: GpuColumnVector,
-    rhs: GpuColumnVector): GpuColumnVector = throw new IllegalStateException(
-    "Really should not be here, cannot have two column vectors as input in EndsWith")
+  override def doColumnar(lhs: GpuColumnVector, rhs: GpuColumnVector): GpuColumnVector =
+    throw new IllegalStateException(
+      "Really should not be here, cannot have two column vectors as input in EndsWith")
 
-  override def doColumnar(lhs: Scalar,
-    rhs: GpuColumnVector): GpuColumnVector = throw new IllegalStateException(
-    "Really should not be here, cannot have a scalar as left side operand in EndsWith")
+  override def doColumnar(lhs: Scalar, rhs: GpuColumnVector): GpuColumnVector =
+    throw new IllegalStateException(
+      "Really should not be here, cannot have a scalar as left side operand in EndsWith")
 }
 
 case class GpuStringTrim(column: GpuExpression, trimParameters: Option[GpuExpression] = None)
@@ -341,13 +353,13 @@ case class GpuContains(left: GpuExpression, right: GpuExpression) extends GpuBin
     }
   }
 
-  override def doColumnar(lhs: GpuColumnVector,
-    rhs: GpuColumnVector): GpuColumnVector = throw new IllegalStateException("Really should not be here, " +
-    "Cannot have two column vectors as input in Contains")
+  override def doColumnar(lhs: GpuColumnVector, rhs: GpuColumnVector): GpuColumnVector =
+    throw new IllegalStateException("Really should not be here, " +
+      "Cannot have two column vectors as input in Contains")
 
-  override def doColumnar(lhs: Scalar,
-    rhs: GpuColumnVector): GpuColumnVector = throw new IllegalStateException("Really should not be here," +
-    "Cannot have a scalar as left side operand in Contains")
+  override def doColumnar(lhs: Scalar, rhs: GpuColumnVector): GpuColumnVector =
+    throw new IllegalStateException("Really should not be here," +
+      "Cannot have a scalar as left side operand in Contains")
 }
 
 case class GpuSubstring(str: Expression, pos: Expression, len: Expression)
@@ -364,11 +376,17 @@ case class GpuSubstring(str: Expression, pos: Expression, len: Expression)
     this(str, pos, GpuLiteral(Integer.MAX_VALUE, IntegerType))
   }
 
-  override def doColumnar(val0: GpuColumnVector, val1: GpuColumnVector, val2: GpuColumnVector)
-  : GpuColumnVector = throw new UnsupportedOperationException(s"Cannot columnar evaluate expression: $this")
+  override def doColumnar(
+      val0: GpuColumnVector,
+      val1: GpuColumnVector,
+      val2: GpuColumnVector): GpuColumnVector =
+        throw new UnsupportedOperationException(s"Cannot columnar evaluate expression: $this")
 
-  override def doColumnar(val0: Scalar, val1: GpuColumnVector, val2: GpuColumnVector)
-  : GpuColumnVector = throw new UnsupportedOperationException(s"Cannot columnar evaluate expression: $this")
+  override def doColumnar(
+      val0: Scalar,
+      val1: GpuColumnVector,
+      val2: GpuColumnVector): GpuColumnVector =
+        throw new UnsupportedOperationException(s"Cannot columnar evaluate expression: $this")
 
   override def doColumnar(val0: Scalar, val1: Scalar, val2: GpuColumnVector): GpuColumnVector =
     throw new UnsupportedOperationException(s"Cannot columnar evaluate expression: $this")
@@ -376,10 +394,15 @@ case class GpuSubstring(str: Expression, pos: Expression, len: Expression)
   override def doColumnar(val0: Scalar, val1: GpuColumnVector, val2: Scalar): GpuColumnVector =
     throw new UnsupportedOperationException(s"Cannot columnar evaluate expression: $this")
 
-  override def doColumnar(val0: GpuColumnVector, val1: Scalar, val2: GpuColumnVector)
-  : GpuColumnVector = throw new UnsupportedOperationException(s"Cannot columnar evaluate expression: $this")
+  override def doColumnar(
+      val0: GpuColumnVector,
+      val1: Scalar,
+      val2: GpuColumnVector): GpuColumnVector =
+        throw new UnsupportedOperationException(s"Cannot columnar evaluate expression: $this")
 
-  override def doColumnar(column: GpuColumnVector, position: Scalar, length: Scalar): GpuColumnVector = {
+  override def doColumnar(column: GpuColumnVector,
+                          position: Scalar,
+                          length: Scalar): GpuColumnVector = {
     val substringPos = position.getInt
     val substringLen = length.getInt
     if (substringLen < 0) { // Spark returns empty string if length is negative
@@ -388,15 +411,19 @@ case class GpuSubstring(str: Expression, pos: Expression, len: Expression)
       if (substringPos == 0) {  // calculate substring from first character to length
         GpuColumnVector.from(column.getBase.substring(substringPos, substringLen))
       } else { // calculate substring from position to length
-        GpuColumnVector.from(column.getBase.substring(substringPos - 1, substringPos + substringLen - 1))
+        GpuColumnVector.from(
+          column.getBase.substring(substringPos - 1, substringPos + substringLen - 1))
       }
     } else { // If position is negative, evaluate from end.
       GpuColumnVector.from(column.getBase.substring(substringPos, Integer.MAX_VALUE))
     }
   }
 
-  override def doColumnar(val0: GpuColumnVector, val1: GpuColumnVector, val2: Scalar)
-  : GpuColumnVector = throw new UnsupportedOperationException(s"Cannot columnar evaluate expression: $this")
+  override def doColumnar(
+      val0: GpuColumnVector,
+      val1: GpuColumnVector,
+      val2: Scalar): GpuColumnVector =
+        throw new UnsupportedOperationException(s"Cannot columnar evaluate expression: $this")
 }
 
 case class GpuInitCap(child: GpuExpression) extends GpuUnaryExpression with ImplicitCastInputTypes {
@@ -407,8 +434,11 @@ case class GpuInitCap(child: GpuExpression) extends GpuUnaryExpression with Impl
   }
 }
 
-case class GpuStringReplace(srcExpr: GpuExpression, searchExpr: GpuExpression, replaceExpr: GpuExpression)
-    extends GpuTernaryExpression with ImplicitCastInputTypes {
+case class GpuStringReplace(
+    srcExpr: GpuExpression,
+    searchExpr: GpuExpression,
+    replaceExpr: GpuExpression)
+  extends GpuTernaryExpression with ImplicitCastInputTypes {
 
   override def dataType: DataType = srcExpr.dataType
 
@@ -420,22 +450,40 @@ case class GpuStringReplace(srcExpr: GpuExpression, searchExpr: GpuExpression, r
     this(srcExpr, searchExpr, GpuLiteral("", StringType))
   }
 
-  override def doColumnar(strExpr: GpuColumnVector, searchExpr: GpuColumnVector, replaceExpr: GpuColumnVector)
-  : GpuColumnVector = throw new UnsupportedOperationException(s"Cannot columnar evaluate expression: $this")
+  override def doColumnar(
+      strExpr: GpuColumnVector,
+      searchExpr: GpuColumnVector,
+      replaceExpr: GpuColumnVector): GpuColumnVector =
+        throw new UnsupportedOperationException(s"Cannot columnar evaluate expression: $this")
 
-  override def doColumnar(strExpr: Scalar, searchExpr: GpuColumnVector, replaceExpr: GpuColumnVector)
-  : GpuColumnVector = throw new UnsupportedOperationException(s"Cannot columnar evaluate expression: $this")
+  override def doColumnar(
+      strExpr: Scalar,
+      searchExpr: GpuColumnVector,
+      replaceExpr: GpuColumnVector): GpuColumnVector =
+        throw new UnsupportedOperationException(s"Cannot columnar evaluate expression: $this")
 
-  override def doColumnar(strExpr: Scalar, searchExpr: Scalar, replaceExpr: GpuColumnVector): GpuColumnVector =
-    throw new UnsupportedOperationException(s"Cannot columnar evaluate expression: $this")
+  override def doColumnar(
+      strExpr: Scalar,
+      searchExpr: Scalar,
+      replaceExpr: GpuColumnVector): GpuColumnVector =
+        throw new UnsupportedOperationException(s"Cannot columnar evaluate expression: $this")
 
-  override def doColumnar(strExpr: Scalar, searchExpr: GpuColumnVector, replaceExpr: Scalar): GpuColumnVector =
-    throw new UnsupportedOperationException(s"Cannot columnar evaluate expression: $this")
+  override def doColumnar(
+      strExpr: Scalar,
+      searchExpr: GpuColumnVector,
+      replaceExpr: Scalar): GpuColumnVector =
+        throw new UnsupportedOperationException(s"Cannot columnar evaluate expression: $this")
 
-  override def doColumnar(strExpr: GpuColumnVector, searchExpr: Scalar, replaceExpr: GpuColumnVector)
-  : GpuColumnVector = throw new UnsupportedOperationException(s"Cannot columnar evaluate expression: $this")
+  override def doColumnar(
+      strExpr: GpuColumnVector,
+      searchExpr: Scalar,
+      replaceExpr: GpuColumnVector): GpuColumnVector =
+        throw new UnsupportedOperationException(s"Cannot columnar evaluate expression: $this")
 
-  override def doColumnar(strExpr: GpuColumnVector, searchExpr: Scalar, replaceExpr: Scalar) : GpuColumnVector = {
+  override def doColumnar(
+      strExpr: GpuColumnVector,
+      searchExpr: Scalar,
+      replaceExpr: Scalar) : GpuColumnVector = {
     if (searchExpr.getJavaString.isEmpty) { // Return original string if search string is empty
       GpuColumnVector.from(strExpr.getBase.asStrings())
     } else {
@@ -443,8 +491,11 @@ case class GpuStringReplace(srcExpr: GpuExpression, searchExpr: GpuExpression, r
     }
   }
 
-  override def doColumnar(strExpr: GpuColumnVector, searchExpr: GpuColumnVector, replaceExpr: Scalar)
-  : GpuColumnVector = throw new UnsupportedOperationException(s"Cannot columnar evaluate expression: $this")
+  override def doColumnar(
+      strExpr: GpuColumnVector,
+      searchExpr: GpuColumnVector,
+      replaceExpr: Scalar): GpuColumnVector =
+        throw new UnsupportedOperationException(s"Cannot columnar evaluate expression: $this")
 }
 
 object CudfRegexp {
@@ -475,13 +526,13 @@ case class GpuLike(left: GpuExpression, right: GpuExpression, escapeChar: Char)
     case c => s"$left gpulike $right ESCAPE '$c'"
   }
 
-  override def doColumnar(lhs: GpuColumnVector,
-    rhs: GpuColumnVector): GpuColumnVector = throw new IllegalStateException("Really should not be here, " +
-    "Cannot have two column vectors as input in Like")
+  override def doColumnar(lhs: GpuColumnVector, rhs: GpuColumnVector): GpuColumnVector =
+    throw new IllegalStateException("Really should not be here, " +
+      "Cannot have two column vectors as input in Like")
 
-  override def doColumnar(lhs: Scalar,
-    rhs: GpuColumnVector): GpuColumnVector = throw new IllegalStateException("Really should not be here, " +
-    "Cannot have a scalar as left side operand in Like")
+  override def doColumnar(lhs: Scalar, rhs: GpuColumnVector): GpuColumnVector =
+    throw new IllegalStateException("Really should not be here, " +
+      "Cannot have a scalar as left side operand in Like")
 
   override def doColumnar(lhs: GpuColumnVector, rhs: Scalar): GpuColumnVector = {
     val regexStr = escapeLikeRegex(rhs.getJavaString, escapeChar)
@@ -558,8 +609,10 @@ class SubstringIndexMeta(
     }
   }
 
-  override def convertToGpu(column: GpuExpression, delim: GpuExpression, count: GpuExpression): GpuExpression =
-    GpuSubstringIndex(column, this.regexp, delim, count)
+  override def convertToGpu(
+      column: GpuExpression,
+      delim: GpuExpression,
+      count: GpuExpression): GpuExpression = GpuSubstringIndex(column, this.regexp, delim, count)
 }
 
 object GpuSubstringIndex {
@@ -624,22 +677,46 @@ case class GpuSubstringIndex(strExpr: GpuExpression,
     }
   }
 
-  override def doColumnar(str: GpuColumnVector, delim: GpuColumnVector, count: GpuColumnVector): GpuColumnVector =
-    throw new IllegalStateException("Internal Error: this version of substring index is not supported")
+  override def doColumnar(
+      str: GpuColumnVector,
+      delim: GpuColumnVector,
+      count: GpuColumnVector): GpuColumnVector =
+        throw new IllegalStateException(
+          "Internal Error: this version of substring index is not supported")
 
-  override def doColumnar(str: Scalar, delim: GpuColumnVector, count: GpuColumnVector): GpuColumnVector =
-    throw new IllegalStateException("Internal Error: this version of substring index is not supported")
+  override def doColumnar(
+      str: Scalar,
+      delim: GpuColumnVector,
+      count: GpuColumnVector): GpuColumnVector =
+        throw new IllegalStateException(
+          "Internal Error: this version of substring index is not supported")
 
-  override def doColumnar(str: Scalar, delim: Scalar, count: GpuColumnVector): GpuColumnVector =
-    throw new IllegalStateException("Internal Error: this version of substring index is not supported")
+  override def doColumnar(
+      str: Scalar,
+      delim: Scalar,
+      count: GpuColumnVector): GpuColumnVector =
+        throw new IllegalStateException(
+          "Internal Error: this version of substring index is not supported")
 
-  override def doColumnar(str: Scalar, delim: GpuColumnVector, count: Scalar): GpuColumnVector =
-    throw new IllegalStateException("Internal Error: this version of substring index is not supported")
+  override def doColumnar(
+      str: Scalar,
+      delim: GpuColumnVector,
+      count: Scalar): GpuColumnVector =
+        throw new IllegalStateException(
+          "Internal Error: this version of substring index is not supported")
 
-  override def doColumnar(str: GpuColumnVector, delim: Scalar, count: GpuColumnVector): GpuColumnVector =
-    throw new IllegalStateException("Internal Error: this version of substring index is not supported")
+  override def doColumnar(
+      str: GpuColumnVector,
+      delim: Scalar,
+      count: GpuColumnVector): GpuColumnVector =
+        throw new IllegalStateException(
+          "Internal Error: this version of substring index is not supported")
 
-  override def doColumnar(str: GpuColumnVector, delim: GpuColumnVector, count: Scalar): GpuColumnVector =
-    throw new IllegalStateException("Internal Error: this version of substring index is not supported")
+  override def doColumnar(
+      str: GpuColumnVector,
+      delim: GpuColumnVector,
+      count: Scalar): GpuColumnVector =
+        throw new IllegalStateException(
+          "Internal Error: this version of substring index is not supported")
 }
 
