@@ -183,7 +183,8 @@ object GpuDeviceManager extends Logging {
 
       deviceId = Some(gpuId)
 
-      logInfo(s"Initializing RMM${features.mkString(" ", " ", "")} ${initialAllocation / 1024 / 1024.0} MB on gpuId $gpuId")
+      logInfo(s"Initializing RMM${features.mkString(" ", " ", "")} " +
+        s"${initialAllocation / 1024 / 1024.0} MB on gpuId $gpuId")
 
       try {
         Rmm.initialize(init, logConf, initialAllocation, gpuId)
