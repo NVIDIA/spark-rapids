@@ -32,19 +32,28 @@ class CastExprMeta[INPUT <: CastBase](
   extends UnaryExprMeta[INPUT](cast, conf, parent, rule) {
 
   private val castExpr = if (ansiEnabled) "ansi_cast" else "cast"
+  private val fromType = cast.child.dataType
+  private val toType = cast.dataType
 
   override def tagExprForGpu(): Unit = {
-    if (!GpuCast.canCast(cast.child.dataType, cast.dataType, ansiEnabled)) {
-      willNotWorkOnGpu(s"$castExpr from ${cast.child.dataType} " +
-        s"to ${cast.dataType} is not currently supported on the GPU")
+    if (!GpuCast.canCast(fromType, toType, ansiEnabled)) {
+      willNotWorkOnGpu(s"$castExpr from $fromType " +
+        s"to $toType is not currently supported on the GPU")
     }
-    if (!conf.isCastToFloatEnabled && cast.dataType == DataTypes.StringType &&
-      (cast.child.dataType == DataTypes.FloatType || cast.child.dataType == DataTypes.DoubleType)) {
+    if (!conf.isCastToFloatEnabled && toType == DataTypes.StringType &&
+      (fromType == DataTypes.FloatType || fromType == DataTypes.DoubleType)) {
       willNotWorkOnGpu("the GPU will use different precision than Java's toString method when " +
         "converting floating point data types to strings and this can produce results that differ " +
         "from the default behavior in Spark.  To enable this operation on the GPU, set" +
         s" ${RapidsConf.ENABLE_CAST_FLOAT_TO_STRING} to true.")
     }
+    if (!conf.isCastTimestampToStringEnabled && fromType == DataTypes.TimestampType &&
+      toType == DataTypes.StringType) {
+      willNotWorkOnGpu("the GPU will add trailing zeros for the millisecond portion of the " +
+        "timestamp, which differs from the default behavior in Spark. To enable this operation " +
+        s"on the GPU, set ${RapidsConf.ENABLE_CAST_TIMESTAMP_TO_STRING} to true.")
+    }
+
     if (!conf.isCastStringToIntegerEnabled && cast.child.dataType == DataTypes.StringType &&
     Seq(DataTypes.ByteType, DataTypes.ShortType, DataTypes.IntegerType, DataTypes.LongType)
       .contains(cast.dataType)) {
@@ -56,7 +65,7 @@ class CastExprMeta[INPUT <: CastBase](
   }
 
   override def convertToGpu(child: GpuExpression): GpuExpression =
-    GpuCast(child, cast.dataType, ansiEnabled, cast.timeZoneId)
+    GpuCast(child, toType, ansiEnabled, cast.timeZoneId)
 }
 
 object GpuCast {
@@ -114,6 +123,7 @@ object GpuCast {
         case ByteType | ShortType | IntegerType | LongType => true
         case FloatType | DoubleType => true
         case TimestampType => true
+        case StringType => true
         case _ => false
       }
       case TimestampType => to match {
@@ -122,6 +132,7 @@ object GpuCast {
         case LongType => true
         case FloatType | DoubleType => true
         case DateType => true
+        case StringType => true
         case _ => false
       }
       case StringType => to match {
@@ -186,6 +197,8 @@ case class GpuCast(child: GpuExpression, dataType: DataType, ansiMode: Boolean =
         } finally {
           scalar.close()
         }
+      case (DateType, StringType) =>
+        GpuColumnVector.from(input.getBase.asStrings("%Y-%m-%d"))
       case (TimestampType, FloatType | DoubleType) =>
         val asLongs = input.getBase.castTo(DType.INT64)
         try {
@@ -225,7 +238,7 @@ case class GpuCast(child: GpuExpression, dataType: DataType, ansiMode: Boolean =
         } finally {
           asLongs.close()
         }
-      case (TimestampType, _: NumericType) =>
+      case (TimestampType, _: LongType) =>
         val asLongs = input.getBase.castTo(DType.INT64)
         try {
           val microsPerSec = Scalar.fromInt(1000000)
@@ -237,6 +250,8 @@ case class GpuCast(child: GpuExpression, dataType: DataType, ansiMode: Boolean =
         } finally {
           asLongs.close()
         }
+      case (TimestampType, StringType) =>
+        GpuColumnVector.from(input.getBase.asStrings("%Y-%m-%d %H:%M:%S.%3f"))
 
       // ansi cast from larger-than-integer integral types, to integer
       case (LongType, IntegerType) if ansiMode =>
