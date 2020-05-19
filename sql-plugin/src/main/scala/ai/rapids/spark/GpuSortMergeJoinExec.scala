@@ -30,7 +30,8 @@ class GpuSortMergeJoinMeta(
 
   val leftKeys: Seq[ExprMeta[_]] = join.leftKeys.map(GpuOverrides.wrapExpr(_, conf, Some(this)))
   val rightKeys: Seq[ExprMeta[_]] = join.rightKeys.map(GpuOverrides.wrapExpr(_, conf, Some(this)))
-  val condition: Option[ExprMeta[_]] = join.condition.map(GpuOverrides.wrapExpr(_, conf, Some(this)))
+  val condition: Option[ExprMeta[_]] = join.condition.map(
+    GpuOverrides.wrapExpr(_, conf, Some(this)))
 
   override val childExprs: Seq[ExprMeta[_]] = leftKeys ++ rightKeys ++ condition
 
@@ -50,9 +51,11 @@ class GpuSortMergeJoinMeta(
       childPlans.foreach { plan =>
         if (plan.wrapped.isInstanceOf[SortExec]) {
           if (!plan.canThisBeReplaced) {
-            willNotWorkOnGpu(s"can't replace sortMergeJoin because one of the SortExec's before can't be replaced.")
+            willNotWorkOnGpu(s"can't replace sortMergeJoin because one of the SortExec's before " +
+              s"can't be replaced.")
           } else {
-            plan.shouldBeRemoved("removing SortExec as part replacing sortMergeJoin with shuffleHashJoin")
+            plan.shouldBeRemoved("removing SortExec as part replacing sortMergeJoin with " +
+              s"shuffleHashJoin")
           }
         }
       }

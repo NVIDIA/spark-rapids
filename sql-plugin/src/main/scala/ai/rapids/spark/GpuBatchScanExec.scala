@@ -182,7 +182,8 @@ object GpuCSVScan {
     // TODO parsedOptions.zoneId This is here by default so we need to be able to support it
     // TODO parsedOptions.local This is here by default so we need to be able to support it
     // TODO parsedOptions.dateFormat This is here by default so we need to be able to support it
-    // TODO parsedOptions.timestampFormat This is here by default so we need to be able to support it
+    // TODO parsedOptions.timestampFormat This is here by default so we need to be able to support 
+    // it
     // TODO parsedOptions.emptyValueInRead
     // TODO ColumnPruning????
     // TODO sparkSession.sessionState.conf.caseSensitiveAnalysis on the column names
@@ -193,7 +194,7 @@ case class GpuCSVScan(
     sparkSession: SparkSession,
     fileIndex: PartitioningAwareFileIndex,
     dataSchema: StructType, // original schema passed in by the user (all the data)
-    readDataSchema: StructType, // schema that is for the data being read in (including dropped columns)
+    readDataSchema: StructType, // schema for data being read (including dropped columns)
     readPartitionSchema: StructType, // schema for the parts that come from the file path
     options: CaseInsensitiveStringMap,
     partitionFilters: Seq[Expression],
@@ -253,7 +254,8 @@ case class GpuCSVPartitionReaderFactory(
     broadcastedConf: Broadcast[SerializableConfiguration],
     dataSchema: StructType,
     readDataSchema: StructType,
-    partitionSchema: StructType, // TODO need to filter these out, or support pulling them in. These are values from the file name/path itself
+    partitionSchema: StructType, // TODO need to filter these out, or support pulling them in.
+                                 // These are values from the file name/path itself
     parsedOptions: CSVOptions,
     maxReaderBatchSizeRows: Integer,
     maxReaderBatchSizeBytes: Long,
@@ -284,7 +286,8 @@ class CSVPartitionReader(
   extends PartitionReader[ColumnarBatch] with ScanWithMetrics {
 
   private var batch: Option[ColumnarBatch] = None
-  private val lineReader = new HadoopFileLinesReader(partFile, parsedOptions.lineSeparatorInRead, conf)
+  private val lineReader = new HadoopFileLinesReader(partFile, parsedOptions.lineSeparatorInRead,
+    conf)
   private var isFirstChunkForIterator: Boolean = true
   private var isExhausted: Boolean = false
   private var maxDeviceMemory: Long = 0
@@ -364,7 +367,8 @@ class CSVPartitionReader(
           if (newTotal > hmb.getLength) {
             hmb = growHostBuffer(hmb, newTotal)
           }
-          // Can have an empty line, do not write this to buffer but add the separator and totalRows
+          // Can have an empty line, do not write this to buffer but add the separator 
+          // and totalRows
           if (lineSize != 0) {
             hmb.setBytes(totalSize, line.getBytes, 0, lineSize)
           }
@@ -413,7 +417,8 @@ class CSVPartitionReader(
         None
       } else {
         val newReadDataSchema: StructType = if (readDataSchema.isEmpty) {
-          val smallestField = dataSchema.min(Ordering.by[StructField, Integer](_.dataType.defaultSize))
+          val smallestField = 
+              dataSchema.min(Ordering.by[StructField, Integer](_.dataType.defaultSize))
           StructType(Seq(smallestField))
         } else {
           readDataSchema

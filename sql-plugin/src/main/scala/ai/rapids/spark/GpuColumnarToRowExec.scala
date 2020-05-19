@@ -31,8 +31,8 @@ import org.apache.spark.TaskContext
 import org.apache.spark.sql.catalyst.plans.physical.Partitioning
 import org.apache.spark.sql.execution.metric.{SQLMetric, SQLMetrics}
 
-case class GpuColumnarToRowExec(child: SparkPlan, exportColumnarRdd: Boolean = false) extends UnaryExecNode
-    with CodegenSupport with GpuExec {
+case class GpuColumnarToRowExec(child: SparkPlan, exportColumnarRdd: Boolean = false) 
+    extends UnaryExecNode with CodegenSupport with GpuExec {
   // We need to do this so the assertions don't fail
   override def supportsColumnar = false
 
@@ -93,7 +93,8 @@ case class GpuColumnarToRowExec(child: SparkPlan, exportColumnarRdd: Boolean = f
             val devCb = batches.next()
             val nvtxRange = new NvtxWithMetrics("ColumnarToRow: batch", NvtxColor.RED, totalTime)
             try {
-              cb = new ColumnarBatch(GpuColumnVector.extractColumns(devCb).map(_.copyToHost()), devCb.numRows())
+              cb = new ColumnarBatch(GpuColumnVector.extractColumns(devCb).map(_.copyToHost()), 
+                devCb.numRows())
               it = cb.rowIterator()
               numInputBatches += 1
               // In order to match the numOutputRows metric in the generated code we update
@@ -225,6 +226,7 @@ case class GpuColumnarToRowExec(child: SparkPlan, exportColumnarRdd: Boolean = f
     val convertStart = ctx.freshName("convertStart")
     val convertRange = ctx.freshName("convertRange")
     val nextBatch = ctx.freshName("nextBatch")
+    // scalastyle:off line.size.limit
     val nextBatchFuncName = ctx.addNewFunction(nextBatch,
       s"""
          |private void $nextBatch() throws java.io.IOException {
@@ -244,6 +246,7 @@ case class GpuColumnarToRowExec(child: SparkPlan, exportColumnarRdd: Boolean = f
          |    ai.rapids.spark.GpuSemaphore$$.MODULE$$.releaseIfNecessary(org.apache.spark.TaskContext.get());
          |  }
          |}""".stripMargin)
+    // scalastyle:on line.size.limit
 
     ctx.currentVars = null
     val rowidx = ctx.freshName("rowIdx")
