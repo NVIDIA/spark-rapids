@@ -216,82 +216,12 @@ case class GpuRemainder(left: GpuExpression, right: GpuExpression) extends GpuDi
 }
 
 
-case class GpuPmod(left: GpuExpression, right: GpuExpression) extends GpuBinaryExpression {
-  // Based off of the spark implementation
-  //  private def pmod(lhs: Int, rhs: Int): Int = {
-  //    val r = lhs % rhs
-  //    if (r < 0) {(r + rhs) % rhs} else r
-  //  }
+case class GpuPmod(left: GpuExpression, right: GpuExpression) extends GpuDivModLike {
+  override def inputType: AbstractDataType = NumericType
 
-  // For the smaller types we need to cast it up to INT to avoid overflow issues on the add
-  // This is to match the spark code.
-  private val tmpType = GpuColumnVector.getRapidsType(left.dataType) match {
-    case DType.INT8 => DType.INT32
-    case DType.INT16 => DType.INT32
-    case other => other
-  }
+  override def binaryOp: BinaryOp = BinaryOp.PMOD
 
-  import GpuDivModLike._
-  override def doColumnar(lhs: GpuColumnVector, origRhs: GpuColumnVector): GpuColumnVector = {
-    withResource(replaceZeroWithNull(origRhs)) { rhs =>
-      withResource(lhs.getBase.mod(rhs.getBase)) { r =>
-        val fixed = withResource(r.add(rhs.getBase, tmpType)) { sum =>
-          sum.mod(rhs.getBase)
-        }
-        withResource(fixed) { fixed =>
-          withResource(fixed.castTo(lhs.getBase.getType)) { fixedWithType =>
-            withResource(Scalar.fromByte(0.toByte)) { zero =>
-              withResource(r.lessThan(zero)) { ltz =>
-                GpuColumnVector.from(ltz.ifElse(fixedWithType, r))
-              }
-            }
-          }
-        }
-      }
-    }
-  }
-
-  override def doColumnar(lhs: Scalar, origRhs: GpuColumnVector): GpuColumnVector = {
-    withResource(replaceZeroWithNull(origRhs)) { rhs =>
-      withResource(lhs.mod(rhs.getBase)) { r =>
-        val fixed = withResource(r.add(rhs.getBase, tmpType)) { sum =>
-          sum.mod(rhs.getBase)
-        }
-        withResource(fixed) { fixed =>
-          withResource(fixed.castTo(lhs.getType)) { fixedWithType =>
-            withResource(Scalar.fromByte(0.toByte)) { zero =>
-              withResource(r.lessThan(zero)) { ltz =>
-                GpuColumnVector.from(ltz.ifElse(fixedWithType, r))
-              }
-            }
-          }
-        }
-      }
-    }
-  }
-
-  override def doColumnar(lhs: GpuColumnVector, rhs: Scalar): GpuColumnVector = {
-    if (isScalarZero(rhs)) {
-      withResource(Scalar.fromNull(lhs.getBase.getType)) { nullScalar =>
-        GpuColumnVector.from(ColumnVector.fromScalar(nullScalar, lhs.getRowCount.toInt))
-      }
-    } else {
-      withResource(lhs.getBase.mod(rhs)) { r =>
-        val fixed = withResource(r.add(rhs, tmpType)) { sum =>
-          sum.mod(rhs)
-        }
-        withResource(fixed) { fixed =>
-          withResource(fixed.castTo(lhs.getBase.getType)) { fixedWithType =>
-            withResource(Scalar.fromByte(0.toByte)) { zero =>
-              withResource(r.lessThan(zero)) { ltz =>
-                GpuColumnVector.from(ltz.ifElse(fixedWithType, r))
-              }
-            }
-          }
-        }
-      }
-    }
-  }
+  override def symbol: String = "pmod"
 
   override def dataType: DataType = left.dataType
 }
