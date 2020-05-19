@@ -23,7 +23,7 @@ import org.apache.spark.SparkConf
 import org.apache.spark.sql.catalyst.expressions.Cast
 import org.apache.spark.sql.functions.col
 import org.apache.spark.sql.types._
-import org.apache.spark.sql.{DataFrame, SparkSession}
+import org.apache.spark.sql.{DataFrame, Row, SparkSession}
 
 class CastOpSuite extends GpuExpressionTestSuite {
   import CastOpSuite._
@@ -50,6 +50,7 @@ class CastOpSuite extends GpuExpressionTestSuite {
 
       val conf = new SparkConf()
         .set(RapidsConf.ENABLE_CAST_FLOAT_TO_STRING.key, "true")
+        .set(RapidsConf.ENABLE_CAST_TIMESTAMP_TO_STRING.key, "true")
         .set(RapidsConf.ENABLE_CAST_STRING_TO_INTEGER.key, "true")
         .set("spark.sql.ansi.enabled", String.valueOf(ansiEnabled))
 
@@ -65,9 +66,13 @@ class CastOpSuite extends GpuExpressionTestSuite {
                   frame => frame.select(col("c0").cast(to))
                     .orderBy(col("c0")), conf)
 
+                // perform comparison logic specific to the cast
                 (from, to) match {
-
-                  case (DataTypes.FloatType|DataTypes.DoubleType, DataTypes.StringType) =>
+                  case (DataTypes.TimestampType, DataTypes.StringType) =>
+                    compareTimestampToStringResults(fromCpu, fromGpu)
+                  case (DataTypes.FloatType | DataTypes.DoubleType, DataTypes.StringType) =>
+                    compareFloatToStringResults(fromCpu, fromGpu)
+                  case (DataTypes.FloatType | DataTypes.DoubleType, DataTypes.StringType) =>
                     // specific comparison logic required for this cast
                     fromCpu.zip(fromGpu).foreach {
                       case (c, g) =>
@@ -96,13 +101,42 @@ class CastOpSuite extends GpuExpressionTestSuite {
     }
   }
 
+  private def compareFloatToStringResults(fromCpu: Array[Row], fromGpu: Array[Row]) = {
+    fromCpu.zip(fromGpu).foreach {
+      case (c, g) =>
+        val cpuValue = c.getAs[String](0)
+        val gpuValue = g.getAs[String](0)
+        if (!compareStringifiedFloats(cpuValue, gpuValue)) {
+          fail(s"Running on the GPU and on the CPU did not match: CPU " +
+            s"value: $cpuValue. GPU value: $gpuValue.")
+        }
+    }
+  }
+
+  private def compareTimestampToStringResults(fromCpu: Array[Row], fromGpu: Array[Row]) = {
+    def removeTrailingZeros(timestampAsString: String): String = {
+      if (timestampAsString == null) {
+        null
+      } else {
+        var s = timestampAsString
+        while (s.endsWith("0") || s.endsWith(".")) {
+          s = s.substring(0, s.length - 1)
+        }
+        s
+      }
+    }
+    val cpu = fromCpu.map(row => Row.fromSeq(Seq(removeTrailingZeros(row
+      .getString(0)))))
+    val gpu = fromGpu.map(row => Row.fromSeq(Seq(removeTrailingZeros(row
+      .getString(0)))))
+    compareResults(sort = false, 0.00001, cpu, gpu)
+  }
+
   test("Test unsupported cast") {
     // this test tracks currently unsupported casts and will need updating as more casts are
     // supported
     val unsupported = getUnsupportedCasts(false)
-    val expected = List((DateType,StringType),
-      (TimestampType,StringType),
-      (StringType,FloatType),
+    val expected = List((StringType,FloatType),
       (StringType,DoubleType),
       (StringType,DateType),
       (StringType,TimestampType))
@@ -113,9 +147,7 @@ class CastOpSuite extends GpuExpressionTestSuite {
     // this test tracks currently unsupported ansi_casts and will need updating as more casts are
     // supported
     val unsupported = getUnsupportedCasts(true)
-    val expected = List((DateType,StringType),
-      (TimestampType,StringType),
-      (StringType,FloatType),
+    val expected = List((StringType,FloatType),
       (StringType,DoubleType),
       (StringType,DateType),
       (StringType,TimestampType))
