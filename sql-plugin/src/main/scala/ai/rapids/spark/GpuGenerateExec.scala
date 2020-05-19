@@ -166,8 +166,8 @@ case class GpuGenerateExec(
                 }
               }
               if (includePos) {
-                result(numOtherColumns) = withResource(GpuScalar.from(indexIntoData, IntegerType)) { scalar =>
-                  ColumnVector.fromScalar(scalar, currentBatch.numRows())
+                result(numOtherColumns) = withResource(GpuScalar.from(indexIntoData, IntegerType)) {
+                  scalar => ColumnVector.fromScalar(scalar, currentBatch.numRows())
                 }
               }
               result(numOtherColumns + numExplodeColumns - 1) =
