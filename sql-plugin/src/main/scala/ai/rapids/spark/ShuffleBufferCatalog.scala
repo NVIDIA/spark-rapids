@@ -146,7 +146,8 @@ class ShuffleBufferCatalog(
     }
 
     // associate this new buffer with the shuffle block
-    val blockBufferIds = info.blockMap.computeIfAbsent(blockId, _ => new ArrayBuffer[ShuffleBufferId])
+    val blockBufferIds = info.blockMap.computeIfAbsent(blockId, _ => 
+      new ArrayBuffer[ShuffleBufferId])
     blockBufferIds.synchronized {
       blockBufferIds.append(id)
     }

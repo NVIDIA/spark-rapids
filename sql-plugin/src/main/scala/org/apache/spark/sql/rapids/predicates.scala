@@ -201,8 +201,9 @@ abstract class CudfBinaryComparison extends CudfBinaryOperator with Predicate {
 }
 
 /**
- * The table below shows how the result is calculated for Equal-to. To make calculation easier we are leveraging
- * the fact that the cudf-result(r) always returns false. So that result is used in place of false when needed.
+ * The table below shows how the result is calculated for Equal-to. To make calculation easier we
+ * are leveraging the fact that the cudf-result(r) always returns false. So that result is used in
+ * place of false when needed.
  *
  * Return (lhs.nan && rhs.nan) || result[i]
  *
@@ -333,8 +334,9 @@ case class GpuEqualNullSafe(left: Expression, right: Expression) extends CudfBin
 }
 
 /**
- * The table below shows how the result is calculated for greater-than. To make calculation easier we are leveraging
- * the fact that the cudf-result(r) always returns false. So that result is used in place of false when needed.
+ * The table below shows how the result is calculated for greater-than. To make calculation easier
+ * we are leveraging the fact that the cudf-result(r) always returns false. So that result is used
+ * in place of false when needed.
  *
  * In this case return (lhs.nan && !lhs.nan) || result[i]
  *
@@ -408,8 +410,9 @@ case class GpuGreaterThan(left: Expression, right: Expression) extends CudfBinar
 }
 
 /**
- * The table below shows how the result is calculated for Greater-than-Eq. To make calculation easier we are leveraging
- * the fact that the cudf-result(r) always returns false. So that result is used in place of false when needed.
+ * The table below shows how the result is calculated for Greater-than-Eq. To make calculation
+ * easier we are leveraging the fact that the cudf-result(r) always returns false. So that result
+ * is used in place of false when needed.
  *
  * In this case return lhs.isNan || result[i]
  *
@@ -474,8 +477,9 @@ case class GpuGreaterThanOrEqual(left: Expression, right: Expression) extends Cu
 }
 
 /**
- * The table below shows how the result is calculated for Less-than. To make calculation easier we are leveraging
- * the fact that the cudf-result(r) always returns false. So that result is used in place of false when needed.
+ * The table below shows how the result is calculated for Less-than. To make calculation easier we
+ * are leveraging the fact that the cudf-result(r) always returns false. So that result is used in
+ * place of false when needed.
  *
  * In this case return !lhs.nan && rhs.nan || result[i]
  *
@@ -549,8 +553,9 @@ case class GpuLessThan(left: Expression, right: Expression) extends CudfBinaryCo
 }
 
 /**
- * The table below shows how the result is calculated for Less-than-Eq. To make calculation easier we are leveraging
- * the fact that the cudf-result(r) always returns false. So that result is used in place of false when needed.
+ * The table below shows how the result is calculated for Less-than-Eq. To make calculation easier
+ * we are leveraging the fact that the cudf-result(r) always returns false. So that result is used
+ * in place of false when needed.
  *
  * In this case, return rhs.nan || result[i]
  *
