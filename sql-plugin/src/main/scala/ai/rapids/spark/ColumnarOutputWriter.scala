@@ -59,8 +59,8 @@ abstract class ColumnarOutputWriterFactory extends Serializable {
  * must provide a zero-argument constructor. This is the columnar version of
  * [[org.apache.spark.sql.execution.datasources.OutputWriter]].
  */
-abstract class ColumnarOutputWriter(path: String, context: TaskAttemptContext, dataSchema: StructType, rangeName: String)
-  extends HostBufferConsumer {
+abstract class ColumnarOutputWriter(path: String, context: TaskAttemptContext,
+    dataSchema: StructType, rangeName: String) extends HostBufferConsumer {
 
   val tableWriter: TableWriter
   val conf = context.getConfiguration
@@ -99,8 +99,8 @@ abstract class ColumnarOutputWriter(path: String, context: TaskAttemptContext, d
   }
 
   /**
-   * Persists a columnar batch. Invoked on the executor side. When writing to dynamically partitioned
-   * tables, dynamic partition columns are not included in columns to be written.
+   * Persists a columnar batch. Invoked on the executor side. When writing to dynamically 
+   * partitioned tables, dynamic partition columns are not included in columns to be written.
    * NOTE: It is the writer's responsibility to close the batch.
    */
   def write(batch: ColumnarBatch, statsTrackers: Seq[ColumnarWriteTaskStatsTracker]): Unit = {

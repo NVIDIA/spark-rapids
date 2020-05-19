@@ -20,6 +20,8 @@ import org.apache.spark.sql.functions._
 import org.apache.spark.sql.types._
 import org.apache.spark.sql.{Column, DataFrame, SparkSession}
 
+// scalastyle:off line.size.limit
+
 object GetQuarterFromCsvFileName {
   // The format is path/TYPE_yyyy\QQ.txt followed by a (_index)* where index is a single digit number [0-9]
   // i.e. mortgage/perf/Performance_2003Q4.txt_0_1
