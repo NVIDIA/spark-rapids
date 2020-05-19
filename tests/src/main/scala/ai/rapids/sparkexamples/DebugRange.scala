@@ -39,7 +39,8 @@ object DebugRange {
       }
     }
     if (color.isDefined) {
-      Some(constructor.get.newInstance(name, color.get.asInstanceOf[Object]).asInstanceOf[AutoCloseable])
+      Some(constructor.get.newInstance(name, color.get.asInstanceOf[Object])
+        .asInstanceOf[AutoCloseable])
     } else {
       System.err.println(s"\nCOULD NOT INITIALIZE NVTX RANGE $name")
       None

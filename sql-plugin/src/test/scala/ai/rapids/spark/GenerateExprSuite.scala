@@ -36,7 +36,8 @@ class GenerateExprSuite extends SparkQueryCompareTestSuite {
   }
 
   IGNORE_ORDER_testSparkResultsAreEqual("posexplode(array(lit), strings)", doubleStringsDf) {
-    frame => frame.select(posexplode(lit(Array("1", "2", "3"))), col("more_doubles"), col("doubles"))
+    frame => frame.select(posexplode(lit(Array("1", "2", "3"))), col("more_doubles"), 
+      col("doubles"))
   }
 
   IGNORE_ORDER_testSparkResultsAreEqual("explode(array(floats, more_floats))", mixedFloatDf) {
