@@ -41,10 +41,10 @@ class DataGen:
         self.data_type = data_type
         self.nullable = nullable
         self._special_cases = []
-        for element in special_cases:
-            self.with_special_case(element)
         if nullable:
             self.with_special_case(None, weight=5.0)
+        for element in special_cases:
+            self.with_special_case(element)
 
     def with_special_case(self, special_case, weight=1.0):
         """
