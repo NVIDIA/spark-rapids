@@ -82,7 +82,9 @@ class CoalescedBatchPartitioner(val parent: Partitioner, val partitionStartIndic
       false
   }
 
-  override def hashCode(): Int = 31 * parent.hashCode() + util.Arrays.hashCode(partitionStartIndices)
+  override def hashCode(): Int = {
+    31 * parent.hashCode() + util.Arrays.hashCode(partitionStartIndices)
+  }
 }
 
 /**
@@ -137,7 +139,11 @@ class ShuffledBatchRDD(
     Array.tabulate[Partition](partitionStartIndices.length) { i =>
       val startIndex = partitionStartIndices(i)
       val endIndex =
-        if (i < partitionStartIndices.length - 1) partitionStartIndices(i + 1) else numPreShufflePartitions
+        if (i < partitionStartIndices.length - 1) {
+          partitionStartIndices(i + 1)
+        } else {
+          numPreShufflePartitions
+        }
       new ShuffledBatchRDDPartition(i, startIndex, endIndex)
     }
   }
@@ -164,7 +170,8 @@ class ShuffledBatchRDD(
       context,
       sqlMetricsReporter)
     var ret : Iterator[ColumnarBatch] = null
-    val nvtxRange = new NvtxWithMetrics("Shuffle getPartitions", NvtxColor.DARK_GREEN, metrics(GpuMetricNames.TOTAL_TIME))
+    val nvtxRange = new NvtxWithMetrics(
+      "Shuffle getPartitions", NvtxColor.DARK_GREEN, metrics(GpuMetricNames.TOTAL_TIME))
     try {
       ret = reader.read().asInstanceOf[Iterator[Product2[Int, ColumnarBatch]]].map(_._2)
     } finally {
