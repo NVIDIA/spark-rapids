@@ -96,7 +96,9 @@ case class GpuAlias(child: GpuExpression, name: String)(
 object GpuAttributeReference {
   def from(attr: Attribute): GpuAttributeReference = attr match {
     case attr: GpuAttributeReference => attr
-    case attr: AttributeReference => GpuAttributeReference(attr.name, attr.dataType, attr.nullable, attr.metadata)(attr.exprId, attr.qualifier)
+    case attr: AttributeReference =>
+      GpuAttributeReference(
+        attr.name, attr.dataType, attr.nullable, attr.metadata)(attr.exprId, attr.qualifier)
     case attr => throw new IllegalStateException(s"Unexpected attribute $attr")
   }
 }

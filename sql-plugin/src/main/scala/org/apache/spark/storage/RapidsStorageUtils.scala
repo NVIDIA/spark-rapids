@@ -19,6 +19,7 @@ package org.apache.spark.storage
 import java.nio.ByteBuffer
 
 object RapidsStorageUtils {
+  // scalastyle:off line.size.limit
   /**
     * Calls into spark's [[StorageUtils]] to expose the [[dispose]] method.
     *
@@ -30,5 +31,6 @@ object RapidsStorageUtils {
     *
     * @param buffer - byte buffer to dispose
     */
+  // scalastyle:on line.size.limit
   def dispose(buffer: ByteBuffer): Unit = StorageUtils.dispose(buffer)
 }
