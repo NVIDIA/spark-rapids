@@ -167,7 +167,8 @@ case class GpuIf(
     }
   }
 
-  override def columnarEval(batch: ColumnarBatch): Any = computeIfElse(batch, predicateExpr, trueExpr, falseExpr)
+  override def columnarEval(batch: ColumnarBatch): Any = computeIfElse(batch, predicateExpr,
+    trueExpr, falseExpr)
 
   override def toString: String = s"if ($predicateExpr) $trueExpr else $falseExpr"
 

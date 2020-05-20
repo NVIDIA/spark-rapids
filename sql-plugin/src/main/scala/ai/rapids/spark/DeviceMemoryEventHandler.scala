@@ -95,7 +95,8 @@ class DeviceMemoryEventHandler(
   override def onAllocThreshold(totalAllocated: Long): Unit = {
     try {
       if (asyncSpillActive.compareAndSet(false, true)) {
-        logInfo(s"Asynchronous spill start triggered, total device memory allocated=${bytesToString(totalAllocated)}")
+        logInfo(s"Asynchronous spill start triggered, total device memory " +
+          s"allocated=${bytesToString(totalAllocated)}")
 
         // TODO: Because this is copying the buffer on a separate stream it needs to synchronize
         //       with the other stream that created the buffer, otherwise we could end up copying
@@ -120,7 +121,8 @@ class DeviceMemoryEventHandler(
   override def onDeallocThreshold(totalAllocated: Long): Unit = {
     try {
       if (asyncSpillActive.compareAndSet(true, false)) {
-        logInfo(s"Asynchronous spill stop triggered, total device memory allocated=${bytesToString(totalAllocated)}")
+        logInfo(s"Asynchronous spill stop triggered, total device memory " +
+          s"allocated=${bytesToString(totalAllocated)}")
       }
     } catch {
       case t: Throwable => logError("Error handling deallocation threshold callback", t)
@@ -136,7 +138,8 @@ class DeviceMemoryEventHandler(
     val nvtx = new NvtxRange("spill", NvtxColor.ORANGE)
     try {
       var loggedSpillExhausted = false
-      logInfo(s"Starting async device spill, device store size=${bytesToString(store.currentSize)}")
+      logInfo(s"Starting async device spill, device store " +
+        s"size=${bytesToString(store.currentSize)}")
       var spillActive = asyncSpillActive.get
 
       while (spillActive) {
@@ -159,7 +162,8 @@ class DeviceMemoryEventHandler(
         spillActive = asyncSpillActive.get
       }
 
-      logInfo(s"Async device spill complete, device store size=${bytesToString(store.currentSize)}")
+      logInfo(s"Async device spill complete, device store " +
+        s"size=${bytesToString(store.currentSize)}")
     } finally {
       nvtx.close()
     }
