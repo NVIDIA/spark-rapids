@@ -43,8 +43,8 @@ class CastExprMeta[INPUT <: CastBase](
     if (!conf.isCastToFloatEnabled && toType == DataTypes.StringType &&
       (fromType == DataTypes.FloatType || fromType == DataTypes.DoubleType)) {
       willNotWorkOnGpu("the GPU will use different precision than Java's toString method when " +
-        "converting floating point data types to strings and this can produce results that differ " +
-        "from the default behavior in Spark.  To enable this operation on the GPU, set" +
+        "converting floating point data types to strings and this can produce results that " +
+        "differ from the default behavior in Spark.  To enable this operation on the GPU, set" +
         s" ${RapidsConf.ENABLE_CAST_FLOAT_TO_STRING} to true.")
     }
     if (!conf.isCastTimestampToStringEnabled && fromType == DataTypes.TimestampType &&
@@ -147,7 +147,11 @@ object GpuCast {
 /**
  * Casts using the GPU
  */
-case class GpuCast(child: GpuExpression, dataType: DataType, ansiMode: Boolean = false, timeZoneId: Option[String] = None)
+case class GpuCast(
+    child: GpuExpression,
+    dataType: DataType,
+    ansiMode: Boolean = false,
+    timeZoneId: Option[String] = None)
   extends GpuUnaryExpression with TimeZoneAwareExpression with NullIntolerant {
 
   override def toString: String = if (ansiMode) {
@@ -178,9 +182,9 @@ case class GpuCast(child: GpuExpression, dataType: DataType, ansiMode: Boolean =
   private[this] def needsTimeZone: Boolean = Cast.needsTimeZone(child.dataType, dataType)
 
   override def sql: String = dataType match {
-    // HiveQL doesn't allow casting to complex types. For logical plans translated from HiveQL, this
-    // type of casting can only be introduced by the analyzer, and can be omitted when converting
-    // back to SQL query string.
+    // HiveQL doesn't allow casting to complex types. For logical plans translated from HiveQL,
+    // this type of casting can only be introduced by the analyzer, and can be omitted when
+    // converting back to SQL query string.
     case _: ArrayType | _: MapType | _: StructType => child.sql
     case _ => s"CAST(${child.sql} AS ${dataType.sql})"
   }
@@ -223,9 +227,15 @@ case class GpuCast(child: GpuExpression, dataType: DataType, ansiMode: Boolean =
             try {
               if (ansiMode) {
                 dataType match {
-                  case IntegerType => assertValuesInRange(cv, Scalar.fromInt(Int.MinValue), Scalar.fromInt(Int.MaxValue))
-                  case ShortType => assertValuesInRange(cv, Scalar.fromShort(Short.MinValue), Scalar.fromShort(Short.MaxValue))
-                  case ByteType => assertValuesInRange(cv, Scalar.fromByte(Byte.MinValue), Scalar.fromByte(Byte.MaxValue))
+                  case IntegerType =>
+                    assertValuesInRange(cv, Scalar.fromInt(Int.MinValue),
+                      Scalar.fromInt(Int.MaxValue))
+                  case ShortType =>
+                    assertValuesInRange(cv, Scalar.fromShort(Short.MinValue),
+                      Scalar.fromShort(Short.MaxValue))
+                  case ByteType =>
+                    assertValuesInRange(cv, Scalar.fromByte(Byte.MinValue),
+                      Scalar.fromByte(Byte.MaxValue))
                 }
               }
               GpuColumnVector.from(cv.castTo(cudfType))
@@ -255,47 +265,55 @@ case class GpuCast(child: GpuExpression, dataType: DataType, ansiMode: Boolean =
 
       // ansi cast from larger-than-integer integral types, to integer
       case (LongType, IntegerType) if ansiMode =>
-        assertValuesInRange(input.getBase, Scalar.fromInt(Int.MinValue), Scalar.fromInt(Int.MaxValue))
+        assertValuesInRange(input.getBase, Scalar.fromInt(Int.MinValue),
+          Scalar.fromInt(Int.MaxValue))
         GpuColumnVector.from(input.getBase.castTo(cudfType))
 
       // ansi cast from larger-than-short integral types, to short
       case (LongType|IntegerType, ShortType) if ansiMode =>
-        assertValuesInRange(input.getBase, Scalar.fromShort(Short.MinValue), Scalar.fromShort(Short.MaxValue))
+        assertValuesInRange(input.getBase, Scalar.fromShort(Short.MinValue),
+          Scalar.fromShort(Short.MaxValue))
         GpuColumnVector.from(input.getBase.castTo(cudfType))
 
       // ansi cast from larger-than-byte integral types, to byte
       case (LongType|IntegerType|ShortType, ByteType) if ansiMode =>
-        assertValuesInRange(input.getBase, Scalar.fromByte(Byte.MinValue), Scalar.fromByte(Byte.MaxValue))
+        assertValuesInRange(input.getBase, Scalar.fromByte(Byte.MinValue),
+          Scalar.fromByte(Byte.MaxValue))
         GpuColumnVector.from(input.getBase.castTo(cudfType))
 
       // ansi cast from floating-point types, to byte
       case (FloatType|DoubleType, ByteType) if ansiMode =>
-        assertValuesInRange(input.getBase, Scalar.fromByte(Byte.MinValue), Scalar.fromByte(Byte.MaxValue))
+        assertValuesInRange(input.getBase, Scalar.fromByte(Byte.MinValue),
+          Scalar.fromByte(Byte.MaxValue))
         GpuColumnVector.from(input.getBase.castTo(cudfType))
 
       // ansi cast from floating-point types, to short
       case (FloatType|DoubleType, ShortType) if ansiMode =>
-        assertValuesInRange(input.getBase, Scalar.fromShort(Short.MinValue), Scalar.fromShort(Short.MaxValue))
+        assertValuesInRange(input.getBase, Scalar.fromShort(Short.MinValue),
+          Scalar.fromShort(Short.MaxValue))
         GpuColumnVector.from(input.getBase.castTo(cudfType))
 
       // ansi cast from floating-point types, to integer
       case (FloatType|DoubleType, IntegerType) if ansiMode =>
-        assertValuesInRange(input.getBase, Scalar.fromInt(Int.MinValue), Scalar.fromInt(Int.MaxValue))
+        assertValuesInRange(input.getBase, Scalar.fromInt(Int.MinValue),
+          Scalar.fromInt(Int.MaxValue))
         GpuColumnVector.from(input.getBase.castTo(cudfType))
 
       // ansi cast from floating-point types, to long
       case (FloatType|DoubleType, LongType) if ansiMode =>
-        assertValuesInRange(input.getBase, Scalar.fromLong(Long.MinValue), Scalar.fromLong(Long.MaxValue))
+        assertValuesInRange(input.getBase, Scalar.fromLong(Long.MinValue),
+          Scalar.fromLong(Long.MaxValue))
         GpuColumnVector.from(input.getBase.castTo(cudfType))
 
       case (FloatType | DoubleType, TimestampType) =>
         // Spark casting to timestamp from double assumes value is in microseconds
         withResource(Scalar.fromInt(1000000)) { microsPerSec =>
           withResource(input.getBase.nansToNulls()) { inputWithNansToNull =>
-            withResource(FloatUtils.infinityToNulls(inputWithNansToNull)) { inputWithoutNanAndInfinity =>
-              withResource(inputWithoutNanAndInfinity.mul(microsPerSec)) { inputTimesMicrosCv =>
-                GpuColumnVector.from(inputTimesMicrosCv.castTo(DType.TIMESTAMP_MICROSECONDS))
-              }
+            withResource(FloatUtils.infinityToNulls(inputWithNansToNull)) {
+              inputWithoutNanAndInfinity =>
+                withResource(inputWithoutNanAndInfinity.mul(microsPerSec)) { inputTimesMicrosCv =>
+                  GpuColumnVector.from(inputTimesMicrosCv.castTo(DType.TIMESTAMP_MICROSECONDS))
+                }
             }
           }
         }
@@ -308,8 +326,9 @@ case class GpuCast(child: GpuExpression, dataType: DataType, ansiMode: Boolean =
         } finally {
           timestampSecs.close();
         }
-        // Float.NaN => Int is casted to a zero but float.NaN => Long returns a small negative number
-        // Double.NaN => Int | Long, returns a small negative number so Nans have to be converted to zero first
+        // Float.NaN => Int is casted to a zero but float.NaN => Long returns a small negative
+        // number Double.NaN => Int | Long, returns a small negative number so Nans have to be
+        // converted to zero first
       case (FloatType, LongType) | (DoubleType, IntegerType | LongType) =>
         withResource(FloatUtils.nanToZero(input.getBase)) { inputWithNansToZero =>
           GpuColumnVector.from(inputWithNansToZero.castTo(cudfType))
@@ -339,8 +358,9 @@ case class GpuCast(child: GpuExpression, dataType: DataType, ansiMode: Boolean =
             }
           }
         }
-        // cast to specific integral type after filtering out values that are not in range for that type
-        // note that the scalar values here are named parameters so are not created until they are needed
+        // cast to specific integral type after filtering out values that are not in range for that
+        // type note that the scalar values here are named parameters so are not created until they
+        // are needed
         withResource(longStrings) { longStrings =>
           cudfType match {
             case DType.INT8 =>
