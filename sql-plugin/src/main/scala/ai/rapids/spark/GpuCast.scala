@@ -40,7 +40,7 @@ class CastExprMeta[INPUT <: CastBase](
       willNotWorkOnGpu(s"$castExpr from $fromType " +
         s"to $toType is not currently supported on the GPU")
     }
-    if (!conf.isCastToFloatEnabled && toType == DataTypes.StringType &&
+    if (!conf.isCastFloatToStringEnabled && toType == DataTypes.StringType &&
       (fromType == DataTypes.FloatType || fromType == DataTypes.DoubleType)) {
       willNotWorkOnGpu("the GPU will use different precision than Java's toString method when " +
         "converting floating point data types to strings and this can produce results that " +
