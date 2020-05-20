@@ -85,7 +85,8 @@ abstract class RapidsBufferStore(
 
   private class BufferTracker {
     private[this] val comparator: Comparator[RapidsBufferBase] =
-      (o1: RapidsBufferBase, o2: RapidsBufferBase) => java.lang.Long.compare(o1.getSpillPriority, o2.getSpillPriority)
+      (o1: RapidsBufferBase, o2: RapidsBufferBase) =>
+        java.lang.Long.compare(o1.getSpillPriority, o2.getSpillPriority)
     private[this] val buffers = new java.util.HashMap[RapidsBufferId, RapidsBufferBase]
     private[this] val spillable = new HashedPriorityQueue[RapidsBufferBase](comparator)
     private[this] var totalBytesStored: Long = 0L
@@ -230,32 +231,33 @@ abstract class RapidsBufferStore(
     }
   }
 
-  def asyncSpillSingleBuffer(targetUnspilledSize: Long, stream: Cuda.Stream): Boolean = synchronized {
-    require(targetUnspilledSize >= 0)
-    val unspilledSize = buffers.getTotalBytes - spilledBytesStored.get
-    if (unspilledSize <= targetUnspilledSize) {
-      return false
-    }
-    val bufferToSpill = buffers.nextSpillableBuffer()
-    if (bufferToSpill == null) {
-      return false
-    }
-    // If unable to get a reference then its a race condition where the buffer was invalidated
-    // just as we were going to spill it. Either way, indicate to the caller that a spillable
-    // buffer was found and more may be available in subsequent invocations.
-    if (bufferToSpill.addReference()) {
-      val newBuffer = try {
-        logInfo(s"Async spilling $bufferToSpill to ${spillStore.name}")
-        spillStore.copyBuffer(bufferToSpill, stream)
-      } finally {
-        bufferToSpill.close()
+  def asyncSpillSingleBuffer(targetUnspilledSize: Long, stream: Cuda.Stream): Boolean =
+    synchronized {
+      require(targetUnspilledSize >= 0)
+      val unspilledSize = buffers.getTotalBytes - spilledBytesStored.get
+      if (unspilledSize <= targetUnspilledSize) {
+        return false
       }
-      if (newBuffer != null) {
-        bufferToSpill.markAsSpilled()
+      val bufferToSpill = buffers.nextSpillableBuffer()
+      if (bufferToSpill == null) {
+        return false
       }
+      // If unable to get a reference then its a race condition where the buffer was invalidated
+      // just as we were going to spill it. Either way, indicate to the caller that a spillable
+      // buffer was found and more may be available in subsequent invocations.
+      if (bufferToSpill.addReference()) {
+        val newBuffer = try {
+          logInfo(s"Async spilling $bufferToSpill to ${spillStore.name}")
+          spillStore.copyBuffer(bufferToSpill, stream)
+        } finally {
+          bufferToSpill.close()
+        }
+        if (newBuffer != null) {
+          bufferToSpill.markAsSpilled()
+        }
+      }
+      true
     }
-    true
-  }
 
   /**
    * Free buffers that has already been spilled via asynchronous spill to
@@ -310,7 +312,8 @@ abstract class RapidsBufferStore(
     // to return back to the outer loop to see if enough has been freed.
     if (buffer.addReference()) {
       val newBuffer = try {
-        logInfo(s"Spilling $buffer ${buffer.id} to ${spillStore.name} total mem=${buffers.getTotalBytes}")
+        logInfo(s"Spilling $buffer ${buffer.id} to ${spillStore.name} " +
+          s"total mem=${buffers.getTotalBytes}")
         spillStore.copyBuffer(buffer, stream)
       } finally {
         buffer.close()
@@ -453,7 +456,8 @@ abstract class RapidsBufferStore(
 
     override def getSpillPriority: Long = spillPriority
 
-    override def setSpillPriority(priority: Long): Unit = buffers.updateSpillPriority(this, priority)
+    override def setSpillPriority(priority: Long): Unit =
+      buffers.updateSpillPriority(this, priority)
 
     private[RapidsBufferStore] def updateSpillPriorityValue(priority: Long): Unit = {
       spillPriority = priority
