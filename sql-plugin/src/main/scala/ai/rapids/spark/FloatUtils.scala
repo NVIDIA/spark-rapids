@@ -24,16 +24,25 @@ object FloatUtils extends Arm {
       throw new IllegalArgumentException("Only Floats and Doubles allowed")
     }
     withResource(cv.isNan()) { isNan =>
-      withResource(if (cv.getType == DType.FLOAT64) Scalar.fromDouble(0.0d) else Scalar.fromFloat(0.0f)) { zero =>
-        isNan.ifElse(zero, cv)
+      withResource(
+        if (cv.getType == DType.FLOAT64) {
+          Scalar.fromDouble(0.0d)
+        } else {
+          Scalar.fromFloat(0.0f)
+        }
+      ) {
+        zero => isNan.ifElse(zero, cv)
       }
     }
   }
 
   def infinityToNulls(vec: ColumnVector): ColumnVector = {
     def getInfinityVector: ColumnVector = {
-      if (vec.getType == DType.FLOAT64) ColumnVector.fromDoubles(Double.PositiveInfinity, Double.NegativeInfinity)
-      else ColumnVector.fromFloats(Float.PositiveInfinity, Float.NegativeInfinity)
+      if (vec.getType == DType.FLOAT64) {
+        ColumnVector.fromDoubles(Double.PositiveInfinity, Double.NegativeInfinity)
+      } else {
+        ColumnVector.fromFloats(Float.PositiveInfinity, Float.NegativeInfinity)
+      }
     }
 
     def getNullVector: ColumnVector = {
