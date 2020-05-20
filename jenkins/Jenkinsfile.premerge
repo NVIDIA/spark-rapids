@@ -37,6 +37,7 @@ pipeline {
 
     environment {
         JENKINS_ROOT  = 'jenkins'
+        BUILD_SCRIPT = '$JENKINS_ROOT/spark-premerge-build.sh'
         MVN_GPUWA_MIRROR='-s jenkins/settings.xml -P mirror-apache-to-gpuwa'
         LIBCUDF_KERNEL_CACHE_PATH='/tmp'
         QUAY_IO = credentials("svcngcc_quayio")
@@ -55,7 +56,7 @@ pipeline {
                     docker.image(IMAGE_NAME).inside("--runtime=nvidia -v ${HOME}/.m2:${HOME}/.m2:rw \
                         -v ${HOME}/.zinc:${HOME}/.zinc:rw \
                         -v /etc/passwd:/etc/passwd -v /etc/group:/etc/group") {
-                        sh "mvn -U -B clean verify $MVN_GPUWA_MIRROR scoverage:report"
+                        sh "bash $BUILD_SCRIPT $MVN_GPUWA_MIRROR"
                         cobertura coberturaReportFile: 'target/cobertura.xml'
                     }
                 }

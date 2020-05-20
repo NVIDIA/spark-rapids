@@ -378,6 +378,7 @@
                 <artifactId>apache-rat-plugin</artifactId>
                 <configuration>
                     <excludes>
+                        <exclude>.download/**</exclude>
                         <exclude>.gitattributes</exclude>
                         <exclude>.gitignore</exclude>
                         <exclude>.git/**</exclude>
