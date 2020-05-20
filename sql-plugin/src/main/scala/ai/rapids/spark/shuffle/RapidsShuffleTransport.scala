@@ -45,7 +45,8 @@ class AddressLengthTag(val address: Long, var length: Long, val tag: Long,
   }
 
   /**
-    * Get a device memory buffer, this function will throw if it is not backed by a [[DeviceMemoryBuffer]]
+    * Get a device memory buffer, this function will throw if it is not backed by a
+    * [[DeviceMemoryBuffer]]
     * @return - the backing [[DeviceMemoryBuffer]]
     */
   def releaseDeviceMemoryBuffer(): DeviceMemoryBuffer = {
@@ -85,7 +86,8 @@ class AddressLengthTag(val address: Long, var length: Long, val tag: Long,
     */
   def cudaCopyFrom(srcAlt: AddressLengthTag, dstOffset: Long): Long = {
     require(dstOffset + srcAlt.length <= length,
-      s"Attempting to copy to a buffer that isn't big enough! $dstOffset + ${srcAlt.length} (${dstOffset+srcAlt.length}) <= ${length}")
+      s"Attempting to copy to a buffer that isn't big enough! $dstOffset + ${srcAlt.length} " +
+        s"(${dstOffset+srcAlt.length}) <= ${length}")
     // TODO: replace this with an async copy on target stream
     CudaUtil.copy(
       srcAlt.memoryBuffer.get,
@@ -119,7 +121,8 @@ class AddressLengthTag(val address: Long, var length: Long, val tag: Long,
   }
 
   /**
-    * The Server will call close as the memory buffer stored here is owned by this [[AddressLengthTag]]
+    * The Server will call close as the memory buffer stored here is owned by this
+    * [[AddressLengthTag]]
     */
   override def close(): Unit = {
     memoryBuffer.foreach(_.close())
@@ -232,7 +235,8 @@ trait ClientConnection extends Connection {
     * when the response is received at the response's tag.
     * @param request - [[AddressLengthTag]] describing request message
     * @param response - [[AddressLengthTag]] describing response message
-    * @param cb - a callback to tell the caller that the transaction is done ([[response]] should have the result)
+    * @param cb - a callback to tell the caller that the transaction is done ([[response]] should
+    *             have the result)
     * @return - [[Transaction]] object. It can be used to block for this requst to complete.
     */
   def request(request: AddressLengthTag,
@@ -316,13 +320,16 @@ case class TransactionStats(txTimeMs: Double,
                             recvThroughput: Double)
 
 /**
-  * This trait represents a shuffle "transaction", and it is specific to a transfer (or set of transfers).
+  * This trait represents a shuffle "transaction", and it is specific to a transfer (or set of
+  * transfers).
   *
   * It is useful in that it groups a set of sends and receives requires in order to carry an action
-  * against a peer. It can be used to find statistics about the transfer (bytes send/received, throughput),
+  * against a peer. It can be used to find statistics about the transfer (bytes send/received,
+  * throughput),
   * and it also can be waited on, for blocking clients.
   *
-  * NOTE: a Transaction is thread safe w.r.t. a connection's callback. Calling methods on the transaction
+  * NOTE: a Transaction is thread safe w.r.t. a connection's callback. Calling methods on the
+  * transaction
   * outside of [[waitForCompletion]] produces undefined behavior.
   */
 trait Transaction extends AutoCloseable {
@@ -349,7 +356,8 @@ trait Transaction extends AutoCloseable {
     * Block until this transaction is completed.
     *
     * NOTE: not only does this include the transaction time, but it also includes the
-    * code performed in the callback. If the callback would block, you could end up in a situation of
+    * code performed in the callback. If the callback would block, you could end up in a situation
+    * of
     * deadlock.
     */
   def waitForCompletion(): Unit
@@ -359,7 +367,8 @@ trait Transaction extends AutoCloseable {
   * This defines what a "transport" should support. The intention is to allow for
   * various transport implementations to exist, for different communication frameworks.
   *
-  * It is an [[AutoCloseable]] and so the caller should close when the transport is no longer needed.
+  * It is an [[AutoCloseable]] and so the caller should close when the transport is no longer
+  * needed.
   */
 trait RapidsShuffleTransport extends AutoCloseable {
   /**
@@ -399,7 +408,8 @@ trait RapidsShuffleTransport extends AutoCloseable {
   def queuePending(reqs: Seq[PendingTransferRequest])
 
   /**
-    * (throttle) Signals that [[bytesCompleted]] are done, allowing more requests through the throttle.
+    * (throttle) Signals that [[bytesCompleted]] are done, allowing more requests through the
+    * throttle.
     * @param bytesCompleted - amount of bytes handled
     */
   def doneBytesInFlight(bytesCompleted: Long): Unit
@@ -448,7 +458,8 @@ trait RapidsShuffleTransport extends AutoCloseable {
     * @param totalRequired - maximum no. of buffers that should be returned
     * @return - a sequence of bounce buffers
     */
-  def getSendBounceBuffers(deviceMemory: Boolean, remaining: Long, totalRequired: Int): Seq[MemoryBuffer]
+  def getSendBounceBuffers(deviceMemory: Boolean, remaining: Long,
+      totalRequired: Int): Seq[MemoryBuffer]
 
   /**
     * Get send bounce buffers needed for [[remaining]] bytes. [[totalRequired]] limits the
@@ -462,7 +473,8 @@ trait RapidsShuffleTransport extends AutoCloseable {
     * @param totalRequired - maximum no. of buffers that should be returned
     * @return - a sequence of bounce buffers, or empty if the request can't be satisfied
     */
-  def tryGetSendBounceBuffers(deviceMemory: Boolean, remaining: Long, totalRequired: Int): Seq[MemoryBuffer]
+  def tryGetSendBounceBuffers(deviceMemory: Boolean, remaining: Long,
+      totalRequired: Int): Seq[MemoryBuffer]
 
   /**
     * Free send bounce buffers. These may be pooled and so reused by other requests.
@@ -485,7 +497,8 @@ class DirectByteBufferPool(bufferSize: Long) extends Logging {
 
   def getBuffer(size: Long): RefCountedDirectByteBuffer = {
     if (size > bufferSize) {
-      throw new IllegalStateException(s"Buffers of size $bufferSize are the only ones supported, asked for $size")
+      throw new IllegalStateException(s"Buffers of size $bufferSize are the only ones supported, " +
+        s"asked for $size")
     }
     var buff = buffers.poll()
     if (buff == null) {
@@ -504,7 +517,8 @@ class DirectByteBufferPool(bufferSize: Long) extends Logging {
 }
 
 /**
-  * [[RefCountedDirectByteBuffer]] is a simple wrapper on top of a [[ByteBuffer]] that has been allocated
+  * [[RefCountedDirectByteBuffer]] is a simple wrapper on top of a [[ByteBuffer]] that has been
+  * allocated
   * in direct mode. The pool is used to return the [[ByteBuffer]] to be reused, but not all
   * of these buffers are pooled (hence the argument is optional)
   *
@@ -514,7 +528,8 @@ class DirectByteBufferPool(bufferSize: Long) extends Logging {
   * @param bb - buffer to wrap
   * @param pool - optional pool
   */
-class RefCountedDirectByteBuffer(bb: ByteBuffer, pool: Option[DirectByteBufferPool] = None) extends AutoCloseable {
+class RefCountedDirectByteBuffer(bb: ByteBuffer,
+                                 pool: Option[DirectByteBufferPool] = None) extends AutoCloseable {
   assert(bb.isDirect, "Only direct buffers are supported")
 
   var refCount: Int = 0
@@ -596,23 +611,27 @@ object TransportUtils {
 
 object RapidsShuffleTransport extends Logging {
   /**
-    * Used in [[BlockManagerId]]s handled by the [[RapidsShuffleTransport]], in the topology property.
+    * Used in [[BlockManagerId]]s handled by the [[RapidsShuffleTransport]], in the topology
+    * property.
     */
   val BLOCK_MANAGER_ID_TOPO_PREFIX: String = "rapids"
 
   /**
     * Returns an instance of [[RapidsShuffleTransport]]. This only knows about UCX right now.
-    * @param shuffleServerId - this is the original [[BlockManagerId]] that Spark has for this executor
+    * @param shuffleServerId - this is the original [[BlockManagerId]] that Spark has for this
+    *                          executor
     * @param rapidsConf - instance of [[RapidsConf]]
     * @return - a [[RapidsShuffleTransport]] instance to be used to create a server and clients.
     */
-  def makeTransport(shuffleServerId: BlockManagerId, rapidsConf: RapidsConf): RapidsShuffleTransport = {
+  def makeTransport(shuffleServerId: BlockManagerId,
+                    rapidsConf: RapidsConf): RapidsShuffleTransport = {
     val transportClass = try {
       Class.forName(rapidsConf.shuffleTransportClassName)
     } catch {
       case classNotFoundException: ClassNotFoundException =>
-        logError(s"Unable to find RapidsShuffleTransport class ${rapidsConf.shuffleTransportClassName}." +
-          "Please ensure the appropriate jars have been added to the classpath.", classNotFoundException)
+        logError(s"Unable to find RapidsShuffleTransport class " +
+          s"${rapidsConf.shuffleTransportClassName}. Please ensure the appropriate jars have " +
+          s"been added to the classpath.", classNotFoundException)
         throw classNotFoundException
     }
     try {
@@ -620,7 +639,8 @@ object RapidsShuffleTransport extends Logging {
       ctr.newInstance(shuffleServerId, rapidsConf).asInstanceOf[RapidsShuffleTransport]
     } catch {
       case t: Throwable =>
-        logError(s"Found class for ${rapidsConf.shuffleTransportClassName}, but failed to instantiate", t)
+        logError(s"Found class for ${rapidsConf.shuffleTransportClassName}, but failed " +
+          s"to instantiate", t)
         throw t
     }
   }
