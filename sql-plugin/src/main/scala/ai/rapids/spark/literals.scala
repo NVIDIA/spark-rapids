@@ -41,7 +41,8 @@ object GpuScalar {
       case _: Byte => DType.INT8
       case _: Boolean => DType.BOOL8
       case _: String | _: UTF8String => DType.STRING
-      case _ => throw new IllegalArgumentException(s"${v.getClass} '$v' is not supported as a scalar yet")
+      case _ =>
+        throw new IllegalArgumentException(s"${v.getClass} '$v' is not supported as a scalar yet")
     }
   }
 
@@ -70,7 +71,8 @@ object GpuScalar {
     case b: Boolean => Scalar.fromBool(b)
     case s: String => Scalar.fromString(s)
     case s: UTF8String => Scalar.fromString(s.toString)
-    case _ => throw new IllegalStateException(s"${v.getClass} '${v}' is not supported as a scalar yet")
+    case _ =>
+      throw new IllegalStateException(s"${v.getClass} '${v}' is not supported as a scalar yet")
   }
 
   def from(v: Any, t: DataType): Scalar = v match {
@@ -92,7 +94,8 @@ object GpuScalar {
     case b: Boolean => Scalar.fromBool(b)
     case s: String => Scalar.fromString(s)
     case s: UTF8String => Scalar.fromString(s.toString)
-    case _ => throw new IllegalStateException(s"${v.getClass} '${v}' is not supported as a scalar yet")
+    case _ =>
+      throw new IllegalStateException(s"${v.getClass} '${v}' is not supported as a scalar yet")
   }
 
   def isNan(s: Scalar): Boolean = {

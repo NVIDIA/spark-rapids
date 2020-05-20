@@ -36,7 +36,10 @@ import scala.collection.mutable.ArrayBuffer
   * the value of `partitions`.
   */
 
-case class GpuRangePartitioning(gpuOrdering: Seq[GpuSortOrder], numPartitions: Int, part: GpuRangePartitioner)
+case class GpuRangePartitioning(
+    gpuOrdering: Seq[GpuSortOrder],
+    numPartitions: Int,
+    part: GpuRangePartitioner)
   extends GpuExpression with GpuPartitioning {
 
   var rangeBounds: Array[InternalRow] = _
@@ -68,12 +71,13 @@ case class GpuRangePartitioning(gpuOrdering: Seq[GpuSortOrder], numPartitions: I
           // If `requiredOrdering` is a prefix of `ordering`:
           //   Let's say `ordering` is [a, b, c] and `requiredOrdering` is [a, b]. According to the
           //   RangePartitioning definition, any [a, b, c] in a previous partition must be smaller
-          //   than any [a, b, c] in the following partition. If there is a [a1, b1] from a previous
-          //   partition which is larger than a [a2, b2] from the following partition, then there
-          //   must be a [a1, b1 c1] larger than [a2, b2, c2], which violates RangePartitioning
-          //   definition. So it's guaranteed that, any [a, b] in a previous partition must not be
-          //   greater(i.e. smaller or equal to) than any [a, b] in the following partition. Thus
-          //   `RangePartitioning(a, b, c)` satisfies `OrderedDistribution(a, b)`.
+          //   than any [a, b, c] in the following partition. If there is a [a1, b1] from a
+          //   previous partition which is larger than a [a2, b2] from the following partition,
+          //   then there must be a [a1, b1 c1] larger than [a2, b2, c2], which violates
+          //   RangePartitioning definition. So it's guaranteed that, any [a, b] in a previous
+          //   partition must not be greater(i.e. smaller or equal to) than any [a, b] in the
+          //   following partition. Thus `RangePartitioning(a, b, c)` satisfies
+          //   `OrderedDistribution(a, b)`.
           val minSize = Seq(requiredOrdering.size, gpuOrdering.size).min
           requiredOrdering.take(minSize) == gpuOrdering.take(minSize)
         case ClusteredDistribution(requiredClustering, _) =>
@@ -125,8 +129,8 @@ case class GpuRangePartitioning(gpuOrdering: Seq[GpuSortOrder], numPartitions: I
       finalSortedCb = GpuColumnVector.from(sortedTbl, numSortCols, sortedTbl.getNumberOfColumns)
       partitionColumns = GpuColumnVector.extractColumns(finalSortedCb)
       // get the ranges table and get upper bounds if possible
-      // rangeBounds can be empty or of length < numPartitions in cases where the samples are less than
-      // numPartitions. The way Spark handles it is by allowing the returned partitions to be
+      // rangeBounds can be empty or of length < numPartitions in cases where the samples are less
+      // than numPartitions. The way Spark handles it is by allowing the returned partitions to be
       // rangeBounds.length + 1 which is essentially what happens here when we do upperBound on the
       // ranges table, or return one partition.
       if (part.rangeBounds.nonEmpty) {
