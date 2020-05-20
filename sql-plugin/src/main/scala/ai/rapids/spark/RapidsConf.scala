@@ -652,7 +652,7 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
 
   lazy val enableHashOptimizeSort: Boolean = get(ENABLE_HASH_OPTIMIZE_SORT)
 
-  lazy val isCastToFloatEnabled: Boolean = get(ENABLE_CAST_FLOAT_TO_STRING)
+  lazy val isCastFloatToStringEnabled: Boolean = get(ENABLE_CAST_FLOAT_TO_STRING)
 
   lazy val isCastTimestampToStringEnabled: Boolean = get(ENABLE_CAST_TIMESTAMP_TO_STRING)
 
