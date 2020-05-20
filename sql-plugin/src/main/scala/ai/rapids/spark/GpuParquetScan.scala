@@ -475,7 +475,7 @@ class ParquetPartitionReader(
         if (readDataSchema.length != numColumns) {
           table.close()
           throw new QueryExecutionException(s"Expected ${readDataSchema.length} columns " +
-              s"but read ${table.getNumberOfColumns} from $filePath")
+              s"but read $numColumns from $filePath")
         }
         metrics(NUM_OUTPUT_BATCHES) += 1
         Some(table)
