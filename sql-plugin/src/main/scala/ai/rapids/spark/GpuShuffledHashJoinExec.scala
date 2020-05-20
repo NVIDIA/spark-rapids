@@ -36,7 +36,8 @@ class GpuShuffledHashJoinMeta(
   extends SparkPlanMeta[ShuffledHashJoinExec](join, conf, parent, rule) {
   val leftKeys: Seq[ExprMeta[_]] = join.leftKeys.map(GpuOverrides.wrapExpr(_, conf, Some(this)))
   val rightKeys: Seq[ExprMeta[_]] = join.rightKeys.map(GpuOverrides.wrapExpr(_, conf, Some(this)))
-  val condition: Option[ExprMeta[_]] = join.condition.map(GpuOverrides.wrapExpr(_, conf, Some(this)))
+  val condition: Option[ExprMeta[_]] =
+    join.condition.map(GpuOverrides.wrapExpr(_, conf, Some(this)))
 
   override val childExprs: Seq[ExprMeta[_]] = leftKeys ++ rightKeys ++ condition
 
@@ -100,12 +101,15 @@ case class GpuShuffledHashJoinExec(
       (streamIter, buildIter) => {
         var combinedSize = 0
         val startTime = System.nanoTime()
-        val buildBatch = ConcatAndConsumeAll.getSingleBatchWithVerification(buildIter, localBuildOutput)
+        val buildBatch =
+          ConcatAndConsumeAll.getSingleBatchWithVerification(buildIter, localBuildOutput)
         val keys = GpuProjectExec.project(buildBatch, gpuBuildKeys)
         val builtTable = try {
           // Combine does not inc any reference counting
           val combined = combine(keys, buildBatch)
-          combinedSize = GpuColumnVector.extractColumns(combined).map(_.dataType().defaultSize).sum * combined.numRows
+          combinedSize =
+            GpuColumnVector.extractColumns(combined)
+              .map(_.dataType().defaultSize).sum * combined.numRows
           GpuColumnVector.from(combined)
         } finally {
           keys.close()

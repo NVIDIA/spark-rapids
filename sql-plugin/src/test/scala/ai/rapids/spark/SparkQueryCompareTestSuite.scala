@@ -161,7 +161,8 @@ trait SparkQueryCompareTestSuite extends FunSuite with Arm {
         a.length == b.length && a.zip(b).forall { case (l, r) => compare(l, r, epsilon) }
       case (a: Map[_, _], b: Map[_, _]) =>
         a.size == b.size && a.keys.forall { aKey =>
-          b.keys.find(bKey => compare(aKey, bKey)).exists(bKey => compare(a(aKey), b(bKey), epsilon))
+          b.keys.find(bKey => compare(aKey, bKey))
+                .exists(bKey => compare(a(aKey), b(bKey), epsilon))
         }
       case (a: Iterable[_], b: Iterable[_]) =>
         a.size == b.size && a.zip(b).forall { case (l, r) => compare(l, r, epsilon) }
@@ -207,7 +208,8 @@ trait SparkQueryCompareTestSuite extends FunSuite with Arm {
     val fromCpu = withCpuSparkSession( session => {
       var data = df(session)
       if (repart > 0) {
-        // repartition the data so it is turned into a projection, not folded into the table scan exec
+        // repartition the data so it is turned into a projection,
+        // not folded into the table scan exec
         data = data.repartition(repart)
       }
       fun(data).collect()
@@ -216,7 +218,8 @@ trait SparkQueryCompareTestSuite extends FunSuite with Arm {
     val fromGpu = withGpuSparkSession( session => {
       var data = df(session)
       if (repart > 0) {
-        // repartition the data so it is turned into a projection, not folded into the table scan exec
+        // repartition the data so it is turned into a projection,
+        // not folded into the table scan exec
         data = data.repartition(repart)
       }
       fun(data).collect()
@@ -243,7 +246,8 @@ trait SparkQueryCompareTestSuite extends FunSuite with Arm {
       var dataA = dfA(session)
       var dataB = dfB(session)
       if (repart > 0) {
-        // repartition the data so it is turned into a projection, not folded into the table scan exec
+        // repartition the data so it is turned into a projection,
+        // not folded into the table scan exec
         dataA = dataA.repartition(repart)
         dataB = dataB.repartition(repart)
       }
@@ -254,7 +258,8 @@ trait SparkQueryCompareTestSuite extends FunSuite with Arm {
       var dataA = dfA(session)
       var dataB = dfB(session)
       if (repart > 0) {
-        // repartition the data so it is turned into a projection, not folded into the table scan exec
+        // repartition the data so it is turned into a projection,
+        // not folded into the table scan exec
         dataA = dataA.repartition(repart)
         dataB = dataB.repartition(repart)
       }
@@ -453,7 +458,8 @@ trait SparkQueryCompareTestSuite extends FunSuite with Arm {
             } else if (cmp > 0) {
               return false
             } // else equal go on
-          case (o1, o2) => throw new UnsupportedOperationException(o1.getClass + " is not supported yet")
+          case (o1, o2) =>
+            throw new UnsupportedOperationException(o1.getClass + " is not supported yet")
         }
       }
     }
@@ -554,7 +560,8 @@ trait SparkQueryCompareTestSuite extends FunSuite with Arm {
     }
   }
 
-  /** Create a DataFrame from a sequence of values and execution a transformation on CPU and GPU and compare results */
+  /** Create a DataFrame from a sequence of values and execution a transformation on CPU and GPU,
+   *  and compare results */
   def testUnaryFunction(
     conf: SparkConf,
     values: Seq[Any],
@@ -564,7 +571,8 @@ trait SparkQueryCompareTestSuite extends FunSuite with Arm {
     repart: Integer = 1,
     sortBeforeRepart: Boolean = false)(fun: DataFrame => DataFrame): Unit = {
 
-    val df: SparkSession => DataFrame = (sparkSession: SparkSession) => createDataFrame(sparkSession, values)
+    val df: SparkSession => DataFrame =
+      (sparkSession: SparkSession) => createDataFrame(sparkSession, values)
 
     val (fromCpu, fromGpu) = runOnCpuAndGpu(df, fun,
       conf,
@@ -740,8 +748,8 @@ trait SparkQueryCompareTestSuite extends FunSuite with Arm {
       (0, "\roo"), (10, "a\u20ACa") , (-10, "o\\aood"), (-20, "foo"), (-30, "food"),(-40, "foodu"),
       (-50,"abc%abc"), (-60,"abc%&^abc"), (-70, """"%SystemDrive%\Users\John"""),
       (-80, """%SystemDrive%\\Users\\John"""), (-90, "aa^def"), (-100, "acna"), (-110, "_"),
-      (-110, "cn"), (-120, "aa[d]abc"), (-130, "aa(d)abc"), (-140, "a?b"), (-150, "a+c"), (-160, "a{3}"),
-      (-170, "aaa"), (-180, """\abc"""))
+      (-110, "cn"), (-120, "aa[d]abc"), (-130, "aa(d)abc"), (-140, "a?b"), (-150, "a+c"),
+      (-160, "a{3}"), (-170, "aaa"), (-180, """\abc"""))
     .toDF("number","word")
   }
 
@@ -1075,16 +1083,42 @@ trait SparkQueryCompareTestSuite extends FunSuite with Arm {
 
   def mixedSingleColumnDoubleDf(session: SparkSession): DataFrame = {
     import session.sqlContext.implicits._
-    Seq[java.lang.Double](Double.PositiveInfinity, Double.NegativeInfinity, 0.8435376941d, 23.1927672582d, 2309.4430349398d,
-      Double.NaN, DOUBLE_POSITIVE_NAN_LOWER_RANGE, DOUBLE_POSITIVE_NAN_UPPER_RANGE, DOUBLE_NEGATIVE_NAN_LOWER_RANGE,
-      DOUBLE_NEGATIVE_NAN_UPPER_RANGE, null, -0.7078783860d, -70.9667587507d, -838600.5867225748d).toDF("doubles")
+    Seq[java.lang.Double](
+      Double.PositiveInfinity,
+      Double.NegativeInfinity,
+      0.8435376941d,
+      23.1927672582d,
+      2309.4430349398d,
+      Double.NaN,
+      DOUBLE_POSITIVE_NAN_LOWER_RANGE,
+      DOUBLE_POSITIVE_NAN_UPPER_RANGE,
+      DOUBLE_NEGATIVE_NAN_LOWER_RANGE,
+      DOUBLE_NEGATIVE_NAN_UPPER_RANGE,
+      null,
+      -0.7078783860d,
+      -70.9667587507d,
+      -838600.5867225748d
+    ).toDF("doubles")
   }
 
   def mixedSingleColumnFloatDf(session: SparkSession): DataFrame = {
     import session.sqlContext.implicits._
-    Seq[java.lang.Float](Float.PositiveInfinity, Float.NegativeInfinity, 0.8435376941f, 23.1927672582f, 2309.4430349398f,
-      Float.NaN, FLOAT_POSITIVE_NAN_LOWER_RANGE, FLOAT_NEGATIVE_NAN_LOWER_RANGE, FLOAT_POSITIVE_NAN_UPPER_RANGE,
-      FLOAT_NEGATIVE_NAN_UPPER_RANGE, null, -0.7078783860f, -70.9667587507f, -838600.5867225748f).toDF("floats")
+    Seq[java.lang.Float](
+      Float.PositiveInfinity,
+      Float.NegativeInfinity,
+      0.8435376941f,
+      23.1927672582f,
+      2309.4430349398f,
+      Float.NaN,
+      FLOAT_POSITIVE_NAN_LOWER_RANGE,
+      FLOAT_NEGATIVE_NAN_LOWER_RANGE,
+      FLOAT_POSITIVE_NAN_UPPER_RANGE,
+      FLOAT_NEGATIVE_NAN_UPPER_RANGE,
+      null,
+      -0.7078783860f,
+      -70.9667587507f,
+      -838600.5867225748f
+    ).toDF("floats")
   }
 
   def mixedFloatDf(session: SparkSession): DataFrame = {
@@ -1320,7 +1354,11 @@ trait SparkQueryCompareTestSuite extends FunSuite with Arm {
 
   // Note: some tests here currently use this to force Spark not to
   // push down expressions into the scan (e.g. GpuFilters need this)
-  def fromCsvPatternDf(base: String, pattern: String, schema: StructType, hasHeader: Boolean = false)
+  def fromCsvPatternDf(
+      base: String,
+      pattern: String,
+      schema: StructType,
+      hasHeader: Boolean = false)
     (session: SparkSession): DataFrame = {
     val resource = TestResourceFinder.getResourcePath(base) + "/" + pattern
     val df = if (hasHeader) {
