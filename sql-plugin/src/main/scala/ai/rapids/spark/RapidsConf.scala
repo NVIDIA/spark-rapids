@@ -149,7 +149,8 @@ class TypedConfBuilder[T](
 
   /** Turns the config entry into a sequence of values of the underlying type. */
   def toSequence: TypedConfBuilder[Seq[T]] = {
-    new TypedConfBuilder(parent, ConfHelper.stringToSeq(_, converter), ConfHelper.seqToString(_, stringConverter))
+    new TypedConfBuilder(parent, ConfHelper.stringToSeq(_, converter),
+      ConfHelper.seqToString(_, stringConverter))
   }
 }
 
@@ -283,16 +284,17 @@ object RapidsConf {
     .createWithDefault(Integer.MAX_VALUE)
 
   val MAX_READER_BATCH_SIZE_ROWS = conf("spark.rapids.sql.reader.batchSizeRows")
-    .doc("Soft limit on the maximum number of rows the reader will read per batch. The orc and parquet " +
-      "readers will read row groups until this limit is met or exceeded. The limit is respected by the csv reader.")
+    .doc("Soft limit on the maximum number of rows the reader will read per batch. " +
+      "The orc and parquet readers will read row groups until this limit is met or exceeded. " +
+      "The limit is respected by the csv reader.")
     .integerConf
     .createWithDefault(Integer.MAX_VALUE)
 
   val MAX_READER_BATCH_SIZE_BYTES = conf("spark.rapids.sql.reader.batchSizeBytes")
-    .doc("Soft limit on the maximum number of bytes the reader reads per batch. The readers " +
-      "will read chunks of data until this limit is met or exceeded. Note that the reader may estimate the " +
-      "number of bytes that will be used on the GPU in some cases based on the schema and number of rows in " +
-      "each batch.")
+    .doc("Soft limit on the maximum number of bytes the reader reads per batch. " +
+      "The readers will read chunks of data until this limit is met or exceeded. " +
+      "Note that the reader may estimate the number of bytes that will be used on the GPU " +
+      "in some cases based on the schema and number of rows in  each batch.")
     .bytesConf(ByteUnit.BYTE)
     .createWithDefault(Integer.MAX_VALUE)
 
@@ -353,8 +355,8 @@ object RapidsConf {
     .createWithDefault(false)
 
   val ENABLE_CAST_FLOAT_TO_STRING = conf("spark.rapids.sql.castFloatToString.enabled")
-    .doc("Casting from floating point types to string on the GPU returns results that have a different " +
-      "precision than the default Java toString behavior.")
+    .doc("Casting from floating point types to string on the GPU returns results that have " +
+      "a different precision than the default Java toString behavior.")
     .booleanConf
     .createWithDefault(false)
 
@@ -366,8 +368,8 @@ object RapidsConf {
     .createWithDefault(false)
 
   val ENABLE_CAST_STRING_TO_INTEGER = conf("spark.rapids.sql.castStringToInteger.enabled")
-    .doc("When set to true, enables casting from strings to integer types (byte, short, int, " +
-      "long) on the GPU. Casting from string to integer types on the GPU returns incorrect " +
+    .doc("When set to true, enables casting from strings to integer types (byte, short, " +
+      "int, long) on the GPU. Casting from string to integer types on the GPU returns incorrect " +
       "results when the string represents a number larger than Long.MaxValue or smaller than " +
       "Long.MinValue.")
     .booleanConf
@@ -376,8 +378,8 @@ object RapidsConf {
   // INTERNAL TEST AND DEBUG CONFIGS
 
   val TEST_CONF = conf("spark.rapids.sql.test.enabled")
-    .doc("Intended to be used by unit tests, if enabled all operations must run on the GPU " +
-      "or an error happens.")
+    .doc("Intended to be used by unit tests, if enabled all operations must run on the " +
+      "GPU or an error happens.")
     .internal()
     .booleanConf
     .createWithDefault(false)
@@ -430,8 +432,10 @@ object RapidsConf {
     .stringConf
     .createWithDefault("ai.rapids.spark.shuffle.ucx.UCXShuffleTransport")
 
-  val SHUFFLE_TRANSPORT_MAX_RECEIVE_INFLIGHT_BYTES = conf("spark.rapids.shuffle.transport.maxReceiveInflightBytes")
-    .doc("Maximum aggregate amount of bytes that be fetched at any given time from peers during shuffle")
+  val SHUFFLE_TRANSPORT_MAX_RECEIVE_INFLIGHT_BYTES =
+    conf("spark.rapids.shuffle.transport.maxReceiveInflightBytes")
+    .doc("Maximum aggregate amount of bytes that be fetched at any given time from peers " +
+      "during shuffle")
     .bytesConf(ByteUnit.BYTE)
     .createWithDefault(1024 * 1024 * 1024)
 
@@ -447,18 +451,21 @@ object RapidsConf {
     .createWithDefault(null)
 
   val SHUFFLE_UCX_BOUNCE_BUFFERS_SIZE = conf("spark.rapids.shuffle.ucx.bounceBuffers.size")
-    .doc("The size of bounce buffer to use in bytes. Note that this size will be the same for device and host memory")
+    .doc("The size of bounce buffer to use in bytes. Note that this size will be the same " +
+      "for device and host memory")
     .internal()
     .bytesConf(ByteUnit.BYTE)
     .createWithDefault(4 * 1024  * 1024)
 
-  val SHUFFLE_UCX_BOUNCE_BUFFERS_DEVICE_COUNT = conf("spark.rapids.shuffle.ucx.bounceBuffers.device.count")
+  val SHUFFLE_UCX_BOUNCE_BUFFERS_DEVICE_COUNT =
+    conf("spark.rapids.shuffle.ucx.bounceBuffers.device.count")
     .doc("The number of bounce buffers to pre-allocate from device memory")
     .internal()
     .integerConf
     .createWithDefault(32)
 
-  val SHUFFLE_UCX_BOUNCE_BUFFERS_HOST_COUNT = conf("spark.rapids.shuffle.ucx.bounceBuffers.host.count")
+  val SHUFFLE_UCX_BOUNCE_BUFFERS_HOST_COUNT =
+    conf("spark.rapids.shuffle.ucx.bounceBuffers.host.count")
     .doc("The number of bounce buffers to pre-allocate from host memory")
     .internal()
     .integerConf
@@ -478,8 +485,8 @@ object RapidsConf {
     .createWithDefault(100)
 
   val SHUFFLE_CLIENT_THREAD_KEEPALIVE = conf("spark.rapids.shuffle.clientThreadKeepAlive")
-    .doc("The number of seconds that the ThreadPoolExecutor will allow an idle client shuffle thread to " +
-      "stay alive, before reclaiming.")
+    .doc("The number of seconds that the ThreadPoolExecutor will allow an idle client " +
+      "shuffle thread to stay alive, before reclaiming.")
     .internal()
     .integerConf
     .createWithDefault(30)
@@ -498,9 +505,11 @@ object RapidsConf {
 
   // USER FACING DEBUG CONFIGS
 
-  val DATA_CONTAINS_NEGATIVE_TIMESTAMPS = conf("spark.rapids.sql.contains.negative.timestamps")
-    .doc("Whether the data contains negative timestamps i.e. timestamps prior to Jan 1st 1970. " +
-      "When set to true operators using timestamps will not be accelerated")
+  val DATA_CONTAINS_NEGATIVE_TIMESTAMPS =
+    conf("spark.rapids.sql.contains.negative.timestamps")
+    .doc("Whether the data contains negative timestamps " +
+      "i.e. timestamps prior to Jan 1st 1970. When set to true operators using timestamps " +
+      "will not be accelerated")
     .booleanConf
     .createWithDefault(false)
 
