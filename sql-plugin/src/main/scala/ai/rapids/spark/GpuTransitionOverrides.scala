@@ -60,7 +60,8 @@ class GpuTransitionOverrides extends Rule[SparkPlan] {
       p.withNewChildren(p.children.map(optimizeCoalesce))
   }
 
-  private def insertCoalesce(plans: Seq[SparkPlan], goals: Seq[CoalesceGoal], disableUntilInput: Boolean): Seq[SparkPlan] = {
+  private def insertCoalesce(plans: Seq[SparkPlan], goals: Seq[CoalesceGoal],
+      disableUntilInput: Boolean): Seq[SparkPlan] = {
     plans.zip(goals).map {
       case (plan, null) =>
         // No coalesce requested
@@ -122,13 +123,15 @@ class GpuTransitionOverrides extends Rule[SparkPlan] {
 
   // This walks from the output to the input so disableUntilInput can walk its way from when
   // we hit something that cannot allow for coalesce up until the input
-  private def insertCoalesce(plan: SparkPlan, disableUntilInput: Boolean = false): SparkPlan = plan match {
+  private def insertCoalesce(plan: SparkPlan,
+      disableUntilInput: Boolean = false): SparkPlan = plan match {
     case exec: GpuExec =>
       // We will disable coalesce if it is already disabled and we cannot re-enable it
       val shouldDisable = (disableUntilInput && !shouldEnableCoalesce(exec)) ||
         //or if we should disable it and it is in a stage with a file input that would matter
         (exec.disableCoalesceUntilInput() && hasDirectLineToInput(exec))
-      val tmp = exec.withNewChildren(insertCoalesce(exec.children, exec.childrenCoalesceGoal, shouldDisable))
+      val tmp = exec.withNewChildren(insertCoalesce(exec.children, exec.childrenCoalesceGoal,
+        shouldDisable))
       if (exec.coalesceAfter && !shouldDisable) {
         GpuCoalesceBatches(tmp, TargetSize(conf.gpuTargetBatchSizeBytes))
       } else {
@@ -228,11 +231,13 @@ class GpuTransitionOverrides extends Rule[SparkPlan] {
       case _: GpuColumnarToRowExec => () // Ignored
       case _: ExecutedCommandExec => () // Ignored
       case _: RDDScanExec => () // Ignored
-      case _: ShuffleExchangeExec => () // Ignored for now, we don't force it to the GPU if children are not on the gpu
+      case _: ShuffleExchangeExec => () // Ignored for now, we don't force it to the GPU if
+                                        // children are not on the gpu
       case other =>
         if (!plan.supportsColumnar &&
           !conf.testingAllowedNonGpu.contains(getBaseNameFromClass(other.getClass.toString))) {
-          throw new IllegalArgumentException(s"Part of the plan is not columnar ${plan.getClass}\n${plan}")
+          throw new IllegalArgumentException(s"Part of the plan is not columnar " +
+            s"${plan.getClass}\n${plan}")
         }
         // filter out the output expressions since those are not GPU expressions
         val planOutput = plan.output.toSet

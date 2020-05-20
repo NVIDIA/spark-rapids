@@ -209,7 +209,8 @@ class ImplicitsTestSuite extends FlatSpec with Matchers {
     // a) a new RefCountTest(i) gets produced,
     // b) the body of the safeMap executes then (interleaved with the first map)
     // c) if the body of the safeMap throws, it cleans at that point.
-    // d) the safeMap stops executing in case of error, but the first map goes until the end of the stream
+    // d) the safeMap stops executing in case of error, but the first map goes until the end of
+    //    the stream
     val resources: Stream[RefCountTest] = (0 until 10).toStream.map(i => new RefCountTest(i, false))
 
     assertThrows[Throwable] {

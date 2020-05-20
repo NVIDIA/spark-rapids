@@ -92,29 +92,37 @@ class FileSourceScanExecSuite extends SparkQueryCompareTestSuite {
 
   testSparkResultsAreEqual("Test CSV count", fileSourceIntsCsv())(frameCount)
 
-  testSparkResultsAreEqual("Test CSV count with headers", fileSourceIntsHeaderCsv)(frameCount)
+  testSparkResultsAreEqual("Test CSV count with headers",
+    fileSourceIntsHeaderCsv)(frameCount)
 
   testSparkResultsAreEqual("Test CSV splits", fileSourceIntsCsv(), conf=csvSplitsConf) {
     frame => frame.select(col("ints_1"), col("ints_3"), col("ints_5"))
   }
 
-  testSparkResultsAreEqual("Test CSV splits with header", fileSourceFloatsCsv, conf=csvSplitsConf) {
+  testSparkResultsAreEqual("Test CSV splits with header", fileSourceFloatsCsv,
+    conf=csvSplitsConf) {
     frame => frame.select(col("*"))
   }
 
-  testSparkResultsAreEqual("Test CSV splits with chunks", fileSourceFloatsCsv, conf= new SparkConf().set(
-    RapidsConf.MAX_READER_BATCH_SIZE_ROWS.key, "1")) {
+  testSparkResultsAreEqual("Test CSV splits with chunks", fileSourceFloatsCsv,
+    conf= new SparkConf().set(RapidsConf.MAX_READER_BATCH_SIZE_ROWS.key, "1")) {
     frame => frame.select(col("floats"))
   }
 
-  testSparkResultsAreEqual("Test CSV count chunked", fileSourceIntsCsv(), conf= new SparkConf().set(
-    RapidsConf.MAX_READER_BATCH_SIZE_ROWS.key, "1"))(frameCount)
+  testSparkResultsAreEqual("Test CSV count chunked", fileSourceIntsCsv(),
+    conf= new SparkConf().set(RapidsConf.MAX_READER_BATCH_SIZE_ROWS.key, "1"))(frameCount)
 
-  testSparkResultsAreEqual("Test partitioned CSV splits", fileSourcePartitionedIntsCsv, conf=csvSplitsConf) {
-    frame => frame.select(col("partKey"), col("ints_1"), col("ints_3"), col("ints_5"))
+  testSparkResultsAreEqual("Test partitioned CSV splits", fileSourcePartitionedIntsCsv,
+    conf = csvSplitsConf) {
+    frame =>
+      frame.select(col("partKey"),
+        col("ints_1"),
+        col("ints_3"),
+        col("ints_5"))
   }
 
-  testSparkResultsAreEqual("File source scan parquet", fileSourceParquet("test.snappy.parquet")) {
+  testSparkResultsAreEqual("File source scan parquet",
+    fileSourceParquet("test.snappy.parquet")) {
     frame => frame.select(col("ints_1"), col("ints_3"), col("ints_5"))
   }
 
@@ -132,26 +140,30 @@ class FileSourceScanExecSuite extends SparkQueryCompareTestSuite {
     conf=parquetSplitsConf)(frameCount)
 
   testSparkResultsAreEqual("Test Parquet predicate push-down", fileSplitsParquet) {
-    frame => frame.select(col("loan_id"), col("orig_interest_rate"), col("zip"))
-        .where(col("orig_interest_rate") > 10)
+    frame => frame.select(col("loan_id"), col("orig_interest_rate"),
+      col("zip")).where(col("orig_interest_rate") > 10)
   }
 
   testSparkResultsAreEqual("Test Parquet splits predicate push-down", fileSplitsParquet,
     conf=parquetSplitsConf) {
-    frame => frame.select(col("loan_id"), col("orig_interest_rate"), col("zip"))
-        .where(col("orig_interest_rate") > 10)
+    frame => frame.select(col("loan_id"), col("orig_interest_rate"),
+      col("zip")).where(col("orig_interest_rate") > 10)
   }
 
-  testSparkResultsAreEqual("Test partitioned Parquet", fileSourceParquet("partitioned-parquet")) {
-    frame => frame.select(col("partKey"), col("ints_1"), col("ints_3"), col("ints_5"))
+  testSparkResultsAreEqual("Test partitioned Parquet",
+    fileSourceParquet("partitioned-parquet")) {
+    frame => frame.select(col("partKey"), col("ints_1"),
+      col("ints_3"), col("ints_5"))
   }
 
-  testSparkResultsAreEqual("Test partitioned Parquet predicate push-down", fileSourceParquet("partitioned-parquet")) {
-    frame => frame.select(col("partKey"), col("ints_1"), col("ints_3"), col("ints_5"))
-          .where(col("partKey") === 100)
+  testSparkResultsAreEqual("Test partitioned Parquet predicate push-down",
+    fileSourceParquet("partitioned-parquet")) {
+    frame => frame.select(col("partKey"), col("ints_1"),
+      col("ints_3"), col("ints_5")).where(col("partKey") === 100)
   }
 
-  testSparkResultsAreEqual("File source scan ORC", fileSourceOrc("test.snappy.orc")) {
+  testSparkResultsAreEqual("File source scan ORC",
+    fileSourceOrc("test.snappy.orc")) {
     frame => frame.select(col("ints_1"), col("ints_3"), col("ints_5"))
   }
 
@@ -169,22 +181,25 @@ class FileSourceScanExecSuite extends SparkQueryCompareTestSuite {
     conf=orcSplitsConf)(frameCount)
 
   testSparkResultsAreEqual("Test ORC predicate push-down", fileSplitsOrc) {
-    frame => frame.select(col("loan_id"), col("orig_interest_rate"), col("zip"))
-        .where(col("orig_interest_rate") > 10)
+    frame => frame.select(col("loan_id"), col("orig_interest_rate"),
+      col("zip")).where(col("orig_interest_rate") > 10)
   }
 
   testSparkResultsAreEqual("Test ORC splits predicate push-down", fileSplitsOrc,
     conf=orcSplitsConf) {
-    frame => frame.select(col("loan_id"), col("orig_interest_rate"), col("zip"))
-        .where(col("orig_interest_rate") > 10)
+    frame => frame.select(col("loan_id"), col("orig_interest_rate"),
+      col("zip")).where(col("orig_interest_rate") > 10)
   }
 
-  testSparkResultsAreEqual("Test partitioned ORC", fileSourceOrc("partitioned-orc")) {
-    frame => frame.select(col("partKey"), col("ints_5"), col("ints_3"), col("ints_1"))
+  testSparkResultsAreEqual("Test partitioned ORC",
+    fileSourceOrc("partitioned-orc")) {
+    frame => frame.select(col("partKey"), col("ints_5"),
+      col("ints_3"), col("ints_1"))
   }
 
-  testSparkResultsAreEqual("Test partitioned ORC predicate push-down", fileSourceOrc("partitioned-orc")) {
-    frame => frame.select(col("partKey"), col("ints_1"), col("ints_3"), col("ints_5"))
-        .where(col("partKey") === 100)
+  testSparkResultsAreEqual("Test partitioned ORC predicate push-down",
+    fileSourceOrc("partitioned-orc")) {
+    frame => frame.select(col("partKey"), col("ints_1"),
+      col("ints_3"), col("ints_5")).where(col("partKey") === 100)
   }
 }

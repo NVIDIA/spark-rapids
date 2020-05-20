@@ -85,7 +85,8 @@ class RapidsBufferCatalog extends Logging {
 
   /**
    * Replace the mapping at the specified tier with a specified buffer.
-   * NOTE: The mapping will not be updated if the current mapping is to a higher priority storage tier.
+   * NOTE: The mapping will not be updated if the current mapping is to a higher priority
+   * storage tier.
    * @param tier the storage tier of the buffer being replaced
    * @param buffer the new buffer to associate
    */
