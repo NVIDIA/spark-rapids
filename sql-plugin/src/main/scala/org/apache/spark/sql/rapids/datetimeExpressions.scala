@@ -36,7 +36,10 @@ case class GpuYear(child: Expression) extends GpuDateTimeUnaryExpression {
     GpuColumnVector.from(input.getBase.year())
 }
 
-case class GpuTimeSub(start: GpuExpression, interval: GpuExpression, timeZoneId: Option[String] = None)
+case class GpuTimeSub(
+    start: GpuExpression,
+    interval: GpuExpression,
+    timeZoneId: Option[String] = None)
   extends BinaryExpression with GpuExpression with TimeZoneAwareExpression with ExpectsInputTypes {
 
   def this(start: GpuExpression, interval: GpuExpression) = this(start, interval, None)
@@ -52,7 +55,9 @@ case class GpuTimeSub(start: GpuExpression, interval: GpuExpression, timeZoneId:
 
   override lazy val resolved: Boolean = childrenResolved && checkInputDataTypes().isSuccess
 
-  override def withTimeZone(timeZoneId: String): TimeZoneAwareExpression = copy(timeZoneId = Option(timeZoneId))
+  override def withTimeZone(timeZoneId: String): TimeZoneAwareExpression = {
+    copy(timeZoneId = Option(timeZoneId))
+  }
 
   override def columnarEval(batch: ColumnarBatch): Any = {
     var lhs: Any = null
@@ -76,7 +81,9 @@ case class GpuTimeSub(start: GpuExpression, interval: GpuExpression, timeZoneId:
               }
             }
           }
-        case _ => throw new UnsupportedOperationException("GpuTimeSub takes column and interval as an argument only")
+        case _ =>
+          throw new UnsupportedOperationException("GpuTimeSub takes column and interval as an " +
+            "argument only")
       }
     } finally {
       if (lhs.isInstanceOf[AutoCloseable]) {
@@ -150,7 +157,11 @@ case class GpuDayOfMonth(child: Expression) extends GpuDateTimeUnaryExpression {
     GpuColumnVector.from(input.getBase.day())
 }
 
-case class GpuUnixTimestamp(strTs: GpuExpression, format: GpuExpression, strfFormat: String, timeZoneId: Option[String] = None)
+case class GpuUnixTimestamp(
+    strTs: GpuExpression,
+    format: GpuExpression,
+    strfFormat: String,
+    timeZoneId: Option[String] = None)
   extends GpuBinaryExpression with TimeZoneAwareExpression with ExpectsInputTypes {
 
   override def doColumnar(lhs: GpuColumnVector, rhs: GpuColumnVector): GpuColumnVector = {
@@ -158,7 +169,8 @@ case class GpuUnixTimestamp(strTs: GpuExpression, format: GpuExpression, strfFor
   }
 
   override def doColumnar(lhs: Scalar, rhs: GpuColumnVector): GpuColumnVector = {
-    throw new IllegalArgumentException("lhs has to be a vector and rhs has to be a scalar for the unixtimestamp to work")
+    throw new IllegalArgumentException("lhs has to be a vector and rhs has to be a scalar for " +
+      "the unixtimestamp to work")
   }
 
   override def inputTypes: Seq[AbstractDataType] =
@@ -167,7 +179,10 @@ case class GpuUnixTimestamp(strTs: GpuExpression, format: GpuExpression, strfFor
   override def dataType: DataType = LongType
   override def nullable: Boolean = true
 
-  override def withTimeZone(timeZoneId: String): TimeZoneAwareExpression = copy(timeZoneId = Option(timeZoneId))
+  override def withTimeZone(timeZoneId: String): TimeZoneAwareExpression = {
+    copy(timeZoneId = Option(timeZoneId))
+  }
+
   override def left: GpuExpression = strTs
   override def right: GpuExpression = format
   override lazy val resolved: Boolean = childrenResolved && checkInputDataTypes().isSuccess
@@ -204,14 +219,19 @@ case class GpuUnixTimestamp(strTs: GpuExpression, format: GpuExpression, strfFor
   }
 }
 
-case class GpuFromUnixTime(sec: GpuExpression, format: GpuExpression, strfFormat: String, timeZoneId: Option[String] = None)
+case class GpuFromUnixTime(
+    sec: GpuExpression,
+    format: GpuExpression,
+    strfFormat: String,
+    timeZoneId: Option[String] = None)
   extends GpuBinaryExpression with TimeZoneAwareExpression with ImplicitCastInputTypes {
   override def doColumnar(lhs: GpuColumnVector, rhs: GpuColumnVector): GpuColumnVector = {
     throw new IllegalArgumentException("rhs has to be a scalar for the from_unixtime to work")
   }
 
   override def doColumnar(lhs: Scalar, rhs: GpuColumnVector): GpuColumnVector = {
-    throw new IllegalArgumentException("lhs has to be a vector and rhs has to be a scalar for the from_unixtime to work")
+    throw new IllegalArgumentException("lhs has to be a vector and rhs has to be a scalar for " +
+      "the from_unixtime to work")
   }
 
   override def doColumnar(lhs: GpuColumnVector, rhs: Scalar): GpuColumnVector = {
@@ -229,14 +249,16 @@ case class GpuFromUnixTime(sec: GpuExpression, format: GpuExpression, strfFormat
     }
   }
 
-  override def withTimeZone(timeZoneId: String): TimeZoneAwareExpression = copy(timeZoneId = Option(timeZoneId))
+  override def withTimeZone(timeZoneId: String): TimeZoneAwareExpression = {
+    copy(timeZoneId = Option(timeZoneId))
+  }
 
   override def inputTypes: Seq[AbstractDataType] = Seq(LongType, StringType)
 
   override def left: GpuExpression = sec
 
-  // we aren't using this "right" GpuExpression, as it was already converted in the GpuOverrides while creating the
-  // expressions map and passed down here as strfFormat
+  // we aren't using this "right" GpuExpression, as it was already converted in the GpuOverrides
+  // while creating the expressions map and passed down here as strfFormat
   override def right: GpuExpression = format
 
   override def dataType: DataType = StringType
