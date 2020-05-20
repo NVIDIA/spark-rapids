@@ -727,8 +727,10 @@ class GpuOrcPartitionReader(
         if (peekedStripe.infoBuilder.getNumberOfRows > Integer.MAX_VALUE) {
           throw new UnsupportedOperationException("Too many rows in split")
         }
-        if (numRows == 0 || numRows + peekedStripe.infoBuilder.getNumberOfRows <= maxReadBatchSizeRows) {
-          val estimatedBytes = GpuBatchUtils.estimateGpuMemory(readDataSchema, peekedStripe.infoBuilder.getNumberOfRows)
+        if (numRows == 0 ||
+          numRows + peekedStripe.infoBuilder.getNumberOfRows <= maxReadBatchSizeRows) {
+          val estimatedBytes = GpuBatchUtils.estimateGpuMemory(readDataSchema,
+            peekedStripe.infoBuilder.getNumberOfRows)
           if (numBytes == 0 || numBytes + estimatedBytes <= maxReadBatchSizeBytes) {
             currentChunk += ctx.blockIterator.next()
             numRows += currentChunk.last.infoBuilder.getNumberOfRows
@@ -742,7 +744,8 @@ class GpuOrcPartitionReader(
 
     readNextBatch()
 
-    logDebug(s"Loaded $numRows rows from Orc. Orc bytes read: $numOrcBytes. Estimated GPU bytes: $numBytes")
+    logDebug(s"Loaded $numRows rows from Orc. Orc bytes read: $numOrcBytes. " +
+      s"Estimated GPU bytes: $numBytes")
 
     currentChunk
   }

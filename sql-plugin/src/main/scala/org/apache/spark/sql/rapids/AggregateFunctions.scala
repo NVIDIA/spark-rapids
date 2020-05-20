@@ -397,14 +397,16 @@ case class GpuAverage(child: GpuExpression) extends GpuDeclarativeAggregate {
  *
  * These functions have an extra field they expect to be around in the aggregation buffer.
  * So this adds a "max" of that, and currently sends it to the GPU. The CPU version uses it
- * to check if the value was set (if we don't ignore nulls, valueSet is true, that's what we do here).
+ * to check if the value was set (if we don't ignore nulls, valueSet is true, that's what we do
+ * here).
  */
 case class GpuFirst(child: GpuExpression, ignoreNullsExpr: GpuExpression)
   extends GpuDeclarativeAggregate with ImplicitCastInputTypes {
   private lazy val cudfFirst = GpuAttributeReference("cudf_first", child.dataType)()
   private lazy val valueSet = GpuAttributeReference("valueSet", BooleanType)()
 
-  override lazy val inputProjection: Seq[GpuExpression] = Seq(child, GpuLiteral(ignoreNulls, BooleanType))
+  override lazy val inputProjection: Seq[GpuExpression] =
+    Seq(child, GpuLiteral(ignoreNulls, BooleanType))
 
   private lazy val commonExpressions: Seq[CudfAggregate] = if (ignoreNulls) {
     Seq(new CudfFirstExcludeNulls(cudfFirst), new CudfFirstExcludeNulls(valueSet))
@@ -441,8 +443,8 @@ case class GpuFirst(child: GpuExpression, ignoreNullsExpr: GpuExpression)
     if (defaultCheck.isFailure) {
       defaultCheck
     } else if (!ignoreNullsExpr.foldable) {
-      TypeCheckFailure(
-        s"The second argument of GpuFirst must be a boolean literal, but got: ${ignoreNullsExpr.sql}")
+      TypeCheckFailure(s"The second argument of GpuFirst must be a boolean literal, but " +
+        s"got: ${ignoreNullsExpr.sql}")
     } else {
       TypeCheckSuccess
     }
@@ -455,7 +457,8 @@ case class GpuLast(child: GpuExpression, ignoreNullsExpr: GpuExpression)
   private lazy val cudfLast = GpuAttributeReference("cudf_last", child.dataType)()
   private lazy val valueSet = GpuAttributeReference("valueSet", BooleanType)()
 
-  override lazy val inputProjection: Seq[GpuExpression] = Seq(child, GpuLiteral(!ignoreNulls, BooleanType))
+  override lazy val inputProjection: Seq[GpuExpression] =
+    Seq(child, GpuLiteral(!ignoreNulls, BooleanType))
 
   private lazy val commonExpressions: Seq[CudfAggregate] = if (ignoreNulls) {
     Seq(new CudfLastExcludeNulls(cudfLast), new CudfLastExcludeNulls(valueSet))
@@ -491,8 +494,8 @@ case class GpuLast(child: GpuExpression, ignoreNullsExpr: GpuExpression)
     if (defaultCheck.isFailure) {
       defaultCheck
     } else if (!ignoreNullsExpr.foldable) {
-      TypeCheckFailure(
-        s"The second argument of GpuLast must be a boolean literal, but got: ${ignoreNullsExpr.sql}")
+      TypeCheckFailure(s"The second argument of GpuLast must be a boolean literal, but " +
+        s"got: ${ignoreNullsExpr.sql}")
     } else {
       TypeCheckSuccess
     }
