@@ -28,7 +28,8 @@ import org.apache.spark.sql.{DataFrame, Row, SparkSession}
 class CastOpSuite extends GpuExpressionTestSuite {
   import CastOpSuite._
 
-  private val timestampDatesMsecParquet = frameFromParquet("timestamp-date-test-msec.parquet")
+  private val timestampDatesMsecParquet =
+    frameFromParquet("timestamp-date-test-msec.parquet")
 
   /** Data types supported by the plugin. */
   protected val supportedTypes = Seq(DataTypes.BooleanType,
@@ -62,7 +63,8 @@ class CastOpSuite extends GpuExpressionTestSuite {
             if (GpuCast.canCast(from, to, ansiEnabled)) {
               // test the cast
               try {
-                val (fromCpu, fromGpu) = runOnCpuAndGpu(generateInRangeTestData(from, to, ansiEnabled),
+                val (fromCpu, fromGpu) =
+                  runOnCpuAndGpu(generateInRangeTestData(from, to, ansiEnabled),
                   frame => frame.select(col("c0").cast(to))
                     .orderBy(col("c0")), conf)
 
@@ -243,11 +245,15 @@ class CastOpSuite extends GpuExpressionTestSuite {
     testCastToString[Double](DataTypes.DoubleType, comparisonFunc = Some(compareStringifiedFloats))
   }
 
-  private def testCastToString[T](dataType: DataType, comparisonFunc: Option[(String, String) => Boolean] = None) {
+  private def testCastToString[T](
+      dataType: DataType,
+      comparisonFunc: Option[(String, String) => Boolean] = None) {
     assert(GpuCast.canCast(dataType, DataTypes.StringType, false))
     val schema = FuzzerUtils.createSchema(Seq(dataType))
     val childExpr: GpuBoundReference = GpuBoundReference(0, dataType, nullable = false)
-    checkEvaluateGpuUnaryExpression(GpuCast(childExpr, DataTypes.StringType), dataType, DataTypes.StringType,
+    checkEvaluateGpuUnaryExpression(GpuCast(childExpr, DataTypes.StringType),
+      dataType,
+      DataTypes.StringType,
       expectedFun = castToStringExpectedFun[T],
       schema = schema,
       comparisonFunc = comparisonFunc)
@@ -294,8 +300,8 @@ class CastOpSuite extends GpuExpressionTestSuite {
 
   ignore("Test cast from double to string") {
 
-    //NOTE that the testSparkResultsAreEqual method isn't adequate in this case because we need to use
-    // a specialized comparison function
+    //NOTE that the testSparkResultsAreEqual method isn't adequate in this case because we
+    // need to use a specialized comparison function
 
     val conf = new SparkConf()
       .set(RapidsConf.ENABLE_CAST_FLOAT_TO_STRING.key, "true")
@@ -310,7 +316,8 @@ class CastOpSuite extends GpuExpressionTestSuite {
     fromCpu.zip(fromGpu).foreach {
       case (c, g) =>
         if (!compareStringifiedFloats(c, g)) {
-          fail(s"Running on the GPU and on the CPU did not match: CPU value: $c. GPU value: $g.")
+          fail(s"Running on the GPU and on the CPU did not match: CPU value: $c. " +
+            s"GPU value: $g.")
         }
     }
   }
@@ -349,7 +356,8 @@ class CastOpSuite extends GpuExpressionTestSuite {
     import spark.implicits._
     val trueStrings = Seq("t", "true", "y", "yes", "1")
     val falseStrings = Seq("f", "false", "n", "no", "0")
-    val maybeBool: Seq[String] = trueStrings ++ falseStrings ++ Seq("maybe", " true ", " false ", null, "", "12")
+    val maybeBool: Seq[String] = trueStrings ++ falseStrings ++ Seq(
+      "maybe", " true ", " false ", null, "", "12")
     maybeBool.toDF("maybe_bool")
   }
 
@@ -367,7 +375,8 @@ class CastOpSuite extends GpuExpressionTestSuite {
       col("time").cast(DateType))
   }
 
-  testSparkResultsAreEqual("Test cast from timestamp", timestampDatesMsecParquet)(timestampCastFn)
+  testSparkResultsAreEqual(
+    "Test cast from timestamp", timestampDatesMsecParquet)(timestampCastFn)
 
   test("Test cast from timestamp in UTC-equivalent timezone") {
     val oldtz = TimeZone.getDefault

@@ -29,9 +29,8 @@ import org.apache.spark.unsafe.types.UTF8String
 
 
 object GpuExpressionsUtils {
-
-
-  def evaluateBoundExpressions[A <: GpuExpression](cb: ColumnarBatch, boundExprs: Seq[A]) : Seq[GpuColumnVector] = {
+  def evaluateBoundExpressions[A <: GpuExpression](cb: ColumnarBatch,
+      boundExprs: Seq[A]): Seq[GpuColumnVector] = {
     val numCols = boundExprs.length
     val resultCvs = new ArrayBuffer[GpuColumnVector](numCols)
     try {
@@ -64,8 +63,9 @@ object GpuExpressionsUtils {
 
     case None => " "
 
-    case _ => throw new IllegalStateException("Internal Error GPU support for this data type is not implemented and " +
-        "should have been disabled")
+    case _ =>
+      throw new IllegalStateException("Internal Error GPU support for this data type is not " +
+        "implemented and should have been disabled")
   }
 }
 
@@ -258,8 +258,8 @@ trait GpuString2TrimExpression extends String2TrimExpression with GpuExpression 
     val trim = GpuExpressionsUtils.getTrimString(trimStr)
     val shouldBeColumn = srcStr.columnarEval(batch)
     try {
-      // We know the first parameter is not a Literal, because trim(Literal, Literal) would already have been
-      // optimized out
+      // We know the first parameter is not a Literal, because trim(Literal, Literal) would already
+      // have been optimized out
       val column = shouldBeColumn.asInstanceOf[GpuColumnVector]
       if (trim == null) {
         withResource(GpuScalar.from(null, StringType)) { nullScalar =>
@@ -282,7 +282,8 @@ trait GpuString2TrimExpression extends String2TrimExpression with GpuExpression 
 
 trait GpuTernaryExpression extends TernaryExpression with GpuExpression {
 
-  def doColumnar(val0: GpuColumnVector, val1: GpuColumnVector, val2: GpuColumnVector): GpuColumnVector
+  def doColumnar(
+      val0: GpuColumnVector, val1: GpuColumnVector, val2: GpuColumnVector): GpuColumnVector
   def doColumnar(val0: Scalar, val1: GpuColumnVector, val2: GpuColumnVector): GpuColumnVector
   def doColumnar(val0: Scalar, val1: Scalar, val2: GpuColumnVector): GpuColumnVector
   def doColumnar(val0: Scalar, val1: GpuColumnVector, val2: Scalar): GpuColumnVector
