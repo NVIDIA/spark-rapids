@@ -126,8 +126,8 @@ class GpuColumnarBatchSorter(
 
   def sort(batchIter: Iterator[ColumnarBatch]): Iterator[ColumnarBatch]  = {
 
-    // Sort order shouldn't be empty for Sort exec,
-    // in any other case empty sort order translates to an ascending sort on all columns with nulls as smallest
+    // Sort order shouldn't be empty for Sort exec, in any other case empty sort order
+    // translates to an ascending sort on all columns with nulls as smallest
     new Iterator[ColumnarBatch] {
       var resultBatch: Option[ColumnarBatch] = None
 
@@ -227,7 +227,8 @@ class GpuColumnarBatchSorter(
       totalSortTimeNanos += System.nanoTime - startTimestamp
       outputBatchesMetric.get += 1
       outputRowsMetric.get += batch.numRows
-      val devMemUsed = GpuColumnVector.getTotalDeviceMemoryUsed(inputTbl) + GpuColumnVector.getTotalDeviceMemoryUsed(batch)
+      val devMemUsed = GpuColumnVector.getTotalDeviceMemoryUsed(inputTbl) +
+        GpuColumnVector.getTotalDeviceMemoryUsed(batch)
       maxDeviceMemory = scala.math.max(maxDeviceMemory, devMemUsed)
     }
   }
@@ -304,6 +305,7 @@ object GpuSortOrder {
       origChild: Expression,
       direction: SortDirection,
       sameOrderExpressions: Set[Expression] = Set.empty): GpuSortOrder = {
-    new GpuSortOrder(child, direction, direction.defaultNullOrdering, sameOrderExpressions, origChild)
+    new GpuSortOrder(child, direction, direction.defaultNullOrdering,
+      sameOrderExpressions, origChild)
   }
 }
