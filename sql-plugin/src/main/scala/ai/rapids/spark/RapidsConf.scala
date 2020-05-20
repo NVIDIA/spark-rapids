@@ -294,7 +294,7 @@ object RapidsConf {
     .doc("Soft limit on the maximum number of bytes the reader reads per batch. " +
       "The readers will read chunks of data until this limit is met or exceeded. " +
       "Note that the reader may estimate the number of bytes that will be used on the GPU " +
-      "in some cases based on the schema and number of rows in  each batch.")
+      "in some cases based on the schema and number of rows in each batch.")
     .bytesConf(ByteUnit.BYTE)
     .createWithDefault(Integer.MAX_VALUE)
 
