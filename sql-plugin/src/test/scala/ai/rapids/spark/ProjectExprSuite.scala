@@ -268,17 +268,17 @@ class ProjectExprSuite extends SparkQueryCompareTestSuite {
   }
 
   testSparkResultsAreEqual("input_file_name", longsFromMultipleCSVDf, repart = 0) {
-    // The filter forces a coalesce so we can test that we have disabled coalesce properly in this case
+    // The filter forces a coalesce so we can test that we disabled coalesce properly in this case
     frame => frame.filter(col("longs") > 0).select(col("longs"), input_file_name())
   }
 
   testSparkResultsAreEqual("input_file_block_start", longsFromMultipleCSVDf, repart = 0) {
-    // The filter forces a coalesce so we can test that we have disabled coalesce properly in this case
+    // The filter forces a coalesce so we can test that we disabled coalesce properly in this case
     frame => frame.filter(col("longs") > 0).selectExpr("longs", "input_file_block_start()")
   }
 
   testSparkResultsAreEqual("input_file_block_length", longsFromMultipleCSVDf, repart = 0) {
-    // The filter forces a coalesce so we can test that we have disabled coalesce properly in this case
+    // The filter forces a coalesce so we can test that we disabled coalesce properly in this case
     frame => frame.filter(col("longs") > 0).selectExpr("longs", "input_file_block_length()")
   }
 
@@ -343,7 +343,8 @@ class ProjectExprSuite extends SparkQueryCompareTestSuite {
   }
 
   testSparkResultsAreEqual("SQL IN timestamps", frameFromParquet("timestamp-date-test.parquet")) {
-    frame => frame.selectExpr("""time IN (TIMESTAMP '1900-05-05 12:34:56.108', TIMESTAMP '1900-05-05 12:34:56.118')""")
+    frame => frame.selectExpr(
+      """time IN (TIMESTAMP '1900-05-05 12:34:56.108', TIMESTAMP '1900-05-05 12:34:56.118')""")
   }
 
   testSparkResultsAreEqual("SQL IF booleans", booleanDf) {
@@ -407,7 +408,8 @@ class ProjectExprSuite extends SparkQueryCompareTestSuite {
   }
 
   testSparkResultsAreEqual("SQL IF timestamps", frameFromParquet("timestamp-date-test.parquet")) {
-    frame => frame.selectExpr("IF(time != TIMESTAMP '1900-05-05 12:34:56.108', time, TIMESTAMP '1900-05-05 12:34:56.118')")
+    frame => frame.selectExpr(
+      "IF(time != TIMESTAMP '1900-05-05 12:34:56.108', time, TIMESTAMP '1900-05-05 12:34:56.118')")
   }
 
   testSparkResultsAreEqual("SQL CASE WHEN booleans", booleanDf) {
@@ -419,11 +421,13 @@ class ProjectExprSuite extends SparkQueryCompareTestSuite {
   }
 
   testSparkResultsAreEqual("SQL CASE WHEN bytes", bytesDf) {
-    frame => frame.selectExpr("CASE WHEN bytes = 2 THEN bytes + 3 WHEN bytes > 2 THEN bytes - 3 ELSE 0 END")
+    frame => frame.selectExpr(
+      "CASE WHEN bytes = 2 THEN bytes + 3 WHEN bytes > 2 THEN bytes - 3 ELSE 0 END")
   }
 
   testSparkResultsAreEqual("SQL CASE WHEN nullable bytes", bytesWithNullsDf) {
-    frame => frame.selectExpr("CASE WHEN bytes = 2 THEN bytes + 3 WHEN bytes > 2 THEN bytes - 3 END")
+    frame => frame.selectExpr(
+      "CASE WHEN bytes = 2 THEN bytes + 3 WHEN bytes > 2 THEN bytes - 3 END")
   }
 
   testSparkResultsAreEqual("SQL CASE WHEN shorts", shortsDf) {
@@ -525,7 +529,8 @@ class ProjectExprSuite extends SparkQueryCompareTestSuite {
         | ELSE dates END""".stripMargin)
   }
 
-  testSparkResultsAreEqual("SQL CASE WHEN timestamps", frameFromParquet("timestamp-date-test.parquet")) {
+  testSparkResultsAreEqual("SQL CASE WHEN timestamps",
+    frameFromParquet("timestamp-date-test.parquet")) {
     frame => frame.selectExpr(
       """CASE WHEN time <= TIMESTAMP '1900-05-05 12:34:56.108' THEN time
         | ELSE NULL END""".stripMargin)
