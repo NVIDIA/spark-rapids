@@ -531,7 +531,7 @@ case class GpuHashAggregateExec(requiredChildDistributionExpressions: Option[Seq
         childCv
       } else {
         withResource(childCv) { childCv =>
-          val rapidsType = GpuColumnVector.getRapidsType(childCv.dataType)
+          val rapidsType = GpuColumnVector.getRapidsType(ref.dataType)
           GpuColumnVector.from(childCv.getBase.castTo(rapidsType))
         }
       }
@@ -664,11 +664,13 @@ case class GpuHashAggregateExec(requiredChildDistributionExpressions: Option[Seq
           updateExpressionsDistinct.filter(_.isInstanceOf[CudfAggregate])
             .map(_.asInstanceOf[CudfAggregate].ref)
         if (inputProjectionsDistinct.exists(p => !p.isInstanceOf[NamedExpression])) {
-          // Case of distinct average we need to evaluate the "GpuCast isNotNull as longs" columns
-          distinctAttributes = inputProjectionsDistinct.filter(projection =>
-            projection.isInstanceOf[NamedExpression])
-            .map(_.asInstanceOf[NamedExpression].toAttribute)
+          // Case of distinct average we need to evaluate the "GpuCast and GpuIsNotNull" columns.
+          // Refer to how input projections are setup for GpuAverage.
+          // In the case where we have expressions to evaluate, pick the unique attributes
+          // references from them as you only have one column for it before you start evaluating.
           distinctExpressions = inputProjectionsDistinct
+          distinctAttributes = inputProjectionsDistinct.flatMap(ref =>
+            ref.references.toSeq).distinct
         } else {
           distinctAttributes = updateAttributesDistinct
           distinctExpressions = updateExpressionsCudfAggsDistinct
