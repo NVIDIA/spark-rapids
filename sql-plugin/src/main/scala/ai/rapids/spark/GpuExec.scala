@@ -22,12 +22,22 @@ import org.apache.spark.sql.execution.metric.{SQLMetric, SQLMetrics}
 import org.apache.spark.sql.execution.SparkPlan
 
 object GpuMetricNames {
+
+  // Metric names.
   val NUM_INPUT_ROWS =  "numInputRows"
   val NUM_INPUT_BATCHES = "numInputBatches"
   val NUM_OUTPUT_ROWS =  "numOutputRows"
   val NUM_OUTPUT_BATCHES = "numOutputBatches"
   val TOTAL_TIME = "totalTime"
   val PEAK_DEVICE_MEMORY = "peakDevMemory"
+
+  // Metric Descriptions.
+  val DESCRIPTION_NUM_INPUT_ROWS = "number of input rows"
+  val DESCRIPTION_NUM_INPUT_BATCHES = "number of input batches"
+  val DESCRIPTION_NUM_OUTPUT_ROWS = "number of output rows"
+  val DESCRIPTION_NUM_OUTPUT_BATCHES = "number of output batches"
+  val DESCRIPTION_TOTAL_TIME = "total time"
+  val DESCRIPTION_PEAK_DEVICE_MEMORY = "peak device memory"
 }
 
 trait GpuExec extends SparkPlan with Arm {
