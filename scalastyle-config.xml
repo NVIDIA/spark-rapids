@@ -40,6 +40,14 @@ You can also disable only one rule, by specifying its rule id, as specified in:
 
     <check level="error" class="org.scalastyle.file.FileTabChecker" enabled="true"/>
 
+    <check level="error" class="org.scalastyle.file.FileLineLengthChecker" enabled="true">
+        <parameters>
+            <parameter name="maxLineLength"><![CDATA[100]]></parameter>
+            <parameter name="tabSize"><![CDATA[2]]></parameter>
+            <parameter name="ignoreImports">true</parameter>
+        </parameters>
+    </check>
+
     <check level="error" class="org.scalastyle.scalariform.ClassNamesChecker" enabled="true">
         <parameters>
             <parameter name="regex"><![CDATA[[A-Z][A-Za-z]*]]></parameter>
@@ -93,12 +101,4 @@ You can also disable only one rule, by specifying its rule id, as specified in:
         <customMessage>Use Javadoc style indentation for multiline comments</customMessage>
     </check>
 
-    <check level="error" class="org.scalastyle.file.FileLineLengthChecker" enabled="false">
-        <parameters>
-            <parameter name="maxLineLength"><![CDATA[100]]></parameter>
-            <parameter name="tabSize"><![CDATA[2]]></parameter>
-            <parameter name="ignoreImports">true</parameter>
-        </parameters>
-    </check>
-    
 </scalastyle>

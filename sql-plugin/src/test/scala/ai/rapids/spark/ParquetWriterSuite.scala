@@ -134,7 +134,9 @@ class ParquetWriterSuite extends SparkQueryCompareTestSuite {
     }
   }
 
-  private def getCompressionCodecs(spark: SparkSession, compression: String, expectedExt: String): Seq[String] = {
+  private def getCompressionCodecs(
+      spark: SparkSession,
+      compression: String, expectedExt: String): Seq[String] = {
     val tempFile = File.createTempFile(s"compression-$compression-test", ".parquet")
 
     try {

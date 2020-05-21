@@ -175,7 +175,8 @@ class CudfCount(ref: GpuExpression) extends CudfAggregate(ref) {
     (col: cudf.ColumnVector) => cudf.Scalar.fromLong(col.getRowCount - col.getNullCount)
   override val mergeReductionAggregate: cudf.ColumnVector => cudf.Scalar =
     (col: cudf.ColumnVector) => col.sum
-  override lazy val updateAggregate: cudf.Aggregate = cudf.Table.count(getOrdinal(ref), includeNulls)
+  override lazy val updateAggregate: cudf.Aggregate =
+    cudf.Table.count(getOrdinal(ref), includeNulls)
   override lazy val mergeAggregate: cudf.Aggregate = cudf.Table.sum(getOrdinal(ref))
   override def toString(): String = "CudfCount"
 }
@@ -212,32 +213,40 @@ class CudfMin(ref: GpuExpression) extends CudfAggregate(ref) {
 
 abstract class CudfFirstLastBase(ref: GpuExpression) extends CudfAggregate(ref) {
   override val updateReductionAggregate: cudf.ColumnVector => cudf.Scalar =
-    (col: cudf.ColumnVector) => throw new UnsupportedOperationException("first/last reduction not supported on GPU")
+    (col: cudf.ColumnVector) =>
+      throw new UnsupportedOperationException("first/last reduction not supported on GPU")
   override val mergeReductionAggregate: cudf.ColumnVector => cudf.Scalar =
-    (col: cudf.ColumnVector) => throw new UnsupportedOperationException("first/last reduction not supported on GPU")
+    (col: cudf.ColumnVector) =>
+      throw new UnsupportedOperationException("first/last reduction not supported on GPU")
 }
 
 class CudfFirstIncludeNulls(ref: GpuExpression) extends CudfFirstLastBase(ref) {
   val includeNulls = true
-  override lazy val updateAggregate: cudf.Aggregate = cudf.Table.first(getOrdinal(ref), includeNulls)
-  override lazy val mergeAggregate: cudf.Aggregate = cudf.Table.first(getOrdinal(ref), includeNulls)
+  override lazy val updateAggregate: cudf.Aggregate =
+    cudf.Table.first(getOrdinal(ref), includeNulls)
+  override lazy val mergeAggregate: cudf.Aggregate =
+    cudf.Table.first(getOrdinal(ref), includeNulls)
 }
 
 class CudfFirstExcludeNulls(ref: GpuExpression) extends CudfFirstLastBase(ref) {
   val includeNulls = false
-  override lazy val updateAggregate: cudf.Aggregate = cudf.Table.first(getOrdinal(ref), includeNulls)
-  override lazy val mergeAggregate: cudf.Aggregate = cudf.Table.first(getOrdinal(ref), includeNulls)
+  override lazy val updateAggregate: cudf.Aggregate =
+    cudf.Table.first(getOrdinal(ref), includeNulls)
+  override lazy val mergeAggregate: cudf.Aggregate =
+    cudf.Table.first(getOrdinal(ref), includeNulls)
 }
 
 class CudfLastIncludeNulls(ref: GpuExpression) extends CudfFirstLastBase(ref) {
   val includeNulls = true
-  override lazy val updateAggregate: cudf.Aggregate = cudf.Table.last(getOrdinal(ref), includeNulls)
+  override lazy val updateAggregate: cudf.Aggregate =
+    cudf.Table.last(getOrdinal(ref), includeNulls)
   override lazy val mergeAggregate: cudf.Aggregate = cudf.Table.last(getOrdinal(ref), includeNulls)
 }
 
 class CudfLastExcludeNulls(ref: GpuExpression) extends CudfFirstLastBase(ref) {
   val includeNulls = false
-  override lazy val updateAggregate: cudf.Aggregate = cudf.Table.last(getOrdinal(ref), includeNulls)
+  override lazy val updateAggregate: cudf.Aggregate =
+    cudf.Table.last(getOrdinal(ref), includeNulls)
   override lazy val mergeAggregate: cudf.Aggregate = cudf.Table.last(getOrdinal(ref), includeNulls)
 }
 
@@ -363,13 +372,15 @@ case class GpuAverage(child: GpuExpression) extends GpuDeclarativeAggregate {
         // a sum of this == the count
         GpuCast(GpuIsNotNull(child), LongType)
     })
-  override lazy val mergeExpressions: Seq[GpuExpression] = Seq(new CudfSum(cudfSum), new CudfSum(cudfCount))
-  // The count input projection will need to be collected as a sum (of counts) instead of counts (of counts)
-  // as the GpuIsNotNull o/p is casted to count=0 for null and 1 otherwise, and the total count can be
-  // correctly evaluated only by summing them. eg. avg(col(null, 27)) should be 27, with
-  // count column projection as (0, 1) and total count for dividing the average = (0 + 1) and not 2
-  // which is the rowcount of the projected column.
-  override lazy val updateExpressions: Seq[GpuExpression] = Seq(new CudfSum(cudfSum), new CudfSum(cudfCount))
+  override lazy val mergeExpressions: Seq[GpuExpression] = Seq(new CudfSum(cudfSum),
+    new CudfSum(cudfCount))
+  // The count input projection will need to be collected as a sum (of counts) instead of
+  // counts (of counts) as the GpuIsNotNull o/p is casted to count=0 for null and 1 otherwise, and
+  // the total count can be correctly evaluated only by summing them. eg. avg(col(null, 27))
+  // should be 27, with count column projection as (0, 1) and total count for dividing the
+  // average = (0 + 1) and not 2 which is the rowcount of the projected column.
+  override lazy val updateExpressions: Seq[GpuExpression] = Seq(new CudfSum(cudfSum),
+    new CudfSum(cudfCount))
   override lazy val evaluateExpression: GpuExpression = GpuDivide(
     GpuCast(cudfSum, DoubleType),
     GpuCast(cudfCount, DoubleType))
