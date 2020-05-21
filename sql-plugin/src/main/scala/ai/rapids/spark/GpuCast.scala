@@ -140,6 +140,7 @@ object GpuCast {
         case ByteType | ShortType | IntegerType | LongType => true
         case _ => false
       }
+      case _ => false
     }
   }
 }
