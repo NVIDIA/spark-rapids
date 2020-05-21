@@ -19,7 +19,7 @@ package ai.rapids.spark
 import ai.rapids.cudf.{ColumnVector, DType, Scalar}
 
 import org.apache.spark.sql.catalyst.analysis.TypeCheckResult
-import org.apache.spark.sql.catalyst.expressions.{Cast, CastBase, NullIntolerant, TimeZoneAwareExpression}
+import org.apache.spark.sql.catalyst.expressions.{Cast, CastBase, Expression, NullIntolerant, TimeZoneAwareExpression}
 import org.apache.spark.sql.types._
 
 /** Meta-data for cast and ansi_cast. */
@@ -173,6 +173,21 @@ case class GpuCast(
 
   override def withTimeZone(timeZoneId: String): TimeZoneAwareExpression =
     copy(timeZoneId = Option(timeZoneId))
+
+  /**
+   * Under certain conditions during hash partitioning, Spark will attempt to replace casts
+   * with semantically equivalent expressions. This method is overridden to prevent Spark
+   * from substituting non-GPU expressions.
+   */
+  override def semanticEquals(other: Expression): Boolean = other match {
+    case g: GpuExpression =>
+      if (this == g) {
+        true
+      } else {
+        super.semanticEquals(g)
+      }
+    case _ => false
+  }
 
   // When this cast involves TimeZone, it's only resolved if the timeZoneId is set;
   // Otherwise behave like Expression.resolved.
