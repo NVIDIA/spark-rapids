@@ -59,16 +59,22 @@ class SortExecSuite extends SparkQueryCompareTestSuite {
 
   private val sortConfig = makeBatchedBytes(Integer.MAX_VALUE)
 
-  // Note I -- out the set of Types that aren't supported with Sort right now so we can explicitly see them and remove
-  // individually as we add support
+  // Note I -- out the set of Types that aren't supported with Sort right now,
+  // so we can explicitly see them and remove individually as we add support
   for (
-    dataType <- DataTypeTestUtils.atomicTypes ++ Set(NullType) -- Set(NullType, DecimalType.USER_DEFAULT,
+    dataType <-
+      DataTypeTestUtils.atomicTypes ++ Set(NullType) -- Set(NullType, DecimalType.USER_DEFAULT,
       DecimalType(20, 5), DecimalType.SYSTEM_DEFAULT, BinaryType);
     nullable <- Seq(true, false);
-    sortOrder <- Seq(col("a").asc, col("a").asc_nulls_last, col("a").desc, col("a").desc_nulls_first)
+    sortOrder <- Seq(col("a").asc,
+                     col("a").asc_nulls_last,
+                     col("a").desc,
+                     col("a").desc_nulls_first)
   ) {
     val inputDf = generateData(dataType, nullable, 60, sortConfig)
-    testSparkResultsAreEqual(s"sorting in partition on $dataType with nullable=$nullable, sortOrder=$sortOrder",  inputDf,
+    testSparkResultsAreEqual(
+      s"sorting in partition on $dataType with nullable=$nullable, sortOrder=$sortOrder",
+      inputDf,
       conf = sortConfig,
       execsAllowedNonGpu = Seq("RDDScanExec", "AttributeReference")) {
       frame => frame.sortWithinPartitions(sortOrder)
@@ -79,10 +85,15 @@ class SortExecSuite extends SparkQueryCompareTestSuite {
   for (
     dataType <- Seq(StringType, LongType);
     nullable <- Seq(true, false);
-    sortOrder <- Seq(col("a").asc, col("a").asc_nulls_last, col("a").desc, col("a").desc_nulls_first)
+    sortOrder <- Seq(col("a").asc,
+                     col("a").asc_nulls_last,
+                     col("a").desc,
+                     col("a").desc_nulls_first)
   ) {
     val inputDf = generateData(dataType, nullable, 60, sortConfig)
-    testSparkResultsAreEqual(s"sorting on $dataType with nullable=$nullable, sortOrder=$sortOrder",  inputDf,
+    testSparkResultsAreEqual(
+      s"sorting on $dataType with nullable=$nullable, sortOrder=$sortOrder",
+      inputDf,
       conf = sortConfig,
       execsAllowedNonGpu = Seq("RDDScanExec", "AttributeReference")) {
       frame => frame.sort(sortOrder)
@@ -98,7 +109,8 @@ class SortExecSuite extends SparkQueryCompareTestSuite {
     frame => frame.sortWithinPartitions("longs", "more_longs")
   }
 
-  testSparkResultsAreEqual("sort 2 cols longs nulls total", nullableLongsDfWithDuplicates, sortConfig) {
+  testSparkResultsAreEqual( "sort 2 cols longs nulls total",
+    nullableLongsDfWithDuplicates, sortConfig) {
     frame => frame.sort("longs", "more_longs")
   }
 
@@ -127,20 +139,29 @@ class SortExecSuite extends SparkQueryCompareTestSuite {
     frame => frame.sortWithinPartitions(col("longs").desc, col("more_longs").desc)
   }
 
-  testSparkResultsAreEqual("sort 2 cols longs nulls last desc/desc", nullableLongsDfWithDuplicates) {
-    frame => frame.sortWithinPartitions(col("longs").desc_nulls_last, col("more_longs").desc_nulls_last)
+  testSparkResultsAreEqual("sort 2 cols longs nulls last desc/desc",
+    nullableLongsDfWithDuplicates) {
+    frame => frame.sortWithinPartitions(
+      col("longs").desc_nulls_last,
+      col("more_longs").desc_nulls_last)
   }
 
   testSparkResultsAreEqual("sort long column carrying string col", stringsAndLongsDf) {
     frame => frame.sortWithinPartitions(col("longs"))
   }
 
-  testSparkResultsAreEqual("sort 2 cols longs nulls last desc/null first asc", nullableLongsDfWithDuplicates) {
-    frame => frame.sortWithinPartitions(col("longs").desc_nulls_last, col("more_longs").asc_nulls_first)
+  testSparkResultsAreEqual("sort 2 cols longs nulls last desc/null first asc",
+    nullableLongsDfWithDuplicates) {
+    frame => frame.sortWithinPartitions(
+      col("longs").desc_nulls_last,
+      col("more_longs").asc_nulls_first)
   }
 
-  testSparkResultsAreEqual("sort 2 cols longs nulls first desc/null last asc", nullableLongsDfWithDuplicates) {
-    frame => frame.sortWithinPartitions(col("longs").desc_nulls_first, col("more_longs").asc_nulls_last)
+  testSparkResultsAreEqual("sort 2 cols longs nulls first desc/null last asc",
+    nullableLongsDfWithDuplicates) {
+    frame => frame.sortWithinPartitions(
+      col("longs").desc_nulls_first,
+      col("more_longs").asc_nulls_last)
   }
 
   // force a sortMergeJoin
