@@ -24,7 +24,7 @@ import org.apache.spark.sql.catalyst.analysis.TypeCheckResult.{TypeCheckFailure,
 import org.apache.spark.sql.catalyst.expressions.aggregate.{AggregateMode, Complete, Final, Partial, PartialMerge}
 import org.apache.spark.sql.catalyst.expressions.{AttributeSet, Expression, ExprId, ImplicitCastInputTypes, Literal}
 import org.apache.spark.sql.catalyst.util.TypeUtils
-import org.apache.spark.sql.types.{AbstractDataType, AnyDataType, BooleanType, DataType, DataTypes, DoubleType, LongType, NumericType, StructType}
+import org.apache.spark.sql.types.{AbstractDataType, AnyDataType, BooleanType, DataType, DoubleType, LongType, NumericType, StructType}
 
 trait GpuAggregateFunction extends GpuExpression {
   // using the child reference, define the shape of the vectors sent to
@@ -364,7 +364,25 @@ case class GpuAverage(child: GpuExpression) extends GpuDeclarativeAggregate {
   private lazy val cudfSum = GpuAttributeReference("cudf_sum", DoubleType)()
   private lazy val cudfCount = GpuAttributeReference("cudf_count", LongType)()
 
-  override lazy val inputProjection: Seq[GpuExpression] = Seq(child,
+  private def toDoubleLit(v: Any): GpuLiteral = {
+    val litVal = v match {
+      case null => null
+      case l: Long => l.toDouble
+      case i: Int => i.toDouble
+      case f: Float => f.toDouble
+      case s: Short => s.toDouble
+      case b: Byte => b.toDouble
+      case d: Double => d
+      case _ => throw new IllegalArgumentException("function average requires numeric type")
+    }
+    GpuLiteral(litVal, DoubleType)
+  }
+
+  override lazy val inputProjection: Seq[GpuExpression] = Seq(
+    child match {
+      case literal: GpuLiteral => toDoubleLit(literal.value)
+      case _ => GpuCast(child, DoubleType)
+    },
     child match {
       case literal : GpuLiteral => GpuLiteral(if (literal.value != null) 1L else 0L, LongType)
       case _ =>
