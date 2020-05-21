@@ -58,16 +58,22 @@ object GpuOrcFileFormat extends Logging {
     }
 
     // hard coding the default value as it could change in future
-    val supportedConf = Map(STRIPE_SIZE.ordinal() -> ConfDataForTagging(STRIPE_SIZE, 67108864L, "only 64MB stripe size is supported"),
-      BUFFER_SIZE.ordinal() -> ConfDataForTagging(BUFFER_SIZE, 262144, "only 256KB block size is supported"),
-      ROW_INDEX_STRIDE.ordinal() -> ConfDataForTagging(ROW_INDEX_STRIDE, 10000, "only 10,000 row index stride is supported"),
-      BLOCK_PADDING.ordinal() -> ConfDataForTagging(BLOCK_PADDING, true, "Block padding isn't supported"))
+    val supportedConf = Map(
+      STRIPE_SIZE.ordinal() ->
+        ConfDataForTagging(STRIPE_SIZE, 67108864L, "only 64MB stripe size is supported"),
+      BUFFER_SIZE.ordinal() ->
+        ConfDataForTagging(BUFFER_SIZE, 262144, "only 256KB block size is supported"),
+      ROW_INDEX_STRIDE.ordinal() ->
+        ConfDataForTagging(ROW_INDEX_STRIDE, 10000, "only 10,000 row index stride is supported"),
+      BLOCK_PADDING.ordinal() ->
+        ConfDataForTagging(BLOCK_PADDING, true, "Block padding isn't supported"))
 
     OrcConf.values().foreach(conf => {
       if (supportedConf.contains(conf.ordinal())) {
         tagIfOrcOrHiveConfNotSupported(supportedConf(conf.ordinal()))
       } else {
-        if (conf.getHiveConfName != null && parameters.contains(conf.getHiveConfName) || parameters.contains(conf.getAttribute)) {
+        if ((conf.getHiveConfName != null && parameters.contains(conf.getHiveConfName))
+              || parameters.contains(conf.getAttribute)) {
           // these configurations are implementation specific and don't apply to cudf
           // The user has set them so we can't run on GPU
           logInfo(s"${conf.name()} is unsupported configuration")
