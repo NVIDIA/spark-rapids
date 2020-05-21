@@ -16,10 +16,14 @@
 
 package ai.rapids.spark
 
+import ai.rapids.spark.GpuMetricNames._
+import ai.rapids.cudf.NvtxColor
+
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.expressions.{Attribute, NamedExpression, SortOrder}
 import org.apache.spark.sql.catalyst.plans.physical.Partitioning
+import org.apache.spark.sql.execution.metric.{SQLMetric, SQLMetrics}
 import org.apache.spark.sql.execution.window.WindowExec
 import org.apache.spark.sql.execution.{SparkPlan, UnaryExecNode}
 import org.apache.spark.sql.rapids.GpuAggregateExpression
@@ -65,6 +69,25 @@ case class GpuWindowExec(windowExpressionAliases: Seq[GpuExpression],
 
   override def outputPartitioning: Partitioning = child.outputPartitioning
 
+  override lazy val additionalMetrics: Map[String, SQLMetric] =
+    Map(
+      NUM_INPUT_ROWS ->
+        SQLMetrics.createMetric(sparkContext, DESCRIPTION_NUM_INPUT_ROWS),
+      NUM_INPUT_BATCHES ->
+        SQLMetrics.createMetric(sparkContext, DESCRIPTION_NUM_INPUT_BATCHES),
+      PEAK_DEVICE_MEMORY ->
+        SQLMetrics.createSizeMetric(sparkContext, DESCRIPTION_PEAK_DEVICE_MEMORY)
+    )
+
+  // Job metrics.
+  private var maxDeviceMemory = 0L
+  private val peakDeviceMemoryMetric = metrics(GpuMetricNames.PEAK_DEVICE_MEMORY)
+  private val numInputBatchesMetric = metrics(GpuMetricNames.NUM_INPUT_BATCHES)
+  private val numInputRowsMetric = metrics(GpuMetricNames.NUM_INPUT_ROWS)
+  private val numOutputBatchesMetric = metrics(GpuMetricNames.NUM_OUTPUT_BATCHES)
+  private val numOutputRowsMetric = metrics(GpuMetricNames.NUM_OUTPUT_ROWS)
+  private val totalTimeMetric = metrics(GpuMetricNames.TOTAL_TIME)
+
   override protected def doExecute(): RDD[InternalRow] =
     throw new IllegalStateException(s"Row-based execution should not happen, in $this.")
 
@@ -103,16 +126,33 @@ case class GpuWindowExec(windowExpressionAliases: Seq[GpuExpression],
     input.map {
       cb => {
 
+        numInputBatchesMetric += 1
+        numInputRowsMetric += cb.numRows
+
         var originalCols: Array[GpuColumnVector] = null
         var aggCols     : Array[GpuColumnVector] = null
 
         try {
           originalCols = GpuColumnVector.extractColumns(cb)
           originalCols.foreach(_.incRefCount())
-          aggCols = boundOutputProjectList.map(
-            _.columnarEval(cb).asInstanceOf[GpuColumnVector]).toArray
 
-          new ColumnarBatch(originalCols ++ aggCols, cb.numRows())
+          withResource(
+            new NvtxWithMetrics(
+              "WindowExec projections", NvtxColor.GREEN, totalTimeMetric)
+            ) { _ =>
+                aggCols = boundOutputProjectList.map(
+                  _.columnarEval(cb).asInstanceOf[GpuColumnVector]).toArray
+            }
+
+          numOutputBatchesMetric += 1
+          numOutputRowsMetric += cb.numRows
+
+          val outputBatch = new ColumnarBatch(originalCols ++ aggCols, cb.numRows())
+          maxDeviceMemory = maxDeviceMemory.max(
+            GpuColumnVector.getTotalDeviceMemoryUsed(outputBatch))
+          peakDeviceMemoryMetric.set(maxDeviceMemory)
+
+          outputBatch
         } finally {
           cb.close()
         }
