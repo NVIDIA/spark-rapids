@@ -86,9 +86,6 @@ object GpuCast {
     "required range"
   /**
    * Returns true iff we can cast `from` to `to` using the GPU.
-   *
-   * Eventually we will need to match what is supported by spark proper
-   * https://github.com/apache/spark/blob/master/sql/catalyst/src/main/scala/org/apache/spark/sql/catalyst/expressions/Cast.scala#L37-L95
    */
   def canCast(from: DataType, to: DataType, ansiEnabled: Boolean = false): Boolean = {
     if (from == to) {
