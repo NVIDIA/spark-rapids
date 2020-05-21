@@ -26,7 +26,8 @@ import org.apache.spark.unsafe.types.UTF8String
 case class GpuInSet(
     child: Expression,
     list: Seq[Literal]) extends GpuUnaryExpression with Predicate {
-  @transient private[this] lazy val _needles: ThreadLocal[ColumnVector] = new ThreadLocal[ColumnVector]
+  @transient private[this] lazy val _needles: ThreadLocal[ColumnVector] =
+    new ThreadLocal[ColumnVector]
 
   require(list != null, "list should not be null")
 
