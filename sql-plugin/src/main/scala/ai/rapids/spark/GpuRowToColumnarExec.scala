@@ -293,7 +293,8 @@ private object GpuRowToColumnConverter {
 //    }
 //  }
 //
-//  private case class StructConverter(childConverters: Array[TypeConverter]) extends TypeConverter {
+//  private case class StructConverter(
+//      childConverters: Array[TypeConverter]) extends TypeConverter {
 //    override def append(row: SpecializedGetters,
   //    column: Int,
   //    builder: ai.rapids.cudf.HostColumnVector.Builder): Unit = {

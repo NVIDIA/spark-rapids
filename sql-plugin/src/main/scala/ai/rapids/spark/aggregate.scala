@@ -98,8 +98,8 @@ class GpuHashAggregateMeta(
         }
         case _ =>
           throw new IllegalArgumentException(s"The hash aggregate replacement mode " +
-            s"$hashAggReplaceMode is not valid. Valid options are: 'partial', 'final', 'complete'," +
-            s" or 'all'")
+            s"$hashAggReplaceMode is not valid. Valid options are: 'partial', " +
+            s"'final', 'complete', or 'all'")
       }
     }
     if (!conf.partialMergeDistinctEnabled && hashAggMode.contains(PartialMerge)) {

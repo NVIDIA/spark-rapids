@@ -126,7 +126,9 @@ class GpuCollectLimitMeta(
         GpuShuffleExchangeExec(GpuSinglePartitioning(Seq.empty), childPlans(0).convertIfNeeded())))
 }
 
-case class GpuCollectLimitExec(limit: Int, partitioning: GpuPartitioning, child: SparkPlan) extends GpuBaseLimitExec {
+case class GpuCollectLimitExec(
+    limit: Int, partitioning: GpuPartitioning,
+    child: SparkPlan) extends GpuBaseLimitExec {
 
   private val serializer: Serializer = new GpuColumnarBatchSerializer(child.output.size)
 
