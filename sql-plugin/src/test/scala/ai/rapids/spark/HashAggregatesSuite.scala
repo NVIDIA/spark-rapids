@@ -16,6 +16,8 @@
 
 package ai.rapids.spark
 
+import java.sql.Timestamp
+
 import org.apache.spark.SparkConf
 import org.apache.spark.sql.execution.WholeStageCodegenExec
 import org.apache.spark.sql.execution.aggregate.SortAggregateExec
@@ -218,14 +220,75 @@ class HashAggregatesSuite extends SparkQueryCompareTestSuite {
     frame => frame.agg(avg(lit(1.toDouble)),avg(lit(2.toDouble)))
   }
 
-  IGNORE_ORDER_testSparkResultsAreEqual(
+  INCOMPAT_testSparkResultsAreEqual(
+      "avg literals dbl_max",
+      longsFromCSVDf,
+      maxFloatDiff = 0.0001,
+      conf = floatAggConf.set(RapidsConf.INCOMPATIBLE_OPS.key, "true")) {
+    frame => frame.agg(avg(lit(1.4718094e+19)),avg(lit(1.4718094e+19)))
+  }
+
+  INCOMPAT_testSparkResultsAreEqual(
+      "avg literals long_max casted",
+      longsFromCSVDf,
+      conf = floatAggConf) {
+    frame => frame.agg(avg(lit(1.4718094e+19.toLong)),avg(lit(1.4718094e+19.toLong)))
+  }
+
+  INCOMPAT_testSparkResultsAreEqual(
+      "avg literals strings",
+      longsFromCSVDf,
+      conf = floatAggConf) {
+    //returns (null, null) as strings are casted to double prior avg eval.
+    frame => frame.agg(avg(lit("abc")),avg(lit("pqr")))
+  }
+
+  testExpectedExceptionStartsWith(
+      "avg literals bools fail",
+      classOf[AnalysisException],
+      "cannot resolve",
+      longsFromCSVDf,
+      conf = floatAggConf) {
+    frame => frame.agg(avg(lit(true)),avg(lit(false)))
+  }
+
+  testSparkResultsAreEqual(
+      "avg literals bytes",
+      longsFromCSVDf,
+      conf = floatAggConf) {
+      frame => frame.agg(avg(lit(1.toByte)),avg(lit(2.toByte)))
+  }
+
+  testSparkResultsAreEqual(
+      "avg literals shorts",
+      longsFromCSVDf,
+      conf = floatAggConf) {
+    frame => frame.agg(avg(lit(1.toShort)),avg(lit(2.toShort)))
+  }
+
+  INCOMPAT_testSparkResultsAreEqual(
+      "avg literals strings dbl",
+      longsFromCSVDf,
+      maxFloatDiff = 0.0001,
+      conf = floatAggConf.set(RapidsConf.INCOMPATIBLE_OPS.key, "true")) {
+    frame => frame.agg(avg(lit("1.4718094e+19")),avg(lit("1.4718094e+19")))
+  }
+
+  INCOMPAT_testSparkResultsAreEqual(
+      "avg literals timestamps",
+      timestampsDf,
+      conf = floatAggConf) {
+    frame => frame.agg(avg(lit(Timestamp.valueOf("0100-1-1 23:00:01"))))
+  }
+
+  testSparkResultsAreEqual(
       "avg literals with nulls",
       longsFromCSVDf,
       conf = floatAggConf) {
     frame => frame.agg(avg(lit(null)),avg(lit(2.toDouble)))
   }
 
-  IGNORE_ORDER_testSparkResultsAreEqual(
+  testSparkResultsAreEqual(
       "avg literals with all nulls",
       longsFromCSVDf,
       conf = floatAggConf) {
@@ -1584,5 +1647,12 @@ class HashAggregatesSuite extends SparkQueryCompareTestSuite {
       longsFromCSVDf, conf = floatAggConf) {
     frame => val res = frame.selectExpr("avg(distinct longs) filter (where longs < 5)")
       res
+  }
+
+  testSparkResultsAreEqual("PartMerge:avg_overflow_cast_dbl", veryLargeLongsFromCSVDf,
+    conf = floatAggConf, repart = 2) {
+    frame => val result = frame.groupBy("large_longs").agg(avg("large_longs"))
+      checkExecNode(result)
+      result
   }
 }

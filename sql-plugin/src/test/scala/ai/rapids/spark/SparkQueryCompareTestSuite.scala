@@ -1436,6 +1436,12 @@ trait SparkQueryCompareTestSuite extends FunSuite with Arm {
     )))(_)
   }
 
+  def veryLargeLongsFromCSVDf = {
+    fromCsvDf("very_large_longs.csv", StructType(Array(
+      StructField("large_longs", LongType, true)
+    )))(_)
+  }
+
   def intsFromCsvInferredSchema(session: SparkSession): DataFrame = {
     val path = TestResourceFinder.getResourcePath("test.csv")
     session.read.option("inferSchema", "true").csv(path)
