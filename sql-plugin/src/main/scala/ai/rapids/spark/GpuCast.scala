@@ -381,8 +381,9 @@ case class GpuCast(
                   regexMatches.ifElse(trimmed, nullString)
                 }
               }
-              // cast to specific integral type after filtering out values that are not in range for that type
-              // note that the scalar values here are named parameters so are not created until they are needed
+              // cast to specific integral type after filtering out values that are not in range
+              // for that type. Note that the scalar values here are named parameters so are not
+              // created until they are needed
               withResource(longStrings) { longStrings =>
                 cudfType match {
                   case DType.INT8 =>
@@ -489,10 +490,12 @@ case class GpuCast(
     }
   }
 
-  def castStringToFloats(input: ColumnVector, ansiEnabled: Boolean, dType: DType): GpuColumnVector = {
+  def castStringToFloats(
+      input: ColumnVector,
+      ansiEnabled: Boolean, dType: DType): GpuColumnVector = {
 
-    // TODO: since cudf doesn't support case-insensitive regex, we have to generate all possible strings. But these should
-    // cover most of the cases
+    // TODO: since cudf doesn't support case-insensitive regex, we have to generate all
+    //  possible strings. But these should cover most of the cases
     val POS_INF_REGEX = "^[+]?(?:infinity|inf|Infinity|Inf|INF|INFINITY)$"
     val NEG_INF_REGEX = "^[\\-](?:infinity|inf|Infinity|Inf|INF|INFINITY)$"
     val NAN_REGEX = "^(?:nan|NaN|NAN)$"
