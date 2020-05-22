@@ -36,9 +36,9 @@ class CastExprMeta[INPUT <: CastBase](
   private val toType = cast.dataType
 
   override def tagExprForGpu(): Unit = {
-    if (!GpuCast.canCast(fromType, toType, ansiEnabled)) {
-      willNotWorkOnGpu(s"$castExpr from $fromType " +
-        s"to $toType is not currently supported on the GPU")
+    if (!GpuCast.canCast(cast.child.dataType, cast.dataType)) {
+      willNotWorkOnGpu(s"$castExpr from ${cast.child.dataType} " +
+        s"to ${cast.dataType} is not currently supported on the GPU")
     }
     if (!conf.isCastFloatToStringEnabled && toType == DataTypes.StringType &&
       (fromType == DataTypes.FloatType || fromType == DataTypes.DoubleType)) {
@@ -47,13 +47,16 @@ class CastExprMeta[INPUT <: CastBase](
         "differ from the default behavior in Spark.  To enable this operation on the GPU, set" +
         s" ${RapidsConf.ENABLE_CAST_FLOAT_TO_STRING} to true.")
     }
-    if (!conf.isCastTimestampToStringEnabled && fromType == DataTypes.TimestampType &&
-      toType == DataTypes.StringType) {
-      willNotWorkOnGpu("the GPU will add trailing zeros for the millisecond portion of the " +
-        "timestamp, which differs from the default behavior in Spark. To enable this operation " +
-        s"on the GPU, set ${RapidsConf.ENABLE_CAST_TIMESTAMP_TO_STRING} to true.")
+    if (!conf.isCastStringToFloatEnabled && cast.child.dataType == DataTypes.StringType &&
+      Seq(DataTypes.FloatType, DataTypes.DoubleType).contains(cast.dataType)) {
+      willNotWorkOnGpu("Currently hex values aren't supported on the GPU. Also note " +
+        "that casting from string to float types on the GPU returns incorrect results when the " +
+        "string represents any number \"1.7976931348623158E308\" <= x < " +
+        "\"1.7976931348623159E308\" and \"-1.7976931348623159E308\" < x <= " +
+        "\"-1.7976931348623158E308\" in both these cases the GPU returns Double.MaxValue while " +
+        "CPU returns \"+Infinity\" and \"-Infinity\" respectively. To enable this operation on " +
+        "the GPU, set" + s" ${RapidsConf.ENABLE_CAST_STRING_TO_FLOAT} to true.")
     }
-
     if (!conf.isCastStringToIntegerEnabled && cast.child.dataType == DataTypes.StringType &&
     Seq(DataTypes.ByteType, DataTypes.ShortType, DataTypes.IntegerType, DataTypes.LongType)
       .contains(cast.dataType)) {
@@ -82,12 +85,15 @@ object GpuCast {
    */
   private val ANSI_CASTABLE_TO_INT_REGEX = "\\s*[+\\-]?[0-9]+\\s*$"
 
-  private val INVALID_INPUT_MESSAGE = "Column contains at least one value that is not in the " +
+  val INVALID_INPUT_MESSAGE = "Column contains at least one value that is not in the " +
     "required range"
+
+  val INVALID_FLOAT_CAST_MSG = "At least one value is either null or is an invalid number"
+
   /**
    * Returns true iff we can cast `from` to `to` using the GPU.
    */
-  def canCast(from: DataType, to: DataType, ansiEnabled: Boolean = false): Boolean = {
+  def canCast(from: DataType, to: DataType): Boolean = {
     if (from == to) {
       return true
     }
@@ -134,7 +140,7 @@ object GpuCast {
       }
       case StringType => to match {
         case BooleanType => true
-        case ByteType | ShortType | IntegerType | LongType => true
+        case ByteType | ShortType | IntegerType | LongType | FloatType | DoubleType => true
         case _ => false
       }
       case _ => false
@@ -348,47 +354,52 @@ case class GpuCast(
         }
       case (FloatType|DoubleType, StringType) =>
         castFloatingTypeToString(input)
-      case (StringType, BooleanType) =>
-        castStringToBool(input, ansiMode)
-      case (StringType, ByteType|ShortType|IntegerType|LongType) =>
-        // filter out values that are not valid longs or nulls
-        val regex = if (ansiMode) {
-          GpuCast.ANSI_CASTABLE_TO_INT_REGEX
-        } else {
-          GpuCast.CASTABLE_TO_INT_REGEX
-        }
-        val longStrings = withResource(input.getBase.strip()) { trimmed =>
-          withResource(trimmed.matchesRe(regex)) { regexMatches =>
-            if (ansiMode) {
-              withResource(regexMatches.all()) { allRegexMatches => {
-                if (!allRegexMatches.getBoolean) {
-                  throw new NumberFormatException(GpuCast.INVALID_INPUT_MESSAGE)
+      case (StringType, BooleanType | ByteType | ShortType | IntegerType | LongType | FloatType
+                        | DoubleType) =>
+        withResource(input.getBase.strip()) { trimmed =>
+          dataType match {
+            case BooleanType =>
+              castStringToBool(trimmed, ansiMode)
+            case FloatType | DoubleType =>
+              castStringToFloats(trimmed, ansiMode, cudfType)
+            case ByteType | ShortType | IntegerType | LongType =>
+              // filter out values that are not valid longs or nulls
+              val regex = if (ansiMode) {
+                GpuCast.ANSI_CASTABLE_TO_INT_REGEX
+              } else {
+                GpuCast.CASTABLE_TO_INT_REGEX
+              }
+              val longStrings = withResource(trimmed.matchesRe(regex)) { regexMatches =>
+                if (ansiMode) {
+                  withResource(regexMatches.all()) { allRegexMatches =>
+                    if (!allRegexMatches.getBoolean) {
+                      throw new NumberFormatException(GpuCast.INVALID_INPUT_MESSAGE)
+                    }
+                  }
                 }
-              }}
-            }
-            withResource(Scalar.fromNull(DType.STRING)) { nullString =>
-              regexMatches.ifElse(trimmed, nullString)
-            }
-          }
-        }
-        // cast to specific integral type after filtering out values that are not in range for that
-        // type note that the scalar values here are named parameters so are not created until they
-        // are needed
-        withResource(longStrings) { longStrings =>
-          cudfType match {
-            case DType.INT8 =>
-              castStringToIntegralType(longStrings, DType.INT8,
-                Scalar.fromInt(Byte.MinValue), Scalar.fromInt(Byte.MaxValue))
-            case DType.INT16 =>
-              castStringToIntegralType(longStrings, DType.INT16,
-                Scalar.fromInt(Short.MinValue), Scalar.fromInt(Short.MaxValue))
-            case DType.INT32 =>
-              castStringToIntegralType(longStrings, DType.INT32,
-                Scalar.fromInt(Int.MinValue), Scalar.fromInt(Int.MaxValue))
-            case DType.INT64 =>
-              GpuColumnVector.from(longStrings.castTo(DType.INT64))
-            case _ =>
-              throw new IllegalStateException("Invalid integral type")
+                withResource(Scalar.fromNull(DType.STRING)) { nullString =>
+                  regexMatches.ifElse(trimmed, nullString)
+                }
+              }
+              // cast to specific integral type after filtering out values that are not in range for that type
+              // note that the scalar values here are named parameters so are not created until they are needed
+              withResource(longStrings) { longStrings =>
+                cudfType match {
+                  case DType.INT8 =>
+                    castStringToIntegralType(longStrings, DType.INT8,
+                      Scalar.fromInt(Byte.MinValue), Scalar.fromInt(Byte.MaxValue))
+                  case DType.INT16 =>
+                    castStringToIntegralType(longStrings, DType.INT16,
+                      Scalar.fromInt(Short.MinValue), Scalar.fromInt(Short.MaxValue))
+                  case DType.INT32 =>
+                    castStringToIntegralType(longStrings, DType.INT32,
+                      Scalar.fromInt(Int.MinValue), Scalar.fromInt(Int.MaxValue))
+                  case DType.INT64 =>
+                    GpuColumnVector.from(longStrings.castTo(DType.INT64))
+                  case _ =>
+                    throw new IllegalStateException("Invalid integral type")
+                }
+              }
           }
         }
 
@@ -449,30 +460,93 @@ case class GpuCast(
     }
   }
 
-  private def castStringToBool(input: GpuColumnVector, ansiEnabled: Boolean): GpuColumnVector = {
+  private def castStringToBool(input: ColumnVector, ansiEnabled: Boolean): GpuColumnVector = {
     val trueStrings = Seq("t", "true", "y", "yes", "1")
     val falseStrings = Seq("f", "false", "n", "no", "0")
     val boolStrings = trueStrings ++ falseStrings
 
-    // remove whitespace first
-    withResource(input.getBase().strip()) { input =>
-      // determine which values are valid bool strings
-      withResource(ColumnVector.fromStrings(boolStrings: _*)) { boolStrings =>
-        withResource(input.contains(boolStrings)) { validBools =>
-          // in ansi mode, fail if any values are not valid bool strings
-          if (ansiEnabled) {
-            withResource(validBools.all()) { isAllBool =>
-              if (!isAllBool.getBoolean) {
-                throw new IllegalStateException(GpuCast.INVALID_INPUT_MESSAGE)
+    // determine which values are valid bool strings
+    withResource(ColumnVector.fromStrings(boolStrings: _*)) { boolStrings =>
+      withResource(input.contains(boolStrings)) { validBools =>
+        // in ansi mode, fail if any values are not valid bool strings
+        if (ansiEnabled) {
+          withResource(validBools.all()) { isAllBool =>
+            if (!isAllBool.getBoolean) {
+              throw new IllegalStateException(GpuCast.INVALID_INPUT_MESSAGE)
+            }
+          }
+        }
+        // replace non-boolean values with null
+        withResource(Scalar.fromNull(DType.STRING)) { nullString =>
+          withResource(validBools.ifElse(input, nullString)) { sanitizedInput =>
+            // return true, false, or null, as appropriate
+            withResource(ColumnVector.fromStrings(trueStrings: _*)) { cvTrue =>
+              GpuColumnVector.from(sanitizedInput.contains(cvTrue))
+            }
+          }
+        }
+      }
+    }
+  }
+
+  def castStringToFloats(input: ColumnVector, ansiEnabled: Boolean, dType: DType): GpuColumnVector = {
+
+    // TODO: since cudf doesn't support case-insensitive regex, we have to generate all possible strings. But these should
+    // cover most of the cases
+    val POS_INF_REGEX = "^[+]?(?:infinity|inf|Infinity|Inf|INF|INFINITY)$"
+    val NEG_INF_REGEX = "^[\\-](?:infinity|inf|Infinity|Inf|INF|INFINITY)$"
+    val NAN_REGEX = "^(?:nan|NaN|NAN)$"
+
+
+//      1. convert the different infinities to "Inf"/"-Inf" which is the only variation cudf
+//         understands
+//      2. identify the nans
+//      3. identify the floats. "nan", "null" and letters are not considered floats
+//      4. if ansi is enabled we want to throw and exception if the string is neither float nor nan
+//      5. convert everything thats not floats to null
+//      6. set the indices where we originally had nans to Float.NaN
+//
+//      NOTE Limitation: "1.7976931348623159E308" and "-1.7976931348623159E308" are not considered
+//      Inf even though spark does
+
+    if (ansiEnabled && input.hasNulls()) {
+      throw new NumberFormatException(GpuCast.INVALID_FLOAT_CAST_MSG)
+    }
+    // First replace different spellings/cases of infinity with Inf and -Infinity with -Inf
+    val posInfReplaced = withResource(input.matchesRe(POS_INF_REGEX)) { containsInf =>
+      withResource(Scalar.fromString("Inf")) { inf =>
+        containsInf.ifElse(inf, input)
+      }
+    }
+    val withPosNegInfinityReplaced = withResource(posInfReplaced) { withPositiveInfinityReplaced =>
+      withResource(withPositiveInfinityReplaced.matchesRe(NEG_INF_REGEX)) { containsNegInf =>
+        withResource(Scalar.fromString("-Inf")) { negInf =>
+          containsNegInf.ifElse(negInf, withPositiveInfinityReplaced)
+        }
+      }
+    }
+    //Now identify the different variations of nans
+    withResource(withPosNegInfinityReplaced.matchesRe(NAN_REGEX)) { isNan =>
+      // now check if the values are floats
+      withResource(withPosNegInfinityReplaced.isFloat()) { isFloat =>
+        if (ansiEnabled) {
+          withResource(isNan.not()) { notNan =>
+            withResource(isFloat.not()) { notFloat =>
+              withResource(notFloat.and(notNan)) { notFloatAndNotNan =>
+                withResource(notFloatAndNotNan.any()) { notNanAndNotFloat =>
+                  if (notNanAndNotFloat.getBoolean()) {
+                    throw new NumberFormatException(GpuCast.INVALID_FLOAT_CAST_MSG)
+                  }
+                }
               }
             }
           }
-          // replace non-boolean values with null
-          withResource(Scalar.fromNull(DType.STRING)) { nullString =>
-            withResource(validBools.ifElse(input, nullString)) { sanitizedInput =>
-              // return true, false, or null, as appropriate
-              withResource(ColumnVector.fromStrings(trueStrings: _*)) { cvTrue =>
-                GpuColumnVector.from(sanitizedInput.contains(cvTrue))
+        }
+        withResource(withPosNegInfinityReplaced.castTo(dType)) { casted =>
+          withResource(Scalar.fromNull(dType)) { nulls =>
+            withResource(isFloat.ifElse(casted, nulls)) { floatsOnly =>
+              withResource(FloatUtils.getNanScalar(dType)) { nan =>
+                GpuColumnVector.from(isNan.ifElse(nan, floatsOnly))
               }
             }
           }
