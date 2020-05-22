@@ -261,7 +261,11 @@ private[ucx] class UCXTransaction(conn: UCXConnection, val txId: Long)
     * @param numPending - number of messages we expect to see sent/received
     * @param cb - callback to call when done/errored
     */
-  private[ucx] def start(txType: UCXTransactionType.Value, numPending: Long, cb: TransactionCallback): Unit = {
+  private[ucx] def start(
+      txType: UCXTransactionType.Value,
+      numPending: Long,
+      cb: TransactionCallback): Unit = {
+
     if (start != 0) {
       throw new IllegalStateException("Transaction can't be started twice!")
     }
