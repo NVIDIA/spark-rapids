@@ -358,8 +358,8 @@ class UCXShuffleTransport(shuffleServerId: BlockManagerId, rapidsConf: RapidsCon
     */
   private def markBytesInFlight(neededAmount: Long)
       : Option[Seq[MemoryBuffer]] = inflightMonitor.synchronized {
-    // if it would fit, or we are sending nothing (protects against the buffer that is bigger than limit),
-    // go ahead and allow it
+    // if it would fit, or we are sending nothing (protects against the buffer that is bigger
+    // than limit), go ahead and allow it
     if (wouldFit(neededAmount)) {
       val bbs = tryGetReceiveBounceBuffers(neededAmount, 2)
       if (bbs.nonEmpty) {
