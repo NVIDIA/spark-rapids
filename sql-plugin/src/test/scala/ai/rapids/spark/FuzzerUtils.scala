@@ -42,9 +42,8 @@ object FuzzerUtils {
   /**
    * Create a schema with the specified data types.
    */
-  def createSchema(dataTypes: Seq[DataType]): StructType = {
-    new StructType(dataTypes.zipWithIndex
-      .map(pair => StructField(s"c${pair._2}", pair._1)).toArray)
+  def createSchema(dataTypes: Seq[DataType], nullable: Boolean = true): StructType = {
+    new StructType(dataTypes.zipWithIndex.map(pair => StructField(s"c${pair._2}", pair._1, nullable)).toArray)
   }
 
   /**

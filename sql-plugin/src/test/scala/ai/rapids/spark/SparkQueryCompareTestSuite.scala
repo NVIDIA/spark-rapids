@@ -854,6 +854,26 @@ trait SparkQueryCompareTestSuite extends FunSuite with Arm {
     ).toDF("dates")
   }
 
+  def exponentsAsStringsDf(session: SparkSession): DataFrame = {
+    import session.sqlContext.implicits._
+    Seq("1.38E-2",
+      "1.2e-2",
+      "3.544E+2",
+      "3.2e+2",
+      "4.5E3",
+      "9.8e5").toDF("c0")
+  }
+
+  def badFloatStringsDf(session: SparkSession): DataFrame = {
+    import session.sqlContext.implicits._
+    Seq(("A", "null"), ("1.3", "43.54")).toDF("c0", "c1")
+  }
+
+  def badDoubleStringsDf(session: SparkSession): DataFrame = {
+    import session.sqlContext.implicits._
+    Seq("1.7976931348623159E308", "-1.7976931348623159E308").toDF("c0")
+  }
+
   def stringsAndLongsDf(session: SparkSession): DataFrame = {
     import session.sqlContext.implicits._
     Seq(

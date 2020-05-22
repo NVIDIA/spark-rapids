@@ -19,6 +19,7 @@ package ai.rapids.spark
 import ai.rapids.cudf.{ColumnVector, DType, Scalar}
 
 object FloatUtils extends Arm {
+
   def nanToZero(cv: ColumnVector): ColumnVector = {
     if (cv.getType() != DType.FLOAT32 && cv.getType() != DType.FLOAT64) {
       throw new IllegalArgumentException("Only Floats and Doubles allowed")
@@ -33,6 +34,30 @@ object FloatUtils extends Arm {
       ) {
         zero => isNan.ifElse(zero, cv)
       }
+    }
+  }
+
+  def getNanScalar(dType: DType): Scalar = {
+    if (dType == DType.FLOAT64) {
+      Scalar.fromDouble(Double.NaN)
+    } else {
+      Scalar.fromFloat(Float.NaN)
+    }
+  }
+
+  def getPositiveInfinityScalar(dType: DType): Scalar = {
+    if (dType == DType.FLOAT64) {
+      Scalar.fromDouble(Double.PositiveInfinity)
+    } else {
+      Scalar.fromFloat(Float.PositiveInfinity)
+    }
+  }
+
+  def getNegativeInfinityScalar(dType: DType): Scalar = {
+    if (dType == DType.FLOAT64) {
+      Scalar.fromDouble(Double.NegativeInfinity)
+    } else {
+      Scalar.fromFloat(Float.NegativeInfinity)
     }
   }
 

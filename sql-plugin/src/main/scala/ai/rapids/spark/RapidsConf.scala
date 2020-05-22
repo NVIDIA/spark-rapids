@@ -367,6 +367,17 @@ object RapidsConf {
     .booleanConf
     .createWithDefault(false)
 
+  val ENABLE_CAST_STRING_TO_FLOAT = conf("spark.rapids.sql.castStringToFloat.enabled")
+    .doc("When set to true, enables casting from strings to float types (float, double) " +
+      "on the GPU. Currently hex values aren't supported on the GPU. Also note that casting from " +
+      "string to float types on the GPU returns incorrect results when the string represents any " +
+      "number \"1.7976931348623158E308\" <= x < \"1.7976931348623159E308\" " +
+      "and \"-1.7976931348623158E308\" >= x > \"-1.7976931348623159E308\" in both these cases " +
+      "the GPU returns Double.MaxValue while CPU returns \"+Infinity\" and \"-Infinity\" " +
+      "respectively")
+    .booleanConf
+    .createWithDefault(false)
+
   val ENABLE_CAST_STRING_TO_INTEGER = conf("spark.rapids.sql.castStringToInteger.enabled")
     .doc("When set to true, enables casting from strings to integer types (byte, short, " +
       "int, long) on the GPU. Casting from string to integer types on the GPU returns incorrect " +
@@ -668,6 +679,8 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
   lazy val isCastTimestampToStringEnabled: Boolean = get(ENABLE_CAST_TIMESTAMP_TO_STRING)
 
   lazy val isCastStringToIntegerEnabled: Boolean = get(ENABLE_CAST_STRING_TO_INTEGER)
+
+  lazy val isCastStringToFloatEnabled: Boolean = get(ENABLE_CAST_STRING_TO_FLOAT)
 
   lazy val shuffleTransportEnabled: Boolean = get(SHUFFLE_TRANSPORT_ENABLE)
 
