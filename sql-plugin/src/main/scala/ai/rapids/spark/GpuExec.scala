@@ -27,6 +27,7 @@ object GpuMetricNames {
   val NUM_OUTPUT_ROWS =  "numOutputRows"
   val NUM_OUTPUT_BATCHES = "numOutputBatches"
   val TOTAL_TIME = "totalTime"
+  val PEAK_DEVICE_MEMORY = "peakDevMemory"
 }
 
 trait GpuExec extends SparkPlan with Arm {

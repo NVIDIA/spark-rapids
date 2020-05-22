@@ -15,7 +15,8 @@
  */
 package ai.rapids.spark
 
-import ai.rapids.spark.GpuMetricNames.NUM_OUTPUT_ROWS
+import ai.rapids.cudf.NvtxColor
+import ai.rapids.spark.GpuMetricNames._
 import ai.rapids.spark.RapidsPluginImplicits._
 
 import org.apache.spark.TaskContext
@@ -61,14 +62,18 @@ class GpuExpandExecMeta(
  * @param child       Child operator
  */
 case class GpuExpandExec(
-                       projections: Seq[Seq[GpuExpression]],
-                       resultExpressions: Seq[NamedExpression],
-                       child: SparkPlan)
+    projections: Seq[Seq[GpuExpression]],
+    resultExpressions: Seq[NamedExpression],
+    child: SparkPlan)
   extends UnaryExecNode with GpuExec {
 
-  override lazy val metrics: Map[String, SQLMetric] = Map(
-    GpuMetricNames.NUM_OUTPUT_ROWS -> SQLMetrics.createMetric(sparkContext,
-      "number of output rows"))
+  override lazy val additionalMetrics: Map[String, SQLMetric] = Map(
+    NUM_INPUT_ROWS -> SQLMetrics.createMetric(sparkContext,
+      "number of input rows"),
+    NUM_INPUT_BATCHES -> SQLMetrics.createMetric(sparkContext,
+      "number of input columnar batches"),
+    PEAK_DEVICE_MEMORY -> SQLMetrics.createSizeMetric(sparkContext,
+      "peak device memory"))
 
   // The GroupExpressions can output data with arbitrary partitioning, so set it
   // as UNKNOWN partitioning
@@ -81,13 +86,11 @@ case class GpuExpandExec(
     AttributeSet(projections.flatten.flatMap(_.references))
 
   override protected def doExecuteColumnar(): RDD[ColumnarBatch] = {
-    val numOutputRows = longMetric(NUM_OUTPUT_ROWS)
-
     val boundProjections: Seq[Seq[GpuExpression]] =
       projections.map(GpuBindReferences.bindReferences(_, child.output))
 
     child.executeColumnar().mapPartitions { it =>
-      new GpuExpandIterator(boundProjections, numOutputRows, it)
+      new GpuExpandIterator(boundProjections, metrics, it)
     }
   }
 
@@ -99,13 +102,20 @@ case class GpuExpandExec(
 
 class GpuExpandIterator(
     boundProjections: Seq[Seq[GpuExpression]],
-    numOutputRows: SQLMetric,
+    metrics: Map[String, SQLMetric],
     it: Iterator[ColumnarBatch])
   extends Iterator[ColumnarBatch]
   with Arm {
 
   private var cb: ColumnarBatch = _
   private var projectionIndex = 0
+  private var maxDeviceMemory = 0L
+  private val numInputBatches = metrics(NUM_INPUT_BATCHES)
+  private val numOutputBatches = metrics(NUM_OUTPUT_BATCHES)
+  private val numInputRows = metrics(NUM_INPUT_ROWS)
+  private val numOutputRows = metrics(NUM_OUTPUT_ROWS)
+  private val totalTime = metrics(TOTAL_TIME)
+  private val peakDeviceMemory = metrics(PEAK_DEVICE_MEMORY)
 
   Option(TaskContext.get())
     .foreach(_.addTaskCompletionListener[Unit](_ => Option(cb).foreach(_.close())))
@@ -116,24 +126,34 @@ class GpuExpandIterator(
 
     if (cb == null) {
       cb = it.next()
+      numInputBatches += 1
+      numInputRows += cb.numRows()
     }
 
-    val projectedColumns = boundProjections(projectionIndex).safeMap(expr => {
-      expr.columnarEval(cb) match {
-        case cv: GpuColumnVector => cv
-        case lit: GpuLiteral =>
-          withResource(GpuScalar.from(lit.value, lit.dataType)) { scalar =>
-            GpuColumnVector.from(scalar, cb.numRows())
-          }
-        case other =>
-          withResource(GpuScalar.from(other, expr.dataType)) { scalar =>
-            GpuColumnVector.from(scalar, cb.numRows())
-          }
-      }
-    })
+    val projectedBatch = withResource(new NvtxWithMetrics(
+      "ExpandExec projections", NvtxColor.GREEN, totalTime)) { _ =>
 
-    val projectedBatch = new ColumnarBatch(projectedColumns.toArray, cb.numRows())
-    numOutputRows += cb.numRows()
+      val projectedColumns = boundProjections(projectionIndex).safeMap(expr => {
+        expr.columnarEval(cb) match {
+          case cv: GpuColumnVector => cv
+          case lit: GpuLiteral =>
+            withResource(GpuScalar.from(lit.value, lit.dataType)) { scalar =>
+              GpuColumnVector.from(scalar, cb.numRows())
+            }
+          case other =>
+            withResource(GpuScalar.from(other, expr.dataType)) { scalar =>
+              GpuColumnVector.from(scalar, cb.numRows())
+            }
+        }
+      })
+
+      new ColumnarBatch(projectedColumns.toArray, cb.numRows())
+    }
+
+    numOutputBatches += 1
+    numOutputRows += projectedBatch.numRows()
+    maxDeviceMemory = maxDeviceMemory.max(GpuColumnVector.getTotalDeviceMemoryUsed(projectedBatch))
+    peakDeviceMemory.set(maxDeviceMemory)
 
     projectionIndex += 1
     if (projectionIndex == boundProjections.length) {
