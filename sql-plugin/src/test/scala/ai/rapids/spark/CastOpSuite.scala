@@ -28,8 +28,10 @@ import org.apache.spark.sql.{DataFrame, Row, SparkSession}
 class CastOpSuite extends GpuExpressionTestSuite {
   import CastOpSuite._
 
-  private val timestampDatesMsecParquet =
-    frameFromParquet("timestamp-date-test-msec.parquet")
+  private val sparkConf = new SparkConf()
+    .set(RapidsConf.ENABLE_CAST_STRING_TO_FLOAT.key, "true")
+
+  private val timestampDatesMsecParquet = frameFromParquet("timestamp-date-test-msec.parquet")
 
   /** Data types supported by the plugin. */
   protected val supportedTypes = Seq(DataTypes.BooleanType,
@@ -53,6 +55,7 @@ class CastOpSuite extends GpuExpressionTestSuite {
         .set(RapidsConf.ENABLE_CAST_FLOAT_TO_STRING.key, "true")
         .set(RapidsConf.ENABLE_CAST_TIMESTAMP_TO_STRING.key, "true")
         .set(RapidsConf.ENABLE_CAST_STRING_TO_INTEGER.key, "true")
+        .set(RapidsConf.ENABLE_CAST_STRING_TO_FLOAT.key, "true")
         .set("spark.sql.ansi.enabled", String.valueOf(ansiEnabled))
 
       typeMatrix.foreach {
@@ -60,7 +63,7 @@ class CastOpSuite extends GpuExpressionTestSuite {
           // check if Spark supports this cast
           if (Cast.canCast(from, to)) {
             // check if plugin supports this cast
-            if (GpuCast.canCast(from, to, ansiEnabled)) {
+            if (GpuCast.canCast(from, to)) {
               // test the cast
               try {
                 val (fromCpu, fromGpu) =
@@ -138,9 +141,7 @@ class CastOpSuite extends GpuExpressionTestSuite {
     // this test tracks currently unsupported casts and will need updating as more casts are
     // supported
     val unsupported = getUnsupportedCasts(false)
-    val expected = List((StringType,FloatType),
-      (StringType,DoubleType),
-      (StringType,DateType),
+    val expected = List((StringType,DateType),
       (StringType,TimestampType))
     assert(unsupported == expected)
   }
@@ -149,9 +150,7 @@ class CastOpSuite extends GpuExpressionTestSuite {
     // this test tracks currently unsupported ansi_casts and will need updating as more casts are
     // supported
     val unsupported = getUnsupportedCasts(true)
-    val expected = List((StringType,FloatType),
-      (StringType,DoubleType),
-      (StringType,DateType),
+    val expected = List((StringType,DateType),
       (StringType,TimestampType))
 
     assert(unsupported == expected)
@@ -160,7 +159,7 @@ class CastOpSuite extends GpuExpressionTestSuite {
   private def getUnsupportedCasts(ansiEnabled: Boolean) = {
     val unsupported = typeMatrix.flatMap {
       case (from, to) =>
-        if (Cast.canCast(from, to) && !GpuCast.canCast(from, to, ansiEnabled)) {
+        if (Cast.canCast(from, to) && !GpuCast.canCast(from, to)) {
           Some((from, to))
         } else {
           None
@@ -196,6 +195,8 @@ class CastOpSuite extends GpuExpressionTestSuite {
       } else {
         longsAsDecimalStrings(spark)
       }
+      case (DataTypes.StringType, DataTypes.FloatType) if ansiEnabled => floatsAsStrings(spark)
+      case (DataTypes.StringType, DataTypes.DoubleType) if ansiEnabled => doublesAsStrings(spark)
 
       case (DataTypes.ShortType, DataTypes.ByteType) if ansiEnabled => bytesAsShorts(spark)
       case (DataTypes.IntegerType, DataTypes.ByteType) if ansiEnabled => bytesAsInts(spark)
@@ -248,7 +249,7 @@ class CastOpSuite extends GpuExpressionTestSuite {
   private def testCastToString[T](
       dataType: DataType,
       comparisonFunc: Option[(String, String) => Boolean] = None) {
-    assert(GpuCast.canCast(dataType, DataTypes.StringType, false))
+    assert(GpuCast.canCast(dataType, DataTypes.StringType))
     val schema = FuzzerUtils.createSchema(Seq(dataType))
     val childExpr: GpuBoundReference = GpuBoundReference(0, dataType, nullable = false)
     checkEvaluateGpuUnaryExpression(GpuCast(childExpr, DataTypes.StringType),
@@ -398,10 +399,62 @@ class CastOpSuite extends GpuExpressionTestSuite {
       //, col("doubles").cast(TimestampType))
   }
 
+  ignore("Test cast from strings to double that doesn't match") {
+        testSparkResultsAreEqual("Test cast from strings to double that doesn't match",
+          badDoubleStringsDf) {
+          frame =>frame.select(
+              col("doubles").cast(DoubleType))
+        }
+  }
+
+  testSparkResultsAreEqual("Test cast from strings to doubles", doublesAsStrings,
+    conf = sparkConf, maxFloatDiff = 0.0001) {
+    frame => frame.select(
+      col("c0").cast(DoubleType))
+  }
+
+  testSparkResultsAreEqual("Test cast from strings to floats", floatsAsStrings,
+    conf = sparkConf, maxFloatDiff = 0.0001) {
+    frame => frame.select(
+      col("c0").cast(FloatType))
+  }
+
+  testSparkResultsAreEqual("Test bad cast from strings to floats", badFloatStringsDf,
+    conf = sparkConf, maxFloatDiff = 0.0001) {
+    frame =>frame.select(
+      col("c0").cast(DoubleType),
+      col("c0").cast(FloatType),
+      col("c1").cast(DoubleType),
+      col("c1").cast(FloatType))
+  }
+
+  testSparkResultsAreEqual("ansi_cast string to double exp", exponentsAsStringsDf,
+    conf = sparkConf, maxFloatDiff = 0.0001) {
+    frame => frame.select(
+      col("c0").cast(DoubleType))
+  }
+
+  testSparkResultsAreEqual("ansi_cast string to float exp", exponentsAsStringsDf,
+    conf = sparkConf, maxFloatDiff = 0.0001) {
+    frame => frame.select(
+      col("c0").cast(FloatType))
+  }
 }
 
 /** Data shared between CastOpSuite and AnsiCastOpSuite. */
 object CastOpSuite {
+
+  def doublesAsStrings(session: SparkSession): DataFrame = {
+    val schema = FuzzerUtils.createSchema(Seq(DoubleType), false)
+    val df = FuzzerUtils.generateDataFrame(session, schema, 100)
+    df.withColumn("c0", col("c0").cast(StringType))
+  }
+
+  def floatsAsStrings(session: SparkSession): DataFrame = {
+    val schema = FuzzerUtils.createSchema(Seq(FloatType), false)
+    val df = FuzzerUtils.generateDataFrame(session, schema, 100)
+    df.withColumn("c0", col("c0").cast(StringType))
+  }
 
   def bytesAsShorts(session: SparkSession): DataFrame = {
     import session.sqlContext.implicits._

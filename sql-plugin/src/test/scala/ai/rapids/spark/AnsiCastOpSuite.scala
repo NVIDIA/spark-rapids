@@ -37,6 +37,7 @@ class AnsiCastOpSuite extends GpuExpressionTestSuite {
     .set("spark.sql.storeAssignmentPolicy", "ANSI") // note this is the default in 3.0.0
     .set(RapidsConf.ENABLE_CAST_FLOAT_TO_STRING.key, "true")
     .set(RapidsConf.ENABLE_CAST_STRING_TO_INTEGER.key, "true")
+    .set(RapidsConf.ENABLE_CAST_STRING_TO_FLOAT.key, "true")
 
   def generateOutOfRangeTimestampsDF(
       lowerValue: Long,
@@ -291,6 +292,51 @@ class AnsiCastOpSuite extends GpuExpressionTestSuite {
   }
 
   ///////////////////////////////////////////////////////////////////////////
+  // Ansi cast from string to floating point
+  ///////////////////////////////////////////////////////////////////////////
+
+  testSparkResultsAreEqual("ansi_cast string to double exp", exponentsAsStringsDf, sparkConf, maxFloatDiff = 0.0001) {
+    frame => testCastTo(DataTypes.DoubleType)(frame)
+  }
+
+  testSparkResultsAreEqual("ansi_cast string to float exp", exponentsAsStringsDf, sparkConf, maxFloatDiff = 0.0001) {
+    frame => testCastTo(DataTypes.FloatType)(frame)
+  }
+
+  testSparkResultsAreEqual("ansi_cast string to float", floatsAsStrings, sparkConf, maxFloatDiff = 0.0001) {
+    frame => testCastTo(DataTypes.FloatType)(frame)
+  }
+
+  testSparkResultsAreEqual("ansi_cast string to double", doublesAsStrings, sparkConf, maxFloatDiff = 0.0001) {
+    frame => testCastTo(DataTypes.DoubleType)(frame)
+  }
+
+  testCastFailsForBadInputs("Test bad cast 1 from strings to floats", badFloatStringsDf, msg = GpuCast.INVALID_FLOAT_CAST_MSG) {
+    frame =>frame.select(col("c0").cast(FloatType))
+  }
+
+  testCastFailsForBadInputs("Test bad cast 2 from strings to floats", badFloatStringsDf, msg = GpuCast.INVALID_FLOAT_CAST_MSG) {
+    frame =>frame.select(col("c1").cast(FloatType))
+  }
+
+  testCastFailsForBadInputs("Test bad cast 1 from strings to double", badFloatStringsDf, msg = GpuCast.INVALID_FLOAT_CAST_MSG) {
+    frame =>frame.select(col("c0").cast(DoubleType))
+  }
+
+  testCastFailsForBadInputs("Test bad cast 2 from strings to double", badFloatStringsDf, msg = GpuCast.INVALID_FLOAT_CAST_MSG) {
+    frame =>frame.select(col("c1").cast(DoubleType))
+  }
+
+  //Currently there is a bug in cudf which doesn't convert one value correctly
+  // The bug is documented here https://github.com/rapidsai/cudf/issues/5225
+  ignore("Test cast from strings to double that doesn't match") {
+    testSparkResultsAreEqual("Test cast from strings to double that doesn't match", badDoubleStringsDf) {
+      frame =>frame.select(
+        col("c0").cast(DoubleType))
+    }
+  }
+
+  ///////////////////////////////////////////////////////////////////////////
   // Ansi cast from floating point to string
   ///////////////////////////////////////////////////////////////////////////
 
@@ -308,7 +354,7 @@ class AnsiCastOpSuite extends GpuExpressionTestSuite {
 
   private def testCastToString[T](dataType: DataType, ansiMode: Boolean,
       comparisonFunc: Option[(String, String) => Boolean] = None) {
-    assert(GpuCast.canCast(dataType, DataTypes.StringType, ansiEnabled = true))
+    assert(GpuCast.canCast(dataType, DataTypes.StringType))
     val schema = FuzzerUtils.createSchema(Seq(dataType))
     val childExpr: GpuBoundReference = GpuBoundReference(0, dataType, nullable = false)
     checkEvaluateGpuUnaryExpression(GpuCast(childExpr, DataTypes.StringType, ansiMode = true),
@@ -574,7 +620,7 @@ class AnsiCastOpSuite extends GpuExpressionTestSuite {
    * an ansi_cast
    */
   private def testCastFailsForBadInputs(testName: String, frame: SparkSession => DataFrame,
-    sparkConf: SparkConf)(transformation: DataFrame => DataFrame): Unit = {
+    sparkConf: SparkConf = sparkConf, msg: String = GpuCast.INVALID_INPUT_MESSAGE)(transformation: DataFrame => DataFrame): Unit = {
 
     test(testName) {
       try {
@@ -586,8 +632,7 @@ class AnsiCastOpSuite extends GpuExpressionTestSuite {
           "for an ansi_cast")
       } catch {
         case e: Exception =>
-          assert(exceptionContains(e, "Column contains at least one value that is not " +
-            "in the required range"))
+          assert(exceptionContains(e, msg))
       }
     }
   }
