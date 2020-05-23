@@ -15,7 +15,7 @@
  */
 package ai.rapids.spark
 
-import ai.rapids.cudf.NvtxColor
+import ai.rapids.cudf.{DType, NvtxColor, Scalar}
 import ai.rapids.spark.GpuMetricNames._
 import ai.rapids.spark.RapidsPluginImplicits._
 
@@ -27,6 +27,8 @@ import org.apache.spark.sql.catalyst.plans.physical.{Partitioning, UnknownPartit
 import org.apache.spark.sql.execution.{ExpandExec, SparkPlan, UnaryExecNode}
 import org.apache.spark.sql.execution.metric.{SQLMetric, SQLMetrics}
 import org.apache.spark.sql.vectorized.ColumnarBatch
+
+import scala.collection.mutable
 
 class GpuExpandExecMeta(
     expand: ExpandExec,
@@ -130,29 +132,62 @@ class GpuExpandIterator(
       numInputRows += cb.numRows()
     }
 
+    val uniqueDeviceColumns = mutable.ListBuffer[GpuColumnVector]()
+
     val projectedBatch = withResource(new NvtxWithMetrics(
       "ExpandExec projections", NvtxColor.GREEN, totalTime)) { _ =>
 
-      val projectedColumns = boundProjections(projectionIndex).safeMap(expr => {
-        expr.columnarEval(cb) match {
-          case cv: GpuColumnVector => cv
-          case lit: GpuLiteral =>
-            withResource(GpuScalar.from(lit.value, lit.dataType)) { scalar =>
+      // ExpandExec typically produces many null columns so we re-use them where possible
+      val nullCVs = mutable.Map[DType,GpuColumnVector]()
+
+      /**
+       * Create a null column vector for the specified data type, returning the vector and
+       * a boolean indicating whether an existing vector was re-used.
+       */
+      def getOrCreateNullCV(dataType: DType): (GpuColumnVector, Boolean) = {
+        nullCVs.get(dataType) match {
+          case Some(cv) =>
+            (cv.incRefCount(), true)
+          case None =>
+            val cv = withResource(Scalar.fromNull(dataType)) { scalar =>
               GpuColumnVector.from(scalar, cb.numRows())
             }
-          case other =>
-            withResource(GpuScalar.from(other, expr.dataType)) { scalar =>
-              GpuColumnVector.from(scalar, cb.numRows())
-            }
+            nullCVs.put(dataType, cv)
+            (cv, false)
         }
+      }
+
+      val projectedColumns = boundProjections(projectionIndex).safeMap(fn = expr => {
+        val rapidsType = GpuColumnVector.getRapidsType(expr.dataType)
+        val (cv, nullColumnReused) = expr.columnarEval(cb) match {
+          case null => getOrCreateNullCV(rapidsType)
+          case lit: GpuLiteral if lit.value == null => getOrCreateNullCV(rapidsType)
+          case lit: GpuLiteral =>
+            val cv = withResource(GpuScalar.from(lit.value, lit.dataType)) { scalar =>
+              GpuColumnVector.from(scalar, cb.numRows())
+            }
+            (cv, false)
+          case cv: GpuColumnVector => (cv, false)
+          case other =>
+            val cv = withResource(GpuScalar.from(other, expr.dataType)) { scalar =>
+              GpuColumnVector.from(scalar, cb.numRows())
+            }
+            (cv, false)
+        }
+        if (!nullColumnReused) {
+          uniqueDeviceColumns += cv
+        }
+        cv
       })
 
       new ColumnarBatch(projectedColumns.toArray, cb.numRows())
     }
 
+    val deviceMemory = GpuColumnVector.getTotalDeviceMemoryUsed(uniqueDeviceColumns.toArray)
+
     numOutputBatches += 1
     numOutputRows += projectedBatch.numRows()
-    maxDeviceMemory = maxDeviceMemory.max(GpuColumnVector.getTotalDeviceMemoryUsed(projectedBatch))
+    maxDeviceMemory = maxDeviceMemory.max(deviceMemory)
     peakDeviceMemory.set(maxDeviceMemory)
 
     projectionIndex += 1
