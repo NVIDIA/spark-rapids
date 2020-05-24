@@ -40,7 +40,7 @@ pipeline {
         JENKINS_ROOT  = 'jenkins'
         MVN_GPUWA_MIRROR='-s jenkins/settings.xml -P mirror-apache-to-gpuwa'
         LIBCUDF_KERNEL_CACHE_PATH='/tmp'
-        QUAY_IO = credentials("svcngcc_quayio")
+        QUAY = credentials("svcngcc_quayio")
     }
 
     triggers {
@@ -53,9 +53,11 @@ pipeline {
             steps {
                 script {
                     def IMAGE_NAME="quay.io/nvidia/spark:plugin-build-ubuntu16-cuda10.1"
+                    def DOCKER_CMD="docker --config $WORKSPACE/.docker"
                     sh """
-                        docker login -u "$QUAY_IO_USR" -p "$QUAY_IO_PSW" https://quay.io
-                        docker pull $IMAGE_NAME
+                        echo $QUAY_PSW | $DOCKER_CMD login https://quay.io -u $QUAY_USR --password-stdin
+                        $DOCKER_CMD pull $IMAGE_NAME
+                        $DOCKER_CMD logout https://quay.io
                     """
                     docker.image(IMAGE_NAME).inside("--runtime=nvidia -v ${HOME}/.m2:${HOME}/.m2:rw \
                         -v ${HOME}/.zinc:${HOME}/.zinc:rw \
