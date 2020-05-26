@@ -50,9 +50,9 @@ case class GpuColumnarToRowExec(child: SparkPlan, exportColumnarRdd: Boolean = f
 
   // Override the original metrics to remove NUM_OUTPUT_BATCHES, which makes no sense.
   override lazy val metrics: Map[String, SQLMetric] = Map(
-    NUM_OUTPUT_ROWS -> SQLMetrics.createMetric(sparkContext, "number of output rows"),
-    TOTAL_TIME -> SQLMetrics.createNanoTimingMetric(sparkContext, "total time"),
-    NUM_INPUT_BATCHES -> SQLMetrics.createMetric(sparkContext, "number of input batches"))
+    NUM_OUTPUT_ROWS -> SQLMetrics.createMetric(sparkContext, DESCRIPTION_NUM_OUTPUT_ROWS),
+    TOTAL_TIME -> SQLMetrics.createNanoTimingMetric(sparkContext, DESCRIPTION_TOTAL_TIME),
+    NUM_INPUT_BATCHES -> SQLMetrics.createMetric(sparkContext, DESCRIPTION_NUM_INPUT_BATCHES))
 
   override def inputRDDs(): Seq[RDD[InternalRow]] = {
     Seq(child.executeColumnar().asInstanceOf[RDD[InternalRow]]) // Hack because of type erasure

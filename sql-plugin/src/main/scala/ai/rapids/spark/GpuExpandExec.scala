@@ -71,11 +71,11 @@ case class GpuExpandExec(
 
   override lazy val additionalMetrics: Map[String, SQLMetric] = Map(
     NUM_INPUT_ROWS -> SQLMetrics.createMetric(sparkContext,
-      "number of input rows"),
+      DESCRIPTION_NUM_INPUT_ROWS),
     NUM_INPUT_BATCHES -> SQLMetrics.createMetric(sparkContext,
-      "number of input columnar batches"),
+      DESCRIPTION_NUM_INPUT_BATCHES),
     PEAK_DEVICE_MEMORY -> SQLMetrics.createSizeMetric(sparkContext,
-      "peak device memory"))
+      DESCRIPTION_PEAK_DEVICE_MEMORY))
 
   // The GroupExpressions can output data with arbitrary partitioning, so set it
   // as UNKNOWN partitioning

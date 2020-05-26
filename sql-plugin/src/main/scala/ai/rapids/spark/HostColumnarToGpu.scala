@@ -225,11 +225,14 @@ case class HostColumnarToGpu(child: SparkPlan, goal: CoalesceGoal)
   import GpuMetricNames._
 
   override lazy val additionalMetrics: Map[String, SQLMetric] = Map(
-    NUM_INPUT_ROWS -> SQLMetrics.createMetric(sparkContext, "input rows"),
-    NUM_INPUT_BATCHES -> SQLMetrics.createMetric(sparkContext, "input batches"),
+    NUM_INPUT_ROWS ->
+      SQLMetrics.createMetric(sparkContext, GpuMetricNames.DESCRIPTION_NUM_INPUT_ROWS),
+    NUM_INPUT_BATCHES ->
+      SQLMetrics.createMetric(sparkContext, GpuMetricNames.DESCRIPTION_NUM_INPUT_BATCHES),
     "collectTime" -> SQLMetrics.createNanoTimingMetric(sparkContext, "collect batch time"),
     "concatTime" -> SQLMetrics.createNanoTimingMetric(sparkContext, "concat batch time"),
-    "peakDevMemory" ->SQLMetrics.createMetric(sparkContext, "peak device memory")
+    "peakDevMemory" ->
+      SQLMetrics.createMetric(sparkContext, GpuMetricNames.DESCRIPTION_PEAK_DEVICE_MEMORY)
   )
 
   override def output: Seq[Attribute] = child.output
