@@ -32,6 +32,7 @@
         <module>sql-plugin</module>
         <module>tests</module>
         <module>integration_tests</module>
+        <module>api_validation</module>
     </modules>
 
     <profiles>
