@@ -33,9 +33,9 @@ object GpuMetricNames {
 
   // Metric Descriptions.
   val DESCRIPTION_NUM_INPUT_ROWS = "number of input rows"
-  val DESCRIPTION_NUM_INPUT_BATCHES = "number of input batches"
+  val DESCRIPTION_NUM_INPUT_BATCHES = "number of input columnar batches"
   val DESCRIPTION_NUM_OUTPUT_ROWS = "number of output rows"
-  val DESCRIPTION_NUM_OUTPUT_BATCHES = "number of output batches"
+  val DESCRIPTION_NUM_OUTPUT_BATCHES = "number of output columnar batches"
   val DESCRIPTION_TOTAL_TIME = "total time"
   val DESCRIPTION_PEAK_DEVICE_MEMORY = "peak device memory"
 }
@@ -59,11 +59,10 @@ trait GpuExec extends SparkPlan with Arm {
   override def supportsColumnar = true
 
   override lazy val metrics: Map[String, SQLMetric] = Map(
-    NUM_OUTPUT_ROWS -> SQLMetrics.createMetric(sparkContext, "number of output rows"),
-    NUM_OUTPUT_BATCHES -> SQLMetrics.createMetric(sparkContext,
-      "number of output columnar batches"),
+    NUM_OUTPUT_ROWS -> SQLMetrics.createMetric(sparkContext, DESCRIPTION_NUM_OUTPUT_ROWS),
+    NUM_OUTPUT_BATCHES -> SQLMetrics.createMetric(sparkContext, DESCRIPTION_NUM_OUTPUT_BATCHES),
     TOTAL_TIME -> SQLMetrics.createNanoTimingMetric(sparkContext,
-      "total time")) ++ additionalMetrics
+      DESCRIPTION_TOTAL_TIME)) ++ additionalMetrics
 
   lazy val additionalMetrics: Map[String, SQLMetric] = Map.empty
 
