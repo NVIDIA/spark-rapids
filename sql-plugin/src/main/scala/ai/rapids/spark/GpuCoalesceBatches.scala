@@ -419,11 +419,11 @@ case class GpuCoalesceBatches(child: SparkPlan, goal: CoalesceGoal)
   import GpuMetricNames._
 
   override lazy val additionalMetrics: Map[String, SQLMetric] = Map(
-    NUM_INPUT_ROWS -> SQLMetrics.createMetric(sparkContext, "input rows"),
-    NUM_INPUT_BATCHES -> SQLMetrics.createMetric(sparkContext, "input batches"),
+    NUM_INPUT_ROWS -> SQLMetrics.createMetric(sparkContext, DESCRIPTION_NUM_INPUT_ROWS),
+    NUM_INPUT_BATCHES -> SQLMetrics.createMetric(sparkContext, DESCRIPTION_NUM_INPUT_BATCHES),
     "collectTime" -> SQLMetrics.createNanoTimingMetric(sparkContext, "collect batch time"),
     "concatTime" -> SQLMetrics.createNanoTimingMetric(sparkContext, "concat batch time"),
-    "peakDevMemory" -> SQLMetrics.createSizeMetric(sparkContext, "peak device memory")
+    PEAK_DEVICE_MEMORY -> SQLMetrics.createSizeMetric(sparkContext, DESCRIPTION_PEAK_DEVICE_MEMORY)
   )
 
   override protected def doExecute(): RDD[InternalRow] = {
