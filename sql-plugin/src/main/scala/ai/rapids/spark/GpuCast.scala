@@ -528,28 +528,30 @@ case class GpuCast(
         }
       }
     }
-    //Now identify the different variations of nans
-    withResource(withPosNegInfinityReplaced.matchesRe(NAN_REGEX)) { isNan =>
-      // now check if the values are floats
-      withResource(withPosNegInfinityReplaced.isFloat()) { isFloat =>
-        if (ansiEnabled) {
-          withResource(isNan.not()) { notNan =>
-            withResource(isFloat.not()) { notFloat =>
-              withResource(notFloat.and(notNan)) { notFloatAndNotNan =>
-                withResource(notFloatAndNotNan.any()) { notNanAndNotFloat =>
-                  if (notNanAndNotFloat.getBoolean()) {
-                    throw new NumberFormatException(GpuCast.INVALID_FLOAT_CAST_MSG)
+    withResource(withPosNegInfinityReplaced) { withPosNegInfinityReplaced =>
+      //Now identify the different variations of nans
+      withResource(withPosNegInfinityReplaced.matchesRe(NAN_REGEX)) { isNan =>
+        // now check if the values are floats
+        withResource(withPosNegInfinityReplaced.isFloat()) { isFloat =>
+          if (ansiEnabled) {
+            withResource(isNan.not()) { notNan =>
+              withResource(isFloat.not()) { notFloat =>
+                withResource(notFloat.and(notNan)) { notFloatAndNotNan =>
+                  withResource(notFloatAndNotNan.any()) { notNanAndNotFloat =>
+                    if (notNanAndNotFloat.getBoolean()) {
+                      throw new NumberFormatException(GpuCast.INVALID_FLOAT_CAST_MSG)
+                    }
                   }
                 }
               }
             }
           }
-        }
-        withResource(withPosNegInfinityReplaced.castTo(dType)) { casted =>
-          withResource(Scalar.fromNull(dType)) { nulls =>
-            withResource(isFloat.ifElse(casted, nulls)) { floatsOnly =>
-              withResource(FloatUtils.getNanScalar(dType)) { nan =>
-                GpuColumnVector.from(isNan.ifElse(nan, floatsOnly))
+          withResource(withPosNegInfinityReplaced.castTo(dType)) { casted =>
+            withResource(Scalar.fromNull(dType)) { nulls =>
+              withResource(isFloat.ifElse(casted, nulls)) { floatsOnly =>
+                withResource(FloatUtils.getNanScalar(dType)) { nan =>
+                  GpuColumnVector.from(isNan.ifElse(nan, floatsOnly))
+                }
               }
             }
           }
