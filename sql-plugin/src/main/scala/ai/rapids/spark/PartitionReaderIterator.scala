@@ -65,12 +65,14 @@ object PartitionReaderIterator {
   def buildScanMetrics(sparkContext: SparkContext): Map[String, SQLMetric] = {
     Map(
       GpuMetricNames.NUM_OUTPUT_ROWS -> SQLMetrics.createMetric(sparkContext,
-        "number of output rows"),
+        GpuMetricNames.DESCRIPTION_NUM_OUTPUT_ROWS),
       GpuMetricNames.NUM_OUTPUT_BATCHES -> SQLMetrics.createMetric(sparkContext,
-        "number of output columnar batches"),
-      GpuMetricNames.TOTAL_TIME -> SQLMetrics.createNanoTimingMetric(sparkContext, "total time"),
+        GpuMetricNames.DESCRIPTION_NUM_OUTPUT_BATCHES),
+      GpuMetricNames.TOTAL_TIME -> SQLMetrics.createNanoTimingMetric(sparkContext,
+        GpuMetricNames.DESCRIPTION_TOTAL_TIME),
       "bufferTime" -> SQLMetrics.createNanoTimingMetric(sparkContext, "buffer time"),
-      "peakDevMemory" -> SQLMetrics.createSizeMetric(sparkContext, "peak device memory")
+      GpuMetricNames.PEAK_DEVICE_MEMORY ->
+        SQLMetrics.createSizeMetric(sparkContext, GpuMetricNames.DESCRIPTION_PEAK_DEVICE_MEMORY)
     )
   }
 }
