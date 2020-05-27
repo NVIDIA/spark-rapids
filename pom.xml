@@ -379,6 +379,7 @@
                 <artifactId>apache-rat-plugin</artifactId>
                 <configuration>
                     <excludes>
+                        <exclude>.docker/**</exclude>
                         <exclude>.download/**</exclude>
                         <exclude>.gitattributes</exclude>
                         <exclude>.gitignore</exclude>
