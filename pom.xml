@@ -388,8 +388,7 @@
                         <exclude>.github/pull_request_template.md</exclude>
                         <exclude>**/*.md</exclude>
                         <exclude>NOTICE-binary</exclude>
-                        <!-- exclude projects that are conditionally enabled -->
-                        <exclude>shuffle-plugin/**</exclude>
+                        <exclude>docs/dev/idea-code-style-settings.xml</exclude>
                     </excludes>
                 </configuration>
             </plugin>
