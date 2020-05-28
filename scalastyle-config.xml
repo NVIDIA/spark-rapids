@@ -48,6 +48,16 @@ You can also disable only one rule, by specifying its rule id, as specified in:
         </parameters>
     </check>
 
+    <check level="error" class="org.scalastyle.scalariform.ImportOrderChecker" enabled="false">
+        <parameters>
+            <parameter name="groups">java,scala,3rdParty,spark</parameter>
+            <parameter name="group.java">javax?\..*</parameter>
+            <parameter name="group.scala">scala\..*</parameter>
+            <parameter name="group.3rdParty">(?!org\.apache\.spark\.).*</parameter>
+            <parameter name="group.spark">org\.apache\.spark\..*</parameter>
+        </parameters>
+    </check>
+
     <check level="error" class="org.scalastyle.scalariform.ClassNamesChecker" enabled="true">
         <parameters>
             <parameter name="regex"><![CDATA[[A-Z][A-Za-z]*]]></parameter>
