@@ -85,6 +85,13 @@ object GpuCast {
    */
   private val ANSI_CASTABLE_TO_INT_REGEX = "\\s*[+\\-]?[0-9]+\\s*$"
 
+  /**
+   * Regex to match timestamps with or without trailing zeros.
+   */
+  private val TIMESTAMP_TRUNCATE_REGEX = "^([0-9]{4}-[0-9]{2}-[0-9]{2} " +
+    "[0-9]{2}:[0-9]{2}:[0-9]{2})" +
+    "(.[1-9]*(?:0)?[1-9]+)?(.0*[1-9]+)?(?:.0*)?$"
+
   val INVALID_INPUT_MESSAGE = "Column contains at least one value that is not in the " +
     "required range"
 
@@ -280,7 +287,7 @@ case class GpuCast(
           asLongs.close()
         }
       case (TimestampType, StringType) =>
-        GpuColumnVector.from(input.getBase.asStrings("%Y-%m-%d %H:%M:%S.%3f"))
+        castTimestampToString(input)
 
       // ansi cast from larger-than-integer integral types, to integer
       case (LongType, IntegerType) if ansiMode =>
@@ -438,6 +445,13 @@ case class GpuCast(
     withResource(maxValue) { maxValue =>
       throwIfAny(values.greaterThan(maxValue))
     }
+  }
+
+  private def castTimestampToString(input: GpuColumnVector) = {
+    GpuColumnVector.from(
+      withResource(input.getBase.asStrings("%Y-%m-%d %H:%M:%S.%3f")) { cv =>
+        cv.stringReplaceWithBackrefs(GpuCast.TIMESTAMP_TRUNCATE_REGEX,"\\1\\2\\3")
+      })
   }
 
   private def castFloatingTypeToString(input: GpuColumnVector): GpuColumnVector = {
