@@ -17,6 +17,7 @@
 package ai.rapids.spark
 
 import java.sql.Timestamp
+import java.text.SimpleDateFormat
 import java.util.TimeZone
 
 import org.apache.spark.SparkConf
@@ -53,7 +54,6 @@ class CastOpSuite extends GpuExpressionTestSuite {
 
       val conf = new SparkConf()
         .set(RapidsConf.ENABLE_CAST_FLOAT_TO_STRING.key, "true")
-        .set(RapidsConf.ENABLE_CAST_TIMESTAMP_TO_STRING.key, "true")
         .set(RapidsConf.ENABLE_CAST_STRING_TO_INTEGER.key, "true")
         .set(RapidsConf.ENABLE_CAST_STRING_TO_FLOAT.key, "true")
         .set("spark.sql.ansi.enabled", String.valueOf(ansiEnabled))
@@ -73,8 +73,6 @@ class CastOpSuite extends GpuExpressionTestSuite {
 
                 // perform comparison logic specific to the cast
                 (from, to) match {
-                  case (DataTypes.TimestampType, DataTypes.StringType) =>
-                    compareTimestampToStringResults(fromCpu, fromGpu)
                   case (DataTypes.FloatType | DataTypes.DoubleType, DataTypes.StringType) =>
                     compareFloatToStringResults(fromCpu, fromGpu)
                   case (DataTypes.FloatType | DataTypes.DoubleType, DataTypes.StringType) =>
@@ -116,25 +114,6 @@ class CastOpSuite extends GpuExpressionTestSuite {
             s"value: $cpuValue. GPU value: $gpuValue.")
         }
     }
-  }
-
-  private def compareTimestampToStringResults(fromCpu: Array[Row], fromGpu: Array[Row]) = {
-    def removeTrailingZeros(timestampAsString: String): String = {
-      if (timestampAsString == null) {
-        null
-      } else {
-        var s = timestampAsString
-        while (s.endsWith("0") || s.endsWith(".")) {
-          s = s.substring(0, s.length - 1)
-        }
-        s
-      }
-    }
-    val cpu = fromCpu.map(row => Row.fromSeq(Seq(removeTrailingZeros(row
-      .getString(0)))))
-    val gpu = fromGpu.map(row => Row.fromSeq(Seq(removeTrailingZeros(row
-      .getString(0)))))
-    compareResults(sort = false, 0.00001, cpu, gpu)
   }
 
   test("Test unsupported cast") {
@@ -182,6 +161,7 @@ class CastOpSuite extends GpuExpressionTestSuite {
       case (DataTypes.TimestampType, DataTypes.ShortType) => shortsAsTimestamps(spark)
       case (DataTypes.TimestampType, DataTypes.IntegerType) => intsAsTimestamps(spark)
       case (DataTypes.TimestampType, DataTypes.LongType) => longsAsTimestamps(spark)
+      case (DataTypes.TimestampType, DataTypes.StringType) => validTimestamps(spark)
 
       case (DataTypes.StringType, DataTypes.BooleanType) => validBoolStrings(spark)
 
@@ -579,6 +559,26 @@ object CastOpSuite {
   def timestampsAsDoubles(session: SparkSession): DataFrame = {
     import session.sqlContext.implicits._
     timestampValues.map(_.toDouble).toDF("c0")
+  }
+
+  def validTimestamps(session: SparkSession): DataFrame = {
+    import session.sqlContext.implicits._
+    val df = new SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSS")
+    val timestampStrings = Seq(
+      "2020-12-31T11:59:59.999",
+      "2020-12-31T11:59:59.990",
+      "2020-12-31T11:59:59.900",
+      "2020-12-31T11:59:59.000",
+      "2020-12-31T11:59:50.000",
+      "2020-12-31T11:59:00.000",
+      "2020-12-31T11:50:00.000",
+      "2020-12-31T11:00:00.000"
+    )
+    val timestamps = timestampStrings
+      .map(s => df.parse(s))
+      .map(d => new Timestamp(d.getTime))
+
+    timestamps.toDF("c0")
   }
 
   protected def validBoolStrings(spark: SparkSession): DataFrame = {
