@@ -360,13 +360,6 @@ object RapidsConf {
     .booleanConf
     .createWithDefault(false)
 
-  val ENABLE_CAST_TIMESTAMP_TO_STRING = conf("spark.rapids.sql.castTimestampToString.enabled")
-    .doc("When set to true, casting from timestamp to string is supported on the GPU. Note " +
-      "that the GPU returns timestamps formatted with trailing zeros for the millisecond part " +
-      "which differs from default Spark behavior")
-    .booleanConf
-    .createWithDefault(false)
-
   val ENABLE_CAST_STRING_TO_FLOAT = conf("spark.rapids.sql.castStringToFloat.enabled")
     .doc("When set to true, enables casting from strings to float types (float, double) " +
       "on the GPU. Currently hex values aren't supported on the GPU. Also note that casting from " +
@@ -675,8 +668,6 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
   lazy val enableHashOptimizeSort: Boolean = get(ENABLE_HASH_OPTIMIZE_SORT)
 
   lazy val isCastFloatToStringEnabled: Boolean = get(ENABLE_CAST_FLOAT_TO_STRING)
-
-  lazy val isCastTimestampToStringEnabled: Boolean = get(ENABLE_CAST_TIMESTAMP_TO_STRING)
 
   lazy val isCastStringToIntegerEnabled: Boolean = get(ENABLE_CAST_STRING_TO_INTEGER)
 
