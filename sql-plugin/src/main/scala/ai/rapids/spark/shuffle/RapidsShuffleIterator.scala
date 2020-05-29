@@ -81,7 +81,7 @@ class RapidsShuffleIterator(
   override def hasNext: Boolean = resolvedBatches.synchronized {
     val hasMoreBatches =
       pendingFetchesByAddress.nonEmpty || batchesInFlight > 0 || !resolvedBatches.isEmpty
-    logInfo(s"$taskContext hasNext: batches expected = $totalBatchesExpected, batches " +
+    logDebug(s"$taskContext hasNext: batches expected = $totalBatchesExpected, batches " +
       s"resolved = $totalBatchesResolved, pending = ${pendingFetchesByAddress.size}, " +
       s"batches in flight = $batchesInFlight, resolved ${resolvedBatches.size}, " +
       s"hasNext = $hasMoreBatches")
@@ -104,7 +104,6 @@ class RapidsShuffleIterator(
   private val taskContext = TaskContext.get
 
   def start(): Unit = {
-
     logInfo(s"Fetching ${blocksByAddress.size} blocks.")
 
     // issue local fetches first
@@ -146,7 +145,7 @@ class RapidsShuffleIterator(
             batchesInFlight = batchesInFlight + expectedBatches
             totalBatchesExpected = totalBatchesExpected + expectedBatches
             clientExpectedBatches = expectedBatches
-            logInfo(s"Task: ${taskContext.taskAttemptId()} Client $blockManagerId " +
+            logDebug(s"Task: ${taskContext.taskAttemptId()} Client $blockManagerId " +
               s"Expecting $expectedBatches batches, $batchesInFlight batches currently in " +
               s"flight, total expected by this client: $clientExpectedBatches, total resolved by " +
               s"this client: $clientResolvedBatches")
@@ -166,11 +165,11 @@ class RapidsShuffleIterator(
                 resolvedBatches.offer(bufferId)
 
                 if (clientExpectedBatches == clientResolvedBatches) {
-                  logInfo(s"Task: ${taskContext.taskAttemptId()} Client $blockManagerId is " +
+                  logDebug(s"Task: ${taskContext.taskAttemptId()} Client $blockManagerId is " +
                     s"done fetching batches. Total batches expected $clientExpectedBatches, " +
                     s"total batches resolved $clientResolvedBatches.")
                 } else {
-                  logInfo(s"Task: ${taskContext.taskAttemptId()} Client $blockManagerId is " +
+                  logDebug(s"Task: ${taskContext.taskAttemptId()} Client $blockManagerId is " +
                     s"NOT done fetching batches. Total batches expected $clientExpectedBatches, " +
                     s"total batches resolved $clientResolvedBatches.")
                 }

@@ -239,7 +239,7 @@ class BufferReceiveState(
       (currentRequest, false)
     } else {
       if (currentRequest != null) {
-        logInfo(s"Done with ${currentRequest}, advancing.")
+        logDebug(s"Done with ${currentRequest}, advancing.")
         require(currentRequestDone,
           s"Attempted to move on to the next buffer receive, but the prior buffer wasn't fully " +
             s"transmitted, offset ${currentRequestOffset} == ${currentRequest.getLength}")
@@ -535,7 +535,7 @@ class RapidsShuffleClient(
           throw new IllegalStateException(s"Transaction is invalid state $tx")
       }
     } finally {
-      logInfo(s"Metadata response handled in ${TransportUtils.timeDiffMs(start)} ms")
+      logDebug(s"Metadata response handled in ${TransportUtils.timeDiffMs(start)} ms")
       handleMetaRange.close()
       resp.close()
       tx.close()
@@ -571,7 +571,7 @@ class RapidsShuffleClient(
       receiveBuffers(currentRequest, bufferReceiveState)
       sendTransferRequest(Seq(currentRequest))
     } else {
-      logInfo(s"Not the first time around for ${currentRequest}, NOT sending transfer request.")
+      logDebug(s"Not the first time around for ${currentRequest}, NOT sending transfer request.")
       receiveBuffers(currentRequest, bufferReceiveState)
     }
   }
@@ -602,7 +602,7 @@ class RapidsShuffleClient(
     *                transfers
     */
   private[this] def sendTransferRequest(toIssue: Seq[PendingTransferRequest]): Unit = {
-    logInfo(s"Sending a transfer request for " +
+    logDebug(s"Sending a transfer request for " +
       s"${toIssue.map(r => TransportUtils.formatTag(r.tag)).mkString(",")}")
 
     // get a tag that the server can use to send its reply
@@ -659,7 +659,7 @@ class RapidsShuffleClient(
                                     handler: RapidsShuffleFetchHandler): Unit = {
     val allTables = metaResponse.tableMetasLength()
 
-    logInfo(s"Queueing transfer requests for ${allTables} tables " +
+    logDebug(s"Queueing transfer requests for ${allTables} tables " +
       s"from ${connection.getPeerExecutorId}")
 
     val ptrs = new ArrayBuffer[PendingTransferRequest](allTables)
@@ -704,7 +704,7 @@ class RapidsShuffleClient(
       val buff = bufferReceiveState.consumeBuffers(bounceBuffers)
 
       if (buff.isDefined) {
-        logInfo(s"Done with receive [tag=${TransportUtils.formatTag(currentRequest.tag)}, " +
+        logDebug(s"Done with receive [tag=${TransportUtils.formatTag(currentRequest.tag)}, " +
           s"tx=${tx}]")
 
         // release the bytes in flight
@@ -725,7 +725,7 @@ class RapidsShuffleClient(
 
       val stats = tx.getStats
 
-      logInfo(s"Received buffer size ${stats.receiveSize} in" +
+      logDebug(s"Received buffer size ${stats.receiveSize} in" +
         s" ${stats.txTimeMs} ms @ bw: [recv: ${stats.recvThroughput}] GB/sec")
 
       if (!bufferReceiveState.isDone) {
@@ -751,7 +751,7 @@ class RapidsShuffleClient(
   private def track(buffer: DeviceMemoryBuffer, meta: TableMeta): RapidsBufferId = {
     val catalog = GpuShuffleEnv.getReceivedCatalog
     val id: ShuffleReceivedBufferId = catalog.nextShuffleReceivedBufferId()
-    logInfo(s"Adding buffer id ${id} to catalog")
+    logDebug(s"Adding buffer id ${id} to catalog")
     if (buffer != null) {
       // add the buffer to the catalog so it is available for spill
       val devStorage = GpuShuffleEnv.getDeviceStorage
