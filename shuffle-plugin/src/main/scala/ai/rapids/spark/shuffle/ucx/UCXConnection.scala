@@ -86,13 +86,14 @@ class UCXClientConnection(peerExecutorId: Int, peerClientId: Long, ucx: UCX)
 
     tx.start(UCXTransactionType.Request, 2, cb)
 
-    logInfo(s"Performing header request on tag ${TransportUtils.formatTag(request.tag)} for tx $tx")
+    logDebug(s"Performing header request on tag ${TransportUtils.formatTag(request.tag)} " +
+      s"for tx $tx")
     send(peerExecutorId, request, Seq.empty, (sendTx: Transaction) => {
-      logInfo(s"UCX request send callback $sendTx")
+      logDebug(s"UCX request send callback $sendTx")
       if (sendTx.getStatus == TransactionStatus.Success) {
         tx.incrementSendSize(request.length)
         if (tx.decrementPendingAndGet <= 0) {
-          logInfo(s"Header request is done on send: ${sendTx.getStatus}, " +
+          logDebug(s"Header request is done on send: ${sendTx.getStatus}, " +
             s"tag: ${TransportUtils.formatTag(request.tag)} for $tx")
           tx.txCallback(TransactionStatus.Success)
         }
@@ -101,11 +102,11 @@ class UCXClientConnection(peerExecutorId: Int, peerClientId: Long, ucx: UCX)
     })
 
     receive(Seq(response), receiveTx => {
-      logInfo(s"UCX request receive callback $receiveTx")
+      logDebug(s"UCX request receive callback $receiveTx")
       if (receiveTx.getStatus == TransactionStatus.Success) {
         tx.incrementReceiveSize(response.length)
         if (tx.decrementPendingAndGet <= 0) {
-          logInfo(s"Header request is done on receive: $this, " +
+          logDebug(s"Header request is done on receive: $this, " +
             s"tag: ${TransportUtils.formatTag(response.tag)}")
           tx.txCallback(TransactionStatus.Success)
         }

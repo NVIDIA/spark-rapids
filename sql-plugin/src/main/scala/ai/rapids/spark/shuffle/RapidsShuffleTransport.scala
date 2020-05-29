@@ -503,7 +503,7 @@ class DirectByteBufferPool(bufferSize: Long) extends Logging {
     var buff = buffers.poll()
     if (buff == null) {
       high.incrementAndGet()
-      logInfo(s"Allocating new direct buffer, high watermark = $high")
+      logDebug(s"Allocating new direct buffer, high watermark = $high")
       buff = new RefCountedDirectByteBuffer(ByteBuffer.allocateDirect(bufferSize.toInt), Some(this))
     }
     buff.getBuffer().clear()
@@ -511,7 +511,7 @@ class DirectByteBufferPool(bufferSize: Long) extends Logging {
   }
 
   def releaseBuffer(buff: RefCountedDirectByteBuffer): Boolean = {
-    logInfo(s"Free direct buffers ${buffers.size()}")
+    logDebug(s"Free direct buffers ${buffers.size()}")
     buffers.offer(buff)
   }
 }
