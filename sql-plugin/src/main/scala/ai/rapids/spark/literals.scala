@@ -60,6 +60,15 @@ object GpuScalar {
     case t => throw new IllegalStateException(s"$t is not a supported rapids scalar type yet")
   }
 
+  def castDateScalarToInt(s: Scalar): Scalar = {
+    assert(s.getType == DType.TIMESTAMP_DAYS)
+    if (s.isValid) {
+      Scalar.fromInt(s.getInt)
+    } else {
+      Scalar.fromNull(DType.INT32)
+    }
+  }
+
   def from(v: Any): Scalar = v match {
     case _ if v == null => Scalar.fromNull(scalaTypeToDType(v))
     case l: Long => Scalar.fromLong(l)
