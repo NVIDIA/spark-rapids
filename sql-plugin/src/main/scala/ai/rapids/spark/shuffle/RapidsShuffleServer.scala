@@ -209,7 +209,7 @@ class RapidsShuffleServer(transport: RapidsShuffleTransport,
     * @param requestType - The request type received
     */
   private def doIssueReceive(requestType: RequestType.Value): Unit = {
-    logInfo(s"Waiting for a new connection. Posting ${requestType} receive.")
+    logDebug(s"Waiting for a new connection. Posting ${requestType} receive.")
     val metaRequest = transport.getMetaBuffer(rapidsConf.shuffleMaxMetadataSize)
 
     val alt = AddressLengthTag.from(
@@ -231,7 +231,7 @@ class RapidsShuffleServer(transport: RapidsShuffleTransport,
             bssExec.synchronized {
               bssExec.notifyAll()
             }
-            logInfo(s"Got a transfer request ${bss} from ${tx}. " +
+            logDebug(s"Got a transfer request ${bss} from ${tx}. " +
               s"I now have ${bssQueue.size} BSSs")
             doIssueReceive(RequestType.TransferRequest)
           }
@@ -257,7 +257,7 @@ class RapidsShuffleServer(transport: RapidsShuffleTransport,
         metaRequest.close() // the buffer is not going to be handed anywhere else, so lets close it
         throw new IllegalStateException(s"Error occurred while while handling metadata $tx")
       } else {
-        logInfo(s"Received metadata request: $tx => $metaRequest")
+        logDebug(s"Received metadata request: $tx => $metaRequest")
         try {
           handleMetadataRequest(metaRequest)
         } catch {
@@ -268,7 +268,7 @@ class RapidsShuffleServer(transport: RapidsShuffleTransport,
         }
       }
     } finally {
-      logInfo(s"Metadata request handled in ${TransportUtils.timeDiffMs(start)} ms")
+      logDebug(s"Metadata request handled in ${TransportUtils.timeDiffMs(start)} ms")
       doHandleMetaRange.close()
       tx.close()
     }
@@ -289,7 +289,7 @@ class RapidsShuffleServer(transport: RapidsShuffleTransport,
       val responseTag = req.responseTag()
 
       logDebug(s"Received request req:\n: ${ShuffleMetadata.printRequest(req)}")
-      logInfo(s"HandleMetadataRequest for peerExecutorId $peerExecutorId and " +
+      logDebug(s"HandleMetadataRequest for peerExecutorId $peerExecutorId and " +
         s"responseTag ${TransportUtils.formatTag(req.responseTag())}")
 
       // NOTE: MetaUtils will have a simpler/better way of handling creating a response.
@@ -323,7 +323,7 @@ class RapidsShuffleServer(transport: RapidsShuffleTransport,
               s"Error while handling a metadata response send for $tx")
           } else {
             val stats = tx.getStats
-            logInfo(s"Sent metadata ${stats.sendSize} in ${stats.txTimeMs} ms")
+            logDebug(s"Sent metadata ${stats.sendSize} in ${stats.txTimeMs} ms")
           }
         } finally {
           respBuffer.close()
@@ -548,14 +548,14 @@ class RapidsShuffleServer(transport: RapidsShuffleTransport,
     def getBuffersToSend(): Seq[AddressLengthTag] = synchronized {
       val alt = acquireTable()
 
-      logInfo(s"Handling transfer request for ${alt}")
+      logDebug(s"Handling transfer request for ${alt}")
 
-      logInfo(s"${currentTableRemaining} remaining, getting bounce buffers for tr ${alt}")
+      logDebug(s"${currentTableRemaining} remaining, getting bounce buffers for tr ${alt}")
 
       // get bounce buffers, note we may block
       val bounceBuffers = getBounceBuffers()
 
-      logInfo(s"${bounceBuffers} got, for tr ${alt}")
+      logDebug(s"${bounceBuffers} got, for tr ${alt}")
 
       var buffersToSend = Seq[AddressLengthTag]()
 
@@ -582,7 +582,7 @@ class RapidsShuffleServer(transport: RapidsShuffleTransport,
           throw t
       }
 
-      logInfo(s"Sending ${buffersToSend} for transfer request, with " +
+      logDebug(s"Sending ${buffersToSend} for transfer request, with " +
         s"${currentTableRemaining} left [peer_executor_id=${transferRequest.executorId()}, " +
         s"table_id=${acquiredTable.id}, tag=${TransportUtils.formatTag(alt.tag)}]")
 
@@ -592,7 +592,7 @@ class RapidsShuffleServer(transport: RapidsShuffleTransport,
     def freeBounceBuffersIfNecessary(): Unit = synchronized {
       // let go of the buffers, we'll be acquiring them again on the next table we want to transfer
       if (currentTableRemaining <= 0) {
-        logInfo(s"Freeing bounce buffers ${bounceBuffers}")
+        logDebug(s"Freeing bounce buffers ${bounceBuffers}")
         freeBounceBuffers()
       }
     }
@@ -616,17 +616,17 @@ class RapidsShuffleServer(transport: RapidsShuffleTransport,
 
       val transferRequest = bufferSendState.getTransferRequest()
 
-      logInfo(s"Handling transfer request for ${transferRequest.executorId()} " +
+      logDebug(s"Handling transfer request for ${transferRequest.executorId()} " +
         s"with ${buffersToSend}")
 
       serverConnection.send(transferRequest.executorId(), buffersToSend, new TransactionCallback {
         override def apply(bufferTx: Transaction): Unit = {
           try {
-            logInfo(s"Done with the send for ${bufferSendState} with ${buffersToSend}")
+            logDebug(s"Done with the send for ${bufferSendState} with ${buffersToSend}")
 
             if (!bufferSendState.isDone) {
               // continue issuing sends.
-              logInfo(s"Buffer send state ${bufferSendState} is NOT done. " +
+              logDebug(s"Buffer send state ${bufferSendState} is NOT done. " +
                 s"I now have ${bssQueue.size} BSSs")
               asyncOnCopyThread(HandleTransferRequest(bufferSendState))
             } else {
@@ -642,7 +642,7 @@ class RapidsShuffleServer(transport: RapidsShuffleTransport,
                 })
 
               // close up the [[BufferSendState]] instance
-              logInfo(s"Buffer send state ${bufferSendState} is done. Closing. " +
+              logDebug(s"Buffer send state ${bufferSendState} is done. Closing. " +
                 s"I now have ${bssQueue.size} BSSs")
               bufferSendState.close()
             }
