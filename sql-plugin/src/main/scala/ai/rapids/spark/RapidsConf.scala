@@ -15,6 +15,7 @@
  */
 package ai.rapids.spark
 
+import java.io.{File, FileOutputStream}
 import java.util
 
 import scala.collection.JavaConverters._
@@ -588,6 +589,14 @@ object RapidsConf {
       printToggleHeader("Partitioning")
     }
     GpuOverrides.parts.values.toSeq.sortBy(_.tag.toString).foreach(_.confHelp(asTable))
+  }
+  def main(args: Array[String]): Unit = {
+    val out = new FileOutputStream(new File(args(0)))
+    Console.withOut(out) {
+      Console.withErr(out) {
+        RapidsConf.help(true)
+      }
+    }
   }
 }
 
