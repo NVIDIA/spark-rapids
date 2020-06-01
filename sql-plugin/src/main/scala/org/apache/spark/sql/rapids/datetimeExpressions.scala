@@ -17,7 +17,7 @@
 package org.apache.spark.sql.rapids
 
 import ai.rapids.cudf.{ColumnVector, DType, Scalar}
-import ai.rapids.spark.{GpuBinaryExpression, GpuColumnVector, GpuExpression, GpuUnaryExpression}
+import ai.rapids.spark.{GpuBinaryExpression, GpuColumnVector, GpuScalar, GpuExpression, GpuUnaryExpression}
 import org.apache.spark.sql.catalyst.expressions.{BinaryExpression, ExpectsInputTypes, Expression, ImplicitCastInputTypes, TimeZoneAwareExpression}
 import org.apache.spark.sql.types._
 import org.apache.spark.sql.vectorized.ColumnarBatch
@@ -100,8 +100,11 @@ case class GpuDateDiff(endDate: Expression, startDate: Expression)
   extends GpuBinaryExpression with ImplicitCastInputTypes {
 
   override def left: Expression = endDate
+
   override def right: Expression = startDate
+
   override def inputTypes: Seq[AbstractDataType] = Seq(DateType, DateType)
+
   override def dataType: DataType = IntegerType
 
   override def doColumnar(lhs: GpuColumnVector, rhs: GpuColumnVector): GpuColumnVector = {
@@ -116,16 +119,10 @@ case class GpuDateDiff(endDate: Expression, startDate: Expression)
     // if one of the operands is a scalar, they have to be explicitly casted by the caller
     // before the operation can be run. This is an issue being tracked by
     // https://github.com/rapidsai/cudf/issues/4180
-    val intScalar = Scalar.fromInt(lhs.getInt)
-    try {
-      val intVector = rhs.getBase.asInts()
-      try {
+    withResource(GpuScalar.castDateScalarToInt(lhs)) { intScalar =>
+      withResource(rhs.getBase.asInts()) { intVector =>
         GpuColumnVector.from(intScalar.sub(intVector))
-      } finally {
-        intVector.close()
       }
-    } finally {
-      intScalar.close()
     }
   }
 
@@ -133,16 +130,10 @@ case class GpuDateDiff(endDate: Expression, startDate: Expression)
     // if one of the operands is a scalar, they have to be explicitly casted by the caller
     // before the operation can be run. This is an issue being tracked by
     // https://github.com/rapidsai/cudf/issues/4180
-    val intScalar = Scalar.fromInt(rhs.getInt)
-    try {
-      val intVector = lhs.getBase.asInts()
-      try {
+    withResource(GpuScalar.castDateScalarToInt(rhs)) { intScalar =>
+      withResource(lhs.getBase.asInts()) { intVector =>
         GpuColumnVector.from(intVector.sub(intScalar))
-      } finally {
-        intVector.close()
       }
-    } finally {
-      intScalar.close()
     }
   }
 }
