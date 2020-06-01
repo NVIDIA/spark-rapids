@@ -157,12 +157,12 @@ class ByteGen(DataGen):
     def start(self, rand):
         self._start(rand, lambda : rand.randint(self._min_val, self._max_val))
 
-_SHORT_MIN = -(1 << 15)
-_SHORT_MAX = (1 << 15) - 1
+SHORT_MIN = -(1 << 15)
+SHORT_MAX = (1 << 15) - 1
 class ShortGen(DataGen):
     """Generate Shorts, which some built in corner cases."""
-    def __init__(self, nullable=True, min_val =_SHORT_MIN, max_val = _SHORT_MAX,
-                 special_cases = [_SHORT_MIN, _SHORT_MAX, 0, 1, -1]):
+    def __init__(self, nullable=True, min_val = SHORT_MIN, max_val = SHORT_MAX,
+                 special_cases = [SHORT_MIN, SHORT_MAX, 0, 1, -1]):
         super().__init__(ShortType(), nullable=nullable, special_cases=special_cases)
         self._min_val = min_val
         self._max_val = max_val
@@ -170,12 +170,12 @@ class ShortGen(DataGen):
     def start(self, rand):
         self._start(rand, lambda : rand.randint(self._min_val, self._max_val))
 
-_INT_MIN = -(1 << 31)
-_INT_MAX = (1 << 31) - 1
+INT_MIN = -(1 << 31)
+INT_MAX = (1 << 31) - 1
 class IntegerGen(DataGen):
     """Generate Ints, which some built in corner cases."""
-    def __init__(self, nullable=True, min_val =_INT_MIN, max_val = _INT_MAX,
-                 special_cases = [_INT_MIN, _INT_MAX, 0, 1, -1]):
+    def __init__(self, nullable=True, min_val = INT_MIN, max_val = INT_MAX,
+                 special_cases = [INT_MIN, INT_MAX, 0, 1, -1]):
         super().__init__(IntegerType(), nullable=nullable, special_cases=special_cases)
         self._min_val = min_val
         self._max_val = max_val
@@ -183,12 +183,12 @@ class IntegerGen(DataGen):
     def start(self, rand):
         self._start(rand, lambda : rand.randint(self._min_val, self._max_val))
 
-_LONG_MIN = -(1 << 63)
-_LONG_MAX = (1 << 63) - 1
+LONG_MIN = -(1 << 63)
+LONG_MAX = (1 << 63) - 1
 class LongGen(DataGen):
     """Generate Longs, which some built in corner cases."""
-    def __init__(self, nullable=True, min_val =_LONG_MIN, max_val = _LONG_MAX,
-                 special_cases = [_LONG_MIN, _LONG_MAX, 0, 1, -1]):
+    def __init__(self, nullable=True, min_val =LONG_MIN, max_val = LONG_MAX,
+                 special_cases = [LONG_MIN, LONG_MAX, 0, 1, -1]):
         super().__init__(LongType(), nullable=nullable, special_cases=special_cases)
         self._min_val = min_val
         self._max_val = max_val
@@ -217,44 +217,44 @@ class RepeatSeqGen(DataGen):
         self._start(rand, self._loop_values)
         self._vals = [self._child.gen() for _ in range(0, self._length)]
 
-_FLOAT_MIN = -3.4028235E38
-_FLOAT_MAX = 3.4028235E38
-_NEG_FLOAT_NAN = struct.unpack('f', struct.pack('I', 0xfff00001))[0]
+FLOAT_MIN = -3.4028235E38
+FLOAT_MAX = 3.4028235E38
+NEG_FLOAT_NAN = struct.unpack('f', struct.pack('I', 0xfff00001))[0]
 class FloatGen(DataGen):
     """Generate floats, which some built in corner cases."""
-    def __init__(self, nullable=True, min_val =_FLOAT_MIN, max_val = _FLOAT_MAX,
-                 special_cases = [_FLOAT_MIN, _FLOAT_MAX, 0.0, -0.0, 1.0, -1.0,
-                                  float('inf'),float('-inf'), float('nan'), _NEG_FLOAT_NAN]):
+    def __init__(self, nullable=True, min_val =FLOAT_MIN, max_val = FLOAT_MAX,
+                 special_cases = [FLOAT_MIN, FLOAT_MAX, 0.0, -0.0, 1.0, -1.0,
+                                  float('inf'),float('-inf'), float('nan'), NEG_FLOAT_NAN]):
         super().__init__(FloatType(), nullable=nullable, special_cases=special_cases)
         self._min_val = min_val
         self._max_val = max_val
 
     def start(self, rand):
         def gen_float():
-            i = rand.randint(_INT_MIN, _INT_MAX)
+            i = rand.randint(INT_MIN, INT_MAX)
             p = struct.pack('i', i)
             return struct.unpack('f', p)[0]
         self._start(rand, gen_float)
 
-_DOUBLE_MIN_EXP = -1022
-_DOUBLE_MAX_EXP = 1023
-_DOUBLE_MAX_FRACTION = int('1'*52, 2)
-_DOUBLE_MIN = -1.7976931348623157E308
-_DOUBLE_MAX = 1.7976931348623157E308
-_NEG_DOUBLE_NAN = struct.unpack('d', struct.pack('L', 0xfff0000000000001))[0]
+DOUBLE_MIN_EXP = -1022
+DOUBLE_MAX_EXP = 1023
+DOUBLE_MAX_FRACTION = int('1'*52, 2)
+DOUBLE_MIN = -1.7976931348623157E308
+DOUBLE_MAX = 1.7976931348623157E308
+NEG_DOUBLE_NAN = struct.unpack('d', struct.pack('L', 0xfff0000000000001))[0]
 class DoubleGen(DataGen):
     """Generate doubles, which some built in corner cases."""
-    def __init__(self, min_exp=_DOUBLE_MIN_EXP, max_exp=_DOUBLE_MAX_EXP, nullable=True,
+    def __init__(self, min_exp=DOUBLE_MIN_EXP, max_exp=DOUBLE_MAX_EXP, nullable=True,
                  special_cases = None):
         self._min_exp = min_exp
         self._max_exp = max_exp
-        self._use_full_range = (self._min_exp == _DOUBLE_MIN_EXP) and (self._max_exp == _DOUBLE_MAX_EXP)
+        self._use_full_range = (self._min_exp == DOUBLE_MIN_EXP) and (self._max_exp == DOUBLE_MAX_EXP)
         if special_cases is None:
             special_cases = [
-                self._make_from(1, self._max_exp, _DOUBLE_MAX_FRACTION),
-                self._make_from(0, self._max_exp, _DOUBLE_MAX_FRACTION),
-                self._make_from(1, self._min_exp, _DOUBLE_MAX_FRACTION),
-                self._make_from(0, self._min_exp, _DOUBLE_MAX_FRACTION)
+                self._make_from(1, self._max_exp, DOUBLE_MAX_FRACTION),
+                self._make_from(0, self._max_exp, DOUBLE_MAX_FRACTION),
+                self._make_from(1, self._min_exp, DOUBLE_MAX_FRACTION),
+                self._make_from(0, self._min_exp, DOUBLE_MAX_FRACTION)
             ]
             if self._min_exp <= 0 and self._max_exp >= 0:
                 special_cases.append(0.0)
@@ -265,14 +265,14 @@ class DoubleGen(DataGen):
             special_cases.append(float('inf'))
             special_cases.append(float('-inf'))
             special_cases.append(float('nan'))
-            special_cases.append(_NEG_DOUBLE_NAN)
+            special_cases.append(NEG_DOUBLE_NAN)
         super().__init__(DoubleType(), nullable=nullable, special_cases=special_cases)
 
     @staticmethod
     def _make_from(sign, exp, fraction):
         sign = sign & 1 # 1 bit
         exp = (exp + 1023) & 0x7FF # add bias and 11 bits
-        fraction = fraction & _DOUBLE_MAX_FRACTION
+        fraction = fraction & DOUBLE_MAX_FRACTION
         i = (sign << 63) | (exp << 52) | fraction
         p = struct.pack('L', i)
         ret = struct.unpack('d', p)[0]
@@ -281,7 +281,7 @@ class DoubleGen(DataGen):
     def start(self, rand):
         if self._use_full_range:
             def gen_double():
-                i = rand.randint(_LONG_MIN, _LONG_MAX)
+                i = rand.randint(LONG_MIN, LONG_MAX)
                 p = struct.pack('l', i)
                 return struct.unpack('d', p)[0]
             self._start(rand, gen_double)
@@ -303,7 +303,7 @@ class BooleanGen(DataGen):
 
 class StructGen(DataGen):
     """Generate a Struct"""
-    def __init__(self, children, nullable=True):
+    def __init__(self, children, nullable=True, special_cases=[]):
         """
         Initialize the struct with children.  The children should be of the form:
         [('name', Gen),('name_2', Gen2)]
@@ -311,7 +311,7 @@ class StructGen(DataGen):
         the type for that entry.
         """
         tmp = [StructField(name, child.data_type, nullable=child.nullable) for name, child in children]
-        super().__init__(StructType(tmp), nullable=nullable)
+        super().__init__(StructType(tmp), nullable=nullable, special_cases=special_cases)
         self.children = children
 
     def start(self, rand):
@@ -538,10 +538,17 @@ def to_cast_string(spark_type):
     else:
         raise RuntimeError('CAST TO TYPE {} NOT SUPPORTED YET'.format(spark_type))
 
-numeric_gens = [ByteGen(), ShortGen(), IntegerGen(), LongGen(), FloatGen(), DoubleGen()]
-integral_gens = [ByteGen(), ShortGen(), IntegerGen(), LongGen()]
+byte_gen = ByteGen()
+short_gen = ShortGen()
+int_gen = IntegerGen()
+long_gen = LongGen()
+float_gen = FloatGen()
+double_gen = DoubleGen()
+
+numeric_gens = [byte_gen, short_gen, int_gen, long_gen, float_gen, double_gen]
+integral_gens = [byte_gen, short_gen, int_gen, long_gen]
 # A lot of mathematical expressions only support a double as input
 # by parametrizing even for a single param for the test it makes the tests consistent
-double_gens = [DoubleGen()]
-double_n_long_gens = [DoubleGen(), LongGen()]
-int_n_long_gens = [IntegerGen(), LongGen()]
+double_gens = [double_gen]
+double_n_long_gens = [double_gen, long_gen]
+int_n_long_gens = [int_gen, long_gen]
