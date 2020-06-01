@@ -27,6 +27,15 @@ def unary_op_df(spark, gen, length=2048, seed=0):
 date_gen = [DateGen()]
 date_n_time_gen = [DateGen(), TimestampGen()]
 
+def test_datediff():
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark : two_col_df(spark, DateGen(), DateGen()).selectExpr(
+            'datediff(a, b)',
+            'datediff(\'2016-03-02\', b)',
+            'datediff(date(null), b)',
+            'datediff(a, date(null))',
+            'datediff(a, \'2016-03-02\')'))
+
 @pytest.mark.parametrize('data_gen', date_gen, ids=idfn)
 def test_year(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
