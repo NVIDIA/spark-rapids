@@ -40,7 +40,7 @@ pipeline {
         JENKINS_ROOT  = 'jenkins'
         MVN_GPUWA_MIRROR='-s jenkins/settings.xml -P mirror-apache-to-gpuwa'
         LIBCUDF_KERNEL_CACHE_PATH='/tmp'
-        QUAY = credentials("svcngcc_quayio")
+        URM_CREDS = credentials("svcngcc_artifactory")
     }
 
     triggers {
@@ -52,12 +52,12 @@ pipeline {
             agent { label 'docker-gpu' }
             steps {
                 script {
-                    def IMAGE_NAME="quay.io/nvidia/spark:plugin-build-ubuntu16-cuda10.1"
+                    def IMAGE_NAME="urm.nvidia.com/sw-spark-docker/plugin:dev-ubuntu16-cuda10.1"
                     def DOCKER_CMD="docker --config $WORKSPACE/.docker"
                     sh """
-                        echo $QUAY_PSW | $DOCKER_CMD login https://quay.io -u $QUAY_USR --password-stdin
+                        echo $URM_CREDS_PSW | $DOCKER_CMD login https://urm.nvidia.com -u $URM_CREDS_USR --password-stdin
                         $DOCKER_CMD pull $IMAGE_NAME
-                        $DOCKER_CMD logout https://quay.io
+                        $DOCKER_CMD logout https://urm.nvidia.com
                     """
                     docker.image(IMAGE_NAME).inside("--runtime=nvidia -v ${HOME}/.m2:${HOME}/.m2:rw \
                         -v ${HOME}/.zinc:${HOME}/.zinc:rw \
