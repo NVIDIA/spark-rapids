@@ -1655,4 +1655,36 @@ class HashAggregatesSuite extends SparkQueryCompareTestSuite {
       checkExecNode(result)
       result
   }
+
+  ALLOW_NON_GPU_testSparkResultsAreEqual(
+    "max_with_nans_fall_back",
+    nanDf,
+    Seq("HashAggregateExec", "AggregateExpression",
+      "AttributeReference", "Alias", "Max"),
+    conf = new SparkConf()) {
+    frame => val result = frame.agg(max("doubles"))
+      // verify nothing ran on the gpu
+      if (result.queryExecution.executedPlan.conf.getAllConfs(
+        RapidsConf.SQL_ENABLED.key).toBoolean) {
+        val execNode = result.queryExecution.executedPlan.find(_.isInstanceOf[GpuHashAggregateExec])
+        assert(!execNode.isDefined)
+      }
+      result
+  }
+
+  ALLOW_NON_GPU_testSparkResultsAreEqual(
+    "min_with_nans_fall_back",
+    nanDf,
+    Seq("HashAggregateExec", "AggregateExpression",
+      "AttributeReference", "Alias", "Min"),
+    conf = new SparkConf()) {
+    frame => val result = frame.agg(min("doubles"))
+      // verify nothing ran on the gpu
+      if (result.queryExecution.executedPlan.conf.getAllConfs(
+        RapidsConf.SQL_ENABLED.key).toBoolean) {
+        val execNode = result.queryExecution.executedPlan.find(_.isInstanceOf[GpuHashAggregateExec])
+        assert(!execNode.isDefined)
+      }
+      result
+  }
 }

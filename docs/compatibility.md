@@ -40,6 +40,13 @@ properly with the plugin but would have worked with plain Spark. Because of this
 floating point aggregations are off by default but can be enabled with the config
 [`spark.rapids.sql.variableFloatAgg.enabled`](configs.md#sql.variableFloatAgg.enabled).
 
+Additionally, some aggregations on floating point columns that contain NaNs can produce
+incorrect results. More details on this behavior can be found
+[here](https://github.com/NVIDIA/spark-rapids/issues/87)
+and in this cudf [feature request](https://github.com/rapidsai/cudf/issues/4753).
+If it is known with certainty that the floating point columns do not contain NaNs,
+set `spark.rapids.sql.hasNans` to `false` to run GPU enabled aggregations on them.
+
 ## Unicode
 
 Spark delegates Unicode operations to the underlying JVM. Each version of Java complies with a

@@ -1017,6 +1017,16 @@ trait SparkQueryCompareTestSuite extends FunSuite with Arm {
     ).toDF("doubles", "more_doubles")
   }
 
+  def nanDf(session: SparkSession): DataFrame = {
+    import session.sqlContext.implicits._
+    Seq[java.lang.Double](
+      DOUBLE_NEGATIVE_NAN_LOWER_RANGE,
+      Double.NaN,
+      1.0d,
+      2.0d
+    ).toDF("doubles")
+  }
+
   def mixedDoubleDf(session: SparkSession): DataFrame = {
     import session.sqlContext.implicits._
     Seq[(java.lang.Double, java.lang.Double)](
