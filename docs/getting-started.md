@@ -438,10 +438,6 @@ For example: if `query` is the resulting DataFrame from the query then `query.ex
 print the physical plan from Spark.  From the query's physical plan you can see what nodes were
 replaced with GPU calls.
 
-To see why some parts of your query did not run on the GPU set the config
-`spark.rapids.sql.explain` to `true`. The output will be logged to the driver's log or to the
-screen in interactive mode.
-
 ## Debugging
 For now, the best way to debug is how you would normally do it on Spark. Look at the UI and log
 files to see what failed. If you got a segmentation fault from the GPU find the hs_err_pid.log
@@ -449,8 +445,8 @@ file. To make sure your hs_err_pid.log file goes into the YARN application log d
 the config: `--conf spark.executor.extraJavaOptions="-XX:ErrorFile=<LOG_DIR>/hs_err_pid_%p.log"`
 
 If you want to see why an operation did not run on the GPU you can turn on the configuration:
-`--conf spark.rapids.sql.explain=NOT_ON_GPU`. A log message will then be emitted to the driver log
-as to why a Spark operation is not able to run on the GPU.
+[`--conf spark.rapids.sql.explain=NOT_ON_GPU`](configs.md#sql.explain). A log message will then
+be emitted to the driver log as to why a Spark operation is not able to run on the GPU.
 
 ## Out of GPU Memory
 GPU out of memory errors can show up in multiple ways.  You can see an error that it out of memory

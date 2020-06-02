@@ -24,24 +24,24 @@ The [number of concurrent tasks running on a GPU](#number-of-concurrent-tasks-pe
 is configured separately.
 
 ## Pooled Memory
-Configuration key: [`spark.rapids.memory.gpu.pooling.enabled`](configs.md#spark.rapids.memory.gpu.pooling.enabled)
+Configuration key: [`spark.rapids.memory.gpu.pooling.enabled`](configs.md#memory.gpu.pooling.enabled)
 
 Default value: `true`
 
-Configuration key: [`spark.rapids.memory.gpu.allocFraction`](configs.md#spark.rapids.memory.gpu.allocFraction)
+Configuration key: [`spark.rapids.memory.gpu.allocFraction`](configs.md#memory.gpu.allocFraction)
 
 Default value: `0.9`
 
 Allocating memory on a GPU can be an expensive operation. RAPIDS uses a pooling allocator
 called [RMM](https://github.com/rapidsai/rmm) to mitigate this overhead. By default, on startup
 the plugin will allocate `90%` (`0.9`) of the memory on the GPU and keep it as a pool that can
-be allocated from. If the pools is exhausted more memory will be allocated and added to the pool.
+be allocated from. If the pool is exhausted more memory will be allocated and added to the pool.
 Most of the time this is a huge win, but if you need to share the GPU with other 
 [libraries](ml-integration.md) that are not aware of RMM this can lead to memory issues, and you
 may need to disable pooling.
 
 ## Pinned Memory
-Configuration key: [`spark.rapids.memory.pinnedPool.size`](configs.md#spark.rapids.memory.pinnedPool.size)
+Configuration key: [`spark.rapids.memory.pinnedPool.size`](configs.md#memory.pinnedPool.size)
 
 Default value: `0`
 
@@ -66,7 +66,8 @@ memory pool is exhausted, and that would also need to be accounted for in the me
 setting.
 
 ## Locality Wait
-Configuration key: `spark.locality.wait`
+Configuration key:
+[`spark.locality.wait`](http://spark.apache.org/docs/latest/configuration.html#scheduling)
 
 Default value: `3s`
 
@@ -77,7 +78,7 @@ Spark is running tasks serially through a small subset of executors it is probab
 setting.  Some queries will see significant performance gains by setting this to `0`.
 
 ## Number of Concurrent Tasks per GPU
-Configuration key: [`spark.rapids.sql.concurrentGpuTasks`](configs.md#concurrentGpuTasks)
+Configuration key: [`spark.rapids.sql.concurrentGpuTasks`](configs.md#sql.concurrentGpuTasks)
 
 Default value: `1`
 
@@ -93,7 +94,8 @@ to each task as they will be sharing the GPU's total memory. As a result, some q
 to run with a higher concurrent task setting may run successfully with a lower setting.
 
 ## Shuffle Partitions
-Configuration key: `spark.sql.shuffle.partitions`
+Configuration key:
+[`spark.sql.shuffle.partitions`](https://spark.apache.org/docs/latest/sql-performance-tuning.html#other-configuration-options)
 
 Default value: `200`
 
@@ -136,7 +138,9 @@ to read the input data.
 
 ### Input Partition Size with DataSource API
 
-Configuration key: `spark.sql.files.maxPartitionBytes`
+Configuration key:
+[`spark.sql.files.maxPartitionBytes`](https://spark.apache.org/docs/latest/sql-performance-tuning.html#other-configuration-options)
+
 
 Default value: `128MB`
 
@@ -152,7 +156,7 @@ Configuration keys:
 Default value: `0`
 
 ## Columnar Batch Size
-Configuration key: [`spark.rapids.sql.batchSizeBytes`](configs.md#batchSizeBytes)
+Configuration key: [`spark.rapids.sql.batchSizeBytes`](configs.md#sql.batchSizeBytes)
 
 Default value: `2147483648`
 
@@ -165,11 +169,11 @@ out of memory errors.  If tasks fail due to GPU out of memory errors after the q
 partitions have been read, try setting this to a lower value.
 
 ### File Reader Batch Size
-Configuration key: [`spark.rapids.sql.reader.batchSizeRows`](configs.md#reader.batchSizeRows)
+Configuration key: [`spark.rapids.sql.reader.batchSizeRows`](configs.md#sql.reader.batchSizeRows)
 
 Default value: `2147483648`
 
-Configuration key: [`spark.rapids.sql.reader.batchSizeBytes`](configs.md#reader.batchSizeBytes)
+Configuration key: [`spark.rapids.sql.reader.batchSizeBytes`](configs.md#sql.reader.batchSizeBytes)
 
 Default value: `2147483648`
 
@@ -179,7 +183,8 @@ load CSV files then write Parquet files) need to lower this setting when using l
 partition sizes to avoid GPU out of memory errors.
 
 ### Enable Incompatible Operations
-Configuration key: [`spark.rapids.sql.incompatibleOps.enabled`](configs.md#incompatibleOps.enabled)
+Configuration key: 
+[`spark.rapids.sql.incompatibleOps.enabled`](configs.md#sql.incompatibleOps.enabled)
 
 Default value: `false`
 
@@ -199,10 +204,11 @@ into multiple jobs, and in those cases a separate log message might be output fo
 are logged each time a query is compiled into an `RDD`, not just when the job runs. Because of
 this calling `explain` on a DataFrame will also trigger this to be logged. 
 
-The following configs all enable different types of incompatible operations that can improve performance.
-- [`spark.rapids.sql.variableFloatAgg.enabled`](configs.md#variableFloatAgg.enabled) 
-- [`spark.rapids.sql.hasNans`](configs.md#hasNans)
-- [`spark.rapids.sql.contains.negative.timestamps`](configs.md#contains.negative.timestamps)
-- [`spark.rapids.sql.castFloatToString.enabled`](configs.md#castFloatToString.enabled)
-- [`spark.rapids.sql.castStringToInteger.enabled`](configs.md#castStringToInteger.enabled)
-- [`spark.rapids.sql.castStringToFloat.enabled`](configs.md#castStringToFloat.enabled)
+The following configs all enable different types of incompatible operations that can improve
+performance.
+- [`spark.rapids.sql.variableFloatAgg.enabled`](configs.md#sql.variableFloatAgg.enabled) 
+- [`spark.rapids.sql.hasNans`](configs.md#sql.hasNans)
+- [`spark.rapids.sql.contains.negative.timestamps`](configs.md#sql.contains.negative.timestamps)
+- [`spark.rapids.sql.castFloatToString.enabled`](configs.md#sql.castFloatToString.enabled)
+- [`spark.rapids.sql.castStringToInteger.enabled`](configs.md#sql.castStringToInteger.enabled)
+- [`spark.rapids.sql.castStringToFloat.enabled`](configs.md#sql.castStringToFloat.enabled)
