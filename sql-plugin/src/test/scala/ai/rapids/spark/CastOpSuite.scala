@@ -373,10 +373,8 @@ class CastOpSuite extends GpuExpressionTestSuite {
   testSparkResultsAreEqual("Test cast to timestamp", mixedDfWithNulls) {
     frame => frame.select(
       col("ints").cast(TimestampType),
-      col("longs").cast(TimestampType))
-    // There is a bug in the way we are casting doubles to timestamp.
-    // https://gitlab-master.nvidia.com/nvspark/rapids-plugin-4-spark/issues/47
-      //, col("doubles").cast(TimestampType))
+      col("longs").cast(TimestampType),
+      col("doubles").cast(TimestampType))
   }
 
   ignore("Test cast from strings to double that doesn't match") {
