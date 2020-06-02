@@ -351,7 +351,7 @@ def test_log10(data_gen):
             lambda spark : unary_op_df(spark, data_gen).selectExpr('log10(a)'))
 
 @approximate_float
-@pytest.mark.xfail(reason='SPAR-1125')
+@pytest.mark.xfail(reason='https://github.com/NVIDIA/spark-rapids/issues/89')
 def test_logarithm():
     # For the 'b' field include a lot more values that we would expect customers to use as a part of a log
     data_gen = [('a', DoubleGen()),('b', DoubleGen().with_special_case(lambda rand: float(rand.randint(-16, 16)), weight=100.0))]
@@ -377,7 +377,7 @@ def test_scalar_pow():
                 'pow(b, cast(null as {}))'.format(string_type)))
 
 @approximate_float
-@pytest.mark.xfail(reason='SPAR-1125')
+@pytest.mark.xfail(reason='https://github.com/NVIDIA/spark-rapids/issues/89')
 @pytest.mark.parametrize('data_gen', double_gens, ids=idfn)
 def test_columnar_pow(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
