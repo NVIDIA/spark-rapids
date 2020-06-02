@@ -24,12 +24,13 @@ import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.expressions.{Attribute, SortOrder, UnsafeProjection}
 import org.apache.spark.sql.catalyst.expressions.codegen._
 import org.apache.spark.sql.catalyst.expressions.codegen.Block._
-import org.apache.spark.sql.execution.{CodegenSupport, GpuColumnToRowMapPartitionsRDD, SparkPlan, UnaryExecNode}
+import org.apache.spark.sql.execution.{CodegenSupport, SparkPlan, UnaryExecNode}
 import org.apache.spark.sql.types.DataType
 import org.apache.spark.sql.vectorized.{ColumnarBatch, ColumnVector}
 import org.apache.spark.TaskContext
 import org.apache.spark.sql.catalyst.plans.physical.Partitioning
 import org.apache.spark.sql.execution.metric.{SQLMetric, SQLMetrics}
+import org.apache.spark.sql.rapids.execution.GpuColumnToRowMapPartitionsRDD
 
 case class GpuColumnarToRowExec(child: SparkPlan, exportColumnarRdd: Boolean = false) 
     extends UnaryExecNode with CodegenSupport with GpuExec {

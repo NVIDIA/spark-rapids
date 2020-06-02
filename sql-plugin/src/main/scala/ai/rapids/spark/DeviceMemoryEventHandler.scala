@@ -22,7 +22,7 @@ import java.util.concurrent.{Executors, ThreadFactory, TimeUnit}
 import ai.rapids.cudf.{Cuda, NvtxColor, NvtxRange, RmmEventHandler}
 
 import org.apache.spark.internal.Logging
-import org.apache.spark.sql.execution.TrampolineUtil.bytesToString
+import org.apache.spark.sql.rapids.execution.TrampolineUtil.bytesToString
 
 object DeviceMemoryEventHandler {
   private val EXHAUSTED_POLL_INTERVAL_MSEC = 10

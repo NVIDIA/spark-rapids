@@ -17,7 +17,9 @@
 package ai.rapids.spark
 
 import scala.collection.AbstractIterator
+
 import ai.rapids.spark.RapidsPluginImplicits._
+
 import org.apache.spark.ShuffleDependency
 import org.apache.spark.rdd.RDD
 import org.apache.spark.serializer.Serializer
@@ -25,12 +27,13 @@ import org.apache.spark.sql.catalyst.errors._
 import org.apache.spark.sql.catalyst.expressions.Attribute
 import org.apache.spark.sql.catalyst.plans.physical.Partitioning
 import org.apache.spark.sql.catalyst.InternalRow
-import org.apache.spark.sql.execution.{BatchPartitionIdPassthrough, ShuffledBatchRDD, SparkPlan}
+import org.apache.spark.sql.execution.SparkPlan
 import org.apache.spark.sql.execution.exchange.{Exchange, ShuffleExchangeExec}
 import org.apache.spark.sql.execution.metric._
 import org.apache.spark.sql.internal.SQLConf
+import org.apache.spark.sql.rapids.GpuShuffleDependency
+import org.apache.spark.sql.rapids.execution.{BatchPartitionIdPassthrough, ShuffledBatchRDD}
 import org.apache.spark.sql.vectorized.ColumnarBatch
-import org.apache.spark.sql.GpuShuffleDependency
 import org.apache.spark.util.MutablePair
 
 class GpuShuffleMeta(
