@@ -49,7 +49,7 @@ pipeline {
         JENKINS_ROOT  = 'jenkins'
         TEST_SCRIPT = '$JENKINS_ROOT/spark-tests.sh'
         LIBCUDF_KERNEL_CACHE_PATH='/tmp'
-        QUAY = credentials("svcngcc_quayio")
+        URM_CREDS = credentials("svcngcc_artifactory")
     }
 
     stages {
@@ -63,12 +63,12 @@ pipeline {
                     }
                     echo "CUDA_CLASSIFIER: $CUDA_CLASSIFIER, DOCKER_TAG: $DOCKER_TAG"
 
-                    def IMAGE_NAME="quay.io/nvidia/spark:plugin-integration-centos7-$DOCKER_TAG"
+                    def IMAGE_NAME="urm.nvidia.com/sw-spark-docker/plugin:it-centos7-$DOCKER_TAG"
                     def DOCKER_CMD="docker --config $WORKSPACE/.docker"
                     sh """
-                        echo $QUAY_PSW | $DOCKER_CMD login https://quay.io -u $QUAY_USR --password-stdin
+                        echo $URM_CREDS_PSW | $DOCKER_CMD login https://urm.nvidia.com -u $URM_CREDS_USR --password-stdin
                         $DOCKER_CMD pull $IMAGE_NAME
-                        $DOCKER_CMD logout https://quay.io
+                        $DOCKER_CMD logout https://urm.nvidia.com
                     """
 
                     docker.image(IMAGE_NAME).inside("--runtime=nvidia -v ${HOME}/.zinc:${HOME}/.zinc:rw \
