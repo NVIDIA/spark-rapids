@@ -130,7 +130,8 @@ abstract class ReplacementRule[INPUT <: BASE, BASE, WRAP_TYPE <: RapidsMeta[INPU
   def confHelp(asTable: Boolean = false): Unit = {
     val incompatMsg = isIncompatMsg()
     if (asTable) {
-      print(s"$confKey|$desc|${incompatMsg.isEmpty}|")
+      import ConfHelper.makeConfAnchor
+      print(s"${makeConfAnchor(confKey)}|$desc|${incompatMsg.isEmpty}|")
       if (incompatMsg.isDefined) {
         print(s"${incompatMsg.get}")
       } else {
@@ -138,9 +139,9 @@ abstract class ReplacementRule[INPUT <: BASE, BASE, WRAP_TYPE <: RapidsMeta[INPU
       }
       println("|")
     } else {
-      println(s"${confKey}:")
-      println(s"\tEnable (true) or disable (false) the ${tag} ${operationName}.")
-      println(s"\t${desc}")
+      println(s"$confKey:")
+      println(s"\tEnable (true) or disable (false) the $tag $operationName.")
+      println(s"\t$desc")
       if (incompatMsg.isDefined) {
         println(s"\t${incompatMsg.get}")
       }

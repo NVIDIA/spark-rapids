@@ -84,6 +84,13 @@ object ConfHelper {
       }
     multiplier * JavaUtils.byteStringAs(input, unit)
   }
+
+  def makeConfAnchor(key: String, text: String = null): String = {
+    val t = if (text != null) text else key
+    // The anchor cannot be too long, so for now
+    val a = key.replaceFirst("spark.rapids.sql.", "")
+    "<a name=\"" + s"$a" + "\"></a>" + t
+  }
 }
 
 abstract class ConfEntry[T](val key: String, val converter: String => T,
@@ -106,11 +113,12 @@ class ConfEntryWithDefault[T](key: String, converter: String => T, doc: String,
   override def help(asTable: Boolean = false): Unit = {
     if (!isInternal) {
       if (asTable) {
-        println(s"${key}|${doc}|${defaultValue}")
+        import ConfHelper.makeConfAnchor
+        println(s"${makeConfAnchor(key)}|$doc|$defaultValue")
       } else {
-        println(s"${key}:")
-        println(s"\t${doc}")
-        println(s"\tdefault ${defaultValue}")
+        println(s"$key:")
+        println(s"\t$doc")
+        println(s"\tdefault $defaultValue")
         println()
       }
     }
@@ -525,8 +533,11 @@ object RapidsConf {
     .stringConf
     .createWithDefault("NONE")
 
+  private def printSectionHeader(category: String): Unit =
+    println(s"\n### $category")
+
   private def printToggleHeader(category: String): Unit = {
-    println(s"\n### ${category}")
+    printSectionHeader(category)
     println("Name | Description | Default Value | Incompatibilities")
     println("-----|-------------|---------------|------------------")
   }
@@ -550,7 +561,11 @@ object RapidsConf {
         |
         |```
         |scala> spark.conf.set("spark.rapids.sql.incompatibleOps.enabled", true)
-        |```""".stripMargin)
+        |```
+        |
+        | All configs can be set on startup, but some configs, especially for shuffle, will not
+        | work if they are set at runtime.
+        |""".stripMargin)
       // scalastyle:on line.size.limit
 
       println("\n## General Configuration")
@@ -562,17 +577,20 @@ object RapidsConf {
     registeredConfs.sortBy(_.key).foreach(_.help(asTable))
     if (asTable) {
       println("")
+      // scalastyle:off line.size.limit
       println("""## Fine Tuning
-        |_Rapids Plugin 4 Spark_ can be further configured to enable or disable specific
-        |expressions and to control what parts of the query execute using the GPU or
+        |_The RAPIDS Accelerator for Apache Spark_ can be further configured to enable or disable
+        |specific expressions and to control what parts of the query execute using the GPU or
         |the CPU.
         |
-        |Please leverage the `spark.rapids.sql.explain` setting to get feedback from the
-        |plugin as to why parts of a query may not be executing on the GPU.
+        |Please leverage the [`spark.rapids.sql.explain`](#explain) setting to get
+        |feedback from the plugin as to why parts of a query may not be executing on the GPU.
         |
-        |**NOTE:** Setting `spark.rapids.sql.incompatibleOps.enabled=true` will enable all
-        |the settings in the table below which are not enabled by default due to
+        |**NOTE:** Setting
+        |[`spark.rapids.sql.incompatibleOps.enabled=true`](#incompatibleOps.enabled)
+        |will enable all the settings in the table below which are not enabled by default due to
         |incompatibilities.""".stripMargin)
+      // scalastyle:on line.size.limit
 
       printToggleHeader("Expressions")
     }
@@ -589,6 +607,24 @@ object RapidsConf {
       printToggleHeader("Partitioning")
     }
     GpuOverrides.parts.values.toSeq.sortBy(_.tag.toString).foreach(_.confHelp(asTable))
+    if (asTable) {
+      printSectionHeader("JIT Kernel Cache Path")
+      println("""
+      |  CUDF can compile GPU kernels at runtime using a just-in-time (JIT) compiler. The
+      |  resulting kernels are cached on the filesystem. The default location for this cache is
+      |  under the `.cudf` directory in the user's home directory. When running in an environment
+      |  where the user's home directory cannot be written, such as running in a container
+      |  environment on a cluster, the JIT cache path will need to be specified explicitly with
+      |  the `LIBCUDF_KERNEL_CACHE_PATH` environment variable.
+      |  The specified kernel cache path should be specific to the user to avoid conflicts with
+      |  others running on the same host. For example, the following would specify the path to a
+      |  user-specific location under `/tmp`:
+      |
+      |  ```
+      |  --conf spark.executorEnv.LIBCUDF_KERNEL_CACHE_PATH="/tmp/cudf-$USER"
+      |  ```
+      |""".stripMargin)
+    }
   }
   def main(args: Array[String]): Unit = {
     val out = new FileOutputStream(new File(args(0)))
