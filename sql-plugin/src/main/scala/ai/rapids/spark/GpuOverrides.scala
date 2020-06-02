@@ -1123,11 +1123,27 @@ object GpuOverrides {
     expr[Max](
       "max aggregate operator",
       (max, conf, p, r) => new AggExprMeta[Max](max, conf, p, r) {
+        override def tagExprForGpu(): Unit = {
+          val dataType = max.child.dataType
+          if (conf.hasNans && (dataType == DoubleType || dataType == FloatType)) {
+            willNotWorkOnGpu("Max aggregation on floating point columns that can contain NaNs " +
+              "will compute incorrect results. If it is known that there are no NaNs, set " +
+              s" ${RapidsConf.HAS_NANS} to false.")
+          }
+        }
         override def convertToGpu(child: GpuExpression): GpuExpression = GpuMax(child)
       }),
     expr[Min](
       "min aggregate operator",
       (a, conf, p, r) => new AggExprMeta[Min](a, conf, p, r) {
+        override def tagExprForGpu(): Unit = {
+          val dataType = a.child.dataType
+          if (conf.hasNans && (dataType == DoubleType || dataType == FloatType)) {
+            willNotWorkOnGpu("Min aggregation on floating point columns that can contain NaNs " +
+              "will compute incorrect results. If it is known that there are no NaNs, set " +
+              s" ${RapidsConf.HAS_NANS} to false.")
+          }
+        }
         override def convertToGpu(child: GpuExpression): GpuExpression = GpuMin(child)
       }),
     expr[First](
@@ -1170,7 +1186,8 @@ object GpuOverrides {
       "average aggregate operator",
       (a, conf, p, r) => new AggExprMeta[Average](a, conf, p, r) {
         override def tagExprForGpu(): Unit = {
-          if (!conf.isFloatAggEnabled) {
+          val dataType = a.child.dataType
+          if (!conf.isFloatAggEnabled && (dataType == DoubleType || dataType == FloatType)) {
             willNotWorkOnGpu("the GPU will sum floating point values in" +
               " parallel to compute an average and the result is not always identical each time." +
               " This can cause some Spark queries to produce an incorrect answer if the value is" +

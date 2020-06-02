@@ -73,7 +73,7 @@ class GpuHashAggregateMeta(
     if (conf.hasNans &&
       (groupingExpressionTypes.contains(FloatType) ||
         groupingExpressionTypes.contains(DoubleType))) {
-      willNotWorkOnGpu("grouping expressions over floating point columns " +
+      willNotWorkOnGpu("grouping expressions and some aggregations over floating point columns " +
         "that may contain -0.0 and NaN are disabled. You can bypass this by setting " +
         s"${RapidsConf.HAS_NANS}=false")
     }
