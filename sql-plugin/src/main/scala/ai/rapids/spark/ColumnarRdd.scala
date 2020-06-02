@@ -19,8 +19,8 @@ package ai.rapids.spark
 import ai.rapids.cudf.Table
 
 import org.apache.spark.rdd.RDD
-import org.apache.spark.sql.execution.InternalColumnarRddConverter
 import org.apache.spark.sql.DataFrame
+import org.apache.spark.sql.rapids.execution.InternalColumnarRddConverter
 
 /**
  * This provides a way to get back out GPU Columnar data RDD[Table]. Each Table will have the same

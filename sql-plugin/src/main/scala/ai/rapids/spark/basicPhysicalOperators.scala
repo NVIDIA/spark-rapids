@@ -23,12 +23,13 @@ import ai.rapids.spark.GpuMetricNames._
 
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.expressions.{Attribute, AttributeReference, Expression, IsNotNull, NamedExpression, NullIntolerant, PredicateHelper, SortOrder}
-import org.apache.spark.sql.execution.{SparkPlan, TrampolineUtil, UnaryExecNode}
+import org.apache.spark.sql.execution.{SparkPlan, UnaryExecNode}
 import org.apache.spark.sql.vectorized.{ColumnarBatch, ColumnVector}
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.plans.physical.{Partitioning, SinglePartition, UnknownPartitioning}
 import org.apache.spark.sql.execution.metric.SQLMetric
 import org.apache.spark.{Partition, SparkContext, TaskContext}
+import org.apache.spark.sql.rapids.execution.TrampolineUtil
 
 object GpuProjectExec {
   def projectAndClose[A <: GpuExpression](cb: ColumnarBatch, boundExprs: Seq[A],

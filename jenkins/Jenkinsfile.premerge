@@ -59,7 +59,12 @@ pipeline {
                         -v ${HOME}/.zinc:${HOME}/.zinc:rw \
                         -v /etc/passwd:/etc/passwd -v /etc/group:/etc/group") {
                         sh "bash $BUILD_SCRIPT $MVN_GPUWA_MIRROR"
-                        cobertura coberturaReportFile: 'target/cobertura.xml'
+                        step([$class: 'JacocoPublisher',
+                              execPattern: '**/target/jacoco.exec',
+                              classPattern: 'target/jacoco_classes/',
+                              sourcePattern: 'sql-plugin/src/main/java/,sql-plugin/src/main/scala/',
+                              sourceInclusionPattern: '**/*.java,**/*.scala'
+                        ])
                     }
                 }
             }

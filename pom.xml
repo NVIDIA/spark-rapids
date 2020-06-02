@@ -51,10 +51,13 @@
         <cuda.version>cuda10-1</cuda.version>
         <scala.binary.version>2.12</scala.binary.version>
         <scala.version>2.12.8</scala.version>
-        <scoverage.plugin.version>1.4.0</scoverage.plugin.version>
         <orc.version>1.5.8</orc.version>
         <orc.classifier></orc.classifier>
-        <rapids.shade.package>ai.rapids.spark.shaded</rapids.shade.package>
+        <!--
+             If the shade package changes we need to also update jenkins/spark-premerge-build.sh
+             so code coverage does not include the shaded classes.
+        -->
+        <rapids.shade.package>ai.rapids.shaded.spark</rapids.shade.package>
         <test.exclude.tags></test.exclude.tags>
         <test.include.tags></test.include.tags>
         <rapids.shuffle.manager.override>false</rapids.shuffle.manager.override>
@@ -207,25 +210,6 @@
                   <groupId>org.apache.maven.plugins</groupId>
                   <artifactId>maven-antrun-plugin</artifactId>
                   <version>1.8</version>
-                  <executions>
-                    <execution>
-                      <phase>generate-resources</phase>
-                      <configuration>
-                        <!-- Execute the shell script to generate the plugin build information. -->
-                        <target>
-                          <mkdir dir="${project.build.directory}/extra-resources"/>
-                          <mkdir dir="${project.build.directory}/tmp"/>
-                          <exec executable="bash" output="${project.build.directory}/extra-resources/rapids4spark-version-info.properties">
-                            <arg value="${project.basedir}/../build/build-info"/>
-                            <arg value="${project.version}"/>
-                          </exec>
-                        </target>
-                      </configuration>
-                      <goals>
-                        <goal>run</goal>
-                      </goals>
-                    </execution>
-                  </executions>
                 </plugin>
                 <plugin>
                   <groupId>org.apache.maven.plugins</groupId>
@@ -302,7 +286,7 @@
                         <reportsDirectory>${project.build.directory}/surefire-reports</reportsDirectory>
                         <junitxml>.</junitxml>
                         <filereports>scala-test-output.txt</filereports>
-                        <argLine>-ea -Xmx4g -Xss4m</argLine>
+                        <argLine>${argLine} -ea -Xmx4g -Xss4m</argLine>
                         <stderr/>
                         <systemProperties>
                             <rapids.shuffle.manager.override>${rapids.shuffle.manager.override}</rapids.shuffle.manager.override>
@@ -324,14 +308,6 @@
                             </goals>
                         </execution>
                     </executions>
-                </plugin>
-                <plugin>
-                    <groupId>org.scoverage</groupId>
-                    <artifactId>scoverage-maven-plugin</artifactId>
-                    <version>${scoverage.plugin.version}</version>
-                    <configuration>
-                        <aggregateOnly>true</aggregateOnly>
-                    </configuration>
                 </plugin>
                 <plugin>
                     <groupId>org.scalastyle</groupId>
@@ -370,6 +346,22 @@
                         </execution>
                     </executions>
                 </plugin>
+                <plugin>
+                    <groupId>org.jacoco</groupId>
+                    <artifactId>jacoco-maven-plugin</artifactId>
+                    <version>0.8.5</version>
+                </plugin>
+                <plugin>
+                    <groupId>org.apache.maven.plugins</groupId>
+                    <artifactId>maven-jar-plugin</artifactId>
+                    <executions>
+                        <execution>
+                            <goals>
+                                <goal>test-jar</goal>
+                            </goals>
+                        </execution>
+                    </executions>
+                </plugin>
             </plugins>
         </pluginManagement>
 
@@ -391,6 +383,51 @@
                         <exclude>docs/dev/idea-code-style-settings.xml</exclude>
                     </excludes>
                 </configuration>
+            </plugin>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-antrun-plugin</artifactId>
+                <executions>
+                    <execution>
+                        <phase>generate-resources</phase>
+                        <configuration>
+                            <!-- Execute the shell script to generate the plugin build information. -->
+                            <target>
+                                <mkdir dir="${project.build.directory}/extra-resources"/>
+                                <mkdir dir="${project.build.directory}/tmp"/>
+                                <exec executable="bash" output="${project.build.directory}/extra-resources/rapids4spark-version-info.properties">
+                                    <arg value="${project.basedir}/../build/build-info"/>
+                                    <arg value="${project.version}"/>
+                                </exec>
+                            </target>
+                        </configuration>
+                        <goals>
+                            <goal>run</goal>
+                        </goals>
+                    </execution>
+                </executions>
+            </plugin>
+            <plugin>
+                <groupId>org.jacoco</groupId>
+                <artifactId>jacoco-maven-plugin</artifactId>
+                <executions>
+                    <execution>
+                        <id>prepare-agent</id>
+                        <goals>
+                            <goal>prepare-agent</goal>
+                        </goals>
+                        <configuration>
+                            <append>true</append>
+                            <excludes>
+                                <exclude>${rapids.shade.package}.*</exclude>
+                            </excludes>
+                            <includes>
+                                <include>ai.rapids.spark.*</include>
+                                <include>org.apache.spark.sql.rapids.*</include>
+                            </includes>
+                        </configuration>
+                    </execution>
+                </executions>
             </plugin>
         </plugins>
     </build>

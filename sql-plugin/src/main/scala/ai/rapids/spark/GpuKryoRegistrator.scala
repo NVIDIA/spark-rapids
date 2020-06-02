@@ -20,14 +20,15 @@ import com.esotericsoftware.kryo.Kryo
 import com.esotericsoftware.kryo.serializers.{JavaSerializer => KryoJavaSerializer}
 
 import org.apache.spark.serializer.KryoRegistrator
+import org.apache.spark.sql.rapids.execution.{SerializeBatchDeserializeHostBuffer, SerializeConcatHostBuffersDeserializeBatch}
 
 class GpuKryoRegistrator extends KryoRegistrator {
   override def registerClasses(kryo: Kryo): Unit = {
     kryo.register(
-      classOf[org.apache.spark.sql.execution.SerializeConcatHostBuffersDeserializeBatch],
+      classOf[SerializeConcatHostBuffersDeserializeBatch],
       new KryoJavaSerializer())
     kryo.register(
-      classOf[org.apache.spark.sql.execution.SerializeBatchDeserializeHostBuffer],
+      classOf[SerializeBatchDeserializeHostBuffer],
       new KryoJavaSerializer())
   }
 }

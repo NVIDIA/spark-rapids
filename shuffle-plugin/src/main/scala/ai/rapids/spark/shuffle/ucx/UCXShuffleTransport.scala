@@ -25,7 +25,6 @@ import ai.rapids.spark.shuffle._
 import ai.rapids.spark.{GpuDeviceManager, RapidsConf}
 import com.google.common.util.concurrent.ThreadFactoryBuilder
 import org.apache.spark.internal.Logging
-import org.apache.spark.sql.GpuShuffleEnv
 import org.apache.spark.storage.BlockManagerId
 
 import scala.collection.mutable
