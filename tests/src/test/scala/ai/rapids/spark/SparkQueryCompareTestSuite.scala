@@ -1306,6 +1306,50 @@ trait SparkQueryCompareTestSuite extends FunSuite with Arm {
     ).toDF("doubles", "more_doubles")
   }
 
+  def doubleWithDifferentKindsOfNansAndZeros(session: SparkSession): DataFrame = {
+    import session.sqlContext.implicits._
+    Seq[(Double, Int)](
+      // Regular numbers
+      (1, 10),
+      (2, 20),
+
+      // NaNs, in different forms, as per Java documentation for Double.
+      // @see java.lang.Double#longBitsToDouble
+      // <quote>
+      //  If the argument is any value in the range 0x7ff0000000000001L through 0x7fffffffffffffffL,
+      //  or in the range 0xfff0000000000001L through 0xffffffffffffffffL, the result is a NaN.
+      // </quote>
+      (DOUBLE_POSITIVE_NAN_LOWER_RANGE, 30), // Minimum Positive NaN value
+      (DOUBLE_POSITIVE_NAN_UPPER_RANGE, 40), // Maximum Positive NaN value
+      (DOUBLE_NEGATIVE_NAN_LOWER_RANGE, 50), // Maximum Negative NaN value
+      (DOUBLE_NEGATIVE_NAN_UPPER_RANGE, 60), // Minimum Negative NaN value
+
+      // Zeros
+      (+0.0, 70), // Minimum Negative NaN value
+      (-0.0, 80)  // Minimum Negative NaN value
+    ).toDF("double", "int")
+  }
+
+  def floatWithDifferentKindsOfNansAndZeros(session: SparkSession): DataFrame = {
+    import session.sqlContext.implicits._
+    Seq[(Float, Int)](
+      // Regular numbers
+      (1, 10),
+      (2, 20),
+
+      // NaNs, in different forms, as per Java documentation for Float.
+      // @see java.lang.Float#longBitsToDouble
+      (FLOAT_POSITIVE_NAN_LOWER_RANGE, 30), // Minimum Positive NaN value
+      (FLOAT_POSITIVE_NAN_UPPER_RANGE, 40), // Maximum Positive NaN value
+      (FLOAT_NEGATIVE_NAN_LOWER_RANGE, 50), // Maximum Negative NaN value
+      (FLOAT_NEGATIVE_NAN_UPPER_RANGE, 60), // Minimum Negative NaN value
+
+      // Zeros
+      (+0.0f, 70), // Minimum Negative NaN value
+      (-0.0f, 80)  // Minimum Negative NaN value
+    ).toDF("float", "int")
+  }
+
   def floatWithNansDf(session: SparkSession): DataFrame = {
     import session.sqlContext.implicits._
     Seq[(java.lang.Float, java.lang.Float)](

@@ -33,8 +33,6 @@ case class GpuNormalizeNaNAndZero(child: GpuExpression) extends GpuUnaryExpressi
 
   override def inputTypes: Seq[AbstractDataType] = Seq(TypeCollection(FloatType, DoubleType))
 
-  override def columnarEval(input: ColumnarBatch): Any = child.columnarEval(input)
-
   override def doColumnar(input: GpuColumnVector): GpuColumnVector =
-    throw new IllegalStateException("doColumnar should not be called for $this")
+    GpuColumnVector.from(input.getBase.normalizeNANsAndZeros())
 }
