@@ -30,14 +30,14 @@ def four_op_df(spark, gen, length=2048, seed=0):
 all_gen = [StringGen(), ByteGen(), ShortGen(), IntegerGen(), LongGen(), 
          FloatGen(), DoubleGen(), BooleanGen(), DateGen(), TimestampGen()]
 
-#sort locally because of SPAR-1210
+#sort locally because of https://github.com/NVIDIA/spark-rapids/issues/84
 @ignore_order(local=True)
 @pytest.mark.parametrize('data_gen', all_gen, ids=idfn)
 def test_posexplode_makearray(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : four_op_df(spark, data_gen).selectExpr('posexplode(array(b, c, d))', 'a'))
 
-#sort locally because of SPAR-1210
+#sort locally because of https://github.com/NVIDIA/spark-rapids/issues/84
 @ignore_order(local=True)
 @pytest.mark.parametrize('data_gen', all_gen, ids=idfn)
 def test_posexplode_litarray(data_gen):
@@ -46,14 +46,14 @@ def test_posexplode_litarray(data_gen):
             lambda spark : four_op_df(spark, data_gen).select(f.col('a'), f.col('b'), f.col('c'), 
                 f.posexplode(array_lit)))
 
-#sort locally because of SPAR-1210
+#sort locally because of https://github.com/NVIDIA/spark-rapids/issues/84
 @ignore_order(local=True)
 @pytest.mark.parametrize('data_gen', all_gen, ids=idfn)
 def test_explode_makearray(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : four_op_df(spark, data_gen).selectExpr('a', 'explode(array(b, c, d))'))
 
-#sort locally because of SPAR-1210
+#sort locally because of https://github.com/NVIDIA/spark-rapids/issues/84
 @ignore_order(local=True)
 @pytest.mark.parametrize('data_gen', all_gen, ids=idfn)
 def test_explode_litarray(data_gen):
