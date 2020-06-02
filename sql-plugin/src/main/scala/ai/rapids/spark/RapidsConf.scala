@@ -88,7 +88,7 @@ object ConfHelper {
   def makeConfAnchor(key: String, text: String = null): String = {
     val t = if (text != null) text else key
     // The anchor cannot be too long, so for now
-    val a = key.replaceFirst("spark.rapids.sql.", "")
+    val a = key.replaceFirst("spark.rapids.", "")
     "<a name=\"" + s"$a" + "\"></a>" + t
   }
 }
@@ -583,11 +583,11 @@ object RapidsConf {
         |specific expressions and to control what parts of the query execute using the GPU or
         |the CPU.
         |
-        |Please leverage the [`spark.rapids.sql.explain`](#explain) setting to get
+        |Please leverage the [`spark.rapids.sql.explain`](#sql.explain) setting to get
         |feedback from the plugin as to why parts of a query may not be executing on the GPU.
         |
         |**NOTE:** Setting
-        |[`spark.rapids.sql.incompatibleOps.enabled=true`](#incompatibleOps.enabled)
+        |[`spark.rapids.sql.incompatibleOps.enabled=true`](#sql.incompatibleOps.enabled)
         |will enable all the settings in the table below which are not enabled by default due to
         |incompatibilities.""".stripMargin)
       // scalastyle:on line.size.limit
