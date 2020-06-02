@@ -23,13 +23,15 @@ import java.util.concurrent.ConcurrentHashMap
 import java.util.function.{Consumer, IntUnaryOperator}
 
 import scala.collection.mutable.ArrayBuffer
+
 import ai.rapids.cudf.{Cuda, DeviceMemoryBuffer}
 import ai.rapids.spark.format.TableMeta
+
 import org.apache.spark.internal.Logging
 import org.apache.spark.storage.{BlockId, ShuffleBlockId}
 import org.apache.spark.SparkEnv
-import org.apache.spark.sql.execution.TrampolineUtil
 import org.apache.spark.sql.rapids.RapidsDiskBlockManager
+import org.apache.spark.sql.rapids.execution.TrampolineUtil
 
 /** Identifier for a shuffle buffer that holds the data for a table on the read side */
 

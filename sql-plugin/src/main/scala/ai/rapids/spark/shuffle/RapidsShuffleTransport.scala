@@ -22,8 +22,10 @@ import java.util.concurrent.atomic.AtomicInteger
 
 import ai.rapids.cudf.{CudaUtil, DeviceMemoryBuffer, MemoryBuffer, NvtxColor, NvtxRange}
 import ai.rapids.spark.RapidsConf
+
 import org.apache.spark.internal.Logging
-import org.apache.spark.storage.{BlockManagerId, RapidsStorageUtils, StorageUtils}
+import org.apache.spark.sql.rapids.storage.RapidsStorageUtils
+import org.apache.spark.storage.{BlockManagerId, StorageUtils}
 
 /**
   * This case class is a bit bloated, with memory buffers and rapids buffers.

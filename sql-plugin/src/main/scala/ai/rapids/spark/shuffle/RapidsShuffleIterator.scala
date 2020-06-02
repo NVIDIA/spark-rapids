@@ -16,17 +16,18 @@
 
 package ai.rapids.spark.shuffle
 
-import java.util.concurrent.{ConcurrentHashMap, LinkedBlockingQueue}
+import java.util.concurrent.LinkedBlockingQueue
+
+import scala.collection.mutable
 
 import ai.rapids.cudf.{NvtxColor, NvtxRange}
 import ai.rapids.spark._
+
 import org.apache.spark.TaskContext
 import org.apache.spark.internal.Logging
+import org.apache.spark.sql.rapids.{GpuShuffleEnv, ShuffleMetricsUpdater}
 import org.apache.spark.sql.vectorized.ColumnarBatch
-import org.apache.spark.sql.{GpuShuffleEnv, ShuffleMetricsUpdater}
 import org.apache.spark.storage.{BlockId, BlockManagerId, ShuffleBlockBatchId, ShuffleBlockId}
-
-import scala.collection.mutable
 
 /**
   * An Iterator over columnar batches that fetches blocks using [[RapidsShuffleClient]]s.

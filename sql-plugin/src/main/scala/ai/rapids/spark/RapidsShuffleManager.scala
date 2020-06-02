@@ -16,8 +16,8 @@
 
 package ai.rapids.spark
 
-import org.apache.spark.sql.RapidsShuffleInternalManager
 import org.apache.spark.SparkConf
+import org.apache.spark.sql.rapids.RapidsShuffleInternalManager
 
 /** A shuffle manager optimized for the RAPIDS Plugin for Apache Spark. */
 sealed class RapidsShuffleManager(
