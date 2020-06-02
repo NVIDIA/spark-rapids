@@ -6,8 +6,9 @@ that produce different results are off by default, and you can look at the
 [configs](configs.md) for more information on how to enable them.  In some cases
 we felt that enabling the incompatibility by default was worth the performance gain. All
 of those operators can be disabled through configs if it becomes a problem. Please also look
-at the current list of [bugs](https://github.com/NVIDIA/spark-rapids/issues) which are typically
-incompatibilities that we have not yet addressed.
+at the current list of
+[bugs](https://github.com/NVIDIA/spark-rapids/issues?q=is%3Aopen+is%3Aissue+label%3Abug)
+which are typically incompatibilities that we have not yet addressed.
 
 ## Ordering of Output
 
@@ -37,7 +38,7 @@ a query joins on a floating point value, which is not wise to do anyways,
 and the value is the result of a floating point aggregation then the join may fail to work
 properly with the plugin but would have worked with plain Spark. Because of this most
 floating point aggregations are off by default but can be enabled with the config
-`spark.rapids.sql.variableFloatAgg.enabled`.
+[`spark.rapids.sql.variableFloatAgg.enabled`](configs.md#sql.variableFloatAgg.enabled).
 
 ## Unicode
 
@@ -52,8 +53,9 @@ Spark is very strict when reading CSV and if the data does not conform with the 
 exactly it will result in a `null` value. The underlying parser that the SQL plugin uses is much
 more lenient. If you have badly formatted CSV data you may get data back instead of nulls.
 If this is a problem you can disable the CSV reader by setting the config 
-`spark.rapids.sql.input.CSVScan` to `false`. Because the speed up is so large and the issues only
-show up in error conditions we felt it was worth having the CSV reader enabled by default.
+[`spark.rapids.sql.input.CSVScan`](configs.md#sql.input.CSVScan) to `false`. Because the speed up
+is so large and the issues only show up in error conditions we felt it was worth having the CSV
+reader enabled by default.
 
 ## Timestamps
 
