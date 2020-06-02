@@ -54,6 +54,13 @@
             <version>${project.version}</version>
             <scope>test</scope>
         </dependency>
+        <dependency>
+            <groupId>ai.rapids</groupId>
+            <artifactId>rapids-4-spark-tests_${scala.binary.version}</artifactId>
+            <version>${project.version}</version>
+            <type>test-jar</type>
+            <scope>test</scope>
+        </dependency>
     </dependencies>
 
     <build>
@@ -118,6 +125,17 @@
                 </executions>
             </plugin>
             <plugin>
+                <groupId>org.apache.rat</groupId>
+                <artifactId>apache-rat-plugin</artifactId>
+                <configuration>
+                    <excludes>
+                        <exclude>src/test/resources/**</exclude>
+                        <exclude>**/*.md</exclude>
+                        <exclude>.pytest_cache/**</exclude>
+                    </excludes>
+                </configuration>
+            </plugin>
+            <plugin>
                 <groupId>org.codehaus.mojo</groupId>
                 <artifactId>exec-maven-plugin</artifactId>
                 <executions>
@@ -133,6 +151,7 @@
                             <environmentVariables>
                                 <SKIP_TESTS>${skipTests}</SKIP_TESTS>
                                 <TEST>${test}</TEST>
+                                <COVERAGE_SUBMIT_FLAGS>${argLine}</COVERAGE_SUBMIT_FLAGS>
                             </environmentVariables>
                         </configuration>
                     </execution>

@@ -47,4 +47,14 @@ export PATH="$SPARK_HOME/bin:$SPARK_HOME/sbin:$PATH"
 tar zxf $SPARK_HOME.tar.gz -C $ARTF_ROOT && \
     rm -f $SPARK_HOME.tar.gz
 
-mvn -U -B "$@" clean verify scoverage:report
+mvn -U -B "$@" clean verify
+
+# The jacoco coverage should have been collected, but because of how the shade plugin
+# works and jacoco we need to clean some things up so jacoco will only report for the
+# things we care about
+mkdir -p target/jacoco_classes/
+FILE=$(ls dist/target/rapids-4-spark_2.12-*.jar | grep -v test | xargs readlink -f)
+pushd target/jacoco_classes/
+jar xf $FILE
+rm -rf ai/rapids/shaded/ org/openucx/
+popd

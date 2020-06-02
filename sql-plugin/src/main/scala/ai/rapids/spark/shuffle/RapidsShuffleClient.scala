@@ -19,11 +19,13 @@ package ai.rapids.spark.shuffle
 import java.util.concurrent.Executor
 
 import scala.collection.mutable.ArrayBuffer
+
 import ai.rapids.cudf.{DeviceMemoryBuffer, MemoryBuffer, NvtxColor, NvtxRange}
 import ai.rapids.spark._
 import ai.rapids.spark.format.{CodecType, MetadataResponse, TableMeta, TransferState}
+
 import org.apache.spark.internal.Logging
-import org.apache.spark.sql.GpuShuffleEnv
+import org.apache.spark.sql.rapids.GpuShuffleEnv
 import org.apache.spark.storage.ShuffleBlockBatchId
 
 /**

@@ -26,7 +26,7 @@ import ai.rapids.cudf._
 import org.apache.spark.{SparkEnv, TaskContext}
 import org.apache.spark.internal.Logging
 import org.apache.spark.resource.ResourceInformation
-import org.apache.spark.sql.GpuShuffleEnv
+import org.apache.spark.sql.rapids.GpuShuffleEnv
 
 object GpuDeviceManager extends Logging {
   // This config controls whether RMM/Pinned memory are initialized from the task
