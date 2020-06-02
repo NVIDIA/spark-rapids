@@ -1,26 +1,47 @@
 # RAPIDS Accelerator for Apache Spark Tuning Guide
 Tuning a Spark job's configuration settings from the defaults can often improve job performance,
-and this remains true for jobs leveraging the RAPIDS Accelerator plugin for Apache Spark.  This
+and this remains true for jobs leveraging the RAPIDS Accelerator plugin for Apache Spark. This
 document provides guidelines on how to tune a Spark job's configuration settings for improved
 performance when using the RAPIDS Accelerator plugin.
 
 ## Number of Executors
 The RAPIDS Accelerator plugin only supports a one-to-one mapping between GPUs and executors.
+
+## Number of Tasks per Executor 
 Running multiple, concurrent tasks per executor is supported in the same manner as standard
-Apache Spark.  For example, if the cluster nodes each have 24 CPU cores and 4 GPUs then setting
+Apache Spark. For example, if the cluster nodes each have 24 CPU cores and 4 GPUs then setting
 `spark.executor.cores=6` will run each executor with 6 cores and 6 concurrent tasks per executor,
 assuming the default setting of one core per task, i.e.: `spark.task.cpus=1`.
 
 It is recommended to run more than one concurrent task per executor as this allows overlapping
 I/O and computation.  For example one task can be communicating with a distributed filesystem to
-fetch an input buffer while another task is decoding an input buffer on the GPU.  Configuring too
-many concurrent tasks on an executor can lead to excessive I/O and overload host memory.
+fetch an input buffer while another task is decoding an input buffer on the GPU. Configuring too
+many concurrent tasks on an executor can lead to excessive I/O and overload host memory. 
+Counter-intuitively leaving some CPU cores idle may actually speed up your overall job. We
+typically find that two times the number of concurrent GPU tasks is a good starting point. 
 
-Note that the [number of concurrent tasks running on a GPU](#number-of-concurrent-tasks-per-gpu)
-can be separately configured.
+The [number of concurrent tasks running on a GPU](#number-of-concurrent-tasks-per-gpu)
+is configured separately.
+
+## Pooled Memory
+Configuration key: [`spark.rapids.memory.gpu.pooling.enabled`](configs.md#spark.rapids.memory.gpu.pooling.enabled)
+
+Default value: `true`
+
+Configuration key: [`spark.rapids.memory.gpu.allocFraction`](configs.md#spark.rapids.memory.gpu.allocFraction)
+
+Default value: `0.9`
+
+Allocating memory on a GPU can be an expensive operation. RAPIDS uses a pooling allocator
+called [RMM](https://github.com/rapidsai/rmm) to mitigate this overhead. By default, on startup
+the plugin will allocate `90%` (`0.9`) of the memory on the GPU and keep it as a pool that can
+be allocated from. If the pools is exhausted more memory will be allocated and added to the pool.
+Most of the time this is a huge win, but if you need to share the GPU with other 
+[libraries](ml-integration.md) that are not aware of RMM this can lead to memory issues, and you
+may need to disable pooling.
 
 ## Pinned Memory
-Configuration key: `spark.rapids.memory.pinnedPoolSize`
+Configuration key: [`spark.rapids.memory.pinnedPool.size`](configs.md#spark.rapids.memory.pinnedPool.size)
 
 Default value: `0`
 
@@ -31,12 +52,12 @@ memory is relatively expensive to allocate and can cause system issues if too mu
 pinned, so by default no pinned memory is allocated.
 
 It is recommended to use some amount of pinned memory when using the RAPIDS Accelerator if
-possible.  Ideally the amount of pinned memory allocated would be sufficient to hold the input
+possible. Ideally the amount of pinned memory allocated would be sufficient to hold the input
 partitions for the number of concurrent tasks that Spark can schedule for the executor.
 
 Note that the specified amount of pinned memory is allocated _per executor_.  For example, if
 each node in the cluster has 4 GPUs and therefore 4 executors per node, a configuration setting
-of `spark.rapids.memory.pinnedPoolSize=4g` will allocate a total of 16GB of memory on the system.
+of `spark.rapids.memory.pinnedPool.size=4G` will allocate a total of 16GB of memory on the system.
 
 When running on YARN, make sure to account for the extra memory consumed by setting
 `spark.executor.memoryOverhead` to a value at least as large as the amount of pinned memory
@@ -56,18 +77,19 @@ Spark is running tasks serially through a small subset of executors it is probab
 setting.  Some queries will see significant performance gains by setting this to `0`.
 
 ## Number of Concurrent Tasks per GPU
-Configuration key: `spark.rapids.sql.concurrentGpuTasks`
+Configuration key: [`spark.rapids.sql.concurrentGpuTasks`](configs.md#concurrentGpuTasks)
 
 Default value: `1`
 
 The number of concurrent tasks per executor can be further limited when tasks are sharing the GPU.
 This is useful for avoiding GPU out of memory errors while still allowing full concurrency for the
 portions of the job that are not executing on the GPU.  Some queries benefit significantly from
-setting this to a value between `2` and `4`.
+setting this to a value between `2` and `4`, with `2` typically providing the most benefit, and
+higher numbers giving diminishing returns.
 
-Note that setting this value to high can lead to GPU out of memory errors or poor runtime
-performance.  Running multiple tasks concurrently on the GPU will reduce the memory available
-to each task as they will be sharing the GPU's total memory.  As a result, some queries that fail
+Setting this value to high can lead to GPU out of memory errors or poor runtime
+performance. Running multiple tasks concurrently on the GPU will reduce the memory available
+to each task as they will be sharing the GPU's total memory. As a result, some queries that fail
 to run with a higher concurrent task setting may run successfully with a lower setting.
 
 ## Shuffle Partitions
@@ -130,7 +152,7 @@ Configuration keys:
 Default value: `0`
 
 ## Columnar Batch Size
-Configuration key: `spark.rapids.sql.batchSizeBytes`
+Configuration key: [`spark.rapids.sql.batchSizeBytes`](configs.md#batchSizeBytes)
 
 Default value: `2147483648`
 
@@ -143,7 +165,11 @@ out of memory errors.  If tasks fail due to GPU out of memory errors after the q
 partitions have been read, try setting this to a lower value.
 
 ### File Reader Batch Size
-Configuration key: `spark.rapids.sql.reader.batchSizeRows`
+Configuration key: [`spark.rapids.sql.reader.batchSizeRows`](configs.md#reader.batchSizeRows)
+
+Default value: `2147483648`
+
+Configuration key: [`spark.rapids.sql.reader.batchSizeBytes`](configs.md#reader.batchSizeBytes)
 
 Default value: `2147483648`
 
@@ -151,3 +177,32 @@ When reading data from a file, this setting is used to control the maximum batch
 from the main [columnar batch size](#columnar-batch-size) setting.  Some transcoding jobs (e.g.:
 load CSV files then write Parquet files) need to lower this setting when using large task input
 partition sizes to avoid GPU out of memory errors.
+
+### Enable Incompatible Operations
+Configuration key: [`spark.rapids.sql.incompatibleOps.enabled`](configs.md#incompatibleOps.enabled)
+
+Default value: `false`
+
+There are several operators/expressions that are not 100% compatible with the CPU version. These
+incompatibilities are documented [here](compatibility.md) and in the 
+[configuration documentation](./configs.md). Many of these incompatibilities are around corner
+cases that most queries do not encounter, or that would not result in any meaningful difference
+to the resulting output.  By enabling these operations either individually or with the 
+`spark.rapids.sql.incompatibleOps.enabled` config it can greatly improve performance of your
+queries. Over time, we expect the number of incompatible operators to reduce.
+
+If you want to understand if an operation is or is not on the GPU and why, you can set 
+`spark.rapids.sql.explain` to `ALL` for the framework to log a message explaining every operator
+in the query plan and why it is or is not on the GPU. If you just want to see the operators
+not on the GPU you may set it to `NOT_ON_GPU`. Be aware that some queries end up being broken down
+into multiple jobs, and in those cases a separate log message might be output for each job. These
+are logged each time a query is compiled into an `RDD`, not just when the job runs. Because of
+this calling `explain` on a DataFrame will also trigger this to be logged. 
+
+The following configs all enable different types of incompatible operations that can improve performance.
+- [`spark.rapids.sql.variableFloatAgg.enabled`](configs.md#variableFloatAgg.enabled) 
+- [`spark.rapids.sql.hasNans`](configs.md#hasNans)
+- [`spark.rapids.sql.contains.negative.timestamps`](configs.md#contains.negative.timestamps)
+- [`spark.rapids.sql.castFloatToString.enabled`](configs.md#castFloatToString.enabled)
+- [`spark.rapids.sql.castStringToInteger.enabled`](configs.md#castStringToInteger.enabled)
+- [`spark.rapids.sql.castStringToFloat.enabled`](configs.md#castStringToFloat.enabled)
