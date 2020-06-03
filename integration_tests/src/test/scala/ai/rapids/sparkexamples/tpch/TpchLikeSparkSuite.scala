@@ -33,6 +33,7 @@ class TpchLikeSparkSuite extends FunSuite with BeforeAndAfterAll {
       .config("spark.rapids.sql.test.enabled", false)
       .config("spark.rapids.sql.explain", true)
       .config("spark.rapids.sql.incompatibleOps.enabled", true)
+      .config("spark.rapids.sql.hasNans", false)
     val rapidsShuffle = classOf[RapidsShuffleManager].getCanonicalName
     val prop = System.getProperty("rapids.shuffle.manager.override", "false")
     if (prop.equalsIgnoreCase("true")) {
