@@ -16,6 +16,8 @@
 
 package ai.rapids.spark
 
+import scala.collection.mutable.ArrayBuffer
+
 import ai.rapids.cudf.{ColumnVector, NvtxColor, NvtxRange, Table}
 import ai.rapids.spark.RapidsPluginImplicits._
 
@@ -23,8 +25,6 @@ import org.apache.spark.sql.catalyst.expressions.Expression
 import org.apache.spark.sql.catalyst.plans.physical.{ClusteredDistribution, Distribution, HashClusteredDistribution}
 import org.apache.spark.sql.types.{DataType, IntegerType}
 import org.apache.spark.sql.vectorized.ColumnarBatch
-
-import scala.collection.mutable.ArrayBuffer
 
 case class GpuHashPartitioning(expressions: Seq[GpuExpression], numPartitions: Int)
   extends GpuExpression with GpuPartitioning {

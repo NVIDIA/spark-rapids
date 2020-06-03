@@ -16,8 +16,9 @@
 
 package ai.rapids.spark
 
-import ai.rapids.cudf.DType._
 import ai.rapids.cudf.{ColumnVector, DType}
+import ai.rapids.cudf.DType._
+
 import org.apache.spark.sql.catalyst.expressions.{Expression, Nondeterministic}
 import org.apache.spark.sql.types._
 import org.apache.spark.sql.vectorized.ColumnarBatch

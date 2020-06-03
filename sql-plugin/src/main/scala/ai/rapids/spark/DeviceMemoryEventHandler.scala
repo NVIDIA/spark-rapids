@@ -16,8 +16,8 @@
 
 package ai.rapids.spark
 
-import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.{Executors, ThreadFactory, TimeUnit}
+import java.util.concurrent.atomic.AtomicBoolean
 
 import ai.rapids.cudf.{Cuda, NvtxColor, NvtxRange, RmmEventHandler}
 

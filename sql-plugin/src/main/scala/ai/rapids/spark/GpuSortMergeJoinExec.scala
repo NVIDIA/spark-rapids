@@ -17,7 +17,6 @@
 package ai.rapids.spark
 
 import org.apache.spark.internal.Logging
-
 import org.apache.spark.sql.execution.SortExec
 import org.apache.spark.sql.execution.joins.{BuildRight, SortMergeJoinExec}
 

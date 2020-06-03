@@ -21,10 +21,10 @@ import java.text.SimpleDateFormat
 import java.util.TimeZone
 
 import org.apache.spark.SparkConf
+import org.apache.spark.sql.{DataFrame, Row, SparkSession}
 import org.apache.spark.sql.catalyst.expressions.Cast
 import org.apache.spark.sql.functions.col
 import org.apache.spark.sql.types._
-import org.apache.spark.sql.{DataFrame, Row, SparkSession}
 
 class CastOpSuite extends GpuExpressionTestSuite {
   import CastOpSuite._

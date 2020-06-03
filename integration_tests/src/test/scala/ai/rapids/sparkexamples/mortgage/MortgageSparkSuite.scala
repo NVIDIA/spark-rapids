@@ -17,10 +17,10 @@
 package ai.rapids.sparkexamples.mortgage
 
 import ai.rapids.spark.RapidsShuffleManager
+import org.scalatest.FunSuite
 
 import org.apache.spark.sql.SparkSession
 import org.apache.spark.sql.functions._
-import org.scalatest.FunSuite
 
 class MortgageSparkSuite extends FunSuite {
   lazy val  session: SparkSession = {

@@ -17,6 +17,7 @@
 package ai.rapids.spark
 
 import ai.rapids.cudf.{NvtxColor, NvtxRange}
+
 import org.apache.spark.sql.execution.metric.SQLMetric
 
 /**

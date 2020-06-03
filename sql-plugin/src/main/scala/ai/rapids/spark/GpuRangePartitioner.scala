@@ -16,18 +16,19 @@
 
 package ai.rapids.spark
 
-import ai.rapids.spark.GpuColumnVector.GpuColumnarBatchBuilder
-import org.apache.spark.rdd.{PartitionPruningRDD, RDD}
-import org.apache.spark.sql.catalyst.InternalRow
-import org.apache.spark.sql.catalyst.expressions.codegen.LazilyGeneratedOrdering
-import org.apache.spark.sql.catalyst.expressions.{Attribute, BoundReference, UnsafeProjection}
-import org.apache.spark.sql.types.StructType
-import org.apache.spark.sql.vectorized.ColumnarBatch
-import org.apache.spark.util.MutablePair
-
 import scala.collection.mutable.ArrayBuffer
 import scala.reflect.ClassTag
 import scala.util.hashing.byteswap32
+
+import ai.rapids.spark.GpuColumnVector.GpuColumnarBatchBuilder
+
+import org.apache.spark.rdd.{PartitionPruningRDD, RDD}
+import org.apache.spark.sql.catalyst.InternalRow
+import org.apache.spark.sql.catalyst.expressions.{Attribute, BoundReference, UnsafeProjection}
+import org.apache.spark.sql.catalyst.expressions.codegen.LazilyGeneratedOrdering
+import org.apache.spark.sql.types.StructType
+import org.apache.spark.sql.vectorized.ColumnarBatch
+import org.apache.spark.util.MutablePair
 
 class GpuRangePartitioner extends Serializable {
   var rangeBounds: Array[InternalRow] = _

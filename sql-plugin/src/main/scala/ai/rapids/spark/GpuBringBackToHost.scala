@@ -18,12 +18,12 @@ package ai.rapids.spark
 
 import ai.rapids.cudf.{NvtxColor, NvtxRange}
 
+import org.apache.spark.TaskContext
 import org.apache.spark.rdd.RDD
-import org.apache.spark.sql.catalyst.expressions.Attribute
 import org.apache.spark.sql.catalyst.InternalRow
+import org.apache.spark.sql.catalyst.expressions.Attribute
 import org.apache.spark.sql.execution.{SparkPlan, UnaryExecNode}
 import org.apache.spark.sql.vectorized.ColumnarBatch
-import org.apache.spark.TaskContext
 
 /**
  * Pull back any data on the GPU to the host so the host can access it.

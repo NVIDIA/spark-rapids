@@ -16,12 +16,13 @@
 
 package ai.rapids.spark
 
+import scala.collection.mutable.ArrayBuffer
+
 import ai.rapids.spark.RapidsPluginImplicits._
-import org.apache.spark.sql.types.IntegerType
-import org.apache.spark.sql.vectorized.ColumnarBatch
 import org.scalatest.{FlatSpec, Matchers}
 
-import scala.collection.mutable.ArrayBuffer
+import org.apache.spark.sql.types.IntegerType
+import org.apache.spark.sql.vectorized.ColumnarBatch
 
 class ImplicitsTestSuite extends FlatSpec with Matchers {
   private class RefCountTest (i: Int, throwOnClose: Boolean) extends AutoCloseable {

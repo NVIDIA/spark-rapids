@@ -19,18 +19,19 @@ package ai.rapids.spark.shuffle.ucx
 import java.io._
 import java.net.{InetSocketAddress, ServerSocket, Socket}
 import java.nio.ByteBuffer
-import java.util.concurrent.atomic.AtomicLong
 import java.util.concurrent.{ConcurrentHashMap, ConcurrentLinkedQueue, Executors, TimeUnit}
+import java.util.concurrent.atomic.AtomicLong
+
+import scala.collection.mutable.ArrayBuffer
 
 import ai.rapids.cudf.{MemoryBuffer, NvtxColor, NvtxRange}
 import ai.rapids.spark.GpuDeviceManager
 import ai.rapids.spark.shuffle.{AddressLengthTag, ClientConnection, MemoryRegistrationCallback, RapidsShuffleIterator, Transaction, TransportUtils}
 import com.google.common.util.concurrent.ThreadFactoryBuilder
-import org.apache.spark.internal.Logging
 import org.openucx.jucx._
 import org.openucx.jucx.ucp._
 
-import scala.collection.mutable.ArrayBuffer
+import org.apache.spark.internal.Logging
 
 case class WorkerAddress(address: ByteBuffer)
 

@@ -18,9 +18,9 @@ package ai.rapids.spark
 
 import java.util
 import java.util.Objects
+import javax.xml.bind.DatatypeConverter
 
 import ai.rapids.cudf.{DType, Scalar}
-import javax.xml.bind.DatatypeConverter
 import org.json4s.JsonAST.{JField, JNull, JString}
 
 import org.apache.spark.sql.catalyst.util.{DateFormatter, DateTimeUtils, TimestampFormatter}

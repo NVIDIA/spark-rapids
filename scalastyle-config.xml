@@ -48,7 +48,7 @@ You can also disable only one rule, by specifying its rule id, as specified in:
         </parameters>
     </check>
 
-    <check level="error" class="org.scalastyle.scalariform.ImportOrderChecker" enabled="false">
+    <check level="error" class="org.scalastyle.scalariform.ImportOrderChecker" enabled="true">
         <parameters>
             <parameter name="groups">java,scala,3rdParty,spark</parameter>
             <parameter name="group.java">javax?\..*</parameter>

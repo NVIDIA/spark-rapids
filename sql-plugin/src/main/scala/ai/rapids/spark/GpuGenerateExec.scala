@@ -20,15 +20,15 @@ import ai.rapids.cudf.{ColumnVector, NvtxColor, Table}
 import ai.rapids.spark.GpuMetricNames.{NUM_OUTPUT_BATCHES, NUM_OUTPUT_ROWS, TOTAL_TIME}
 import ai.rapids.spark.RapidsPluginImplicits._
 
+import org.apache.spark.TaskContext
 import org.apache.spark.rdd.RDD
-import org.apache.spark.sql.catalyst.expressions.{Alias, Attribute, AttributeSet, CreateArray, Explode, Expression, Literal, PosExplode}
 import org.apache.spark.sql.catalyst.InternalRow
+import org.apache.spark.sql.catalyst.expressions.{Alias, Attribute, AttributeSet, CreateArray, Explode, Expression, Literal, PosExplode}
 import org.apache.spark.sql.catalyst.plans.physical.Partitioning
+import org.apache.spark.sql.catalyst.util.ArrayData
 import org.apache.spark.sql.execution.{GenerateExec, SparkPlan, UnaryExecNode}
 import org.apache.spark.sql.types.{ArrayType, DataType, IntegerType}
 import org.apache.spark.sql.vectorized.ColumnarBatch
-import org.apache.spark.TaskContext
-import org.apache.spark.sql.catalyst.util.ArrayData
 
 class GpuGenerateExecSparkPlanMeta(
     gen: GenerateExec,

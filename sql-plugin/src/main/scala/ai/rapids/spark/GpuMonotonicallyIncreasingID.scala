@@ -14,11 +14,12 @@
  * limitations under the License.
  */
 package ai.rapids.spark
+
 import ai.rapids.cudf.{ColumnVector, Scalar}
 
+import org.apache.spark.TaskContext
 import org.apache.spark.sql.types.{DataType, LongType}
 import org.apache.spark.sql.vectorized.ColumnarBatch
-import org.apache.spark.TaskContext
 
 /**
  * An expression that returns monotonically increasing 64-bit integers just like

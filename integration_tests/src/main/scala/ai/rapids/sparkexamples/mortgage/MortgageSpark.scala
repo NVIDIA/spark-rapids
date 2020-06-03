@@ -16,9 +16,9 @@
 
 package ai.rapids.sparkexamples.mortgage
 
+import org.apache.spark.sql.{Column, DataFrame, SparkSession}
 import org.apache.spark.sql.functions._
 import org.apache.spark.sql.types._
-import org.apache.spark.sql.{Column, DataFrame, SparkSession}
 
 // scalastyle:off line.size.limit
 
