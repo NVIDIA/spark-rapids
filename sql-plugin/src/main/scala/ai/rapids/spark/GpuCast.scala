@@ -16,10 +16,11 @@
 
 package ai.rapids.spark
 
+import java.text.SimpleDateFormat
 import java.time.ZoneId
+import java.util.{Calendar, TimeZone}
 
 import ai.rapids.cudf.{ColumnVector, DType, Scalar}
-import ai.rapids.spark.RapidsPluginImplicits._
 
 import org.apache.spark.sql.catalyst.analysis.TypeCheckResult
 import org.apache.spark.sql.catalyst.expressions.{Cast, CastBase, Expression, NullIntolerant, TimeZoneAwareExpression}
@@ -77,9 +78,18 @@ class CastExprMeta[INPUT <: CastBase](
 
 object GpuCast {
 
-  val DATE_REGEX_YYYY = "\\A\\d{4}\\Z"
-  val DATE_REGEX_YYYY_MM = "\\A\\d{4}\\-\\d{2}\\Z"
-  val DATE_REGEX_YYYY_MM_DD = "\\A\\d{4}\\-\\d{2}\\-\\d{2}([ T](:?[\\r\\n]|.)*)?\\Z"
+  private val DATE_REGEX_YYYY = "\\A\\d{4}\\Z"
+  private val DATE_REGEX_YYYY_MM = "\\A\\d{4}\\-\\d{2}\\Z"
+  private val DATE_REGEX_YYYY_MM_DD = "\\A\\d{4}\\-\\d{2}\\-\\d{2}([ T](:?[\\r\\n]|.)*)?\\Z"
+
+  private val TIMESTAMP_REGEX_YYYY = "\\A\\d{4}\\Z"
+  private val TIMESTAMP_REGEX_YYYY_MM = "\\A\\d{4}\\-\\d{2}[ ]?\\Z"
+  private val TIMESTAMP_REGEX_YYYY_MM_DD = "\\A\\d{4}\\-\\d{2}\\-\\d{2}[ ]?\\Z"
+  private val TIMESTAMP_REGEX_FULL =
+    "\\A\\d{4}\\-\\d{2}\\-\\d{2}[ T]\\d{2}:\\d{2}:\\d{2}\\.\\d{6}Z\\Z"
+  private val TIMESTAMP_REGEX_NO_DATE = "\\A[T]?(\\d{2}:\\d{2}:\\d{2}\\.\\d{6}Z)\\Z"
+
+  private val ONE_DAY_MICROSECONDS = 86400000000L
 
   /**
    * Regex for identifying strings that contain numeric values that can be casted to integral
@@ -157,6 +167,7 @@ object GpuCast {
         case BooleanType => true
         case ByteType | ShortType | IntegerType | LongType | FloatType | DoubleType => true
         case DateType => true
+        case TimestampType => true
         case _ => false
       }
       case _ => false
@@ -373,13 +384,15 @@ case class GpuCast(
       case (FloatType|DoubleType, StringType) =>
         castFloatingTypeToString(input)
       case (StringType, BooleanType | ByteType | ShortType | IntegerType | LongType | FloatType
-                        | DoubleType | DateType) =>
+                        | DoubleType | DateType | TimestampType) =>
         withResource(input.getBase.strip()) { trimmed =>
           dataType match {
             case BooleanType =>
               castStringToBool(trimmed, ansiMode)
             case DateType =>
               castStringToDate(trimmed)
+            case TimestampType =>
+              castStringToTimestamp(trimmed)
             case FloatType | DoubleType =>
               castStringToFloats(trimmed, ansiMode, cudfType)
             case ByteType | ShortType | IntegerType | LongType =>
@@ -611,7 +624,7 @@ case class GpuCast(
     }
 
     /**
-     * Parse dates that match the the provided regex. This method does not close the `input`
+     * Parse dates that match the provided regex. This method does not close the `input`
      * ColumnVector.
      */
     def convertDateOrNull(
@@ -676,6 +689,119 @@ case class GpuCast(
       // handle special dates like "epoch", "now", etc.
       specialDates.foldLeft(converted)((prev, specialDate) =>
         specialDateOr(sanitizedInput, specialDate._1, specialDate._2, prev))
+    }
+
+    GpuColumnVector.from(result)
+  }
+
+  private def castStringToTimestamp(input: ColumnVector): GpuColumnVector = {
+
+    /**
+     * Replace special date strings such as "now" with timestampMicros. This method does not
+     * close the `input` ColumnVector.
+     */
+    def specialTimestampOr(
+        input: ColumnVector,
+        special: String,
+        value: Long,
+        orColumnVector: ColumnVector): ColumnVector = {
+
+      withResource(orColumnVector) { other =>
+        withResource(Scalar.fromString(special)) { str =>
+          withResource(input.equalTo(str)) { isStr =>
+            withResource(Scalar.timestampFromLong(DType.TIMESTAMP_MICROSECONDS, value)) { date =>
+              isStr.ifElse(date, other)
+            }
+          }
+        }
+      }
+    }
+
+    /**
+     * Parse dates that match the the provided regex. This method does not close the `input`
+     * ColumnVector.
+     */
+    def convertTimestampOrNull(
+        input: ColumnVector,
+        regex: String,
+        cudfFormat: String): ColumnVector = {
+
+      withResource(Scalar.fromNull(DType.TIMESTAMP_MICROSECONDS)) { nullScalar =>
+        withResource(input.matchesRe(regex)) { isMatch =>
+          withResource(input.asTimestampMicroseconds(cudfFormat)) { asDays =>
+            isMatch.ifElse(asDays, nullScalar)
+          }
+        }
+      }
+    }
+
+    /** This method does not close the `input` ColumnVector. */
+    def convertTimestampOr(
+        input: ColumnVector,
+        regex: String,
+        cudfFormat: String,
+        orElse: ColumnVector): ColumnVector = {
+
+      withResource(input.matchesRe(regex)) { isMatch =>
+        withResource(input.asTimestampMicroseconds(cudfFormat)) { asDays =>
+          withResource(orElse) { orElse =>
+            isMatch.ifElse(asDays, orElse)
+          }
+        }
+      }
+    }
+
+    // special timestamps
+    val cal = Calendar.getInstance(TimeZone.getTimeZone(ZoneId.of("UTC")))
+    cal.set(Calendar.HOUR_OF_DAY, 0)
+    cal.set(Calendar.MINUTE, 0)
+    cal.set(Calendar.SECOND, 0)
+    cal.set(Calendar.MILLISECOND, 0)
+    val today: Long = cal.getTimeInMillis * 1000
+    val todayStr = new SimpleDateFormat("yyyy-MM-dd").format(cal.getTime)
+    val specialDates: Map[String, Long] = Map(
+      "epoch" -> 0,
+      "now" -> today,
+      "today" -> today,
+      "yesterday" -> (today - ONE_DAY_MICROSECONDS),
+      "tomorrow" -> (today + ONE_DAY_MICROSECONDS)
+    )
+
+    var sanitizedInput = input.incRefCount()
+
+    // replace partial months
+    sanitizedInput = withResource(sanitizedInput) { cv =>
+      cv.stringReplaceWithBackrefs("-([0-9])-", "-0\\1-")
+    }
+
+    // replace partial month or day at end of string
+    sanitizedInput = withResource(sanitizedInput) { cv =>
+      cv.stringReplaceWithBackrefs("-([0-9])[ ]?\\Z", "-0\\1")
+    }
+
+    // replace partial day in timestamp formats without dates
+    sanitizedInput = withResource(sanitizedInput) { cv =>
+      cv.stringReplaceWithBackrefs(
+        "-([0-9])([ T]\\d{1,2}:\\d{1,2}:\\d{1,2}\\.\\d{6}Z)\\Z", "-0\\1\\2")
+    }
+
+    // prepend today's date to timestamp formats without dates
+    sanitizedInput = withResource(sanitizedInput) { cv =>
+      sanitizedInput.stringReplaceWithBackrefs(TIMESTAMP_REGEX_NO_DATE, s"${todayStr}T\\1")
+    }
+
+    val result = withResource(sanitizedInput) { sanitizedInput =>
+
+      // convert dates that are in valid timestamp formats
+      val converted =
+        convertTimestampOr(sanitizedInput, TIMESTAMP_REGEX_FULL, "%Y-%m-%dT%H:%M:%SZ%f",
+          convertTimestampOr(sanitizedInput, TIMESTAMP_REGEX_YYYY_MM_DD, "%Y-%m-%d",
+            convertTimestampOr(sanitizedInput, TIMESTAMP_REGEX_YYYY_MM, "%Y-%m",
+              convertTimestampOrNull(sanitizedInput, TIMESTAMP_REGEX_YYYY, "%Y"))))
+
+      // handle special dates like "epoch", "now", etc.
+      specialDates.foldLeft(converted)((prev, specialDate) =>
+        specialTimestampOr(sanitizedInput, specialDate._1, specialDate._2, prev))
     }
 
     GpuColumnVector.from(result)
