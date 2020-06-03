@@ -16,9 +16,13 @@
 
 package ai.rapids.spark
 
+import java.time.ZoneId
+
 import ai.rapids.cudf.{ColumnVector, DType, Scalar}
+import ai.rapids.spark.RapidsPluginImplicits._
 
 import org.apache.spark.sql.catalyst.analysis.TypeCheckResult
+import org.apache.spark.sql.catalyst.util.DateTimeUtils
 import org.apache.spark.sql.catalyst.expressions.{Cast, CastBase, Expression, NullIntolerant, TimeZoneAwareExpression}
 import org.apache.spark.sql.types._
 
@@ -36,9 +40,9 @@ class CastExprMeta[INPUT <: CastBase](
   private val toType = cast.dataType
 
   override def tagExprForGpu(): Unit = {
-    if (!GpuCast.canCast(cast.child.dataType, cast.dataType)) {
-      willNotWorkOnGpu(s"$castExpr from ${cast.child.dataType} " +
-        s"to ${cast.dataType} is not currently supported on the GPU")
+    if (!GpuCast.canCast(fromType, toType)) {
+      willNotWorkOnGpu(s"$castExpr from $fromType " +
+        s"to $toType is not currently supported on the GPU")
     }
     if (!conf.isCastFloatToStringEnabled && toType == DataTypes.StringType &&
       (fromType == DataTypes.FloatType || fromType == DataTypes.DoubleType)) {
@@ -72,6 +76,10 @@ class CastExprMeta[INPUT <: CastBase](
 }
 
 object GpuCast {
+
+  val DATE_REGEX_YYYY = "\\A\\d{4}\\Z"
+  val DATE_REGEX_YYYY_MM = "\\A\\d{4}\\-\\d{2}\\Z"
+  val DATE_REGEX_YYYY_MM_DD = "\\A\\d{4}\\-\\d{2}\\-\\d{2}([ T](:?[\\r\\n]|.)*)?\\Z"
 
   /**
    * Regex for identifying strings that contain numeric values that can be casted to integral
@@ -148,6 +156,7 @@ object GpuCast {
       case StringType => to match {
         case BooleanType => true
         case ByteType | ShortType | IntegerType | LongType | FloatType | DoubleType => true
+        case DateType => true
         case _ => false
       }
       case _ => false
@@ -164,6 +173,8 @@ case class GpuCast(
     ansiMode: Boolean = false,
     timeZoneId: Option[String] = None)
   extends GpuUnaryExpression with TimeZoneAwareExpression with NullIntolerant {
+
+  import GpuCast._
 
   override def toString: String = if (ansiMode) {
     s"ansi_cast($child as ${dataType.simpleString})"
@@ -362,11 +373,13 @@ case class GpuCast(
       case (FloatType|DoubleType, StringType) =>
         castFloatingTypeToString(input)
       case (StringType, BooleanType | ByteType | ShortType | IntegerType | LongType | FloatType
-                        | DoubleType) =>
+                        | DoubleType | DateType) =>
         withResource(input.getBase.strip()) { trimmed =>
           dataType match {
             case BooleanType =>
               castStringToBool(trimmed, ansiMode)
+            case DateType =>
+              castStringToDate(trimmed)
             case FloatType | DoubleType =>
               castStringToFloats(trimmed, ansiMode, cudfType)
             case ByteType | ShortType | IntegerType | LongType =>
@@ -572,6 +585,100 @@ case class GpuCast(
         }
       }
     }
+  }
+
+  private def castStringToDate(input: ColumnVector): GpuColumnVector = {
+
+    /**
+     * Replace special date strings such as "now" with timestampDays. This method does not
+     * close the `input` ColumnVector.
+     */
+    def specialDateOr(
+        input: ColumnVector,
+        special: String,
+        value: Int,
+        orColumnVector: ColumnVector): ColumnVector = {
+
+      withResource(orColumnVector) { other =>
+        withResource(Scalar.fromString(special)) { str =>
+          withResource(input.equalTo(str)) { isStr =>
+            withResource(Scalar.timestampDaysFromInt(value)) { date =>
+              isStr.ifElse(date, other)
+            }
+          }
+        }
+      }
+    }
+
+    /**
+     * Parse dates that match the the provided regex. This method does not close the `input`
+     * ColumnVector.
+     */
+    def convertDateOrNull(
+        input: ColumnVector,
+        regex: String,
+        cudfFormat: String): ColumnVector = {
+
+      withResource(Scalar.fromNull(DType.TIMESTAMP_DAYS)) { nullScalar =>
+        withResource(input.matchesRe(regex)) { isMatch =>
+          withResource(input.asTimestampDays(cudfFormat)) { asDays =>
+            isMatch.ifElse(asDays, nullScalar)
+          }
+        }
+      }
+    }
+
+    /** This method does not close the `input` ColumnVector. */
+    def convertDateOr(
+        input: ColumnVector,
+        regex: String,
+        cudfFormat: String,
+        orElse: ColumnVector): ColumnVector = {
+
+      withResource(input.matchesRe(regex)) { isMatch =>
+        withResource(input.asTimestampDays(cudfFormat)) { asDays =>
+          withResource(orElse) { orElse =>
+            isMatch.ifElse(asDays, orElse)
+          }
+        }
+      }
+    }
+
+    // special dates
+    val now = DateTimeUtils.currentDate(ZoneId.of("UTC"))
+    val specialDates: Map[String, Int] = Map(
+      "epoch" -> 0,
+      "now" -> now,
+      "today" -> now,
+      "yesterday" -> (now - 1),
+      "tomorrow" -> (now + 1)
+    )
+
+    var sanitizedInput = input.incRefCount()
+
+    // replace partial months
+    sanitizedInput = withResource(sanitizedInput) { cv =>
+      cv.stringReplaceWithBackrefs("-([0-9])-", "-0\\1-")
+    }
+
+    // replace partial month or day at end of string
+    sanitizedInput = withResource(sanitizedInput) { cv =>
+      cv.stringReplaceWithBackrefs("-([0-9])([ T](:?[\\r\\n]|.)*)?\\Z", "-0\\1")
+    }
+
+    val result = withResource(sanitizedInput) { sanitizedInput =>
+
+      // convert dates that are in valid formats yyyy, yyyy-mm, yyyy-mm-dd
+      val converted = convertDateOr(sanitizedInput, DATE_REGEX_YYYY_MM_DD, "%Y-%m-%d",
+        convertDateOr(sanitizedInput, DATE_REGEX_YYYY_MM, "%Y-%m",
+          convertDateOrNull(sanitizedInput, DATE_REGEX_YYYY, "%Y")))
+
+      // handle special dates like "epoch", "now", etc.
+      specialDates.foldLeft(converted)((prev, specialDate) =>
+        specialDateOr(sanitizedInput, specialDate._1, specialDate._2, prev))
+    }
+
+    GpuColumnVector.from(result)
   }
 
   /**
