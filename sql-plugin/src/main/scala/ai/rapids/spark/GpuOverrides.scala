@@ -675,6 +675,20 @@ object GpuOverrides {
           GpuAtLeastNNonNulls(a.n, childExprs.map(_.convertToGpu()))
         }
       }),
+    expr[DateAdd](
+      "Returns the date that is num_days after start_date",
+      (a, conf, p, r) => new BinaryExprMeta[DateAdd](a, conf, p, r) {
+        override def convertToGpu(lhs: GpuExpression, rhs: GpuExpression): GpuExpression =
+          GpuDateAdd(lhs, rhs)
+      }
+    ),
+    expr[DateSub](
+      "Returns the date that is num_days before start_date",
+      (a, conf, p, r) => new BinaryExprMeta[DateSub](a, conf, p, r) {
+        override def convertToGpu(lhs: GpuExpression, rhs: GpuExpression): GpuExpression =
+          GpuDateSub(lhs, rhs)
+      }
+    ),
     expr[TimeSub](
       "Subtracts interval from timestamp",
       (a, conf, p, r) => new BinaryExprMeta[TimeSub](a, conf, p, r) {

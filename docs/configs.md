@@ -97,7 +97,9 @@ Name | Description | Default Value | Incompatibilities
 <a name="sql.expression.Cosh"></a>spark.rapids.sql.expression.Cosh|hyperbolic cosine|true|None|
 <a name="sql.expression.Cot"></a>spark.rapids.sql.expression.Cot|Returns the cotangent|true|None|
 <a name="sql.expression.CurrentRow$"></a>spark.rapids.sql.expression.CurrentRow$|Special boundary for a window frame, indicating stopping at the current row|true|None|
+<a name="sql.expression.DateAdd"></a>spark.rapids.sql.expression.DateAdd|Returns the date that is num_days after start_date|true|None|
 <a name="sql.expression.DateDiff"></a>spark.rapids.sql.expression.DateDiff|datediff|true|None|
+<a name="sql.expression.DateSub"></a>spark.rapids.sql.expression.DateSub|Returns the date that is num_days before start_date|true|None|
 <a name="sql.expression.DayOfMonth"></a>spark.rapids.sql.expression.DayOfMonth|get the day of the month from a date or timestamp|true|None|
 <a name="sql.expression.Divide"></a>spark.rapids.sql.expression.Divide|division|true|None|
 <a name="sql.expression.EndsWith"></a>spark.rapids.sql.expression.EndsWith|Ends With|true|None|

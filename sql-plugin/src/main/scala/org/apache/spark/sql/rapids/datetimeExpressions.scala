@@ -16,8 +16,8 @@
 
 package org.apache.spark.sql.rapids
 
-import ai.rapids.cudf.{ColumnVector, DType, Scalar}
-import ai.rapids.spark.{GpuBinaryExpression, GpuColumnVector, GpuScalar, GpuExpression, GpuUnaryExpression}
+import ai.rapids.cudf.{BinaryOp, ColumnVector, DType, Scalar}
+import ai.rapids.spark.{GpuBinaryExpression, GpuColumnVector, GpuExpression, GpuScalar, GpuUnaryExpression}
 import org.apache.spark.sql.catalyst.expressions.{BinaryExpression, ExpectsInputTypes, Expression, ImplicitCastInputTypes, TimeZoneAwareExpression}
 import org.apache.spark.sql.types._
 import org.apache.spark.sql.vectorized.ColumnarBatch
@@ -255,4 +255,60 @@ case class GpuFromUnixTime(
   override def dataType: DataType = StringType
 
   override lazy val resolved: Boolean = childrenResolved && checkInputDataTypes().isSuccess
+}
+
+trait GpuDateMathBase extends GpuBinaryExpression with ExpectsInputTypes {
+  override def inputTypes: Seq[AbstractDataType] =
+    Seq(DateType, TypeCollection(IntegerType, ShortType, ByteType))
+
+  override def dataType: DataType = DateType
+
+  def binaryOp: BinaryOp
+
+  override lazy val resolved: Boolean = childrenResolved && checkInputDataTypes().isSuccess
+
+  override def doColumnar(lhs: GpuColumnVector, rhs: GpuColumnVector): GpuColumnVector = {
+    withResource(lhs.getBase.castTo(DType.INT32)) { daysSinceEpoch =>
+      withResource(daysSinceEpoch.binaryOp(binaryOp, rhs.getBase, daysSinceEpoch.getType)) {
+        daysAsInts => GpuColumnVector.from(daysAsInts.castTo(DType.TIMESTAMP_DAYS))
+      }
+    }
+  }
+
+  override def doColumnar(lhs: Scalar, rhs: GpuColumnVector): GpuColumnVector = {
+    withResource(GpuScalar.castDateScalarToInt(lhs)) { daysAsInts =>
+     withResource(daysAsInts.binaryOp(binaryOp, rhs.getBase, daysAsInts.getType)) { ints =>
+       GpuColumnVector.from(ints.castTo(DType.TIMESTAMP_DAYS))
+     }
+    }
+  }
+
+  override def doColumnar(lhs: GpuColumnVector, rhs: Scalar): GpuColumnVector = {
+    withResource(lhs.getBase.castTo(DType.INT32)) { daysSinceEpoch =>
+      withResource(daysSinceEpoch.binaryOp(binaryOp, rhs, daysSinceEpoch.getType)) { daysAsInts =>
+        GpuColumnVector.from(daysAsInts.castTo(DType.TIMESTAMP_DAYS))
+      }
+    }
+  }
+}
+
+case class GpuDateSub(startDate: GpuExpression, days: GpuExpression)
+  extends GpuDateMathBase {
+
+  override def left: GpuExpression = startDate
+  override def right: GpuExpression = days
+
+  override def prettyName: String = "date_sub"
+
+  override def binaryOp: BinaryOp = BinaryOp.SUB
+}
+
+case class GpuDateAdd(startDate: GpuExpression, days: GpuExpression) extends GpuDateMathBase {
+
+  override def left: GpuExpression = startDate
+  override def right: GpuExpression = days
+
+  override def prettyName: String = "date_add"
+
+  override def binaryOp: BinaryOp = BinaryOp.ADD
 }
