@@ -22,8 +22,9 @@ import java.util.concurrent.ConcurrentHashMap
 
 import ai.rapids.cudf.{NvtxColor, NvtxRange}
 import ai.rapids.spark.shuffle._
-import org.apache.spark.internal.Logging
 import org.openucx.jucx.ucp.UcpRequest
+
+import org.apache.spark.internal.Logging
 
 /**
   * This is a private api used within the ucx package.

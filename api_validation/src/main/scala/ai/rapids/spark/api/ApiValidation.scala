@@ -15,11 +15,11 @@
  */
 
 package ai.rapids.spark.api
-import ai.rapids.spark._
-
-import scala.reflect.runtime.{universe => ru}
-import ru.MethodSymbolTag
 import scala.reflect.api
+import scala.reflect.runtime.{universe => ru}
+
+import ai.rapids.spark._
+import ru.MethodSymbolTag
 
 object ApiValidation {
   // Method to take in a fully qualified case class name and return case class accessors in the

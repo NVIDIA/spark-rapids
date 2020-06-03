@@ -18,8 +18,8 @@ package ai.rapids.spark
 
 import ai.rapids.cudf.{ColumnVector, DType, HostColumnVector}
 
-import org.apache.spark.sql.catalyst.expressions.{Expression, Literal, Predicate}
 import org.apache.spark.TaskContext
+import org.apache.spark.sql.catalyst.expressions.{Expression, Literal, Predicate}
 import org.apache.spark.sql.types._
 import org.apache.spark.unsafe.types.UTF8String
 

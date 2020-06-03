@@ -19,6 +19,7 @@ package ai.rapids.spark.shuffle
 import java.util
 
 import ai.rapids.cudf.MemoryBuffer
+
 import org.apache.spark.internal.Logging
 
 /**

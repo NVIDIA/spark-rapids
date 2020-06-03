@@ -20,14 +20,15 @@ import java.nio.ByteBuffer
 import java.util.PriorityQueue
 import java.util.concurrent._
 
+import scala.collection.mutable
+
 import ai.rapids.cudf.{DeviceMemoryBuffer, HostMemoryBuffer, MemoryBuffer, NvtxColor, NvtxRange}
-import ai.rapids.spark.shuffle._
 import ai.rapids.spark.{GpuDeviceManager, RapidsConf}
+import ai.rapids.spark.shuffle._
 import com.google.common.util.concurrent.ThreadFactoryBuilder
+
 import org.apache.spark.internal.Logging
 import org.apache.spark.storage.BlockManagerId
-
-import scala.collection.mutable
 
 /**
   * This is the UCX implementation of [[RapidsShuffleTransport]]

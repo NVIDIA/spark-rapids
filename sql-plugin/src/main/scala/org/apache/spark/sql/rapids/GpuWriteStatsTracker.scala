@@ -18,10 +18,10 @@ package org.apache.spark.sql.rapids
 
 import org.apache.hadoop.conf.Configuration
 
+import org.apache.spark.SparkContext
 import org.apache.spark.sql.execution.datasources.{BasicWriteJobStatsTracker, WriteTaskStats}
 import org.apache.spark.sql.execution.metric.{SQLMetric, SQLMetrics}
 import org.apache.spark.util.SerializableConfiguration
-import org.apache.spark.SparkContext
 
 /**
  * [[ColumnarWriteTaskStatsTracker]] implementation that produces [[WriteTaskStats]]

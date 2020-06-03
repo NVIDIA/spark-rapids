@@ -18,9 +18,9 @@ package ai.rapids.spark
 
 import org.scalatest.Ignore
 
+import org.apache.spark.SparkConf
 import org.apache.spark.sql.{DataFrame, Row, SparkSession}
 import org.apache.spark.sql.functions._
-import org.apache.spark.SparkConf
 
  /* 
  * Different versions of Java support different versions of Unicode. 

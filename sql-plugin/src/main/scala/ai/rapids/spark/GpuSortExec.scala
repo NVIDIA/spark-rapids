@@ -20,16 +20,16 @@ import ai.rapids.cudf
 import ai.rapids.cudf.{NvtxColor, NvtxRange, Table}
 import ai.rapids.spark.GpuMetricNames._
 
-import org.apache.spark.rdd.RDD
-import org.apache.spark.sql.catalyst.expressions.{Ascending, Attribute, Expression, NullOrdering, NullsFirst, NullsLast, RowOrdering, SortDirection, SortOrder}
-import org.apache.spark.sql.execution.{SortExec, SparkPlan, UnaryExecNode}
-import org.apache.spark.sql.types.{DataType, DoubleType, FloatType}
-import org.apache.spark.sql.vectorized.ColumnarBatch
 import org.apache.spark.TaskContext
-import org.apache.spark.sql.catalyst.plans.physical.{Distribution, OrderedDistribution, Partitioning, UnspecifiedDistribution}
+import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.analysis.TypeCheckResult
+import org.apache.spark.sql.catalyst.expressions.{Ascending, Attribute, Expression, NullOrdering, NullsFirst, NullsLast, RowOrdering, SortDirection, SortOrder}
+import org.apache.spark.sql.catalyst.plans.physical.{Distribution, OrderedDistribution, Partitioning, UnspecifiedDistribution}
+import org.apache.spark.sql.execution.{SortExec, SparkPlan, UnaryExecNode}
 import org.apache.spark.sql.execution.metric.{SQLMetric, SQLMetrics}
+import org.apache.spark.sql.types.{DataType, DoubleType, FloatType}
+import org.apache.spark.sql.vectorized.ColumnarBatch
 
 class GpuSortMeta(
     sort: SortExec,

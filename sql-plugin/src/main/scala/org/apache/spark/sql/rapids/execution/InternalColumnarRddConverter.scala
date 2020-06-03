@@ -20,15 +20,15 @@ import ai.rapids.cudf.Table
 import ai.rapids.spark._
 import ai.rapids.spark.GpuColumnVector.GpuColumnarBatchBuilder
 
+import org.apache.spark.TaskContext
+import org.apache.spark.internal.Logging
 import org.apache.spark.rdd.{MapPartitionsRDD, RDD}
 import org.apache.spark.sql.{DataFrame, Row}
 import org.apache.spark.sql.catalyst.InternalRow
-import org.apache.spark.sql.vectorized.ColumnarBatch
-import org.apache.spark.TaskContext
-import org.apache.spark.internal.Logging
 import org.apache.spark.sql.execution.SQLExecutionRDD
 import org.apache.spark.sql.rapids.execution.GpuExternalRowToColumnConverter.{FixedWidthTypeConverter, VariableWidthTypeConverter}
 import org.apache.spark.sql.types._
+import org.apache.spark.sql.vectorized.ColumnarBatch
 
 /**
  * This code is based off of the code for [[ai.rapids.spark.GpuRowToColumnarExec]] but this is for
