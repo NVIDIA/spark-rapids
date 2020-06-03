@@ -23,8 +23,8 @@ import scala.collection.mutable.ArrayBuffer
 import ai.rapids.cudf._
 
 import org.apache.spark.SparkConf
-import org.apache.spark.internal.Logging
 import org.apache.spark.api.resource.ResourceDiscoveryPlugin
+import org.apache.spark.internal.Logging
 import org.apache.spark.resource.{ResourceInformation, ResourceRequest}
 
 /**

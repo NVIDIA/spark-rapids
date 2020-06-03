@@ -16,7 +16,7 @@
 
 package ai.rapids.spark
 
-import org.apache.spark.sql.types.{DataType, DataTypes, ArrayType, MapType, StructType}
+import org.apache.spark.sql.types.{ArrayType, DataType, DataTypes, MapType, StructType}
 
 /**
  * Utility class with methods for calculating various metrics about GPU memory usage

@@ -15,6 +15,8 @@
  */
 package ai.rapids.spark
 
+import scala.collection.mutable
+
 import ai.rapids.cudf.{DType, NvtxColor, Scalar}
 import ai.rapids.spark.GpuMetricNames._
 import ai.rapids.spark.RapidsPluginImplicits._
@@ -27,8 +29,6 @@ import org.apache.spark.sql.catalyst.plans.physical.{Partitioning, UnknownPartit
 import org.apache.spark.sql.execution.{ExpandExec, SparkPlan, UnaryExecNode}
 import org.apache.spark.sql.execution.metric.{SQLMetric, SQLMetrics}
 import org.apache.spark.sql.vectorized.ColumnarBatch
-
-import scala.collection.mutable
 
 class GpuExpandExecMeta(
     expand: ExpandExec,

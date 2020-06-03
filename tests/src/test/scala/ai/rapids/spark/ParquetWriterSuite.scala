@@ -20,13 +20,12 @@ import java.io.File
 import java.nio.charset.StandardCharsets
 
 import collection.JavaConverters._
-
 import org.apache.hadoop.fs.Path
 import org.apache.parquet.hadoop.ParquetFileReader
 import org.apache.parquet.hadoop.util.HadoopInputFile
 
-import org.apache.spark.sql.{DataFrame, SparkSession}
 import org.apache.spark.SparkConf
+import org.apache.spark.sql.{DataFrame, SparkSession}
 
 /**
  * Tests for writing Parquet files with the GPU.

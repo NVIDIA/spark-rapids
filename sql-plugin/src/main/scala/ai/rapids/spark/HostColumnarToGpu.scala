@@ -18,6 +18,7 @@ package ai.rapids.spark
 
 import ai.rapids.cudf.DType
 
+import org.apache.spark.TaskContext
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.expressions.Attribute
@@ -25,7 +26,6 @@ import org.apache.spark.sql.execution.{SparkPlan, UnaryExecNode}
 import org.apache.spark.sql.execution.metric.{SQLMetric, SQLMetrics}
 import org.apache.spark.sql.types.StructType
 import org.apache.spark.sql.vectorized.{ColumnarBatch, ColumnVector}
-import org.apache.spark.TaskContext
 
 object HostColumnarToGpu {
   def columnarCopy(cv: ColumnVector, b: ai.rapids.cudf.HostColumnVector.Builder,

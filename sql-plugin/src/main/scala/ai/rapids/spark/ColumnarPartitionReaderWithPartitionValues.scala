@@ -19,8 +19,8 @@ package ai.rapids.spark
 import ai.rapids.cudf.Scalar
 import ai.rapids.spark.RapidsPluginImplicits._
 
-import org.apache.spark.sql.execution.datasources.PartitionedFile
 import org.apache.spark.sql.connector.read.PartitionReader
+import org.apache.spark.sql.execution.datasources.PartitionedFile
 import org.apache.spark.sql.types.StructType
 import org.apache.spark.sql.vectorized.ColumnarBatch
 

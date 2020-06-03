@@ -22,8 +22,8 @@ import ai.rapids.cudf.{ColumnVector, DType, Scalar}
 import ai.rapids.spark.RapidsPluginImplicits._
 
 import org.apache.spark.sql.catalyst.analysis.TypeCheckResult
-import org.apache.spark.sql.catalyst.util.DateTimeUtils
 import org.apache.spark.sql.catalyst.expressions.{Cast, CastBase, Expression, NullIntolerant, TimeZoneAwareExpression}
+import org.apache.spark.sql.catalyst.util.DateTimeUtils
 import org.apache.spark.sql.types._
 
 /** Meta-data for cast and ansi_cast. */

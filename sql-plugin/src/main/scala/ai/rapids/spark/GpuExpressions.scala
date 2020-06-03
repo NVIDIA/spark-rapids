@@ -21,12 +21,10 @@ import scala.collection.mutable.ArrayBuffer
 import ai.rapids.cudf.{BinaryOp, BinaryOperable, DType, Scalar, UnaryOp}
 import ai.rapids.spark.RapidsPluginImplicits._
 
-import org.apache.spark.sql.catalyst.expressions.{BinaryExpression, BinaryOperator, ComplexTypeMergingExpression,
-  Expression, String2TrimExpression, TernaryExpression, UnaryExpression, Unevaluable}
+import org.apache.spark.sql.catalyst.expressions.{BinaryExpression, BinaryOperator, ComplexTypeMergingExpression, Expression, String2TrimExpression, TernaryExpression, UnaryExpression, Unevaluable}
 import org.apache.spark.sql.types.StringType
 import org.apache.spark.sql.vectorized.ColumnarBatch
 import org.apache.spark.unsafe.types.UTF8String
-
 
 object GpuExpressionsUtils {
   def evaluateBoundExpressions[A <: GpuExpression](cb: ColumnarBatch,

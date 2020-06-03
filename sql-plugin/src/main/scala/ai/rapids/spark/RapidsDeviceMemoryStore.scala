@@ -17,8 +17,8 @@
 package ai.rapids.spark
 
 import ai.rapids.cudf.{Cuda, DeviceMemoryBuffer, MemoryBuffer, Table}
-import ai.rapids.spark.format.TableMeta
 import ai.rapids.spark.StorageTier.StorageTier
+import ai.rapids.spark.format.TableMeta
 import com.google.flatbuffers.FlatBufferBuilder
 
 import org.apache.spark.sql.vectorized.ColumnarBatch

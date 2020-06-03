@@ -25,10 +25,10 @@ import scala.reflect.ClassTag
 import ai.rapids.cudf.{HostColumnVector, JCudfSerialization, NvtxColor, NvtxRange}
 import ai.rapids.spark.RapidsPluginImplicits._
 
+import org.apache.spark.TaskContext
 import org.apache.spark.serializer.{DeserializationStream, SerializationStream, Serializer, SerializerInstance}
 import org.apache.spark.sql.execution.metric.SQLMetric
 import org.apache.spark.sql.vectorized.ColumnarBatch
-import org.apache.spark.TaskContext
 
 /**
  * Serializer for serializing [[ColumnarBatch]]s during shuffle.

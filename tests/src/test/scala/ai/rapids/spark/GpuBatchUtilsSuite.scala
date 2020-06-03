@@ -16,15 +16,16 @@
 
 package ai.rapids.spark
 
+import scala.collection.mutable
+import scala.util.Random
+
 import ai.rapids.spark.GpuColumnVector.GpuColumnarBatchBuilder
+import org.scalatest.FunSuite
+
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.expressions.GenericInternalRow
 import org.apache.spark.sql.types.{DataType, DataTypes, StructField, StructType}
 import org.apache.spark.unsafe.types.UTF8String
-import org.scalatest.FunSuite
-
-import scala.collection.mutable
-import scala.util.Random
 
 class GpuBatchUtilsSuite extends FunSuite {
 

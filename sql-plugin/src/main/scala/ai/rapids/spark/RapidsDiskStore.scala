@@ -21,8 +21,8 @@ import java.nio.channels.FileChannel.MapMode
 import java.util.concurrent.ConcurrentHashMap
 
 import ai.rapids.cudf.{Cuda, HostMemoryBuffer, MemoryBuffer}
-import ai.rapids.spark.format.TableMeta
 import ai.rapids.spark.StorageTier.StorageTier
+import ai.rapids.spark.format.TableMeta
 
 import org.apache.spark.sql.rapids.RapidsDiskBlockManager
 

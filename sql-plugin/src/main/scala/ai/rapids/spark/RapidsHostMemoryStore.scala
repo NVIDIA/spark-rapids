@@ -17,8 +17,8 @@
 package ai.rapids.spark
 
 import ai.rapids.cudf.{Cuda, DeviceMemoryBuffer, HostMemoryBuffer, MemoryBuffer, PinnedMemoryPool}
-import ai.rapids.spark.format.TableMeta
 import ai.rapids.spark.StorageTier.StorageTier
+import ai.rapids.spark.format.TableMeta
 
 /**
  * A buffer store using host memory.

@@ -24,9 +24,9 @@ import scala.util.{Failure, Try}
 
 import org.scalatest.FunSuite
 
-import org.apache.spark.sql.{DataFrame, Row, SparkSession}
 import org.apache.spark.SparkConf
 import org.apache.spark.internal.Logging
+import org.apache.spark.sql.{DataFrame, Row, SparkSession}
 import org.apache.spark.sql.types._
 
 object TestResourceFinder {

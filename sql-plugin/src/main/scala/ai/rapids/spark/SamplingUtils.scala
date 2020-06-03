@@ -17,14 +17,14 @@
 
 package ai.rapids.spark
 
-import scala.reflect.ClassTag
-import scala.util.hashing.MurmurHash3
-import scala.util.Random
-
-import org.apache.spark.sql.catalyst.expressions.UnsafeRow
-
 import java.nio.ByteBuffer
 import java.util.{Random => JavaRandom}
+
+import scala.reflect.ClassTag
+import scala.util.Random
+import scala.util.hashing.MurmurHash3
+
+import org.apache.spark.sql.catalyst.expressions.UnsafeRow
 
 object SamplingUtils {
 

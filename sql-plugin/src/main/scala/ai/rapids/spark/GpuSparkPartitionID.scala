@@ -17,9 +17,9 @@ package ai.rapids.spark
 
 import ai.rapids.cudf.{ColumnVector, Scalar}
 
+import org.apache.spark.TaskContext
 import org.apache.spark.sql.types.{DataType, IntegerType}
 import org.apache.spark.sql.vectorized.ColumnarBatch
-import org.apache.spark.TaskContext
 
 /**
  * An expression that returns the current partition id just like

@@ -17,8 +17,8 @@
 package org.apache.spark.sql.rapids.execution
 
 import java.io._
-import java.util.concurrent._
 import java.util.UUID
+import java.util.concurrent._
 
 import scala.concurrent.{ExecutionContext, Promise}
 import scala.util.control.NonFatal
@@ -32,9 +32,9 @@ import com.google.common.util.concurrent.ThreadFactoryBuilder
 import org.apache.spark.{broadcast, SparkException}
 import org.apache.spark.launcher.SparkLauncher
 import org.apache.spark.rdd.RDD
-import org.apache.spark.sql.catalyst.plans.physical.{BroadcastMode, BroadcastPartitioning, Partitioning}
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.expressions.Attribute
+import org.apache.spark.sql.catalyst.plans.physical.{BroadcastMode, BroadcastPartitioning, Partitioning}
 import org.apache.spark.sql.execution.{SparkPlan, SQLExecution}
 import org.apache.spark.sql.execution.exchange.{BroadcastExchangeExec, Exchange}
 import org.apache.spark.sql.execution.joins.BroadcastHashJoinExec

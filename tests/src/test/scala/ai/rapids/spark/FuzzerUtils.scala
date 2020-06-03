@@ -18,13 +18,14 @@ package ai.rapids.spark
 
 import java.sql.{Date, Timestamp}
 
+import scala.collection.JavaConverters._
+import scala.util.Random
+
 import ai.rapids.spark.GpuColumnVector.GpuColumnarBatchBuilder
+
 import org.apache.spark.sql.{DataFrame, Row, SparkSession}
 import org.apache.spark.sql.types.{DataType, DataTypes, StructField, StructType}
 import org.apache.spark.sql.vectorized.ColumnarBatch
-
-import scala.util.Random
-import scala.collection.JavaConverters._
 
 /**
  * Utilities for creating random inputs for unit tests.

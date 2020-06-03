@@ -16,9 +16,10 @@
 
 package ai.rapids.sparkexamples.tpch
 
+import ai.rapids.sparkexamples.DebugRange
+
 import org.apache.spark.sql.{DataFrame, SparkSession}
 import org.apache.spark.sql.types._
-import ai.rapids.sparkexamples.DebugRange
 
 // scalastyle:off line.size.limit
 

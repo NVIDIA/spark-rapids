@@ -21,8 +21,8 @@ import java.util.function.BiFunction
 
 import scala.collection.mutable.ArrayBuffer
 
-import ai.rapids.spark.format.TableMeta
 import ai.rapids.spark.StorageTier.StorageTier
+import ai.rapids.spark.format.TableMeta
 
 import org.apache.spark.internal.Logging
 
