@@ -120,8 +120,7 @@ class CastOpSuite extends GpuExpressionTestSuite {
     // this test tracks currently unsupported casts and will need updating as more casts are
     // supported
     val unsupported = getUnsupportedCasts(false)
-    val expected = List((StringType,DateType),
-      (StringType,TimestampType))
+    val expected = List((StringType,TimestampType))
     assert(unsupported == expected)
   }
 
@@ -129,9 +128,7 @@ class CastOpSuite extends GpuExpressionTestSuite {
     // this test tracks currently unsupported ansi_casts and will need updating as more casts are
     // supported
     val unsupported = getUnsupportedCasts(true)
-    val expected = List((StringType,DateType),
-      (StringType,TimestampType))
-
+    val expected = List((StringType,TimestampType))
     assert(unsupported == expected)
   }
 
@@ -165,7 +162,6 @@ class CastOpSuite extends GpuExpressionTestSuite {
 
       case (DataTypes.StringType, DataTypes.BooleanType) => validBoolStrings(spark)
 
-      case (DataTypes.StringType, DataTypes.BooleanType) if ansiEnabled => validBoolStrings(spark)
       case (DataTypes.StringType, DataTypes.ByteType) if ansiEnabled => bytesAsStrings(spark)
       case (DataTypes.StringType, DataTypes.ShortType) if ansiEnabled => shortsAsStrings(spark)
       case (DataTypes.StringType, DataTypes.IntegerType) if ansiEnabled => intsAsStrings(spark)
@@ -177,6 +173,8 @@ class CastOpSuite extends GpuExpressionTestSuite {
       }
       case (DataTypes.StringType, DataTypes.FloatType) if ansiEnabled => floatsAsStrings(spark)
       case (DataTypes.StringType, DataTypes.DoubleType) if ansiEnabled => doublesAsStrings(spark)
+
+      case (DataTypes.StringType, DataTypes.DateType) => datesAsStrings(spark)
 
       case (DataTypes.ShortType, DataTypes.ByteType) if ansiEnabled => bytesAsShorts(spark)
       case (DataTypes.IntegerType, DataTypes.ByteType) if ansiEnabled => bytesAsInts(spark)
@@ -198,6 +196,16 @@ class CastOpSuite extends GpuExpressionTestSuite {
 
       case _ => FuzzerUtils.createDataFrame(from)(spark)
     }
+  }
+
+  private def testCastTo(castTo: DataType)(frame: DataFrame): DataFrame ={
+    frame.withColumn("c1", col("c0").cast(castTo))
+  }
+
+  private def stringDf(str: String)(session: SparkSession): DataFrame = {
+    import session.sqlContext.implicits._
+    // use more than one value otherwise spark optimizes it out as a literal
+    Seq(str, str).toDF("c0")
   }
 
   private def castToStringExpectedFun[T]: T => Option[String] = (d: T) => Some(String.valueOf(d))
@@ -557,6 +565,103 @@ object CastOpSuite {
   def timestampsAsDoubles(session: SparkSession): DataFrame = {
     import session.sqlContext.implicits._
     timestampValues.map(_.toDouble).toDF("c0")
+  }
+
+  def datesAsStrings(session: SparkSession): DataFrame = {
+    import session.sqlContext.implicits._
+
+    val specialDates = Seq(
+      "epoch",
+      "now",
+      "today",
+      "yesterday",
+      "tomorrow"
+    )
+
+    // `yyyy`
+    val validYear = Seq("2006")
+
+    // note that single-digit months are not currently supported on GPU for this format
+    val validYearMonth = Seq(
+      // `yyyy-[m]m`
+      "2007-01",
+      "2007-2"
+    )
+
+    // note that single-digit days are not currently supported on GPU for this format
+    val validYearMonthDay = Seq(
+      // `yyyy-[m]m-[d]d`
+      "2008-1-02",
+      "2008-01-03",
+      "2008-01-4",
+      "2008-1-05",
+      "2008-1-6",
+      // `yyyy-[m]m-[d]d `
+      "2009-1-02 ",
+      "2009-01-03 ",
+      "2009-01-4 ",
+      "2009-1-05 ",
+      "2009-1-6 ",
+      // `yyyy-[m]m-[d]d *`
+      "2010-1-01 !@#$%",
+      "2010-1-02 ,",
+      "2010-01-03 *",
+      "2010-01-04 T",
+      "2010-01-5 T",
+      "2010-1-06 T",
+      "2010-1-7 T",
+      // `yyyy-[m]m-[d]dT*`
+      "2010-1-01T!@#$%",
+      "2010-1-02T,",
+      "2010-01-03T*",
+      "2010-01-04TT",
+      "2010-01-05T12:34:56",
+      "2010-01-6T12:34:56.000111Z",
+      "2010-02-3T*",
+      "2010-02-4TT",
+      "2010-02-5T12:34:56",
+      "2010-02-6T12:34:56.000111Z"
+    )
+
+    // invalid values that should be cast to null on both CPU and GPU
+    val invalidValues = Seq(
+      "200", // year too few digits
+      "20000", // year too many digits
+      "1999\rGARBAGE",
+      "1999-1\rGARBAGE",
+      "1999-12\rGARBAGE",
+      "1999-12-31\rGARBAGE",
+      "1999-10-1 TGARBAGE\nMORE GARBAGE",
+      "200-1-1",
+      "2000-1-1-1",
+      "2000-1-1-1-1",
+      "-1-1-1-",
+      "2010-01-6\r\nT\r\n12:34:56.000111Z",
+      "2010-01-6\nT 12:34:56.000111Z",
+      "2010-01-6\nT\n12:34:56.000111Z",
+      "2010-01-6 T 12:34:56.000111Z",
+      "2010-01-6\tT\t12:34:56.000111Z",
+      "2010-01-6T\t12:34:56.000111Z",
+      "2010-01-6T 12:34:56.000111Z",
+      "2010-01-6T  12:34:56.000111Z",
+      "2010-01-6 T 12:34:56.000111Z",
+      "2010-01-6  T12:34:56.000111Z",
+      "2010-01-6 ",
+      "2010-01-6 T",
+      "2010-01-6 T\n",
+      "2010-01-6 T\n12:34:56.000111Z",
+      "2018random_text",
+      "2018-11random_text",
+      "2018-1random_text",
+      "2018-11-08random_text",
+      "2018-11-9random_text"
+    )
+
+    val values = specialDates ++ validYear ++ validYearMonth ++ validYearMonthDay ++ invalidValues
+
+    val valuesWithWhitespace = values.map(s => s"\t\n\t$s\r\n")
+
+    (values ++ valuesWithWhitespace).toDF("c0")
   }
 
   def validTimestamps(session: SparkSession): DataFrame = {

@@ -102,3 +102,22 @@ To enable this operation on the GPU, set `spark.rapids.sql.castStringToFloat.ena
 The GPU will return incorrect results for strings representing values greater than Long.MaxValue or less than Long.MinValue. The correct behavior would be to return null for these values, but the GPU currently overflows and returns an incorrect integer value.
 
 To enable this operation on the GPU, set `spark.rapids.sql.castStringToInteger.enabled` to `true`.
+
+### String to Date
+
+The following formats are supported on the GPU. Timezone of UTC is assumed.
+
+| Format                | Supported on GPU? |
+| --------------------- | ----------------- |
+| `'yyyy'`              | Yes.              |
+| `'yyyy-[m]m'`         | Yes.              |
+| `'yyyy-[m]m '`        | Yes.              |
+| `'yyyy-[m]m-[d]d'`    | Yes.              |
+| `'yyyy-[m]m-[d]d '`   | Yes.              |
+| `'yyyy-[m]m-[d]d *'`  | Yes.              |
+| `'yyyy-[m]m-[d]d T*'` | Yes.              |
+| `'epoch'`             | Yes.              |
+| `'now'`               | Yes.              |
+| `'today'`             | Yes.              |
+| `'tomorrow'`          | Yes.              |
+| `'yesterday'`         | Yes.              |
