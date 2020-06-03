@@ -19,8 +19,8 @@ package ai.rapids.spark
 import org.mockito.ArgumentMatchers.any
 import org.mockito.Mockito._
 import org.scalatest.{BeforeAndAfterEach, FunSuite}
-import org.scalatest.mockito.MockitoSugar
 import org.scalatest.concurrent.{TimeLimitedTests, TimeLimits}
+import org.scalatest.mockito.MockitoSugar
 import org.scalatest.time.{Seconds, Span}
 
 import org.apache.spark.TaskContext

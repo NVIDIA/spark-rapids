@@ -16,11 +16,11 @@
 
 package ai.rapids.spark
 
-import org.apache.spark.sql.vectorized.ColumnarBatch
-
+import scala.collection.{mutable, SeqLike}
 import scala.collection.generic.CanBuildFrom
-import scala.collection.{SeqLike, mutable}
 import scala.reflect.ClassTag
+
+import org.apache.spark.sql.vectorized.ColumnarBatch
 
 /**
   * RapidsPluginImplicits, adds implicit functions for ColumnarBatch, Seq, Seq[AutoCloseable],

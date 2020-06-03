@@ -16,13 +16,13 @@
 
 package ai.rapids.spark
 
-import org.apache.spark.sql.vectorized.ColumnarBatch
 import org.apache.spark.{SparkContext, TaskContext}
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.connector.read.PartitionReader
 import org.apache.spark.sql.execution.datasources.PartitionedFile
 import org.apache.spark.sql.execution.datasources.v2.FilePartitionReaderFactory
 import org.apache.spark.sql.execution.metric.{SQLMetric, SQLMetrics}
+import org.apache.spark.sql.vectorized.ColumnarBatch
 
 /**
  * An adaptor class that provides an Iterator interface for a PartitionReader.

@@ -18,18 +18,18 @@ package ai.rapids.spark
 
 import ai.rapids.cudf
 import ai.rapids.cudf.NvtxColor
-import ai.rapids.spark.RapidsPluginImplicits._
 import ai.rapids.spark.GpuMetricNames._
+import ai.rapids.spark.RapidsPluginImplicits._
 
-import org.apache.spark.rdd.RDD
-import org.apache.spark.sql.catalyst.expressions.{Attribute, AttributeReference, Expression, IsNotNull, NamedExpression, NullIntolerant, PredicateHelper, SortOrder}
-import org.apache.spark.sql.execution.{SparkPlan, UnaryExecNode}
-import org.apache.spark.sql.vectorized.{ColumnarBatch, ColumnVector}
-import org.apache.spark.sql.catalyst.InternalRow
-import org.apache.spark.sql.catalyst.plans.physical.{Partitioning, SinglePartition, UnknownPartitioning}
-import org.apache.spark.sql.execution.metric.SQLMetric
 import org.apache.spark.{Partition, SparkContext, TaskContext}
+import org.apache.spark.rdd.RDD
+import org.apache.spark.sql.catalyst.InternalRow
+import org.apache.spark.sql.catalyst.expressions.{Attribute, AttributeReference, Expression, IsNotNull, NamedExpression, NullIntolerant, PredicateHelper, SortOrder}
+import org.apache.spark.sql.catalyst.plans.physical.{Partitioning, SinglePartition, UnknownPartitioning}
+import org.apache.spark.sql.execution.{SparkPlan, UnaryExecNode}
+import org.apache.spark.sql.execution.metric.SQLMetric
 import org.apache.spark.sql.rapids.execution.TrampolineUtil
+import org.apache.spark.sql.vectorized.{ColumnarBatch, ColumnVector}
 
 object GpuProjectExec {
   def projectAndClose[A <: GpuExpression](cb: ColumnarBatch, boundExprs: Seq[A],

@@ -18,8 +18,8 @@ package ai.rapids.spark
 import scala.util.Random
 
 import org.apache.spark.SparkConf
-import org.apache.spark.sql.functions._
 import org.apache.spark.sql.{DataFrame, RandomDataGenerator, Row, SparkSession}
+import org.apache.spark.sql.functions._
 import org.apache.spark.sql.types._
 
 class SortExecSuite extends SparkQueryCompareTestSuite {

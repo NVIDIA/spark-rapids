@@ -21,11 +21,11 @@ import org.apache.hadoop.hive.ql.io.sarg.SearchArgument.Builder
 import org.apache.hadoop.hive.ql.io.sarg.SearchArgumentFactory.newBuilder
 import org.apache.hadoop.hive.serde2.io.HiveDecimalWritable
 
-import org.apache.spark.sql.sources.Filter
-import org.apache.spark.sql.types._
 import org.apache.spark.SparkException
 import org.apache.spark.sql.connector.catalog.CatalogV2Implicits.quoteIfNeeded
 import org.apache.spark.sql.execution.datasources.orc.OrcFiltersBase
+import org.apache.spark.sql.sources.Filter
+import org.apache.spark.sql.types._
 
 // This is derived from Apache Spark's OrcFilters code to avoid calling the
 // Spark version.  Spark's version can potentially create a search argument

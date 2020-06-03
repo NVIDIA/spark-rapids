@@ -19,12 +19,12 @@ package org.apache.spark.sql.rapids.catalyst.expressions
 import ai.rapids.cudf.{DType, HostColumnVector}
 import ai.rapids.spark.{GpuColumnVector, GpuExpression, GpuLiteral}
 
-import org.apache.spark.sql.types._
-import org.apache.spark.sql.vectorized.ColumnarBatch
-import org.apache.spark.util.Utils
 import org.apache.spark.TaskContext
 import org.apache.spark.sql.AnalysisException
 import org.apache.spark.sql.catalyst.expressions.{ExpectsInputTypes, ExpressionWithRandomSeed, UnaryExpression}
+import org.apache.spark.sql.types._
+import org.apache.spark.sql.vectorized.ColumnarBatch
+import org.apache.spark.util.Utils
 import org.apache.spark.util.random.XORShiftRandom
 
 /** Generate a random column with i.i.d. uniformly distributed values in [0, 1). */

@@ -18,6 +18,7 @@ package ai.rapids.spark.unit
 
 import ai.rapids.cudf.ColumnVector
 import ai.rapids.spark.{GpuColumnVector, GpuLiteral, GpuUnitTests}
+
 import org.apache.spark.sql.rapids.{GpuDateAdd, GpuDateSub}
 
 class DateTimeUnitTest extends GpuUnitTests {

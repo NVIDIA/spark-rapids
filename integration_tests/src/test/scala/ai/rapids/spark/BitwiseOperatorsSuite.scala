@@ -15,8 +15,8 @@
  */
 package ai.rapids.spark
 
-import org.apache.spark.sql.functions.col
 import org.apache.spark.sql.functions.bitwiseNOT
+import org.apache.spark.sql.functions.col
 import org.apache.spark.sql.functions.shiftLeft
 import org.apache.spark.sql.functions.shiftRight
 import org.apache.spark.sql.functions.shiftRightUnsigned

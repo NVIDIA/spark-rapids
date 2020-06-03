@@ -18,8 +18,8 @@ package ai.rapids.spark
 
 import ai.rapids.spark.GpuMetricNames._
 
-import org.apache.spark.sql.execution.metric.{SQLMetric, SQLMetrics}
 import org.apache.spark.sql.execution.SparkPlan
+import org.apache.spark.sql.execution.metric.{SQLMetric, SQLMetrics}
 
 object GpuMetricNames {
 

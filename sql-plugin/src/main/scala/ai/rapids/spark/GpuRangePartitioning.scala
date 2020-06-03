@@ -16,6 +16,8 @@
 
 package ai.rapids.spark
 
+import scala.collection.mutable.ArrayBuffer
+
 import ai.rapids.cudf.{ColumnVector, Table}
 import ai.rapids.spark.RapidsPluginImplicits._
 
@@ -23,8 +25,6 @@ import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.plans.physical.{ClusteredDistribution, Distribution, OrderedDistribution}
 import org.apache.spark.sql.types.{DataType, IntegerType, StructField, StructType}
 import org.apache.spark.sql.vectorized.ColumnarBatch
-
-import scala.collection.mutable.ArrayBuffer
 
 /**
   * A GPU accelerated [[org.apache.spark.sql.catalyst.plans.physical.Partitioning]] that partitions

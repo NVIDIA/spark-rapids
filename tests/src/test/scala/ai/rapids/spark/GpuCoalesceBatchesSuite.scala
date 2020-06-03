@@ -18,12 +18,12 @@ package ai.rapids.spark
 
 import java.io.File
 
-import org.apache.spark.sql.execution.metric.SQLMetric
-import org.apache.spark.sql.types.{DataTypes, StructField, StructType}
-import org.apache.spark.sql.vectorized.ColumnarBatch
 import org.sparkproject.guava.io.Files
 
+import org.apache.spark.sql.execution.metric.SQLMetric
 import org.apache.spark.sql.rapids.metrics.source.MockTaskContext
+import org.apache.spark.sql.types.{DataTypes, StructField, StructType}
+import org.apache.spark.sql.vectorized.ColumnarBatch
 
 class GpuCoalesceBatchesSuite extends SparkQueryCompareTestSuite {
 

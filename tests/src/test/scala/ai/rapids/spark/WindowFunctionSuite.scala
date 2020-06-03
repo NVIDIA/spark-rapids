@@ -17,8 +17,8 @@
 package ai.rapids.spark
 
 import org.apache.spark.sql.DataFrame
-import org.apache.spark.sql.functions._
 import org.apache.spark.sql.expressions.{Window, WindowSpec}
+import org.apache.spark.sql.functions._
 
 class WindowFunctionSuite extends SparkQueryCompareTestSuite {
 

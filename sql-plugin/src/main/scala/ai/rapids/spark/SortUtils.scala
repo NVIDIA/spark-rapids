@@ -16,11 +16,12 @@
 
 package ai.rapids.spark
 
+import scala.collection.mutable.ArrayBuffer
+
 import ai.rapids.spark.GpuExpressionsUtils.evaluateBoundExpressions
+
 import org.apache.spark.sql.catalyst.expressions.{NullsFirst, NullsLast}
 import org.apache.spark.sql.vectorized.ColumnarBatch
-
-import scala.collection.mutable.ArrayBuffer
 
 object SortUtils {
   /*

@@ -18,14 +18,14 @@ package ai.rapids.spark
 
 import java.sql.Timestamp
 
+import scala.util.Random
+
 import org.apache.spark.SparkConf
+import org.apache.spark.sql.{DataFrame, SparkSession}
 import org.apache.spark.sql.catalyst.expressions.{Alias, CastBase}
 import org.apache.spark.sql.execution.ProjectExec
 import org.apache.spark.sql.functions._
 import org.apache.spark.sql.types._
-import org.apache.spark.sql.{DataFrame, SparkSession}
-
-import scala.util.Random
 
 class AnsiCastOpSuite extends GpuExpressionTestSuite {
 

@@ -16,17 +16,18 @@
 
 package ai.rapids.spark.shuffle.ucx
 
+import java.util.concurrent.{ConcurrentLinkedQueue, TimeUnit}
 import java.util.concurrent.atomic.AtomicLong
 import java.util.concurrent.locks.ReentrantLock
-import java.util.concurrent.{ConcurrentLinkedQueue, TimeUnit}
-
-import ai.rapids.cudf.{NvtxColor, NvtxRange}
-import ai.rapids.spark.shuffle.{AddressLengthTag, Transaction, TransactionCallback, TransactionStats, TransactionStatus, TransportUtils}
-import org.apache.spark.internal.Logging
-import org.openucx.jucx.ucp.UcpRequest
 
 import scala.collection.mutable
 import scala.collection.mutable.ArrayBuffer
+
+import ai.rapids.cudf.{NvtxColor, NvtxRange}
+import ai.rapids.spark.shuffle.{AddressLengthTag, Transaction, TransactionCallback, TransactionStats, TransactionStatus, TransportUtils}
+import org.openucx.jucx.ucp.UcpRequest
+
+import org.apache.spark.internal.Logging
 
 /**
   * Helper enum to describe transaction types supported in UCX
