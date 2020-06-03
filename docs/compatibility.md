@@ -121,3 +121,32 @@ The following formats are supported on the GPU. Timezone of UTC is assumed.
 | `'today'`             | Yes.              |
 | `'tomorrow'`          | Yes.              |
 | `'yesterday'`         | Yes.              |
+
+## String to Timestamp
+
+To allow casts from string to timestamp on the GPU, enable the configuration property 
+`spark.rapids.sql.castStringToTimestamp.enabled`.
+
+Casting from string to timestamp currently has the following limitations. 
+
+| Format                                                              | Supported on GPU? |
+| ------------------------------------------------------------------- | ------------------|
+| `'yyyy'`                                                            | Yes.              |
+| `'yyyy-[m]m'`                                                       | Yes.              |
+| `'yyyy-[m]m '`                                                      | Yes.              |
+| `'yyyy-[m]m-[d]d'`                                                  | Yes.              |
+| `'yyyy-[m]m-[d]d '`                                                 | Yes.              |
+| `'yyyy-[m]m-[d]dT[h]h:[m]m:[s]s.[ms][ms][ms][us][us][us][zone_id]'` | Partial [1].      |
+| `'yyyy-[m]m-[d]d [h]h:[m]m:[s]s.[ms][ms][ms][us][us][us][zone_id]'` | Partial [1].      |
+| `'[h]h:[m]m:[s]s.[ms][ms][ms][us][us][us][zone_id]'`                | Partial [1].      |
+| `'T[h]h:[m]m:[s]s.[ms][ms][ms][us][us][us][zone_id]'`               | Partial [1].      |
+| `'epoch'`                                                           | Yes.              |
+| `'now'`                                                             | Yes.              |
+| `'today'`                                                           | Yes.              |
+| `'tomorrow`'                                                        | Yes.              |
+| `'yesterday'`                                                       | Yes.              |
+
+- [1] The timestamp portion must be complete in terms of hours, minutes, seconds, and
+ milliseconds, with 2 digits each for hours, minutes, and seconds, and 6 digits for milliseconds. 
+ Only timezone 'Z' (UTC) is supported. Casting unsupported formats will result in null values. 
+ 
