@@ -35,10 +35,10 @@ class HashAggregatesSuite extends SparkQueryCompareTestSuite {
   }
 
   private def checkExecNode(result: DataFrame): Unit = {
-    if (result.sparkSession.sqlContext.getAllConfs("spark.app.name").contains("gpu")) {
+    if (result.queryExecution.executedPlan.conf.getAllConfs(RapidsConf.SQL_ENABLED.key).toBoolean) {
       assert(result.queryExecution.executedPlan.find {
         _.isInstanceOf[GpuHashAggregateExec]
-      }.isDefined)
+      }.isDefined, "as the GPU plan expected a GPU aggregate but did not find any!")
     }
   }
 
