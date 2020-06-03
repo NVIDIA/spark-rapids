@@ -380,6 +380,13 @@ object RapidsConf {
     .booleanConf
     .createWithDefault(false)
 
+  val ENABLE_CAST_STRING_TO_TIMESTAMP = conf("spark.rapids.sql.castStringToTimestamp.enabled")
+    .doc("When set to true, casting from string to timestamp is supported on the GPU. The GPU " +
+      "only supports a subset of formats when casting strings to timestamps. Refer to the CAST " +
+      "documentation for more details.")
+    .booleanConf
+    .createWithDefault(false)
+
   val ENABLE_CAST_STRING_TO_INTEGER = conf("spark.rapids.sql.castStringToInteger.enabled")
     .doc("When set to true, enables casting from strings to integer types (byte, short, " +
       "int, long) on the GPU. Casting from string to integer types on the GPU returns incorrect " +
@@ -713,6 +720,8 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
   lazy val enableHashOptimizeSort: Boolean = get(ENABLE_HASH_OPTIMIZE_SORT)
 
   lazy val isCastFloatToStringEnabled: Boolean = get(ENABLE_CAST_FLOAT_TO_STRING)
+
+  lazy val isCastStringToTimestampEnabled: Boolean = get(ENABLE_CAST_STRING_TO_TIMESTAMP)
 
   lazy val isCastStringToIntegerEnabled: Boolean = get(ENABLE_CAST_STRING_TO_INTEGER)
 
