@@ -35,10 +35,12 @@ class CastOpSuite extends GpuExpressionTestSuite {
   private val timestampDatesMsecParquet = frameFromParquet("timestamp-date-test-msec.parquet")
 
   /** Data types supported by the plugin. */
-  protected val supportedTypes = Seq(DataTypes.BooleanType,
+  protected val supportedTypes = Seq(
+    DataTypes.BooleanType,
     DataTypes.ByteType, DataTypes.ShortType, DataTypes.IntegerType, DataTypes.LongType,
     DataTypes.FloatType, DataTypes.DoubleType,
-    DataTypes.DateType, DataTypes.TimestampType,
+    DataTypes.DateType,
+    DataTypes.TimestampType,
     DataTypes.StringType
   )
 
@@ -54,6 +56,7 @@ class CastOpSuite extends GpuExpressionTestSuite {
 
       val conf = new SparkConf()
         .set(RapidsConf.ENABLE_CAST_FLOAT_TO_STRING.key, "true")
+        .set(RapidsConf.ENABLE_CAST_STRING_TO_TIMESTAMP.key, "true")
         .set(RapidsConf.ENABLE_CAST_STRING_TO_INTEGER.key, "true")
         .set(RapidsConf.ENABLE_CAST_STRING_TO_FLOAT.key, "true")
         .set("spark.sql.ansi.enabled", String.valueOf(ansiEnabled))
@@ -75,18 +78,6 @@ class CastOpSuite extends GpuExpressionTestSuite {
                 (from, to) match {
                   case (DataTypes.FloatType | DataTypes.DoubleType, DataTypes.StringType) =>
                     compareFloatToStringResults(fromCpu, fromGpu)
-                  case (DataTypes.FloatType | DataTypes.DoubleType, DataTypes.StringType) =>
-                    // specific comparison logic required for this cast
-                    fromCpu.zip(fromGpu).foreach {
-                      case (c, g) =>
-                        val cpuValue = c.getAs[String](0)
-                        val gpuValue = g.getAs[String](0)
-                        if (!compareStringifiedFloats(cpuValue, gpuValue)) {
-                          fail(s"Running on the GPU and on the CPU did not match: CPU " +
-                            s"value: $cpuValue. GPU value: $gpuValue.")
-                        }
-                    }
-
                   case _ =>
                     compareResults(sort = false, 0.00001, fromCpu, fromGpu)
                 }
@@ -120,7 +111,7 @@ class CastOpSuite extends GpuExpressionTestSuite {
     // this test tracks currently unsupported casts and will need updating as more casts are
     // supported
     val unsupported = getUnsupportedCasts(false)
-    val expected = List((StringType,TimestampType))
+    val expected = List.empty
     assert(unsupported == expected)
   }
 
@@ -128,7 +119,7 @@ class CastOpSuite extends GpuExpressionTestSuite {
     // this test tracks currently unsupported ansi_casts and will need updating as more casts are
     // supported
     val unsupported = getUnsupportedCasts(true)
-    val expected = List((StringType,TimestampType))
+    val expected = List.empty
     assert(unsupported == expected)
   }
 
@@ -174,7 +165,8 @@ class CastOpSuite extends GpuExpressionTestSuite {
       case (DataTypes.StringType, DataTypes.FloatType) if ansiEnabled => floatsAsStrings(spark)
       case (DataTypes.StringType, DataTypes.DoubleType) if ansiEnabled => doublesAsStrings(spark)
 
-      case (DataTypes.StringType, DataTypes.DateType) => datesAsStrings(spark)
+      case (DataTypes.StringType, DataTypes.DateType) => timestampsAsStrings(spark, false)
+      case (DataTypes.StringType, DataTypes.TimestampType) => timestampsAsStrings(spark, true)
 
       case (DataTypes.ShortType, DataTypes.ByteType) if ansiEnabled => bytesAsShorts(spark)
       case (DataTypes.IntegerType, DataTypes.ByteType) if ansiEnabled => bytesAsInts(spark)
@@ -556,7 +548,7 @@ object CastOpSuite {
     import session.sqlContext.implicits._
     longValues.map(value => String.valueOf(value) + ".1").toDF("c0")
   }
-  
+
   def timestampsAsFloats(session: SparkSession): DataFrame = {
     import session.sqlContext.implicits._
     timestampValues.map(_.toFloat).toDF("c0")
@@ -567,7 +559,7 @@ object CastOpSuite {
     timestampValues.map(_.toDouble).toDF("c0")
   }
 
-  def datesAsStrings(session: SparkSession): DataFrame = {
+  def timestampsAsStrings(session: SparkSession, castStringToTimestamp: Boolean): DataFrame = {
     import session.sqlContext.implicits._
 
     val specialDates = Seq(
@@ -615,12 +607,19 @@ object CastOpSuite {
       "2010-1-02T,",
       "2010-01-03T*",
       "2010-01-04TT",
-      "2010-01-05T12:34:56",
-      "2010-01-6T12:34:56.000111Z",
       "2010-02-3T*",
-      "2010-02-4TT",
-      "2010-02-5T12:34:56",
-      "2010-02-6T12:34:56.000111Z"
+      "2010-02-4TT"
+    )
+
+    val validTimestamps = Seq(
+      "2030-8-1 11:02:03.012345Z",
+      "2030-9-11 11:02:03.012345Z",
+      "2030-10-1 11:02:03.012345Z",
+      "2030-11-11 12:02:03.012345Z",
+      "2031-8-1T11:02:03.012345Z",
+      "2031-9-11T11:02:03.012345Z",
+      "2031-10-1T11:02:03.012345Z",
+      "2031-11-11T12:02:03.012345Z"
     )
 
     // invalid values that should be cast to null on both CPU and GPU
@@ -657,7 +656,32 @@ object CastOpSuite {
       "2018-11-9random_text"
     )
 
-    val values = specialDates ++ validYear ++ validYearMonth ++ validYearMonthDay ++ invalidValues
+    val timestampWithoutDate = Seq(
+      "23:59:59.333666Z",
+      "T21:34:56.333666Z"
+    )
+
+    val allValues = specialDates ++
+        validYear ++
+        validYearMonth ++
+        validYearMonthDay ++
+        invalidValues ++
+        validTimestamps ++
+        timestampWithoutDate
+
+    // these partial timestamp formats are not yet supported in cast string to timestamp but are
+    // supported by cast string to date
+    val partialTimestamps = Seq(
+      "2010-01-05T12:34:56Z",
+      "2010-02-5T12:34:56Z"
+    )
+
+    val values = if (castStringToTimestamp) {
+      // filter out "now" because it contains the current time so CPU and GPU will never match
+      allValues.filterNot(_ == "now")
+    } else {
+      allValues ++ partialTimestamps
+    }
 
     val valuesWithWhitespace = values.map(s => s"\t\n\t$s\r\n")
 
