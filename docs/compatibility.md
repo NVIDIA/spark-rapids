@@ -75,3 +75,30 @@ does not support writing timestamps in the INT96 format, so by default writing t
 Parquet will not be GPU-accelerated. If the INT96 timestamp format is not required for
 compatibility with other tools then set `spark.sql.parquet.outputTimestampType` to
 `TIMESTAMP_MICROS`.
+
+## Casting between types
+
+In general, performing `cast` and `ansi_cast` operations on the GPU is compatible with the same operations on the CPU. However, there are some exceptions. For this reason, certain casts are disabled on the GPU by default and require configuration options to be specified to enable them. 
+
+### Float to String
+
+The GPU will use different precision than Java's toString method when converting floating-point data types to strings and this can produce results that differ from the default behavior in Spark. 
+
+To enable this operation on the GPU, set `spark.rapids.sql.castFloatToString.enabled` to `true`.
+
+### String to Float
+
+Casting from string to floating-point types on the GPU returns incorrect results when the string represents any number in the following ranges. In both cases the GPU returns `Double.MaxValue`. The default behavior in Apache Spark is to return `+Infinity` and `-Infinity`, respectively.
+
+- `1.7976931348623158E308 <= x < 1.7976931348623159E308`
+- `-1.7976931348623159E308 < x <= -1.7976931348623158E308` 
+
+Also, the GPU does not support casting from strings containing hex values.
+
+To enable this operation on the GPU, set `spark.rapids.sql.castStringToFloat.enabled` to `true`.
+       
+### String to Integral Types
+
+The GPU will return incorrect results for strings representing values greater than Long.MaxValue or less than Long.MinValue. The correct behavior would be to return null for these values, but the GPU currently overflows and returns an incorrect integer value.
+
+To enable this operation on the GPU, set `spark.rapids.sql.castStringToInteger.enabled` to `true`.
