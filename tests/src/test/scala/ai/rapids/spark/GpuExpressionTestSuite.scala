@@ -122,4 +122,14 @@ abstract class GpuExpressionTestSuite extends SparkQueryCompareTestSuite {
     }
 
   }
+
+  def exceptionContains(e: Throwable, message: String): Boolean = {
+    if (e.getMessage.contains(message)) {
+      true
+    } else if (e.getCause != null) {
+      exceptionContains(e.getCause, message)
+    } else {
+      false
+    }
+  }
 }

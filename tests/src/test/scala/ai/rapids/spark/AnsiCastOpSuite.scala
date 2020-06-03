@@ -25,7 +25,6 @@ import org.apache.spark.sql.functions._
 import org.apache.spark.sql.types._
 import org.apache.spark.sql.{DataFrame, SparkSession}
 
-import scala.annotation.tailrec
 import scala.util.Random
 
 class AnsiCastOpSuite extends GpuExpressionTestSuite {
@@ -650,16 +649,6 @@ class AnsiCastOpSuite extends GpuExpressionTestSuite {
     }
   }
 
-  @tailrec
-  private def exceptionContains(e: Throwable, message: String): Boolean = {
-    if (e.getMessage.contains(message)) {
-      true
-    } else if (e.getCause != null) {
-      exceptionContains(e.getCause, message)
-    } else {
-      false
-    }
-  }
 
   private def assertContainsAnsiCast(df: DataFrame, expected: Int = 1): DataFrame = {
     var count = 0
