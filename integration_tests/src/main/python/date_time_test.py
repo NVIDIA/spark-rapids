@@ -21,15 +21,10 @@ from marks import incompat
 from pyspark.sql.types import *
 import pyspark.sql.functions as f
 
-def unary_op_df(spark, gen, length=2048, seed=0):
-    return gen_df(spark, StructGen([('a', gen)], nullable=False), length=length, seed=seed)
-
-date_gen = [DateGen()]
-date_n_time_gen = [DateGen(), TimestampGen()]
-
-def test_datediff():
+@pytest.mark.parametrize('data_gen', date_gens, ids=idfn)
+def test_datediff(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
-        lambda spark : two_col_df(spark, DateGen(), DateGen()).selectExpr(
+        lambda spark : binary_op_df(spark, data_gen).selectExpr(
             'datediff(a, b)',
             'datediff(\'2016-03-02\', b)',
             'datediff(date(null), b)',
@@ -97,23 +92,23 @@ def test_datesub_with_date_overflow(data_gen):
            'unix_timestamp(date_sub(a, cast(null as {})))'.format(string_type),
            'unix_timestamp(date_sub(a, cast(24 as {})))'.format(string_type)))
 
-@pytest.mark.parametrize('data_gen', date_gen, ids=idfn)
+@pytest.mark.parametrize('data_gen', date_gens, ids=idfn)
 def test_year(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : unary_op_df(spark, data_gen).select(f.year(f.col('a'))))
 
-@pytest.mark.parametrize('data_gen', date_gen, ids=idfn)
+@pytest.mark.parametrize('data_gen', date_gens, ids=idfn)
 def test_month(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : unary_op_df(spark, data_gen).select(f.month(f.col('a'))))
 
-@pytest.mark.parametrize('data_gen', date_gen, ids=idfn)
+@pytest.mark.parametrize('data_gen', date_gens, ids=idfn)
 def test_dayofmonth(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : unary_op_df(spark, data_gen).select(f.dayofmonth(f.col('a'))))
 
 @incompat #Really only the string is
-@pytest.mark.parametrize('data_gen', date_n_time_gen, ids=idfn)
+@pytest.mark.parametrize('data_gen', date_n_time_gens, ids=idfn)
 def test_unix_time(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : unary_op_df(spark, data_gen).select(f.unix_timestamp(f.col('a'))))

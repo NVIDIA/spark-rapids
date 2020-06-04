@@ -14,25 +14,13 @@
 
 import pytest
 
-from asserts import assert_gpu_and_cpu_are_equal_collect, assert_gpu_and_cpu_are_equal_iterator
+from asserts import assert_gpu_and_cpu_are_equal_collect
 from data_gen import *
 from marks import incompat, approximate_float
 from pyspark.sql.types import *
 import pyspark.sql.functions as f
 
-def two_col_df(spark, a_gen, b_gen, length=2048, seed=0):
-    gen = StructGen([('a', a_gen),('b', b_gen)], nullable=False)
-    return gen_df(spark, gen, length=length, seed=seed)
-
-def binary_op_df(spark, gen, length=2048, seed=0):
-    return two_col_df(spark, gen, gen, length=length, seed=seed)
-
-def unary_op_df(spark, gen, length=2048, seed=0):
-    return gen_df(spark, StructGen([('a', gen)], nullable=False), length=length, seed=seed)
-
-bool_gens = [BooleanGen()]
-
-@pytest.mark.parametrize('data_gen', bool_gens, ids=idfn)
+@pytest.mark.parametrize('data_gen', boolean_gens, ids=idfn)
 def test_and(data_gen):
     data_type = data_gen.data_type
     assert_gpu_and_cpu_are_equal_collect(
@@ -43,7 +31,7 @@ def test_and(data_gen):
                 f.col('b') & f.lit(None).cast(data_type),
                 f.col('a') & f.col('b')))
 
-@pytest.mark.parametrize('data_gen', bool_gens, ids=idfn)
+@pytest.mark.parametrize('data_gen', boolean_gens, ids=idfn)
 def test_or(data_gen):
     data_type = data_gen.data_type
     assert_gpu_and_cpu_are_equal_collect(
@@ -54,7 +42,7 @@ def test_or(data_gen):
                 f.col('b') | f.lit(None).cast(data_type),
                 f.col('a') | f.col('b')))
 
-@pytest.mark.parametrize('data_gen', bool_gens, ids=idfn)
+@pytest.mark.parametrize('data_gen', boolean_gens, ids=idfn)
 def test_not(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
                 lambda spark : unary_op_df(spark, data_gen).selectExpr('!a'))
