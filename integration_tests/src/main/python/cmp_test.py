@@ -126,6 +126,17 @@ def test_dropna_all(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : binary_op_df(spark, data_gen).dropna(how='all'))
 
+#dropna is really a filter along with a test for null, but lets do an explicit filter test too
+@pytest.mark.parametrize('data_gen', eq_gens, ids=idfn)
+def test_filter(data_gen):
+    assert_gpu_and_cpu_are_equal_collect(
+            lambda spark : three_col_df(spark, BooleanGen(), data_gen, data_gen).filter(f.col('a')))
+
+@pytest.mark.parametrize('expr', [f.lit(True), f.lit(False), f.lit(None).cast('boolean')], ids=idfn)
+def test_filter_with_lit(expr):
+    assert_gpu_and_cpu_are_equal_collect(
+            lambda spark : unary_op_df(spark, LongGen()).filter(expr))
+
 @pytest.mark.parametrize('data_gen', eq_gens, ids=idfn)
 def test_in(data_gen):
     # nulls are not supported for in on the GPU yet
