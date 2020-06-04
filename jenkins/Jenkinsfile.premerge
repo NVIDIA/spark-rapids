@@ -38,7 +38,7 @@ pipeline {
     environment {
         JENKINS_ROOT  = 'jenkins'
         BUILD_SCRIPT = '$JENKINS_ROOT/spark-premerge-build.sh'
-        MVN_GPUWA_MIRROR='-s jenkins/settings.xml -P mirror-apache-to-gpuwa'
+        MVN_URM_MIRROR='-s jenkins/settings.xml -P mirror-apache-to-urm'
         LIBCUDF_KERNEL_CACHE_PATH='/tmp'
         URM_CREDS = credentials("svcngcc_artifactory")
     }
@@ -58,7 +58,7 @@ pipeline {
                     docker.image(IMAGE_NAME).inside("--runtime=nvidia -v ${HOME}/.m2:${HOME}/.m2:rw \
                         -v ${HOME}/.zinc:${HOME}/.zinc:rw \
                         -v /etc/passwd:/etc/passwd -v /etc/group:/etc/group") {
-                        sh "bash $BUILD_SCRIPT $MVN_GPUWA_MIRROR"
+                        sh "bash $BUILD_SCRIPT $MVN_URM_MIRROR"
                         step([$class: 'JacocoPublisher',
                               execPattern: '**/target/jacoco.exec',
                               classPattern: 'target/jacoco_classes/',

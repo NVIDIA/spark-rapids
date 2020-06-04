@@ -40,7 +40,7 @@ pipeline {
             description: 'Default project version 0.1-SNAPSHOT')
         string(name: 'SPARK_VER', defaultValue: '3.0.1-SNAPSHOT',
             description: 'Default spark version 3.0.1-SNAPSHOT')
-        string(name: 'SERVER_URL', defaultValue: 'https://gpuwa.nvidia.com/artifactory/sw-spark-maven',
+        string(name: 'SERVER_URL', defaultValue: 'https://urm.nvidia.com:443/artifactory/sw-spark-maven',
             description: 'Default maven repo URL where to download Spark3.0 tar file.')
         string(name: 'REF', defaultValue: 'branch-0.1', description: 'Commit to build')
     }
