@@ -30,9 +30,9 @@ fi
 
 SCALA_BINARY_VER=${SCALA_BINARY_VER:-2.12}
 
-#default maven server gpuwa
+#default maven server urm
 if [ "$SERVER_URL"x == x ]; then
-    SERVER_URL="https://gpuwa.nvidia.com/artifactory/sw-spark-maven"
+    SERVER_URL="https://urm.nvidia.com:443/artifactory/sw-spark-maven"
 fi
 
 echo "CUDF_VER: $CUDF_VER, CUDA_CLASSIFIER: $CUDA_CLASSIFIER, PROJECT_VER: $PROJECT_VER \

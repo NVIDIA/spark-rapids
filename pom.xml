@@ -433,15 +433,15 @@
     </build>
     <repositories>
         <repository>
-            <id>spark.sw.nvidia.com</id>
+            <id>snapshots</id>
             <name>sw-spark-maven</name>
-            <url>https://gpuwa.nvidia.com/artifactory/sw-spark-maven</url>
+            <url>https://urm.nvidia.com:443/artifactory/sw-spark-maven</url>
         </repository>
     </repositories>
     <distributionManagement>
         <repository>
-            <id>spark.sw.nvidia.com</id>
-            <url>https://gpuwa.nvidia.com/artifactory/sw-spark-maven-local</url>
+            <id>snapshots</id>
+            <url>https://urm.nvidia.com:443/artifactory/sw-spark-maven-local</url>
         </repository>
     </distributionManagement>
 </project>
