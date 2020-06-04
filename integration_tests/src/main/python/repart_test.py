@@ -26,3 +26,19 @@ def test_union(data_gen):
 def test_union_by_name(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : binary_op_df(spark, data_gen).unionByName(binary_op_df(spark, data_gen)))
+
+@pytest.mark.parametrize('num_parts', [1, 10, 100, 1000, 2000], ids=idfn)
+@pytest.mark.parametrize('length', [0, 2048, 4096], ids=idfn)
+def test_coalesce_df(num_parts, length):
+    #This should change eventually to be more than just the basic gens
+    gen_list = [('_c' + str(i), gen) for i, gen in enumerate(all_basic_gens)]
+    assert_gpu_and_cpu_are_equal_collect(
+            lambda spark : gen_df(spark, gen_list, length=length).coalesce(num_parts))
+
+@pytest.mark.parametrize('num_parts', [1, 10, 100, 1000, 2000], ids=idfn)
+@pytest.mark.parametrize('length', [0, 2048, 4096], ids=idfn)
+def test_repartion_df(num_parts, length):
+    #This should change eventually to be more than just the basic gens
+    gen_list = [('_c' + str(i), gen) for i, gen in enumerate(all_basic_gens)]
+    assert_gpu_and_cpu_are_equal_collect(
+            lambda spark : gen_df(spark, gen_list, length=length).repartition(num_parts))
