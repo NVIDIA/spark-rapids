@@ -113,7 +113,7 @@ def test_unix_time(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : unary_op_df(spark, data_gen).select(f.unix_timestamp(f.col('a'))))
 
-str_date_and_format_gen = [pytest.param(StringGen('[0-9]{1,4}/[01][0-9]'),'yyyy/MM', marks=pytest.mark.xfail(reason="cudf does no checks")),
+str_date_and_format_gen = [pytest.param(StringGen('[0-9]{4}/[01][0-9]'),'yyyy/MM', marks=pytest.mark.xfail(reason="cudf does no checks")),
         (StringGen('[0-9]{4}/[01][12]/[0-2][1-8]'),'yyyy/MM/dd'),
         (ConvertGen(DateGen(nullable=False), lambda d: d.strftime('%Y/%m').zfill(7), data_type=StringType()), 'yyyy/MM')]
 
@@ -121,6 +121,6 @@ str_date_and_format_gen = [pytest.param(StringGen('[0-9]{1,4}/[01][0-9]'),'yyyy/
 @pytest.mark.parametrize('data_gen,date_form', str_date_and_format_gen, ids=idfn)
 def test_string_unix_time(data_gen, date_form):
     assert_gpu_and_cpu_are_equal_collect(
-            lambda spark : debug_df(unary_op_df(spark, data_gen, seed=1, length=10)).select(f.unix_timestamp(f.col('a'), date_form)))
+            lambda spark : unary_op_df(spark, data_gen, seed=1).select(f.unix_timestamp(f.col('a'), date_form)))
 
 
