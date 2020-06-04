@@ -85,7 +85,6 @@ ai.rapids.spark.TestResourceFinder.setPrefix(PATH_TO_TEST_FILES)
 Next you can start to run the tests.
 
 ```scala
-durations.run(new ai.rapids.spark.ArithmeticOperatorsSuite)
-durations.run(new ai.rapids.spark.BitwiseOperatorsSuite)
+durations.run(new ai.rapids.spark.JoinsSuite)
 ...
 ```

@@ -16,24 +16,9 @@
 
 package ai.rapids.spark
 
-import java.sql.Date
-
-import org.apache.spark.SparkConf
 import org.apache.spark.sql.functions._
 
 class TimeOperatorsSuite extends SparkQueryCompareTestSuite {
-  testSparkResultsAreEqual("Test datediff", datesDf) {
-    frame => frame.select(datediff(col("dates"), col("more_dates")))
-  }
-
-  testSparkResultsAreEqual("Test datediff rhs literal", datesDf) {
-    frame => frame.select(datediff(col("dates"), lit(Date.valueOf("2020-01-09"))))
-  }
-
-  testSparkResultsAreEqual("Test datediff lhs literal", datesDf) {
-    frame => frame.select(datediff(lit(Date.valueOf("2018-02-12")), col("more_dates")))
-  }
-
   testSparkResultsAreEqual("Test from_unixtime", datesPostEpochDf) {
     frame => frame.select(from_unixtime(col("dates")))
   }
