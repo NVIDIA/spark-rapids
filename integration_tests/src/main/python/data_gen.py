@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import copy
 from datetime import date, datetime, timedelta, timezone
 import math
 from pyspark.sql.types import *
@@ -58,6 +59,13 @@ class DataGen:
                 self.with_special_case(element[0], element[1])
             else:
                 self.with_special_case(element)
+
+    def copy_special_case(self, special_case, weight=1.0):
+        # it would be good to do a deepcopy, but sre_yield is not happy with that.
+        c = copy.copy(self)
+        c._special_cases = copy.deepcopy(self._special_cases)
+
+        return c.with_special_case(special_case, weight=weight)
 
     def with_special_case(self, special_case, weight=1.0):
         """
@@ -486,8 +494,7 @@ def _mark_as_lit(data):
         return f.array([_mark_as_lit(x) for x in data])
     return f.lit(data)
 
-def gen_scalars(data_gen, count, seed=0, force_no_nulls=False):
-    """Generate scalar values."""
+def _gen_scalars_common(data_gen, count, seed=0):
     if isinstance(data_gen, list):
         src = StructGen(data_gen, nullable=False)
     else:
@@ -504,6 +511,11 @@ def gen_scalars(data_gen, count, seed=0, force_no_nulls=False):
 
     rand = random.Random(seed)
     src.start(rand)
+    return src
+
+def gen_scalars(data_gen, count, seed=0, force_no_nulls=False):
+    """Generate scalar values."""
+    src = _gen_scalars_common(data_gen, count, seed=seed)
     return (_mark_as_lit(src.gen(force_no_nulls=force_no_nulls)) for i in range(0, count))
 
 def gen_scalar(data_gen, seed=0, force_no_nulls=False):
@@ -523,6 +535,10 @@ def print_params(data_gen):
 def idfn(val):
     """Provide an API to provide display names for data type generators."""
     return str(val)
+
+def three_col_df(spark, a_gen, b_gen, c_gen, length=2048, seed=0):
+    gen = StructGen([('a', a_gen),('b', b_gen),('c', c_gen)], nullable=False)
+    return gen_df(spark, gen, length=length, seed=seed)
 
 def two_col_df(spark, a_gen, b_gen, length=2048, seed=0):
     gen = StructGen([('a', a_gen),('b', b_gen)], nullable=False)
@@ -557,6 +573,24 @@ def to_cast_string(spark_type):
         return 'STRING'
     else:
         raise RuntimeError('CAST TO TYPE {} NOT SUPPORTED YET'.format(spark_type))
+
+def _convert_to_sql(t, data):
+    if isinstance(data, str):
+        d = "'" + data.replace("'", "\\'") + "'"
+    elif isinstance(data, datetime):
+        d = "'" + data.strftime('%Y-%m-%d T%H:%M:%S.%f').zfill(26) + "'"
+    elif isinstance(data, date):
+        d = "'" + data.strftime('%Y-%m-%d').zfill(10) + "'"
+    else:
+        d = str(data)
+
+    return 'CAST({} as {})'.format(d, t)
+
+def gen_scalars_for_sql(data_gen, count, seed=0, force_no_nulls=False):
+    """Generate scalar values, but strings that can be used in selectExpr or SQL"""
+    src = _gen_scalars_common(data_gen, count, seed=seed)
+    string_type = to_cast_string(data_gen.data_type)
+    return (_convert_to_sql(string_type, src.gen(force_no_nulls=force_no_nulls)) for i in range(0, count))
 
 byte_gen = ByteGen()
 short_gen = ShortGen()
