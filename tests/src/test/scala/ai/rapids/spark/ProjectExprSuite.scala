@@ -117,32 +117,8 @@ class ProjectExprSuite extends SparkQueryCompareTestSuite {
     frame => frame.selectExpr("nullif(longs, more_longs)")
   }
 
-  testSparkResultsAreEqual("project is not null", mixedFloatDf) {
-    frame => frame.selectExpr("floats is not null")
-  }
-
-  testSparkResultsAreEqual("project is null", mixedFloatDf) {
-    frame => frame.selectExpr("floats is null")
-  }
-
-  testSparkResultsAreEqual("project is null col1 OR is null col2", mixedFloatDf) {
-    frame => frame.selectExpr("floats is null OR more_floats is null")
-  }
-
   testSparkResultsAreEqual("Test literal values in select", mixedFloatDf) {
     frame => frame.select(col("floats"), lit(100), lit("hello, world!"))
-  }
-
-  testSparkResultsAreEqual("IsNotNull strings", nullableStringsDf) {
-    frame => frame.selectExpr("strings is not null")
-  }
-
-  testSparkResultsAreEqual("IsNull strings", nullableStringsDf) {
-    frame => frame.selectExpr("strings is null")
-  }
-
-  testSparkResultsAreEqual("IsNull OR IsNull strings", nullableStringsDf) {
-    frame => frame.selectExpr("strings is null OR more_strings is null")
   }
 
   testSparkResultsAreEqual("equals strings", nullableStringsDf) {
@@ -152,16 +128,6 @@ class ProjectExprSuite extends SparkQueryCompareTestSuite {
   testSparkResultsAreEqual("project time", frameFromParquet("timestamp-date-test.parquet"),
     conf = forceHostColumnarToGpu()) {
     frame => frame.select("time")
-  }
-
-  testSparkResultsAreEqual("IsNull timestamp", frameFromParquet("timestamp-date-test.parquet"),
-    conf = forceHostColumnarToGpu()) {
-    frame => frame.selectExpr("time is null")
-  }
-
-  testSparkResultsAreEqual("IsNotNull timestamp", frameFromParquet("timestamp-date-test.parquet"),
-    conf = forceHostColumnarToGpu()) {
-    frame => frame.selectExpr("time is not null")
   }
 
   testSparkResultsAreEqual("year timestamp", frameFromParquet("timestamp-date-test.parquet"),
@@ -193,14 +159,6 @@ class ProjectExprSuite extends SparkQueryCompareTestSuite {
     ).toDF("bools")
   }
 
-  testSparkResultsAreEqual("SQL IN booleans", booleanDf) {
-    frame => frame.selectExpr("bools IN (false)")
-  }
-
-  testSparkResultsAreEqual("SQL IN nullable booleans", booleanWithNullsDf) {
-    frame => frame.selectExpr("bools IN (false)")
-  }
-
   def bytesDf(session: SparkSession): DataFrame = {
     import session.sqlContext.implicits._
     Seq[Byte](
@@ -228,14 +186,6 @@ class ProjectExprSuite extends SparkQueryCompareTestSuite {
       null,
       0.toByte
     ).toDF("bytes")
-  }
-
-  testSparkResultsAreEqual("SQL IN bytes", bytesDf) {
-    frame => frame.selectExpr("bytes IN (-128, 127, 0)")
-  }
-
-  testSparkResultsAreEqual("SQL IN nullable bytes", bytesWithNullsDf) {
-    frame => frame.selectExpr("bytes IN (-128, 127, 0, -5)")
   }
 
   def shortsDf(session: SparkSession): DataFrame = {
@@ -288,63 +238,6 @@ class ProjectExprSuite extends SparkQueryCompareTestSuite {
 
   testSparkResultsAreEqual("spark_partition_id", shortsDf) {
     frame => frame.select(col("shorts"), spark_partition_id())
-  }
-
-  testSparkResultsAreEqual("SQL IN shorts", shortsDf) {
-    frame => frame.selectExpr("shorts IN (-10240, 23456, 100, 3)")
-  }
-
-  testSparkResultsAreEqual("SQL IN nullable shorts", shortsWithNullsDf) {
-    frame => frame.selectExpr("shorts IN (-10240, 23456, 100, 3)")
-  }
-
-  testSparkResultsAreEqual("SQL IN ints", mixedDf) {
-    frame => frame.selectExpr("ints IN (-200, 96, 98)")
-  }
-
-  testSparkResultsAreEqual("SQL IN nullable ints", mixedDfWithNulls) {
-    frame => frame.selectExpr("ints IN (-200, 96, 98)")
-  }
-
-  testSparkResultsAreEqual("SQL IN longs", mixedDf) {
-    frame => frame.selectExpr("longs IN (1000, 200, -500)")
-  }
-
-  testSparkResultsAreEqual("SQL IN nullable longs", mixedDfWithNulls) {
-    frame => frame.selectExpr("longs IN (1000, 200, -500)")
-  }
-
-  testSparkResultsAreEqual("SQL IN floats", mixedFloatDf) {
-    frame => frame.selectExpr("floats IN (12345, -100.0, -500.0)")
-  }
-
-  testSparkResultsAreEqual("SQL IN nullable floats", mixedFloatDf) {
-    frame => frame.selectExpr("floats IN (12345, 5.0, 0.0)")
-  }
-
-  testSparkResultsAreEqual("SQL IN doubles", mixedDf) {
-    frame => frame.selectExpr("doubles IN (12345, 5.0, 0.0)")
-  }
-
-  testSparkResultsAreEqual("SQL IN nullable doubles", mixedDfWithNulls) {
-    frame => frame.selectExpr("doubles IN (12345, 5.0, 0.0)")
-  }
-
-  testSparkResultsAreEqual("SQL IN strings", mixedDf) {
-    frame => frame.selectExpr("strings IN ('B', 'C', 'Z', 'IJ\"\u0100\u0101\u0500\u0501', 'E')")
-  }
-
-  testSparkResultsAreEqual("SQL IN nullable strings", mixedDfWithNulls) {
-    frame => frame.selectExpr("strings IN ('B', 'C', 'Z', 'E\u0480\u0481', 'E')")
-  }
-
-  testSparkResultsAreEqual("SQL IN dates", datesDf) {
-    frame => frame.selectExpr("""dates IN (DATE '1900-2-2', DATE '2020-5-5')""")
-  }
-
-  testSparkResultsAreEqual("SQL IN timestamps", frameFromParquet("timestamp-date-test.parquet")) {
-    frame => frame.selectExpr(
-      """time IN (TIMESTAMP '1900-05-05 12:34:56.108', TIMESTAMP '1900-05-05 12:34:56.118')""")
   }
 
   testSparkResultsAreEqual("SQL IF booleans", booleanDf) {

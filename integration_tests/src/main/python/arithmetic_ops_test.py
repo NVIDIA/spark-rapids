@@ -14,7 +14,7 @@
 
 import pytest
 
-from asserts import assert_gpu_and_cpu_are_equal_collect, assert_gpu_and_cpu_are_equal_iterator
+from asserts import assert_gpu_and_cpu_are_equal_collect
 from data_gen import *
 from marks import incompat, approximate_float
 from pyspark.sql.types import *
@@ -234,6 +234,20 @@ def test_radians(data_gen):
 
 @approximate_float
 @pytest.mark.parametrize('data_gen', double_gens, ids=idfn)
+@pytest.mark.xfail(rason='https://github.com/NVIDIA/spark-rapids/issues/109')
+def test_degrees(data_gen):
+    assert_gpu_and_cpu_are_equal_collect(
+            lambda spark : unary_op_df(spark, data_gen).selectExpr('degrees(a)'))
+
+# Once https://github.com/NVIDIA/spark-rapids/issues/109 is fixed this can be removed
+@approximate_float
+@pytest.mark.parametrize('data_gen', [float_gen], ids=idfn)
+def test_degrees_small(data_gen):
+    assert_gpu_and_cpu_are_equal_collect(
+            lambda spark : unary_op_df(spark, data_gen).selectExpr('degrees(a)'))
+
+@approximate_float
+@pytest.mark.parametrize('data_gen', double_gens, ids=idfn)
 def test_cos(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : unary_op_df(spark, data_gen).selectExpr('cos(a)'))
@@ -243,6 +257,12 @@ def test_cos(data_gen):
 def test_acos(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : unary_op_df(spark, data_gen).selectExpr('acos(a)'))
+
+@approximate_float
+@pytest.mark.parametrize('data_gen', double_gens, ids=idfn)
+def test_cosh(data_gen):
+    assert_gpu_and_cpu_are_equal_collect(
+            lambda spark : unary_op_df(spark, data_gen).selectExpr('cosh(a)'))
 
 @approximate_float
 @pytest.mark.parametrize('data_gen', double_gens, ids=idfn)
@@ -266,6 +286,12 @@ def test_columnar_acosh_improved(data_gen):
 def test_sin(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : unary_op_df(spark, data_gen).selectExpr('sin(a)'))
+
+@approximate_float
+@pytest.mark.parametrize('data_gen', double_gens, ids=idfn)
+def test_sinh(data_gen):
+    assert_gpu_and_cpu_are_equal_collect(
+            lambda spark : unary_op_df(spark, data_gen).selectExpr('sinh(a)'))
 
 @approximate_float
 @pytest.mark.parametrize('data_gen', double_gens, ids=idfn)
@@ -307,6 +333,12 @@ def test_atan(data_gen):
 def test_atanh(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : unary_op_df(spark, data_gen).selectExpr('atanh(a)'))
+
+@approximate_float
+@pytest.mark.parametrize('data_gen', double_gens, ids=idfn)
+def test_tanh(data_gen):
+    assert_gpu_and_cpu_are_equal_collect(
+            lambda spark : unary_op_df(spark, data_gen).selectExpr('tanh(a)'))
 
 @approximate_float
 @pytest.mark.parametrize('data_gen', double_gens, ids=idfn)

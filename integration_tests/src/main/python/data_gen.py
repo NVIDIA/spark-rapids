@@ -544,6 +544,10 @@ int_gen = IntegerGen()
 long_gen = LongGen()
 float_gen = FloatGen()
 double_gen = DoubleGen()
+string_gen = StringGen()
+boolean_gen = BooleanGen()
+date_gen = DateGen()
+timestamp_gen = TimestampGen()
 
 numeric_gens = [byte_gen, short_gen, int_gen, long_gen, float_gen, double_gen]
 integral_gens = [byte_gen, short_gen, int_gen, long_gen]
@@ -552,3 +556,20 @@ integral_gens = [byte_gen, short_gen, int_gen, long_gen]
 double_gens = [double_gen]
 double_n_long_gens = [double_gen, long_gen]
 int_n_long_gens = [int_gen, long_gen]
+
+# all of the basic gens
+all_basic_gens = [byte_gen, short_gen, int_gen, long_gen, float_gen, double_gen,
+        string_gen, boolean_gen, date_gen, timestamp_gen]
+
+# a selection of generators that should be orderable (sortable and compareable)
+orderable_gens = [byte_gen, short_gen, int_gen, long_gen, float_gen, double_gen,
+        string_gen, boolean_gen, date_gen, timestamp_gen]
+
+# a selection of generators that can be compared for equality
+eq_gens = [byte_gen, short_gen, int_gen, long_gen, float_gen, double_gen,
+        string_gen, boolean_gen, date_gen, timestamp_gen]
+
+date_gens = [date_gen]
+date_n_time_gens = [date_gen, timestamp_gen]
+
+boolean_gens = [boolean_gen]

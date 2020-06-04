@@ -17,15 +17,12 @@ import pytest
 from asserts import assert_gpu_and_cpu_are_equal_collect
 from data_gen import *
 
-all_gen = [StringGen(), ByteGen(), ShortGen(), IntegerGen(), LongGen(),
-         FloatGen(), DoubleGen(), BooleanGen(), DateGen(), TimestampGen()]
-
-@pytest.mark.parametrize('data_gen', all_gen, ids=idfn)
+@pytest.mark.parametrize('data_gen', all_basic_gens, ids=idfn)
 def test_union(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : binary_op_df(spark, data_gen).union(binary_op_df(spark, data_gen)))
 
-@pytest.mark.parametrize('data_gen', all_gen, ids=idfn)
+@pytest.mark.parametrize('data_gen', all_basic_gens, ids=idfn)
 def test_union_by_name(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : binary_op_df(spark, data_gen).unionByName(binary_op_df(spark, data_gen)))
