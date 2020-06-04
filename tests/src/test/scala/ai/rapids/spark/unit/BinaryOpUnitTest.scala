@@ -18,6 +18,7 @@ package ai.rapids.spark.unit
 
 import ai.rapids.cudf.ColumnVector
 import ai.rapids.spark.{GpuLiteral, GpuUnitTests}
+
 import org.apache.spark.sql.rapids.GpuPmod
 
 class BinaryOpUnitTest extends GpuUnitTests {
