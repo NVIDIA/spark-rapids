@@ -31,14 +31,14 @@ pipeline {
     }
 
     parameters {
-        choice(name: 'DEPLOY_TO', choices: ['Gpuwa', 'Local'],
+        choice(name: 'DEPLOY_TO', choices: ['Urm', 'Local'],
             description: 'Where to deploy artifacts to')
         string(name: 'REF', defaultValue: 'branch-0.1', description: 'Commit to build')
     }
 
     environment {
         JENKINS_ROOT  = 'jenkins'
-        MVN_GPUWA_MIRROR='-s jenkins/settings.xml -P mirror-apache-to-gpuwa'
+        MVN_URM_MIRROR='-s jenkins/settings.xml -P mirror-apache-to-urm'
         LIBCUDF_KERNEL_CACHE_PATH='/tmp'
         URM_CREDS = credentials("svcngcc_artifactory")
     }
@@ -62,7 +62,7 @@ pipeline {
                     docker.image(IMAGE_NAME).inside("--runtime=nvidia -v ${HOME}/.m2:${HOME}/.m2:rw \
                         -v ${HOME}/.zinc:${HOME}/.zinc:rw \
                         -v /etc/passwd:/etc/passwd -v /etc/group:/etc/group") {
-                        sh "mvn -U -B clean deploy $MVN_GPUWA_MIRROR"
+                        sh "mvn -U -B clean deploy $MVN_URM_MIRROR"
                         sh "jenkins/printJarVersion.sh 'CUDFVersion' '${HOME}/.m2/repository/ai/rapids/cudf/0.14-SNAPSHOT' 'cudf-0.14-' '-cuda10-1.jar'"
                         sh "jenkins/printJarVersion.sh 'SPARKVersion' '${HOME}/.m2/repository/org/apache/spark/spark-core_2.12/3.0.1-SNAPSHOT' 'spark-core_2.12-3.0.1-' '.jar'"
                     }

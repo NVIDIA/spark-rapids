@@ -14,23 +14,74 @@
   See the License for the specific language governing permissions and
   limitations under the License.
 -->
-<settings>
-    <profiles>
-        <profile>
-            <id>mirror-apache-to-gpuwa</id>
-            <repositories>
-                <repository>
-                    <id>apache.snapshots</id>
-                    <name>sw-spark-maven</name>
-                    <url>https://gpuwa.nvidia.com/artifactory/sw-spark-maven</url>
-                </repository>
-            </repositories>
-        </profile>
-        <profile>
-            <id>deploy-to-sh04</id>
-            <properties>
-                <altDeploymentRepository>sh04-release-repo::default::http://apt-sh04:8081/repository/xgboost-spark-release</altDeploymentRepository>
-            </properties>
-        </profile>
-    </profiles>
+<settings xsi:schemaLocation="http://maven.apache.org/SETTINGS/1.1.0 http://maven.apache.org/xsd/settings-1.1.0.xsd" xmlns="http://maven.apache.org/SETTINGS/1.1.0"
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+  <servers>
+    <server>
+      <username>${env.URM_CREDS_USR}</username>
+      <password>${env.URM_CREDS_PSW}</password>
+      <id>central</id>
+    </server>
+    <server>
+      <username>${env.URM_CREDS_USR}</username>
+      <password>${env.URM_CREDS_PSW}</password>
+      <id>snapshots</id>
+    </server>
+  </servers>
+  <profiles>
+    <profile>
+      <repositories>
+        <repository>
+          <snapshots>
+            <enabled>false</enabled>
+          </snapshots>
+          <id>central</id>
+          <name>sw-spark-maven</name>
+          <url>https://urm.nvidia.com:443/artifactory/sw-spark-maven</url>
+        </repository>
+        <repository>
+          <snapshots />
+          <id>snapshots</id>
+          <name>sw-spark-maven</name>
+          <url>https://urm.nvidia.com:443/artifactory/sw-spark-maven</url>
+        </repository>
+      </repositories>
+      <pluginRepositories>
+        <pluginRepository>
+          <snapshots>
+            <enabled>false</enabled>
+          </snapshots>
+          <id>central</id>
+          <name>sw-spark-maven</name>
+          <url>https://urm.nvidia.com:443/artifactory/sw-spark-maven</url>
+        </pluginRepository>
+        <pluginRepository>
+          <snapshots />
+          <id>snapshots</id>
+          <name>sw-spark-maven</name>
+          <url>https://urm.nvidia.com:443/artifactory/sw-spark-maven</url>
+        </pluginRepository>
+      </pluginRepositories>
+      <id>artifactory</id>
+    </profile>
+    <profile>
+      <id>mirror-apache-to-urm</id>
+      <repositories>
+        <repository>
+          <id>apache.snapshots</id>
+          <name>sw-spark-maven</name>
+          <url>https://urm.nvidia.com:443/artifactory/sw-spark-maven</url>
+        </repository>
+      </repositories>
+    </profile>
+    <profile>
+      <id>deploy-to-sh04</id>
+      <properties>
+        <altDeploymentRepository>sh04-release-repo::http://apt-sh04:8081/repository/xgboost-spark-release</altDeploymentRepository>
+      </properties>
+    </profile>
+  </profiles>
+  <activeProfiles>
+    <activeProfile>artifactory</activeProfile>
+  </activeProfiles>
 </settings>
