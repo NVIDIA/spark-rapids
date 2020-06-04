@@ -19,7 +19,8 @@ mvn scala:run
 ```
 
 # Output
-Currently, the script prints the result to stdout.  
+Output is saved in `api-validation-result.log` in api_validation/target directory.  
+
 Sample Output
 
 ```
