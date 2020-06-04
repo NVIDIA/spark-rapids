@@ -19,9 +19,6 @@ from data_gen import *
 from pyspark.sql.types import *
 import pyspark.sql.functions as f
 
-def unary_op_df(spark, gen, length=2048, seed=0):
-    return gen_df(spark, StructGen([('a', gen)], nullable=False), length=length, seed=seed)
-
 def mk_str_gen(pattern):
     return StringGen(pattern).with_special_case('').with_special_pattern('.{0,10}')
 
@@ -36,5 +33,3 @@ def test_substring_index(data_gen,delim):
                 f.substring_index(f.col('a'), delim, 0),
                 f.substring_index(f.col('a'), delim, -1),
                 f.substring_index(f.col('a'), delim, -4)))
-
-
