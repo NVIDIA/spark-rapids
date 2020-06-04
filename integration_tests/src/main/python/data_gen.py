@@ -39,12 +39,25 @@ class DataGen:
 
     def __init__(self, data_type, nullable=True, special_cases =[]):
         self.data_type = data_type
-        self.nullable = nullable
+        self.list_of_special_cases = special_cases
         self._special_cases = []
-        if nullable:
-            self.with_special_case(None, weight=5.0)
+        if isinstance(nullable, tuple):
+            self.nullable = nullable[0]
+            weight = nullable[1]
+        else:
+            self.nullable = nullable
+            weight = 5.0
+        if self.nullable:
+            self.with_special_case(None, weight)
+
+        # Special cases can be a value or a tuple of (value, weight). If the
+        # special_case itself is a tuple as in the case of StructGen, it MUST be added with a
+        # weight like : ((special_case_tuple_v1, special_case_tuple_v2), weight).
         for element in special_cases:
-            self.with_special_case(element)
+            if isinstance(element, tuple):
+                self.with_special_case(element[0], element[1])
+            else:
+                self.with_special_case(element)
 
     def with_special_case(self, special_case, weight=1.0):
         """
@@ -60,6 +73,10 @@ class DataGen:
             sc = lambda rand: special_case
         self._special_cases.append((weight, sc))
         return self
+
+    def get_types(self):
+        return 'DataType: {}, nullable: {}, special_cases: {}'.format(self.data_type,
+          self.nullable, self.list_of_special_cases)
 
     def start(self, rand):
         """Start data generation using the given rand"""
@@ -499,6 +516,9 @@ def debug_df(df):
     print('COLLECTED\n{}'.format(df.collect()))
     df.explain()
     return df
+
+def print_params(data_gen):
+    print('Test Datagen Params=' + str([(a, b.get_types()) for a, b in data_gen]))
 
 def idfn(val):
     """Provide an API to provide display names for data type generators."""
