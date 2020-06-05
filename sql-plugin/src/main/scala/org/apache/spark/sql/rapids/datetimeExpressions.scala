@@ -152,7 +152,7 @@ case class GpuTimeSub(
           if (intvl.months != 0) {
             throw new UnsupportedOperationException("Months aren't supported at the moment")
           }
-          val usToSub = intvl.days * 24 * 60 * 60 * 1000 * 1000L + intvl.microseconds
+          val usToSub = intvl.days.toLong * 24 * 60 * 60 * 1000 * 1000 + intvl.microseconds
           if (usToSub > 0) {
             withResource(Scalar.fromLong(usToSub)) { us_s =>
               withResource(l.getBase.castTo(DType.INT64)) { us =>

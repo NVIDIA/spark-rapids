@@ -20,6 +20,21 @@ from datetime import date, datetime, timedelta, timezone
 from marks import incompat
 from pyspark.sql.types import *
 import pyspark.sql.functions as f
+import random
+
+
+# We only support literal intervals for TimeSub
+str_vals = []
+random.seed(12)
+for i in range(0, 50):
+    d = (random.randint(0,4000), random.randint(0, 4000))
+    str_vals.append(d)
+@pytest.mark.parametrize('data_gen', str_vals, ids=idfn)
+def test_timesub(data_gen):
+    days, seconds = data_gen
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark: unary_op_df(spark, DateGen(start=date(15, 1, 1)), seed=1)
+            .selectExpr("cast(a as timestamp) - (interval {} days {} seconds)".format(days, seconds)))
 
 @pytest.mark.parametrize('data_gen', date_gens, ids=idfn)
 def test_datediff(data_gen):
