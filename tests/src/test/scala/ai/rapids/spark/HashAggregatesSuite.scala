@@ -1687,4 +1687,24 @@ class HashAggregatesSuite extends SparkQueryCompareTestSuite {
       }
       result
   }
+
+  IGNORE_ORDER_testSparkResultsAreEqual(
+    testName = "Test NormalizeNansAndZeros(Float)",
+    floatWithDifferentKindsOfNansAndZeros,
+    conf = new SparkConf()
+      .set(RapidsConf.HAS_NANS.key, "false")
+      .set(RapidsConf.ENABLE_FLOAT_AGG.key, "true")
+      .set(RapidsConf.INCOMPATIBLE_OPS.key, "true")) {
+    frame => frame.groupBy(col("float")).agg(sum(col("int")))
+  }
+
+  IGNORE_ORDER_testSparkResultsAreEqual(
+    testName = "Test NormalizeNansAndZeros(Double)",
+    doubleWithDifferentKindsOfNansAndZeros,
+    conf = new SparkConf()
+      .set(RapidsConf.HAS_NANS.key, "false")
+      .set(RapidsConf.ENABLE_FLOAT_AGG.key, "true")
+      .set(RapidsConf.INCOMPATIBLE_OPS.key, "true")) {
+    frame => frame.groupBy(col("double")).agg(sum(col("int")))
+  }
 }
