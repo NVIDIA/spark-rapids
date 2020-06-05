@@ -19,12 +19,12 @@ package org.apache.spark.sql.rapids
 import ai.rapids.cudf.{BinaryOp, ColumnVector, DType, Scalar}
 import ai.rapids.spark.{GpuBinaryExpression, GpuColumnVector, GpuExpression, GpuScalar, GpuUnaryExpression}
 
-import org.apache.spark.sql.catalyst.expressions.{BinaryExpression, ExpectsInputTypes, Expression, ImplicitCastInputTypes, TimeZoneAwareExpression}
+import org.apache.spark.sql.catalyst.expressions.{BinaryExpression, ExpectsInputTypes, Expression, ImplicitCastInputTypes, NullIntolerant, TimeZoneAwareExpression}
 import org.apache.spark.sql.types._
 import org.apache.spark.sql.vectorized.ColumnarBatch
 import org.apache.spark.unsafe.types.CalendarInterval
 
-trait GpuDateTimeUnaryExpression extends GpuUnaryExpression with ImplicitCastInputTypes {
+trait GpuDateUnaryExpression extends GpuUnaryExpression with ImplicitCastInputTypes {
   override def inputTypes: Seq[AbstractDataType] = Seq(DateType)
 
   override def dataType: DataType = IntegerType
@@ -32,7 +32,51 @@ trait GpuDateTimeUnaryExpression extends GpuUnaryExpression with ImplicitCastInp
   override def outputTypeOverride = DType.INT32
 }
 
-case class GpuYear(child: Expression) extends GpuDateTimeUnaryExpression {
+trait GpuTimeUnaryExpression extends GpuUnaryExpression with TimeZoneAwareExpression
+   with ImplicitCastInputTypes with NullIntolerant {
+  override def inputTypes: Seq[AbstractDataType] = Seq(TimestampType)
+
+  override def dataType: DataType = IntegerType
+
+  override def outputTypeOverride = DType.INT32
+
+  override lazy val resolved: Boolean = childrenResolved && checkInputDataTypes().isSuccess
+}
+
+case class GpuMinute(child: GpuExpression, timeZoneId: Option[String] = None)
+    extends GpuTimeUnaryExpression {
+
+  override def withTimeZone(timeZoneId: String): TimeZoneAwareExpression =
+    copy(timeZoneId = Option(timeZoneId))
+
+  override protected def doColumnar(input: GpuColumnVector): GpuColumnVector = {
+    GpuColumnVector.from(input.getBase.minute())
+  }
+}
+
+case class GpuSecond(child: GpuExpression, timeZoneId: Option[String] = None)
+    extends GpuTimeUnaryExpression {
+
+  override def withTimeZone(timeZoneId: String): TimeZoneAwareExpression =
+    copy(timeZoneId = Option(timeZoneId))
+
+  override protected def doColumnar(input: GpuColumnVector): GpuColumnVector = {
+    GpuColumnVector.from(input.getBase.second())
+  }
+}
+
+case class GpuHour(child: GpuExpression, timeZoneId: Option[String] = None)
+  extends GpuTimeUnaryExpression {
+
+  override def withTimeZone(timeZoneId: String): TimeZoneAwareExpression =
+    copy(timeZoneId = Option(timeZoneId))
+
+  override protected def doColumnar(input: GpuColumnVector): GpuColumnVector = {
+    GpuColumnVector.from(input.getBase.hour())
+  }
+}
+
+case class GpuYear(child: Expression) extends GpuDateUnaryExpression {
   override def doColumnar(input: GpuColumnVector): GpuColumnVector =
     GpuColumnVector.from(input.getBase.year())
 }
@@ -139,12 +183,12 @@ case class GpuDateDiff(endDate: Expression, startDate: Expression)
   }
 }
 
-case class GpuMonth(child: Expression) extends GpuDateTimeUnaryExpression {
+case class GpuMonth(child: Expression) extends GpuDateUnaryExpression {
   override def doColumnar(input: GpuColumnVector): GpuColumnVector =
     GpuColumnVector.from(input.getBase.month())
 }
 
-case class GpuDayOfMonth(child: Expression) extends GpuDateTimeUnaryExpression {
+case class GpuDayOfMonth(child: Expression) extends GpuDateUnaryExpression {
   override def doColumnar(input: GpuColumnVector): GpuColumnVector =
     GpuColumnVector.from(input.getBase.day())
 }
