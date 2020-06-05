@@ -348,16 +348,24 @@ object GpuOverrides {
 
   def isLit(exp: Expression): Boolean = extractLit(exp).isDefined
 
+  def isNullLit(lit: Literal): Boolean = {
+    lit.value == null
+  }
+
   def isNullOrEmptyOrRegex(exp: Expression): Boolean = {
     val lit = extractLit(exp)
     if (!isOfType(lit, StringType)) {
       false
+    } else if (isNullLit(lit.get)) {
+      //isOfType check above ensures that this lit.get does not throw
+      true
     } else {
-      val value = lit.get.value
-      if (value == null) return true
-      val strLit = value.asInstanceOf[UTF8String].toString
-      if (strLit.isEmpty) return true
-      regexList.exists(pattern => strLit.contains(pattern))
+      val strLit = lit.get.value.asInstanceOf[UTF8String].toString
+      if (strLit.isEmpty) {
+        true
+      } else {
+        regexList.exists(pattern => strLit.contains(pattern))
+      }
     }
   }
 
@@ -1433,6 +1441,10 @@ object GpuOverrides {
       "RegExpReplace",
       (a, conf, p, r) => new TernaryExprMeta[RegExpReplace](a, conf, p, r) {
         override def tagExprForGpu(): Unit = {
+          val litVal = extractLit(a.rep)
+          if (litVal.isEmpty || isNullLit(litVal.get)) {
+            willNotWorkOnGpu("Only literal values are supported for replacement string")
+          }
           if (isNullOrEmptyOrRegex(a.regexp)) {
             willNotWorkOnGpu(
               "Only non-null, non-empty String literals that are not regex patterns " +
