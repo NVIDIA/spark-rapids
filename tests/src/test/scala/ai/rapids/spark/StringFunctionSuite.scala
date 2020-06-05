@@ -184,204 +184,12 @@ class StringOperatorsSuite extends SparkQueryCompareTestSuite {
     frame => frame.select(lower(col("strings")))
   }
 
-  testSparkResultsAreEqual("Substring location function", nullableStringsFromCsv) {
-    frame => frame.selectExpr("POSITION('r' IN strings)")
-  }
-
-  testSparkResultsAreEqual("Substring location function with offset", nullableStringsFromCsv) {
-    frame => frame.selectExpr("locate('o', strings, 3)")
-  }
-
-  testSparkResultsAreEqual("Substring location function miss", nullableStringsFromCsv) {
-    frame => frame.selectExpr("locate('t', strings, 1000)")
-  }
-
-  testSparkResultsAreEqual("Substring location function null offset", nullableStringsFromCsv) {
-    frame => frame.selectExpr("locate('t', strings, null)")
-  }
-
-  testSparkResultsAreEqual("Substring location function null substring", nullableStringsFromCsv) {
-    frame => frame.selectExpr("locate(null, strings, 1)")
-  }
-
-  testSparkResultsAreEqual("Substring location function empty string", nullableStringsFromCsv) {
-    frame => frame.selectExpr("POSITION('' IN strings)")
-  }
-
-  testSparkResultsAreEqual("Substring location function invalid offset", nullableStringsFromCsv) {
-    frame => frame.selectExpr("locate('', strings, 0)")
-  }
-
-  testSparkResultsAreEqual("StringTrim valid strings", nullableStringsFromCsv) {
-    frame => frame.select(trim(frame("strings"), "aB"))
-  }
-
-  testSparkResultsAreEqual("StringTrim empty string", nullableStringsFromCsv) {
-    frame => frame.select(trim(frame("strings"), ""))
-  }
-
-  testSparkResultsAreEqual("StringTrim test null", nullableStringsFromCsv) {
-    frame => frame.select(trim(frame("strings"), null))
-  }
-
-  testSparkResultsAreEqual("StringTrim no trimString - default whitespace",
-    nullableStringsFromCsv) {
-    frame => frame.select(trim(frame("strings")))
-  }
-
-  testSparkResultsAreEqual("StringTrim utf8 strings", utf8StringsDf) {
-    frame => frame.select(trim(frame("strings"), "B"))
-  }
-
-  testSparkResultsAreEqual("StringTrim utf8 strings with utf8 trim", utf8StringsDf) {
-    frame => frame.select(trim(frame("strings"), " B\ud720"))
-  }
-
-  testSparkResultsAreEqual("StringTrimLeft valid strings", nullableStringsFromCsv) {
-    frame => frame.select(ltrim(frame("strings"), "aB"))
-  }
-
-  testSparkResultsAreEqual("StringTrimLeft empty string", nullableStringsFromCsv) {
-    frame => frame.select(ltrim(frame("strings"), ""))
-  }
-
-  testSparkResultsAreEqual("StringTrimLeft test null", nullableStringsFromCsv) {
-    frame => frame.select(ltrim(frame("strings"), null))
-  }
-
-  testSparkResultsAreEqual("StringTrimLeft no trimString - default whitespace",
-    nullableStringsFromCsv) {
-    frame => frame.select(ltrim(frame("strings")))
-  }
-
-  testSparkResultsAreEqual("StringTrimLeft utf8 strings", utf8StringsDf) {
-    frame => frame.select(ltrim(frame("strings"), "B"))
-  }
-
-  testSparkResultsAreEqual("StringTrimLeft utf8 strings with utf8 trim", utf8StringsDf) {
-    frame => frame.select(ltrim(frame("strings"), " B\ud720"))
-  }
-
-  testSparkResultsAreEqual("StringTrimRight valid strings", nullableStringsFromCsv) {
-    frame => frame.select(rtrim(frame("strings"), "aB"))
-  }
-
-  testSparkResultsAreEqual("StringTrimRight empty string", nullableStringsFromCsv) {
-    frame => frame.select(rtrim(frame("strings"), ""))
-  }
-
-  testSparkResultsAreEqual("StringTrimRight test null", nullableStringsFromCsv) {
-    frame => frame.select(rtrim(frame("strings"), null))
-  }
-
-  testSparkResultsAreEqual("StringTrimRight no trimString - default whitespace",
-    nullableStringsFromCsv) {
-    frame => frame.select(rtrim(frame("strings")))
-  }
-
-  testSparkResultsAreEqual("StringTrimRight utf8 strings", utf8StringsDf) {
-    frame => frame.select(rtrim(frame("strings"), "B"))
-  }
-
-  testSparkResultsAreEqual("StringTrimRight utf8 strings with utf8 trim", utf8StringsDf) {
-    frame => frame.select(rtrim(frame("strings"), " B\ud720"))
-  }
-
-  testSparkResultsAreEqual("String StartsWith", nullableStringsFromCsv) {
-    frame => frame.filter(col("strings").startsWith("F"))
-  }
-
-  testSparkResultsAreEqual("String StartsWith Col fall back", nullableStringsFromCsv,
-    execsAllowedNonGpu =
-      Seq("FilterExec", "And", "IsNotNull", "StartsWith", "AttributeReference")) {
-    frame => frame.filter(col("strings").startsWith(col("more_strings")))
-  }
-
-  testSparkResultsAreEqual("String StartsWith Empty", nullableStringsFromCsv) {
-    frame => frame.filter(col("strings").startsWith(""))
-  }
-
-  testSparkResultsAreEqual("String StartsWith Null", nullableStringsFromCsv) {
-    val str : String = null
-    frame => frame.filter(col("strings").startsWith(str))
-  }
-
-  testSparkResultsAreEqual("String EndsWith", nullableStringsFromCsv) {
-    frame => frame.filter(col("strings").endsWith("oo"))
-  }
-
-  testSparkResultsAreEqual("String EndsWith Col fall back", nullableStringsFromCsv,
-    execsAllowedNonGpu = Seq("FilterExec", "And", "IsNotNull", "EndsWith", "AttributeReference")) {
-    frame => frame.filter(col("strings").endsWith(col("more_strings")))
-  }
-
-  testSparkResultsAreEqual("String EndWith Empty", nullableStringsFromCsv) {
-    frame => frame.filter(col("strings").endsWith(""))
-  }
-
-  testSparkResultsAreEqual("String EndWith Null", nullableStringsFromCsv) {
-            val str : String = null
-    frame => frame.filter(col("strings").endsWith(str))
-  }
-
-  testSparkResultsAreEqual("String CONCAT no separator", nullableStringsFromCsv) {
-    frame => frame.selectExpr("CONCAT(more_strings, more_strings)")
-  }
-
-  testSparkResultsAreEqual("String CONCAT no separator with nulls", nullableStringsFromCsv) {
-    frame => frame.selectExpr("CONCAT(strings, more_strings)")
-  }
-
-  testSparkResultsAreEqual("String CONCAT no separator with scalar", nullableStringsFromCsv) {
-    frame => frame.selectExpr("CONCAT(strings, 'scalar')")
-  }
-
-  testSparkResultsAreEqual("String CONCAT no separator with null scalar", nullableStringsFromCsv) {
-    frame => frame.selectExpr("CONCAT(more_strings, null)")
-  }
-
   testSparkResultsAreEqual("String Like to Contains", nullableStringsFromCsv) {
     frame => frame.filter(col("strings").like("%o%"))
   }
 
   testSparkResultsAreEqual("String Like to Contains Empty", nullableStringsFromCsv) {
     frame => frame.filter(col("strings").like(""))
-  }
-
-  testSparkResultsAreEqual("Substring valid", nullableStringsFromCsv) {
-    frame => frame.selectExpr("substring(strings, 1, 5)")
-  }
-
-  testSparkResultsAreEqual("Substring length not specified", nullableStringsFromCsv) {
-    frame => frame.selectExpr("substring(strings, 1)")
-  }
-
-  testSparkResultsAreEqual("Substring position from end", nullableStringsFromCsv) {
-    frame => frame.selectExpr("substring(strings, -3)")
-  }
-
-  testSparkResultsAreEqual("Substring negative length ", nullableStringsFromCsv) {
-    frame => frame.selectExpr("substring(strings, 3, -2)")
-  }
-
-  testSparkResultsAreEqual("Substring max position", nullableStringsFromCsv) {
-    frame => frame.selectExpr("substring(strings, 100)")
-  }
-
-  testSparkResultsAreEqual("Substring position and length zero", nullableStringsFromCsv) {
-    frame => frame.selectExpr("substring(strings, 0, 0)")
-  }
-
-  testSparkResultsAreEqual("String replace ", nullableStringsFromCsv) {
-    frame => frame.selectExpr("replace(strings, 'a', 'A')")
-  }
-
-  testSparkResultsAreEqual("String replace empty search ", nullableStringsFromCsv) {
-    frame => frame.selectExpr("replace(strings, '', 'A')")
-  }
-
-  testSparkResultsAreEqual("String replace- No replace parameter", nullableStringsFromCsv) {
-    frame => frame.selectExpr("replace(strings, 'a')")
   }
 
   testSparkResultsAreEqual("String Like 1", likeDf) {
@@ -567,19 +375,6 @@ class StringOperatorsSuite extends SparkQueryCompareTestSuite {
     frame => frame.select(initcap(col("words")))
   }
 
-  testSparkResultsAreEqual("String regexp_replace 1", nullableStringsFromCsv) {
-    frame => frame.selectExpr("regexp_replace(strings,'a','D')")
-  }
-
-  testSparkResultsAreEqual("String regexp_replace 2", nullableStringsFromCsv) {
-    frame => frame.selectExpr("regexp_replace(strings,'a','%^[]')")
-  }
-
-  testSparkResultsAreEqual("String regexp_replace replaced empty",
-    nullableStringsFromCsv) {
-    frame => frame.selectExpr("regexp_replace(strings,'a','')")
-  }
-
   testSparkResultsAreEqual("String regexp_replace null cpu fall back",
     nullableStringsFromCsv, execsAllowedNonGpu = Seq("ProjectExec", "Alias",
     "RegExpReplace", "AttributeReference", "Literal")) {
@@ -639,26 +434,6 @@ class StringOperatorsSuite extends SparkQueryCompareTestSuite {
       assert(!result.queryExecution.executedPlan.toString().contains("GpuProject"))
       result
   }
-
-  testSparkResultsAreEqual("String char_length select expression syntax with nulls",
-    nullableStringsFromCsv) {
-    frame => frame.selectExpr("char_length(strings)")
-  }
-
-  testSparkResultsAreEqual("String character_length select expression syntax with " +
-    "special characters", likeDf) {
-    frame => frame.selectExpr("character_length(word)")
-  }
-
-  testSparkResultsAreEqual("String length select syntax with nulls", nullableStringsFromCsv) {
-    frame => frame.select(length(col("more_strings")))
-  }
-
-  testSparkResultsAreEqual("String length selectexpression syntax with multibyte characters",
-    TestCodepoints.validCodepointCharsDF) {
-    frame => frame.selectExpr("length(strings)")
-  }
-
 }
 
 /*
