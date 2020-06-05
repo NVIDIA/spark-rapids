@@ -28,58 +28,17 @@ pipeline {
         ansiColor('xterm')
         timeout(time: 120, unit: 'MINUTES')
         buildDiscarder(logRotator(numToKeepStr: '10'))
-        gitLabConnection('GitLab Master')
     }
 
     parameters {
-        string(name: 'REF', defaultValue: '\${gitlabBranch}', description: 'Commit to build')
-    }
-
-    environment {
-        JENKINS_ROOT  = 'jenkins'
-        BUILD_SCRIPT = '$JENKINS_ROOT/spark-premerge-build.sh'
-        MVN_URM_MIRROR='-s jenkins/settings.xml -P mirror-apache-to-urm'
-        LIBCUDF_KERNEL_CACHE_PATH='/tmp'
-        URM_CREDS = credentials("svcngcc_artifactory")
+        string(name: 'REF', defaultValue: '\${sha1}', description: 'Commit to build')
     }
 
     stages {
-        stage('Ubuntu16 CUDA10.1') {
-            agent { label 'docker-gpu' }
+        stage('Hello world') {
             steps {
-                script {
-                    def IMAGE_NAME="urm.nvidia.com/sw-spark-docker/plugin:dev-ubuntu16-cuda10.1"
-                    def DOCKER_CMD="docker --config $WORKSPACE/.docker"
-                    sh """
-                        echo $URM_CREDS_PSW | $DOCKER_CMD login https://urm.nvidia.com -u $URM_CREDS_USR --password-stdin
-                        $DOCKER_CMD pull $IMAGE_NAME
-                        $DOCKER_CMD logout https://urm.nvidia.com
-                    """
-                    docker.image(IMAGE_NAME).inside("--runtime=nvidia -v ${HOME}/.m2:${HOME}/.m2:rw \
-                        -v ${HOME}/.zinc:${HOME}/.zinc:rw \
-                        -v /etc/passwd:/etc/passwd -v /etc/group:/etc/group") {
-                        sh "bash $BUILD_SCRIPT $MVN_URM_MIRROR"
-                        step([$class: 'JacocoPublisher',
-                              execPattern: '**/target/jacoco.exec',
-                              classPattern: 'target/jacoco_classes/',
-                              sourcePattern: 'sql-plugin/src/main/java/,sql-plugin/src/main/scala/',
-                              sourceInclusionPattern: '**/*.java,**/*.scala'
-                        ])
-                    }
-                }
+                echo "Hello world!"
             }
         }
     } // end of stages
-
-    post {
-        always {
-            script {
-                if (currentBuild.currentResult == "SUCCESS") {
-                    updateGitlabCommitStatus(name: 'Jenkins CI', state: "success")
-                } else {
-                    updateGitlabCommitStatus(name: 'Jenkins CI', state: "failed")
-                }
-            }
-        }
-    }
 } // end of pipeline
