@@ -16,6 +16,7 @@ import pytest
 
 from asserts import assert_gpu_and_cpu_are_equal_collect
 from data_gen import *
+from marks import incompat
 from pyspark.sql.types import *
 import pyspark.sql.functions as f
 
@@ -53,6 +54,26 @@ def test_locate():
                 'locate("Z", a, 4)',
                 'locate("A", a, 500)',
                 'locate("_", a, NULL)'))
+
+# Once https://github.com/NVIDIA/spark-rapids/issues/121
+# is fixed this should go away and test_contains should be updated
+@pytest.mark.xfail(reason='https://github.com/NVIDIA/spark-rapids/issues/121')
+def test_contains_empty():
+    gen = mk_str_gen('.{0,3}Z?_Z?.{0,3}A?.{0,3}')
+    assert_gpu_and_cpu_are_equal_collect(
+            lambda spark: unary_op_df(spark, gen).select(
+                f.col('a').contains('')))
+
+def test_contains():
+    gen = mk_str_gen('.{0,3}Z?_Z?.{0,3}A?.{0,3}')
+    assert_gpu_and_cpu_are_equal_collect(
+            lambda spark: unary_op_df(spark, gen).select(
+                f.col('a').contains('Z'),
+                f.col('a').contains('Z_'),
+                # https://github.com/NVIDIA/spark-rapids/issues/121
+                #f.col('a').contains(''),
+                f.col('a').contains(None)
+                ))
 
 def test_trim():
     gen = mk_str_gen('[Ab \ud720]{0,3}A.{0,3}Z[ Ab]{0,3}')
@@ -195,3 +216,109 @@ def test_length():
                 'CHAR_LENGTH(a)',
                 'CHARACTER_LENGTH(a)'))
 
+# Once the xfail is fixed this can replace test_initcap_space
+@incompat
+@pytest.mark.xfail(reason='https://github.com/NVIDIA/spark-rapids/issues/120')
+def test_initcap():
+    # Because we don't use the same unicode version we need to limit
+    # the charicter set to something more reasonable
+    # upper and lower should cover the corner cases, this is mostly to
+    # see if there are issues with spaces
+    gen = mk_str_gen('([aAbB]{0,5}[ \r\n\t]{1,2}){1,5}')
+    assert_gpu_and_cpu_are_equal_collect(
+            lambda spark: unary_op_df(spark, gen).select(
+                f.initcap(f.col('a'))))
+
+@incompat
+def test_initcap_space():
+    # we see a lot more space delim
+    gen = StringGen('([aAbB]{0,5}[ ]{1,2}){1,5}')
+    assert_gpu_and_cpu_are_equal_collect(
+            lambda spark: unary_op_df(spark, gen).select(
+                f.initcap(f.col('a'))))
+
+@pytest.mark.xfail(reason='https://github.com/NVIDIA/spark-rapids/issues/119')
+def test_like_null_xfail():
+    gen = mk_str_gen('.{0,3}a[|b*.$\r\n]{0,2}c.{0,3}')\
+            .with_special_pattern('.{0,3}oo.{0,3}', weight=100.0)\
+            .with_special_case('_')\
+            .with_special_case('\r')\
+            .with_special_case('\n')\
+            .with_special_case('%SystemDrive%\\Users\\John')
+    assert_gpu_and_cpu_are_equal_collect(
+            lambda spark: unary_op_df(spark, gen).select(
+                f.col('a').like('_'))) 
+
+def test_like():
+    gen = mk_str_gen('(\u20ac|\\w){0,3}a[|b*.$\r\n]{0,2}c\\w{0,3}')\
+            .with_special_pattern('\\w{0,3}oo\\w{0,3}', weight=100.0)\
+            .with_special_case('_')\
+            .with_special_case('\r')\
+            .with_special_case('\n')\
+            .with_special_case('a{3}bar')\
+            .with_special_case('12345678')\
+            .with_special_case('12345678901234')\
+            .with_special_case('%SystemDrive%\\Users\\John')
+    assert_gpu_and_cpu_are_equal_collect(
+            lambda spark: unary_op_df(spark, gen).select(
+                f.col('a').like('%o%'), # turned into contains
+                f.col('a').like('%a%'), # turned into contains
+                f.col('a').like(''), #turned into equals
+                f.col('a').like('12345678'), #turned into equals
+                f.col('a').like('\\%SystemDrive\\%\\\\Users%'),
+                f.col('a').like('_'),
+                f.col('a').like('_oo_'),
+                f.col('a').like('_oo%'),
+                f.col('a').like('%oo_'),
+                f.col('a').like('_\u201c%'),
+                f.col('a').like('_a[d]%'),
+                f.col('a').like('_a(d)%'),
+                f.col('a').like('_$'),
+                f.col('a').like('_$%'),
+                f.col('a').like('_._'),
+                f.col('a').like('_?|}{_%'),
+                f.col('a').like('%a{3}%'))) 
+
+def test_like_simple_escape():
+    gen = mk_str_gen('(\u20ac|\\w){0,3}a[|b*.$\r\n]{0,2}c\\w{0,3}')\
+            .with_special_pattern('\\w{0,3}oo\\w{0,3}', weight=100.0)\
+            .with_special_case('_')\
+            .with_special_case('\r')\
+            .with_special_case('\n')\
+            .with_special_case('a{3}bar')\
+            .with_special_case('12345678')\
+            .with_special_case('12345678901234')\
+            .with_special_case('%SystemDrive%\\Users\\John')
+    assert_gpu_and_cpu_are_equal_collect(
+            lambda spark: unary_op_df(spark, gen).selectExpr(
+                'a like "_a^d%" escape "c"',
+                'a like "a_a" escape "c"',
+                'a like "a%a" escape "c"',
+                'a like "c_" escape "c"',
+                'a like x "6162632325616263" escape "#"',
+                'a like x "61626325616263" escape "#"'))
+ 
+def test_like_complex_escape():
+    gen = mk_str_gen('(\u20ac|\\w){0,3}a[|b*.$\r\n]{0,2}c\\w{0,3}')\
+            .with_special_pattern('\\w{0,3}oo\\w{0,3}', weight=100.0)\
+            .with_special_case('_')\
+            .with_special_case('\r')\
+            .with_special_case('\n')\
+            .with_special_case('a{3}bar')\
+            .with_special_case('12345678')\
+            .with_special_case('12345678901234')\
+            .with_special_case('%SystemDrive%\\Users\\John')
+    assert_gpu_and_cpu_are_equal_collect(
+            lambda spark: unary_op_df(spark, gen).selectExpr(
+                'a like x "256f6f5f"',
+                'a like x "6162632325616263" escape "#"',
+                'a like x "61626325616263" escape "#"',
+                'a like ""',
+                'a like "_oo_"',
+                'a like "_oo%"',
+                'a like "%oo_"',
+                'a like "_\u20AC_"',
+                'a like "\\%SystemDrive\\%\\\\\\\\Users%"',
+                'a like "_oo"'),
+            conf={'spark.sql.parser.escapedStringLiterals': 'true'})
+ 
