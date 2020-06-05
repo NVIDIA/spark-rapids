@@ -909,6 +909,45 @@ object GpuOverrides {
       })
       .incompat("Incorrectly formatted strings and bogus dates produce garbage data" +
         " instead of null"),
+    expr[Hour](
+      "Returns the hour component of the string/timestamp.",
+      (a, conf, p, r) => new UnaryExprMeta[Hour](a, conf, p, r) {
+        override def tagExprForGpu(): Unit = {
+          if (ZoneId.of(a.timeZoneId.get).normalized() != UTC_TIMEZONE_ID) {
+            willNotWorkOnGpu("Only UTC zone id is supported")
+          }
+        }
+
+        override def convertToGpu(expr: GpuExpression): GpuExpression = {
+          GpuHour(expr)
+        }
+      }),
+    expr[Minute](
+      "Returns the minute component of the string/timestamp.",
+      (a, conf, p, r) => new UnaryExprMeta[Minute](a, conf, p, r) {
+        override def tagExprForGpu(): Unit = {
+          if (ZoneId.of(a.timeZoneId.get).normalized() != UTC_TIMEZONE_ID) {
+            willNotWorkOnGpu("Only UTC zone id is supported")
+          }
+        }
+
+        override def convertToGpu(expr: GpuExpression): GpuExpression = {
+          GpuMinute(expr)
+        }
+      }),
+    expr[Second](
+      "Returns the second component of the string/timestamp.",
+      (a, conf, p, r) => new UnaryExprMeta[Second](a, conf, p, r) {
+        override def tagExprForGpu(): Unit = {
+            if (ZoneId.of(a.timeZoneId.get).normalized() != UTC_TIMEZONE_ID) {
+              willNotWorkOnGpu("Only UTC zone id is supported")
+            }
+        }
+
+        override def convertToGpu(expr: GpuExpression): GpuExpression = {
+          GpuSecond(expr)
+      }
+      }),
     expr[FromUnixTime](
       "get the String from a unix timestamp",
       (a, conf, p, r) => new BinaryExprMeta[FromUnixTime](a, conf, p, r) {
