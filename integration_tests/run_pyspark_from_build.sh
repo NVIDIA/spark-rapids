@@ -24,7 +24,7 @@ else
     echo "WILL RUN TESTS WITH SPARK_HOME: ${SPARK_HOME}"
     CUDF_JARS=$(echo ./target/dependency/cudf-*.jar)
     PLUGIN_JARS=$(echo ../dist/target/rapids-4-spark*.jar)
-    TEST_JARS=$(echo ./target/rapids-4-spark-integration-tests-*.jar)
+    TEST_JARS=$(echo ./target/rapids-4-spark-integration-tests*.jar)
     ALL_JARS="$CUDF_JARS $PLUGIN_JARS $TEST_JARS"
     echo "AND PLUGIN JARS: $ALL_JARS"
     if [[ "${TEST}" != "" ]];
