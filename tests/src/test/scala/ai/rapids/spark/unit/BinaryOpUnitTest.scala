@@ -33,8 +33,8 @@ class BinaryOpUnitTest extends GpuUnitTests {
                 //vector 0
                 val vector0 = convert(ColumnVector.fromBoxedInts(-7, 3, 4, null))
                 // assign to new handles for code readability
-                val vector0_1 = vector0.incRefCount()
-                val vector0_2 = vector0.incRefCount()
+                val vector01 = vector0.incRefCount()
+                val vector02 = vector0.incRefCount()
 
                 //vector 1
                 val vector1 = convert(ColumnVector.fromBoxedInts(3, 0, 1, null))
@@ -44,17 +44,17 @@ class BinaryOpUnitTest extends GpuUnitTests {
 
                 //lhs = vector rhs = scalar
                 val expr0 = GpuLiteral(vector0, dataType)
-                val expr_s = GpuLiteral(convertS(3), dataType)
-                checkEvaluation(GpuPmod(expr0, expr_s), expected0)
+                val exprS = GpuLiteral(convertS(3), dataType)
+                checkEvaluation(GpuPmod(expr0, exprS), expected0)
 
                 //lhs = vector rhs = vector
-                val expr0_1 = GpuLiteral(vector0_1, dataType)
+                val expr01 = GpuLiteral(vector01, dataType)
                 val expr1 = GpuLiteral(vector1, dataType)
-                checkEvaluation(GpuPmod(expr0_1, expr1), expected1)
+                checkEvaluation(GpuPmod(expr01, expr1), expected1)
 
                 //lhs = scalar rhs = vector
-                val expr0_2 = GpuLiteral(vector0_2, dataType)
-                checkEvaluation(GpuPmod(expr_s, expr0_2), expected2)
+                val expr02 = GpuLiteral(vector02, dataType)
+                checkEvaluation(GpuPmod(exprS, expr02), expected2)
               }
             }
           }
