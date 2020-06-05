@@ -51,20 +51,20 @@ $MVN_GET_CMD \
 $MVN_GET_CMD \
     -DgroupId=ai.rapids -DartifactId=rapids-4-spark_$SCALA_BINARY_VER -Dversion=$PROJECT_VER
 $MVN_GET_CMD \
-    -DgroupId=ai.rapids -DartifactId=rapids-4-spark-tests_$SCALA_BINARY_VER -Dversion=$PROJECT_VER
+    -DgroupId=ai.rapids -DartifactId=rapids-4-spark-integration-tests_$SCALA_BINARY_VER -Dversion=$PROJECT_VER
 if [ "$CUDA_CLASSIFIER"x == x ];then
     CUDF_JAR="$ARTF_ROOT/cudf-$CUDF_VER.jar"
 else
     CUDF_JAR="$ARTF_ROOT/cudf-$CUDF_VER-$CUDA_CLASSIFIER.jar"
 fi
 RAPIDS_PLUGIN_JAR="$ARTF_ROOT/rapids-4-spark_${SCALA_BINARY_VER}-$PROJECT_VER.jar"
-RAPIDS_TEST_JAR="$ARTF_ROOT/rapids-4-spark-tests_${SCALA_BINARY_VER}-$PROJECT_VER.jar"
+RAPIDS_TEST_JAR="$ARTF_ROOT/rapids-4-spark-integration-tests_${SCALA_BINARY_VER}-$PROJECT_VER.jar"
 
 $MVN_GET_CMD \
-    -DgroupId=ai.rapids -DartifactId=rapids-4-spark-integration-tests -Dversion=$PROJECT_VER -Dclassifier=pytest -Dpackaging=tar.gz
+    -DgroupId=ai.rapids -DartifactId=rapids-4-spark-integration-tests_$SCALA_BINARY_VER -Dversion=$PROJECT_VER -Dclassifier=pytest -Dpackaging=tar.gz
 
 RAPIDS_INT_TESTS_HOME="$ARTF_ROOT/integration_tests/"
-RAPDIS_INT_TESTS_TGZ="$ARTF_ROOT/rapids-4-spark-integration-tests-$PROJECT_VER-pytest.tar.gz"
+RAPDIS_INT_TESTS_TGZ="$ARTF_ROOT/rapids-4-spark-integration-tests_${SCALA_BINARY_VER}-$PROJECT_VER-pytest.tar.gz"
 tar xzf "$RAPDIS_INT_TESTS_TGZ" -C $ARTF_ROOT && rm -f "$RAPDIS_INT_TESTS_TGZ"
 
 $MVN_GET_CMD \
@@ -75,8 +75,8 @@ export PATH="$SPARK_HOME/bin:$SPARK_HOME/sbin:$PATH"
 tar zxf $SPARK_HOME.tar.gz -C $ARTF_ROOT && \
     rm -f $SPARK_HOME.tar.gz
 
-PARQUET_PERF="$WORKSPACE/tests/src/test/resources/parquet_perf"
-PARQUET_ACQ="$WORKSPACE/tests/src/test/resources/parquet_acq"
+PARQUET_PERF="$WORKSPACE/integration_tests/src/test/resources/parquet_perf"
+PARQUET_ACQ="$WORKSPACE/integration_tests/src/test/resources/parquet_acq"
 OUTPUT="$WORKSPACE/output"
 BASE_SPARK_SUBMIT_ARGS="--master spark://$HOSTNAME:7077 --executor-memory 32G \
     --conf spark.sql.shuffle.partitions=12 \
