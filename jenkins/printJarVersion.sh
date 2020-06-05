@@ -20,8 +20,8 @@ function print_ver(){
     repo=$2
     prefix=$3
     suffix=$4
-    timestamp=`grep -oP '(?<=timestamp>)[^<]+' < $repo/maven-metadata-spark.sw.nvidia.com.xml`
-    buildnumber=`grep -oP '(?<=buildNumber>)[^<]+' < $repo/maven-metadata-spark.sw.nvidia.com.xml`
+    timestamp=`grep -oP '(?<=timestamp>)[^<]+' < $repo/maven-metadata-snapshots.xml`
+    buildnumber=`grep -oP '(?<=buildNumber>)[^<]+' < $repo/maven-metadata-snapshots.xml`
     echo $type: $prefix$timestamp-$buildnumber$suffix
 }
 
