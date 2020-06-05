@@ -31,6 +31,18 @@ def test_datediff(data_gen):
             'datediff(a, date(null))',
             'datediff(a, \'2016-03-02\')'))
 
+def test_hour():
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark : unary_op_df(spark, timestamp_gen).selectExpr('hour(a)'))
+
+def test_minute():
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark : unary_op_df(spark, timestamp_gen).selectExpr('minute(a)'))
+
+def test_second():
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark : unary_op_df(spark, timestamp_gen).selectExpr('second(a)'))
+
 # We have to set the upper/lower limit on IntegerGen so the date_add doesn't overflow
 # Python uses proleptic gregorian date which extends Gregorian calendar as it always existed and
 # always exist in future. When performing date_sub('0001-01-01', 1), it will blow up because python

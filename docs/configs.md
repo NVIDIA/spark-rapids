@@ -112,6 +112,7 @@ Name | Description | Default Value | Incompatibilities
 <a name="sql.expression.FromUnixTime"></a>spark.rapids.sql.expression.FromUnixTime|get the String from a unix timestamp|true|None|
 <a name="sql.expression.GreaterThan"></a>spark.rapids.sql.expression.GreaterThan|> operator|true|None|
 <a name="sql.expression.GreaterThanOrEqual"></a>spark.rapids.sql.expression.GreaterThanOrEqual|>= operator|true|None|
+<a name="sql.expression.Hour"></a>spark.rapids.sql.expression.Hour|Returns the hour component of the string/timestamp.|true|None|
 <a name="sql.expression.If"></a>spark.rapids.sql.expression.If|IF expression|true|None|
 <a name="sql.expression.In"></a>spark.rapids.sql.expression.In|IN operator|true|None|
 <a name="sql.expression.InSet"></a>spark.rapids.sql.expression.InSet|INSET operator|true|None|
@@ -135,6 +136,7 @@ Name | Description | Default Value | Incompatibilities
 <a name="sql.expression.Log2"></a>spark.rapids.sql.expression.Log2|log base 2|true|None|
 <a name="sql.expression.Logarithm"></a>spark.rapids.sql.expression.Logarithm|log variable base|true|None|
 <a name="sql.expression.Lower"></a>spark.rapids.sql.expression.Lower|String lowercase operator|false|This is not 100% compatible with the Spark version because in some cases unicode characters change byte width when changing the case. The GPU string conversion does not support these characters. For a full list of unsupported characters see https://github.com/rapidsai/cudf/issues/3132|
+<a name="sql.expression.Minute"></a>spark.rapids.sql.expression.Minute|Returns the minute component of the string/timestamp.|true|None|
 <a name="sql.expression.MonotonicallyIncreasingID"></a>spark.rapids.sql.expression.MonotonicallyIncreasingID|Returns monotonically increasing 64-bit integers.|true|None|
 <a name="sql.expression.Month"></a>spark.rapids.sql.expression.Month|get the month from a date or timestamp|true|None|
 <a name="sql.expression.Multiply"></a>spark.rapids.sql.expression.Multiply|multiplication|true|None|
@@ -148,6 +150,7 @@ Name | Description | Default Value | Incompatibilities
 <a name="sql.expression.Remainder"></a>spark.rapids.sql.expression.Remainder|remainder or modulo|true|None|
 <a name="sql.expression.Rint"></a>spark.rapids.sql.expression.Rint|Rounds up a double value to the nearest double equal to an integer|true|None|
 <a name="sql.expression.RowNumber"></a>spark.rapids.sql.expression.RowNumber|Window function that returns the index for the row within the aggregation window|true|None|
+<a name="sql.expression.Second"></a>spark.rapids.sql.expression.Second|Returns the second component of the string/timestamp.|true|None|
 <a name="sql.expression.ShiftLeft"></a>spark.rapids.sql.expression.ShiftLeft|Bitwise shift left (<<)|true|None|
 <a name="sql.expression.ShiftRight"></a>spark.rapids.sql.expression.ShiftRight|Bitwise shift right (>>)|true|None|
 <a name="sql.expression.ShiftRightUnsigned"></a>spark.rapids.sql.expression.ShiftRightUnsigned|Bitwise unsigned shift right (>>>)|true|None|
