@@ -796,7 +796,8 @@ object GpuOverrides {
       "All other letters are in lowercase",
       (a, conf, p, r) => new UnaryExprMeta[InitCap](a, conf, p, r) {
         override def convertToGpu(child: GpuExpression): GpuExpression = GpuInitCap(child)
-      }),
+      }).incompat(CASE_MODIFICATION_INCOMPAT + " Spark also only sees the space character as " +
+      "a word deliminator, but this uses more white space characters."),
     expr[Log](
       "natural log",
       (a, conf, p, r) => new UnaryExprMeta[Log](a, conf, p, r) {
