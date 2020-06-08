@@ -14,19 +14,7 @@
 
 from conftest import is_allowing_any_non_gpu, get_non_gpu_allowed
 from pyspark.sql import SparkSession
-
-def _spark__init():
-    #Force the RapidsPlugin to be enabled, so it blows up if the classpath is not set properly
-    # DO NOT SET ANY OTHER CONFIGS HERE!!!
-    # due to bugs in pyspark/pytest it looks like any configs set here
-    # can be reset in the middle of a test if specific operations are done (some types of cast etc)
-    _s = SparkSession.builder \
-            .config('spark.plugins', 'ai.rapids.spark.SQLPlugin') \
-            .appName('rapids spark plugin integration tests (python)').getOrCreate()
-    #TODO catch the ClassNotFound error that happens if the classpath is not set up properly and
-    # make it a better error message
-    _s.sparkContext.setLogLevel("WARN")
-    return _s
+from spark_init_internal import spark as internal_spark
 
 def _from_scala_map(scala_map):
     ret = {}
@@ -37,10 +25,20 @@ def _from_scala_map(scala_map):
         ret[key] = scala_map.get(key).get()
     return ret
 
-spark = _spark__init()
+spark = internal_spark
 # Have to reach into a private member to get access to the API we need
 _orig_conf = _from_scala_map(spark.conf._jconf.getAll())
 _orig_conf_keys = _orig_conf.keys()
+
+def is_tz_utc(spark=spark):
+    """
+    true if the tz is UTC else false
+    """
+    # Now we have to do some kind of ugly internal java stuff
+    jvm = spark.sparkContext._jvm
+    utc = jvm.java.time.ZoneId.of('UTC').normalized()
+    sys_tz = jvm.java.time.ZoneId.systemDefault().normalized()
+    return utc == sys_tz
 
 def _set_all_confs(conf):
     for key, value in conf.items():
@@ -83,8 +81,3 @@ def with_gpu_session(func, conf={}):
         copy['spark.rapids.sql.test.allowedNonGpu'] = ','.join(get_non_gpu_allowed())
     return with_spark_session(func, conf=copy)
 
-def get_jvm_session(spark):
-    return spark._jsparkSession
-
-def get_jvm(spark):
-    return spark.sparkContext._jvm

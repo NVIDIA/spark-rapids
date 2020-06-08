@@ -19,7 +19,7 @@ from pyspark.sql.types import *
 import pyspark.sql.functions as f
 import pytest
 import random
-from spark_session import spark
+from spark_session import spark, is_tz_utc
 import sre_yield
 import struct
 
@@ -464,6 +464,9 @@ class ArrayGen(DataGen):
             return [self._child_gen.gen() for _ in range(0, length)]
         self._start(rand, gen_array)
 
+def skip_if_not_utc(spark):
+    if (not is_tz_utc(spark)):
+        pytest.skip('The java system time zone is not set to UTC')
 
 def gen_df(spark, data_gen, length=2048, seed=0):
     """Generate a spark dataframe from the given data generators."""
@@ -476,12 +479,7 @@ def gen_df(spark, data_gen, length=2048, seed=0):
 
     # Before we get too far we need to verify that we can run with timestamps
     if src.contains_ts():
-        # Now we have to do some kind of ugly internal java stuff
-        jvm = spark.sparkContext._jvm
-        utc = jvm.java.time.ZoneId.of('UTC').normalized()
-        sys_tz = jvm.java.time.ZoneId.systemDefault().normalized()
-        if (utc != sys_tz):
-            pytest.skip('The java system time zone is not set to UTC but is {}'.format(sys_tz))
+        skip_if_not_utc(spark)
 
     rand = random.Random(seed)
     src.start(rand)
@@ -502,12 +500,7 @@ def _gen_scalars_common(data_gen, count, seed=0):
 
     # Before we get too far we need to verify that we can run with timestamps
     if src.contains_ts():
-        # Now we have to do some kind of ugly internal java stuff
-        jvm = spark.sparkContext._jvm
-        utc = jvm.java.time.ZoneId.of('UTC').normalized()
-        sys_tz = jvm.java.time.ZoneId.systemDefault().normalized()
-        if (utc != sys_tz):
-            pytest.skip('The java system time zone is not set to UTC but is {}'.format(sys_tz))
+        skip_if_not_utc(spark)
 
     rand = random.Random(seed)
     src.start(rand)

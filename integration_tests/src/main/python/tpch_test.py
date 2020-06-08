@@ -16,63 +16,6 @@ import pytest
 
 from asserts import assert_gpu_and_cpu_are_equal_collect
 from marks import approximate_float, incompat, ignore_order, allow_non_gpu
-from spark_session import spark, get_jvm, get_jvm_session
-from pyspark.sql.dataframe import DataFrame
-
-class TpchRunner:
-  def __init__(self, tpch_format, tpch_path):
-    self.tpch_format = tpch_format
-    self.tpch_path = tpch_path
-    self.setup(spark)
-
-  def setup(self, spark):
-    jvm_session = get_jvm_session(spark)
-    jvm = get_jvm(spark)
-    formats = {
-      "csv": jvm.ai.rapids.sparkexamples.tpch.TpchLikeSpark.setupAllCSV,
-      "parquet": jvm.ai.rapids.sparkexamples.tpch.TpchLikeSpark.setupAllParquet,
-      "orc": jvm.ai.rapids.sparkexamples.tpch.TpchLikeSpark.setupAllOrc
-    }
-    formats.get(self.tpch_format)(jvm_session, self.tpch_path)
-
-  def do_test_query(self, query):
-    jvm_session = get_jvm_session(spark)
-    jvm = get_jvm(spark)
-    tests = {
-      "q1": jvm.ai.rapids.sparkexamples.tpch.Q1Like,
-      "q2": jvm.ai.rapids.sparkexamples.tpch.Q2Like,
-      "q3": jvm.ai.rapids.sparkexamples.tpch.Q3Like,
-      "q4": jvm.ai.rapids.sparkexamples.tpch.Q4Like,
-      "q5": jvm.ai.rapids.sparkexamples.tpch.Q5Like,
-      "q6": jvm.ai.rapids.sparkexamples.tpch.Q6Like,
-      "q7": jvm.ai.rapids.sparkexamples.tpch.Q7Like,
-      "q8": jvm.ai.rapids.sparkexamples.tpch.Q8Like,
-      "q9": jvm.ai.rapids.sparkexamples.tpch.Q9Like,
-      "q10": jvm.ai.rapids.sparkexamples.tpch.Q10Like,
-      "q11": jvm.ai.rapids.sparkexamples.tpch.Q11Like,
-      "q12": jvm.ai.rapids.sparkexamples.tpch.Q12Like,
-      "q13": jvm.ai.rapids.sparkexamples.tpch.Q13Like,
-      "q14": jvm.ai.rapids.sparkexamples.tpch.Q14Like,
-      "q15": jvm.ai.rapids.sparkexamples.tpch.Q15Like,
-      "q16": jvm.ai.rapids.sparkexamples.tpch.Q16Like,
-      "q17": jvm.ai.rapids.sparkexamples.tpch.Q17Like,
-      "q18": jvm.ai.rapids.sparkexamples.tpch.Q18Like,
-      "q19": jvm.ai.rapids.sparkexamples.tpch.Q19Like,
-      "q20": jvm.ai.rapids.sparkexamples.tpch.Q20Like,
-      "q21": jvm.ai.rapids.sparkexamples.tpch.Q21Like,
-      "q22": jvm.ai.rapids.sparkexamples.tpch.Q22Like
-    }
-    df = tests.get(query).apply(jvm_session)
-    return DataFrame(df, spark.getActiveSession())
-   
-@pytest.fixture(scope="session")
-def tpch(request):
-  tpch_format = request.config.getoption("tpch_format")
-  tpch_path = request.config.getoption("tpch_path")
-  if tpch_path is None:
-    pytest.skip("TPCH not configured to run")
-  else:
-    yield TpchRunner(tpch_format, tpch_path)
 
 _base_conf = {'spark.rapids.sql.variableFloatAgg.enabled': 'true',
         'spark.rapids.sql.hasNans': 'false'}
@@ -182,7 +125,9 @@ def test_tpch_q20(tpch):
   assert_gpu_and_cpu_are_equal_collect(
           lambda spark : tpch.do_test_query("q20"), conf=_base_conf)
 
-@allow_non_gpu('TakeOrderedAndProjectExec', 'SortOrder', 'AttributeReference', 'SortMergeJoinExec', 'Alias', 'Not', 'EqualTo')
+@allow_non_gpu('TakeOrderedAndProjectExec', 'SortOrder', 'AttributeReference',
+        'SortMergeJoinExec', 'BroadcastHashJoinExec', 'BroadcastExchangeExec',
+        'Alias', 'Not', 'EqualTo')
 def test_tpch_q21(tpch):
   assert_gpu_and_cpu_are_equal_collect(
           lambda spark : tpch.do_test_query("q21"), conf=_base_conf)
