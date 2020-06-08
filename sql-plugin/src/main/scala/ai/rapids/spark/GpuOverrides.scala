@@ -320,7 +320,7 @@ object GpuOverrides {
     "in some cases unicode characters change byte width when changing the case. The GPU string " +
     "conversion does not support these characters. For a full list of unsupported characters " +
     "see https://github.com/rapidsai/cudf/issues/3132"
-  private val UTC_TIMEZONE_ID = ZoneId.of("UTC").normalized()
+  val UTC_TIMEZONE_ID = ZoneId.of("UTC").normalized()
   // Based on https://docs.oracle.com/javase/8/docs/api/java/util/regex/Pattern.html
   private[this] lazy val regexList: Seq[String] = Seq("\\", "\u0000", "\\x", "\t", "\n", "\r",
     "\f", "\\a", "\\e", "\\cx", "[", "]", "^", "&", ".", "*", "\\d", "\\D", "\\h", "\\H", "\\s",
@@ -701,11 +701,6 @@ object GpuOverrides {
       "Subtracts interval from timestamp",
       (a, conf, p, r) => new BinaryExprMeta[TimeSub](a, conf, p, r) {
         override def tagExprForGpu(): Unit = {
-          if (conf.dataContainsNegativeTimestamps) {
-            willNotWorkOnGpu("Negative timestamps aren't supported i.e. timestamps prior to " +
-              "Jan 1st 1970. To enable this anyways set " +
-              s"${RapidsConf.DATA_CONTAINS_NEGATIVE_TIMESTAMPS} to false.")
-          }
           a.interval match {
             case Literal(intvl: CalendarInterval, DataTypes.CalendarIntervalType) =>
               if (intvl.months != 0) {
@@ -887,33 +882,30 @@ object GpuOverrides {
           GpuDateDiff(lhs, rhs)
         }
     }),
-    expr[UnixTimestamp](
-      "convert a string date or timestamp to a unix timestamp",
-      (a, conf, p, r) => new BinaryExprMeta[UnixTimestamp](a, conf, p, r) {
-        var strfFormat: String = _
-        override def tagExprForGpu(): Unit = {
-          if (ZoneId.of(a.timeZoneId.get).normalized() != UTC_TIMEZONE_ID) {
-            willNotWorkOnGpu("Only UTC zone id is supported")
-          }
-          // Date and Timestamp work too
-          if (a.right.dataType == StringType) {
-            try {
-              val rightLit = extractStringLit(a.right)
-              if (rightLit.isDefined) {
-                strfFormat = DateUtils.toStrf(rightLit.get)
-              } else {
-                willNotWorkOnGpu("format has to be a string literal")
-              }
-            } catch {
-              case x: TimestampFormatConversionException =>
-                willNotWorkOnGpu(x.getMessage)
-            }
+    expr[ToUnixTimestamp](
+      "Returns the UNIX timestamp of the given time",
+      (a, conf, p, r) => new UnixTimeExprMeta[ToUnixTimestamp](a, conf, p, r){
+        override def convertToGpu(lhs: GpuExpression, rhs: GpuExpression): GpuExpression = {
+          if (conf.isImprovedTimestampOpsEnabled) {
+            // passing the already converted strf string for a little optimization
+            GpuToUnixTimestampImproved(lhs, rhs, strfFormat)
+          } else {
+            GpuToUnixTimestamp(lhs, rhs, strfFormat)
           }
         }
-
+      })
+      .incompat("Incorrectly formatted strings and bogus dates produce garbage data" +
+        " instead of null"),
+    expr[UnixTimestamp](
+      "Returns the UNIX timestamp of current or specified time",
+      (a, conf, p, r) => new UnixTimeExprMeta[UnixTimestamp](a, conf, p, r){
         override def convertToGpu(lhs: GpuExpression, rhs: GpuExpression): GpuExpression = {
-          // passing the already converted strf string for a little optimization
-          GpuUnixTimestamp(lhs, rhs, strfFormat)
+          if (conf.isImprovedTimestampOpsEnabled) {
+            // passing the already converted strf string for a little optimization
+            GpuUnixTimestampImproved(lhs, rhs, strfFormat)
+          } else {
+            GpuUnixTimestamp(lhs, rhs, strfFormat)
+          }
         }
       })
       .incompat("Incorrectly formatted strings and bogus dates produce garbage data" +
@@ -959,25 +951,7 @@ object GpuOverrides {
       }),
     expr[FromUnixTime](
       "get the String from a unix timestamp",
-      (a, conf, p, r) => new BinaryExprMeta[FromUnixTime](a, conf, p, r) {
-        var strfFormat: String = _
-        override def tagExprForGpu(): Unit = {
-          try {
-            if (ZoneId.of(a.timeZoneId.get).normalized() != UTC_TIMEZONE_ID) {
-              willNotWorkOnGpu("Only UTC zone id is supported")
-            }
-            val rightLit = extractStringLit(a.right)
-            if (rightLit.isDefined) {
-              strfFormat = DateUtils.toStrf(rightLit.get)
-            } else {
-              willNotWorkOnGpu("format has to be a string literal")
-            }
-          } catch {
-            case x: TimestampFormatConversionException =>
-              willNotWorkOnGpu(x.getMessage)
-          }
-        }
-
+      (a, conf, p, r) => new UnixTimeExprMeta[FromUnixTime](a, conf, p, r) {
         override def convertToGpu(lhs: GpuExpression, rhs: GpuExpression): GpuExpression = {
           // passing the already converted strf string for a little optimization
           GpuFromUnixTime(lhs, rhs, strfFormat)
