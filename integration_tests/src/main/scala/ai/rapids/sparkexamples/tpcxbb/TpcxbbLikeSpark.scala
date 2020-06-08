@@ -959,7 +959,7 @@ object Q7Like {
         |-- a given month bought products with the price tag at least 20% higher than the
         |-- average price of products in the same category.
         |
-        |CREATE TABLE q7_temp_table as
+        |CREATE TABLE q7_temp_table USING parquet as
         |-- "price tag at least 20% higher than the average price of products in the same category."
         |
         |SELECT
@@ -1696,7 +1696,7 @@ object Q23Like {
         |-- Iteration 2: Find items that had a coefficient of variation of 1.3 or larger
         |-- in the given and the consecutive month
         |
-        |CREATE TABLE q23_temp_table AS
+        |CREATE TABLE q23_temp_table USING parquet AS
         |SELECT
         |  inv_warehouse_sk,
         | -- w_warehouse_name,
@@ -1778,7 +1778,7 @@ object Q24Like {
         |-- compute the price change % for the competitor items
         |-- will give a list of competitor prices changes
         |
-        |CREATE TABLE q24_temp_table AS
+        |CREATE TABLE q24_temp_table USING parquet AS
         |SELECT
         |  i_item_sk,
         |  imp_sk,
@@ -1884,7 +1884,7 @@ object Q25Like {
         |  frequency         BIGINT,
         |  most_recent_date  BIGINT,
         |  amount            decimal(15,2)
-        |)
+        |) USING parquet
         |
         |""".stripMargin)
 
@@ -2012,7 +2012,7 @@ object Q28Like {
         |  pr_review_sk      BIGINT,
         |  pr_rating         INT,
         |  pr_review_content STRING
-        |)
+        |) USING parquet
       """.stripMargin)
 
     spark.sql("DROP TABLE IF EXISTS q28_temp_table2")
@@ -2023,7 +2023,7 @@ object Q28Like {
         |  pr_review_sk      BIGINT,
         |  pr_rating         INT,
         |  pr_review_content STRING
-        |)
+        |) USING parquet
       """.stripMargin)
 
     spark.sql(
