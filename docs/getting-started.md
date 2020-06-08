@@ -254,6 +254,7 @@ $SPARK_HOME/bin/spark-shell \
        --driver-memory 2G \
        --conf spark.executor.memory=4G \
        --conf spark.executor.cores=4 \
+       --conf spark.executor.resource.gpu.amount=1 \
        --conf spark.task.cpus=1 \
        --conf spark.task.resource.gpu.amount=0.25 \
        --conf spark.rapids.memory.pinnedPool.size=2G \
