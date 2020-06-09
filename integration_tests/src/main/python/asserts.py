@@ -13,7 +13,7 @@
 # limitations under the License.
 
 from conftest import is_incompat, should_sort_on_spark, should_sort_locally, get_float_check, get_limit
-from datetime import date
+from datetime import date, datetime
 import math
 from pyspark.sql import Row
 import pytest
@@ -67,6 +67,8 @@ def _assert_equal(cpu, gpu, float_check, path):
             assert float_check(cpu, gpu), "GPU and CPU float values are different {}".format(path)
     elif isinstance(cpu, str):
         assert cpu == gpu, "GPU and CPU string values are different at {}".format(path)
+    elif isinstance(cpu, datetime):
+        assert cpu == gpu, "GPU and CPU timestamp values are different at {}".format(path)
     elif isinstance(cpu, date):
         assert cpu == gpu, "GPU and CPU date values are different at {}".format(path)
     elif isinstance(cpu, bool):

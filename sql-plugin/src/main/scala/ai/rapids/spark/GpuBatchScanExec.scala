@@ -45,7 +45,7 @@ import org.apache.spark.sql.execution.datasources.v2._
 import org.apache.spark.sql.execution.datasources.v2.csv.CSVScan
 import org.apache.spark.sql.execution.metric.{SQLMetric, SQLMetrics}
 import org.apache.spark.sql.internal.SQLConf
-import org.apache.spark.sql.types.{StructField, StructType, TimestampType}
+import org.apache.spark.sql.types.{DateType, StructField, StructType, TimestampType}
 import org.apache.spark.sql.util.CaseInsensitiveStringMap
 import org.apache.spark.sql.vectorized.ColumnarBatch
 import org.apache.spark.util.SerializableConfiguration
@@ -88,6 +88,31 @@ trait ScanWithMetrics {
 }
 
 object GpuCSVScan {
+  private val supportedDateFormats = Set(
+    "yyyy-MM-dd",
+    "yyyy/MM/dd",
+    "yyyy-MM",
+    "yyyy/MM",
+    "MM-yyyy",
+    "MM/yyyy",
+    "MM-dd-yyyy",
+    "MM/dd/yyyy"
+    // TODO "dd-MM-yyyy" and "dd/MM/yyyy" can also be supported, but only if we set
+    // dayfirst to true in the parser config. This is not plumbed into the java cudf yet
+    // and would need to coordinate with the timestamp format too, because both cannot
+    // coexist
+  )
+
+  private val supportedTsPortionFormats = Set(
+    "HH:mm:ss.SSSXXX",
+    "HH:mm:ss[.SSS][XXX]",
+    "HH:mm",
+    "HH:mm:ss",
+    "HH:mm[:ss]",
+    "HH:mm:ss.SSS",
+    "HH:mm:ss[.SSS]"
+  )
+
   def tagSupport(scanMeta: ScanMeta[CSVScan]) : Unit = {
     val scan = scanMeta.wrapped
     tagSupport(
@@ -118,11 +143,6 @@ object GpuCSVScan {
       meta.willNotWorkOnGpu("GpuCSVScan requires a specified data schema")
     }
 
-    // TODO: Add an incompat override flag to specify no timezones appear in timestamp types?
-    if (readSchema.map(_.dataType).contains(TimestampType)) {
-      meta.willNotWorkOnGpu("GpuCSVScan does not support parsing timestamp types")
-    }
-
     if (parsedOptions.delimiter.length > 1) {
       meta.willNotWorkOnGpu("GpuCSVScan does not support multi-character delimiters")
     }
@@ -140,12 +160,10 @@ object GpuCSVScan {
     }
 
     if (parsedOptions.escape != '\\') {
-      // TODO need to fix this
       meta.willNotWorkOnGpu("GpuCSVScan does not support modified escape chars")
     }
 
     // TODO charToEscapeQuoteEscaping???
-
 
     if (StandardCharsets.UTF_8.name() != parsedOptions.charset &&
         StandardCharsets.US_ASCII.name() != parsedOptions.charset) {
@@ -163,30 +181,47 @@ object GpuCSVScan {
     }
 
     if (parsedOptions.multiLine) {
-      // TODO should we support this
       meta.willNotWorkOnGpu("GpuCSVScan does not support multi-line")
     }
 
     if (parsedOptions.lineSeparator.getOrElse("\n") != "\n") {
-      // TODO should we support this
       meta.willNotWorkOnGpu("GpuCSVScan only supports \"\\n\" as a line separator")
     }
 
     if (parsedOptions.parseMode != PermissiveMode) {
       meta.willNotWorkOnGpu("GpuCSVScan only supports Permissive CSV parsing")
     }
-    // TODO parsedOptions.columnNameOfCorruptRecord
+
     // TODO parsedOptions.nanValue This is here by default so we need to be able to support it
     // TODO parsedOptions.positiveInf This is here by default so we need to be able to support it
     // TODO parsedOptions.negativeInf This is here by default so we need to be able to support it
-    // TODO parsedOptions.zoneId This is here by default so we need to be able to support it
-    // TODO parsedOptions.local This is here by default so we need to be able to support it
-    // TODO parsedOptions.dateFormat This is here by default so we need to be able to support it
-    // TODO parsedOptions.timestampFormat This is here by default so we need to be able to support 
-    // it
+
+    if (readSchema.map(_.dataType).contains(DateType) &&
+      !supportedDateFormats.contains(parsedOptions.dateFormat)) {
+      meta.willNotWorkOnGpu(s"the date format '${parsedOptions.dateFormat}' is not supported'")
+    }
+
+    if (readSchema.map(_.dataType).contains(TimestampType)) {
+      if (!meta.conf.isCsvTimestampEnabled) {
+        meta.willNotWorkOnGpu("GpuCSVScan does not support parsing timestamp types. To " +
+          s"enable it please set ${RapidsConf.ENABLE_CSV_TIMESTAMPS} to true.")
+      }
+      if (parsedOptions.zoneId.normalized() != GpuOverrides.UTC_TIMEZONE_ID) {
+        meta.willNotWorkOnGpu("Only UTC zone id is supported")
+      }
+      val tsFormat = parsedOptions.timestampFormat
+      val parts = tsFormat.split("'T'", 2)
+      if (parts.length == 0) {
+        meta.willNotWorkOnGpu(s"the timestamp format '$tsFormat' is not supported")
+      }
+      if (parts.length > 0 && !supportedDateFormats.contains(parts(0))) {
+        meta.willNotWorkOnGpu(s"the timestamp format '$tsFormat' is not supported")
+      }
+      if (parts.length > 1 && !supportedTsPortionFormats.contains(parts(1))) {
+        meta.willNotWorkOnGpu(s"the timestamp format '$tsFormat' is not supported")
+      }
+    }
     // TODO parsedOptions.emptyValueInRead
-    // TODO ColumnPruning????
-    // TODO sparkSession.sessionState.conf.caseSensitiveAnalysis on the column names
   }
 }
 

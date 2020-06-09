@@ -15,6 +15,7 @@
 import pytest
 
 from asserts import assert_gpu_and_cpu_are_equal_collect
+from datetime import datetime, timezone
 from data_gen import *
 from marks import *
 from pyspark.sql.types import *
@@ -80,25 +81,57 @@ _perf_schema = StructType([
     StructField('foreclosure_principal_write_off_amount', StringType()),
     StructField('servicing_activity_indicator', StringType())])
 
+_date_schema = StructType([
+    StructField('date', DateType())])
+
+_ts_schema = StructType([
+    StructField('ts', TimestampType())])
+
+_bad_str_schema = StructType([
+    StructField('string', StringType())])
+
+_good_str_schema = StructType([
+    StructField('Something', StringType())])
+
+
+_enable_ts_conf = {'spark.rapids.sql.csvTimestamps.enabled': 'true'}
+
 @approximate_float
 @pytest.mark.parametrize('name,schema,sep,header', [
     ('Acquisition_2007Q3.txt', _acq_schema, '|', False),
-    ('Performance_2007Q3.txt_0', _perf_schema, '|', False)])
+    ('Performance_2007Q3.txt_0', _perf_schema, '|', False),
+    pytest.param('ts.csv', _date_schema, ',', False, marks=pytest.mark.xfail(reason='https://github.com/NVIDIA/spark-rapids/issues/122')),
+    ('ts.csv', _ts_schema, ',', False),
+    ('str.csv', _bad_str_schema, ',', True),
+    ('str.csv', _good_str_schema, ',', True)
+    ])
 def test_basic_read(std_input_path, name, schema, sep, header):
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : spark.read\
                     .schema(schema)\
                     .option('header', header)\
                     .option('sep', sep)\
-                    .csv(std_input_path + '/' + name))
+                    .csv(std_input_path + '/' + name),
+                    conf=_enable_ts_conf)
 
 
-# tiemstamps are not supported because of time zones
-csv_supported_gens = [byte_gen, short_gen, int_gen, long_gen, boolean_gen, date_gen]
+csv_supported_gens = [
+        # Spark does not escape '\r' or '\n' even though it uses it to mark end of record
+        # This would require multiLine reads to work correctly so we avoid these chars
+        StringGen('(\\w| |\t|\ud720){0,10}', nullable=False),
+        pytest.param(StringGen('[aAbB ]{0,10}'), marks=pytest.mark.xfail(reason='https://github.com/NVIDIA/spark-rapids/issues/127')),
+        byte_gen, short_gen, int_gen, long_gen, boolean_gen, date_gen,
+        DoubleGen(no_nans=True), # NaN, Inf, and -Inf are not supported
+        # Once https://github.com/NVIDIA/spark-rapids/issues/125 and https://github.com/NVIDIA/spark-rapids/issues/124
+        # are fixed we should not have to special case float values any more.
+        pytest.param(double_gen, marks=pytest.mark.xfail(reason='https://github.com/NVIDIA/spark-rapids/issues/125')),
+        pytest.param(FloatGen(no_nans=True), marks=pytest.mark.xfail(reason='https://github.com/NVIDIA/spark-rapids/issues/124')),
+        pytest.param(float_gen, marks=pytest.mark.xfail(reason='https://github.com/NVIDIA/spark-rapids/issues/125')),
+        # Once https://github.com/NVIDIA/spark-rapids/issues/122 is fixed the reduced range ts gen should be removed
+        TimestampGen(start=datetime(1902, 1, 1, tzinfo=timezone.utc), end=datetime(2038, 1, 1, tzinfo=timezone.utc)),
+        pytest.param(TimestampGen(), marks=pytest.mark.xfail(reason='https://github.com/NVIDIA/spark-rapids/issues/122'))]
 
-#TODO need to work on string_gen
-#TODO need to work on double_gen and float_gen (NaN, Infinity and -Infinity don't parse properly).
-
+@approximate_float
 @pytest.mark.parametrize('data_gen', csv_supported_gens, ids=idfn)
 def test_round_trip(spark_tmp_path, data_gen):
     gen = StructGen([('a', data_gen)], nullable=False)
@@ -107,33 +140,52 @@ def test_round_trip(spark_tmp_path, data_gen):
     with_cpu_session(
             lambda spark : gen_df(spark, gen).write.csv(data_path))
     assert_gpu_and_cpu_are_equal_collect(
-            lambda spark : spark.read.schema(schema).csv(data_path))
+            lambda spark : spark.read.schema(schema).csv(data_path),
+            conf=_enable_ts_conf)
 
-# It looks like cudf supports
-# TODO add more tests and document incompat
-# DATE:
-# yyyy-MM?-dd?
-# yyyy/MM?/dd?
-# yyyy-MM?
-# yyyy/MM?
-# If day first is false (default)
-# MM?/yyyy*
-# MM?/dd?/yyyy*
-# If day first is true
-# dd?-MM?-yyyy* # No bounds checking
-# dd?/MM?/yyyy*
+csv_supported_date_formats = ['yyyy-MM-dd', 'yyyy/MM/dd', 'yyyy-MM', 'yyyy/MM',
+        'MM-yyyy', 'MM/yyyy', 'MM-dd-yyyy', 'MM/dd/yyyy']
+@pytest.mark.parametrize('date_format', csv_supported_date_formats, ids=idfn)
+def test_date_formats_round_trip(spark_tmp_path, date_format):
+    gen = StructGen([('a', DateGen())], nullable=False)
+    data_path = spark_tmp_path + '/CSV_DATA'
+    schema = gen.data_type
+    with_cpu_session(
+            lambda spark : gen_df(spark, gen).write\
+                    .option('dateFormat', date_format)\
+                    .csv(data_path))
+    assert_gpu_and_cpu_are_equal_collect(
+            lambda spark : spark.read\
+                    .schema(schema)\
+                    .option('dateFormat', date_format)\
+                    .csv(data_path))
 
-# TIMESTAMP:
-# $DATE[T ]$TIME
-# hh?:mm?:ss?.SSS? aa
-# HH?:mm?:ss?.SSS?
-# Default date format is "yyyy-MM-dd"
-# Default TS format is "yyyy-MM-dd'T'HH:mm:ss[.SSS][XXX]"
+csv_supported_ts_parts = ['', # Just the date
+        "'T'HH:mm:ss.SSSXXX",
+        "'T'HH:mm:ss[.SSS][XXX]",
+        "'T'HH:mm:ss.SSS",
+        "'T'HH:mm:ss[.SSS]",
+        "'T'HH:mm:ss",
+        "'T'HH:mm[:ss]",
+        "'T'HH:mm"]
 
-# FLOAT:
-#-?\d*.\d*[eE][+-]?
-#-?\d*[eE][+-]?
-# Anything else is null
-
-# INT:
-# -?\d*
+@pytest.mark.parametrize('ts_part', csv_supported_ts_parts)
+@pytest.mark.parametrize('date_format', csv_supported_date_formats)
+def test_ts_formats_round_trip(spark_tmp_path, date_format, ts_part):
+    full_format = date_format + ts_part
+    # Once https://github.com/NVIDIA/spark-rapids/issues/122 is fixed the full range should be used
+    data_gen = TimestampGen(start=datetime(1902, 1, 1, tzinfo=timezone.utc),
+            end=datetime(2038, 1, 1, tzinfo=timezone.utc))
+    gen = StructGen([('a', data_gen)], nullable=False)
+    data_path = spark_tmp_path + '/CSV_DATA'
+    schema = gen.data_type
+    with_cpu_session(
+            lambda spark : gen_df(spark, gen).write\
+                    .option('timestampFormat', full_format)\
+                    .csv(data_path))
+    assert_gpu_and_cpu_are_equal_collect(
+            lambda spark : spark.read\
+                    .schema(schema)\
+                    .option('timestampFormat', full_format)\
+                    .csv(data_path),
+            conf=_enable_ts_conf)

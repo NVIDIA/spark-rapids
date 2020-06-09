@@ -155,6 +155,7 @@ def std_input_path(request):
 
 @pytest.fixture
 def spark_tmp_path(request):
+    debug = request.config.getoption('debug_tmp_path')
     ret = request.config.getoption('tmp_path')
     if ret is None:
         ret = '/tmp/pyspark_tests/'
@@ -166,7 +167,8 @@ def spark_tmp_path(request):
     fs = sc._jvm.org.apache.hadoop.fs.FileSystem.get(config)
     fs.mkdirs(path)
     yield ret
-    fs.delete(path)
+    if not debug:
+        fs.delete(path)
 
 def _get_jvm_session(spark):
     return spark._jsparkSession
