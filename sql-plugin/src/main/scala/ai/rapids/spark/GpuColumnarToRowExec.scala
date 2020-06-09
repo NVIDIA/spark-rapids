@@ -179,8 +179,8 @@ case class GpuColumnarToRowExec(child: SparkPlan, exportColumnarRdd: Boolean = f
   }
 
   /**
-   * Produce code to process the input iterator as [[ColumnarBatch]]es.
-   * This produces an [[org.apache.spark.sql.catalyst.expressions.UnsafeRow]] for each row in
+   * Produce code to process the input iterator as `ColumnarBatch`es.
+   * This produces an `org.apache.spark.sql.catalyst.expressions.UnsafeRow` for each row in
    * each batch..
    */
   override protected def doProduce(ctx: CodegenContext): String = {

@@ -86,13 +86,13 @@ trait GpuExpression extends Expression with Unevaluable with Arm {
 
   /**
    * Returns the result of evaluating this expression on the entire
-   * [[ColumnarBatch]]. The result of calling this may be a single [[GpuColumnVector]] or a scalar
+   * `ColumnarBatch`. The result of calling this may be a single `GpuColumnVector` or a scalar
    * value. Scalar values typically happen if they are a part of the expression i.e. col("a") + 100.
    * In this case the 100 is a literal that Add would have to be able to handle.
    *
-   * By convention any [[GpuColumnVector]] returned by [[columnarEval]]
+   * By convention any `GpuColumnVector` returned by [[columnarEval]]
    * is owned by the caller and will need to be closed by them. This can happen by putting it into
-   * a [[ColumnarBatch]] and closing the batch or by closing the vector directly if it is a
+   * a `ColumnarBatch` and closing the batch or by closing the vector directly if it is a
    * temporary value.
    */
   def columnarEval(batch: ColumnarBatch): Any

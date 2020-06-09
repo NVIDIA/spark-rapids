@@ -454,10 +454,10 @@ private class ExternalRowToColumnarIterator(
  *
  * This provides a way to get back out GPU Columnar data RDD[Table]. Each Table will have the same
  * schema as the dataframe passed in.  If the schema of the dataframe is something that Rapids does
- * not currently support an [[IllegalArgumentException]] will be thrown.
+ * not currently support an `IllegalArgumentException` will be thrown.
  *
  * The size of each table will be determined by what is producing that table but typically will be
- * about the number of bytes set by [[RapidsConf.GPU_BATCH_SIZE_BYTES]].
+ * about the number of bytes set by `RapidsConf.GPU_BATCH_SIZE_BYTES`.
  *
  * Table is not a typical thing in an RDD so special care needs to be taken when working with it.
  * By default it is not serializable so repartitioning the RDD or any other operator that involves

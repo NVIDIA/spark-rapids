@@ -63,37 +63,36 @@ case class PendingTransferRequest(client: RapidsShuffleClient,
   *
   * Callers use this class, like so:
   *
-  * 1) [[getRequest]]
+  * 1. [[getRequest]]
   *    - first call:
-  *       -- Initializes the state tracking the progress of [[currentRequest]] and our place in
-  *          [[requests]] (e.g. offset, bytes remaining), and then acquires a set of bounce buffers
-  *          that will be used to fully receive the first request (stored at [[currentRequest]]).
+  *       - Initializes the state tracking the progress of `currentRequest` and our place in
+  *          `requests` (e.g. offset, bytes remaining)
   *
   *    - subsequent calls:
-  *       -- if [[currentRequest]] is not done, it will return the current request. And perform
+  *       - if `currentRequest` is not done, it will return the current request. And perform
   *          sanity checks.
-  *       -- if [[currentRequest]] is done, it will perform sanity checks, and advance to the next
-  *          request in [[requests]]
+  *       - if `currentRequest` is done, it will perform sanity checks, and advance to the next
+  *          request in `requests`
   *
-  * 2) [[consumeBuffers]]
-  *     - given a set of buffers (subset of the bounce buffers retained in this class), it will:
-  *       1) The first time around for [[currentRequest]] it will allocate the actuall full device
-  *          buffer that we will copy to.
-  *       2) copy data sequentially from the bounce buffers passed in, assuming the sequence of
-  *          bounce buffers passed is sequential and represent contiguous parts of the overall
-  *          receive.
-  *       3) if [[currentRequest]] has been fully received, releases *all* bounce buffers.
-  *          NOTE: this implies that at the tail of a long request we will hold X bounce buffers,
-  *          when in reality only a subset may be needed, and the unused bunce buffers should be
-  *          returned to the pool.
+  * 2. [[consumeBuffers]]
+  *     - first call:
+  *       - The first time around for `currentRequest` it will allocate the actual full device
+  *         buffer that we will copy to, copy data sequentially from the bounce buffer to the 
+  *         target buffer.
+  *     - subsequent calls:
+  *       - continue copy data sequentially from the bounce buffers passed in.
+  *       - When `currentRequest` has been fully received, an optional `DeviceMemoryBuffer` is 
+  *         set, and returned.
   *
-  * @param requests - [[PendingTransferRequest]] instances that the client is actively trying
-  *                   to receive
-  * @param transport - a transport, which in this case is used to get bounce buffers
+  * 3. [[close]]
+  *     - once the caller calls close, the bounce buffers are returned to the pool.
+  *
+  * @param transport - a transport, which in this case is used to free bounce buffers
+  * @param bounceMemoryBuffers - a sequence of `MemoryBuffer` buffers to use for receives
   */
 class BufferReceiveState(
     transport: RapidsShuffleTransport,
-    val  bounceMemoryBuffers: Seq[MemoryBuffer])
+    val bounceMemoryBuffers: Seq[MemoryBuffer])
   extends AutoCloseable
   with Logging {
 
@@ -163,11 +162,12 @@ class BufferReceiveState(
 
   /**
     * When a receive transaction is successful, this function is called to consume the bounce
-    * buffers received. [[consumeBuffers]] allocates [[buff]] if it is not allocated already.
+    * buffers received.
+    *
+    * @note If the target device buffer is not allocated, this function does so.
     * @param bounceBuffers - sequence of buffers that have been received
-    * @return - if the current request is complete, returns a shallow copy of [[buff]] as an
-    *         [[Option]], by adding a reference to it, closing the one in this class, and nulling
-    *         it (to prepare for the next transfer).
+    * @return - if the current request is complete, returns a shallow copy of the target
+    *         device buffer as an `Option`. Callers will need to close the buffer.
     */
   def consumeBuffers(
       bounceBuffers: Seq[AddressLengthTag]): Option[DeviceMemoryBuffer] = synchronized {
@@ -285,8 +285,10 @@ class BufferReceiveState(
     * This is a subset, because at the moment, the full target length worth of bounce buffers
     * could have been acquired. If we are at the tail end of receive, and it could be fulfilled
     * with 1 bounce buffer, for example, we would return 1 bounce buffer here, rather than the
-    * number of buffers in [[bounceBuffers]]. Note that these extra buffers should really just be
-    * freed as soon as we consume them and realize they are of no use.
+    * number of buffers in acquired.
+    *
+    * @note that these extra buffers should really just be freed as soon as we realize
+    *       they are of no use.
     *
     * @return - sequence of [[AddressLengthTag]] pointing to the receive bounce buffers.
     */
@@ -326,13 +328,13 @@ class BufferReceiveState(
   * The client makes requests via a [[Connection]] obtained from the [[RapidsShuffleTransport]].
   *
   * The [[Connection]] follows a single threaded callback model, so this class posts operations
-  * to an [[Executor]] as quickly as it gets them from the [[Connection]].
+  * to an `Executor` as quickly as it gets them from the [[Connection]].
   *
   * This class handles fetch requests from [[RapidsShuffleIterator]], turning them into
-  * [[ShuffleMetadata]] messages, and shuffle [[TransferRequest]]s.
+  * [[ShuffleMetadata]] messages, and shuffle `TransferRequest`s.
   *
   * Its counterpart is the [[RapidsShuffleServer]] on a specific peer executor, specified by
-  * [[connection]].
+  * `connection`.
   *
   * @param localExecutorId - this id is sent to the server, it is required for the protocol as
   *                        the server needs to pick an endpoint to send a response back to this
@@ -341,6 +343,7 @@ class BufferReceiveState(
   * @param transport - used to get metadata buffers and to work with the throttle mechanism
   * @param exec - Executor used to handle tasks that take time, and should not be in the
   *             transport's thread
+  * @param clientCopyExecutor - Executors used to handle synchronous mem copies
   * @param maximumMetadataSize - The maximum metadata buffer size we are able to request
   *                            TODO: this should go away
   */
@@ -439,7 +442,7 @@ class RapidsShuffleClient(
   }
 
   /**
-    * Starts a fetch request for all the shuffleRequests, using [[handler]] to communicate
+    * Starts a fetch request for all the shuffleRequests, using `handler` to communicate
     * events back to the iterator.
     *
     * @param shuffleRequests - blocks to fetch
@@ -686,8 +689,8 @@ class RapidsShuffleClient(
   }
 
   /**
-    * This function handles data received in [[bounceBuffers]]. The data should be copied out
-    * of the buffers, and the function should call into [[bufferReceiveState]] to advance its
+    * This function handles data received in `bounceBuffers`. The data should be copied out
+    * of the buffers, and the function should call into `bufferReceiveState` to advance its
     * state (consumeBuffers)
     * @param tx - live transaction for these bounce buffers, it should be closed in this function
     * @param bufferReceiveState - state management objects for live transfer requests

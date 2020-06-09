@@ -89,10 +89,10 @@ class CoalescedBatchPartitioner(val parent: Partitioner, val partitionStartIndic
 }
 
 /**
- * This is a specialized version of [[org.apache.spark.rdd.ShuffledRDD]] that is optimized for
- * shuffling [[ColumnarBatch]] instead of Java key-value pairs.
+ * This is a specialized version of `org.apache.spark.rdd.ShuffledRDD` that is optimized for
+ * shuffling `ColumnarBatch` instead of Java key-value pairs.
  *
- * This RDD takes a [[ShuffleDependency]] (`dependency`),
+ * This RDD takes a `ShuffleDependency` (`dependency`),
  * and an optional array of partition start indices as input arguments
  * (`specifiedPartitionStartIndices`).
  *

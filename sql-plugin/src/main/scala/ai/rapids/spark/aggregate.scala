@@ -576,8 +576,8 @@ case class GpuHashAggregateExec(requiredChildDistributionExpressions: Option[Seq
   private lazy val completeMode = uniqueModes.contains(Complete)
 
   /**
-    * getCudfAggregates returns a sequence of [[cudf.Aggregate]], given the current mode
-    * [[AggregateMode]], and a sequence of all expressions for this [[GpuHashAggregateExec]]
+    * getCudfAggregates returns a sequence of `cudf.Aggregate`, given the current mode
+    * `AggregateMode`, and a sequence of all expressions for this [[GpuHashAggregateExec]]
     * node, we get all the expressions as that's important for us to be able to resolve the current
     * ordinal for this cudf aggregate.
     *
@@ -586,7 +586,7 @@ case class GpuHashAggregateExec(requiredChildDistributionExpressions: Option[Seq
     * avg will be Seq(sum, count) for Partial mode, but Seq(sum, sum) for other modes
     * count will be Seq(count) for Partial mode, but Seq(sum) for other modes
     *
-    * @return - Seq of [[cudf.Aggregate]], with one or more aggregates that correspond to each
+    * @return - Seq of `cudf.Aggregate`, with one or more aggregates that correspond to each
     *           expression in allExpressions
     */
   def setupReferences(childAttr: AttributeSeq,

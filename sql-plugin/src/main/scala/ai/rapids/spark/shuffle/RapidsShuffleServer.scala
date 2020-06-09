@@ -31,17 +31,16 @@ import org.apache.spark.storage.{BlockManagerId, ShuffleBlockBatchId}
   */
 trait RapidsShuffleRequestHandler {
   /**
-    * This is a query into the manager to get the [[TableMeta]] corresponding to this shuffle block,
-    * described by the arguments.
-    * @param shuffleBlockBatchId - spark's [[ShuffleBlockBatchId]] with (shuffleId, mapId,
+    * This is a query into the manager to get the `TableMeta` corresponding to a
+    * shuffle block.
+    * @param shuffleBlockBatchId - `ShuffleBlockBatchId` with (shuffleId, mapId,
     *                            startReduceId, endReduceId)
-    * @return - a sequence of [[TableMeta]] describing batches corresponding to the
-    *         [[shuffleBlockBatchId]]
+    * @return - a sequence of `TableMeta` describing batches corresponding to a block.
     */
   def getShuffleBufferMetas(shuffleBlockBatchId: ShuffleBlockBatchId): Seq[TableMeta]
 
   /**
-    * Acquires (locks w.r.t. the memory tier) a [[RapidsBuffer]] corresponding to a [[tableId]].
+    * Acquires (locks w.r.t. the memory tier) a [[RapidsBuffer]] corresponding to a table id.
     * @param tableId - the unique id for a table in the catalog
     * @return - a [[RapidsBuffer]] which is reference counted, and should be closed by the acquirer
     */
@@ -56,7 +55,7 @@ trait RapidsShuffleRequestHandler {
   *
   * @param transport - the transport we were configured with
   * @param serverConnection - a connection object, which contains functions to send/receive
-  * @param originalShuffleServerId - spark's [[BlockManagerId]] for this executor
+  * @param originalShuffleServerId - spark's `BlockManagerId` for this executor
   * @param requestHandler - instance of [[RapidsShuffleRequestHandler]]
   * @param exec - Executor used to handle tasks that take time, and should not be in the
   *             transport's thread
@@ -142,7 +141,7 @@ class RapidsShuffleServer(transport: RapidsShuffleTransport,
     * All callbacks handled in the server (from the transport) need to be offloaded into
     * this pool. Note, if this thread blocks we are blocking the progress thread of the transport.
     *
-    * @param op - One of the case classes in [[ShuffleServerOps]]
+    * @param op - One of the case classes in `ShuffleServerOps`
     */
   def asyncOrBlock(op: Any): Unit = {
     exec.execute(() => handleOp(op))
@@ -243,8 +242,8 @@ class RapidsShuffleServer(transport: RapidsShuffleTransport,
   }
 
   /**
-    * Function to handle [[HandleMeta]] events. It will populate and issue a response for the
-    * appropriate client.
+    * Function to handle `MetadataRequest`s. It will populate and issue a
+    * `MetadataResponse` response for the appropriate client.
     *
     * @param tx - the inbound [[Transaction]]
     * @param metaRequest - a ref counted buffer holding a MetadataRequest message.
@@ -338,7 +337,8 @@ class RapidsShuffleServer(transport: RapidsShuffleTransport,
   }
 
   /**
-    * A helper case class to maintain the state associated with a [[TransferRequest]].
+    * A helper case class to maintain the state associated with a transfer request initiated by
+    * a `TransferRequest` metadata message.
     *
     * This class is *not thread safe*. The way the code is currently designed, bounce buffers
     * being used to send, or copied to, are acted on a sequential basis, in time and in space.
@@ -369,9 +369,9 @@ class RapidsShuffleServer(transport: RapidsShuffleTransport,
     *
     * In terms of the lifecycle of this object, it begins with the client asking for transfers to
     * start, it lasts through all buffers being transmitted, and ultimately finishes when a
-    * [[TransferResponse]] is sent back to the client.
+    * `TransferResponse` is sent back to the client.
     *
-    * @param tx      - the original [[ai.rapids.spark.format.TransferRequest]] transaction.
+    * @param tx      - the original `Transaction` from the `TransferRequest`.
     * @param request - a transfer request
     */
   class BufferSendState(tx: Transaction, request: RefCountedDirectByteBuffer)
@@ -420,8 +420,8 @@ class RapidsShuffleServer(transport: RapidsShuffleTransport,
     }
 
     /**
-      * Used by the [[bssExec]] to pop a [[BufferSendState]] from its queue if and only if
-      * there are bounce buffers available
+      * Used to pop a [[BufferSendState]] from its queue if and only if there are bounce
+      * buffers available
       * @return
       */
     def acquireBounceBuffersNonBlocking: Boolean = {

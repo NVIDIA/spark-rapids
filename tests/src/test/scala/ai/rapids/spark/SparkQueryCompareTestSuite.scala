@@ -107,8 +107,8 @@ trait SparkQueryCompareTestSuite extends FunSuite with Arm {
 
   //  @see java.lang.Float#intBitsToFloat
   // <quote>
-  // If the argument is any value in the range 0x7f800001 through 0x7fffffff or
-  // in the range 0xff800001 through 0xffffffff, the result is a NaN
+  // If the argument is any value in the range `0x7f800001` through `0x7fffffff` or
+  // in the range `0xff800001` through `0xffffffff`, the result is a NaN
   // </quote>
   val FLOAT_POSITIVE_NAN_LOWER_RANGE = java.lang.Float.intBitsToFloat(0x7f800001)
   val FLOAT_POSITIVE_NAN_UPPER_RANGE = java.lang.Float.intBitsToFloat(0x7fffffff)
@@ -117,10 +117,10 @@ trait SparkQueryCompareTestSuite extends FunSuite with Arm {
 
   // see java.lang.Double#longBitsToDouble
   // <quote>
-  // <p>If the argument is any value in the range {@code 0x7ff0000000000001L} through
-  // {@code 0x7fffffffffffffffL} or in the range
-  // {@code 0xfff0000000000001L} through
-  // {@code 0xffffffffffffffffL}, the result is a NaN
+  // <p>If the argument is any value in the range `0x7ff0000000000001L` through
+  // `0x7fffffffffffffffL` or in the range
+  // `0xfff0000000000001L` through
+  // `0xffffffffffffffffL`, the result is a NaN
   val DOUBLE_POSITIVE_NAN_LOWER_RANGE = java.lang.Double.longBitsToDouble(0x7ff0000000000001L)
   val DOUBLE_POSITIVE_NAN_UPPER_RANGE = java.lang.Double.longBitsToDouble(0x7fffffffffffffffL)
   val DOUBLE_NEGATIVE_NAN_LOWER_RANGE = java.lang.Double.longBitsToDouble(0xfff0000000000001L)

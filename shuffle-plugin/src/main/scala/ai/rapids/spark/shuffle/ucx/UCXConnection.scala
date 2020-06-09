@@ -72,17 +72,21 @@ class UCXClientConnection(peerExecutorId: Int, peerClientId: Long, ucx: UCX)
   override def getPeerExecutorId: Long = peerExecutorId
 
   /**
-    * This performs a request/response, where the request and response are read from/deposited
-    * from memory. This is used when an executor wants to request blocks from a remote executor,
-    * it sends a [[ShuffleMetadataRequest]] in the [[reqAddress]] and expects a
-    * [[ShuffleMatadataResponse]] in the [[respAddress]] at the [[response.tag]].
+    * This performs a request/response, where the request is read from one
+    * `AddressLengthTag` `request`, and the response is populated at the memory 
+    * described by `response`.
     *
-    * @param cb - callback to call once the response is done
-    * @return
+    * @param request - `AddressLengthTag` holding the request message
+    * @param response - `AddressLengthTag` describing memory that will hold a response
+    * @param cb - callback to handle transaction status. If successful the memory described
+    *           using "response" will hold the response as expected, otherwise its contents
+    *           are not defined.
+    * @return - Transaction instance for the request
     */
-  override def request(request: AddressLengthTag,
-                       response: AddressLengthTag,
-                       cb: TransactionCallback): Transaction = {
+  override def request(
+      request: AddressLengthTag,
+      response: AddressLengthTag,
+      cb: TransactionCallback): Transaction = {
     val tx = createTransaction
 
     tx.start(UCXTransactionType.Request, 2, cb)
@@ -341,12 +345,11 @@ object UCXConnection extends Logging {
   }
 
   /**
-    * Handles the input stream, using [[readBytesFromStream]] to read from the
-    * stream: the length of the WorkerAddress + the WorkerAddress +
-    * the remote ExecutorId (as an int)
+    * Given a java `InputStream`, obtain the peer's `WorkerAddress` and executor id,
+    * returning them as a pair.
     *
-    * @param is - management port InputStream
-    * @return - (WorkerAddress, remoteExecutorId)
+    * @param is - management port `InputStream`
+    * @return - `(WorkerAddress, remoteExecutorId) tuple`
     */
   def readHandshakeHeader(is: InputStream): (WorkerAddress, Int) = {
     val maxLen = 1024 * 1024

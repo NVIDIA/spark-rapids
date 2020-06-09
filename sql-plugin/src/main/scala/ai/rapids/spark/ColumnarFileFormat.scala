@@ -37,7 +37,7 @@ trait ColumnarFileFormat {
       dataSchema: StructType): ColumnarOutputWriterFactory
 
   /**
-   * Returns whether this format supports the given [[DataType]] in the write path.
+   * Returns whether this format supports the given `DataType` in the write path.
    * By default all data types are supported.
    */
   def supportDataType(dataType: DataType): Boolean = true

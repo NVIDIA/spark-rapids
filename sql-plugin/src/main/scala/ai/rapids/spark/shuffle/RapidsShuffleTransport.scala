@@ -25,7 +25,7 @@ import ai.rapids.spark.RapidsConf
 
 import org.apache.spark.internal.Logging
 import org.apache.spark.sql.rapids.storage.RapidsStorageUtils
-import org.apache.spark.storage.{BlockManagerId, StorageUtils}
+import org.apache.spark.storage.BlockManagerId
 
 /**
   * This case class is a bit bloated, with memory buffers and rapids buffers.
@@ -48,8 +48,8 @@ class AddressLengthTag(val address: Long, var length: Long, val tag: Long,
 
   /**
     * Get a device memory buffer, this function will throw if it is not backed by a
-    * [[DeviceMemoryBuffer]]
-    * @return - the backing [[DeviceMemoryBuffer]]
+    * `DeviceMemoryBuffer`
+    * @return - the backing device memory buffer
     */
   def releaseDeviceMemoryBuffer(): DeviceMemoryBuffer = {
     require(isDeviceBuffer(),
@@ -63,7 +63,7 @@ class AddressLengthTag(val address: Long, var length: Long, val tag: Long,
     * Copy to a destination [[AddressLengthTag]]
     * @param dstAlt - the destination [[AddressLengthTag]]
     * @param srcOffset - the offset to start copying from
-    * @param toCopy - amount to copy to [[dstAlt]]
+    * @param toCopy - amount to copy to dstAlt
     * @return - amount of bytes copied
     */
   def cudaCopyTo(dstAlt: AddressLengthTag, srcOffset: Long, toCopy: Long): Long = {
@@ -133,7 +133,7 @@ class AddressLengthTag(val address: Long, var length: Long, val tag: Long,
 
 object AddressLengthTag {
   /**
-    * Construct an [[AddressLengthTag]] given a [[MemoryBuffer]] that is on the device, or host.
+    * Construct an [[AddressLengthTag]] given a `MemoryBuffer` that is on the device, or host.
     * @param memoryBuffer - the buffer the [[AddressLengthTag]] should point to
     * @param tag - the transport tag to use to send/receive this buffer
     * @return - an instance of [[AddressLengthTag]]
@@ -147,7 +147,7 @@ object AddressLengthTag {
   }
 
   /**
-    * Construct an [[AddressLengthTag]] given a [[ByteBuffer]]
+    * Construct an [[AddressLengthTag]] given a `ByteBuffer`
     * This is used for metadata messages, and the buffers are direct.
     * @param byteBuffer - the buffer the [[AddressLengthTag]] should point to
     * @param tag - the transport tag to use to send/receive this buffer
@@ -180,7 +180,7 @@ trait MemoryRegistrationCallback {
   */
 trait ServerConnection extends Connection {
   /**
-    * Starts a TCP management port, bound to [[host]], on an ephemeral port (returned)
+    * Starts a TCP management port, bound to `host`, on an ephemeral port (returned)
     * @param host - host to bind to
     * @return - integer ephemeral port that was bound
     */
@@ -214,14 +214,14 @@ trait ServerConnection extends Connection {
   */
 object RequestType extends Enumeration {
   /**
-    * A client will issue: [[ai.rapids.spark.format.MetadataRequest]]
-    * A server will respond with: [[ai.rapids.spark.format.MetadataResponse]]
+    * A client will issue: `MetadataRequest`
+    * A server will respond with: `MetadataResponse`
     */
   val MetadataRequest = Value
 
   /**
-    * A client will issue: [[ai.rapids.spark.format.TransferRequest]]
-    * A server will respond with: [[ai.rapids.spark.format.TransferResponse]]
+    * A client will issue: `TransferRequest`
+    * A server will respond with: `TransferResponse`
     */
   val TransferRequest = Value
 }
@@ -233,13 +233,12 @@ object RequestType extends Enumeration {
   */
 trait ClientConnection extends Connection {
   /**
-    * Perform an asynchronous request, where the callback [[cb]] is triggered
+    * Perform an asynchronous request, where the callback `cb` is triggered
     * when the response is received at the response's tag.
-    * @param request - [[AddressLengthTag]] describing request message
-    * @param response - [[AddressLengthTag]] describing response message
-    * @param cb - a callback to tell the caller that the transaction is done ([[response]] should
-    *             have the result)
-    * @return - [[Transaction]] object. It can be used to block for this requst to complete.
+    * @param request - `AddressLengthTag` describing request message
+    * @param response - `AddressLengthTag` describing response message
+    * @param cb - a callback to tell the caller that the transaction is done
+    * @return - `Transaction` object
     */
   def request(request: AddressLengthTag,
               response: AddressLengthTag,
@@ -369,17 +368,17 @@ trait Transaction extends AutoCloseable {
   * This defines what a "transport" should support. The intention is to allow for
   * various transport implementations to exist, for different communication frameworks.
   *
-  * It is an [[AutoCloseable]] and so the caller should close when the transport is no longer
+  * It is an `AutoCloseable` and so the caller should close when the transport is no longer
   * needed.
   */
 trait RapidsShuffleTransport extends AutoCloseable {
   /**
     * This function will connect (if not connected already) to a peer
-    * described by [[blockManagerId]]. Connections are cached.
+    * described by `blockManagerId`. Connections are cached.
     *
     * @param localExecutorId - the local executor id
     * @param blockManagerId - the peer's block manager id
-    * @return - A [[RapidsShuffleClient]] instance that can be used to interact with the peer
+    * @return - RapidsShuffleClient instance that can be used to interact with the peer
     */
   def makeClient(localExecutorId: Long,
                  blockManagerId: BlockManagerId): RapidsShuffleClient
@@ -410,7 +409,7 @@ trait RapidsShuffleTransport extends AutoCloseable {
   def queuePending(reqs: Seq[PendingTransferRequest])
 
   /**
-    * (throttle) Signals that [[bytesCompleted]] are done, allowing more requests through the
+    * (throttle) Signals that `bytesCompleted` are done, allowing more requests through the
     * throttle.
     * @param bytesCompleted - amount of bytes handled
     */
@@ -419,8 +418,9 @@ trait RapidsShuffleTransport extends AutoCloseable {
   // Bounce Buffer Management
 
   /**
-    * Get receive bounce buffers needed for [[remaining]] bytes. [[totalRequired]] limits the
-    * number of buffers that should be returned.
+    * Get receive bounce buffers needed for a receive, limited by the amount of bytes
+    * to be received, and a hard limit on the number of buffers set by the caller
+    * using `totalRequired`.
     *
     * This function blocks if it can't satisfy the bounce buffer request.
     *
@@ -431,8 +431,9 @@ trait RapidsShuffleTransport extends AutoCloseable {
   def getReceiveBounceBuffers(remaining: Long, totalRequired: Int): Seq[MemoryBuffer]
 
   /**
-    * Get receive bounce buffers needed for [[remaining]] bytes. [[totalRequired]] limits the
-    * number of buffers that should be returned.
+    * Get receive bounce buffers needed for a receive, limited by the amount of bytes
+    * to be received, and a hard limit on the number of buffers set by the caller
+    * using `totalRequired`.
     *
     * This function is non blocking. If it can't satisfy the bounce buffer request, an empty
     * sequence is returned.
@@ -450,12 +451,13 @@ trait RapidsShuffleTransport extends AutoCloseable {
   def freeReceiveBounceBuffers(bounceBuffers: Seq[MemoryBuffer]): Unit
 
   /**
-    * Get send bounce buffers needed for [[remaining]] bytes. [[totalRequired]] limits the
-    * number of buffers that should be returned.
+    * Get send bounce buffers needed for a receive, limited by the amount of bytes
+    * to be sent, and a hard limit on the number of buffers set by the caller
+    * using `totalRequired`.
     *
     * This function blocks if it can't satisfy the bounce buffer request.
     *
-    * @param deviceMemory - if true, return [[DeviceMemoryBuffer]] else, return [[HostMemoryBuffer]]
+    * @param deviceMemory - true: returns a device buffer, false: returns a host buffer
     * @param remaining - amount of bytes remaining in the receive
     * @param totalRequired - maximum no. of buffers that should be returned
     * @return - a sequence of bounce buffers
@@ -464,13 +466,14 @@ trait RapidsShuffleTransport extends AutoCloseable {
       totalRequired: Int): Seq[MemoryBuffer]
 
   /**
-    * Get send bounce buffers needed for [[remaining]] bytes. [[totalRequired]] limits the
-    * number of buffers that should be returned.
+    * Get send bounce buffers needed for a receive, limited by the amount of bytes
+    * to be sent, and a hard limit on the number of buffers set by the caller
+    * using `totalRequired`.
     *
     * This function is non blocking. If it can't satisfy the bounce buffer request, an empty
     * sequence is returned.
     *
-    * @param deviceMemory - if true, return [[DeviceMemoryBuffer]] else, return [[HostMemoryBuffer]]
+    * @param deviceMemory - true: returns a device buffer, false: returns a host buffer
     * @param remaining - amount of bytes remaining in the receive
     * @param totalRequired - maximum no. of buffers that should be returned
     * @return - a sequence of bounce buffers, or empty if the request can't be satisfied
@@ -486,12 +489,12 @@ trait RapidsShuffleTransport extends AutoCloseable {
 }
 
 /**
-  * A pool of direct byte buffers, sized to be [[bufferSize]].
+  * A pool of direct byte buffers, sized to be `bufferSize`.
   * This is a controlled leak at the moment, there is no reclaiming of buffers.
   *
   * NOTE: this is used for metadata messages.
   *
-  * @param bufferSize - the size of direct [[ByteBuffer]] to allocate.
+  * @param bufferSize - the size of direct `ByteBuffer` to allocate.
   */
 class DirectByteBufferPool(bufferSize: Long) extends Logging {
   val buffers = new ConcurrentLinkedQueue[RefCountedDirectByteBuffer]()
@@ -519,12 +522,13 @@ class DirectByteBufferPool(bufferSize: Long) extends Logging {
 }
 
 /**
-  * [[RefCountedDirectByteBuffer]] is a simple wrapper on top of a [[ByteBuffer]] that has been
-  * allocated
-  * in direct mode. The pool is used to return the [[ByteBuffer]] to be reused, but not all
-  * of these buffers are pooled (hence the argument is optional)
+  * RefCountedDirectByteBuffer is a simple wrapper on top of a `ByteBuffer` that has been
+  * allocated in direct mode.
   *
-  * The user should always .close() a [[RefCountedDirectByteBuffer]]. The close could hard destroy
+  * The pool is used to return the ByteBuffer to be reused, but not all of these buffers
+  * are pooled (hence the argument is optional)
+  *
+  * The user should always close a RefCountedDirectByteBuffer. The close could hard destroy
   * the buffer, or return the object to the pool
   *
   * @param bb - buffer to wrap
@@ -613,17 +617,18 @@ object TransportUtils {
 
 object RapidsShuffleTransport extends Logging {
   /**
-    * Used in [[BlockManagerId]]s handled by the [[RapidsShuffleTransport]], in the topology
-    * property.
+    * Used in `BlockManagerId`s when returning a map status after a shuffle write to
+    * let the readers know what TCP port to use to establish a transport connection.
     */
   val BLOCK_MANAGER_ID_TOPO_PREFIX: String = "rapids"
 
   /**
-    * Returns an instance of [[RapidsShuffleTransport]]. This only knows about UCX right now.
-    * @param shuffleServerId - this is the original [[BlockManagerId]] that Spark has for this
+    * Returns an instance of `RapidsShuffleTransport`.
+    * @note the single current implementation is `UCXShuffleTransport`.
+    * @param shuffleServerId - this is the original `BlockManagerId` that Spark has for this
     *                          executor
-    * @param rapidsConf - instance of [[RapidsConf]]
-    * @return - a [[RapidsShuffleTransport]] instance to be used to create a server and clients.
+    * @param rapidsConf - instance of `RapidsConf`
+    * @return - a transport instance to be used to create a server and clients.
     */
   def makeTransport(shuffleServerId: BlockManagerId,
                     rapidsConf: RapidsConf): RapidsShuffleTransport = {

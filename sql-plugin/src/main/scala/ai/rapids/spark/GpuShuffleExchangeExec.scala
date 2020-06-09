@@ -83,7 +83,7 @@ case class GpuShuffleExchangeExec(
   @transient lazy val inputBatchRDD: RDD[ColumnarBatch] = child.executeColumnar()
 
   /**
-   * A [[ShuffleDependency]] that will partition columnar batches of its child based on
+   * A `ShuffleDependency` that will partition columnar batches of its child based on
    * the partitioning scheme defined in `newPartitioning`. Those partitions of
    * the returned ShuffleDependency will be the input of shuffle.
    */

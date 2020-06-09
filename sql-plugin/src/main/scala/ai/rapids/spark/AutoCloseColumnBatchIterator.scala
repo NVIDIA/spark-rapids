@@ -21,7 +21,7 @@ import org.apache.spark.sql.vectorized.ColumnarBatch
 
 /**
  * For columnar code on the CPU it is the responsibility of the SparkPlan exec that creates a
- * [[ColumnarBatch]] to close it.  In the case of code running on the GPU that would waste too
+ * `ColumnarBatch` to close it.  In the case of code running on the GPU that would waste too
  * much memory, so it is the responsibility of the code receiving the batch to close it, when it
  * is not longer needed.
  *

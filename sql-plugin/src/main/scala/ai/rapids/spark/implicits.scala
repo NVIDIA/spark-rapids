@@ -97,7 +97,7 @@ object RapidsPluginImplicits {
       *
       * Note: safeMap will close in case of errors, without any knowledge of whether it should
       * or not.
-      * Use safeMap only in these circumstances if [[fn]] increases the reference count,
+      * Use safeMap only in these circumstances if `fn` increases the reference count,
       * producing an AutoCloseable, and nothing else is tracking these references:
       *    a) seq.safeMap(x => {...; x.incRefCount; x})
       *    b) seq.safeMap(x => GpuColumnVector.from(...))

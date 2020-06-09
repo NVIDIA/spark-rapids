@@ -277,7 +277,7 @@ abstract class RapidsMeta[INPUT <: BASE, BASE, OUTPUT <: BASE](
 }
 
 /**
- * Base class for metadata around [[Partitioning]].
+ * Base class for metadata around `Partitioning`.
  */
 abstract class PartMeta[INPUT <: Partitioning](part: INPUT,
     conf: RapidsConf,
@@ -302,7 +302,7 @@ abstract class PartMeta[INPUT <: Partitioning](part: INPUT,
 }
 
 /**
- * Metadata for [[Partitioning]] with no rule found
+ * Metadata for Partitioning]] with no rule found
  */
 final class RuleNotFoundPartMeta[INPUT <: Partitioning](
     part: INPUT,
@@ -319,7 +319,7 @@ final class RuleNotFoundPartMeta[INPUT <: Partitioning](
 }
 
 /**
- * Base class for metadata around [[Scan]].
+ * Base class for metadata around `Scan`.
  */
 abstract class ScanMeta[INPUT <: Scan](scan: INPUT,
     conf: RapidsConf,
@@ -337,7 +337,7 @@ abstract class ScanMeta[INPUT <: Scan](scan: INPUT,
 }
 
 /**
- * Metadata for [[Scan]] with no rule found
+ * Metadata for `Scan` with no rule found
  */
 final class RuleNotFoundScanMeta[INPUT <: Scan](
     scan: INPUT,
@@ -354,7 +354,7 @@ final class RuleNotFoundScanMeta[INPUT <: Scan](
 }
 
 /**
- * Base class for metadata around [[DataWritingCommand]].
+ * Base class for metadata around `DataWritingCommand`.
  */
 abstract class DataWritingCommandMeta[INPUT <: DataWritingCommand](
     cmd: INPUT,
@@ -373,7 +373,7 @@ abstract class DataWritingCommandMeta[INPUT <: DataWritingCommand](
 }
 
 /**
- * Metadata for [[DataWritingCommand]] with no rule found
+ * Metadata for `DataWritingCommand` with no rule found
  */
 final class RuleNotFoundDataWritingCommandMeta[INPUT <: DataWritingCommand](
     cmd: INPUT,
@@ -390,7 +390,7 @@ final class RuleNotFoundDataWritingCommandMeta[INPUT <: DataWritingCommand](
 }
 
 /**
- * Base class for metadata around [[SparkPlan]].
+ * Base class for metadata around `SparkPlan`.
  */
 abstract class SparkPlanMeta[INPUT <: SparkPlan](plan: INPUT,
     conf: RapidsConf,
@@ -510,8 +510,8 @@ abstract class SparkPlanMeta[INPUT <: SparkPlan](plan: INPUT,
   /**
    * Called to verify that this plan will work on the GPU. Generic checks will have already been
    * done. In general this method should only tag this operator as bad.  If it needs to tag
-   * one of its children please take special care to update the comment inside [[tagSelfForGpu()]]
-   * so we don't end up with something that could be cyclical.
+   * one of its children please take special care to update the comment inside
+   * `tagSelfForGpu` so we don't end up with something that could be cyclical.
    */
   def tagPlanForGpu(): Unit = {}
 
@@ -538,7 +538,7 @@ abstract class SparkPlanMeta[INPUT <: SparkPlan](plan: INPUT,
 }
 
 /**
- * Metadata for [[SparkPlan]] with no rule found
+ * Metadata for `SparkPlan` with no rule found
  */
 final class RuleNotFoundSparkPlanMeta[INPUT <: SparkPlan](
     plan: INPUT,
@@ -554,7 +554,7 @@ final class RuleNotFoundSparkPlanMeta[INPUT <: SparkPlan](
 }
 
 /**
- * Base class for metadata around [[Expression]].
+ * Base class for metadata around `Expression`.
  */
 abstract class ExprMeta[INPUT <: Expression](
     expr: INPUT,
@@ -602,7 +602,7 @@ abstract class ExprMeta[INPUT <: Expression](
 }
 
 /**
- * Base class for metadata around [[UnaryExpression]].
+ * Base class for metadata around `UnaryExpression`.
  */
 abstract class UnaryExprMeta[INPUT <: UnaryExpression](
     expr: INPUT,
@@ -618,7 +618,7 @@ abstract class UnaryExprMeta[INPUT <: UnaryExpression](
 }
 
 /**
- * Base class for metadata around [[AggregateFunction]].
+ * Base class for metadata around `AggregateFunction`.
  */
 abstract class AggExprMeta[INPUT <: AggregateFunction](
     expr: INPUT,
@@ -634,7 +634,7 @@ abstract class AggExprMeta[INPUT <: AggregateFunction](
 }
 
 /**
- * Base class for metadata around [[BinaryExpression]].
+ * Base class for metadata around `BinaryExpression`.
  */
 abstract class BinaryExprMeta[INPUT <: BinaryExpression](
     expr: INPUT,
@@ -650,7 +650,7 @@ abstract class BinaryExprMeta[INPUT <: BinaryExpression](
 }
 
 /**
- * Base class for metadata around [[TernaryExpression]].
+ * Base class for metadata around `TernaryExpression`.
  */
 abstract class TernaryExprMeta[INPUT <: TernaryExpression](
     expr: INPUT,
@@ -694,7 +694,7 @@ abstract class String2TrimExpressionMeta[INPUT <: String2TrimExpression](
 }
 
 /**
- * Base class for metadata around [[ComplexTypeMergingExpression]].
+ * Base class for metadata around `ComplexTypeMergingExpression`.
  */
 abstract class ComplexTypeMergingExprMeta[INPUT <: ComplexTypeMergingExpression](
     expr: INPUT,
@@ -709,7 +709,7 @@ abstract class ComplexTypeMergingExprMeta[INPUT <: ComplexTypeMergingExpression]
 }
 
 /**
- * Metadata for [[Expression]] with no rule found
+ * Metadata for `Expression` with no rule found
  */
 final class RuleNotFoundExprMeta[INPUT <: Expression](
     expr: INPUT,

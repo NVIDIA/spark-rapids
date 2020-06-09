@@ -86,7 +86,7 @@ public final class GpuColumnVectorFromBuffer extends GpuColumnVector {
 
   /**
    * Get the underlying contiguous buffer, shared between columns of the original
-   * [[ContiguousTable]]
+   * `ContiguousTable`
    * @return - contiguous (data, validity and offsets) device memory buffer
    */
   public DeviceMemoryBuffer getBuffer() {

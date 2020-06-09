@@ -23,14 +23,14 @@ import ai.rapids.cudf.MemoryBuffer
 import org.apache.spark.internal.Logging
 
 /**
-  * This classes manages a set of bounce buffers, that are instances of [[MemoryBuffer]].
+  * This classes manages a set of bounce buffers, that are instances of `MemoryBuffer`.
   * The size/quantity of buffers is configurable, and so is the allocator.
   * @param poolName - a human-friendly name to use for debug logs
   * @param bufferSize - the size of buffer to use
   * @param numBuffers - the number of buffers to allocate on instantiation
-  * @param allocator - instance of [[BounceBufferAllocator]] to obtain [[MemoryBuffer]]s.
-  * @tparam T - the specific type of [[MemoryBuffer]] i.e. [[DeviceMemoryBuffer]],
- *           [[HostMemoryBuffer]], etc.
+  * @param allocator - function that takes a size, and returns a `MemoryBuffer` instance.
+  * @tparam T - the specific type of MemoryBuffer i.e. `DeviceMemoryBuffer`,
+  *           `HostMemoryBuffer`, etc.
   */
 class BounceBufferManager[T <: MemoryBuffer](
     poolName: String,
@@ -73,7 +73,7 @@ class BounceBufferManager[T <: MemoryBuffer](
   }
 
   /**
-    * Acquire [[possibleNumBuffers]] buffers from the pool. This method will not block.
+    * Acquire `possibleNumBuffers` buffers from the pool. This method will not block.
     * @param possibleNumBuffers - number of buffers to acquire
     * @return - a sequence of MemoryBuffers, or empty if the request can't be satisfied
     */
@@ -89,8 +89,8 @@ class BounceBufferManager[T <: MemoryBuffer](
   }
 
   /**
-    * Acquire [[possibleNumBuffers]] buffers from the pool. This method will block until
-    * it can get [[possibleNumBuffers]].
+    * Acquire `possibleNumBuffers` buffers from the pool. This method will block until
+    * it can get the buffers requested.
     * @param possibleNumBuffers - number of buffers to acquire
     * @return - a sequence of MemoryBuffers
     */
@@ -101,7 +101,7 @@ class BounceBufferManager[T <: MemoryBuffer](
   }
 
   /**
-    * Free a [[MemoryBuffer]], putting it back into the pool.
+    * Free a `MemoryBuffer`, putting it back into the pool.
     * @param buffer - the memory buffer to free
     */
   def freeBuffer(buffer: MemoryBuffer): Unit = synchronized {
@@ -119,7 +119,7 @@ class BounceBufferManager[T <: MemoryBuffer](
   }
 
   /**
-    * Returns the root (backing) [[MemoryBuffer]]. This is used for a transport
+    * Returns the root (backing) `MemoryBuffer`. This is used for a transport
     * that wants to register the bounce buffers against hardware, for pinning purposes.
     * @return - the root (backing) memory buffer
     */

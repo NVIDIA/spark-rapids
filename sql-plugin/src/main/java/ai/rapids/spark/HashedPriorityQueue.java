@@ -29,9 +29,9 @@ import java.util.Iterator;
  * implementations, this provides logarithmic time for inserting elements
  * and removing the top element. However unlike many implementations,
  * this provides logarithmic rather than linear time for the random-access
- * {@code contains} and {@code remove} methods. The queue also provides a
+ * `contains` and `remove` methods. The queue also provides a
  * mechanism for updating the heap after an element's priority has changed
- * via the {@code priorityUpdated} method instead of requiring the element
+ * via the `priorityUpdated` method instead of requiring the element
  * to be removed and re-inserted.
  *
  * <p>The queue is <strong>NOT thread-safe</strong>.
