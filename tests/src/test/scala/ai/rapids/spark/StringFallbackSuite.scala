@@ -31,16 +31,6 @@ class StringFallbackSuite extends SparkQueryCompareTestSuite {
       result
   }
 
-  testSparkResultsAreEqual(
-    "String regexp_replace with null fall back",
-    nullableStringsFromCsv,
-    execsAllowedNonGpu = Seq("ProjectExec", "Alias",
-      "RegExpReplace", "AttributeReference", "Literal")) {
-    frame => val result = frame.selectExpr("regexp_replace(strings,'a', null)")
-      checkPlanForRegexpReplace(result)
-      result
-  }
-
   testSparkResultsAreEqual("String regexp_replace null cpu fall back",
     nullableStringsFromCsv, execsAllowedNonGpu = Seq("ProjectExec", "Alias",
       "RegExpReplace", "AttributeReference", "Literal")) {

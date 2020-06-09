@@ -1415,8 +1415,7 @@ object GpuOverrides {
       "RegExpReplace",
       (a, conf, p, r) => new TernaryExprMeta[RegExpReplace](a, conf, p, r) {
         override def tagExprForGpu(): Unit = {
-          val litVal = extractLit(a.rep)
-          if (litVal.isEmpty || isNullLit(litVal.get)) {
+          if (!isLit(a.rep)) {
             willNotWorkOnGpu("Only literal values are supported for replacement string")
           }
           if (isNullOrEmptyOrRegex(a.regexp)) {
