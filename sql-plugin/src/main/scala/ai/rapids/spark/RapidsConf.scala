@@ -402,6 +402,13 @@ object RapidsConf {
     .booleanConf
     .createWithDefault(false)
 
+  val ENABLE_CSV_TIMESTAMPS = conf("spark.rapids.sql.csvTimestamps.enabled")
+    .doc("When set to true, enables the CSV parser to read timestamps. The default output " +
+      "format for Spark includes a timezone at the end. Anything except the UTC timezone is not " +
+      "supported. Timestamps after 2038 and before 1902 are also not supported.")
+    .booleanConf
+    .createWithDefault(false)
+
   // INTERNAL TEST AND DEBUG CONFIGS
 
   val TEST_CONF = conf("spark.rapids.sql.test.enabled")
@@ -725,6 +732,8 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
   lazy val isCastStringToIntegerEnabled: Boolean = get(ENABLE_CAST_STRING_TO_INTEGER)
 
   lazy val isCastStringToFloatEnabled: Boolean = get(ENABLE_CAST_STRING_TO_FLOAT)
+
+  lazy val isCsvTimestampEnabled: Boolean = get(ENABLE_CSV_TIMESTAMPS)
 
   lazy val shuffleTransportEnabled: Boolean = get(SHUFFLE_TRANSPORT_ENABLE)
 

@@ -61,8 +61,80 @@ exactly it will result in a `null` value. The underlying parser that the SQL plu
 more lenient. If you have badly formatted CSV data you may get data back instead of nulls.
 If this is a problem you can disable the CSV reader by setting the config 
 [`spark.rapids.sql.input.CSVScan`](configs.md#sql.input.CSVScan) to `false`. Because the speed up
-is so large and the issues only show up in error conditions we felt it was worth having the CSV
-reader enabled by default.
+is so large and the issues typically only show up in error conditions we felt it was worth having
+the CSV reader enabled by default.
+
+There are also discrepancies/issues with specific types that are detailed below.
+
+### CSV Strings
+Writing strings to a CSV file in general for Spark can be problematic unless you can ensure
+that your data does not have any line deliminators in it. The GPU accelerated CSV parser
+handles quoted line deliminators similar to `multiLine` mode.  But there are still a number
+of issues surrounding it and they should be avoided. 
+
+Escaped quote characters `'\"'` are not supported well as described by this
+[issue](https://github.com/NVIDIA/spark-rapids/issues/129).
+
+Null values are not respected as described
+[here](https://github.com/NVIDIA/spark-rapids/issues/127) even though they are
+supported for other types.
+
+### CSV Dates
+Parsing a `timestamp` as a `date` does not work. The details are documented in this
+[issue](https://github.com/NVIDIA/spark-rapids/issues/122).
+
+Only a limited set of formats are supported when parsing dates.
+
+* `"yyyy-MM-dd"`
+* `"yyyy/MM/dd"`
+* `"yyyy-MM"`
+* `"yyyy/MM"`
+* `"MM-yyyy"`
+* `"MM/yyyy"`
+* `"MM-dd-yyyy"`
+* `"MM/dd/yyyy"`
+
+The reality is that all of these formats are supported at the same time. The plugin
+will only disable itself if you set a format that it does not support.
+
+### CSV Timestamps
+The CSV parser only works for timestamps that are after 1902 and before the end of 2038.
+This is documented in this [issue](https://github.com/NVIDIA/spark-rapids/issues/122).
+
+The CSV parser does not support time zones.  It will ignore any trailing time zone
+information, despite the format asking for a `XXX` or `[XXX]`. As such it is off by
+default and you can enable it by setting 
+[`spark.rapids.sql.csvTimestamps.enabled`](configs.md#sql.csvTimestamps.enabled) to `true`. 
+
+The formats supported for timestamps are limited similar to dates.  The first part of
+the format must be a supported date format.  The second part must start with a `'T'`
+to separate the time portion followed by one of the following formats:
+
+* `HH:mm:ss.SSSXXX`
+* `HH:mm:ss[.SSS][XXX]`
+* `HH:mm`
+* `HH:mm:ss`
+* `HH:mm[:ss]`
+* `HH:mm:ss.SSS`
+* `HH:mm:ss[.SSS]`
+
+Just like with dates all timestamp formats are actually supported at the same time.
+The plugin will disable itself if it sees a format it cannot support.
+
+### CSV Floating Point
+
+The CSV parser is not able to parse `Infinity`, `-Infinity`, or `NaN` values.  All of
+these are likely to be turned into null values, as described in this
+[issue](https://github.com/NVIDIA/spark-rapids/issues/125).
+
+Some floating-point values also appear to overflow but do not for the CPU as described
+in this [issue](https://github.com/NVIDIA/spark-rapids/issues/124).
+
+Any number that overflows will not be turned into a null value.
+
+### CSV Integer
+
+Any number that overflows will not be turned into a null value.
 
 ## Timestamps
 
@@ -84,7 +156,8 @@ In general, performing `cast` and `ansi_cast` operations on the GPU is compatibl
 
 The GPU will use different precision than Java's toString method when converting floating-point data types to strings and this can produce results that differ from the default behavior in Spark. 
 
-To enable this operation on the GPU, set `spark.rapids.sql.castFloatToString.enabled` to `true`.
+To enable this operation on the GPU, set
+[`spark.rapids.sql.castFloatToString.enabled`](configs.md#sql.castFloatToString.enabled) to `true`.
 
 ### String to Float
 
@@ -95,56 +168,58 @@ Casting from string to floating-point types on the GPU returns incorrect results
 
 Also, the GPU does not support casting from strings containing hex values.
 
-To enable this operation on the GPU, set `spark.rapids.sql.castStringToFloat.enabled` to `true`.
+To enable this operation on the GPU, set 
+[`spark.rapids.sql.castStringToFloat.enabled`](configs.md#sql.castStringToFloat.enabled) to `true`.
        
 ### String to Integral Types
 
 The GPU will return incorrect results for strings representing values greater than Long.MaxValue or less than Long.MinValue. The correct behavior would be to return null for these values, but the GPU currently overflows and returns an incorrect integer value.
 
-To enable this operation on the GPU, set `spark.rapids.sql.castStringToInteger.enabled` to `true`.
+To enable this operation on the GPU, set
+[`spark.rapids.sql.castStringToInteger.enabled`](configs.md#sql.castStringToInteger.enabled) to `true`.
 
 ### String to Date
 
-The following formats are supported on the GPU. Timezone of UTC is assumed.
+The following formats/patterns are supported on the GPU. Timezone of UTC is assumed.
 
-| Format                | Supported on GPU? |
+| Format or Pattern     | Supported on GPU? |
 | --------------------- | ----------------- |
-| `'yyyy'`              | Yes.              |
-| `'yyyy-[m]m'`         | Yes.              |
-| `'yyyy-[m]m '`        | Yes.              |
-| `'yyyy-[m]m-[d]d'`    | Yes.              |
-| `'yyyy-[m]m-[d]d '`   | Yes.              |
-| `'yyyy-[m]m-[d]d *'`  | Yes.              |
-| `'yyyy-[m]m-[d]d T*'` | Yes.              |
-| `'epoch'`             | Yes.              |
-| `'now'`               | Yes.              |
-| `'today'`             | Yes.              |
-| `'tomorrow'`          | Yes.              |
-| `'yesterday'`         | Yes.              |
+| `"yyyy"`              | Yes.              |
+| `"yyyy-[M]M"`         | Yes.              |
+| `"yyyy-[M]M "`        | Yes.              |
+| `"yyyy-[M]M-[d]d"`    | Yes.              |
+| `"yyyy-[M]M-[d]d "`   | Yes.              |
+| `"yyyy-[M]M-[d]d *"`  | Yes.              |
+| `"yyyy-[M]M-[d]d T*"` | Yes.              |
+| `"epoch"`             | Yes.              |
+| `"now"`               | Yes.              |
+| `"today"`             | Yes.              |
+| `"tomorrow"`          | Yes.              |
+| `"yesterday"`         | Yes.              |
 
 ## String to Timestamp
 
 To allow casts from string to timestamp on the GPU, enable the configuration property 
-`spark.rapids.sql.castStringToTimestamp.enabled`.
+[`spark.rapids.sql.castStringToTimestamp.enabled`](configs.md#sql.castStringToTimestamp.enabled).
 
 Casting from string to timestamp currently has the following limitations. 
 
-| Format                                                              | Supported on GPU? |
+| Format or Pattern                                                   | Supported on GPU? |
 | ------------------------------------------------------------------- | ------------------|
-| `'yyyy'`                                                            | Yes.              |
-| `'yyyy-[m]m'`                                                       | Yes.              |
-| `'yyyy-[m]m '`                                                      | Yes.              |
-| `'yyyy-[m]m-[d]d'`                                                  | Yes.              |
-| `'yyyy-[m]m-[d]d '`                                                 | Yes.              |
-| `'yyyy-[m]m-[d]dT[h]h:[m]m:[s]s.[ms][ms][ms][us][us][us][zone_id]'` | Partial [1].      |
-| `'yyyy-[m]m-[d]d [h]h:[m]m:[s]s.[ms][ms][ms][us][us][us][zone_id]'` | Partial [1].      |
-| `'[h]h:[m]m:[s]s.[ms][ms][ms][us][us][us][zone_id]'`                | Partial [1].      |
-| `'T[h]h:[m]m:[s]s.[ms][ms][ms][us][us][us][zone_id]'`               | Partial [1].      |
-| `'epoch'`                                                           | Yes.              |
-| `'now'`                                                             | Yes.              |
-| `'today'`                                                           | Yes.              |
-| `'tomorrow`'                                                        | Yes.              |
-| `'yesterday'`                                                       | Yes.              |
+| `"yyyy"`                                                            | Yes.              |
+| `"yyyy-[M]M"`                                                       | Yes.              |
+| `"yyyy-[M]M "`                                                      | Yes.              |
+| `"yyyy-[M]M-[d]d"`                                                  | Yes.              |
+| `"yyyy-[M]M-[d]d "`                                                 | Yes.              |
+| `"yyyy-[M]M-[d]dT[h]h:[m]m:[s]s.[ms][ms][ms][us][us][us][zone_id]"` | Partial [1].      |
+| `"yyyy-[M]M-[d]d [h]h:[m]m:[s]s.[ms][ms][ms][us][us][us][zone_id]"` | Partial [1].      |
+| `"[h]h:[m]m:[s]s.[ms][ms][ms][us][us][us][zone_id]"`                | Partial [1].      |
+| `"T[h]h:[m]m:[s]s.[ms][ms][ms][us][us][us][zone_id]"`               | Partial [1].      |
+| `"epoch"`                                                           | Yes.              |
+| `"now"`                                                             | Yes.              |
+| `"today"`                                                           | Yes.              |
+| `"tomorrow"`                                                        | Yes.              |
+| `"yesterday"`                                                       | Yes.              |
 
 - [1] The timestamp portion must be complete in terms of hours, minutes, seconds, and
  milliseconds, with 2 digits each for hours, minutes, and seconds, and 6 digits for milliseconds. 
