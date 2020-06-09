@@ -247,18 +247,28 @@ FLOAT_MAX = 3.4028235E38
 NEG_FLOAT_NAN = struct.unpack('f', struct.pack('I', 0xfff00001))[0]
 class FloatGen(DataGen):
     """Generate floats, which some built in corner cases."""
-    def __init__(self, nullable=True, min_val =FLOAT_MIN, max_val = FLOAT_MAX,
-                 special_cases = [FLOAT_MIN, FLOAT_MAX, 0.0, -0.0, 1.0, -1.0,
-                                  float('inf'),float('-inf'), float('nan'), NEG_FLOAT_NAN]):
+    def __init__(self, nullable=True, 
+            no_nans=False, special_cases=None):
+        self._no_nans = no_nans
+        if special_cases is None:
+            special_cases = [FLOAT_MIN, FLOAT_MAX, 0.0, -0.0, 1.0, -1.0]
+            if not no_nans:
+                special_cases.append(float('inf'))
+                special_cases.append(float('-inf'))
+                special_cases.append(float('nan'))
+                special_cases.append(NEG_DOUBLE_NAN)
         super().__init__(FloatType(), nullable=nullable, special_cases=special_cases)
-        self._min_val = min_val
-        self._max_val = max_val
+
+    def _fixup_nans(self, v):
+        if self._no_nans and (math.isnan(v) or v == math.inf or v == -math.inf):
+            v = None
+        return v
 
     def start(self, rand):
         def gen_float():
             i = rand.randint(INT_MIN, INT_MAX)
             p = struct.pack('i', i)
-            return struct.unpack('f', p)[0]
+            return self._fixup_nans(struct.unpack('f', p)[0])
         self._start(rand, gen_float)
 
 DOUBLE_MIN_EXP = -1022
@@ -269,10 +279,11 @@ DOUBLE_MAX = 1.7976931348623157E308
 NEG_DOUBLE_NAN = struct.unpack('d', struct.pack('L', 0xfff0000000000001))[0]
 class DoubleGen(DataGen):
     """Generate doubles, which some built in corner cases."""
-    def __init__(self, min_exp=DOUBLE_MIN_EXP, max_exp=DOUBLE_MAX_EXP, nullable=True,
-                 special_cases = None):
+    def __init__(self, min_exp=DOUBLE_MIN_EXP, max_exp=DOUBLE_MAX_EXP, no_nans=False, 
+            nullable=True, special_cases = None):
         self._min_exp = min_exp
         self._max_exp = max_exp
+        self._no_nans = no_nans
         self._use_full_range = (self._min_exp == DOUBLE_MIN_EXP) and (self._max_exp == DOUBLE_MAX_EXP)
         if special_cases is None:
             special_cases = [
@@ -287,10 +298,11 @@ class DoubleGen(DataGen):
             if self._min_exp <= 3 and self._max_exp >= 3:
                 special_cases.append(1.0)
                 special_cases.append(-1.0)
-            special_cases.append(float('inf'))
-            special_cases.append(float('-inf'))
-            special_cases.append(float('nan'))
-            special_cases.append(NEG_DOUBLE_NAN)
+            if not no_nans:
+                special_cases.append(float('inf'))
+                special_cases.append(float('-inf'))
+                special_cases.append(float('nan'))
+                special_cases.append(NEG_DOUBLE_NAN)
         super().__init__(DoubleType(), nullable=nullable, special_cases=special_cases)
 
     @staticmethod
@@ -303,19 +315,24 @@ class DoubleGen(DataGen):
         ret = struct.unpack('d', p)[0]
         return ret
 
+    def _fixup_nans(self, v):
+        if self._no_nans and (math.isnan(v) or v == math.inf or v == -math.inf):
+            v = None
+        return v
+
     def start(self, rand):
         if self._use_full_range:
             def gen_double():
                 i = rand.randint(LONG_MIN, LONG_MAX)
                 p = struct.pack('l', i)
-                return struct.unpack('d', p)[0]
+                return self._fixup_nans(struct.unpack('d', p)[0])
             self._start(rand, gen_double)
         else:
             def gen_part_double():
                 sign = rand.getrandbits(1)
                 exp = rand.randint(self._min_exp, self._max_exp)
                 fraction = rand.getrandbits(52)
-                return self._make_from(sign, exp, fraction)
+                return self._fixup_nans(self._make_from(sign, exp, fraction))
             self._start(rand, gen_part_double)
 
 class BooleanGen(DataGen):

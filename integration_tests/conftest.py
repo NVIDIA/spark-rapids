@@ -38,3 +38,6 @@ def pytest_addoption(parser):
     parser.addoption(
         "--tmp_path", action="store", default=None, help="path to store tmp files"
     )
+    parser.addoption(
+        "--debug_tmp_path", action='store_true', default=False, help="if true don't delete tmp_path contents for debugging"
+    )
