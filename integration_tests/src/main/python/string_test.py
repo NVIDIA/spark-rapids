@@ -178,16 +178,6 @@ def test_substring():
                 'SUBSTRING(a, 1, NULL)',
                 'SUBSTRING(a, 0, 0)'))
 
-# Once https://github.com/NVIDIA/spark-rapids/issues/116 is fixed this should be
-# deleted and the corresponding lines in the other tests should be uncommented
-@pytest.mark.xfail(reason='https://github.com/NVIDIA/spark-rapids/issues/116')
-def test_replace_null_xfail():
-    gen = mk_str_gen('.{0,5}TEST[\ud720 A]{0,5}')
-    assert_gpu_and_cpu_are_equal_collect(
-            lambda spark: unary_op_df(spark, gen).selectExpr(
-                'REPLACE(a, "T", NULL)',
-                'REPLACE(a, NULL, "PROD")'))
-
 def test_replace():
     gen = mk_str_gen('.{0,5}TEST[\ud720 A]{0,5}')
     assert_gpu_and_cpu_are_equal_collect(
@@ -195,9 +185,8 @@ def test_replace():
                 'REPLACE(a, "TEST", "PROD")',
                 'REPLACE(a, "T\ud720", "PROD")',
                 'REPLACE(a, "", "PROD")',
-                # https://github.com/NVIDIA/spark-rapids/issues/116
-                #'REPLACE(a, "T", NULL)',
-                #'REPLACE(a, NULL, "PROD")',
+                'REPLACE(a, "T", NULL)',
+                'REPLACE(a, NULL, "PROD")',
                 'REPLACE(a, "T", "")'))
 
 def test_re_replace():
@@ -206,7 +195,8 @@ def test_re_replace():
             lambda spark: unary_op_df(spark, gen).selectExpr(
                 'REGEXP_REPLACE(a, "TEST", "PROD")',
                 'REGEXP_REPLACE(a, "TEST", "")',
-                'REGEXP_REPLACE(a, "TEST", "%^[]\ud720")'))
+                'REGEXP_REPLACE(a, "TEST", "%^[]\ud720")',
+                'REGEXP_REPLACE(a, "TEST", NULL)'))
 
 def test_length():
     gen = mk_str_gen('.{0,5}TEST[\ud720 A]{0,5}')

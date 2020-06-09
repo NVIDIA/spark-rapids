@@ -484,6 +484,12 @@ case class GpuStringReplace(
       strExpr: GpuColumnVector,
       searchExpr: Scalar,
       replaceExpr: Scalar) : GpuColumnVector = {
+    // When search or replace string is null, return all nulls like the CPU does.
+    if (!searchExpr.isValid || !replaceExpr.isValid) {
+      withResource(GpuScalar.from(null, StringType)) { nullStrScalar =>
+        return GpuColumnVector.from(nullStrScalar, strExpr.getRowCount.toInt)
+      }
+    }
     if (searchExpr.getJavaString.isEmpty) { // Return original string if search string is empty
       GpuColumnVector.from(strExpr.getBase.asStrings())
     } else {
