@@ -34,10 +34,39 @@ pipeline {
         string(name: 'REF', defaultValue: '\${sha1}', description: 'Commit to build')
     }
 
+    environment {
+        JENKINS_ROOT  = 'jenkins'
+        BUILD_SCRIPT = '$JENKINS_ROOT/spark-premerge-build.sh'
+        MVN_URM_MIRROR='-s jenkins/settings.xml -P mirror-apache-to-urm'
+        LIBCUDF_KERNEL_CACHE_PATH='/tmp'
+        URM_CREDS = credentials("svcngcc_artifactory")
+    }
+
     stages {
-        stage('Hello world') {
+        stage('Ubuntu16 CUDA10.1') {
+            agent { label 'docker-gpu' }
             steps {
-                echo "Hello world!"
+                script {
+                    def IMAGE_NAME="urm.nvidia.com/sw-spark-docker/plugin:dev-ubuntu16-cuda10.1"
+                    def DOCKER_CMD="docker --config $WORKSPACE/.docker"
+                    sh """
+                        echo $URM_CREDS_PSW | $DOCKER_CMD login https://urm.nvidia.com -u $URM_CREDS_USR --password-stdin
+                        $DOCKER_CMD pull $IMAGE_NAME
+                        $DOCKER_CMD logout https://urm.nvidia.com
+                    """
+                    docker.image(IMAGE_NAME).inside("--runtime=nvidia -v ${HOME}/.m2:${HOME}/.m2:rw \
+                        -v ${HOME}/.zinc:${HOME}/.zinc:rw \
+                        -v /etc/passwd:/etc/passwd -v /etc/group:/etc/group") {
+                        echo "This is a test of Whitelist pre-merge! by Calvin"
+                        sh "bash $BUILD_SCRIPT $MVN_URM_MIRROR"
+                        step([$class: 'JacocoPublisher',
+                              execPattern: '**/target/jacoco.exec',
+                              classPattern: 'target/jacoco_classes/',
+                              sourcePattern: 'sql-plugin/src/main/java/,sql-plugin/src/main/scala/',
+                              sourceInclusionPattern: '**/*.java,**/*.scala'
+                        ])
+                    }
+                }
             }
         }
     } // end of stages
