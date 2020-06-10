@@ -244,11 +244,13 @@ def _assert_gpu_and_cpu_are_equal(func,
     print('### CPU RUN ###')
     cpu_start = time.time()
     from_cpu = with_cpu_session(bring_back, conf=conf)
+    print("KUHU from_cpu=" + str(from_cpu))
     cpu_end = time.time()
     print('### GPU RUN ###')
     gpu_start = time.time()
     from_gpu = with_gpu_session(bring_back,
             conf=conf)
+    print("KUHU from_gpu=" + str(from_gpu))
     gpu_end = time.time()
     print('### {}: GPU TOOK {} CPU TOOK {} ###'.format(collect_type, 
         gpu_end - gpu_start, cpu_end - cpu_start))

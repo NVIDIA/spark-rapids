@@ -26,6 +26,17 @@ _no_nans_float_conf = {'spark.rapids.sql.variableFloatAgg.enabled': 'true',
                        'spark.rapids.sql.castStringToFloat.enabled': 'true'
                       }
 
+_no_nans_float_conf_partial = {'spark.rapids.sql.variableFloatAgg.enabled': 'true',
+                               'spark.rapids.sql.hasNans': 'false',
+                               'spark.rapids.sql.castStringToFloat.enabled': 'true',
+                               'spark.rapids.sql.hashAgg.replaceMode': 'partial'
+                              }
+
+_no_nans_float_conf_final = {'spark.rapids.sql.variableFloatAgg.enabled': 'true',
+                             'spark.rapids.sql.hasNans': 'false',
+                             'spark.rapids.sql.castStringToFloat.enabled': 'true',
+                             'spark.rapids.sql.hashAgg.replaceMode': 'final'
+                            }
 
 # The input lists or schemas that are used by StructGen.
 
@@ -97,13 +108,63 @@ def get_struct_gens(init_list=_init_list_no_nans, marked_params=[]):
     """
     list = init_list.copy()
     for index in range(0, len(list)):
-        for test_case,marks in marked_params:
+        for test_case, marks in marked_params:
             if list[index] == test_case:
                 list[index] = pytest.param(list[index], marks=marks)
     return list
 
 
-params_markers_for_avg_sum=[
+_confs = [_no_nans_float_conf, _no_nans_float_conf_final, _no_nans_float_conf_partial]
+
+# Partial only conf fails for averages, building this conf param for tests with averages
+params_markers_for_confs_with_xfail = [
+    (_no_nans_float_conf_final, [pytest.mark.allow_non_gpu(
+        'HashAggregateExec', 'AggregateExpression',
+        'AttributeReference', 'Alias', 'Sum', 'Count', 'Max', 'Min', 'Average', 'Cast',
+        'KnownFloatingPointNormalized', 'NormalizeNaNAndZero', 'GreaterThan', 'Literal', 'If',
+        'EqualTo', 'First', 'SortAggregateExec')]),
+    (_no_nans_float_conf_partial, [pytest.mark.allow_non_gpu(
+        'HashAggregateExec', 'AggregateExpression',
+        'AttributeReference', 'Alias', 'Sum', 'Count', 'Max', 'Min', 'Average', 'Cast',
+        'KnownFloatingPointNormalized', 'NormalizeNaNAndZero', 'GreaterThan', 'Literal', 'If',
+        'EqualTo', 'First', 'SortAggregateExec'),
+        pytest.mark.xfail(reason='partial conf may fail')])
+
+]
+
+# Partial only conf only fails for averages, building this conf param for tests without averages
+params_markers_for_confs = [
+    (_no_nans_float_conf_final, [pytest.mark.allow_non_gpu(
+        'HashAggregateExec', 'AggregateExpression',
+        'AttributeReference', 'Alias', 'Sum', 'Count', 'Max', 'Min', 'Average', 'Cast',
+        'KnownFloatingPointNormalized', 'NormalizeNaNAndZero', 'GreaterThan', 'Literal', 'If',
+        'EqualTo', 'First', 'SortAggregateExec')]),
+    (_no_nans_float_conf_partial, [pytest.mark.allow_non_gpu(
+        'HashAggregateExec', 'AggregateExpression',
+        'AttributeReference', 'Alias', 'Sum', 'Count', 'Max', 'Min', 'Average', 'Cast',
+        'KnownFloatingPointNormalized', 'NormalizeNaNAndZero', 'GreaterThan', 'Literal', 'If',
+        'EqualTo', 'First', 'SortAggregateExec')])
+
+]
+
+
+def get_conf_params(init_list=_confs, marked_params=[]):
+    """
+    A method to build the confs with their passed in markers to allow testing
+    specific confs with their relevant markers.
+    :arg init_list list of confs
+    :arg marked_params A list of tuples of (schema, list of pytest markers)
+    Look at params_markers_for_confs as an example.
+    """
+    list = init_list.copy()
+    for index in range(0, len(list)):
+        for test_case, marks in marked_params:
+            if list[index] == test_case:
+                list[index] = pytest.param(list[index], marks=marks)
+    return list
+
+
+params_markers_for_avg_sum = [
     (_grpkey_strings_with_nulls, [pytest.mark.incompat, pytest.mark.approximate_float]),
     (_grpkey_dbls_with_nulls, [pytest.mark.incompat, pytest.mark.approximate_float]),
     (_grpkey_floats_with_nulls, [pytest.mark.incompat, pytest.mark.approximate_float]),
@@ -113,27 +174,32 @@ params_markers_for_avg_sum=[
 @ignore_order
 @pytest.mark.parametrize('data_gen', get_struct_gens(
     marked_params=params_markers_for_avg_sum), ids=idfn)
-def test_hash_grpby_sum(data_gen):
+@pytest.mark.parametrize('conf', get_conf_params(_confs, params_markers_for_confs), ids=idfn)
+def test_hash_grpby_sum(data_gen, conf):
     assert_gpu_and_cpu_are_equal_collect(
-        lambda spark: gen_df(spark, data_gen, length=100).groupby('a').agg(f.sum('b')),
-        conf=_no_nans_float_conf
+        lambda spark: debug_df(gen_df(spark, data_gen, length=100).groupby('a').agg(f.sum('b'))),
+        conf=conf
     )
 
 
 @ignore_order
 @pytest.mark.parametrize('data_gen', get_struct_gens(init_list=_init_list_with_nans_and_no_nans,
     marked_params=params_markers_for_avg_sum), ids=idfn)
-def test_hash_grpby_avg(data_gen):
+@pytest.mark.parametrize('conf', get_conf_params(
+    _confs, params_markers_for_confs_with_xfail), ids=idfn)
+def test_hash_grpby_avg(data_gen, conf):
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark: gen_df(spark, data_gen, length=100).groupby('a').agg(f.avg('b')),
-        conf=_no_nans_float_conf
+        conf=conf
     )
 
 
 @ignore_order
 @pytest.mark.parametrize('data_gen', get_struct_gens(
     marked_params=params_markers_for_avg_sum), ids=idfn)
-def test_hash_multiple_mode_query(data_gen):
+@pytest.mark.parametrize('conf', get_conf_params(
+    _confs, params_markers_for_confs_with_xfail), ids=idfn)
+def test_hash_multiple_mode_query(data_gen, conf):
     print_params(data_gen)
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark: gen_df(spark, data_gen, length=100)
@@ -145,28 +211,29 @@ def test_hash_multiple_mode_query(data_gen):
                  f.sum('a'),
                  f.min('a'),
                  f.max('a'),
-                 f.countDistinct('c')), conf=_no_nans_float_conf)
+                 f.countDistinct('c')), conf=conf)
 
 
 @ignore_order
 @approximate_float
 @incompat
 @pytest.mark.parametrize('data_gen', get_struct_gens(), ids=idfn)
-def test_hash_multiple_mode_query_avg_distincts(data_gen):
+@pytest.mark.parametrize('conf', get_conf_params(_confs, params_markers_for_confs_with_xfail), ids=idfn)
+def test_hash_multiple_mode_query_avg_distincts(data_gen, conf):
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark: gen_df(spark, data_gen, length=100)
             .selectExpr('avg(distinct a)', 'avg(distinct b)','avg(distinct c)'),
-        conf=_no_nans_float_conf)
+        conf=conf)
 
 
 @ignore_order
 @pytest.mark.parametrize('data_gen', get_struct_gens(), ids=idfn)
-def test_hash_count_with_filter(data_gen):
+@pytest.mark.parametrize('conf', get_conf_params(_confs, params_markers_for_confs), ids=idfn)
+def test_hash_count_with_filter(data_gen, conf):
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark: gen_df(spark, data_gen, length=100)
             .selectExpr('count(a) filter (where c > 50)'),
-        conf=_no_nans_float_conf)
-
+        conf=conf)
 
 @ignore_order
 @pytest.mark.parametrize('data_gen', get_struct_gens(
