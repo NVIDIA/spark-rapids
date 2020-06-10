@@ -19,10 +19,11 @@ from data_gen import *
 from pyspark.sql.types import *
 from marks import *
 import pyspark.sql.functions as f
+from spark_session import with_cpu_session
 
 _no_nans_float_conf = {'spark.rapids.sql.variableFloatAgg.enabled': 'true',
                        'spark.rapids.sql.hasNans': 'false',
-                       'spark.rapids.sql.castStringToFloat.enabled': 'true',
+                       'spark.rapids.sql.castStringToFloat.enabled': 'true'
                       }
 
 
@@ -164,6 +165,22 @@ def test_hash_count_with_filter(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark: gen_df(spark, data_gen, length=100)
             .selectExpr('count(a) filter (where c > 50)'),
+        conf=_no_nans_float_conf)
+
+
+@ignore_order
+@pytest.mark.parametrize('data_gen', get_struct_gens(
+    marked_params=params_markers_for_avg_sum), ids=idfn)
+def test_hash_multiple_filters(data_gen):
+    df = with_cpu_session(
+        lambda spark : gen_df(spark, data_gen, length=100))
+    df.createOrReplaceTempView("hash_agg_table")
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark: spark.sql(
+            'select count(a) filter (where c > 50),' +
+            'count(b) filter (where c > 100),' +
+            'avg(b) filter (where b > 20),' +
+            'min(a), max(b) filter (where c > 250) from hash_agg_table group by a'),
         conf=_no_nans_float_conf)
 
 
