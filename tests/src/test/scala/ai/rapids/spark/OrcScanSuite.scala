@@ -23,48 +23,6 @@ class OrcScanSuite extends SparkQueryCompareTestSuite {
 
   private val fileSplitsOrc = frameFromOrc("file-splits.orc")
 
-  private val orcSplitsConf = new SparkConf().set("spark.sql.files.maxPartitionBytes", "30000")
-
-  testSparkResultsAreEqual("Test ORC", frameFromOrc("test.snappy.orc")) {
-    // dropping the timestamp column since timestamp expressions are not GPU supported yet
-    frame => frame.select(col("*")).drop("timestamp")
-  }
-
-  testSparkResultsAreEqual("Test ORC file splitting", fileSplitsOrc, conf=orcSplitsConf) {
-    frame => frame.select(col("*"))
-  }
-
-  testSparkResultsAreEqual("Test ORC count", fileSplitsOrc,
-    conf=orcSplitsConf)(frameCount)
-
-  testSparkResultsAreEqual("Test ORC predicate push-down", fileSplitsOrc) {
-    frame => frame.select(col("loan_id"), col("orig_interest_rate"), col("zip"))
-      .where(col("orig_interest_rate") > 10)
-  }
-
-  testSparkResultsAreEqual("Test ORC splits predicate push-down", fileSplitsOrc,
-    conf=orcSplitsConf) {
-    frame => frame.select(col("loan_id"), col("orig_interest_rate"), col("zip"))
-      .where(col("orig_interest_rate") > 10)
-  }
-
-  testSparkResultsAreEqual("Test partitioned ORC", frameFromOrc("partitioned-orc")) {
-    frame => frame.select(col("partKey"), col("ints_5"), col("ints_3"), col("ints_1"))
-  }
-
-  testSparkResultsAreEqual("Test ORC msec timestamps and dates",
-      frameFromOrc("timestamp-date-test-msec.orc")) {
-    frame => frame.select(col("*"))
-  }
-
-  // This test is commented out because cudf doesn't support loading anything more than
-  // millsecond resolution timestamps yet.  See https://github.com/rapidsai/cudf/issues/2497
-  // NOTE: When this is fixed, the timestamp msec test and data file should be deleted
-  //       in preference of this test.
-  //testSparkResultsAreEqual("Test ORC timestamps and dates",
-  //  frameFromOrc("timestamp-date-test.orc")) {
-  //  frame => frame.select(col("*"))
-  //}
   testSparkResultsAreEqual("Test ORC chunks", fileSplitsOrc,
     new SparkConf().set(RapidsConf.MAX_READER_BATCH_SIZE_ROWS.key, "2048")) {
     frame => frame.select(col("loan_id"), col("orig_interest_rate"), col("zip"))
