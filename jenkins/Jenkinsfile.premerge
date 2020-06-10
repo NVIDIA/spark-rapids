@@ -58,6 +58,7 @@ pipeline {
                         -v ${HOME}/.zinc:${HOME}/.zinc:rw \
                         -v /etc/passwd:/etc/passwd -v /etc/group:/etc/group") {
                         sh "bash $BUILD_SCRIPT $MVN_URM_MIRROR"
+                        sh "Test premerge 2!"
                         step([$class: 'JacocoPublisher',
                               execPattern: '**/target/jacoco.exec',
                               classPattern: 'target/jacoco_classes/',
