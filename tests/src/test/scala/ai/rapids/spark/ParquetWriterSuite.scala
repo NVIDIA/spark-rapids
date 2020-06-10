@@ -19,58 +19,15 @@ package ai.rapids.spark
 import java.io.File
 import java.nio.charset.StandardCharsets
 
-import collection.JavaConverters._
 import org.apache.hadoop.fs.Path
 import org.apache.parquet.hadoop.ParquetFileReader
-import org.apache.parquet.hadoop.util.HadoopInputFile
 
 import org.apache.spark.SparkConf
-import org.apache.spark.sql.{DataFrame, SparkSession}
 
 /**
  * Tests for writing Parquet files with the GPU.
  */
 class ParquetWriterSuite extends SparkQueryCompareTestSuite {
-
-  def readParquet(spark: SparkSession, path: String): DataFrame = spark.read.parquet(path)
-
-  def writeParquet(df: DataFrame, path: String): Unit = df.write.parquet(path)
-
-  def writeParquetBucket(colNames: String*): (DataFrame, String) => Unit =
-    (df, path) => df.write.partitionBy(colNames:_*).parquet(path)
-
-  testSparkWritesAreEqual("simple Parquet write without nulls",
-    mixedDf, writeParquet, readParquet)
-
-  testSparkWritesAreEqual("simple Parquet write with nulls",
-    mixedDfWithNulls, writeParquet, readParquet)
-
-  testSparkWritesAreEqual("simple partitioned Parquet write",
-    mixedDfWithBuckets, writeParquetBucket("bucket_1", "bucket_2"), readParquet,
-    sort = true /*The order the data is read in on the CPU is not deterministic*/)
-
-  test("write with no compression") {
-    val compression = "none"
-    val expectedFileExt = ".parquet"
-    val cpuCodecs = withCpuSparkSession(
-      spark => getCompressionCodecs(spark, compression, expectedFileExt))
-    val gpuCodecs = withGpuSparkSession(
-      spark => getCompressionCodecs(spark, compression, expectedFileExt))
-    assert(cpuCodecs.forall(_ == "UNCOMPRESSED"))
-    assert(gpuCodecs.forall(_ == "UNCOMPRESSED"))
-  }
-
-  test("write with snappy compression") {
-    val compression = "snappy"
-    val expectedFileExt = ".snappy.parquet"
-    val cpuCodecs = withCpuSparkSession(
-      spark => getCompressionCodecs(spark, compression, expectedFileExt))
-    val gpuCodecs = withGpuSparkSession(
-      spark => getCompressionCodecs(spark, compression, expectedFileExt))
-    assert(cpuCodecs.contains("SNAPPY"))
-    assert(gpuCodecs.contains("SNAPPY"))
-  }
-
   test("file metadata") {
     val tempFile = File.createTempFile("stats", ".parquet")
     try {
@@ -130,41 +87,6 @@ class ParquetWriterSuite extends SparkQueryCompareTestSuite {
     frame => {
       frame.write.parquet(tempFile.getAbsolutePath)
       frame
-    }
-  }
-
-  private def getCompressionCodecs(
-      spark: SparkSession,
-      compression: String, expectedExt: String): Seq[String] = {
-    val tempFile = File.createTempFile(s"compression-$compression-test", ".parquet")
-
-    try {
-      val df = mixedDfWithNulls(spark)
-      df.write
-        .mode("overwrite")
-        .option("compression", compression)
-        .parquet(tempFile.getAbsolutePath)
-
-      val files = new File(tempFile.getAbsolutePath)
-        .list()
-        .filter { filename =>
-          val i = filename.indexOf('.')
-          i != -1 && filename.substring(i) == expectedExt
-        }
-
-      assert(files.length > 0)
-
-      val file = HadoopInputFile.fromPath(new Path(new File(tempFile, files.head).getAbsolutePath),
-        spark.sparkContext.hadoopConfiguration)
-
-      val fileReader = ParquetFileReader.open(file)
-
-      fileReader.getRowGroups.asScala
-        .flatMap(_.getColumns.asScala
-          .map(_.getCodec.toString))
-
-    } finally {
-      tempFile.delete()
     }
   }
 }

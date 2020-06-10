@@ -96,6 +96,19 @@ _good_str_schema = StructType([
 
 _enable_ts_conf = {'spark.rapids.sql.csvTimestamps.enabled': 'true'}
 
+def read_csv_df(data_path, schema, header, sep):
+    return lambda spark : spark.read\
+            .schema(schema)\
+            .option('header', header)\
+            .option('sep', sep)\
+            .csv(data_path)
+
+def read_csv_sql(data_path, schema, header, sep):
+    def read_impl(spark):
+        spark.sql('DROP TABLE IF EXISTS `TMP_CSV_TABLE`')
+        return spark.catalog.createTable('TMP_CSV_TABLE', source='csv', schema=schema, header=str(header), sep=sep, path=data_path)
+    return read_impl
+
 @approximate_float
 @pytest.mark.parametrize('name,schema,sep,header', [
     ('Acquisition_2007Q3.txt', _acq_schema, '|', False),
@@ -105,15 +118,10 @@ _enable_ts_conf = {'spark.rapids.sql.csvTimestamps.enabled': 'true'}
     ('str.csv', _bad_str_schema, ',', True),
     ('str.csv', _good_str_schema, ',', True)
     ])
-def test_basic_read(std_input_path, name, schema, sep, header):
-    assert_gpu_and_cpu_are_equal_collect(
-            lambda spark : spark.read\
-                    .schema(schema)\
-                    .option('header', header)\
-                    .option('sep', sep)\
-                    .csv(std_input_path + '/' + name),
-                    conf=_enable_ts_conf)
-
+@pytest.mark.parametrize('read_func', [read_csv_df, read_csv_sql])
+def test_basic_read(std_input_path, name, schema, sep, header, read_func):
+    assert_gpu_and_cpu_are_equal_collect(read_func(std_input_path + '/' + name, schema, header, sep),
+            conf=_enable_ts_conf)
 
 csv_supported_gens = [
         # Spark does not escape '\r' or '\n' even though it uses it to mark end of record
