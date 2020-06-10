@@ -45,7 +45,8 @@ incorrect results. More details on this behavior can be found
 [here](https://github.com/NVIDIA/spark-rapids/issues/87)
 and in this cudf [feature request](https://github.com/rapidsai/cudf/issues/4753).
 If it is known with certainty that the floating point columns do not contain NaNs,
-set `spark.rapids.sql.hasNans` to `false` to run GPU enabled aggregations on them.
+set [`spark.rapids.sql.hasNans`](configs.md#sql.hasNans) to `false` to run GPU enabled
+aggregations on them.
 
 ## Unicode
 
@@ -136,17 +137,41 @@ Any number that overflows will not be turned into a null value.
 
 Any number that overflows will not be turned into a null value.
 
-## Timestamps
+## ORC
 
-Spark stores timestamps internally relative to the JVM time zone.  Converting an
-arbitrary timestamp between time zones is not currently supported on the GPU. Therefore operations
-involving timestamps will only be GPU-accelerated if the time zone used by the JVM is UTC.
+The ORC format has fairly complete support for both reads and writes. There are only a few known
+issues. The first is for reading timestamps and dates around the transition between Julian and
+Gregorian calendars as described [here](https://github.com/NVIDIA/spark-rapids/issues/131). A
+similar issue exists for writing dates as described
+[here](https://github.com/NVIDIA/spark-rapids/issues/139). Writing timestamps, however only
+appears to work for dates after the epoch as described
+[here](https://github.com/NVIDIA/spark-rapids/issues/140). 
+
+## Parquet
+
+The Parquet format has more configs because there are multiple versions with some compatibility
+issues between them. Dates and timestamps are where the known issues exist. 
+For reads when `spark.sql.legacy.parquet.datetimeRebaseModeInWrite` is set to `CORRECTED`
+[timestamps](https://github.com/NVIDIA/spark-rapids/issues/132) before the transition
+between the Julian and Gregorian calendars are wrong, but dates are fine. When 
+`spark.sql.legacy.parquet.datetimeRebaseModeInWrite` is set to `LEGACY`, however both dates and
+timestamps are read incorrectly before the Gregorian calendar transition as described
+[here]('https://github.com/NVIDIA/spark-rapids/issues/133).
+
+When writing `spark.sql.legacy.parquet.datetimeRebaseModeInWrite` is currently ignored as described
+[here](https://github.com/NVIDIA/spark-rapids/issues/144).
 
 Apache Spark 3.0 defaults to writing Parquet timestamps in the deprecated INT96 format. The plugin
 does not support writing timestamps in the INT96 format, so by default writing timestamp columns to
 Parquet will not be GPU-accelerated. If the INT96 timestamp format is not required for
 compatibility with other tools then set `spark.sql.parquet.outputTimestampType` to
 `TIMESTAMP_MICROS`.
+
+## Timestamps
+
+Spark stores timestamps internally relative to the JVM time zone.  Converting an
+arbitrary timestamp between time zones is not currently supported on the GPU. Therefore operations
+involving timestamps will only be GPU-accelerated if the time zone used by the JVM is UTC.
 
 ## Casting between types
 

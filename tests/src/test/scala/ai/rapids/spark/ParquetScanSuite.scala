@@ -20,19 +20,7 @@ import org.apache.spark.SparkConf
 import org.apache.spark.sql.functions.col
 
 class ParquetScanSuite extends SparkQueryCompareTestSuite {
-
-  testSparkResultsAreEqual("Test Parquet", frameFromParquet("test.snappy.parquet")) {
-    frame => frame.select(col("ints_1"), col("ints_3"), col("ints_5"))
-  }
-
   private val fileSplitsParquet = frameFromParquet("file-splits.parquet")
-
-  private val parquetSplitsConf = new SparkConf().set("spark.sql.files.maxPartitionBytes", "10000")
-
-  testSparkResultsAreEqual("Test Parquet file splitting", fileSplitsParquet,
-    conf=parquetSplitsConf) {
-    frame => frame.select(col("*"))
-  }
 
   testSparkResultsAreEqual("Test Parquet with row chunks", fileSplitsParquet,
     conf = new SparkConf().set(RapidsConf.MAX_READER_BATCH_SIZE_ROWS.key, "100")) {
@@ -44,35 +32,10 @@ class ParquetScanSuite extends SparkQueryCompareTestSuite {
     frame => frame.select(col("*"))
   }
 
-  testSparkResultsAreEqual("Test Parquet count", fileSplitsParquet,
-    conf=parquetSplitsConf)(frameCount)
-
-  testSparkResultsAreEqual("Test Parquet predicate push-down", fileSplitsParquet) {
-    frame => frame.select(col("loan_id"), col("orig_interest_rate"), col("zip"))
-      .where(col("orig_interest_rate") > 10)
-  }
-
-  testSparkResultsAreEqual("Test Parquet splits predicate push-down", fileSplitsParquet,
-    conf=parquetSplitsConf) {
-    frame => frame.select(col("loan_id"), col("orig_interest_rate"), col("zip"))
-      .where(col("orig_interest_rate") > 10)
-  }
-
-  testSparkResultsAreEqual("Test partitioned Parquet", frameFromParquet("partitioned-parquet")) {
-    frame => frame.select(col("partKey"), col("ints_1"), col("ints_3"), col("ints_5"))
-  }
-
-  testSparkResultsAreEqual("Test Parquet msec timestamps and dates",
-      frameFromParquet("timestamp-date-test-msec.parquet")) {
+  // Eventually it would be nice to move this to the integration tests,
+  // but the file it depends on is used in other tests too.
+  testSparkResultsAreEqual("Test Parquet timestamps and dates",
+    frameFromParquet("timestamp-date-test.parquet")) {
     frame => frame.select(col("*"))
   }
-
-  // This test is commented out because cudf doesn't support loading anything more than
-  // millsecond resolution timestamps yet.  See https://github.com/rapidsai/cudf/issues/2497
-  // NOTE: When this is fixed, the timestamp msec test and data file should be deleted
-  //       in preference of this test.
-  //testSparkResultsAreEqual("Test Parquet timestamps and dates",
-  //  frameFromParquet("timestamp-date-test.parquet")) {
-  //  frame => frame.select(col("*"))
-  //}
 }
