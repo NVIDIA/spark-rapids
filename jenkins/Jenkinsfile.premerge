@@ -28,7 +28,6 @@ pipeline {
         ansiColor('xterm')
         timeout(time: 120, unit: 'MINUTES')
         buildDiscarder(logRotator(numToKeepStr: '10'))
-        gitLabConnection('GitLab Master')
     }
 
     parameters {
@@ -58,6 +57,7 @@ pipeline {
                     docker.image(IMAGE_NAME).inside("--runtime=nvidia -v ${HOME}/.m2:${HOME}/.m2:rw \
                         -v ${HOME}/.zinc:${HOME}/.zinc:rw \
                         -v /etc/passwd:/etc/passwd -v /etc/group:/etc/group") {
+                        echo "This is a test of Whitelist pre-merge! "
                         sh "bash $BUILD_SCRIPT $MVN_URM_MIRROR"
                         step([$class: 'JacocoPublisher',
                               execPattern: '**/target/jacoco.exec',
@@ -70,16 +70,4 @@ pipeline {
             }
         }
     } // end of stages
-
-    post {
-        always {
-            script {
-                if (currentBuild.currentResult == "SUCCESS") {
-                    updateGitlabCommitStatus(name: 'Jenkins CI', state: "success")
-                } else {
-                    updateGitlabCommitStatus(name: 'Jenkins CI', state: "failed")
-                }
-            }
-        }
-    }
 } // end of pipeline

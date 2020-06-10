@@ -71,16 +71,4 @@ pipeline {
             }
         }   
     }
-    
-    post {
-        always {
-            script {
-                if (currentBuild.currentResult == "SUCCESS") {
-                    updateGitlabCommitStatus(name: 'Jenkins CI', state: "success")
-                } else {
-                    updateGitlabCommitStatus(name: 'Jenkins CI', state: "failed")
-                }
-            }
-        }
-    }
 }
