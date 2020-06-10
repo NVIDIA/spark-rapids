@@ -144,10 +144,8 @@ class _RowCmp(object):
 
     def __ne__(self, other):
         return self.cmp(other) != 0
- 
-def _assert_gpu_and_cpu_are_equal(func,
-        should_collect,
-        conf={}):
+
+def _prep_func_for_compare(func, should_collect):
     sort_locally = should_sort_locally()
     if should_sort_on_spark():
         def with_sorted(spark):
@@ -175,12 +173,73 @@ def _assert_gpu_and_cpu_are_equal(func,
         collect_type = 'ITERATOR'
         if sort_locally:
             raise RuntimeError('Local Sort is only supported on a collect')
+    return (bring_back, collect_type)
 
+def _prep_incompat_conf(conf):
     if is_incompat():
         conf = dict(conf) # Make a copy before we change anything
         conf['spark.rapids.sql.incompatibleOps.enabled'] = 'true'
     elif _has_incompat_conf(conf):
         raise AssertionError("incompat must be enabled by the incompat fixture")
+    return conf
+
+def _assert_gpu_and_cpu_writes_are_equal(
+        write_func,
+        read_func,
+        base_path,
+        should_collect,
+        conf={}):
+    conf = _prep_incompat_conf(conf)
+
+    print('### CPU RUN ###')
+    cpu_start = time.time()
+    cpu_path = base_path + '/CPU'
+    with_cpu_session(lambda spark : write_func(spark, cpu_path), conf=conf)
+    cpu_end = time.time()
+    print('### GPU RUN ###')
+    gpu_start = time.time()
+    gpu_path = base_path + '/GPU'
+    with_gpu_session(lambda spark : write_func(spark, gpu_path), conf=conf)
+    gpu_end = time.time()
+    print('### WRITE: GPU TOOK {} CPU TOOK {} ###'.format( 
+        gpu_end - gpu_start, cpu_end - cpu_start))
+
+    (cpu_bring_back, cpu_collect_type) = _prep_func_for_compare(
+            lambda spark: read_func(spark, cpu_path), should_collect)
+    (gpu_bring_back, gpu_collect_type) = _prep_func_for_compare(
+            lambda spark: read_func(spark, gpu_path), should_collect)
+
+    from_cpu = with_cpu_session(cpu_bring_back, conf=conf)
+    from_gpu = with_cpu_session(gpu_bring_back, conf=conf)
+    if should_sort_locally():
+        from_cpu.sort(key=_RowCmp)
+        from_gpu.sort(key=_RowCmp)
+
+    assert_equal(from_cpu, from_gpu)
+
+def assert_gpu_and_cpu_writes_are_equal_collect(write_func, read_func, base_path, conf={}):
+    """
+    Assert when running write_func on both the CPU and the GPU and reading using read_func
+    ont he CPU that the results are equal.
+    In this case the data is collected back to the driver and compared here, so be
+    careful about the amount of data returned.
+    """
+    _assert_gpu_and_cpu_writes_are_equal(write_func, read_func, base_path, True, conf=conf)
+
+def assert_gpu_and_cpu_writes_are_equal_iterator(write_func, read_func, base_path, conf={}):
+    """
+    Assert when running write_func on both the CPU and the GPU and reading using read_func
+    ont he CPU that the results are equal.
+    In this case the data is pulled back to the driver in chunks and compared here
+    so any amount of data can work, just be careful about how long it might take.
+    """
+    _assert_gpu_and_cpu_writes_are_equal(write_func, read_func, base_path, False, conf=conf)
+
+def _assert_gpu_and_cpu_are_equal(func,
+        should_collect,
+        conf={}):
+    (bring_back, collect_type) = _prep_func_for_compare(func, should_collect)
+    conf = _prep_incompat_conf(conf)
 
     print('### CPU RUN ###')
     cpu_start = time.time()
@@ -193,7 +252,7 @@ def _assert_gpu_and_cpu_are_equal(func,
     gpu_end = time.time()
     print('### {}: GPU TOOK {} CPU TOOK {} ###'.format(collect_type, 
         gpu_end - gpu_start, cpu_end - cpu_start))
-    if sort_locally:
+    if should_sort_locally():
         from_cpu.sort(key=_RowCmp)
         from_gpu.sort(key=_RowCmp)
 
