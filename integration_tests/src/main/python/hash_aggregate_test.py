@@ -30,7 +30,7 @@ _no_nans_float_conf_partial = {'spark.rapids.sql.variableFloatAgg.enabled': 'tru
                                'spark.rapids.sql.hasNans': 'false',
                                'spark.rapids.sql.castStringToFloat.enabled': 'true',
                                'spark.rapids.sql.hashAgg.replaceMode': 'partial',
-                               'spark.sql.shuffle.partitions':'2'
+                               # 'spark.sql.shuffle.partitions':'2'
                               }
 
 _no_nans_float_conf_final = {'spark.rapids.sql.variableFloatAgg.enabled': 'true',

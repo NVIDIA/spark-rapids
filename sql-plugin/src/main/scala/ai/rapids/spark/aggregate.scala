@@ -19,7 +19,7 @@ package ai.rapids.spark
 import scala.collection.mutable.ArrayBuffer
 
 import ai.rapids.cudf
-import ai.rapids.cudf.{DType, NvtxColor, Scalar}
+import ai.rapids.cudf.NvtxColor
 import ai.rapids.spark.GpuMetricNames._
 import ai.rapids.spark.RapidsPluginImplicits._
 
@@ -353,16 +353,7 @@ case class GpuHashAggregateExec(requiredChildDistributionExpressions: Option[Seq
             val nvtxRange =
               new NvtxWithMetrics("Hash Aggregate Batch", NvtxColor.YELLOW, totalTime)
             try {
-              System.err.println(s"KUHU MAIN CB rows=${batch.numRows()}" +
-                s"cols=${batch.numCols()}=============")
-              System.err.flush()
-              printCvs(GpuColumnVector.extractColumns(batch))
               childCvs = processIncomingBatch(batch, boundExpression.boundInputReferences)
-
-              System.err.println(s"KUHU Incomping batch CB rows=${childCvs.head.getRowCount}" +
-                s"cols=${childCvs.length}=============")
-              System.err.flush()
-              printCvs(childCvs)
               // done with the batch, clean it as soon as possible
               batch.close()
               batch = null
@@ -459,11 +450,6 @@ case class GpuHashAggregateExec(requiredChildDistributionExpressions: Option[Seq
           aggregatedCb = null
 
           if (finalCb != null) {
-//            System.err.flush()
-//            System.err.println(s"KUHU FINAL CB rows=${finalCb.numRows()}" +
-//              s"cols=${finalCb.numCols()}=============")
-//            System.err.flush()
-//            printCvs(GpuColumnVector.extractColumns(finalCb))
             // Perform the last project to get the correct shape that Spark expects. Note this will
             // add things like literals, that were not part of the aggregate into the batch.
             resultCvs = boundExpression.boundResultReferences.map { ref =>
@@ -489,11 +475,6 @@ case class GpuHashAggregateExec(requiredChildDistributionExpressions: Option[Seq
               numOutputRows += resultCvs.head.getBase.getRowCount
               new ColumnarBatch(resultCvs.toArray, resultCvs.head.getBase.getRowCount.toInt)
             }
-            System.err.flush()
-            System.err.println(s"KUHU RESULT CB rows=${resultCb.numRows()}" +
-              s"cols=${resultCb.numCols()}=============")
-            System.err.flush()
-            printCvs(GpuColumnVector.extractColumns(resultCb))
             numOutputBatches += 1
             success = true
             new Iterator[ColumnarBatch] {
@@ -917,32 +898,6 @@ case class GpuHashAggregateExec(requiredChildDistributionExpressions: Option[Seq
         s" filters=${aggregateExpressions.map(_.filter)})"
     }
   }
-
-  private def printCvs(childCvs: Seq[GpuColumnVector]) = {
-    (0 until childCvs(0).getRowCount.toInt).foreach { i =>
-      for (j <- 0 until childCvs.length) {
-        val cv: RapidsHostColumnVector = childCvs(j).copyToHost()
-        val (rowVal,rowNull) = cv.getBase.getType match {
-          case DType.FLOAT64 => (cv.getDouble(i),cv.isNullAt(i))
-          case DType.FLOAT32 => (cv.getFloat(i),cv.isNullAt(i))
-          case DType.INT64 => (cv.getLong(i),cv.isNullAt(i))
-          case DType.INT32 => (cv.getInt(i),cv.isNullAt(i))
-          case DType.INT16 => (cv.getShort(i),cv.isNullAt(i))
-          case DType.BOOL8 => (cv.getBoolean(i),cv.isNullAt(i))
-          case DType.STRING => (cv.getUTF8String(i),cv.isNullAt(i))
-          case DType.TIMESTAMP_DAYS => "N/A"
-          case DType.TIMESTAMP_MICROSECONDS => "N/A"
-        }
-        System.err.print("("+rowVal+")")
-        System.err.flush()
-      }
-      System.err.println()
-      System.err.flush()
-    }
-    System.err.println()
-    System.err.flush()
-  }
-
   //
   // End copies from HashAggregateExec
   //

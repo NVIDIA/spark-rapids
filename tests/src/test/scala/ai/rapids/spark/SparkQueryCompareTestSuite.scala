@@ -745,14 +745,6 @@ trait SparkQueryCompareTestSuite extends FunSuite with Arm {
     ).toDF("ints", "longs", "doubles", "strings")
   }
 
-  def nullIntDf(session: SparkSession): DataFrame = {
-    import session.sqlContext.implicits._
-    Seq[(java.lang.Integer, java.lang.Integer)](
-      (null, 15),
-      (null, null)
-    ).toDF("ints", "more_ints")
-  }
-
   def likeDf(session: SparkSession): DataFrame = {
     import session.sqlContext.implicits._
     Seq(

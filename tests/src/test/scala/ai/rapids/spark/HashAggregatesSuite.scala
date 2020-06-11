@@ -28,11 +28,6 @@ import org.apache.spark.sql.types.{DataType, DataTypes}
 class HashAggregatesSuite extends SparkQueryCompareTestSuite {
   private val floatAggConf: SparkConf = new SparkConf().set(
     RapidsConf.ENABLE_FLOAT_AGG.key, "true").set(RapidsConf.HAS_NANS.key, "false")
-  private val partialOnlyConf = replaceHashAggMode("partial").set(
-    RapidsConf.ENABLE_FLOAT_AGG.key, "true").set(RapidsConf.HAS_NANS.key, "false")
-  private val finalOnlyConf = replaceHashAggMode("final").set(
-    RapidsConf.ENABLE_FLOAT_AGG.key, "true").set(RapidsConf.HAS_NANS.key, "false")
-
 
   def replaceHashAggMode(mode: String, conf: SparkConf = new SparkConf()): SparkConf = {
     // configures whether Plugin will replace certain aggregate exec nodes
@@ -1076,6 +1071,11 @@ class HashAggregatesSuite extends SparkQueryCompareTestSuite {
       result
   }
 
+  private val partialOnlyConf = replaceHashAggMode("partial").set(
+    RapidsConf.ENABLE_FLOAT_AGG.key, "true").set(RapidsConf.HAS_NANS.key, "false")
+  private val finalOnlyConf = replaceHashAggMode("final").set(
+    RapidsConf.ENABLE_FLOAT_AGG.key, "true").set(RapidsConf.HAS_NANS.key, "false")
+
   IGNORE_ORDER_ALLOW_NON_GPU_testSparkResultsAreEqual(
       "PartMerge:countDistinct:sum:partOnly",
       longsFromCSVDf,
@@ -1706,17 +1706,5 @@ class HashAggregatesSuite extends SparkQueryCompareTestSuite {
       .set(RapidsConf.ENABLE_FLOAT_AGG.key, "true")
       .set(RapidsConf.INCOMPATIBLE_OPS.key, "true")) {
     frame => frame.groupBy(col("double")).agg(sum(col("int")))
-  }
-
-  IGNORE_ORDER_ALLOW_NON_GPU_testSparkResultsAreEqual(
-    "PartMerge:avg_partOnly_null_corner_case", nullIntDf,
-    execsAllowedNonGpu = Seq("HashAggregateExec", "AggregateExpression", "AttributeReference",
-      "Alias", "Average", "Cast"),
-    conf = partialOnlyConf,
-    repart = 2) {
-    frame => val result = frame.agg(avg("more_ints"))
-      checkExecNode(result)
-      result.explain()
-      result
   }
 }
