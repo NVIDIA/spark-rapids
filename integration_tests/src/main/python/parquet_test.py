@@ -127,7 +127,6 @@ def test_simple_partitioned_read(spark_tmp_path):
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : spark.read.parquet(data_path))
 
-@pytest.mark.xfail(reason='https://github.com/NVIDIA/spark-rapids/issues/60')
 def test_read_merge_schema(spark_tmp_path):
     # Once https://github.com/NVIDIA/spark-rapids/issues/133 and https://github.com/NVIDIA/spark-rapids/issues/132 are fixed 
     # we should go with a more standard set of generators
