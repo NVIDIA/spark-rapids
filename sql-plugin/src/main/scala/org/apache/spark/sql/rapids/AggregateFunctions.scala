@@ -359,6 +359,7 @@ case class GpuCount(children: Seq[GpuExpression]) extends GpuDeclarativeAggregat
   override def dataType: DataType = LongType
 }
 
+
 case class GpuAverage(child: GpuExpression) extends GpuDeclarativeAggregate {
   // averages are either Decimal or Double. We don't support decimal yet, so making this double.
   private lazy val cudfSum = GpuAttributeReference("cudf_sum", DoubleType)()
@@ -381,7 +382,7 @@ case class GpuAverage(child: GpuExpression) extends GpuDeclarativeAggregate {
   override lazy val inputProjection: Seq[GpuExpression] = Seq(
     child match {
       case literal: GpuLiteral => toDoubleLit(literal.value)
-      case _ => GpuCast(child, DoubleType)
+      case _ => GpuNvl(GpuCast(child, DoubleType), GpuLiteral(0d, DoubleType))
     },
     child match {
       case literal : GpuLiteral => GpuLiteral(if (literal.value != null) 1L else 0L, LongType)
