@@ -114,6 +114,16 @@ object GpuParquetScan {
       sparkSession: SparkSession,
       readSchema: StructType,
       meta: RapidsMeta[_, _, _]): Unit = {
+    if (!meta.conf.isParquetEnabled) {
+      meta.willNotWorkOnGpu("Parquet input and output has been disabled. To enable set" +
+        s"${RapidsConf.ENABLE_PARQUET} to true")
+    }
+
+    if (!meta.conf.isParquetReadEnabled) {
+      meta.willNotWorkOnGpu("Parquet input has been disabled. To enable set" +
+        s"${RapidsConf.ENABLE_PARQUET_READ} to true")
+    }
+
     for (field <- readSchema) {
       if (!GpuColumnVector.isSupportedType(field.dataType)) {
         meta.willNotWorkOnGpu(s"GpuParquetScan does not support fields of type ${field.dataType}")

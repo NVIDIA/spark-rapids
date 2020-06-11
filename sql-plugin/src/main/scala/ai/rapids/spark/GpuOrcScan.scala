@@ -121,6 +121,16 @@ object GpuOrcScan {
       sparkSession: SparkSession,
       schema: StructType,
       meta: RapidsMeta[_, _, _]): Unit = {
+    if (!meta.conf.isOrcEnabled) {
+      meta.willNotWorkOnGpu("ORC input and output has been disabled. To enable set" +
+        s"${RapidsConf.ENABLE_ORC} to true")
+    }
+
+    if (!meta.conf.isOrcReadEnabled) {
+      meta.willNotWorkOnGpu("ORC input has been disabled. To enable set" +
+        s"${RapidsConf.ENABLE_ORC_READ} to true")
+    }
+
     if (sparkSession.conf
       .getOption("spark.sql.orc.mergeSchema").exists(_.toBoolean)) {
       meta.willNotWorkOnGpu("mergeSchema and schema evolution is not supported yet")
