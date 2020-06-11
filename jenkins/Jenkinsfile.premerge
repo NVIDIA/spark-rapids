@@ -28,11 +28,10 @@ pipeline {
         ansiColor('xterm')
         timeout(time: 120, unit: 'MINUTES')
         buildDiscarder(logRotator(numToKeepStr: '10'))
-        gitLabConnection('GitLab Master')
     }
 
     parameters {
-        string(name: 'REF', defaultValue: '\${gitlabBranch}', description: 'Commit to build')
+        string(name: 'REF', defaultValue: '\${sha1}', description: 'Commit to build')
     }
 
     environment {
@@ -70,16 +69,4 @@ pipeline {
             }
         }
     } // end of stages
-
-    post {
-        always {
-            script {
-                if (currentBuild.currentResult == "SUCCESS") {
-                    updateGitlabCommitStatus(name: 'Jenkins CI', state: "success")
-                } else {
-                    updateGitlabCommitStatus(name: 'Jenkins CI', state: "failed")
-                }
-            }
-        }
-    }
 } // end of pipeline
