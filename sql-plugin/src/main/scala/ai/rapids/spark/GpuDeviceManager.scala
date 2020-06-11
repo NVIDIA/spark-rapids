@@ -53,12 +53,11 @@ object GpuDeviceManager extends Logging {
 
   // Attempt to set and acquire the gpu, return true if acquired, false otherwise
   def tryToSetGpuDeviceAndAcquire(addr: Int): Boolean = {
-    logError(s"TRYING TO GET GPU $addr")
     try {
       GpuDeviceManager.setGpuDeviceAndAcquire(addr)
     } catch {
       case NonFatal(e) =>
-        logError("COULD NOT GET IT", e)
+        logInfo(s"Will not use GPU $addr because of $e")
         // we may have lost a race trying to acquire this addr or GPU is already busy
         return false
     }
@@ -72,10 +71,9 @@ object GpuDeviceManager extends Logging {
    */
   private def findGpuAndAcquire(): Int = {
     val deviceCount: Int = Cuda.getDeviceCount()
-    logError(s"FOUND $deviceCount GPUs")
     // loop multiple times to see if a GPU was released or something unexpected happened that
     // we couldn't acquire on first try
-    var numRetries = 10
+    var numRetries = 2
     val addrsToTry = ArrayBuffer.empty ++= (0 to (deviceCount - 1))
     while (numRetries > 0) {
       val addr = addrsToTry.find(tryToSetGpuDeviceAndAcquire)
