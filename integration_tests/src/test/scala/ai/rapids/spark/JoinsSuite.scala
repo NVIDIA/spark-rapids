@@ -20,48 +20,10 @@ import org.apache.spark.SparkConf
 
 class JoinsSuite extends SparkQueryCompareTestSuite {
 
-  testSparkResultsAreEqual2("Test broadcast hash join", longsDf, nonZeroLongsDf,
-    conf=new SparkConf()
-      .set("spark.sql.autoBroadcastJoinThreshold", "10MB")) {
-    (A, B) => A.join(B, A("longs") === B("more_longs"))
-  }
-
-  testSparkResultsAreEqual2("Test broadcast hash semi join", longsDf, nonZeroLongsDf,
-    conf=new SparkConf()
-        .set("spark.sql.autoBroadcastJoinThreshold", "10MB")) {
-    (A, B) => A.join(B, A("longs") === B("more_longs"), "LeftSemi")
-  }
-
-  testSparkResultsAreEqual2("Test broadcast hash anti join", longsDf, nonZeroLongsDf,
-    conf=new SparkConf()
-        .set("spark.sql.autoBroadcastJoinThreshold", "10MB")) {
-    (A, B) => A.join(B, A("longs") === B("more_longs"), "LeftAnti")
-  }
-
   testSparkResultsAreEqual2("Test broadcast hash join with ops", longsDf, nonZeroLongsDf,
     conf=new SparkConf()
       .set("spark.sql.autoBroadcastJoinThreshold", "10MB")) {
     (A, B) => A.join(B, (A("longs") - A("more_longs")) === (B("longs") - B("more_longs")))
-  }
-
-  testSparkResultsAreEqual2("Test broadcast hash join with conditional", longsDf, nonZeroLongsDf,
-    conf=new SparkConf()
-      .set("spark.sql.autoBroadcastJoinThreshold", "10MB")) {
-    (A, B) => A.join(B, A("longs") === B("longs") && A("more_longs") >= B("more_longs"))
-  }
-
-  IGNORE_ORDER_testSparkResultsAreEqual2("Test broadcast hash join with mixed fields",
-    mixedDf, mixedDfWithNulls,
-    conf = new SparkConf()
-      .set("spark.sql.autoBroadcastJoinThreshold", "10MB")) {
-    (A, B) => A.join(B, A("ints") === B("ints"))
-  }
-
-  IGNORE_ORDER_testSparkResultsAreEqual2("Test broadcast hash join on string with mixed fields",
-    mixedDf, mixedDfWithNulls,
-    conf = new SparkConf()
-      .set("spark.sql.autoBroadcastJoinThreshold", "10MB")) {
-    (A, B) => A.join(B, A("strings") === B("strings"))
   }
 
   // For spark to insert a shuffled hash join it has to be enabled with
@@ -105,33 +67,13 @@ class JoinsSuite extends SparkQueryCompareTestSuite {
     (A, B) => A.join(B, A("longs") === B("longs"))
   }
 
-  testSparkResultsAreEqual2("Test left semi self join with nulls",
-    mixedDfWithNulls, mixedDfWithNulls) {
-    (A, B) => A.join(B, A("longs") === B("longs"), "LeftSemi")
-  }
-
   IGNORE_ORDER_testSparkResultsAreEqual2("Test left semi self join with nulls sort part",
     mixedDfWithNulls, mixedDfWithNulls, sortBeforeRepart = true) {
     (A, B) => A.join(B, A("longs") === B("longs"), "LeftSemi")
   }
 
-  testSparkResultsAreEqual2("Test left anti self join with nulls",
-    mixedDfWithNulls, mixedDfWithNulls) {
-    (A, B) => A.join(B, A("longs") === B("longs"), "LeftAnti")
-  }
-
   IGNORE_ORDER_testSparkResultsAreEqual2("Test left anti self join with nulls with partition sort",
     mixedDfWithNulls, mixedDfWithNulls, sortBeforeRepart = true) {
     (A, B) => A.join(B, A("longs") === B("longs"), "LeftAnti")
-  }
-
-  testSparkResultsAreEqual2("Test left semi join with nulls",
-    mixedDfWithNulls, mixedDf) {
-    (A, B) => A.join(B, A("longs") === B("longs") && A("strings") === B("strings"), "LeftSemi")
-  }
-
-  testSparkResultsAreEqual2("Test left anti join with nulls",
-    mixedDfWithNulls, mixedDf) {
-    (A, B) => A.join(B, A("longs") === B("longs") && A("strings") === B("strings"), "LeftAnti")
   }
 }
