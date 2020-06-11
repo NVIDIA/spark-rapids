@@ -29,8 +29,7 @@ _no_nans_float_conf = {'spark.rapids.sql.variableFloatAgg.enabled': 'true',
 _no_nans_float_conf_partial = {'spark.rapids.sql.variableFloatAgg.enabled': 'true',
                                'spark.rapids.sql.hasNans': 'false',
                                'spark.rapids.sql.castStringToFloat.enabled': 'true',
-                               'spark.rapids.sql.hashAgg.replaceMode': 'partial',
-                               # 'spark.sql.shuffle.partitions':'2'
+                               'spark.rapids.sql.hashAgg.replaceMode': 'partial'
                               }
 
 _no_nans_float_conf_final = {'spark.rapids.sql.variableFloatAgg.enabled': 'true',
@@ -99,13 +98,13 @@ _init_list_with_nans_and_no_nans = [
     _grpkey_floats_with_nulls_and_nans]
 
 
-def get_struct_gens(init_list=_init_list_no_nans, marked_params=[]):
+def get_params(init_list, marked_params=[]):
     """
-    A method to build the structGen inputs along with their passed in markers to allow testing
+    A method to build the test inputs along with their passed in markers to allow testing
     specific params with their relevant markers.
-    :arg init_list list of schemas to be tested, defaults to _init_list_no_nans from above.
-    :arg marked_params A list of tuples of (schema, list of pytest markers)
-    Look at params_markers_for_avg_sum as an example.
+    :arg init_list list of param values to be tested
+    :arg marked_params A list of tuples of (params, list of pytest markers)
+    Look at params_markers_for_avg_sum and params_markers_for_confs as an example.
     """
     list = init_list.copy()
     for index in range(0, len(list)):
@@ -129,46 +128,29 @@ params_markers_for_confs = [
 
 ]
 
-
-def get_conf_params(init_list=_confs, marked_params=[]):
-    """
-    A method to build the confs with their passed in markers to allow testing
-    specific confs with their relevant markers.
-    :arg init_list list of confs
-    :arg marked_params A list of tuples of (schema, list of pytest markers)
-    Look at params_markers_for_confs as an example.
-    """
-    list = init_list.copy()
-    for index in range(0, len(list)):
-        for test_case, marks in marked_params:
-            if list[index] == test_case:
-                list[index] = pytest.param(list[index], marks=marks)
-    return list
-
-
 params_markers_for_avg_sum = [
     (_grpkey_strings_with_nulls, [pytest.mark.incompat, pytest.mark.approximate_float]),
     (_grpkey_dbls_with_nulls, [pytest.mark.incompat, pytest.mark.approximate_float]),
     (_grpkey_floats_with_nulls, [pytest.mark.incompat, pytest.mark.approximate_float]),
-    (_grpkey_floats_with_nulls_and_nans, [pytest.mark.incompat, pytest.mark.approximate_float])]
+    (_grpkey_floats_with_nulls_and_nans, [pytest.mark.incompat, pytest.mark.approximate_float]),
+    (_grpkey_longs_with_nulls, [pytest.mark.incompat, pytest.mark.approximate_float])]
 
 
 @ignore_order
-@pytest.mark.parametrize('data_gen', get_struct_gens(
+@pytest.mark.parametrize('data_gen', get_params(_init_list_no_nans,
     marked_params=params_markers_for_avg_sum), ids=idfn)
-@pytest.mark.parametrize('conf', get_conf_params(_confs, params_markers_for_confs), ids=idfn)
+@pytest.mark.parametrize('conf', get_params(_confs, params_markers_for_confs), ids=idfn)
 def test_hash_grpby_sum(data_gen, conf):
     assert_gpu_and_cpu_are_equal_collect(
-        lambda spark: debug_df(gen_df(spark, data_gen, length=100).groupby('a').agg(f.sum('b'))),
+        lambda spark: gen_df(spark, data_gen, length=100).groupby('a').agg(f.sum('b')),
         conf=conf
     )
 
 
 @ignore_order
-@pytest.mark.parametrize('data_gen', get_struct_gens(init_list=_init_list_with_nans_and_no_nans,
+@pytest.mark.parametrize('data_gen', get_params(_init_list_with_nans_and_no_nans,
     marked_params=params_markers_for_avg_sum), ids=idfn)
-@pytest.mark.parametrize('conf', get_conf_params(
-    _confs, params_markers_for_confs), ids=idfn)
+@pytest.mark.parametrize('conf', get_params(_confs, params_markers_for_confs), ids=idfn)
 def test_hash_grpby_avg(data_gen, conf):
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark: gen_df(spark, data_gen, length=100).groupby('a').agg(f.avg('b')),
@@ -187,15 +169,14 @@ def test_hash_grpby_avg(data_gen, conf):
         special_cases=[((None, None), 400.0), ((None, -1542301795), 100.0)])], ids=idfn)
 def test_hash_avg_nulls_partial_only(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
-        lambda spark: debug_df(gen_df(spark, data_gen, length=2).agg(f.avg('b'))),
+        lambda spark: gen_df(spark, data_gen, length=2).agg(f.avg('b')),
         conf=_no_nans_float_conf_partial
     )
 
 @ignore_order
-@pytest.mark.parametrize('data_gen', get_struct_gens(
+@pytest.mark.parametrize('data_gen', get_params(_init_list_no_nans,
     marked_params=params_markers_for_avg_sum), ids=idfn)
-@pytest.mark.parametrize('conf', get_conf_params(
-    _confs, params_markers_for_confs), ids=idfn)
+@pytest.mark.parametrize('conf', get_params(_confs, params_markers_for_confs), ids=idfn)
 def test_hash_multiple_mode_query(data_gen, conf):
     print_params(data_gen)
     assert_gpu_and_cpu_are_equal_collect(
@@ -223,23 +204,24 @@ def test_hash_multiple_mode_query(data_gen, conf):
     'KnownFloatingPointNormalized', 'NormalizeNaNAndZero', 'GreaterThan', 'Literal', 'If',
     'EqualTo', 'First', 'SortAggregateExec', 'Coalesce')
 @pytest.mark.xfail(reason='https://github.com/NVIDIA/spark-rapids/issues/153')
-@pytest.mark.parametrize('data_gen', get_struct_gens(
+@pytest.mark.parametrize('data_gen', get_params(_init_list_no_nans,
     marked_params=params_markers_for_avg_sum), ids=idfn)
 def test_hash_multiple_mode_query_fail(data_gen):
     print_params(data_gen)
     assert_gpu_and_cpu_are_equal_collect(
-        lambda spark: debug_df(debug_df(gen_df(spark, data_gen, length=3))
+        lambda spark: gen_df(spark, data_gen, length=3)
             .groupby('a')
             .agg(f.count('a'),
                  f.countDistinct('b'),
                  f.countDistinct('c')
-                )), conf=_no_nans_float_conf_partial)
+                ), conf=_no_nans_float_conf_partial)
+
 
 @ignore_order
 @approximate_float
 @incompat
-@pytest.mark.parametrize('data_gen', get_struct_gens(), ids=idfn)
-@pytest.mark.parametrize('conf', get_conf_params(_confs, params_markers_for_confs),
+@pytest.mark.parametrize('data_gen', get_params(_init_list_no_nans), ids=idfn)
+@pytest.mark.parametrize('conf', get_params(_confs, params_markers_for_confs),
     ids=idfn)
 def test_hash_multiple_mode_query_avg_distincts(data_gen, conf):
     assert_gpu_and_cpu_are_equal_collect(
@@ -249,8 +231,8 @@ def test_hash_multiple_mode_query_avg_distincts(data_gen, conf):
 
 
 @ignore_order
-@pytest.mark.parametrize('data_gen', get_struct_gens(), ids=idfn)
-@pytest.mark.parametrize('conf', get_conf_params(_confs, params_markers_for_confs), ids=idfn)
+@pytest.mark.parametrize('data_gen', get_params(_init_list_no_nans), ids=idfn)
+@pytest.mark.parametrize('conf', get_params(_confs, params_markers_for_confs), ids=idfn)
 def test_hash_count_with_filter(data_gen, conf):
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark: gen_df(spark, data_gen, length=100)
@@ -258,9 +240,10 @@ def test_hash_count_with_filter(data_gen, conf):
         conf=conf)
 
 @ignore_order
-@pytest.mark.parametrize('data_gen', get_struct_gens(
+@pytest.mark.parametrize('data_gen', get_params(_init_list_no_nans,
     marked_params=params_markers_for_avg_sum), ids=idfn)
-def test_hash_multiple_filters(data_gen):
+@pytest.mark.parametrize('conf', get_params(_confs, params_markers_for_confs), ids=idfn)
+def test_hash_multiple_filters(data_gen, conf):
     df = with_cpu_session(
         lambda spark : gen_df(spark, data_gen, length=100))
     df.createOrReplaceTempView("hash_agg_table")
@@ -268,9 +251,29 @@ def test_hash_multiple_filters(data_gen):
         lambda spark: spark.sql(
             'select count(a) filter (where c > 50),' +
             'count(b) filter (where c > 100),' +
-            'avg(b) filter (where b > 20),' +
+            # Uncomment after https://github.com/NVIDIA/spark-rapids/issues/155 is fixed
+            # 'avg(b) filter (where b > 20),' +
             'min(a), max(b) filter (where c > 250) from hash_agg_table group by a'),
-        conf=_no_nans_float_conf)
+        conf=conf)
+
+
+@pytest.mark.xfail(reason='https://github.com/NVIDIA/spark-rapids/issues/155')
+@ignore_order
+@allow_non_gpu(
+    'HashAggregateExec', 'AggregateExpression',
+    'AttributeReference', 'Alias', 'Sum', 'Count', 'Max', 'Min', 'Average', 'Cast',
+    'KnownFloatingPointNormalized', 'NormalizeNaNAndZero', 'GreaterThan', 'Literal', 'If',
+    'EqualTo', 'First', 'SortAggregateExec', 'Coalesce')
+@pytest.mark.parametrize('data_gen', get_params(_init_list_no_nans,
+    marked_params=params_markers_for_avg_sum), ids=idfn)
+def test_hash_multiple_filters_fail(data_gen):
+    df = with_cpu_session(
+        lambda spark : gen_df(spark, data_gen, length=100))
+    df.createOrReplaceTempView("hash_agg_table")
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark: spark.sql(
+            'select avg(b) filter (where b > 20) from hash_agg_table group by a'),
+        conf=_no_nans_float_conf_partial)
 
 
 @ignore_order
