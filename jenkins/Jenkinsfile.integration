@@ -32,7 +32,7 @@ pipeline {
     }
 
     parameters {
-        string(name: 'CUDF_VER', defaultValue: '0.14-SNAPSHOT',
+        string(name: 'CUDF_VER', defaultValue: '0.14',
             description: '-Dcudf.version= \n\n Default for cudf version')
         string(name: 'CUDA_CLASSIFIER', defaultValue: '',
             description: '-Dclassifier=\n\n cuda10-1, cuda10-2, EMPTY as cuda10-1')
