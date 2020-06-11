@@ -151,6 +151,25 @@ def test_round_trip(spark_tmp_path, data_gen):
             lambda spark : spark.read.schema(schema).csv(data_path),
             conf=_enable_ts_conf)
 
+@allow_non_gpu('FileSourceScanExec')
+@pytest.mark.parametrize('read_func', [read_csv_df, read_csv_sql])
+@pytest.mark.parametrize('disable_conf', ['spark.rapids.sql.format.csv.enabled', 'spark.rapids.sql.format.csv.read.enabled'])
+def test_csv_fallback(spark_tmp_path, read_func, disable_conf):
+    data_gens =[
+        StringGen('(\\w| |\t|\ud720){0,10}', nullable=False),
+        byte_gen, short_gen, int_gen, long_gen, boolean_gen, date_gen]
+ 
+    gen_list = [('_c' + str(i), gen) for i, gen in enumerate(data_gens)]
+    gen = StructGen(gen_list, nullable=False)
+    data_path = spark_tmp_path + '/CSV_DATA'
+    schema = gen.data_type
+    reader = read_func(data_path, schema, False, ',')
+    with_cpu_session(
+            lambda spark : gen_df(spark, gen).write.csv(data_path))
+    assert_gpu_and_cpu_are_equal_collect(
+            lambda spark : reader(spark).select(f.col('*'), f.col('_c2') + f.col('_c3')),
+            conf={disable_conf: 'false'})
+
 csv_supported_date_formats = ['yyyy-MM-dd', 'yyyy/MM/dd', 'yyyy-MM', 'yyyy/MM',
         'MM-yyyy', 'MM/yyyy', 'MM-dd-yyyy', 'MM/dd/yyyy']
 @pytest.mark.parametrize('date_format', csv_supported_date_formats, ids=idfn)
