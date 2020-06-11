@@ -354,6 +354,7 @@ case class GpuHashAggregateExec(requiredChildDistributionExpressions: Option[Seq
               new NvtxWithMetrics("Hash Aggregate Batch", NvtxColor.YELLOW, totalTime)
             try {
               childCvs = processIncomingBatch(batch, boundExpression.boundInputReferences)
+
               // done with the batch, clean it as soon as possible
               batch.close()
               batch = null
