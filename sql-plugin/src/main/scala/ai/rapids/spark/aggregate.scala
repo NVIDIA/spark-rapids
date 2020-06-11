@@ -353,16 +353,16 @@ case class GpuHashAggregateExec(requiredChildDistributionExpressions: Option[Seq
             val nvtxRange =
               new NvtxWithMetrics("Hash Aggregate Batch", NvtxColor.YELLOW, totalTime)
             try {
-//              System.err.println(s"KUHU MAIN CB rows=${batch.numRows()}" +
-//                s"cols=${batch.numCols()}=============")
-//              System.err.flush()
-//              printCvs(GpuColumnVector.extractColumns(batch))
+              System.err.println(s"KUHU MAIN CB rows=${batch.numRows()}" +
+                s"cols=${batch.numCols()}=============")
+              System.err.flush()
+              printCvs(GpuColumnVector.extractColumns(batch))
               childCvs = processIncomingBatch(batch, boundExpression.boundInputReferences)
 
-//              System.err.println(s"KUHU Incomping batch CB rows=${childCvs.head.getRowCount}" +
-//                s"cols=${childCvs.length}=============")
-//              System.err.flush()
-//              printCvs(childCvs)
+              System.err.println(s"KUHU Incomping batch CB rows=${childCvs.head.getRowCount}" +
+                s"cols=${childCvs.length}=============")
+              System.err.flush()
+              printCvs(childCvs)
               // done with the batch, clean it as soon as possible
               batch.close()
               batch = null
@@ -489,11 +489,11 @@ case class GpuHashAggregateExec(requiredChildDistributionExpressions: Option[Seq
               numOutputRows += resultCvs.head.getBase.getRowCount
               new ColumnarBatch(resultCvs.toArray, resultCvs.head.getBase.getRowCount.toInt)
             }
-//            System.err.flush()
-//            System.err.println(s"KUHU RESULT CB rows=${resultCb.numRows()}" +
-//              s"cols=${resultCb.numCols()}=============")
-//            System.err.flush()
-//            printCvs(GpuColumnVector.extractColumns(resultCb))
+            System.err.flush()
+            System.err.println(s"KUHU RESULT CB rows=${resultCb.numRows()}" +
+              s"cols=${resultCb.numCols()}=============")
+            System.err.flush()
+            printCvs(GpuColumnVector.extractColumns(resultCb))
             numOutputBatches += 1
             success = true
             new Iterator[ColumnarBatch] {
@@ -514,7 +514,6 @@ case class GpuHashAggregateExec(requiredChildDistributionExpressions: Option[Seq
             }
           } else {
             // we had a grouped aggregate, without input
-            System.err.println("KUHU NO INPUT AGG")
             Iterator.empty
           }
         } finally {
@@ -934,7 +933,7 @@ case class GpuHashAggregateExec(requiredChildDistributionExpressions: Option[Seq
           case DType.TIMESTAMP_DAYS => "N/A"
           case DType.TIMESTAMP_MICROSECONDS => "N/A"
         }
-        System.err.print("("+rowVal + ", " + rowNull+")")
+        System.err.print("("+rowVal+")")
         System.err.flush()
       }
       System.err.println()

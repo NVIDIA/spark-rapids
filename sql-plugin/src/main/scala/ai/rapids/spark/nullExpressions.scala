@@ -51,12 +51,7 @@ case class GpuNvl(left: GpuExpression, right: GpuExpression) extends GpuBinaryEx
   }
 
   override def doColumnar(lhs: Scalar, rhs: GpuColumnVector): GpuColumnVector = {
-    val isNull = !lhs.isValid
-    if (isNull) {
-      GpuColumnVector.from(ColumnVector.fromScalar(lhs, rhs.getRowCount.toInt))
-    } else {
-      rhs.incRefCount()
-    }
+    throw new IllegalStateException("Should not be used with lhs as scalar")
   }
 
   override def doColumnar(lhs: GpuColumnVector, rhs: Scalar): GpuColumnVector = {
