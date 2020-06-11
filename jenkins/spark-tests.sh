@@ -17,7 +17,7 @@
 
 set -ex
 if [ "$CUDF_VER"x == x ];then
-    CUDF_VER="0.14-SNAPSHOT"
+    CUDF_VER="0.14"
 fi
 
 if [ "$PROJECT_VER"x == x ];then

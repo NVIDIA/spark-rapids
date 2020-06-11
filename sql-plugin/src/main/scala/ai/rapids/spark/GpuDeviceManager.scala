@@ -57,6 +57,7 @@ object GpuDeviceManager extends Logging {
       GpuDeviceManager.setGpuDeviceAndAcquire(addr)
     } catch {
       case NonFatal(e) =>
+        logInfo(s"Will not use GPU $addr because of $e")
         // we may have lost a race trying to acquire this addr or GPU is already busy
         return false
     }

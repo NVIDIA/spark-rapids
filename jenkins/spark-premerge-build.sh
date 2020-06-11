@@ -17,6 +17,8 @@
 
 set -ex
 
+nvidia-smi
+
 if [ "$SPARK_VER"x == x ];then
     SPARK_VER="3.0.1-SNAPSHOT"
 fi
