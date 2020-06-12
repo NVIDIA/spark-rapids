@@ -38,6 +38,7 @@ object ShiftHelper extends Arm {
   private def maskForDistance(t: DType): Int = t match {
     case DType.INT32 =>  0x1F // 0b11111
     case DType.INT64 =>  0x3F //0b111111
+    case t => throw new IllegalArgumentException(s"$t is not a supported type for java bit shifts")
   }
 
   def fixupDistanceNoClose(t: DType, distance: ColumnVector): ColumnVector = {
