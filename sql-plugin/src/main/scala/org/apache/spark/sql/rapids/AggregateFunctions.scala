@@ -381,7 +381,7 @@ case class GpuAverage(child: GpuExpression) extends GpuDeclarativeAggregate {
   override lazy val inputProjection: Seq[GpuExpression] = Seq(
     child match {
       case literal: GpuLiteral => toDoubleLit(literal.value)
-      case _ => GpuCast(child, DoubleType)
+      case _ => GpuCoalesce(Seq(GpuCast(child, DoubleType), GpuLiteral(0D, DoubleType)))
     },
     child match {
       case literal : GpuLiteral => GpuLiteral(if (literal.value != null) 1L else 0L, LongType)
