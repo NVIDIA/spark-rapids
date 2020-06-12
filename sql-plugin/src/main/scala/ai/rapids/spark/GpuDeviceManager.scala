@@ -188,7 +188,8 @@ object GpuDeviceManager extends Logging {
         s"${initialAllocation / 1024 / 1024.0} MB on gpuId $gpuId")
 
       try {
-        Rmm.initialize(init, logConf, initialAllocation, gpuId)
+        Cuda.setDevice(gpuId)
+        Rmm.initialize(init, logConf, initialAllocation)
         GpuShuffleEnv.initStorage(conf, info)
       } catch {
         case e: Exception => logError("Could not initialize RMM", e)
