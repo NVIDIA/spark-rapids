@@ -642,7 +642,7 @@ class GpuOrcPartitionReader(
           .withCompression(orcReader.getCompressionKind)
           .withFileSystem(fs)
           .withPath(filePath)
-          .withTypeCount(orcReader.getTypes.size)
+          .withTypeCount(org.apache.orc.OrcUtils.getOrcTypes(orcReader.getSchema).size)
           .withZeroCopy(zeroCopy)
           .withMaxDiskRangeChunkLimit(maxDiskRangeChunkLimit)
           .build())
