@@ -117,9 +117,6 @@ _init_list_with_nans_and_no_nans = [
     _grpkey_strings_with_nulls,
     _grpkey_floats_with_nulls_and_nans]
 
-_init_list_with_nan_grouping_keys = [
-    _grpkey_floats_with_nan_zero_grouping_keys,
-    _grpkey_doubles_with_nan_zero_grouping_keys]
 
 def get_struct_gens(init_list=_init_list_no_nans, marked_params=[]):
     """
@@ -229,8 +226,9 @@ def test_hash_query_max_bug(data_gen):
 
 
 @ignore_order
-@pytest.mark.parametrize('data_gen', get_struct_gens(init_list=_init_list_with_nan_grouping_keys,
-    marked_params=params_markers_for_avg_sum), ids=idfn)
+@incompat
+@pytest.mark.parametrize('data_gen', [_grpkey_floats_with_nan_zero_grouping_keys,
+                                      _grpkey_doubles_with_nan_zero_grouping_keys], ids=idfn)
 def test_hash_agg_with_nan_keys(data_gen):
     df = with_cpu_session(
         lambda spark : gen_df(spark, data_gen, length=100))
