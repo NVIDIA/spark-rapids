@@ -161,6 +161,8 @@ case class GpuTimeSub(
                 }
               }
             }
+          } else {
+            l.incRefCount()
           }
         case _ =>
           throw new UnsupportedOperationException("GpuTimeSub takes column and interval as an " +

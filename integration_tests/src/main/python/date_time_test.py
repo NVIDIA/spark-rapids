@@ -13,28 +13,23 @@
 # limitations under the License.
 
 import pytest
-
 from asserts import assert_gpu_and_cpu_are_equal_collect
 from data_gen import *
-from datetime import date, datetime, timedelta, timezone
+from datetime import date, datetime, timezone
 from marks import incompat
 from pyspark.sql.types import *
 import pyspark.sql.functions as f
-import random
-
 
 # We only support literal intervals for TimeSub
-str_vals = []
-random.seed(12)
-for i in range(0, 50):
-    d = (random.randint(0,4000), random.randint(0, 4000))
-    str_vals.append(d)
-@pytest.mark.parametrize('data_gen', str_vals, ids=idfn)
+vals = [(1943, 1101), (2693, 2167), (2729, 0), (584, 1563), (44, 1534), (2635, 3319),
+            (1885, 2828), (0, 2463), (932, 2286), (0, 0)]
+@pytest.mark.parametrize('data_gen', vals, ids=idfn)
 def test_timesub(data_gen):
     days, seconds = data_gen
     assert_gpu_and_cpu_are_equal_collect(
-        lambda spark: unary_op_df(spark, DateGen(start=date(15, 1, 1)), seed=1)
-            .selectExpr("cast(a as timestamp) - (interval {} days {} seconds)".format(days, seconds)))
+        # We are starting at year 0015 to make sure we don't go before year 0001 while doing TimeSub
+        lambda spark: unary_op_df(spark, TimestampGen(start=datetime(15, 1, 1, tzinfo=timezone.utc)), seed=1)
+            .selectExpr("a - (interval {} days {} seconds)".format(days, seconds)))
 
 @pytest.mark.parametrize('data_gen', date_gens, ids=idfn)
 def test_datediff(data_gen):
