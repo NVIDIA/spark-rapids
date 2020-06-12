@@ -1501,13 +1501,6 @@ trait SparkQueryCompareTestSuite extends FunSuite with Arm {
     )))(_)
   }
 
-  def longsFromMultipleCSVDf = {
-    fromCsvPatternDf("./", "lots_o_longs*.csv", StructType(Array(
-      StructField("longs", LongType, true),
-      StructField("more_longs", LongType, true)
-    )))(_)
-  }
-
   def longsFromCSVDf = {
     fromCsvDf("lots_o_longs.csv", StructType(Array(
       StructField("longs", LongType, true),
