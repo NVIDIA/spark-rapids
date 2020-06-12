@@ -43,6 +43,23 @@ def test_read_round_trip(spark_tmp_path, parquet_gens, read_func):
     assert_gpu_and_cpu_are_equal_collect(
             read_func(data_path))
 
+@allow_non_gpu('FileSourceScanExec')
+@pytest.mark.parametrize('read_func', [read_parquet_df, read_parquet_sql])
+@pytest.mark.parametrize('disable_conf', ['spark.rapids.sql.format.parquet.enabled', 'spark.rapids.sql.format.parquet.read.enabled'])
+def test_parquet_fallback(spark_tmp_path, read_func, disable_conf):
+    data_gens =[string_gen,
+        byte_gen, short_gen, int_gen, long_gen, boolean_gen]
+ 
+    gen_list = [('_c' + str(i), gen) for i, gen in enumerate(data_gens)]
+    gen = StructGen(gen_list, nullable=False)
+    data_path = spark_tmp_path + '/PARQUET_DATA'
+    reader = read_func(data_path)
+    with_cpu_session(
+            lambda spark : gen_df(spark, gen).write.parquet(data_path))
+    assert_gpu_and_cpu_are_equal_collect(
+            lambda spark : reader(spark).select(f.col('*'), f.col('_c2') + f.col('_c3')),
+            conf={disable_conf: 'false'})
+
 parquet_compress_options = ['none', 'uncompressed', 'snappy', 'gzip']
 # The following need extra jars 'lzo', 'lz4', 'brotli', 'zstd'
 # https://github.com/NVIDIA/spark-rapids/issues/143

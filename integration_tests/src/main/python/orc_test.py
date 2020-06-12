@@ -39,6 +39,23 @@ orc_gens_list = [[byte_gen, short_gen, int_gen, long_gen, float_gen, double_gen,
     pytest.param([date_gen], marks=pytest.mark.xfail(reason='https://github.com/NVIDIA/spark-rapids/issues/131')),
     pytest.param([timestamp_gen], marks=pytest.mark.xfail(reason='https://github.com/NVIDIA/spark-rapids/issues/131'))]
 
+@allow_non_gpu('FileSourceScanExec')
+@pytest.mark.parametrize('read_func', [read_orc_df, read_orc_sql])
+@pytest.mark.parametrize('disable_conf', ['spark.rapids.sql.format.orc.enabled', 'spark.rapids.sql.format.orc.read.enabled'])
+def test_orc_fallback(spark_tmp_path, read_func, disable_conf):
+    data_gens =[string_gen,
+        byte_gen, short_gen, int_gen, long_gen, boolean_gen]
+ 
+    gen_list = [('_c' + str(i), gen) for i, gen in enumerate(data_gens)]
+    gen = StructGen(gen_list, nullable=False)
+    data_path = spark_tmp_path + '/PARQUET_DATA'
+    reader = read_func(data_path)
+    with_cpu_session(
+            lambda spark : gen_df(spark, gen).write.orc(data_path))
+    assert_gpu_and_cpu_are_equal_collect(
+            lambda spark : reader(spark).select(f.col('*'), f.col('_c2') + f.col('_c3')),
+            conf={disable_conf: 'false'})
+
 @pytest.mark.parametrize('orc_gens', orc_gens_list, ids=idfn)
 @pytest.mark.parametrize('read_func', [read_orc_df, read_orc_sql])
 def test_read_round_trip(spark_tmp_path, orc_gens, read_func):

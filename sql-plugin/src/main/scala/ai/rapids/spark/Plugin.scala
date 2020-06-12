@@ -266,9 +266,8 @@ class SQLPlugin extends SparkPlugin with Logging {
 
 /**
  * Old version of SQLPlugin kept for backwards compatibility
- * @deprecated please use SQLPlugin instead
  */
-@scala.deprecated
+@scala.deprecated("Please use ai.rapids.spark.SQLPlugin instead", since="0.1")
 class RapidsSparkPlugin extends SQLPlugin {
   override def driverPlugin(): DriverPlugin = {
     logWarning(s"The plugin class ${this.getClass.getName} is deprecated please use " +
