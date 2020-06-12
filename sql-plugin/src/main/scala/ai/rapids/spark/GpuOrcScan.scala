@@ -35,7 +35,7 @@ import org.apache.commons.io.IOUtils
 import org.apache.hadoop.conf.Configuration
 import org.apache.hadoop.fs.{FileSystem, Path}
 import org.apache.hadoop.hive.common.io.DiskRangeList
-import org.apache.orc.{CompressionKind, DataReader, OrcConf, OrcFile, OrcProto, PhysicalWriter, Reader, StripeInformation, TypeDescription}
+import org.apache.orc.{DataReader, OrcConf, OrcFile, OrcProto, PhysicalWriter, Reader, StripeInformation, TypeDescription}
 import org.apache.orc.impl._
 import org.apache.orc.impl.RecordReaderImpl.SargApplier
 import org.apache.orc.mapred.OrcInputFormat
@@ -111,6 +111,9 @@ object GpuOrcScan {
   def tagSupport(scanMeta: ScanMeta[OrcScan]): Unit = {
     val scan = scanMeta.wrapped
     val schema = StructType(scan.readDataSchema ++ scan.readPartitionSchema)
+    if (scan.options.getBoolean("mergeSchema", false)) {
+      scanMeta.willNotWorkOnGpu("mergeSchema and schema evolution is not supported yet")
+    }
     tagSupport(scan.sparkSession, schema, scanMeta)
   }
 
@@ -118,6 +121,20 @@ object GpuOrcScan {
       sparkSession: SparkSession,
       schema: StructType,
       meta: RapidsMeta[_, _, _]): Unit = {
+    if (!meta.conf.isOrcEnabled) {
+      meta.willNotWorkOnGpu("ORC input and output has been disabled. To enable set" +
+        s"${RapidsConf.ENABLE_ORC} to true")
+    }
+
+    if (!meta.conf.isOrcReadEnabled) {
+      meta.willNotWorkOnGpu("ORC input has been disabled. To enable set" +
+        s"${RapidsConf.ENABLE_ORC_READ} to true")
+    }
+
+    if (sparkSession.conf
+      .getOption("spark.sql.orc.mergeSchema").exists(_.toBoolean)) {
+      meta.willNotWorkOnGpu("mergeSchema and schema evolution is not supported yet")
+    }
     schema.foreach { field =>
       if (!GpuColumnVector.isSupportedType(field.dataType)) {
         meta.willNotWorkOnGpu(s"GpuOrcScan does not support fields of type ${field.dataType}")
@@ -434,9 +451,6 @@ class GpuOrcPartitionReader(
     OrcOutputStripe(infoBuilder, outputStripeFooter, rangeCreator.get)
   }
 
-  private def estimateRowCount(stripes: Seq[OrcOutputStripe]): Long =
-    stripes.map(_.infoBuilder.getNumberOfRows).sum
-
   private def estimateOutputSize(stripes: Seq[OrcOutputStripe]): Long = {
     // start with header magic
     var size: Long = OrcFile.MAGIC.length
@@ -649,12 +663,12 @@ class GpuOrcPartitionReader(
     }
   }
 
-  private def readPartFile(stripes: Seq[OrcOutputStripe]): (HostMemoryBuffer, Long, Long) = {
+  private def readPartFile(stripes: Seq[OrcOutputStripe]): (HostMemoryBuffer, Long) = {
     val nvtxRange = new NvtxWithMetrics("Buffer file split", NvtxColor.YELLOW,
       metrics("bufferTime"))
     try {
       if (stripes.isEmpty) {
-        return (null, 0L, 0)
+        return (null, 0L)
       }
 
       val hostBufferSize = estimateOutputSize(stripes)
@@ -664,7 +678,7 @@ class GpuOrcPartitionReader(
         val out = new HostMemoryOutputStream(hmb)
         writeOrcOutputFile(out, stripes)
         succeeded = true
-        (hmb, out.getPos, estimateRowCount(stripes))
+        (hmb, out.getPos)
       } finally {
         if (!succeeded) {
           hmb.close()
@@ -676,7 +690,7 @@ class GpuOrcPartitionReader(
   }
 
   private def readToTable(stripes: Seq[OrcOutputStripe]): Option[Table] = {
-    val (dataBuffer, dataSize, rowCount) = readPartFile(stripes)
+    val (dataBuffer, dataSize) = readPartFile(stripes)
     try {
       if (dataSize == 0) {
         None
@@ -684,7 +698,6 @@ class GpuOrcPartitionReader(
         if (debugDumpPrefix != null) {
           dumpOrcData(dataBuffer, dataSize)
         }
-        val cudfSchema = GpuColumnVector.from(readDataSchema)
         val includedColumns = ctx.updatedReadSchema.getFieldNames.asScala
         val parseOpts = ORCOptions.builder()
           .withTimeUnit(DType.TIMESTAMP_MICROSECONDS)
