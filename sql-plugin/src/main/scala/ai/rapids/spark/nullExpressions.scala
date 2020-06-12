@@ -45,22 +45,6 @@ object GpuNvl {
   }
 }
 
-case class GpuNvl(left: GpuExpression, right: GpuExpression) extends GpuBinaryExpression {
-  override def doColumnar(lhs: GpuColumnVector, rhs: GpuColumnVector): GpuColumnVector = {
-    GpuNvl(lhs, rhs)
-  }
-
-  override def doColumnar(lhs: Scalar, rhs: GpuColumnVector): GpuColumnVector = {
-    throw new IllegalStateException("Should not be used with lhs as scalar")
-  }
-
-  override def doColumnar(lhs: GpuColumnVector, rhs: Scalar): GpuColumnVector = {
-    GpuNvl(lhs, rhs)
-  }
-
-  override def dataType: DataType = left.dataType
-}
-
 case class GpuCoalesce(children: Seq[GpuExpression]) extends GpuExpression with
   ComplexTypeMergingExpression {
 
