@@ -409,6 +409,48 @@ object RapidsConf {
     .booleanConf
     .createWithDefault(false)
 
+  // FILE FORMATS
+  val ENABLE_PARQUET = conf("spark.rapids.sql.format.parquet.enabled")
+    .doc("When set to false disables all parquet input and output acceleration")
+    .booleanConf
+    .createWithDefault(true)
+
+  val ENABLE_PARQUET_READ = conf("spark.rapids.sql.format.parquet.read.enabled")
+    .doc("When set to false disables parquet input acceleration")
+    .booleanConf
+    .createWithDefault(true)
+
+  val ENABLE_PARQUET_WRITE = conf("spark.rapids.sql.format.parquet.write.enabled")
+    .doc("When set to false disables parquet output acceleration")
+    .booleanConf
+    .createWithDefault(true)
+
+  val ENABLE_ORC = conf("spark.rapids.sql.format.orc.enabled")
+    .doc("When set to false disables all orc input and output acceleration")
+    .booleanConf
+    .createWithDefault(true)
+
+  val ENABLE_ORC_READ = conf("spark.rapids.sql.format.orc.read.enabled")
+    .doc("When set to false disables orc input acceleration")
+    .booleanConf
+    .createWithDefault(true)
+
+  val ENABLE_ORC_WRITE = conf("spark.rapids.sql.format.orc.write.enabled")
+    .doc("When set to false disables orc output acceleration")
+    .booleanConf
+    .createWithDefault(true)
+
+  val ENABLE_CSV = conf("spark.rapids.sql.format.csv.enabled")
+    .doc("When set to false disables all csv input and output acceleration. " +
+      "(only input is currently supported anyways)")
+    .booleanConf
+    .createWithDefault(true)
+
+  val ENABLE_CSV_READ = conf("spark.rapids.sql.format.csv.read.enabled")
+    .doc("When set to false disables csv input acceleration")
+    .booleanConf
+    .createWithDefault(true)
+
   // INTERNAL TEST AND DEBUG CONFIGS
 
   val TEST_CONF = conf("spark.rapids.sql.test.enabled")
@@ -734,6 +776,22 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
   lazy val isCastStringToFloatEnabled: Boolean = get(ENABLE_CAST_STRING_TO_FLOAT)
 
   lazy val isCsvTimestampEnabled: Boolean = get(ENABLE_CSV_TIMESTAMPS)
+
+  lazy val isParquetEnabled: Boolean = get(ENABLE_PARQUET)
+
+  lazy val isParquetReadEnabled: Boolean = get(ENABLE_PARQUET_READ)
+
+  lazy val isParquetWriteEnabled: Boolean = get(ENABLE_PARQUET_WRITE)
+
+  lazy val isOrcEnabled: Boolean = get(ENABLE_ORC)
+
+  lazy val isOrcReadEnabled: Boolean = get(ENABLE_ORC_READ)
+
+  lazy val isOrcWriteEnabled: Boolean = get(ENABLE_ORC_WRITE)
+
+  lazy val isCsvEnabled: Boolean = get(ENABLE_CSV)
+
+  lazy val isCsvReadEnabled: Boolean = get(ENABLE_CSV_READ)
 
   lazy val shuffleTransportEnabled: Boolean = get(SHUFFLE_TRANSPORT_ENABLE)
 

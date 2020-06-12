@@ -61,9 +61,9 @@ Spark is very strict when reading CSV and if the data does not conform with the 
 exactly it will result in a `null` value. The underlying parser that the SQL plugin uses is much
 more lenient. If you have badly formatted CSV data you may get data back instead of nulls.
 If this is a problem you can disable the CSV reader by setting the config 
-[`spark.rapids.sql.input.CSVScan`](configs.md#sql.input.CSVScan) to `false`. Because the speed up
-is so large and the issues typically only show up in error conditions we felt it was worth having
-the CSV reader enabled by default.
+[`spark.rapids.sql.format.csv.read.enabled`](configs.md#sql.format.csv.read.enabled) to `false`.
+Because the speed up is so large and the issues typically only show up in error conditions we felt
+it was worth having the CSV reader enabled by default.
 
 There are also discrepancies/issues with specific types that are detailed below.
 

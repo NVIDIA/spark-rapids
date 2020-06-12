@@ -34,13 +34,24 @@ object GpuOrcFileFormat extends Logging {
   def tagGpuSupport(meta: RapidsMeta[_, _, _],
                     spark: SparkSession,
                     options: Map[String, String]): Option[GpuOrcFileFormat] = {
+
+    if (!meta.conf.isOrcEnabled) {
+      meta.willNotWorkOnGpu("ORC input and output has been disabled. To enable set" +
+        s"${RapidsConf.ENABLE_ORC} to true")
+    }
+
+    if (!meta.conf.isOrcWriteEnabled) {
+      meta.willNotWorkOnGpu("ORC output has been disabled. To enable set" +
+        s"${RapidsConf.ENABLE_ORC_WRITE} to true")
+    }
+
     val sqlConf = spark.sessionState.conf
 
     val parameters = CaseInsensitiveMap(options)
 
     case class ConfDataForTagging(orcConf: OrcConf, defaultValue: Any, message: String)
 
-    def tagIfOrcOrHiveConfNotSupported(params: ConfDataForTagging) = {
+    def tagIfOrcOrHiveConfNotSupported(params: ConfDataForTagging): Unit = {
       val conf = params.orcConf
       val defaultValue = params.defaultValue
       val message = params.message

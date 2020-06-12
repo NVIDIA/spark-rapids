@@ -135,6 +135,16 @@ object GpuCSVScan {
       sparkSession.sessionState.conf.sessionLocalTimeZone,
       sparkSession.sessionState.conf.columnNameOfCorruptRecord)
 
+    if (!meta.conf.isCsvEnabled) {
+      meta.willNotWorkOnGpu("CSV input and output has been disabled. To enable set" +
+        s"${RapidsConf.ENABLE_CSV} to true")
+    }
+
+    if (!meta.conf.isCsvReadEnabled) {
+      meta.willNotWorkOnGpu("CSV input has been disabled. To enable set" +
+        s"${RapidsConf.ENABLE_CSV_READ} to true")
+    }
+
     if (!parsedOptions.enforceSchema) {
       meta.willNotWorkOnGpu("GpuCSVScan always enforces schemas")
     }

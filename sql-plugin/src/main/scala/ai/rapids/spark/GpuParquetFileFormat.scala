@@ -40,6 +40,16 @@ object GpuParquetFileFormat {
     val sqlConf = spark.sessionState.conf
     val parquetOptions = new ParquetOptions(options, sqlConf)
 
+    if (!meta.conf.isParquetEnabled) {
+      meta.willNotWorkOnGpu("Parquet input and output has been disabled. To enable set" +
+        s"${RapidsConf.ENABLE_PARQUET} to true")
+    }
+
+    if (!meta.conf.isParquetWriteEnabled) {
+      meta.willNotWorkOnGpu("Parquet output has been disabled. To enable set" +
+        s"${RapidsConf.ENABLE_PARQUET_WRITE} to true")
+    }
+
     parseCompressionType(parquetOptions.compressionCodecClassName)
       .getOrElse(meta.willNotWorkOnGpu(
         s"compression codec ${parquetOptions.compressionCodecClassName} is not supported"))
