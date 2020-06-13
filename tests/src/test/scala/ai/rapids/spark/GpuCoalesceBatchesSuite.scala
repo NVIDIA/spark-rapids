@@ -18,7 +18,7 @@ package ai.rapids.spark
 
 import java.io.File
 
-import org.sparkproject.guava.io.Files
+import com.google.common.io.Files
 
 import org.apache.spark.sql.execution.metric.SQLMetric
 import org.apache.spark.sql.rapids.metrics.source.MockTaskContext
