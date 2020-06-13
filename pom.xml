@@ -42,6 +42,12 @@
                 <rapids.shuffle.manager.override>true</rapids.shuffle.manager.override>
             </properties>
         </profile>
+        <profile>
+            <id>local-spark</id>
+            <modules>
+                <module>spark</module>
+            </modules>
+        </profile>
     </profiles>
 
     <properties>
