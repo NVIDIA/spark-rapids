@@ -115,4 +115,4 @@ mvn clean verify -DskipTests -Plocal-spark
 ```
 
 At this point, it should be possible to modify code in both Spark and the plugin and run tests in 
-an IDE.
+an IDE. The `local-spark` maven profile will need to be enabled in the IDE.
