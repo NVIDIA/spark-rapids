@@ -17,7 +17,6 @@
 package ai.rapids.spark
 
 import org.apache.spark.SparkConf
-import org.apache.spark.sql.{DataFrame, SparkSession}
 import org.apache.spark.sql.functions._
 
 class ProjectExprSuite extends SparkQueryCompareTestSuite {
@@ -48,100 +47,5 @@ class ProjectExprSuite extends SparkQueryCompareTestSuite {
   testSparkResultsAreEqual("project time", frameFromParquet("timestamp-date-test.parquet"),
     conf = forceHostColumnarToGpu()) {
     frame => frame.select("time")
-  }
-
-  def booleanWithNullsDf(session: SparkSession): DataFrame = {
-    import session.sqlContext.implicits._
-    Seq[java.lang.Boolean](
-      true,
-      false,
-      true,
-      false,
-      null,
-      null,
-      true,
-      false
-    ).toDF("bools")
-  }
-
-  def bytesDf(session: SparkSession): DataFrame = {
-    import session.sqlContext.implicits._
-    Seq[Byte](
-      0.toByte,
-      2.toByte,
-      3.toByte,
-      (-1).toByte,
-      (-10).toByte,
-      (-128).toByte,
-      127.toByte
-    ).toDF("bytes")
-  }
-
-  def bytesWithNullsDf(session: SparkSession): DataFrame = {
-    import session.sqlContext.implicits._
-    Seq[java.lang.Byte](
-      0.toByte,
-      2.toByte,
-      3.toByte,
-      (-1).toByte,
-      (-10).toByte,
-      (-128).toByte,
-      127.toByte,
-      null,
-      null,
-      0.toByte
-    ).toDF("bytes")
-  }
-
-  def shortsDf(session: SparkSession): DataFrame = {
-    import session.sqlContext.implicits._
-    Seq[Short](
-      0.toShort,
-      23456.toShort,
-      3.toShort,
-      (-1).toShort,
-      (-10240).toShort,
-      (-32768).toShort,
-      32767.toShort
-    ).toDF("shorts")
-  }
-
-  def shortsWithNullsDf(session: SparkSession): DataFrame = {
-    import session.sqlContext.implicits._
-    Seq[java.lang.Short](
-      0.toShort,
-      23456.toShort,
-      3.toShort,
-      (-1).toShort,
-      (-10240).toShort,
-      (-32768).toShort,
-      32767.toShort,
-      null,
-      null,
-      0.toShort
-    ).toDF("shorts")
-  }
-
-  testSparkResultsAreEqual("input_file_name", longsFromMultipleCSVDf, repart = 0) {
-    // The filter forces a coalesce so we can test that we disabled coalesce properly in this case
-    frame => frame.filter(col("longs") > 0).select(col("longs"), input_file_name())
-  }
-
-  testSparkResultsAreEqual("input_file_block_start", longsFromMultipleCSVDf, repart = 0) {
-    // The filter forces a coalesce so we can test that we disabled coalesce properly in this case
-    frame => frame.filter(col("longs") > 0).selectExpr("longs", "input_file_block_start()")
-  }
-
-  testSparkResultsAreEqual("input_file_block_length", longsFromMultipleCSVDf, repart = 0) {
-    // The filter forces a coalesce so we can test that we disabled coalesce properly in this case
-    frame => frame.filter(col("longs") > 0).selectExpr("longs", "input_file_block_length()")
-  }
-
-  testSparkResultsAreEqual("monotonically_increasing_id", shortsDf) {
-    frame => frame.select(col("shorts"), monotonically_increasing_id())
-  }
-
-  testSparkResultsAreEqual("spark_partition_id", shortsDf) {
-    frame => frame.select(col("shorts"), spark_partition_id())
   }
 }

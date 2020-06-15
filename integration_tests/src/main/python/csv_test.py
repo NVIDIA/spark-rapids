@@ -216,3 +216,21 @@ def test_ts_formats_round_trip(spark_tmp_path, date_format, ts_part):
                     .option('timestampFormat', full_format)\
                     .csv(data_path),
             conf=_enable_ts_conf)
+
+def test_input_meta(spark_tmp_path):
+    gen = StructGen([('a', long_gen), ('b', long_gen)], nullable=False) 
+    first_data_path = spark_tmp_path + '/CSV_DATA/key=0'
+    with_cpu_session(
+            lambda spark : gen_df(spark, gen).write.csv(first_data_path))
+    second_data_path = spark_tmp_path + '/CSV_DATA/key=1'
+    with_cpu_session(
+            lambda spark : gen_df(spark, gen).write.csv(second_data_path))
+    data_path = spark_tmp_path + '/CSV_DATA'
+    assert_gpu_and_cpu_are_equal_collect(
+            lambda spark : spark.read.schema(gen.data_type)\
+                    .csv(data_path)\
+                    .filter(f.col('a') > 0)\
+                    .selectExpr('a',
+                        'input_file_name()',
+                        'input_file_block_start()',
+                        'input_file_block_length()'))
