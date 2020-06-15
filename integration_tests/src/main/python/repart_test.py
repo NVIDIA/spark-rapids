@@ -38,7 +38,7 @@ def test_coalesce_df(num_parts, length):
 
 @pytest.mark.parametrize('num_parts', [1, 10, 100, 1000, 2000], ids=idfn)
 @pytest.mark.parametrize('length', [0, 2048, 4096], ids=idfn)
-@ignore_order('local') # To avoid extra data shuffle by 'sort on Spark' for this repartition test.
+@ignore_order(local=True) # To avoid extra data shuffle by 'sort on Spark' for this repartition test.
 def test_repartion_df(num_parts, length):
     #This should change eventually to be more than just the basic gens
     gen_list = [('_c' + str(i), gen) for i, gen in enumerate(all_basic_gens)]
