@@ -28,11 +28,12 @@ import org.apache.spark.sql.rapids.storage.RapidsStorageUtils
 import org.apache.spark.storage.BlockManagerId
 
 /**
-  * This case class is a bit bloated, with memory buffers and rapids buffers.
+  * Class representing a memory location (address), length (in bytes), and a tag, for
+  * tag based transports.
   * @param address the raw native address, used for transfers (from/to this buffer)
   * @param length the amount of bytes used to indicate to the transport how much to send/receive
   * @param tag a numeric tag identifying this buffer
-  * @param memoryBuffer an optional MemoryBuffer
+  * @param memoryBuffer an optional `MemoryBuffer`
   */
 class AddressLengthTag(val address: Long, var length: Long, val tag: Long,
     var memoryBuffer: Option[MemoryBuffer] = None) extends AutoCloseable with Logging {
@@ -237,8 +238,9 @@ trait ClientConnection extends Connection {
     * `AddressLengthTag` `request`, and the response is populated at the memory
     * described by `response`.
     *
-    * @param request references to the populated request
-    * @param response references to memory where the response should be received
+    * @param request the populated request buffer [[AddressLengthTag]]
+    * @param response the response buffer [[AddressLengthTag]] where the response will be
+    *                 stored when the request succeeds.
     * @param cb callback to handle transaction status. If successful the memory described
     *           using "response" will hold the response as expected, otherwise its contents
     *           are not defined.
@@ -341,7 +343,6 @@ trait Transaction extends AutoCloseable {
   /**
     * Get the status this transaction is in. Callbacks use this to handle various transaction states
     * (e.g. success, error, etc.)
-    * @return The current status
     */
   def getStatus: TransactionStatus.Value
 
@@ -353,7 +354,6 @@ trait Transaction extends AutoCloseable {
 
   /**
     * Get the statistics object (bytes sent/recv, tx time, and throughput are available)
-    * @return
     */
   def getStats: TransactionStats
 
@@ -526,13 +526,13 @@ class DirectByteBufferPool(bufferSize: Long) extends Logging {
 }
 
 /**
-  * RefCountedDirectByteBuffer is a simple wrapper on top of a `ByteBuffer` that has been
+  * [[RefCountedDirectByteBuffer]] is a simple wrapper on top of a `ByteBuffer` that has been
   * allocated in direct mode.
   *
-  * The pool is used to return the ByteBuffer to be reused, but not all of these buffers
+  * The pool is used to return the `ByteBuffer` to be reused, but not all of these buffers
   * are pooled (hence the argument is optional)
   *
-  * The user should always close a RefCountedDirectByteBuffer. The close could hard destroy
+  * The user should always close a [[RefCountedDirectByteBuffer]]. The close could hard destroy
   * the buffer, or return the object to the pool
   *
   * @param bb buffer to wrap

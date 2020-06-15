@@ -59,6 +59,9 @@ trait RapidsShuffleRequestHandler {
   * @param requestHandler instance of [[RapidsShuffleRequestHandler]]
   * @param exec Executor used to handle tasks that take time, and should not be in the
   *             transport's thread
+  * @param copyExec Executor used to handle synchronous mem copies
+  * @param bssExec Executor used to handle [[BufferSendState]]s that are waiting
+  *                for bounce buffers to become available
   * @param rapidsConf plugin configuration instance
   */
 class RapidsShuffleServer(transport: RapidsShuffleTransport,
@@ -246,7 +249,7 @@ class RapidsShuffleServer(transport: RapidsShuffleTransport,
     * `MetadataResponse` response for the appropriate client.
     *
     * @param tx the inbound [[Transaction]]
-    * @param metaRequest a ref counted buffer holding a MetadataRequest message.
+    * @param metaRequest a [[RefCountedDirectByteBuffer]] holding a `MetadataRequest` message.
     */
   def doHandleMeta(tx: Transaction, metaRequest: RefCountedDirectByteBuffer): Unit = {
     val doHandleMetaRange = new NvtxRange("doHandleMeta", NvtxColor.PURPLE)
@@ -276,7 +279,7 @@ class RapidsShuffleServer(transport: RapidsShuffleTransport,
 
   /**
     * Handles the very first message that a client will send, in order to request Table/Buffer info.
-    * @param metaRequest the metadata request buffer
+    * @param metaRequest a [[RefCountedDirectByteBuffer]] holding a `MetadataRequest` message.
     */
   def handleMetadataRequest(metaRequest: RefCountedDirectByteBuffer): Unit = {
     try {
@@ -389,6 +392,7 @@ class RapidsShuffleServer(transport: RapidsShuffleTransport,
       transferRequest 
     }
 
+
     case class TableIdTag(tableId: Int, tag: Long)
 
     // this is the complete amount of buffers we need to send
@@ -422,7 +426,7 @@ class RapidsShuffleServer(transport: RapidsShuffleTransport,
     /**
       * Used to pop a [[BufferSendState]] from its queue if and only if there are bounce
       * buffers available
-      * @return
+      * @return true if bounce buffers are available to proceed
       */
     def acquireBounceBuffersNonBlocking: Boolean = {
       // we need to secure the table we are about to send, in order to get the correct flavor of

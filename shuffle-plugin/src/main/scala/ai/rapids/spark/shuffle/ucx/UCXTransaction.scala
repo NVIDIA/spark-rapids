@@ -239,8 +239,6 @@ private[ucx] class UCXTransaction(conn: UCXConnection, val txId: Long)
 
   /**
     * Register an [[AddressLengthTag]] for a send transaction
-    * @param alt an [[AddressLengthTag]] instance
-    * @return tag that should be used to reference this transfer
     */
   def registerForSend(alt: AddressLengthTag): Unit = {
     registeredByTag.put(alt.tag, alt)
@@ -251,8 +249,6 @@ private[ucx] class UCXTransaction(conn: UCXConnection, val txId: Long)
 
   /**
     * Register an [[AddressLengthTag]] for a receive transaction
-    * @param alt an [[AddressLengthTag]] instance
-    * @return tag that should be used to reference this transfer
     */
   def registerForReceive(alt: AddressLengthTag): Unit = {
     registered += alt

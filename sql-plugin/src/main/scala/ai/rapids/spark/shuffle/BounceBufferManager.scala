@@ -50,7 +50,7 @@ class BounceBufferManager[T <: MemoryBuffer](
     * Acquires a [[MemoryBuffer]] from the pool. Blocks if the pool is empty.
     *
     * @note calls to this function should have a lock on this [[BounceBufferManager]]
-    * @return the acquired memory buffer
+    * @return the acquired `MemoryBuffer`
     */
   private def acquireBuffer(): MemoryBuffer = {
     val start = System.currentTimeMillis()
@@ -75,7 +75,7 @@ class BounceBufferManager[T <: MemoryBuffer](
   /**
     * Acquire `possibleNumBuffers` buffers from the pool. This method will not block.
     * @param possibleNumBuffers number of buffers to acquire
-    * @return a sequence of MemoryBuffers, or empty if the request can't be satisfied
+    * @return a sequence of `MemoryBuffer`s, or empty if the request can't be satisfied
     */
   def acquireBuffersNonBlocking(possibleNumBuffers: Int): Seq[MemoryBuffer] = synchronized {
     if (numFree < possibleNumBuffers) {
@@ -92,7 +92,7 @@ class BounceBufferManager[T <: MemoryBuffer](
     * Acquire `possibleNumBuffers` buffers from the pool. This method will block until
     * it can get the buffers requested.
     * @param possibleNumBuffers number of buffers to acquire
-    * @return a sequence of MemoryBuffers
+    * @return a sequence of `MemoryBuffer`s
     */
   def acquireBuffersBlocking(possibleNumBuffers: Int): Seq[MemoryBuffer] = synchronized {
     val res = (0 until possibleNumBuffers).map(_ => acquireBuffer())
