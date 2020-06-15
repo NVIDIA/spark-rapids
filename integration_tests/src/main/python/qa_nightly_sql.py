@@ -631,8 +631,7 @@ SELECT_SQL = [
 ("SELECT MAX(intF) FROM test_table", "MAX(intF)"),
 ("SELECT AVG(intF) FROM test_table", "AVG(intF)"),
 ("SELECT intF, shortF FROM test_table ORDER by intF", "intF, shortF ORDER by intF"),
-]
-SELECT_LOCAL_ORDER_SQL = [
+
 ("SELECT dateF, COALESCE(dateF,'N/A') FROM test_table", "dateF, COALESCE(dateF,'N/A')"),
 ("SELECT timestampF, COALESCE(timestampF,'N/A') FROM test_table", "timestampF, COALESCE(timestampF,'N/A')"),
 
@@ -675,11 +674,8 @@ SELECT_LOCAL_ORDER_SQL = [
 ("SELECT  ROW_NUMBER() OVER (PARTITION BY strF ORDER BY strF) row_num,  strF FROM test_table", "ROW_NUMBER() OVER (PARTITION BY strF ORDER BY strF) row_num, strF"),
 ("SELECT  ROW_NUMBER() OVER (PARTITION BY dateF ORDER BY dateF) row_num,  dateF FROM test_table", "ROW_NUMBER() OVER (PARTITION BY dateF ORDER BY dateF) row_num, dateF"),
 ("SELECT  ROW_NUMBER() OVER (PARTITION BY timestampF ORDER BY timestampF) row_num,  timestampF FROM test_table", "ROW_NUMBER() OVER (PARTITION BY timestampF ORDER BY timestampF) row_num, timestampF"),
-
 # ("window/row/range  (need change)", "window/row/range (need change)"),
-("SELECT  byteF, SUM(byteF) OVER (PARTITION BY shortF ORDER BY intF ROWS BETWEEN 2 PRECEDING AND 2 FOLLOWING ) as sum_total FROM test_table", "byteF, SUM(byteF) OVER (PARTITION BY shortF ORDER BY intF ROWS BETWEEN 2 PRECEDING AND 2 FOLLOWING ) as sum_total"),
 #("SELECT  byteF, SUM(byteF) OVER (PARTITION BY byteF ORDER BY byteF RANGE BETWEEN 20 PRECEDING AND 10 FOLLOWING ) as sum_total FROM test_table", "byteF, SUM(byteF) OVER (PARTITION BY byteF ORDER BY byteF RANGE BETWEEN 20 PRECEDING AND 10 FOLLOWING ) as sum_total"),
-("SELECT  SUM(intF) OVER (PARTITION BY byteF ORDER BY byteF ROWS BETWEEN 1 PRECEDING AND 1 FOLLOWING ) as sum_total FROM test_table", "SUM(intF) OVER (PARTITION BY byteF ORDER BY byteF ROWS BETWEEN 1 PRECEDING AND 1 FOLLOWING ) as sum_total"),
 #("SELECT  SUM(intF) OVER (PARTITION BY byteF ORDER BY byteF RANGE BETWEEN 20 PRECEDING AND 10 FOLLOWING ) as sum_total FROM test_table", "SUM(intF) OVER (PARTITION BY byteF ORDER BY byteF RANGE BETWEEN 20 PRECEDING AND 10 FOLLOWING ) as sum_total"),
 ("SELECT  SUM(byteF) OVER (PARTITION BY byteF ORDER BY shortF ROWS BETWEEN 1 PRECEDING AND 1 FOLLOWING ) as sum_total FROM test_table", "SUM(byteF) OVER (PARTITION BY byteF ORDER BY shortF ROWS BETWEEN 1 PRECEDING AND 1 FOLLOWING ) as sum_total"),
 #("SELECT  SUM(byteF) OVER (PARTITION BY byteF ORDER BY shortF RANGE BETWEEN 20 PRECEDING AND 5 FOLLOWING ) as sum_total FROM test_table", "SUM(byteF) OVER (PARTITION BY byteF ORDER BY shortF RANGE BETWEEN 20 PRECEDING AND 5 FOLLOWING ) as sum_total"),
@@ -698,9 +694,7 @@ SELECT_LOCAL_ORDER_SQL = [
 
 # ("not supported, filed bug", "not supported, filed bug"),
 # ("SELECT  SUM(byteF) OVER (PARTITION BY byteF ORDER BY timestampF RANGE BETWEEN 1 PRECEDING AND 1 FOLLOWING ) as sum_total FROM test_table", "SUM(byteF) OVER (PARTITION BY byteF ORDER BY timestampF RANGE BETWEEN 1 PRECEDING AND 1 FOLLOWING ) as sum_total"),
-
 ]
-
 
 SELECT_JOIN_SQL = [
 # (" JOIN", "JOIN"),
@@ -757,30 +751,33 @@ SELECT_JOIN_SQL = [
 ]
 
 
-SELECT_FIRST_LAST_SQL=[
-("SELECT FIRST(byteF) as first_last FROM test_table GROUP BY intF", "FIRST(byteF) GROUP BY intF", "byteF"),
-("SELECT FIRST(shortF) as first_last FROM test_table GROUP BY intF", "FIRST(shortF) GROUP BY intF", "shortF"),
-("SELECT FIRST(intF) as first_last FROM test_table GROUP BY byteF", "FIRST(intF) GROUP BY byteF", "intF"),
-("SELECT FIRST(longF) as first_last FROM test_table GROUP BY intF", "FIRST(longF) GROUP BY intF", "longF"),
-("SELECT FIRST(floatF) as first_last FROM test_table GROUP BY intF", "FIRST(floatF) GROUP BY intF", "floatF"),
-("SELECT FIRST(doubleF) as first_last FROM test_table GROUP BY intF", "FIRST(doubleF) GROUP BY intF", "doubleF"),
-("SELECT FIRST(booleanF) as first_last FROM test_table GROUP BY intF", "FIRST(booleanF) GROUP BY intF", "booleanF"),
-("SELECT FIRST(strF) as first_last FROM test_table GROUP BY intF", "FIRST(strF) GROUP BY intF", "strF"),
-("SELECT FIRST(dateF) as first_last FROM test_table GROUP BY intF", "FIRST(dateF) GROUP BY intF", "dateF"),
-("SELECT FIRST(timestampF) as first_last FROM test_table GROUP BY intF", "FIRST(timestampF) GROUP BY intF", "timestampF"),
-("SELECT FIRST(byteF) as first_last FROM test_table GROUP BY intF, shortF", "FIRST(byteF) GROUP BY intF, shortF", "byteF"),
-("SELECT FIRST(shortF) as first_last FROM test_table GROUP BY intF, byteF", "FIRST(shortF) GROUP BY intF, byteF", "shortF"),
+SELECT_PRE_ORDER_SQL=[
+("SELECT FIRST(byteF) as res FROM test_table GROUP BY intF", "FIRST(byteF) GROUP BY intF", "byteF"),
+("SELECT FIRST(shortF) as res  FROM test_table GROUP BY intF", "FIRST(shortF) GROUP BY intF", "shortF"),
+("SELECT FIRST(intF) as res FROM test_table GROUP BY byteF", "FIRST(intF) GROUP BY byteF", "intF"),
+("SELECT FIRST(longF) as res FROM test_table GROUP BY intF", "FIRST(longF) GROUP BY intF", "longF"),
+("SELECT FIRST(floatF) as res FROM test_table GROUP BY intF", "FIRST(floatF) GROUP BY intF", "floatF"),
+("SELECT FIRST(doubleF) as res FROM test_table GROUP BY intF", "FIRST(doubleF) GROUP BY intF", "doubleF"),
+("SELECT FIRST(booleanF) as res FROM test_table GROUP BY intF", "FIRST(booleanF) GROUP BY intF", "booleanF"),
+("SELECT FIRST(strF) as res FROM test_table GROUP BY intF", "FIRST(strF) GROUP BY intF", "strF"),
+("SELECT FIRST(dateF) as res FROM test_table GROUP BY intF", "FIRST(dateF) GROUP BY intF", "dateF"),
+("SELECT FIRST(timestampF) as res FROM test_table GROUP BY intF", "FIRST(timestampF) GROUP BY intF", "timestampF"),
+("SELECT FIRST(byteF) as res FROM test_table GROUP BY intF, shortF", "FIRST(byteF) GROUP BY intF, shortF", "byteF"),
+("SELECT FIRST(shortF) as res FROM test_table GROUP BY intF, byteF", "FIRST(shortF) GROUP BY intF, byteF", "shortF"),
 
-("SELECT LAST(byteF) as first_last FROM test_table GROUP BY intF", "LAST(byteF) GROUP BY intF", "byteF"),
-("SELECT LAST(shortF) as first_last FROM test_table GROUP BY intF", "LAST(shortF) GROUP BY intF", "shortF"),
-("SELECT LAST(intF) as first_last FROM test_table GROUP BY byteF", "LAST(intF) GROUP BY byteF", "intF"),
-("SELECT LAST(longF) as first_last FROM test_table GROUP BY intF", "LAST(longF) GROUP BY intF", "longF"),
-("SELECT LAST(floatF) as first_last FROM test_table GROUP BY intF", "LAST(floatF) GROUP BY intF", "floatF"),
-("SELECT LAST(doubleF) as first_last FROM test_table GROUP BY intF", "LAST(doubleF) GROUP BY intF", "doubleF"),
-("SELECT LAST(booleanF) as first_last FROM test_table GROUP BY intF", "LAST(booleanF) GROUP BY intF", "booleanF"),
-("SELECT LAST(strF) as first_last FROM test_table GROUP BY intF", "LAST(strF) GROUP BY intF", "strF"),
-("SELECT LAST(dateF) as first_last FROM test_table GROUP BY intF", "LAST(dateF) GROUP BY intF", "dateF"),
-("SELECT LAST(timestampF) as first_last FROM test_table GROUP BY intF", "LAST(timestampF) GROUP BY intF", "timestampF"),
+("SELECT LAST(byteF) as res FROM test_table GROUP BY intF", "LAST(byteF) GROUP BY intF", "byteF"),
+("SELECT LAST(shortF) as res FROM test_table GROUP BY intF", "LAST(shortF) GROUP BY intF", "shortF"),
+("SELECT LAST(intF) as res FROM test_table GROUP BY byteF", "LAST(intF) GROUP BY byteF", "intF"),
+("SELECT LAST(longF) as res FROM test_table GROUP BY intF", "LAST(longF) GROUP BY intF", "longF"),
+("SELECT LAST(floatF) as res FROM test_table GROUP BY intF", "LAST(floatF) GROUP BY intF", "floatF"),
+("SELECT LAST(doubleF) as res FROM test_table GROUP BY intF", "LAST(doubleF) GROUP BY intF", "doubleF"),
+("SELECT LAST(booleanF) as res FROM test_table GROUP BY intF", "LAST(booleanF) GROUP BY intF", "booleanF"),
+("SELECT LAST(strF) as res FROM test_table GROUP BY intF", "LAST(strF) GROUP BY intF", "strF"),
+("SELECT LAST(dateF) as res FROM test_table GROUP BY intF", "LAST(dateF) GROUP BY intF", "dateF"),
+("SELECT LAST(timestampF) as res FROM test_table GROUP BY intF", "LAST(timestampF) GROUP BY intF", "timestampF"),
+
+("SELECT byteF, SUM(byteF) OVER (PARTITION BY shortF ORDER BY intF ROWS BETWEEN 2 PRECEDING AND 2 FOLLOWING ) as res FROM test_table", "byteF, SUM(byteF) OVER (PARTITION BY shortF ORDER BY intF ROWS BETWEEN 2 PRECEDING AND 2 FOLLOWING ) as res", "byteF"),
+("SELECT SUM(intF) OVER (PARTITION BY byteF ORDER BY byteF ROWS BETWEEN 1 PRECEDING AND 1 FOLLOWING ) as res FROM test_table", "SUM(intF) OVER (PARTITION BY byteF ORDER BY byteF ROWS BETWEEN 1 PRECEDING AND 1 FOLLOWING ) as res", "intF"),
 ]
 '''
 ("SELECT LAST(byteF) FROM test_table", "LAST(byteF)"),

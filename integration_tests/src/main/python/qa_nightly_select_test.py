@@ -172,25 +172,13 @@ def test_select_join(sql_query_line, pytestconfig):
 @incompat
 @ignore_order("local")
 @qarun
-@pytest.mark.parametrize('sql_query_line', SELECT_LOCAL_ORDER_SQL, ids=idfn)
-def test_select_order_local(sql_query_line, pytestconfig):
-    sql_query = sql_query_line[0]
-    if sql_query:
-        print(sql_query)
-        num_stringDf(s)
-        assert_gpu_and_cpu_are_equal_collect(lambda spark: spark.sql(sql_query), conf=_qa_conf)
-
-@approximate_float
-@incompat
-@ignore_order("local")
-@qarun
-@pytest.mark.parametrize('sql_query_line', SELECT_FIRST_LAST_SQL, ids=idfn)
+@pytest.mark.parametrize('sql_query_line', SELECT_PRE_ORDER_SQL, ids=idfn)
 def test_select_first_last(sql_query_line, pytestconfig):
     sql_query = sql_query_line[0]
     if sql_query:
         print(sql_query)
         num_stringDf_first_last(s, sql_query_line[2])
-        assert_gpu_and_cpu_are_equal_collect(lambda spark: spark.sql(sql_query).orderBy('first_last'), conf=_qa_conf)
+        assert_gpu_and_cpu_are_equal_collect(lambda spark: spark.sql(sql_query).orderBy('res'), conf=_qa_conf)
 
 @approximate_float(abs=1e-6)
 @incompat
