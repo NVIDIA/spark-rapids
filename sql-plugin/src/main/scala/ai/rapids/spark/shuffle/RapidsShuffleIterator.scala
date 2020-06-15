@@ -35,11 +35,11 @@ import org.apache.spark.storage.{BlockId, BlockManagerId, ShuffleBlockBatchId, S
   * A `transport` instance is used to make [[RapidsShuffleClient]]s that are able to fetch
   * blocks.
   *
-  * @param localBlockManagerId - the `BlockManagerId` for the local executor
-  * @param rapidsConf - plugin configuration
-  * @param transport - transport to use to fetch blocks
-  * @param blocksByAddress - blocks to fetch
-  * @param metricsUpdater - instance of `ShuffleMetricsUpdater` to update the Spark
+  * @param localBlockManagerId the `BlockManagerId` for the local executor
+  * @param rapidsConf plugin configuration
+  * @param transport transport to use to fetch blocks
+  * @param blocksByAddress blocks to fetch
+  * @param metricsUpdater instance of `ShuffleMetricsUpdater` to update the Spark
   *                       shuffle metrics
   */
 class RapidsShuffleIterator(

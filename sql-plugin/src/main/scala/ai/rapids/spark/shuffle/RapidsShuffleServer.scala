@@ -33,16 +33,16 @@ trait RapidsShuffleRequestHandler {
   /**
     * This is a query into the manager to get the `TableMeta` corresponding to a
     * shuffle block.
-    * @param shuffleBlockBatchId - `ShuffleBlockBatchId` with (shuffleId, mapId,
+    * @param shuffleBlockBatchId `ShuffleBlockBatchId` with (shuffleId, mapId,
     *                            startReduceId, endReduceId)
-    * @return - a sequence of `TableMeta` describing batches corresponding to a block.
+    * @return a sequence of `TableMeta` describing batches corresponding to a block.
     */
   def getShuffleBufferMetas(shuffleBlockBatchId: ShuffleBlockBatchId): Seq[TableMeta]
 
   /**
     * Acquires (locks w.r.t. the memory tier) a [[RapidsBuffer]] corresponding to a table id.
-    * @param tableId - the unique id for a table in the catalog
-    * @return - a [[RapidsBuffer]] which is reference counted, and should be closed by the acquirer
+    * @param tableId the unique id for a table in the catalog
+    * @return a [[RapidsBuffer]] which is reference counted, and should be closed by the acquirer
     */
   def acquireShuffleBuffer(tableId: Int): RapidsBuffer
 }
@@ -53,13 +53,13 @@ trait RapidsShuffleRequestHandler {
   * A single command thread is used to orchestrate sends/receives and to remove
   * from transport's progress thread.
   *
-  * @param transport - the transport we were configured with
-  * @param serverConnection - a connection object, which contains functions to send/receive
-  * @param originalShuffleServerId - spark's `BlockManagerId` for this executor
-  * @param requestHandler - instance of [[RapidsShuffleRequestHandler]]
-  * @param exec - Executor used to handle tasks that take time, and should not be in the
+  * @param transport the transport we were configured with
+  * @param serverConnection a connection object, which contains functions to send/receive
+  * @param originalShuffleServerId spark's `BlockManagerId` for this executor
+  * @param requestHandler instance of [[RapidsShuffleRequestHandler]]
+  * @param exec Executor used to handle tasks that take time, and should not be in the
   *             transport's thread
-  * @param rapidsConf - plugin configuration instance
+  * @param rapidsConf plugin configuration instance
   */
 class RapidsShuffleServer(transport: RapidsShuffleTransport,
                           serverConnection: ServerConnection,
@@ -78,8 +78,8 @@ class RapidsShuffleServer(transport: RapidsShuffleTransport,
     /**
       * When a transfer request is received during a callback, the handle code is offloaded via this
       * event to the server thread.
-      * @param tx - the live transaction that should be closed by the handler
-      * @param metaRequestBuffer - contains the metadata request that should be closed by the
+      * @param tx the live transaction that should be closed by the handler
+      * @param metaRequestBuffer contains the metadata request that should be closed by the
       *                          handler
       */
     case class HandleMeta(tx: Transaction, metaRequestBuffer: RefCountedDirectByteBuffer)
@@ -89,7 +89,7 @@ class RapidsShuffleServer(transport: RapidsShuffleTransport,
       * this event on the server thread. Note that, [[BufferSendState]] encapsulates one more more
       * requests to send buffers, and [[HandleTransferRequest]] may be posted multiple times
       * in order to handle the request fully.
-      * @param sendState - instance of [[BufferSendState]] used to complete a transfer request.
+      * @param sendState instance of [[BufferSendState]] used to complete a transfer request.
       */
     case class HandleTransferRequest(sendState: BufferSendState)
   }
@@ -101,7 +101,7 @@ class RapidsShuffleServer(transport: RapidsShuffleTransport,
   /**
     * Returns a TCP port that is expected to respond to rapids shuffle protocol.
     * Throws if this server is not started yet, which is an illegal state.
-    * @return - the port
+    * @return the port
     */
   def getPort: Int = {
     if (port == -1) {
@@ -141,7 +141,7 @@ class RapidsShuffleServer(transport: RapidsShuffleTransport,
     * All callbacks handled in the server (from the transport) need to be offloaded into
     * this pool. Note, if this thread blocks we are blocking the progress thread of the transport.
     *
-    * @param op - One of the case classes in `ShuffleServerOps`
+    * @param op One of the case classes in `ShuffleServerOps`
     */
   def asyncOrBlock(op: Any): Unit = {
     exec.execute(() => handleOp(op))
@@ -152,7 +152,7 @@ class RapidsShuffleServer(transport: RapidsShuffleTransport,
     *
     * @note - at this stage, tasks in this pool can block (it will grow as needed)
     *
-    * @param op - One of the case classes in [[ShuffleServerOps]]
+    * @param op One of the case classes in [[ShuffleServerOps]]
     */
   private[this] def asyncOnCopyThread(op: Any): Unit = {
     copyExec.execute(() => handleOp(op))
@@ -206,7 +206,7 @@ class RapidsShuffleServer(transport: RapidsShuffleTransport,
     *
     * NOTE: This call must be non-blocking. It is called from the progress thread.
     *
-    * @param requestType - The request type received
+    * @param requestType The request type received
     */
   private def doIssueReceive(requestType: RequestType.Value): Unit = {
     logDebug(s"Waiting for a new connection. Posting ${requestType} receive.")
@@ -245,8 +245,8 @@ class RapidsShuffleServer(transport: RapidsShuffleTransport,
     * Function to handle `MetadataRequest`s. It will populate and issue a
     * `MetadataResponse` response for the appropriate client.
     *
-    * @param tx - the inbound [[Transaction]]
-    * @param metaRequest - a ref counted buffer holding a MetadataRequest message.
+    * @param tx the inbound [[Transaction]]
+    * @param metaRequest a ref counted buffer holding a MetadataRequest message.
     */
   def doHandleMeta(tx: Transaction, metaRequest: RefCountedDirectByteBuffer): Unit = {
     val doHandleMetaRange = new NvtxRange("doHandleMeta", NvtxColor.PURPLE)
@@ -276,7 +276,7 @@ class RapidsShuffleServer(transport: RapidsShuffleTransport,
 
   /**
     * Handles the very first message that a client will send, in order to request Table/Buffer info.
-    * @param metaRequest - the metadata request buffer
+    * @param metaRequest the metadata request buffer
     */
   def handleMetadataRequest(metaRequest: RefCountedDirectByteBuffer): Unit = {
     try {
@@ -371,8 +371,8 @@ class RapidsShuffleServer(transport: RapidsShuffleTransport,
     * start, it lasts through all buffers being transmitted, and ultimately finishes when a
     * `TransferResponse` is sent back to the client.
     *
-    * @param tx      - the original `Transaction` from the `TransferRequest`.
-    * @param request - a transfer request
+    * @param tx the original `Transaction` from the `TransferRequest`.
+    * @param request a transfer request
     */
   class BufferSendState(tx: Transaction, request: RefCountedDirectByteBuffer)
       extends AutoCloseable {
@@ -544,7 +544,7 @@ class RapidsShuffleServer(transport: RapidsShuffleTransport,
       *   2) copy data from the source buffer to the bounce buffers, updating the offset accordingly
       *   3) return either the full set of bounce buffers, or a subset, depending on how much is
       *      left to send.
-      * @return - bounce buffers ready to be sent.
+      * @return bounce buffers ready to be sent.
       */
     def getBuffersToSend(): Seq[AddressLengthTag] = synchronized {
       val alt = acquireTable()
@@ -603,7 +603,7 @@ class RapidsShuffleServer(transport: RapidsShuffleTransport,
     * This will kick off, or continue to work, a [[BufferSendState]] object
     * until all tables are fully transmitted.
     *
-    * @param bufferSendState - state object tracking sends needed to fulfill a TransferRequest
+    * @param bufferSendState state object tracking sends needed to fulfill a TransferRequest
     */
   def doHandleTransferRequest(bufferSendState: BufferSendState): Unit = {
     val doHandleTransferRequest = new NvtxRange("doHandleTransferRequest", NvtxColor.CYAN)

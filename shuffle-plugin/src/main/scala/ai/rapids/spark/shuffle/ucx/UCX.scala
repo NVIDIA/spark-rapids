@@ -46,8 +46,8 @@ case class WorkerAddress(address: ByteBuffer)
  * This class uses an extra TCP management connection to perform a handshake with remote peers,
  * this port should be distributed to peers by other means (e.g. via the `BlockManagerId`)
  *
- * @param executorId - unique id (int) that identifies the local executor
- * @param usingWakeupFeature - (true by default) set to false to use a hot loop, as opposed to
+ * @param executorId unique id (int) that identifies the local executor
+ * @param usingWakeupFeature (true by default) set to false to use a hot loop, as opposed to
  *                           UCP provided signal/wait
  */
 class UCX(executorId: Int, usingWakeupFeature: Boolean = true) extends AutoCloseable with Logging {
@@ -186,7 +186,7 @@ class UCX(executorId: Int, usingWakeupFeature: Boolean = true) extends AutoClose
     * Starts a TCP server to listen for external clients, returning with
     * what port it used.
     *
-    * @param mgmtHost - String the hostname to bind to
+    * @param mgmtHost String the hostname to bind to
     * @return port bound
     */
   def startManagementPort(mgmtHost: String): Int = {
@@ -328,10 +328,10 @@ class UCX(executorId: Int, usingWakeupFeature: Boolean = true) extends AutoClose
   /**
     * Establish a new [[UcpEndpoint]] given a [[WorkerAddress]]. It also
     * caches them s.t. at [[close]] time we can release resources.
-    * @param endpointId - presently an executorId, it is used to distinguish between endpoints
+    * @param endpointId presently an executorId, it is used to distinguish between endpoints
     *                   when routing messages outbound
-    * @param workerAddress - the worker address for the remote endpoint (ucx opaque object)
-    * @return UcpEndpoint - returns a [[UcpEndpoint]] that can later be used to send on (from the
+    * @param workerAddress the worker address for the remote endpoint (ucx opaque object)
+    * @return returns a [[UcpEndpoint]] that can later be used to send on (from the
    *         progress thread)
     */
   private[ucx] def setupEndpoint(endpointId: Long, workerAddress: WorkerAddress): UcpEndpoint = {
@@ -417,7 +417,7 @@ class UCX(executorId: Int, usingWakeupFeature: Boolean = true) extends AutoClose
     * Handle an incoming connection on the TCP management port
     * This will fetch the [[WorkerAddress]] from the peer, and establish a UcpEndpoint
     *
-    * @param socket - an accepted socket to a remote client
+    * @param socket an accepted socket to a remote client
     */
   private[ucx] def handleSocket(socket: Socket): Unit = {
     val connectionRange =

@@ -31,7 +31,7 @@ object RapidsStorageUtils {
     * If the implementation in Spark later on breaks our build, we may need to replicate
     * the dispose method here.
     *
-    * @param buffer - byte buffer to dispose
+    * @param buffer byte buffer to dispose
     */
   // scalastyle:on line.size.limit
   def dispose(buffer: ByteBuffer): Unit = StorageUtils.dispose(buffer)

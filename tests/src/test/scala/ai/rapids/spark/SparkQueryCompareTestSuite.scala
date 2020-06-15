@@ -199,10 +199,10 @@ trait SparkQueryCompareTestSuite extends FunSuite with Arm {
   /**
     * Runs a test defined by fun, using dataframe df.
     *
-    * @param df     - the DataFrame to use as input
-    * @param fun    - the function to transform the DataFrame (produces another DataFrame)
-    * @param conf   - spark conf
-    * @return       - tuple of (cpu results, gpu results) as arrays of Row
+    * @param df the DataFrame to use as input
+    * @param fun the function to transform the DataFrame (produces another DataFrame)
+    * @param conf spark conf
+    * @return tuple of (cpu results, gpu results) as arrays of Row
     */
   def runOnCpuAndGpu(
       df: SparkSession => DataFrame,
@@ -236,11 +236,11 @@ trait SparkQueryCompareTestSuite extends FunSuite with Arm {
   /**
    * Runs a test defined by fun, using 2 dataframes dfA and dfB.
    *
-   * @param dfA  - the first DataFrame to use as input
-   * @param dfB  - the second DataFrame to use as input
-   * @param fun  - the function to transform the DataFrame (produces another DataFrame)
-   * @param conf - spark conf
-   * @return       - tuple of (cpu results, gpu results) as arrays of Row
+   * @param dfA the first DataFrame to use as input
+   * @param dfB the second DataFrame to use as input
+   * @param fun the function to transform the DataFrame (produces another DataFrame)
+   * @param conf spark conf
+   * @return tuple of (cpu results, gpu results) as arrays of Row
    */
   def runOnCpuAndGpu2(dfA: SparkSession => DataFrame,
       dfB: SparkSession => DataFrame,
@@ -349,11 +349,11 @@ trait SparkQueryCompareTestSuite extends FunSuite with Arm {
   /**
    * Writes and reads a dataframe to a file using the CPU and the GPU.
    *
-   * @param df     - the DataFrame to use as input
-   * @param writer - the function to write the data to a file
-   * @param reader - the function to read the data from a file
-   * @param conf   - spark conf
-   * @return       - tuple of (cpu results, gpu results) as arrays of Row
+   * @param df the DataFrame to use as input
+   * @param writer the function to write the data to a file
+   * @param reader the function to read the data from a file
+   * @param conf spark conf
+   * @return tuple of (cpu results, gpu results) as arrays of Row
    */
   def writeWithCpuAndGpu(
       df: SparkSession => DataFrame,

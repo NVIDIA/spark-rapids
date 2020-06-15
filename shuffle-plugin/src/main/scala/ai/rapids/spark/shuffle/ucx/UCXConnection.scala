@@ -71,18 +71,6 @@ class UCXClientConnection(peerExecutorId: Int, peerClientId: Long, ucx: UCX)
 
   override def getPeerExecutorId: Long = peerExecutorId
 
-  /**
-    * This performs a request/response, where the request is read from one
-    * `AddressLengthTag` `request`, and the response is populated at the memory 
-    * described by `response`.
-    *
-    * @param request - `AddressLengthTag` holding the request message
-    * @param response - `AddressLengthTag` describing memory that will hold a response
-    * @param cb - callback to handle transaction status. If successful the memory described
-    *           using "response" will hold the response as expected, otherwise its contents
-    *           are not defined.
-    * @return - Transaction instance for the request
-    */
   override def request(
       request: AddressLengthTag,
       response: AddressLengthTag,
@@ -348,8 +336,8 @@ object UCXConnection extends Logging {
     * Given a java `InputStream`, obtain the peer's `WorkerAddress` and executor id,
     * returning them as a pair.
     *
-    * @param is - management port `InputStream`
-    * @return - `(WorkerAddress, remoteExecutorId) tuple`
+    * @param is management port input stream
+    * @return a tuple of worker address and the peer executor id
     */
   def readHandshakeHeader(is: InputStream): (WorkerAddress, Int) = {
     val maxLen = 1024 * 1024
@@ -376,9 +364,9 @@ object UCXConnection extends Logging {
     *  - UCP Worker address (variable length)
     *  - Local executor id (4 bytes)
     *
-    * @param os              - OutputStream to write to
-    * @param workerAddress   - ByteBuffer that holds
-    * @param localExecutorId - The local executorId
+    * @param os output stream to write to
+    * @param workerAddress byte buffer that holds the local UCX worker address
+    * @param localExecutorId The local executorId
     */
   def writeHandshakeHeader(os: OutputStream,
                            workerAddress: ByteBuffer,

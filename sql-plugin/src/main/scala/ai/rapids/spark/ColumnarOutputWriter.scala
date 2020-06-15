@@ -133,8 +133,8 @@ abstract class ColumnarOutputWriter(path: String, context: TaskAttemptContext,
   /**
    * Writes the columnar batch and returns the time in ns taken to write
    *
-   * @param batch - Columnar batch that needs to be written
-   * @return - time in ns taken to write the batch
+   * @param batch Columnar batch that needs to be written
+   * @return time in ns taken to write the batch
    */
   private[this] def writeBatch(batch: ColumnarBatch): Long = {
     var needToCloseBatch = true
