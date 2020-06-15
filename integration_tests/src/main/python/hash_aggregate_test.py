@@ -68,6 +68,37 @@ _grpkey_floats_with_nulls_and_nans = [
     ('a', RepeatSeqGen(FloatGen(nullable=(True, 10.0)), length= 20)),
     ('b', FloatGen(nullable=(True, 10.0), special_cases=[(float('nan'), 10.0)])),
     ('c', LongGen())]
+
+_nan_zero_float_special_cases = [
+    (float('nan'),  5.0),
+    (NEG_FLOAT_NAN_MIN_VALUE, 5.0),
+    (NEG_FLOAT_NAN_MAX_VALUE, 5.0),
+    (POS_FLOAT_NAN_MIN_VALUE, 5.0),
+    (POS_FLOAT_NAN_MAX_VALUE, 5.0),
+    (float('0.0'),  5.0),
+    (float('-0.0'), 5.0),
+]
+
+_grpkey_floats_with_nan_zero_grouping_keys = [
+    ('a', RepeatSeqGen(FloatGen(nullable=(True, 10.0), special_cases=_nan_zero_float_special_cases), length=50)),
+    ('b', IntegerGen(nullable=(True, 10.0))),
+    ('c', LongGen())]
+
+_nan_zero_double_special_cases = [
+    (float('nan'),  5.0),
+    (NEG_DOUBLE_NAN_MIN_VALUE, 5.0),
+    (NEG_DOUBLE_NAN_MAX_VALUE, 5.0),
+    (POS_DOUBLE_NAN_MIN_VALUE, 5.0),
+    (POS_DOUBLE_NAN_MAX_VALUE, 5.0),
+    (float('0.0'),  5.0),
+    (float('-0.0'), 5.0),
+]
+
+_grpkey_doubles_with_nan_zero_grouping_keys = [
+    ('a', RepeatSeqGen(DoubleGen(nullable=(True, 10.0), special_cases=_nan_zero_double_special_cases), length=50)),
+    ('b', FloatGen(nullable=(True, 10.0))),
+    ('c', LongGen())]
+
 # Schema for xfail cases
 struct_gens_xfail = [
     _grpkey_floats_with_nulls_and_nans
@@ -283,6 +314,21 @@ def test_hash_query_max_bug(data_gen):
     print_params(data_gen)
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark: gen_df(spark, data_gen, length=100).groupby('a').agg(f.max('b')))
+
+
+@ignore_order
+@incompat
+@pytest.mark.parametrize('data_gen', [_grpkey_floats_with_nan_zero_grouping_keys,
+                                      _grpkey_doubles_with_nan_zero_grouping_keys], ids=idfn)
+def test_hash_agg_with_nan_keys(data_gen):
+    df = with_cpu_session(
+        lambda spark : gen_df(spark, data_gen, length=100))
+    df.createOrReplaceTempView("hash_agg_table")
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark: spark.sql(
+            'select a, count(*) as cnt, sum(b) as sum_b, max(c) as max_c '
+            'from hash_agg_table group by a'),
+        conf=_no_nans_float_conf)
 
 
 # TODO: Literal tests
