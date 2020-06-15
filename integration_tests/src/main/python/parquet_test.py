@@ -14,7 +14,7 @@
 
 import pytest
 
-from asserts import assert_gpu_and_cpu_are_equal_collect, assert_gpu_and_cpu_writes_are_equal_collect
+from asserts import assert_gpu_and_cpu_are_equal_collect, assert_gpu_and_cpu_writes_are_equal_collect, assert_gpu_fallback_collect
 from datetime import date, datetime, timezone
 from data_gen import *
 from marks import *
@@ -56,8 +56,9 @@ def test_parquet_fallback(spark_tmp_path, read_func, disable_conf):
     reader = read_func(data_path)
     with_cpu_session(
             lambda spark : gen_df(spark, gen).write.parquet(data_path))
-    assert_gpu_and_cpu_are_equal_collect(
+    assert_gpu_fallback_collect(
             lambda spark : reader(spark).select(f.col('*'), f.col('_c2') + f.col('_c3')),
+            'FileSourceScanExec',
             conf={disable_conf: 'false'})
 
 parquet_compress_options = ['none', 'uncompressed', 'snappy', 'gzip']

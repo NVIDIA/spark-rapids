@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from conftest import is_incompat, should_sort_on_spark, should_sort_locally, get_float_check, get_limit
+from conftest import is_incompat, should_sort_on_spark, should_sort_locally, get_float_check, get_limit, spark_jvm
 from datetime import date, datetime
 import math
 from pyspark.sql import Row
@@ -234,6 +234,32 @@ def assert_gpu_and_cpu_writes_are_equal_iterator(write_func, read_func, base_pat
     so any amount of data can work, just be careful about how long it might take.
     """
     _assert_gpu_and_cpu_writes_are_equal(write_func, read_func, base_path, False, conf=conf)
+
+def assert_gpu_fallback_collect(func,
+        cpu_fallback_class_name,
+        conf={}):
+    (bring_back, collect_type) = _prep_func_for_compare(func, True)
+    conf = _prep_incompat_conf(conf)
+
+    print('### CPU RUN ###')
+    cpu_start = time.time()
+    from_cpu = with_cpu_session(bring_back, conf=conf)
+    cpu_end = time.time()
+    print('### GPU RUN ###')
+    jvm = spark_jvm()
+    jvm.ai.rapids.spark.ExecutionPlanCaptureCallback.startCapture()
+    gpu_start = time.time()
+    from_gpu = with_gpu_session(bring_back,
+            conf=conf)
+    gpu_end = time.time()
+    jvm.ai.rapids.spark.ExecutionPlanCaptureCallback.assertCapturedAndGpuFellBack(cpu_fallback_class_name, 2000)
+    print('### {}: GPU TOOK {} CPU TOOK {} ###'.format(collect_type, 
+        gpu_end - gpu_start, cpu_end - cpu_start))
+    if should_sort_locally():
+        from_cpu.sort(key=_RowCmp)
+        from_gpu.sort(key=_RowCmp)
+
+    assert_equal(from_cpu, from_gpu)
 
 def _assert_gpu_and_cpu_are_equal(func,
         should_collect,

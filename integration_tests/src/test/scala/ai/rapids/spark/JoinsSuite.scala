@@ -60,10 +60,9 @@ class JoinsSuite extends SparkQueryCompareTestSuite {
     conf = new SparkConf()
       .set("spark.sql.autoBroadcastJoinThreshold", "-1")
       .set("spark.sql.join.preferSortMergeJoin", "true")
-      .set("spark.sql.shuffle.partitions", "2"), // hack to try and work around bug in cudf
+      .set("spark.sql.shuffle.partitions", "2"),
     incompat = true,
-    sort = true,
-    execsAllowedNonGpu = Seq("SortExec", "SortOrder")) {
+    sort = true) {
     (A, B) => A.join(B, A("longs") === B("longs"))
   }
 

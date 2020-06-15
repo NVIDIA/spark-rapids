@@ -605,24 +605,6 @@ class AnsiCastOpSuite extends GpuExpressionTestSuite {
     spark.sql(s"SELECT c0 FROM $t3")
   }
 
-  /** Test that a transformation is not supported on GPU */
-  private def testNotSupportedOnGpu(testName: String, frame: SparkSession => DataFrame,
-    sparkConf: SparkConf)(transformation: DataFrame => DataFrame): Unit = {
-
-    test(testName) {
-      try {
-        withGpuSparkSession(spark => {
-          val input = frame(spark).repartition(1)
-          transformation(input).collect()
-        }, sparkConf)
-        fail("should not run on GPU")
-      } catch {
-        case e: IllegalArgumentException =>
-          assert(e.getMessage.startsWith("Part of the plan is not columnar"))
-      }
-    }
-  }
-
   /**
    * Perform a transformation that is expected to fail due to values not being valid for
    * an ansi_cast
