@@ -244,7 +244,10 @@ class RepeatSeqGen(DataGen):
 
 FLOAT_MIN = -3.4028235E38
 FLOAT_MAX = 3.4028235E38
-NEG_FLOAT_NAN = struct.unpack('f', struct.pack('I', 0xfff00001))[0]
+NEG_FLOAT_NAN_MIN_VALUE = struct.unpack('f', struct.pack('I', 0xffffffff))[0]
+NEG_FLOAT_NAN_MAX_VALUE = struct.unpack('f', struct.pack('I', 0xff800001))[0]
+POS_FLOAT_NAN_MIN_VALUE = struct.unpack('f', struct.pack('I', 0x7f800001))[0]
+POS_FLOAT_NAN_MAX_VALUE = struct.unpack('f', struct.pack('I', 0x7fffffff))[0]
 class FloatGen(DataGen):
     """Generate floats, which some built in corner cases."""
     def __init__(self, nullable=True, 
@@ -256,7 +259,7 @@ class FloatGen(DataGen):
                 special_cases.append(float('inf'))
                 special_cases.append(float('-inf'))
                 special_cases.append(float('nan'))
-                special_cases.append(NEG_DOUBLE_NAN)
+                special_cases.append(NEG_FLOAT_NAN_MAX_VALUE)
         super().__init__(FloatType(), nullable=nullable, special_cases=special_cases)
 
     def _fixup_nans(self, v):
@@ -276,7 +279,10 @@ DOUBLE_MAX_EXP = 1023
 DOUBLE_MAX_FRACTION = int('1'*52, 2)
 DOUBLE_MIN = -1.7976931348623157E308
 DOUBLE_MAX = 1.7976931348623157E308
-NEG_DOUBLE_NAN = struct.unpack('d', struct.pack('L', 0xfff0000000000001))[0]
+NEG_DOUBLE_NAN_MIN_VALUE = struct.unpack('d', struct.pack('L', 0xffffffffffffffff))[0]
+NEG_DOUBLE_NAN_MAX_VALUE = struct.unpack('d', struct.pack('L', 0xfff0000000000001))[0]
+POS_DOUBLE_NAN_MIN_VALUE = struct.unpack('d', struct.pack('L', 0x7ff0000000000001))[0]
+POS_DOUBLE_NAN_MAX_VALUE = struct.unpack('d', struct.pack('L', 0x7fffffffffffffff))[0]
 class DoubleGen(DataGen):
     """Generate doubles, which some built in corner cases."""
     def __init__(self, min_exp=DOUBLE_MIN_EXP, max_exp=DOUBLE_MAX_EXP, no_nans=False, 
@@ -302,7 +308,7 @@ class DoubleGen(DataGen):
                 special_cases.append(float('inf'))
                 special_cases.append(float('-inf'))
                 special_cases.append(float('nan'))
-                special_cases.append(NEG_DOUBLE_NAN)
+                special_cases.append(NEG_DOUBLE_NAN_MAX_VALUE)
         super().__init__(DoubleType(), nullable=nullable, special_cases=special_cases)
 
     @staticmethod
