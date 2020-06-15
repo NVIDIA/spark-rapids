@@ -39,7 +39,7 @@ class GpuUnitTests extends SparkQueryCompareTestSuite {
     /**
      * Method to convert Int vector to another numeric type (DecimalType not supported)
      */
-    def convert(to: DataType)(v: ColumnVector): GpuColumnVector = {
+    def convertVector(to: DataType)(v: ColumnVector): GpuColumnVector = {
       val cv = v.asInstanceOf[ColumnVector]
       // close the vector that was passed in and return a new vector
       withResource(cv) { cv =>
@@ -50,7 +50,7 @@ class GpuUnitTests extends SparkQueryCompareTestSuite {
     /**
      * Method to convert any numeric value to 'to' DataType (DecimalType not supported)
      */
-    def convertS(to: DataType)(v: Any): Any = {
+    def convertScalar(to: DataType)(v: Any): Any = {
       val i = v.asInstanceOf[Int]
       to match {
         case ByteType =>
@@ -72,7 +72,7 @@ class GpuUnitTests extends SparkQueryCompareTestSuite {
      * Convenience method to avoid repeating the datatype
      */
     def converters(d: DataType): (ColumnVector => GpuColumnVector, Any => Any) = {
-      (convert(d), convertS(d))
+      (convertVector(d), convertScalar(d))
     }
 
     testFunc(converters(DataTypes.ByteType))

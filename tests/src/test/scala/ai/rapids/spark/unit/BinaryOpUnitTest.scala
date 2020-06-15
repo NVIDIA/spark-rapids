@@ -17,42 +17,42 @@
 package ai.rapids.spark.unit
 
 import ai.rapids.cudf.ColumnVector
-import ai.rapids.spark.{GpuLiteral, GpuUnitTests}
+import ai.rapids.spark.{GpuBoundReference, GpuLiteral, GpuUnitTests}
 
 import org.apache.spark.sql.rapids.GpuPmod
+import org.apache.spark.sql.vectorized.ColumnarBatch
 
 class BinaryOpUnitTest extends GpuUnitTests {
 
   test("test pmod") {
     testNumericDataTypes { case (convertVector, convertScalar) =>
       withResource(convertVector(ColumnVector.fromBoxedInts(2, 0, 1, null))) { expected0 =>
-        withResource(convertVector(ColumnVector.fromBoxedInts(2, null, 0, null))) { expected1 =>
-          withResource(convertVector(ColumnVector.fromBoxedInts(3, 0, 3, null))) { expected2 =>
-            //vector 0
-            val vector0 = convertVector(ColumnVector.fromBoxedInts(-7, 3, 4, null))
-            // assign to new handles for code readability
-            val vector01 = vector0.incRefCount()
-            val vector02 = vector0.incRefCount()
+        withResource(convertVector(ColumnVector.fromBoxedInts(2, null, 0, null))) {
+          expected1 =>
+          withResource(convertVector(ColumnVector.fromBoxedInts(3, 0, 3, null))) {
+            expected2 =>
 
-            //vector 1
-            val vector1 = convertVector(ColumnVector.fromBoxedInts(3, 0, 1, null))
+            withResource(convertVector(ColumnVector.fromBoxedInts(-7, 3, 4, null))) {
+              vector0 =>
+              withResource(convertVector(ColumnVector.fromBoxedInts(3, 0, 1, null))) {
+                vector1 =>
 
-            //saving dataType to a variable for convenience
-            val dataType = getSparkType(vector0.getBase.getType)
+                val batch = new ColumnarBatch(List(vector0, vector1).toArray, 4)
+                val dataType = getSparkType(vector0.getBase.getType)
 
-            //lhs = vector rhs = scalar
-            val exprVectorLhs0 = GpuLiteral(vector0, dataType)
-            val exprScalar = GpuLiteral(convertScalar(3), dataType)
-            checkEvaluation(GpuPmod(exprVectorLhs0, exprScalar), expected0)
+                //lhs = vector rhs = scalar
+                val expressionVector = GpuBoundReference(0, dataType, true)
+                val expressionScalar = GpuLiteral(convertScalar(3), dataType)
+                checkEvaluation(GpuPmod(expressionVector, expressionScalar), expected0, batch)
 
-            //lhs = vector rhs = vector
-            val exprVectorLhs1 = GpuLiteral(vector01, dataType)
-            val exprVectorRhs0 = GpuLiteral(vector1, dataType)
-            checkEvaluation(GpuPmod(exprVectorLhs1, exprVectorRhs0), expected1)
+                //lhs = vector rhs = vector
+                val expressionVector1 = GpuBoundReference(1, dataType, true)
+                checkEvaluation(GpuPmod(expressionVector, expressionVector1), expected1, batch)
 
-            //lhs = scalar rhs = vector
-            val exprVectorRhs1 = GpuLiteral(vector02, dataType)
-            checkEvaluation(GpuPmod(exprScalar, exprVectorRhs1), expected2)
+                //lhs = scalar rhs = vector
+                checkEvaluation(GpuPmod(expressionScalar, expressionVector), expected2, batch)
+              }
+            }
           }
         }
       }
