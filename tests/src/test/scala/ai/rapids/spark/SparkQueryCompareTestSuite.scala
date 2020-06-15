@@ -198,11 +198,10 @@ trait SparkQueryCompareTestSuite extends FunSuite with Arm {
     }
   }
 
-  def runOnCpuAndGpuWithCapture(
-                                   df: SparkSession => DataFrame,
-                                   fun: DataFrame => DataFrame,
-                                   conf: SparkConf = new SparkConf(),
-                                   repart: Integer = 1)
+  def runOnCpuAndGpuWithCapture(df: SparkSession => DataFrame,
+       fun: DataFrame => DataFrame,
+       conf: SparkConf = new SparkConf(),
+       repart: Integer = 1)
   : (Array[Row], SparkPlan, Array[Row], SparkPlan) = {
     conf.setIfMissing("spark.sql.shuffle.partitions", "2")
 
