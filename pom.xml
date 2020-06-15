@@ -19,7 +19,7 @@
          xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
     <modelVersion>4.0.0</modelVersion>
 
-    <groupId>ai.rapids</groupId>
+    <groupId>com.nvidia</groupId>
     <artifactId>rapids-4-spark-parent</artifactId>
     <name>RAPIDS for Apache Spark Root Project</name>
     <description>The root project of the RAPIDS plugin for Apache Spark</description>
