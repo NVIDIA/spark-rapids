@@ -51,6 +51,11 @@ private[ucx] class UCXTransaction(conn: UCXConnection, val txId: Long)
 
   def decrementPendingAndGet: Long = pending.decrementAndGet
 
+  /**
+    * This will mark the tag as being cancelled for debugging purposes.
+    *
+    * @param tag the cancelled tag
+    */
   def handleTagCancelled(tag: Long): Unit = {
     if (registeredByTag.contains(tag)) {
       val origBuff = registeredByTag(tag)
@@ -58,6 +63,12 @@ private[ucx] class UCXTransaction(conn: UCXConnection, val txId: Long)
     }
   }
 
+  /**
+    * This will mark the tag as having an error for debugging purposes.
+    *
+    * @param tag the tag involved in the error
+    * @param errorMsg error description from UCX
+    */
   def handleTagError(tag: Long, errorMsg: String): Unit = {
     if (registeredByTag.contains(tag)) {
       val origBuff = registeredByTag(tag)
@@ -67,15 +78,13 @@ private[ucx] class UCXTransaction(conn: UCXConnection, val txId: Long)
   }
 
   /**
-    * This will place the [[AddressLengthTag]] in the [[completed]] buffer,
-    * for debugging purposes.
+    * This will mark the tag as completed for debugging purposes.
     *
-    * @param alt the [[AddressLengthTag]] instance we completed successfully
-    * @return
+    * @param tag the successful tag
     */
-  def handleTagCompleted(alt: AddressLengthTag): Unit =  {
-    if (registeredByTag.contains(alt.tag)){
-      val origBuff = registeredByTag(alt.tag)
+  def handleTagCompleted(tag: Long): Unit =  {
+    if (registeredByTag.contains(tag)){
+      val origBuff = registeredByTag(tag)
       completed += origBuff
     }
   }

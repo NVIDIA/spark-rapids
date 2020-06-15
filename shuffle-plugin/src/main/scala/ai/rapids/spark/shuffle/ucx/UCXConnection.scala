@@ -196,7 +196,7 @@ class UCXConnection(peerExecutorId: Int, ucx: UCX) extends Connection with Loggi
 
       override def onSuccess(alt: AddressLengthTag): Unit = {
         logDebug(s"Successful send: ${TransportUtils.formatTag(alt.tag)}, tx = $tx")
-        tx.handleTagCompleted(alt)
+        tx.handleTagCompleted(alt.tag)
         if (tx.decrementPendingAndGet <= 0) {
           tx.txCallback(TransactionStatus.Success)
         }
@@ -246,7 +246,7 @@ class UCXConnection(peerExecutorId: Int, ucx: UCX) extends Connection with Loggi
 
       override def onSuccess(alt: AddressLengthTag): Unit = {
         logDebug(s"Successful receive: ${TransportUtils.formatTag(alt.tag)}, tx $tx")
-        tx.handleTagCompleted(alt)
+        tx.handleTagCompleted(alt.tag)
         if (tx.decrementPendingAndGet <= 0) {
           logDebug(s"Receive done for tag: ${TransportUtils.formatTag(alt.tag)}, tx $tx")
           tx.txCallback(TransactionStatus.Success)
