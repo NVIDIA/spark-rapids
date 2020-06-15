@@ -199,9 +199,9 @@ trait SparkQueryCompareTestSuite extends FunSuite with Arm {
   }
 
   def runOnCpuAndGpuWithCapture(df: SparkSession => DataFrame,
-       fun: DataFrame => DataFrame,
-       conf: SparkConf = new SparkConf(),
-       repart: Integer = 1)
+      fun: DataFrame => DataFrame,
+      conf: SparkConf = new SparkConf(),
+      repart: Integer = 1)
   : (Array[Row], SparkPlan, Array[Row], SparkPlan) = {
     conf.setIfMissing("spark.sql.shuffle.partitions", "2")
 
@@ -250,16 +250,16 @@ trait SparkQueryCompareTestSuite extends FunSuite with Arm {
   }
 
   def testGpuFallback(testName: String,
-       fallbackCpuClass: String,
-       df: SparkSession => DataFrame,
-       conf: SparkConf = new SparkConf(),
-       repart: Integer = 1,
-       sort: Boolean = false,
-       maxFloatDiff: Double = 0.0,
-       incompat: Boolean = false,
-       execsAllowedNonGpu: Seq[String] = Seq.empty,
-       sortBeforeRepart: Boolean = false)
-       (fun: DataFrame => DataFrame): Unit = {
+      fallbackCpuClass: String,
+      df: SparkSession => DataFrame,
+      conf: SparkConf = new SparkConf(),
+      repart: Integer = 1,
+      sort: Boolean = false,
+      maxFloatDiff: Double = 0.0,
+      incompat: Boolean = false,
+      execsAllowedNonGpu: Seq[String] = Seq.empty,
+      sortBeforeRepart: Boolean = false)
+      (fun: DataFrame => DataFrame): Unit = {
     val (testConf, qualifiedTestName) =
       setupTestConfAndQualifierName(testName, incompat, sort, conf, execsAllowedNonGpu,
         maxFloatDiff, sortBeforeRepart)
