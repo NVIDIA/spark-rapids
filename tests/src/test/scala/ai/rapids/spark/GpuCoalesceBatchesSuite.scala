@@ -17,8 +17,7 @@
 package ai.rapids.spark
 
 import java.io.File
-
-import org.sparkproject.guava.io.Files
+import java.nio.file.Files
 
 import org.apache.spark.sql.execution.metric.SQLMetric
 import org.apache.spark.sql.rapids.metrics.source.MockTaskContext
@@ -166,7 +165,7 @@ class GpuCoalesceBatchesSuite extends SparkQueryCompareTestSuite {
       .set("spark.rapids.sql.exec.FileSourceScanExec", "false") // force Parquet read onto CPU
       .set("spark.sql.shuffle.partitions", "1")
 
-    val dir = Files.createTempDir()
+    val dir = Files.createTempDirectory("spark-rapids-test").toFile
     val path = new File(dir,
       s"HostColumnarToGpu-${System.currentTimeMillis()}.parquet").getAbsolutePath
 
