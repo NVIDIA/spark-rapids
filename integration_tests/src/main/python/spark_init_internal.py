@@ -21,6 +21,7 @@ def _spark__init():
     # can be reset in the middle of a test if specific operations are done (some types of cast etc)
     _s = SparkSession.builder \
             .config('spark.plugins', 'ai.rapids.spark.SQLPlugin') \
+            .config('spark.sql.queryExecutionListeners', 'ai.rapids.spark.ExecutionPlanCaptureCallback')\
             .appName('rapids spark plugin integration tests (python)').getOrCreate()
     #TODO catch the ClassNotFound error that happens if the classpath is not set up properly and
     # make it a better error message
