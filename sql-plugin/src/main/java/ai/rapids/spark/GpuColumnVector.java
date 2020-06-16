@@ -260,10 +260,10 @@ public class GpuColumnVector extends ColumnVector {
    * increment the reference count for all columns converted so you will need to close
    * both the table that is passed in and the batch returned to be sure that there are no leaks.
    *
-   * @param table  - a table of vectors
-   * @param startColIndex - index of the first vector you want in the final ColumnarBatch
-   * @param untilColIndex - until index of the columns. (ie doesn't include that column num)
-   * @return       - a ColumnarBatch of the vectors from the table
+   * @param table a table of vectors
+   * @param startColIndex index of the first vector you want in the final ColumnarBatch
+   * @param untilColIndex until index of the columns. (ie doesn't include that column num)
+   * @return a ColumnarBatch of the vectors from the table
    */
   public static final ColumnarBatch from(Table table, int startColIndex, int untilColIndex) {
     assert table != null : "Table cannot be null";

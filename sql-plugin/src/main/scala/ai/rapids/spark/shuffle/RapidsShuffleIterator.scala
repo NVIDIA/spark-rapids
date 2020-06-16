@@ -32,11 +32,15 @@ import org.apache.spark.storage.{BlockId, BlockManagerId, ShuffleBlockBatchId, S
 /**
   * An Iterator over columnar batches that fetches blocks using [[RapidsShuffleClient]]s.
   *
-  * A [[transport]] instance is used to make [[RapidsShuffleClient]]s that are able to fetch
+  * A `transport` instance is used to make [[RapidsShuffleClient]]s that are able to fetch
   * blocks.
-  * @param rapidsConf - plugin configuration
-  * @param transport - transport to use to fetch blocks
-  * @param blocksByAddress - blocks to fetch
+  *
+  * @param localBlockManagerId the `BlockManagerId` for the local executor
+  * @param rapidsConf plugin configuration
+  * @param transport transport to use to fetch blocks
+  * @param blocksByAddress blocks to fetch
+  * @param metricsUpdater instance of `ShuffleMetricsUpdater` to update the Spark
+  *                       shuffle metrics
   */
 class RapidsShuffleIterator(
     localBlockManagerId: BlockManagerId,

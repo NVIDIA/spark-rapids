@@ -32,7 +32,7 @@ import org.apache.spark.util.SerializableConfiguration
 /**
  * Simple metrics collected during an instance of [[GpuFileFormatDataWriter]].
  * This is the columnar version of
- * [[org.apache.spark.sql.execution.datasources.BasicWriteTaskStatsTracker]].
+ * `org.apache.spark.sql.execution.datasources.BasicWriteTaskStatsTracker`.
  */
 class BasicColumnarWriteTaskStatsTracker(hadoopConf: Configuration)
     extends ColumnarWriteTaskStatsTracker with Logging {
@@ -112,7 +112,7 @@ class BasicColumnarWriteTaskStatsTracker(hadoopConf: Configuration)
 /**
  * Simple [[ColumnarWriteJobStatsTracker]] implementation that's serializable,
  * capable ofinstantiating [[BasicColumnarWriteTaskStatsTracker]] on executors and processing the
- * [[BasicWriteTaskStats]] they produce by aggregating the metrics and posting them
+ * `BasicWriteTaskStats` they produce by aggregating the metrics and posting them
  * as DriverMetricUpdates.
  */
 class BasicColumnarWriteJobStatsTracker(

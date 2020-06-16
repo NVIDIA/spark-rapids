@@ -139,10 +139,10 @@ object ShuffleMetadata extends Logging{
   val bbFactory = new DirectByteBufferFactory
 
   /**
-    * Given a sequence of [[TableMeta]], re-lay the metas using the flat buffer builder in [[fbb]].
-    * @param fbb - builder to use
-    * @param tables - sequence of [[TableMeta]] to copy
-    * @return - an array of flat buffer offsets for the copied [[TableMeta]]s
+    * Given a sequence of `TableMeta`, re-lay the metas using the flat buffer builder in `fbb`.
+    * @param fbb builder to use
+    * @param tables sequence of `TableMeta` to copy
+    * @return an array of flat buffer offsets for the copied `TableMeta`s
     */
   def copyTables(fbb: FlatBufferBuilder, tables: Seq[TableMeta]): Array[Int] = {
     tables.map { tableMeta =>
@@ -362,11 +362,8 @@ object ShuffleMetadata extends Logging{
 
 
   /**
-    * Utility function to transfer a [[TableMeta]] to the heap,
-    * TODO: I would like to look for an easier way, perhaps just a memcpy will do.
-    *
-    * @param meta - [[TableMeta]] to copy
-    * @return - a copy of [[meta]] on the JVM heap
+    * Utility function to transfer a `TableMeta` to the heap,
+    * @todo we would like to look for an easier way, perhaps just a memcpy will do.
     */
   def copyTableMetaToHeap(meta: TableMeta): TableMeta = {
     val fbb = ShuffleMetadata.getHeapBuilder

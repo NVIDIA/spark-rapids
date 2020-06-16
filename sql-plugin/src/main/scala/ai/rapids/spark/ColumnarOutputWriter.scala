@@ -32,7 +32,7 @@ import org.apache.spark.sql.vectorized.ColumnarBatch
  * A factory that produces [[ColumnarOutputWriter]]s.  A new [[ColumnarOutputWriterFactory]] is
  * created on the driver side, and then gets serialized to executor side to create
  * [[ColumnarOutputWriter]]s. This is the columnar version of
- * [[org.apache.spark.sql.execution.datasources.OutputWriterFactory]].
+ * `org.apache.spark.sql.execution.datasources.OutputWriterFactory`.
  */
 abstract class ColumnarOutputWriterFactory extends Serializable {
 
@@ -40,7 +40,7 @@ abstract class ColumnarOutputWriterFactory extends Serializable {
   def getFileExtension(context: TaskAttemptContext): String
 
   /**
-   * When writing to a [[org.apache.spark.sql.execution.datasources.HadoopFsRelation]], this method
+   * When writing to a `org.apache.spark.sql.execution.datasources.HadoopFsRelation`, this method
    * gets called by each task on executor side to instantiate new [[ColumnarOutputWriter]]s.
    *
    * @param path Path to write the file.
@@ -57,7 +57,7 @@ abstract class ColumnarOutputWriterFactory extends Serializable {
 /**
  * This is used to write columnar data to a file system. Subclasses of [[ColumnarOutputWriter]]
  * must provide a zero-argument constructor. This is the columnar version of
- * [[org.apache.spark.sql.execution.datasources.OutputWriter]].
+ * `org.apache.spark.sql.execution.datasources.OutputWriter`.
  */
 abstract class ColumnarOutputWriter(path: String, context: TaskAttemptContext,
     dataSchema: StructType, rangeName: String) extends HostBufferConsumer {
@@ -133,8 +133,8 @@ abstract class ColumnarOutputWriter(path: String, context: TaskAttemptContext,
   /**
    * Writes the columnar batch and returns the time in ns taken to write
    *
-   * @param batch - Columnar batch that needs to be written
-   * @return - time in ns taken to write the batch
+   * @param batch Columnar batch that needs to be written
+   * @return time in ns taken to write the batch
    */
   private[this] def writeBatch(batch: ColumnarBatch): Long = {
     var needToCloseBatch = true

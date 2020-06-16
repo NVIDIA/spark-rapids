@@ -24,7 +24,7 @@ import org.apache.spark.sql.execution.metric.{SQLMetric, SQLMetrics}
 import org.apache.spark.util.SerializableConfiguration
 
 /**
- * [[ColumnarWriteTaskStatsTracker]] implementation that produces [[WriteTaskStats]]
+ * [[ColumnarWriteTaskStatsTracker]] implementation that produces `WriteTaskStats`
  * and tracks writing times per task.
  */
 class GpuWriteTaskStatsTracker(
@@ -43,7 +43,7 @@ class GpuWriteTaskStatsTracker(
 /**
  * Simple [[ColumnarWriteJobStatsTracker]] implementation that's serializable, capable of
  * instantiating [[GpuWriteTaskStatsTracker]] on executors and processing the
- * [[WriteTaskStats]] they produce by aggregating the metrics and posting them
+ * `WriteTaskStats` they produce by aggregating the metrics and posting them
  * as DriverMetricUpdates.
  */
 class GpuWriteJobStatsTracker(

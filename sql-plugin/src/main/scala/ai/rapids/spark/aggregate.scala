@@ -218,18 +218,18 @@ class GpuSortAggregateMeta(
   * - it doesn't support strings in the grouping key
   * - it doesn't support count(col1, col2, ..., colN)
   * - it doesn't support distinct
-  * @param requiredChildDistributionExpressions - this is unchanged by the GPU. It is used in
-  *                                               EnsureRequirements to be able to add shuffle nodes
-  * @param groupingExpressions - The expressions that, when applied to the input batch, return the
-  *                              grouping key
-  * @param aggregateExpressions - The GpuAggregateExpression instances for this node
-  * @param aggregateAttributes - References to each GpuAggregateExpression (attribute references)
-  * @param initialInputBufferOffset - this is not used in the GPU version, but it's used to offset
-  *                                   the slot in the aggregation buffer that aggregates should
-  *                                   start referencing
-  * @param resultExpressions - the expected output expression of this hash aggregate (which this
-  *                            node should project)
-  * @param child - incoming plan (where we get input columns from)
+  * @param requiredChildDistributionExpressions this is unchanged by the GPU. It is used in
+  *                                             EnsureRequirements to be able to add shuffle nodes
+  * @param groupingExpressions The expressions that, when applied to the input batch, return the
+  *                            grouping key
+  * @param aggregateExpressions The GpuAggregateExpression instances for this node
+  * @param aggregateAttributes References to each GpuAggregateExpression (attribute references)
+  * @param initialInputBufferOffset this is not used in the GPU version, but it's used to offset
+  *                                 the slot in the aggregation buffer that aggregates should
+  *                                 start referencing
+  * @param resultExpressions the expected output expression of this hash aggregate (which this
+  *                          node should project)
+  * @param child incoming plan (where we get input columns from)
   */
 case class GpuHashAggregateExec(requiredChildDistributionExpressions: Option[Seq[GpuExpression]],
                            groupingExpressions: Seq[GpuExpression],
@@ -541,8 +541,8 @@ case class GpuHashAggregateExec(requiredChildDistributionExpressions: Option[Seq
   /**
     * concatenateBatches - given two ColumnarBatch instances, return a sequence of GpuColumnVector
     * that is the concatenated columns of the two input batches.
-    * @param aggregatedInputCb - this is an incoming batch
-    * @param aggregatedCb - this is a batch that was kept for concatenation
+    * @param aggregatedInputCb this is an incoming batch
+    * @param aggregatedCb this is a batch that was kept for concatenation
     * @return Seq[GpuColumnVector] with concatenated vectors
     */
   private def concatenateBatches(aggregatedInputCb: ColumnarBatch, aggregatedCb: ColumnarBatch,
@@ -576,8 +576,8 @@ case class GpuHashAggregateExec(requiredChildDistributionExpressions: Option[Seq
   private lazy val completeMode = uniqueModes.contains(Complete)
 
   /**
-    * getCudfAggregates returns a sequence of [[cudf.Aggregate]], given the current mode
-    * [[AggregateMode]], and a sequence of all expressions for this [[GpuHashAggregateExec]]
+    * getCudfAggregates returns a sequence of `cudf.Aggregate`, given the current mode
+    * `AggregateMode`, and a sequence of all expressions for this [[GpuHashAggregateExec]]
     * node, we get all the expressions as that's important for us to be able to resolve the current
     * ordinal for this cudf aggregate.
     *
@@ -586,8 +586,8 @@ case class GpuHashAggregateExec(requiredChildDistributionExpressions: Option[Seq
     * avg will be Seq(sum, count) for Partial mode, but Seq(sum, sum) for other modes
     * count will be Seq(count) for Partial mode, but Seq(sum) for other modes
     *
-    * @return - Seq of [[cudf.Aggregate]], with one or more aggregates that correspond to each
-    *           expression in allExpressions
+    * @return Seq of `cudf.Aggregate`, with one or more aggregates that correspond to each
+    *         expression in allExpressions
     */
   def setupReferences(childAttr: AttributeSeq,
       groupingExpressions: Seq[GpuExpression],
