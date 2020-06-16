@@ -18,13 +18,12 @@
 package org.apache.spark.sql.rapids.execution
 
 import java.util
-
 import ai.rapids.cudf.NvtxColor
 import ai.rapids.spark.{GpuMetricNames, NvtxWithMetrics}
-
 import org.apache.spark._
+
 import org.apache.spark.rdd.RDD
-import org.apache.spark.sql.execution.{CoalescedPartitioner, CoalescedPartitionSpec, PartialMapperPartitionSpec, PartialReducerPartitionSpec, ShufflePartitionSpec}
+import org.apache.spark.sql.execution.{CoalescedPartitioner, CoalescedPartitionSpec, PartialMapperPartitionSpec, PartialReducerPartitionSpec, ShuffledRowRDDPartition, ShufflePartitionSpec}
 import org.apache.spark.sql.execution.metric.{SQLMetric, SQLShuffleReadMetricsReporter}
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
@@ -139,12 +138,22 @@ class ShuffledBatchRDD(
 
   override def getPreferredLocations(partition: Partition): Seq[String] = {
     val tracker = SparkEnv.get.mapOutputTracker.asInstanceOf[MapOutputTrackerMaster]
-    val dep = dependencies.head.asInstanceOf[ShuffleDependency[_, _, _]]
-    tracker.getPreferredLocationsForShuffle(dep, partition.index)
+    partition.asInstanceOf[ShuffledBatchRDDPartition].spec match {
+      case CoalescedPartitionSpec(startReducerIndex, endReducerIndex) =>
+        // TODO order by partition size.
+        startReducerIndex.until(endReducerIndex).flatMap { reducerIndex =>
+          tracker.getPreferredLocationsForShuffle(dependency, reducerIndex)
+        }
+
+      case PartialReducerPartitionSpec(_, startMapIndex, endMapIndex) =>
+        tracker.getMapLocation(dependency, startMapIndex, endMapIndex)
+
+      case PartialMapperPartitionSpec(mapIndex, _, _) =>
+        tracker.getMapLocation(dependency, mapIndex, mapIndex + 1)
+    }
   }
 
   override def compute(split: Partition, context: TaskContext): Iterator[ColumnarBatch] = {
-    val shuffledRowPartition = split.asInstanceOf[ShuffledBatchRDDPartition]
     val tempMetrics = context.taskMetrics().createTempShuffleReadMetrics()
     // `SQLShuffleReadMetricsReporter` will update its own metrics for SQL exchange operator,
     // as well as the `tempMetrics` for basic shuffle metrics.
