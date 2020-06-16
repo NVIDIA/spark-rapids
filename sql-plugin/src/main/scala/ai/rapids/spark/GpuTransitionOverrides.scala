@@ -48,6 +48,8 @@ class GpuTransitionOverrides extends Rule[SparkPlan] {
 
         case HostColumnarToGpu(r2c: RowToColumnarExec, goal) =>
           GpuRowToColumnarExec(optimizeGpuPlanTransitions(r2c.child), goal)
+        case HostColumnarToGpu(s @ BroadcastQueryStageExec(_, _: GpuExec), _) =>
+          optimizeGpuPlanTransitions(s)
         case HostColumnarToGpu(s @ ShuffleQueryStageExec(_, _: GpuExec), _) =>
           optimizeGpuPlanTransitions(s)
         case HostColumnarToGpu(child: GpuExec, _) =>
@@ -176,8 +178,7 @@ class GpuTransitionOverrides extends Rule[SparkPlan] {
    * Inserts a transition to be running on the GPU from CPU columnar
    */
   private def insertColumnarToGpu(plan: SparkPlan): SparkPlan = {
-    if (plan.supportsColumnar && !plan.isInstanceOf[GpuExec]
-        && !plan.isInstanceOf[BroadcastQueryStageExec]) {
+    if (plan.supportsColumnar && !plan.isInstanceOf[GpuExec]) {
       HostColumnarToGpu(insertColumnarFromGpu(plan), TargetSize(conf.gpuTargetBatchSizeBytes))
     } else {
       plan.withNewChildren(plan.children.map(insertColumnarToGpu))
