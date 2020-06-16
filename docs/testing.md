@@ -88,3 +88,31 @@ Next you can start to run the tests.
 durations.run(new ai.rapids.spark.JoinsSuite)
 ...
 ```
+
+## Adding Spark as a submodule of the RAPIDS Accelerator
+
+It can sometimes be convenient to add Apache Spark as a submodule of the RAPIDS Accelerator to 
+speed up development cycles. This avoids the need to `mvn install` Spark after making code changes.
+
+First, clone your fork of Apache Spark into this project. It is necessarily to run a 
+one-off `mvn verify` to initialize the project. 
+
+```bash
+git clone git@github.com:yournamehere/spark.git
+cd spark
+mvn clean verify -DskipTests
+```
+
+The top-level Spark `pom.xml` must be modified to comment out the `maven-checkstyle-plugin` plugin
+because it fails to find the checkstyle configuration when run as a submodule of the accelerator.
+
+Build the project using the `local-spark` maven profile to verify that everything works as 
+expected. If you want to run tests as well then it will be necessary to follow instructions in 
+the Spark project to set up an environment that is capable of running the Spark tests.
+
+```bash
+mvn clean verify -DskipTests -Plocal-spark
+```
+
+At this point, it should be possible to modify code in both Spark and the plugin and run tests in 
+an IDE. The `local-spark` maven profile will need to be enabled in the IDE.

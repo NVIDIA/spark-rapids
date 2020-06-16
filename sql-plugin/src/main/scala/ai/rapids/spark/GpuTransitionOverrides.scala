@@ -20,6 +20,7 @@ import org.apache.spark.sql.catalyst.expressions.{Ascending, Attribute, Attribut
 import org.apache.spark.sql.catalyst.expressions.objects.CreateExternalRow
 import org.apache.spark.sql.catalyst.rules.Rule
 import org.apache.spark.sql.execution._
+import org.apache.spark.sql.execution.adaptive.{AdaptiveSparkPlanExec, BroadcastQueryStageExec, CustomShuffleReaderExec, QueryStageExec, Reoptimizing, ShuffleQueryStageExec}
 import org.apache.spark.sql.execution.columnar.InMemoryTableScanExec
 import org.apache.spark.sql.execution.command.ExecutedCommandExec
 import org.apache.spark.sql.execution.datasources.v2.DataSourceV2ScanExecBase
@@ -33,13 +34,28 @@ import org.apache.spark.sql.rapids.GpuFileSourceScanExec
 class GpuTransitionOverrides extends Rule[SparkPlan] {
   var conf: RapidsConf = null
 
-  def optimizeGpuPlanTransitions(plan: SparkPlan): SparkPlan = plan match {
-    case HostColumnarToGpu(r2c: RowToColumnarExec, goal) =>
-      GpuRowToColumnarExec(optimizeGpuPlanTransitions(r2c.child), goal)
-    case ColumnarToRowExec(bb: GpuBringBackToHost) =>
-      GpuColumnarToRowExec(optimizeGpuPlanTransitions(bb.child))
-    case p =>
-      p.withNewChildren(p.children.map(optimizeGpuPlanTransitions))
+  def optimizeGpuPlanTransitions(plan: SparkPlan): SparkPlan = {
+    println(s"optimizeGpuPlanTransitions:\n$plan")
+    plan match {
+
+        case ColumnarToRowExec(bb: GpuBringBackToHost) =>
+          GpuColumnarToRowExec(optimizeGpuPlanTransitions(bb.child))
+        case ColumnarToRowExec(s @ ShuffleQueryStageExec(_, _: GpuExec)) =>
+          GpuColumnarToRowExec(optimizeGpuPlanTransitions(s))
+
+        case GpuColumnarToRowExec(bb: GpuBringBackToHost, _) =>
+          GpuColumnarToRowExec(optimizeGpuPlanTransitions(bb.child))
+
+        case HostColumnarToGpu(r2c: RowToColumnarExec, goal) =>
+          GpuRowToColumnarExec(optimizeGpuPlanTransitions(r2c.child), goal)
+        case HostColumnarToGpu(s @ ShuffleQueryStageExec(_, _: GpuExec), _) =>
+          optimizeGpuPlanTransitions(s)
+        case HostColumnarToGpu(child: GpuExec, _) =>
+          optimizeGpuPlanTransitions(child)
+
+        case p =>
+          p.withNewChildren(p.children.map(optimizeGpuPlanTransitions))
+      }
   }
 
   def optimizeCoalesce(plan: SparkPlan): SparkPlan = plan match {
@@ -160,7 +176,8 @@ class GpuTransitionOverrides extends Rule[SparkPlan] {
    * Inserts a transition to be running on the GPU from CPU columnar
    */
   private def insertColumnarToGpu(plan: SparkPlan): SparkPlan = {
-    if (plan.supportsColumnar && !plan.isInstanceOf[GpuExec]) {
+    if (plan.supportsColumnar && !plan.isInstanceOf[GpuExec]
+        && !plan.isInstanceOf[BroadcastQueryStageExec]) {
       HostColumnarToGpu(insertColumnarFromGpu(plan), TargetSize(conf.gpuTargetBatchSizeBytes))
     } else {
       plan.withNewChildren(plan.children.map(insertColumnarToGpu))
@@ -260,20 +277,30 @@ class GpuTransitionOverrides extends Rule[SparkPlan] {
   }
 
   override def apply(plan: SparkPlan): SparkPlan = {
+    // TODO remove this temp debug logging
+    println(s"GpuTransitionOverrides [AQE=${AdaptiveSparkPlanExec.mode}]:\n$plan")
     this.conf = new RapidsConf(plan.conf)
-    if (conf.isSqlEnabled) {
-      var updatedPlan = insertHashOptimizeSorts(plan)
-      updatedPlan = insertCoalesce(insertColumnarFromGpu(updatedPlan))
-      updatedPlan = optimizeCoalesce(optimizeGpuPlanTransitions(updatedPlan))
-      if (conf.exportColumnarRdd) {
-        updatedPlan = detectAndTagFinalColumnarOutput(updatedPlan)
+    val modifiedPlan = if (conf.isSqlEnabled) {
+
+      AdaptiveSparkPlanExec.mode match {
+        //case Some(Reoptimizing()) => plan
+        case _ =>
+          var updatedPlan = insertHashOptimizeSorts(plan)
+          updatedPlan = insertCoalesce(insertColumnarFromGpu(updatedPlan))
+          updatedPlan = optimizeCoalesce(optimizeGpuPlanTransitions(updatedPlan))
+          if (conf.exportColumnarRdd) {
+            updatedPlan = detectAndTagFinalColumnarOutput(updatedPlan)
+          }
+          if (conf.isTestEnabled) {
+            assertIsOnTheGpu(updatedPlan, conf)
+          }
+          updatedPlan
       }
-      if (conf.isTestEnabled) {
-        assertIsOnTheGpu(updatedPlan, conf)
-      }
-      updatedPlan
     } else {
       plan
     }
+    // TODO remove this temp debug logging
+    println(s"GpuTransitionOverrides [AQE=${AdaptiveSparkPlanExec.mode}] returning:\n$modifiedPlan")
+    modifiedPlan
   }
 }

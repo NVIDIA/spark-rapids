@@ -31,6 +31,7 @@ import org.apache.spark.sql.catalyst.plans.physical._
 import org.apache.spark.sql.catalyst.rules.Rule
 import org.apache.spark.sql.connector.read.Scan
 import org.apache.spark.sql.execution._
+import org.apache.spark.sql.execution.adaptive.{AdaptiveSparkPlanExec, CustomShuffleReaderExec}
 import org.apache.spark.sql.execution.aggregate.{HashAggregateExec, SortAggregateExec}
 import org.apache.spark.sql.execution.command.{DataWritingCommand, DataWritingCommandExec}
 import org.apache.spark.sql.execution.datasources.{HadoopFsRelation, InsertIntoHadoopFsRelationCommand}
@@ -1692,14 +1693,28 @@ object GpuOverrides {
       "Window-operator backend",
       (windowOp, conf, p, r) =>
         new GpuWindowExecMeta(windowOp, conf, p, r)
-    )
+    ),
+    exec[CustomShuffleReaderExec]("", (exec, conf, p, r) =>
+      new SparkPlanMeta[CustomShuffleReaderExec](exec, conf, p, r) {
+        override def tagPlanForGpu(): Unit = {
+          if (!exec.child.supportsColumnar) {
+            willNotWorkOnGpu("custom shuffle reader not columnar")
+          }
+        }
+
+        override def convertToGpu(): GpuExec = {
+          GpuCustomShuffleReaderExec(childPlans.head.convertIfNeeded(), Seq.empty, "")
+        }
+      })
   ).map(r => (r.getClassFor.asSubclass(classOf[SparkPlan]), r)).toMap
 }
 
 case class GpuOverrides() extends Rule[SparkPlan] with Logging {
   override def apply(plan: SparkPlan) :SparkPlan = {
+    // TODO remove this temp debug logging
+    println(s"GpuOverrides [AQE=${AdaptiveSparkPlanExec.mode}]:\n$plan")
     val conf = new RapidsConf(plan.conf)
-    if (conf.isSqlEnabled) {
+    val modifiedPlan = if (conf.isSqlEnabled) {
       val wrap = GpuOverrides.wrapPlan(plan, conf, None)
       wrap.tagForGpu()
       wrap.runAfterTagRules()
@@ -1712,6 +1727,9 @@ case class GpuOverrides() extends Rule[SparkPlan] with Logging {
     } else {
       plan
     }
+    // TODO remove this temp debug logging
+    println(s"GpuOverrides [AQE=${AdaptiveSparkPlanExec.mode}] returning:\n$modifiedPlan")
+    modifiedPlan
   }
 
   private final class SortConfKeysAndIncompat extends ConfKeysAndIncompat {

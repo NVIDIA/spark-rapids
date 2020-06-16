@@ -17,10 +17,11 @@
 package ai.rapids.spark
 
 import scala.collection.AbstractIterator
+import scala.concurrent.Future
 
 import ai.rapids.spark.RapidsPluginImplicits._
+import org.apache.spark.{MapOutputStatistics, ShuffleDependency}
 
-import org.apache.spark.ShuffleDependency
 import org.apache.spark.rdd.RDD
 import org.apache.spark.serializer.Serializer
 import org.apache.spark.sql.catalyst.InternalRow
@@ -28,7 +29,7 @@ import org.apache.spark.sql.catalyst.errors._
 import org.apache.spark.sql.catalyst.expressions.Attribute
 import org.apache.spark.sql.catalyst.plans.physical.Partitioning
 import org.apache.spark.sql.execution.SparkPlan
-import org.apache.spark.sql.execution.exchange.{Exchange, ShuffleExchangeExec}
+import org.apache.spark.sql.execution.exchange.{Exchange, ShuffleExchangeExec, ShuffleExchangeExecLike}
 import org.apache.spark.sql.execution.metric._
 import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.rapids.GpuShuffleDependency
@@ -60,16 +61,37 @@ class GpuShuffleMeta(
 case class GpuShuffleExchangeExec(
     override val outputPartitioning: Partitioning,
     child: SparkPlan,
-    canChangeNumPartitions: Boolean = true) extends Exchange with GpuExec {
+    canChangeNumPartitions: Boolean = true)
+  extends Exchange with ShuffleExchangeExecLike with GpuExec {
 
   /**
    * Lots of small output batches we want to group together.
    */
   override def coalesceAfter: Boolean = true
 
+
+  override def shuffleDependencyColumnar: ShuffleDependency[Int, ColumnarBatch, ColumnarBatch] = {
+    shuffleBatchDependencyColumnar
+  }
+
+  // 'mapOutputStatisticsFuture' is only needed when enable AQE.
+  @transient lazy val mapOutputStatisticsFuture: Future[MapOutputStatistics] = {
+    if (inputBatchRDD.getNumPartitions == 0) {
+      Future.successful(null)
+    } else {
+      sparkContext.submitMapStage(shuffleBatchDependencyColumnar)
+    }
+  }
+
+  override def shuffleDependency: ShuffleDependency[Int, InternalRow, InternalRow] = {
+    throw new IllegalStateException()
+  }
+
+  override def asExchange: Exchange = this
+
   private lazy val writeMetrics =
     SQLShuffleWriteMetricsReporter.createShuffleWriteMetrics(sparkContext)
-  private lazy val readMetrics =
+  lazy val readMetrics =
     SQLShuffleReadMetricsReporter.createShuffleReadMetrics(sparkContext)
   override lazy val additionalMetrics : Map[String, SQLMetric] = Map(
     "dataSize" -> SQLMetrics.createSizeMetric(sparkContext, "data size")
@@ -88,7 +110,7 @@ case class GpuShuffleExchangeExec(
    * the returned ShuffleDependency will be the input of shuffle.
    */
   @transient
-  lazy val shuffleBatchDependency : ShuffleDependency[Int, ColumnarBatch, ColumnarBatch] = {
+  lazy val shuffleBatchDependencyColumnar : ShuffleDependency[Int, ColumnarBatch, ColumnarBatch] = {
     GpuShuffleExchangeExec.prepareBatchShuffleDependency(
       inputBatchRDD,
       child.output,
@@ -99,7 +121,8 @@ case class GpuShuffleExchangeExec(
   }
 
   def createShuffledBatchRDD(partitionStartIndices: Option[Array[Int]]): ShuffledBatchRDD = {
-    new ShuffledBatchRDD(shuffleBatchDependency, metrics ++ readMetrics, partitionStartIndices)
+    new ShuffledBatchRDD(shuffleBatchDependencyColumnar, metrics ++ readMetrics,
+      partitionStartIndices)
   }
 
   /**

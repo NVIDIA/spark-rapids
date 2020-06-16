@@ -28,15 +28,15 @@ import ai.rapids.spark._
 import ai.rapids.spark.GpuMetricNames._
 import ai.rapids.spark.RapidsPluginImplicits._
 import com.google.common.util.concurrent.ThreadFactoryBuilder
-
 import org.apache.spark.{broadcast, SparkException}
+
 import org.apache.spark.launcher.SparkLauncher
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.expressions.Attribute
 import org.apache.spark.sql.catalyst.plans.physical.{BroadcastMode, BroadcastPartitioning, Partitioning}
 import org.apache.spark.sql.execution.{SparkPlan, SQLExecution}
-import org.apache.spark.sql.execution.exchange.{BroadcastExchangeExec, Exchange}
+import org.apache.spark.sql.execution.exchange.{BroadcastExchangeExec, BroadcastExchangeExecLike, Exchange}
 import org.apache.spark.sql.execution.joins.BroadcastHashJoinExec
 import org.apache.spark.sql.execution.metric.SQLMetrics
 import org.apache.spark.sql.internal.{SQLConf, StaticSQLConf}
@@ -202,7 +202,9 @@ class GpuBroadcastMeta(
     if (!TrampolineUtil.isHashedRelation(exchange.mode)) {
       willNotWorkOnGpu("Broadcast exchange is only supported for HashedJoin")
     }
-    if (!parent.exists(_.wrapped.isInstanceOf[BroadcastHashJoinExec])) {
+
+    // when called as part of query stage planning with AQE enabled, parent could be None
+    if (parent.nonEmpty && !parent.exists(_.wrapped.isInstanceOf[BroadcastHashJoinExec])) {
       willNotWorkOnGpu("BroadcastExchange only works on the GPU if being used " +
         "with a GPU version of BroadcastHashJoinExec")
     }
@@ -214,13 +216,15 @@ class GpuBroadcastMeta(
 
 case class GpuBroadcastExchangeExec(
     mode: BroadcastMode,
-    child: SparkPlan) extends Exchange with GpuExec {
+    child: SparkPlan) extends Exchange with BroadcastExchangeExecLike with GpuExec {
 
   override lazy val additionalMetrics = Map(
     "dataSize" -> SQLMetrics.createSizeMetric(sparkContext, "data size"),
     "collectTime" -> SQLMetrics.createNanoTimingMetric(sparkContext, "time to collect"),
     "buildTime" -> SQLMetrics.createNanoTimingMetric(sparkContext, "time to build"),
     "broadcastTime" -> SQLMetrics.createNanoTimingMetric(sparkContext, "time to broadcast"))
+
+  override def asExchange(): Exchange = this
 
   override def outputPartitioning: Partitioning = BroadcastPartitioning(mode)
 
