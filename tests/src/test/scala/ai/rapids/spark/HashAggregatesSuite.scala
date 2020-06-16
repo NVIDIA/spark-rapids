@@ -896,9 +896,7 @@ class HashAggregatesSuite extends SparkQueryCompareTestSuite {
       count("*"))
   }
 
-  testSparkResultsAreEqual("Agg expression with filter fall back", longsFromCSVDf,
-    execsAllowedNonGpu = Seq("HashAggregateExec", "AggregateExpression", "AttributeReference",
-        "Alias", "Literal", "Count", "GreaterThan")) {
+  testSparkResultsAreEqual("Agg expression with filter", longsFromCSVDf) {
     frame => frame.selectExpr("count(1) filter (where longs > 20)")
   }
 

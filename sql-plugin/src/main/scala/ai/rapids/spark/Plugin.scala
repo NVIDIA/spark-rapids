@@ -17,27 +17,27 @@
 package ai.rapids.spark
 
 import java.util
-import java.util.concurrent.atomic.{AtomicLong, AtomicReference}
+import java.util.concurrent.atomic.{AtomicBoolean, AtomicReference}
 
 import scala.collection.JavaConverters._
 import scala.collection.mutable.ArrayBuffer
 
 import ai.rapids.cudf._
 import ai.rapids.spark.RapidsPluginImplicits._
-import org.apache.commons.lang3.mutable.MutableLong
 
 import org.apache.spark.{SparkConf, SparkContext, TaskContext}
 import org.apache.spark.api.plugin.{DriverPlugin, ExecutorPlugin, PluginContext, SparkPlugin}
 import org.apache.spark.internal.Logging
 import org.apache.spark.serializer.{JavaSerializer, KryoSerializer}
 import org.apache.spark.sql.SparkSessionExtensions
+import org.apache.spark.sql.catalyst.expressions.Expression
 import org.apache.spark.sql.catalyst.plans.physical.Partitioning
 import org.apache.spark.sql.catalyst.rules.Rule
 import org.apache.spark.sql.execution._
 import org.apache.spark.sql.internal.StaticSQLConf
 import org.apache.spark.sql.rapids.GpuShuffleEnv
+import org.apache.spark.sql.util.QueryExecutionListener
 import org.apache.spark.sql.vectorized.ColumnarBatch
-import org.apache.spark.util.TaskCompletionListener
 
 trait GpuPartitioning extends Partitioning {
 
@@ -253,6 +253,84 @@ class RapidsExecutorPlugin extends ExecutorPlugin with Logging {
   override def shutdown(): Unit = {
     GpuSemaphore.shutdown()
   }
+}
+
+object ExecutionPlanCaptureCallback {
+  private[this] val shouldCapture: AtomicBoolean = new AtomicBoolean(false)
+  private[this] val execPlan: AtomicReference[SparkPlan] = new AtomicReference[SparkPlan]()
+
+  private def captureIfNeeded(qe: QueryExecution): Unit = {
+    if (shouldCapture.get()) {
+      execPlan.set(qe.executedPlan)
+    }
+  }
+
+  def startCapture(): Unit = {
+    execPlan.set(null)
+    shouldCapture.set(true)
+  }
+
+  def getResultWithTimeout(timeoutMs: Long = 2000): Option[SparkPlan] = {
+    try {
+      val endTime = System.currentTimeMillis() + timeoutMs
+      var plan = execPlan.getAndSet(null)
+      while (plan == null) {
+        if (System.currentTimeMillis() > endTime) {
+          return None
+        }
+        Thread.sleep(10)
+        plan = execPlan.getAndSet(null)
+      }
+      Some(plan)
+    } finally {
+      shouldCapture.set(false)
+      execPlan.set(null)
+    }
+  }
+
+  def assertCapturedAndGpuFellBack(fallbackCpuClass: String, timeoutMs: Long = 2000): Unit = {
+    val gpuPlan = getResultWithTimeout(timeoutMs=timeoutMs)
+    assert(gpuPlan.isDefined, "Did not capture a GPU plan")
+    assertDidFallBack(gpuPlan.get, fallbackCpuClass)
+  }
+
+  def assertDidFallBack(gpuPlan: SparkPlan, fallbackCpuClass: String): Unit = {
+    assert(gpuPlan.find(didFallBack(_, fallbackCpuClass)).isDefined,
+      s"Could not find $fallbackCpuClass in the GPU plan\n$gpuPlan")
+  }
+
+  private def getBaseNameFromClass(planClassStr: String): String = {
+    val firstDotIndex = planClassStr.lastIndexOf(".")
+    if (firstDotIndex != -1) planClassStr.substring(firstDotIndex + 1) else planClassStr
+  }
+
+  private def didFallBack(exp: Expression, fallbackCpuClass: String): Boolean = {
+    if (!exp.isInstanceOf[GpuExpression] &&
+      getBaseNameFromClass(exp.getClass.getName) == fallbackCpuClass) {
+      true
+    } else {
+      exp.children.exists(didFallBack(_, fallbackCpuClass))
+    }
+  }
+
+  private def didFallBack(plan: SparkPlan, fallbackCpuClass: String): Boolean = {
+    if (!plan.isInstanceOf[GpuExec] &&
+      getBaseNameFromClass(plan.getClass.getName) == fallbackCpuClass) {
+      true
+    } else {
+      plan.expressions.exists(didFallBack(_, fallbackCpuClass))
+    }
+  }
+}
+
+class ExecutionPlanCaptureCallback extends QueryExecutionListener {
+  import ExecutionPlanCaptureCallback._
+
+  override def onSuccess(funcName: String, qe: QueryExecution, durationNs: Long): Unit =
+    captureIfNeeded(qe)
+
+  override def onFailure(funcName: String, qe: QueryExecution, exception: Exception): Unit =
+    captureIfNeeded(qe)
 }
 
 /**

@@ -23,7 +23,7 @@ import org.apache.spark.sql.vectorized.ColumnarBatch
 
 /**
  * An expression that returns monotonically increasing 64-bit integers just like
- * [[org.apache.spark.sql.catalyst.expressions.MonotonicallyIncreasingID]]
+ * `org.apache.spark.sql.catalyst.expressions.MonotonicallyIncreasingID`
  *
  * The generated ID is guaranteed to be monotonically increasing and unique, but not consecutive.
  * This implementations should match what spark does which is to put the partition ID in the upper

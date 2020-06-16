@@ -17,6 +17,7 @@
 package ai.rapids.spark
 
 import java.nio.{ByteBuffer, ByteOrder}
+import java.util.Optional
 
 import scala.collection.mutable.ArrayBuffer
 
@@ -126,6 +127,46 @@ object MetaUtils {
       buffer: BaseDeviceMemoryBuffer): Int = {
     SubBufferMeta.createSubBufferMeta(fbb, buffer.getAddress - baseAddress, buffer.getLength)
   }
+
+  /**
+   * Construct a columnar batch from a contiguous device buffer and a
+   * `TableMeta` message describing the schema of the buffer data.
+   * @param deviceBuffer contiguous buffer
+   * @param meta schema metadata
+   * @return columnar batch that must be closed by the caller
+   */
+  def getBatchFromMeta(deviceBuffer: DeviceMemoryBuffer, meta: TableMeta): ColumnarBatch = {
+    val columns = new ArrayBuffer[GpuColumnVector](meta.columnMetasLength())
+    try {
+      val columnMeta = new ColumnMeta
+      (0 until meta.columnMetasLength).foreach { i =>
+        columns.append(makeColumn(deviceBuffer, meta.columnMetas(columnMeta, i)))
+      }
+      new ColumnarBatch(columns.toArray, meta.rowCount.toInt)
+    } catch {
+      case e: Exception =>
+        columns.foreach(_.close())
+        throw e
+    }
+  }
+
+  private def makeColumn(buffer: DeviceMemoryBuffer, meta: ColumnMeta): GpuColumnVector = {
+    def getSubBuffer(s: SubBufferMeta): DeviceMemoryBuffer =
+      if (s != null) buffer.slice(s.offset, s.length) else null
+
+    assert(meta.childrenLength() == 0, "child columns are not yet supported")
+    val dtype = DType.fromNative(meta.dtype)
+    val nullCount = if (meta.nullCount >= 0) {
+      Optional.of(java.lang.Long.valueOf(meta.nullCount))
+    } else {
+      Optional.empty[java.lang.Long]
+    }
+    val dataBuffer = getSubBuffer(meta.data)
+    val validBuffer = getSubBuffer(meta.validity)
+    val offsetsBuffer = getSubBuffer(meta.offsets)
+    GpuColumnVector.from(new ColumnVector(dtype, meta.rowCount, nullCount,
+      dataBuffer, validBuffer, offsetsBuffer))
+  }
 }
 
 class DirectByteBufferFactory extends FlatBufferBuilder.ByteBufferFactory {
@@ -139,10 +180,10 @@ object ShuffleMetadata extends Logging{
   val bbFactory = new DirectByteBufferFactory
 
   /**
-    * Given a sequence of [[TableMeta]], re-lay the metas using the flat buffer builder in [[fbb]].
-    * @param fbb - builder to use
-    * @param tables - sequence of [[TableMeta]] to copy
-    * @return - an array of flat buffer offsets for the copied [[TableMeta]]s
+    * Given a sequence of `TableMeta`, re-lay the metas using the flat buffer builder in `fbb`.
+    * @param fbb builder to use
+    * @param tables sequence of `TableMeta` to copy
+    * @return an array of flat buffer offsets for the copied `TableMeta`s
     */
   def copyTables(fbb: FlatBufferBuilder, tables: Seq[TableMeta]): Array[Int] = {
     tables.map { tableMeta =>
@@ -362,11 +403,8 @@ object ShuffleMetadata extends Logging{
 
 
   /**
-    * Utility function to transfer a [[TableMeta]] to the heap,
-    * TODO: I would like to look for an easier way, perhaps just a memcpy will do.
-    *
-    * @param meta - [[TableMeta]] to copy
-    * @return - a copy of [[meta]] on the JVM heap
+    * Utility function to transfer a `TableMeta` to the heap,
+    * @todo we would like to look for an easier way, perhaps just a memcpy will do.
     */
   def copyTableMetaToHeap(meta: TableMeta): TableMeta = {
     val fbb = ShuffleMetadata.getHeapBuilder

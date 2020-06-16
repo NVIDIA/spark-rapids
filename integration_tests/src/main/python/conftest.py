@@ -176,6 +176,9 @@ def _get_jvm_session(spark):
 def _get_jvm(spark):
     return spark.sparkContext._jvm
 
+def spark_jvm():
+    return _get_jvm(spark)
+
 class TpchRunner:
   def __init__(self, tpch_format, tpch_path):
     self.tpch_format = tpch_format

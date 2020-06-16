@@ -23,7 +23,7 @@ import org.apache.spark.sql.vectorized.ColumnarBatch
 
 /**
  * An expression that returns the current partition id just like
- * [[org.apache.spark.sql.catalyst.expressions.SparkPartitionID]]
+ * `org.apache.spark.sql.catalyst.expressions.SparkPartitionID`
  */
 case class GpuSparkPartitionID() extends GpuLeafExpression {
   /**

@@ -31,13 +31,13 @@ import org.apache.spark.util.CompletionIterator
 
 trait ShuffleMetricsUpdater {
   /**
-    * Trait used as a way to expose the [[ShuffleReadMetricsReporter]] to the iterator.
-    * @param fetchWaitTimeInMs - this matches the CPU name (except for the units) but it is actually
+    * Trait used as a way to expose the `ShuffleReadMetricsReporter` to the iterator.
+    * @param fetchWaitTimeInMs this matches the CPU name (except for the units) but it is actually
     *                          the aggreagate amount of time a task is blocked, not working on
     *                          anything, waiting for data.
-    * @param remoteBlocksFetched - aggregate of number of [[ShuffleBlockId]]s fetched.
-    * @param remoteBytesRead - aggregate size of all contiguous buffers received
-    * @param rowsFetched - aggregate of number of rows received
+    * @param remoteBlocksFetched aggregate of number of `ShuffleBlockId`s fetched.
+    * @param remoteBytesRead aggregate size of all contiguous buffers received
+    * @param rowsFetched aggregate of number of rows received
     */
   def update(
     fetchWaitTimeInMs: Long,

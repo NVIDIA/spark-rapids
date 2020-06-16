@@ -245,12 +245,12 @@ case class HostColumnarToGpu(child: SparkPlan, goal: CoalesceGoal)
 
   /**
     * Returns an RDD[ColumnarBatch] that when mapped over will produce GPU-side column vectors
-    * that are expected to be closed by its caller, not [[HostcolumnarToGpu]].
+    * that are expected to be closed by its caller, not [[HostColumnarToGpu]].
     *
     * The expectation is that the only valid instantiation of this node is
     * as a child of a GPU exec node.
     *
-    * @return an RDD of [[ColumnarBatch]]
+    * @return an RDD of `ColumnarBatch`
     */
   override protected def doExecuteColumnar(): RDD[ColumnarBatch] = {
 
