@@ -28,7 +28,7 @@ import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.errors._
 import org.apache.spark.sql.catalyst.expressions.Attribute
 import org.apache.spark.sql.catalyst.plans.physical.Partitioning
-import org.apache.spark.sql.execution.SparkPlan
+import org.apache.spark.sql.execution.{ShufflePartitionSpec, SparkPlan}
 import org.apache.spark.sql.execution.exchange.{Exchange, ShuffleExchangeExec, ShuffleExchangeExecLike}
 import org.apache.spark.sql.execution.metric._
 import org.apache.spark.sql.internal.SQLConf
@@ -120,11 +120,6 @@ case class GpuShuffleExchangeExec(
       writeMetrics)
   }
 
-  def createShuffledBatchRDD(partitionStartIndices: Option[Array[Int]]): ShuffledBatchRDD = {
-    new ShuffledBatchRDD(shuffleBatchDependencyColumnar, metrics ++ readMetrics,
-      partitionStartIndices)
-  }
-
   /**
    * Caches the created ShuffleBatchRDD so we can reuse that.
    */
@@ -136,7 +131,7 @@ case class GpuShuffleExchangeExec(
   protected override def doExecuteColumnar(): RDD[ColumnarBatch] = attachTree(this, "execute") {
     // Returns the same ShuffleRowRDD if this plan is used by multiple plans.
     if (cachedShuffleRDD == null) {
-      cachedShuffleRDD = createShuffledBatchRDD(None)
+      cachedShuffleRDD = new ShuffledBatchRDD(shuffleDependencyColumnar, metrics ++ readMetrics)
     }
     cachedShuffleRDD
   }

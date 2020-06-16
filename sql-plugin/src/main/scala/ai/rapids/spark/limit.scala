@@ -152,7 +152,7 @@ case class GpuCollectLimitExec(
       metrics ++ shuffleMetrics,
       metrics ++ writeMetrics)
 
-    val shuffled = new ShuffledBatchRDD(shuffleDependency, metrics ++ shuffleMetrics, None)
+    val shuffled = new ShuffledBatchRDD(shuffleDependency, metrics ++ shuffleMetrics)
     shuffled.mapPartitions(_.take(limit))
   }
 
