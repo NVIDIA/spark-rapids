@@ -317,7 +317,6 @@ def test_hash_query_max_bug(data_gen):
 
 
 @ignore_order
-@incompat
 @pytest.mark.parametrize('data_gen', [_grpkey_floats_with_nan_zero_grouping_keys,
                                       _grpkey_doubles_with_nan_zero_grouping_keys], ids=idfn)
 def test_hash_agg_with_nan_keys(data_gen):
