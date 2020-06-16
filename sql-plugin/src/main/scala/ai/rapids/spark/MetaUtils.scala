@@ -17,6 +17,7 @@
 package ai.rapids.spark
 
 import java.nio.{ByteBuffer, ByteOrder}
+import java.util.Optional
 
 import scala.collection.mutable.ArrayBuffer
 
@@ -125,6 +126,46 @@ object MetaUtils {
       baseAddress: Long,
       buffer: BaseDeviceMemoryBuffer): Int = {
     SubBufferMeta.createSubBufferMeta(fbb, buffer.getAddress - baseAddress, buffer.getLength)
+  }
+
+  /**
+   * Construct a columnar batch from a contiguous device buffer and a
+   * `TableMeta` message describing the schema of the buffer data.
+   * @param deviceBuffer contiguous buffer
+   * @param meta schema metadata
+   * @return columnar batch that must be closed by the caller
+   */
+  def getBatchFromMeta(deviceBuffer: DeviceMemoryBuffer, meta: TableMeta): ColumnarBatch = {
+    val columns = new ArrayBuffer[GpuColumnVector](meta.columnMetasLength())
+    try {
+      val columnMeta = new ColumnMeta
+      (0 until meta.columnMetasLength).foreach { i =>
+        columns.append(makeColumn(deviceBuffer, meta.columnMetas(columnMeta, i)))
+      }
+      new ColumnarBatch(columns.toArray, meta.rowCount.toInt)
+    } catch {
+      case e: Exception =>
+        columns.foreach(_.close())
+        throw e
+    }
+  }
+
+  private def makeColumn(buffer: DeviceMemoryBuffer, meta: ColumnMeta): GpuColumnVector = {
+    def getSubBuffer(s: SubBufferMeta): DeviceMemoryBuffer =
+      if (s != null) buffer.slice(s.offset, s.length) else null
+
+    assert(meta.childrenLength() == 0, "child columns are not yet supported")
+    val dtype = DType.fromNative(meta.dtype)
+    val nullCount = if (meta.nullCount >= 0) {
+      Optional.of(java.lang.Long.valueOf(meta.nullCount))
+    } else {
+      Optional.empty[java.lang.Long]
+    }
+    val dataBuffer = getSubBuffer(meta.data)
+    val validBuffer = getSubBuffer(meta.validity)
+    val offsetsBuffer = getSubBuffer(meta.offsets)
+    GpuColumnVector.from(new ColumnVector(dtype, meta.rowCount, nullCount,
+      dataBuffer, validBuffer, offsetsBuffer))
   }
 }
 
