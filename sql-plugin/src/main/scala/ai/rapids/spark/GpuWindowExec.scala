@@ -50,16 +50,15 @@ class GpuWindowExecMeta(windowExec: WindowExec,
    *         (i.e. whether result columns should be returned first).
    */
   def getWindowExpression: (Seq[NamedExpression], Boolean) = {
-    var resultColumnsOnly : Boolean = true
+    var resultColumnsOnly : Boolean = false
     val expr = try {
-      val winExpr = windowExec.getClass.getMethod("projectList")
-      winExpr.invoke(windowExec).asInstanceOf[Seq[NamedExpression]]
+      val resultMethod = windowExec.getClass.getMethod("windowExpression")
+      resultMethod.invoke(windowExec).asInstanceOf[Seq[NamedExpression]]
     } catch {
-      case e: Exception => // Fine, be that way.
-        // `projectList` not found. Use Apache Spark semantics.
-        resultColumnsOnly = false
-        val resultMethod = windowExec.getClass.getMethod("windowExpression")
-        resultMethod.invoke(windowExec).asInstanceOf[Seq[NamedExpression]]
+      case e: Exception =>
+        resultColumnsOnly = true
+        val winExpr = windowExec.getClass.getMethod("projectList")
+        winExpr.invoke(windowExec).asInstanceOf[Seq[NamedExpression]]
     }
     (expr, resultColumnsOnly)
   }
