@@ -53,7 +53,7 @@ object GpuBindReferences extends Logging {
   }
 
   /**
-   * A version of [[bindReferences]] that takes AttributeSeq as its expressions
+   * A version of `bindReferences` that takes `AttributeSeq` as its expressions
    */
   def bindReferences(expressions: AttributeSeq, input: AttributeSeq): Seq[GpuExpression] = {
     bindReferences(expressions.attrs.map(ref => GpuAttributeReference(

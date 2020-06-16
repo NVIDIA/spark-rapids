@@ -74,9 +74,9 @@ public final class GpuColumnVectorFromBuffer extends GpuColumnVector {
    *
    * See [[from]] in this class for more info on its lifecycle.
    *
-   * @param type - the spark data type for this column
-   * @param cudfColumn - a ColumnVector instance
-   * @param buffer - the buffer to hold
+   * @param type the spark data type for this column
+   * @param cudfColumn a ColumnVector instance
+   * @param buffer the buffer to hold
    */
   private GpuColumnVectorFromBuffer(DataType type, ColumnVector cudfColumn,
       DeviceMemoryBuffer buffer) {
@@ -86,8 +86,8 @@ public final class GpuColumnVectorFromBuffer extends GpuColumnVector {
 
   /**
    * Get the underlying contiguous buffer, shared between columns of the original
-   * [[ContiguousTable]]
-   * @return - contiguous (data, validity and offsets) device memory buffer
+   * `ContiguousTable`
+   * @return contiguous (data, validity and offsets) device memory buffer
    */
   public DeviceMemoryBuffer getBuffer() {
     return buffer;

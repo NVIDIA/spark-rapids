@@ -102,7 +102,7 @@ object GpuOrcFileFormat extends Logging {
 
 class GpuOrcFileFormat extends ColumnarFileFormat with Logging {
   /**
-   * Prepares a write job and returns an [[ColumnarOutputWriterFactory]].  Client side job
+   * Prepares a write job and returns an `ColumnarOutputWriterFactory`.  Client side job
    * preparation can be put here.  For example, user defined output committer can be configured here
    * by setting the output committer class in the conf of spark.sql.sources.outputCommitterClass.
    */

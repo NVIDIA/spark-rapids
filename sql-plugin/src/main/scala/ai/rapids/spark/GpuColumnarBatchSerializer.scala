@@ -31,7 +31,7 @@ import org.apache.spark.sql.execution.metric.SQLMetric
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
 /**
- * Serializer for serializing [[ColumnarBatch]]s during shuffle.
+ * Serializer for serializing `ColumnarBatch`s during shuffle.
  * The batches will be stored in an internal format specific to rapids.
  */
 class GpuColumnarBatchSerializer(

@@ -36,21 +36,19 @@ import org.apache.spark.internal.Logging
 case class WorkerAddress(address: ByteBuffer)
 
 /**
- * The UCX class holds a [[UcpContext]] and [[UcpWorker]]. It opens a TCP port for UCP's Worker
- * Address to be transmitted from executor to executor in order to create [[UcpEndpoint]]s.
+ * The UCX class wraps JUCX classes and handles all communication with UCX from other
+ * parts of the shuffle code. It manages a `UcpContext` and `UcpWorker`, for the
+ * local executor, and maintain a set of `UcpEndpoint` for peers.
  *
- * The current API supported from UCX is the tag based API. A tag is a long that identifies a
- * "topic" for a particular
+ * The current API supported from UCX is the tag based API. Tags are exposed in this class
+ * via an `AddressLengthTag`.
  *
- * Send and receive methods are exposed here, but should not be used directly (as it deals with
- * raw tags). Instead, the [[Transaction]] interface should be used.
+ * This class uses an extra TCP management connection to perform a handshake with remote peers,
+ * this port should be distributed to peers by other means (e.g. via the `BlockManagerId`)
  *
- * Note that we currently use an extra TCP connection to communicate the WorkerAddress and other
- * pieces to other peers. It would be ideal if this could fit somewhere else (like the
- * [[org.apache.spark.storage.BlockManagerId]])
- *
- * @param executorId - unique id that is used as part of the tags from UCX messages
- * @param usingWakeupFeature - turn on if you want to use polling instead of a hot loop.
+ * @param executorId unique id (int) that identifies the local executor
+ * @param usingWakeupFeature (true by default) set to false to use a hot loop, as opposed to
+ *                           UCP provided signal/wait
  */
 class UCX(executorId: Int, usingWakeupFeature: Boolean = true) extends AutoCloseable with Logging {
   private[this] val context = {
@@ -186,10 +184,9 @@ class UCX(executorId: Int, usingWakeupFeature: Boolean = true) extends AutoClose
 
   /**
     * Starts a TCP server to listen for external clients, returning with
-    * what port it used. This port needs to be communicated to external clients
-    * via the [[BlockManagerId]]'s topologyInfo optional.
+    * what port it used.
     *
-    * @param mgmtHost - String the hostname to bind to
+    * @param mgmtHost String the hostname to bind to
     * @return port bound
     */
   def startManagementPort(mgmtHost: String): Int = {
@@ -331,10 +328,10 @@ class UCX(executorId: Int, usingWakeupFeature: Boolean = true) extends AutoClose
   /**
     * Establish a new [[UcpEndpoint]] given a [[WorkerAddress]]. It also
     * caches them s.t. at [[close]] time we can release resources.
-    * @param endpointId - presently an executorId, it is used to distinguish between endpoints
+    * @param endpointId presently an executorId, it is used to distinguish between endpoints
     *                   when routing messages outbound
-    * @param workerAddress - the worker address for the remote endpoint (ucx opaque object)
-    * @return UcpEndpoint - returns a [[UcpEndpoint]] that can later be used to send on (from the
+    * @param workerAddress the worker address for the remote endpoint (ucx opaque object)
+    * @return returns a [[UcpEndpoint]] that can later be used to send on (from the
    *         progress thread)
     */
   private[ucx] def setupEndpoint(endpointId: Long, workerAddress: WorkerAddress): UcpEndpoint = {
@@ -350,7 +347,7 @@ class UCX(executorId: Int, usingWakeupFeature: Boolean = true) extends AutoClose
   }
 
   /**
-    * Connect to a remote UCX management port. This is called from [[RapidsShuffleIterator]]
+    * Connect to a remote UCX management port.
     *
     * @param peerMgmtHost management TCP host
     * @param peerMgmtPort management TCP port
@@ -420,7 +417,7 @@ class UCX(executorId: Int, usingWakeupFeature: Boolean = true) extends AutoClose
     * Handle an incoming connection on the TCP management port
     * This will fetch the [[WorkerAddress]] from the peer, and establish a UcpEndpoint
     *
-    * @param socket - an accepted socket to a remote client
+    * @param socket an accepted socket to a remote client
     */
   private[ucx] def handleSocket(socket: Socket): Unit = {
     val connectionRange =

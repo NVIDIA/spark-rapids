@@ -36,8 +36,7 @@ object RapidsPluginImplicits {
      * Exception was thrown prior to this close, it adds the new exception to the suppressed
      * exceptions, otherwise just throws
      *
-     * @param e - Exception which we don't want to suppress
-     * @return - Unit
+     * @param e Exception which we don't want to suppress
      */
     def safeClose(e: Throwable = null): Unit = {
       if (e != null) {
@@ -58,8 +57,6 @@ object RapidsPluginImplicits {
       * element of the sequence, even if prior close calls fail. In case of failure in any of the
       * close calls, an Exception is thrown containing the suppressed exceptions (getSuppressed),
       * if any.
-      *
-      * @return - Unit
       */
     def safeClose(): Unit = if (in != null) {
       var closeException: Throwable = null
@@ -97,7 +94,7 @@ object RapidsPluginImplicits {
       *
       * Note: safeMap will close in case of errors, without any knowledge of whether it should
       * or not.
-      * Use safeMap only in these circumstances if [[fn]] increases the reference count,
+      * Use safeMap only in these circumstances if `fn` increases the reference count,
       * producing an AutoCloseable, and nothing else is tracking these references:
       *    a) seq.safeMap(x => {...; x.incRefCount; x})
       *    b) seq.safeMap(x => GpuColumnVector.from(...))
@@ -131,14 +128,14 @@ object RapidsPluginImplicits {
       *
       *   closeTheseLater.safeClose() // go from 1 to 0 in all things inside closeTheseLater
       *
-      * @param in - the Seq[A] to map on
-      * @param fn - a function that takes A, and produces B (a subclass of AutoCloseable)
-      * @tparam A    - the type of the elements in Seq
-      * @tparam B    - the type of the elements produced in the safeMap (should be subclasses of
+      * @param in the Seq[A] to map on
+      * @param fn a function that takes A, and produces B (a subclass of AutoCloseable)
+      * @tparam A the type of the elements in Seq
+      * @tparam B the type of the elements produced in the safeMap (should be subclasses of
       *                AutoCloseable)
-      * @tparam Repr - the type of the input collection (needed by builder)
-      * @tparam That - the type of the output collection (needed by builder)
-      * @return - a sequence of B, in the success case
+      * @tparam Repr the type of the input collection (needed by builder)
+      * @tparam That the type of the output collection (needed by builder)
+      * @return a sequence of B, in the success case
       */
     protected def safeMap[B <: AutoCloseable, That](
         in: SeqLike[A, Repr],
@@ -179,11 +176,11 @@ object RapidsPluginImplicits {
       * AutoCloseable.
       * See [[MapsSafely.safeMap]] for a more detailed explanation.
       *
-      * @param fn - a function that takes A, and produces B (a subclass of AutoCloseable)
-      * @tparam A - the type of the elements in Seq
-      * @tparam B - the type of the elements produced in the safeMap (should be subclasses of
+      * @param fn a function that takes A, and produces B (a subclass of AutoCloseable)
+      * @tparam A the type of the elements in Seq
+      * @tparam B the type of the elements produced in the safeMap (should be subclasses of
       *             AutoCloseable)
-      * @return - a sequence of B, in the success case
+      * @return a sequence of B, in the success case
       */
     def safeMap[B <: AutoCloseable](fn: A => B): Seq[B] = super.safeMap(in, fn)
   }
@@ -194,11 +191,11 @@ object RapidsPluginImplicits {
       * AutoCloseable.
       * See [[MapsSafely.safeMap]] for a more detailed explanation.
       *
-      * @param fn - a function that takes A, and produces B (a subclass of AutoCloseable)
-      * @tparam A - the type of the elements in Seq
-      * @tparam B - the type of the elements produced in the safeMap (should be subclasses of
+      * @param fn a function that takes A, and produces B (a subclass of AutoCloseable)
+      * @tparam A the type of the elements in Seq
+      * @tparam B the type of the elements produced in the safeMap (should be subclasses of
       *             AutoCloseable)
-      * @return - a sequence of B, in the success case
+      * @return a sequence of B, in the success case
       */
     def safeMap[B <: AutoCloseable : ClassTag](fn: A => B): Array[B] = super.safeMap(in, fn)
   }
@@ -212,10 +209,10 @@ object RapidsPluginImplicits {
       *
       * See [[MapsSafely.safeMap]] for a more detailed explanation.
       *
-      * @param fn - a function that takes GpuColumnVector, and returns a subclass of AutoCloseable
-      * @tparam B - the type of the elements produced in the safeMap (should be subclasses of
-      *             AutoCloseable)
-      * @return - a sequence of B, in the success case
+      * @param fn a function that takes GpuColumnVector, and returns a subclass of AutoCloseable
+      * @tparam B the type of the elements produced in the safeMap (should be subclasses of
+      *           AutoCloseable)
+      * @return a sequence of B, in the success case
       */
     def safeMap[B <: AutoCloseable](fn: GpuColumnVector => B): Seq[B] = {
       val colIds: Seq[Int] = 0 until in.numCols

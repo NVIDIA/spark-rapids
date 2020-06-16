@@ -126,8 +126,8 @@ trait RapidsBuffer extends AutoCloseable {
  * A buffer with no corresponding device data (zero rows or columns).
  * These buffers are not tracked in buffer stores since they have no
  * device memory. They are only tracked in the catalog and provide
- * a representative [[ColumnarBatch]] but cannot provide a
- * [[MemoryBuffer]].
+ * a representative `ColumnarBatch` but cannot provide a
+ * `MemoryBuffer`.
  * @param id buffer ID to associate with the buffer
  * @param meta schema metadata
  */
