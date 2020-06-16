@@ -97,19 +97,19 @@ class GpuUnitTests extends SparkQueryCompareTestSuite {
        "types should be the same")
     withResource(expected.copyToHost()) { hostExpected =>
       withResource(result.copyToHost()) { hostResult =>
-        check(result, hostExpected, hostResult)
+        check(hostExpected, hostResult)
       }
     }
     true
   }
 
-  private def check(result: GpuColumnVector, hostExpected: RapidsHostColumnVector,
+  private def check(hostExpected: RapidsHostColumnVector,
      hostResult: RapidsHostColumnVector) = {
-    for (row <- 0 until result.getRowCount().toInt) {
+    for (row <- 0 until hostResult.getRowCount().toInt) {
       assert(hostExpected.isNullAt(row) == hostResult.isNullAt(row),
         "expected and actual differ at " + row + " one of them isn't null")
       if (!hostExpected.isNullAt(row)) {
-        result.getBase.getType() match {
+        hostResult.getBase.getType() match {
           case INT8 | BOOL8 =>
             assert(hostExpected.getByte(row) == hostResult.getByte(row), "row " + row)
           case INT16 =>
