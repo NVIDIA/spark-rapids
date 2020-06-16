@@ -50,7 +50,7 @@ class GpuExpandExecMeta(
    */
   override def convertToGpu(): GpuExec = {
     val projections = gpuProjections.map(_.map(_.convertToGpu()))
-    val attributes = outputAttributes.map(_.convertToGpu()).asInstanceOf[Seq[NamedExpression]]
+    val attributes = outputAttributes.map(_.convertToGpu()).asInstanceOf[Seq[GpuAttributeReference]]
     GpuExpandExec(projections, attributes, childPlans.head.convertIfNeeded())
   }
 }
@@ -60,12 +60,12 @@ class GpuExpandExecMeta(
  * multiple output rows for an input row.
  * @param projections The group of expressions, all of the group expressions should
  *                    output the same schema specified bye the parameter `output`
- * @param resultExpressions The output Schema
+ * @param resultExpressions Attribute references to Output
  * @param child       Child operator
  */
 case class GpuExpandExec(
     projections: Seq[Seq[GpuExpression]],
-    resultExpressions: Seq[NamedExpression],
+    resultExpressions: Seq[GpuAttributeReference],
     child: SparkPlan)
   extends UnaryExecNode with GpuExec {
 
