@@ -25,17 +25,12 @@ import org.apache.spark.sql.vectorized.ColumnarBatch
 
 class MetaUtilsSuite extends FunSuite with Arm {
   private def buildContiguousTable(): ContiguousTable = {
-    val table = new Table.TestBuilder()
+    withResource(new Table.TestBuilder()
         .column(5, null.asInstanceOf[java.lang.Integer], 3, 1)
         .column("five", "two", null, null)
         .column(5.0, 2.0, 3.0, 1.0)
-        .build()
-    try {
+        .build()) { table =>
       table.contiguousSplit()(0)
-    } catch {
-      case t: Throwable =>
-        table.close()
-        throw t
     }
   }
 

@@ -130,7 +130,7 @@ object MetaUtils {
 
   /**
    * Construct a columnar batch from a contiguous device buffer and a
-   * TableMeta message describing the schema of the buffer data.
+   * `TableMeta` message describing the schema of the buffer data.
    * @param deviceBuffer contiguous buffer
    * @param meta schema metadata
    * @return columnar batch that must be closed by the caller
