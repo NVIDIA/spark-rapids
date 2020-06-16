@@ -52,7 +52,7 @@ case class GpuFileSourceScanExec(
     }
     val constructor = constructors(0)
     val instance = if (constructor.getParameterCount() == 8) {
-      // Some distributions of Spark modified FileSourceScanExec to take an addition parameter
+      // Some distributions of Spark modified FileSourceScanExec to take an additional parameter
       // that is the logicalRelation. We don't know what its used for exactly but haven't
       // run into any issues in testing using the one we create here.
       @transient val logicalRelation = LogicalRelation(relation)
