@@ -151,7 +151,8 @@
                             <environmentVariables>
                                 <SKIP_TESTS>${skipTests}</SKIP_TESTS>
                                 <TEST>${test}</TEST>
-                                <COVERAGE_SUBMIT_FLAGS>${argLine}</COVERAGE_SUBMIT_FLAGS>
+				<COVERAGE_SUBMIT_FLAGS>${argLine}</COVERAGE_SUBMIT_FLAGS>
+				<TEST_TAGS>${pytest.TEST_TAGS}</TEST_TAGS>
                             </environmentVariables>
                         </configuration>
                     </execution>

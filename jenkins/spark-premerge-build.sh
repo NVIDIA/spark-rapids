@@ -49,7 +49,7 @@ export PATH="$SPARK_HOME/bin:$SPARK_HOME/sbin:$PATH"
 tar zxf $SPARK_HOME.tar.gz -C $ARTF_ROOT && \
     rm -f $SPARK_HOME.tar.gz
 
-mvn -U -B "$@" clean verify
+mvn -U -B "$@" clean verify -Dpytest.TEST_TAGS=''
 
 # The jacoco coverage should have been collected, but because of how the shade plugin
 # works and jacoco we need to clean some things up so jacoco will only report for the
