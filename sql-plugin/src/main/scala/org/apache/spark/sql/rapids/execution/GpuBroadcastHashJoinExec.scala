@@ -52,7 +52,10 @@ class GpuBroadcastHashJoinMeta(
       case BuildRight => childPlans(1)
     }
 
-    // TODO temporary hack to make progress with AQE ... need to revisit this
+    // TODO this logic needs updating for AQE because child plans could be QueryStages which
+    // we don't currently replace with a GPU equivalent, therefore there is no SparkPlanMeta
+    // available.
+
 //    if (!buildSide.canThisBeReplaced) {
 //      willNotWorkOnGpu("the broadcast for this join must be on the GPU too")
 //    }
@@ -71,7 +74,10 @@ class GpuBroadcastHashJoinMeta(
       case BuildRight => right
     }
 
-    // TODO temporary hack to make progress with AQE ... need to revisit this
+    // TODO this logic needs updating for AQE because child plans could be QueryStages which
+    // we don't currently replace with a GPU equivalent, therefore there is no SparkPlanMeta
+    // available.
+
 //    if (!buildSide.isInstanceOf[GpuBroadcastExchangeExec]) {
 //      throw new IllegalStateException("the broadcast must be on the GPU too")
 //    }
