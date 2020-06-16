@@ -1703,7 +1703,8 @@ object GpuOverrides {
         }
 
         override def convertToGpu(): GpuExec = {
-          GpuCustomShuffleReaderExec(childPlans.head.convertIfNeeded(), Seq.empty, "")
+          GpuCustomShuffleReaderExec(childPlans.head.convertIfNeeded(),
+            exec.partitionSpecs, exec.description)
         }
       })
   ).map(r => (r.getClassFor.asSubclass(classOf[SparkPlan]), r)).toMap
