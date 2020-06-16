@@ -109,8 +109,8 @@ trait SparkQueryCompareTestSuite extends FunSuite with Arm {
 
   //  @see java.lang.Float#intBitsToFloat
   // <quote>
-  // If the argument is any value in the range 0x7f800001 through 0x7fffffff or
-  // in the range 0xff800001 through 0xffffffff, the result is a NaN
+  // If the argument is any value in the range `0x7f800001` through `0x7fffffff` or
+  // in the range `0xff800001` through `0xffffffff`, the result is a NaN
   // </quote>
   val FLOAT_POSITIVE_NAN_LOWER_RANGE = java.lang.Float.intBitsToFloat(0x7f800001)
   val FLOAT_POSITIVE_NAN_UPPER_RANGE = java.lang.Float.intBitsToFloat(0x7fffffff)
@@ -119,10 +119,10 @@ trait SparkQueryCompareTestSuite extends FunSuite with Arm {
 
   // see java.lang.Double#longBitsToDouble
   // <quote>
-  // <p>If the argument is any value in the range {@code 0x7ff0000000000001L} through
-  // {@code 0x7fffffffffffffffL} or in the range
-  // {@code 0xfff0000000000001L} through
-  // {@code 0xffffffffffffffffL}, the result is a NaN
+  // <p>If the argument is any value in the range `0x7ff0000000000001L` through
+  // `0x7fffffffffffffffL` or in the range
+  // `0xfff0000000000001L` through
+  // `0xffffffffffffffffL`, the result is a NaN
   val DOUBLE_POSITIVE_NAN_LOWER_RANGE = java.lang.Double.longBitsToDouble(0x7ff0000000000001L)
   val DOUBLE_POSITIVE_NAN_UPPER_RANGE = java.lang.Double.longBitsToDouble(0x7fffffffffffffffL)
   val DOUBLE_NEGATIVE_NAN_LOWER_RANGE = java.lang.Double.longBitsToDouble(0xfff0000000000001L)
@@ -276,10 +276,10 @@ trait SparkQueryCompareTestSuite extends FunSuite with Arm {
   /**
     * Runs a test defined by fun, using dataframe df.
     *
-    * @param df     - the DataFrame to use as input
-    * @param fun    - the function to transform the DataFrame (produces another DataFrame)
-    * @param conf   - spark conf
-    * @return       - tuple of (cpu results, gpu results) as arrays of Row
+    * @param df the DataFrame to use as input
+    * @param fun the function to transform the DataFrame (produces another DataFrame)
+    * @param conf spark conf
+    * @return tuple of (cpu results, gpu results) as arrays of Row
     */
   def runOnCpuAndGpu(
       df: SparkSession => DataFrame,
@@ -313,11 +313,11 @@ trait SparkQueryCompareTestSuite extends FunSuite with Arm {
   /**
    * Runs a test defined by fun, using 2 dataframes dfA and dfB.
    *
-   * @param dfA  - the first DataFrame to use as input
-   * @param dfB  - the second DataFrame to use as input
-   * @param fun  - the function to transform the DataFrame (produces another DataFrame)
-   * @param conf - spark conf
-   * @return       - tuple of (cpu results, gpu results) as arrays of Row
+   * @param dfA the first DataFrame to use as input
+   * @param dfB the second DataFrame to use as input
+   * @param fun the function to transform the DataFrame (produces another DataFrame)
+   * @param conf spark conf
+   * @return tuple of (cpu results, gpu results) as arrays of Row
    */
   def runOnCpuAndGpu2(dfA: SparkSession => DataFrame,
       dfB: SparkSession => DataFrame,
@@ -426,11 +426,11 @@ trait SparkQueryCompareTestSuite extends FunSuite with Arm {
   /**
    * Writes and reads a dataframe to a file using the CPU and the GPU.
    *
-   * @param df     - the DataFrame to use as input
-   * @param writer - the function to write the data to a file
-   * @param reader - the function to read the data from a file
-   * @param conf   - spark conf
-   * @return       - tuple of (cpu results, gpu results) as arrays of Row
+   * @param df the DataFrame to use as input
+   * @param writer the function to write the data to a file
+   * @param reader the function to read the data from a file
+   * @param conf spark conf
+   * @return tuple of (cpu results, gpu results) as arrays of Row
    */
   def writeWithCpuAndGpu(
       df: SparkSession => DataFrame,

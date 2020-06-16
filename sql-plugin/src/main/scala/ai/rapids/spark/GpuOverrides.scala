@@ -182,7 +182,7 @@ class ExprRule[INPUT <: Expression](
 }
 
 /**
- * Holds everything that is needed to replace a [[Scan]] with a GPU enabled version.
+ * Holds everything that is needed to replace a `Scan` with a GPU enabled version.
  */
 class ScanRule[INPUT <: Scan](
     doWrap: (
@@ -201,7 +201,7 @@ class ScanRule[INPUT <: Scan](
 }
 
 /**
- * Holds everything that is needed to replace a [[Partitioning]] with a GPU enabled version.
+ * Holds everything that is needed to replace a `Partitioning` with a GPU enabled version.
  */
 class PartRule[INPUT <: Partitioning](
     doWrap: (
@@ -220,7 +220,7 @@ class PartRule[INPUT <: Partitioning](
 }
 
 /**
- * Holds everything that is needed to replace a [[SparkPlan]] with a GPU enabled version.
+ * Holds everything that is needed to replace a `SparkPlan` with a GPU enabled version.
  */
 class ExecRule[INPUT <: SparkPlan](
     doWrap: (
@@ -238,7 +238,8 @@ class ExecRule[INPUT <: SparkPlan](
 }
 
 /**
- * Holds everything that is needed to replace a [[DataWritingCommand]] with a GPU enabled version.
+ * Holds everything that is needed to replace a `DataWritingCommand` with a
+ * GPU enabled version.
  */
 class DataWritingCommandRule[INPUT <: DataWritingCommand](
     doWrap: (

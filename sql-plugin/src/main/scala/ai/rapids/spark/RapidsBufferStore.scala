@@ -16,61 +16,19 @@
 
 package ai.rapids.spark
 
-import java.util.{Comparator, Optional}
+import java.util.Comparator
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicLong
 
-import scala.collection.mutable.ArrayBuffer
-
-import ai.rapids.cudf.{ColumnVector, Cuda, DeviceMemoryBuffer, DType, HostMemoryBuffer, NvtxColor, NvtxRange}
+import ai.rapids.cudf.{Cuda, DeviceMemoryBuffer, HostMemoryBuffer, NvtxColor, NvtxRange}
 import ai.rapids.spark.StorageTier.StorageTier
-import ai.rapids.spark.format.{ColumnMeta, SubBufferMeta, TableMeta}
+import ai.rapids.spark.format.TableMeta
 
 import org.apache.spark.internal.Logging
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
 object RapidsBufferStore {
   private val FREE_WAIT_TIMEOUT = 10 * 1000
-
-  /**
-   * Construct a columnar batch from a contiguous device buffer and a
-   * TableMeta message describing the schema of the buffer data.
-   * @param deviceBuffer contiguous buffer
-   * @param meta schema metadata
-   * @return columnar batch that must be closed by the caller
-   */
-  def getBatchFromMeta(deviceBuffer: DeviceMemoryBuffer, meta: TableMeta): ColumnarBatch = {
-    val columns = new ArrayBuffer[GpuColumnVector](meta.columnMetasLength())
-    try {
-      val columnMeta = new ColumnMeta
-      (0 until meta.columnMetasLength).foreach { i =>
-        columns.append(makeColumn(deviceBuffer, meta.columnMetas(columnMeta, i)))
-      }
-      new ColumnarBatch(columns.toArray, meta.rowCount.toInt)
-    } catch {
-      case e: Exception =>
-        columns.foreach(_.close())
-        throw e
-    }
-  }
-
-  private def makeColumn(buffer: DeviceMemoryBuffer, meta: ColumnMeta): GpuColumnVector = {
-    def getSubBuffer(s: SubBufferMeta): DeviceMemoryBuffer =
-      if (s != null) buffer.slice(s.offset, s.length) else null
-
-    assert(meta.childrenLength() == 0, "child columns are not yet supported")
-    val dtype = DType.fromNative(meta.dtype)
-    val nullCount = if (meta.nullCount >= 0) {
-      Optional.of(java.lang.Long.valueOf(meta.nullCount))
-    } else {
-      Optional.empty[java.lang.Long]
-    }
-    val dataBuffer = getSubBuffer(meta.data)
-    val validBuffer = getSubBuffer(meta.validity)
-    val offsetsBuffer = getSubBuffer(meta.offsets)
-    GpuColumnVector.from(new ColumnVector(dtype, meta.rowCount, nullCount,
-      dataBuffer, validBuffer, offsetsBuffer))
-  }
 }
 
 /**
@@ -410,7 +368,7 @@ abstract class RapidsBufferStore(
         } finally {
           buffer.close()
         }
-        RapidsBufferStore.getBatchFromMeta(deviceBuffer, meta)
+        MetaUtils.getBatchFromMeta(deviceBuffer, meta)
       } finally {
         deviceBuffer.close()
       }

@@ -31,5 +31,9 @@ else
     then
         TEST_ARGS="-k $TEST"
     fi
-    "$SPARK_HOME"/bin/spark-submit --jars "${ALL_JARS// /,}" --conf "spark.driver.extraJavaOptions=-Duser.timezone=GMT $COVERAGE_SUBMIT_FLAGS" --conf 'spark.executor.extraJavaOptions=-Duser.timezone=GMT' --conf 'spark.sql.session.timeZone=UTC' --conf 'spark.sql.shuffle.partitions=12' $SPARK_SUBMIT_FLAGS ./runtests.py -v -rfExXs --std_input_path=./src/test/resources/ "$TEST_ARGS" $RUN_TEST_PARAMS "$@"
+    if [[ "${TEST_TAGS}" != "" ]];
+    then
+        TEST_TAGS="-m $TEST_TAGS"
+    fi
+    "$SPARK_HOME"/bin/spark-submit --jars "${ALL_JARS// /,}" --conf "spark.driver.extraJavaOptions=-Duser.timezone=GMT $COVERAGE_SUBMIT_FLAGS" --conf 'spark.executor.extraJavaOptions=-Duser.timezone=GMT' --conf 'spark.sql.session.timeZone=UTC' --conf 'spark.sql.shuffle.partitions=12' $SPARK_SUBMIT_FLAGS ./runtests.py -v -rfExXs "$TEST_TAGS" --std_input_path=./src/test/resources/ "$TEST_ARGS" $RUN_TEST_PARAMS "$@"
 fi

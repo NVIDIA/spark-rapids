@@ -37,7 +37,7 @@ import org.apache.spark.util.SerializableConfiguration
 
 /**
  * Abstract class for writing out data in a single Spark task using the GPU.
- * This is the GPU version of [[org.apache.spark.sql.execution.datasources.FileFormatDataWriter]].
+ * This is the GPU version of `org.apache.spark.sql.execution.datasources.FileFormatDataWriter`.
  */
 abstract class GpuFileFormatDataWriter(
     description: GpuWriteJobDescription,
@@ -391,7 +391,7 @@ class GpuDynamicPartitionDataWriter(
 
 /**
  * A shared job description for all the GPU write tasks.
- * This is the GPU version of [[org.apache.spark.sql.execution.datasources.WriteJobDescription]].
+ * This is the GPU version of `org.apache.spark.sql.execution.datasources.WriteJobDescription`.
  */
 class GpuWriteJobDescription(
     val uuid: String, // prevent collision between different (appending) write jobs

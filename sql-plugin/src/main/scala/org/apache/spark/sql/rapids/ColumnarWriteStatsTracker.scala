@@ -73,7 +73,7 @@ trait ColumnarWriteTaskStatsTracker {
   /**
    * Returns the final statistics computed so far.
    * @note This may only be called once. Further use of the object may lead to undefined behavior.
-   * @return An object of subtype of [[org.apache.spark.sql.execution.datasources.WriteTaskStats]],
+   * @return An object of subtype of `org.apache.spark.sql.execution.datasources.WriteTaskStats`,
    *         to be sent to the driver.
    */
   def getFinalStats(): WriteTaskStats
@@ -84,7 +84,7 @@ trait ColumnarWriteTaskStatsTracker {
  * A class implementing this trait is basically a collection of parameters that are necessary
  * for instantiating a (derived type of) [[ColumnarWriteTaskStatsTracker]] on all executors and then
  * process the statistics produced by them (e.g. save them to memory/disk, issue warnings, etc).
- * It is therefore important that such an objects is [[Serializable]], as it will be sent
+ * It is therefore important that such an objects is `Serializable`, as it will be sent
  * from the driver to all executors.
  */
 trait ColumnarWriteJobStatsTracker extends Serializable {
@@ -101,7 +101,7 @@ trait ColumnarWriteJobStatsTracker extends Serializable {
   /**
    * Process the given collection of stats computed during this job.
    * E.g. aggregate them, write them to memory / disk, issue warnings, whatever.
-   * @param stats One [[WriteTaskStats]] object from each successful write task.
+   * @param stats One `WriteTaskStats` object from each successful write task.
    */
   def processStats(stats: Seq[WriteTaskStats]): Unit
 }

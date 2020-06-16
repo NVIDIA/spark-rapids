@@ -30,7 +30,7 @@ import org.apache.spark.sql.vectorized.ColumnarBatch
 import org.apache.spark.util.SerializableConfiguration
 
 /**
- * An extension of [[DataWritingCommand]] that allows columnar execution.
+ * An extension of `DataWritingCommand` that allows columnar execution.
  */
 trait GpuDataWritingCommand extends DataWritingCommand {
   override lazy val metrics: Map[String, SQLMetric] = GpuWriteJobStatsTracker.metrics

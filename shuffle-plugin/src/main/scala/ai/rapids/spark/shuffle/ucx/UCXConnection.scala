@@ -71,18 +71,10 @@ class UCXClientConnection(peerExecutorId: Int, peerClientId: Long, ucx: UCX)
 
   override def getPeerExecutorId: Long = peerExecutorId
 
-  /**
-    * This performs a request/response, where the request and response are read from/deposited
-    * from memory. This is used when an executor wants to request blocks from a remote executor,
-    * it sends a [[ShuffleMetadataRequest]] in the [[reqAddress]] and expects a
-    * [[ShuffleMatadataResponse]] in the [[respAddress]] at the [[response.tag]].
-    *
-    * @param cb - callback to call once the response is done
-    * @return
-    */
-  override def request(request: AddressLengthTag,
-                       response: AddressLengthTag,
-                       cb: TransactionCallback): Transaction = {
+  override def request(
+      request: AddressLengthTag,
+      response: AddressLengthTag,
+      cb: TransactionCallback): Transaction = {
     val tx = createTransaction
 
     tx.start(UCXTransactionType.Request, 2, cb)
@@ -204,7 +196,7 @@ class UCXConnection(peerExecutorId: Int, ucx: UCX) extends Connection with Loggi
 
       override def onSuccess(alt: AddressLengthTag): Unit = {
         logDebug(s"Successful send: ${TransportUtils.formatTag(alt.tag)}, tx = $tx")
-        tx.handleTagCompleted(alt)
+        tx.handleTagCompleted(alt.tag)
         if (tx.decrementPendingAndGet <= 0) {
           tx.txCallback(TransactionStatus.Success)
         }
@@ -254,7 +246,7 @@ class UCXConnection(peerExecutorId: Int, ucx: UCX) extends Connection with Loggi
 
       override def onSuccess(alt: AddressLengthTag): Unit = {
         logDebug(s"Successful receive: ${TransportUtils.formatTag(alt.tag)}, tx $tx")
-        tx.handleTagCompleted(alt)
+        tx.handleTagCompleted(alt.tag)
         if (tx.decrementPendingAndGet <= 0) {
           logDebug(s"Receive done for tag: ${TransportUtils.formatTag(alt.tag)}, tx $tx")
           tx.txCallback(TransactionStatus.Success)
@@ -341,12 +333,11 @@ object UCXConnection extends Logging {
   }
 
   /**
-    * Handles the input stream, using [[readBytesFromStream]] to read from the
-    * stream: the length of the WorkerAddress + the WorkerAddress +
-    * the remote ExecutorId (as an int)
+    * Given a java `InputStream`, obtain the peer's `WorkerAddress` and executor id,
+    * returning them as a pair.
     *
-    * @param is - management port InputStream
-    * @return - (WorkerAddress, remoteExecutorId)
+    * @param is management port input stream
+    * @return a tuple of worker address and the peer executor id
     */
   def readHandshakeHeader(is: InputStream): (WorkerAddress, Int) = {
     val maxLen = 1024 * 1024
@@ -373,9 +364,9 @@ object UCXConnection extends Logging {
     *  - UCP Worker address (variable length)
     *  - Local executor id (4 bytes)
     *
-    * @param os              - OutputStream to write to
-    * @param workerAddress   - ByteBuffer that holds
-    * @param localExecutorId - The local executorId
+    * @param os output stream to write to
+    * @param workerAddress byte buffer that holds the local UCX worker address
+    * @param localExecutorId The local executorId
     */
   def writeHandshakeHeader(os: OutputStream,
                            workerAddress: ByteBuffer,

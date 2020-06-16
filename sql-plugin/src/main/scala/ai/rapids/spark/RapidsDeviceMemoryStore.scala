@@ -19,7 +19,6 @@ package ai.rapids.spark
 import ai.rapids.cudf.{Cuda, DeviceMemoryBuffer, MemoryBuffer, Table}
 import ai.rapids.spark.StorageTier.StorageTier
 import ai.rapids.spark.format.TableMeta
-import com.google.flatbuffers.FlatBufferBuilder
 
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
@@ -77,7 +76,7 @@ class RapidsDeviceMemoryStore(
         s"meta_size=${tableMeta.bufferMeta().actualSize()}, " +
         s"meta_num_cols=${tableMeta.columnMetasLength()}]")
 
-    val batch = RapidsBufferStore.getBatchFromMeta(buffer, tableMeta) // REFCOUNT 1 + # COLS
+    val batch = MetaUtils.getBatchFromMeta(buffer, tableMeta) // REFCOUNT 1 + # COLS
     // hold the 1 ref count extra in buffer, it will be removed later in releaseResources
     val table = try {
       GpuColumnVector.from(batch) // batch cols have 2 ref count

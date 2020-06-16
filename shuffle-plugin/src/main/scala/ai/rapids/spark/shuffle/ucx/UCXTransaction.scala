@@ -51,6 +51,11 @@ private[ucx] class UCXTransaction(conn: UCXConnection, val txId: Long)
 
   def decrementPendingAndGet: Long = pending.decrementAndGet
 
+  /**
+    * This will mark the tag as being cancelled for debugging purposes.
+    *
+    * @param tag the cancelled tag
+    */
   def handleTagCancelled(tag: Long): Unit = {
     if (registeredByTag.contains(tag)) {
       val origBuff = registeredByTag(tag)
@@ -58,6 +63,12 @@ private[ucx] class UCXTransaction(conn: UCXConnection, val txId: Long)
     }
   }
 
+  /**
+    * This will mark the tag as having an error for debugging purposes.
+    *
+    * @param tag the tag involved in the error
+    * @param errorMsg error description from UCX
+    */
   def handleTagError(tag: Long, errorMsg: String): Unit = {
     if (registeredByTag.contains(tag)) {
       val origBuff = registeredByTag(tag)
@@ -67,15 +78,13 @@ private[ucx] class UCXTransaction(conn: UCXConnection, val txId: Long)
   }
 
   /**
-    * This will place the [[AddressLengthTag]] in the [[completed]] buffer,
-    * for debugging purposes.
+    * This will mark the tag as completed for debugging purposes.
     *
-    * @param alt - the [[AddressLengthTag]] instance we completed successfully
-    * @return
+    * @param tag the successful tag
     */
-  def handleTagCompleted(alt: AddressLengthTag): Unit =  {
-    if (registeredByTag.contains(alt.tag)){
-      val origBuff = registeredByTag(alt.tag)
+  def handleTagCompleted(tag: Long): Unit =  {
+    if (registeredByTag.contains(tag)){
+      val origBuff = registeredByTag(tag)
       completed += origBuff
     }
   }
@@ -177,7 +186,7 @@ private[ucx] class UCXTransaction(conn: UCXConnection, val txId: Long)
 
   /**
     * Interal function to register a callback against the callback service
-    * @param cb - callback function to call using the callbackService.
+    * @param cb callback function to call using the callbackService.
     */
   private def registerCb(cb: TransactionCallback): Unit = {
     txCallback =
@@ -230,8 +239,6 @@ private[ucx] class UCXTransaction(conn: UCXConnection, val txId: Long)
 
   /**
     * Register an [[AddressLengthTag]] for a send transaction
-    * @param alt - an [[AddressLengthTag]] instance
-    * @return - tag that should be used to reference this transfer
     */
   def registerForSend(alt: AddressLengthTag): Unit = {
     registeredByTag.put(alt.tag, alt)
@@ -242,8 +249,6 @@ private[ucx] class UCXTransaction(conn: UCXConnection, val txId: Long)
 
   /**
     * Register an [[AddressLengthTag]] for a receive transaction
-    * @param alt - an [[AddressLengthTag]] instance
-    * @return - tag that should be used to reference this transfer
     */
   def registerForReceive(alt: AddressLengthTag): Unit = {
     registered += alt
@@ -258,9 +263,9 @@ private[ucx] class UCXTransaction(conn: UCXConnection, val txId: Long)
 
   /**
     * Internal function to kick off a [[Transaction]]
-    * @param txType - a transaction type to be used for debugging purposes
-    * @param numPending - number of messages we expect to see sent/received
-    * @param cb - callback to call when done/errored
+    * @param txType a transaction type to be used for debugging purposes
+    * @param numPending number of messages we expect to see sent/received
+    * @param cb callback to call when done/errored
     */
   private[ucx] def start(
       txType: UCXTransactionType.Value,
