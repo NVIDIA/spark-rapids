@@ -44,6 +44,10 @@ case class GpuFileSourceScanExec(
     override val tableIdentifier: Option[TableIdentifier])
     extends DataSourceScanExec with GpuExec {
 
+  override val nodeName: String = {
+    s"GpuScan $relation ${tableIdentifier.map(_.unquotedString).getOrElse("")}"
+  }
+
   private[this] val wrapped: FileSourceScanExec = {
     val tclass = classOf[org.apache.spark.sql.execution.FileSourceScanExec]
     val constructors = tclass.getConstructors()
