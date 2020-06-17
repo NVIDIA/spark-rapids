@@ -19,8 +19,8 @@ package org.apache.spark.sql.rapids
 import scala.collection.mutable.ArrayBuffer
 
 import ai.rapids.cudf.{ColumnVector, Scalar, Table}
-import ai.rapids.spark._
-import ai.rapids.spark.RapidsPluginImplicits._
+import com.nvidia.spark.rapids._
+import com.nvidia.spark.rapids.RapidsPluginImplicits._
 
 import org.apache.spark.sql.catalyst.expressions.{ExpectsInputTypes, Expression, ImplicitCastInputTypes, NullIntolerant, Predicate, SubstringIndex}
 import org.apache.spark.sql.types._
@@ -287,7 +287,7 @@ case class GpuStringTrimRight(column: GpuExpression, trimParameters: Option[GpuE
 
 case class GpuConcat(children: Seq[GpuExpression]) extends GpuComplexTypeMergingExpression {
   override def dataType = StringType
-  override def nullable: Boolean = children.head.nullable
+  override def nullable: Boolean = children.exists(_.nullable)
 
   override def columnarEval(batch: ColumnarBatch): Any = {
     var nullStrScalar: Scalar = null
@@ -553,7 +553,7 @@ case class GpuLike(left: GpuExpression, right: GpuExpression, escapeChar: Char)
     *
     * Underscores (_) are converted to '.' including newlines and percent signs (%)
     * are converted to '.*' including newlines, other characters are quoted literally or escaped.
-    * An invalid pattern will throw an [[IllegalArgumentException]].
+    * An invalid pattern will throw an `IllegalArgumentException`.
     *
     * @param pattern the SQL pattern to convert
     * @param escapeChar the escape string contains one character.

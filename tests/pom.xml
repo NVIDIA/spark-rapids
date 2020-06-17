@@ -20,13 +20,13 @@
     <modelVersion>4.0.0</modelVersion>
 
     <parent>
-        <groupId>ai.rapids</groupId>
+        <groupId>com.nvidia</groupId>
         <artifactId>rapids-4-spark-parent</artifactId>
         <version>0.1-SNAPSHOT</version>
     </parent>
-    <groupId>ai.rapids</groupId>
+    <groupId>com.nvidia</groupId>
     <artifactId>rapids-4-spark-tests_2.12</artifactId>
-    <name>RAPIDS for Apache Spark Tests</name>
+    <name>RAPIDS Accelerator for Apache Spark Tests</name>
     <description>RAPIDS plugin for Apache Spark integration tests</description>
     <version>0.1-SNAPSHOT</version>
 
@@ -51,7 +51,7 @@
             <scope>provided</scope>
         </dependency>
         <dependency>
-            <groupId>ai.rapids</groupId>
+            <groupId>com.nvidia</groupId>
             <artifactId>rapids-4-spark_${scala.binary.version}</artifactId>
             <version>${project.version}</version>
             <scope>test</scope>

@@ -24,10 +24,10 @@ import scala.concurrent.{ExecutionContext, Promise}
 import scala.util.control.NonFatal
 
 import ai.rapids.cudf.{HostMemoryBuffer, JCudfSerialization, NvtxColor, NvtxRange}
-import ai.rapids.spark._
-import ai.rapids.spark.GpuMetricNames._
-import ai.rapids.spark.RapidsPluginImplicits._
 import com.google.common.util.concurrent.ThreadFactoryBuilder
+import com.nvidia.spark.rapids._
+import com.nvidia.spark.rapids.GpuMetricNames._
+import com.nvidia.spark.rapids.RapidsPluginImplicits._
 
 import org.apache.spark.{broadcast, SparkException}
 import org.apache.spark.launcher.SparkLauncher
