@@ -20,8 +20,8 @@ def _spark__init():
     # due to bugs in pyspark/pytest it looks like any configs set here
     # can be reset in the middle of a test if specific operations are done (some types of cast etc)
     _s = SparkSession.builder \
-            .config('spark.plugins', 'ai.rapids.spark.SQLPlugin') \
-            .config('spark.sql.queryExecutionListeners', 'ai.rapids.spark.ExecutionPlanCaptureCallback')\
+            .config('spark.plugins', 'com.nvidia.spark.SQLPlugin') \
+            .config('spark.sql.queryExecutionListeners', 'com.nvidia.spark.rapids.ExecutionPlanCaptureCallback')\
             .appName('rapids spark plugin integration tests (python)').getOrCreate()
     #TODO catch the ClassNotFound error that happens if the classpath is not set up properly and
     # make it a better error message

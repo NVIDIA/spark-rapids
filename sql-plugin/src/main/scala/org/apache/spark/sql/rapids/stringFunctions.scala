@@ -19,8 +19,8 @@ package org.apache.spark.sql.rapids
 import scala.collection.mutable.ArrayBuffer
 
 import ai.rapids.cudf.{ColumnVector, Scalar, Table}
-import ai.rapids.spark._
-import ai.rapids.spark.RapidsPluginImplicits._
+import com.nvidia.spark.rapids._
+import com.nvidia.spark.rapids.RapidsPluginImplicits._
 
 import org.apache.spark.sql.catalyst.expressions.{ExpectsInputTypes, Expression, ImplicitCastInputTypes, NullIntolerant, Predicate, SubstringIndex}
 import org.apache.spark.sql.types._

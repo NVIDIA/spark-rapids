@@ -19,7 +19,7 @@ package org.apache.spark.sql.rapids
 import java.io.Serializable
 
 import ai.rapids.cudf.{BinaryOp, ColumnVector, DType, Scalar, UnaryOp}
-import ai.rapids.spark.{Arm, CudfBinaryExpression, CudfUnaryExpression, FloatUtils, GpuColumnVector, GpuExpression, GpuUnaryExpression}
+import com.nvidia.spark.rapids.{Arm, CudfBinaryExpression, CudfUnaryExpression, FloatUtils, GpuColumnVector, GpuExpression, GpuUnaryExpression}
 
 import org.apache.spark.sql.catalyst.expressions.{Expression, ImplicitCastInputTypes}
 import org.apache.spark.sql.types._

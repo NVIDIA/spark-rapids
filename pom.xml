@@ -19,10 +19,10 @@
          xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
     <modelVersion>4.0.0</modelVersion>
 
-    <groupId>ai.rapids</groupId>
+    <groupId>com.nvidia</groupId>
     <artifactId>rapids-4-spark-parent</artifactId>
-    <name>RAPIDS for Apache Spark Root Project</name>
-    <description>The root project of the RAPIDS plugin for Apache Spark</description>
+    <name>RAPIDS Accelerator for Apache Spark Root Project</name>
+    <description>The root project of the RAPIDS Accelerator for Apache Spark</description>
     <version>0.1-SNAPSHOT</version>
     <packaging>pom</packaging>
 
@@ -58,7 +58,7 @@
              If the shade package changes we need to also update jenkins/spark-premerge-build.sh
              so code coverage does not include the shaded classes.
         -->
-        <rapids.shade.package>ai.rapids.shaded.spark</rapids.shade.package>
+        <rapids.shade.package>com.nvidia.shaded.spark</rapids.shade.package>
         <test.exclude.tags></test.exclude.tags>
         <test.include.tags></test.include.tags>
         <rapids.shuffle.manager.override>false</rapids.shuffle.manager.override>
@@ -429,7 +429,8 @@
                                 <exclude>${rapids.shade.package}.*</exclude>
                             </excludes>
                             <includes>
-                                <include>ai.rapids.spark.*</include>
+                                <include>ai.rapids.cudf.*</include>
+                                <include>com.nvidia.spark.*</include>
                                 <include>org.apache.spark.sql.rapids.*</include>
                             </includes>
                         </configuration>

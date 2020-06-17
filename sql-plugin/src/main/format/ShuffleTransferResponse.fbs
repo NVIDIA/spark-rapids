@@ -14,7 +14,7 @@
 
 include "ShuffleCommon.fbs";
 
-namespace ai.rapids.spark.format;
+namespace com.nvidia.spark.rapids.format;
 
 enum TransferState: byte {
   /// UCX transfer initiated on sender-side
