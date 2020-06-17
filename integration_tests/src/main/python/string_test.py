@@ -55,23 +55,13 @@ def test_locate():
                 'locate("A", a, 500)',
                 'locate("_", a, NULL)'))
 
-# Once https://github.com/NVIDIA/spark-rapids/issues/121
-# is fixed this should go away and test_contains should be updated
-@pytest.mark.xfail(reason='https://github.com/NVIDIA/spark-rapids/issues/121')
-def test_contains_empty():
-    gen = mk_str_gen('.{0,3}Z?_Z?.{0,3}A?.{0,3}')
-    assert_gpu_and_cpu_are_equal_collect(
-            lambda spark: unary_op_df(spark, gen).select(
-                f.col('a').contains('')))
-
 def test_contains():
     gen = mk_str_gen('.{0,3}Z?_Z?.{0,3}A?.{0,3}')
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark: unary_op_df(spark, gen).select(
                 f.col('a').contains('Z'),
                 f.col('a').contains('Z_'),
-                # https://github.com/NVIDIA/spark-rapids/issues/121
-                #f.col('a').contains(''),
+                f.col('a').contains(''),
                 f.col('a').contains(None)
                 ))
 
