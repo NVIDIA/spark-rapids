@@ -47,7 +47,8 @@ class GpuWindowExecMeta(windowExec: WindowExec,
    *
    * @return WindowExpressions within windowExec,
    *         and a boolean, indicating the result column semantics
-   *         (i.e. whether result columns should be returned first).
+   *         (i.e. whether result columns should be returned *without* including the
+   *         input columns).
    */
   def getWindowExpression: (Seq[NamedExpression], Boolean) = {
     var resultColumnsOnly : Boolean = false
