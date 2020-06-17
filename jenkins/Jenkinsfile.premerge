@@ -61,7 +61,7 @@ pipeline {
                         step([$class: 'JacocoPublisher',
                               execPattern: '**/target/jacoco.exec',
                               classPattern: 'target/jacoco_classes/',
-                              sourcePattern: 'sql-plugin/src/main/java/,sql-plugin/src/main/scala/',
+                              sourcePattern: 'sql-plugin/src/main/java/,sql-plugin/src/main/scala/,shuffle-plugin/src/main/scala/',
                               sourceInclusionPattern: '**/*.java,**/*.scala'
                         ])
                     }

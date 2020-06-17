@@ -58,5 +58,5 @@ mkdir -p target/jacoco_classes/
 FILE=$(ls dist/target/rapids-4-spark_2.12-*.jar | grep -v test | xargs readlink -f)
 pushd target/jacoco_classes/
 jar xf $FILE
-rm -rf ai/rapids/shaded/ org/openucx/
+rm -rf com/nvidia/shaded/ org/openucx/
 popd

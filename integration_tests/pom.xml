@@ -20,11 +20,11 @@
     <modelVersion>4.0.0</modelVersion>
 
     <parent>
-        <groupId>ai.rapids</groupId>
+        <groupId>com.nvidia</groupId>
         <artifactId>rapids-4-spark-parent</artifactId>
         <version>0.1-SNAPSHOT</version>
     </parent>
-    <groupId>ai.rapids</groupId>
+    <groupId>com.nvidia</groupId>
     <artifactId>rapids-4-spark-integration-tests_2.12</artifactId>
     <version>0.1-SNAPSHOT</version>
 
@@ -49,13 +49,13 @@
 	    <scope>provided</scope>
         </dependency>
         <dependency>
-            <groupId>ai.rapids</groupId>
+            <groupId>com.nvidia</groupId>
             <artifactId>rapids-4-spark_${scala.binary.version}</artifactId>
             <version>${project.version}</version>
             <scope>test</scope>
         </dependency>
         <dependency>
-            <groupId>ai.rapids</groupId>
+            <groupId>com.nvidia</groupId>
             <artifactId>rapids-4-spark-tests_${scala.binary.version}</artifactId>
             <version>${project.version}</version>
             <type>test-jar</type>

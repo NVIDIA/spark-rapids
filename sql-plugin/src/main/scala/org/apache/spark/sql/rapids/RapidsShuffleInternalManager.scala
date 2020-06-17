@@ -17,9 +17,9 @@
 package org.apache.spark.sql.rapids
 
 import ai.rapids.cudf.{NvtxColor, NvtxRange}
-import ai.rapids.spark._
-import ai.rapids.spark.format.TableMeta
-import ai.rapids.spark.shuffle.{RapidsShuffleRequestHandler, RapidsShuffleServer, RapidsShuffleTransport}
+import com.nvidia.spark.rapids._
+import com.nvidia.spark.rapids.format.TableMeta
+import com.nvidia.spark.rapids.shuffle.{RapidsShuffleRequestHandler, RapidsShuffleServer, RapidsShuffleTransport}
 
 import org.apache.spark.{ShuffleDependency, SparkConf, SparkEnv, TaskContext}
 import org.apache.spark.internal.{config, Logging}
@@ -172,7 +172,7 @@ class RapidsCachingWriter[K, V](
  * @note This is an internal class to obtain access to the private
  *       `ShuffleManager` and `SortShuffleManager` classes. When configuring
  *       Apache Spark to use the RAPIDS shuffle manager,
- *       [[ai.rapids.spark.RapidsShuffleManager]] should be used as that is
+ *       [[com.nvidia.spark.RapidsShuffleManager]] should be used as that is
  *       the public class.
  */
 class RapidsShuffleInternalManager(conf: SparkConf, isDriver: Boolean)

@@ -20,7 +20,7 @@ package org.apache.spark.sql.rapids.execution
 import java.util
 
 import ai.rapids.cudf.NvtxColor
-import ai.rapids.spark.{GpuMetricNames, NvtxWithMetrics}
+import com.nvidia.spark.rapids.{GpuMetricNames, NvtxWithMetrics}
 
 import org.apache.spark._
 import org.apache.spark.rdd.RDD
