@@ -70,6 +70,10 @@ case class GpuShuffleExchangeExec(
   override def coalesceAfter: Boolean = true
 
 
+  override def withPartitioning(partitioning: Partitioning): SparkPlan =
+    GpuShuffleExchangeExec(partitioning, child)
+
+
   override def shuffleDependencyColumnar: ShuffleDependency[Int, ColumnarBatch, ColumnarBatch] = {
     shuffleBatchDependencyColumnar
   }

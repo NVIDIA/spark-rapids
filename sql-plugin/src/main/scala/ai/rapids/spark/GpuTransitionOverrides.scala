@@ -24,8 +24,9 @@ import org.apache.spark.sql.execution.adaptive.{AdaptiveSparkPlanExec, Broadcast
 import org.apache.spark.sql.execution.columnar.InMemoryTableScanExec
 import org.apache.spark.sql.execution.command.ExecutedCommandExec
 import org.apache.spark.sql.execution.datasources.v2.DataSourceV2ScanExecBase
-import org.apache.spark.sql.execution.exchange.{Exchange, ShuffleExchangeExec}
+import org.apache.spark.sql.execution.exchange.{Exchange, ReusedExchangeExec, ShuffleExchangeExec}
 import org.apache.spark.sql.rapids.GpuFileSourceScanExec
+import org.apache.spark.sql.rapids.execution.GpuBroadcastExchangeExec
 
 /**
  * Rules that run after the row to columnar and columnar to row transitions have been inserted.
@@ -37,6 +38,13 @@ class GpuTransitionOverrides extends Rule[SparkPlan] {
   def optimizeGpuPlanTransitions(plan: SparkPlan): SparkPlan = {
     println(s"optimizeGpuPlanTransitions:\n$plan")
     plan match {
+
+        // TODO these rules are now a mix of GPU plan transitions and AQE plan transitions
+        // so need to be broken out into separate methods
+
+        case _: QueryStageExec =>
+          // don't re-optimize existing query stages
+          plan
 
         case ColumnarToRowExec(bb: GpuBringBackToHost) =>
           GpuColumnarToRowExec(optimizeGpuPlanTransitions(bb.child))
@@ -50,10 +58,17 @@ class GpuTransitionOverrides extends Rule[SparkPlan] {
           GpuRowToColumnarExec(optimizeGpuPlanTransitions(r2c.child), goal)
         case HostColumnarToGpu(s @ BroadcastQueryStageExec(_, _: GpuExec), _) =>
           optimizeGpuPlanTransitions(s)
+        case HostColumnarToGpu(s @ BroadcastQueryStageExec(_,
+            ReusedExchangeExec(_, _: GpuBroadcastExchangeExec)), _) =>
+          optimizeGpuPlanTransitions(s)
         case HostColumnarToGpu(s @ ShuffleQueryStageExec(_, _: GpuExec), _) =>
           optimizeGpuPlanTransitions(s)
         case HostColumnarToGpu(child: GpuExec, _) =>
           optimizeGpuPlanTransitions(child)
+
+//          BroadcastExchange HashedRelationBroadcastMode(List(s_suppkey#108L)), [id=#678]
+//    +- BroadcastQueryStage 1
+//    +- GpuBroadcastExchange HashedRelationBroadcastMode(List(input[0, bigint, true])), [id=#318]
 
         case p =>
           p.withNewChildren(p.children.map(optimizeGpuPlanTransitions))
@@ -178,6 +193,7 @@ class GpuTransitionOverrides extends Rule[SparkPlan] {
    * Inserts a transition to be running on the GPU from CPU columnar
    */
   private def insertColumnarToGpu(plan: SparkPlan): SparkPlan = {
+
     if (plan.supportsColumnar && !plan.isInstanceOf[GpuExec]) {
       HostColumnarToGpu(insertColumnarFromGpu(plan), TargetSize(conf.gpuTargetBatchSizeBytes))
     } else {
