@@ -20,13 +20,13 @@
     <modelVersion>4.0.0</modelVersion>
 
     <parent>
-        <groupId>ai.rapids</groupId>
+        <groupId>com.nvidia</groupId>
         <artifactId>rapids-4-spark-parent</artifactId>
         <version>0.1-SNAPSHOT</version>
     </parent>
-    <groupId>ai.rapids</groupId>
+    <groupId>com.nvidia</groupId>
     <artifactId>rapids-4-spark-sql_2.12</artifactId>
-    <name>RAPIDS for Apache Spark SQL Plugin</name>
+    <name>RAPIDS Accelerator for Apache Spark SQL Plugin</name>
     <description>The RAPIDS SQL plugin for Apache Spark</description>
     <version>0.1-SNAPSHOT</version>
 
@@ -145,7 +145,7 @@
                     <launchers>
                         <launcher>
                             <id>update_rapids_config</id>
-                            <mainClass>ai.rapids.spark.RapidsConf</mainClass>
+                            <mainClass>com.nvidia.spark.rapids.RapidsConf</mainClass>
                             <args>
                                 <arg>${project.basedir}/../docs/configs.md</arg>
                             </args>
@@ -164,7 +164,7 @@
                     <excludes>
                         <exclude>dependency-reduced-pom.xml</exclude>
                         <exclude>src/main/format/README.md</exclude>
-                        <exclude>src/main/java/ai/rapids/spark/format/*</exclude>
+                        <exclude>src/main/java/com/nvidia/spark/rapids/format/*</exclude>
                         <exclude>src/test/resources/**</exclude>
                     </excludes>
                 </configuration>

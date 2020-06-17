@@ -85,8 +85,8 @@ BASE_SPARK_SUBMIT_ARGS="--master spark://$HOSTNAME:7077 --executor-memory 32G \
     --conf spark.driver.extraJavaOptions=-Duser.timezone=GMT \
     --conf spark.executor.extraJavaOptions=-Duser.timezone=GMT \
     --conf spark.sql.session.timeZone=UTC"
-MORTGAGE_SPARK_SUBMIT_ARGS=" --conf spark.plugins=ai.rapids.spark.SQLPlugin \
-    --class ai.rapids.sparkexamples.mortgage.Main \
+MORTGAGE_SPARK_SUBMIT_ARGS=" --conf spark.plugins=com.nvidia.spark.SQLPlugin \
+    --class com.nvidia.spark.rapids.tests.mortgage.Main \
     $RAPIDS_TEST_JAR"
 
 TEST_PARAMS="$SPARK_VER $PARQUET_PERF $PARQUET_ACQ $OUTPUT"

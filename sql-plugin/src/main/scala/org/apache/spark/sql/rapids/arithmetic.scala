@@ -17,7 +17,7 @@
 package org.apache.spark.sql.rapids
 
 import ai.rapids.cudf._
-import ai.rapids.spark._
+import com.nvidia.spark.rapids._
 
 import org.apache.spark.sql.catalyst.expressions.{ExpectsInputTypes, NullIntolerant}
 import org.apache.spark.sql.types._

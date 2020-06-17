@@ -20,24 +20,24 @@
   <modelVersion>4.0.0</modelVersion>
 
   <parent>
-    <groupId>ai.rapids</groupId>
+    <groupId>com.nvidia</groupId>
     <artifactId>rapids-4-spark-parent</artifactId>
     <version>0.1-SNAPSHOT</version>
   </parent>
-  <groupId>ai.rapids</groupId>
+  <groupId>com.nvidia</groupId>
   <artifactId>rapids-4-spark_2.12</artifactId>
-  <name>RAPIDS Plugin for Apache Spark Distribution</name>
+  <name>RAPIDS Accelerator for Apache Spark Distribution</name>
   <description>Creates the distribution package of the RAPIDS plugin for Apache Spark</description>
   <version>0.1-SNAPSHOT</version>
 
   <dependencies>
     <dependency>
-       <groupId>ai.rapids</groupId>
+       <groupId>com.nvidia</groupId>
        <artifactId>rapids-4-spark-sql_${scala.binary.version}</artifactId>
        <version>${project.version}</version>
     </dependency>
     <dependency>
-       <groupId>ai.rapids</groupId>
+       <groupId>com.nvidia</groupId>
        <artifactId>rapids-4-spark-shuffle_${scala.binary.version}</artifactId>
        <version>${project.version}</version>
     </dependency>
