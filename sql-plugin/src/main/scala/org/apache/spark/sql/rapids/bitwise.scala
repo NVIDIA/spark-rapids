@@ -17,7 +17,7 @@
 package org.apache.spark.sql.rapids
 
 import ai.rapids.cudf.{BinaryOp, ColumnVector, DType, Scalar, UnaryOp}
-import ai.rapids.spark.{Arm, CudfBinaryExpression, GpuBinaryExpression, GpuColumnVector, GpuExpression, GpuUnaryExpression}
+import com.nvidia.spark.rapids.{Arm, CudfBinaryExpression, GpuBinaryExpression, GpuColumnVector, GpuExpression, GpuUnaryExpression}
 
 import org.apache.spark.sql.catalyst.expressions.{ExpectsInputTypes, Expression, ImplicitCastInputTypes}
 import org.apache.spark.sql.types._

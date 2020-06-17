@@ -17,8 +17,8 @@
 package org.apache.spark.sql.rapids.execution
 
 import ai.rapids.cudf.Table
-import ai.rapids.spark._
-import ai.rapids.spark.GpuColumnVector.GpuColumnarBatchBuilder
+import com.nvidia.spark.rapids._
+import com.nvidia.spark.rapids.GpuColumnVector.GpuColumnarBatchBuilder
 
 import org.apache.spark.TaskContext
 import org.apache.spark.internal.Logging
@@ -31,8 +31,8 @@ import org.apache.spark.sql.types._
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
 /**
- * This code is based off of the code for [[ai.rapids.spark.GpuRowToColumnarExec]] but this is for
- * Row instead of InternalRow, so it is not an exact transition.
+ * This code is based off of the code for [[com.nvidia.spark.rapids.GpuRowToColumnarExec]] but this
+ * is for `Row` instead of `InternalRow`, so it is not an exact transition.
  */
 private class GpuExternalRowToColumnConverter(schema: StructType) extends Serializable {
   private val converters = schema.fields.map {
@@ -448,9 +448,9 @@ private class ExternalRowToColumnarIterator(
 }
 
 /**
- * Please don't use this class directly use [[ai.rapids.spark.ColumnarRdd]] instead. We had to
- * place the implementation in a spark specific package to poke at the internals of spark more than
- * anyone should know about.
+ * Please don't use this class directly use [[com.nvidia.spark.rapids.ColumnarRdd]] instead. We had
+ * to place the implementation in a spark specific package to poke at the internals of spark more
+ * than anyone should know about.
  *
  * This provides a way to get back out GPU Columnar data RDD[Table]. Each Table will have the same
  * schema as the dataframe passed in.  If the schema of the dataframe is something that Rapids does

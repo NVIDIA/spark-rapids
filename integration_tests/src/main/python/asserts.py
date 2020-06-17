@@ -247,12 +247,12 @@ def assert_gpu_fallback_collect(func,
     cpu_end = time.time()
     print('### GPU RUN ###')
     jvm = spark_jvm()
-    jvm.ai.rapids.spark.ExecutionPlanCaptureCallback.startCapture()
+    jvm.com.nvidia.spark.rapids.ExecutionPlanCaptureCallback.startCapture()
     gpu_start = time.time()
     from_gpu = with_gpu_session(bring_back,
             conf=conf)
     gpu_end = time.time()
-    jvm.ai.rapids.spark.ExecutionPlanCaptureCallback.assertCapturedAndGpuFellBack(cpu_fallback_class_name, 2000)
+    jvm.com.nvidia.spark.rapids.ExecutionPlanCaptureCallback.assertCapturedAndGpuFellBack(cpu_fallback_class_name, 2000)
     print('### {}: GPU TOOK {} CPU TOOK {} ###'.format(collect_type, 
         gpu_end - gpu_start, cpu_end - cpu_start))
     if should_sort_locally():
