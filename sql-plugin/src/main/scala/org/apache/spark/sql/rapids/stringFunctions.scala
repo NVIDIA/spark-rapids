@@ -287,7 +287,7 @@ case class GpuStringTrimRight(column: GpuExpression, trimParameters: Option[GpuE
 
 case class GpuConcat(children: Seq[GpuExpression]) extends GpuComplexTypeMergingExpression {
   override def dataType = StringType
-  override def nullable: Boolean = children.head.nullable
+  override def nullable: Boolean = children.exists(_.nullable)
 
   override def columnarEval(batch: ColumnarBatch): Any = {
     var nullStrScalar: Scalar = null
