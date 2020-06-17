@@ -429,6 +429,7 @@
                                 <exclude>${rapids.shade.package}.*</exclude>
                             </excludes>
                             <includes>
+                                <include>ai.rapids.cudf.*</include>
                                 <include>com.nvidia.spark.*</include>
                                 <include>org.apache.spark.sql.rapids.*</include>
                             </includes>
