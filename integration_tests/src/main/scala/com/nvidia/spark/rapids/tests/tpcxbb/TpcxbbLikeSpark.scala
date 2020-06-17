@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-package com.nvidia.sparkexamples.tpcxbb
+package com.nvidia.spark.rapids.tests.tpcxbb
 
 import org.apache.spark.sql.{DataFrame, SparkSession}
 import org.apache.spark.sql.types._

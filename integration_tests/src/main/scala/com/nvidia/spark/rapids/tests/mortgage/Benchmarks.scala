@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-package com.nvidia.sparkexamples.mortgage
+package com.nvidia.spark.rapids.tests.mortgage
 
 import org.apache.spark.sql.SparkSession
 

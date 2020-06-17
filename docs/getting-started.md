@@ -26,7 +26,7 @@ To enable GPU processing acceleration you will need:
 - Add the following jars:
     - A cudf jar that corresponds to the version of CUDA available on your cluster.
     - RAPIDS Spark accelerator plugin jar.
-- Set the config `spark.plugins` to `com.nvidia.spark.rapids.SQLPlugin`
+- Set the config `spark.plugins` to `com.nvidia.spark.SQLPlugin`
 
 ## Prerequisites
 Each node where you are running Spark needs to have the following installed. If you are running
@@ -129,7 +129,7 @@ everything in a single process on a single node.
 - Launch your Spark shell session
 
 Default configs usually work fine in local mode.  The required changes are setting the config 
-`spark.plugins` to `com.nvidia.spark.rapids.SQLPlugin` and including the jars as a dependency. All of the
+`spark.plugins` to `com.nvidia.spark.SQLPlugin` and including the jars as a dependency. All of the
 other config settings and command line parameters are to try and better configure spark for GPU
 execution.
  
@@ -144,7 +144,7 @@ $SPARK_HOME/bin/spark-shell \
        --conf spark.locality.wait=0s \
        --conf spark.sql.files.maxPartitionBytes=512m \
        --conf spark.sql.shuffle.partitions=10 \
-       --conf spark.plugins=com.nvidia.spark.rapids.SQLPlugin \
+       --conf spark.plugins=com.nvidia.spark.SQLPlugin \
        --jars ${SPARK_CUDF_JAR},${SPARK_RAPIDS_PLUGIN_JAR}
 ```
 You can run one of the examples below such as the [Example Join Operation](#example-join-operation)
@@ -214,7 +214,7 @@ $SPARK_HOME/bin/spark-shell \
        --conf spark.locality.wait=0s \
        --conf spark.sql.files.maxPartitionBytes=512m \
        --conf spark.sql.shuffle.partitions=10 \
-       --conf spark.plugins=com.nvidia.spark.rapids.SQLPlugin
+       --conf spark.plugins=com.nvidia.spark.SQLPlugin
 ```
 
 ## Running on YARN
@@ -261,7 +261,7 @@ $SPARK_HOME/bin/spark-shell \
        --conf spark.locality.wait=0s \
        --conf spark.sql.files.maxPartitionBytes=512m \
        --conf spark.sql.shuffle.partitions=10 \
-       --conf spark.plugins=com.nvidia.spark.rapids.SQLPlugin \
+       --conf spark.plugins=com.nvidia.spark.SQLPlugin \
        --conf spark.executor.resource.gpu.discoveryScript=./getGpusResources.sh \
        --files ${SPARK_RAPIDS_DIR}/getGpusResources.sh \
        --jars  ${SPARK_CUDF_JAR},${SPARK_RAPIDS_PLUGIN_JAR}
@@ -288,7 +288,7 @@ $SPARK_HOME/bin/spark-shell \
        --conf spark.locality.wait=0s \
        --conf spark.sql.files.maxPartitionBytes=512m \
        --conf spark.sql.shuffle.partitions=10 \
-       --conf spark.plugins=com.nvidia.spark.rapids.SQLPlugin \
+       --conf spark.plugins=com.nvidia.spark.SQLPlugin \
        --conf spark.executor.resource.gpu.discoveryScript=./getGpusResources.sh \
        --files ${SPARK_RAPIDS_DIR}/getGpusResources.sh \
        --jars  ${SPARK_CUDF_JAR},${SPARK_RAPIDS_PLUGIN_JAR}
@@ -325,8 +325,8 @@ $SPARK_HOME/bin/spark-shell \
        --conf spark.locality.wait=0s \
        --conf spark.sql.files.maxPartitionBytes=512m \
        --conf spark.sql.shuffle.partitions=10 \
-       --conf spark.plugins=com.nvidia.spark.rapids.SQLPlugin \
-       --conf spark.resourceDiscovery.plugin=com.nvidia.spark.rapids.ExclusiveModeGpuDiscoveryPlugin \
+       --conf spark.plugins=com.nvidia.spark.SQLPlugin \
+       --conf spark.resourceDiscovery.plugin=com.nvidia.spark.ExclusiveModeGpuDiscoveryPlugin \
        --conf spark.executor.resource.gpu.discoveryScript=./getGpusResources.sh \
        --files ${SPARK_RAPIDS_DIR}/getGpusResources.sh \
        --jars  ${SPARK_CUDF_JAR},${SPARK_RAPIDS_PLUGIN_JAR}
@@ -368,7 +368,7 @@ $SPARK_HOME/bin/spark-shell \
        --conf spark.locality.wait=0s \
        --conf spark.sql.files.maxPartitionBytes=512m \
        --conf spark.sql.shuffle.partitions=10 \
-       --conf spark.plugins=com.nvidia.spark.rapids.SQLPlugin \
+       --conf spark.plugins=com.nvidia.spark.SQLPlugin \
        --conf spark.executor.resource.gpu.discoveryScript=/opt/sparkRapidsPlugin/getGpusResources.sh \
        --conf spark.executor.resource.gpu.vendor=nvidia.com \
        --conf spark.kubernetes.container.image=$IMAGE_NAME
@@ -392,7 +392,7 @@ and application.
 ```shell script
 $SPARK_HOME/bin/spark-shell --master yarn \
   --num-executors 1 \
-  --conf spark.plugins=com.nvidia.spark.rapids.SQLPlugin \
+  --conf spark.plugins=com.nvidia.spark.SQLPlugin \
   --conf spark.executor.cores=6 \
   --conf spark.rapids.sql.concurrentGpuTasks=2 \
   --executor-memory 20g \

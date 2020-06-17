@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-package com.nvidia.spark.rapids
+package com.nvidia.spark
 
 import org.apache.spark.SparkConf
 import org.apache.spark.sql.rapids.RapidsShuffleInternalManager

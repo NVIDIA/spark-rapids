@@ -14,13 +14,14 @@
  * limitations under the License.
  */
 
-package com.nvidia.spark.rapids
+package com.nvidia.spark
 
 import java.util.Optional
 
 import scala.collection.mutable.ArrayBuffer
 
-import ai.rapids.cudf._
+import ai.rapids.cudf.Cuda
+import com.nvidia.spark.rapids.GpuDeviceManager
 
 import org.apache.spark.SparkConf
 import org.apache.spark.api.resource.ResourceDiscoveryPlugin
@@ -36,7 +37,7 @@ import org.apache.spark.resource.{ResourceInformation, ResourceRequest}
  *  other executors will not be able to use it.
  *
  *  This plugin can be activated in spark with the configuration:
- *  --conf spark.resourceDiscovery.plugin=com.nvidia.spark.rapids.ExclusiveModeGpuDiscoveryPlugin
+ *  `--conf spark.resourceDiscovery.plugin=com.nvidia.spark.ExclusiveModeGpuDiscoveryPlugin`
  */
 class ExclusiveModeGpuDiscoveryPlugin extends ResourceDiscoveryPlugin with Logging {
   override def discoverResource(
@@ -50,15 +51,15 @@ class ExclusiveModeGpuDiscoveryPlugin extends ResourceDiscoveryPlugin with Loggi
       return Optional.empty()
     }
     val ngpusRequested = request.amount
-    val deviceCount: Int = Cuda.getDeviceCount()
+    val deviceCount: Int = Cuda.getDeviceCount
     logInfo(s"Running ExclusiveModeGpuDiscoveryPlugin to acquire $ngpusRequested GPU(s), " +
       s"host has $deviceCount GPU(s)")
     // loop multiple times to see if a GPU was released or something unexpected happened that
     // we couldn't acquire on first try
     var numRetries = 2
     val allocatedAddrs = ArrayBuffer[String]()
-    val addrsToTry = ArrayBuffer.empty ++= (0 to (deviceCount - 1))
-    while (numRetries > 0 && allocatedAddrs.size < ngpusRequested && addrsToTry.size > 0) {
+    val addrsToTry = ArrayBuffer.empty ++= (0 until deviceCount)
+    while (numRetries > 0 && allocatedAddrs.size < ngpusRequested && addrsToTry.nonEmpty) {
       var addrLoc = 0
       val allAddrs = addrsToTry.size
       while (addrLoc < allAddrs && allocatedAddrs.size < ngpusRequested) {

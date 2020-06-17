@@ -14,10 +14,9 @@
  * limitations under the License.
  */
 
-package com.nvidia.sparkexamples.mortgage
+package com.nvidia.spark.rapids.tests.mortgage
 
-import com.nvidia.spark.rapids.RapidsShuffleManager
-import com.nvidia.sparkexamples.mortgage.AggregatesWithJoin
+import com.nvidia.spark.RapidsShuffleManager
 import org.scalatest.FunSuite
 
 import org.apache.spark.sql.SparkSession
@@ -30,7 +29,7 @@ class MortgageSparkSuite extends FunSuite {
       .appName("MortgageTests")
       .config("spark.sql.join.preferSortMergeJoin", false)
       .config("spark.sql.shuffle.partitions", 2)
-      .config("spark.plugins", "com.nvidia.spark.rapids.SQLPlugin")
+      .config("spark.plugins", "com.nvidia.spark.SQLPlugin")
       .config("spark.rapids.sql.explain", true)
       .config("spark.rapids.sql.test.enabled", false)
       .config("spark.rapids.sql.incompatibleOps.enabled", true)

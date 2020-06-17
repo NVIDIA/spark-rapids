@@ -14,9 +14,10 @@
  * limitations under the License.
  */
 
-package com.nvidia.sparkexamples.tpch
+package com.nvidia.spark.rapids.tests.tpch
 
-import com.nvidia.spark.rapids.{ColumnarRdd, RapidsShuffleManager}
+import com.nvidia.spark.RapidsShuffleManager
+import com.nvidia.spark.rapids.ColumnarRdd
 import org.scalatest.{BeforeAndAfterAll, FunSuite}
 
 import org.apache.spark.sql.SparkSession
@@ -29,7 +30,7 @@ class TpchLikeSparkSuite extends FunSuite with BeforeAndAfterAll {
       .appName("TPCHLikeTest")
       .config("spark.sql.join.preferSortMergeJoin", false)
       .config("spark.sql.shuffle.partitions", 2)
-      .config("spark.plugins", "com.nvidia.spark.rapids.SQLPlugin")
+      .config("spark.plugins", "com.nvidia.spark.SQLPlugin")
       .config("spark.rapids.sql.test.enabled", false)
       .config("spark.rapids.sql.explain", true)
       .config("spark.rapids.sql.incompatibleOps.enabled", true)

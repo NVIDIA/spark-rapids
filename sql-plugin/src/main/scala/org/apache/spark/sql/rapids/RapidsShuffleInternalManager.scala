@@ -172,7 +172,7 @@ class RapidsCachingWriter[K, V](
  * @note This is an internal class to obtain access to the private
  *       `ShuffleManager` and `SortShuffleManager` classes. When configuring
  *       Apache Spark to use the RAPIDS shuffle manager,
- *       [[com.nvidia.spark.rapids.RapidsShuffleManager]] should be used as that is
+ *       [[com.nvidia.spark.RapidsShuffleManager]] should be used as that is
  *       the public class.
  */
 class RapidsShuffleInternalManager(conf: SparkConf, isDriver: Boolean)

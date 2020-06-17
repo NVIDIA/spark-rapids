@@ -17,6 +17,7 @@
 package org.apache.spark.sql.rapids
 
 import ai.rapids.cudf.{CudaMemInfo, Rmm}
+import com.nvidia.spark.RapidsShuffleManager
 import com.nvidia.spark.rapids._
 
 import org.apache.spark.{SparkConf, SparkEnv}

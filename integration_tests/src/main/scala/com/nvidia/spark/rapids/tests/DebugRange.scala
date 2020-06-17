@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-package com.nvidia.sparkexamples
+package com.nvidia.spark.rapids.tests
 
 import java.lang.reflect.Constructor
 

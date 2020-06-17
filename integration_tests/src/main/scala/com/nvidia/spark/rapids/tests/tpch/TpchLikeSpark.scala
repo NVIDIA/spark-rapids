@@ -14,9 +14,9 @@
  * limitations under the License.
  */
 
-package com.nvidia.sparkexamples.tpch
+package com.nvidia.spark.rapids.tests.tpch
 
-import com.nvidia.sparkexamples.DebugRange
+import com.nvidia.spark.rapids.tests.DebugRange
 
 import org.apache.spark.sql.{DataFrame, SparkSession}
 import org.apache.spark.sql.types._

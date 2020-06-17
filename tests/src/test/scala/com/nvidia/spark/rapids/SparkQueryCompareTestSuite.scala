@@ -61,7 +61,7 @@ object SparkSessionHolder extends Logging {
       .master("local[1]")
       .config("spark.rapids.sql.enabled", "false")
       .config("spark.rapids.sql.test.enabled", "false")
-      .config("spark.plugins", "com.nvidia.spark.rapids.SQLPlugin")
+      .config("spark.plugins", "com.nvidia.spark.SQLPlugin")
       .config("spark.sql.queryExecutionListeners",
         "com.nvidia.spark.rapids.ExecutionPlanCaptureCallback")
       .config("spark.sql.warehouse.dir", sparkWarehouseDir().getAbsolutePath)

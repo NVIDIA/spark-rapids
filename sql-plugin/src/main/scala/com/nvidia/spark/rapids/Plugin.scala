@@ -131,8 +131,8 @@ trait GpuPartitioning extends Partitioning {
 }
 
 case class ColumnarOverrideRules() extends ColumnarRule with Logging {
-  val overrides = GpuOverrides()
-  val overrideTransitions = new GpuTransitionOverrides()
+  val overrides: Rule[SparkPlan] = GpuOverrides()
+  val overrideTransitions: Rule[SparkPlan] = new GpuTransitionOverrides()
 
   override def preColumnarTransitions : Rule[SparkPlan] = overrides
 
@@ -142,7 +142,7 @@ case class ColumnarOverrideRules() extends ColumnarRule with Logging {
 /**
   * Extension point to enable GPU SQL processing.
   */
-class SQLExecPlugin extends Function1[SparkSessionExtensions, Unit] with Logging {
+class SQLExecPlugin extends (SparkSessionExtensions => Unit) with Logging {
   override def apply(extensions: SparkSessionExtensions): Unit = {
     logWarning("Installing extensions to enable rapids GPU SQL support." +
       s" To disable GPU support set `${RapidsConf.SQL_ENABLED}` to false")
@@ -160,7 +160,6 @@ trait GpuSpillable {
 
 object RapidsPluginUtils extends Logging {
   private val SQL_PLUGIN_NAME = classOf[SQLExecPlugin].getName
-  private val OLD_SQL_PLUGIN_NAME = "com.nvidia.spark.rapids.Plugin"
   private val SQL_PLUGIN_CONF_KEY = StaticSQLConf.SPARK_SESSION_EXTENSIONS.key
   private val SERIALIZER_CONF_KEY = "spark.serializer"
   private val JAVA_SERIALIZER_NAME = classOf[JavaSerializer].getName
@@ -171,14 +170,7 @@ object RapidsPluginUtils extends Logging {
   def fixupConfigs(conf: SparkConf): Unit = {
     // First add in the SQL executor plugin because that is what we need at a minimum
     if (conf.contains(SQL_PLUGIN_CONF_KEY)) {
-      val previousValue = conf.get(SQL_PLUGIN_CONF_KEY).split(",")
-        .map(_.trim).map(_ match {
-        case OLD_SQL_PLUGIN_NAME =>
-          logWarning(s"The spark sql extension $OLD_SQL_PLUGIN_NAME is deprecated and " +
-            s"you only need to set the conf spark.plugins to ${classOf[SQLPlugin].getName}")
-          SQL_PLUGIN_NAME
-        case other => other
-      })
+      val previousValue = conf.get(SQL_PLUGIN_CONF_KEY).split(",").map(_.trim)
       if (!previousValue.contains(SQL_PLUGIN_NAME)) {
         conf.set(SQL_PLUGIN_CONF_KEY, previousValue + "," + SQL_PLUGIN_NAME)
       } else {
@@ -240,13 +232,12 @@ class RapidsExecutorPlugin extends ExecutorPlugin with Logging {
 
       GpuSemaphore.initialize(conf.concurrentGpuTasks)
     } catch {
-      case e: Throwable => {
+      case e: Throwable =>
         // Exceptions in executor plugin can cause a single thread to die but the executor process
         // sticks around without any useful info until it hearbeat times out. Print what happened
         // and exit immediately.
         logError("Exception in the executor plugin", e)
         System.exit(1)
-      }
     }
   }
 
@@ -323,6 +314,9 @@ object ExecutionPlanCaptureCallback {
   }
 }
 
+/**
+ * Used as a part of testing to capture the executed query plan.
+ */
 class ExecutionPlanCaptureCallback extends QueryExecutionListener {
   import ExecutionPlanCaptureCallback._
 
@@ -331,25 +325,4 @@ class ExecutionPlanCaptureCallback extends QueryExecutionListener {
 
   override def onFailure(funcName: String, qe: QueryExecution, exception: Exception): Unit =
     captureIfNeeded(qe)
-}
-
-/**
- * The RAPIDS plugin for Spark.
- * To enable this plugin, set the config "spark.plugins" to com.nvidia.spark.rapids.SQLPlugin
- */
-class SQLPlugin extends SparkPlugin with Logging {
-  override def driverPlugin(): DriverPlugin = new RapidsDriverPlugin
-  override def executorPlugin(): ExecutorPlugin = new RapidsExecutorPlugin
-}
-
-/**
- * Old version of SQLPlugin kept for backwards compatibility
- */
-@scala.deprecated("Please use com.nvidia.spark.rapids.SQLPlugin instead", since="0.1")
-class RapidsSparkPlugin extends SQLPlugin {
-  override def driverPlugin(): DriverPlugin = {
-    logWarning(s"The plugin class ${this.getClass.getName} is deprecated please use " +
-      s"${classOf[SQLPlugin].getName} instead.")
-    super.driverPlugin()
-  }
 }
