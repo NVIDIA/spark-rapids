@@ -106,8 +106,6 @@ abstract class RapidsBufferStore(
 
   private[this] val nvtxSyncSpillName: String = name + " sync spill"
 
-  catalog.registerStore(this)
-
   /** Return the current byte total of buffers in this store. */
   def currentSize: Long = buffers.getTotalBytes
 

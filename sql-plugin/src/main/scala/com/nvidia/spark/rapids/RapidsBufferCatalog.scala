@@ -28,21 +28,8 @@ import org.apache.spark.internal.Logging
 
 /** Catalog for lookup of buffers by ID */
 class RapidsBufferCatalog extends Logging {
-  /** Tracks all buffer stores using this catalog */
-  private[this] val stores = new ArrayBuffer[RapidsBufferStore]
-
   /** Map of buffer IDs to buffers */
   private[this] val bufferMap = new ConcurrentHashMap[RapidsBufferId, RapidsBuffer]
-
-  /**
-   * Register a buffer store that is using this catalog.
-   * NOTE: It is assumed all stores are registered before any buffers are added to the catalog.
-   * @param store buffer store
-   */
-  def registerStore(store: RapidsBufferStore): Unit = {
-    require(store.currentSize == 0, "Store must not have any buffers when registered")
-    stores.append(store)
-  }
 
   /**
    * Lookup the buffer that corresponds to the specified buffer ID and acquire it.
