@@ -14,13 +14,13 @@
  * limitations under the License.
  */
 
-package ai.rapids.spark
+package com.nvidia.spark.rapids
 
 import java.io.File
 import java.util.NoSuchElementException
 
-import ai.rapids.spark.StorageTier.StorageTier
-import ai.rapids.spark.format.TableMeta
+import com.nvidia.spark.rapids.StorageTier.StorageTier
+import com.nvidia.spark.rapids.format.TableMeta
 import org.mockito.Mockito._
 import org.scalatest.FunSuite
 import org.scalatest.mockito.MockitoSugar
