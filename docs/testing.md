@@ -4,10 +4,10 @@ We have several stand alone examples that you can run in the integration_tests s
 
 One set is based off of the mortgage dataset you can download 
 [here](http://www.fanniemae.com/portal/funding-the-market/data/loan-performance-data.html)
-and are in the `ai.rapids.sparkexamples.mortgage` package.
+and are in the `com.nvidia.spark.rapids.tests.mortgage` package.
 
 The other is based off of TPCH. You can use the TPCH `dbgen` tool to generate data for them.  They
-are in the `ai.rapids.sparkexamples.tpch` package. `dbgen` has various options, one way to
+are in the `com.nvidia.spark.rapids.tests.tpch` package. `dbgen` has various options, one way to
 generate the data. Please refer to the documentation that comes with dbgen on how to use it, but
 we typically run with the default options and only increase the scale factor dependig on the test.
 ```shell script
@@ -22,7 +22,7 @@ generated data.  After that each query has its own object.
 
 So you can call like:
 ```scala
-import ai.rapids.sparkexamples.tpch._
+import com.nvidia.spark.rapids.tests.tpch._
 val pathTodbgenoutput = SPECIFY PATH
 TpchLikeSpark.setupAllCSV(spark, pathTodbgenoutput)
 Q1Like(spark).count()
@@ -79,12 +79,12 @@ just copied over.
 
 ```scala
 import org.scalatest._
-ai.rapids.spark.TestResourceFinder.setPrefix(PATH_TO_TEST_FILES)
+com.nvidia.spark.rapids.TestResourceFinder.setPrefix(PATH_TO_TEST_FILES)
 ```
 
 Next you can start to run the tests.
 
 ```scala
-durations.run(new ai.rapids.spark.JoinsSuite)
+durations.run(new com.nvidia.spark.rapids.JoinsSuite)
 ...
 ```

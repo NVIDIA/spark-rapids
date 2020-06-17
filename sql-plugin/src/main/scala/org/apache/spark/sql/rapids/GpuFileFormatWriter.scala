@@ -19,7 +19,7 @@ package org.apache.spark.sql.rapids
 import java.util.{Date, UUID}
 
 import ai.rapids.cudf.ColumnVector
-import ai.rapids.spark._
+import com.nvidia.spark.rapids._
 import org.apache.hadoop.conf.Configuration
 import org.apache.hadoop.fs.Path
 import org.apache.hadoop.mapreduce._

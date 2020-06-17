@@ -18,7 +18,7 @@ package org.apache.spark.sql.rapids
 
 import java.io.IOException
 
-import ai.rapids.spark.{ColumnarFileFormat, GpuDataWritingCommand}
+import com.nvidia.spark.rapids.{ColumnarFileFormat, GpuDataWritingCommand}
 import org.apache.hadoop.fs.{FileSystem, Path}
 
 import org.apache.spark.internal.io.FileCommitProtocol

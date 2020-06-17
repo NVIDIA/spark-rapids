@@ -189,9 +189,9 @@ class TpchRunner:
     jvm_session = _get_jvm_session(spark)
     jvm = _get_jvm(spark)
     formats = {
-      "csv": jvm.ai.rapids.sparkexamples.tpch.TpchLikeSpark.setupAllCSV,
-      "parquet": jvm.ai.rapids.sparkexamples.tpch.TpchLikeSpark.setupAllParquet,
-      "orc": jvm.ai.rapids.sparkexamples.tpch.TpchLikeSpark.setupAllOrc
+      "csv": jvm.com.nvidia.spark.rapids.tests.tpch.TpchLikeSpark.setupAllCSV,
+      "parquet": jvm.com.nvidia.spark.rapids.tests.tpch.TpchLikeSpark.setupAllParquet,
+      "orc": jvm.com.nvidia.spark.rapids.tests.tpch.TpchLikeSpark.setupAllOrc
     }
     formats.get(self.tpch_format)(jvm_session, self.tpch_path)
 
@@ -199,28 +199,28 @@ class TpchRunner:
     jvm_session = _get_jvm_session(spark)
     jvm = _get_jvm(spark)
     tests = {
-      "q1": jvm.ai.rapids.sparkexamples.tpch.Q1Like,
-      "q2": jvm.ai.rapids.sparkexamples.tpch.Q2Like,
-      "q3": jvm.ai.rapids.sparkexamples.tpch.Q3Like,
-      "q4": jvm.ai.rapids.sparkexamples.tpch.Q4Like,
-      "q5": jvm.ai.rapids.sparkexamples.tpch.Q5Like,
-      "q6": jvm.ai.rapids.sparkexamples.tpch.Q6Like,
-      "q7": jvm.ai.rapids.sparkexamples.tpch.Q7Like,
-      "q8": jvm.ai.rapids.sparkexamples.tpch.Q8Like,
-      "q9": jvm.ai.rapids.sparkexamples.tpch.Q9Like,
-      "q10": jvm.ai.rapids.sparkexamples.tpch.Q10Like,
-      "q11": jvm.ai.rapids.sparkexamples.tpch.Q11Like,
-      "q12": jvm.ai.rapids.sparkexamples.tpch.Q12Like,
-      "q13": jvm.ai.rapids.sparkexamples.tpch.Q13Like,
-      "q14": jvm.ai.rapids.sparkexamples.tpch.Q14Like,
-      "q15": jvm.ai.rapids.sparkexamples.tpch.Q15Like,
-      "q16": jvm.ai.rapids.sparkexamples.tpch.Q16Like,
-      "q17": jvm.ai.rapids.sparkexamples.tpch.Q17Like,
-      "q18": jvm.ai.rapids.sparkexamples.tpch.Q18Like,
-      "q19": jvm.ai.rapids.sparkexamples.tpch.Q19Like,
-      "q20": jvm.ai.rapids.sparkexamples.tpch.Q20Like,
-      "q21": jvm.ai.rapids.sparkexamples.tpch.Q21Like,
-      "q22": jvm.ai.rapids.sparkexamples.tpch.Q22Like
+      "q1": jvm.com.nvidia.spark.rapids.tests.tpch.Q1Like,
+      "q2": jvm.com.nvidia.spark.rapids.tests.tpch.Q2Like,
+      "q3": jvm.com.nvidia.spark.rapids.tests.tpch.Q3Like,
+      "q4": jvm.com.nvidia.spark.rapids.tests.tpch.Q4Like,
+      "q5": jvm.com.nvidia.spark.rapids.tests.tpch.Q5Like,
+      "q6": jvm.com.nvidia.spark.rapids.tests.tpch.Q6Like,
+      "q7": jvm.com.nvidia.spark.rapids.tests.tpch.Q7Like,
+      "q8": jvm.com.nvidia.spark.rapids.tests.tpch.Q8Like,
+      "q9": jvm.com.nvidia.spark.rapids.tests.tpch.Q9Like,
+      "q10": jvm.com.nvidia.spark.rapids.tests.tpch.Q10Like,
+      "q11": jvm.com.nvidia.spark.rapids.tests.tpch.Q11Like,
+      "q12": jvm.com.nvidia.spark.rapids.tests.tpch.Q12Like,
+      "q13": jvm.com.nvidia.spark.rapids.tests.tpch.Q13Like,
+      "q14": jvm.com.nvidia.spark.rapids.tests.tpch.Q14Like,
+      "q15": jvm.com.nvidia.spark.rapids.tests.tpch.Q15Like,
+      "q16": jvm.com.nvidia.spark.rapids.tests.tpch.Q16Like,
+      "q17": jvm.com.nvidia.spark.rapids.tests.tpch.Q17Like,
+      "q18": jvm.com.nvidia.spark.rapids.tests.tpch.Q18Like,
+      "q19": jvm.com.nvidia.spark.rapids.tests.tpch.Q19Like,
+      "q20": jvm.com.nvidia.spark.rapids.tests.tpch.Q20Like,
+      "q21": jvm.com.nvidia.spark.rapids.tests.tpch.Q21Like,
+      "q22": jvm.com.nvidia.spark.rapids.tests.tpch.Q22Like
     }
     df = tests.get(query).apply(jvm_session)
     return DataFrame(df, spark.getActiveSession())
@@ -248,9 +248,9 @@ class TpcxbbRunner:
     jvm_session = _get_jvm_session(spark)
     jvm = _get_jvm(spark)
     formats = {
-      "csv": jvm.ai.rapids.sparkexamples.tpcxbb.TpcxbbLikeSpark.setupAllCSV,
-      "parquet": jvm.ai.rapids.sparkexamples.tpcxbb.TpcxbbLikeSpark.setupAllParquet,
-      "orc": jvm.ai.rapids.sparkexamples.tpcxbb.TpcxbbLikeSpark.setupAllOrc
+      "csv": jvm.com.nvidia.spark.rapids.tests.tpcxbb.TpcxbbLikeSpark.setupAllCSV,
+      "parquet": jvm.com.nvidia.spark.rapids.tests.tpcxbb.TpcxbbLikeSpark.setupAllParquet,
+      "orc": jvm.com.nvidia.spark.rapids.tests.tpcxbb.TpcxbbLikeSpark.setupAllOrc
     }
     formats.get(self.tpcxbb_format)(jvm_session,self.tpcxbb_path)
 
@@ -258,10 +258,10 @@ class TpcxbbRunner:
     jvm_session = _get_jvm_session(spark)
     jvm = _get_jvm(spark)
     tests = {
-      "q5": jvm.ai.rapids.sparkexamples.tpcxbb.Q5Like,
-      "q16": jvm.ai.rapids.sparkexamples.tpcxbb.Q16Like,
-      "q21": jvm.ai.rapids.sparkexamples.tpcxbb.Q21Like,
-      "q22": jvm.ai.rapids.sparkexamples.tpcxbb.Q22Like
+      "q5": jvm.com.nvidia.spark.rapids.tests.tpcxbb.Q5Like,
+      "q16": jvm.com.nvidia.spark.rapids.tests.tpcxbb.Q16Like,
+      "q21": jvm.com.nvidia.spark.rapids.tests.tpcxbb.Q21Like,
+      "q22": jvm.com.nvidia.spark.rapids.tests.tpcxbb.Q22Like
     }
     df = tests.get(query).apply(jvm_session)
     return DataFrame(df, spark.getActiveSession())
@@ -286,7 +286,7 @@ class MortgageRunner:
     jvm = _get_jvm(spark)
     acq = self.mortgage_acq_path
     perf = self.mortgage_perf_path
-    run = jvm.ai.rapids.sparkexamples.mortgage.Run
+    run = jvm.com.nvidia.spark.rapids.tests.mortgage.Run
     if self.mortgage_format == 'csv':
         df = run.csv(jvm_session, perf, acq)
     elif self.mortgage_format == 'parquet':
