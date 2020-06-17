@@ -16,10 +16,11 @@
 
 package org.apache.spark.sql.rapids
 
+import com.nvidia.spark.rapids.GpuDataWritingCommand
 import org.apache.hadoop.conf.Configuration
 
 import org.apache.spark.SparkContext
-import org.apache.spark.sql.execution.datasources.{BasicWriteJobStatsTracker, WriteTaskStats}
+import org.apache.spark.sql.execution.datasources.BasicWriteJobStatsTracker
 import org.apache.spark.sql.execution.metric.{SQLMetric, SQLMetrics}
 import org.apache.spark.util.SerializableConfiguration
 
@@ -60,9 +61,9 @@ object GpuWriteJobStatsTracker {
   val GPU_TIME_KEY = "gpuTime"
   val WRITE_TIME_KEY = "writeTime"
 
-  lazy val basicMetrics: Map[String, SQLMetric] = BasicWriteJobStatsTracker.metrics
+  def basicMetrics: Map[String, SQLMetric] = BasicWriteJobStatsTracker.metrics
 
-  lazy val taskMetrics: Map[String, SQLMetric] = {
+  def taskMetrics: Map[String, SQLMetric] = {
     val sparkContext = SparkContext.getActive.get
     Map(
       GPU_TIME_KEY -> SQLMetrics.createNanoTimingMetric(sparkContext, "GPU time"),
@@ -70,8 +71,7 @@ object GpuWriteJobStatsTracker {
     )
   }
 
-  def metrics: Map[String, SQLMetric] = basicMetrics ++ taskMetrics
-
-  def apply(serializableHadoopConf: SerializableConfiguration): GpuWriteJobStatsTracker =
-    new GpuWriteJobStatsTracker(serializableHadoopConf, basicMetrics, taskMetrics)
+  def apply(serializableHadoopConf: SerializableConfiguration,
+      command: GpuDataWritingCommand): GpuWriteJobStatsTracker =
+    new GpuWriteJobStatsTracker(serializableHadoopConf, command.basicMetrics, command.taskMetrics)
 }
