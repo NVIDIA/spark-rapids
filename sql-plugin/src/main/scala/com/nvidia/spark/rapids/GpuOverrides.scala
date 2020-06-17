@@ -1136,9 +1136,20 @@ object GpuOverrides {
         } else {
           childrenExprMeta
         }
-        override def convertToGpu(): GpuExpression =
-          GpuAggregateExpression(childExprs.head.convertToGpu().asInstanceOf[GpuAggregateFunction],
-            a.mode, a.isDistinct, filter.map(_.convertToGpu()) ,a.resultId)
+       override def convertToGpu(): GpuExpression = {
+         // handle the case AggregateExpression has the resultIds parameter where its
+         // Seq[ExprIds] instead of single ExprId.
+         val resultId = try {
+            val resultMethod = a.getClass.getMethod("resultId")
+            resultMethod.invoke(a).asInstanceOf[ExprId]
+          } catch {
+            case e: Exception =>
+              val resultMethod = a.getClass.getMethod("resultIds")
+              resultMethod.invoke(a).asInstanceOf[Seq[ExprId]](0)
+          }
+          GpuAggregateExpression(childExprs(0).convertToGpu().asInstanceOf[GpuAggregateFunction],
+            a.mode, a.isDistinct, filter.map(_.convertToGpu()) ,resultId)
+       }
       }),
     expr[SortOrder](
       "sort order",
