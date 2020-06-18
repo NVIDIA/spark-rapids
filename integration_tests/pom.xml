@@ -54,6 +54,15 @@
             <version>${project.version}</version>
             <scope>test</scope>
         </dependency>
+
+        <!-- tests fail unless this is here when running with Spark as a submodule -->
+        <dependency>
+            <groupId>com.google.guava</groupId>
+            <artifactId>guava</artifactId>
+            <version>14.0.1</version>
+            <scope>test</scope>
+        </dependency>
+
         <dependency>
             <groupId>ai.rapids</groupId>
             <artifactId>rapids-4-spark-tests_${scala.binary.version}</artifactId>
