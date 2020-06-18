@@ -57,13 +57,9 @@ pipeline {
                     docker.image(IMAGE_NAME).inside("--runtime=nvidia -v ${HOME}/.m2:${HOME}/.m2:rw \
                         -v ${HOME}/.zinc:${HOME}/.zinc:rw \
                         -v /etc/passwd:/etc/passwd -v /etc/group:/etc/group") {
-                        sh "bash $BUILD_SCRIPT $MVN_URM_MIRROR"
-                        step([$class: 'JacocoPublisher',
-                              execPattern: '**/target/jacoco.exec',
-                              classPattern: 'target/jacoco_classes/',
-                              sourcePattern: 'sql-plugin/src/main/java/,sql-plugin/src/main/scala/,shuffle-plugin/src/main/scala/',
-                              sourceInclusionPattern: '**/*.java,**/*.scala'
-                        ])
+                        echo rm "spark-3.0.0 cache"
+                        sh "ls -l -rf ${HOME}/.m2/repository/org/apache/spark/3.0.0/"
+                        sh "rm -rf ${HOME}/.m2/repository/org/apache/spark/3.0.0/"
                     }
                 }
             }
