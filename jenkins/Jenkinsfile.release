@@ -22,7 +22,7 @@
 */
 
 def SERVERS_MAP = [
-    Local:    'http://apt-sh04:8081/repository/xgboost-spark-release',
+    Local:    ' ',
     Sonatype: 'https://oss.sonatype.org/service/local/staging/deploy/maven2'
 ]
 
@@ -41,7 +41,7 @@ pipeline {
     }
 
     parameters {
-        choice(name: 'DEPLOY_TO', choices: ['Local', 'Sonatype'],
+        choice(name: 'DEPLOY_TO', choices: ['Sonatype'],
             description: 'Where to deploy artifacts to')
         string(name: 'REF', defaultValue: 'branch-0.1', description: 'Commit to build')
     }
