@@ -1,0 +1,103 @@
+#!/usr/local/env groovy
+/*
+ * Copyright (c) 2019-2020, NVIDIA CORPORATION.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+/**
+*
+* Jenkinsfile for building and deploy rapids-plugin to public repo
+*
+*/
+
+def SERVERS_MAP = [
+    Local:    ' ',
+    Sonatype: 'https://oss.sonatype.org/service/local/staging/deploy/maven2'
+]
+
+def SEC_IDS = [
+    Local:    ['local-gpg-passphrase',  'local-gpg-private-key',  'local-username-password'],
+    Sonatype: ['rapids-gpg-passphrase', 'rapids-gpg-private-key', 'sonatype-username-password']
+]
+
+pipeline {
+    agent { label 'vanilla||docker-deploy||docker-gpu' }
+
+    options {
+        ansiColor('xterm')
+        timeout(time: 120, unit: 'MINUTES')
+        buildDiscarder(logRotator(numToKeepStr: '10'))
+    }
+
+    parameters {
+        choice(name: 'DEPLOY_TO', choices: ['Sonatype'],
+            description: 'Where to deploy artifacts to')
+        string(name: 'REF', defaultValue: 'branch-0.1', description: 'Commit to build')
+    }
+
+    environment {
+        JENKINS_ROOT='jenkins'
+        IMAGE_NAME="urm.nvidia.com/sw-spark-docker/plugin:dev-ubuntu16-cuda10.1"
+        LIBCUDF_KERNEL_CACHE_PATH='/tmp/.cudf'
+        MVN_MIRROR='-s jenkins/settings.xml -P mirror-apache-to-urm'
+        URM_CREDS = credentials("svcngcc_artifactory")
+        DIST_PL='dist'
+        SQL_PL='sql-plugin'
+    }
+
+    stages {
+        stage('Build') {
+            steps {
+                script {
+                    def DOCKER_CMD="docker --config $WORKSPACE/.docker"
+                    sh """
+                        echo $URM_CREDS_PSW | $DOCKER_CMD login https://urm.nvidia.com -u $URM_CREDS_USR --password-stdin
+                        $DOCKER_CMD pull $IMAGE_NAME
+                        $DOCKER_CMD logout https://urm.nvidia.com
+                    """
+                    docker.image("$IMAGE_NAME").inside("--runtime=nvidia -v ${HOME}/.m2:${HOME}/.m2:rw \
+                        -v ${HOME}/.zinc:${HOME}/.zinc:rw \
+                        -v /etc/passwd:/etc/passwd -v /etc/group:/etc/group") {
+                        sh "mvn -U -B clean install $MVN_MIRROR -P source-javadoc"
+                    }
+                }
+            }
+        }
+
+        stage("Deploy") {
+            environment {
+                SERVER_ID='ossrh'
+                SERVER_URL="${SERVERS_MAP["$DEPLOY_TO"]}"
+                GPG_PASSPHRASE=credentials("${SEC_IDS["$DEPLOY_TO"][0]}")
+                GPG_FILE=credentials("${SEC_IDS["$DEPLOY_TO"][1]}")
+                SONATYPE=credentials("${SEC_IDS["$DEPLOY_TO"][2]}")
+                GNUPGHOME="${WORKSPACE}/.gnupg"
+            }
+            steps {
+                script {
+                    docker.image("$IMAGE_NAME").inside("-v ${HOME}/.m2:${HOME}/.m2:rw \
+                        -v /etc/passwd:/etc/passwd -v /etc/group:/etc/group") {
+                        sh 'rm -rf $GNUPGHOME'
+                        sh 'gpg --import $GPG_FILE'
+                        retry (3) {
+                            sh "bash $JENKINS_ROOT/deploy.sh true"
+                        }
+                    }
+                }
+            }
+        }
+    } // End of stages
+
+}
+

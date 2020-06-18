@@ -26,6 +26,32 @@
     <version>0.1-SNAPSHOT</version>
     <packaging>pom</packaging>
 
+    <url>https://github.com/NVIDIA</url>
+    <licenses>
+        <license>
+            <name>Apache License, Version 2.0</name>
+            <url>https://www.apache.org/licenses/LICENSE-2.0.txt</url>
+            <distribution>repo</distribution>
+        </license>
+    </licenses>
+    <scm>
+        <connection>scm:git:https://github.com/NVIDIA/spark-rapids.git</connection>
+        <developerConnection>scm:git:git@github.com:NVIDIA/spark-rapids.git</developerConnection>
+        <tag>HEAD</tag>
+        <url>https://github.com/NVIDIA/spark-rapids</url>
+    </scm>
+    <developers>
+        <developer>
+            <id>revans2</id>
+            <name>Robert Evans</name>
+            <email>bobby@apache.org</email>
+            <roles>
+                <role>Committer</role>
+            </roles>
+            <timezone>-6</timezone>
+        </developer>
+    </developers>
+
     <modules>
         <module>dist</module>
         <module>shuffle-plugin</module>
@@ -41,6 +67,42 @@
             <properties>
                 <rapids.shuffle.manager.override>true</rapids.shuffle.manager.override>
             </properties>
+        </profile>
+        <profile>
+            <id>source-javadoc</id>
+            <build>
+                <plugins>
+                    <plugin>
+                        <groupId>org.apache.maven.plugins</groupId>
+                        <artifactId>maven-source-plugin</artifactId>
+                        <version>3.0.0</version>
+                        <executions>
+                            <execution>
+                                <id>attach-source</id>
+                                <goals>
+                                    <goal>jar-no-fork</goal>
+                                </goals>
+                            </execution>
+                        </executions>
+                    </plugin>
+                    <plugin>
+                        <groupId>org.apache.maven.plugins</groupId>
+                        <artifactId>maven-javadoc-plugin</artifactId>
+                        <version>3.0.0</version>
+                        <executions>
+                            <execution>
+                                <id>attach-javadoc</id>
+                                <goals>
+                                    <goal>jar</goal>
+                                </goals>
+                            </execution>
+                        </executions>
+                        <configuration>
+                            <additionalparam>-Xdoclint:none</additionalparam>
+                        </configuration>
+                    </plugin>
+                </plugins>
+            </build>
         </profile>
     </profiles>
 
@@ -381,6 +443,9 @@
                         <exclude>**/*.md</exclude>
                         <exclude>NOTICE-binary</exclude>
                         <exclude>docs/dev/idea-code-style-settings.xml</exclude>
+                        <exclude>**/.m2/**</exclude>
+                        <exclude>.gnupg/**</exclude>
+                        <exclude>pom.xml.asc</exclude>
                     </excludes>
                 </configuration>
             </plugin>
