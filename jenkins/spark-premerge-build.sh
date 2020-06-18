@@ -20,7 +20,7 @@ set -ex
 nvidia-smi
 
 if [ "$SPARK_VER"x == x ];then
-    SPARK_VER="3.0.1-SNAPSHOT"
+    SPARK_VER="3.0.0"
 fi
 
 SCALA_BINARY_VER=${SCALA_BINARY_VER:-2.12}
