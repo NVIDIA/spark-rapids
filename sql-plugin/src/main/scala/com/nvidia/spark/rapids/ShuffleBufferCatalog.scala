@@ -201,6 +201,15 @@ class ShuffleBufferCatalog(
     val shuffleBufferId = getShuffleBufferId(tableId)
     acquireBuffer(shuffleBufferId)
   }
+
+  /**
+    * Remove a buffer and table given a buffer ID
+    * @param id buffer identifier
+    */
+  def removeBuffer(id: ShuffleBufferId): Unit = {
+    tableMap.remove(id.tableId)
+    catalog.removeBuffer(id)
+  }
 }
 
 object ShuffleBufferCatalog {

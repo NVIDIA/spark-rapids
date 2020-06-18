@@ -79,6 +79,7 @@ object GpuShuffleEnv extends Logging {
   }
 
   def closeStorage(): Unit = {
+    logInfo("Closing shuffle storage")
     if (memoryEventHandler != null) {
       // Workaround for shutdown ordering problems where device buffers allocated with this handler
       // are being freed after the handler is destroyed
