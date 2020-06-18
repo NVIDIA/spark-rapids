@@ -16,7 +16,7 @@
 
 package com.nvidia.spark.rapids
 
-import ai.rapids.cudf.{BufferType, ColumnVector, ContiguousTable, HostColumnVector, Table}
+import ai.rapids.cudf.{BufferType, ContiguousTable, Table}
 import com.nvidia.spark.rapids.format.{CodecType, ColumnMeta}
 import org.scalatest.FunSuite
 
@@ -31,31 +31,6 @@ class MetaUtilsSuite extends FunSuite with Arm {
         .column(5.0, 2.0, 3.0, 1.0)
         .build()) { table =>
       table.contiguousSplit()(0)
-    }
-  }
-
-  private def compareColumns(expected: ColumnVector, actual: ColumnVector): Unit = {
-    assertResult(expected.getType)(actual.getType)
-    assertResult(expected.getRowCount)(actual.getRowCount)
-    withResource(expected.copyToHost()) { expectedHost =>
-      withResource(actual.copyToHost()) { actualHost =>
-        compareColumnBuffers(expectedHost, actualHost, BufferType.DATA)
-        compareColumnBuffers(expectedHost, actualHost, BufferType.VALIDITY)
-        compareColumnBuffers(expectedHost, actualHost, BufferType.OFFSET)
-      }
-    }
-  }
-
-  private def compareColumnBuffers(
-      expected: HostColumnVector,
-      actual: HostColumnVector,
-      bufferType: BufferType): Unit = {
-    val expectedBuffer = expected.getHostBufferFor(bufferType)
-    val actualBuffer = actual.getHostBufferFor(bufferType)
-    if (expectedBuffer != null) {
-      assertResult(expectedBuffer.asByteBuffer())(actualBuffer.asByteBuffer())
-    } else {
-      assertResult(null)(actualBuffer)
     }
   }
 
@@ -139,7 +114,7 @@ class MetaUtilsSuite extends FunSuite with Arm {
           assertResult(table.getRowCount)(batch.numRows)
           assertResult(table.getNumberOfColumns)(batch.numCols)
           (0 until table.getNumberOfColumns).foreach { i =>
-            compareColumns(table.getColumn(i),
+            TestUtils.compareColumns(table.getColumn(i),
               batch.column(i).asInstanceOf[GpuColumnVector].getBase)
           }
         }
