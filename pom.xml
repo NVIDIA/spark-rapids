@@ -44,7 +44,25 @@
         <developer>
             <id>revans2</id>
             <name>Robert Evans</name>
-            <email>bobby@apache.org</email>
+            <email>roberte@nvidia.com</email>
+            <roles>
+                <role>Committer</role>
+            </roles>
+            <timezone>-6</timezone>
+        </developer>
+        <developer>
+            <id>tgravescs</id>
+            <name>Thomas Graves</name>
+            <email>tgraves@nvidia.com</email>
+            <roles>
+                <role>Committer</role>
+            </roles>
+            <timezone>-6</timezone>
+        </developer>
+        <developer>
+            <id>jlowe</id>
+            <name>Jason Lowe</name>
+            <email>jlowe@nvidia.com</email>
             <roles>
                 <role>Committer</role>
             </roles>
