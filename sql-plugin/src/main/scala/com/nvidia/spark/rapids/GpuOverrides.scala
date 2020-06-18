@@ -868,15 +868,13 @@ object GpuOverrides {
       (a, conf, p, r) => new UnaryExprMeta[NormalizeNaNAndZero](a, conf, p, r) {
         override def convertToGpu(child: GpuExpression): GpuExpression =
           GpuNormalizeNaNAndZero(child)
-      })
-      .incompat(FLOAT_DIFFERS_GROUP_INCOMPAT),
+      }),
     expr[KnownFloatingPointNormalized](
       "tag to prevent redundant normalization",
       (a, conf, p, r) => new UnaryExprMeta[KnownFloatingPointNormalized](a, conf, p, r) {
         override def convertToGpu(child: GpuExpression): GpuExpression =
           GpuKnownFloatingPointNormalized(child)
-      })
-      .incompat(FLOAT_DIFFERS_GROUP_INCOMPAT),
+      }),
     expr[DateDiff]("datediff", (a, conf, p, r) =>
       new BinaryExprMeta[DateDiff](a, conf, p, r) {
         override def convertToGpu(lhs: GpuExpression, rhs: GpuExpression): GpuExpression = {
