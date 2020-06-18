@@ -19,7 +19,7 @@ package com.nvidia.spark.rapids
 import java.util.Objects
 
 import org.apache.spark.sql.catalyst.analysis.UnresolvedAttribute
-import org.apache.spark.sql.catalyst.expressions.{Attribute, AttributeReference, Expression, ExprId, Generator, NamedExpression}
+import org.apache.spark.sql.catalyst.expressions.{Attribute, AttributeReference, AttributeSet, Expression, ExprId, Generator, NamedExpression}
 import org.apache.spark.sql.catalyst.plans.logical.EventTimeWatermark
 import org.apache.spark.sql.catalyst.util.quoteIdentifier
 import org.apache.spark.sql.types.{DataType, Metadata}
@@ -32,7 +32,7 @@ case class GpuAlias(child: GpuExpression, name: String)(
   extends GpuUnaryExpression with NamedExpression {
 
   // Alias(Generator, xx) need to be transformed into Generate(generator, ...)
-  override lazy val resolved =
+  override lazy val resolved: Boolean =
     childrenResolved && checkInputDataTypes().isSuccess && !child.isInstanceOf[Generator]
 
   override def dataType: DataType = child.dataType
@@ -216,6 +216,9 @@ case class GpuAttributeReference(
 
   override def toAttribute: Attribute =
     AttributeReference(name, dataType, nullable, metadata)(exprId, qualifier)
+
+  @transient
+  override lazy val references: AttributeSet = AttributeSet(toAttribute)
 
   override def columnarEval(batch: ColumnarBatch): Any =
     throw new IllegalStateException("Attribute executed without being bound")

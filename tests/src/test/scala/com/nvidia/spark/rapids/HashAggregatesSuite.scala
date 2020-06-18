@@ -1691,8 +1691,7 @@ class HashAggregatesSuite extends SparkQueryCompareTestSuite {
     floatWithDifferentKindsOfNansAndZeros,
     conf = new SparkConf()
       .set(RapidsConf.HAS_NANS.key, "false")
-      .set(RapidsConf.ENABLE_FLOAT_AGG.key, "true")
-      .set(RapidsConf.INCOMPATIBLE_OPS.key, "true")) {
+      .set(RapidsConf.ENABLE_FLOAT_AGG.key, "true")) {
     frame => frame.groupBy(col("float")).agg(sum(col("int")))
   }
 
@@ -1701,8 +1700,7 @@ class HashAggregatesSuite extends SparkQueryCompareTestSuite {
     doubleWithDifferentKindsOfNansAndZeros,
     conf = new SparkConf()
       .set(RapidsConf.HAS_NANS.key, "false")
-      .set(RapidsConf.ENABLE_FLOAT_AGG.key, "true")
-      .set(RapidsConf.INCOMPATIBLE_OPS.key, "true")) {
+      .set(RapidsConf.ENABLE_FLOAT_AGG.key, "true")) {
     frame => frame.groupBy(col("double")).agg(sum(col("int")))
   }
 }

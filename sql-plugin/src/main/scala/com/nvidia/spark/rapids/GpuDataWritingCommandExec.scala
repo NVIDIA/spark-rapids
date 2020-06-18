@@ -33,7 +33,10 @@ import org.apache.spark.util.SerializableConfiguration
  * An extension of `DataWritingCommand` that allows columnar execution.
  */
 trait GpuDataWritingCommand extends DataWritingCommand {
-  override lazy val metrics: Map[String, SQLMetric] = GpuWriteJobStatsTracker.metrics
+  lazy val basicMetrics: Map[String, SQLMetric] = GpuWriteJobStatsTracker.basicMetrics
+  lazy val taskMetrics: Map[String, SQLMetric] = GpuWriteJobStatsTracker.taskMetrics
+
+  override lazy val metrics: Map[String, SQLMetric] = basicMetrics ++ taskMetrics
 
   override final def run(sparkSession: SparkSession, child: SparkPlan): Seq[Row] =
     throw new UnsupportedOperationException(
@@ -44,7 +47,7 @@ trait GpuDataWritingCommand extends DataWritingCommand {
   def gpuWriteJobStatsTracker(
       hadoopConf: Configuration): GpuWriteJobStatsTracker = {
     val serializableHadoopConf = new SerializableConfiguration(hadoopConf)
-    GpuWriteJobStatsTracker(serializableHadoopConf)
+    GpuWriteJobStatsTracker(serializableHadoopConf, this)
   }
 
   def requireSingleBatch: Boolean

@@ -341,16 +341,22 @@ case class GpuContains(left: GpuExpression, right: GpuExpression) extends GpuBin
   override def toString: String = s"gpucontains($left, $right)"
 
   def doColumnar(lhs: GpuColumnVector, rhs: Scalar): GpuColumnVector = {
-    if (rhs.getJavaString.isEmpty) {
-      val boolScalar = Scalar.fromBool(true)
-      try {
-        GpuColumnVector.from(ColumnVector.fromScalar(boolScalar, lhs.getRowCount.toInt))
-      } finally {
-        boolScalar.close()
+    val ret = if (rhs.getJavaString.isEmpty) {
+      withResource(Scalar.fromBool(true)) { trueScalar =>
+        if (left.nullable) {
+          withResource(Scalar.fromBool(null)) { nullBool =>
+            withResource(lhs.getBase.isNull) { isNull =>
+              isNull.ifElse(nullBool, trueScalar)
+            }
+          }
+        } else {
+          ColumnVector.fromScalar(trueScalar, lhs.getRowCount.toInt)
+        }
       }
     } else {
-      GpuColumnVector.from(lhs.getBase.stringContains(rhs))
+      lhs.getBase.stringContains(rhs)
     }
+    GpuColumnVector.from(ret)
   }
 
   override def doColumnar(lhs: GpuColumnVector, rhs: GpuColumnVector): GpuColumnVector =
