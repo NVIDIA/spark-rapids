@@ -14,10 +14,10 @@
  * limitations under the License.
  */
 
-package ai.rapids.spark.unit
+package com.nvidia.spark.rapids.unit
 
 import ai.rapids.cudf.ColumnVector
-import ai.rapids.spark.{GpuBoundReference, GpuLiteral, GpuUnitTests}
+import com.nvidia.spark.rapids.{GpuBoundReference, GpuLiteral, GpuUnitTests}
 
 import org.apache.spark.sql.rapids.GpuPmod
 import org.apache.spark.sql.vectorized.ColumnarBatch
