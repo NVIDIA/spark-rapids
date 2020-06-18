@@ -20,7 +20,7 @@ set -ex
 nvidia-smi
 
 if [ "$SPARK_VER"x == x ];then
-    SPARK_VER="3.0.1-SNAPSHOT"
+    SPARK_VER="3.0.0"
 fi
 
 SCALA_BINARY_VER=${SCALA_BINARY_VER:-2.12}
@@ -58,5 +58,5 @@ mkdir -p target/jacoco_classes/
 FILE=$(ls dist/target/rapids-4-spark_2.12-*.jar | grep -v test | xargs readlink -f)
 pushd target/jacoco_classes/
 jar xf $FILE
-rm -rf ai/rapids/shaded/ org/openucx/
+rm -rf com/nvidia/shaded/ org/openucx/
 popd

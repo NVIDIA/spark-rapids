@@ -19,8 +19,8 @@ package org.apache.spark.sql.rapids
 import scala.collection.mutable.ArrayBuffer
 
 import ai.rapids.cudf.{ColumnVector, Scalar, Table}
-import ai.rapids.spark._
-import ai.rapids.spark.RapidsPluginImplicits._
+import com.nvidia.spark.rapids._
+import com.nvidia.spark.rapids.RapidsPluginImplicits._
 
 import org.apache.spark.sql.catalyst.expressions.{ExpectsInputTypes, Expression, ImplicitCastInputTypes, NullIntolerant, Predicate, SubstringIndex}
 import org.apache.spark.sql.types._
@@ -287,7 +287,7 @@ case class GpuStringTrimRight(column: GpuExpression, trimParameters: Option[GpuE
 
 case class GpuConcat(children: Seq[GpuExpression]) extends GpuComplexTypeMergingExpression {
   override def dataType = StringType
-  override def nullable: Boolean = children.head.nullable
+  override def nullable: Boolean = children.exists(_.nullable)
 
   override def columnarEval(batch: ColumnarBatch): Any = {
     var nullStrScalar: Scalar = null
@@ -341,16 +341,22 @@ case class GpuContains(left: GpuExpression, right: GpuExpression) extends GpuBin
   override def toString: String = s"gpucontains($left, $right)"
 
   def doColumnar(lhs: GpuColumnVector, rhs: Scalar): GpuColumnVector = {
-    if (rhs.getJavaString.isEmpty) {
-      val boolScalar = Scalar.fromBool(true)
-      try {
-        GpuColumnVector.from(ColumnVector.fromScalar(boolScalar, lhs.getRowCount.toInt))
-      } finally {
-        boolScalar.close()
+    val ret = if (rhs.getJavaString.isEmpty) {
+      withResource(Scalar.fromBool(true)) { trueScalar =>
+        if (left.nullable) {
+          withResource(Scalar.fromBool(null)) { nullBool =>
+            withResource(lhs.getBase.isNull) { isNull =>
+              isNull.ifElse(nullBool, trueScalar)
+            }
+          }
+        } else {
+          ColumnVector.fromScalar(trueScalar, lhs.getRowCount.toInt)
+        }
       }
     } else {
-      GpuColumnVector.from(lhs.getBase.stringContains(rhs))
+      lhs.getBase.stringContains(rhs)
     }
+    GpuColumnVector.from(ret)
   }
 
   override def doColumnar(lhs: GpuColumnVector, rhs: GpuColumnVector): GpuColumnVector =

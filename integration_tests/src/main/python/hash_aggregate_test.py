@@ -316,17 +316,41 @@ def test_hash_query_max_bug(data_gen):
         lambda spark: gen_df(spark, data_gen, length=100).groupby('a').agg(f.max('b')))
 
 
+@approximate_float
 @ignore_order
-@incompat
 @pytest.mark.parametrize('data_gen', [_grpkey_floats_with_nan_zero_grouping_keys,
                                       _grpkey_doubles_with_nan_zero_grouping_keys], ids=idfn)
 def test_hash_agg_with_nan_keys(data_gen):
     df = with_cpu_session(
-        lambda spark : gen_df(spark, data_gen, length=100))
+        lambda spark : gen_df(spark, data_gen, length=1024))
     df.createOrReplaceTempView("hash_agg_table")
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark: spark.sql(
-            'select a, count(*) as cnt, sum(b) as sum_b, max(c) as max_c '
+            'select a, '
+                   'count(*) as count_stars, ' 
+                   'count(b) as count_bees, '
+                   'sum(b) as sum_of_bees, '
+                   'max(c) as max_seas, '
+                   'min(c) as min_seas, '
+                   'count(distinct c) as count_distinct_cees, '
+                   'avg(c) as average_seas '
+            'from hash_agg_table group by a'),
+        conf=_no_nans_float_conf)
+
+
+@pytest.mark.xfail(reason="count(distinct floats) fails when there are NaN values in the aggregation column."
+                          "(https://github.com/NVIDIA/spark-rapids/issues/194)")
+@approximate_float
+@ignore_order
+@pytest.mark.parametrize('data_gen', [ _grpkey_doubles_with_nan_zero_grouping_keys], ids=idfn)
+def test_count_distinct_with_nan_floats(data_gen):
+    df = with_cpu_session(
+        lambda spark : gen_df(spark, data_gen, length=1024))
+    df.createOrReplaceTempView("hash_agg_table")
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark: spark.sql(
+            'select a, '
+                   'count(distinct b) as count_distinct_bees '
             'from hash_agg_table group by a'),
         conf=_no_nans_float_conf)
 

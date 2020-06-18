@@ -19,12 +19,56 @@
          xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
     <modelVersion>4.0.0</modelVersion>
 
-    <groupId>ai.rapids</groupId>
+    <groupId>com.nvidia</groupId>
     <artifactId>rapids-4-spark-parent</artifactId>
-    <name>RAPIDS for Apache Spark Root Project</name>
-    <description>The root project of the RAPIDS plugin for Apache Spark</description>
+    <name>RAPIDS Accelerator for Apache Spark Root Project</name>
+    <description>The root project of the RAPIDS Accelerator for Apache Spark</description>
     <version>0.1-SNAPSHOT</version>
     <packaging>pom</packaging>
+
+    <url>https://github.com/NVIDIA</url>
+    <licenses>
+        <license>
+            <name>Apache License, Version 2.0</name>
+            <url>https://www.apache.org/licenses/LICENSE-2.0.txt</url>
+            <distribution>repo</distribution>
+        </license>
+    </licenses>
+    <scm>
+        <connection>scm:git:https://github.com/NVIDIA/spark-rapids.git</connection>
+        <developerConnection>scm:git:git@github.com:NVIDIA/spark-rapids.git</developerConnection>
+        <tag>HEAD</tag>
+        <url>https://github.com/NVIDIA/spark-rapids</url>
+    </scm>
+    <developers>
+        <developer>
+            <id>revans2</id>
+            <name>Robert Evans</name>
+            <email>roberte@nvidia.com</email>
+            <roles>
+                <role>Committer</role>
+            </roles>
+            <timezone>-6</timezone>
+        </developer>
+        <developer>
+            <id>tgravescs</id>
+            <name>Thomas Graves</name>
+            <email>tgraves@nvidia.com</email>
+            <roles>
+                <role>Committer</role>
+            </roles>
+            <timezone>-6</timezone>
+        </developer>
+        <developer>
+            <id>jlowe</id>
+            <name>Jason Lowe</name>
+            <email>jlowe@nvidia.com</email>
+            <roles>
+                <role>Committer</role>
+            </roles>
+            <timezone>-6</timezone>
+        </developer>
+    </developers>
 
     <modules>
         <module>dist</module>
@@ -42,12 +86,48 @@
                 <rapids.shuffle.manager.override>true</rapids.shuffle.manager.override>
             </properties>
         </profile>
+        <profile>
+            <id>source-javadoc</id>
+            <build>
+                <plugins>
+                    <plugin>
+                        <groupId>org.apache.maven.plugins</groupId>
+                        <artifactId>maven-source-plugin</artifactId>
+                        <version>3.0.0</version>
+                        <executions>
+                            <execution>
+                                <id>attach-source</id>
+                                <goals>
+                                    <goal>jar-no-fork</goal>
+                                </goals>
+                            </execution>
+                        </executions>
+                    </plugin>
+                    <plugin>
+                        <groupId>org.apache.maven.plugins</groupId>
+                        <artifactId>maven-javadoc-plugin</artifactId>
+                        <version>3.0.0</version>
+                        <executions>
+                            <execution>
+                                <id>attach-javadoc</id>
+                                <goals>
+                                    <goal>jar</goal>
+                                </goals>
+                            </execution>
+                        </executions>
+                        <configuration>
+                            <additionalparam>-Xdoclint:none</additionalparam>
+                        </configuration>
+                    </plugin>
+                </plugins>
+            </build>
+        </profile>
     </profiles>
 
     <properties>
         <maven.compiler.source>1.8</maven.compiler.source>
         <maven.compiler.target>1.8</maven.compiler.target>
-        <spark.version>3.0.1-SNAPSHOT</spark.version>
+        <spark.version>3.0.0</spark.version>
         <cuda.version>cuda10-1</cuda.version>
         <cudf.version>0.14</cudf.version>
         <scala.binary.version>2.12</scala.binary.version>
@@ -58,7 +138,7 @@
              If the shade package changes we need to also update jenkins/spark-premerge-build.sh
              so code coverage does not include the shaded classes.
         -->
-        <rapids.shade.package>ai.rapids.shaded.spark</rapids.shade.package>
+        <rapids.shade.package>com.nvidia.shaded.spark</rapids.shade.package>
         <test.exclude.tags></test.exclude.tags>
         <test.include.tags></test.include.tags>
         <rapids.shuffle.manager.override>false</rapids.shuffle.manager.override>
@@ -172,13 +252,6 @@
               <artifactId>protobuf-java</artifactId>
               <version>2.5.0</version>
             </dependency>
-            <!-- WE CANNOT SUPPORT XGBOOST YET BECAUSE OF A MISMATCH IN SCALA VERSIONS
-            <dependency>
-                <groupId>ml.dmlc</groupId>
-                <artifactId>xgboost4j-spark</artifactId>
-                <version>0.90</version>
-            </dependency>
-            -->
             <dependency>
                 <groupId>com.google.flatbuffers</groupId>
                 <artifactId>flatbuffers-java</artifactId>
@@ -388,6 +461,9 @@
                         <exclude>**/*.md</exclude>
                         <exclude>NOTICE-binary</exclude>
                         <exclude>docs/dev/idea-code-style-settings.xml</exclude>
+                        <exclude>**/.m2/**</exclude>
+                        <exclude>.gnupg/**</exclude>
+                        <exclude>pom.xml.asc</exclude>
                     </excludes>
                 </configuration>
             </plugin>
@@ -429,7 +505,8 @@
                                 <exclude>${rapids.shade.package}.*</exclude>
                             </excludes>
                             <includes>
-                                <include>ai.rapids.spark.*</include>
+                                <include>ai.rapids.cudf.*</include>
+                                <include>com.nvidia.spark.*</include>
                                 <include>org.apache.spark.sql.rapids.*</include>
                             </includes>
                         </configuration>

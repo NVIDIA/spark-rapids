@@ -19,8 +19,8 @@ package org.apache.spark.sql.rapids
 import scala.collection.mutable
 
 import ai.rapids.cudf.{ContiguousTable, Table}
-import ai.rapids.spark._
-import ai.rapids.spark.RapidsPluginImplicits._
+import com.nvidia.spark.rapids._
+import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import org.apache.hadoop.fs.Path
 import org.apache.hadoop.mapreduce.TaskAttemptContext
 

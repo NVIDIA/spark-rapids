@@ -14,7 +14,7 @@
 
 include "ShuffleCommon.fbs";
 
-namespace ai.rapids.spark.format;
+namespace com.nvidia.spark.rapids.format;
 
 /// Descriptor for a buffer within another uncompressed buffer.
 struct SubBufferMeta {
