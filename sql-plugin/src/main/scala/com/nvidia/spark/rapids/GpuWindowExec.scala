@@ -28,7 +28,7 @@ import org.apache.spark.sql.execution.metric.{SQLMetric, SQLMetrics}
 import org.apache.spark.sql.execution.window.WindowExec
 import org.apache.spark.sql.rapids.GpuAggregateExpression
 import org.apache.spark.sql.types.IntegerType
-import org.apache.spark.sql.vectorized.ColumnarBatch
+import org.apache.spark.sql.vectorized.{ColumnarBatch, ColumnVector}
 
 class GpuWindowExecMeta(windowExec: WindowExec,
                         conf: RapidsConf,
@@ -36,8 +36,38 @@ class GpuWindowExecMeta(windowExec: WindowExec,
                         rule: ConfKeysAndIncompat)
   extends SparkPlanMeta[WindowExec](windowExec, conf, parent, rule) {
 
+  /**
+   * Fetches WindowExpressions in input `windowExec`, via reflection.
+   * As a byproduct, determines whether to return the original input columns,
+   * as part of the output.
+   *
+   * (Spark versions that use `projectList` expect result columns
+   * *not* to include the input columns.
+   * Apache Spark expects the input columns, before the aggregation output columns.)
+   *
+   * @return WindowExpressions within windowExec,
+   *         and a boolean, indicating the result column semantics
+   *         (i.e. whether result columns should be returned *without* including the
+   *         input columns).
+   */
+  def getWindowExpression: (Seq[NamedExpression], Boolean) = {
+    var resultColumnsOnly : Boolean = false
+    val expr = try {
+      val resultMethod = windowExec.getClass.getMethod("windowExpression")
+      resultMethod.invoke(windowExec).asInstanceOf[Seq[NamedExpression]]
+    } catch {
+      case e: NoSuchMethodException =>
+        resultColumnsOnly = true
+        val winExpr = windowExec.getClass.getMethod("projectList")
+        winExpr.invoke(windowExec).asInstanceOf[Seq[NamedExpression]]
+    }
+    (expr, resultColumnsOnly)
+  }
+
+  private val (inputWindowExpressions, resultColumnsOnly) = getWindowExpression
+
   val windowExpressions: Seq[ExprMeta[NamedExpression]] =
-    windowExec.windowExpression.map(GpuOverrides.wrapExpr(_, conf, Some(this)))
+    inputWindowExpressions.map(GpuOverrides.wrapExpr(_, conf, Some(this)))
 
   override def tagPlanForGpu(): Unit = {
 
@@ -53,17 +83,23 @@ class GpuWindowExecMeta(windowExec: WindowExec,
   override def convertToGpu(): GpuExec = {
     GpuWindowExec(
       windowExpressions.map(_.convertToGpu()),
-      childPlans.head.convertIfNeeded()
+      childPlans.head.convertIfNeeded(),
+      resultColumnsOnly
     )
   }
 }
 
-case class GpuWindowExec(windowExpressionAliases: Seq[GpuExpression],
-                         child: SparkPlan
-                        ) extends UnaryExecNode with GpuExec {
+case class GpuWindowExec(
+    windowExpressionAliases: Seq[GpuExpression],
+    child: SparkPlan,
+    resultColumnsOnly: Boolean
+  ) extends UnaryExecNode with GpuExec {
 
-  override def output: Seq[Attribute] =
+  override def output: Seq[Attribute] = if (resultColumnsOnly) {
+    windowExpressionAliases.map(_.asInstanceOf[NamedExpression].toAttribute)
+  } else {
     child.output ++ windowExpressionAliases.map(_.asInstanceOf[NamedExpression].toAttribute)
+  }
 
   override def outputOrdering: Seq[SortOrder] = child.outputOrdering
 
@@ -134,7 +170,6 @@ case class GpuWindowExec(windowExpressionAliases: Seq[GpuExpression],
 
         try {
           originalCols = GpuColumnVector.extractColumns(cb)
-          originalCols.foreach(_.incRefCount())
 
           withResource(
             new NvtxWithMetrics(
@@ -147,7 +182,13 @@ case class GpuWindowExec(windowExpressionAliases: Seq[GpuExpression],
           numOutputBatchesMetric += 1
           numOutputRowsMetric += cb.numRows
 
-          val outputBatch = new ColumnarBatch(originalCols ++ aggCols, cb.numRows())
+          val outputBatch = if (resultColumnsOnly) {
+            new ColumnarBatch(aggCols.asInstanceOf[Array[ColumnVector]], cb.numRows())
+          } else {
+            originalCols.foreach(_.incRefCount())
+            new ColumnarBatch(originalCols ++ aggCols, cb.numRows())
+          }
+
           maxDeviceMemory = maxDeviceMemory.max(
             GpuColumnVector.getTotalDeviceMemoryUsed(outputBatch))
           peakDeviceMemoryMetric.set(maxDeviceMemory)
