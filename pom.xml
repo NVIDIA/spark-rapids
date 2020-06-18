@@ -124,13 +124,6 @@
         </profile>
         <profile>
             <id>databricks</id>
-            <dependencies>
-                <dependency>
-                    <groupId>org.apache.spark</groupId>
-                    <artifactId>spark-annotation_${scala.binary.version}</artifactId>
-                    <version>${spark.version}</version>
-                </dependency>
-             </dependencies>
         </profile>
     </profiles>
 
@@ -159,6 +152,11 @@
 
     <dependencyManagement>
         <dependencies>
+            <dependency>
+                <groupId>org.apache.spark</groupId>
+                <artifactId>spark-annotation_${scala.binary.version}</artifactId>
+                <version>${spark.version}</version>
+            </dependency>
             <dependency>
                 <groupId>ai.rapids</groupId>
                 <artifactId>cudf</artifactId>
