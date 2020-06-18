@@ -55,23 +55,13 @@ def test_locate():
                 'locate("A", a, 500)',
                 'locate("_", a, NULL)'))
 
-# Once https://github.com/NVIDIA/spark-rapids/issues/121
-# is fixed this should go away and test_contains should be updated
-@pytest.mark.xfail(reason='https://github.com/NVIDIA/spark-rapids/issues/121')
-def test_contains_empty():
-    gen = mk_str_gen('.{0,3}Z?_Z?.{0,3}A?.{0,3}')
-    assert_gpu_and_cpu_are_equal_collect(
-            lambda spark: unary_op_df(spark, gen).select(
-                f.col('a').contains('')))
-
 def test_contains():
     gen = mk_str_gen('.{0,3}Z?_Z?.{0,3}A?.{0,3}')
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark: unary_op_df(spark, gen).select(
                 f.col('a').contains('Z'),
                 f.col('a').contains('Z_'),
-                # https://github.com/NVIDIA/spark-rapids/issues/121
-                #f.col('a').contains(''),
+                f.col('a').contains(''),
                 f.col('a').contains(None)
                 ))
 
@@ -136,17 +126,6 @@ def test_endswith():
                 f.col('a').endswith(None),
                 f.col('a').endswith('A\ud720')))
 
-# Once https://github.com/NVIDIA/spark-rapids/issues/114 is fixed this should be
-# deleted and the corresponding lines in the other tests should be uncommented
-@pytest.mark.xfail(reason='https://github.com/NVIDIA/spark-rapids/issues/114')
-def test_concat_lit_xfail():
-    gen = mk_str_gen('.{0,5}')
-    (s1, s2) = gen_scalars(gen, 2, force_no_nulls=True)
-    assert_gpu_and_cpu_are_equal_collect(
-            lambda spark: binary_op_df(spark, gen, length=20).select(
-                f.concat(s1, f.col('b')),
-                f.concat(f.lit(''), f.col('b'))))
-
 # We currently only support strings, but this should be extended to other types
 # later on
 def test_concat():
@@ -156,13 +135,11 @@ def test_concat():
             lambda spark: binary_op_df(spark, gen).select(
                 f.concat(f.col('a'), f.col('b')),
                 f.concat(f.col('a'), f.col('b'), f.col('a')),
-                #https://github.com/NVIDIA/spark-rapids/issues/114
-                #f.concat(s1, f.col('b')),
+                f.concat(s1, f.col('b')),
                 f.concat(f.col('a'), s2),
                 f.concat(f.lit(None).cast('string'), f.col('b')),
                 f.concat(f.col('a'), f.lit(None).cast('string')),
-                #https://github.com/NVIDIA/spark-rapids/issues/114
-                #f.concat(f.lit(''), f.col('b')),
+                f.concat(f.lit(''), f.col('b')),
                 f.concat(f.col('a'), f.lit(''))))
 
 def test_substring():
