@@ -71,7 +71,7 @@ trait GpuHashJoin extends GpuExec with HashJoin {
 
   def doJoin(builtTable: Table,
       streamedBatch: ColumnarBatch,
-      condition: Option[GpuExpression],
+      condition: Option[Expression],
       numOutputRows: SQLMetric,
       numJoinOutputRows: SQLMetric,
       numOutputBatches: SQLMetric,

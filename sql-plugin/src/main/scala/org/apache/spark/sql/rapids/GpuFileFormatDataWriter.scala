@@ -194,7 +194,7 @@ class GpuDynamicPartitionDataWriter(
   private lazy val getPartitionColumns: ColumnarBatch => Table = {
     val expressions = GpuBindReferences.bindReferences(
       description.partitionColumns,
-      description.allColumns)
+      description.allColumns).asInstanceOf[Seq[GpuExpression]]
     cb => {
       val batch = GpuProjectExec.project(cb, expressions)
       try {
@@ -209,7 +209,7 @@ class GpuDynamicPartitionDataWriter(
   private lazy val getOutputColumns: ColumnarBatch => Table = {
     val expressions = GpuBindReferences.bindReferences(
       description.dataColumns,
-      description.allColumns)
+      description.allColumns).asInstanceOf[Seq[GpuExpression]]
     cb => {
       val batch = GpuProjectExec.project(cb, expressions)
       try {

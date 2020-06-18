@@ -17,48 +17,60 @@
 package com.nvidia.spark.rapids
 
 import org.apache.spark.internal.Logging
-import org.apache.spark.sql.catalyst.expressions.AttributeSeq
+import org.apache.spark.sql.catalyst.expressions.{AttributeReference, AttributeSeq, Expression, SortOrder}
 import org.apache.spark.sql.types.DataType
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
 object GpuBindReferences extends Logging {
 
+  private[this] def postBindCheck[A <: Expression](base: A): Unit = {
+    base.foreach { expr =>
+      // The condition is needed to have it match what transform
+      // looks at, otherwise we can check things that would nto be modified
+      if (expr.containsChild.nonEmpty) {
+        expr match {
+          case _: GpuExpression =>
+          case _: SortOrder =>
+          case other =>
+            throw new IllegalArgumentException(
+              s"Bound an expression that shouldn't be here ${other.getClass}")
+        }
+      }
+    }
+  }
+
   // Mostly copied from BoundAttribute.scala so we can do columnar processing
-  def bindReference[A <: GpuExpression](
+  def bindReference[A <: Expression](
       expression: A,
       input: AttributeSeq,
       allowFailures: Boolean = false): A = {
-    expression.transform { case a: GpuAttributeReference =>
-      val ordinal = input.indexOf(a.exprId)
-      if (ordinal == -1) {
-        if (allowFailures) {
-          a
+    val ret = expression.transform {
+      case a: AttributeReference =>
+        val ordinal = input.indexOf(a.exprId)
+        if (ordinal == -1) {
+          if (allowFailures) {
+            a
+          } else {
+            sys.error(s"Couldn't find $a in ${input.attrs.mkString("[", ",", "]")}")
+          }
         } else {
-          sys.error(s"Couldn't find $a in ${input.attrs.mkString("[", ",", "]")}")
+          GpuBoundReference(ordinal, a.dataType, input(ordinal).nullable)
         }
-      } else {
-        GpuBoundReference(ordinal, a.dataType, input(ordinal).nullable)
-      }
     }.asInstanceOf[A]
+    if (!allowFailures) {
+      postBindCheck(ret)
+    }
+    ret
   }
 
   /**
-   * bindReferences[GpuExpression]: a helper function to bind given expressions to
-   * an input schema where the expressions are GpuExpressions.
+   * A helper function to bind given expressions to an input schema where the expressions are
+   * to be processed on the GPU.
    */
-  def bindReferences[A <: GpuExpression](
+  def bindReferences[A <: Expression](
       expressions: Seq[A],
       input: AttributeSeq): Seq[A] = {
     expressions.map(GpuBindReferences.bindReference(_, input))
-  }
-
-  /**
-   * A version of `bindReferences` that takes `AttributeSeq` as its expressions
-   */
-  def bindReferences(expressions: AttributeSeq, input: AttributeSeq): Seq[GpuExpression] = {
-    bindReferences(expressions.attrs.map(ref => GpuAttributeReference(
-      ref.name, ref.dataType, ref.nullable, ref.metadata)(ref.exprId, ref.qualifier)),
-      input)
   }
 }
 

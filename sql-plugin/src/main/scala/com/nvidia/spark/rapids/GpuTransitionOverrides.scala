@@ -16,7 +16,7 @@
 
 package com.nvidia.spark.rapids
 
-import org.apache.spark.sql.catalyst.expressions.{Ascending, Attribute, AttributeReference, Expression, InputFileBlockLength, InputFileBlockStart, InputFileName}
+import org.apache.spark.sql.catalyst.expressions.{Ascending, Attribute, AttributeReference, Expression, InputFileBlockLength, InputFileBlockStart, InputFileName, SortOrder}
 import org.apache.spark.sql.catalyst.expressions.objects.CreateExternalRow
 import org.apache.spark.sql.catalyst.rules.Rule
 import org.apache.spark.sql.execution._
@@ -188,17 +188,16 @@ class GpuTransitionOverrides extends Rule[SparkPlan] {
     }
   }
 
-  private def getOptimizedSortOrder(plan: SparkPlan): Seq[GpuSortOrder] = {
+  private def getOptimizedSortOrder(plan: SparkPlan): Seq[SortOrder] = {
     plan.output.map { expr =>
       val wrapped = GpuOverrides.wrapExpr(expr, conf, None)
       wrapped.tagForGpu()
       assert(wrapped.canThisBeReplaced)
-      GpuSortOrder(
+      SortOrder(
         wrapped.convertToGpu(),
         Ascending,
         Ascending.defaultNullOrdering,
-        Set.empty,
-        expr
+        Set.empty
       )
     }
   }
@@ -209,7 +208,10 @@ class GpuTransitionOverrides extends Rule[SparkPlan] {
   }
 
   def assertIsOnTheGpu(exp: Expression, conf: RapidsConf): Unit = {
-    if (!exp.isInstanceOf[GpuExpression] &&
+    // There are no GpuAttributeReference or GpuSortOrder
+    if (!exp.isInstanceOf[AttributeReference] &&
+        !exp.isInstanceOf[SortOrder] &&
+        !exp.isInstanceOf[GpuExpression] &&
       !conf.testingAllowedNonGpu.contains(getBaseNameFromClass(exp.getClass.toString))) {
       throw new IllegalArgumentException(s"The expression $exp is not columnar ${exp.getClass}")
     }

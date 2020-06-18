@@ -22,6 +22,7 @@ import ai.rapids.cudf.{BinaryOp, BinaryOperable, DType, Scalar, UnaryOp}
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 
 import org.apache.spark.sql.catalyst.expressions.{BinaryExpression, BinaryOperator, ComplexTypeMergingExpression, Expression, String2TrimExpression, TernaryExpression, UnaryExpression, Unevaluable}
+import org.apache.spark.sql.catalyst.trees.CurrentOrigin
 import org.apache.spark.sql.types.StringType
 import org.apache.spark.sql.vectorized.ColumnarBatch
 import org.apache.spark.unsafe.types.UTF8String
@@ -44,7 +45,7 @@ object GpuExpressionsUtils {
     resultCvs
   }
 
-  def getTrimString(trimStr: Option[GpuExpression]): String = trimStr match {
+  def getTrimString(trimStr: Option[Expression]): String = trimStr match {
     case Some(GpuLiteral(data, StringType)) =>
       if (data == null) {
         null
@@ -79,7 +80,7 @@ trait GpuExpression extends Expression with Unevaluable with Arm {
    * we have to jump through some hoops to make this work.
    */
   def disableCoalesceUntilInput(): Boolean =
-    children.exists{
+    children.exists {
       case c: GpuExpression => c.disableCoalesceUntilInput()
       case _ => false // This path should never really happen
     }
@@ -237,11 +238,11 @@ abstract class CudfBinaryOperator extends GpuBinaryOperator with CudfBinaryExpre
 
 trait GpuString2TrimExpression extends String2TrimExpression with GpuExpression {
 
-  override def srcStr: GpuExpression
+  override def srcStr: Expression
 
-  override def trimStr: Option[GpuExpression]
+  override def trimStr: Option[Expression]
 
-  override def children: Seq[GpuExpression] = srcStr +: trimStr.toSeq
+  override def children: Seq[Expression] = srcStr +: trimStr.toSeq
 
   def strippedColumnVector(value: GpuColumnVector, sclarValue: Scalar): GpuColumnVector
 
@@ -254,7 +255,7 @@ trait GpuString2TrimExpression extends String2TrimExpression with GpuExpression 
 
   override def columnarEval(batch: ColumnarBatch): Any = {
     val trim = GpuExpressionsUtils.getTrimString(trimStr)
-    val shouldBeColumn = srcStr.columnarEval(batch)
+    val shouldBeColumn = srcStr.asInstanceOf[GpuExpression].columnarEval(batch)
     try {
       // We know the first parameter is not a Literal, because trim(Literal, Literal) would already
       // have been optimized out
