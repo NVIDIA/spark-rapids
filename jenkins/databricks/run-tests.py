@@ -1,4 +1,4 @@
-#!python3
+#!/usr/bin/python3.6
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -38,13 +38,12 @@ def get_master_addr(jsonout):
 def main():
   workspace = 'https://dbc-9ff9942e-a9c4.cloud.databricks.com'
   token = ''
-  #clusterid = '0617-140138-umiak14'
-  clusterid = '0609-193612-lower451'
-  private_key_file = "/home/tgraves/.ssh/id_rsa"
+  clusterid = '0617-140138-umiak14'
+  private_key_file = "~/.ssh/id_rsa"
   skip_start = None
   local_script = "build.sh"
   script_dest = "/home/ubuntu/build.sh"
-  source_tgz = "/home/tgraves/spark-rapids-ci.tgz"
+  source_tgz = "spark-rapids-ci.tgz"
   tgz_dest = "/home/ubuntu/spark-rapids-ci.tgz"
 
   try:
@@ -92,7 +91,7 @@ def main():
       current_state = jsonout['state']
       if current_state in ['RUNNING']:
           print("Cluster is already running - perhaps build/tests already running?")
-          sys.exit(5)
+          sys.exit(3)
 
       print("Starting cluster: " + clusterid)
       resp = requests.post(workspace + "/api/2.0/clusters/start", headers={'Authorization': 'Bearer %s' % token}, json={'cluster_id': clusterid})
@@ -111,7 +110,7 @@ def main():
           if current_state in ['INTERNAL_ERROR', 'SKIPPED', 'TERMINATED'] or p >= 20:
               if p >= 20:
                  print("Waited %d times already, stopping" % p)
-              sys.exit(3)
+              sys.exit(4)
           p = p + 1
    
       print("Done starting cluster")
@@ -121,23 +120,23 @@ def main():
 
   if master_addr is None:
       print("Error, didn't get master address")
-      sys.exit(4)
+      sys.exit(5)
   print("Master node address is: %s" % master_addr)
   print("Copying script")
-  rsync_command = "rsync  -Pave \"ssh -i %s -p 2200\" %s ubuntu@%s:%s" % (private_key_file, local_script, master_addr, script_dest)
+  rsync_command = "rsync -I -Pave \"ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -p 2200 -i %s\" %s ubuntu@%s:%s" % (private_key_file, local_script, master_addr, script_dest)
   print("rsync command: %s" % rsync_command)
   os.system(rsync_command)
 
   print("Copying source")
-  rsync_command = "rsync  -Pave \"ssh -i %s -p 2200\" %s ubuntu@%s:%s" % (private_key_file, source_tgz, master_addr, tgz_dest)
+  rsync_command = "rsync -I -Pave \"ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -p 2200 -i %s\" %s ubuntu@%s:%s" % (private_key_file, source_tgz, master_addr, tgz_dest)
   print("rsync command: %s" % rsync_command)
   os.system(rsync_command)
-  ssh_command = "ssh ubuntu@%s -p 2200 -i %s %s %s 2>&1 | tee buildout" % (master_addr, private_key_file, script_dest, tgz_dest)
+  ssh_command = "ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null ubuntu@%s -p 2200 -i %s %s %s 2>&1 | tee buildout" % (master_addr, private_key_file, script_dest, tgz_dest)
   print("ssh command: %s" % ssh_command)
   os.system(ssh_command)
 
   print("Copying built tarball back")
-  rsync_command = "rsync  -Pave \"ssh -i %s -p 2200\" ubuntu@%s:/home/ubuntu/spark-rapids-built.tgz ./" % (private_key_file, master_addr)
+  rsync_command = "rsync  -I -Pave \"ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -p 2200 -i %s\" ubuntu@%s:/home/ubuntu/spark-rapids-built.tgz ./" % (private_key_file, master_addr)
   print("rsync command to get built tarball: %s" % rsync_command)
   os.system(rsync_command)
 

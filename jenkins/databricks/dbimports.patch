@@ -1,0 +1,78 @@
+diff --git a/sql-plugin/src/main/scala/com/nvidia/spark/rapids/GpuHashJoin.scala b/sql-plugin/src/main/scala/com/nvidia/spark/rapids/GpuHashJoin.scala
+index b1599e6..b432fe0 100644
+--- a/sql-plugin/src/main/scala/com/nvidia/spark/rapids/GpuHashJoin.scala
++++ b/sql-plugin/src/main/scala/com/nvidia/spark/rapids/GpuHashJoin.scala
+@@ -18,8 +18,9 @@ package com.nvidia.spark.rapids
+ import ai.rapids.cudf.{NvtxColor, Table}
+ 
+ import org.apache.spark.sql.catalyst.expressions.{Attribute, Expression}
++import org.apache.spark.sql.catalyst.optimizer.{BuildLeft, BuildRight}
+ import org.apache.spark.sql.catalyst.plans.{Inner, JoinType, LeftAnti, LeftOuter, LeftSemi}
+-import org.apache.spark.sql.execution.joins.{BuildLeft, BuildRight, HashJoin}
++import org.apache.spark.sql.execution.joins.HashJoin
+ import org.apache.spark.sql.execution.metric.SQLMetric
+ import org.apache.spark.sql.vectorized.{ColumnarBatch, ColumnVector}
+ 
+diff --git a/sql-plugin/src/main/scala/com/nvidia/spark/rapids/GpuShuffledHashJoinExec.scala b/sql-plugin/src/main/scala/com/nvidia/spark/rapids/GpuShuffledHashJoinExec.scala
+index 6de4a95..90fb3e7 100644
+--- a/sql-plugin/src/main/scala/com/nvidia/spark/rapids/GpuShuffledHashJoinExec.scala
++++ b/sql-plugin/src/main/scala/com/nvidia/spark/rapids/GpuShuffledHashJoinExec.scala
+@@ -21,10 +21,11 @@ import com.nvidia.spark.rapids.GpuMetricNames._
+ import org.apache.spark.TaskContext
+ import org.apache.spark.rdd.RDD
+ import org.apache.spark.sql.catalyst.InternalRow
++import org.apache.spark.sql.catalyst.optimizer.{BuildLeft, BuildRight, BuildSide}
+ import org.apache.spark.sql.catalyst.plans.JoinType
+ import org.apache.spark.sql.catalyst.plans.physical.{Distribution, HashClusteredDistribution}
+ import org.apache.spark.sql.execution.{BinaryExecNode, SparkPlan}
+-import org.apache.spark.sql.execution.joins.{BuildLeft, BuildRight, BuildSide, ShuffledHashJoinExec}
++import org.apache.spark.sql.execution.joins.ShuffledHashJoinExec
+ import org.apache.spark.sql.execution.metric.{SQLMetric, SQLMetrics}
+ import org.apache.spark.sql.vectorized.ColumnarBatch
+ 
+diff --git a/sql-plugin/src/main/scala/com/nvidia/spark/rapids/GpuSortMergeJoinExec.scala b/sql-plugin/src/main/scala/com/nvidia/spark/rapids/GpuSortMergeJoinExec.scala
+index c493508..3e24a2d 100644
+--- a/sql-plugin/src/main/scala/com/nvidia/spark/rapids/GpuSortMergeJoinExec.scala
++++ b/sql-plugin/src/main/scala/com/nvidia/spark/rapids/GpuSortMergeJoinExec.scala
+@@ -17,8 +17,9 @@
+ package com.nvidia.spark.rapids
+ 
+ import org.apache.spark.internal.Logging
++import org.apache.spark.sql.catalyst.optimizer.BuildRight
+ import org.apache.spark.sql.execution.SortExec
+-import org.apache.spark.sql.execution.joins.{BuildRight, SortMergeJoinExec}
++import org.apache.spark.sql.execution.joins.SortMergeJoinExec
+ 
+ class GpuSortMergeJoinMeta(
+     join: SortMergeJoinExec,
+diff --git a/sql-plugin/src/main/scala/com/nvidia/spark/rapids/RapidsMeta.scala b/sql-plugin/src/main/scala/com/nvidia/spark/rapids/RapidsMeta.scala
+index 088b66b..b7f267f 100644
+--- a/sql-plugin/src/main/scala/com/nvidia/spark/rapids/RapidsMeta.scala
++++ b/sql-plugin/src/main/scala/com/nvidia/spark/rapids/RapidsMeta.scala
+@@ -22,12 +22,13 @@ import com.nvidia.spark.rapids.GpuOverrides.isStringLit
+ 
+ import org.apache.spark.sql.catalyst.expressions.{BinaryExpression, ComplexTypeMergingExpression, Expression, String2TrimExpression, TernaryExpression, UnaryExpression}
+ import org.apache.spark.sql.catalyst.expressions.aggregate.AggregateFunction
++import org.apache.spark.sql.catalyst.optimizer.{BuildLeft, BuildRight}
+ import org.apache.spark.sql.catalyst.plans.physical.Partitioning
+ import org.apache.spark.sql.connector.read.Scan
+ import org.apache.spark.sql.execution.SparkPlan
+ import org.apache.spark.sql.execution.command.DataWritingCommand
+ import org.apache.spark.sql.execution.exchange.ShuffleExchangeExec
+-import org.apache.spark.sql.execution.joins.{BroadcastHashJoinExec, BuildLeft, BuildRight, ShuffledHashJoinExec, SortMergeJoinExec}
++import org.apache.spark.sql.execution.joins.{BroadcastHashJoinExec, ShuffledHashJoinExec, SortMergeJoinExec}
+ import org.apache.spark.sql.types.{CalendarIntervalType, DataType, DataTypes, StringType}
+ 
+ trait ConfKeysAndIncompat {
+diff --git a/sql-plugin/src/main/scala/org/apache/spark/sql/rapids/execution/GpuBroadcastHashJoinExec.scala b/sql-plugin/src/main/scala/org/apache/spark/sql/rapids/execution/GpuBroadcastHashJoinExec.scala
+index dc12bbe..a07add3 100644
+--- a/sql-plugin/src/main/scala/org/apache/spark/sql/rapids/execution/GpuBroadcastHashJoinExec.scala
++++ b/sql-plugin/src/main/scala/org/apache/spark/sql/rapids/execution/GpuBroadcastHashJoinExec.scala
+@@ -21,6 +21,7 @@ import com.nvidia.spark.rapids.GpuMetricNames._
+ 
+ import org.apache.spark.rdd.RDD
+ import org.apache.spark.sql.catalyst.InternalRow
++import org.apache.spark.sql.catalyst.optimizer.{BuildLeft, BuildRight, BuildSide}
+ import org.apache.spark.sql.catalyst.plans.JoinType
+ import org.apache.spark.sql.catalyst.plans.physical.{BroadcastDistribution, Distribution, UnspecifiedDistribution}
+ import org.apache.spark.sql.execution.{BinaryExecNode, SparkPlan}

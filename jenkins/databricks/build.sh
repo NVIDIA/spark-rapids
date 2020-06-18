@@ -23,12 +23,11 @@ if [ "$1" != "" ]; then
 fi
 
 sudo apt install -y maven
-# TODO - need to get databricks branch available
-#git clone https://tgravescs:passwd@github.com/NVIDIA/spark-rapids.git
 rm -rf spark-rapids
 mkdir spark-rapids
 tar -zxvf $SPARKTGZ -C spark-rapids
 cd spark-rapids
+# pull 3.0.0 artifacts and ignore errors then install databricks jars, then build again
 mvn clean package || true
 M2DIR=/home/ubuntu/.m2/repository
 JARDIR=/databricks/jars
@@ -84,7 +83,8 @@ mvn -Pdatabricks clean verify -DskipTests
 sudo cp dist/target/rapids-4-spark_2.12-*-SNAPSHOT.jar /databricks/jars/rapids-4-spark_2.12-0.1-SNAPSHOT-ci.jar
 
 # tests
-sudo pip install pytest sre_yield
+export PATH=/databricks/conda/envs/databricks-ml-gpu/bin:/databricks/conda/condabin:$PATH
+sudo /databricks/conda/envs/databricks-ml-gpu/bin/pip install pytest sre_yield
 cd /home/ubuntu/spark-rapids/integration_tests
 export SPARK_HOME=/databricks/spark
 export PYTHONPATH=$SPARK_HOME/python:$SPARK_HOME/python/pyspark/:$SPARK_HOME/python/lib/py4j-0.10.9-src.zip

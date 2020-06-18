@@ -254,8 +254,9 @@ class GpuTransitionOverrides extends Rule[SparkPlan] {
   }
 
   def detectAndTagFinalColumnarOutput(plan: SparkPlan): SparkPlan = plan match {
-    case DeserializeToObjectExec(_: CreateExternalRow, _, child: GpuColumnarToRowExec) =>
-      plan.withNewChildren(Seq(GpuColumnarToRowExec(child.child, true)))
+    case d: DeserializeToObjectExec if d.child.isInstanceOf[GpuColumnarToRowExec] =>
+      val gpuColumnar = d.child.asInstanceOf[GpuColumnarToRowExec]
+      plan.withNewChildren(Seq(GpuColumnarToRowExec(gpuColumnar.child, true)))
     case _ => plan
   }
 

@@ -16,9 +16,14 @@
 #
 
 set -e
-mkdir deploy
+rm -rf deploy
+mkdir -p deploy
 cd deploy
-tar -zxvf spark-rapids-built.tgz
+tar -zxvf ../spark-rapids-built.tgz
 cd spark-rapids
 echo "Maven mirror is $MVN_URM_MIRROR"
-echo mvn -o -U -B -Pdatabricks clean deploy $MVN_URM_MIRROR
+SERVER_ID='snapshots'
+SERVER_URL='https://urm.nvidia.com:443/artifactory/sw-spark-maven-local'
+FPATH=./dist/target/rapids-4-spark_2.12-0.1-databricks-SNAPSHOT.jar
+mvn -B deploy:deploy-file $MVN_URM_MIRROR -Durl=$SERVER_URL -DrepositoryId=$SERVER_ID \
+    -Dfile=$FPATH -DpomFile=dist/pom.xml 
