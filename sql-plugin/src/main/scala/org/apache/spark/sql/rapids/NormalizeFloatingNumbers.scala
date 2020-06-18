@@ -18,7 +18,7 @@ package org.apache.spark.sql.rapids
 
 import com.nvidia.spark.rapids.{GpuColumnVector, GpuExpression, GpuUnaryExpression}
 
-import org.apache.spark.sql.catalyst.expressions.ExpectsInputTypes
+import org.apache.spark.sql.catalyst.expressions.{ExpectsInputTypes, Expression}
 import org.apache.spark.sql.types.{AbstractDataType, DataType, DoubleType, FloatType, TypeCollection}
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
@@ -26,7 +26,7 @@ import org.apache.spark.sql.vectorized.ColumnarBatch
 //  - input NaNs become Float.NaN, or Double.NaN
 //  - that -0.0f and -0.0d becomes 0.0f, and 0.0d respectively
 // TODO: need coalesce as a feature request in cudf
-case class GpuNormalizeNaNAndZero(child: GpuExpression) extends GpuUnaryExpression
+case class GpuNormalizeNaNAndZero(child: Expression) extends GpuUnaryExpression
     with ExpectsInputTypes {
 
   override def dataType: DataType = child.dataType

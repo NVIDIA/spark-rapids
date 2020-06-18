@@ -36,7 +36,7 @@ class GpuGenerateExecSparkPlanMeta(
     p: Option[RapidsMeta[_, _, _]],
     r: ConfKeysAndIncompat) extends SparkPlanMeta[GenerateExec](gen, conf, p, r) {
 
-  private def exprsFromArray(data: ArrayData, dataType: DataType): Seq[ExprMeta[Expression]] = {
+  private def exprsFromArray(data: ArrayData, dataType: DataType): Seq[BaseExprMeta[Expression]] = {
     (0 until data.numElements()).map { i =>
       Literal(data.get(i, dataType), dataType).asInstanceOf[Expression]
     }.map(GpuOverrides.wrapExpr(_, conf, Some(this)))
@@ -60,7 +60,7 @@ class GpuGenerateExecSparkPlanMeta(
     case _ => Seq.empty
   }
 
-  override val childExprs: Seq[ExprMeta[_]] = arrayExprs
+  override val childExprs: Seq[BaseExprMeta[_]] = arrayExprs
 
   override def tagPlanForGpu(): Unit = {
     // We can only run on the GPU if we are doing a posexplode of an array we are generating
@@ -100,7 +100,7 @@ class GpuGenerateExecSparkPlanMeta(
  */
 case class GpuGenerateExec(
     includePos: Boolean,
-    arrayProject: Seq[GpuExpression],
+    arrayProject: Seq[Expression],
     requiredChildOutput: Seq[Attribute],
     generatorOutput: Seq[Attribute],
     child: SparkPlan
@@ -121,8 +121,9 @@ case class GpuGenerateExec(
     val totalTime = longMetric(TOTAL_TIME)
     val boundArrayProjectList = GpuBindReferences.bindReferences(arrayProject, child.output).toArray
     val numArrayColumns = boundArrayProjectList.length
-    val boundOthersProjectList =
-      GpuBindReferences.bindReferences(requiredChildOutput, child.output).toArray
+    val boundOthersProjectList: Array[GpuExpression] =
+      GpuBindReferences.bindReferences(requiredChildOutput, child.output)
+          .asInstanceOf[Seq[GpuExpression]].toArray
     val numOtherColumns = boundOthersProjectList.length
     val numExplodeColumns = if (includePos) 2 else 1
 

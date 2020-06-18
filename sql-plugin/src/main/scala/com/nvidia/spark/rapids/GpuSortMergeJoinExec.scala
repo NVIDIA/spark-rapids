@@ -27,12 +27,14 @@ class GpuSortMergeJoinMeta(
     rule: ConfKeysAndIncompat)
   extends SparkPlanMeta[SortMergeJoinExec](join, conf, parent, rule) with Logging {
 
-  val leftKeys: Seq[ExprMeta[_]] = join.leftKeys.map(GpuOverrides.wrapExpr(_, conf, Some(this)))
-  val rightKeys: Seq[ExprMeta[_]] = join.rightKeys.map(GpuOverrides.wrapExpr(_, conf, Some(this)))
-  val condition: Option[ExprMeta[_]] = join.condition.map(
+  val leftKeys: Seq[BaseExprMeta[_]] =
+    join.leftKeys.map(GpuOverrides.wrapExpr(_, conf, Some(this)))
+  val rightKeys: Seq[BaseExprMeta[_]] =
+    join.rightKeys.map(GpuOverrides.wrapExpr(_, conf, Some(this)))
+  val condition: Option[BaseExprMeta[_]] = join.condition.map(
     GpuOverrides.wrapExpr(_, conf, Some(this)))
 
-  override val childExprs: Seq[ExprMeta[_]] = leftKeys ++ rightKeys ++ condition
+  override val childExprs: Seq[BaseExprMeta[_]] = leftKeys ++ rightKeys ++ condition
 
   override def tagPlanForGpu(): Unit = {
     // Use conditions from Hash Join

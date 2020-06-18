@@ -21,6 +21,7 @@ import com.nvidia.spark.rapids.GpuMetricNames._
 
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.InternalRow
+import org.apache.spark.sql.catalyst.expressions.Expression
 import org.apache.spark.sql.catalyst.plans.JoinType
 import org.apache.spark.sql.catalyst.plans.physical.{BroadcastDistribution, Distribution, UnspecifiedDistribution}
 import org.apache.spark.sql.execution.{BinaryExecNode, SparkPlan}
@@ -36,12 +37,14 @@ class GpuBroadcastHashJoinMeta(
     rule: ConfKeysAndIncompat)
   extends SparkPlanMeta[BroadcastHashJoinExec](join, conf, parent, rule) {
 
-  val leftKeys: Seq[ExprMeta[_]] = join.leftKeys.map(GpuOverrides.wrapExpr(_, conf, Some(this)))
-  val rightKeys: Seq[ExprMeta[_]] = join.rightKeys.map(GpuOverrides.wrapExpr(_, conf, Some(this)))
-  val condition: Option[ExprMeta[_]] =
+  val leftKeys: Seq[BaseExprMeta[_]] =
+    join.leftKeys.map(GpuOverrides.wrapExpr(_, conf, Some(this)))
+  val rightKeys: Seq[BaseExprMeta[_]] =
+    join.rightKeys.map(GpuOverrides.wrapExpr(_, conf, Some(this)))
+  val condition: Option[BaseExprMeta[_]] =
     join.condition.map(GpuOverrides.wrapExpr(_, conf, Some(this)))
 
-  override val childExprs: Seq[ExprMeta[_]] = leftKeys ++ rightKeys ++ condition
+  override val childExprs: Seq[BaseExprMeta[_]] = leftKeys ++ rightKeys ++ condition
 
   override def tagPlanForGpu(): Unit = {
     GpuHashJoin.tagJoin(this, join.joinType, join.condition)
@@ -81,11 +84,11 @@ class GpuBroadcastHashJoinMeta(
 }
 
 case class GpuBroadcastHashJoinExec(
-    leftKeys: Seq[GpuExpression],
-    rightKeys: Seq[GpuExpression],
+    leftKeys: Seq[Expression],
+    rightKeys: Seq[Expression],
     joinType: JoinType,
     buildSide: BuildSide,
-    condition: Option[GpuExpression],
+    condition: Option[Expression],
     left: SparkPlan,
     right: SparkPlan) extends BinaryExecNode with GpuHashJoin {
 

@@ -24,7 +24,7 @@ import com.nvidia.spark.rapids.GpuColumnVector.GpuColumnarBatchBuilder
 
 import org.apache.spark.rdd.{PartitionPruningRDD, RDD}
 import org.apache.spark.sql.catalyst.InternalRow
-import org.apache.spark.sql.catalyst.expressions.{Attribute, BoundReference, UnsafeProjection}
+import org.apache.spark.sql.catalyst.expressions.{Attribute, BindReferences, BoundReference, SortOrder, UnsafeProjection}
 import org.apache.spark.sql.catalyst.expressions.codegen.LazilyGeneratedOrdering
 import org.apache.spark.sql.types.StructType
 import org.apache.spark.sql.vectorized.ColumnarBatch
@@ -92,13 +92,12 @@ class GpuRangePartitioner extends Serializable {
     bounds.toArray
   }
 
-  def createRangeBounds(partitions: Int, gpuOrdering: Seq[GpuSortOrder], rdd: RDD[ColumnarBatch],
+  def createRangeBounds(partitions: Int, gpuOrdering: Seq[SortOrder], rdd: RDD[ColumnarBatch],
                         outputAttributes: Seq[Attribute],
                         samplePointsPerPartitionHint: Int): Unit = {
 
     val orderingAttributes = gpuOrdering.zipWithIndex.map { case (ord, i) =>
-      val sortOrder = ord.toSortOrder
-      sortOrder.copy(child = BoundReference(i, sortOrder.dataType, sortOrder.nullable))
+      ord.copy(child = BoundReference(i, ord.dataType, ord.nullable))
     }
     implicit val ordering: LazilyGeneratedOrdering = new LazilyGeneratedOrdering(orderingAttributes)
     val rowsRDD = rddForSampling(partitions, gpuOrdering, rdd, outputAttributes)
@@ -155,11 +154,13 @@ class GpuRangePartitioner extends Serializable {
     this.rangeBounds = rangeBounds.asInstanceOf[Array[InternalRow]]
   }
 
-  def rddForSampling(partitions: Int, gpuOrdering: Seq[GpuSortOrder], rdd: RDD[ColumnarBatch],
+  def rddForSampling(partitions: Int, gpuOrdering: Seq[SortOrder], rdd: RDD[ColumnarBatch],
                      outputAttributes: Seq[Attribute]) : RDD[MutablePair[InternalRow, Null]] = {
 
-    val sortingExpressions = gpuOrdering.map(so => so.toSortOrder)
-    lazy val toUnsafe = UnsafeProjection.create(sortingExpressions.map(_.child), outputAttributes)
+    val sortingExpressions = gpuOrdering
+    lazy val toUnsafe = UnsafeProjection.create(
+      sortingExpressions.map(_.child),
+      outputAttributes)
     val rowsRDD = rdd.mapPartitions {
       batches => {
         new Iterator[InternalRow] {
