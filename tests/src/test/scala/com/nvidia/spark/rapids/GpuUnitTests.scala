@@ -89,7 +89,7 @@ class GpuUnitTests extends SparkQueryCompareTestSuite {
    * true if result is null
    */
   protected def checkResult(result: GpuColumnVector, expected: GpuColumnVector,
-     expression: Expression): Boolean = {
+     expression: Expression): Unit = {
     // The result is null for a non-nullable expression
     assert(result != null || expression.nullable, "expression.nullable should be true if " +
         "result is null")
@@ -100,7 +100,6 @@ class GpuUnitTests extends SparkQueryCompareTestSuite {
         check(hostExpected, hostResult)
       }
     }
-    true
   }
 
   private def check(hostExpected: RapidsHostColumnVector,
@@ -156,13 +155,7 @@ class GpuUnitTests extends SparkQueryCompareTestSuite {
       inputBatch: ColumnarBatch = EmptyBatch): Unit = {
     try {
       withResource(evaluateWithoutCodegen(gpuExpression, inputBatch)) { actual =>
-
-        if (!checkResult(actual, expected, gpuExpression)) {
-          val input = if (inputBatch == EmptyBatch) "" else s", input: $inputBatch"
-          fail(s"Incorrect evaluation (codegen off): $gpuExpression, " +
-              s"actual: $actual, " +
-              s"expected: $expected$input")
-        }
+          checkResult(actual, expected, gpuExpression)
       }
     } catch {
       case e: Exception => e.printStackTrace()
