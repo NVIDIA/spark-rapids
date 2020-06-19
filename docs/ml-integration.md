@@ -7,7 +7,7 @@ nav_order: 7
 
 There are cases where you may want to get access to the raw data on the GPU, preferably without
 copying it. One use case for this is exporting the data to an ML framework after doing feature
-extraction. To do this we provide a simple Scala utility `ai.rapids.spark.ColumnarRdd` that can
+extraction. To do this we provide a simple Scala utility `com.nvidia.spark.rapids.ColumnarRdd` that can
 be used to convert a `DataFrame` to an `RDD[ai.rapids.cudf.Table]`. Each `Table` will have the same
 schema as the `DataFrame` passed in.
 

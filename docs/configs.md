@@ -11,7 +11,7 @@ On startup use: `--conf [conf key]=[conf value]`. For example:
 
 ```
 ${SPARK_HOME}/bin/spark --jars 'rapids-4-spark_2.12-0.1-SNAPSHOT.jar,cudf-0.14-SNAPSHOT-cuda10.jar' \
---conf spark.plugins=ai.rapids.spark.SQLPlugin \
+--conf spark.plugins=com.nvidia.spark.SQLPlugin \
 --conf spark.rapids.sql.incompatibleOps.enabled=true
 ```
 
@@ -26,9 +26,8 @@ scala> spark.conf.set("spark.rapids.sql.incompatibleOps.enabled", true)
 
 
 ## General Configuration
-
-|Name|Description|Default Value|
-|---|---|---|
+Name | Description | Default Value
+-----|-------------|--------------
 <a name="memory.gpu.allocFraction"></a>spark.rapids.memory.gpu.allocFraction|The fraction of total GPU memory that should be initially allocated for pooled memory. Extra memory will be allocated as needed, but it may result in more fragmentation.|0.9
 <a name="memory.gpu.debug"></a>spark.rapids.memory.gpu.debug|Provides a log of GPU memory allocations and frees. If set to STDOUT or STDERR the logging will go there. Setting it to NONE disables logging. All other values are reserved for possible future expansion and in the mean time will disable logging.|NONE
 <a name="memory.gpu.pooling.enabled"></a>spark.rapids.memory.gpu.pooling.enabled|Should RMM act as a pooling allocator for GPU memory, or should it just pass through to CUDA memory allocation directly.|true
@@ -83,8 +82,8 @@ will enable all the settings in the table below which are not enabled by default
 incompatibilities.
 
 ### Expressions
-Name|Description|Default Value|Incompatibilities
-----|-----------|-------------|-----------------
+Name | Description | Default Value | Incompatibilities
+-----|-------------|---------------|------------------
 <a name="sql.expression.Abs"></a>spark.rapids.sql.expression.Abs|absolute value|true|None|
 <a name="sql.expression.Acos"></a>spark.rapids.sql.expression.Acos|inverse cosine|true|None|
 <a name="sql.expression.Acosh"></a>spark.rapids.sql.expression.Acosh|inverse hyperbolic cosine|true|None|
@@ -139,7 +138,7 @@ Name|Description|Default Value|Incompatibilities
 <a name="sql.expression.IsNaN"></a>spark.rapids.sql.expression.IsNaN|checks if a value is NaN|true|None|
 <a name="sql.expression.IsNotNull"></a>spark.rapids.sql.expression.IsNotNull|checks if a value is not null|true|None|
 <a name="sql.expression.IsNull"></a>spark.rapids.sql.expression.IsNull|checks if a value is null|true|None|
-<a name="sql.expression.KnownFloatingPointNormalized"></a>spark.rapids.sql.expression.KnownFloatingPointNormalized|tag to prevent redundant normalization|false|This is not 100% compatible with the Spark version because when enabling these, there may be extra groups produced for floating point grouping keys (e.g. -0.0, and 0.0)|
+<a name="sql.expression.KnownFloatingPointNormalized"></a>spark.rapids.sql.expression.KnownFloatingPointNormalized|tag to prevent redundant normalization|true|None|
 <a name="sql.expression.Length"></a>spark.rapids.sql.expression.Length|String Character Length|true|None|
 <a name="sql.expression.LessThan"></a>spark.rapids.sql.expression.LessThan|< operator|true|None|
 <a name="sql.expression.LessThanOrEqual"></a>spark.rapids.sql.expression.LessThanOrEqual|<= operator|true|None|
@@ -208,7 +207,7 @@ Name|Description|Default Value|Incompatibilities
 <a name="sql.expression.Max"></a>spark.rapids.sql.expression.Max|max aggregate operator|true|None|
 <a name="sql.expression.Min"></a>spark.rapids.sql.expression.Min|min aggregate operator|true|None|
 <a name="sql.expression.Sum"></a>spark.rapids.sql.expression.Sum|sum aggregate operator|true|None|
-<a name="sql.expression.NormalizeNaNAndZero"></a>spark.rapids.sql.expression.NormalizeNaNAndZero|normalize nan and zero|false|This is not 100% compatible with the Spark version because when enabling these, there may be extra groups produced for floating point grouping keys (e.g. -0.0, and 0.0)|
+<a name="sql.expression.NormalizeNaNAndZero"></a>spark.rapids.sql.expression.NormalizeNaNAndZero|normalize nan and zero|true|None|
 
 ### Execution
 Name | Description | Default Value | Incompatibilities
