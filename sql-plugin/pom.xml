@@ -30,6 +30,18 @@
     <description>The RAPIDS SQL plugin for Apache Spark</description>
     <version>0.1-SNAPSHOT</version>
 
+    <profiles>
+        <profile>
+            <id>databricks</id>
+            <dependencies>
+                <dependency>
+                    <groupId>org.apache.spark</groupId>
+                    <artifactId>spark-annotation_${scala.binary.version}</artifactId>
+                </dependency>
+             </dependencies>
+        </profile>
+    </profiles>
+
     <dependencies>
         <dependency>
             <groupId>ai.rapids</groupId>
