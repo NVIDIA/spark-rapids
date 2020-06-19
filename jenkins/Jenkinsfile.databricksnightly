@@ -80,18 +80,7 @@ pipeline {
     post {
         always {
             script {
-                def IMAGE_NAME="urm.nvidia.com/sw-spark-docker/plugin:dev-ubuntu16-cuda10.1"
-                def DOCKER_CMD="docker --config $WORKSPACE/.docker"
-                sh """
-                    echo $URM_CREDS_PSW | $DOCKER_CMD login https://urm.nvidia.com -u $URM_CREDS_USR --password-stdin
-                    $DOCKER_CMD pull $IMAGE_NAME
-                    $DOCKER_CMD logout https://urm.nvidia.com
-                """
-                docker.image(IMAGE_NAME).inside("--runtime=nvidia -v ${HOME}/.m2:${HOME}/.m2:rw \
-                    -v ${HOME}/.zinc:${HOME}/.zinc:rw \
-                    -v /etc/passwd:/etc/passwd -v /etc/group:/etc/group") {
-                    sh "python3.6 ./jenkins/databricks/shutdown.py -t $DATABRICKS_TOKEN"
-                }
+                sh "python3.6 ./jenkins/databricks/shutdown.py -t $DATABRICKS_TOKEN"
             }
         }
     }
