@@ -89,18 +89,26 @@ class GpuUnitTests extends SparkQueryCompareTestSuite {
    * true if result is null
    */
   protected def checkResult(result: GpuColumnVector, expected: GpuColumnVector,
-     expression: Expression): Boolean = {
+     expression: Expression): Unit = {
     // The result is null for a non-nullable expression
     assert(result != null || expression.nullable, "expression.nullable should be true if " +
-       "result is null")
-    assert(result.getBase().getType() == expected.getBase().getType(), "types should be the same")
-    val hostExpected = expected.copyToHost()
-    val hostResult = result.copyToHost()
-    for (row <- 0 until result.getRowCount().toInt) {
+        "result is null")
+    assert(result.getBase().getType() == expected.getBase().getType(),
+       "types should be the same")
+    withResource(expected.copyToHost()) { hostExpected =>
+      withResource(result.copyToHost()) { hostResult =>
+        check(hostExpected, hostResult)
+      }
+    }
+  }
+
+  private def check(hostExpected: RapidsHostColumnVector,
+     hostResult: RapidsHostColumnVector) = {
+    for (row <- 0 until hostResult.getRowCount().toInt) {
       assert(hostExpected.isNullAt(row) == hostResult.isNullAt(row),
-         "expected and actual differ at " + row + " one of them isn't null")
+        "expected and actual differ at " + row + " one of them isn't null")
       if (!hostExpected.isNullAt(row)) {
-        result.getBase.getType() match {
+        hostResult.getBase.getType() match {
           case INT8 | BOOL8 =>
             assert(hostExpected.getByte(row) == hostResult.getByte(row), "row " + row)
           case INT16 =>
@@ -114,23 +122,23 @@ class GpuUnitTests extends SparkQueryCompareTestSuite {
             assert(hostExpected.getLong(row) == hostResult.getLong(row), "row " + row)
 
           case FLOAT32 =>
-            assert(compare(hostExpected.getFloat(row), hostResult.getFloat(row), 0.0001),
-               "row " + row)
+            assert(compare(hostExpected.getFloat(row), hostResult.getFloat(row),
+              0.0001), "row " + row)
 
           case FLOAT64 =>
-            assert(compare(hostExpected.getDouble(row), hostResult.getDouble(row), 0.0001),
-               "row " + row)
+            assert(compare(hostExpected.getDouble(row), hostResult.getDouble(row),
+              0.0001), "row " + row)
 
           case STRING =>
-            assert(hostExpected.getUTF8String(row) == hostResult.getUTF8String(row), "row " + row)
+            assert(hostExpected.getUTF8String(row) == hostResult.getUTF8String(row),
+              "row " + row)
 
           case _ =>
-            throw new IllegalArgumentException(hostResult.getBase.getType() + " is not supported " +
-               "yet")
+            throw new IllegalArgumentException(hostResult.getBase.getType() +
+                " is not supported yet")
         }
       }
     }
-    true
   }
 
   protected def evaluateWithoutCodegen(gpuExpression: GpuExpression,
@@ -143,17 +151,15 @@ class GpuUnitTests extends SparkQueryCompareTestSuite {
   }
 
   private def checkEvaluationWithoutCodegen(gpuExpression: GpuExpression,
-     expected: GpuColumnVector,
-     inputBatch: ColumnarBatch = EmptyBatch): Unit = {
-    val actual = try evaluateWithoutCodegen(gpuExpression, inputBatch) catch {
+      expected: GpuColumnVector,
+      inputBatch: ColumnarBatch = EmptyBatch): Unit = {
+    try {
+      withResource(evaluateWithoutCodegen(gpuExpression, inputBatch)) { actual =>
+          checkResult(actual, expected, gpuExpression)
+      }
+    } catch {
       case e: Exception => e.printStackTrace()
-         fail(s"Exception evaluating $gpuExpression", e)
-    }
-    if (!checkResult(actual, expected, gpuExpression)) {
-      val input = if (inputBatch == EmptyBatch) "" else s", input: $inputBatch"
-      fail(s"Incorrect evaluation (codegen off): $gpuExpression, " +
-        s"actual: $actual, " +
-        s"expected: $expected$input")
+        fail(s"Exception evaluating $gpuExpression", e)
     }
   }
 
