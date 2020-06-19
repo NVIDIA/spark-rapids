@@ -1,3 +1,10 @@
+---
+layout: page
+title: Developer Overview
+nav_order: 8
+has_children: true
+permalink: /developer-overview/
+---
 # RAPIDS Plugin for Apache Spark Developer Overview
 This document provides a developer overview of the project and covers the
 following topics:

@@ -1,3 +1,9 @@
+---
+layout: page
+title: Compatability
+nav_order: 4
+---
+
 # RAPIDS Accelerator for Apache Spark Compatibility with Apache Spark
 
 The SQL plugin tries to produce results that are bit for bit identical with Apache Spark.
