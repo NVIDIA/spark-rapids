@@ -22,7 +22,16 @@
 */
 
 pipeline {
-    agent { label 'vanilla' }
+    agent {
+        dockerfile {
+            label 'docker-gpu'
+            filename 'Dockerfile.ubuntu16'
+            dir "jenkins"
+            args '--runtime=nvidia -v ${HOME}/.m2:${HOME}/.m2:rw \
+                -v ${HOME}/.zinc:${HOME}/.zinc:rw \
+                -v /etc/passwd:/etc/passwd -v /etc/group:/etc/group'
+        }
+    }
 
     options {
         ansiColor('xterm')
@@ -34,6 +43,8 @@ pipeline {
         choice(name: 'DEPLOY_TO', choices: ['Urm', 'Local'],
             description: 'Where to deploy artifacts to')
         string(name: 'REF', defaultValue: 'branch-0.1', description: 'Commit to build')
+        string(name: 'DATABRICKS_VERSION',
+                defaultValue: '0.1-databricks-SNAPSHOT', description: 'Version to set')
     }
 
     environment {
@@ -50,39 +61,19 @@ pipeline {
 
     stages {
         stage('Ubuntu16 CUDA10.1') {
-            agent {
-                dockerfile {
-                    label 'docker-gpu'
-                    filename 'Dockerfile.ubuntu16'
-                    dir "jenkins"
-                    args '--runtime=nvidia -v ${HOME}/.m2:${HOME}/.m2:rw \
-                        -v ${HOME}/.zinc:${HOME}/.zinc:rw \
-                        -v /etc/passwd:/etc/passwd -v /etc/group:/etc/group'
-                }
-            }
             steps {
                 script {
                     sshagent(credentials : ['svcngcc_pubpriv']) {
-                        sh "mvn versions:set -DnewVersion=0.1-databricks-SNAPSHOT && git clean -d -f"
+                        sh "mvn versions:set -DnewVersion=$DATABRICKS_VERSION && git clean -d -f"
                         sh "patch -p1 < ./jenkins/databricks/dbimports.patch"
                         sh "tar -zcvf spark-rapids-ci.tgz * || true"
                         sh "python3.6 ./jenkins/databricks/run-tests.py -z ./spark-rapids-ci.tgz -t $DATABRICKS_TOKEN -p /home/svcngcc/.ssh/id_rsa -l ./jenkins/databricks/build.sh"
-                        sh "./jenkins/databricks/deploy.sh"
+                        sh "# ./jenkins/databricks/deploy.sh"
                     }
                 }
             }
         }
         stage('cleanup') {
-            agent {
-                dockerfile {
-                    label 'docker-gpu'
-                    filename 'Dockerfile.ubuntu16'
-                    dir "jenkins"
-                    args '--runtime=nvidia -v ${HOME}/.m2:${HOME}/.m2:rw \
-                        -v ${HOME}/.zinc:${HOME}/.zinc:rw \
-                        -v /etc/passwd:/etc/passwd -v /etc/group:/etc/group'
-                }
-            }
             steps {
                 script {
                     sh "python3.6 ./jenkins/databricks/shutdown.py -t $DATABRICKS_TOKEN"
@@ -93,11 +84,6 @@ pipeline {
     post {
         always {
             script {
-                if (currentBuild.currentResult == "SUCCESS") {
-                    slack("#rapidsai-spark-cicd", "Success", color: "#33CC33")
-                } else {
-                    slack("#rapidsai-spark-cicd", "Failed", color: "#FF0000")
-                }
             }
         }
     }
