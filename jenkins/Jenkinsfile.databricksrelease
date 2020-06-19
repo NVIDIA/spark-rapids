@@ -70,7 +70,8 @@ pipeline {
         stage('debug') {
             steps {
                 script {
-                    sh "whoami"
+                    sh "echo Tom"
+                    sh "echo `whoami`"
                 }
             }
         }
