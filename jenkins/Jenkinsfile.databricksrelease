@@ -90,11 +90,10 @@ pipeline {
             }
             steps {
                 script {
-                        sh 'rm -rf $GNUPGHOME'
-                        sh 'gpg --import $GPG_FILE'
-                        retry (3) {
-                            sh "bash $JENKINS_ROOT/deploy.sh true true"
-                        }
+                    sh 'rm -rf $GNUPGHOME'
+                    sh 'gpg --import $GPG_FILE'
+                    retry (3) {
+                        sh "bash $JENKINS_ROOT/deploy.sh true true"
                     }
                 }
             }
