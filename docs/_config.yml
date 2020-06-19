@@ -20,3 +20,5 @@ remote_theme: pmarsceill/just-the-docs
 aux_links:
   "Spark Rapids Plugin on Github":
     - "//github.com/nvidia/spark-rapids"
+
+ga_tracking: UA-170042181
