@@ -29,7 +29,7 @@ if [ "$BUILD_VERSION"x == x ];then
     BUILD_VERSION=0.1-databricks-SNAPSHOT
 fi
 
-RAPIDS_BUILT_JAR=rapids-4-spark_2.12-$BUILDVERSION.jar
+RAPIDS_BUILT_JAR=rapids-4-spark_2.12-$BUILD_VERSION.jar
 
 sudo apt install -y maven
 rm -rf spark-rapids
