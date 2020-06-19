@@ -1,3 +1,10 @@
+---
+layout: default
+title: Getting Started
+nav_order: 2
+---
+
+
 # Getting Started with the RAPIDS Accelerator for Apache Spark
 
 ## Overview
@@ -26,7 +33,7 @@ To enable GPU processing acceleration you will need:
 - Add the following jars:
     - A cudf jar that corresponds to the version of CUDA available on your cluster.
     - RAPIDS Spark accelerator plugin jar.
-- Set the config `spark.plugins` to `com.nvidia.spark.SQLPlugin`
+- Set the config `spark.plugins` to `ai.rapids.spark.SQLPlugin`
 
 ## Prerequisites
 Each node where you are running Spark needs to have the following installed. If you are running
@@ -88,7 +95,7 @@ To install Apache Spark please follow the official
 scala version 2.12 is currently supported by the accelerator. 
 
 ## Download the RAPIDS jars
-The [accelerator](https://mvnrepository.com/artifact/com.nvidia/rapids-4-spark_2.12) and 
+The [accelerator](https://mvnrepository.com/artifact/ai.rapids/rapids-4-spark_2.12) and 
 [cudf](https://mvnrepository.com/artifact/ai.rapids/cudf) jars are available in 
 [maven central](https://mvnrepository.com/search?q=ai.rapids)
 
@@ -100,16 +107,16 @@ CUDA and will not run on other versions. The jars use a maven classifier to keep
 - CUDA 10.1 => classifier cuda10-1
 - CUDA 10.2 => classifier cuda10-2
 
-For example, here's a sample version of the jars and cudf with CUDA 10.1 support:
-- cudf-0.14-20200424.205232-49-cuda10-1.jar
-- rapids-4-spark_2.12-0.1-20200424.210950-11.jar
+For example, here is a sample version of the jars and cudf with CUDA 10.1 support:
+- cudf-0.14-cuda10-1.jar
+- rapids-4-spark_2.12-0.1.0.jar
 
 For simplicity export the location to these jars. This example assumes the sample jars above have
 been placed in the `/opt/sparkRapidsPlugin` directory:
-```shell script
+```shell 
 export SPARK_RAPIDS_DIR=/opt/sparkRapidsPlugin
-export SPARK_CUDF_JAR=${SPARK_RAPIDS_DIR}/cudf-0.14-20200424.205232-49-cuda10-1.jar
-export SPARK_RAPIDS_PLUGIN_JAR=${SPARK_RAPIDS_DIR}/rapids-4-spark_2.12-0.1-20200424.210950-11.jar
+export SPARK_CUDF_JAR=${SPARK_RAPIDS_DIR}/cudf-0.14-cuda10-1.jar
+export SPARK_RAPIDS_PLUGIN_JAR=${SPARK_RAPIDS_DIR}/rapids-4-spark_2.12-0.1.jar 
 ```
 
 ## Install the GPU Discovery Script
@@ -129,11 +136,11 @@ everything in a single process on a single node.
 - Launch your Spark shell session
 
 Default configs usually work fine in local mode.  The required changes are setting the config 
-`spark.plugins` to `com.nvidia.spark.SQLPlugin` and including the jars as a dependency. All of the
+`spark.plugins` to `ai.rapids.spark.SQLPlugin` and including the jars as a dependency. All of the
 other config settings and command line parameters are to try and better configure spark for GPU
 execution.
  
-```shell script
+```shell 
 $SPARK_HOME/bin/spark-shell \
        --master local \
        --num-executors 1 \
@@ -144,7 +151,7 @@ $SPARK_HOME/bin/spark-shell \
        --conf spark.locality.wait=0s \
        --conf spark.sql.files.maxPartitionBytes=512m \
        --conf spark.sql.shuffle.partitions=10 \
-       --conf spark.plugins=com.nvidia.spark.SQLPlugin \
+       --conf spark.plugins=ai.rapids.spark.SQLPlugin \
        --jars ${SPARK_CUDF_JAR},${SPARK_RAPIDS_PLUGIN_JAR}
 ```
 You can run one of the examples below such as the [Example Join Operation](#example-join-operation)
@@ -200,7 +207,7 @@ ask for GPUs.  In this case we are asking for 1 GPU per executor, the plugin can
 than one, and 4 CPU tasks per executor, but only one task will be on the GPU at a time. This allows
 for overlapping I/O and computation.
 
-```shell script
+```shell 
 $SPARK_HOME/bin/spark-shell \
        --master spark://${MASTER_HOST}:7077 \
        --conf spark.executor.extraClassPath=${SPARK_CUDF_JAR}:${SPARK_RAPIDS_PLUGIN_JAR} \
@@ -214,7 +221,7 @@ $SPARK_HOME/bin/spark-shell \
        --conf spark.locality.wait=0s \
        --conf spark.sql.files.maxPartitionBytes=512m \
        --conf spark.sql.shuffle.partitions=10 \
-       --conf spark.plugins=com.nvidia.spark.SQLPlugin
+       --conf spark.plugins=ai.rapids.spark.SQLPlugin
 ```
 
 ## Running on YARN
@@ -247,7 +254,7 @@ use - either 3.x or 2.x.
   launching your Spark application.
 - Use the following configuration settings when running Spark on YARN, changing the amounts as
   necessary:
-```shell script
+```shell 
 $SPARK_HOME/bin/spark-shell \
        --master yarn \
        --conf spark.rapids.sql.concurrentGpuTasks=1 \
@@ -261,7 +268,7 @@ $SPARK_HOME/bin/spark-shell \
        --conf spark.locality.wait=0s \
        --conf spark.sql.files.maxPartitionBytes=512m \
        --conf spark.sql.shuffle.partitions=10 \
-       --conf spark.plugins=com.nvidia.spark.SQLPlugin \
+       --conf spark.plugins=ai.rapids.spark.SQLPlugin \
        --conf spark.executor.resource.gpu.discoveryScript=./getGpusResources.sh \
        --files ${SPARK_RAPIDS_DIR}/getGpusResources.sh \
        --jars  ${SPARK_CUDF_JAR},${SPARK_RAPIDS_PLUGIN_JAR}
@@ -275,7 +282,7 @@ $SPARK_HOME/bin/spark-shell \
   [GPU discovery script](#install-the-gpu-discovery-script) on the node from which you are
   launching your Spark application.
 - Use the following configs when running Spark on YARN, changing the amounts as necessary:
-```shell script
+```shell 
 $SPARK_HOME/bin/spark-shell \
        --master yarn \
        --conf spark.rapids.sql.concurrentGpuTasks=1 \
@@ -288,7 +295,7 @@ $SPARK_HOME/bin/spark-shell \
        --conf spark.locality.wait=0s \
        --conf spark.sql.files.maxPartitionBytes=512m \
        --conf spark.sql.shuffle.partitions=10 \
-       --conf spark.plugins=com.nvidia.spark.SQLPlugin \
+       --conf spark.plugins=ai.rapids.spark.SQLPlugin \
        --conf spark.executor.resource.gpu.discoveryScript=./getGpusResources.sh \
        --files ${SPARK_RAPIDS_DIR}/getGpusResources.sh \
        --jars  ${SPARK_CUDF_JAR},${SPARK_RAPIDS_PLUGIN_JAR}
@@ -312,7 +319,7 @@ discovery plugin. Spark will first try to discover the GPUs using this plugin an
 to the discovery script if this doesn’t work. This plugin knows how to atomically acquire a GPU in
 process exclusive mode and expose it to the tasks. 
 
-```shell script
+```shell 
 $SPARK_HOME/bin/spark-shell \
        --master yarn \
        --conf spark.rapids.sql.concurrentGpuTasks=1 \
@@ -325,8 +332,8 @@ $SPARK_HOME/bin/spark-shell \
        --conf spark.locality.wait=0s \
        --conf spark.sql.files.maxPartitionBytes=512m \
        --conf spark.sql.shuffle.partitions=10 \
-       --conf spark.plugins=com.nvidia.spark.SQLPlugin \
-       --conf spark.resourceDiscovery.plugin=com.nvidia.spark.ExclusiveModeGpuDiscoveryPlugin \
+       --conf spark.plugins=ai.rapids.spark.SQLPlugin \
+       --conf spark.resourceDiscovery.plugin=ai.rapids.spark.ExclusiveModeGpuDiscoveryPlugin \
        --conf spark.executor.resource.gpu.discoveryScript=./getGpusResources.sh \
        --files ${SPARK_RAPIDS_DIR}/getGpusResources.sh \
        --jars  ${SPARK_CUDF_JAR},${SPARK_RAPIDS_PLUGIN_JAR}
@@ -355,7 +362,7 @@ to setup a Kubernetes cluster.
   - `docker build . -f Dockerfile.cuda -t ubuntu18cuda10-1-sparkrapidsplugin`
   - Deploy your Dockerfile to the necessary repository to run on your K8S cluster.
 - Use the following configs when you run. Change the executor and task amounts as necessary:
-```shell script
+```shell 
 $SPARK_HOME/bin/spark-shell \
        --master k8s://https://<k8s-apiserver-host>:<k8s-apiserver-port> \
        --conf spark.rapids.sql.concurrentGpuTasks=1 \
@@ -368,7 +375,7 @@ $SPARK_HOME/bin/spark-shell \
        --conf spark.locality.wait=0s \
        --conf spark.sql.files.maxPartitionBytes=512m \
        --conf spark.sql.shuffle.partitions=10 \
-       --conf spark.plugins=com.nvidia.spark.SQLPlugin \
+       --conf spark.plugins=ai.rapids.spark.SQLPlugin \
        --conf spark.executor.resource.gpu.discoveryScript=/opt/sparkRapidsPlugin/getGpusResources.sh \
        --conf spark.executor.resource.gpu.vendor=nvidia.com \
        --conf spark.kubernetes.container.image=$IMAGE_NAME
@@ -383,16 +390,16 @@ and application.
 1. If you are using the KryoSerializer with Spark, e.g.:
    `--conf spark.serializer=org.apache.spark.serializer.KryoSerializer`, you will have to register
    the GpuKryoRegistrator class, e.g.:
-   `--conf spark.kryo.registrator=com.nvidia.spark.rapids.GpuKryoRegistrator`.
+   `--conf spark.kryo.registrator=ai.rapids.spark.GpuKryoRegistrator`.
 1. Configure the amount of executor memory like you would for a normal Spark application.  If most
    of the job will run on the GPU then often you can run with less executor heap memory than would
    be needed for the corresponding Spark job on the CPU.
 
 ### Example Command Running on YARN
-```shell script
+```shell 
 $SPARK_HOME/bin/spark-shell --master yarn \
   --num-executors 1 \
-  --conf spark.plugins=com.nvidia.spark.SQLPlugin \
+  --conf spark.plugins=ai.rapids.spark.SQLPlugin \
   --conf spark.executor.cores=6 \
   --conf spark.rapids.sql.concurrentGpuTasks=2 \
   --executor-memory 20g \

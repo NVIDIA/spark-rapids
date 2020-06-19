@@ -1,3 +1,8 @@
+---
+layout: page
+title: Tuning
+nav_order: 5
+---
 # RAPIDS Accelerator for Apache Spark Tuning Guide
 Tuning a Spark job's configuration settings from the defaults can often improve job performance,
 and this remains true for jobs leveraging the RAPIDS Accelerator plugin for Apache Spark. This
