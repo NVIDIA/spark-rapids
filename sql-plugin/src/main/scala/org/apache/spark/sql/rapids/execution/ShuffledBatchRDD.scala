@@ -20,8 +20,8 @@ package org.apache.spark.sql.rapids.execution
 import java.util
 import ai.rapids.cudf.NvtxColor
 import ai.rapids.spark.{GpuMetricNames, NvtxWithMetrics}
-import org.apache.spark._
 
+import org.apache.spark._
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.execution.{CoalescedPartitioner, CoalescedPartitionSpec, PartialMapperPartitionSpec, PartialReducerPartitionSpec, ShuffledRowRDDPartition, ShufflePartitionSpec}
 import org.apache.spark.sql.execution.metric.{SQLMetric, SQLShuffleReadMetricsReporter}

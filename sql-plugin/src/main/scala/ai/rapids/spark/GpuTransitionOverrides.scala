@@ -42,33 +42,36 @@ class GpuTransitionOverrides extends Rule[SparkPlan] {
         // TODO these rules are now a mix of GPU plan transitions and AQE plan transitions
         // so need to be broken out into separate methods
 
-        case _: QueryStageExec =>
-          // don't re-optimize existing query stages
+        case _: QueryStageExec | _: ReusedExchangeExec =>
+          // don't re-optimize existing query stages or exchange nodes
           plan
 
-        case ColumnarToRowExec(bb: GpuBringBackToHost) =>
-          GpuColumnarToRowExec(optimizeGpuPlanTransitions(bb.child))
-        case ColumnarToRowExec(s @ ShuffleQueryStageExec(_, _: GpuExec)) =>
-          GpuColumnarToRowExec(optimizeGpuPlanTransitions(s))
+        case ColumnarToRowExec(child) => child match {
+          case bb: GpuBringBackToHost =>
+            GpuColumnarToRowExec(optimizeGpuPlanTransitions(bb.child))
+          case s @ ShuffleQueryStageExec(_, _: GpuExec) =>
+            GpuColumnarToRowExec(optimizeGpuPlanTransitions(s))
+          case s @ BroadcastQueryStageExec(_, _: GpuExec) =>
+            GpuColumnarToRowExec(optimizeGpuPlanTransitions(s))
+        }
 
         case GpuColumnarToRowExec(bb: GpuBringBackToHost, _) =>
           GpuColumnarToRowExec(optimizeGpuPlanTransitions(bb.child))
 
-        case HostColumnarToGpu(r2c: RowToColumnarExec, goal) =>
-          GpuRowToColumnarExec(optimizeGpuPlanTransitions(r2c.child), goal)
-        case HostColumnarToGpu(s @ BroadcastQueryStageExec(_, _: GpuExec), _) =>
-          optimizeGpuPlanTransitions(s)
-        case HostColumnarToGpu(s @ BroadcastQueryStageExec(_,
-            ReusedExchangeExec(_, _: GpuBroadcastExchangeExec)), _) =>
-          optimizeGpuPlanTransitions(s)
-        case HostColumnarToGpu(s @ ShuffleQueryStageExec(_, _: GpuExec), _) =>
-          optimizeGpuPlanTransitions(s)
-        case HostColumnarToGpu(child: GpuExec, _) =>
-          optimizeGpuPlanTransitions(child)
-
-//          BroadcastExchange HashedRelationBroadcastMode(List(s_suppkey#108L)), [id=#678]
-//    +- BroadcastQueryStage 1
-//    +- GpuBroadcastExchange HashedRelationBroadcastMode(List(input[0, bigint, true])), [id=#318]
+        case HostColumnarToGpu(child, goal) => child match {
+          case r2c: RowToColumnarExec =>
+            GpuRowToColumnarExec(optimizeGpuPlanTransitions(r2c.child), goal)
+          case s @ ShuffleQueryStageExec(_, _: GpuExec) =>
+            optimizeGpuPlanTransitions(s)
+          case s @ BroadcastQueryStageExec(_, _: GpuExec) =>
+            optimizeGpuPlanTransitions(s)
+          case s @ ShuffleQueryStageExec(_, ReusedExchangeExec(_, _: GpuExec)) =>
+            optimizeGpuPlanTransitions(s)
+          case s @ BroadcastQueryStageExec(_, ReusedExchangeExec(_, _: GpuExec)) =>
+            optimizeGpuPlanTransitions(s)
+          case child: GpuExec =>
+            optimizeGpuPlanTransitions(child)
+        }
 
         case p =>
           p.withNewChildren(p.children.map(optimizeGpuPlanTransitions))
