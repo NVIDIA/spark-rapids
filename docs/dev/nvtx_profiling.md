@@ -1,3 +1,9 @@
+---
+layout: page
+title: NVTX Ranges
+nav_order: 2
+parent: Developer Overview
+---
 # Using NVTX Ranges with the RAPIDS Plugin for Spark
 NVTX ranges are typically used to profile applications that use the GPU. Such NVTX profiles,
 once captured can be visually analyzed using
@@ -8,7 +14,8 @@ This document is specific to the RAPIDS Spark Plugin profiling.
 
 In order to get NVTX ranges to work you need to recompile your cuDF with NVTX flag enabled:
 
-```//from the cpp/build directory
+```
+//from the cpp/build directory
 
 cmake .. -DCMAKE_INSTALL_PREFIX=$CONDA_PREFIX -DCMAKE_CXX11_ABI=ON -DUSE_NVTX=1
 

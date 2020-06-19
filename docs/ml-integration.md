@@ -1,3 +1,8 @@
+---
+layout: page
+title: ML Integration
+nav_order: 7
+---
 # RAPIDS Accelerator for Apache Spark ML Library Integration
 
 There are cases where you may want to get access to the raw data on the GPU, preferably without
