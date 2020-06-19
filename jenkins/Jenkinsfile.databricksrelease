@@ -1,6 +1,6 @@
 #!/usr/local/env groovy
 /*
- * Copyright (c) 2019-2020, NVIDIA CORPORATION.
+ * Copyright (c) 2020, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,7 +17,7 @@
 
 /**
 *
-* Jenkinsfile for building and deploy rapids-plugin to public repo
+* Jenkinsfile for building and deploy rapids-plugin for Databricks to public repo
 *
 */
 
@@ -32,7 +32,16 @@ def SEC_IDS = [
 ]
 
 pipeline {
-    agent { label 'vanilla||docker-deploy||docker-gpu' }
+    agent {
+        dockerfile {
+            label 'vanilla||docker-deploy||docker-gpu'
+            filename 'Dockerfile.ubuntu16'
+            dir "jenkins"
+            args '--runtime=nvidia -v ${HOME}/.m2:${HOME}/.m2:rw \
+                -v ${HOME}/.zinc:${HOME}/.zinc:rw \
+                -v /etc/passwd:/etc/passwd -v /etc/group:/etc/group'
+        }
+    }
 
     options {
         ansiColor('xterm')
@@ -52,6 +61,7 @@ pipeline {
         LIBCUDF_KERNEL_CACHE_PATH='/tmp/.cudf'
         MVN_MIRROR='-s jenkins/settings.xml -P mirror-apache-to-urm'
         URM_CREDS = credentials("svcngcc_artifactory")
+        DATABRICKS_TOKEN = credentials("SPARK_DATABRICKS_TOKEN")
         DIST_PL='dist'
         SQL_PL='sql-plugin'
     }
@@ -60,21 +70,15 @@ pipeline {
         stage('Build') {
             steps {
                 script {
-                    def DOCKER_CMD="docker --config $WORKSPACE/.docker"
-                    sh """
-                        echo $URM_CREDS_PSW | $DOCKER_CMD login https://urm.nvidia.com -u $URM_CREDS_USR --password-stdin
-                        $DOCKER_CMD pull $IMAGE_NAME
-                        $DOCKER_CMD logout https://urm.nvidia.com
-                    """
-                    docker.image("$IMAGE_NAME").inside("--runtime=nvidia -v ${HOME}/.m2:${HOME}/.m2:rw \
-                        -v ${HOME}/.zinc:${HOME}/.zinc:rw \
-                        -v /etc/passwd:/etc/passwd -v /etc/group:/etc/group") {
-                        sh "mvn -U -B clean install $MVN_MIRROR -P source-javadoc"
+                    sshagent(credentials : ['svcngcc_pubpriv']) {
+                        sh "mvn versions:set -DnewVersion=0.1.0-databricks && git clean -d -f"
+                        sh "patch -p1 < ./jenkins/databricks/dbimports.patch"
+                        sh "tar -zcvf spark-rapids-ci.tgz * || true"
+                        sh "python3.6 ./jenkins/databricks/run-tests.py -z ./spark-rapids-ci.tgz -t $DATABRICKS_TOKEN -p /home/svcngcc/.ssh/id_rsa -l ./jenkins/databricks/build.sh"
                     }
                 }
             }
         }
-
         stage("Deploy") {
             environment {
                 SERVER_ID='ossrh'
@@ -86,18 +90,20 @@ pipeline {
             }
             steps {
                 script {
-                    docker.image("$IMAGE_NAME").inside("-v ${HOME}/.m2:${HOME}/.m2:rw \
-                        -v /etc/passwd:/etc/passwd -v /etc/group:/etc/group") {
-                        sh 'rm -rf $GNUPGHOME'
-                        sh 'gpg --import $GPG_FILE'
-                        retry (3) {
-                            sh "bash $JENKINS_ROOT/deploy.sh true false"
-                        }
+                    sh 'rm -rf $GNUPGHOME'
+                    sh 'gpg --import $GPG_FILE'
+                    retry (3) {
+                        sh "bash $JENKINS_ROOT/deploy.sh true true"
                     }
                 }
             }
         }
+        stage('Cleanup') {
+            steps {
+                script {
+                    sh "python3.6 ./jenkins/databricks/shutdown.py -t $DATABRICKS_TOKEN"
+                }
+            }
+        }
     } // End of stages
-
-}
-
+} // end of pipeline
