@@ -67,11 +67,17 @@ pipeline {
     }
 
     stages {
+        stage('debug') {
+            steps {
+                script {
+                    sh "whoami"
+                }
+            }
+        }
         stage('Build') {
             steps {
                 script {
                     sshagent(credentials : ['tgraves_pubpriv']) {
-                        sh "whoami"
                         sh "mvn versions:set -DnewVersion=0.1.0-databricks && git clean -d -f"
                         sh "patch -p1 < ./jenkins/databricks/dbimports.patch"
                         sh "tar -zcvf spark-rapids-ci.tgz * || true"
