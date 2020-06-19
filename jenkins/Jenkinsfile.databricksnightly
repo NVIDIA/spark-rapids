@@ -17,7 +17,7 @@
 
 /**
 *
-* Jenkinsfile for building rapids-plugin
+* Jenkinsfile for building rapids-plugin on Databricks
 *
 */
 
