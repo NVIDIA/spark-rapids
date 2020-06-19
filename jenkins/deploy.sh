@@ -24,7 +24,7 @@ DATABRICKS=$2
 cd $WORKSPACE
 
 ###### Databricks built tgz file so we need to untar and deploy from that
-if [ "DATABRICKS" == true ]; then
+if [ "$DATABRICKS" == true ]; then
     rm -rf deploy
     mkdir -p deploy
     cd deploy

@@ -67,14 +67,6 @@ pipeline {
     }
 
     stages {
-        stage('debug') {
-            steps {
-                script {
-                    sh "echo Tom"
-                    sh "echo `whoami`"
-                }
-            }
-        }
         stage('Build') {
             steps {
                 script {
