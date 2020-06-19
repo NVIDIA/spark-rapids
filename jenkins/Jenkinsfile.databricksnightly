@@ -61,7 +61,6 @@ pipeline {
 
     stages {
         stage('Ubuntu16 CUDA10.1') {
-            agent { label 'docker' }
             steps {
                 script {
                     sshagent(credentials : ['svcngcc_pubpriv']) {
