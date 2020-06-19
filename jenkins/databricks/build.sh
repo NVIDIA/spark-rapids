@@ -21,6 +21,15 @@ SPARKTGZ=/home/ubuntu/spark-rapids-ci.tgz
 if [ "$1" != "" ]; then
   SPARKTGZ=$1
 fi
+# this has to match the Databricks init script
+CI_RAPIDS_JAR=rapids-4-spark_2.12-0.1-SNAPSHOT-ci.jar
+DB_JAR_LOC=/databricks/jars/$CI_RAPIDS_JAR
+
+if [ "$BUILD_VERSION"x == x ];then
+    BUILD_VERSION=0.1-databricks-SNAPSHOT
+fi
+
+RAPIDS_BUILT_JAR=rapids-4-spark_2.12-$BUILDVERSION.jar
 
 sudo apt install -y maven
 rm -rf spark-rapids
@@ -80,7 +89,7 @@ mvn install:install-file \
 mvn -Pdatabricks clean verify -DskipTests
 
 # copy so we pick up new built jar
-sudo cp dist/target/rapids-4-spark_2.12-*-SNAPSHOT.jar /databricks/jars/rapids-4-spark_2.12-0.1-SNAPSHOT-ci.jar
+sudo cp dist/target/$RAPIDS_BUILT_JAR $DB_JAR_LOC
 
 # tests
 export PATH=/databricks/conda/envs/databricks-ml-gpu/bin:/databricks/conda/condabin:$PATH

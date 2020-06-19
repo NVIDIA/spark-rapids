@@ -22,16 +22,7 @@
 */
 
 pipeline {
-    agent {
-        dockerfile {
-            label 'docker-gpu'
-            filename 'Dockerfile.ubuntu16'
-            dir "jenkins"
-            args '--runtime=nvidia -v ${HOME}/.m2:${HOME}/.m2:rw \
-                -v ${HOME}/.zinc:${HOME}/.zinc:rw \
-                -v /etc/passwd:/etc/passwd -v /etc/group:/etc/group'
-        }
-    }
+    agent { label 'vanilla' }
 
     options {
         ansiColor('xterm')
@@ -61,26 +52,50 @@ pipeline {
 
     stages {
         stage('Ubuntu16 CUDA10.1') {
+            agent { label 'docker' }
             steps {
                 script {
                     sshagent(credentials : ['svcngcc_pubpriv']) {
-                        sh "mvn versions:set -DnewVersion=$DATABRICKS_VERSION && git clean -d -f"
-                        sh "patch -p1 < ./jenkins/databricks/dbimports.patch"
-                        sh "tar -zcvf spark-rapids-ci.tgz * || true"
-                        sh "python3.6 ./jenkins/databricks/run-tests.py -z ./spark-rapids-ci.tgz -t $DATABRICKS_TOKEN -p /home/svcngcc/.ssh/id_rsa -l ./jenkins/databricks/build.sh"
-                        sh "# ./jenkins/databricks/deploy.sh"
+                        def IMAGE_NAME="urm.nvidia.com/sw-spark-docker/plugin:dev-ubuntu16-cuda10.1"
+                        def DOCKER_CMD="docker --config $WORKSPACE/.docker"
+                        sh """
+                            echo $URM_CREDS_PSW | $DOCKER_CMD login https://urm.nvidia.com -u $URM_CREDS_USR --password-stdin
+                            $DOCKER_CMD pull $IMAGE_NAME
+                            $DOCKER_CMD logout https://urm.nvidia.com
+                        """
+                        docker.image(IMAGE_NAME).inside("--runtime=nvidia -v ${HOME}/.m2:${HOME}/.m2:rw \
+                            -v ${HOME}/.zinc:${HOME}/.zinc:rw \
+                            -v /etc/passwd:/etc/passwd -v /etc/group:/etc/group") {
+                            sh "mvn versions:set -DnewVersion=$DATABRICKS_VERSION && git clean -d -f"
+                            sh "patch -p1 < ./jenkins/databricks/dbimports.patch"
+                            sh "tar -zcvf spark-rapids-ci.tgz *"
+                            sh "python3.6 ./jenkins/databricks/run-tests.py -z ./spark-rapids-ci.tgz -t $DATABRICKS_TOKEN -p /home/svcngcc/.ssh/id_rsa -l ./jenkins/databricks/build.sh"
+                            sh "#./jenkins/databricks/deploy.sh"
+                        }
                     }
                 }
             }
         }
-        stage('cleanup') {
-            steps {
-                script {
+    } // end of stages
+    post {
+        always {
+            agent { label 'docker' }
+            script {
+                def IMAGE_NAME="urm.nvidia.com/sw-spark-docker/plugin:dev-ubuntu16-cuda10.1"
+                def DOCKER_CMD="docker --config $WORKSPACE/.docker"
+                sh """
+                    echo $URM_CREDS_PSW | $DOCKER_CMD login https://urm.nvidia.com -u $URM_CREDS_USR --password-stdin
+                    $DOCKER_CMD pull $IMAGE_NAME
+                    $DOCKER_CMD logout https://urm.nvidia.com
+                """
+                docker.image(IMAGE_NAME).inside("--runtime=nvidia -v ${HOME}/.m2:${HOME}/.m2:rw \
+                    -v ${HOME}/.zinc:${HOME}/.zinc:rw \
+                    -v /etc/passwd:/etc/passwd -v /etc/group:/etc/group") {
                     sh "python3.6 ./jenkins/databricks/shutdown.py -t $DATABRICKS_TOKEN"
                 }
             }
         }
-    } // end of stages
+    }
 } // end of pipeline
 
 void slack(Map params = [:], String channel, String message) {
