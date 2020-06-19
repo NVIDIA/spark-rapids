@@ -81,12 +81,6 @@ pipeline {
             }
         }
     } // end of stages
-    post {
-        always {
-            script {
-            }
-        }
-    }
 } // end of pipeline
 
 void slack(Map params = [:], String channel, String message) {
