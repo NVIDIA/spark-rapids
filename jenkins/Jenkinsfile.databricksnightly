@@ -25,8 +25,7 @@ pipeline {
     agent {
         dockerfile {
             label 'docker-gpu'
-            filename 'Dockerfile.ubuntu16'
-            dir "jenkins"
+            image 'urm.nvidia.com/sw-spark-docker/plugin:dev-ubuntu16-cuda10.1'
             args '--runtime=nvidia -v ${HOME}/.m2:${HOME}/.m2:rw \
                 -v ${HOME}/.zinc:${HOME}/.zinc:rw \
                 -v /etc/passwd:/etc/passwd -v /etc/group:/etc/group'
