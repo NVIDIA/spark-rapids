@@ -22,7 +22,7 @@
 */
 
 pipeline {
-    agent { label 'docker' }
+    agent { label 'vanilla' }
 
     options {
         ansiColor('xterm')
