@@ -17,10 +17,21 @@
 
 set -e
 SIGN_FILE=$1
+DATABRICKS=$2
 
 ###### Build the path of jar(s) to be deployed ######
 
 cd $WORKSPACE
+
+###### Databricks built tgz file so we need to untar and deploy from that
+if [ "$DATABRICKS" == true ]; then
+    rm -rf deploy
+    mkdir -p deploy
+    cd deploy
+    tar -zxvf ../spark-rapids-built.tgz
+    cd spark-rapids
+fi
+
 ART_ID=`mvn exec:exec -q -pl $DIST_PL -Dexec.executable=echo -Dexec.args='${project.artifactId}'`
 ART_VER=`mvn exec:exec -q -pl $DIST_PL -Dexec.executable=echo -Dexec.args='${project.version}'`
 
