@@ -79,7 +79,6 @@ pipeline {
     } // end of stages
     post {
         always {
-            agent { label 'docker' }
             script {
                 def IMAGE_NAME="urm.nvidia.com/sw-spark-docker/plugin:dev-ubuntu16-cuda10.1"
                 def DOCKER_CMD="docker --config $WORKSPACE/.docker"
