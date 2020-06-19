@@ -58,12 +58,12 @@ echo "Deploy CMD: $DEPLOY_CMD"
 
 ###### Deploy the parent pom file ######
 
-$DEPLOY_CMD -Durl=$SERVER_URL -DrepositoryId=$SERVER_ID \
-            -Dfile=./pom.xml -DpomFile=./pom.xml
+#$DEPLOY_CMD -Durl=$SERVER_URL -DrepositoryId=$SERVER_ID \
+#            -Dfile=./pom.xml -DpomFile=./pom.xml
 
 ###### Deploy the artifact jar(s) ######
 
-$DEPLOY_CMD -Durl=$SERVER_URL -DrepositoryId=$SERVER_ID \
-            $SRC_DOC_JARS \
-            -Dfile=$FPATH.jar -DpomFile=${DIST_PL}/pom.xml
+#$DEPLOY_CMD -Durl=$SERVER_URL -DrepositoryId=$SERVER_ID \
+#            $SRC_DOC_JARS \
+#            -Dfile=$FPATH.jar -DpomFile=${DIST_PL}/pom.xml
 
