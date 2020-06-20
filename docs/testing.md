@@ -1,3 +1,9 @@
+---
+layout: page
+title: Testing
+nav_order: 1
+parent: Developer Overview
+---
 # RAPIDS Accelerator for Apache Spark Testing
 
 We have several stand alone examples that you can run in the integration_tests subdirectory/jar.
@@ -10,7 +16,7 @@ The other is based off of TPCH. You can use the TPCH `dbgen` tool to generate da
 are in the `com.nvidia.spark.rapids.tests.tpch` package. `dbgen` has various options, one way to
 generate the data. Please refer to the documentation that comes with dbgen on how to use it, but
 we typically run with the default options and only increase the scale factor dependig on the test.
-```shell script
+```shell 
 dbgen -b dists.dss -s 10
 ```
 
@@ -20,7 +26,7 @@ Spark --jars option to get the TPCH tests. To setup for the queries you can run
 for parquet formatted data.  Both of those take the Spark session, and a path to the dbgen
 generated data.  After that each query has its own object.
 
-So you can call like:
+So you can make a call like:
 ```scala
 import com.nvidia.spark.rapids.tests.tpch._
 val pathTodbgenoutput = SPECIFY PATH
@@ -70,7 +76,7 @@ It is recommended that you use `spark-shell` and the scalatest shell to run each
 individually, so you don't risk running unit tests along with the integration tests.
 http://www.scalatest.org/user_guide/using_the_scalatest_shell
 
-```shell script
+```shell 
 spark-shell --jars rapids-4-spark-tests_2.12-0.1-SNAPSHOT-tests.jar,rapids-4-spark-integration-tests_2.12-0.1-SNAPSHOT-tests.jar,scalatest_2.12-3.0.5.jar,scalactic_2.12-3.0.5.jar
 ```
 

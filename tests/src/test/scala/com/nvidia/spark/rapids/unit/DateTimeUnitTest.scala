@@ -17,9 +17,11 @@
 package com.nvidia.spark.rapids.unit
 
 import ai.rapids.cudf.ColumnVector
-import com.nvidia.spark.rapids.{GpuColumnVector, GpuLiteral, GpuUnitTests}
+import com.nvidia.spark.rapids.{GpuBoundReference, GpuColumnVector, GpuLiteral, GpuUnitTests}
 
 import org.apache.spark.sql.rapids.{GpuDateAdd, GpuDateSub}
+import org.apache.spark.sql.types.DataTypes
+import org.apache.spark.sql.vectorized.ColumnarBatch
 
 class DateTimeUnitTest extends GpuUnitTests {
   val TIMES_DAY = Array(-1528, //1965-10-26
@@ -35,35 +37,28 @@ class DateTimeUnitTest extends GpuUnitTests {
         withResource(GpuColumnVector.from(ColumnVector.daysFromInts(17676, 17706, 17680,
           17683, 17680))) { expected2 =>
 
-          // vector 0
-          val dates0 = GpuColumnVector.from(ColumnVector.daysFromInts(TIMES_DAY: _*))
-          // assign to new handles for code readability
-          val dates0_1 = dates0.incRefCount()
+          withResource(GpuColumnVector.from(ColumnVector.daysFromInts(TIMES_DAY: _*))) {
+            datesVector =>
+              withResource(GpuColumnVector.from(ColumnVector.fromInts(2, 32, 6, 9, 6))) {
+                daysVector =>
+                  val datesExpressionVector = GpuBoundReference(0, DataTypes.DateType, false)
+                  val daysExpressionVector = GpuBoundReference(1, DataTypes.IntegerType, false)
+                  val batch = new ColumnarBatch(List(datesVector, daysVector).toArray,
+                     TIMES_DAY.length)
 
-          //vector 1
-          val days0 = GpuColumnVector.from(ColumnVector.fromInts(2, 32, 6, 9, 6))
-          // assign to new handles for code readability
-          val days0_1 = days0.incRefCount()
+                  val daysScalar = GpuLiteral(30, DataTypes.IntegerType)
+                  // lhs = vector, rhs = scalar
+                  checkEvaluation(GpuDateAdd(datesExpressionVector, daysScalar), expected0, batch)
 
-          // saving types for convenience
-          val lhsType = getSparkType(dates0.getBase.getType)
-          val rhsType = getSparkType(days0.getBase.getType)
+                  // lhs = vector, rhs = vector
+                  checkEvaluation(GpuDateAdd(datesExpressionVector, daysExpressionVector),
+                     expected1, batch)
 
-          val daysExprV0 = GpuLiteral(days0_1, rhsType)
-          val datesS = GpuLiteral(17674, lhsType)
-
-          // lhs = vector, rhs = scalar
-          val datesExprV = GpuLiteral(dates0, lhsType)
-          val daysS = GpuLiteral(30, rhsType)
-          checkEvaluation(GpuDateAdd(datesExprV, daysS), expected0)
-
-          // lhs = vector, rhs = vector
-          val daysExprV = GpuLiteral(days0, rhsType)
-          val datesExprV_1 = GpuLiteral(dates0_1, lhsType)
-          checkEvaluation(GpuDateAdd(datesExprV_1, daysExprV), expected1)
-
-          // lhs = scalar, rhs = vector
-          checkEvaluation(GpuDateAdd(datesS, daysExprV0), expected2)
+                  // lhs = scalar, rhs = vector
+                  val datesS = GpuLiteral(17674, DataTypes.DateType)
+                  checkEvaluation(GpuDateAdd(datesS, daysExpressionVector), expected2, batch)
+              }
+          }
         }
       }
     }
@@ -76,35 +71,29 @@ class DateTimeUnitTest extends GpuUnitTests {
         -13537, 1710))) { expected1 =>
         withResource(GpuColumnVector.from(ColumnVector.daysFromInts(17672, 17642, 17668,
           17665, 17668))) { expected2 =>
-          // vector 0
-          val dates0 = GpuColumnVector.from(ColumnVector.daysFromInts(TIMES_DAY: _*))
-          // assign to new handles for code readability
-          val dates0_1 = dates0.incRefCount()
 
-          //vector 1
-          val days0 = GpuColumnVector.from(ColumnVector.fromInts(2, 32, 6, 9, 6))
-          // assign to new handles for code readability
-          val days0_1 = days0.incRefCount()
+          withResource(GpuColumnVector.from(ColumnVector.daysFromInts(TIMES_DAY: _*))) {
+            datesVector =>
+              withResource(GpuColumnVector.from(ColumnVector.fromInts(2, 32, 6, 9, 6))) {
+                daysVector =>
+                  val datesExpressionVector = GpuBoundReference(0, DataTypes.DateType, false)
+                  val daysExpressionVector = GpuBoundReference(1, DataTypes.IntegerType, false)
+                  val batch = new ColumnarBatch(List(datesVector, daysVector).toArray,
+                    TIMES_DAY.length)
 
-          // saving types for convenience
-          val lhsType = getSparkType(dates0.getBase.getType)
-          val rhsType = getSparkType(days0.getBase.getType)
+                  val daysScalar = GpuLiteral(30, DataTypes.IntegerType)
+                  // lhs = vector, rhs = scalar
+                  checkEvaluation(GpuDateSub(datesExpressionVector, daysScalar), expected0, batch)
 
-          val daysExprV0 = GpuLiteral(days0_1, rhsType)
-          val datesS = GpuLiteral(17674, lhsType)
+                  // lhs = vector, rhs = vector
+                  checkEvaluation(GpuDateSub(datesExpressionVector, daysExpressionVector),
+                    expected1, batch)
 
-          // lhs = vector, rhs = scalar
-          val datesExprV = GpuLiteral(dates0, lhsType)
-          val daysS = GpuLiteral(30, rhsType)
-          checkEvaluation(GpuDateSub(datesExprV, daysS), expected0)
-
-          // lhs = vector, rhs = vector
-          val daysExprV = GpuLiteral(days0, rhsType)
-          val datesExprV_1 = GpuLiteral(dates0_1, lhsType)
-          checkEvaluation(GpuDateSub(datesExprV_1, daysExprV), expected1)
-
-          // lhs = scalar, rhs = vector
-          checkEvaluation(GpuDateSub(datesS, daysExprV0), expected2)
+                  // lhs = scalar, rhs = vector
+                  val datesS = GpuLiteral(17674, DataTypes.DateType)
+                  checkEvaluation(GpuDateSub(datesS, daysExpressionVector), expected2, batch)
+              }
+          }
         }
       }
     }
