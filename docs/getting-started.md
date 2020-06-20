@@ -1,3 +1,10 @@
+---
+layout: default
+title: Getting Started
+nav_order: 2
+---
+
+
 # Getting Started with the RAPIDS Accelerator for Apache Spark
 
 ## Overview
@@ -100,16 +107,16 @@ CUDA and will not run on other versions. The jars use a maven classifier to keep
 - CUDA 10.1 => classifier cuda10-1
 - CUDA 10.2 => classifier cuda10-2
 
-For example, here's a sample version of the jars and cudf with CUDA 10.1 support:
-- cudf-0.14-20200424.205232-49-cuda10-1.jar
-- rapids-4-spark_2.12-0.1-20200424.210950-11.jar
+For example, here is a sample version of the jars and cudf with CUDA 10.1 support:
+- cudf-0.14-cuda10-1.jar
+- rapids-4-spark_2.12-0.1.0.jar
 
 For simplicity export the location to these jars. This example assumes the sample jars above have
 been placed in the `/opt/sparkRapidsPlugin` directory:
-```shell script
+```shell 
 export SPARK_RAPIDS_DIR=/opt/sparkRapidsPlugin
-export SPARK_CUDF_JAR=${SPARK_RAPIDS_DIR}/cudf-0.14-20200424.205232-49-cuda10-1.jar
-export SPARK_RAPIDS_PLUGIN_JAR=${SPARK_RAPIDS_DIR}/rapids-4-spark_2.12-0.1-20200424.210950-11.jar
+export SPARK_CUDF_JAR=${SPARK_RAPIDS_DIR}/cudf-0.14-cuda10-1.jar
+export SPARK_RAPIDS_PLUGIN_JAR=${SPARK_RAPIDS_DIR}/rapids-4-spark_2.12-0.1.0.jar
 ```
 
 ## Install the GPU Discovery Script
@@ -133,7 +140,7 @@ Default configs usually work fine in local mode.  The required changes are setti
 other config settings and command line parameters are to try and better configure spark for GPU
 execution.
  
-```shell script
+```shell 
 $SPARK_HOME/bin/spark-shell \
        --master local \
        --num-executors 1 \
@@ -200,7 +207,7 @@ ask for GPUs.  In this case we are asking for 1 GPU per executor, the plugin can
 than one, and 4 CPU tasks per executor, but only one task will be on the GPU at a time. This allows
 for overlapping I/O and computation.
 
-```shell script
+```shell 
 $SPARK_HOME/bin/spark-shell \
        --master spark://${MASTER_HOST}:7077 \
        --conf spark.executor.extraClassPath=${SPARK_CUDF_JAR}:${SPARK_RAPIDS_PLUGIN_JAR} \
@@ -247,7 +254,7 @@ use - either 3.x or 2.x.
   launching your Spark application.
 - Use the following configuration settings when running Spark on YARN, changing the amounts as
   necessary:
-```shell script
+```shell 
 $SPARK_HOME/bin/spark-shell \
        --master yarn \
        --conf spark.rapids.sql.concurrentGpuTasks=1 \
@@ -275,7 +282,7 @@ $SPARK_HOME/bin/spark-shell \
   [GPU discovery script](#install-the-gpu-discovery-script) on the node from which you are
   launching your Spark application.
 - Use the following configs when running Spark on YARN, changing the amounts as necessary:
-```shell script
+```shell 
 $SPARK_HOME/bin/spark-shell \
        --master yarn \
        --conf spark.rapids.sql.concurrentGpuTasks=1 \
@@ -312,7 +319,7 @@ discovery plugin. Spark will first try to discover the GPUs using this plugin an
 to the discovery script if this doesn’t work. This plugin knows how to atomically acquire a GPU in
 process exclusive mode and expose it to the tasks. 
 
-```shell script
+```shell 
 $SPARK_HOME/bin/spark-shell \
        --master yarn \
        --conf spark.rapids.sql.concurrentGpuTasks=1 \
@@ -355,7 +362,7 @@ to setup a Kubernetes cluster.
   - `docker build . -f Dockerfile.cuda -t ubuntu18cuda10-1-sparkrapidsplugin`
   - Deploy your Dockerfile to the necessary repository to run on your K8S cluster.
 - Use the following configs when you run. Change the executor and task amounts as necessary:
-```shell script
+```shell 
 $SPARK_HOME/bin/spark-shell \
        --master k8s://https://<k8s-apiserver-host>:<k8s-apiserver-port> \
        --conf spark.rapids.sql.concurrentGpuTasks=1 \
@@ -389,7 +396,7 @@ and application.
    be needed for the corresponding Spark job on the CPU.
 
 ### Example Command Running on YARN
-```shell script
+```shell 
 $SPARK_HOME/bin/spark-shell --master yarn \
   --num-executors 1 \
   --conf spark.plugins=com.nvidia.spark.SQLPlugin \

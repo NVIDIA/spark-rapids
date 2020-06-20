@@ -122,6 +122,9 @@
                 </plugins>
             </build>
         </profile>
+        <profile>
+            <id>databricks</id>
+        </profile>
     </profiles>
 
     <properties>
@@ -149,6 +152,11 @@
 
     <dependencyManagement>
         <dependencies>
+            <dependency>
+                <groupId>org.apache.spark</groupId>
+                <artifactId>spark-annotation_${scala.binary.version}</artifactId>
+                <version>${spark.version}</version>
+            </dependency>
             <dependency>
                 <groupId>ai.rapids</groupId>
                 <artifactId>cudf</artifactId>
@@ -464,6 +472,7 @@
                         <exclude>**/.m2/**</exclude>
                         <exclude>.gnupg/**</exclude>
                         <exclude>pom.xml.asc</exclude>
+			<exclude>jenkins/databricks/*.patch</exclude>
                     </excludes>
                 </configuration>
             </plugin>

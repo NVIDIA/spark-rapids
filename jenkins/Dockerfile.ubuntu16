@@ -35,5 +35,5 @@ RUN add-apt-repository ppa:deadsnakes/ppa && \
     openjdk-8-jdk python3.6 python3-pip tzdata git
 
 RUN ln -s /usr/bin/python3.6 /usr/bin/python
-RUN python -m pip install pytest sre_yield
+RUN python -m pip install pytest sre_yield requests
 
