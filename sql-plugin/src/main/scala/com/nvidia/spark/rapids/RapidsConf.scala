@@ -628,7 +628,7 @@ object RapidsConf {
         |""".stripMargin)
       // scalastyle:on line.size.limit
 
-      println("\n## General Configuration")
+      println("\n## General Configuration\n")
       println("Name | Description | Default Value")
       println("-----|-------------|--------------")
     } else {
@@ -652,19 +652,19 @@ object RapidsConf {
         |incompatibilities.""".stripMargin)
       // scalastyle:on line.size.limit
 
-      printToggleHeader("Expressions")
+      printToggleHeader("Expressions\n")
     }
     GpuOverrides.expressions.values.toSeq.sortBy(_.tag.toString).foreach(_.confHelp(asTable))
     if (asTable) {
-      printToggleHeader("Execution")
+      printToggleHeader("Execution\n")
     }
     GpuOverrides.execs.values.toSeq.sortBy(_.tag.toString).foreach(_.confHelp(asTable))
     if (asTable) {
-      printToggleHeader("Scans")
+      printToggleHeader("Scans\n")
     }
     GpuOverrides.scans.values.toSeq.sortBy(_.tag.toString).foreach(_.confHelp(asTable))
     if (asTable) {
-      printToggleHeader("Partitioning")
+      printToggleHeader("Partitioning\n")
     }
     GpuOverrides.parts.values.toSeq.sortBy(_.tag.toString).foreach(_.confHelp(asTable))
     if (asTable) {
