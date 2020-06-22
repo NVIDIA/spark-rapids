@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019, NVIDIA CORPORATION.
+ * Copyright (c) 2019-2020, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -26,7 +26,7 @@ object GpuBindReferences extends Logging {
   private[this] def postBindCheck[A <: Expression](base: A): Unit = {
     base.foreach { expr =>
       // The condition is needed to have it match what transform
-      // looks at, otherwise we can check things that would nto be modified
+      // looks at, otherwise we can check things that would not be modified.
       if (expr.containsChild.nonEmpty) {
         expr match {
           case _: GpuExpression =>

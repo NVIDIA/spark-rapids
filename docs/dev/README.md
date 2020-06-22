@@ -178,9 +178,9 @@ producing GPU columnar data as output, the child node(s) passed to the case
 class constructor should have the `Expression` type.  This is a little
 odd because they should all be instances of `GpuExpression` except for
 `AttributeReference` and `SortOrder`. This is needed because `AttributeReference`
-is weaved into a lot of the magic that is build into Spark expressions.
-`SortOrder` is similar as spark itself will insert `SortOrder` instances into
-the plan automatically in many cases.  These are both `Unevalable` expressions
+is weaved into a lot of the magic that is built into Spark expressions.
+`SortOrder` is similar as Spark itself will insert `SortOrder` instances into
+the plan automatically in many cases.  These are both `Unevaluable` expressions
 so they should never be run columnar or otherwise.  These `Expressions` should be
 bound using `GpuBindReferences` which will make sure that all `AttributeReference`
 instances are replaced with `GpuBoundReference` implementations and everything is

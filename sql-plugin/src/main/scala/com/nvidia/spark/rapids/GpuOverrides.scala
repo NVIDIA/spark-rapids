@@ -1144,11 +1144,8 @@ object GpuOverrides {
       }),
     expr[SortOrder](
       "sort order",
-//      (a, conf, p, r) => new UnaryExprMeta[SortOrder](a, conf, p, r) {
-//        override def convertToGpu(child: Expression): GpuExpression =
-//          GpuSortOrder(child, a.direction, a.nullOrdering, a.sameOrderExpressions, a.child)
-//      }),
       (a, conf, p, r) => new BaseExprMeta[SortOrder](a, conf, p, r) {
+        // One of the few expressions that are not replaced with a GPU version
         override def convertToGpu(): Expression =
           a.withNewChildren(childExprs.map(_.convertToGpu()))
       }),
