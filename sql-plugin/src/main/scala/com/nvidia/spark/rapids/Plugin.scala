@@ -253,6 +253,7 @@ object ExecutionPlanCaptureCallback {
   private[this] val execPlan: AtomicReference[SparkPlan] = new AtomicReference[SparkPlan]()
 
   private def captureIfNeeded(qe: QueryExecution): Unit = {
+    //println(qe.executedPlan)
     if (shouldCapture.get()) {
       execPlan.set(qe.executedPlan)
     }
@@ -288,8 +289,11 @@ object ExecutionPlanCaptureCallback {
   }
 
   def assertDidFallBack(gpuPlan: SparkPlan, fallbackCpuClass: String): Unit = {
-    assert(gpuPlan.find(didFallBack(_, fallbackCpuClass)).isDefined,
-      s"Could not find $fallbackCpuClass in the GPU plan\n$gpuPlan")
+    gpuPlan match {
+      case p: AdaptiveSparkPlanExec => assertDidFallBack(p.executedPlan, fallbackCpuClass)
+      case _ => assert(gpuPlan.find(didFallBack(_, fallbackCpuClass)).isDefined,
+        s"Could not find $fallbackCpuClass in the GPU plan\n$gpuPlan")
+    }
   }
 
   private def getBaseNameFromClass(planClassStr: String): String = {
@@ -308,7 +312,7 @@ object ExecutionPlanCaptureCallback {
 
   private def didFallBack(plan: SparkPlan, fallbackCpuClass: String): Boolean = {
     plan match {
-      case p: AdaptiveSparkPlanExec => didFallBack(p.initialPlan, fallbackCpuClass)
+      case p: AdaptiveSparkPlanExec => didFallBack(p.executedPlan, fallbackCpuClass)
       case _ => if (!plan.isInstanceOf[GpuExec] &&
           getBaseNameFromClass(plan.getClass.getName) == fallbackCpuClass) {
         true

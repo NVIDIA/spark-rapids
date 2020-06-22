@@ -54,7 +54,7 @@ class HashSortOptimizeSuite extends FunSuite with BeforeAndAfterAll {
    **/
   private def validateOptimizeSort(queryPlan: SparkPlan, joinNode: SparkPlan): Unit = {
     queryPlan match {
-      case a: AdaptiveSparkPlanExec => validateOptimizeSort(a.initialPlan, joinNode)
+      case a: AdaptiveSparkPlanExec => validateOptimizeSort(a.executedPlan, joinNode)
       case _ =>
         val sortNode = queryPlan.find(_.isInstanceOf[GpuSortExec])
         assert(sortNode.isDefined, "No sort node found")

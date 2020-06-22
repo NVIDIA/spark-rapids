@@ -19,6 +19,7 @@ package com.nvidia.spark.rapids
 import java.io.File
 import java.nio.file.Files
 
+import org.apache.spark.sql.execution.adaptive.AdaptiveSparkPlanExec
 import org.apache.spark.sql.execution.metric.SQLMetric
 import org.apache.spark.sql.rapids.metrics.source.MockTaskContext
 import org.apache.spark.sql.types.{DataTypes, StructField, StructType}
@@ -127,6 +128,8 @@ class GpuCoalesceBatchesSuite extends SparkQueryCompareTestSuite {
 
     withGpuSparkSession(spark => {
 
+      ExecutionPlanCaptureCallback.startCapture()
+
       val df = longsCsvDf(spark)
 
       // currently, GpuSortExec requires a single batch but this is likely to change in the
@@ -134,22 +137,27 @@ class GpuCoalesceBatchesSuite extends SparkQueryCompareTestSuite {
       val df2 = df
         .sort(df.col("longs"))
 
-      val coalesce = df2.queryExecution.executedPlan
+      // execute the plan
+      df2.collect()
+
+      val executedPlan = ExecutionPlanCaptureCallback.getResultWithTimeout().get match {
+        case a: AdaptiveSparkPlanExec => a.executedPlan
+        case other => other
+      }
+
+      val coalesce = executedPlan
         .find(_.isInstanceOf[GpuCoalesceBatches]).get
         .asInstanceOf[GpuCoalesceBatches]
 
       assert(coalesce.goal == RequireSingleBatch)
       assert(coalesce.goal.targetSizeBytes == Long.MaxValue)
 
-      // assert the metrics start out at zero
-      assert(coalesce.additionalMetrics("numInputBatches").value == 0)
-      assert(coalesce.longMetric(GpuMetricNames.NUM_OUTPUT_BATCHES).value == 0)
-
-      // execute the plan
-      df2.collect()
-
-      // assert the metrics are correct
-      assert(coalesce.additionalMetrics("numInputBatches").value == 7)
+      if (SparkSessionHolder.adaptiveQueryEnabled) {
+        // custom shuffle reader changes the behavior
+        assert(coalesce.additionalMetrics("numInputBatches").value == 1)
+      } else {
+        assert(coalesce.additionalMetrics("numInputBatches").value == 7)
+      }
       assert(coalesce.longMetric(GpuMetricNames.NUM_OUTPUT_BATCHES).value == 1)
 
     }, conf)
@@ -170,32 +178,42 @@ class GpuCoalesceBatchesSuite extends SparkQueryCompareTestSuite {
       s"HostColumnarToGpu-${System.currentTimeMillis()}.parquet").getAbsolutePath
 
     try {
+
       // convert csv test data to parquet
       withCpuSparkSession(spark => {
         longsCsvDf(spark).write.parquet(path)
       }, conf)
 
       withGpuSparkSession(spark => {
+
+        ExecutionPlanCaptureCallback.startCapture()
+
         val df = spark.read.parquet(path)
         val df2 = df
           .sort(df.col("longs"))
 
+        // execute the plan
+        df2.collect()
+
+        val executedPlan = ExecutionPlanCaptureCallback.getResultWithTimeout().get match {
+          case a: AdaptiveSparkPlanExec => a.executedPlan
+          case other => other
+        }
+
         // ensure that the plan does include the HostColumnarToGpu step
-        val hostColumnarToGpu = df2.queryExecution.executedPlan
+        val hostColumnarToGpu = executedPlan
           .find(_.isInstanceOf[HostColumnarToGpu]).get
           .asInstanceOf[HostColumnarToGpu]
 
         assert(hostColumnarToGpu.goal == TargetSize(50000))
 
-        val gpuCoalesceBatches = df2.queryExecution.executedPlan
+        val gpuCoalesceBatches = executedPlan
           .find(_.isInstanceOf[GpuCoalesceBatches]).get
           .asInstanceOf[GpuCoalesceBatches]
 
         assert(gpuCoalesceBatches.goal == RequireSingleBatch)
         assert(gpuCoalesceBatches.goal.targetSizeBytes == Long.MaxValue)
 
-        // execute the plan
-        df2.collect()
 
       }, conf)
     } finally {
