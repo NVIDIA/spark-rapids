@@ -50,7 +50,7 @@ class GpuExpandExecMeta(
    */
   override def convertToGpu(): GpuExec = {
     val projections = gpuProjections.map(_.map(_.convertToGpu()))
-    GpuExpandExec(projections, expand.output.asInstanceOf[Seq[AttributeReference]],
+    GpuExpandExec(projections, expand.output,
       childPlans.head.convertIfNeeded())
   }
 }
@@ -65,7 +65,7 @@ class GpuExpandExecMeta(
  */
 case class GpuExpandExec(
     projections: Seq[Seq[Expression]],
-    output: Seq[AttributeReference],
+    output: Seq[Attribute],
     child: SparkPlan)
   extends UnaryExecNode with GpuExec {
 
