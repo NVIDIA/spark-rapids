@@ -28,7 +28,7 @@ def SERVERS_MAP = [
 
 def SEC_IDS = [
     Local:    ['local-gpg-passphrase',  'local-gpg-private-key',  'local-username-password'],
-    Sonatype: ['rapids-gpg-passphrase', 'rapids-gpg-private-key', 'sonatype-username-password']
+    Sonatype: ['SPARK_RAPIDS_GPG_PASSPHRASE', 'SPARK_RAPIDS_GPG_PRIVATE_KEY', 'SPARK_SONATYPE_USERPASS']
 ]
 
 pipeline {
