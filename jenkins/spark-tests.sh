@@ -17,11 +17,11 @@
 
 set -ex
 if [ "$CUDF_VER"x == x ];then
-    CUDF_VER="0.14"
+    CUDF_VER="0.15-SNAPSHOT"
 fi
 
 if [ "$PROJECT_VER"x == x ];then
-    PROJECT_VER="0.1-SNAPSHOT"
+    PROJECT_VER="0.2.0-SNAPSHOT"
 fi
 
 if [ "$SPARK_VER"x == x ];then
