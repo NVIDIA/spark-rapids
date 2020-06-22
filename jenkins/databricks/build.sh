@@ -21,6 +21,7 @@ SPARKTGZ=$1
 DATABRICKS_VERSION=$2
 SCALA_VERSION=$3
 CI_RAPIDS_JAR=$4
+SPARK_VERSION=$5
 
 # this has to match the Databricks init script
 DB_JAR_LOC=/databricks/jars/$CI_RAPIDS_JAR
@@ -40,14 +41,12 @@ SQLJAR=----workspace_spark_3_0--sql--core--core-hive-2.3__hadoop-2.7_${SCALA_VER
 CATALYSTJAR=----workspace_spark_3_0--sql--catalyst--catalyst-hive-2.3__hadoop-2.7_${SCALA_VERSION}_deploy.jar
 ANNOTJAR=----workspace_spark_3_0--common--tags--tags-hive-2.3__hadoop-2.7_${SCALA_VERSION}_deploy.jar
 COREJAR=----workspace_spark_3_0--core--core-hive-2.3__hadoop-2.7_${SCALA_VERSION}_deploy.jar
-VERSIONJAR=----workspace_spark_3_0--core--libcore_generated_resources.jar
-VERSION=$SPARK_VERSION
 mvn install:install-file \
    -Dmaven.repo.local=$M2DIR \
    -Dfile=$JARDIR/$COREJAR \
    -DgroupId=org.apache.spark \
    -DartifactId=spark-core_$SCALA_VERSION \
-   -Dversion=$DATABRICKS_VERSION \
+   -Dversion=$SPARK_VERSION \
    -Dpackaging=jar
 
 mvn install:install-file \
@@ -55,7 +54,7 @@ mvn install:install-file \
    -Dfile=$JARDIR/$CATALYSTJAR \
    -DgroupId=org.apache.spark \
    -DartifactId=spark-catalyst_$SCALA_VERSION \
-   -Dversion=$DATABRICKS_VERSION \
+   -Dversion=$SPARK_VERSION \
    -Dpackaging=jar
 
 mvn install:install-file \
@@ -63,7 +62,7 @@ mvn install:install-file \
    -Dfile=$JARDIR/$SQLJAR \
    -DgroupId=org.apache.spark \
    -DartifactId=spark-sql_$SCALA_VERSION \
-   -Dversion=$DATABRICKS_VERSION \
+   -Dversion=$SPARK_VERSION \
    -Dpackaging=jar
 
 mvn install:install-file \
@@ -71,15 +70,7 @@ mvn install:install-file \
    -Dfile=$JARDIR/$ANNOTJAR \
    -DgroupId=org.apache.spark \
    -DartifactId=spark-annotation_$SCALA_VERSION \
-   -Dversion=$DATABRICKS_VERSION \
-   -Dpackaging=jar
-
-mvn install:install-file \
-   -Dmaven.repo.local=$M2DIR \
-   -Dfile=$JARDIR/$VERSIONJAR \
-   -DgroupId=org.apache.spark \
-   -DartifactId=spark-version_$SCALA_VERSION \
-   -Dversion=$DATABRICKS_VERSION \
+   -Dversion=$SPARK_VERSION \
    -Dpackaging=jar
 
 mvn -Pdatabricks clean verify -DskipTests

@@ -134,10 +134,11 @@ def main():
 
   db_version = os.getenv('DATABRICKS_VERSION')
   scala_version=os.getenv("SCALA_VERSION")
+  spark_version=os.getenv("SPARK_VERSION")
   ci_rapids_jar=os.getenv("CI_RAPIDS_JAR")
   print("vversions: %s %s %s" % (db_version, scala_version, ci_rapids_jar))
 
-  ssh_command = "ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null ubuntu@%s -p 2200 -i %s %s %s %s %s %s2>&1 | tee buildout" % (master_addr, private_key_file, script_dest, tgz_dest, db_version, scala_version, ci_rapids_jar)
+  ssh_command = "ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null ubuntu@%s -p 2200 -i %s %s %s %s %s %s %s2>&1 | tee buildout" % (master_addr, private_key_file, script_dest, tgz_dest, db_version, scala_version, ci_rapids_jar, spark_version)
   print("ssh command: %s" % ssh_command)
   os.system(ssh_command)
 
