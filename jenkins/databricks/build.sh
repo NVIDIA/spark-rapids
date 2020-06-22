@@ -47,7 +47,7 @@ mvn install:install-file \
    -Dfile=$JARDIR/$COREJAR \
    -DgroupId=org.apache.spark \
    -DartifactId=spark-core_$SCALA_VERSION \
-   -Dversion=$VERSION \
+   -Dversion=$DATABRICKS_VERSION \
    -Dpackaging=jar
 
 mvn install:install-file \
@@ -55,7 +55,7 @@ mvn install:install-file \
    -Dfile=$JARDIR/$CATALYSTJAR \
    -DgroupId=org.apache.spark \
    -DartifactId=spark-catalyst_$SCALA_VERSION \
-   -Dversion=$VERSION \
+   -Dversion=$DATABRICKS_VERSION \
    -Dpackaging=jar
 
 mvn install:install-file \
@@ -63,7 +63,7 @@ mvn install:install-file \
    -Dfile=$JARDIR/$SQLJAR \
    -DgroupId=org.apache.spark \
    -DartifactId=spark-sql_$SCALA_VERSION \
-   -Dversion=$VERSION \
+   -Dversion=$DATABRICKS_VERSION \
    -Dpackaging=jar
 
 mvn install:install-file \
@@ -71,7 +71,7 @@ mvn install:install-file \
    -Dfile=$JARDIR/$ANNOTJAR \
    -DgroupId=org.apache.spark \
    -DartifactId=spark-annotation_$SCALA_VERSION \
-   -Dversion=$VERSION \
+   -Dversion=$DATABRICKS_VERSION \
    -Dpackaging=jar
 
 mvn install:install-file \
@@ -79,7 +79,7 @@ mvn install:install-file \
    -Dfile=$JARDIR/$VERSIONJAR \
    -DgroupId=org.apache.spark \
    -DartifactId=spark-version_$SCALA_VERSION \
-   -Dversion=$VERSION \
+   -Dversion=$DATABRICKS_VERSION \
    -Dpackaging=jar
 
 mvn -Pdatabricks clean verify -DskipTests
