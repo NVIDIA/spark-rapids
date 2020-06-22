@@ -69,7 +69,6 @@ class GpuHashAggregateMeta(
         willNotWorkOnGpu("First/Last reductions are not supported on GPU")
       }
     }
-    val groupingExpressionTypes = agg.groupingExpressions.map(_.dataType)
     if (agg.resultExpressions.isEmpty) {
       willNotWorkOnGpu("result expressions is empty")
     }
@@ -234,8 +233,8 @@ case class GpuHashAggregateExec(
     resultExpressions: Seq[NamedExpression],
     child: SparkPlan) extends UnaryExecNode with GpuExec with Arm {
 
-  case class BoundExpressionsModeAggregates(boundInputReferences: Seq[Expression] ,
-    boundFinalProjections: Option[scala.Seq[Expression]],
+  case class BoundExpressionsModeAggregates(boundInputReferences: Seq[GpuExpression] ,
+    boundFinalProjections: Option[scala.Seq[GpuExpression]],
     boundResultReferences: scala.Seq[Expression] ,
     aggModeCudfAggregates: scala.Seq[(AggregateMode, scala.Seq[CudfAggregate])])
   // This handles GPU hash aggregation without spilling.
@@ -503,7 +502,7 @@ case class GpuHashAggregateExec(
         }
         childCvs.safeClose()
         concatCvs.safeClose()
-        (Seq(batch, aggregatedInputCb, aggregatedCb, finalCb))
+        Seq(batch, aggregatedInputCb, aggregatedCb, finalCb)
           .safeClose()
       }
     }}
@@ -607,10 +606,10 @@ case class GpuHashAggregateExec(
 
     val aggModeCudfAggregates = aggregateExpressions.zipWithIndex.map { case (expr, modeIndex) =>
       val cudfAggregates = if (expr.mode == Partial || expr.mode == Complete) {
-        GpuBindReferences.bindReferences(updateExpressionsSeq(modeIndex), aggBufferAttributes)
+        GpuBindReferences.bindGpuReferences(updateExpressionsSeq(modeIndex), aggBufferAttributes)
           .asInstanceOf[Seq[CudfAggregate]]
       } else {
-        GpuBindReferences.bindReferences(mergeExpressionsSeq(modeIndex), aggBufferAttributes)
+        GpuBindReferences.bindGpuReferences(mergeExpressionsSeq(modeIndex), aggBufferAttributes)
           .asInstanceOf[Seq[CudfAggregate]]
       }
       (expr.mode, cudfAggregates)
@@ -686,16 +685,15 @@ case class GpuHashAggregateExec(
     //   for Partial and non distinct merge expressions for PartialMerge.
     // - Final mode: we pick the columns in the order as handed to us.
     val boundInputReferences = if (uniqueModes.contains(PartialMerge)) {
-      GpuBindReferences.bindReferences(inputBindExpressions, resultingBindAttributes)
+      GpuBindReferences.bindGpuReferences(inputBindExpressions, resultingBindAttributes)
     } else if (finalMode) {
-      GpuBindReferences.bindReferences(childAttr.attrs.asInstanceOf[Seq[Expression]], childAttr)
-          .asInstanceOf[Seq[GpuExpression]]
+      GpuBindReferences.bindGpuReferences(childAttr.attrs.asInstanceOf[Seq[Expression]], childAttr)
     } else {
-      GpuBindReferences.bindReferences(inputProjections, childAttr)
+      GpuBindReferences.bindGpuReferences(inputProjections, childAttr)
     }
 
     val boundFinalProjections = if (finalMode || completeMode) {
-      Some(GpuBindReferences.bindReferences(finalProjections, aggBufferAttributes))
+      Some(GpuBindReferences.bindGpuReferences(finalProjections, aggBufferAttributes))
     } else {
       None
     }
@@ -711,17 +709,17 @@ case class GpuHashAggregateExec(
     // - Final or Complete mode: we use resultExpressions to pick out the correct columns that
     //   finalReferences has pre-processed for us
     val boundResultReferences = if (partialMode) {
-      GpuBindReferences.bindReferences(
-        resultExpressions.asInstanceOf[Seq[GpuExpression]],
+      GpuBindReferences.bindGpuReferences(
+        resultExpressions,
         resultExpressions.map(_.toAttribute))
     } else if (finalMode || completeMode) {
-      GpuBindReferences.bindReferences(
-        resultExpressions.asInstanceOf[Seq[GpuExpression]],
-        finalAttributes.asInstanceOf[Seq[Attribute]])
+      GpuBindReferences.bindGpuReferences(
+        resultExpressions,
+        finalAttributes)
     } else {
-      GpuBindReferences.bindReferences(
-        resultExpressions.asInstanceOf[Seq[GpuExpression]],
-        groupingAttributes.asInstanceOf[Seq[Attribute]])
+      GpuBindReferences.bindGpuReferences(
+        resultExpressions,
+        groupingAttributes)
     }
     BoundExpressionsModeAggregates(boundInputReferences, boundFinalProjections,
       boundResultReferences, aggModeCudfAggregates)

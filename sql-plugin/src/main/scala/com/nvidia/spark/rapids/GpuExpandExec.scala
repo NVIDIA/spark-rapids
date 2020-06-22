@@ -86,8 +86,8 @@ case class GpuExpandExec(
     AttributeSet(projections.flatten.flatMap(_.references))
 
   override protected def doExecuteColumnar(): RDD[ColumnarBatch] = {
-    val boundProjections: Seq[Seq[Expression]] =
-      projections.map(GpuBindReferences.bindReferences(_, child.output))
+    val boundProjections: Seq[Seq[GpuExpression]] =
+      projections.map(GpuBindReferences.bindGpuReferences(_, child.output))
     child.executeColumnar().mapPartitions { it =>
       new GpuExpandIterator(boundProjections, metrics, it)
     }
@@ -100,7 +100,7 @@ case class GpuExpandExec(
 }
 
 class GpuExpandIterator(
-    boundProjections: Seq[Seq[Expression]],
+    boundProjections: Seq[Seq[GpuExpression]],
     metrics: Map[String, SQLMetric],
     it: Iterator[ColumnarBatch])
   extends Iterator[ColumnarBatch]

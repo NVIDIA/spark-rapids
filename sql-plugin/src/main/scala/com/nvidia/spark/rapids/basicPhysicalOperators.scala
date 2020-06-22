@@ -80,7 +80,7 @@ case class GpuProjectExec(projectList: Seq[Expression], child: SparkPlan)
     val numOutputRows = longMetric(NUM_OUTPUT_ROWS)
     val numOutputBatches = longMetric(NUM_OUTPUT_BATCHES)
     val totalTime = longMetric(TOTAL_TIME)
-    val boundProjectList = GpuBindReferences.bindReferences(projectList, child.output)
+    val boundProjectList = GpuBindReferences.bindGpuReferences(projectList, child.output)
     val rdd = child.executeColumnar()
     rdd.map { cb =>
       numOutputBatches += 1

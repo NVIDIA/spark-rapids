@@ -119,11 +119,11 @@ case class GpuGenerateExec(
     val numOutputRows = longMetric(NUM_OUTPUT_ROWS)
     val numOutputBatches = longMetric(NUM_OUTPUT_BATCHES)
     val totalTime = longMetric(TOTAL_TIME)
-    val boundArrayProjectList = GpuBindReferences.bindReferences(arrayProject, child.output).toArray
+    val boundArrayProjectList =
+      GpuBindReferences.bindGpuReferences(arrayProject, child.output).toArray
     val numArrayColumns = boundArrayProjectList.length
     val boundOthersProjectList: Array[GpuExpression] =
-      GpuBindReferences.bindReferences(requiredChildOutput, child.output)
-          .asInstanceOf[Seq[GpuExpression]].toArray
+      GpuBindReferences.bindGpuReferences(requiredChildOutput, child.output).toArray
     val numOtherColumns = boundOthersProjectList.length
     val numExplodeColumns = if (includePos) 2 else 1
 
