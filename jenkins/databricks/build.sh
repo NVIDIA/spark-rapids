@@ -23,6 +23,8 @@ SCALA_VERSION=$3
 CI_RAPIDS_JAR=$4
 SPARK_VERSION=$5
 
+echo "spark version is $SPARK_VERSION"
+
 # this has to match the Databricks init script
 DB_JAR_LOC=/databricks/jars/$CI_RAPIDS_JAR
 RAPIDS_BUILT_JAR=rapids-4-spark_$SCALA_VERSION-$DATABRICKS_VERSION.jar
