@@ -122,18 +122,22 @@ def main():
       print("Error, didn't get master address")
       sys.exit(5)
   print("Master node address is: %s" % master_addr)
-  return master_addr
   print("Copying script")
   rsync_command = "rsync -I -Pave \"ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -p 2200 -i %s\" %s ubuntu@%s:%s" % (private_key_file, local_script, master_addr, script_dest)
   print("rsync command to subprocess: %s" % rsync_command)
-  os.system(rsync_command)
-  #subprocess.check_call(rsync_command, shell = True)
+  subprocess.check_call(rsync_command, shell = True)
 
   print("Copying source")
   rsync_command = "rsync -I -Pave \"ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -p 2200 -i %s\" %s ubuntu@%s:%s" % (private_key_file, source_tgz, master_addr, tgz_dest)
   print("rsync command: %s" % rsync_command)
   os.system(rsync_command)
-  ssh_command = "ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null ubuntu@%s -p 2200 -i %s %s %s %s %s %s2>&1 | tee buildout" % (master_addr, private_key_file, script_dest, tgz_dest, )
+
+  db_version = os.getenv('DATABRICKS_VERSION')
+  scala_version=os.getenv("SCALA_VERSION")
+  ci_rapids_jar=os.getenv("CI_RAPIDS_JAR")
+  print("vversions: %s %s %s", % (db_version, scala_version, ci_rapids_jar))
+
+  ssh_command = "ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null ubuntu@%s -p 2200 -i %s %s %s %s %s %s2>&1 | tee buildout" % (master_addr, private_key_file, script_dest, tgz_dest, db_version, scala_version, ci_rapids_jar)
   print("ssh command: %s" % ssh_command)
   os.system(ssh_command)
 
@@ -141,8 +145,6 @@ def main():
   rsync_command = "rsync  -I -Pave \"ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -p 2200 -i %s\" ubuntu@%s:/home/ubuntu/spark-rapids-built.tgz ./" % (private_key_file, master_addr)
   print("rsync command to get built tarball: %s" % rsync_command)
   os.system(rsync_command)
-  return 0
 
 if __name__ == '__main__':
-  addr = main()
-  print("%s" % addr)
+  main()
