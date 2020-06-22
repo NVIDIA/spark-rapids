@@ -17,10 +17,11 @@
 
 set -e
 
-SPARKTGZ=/home/ubuntu/spark-rapids-ci.tgz
-if [ "$1" != "" ]; then
-  SPARKTGZ=$1
-fi
+SPARKTGZ=$1
+DATABRICKS_VERSION=$2
+SCALA_VERSION=$3
+CI_RAPIDS_JAR=$4
+
 # this has to match the Databricks init script
 DB_JAR_LOC=/databricks/jars/$CI_RAPIDS_JAR
 RAPIDS_BUILT_JAR=rapids-4-spark_$SCALA_VERSION-$DATABRICKS_VERSION.jar
@@ -32,6 +33,7 @@ tar -zxvf $SPARKTGZ -C spark-rapids
 cd spark-rapids
 # pull normal Spark artifacts and ignore errors then install databricks jars, then build again
 mvn clean package || true
+echo "SCALA VERSION is: $SCALA_VERSION"
 M2DIR=/home/ubuntu/.m2/repository
 JARDIR=/databricks/jars
 SQLJAR=----workspace_spark_3_0--sql--core--core-hive-2.3__hadoop-2.7_${SCALA_VERSION}_deploy.jar

@@ -122,6 +122,7 @@ def main():
       print("Error, didn't get master address")
       sys.exit(5)
   print("Master node address is: %s" % master_addr)
+  return master_addr
   print("Copying script")
   rsync_command = "rsync -I -Pave \"ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -p 2200 -i %s\" %s ubuntu@%s:%s" % (private_key_file, local_script, master_addr, script_dest)
   print("rsync command to subprocess: %s" % rsync_command)
@@ -132,7 +133,7 @@ def main():
   rsync_command = "rsync -I -Pave \"ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -p 2200 -i %s\" %s ubuntu@%s:%s" % (private_key_file, source_tgz, master_addr, tgz_dest)
   print("rsync command: %s" % rsync_command)
   os.system(rsync_command)
-  ssh_command = "ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null ubuntu@%s -p 2200 -i %s %s %s 2>&1 | tee buildout" % (master_addr, private_key_file, script_dest, tgz_dest)
+  ssh_command = "ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null ubuntu@%s -p 2200 -i %s %s %s %s %s %s2>&1 | tee buildout" % (master_addr, private_key_file, script_dest, tgz_dest, )
   print("ssh command: %s" % ssh_command)
   os.system(ssh_command)
 
@@ -140,6 +141,8 @@ def main():
   rsync_command = "rsync  -I -Pave \"ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -p 2200 -i %s\" ubuntu@%s:/home/ubuntu/spark-rapids-built.tgz ./" % (private_key_file, master_addr)
   print("rsync command to get built tarball: %s" % rsync_command)
   os.system(rsync_command)
+  return 0
 
 if __name__ == '__main__':
-  main()
+  addr = main()
+  print("%s" % addr)
