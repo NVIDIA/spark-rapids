@@ -70,7 +70,7 @@ pipeline {
                         sh "patch -p1 < ./jenkins/databricks/dbimports.patch"
                         sh "tar -zcvf spark-rapids-ci.tgz *"
                         sh "python3.6 ./jenkins/databricks/run-tests.py -z ./spark-rapids-ci.tgz -t $DATABRICKS_TOKEN -p /home/svcngcc/.ssh/id_rsa -l ./jenkins/databricks/build.sh"
-                        sh "#./jenkins/databricks/deploy.sh"
+                        sh "./jenkins/databricks/deploy.sh"
                     }
                 }
             }
