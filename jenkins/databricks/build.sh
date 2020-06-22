@@ -22,35 +22,29 @@ if [ "$1" != "" ]; then
   SPARKTGZ=$1
 fi
 # this has to match the Databricks init script
-CI_RAPIDS_JAR=rapids-4-spark_2.12-0.1-SNAPSHOT-ci.jar
 DB_JAR_LOC=/databricks/jars/$CI_RAPIDS_JAR
-
-if [ "$BUILD_VERSION"x == x ];then
-    BUILD_VERSION=0.1-databricks-SNAPSHOT
-fi
-
-RAPIDS_BUILT_JAR=rapids-4-spark_2.12-$BUILD_VERSION.jar
+RAPIDS_BUILT_JAR=rapids-4-spark_$SCALA_VERSION-$DATABRICKS_VERSION.jar
 
 sudo apt install -y maven
 rm -rf spark-rapids
 mkdir spark-rapids
 tar -zxvf $SPARKTGZ -C spark-rapids
 cd spark-rapids
-# pull 3.0.0 artifacts and ignore errors then install databricks jars, then build again
+# pull normal Spark artifacts and ignore errors then install databricks jars, then build again
 mvn clean package || true
 M2DIR=/home/ubuntu/.m2/repository
 JARDIR=/databricks/jars
-SQLJAR=----workspace_spark_3_0--sql--core--core-hive-2.3__hadoop-2.7_2.12_deploy.jar
-CATALYSTJAR=----workspace_spark_3_0--sql--catalyst--catalyst-hive-2.3__hadoop-2.7_2.12_deploy.jar
-ANNOTJAR=----workspace_spark_3_0--common--tags--tags-hive-2.3__hadoop-2.7_2.12_deploy.jar
-COREJAR=----workspace_spark_3_0--core--core-hive-2.3__hadoop-2.7_2.12_deploy.jar
+SQLJAR=----workspace_spark_3_0--sql--core--core-hive-2.3__hadoop-2.7_${SCALA_VERSION}_deploy.jar
+CATALYSTJAR=----workspace_spark_3_0--sql--catalyst--catalyst-hive-2.3__hadoop-2.7_${SCALA_VERSION}_deploy.jar
+ANNOTJAR=----workspace_spark_3_0--common--tags--tags-hive-2.3__hadoop-2.7_${SCALA_VERSION}_deploy.jar
+COREJAR=----workspace_spark_3_0--core--core-hive-2.3__hadoop-2.7_${SCALA_VERSION}_deploy.jar
 VERSIONJAR=----workspace_spark_3_0--core--libcore_generated_resources.jar
-VERSION=3.0.0
+VERSION=$SPARK_VERSION
 mvn install:install-file \
    -Dmaven.repo.local=$M2DIR \
    -Dfile=$JARDIR/$COREJAR \
    -DgroupId=org.apache.spark \
-   -DartifactId=spark-core_2.12 \
+   -DartifactId=spark-core_$SCALA_VERSION \
    -Dversion=$VERSION \
    -Dpackaging=jar
 
@@ -58,7 +52,7 @@ mvn install:install-file \
    -Dmaven.repo.local=$M2DIR \
    -Dfile=$JARDIR/$CATALYSTJAR \
    -DgroupId=org.apache.spark \
-   -DartifactId=spark-catalyst_2.12 \
+   -DartifactId=spark-catalyst_$SCALA_VERSION \
    -Dversion=$VERSION \
    -Dpackaging=jar
 
@@ -66,7 +60,7 @@ mvn install:install-file \
    -Dmaven.repo.local=$M2DIR \
    -Dfile=$JARDIR/$SQLJAR \
    -DgroupId=org.apache.spark \
-   -DartifactId=spark-sql_2.12 \
+   -DartifactId=spark-sql_$SCALA_VERSION \
    -Dversion=$VERSION \
    -Dpackaging=jar
 
@@ -74,7 +68,7 @@ mvn install:install-file \
    -Dmaven.repo.local=$M2DIR \
    -Dfile=$JARDIR/$ANNOTJAR \
    -DgroupId=org.apache.spark \
-   -DartifactId=spark-annotation_2.12 \
+   -DartifactId=spark-annotation_$SCALA_VERSION \
    -Dversion=$VERSION \
    -Dpackaging=jar
 
@@ -82,7 +76,7 @@ mvn install:install-file \
    -Dmaven.repo.local=$M2DIR \
    -Dfile=$JARDIR/$VERSIONJAR \
    -DgroupId=org.apache.spark \
-   -DartifactId=spark-version_2.12 \
+   -DartifactId=spark-version_$SCALA_VERSION \
    -Dversion=$VERSION \
    -Dpackaging=jar
 

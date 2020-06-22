@@ -17,6 +17,7 @@ import sys
 import getopt
 import time
 import os
+import subprocess
 
 def cluster_state(workspace, clusterid, token):
   clusterresp = requests.get(workspace + "/api/2.0/clusters/get?cluster_id=%s" % clusterid, headers={'Authorization': 'Bearer %s' % token})
@@ -124,7 +125,8 @@ def main():
   print("Copying script")
   rsync_command = "rsync -I -Pave \"ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -p 2200 -i %s\" %s ubuntu@%s:%s" % (private_key_file, local_script, master_addr, script_dest)
   print("rsync command: %s" % rsync_command)
-  os.system(rsync_command)
+  #os.system(rsync_command)
+  subprocess.check_call(rsync_command, shell = True)
 
   print("Copying source")
   rsync_command = "rsync -I -Pave \"ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -p 2200 -i %s\" %s ubuntu@%s:%s" % (private_key_file, source_tgz, master_addr, tgz_dest)
