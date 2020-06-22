@@ -156,7 +156,7 @@ class GpuExpandIterator(
 
       val projectedColumns = boundProjections(projectionIndex).safeMap(fn = expr => {
         val rapidsType = GpuColumnVector.getRapidsType(expr.dataType)
-        val (cv, nullColumnReused) = expr.asInstanceOf[GpuExpression].columnarEval(cb) match {
+        val (cv, nullColumnReused) = expr.columnarEval(cb) match {
           case null => getOrCreateNullCV(rapidsType)
           case lit: GpuLiteral if lit.value == null => getOrCreateNullCV(rapidsType)
           case lit: GpuLiteral =>

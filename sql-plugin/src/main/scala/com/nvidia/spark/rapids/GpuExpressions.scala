@@ -22,7 +22,6 @@ import ai.rapids.cudf.{BinaryOp, BinaryOperable, DType, Scalar, UnaryOp}
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 
 import org.apache.spark.sql.catalyst.expressions.{BinaryExpression, BinaryOperator, ComplexTypeMergingExpression, Expression, String2TrimExpression, TernaryExpression, UnaryExpression, Unevaluable}
-import org.apache.spark.sql.catalyst.trees.CurrentOrigin
 import org.apache.spark.sql.types.StringType
 import org.apache.spark.sql.vectorized.ColumnarBatch
 import org.apache.spark.unsafe.types.UTF8String
@@ -119,7 +118,7 @@ abstract class GpuUnaryExpression extends UnaryExpression with GpuExpression {
   def outputTypeOverride: DType = null
 
   override def columnarEval(batch: ColumnarBatch): Any = {
-    val input = child.asInstanceOf[GpuExpression].columnarEval(batch)
+    val input = child.columnarEval(batch)
     try {
       input match {
         case vec: GpuColumnVector =>
@@ -166,8 +165,8 @@ trait GpuBinaryExpression extends BinaryExpression with GpuExpression {
     var lhs: Any = null
     var rhs: Any = null
     try {
-      lhs = left.asInstanceOf[GpuExpression].columnarEval(batch)
-      rhs = right.asInstanceOf[GpuExpression].columnarEval(batch)
+      lhs = left.columnarEval(batch)
+      rhs = right.columnarEval(batch)
 
       (lhs, rhs) match {
         case (l: GpuColumnVector, r: GpuColumnVector) => doColumnar(l, r)
@@ -255,7 +254,7 @@ trait GpuString2TrimExpression extends String2TrimExpression with GpuExpression 
 
   override def columnarEval(batch: ColumnarBatch): Any = {
     val trim = GpuExpressionsUtils.getTrimString(trimStr)
-    val shouldBeColumn = srcStr.asInstanceOf[GpuExpression].columnarEval(batch)
+    val shouldBeColumn = srcStr.columnarEval(batch)
     try {
       // We know the first parameter is not a Literal, because trim(Literal, Literal) would already
       // have been optimized out
@@ -295,9 +294,9 @@ trait GpuTernaryExpression extends TernaryExpression with GpuExpression {
     var val1: Any = null
     var val2: Any = null
     try {
-      val0 = children(0).asInstanceOf[GpuExpression].columnarEval(batch)
-      val1 = children(1).asInstanceOf[GpuExpression].columnarEval(batch)
-      val2 = children(2).asInstanceOf[GpuExpression].columnarEval(batch)
+      val0 = children(0).columnarEval(batch)
+      val1 = children(1).columnarEval(batch)
+      val2 = children(2).columnarEval(batch)
 
       (val0, val1, val2) match {
         case (v0: GpuColumnVector, v1: GpuColumnVector, v2: GpuColumnVector) =>

@@ -297,7 +297,7 @@ case class GpuConcat(children: Seq[Expression]) extends GpuComplexTypeMergingExp
     val columns: ArrayBuffer[ColumnVector] = new ArrayBuffer[ColumnVector]()
     try {
       nullStrScalar = GpuScalar.from(null, StringType)
-      children.foreach(childEvals += _.asInstanceOf[GpuExpression].columnarEval(batch))
+      children.foreach(childEvals += _.columnarEval(batch))
       childEvals.foreach {
         case vector: GpuColumnVector =>
           columns += vector.getBase

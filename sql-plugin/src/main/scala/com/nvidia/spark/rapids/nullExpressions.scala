@@ -54,7 +54,7 @@ case class GpuCoalesce(children: Seq[Expression]) extends GpuExpression with
     var runningScalar: Scalar = null
     try {
       children.reverse.foreach(expr => {
-        expr.asInstanceOf[GpuExpression].columnarEval(batch) match {
+        expr.columnarEval(batch) match {
           case data: GpuColumnVector =>
             try {
               if (runningResult != null) {
@@ -180,8 +180,7 @@ case class GpuAtLeastNNonNulls(
         var notNanVector: ColumnVector = null
         var nanAndNullVector: ColumnVector = null
         try {
-          cv = expr.asInstanceOf[GpuExpression]
-              .columnarEval(batch).asInstanceOf[GpuColumnVector].getBase
+          cv = expr.columnarEval(batch).asInstanceOf[GpuColumnVector].getBase
           notNullVector = cv.isNotNull
           if (cv.getType == DType.FLOAT32 || cv.getType == DType.FLOAT64) {
             notNanVector = cv.isNotNan

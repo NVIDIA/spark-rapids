@@ -48,7 +48,7 @@ case class GpuHashPartitioning(expressions: Seq[Expression], numPartitions: Int)
   }
 
   def getGpuKeyColumns(batch: ColumnarBatch) : Array[GpuColumnVector] = {
-    expressions.map(_.asInstanceOf[GpuExpression].columnarEval(batch)
+    expressions.map(_.columnarEval(batch)
         .asInstanceOf[GpuColumnVector]).toArray
   }
 

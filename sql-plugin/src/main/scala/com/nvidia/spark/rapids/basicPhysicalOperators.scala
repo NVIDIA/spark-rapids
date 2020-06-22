@@ -46,7 +46,7 @@ object GpuProjectExec {
   def project[A <: Expression](cb: ColumnarBatch, boundExprs: Seq[A]): ColumnarBatch = {
     val newColumns = boundExprs.safeMap {
       expr => {
-        val result = expr.asInstanceOf[GpuExpression].columnarEval(cb)
+        val result = expr.columnarEval(cb)
         result match {
           case cv: ColumnVector => cv
           case other =>
@@ -106,8 +106,7 @@ object GpuFilter {
       var tbl: cudf.Table = null
       var filtered: cudf.Table = null
       val filteredBatch = try {
-        filterConditionCv = boundCondition.asInstanceOf[GpuExpression]
-            .columnarEval(batch).asInstanceOf[GpuColumnVector]
+        filterConditionCv = boundCondition.columnarEval(batch).asInstanceOf[GpuColumnVector]
         tbl = GpuColumnVector.from(batch)
         filtered = tbl.filter(filterConditionCv.getBase)
         GpuColumnVector.from(filtered)

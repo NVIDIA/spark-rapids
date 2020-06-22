@@ -16,6 +16,8 @@
 
 package com.nvidia.spark.rapids
 
+import com.nvidia.spark.rapids.RapidsPluginImplicits._
+
 import org.apache.spark.sql.catalyst.expressions.{Expression, TaggingExpression}
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
@@ -26,6 +28,6 @@ import org.apache.spark.sql.vectorized.ColumnarBatch
 case class GpuKnownFloatingPointNormalized(child: Expression) extends TaggingExpression
     with GpuExpression {
   override def columnarEval(batch: ColumnarBatch): Any = {
-    child.asInstanceOf[GpuExpression].columnarEval(batch)
+    child.columnarEval(batch)
   }
 }

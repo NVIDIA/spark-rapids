@@ -17,6 +17,7 @@
 package com.nvidia.spark.rapids
 
 import ai.rapids.cudf.Scalar
+import com.nvidia.spark.rapids.RapidsPluginImplicits._
 
 import org.apache.spark.sql.catalyst.analysis.{TypeCheckResult, TypeCoercion}
 import org.apache.spark.sql.catalyst.expressions.{ComplexTypeMergingExpression, Expression}
@@ -27,7 +28,7 @@ abstract class GpuConditionalExpression extends ComplexTypeMergingExpression wit
   private def computePredicate(
       batch: ColumnarBatch,
       predicateExpr: Expression): GpuColumnVector = {
-    val predicate: Any = predicateExpr.asInstanceOf[GpuExpression].columnarEval(batch)
+    val predicate: Any = predicateExpr.columnarEval(batch)
     try {
       if (!predicate.isInstanceOf[GpuColumnVector]) {
         throw new IllegalStateException("Predicate result is not a column")
@@ -57,7 +58,7 @@ abstract class GpuConditionalExpression extends ComplexTypeMergingExpression wit
       falseValues: GpuColumnVector): GpuColumnVector = {
     val predicate = computePredicate(batch, predicateExpr)
     try {
-      val trueResult: Any = trueExpr.asInstanceOf[GpuExpression].columnarEval(batch)
+      val trueResult: Any = trueExpr.columnarEval(batch)
       try {
         val result = trueResult match {
           case t: GpuColumnVector => predicate.getBase.ifElse(t.getBase, falseValues.getBase)
@@ -89,7 +90,7 @@ abstract class GpuConditionalExpression extends ComplexTypeMergingExpression wit
       falseValue: Scalar): GpuColumnVector = {
     val predicate = computePredicate(batch, predicateExpr)
     try {
-      val trueResult: Any = trueExpr.asInstanceOf[GpuExpression].columnarEval(batch)
+      val trueResult: Any = trueExpr.columnarEval(batch)
       try {
         val result = trueResult match {
           case t: GpuColumnVector => predicate.getBase.ifElse(t.getBase, falseValue)
@@ -119,7 +120,7 @@ abstract class GpuConditionalExpression extends ComplexTypeMergingExpression wit
       predicateExpr: Expression,
       trueExpr: Expression,
       falseExpr: Expression): GpuColumnVector = {
-    val falseResult: Any = falseExpr.asInstanceOf[GpuExpression].columnarEval(batch)
+    val falseResult: Any = falseExpr.columnarEval(batch)
     try {
       falseResult match {
         case f: GpuColumnVector => computeIfElse(batch, predicateExpr, trueExpr, f)

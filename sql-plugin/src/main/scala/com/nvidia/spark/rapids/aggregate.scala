@@ -430,8 +430,7 @@ case class GpuHashAggregateExec(
                   // aggregatedCb is made up of ColumnVectors
                   // and the final projections from the aggregates won't change that,
                   // so we can assume they will be vectors after we eval
-                  ref.asInstanceOf[GpuExpression]
-                      .columnarEval(aggregatedCb).asInstanceOf[GpuColumnVector]
+                  ref.columnarEval(aggregatedCb).asInstanceOf[GpuColumnVector]
                 }
               aggregatedCb.close()
               aggregatedCb = null
@@ -449,7 +448,7 @@ case class GpuHashAggregateExec(
             // Perform the last project to get the correct shape that Spark expects. Note this will
             // add things like literals, that were not part of the aggregate into the batch.
             resultCvs = boundExpression.boundResultReferences.map { ref =>
-              val result = ref.asInstanceOf[GpuExpression].columnarEval(finalCb)
+              val result = ref.columnarEval(finalCb)
               // Result references can be virtually anything, we need to coerce
               // them to be vectors since this is going into a ColumnarBatch
               result match {
@@ -513,7 +512,7 @@ case class GpuHashAggregateExec(
   private def processIncomingBatch(batch: ColumnarBatch,
       boundInputReferences: Seq[Expression]): Seq[GpuColumnVector] = {
     boundInputReferences.safeMap { ref =>
-      val in = ref.asInstanceOf[GpuExpression].columnarEval(batch)
+      val in = ref.columnarEval(batch)
       val childCv = in match {
         case cv: ColumnVector => cv.asInstanceOf[GpuColumnVector]
         case _ =>
