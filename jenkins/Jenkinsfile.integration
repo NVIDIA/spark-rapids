@@ -32,17 +32,17 @@ pipeline {
     }
 
     parameters {
-        string(name: 'CUDF_VER', defaultValue: '0.14',
+        string(name: 'CUDF_VER', defaultValue: '0.15-SNAPSHOT',
             description: '-Dcudf.version= \n\n Default for cudf version')
         string(name: 'CUDA_CLASSIFIER', defaultValue: '',
             description: '-Dclassifier=\n\n cuda10-1, cuda10-2, EMPTY as cuda10-1')
-        string(name: 'PROJECT_VER', defaultValue: '0.1-SNAPSHOT',
-            description: 'Default project version 0.1-SNAPSHOT')
+        string(name: 'PROJECT_VER', defaultValue: '0.2.0-SNAPSHOT',
+            description: 'Default project version 0.2.0-SNAPSHOT')
         string(name: 'SPARK_VER', defaultValue: '3.0.0',
             description: 'Default spark version 3.0.0')
         string(name: 'SERVER_URL', defaultValue: 'https://urm.nvidia.com:443/artifactory/sw-spark-maven',
             description: 'Default maven repo URL where to download Spark3.0 tar file.')
-        string(name: 'REF', defaultValue: 'branch-0.1', description: 'Commit to build')
+        string(name: 'REF', defaultValue: 'branch-0.2', description: 'Commit to build')
     }
 
     environment {

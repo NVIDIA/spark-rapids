@@ -80,7 +80,7 @@ mvn install:install-file \
 mvn -Pdatabricks clean verify -DskipTests
 
 # copy so we pick up new built jar
-sudo cp dist/target/rapids-4-spark_2.12-*-SNAPSHOT.jar /databricks/jars/rapids-4-spark_2.12-0.1-SNAPSHOT-ci.jar
+sudo cp dist/target/rapids-4-spark_2.12-*-SNAPSHOT.jar /databricks/jars/rapids-4-spark_2.12-0.2.0-SNAPSHOT-ci.jar
 
 # tests
 export PATH=/databricks/conda/envs/databricks-ml-gpu/bin:/databricks/conda/condabin:$PATH
