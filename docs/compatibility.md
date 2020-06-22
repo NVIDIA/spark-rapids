@@ -1,6 +1,6 @@
 ---
 layout: page
-title: Compatability
+title: Compatibility
 nav_order: 4
 ---
 
