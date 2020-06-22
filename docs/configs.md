@@ -26,6 +26,7 @@ scala> spark.conf.set("spark.rapids.sql.incompatibleOps.enabled", true)
 
 
 ## General Configuration
+
 Name | Description | Default Value
 -----|-------------|--------------
 <a name="memory.gpu.allocFraction"></a>spark.rapids.memory.gpu.allocFraction|The fraction of total GPU memory that should be initially allocated for pooled memory. Extra memory will be allocated as needed, but it may result in more fragmentation.|0.9
@@ -82,6 +83,7 @@ will enable all the settings in the table below which are not enabled by default
 incompatibilities.
 
 ### Expressions
+
 Name | Description | Default Value | Incompatibilities
 -----|-------------|---------------|------------------
 <a name="sql.expression.Abs"></a>spark.rapids.sql.expression.Abs|absolute value|true|None|
@@ -210,6 +212,7 @@ Name | Description | Default Value | Incompatibilities
 <a name="sql.expression.NormalizeNaNAndZero"></a>spark.rapids.sql.expression.NormalizeNaNAndZero|normalize nan and zero|true|None|
 
 ### Execution
+
 Name | Description | Default Value | Incompatibilities
 -----|-------------|---------------|------------------
 <a name="sql.exec.CoalesceExec"></a>spark.rapids.sql.exec.CoalesceExec|The backend for the dataframe coalesce method|true|None|
@@ -235,6 +238,7 @@ Name | Description | Default Value | Incompatibilities
 <a name="sql.exec.WindowExec"></a>spark.rapids.sql.exec.WindowExec|Window-operator backend|true|None|
 
 ### Scans
+
 Name | Description | Default Value | Incompatibilities
 -----|-------------|---------------|------------------
 <a name="sql.input.CSVScan"></a>spark.rapids.sql.input.CSVScan|CSV parsing|true|None|
@@ -242,6 +246,7 @@ Name | Description | Default Value | Incompatibilities
 <a name="sql.input.ParquetScan"></a>spark.rapids.sql.input.ParquetScan|Parquet parsing|true|None|
 
 ### Partitioning
+
 Name | Description | Default Value | Incompatibilities
 -----|-------------|---------------|------------------
 <a name="sql.partitioning.HashPartitioning"></a>spark.rapids.sql.partitioning.HashPartitioning|Hash based partitioning|true|None|
