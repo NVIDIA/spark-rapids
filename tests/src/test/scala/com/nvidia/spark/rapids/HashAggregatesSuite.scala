@@ -35,7 +35,12 @@ class HashAggregatesSuite extends SparkQueryCompareTestSuite {
   }
 
   private def checkExecNode(result: DataFrame): Unit = {
-    if (result.queryExecution.executedPlan.conf.getAllConfs(RapidsConf.SQL_ENABLED.key).toBoolean) {
+    if (result.queryExecution.executedPlan.conf.getAllConfs(RapidsConf.SQL_ENABLED.key).toBoolean
+      && !result.sqlContext.getConf("spark.sql.adaptive.enabled").toBoolean) {
+
+      // this assertion is skipped when AQE is enabled because it is looking at the plan before
+      // it has been converted to GPU
+
       assert(result.queryExecution.executedPlan.find {
         _.isInstanceOf[GpuHashAggregateExec]
       }.isDefined, "as the GPU plan expected a GPU aggregate but did not find any!")

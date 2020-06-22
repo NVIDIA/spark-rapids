@@ -52,6 +52,10 @@ object TestResourceFinder {
 }
 
 object SparkSessionHolder extends Logging {
+
+  val adaptiveQueryEnabled = Option(System.getProperty("spark.sql.adaptive.enabled"))
+      .getOrElse("false").toBoolean
+
   val spark = {
     // Timezone is fixed to UTC to allow timestamps to work by default
     TimeZone.setDefault(TimeZone.getTimeZone("UTC"))
@@ -59,6 +63,7 @@ object SparkSessionHolder extends Logging {
     Locale.setDefault(Locale.US)
     SparkSession.builder()
       .master("local[1]")
+      .config("spark.sql.adaptive.enabled", adaptiveQueryEnabled)
       .config("spark.rapids.sql.enabled", "false")
       .config("spark.rapids.sql.test.enabled", "false")
       .config("spark.plugins", "com.nvidia.spark.SQLPlugin")

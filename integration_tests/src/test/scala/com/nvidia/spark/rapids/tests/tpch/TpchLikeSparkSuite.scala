@@ -17,19 +17,26 @@
 package com.nvidia.spark.rapids.tests.tpch
 
 import com.nvidia.spark.RapidsShuffleManager
-import com.nvidia.spark.rapids.ColumnarRdd
+import com.nvidia.spark.rapids.{ColumnarRdd, ExecutionPlanCaptureCallback}
 import org.scalatest.{BeforeAndAfterAll, FunSuite}
 
-import org.apache.spark.sql.SparkSession
+import org.apache.spark.sql.{DataFrame, SparkSession}
+import org.apache.spark.sql.execution.adaptive.AdaptiveSparkPlanExec
 
 class TpchLikeSparkSuite extends FunSuite with BeforeAndAfterAll {
 
-  lazy val  session: SparkSession = {
+  val adaptiveQueryEnabled = Option(System.getProperty("spark.sql.adaptive.enabled"))
+      .getOrElse("false").toBoolean
+
+  lazy val session: SparkSession = {
     var builder = SparkSession.builder
       .master("local[2]")
       .appName("TPCHLikeTest")
+      .config("spark.sql.adaptive.enabled", adaptiveQueryEnabled)
       .config("spark.sql.join.preferSortMergeJoin", false)
       .config("spark.sql.shuffle.partitions", 2)
+      .config("spark.sql.queryExecutionListeners",
+        "com.nvidia.spark.rapids.ExecutionPlanCaptureCallback")
       .config("spark.plugins", "com.nvidia.spark.SQLPlugin")
       .config("spark.rapids.sql.test.enabled", false)
       .config("spark.rapids.sql.explain", true)
@@ -91,113 +98,124 @@ class TpchLikeSparkSuite extends FunSuite with BeforeAndAfterAll {
     }).max())
   }
 
+  private def assertResult(expectedRowCount: Int)(df: DataFrame): Unit = {
+    ExecutionPlanCaptureCallback.startCapture()
+    val c = df.count()
+    val plan = ExecutionPlanCaptureCallback.getResultWithTimeout()
+    assert(plan.isDefined)
+    if (adaptiveQueryEnabled) {
+      assert(plan.get.isInstanceOf[AdaptiveSparkPlanExec])
+    }
+    assert(expectedRowCount == c)
+  }
+
   test("Something like TPCH Query 1") {
     val df = Q1Like(session)
-    assertResult(4)(df.count())
+    assertResult(4)(df)
   }
 
   test("Something like TPCH Query 2") {
     val df = Q2Like(session)
-    assertResult(1)(df.count())
+    assertResult(1)(df)
   }
 
   test("Something like TPCH Query 3") {
     val df = Q3Like(session)
-    assertResult(3)(df.count())
+    assertResult(3)(df)
   }
 
   test("Something like TPCH Query 4") {
     val df = Q4Like(session)
-    assertResult(5)(df.count())
+    assertResult(5)(df)
   }
 
   test("Something like TPCH Query 5") {
     val df = Q5Like(session)
-    assertResult(1)(df.count())
+    assertResult(1)(df)
   }
 
   test("Something like TPCH Query 6") {
     val df = Q6Like(session)
-    assertResult(1)(df.count())
+    assertResult(1)(df)
   }
 
   test("Something like TPCH Query 7") {
     val df = Q7Like(session)
-    assertResult(0)(df.count())
+    assertResult(0)(df)
   }
 
   test("Something like TPCH Query 8") {
     val df = Q8Like(session)
-    assertResult(0)(df.count())
+    assertResult(0)(df)
   }
 
   test("Something like TPCH Query 9") {
     val df = Q9Like(session)
-    assertResult(5)(df.count())
+    assertResult(5)(df)
   }
 
   test("Something like TPCH Query 10") {
     val df = Q10Like(session)
-    assertResult(4)(df.count())
+    assertResult(4)(df)
   }
 
   test("Something like TPCH Query 11") {
     val df = Q11Like(session)
-    assertResult(47)(df.count())
+    assertResult(47)(df)
   }
 
   test("Something like TPCH Query 12") {
     val df = Q12Like(session)
-    assertResult(2)(df.count())
+    assertResult(2)(df)
   }
 
   test("Something like TPCH Query 13") {
     val df = Q13Like(session)
-    assertResult(6)(df.count())
+    assertResult(6)(df)
   }
 
   test("Something like TPCH Query 14") {
     val df = Q14Like(session)
-    assertResult(1)(df.count())
+    assertResult(1)(df)
   }
 
   test("Something like TPCH Query 15") {
     val df = Q15Like(session)
-    assertResult(1)(df.count())
+    assertResult(1)(df)
   }
 
   test("Something like TPCH Query 16") {
     val df = Q16Like(session)
-    assertResult(42)(df.count())
+    assertResult(42)(df)
   }
 
   test("Something like TPCH Query 17") {
     val df = Q17Like(session)
-    assertResult(1)(df.count())
+    assertResult(1)(df)
   }
 
   test("Something like TPCH Query 18") {
     val df = Q18Like(session)
-    assertResult(0)(df.count())
+    assertResult(0)(df)
   }
 
   test("Something like TPCH Query 19") {
     val df = Q19Like(session)
-    assertResult(1)(df.count())
+    assertResult(1)(df)
   }
 
   test("Something like TPCH Query 20") {
     val df = Q20Like(session)
-    assertResult(0)(df.count())
+    assertResult(0)(df)
   }
 
   test("Something like TPCH Query 21") {
     val df = Q21Like(session)
-    assertResult(0)(df.count())
+    assertResult(0)(df)
   }
 
   test("Something like TPCH Query 22") {
     val df = Q22Like(session)
-    assertResult(7)(df.count())
+    assertResult(7)(df)
   }
 }

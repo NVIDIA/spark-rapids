@@ -21,11 +21,12 @@ import java.util.concurrent.atomic.{AtomicBoolean, AtomicReference}
 
 import scala.collection.JavaConverters._
 import scala.collection.mutable.ArrayBuffer
+import scala.util.{Failure, Success, Try}
 
 import ai.rapids.cudf._
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
-
 import org.apache.spark.{SparkConf, SparkContext, TaskContext}
+
 import org.apache.spark.api.plugin.{DriverPlugin, ExecutorPlugin, PluginContext, SparkPlugin}
 import org.apache.spark.internal.Logging
 import org.apache.spark.serializer.{JavaSerializer, KryoSerializer}
@@ -34,6 +35,7 @@ import org.apache.spark.sql.catalyst.expressions.Expression
 import org.apache.spark.sql.catalyst.plans.physical.Partitioning
 import org.apache.spark.sql.catalyst.rules.Rule
 import org.apache.spark.sql.execution._
+import org.apache.spark.sql.execution.adaptive.AdaptiveSparkPlanExec
 import org.apache.spark.sql.internal.StaticSQLConf
 import org.apache.spark.sql.rapids.GpuShuffleEnv
 import org.apache.spark.sql.util.QueryExecutionListener
@@ -305,11 +307,14 @@ object ExecutionPlanCaptureCallback {
   }
 
   private def didFallBack(plan: SparkPlan, fallbackCpuClass: String): Boolean = {
-    if (!plan.isInstanceOf[GpuExec] &&
-      getBaseNameFromClass(plan.getClass.getName) == fallbackCpuClass) {
-      true
-    } else {
-      plan.expressions.exists(didFallBack(_, fallbackCpuClass))
+    plan match {
+      case p: AdaptiveSparkPlanExec => didFallBack(p.initialPlan, fallbackCpuClass)
+      case _ => if (!plan.isInstanceOf[GpuExec] &&
+          getBaseNameFromClass(plan.getClass.getName) == fallbackCpuClass) {
+        true
+      } else {
+        plan.expressions.exists(didFallBack(_, fallbackCpuClass))
+      }
     }
   }
 }
