@@ -125,8 +125,8 @@ def main():
   print("Copying script")
   rsync_command = "rsync -I -Pave \"ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -p 2200 -i %s\" %s ubuntu@%s:%s" % (private_key_file, local_script, master_addr, script_dest)
   print("rsync command to subprocess: %s" % rsync_command)
-  #os.system(rsync_command)
-  subprocess.check_call(rsync_command, shell = True)
+  os.system(rsync_command)
+  #subprocess.check_call(rsync_command, shell = True)
 
   print("Copying source")
   rsync_command = "rsync -I -Pave \"ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -p 2200 -i %s\" %s ubuntu@%s:%s" % (private_key_file, source_tgz, master_addr, tgz_dest)
