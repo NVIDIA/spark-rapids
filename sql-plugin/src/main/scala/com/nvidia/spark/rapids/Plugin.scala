@@ -21,13 +21,12 @@ import java.util.concurrent.atomic.{AtomicBoolean, AtomicReference}
 
 import scala.collection.JavaConverters._
 import scala.collection.mutable.ArrayBuffer
-import scala.util.{Failure, Success, Try}
 
 import ai.rapids.cudf._
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
-import org.apache.spark.{SparkConf, SparkContext, TaskContext}
 
-import org.apache.spark.api.plugin.{DriverPlugin, ExecutorPlugin, PluginContext, SparkPlugin}
+import org.apache.spark.{SparkConf, SparkContext, TaskContext}
+import org.apache.spark.api.plugin.{DriverPlugin, ExecutorPlugin, PluginContext}
 import org.apache.spark.internal.Logging
 import org.apache.spark.serializer.{JavaSerializer, KryoSerializer}
 import org.apache.spark.sql.SparkSessionExtensions

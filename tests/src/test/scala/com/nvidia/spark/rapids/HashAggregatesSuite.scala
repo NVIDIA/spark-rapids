@@ -19,7 +19,6 @@ package com.nvidia.spark.rapids
 import java.sql.Timestamp
 
 import org.apache.spark.SparkConf
-
 import org.apache.spark.sql.{AnalysisException, DataFrame, SparkSession}
 import org.apache.spark.sql.execution.WholeStageCodegenExec
 import org.apache.spark.sql.execution.adaptive.AdaptiveSparkPlanExec
@@ -109,9 +108,6 @@ class HashAggregatesSuite extends SparkQueryCompareTestSuite {
       .set(RapidsConf.ENABLE_HASH_OPTIMIZE_SORT.key, "false")
 
     withGpuSparkSession(spark => {
-
-      ExecutionPlanCaptureCallback.startCapture()
-
       val df = firstDf(spark)
         .coalesce(1)
         .sort(col("c2").asc, col("c0").asc) // force deterministic use case
@@ -121,11 +117,13 @@ class HashAggregatesSuite extends SparkQueryCompareTestSuite {
       val cpuPlan = df.queryExecution.sparkPlan
       assert(cpuPlan.find(_.isInstanceOf[SortAggregateExec]).isDefined)
 
-      df.count()
-
-      val gpuPlan = ExecutionPlanCaptureCallback.getResultWithTimeout().get match {
-        case a: AdaptiveSparkPlanExec => a.executedPlan
-        case other => other
+      val gpuPlan = if (SparkSessionHolder.adaptiveQueryEnabled) {
+        ExecutionPlanCaptureCallback.startCapture()
+        df.count()
+        ExecutionPlanCaptureCallback.getResultWithTimeout().get
+            .asInstanceOf[AdaptiveSparkPlanExec].executedPlan
+      } else {
+        df.queryExecution.executedPlan
       }
 
       gpuPlan match {
@@ -146,9 +144,6 @@ class HashAggregatesSuite extends SparkQueryCompareTestSuite {
       .set(RapidsConf.ENABLE_HASH_OPTIMIZE_SORT.key, "true")
 
     withGpuSparkSession(spark => {
-
-      ExecutionPlanCaptureCallback.startCapture()
-
       val df = firstDf(spark)
         .coalesce(1)
         .sort(col("c2").asc, col("c0").asc) // force deterministic use case
@@ -158,13 +153,14 @@ class HashAggregatesSuite extends SparkQueryCompareTestSuite {
       val cpuPlan = df.queryExecution.sparkPlan
       assert(cpuPlan.find(_.isInstanceOf[SortAggregateExec]).isDefined)
 
-      df.count()
-
-      val gpuPlan = ExecutionPlanCaptureCallback.getResultWithTimeout().get match {
-        case a: AdaptiveSparkPlanExec => a.executedPlan
-        case other => other
+      val gpuPlan = if (SparkSessionHolder.adaptiveQueryEnabled) {
+        ExecutionPlanCaptureCallback.startCapture()
+        df.count()
+        ExecutionPlanCaptureCallback.getResultWithTimeout().get
+            .asInstanceOf[AdaptiveSparkPlanExec].executedPlan
+      } else {
+        df.queryExecution.executedPlan
       }
-
 
       gpuPlan match {
         case WholeStageCodegenExec(GpuColumnarToRowExec(plan, _)) =>

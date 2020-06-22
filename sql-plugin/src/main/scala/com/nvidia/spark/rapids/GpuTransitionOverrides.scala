@@ -269,7 +269,8 @@ class GpuTransitionOverrides extends Rule[SparkPlan] {
       if (conf.exportColumnarRdd) {
         updatedPlan = detectAndTagFinalColumnarOutput(updatedPlan)
       }
-      val adaptiveQueryEnabled = plan.conf.getConfString("spark.sql.adaptive.enabled").toBoolean
+      val adaptiveQueryEnabled = plan.conf
+          .getConfString("spark.sql.adaptive.enabled", "false").toBoolean
       if (conf.isTestEnabled && !adaptiveQueryEnabled) {
         // we cannot assert that the plan is on the GPU at this stage when adaptive query
         // execution is enabled
