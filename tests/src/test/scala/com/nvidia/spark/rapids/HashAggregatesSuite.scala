@@ -38,7 +38,7 @@ class HashAggregatesSuite extends SparkQueryCompareTestSuite {
 
   private def checkExecNode(result: DataFrame): Unit = {
     if (result.queryExecution.executedPlan.conf.getAllConfs(RapidsConf.SQL_ENABLED.key).toBoolean
-      && !result.sqlContext.getConf("spark.sql.adaptive.enabled").toBoolean) {
+      && !SparkSessionHolder.adaptiveQueryEnabled) {
 
       // this assertion is skipped when AQE is enabled because it is looking at the plan before
       // it has been converted to GPU

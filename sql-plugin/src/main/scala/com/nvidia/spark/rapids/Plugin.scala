@@ -253,7 +253,6 @@ object ExecutionPlanCaptureCallback {
   private[this] val execPlan: AtomicReference[SparkPlan] = new AtomicReference[SparkPlan]()
 
   private def captureIfNeeded(qe: QueryExecution): Unit = {
-    //println(qe.executedPlan)
     if (shouldCapture.get()) {
       execPlan.set(qe.executedPlan)
     }
