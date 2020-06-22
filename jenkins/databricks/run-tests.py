@@ -124,7 +124,7 @@ def main():
   print("Master node address is: %s" % master_addr)
   print("Copying script")
   rsync_command = "rsync -I -Pave \"ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -p 2200 -i %s\" %s ubuntu@%s:%s" % (private_key_file, local_script, master_addr, script_dest)
-  print("rsync command: %s" % rsync_command)
+  print("rsync command to subprocess: %s" % rsync_command)
   #os.system(rsync_command)
   subprocess.check_call(rsync_command, shell = True)
 
