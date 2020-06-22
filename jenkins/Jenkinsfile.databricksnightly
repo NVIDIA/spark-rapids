@@ -52,9 +52,9 @@ pipeline {
         LIBCUDF_KERNEL_CACHE_PATH='/tmp'
         URM_CREDS = credentials("svcngcc_artifactory")
         DATABRICKS_TOKEN = credentials("SPARK_DATABRICKS_TOKEN")
-        SCALA_VERSION = 2.12
-        SPARK_VERSION = 3.0.0
-        CI_RAPIDS_JAR=rapids-4-spark_2.12-0.1-SNAPSHOT-ci.jar
+        SCALA_VERSION = '2.12'
+        SPARK_VERSION = '3.0.0'
+        CI_RAPIDS_JAR = 'rapids-4-spark_2.12-0.1-SNAPSHOT-ci.jar'
     }
 
     triggers {
