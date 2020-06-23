@@ -960,6 +960,12 @@ object GpuOverrides {
         override def convertToGpu(expr: GpuExpression): GpuExpression =
           GpuDayOfWeek(expr)
       }),
+    expr[LastDay](
+      "Returns the last day of the month which the date belongs to",
+      (a, conf, p, r) => new UnaryExprMeta[LastDay](a, conf, p, r) {
+        override def convertToGpu(expr: GpuExpression): GpuExpression =
+          GpuLastDay(expr)
+      }),
     expr[FromUnixTime](
       "get the String from a unix timestamp",
       (a, conf, p, r) => new UnixTimeExprMeta[FromUnixTime](a, conf, p, r) {

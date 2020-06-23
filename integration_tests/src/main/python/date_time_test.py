@@ -51,6 +51,10 @@ def test_dayofweek():
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark : unary_op_df(spark, date_gen).selectExpr('dayofweek(a)'))
 
+def test_last_day():
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark : unary_op_df(spark, date_gen).selectExpr('last_day(a)'))
+
 # We have to set the upper/lower limit on IntegerGen so the date_add doesn't overflow
 # Python uses proleptic gregorian date which extends Gregorian calendar as it always existed and
 # always exist in future. When performing date_sub('0001-01-01', 1), it will blow up because python

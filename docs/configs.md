@@ -142,6 +142,7 @@ Name | Description | Default Value | Incompatibilities
 <a name="sql.expression.IsNotNull"></a>spark.rapids.sql.expression.IsNotNull|checks if a value is not null|true|None|
 <a name="sql.expression.IsNull"></a>spark.rapids.sql.expression.IsNull|checks if a value is null|true|None|
 <a name="sql.expression.KnownFloatingPointNormalized"></a>spark.rapids.sql.expression.KnownFloatingPointNormalized|tag to prevent redundant normalization|true|None|
+<a name="sql.expression.LastDay"></a>spark.rapids.sql.expression.LastDay|Returns the last day of the month which the date belongs to|true|None|
 <a name="sql.expression.Length"></a>spark.rapids.sql.expression.Length|String Character Length|true|None|
 <a name="sql.expression.LessThan"></a>spark.rapids.sql.expression.LessThan|< operator|true|None|
 <a name="sql.expression.LessThanOrEqual"></a>spark.rapids.sql.expression.LessThanOrEqual|<= operator|true|None|

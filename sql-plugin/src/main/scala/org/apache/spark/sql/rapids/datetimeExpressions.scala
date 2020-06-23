@@ -23,7 +23,7 @@ import com.nvidia.spark.rapids.{BinaryExprMeta, ConfKeysAndIncompat, DateUtils, 
 import com.nvidia.spark.rapids.DateUtils.TimestampFormatConversionException
 import com.nvidia.spark.rapids.GpuOverrides.extractStringLit
 
-import org.apache.spark.sql.catalyst.expressions.{BinaryExpression, ExpectsInputTypes, Expression, ImplicitCastInputTypes, NullIntolerant, TimeZoneAwareExpression, UnixTime}
+import org.apache.spark.sql.catalyst.expressions.{BinaryExpression, ExpectsInputTypes, Expression, ImplicitCastInputTypes, NullIntolerant, TimeZoneAwareExpression}
 import org.apache.spark.sql.types._
 import org.apache.spark.sql.vectorized.ColumnarBatch
 import org.apache.spark.unsafe.types.CalendarInterval
@@ -47,7 +47,7 @@ trait GpuTimeUnaryExpression extends GpuUnaryExpression with TimeZoneAwareExpres
   override lazy val resolved: Boolean = childrenResolved && checkInputDataTypes().isSuccess
 }
 
-case class GpuWeekDay(child: GpuExpression)
+case class GpuWeekDay(child: Expression)
     extends GpuDateUnaryExpression {
 
   override protected def doColumnar(input: GpuColumnVector): GpuColumnVector = {
@@ -59,7 +59,7 @@ case class GpuWeekDay(child: GpuExpression)
   }
 }
 
-case class GpuDayOfWeek(child: GpuExpression)
+case class GpuDayOfWeek(child: Expression)
     extends GpuDateUnaryExpression {
 
   override protected def doColumnar(input: GpuColumnVector): GpuColumnVector = {
@@ -493,4 +493,18 @@ case class GpuDateAdd(startDate: GpuExpression, days: GpuExpression) extends Gpu
   override def prettyName: String = "date_add"
 
   override def binaryOp: BinaryOp = BinaryOp.ADD
+}
+
+case class GpuLastDay(startDate: Expression)
+    extends GpuUnaryExpression with ImplicitCastInputTypes {
+  override def child: Expression = startDate
+
+  override def inputTypes: Seq[AbstractDataType] = Seq(DateType)
+
+  override def dataType: DataType = DateType
+
+  override def prettyName: String = "last_day"
+
+  override protected def doColumnar(input: GpuColumnVector): GpuColumnVector =
+    GpuColumnVector.from(input.getBase.lastDayOfMonth())
 }
