@@ -59,12 +59,12 @@ pipeline {
                         $DOCKER_CMD pull $IMAGE_NAME
                         $DOCKER_CMD logout https://urm.nvidia.com
                     """
-                    docker.image(IMAGE_NAME).inside("--runtime=nvidia -v ${HOME}/.m2:${HOME}/.m2:rw \
+                    docker.image(IMAGE_NAME).inside("--runtime=nvidia \
                         -v ${HOME}/.zinc:${HOME}/.zinc:rw \
                         -v /etc/passwd:/etc/passwd -v /etc/group:/etc/group") {
-                        sh "mvn -U -B clean deploy $MVN_URM_MIRROR"
-                        sh "jenkins/printJarVersion.sh 'CUDFVersion' '${HOME}/.m2/repository/ai/rapids/cudf/0.15-SNAPSHOT' 'cudf-0.15-SNAPSHOT' '-cuda10-1.jar'"
-                        sh "jenkins/printJarVersion.sh 'SPARKVersion' '${HOME}/.m2/repository/org/apache/spark/spark-core_2.12/3.0.0' 'spark-core_2.12-3.0.0-' '.jar'"
+                        sh "mvn -U -B clean deploy $MVN_URM_MIRROR -Dmaven.repo.local=$WORKSPACE/.m2"
+                        sh "jenkins/printJarVersion.sh 'CUDFVersion' '{$WORKSPACE}/.m2/repository/ai/rapids/cudf/0.15-SNAPSHOT' 'cudf-0.15-SNAPSHOT' '-cuda10-1.jar'"
+                        sh "jenkins/printJarVersion.sh 'SPARKVersion' '${WORKSPACE}/.m2/repository/org/apache/spark/spark-core_2.12/3.0.0' 'spark-core_2.12-3.0.0-' '.jar'"
                     }
                 }
             }
