@@ -85,6 +85,7 @@ export PATH=/databricks/conda/envs/databricks-ml-gpu/bin:/databricks/conda/conda
 sudo /databricks/conda/envs/databricks-ml-gpu/bin/pip install pytest sre_yield
 cd /home/ubuntu/spark-rapids/integration_tests
 export SPARK_HOME=/databricks/spark
+# change to not point at databricks confs so we don't conflict with their settings
 export SPARK_CONF_DIR=$PWD
 export PYTHONPATH=$SPARK_HOME/python:$SPARK_HOME/python/pyspark/:$SPARK_HOME/python/lib/py4j-0.10.9-src.zip
 sudo ln -s /databricks/jars/ $SPARK_HOME/jars || true

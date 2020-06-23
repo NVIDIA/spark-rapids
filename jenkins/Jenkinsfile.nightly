@@ -33,7 +33,7 @@ pipeline {
     parameters {
         choice(name: 'DEPLOY_TO', choices: ['Urm', 'Local'],
             description: 'Where to deploy artifacts to')
-        string(name: 'REF', defaultValue: 'branch-0.1', description: 'Commit to build')
+        string(name: 'REF', defaultValue: 'branch-0.2', description: 'Commit to build')
     }
 
     environment {
@@ -59,12 +59,12 @@ pipeline {
                         $DOCKER_CMD pull $IMAGE_NAME
                         $DOCKER_CMD logout https://urm.nvidia.com
                     """
-                    docker.image(IMAGE_NAME).inside("--runtime=nvidia -v ${HOME}/.m2:${HOME}/.m2:rw \
+                    docker.image(IMAGE_NAME).inside("--runtime=nvidia \
                         -v ${HOME}/.zinc:${HOME}/.zinc:rw \
                         -v /etc/passwd:/etc/passwd -v /etc/group:/etc/group") {
-                        sh "mvn -U -B clean deploy $MVN_URM_MIRROR"
-                        sh "jenkins/printJarVersion.sh 'CUDFVersion' '${HOME}/.m2/repository/ai/rapids/cudf/0.14' 'cudf-0.14' '-cuda10-1.jar'"
-                        sh "jenkins/printJarVersion.sh 'SPARKVersion' '${HOME}/.m2/repository/org/apache/spark/spark-core_2.12/3.0.0' 'spark-core_2.12-3.0.0-' '.jar'"
+                        sh "mvn -U -B clean deploy $MVN_URM_MIRROR -Dmaven.repo.local=$WORKSPACE/.m2"
+                        sh "jenkins/printJarVersion.sh 'CUDFVersion' '{$WORKSPACE}/.m2/repository/ai/rapids/cudf/0.15-SNAPSHOT' 'cudf-0.15-SNAPSHOT' '-cuda10-1.jar'"
+                        sh "jenkins/printJarVersion.sh 'SPARKVersion' '${WORKSPACE}/.m2/repository/org/apache/spark/spark-core_2.12/3.0.0' 'spark-core_2.12-3.0.0-' '.jar'"
                     }
                 }
             }
@@ -77,8 +77,8 @@ pipeline {
                 if (currentBuild.currentResult == "SUCCESS") {
                     build(job: 'spark/rapids_integration-0.1-github',
                           propagate: false,
-                          parameters: [string(name: 'REF', value: 'branch-0.1'),
-                                       string(name: 'CUDF_VER', value: '0.14'),
+                          parameters: [string(name: 'REF', value: 'branch-0.2'),
+                                       string(name: 'CUDF_VER', value: '0.15-SNAPSHOT'),
                                        booleanParam(name: 'BUILD_CENTOS7', value: false),])
 
                     slack("#rapidsai-spark-cicd", "Success", color: "#33CC33")

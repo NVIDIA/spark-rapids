@@ -41,9 +41,9 @@ pipeline {
     parameters {
         choice(name: 'DEPLOY_TO', choices: ['Urm', 'Local'],
             description: 'Where to deploy artifacts to')
-        string(name: 'REF', defaultValue: 'branch-0.1', description: 'Commit to build')
         string(name: 'DATABRICKS_VERSION',
-                defaultValue: '0.1-databricks-SNAPSHOT', description: 'Version to set')
+                defaultValue: '0.2-databricks-SNAPSHOT', description: 'Version to set')
+        string(name: 'REF', defaultValue: 'branch-0.2', description: 'Commit to build')
     }
 
     environment {
@@ -80,6 +80,11 @@ pipeline {
         always {
             script {
                 sh "python3.6 ./jenkins/databricks/shutdown.py -t $DATABRICKS_TOKEN"
+                if (currentBuild.currentResult == "SUCCESS") {
+                    slack("#rapidsai-spark-cicd", "Success", color: "#33CC33")
+                } else {
+                    slack("#rapidsai-spark-cicd", "Failed", color: "#FF0000")
+                }
             }
         }
     }
