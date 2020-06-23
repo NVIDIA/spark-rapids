@@ -34,21 +34,19 @@ if [ "$DATABRICKS" == true ]; then
 fi
 
 echo "Getting maven project artifactid"
-ART_ID=`mvn exec:exec -q -pl $DIST_PL -Dexec.executable=echo -Dexec.args='${project.artifactId}'`
-echo "Getting maven project version"
-ART_VER=`mvn exec:exec -q -pl $DIST_PL -Dexec.executable=echo -Dexec.args='${project.version}'`
+ART_ID=rapids-4-spark_2.12
+ART_VER=0.1.0-databricks
 
 FPATH="$DIST_PL/target/$ART_ID-$ART_VER"
 
 echo "Plan to deploy ${FPATH}.jar to $SERVER_URL (ID:$SERVER_ID)"
 
-
 ###### Choose the deploy command ######
 
 if [ "$SIGN_FILE" == true ]; then
     # No javadoc and sources jar is generated for shade artifact only. Use 'sql-plugin' instead
-    SQL_ART_ID=`mvn exec:exec -q -pl $SQL_PL -Dexec.executable=echo -Dexec.args='${project.artifactId}'`
-    SQL_ART_VER=`mvn exec:exec -q -pl $SQL_PL -Dexec.executable=echo -Dexec.args='${project.version}'`
+    SQL_ART_ID=rapids-4-spark-sql_2.12
+    SQL_ART_VER=0.1.0-databricks
     JS_FPATH="${SQL_PL}/target/${SQL_ART_ID}-${SQL_ART_VER}"
     SRC_DOC_JARS="-Dsources=${JS_FPATH}-sources.jar -Djavadoc=${JS_FPATH}-javadoc.jar"
     DEPLOY_CMD="mvn -B gpg:sign-and-deploy-file -s jenkins/settings.xml -Dgpg.passphrase=$GPG_PASSPHRASE"
