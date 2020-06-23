@@ -19,9 +19,10 @@ package com.nvidia.spark.rapids
 import java.sql.Timestamp
 
 import org.apache.spark.SparkConf
+
 import org.apache.spark.sql.{AnalysisException, DataFrame, SparkSession}
 import org.apache.spark.sql.execution.{SparkPlan, WholeStageCodegenExec}
-import org.apache.spark.sql.execution.adaptive.AdaptiveSparkPlanExec
+import org.apache.spark.sql.execution.adaptive.{BroadcastQueryStageExec, QueryStageExec, ShuffleQueryStageExec}
 import org.apache.spark.sql.execution.aggregate.SortAggregateExec
 import org.apache.spark.sql.functions._
 import org.apache.spark.sql.types.{DataType, DataTypes}
@@ -38,8 +39,15 @@ class HashAggregatesSuite extends SparkQueryCompareTestSuite {
   private def checkExecPlan(plan: SparkPlan): Unit = {
     val executedPlan = ExecutionPlanCaptureCallback.extractExecutedPlan(Some(plan))
     if (executedPlan.conf.getAllConfs(RapidsConf.SQL_ENABLED.key).toBoolean) {
-      assert(executedPlan.find(_.isInstanceOf[GpuHashAggregateExec]).isDefined,
-        "as the GPU plan expected a GPU aggregate but did not find any!")
+      val gpuAgg = executedPlan.find(_.isInstanceOf[GpuHashAggregateExec]) match {
+        case Some(agg) => Some(agg)
+        case _ => executedPlan.find(_.isInstanceOf[QueryStageExec]) match {
+          case Some(s: BroadcastQueryStageExec) => s.plan.find(_.isInstanceOf[GpuHashAggregateExec])
+          case Some(s: ShuffleQueryStageExec) => s.plan.find(_.isInstanceOf[GpuHashAggregateExec])
+          case _ => None
+        }
+      }
+      assert(gpuAgg.isDefined, "as the GPU plan expected a GPU aggregate but did not find any!")
     }
   }
 
@@ -115,11 +123,8 @@ class HashAggregatesSuite extends SparkQueryCompareTestSuite {
       val gpuPlan = if (SparkSessionHolder.adaptiveQueryEnabled) {
         ExecutionPlanCaptureCallback.startCapture()
         df.count()
-        ExecutionPlanCaptureCallback.getResultWithTimeout() match {
-          case Some(a: AdaptiveSparkPlanExec) => a.executedPlan
-          case Some(other) => other
-          case _ => fail("No executedPlan available")
-        }
+        ExecutionPlanCaptureCallback.extractExecutedPlan(
+          ExecutionPlanCaptureCallback.getResultWithTimeout())
       } else {
         df.queryExecution.executedPlan
       }
@@ -154,11 +159,8 @@ class HashAggregatesSuite extends SparkQueryCompareTestSuite {
       val gpuPlan = if (SparkSessionHolder.adaptiveQueryEnabled) {
         ExecutionPlanCaptureCallback.startCapture()
         df.count()
-        ExecutionPlanCaptureCallback.getResultWithTimeout() match {
-          case Some(a: AdaptiveSparkPlanExec) => a.executedPlan
-          case Some(other) => other
-          case _ => fail("No executedPlan available")
-        }
+        ExecutionPlanCaptureCallback.extractExecutedPlan(
+          ExecutionPlanCaptureCallback.getResultWithTimeout())
       } else {
         df.queryExecution.executedPlan
       }
