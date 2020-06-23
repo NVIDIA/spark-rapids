@@ -33,7 +33,7 @@ pipeline {
     parameters {
         choice(name: 'DEPLOY_TO', choices: ['Urm', 'Local'],
             description: 'Where to deploy artifacts to')
-        string(name: 'REF', defaultValue: 'branch-0.1', description: 'Commit to build')
+        string(name: 'REF', defaultValue: 'branch-0.2', description: 'Commit to build')
     }
 
     environment {
@@ -77,7 +77,7 @@ pipeline {
                 if (currentBuild.currentResult == "SUCCESS") {
                     build(job: 'spark/rapids_integration-0.1-github',
                           propagate: false,
-                          parameters: [string(name: 'REF', value: 'branch-0.1'),
+                          parameters: [string(name: 'REF', value: 'branch-0.2'),
                                        string(name: 'CUDF_VER', value: '0.15-SNAPSHOT'),
                                        booleanParam(name: 'BUILD_CENTOS7', value: false),])
 

@@ -33,7 +33,7 @@ pipeline {
     parameters {
         choice(name: 'DEPLOY_TO', choices: ['Urm', 'Local'],
             description: 'Where to deploy artifacts to')
-        string(name: 'REF', defaultValue: 'branch-0.1', description: 'Commit to build')
+        string(name: 'REF', defaultValue: 'branch-0.2', description: 'Commit to build')
     }
 
     environment {
