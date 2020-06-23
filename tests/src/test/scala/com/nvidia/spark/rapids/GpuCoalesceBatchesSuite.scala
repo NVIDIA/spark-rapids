@@ -128,8 +128,6 @@ class GpuCoalesceBatchesSuite extends SparkQueryCompareTestSuite {
 
     withGpuSparkSession(spark => {
 
-      ExecutionPlanCaptureCallback.startCapture()
-
       val df = longsCsvDf(spark)
 
       // currently, GpuSortExec requires a single batch but this is likely to change in the
@@ -138,11 +136,13 @@ class GpuCoalesceBatchesSuite extends SparkQueryCompareTestSuite {
         .sort(df.col("longs"))
 
       // execute the plan
+      ExecutionPlanCaptureCallback.startCapture()
       df2.collect()
 
-      val executedPlan = ExecutionPlanCaptureCallback.getResultWithTimeout().get match {
-        case a: AdaptiveSparkPlanExec => a.executedPlan
-        case other => other
+      val executedPlan = ExecutionPlanCaptureCallback.getResultWithTimeout() match {
+        case Some(a: AdaptiveSparkPlanExec) => a.executedPlan
+        case Some(other) => other
+        case _ => fail("No executedPlan available")
       }
 
       val coalesce = executedPlan
@@ -186,18 +186,18 @@ class GpuCoalesceBatchesSuite extends SparkQueryCompareTestSuite {
 
       withGpuSparkSession(spark => {
 
-        ExecutionPlanCaptureCallback.startCapture()
-
         val df = spark.read.parquet(path)
         val df2 = df
           .sort(df.col("longs"))
 
         // execute the plan
+        ExecutionPlanCaptureCallback.startCapture()
         df2.collect()
 
-        val executedPlan = ExecutionPlanCaptureCallback.getResultWithTimeout().get match {
-          case a: AdaptiveSparkPlanExec => a.executedPlan
-          case other => other
+        val executedPlan = ExecutionPlanCaptureCallback.getResultWithTimeout() match {
+          case Some(a: AdaptiveSparkPlanExec) => a.executedPlan
+          case Some(other) => other
+          case _ => fail("No executedPlan available")
         }
 
         // ensure that the plan does include the HostColumnarToGpu step

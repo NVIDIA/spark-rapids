@@ -119,8 +119,11 @@ class HashAggregatesSuite extends SparkQueryCompareTestSuite {
       val gpuPlan = if (SparkSessionHolder.adaptiveQueryEnabled) {
         ExecutionPlanCaptureCallback.startCapture()
         df.count()
-        ExecutionPlanCaptureCallback.getResultWithTimeout().get
-            .asInstanceOf[AdaptiveSparkPlanExec].executedPlan
+        ExecutionPlanCaptureCallback.getResultWithTimeout() match {
+          case Some(a: AdaptiveSparkPlanExec) => a.executedPlan
+          case Some(other) => other
+          case _ => fail("No executedPlan available")
+        }
       } else {
         df.queryExecution.executedPlan
       }
@@ -155,8 +158,11 @@ class HashAggregatesSuite extends SparkQueryCompareTestSuite {
       val gpuPlan = if (SparkSessionHolder.adaptiveQueryEnabled) {
         ExecutionPlanCaptureCallback.startCapture()
         df.count()
-        ExecutionPlanCaptureCallback.getResultWithTimeout().get
-            .asInstanceOf[AdaptiveSparkPlanExec].executedPlan
+        ExecutionPlanCaptureCallback.getResultWithTimeout() match {
+          case Some(a: AdaptiveSparkPlanExec) => a.executedPlan
+          case Some(other) => other
+          case _ => fail("No executedPlan available")
+        }
       } else {
         df.queryExecution.executedPlan
       }
