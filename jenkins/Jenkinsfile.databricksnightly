@@ -63,7 +63,7 @@ pipeline {
             steps {
                 script {
                     sshagent(credentials : ['svcngcc_pubpriv']) {
-                        sh "mvn versions:set -DnewVersion=0.1-databricks-SNAPSHOT && git clean -d -f"
+                        sh "mvn versions:set -DnewVersion=0.2.0-databricks-SNAPSHOT && git clean -d -f"
                         sh "patch -p1 < ./jenkins/databricks/dbimports.patch"
                         sh "tar -zcvf spark-rapids-ci.tgz * || true"
                         sh "python3.6 ./jenkins/databricks/run-tests.py -z ./spark-rapids-ci.tgz -t $DATABRICKS_TOKEN -p /home/svcngcc/.ssh/id_rsa -l ./jenkins/databricks/build.sh"
