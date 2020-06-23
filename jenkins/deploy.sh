@@ -63,7 +63,7 @@ $DEPLOY_CMD -Durl=$SERVER_URL -DrepositoryId=$SERVER_ID \
 
 ###### Deploy the artifact jar(s) ######
 
+# Distribution jar is a shaded artifact so use the reduced dependency pom.
 $DEPLOY_CMD -Durl=$SERVER_URL -DrepositoryId=$SERVER_ID \
             $SRC_DOC_JARS \
-            -Dfile=$FPATH.jar -DpomFile=${DIST_PL}/pom.xml
-
+            -Dfile=$FPATH.jar -DpomFile=${DIST_PL}/dependency-reduced-pom.xml
