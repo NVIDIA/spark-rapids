@@ -23,7 +23,8 @@ SCALA_VERSION=$3
 CI_RAPIDS_JAR=$4
 SPARK_VERSION=$5
 
-echo "spark version is $SPARK_VERSION"
+echo "Spark version is $SPARK_VERSION"
+echo "scala version is: $SCALA_VERSION"
 
 # this has to match the Databricks init script
 DB_JAR_LOC=/databricks/jars/$CI_RAPIDS_JAR
@@ -36,7 +37,6 @@ tar -zxvf $SPARKTGZ -C spark-rapids
 cd spark-rapids
 # pull normal Spark artifacts and ignore errors then install databricks jars, then build again
 mvn clean package || true
-echo "SCALA VERSION is: $SCALA_VERSION"
 M2DIR=/home/ubuntu/.m2/repository
 JARDIR=/databricks/jars
 SQLJAR=----workspace_spark_3_0--sql--core--core-hive-2.3__hadoop-2.7_${SCALA_VERSION}_deploy.jar
