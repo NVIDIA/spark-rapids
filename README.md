@@ -36,10 +36,13 @@ may file one [here](https://github.com/NVIDIA/spark-rapids/issues/new/choose).
 
 ## Releases
 
-For a list of releases please visit [here](https://github.com/NVIDIA/spark-rapids/releases/)
+For a list of releases please visit [here](https://github.com/NVIDIA/spark-rapids/releases/). 
+
 | Version | Description |
 |---------|-------------|
-| [0.1.0](https://github.com/NVIDIA/spark-rapids/releases/tag/v0.1.0)| First release|
+| [0.1.0](https://github.com/NVIDIA/spark-rapids/releases/tag/v0.1.0)| First release. |
+
+For more information about spark-rapids, please click [here](https://nvidia.github.io/spark-rapids/) 
 
 ## Build
 
