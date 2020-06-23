@@ -59,7 +59,7 @@ pipeline {
                         $DOCKER_CMD pull $IMAGE_NAME
                         $DOCKER_CMD logout https://urm.nvidia.com
                     """
-                    docker.image(IMAGE_NAME).inside("--runtime=nvidia -v ${HOME}/.m2:${HOME}/.m2:rw \
+                    docker.image(IMAGE_NAME).inside("--runtime=nvidia \
                         -v ${HOME}/.zinc:${HOME}/.zinc:rw \
                         -v /etc/passwd:/etc/passwd -v /etc/group:/etc/group") {
                         sh "mvn -U -B clean deploy $MVN_URM_MIRROR -Dmaven.repo.local=$WORKSPACE/.m2"
