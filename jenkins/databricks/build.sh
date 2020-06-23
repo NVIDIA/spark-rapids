@@ -92,6 +92,7 @@ sudo ln -s /databricks/jars/ $SPARK_HOME/jars || true
 sudo chmod 777 /databricks/data/logs/
 sudo chmod 777 /databricks/data/logs/*
 echo { \"port\":\"15002\" } > ~/.databricks-connect
+false
 $SPARK_HOME/bin/spark-submit ./runtests.py 2>&1 | tee out
 
 cd /home/ubuntu
