@@ -19,7 +19,6 @@ package com.nvidia.spark.rapids
 import java.sql.Timestamp
 
 import org.apache.spark.SparkConf
-
 import org.apache.spark.sql.{AnalysisException, DataFrame, SparkSession}
 import org.apache.spark.sql.execution.{SparkPlan, WholeStageCodegenExec}
 import org.apache.spark.sql.execution.adaptive.{BroadcastQueryStageExec, QueryStageExec, ShuffleQueryStageExec}

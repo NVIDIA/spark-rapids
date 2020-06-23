@@ -56,7 +56,7 @@ object SparkSessionHolder extends Logging {
   val SPARK_SQL_ADAPTIVE_ENABLED = "spark.sql.adaptive.enabled"
 
   @transient
-  var adaptiveQueryEnabled: Boolean = true
+  var adaptiveQueryEnabled: Boolean = false
 
   val spark = {
     // Timezone is fixed to UTC to allow timestamps to work by default

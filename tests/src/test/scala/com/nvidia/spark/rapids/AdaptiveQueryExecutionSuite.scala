@@ -15,32 +15,44 @@
  */
 package com.nvidia.spark.rapids
 
-import org.scalatest.{BeforeAndAfterAll, Suites}
+import scala.collection.immutable
+
+import org.scalatest.{BeforeAndAfterAll, DoNotDiscover, Suite}
 
 /**
  * Runs all of the test suites with Adaptive Query Execution enabled.
  */
-class AdaptiveQueryExecutionSuite extends Suites (
-    new AnsiCastOpSuite,
-    new CastOpSuite,
-    new CsvScanSuite,
-    new ExpandExecSuite,
-    new GpuBatchUtilsSuite,
-    new GpuCoalesceBatchesSuite,
-    new HashAggregatesSuite,
-    new HashSortOptimizeSuite,
-    new LimitExecSuite,
-    new OrcScanSuite,
-    new ParquetScanSuite,
-    new ParquetWriterSuite,
-    new ProjectExprSuite,
-    new SortExecSuite,
-    new StringFallbackSuite,
-    new WindowFunctionSuite)
+class AdaptiveQueryExecutionSuite extends Suite
   with BeforeAndAfterAll {
 
   override protected def beforeAll(): Unit = {
     SparkSessionHolder.adaptiveQueryEnabled = true
+  }
+
+  override def nestedSuites: immutable.IndexedSeq[Suite] = {
+    // we need to enable AQE before registering the tests so
+    // that the test names are correct
+    SparkSessionHolder.adaptiveQueryEnabled = true
+    try {
+      Seq(new AnsiCastOpSuiteAdaptive,
+        new CastOpSuiteAdaptive,
+        new CsvScanSuiteAdaptive,
+        new ExpandExecSuiteAdaptive,
+        new GpuBatchUtilsSuiteAdaptive,
+        new GpuCoalesceBatchesSuiteAdaptive,
+        new HashAggregatesSuiteAdaptive,
+        new HashSortOptimizeSuiteAdaptive,
+        new LimitExecSuiteAdaptive,
+        new OrcScanSuiteAdaptive,
+        new ParquetScanSuiteAdaptive,
+        new ParquetWriterSuiteAdaptive,
+        new ProjectExprSuiteAdaptive,
+        new SortExecSuiteAdaptive,
+        new StringFallbackSuiteAdaptive,
+        new WindowFunctionSuiteAdaptive).toIndexedSeq
+    } finally {
+      SparkSessionHolder.adaptiveQueryEnabled = false
+    }
   }
 
   override protected def afterAll(): Unit = {
@@ -48,3 +60,21 @@ class AdaptiveQueryExecutionSuite extends Suites (
   }
 }
 
+// we need the AQE suites to have unique names so that they don't overwrite
+// surefire results from the original suites
+@DoNotDiscover class AnsiCastOpSuiteAdaptive extends AnsiCastOpSuite
+@DoNotDiscover class CastOpSuiteAdaptive extends CastOpSuite
+@DoNotDiscover class CsvScanSuiteAdaptive extends CsvScanSuite
+@DoNotDiscover class ExpandExecSuiteAdaptive extends ExpandExecSuite
+@DoNotDiscover class GpuBatchUtilsSuiteAdaptive extends GpuBatchUtilsSuite
+@DoNotDiscover class GpuCoalesceBatchesSuiteAdaptive extends GpuCoalesceBatchesSuite
+@DoNotDiscover class HashAggregatesSuiteAdaptive extends HashAggregatesSuite
+@DoNotDiscover class HashSortOptimizeSuiteAdaptive extends HashSortOptimizeSuite
+@DoNotDiscover class LimitExecSuiteAdaptive extends LimitExecSuite
+@DoNotDiscover class OrcScanSuiteAdaptive extends OrcScanSuite
+@DoNotDiscover class ParquetScanSuiteAdaptive extends ParquetScanSuite
+@DoNotDiscover class ParquetWriterSuiteAdaptive extends ParquetWriterSuite
+@DoNotDiscover class ProjectExprSuiteAdaptive extends ProjectExprSuite
+@DoNotDiscover class SortExecSuiteAdaptive extends SortExecSuite
+@DoNotDiscover class StringFallbackSuiteAdaptive extends StringFallbackSuite
+@DoNotDiscover class WindowFunctionSuiteAdaptive extends WindowFunctionSuite

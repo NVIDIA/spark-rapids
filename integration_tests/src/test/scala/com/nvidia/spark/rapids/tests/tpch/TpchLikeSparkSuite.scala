@@ -23,16 +23,18 @@ import org.scalatest.{BeforeAndAfterAll, FunSuite}
 import org.apache.spark.sql.{DataFrame, SparkSession}
 import org.apache.spark.sql.execution.adaptive.AdaptiveSparkPlanExec
 
-class TpchLikeSparkSuite extends FunSuite with BeforeAndAfterAll {
+object TpchLikeSparkSuite {
+  @transient
+  var adaptiveQueryEnabled = false
+}
 
-  val adaptiveQueryEnabled = Option(System.getProperty("spark.sql.adaptive.enabled"))
-      .getOrElse("false").toBoolean
+class TpchLikeSparkSuite extends FunSuite with BeforeAndAfterAll {
+  import TpchLikeSparkSuite._
 
   lazy val session: SparkSession = {
     var builder = SparkSession.builder
       .master("local[2]")
       .appName("TPCHLikeTest")
-      .config("spark.sql.adaptive.enabled", adaptiveQueryEnabled)
       .config("spark.sql.join.preferSortMergeJoin", false)
       .config("spark.sql.shuffle.partitions", 2)
       .config("spark.sql.queryExecutionListeners",
@@ -98,126 +100,115 @@ class TpchLikeSparkSuite extends FunSuite with BeforeAndAfterAll {
     }).max())
   }
 
-  private def testTpchLike(expectedRowCount: Int, df: DataFrame): Unit = {
-    ExecutionPlanCaptureCallback.startCapture()
-    val c = df.count()
-    val plan = ExecutionPlanCaptureCallback.getResultWithTimeout()
-    assert(plan.isDefined)
+  private def testTpchLike(
+      name: String,
+      expectedRowCount: Int)
+      (fun: SparkSession => DataFrame): Unit = {
+    var qualifiedName = name
     if (adaptiveQueryEnabled) {
-      assert(plan.get.isInstanceOf[AdaptiveSparkPlanExec])
-    } else {
-      assert(!plan.get.isInstanceOf[AdaptiveSparkPlanExec])
+      qualifiedName += " AQE"
     }
-    assert(expectedRowCount == c)
+    test(qualifiedName) {
+      session.conf.set("spark.sql.adaptive.enabled", adaptiveQueryEnabled)
+      ExecutionPlanCaptureCallback.startCapture()
+      val df = fun(session)
+      val c = df.count()
+      val plan = ExecutionPlanCaptureCallback.getResultWithTimeout()
+      assert(plan.isDefined)
+      if (adaptiveQueryEnabled) {
+        assert(plan.get.isInstanceOf[AdaptiveSparkPlanExec])
+      } else {
+        assert(!plan.get.isInstanceOf[AdaptiveSparkPlanExec])
+      }
+      assert(expectedRowCount == c)
+    }
   }
 
-  test("Something like TPCH Query 1") {
-    val df = Q1Like(session)
-    testTpchLike(4, df)
+  testTpchLike("Something like TPCH Query 1", 4) {
+    session => Q1Like(session)
   }
 
-  test("Something like TPCH Query 2") {
-    val df = Q2Like(session)
-    testTpchLike(1, df)
+  testTpchLike("Something like TPCH Query 2", 1) {
+    session => Q2Like(session)
   }
 
-  test("Something like TPCH Query 3") {
-    val df = Q3Like(session)
-    testTpchLike(3, df)
+  testTpchLike("Something like TPCH Query 3", 3) {
+    session => Q3Like(session)
   }
 
-  test("Something like TPCH Query 4") {
-    val df = Q4Like(session)
-    testTpchLike(5, df)
+  testTpchLike("Something like TPCH Query 4", 5) {
+    session => Q4Like(session)
   }
 
-  test("Something like TPCH Query 5") {
-    val df = Q5Like(session)
-    testTpchLike(1, df)
+  testTpchLike("Something like TPCH Query 5", 1) {
+    session => Q5Like(session)
   }
 
-  test("Something like TPCH Query 6") {
-    val df = Q6Like(session)
-    testTpchLike(1, df)
+  testTpchLike("Something like TPCH Query 6", 1) {
+    session => Q6Like(session)
   }
 
-  test("Something like TPCH Query 7") {
-    val df = Q7Like(session)
-    testTpchLike(0, df)
+  testTpchLike("Something like TPCH Query 7", 0) {
+    session => Q7Like(session)
   }
 
-  test("Something like TPCH Query 8") {
-    val df = Q8Like(session)
-    testTpchLike(0, df)
+  testTpchLike("Something like TPCH Query 8", 0) {
+    session => Q8Like(session)
   }
 
-  test("Something like TPCH Query 9") {
-    val df = Q9Like(session)
-    testTpchLike(5, df)
+  testTpchLike("Something like TPCH Query 9", 5) {
+    session => Q9Like(session)
   }
 
-  test("Something like TPCH Query 10") {
-    val df = Q10Like(session)
-    testTpchLike(4, df)
+  testTpchLike("Something like TPCH Query 10", 4) {
+    session => Q10Like(session)
   }
 
-  test("Something like TPCH Query 11") {
-    val df = Q11Like(session)
-    testTpchLike(47, df)
+  testTpchLike("Something like TPCH Query 11", 47) {
+    session => Q11Like(session)
   }
 
-  test("Something like TPCH Query 12") {
-    val df = Q12Like(session)
-    testTpchLike(2, df)
+  testTpchLike("Something like TPCH Query 12", 2) {
+    session => Q12Like(session)
   }
 
-  test("Something like TPCH Query 13") {
-    val df = Q13Like(session)
-    testTpchLike(6, df)
+  testTpchLike("Something like TPCH Query 13", 6) {
+    session => Q13Like(session)
   }
 
-  test("Something like TPCH Query 14") {
-    val df = Q14Like(session)
-    testTpchLike(1, df)
+  testTpchLike("Something like TPCH Query 14", 1) {
+    session => Q14Like(session)
   }
 
-  test("Something like TPCH Query 15") {
-    val df = Q15Like(session)
-    testTpchLike(1, df)
+  testTpchLike("Something like TPCH Query 15", 1) {
+    session => Q15Like(session)
   }
 
-  test("Something like TPCH Query 16") {
-    val df = Q16Like(session)
-    testTpchLike(42, df)
+  testTpchLike("Something like TPCH Query 16", 42) {
+    session => Q16Like(session)
   }
 
-  test("Something like TPCH Query 17") {
-    val df = Q17Like(session)
-    testTpchLike(1, df)
+  testTpchLike("Something like TPCH Query 17", 1) {
+    session => Q17Like(session)
   }
 
-  test("Something like TPCH Query 18") {
-    val df = Q18Like(session)
-    testTpchLike(0, df)
+  testTpchLike("Something like TPCH Query 18", 0) {
+    session => Q18Like(session)
   }
 
-  test("Something like TPCH Query 19") {
-    val df = Q19Like(session)
-    testTpchLike(1, df)
+  testTpchLike("Something like TPCH Query 19", 1) {
+    session => Q19Like(session)
   }
 
-  test("Something like TPCH Query 20") {
-    val df = Q20Like(session)
-    testTpchLike(0, df)
+  testTpchLike("Something like TPCH Query 20", 0) {
+    session => Q20Like(session)
   }
 
-  test("Something like TPCH Query 21") {
-    val df = Q21Like(session)
-    testTpchLike(0, df)
+  testTpchLike("Something like TPCH Query 21", 0) {
+    session => Q21Like(session)
   }
 
-  test("Something like TPCH Query 22") {
-    val df = Q22Like(session)
-    testTpchLike(7, df)
+  testTpchLike("Something like TPCH Query 22", 7) {
+    session => Q22Like(session)
   }
 }
