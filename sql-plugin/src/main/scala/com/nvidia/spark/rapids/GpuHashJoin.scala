@@ -18,7 +18,7 @@ package com.nvidia.spark.rapids
 import ai.rapids.cudf.{NvtxColor, Table}
 
 import org.apache.spark.sql.catalyst.expressions.{Attribute, Expression}
-import org.apache.spark.sql.catalyst.plans.{Inner, JoinType, LeftAnti, LeftOuter, LeftSemi}
+import org.apache.spark.sql.catalyst.plans.{ExistenceJoin, FullOuter, Inner, InnerLike, JoinType, LeftAnti, LeftExistence, LeftOuter, LeftSemi, RightOuter}
 import org.apache.spark.sql.execution.joins.{BuildLeft, BuildRight, HashJoin}
 import org.apache.spark.sql.execution.metric.SQLMetric
 import org.apache.spark.sql.vectorized.{ColumnarBatch, ColumnVector}
@@ -27,8 +27,18 @@ object GpuHashJoin {
   def tagJoin(
       meta: RapidsMeta[_, _, _],
       joinType: JoinType,
+      leftKeys: Seq[Expression],
+      rightKeys: Seq[Expression],
       condition: Option[Expression]): Unit = joinType match {
     case Inner =>
+    case FullOuter =>
+      if (leftKeys.exists(_.nullable) || rightKeys.exists(_.nullable)) {
+        // https://github.com/rapidsai/cudf/issues/5563
+        meta.willNotWorkOnGpu("Full outer join does not work on nullable keys")
+      }
+      if (condition.isDefined) {
+        meta.willNotWorkOnGpu(s"$joinType joins currently do not support conditions")
+      }
     case LeftOuter | LeftSemi | LeftAnti =>
       if (condition.isDefined) {
         meta.willNotWorkOnGpu(s"$joinType joins currently do not support conditions")
@@ -38,6 +48,25 @@ object GpuHashJoin {
 }
 
 trait GpuHashJoin extends GpuExec with HashJoin {
+
+  override def output: Seq[Attribute] = {
+    joinType match {
+      case _: InnerLike =>
+        left.output ++ right.output
+      case LeftOuter =>
+        left.output ++ right.output.map(_.withNullability(true))
+      case RightOuter =>
+        left.output.map(_.withNullability(true)) ++ right.output
+      case j: ExistenceJoin =>
+        left.output :+ j.exists
+      case LeftExistence(_) =>
+        left.output
+      case FullOuter =>
+        left.output.map(_.withNullability(true)) ++ right.output.map(_.withNullability(true))
+      case x =>
+        throw new IllegalArgumentException(s"GpuHashJoin should not take $x as the JoinType")
+    }
+  }
 
   protected lazy val (gpuBuildKeys, gpuStreamedKeys) = {
     require(leftKeys.map(_.dataType) == rightKeys.map(_.dataType),
@@ -122,6 +151,9 @@ trait GpuHashJoin extends GpuExec with HashJoin {
       case LeftAnti =>
         leftTable.onColumns(joinKeyIndices: _*)
           .leftAntiJoin(rightTable.onColumns(joinKeyIndices: _*))
+      case FullOuter =>
+        leftTable.onColumns(joinKeyIndices: _*)
+            .fullJoin(rightTable.onColumns(joinKeyIndices: _*))
       case _ => throw new NotImplementedError(s"Joint Type ${joinType.getClass} is not currently" +
         s" supported")
     }

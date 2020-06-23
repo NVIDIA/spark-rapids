@@ -53,6 +53,11 @@ class JoinsSuite extends SparkQueryCompareTestSuite {
     (A, B) => A.join(B, A("longs") === B("longs"), "LeftAnti")
   }
 
+  IGNORE_ORDER_testSparkResultsAreEqual2("Test hash full join", longsDf, biggerLongsDf,
+    conf = shuffledJoinConf) {
+    (A, B) => A.join(B, A("longs") === B("longs"), "FullOuter")
+  }
+
   // test replacement of sort merge join with hash join
   // make sure broadcast size small enough it doesn't get used
   testSparkResultsAreEqual2("Test replace sort merge join with hash join",
