@@ -51,6 +51,7 @@ class RapidsHostMemoryStoreSuite extends FunSuite with Arm with MockitoSugar {
         val ct = buildContiguousTable()
         val bufferSize = ct.getBuffer.getLength
         try {
+          // store takes ownership of the table
           devStore.addTable(bufferId, ct.getTable, ct.getBuffer, spillPriority)
         } catch {
           case t: Throwable =>
@@ -85,6 +86,7 @@ class RapidsHostMemoryStoreSuite extends FunSuite with Arm with MockitoSugar {
         try {
           withResource(HostMemoryBuffer.allocate(ct.getBuffer.getLength)) { expectedBuffer =>
             expectedBuffer.copyFromDeviceBuffer(ct.getBuffer)
+            // store takes ownership of the table
             devStore.addTable(bufferId, ct.getTable, ct.getBuffer, spillPriority)
             ct = null
 
@@ -118,6 +120,7 @@ class RapidsHostMemoryStoreSuite extends FunSuite with Arm with MockitoSugar {
         var ct = buildContiguousTable()
         try {
           withResource(GpuColumnVector.from(ct.getTable)) { expectedBatch =>
+            // store takes ownership of the table
             devStore.addTable(bufferId, ct.getTable, ct.getBuffer, spillPriority)
             ct = null
 
