@@ -53,19 +53,16 @@ class HashSortOptimizeSuite extends FunSuite with BeforeAndAfterAll {
    * specified join node.
    **/
   private def validateOptimizeSort(queryPlan: SparkPlan, joinNode: SparkPlan): Unit = {
-    queryPlan match {
-      case a: AdaptiveSparkPlanExec => validateOptimizeSort(a.executedPlan, joinNode)
-      case _ =>
-        val sortNode = queryPlan.find(_.isInstanceOf[GpuSortExec])
-        assert(sortNode.isDefined, "No sort node found")
-        val gse = sortNode.get.asInstanceOf[GpuSortExec]
-        assert(gse.children.length == 1)
-        assert(gse.global == false)
-        assert(gse.coalesceGoal.isInstanceOf[TargetSize])
-        val sortChild = gse.children.head
-        assert(sortChild.isInstanceOf[GpuCoalesceBatches])
-        assertResult(joinNode) { sortChild.children.head }
-    }
+    val executedPlan = ExecutionPlanCaptureCallback.extractExecutedPlan(Some(queryPlan))
+    val sortNode = executedPlan.find(_.isInstanceOf[GpuSortExec])
+    assert(sortNode.isDefined, "No sort node found")
+    val gse = sortNode.get.asInstanceOf[GpuSortExec]
+    assert(gse.children.length == 1)
+    assert(gse.global == false)
+    assert(gse.coalesceGoal.isInstanceOf[TargetSize])
+    val sortChild = gse.children.head
+    assert(sortChild.isInstanceOf[GpuCoalesceBatches])
+    assertResult(joinNode) { sortChild.children.head }
   }
 
   test("sort inserted after broadcast hash join") {

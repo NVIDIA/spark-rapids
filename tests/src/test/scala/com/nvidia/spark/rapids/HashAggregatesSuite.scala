@@ -36,14 +36,10 @@ class HashAggregatesSuite extends SparkQueryCompareTestSuite {
   }
 
   private def checkExecPlan(plan: SparkPlan): Unit = {
-    plan match {
-      case a: AdaptiveSparkPlanExec => checkExecPlan(a.executedPlan)
-      case _ =>
-        if (plan.conf.getAllConfs(RapidsConf.SQL_ENABLED.key).toBoolean) {
-          assert(plan.find {
-            _.isInstanceOf[GpuHashAggregateExec]
-          }.isDefined, "as the GPU plan expected a GPU aggregate but did not find any!")
-        }
+    val executedPlan = ExecutionPlanCaptureCallback.extractExecutedPlan(Some(plan))
+    if (executedPlan.conf.getAllConfs(RapidsConf.SQL_ENABLED.key).toBoolean) {
+      assert(executedPlan.find(_.isInstanceOf[GpuHashAggregateExec]).isDefined,
+        "as the GPU plan expected a GPU aggregate but did not find any!")
     }
   }
 

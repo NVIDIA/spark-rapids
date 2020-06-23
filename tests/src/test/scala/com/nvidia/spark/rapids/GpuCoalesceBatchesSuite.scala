@@ -138,12 +138,8 @@ class GpuCoalesceBatchesSuite extends SparkQueryCompareTestSuite {
       // execute the plan
       ExecutionPlanCaptureCallback.startCapture()
       df2.collect()
-
-      val executedPlan = ExecutionPlanCaptureCallback.getResultWithTimeout() match {
-        case Some(a: AdaptiveSparkPlanExec) => a.executedPlan
-        case Some(other) => other
-        case _ => fail("No executedPlan available")
-      }
+      val executedPlan = ExecutionPlanCaptureCallback.extractExecutedPlan(
+        ExecutionPlanCaptureCallback.getResultWithTimeout())
 
       val coalesce = executedPlan
         .find(_.isInstanceOf[GpuCoalesceBatches]).get
@@ -194,11 +190,8 @@ class GpuCoalesceBatchesSuite extends SparkQueryCompareTestSuite {
         ExecutionPlanCaptureCallback.startCapture()
         df2.collect()
 
-        val executedPlan = ExecutionPlanCaptureCallback.getResultWithTimeout() match {
-          case Some(a: AdaptiveSparkPlanExec) => a.executedPlan
-          case Some(other) => other
-          case _ => fail("No executedPlan available")
-        }
+        val executedPlan = ExecutionPlanCaptureCallback.extractExecutedPlan(
+          ExecutionPlanCaptureCallback.getResultWithTimeout())
 
         // ensure that the plan does include the HostColumnarToGpu step
         val hostColumnarToGpu = executedPlan

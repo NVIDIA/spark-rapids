@@ -280,6 +280,14 @@ object ExecutionPlanCaptureCallback {
     }
   }
 
+  def extractExecutedPlan(plan: Option[SparkPlan]): SparkPlan = {
+    plan match {
+      case Some(p: AdaptiveSparkPlanExec) => p.executedPlan
+      case Some(p) => p
+      case _ => throw new IllegalStateException("No execution plan available")
+    }
+  }
+
   def assertCapturedAndGpuFellBack(fallbackCpuClass: String, timeoutMs: Long = 2000): Unit = {
     val gpuPlan = getResultWithTimeout(timeoutMs=timeoutMs)
     assert(gpuPlan.isDefined, "Did not capture a GPU plan")
@@ -287,11 +295,9 @@ object ExecutionPlanCaptureCallback {
   }
 
   def assertDidFallBack(gpuPlan: SparkPlan, fallbackCpuClass: String): Unit = {
-    gpuPlan match {
-      case p: AdaptiveSparkPlanExec => assertDidFallBack(p.executedPlan, fallbackCpuClass)
-      case _ => assert(gpuPlan.find(didFallBack(_, fallbackCpuClass)).isDefined,
-        s"Could not find $fallbackCpuClass in the GPU plan\n$gpuPlan")
-    }
+    val executedPlan = ExecutionPlanCaptureCallback.extractExecutedPlan(Some(gpuPlan))
+    assert(executedPlan.find(didFallBack(_, fallbackCpuClass)).isDefined,
+        s"Could not find $fallbackCpuClass in the GPU plan\n$executedPlan")
   }
 
   private def getBaseNameFromClass(planClassStr: String): String = {
@@ -309,8 +315,8 @@ object ExecutionPlanCaptureCallback {
   }
 
   private def didFallBack(plan: SparkPlan, fallbackCpuClass: String): Boolean = {
-    plan match {
-      case p: AdaptiveSparkPlanExec => didFallBack(p.executedPlan, fallbackCpuClass)
+    val executedPlan = ExecutionPlanCaptureCallback.extractExecutedPlan(Some(plan))
+    executedPlan match {
       case p: GpuExec if getBaseNameFromClass(p.getClass.getName) == fallbackCpuClass => true
       case _ => plan.expressions.exists(didFallBack(_, fallbackCpuClass))
     }
