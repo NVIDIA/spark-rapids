@@ -954,6 +954,12 @@ object GpuOverrides {
         override def convertToGpu(expr: GpuExpression): GpuExpression =
           GpuWeekDay(expr)
       }),
+    expr[DayOfWeek](
+      "Returns the day of the week (1 = Sunday...7=Saturday)",
+      (a, conf, p, r) => new UnaryExprMeta[DayOfWeek](a, conf, p, r) {
+        override def convertToGpu(expr: GpuExpression): GpuExpression =
+          GpuDayOfWeek(expr)
+      }),
     expr[FromUnixTime](
       "get the String from a unix timestamp",
       (a, conf, p, r) => new UnixTimeExprMeta[FromUnixTime](a, conf, p, r) {

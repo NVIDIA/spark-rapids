@@ -118,6 +118,7 @@ Name | Description | Default Value | Incompatibilities
 <a name="sql.expression.DateDiff"></a>spark.rapids.sql.expression.DateDiff|datediff|true|None|
 <a name="sql.expression.DateSub"></a>spark.rapids.sql.expression.DateSub|Returns the date that is num_days before start_date|true|None|
 <a name="sql.expression.DayOfMonth"></a>spark.rapids.sql.expression.DayOfMonth|get the day of the month from a date or timestamp|true|None|
+<a name="sql.expression.DayOfWeek"></a>spark.rapids.sql.expression.DayOfWeek|Returns the day of the week (1 = Sunday...7=Saturday)|true|None|
 <a name="sql.expression.Divide"></a>spark.rapids.sql.expression.Divide|division|true|None|
 <a name="sql.expression.EndsWith"></a>spark.rapids.sql.expression.EndsWith|Ends With|true|None|
 <a name="sql.expression.EqualNullSafe"></a>spark.rapids.sql.expression.EqualNullSafe|check if the values are equal including nulls <=>|true|None|

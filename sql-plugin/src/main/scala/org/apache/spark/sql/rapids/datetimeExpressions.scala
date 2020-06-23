@@ -59,6 +59,25 @@ case class GpuWeekDay(child: GpuExpression)
   }
 }
 
+case class GpuDayOfWeek(child: GpuExpression)
+    extends GpuDateUnaryExpression {
+
+  override protected def doColumnar(input: GpuColumnVector): GpuColumnVector = {
+    // Cudf returns Monday = 1, ...
+    // We want Sunday = 1, ..., so add a day before we extract the day of the week
+    val nextInts = withResource(Scalar.fromInt(1)) { one =>
+      withResource(input.getBase.asInts()) { ints =>
+        ints.add(one)
+      }
+    }
+    withResource(nextInts) { nextInts =>
+      withResource(nextInts.asTimestampDays()) { daysAgain =>
+        GpuColumnVector.from(daysAgain.weekDay())
+      }
+    }
+  }
+}
+
 case class GpuMinute(child: GpuExpression, timeZoneId: Option[String] = None)
     extends GpuTimeUnaryExpression {
 
