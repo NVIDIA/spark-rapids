@@ -79,7 +79,10 @@ mvn install:install-file \
 
 mvn -Pdatabricks clean verify -DskipTests
 
-# copy so we pick up new built jar
+# Copy so we pick up new built jar. Note that the jar name rapids-4-spark_2.12-0.1-SNAPSHOT-ci.jar has to be
+# exactly that because its based on the staticly setup Databricks cluster we use. That cluster specifically
+# installs the jar with the name rapids-4-spark_2.12-0.1-SNAPSHOT-ci.jar. Do not change that name
+# without changing the Databricks cluster setup.
 sudo cp dist/target/rapids-4-spark_2.12-*-SNAPSHOT.jar /databricks/jars/rapids-4-spark_2.12-0.1-SNAPSHOT-ci.jar
 
 # tests
