@@ -131,6 +131,11 @@ def test_dayofmonth(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : unary_op_df(spark, data_gen).select(f.dayofmonth(f.col('a'))))
 
+@pytest.mark.parametrize('data_gen', date_gens, ids=idfn)
+def test_dayofyear(data_gen):
+    assert_gpu_and_cpu_are_equal_collect(
+            lambda spark : unary_op_df(spark, data_gen).select(f.dayofyear(f.col('a'))))
+
 @incompat #Really only the string is
 @pytest.mark.parametrize('data_gen', date_n_time_gens, ids=idfn)
 def test_unix_timestamp(data_gen):

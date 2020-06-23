@@ -228,6 +228,11 @@ case class GpuDayOfMonth(child: Expression) extends GpuDateUnaryExpression {
     GpuColumnVector.from(input.getBase.day())
 }
 
+case class GpuDayOfYear(child: Expression) extends GpuDateUnaryExpression {
+  override def doColumnar(input: GpuColumnVector): GpuColumnVector =
+    GpuColumnVector.from(input.getBase.dayOfYear())
+}
+
 abstract class UnixTimeExprMeta[A <: BinaryExpression with TimeZoneAwareExpression]
    (expr: A, conf: RapidsConf,
    parent: Option[RapidsMeta[_, _, _]],
