@@ -77,7 +77,7 @@ mvn install:install-file \
    -Dversion=$VERSION \
    -Dpackaging=jar
 
-mvn -Pdatabricks clean verify -DskipTests
+mvn -Pdatabricks -Psource-javadoc clean verify -DskipTests
 
 # copy so we pick up new built jar
 sudo cp dist/target/rapids-4-spark_2.12-0.1.0-databricks.jar /databricks/jars/rapids-4-spark_2.12-0.1-SNAPSHOT-ci.jar

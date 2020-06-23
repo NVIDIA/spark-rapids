@@ -30,9 +30,12 @@ if [ "$DATABRICKS" == true ]; then
     cd deploy
     tar -zxvf ../spark-rapids-built.tgz
     cd spark-rapids
+    echo "chagned to spark-rapids"
 fi
 
+echo "Getting maven project artifactid"
 ART_ID=`mvn exec:exec -q -pl $DIST_PL -Dexec.executable=echo -Dexec.args='${project.artifactId}'`
+echo "Getting maven project version"
 ART_VER=`mvn exec:exec -q -pl $DIST_PL -Dexec.executable=echo -Dexec.args='${project.version}'`
 
 FPATH="$DIST_PL/target/$ART_ID-$ART_VER"
