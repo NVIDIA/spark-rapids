@@ -142,16 +142,16 @@ def main():
   print("Copying source")
   rsync_command = "rsync -I -Pave \"ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -p 2200 -i %s\" %s ubuntu@%s:%s" % (private_key_file, source_tgz, master_addr, tgz_dest)
   print("rsync command: %s" % rsync_command)
-  os.system(rsync_command)
+  subprocess.check_call(rsync_command, shell = True)
 
   ssh_command = "ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null ubuntu@%s -p 2200 -i %s %s %s %s %s %s %s 2>&1 | tee buildout" % (master_addr, private_key_file, script_dest, tgz_dest, db_version, scala_version, ci_rapids_jar, spark_version)
   print("ssh command: %s" % ssh_command)
-  os.system(ssh_command)
+  subprocess.check_call(ssh_command, shell = True)
 
   print("Copying built tarball back")
   rsync_command = "rsync  -I -Pave \"ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -p 2200 -i %s\" ubuntu@%s:/home/ubuntu/spark-rapids-built.tgz ./" % (private_key_file, master_addr)
   print("rsync command to get built tarball: %s" % rsync_command)
-  os.system(rsync_command)
+  subprocess.check_call(rsync_command, shell = True)
 
 if __name__ == '__main__':
   main()
