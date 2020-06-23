@@ -47,6 +47,18 @@ trait GpuTimeUnaryExpression extends GpuUnaryExpression with TimeZoneAwareExpres
   override lazy val resolved: Boolean = childrenResolved && checkInputDataTypes().isSuccess
 }
 
+case class GpuWeekDay(child: GpuExpression)
+    extends GpuDateUnaryExpression {
+
+  override protected def doColumnar(input: GpuColumnVector): GpuColumnVector = {
+    withResource(Scalar.fromShort(1.toShort)) { one =>
+      withResource(input.getBase.weekDay()) { weekday => // We want Monday = 0, CUDF Monday = 1
+        GpuColumnVector.from(weekday.sub(one))
+      }
+    }
+  }
+}
+
 case class GpuMinute(child: GpuExpression, timeZoneId: Option[String] = None)
     extends GpuTimeUnaryExpression {
 
