@@ -92,11 +92,6 @@ sudo ln -s /databricks/jars/ $SPARK_HOME/jars || true
 sudo chmod 777 /databricks/data/logs/
 sudo chmod 777 /databricks/data/logs/*
 echo { \"port\":\"15002\" } > ~/.databricks-connect
-$SPARK_HOME/bin/spark-submit ./runtests.py 2>&1 | tee out
-if [ "${PIPESTATUS[0]}" -ne "0" ]; then
-    echo "Failure running tests"
-    exit 2
-fi
-
+$SPARK_HOME/bin/spark-submit ./runtests.py
 cd /home/ubuntu
 tar -zcvf spark-rapids-built.tgz spark-rapids
