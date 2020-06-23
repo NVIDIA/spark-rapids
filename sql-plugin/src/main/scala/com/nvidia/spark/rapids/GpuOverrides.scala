@@ -583,6 +583,11 @@ object GpuOverrides {
       (a, conf, p, r) => new UnaryExprMeta[Month](a, conf, p, r) {
         override def convertToGpu(child: GpuExpression): GpuExpression = GpuMonth(child)
       }),
+    expr[Quarter](
+      "returns the quarter of the year for date, in the range 1 to 4.",
+      (a, conf, p, r) => new UnaryExprMeta[Quarter](a, conf, p, r) {
+        override def convertToGpu(child: GpuExpression): GpuExpression = GpuQuarter(child)
+      }),
     expr[DayOfMonth](
       "get the day of the month from a date or timestamp",
       (a, conf, p, r) => new UnaryExprMeta[DayOfMonth](a, conf, p, r) {

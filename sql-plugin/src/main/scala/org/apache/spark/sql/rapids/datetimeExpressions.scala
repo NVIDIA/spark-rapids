@@ -218,6 +218,21 @@ case class GpuDateDiff(endDate: Expression, startDate: Expression)
   }
 }
 
+case class GpuQuarter(child: Expression) extends GpuDateUnaryExpression {
+  override def doColumnar(input: GpuColumnVector): GpuColumnVector = {
+    val tmp = withResource(Scalar.fromInt(2)) { two =>
+      withResource(input.getBase.month()) { month =>
+        month.add(two)
+      }
+    }
+    withResource(tmp) { tmp =>
+      withResource(Scalar.fromInt(3)) { three =>
+        GpuColumnVector.from(tmp.div(three))
+      }
+    }
+  }
+}
+
 case class GpuMonth(child: Expression) extends GpuDateUnaryExpression {
   override def doColumnar(input: GpuColumnVector): GpuColumnVector =
     GpuColumnVector.from(input.getBase.month())

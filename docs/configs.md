@@ -164,6 +164,7 @@ Name | Description | Default Value | Incompatibilities
 <a name="sql.expression.Or"></a>spark.rapids.sql.expression.Or|logical or|true|None|
 <a name="sql.expression.Pmod"></a>spark.rapids.sql.expression.Pmod|pmod|true|None|
 <a name="sql.expression.Pow"></a>spark.rapids.sql.expression.Pow|lhs ^ rhs|true|None|
+<a name="sql.expression.Quarter"></a>spark.rapids.sql.expression.Quarter|returns the quarter of the year for date, in the range 1 to 4.|true|None|
 <a name="sql.expression.Rand"></a>spark.rapids.sql.expression.Rand|Generate a random column with i.i.d. uniformly distributed values in [0, 1)|true|None|
 <a name="sql.expression.RegExpReplace"></a>spark.rapids.sql.expression.RegExpReplace|RegExpReplace|true|None|
 <a name="sql.expression.Remainder"></a>spark.rapids.sql.expression.Remainder|remainder or modulo|true|None|

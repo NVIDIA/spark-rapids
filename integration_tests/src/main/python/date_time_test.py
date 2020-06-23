@@ -43,6 +43,10 @@ def test_second():
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark : unary_op_df(spark, timestamp_gen).selectExpr('second(a)'))
 
+def test_quarter():
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark : unary_op_df(spark, date_gen).selectExpr('quarter(a)'))
+
 def test_weekday():
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark : unary_op_df(spark, date_gen).selectExpr('weekday(a)'))
