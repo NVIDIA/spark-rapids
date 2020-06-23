@@ -311,12 +311,8 @@ object ExecutionPlanCaptureCallback {
   private def didFallBack(plan: SparkPlan, fallbackCpuClass: String): Boolean = {
     plan match {
       case p: AdaptiveSparkPlanExec => didFallBack(p.executedPlan, fallbackCpuClass)
-      case _ => if (!plan.isInstanceOf[GpuExec] &&
-          getBaseNameFromClass(plan.getClass.getName) == fallbackCpuClass) {
-        true
-      } else {
-        plan.expressions.exists(didFallBack(_, fallbackCpuClass))
-      }
+      case p: GpuExec if getBaseNameFromClass(p.getClass.getName) == fallbackCpuClass => true
+      case _ => plan.expressions.exists(didFallBack(_, fallbackCpuClass))
     }
   }
 }
