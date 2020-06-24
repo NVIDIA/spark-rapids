@@ -23,12 +23,10 @@ import com.nvidia.spark.rapids.GpuMetricNames._
 import org.apache.spark.TaskContext
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.InternalRow
-import org.apache.spark.sql.catalyst.analysis.TypeCheckResult
-import org.apache.spark.sql.catalyst.expressions.{Ascending, Attribute, Expression, NullOrdering, NullsFirst, NullsLast, RowOrdering, SortDirection, SortOrder}
+import org.apache.spark.sql.catalyst.expressions.{Attribute, NullsFirst, NullsLast, SortOrder}
 import org.apache.spark.sql.catalyst.plans.physical.{Distribution, OrderedDistribution, Partitioning, UnspecifiedDistribution}
 import org.apache.spark.sql.execution.{SortExec, SparkPlan, UnaryExecNode}
 import org.apache.spark.sql.execution.metric.{SQLMetric, SQLMetrics}
-import org.apache.spark.sql.types.{DataType, DoubleType, FloatType}
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
 class GpuSortMeta(
@@ -38,7 +36,7 @@ class GpuSortMeta(
     rule: ConfKeysAndIncompat)
   extends SparkPlanMeta[SortExec](sort, conf, parent, rule) {
   override def convertToGpu(): GpuExec =
-    GpuSortExec(childExprs.map(_.convertToGpu()).asInstanceOf[Seq[GpuSortOrder]],
+    GpuSortExec(childExprs.map(_.convertToGpu()).asInstanceOf[Seq[SortOrder]],
       sort.global,
       childPlans(0).convertIfNeeded())
 
@@ -50,15 +48,14 @@ class GpuSortMeta(
 }
 
 case class GpuSortExec(
-    sortOrder: Seq[GpuSortOrder],
+    sortOrder: Seq[SortOrder],
     global: Boolean,
     child: SparkPlan,
     coalesceGoal: CoalesceGoal = RequireSingleBatch,
-    testSpillFrequency: Int = 0
-)
+    testSpillFrequency: Int = 0)
   extends UnaryExecNode with GpuExec {
 
-  private val sparkSortOrder = sortOrder.map(_.toSortOrder)
+  private val sparkSortOrder = sortOrder
 
   override def childrenCoalesceGoal: Seq[CoalesceGoal] = Seq(coalesceGoal)
 
@@ -101,7 +98,7 @@ case class GpuSortExec(
 }
 
 class GpuColumnarBatchSorter(
-    sortOrder: Seq[GpuSortOrder],
+    sortOrder: Seq[SortOrder],
     exec: GpuExec,
     singleBatchOnly: Boolean,
     shouldUpdateMetrics: Boolean = true) extends Serializable {
@@ -253,59 +250,5 @@ class GpuColumnarBatchSorter(
         resultTbl.close()
       }
     }
-  }
-}
-
-/**
- * GpuSortOrder where the child is a GpuExpression.
- *
- * As far as I can tell the sameOrderExpressions can stay as is. It's used to see if the
- * ordering already matches for things like inserting shuffles and optimizing out redundant sorts
- * and as long as the plugin isn't acting differently then the CPU that should just work.
- *
- * Keep the original child Expression around so that when we convert back to a SortOrder we
- * can pass that in. If we don't do that then GpuExpressions will end up being used to
- * check if the sort order satisfies the child order and things won't match up (specifically
- * AttributeReference.semanticEquals won't match GpuAttributeReference.
- *
- */
-case class GpuSortOrder(
-    child: GpuExpression,
-    direction: SortDirection,
-    nullOrdering: NullOrdering,
-    sameOrderExpressions: Set[Expression],
-    private val origChild: Expression)
-  extends GpuUnevaluableUnaryExpression {
-
-  /** Sort order is not foldable because we don't have an eval for it. */
-  override def foldable: Boolean = false
-
-  override def checkInputDataTypes(): TypeCheckResult = {
-    if (RowOrdering.isOrderable(dataType)) {
-      TypeCheckResult.TypeCheckSuccess
-    } else {
-      TypeCheckResult.TypeCheckFailure(s"cannot sort data type ${dataType.catalogString}")
-    }
-  }
-
-  override def dataType: DataType = child.dataType
-  override def nullable: Boolean = child.nullable
-
-  override def toString: String = s"$child ${direction.sql} ${nullOrdering.sql}"
-  override def sql: String = child.sql + " " + direction.sql + " " + nullOrdering.sql
-
-  def isAscending: Boolean = direction == Ascending
-
-  def toSortOrder: SortOrder = SortOrder(origChild, direction, nullOrdering, sameOrderExpressions)
-}
-
-object GpuSortOrder {
-  def apply(
-      child: GpuExpression,
-      origChild: Expression,
-      direction: SortDirection,
-      sameOrderExpressions: Set[Expression] = Set.empty): GpuSortOrder = {
-    new GpuSortOrder(child, direction, direction.defaultNullOrdering,
-      sameOrderExpressions, origChild)
   }
 }

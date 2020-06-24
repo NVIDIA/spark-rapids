@@ -35,13 +35,11 @@
        <groupId>com.nvidia</groupId>
        <artifactId>rapids-4-spark-sql_${scala.binary.version}</artifactId>
        <version>${project.version}</version>
-       <optional>true</optional>
     </dependency>
     <dependency>
        <groupId>com.nvidia</groupId>
        <artifactId>rapids-4-spark-shuffle_${scala.binary.version}</artifactId>
        <version>${project.version}</version>
-       <optional>true</optional>
     </dependency>
   </dependencies>
 
