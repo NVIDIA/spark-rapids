@@ -66,6 +66,13 @@ class RapidsDeviceMemoryStore(
     }
   }
 
+  /**
+   * Adds a buffer to the device storage, taking ownership of the buffer.
+   * @param id buffer ID to associate with this buffer
+   * @param buffer buffer that will be owned by the store
+   * @param tableMeta metadata describing the buffer layout
+   * @param initialSpillPriority starting spill priority value for the buffer
+   */
   def addBuffer(
       id: RapidsBufferId,
       buffer: DeviceMemoryBuffer,
