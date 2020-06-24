@@ -26,7 +26,7 @@ import org.apache.spark.sql.catalyst.plans.physical.{ClusteredDistribution, Dist
 import org.apache.spark.sql.types.{DataType, IntegerType}
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
-case class GpuHashPartitioning(expressions: Seq[GpuExpression], numPartitions: Int)
+case class GpuHashPartitioning(expressions: Seq[Expression], numPartitions: Int)
   extends GpuExpression with GpuPartitioning {
 
   override def children: Seq[Expression] = expressions
@@ -47,8 +47,10 @@ case class GpuHashPartitioning(expressions: Seq[GpuExpression], numPartitions: I
     }
   }
 
-  def getGpuKeyColumns(batch: ColumnarBatch) : Array[GpuColumnVector] =
-    expressions.map(_.columnarEval(batch).asInstanceOf[GpuColumnVector]).toArray
+  def getGpuKeyColumns(batch: ColumnarBatch) : Array[GpuColumnVector] = {
+    expressions.map(_.columnarEval(batch)
+        .asInstanceOf[GpuColumnVector]).toArray
+  }
 
   def getGpuDataColumns(batch: ColumnarBatch) : Array[GpuColumnVector] =
     GpuColumnVector.extractColumns(batch)

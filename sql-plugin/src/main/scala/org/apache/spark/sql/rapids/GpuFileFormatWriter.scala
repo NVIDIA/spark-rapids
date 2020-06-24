@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019, NVIDIA CORPORATION.
+ * Copyright (c) 2019-2020, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -33,7 +33,7 @@ import org.apache.spark.shuffle.FetchFailedException
 import org.apache.spark.sql.{AnalysisException, SparkSession}
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.catalog.BucketSpec
-import org.apache.spark.sql.catalyst.expressions.{Ascending, Attribute, AttributeSet}
+import org.apache.spark.sql.catalyst.expressions.{Ascending, Attribute, AttributeSet, Expression, SortOrder}
 import org.apache.spark.sql.catalyst.util.{CaseInsensitiveMap, DateTimeUtils}
 import org.apache.spark.sql.execution.{SparkPlan, SQLExecution}
 import org.apache.spark.sql.execution.datasources.{WriteJobStatsTracker, WriteTaskResult, WriteTaskStats}
@@ -46,7 +46,7 @@ import org.apache.spark.util.{SerializableConfiguration, Utils}
 object GpuFileFormatWriter extends Logging {
 
   /** A function that converts the empty string to null for partition values. */
-  case class GpuEmpty2Null(child: GpuExpression) extends GpuUnaryExpression {
+  case class GpuEmpty2Null(child: Expression) extends GpuUnaryExpression {
     override def nullable: Boolean = true
 
     override def doColumnar(input: GpuColumnVector): GpuColumnVector = {
@@ -118,12 +118,11 @@ object GpuFileFormatWriter extends Logging {
     val dataColumns = outputSpec.outputColumns.filterNot(partitionSet.contains)
 
     var needConvert = false
-    val projectList: Seq[GpuExpression] = plan.output.map {
+    val projectList: Seq[Expression] = plan.output.map {
       case p if partitionSet.contains(p) && p.dataType == StringType && p.nullable =>
-        val gpuAttr = GpuAttributeReference.from(p)
         needConvert = true
-        GpuAlias(GpuEmpty2Null(gpuAttr), p.name)()
-      case attr => GpuAttributeReference.from(attr)
+        GpuAlias(GpuEmpty2Null(p), p.name)()
+      case other => other
     }
     val empty2NullPlan = if (needConvert) GpuProjectExec(projectList, plan) else plan
 
@@ -199,8 +198,7 @@ object GpuFileFormatWriter extends Logging {
         // aliases. Here we bind the expression ahead to avoid potential attribute ids mismatch.
         val orderingExpr = GpuBindReferences.bindReferences(
           requiredOrdering
-            .map(attr => (GpuAttributeReference.from(attr), attr))
-            .map(both => GpuSortOrder(both._1, both._2, Ascending)), outputSpec.outputColumns)
+            .map(attr => SortOrder(attr, Ascending)), outputSpec.outputColumns)
         GpuSortExec(
           orderingExpr,
           global = false,

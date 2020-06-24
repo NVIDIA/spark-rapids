@@ -25,7 +25,7 @@ import org.apache.spark.rdd.RDD
 import org.apache.spark.serializer.Serializer
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.errors._
-import org.apache.spark.sql.catalyst.expressions.Attribute
+import org.apache.spark.sql.catalyst.expressions.{Attribute, SortOrder}
 import org.apache.spark.sql.catalyst.plans.physical.Partitioning
 import org.apache.spark.sql.execution.SparkPlan
 import org.apache.spark.sql.execution.exchange.{Exchange, ShuffleExchangeExec}
@@ -142,7 +142,7 @@ object GpuShuffleExchangeExec {
      * task when indeterminate tasks re-run.
      */
     val newRdd = if (isRoundRobin && SQLConf.get.sortBeforeRepartition) {
-      val sorter = new GpuColumnarBatchSorter(Seq.empty[GpuSortOrder],
+      val sorter = new GpuColumnarBatchSorter(Seq.empty[SortOrder],
         null, false, false)
       rdd.mapPartitions { cbIter =>
         val sortedIterator = sorter.sort(cbIter)
@@ -228,16 +228,15 @@ object GpuShuffleExchangeExec {
     newPartitioning: Partitioning): GpuExpression with GpuPartitioning = {
     newPartitioning match {
       case h: GpuHashPartitioning =>
-        GpuBindReferences.bindReferences(h :: Nil, outputAttributes).head
+        GpuBindReferences.bindReference(h, outputAttributes)
       case r: GpuRangePartitioning =>
         r.part.createRangeBounds(r.numPartitions, r.gpuOrdering, rdd, outputAttributes,
           SQLConf.get.rangeExchangeSampleSizePerPartition)
-        val boundR = GpuBindReferences.bindReferences(r :: Nil, outputAttributes).head
-        boundR
+        GpuBindReferences.bindReference(r, outputAttributes)
       case s: GpuSinglePartitioning =>
-        GpuBindReferences.bindReferences(s :: Nil, outputAttributes).head
+        GpuBindReferences.bindReference(s, outputAttributes)
       case rrp: GpuRoundRobinPartitioning =>
-        GpuBindReferences.bindReferences(rrp :: Nil, outputAttributes).head
+        GpuBindReferences.bindReference(rrp, outputAttributes)
       case _ => sys.error(s"Exchange not implemented for $newPartitioning")
     }
   }
