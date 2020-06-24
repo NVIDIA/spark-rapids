@@ -118,6 +118,8 @@ Name | Description | Default Value | Incompatibilities
 <a name="sql.expression.DateDiff"></a>spark.rapids.sql.expression.DateDiff|datediff|true|None|
 <a name="sql.expression.DateSub"></a>spark.rapids.sql.expression.DateSub|Returns the date that is num_days before start_date|true|None|
 <a name="sql.expression.DayOfMonth"></a>spark.rapids.sql.expression.DayOfMonth|get the day of the month from a date or timestamp|true|None|
+<a name="sql.expression.DayOfWeek"></a>spark.rapids.sql.expression.DayOfWeek|Returns the day of the week (1 = Sunday...7=Saturday)|true|None|
+<a name="sql.expression.DayOfYear"></a>spark.rapids.sql.expression.DayOfYear|get the day of the year from a date or timestamp|true|None|
 <a name="sql.expression.Divide"></a>spark.rapids.sql.expression.Divide|division|true|None|
 <a name="sql.expression.EndsWith"></a>spark.rapids.sql.expression.EndsWith|Ends With|true|None|
 <a name="sql.expression.EqualNullSafe"></a>spark.rapids.sql.expression.EqualNullSafe|check if the values are equal including nulls <=>|true|None|
@@ -141,6 +143,7 @@ Name | Description | Default Value | Incompatibilities
 <a name="sql.expression.IsNotNull"></a>spark.rapids.sql.expression.IsNotNull|checks if a value is not null|true|None|
 <a name="sql.expression.IsNull"></a>spark.rapids.sql.expression.IsNull|checks if a value is null|true|None|
 <a name="sql.expression.KnownFloatingPointNormalized"></a>spark.rapids.sql.expression.KnownFloatingPointNormalized|tag to prevent redundant normalization|true|None|
+<a name="sql.expression.LastDay"></a>spark.rapids.sql.expression.LastDay|Returns the last day of the month which the date belongs to|true|None|
 <a name="sql.expression.Length"></a>spark.rapids.sql.expression.Length|String Character Length|true|None|
 <a name="sql.expression.LessThan"></a>spark.rapids.sql.expression.LessThan|< operator|true|None|
 <a name="sql.expression.LessThanOrEqual"></a>spark.rapids.sql.expression.LessThanOrEqual|<= operator|true|None|
@@ -161,6 +164,7 @@ Name | Description | Default Value | Incompatibilities
 <a name="sql.expression.Or"></a>spark.rapids.sql.expression.Or|logical or|true|None|
 <a name="sql.expression.Pmod"></a>spark.rapids.sql.expression.Pmod|pmod|true|None|
 <a name="sql.expression.Pow"></a>spark.rapids.sql.expression.Pow|lhs ^ rhs|true|None|
+<a name="sql.expression.Quarter"></a>spark.rapids.sql.expression.Quarter|returns the quarter of the year for date, in the range 1 to 4.|true|None|
 <a name="sql.expression.Rand"></a>spark.rapids.sql.expression.Rand|Generate a random column with i.i.d. uniformly distributed values in [0, 1)|true|None|
 <a name="sql.expression.RegExpReplace"></a>spark.rapids.sql.expression.RegExpReplace|RegExpReplace|true|None|
 <a name="sql.expression.Remainder"></a>spark.rapids.sql.expression.Remainder|remainder or modulo|true|None|
@@ -198,6 +202,7 @@ Name | Description | Default Value | Incompatibilities
 <a name="sql.expression.UnboundedPreceding$"></a>spark.rapids.sql.expression.UnboundedPreceding$|Special boundary for a window frame, indicating all rows preceding the current row|true|None|
 <a name="sql.expression.UnixTimestamp"></a>spark.rapids.sql.expression.UnixTimestamp|Returns the UNIX timestamp of current or specified time|false|This is not 100% compatible with the Spark version because Incorrectly formatted strings and bogus dates produce garbage data instead of null|
 <a name="sql.expression.Upper"></a>spark.rapids.sql.expression.Upper|String uppercase operator|false|This is not 100% compatible with the Spark version because in some cases unicode characters change byte width when changing the case. The GPU string conversion does not support these characters. For a full list of unsupported characters see https://github.com/rapidsai/cudf/issues/3132|
+<a name="sql.expression.WeekDay"></a>spark.rapids.sql.expression.WeekDay|Returns the day of the week (0 = Monday...6=Sunday)|true|None|
 <a name="sql.expression.WindowExpression"></a>spark.rapids.sql.expression.WindowExpression|calculates a return value for every input row of a table based on a group (or "window") of rows|true|None|
 <a name="sql.expression.WindowSpecDefinition"></a>spark.rapids.sql.expression.WindowSpecDefinition|specification of a window function, indicating the partitioning-expression, the row ordering, and the width of the window|true|None|
 <a name="sql.expression.Year"></a>spark.rapids.sql.expression.Year|get the year from a date or timestamp|true|None|

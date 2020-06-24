@@ -48,6 +48,37 @@ trait GpuTimeUnaryExpression extends GpuUnaryExpression with TimeZoneAwareExpres
   override lazy val resolved: Boolean = childrenResolved && checkInputDataTypes().isSuccess
 }
 
+case class GpuWeekDay(child: Expression)
+    extends GpuDateUnaryExpression {
+
+  override protected def doColumnar(input: GpuColumnVector): GpuColumnVector = {
+    withResource(Scalar.fromShort(1.toShort)) { one =>
+      withResource(input.getBase.weekDay()) { weekday => // We want Monday = 0, CUDF Monday = 1
+        GpuColumnVector.from(weekday.sub(one))
+      }
+    }
+  }
+}
+
+case class GpuDayOfWeek(child: Expression)
+    extends GpuDateUnaryExpression {
+
+  override protected def doColumnar(input: GpuColumnVector): GpuColumnVector = {
+    // Cudf returns Monday = 1, ...
+    // We want Sunday = 1, ..., so add a day before we extract the day of the week
+    val nextInts = withResource(Scalar.fromInt(1)) { one =>
+      withResource(input.getBase.asInts()) { ints =>
+        ints.add(one)
+      }
+    }
+    withResource(nextInts) { nextInts =>
+      withResource(nextInts.asTimestampDays()) { daysAgain =>
+        GpuColumnVector.from(daysAgain.weekDay())
+      }
+    }
+  }
+}
+
 case class GpuMinute(child: Expression, timeZoneId: Option[String] = None)
     extends GpuTimeUnaryExpression {
 
@@ -188,6 +219,21 @@ case class GpuDateDiff(endDate: Expression, startDate: Expression)
   }
 }
 
+case class GpuQuarter(child: Expression) extends GpuDateUnaryExpression {
+  override def doColumnar(input: GpuColumnVector): GpuColumnVector = {
+    val tmp = withResource(Scalar.fromInt(2)) { two =>
+      withResource(input.getBase.month()) { month =>
+        month.add(two)
+      }
+    }
+    withResource(tmp) { tmp =>
+      withResource(Scalar.fromInt(3)) { three =>
+        GpuColumnVector.from(tmp.div(three))
+      }
+    }
+  }
+}
+
 case class GpuMonth(child: Expression) extends GpuDateUnaryExpression {
   override def doColumnar(input: GpuColumnVector): GpuColumnVector =
     GpuColumnVector.from(input.getBase.month())
@@ -196,6 +242,11 @@ case class GpuMonth(child: Expression) extends GpuDateUnaryExpression {
 case class GpuDayOfMonth(child: Expression) extends GpuDateUnaryExpression {
   override def doColumnar(input: GpuColumnVector): GpuColumnVector =
     GpuColumnVector.from(input.getBase.day())
+}
+
+case class GpuDayOfYear(child: Expression) extends GpuDateUnaryExpression {
+  override def doColumnar(input: GpuColumnVector): GpuColumnVector =
+    GpuColumnVector.from(input.getBase.dayOfYear())
 }
 
 abstract class UnixTimeExprMeta[A <: BinaryExpression with TimeZoneAwareExpression]
@@ -463,4 +514,18 @@ case class GpuDateAdd(startDate: Expression, days: Expression) extends GpuDateMa
   override def prettyName: String = "date_add"
 
   override def binaryOp: BinaryOp = BinaryOp.ADD
+}
+
+case class GpuLastDay(startDate: Expression)
+    extends GpuUnaryExpression with ImplicitCastInputTypes {
+  override def child: Expression = startDate
+
+  override def inputTypes: Seq[AbstractDataType] = Seq(DateType)
+
+  override def dataType: DataType = DateType
+
+  override def prettyName: String = "last_day"
+
+  override protected def doColumnar(input: GpuColumnVector): GpuColumnVector =
+    GpuColumnVector.from(input.getBase.lastDayOfMonth())
 }
