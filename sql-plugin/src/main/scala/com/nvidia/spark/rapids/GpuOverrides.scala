@@ -580,10 +580,20 @@ object GpuOverrides {
       (a, conf, p, r) => new UnaryExprMeta[Month](a, conf, p, r) {
         override def convertToGpu(child: Expression): GpuExpression = GpuMonth(child)
       }),
+    expr[Quarter](
+      "returns the quarter of the year for date, in the range 1 to 4.",
+      (a, conf, p, r) => new UnaryExprMeta[Quarter](a, conf, p, r) {
+        override def convertToGpu(child: Expression): GpuExpression = GpuQuarter(child)
+      }),
     expr[DayOfMonth](
       "get the day of the month from a date or timestamp",
       (a, conf, p, r) => new UnaryExprMeta[DayOfMonth](a, conf, p, r) {
         override def convertToGpu(child: Expression): GpuExpression = GpuDayOfMonth(child)
+      }),
+    expr[DayOfYear](
+      "get the day of the year from a date or timestamp",
+      (a, conf, p, r) => new UnaryExprMeta[DayOfYear](a, conf, p, r) {
+        override def convertToGpu(child: Expression): GpuExpression = GpuDayOfYear(child)
       }),
     expr[Abs](
       "absolute value",
@@ -940,6 +950,24 @@ object GpuOverrides {
 
         override def convertToGpu(expr: Expression): GpuExpression =
           GpuSecond(expr)
+      }),
+    expr[WeekDay](
+      "Returns the day of the week (0 = Monday...6=Sunday)",
+      (a, conf, p, r) => new UnaryExprMeta[WeekDay](a, conf, p, r) {
+        override def convertToGpu(expr: Expression): GpuExpression =
+          GpuWeekDay(expr)
+      }),
+    expr[DayOfWeek](
+      "Returns the day of the week (1 = Sunday...7=Saturday)",
+      (a, conf, p, r) => new UnaryExprMeta[DayOfWeek](a, conf, p, r) {
+        override def convertToGpu(expr: Expression): GpuExpression =
+          GpuDayOfWeek(expr)
+      }),
+    expr[LastDay](
+      "Returns the last day of the month which the date belongs to",
+      (a, conf, p, r) => new UnaryExprMeta[LastDay](a, conf, p, r) {
+        override def convertToGpu(expr: Expression): GpuExpression =
+          GpuLastDay(expr)
       }),
     expr[FromUnixTime](
       "get the String from a unix timestamp",
