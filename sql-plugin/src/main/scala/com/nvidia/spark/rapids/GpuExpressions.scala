@@ -44,7 +44,7 @@ object GpuExpressionsUtils {
     resultCvs
   }
 
-  def getTrimString(trimStr: Option[GpuExpression]): String = trimStr match {
+  def getTrimString(trimStr: Option[Expression]): String = trimStr match {
     case Some(GpuLiteral(data, StringType)) =>
       if (data == null) {
         null
@@ -79,7 +79,7 @@ trait GpuExpression extends Expression with Unevaluable with Arm {
    * we have to jump through some hoops to make this work.
    */
   def disableCoalesceUntilInput(): Boolean =
-    children.exists{
+    children.exists {
       case c: GpuExpression => c.disableCoalesceUntilInput()
       case _ => false // This path should never really happen
     }
@@ -118,7 +118,7 @@ abstract class GpuUnaryExpression extends UnaryExpression with GpuExpression {
   def outputTypeOverride: DType = null
 
   override def columnarEval(batch: ColumnarBatch): Any = {
-    val input = child.asInstanceOf[GpuExpression].columnarEval(batch)
+    val input = child.columnarEval(batch)
     try {
       input match {
         case vec: GpuColumnVector =>
@@ -165,8 +165,8 @@ trait GpuBinaryExpression extends BinaryExpression with GpuExpression {
     var lhs: Any = null
     var rhs: Any = null
     try {
-      lhs = left.asInstanceOf[GpuExpression].columnarEval(batch)
-      rhs = right.asInstanceOf[GpuExpression].columnarEval(batch)
+      lhs = left.columnarEval(batch)
+      rhs = right.columnarEval(batch)
 
       (lhs, rhs) match {
         case (l: GpuColumnVector, r: GpuColumnVector) => doColumnar(l, r)
@@ -237,11 +237,11 @@ abstract class CudfBinaryOperator extends GpuBinaryOperator with CudfBinaryExpre
 
 trait GpuString2TrimExpression extends String2TrimExpression with GpuExpression {
 
-  override def srcStr: GpuExpression
+  override def srcStr: Expression
 
-  override def trimStr: Option[GpuExpression]
+  override def trimStr: Option[Expression]
 
-  override def children: Seq[GpuExpression] = srcStr +: trimStr.toSeq
+  override def children: Seq[Expression] = srcStr +: trimStr.toSeq
 
   def strippedColumnVector(value: GpuColumnVector, sclarValue: Scalar): GpuColumnVector
 
@@ -294,9 +294,9 @@ trait GpuTernaryExpression extends TernaryExpression with GpuExpression {
     var val1: Any = null
     var val2: Any = null
     try {
-      val0 = children(0).asInstanceOf[GpuExpression].columnarEval(batch)
-      val1 = children(1).asInstanceOf[GpuExpression].columnarEval(batch)
-      val2 = children(2).asInstanceOf[GpuExpression].columnarEval(batch)
+      val0 = children(0).columnarEval(batch)
+      val1 = children(1).columnarEval(batch)
+      val2 = children(2).columnarEval(batch)
 
       (val0, val1, val2) match {
         case (v0: GpuColumnVector, v1: GpuColumnVector, v2: GpuColumnVector) =>

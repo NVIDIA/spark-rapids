@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019, NVIDIA CORPORATION.
+ * Copyright (c) 2019-2020, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -158,7 +158,7 @@ case class GpuStringLocate(substr: Expression, col: Expression, start: Expressio
         throw new UnsupportedOperationException(s"Cannot columnar evaluate expression: $this")
 }
 
-case class GpuStartsWith(left: GpuExpression, right: GpuExpression)
+case class GpuStartsWith(left: Expression, right: Expression)
   extends GpuBinaryExpression with Predicate with ImplicitCastInputTypes with NullIntolerant {
 
   override def inputTypes: Seq[DataType] = Seq(StringType)
@@ -193,7 +193,7 @@ case class GpuStartsWith(left: GpuExpression, right: GpuExpression)
       "Really should not be here, cannot have a scalar as left side operand in StartsWith")
 }
 
-case class GpuEndsWith(left: GpuExpression, right: GpuExpression)
+case class GpuEndsWith(left: Expression, right: Expression)
   extends GpuBinaryExpression with Predicate with ImplicitCastInputTypes with NullIntolerant {
 
   override def inputTypes: Seq[DataType] = Seq(StringType)
@@ -228,17 +228,17 @@ case class GpuEndsWith(left: GpuExpression, right: GpuExpression)
       "Really should not be here, cannot have a scalar as left side operand in EndsWith")
 }
 
-case class GpuStringTrim(column: GpuExpression, trimParameters: Option[GpuExpression] = None)
+case class GpuStringTrim(column: Expression, trimParameters: Option[Expression] = None)
     extends GpuString2TrimExpression with ImplicitCastInputTypes {
 
-  override def srcStr: GpuExpression = column
+  override def srcStr: Expression = column
 
-  override def trimStr:Option[GpuExpression] = trimParameters
+  override def trimStr:Option[Expression] = trimParameters
 
-  def this(trimParameters: GpuExpression, column: GpuExpression) =
+  def this(trimParameters: Expression, column: Expression) =
     this(column, Option(trimParameters))
 
-  def this(column: GpuExpression) = this(column, None)
+  def this(column: Expression) = this(column, None)
 
   override protected def direction: String = "BOTH"
 
@@ -247,17 +247,17 @@ case class GpuStringTrim(column: GpuExpression, trimParameters: Option[GpuExpres
   }
 }
 
-case class GpuStringTrimLeft(column: GpuExpression, trimParameters: Option[GpuExpression] = None)
+case class GpuStringTrimLeft(column: Expression, trimParameters: Option[Expression] = None)
   extends GpuString2TrimExpression with ImplicitCastInputTypes {
 
-  override def srcStr: GpuExpression = column
+  override def srcStr: Expression = column
 
-  override def trimStr:Option[GpuExpression] = trimParameters
+  override def trimStr:Option[Expression] = trimParameters
 
-  def this(trimParameters: GpuExpression, column: GpuExpression) =
+  def this(trimParameters: Expression, column: Expression) =
     this(column, Option(trimParameters))
 
-  def this(column: GpuExpression) = this(column, None)
+  def this(column: Expression) = this(column, None)
 
   override protected def direction: String = "LEADING"
 
@@ -266,17 +266,17 @@ case class GpuStringTrimLeft(column: GpuExpression, trimParameters: Option[GpuEx
   }
 }
 
-case class GpuStringTrimRight(column: GpuExpression, trimParameters: Option[GpuExpression] = None)
+case class GpuStringTrimRight(column: Expression, trimParameters: Option[Expression] = None)
     extends GpuString2TrimExpression with ImplicitCastInputTypes {
 
-  override def srcStr: GpuExpression = column
+  override def srcStr: Expression = column
 
-  override def trimStr:Option[GpuExpression] = trimParameters
+  override def trimStr:Option[Expression] = trimParameters
 
-  def this(trimParameters: GpuExpression, column: GpuExpression) =
+  def this(trimParameters: Expression, column: Expression) =
     this(column, Option(trimParameters))
 
-  def this(column: GpuExpression) = this(column, None)
+  def this(column: Expression) = this(column, None)
 
   override protected def direction: String = "TRAILING"
 
@@ -285,7 +285,7 @@ case class GpuStringTrimRight(column: GpuExpression, trimParameters: Option[GpuE
   }
 }
 
-case class GpuConcat(children: Seq[GpuExpression]) extends GpuComplexTypeMergingExpression {
+case class GpuConcat(children: Seq[Expression]) extends GpuComplexTypeMergingExpression {
   override def dataType = StringType
   override def nullable: Boolean = children.exists(_.nullable)
 
@@ -327,14 +327,14 @@ case class GpuConcat(children: Seq[GpuExpression]) extends GpuComplexTypeMerging
   }
 }
 
-case class GpuContains(left: GpuExpression, right: GpuExpression) extends GpuBinaryExpression
+case class GpuContains(left: Expression, right: Expression) extends GpuBinaryExpression
   with Predicate with ImplicitCastInputTypes with NullIntolerant {
 
   override def inputTypes: Seq[DataType] = Seq(StringType)
 
   override def sql: String = {
     val inputSQL = left.sql
-    val listSQL = right.sql.toString
+    val listSQL = right.sql
     s"($inputSQL CONTAINS ($listSQL))"
   }
 
@@ -432,7 +432,7 @@ case class GpuSubstring(str: Expression, pos: Expression, len: Expression)
         throw new UnsupportedOperationException(s"Cannot columnar evaluate expression: $this")
 }
 
-case class GpuInitCap(child: GpuExpression) extends GpuUnaryExpression with ImplicitCastInputTypes {
+case class GpuInitCap(child: Expression) extends GpuUnaryExpression with ImplicitCastInputTypes {
   override def inputTypes: Seq[DataType] = Seq(StringType)
   override def dataType: DataType = StringType
   override protected def doColumnar(input: GpuColumnVector): GpuColumnVector = {
@@ -441,9 +441,9 @@ case class GpuInitCap(child: GpuExpression) extends GpuUnaryExpression with Impl
 }
 
 case class GpuStringReplace(
-    srcExpr: GpuExpression,
-    searchExpr: GpuExpression,
-    replaceExpr: GpuExpression)
+    srcExpr: Expression,
+    searchExpr: Expression,
+    replaceExpr: Expression)
   extends GpuTernaryExpression with ImplicitCastInputTypes {
 
   override def dataType: DataType = srcExpr.dataType
@@ -452,7 +452,7 @@ case class GpuStringReplace(
 
   override def children: Seq[Expression] = Seq(srcExpr, searchExpr, replaceExpr)
 
-  def this(srcExpr: GpuExpression, searchExpr: GpuExpression) = {
+  def this(srcExpr: Expression, searchExpr: Expression) = {
     this(srcExpr, searchExpr, GpuLiteral("", StringType))
   }
 
@@ -528,10 +528,10 @@ object CudfRegexp {
   }
 }
 
-case class GpuLike(left: GpuExpression, right: GpuExpression, escapeChar: Char)
+case class GpuLike(left: Expression, right: Expression, escapeChar: Char)
   extends GpuBinaryExpression with ImplicitCastInputTypes with NullIntolerant  {
 
-  def this(left: GpuExpression, right: GpuExpression) = this(left, right, '\\')
+  def this(left: Expression, right: Expression) = this(left, right, '\\')
 
   override def toString: String = escapeChar match {
     case '\\' => s"$left gpulike $right"
@@ -622,9 +622,9 @@ class SubstringIndexMeta(
   }
 
   override def convertToGpu(
-      column: GpuExpression,
-      delim: GpuExpression,
-      count: GpuExpression): GpuExpression = GpuSubstringIndex(column, this.regexp, delim, count)
+      column: Expression,
+      delim: Expression,
+      count: Expression): GpuExpression = GpuSubstringIndex(column, this.regexp, delim, count)
 }
 
 object GpuSubstringIndex {
@@ -661,10 +661,10 @@ object GpuSubstringIndex {
   }
 }
 
-case class GpuSubstringIndex(strExpr: GpuExpression,
+case class GpuSubstringIndex(strExpr: Expression,
     regexp: String,
-    ignoredDelimExpr: GpuExpression,
-    ignoredCountExpr: GpuExpression)
+    ignoredDelimExpr: Expression,
+    ignoredCountExpr: Expression)
   extends GpuTernaryExpression with ImplicitCastInputTypes {
 
   override def dataType: DataType = StringType

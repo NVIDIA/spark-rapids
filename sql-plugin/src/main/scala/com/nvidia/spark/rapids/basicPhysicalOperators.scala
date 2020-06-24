@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019, NVIDIA CORPORATION.
+ * Copyright (c) 2019-2020, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -32,7 +32,7 @@ import org.apache.spark.sql.rapids.execution.TrampolineUtil
 import org.apache.spark.sql.vectorized.{ColumnarBatch, ColumnVector}
 
 object GpuProjectExec {
-  def projectAndClose[A <: GpuExpression](cb: ColumnarBatch, boundExprs: Seq[A],
+  def projectAndClose[A <: Expression](cb: ColumnarBatch, boundExprs: Seq[A],
       totalTime: SQLMetric): ColumnarBatch = {
     val nvtxRange = new NvtxWithMetrics("ProjectExec", NvtxColor.CYAN, totalTime)
     try {
@@ -43,7 +43,7 @@ object GpuProjectExec {
     }
   }
 
-  def project[A <: GpuExpression](cb: ColumnarBatch, boundExprs: Seq[A]): ColumnarBatch = {
+  def project[A <: Expression](cb: ColumnarBatch, boundExprs: Seq[A]): ColumnarBatch = {
     val newColumns = boundExprs.safeMap {
       expr => {
         val result = expr.columnarEval(cb)
@@ -62,7 +62,7 @@ object GpuProjectExec {
   }
 }
 
-case class GpuProjectExec(projectList: Seq[GpuExpression], child: SparkPlan)
+case class GpuProjectExec(projectList: Seq[Expression], child: SparkPlan)
   extends UnaryExecNode with GpuExec {
 
   private val sparkProjectList = projectList.asInstanceOf[Seq[NamedExpression]]
@@ -80,7 +80,7 @@ case class GpuProjectExec(projectList: Seq[GpuExpression], child: SparkPlan)
     val numOutputRows = longMetric(NUM_OUTPUT_ROWS)
     val numOutputBatches = longMetric(NUM_OUTPUT_BATCHES)
     val totalTime = longMetric(TOTAL_TIME)
-    val boundProjectList = GpuBindReferences.bindReferences(projectList, child.output)
+    val boundProjectList = GpuBindReferences.bindGpuReferences(projectList, child.output)
     val rdd = child.executeColumnar()
     rdd.map { cb =>
       numOutputBatches += 1
@@ -96,7 +96,7 @@ case class GpuProjectExec(projectList: Seq[GpuExpression], child: SparkPlan)
 object GpuFilter {
   def apply(
       batch: ColumnarBatch,
-      boundCondition: GpuExpression,
+      boundCondition: Expression,
       numOutputRows: SQLMetric,
       numOutputBatches: SQLMetric,
       filterTime: SQLMetric): ColumnarBatch = {
@@ -123,7 +123,7 @@ object GpuFilter {
   }
 }
 
-case class GpuFilterExec(condition: GpuExpression, child: SparkPlan)
+case class GpuFilterExec(condition: Expression, child: SparkPlan)
   extends UnaryExecNode with PredicateHelper with GpuExec {
 
   // Split out all the IsNotNulls from condition.
@@ -169,7 +169,6 @@ case class GpuFilterExec(condition: GpuExpression, child: SparkPlan)
     val totalTime = longMetric(TOTAL_TIME)
     val boundCondition = GpuBindReferences.bindReference(condition, child.output)
     val rdd = child.executeColumnar()
-
     rdd.map { batch =>
         GpuFilter(batch, boundCondition, numOutputRows, numOutputBatches, totalTime)
     }

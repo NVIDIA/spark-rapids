@@ -20,6 +20,7 @@ import scala.collection.{mutable, SeqLike}
 import scala.collection.generic.CanBuildFrom
 import scala.reflect.ClassTag
 
+import org.apache.spark.sql.catalyst.expressions.Expression
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
 /**
@@ -28,6 +29,12 @@ import org.apache.spark.sql.vectorized.ColumnarBatch
   */
 object RapidsPluginImplicits {
   import scala.language.implicitConversions
+
+  implicit class ReallyAGpuExpression[A <: Expression](exp: Expression) {
+    def columnarEval(batch: ColumnarBatch): Any = {
+      exp.asInstanceOf[GpuExpression].columnarEval(batch)
+    }
+  }
 
   implicit class AutoCloseableColumn[A <: AutoCloseable](autoCloseable: AutoCloseable) {
 

@@ -80,7 +80,7 @@ trait GpuShiftBase extends GpuBinaryExpression with ImplicitCastInputTypes {
   }
 }
 
-case class GpuShiftLeft(left: GpuExpression, right: GpuExpression) extends GpuShiftBase {
+case class GpuShiftLeft(left: Expression, right: Expression) extends GpuShiftBase {
   override def inputTypes: Seq[AbstractDataType] =
     Seq(TypeCollection(IntegerType, LongType), IntegerType)
 
@@ -89,7 +89,7 @@ case class GpuShiftLeft(left: GpuExpression, right: GpuExpression) extends GpuSh
   override def dataType: DataType = left.dataType
 }
 
-case class GpuShiftRight(left: GpuExpression, right: GpuExpression) extends GpuShiftBase {
+case class GpuShiftRight(left: Expression, right: Expression) extends GpuShiftBase {
   override def inputTypes: Seq[AbstractDataType] =
     Seq(TypeCollection(IntegerType, LongType), IntegerType)
 
@@ -99,7 +99,7 @@ case class GpuShiftRight(left: GpuExpression, right: GpuExpression) extends GpuS
 
 }
 
-case class GpuShiftRightUnsigned(left: GpuExpression, right: GpuExpression) extends GpuShiftBase {
+case class GpuShiftRightUnsigned(left: Expression, right: Expression) extends GpuShiftBase {
   override def inputTypes: Seq[AbstractDataType] =
     Seq(TypeCollection(IntegerType, LongType), IntegerType)
 
@@ -108,7 +108,7 @@ case class GpuShiftRightUnsigned(left: GpuExpression, right: GpuExpression) exte
   override def dataType: DataType = left.dataType
 }
 
-case class GpuBitwiseAnd(left: GpuExpression, right: GpuExpression) extends CudfBinaryArithmetic {
+case class GpuBitwiseAnd(left: Expression, right: Expression) extends CudfBinaryArithmetic {
   override def inputType: AbstractDataType = IntegralType
 
   override def symbol: String = "&"
@@ -116,7 +116,7 @@ case class GpuBitwiseAnd(left: GpuExpression, right: GpuExpression) extends Cudf
   override def binaryOp: BinaryOp = BinaryOp.BITWISE_AND
 }
 
-case class GpuBitwiseOr(left: GpuExpression, right: GpuExpression) extends CudfBinaryArithmetic {
+case class GpuBitwiseOr(left: Expression, right: Expression) extends CudfBinaryArithmetic {
   override def inputType: AbstractDataType = IntegralType
 
   override def symbol: String = "|"
@@ -124,7 +124,7 @@ case class GpuBitwiseOr(left: GpuExpression, right: GpuExpression) extends CudfB
   override def binaryOp: BinaryOp = BinaryOp.BITWISE_OR
 }
 
-case class GpuBitwiseXor(left: GpuExpression, right: GpuExpression) extends CudfBinaryArithmetic {
+case class GpuBitwiseXor(left: Expression, right: Expression) extends CudfBinaryArithmetic {
   override def inputType: AbstractDataType = IntegralType
 
   override def symbol: String = "^"
@@ -132,7 +132,7 @@ case class GpuBitwiseXor(left: GpuExpression, right: GpuExpression) extends Cudf
   override def binaryOp: BinaryOp = BinaryOp.BITWISE_XOR
 }
 
-case class GpuBitwiseNot(child: GpuExpression) extends GpuUnaryExpression with ExpectsInputTypes {
+case class GpuBitwiseNot(child: Expression) extends GpuUnaryExpression with ExpectsInputTypes {
   override def inputTypes: Seq[AbstractDataType] = Seq(IntegralType)
 
   override def dataType: DataType = child.dataType
