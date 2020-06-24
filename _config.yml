@@ -17,6 +17,8 @@
 
 remote_theme: pmarsceill/just-the-docs
 
+color_scheme: emerald
+
 aux_links:
   "Spark Rapids Plugin on Github":
     - "//github.com/nvidia/spark-rapids"
