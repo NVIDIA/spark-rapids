@@ -14,7 +14,7 @@
 # limitations under the License.
 set -ex
 
-if [[ "${SKIP_TESTS,,}" == "true" ]];
+if [[ $( echo ${SKIP_TESTS} | tr [:upper:] [:lower:] ) == "true" ]];
 then
     echo "PYTHON INTEGRATION TESTS SKIPPED..."
 elif [[ -z "$SPARK_HOME" ]];
