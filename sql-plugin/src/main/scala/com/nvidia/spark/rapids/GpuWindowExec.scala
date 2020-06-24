@@ -21,7 +21,7 @@ import com.nvidia.spark.rapids.GpuMetricNames._
 
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.InternalRow
-import org.apache.spark.sql.catalyst.expressions.{Attribute, NamedExpression, SortOrder}
+import org.apache.spark.sql.catalyst.expressions.{Attribute, Expression, NamedExpression, SortOrder}
 import org.apache.spark.sql.catalyst.plans.physical.Partitioning
 import org.apache.spark.sql.execution.{SparkPlan, UnaryExecNode}
 import org.apache.spark.sql.execution.metric.{SQLMetric, SQLMetrics}
@@ -66,7 +66,7 @@ class GpuWindowExecMeta(windowExec: WindowExec,
 
   private val (inputWindowExpressions, resultColumnsOnly) = getWindowExpression
 
-  val windowExpressions: Seq[ExprMeta[NamedExpression]] =
+  val windowExpressions: Seq[BaseExprMeta[NamedExpression]] =
     inputWindowExpressions.map(GpuOverrides.wrapExpr(_, conf, Some(this)))
 
   override def tagPlanForGpu(): Unit = {
@@ -90,7 +90,7 @@ class GpuWindowExecMeta(windowExec: WindowExec,
 }
 
 case class GpuWindowExec(
-    windowExpressionAliases: Seq[GpuExpression],
+    windowExpressionAliases: Seq[Expression],
     child: SparkPlan,
     resultColumnsOnly: Boolean
   ) extends UnaryExecNode with GpuExec {
@@ -131,8 +131,7 @@ case class GpuWindowExec(
 
     // Address bindings for all expressions evaluated by WindowExec.
     val boundProjectList = windowExpressionAliases.map(
-      alias => GpuBindReferences.bindReference(alias, child.output)
-    )
+      alias => GpuBindReferences.bindReference(alias, child.output))
 
     // Bind aggregation column.
     boundProjectList.map(

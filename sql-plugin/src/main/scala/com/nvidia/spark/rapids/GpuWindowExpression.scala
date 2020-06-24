@@ -84,7 +84,7 @@ class GpuWindowExpressionMeta(
     )
 }
 
-case class GpuWindowExpression(windowFunction: GpuExpression, windowSpec: GpuWindowSpecDefinition)
+case class GpuWindowExpression(windowFunction: Expression, windowSpec: GpuWindowSpecDefinition)
   extends GpuExpression {
 
   override def children: Seq[Expression] = windowFunction :: windowSpec :: Nil
@@ -99,11 +99,11 @@ case class GpuWindowExpression(windowFunction: GpuExpression, windowSpec: GpuWin
 
   override def sql: String = windowFunction.sql + " OVER " + windowSpec.sql
 
-  private var boundAggCol : GpuExpression = _
+  private var boundAggCol : Expression = _
   private val frameType : FrameType =
     windowSpec.frameSpecification.asInstanceOf[GpuSpecifiedWindowFrame].frameType
 
-  def setBoundAggCol(bound : GpuExpression) : Unit = {
+  def setBoundAggCol(bound : Expression) : Unit = {
     boundAggCol = bound
   }
 
@@ -181,15 +181,16 @@ case class GpuWindowExpression(windowFunction: GpuExpression, windowSpec: GpuWin
 
     try {
       // Project required column batches.
-      groupingColsCB    = GpuProjectExec.project(cb, windowSpec.partitionSpec)
+      groupingColsCB = GpuProjectExec.project(cb, windowSpec.partitionSpec)
       assert(windowSpec.orderSpec.size == 1, "Expected a single sort column.")
 
-      sortColsCB        = GpuProjectExec.project(cb, windowSpec.orderSpec.map(_.child))
+      sortColsCB = GpuProjectExec.project(cb,
+        windowSpec.orderSpec.map(_.child.asInstanceOf[GpuExpression]))
       aggregationColsCB = GpuProjectExec.project(cb, Seq(boundAggCol))
 
       // Extract required columns columns.
       groupingCols = GpuColumnVector.extractColumns(groupingColsCB)
-      sortCols        = GpuColumnVector.extractColumns(sortColsCB)
+      sortCols = GpuColumnVector.extractColumns(sortColsCB)
       aggregationCols = GpuColumnVector.extractColumns(aggregationColsCB)
 
       inputTable = new Table( ( groupingCols ++ sortCols ++ aggregationCols ).map(_.getBase) : _* )
@@ -234,7 +235,7 @@ case class GpuWindowExpression(windowFunction: GpuExpression, windowSpec: GpuWin
 object GpuWindowExpression {
 
   def getRowBasedWindowFrame(columnIndex : Int,
-                             aggExpression : GpuExpression,
+                             aggExpression : Expression,
                              windowSpec : GpuSpecifiedWindowFrame)
   : WindowAggregate = {
 
@@ -287,7 +288,7 @@ object GpuWindowExpression {
 
   def getRangeBasedWindowFrame(aggColumnIndex : Int,
                                timeColumnIndex : Int,
-                               aggExpression : GpuExpression,
+                               aggExpression : Expression,
                                windowSpec : GpuSpecifiedWindowFrame,
                                timestampIsAscending : Boolean)
   : WindowAggregate = {
@@ -341,7 +342,7 @@ object GpuWindowExpression {
     }
   }
 
-  def getBoundaryValue(boundary : GpuExpression) : Int = boundary match {
+  def getBoundaryValue(boundary : Expression) : Int = boundary match {
     case literal: GpuLiteral if literal.dataType.equals(IntegerType) =>
       literal.value.asInstanceOf[Int]
     case literal: GpuLiteral if literal.dataType.equals(CalendarIntervalType) =>
@@ -360,11 +361,11 @@ class GpuWindowSpecDefinitionMeta(
     rule: ConfKeysAndIncompat)
   extends ExprMeta[WindowSpecDefinition](windowSpec, conf, parent, rule) {
 
-  val partitionSpec: Seq[ExprMeta[Expression]] =
+  val partitionSpec: Seq[BaseExprMeta[Expression]] =
     windowSpec.partitionSpec.map(wrapExpr(_, conf, Some(this)))
-  val orderSpec: Seq[ExprMeta[SortOrder]] =
+  val orderSpec: Seq[BaseExprMeta[SortOrder]] =
     windowSpec.orderSpec.map(wrapExpr(_, conf, Some(this)))
-  val windowFrame: ExprMeta[WindowFrame] =
+  val windowFrame: BaseExprMeta[WindowFrame] =
     wrapExpr(windowSpec.frameSpecification, conf, Some(this))
 
   override val ignoreUnsetDataTypes: Boolean = true
@@ -381,14 +382,14 @@ class GpuWindowSpecDefinitionMeta(
   override def convertToGpu(): GpuExpression = {
     GpuWindowSpecDefinition(
       partitionSpec.map(_.convertToGpu()),
-      orderSpec.map(_.convertToGpu().asInstanceOf[GpuSortOrder]),
+      orderSpec.map(_.convertToGpu().asInstanceOf[SortOrder]),
       windowFrame.convertToGpu().asInstanceOf[GpuWindowFrame])
   }
 }
 
 case class GpuWindowSpecDefinition(
-    partitionSpec: Seq[GpuExpression],
-    orderSpec: Seq[GpuSortOrder],
+    partitionSpec: Seq[Expression],
+    orderSpec: Seq[SortOrder],
     frameSpecification: GpuWindowFrame)
   extends GpuExpression with GpuUnevaluable {
 
@@ -577,8 +578,8 @@ case object GpuUnspecifiedFrame extends GpuWindowFrame // Placeholder, to handle
 // This class closely follows what's done in SpecifiedWindowFrame.
 case class GpuSpecifiedWindowFrame(
                                     frameType: FrameType,
-                                    lower: GpuExpression,
-                                    upper: GpuExpression)
+                                    lower: Expression,
+                                    upper: Expression)
   extends GpuWindowFrame {
 
   override def children: Seq[Expression] = lower :: upper :: Nil
@@ -712,11 +713,11 @@ case class GpuRowNumber() extends GpuAggregateWindowFunction {
   protected val zero: GpuLiteral = GpuLiteral(0, IntegerType)
   protected val one : GpuLiteral = GpuLiteral(1, IntegerType)
 
-  protected val rowNumber : GpuAttributeReference =
-    GpuAttributeReference("rowNumber", IntegerType)()
-  override def aggBufferAttributes: Seq[GpuAttributeReference] =  rowNumber :: Nil
+  protected val rowNumber : AttributeReference =
+    AttributeReference("rowNumber", IntegerType)()
+  override def aggBufferAttributes: Seq[AttributeReference] =  rowNumber :: Nil
   override val initialValues: Seq[GpuExpression] = zero :: Nil
-  override val updateExpressions: Seq[GpuExpression] = rowNumber :: one :: Nil
-  override val evaluateExpression : GpuExpression = rowNumber
+  override val updateExpressions: Seq[Expression] = rowNumber :: one :: Nil
+  override val evaluateExpression: Expression = rowNumber
   override val inputProjection: Seq[GpuExpression] = Nil
 }

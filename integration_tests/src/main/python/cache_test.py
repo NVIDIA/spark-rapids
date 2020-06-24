@@ -18,16 +18,13 @@ from asserts import assert_gpu_and_cpu_are_equal_collect
 from data_gen import *
 import pyspark.sql.functions as f
 
-@pytest.mark.xfail(reason='https://github.com/NVIDIA/spark-rapids/issues/187')
 def test_passing_gpuExpr_as_Expr():
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark : unary_op_df(spark, string_gen)
             .select(f.col("a")).na.drop()
             .groupBy(f.col("a"))
-            .agg(f.count(f.col("a")))
-            .orderBy("count(a)", ascending=False)
+            .agg(f.count(f.col("a")).alias("count_a"))
+            .orderBy(f.col("count_a").desc(), f.col("a"))
             .cache()
             .limit(50)
     )
-
-

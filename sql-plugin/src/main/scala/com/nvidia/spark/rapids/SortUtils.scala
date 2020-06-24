@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019, NVIDIA CORPORATION.
+ * Copyright (c) 2019-2020, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -20,7 +20,7 @@ import scala.collection.mutable.ArrayBuffer
 
 import com.nvidia.spark.rapids.GpuExpressionsUtils.evaluateBoundExpressions
 
-import org.apache.spark.sql.catalyst.expressions.{NullsFirst, NullsLast}
+import org.apache.spark.sql.catalyst.expressions.{NullsFirst, NullsLast, SortOrder}
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
 object SortUtils {
@@ -30,9 +30,9 @@ object SortUtils {
   * after the sort key columns. The sort key columns will be dropped after sorting.
   */
   def getGpuColVectorsAndBindReferences(batch: ColumnarBatch,
-      boundInputReferences: Seq[GpuSortOrder]): Seq[GpuColumnVector] = {
+      boundInputReferences: Seq[SortOrder]): Seq[GpuColumnVector] = {
     val sortCvs = new ArrayBuffer[GpuColumnVector](boundInputReferences.length)
-    val childExprs = boundInputReferences.map(_.child)
+    val childExprs = boundInputReferences.map(_.child.asInstanceOf[GpuExpression])
     sortCvs ++= evaluateBoundExpressions(batch, childExprs)
     val originalColumns = GpuColumnVector.extractColumns(batch)
     originalColumns.foreach(_.incRefCount())
@@ -42,7 +42,7 @@ object SortUtils {
   /*
   * Return true if nulls are needed first and ordering is ascending and vice versa
    */
-  def areNullsSmallest(order: GpuSortOrder): Boolean = {
+  def areNullsSmallest(order: SortOrder): Boolean = {
     (order.isAscending && order.nullOrdering == NullsFirst) ||
       (!order.isAscending && order.nullOrdering == NullsLast)
   }
