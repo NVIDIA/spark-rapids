@@ -95,23 +95,12 @@ def test_rtrim():
                 'TRIM(TRAILING NULL FROM a)',
                 'TRIM(TRAILING "" FROM a)'))
 
-# Once https://github.com/NVIDIA/spark-rapids/issues/112 is fixed this should be
-# deleted and the corresponding lines in the other tests should be uncommented
-@pytest.mark.xfail(reason='https://github.com/NVIDIA/spark-rapids/issues/112')
-def test_start_n_ends_with_xfail():
-    gen = mk_str_gen('[Ab\ud720]{3}A.{0,3}Z[Ab\ud720]{3}')
-    assert_gpu_and_cpu_are_equal_collect(
-            lambda spark: unary_op_df(spark, gen).select(
-                f.col('a').startswith(''),
-                f.col('a').endswith('')))
-
 def test_startswith():
     gen = mk_str_gen('[Ab\ud720]{3}A.{0,3}Z[Ab\ud720]{3}')
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark: unary_op_df(spark, gen).select(
                 f.col('a').startswith('A'),
-                #https://github.com/NVIDIA/spark-rapids/issues/112
-                #f.col('a').startswith(''),
+                f.col('a').startswith(''),
                 f.col('a').startswith(None),
                 f.col('a').startswith('A\ud720')))
 
@@ -121,8 +110,7 @@ def test_endswith():
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark: unary_op_df(spark, gen).select(
                 f.col('a').endswith('A'),
-                #https://github.com/NVIDIA/spark-rapids/issues/112
-                #f.col('a').endswith(''),
+                f.col('a').endswith(''),
                 f.col('a').endswith(None),
                 f.col('a').endswith('A\ud720')))
 

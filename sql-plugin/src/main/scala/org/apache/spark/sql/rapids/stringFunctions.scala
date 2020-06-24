@@ -171,18 +171,8 @@ case class GpuStartsWith(left: Expression, right: Expression)
 
   override def toString: String = s"gpustartswith($left, $right)"
 
-  def doColumnar(lhs: GpuColumnVector, rhs: Scalar): GpuColumnVector = {
-    if (rhs.getJavaString.isEmpty) {
-      val boolScalar = Scalar.fromBool(true)
-      try {
-        GpuColumnVector.from(ColumnVector.fromScalar(boolScalar, lhs.getRowCount.toInt))
-      } finally {
-        boolScalar.close()
-      }
-    } else {
-      GpuColumnVector.from(lhs.getBase.startsWith(rhs))
-    }
-  }
+  def doColumnar(lhs: GpuColumnVector, rhs: Scalar): GpuColumnVector =
+    GpuColumnVector.from(lhs.getBase.startsWith(rhs))
 
   override def doColumnar(lhs: GpuColumnVector, rhs: GpuColumnVector): GpuColumnVector =
     throw new IllegalStateException(
@@ -206,18 +196,8 @@ case class GpuEndsWith(left: Expression, right: Expression)
 
   override def toString: String = s"gpuendswith($left, $right)"
 
-  def doColumnar(lhs: GpuColumnVector, rhs: Scalar): GpuColumnVector = {
-    if (rhs.getJavaString.isEmpty) {
-      val boolScalar = Scalar.fromBool(true)
-      try {
-        GpuColumnVector.from(ColumnVector.fromScalar(boolScalar, lhs.getRowCount.toInt))
-      } finally {
-        boolScalar.close()
-      }
-    } else {
-      GpuColumnVector.from(lhs.getBase.endsWith(rhs))
-    }
-  }
+  def doColumnar(lhs: GpuColumnVector, rhs: Scalar): GpuColumnVector =
+    GpuColumnVector.from(lhs.getBase.endsWith(rhs))
 
   override def doColumnar(lhs: GpuColumnVector, rhs: GpuColumnVector): GpuColumnVector =
     throw new IllegalStateException(
@@ -340,24 +320,8 @@ case class GpuContains(left: Expression, right: Expression) extends GpuBinaryExp
 
   override def toString: String = s"gpucontains($left, $right)"
 
-  def doColumnar(lhs: GpuColumnVector, rhs: Scalar): GpuColumnVector = {
-    val ret = if (rhs.getJavaString.isEmpty) {
-      withResource(Scalar.fromBool(true)) { trueScalar =>
-        if (left.nullable) {
-          withResource(Scalar.fromBool(null)) { nullBool =>
-            withResource(lhs.getBase.isNull) { isNull =>
-              isNull.ifElse(nullBool, trueScalar)
-            }
-          }
-        } else {
-          ColumnVector.fromScalar(trueScalar, lhs.getRowCount.toInt)
-        }
-      }
-    } else {
-      lhs.getBase.stringContains(rhs)
-    }
-    GpuColumnVector.from(ret)
-  }
+  def doColumnar(lhs: GpuColumnVector, rhs: Scalar): GpuColumnVector =
+    GpuColumnVector.from(lhs.getBase.stringContains(rhs))
 
   override def doColumnar(lhs: GpuColumnVector, rhs: GpuColumnVector): GpuColumnVector =
     throw new IllegalStateException("Really should not be here, " +
