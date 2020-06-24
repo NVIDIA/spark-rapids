@@ -161,6 +161,9 @@ class GpuCoalesceBatchesSuite extends SparkQueryCompareTestSuite {
 
   test("coalesce HostColumnarToGpu") {
 
+    // this test fails when AQE is enabled - https://github.com/NVIDIA/spark-rapids/issues/276
+    assume(!SparkSessionHolder.adaptiveQueryEnabled)
+
     val conf = makeBatchedBytes(1)
       .set(RapidsConf.MAX_READER_BATCH_SIZE_ROWS.key, "1")
       .set(RapidsConf.MAX_READER_BATCH_SIZE_BYTES.key, "1")

@@ -15,33 +15,19 @@
  */
 package com.nvidia.spark.rapids.tests.tpch
 
-import scala.collection.immutable
+import org.scalatest.{DoNotDiscover, Suites}
 
-import org.scalatest.{BeforeAndAfterAll, DoNotDiscover, Suite, Suites}
-
-class TpchLikeAdaptiveSparkSuite extends Suite
-    with BeforeAndAfterAll {
-
-  override protected def beforeAll(): Unit = {
-    TpchLikeSparkSuite.adaptiveQueryEnabled = true
-  }
-
-  override def nestedSuites: immutable.IndexedSeq[Suite] = {
-    // we need to enable AQE before registering the tests so
-    // that the test names are correct
-    TpchLikeSparkSuite.adaptiveQueryEnabled = true
-    try {
-      Seq(new TpchLikeSparkSuiteAdaptive).toIndexedSeq
-    } finally {
-      TpchLikeSparkSuite.adaptiveQueryEnabled = false
-    }
-  }
-
-  override protected def afterAll(): Unit = {
-    TpchLikeSparkSuite.adaptiveQueryEnabled = false
-  }
-}
+class TpchLikeAdaptiveSparkSuite extends Suites(new TpchLikeSparkSuiteAdaptive)
 
 // we need the AQE suites to have unique names so that they don't overwrite
 // surefire results from the original suites
-@DoNotDiscover class TpchLikeSparkSuiteAdaptive extends TpchLikeSparkSuite
+@DoNotDiscover class TpchLikeSparkSuiteAdaptive extends TpchLikeSparkSuite {
+  override def beforeAll(): Unit = {
+    super.beforeAll()
+    TpchLikeSparkSuite.adaptiveQueryEnabled = true
+  }
+  override  def afterAll(): Unit = {
+    super.afterAll()
+    TpchLikeSparkSuite.adaptiveQueryEnabled = false
+  }
+}

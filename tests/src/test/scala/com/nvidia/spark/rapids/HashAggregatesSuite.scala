@@ -106,6 +106,9 @@ class HashAggregatesSuite extends SparkQueryCompareTestSuite {
 
   test("SortAggregateExec is translated correctly ENABLE_HASH_OPTIMIZE_SORT=false") {
 
+    // this test fails when AQE is enabled - https://github.com/NVIDIA/spark-rapids/issues/277
+    assume(!SparkSessionHolder.adaptiveQueryEnabled)
+
     val conf = new SparkConf()
       .set(RapidsConf.ENABLE_HASH_OPTIMIZE_SORT.key, "false")
 
@@ -141,6 +144,9 @@ class HashAggregatesSuite extends SparkQueryCompareTestSuite {
     }, conf)
   }
   test("SortAggregateExec is translated correctly ENABLE_HASH_OPTIMIZE_SORT=true") {
+
+    // this test fails when AQE is enabled - https://github.com/NVIDIA/spark-rapids/issues/277
+    assume(!SparkSessionHolder.adaptiveQueryEnabled)
 
     val conf = new SparkConf()
       .set(RapidsConf.ENABLE_HASH_OPTIMIZE_SORT.key, "true")

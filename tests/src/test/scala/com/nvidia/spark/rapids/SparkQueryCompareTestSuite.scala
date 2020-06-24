@@ -55,7 +55,7 @@ object SparkSessionHolder extends Logging {
 
   val SPARK_SQL_ADAPTIVE_ENABLED = "spark.sql.adaptive.enabled"
 
-  @transient
+  @volatile
   var adaptiveQueryEnabled: Boolean = false
 
   val spark = {

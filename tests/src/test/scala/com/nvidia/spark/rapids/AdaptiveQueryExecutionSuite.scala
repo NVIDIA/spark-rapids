@@ -15,66 +15,163 @@
  */
 package com.nvidia.spark.rapids
 
-import scala.collection.immutable
-
-import org.scalatest.{BeforeAndAfterAll, DoNotDiscover, Suite}
+import org.scalatest.{BeforeAndAfterAll, DoNotDiscover, Suites}
 
 /**
  * Runs all of the test suites with Adaptive Query Execution enabled.
  */
-class AdaptiveQueryExecutionSuite extends Suite
-  with BeforeAndAfterAll {
-
-  override protected def beforeAll(): Unit = {
-    SparkSessionHolder.adaptiveQueryEnabled = true
-  }
-
-  override def nestedSuites: immutable.IndexedSeq[Suite] = {
-    // we need to enable AQE before registering the tests so
-    // that the test names are correct
-    SparkSessionHolder.adaptiveQueryEnabled = true
-    try {
-      Seq(new AnsiCastOpSuiteAdaptive,
-        new CastOpSuiteAdaptive,
-        new CsvScanSuiteAdaptive,
-        new ExpandExecSuiteAdaptive,
-        new GpuBatchUtilsSuiteAdaptive,
-        new GpuCoalesceBatchesSuiteAdaptive,
-        new HashAggregatesSuiteAdaptive,
-        new HashSortOptimizeSuiteAdaptive,
-        new LimitExecSuiteAdaptive,
-        new OrcScanSuiteAdaptive,
-        new ParquetScanSuiteAdaptive,
-        new ParquetWriterSuiteAdaptive,
-        new ProjectExprSuiteAdaptive,
-        new SortExecSuiteAdaptive,
-        new StringFallbackSuiteAdaptive,
-        new WindowFunctionSuiteAdaptive).toIndexedSeq
-    } finally {
-      SparkSessionHolder.adaptiveQueryEnabled = false
-    }
-  }
-
-  override protected def afterAll(): Unit = {
-    SparkSessionHolder.adaptiveQueryEnabled = false
-  }
-}
+class AdaptiveQueryExecutionSuite extends Suites(
+  new AnsiCastOpSuiteAdaptive,
+  new CastOpSuiteAdaptive,
+  new CsvScanSuiteAdaptive,
+  new ExpandExecSuiteAdaptive,
+  new GpuBatchUtilsSuiteAdaptive,
+  new GpuCoalesceBatchesSuiteAdaptive,
+  new HashAggregatesSuiteAdaptive,
+  new HashSortOptimizeSuiteAdaptive,
+  new LimitExecSuiteAdaptive,
+  new OrcScanSuiteAdaptive,
+  new ParquetScanSuiteAdaptive,
+  new ParquetWriterSuiteAdaptive,
+  new ProjectExprSuiteAdaptive,
+  new SortExecSuiteAdaptive,
+  new StringFallbackSuiteAdaptive,
+  new WindowFunctionSuiteAdaptive)
 
 // we need the AQE suites to have unique names so that they don't overwrite
 // surefire results from the original suites
-@DoNotDiscover class AnsiCastOpSuiteAdaptive extends AnsiCastOpSuite
-@DoNotDiscover class CastOpSuiteAdaptive extends CastOpSuite
-@DoNotDiscover class CsvScanSuiteAdaptive extends CsvScanSuite
-@DoNotDiscover class ExpandExecSuiteAdaptive extends ExpandExecSuite
-@DoNotDiscover class GpuBatchUtilsSuiteAdaptive extends GpuBatchUtilsSuite
+@DoNotDiscover class AnsiCastOpSuiteAdaptive extends AnsiCastOpSuite with BeforeAndAfterAll {
+  override def beforeAll(): Unit = {
+    SparkSessionHolder.adaptiveQueryEnabled = true
+  }
+  override  def afterAll(): Unit = {
+    SparkSessionHolder.adaptiveQueryEnabled = false
+  }
+}
+@DoNotDiscover class CastOpSuiteAdaptive extends CastOpSuite with BeforeAndAfterAll {
+  override def beforeAll(): Unit = {
+    SparkSessionHolder.adaptiveQueryEnabled = true
+  }
+  override  def afterAll(): Unit = {
+    SparkSessionHolder.adaptiveQueryEnabled = false
+  }
+}
+@DoNotDiscover class CsvScanSuiteAdaptive extends CsvScanSuite with BeforeAndAfterAll {
+  override def beforeAll(): Unit = {
+    SparkSessionHolder.adaptiveQueryEnabled = true
+  }
+  override  def afterAll(): Unit = {
+    SparkSessionHolder.adaptiveQueryEnabled = false
+  }
+}
+@DoNotDiscover class ExpandExecSuiteAdaptive extends ExpandExecSuite with BeforeAndAfterAll {
+  override def beforeAll(): Unit = {
+    SparkSessionHolder.adaptiveQueryEnabled = true
+  }
+  override  def afterAll(): Unit = {
+    SparkSessionHolder.adaptiveQueryEnabled = false
+  }
+}
+@DoNotDiscover class GpuBatchUtilsSuiteAdaptive extends GpuBatchUtilsSuite with BeforeAndAfterAll {
+  override def beforeAll(): Unit = {
+    SparkSessionHolder.adaptiveQueryEnabled = true
+  }
+  override  def afterAll(): Unit = {
+    SparkSessionHolder.adaptiveQueryEnabled = false
+  }
+}
 @DoNotDiscover class GpuCoalesceBatchesSuiteAdaptive extends GpuCoalesceBatchesSuite
+    with BeforeAndAfterAll {
+  override def beforeAll(): Unit = {
+    SparkSessionHolder.adaptiveQueryEnabled = true
+  }
+  override  def afterAll(): Unit = {
+    SparkSessionHolder.adaptiveQueryEnabled = false
+  }
+}
 @DoNotDiscover class HashAggregatesSuiteAdaptive extends HashAggregatesSuite
+    with BeforeAndAfterAll {
+  override def beforeAll(): Unit = {
+    SparkSessionHolder.adaptiveQueryEnabled = true
+  }
+  override  def afterAll(): Unit = {
+    SparkSessionHolder.adaptiveQueryEnabled = false
+  }
+}
 @DoNotDiscover class HashSortOptimizeSuiteAdaptive extends HashSortOptimizeSuite
-@DoNotDiscover class LimitExecSuiteAdaptive extends LimitExecSuite
-@DoNotDiscover class OrcScanSuiteAdaptive extends OrcScanSuite
-@DoNotDiscover class ParquetScanSuiteAdaptive extends ParquetScanSuite
-@DoNotDiscover class ParquetWriterSuiteAdaptive extends ParquetWriterSuite
-@DoNotDiscover class ProjectExprSuiteAdaptive extends ProjectExprSuite
-@DoNotDiscover class SortExecSuiteAdaptive extends SortExecSuite
+    with BeforeAndAfterAll {
+  override def beforeAll(): Unit = {
+    super.beforeAll()
+    SparkSessionHolder.adaptiveQueryEnabled = true
+  }
+  override  def afterAll(): Unit = {
+    super.afterAll()
+    SparkSessionHolder.adaptiveQueryEnabled = false
+  }
+}
+@DoNotDiscover class LimitExecSuiteAdaptive extends LimitExecSuite with BeforeAndAfterAll {
+  override def beforeAll(): Unit = {
+    SparkSessionHolder.adaptiveQueryEnabled = true
+  }
+  override  def afterAll(): Unit = {
+    SparkSessionHolder.adaptiveQueryEnabled = false
+  }
+}
+@DoNotDiscover class OrcScanSuiteAdaptive extends OrcScanSuite with BeforeAndAfterAll {
+  override def beforeAll(): Unit = {
+    SparkSessionHolder.adaptiveQueryEnabled = true
+  }
+  override  def afterAll(): Unit = {
+    SparkSessionHolder.adaptiveQueryEnabled = false
+  }
+}
+@DoNotDiscover class ParquetScanSuiteAdaptive extends ParquetScanSuite with BeforeAndAfterAll {
+  override def beforeAll(): Unit = {
+    SparkSessionHolder.adaptiveQueryEnabled = true
+  }
+  override  def afterAll(): Unit = {
+    SparkSessionHolder.adaptiveQueryEnabled = false
+  }
+}
+@DoNotDiscover class ParquetWriterSuiteAdaptive extends ParquetWriterSuite with BeforeAndAfterAll {
+  override def beforeAll(): Unit = {
+    SparkSessionHolder.adaptiveQueryEnabled = true
+  }
+  override  def afterAll(): Unit = {
+    SparkSessionHolder.adaptiveQueryEnabled = false
+  }
+}
+@DoNotDiscover class ProjectExprSuiteAdaptive extends ProjectExprSuite with BeforeAndAfterAll {
+  override def beforeAll(): Unit = {
+    SparkSessionHolder.adaptiveQueryEnabled = true
+  }
+  override  def afterAll(): Unit = {
+    SparkSessionHolder.adaptiveQueryEnabled = false
+  }
+}
+@DoNotDiscover class SortExecSuiteAdaptive extends SortExecSuite with BeforeAndAfterAll {
+  override def beforeAll(): Unit = {
+    SparkSessionHolder.adaptiveQueryEnabled = true
+  }
+  override  def afterAll(): Unit = {
+    SparkSessionHolder.adaptiveQueryEnabled = false
+  }
+}
 @DoNotDiscover class StringFallbackSuiteAdaptive extends StringFallbackSuite
+    with BeforeAndAfterAll {
+override def beforeAll(): Unit = {
+    SparkSessionHolder.adaptiveQueryEnabled = true
+  }
+  override  def afterAll(): Unit = {
+    SparkSessionHolder.adaptiveQueryEnabled = false
+  }
+}
 @DoNotDiscover class WindowFunctionSuiteAdaptive extends WindowFunctionSuite
+    with BeforeAndAfterAll {
+  override def beforeAll(): Unit = {
+    SparkSessionHolder.adaptiveQueryEnabled = true
+  }
+  override  def afterAll(): Unit = {
+    SparkSessionHolder.adaptiveQueryEnabled = false
+  }
+}

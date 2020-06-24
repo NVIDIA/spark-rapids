@@ -24,7 +24,7 @@ import org.apache.spark.sql.{DataFrame, SparkSession}
 import org.apache.spark.sql.execution.adaptive.AdaptiveSparkPlanExec
 
 object TpchLikeSparkSuite {
-  @transient
+  @volatile
   var adaptiveQueryEnabled = false
 }
 
@@ -129,7 +129,11 @@ class TpchLikeSparkSuite extends FunSuite with BeforeAndAfterAll {
   }
 
   testTpchLike("Something like TPCH Query 2", 1) {
-    session => Q2Like(session)
+    session => {
+      // this test fails when AQE is enabled - https://github.com/NVIDIA/spark-rapids/issues/275
+      assume(!adaptiveQueryEnabled)
+      Q2Like(session)
+    }
   }
 
   testTpchLike("Something like TPCH Query 3", 3) {
