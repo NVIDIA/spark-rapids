@@ -37,21 +37,21 @@ class GpuExpandExecMeta(
     rule: ConfKeysAndIncompat)
   extends SparkPlanMeta[ExpandExec](expand, conf, parent, rule) {
 
-  private val gpuProjections: Seq[Seq[ExprMeta[_]]] =
+  private val gpuProjections: Seq[Seq[BaseExprMeta[_]]] =
     expand.projections.map(_.map(GpuOverrides.wrapExpr(_, conf, Some(this))))
 
-  private val outputAttributes: Seq[ExprMeta[_]] =
+  private val outputAttributes: Seq[BaseExprMeta[_]] =
     expand.output.map(GpuOverrides.wrapExpr(_, conf, Some(this)))
 
-  override val childExprs: Seq[ExprMeta[_]] = gpuProjections.flatten ++ outputAttributes
+  override val childExprs: Seq[BaseExprMeta[_]] = gpuProjections.flatten ++ outputAttributes
 
   /**
    * Convert what this wraps to a GPU enabled version.
    */
   override def convertToGpu(): GpuExec = {
     val projections = gpuProjections.map(_.map(_.convertToGpu()))
-    val attributes = outputAttributes.map(_.convertToGpu()).asInstanceOf[Seq[GpuAttributeReference]]
-    GpuExpandExec(projections, attributes, childPlans.head.convertIfNeeded())
+    GpuExpandExec(projections, expand.output,
+      childPlans.head.convertIfNeeded())
   }
 }
 
@@ -60,12 +60,12 @@ class GpuExpandExecMeta(
  * multiple output rows for an input row.
  * @param projections The group of expressions, all of the group expressions should
  *                    output the same schema specified bye the parameter `output`
- * @param resultExpressions Attribute references to Output
+ * @param output Attribute references to Output
  * @param child       Child operator
  */
 case class GpuExpandExec(
-    projections: Seq[Seq[GpuExpression]],
-    resultExpressions: Seq[GpuAttributeReference],
+    projections: Seq[Seq[Expression]],
+    output: Seq[Attribute],
     child: SparkPlan)
   extends UnaryExecNode with GpuExec {
 
@@ -81,16 +81,13 @@ case class GpuExpandExec(
   // as UNKNOWN partitioning
   override def outputPartitioning: Partitioning = UnknownPartitioning(0)
 
-  override def output: Seq[Attribute] = resultExpressions.map(_.toAttribute)
-
   @transient
   override lazy val references: AttributeSet =
     AttributeSet(projections.flatten.flatMap(_.references))
 
   override protected def doExecuteColumnar(): RDD[ColumnarBatch] = {
     val boundProjections: Seq[Seq[GpuExpression]] =
-      projections.map(GpuBindReferences.bindReferences(_, child.output))
-
+      projections.map(GpuBindReferences.bindGpuReferences(_, child.output))
     child.executeColumnar().mapPartitions { it =>
       new GpuExpandIterator(boundProjections, metrics, it)
     }

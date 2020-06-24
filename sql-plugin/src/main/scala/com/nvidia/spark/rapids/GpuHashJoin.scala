@@ -42,10 +42,8 @@ trait GpuHashJoin extends GpuExec with HashJoin {
   protected lazy val (gpuBuildKeys, gpuStreamedKeys) = {
     require(leftKeys.map(_.dataType) == rightKeys.map(_.dataType),
       "Join keys from two sides should have same types")
-    val lkeys = GpuBindReferences.bindReferences(leftKeys.asInstanceOf[Seq[GpuExpression]],
-      left.output)
-    val rkeys = GpuBindReferences.bindReferences(rightKeys.asInstanceOf[Seq[GpuExpression]],
-      right.output)
+    val lkeys = GpuBindReferences.bindGpuReferences(leftKeys, left.output)
+    val rkeys = GpuBindReferences.bindGpuReferences(rightKeys, right.output)
     buildSide match {
       case BuildLeft => (lkeys, rkeys)
       case BuildRight => (rkeys, lkeys)
@@ -71,7 +69,7 @@ trait GpuHashJoin extends GpuExec with HashJoin {
 
   def doJoin(builtTable: Table,
       streamedBatch: ColumnarBatch,
-      condition: Option[GpuExpression],
+      condition: Option[Expression],
       numOutputRows: SQLMetric,
       numJoinOutputRows: SQLMetric,
       numOutputBatches: SQLMetric,
