@@ -147,7 +147,7 @@ _qa_conf = {
 @ignore_order
 @qarun
 @pytest.mark.parametrize('sql_query_line', SELECT_SQL, ids=idfn)
-def test_select(sql_query_line, pytestconfig):
+def test_select(sql_query_line, pytestconfig, runtime_env):
     sql_query = sql_query_line[0]
     if sql_query:
         print(sql_query)

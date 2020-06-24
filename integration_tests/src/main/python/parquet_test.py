@@ -15,6 +15,7 @@
 import pytest
 
 from asserts import assert_gpu_and_cpu_are_equal_collect, assert_gpu_and_cpu_writes_are_equal_collect, assert_gpu_fallback_collect
+from conftest import is_databricks_runtime
 from datetime import date, datetime, timezone
 from data_gen import *
 from marks import *
@@ -145,8 +146,8 @@ def test_simple_partitioned_read(spark_tmp_path):
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : spark.read.parquet(data_path))
 
-def test_read_merge_schema(spark_tmp_path, is_databricks_runtime):
-    if is_databricks_runtime:
+def test_read_merge_schema(spark_tmp_path):
+    if is_databricks_runtime():
         pytest.xfail(reason="test_read_merge_schema fails on Databricks "
         "(https://github.com/NVIDIA/spark-rapids/issues/192)")
     # Once https://github.com/NVIDIA/spark-rapids/issues/133 and https://github.com/NVIDIA/spark-rapids/issues/132 are fixed 
