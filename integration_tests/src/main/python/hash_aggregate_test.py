@@ -19,7 +19,7 @@ from data_gen import *
 from pyspark.sql.types import *
 from marks import *
 import pyspark.sql.functions as f
-from spark_session import with_cpu_session
+from spark_session import with_cpu_session, with_spark_session
 
 _no_nans_float_conf = {'spark.rapids.sql.variableFloatAgg.enabled': 'true',
                        'spark.rapids.sql.hasNans': 'false',
@@ -338,8 +338,11 @@ def test_hash_agg_with_nan_keys(data_gen):
         conf=_no_nans_float_conf)
 
 
-@pytest.mark.xfail(reason="count(distinct floats) fails when there are NaN values in the aggregation column."
-                          "(https://github.com/NVIDIA/spark-rapids/issues/194)")
+@pytest.mark.xfail(
+    condition=with_spark_session(lambda spark : spark.sparkContext.version == "3.0.0"),
+    reason="[SPARK-32038][SQL] NormalizeFloatingNumbers should also work on distinct aggregate "
+           "(https://github.com/apache/spark/pull/28876) "
+           "Fixed in later Apache Spark releases.")
 @approximate_float
 @ignore_order
 @pytest.mark.parametrize('data_gen', [ _grpkey_doubles_with_nan_zero_grouping_keys], ids=idfn)
@@ -353,7 +356,6 @@ def test_count_distinct_with_nan_floats(data_gen):
                    'count(distinct b) as count_distinct_bees '
             'from hash_agg_table group by a'),
         conf=_no_nans_float_conf)
-
 
 # TODO: Literal tests
 # TODO: First and Last tests
