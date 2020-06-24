@@ -170,6 +170,19 @@ def spark_tmp_path(request):
     if not debug:
         fs.delete(path)
 
+def runtime_env(request):
+    env = request.config.getoption('runtime_env')
+    print("Runtime env is : %s" % env)
+    return env
+
+@pytest.fixture
+def is_apache_runtime(request):
+    runtime_env(request).lower() == "apache"
+
+@pytest.fixture
+def is_databricks_runtime(request):
+    runtime_env(request).lower() == "databricks"
+
 def _get_jvm_session(spark):
     return spark._jsparkSession
 

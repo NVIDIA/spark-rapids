@@ -145,7 +145,10 @@ def test_simple_partitioned_read(spark_tmp_path):
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : spark.read.parquet(data_path))
 
-def test_read_merge_schema(spark_tmp_path):
+def test_read_merge_schema(spark_tmp_path, is_databricks_runtime):
+    if is_databricks_runtime:
+        pytest.xfail(reason="test_read_merge_schema fails on Databricks "
+        "(https://github.com/NVIDIA/spark-rapids/issues/192)")
     # Once https://github.com/NVIDIA/spark-rapids/issues/133 and https://github.com/NVIDIA/spark-rapids/issues/132 are fixed 
     # we should go with a more standard set of generators
     parquet_gens = [byte_gen, short_gen, int_gen, long_gen, float_gen, double_gen,
