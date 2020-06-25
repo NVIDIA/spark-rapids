@@ -79,7 +79,7 @@ pipeline {
     post {
         always {
             script {
-                sh "python3.6 ./jenkins/databricks/shutdown.py -t $DATABRICKS_TOKEN"
+                sh "python3.6 ./jenkins/databricks/shutdown.py -t $DATABRICKS_TOKEN || true"
             }
         }
     }

@@ -49,7 +49,7 @@ pipeline {
 
     stages {
         stage('Ubuntu16 CUDA10.1') {
-            agent { label 'docker' }
+            agent { label 'docker-gpu' }
             steps {
                 script {
                     def IMAGE_NAME="urm.nvidia.com/sw-spark-docker/plugin:dev-ubuntu16-cuda10.1"
