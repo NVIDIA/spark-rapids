@@ -50,19 +50,20 @@ def main():
   scala_version = '2.12'
   spark_version = '3.0.0'
   cudf_version = '0.15-SNAPSHOT'
+  cuda_version = 'cuda10-1'
 
   try:
-      opts, args = getopt.getopt(sys.argv[1:], 'hs:t:c:p:l:nd:z:j:b:k:a:f:',
-                                 ['workspace=', 'token=', 'clusterid=', 'private=', 'nostart=', 'localscript=', 'dest=', 'sparktgz=', 'cirapidsjar=', 'databricksversion=', 'sparkversion=', 'scalaversion=', 'cudfversion='])
+      opts, args = getopt.getopt(sys.argv[1:], 'hs:t:c:p:l:nd:z:j:b:k:a:f:u:',
+                                 ['workspace=', 'token=', 'clusterid=', 'private=', 'nostart=', 'localscript=', 'dest=', 'sparktgz=', 'cirapidsjar=', 'databricksversion=', 'sparkversion=', 'scalaversion=', 'cudfversion=', 'cudaversion='])
   except getopt.GetoptError:
       print(
-          'run-tests.py -s <workspace> -t <token> -c <clusterid> -p <privatekeyfile> -n <skipstartingcluster> -l <localscript> -d <scriptdestinatino> -z <sparktgz> -j <cirapidsjar> -b <databricksversion> -k <sparkversion> -a <scalaversion> -f <cudfversion>')
+          'run-tests.py -s <workspace> -t <token> -c <clusterid> -p <privatekeyfile> -n <skipstartingcluster> -l <localscript> -d <scriptdestinatino> -z <sparktgz> -j <cirapidsjar> -b <databricksversion> -k <sparkversion> -a <scalaversion> -f <cudfversion> -u <cudaversion>')
       sys.exit(2)
 
   for opt, arg in opts:
       if opt == '-h':
           print(
-              'run-tests.py -s <workspace> -t <token> -c <clusterid> -p <privatekeyfile> -n <skipstartingcluster> -l <localscript> -d <scriptdestinatino>, -z <sparktgz> -j <cirapidsjar> -b <databricksversion> -k <sparkversion> -a <scalaversion> -f <cudfversion>')
+              'run-tests.py -s <workspace> -t <token> -c <clusterid> -p <privatekeyfile> -n <skipstartingcluster> -l <localscript> -d <scriptdestinatino>, -z <sparktgz> -j <cirapidsjar> -b <databricksversion> -k <sparkversion> -a <scalaversion> -f <cudfversion> -u <cudaversion>')
           sys.exit()
       elif opt in ('-s', '--workspace'):
           workspace = arg
@@ -90,6 +91,8 @@ def main():
           scala_version = arg
       elif opt in ('-f', '--cudfversion'):
           cudf_version = arg
+      elif opt in ('-u', '--cudaversion'):
+          cuda_version = arg
 
   print('-s is ' + workspace)
   print('-c is ' + clusterid)
@@ -106,6 +109,7 @@ def main():
   print('-k is ' + spark_version)
   print('-a is ' + scala_version)
   print('-f is ' + cudf_version)
+  print('-u is ' + cuda_version)
 
   if skip_start is None:
       jsonout = cluster_state(workspace, clusterid, token)
@@ -153,7 +157,7 @@ def main():
   print("rsync command: %s" % rsync_command)
   subprocess.check_call(rsync_command, shell = True)
 
-  ssh_command = "ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null ubuntu@%s -p 2200 -i %s %s %s %s %s %s %s %s 2>&1 | tee buildout; if [ `echo ${PIPESTATUS[0]}` -ne 0 ]; then false; else true; fi" % (master_addr, private_key_file, script_dest, tgz_dest, db_version, scala_version, ci_rapids_jar, spark_version, cudf_version)
+  ssh_command = "ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null ubuntu@%s -p 2200 -i %s %s %s %s %s %s %s %s %s 2>&1 | tee buildout; if [ `echo ${PIPESTATUS[0]}` -ne 0 ]; then false; else true; fi" % (master_addr, private_key_file, script_dest, tgz_dest, db_version, scala_version, ci_rapids_jar, spark_version, cudf_version, cuda_version)
   print("ssh command: %s" % ssh_command)
   subprocess.check_call(ssh_command, shell = True)
 
