@@ -74,17 +74,30 @@ def test_broadcast_join_no_nulls(data_gen, join_type):
         return left.join(broadcast(right), left.a == right.r_a, join_type)
     assert_gpu_and_cpu_are_equal_collect(do_join)
 
-# For tests which include broadcast joins, right table is broadcasted and hence it is
-# made smaller than left table.
 # local sort becasue of https://github.com/NVIDIA/spark-rapids/issues/84
 @ignore_order(local=True)
 @pytest.mark.parametrize('data_gen', all_gen, ids=idfn)
+# Not all join types can be translated to a broadcast join, but this tests them to be sure we
+# can handle what spark is doing
 @pytest.mark.parametrize('join_type', ['Left', 'Right', 'Inner', 'LeftSemi', 'LeftAnti',
     pytest.param('FullOuter', marks=[pytest.mark.xfail(reason='https://github.com/NVIDIA/spark-rapids/issues/280')])], ids=idfn)
-def test_broadcast_join(data_gen, join_type):
+def test_broadcast_join_right_table(data_gen, join_type):
     def do_join(spark):
         left, right = create_df(spark, data_gen, 500, 250)
         return left.join(broadcast(right), left.a == right.r_a, join_type)
+    assert_gpu_and_cpu_are_equal_collect(do_join)
+
+# local sort becasue of https://github.com/NVIDIA/spark-rapids/issues/84
+@ignore_order(local=True)
+@pytest.mark.parametrize('data_gen', all_gen, ids=idfn)
+# Not all join types can be translated to a broadcast join, but this tests them to be sure we
+# can handle what spark is doing
+@pytest.mark.parametrize('join_type', ['Left', 'Right', 'Inner', 'LeftSemi', 'LeftAnti',
+    pytest.param('FullOuter', marks=[pytest.mark.xfail(reason='https://github.com/NVIDIA/spark-rapids/issues/280')])], ids=idfn)
+def test_broadcast_join_left_table(data_gen, join_type):
+    def do_join(spark):
+        left, right = create_df(spark, data_gen, 250, 500)
+        return broadcast(left).join(right, left.a == right.r_a, join_type)
     assert_gpu_and_cpu_are_equal_collect(do_join)
 
 # local sort becasue of https://github.com/NVIDIA/spark-rapids/issues/84
