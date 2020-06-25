@@ -420,6 +420,9 @@
                     <groupId>org.apache.rat</groupId>
                     <artifactId>apache-rat-plugin</artifactId>
                     <version>0.13</version>
+                    <configuration>
+                        <consoleOutput>true</consoleOutput>
+                    </configuration>
                     <executions>
                         <execution>
                             <phase>verify</phase>
