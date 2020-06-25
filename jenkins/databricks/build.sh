@@ -22,6 +22,7 @@ DATABRICKS_VERSION=$2
 SCALA_VERSION=$3
 CI_RAPIDS_JAR=$4
 SPARK_VERSION=$5
+CUDF_VERSION=$5
 
 echo "Spark version is $SPARK_VERSION"
 echo "scala version is: $SCALA_VERSION"
@@ -37,6 +38,15 @@ tar -zxvf $SPARKTGZ -C spark-rapids
 cd spark-rapids
 # pull normal Spark artifacts and ignore errors then install databricks jars, then build again
 mvn clean package || true
+CUDFJAR=cudf-${CUDF_VERSION}.jar
+mvn install:install-file \
+   -Dmaven.repo.local=$M2DIR \
+   -Dfile=./$CUDFJAR \
+   -DgroupId=ai.rapids \
+   -DartifactId=cudf \
+   -Dversion=$CUDF_VERSION \
+   -Dpackaging=jar
+
 M2DIR=/home/ubuntu/.m2/repository
 JARDIR=/databricks/jars
 SQLJAR=----workspace_spark_3_0--sql--core--core-hive-2.3__hadoop-2.7_${SCALA_VERSION}_deploy.jar
