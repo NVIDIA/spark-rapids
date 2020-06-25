@@ -28,3 +28,8 @@ def test_passing_gpuExpr_as_Expr():
             .cache()
             .limit(50)
     )
+
+def test_cache_table():
+    spark.sql("CACHE TABLE range5 AS SELECT * FROM range(5)")
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark : spark.sql("select * from range5").limit(5))
