@@ -52,7 +52,7 @@ def test_sortmerge_join_no_nulls(data_gen, join_type):
         return left.join(right, left.a == right.r_a, join_type)
     assert_gpu_and_cpu_are_equal_collect(do_join, conf=_sortmerge_join_conf)
 
-# local sort becasue of https://github.com/NVIDIA/spark-rapids/issues/84
+# local sort because of https://github.com/NVIDIA/spark-rapids/issues/84
 @ignore_order(local=True)
 @pytest.mark.parametrize('data_gen', all_gen, ids=idfn)
 @pytest.mark.parametrize('join_type', ['Left', 'Right', 'Inner', 'LeftSemi', 'LeftAnti',
@@ -74,7 +74,7 @@ def test_broadcast_join_no_nulls(data_gen, join_type):
         return left.join(broadcast(right), left.a == right.r_a, join_type)
     assert_gpu_and_cpu_are_equal_collect(do_join)
 
-# local sort becasue of https://github.com/NVIDIA/spark-rapids/issues/84
+# local sort because of https://github.com/NVIDIA/spark-rapids/issues/84
 @ignore_order(local=True)
 @pytest.mark.parametrize('data_gen', all_gen, ids=idfn)
 # Not all join types can be translated to a broadcast join, but this tests them to be sure we
@@ -87,7 +87,7 @@ def test_broadcast_join_right_table(data_gen, join_type):
         return left.join(broadcast(right), left.a == right.r_a, join_type)
     assert_gpu_and_cpu_are_equal_collect(do_join)
 
-# local sort becasue of https://github.com/NVIDIA/spark-rapids/issues/84
+# local sort because of https://github.com/NVIDIA/spark-rapids/issues/84
 @ignore_order(local=True)
 @pytest.mark.parametrize('data_gen', all_gen, ids=idfn)
 # Not all join types can be translated to a broadcast join, but this tests them to be sure we
@@ -100,7 +100,7 @@ def test_broadcast_join_left_table(data_gen, join_type):
         return broadcast(left).join(right, left.a == right.r_a, join_type)
     assert_gpu_and_cpu_are_equal_collect(do_join)
 
-# local sort becasue of https://github.com/NVIDIA/spark-rapids/issues/84
+# local sort because of https://github.com/NVIDIA/spark-rapids/issues/84
 @ignore_order(local=True)
 @pytest.mark.parametrize('data_gen', all_gen, ids=idfn)
 @pytest.mark.parametrize('join_type', ['Inner'], ids=idfn)
