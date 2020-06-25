@@ -316,9 +316,11 @@ object ExecutionPlanCaptureCallback {
 
   private def didFallBack(plan: SparkPlan, fallbackCpuClass: String): Boolean = {
     val executedPlan = ExecutionPlanCaptureCallback.extractExecutedPlan(Some(plan))
-    executedPlan match {
-      case p: GpuExec if getBaseNameFromClass(p.getClass.getName) == fallbackCpuClass => true
-      case _ => plan.expressions.exists(didFallBack(_, fallbackCpuClass))
+    if (!executedPlan.isInstanceOf[GpuExec] &&
+      getBaseNameFromClass(executedPlan.getClass.getName) == fallbackCpuClass) {
+      true
+    } else {
+      executedPlan.expressions.exists(didFallBack(_, fallbackCpuClass))
     }
   }
 }
