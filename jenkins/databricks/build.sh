@@ -46,7 +46,7 @@ mvn install:install-file \
    -Dpackaging=jar
 
 # pull normal Spark artifacts and ignore errors then install databricks jars, then build again
-mvn clean -d -f
+git clean -d -f
 mvn clean package || true
 M2DIR=/home/ubuntu/.m2/repository
 JARDIR=/databricks/jars
