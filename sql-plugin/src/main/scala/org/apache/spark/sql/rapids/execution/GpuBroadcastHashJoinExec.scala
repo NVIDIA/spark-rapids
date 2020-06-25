@@ -128,28 +128,19 @@ case class GpuBroadcastHashJoinExec(
 
     val boundCondition = condition.map(GpuBindReferences.bindReference(_, output))
 
+    lazy val builtTable = {
+      // TODO clean up intermediate results...
+      val keys = GpuProjectExec.project(broadcastRelation.value.batch, gpuBuildKeys)
+      val combined = combine(keys, broadcastRelation.value.batch)
+      val ret = GpuColumnVector.from(combined)
+      // Don't warn for a leak, because we cannot control when we are done with this
+      (0 until ret.getNumberOfColumns).foreach(ret.getColumn(_).noWarnLeakExpected())
+      ret
+    }
+
     val rdd = streamedPlan.executeColumnar()
-    rdd.mapPartitions(it => new Iterator[ColumnarBatch] {
-      @transient private lazy val builtTable = {
-        // TODO clean up intermediate results...
-        val keys = GpuProjectExec.project(broadcastRelation.value.batch, gpuBuildKeys)
-        val combined = combine(keys, broadcastRelation.value.batch)
-        val ret = GpuColumnVector.from(combined)
-        // Don't warn for a leak, because we cannot control when we are done with this
-        (0 until ret.getNumberOfColumns).foreach(ret.getColumn(_).noWarnLeakExpected())
-        ret
-      }
-
-      override def hasNext: Boolean = it.hasNext
-
-      override def next(): ColumnarBatch = {
-        val cb = it.next()
-        val startTime = System.nanoTime()
-        val ret = doJoin(builtTable, cb, boundCondition, numOutputRows, joinOutputRows,
-          numOutputBatches, joinTime, filterTime)
-        totalTime += (System.nanoTime() - startTime)
-        ret
-      }
-    })
+    rdd.mapPartitions(it =>
+      doJoin(builtTable, it, boundCondition, numOutputRows, joinOutputRows,
+        numOutputBatches, joinTime, filterTime, totalTime))
   }
 }

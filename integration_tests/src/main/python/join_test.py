@@ -55,7 +55,7 @@ def test_sortmerge_join_no_nulls(data_gen, join_type):
 # local sort becasue of https://github.com/NVIDIA/spark-rapids/issues/84
 @ignore_order(local=True)
 @pytest.mark.parametrize('data_gen', all_gen, ids=idfn)
-@pytest.mark.parametrize('join_type', ['Left', 'Inner', 'LeftSemi', 'LeftAnti',
+@pytest.mark.parametrize('join_type', ['Left', 'Right', 'Inner', 'LeftSemi', 'LeftAnti',
     pytest.param('FullOuter', marks=[pytest.mark.xfail(reason='https://github.com/NVIDIA/spark-rapids/issues/280')])], ids=idfn)
 def test_sortmerge_join(data_gen, join_type):
     def do_join(spark):
@@ -79,7 +79,7 @@ def test_broadcast_join_no_nulls(data_gen, join_type):
 # local sort becasue of https://github.com/NVIDIA/spark-rapids/issues/84
 @ignore_order(local=True)
 @pytest.mark.parametrize('data_gen', all_gen, ids=idfn)
-@pytest.mark.parametrize('join_type', ['Left', 'Inner', 'LeftSemi', 'LeftAnti',
+@pytest.mark.parametrize('join_type', ['Left', 'Right', 'Inner', 'LeftSemi', 'LeftAnti',
     pytest.param('FullOuter', marks=[pytest.mark.xfail(reason='https://github.com/NVIDIA/spark-rapids/issues/280')])], ids=idfn)
 def test_broadcast_join(data_gen, join_type):
     def do_join(spark):
@@ -105,7 +105,7 @@ _mixed_df2_with_nulls = [('a', RepeatSeqGen(LongGen(nullable=(True, 20.0)), leng
                          ('b', StringGen()), ('c', BooleanGen())]
 
 @ignore_order
-@pytest.mark.parametrize('join_type', ['Left', 'Inner', 'LeftSemi', 'LeftAnti', 'FullOuter'], ids=idfn)
+@pytest.mark.parametrize('join_type', ['Left', 'Right', 'Inner', 'LeftSemi', 'LeftAnti', 'FullOuter'], ids=idfn)
 def test_broadcast_join_mixed(join_type):
     def do_join(spark):
         left = gen_df(spark, _mixed_df1_with_nulls, length=500)
