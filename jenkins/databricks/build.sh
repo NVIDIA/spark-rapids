@@ -38,7 +38,7 @@ tar -zxvf $SPARKTGZ -C spark-rapids
 cd spark-rapids
 # pull normal Spark artifacts and ignore errors then install databricks jars, then build again
 mvn clean package || true
-CUDFJAR=cudf-${CUDF_VERSION}.jar
+CUDFJAR=./downloads/cudf-${CUDF_VERSION}.jar
 mvn install:install-file \
    -Dmaven.repo.local=$M2DIR \
    -Dfile=./$CUDFJAR \
