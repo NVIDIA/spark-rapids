@@ -38,6 +38,7 @@ mkdir spark-rapids
 tar -zxvf $SPARKTGZ -C spark-rapids
 cd spark-rapids
 mvn clean package || true
+M2DIR=/home/ubuntu/.m2/repository
 CUDFJAR=./cudf-${CUDF_VERSION}.jar
 mvn install:install-file \
    -Dmaven.repo.local=$M2DIR \
@@ -49,7 +50,6 @@ mvn install:install-file \
    -Dpackaging=jar
 
 # pull normal Spark artifacts and ignore errors then install databricks jars, then build again
-M2DIR=/home/ubuntu/.m2/repository
 JARDIR=/databricks/jars
 SQLJAR=----workspace_spark_3_0--sql--core--core-hive-2.3__hadoop-2.7_${SCALA_VERSION}_deploy.jar
 CATALYSTJAR=----workspace_spark_3_0--sql--catalyst--catalyst-hive-2.3__hadoop-2.7_${SCALA_VERSION}_deploy.jar
