@@ -62,16 +62,13 @@ trait GpuBaseLimitExec extends LimitExec with GpuExec {
           val batch = cbIter.next()
           withResource(new NvtxWithMetrics("limit", NvtxColor.ORANGE, totalTime)) { _ =>
             val result = if (batch.numRows() > remainingLimit) {
-              System.err.println(s"SLICE $remainingLimit/${batch.numRows()}")
               sliceBatch(batch)
             } else {
-              System.err.println(s"PASS $remainingLimit/${batch.numRows()}")
               batch
             }
             numOutputBatches += 1
             numOutputRows += result.numRows()
             remainingLimit -= result.numRows()
-            System.err.println(s"RESULT $remainingLimit/${result.numRows()}")
             result
           }
         }
