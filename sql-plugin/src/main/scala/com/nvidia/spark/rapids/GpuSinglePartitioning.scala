@@ -20,7 +20,7 @@ import org.apache.spark.sql.catalyst.expressions.Expression
 import org.apache.spark.sql.types.{DataType, IntegerType}
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
-case class GpuSinglePartitioning(expressions: Seq[GpuExpression])
+case class GpuSinglePartitioning(expressions: Seq[Expression])
   extends GpuExpression with GpuPartitioning {
   /**
     * Returns the result of evaluating this expression on the entire `ColumnarBatch`.

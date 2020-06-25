@@ -22,6 +22,7 @@ import ai.rapids.cudf.{ColumnVector, Table}
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 
 import org.apache.spark.sql.catalyst.InternalRow
+import org.apache.spark.sql.catalyst.expressions.SortOrder
 import org.apache.spark.sql.catalyst.plans.physical.{ClusteredDistribution, Distribution, OrderedDistribution}
 import org.apache.spark.sql.types.{DataType, IntegerType, StructField, StructType}
 import org.apache.spark.sql.vectorized.ColumnarBatch
@@ -37,24 +38,16 @@ import org.apache.spark.sql.vectorized.ColumnarBatch
   */
 
 case class GpuRangePartitioning(
-    gpuOrdering: Seq[GpuSortOrder],
+    gpuOrdering: Seq[SortOrder],
     numPartitions: Int,
-    part: GpuRangePartitioner)
+    part: GpuRangePartitioner,
+    schema: StructType)
   extends GpuExpression with GpuPartitioning {
 
   var rangeBounds: Array[InternalRow] = _
-  var schema: StructType = new StructType()
-  gpuOrdering.foreach { ord =>
-    val sortOrder = ord.toSortOrder
-    sortOrder.child.references.foreach(field => {
-      schema = schema.add(StructField(field.name, field.dataType))
-    })
-  }
 
-  override def children: Seq[GpuExpression] = gpuOrdering
-
+  override def children: Seq[SortOrder] = gpuOrdering
   override def nullable: Boolean = false
-
   override def dataType: DataType = IntegerType
 
   override def satisfies0(required: Distribution): Boolean = {

@@ -101,8 +101,6 @@ object ApiValidation extends Logging {
             "com.nvidia.spark.rapids.GpuExpression",
           "org.apache.spark.sql.catalyst.expressions.aggregate.AggregateExpression" ->
             "org.apache.spark.sql.rapids.GpuAggregateExpression",
-          "org.apache.spark.sql.catalyst.expressions.AttributeReference" ->
-            "com.nvidia.spark.rapids.GpuAttributeReference",
           "org.apache.spark.sql.execution.command.DataWritingCommand" ->
             "com.nvidia.spark.rapids.GpuDataWritingCommand",
           "org.apache.spark.sql.execution.joins.BuildSide" ->

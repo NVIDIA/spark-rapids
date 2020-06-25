@@ -16,6 +16,8 @@
 
 package com.nvidia.spark.rapids
 
+import java.io.File
+
 import ai.rapids.cudf.{BufferType, ColumnVector, HostColumnVector, Table}
 import org.scalatest.Assertions
 
@@ -23,6 +25,10 @@ import org.apache.spark.sql.vectorized.ColumnarBatch
 
 /** A collection of utility methods useful in tests. */
 object TestUtils extends Assertions with Arm {
+  def getTempDir(basename: String): File = new File(
+    System.getProperty("test.build.data", System.getProperty("java.io.tmpdir", "/tmp")),
+    basename)
+
   /** Compare the equality of two tables */
   def compareTables(expected: Table, actual: Table): Unit = {
     assertResult(expected.getRowCount)(actual.getRowCount)

@@ -74,7 +74,7 @@ abstract class RapidsMeta[INPUT <: BASE, BASE, OUTPUT <: BASE](
   /**
    * The wrapped expressions that should be examined
    */
-  val childExprs: Seq[ExprMeta[_]]
+  val childExprs: Seq[BaseExprMeta[_]]
 
   /**
    * The wrapped scans that should be examined
@@ -286,7 +286,7 @@ abstract class PartMeta[INPUT <: Partitioning](part: INPUT,
   extends RapidsMeta[INPUT, Partitioning, GpuPartitioning](part, conf, parent, rule) {
 
   override val childPlans: Seq[SparkPlanMeta[_]] = Seq.empty
-  override val childExprs: Seq[ExprMeta[_]] = Seq.empty
+  override val childExprs: Seq[BaseExprMeta[_]] = Seq.empty
   override val childScans: Seq[ScanMeta[_]] = Seq.empty
   override val childParts: Seq[PartMeta[_]] = Seq.empty
   override val childDataWriteCmds: Seq[DataWritingCommandMeta[_]] = Seq.empty
@@ -328,7 +328,7 @@ abstract class ScanMeta[INPUT <: Scan](scan: INPUT,
   extends RapidsMeta[INPUT, Scan, Scan](scan, conf, parent, rule) {
 
   override val childPlans: Seq[SparkPlanMeta[_]] = Seq.empty
-  override val childExprs: Seq[ExprMeta[_]] = Seq.empty
+  override val childExprs: Seq[BaseExprMeta[_]] = Seq.empty
   override val childScans: Seq[ScanMeta[_]] = Seq.empty
   override val childParts: Seq[PartMeta[_]] = Seq.empty
   override val childDataWriteCmds: Seq[DataWritingCommandMeta[_]] = Seq.empty
@@ -364,7 +364,7 @@ abstract class DataWritingCommandMeta[INPUT <: DataWritingCommand](
     extends RapidsMeta[INPUT, DataWritingCommand, GpuDataWritingCommand](cmd, conf, parent, rule) {
 
   override val childPlans: Seq[SparkPlanMeta[_]] = Seq.empty
-  override val childExprs: Seq[ExprMeta[_]] = Seq.empty
+  override val childExprs: Seq[BaseExprMeta[_]] = Seq.empty
   override val childScans: Seq[ScanMeta[_]] = Seq.empty
   override val childParts: Seq[PartMeta[_]] = Seq.empty
   override val childDataWriteCmds: Seq[DataWritingCommandMeta[_]] = Seq.empty
@@ -400,7 +400,7 @@ abstract class SparkPlanMeta[INPUT <: SparkPlan](plan: INPUT,
 
   override val childPlans: Seq[SparkPlanMeta[_]] =
     plan.children.map(GpuOverrides.wrapPlan(_, conf, Some(this)))
-  override val childExprs: Seq[ExprMeta[_]] =
+  override val childExprs: Seq[BaseExprMeta[_]] =
     plan.expressions.map(GpuOverrides.wrapExpr(_, conf, Some(this)))
   override val childScans: Seq[ScanMeta[_]] = Seq.empty
   override val childParts: Seq[PartMeta[_]] = Seq.empty
@@ -556,15 +556,15 @@ final class RuleNotFoundSparkPlanMeta[INPUT <: SparkPlan](
 /**
  * Base class for metadata around `Expression`.
  */
-abstract class ExprMeta[INPUT <: Expression](
+abstract class BaseExprMeta[INPUT <: Expression](
     expr: INPUT,
     conf: RapidsConf,
     parent: Option[RapidsMeta[_, _, _]],
     rule: ConfKeysAndIncompat)
-  extends RapidsMeta[INPUT, Expression, GpuExpression](expr, conf, parent, rule) {
+  extends RapidsMeta[INPUT, Expression, Expression](expr, conf, parent, rule) {
 
   override val childPlans: Seq[SparkPlanMeta[_]] = Seq.empty
-  override val childExprs: Seq[ExprMeta[_]] =
+  override val childExprs: Seq[BaseExprMeta[_]] =
     expr.children.map(GpuOverrides.wrapExpr(_, conf, Some(this)))
   override val childScans: Seq[ScanMeta[_]] = Seq.empty
   override val childParts: Seq[PartMeta[_]] = Seq.empty
@@ -601,6 +601,16 @@ abstract class ExprMeta[INPUT <: Expression](
   def tagExprForGpu(): Unit = {}
 }
 
+abstract class ExprMeta[INPUT <: Expression](
+    expr: INPUT,
+    conf: RapidsConf,
+    parent: Option[RapidsMeta[_, _, _]],
+    rule: ConfKeysAndIncompat)
+    extends BaseExprMeta[INPUT](expr, conf, parent, rule) {
+
+  override def convertToGpu(): GpuExpression
+}
+
 /**
  * Base class for metadata around `UnaryExpression`.
  */
@@ -614,7 +624,7 @@ abstract class UnaryExprMeta[INPUT <: UnaryExpression](
   override final def convertToGpu(): GpuExpression =
     convertToGpu(childExprs(0).convertToGpu())
 
-  def convertToGpu(child: GpuExpression): GpuExpression
+  def convertToGpu(child: Expression): GpuExpression
 }
 
 /**
@@ -630,7 +640,7 @@ abstract class AggExprMeta[INPUT <: AggregateFunction](
   override final def convertToGpu(): GpuExpression =
     convertToGpu(childExprs(0).convertToGpu())
 
-  def convertToGpu(child: GpuExpression): GpuExpression
+  def convertToGpu(child: Expression): GpuExpression
 }
 
 /**
@@ -646,7 +656,7 @@ abstract class BinaryExprMeta[INPUT <: BinaryExpression](
   override final def convertToGpu(): GpuExpression =
     convertToGpu(childExprs(0).convertToGpu(), childExprs(1).convertToGpu())
 
-  def convertToGpu(lhs: GpuExpression, rhs: GpuExpression): GpuExpression
+  def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression
 }
 
 /**
@@ -663,8 +673,8 @@ abstract class TernaryExprMeta[INPUT <: TernaryExpression](
     convertToGpu(childExprs(0).convertToGpu(), childExprs(1).convertToGpu(),
                  childExprs(2).convertToGpu())
 
-  def convertToGpu(val0: GpuExpression, val1: GpuExpression,
-                   val2: GpuExpression): GpuExpression
+  def convertToGpu(val0: Expression, val1: Expression,
+                   val2: Expression): GpuExpression
 }
 
 abstract class String2TrimExpressionMeta[INPUT <: String2TrimExpression](
@@ -690,7 +700,7 @@ abstract class String2TrimExpressionMeta[INPUT <: String2TrimExpression](
     convertToGpu(childExprs(0).convertToGpu(), trimParam)
   }
 
-  def convertToGpu(column: GpuExpression, target: Option[GpuExpression] = None): GpuExpression
+  def convertToGpu(column: Expression, target: Option[Expression] = None): GpuExpression
 }
 
 /**
@@ -705,7 +715,7 @@ abstract class ComplexTypeMergingExprMeta[INPUT <: ComplexTypeMergingExpression]
   override final def convertToGpu(): GpuExpression =
     convertToGpu(childExprs.map(_.convertToGpu()))
 
-  def convertToGpu(childExprs: Seq[GpuExpression]): GpuExpression
+  def convertToGpu(childExprs: Seq[Expression]): GpuExpression
 }
 
 /**
