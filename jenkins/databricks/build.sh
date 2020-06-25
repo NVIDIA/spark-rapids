@@ -46,7 +46,6 @@ mvn install:install-file \
    -Dpackaging=jar
 
 # pull normal Spark artifacts and ignore errors then install databricks jars, then build again
-git clean -d -f
 mvn clean package || true
 M2DIR=/home/ubuntu/.m2/repository
 JARDIR=/databricks/jars
@@ -86,7 +85,7 @@ mvn install:install-file \
    -Dversion=$SPARK_VERSION \
    -Dpackaging=jar
 
-mvn -Pdatabricks clean verify -DskipTests
+mvn -Pdatabricks clean package -DskipTests
 
 # copy so we pick up new built jar
 sudo cp dist/target/$RAPIDS_BUILT_JAR $DB_JAR_LOC
