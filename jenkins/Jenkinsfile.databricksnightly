@@ -69,7 +69,7 @@ pipeline {
                 script {
                     sshagent(credentials : ['svcngcc_pubpriv']) {
                         sh "mvn versions:set -DnewVersion=$DATABRICKS_VERSION && git clean -d -f"
-                        sh "mkdir ./downloads && mvn dependency:get -Dartifact=ai.rapids:cudf:$CUDF_VERSION -Ddest=./downloads && rm -rf downloads/org downloads/classworlds downloads/ai downloads/junit"
+                        sh "mkdir ./downloads && mvn dependency:get -Dartifact=ai.rapids:cudf:$CUDF_VERSION -Ddest=./downloads && rm -rf org classworlds ai junit"
                         sh "patch -p1 < ./jenkins/databricks/dbimports.patch"
                         sh "tar -zcvf spark-rapids-ci.tgz *"
                         sh "python3.6 ./jenkins/databricks/run-tests.py -z ./spark-rapids-ci.tgz -t $DATABRICKS_TOKEN -p /home/svcngcc/.ssh/id_rsa -l ./jenkins/databricks/build.sh -j $CI_RAPIDS_JAR -b $DATABRICKS_VERSION -k $SPARK_VERSION -a $SCALA_VERSION -f $CUDF_VERSION"
