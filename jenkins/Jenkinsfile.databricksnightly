@@ -58,8 +58,8 @@ pipeline {
         DATABRICKS_TOKEN = credentials("SPARK_DATABRICKS_TOKEN")
         SCALA_VERSION = '2.12'
         SPARK_VERSION = '3.0.0'
-        CI_RAPIDS_JAR = 'rapids-4-spark_2.12-0.1-SNAPSHOT-ci.jar'
-        CI_CUDF_JAR = 'cudf-0.14-cuda10-1.jar'
+        CI_RAPIDS_JAR = 'rapids-4-spark_2.12-0.2-databricks-20200626.173003-1.jar'
+        CI_CUDF_JAR = 'cudf-0.15-SNAPSHOT-cuda10-1-062620.jar'
     }
 
     triggers {
