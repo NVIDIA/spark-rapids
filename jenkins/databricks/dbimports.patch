@@ -1,12 +1,12 @@
 diff --git a/sql-plugin/src/main/scala/com/nvidia/spark/rapids/GpuHashJoin.scala b/sql-plugin/src/main/scala/com/nvidia/spark/rapids/GpuHashJoin.scala
-index e6c3e37..1a8759d 100644
+index e6c3e37..ddd8ca4 100644
 --- a/sql-plugin/src/main/scala/com/nvidia/spark/rapids/GpuHashJoin.scala
 +++ b/sql-plugin/src/main/scala/com/nvidia/spark/rapids/GpuHashJoin.scala
 @@ -19,8 +19,9 @@ import ai.rapids.cudf.{NvtxColor, Table}
  
  import org.apache.spark.TaskContext
  import org.apache.spark.sql.catalyst.expressions.{Attribute, Expression}
-++import org.apache.spark.sql.catalyst.optimizer.{BuildLeft, BuildRight}
++import org.apache.spark.sql.catalyst.optimizer.{BuildLeft, BuildRight}
  import org.apache.spark.sql.catalyst.plans.{ExistenceJoin, FullOuter, Inner, InnerLike, JoinType, LeftAnti, LeftExistence, LeftOuter, LeftSemi, RightOuter}
 -import org.apache.spark.sql.execution.joins.{BuildLeft, BuildRight, HashJoin}
 +import org.apache.spark.sql.execution.joins.HashJoin
