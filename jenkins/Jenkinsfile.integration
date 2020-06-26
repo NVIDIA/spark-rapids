@@ -52,7 +52,7 @@ pipeline {
             steps {
                 script {
                     def CUDA_NAME=sh(returnStdout: true,
-                        script: '. jenkins/version-def.sh>1 && echo -n $CUDA_CLASSIFIER | sed "s/-/./g"')
+                        script: '. jenkins/version-def.sh>&2 && echo -n $CUDA_CLASSIFIER | sed "s/-/./g"')
                     def IMAGE_NAME="urm.nvidia.com/sw-spark-docker/plugin:it-centos7-$CUDA_NAME"
                     def DOCKER_CMD="docker --config $WORKSPACE/.docker"
                     sh """
