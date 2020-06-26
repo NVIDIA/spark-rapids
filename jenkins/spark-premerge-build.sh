@@ -19,19 +19,7 @@ set -ex
 
 nvidia-smi
 
-if [ "$SPARK_VER"x == x ];then
-    SPARK_VER="3.0.0"
-fi
-
-SCALA_BINARY_VER=${SCALA_BINARY_VER:-2.12}
-
-#default maven server urm
-if [ "$SERVER_URL"x == x ]; then
-    SERVER_URL="https://urm.nvidia.com:443/artifactory/sw-spark-maven"
-fi
-
-echo "CUDA_CLASSIFIER: $CUDA_CLASSIFIER SPARK_VER: $SPARK_VER, \
-    SCALA_BINARY_VER: $SCALA_BINARY_VER, SERVER_URL: $SERVER_URL"
+. jenkins/version-def.sh
 
 ARTF_ROOT="$WORKSPACE/.download"
 MVN_GET_CMD="mvn org.apache.maven.plugins:maven-dependency-plugin:2.8:get -B \

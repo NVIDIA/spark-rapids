@@ -21,7 +21,7 @@ from decimal import Decimal
 from asserts import assert_gpu_and_cpu_are_equal_collect
 from qa_nightly_sql import *
 import pytest
-from spark_session import spark as s
+from spark_session import with_cpu_session
 from marks import approximate_float, ignore_order, incompat, qarun
 
 def num_stringDf(spark):
@@ -134,61 +134,68 @@ _qa_conf = {
         'spark.rapids.sql.hasNans': 'false',
         'spark.rapids.sql.castStringToFloat.enabled': 'true',
         'spark.rapids.sql.castFloatToString.enabled': 'true',
-        'spark.rapids.sql.expression.InitCap': 'true',
-        'spark.rapids.sql.expression.Lower': 'true',
-        'spark.rapids.sql.expression.Upper': 'true',
-        'spark.rapids.sql.expression.UnixTimestamp': 'true',
         }
-
-
 
 @approximate_float
 @incompat
-@ignore_order
 @qarun
 @pytest.mark.parametrize('sql_query_line', SELECT_SQL, ids=idfn)
 def test_select(sql_query_line, pytestconfig):
     sql_query = sql_query_line[0]
     if sql_query:
         print(sql_query)
-        num_stringDf(s)
+        with_cpu_session(num_stringDf)
+        assert_gpu_and_cpu_are_equal_collect(lambda spark: spark.sql(sql_query), conf=_qa_conf)
+
+@ignore_order
+@approximate_float
+@incompat
+@qarun
+@pytest.mark.parametrize('sql_query_line', SELECT_NEEDS_SORT_SQL, ids=idfn)
+def test_needs_sort_select(sql_query_line, pytestconfig):
+    sql_query = sql_query_line[0]
+    if sql_query:
+        print(sql_query)
+        with_cpu_session(num_stringDf)
         assert_gpu_and_cpu_are_equal_collect(lambda spark: spark.sql(sql_query), conf=_qa_conf)
 
 @approximate_float
 @incompat
-@ignore_order("local")
+@ignore_order(local=True)
 @qarun
 @pytest.mark.parametrize('sql_query_line', SELECT_JOIN_SQL, ids=idfn)
 def test_select_join(sql_query_line, pytestconfig):
     sql_query = sql_query_line[0]
     if sql_query:
         print(sql_query)
-        num_stringDf(s)
-        if ("UNION" in sql_query) or ("JOIN" in sql_query):
-            num_stringDf_two(s)
+        def init_tables(spark):
+            num_stringDf(spark)
+            if ("UNION" in sql_query) or ("JOIN" in sql_query):
+                num_stringDf_two(spark)
+        with_cpu_session(init_tables)
         assert_gpu_and_cpu_are_equal_collect(lambda spark: spark.sql(sql_query), conf=_qa_conf)
 
 @approximate_float
 @incompat
-@ignore_order("local")
+@ignore_order(local=True)
 @qarun
 @pytest.mark.parametrize('sql_query_line', SELECT_PRE_ORDER_SQL, ids=idfn)
 def test_select_first_last(sql_query_line, pytestconfig):
     sql_query = sql_query_line[0]
     if sql_query:
         print(sql_query)
-        num_stringDf_first_last(s, sql_query_line[2])
-        assert_gpu_and_cpu_are_equal_collect(lambda spark: spark.sql(sql_query).orderBy('res'), conf=_qa_conf)
+        with_cpu_session(lambda spark: num_stringDf_first_last(spark, sql_query_line[2]))
+        assert_gpu_and_cpu_are_equal_collect(lambda spark: spark.sql(sql_query), conf=_qa_conf)
 
 @approximate_float(abs=1e-6)
 @incompat
-@ignore_order("local")
+@ignore_order(local=True)
 @qarun
 @pytest.mark.parametrize('sql_query_line', SELECT_FLOAT_SQL, ids=idfn)
 def test_select_float_order_local(sql_query_line, pytestconfig):
     sql_query = sql_query_line[0]
     if sql_query:
         print(sql_query)
-        num_stringDf(s)
+        with_cpu_session(num_stringDf)
         assert_gpu_and_cpu_are_equal_collect(lambda spark: spark.sql(sql_query), conf=_qa_conf)
 
