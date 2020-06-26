@@ -89,7 +89,8 @@ mvn install:install-file \
 
 mvn -Pdatabricks clean package -DskipTests
 
-# copy so we pick up new built jar
+# Copy so we pick up new built jar. Note that the jar name has to be
+# exactly what is in the staticly setup Databricks cluster we use. 
 sudo cp dist/target/$RAPIDS_BUILT_JAR $DB_JAR_LOC
 
 # tests

@@ -17,6 +17,7 @@
 package com.nvidia.spark.rapids
 
 import ai.rapids.cudf.Scalar
+import com.nvidia.spark.rapids.RapidsPluginImplicits._
 
 import org.apache.spark.sql.catalyst.analysis.{TypeCheckResult, TypeCoercion}
 import org.apache.spark.sql.catalyst.expressions.{ComplexTypeMergingExpression, Expression}
@@ -26,7 +27,7 @@ import org.apache.spark.sql.vectorized.ColumnarBatch
 abstract class GpuConditionalExpression extends ComplexTypeMergingExpression with GpuExpression {
   private def computePredicate(
       batch: ColumnarBatch,
-      predicateExpr: GpuExpression): GpuColumnVector = {
+      predicateExpr: Expression): GpuColumnVector = {
     val predicate: Any = predicateExpr.columnarEval(batch)
     try {
       if (!predicate.isInstanceOf[GpuColumnVector]) {
@@ -52,8 +53,8 @@ abstract class GpuConditionalExpression extends ComplexTypeMergingExpression wit
 
   protected def computeIfElse(
       batch: ColumnarBatch,
-      predicateExpr: GpuExpression,
-      trueExpr: GpuExpression,
+      predicateExpr: Expression,
+      trueExpr: Expression,
       falseValues: GpuColumnVector): GpuColumnVector = {
     val predicate = computePredicate(batch, predicateExpr)
     try {
@@ -84,8 +85,8 @@ abstract class GpuConditionalExpression extends ComplexTypeMergingExpression wit
 
   protected def computeIfElse(
       batch: ColumnarBatch,
-      predicateExpr: GpuExpression,
-      trueExpr: GpuExpression,
+      predicateExpr: Expression,
+      trueExpr: Expression,
       falseValue: Scalar): GpuColumnVector = {
     val predicate = computePredicate(batch, predicateExpr)
     try {
@@ -116,9 +117,9 @@ abstract class GpuConditionalExpression extends ComplexTypeMergingExpression wit
 
   protected def computeIfElse(
       batch: ColumnarBatch,
-      predicateExpr: GpuExpression,
-      trueExpr: GpuExpression,
-      falseExpr: GpuExpression): GpuColumnVector = {
+      predicateExpr: Expression,
+      trueExpr: Expression,
+      falseExpr: Expression): GpuColumnVector = {
     val falseResult: Any = falseExpr.columnarEval(batch)
     try {
       falseResult match {
@@ -142,9 +143,9 @@ abstract class GpuConditionalExpression extends ComplexTypeMergingExpression wit
 }
 
 case class GpuIf(
-    predicateExpr: GpuExpression,
-    trueExpr: GpuExpression,
-    falseExpr: GpuExpression) extends GpuConditionalExpression {
+    predicateExpr: Expression,
+    trueExpr: Expression,
+    falseExpr: Expression) extends GpuConditionalExpression {
 
   @transient
   override lazy val inputTypesForMerging: Seq[DataType] = {
@@ -177,8 +178,8 @@ case class GpuIf(
 
 
 case class GpuCaseWhen(
-    branches: Seq[(GpuExpression, GpuExpression)],
-    elseValue: Option[GpuExpression] = None) extends GpuConditionalExpression with Serializable {
+    branches: Seq[(Expression, Expression)],
+    elseValue: Option[Expression] = None) extends GpuConditionalExpression with Serializable {
 
   override def children: Seq[Expression] = branches.flatMap(b => b._1 :: b._2 :: Nil) ++ elseValue
 

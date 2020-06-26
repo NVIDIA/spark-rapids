@@ -43,6 +43,22 @@ def test_second():
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark : unary_op_df(spark, timestamp_gen).selectExpr('second(a)'))
 
+def test_quarter():
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark : unary_op_df(spark, date_gen).selectExpr('quarter(a)'))
+
+def test_weekday():
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark : unary_op_df(spark, date_gen).selectExpr('weekday(a)'))
+
+def test_dayofweek():
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark : unary_op_df(spark, date_gen).selectExpr('dayofweek(a)'))
+
+def test_last_day():
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark : unary_op_df(spark, date_gen).selectExpr('last_day(a)'))
+
 # We have to set the upper/lower limit on IntegerGen so the date_add doesn't overflow
 # Python uses proleptic gregorian date which extends Gregorian calendar as it always existed and
 # always exist in future. When performing date_sub('0001-01-01', 1), it will blow up because python
@@ -118,6 +134,11 @@ def test_month(data_gen):
 def test_dayofmonth(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : unary_op_df(spark, data_gen).select(f.dayofmonth(f.col('a'))))
+
+@pytest.mark.parametrize('data_gen', date_gens, ids=idfn)
+def test_dayofyear(data_gen):
+    assert_gpu_and_cpu_are_equal_collect(
+            lambda spark : unary_op_df(spark, data_gen).select(f.dayofyear(f.col('a'))))
 
 @incompat #Really only the string is
 @pytest.mark.parametrize('data_gen', date_n_time_gens, ids=idfn)

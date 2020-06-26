@@ -72,7 +72,7 @@ class CastExprMeta[INPUT <: CastBase](
     }
   }
 
-  override def convertToGpu(child: GpuExpression): GpuExpression =
+  override def convertToGpu(child: Expression): GpuExpression =
     GpuCast(child, toType, ansiEnabled, cast.timeZoneId)
 }
 
@@ -179,7 +179,7 @@ object GpuCast {
  * Casts using the GPU
  */
 case class GpuCast(
-    child: GpuExpression,
+    child: Expression,
     dataType: DataType,
     ansiMode: Boolean = false,
     timeZoneId: Option[String] = None)
