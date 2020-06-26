@@ -124,6 +124,9 @@
         </profile>
         <profile>
             <id>databricks</id>
+            <properties>
+	        <rat.consoleOutput>true</rat.consoleOutput>
+            </properties>
         </profile>
     </profiles>
 
@@ -148,6 +151,7 @@
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
 	<project.reporting.sourceEncoding>UTF-8</project.reporting.sourceEncoding>
 	<pytest.TEST_TAGS>not qarun</pytest.TEST_TAGS>
+	<rat.consoleOutput>false</rat.consoleOutput>
     </properties>
 
     <dependencyManagement>
@@ -421,7 +425,7 @@
                     <artifactId>apache-rat-plugin</artifactId>
                     <version>0.13</version>
                     <configuration>
-                        <consoleOutput>true</consoleOutput>
+			    <consoleOutput>${rat.consoleOutput}</consoleOutput>
                     </configuration>
                     <executions>
                         <execution>
