@@ -47,6 +47,8 @@ pipeline {
                 defaultValue: '0.15-SNAPSHOT', description: 'Cudf version to use')
         string(name: 'CUDA_VERSION',
                 defaultValue: 'cuda10-1', description: 'cuda version to use')
+        string(name: 'CLUSTER_ID',
+                defaultValue: '0617-140138-umiak14', description: 'databricks cluster id')
         string(name: 'REF', defaultValue: 'branch-0.2', description: 'Commit to build')
     }
 
@@ -75,7 +77,7 @@ pipeline {
                         sh "mvn dependency:get -Dartifact=ai.rapids:cudf:$CUDF_VERSION -Ddest=./"
                         sh "patch -p1 < ./jenkins/databricks/dbimports.patch"
                         sh "tar -zcvf spark-rapids-ci.tgz *"
-                        sh "python3.6 ./jenkins/databricks/run-tests.py -z ./spark-rapids-ci.tgz -t $DATABRICKS_TOKEN -p /home/svcngcc/.ssh/id_rsa -l ./jenkins/databricks/build.sh -j $CI_RAPIDS_JAR -b $DATABRICKS_VERSION -k $SPARK_VERSION -a $SCALA_VERSION -f $CUDF_VERSION -u $CUDA_VERSION -m $CI_CUDF_JAR"
+                        sh "python3.6 ./jenkins/databricks/run-tests.py -c $CLUSTER_ID -z ./spark-rapids-ci.tgz -t $DATABRICKS_TOKEN -p /home/svcngcc/.ssh/id_rsa -l ./jenkins/databricks/build.sh -j $CI_RAPIDS_JAR -b $DATABRICKS_VERSION -k $SPARK_VERSION -a $SCALA_VERSION -f $CUDF_VERSION -u $CUDA_VERSION -m $CI_CUDF_JAR"
                         sh "./jenkins/databricks/deploy.sh"
                     }
                 }
@@ -85,7 +87,7 @@ pipeline {
     post {
         always {
             script {
-                sh "python3.6 ./jenkins/databricks/shutdown.py -t $DATABRICKS_TOKEN || true"
+                sh "python3.6 ./jenkins/databricks/shutdown.py -c $CLUSTER_ID -t $DATABRICKS_TOKEN || true"
             }
         }
     }
