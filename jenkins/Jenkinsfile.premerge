@@ -47,7 +47,9 @@ pipeline {
             agent { label 'docker-gpu' }
             steps {
                 script {
-                    def IMAGE_NAME="urm.nvidia.com/sw-spark-docker/plugin:dev-ubuntu16-cuda10.1"
+                    def CUDA_NAME=sh(returnStdout: true,
+                        script: '. jenkins/version-def.sh>&2 && echo -n $CUDA_CLASSIFIER | sed "s/-/./g"')
+                    def IMAGE_NAME="urm.nvidia.com/sw-spark-docker/plugin:dev-ubuntu16-$CUDA_NAME"
                     def DOCKER_CMD="docker --config $WORKSPACE/.docker"
                     sh """
                         echo $URM_CREDS_PSW | $DOCKER_CMD login https://urm.nvidia.com -u $URM_CREDS_USR --password-stdin
