@@ -24,12 +24,15 @@ CI_RAPIDS_JAR=$4
 SPARK_VERSION=$5
 CUDF_VERSION=$6
 CUDA_VERSION=$7
+CI_CUDF_JAR=$8
 
 echo "Spark version is $SPARK_VERSION"
 echo "scala version is: $SCALA_VERSION"
 
 # this has to match the Databricks init script
-DB_JAR_LOC=/databricks/jars/$CI_RAPIDS_JAR
+DB_JAR_LOC=/databricks/jars
+DB_RAPIDS_JAR_LOC=$DB_JAR_LOC/$CI_RAPIDS_JAR
+DB_CUDF_JAR_LOC=$DB_JAR_LOC/$CI_CUDF_JAR
 RAPIDS_BUILT_JAR=rapids-4-spark_$SCALA_VERSION-$DATABRICKS_VERSION.jar
 
 sudo apt install -y maven
@@ -39,10 +42,10 @@ tar -zxvf $SPARKTGZ -C spark-rapids
 cd spark-rapids
 mvn clean package || true
 M2DIR=/home/ubuntu/.m2/repository
-CUDFJAR=./cudf-${CUDF_VERSION}.jar
+CUDF_JAR=./cudf-${CUDF_VERSION}.jar
 mvn install:install-file \
    -Dmaven.repo.local=$M2DIR \
-   -Dfile=./$CUDFJAR \
+   -Dfile=./$CUDF_JAR \
    -DgroupId=ai.rapids \
    -DartifactId=cudf \
    -Dversion=$CUDF_VERSION \
@@ -89,9 +92,10 @@ mvn install:install-file \
 
 mvn -Pdatabricks clean package -DskipTests
 
-# Copy so we pick up new built jar. Note that the jar name has to be
+# Copy so we pick up new built jar and latesty CuDF jar. Note that the jar names has to be
 # exactly what is in the staticly setup Databricks cluster we use. 
-sudo cp dist/target/$RAPIDS_BUILT_JAR $DB_JAR_LOC
+sudo cp dist/target/$RAPIDS_BUILT_JAR $DB_RAPIDS_JAR_LOC
+sudo cp ./$CUDF_JAR $DB_CUDF_JAR_LOC
 
 # tests
 export PATH=/databricks/conda/envs/databricks-ml-gpu/bin:/databricks/conda/condabin:$PATH
