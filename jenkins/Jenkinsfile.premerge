@@ -49,6 +49,7 @@ pipeline {
                 script {
                     def IMAGE_NAME="urm.nvidia.com/sw-spark-docker/plugin:dev-ubuntu16-cuda10.1"
                     def DOCKER_CMD="docker --config $WORKSPACE/.docker"
+echo "test premerge"
                     sh """
                         echo $URM_CREDS_PSW | $DOCKER_CMD login https://urm.nvidia.com -u $URM_CREDS_USR --password-stdin
                         $DOCKER_CMD pull $IMAGE_NAME
