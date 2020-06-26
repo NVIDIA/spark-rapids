@@ -20,7 +20,7 @@ import org.json4s.JsonAST
 
 import org.apache.spark.{SparkContext, SparkEnv}
 import org.apache.spark.broadcast.Broadcast
-import org.apache.spark.sql.catalyst.plans.physical.BroadcastMode
+import org.apache.spark.sql.catalyst.plans.physical.{BroadcastMode, IdentityBroadcastMode}
 import org.apache.spark.sql.execution.SparkPlan
 import org.apache.spark.sql.execution.joins.HashedRelationBroadcastMode
 import org.apache.spark.sql.types.{DataType, StructType}
@@ -29,8 +29,10 @@ import org.apache.spark.util.Utils
 object TrampolineUtil {
   def doExecuteBroadcast[T](child: SparkPlan): Broadcast[T] = child.doExecuteBroadcast()
 
-  def isHashedRelation(mode: BroadcastMode): Boolean = {
-    mode.isInstanceOf[HashedRelationBroadcastMode]
+  def isSupportedRelation(mode: BroadcastMode): Boolean = mode match {
+    case _ : HashedRelationBroadcastMode => true
+    case IdentityBroadcastMode => true
+    case _ => false
   }
 
   def structTypeMerge(left: DataType, right: DataType): DataType = StructType.merge(left, right)
