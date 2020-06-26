@@ -15,21 +15,12 @@
 # limitations under the License.
 #
 
-function print_ver(){
-    TAG=$1
-    REPO=$2
-    VERSION=$3
-    SUFFIX=$4
-    
-    if [[ "$VERSION" == *"-SNAPSHOT" ]]; then
-        PREFIX=${VERSION%-SNAPSHOT}
-        TIMESTAMP=`grep -oP '(?<=timestamp>)[^<]+' < $REPO/maven-metadata-$SERVER_ID.xml`
-        BUILD_NUM=`grep -oP '(?<=buildNumber>)[^<]+' < $REPO/maven-metadata-$SERVER_ID.xml`
-        echo $TAG: $PREFIX-$TIMESTAMP-$BUILD_NUM$SUFFIX
-    else
-        echo $TAG: $VERSION$SUFFIX
-    fi
-}
+set -ex
 
 . jenkins/version-def.sh
-print_ver $1 $2 $3 $4
+
+mvn -U -B clean deploy $MVN_URM_MIRROR -Dmaven.repo.local=$WORKSPACE/.m2
+
+# Parse cudf and spark files from local mvn repo
+jenkins/printJarVersion.sh "CUDFVersion" "${WORKSPACE}/.m2/ai/rapids/cudf/${CUDF_VER}" "cudf-${CUDF_VER}" "-${CUDA_CLASSIFIER}.jar"
+jenkins/printJarVersion.sh "SPARKVersion" "${WORKSPACE}/.m2/org/apache/spark/spark-core_2.12/${SPARK_VER}" "spark-core_2.12-${SPARK_VER}" ".jar"

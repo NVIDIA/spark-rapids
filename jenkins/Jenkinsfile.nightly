@@ -52,7 +52,9 @@ pipeline {
             agent { label 'docker-gpu' }
             steps {
                 script {
-                    def IMAGE_NAME="urm.nvidia.com/sw-spark-docker/plugin:dev-ubuntu16-cuda10.1"
+                    def CUDA_NAME=sh(returnStdout: true,
+                        script: '. jenkins/version-def.sh>&2 && echo -n $CUDA_CLASSIFIER | sed "s/-/./g"')
+                    def IMAGE_NAME="urm.nvidia.com/sw-spark-docker/plugin:dev-ubuntu16-$CUDA_NAME"
                     def DOCKER_CMD="docker --config $WORKSPACE/.docker"
                     sh """
                         echo $URM_CREDS_PSW | $DOCKER_CMD login https://urm.nvidia.com -u $URM_CREDS_USR --password-stdin
@@ -62,9 +64,7 @@ pipeline {
                     docker.image(IMAGE_NAME).inside("--runtime=nvidia \
                         -v ${HOME}/.zinc:${HOME}/.zinc:rw \
                         -v /etc/passwd:/etc/passwd -v /etc/group:/etc/group") {
-                        sh "mvn -U -B clean deploy $MVN_URM_MIRROR -Dmaven.repo.local=$WORKSPACE/.m2"
-                        sh "jenkins/printJarVersion.sh 'CUDFVersion' '{$WORKSPACE}/.m2/repository/ai/rapids/cudf/0.15-SNAPSHOT' 'cudf-0.15-SNAPSHOT' '-cuda10-1.jar'"
-                        sh "jenkins/printJarVersion.sh 'SPARKVersion' '${WORKSPACE}/.m2/repository/org/apache/spark/spark-core_2.12/3.0.0' 'spark-core_2.12-3.0.0-' '.jar'"
+                        sh "jenkins/spark-nightly-build.sh"
                     }
                 }
             }
@@ -77,9 +77,7 @@ pipeline {
                 if (currentBuild.currentResult == "SUCCESS") {
                     build(job: 'spark/rapids_integration-0.1-github',
                           propagate: false,
-                          parameters: [string(name: 'REF', value: 'branch-0.2'),
-                                       string(name: 'CUDF_VER', value: '0.15-SNAPSHOT'),
-                                       booleanParam(name: 'BUILD_CENTOS7', value: false),])
+                          parameters: [string(name: 'REF', value: 'branch-0.2')])
 
                     slack("#rapidsai-spark-cicd", "Success", color: "#33CC33")
                 } else {

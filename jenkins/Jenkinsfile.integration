@@ -32,16 +32,10 @@ pipeline {
     }
 
     parameters {
-        string(name: 'CUDF_VER', defaultValue: '0.15-SNAPSHOT',
-            description: '-Dcudf.version= \n\n Default for cudf version')
-        string(name: 'CUDA_CLASSIFIER', defaultValue: '',
+        string(name: 'OVERWRITE_PARAMS', defaultValue: '',
+            description: 'parameters format XXX_VER=xxx;YYY_VER=yyy;')
+        string(name: 'CUDA_CLASSIFIER', defaultValue: 'cuda10-1',
             description: '-Dclassifier=\n\n cuda10-1, cuda10-2, EMPTY as cuda10-1')
-        string(name: 'PROJECT_VER', defaultValue: '0.2.0-SNAPSHOT',
-            description: 'Default project version 0.2.0-SNAPSHOT')
-        string(name: 'SPARK_VER', defaultValue: '3.0.0',
-            description: 'Default spark version 3.0.0')
-        string(name: 'SERVER_URL', defaultValue: 'https://urm.nvidia.com:443/artifactory/sw-spark-maven',
-            description: 'Default maven repo URL where to download Spark3.0 tar file.')
         string(name: 'REF', defaultValue: 'branch-0.2', description: 'Commit to build')
     }
 
@@ -57,13 +51,9 @@ pipeline {
             agent { label 'docker-gpu' }
             steps {
                 script {
-                    def DOCKER_TAG=CUDA_CLASSIFIER.replaceAll("-", ".")
-                    if ( DOCKER_TAG == "") {
-                         DOCKER_TAG="cuda10.1"
-                    }
-                    echo "CUDA_CLASSIFIER: $CUDA_CLASSIFIER, DOCKER_TAG: $DOCKER_TAG"
-
-                    def IMAGE_NAME="urm.nvidia.com/sw-spark-docker/plugin:it-centos7-$DOCKER_TAG"
+                    def CUDA_NAME=sh(returnStdout: true,
+                        script: '. jenkins/version-def.sh>&2 && echo -n $CUDA_CLASSIFIER | sed "s/-/./g"')
+                    def IMAGE_NAME="urm.nvidia.com/sw-spark-docker/plugin:it-centos7-$CUDA_NAME"
                     def DOCKER_CMD="docker --config $WORKSPACE/.docker"
                     sh """
                         echo $URM_CREDS_PSW | $DOCKER_CMD login https://urm.nvidia.com -u $URM_CREDS_USR --password-stdin
@@ -73,7 +63,7 @@ pipeline {
 
                     docker.image(IMAGE_NAME).inside("--runtime=nvidia -v ${HOME}/.zinc:${HOME}/.zinc:rw \
                         -v /etc/passwd:/etc/passwd -v /etc/group:/etc/group") {
-                        echo "Running integration tests on centos7 $DOCKER_TAG"
+                        echo "Running integration tests on centos7 $CUDA_NAME"
                         sh "bash $TEST_SCRIPT"
                     }
                 }
