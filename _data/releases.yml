@@ -1,0 +1,18 @@
+#Release versions
+
+legacy:
+  version: "0.0.0"
+  date: "YYYY-MM-DD"
+stable:
+  version: "0.1.0"
+  date: "2020-06-22"
+nightly:
+  version: "0.2-STABLE"
+  date: "2020-09-04"
+
+stable_cudf:
+  version: "0.14"
+  date: "2020-06-08"
+nightly:
+  version: "0.15"
+  date: "2020-08-19"
