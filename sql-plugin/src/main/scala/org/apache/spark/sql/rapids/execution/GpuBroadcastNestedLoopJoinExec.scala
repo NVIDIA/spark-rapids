@@ -16,8 +16,8 @@
 
 package org.apache.spark.sql.rapids.execution
 
-import ai.rapids.cudf.NvtxColor
-import com.nvidia.spark.rapids.{BaseExprMeta, ConfKeysAndIncompat, GpuBindReferences, GpuColumnVector, GpuExec, GpuFilter, GpuOverrides, NvtxWithMetrics, RapidsConf, RapidsMeta, SparkPlanMeta}
+import ai.rapids.cudf.{NvtxColor, Table}
+import com.nvidia.spark.rapids.{BaseExprMeta, ConfKeysAndIncompat, GpuBindReferences, GpuColumnVector, GpuExec, GpuExpression, GpuFilter, GpuOverrides, NvtxWithMetrics, RapidsConf, RapidsMeta, SparkPlanMeta}
 import com.nvidia.spark.rapids.GpuMetricNames.{NUM_OUTPUT_BATCHES, NUM_OUTPUT_ROWS, TOTAL_TIME}
 
 import org.apache.spark.rdd.RDD
@@ -51,7 +51,7 @@ class GpuBroadcastNestedLoopJoinMeta(
     }
 
     val buildSide = join.buildSide match {
-      case BuildLeft => childPlans(0)
+      case BuildLeft => childPlans.head
       case BuildRight => childPlans(1)
     }
 
@@ -66,7 +66,7 @@ class GpuBroadcastNestedLoopJoinMeta(
   }
 
   override def convertToGpu(): GpuExec = {
-    val left = childPlans(0).convertIfNeeded()
+    val left = childPlans.head.convertIfNeeded()
     val right = childPlans(1).convertIfNeeded()
     // The broadcast part of this must be a BroadcastExchangeExec
     val buildSide = join.buildSide match {
@@ -79,7 +79,8 @@ class GpuBroadcastNestedLoopJoinMeta(
     GpuBroadcastNestedLoopJoinExec(
       left, right, join.buildSide,
       join.joinType,
-      condition.map(_.convertToGpu()))
+      condition.map(_.convertToGpu()),
+      conf.gpuTargetBatchSizeBytes)
   }
 }
 
@@ -88,7 +89,8 @@ case class GpuBroadcastNestedLoopJoinExec(
     right: SparkPlan,
     buildSide: BuildSide,
     joinType: JoinType,
-    condition: Option[Expression]) extends BinaryExecNode with GpuExec {
+    condition: Option[Expression],
+    targetSize: Long) extends BinaryExecNode with GpuExec {
 
   override protected def doExecute(): RDD[InternalRow] =
     throw new IllegalStateException("This should only be called from columnar")
@@ -99,7 +101,6 @@ case class GpuBroadcastNestedLoopJoinExec(
     "joinTime" -> SQLMetrics.createNanoTimingMetric(sparkContext, "join time"),
     "joinOutputRows" -> SQLMetrics.createMetric(sparkContext, "join output rows"),
     "filterTime" -> SQLMetrics.createNanoTimingMetric(sparkContext, "filter time"))
-  //TODO need to figure out what if anything we can make common with GpuHashJoin
 
   /** BuildRight means the right relation <=> the broadcast relation. */
   private val (streamed, broadcast) = buildSide match {
@@ -139,22 +140,63 @@ case class GpuBroadcastNestedLoopJoinExec(
     }
   }
 
+  private def innerLikeJoin(
+      streamedIter: Iterator[ColumnarBatch],
+      builtTable: Table,
+      boundCondition: Option[GpuExpression],
+      joinTime: SQLMetric,
+      joinOutputRows: SQLMetric,
+      numOutputRows: SQLMetric,
+      numOutputBatches: SQLMetric,
+      filterTime: SQLMetric,
+      totalTime: SQLMetric): Iterator[ColumnarBatch] = {
+    streamedIter.map { cb =>
+      val startTime = System.nanoTime()
+      val streamTable = withResource(cb) { cb =>
+        GpuColumnVector.from(cb)
+      }
+      val joined =
+        withResource(new NvtxWithMetrics("join", NvtxColor.ORANGE, joinTime)) { _ =>
+          val joinedTable = withResource(streamTable) { tab =>
+            buildSide match {
+              case BuildLeft => builtTable.crossJoin(tab)
+              case BuildRight => tab.crossJoin(builtTable)
+            }
+          }
+          withResource(joinedTable) { jt =>
+            GpuColumnVector.from(jt)
+          }
+        }
+      joinOutputRows += joined.numRows()
+      val ret = if (boundCondition.isDefined) {
+        GpuFilter(joined, boundCondition.get, numOutputRows, numOutputBatches, filterTime)
+      } else {
+        numOutputRows += joined.numRows()
+        numOutputBatches += 1
+        joined
+      }
+      totalTime += (System.nanoTime() - startTime)
+      ret
+    }
+  }
+
   override def doExecuteColumnar(): RDD[ColumnarBatch] = {
-    val buildDataSize = longMetric("buildDataSize")
     val numOutputRows = longMetric(NUM_OUTPUT_ROWS)
     val numOutputBatches = longMetric(NUM_OUTPUT_BATCHES)
     val totalTime = longMetric(TOTAL_TIME)
-    val buildTime = longMetric("buildTime")
     val joinTime = longMetric("joinTime")
     val filterTime = longMetric("filterTime")
     val joinOutputRows = longMetric("joinOutputRows")
 
+    val boundCondition = condition.map(GpuBindReferences.bindGpuReference(_, output))
+
+    val buildTime = longMetric("buildTime")
+    val buildDataSize = longMetric("buildDataSize")
+
     val broadcastedRelation =
       broadcastExchange.executeColumnarBroadcast[SerializeConcatHostBuffersDeserializeBatch]()
 
-    val boundCondition = condition.map(GpuBindReferences.bindReference(_, output))
-
-    lazy val builtTable = {
+    lazy val builtTable: Table = {
       withResource(new NvtxWithMetrics("build join table", NvtxColor.GREEN, buildTime)) { _ =>
         val ret = GpuColumnVector.from(broadcastedRelation.value.batch)
         // Don't warn for a leak, because we cannot control when we are done with this
@@ -167,39 +209,13 @@ case class GpuBroadcastNestedLoopJoinExec(
       }
     }
 
-    joinType match {
-      case _: InnerLike =>
-        streamed.executeColumnar().mapPartitionsInternal { streamedIter =>
-          streamedIter.map { cb =>
-            val startTime = System.nanoTime()
-            val joined =
-              withResource(new NvtxWithMetrics("join", NvtxColor.ORANGE, joinTime)) { _ =>
-                withResource(cb) { cb =>
-                  val joinedTable = withResource(GpuColumnVector.from(cb)) { tab =>
-                    buildSide match {
-                      case BuildLeft => builtTable.crossJoin(tab)
-                      case BuildRight => tab.crossJoin(builtTable)
-                    }
-                  }
-                  withResource(joinedTable) { jt =>
-                    GpuColumnVector.from(jt)
-                  }
-                }
-              }
-            joinOutputRows += joined.numRows()
-            val ret = if (boundCondition.isDefined) {
-              GpuFilter(joined, boundCondition.get, numOutputRows, numOutputBatches, filterTime)
-            } else {
-              numOutputRows += joined.numRows()
-              numOutputBatches += 1
-              joined
-            }
-            totalTime += (System.nanoTime() - startTime)
-            ret
-          }
-        }
-      case _ => throw new IllegalArgumentException(s"$joinType + $buildSide is not supported" +
-          s" and should be run on the CPU")
+    streamed.executeColumnar().mapPartitions { streamedIter =>
+      joinType match {
+        case _: InnerLike => innerLikeJoin(streamedIter, builtTable, boundCondition,
+          joinTime, joinOutputRows, numOutputRows, numOutputBatches, filterTime, totalTime)
+        case _ => throw new IllegalArgumentException(s"$joinType + $buildSide is not supported" +
+            s" and should be run on the CPU")
+      }
     }
   }
 }

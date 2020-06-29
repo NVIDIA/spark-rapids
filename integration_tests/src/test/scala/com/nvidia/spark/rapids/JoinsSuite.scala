@@ -37,6 +37,7 @@ class JoinsSuite extends SparkQueryCompareTestSuite {
       .set("spark.sql.autoBroadcastJoinThreshold", "160")
       .set("spark.sql.join.preferSortMergeJoin", "false")
       .set("spark.sql.shuffle.partitions", "2") // hack to try and work around bug in cudf
+      .set("spark.rapids.sql.exec.BroadcastNestedLoopJoinExec", "true")
 
   IGNORE_ORDER_testSparkResultsAreEqual2("Test hash join", longsDf, biggerLongsDf,
     conf = shuffledJoinConf) {
