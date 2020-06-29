@@ -46,13 +46,24 @@ properly with the plugin but would have worked with plain Spark. Because of this
 floating point aggregations are off by default but can be enabled with the config
 [`spark.rapids.sql.variableFloatAgg.enabled`](configs.md#sql.variableFloatAgg.enabled).
 
-Additionally, some aggregations on floating point columns that contain NaNs can produce
+Additionally, some aggregations on floating point columns that contain `NaN` can produce
 incorrect results. More details on this behavior can be found
 [here](https://github.com/NVIDIA/spark-rapids/issues/87)
 and in this cudf [feature request](https://github.com/rapidsai/cudf/issues/4753).
-If it is known with certainty that the floating point columns do not contain NaNs,
+If it is known with certainty that the floating point columns do not contain `NaN`,
 set [`spark.rapids.sql.hasNans`](configs.md#sql.hasNans) to `false` to run GPU enabled
 aggregations on them.
+
+### `0.0` vs `-0.0`
+
+Floating point allows zero to be encoded as `0.0` and `-0.0`, but the standard says that
+they should be interpreted as the same. Most databases normalize these values to always
+be `0.0`. Spark does this in some cases but not all as is documented
+[here](https://issues.apache.org/jira/browse/SPARK-32110). The underlying implementation of
+this plugin treats them as the same for essentially all processing. This can result in some
+differences with Spark for operations like
+[sorting](https://github.com/NVIDIA/spark-rapids/issues/84),
+[joins, and comparisons](https://github.com/NVIDIA/spark-rapids/issues/294).
 
 ## Unicode
 
