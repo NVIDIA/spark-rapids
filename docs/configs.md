@@ -84,7 +84,7 @@ incompatibilities.
 
 ### Expressions
 
-Name | Description | Default Value | Incompatibilities
+Name | Description | Default Value | Notes
 -----|-------------|---------------|------------------
 <a name="sql.expression.Abs"></a>spark.rapids.sql.expression.Abs|absolute value|true|None|
 <a name="sql.expression.Acos"></a>spark.rapids.sql.expression.Acos|inverse cosine|true|None|
@@ -218,7 +218,7 @@ Name | Description | Default Value | Incompatibilities
 
 ### Execution
 
-Name | Description | Default Value | Incompatibilities
+Name | Description | Default Value | Notes
 -----|-------------|---------------|------------------
 <a name="sql.exec.CoalesceExec"></a>spark.rapids.sql.exec.CoalesceExec|The backend for the dataframe coalesce method|true|None|
 <a name="sql.exec.CollectLimitExec"></a>spark.rapids.sql.exec.CollectLimitExec|Reduce to single partition and apply limit|true|None|
@@ -238,13 +238,14 @@ Name | Description | Default Value | Incompatibilities
 <a name="sql.exec.BroadcastExchangeExec"></a>spark.rapids.sql.exec.BroadcastExchangeExec|The backend for broadcast exchange of data|true|None|
 <a name="sql.exec.ShuffleExchangeExec"></a>spark.rapids.sql.exec.ShuffleExchangeExec|The backend for most data being exchanged between processes|true|None|
 <a name="sql.exec.BroadcastHashJoinExec"></a>spark.rapids.sql.exec.BroadcastHashJoinExec|Implementation of join using broadcast data|true|None|
+<a name="sql.exec.BroadcastNestedLoopJoinExec"></a>spark.rapids.sql.exec.BroadcastNestedLoopJoinExec|Implementation of join using brute force|false|This is disabled by default because large joins can cause out of memory errors|
 <a name="sql.exec.ShuffledHashJoinExec"></a>spark.rapids.sql.exec.ShuffledHashJoinExec|Implementation of join using hashed shuffled data|true|None|
 <a name="sql.exec.SortMergeJoinExec"></a>spark.rapids.sql.exec.SortMergeJoinExec|Sort merge join, replacing with shuffled hash join|true|None|
 <a name="sql.exec.WindowExec"></a>spark.rapids.sql.exec.WindowExec|Window-operator backend|true|None|
 
 ### Scans
 
-Name | Description | Default Value | Incompatibilities
+Name | Description | Default Value | Notes
 -----|-------------|---------------|------------------
 <a name="sql.input.CSVScan"></a>spark.rapids.sql.input.CSVScan|CSV parsing|true|None|
 <a name="sql.input.OrcScan"></a>spark.rapids.sql.input.OrcScan|ORC parsing|true|None|
@@ -252,7 +253,7 @@ Name | Description | Default Value | Incompatibilities
 
 ### Partitioning
 
-Name | Description | Default Value | Incompatibilities
+Name | Description | Default Value | Notes
 -----|-------------|---------------|------------------
 <a name="sql.partitioning.HashPartitioning"></a>spark.rapids.sql.partitioning.HashPartitioning|Hash based partitioning|true|None|
 <a name="sql.partitioning.RangePartitioning"></a>spark.rapids.sql.partitioning.RangePartitioning|Range Partitioning|true|None|

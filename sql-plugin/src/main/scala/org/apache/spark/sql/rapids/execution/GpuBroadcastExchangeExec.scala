@@ -37,7 +37,7 @@ import org.apache.spark.sql.catalyst.expressions.Attribute
 import org.apache.spark.sql.catalyst.plans.physical.{BroadcastMode, BroadcastPartitioning, Partitioning}
 import org.apache.spark.sql.execution.{SparkPlan, SQLExecution}
 import org.apache.spark.sql.execution.exchange.{BroadcastExchangeExec, Exchange}
-import org.apache.spark.sql.execution.joins.BroadcastHashJoinExec
+import org.apache.spark.sql.execution.joins.{BroadcastHashJoinExec, BroadcastNestedLoopJoinExec}
 import org.apache.spark.sql.execution.metric.SQLMetrics
 import org.apache.spark.sql.internal.{SQLConf, StaticSQLConf}
 import org.apache.spark.sql.rapids.execution
@@ -199,12 +199,18 @@ class GpuBroadcastMeta(
   SparkPlanMeta[BroadcastExchangeExec](exchange, conf, parent, rule) {
 
   override def tagPlanForGpu(): Unit = {
-    if (!TrampolineUtil.isHashedRelation(exchange.mode)) {
-      willNotWorkOnGpu("Broadcast exchange is only supported for HashedJoin")
+    if (!TrampolineUtil.isSupportedRelation(exchange.mode)) {
+      willNotWorkOnGpu(
+        "Broadcast exchange is only supported for HashedJoin or BroadcastNestedLoopJoin")
     }
-    if (!parent.exists(_.wrapped.isInstanceOf[BroadcastHashJoinExec])) {
+    def isSupported(rm: RapidsMeta[_, _, _]): Boolean = rm.wrapped match {
+      case _: BroadcastHashJoinExec => true
+      case _: BroadcastNestedLoopJoinExec => true
+      case _ => false
+    }
+    if (!parent.exists(isSupported)) {
       willNotWorkOnGpu("BroadcastExchange only works on the GPU if being used " +
-        "with a GPU version of BroadcastHashJoinExec")
+        "with a GPU version of BroadcastHashJoinExec or BroadcastNestedLoopJoinExec")
     }
   }
 

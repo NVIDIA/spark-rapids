@@ -42,19 +42,17 @@ import org.apache.spark.sql.execution.datasources.v2.csv.CSVScan
 import org.apache.spark.sql.execution.datasources.v2.orc.OrcScan
 import org.apache.spark.sql.execution.datasources.v2.parquet.ParquetScan
 import org.apache.spark.sql.execution.exchange.{BroadcastExchangeExec, ShuffleExchangeExec}
-import org.apache.spark.sql.execution.joins.{BroadcastHashJoinExec, ShuffledHashJoinExec, SortMergeJoinExec}
+import org.apache.spark.sql.execution.joins.{BroadcastHashJoinExec, BroadcastNestedLoopJoinExec, ShuffledHashJoinExec, SortMergeJoinExec}
 import org.apache.spark.sql.execution.window.WindowExec
 import org.apache.spark.sql.rapids._
 import org.apache.spark.sql.rapids.catalyst.expressions.GpuRand
-import org.apache.spark.sql.rapids.execution.{GpuBroadcastHashJoinMeta, GpuBroadcastMeta}
+import org.apache.spark.sql.rapids.execution.{GpuBroadcastHashJoinMeta, GpuBroadcastMeta, GpuBroadcastNestedLoopJoinMeta}
 import org.apache.spark.sql.types._
 import org.apache.spark.unsafe.types.{CalendarInterval, UTF8String}
 
 /**
  * Base class for all ReplacementRules
  * @param doWrap wraps a part of the plan in a [[RapidsMeta]] for further processing.
- * @param incomDoc docs explaining if this rule produces an GPU version that is incompatible with
- *                    the CPU version in some way.
  * @param desc a description of what this part of the plan does.
  * @param tag metadata used to determine what INPUT is at runtime.
  * @tparam INPUT the exact type of the class we are wrapping.
@@ -67,11 +65,14 @@ abstract class ReplacementRule[INPUT <: BASE, BASE, WRAP_TYPE <: RapidsMeta[INPU
         RapidsConf,
         Option[RapidsMeta[_, _, _]],
         ConfKeysAndIncompat) => WRAP_TYPE,
-    protected var incomDoc: Option[String],
     protected var desc: String,
     final val tag: ClassTag[INPUT]) extends ConfKeysAndIncompat {
 
-  override def incompatDoc: Option[String] = incomDoc
+  private var _incompatDoc: Option[String] = None
+  private var _disabledDoc: Option[String] = None
+
+  override def incompatDoc: Option[String] = _incompatDoc
+  override def disabledMsg: Option[String] = _disabledDoc
 
   /**
    * Mark this expression as incompatible with the original Spark version
@@ -79,7 +80,17 @@ abstract class ReplacementRule[INPUT <: BASE, BASE, WRAP_TYPE <: RapidsMeta[INPU
    * @return this for chaining.
    */
   final def incompat(str: String) : this.type = {
-    incomDoc = Some(str)
+    _incompatDoc = Some(str)
+    this
+  }
+
+  /**
+   * Mark this expression as disabled by default.
+   * @param str a description of why it is disabled by default.
+   * @return this for chaining.
+   */
+  final def disabledByDefault(str: String) : this.type = {
+    _disabledDoc = Some(str)
     this
   }
 
@@ -108,8 +119,6 @@ abstract class ReplacementRule[INPUT <: BASE, BASE, WRAP_TYPE <: RapidsMeta[INPU
     this
   }
 
-  def isIncompat: Boolean = incompatDoc.isDefined
-
   private var confKeyCache: String = null
   protected val confKeyPart: String
 
@@ -120,19 +129,21 @@ abstract class ReplacementRule[INPUT <: BASE, BASE, WRAP_TYPE <: RapidsMeta[INPU
     confKeyCache
   }
 
-  private def isIncompatMsg(): Option[String] = if (incompatDoc.isDefined) {
+  private def notes(): Option[String] = if (incompatDoc.isDefined) {
     Some(s"This is not 100% compatible with the Spark version because ${incompatDoc.get}")
+  } else if (disabledMsg.isDefined) {
+    Some(s"This is disabled by default because ${disabledMsg.get}")
   } else {
     None
   }
 
   def confHelp(asTable: Boolean = false): Unit = {
-    val incompatMsg = isIncompatMsg()
+    val notesMsg = notes()
     if (asTable) {
       import ConfHelper.makeConfAnchor
-      print(s"${makeConfAnchor(confKey)}|$desc|${incompatMsg.isEmpty}|")
-      if (incompatMsg.isDefined) {
-        print(s"${incompatMsg.get}")
+      print(s"${makeConfAnchor(confKey)}|$desc|${notesMsg.isEmpty}|")
+      if (notesMsg.isDefined) {
+        print(s"${notesMsg.get}")
       } else {
         print("None")
       }
@@ -141,10 +152,10 @@ abstract class ReplacementRule[INPUT <: BASE, BASE, WRAP_TYPE <: RapidsMeta[INPU
       println(s"$confKey:")
       println(s"\tEnable (true) or disable (false) the $tag $operationName.")
       println(s"\t$desc")
-      if (incompatMsg.isDefined) {
-        println(s"\t${incompatMsg.get}")
+      if (notesMsg.isDefined) {
+        println(s"\t${notesMsg.get}")
       }
-      println(s"\tdefault: ${incompatDoc.isEmpty}")
+      println(s"\tdefault: ${notesMsg.isEmpty}")
       println()
     }
   }
@@ -169,11 +180,9 @@ class ExprRule[INPUT <: Expression](
         RapidsConf,
         Option[RapidsMeta[_, _, _]],
         ConfKeysAndIncompat) => BaseExprMeta[INPUT],
-    incompatDoc: Option[String],
     desc: String,
     tag: ClassTag[INPUT])
-  extends ReplacementRule[INPUT, Expression, BaseExprMeta[INPUT]](doWrap,
-    incompatDoc, desc, tag) {
+  extends ReplacementRule[INPUT, Expression, BaseExprMeta[INPUT]](doWrap, desc, tag) {
 
   override val confKeyPart = "expression"
   override val operationName = "Expression"
@@ -188,11 +197,9 @@ class ScanRule[INPUT <: Scan](
         RapidsConf,
         Option[RapidsMeta[_, _, _]],
         ConfKeysAndIncompat) => ScanMeta[INPUT],
-    incompatDoc: Option[String],
     desc: String,
     tag: ClassTag[INPUT])
-  extends ReplacementRule[INPUT, Scan, ScanMeta[INPUT]](
-    doWrap, incompatDoc, desc, tag) {
+  extends ReplacementRule[INPUT, Scan, ScanMeta[INPUT]](doWrap, desc, tag) {
 
   override val confKeyPart: String = "input"
   override val operationName: String = "Input"
@@ -207,11 +214,9 @@ class PartRule[INPUT <: Partitioning](
         RapidsConf,
         Option[RapidsMeta[_, _, _]],
         ConfKeysAndIncompat) => PartMeta[INPUT],
-    incompatDoc: Option[String],
     desc: String,
     tag: ClassTag[INPUT])
-  extends ReplacementRule[INPUT, Partitioning,
-    PartMeta[INPUT]](doWrap, incompatDoc, desc, tag) {
+  extends ReplacementRule[INPUT, Partitioning, PartMeta[INPUT]](doWrap, desc, tag) {
 
   override val confKeyPart: String = "partitioning"
   override val operationName: String = "Partitioning"
@@ -226,10 +231,9 @@ class ExecRule[INPUT <: SparkPlan](
         RapidsConf,
         Option[RapidsMeta[_, _, _]],
         ConfKeysAndIncompat) => SparkPlanMeta[INPUT],
-    incompatDoc: Option[String],
     desc: String,
     tag: ClassTag[INPUT])
-  extends ReplacementRule[INPUT, SparkPlan, SparkPlanMeta[INPUT]](doWrap, incompatDoc, desc, tag) {
+  extends ReplacementRule[INPUT, SparkPlan, SparkPlanMeta[INPUT]](doWrap, desc, tag) {
 
   override val confKeyPart: String = "exec"
   override val operationName: String = "Exec"
@@ -245,11 +249,10 @@ class DataWritingCommandRule[INPUT <: DataWritingCommand](
         RapidsConf,
         Option[RapidsMeta[_, _, _]],
         ConfKeysAndIncompat) => DataWritingCommandMeta[INPUT],
-    incompatDoc: Option[String],
     desc: String,
     tag: ClassTag[INPUT])
     extends ReplacementRule[INPUT, DataWritingCommand, DataWritingCommandMeta[INPUT]](
-      doWrap, incompatDoc, desc, tag) {
+      doWrap, desc, tag) {
 
   override val confKeyPart: String = "output"
   override val operationName: String = "Output"
@@ -397,7 +400,7 @@ object GpuOverrides {
       (implicit tag: ClassTag[INPUT]): ExprRule[INPUT] = {
     assert(desc != null)
     assert(doWrap != null)
-    new ExprRule[INPUT](doWrap, None, desc, tag)
+    new ExprRule[INPUT](doWrap, desc, tag)
   }
 
   def scan[INPUT <: Scan](
@@ -407,7 +410,7 @@ object GpuOverrides {
     (implicit tag: ClassTag[INPUT]): ScanRule[INPUT] = {
     assert(desc != null)
     assert(doWrap != null)
-    new ScanRule[INPUT](doWrap, None, desc, tag)
+    new ScanRule[INPUT](doWrap, desc, tag)
   }
 
   def part[INPUT <: Partitioning](
@@ -417,7 +420,7 @@ object GpuOverrides {
     (implicit tag: ClassTag[INPUT]): PartRule[INPUT] = {
     assert(desc != null)
     assert(doWrap != null)
-    new PartRule[INPUT](doWrap, None, desc, tag)
+    new PartRule[INPUT](doWrap, desc, tag)
   }
 
   def exec[INPUT <: SparkPlan](
@@ -427,7 +430,7 @@ object GpuOverrides {
     (implicit tag: ClassTag[INPUT]): ExecRule[INPUT] = {
     assert(desc != null)
     assert(doWrap != null)
-    new ExecRule[INPUT](doWrap, None, desc, tag)
+    new ExecRule[INPUT](doWrap, desc, tag)
   }
 
   def dataWriteCmd[INPUT <: DataWritingCommand](
@@ -437,7 +440,7 @@ object GpuOverrides {
     (implicit tag: ClassTag[INPUT]): DataWritingCommandRule[INPUT] = {
     assert(desc != null)
     assert(doWrap != null)
-    new DataWritingCommandRule[INPUT](doWrap, None, desc, tag)
+    new DataWritingCommandRule[INPUT](doWrap, desc, tag)
   }
 
   def wrapExpr[INPUT <: Expression](
@@ -1713,6 +1716,10 @@ object GpuOverrides {
     exec[ShuffledHashJoinExec](
       "Implementation of join using hashed shuffled data",
       (join, conf, p, r) => new GpuShuffledHashJoinMeta(join, conf, p, r)),
+    exec[BroadcastNestedLoopJoinExec](
+      "Implementation of join using brute force",
+      (join, conf, p, r) => new GpuBroadcastNestedLoopJoinMeta(join, conf, p, r))
+        .disabledByDefault("large joins can cause out of memory errors"),
     exec[SortMergeJoinExec](
       "Sort merge join, replacing with shuffled hash join",
       (join, conf, p, r) => new GpuSortMergeJoinMeta(join, conf, p, r)),
