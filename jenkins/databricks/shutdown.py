@@ -31,7 +31,7 @@ def main():
   clusterid = '0617-140138-umiak14'
 
   try:
-      opts, args = getopt.getopt(sys.argv[1:], 'hs:t:c',
+      opts, args = getopt.getopt(sys.argv[1:], 'hs:t:c:',
                                  ['workspace=', 'token=', 'clusterid='])
   except getopt.GetoptError:
       print(
