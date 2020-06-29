@@ -39,6 +39,7 @@ def test_cache_table():
 
 gen=[StringGen(nullable=False), DateGen(nullable=False), TimestampGen(nullable=False)]
 @ignore_order
+@pytest.mark.xfail(reason="TODO: github issue")
 @pytest.mark.parametrize('data_gen', gen, ids=idfn)
 @pytest.mark.parametrize('join_type', ['Left', 'Right', 'Inner', 'LeftSemi', 'LeftAnti'], ids=idfn)
 def test_cached_join(data_gen, join_type):
@@ -53,6 +54,7 @@ def test_cached_join(data_gen, join_type):
 
 gen_filter=[(StringGen(nullable=False), "rlike(a, '^(?=.{1,5}$).*')"), (DateGen(nullable=False), "a > '1/21/2012'"), (TimestampGen(nullable=False), "a > '1/21/2012'")]
 @ignore_order
+@pytest.mark.xfail(reason="TODO: github issue")
 @pytest.mark.parametrize('data_gen', gen_filter, ids=idfn)
 @pytest.mark.parametrize('join_type', ['Left', 'Right', 'Inner', 'LeftSemi', 'LeftAnti'], ids=idfn)
 def test_cached_join_filter(data_gen, join_type):
