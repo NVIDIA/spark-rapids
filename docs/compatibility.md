@@ -61,7 +61,7 @@ they should be interpreted as the same. Most databases normalize these values to
 be `0.0`. Spark does this in some cases but not all as is documented
 [here](https://issues.apache.org/jira/browse/SPARK-32110). The underlying implementation of
 this plugin treats them as the same for essentially all processing. This can result in some
-differences with Spark for thing like
+differences with Spark for operations like
 [sorting](https://github.com/NVIDIA/spark-rapids/issues/84),
 [joins, and comparisons](https://github.com/NVIDIA/spark-rapids/issues/294).
 
