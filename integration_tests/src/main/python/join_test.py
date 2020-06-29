@@ -90,10 +90,38 @@ def test_broadcast_join_right_table(data_gen, join_type):
 # local sort because of https://github.com/NVIDIA/spark-rapids/issues/84
 @ignore_order(local=True)
 @pytest.mark.parametrize('data_gen', all_gen, ids=idfn)
+def test_cartesean_join(data_gen):
+    def do_join(spark):
+        left, right = create_df(spark, data_gen, 50, 25)
+        return left.crossJoin(right)
+    assert_gpu_and_cpu_are_equal_collect(do_join, conf={'spark.rapids.sql.exec.CartesianProductExec': 'true'})
+
+# local sort because of https://github.com/NVIDIA/spark-rapids/issues/84
+@ignore_order(local=True)
+@pytest.mark.parametrize('data_gen', all_gen, ids=idfn)
+def test_cartesean_join_special_case(data_gen):
+    def do_join(spark):
+        left, right = create_df(spark, data_gen, 500, 250)
+        return left.crossJoin(right).selectExpr('COUNT(*)')
+    assert_gpu_and_cpu_are_equal_collect(do_join, conf={'spark.rapids.sql.exec.CartesianProductExec': 'true'})
+
+# local sort because of https://github.com/NVIDIA/spark-rapids/issues/84
+@ignore_order(local=True)
+@pytest.mark.parametrize('data_gen', all_gen, ids=idfn)
 def test_broadcast_nested_loop_join(data_gen):
     def do_join(spark):
         left, right = create_df(spark, data_gen, 50, 25)
         return left.crossJoin(broadcast(right))
+    assert_gpu_and_cpu_are_equal_collect(do_join, conf={'spark.rapids.sql.exec.BroadcastNestedLoopJoinExec': 'true'})
+
+# local sort because of https://github.com/NVIDIA/spark-rapids/issues/84
+@ignore_order(local=True)
+@pytest.mark.parametrize('data_gen', all_gen, ids=idfn)
+@pytest.mark.xfail(reason='https://github.com/NVIDIA/spark-rapids/issues/323')
+def test_broadcast_nested_loop_join_special_case(data_gen):
+    def do_join(spark):
+        left, right = create_df(spark, data_gen, 50, 25)
+        return left.crossJoin(broadcast(right)).selectExpr('COUNT(*)')
     assert_gpu_and_cpu_are_equal_collect(do_join, conf={'spark.rapids.sql.exec.BroadcastNestedLoopJoinExec': 'true'})
 
 # local sort because of https://github.com/NVIDIA/spark-rapids/issues/84
