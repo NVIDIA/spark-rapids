@@ -22,7 +22,7 @@
 */
 
 pipeline {
-    agent { label 'vanilla||docker-deploy||docker-gpu' }
+    agent { label 'docker-deploy||docker-gpu' }
 
     options {
         ansiColor('xterm')
