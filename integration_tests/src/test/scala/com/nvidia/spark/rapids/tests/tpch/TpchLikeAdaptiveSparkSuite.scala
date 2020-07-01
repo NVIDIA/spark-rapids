@@ -18,5 +18,5 @@ package com.nvidia.spark.rapids.tests.tpch
 // we need the AQE suites to have unique names so that they don't overwrite
 // surefire results from the original suites
 class TpchLikeAdaptiveSparkSuite extends TpchLikeSparkSuite {
-  override val adaptiveQueryEnabled: Boolean = true
+  override def adaptiveQueryEnabled: Boolean = true
 }

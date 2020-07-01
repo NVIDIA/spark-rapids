@@ -25,7 +25,11 @@ import org.apache.spark.sql.execution.adaptive.AdaptiveSparkPlanExec
 
 class TpchLikeSparkSuite extends FunSuite with BeforeAndAfterAll {
 
-  val adaptiveQueryEnabled = false
+  /**
+   * This is intentionally a def rather than a val so that scalatest uses the correct value (from
+   * this class or the derived class) when registering tests.
+   */
+  def adaptiveQueryEnabled = false
 
   lazy val session: SparkSession = {
     var builder = SparkSession.builder
