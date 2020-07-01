@@ -53,10 +53,6 @@ object TestResourceFinder {
 
 object SparkSessionHolder extends Logging {
 
-  val SPARK_SQL_ADAPTIVE_ENABLED = "spark.sql.adaptive.enabled"
-
-  var adaptiveQueryEnabled: Boolean = false
-
   val spark = {
     // Timezone is fixed to UTC to allow timestamps to work by default
     TimeZone.setDefault(TimeZone.getTimeZone("UTC"))
@@ -139,8 +135,6 @@ trait SparkQueryCompareTestSuite extends FunSuite with Arm {
       .set(RapidsConf.SQL_ENABLED.key, "true")
       .set(RapidsConf.TEST_CONF.key, "true")
       .set(RapidsConf.EXPLAIN.key, "ALL")
-      .set(SparkSessionHolder.SPARK_SQL_ADAPTIVE_ENABLED,
-        String.valueOf(SparkSessionHolder.adaptiveQueryEnabled))
     withSparkSession(c, f)
   }
 
@@ -628,10 +622,6 @@ trait SparkQueryCompareTestSuite extends FunSuite with Arm {
       val execStr = execsAllowedNonGpu.mkString(",")
       testConf = testConf.clone().set(RapidsConf.TEST_ALLOWED_NONGPU.key, execStr)
       qualifiers = qualifiers + s"NOT ON GPU[$execStr]"
-    }
-
-    if (SparkSessionHolder.adaptiveQueryEnabled) {
-      qualifiers += "AQE"
     }
 
     testConf.set("spark.sql.execution.sortBeforeRepartition", sortBeforeRepart.toString)

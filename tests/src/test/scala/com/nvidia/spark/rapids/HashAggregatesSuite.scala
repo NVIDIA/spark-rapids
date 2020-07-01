@@ -106,9 +106,6 @@ class HashAggregatesSuite extends SparkQueryCompareTestSuite {
 
   test("SortAggregateExec is translated correctly ENABLE_HASH_OPTIMIZE_SORT=false") {
 
-    // this test fails when AQE is enabled - https://github.com/NVIDIA/spark-rapids/issues/277
-    assume(!SparkSessionHolder.adaptiveQueryEnabled)
-
     val conf = new SparkConf()
       .set(RapidsConf.ENABLE_HASH_OPTIMIZE_SORT.key, "false")
 
@@ -122,14 +119,7 @@ class HashAggregatesSuite extends SparkQueryCompareTestSuite {
       val cpuPlan = df.queryExecution.sparkPlan
       assert(cpuPlan.find(_.isInstanceOf[SortAggregateExec]).isDefined)
 
-      val gpuPlan = if (SparkSessionHolder.adaptiveQueryEnabled) {
-        ExecutionPlanCaptureCallback.startCapture()
-        df.count()
-        ExecutionPlanCaptureCallback.extractExecutedPlan(
-          ExecutionPlanCaptureCallback.getResultWithTimeout())
-      } else {
-        df.queryExecution.executedPlan
-      }
+      val gpuPlan = df.queryExecution.executedPlan
 
       gpuPlan match {
         case WholeStageCodegenExec(GpuColumnarToRowExec(plan, _)) =>
@@ -145,9 +135,6 @@ class HashAggregatesSuite extends SparkQueryCompareTestSuite {
   }
   test("SortAggregateExec is translated correctly ENABLE_HASH_OPTIMIZE_SORT=true") {
 
-    // this test fails when AQE is enabled - https://github.com/NVIDIA/spark-rapids/issues/277
-    assume(!SparkSessionHolder.adaptiveQueryEnabled)
-
     val conf = new SparkConf()
       .set(RapidsConf.ENABLE_HASH_OPTIMIZE_SORT.key, "true")
 
@@ -161,14 +148,7 @@ class HashAggregatesSuite extends SparkQueryCompareTestSuite {
       val cpuPlan = df.queryExecution.sparkPlan
       assert(cpuPlan.find(_.isInstanceOf[SortAggregateExec]).isDefined)
 
-      val gpuPlan = if (SparkSessionHolder.adaptiveQueryEnabled) {
-        ExecutionPlanCaptureCallback.startCapture()
-        df.count()
-        ExecutionPlanCaptureCallback.extractExecutedPlan(
-          ExecutionPlanCaptureCallback.getResultWithTimeout())
-      } else {
-        df.queryExecution.executedPlan
-      }
+      val gpuPlan = df.queryExecution.executedPlan
 
       gpuPlan match {
         case WholeStageCodegenExec(GpuColumnarToRowExec(plan, _)) =>

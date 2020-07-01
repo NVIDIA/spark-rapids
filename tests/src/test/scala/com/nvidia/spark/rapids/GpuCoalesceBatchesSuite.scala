@@ -19,7 +19,6 @@ package com.nvidia.spark.rapids
 import java.io.File
 import java.nio.file.Files
 
-import org.apache.spark.sql.execution.adaptive.AdaptiveSparkPlanExec
 import org.apache.spark.sql.execution.metric.SQLMetric
 import org.apache.spark.sql.rapids.metrics.source.MockTaskContext
 import org.apache.spark.sql.types.{DataTypes, StructField, StructType}
@@ -148,21 +147,13 @@ class GpuCoalesceBatchesSuite extends SparkQueryCompareTestSuite {
       assert(coalesce.goal == RequireSingleBatch)
       assert(coalesce.goal.targetSizeBytes == Long.MaxValue)
 
-      if (SparkSessionHolder.adaptiveQueryEnabled) {
-        // custom shuffle reader changes the behavior
-        assert(coalesce.additionalMetrics("numInputBatches").value == 1)
-      } else {
-        assert(coalesce.additionalMetrics("numInputBatches").value == 7)
-      }
+      assert(coalesce.additionalMetrics("numInputBatches").value == 7)
       assert(coalesce.longMetric(GpuMetricNames.NUM_OUTPUT_BATCHES).value == 1)
 
     }, conf)
   }
 
   test("coalesce HostColumnarToGpu") {
-
-    // this test fails when AQE is enabled - https://github.com/NVIDIA/spark-rapids/issues/276
-    assume(!SparkSessionHolder.adaptiveQueryEnabled)
 
     val conf = makeBatchedBytes(1)
       .set(RapidsConf.MAX_READER_BATCH_SIZE_ROWS.key, "1")
@@ -177,14 +168,12 @@ class GpuCoalesceBatchesSuite extends SparkQueryCompareTestSuite {
       s"HostColumnarToGpu-${System.currentTimeMillis()}.parquet").getAbsolutePath
 
     try {
-
       // convert csv test data to parquet
       withCpuSparkSession(spark => {
         longsCsvDf(spark).write.parquet(path)
       }, conf)
 
       withGpuSparkSession(spark => {
-
         val df = spark.read.parquet(path)
         val df2 = df
           .sort(df.col("longs"))
