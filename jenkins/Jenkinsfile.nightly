@@ -22,7 +22,7 @@
 */
 
 pipeline {
-    agent { label 'vanilla' }
+    agent { label 'docker-gpu' }
 
     options {
         ansiColor('xterm')
@@ -39,8 +39,10 @@ pipeline {
     environment {
         JENKINS_ROOT  = 'jenkins'
         MVN_URM_MIRROR='-s jenkins/settings.xml -P mirror-apache-to-urm'
-        LIBCUDF_KERNEL_CACHE_PATH='/tmp'
+        LIBCUDF_KERNEL_CACHE_PATH='/tmp/.cudf'
         URM_CREDS = credentials("svcngcc_artifactory")
+        DIST_PL='dist'
+        SQL_PL='sql-plugin'
     }
 
     triggers {
@@ -48,8 +50,7 @@ pipeline {
     }
 
     stages {
-        stage('Ubuntu16 CUDA10.1') {
-            agent { label 'docker-gpu' }
+        stage('Build and deploy to URM') {
             steps {
                 script {
                     def CUDA_NAME=sh(returnStdout: true,
@@ -69,13 +70,31 @@ pipeline {
                 }
             }
         }
+        stage('Deploy to Sonatype') {
+            environment {
+                SERVER_ID='ossrh'
+                SERVER_URL='https://oss.sonatype.org/content/repositories/snapshots'
+                SONATYPE=credentials('SPARK_SONATYPE_USERPASS')
+            }
+            steps {
+                script {
+                    def CUDA_NAME=sh(returnStdout: true,
+                        script: '. jenkins/version-def.sh>&2 && echo -n $CUDA_CLASSIFIER | sed "s/-/./g"')
+                    def IMAGE_NAME="urm.nvidia.com/sw-spark-docker/plugin:dev-ubuntu16-$CUDA_NAME"
+                    sh "docker pull $IMAGE_NAME"
+                    docker.image(IMAGE_NAME).inside() {
+                       sh "bash $JENKINS_ROOT/deploy.sh false false"
+                    }
+                }
+            }
+        }
     } // end of stages
 
     post {
         always {
             script {
                 if (currentBuild.currentResult == "SUCCESS") {
-                    build(job: 'spark/rapids_integration-0.1-github',
+                    build(job: 'spark/rapids_integration-0.2-github',
                           propagate: false,
                           parameters: [string(name: 'REF', value: 'branch-0.2')])
 
