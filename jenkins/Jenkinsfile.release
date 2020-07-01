@@ -21,18 +21,8 @@
 *
 */
 
-def SERVERS_MAP = [
-    Local:    ' ',
-    Sonatype: 'https://oss.sonatype.org/service/local/staging/deploy/maven2'
-]
-
-def SEC_IDS = [
-    Local:    ['local-gpg-passphrase',  'local-gpg-private-key',  'local-username-password'],
-    Sonatype: ['rapids-gpg-passphrase', 'rapids-gpg-private-key', 'sonatype-username-password']
-]
-
 pipeline {
-    agent { label 'vanilla||docker-deploy||docker-gpu' }
+    agent { label 'docker-deploy||docker-gpu' }
 
     options {
         ansiColor('xterm')
@@ -41,9 +31,9 @@ pipeline {
     }
 
     parameters {
-        choice(name: 'DEPLOY_TO', choices: ['Sonatype'],
-            description: 'Where to deploy artifacts to')
-        string(name: 'REF', defaultValue: 'master', description: 'Commit to build')
+        string(name: 'DEPLOY_TO', defaultValue: 'https://oss.sonatype.org/service/local/staging/deploy/maven2',
+            description: 'The repo URL where to deploy the artifacts')
+        string(name: 'REF', defaultValue: 'main', description: 'Commit to build')
     }
 
     environment {
@@ -66,6 +56,7 @@ pipeline {
                         $DOCKER_CMD pull $IMAGE_NAME
                         $DOCKER_CMD logout https://urm.nvidia.com
                     """
+                    sh "mkdir -p ${HOME}/.zinc"
                     docker.image("$IMAGE_NAME").inside("--runtime=nvidia -v ${HOME}/.m2:${HOME}/.m2:rw \
                         -v ${HOME}/.zinc:${HOME}/.zinc:rw \
                         -v /etc/passwd:/etc/passwd -v /etc/group:/etc/group") {
@@ -78,10 +69,10 @@ pipeline {
         stage("Deploy") {
             environment {
                 SERVER_ID='ossrh'
-                SERVER_URL="${SERVERS_MAP["$DEPLOY_TO"]}"
-                GPG_PASSPHRASE=credentials("${SEC_IDS["$DEPLOY_TO"][0]}")
-                GPG_FILE=credentials("${SEC_IDS["$DEPLOY_TO"][1]}")
-                SONATYPE=credentials("${SEC_IDS["$DEPLOY_TO"][2]}")
+                SERVER_URL="${DEPLOY_TO}"
+                GPG_PASSPHRASE=credentials('SPARK_RAPIDS_GPG_PASSPHRASE')
+                GPG_FILE=credentials('SPARK_RAPIDS_GPG_PRIVATE_KEY')
+                SONATYPE=credentials('SPARK_SONATYPE_USERPASS')
                 GNUPGHOME="${WORKSPACE}/.gnupg"
             }
             steps {

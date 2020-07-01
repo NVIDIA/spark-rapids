@@ -15,6 +15,18 @@
 # limitations under the License.
 #
 
+# Argument(s):
+#   SIGN_FILE:  true/false, whether to sign the jar/pom file to de deployed
+#   DATABRICKS: true/fasle, whether deploying for databricks
+#
+# Used environment(s):
+#   SQL_PL:         The path of module 'sql-plugin', relative to project root path.
+#   DIST_PL:        The path of module 'dist', relative to project root path.
+#   SERVER_ID:      The repository id for this deployment.
+#   SERVER_URL:     The url where to deploy artifacts.
+#   GPG_PASSPHRASE: The passphrase used to sign files, only required when <SIGN_FILE> is true.
+###
+
 set -e
 SIGN_FILE=$1
 DATABRICKS=$2
