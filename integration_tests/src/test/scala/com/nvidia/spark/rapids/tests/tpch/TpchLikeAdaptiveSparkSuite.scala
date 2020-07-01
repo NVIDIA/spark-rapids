@@ -15,18 +15,8 @@
  */
 package com.nvidia.spark.rapids.tests.tpch
 
-import org.scalatest.{DoNotDiscover, Suites}
-
-class TpchLikeAdaptiveSparkSuite extends Suites(new TpchLikeSparkSuiteAdaptive)
-
 // we need the AQE suites to have unique names so that they don't overwrite
 // surefire results from the original suites
-@DoNotDiscover class TpchLikeSparkSuiteAdaptive
-    extends TpchLikeSparkSuite(adaptiveQueryEnabled = true) {
-  override def beforeAll(): Unit = {
-    super.beforeAll()
-  }
-  override  def afterAll(): Unit = {
-    super.afterAll()
-  }
+class TpchLikeAdaptiveSparkSuite extends TpchLikeSparkSuite {
+  override val adaptiveQueryEnabled: Boolean = true
 }
