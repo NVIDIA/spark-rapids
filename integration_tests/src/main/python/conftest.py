@@ -48,6 +48,17 @@ def is_allowing_any_non_gpu():
 def get_non_gpu_allowed():
     return _non_gpu_allowed
 
+_runtime_env = "apache"
+
+def runtime_env():
+    return _runtime_env.lower()
+
+def is_apache_runtime():
+    return runtime_env() == "apache"
+
+def is_databricks_runtime():
+    return runtime_env() == "databricks"
+
 _limit = -1
 
 def get_limit():
@@ -112,6 +123,9 @@ def pytest_runtest_setup(item):
     else:
         _limit = -1
 
+def pytest_configure(config):
+    global _runtime_env
+    _runtime_env = config.getoption('runtime_env')
 
 def pytest_collection_modifyitems(config, items):
     for item in items:

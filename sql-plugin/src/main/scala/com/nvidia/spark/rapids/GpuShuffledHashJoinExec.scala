@@ -112,7 +112,7 @@ case class GpuShuffledHashJoinExec(
           val combined = combine(keys, buildBatch)
           combinedSize =
             GpuColumnVector.extractColumns(combined)
-              .map(_.dataType().defaultSize).sum * combined.numRows
+              .map(_.getBase.getDeviceMemorySize).sum.toInt
           GpuColumnVector.from(combined)
         } finally {
           keys.close()
@@ -122,18 +122,13 @@ case class GpuShuffledHashJoinExec(
         val delta = System.nanoTime() - startTime
         buildTime += delta
         totalTime += delta
-        //TODO this does not take into account strings correctly.
         buildDataSize += combinedSize
         val context = TaskContext.get()
         context.addTaskCompletionListener[Unit](_ => builtTable.close())
 
-        streamIter.map(cb => {
-          val startTime = System.nanoTime()
-          val ret = doJoin(builtTable, cb, boundCondition, joinOutputRows, numOutputRows,
-            numOutputBatches, joinTime, filterTime)
-          totalTime += (System.nanoTime() - startTime)
-          ret
-        })
+        doJoin(builtTable, streamIter, boundCondition,
+          numOutputRows, joinOutputRows, numOutputBatches,
+          joinTime, filterTime, totalTime)
       }
     }
   }
