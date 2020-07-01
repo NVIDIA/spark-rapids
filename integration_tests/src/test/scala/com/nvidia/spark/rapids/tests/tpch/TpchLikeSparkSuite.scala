@@ -23,13 +23,8 @@ import org.scalatest.{BeforeAndAfterAll, FunSuite}
 import org.apache.spark.sql.{DataFrame, SparkSession}
 import org.apache.spark.sql.execution.adaptive.AdaptiveSparkPlanExec
 
-object TpchLikeSparkSuite {
-  @volatile
-  var adaptiveQueryEnabled = false
-}
-
-class TpchLikeSparkSuite extends FunSuite with BeforeAndAfterAll {
-  import TpchLikeSparkSuite._
+class TpchLikeSparkSuite(adaptiveQueryEnabled: Boolean = false)
+    extends FunSuite with BeforeAndAfterAll {
 
   lazy val session: SparkSession = {
     var builder = SparkSession.builder

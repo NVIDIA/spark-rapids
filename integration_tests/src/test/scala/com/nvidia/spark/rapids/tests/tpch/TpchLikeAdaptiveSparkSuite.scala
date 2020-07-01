@@ -21,13 +21,12 @@ class TpchLikeAdaptiveSparkSuite extends Suites(new TpchLikeSparkSuiteAdaptive)
 
 // we need the AQE suites to have unique names so that they don't overwrite
 // surefire results from the original suites
-@DoNotDiscover class TpchLikeSparkSuiteAdaptive extends TpchLikeSparkSuite {
+@DoNotDiscover class TpchLikeSparkSuiteAdaptive
+    extends TpchLikeSparkSuite(adaptiveQueryEnabled = true) {
   override def beforeAll(): Unit = {
     super.beforeAll()
-    TpchLikeSparkSuite.adaptiveQueryEnabled = true
   }
   override  def afterAll(): Unit = {
     super.afterAll()
-    TpchLikeSparkSuite.adaptiveQueryEnabled = false
   }
 }
