@@ -75,7 +75,7 @@ pipeline {
         always {
             script {
                 if (currentBuild.currentResult == "SUCCESS") {
-                    build(job: 'spark/rapids_integration-0.1-github',
+                    build(job: 'spark/rapids_integration-0.2-github',
                           propagate: false,
                           parameters: [string(name: 'REF', value: 'branch-0.2')])
 
