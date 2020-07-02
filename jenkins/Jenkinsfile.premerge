@@ -54,7 +54,7 @@ pipeline {
                     sh """
                         echo $URM_CREDS_PSW | $DOCKER_CMD login https://urm.nvidia.com -u $URM_CREDS_USR --password-stdin
                         $DOCKER_CMD pull $IMAGE_NAME
-                        $DOCKER_CMD build -f jenkins/Dockerfile.ubuntu16 --cache-from $IMAGE_NAME -t $IMAGE_NAME .
+                        $DOCKER_CMD build -f jenkins/Dockerfile.ubuntu16 --build-arg CUDA_VER=10.1 --cache-from $IMAGE_NAME -t $IMAGE_NAME .
                         $DOCKER_CMD logout https://urm.nvidia.com
                     """
                     docker.image(IMAGE_NAME).inside("--runtime=nvidia -v ${HOME}/.m2:${HOME}/.m2:rw \
