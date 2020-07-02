@@ -24,6 +24,8 @@ import scala.collection.mutable.ListBuffer
 import org.apache.spark.SparkConf
 import org.apache.spark.internal.Logging
 import org.apache.spark.network.util.{ByteUnit, JavaUtils}
+import org.apache.spark.sql.catalyst.analysis.FunctionRegistry
+import org.apache.spark.sql.catalyst.expressions.ExpressionInfo
 import org.apache.spark.sql.internal.SQLConf
 
 object ConfHelper {
@@ -685,6 +687,45 @@ object RapidsConf {
       |  ```
       |""".stripMargin)
     }
+
+    if (asTable) {
+      println("""## Supported SQL Functions
+          |The following is a set of SQL functions that have GPU overrides in this plugin. We find
+          |these by by cross-referencing with Spark's `FunctionRegistry`.
+          |
+          |Please note that there could still be caveats to each function, like data types that
+          |are supported, and edge cases that would cause the function to be disabled by default
+          |on the GPU. That said, any function that has GPU support will be a candidate
+          |for acceleration.
+          |""".stripMargin)
+      println("Function | Class | GPU Support")
+      println("-----|------|-------------")
+    } else {
+      println ("SQL functions that have GPU overrides:")
+    }
+
+    val gpuExpressions = GpuOverrides.expressions.keys.map(_.getCanonicalName).toSet
+
+    FunctionRegistry.expressions.toSeq.sortBy(_._1).foreach(expr => {
+      val (_,(sparkExpressionInfo: ExpressionInfo, _)) = expr
+      val sparkClass = sparkExpressionInfo.getClassName
+      val supported = gpuExpressions.exists(_.equalsIgnoreCase(sparkClass))
+
+      val supportedSymbol = if (supported) {
+        "✔️"
+      } else {
+        ""
+      }
+
+      if (asTable) {
+        val exprCleaned = if (expr._1 != "|") {
+          expr._1
+        } else {
+          "\\|"
+        }
+        println(s"`${exprCleaned}` | ${sparkClass} | ${supportedSymbol}")
+      }
+    })
   }
   def main(args: Array[String]): Unit = {
     val out = new FileOutputStream(new File(args(0)))
