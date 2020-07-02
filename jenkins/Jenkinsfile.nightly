@@ -55,13 +55,21 @@ pipeline {
                     def CUDA_NAME=sh(returnStdout: true,
                         script: '. jenkins/version-def.sh>&2 && echo -n $CUDA_CLASSIFIER | sed "s/-/./g"')
                     def IMAGE_NAME="urm.nvidia.com/sw-spark-docker/plugin:dev-ubuntu16-$CUDA_NAME"
-                    def DOCKER_CMD="docker --config $WORKSPACE/.docker"
-                    sh """
-                        echo $URM_CREDS_PSW | $DOCKER_CMD login https://urm.nvidia.com -u $URM_CREDS_USR --password-stdin
-                        $DOCKER_CMD pull $IMAGE_NAME
-                        $DOCKER_CMD logout https://urm.nvidia.com
-                    """
-                    docker.image(IMAGE_NAME).inside("--runtime=nvidia \
+                    def CUDA_VER="$CUDA_NAME" - "cuda"
+                    def urmImage=docker.image(IMAGE_NAME)
+                    urmImage.pull()
+                    // docker inspect returns "sha256:urmImageID"
+                    def urmImageID=sh(returnStdout: true, script: "docker inspect -f {{'.Id'}} $IMAGE_NAME") - "sha256:"
+                    // Speed up Docker building via '--cache-from $IMAGE_NAME'
+                    def buildImage=docker.build(IMAGE_NAME,
+                        "-f jenkins/Dockerfile.ubuntu16 --build-arg CUDA_VER=$CUDA_VER --cache-from $IMAGE_NAME -t $IMAGE_NAME .")
+                    def buildImageID=sh(returnStdout: true, script: "docker inspect -f {{'.Id'}} $IMAGE_NAME") - "sha256:"
+                    if (! buildImageID.equals(urmImageID)) {
+                        echo "Dockerfile updated, upload docker image to URM"
+                        uploadDocker(IMAGE_NAME)
+                    }
+
+                    buildImage.inside("--runtime=nvidia \
                         -v ${HOME}/.zinc:${HOME}/.zinc:rw \
                         -v /etc/passwd:/etc/passwd -v /etc/group:/etc/group") {
                         sh "jenkins/spark-nightly-build.sh"
@@ -87,6 +95,15 @@ pipeline {
         }
     }
 } // end of pipeline
+
+void uploadDocker(String IMAGE_NAME) {
+    def DOCKER_CMD="docker --config $WORKSPACE/.docker"
+    sh """
+        echo $URM_CREDS_PSW | $DOCKER_CMD login https://urm.nvidia.com -u $URM_CREDS_USR --password-stdin
+        $DOCKER_CMD push $IMAGE_NAME
+        $DOCKER_CMD logout https://urm.nvidia.com
+    """
+}
 
 void slack(Map params = [:], String channel, String message) {
     Map defaultParams = [
