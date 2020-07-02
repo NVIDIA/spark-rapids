@@ -535,8 +535,8 @@
     <repositories>
         <repository>
             <id>snapshots</id>
-            <name>sw-spark-maven</name>
-            <url>https://urm.nvidia.com:443/artifactory/sw-spark-maven</url>
+            <name>Sonatype-Snapshots</name>
+            <url>https://oss.sonatype.org/content/repositories/snapshots</url>
         </repository>
     </repositories>
     <distributionManagement>
