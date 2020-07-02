@@ -38,7 +38,7 @@ class TpchLikeSparkSuite extends FunSuite with BeforeAndAfterAll {
       .config("spark.sql.join.preferSortMergeJoin", false)
       .config("spark.sql.shuffle.partitions", 2)
       .config("spark.sql.queryExecutionListeners",
-        "com.nvidia.spark.rapids.ExecutionPlanCaptureCallback")
+        classOf[ExecutionPlanCaptureCallback].getCanonicalName)
       .config("spark.plugins", "com.nvidia.spark.SQLPlugin")
       .config("spark.rapids.sql.test.enabled", false)
       .config("spark.rapids.sql.explain", true)
