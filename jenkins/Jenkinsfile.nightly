@@ -70,8 +70,7 @@ pipeline {
                     }
 
                     buildImage.inside("--runtime=nvidia \
-                        -v ${HOME}/.zinc:${HOME}/.zinc:rw \
-                        -v /etc/passwd:/etc/passwd -v /etc/group:/etc/group") {
+                        -v ${HOME}/.zinc:${HOME}/.zinc:rw") {
                         sh "jenkins/spark-nightly-build.sh"
                     }
                 }
