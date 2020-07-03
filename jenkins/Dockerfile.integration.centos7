@@ -33,7 +33,7 @@ RUN yum update -y && \
 # The default mvn verision is 3.05 on centos7 docker container.
 # The plugin: net.alchim31.maven requires a higher mvn version.
 ENV MAVEN_HOME "/usr/local/apache-maven-3.6.3"
-RUN wget https://archive.apache.org/dist/maven/maven-3/3.6.3/binaries/apache-maven-3.6.3-bin.tar.gz -P /usr/local && \
+RUN wget https://urm.nvidia.com/artifactory/sw-spark-maven/org/apache/maven/apache-maven/3.6.3/apache-maven-3.6.3-bin.tar.gz -P /usr/local && \
     tar xzvf $MAVEN_HOME-bin.tar.gz -C /usr/local && \
     rm -f $MAVEN_HOME-bin.tar.gz
 
@@ -42,3 +42,7 @@ RUN python -m pip install pytest sre_yield
 
 # Set ENV for mvn
 ENV JAVA_HOME "/usr/lib/jvm/java-1.8.0-openjdk"
+
+RUN groupadd --gid 30 dip
+RUN adduser --uid 26576 --gid 30 --shell /bin/bash svcngcc
+USER svcngcc

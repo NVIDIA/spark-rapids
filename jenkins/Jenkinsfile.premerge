@@ -39,7 +39,6 @@ pipeline {
         BUILD_SCRIPT = '$JENKINS_ROOT/spark-premerge-build.sh'
         MVN_URM_MIRROR='-s jenkins/settings.xml -P mirror-apache-to-urm'
         LIBCUDF_KERNEL_CACHE_PATH='/tmp'
-        URM_CREDS = credentials("svcngcc_artifactory")
     }
 
     stages {
@@ -50,15 +49,11 @@ pipeline {
                     def CUDA_NAME=sh(returnStdout: true,
                         script: '. jenkins/version-def.sh>&2 && echo -n $CUDA_CLASSIFIER | sed "s/-/./g"')
                     def IMAGE_NAME="urm.nvidia.com/sw-spark-docker/plugin:dev-ubuntu16-$CUDA_NAME"
-                    def DOCKER_CMD="docker --config $WORKSPACE/.docker"
-                    sh """
-                        echo $URM_CREDS_PSW | $DOCKER_CMD login https://urm.nvidia.com -u $URM_CREDS_USR --password-stdin
-                        $DOCKER_CMD pull $IMAGE_NAME
-                        $DOCKER_CMD logout https://urm.nvidia.com
-                    """
-                    docker.image(IMAGE_NAME).inside("--runtime=nvidia -v ${HOME}/.m2:${HOME}/.m2:rw \
-                        -v ${HOME}/.zinc:${HOME}/.zinc:rw \
-                        -v /etc/passwd:/etc/passwd -v /etc/group:/etc/group") {
+                    sh "docker pull $IMAGE_NAME"
+                    def CUDA_VER="$CUDA_NAME" - "cuda"
+                    def buildImage=docker.build(IMAGE_NAME,
+                        "-f jenkins/Dockerfile.ubuntu16 --build-arg CUDA_VER=$CUDA_VER --cache-from $IMAGE_NAME -t $IMAGE_NAME .")
+                    buildImage.inside("--runtime=nvidia -v ${HOME}/.m2:${HOME}/.m2:rw -v ${HOME}/.zinc:${HOME}/.zinc:rw") {
                         sh "bash $BUILD_SCRIPT $MVN_URM_MIRROR"
                         step([$class: 'JacocoPublisher',
                               execPattern: '**/target/jacoco.exec',
