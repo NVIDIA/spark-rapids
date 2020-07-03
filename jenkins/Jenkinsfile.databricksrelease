@@ -38,8 +38,7 @@ pipeline {
             filename 'Dockerfile.ubuntu16'
             dir "jenkins"
             args '--runtime=nvidia -v ${HOME}/.m2:${HOME}/.m2:rw \
-                -v ${HOME}/.zinc:${HOME}/.zinc:rw \
-                -v /etc/passwd:/etc/passwd -v /etc/group:/etc/group'
+                -v ${HOME}/.zinc:${HOME}/.zinc:rw'
         }
     }
 

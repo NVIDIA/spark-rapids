@@ -52,8 +52,7 @@ pipeline {
                     sh "docker pull $IMAGE_NAME"
                     sh "mkdir -p ${HOME}/.zinc"
                     docker.image("$IMAGE_NAME").inside("--runtime=nvidia -v ${HOME}/.m2:${HOME}/.m2:rw \
-                        -v ${HOME}/.zinc:${HOME}/.zinc:rw \
-                        -v /etc/passwd:/etc/passwd -v /etc/group:/etc/group") {
+                        -v ${HOME}/.zinc:${HOME}/.zinc:rw") {
                         sh "mvn -U -B clean install $MVN_MIRROR -P source-javadoc"
                     }
                 }
@@ -71,8 +70,7 @@ pipeline {
             }
             steps {
                 script {
-                    docker.image("$IMAGE_NAME").inside("-v ${HOME}/.m2:${HOME}/.m2:rw \
-                        -v /etc/passwd:/etc/passwd -v /etc/group:/etc/group") {
+                    docker.image("$IMAGE_NAME").inside("-v ${HOME}/.m2:${HOME}/.m2:rw") {
                         sh 'rm -rf $GNUPGHOME'
                         sh 'gpg --import $GPG_FILE'
                         retry (3) {
