@@ -37,3 +37,5 @@ RUN add-apt-repository ppa:deadsnakes/ppa && \
 RUN ln -s /usr/bin/python3.6 /usr/bin/python
 RUN python -m pip install pytest sre_yield requests
 
+RUN adduser --uid 26576 --gid 30 --shell /bin/bash svcngcc
+USER svcngcc
