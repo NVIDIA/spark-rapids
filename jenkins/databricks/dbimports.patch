@@ -76,3 +76,28 @@ index ac444d1..14a8c6e 100644
  import org.apache.spark.sql.catalyst.plans.JoinType
  import org.apache.spark.sql.catalyst.plans.physical.{BroadcastDistribution, Distribution, UnspecifiedDistribution}
  import org.apache.spark.sql.execution.{BinaryExecNode, SparkPlan}
+diff --git a/sql-plugin/src/main/scala/org/apache/spark/sql/rapids/execution/GpuBroadcastNestedLoopJoinExec.scala b/sql-plugin/src/main/scala/org/apache/spark/sql/rapids/execution/GpuBroadcastNestedLoopJoinExec.scala
+index 4a8fb80..c8d6b14 100644
+--- a/sql-plugin/src/main/scala/org/apache/spark/sql/rapids/execution/GpuBroadcastNestedLoopJoinExec.scala
++++ b/sql-plugin/src/main/scala/org/apache/spark/sql/rapids/execution/GpuBroadcastNestedLoopJoinExec.scala
+@@ -23,11 +23,12 @@ import com.nvidia.spark.rapids.GpuMetricNames.{NUM_OUTPUT_BATCHES, NUM_OUTPUT_RO
+ import org.apache.spark.rdd.RDD
+ import org.apache.spark.sql.catalyst.InternalRow
+ import org.apache.spark.sql.catalyst.expressions.{Attribute, Expression}
++import org.apache.spark.sql.catalyst.optimizer.{BuildLeft, BuildRight, BuildSide}
+ import org.apache.spark.sql.catalyst.plans.{Cross, ExistenceJoin, FullOuter, Inner, InnerLike, JoinType, LeftExistence, LeftOuter, RightOuter}
+ import org.apache.spark.sql.catalyst.plans.physical.{BroadcastDistribution, Distribution, IdentityBroadcastMode, UnspecifiedDistribution}
+ import org.apache.spark.sql.execution.{BinaryExecNode, SparkPlan}
+ import org.apache.spark.sql.execution.exchange.ReusedExchangeExec
+-import org.apache.spark.sql.execution.joins.{BroadcastNestedLoopJoinExec, BuildLeft, BuildRight, BuildSide}
++import org.apache.spark.sql.execution.joins.{BroadcastNestedLoopJoinExec}
+ import org.apache.spark.sql.execution.metric.{SQLMetric, SQLMetrics}
+ import org.apache.spark.sql.vectorized.ColumnarBatch
+ 
+@@ -218,4 +219,4 @@ case class GpuBroadcastNestedLoopJoinExec(
+       }
+     }
+   }
+-}
+\ No newline at end of file
++}
