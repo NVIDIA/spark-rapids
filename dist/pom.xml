@@ -100,7 +100,7 @@
         <configuration>
           <excludes>
             <exclude>dependency-reduced-pom.xml</exclude>
-            <exclude>pom.xml.asc</exclude>
+            <exclude>*pom.xml.asc</exclude>
           </excludes>
         </configuration>
       </plugin>

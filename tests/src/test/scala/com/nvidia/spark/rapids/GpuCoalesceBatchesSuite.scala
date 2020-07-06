@@ -134,21 +134,19 @@ class GpuCoalesceBatchesSuite extends SparkQueryCompareTestSuite {
       val df2 = df
         .sort(df.col("longs"))
 
-      val coalesce = df2.queryExecution.executedPlan
+      // execute the plan
+      ExecutionPlanCaptureCallback.startCapture()
+      df2.collect()
+      val executedPlan = ExecutionPlanCaptureCallback.extractExecutedPlan(
+        ExecutionPlanCaptureCallback.getResultWithTimeout())
+
+      val coalesce = executedPlan
         .find(_.isInstanceOf[GpuCoalesceBatches]).get
         .asInstanceOf[GpuCoalesceBatches]
 
       assert(coalesce.goal == RequireSingleBatch)
       assert(coalesce.goal.targetSizeBytes == Long.MaxValue)
 
-      // assert the metrics start out at zero
-      assert(coalesce.additionalMetrics("numInputBatches").value == 0)
-      assert(coalesce.longMetric(GpuMetricNames.NUM_OUTPUT_BATCHES).value == 0)
-
-      // execute the plan
-      df2.collect()
-
-      // assert the metrics are correct
       assert(coalesce.additionalMetrics("numInputBatches").value == 7)
       assert(coalesce.longMetric(GpuMetricNames.NUM_OUTPUT_BATCHES).value == 1)
 
@@ -180,22 +178,27 @@ class GpuCoalesceBatchesSuite extends SparkQueryCompareTestSuite {
         val df2 = df
           .sort(df.col("longs"))
 
+        // execute the plan
+        ExecutionPlanCaptureCallback.startCapture()
+        df2.collect()
+
+        val executedPlan = ExecutionPlanCaptureCallback.extractExecutedPlan(
+          ExecutionPlanCaptureCallback.getResultWithTimeout())
+
         // ensure that the plan does include the HostColumnarToGpu step
-        val hostColumnarToGpu = df2.queryExecution.executedPlan
+        val hostColumnarToGpu = executedPlan
           .find(_.isInstanceOf[HostColumnarToGpu]).get
           .asInstanceOf[HostColumnarToGpu]
 
         assert(hostColumnarToGpu.goal == TargetSize(50000))
 
-        val gpuCoalesceBatches = df2.queryExecution.executedPlan
+        val gpuCoalesceBatches = executedPlan
           .find(_.isInstanceOf[GpuCoalesceBatches]).get
           .asInstanceOf[GpuCoalesceBatches]
 
         assert(gpuCoalesceBatches.goal == RequireSingleBatch)
         assert(gpuCoalesceBatches.goal.targetSizeBytes == Long.MaxValue)
 
-        // execute the plan
-        df2.collect()
 
       }, conf)
     } finally {

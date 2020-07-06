@@ -26,7 +26,7 @@ import ai.rapids.cudf._
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 
 import org.apache.spark.{SparkConf, SparkContext, TaskContext}
-import org.apache.spark.api.plugin.{DriverPlugin, ExecutorPlugin, PluginContext, SparkPlugin}
+import org.apache.spark.api.plugin.{DriverPlugin, ExecutorPlugin, PluginContext}
 import org.apache.spark.internal.Logging
 import org.apache.spark.serializer.{JavaSerializer, KryoSerializer}
 import org.apache.spark.sql.SparkSessionExtensions
@@ -34,6 +34,7 @@ import org.apache.spark.sql.catalyst.expressions.Expression
 import org.apache.spark.sql.catalyst.plans.physical.Partitioning
 import org.apache.spark.sql.catalyst.rules.Rule
 import org.apache.spark.sql.execution._
+import org.apache.spark.sql.execution.adaptive.AdaptiveSparkPlanExec
 import org.apache.spark.sql.internal.StaticSQLConf
 import org.apache.spark.sql.rapids.GpuShuffleEnv
 import org.apache.spark.sql.util.QueryExecutionListener
@@ -279,6 +280,14 @@ object ExecutionPlanCaptureCallback {
     }
   }
 
+  def extractExecutedPlan(plan: Option[SparkPlan]): SparkPlan = {
+    plan match {
+      case Some(p: AdaptiveSparkPlanExec) => p.executedPlan
+      case Some(p) => p
+      case _ => throw new IllegalStateException("No execution plan available")
+    }
+  }
+
   def assertCapturedAndGpuFellBack(fallbackCpuClass: String, timeoutMs: Long = 2000): Unit = {
     val gpuPlan = getResultWithTimeout(timeoutMs=timeoutMs)
     assert(gpuPlan.isDefined, "Did not capture a GPU plan")
@@ -286,8 +295,9 @@ object ExecutionPlanCaptureCallback {
   }
 
   def assertDidFallBack(gpuPlan: SparkPlan, fallbackCpuClass: String): Unit = {
-    assert(gpuPlan.find(didFallBack(_, fallbackCpuClass)).isDefined,
-      s"Could not find $fallbackCpuClass in the GPU plan\n$gpuPlan")
+    val executedPlan = ExecutionPlanCaptureCallback.extractExecutedPlan(Some(gpuPlan))
+    assert(executedPlan.find(didFallBack(_, fallbackCpuClass)).isDefined,
+        s"Could not find $fallbackCpuClass in the GPU plan\n$executedPlan")
   }
 
   private def getBaseNameFromClass(planClassStr: String): String = {
@@ -305,11 +315,12 @@ object ExecutionPlanCaptureCallback {
   }
 
   private def didFallBack(plan: SparkPlan, fallbackCpuClass: String): Boolean = {
-    if (!plan.isInstanceOf[GpuExec] &&
-      getBaseNameFromClass(plan.getClass.getName) == fallbackCpuClass) {
+    val executedPlan = ExecutionPlanCaptureCallback.extractExecutedPlan(Some(plan))
+    if (!executedPlan.isInstanceOf[GpuExec] &&
+      getBaseNameFromClass(executedPlan.getClass.getName) == fallbackCpuClass) {
       true
     } else {
-      plan.expressions.exists(didFallBack(_, fallbackCpuClass))
+      executedPlan.expressions.exists(didFallBack(_, fallbackCpuClass))
     }
   }
 }

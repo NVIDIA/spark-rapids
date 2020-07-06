@@ -52,6 +52,7 @@ object TestResourceFinder {
 }
 
 object SparkSessionHolder extends Logging {
+
   val spark = {
     // Timezone is fixed to UTC to allow timestamps to work by default
     TimeZone.setDefault(TimeZone.getTimeZone("UTC"))
@@ -382,6 +383,20 @@ trait SparkQueryCompareTestSuite extends FunSuite with Arm {
       sortBeforeRepart = sortBeforeRepart)(fun)
   }
 
+  def ALLOW_NON_GPU_testSparkResultsAreEqualWithCapture(
+      testName: String,
+      df: SparkSession => DataFrame,
+      execsAllowedNonGpu: Seq[String],
+      conf: SparkConf = new SparkConf(),
+      sortBeforeRepart: Boolean = false)
+      (fun: DataFrame => DataFrame)
+      (validateCapturedPlans: (SparkPlan, SparkPlan) => Unit): Unit = {
+    testSparkResultsAreEqualWithCapture(testName, df,
+      conf=conf,
+      execsAllowedNonGpu=execsAllowedNonGpu,
+      sortBeforeRepart = sortBeforeRepart)(fun)(validateCapturedPlans)
+  }
+
   def IGNORE_ORDER_ALLOW_NON_GPU_testSparkResultsAreEqual(
       testName: String,
       df: SparkSession => DataFrame,
@@ -397,6 +412,23 @@ trait SparkQueryCompareTestSuite extends FunSuite with Arm {
       sortBeforeRepart = sortBeforeRepart)(fun)
   }
 
+  def IGNORE_ORDER_ALLOW_NON_GPU_testSparkResultsAreEqualWithCapture(
+      testName: String,
+      df: SparkSession => DataFrame,
+      execsAllowedNonGpu: Seq[String],
+      repart: Integer = 1,
+      conf: SparkConf = new SparkConf(),
+      sortBeforeRepart: Boolean = false)
+      (fun: DataFrame => DataFrame)
+      (validateCapturedPlans: (SparkPlan, SparkPlan) => Unit): Unit = {
+    testSparkResultsAreEqualWithCapture(testName, df,
+      conf=conf,
+      execsAllowedNonGpu=execsAllowedNonGpu,
+      repart=repart,
+      sort=true,
+      sortBeforeRepart = sortBeforeRepart)(fun)(validateCapturedPlans)
+  }
+
   def IGNORE_ORDER_testSparkResultsAreEqual(
       testName: String,
       df: SparkSession => DataFrame,
@@ -408,6 +440,21 @@ trait SparkQueryCompareTestSuite extends FunSuite with Arm {
       repart=repart,
       sort=true,
       sortBeforeRepart = sortBeforeRepart)(fun)
+  }
+
+  def IGNORE_ORDER_testSparkResultsAreEqualWithCapture(
+      testName: String,
+      df: SparkSession => DataFrame,
+      repart: Integer = 1,
+      conf: SparkConf = new SparkConf(),
+      sortBeforeRepart: Boolean = false)
+      (fun: DataFrame => DataFrame)
+      (validateCapturedPlans: (SparkPlan, SparkPlan) => Unit): Unit = {
+    testSparkResultsAreEqualWithCapture(testName, df,
+      conf=conf,
+      repart=repart,
+      sort=true,
+      sortBeforeRepart = sortBeforeRepart)(fun)(validateCapturedPlans)
   }
 
   def INCOMPAT_IGNORE_ORDER_testSparkResultsAreEqual(
@@ -640,6 +687,31 @@ trait SparkQueryCompareTestSuite extends FunSuite with Arm {
         conf = testConf,
         repart = repart)
       compareResults(sort, maxFloatDiff, fromCpu, fromGpu)
+    }
+  }
+
+  def testSparkResultsAreEqualWithCapture(
+      testName: String,
+      df: SparkSession => DataFrame,
+      conf: SparkConf = new SparkConf(),
+      repart: Integer = 1,
+      sort: Boolean = false,
+      maxFloatDiff: Double = 0.0,
+      incompat: Boolean = false,
+      execsAllowedNonGpu: Seq[String] = Seq.empty,
+      sortBeforeRepart: Boolean = false)
+      (fun: DataFrame => DataFrame)
+      (validateCapturedPlans: (SparkPlan, SparkPlan) => Unit): Unit = {
+
+    val (testConf, qualifiedTestName) =
+      setupTestConfAndQualifierName(testName, incompat, sort, conf, execsAllowedNonGpu,
+        maxFloatDiff, sortBeforeRepart)
+    test(qualifiedTestName) {
+      val (fromCpu, cpuPlan, fromGpu, gpuPlan) = runOnCpuAndGpuWithCapture(df, fun,
+        conf = testConf,
+        repart = repart)
+      compareResults(sort, maxFloatDiff, fromCpu, fromGpu)
+      validateCapturedPlans(cpuPlan, gpuPlan)
     }
   }
 
