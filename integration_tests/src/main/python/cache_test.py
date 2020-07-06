@@ -43,9 +43,16 @@ def test_cache_join(data_gen, join_type):
         left, right = create_df(spark, data_gen, 500, 500)
         return left.join(right, left.a == right.r_a, join_type).cache()
     cached_df_cpu = with_cpu_session(do_join, conf)
-    from_cpu = debug_df(cached_df_cpu.sort(asc("a")).collect())
+    if (join_type == 'LeftAnti' or join_type == 'LeftSemi'):
+        sort = [asc("a"), asc("b")]
+    else:
+        sort = [asc("a"), asc("b"), asc("r_a"), asc("r_b")]
+
+    from_cpu = cached_df_cpu.sort(sort).collect()
+    print('COLLECTED\n{}'.format(from_cpu))
     cached_df_gpu = with_gpu_session(do_join, conf)
-    from_gpu = debug_df(cached_df_gpu.sort(asc("a")).collect())
+    from_gpu = cached_df_gpu.sort(sort).collect()
+    print('COLLECTED\n{}'.format(from_gpu))
     assert_equal(from_cpu, from_gpu)
 
 all_gen_no_nulls_filters = [(StringGen(nullable=False), "rlike(a, '^(?=.{1,5}$).*')"),
@@ -70,13 +77,17 @@ def test_cached_join_filter(data_gen, join_type):
         left, right = create_df(spark, data, 500, 500)
         return left.join(right, left.a == right.r_a, join_type).cache()
     cached_df_cpu = with_cpu_session(do_join, conf)
-    join_from_cpu = cached_df_cpu.sort(asc("a")).collect()
-    filter_from_cpu = cached_df_cpu.filter(filter).collect()
+    if (join_type == 'LeftAnti' or join_type == 'LeftSemi'):
+        sort_columns = [asc("a"), asc("b")]
+    else:
+        sort_columns = [asc("a"), asc("b"), asc("r_a"), asc("r_b")]
+
+    join_from_cpu = cached_df_cpu.sort(sort_columns).collect()
+    filter_from_cpu = cached_df_cpu.filter(filter).sort(sort_columns).collect()
 
     cached_df_gpu = with_gpu_session(do_join, conf)
-    join_from_gpu = cached_df_gpu.sort(asc("a")).collect()
-    filter_from_gpu = cached_df_gpu.filter(filter).collect()
+    join_from_gpu = cached_df_gpu.sort(sort_columns).collect()
+    filter_from_gpu = cached_df_gpu.filter(filter).sort(sort_columns).collect()
 
     assert_equal(join_from_cpu, join_from_gpu)
-
     assert_equal(filter_from_cpu, filter_from_gpu)
