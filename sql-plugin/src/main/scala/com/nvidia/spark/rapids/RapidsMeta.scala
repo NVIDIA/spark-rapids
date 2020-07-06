@@ -33,6 +33,7 @@ import org.apache.spark.sql.types.{CalendarIntervalType, DataType, DataTypes, St
 trait ConfKeysAndIncompat {
   val operationName: String
   def incompatDoc: Option[String] = None
+  def disabledMsg: Option[String] = None
 
   def confKey: String
 }
@@ -159,6 +160,8 @@ abstract class RapidsMeta[INPUT <: BASE, BASE, OUTPUT <: BASE](
   final val operationName: String = rule.operationName
   final val incompatDoc: Option[String] = rule.incompatDoc
   def isIncompat: Boolean = incompatDoc.isDefined
+  final val disabledMsg: Option[String] = rule.disabledMsg
+  def isDisabledByDefault: Boolean = disabledMsg.isDefined
 
   def initReasons(): Unit = {
     cannotBeReplacedReasons = Some(mutable.Set[String]())
@@ -179,16 +182,20 @@ abstract class RapidsMeta[INPUT <: BASE, BASE, OUTPUT <: BASE](
 
     initReasons()
 
-    if (!conf.isOperatorEnabled(confKey, isIncompat)) {
+    if (!conf.isOperatorEnabled(confKey, isIncompat, isDisabledByDefault)) {
       if (isIncompat && !conf.isIncompatEnabled) {
         willNotWorkOnGpu(s"the GPU version of ${wrapped.getClass.getSimpleName}" +
-          s" is not 100% compatible with the Spark version. ${incompatDoc.get}. To enable this" +
-          s" ${operationName} despite the incompatibilities please set the config" +
-          s" ${confKey} to true. You could also set ${RapidsConf.INCOMPATIBLE_OPS} to true" +
-          s" to enable all incompatible ops")
+            s" is not 100% compatible with the Spark version. ${incompatDoc.get}. To enable this" +
+            s" $operationName despite the incompatibilities please set the config" +
+            s" $confKey to true. You could also set ${RapidsConf.INCOMPATIBLE_OPS} to true" +
+            s" to enable all incompatible ops")
+      } else if (isDisabledByDefault) {
+        willNotWorkOnGpu(s"the $operationName ${wrapped.getClass.getSimpleName} has" +
+            s" been disabled, and is disabled by default because ${disabledMsg.get}. Set $confKey" +
+            s" to true if you wish to enable it")
       } else {
-        willNotWorkOnGpu(s"the ${operationName} ${wrapped.getClass.getSimpleName} has" +
-          s" been disabled. Set ${confKey} to true if you wish to enable it")
+        willNotWorkOnGpu(s"the $operationName ${wrapped.getClass.getSimpleName} has" +
+            s" been disabled. Set $confKey to true if you wish to enable it")
       }
     }
 

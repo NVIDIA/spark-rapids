@@ -593,7 +593,7 @@ object RapidsConf {
 
   private def printToggleHeader(category: String): Unit = {
     printSectionHeader(category)
-    println("Name | Description | Default Value | Incompatibilities")
+    println("Name | Description | Default Value | Notes")
     println("-----|-------------|---------------|------------------")
   }
 
@@ -825,8 +825,8 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
 
   lazy val shuffleMaxMetadataSize: Long = get(SHUFFLE_MAX_METADATA_SIZE)
 
-  def isOperatorEnabled(key: String, incompat: Boolean): Boolean = {
-    val default = !incompat || (incompat && isIncompatEnabled)
+  def isOperatorEnabled(key: String, incompat: Boolean, isDisabledByDefault: Boolean): Boolean = {
+    val default = !(isDisabledByDefault || incompat) || (incompat && isIncompatEnabled)
     conf.get(key).map(toBoolean(_, key)).getOrElse(default)
   }
 }

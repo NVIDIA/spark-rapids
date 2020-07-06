@@ -15,15 +15,12 @@
 # limitations under the License.
 #
 
-set -e
-rm -rf deploy
-mkdir -p deploy
-cd deploy
-tar -zxvf ../spark-rapids-built.tgz
-cd spark-rapids
-echo "Maven mirror is $MVN_URM_MIRROR"
-SERVER_ID='snapshots'
-SERVER_URL='https://urm.nvidia.com:443/artifactory/sw-spark-maven-local'
-FPATH=./dist/target/rapids-4-spark_$SCALA_VERSION-$DATABRICKS_VERSION.jar
-mvn -B deploy:deploy-file $MVN_URM_MIRROR -Durl=$SERVER_URL -DrepositoryId=$SERVER_ID \
-    -Dfile=$FPATH -DpomFile=dist/pom.xml 
+set -ex
+
+. jenkins/version-def.sh
+
+mvn -U -B clean deploy $MVN_URM_MIRROR -Dmaven.repo.local=$WORKSPACE/.m2
+
+# Parse cudf and spark files from local mvn repo
+jenkins/printJarVersion.sh "CUDFVersion" "${WORKSPACE}/.m2/ai/rapids/cudf/${CUDF_VER}" "cudf-${CUDF_VER}" "-${CUDA_CLASSIFIER}.jar"
+jenkins/printJarVersion.sh "SPARKVersion" "${WORKSPACE}/.m2/org/apache/spark/spark-core_2.12/${SPARK_VER}" "spark-core_2.12-${SPARK_VER}" ".jar"

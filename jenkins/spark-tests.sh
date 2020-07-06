@@ -16,27 +16,8 @@
 #
 
 set -ex
-if [ "$CUDF_VER"x == x ];then
-    CUDF_VER="0.15-SNAPSHOT"
-fi
 
-if [ "$PROJECT_VER"x == x ];then
-    PROJECT_VER="0.2.0-SNAPSHOT"
-fi
-
-if [ "$SPARK_VER"x == x ];then
-    SPARK_VER="3.0.0"
-fi
-
-SCALA_BINARY_VER=${SCALA_BINARY_VER:-2.12}
-
-#default maven server urm
-if [ "$SERVER_URL"x == x ]; then
-    SERVER_URL="https://urm.nvidia.com:443/artifactory/sw-spark-maven"
-fi
-
-echo "CUDF_VER: $CUDF_VER, CUDA_CLASSIFIER: $CUDA_CLASSIFIER, PROJECT_VER: $PROJECT_VER \
-        SPARK_VER: $SPARK_VER, SCALA_BINARY_VER: $SCALA_BINARY_VER, SERVER_URL: $SERVER_URL"
+. jenkins/version-def.sh
 
 ARTF_ROOT="$WORKSPACE/jars"
 MVN_GET_CMD="mvn org.apache.maven.plugins:maven-dependency-plugin:2.8:get -B \

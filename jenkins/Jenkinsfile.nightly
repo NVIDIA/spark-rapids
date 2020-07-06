@@ -52,19 +52,26 @@ pipeline {
             agent { label 'docker-gpu' }
             steps {
                 script {
-                    def IMAGE_NAME="urm.nvidia.com/sw-spark-docker/plugin:dev-ubuntu16-cuda10.1"
-                    def DOCKER_CMD="docker --config $WORKSPACE/.docker"
-                    sh """
-                        echo $URM_CREDS_PSW | $DOCKER_CMD login https://urm.nvidia.com -u $URM_CREDS_USR --password-stdin
-                        $DOCKER_CMD pull $IMAGE_NAME
-                        $DOCKER_CMD logout https://urm.nvidia.com
-                    """
-                    docker.image(IMAGE_NAME).inside("--runtime=nvidia \
-                        -v ${HOME}/.zinc:${HOME}/.zinc:rw \
-                        -v /etc/passwd:/etc/passwd -v /etc/group:/etc/group") {
-                        sh "mvn -U -B clean deploy $MVN_URM_MIRROR -Dmaven.repo.local=$WORKSPACE/.m2"
-                        sh "jenkins/printJarVersion.sh 'CUDFVersion' '{$WORKSPACE}/.m2/repository/ai/rapids/cudf/0.15-SNAPSHOT' 'cudf-0.15-SNAPSHOT' '-cuda10-1.jar'"
-                        sh "jenkins/printJarVersion.sh 'SPARKVersion' '${WORKSPACE}/.m2/repository/org/apache/spark/spark-core_2.12/3.0.0' 'spark-core_2.12-3.0.0-' '.jar'"
+                    def CUDA_NAME=sh(returnStdout: true,
+                        script: '. jenkins/version-def.sh>&2 && echo -n $CUDA_CLASSIFIER | sed "s/-/./g"')
+                    def IMAGE_NAME="urm.nvidia.com/sw-spark-docker/plugin:dev-ubuntu16-$CUDA_NAME"
+                    def CUDA_VER="$CUDA_NAME" - "cuda"
+                    def urmImage=docker.image(IMAGE_NAME)
+                    urmImage.pull()
+                    // docker inspect returns "sha256:urmImageID"
+                    def urmImageID=sh(returnStdout: true, script: "docker inspect -f {{'.Id'}} $IMAGE_NAME") - "sha256:"
+                    // Speed up Docker building via '--cache-from $IMAGE_NAME'
+                    def buildImage=docker.build(IMAGE_NAME,
+                        "-f jenkins/Dockerfile.ubuntu16 --build-arg CUDA_VER=$CUDA_VER --cache-from $IMAGE_NAME -t $IMAGE_NAME .")
+                    def buildImageID=sh(returnStdout: true, script: "docker inspect -f {{'.Id'}} $IMAGE_NAME") - "sha256:"
+                    if (! buildImageID.equals(urmImageID)) {
+                        echo "Dockerfile updated, upload docker image to URM"
+                        uploadDocker(IMAGE_NAME)
+                    }
+
+                    buildImage.inside("--runtime=nvidia \
+                        -v ${HOME}/.zinc:${HOME}/.zinc:rw") {
+                        sh "jenkins/spark-nightly-build.sh"
                     }
                 }
             }
@@ -75,11 +82,9 @@ pipeline {
         always {
             script {
                 if (currentBuild.currentResult == "SUCCESS") {
-                    build(job: 'spark/rapids_integration-0.1-github',
+                    build(job: 'spark/rapids_integration-0.2-github',
                           propagate: false,
-                          parameters: [string(name: 'REF', value: 'branch-0.2'),
-                                       string(name: 'CUDF_VER', value: '0.15-SNAPSHOT'),
-                                       booleanParam(name: 'BUILD_CENTOS7', value: false),])
+                          parameters: [string(name: 'REF', value: 'branch-0.2')])
 
                     slack("#rapidsai-spark-cicd", "Success", color: "#33CC33")
                 } else {
@@ -89,6 +94,15 @@ pipeline {
         }
     }
 } // end of pipeline
+
+void uploadDocker(String IMAGE_NAME) {
+    def DOCKER_CMD="docker --config $WORKSPACE/.docker"
+    sh """
+        echo $URM_CREDS_PSW | $DOCKER_CMD login https://urm.nvidia.com -u $URM_CREDS_USR --password-stdin
+        $DOCKER_CMD push $IMAGE_NAME
+        $DOCKER_CMD logout https://urm.nvidia.com
+    """
+}
 
 void slack(Map params = [:], String channel, String message) {
     Map defaultParams = [

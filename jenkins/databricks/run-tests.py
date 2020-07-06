@@ -17,6 +17,7 @@ import sys
 import getopt
 import time
 import os
+import subprocess
 
 def cluster_state(workspace, clusterid, token):
   clusterresp = requests.get(workspace + "/api/2.0/clusters/get?cluster_id=%s" % clusterid, headers={'Authorization': 'Bearer %s' % token})
@@ -40,23 +41,30 @@ def main():
   clusterid = '0617-140138-umiak14'
   private_key_file = "~/.ssh/id_rsa"
   skip_start = None
-  local_script = "build.sh"
-  script_dest = "/home/ubuntu/build.sh"
-  source_tgz = "spark-rapids-ci.tgz"
-  tgz_dest = "/home/ubuntu/spark-rapids-ci.tgz"
+  local_script = 'build.sh'
+  script_dest = '/home/ubuntu/build.sh'
+  source_tgz = 'spark-rapids-ci.tgz'
+  tgz_dest = '/home/ubuntu/spark-rapids-ci.tgz'
+  ci_rapids_jar = 'rapids-4-spark_2.12-0.1-SNAPSHOT-ci.jar'
+  db_version = '0.1-databricks-SNAPSHOT'
+  scala_version = '2.12'
+  spark_version = '3.0.0'
+  cudf_version = '0.15-SNAPSHOT'
+  cuda_version = 'cuda10-1'
+  ci_cudf_jar = 'cudf-0.14-cuda10-1.jar'
 
   try:
-      opts, args = getopt.getopt(sys.argv[1:], 'hs:t:c:p:l:nd:z:',
-                                 ['workspace=', 'token=', 'clusterid=', 'private=', 'nostart=', 'localscript=', 'dest=', 'sparktgz='])
+      opts, args = getopt.getopt(sys.argv[1:], 'hs:t:c:p:l:nd:z:j:b:k:a:f:u:m:',
+                                 ['workspace=', 'token=', 'clusterid=', 'private=', 'nostart=', 'localscript=', 'dest=', 'sparktgz=', 'cirapidsjar=', 'databricksversion=', 'sparkversion=', 'scalaversion=', 'cudfversion=', 'cudaversion=', 'cicudfjar='])
   except getopt.GetoptError:
       print(
-          'run-tests.py -s <workspace> -t <token> -c <clusterid> -p <privatekeyfile> -n <skipstartingcluster> -l <localscript> -z <scriptdestinatino> -z <sparktgz>')
+          'run-tests.py -s <workspace> -t <token> -c <clusterid> -p <privatekeyfile> -n <skipstartingcluster> -l <localscript> -d <scriptdestinatino> -z <sparktgz> -j <cirapidsjar> -b <databricksversion> -k <sparkversion> -a <scalaversion> -f <cudfversion> -u <cudaversion> -m <cicudfjar>')
       sys.exit(2)
 
   for opt, arg in opts:
       if opt == '-h':
           print(
-              'run-tests.py -s <workspace> -t <token> -c <clusterid> -p <privatekeyfile> -n <skipstartingcluster> -l <localscript> -d <scriptdestinatino>, -z <sparktgz>')
+              'run-tests.py -s <workspace> -t <token> -c <clusterid> -p <privatekeyfile> -n <skipstartingcluster> -l <localscript> -d <scriptdestinatino>, -z <sparktgz> -j <cirapidsjar> -b <databricksversion> -k <sparkversion> -a <scalaversion> -f <cudfversion> -u <cudaversion> -m <cicudfjar>')
           sys.exit()
       elif opt in ('-s', '--workspace'):
           workspace = arg
@@ -74,6 +82,20 @@ def main():
           script_dest = arg
       elif opt in ('-z', '--sparktgz'):
           source_tgz = arg
+      elif opt in ('-j', '--cirapidsjar'):
+          ci_rapids_jar = arg
+      elif opt in ('-b', '--databricksversion'):
+          db_version = arg
+      elif opt in ('-k', '--sparkversion'):
+          spark_version = arg
+      elif opt in ('-a', '--scalaversion'):
+          scala_version = arg
+      elif opt in ('-f', '--cudfversion'):
+          cudf_version = arg
+      elif opt in ('-u', '--cudaversion'):
+          cuda_version = arg
+      elif opt in ('-m', '--cicudfjar'):
+          ci_cudf_jar = arg
 
   print('-s is ' + workspace)
   print('-c is ' + clusterid)
@@ -84,6 +106,14 @@ def main():
       print("-n: don't skip start")
   print('-l is ' + local_script)
   print('-d is ' + script_dest)
+  print('-z is ' + source_tgz)
+  print('-j is ' + ci_rapids_jar)
+  print('-b is ' + db_version)
+  print('-k is ' + spark_version)
+  print('-a is ' + scala_version)
+  print('-f is ' + cudf_version)
+  print('-u is ' + cuda_version)
+  print('-m is ' + ci_cudf_jar)
 
   if skip_start is None:
       jsonout = cluster_state(workspace, clusterid, token)
@@ -124,20 +154,21 @@ def main():
   print("Copying script")
   rsync_command = "rsync -I -Pave \"ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -p 2200 -i %s\" %s ubuntu@%s:%s" % (private_key_file, local_script, master_addr, script_dest)
   print("rsync command: %s" % rsync_command)
-  os.system(rsync_command)
+  subprocess.check_call(rsync_command, shell = True)
 
   print("Copying source")
   rsync_command = "rsync -I -Pave \"ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -p 2200 -i %s\" %s ubuntu@%s:%s" % (private_key_file, source_tgz, master_addr, tgz_dest)
   print("rsync command: %s" % rsync_command)
-  os.system(rsync_command)
-  ssh_command = "ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null ubuntu@%s -p 2200 -i %s %s %s 2>&1 | tee buildout" % (master_addr, private_key_file, script_dest, tgz_dest)
+  subprocess.check_call(rsync_command, shell = True)
+
+  ssh_command = "ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null ubuntu@%s -p 2200 -i %s %s %s %s %s %s %s %s %s %s 2>&1 | tee buildout; if [ `echo ${PIPESTATUS[0]}` -ne 0 ]; then false; else true; fi" % (master_addr, private_key_file, script_dest, tgz_dest, db_version, scala_version, ci_rapids_jar, spark_version, cudf_version, cuda_version, ci_cudf_jar)
   print("ssh command: %s" % ssh_command)
-  os.system(ssh_command)
+  subprocess.check_call(ssh_command, shell = True)
 
   print("Copying built tarball back")
   rsync_command = "rsync  -I -Pave \"ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -p 2200 -i %s\" ubuntu@%s:/home/ubuntu/spark-rapids-built.tgz ./" % (private_key_file, master_addr)
   print("rsync command to get built tarball: %s" % rsync_command)
-  os.system(rsync_command)
+  subprocess.check_call(rsync_command, shell = True)
 
 if __name__ == '__main__':
   main()

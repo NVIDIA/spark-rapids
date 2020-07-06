@@ -41,3 +41,6 @@ def pytest_addoption(parser):
     parser.addoption(
         "--debug_tmp_path", action='store_true', default=False, help="if true don't delete tmp_path contents for debugging"
     )
+    parser.addoption(
+        "--runtime_env", action='store', default="Apache", help="the runtime environment for the tests - apache or databricks"
+    )
