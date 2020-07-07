@@ -87,6 +87,11 @@ pipeline {
         always {
             script {
                 sh "python3.6 ./jenkins/databricks/shutdown.py -c $CLUSTER_ID -t $DATABRICKS_TOKEN || true"
+                if (currentBuild.currentResult == "SUCCESS") {
+                    slack("#rapidsai-spark-cicd", "Success", color: "#33CC33")
+                } else {
+                    slack("#rapidsai-spark-cicd", "Failed", color: "#FF0000")
+                }
             }
         }
     }
