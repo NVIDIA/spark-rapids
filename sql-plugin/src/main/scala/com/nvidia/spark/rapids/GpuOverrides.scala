@@ -1729,8 +1729,11 @@ object GpuOverrides {
         override val childExprs: Seq[BaseExprMeta[_]] = condition.toSeq
 
         override def convertToGpu(): GpuExec =
-          GpuCartesianProductExec(childPlans.head.convertIfNeeded(),
-            childPlans(1).convertIfNeeded(), condition.map(_.convertToGpu()))
+          GpuCartesianProductExec(
+            childPlans.head.convertIfNeeded(),
+            childPlans(1).convertIfNeeded(),
+            condition.map(_.convertToGpu()),
+            conf.gpuTargetBatchSizeBytes)
       })
         .disabledByDefault("large joins can cause out of memory errors"),
     exec[SortMergeJoinExec](

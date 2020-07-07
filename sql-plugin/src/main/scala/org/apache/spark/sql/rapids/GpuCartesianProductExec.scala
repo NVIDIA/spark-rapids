@@ -53,11 +53,14 @@ class GpuSerializableBatch(batch: ColumnarBatch)
       } else {
         val numRows = internalBatch.numRows()
         val columns = GpuColumnVector.extractBases(internalBatch).map(_.copyToHost())
-        internalBatch.close()
-        internalBatch = null
-        GpuSemaphore.releaseIfNecessary(TaskContext.get())
-        JCudfSerialization.writeToStream(columns, out, 0, numRows)
-        columns.safeClose()
+        try {
+          internalBatch.close()
+          internalBatch = null
+          GpuSemaphore.releaseIfNecessary(TaskContext.get())
+          JCudfSerialization.writeToStream(columns, out, 0, numRows)
+        } finally {
+          columns.safeClose()
+        }
       }
     }
   }
@@ -178,7 +181,8 @@ class GpuCartesianRDD(
 case class GpuCartesianProductExec(
     left: SparkPlan,
     right: SparkPlan,
-    condition: Option[Expression]) extends BinaryExecNode with GpuExec {
+    condition: Option[Expression],
+    targetSizeBytes: Long) extends BinaryExecNode with GpuExec {
   override def output: Seq[Attribute]= left.output ++ right.output
 
   override def verboseStringWithOperatorId(): String = {
@@ -225,7 +229,10 @@ case class GpuCartesianProductExec(
         ret
       }
 
-      val maxRowCount = 100000000
+      // Hash aggregate explodes the rows out, so if we go too large
+      // it can blow up. The size of a Long is 8 bytes so we just go with
+      // that as our estimate, no nulls.
+      val maxRowCount = targetSizeBytes/8
 
       def divideIntoBatches(rows: Long): Iterable[ColumnarBatch] = {
         val numBatches = (rows + maxRowCount - 1)/maxRowCount
@@ -234,7 +241,7 @@ case class GpuCartesianProductExec(
           if ((i + 1) * maxRowCount > rows) {
             ret.setNumRows((rows - (i * maxRowCount)).toInt)
           } else {
-            ret.setNumRows(maxRowCount)
+            ret.setNumRows(maxRowCount.toInt)
           }
           numOutputRows += ret.numRows()
           numOutputBatches += 1
