@@ -89,7 +89,7 @@ private class GpuColumnarBatchSerializerInstance(
           } finally {
             range.close()
           }
-        }  else {
+        } else {
           val range = new NvtxRange("Serialize Row Only Batch", NvtxColor.YELLOW)
           try {
             JCudfSerialization.writeRowsToStream(dOut, numRows)
