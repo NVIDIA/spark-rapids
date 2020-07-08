@@ -20,6 +20,9 @@
 * Jenkinsfile for building and deploy rapids-plugin for Databricks to public repo
 *
 */
+@Library('shared-libs') _
+
+def urmUrl="https://${ArtifactoryConstants.ARTIFACTORY_NAME}/artifactory/sw-spark-maven"
 
 def SERVERS_MAP = [
     Local:    ' ',
@@ -62,7 +65,6 @@ pipeline {
 
     environment {
         JENKINS_ROOT='jenkins'
-        IMAGE_NAME="urm.nvidia.com/sw-spark-docker/plugin:dev-ubuntu16-cuda10.1"
         LIBCUDF_KERNEL_CACHE_PATH='/tmp/.cudf'
         MVN_MIRROR='-s jenkins/settings.xml -P mirror-apache-to-urm'
         URM_CREDS = credentials("svcngcc_artifactory")
@@ -73,6 +75,7 @@ pipeline {
         SPARK_VERSION = '3.0.0'
         CI_RAPIDS_JAR = 'rapids-4-spark_2.12-0.1-SNAPSHOT-ci.jar'
         CI_CUDF_JAR = 'cudf-0.14-cuda10-1.jar'
+        LOCAL_URL = "${localUrl}"
     }
 
     stages {

@@ -33,7 +33,8 @@ RUN yum update -y && \
 # The default mvn verision is 3.05 on centos7 docker container.
 # The plugin: net.alchim31.maven requires a higher mvn version.
 ENV MAVEN_HOME "/usr/local/apache-maven-3.6.3"
-RUN wget https://urm.nvidia.com/artifactory/sw-spark-maven/org/apache/maven/apache-maven/3.6.3/apache-maven-3.6.3-bin.tar.gz -P /usr/local && \
+ARG URM_URL
+RUN wget ${URM_URL}/org/apache/maven/apache-maven/3.6.3/apache-maven-3.6.3-bin.tar.gz -P /usr/local && \
     tar xzvf $MAVEN_HOME-bin.tar.gz -C /usr/local && \
     rm -f $MAVEN_HOME-bin.tar.gz
 

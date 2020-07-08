@@ -20,6 +20,9 @@
 * Jenkinsfile for building rapids-plugin
 *
 */
+@Library('shared-libs') _
+
+def urmUrl="https://${ArtifactoryConstants.ARTIFACTORY_NAME}/artifactory/sw-spark-maven"
 
 pipeline {
     agent { label 'vanilla' }
@@ -38,7 +41,9 @@ pipeline {
         JENKINS_ROOT  = 'jenkins'
         BUILD_SCRIPT = '$JENKINS_ROOT/spark-premerge-build.sh'
         MVN_URM_MIRROR='-s jenkins/settings.xml -P mirror-apache-to-urm'
-        LIBCUDF_KERNEL_CACHE_PATH='/tmp'
+        LIBCUDF_KERNEL_CACHE_PATH='/tmp/.cudf'
+        ARTIFACTORY_NAME = "${ArtifactoryConstants.ARTIFACTORY_NAME}"
+        URM_URL = "${urmUrl}"
     }
 
     stages {
@@ -48,13 +53,13 @@ pipeline {
                 script {
                     def CUDA_NAME=sh(returnStdout: true,
                         script: '. jenkins/version-def.sh>&2 && echo -n $CUDA_CLASSIFIER | sed "s/-/./g"')
-                    def IMAGE_NAME="urm.nvidia.com/sw-spark-docker/plugin:dev-ubuntu16-$CUDA_NAME"
+                    def IMAGE_NAME="$ARTIFACTORY_NAME/sw-spark-docker/plugin:dev-ubuntu16-$CUDA_NAME"
                     sh "docker pull $IMAGE_NAME"
                     def CUDA_VER="$CUDA_NAME" - "cuda"
                     def buildImage=docker.build(IMAGE_NAME,
                         "-f jenkins/Dockerfile.ubuntu16 --build-arg CUDA_VER=$CUDA_VER --cache-from $IMAGE_NAME -t $IMAGE_NAME .")
                     buildImage.inside("--runtime=nvidia -v ${HOME}/.m2:${HOME}/.m2:rw -v ${HOME}/.zinc:${HOME}/.zinc:rw") {
-                        sh "bash $BUILD_SCRIPT $MVN_URM_MIRROR"
+                        sh "bash $BUILD_SCRIPT"
                         step([$class: 'JacocoPublisher',
                               execPattern: '**/target/jacoco.exec',
                               classPattern: 'target/jacoco_classes/',

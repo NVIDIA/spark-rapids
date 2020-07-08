@@ -20,12 +20,15 @@
 * Jenkinsfile for building rapids-plugin on Databricks
 *
 */
+@Library('shared-libs') _
+
+def urmUrl="https://${ArtifactoryConstants.ARTIFACTORY_NAME}/artifactory/sw-spark-maven"
 
 pipeline {
     agent {
         docker {
             label 'docker-gpu'
-            image 'urm.nvidia.com/sw-spark-docker/plugin:dev-ubuntu16-cuda10.1'
+            image "${ArtifactoryConstants.ARTIFACTORY_NAME}/sw-spark-docker/plugin:dev-ubuntu16-cuda10.1"
             args '--runtime=nvidia -v ${HOME}/.m2:${HOME}/.m2:rw \
                 -v ${HOME}/.zinc:${HOME}/.zinc:rw'
         }
@@ -61,6 +64,7 @@ pipeline {
         SPARK_VERSION = '3.0.0'
         CI_RAPIDS_JAR = 'rapids-4-spark_2.12-0.1-SNAPSHOT-ci.jar'
         CI_CUDF_JAR = 'cudf-0.14-cuda10-1.jar'
+        URM_URL = "${urmUrl}"
     }
 
     triggers {
