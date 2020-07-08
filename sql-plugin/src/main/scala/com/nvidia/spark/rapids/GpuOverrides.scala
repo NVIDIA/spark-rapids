@@ -42,7 +42,7 @@ import org.apache.spark.sql.execution.datasources.v2.csv.CSVScan
 import org.apache.spark.sql.execution.datasources.v2.orc.OrcScan
 import org.apache.spark.sql.execution.datasources.v2.parquet.ParquetScan
 import org.apache.spark.sql.execution.exchange.{BroadcastExchangeExec, ShuffleExchangeExec}
-import org.apache.spark.sql.execution.joins.{BroadcastHashJoinExec, BroadcastNestedLoopJoinExec, ShuffledHashJoinExec, SortMergeJoinExec}
+import org.apache.spark.sql.execution.joins.{BroadcastHashJoinExec, BroadcastNestedLoopJoinExec, CartesianProductExec, ShuffledHashJoinExec, SortMergeJoinExec}
 import org.apache.spark.sql.execution.window.WindowExec
 import org.apache.spark.sql.rapids._
 import org.apache.spark.sql.rapids.catalyst.expressions.GpuRand
@@ -1719,6 +1719,22 @@ object GpuOverrides {
     exec[BroadcastNestedLoopJoinExec](
       "Implementation of join using brute force",
       (join, conf, p, r) => new GpuBroadcastNestedLoopJoinMeta(join, conf, p, r))
+        .disabledByDefault("large joins can cause out of memory errors"),
+    exec[CartesianProductExec](
+      "Implementation of join using brute force",
+      (join, conf, p, r) => new SparkPlanMeta[CartesianProductExec](join, conf, p, r) {
+        val condition: Option[BaseExprMeta[_]] =
+          join.condition.map(GpuOverrides.wrapExpr(_, conf, Some(this)))
+
+        override val childExprs: Seq[BaseExprMeta[_]] = condition.toSeq
+
+        override def convertToGpu(): GpuExec =
+          GpuCartesianProductExec(
+            childPlans.head.convertIfNeeded(),
+            childPlans(1).convertIfNeeded(),
+            condition.map(_.convertToGpu()),
+            conf.gpuTargetBatchSizeBytes)
+      })
         .disabledByDefault("large joins can cause out of memory errors"),
     exec[SortMergeJoinExec](
       "Sort merge join, replacing with shuffled hash join",
