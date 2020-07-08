@@ -20,6 +20,9 @@
 * Jenkinsfile for building and deploy rapids-plugin to public repo
 *
 */
+@Library('shared-libs') _
+
+def urmUrl="https://${ArtifactoryConstants.ARTIFACTORY_NAME}/artifactory/sw-spark-maven"
 
 pipeline {
     agent { label 'docker-deploy||docker-gpu' }
@@ -38,11 +41,12 @@ pipeline {
 
     environment {
         JENKINS_ROOT='jenkins'
-        IMAGE_NAME="urm.nvidia.com/sw-spark-docker/plugin:dev-ubuntu16-cuda10.1"
+        IMAGE_NAME="${ArtifactoryConstants.ARTIFACTORY_NAME}/sw-spark-docker/plugin:dev-ubuntu16-cuda10.1"
         LIBCUDF_KERNEL_CACHE_PATH='/tmp/.cudf'
         MVN_MIRROR='-s jenkins/settings.xml -P mirror-apache-to-urm'
         DIST_PL='dist'
         SQL_PL='sql-plugin'
+        URM_URL = "${urmUrl}"
     }
 
     stages {
