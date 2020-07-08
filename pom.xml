@@ -543,16 +543,5 @@
                 <enabled>true</enabled>
             </snapshots>
         </repository>
-        <repository>
-            <id>snapshots</id>
-            <name>sw-spark-maven</name>
-            <url>https://urm.nvidia.com:443/artifactory/sw-spark-maven</url>
-        </repository>
     </repositories>
-    <distributionManagement>
-        <repository>
-            <id>snapshots</id>
-            <url>https://urm.nvidia.com:443/artifactory/sw-spark-maven-local</url>
-        </repository>
-    </distributionManagement>
 </project>
