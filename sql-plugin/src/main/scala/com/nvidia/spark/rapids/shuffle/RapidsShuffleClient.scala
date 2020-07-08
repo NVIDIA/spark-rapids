@@ -562,7 +562,7 @@ class RapidsShuffleClient(
       tx: Transaction,
       resp: RefCountedDirectByteBuffer,
       shuffleRequests: Seq[ShuffleBlockBatchId],
-      handler: RapidsShuffleFetchHandler): Unit = GpuShuffleEnv.synchronized{
+      handler: RapidsShuffleFetchHandler): Unit = {
     val start = System.currentTimeMillis()
     val handleMetaRange = new NvtxRange("Client.handleMeta", NvtxColor.CYAN)
     try {
