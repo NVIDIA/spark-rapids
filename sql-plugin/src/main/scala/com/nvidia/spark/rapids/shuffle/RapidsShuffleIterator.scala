@@ -132,6 +132,12 @@ class RapidsShuffleIterator(
 
   private var started: Boolean = false
 
+  // NOTE: `mapIndex` is utilized by the `FetchFailedException` to reference
+  // a map output by index from the statuses collection in `MapOutputTracker`.
+  //
+  // This is different than the `mapId` in the `ShuffleBlockBatchId`, because
+  // as of Spark 3.x the default shuffle protocol overloads `mapId` to be
+  // `taskAttemptId`.
   case class BlockIdMapIndex(id: ShuffleBlockBatchId, mapIndex: Int)
 
   def start(): Unit = {
