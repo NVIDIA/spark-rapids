@@ -15,6 +15,7 @@
 import pytest
 from pyspark.sql.functions import broadcast
 from asserts import assert_gpu_and_cpu_are_equal_collect
+from conftest import is_databricks_runtime
 from data_gen import *
 from marks import ignore_order, allow_non_gpu, incompat
 
@@ -98,6 +99,8 @@ def test_cartesean_join(data_gen):
 
 # local sort because of https://github.com/NVIDIA/spark-rapids/issues/84
 @ignore_order(local=True)
+@pytest.mark.xfail(condition=is_databricks_runtime(),
+    reason='https://github.com/NVIDIA/spark-rapids/issues/334')
 @pytest.mark.parametrize('data_gen', all_gen, ids=idfn)
 def test_cartesean_join_special_case(data_gen):
     def do_join(spark):
