@@ -95,8 +95,8 @@ To install Apache Spark please follow the official
 scala version 2.12 is currently supported by the accelerator. 
 
 ## Download the RAPIDS jars
-The [accelerator](https://repo1.maven.org/maven2/com/nvidia/rapids-4-spark_2.12/{{ site.data.releases.stable.version }}/) and 
-[cudf](https://repo.maven.apache.org/maven2/ai/rapids/cudf/{{ site.data.releases.stable_cudf.version }}/) jars are available in maven central. 
+The [accelerator](https://repo1.maven.org/maven2/com/nvidia/rapids-4-spark_2.12/0.1.0/) and 
+[cudf](https://repo.maven.apache.org/maven2/ai/rapids/cudf/0.14/) jars are available in maven central. 
 
 Download the RAPIDS Accelerator for Apache Spark plugin jar. Then download the version of the cudf
 jar that your version of the accelerator depends on. Each cudf jar is for a specific version of
