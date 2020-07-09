@@ -141,7 +141,7 @@ abstract class ReplacementRule[INPUT <: BASE, BASE, WRAP_TYPE <: RapidsMeta[INPU
     val notesMsg = notes()
     if (asTable) {
       import ConfHelper.makeConfAnchor
-      print(s"${makeConfAnchor(name)}|$desc|${notesMsg.isEmpty}|")
+      print(s"${makeConfAnchor(confKey, name)}|$desc|${notesMsg.isEmpty}|")
       if (notesMsg.isDefined) {
         print(s"${notesMsg.get}")
       } else {
