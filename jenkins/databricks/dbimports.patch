@@ -64,6 +64,20 @@ index 834ec51..646ccda 100644
  import org.apache.spark.sql.types.{CalendarIntervalType, DataType, DataTypes, StringType}
  
  trait ConfKeysAndIncompat {
+diff --git a/sql-plugin/src/main/scala/org/apache/spark/sql/rapids/GpuCartesianProductExec.scala b/sql-plugin/src/main/scala/org/apache/spark/sql/rapids/GpuCartesianProductExec.scala
+index 4c8c540..fb6dc06 100644
+--- a/sql-plugin/src/main/scala/org/apache/spark/sql/rapids/GpuCartesianProductExec.scala
++++ b/sql-plugin/src/main/scala/org/apache/spark/sql/rapids/GpuCartesianProductExec.scala
+@@ -27,8 +27,8 @@ import org.apache.spark.rdd.RDD
+ import org.apache.spark.serializer.Serializer
+ import org.apache.spark.sql.catalyst.InternalRow
+ import org.apache.spark.sql.catalyst.expressions.{Attribute, Expression}
++import org.apache.spark.sql.catalyst.optimizer.BuildLeft
+ import org.apache.spark.sql.execution.{BinaryExecNode, ExplainUtils, SparkPlan}
+-import org.apache.spark.sql.execution.joins.BuildLeft
+ import org.apache.spark.sql.execution.metric.{SQLMetric, SQLMetrics}
+ import org.apache.spark.sql.rapids.execution.GpuBroadcastNestedLoopJoinExec
+ import org.apache.spark.sql.vectorized.{ColumnarBatch, ColumnVector}
 diff --git a/sql-plugin/src/main/scala/org/apache/spark/sql/rapids/execution/GpuBroadcastHashJoinExec.scala b/sql-plugin/src/main/scala/org/apache/spark/sql/rapids/execution/GpuBroadcastHashJoinExec.scala
 index ac444d1..14a8c6e 100644
 --- a/sql-plugin/src/main/scala/org/apache/spark/sql/rapids/execution/GpuBroadcastHashJoinExec.scala
@@ -77,7 +91,7 @@ index ac444d1..14a8c6e 100644
  import org.apache.spark.sql.catalyst.plans.physical.{BroadcastDistribution, Distribution, UnspecifiedDistribution}
  import org.apache.spark.sql.execution.{BinaryExecNode, SparkPlan}
 diff --git a/sql-plugin/src/main/scala/org/apache/spark/sql/rapids/execution/GpuBroadcastNestedLoopJoinExec.scala b/sql-plugin/src/main/scala/org/apache/spark/sql/rapids/execution/GpuBroadcastNestedLoopJoinExec.scala
-index 4a8fb80..c8d6b14 100644
+index c120444..16c318a 100644
 --- a/sql-plugin/src/main/scala/org/apache/spark/sql/rapids/execution/GpuBroadcastNestedLoopJoinExec.scala
 +++ b/sql-plugin/src/main/scala/org/apache/spark/sql/rapids/execution/GpuBroadcastNestedLoopJoinExec.scala
 @@ -23,11 +23,12 @@ import com.nvidia.spark.rapids.GpuMetricNames.{NUM_OUTPUT_BATCHES, NUM_OUTPUT_RO
@@ -94,7 +108,7 @@ index 4a8fb80..c8d6b14 100644
  import org.apache.spark.sql.execution.metric.{SQLMetric, SQLMetrics}
  import org.apache.spark.sql.vectorized.ColumnarBatch
  
-@@ -218,4 +219,4 @@ case class GpuBroadcastNestedLoopJoinExec(
+@@ -222,4 +223,4 @@ case class GpuBroadcastNestedLoopJoinExec(
        }
      }
    }
