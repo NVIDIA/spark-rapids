@@ -220,45 +220,45 @@ Name | SQL Function(s) | Description | Default Value | Notes
 
 Name | Description | Default Value | Notes
 -----|-------------|---------------|------------------
-<a name="sql.exec.CoalesceExec"></a>spark.rapids.sql.exec.CoalesceExecThe backend for the dataframe coalesce method|true|None|
-<a name="sql.exec.CollectLimitExec"></a>spark.rapids.sql.exec.CollectLimitExecReduce to single partition and apply limit|true|None|
-<a name="sql.exec.ExpandExec"></a>spark.rapids.sql.exec.ExpandExecThe backend for the expand operator|true|None|
-<a name="sql.exec.FileSourceScanExec"></a>spark.rapids.sql.exec.FileSourceScanExecReading data from files, often from Hive tables|true|None|
-<a name="sql.exec.FilterExec"></a>spark.rapids.sql.exec.FilterExecThe backend for most filter statements|true|None|
-<a name="sql.exec.GenerateExec"></a>spark.rapids.sql.exec.GenerateExecThe backend for operations that generate more output rows than input rows like explode.|true|None|
-<a name="sql.exec.GlobalLimitExec"></a>spark.rapids.sql.exec.GlobalLimitExecLimiting of results across partitions|true|None|
-<a name="sql.exec.LocalLimitExec"></a>spark.rapids.sql.exec.LocalLimitExecPer-partition limiting of results|true|None|
-<a name="sql.exec.ProjectExec"></a>spark.rapids.sql.exec.ProjectExecThe backend for most select, withColumn and dropColumn statements|true|None|
-<a name="sql.exec.SortExec"></a>spark.rapids.sql.exec.SortExecThe backend for the sort operator|true|None|
-<a name="sql.exec.UnionExec"></a>spark.rapids.sql.exec.UnionExecThe backend for the union operator|true|None|
-<a name="sql.exec.HashAggregateExec"></a>spark.rapids.sql.exec.HashAggregateExecThe backend for hash based aggregations|true|None|
-<a name="sql.exec.SortAggregateExec"></a>spark.rapids.sql.exec.SortAggregateExecThe backend for sort based aggregations|true|None|
-<a name="sql.exec.DataWritingCommandExec"></a>spark.rapids.sql.exec.DataWritingCommandExecWriting data|true|None|
-<a name="sql.exec.BatchScanExec"></a>spark.rapids.sql.exec.BatchScanExecThe backend for most file input|true|None|
-<a name="sql.exec.BroadcastExchangeExec"></a>spark.rapids.sql.exec.BroadcastExchangeExecThe backend for broadcast exchange of data|true|None|
-<a name="sql.exec.ShuffleExchangeExec"></a>spark.rapids.sql.exec.ShuffleExchangeExecThe backend for most data being exchanged between processes|true|None|
-<a name="sql.exec.BroadcastHashJoinExec"></a>spark.rapids.sql.exec.BroadcastHashJoinExecImplementation of join using broadcast data|true|None|
-<a name="sql.exec.BroadcastNestedLoopJoinExec"></a>spark.rapids.sql.exec.BroadcastNestedLoopJoinExecImplementation of join using brute force|false|This is disabled by default because large joins can cause out of memory errors|
-<a name="sql.exec.ShuffledHashJoinExec"></a>spark.rapids.sql.exec.ShuffledHashJoinExecImplementation of join using hashed shuffled data|true|None|
-<a name="sql.exec.SortMergeJoinExec"></a>spark.rapids.sql.exec.SortMergeJoinExecSort merge join, replacing with shuffled hash join|true|None|
-<a name="sql.exec.WindowExec"></a>spark.rapids.sql.exec.WindowExecWindow-operator backend|true|None|
+<a name="sql.exec.CoalesceExec"></a>spark.rapids.sql.exec.CoalesceExec|The backend for the dataframe coalesce method|true|None|
+<a name="sql.exec.CollectLimitExec"></a>spark.rapids.sql.exec.CollectLimitExec|Reduce to single partition and apply limit|true|None|
+<a name="sql.exec.ExpandExec"></a>spark.rapids.sql.exec.ExpandExec|The backend for the expand operator|true|None|
+<a name="sql.exec.FileSourceScanExec"></a>spark.rapids.sql.exec.FileSourceScanExec|Reading data from files, often from Hive tables|true|None|
+<a name="sql.exec.FilterExec"></a>spark.rapids.sql.exec.FilterExec|The backend for most filter statements|true|None|
+<a name="sql.exec.GenerateExec"></a>spark.rapids.sql.exec.GenerateExec|The backend for operations that generate more output rows than input rows like explode.|true|None|
+<a name="sql.exec.GlobalLimitExec"></a>spark.rapids.sql.exec.GlobalLimitExec|Limiting of results across partitions|true|None|
+<a name="sql.exec.LocalLimitExec"></a>spark.rapids.sql.exec.LocalLimitExec|Per-partition limiting of results|true|None|
+<a name="sql.exec.ProjectExec"></a>spark.rapids.sql.exec.ProjectExec|The backend for most select, withColumn and dropColumn statements|true|None|
+<a name="sql.exec.SortExec"></a>spark.rapids.sql.exec.SortExec|The backend for the sort operator|true|None|
+<a name="sql.exec.UnionExec"></a>spark.rapids.sql.exec.UnionExec|The backend for the union operator|true|None|
+<a name="sql.exec.HashAggregateExec"></a>spark.rapids.sql.exec.HashAggregateExec|The backend for hash based aggregations|true|None|
+<a name="sql.exec.SortAggregateExec"></a>spark.rapids.sql.exec.SortAggregateExec|The backend for sort based aggregations|true|None|
+<a name="sql.exec.DataWritingCommandExec"></a>spark.rapids.sql.exec.DataWritingCommandExec|Writing data|true|None|
+<a name="sql.exec.BatchScanExec"></a>spark.rapids.sql.exec.BatchScanExec|The backend for most file input|true|None|
+<a name="sql.exec.BroadcastExchangeExec"></a>spark.rapids.sql.exec.BroadcastExchangeExec|The backend for broadcast exchange of data|true|None|
+<a name="sql.exec.ShuffleExchangeExec"></a>spark.rapids.sql.exec.ShuffleExchangeExec|The backend for most data being exchanged between processes|true|None|
+<a name="sql.exec.BroadcastHashJoinExec"></a>spark.rapids.sql.exec.BroadcastHashJoinExec|Implementation of join using broadcast data|true|None|
+<a name="sql.exec.BroadcastNestedLoopJoinExec"></a>spark.rapids.sql.exec.BroadcastNestedLoopJoinExec|Implementation of join using brute force|false|This is disabled by default because large joins can cause out of memory errors|
+<a name="sql.exec.ShuffledHashJoinExec"></a>spark.rapids.sql.exec.ShuffledHashJoinExec|Implementation of join using hashed shuffled data|true|None|
+<a name="sql.exec.SortMergeJoinExec"></a>spark.rapids.sql.exec.SortMergeJoinExec|Sort merge join, replacing with shuffled hash join|true|None|
+<a name="sql.exec.WindowExec"></a>spark.rapids.sql.exec.WindowExec|Window-operator backend|true|None|
 
 ### Scans
 
 Name | Description | Default Value | Notes
 -----|-------------|---------------|------------------
-<a name="sql.input.CSVScan"></a>spark.rapids.sql.input.CSVScanCSV parsing|true|None|
-<a name="sql.input.OrcScan"></a>spark.rapids.sql.input.OrcScanORC parsing|true|None|
-<a name="sql.input.ParquetScan"></a>spark.rapids.sql.input.ParquetScanParquet parsing|true|None|
+<a name="sql.input.CSVScan"></a>spark.rapids.sql.input.CSVScan|CSV parsing|true|None|
+<a name="sql.input.OrcScan"></a>spark.rapids.sql.input.OrcScan|ORC parsing|true|None|
+<a name="sql.input.ParquetScan"></a>spark.rapids.sql.input.ParquetScan|Parquet parsing|true|None|
 
 ### Partitioning
 
 Name | Description | Default Value | Notes
 -----|-------------|---------------|------------------
-<a name="sql.partitioning.HashPartitioning"></a>spark.rapids.sql.partitioning.HashPartitioningHash based partitioning|true|None|
-<a name="sql.partitioning.RangePartitioning"></a>spark.rapids.sql.partitioning.RangePartitioningRange Partitioning|true|None|
-<a name="sql.partitioning.RoundRobinPartitioning"></a>spark.rapids.sql.partitioning.RoundRobinPartitioningRound Robin Partitioning|true|None|
-<a name="sql.partitioning.SinglePartition$"></a>spark.rapids.sql.partitioning.SinglePartition$Single Partitioning|true|None|
+<a name="sql.partitioning.HashPartitioning"></a>spark.rapids.sql.partitioning.HashPartitioning|Hash based partitioning|true|None|
+<a name="sql.partitioning.RangePartitioning"></a>spark.rapids.sql.partitioning.RangePartitioning|Range Partitioning|true|None|
+<a name="sql.partitioning.RoundRobinPartitioning"></a>spark.rapids.sql.partitioning.RoundRobinPartitioning|Round Robin Partitioning|true|None|
+<a name="sql.partitioning.SinglePartition$"></a>spark.rapids.sql.partitioning.SinglePartition$|Single Partitioning|true|None|
 
 ### JIT Kernel Cache Path
 
