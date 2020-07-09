@@ -93,7 +93,11 @@ object ConfHelper {
     "<a name=\"" + s"$a" + "\"></a>" + t
   }
 
-  def getSqlFunctionsByClass: Map[String, Seq[String]] = {
+  def getSqlFunctionsForClass[T](exprClass: Class[T]): Option[Seq[String]] = {
+    sqlFunctionsByClass.get(exprClass.getCanonicalName)
+  }
+
+  lazy val sqlFunctionsByClass: Map[String, Seq[String]] = {
     val functionsByClass = new HashMap[String, Seq[String]]
     FunctionRegistry.expressions.foreach { case (sqlFn, (expressionInfo, _)) =>
       val className = expressionInfo.getClassName
@@ -613,6 +617,12 @@ object RapidsConf {
     println("-----|-------------|---------------|------------------")
   }
 
+  private def printToggleHeaderWithSqlFunction(category: String): Unit = {
+    printSectionHeader(category)
+    println("Name | SQL Function | Description | Default Value | Notes")
+    println("-----|------------- |-------------|---------------|------")
+  }
+
   def help(asTable: Boolean = false): Unit = {
     if (asTable) {
       println("---")
@@ -668,17 +678,15 @@ object RapidsConf {
         |incompatibilities.""".stripMargin)
       // scalastyle:on line.size.limit
 
-      printToggleHeader("Expressions\n")
+      printToggleHeaderWithSqlFunction("Expressions\n")
     }
-    val sqlFunctionsByClass = ConfHelper.getSqlFunctionsByClass
-    GpuOverrides.expressions.toSeq.sortBy(_._2.tag.toString).foreach { case (expr, rule) =>
-      val sqlFunctions = sqlFunctionsByClass.get(expr.getCanonicalName)
-      if (sqlFunctions.isDefined) {
-        val nameWithSqlFunctions = s"${rule.confKey}${sqlFunctions.get.mkString(" (", ", ", ")")}"
-        rule.confHelp(asTable, nameWithSqlFunctions)
-      } else {
-        rule.confHelp(asTable)
-      }
+    GpuOverrides.expressions.values.toSeq.sortBy(_.tag.toString).foreach { rule =>
+      val sqlFunctions =
+        ConfHelper.getSqlFunctionsForClass(rule.tag.runtimeClass).map(_.mkString(", "))
+
+      // this is only for formatting, this is done to ensure the table has a column for a
+      // row where there isn't a SQL function
+      rule.confHelp(asTable, Some(sqlFunctions.getOrElse(" ")))
     }
     if (asTable) {
       printToggleHeader("Execution\n")
