@@ -137,11 +137,15 @@ abstract class ReplacementRule[INPUT <: BASE, BASE, WRAP_TYPE <: RapidsMeta[INPU
     None
   }
 
-  def confHelp(asTable: Boolean = false): Unit = {
+  def confHelp(asTable: Boolean = false, sparkSQLFunctions: Option[String] = None): Unit = {
     val notesMsg = notes()
     if (asTable) {
       import ConfHelper.makeConfAnchor
-      print(s"${makeConfAnchor(confKey)}|$desc|${notesMsg.isEmpty}|")
+      print(s"${makeConfAnchor(confKey)}")
+      if (sparkSQLFunctions.isDefined) {
+        print(s"|${sparkSQLFunctions.get}")
+      }
+      print(s"|$desc|${notesMsg.isEmpty}|")
       if (notesMsg.isDefined) {
         print(s"${notesMsg.get}")
       } else {
@@ -151,6 +155,9 @@ abstract class ReplacementRule[INPUT <: BASE, BASE, WRAP_TYPE <: RapidsMeta[INPU
     } else {
       println(s"$confKey:")
       println(s"\tEnable (true) or disable (false) the $tag $operationName.")
+      if (sparkSQLFunctions.isDefined) {
+        println(s"\tsql function: ${sparkSQLFunctions.get}")
+      }
       println(s"\t$desc")
       if (notesMsg.isDefined) {
         println(s"\t${notesMsg.get}")
