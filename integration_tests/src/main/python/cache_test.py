@@ -20,7 +20,6 @@ import pyspark.sql.functions as f
 from spark_session import with_cpu_session, with_gpu_session
 from join_test import create_df
 from marks import incompat, allow_non_gpu
-from join_test import all_gen_no_nulls
 
 def test_passing_gpuExpr_as_Expr():
     assert_gpu_and_cpu_are_equal_collect(
@@ -32,15 +31,36 @@ def test_passing_gpuExpr_as_Expr():
             .cache()
             .limit(50)
     )
+#creating special cases to just remove -0.0
+double_special_cases = [
+    DoubleGen._make_from(1, DOUBLE_MAX_EXP, DOUBLE_MAX_FRACTION),
+    DoubleGen._make_from(0, DOUBLE_MAX_EXP, DOUBLE_MAX_FRACTION),
+    DoubleGen._make_from(1, DOUBLE_MIN_EXP, DOUBLE_MAX_FRACTION),
+    DoubleGen._make_from(0, DOUBLE_MIN_EXP, DOUBLE_MAX_FRACTION),
+    0.0, 1.0, -1.0, float('inf'), float('-inf'), float('nan'),
+    NEG_DOUBLE_NAN_MAX_VALUE
+]
+
+all_gen_no_nulls_filters = [(StringGen(nullable=False), "rlike(a, '^(?=.{1,5}$).*')"),
+                            (ByteGen(nullable=False), "a < 100"),
+                            (ShortGen(nullable=False), "a < 100"),
+                            (IntegerGen(nullable=False), "a < 1000"),
+                            (LongGen(nullable=False), "a < 1000"),
+                            (BooleanGen(nullable=False), "a == false"),
+                            (DateGen(nullable=False), "a > '1/21/2012'"),
+                            (TimestampGen(nullable=False), "a > '1/21/2012'"),
+                            pytest.param((FloatGen(nullable=False, special_cases=[FLOAT_MIN, FLOAT_MAX, 0.0, 1.0, -1.0]), "a < 1000"), marks=[incompat]),
+                            pytest.param((DoubleGen(nullable=False, special_cases=double_special_cases),"a < 1000"), marks=[incompat])]
 
 conf={"spark.rapids.sql.explain":"ALL"}
 @pytest.mark.xfail(reason="TODO: github issue")
-@pytest.mark.parametrize('data_gen', all_gen_no_nulls, ids=idfn)
+@pytest.mark.parametrize('data_gen', all_gen_no_nulls_filters, ids=idfn)
 @pytest.mark.parametrize('join_type', ['Left', 'Right', 'Inner', 'LeftSemi', 'LeftAnti'], ids=idfn)
 def test_cache_join(data_gen, join_type):
     from pyspark.sql.functions import asc
+    data, filter = data_gen # we are not using the filter
     def do_join(spark):
-        left, right = create_df(spark, data_gen, 500, 500)
+        left, right = create_df(spark, data, 500, 500)
         return left.join(right, left.a == right.r_a, join_type).cache()
     cached_df_cpu = with_cpu_session(do_join, conf)
     if (join_type == 'LeftAnti' or join_type == 'LeftSemi'):
@@ -55,21 +75,11 @@ def test_cache_join(data_gen, join_type):
     print('COLLECTED\n{}'.format(from_gpu))
     assert_equal(from_cpu, from_gpu)
 
-all_gen_no_nulls_filters = [(StringGen(nullable=False), "rlike(a, '^(?=.{1,5}$).*')"),
-                            (ByteGen(nullable=False), "a < 100"),
-                            (ShortGen(nullable=False), "a < 100"),
-                            (IntegerGen(nullable=False), "a < 1000"),
-                            (LongGen(nullable=False), "a < 1000"),
-                            (BooleanGen(nullable=False), "a == false"),
-                            (DateGen(nullable=False), "a > '1/21/2012'"),
-                            (TimestampGen(nullable=False), "a > '1/21/2012'"),
-                            pytest.param((FloatGen(nullable=False), "a < 1000"), marks=[incompat]),
-                            pytest.param((DoubleGen(nullable=False),"a < 1000"), marks=[incompat])]
 
 @pytest.mark.xfail(reason="TODO: github issue")
 @pytest.mark.parametrize('data_gen', all_gen_no_nulls_filters, ids=idfn)
 @pytest.mark.parametrize('join_type', ['Left', 'Right', 'Inner', 'LeftSemi', 'LeftAnti'], ids=idfn)
-@allow_non_gpu('InMemoryTableScanExec', 'RDDScanExec')
+@allow_non_gpu(any=True)
 def test_cached_join_filter(data_gen, join_type):
     from pyspark.sql.functions import asc
     data, filter = data_gen
