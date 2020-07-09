@@ -30,16 +30,11 @@ class RapidsShuffleIteratorSuite extends RapidsShuffleTestHelper {
   test("inability to get a client raises a fetch failure") {
     val blocksByAddress = RapidsShuffleTestHelper.getBlocksByAddress
 
-    val taskContext = mock[TaskContext]
-
-    when(taskContext.addTaskCompletionListener[Unit](any())).thenReturn(null)
-
     val cl = new RapidsShuffleIterator(
       RapidsShuffleTestHelper.makeMockBlockManager("1", "1"),
       null,
       mockTransport,
-      blocksByAddress.toArray,
-      taskContext,
+      blocksByAddress,
       null)
 
     when(mockTransaction.getStatus).thenReturn(TransactionStatus.Error)
@@ -56,16 +51,11 @@ class RapidsShuffleIteratorSuite extends RapidsShuffleTestHelper {
 
       val blocksByAddress = RapidsShuffleTestHelper.getBlocksByAddress
 
-      val taskContext = mock[TaskContext]
-
-      when(taskContext.addTaskCompletionListener[Unit](any())).thenReturn(null)
-
       val cl = new RapidsShuffleIterator(
         RapidsShuffleTestHelper.makeMockBlockManager("1", "1"),
         null,
         mockTransport,
-        blocksByAddress.toArray,
-        taskContext,
+        blocksByAddress,
         null)
 
       val ac = ArgumentCaptor.forClass(classOf[RapidsShuffleFetchHandler])
@@ -86,18 +76,13 @@ class RapidsShuffleIteratorSuite extends RapidsShuffleTestHelper {
   test("a new good batch is queued") {
     val blocksByAddress = RapidsShuffleTestHelper.getBlocksByAddress
 
-    val taskContext = mock[TaskContext]
-
-    when(taskContext.addTaskCompletionListener[Unit](any())).thenReturn(null)
-
     val mockMetrics = mock[ShuffleMetricsUpdater]
 
     val cl = new RapidsShuffleIterator(
       RapidsShuffleTestHelper.makeMockBlockManager("1", "1"),
       null,
       mockTransport,
-      blocksByAddress.toArray,
-      taskContext,
+      blocksByAddress,
       mockMetrics,
       mockCatalog)
 

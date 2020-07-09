@@ -145,7 +145,7 @@ class RapidsCachingReader[K, C](
 
         val cbArrayFromUcx: Iterator[(K, C)] = if (blocksForRapidsTransport.nonEmpty) {
           val rapidsShuffleIterator = new RapidsShuffleIterator(localId, rapidsConf, transport.get,
-            blocksForRapidsTransport.toArray, TaskContext.get(), metricsUpdater)
+            blocksForRapidsTransport.toArray, metricsUpdater)
           rapidsShuffleIterator.map(cb => {
             (0, cb)
           }).asInstanceOf[Iterator[(K, C)]]

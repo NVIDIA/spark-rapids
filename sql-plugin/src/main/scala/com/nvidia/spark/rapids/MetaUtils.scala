@@ -60,12 +60,9 @@ object MetaUtils {
       bufferSize,
       CodecType.UNCOMPRESSED)
 
-    val columnMetaOffsets = new ArrayBuffer[Int](columns.length)
-    columns.foreach { col =>
-      columnMetaOffsets.append(addColumnMeta(fbb, baseAddress, col))
-    }
+    val columnMetaOffsets = columns.map(col => addColumnMeta(fbb, baseAddress, col)).toArray
 
-    val columnMetasOffset = TableMeta.createColumnMetasVector(fbb, columnMetaOffsets.toArray)
+    val columnMetasOffset = TableMeta.createColumnMetasVector(fbb, columnMetaOffsets)
     TableMeta.startTableMeta(fbb)
     TableMeta.addBufferMeta(fbb, bufferMetaOffset)
     TableMeta.addRowCount(fbb, numRows)

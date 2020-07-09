@@ -41,16 +41,15 @@ trait RapidsShuffleFetchHandler {
   def start(expectedBatches: Int): Unit
 
   /**
-    * Called when a buffer is received, and has been handed off to the catalog.
+    * Called when a buffer is received and has been handed off to the catalog.
     * @param bufferId - a tracked shuffle buffer id
     */
   def batchReceived(bufferId: ShuffleReceivedBufferId): Unit
 
   /**
-    * Called when an error is detected during a metadata or a buffer fetch.
+    * Called when the transport layer is not able to handle a fetch error for metadata
+    * or buffer fetches.
     *
-    * @note No retry mechanism currently exists before calling [[transferError]],
-    *       in the future, some retries may happen before handing off the error to the caller.
     * @param errorMessage - a string containing an error message
     */
   def transferError(errorMessage: String): Unit
@@ -383,34 +382,9 @@ class RapidsShuffleClient(
     transport: RapidsShuffleTransport,
     exec: Executor,
     clientCopyExecutor: Executor,
-    maximumMetadataSize: Long) extends Logging {
-
-  private[this] var devStorage: RapidsDeviceMemoryStore = GpuShuffleEnv.getDeviceStorage
-  private[this] var catalog: ShuffleReceivedBufferCatalog = GpuShuffleEnv.getReceivedCatalog
-
-  /**
-    * Convenience constructor exposed for unit tests.
-    */
-  private[shuffle] def this(
-    localExecutorId: Long,
-    connection: ClientConnection,
-    transport: RapidsShuffleTransport,
-    exec: Executor,
-    clientCopyExecutor: Executor,
     maximumMetadataSize: Long,
-    storage: RapidsDeviceMemoryStore,
-    catalog: ShuffleReceivedBufferCatalog) = {
-    this(
-      localExecutorId,
-      connection,
-      transport,
-      exec,
-      clientCopyExecutor,
-      maximumMetadataSize)
-
-    this.devStorage = storage
-    this.catalog = catalog
-  }
+    devStorage: RapidsDeviceMemoryStore = GpuShuffleEnv.getDeviceStorage,
+    catalog: ShuffleReceivedBufferCatalog = GpuShuffleEnv.getReceivedCatalog) extends Logging {
 
   object ShuffleClientOps {
     /**
@@ -651,7 +625,7 @@ class RapidsShuffleClient(
         tx.getStatus match {
           case TransactionStatus.Success =>
             // TODO: during code review we agreed to make this receive per buffer, s.t.
-            //  buffers could begin go get freed earlier and likely out of order.
+            //  buffers could be freed earlier and likely out of order.
             asyncOnCopyThread(HandleBounceBufferReceive(tx, bufferReceiveState,
               currentRequest, buffersToReceive))
           case _ => try {
