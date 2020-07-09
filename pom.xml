@@ -321,12 +321,14 @@
                         </execution>
                         <execution>
                             <id>scala-compile-first</id>
+                            <phase>process-resources</phase>
                             <goals>
                                 <goal>compile</goal>
                             </goals>
                         </execution>
                         <execution>
                             <id>scala-test-compile-first</id>
+                            <phase>process-test-resources</phase>
                             <goals>
                                 <goal>testCompile</goal>
                             </goals>
