@@ -84,8 +84,8 @@ incompatibilities.
 
 ### Expressions
 
-Name | SQL Function | Description | Default Value | Notes
------|------------- |-------------|---------------|------
+Name | SQL Function(s) | Description | Default Value | Notes
+-----|-----------------|-------------|---------------|------
 <a name="sql.expression.Abs"></a>spark.rapids.sql.expression.Abs|`abs`|absolute value|true|None|
 <a name="sql.expression.Acos"></a>spark.rapids.sql.expression.Acos|`acos`|inverse cosine|true|None|
 <a name="sql.expression.Acosh"></a>spark.rapids.sql.expression.Acosh|`acosh`|inverse hyperbolic cosine|true|None|

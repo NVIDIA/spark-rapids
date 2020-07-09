@@ -619,8 +619,8 @@ object RapidsConf {
 
   private def printToggleHeaderWithSqlFunction(category: String): Unit = {
     printSectionHeader(category)
-    println("Name | SQL Function | Description | Default Value | Notes")
-    println("-----|------------- |-------------|---------------|------")
+    println("Name | SQL Function(s) | Description | Default Value | Notes")
+    println("-----|-----------------|-------------|---------------|------")
   }
 
   def help(asTable: Boolean = false): Unit = {
