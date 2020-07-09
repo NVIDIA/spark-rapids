@@ -99,6 +99,12 @@ class ShuffleReceivedBufferCatalog(
     acquireBuffer(shuffleBufferId)
   }
 
+  /**
+   * Remove a buffer and table given a buffer ID
+   * NOTE: This function is not thread safe! The caller should only invoke if
+   * the [[ShuffleReceivedBufferId]] being removed is not being utilized by another thread.
+   * @param id buffer identifier
+   */
   def removeBuffer(id: ShuffleReceivedBufferId): Unit = {
     tableMap.remove(id.tableId)
     catalog.removeBuffer(id)

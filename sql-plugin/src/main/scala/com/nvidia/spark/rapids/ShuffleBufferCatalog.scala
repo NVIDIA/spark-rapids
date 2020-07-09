@@ -204,6 +204,8 @@ class ShuffleBufferCatalog(
 
   /**
     * Remove a buffer and table given a buffer ID
+    * NOTE: This function is not thread safe! The caller should only invoke if
+    * the [[ShuffleBufferId]] being removed is not being utilized by another thread.
     * @param id buffer identifier
     */
   def removeBuffer(id: ShuffleBufferId): Unit = {
