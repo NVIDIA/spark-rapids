@@ -86,134 +86,134 @@ incompatibilities.
 
 Name | Description | Default Value | Notes
 -----|-------------|---------------|------------------
-<a name="sql.expression.Abs"></a>spark.rapids.sql.expression.Abs|absolute value|true|None|
-<a name="sql.expression.Acos"></a>spark.rapids.sql.expression.Acos|inverse cosine|true|None|
-<a name="sql.expression.Acosh"></a>spark.rapids.sql.expression.Acosh|inverse hyperbolic cosine|true|None|
-<a name="sql.expression.Add"></a>spark.rapids.sql.expression.Add|addition|true|None|
+<a name="sql.expression.Abs (`abs`)"></a>spark.rapids.sql.expression.Abs (`abs`)|absolute value|true|None|
+<a name="sql.expression.Acos (`acos`)"></a>spark.rapids.sql.expression.Acos (`acos`)|inverse cosine|true|None|
+<a name="sql.expression.Acosh (`acosh`)"></a>spark.rapids.sql.expression.Acosh (`acosh`)|inverse hyperbolic cosine|true|None|
+<a name="sql.expression.Add (`+`)"></a>spark.rapids.sql.expression.Add (`+`)|addition|true|None|
 <a name="sql.expression.Alias"></a>spark.rapids.sql.expression.Alias|gives a column a name|true|None|
-<a name="sql.expression.And"></a>spark.rapids.sql.expression.And|logical and|true|None|
+<a name="sql.expression.And (`and`)"></a>spark.rapids.sql.expression.And (`and`)|logical and|true|None|
 <a name="sql.expression.AnsiCast"></a>spark.rapids.sql.expression.AnsiCast|convert a column of one type of data into another type|true|None|
-<a name="sql.expression.Asin"></a>spark.rapids.sql.expression.Asin|inverse sine|true|None|
-<a name="sql.expression.Asinh"></a>spark.rapids.sql.expression.Asinh|inverse hyperbolic sine|true|None|
+<a name="sql.expression.Asin (`asin`)"></a>spark.rapids.sql.expression.Asin (`asin`)|inverse sine|true|None|
+<a name="sql.expression.Asinh (`asinh`)"></a>spark.rapids.sql.expression.Asinh (`asinh`)|inverse hyperbolic sine|true|None|
 <a name="sql.expression.AtLeastNNonNulls"></a>spark.rapids.sql.expression.AtLeastNNonNulls|checks if number of non null/Nan values is greater than a given value|true|None|
-<a name="sql.expression.Atan"></a>spark.rapids.sql.expression.Atan|inverse tangent|true|None|
-<a name="sql.expression.Atanh"></a>spark.rapids.sql.expression.Atanh|inverse hyperbolic tangent|true|None|
+<a name="sql.expression.Atan (`atan`)"></a>spark.rapids.sql.expression.Atan (`atan`)|inverse tangent|true|None|
+<a name="sql.expression.Atanh (`atanh`)"></a>spark.rapids.sql.expression.Atanh (`atanh`)|inverse hyperbolic tangent|true|None|
 <a name="sql.expression.AttributeReference"></a>spark.rapids.sql.expression.AttributeReference|references an input column|true|None|
-<a name="sql.expression.BitwiseAnd"></a>spark.rapids.sql.expression.BitwiseAnd|Returns the bitwise AND of the operands|true|None|
-<a name="sql.expression.BitwiseNot"></a>spark.rapids.sql.expression.BitwiseNot|Returns the bitwise NOT of the operands|true|None|
-<a name="sql.expression.BitwiseOr"></a>spark.rapids.sql.expression.BitwiseOr|Returns the bitwise OR of the operands|true|None|
-<a name="sql.expression.BitwiseXor"></a>spark.rapids.sql.expression.BitwiseXor|Returns the bitwise XOR of the operands|true|None|
-<a name="sql.expression.CaseWhen"></a>spark.rapids.sql.expression.CaseWhen|CASE WHEN expression|true|None|
-<a name="sql.expression.Cast"></a>spark.rapids.sql.expression.Cast|convert a column of one type of data into another type|true|None|
-<a name="sql.expression.Cbrt"></a>spark.rapids.sql.expression.Cbrt|cube root|true|None|
-<a name="sql.expression.Ceil"></a>spark.rapids.sql.expression.Ceil|ceiling of a number|true|None|
-<a name="sql.expression.Coalesce"></a>spark.rapids.sql.expression.Coalesce|Returns the first non-null argument if exists. Otherwise, null.|true|None|
-<a name="sql.expression.Concat"></a>spark.rapids.sql.expression.Concat|String Concatenate NO separator|true|None|
+<a name="sql.expression.BitwiseAnd (`&`)"></a>spark.rapids.sql.expression.BitwiseAnd (`&`)|Returns the bitwise AND of the operands|true|None|
+<a name="sql.expression.BitwiseNot (`~`)"></a>spark.rapids.sql.expression.BitwiseNot (`~`)|Returns the bitwise NOT of the operands|true|None|
+<a name="sql.expression.BitwiseOr (`\|`)"></a>spark.rapids.sql.expression.BitwiseOr (`\|`)|Returns the bitwise OR of the operands|true|None|
+<a name="sql.expression.BitwiseXor (`^`)"></a>spark.rapids.sql.expression.BitwiseXor (`^`)|Returns the bitwise XOR of the operands|true|None|
+<a name="sql.expression.CaseWhen (`when`)"></a>spark.rapids.sql.expression.CaseWhen (`when`)|CASE WHEN expression|true|None|
+<a name="sql.expression.Cast (`timestamp`, `tinyint`, `binary`, `float`, `smallint`, `string`, `decimal`, `double`, `boolean`, `cast`, `date`, `int`, `bigint`)"></a>spark.rapids.sql.expression.Cast (`timestamp`, `tinyint`, `binary`, `float`, `smallint`, `string`, `decimal`, `double`, `boolean`, `cast`, `date`, `int`, `bigint`)|convert a column of one type of data into another type|true|None|
+<a name="sql.expression.Cbrt (`cbrt`)"></a>spark.rapids.sql.expression.Cbrt (`cbrt`)|cube root|true|None|
+<a name="sql.expression.Ceil (`ceiling`, `ceil`)"></a>spark.rapids.sql.expression.Ceil (`ceiling`, `ceil`)|ceiling of a number|true|None|
+<a name="sql.expression.Coalesce (`coalesce`)"></a>spark.rapids.sql.expression.Coalesce (`coalesce`)|Returns the first non-null argument if exists. Otherwise, null.|true|None|
+<a name="sql.expression.Concat (`concat`)"></a>spark.rapids.sql.expression.Concat (`concat`)|String Concatenate NO separator|true|None|
 <a name="sql.expression.Contains"></a>spark.rapids.sql.expression.Contains|Contains|true|None|
-<a name="sql.expression.Cos"></a>spark.rapids.sql.expression.Cos|cosine|true|None|
-<a name="sql.expression.Cosh"></a>spark.rapids.sql.expression.Cosh|hyperbolic cosine|true|None|
-<a name="sql.expression.Cot"></a>spark.rapids.sql.expression.Cot|Returns the cotangent|true|None|
+<a name="sql.expression.Cos (`cos`)"></a>spark.rapids.sql.expression.Cos (`cos`)|cosine|true|None|
+<a name="sql.expression.Cosh (`cosh`)"></a>spark.rapids.sql.expression.Cosh (`cosh`)|hyperbolic cosine|true|None|
+<a name="sql.expression.Cot (`cot`)"></a>spark.rapids.sql.expression.Cot (`cot`)|Returns the cotangent|true|None|
 <a name="sql.expression.CurrentRow$"></a>spark.rapids.sql.expression.CurrentRow$|Special boundary for a window frame, indicating stopping at the current row|true|None|
-<a name="sql.expression.DateAdd"></a>spark.rapids.sql.expression.DateAdd|Returns the date that is num_days after start_date|true|None|
-<a name="sql.expression.DateDiff"></a>spark.rapids.sql.expression.DateDiff|datediff|true|None|
-<a name="sql.expression.DateSub"></a>spark.rapids.sql.expression.DateSub|Returns the date that is num_days before start_date|true|None|
-<a name="sql.expression.DayOfMonth"></a>spark.rapids.sql.expression.DayOfMonth|get the day of the month from a date or timestamp|true|None|
-<a name="sql.expression.DayOfWeek"></a>spark.rapids.sql.expression.DayOfWeek|Returns the day of the week (1 = Sunday...7=Saturday)|true|None|
-<a name="sql.expression.DayOfYear"></a>spark.rapids.sql.expression.DayOfYear|get the day of the year from a date or timestamp|true|None|
-<a name="sql.expression.Divide"></a>spark.rapids.sql.expression.Divide|division|true|None|
+<a name="sql.expression.DateAdd (`date_add`)"></a>spark.rapids.sql.expression.DateAdd (`date_add`)|Returns the date that is num_days after start_date|true|None|
+<a name="sql.expression.DateDiff (`datediff`)"></a>spark.rapids.sql.expression.DateDiff (`datediff`)|datediff|true|None|
+<a name="sql.expression.DateSub (`date_sub`)"></a>spark.rapids.sql.expression.DateSub (`date_sub`)|Returns the date that is num_days before start_date|true|None|
+<a name="sql.expression.DayOfMonth (`dayofmonth`, `day`)"></a>spark.rapids.sql.expression.DayOfMonth (`dayofmonth`, `day`)|get the day of the month from a date or timestamp|true|None|
+<a name="sql.expression.DayOfWeek (`dayofweek`)"></a>spark.rapids.sql.expression.DayOfWeek (`dayofweek`)|Returns the day of the week (1 = Sunday...7=Saturday)|true|None|
+<a name="sql.expression.DayOfYear (`dayofyear`)"></a>spark.rapids.sql.expression.DayOfYear (`dayofyear`)|get the day of the year from a date or timestamp|true|None|
+<a name="sql.expression.Divide (`/`)"></a>spark.rapids.sql.expression.Divide (`/`)|division|true|None|
 <a name="sql.expression.EndsWith"></a>spark.rapids.sql.expression.EndsWith|Ends With|true|None|
-<a name="sql.expression.EqualNullSafe"></a>spark.rapids.sql.expression.EqualNullSafe|check if the values are equal including nulls <=>|true|None|
-<a name="sql.expression.EqualTo"></a>spark.rapids.sql.expression.EqualTo|check if the values are equal|true|None|
-<a name="sql.expression.Exp"></a>spark.rapids.sql.expression.Exp|Euler's number e raised to a power|true|None|
-<a name="sql.expression.Expm1"></a>spark.rapids.sql.expression.Expm1|Euler's number e raised to a power minus 1|true|None|
-<a name="sql.expression.Floor"></a>spark.rapids.sql.expression.Floor|floor of a number|true|None|
-<a name="sql.expression.FromUnixTime"></a>spark.rapids.sql.expression.FromUnixTime|get the String from a unix timestamp|true|None|
-<a name="sql.expression.GreaterThan"></a>spark.rapids.sql.expression.GreaterThan|> operator|true|None|
-<a name="sql.expression.GreaterThanOrEqual"></a>spark.rapids.sql.expression.GreaterThanOrEqual|>= operator|true|None|
-<a name="sql.expression.Hour"></a>spark.rapids.sql.expression.Hour|Returns the hour component of the string/timestamp.|true|None|
-<a name="sql.expression.If"></a>spark.rapids.sql.expression.If|IF expression|true|None|
-<a name="sql.expression.In"></a>spark.rapids.sql.expression.In|IN operator|true|None|
+<a name="sql.expression.EqualNullSafe (`<=>`)"></a>spark.rapids.sql.expression.EqualNullSafe (`<=>`)|check if the values are equal including nulls <=>|true|None|
+<a name="sql.expression.EqualTo (`=`, `==`)"></a>spark.rapids.sql.expression.EqualTo (`=`, `==`)|check if the values are equal|true|None|
+<a name="sql.expression.Exp (`exp`)"></a>spark.rapids.sql.expression.Exp (`exp`)|Euler's number e raised to a power|true|None|
+<a name="sql.expression.Expm1 (`expm1`)"></a>spark.rapids.sql.expression.Expm1 (`expm1`)|Euler's number e raised to a power minus 1|true|None|
+<a name="sql.expression.Floor (`floor`)"></a>spark.rapids.sql.expression.Floor (`floor`)|floor of a number|true|None|
+<a name="sql.expression.FromUnixTime (`from_unixtime`)"></a>spark.rapids.sql.expression.FromUnixTime (`from_unixtime`)|get the String from a unix timestamp|true|None|
+<a name="sql.expression.GreaterThan (`>`)"></a>spark.rapids.sql.expression.GreaterThan (`>`)|> operator|true|None|
+<a name="sql.expression.GreaterThanOrEqual (`>=`)"></a>spark.rapids.sql.expression.GreaterThanOrEqual (`>=`)|>= operator|true|None|
+<a name="sql.expression.Hour (`hour`)"></a>spark.rapids.sql.expression.Hour (`hour`)|Returns the hour component of the string/timestamp.|true|None|
+<a name="sql.expression.If (`if`)"></a>spark.rapids.sql.expression.If (`if`)|IF expression|true|None|
+<a name="sql.expression.In (`in`)"></a>spark.rapids.sql.expression.In (`in`)|IN operator|true|None|
 <a name="sql.expression.InSet"></a>spark.rapids.sql.expression.InSet|INSET operator|true|None|
-<a name="sql.expression.InitCap"></a>spark.rapids.sql.expression.InitCap|Returns str with the first letter of each word in uppercase. All other letters are in lowercase|false|This is not 100% compatible with the Spark version because in some cases unicode characters change byte width when changing the case. The GPU string conversion does not support these characters. For a full list of unsupported characters see https://github.com/rapidsai/cudf/issues/3132 Spark also only sees the space character as a word deliminator, but this uses more white space characters.|
-<a name="sql.expression.InputFileBlockLength"></a>spark.rapids.sql.expression.InputFileBlockLength|Returns the length of the block being read, or -1 if not available.|true|None|
-<a name="sql.expression.InputFileBlockStart"></a>spark.rapids.sql.expression.InputFileBlockStart|Returns the start offset of the block being read, or -1 if not available.|true|None|
-<a name="sql.expression.InputFileName"></a>spark.rapids.sql.expression.InputFileName|Returns the name of the file being read, or empty string if not available.|true|None|
-<a name="sql.expression.IntegralDivide"></a>spark.rapids.sql.expression.IntegralDivide|division with a integer result|true|None|
-<a name="sql.expression.IsNaN"></a>spark.rapids.sql.expression.IsNaN|checks if a value is NaN|true|None|
-<a name="sql.expression.IsNotNull"></a>spark.rapids.sql.expression.IsNotNull|checks if a value is not null|true|None|
-<a name="sql.expression.IsNull"></a>spark.rapids.sql.expression.IsNull|checks if a value is null|true|None|
+<a name="sql.expression.InitCap (`initcap`)"></a>spark.rapids.sql.expression.InitCap (`initcap`)|Returns str with the first letter of each word in uppercase. All other letters are in lowercase|false|This is not 100% compatible with the Spark version because in some cases unicode characters change byte width when changing the case. The GPU string conversion does not support these characters. For a full list of unsupported characters see https://github.com/rapidsai/cudf/issues/3132 Spark also only sees the space character as a word deliminator, but this uses more white space characters.|
+<a name="sql.expression.InputFileBlockLength (`input_file_block_length`)"></a>spark.rapids.sql.expression.InputFileBlockLength (`input_file_block_length`)|Returns the length of the block being read, or -1 if not available.|true|None|
+<a name="sql.expression.InputFileBlockStart (`input_file_block_start`)"></a>spark.rapids.sql.expression.InputFileBlockStart (`input_file_block_start`)|Returns the start offset of the block being read, or -1 if not available.|true|None|
+<a name="sql.expression.InputFileName (`input_file_name`)"></a>spark.rapids.sql.expression.InputFileName (`input_file_name`)|Returns the name of the file being read, or empty string if not available.|true|None|
+<a name="sql.expression.IntegralDivide (`div`)"></a>spark.rapids.sql.expression.IntegralDivide (`div`)|division with a integer result|true|None|
+<a name="sql.expression.IsNaN (`isnan`)"></a>spark.rapids.sql.expression.IsNaN (`isnan`)|checks if a value is NaN|true|None|
+<a name="sql.expression.IsNotNull (`isnotnull`)"></a>spark.rapids.sql.expression.IsNotNull (`isnotnull`)|checks if a value is not null|true|None|
+<a name="sql.expression.IsNull (`isnull`)"></a>spark.rapids.sql.expression.IsNull (`isnull`)|checks if a value is null|true|None|
 <a name="sql.expression.KnownFloatingPointNormalized"></a>spark.rapids.sql.expression.KnownFloatingPointNormalized|tag to prevent redundant normalization|true|None|
-<a name="sql.expression.LastDay"></a>spark.rapids.sql.expression.LastDay|Returns the last day of the month which the date belongs to|true|None|
-<a name="sql.expression.Length"></a>spark.rapids.sql.expression.Length|String Character Length|true|None|
-<a name="sql.expression.LessThan"></a>spark.rapids.sql.expression.LessThan|< operator|true|None|
-<a name="sql.expression.LessThanOrEqual"></a>spark.rapids.sql.expression.LessThanOrEqual|<= operator|true|None|
-<a name="sql.expression.Like"></a>spark.rapids.sql.expression.Like|Like|true|None|
+<a name="sql.expression.LastDay (`last_day`)"></a>spark.rapids.sql.expression.LastDay (`last_day`)|Returns the last day of the month which the date belongs to|true|None|
+<a name="sql.expression.Length (`length`, `character_length`, `char_length`)"></a>spark.rapids.sql.expression.Length (`length`, `character_length`, `char_length`)|String Character Length|true|None|
+<a name="sql.expression.LessThan (`<`)"></a>spark.rapids.sql.expression.LessThan (`<`)|< operator|true|None|
+<a name="sql.expression.LessThanOrEqual (`<=`)"></a>spark.rapids.sql.expression.LessThanOrEqual (`<=`)|<= operator|true|None|
+<a name="sql.expression.Like (`like`)"></a>spark.rapids.sql.expression.Like (`like`)|Like|true|None|
 <a name="sql.expression.Literal"></a>spark.rapids.sql.expression.Literal|holds a static value from the query|true|None|
-<a name="sql.expression.Log"></a>spark.rapids.sql.expression.Log|natural log|true|None|
-<a name="sql.expression.Log10"></a>spark.rapids.sql.expression.Log10|log base 10|true|None|
-<a name="sql.expression.Log1p"></a>spark.rapids.sql.expression.Log1p|natural log 1 + expr|true|None|
-<a name="sql.expression.Log2"></a>spark.rapids.sql.expression.Log2|log base 2|true|None|
-<a name="sql.expression.Logarithm"></a>spark.rapids.sql.expression.Logarithm|log variable base|true|None|
-<a name="sql.expression.Lower"></a>spark.rapids.sql.expression.Lower|String lowercase operator|false|This is not 100% compatible with the Spark version because in some cases unicode characters change byte width when changing the case. The GPU string conversion does not support these characters. For a full list of unsupported characters see https://github.com/rapidsai/cudf/issues/3132|
-<a name="sql.expression.Minute"></a>spark.rapids.sql.expression.Minute|Returns the minute component of the string/timestamp.|true|None|
-<a name="sql.expression.MonotonicallyIncreasingID"></a>spark.rapids.sql.expression.MonotonicallyIncreasingID|Returns monotonically increasing 64-bit integers.|true|None|
-<a name="sql.expression.Month"></a>spark.rapids.sql.expression.Month|get the month from a date or timestamp|true|None|
-<a name="sql.expression.Multiply"></a>spark.rapids.sql.expression.Multiply|multiplication|true|None|
-<a name="sql.expression.NaNvl"></a>spark.rapids.sql.expression.NaNvl|evaluates to `left` iff left is not NaN, `right` otherwise.|true|None|
-<a name="sql.expression.Not"></a>spark.rapids.sql.expression.Not|boolean not operator|true|None|
-<a name="sql.expression.Or"></a>spark.rapids.sql.expression.Or|logical or|true|None|
-<a name="sql.expression.Pmod"></a>spark.rapids.sql.expression.Pmod|pmod|true|None|
-<a name="sql.expression.Pow"></a>spark.rapids.sql.expression.Pow|lhs ^ rhs|true|None|
-<a name="sql.expression.Quarter"></a>spark.rapids.sql.expression.Quarter|returns the quarter of the year for date, in the range 1 to 4.|true|None|
-<a name="sql.expression.Rand"></a>spark.rapids.sql.expression.Rand|Generate a random column with i.i.d. uniformly distributed values in [0, 1)|true|None|
-<a name="sql.expression.RegExpReplace"></a>spark.rapids.sql.expression.RegExpReplace|RegExpReplace|true|None|
-<a name="sql.expression.Remainder"></a>spark.rapids.sql.expression.Remainder|remainder or modulo|true|None|
-<a name="sql.expression.Rint"></a>spark.rapids.sql.expression.Rint|Rounds up a double value to the nearest double equal to an integer|true|None|
-<a name="sql.expression.RowNumber"></a>spark.rapids.sql.expression.RowNumber|Window function that returns the index for the row within the aggregation window|true|None|
-<a name="sql.expression.Second"></a>spark.rapids.sql.expression.Second|Returns the second component of the string/timestamp.|true|None|
-<a name="sql.expression.ShiftLeft"></a>spark.rapids.sql.expression.ShiftLeft|Bitwise shift left (<<)|true|None|
-<a name="sql.expression.ShiftRight"></a>spark.rapids.sql.expression.ShiftRight|Bitwise shift right (>>)|true|None|
-<a name="sql.expression.ShiftRightUnsigned"></a>spark.rapids.sql.expression.ShiftRightUnsigned|Bitwise unsigned shift right (>>>)|true|None|
-<a name="sql.expression.Signum"></a>spark.rapids.sql.expression.Signum|Returns -1.0, 0.0 or 1.0 as expr is negative, 0 or positive|true|None|
-<a name="sql.expression.Sin"></a>spark.rapids.sql.expression.Sin|sine|true|None|
-<a name="sql.expression.Sinh"></a>spark.rapids.sql.expression.Sinh|hyperbolic sine|true|None|
+<a name="sql.expression.Log (`ln`)"></a>spark.rapids.sql.expression.Log (`ln`)|natural log|true|None|
+<a name="sql.expression.Log10 (`log10`)"></a>spark.rapids.sql.expression.Log10 (`log10`)|log base 10|true|None|
+<a name="sql.expression.Log1p (`log1p`)"></a>spark.rapids.sql.expression.Log1p (`log1p`)|natural log 1 + expr|true|None|
+<a name="sql.expression.Log2 (`log2`)"></a>spark.rapids.sql.expression.Log2 (`log2`)|log base 2|true|None|
+<a name="sql.expression.Logarithm (`log`)"></a>spark.rapids.sql.expression.Logarithm (`log`)|log variable base|true|None|
+<a name="sql.expression.Lower (`lower`, `lcase`)"></a>spark.rapids.sql.expression.Lower (`lower`, `lcase`)|String lowercase operator|false|This is not 100% compatible with the Spark version because in some cases unicode characters change byte width when changing the case. The GPU string conversion does not support these characters. For a full list of unsupported characters see https://github.com/rapidsai/cudf/issues/3132|
+<a name="sql.expression.Minute (`minute`)"></a>spark.rapids.sql.expression.Minute (`minute`)|Returns the minute component of the string/timestamp.|true|None|
+<a name="sql.expression.MonotonicallyIncreasingID (`monotonically_increasing_id`)"></a>spark.rapids.sql.expression.MonotonicallyIncreasingID (`monotonically_increasing_id`)|Returns monotonically increasing 64-bit integers.|true|None|
+<a name="sql.expression.Month (`month`)"></a>spark.rapids.sql.expression.Month (`month`)|get the month from a date or timestamp|true|None|
+<a name="sql.expression.Multiply (`*`)"></a>spark.rapids.sql.expression.Multiply (`*`)|multiplication|true|None|
+<a name="sql.expression.NaNvl (`nanvl`)"></a>spark.rapids.sql.expression.NaNvl (`nanvl`)|evaluates to `left` iff left is not NaN, `right` otherwise.|true|None|
+<a name="sql.expression.Not (`!`, `not`)"></a>spark.rapids.sql.expression.Not (`!`, `not`)|boolean not operator|true|None|
+<a name="sql.expression.Or (`or`)"></a>spark.rapids.sql.expression.Or (`or`)|logical or|true|None|
+<a name="sql.expression.Pmod (`pmod`)"></a>spark.rapids.sql.expression.Pmod (`pmod`)|pmod|true|None|
+<a name="sql.expression.Pow (`pow`, `power`)"></a>spark.rapids.sql.expression.Pow (`pow`, `power`)|lhs ^ rhs|true|None|
+<a name="sql.expression.Quarter (`quarter`)"></a>spark.rapids.sql.expression.Quarter (`quarter`)|returns the quarter of the year for date, in the range 1 to 4.|true|None|
+<a name="sql.expression.Rand (`random`, `rand`)"></a>spark.rapids.sql.expression.Rand (`random`, `rand`)|Generate a random column with i.i.d. uniformly distributed values in [0, 1)|true|None|
+<a name="sql.expression.RegExpReplace (`regexp_replace`)"></a>spark.rapids.sql.expression.RegExpReplace (`regexp_replace`)|RegExpReplace|true|None|
+<a name="sql.expression.Remainder (`%`, `mod`)"></a>spark.rapids.sql.expression.Remainder (`%`, `mod`)|remainder or modulo|true|None|
+<a name="sql.expression.Rint (`rint`)"></a>spark.rapids.sql.expression.Rint (`rint`)|Rounds up a double value to the nearest double equal to an integer|true|None|
+<a name="sql.expression.RowNumber (`row_number`)"></a>spark.rapids.sql.expression.RowNumber (`row_number`)|Window function that returns the index for the row within the aggregation window|true|None|
+<a name="sql.expression.Second (`second`)"></a>spark.rapids.sql.expression.Second (`second`)|Returns the second component of the string/timestamp.|true|None|
+<a name="sql.expression.ShiftLeft (`shiftleft`)"></a>spark.rapids.sql.expression.ShiftLeft (`shiftleft`)|Bitwise shift left (<<)|true|None|
+<a name="sql.expression.ShiftRight (`shiftright`)"></a>spark.rapids.sql.expression.ShiftRight (`shiftright`)|Bitwise shift right (>>)|true|None|
+<a name="sql.expression.ShiftRightUnsigned (`shiftrightunsigned`)"></a>spark.rapids.sql.expression.ShiftRightUnsigned (`shiftrightunsigned`)|Bitwise unsigned shift right (>>>)|true|None|
+<a name="sql.expression.Signum (`sign`, `signum`)"></a>spark.rapids.sql.expression.Signum (`sign`, `signum`)|Returns -1.0, 0.0 or 1.0 as expr is negative, 0 or positive|true|None|
+<a name="sql.expression.Sin (`sin`)"></a>spark.rapids.sql.expression.Sin (`sin`)|sine|true|None|
+<a name="sql.expression.Sinh (`sinh`)"></a>spark.rapids.sql.expression.Sinh (`sinh`)|hyperbolic sine|true|None|
 <a name="sql.expression.SortOrder"></a>spark.rapids.sql.expression.SortOrder|sort order|true|None|
-<a name="sql.expression.SparkPartitionID"></a>spark.rapids.sql.expression.SparkPartitionID|Returns the current partition id.|true|None|
+<a name="sql.expression.SparkPartitionID (`spark_partition_id`)"></a>spark.rapids.sql.expression.SparkPartitionID (`spark_partition_id`)|Returns the current partition id.|true|None|
 <a name="sql.expression.SpecifiedWindowFrame"></a>spark.rapids.sql.expression.SpecifiedWindowFrame|specification of the width of the group (or "frame") of input rows around which a window function is evaluated|true|None|
-<a name="sql.expression.Sqrt"></a>spark.rapids.sql.expression.Sqrt|square root|true|None|
+<a name="sql.expression.Sqrt (`sqrt`)"></a>spark.rapids.sql.expression.Sqrt (`sqrt`)|square root|true|None|
 <a name="sql.expression.StartsWith"></a>spark.rapids.sql.expression.StartsWith|Starts With|true|None|
-<a name="sql.expression.StringLocate"></a>spark.rapids.sql.expression.StringLocate|Substring search operator|true|None|
-<a name="sql.expression.StringReplace"></a>spark.rapids.sql.expression.StringReplace|StringReplace operator|true|None|
-<a name="sql.expression.StringTrim"></a>spark.rapids.sql.expression.StringTrim|StringTrim operator|true|None|
-<a name="sql.expression.StringTrimLeft"></a>spark.rapids.sql.expression.StringTrimLeft|StringTrimLeft operator|true|None|
-<a name="sql.expression.StringTrimRight"></a>spark.rapids.sql.expression.StringTrimRight|StringTrimRight operator|true|None|
-<a name="sql.expression.Substring"></a>spark.rapids.sql.expression.Substring|Substring operator|true|None|
-<a name="sql.expression.SubstringIndex"></a>spark.rapids.sql.expression.SubstringIndex|substring_index operator|true|None|
-<a name="sql.expression.Subtract"></a>spark.rapids.sql.expression.Subtract|subtraction|true|None|
-<a name="sql.expression.Tan"></a>spark.rapids.sql.expression.Tan|tangent|true|None|
-<a name="sql.expression.Tanh"></a>spark.rapids.sql.expression.Tanh|hyperbolic tangent|true|None|
+<a name="sql.expression.StringLocate (`position`, `locate`)"></a>spark.rapids.sql.expression.StringLocate (`position`, `locate`)|Substring search operator|true|None|
+<a name="sql.expression.StringReplace (`replace`)"></a>spark.rapids.sql.expression.StringReplace (`replace`)|StringReplace operator|true|None|
+<a name="sql.expression.StringTrim (`trim`)"></a>spark.rapids.sql.expression.StringTrim (`trim`)|StringTrim operator|true|None|
+<a name="sql.expression.StringTrimLeft (`ltrim`)"></a>spark.rapids.sql.expression.StringTrimLeft (`ltrim`)|StringTrimLeft operator|true|None|
+<a name="sql.expression.StringTrimRight (`rtrim`)"></a>spark.rapids.sql.expression.StringTrimRight (`rtrim`)|StringTrimRight operator|true|None|
+<a name="sql.expression.Substring (`substr`, `substring`)"></a>spark.rapids.sql.expression.Substring (`substr`, `substring`)|Substring operator|true|None|
+<a name="sql.expression.SubstringIndex (`substring_index`)"></a>spark.rapids.sql.expression.SubstringIndex (`substring_index`)|substring_index operator|true|None|
+<a name="sql.expression.Subtract (`-`)"></a>spark.rapids.sql.expression.Subtract (`-`)|subtraction|true|None|
+<a name="sql.expression.Tan (`tan`)"></a>spark.rapids.sql.expression.Tan (`tan`)|tangent|true|None|
+<a name="sql.expression.Tanh (`tanh`)"></a>spark.rapids.sql.expression.Tanh (`tanh`)|hyperbolic tangent|true|None|
 <a name="sql.expression.TimeSub"></a>spark.rapids.sql.expression.TimeSub|Subtracts interval from timestamp|true|None|
-<a name="sql.expression.ToDegrees"></a>spark.rapids.sql.expression.ToDegrees|Converts radians to degrees|true|None|
-<a name="sql.expression.ToRadians"></a>spark.rapids.sql.expression.ToRadians|Converts degrees to radians|true|None|
-<a name="sql.expression.ToUnixTimestamp"></a>spark.rapids.sql.expression.ToUnixTimestamp|Returns the UNIX timestamp of the given time|false|This is not 100% compatible with the Spark version because Incorrectly formatted strings and bogus dates produce garbage data instead of null|
-<a name="sql.expression.UnaryMinus"></a>spark.rapids.sql.expression.UnaryMinus|negate a numeric value|true|None|
-<a name="sql.expression.UnaryPositive"></a>spark.rapids.sql.expression.UnaryPositive|a numeric value with a + in front of it|true|None|
+<a name="sql.expression.ToDegrees (`degrees`)"></a>spark.rapids.sql.expression.ToDegrees (`degrees`)|Converts radians to degrees|true|None|
+<a name="sql.expression.ToRadians (`radians`)"></a>spark.rapids.sql.expression.ToRadians (`radians`)|Converts degrees to radians|true|None|
+<a name="sql.expression.ToUnixTimestamp (`to_unix_timestamp`)"></a>spark.rapids.sql.expression.ToUnixTimestamp (`to_unix_timestamp`)|Returns the UNIX timestamp of the given time|false|This is not 100% compatible with the Spark version because Incorrectly formatted strings and bogus dates produce garbage data instead of null|
+<a name="sql.expression.UnaryMinus (`negative`)"></a>spark.rapids.sql.expression.UnaryMinus (`negative`)|negate a numeric value|true|None|
+<a name="sql.expression.UnaryPositive (`positive`)"></a>spark.rapids.sql.expression.UnaryPositive (`positive`)|a numeric value with a + in front of it|true|None|
 <a name="sql.expression.UnboundedFollowing$"></a>spark.rapids.sql.expression.UnboundedFollowing$|Special boundary for a window frame, indicating all rows preceding the current row|true|None|
 <a name="sql.expression.UnboundedPreceding$"></a>spark.rapids.sql.expression.UnboundedPreceding$|Special boundary for a window frame, indicating all rows preceding the current row|true|None|
-<a name="sql.expression.UnixTimestamp"></a>spark.rapids.sql.expression.UnixTimestamp|Returns the UNIX timestamp of current or specified time|false|This is not 100% compatible with the Spark version because Incorrectly formatted strings and bogus dates produce garbage data instead of null|
-<a name="sql.expression.Upper"></a>spark.rapids.sql.expression.Upper|String uppercase operator|false|This is not 100% compatible with the Spark version because in some cases unicode characters change byte width when changing the case. The GPU string conversion does not support these characters. For a full list of unsupported characters see https://github.com/rapidsai/cudf/issues/3132|
-<a name="sql.expression.WeekDay"></a>spark.rapids.sql.expression.WeekDay|Returns the day of the week (0 = Monday...6=Sunday)|true|None|
+<a name="sql.expression.UnixTimestamp (`unix_timestamp`)"></a>spark.rapids.sql.expression.UnixTimestamp (`unix_timestamp`)|Returns the UNIX timestamp of current or specified time|false|This is not 100% compatible with the Spark version because Incorrectly formatted strings and bogus dates produce garbage data instead of null|
+<a name="sql.expression.Upper (`upper`, `ucase`)"></a>spark.rapids.sql.expression.Upper (`upper`, `ucase`)|String uppercase operator|false|This is not 100% compatible with the Spark version because in some cases unicode characters change byte width when changing the case. The GPU string conversion does not support these characters. For a full list of unsupported characters see https://github.com/rapidsai/cudf/issues/3132|
+<a name="sql.expression.WeekDay (`weekday`)"></a>spark.rapids.sql.expression.WeekDay (`weekday`)|Returns the day of the week (0 = Monday...6=Sunday)|true|None|
 <a name="sql.expression.WindowExpression"></a>spark.rapids.sql.expression.WindowExpression|calculates a return value for every input row of a table based on a group (or "window") of rows|true|None|
 <a name="sql.expression.WindowSpecDefinition"></a>spark.rapids.sql.expression.WindowSpecDefinition|specification of a window function, indicating the partitioning-expression, the row ordering, and the width of the window|true|None|
-<a name="sql.expression.Year"></a>spark.rapids.sql.expression.Year|get the year from a date or timestamp|true|None|
+<a name="sql.expression.Year (`year`)"></a>spark.rapids.sql.expression.Year (`year`)|get the year from a date or timestamp|true|None|
 <a name="sql.expression.AggregateExpression"></a>spark.rapids.sql.expression.AggregateExpression|aggregate expression|true|None|
-<a name="sql.expression.Average"></a>spark.rapids.sql.expression.Average|average aggregate operator|true|None|
-<a name="sql.expression.Count"></a>spark.rapids.sql.expression.Count|count aggregate operator|true|None|
-<a name="sql.expression.First"></a>spark.rapids.sql.expression.First|first aggregate operator|true|None|
-<a name="sql.expression.Last"></a>spark.rapids.sql.expression.Last|last aggregate operator|true|None|
-<a name="sql.expression.Max"></a>spark.rapids.sql.expression.Max|max aggregate operator|true|None|
-<a name="sql.expression.Min"></a>spark.rapids.sql.expression.Min|min aggregate operator|true|None|
-<a name="sql.expression.Sum"></a>spark.rapids.sql.expression.Sum|sum aggregate operator|true|None|
+<a name="sql.expression.Average (`avg`, `mean`)"></a>spark.rapids.sql.expression.Average (`avg`, `mean`)|average aggregate operator|true|None|
+<a name="sql.expression.Count (`count`)"></a>spark.rapids.sql.expression.Count (`count`)|count aggregate operator|true|None|
+<a name="sql.expression.First (`first_value`, `first`)"></a>spark.rapids.sql.expression.First (`first_value`, `first`)|first aggregate operator|true|None|
+<a name="sql.expression.Last (`last`, `last_value`)"></a>spark.rapids.sql.expression.Last (`last`, `last_value`)|last aggregate operator|true|None|
+<a name="sql.expression.Max (`max`)"></a>spark.rapids.sql.expression.Max (`max`)|max aggregate operator|true|None|
+<a name="sql.expression.Min (`min`)"></a>spark.rapids.sql.expression.Min (`min`)|min aggregate operator|true|None|
+<a name="sql.expression.Sum (`sum`)"></a>spark.rapids.sql.expression.Sum (`sum`)|sum aggregate operator|true|None|
 <a name="sql.expression.NormalizeNaNAndZero"></a>spark.rapids.sql.expression.NormalizeNaNAndZero|normalize nan and zero|true|None|
 
 ### Execution
@@ -276,345 +276,3 @@ Name | Description | Default Value | Notes
   --conf spark.executorEnv.LIBCUDF_KERNEL_CACHE_PATH="/tmp/cudf-$USER"
   ```
 
-## Supported SQL Functions
-The following is a set of SQL functions that have GPU overrides in this plugin. We find
-these by by cross-referencing with Spark's `FunctionRegistry`.
-
-Please note that there could still be caveats to each function, like data types that
-are supported, and edge cases that would cause the function to be disabled by default
-on the GPU. That said, any function that has GPU support will be a candidate
-for acceleration.
-
-Function | Class | GPU Support
------|------|-------------
-`!` | org.apache.spark.sql.catalyst.expressions.Not | ✔️
-`%` | org.apache.spark.sql.catalyst.expressions.Remainder | ✔️
-`&` | org.apache.spark.sql.catalyst.expressions.BitwiseAnd | ✔️
-`*` | org.apache.spark.sql.catalyst.expressions.Multiply | ✔️
-`+` | org.apache.spark.sql.catalyst.expressions.Add | ✔️
-`-` | org.apache.spark.sql.catalyst.expressions.Subtract | ✔️
-`/` | org.apache.spark.sql.catalyst.expressions.Divide | ✔️
-`<` | org.apache.spark.sql.catalyst.expressions.LessThan | ✔️
-`<=` | org.apache.spark.sql.catalyst.expressions.LessThanOrEqual | ✔️
-`<=>` | org.apache.spark.sql.catalyst.expressions.EqualNullSafe | ✔️
-`=` | org.apache.spark.sql.catalyst.expressions.EqualTo | ✔️
-`==` | org.apache.spark.sql.catalyst.expressions.EqualTo | ✔️
-`>` | org.apache.spark.sql.catalyst.expressions.GreaterThan | ✔️
-`>=` | org.apache.spark.sql.catalyst.expressions.GreaterThanOrEqual | ✔️
-`^` | org.apache.spark.sql.catalyst.expressions.BitwiseXor | ✔️
-`abs` | org.apache.spark.sql.catalyst.expressions.Abs | ✔️
-`acos` | org.apache.spark.sql.catalyst.expressions.Acos | ✔️
-`acosh` | org.apache.spark.sql.catalyst.expressions.Acosh | ✔️
-`add_months` | org.apache.spark.sql.catalyst.expressions.AddMonths | 
-`aggregate` | org.apache.spark.sql.catalyst.expressions.ArrayAggregate | 
-`and` | org.apache.spark.sql.catalyst.expressions.And | ✔️
-`any` | org.apache.spark.sql.catalyst.expressions.aggregate.BoolOr | 
-`approx_count_distinct` | org.apache.spark.sql.catalyst.expressions.aggregate.HyperLogLogPlusPlus | 
-`approx_percentile` | org.apache.spark.sql.catalyst.expressions.aggregate.ApproximatePercentile | 
-`array` | org.apache.spark.sql.catalyst.expressions.CreateArray | 
-`array_contains` | org.apache.spark.sql.catalyst.expressions.ArrayContains | 
-`array_distinct` | org.apache.spark.sql.catalyst.expressions.ArrayDistinct | 
-`array_except` | org.apache.spark.sql.catalyst.expressions.ArrayExcept | 
-`array_intersect` | org.apache.spark.sql.catalyst.expressions.ArrayIntersect | 
-`array_join` | org.apache.spark.sql.catalyst.expressions.ArrayJoin | 
-`array_max` | org.apache.spark.sql.catalyst.expressions.ArrayMax | 
-`array_min` | org.apache.spark.sql.catalyst.expressions.ArrayMin | 
-`array_position` | org.apache.spark.sql.catalyst.expressions.ArrayPosition | 
-`array_remove` | org.apache.spark.sql.catalyst.expressions.ArrayRemove | 
-`array_repeat` | org.apache.spark.sql.catalyst.expressions.ArrayRepeat | 
-`array_sort` | org.apache.spark.sql.catalyst.expressions.ArraySort | 
-`array_union` | org.apache.spark.sql.catalyst.expressions.ArrayUnion | 
-`arrays_overlap` | org.apache.spark.sql.catalyst.expressions.ArraysOverlap | 
-`arrays_zip` | org.apache.spark.sql.catalyst.expressions.ArraysZip | 
-`ascii` | org.apache.spark.sql.catalyst.expressions.Ascii | 
-`asin` | org.apache.spark.sql.catalyst.expressions.Asin | ✔️
-`asinh` | org.apache.spark.sql.catalyst.expressions.Asinh | ✔️
-`assert_true` | org.apache.spark.sql.catalyst.expressions.AssertTrue | 
-`atan` | org.apache.spark.sql.catalyst.expressions.Atan | ✔️
-`atan2` | org.apache.spark.sql.catalyst.expressions.Atan2 | 
-`atanh` | org.apache.spark.sql.catalyst.expressions.Atanh | ✔️
-`avg` | org.apache.spark.sql.catalyst.expressions.aggregate.Average | ✔️
-`base64` | org.apache.spark.sql.catalyst.expressions.Base64 | 
-`bigint` | org.apache.spark.sql.catalyst.expressions.Cast | ✔️
-`bin` | org.apache.spark.sql.catalyst.expressions.Bin | 
-`binary` | org.apache.spark.sql.catalyst.expressions.Cast | ✔️
-`bit_and` | org.apache.spark.sql.catalyst.expressions.aggregate.BitAndAgg | 
-`bit_count` | org.apache.spark.sql.catalyst.expressions.BitwiseCount | 
-`bit_length` | org.apache.spark.sql.catalyst.expressions.BitLength | 
-`bit_or` | org.apache.spark.sql.catalyst.expressions.aggregate.BitOrAgg | 
-`bit_xor` | org.apache.spark.sql.catalyst.expressions.aggregate.BitXorAgg | 
-`bool_and` | org.apache.spark.sql.catalyst.expressions.aggregate.BoolAnd | 
-`bool_or` | org.apache.spark.sql.catalyst.expressions.aggregate.BoolOr | 
-`boolean` | org.apache.spark.sql.catalyst.expressions.Cast | ✔️
-`bround` | org.apache.spark.sql.catalyst.expressions.BRound | 
-`cardinality` | org.apache.spark.sql.catalyst.expressions.Size | 
-`cast` | org.apache.spark.sql.catalyst.expressions.Cast | ✔️
-`cbrt` | org.apache.spark.sql.catalyst.expressions.Cbrt | ✔️
-`ceil` | org.apache.spark.sql.catalyst.expressions.Ceil | ✔️
-`ceiling` | org.apache.spark.sql.catalyst.expressions.Ceil | ✔️
-`char` | org.apache.spark.sql.catalyst.expressions.Chr | 
-`char_length` | org.apache.spark.sql.catalyst.expressions.Length | ✔️
-`character_length` | org.apache.spark.sql.catalyst.expressions.Length | ✔️
-`chr` | org.apache.spark.sql.catalyst.expressions.Chr | 
-`coalesce` | org.apache.spark.sql.catalyst.expressions.Coalesce | ✔️
-`collect_list` | org.apache.spark.sql.catalyst.expressions.aggregate.CollectList | 
-`collect_set` | org.apache.spark.sql.catalyst.expressions.aggregate.CollectSet | 
-`concat` | org.apache.spark.sql.catalyst.expressions.Concat | ✔️
-`concat_ws` | org.apache.spark.sql.catalyst.expressions.ConcatWs | 
-`conv` | org.apache.spark.sql.catalyst.expressions.Conv | 
-`corr` | org.apache.spark.sql.catalyst.expressions.aggregate.Corr | 
-`cos` | org.apache.spark.sql.catalyst.expressions.Cos | ✔️
-`cosh` | org.apache.spark.sql.catalyst.expressions.Cosh | ✔️
-`cot` | org.apache.spark.sql.catalyst.expressions.Cot | ✔️
-`count` | org.apache.spark.sql.catalyst.expressions.aggregate.Count | ✔️
-`count_if` | org.apache.spark.sql.catalyst.expressions.aggregate.CountIf | 
-`count_min_sketch` | org.apache.spark.sql.catalyst.expressions.aggregate.CountMinSketchAgg | 
-`covar_pop` | org.apache.spark.sql.catalyst.expressions.aggregate.CovPopulation | 
-`covar_samp` | org.apache.spark.sql.catalyst.expressions.aggregate.CovSample | 
-`crc32` | org.apache.spark.sql.catalyst.expressions.Crc32 | 
-`cube` | org.apache.spark.sql.catalyst.expressions.Cube | 
-`cume_dist` | org.apache.spark.sql.catalyst.expressions.CumeDist | 
-`current_database` | org.apache.spark.sql.catalyst.expressions.CurrentDatabase | 
-`current_date` | org.apache.spark.sql.catalyst.expressions.CurrentDate | 
-`current_timestamp` | org.apache.spark.sql.catalyst.expressions.CurrentTimestamp | 
-`date` | org.apache.spark.sql.catalyst.expressions.Cast | ✔️
-`date_add` | org.apache.spark.sql.catalyst.expressions.DateAdd | ✔️
-`date_format` | org.apache.spark.sql.catalyst.expressions.DateFormatClass | 
-`date_part` | org.apache.spark.sql.catalyst.expressions.DatePart | 
-`date_sub` | org.apache.spark.sql.catalyst.expressions.DateSub | ✔️
-`date_trunc` | org.apache.spark.sql.catalyst.expressions.TruncTimestamp | 
-`datediff` | org.apache.spark.sql.catalyst.expressions.DateDiff | ✔️
-`day` | org.apache.spark.sql.catalyst.expressions.DayOfMonth | ✔️
-`dayofmonth` | org.apache.spark.sql.catalyst.expressions.DayOfMonth | ✔️
-`dayofweek` | org.apache.spark.sql.catalyst.expressions.DayOfWeek | ✔️
-`dayofyear` | org.apache.spark.sql.catalyst.expressions.DayOfYear | ✔️
-`decimal` | org.apache.spark.sql.catalyst.expressions.Cast | ✔️
-`decode` | org.apache.spark.sql.catalyst.expressions.Decode | 
-`degrees` | org.apache.spark.sql.catalyst.expressions.ToDegrees | ✔️
-`dense_rank` | org.apache.spark.sql.catalyst.expressions.DenseRank | 
-`div` | org.apache.spark.sql.catalyst.expressions.IntegralDivide | ✔️
-`double` | org.apache.spark.sql.catalyst.expressions.Cast | ✔️
-`e` | org.apache.spark.sql.catalyst.expressions.EulerNumber | 
-`element_at` | org.apache.spark.sql.catalyst.expressions.ElementAt | 
-`elt` | org.apache.spark.sql.catalyst.expressions.Elt | 
-`encode` | org.apache.spark.sql.catalyst.expressions.Encode | 
-`every` | org.apache.spark.sql.catalyst.expressions.aggregate.BoolAnd | 
-`exists` | org.apache.spark.sql.catalyst.expressions.ArrayExists | 
-`exp` | org.apache.spark.sql.catalyst.expressions.Exp | ✔️
-`explode` | org.apache.spark.sql.catalyst.expressions.Explode | 
-`explode_outer` | org.apache.spark.sql.catalyst.expressions.Explode | 
-`expm1` | org.apache.spark.sql.catalyst.expressions.Expm1 | ✔️
-`extract` | org.apache.spark.sql.catalyst.expressions.Extract | 
-`factorial` | org.apache.spark.sql.catalyst.expressions.Factorial | 
-`filter` | org.apache.spark.sql.catalyst.expressions.ArrayFilter | 
-`find_in_set` | org.apache.spark.sql.catalyst.expressions.FindInSet | 
-`first` | org.apache.spark.sql.catalyst.expressions.aggregate.First | ✔️
-`first_value` | org.apache.spark.sql.catalyst.expressions.aggregate.First | ✔️
-`flatten` | org.apache.spark.sql.catalyst.expressions.Flatten | 
-`float` | org.apache.spark.sql.catalyst.expressions.Cast | ✔️
-`floor` | org.apache.spark.sql.catalyst.expressions.Floor | ✔️
-`forall` | org.apache.spark.sql.catalyst.expressions.ArrayForAll | 
-`format_number` | org.apache.spark.sql.catalyst.expressions.FormatNumber | 
-`format_string` | org.apache.spark.sql.catalyst.expressions.FormatString | 
-`from_csv` | org.apache.spark.sql.catalyst.expressions.CsvToStructs | 
-`from_json` | org.apache.spark.sql.catalyst.expressions.JsonToStructs | 
-`from_unixtime` | org.apache.spark.sql.catalyst.expressions.FromUnixTime | ✔️
-`from_utc_timestamp` | org.apache.spark.sql.catalyst.expressions.FromUTCTimestamp | 
-`get_json_object` | org.apache.spark.sql.catalyst.expressions.GetJsonObject | 
-`greatest` | org.apache.spark.sql.catalyst.expressions.Greatest | 
-`grouping` | org.apache.spark.sql.catalyst.expressions.Grouping | 
-`grouping_id` | org.apache.spark.sql.catalyst.expressions.GroupingID | 
-`hash` | org.apache.spark.sql.catalyst.expressions.Murmur3Hash | 
-`hex` | org.apache.spark.sql.catalyst.expressions.Hex | 
-`hour` | org.apache.spark.sql.catalyst.expressions.Hour | ✔️
-`hypot` | org.apache.spark.sql.catalyst.expressions.Hypot | 
-`if` | org.apache.spark.sql.catalyst.expressions.If | ✔️
-`ifnull` | org.apache.spark.sql.catalyst.expressions.IfNull | 
-`in` | org.apache.spark.sql.catalyst.expressions.In | ✔️
-`initcap` | org.apache.spark.sql.catalyst.expressions.InitCap | ✔️
-`inline` | org.apache.spark.sql.catalyst.expressions.Inline | 
-`inline_outer` | org.apache.spark.sql.catalyst.expressions.Inline | 
-`input_file_block_length` | org.apache.spark.sql.catalyst.expressions.InputFileBlockLength | ✔️
-`input_file_block_start` | org.apache.spark.sql.catalyst.expressions.InputFileBlockStart | ✔️
-`input_file_name` | org.apache.spark.sql.catalyst.expressions.InputFileName | ✔️
-`instr` | org.apache.spark.sql.catalyst.expressions.StringInstr | 
-`int` | org.apache.spark.sql.catalyst.expressions.Cast | ✔️
-`isnan` | org.apache.spark.sql.catalyst.expressions.IsNaN | ✔️
-`isnotnull` | org.apache.spark.sql.catalyst.expressions.IsNotNull | ✔️
-`isnull` | org.apache.spark.sql.catalyst.expressions.IsNull | ✔️
-`java_method` | org.apache.spark.sql.catalyst.expressions.CallMethodViaReflection | 
-`json_tuple` | org.apache.spark.sql.catalyst.expressions.JsonTuple | 
-`kurtosis` | org.apache.spark.sql.catalyst.expressions.aggregate.Kurtosis | 
-`lag` | org.apache.spark.sql.catalyst.expressions.Lag | 
-`last` | org.apache.spark.sql.catalyst.expressions.aggregate.Last | ✔️
-`last_day` | org.apache.spark.sql.catalyst.expressions.LastDay | ✔️
-`last_value` | org.apache.spark.sql.catalyst.expressions.aggregate.Last | ✔️
-`lcase` | org.apache.spark.sql.catalyst.expressions.Lower | ✔️
-`lead` | org.apache.spark.sql.catalyst.expressions.Lead | 
-`least` | org.apache.spark.sql.catalyst.expressions.Least | 
-`left` | org.apache.spark.sql.catalyst.expressions.Left | 
-`length` | org.apache.spark.sql.catalyst.expressions.Length | ✔️
-`levenshtein` | org.apache.spark.sql.catalyst.expressions.Levenshtein | 
-`like` | org.apache.spark.sql.catalyst.expressions.Like | ✔️
-`ln` | org.apache.spark.sql.catalyst.expressions.Log | ✔️
-`locate` | org.apache.spark.sql.catalyst.expressions.StringLocate | ✔️
-`log` | org.apache.spark.sql.catalyst.expressions.Logarithm | ✔️
-`log10` | org.apache.spark.sql.catalyst.expressions.Log10 | ✔️
-`log1p` | org.apache.spark.sql.catalyst.expressions.Log1p | ✔️
-`log2` | org.apache.spark.sql.catalyst.expressions.Log2 | ✔️
-`lower` | org.apache.spark.sql.catalyst.expressions.Lower | ✔️
-`lpad` | org.apache.spark.sql.catalyst.expressions.StringLPad | 
-`ltrim` | org.apache.spark.sql.catalyst.expressions.StringTrimLeft | ✔️
-`make_date` | org.apache.spark.sql.catalyst.expressions.MakeDate | 
-`make_interval` | org.apache.spark.sql.catalyst.expressions.MakeInterval | 
-`make_timestamp` | org.apache.spark.sql.catalyst.expressions.MakeTimestamp | 
-`map` | org.apache.spark.sql.catalyst.expressions.CreateMap | 
-`map_concat` | org.apache.spark.sql.catalyst.expressions.MapConcat | 
-`map_entries` | org.apache.spark.sql.catalyst.expressions.MapEntries | 
-`map_filter` | org.apache.spark.sql.catalyst.expressions.MapFilter | 
-`map_from_arrays` | org.apache.spark.sql.catalyst.expressions.MapFromArrays | 
-`map_from_entries` | org.apache.spark.sql.catalyst.expressions.MapFromEntries | 
-`map_keys` | org.apache.spark.sql.catalyst.expressions.MapKeys | 
-`map_values` | org.apache.spark.sql.catalyst.expressions.MapValues | 
-`map_zip_with` | org.apache.spark.sql.catalyst.expressions.MapZipWith | 
-`max` | org.apache.spark.sql.catalyst.expressions.aggregate.Max | ✔️
-`max_by` | org.apache.spark.sql.catalyst.expressions.aggregate.MaxBy | 
-`md5` | org.apache.spark.sql.catalyst.expressions.Md5 | 
-`mean` | org.apache.spark.sql.catalyst.expressions.aggregate.Average | ✔️
-`min` | org.apache.spark.sql.catalyst.expressions.aggregate.Min | ✔️
-`min_by` | org.apache.spark.sql.catalyst.expressions.aggregate.MinBy | 
-`minute` | org.apache.spark.sql.catalyst.expressions.Minute | ✔️
-`mod` | org.apache.spark.sql.catalyst.expressions.Remainder | ✔️
-`monotonically_increasing_id` | org.apache.spark.sql.catalyst.expressions.MonotonicallyIncreasingID | ✔️
-`month` | org.apache.spark.sql.catalyst.expressions.Month | ✔️
-`months_between` | org.apache.spark.sql.catalyst.expressions.MonthsBetween | 
-`named_struct` | org.apache.spark.sql.catalyst.expressions.CreateNamedStruct | 
-`nanvl` | org.apache.spark.sql.catalyst.expressions.NaNvl | ✔️
-`negative` | org.apache.spark.sql.catalyst.expressions.UnaryMinus | ✔️
-`next_day` | org.apache.spark.sql.catalyst.expressions.NextDay | 
-`not` | org.apache.spark.sql.catalyst.expressions.Not | ✔️
-`now` | org.apache.spark.sql.catalyst.expressions.Now | 
-`ntile` | org.apache.spark.sql.catalyst.expressions.NTile | 
-`nullif` | org.apache.spark.sql.catalyst.expressions.NullIf | 
-`nvl` | org.apache.spark.sql.catalyst.expressions.Nvl | 
-`nvl2` | org.apache.spark.sql.catalyst.expressions.Nvl2 | 
-`octet_length` | org.apache.spark.sql.catalyst.expressions.OctetLength | 
-`or` | org.apache.spark.sql.catalyst.expressions.Or | ✔️
-`overlay` | org.apache.spark.sql.catalyst.expressions.Overlay | 
-`parse_url` | org.apache.spark.sql.catalyst.expressions.ParseUrl | 
-`percent_rank` | org.apache.spark.sql.catalyst.expressions.PercentRank | 
-`percentile` | org.apache.spark.sql.catalyst.expressions.aggregate.Percentile | 
-`percentile_approx` | org.apache.spark.sql.catalyst.expressions.aggregate.ApproximatePercentile | 
-`pi` | org.apache.spark.sql.catalyst.expressions.Pi | 
-`pmod` | org.apache.spark.sql.catalyst.expressions.Pmod | ✔️
-`posexplode` | org.apache.spark.sql.catalyst.expressions.PosExplode | 
-`posexplode_outer` | org.apache.spark.sql.catalyst.expressions.PosExplode | 
-`position` | org.apache.spark.sql.catalyst.expressions.StringLocate | ✔️
-`positive` | org.apache.spark.sql.catalyst.expressions.UnaryPositive | ✔️
-`pow` | org.apache.spark.sql.catalyst.expressions.Pow | ✔️
-`power` | org.apache.spark.sql.catalyst.expressions.Pow | ✔️
-`printf` | org.apache.spark.sql.catalyst.expressions.FormatString | 
-`quarter` | org.apache.spark.sql.catalyst.expressions.Quarter | ✔️
-`radians` | org.apache.spark.sql.catalyst.expressions.ToRadians | ✔️
-`rand` | org.apache.spark.sql.catalyst.expressions.Rand | ✔️
-`randn` | org.apache.spark.sql.catalyst.expressions.Randn | 
-`random` | org.apache.spark.sql.catalyst.expressions.Rand | ✔️
-`rank` | org.apache.spark.sql.catalyst.expressions.Rank | 
-`reflect` | org.apache.spark.sql.catalyst.expressions.CallMethodViaReflection | 
-`regexp_extract` | org.apache.spark.sql.catalyst.expressions.RegExpExtract | 
-`regexp_replace` | org.apache.spark.sql.catalyst.expressions.RegExpReplace | ✔️
-`repeat` | org.apache.spark.sql.catalyst.expressions.StringRepeat | 
-`replace` | org.apache.spark.sql.catalyst.expressions.StringReplace | ✔️
-`reverse` | org.apache.spark.sql.catalyst.expressions.Reverse | 
-`right` | org.apache.spark.sql.catalyst.expressions.Right | 
-`rint` | org.apache.spark.sql.catalyst.expressions.Rint | ✔️
-`rlike` | org.apache.spark.sql.catalyst.expressions.RLike | 
-`rollup` | org.apache.spark.sql.catalyst.expressions.Rollup | 
-`round` | org.apache.spark.sql.catalyst.expressions.Round | 
-`row_number` | org.apache.spark.sql.catalyst.expressions.RowNumber | ✔️
-`rpad` | org.apache.spark.sql.catalyst.expressions.StringRPad | 
-`rtrim` | org.apache.spark.sql.catalyst.expressions.StringTrimRight | ✔️
-`schema_of_csv` | org.apache.spark.sql.catalyst.expressions.SchemaOfCsv | 
-`schema_of_json` | org.apache.spark.sql.catalyst.expressions.SchemaOfJson | 
-`second` | org.apache.spark.sql.catalyst.expressions.Second | ✔️
-`sentences` | org.apache.spark.sql.catalyst.expressions.Sentences | 
-`sequence` | org.apache.spark.sql.catalyst.expressions.Sequence | 
-`sha` | org.apache.spark.sql.catalyst.expressions.Sha1 | 
-`sha1` | org.apache.spark.sql.catalyst.expressions.Sha1 | 
-`sha2` | org.apache.spark.sql.catalyst.expressions.Sha2 | 
-`shiftleft` | org.apache.spark.sql.catalyst.expressions.ShiftLeft | ✔️
-`shiftright` | org.apache.spark.sql.catalyst.expressions.ShiftRight | ✔️
-`shiftrightunsigned` | org.apache.spark.sql.catalyst.expressions.ShiftRightUnsigned | ✔️
-`shuffle` | org.apache.spark.sql.catalyst.expressions.Shuffle | 
-`sign` | org.apache.spark.sql.catalyst.expressions.Signum | ✔️
-`signum` | org.apache.spark.sql.catalyst.expressions.Signum | ✔️
-`sin` | org.apache.spark.sql.catalyst.expressions.Sin | ✔️
-`sinh` | org.apache.spark.sql.catalyst.expressions.Sinh | ✔️
-`size` | org.apache.spark.sql.catalyst.expressions.Size | 
-`skewness` | org.apache.spark.sql.catalyst.expressions.aggregate.Skewness | 
-`slice` | org.apache.spark.sql.catalyst.expressions.Slice | 
-`smallint` | org.apache.spark.sql.catalyst.expressions.Cast | ✔️
-`some` | org.apache.spark.sql.catalyst.expressions.aggregate.BoolOr | 
-`sort_array` | org.apache.spark.sql.catalyst.expressions.SortArray | 
-`soundex` | org.apache.spark.sql.catalyst.expressions.SoundEx | 
-`space` | org.apache.spark.sql.catalyst.expressions.StringSpace | 
-`spark_partition_id` | org.apache.spark.sql.catalyst.expressions.SparkPartitionID | ✔️
-`split` | org.apache.spark.sql.catalyst.expressions.StringSplit | 
-`sqrt` | org.apache.spark.sql.catalyst.expressions.Sqrt | ✔️
-`stack` | org.apache.spark.sql.catalyst.expressions.Stack | 
-`std` | org.apache.spark.sql.catalyst.expressions.aggregate.StddevSamp | 
-`stddev` | org.apache.spark.sql.catalyst.expressions.aggregate.StddevSamp | 
-`stddev_pop` | org.apache.spark.sql.catalyst.expressions.aggregate.StddevPop | 
-`stddev_samp` | org.apache.spark.sql.catalyst.expressions.aggregate.StddevSamp | 
-`str_to_map` | org.apache.spark.sql.catalyst.expressions.StringToMap | 
-`string` | org.apache.spark.sql.catalyst.expressions.Cast | ✔️
-`struct` | org.apache.spark.sql.catalyst.expressions.CreateNamedStruct | 
-`substr` | org.apache.spark.sql.catalyst.expressions.Substring | ✔️
-`substring` | org.apache.spark.sql.catalyst.expressions.Substring | ✔️
-`substring_index` | org.apache.spark.sql.catalyst.expressions.SubstringIndex | ✔️
-`sum` | org.apache.spark.sql.catalyst.expressions.aggregate.Sum | ✔️
-`tan` | org.apache.spark.sql.catalyst.expressions.Tan | ✔️
-`tanh` | org.apache.spark.sql.catalyst.expressions.Tanh | ✔️
-`timestamp` | org.apache.spark.sql.catalyst.expressions.Cast | ✔️
-`tinyint` | org.apache.spark.sql.catalyst.expressions.Cast | ✔️
-`to_csv` | org.apache.spark.sql.catalyst.expressions.StructsToCsv | 
-`to_date` | org.apache.spark.sql.catalyst.expressions.ParseToDate | 
-`to_json` | org.apache.spark.sql.catalyst.expressions.StructsToJson | 
-`to_timestamp` | org.apache.spark.sql.catalyst.expressions.ParseToTimestamp | 
-`to_unix_timestamp` | org.apache.spark.sql.catalyst.expressions.ToUnixTimestamp | ✔️
-`to_utc_timestamp` | org.apache.spark.sql.catalyst.expressions.ToUTCTimestamp | 
-`transform` | org.apache.spark.sql.catalyst.expressions.ArrayTransform | 
-`transform_keys` | org.apache.spark.sql.catalyst.expressions.TransformKeys | 
-`transform_values` | org.apache.spark.sql.catalyst.expressions.TransformValues | 
-`translate` | org.apache.spark.sql.catalyst.expressions.StringTranslate | 
-`trim` | org.apache.spark.sql.catalyst.expressions.StringTrim | ✔️
-`trunc` | org.apache.spark.sql.catalyst.expressions.TruncDate | 
-`typeof` | org.apache.spark.sql.catalyst.expressions.TypeOf | 
-`ucase` | org.apache.spark.sql.catalyst.expressions.Upper | ✔️
-`unbase64` | org.apache.spark.sql.catalyst.expressions.UnBase64 | 
-`unhex` | org.apache.spark.sql.catalyst.expressions.Unhex | 
-`unix_timestamp` | org.apache.spark.sql.catalyst.expressions.UnixTimestamp | ✔️
-`upper` | org.apache.spark.sql.catalyst.expressions.Upper | ✔️
-`uuid` | org.apache.spark.sql.catalyst.expressions.Uuid | 
-`var_pop` | org.apache.spark.sql.catalyst.expressions.aggregate.VariancePop | 
-`var_samp` | org.apache.spark.sql.catalyst.expressions.aggregate.VarianceSamp | 
-`variance` | org.apache.spark.sql.catalyst.expressions.aggregate.VarianceSamp | 
-`version` | org.apache.spark.sql.catalyst.expressions.SparkVersion | 
-`weekday` | org.apache.spark.sql.catalyst.expressions.WeekDay | ✔️
-`weekofyear` | org.apache.spark.sql.catalyst.expressions.WeekOfYear | 
-`when` | org.apache.spark.sql.catalyst.expressions.CaseWhen | ✔️
-`window` | org.apache.spark.sql.catalyst.expressions.TimeWindow | 
-`xpath` | org.apache.spark.sql.catalyst.expressions.xml.XPathList | 
-`xpath_boolean` | org.apache.spark.sql.catalyst.expressions.xml.XPathBoolean | 
-`xpath_double` | org.apache.spark.sql.catalyst.expressions.xml.XPathDouble | 
-`xpath_float` | org.apache.spark.sql.catalyst.expressions.xml.XPathFloat | 
-`xpath_int` | org.apache.spark.sql.catalyst.expressions.xml.XPathInt | 
-`xpath_long` | org.apache.spark.sql.catalyst.expressions.xml.XPathLong | 
-`xpath_number` | org.apache.spark.sql.catalyst.expressions.xml.XPathDouble | 
-`xpath_short` | org.apache.spark.sql.catalyst.expressions.xml.XPathShort | 
-`xpath_string` | org.apache.spark.sql.catalyst.expressions.xml.XPathString | 
-`xxhash64` | org.apache.spark.sql.catalyst.expressions.XxHash64 | 
-`year` | org.apache.spark.sql.catalyst.expressions.Year | ✔️
-`zip_with` | org.apache.spark.sql.catalyst.expressions.ZipWith | 
-`\|` | org.apache.spark.sql.catalyst.expressions.BitwiseOr | ✔️
-`~` | org.apache.spark.sql.catalyst.expressions.BitwiseNot | ✔️

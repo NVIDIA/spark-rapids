@@ -137,11 +137,11 @@ abstract class ReplacementRule[INPUT <: BASE, BASE, WRAP_TYPE <: RapidsMeta[INPU
     None
   }
 
-  def confHelp(asTable: Boolean = false): Unit = {
+  def confHelp(asTable: Boolean = false, name: String = confKey): Unit = {
     val notesMsg = notes()
     if (asTable) {
       import ConfHelper.makeConfAnchor
-      print(s"${makeConfAnchor(confKey)}|$desc|${notesMsg.isEmpty}|")
+      print(s"${makeConfAnchor(name)}|$desc|${notesMsg.isEmpty}|")
       if (notesMsg.isDefined) {
         print(s"${notesMsg.get}")
       } else {
