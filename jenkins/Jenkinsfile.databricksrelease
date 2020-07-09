@@ -24,20 +24,10 @@
 
 def urmUrl="https://${ArtifactoryConstants.ARTIFACTORY_NAME}/artifactory/sw-spark-maven"
 
-def SERVERS_MAP = [
-    Local:    ' ',
-    Sonatype: 'https://oss.sonatype.org/service/local/staging/deploy/maven2'
-]
-
-def SEC_IDS = [
-    Local:    ['local-gpg-passphrase',  'local-gpg-private-key',  'local-username-password'],
-    Sonatype: ['SPARK_RAPIDS_GPG_PASSPHRASE', 'SPARK_RAPIDS_GPG_PRIVATE_KEY', 'SPARK_SONATYPE_USERPASS']
-]
-
 pipeline {
     agent {
         dockerfile {
-            label 'vanilla||docker-deploy||docker-gpu'
+            label 'docker-deploy||docker-gpu'
             filename 'Dockerfile.ubuntu16'
             dir "jenkins"
             args '--runtime=nvidia -v ${HOME}/.m2:${HOME}/.m2:rw \
@@ -52,8 +42,8 @@ pipeline {
     }
 
     parameters {
-        choice(name: 'DEPLOY_TO', choices: ['Sonatype'],
-            description: 'Where to deploy artifacts to')
+        string(name: 'DEPLOY_TO', defaultValue: 'https://oss.sonatype.org/service/local/staging/deploy/maven2',
+            description: 'The repo URL where to deploy the artifacts')
         string(name: 'DATABRICKS_VERSION',
                 defaultValue: '0.2-databricks-SNAPSHOT', description: 'Version to set')
         string(name: 'CUDF_VERSION',
@@ -94,10 +84,10 @@ pipeline {
         stage("Deploy") {
             environment {
                 SERVER_ID='ossrh'
-                SERVER_URL="${SERVERS_MAP["$DEPLOY_TO"]}"
-                GPG_PASSPHRASE=credentials("${SEC_IDS["$DEPLOY_TO"][0]}")
-                GPG_FILE=credentials("${SEC_IDS["$DEPLOY_TO"][1]}")
-                SONATYPE=credentials("${SEC_IDS["$DEPLOY_TO"][2]}")
+                SERVER_URL="${DEPLOY_TO}"
+                GPG_PASSPHRASE=credentials('SPARK_RAPIDS_GPG_PASSPHRASE')
+                GPG_FILE=credentials('SPARK_RAPIDS_GPG_PRIVATE_KEY')
+                SONATYPE=credentials('SPARK_SONATYPE_USERPASS')
                 GNUPGHOME="${WORKSPACE}/.gnupg"
             }
             steps {
