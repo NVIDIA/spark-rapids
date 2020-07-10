@@ -39,6 +39,17 @@ object MetaUtils {
    * @return heap-based flatbuffer message
    */
   def buildTableMeta(tableId: Int, table: Table, buffer: DeviceMemoryBuffer): TableMeta = {
+    buildTableMeta(tableId,
+      (0 until table.getNumberOfColumns).map(i => table.getColumn(i)),
+      table.getRowCount,
+      buffer)
+  }
+
+  def buildTableMeta(
+      tableId: Int,
+      columns: Seq[ColumnVector],
+      numRows: Long,
+      buffer: DeviceMemoryBuffer): TableMeta = {
     val fbb = new FlatBufferBuilder(1024)
     val baseAddress = buffer.getAddress
     val bufferSize = buffer.getLength
@@ -49,15 +60,12 @@ object MetaUtils {
       bufferSize,
       CodecType.UNCOMPRESSED)
 
-    val columnMetaOffsets = new ArrayBuffer[Int](table.getNumberOfColumns)
-    for (i <- 0 until table.getNumberOfColumns) {
-      columnMetaOffsets.append(addColumnMeta(fbb, baseAddress, table.getColumn(i)))
-    }
+    val columnMetaOffsets = columns.map(col => addColumnMeta(fbb, baseAddress, col)).toArray
 
-    val columnMetasOffset = TableMeta.createColumnMetasVector(fbb, columnMetaOffsets.toArray)
+    val columnMetasOffset = TableMeta.createColumnMetasVector(fbb, columnMetaOffsets)
     TableMeta.startTableMeta(fbb)
     TableMeta.addBufferMeta(fbb, bufferMetaOffset)
-    TableMeta.addRowCount(fbb, table.getRowCount)
+    TableMeta.addRowCount(fbb, numRows)
     TableMeta.addColumnMetas(fbb, columnMetasOffset)
     fbb.finish(TableMeta.endTableMeta(fbb))
     // copy the message to trim the backing array to only what is needed

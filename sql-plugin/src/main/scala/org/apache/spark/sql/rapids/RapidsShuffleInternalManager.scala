@@ -20,6 +20,7 @@ import ai.rapids.cudf.{NvtxColor, NvtxRange}
 import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.format.TableMeta
 import com.nvidia.spark.rapids.shuffle.{RapidsShuffleRequestHandler, RapidsShuffleServer, RapidsShuffleTransport}
+import scala.collection.mutable.ArrayBuffer
 
 import org.apache.spark.{ShuffleDependency, SparkConf, SparkEnv, TaskContext}
 import org.apache.spark.internal.{config, Logging}
@@ -86,6 +87,7 @@ class RapidsCachingWriter[K, V](
 
   private val numParts = handle.dependency.partitioner.numPartitions
   private val sizes = new Array[Long](numParts)
+  private val writtenBufferIds = new ArrayBuffer[ShuffleBufferId](numParts)
 
   override def write(records: Iterator[Product2[K, V]]): Unit = {
     val nvtxRange = new NvtxRange("RapidsCachingWriter.write", NvtxColor.CYAN)
@@ -129,6 +131,7 @@ class RapidsCachingWriter[K, V](
             sizes(partId) += 100
           }
         }
+        writtenBufferIds.append(bufferId)
       }
       metrics.incBytesWritten(bytesWritten)
       metrics.incRecordsWritten(recordsWritten)
@@ -137,11 +140,18 @@ class RapidsCachingWriter[K, V](
     }
   }
 
+  /**
+    * Used to remove shuffle buffers when the writing task detects an error, calling `stop(false)`
+    */
+  private def cleanStorage(): Unit = {
+    writtenBufferIds.foreach(catalog.removeBuffer)
+  }
+
   override def stop(success: Boolean): Option[MapStatus] = {
     val nvtxRange = new NvtxRange("RapidsCachingWriter.close", NvtxColor.CYAN)
     try {
       if (!success) {
-        shuffleStorage.close()
+        cleanStorage()
         None
       } else {
         // upon seeing this port, the other side will try to connect to the port
