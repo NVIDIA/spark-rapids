@@ -1,6 +1,6 @@
 #!/usr/local/env groovy
 /*
- * Copyright (c) 2019-2020, NVIDIA CORPORATION.
+ * Copyright (c) 2020, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,7 +17,7 @@
 
 /**
 *
-* Jenkins file for running spark3.0 integration tests
+* Jenkins file for running spark3.1.0 integration tests
 *
 */
 
@@ -53,7 +53,7 @@ pipeline {
     stages {
         stage('IT on 3.1.0-SNAPSHOT') {
             agent { label 'docker-gpu' }
-            environment {SPARK_VER='3.0.1-SNAPSHOT'}
+            environment {SPARK_VER='3.1.0-SNAPSHOT'}
             steps {
                 script {
                     def CUDA_NAME=sh(returnStdout: true,
