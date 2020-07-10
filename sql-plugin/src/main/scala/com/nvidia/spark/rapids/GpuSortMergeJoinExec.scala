@@ -38,14 +38,8 @@ class GpuSortMergeJoinMeta(
   override val childExprs: Seq[BaseExprMeta[_]] = leftKeys ++ rightKeys ++ condition
 
   override def tagPlanForGpu(): Unit = {
-
-    join.joinType match {
-      case FullOuter =>
-        willNotWorkOnGpu("GpuShuffleHashJoin does not support FullOuter joins")
-      case _ =>
-        // Use conditions from Hash Join
-        GpuHashJoin.tagJoin(this, join.joinType, join.leftKeys, join.rightKeys, join.condition)
-    }
+    // Use conditions from Hash Join
+    GpuHashJoin.tagJoin(this, join.joinType, join.leftKeys, join.rightKeys, join.condition)
 
     if (!conf.enableReplaceSortMergeJoin) {
       willNotWorkOnGpu(s"Not replacing sort merge join with hash join, " +
@@ -93,8 +87,9 @@ class GpuSortMergeJoinMeta(
     case _ => false
   }
 
+  // note that the plugin supports FullOuter shuffle hash joins where Spark does not
   private def canBuildLeft(joinType: JoinType): Boolean = joinType match {
-    case _: InnerLike | RightOuter => true
+    case _: InnerLike | RightOuter | FullOuter => true
     case _ => false
   }
 }
