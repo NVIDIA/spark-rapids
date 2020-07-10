@@ -82,12 +82,22 @@ class GpuSortMergeJoinMeta(
       childPlans(1).convertIfNeeded())
   }
 
+  /**
+   * Determine if this type of join supports using the right side of the join as the build side.
+   *
+   * These rules match those in Spark's ShuffleHashJoinExec.
+   */
   private def canBuildRight(joinType: JoinType): Boolean = joinType match {
     case _: InnerLike | LeftOuter | LeftSemi | LeftAnti | _: ExistenceJoin => true
     case _ => false
   }
 
-  // note that the plugin supports FullOuter shuffle hash joins where Spark does not
+  /**
+   * Determine if this type of join supports using the left side of the join as the build side.
+   *
+   * These rules match those in Spark's ShuffleHashJoinExec, with the addition of support for
+   * full outer joins.
+   */
   private def canBuildLeft(joinType: JoinType): Boolean = joinType match {
     case _: InnerLike | RightOuter | FullOuter => true
     case _ => false
