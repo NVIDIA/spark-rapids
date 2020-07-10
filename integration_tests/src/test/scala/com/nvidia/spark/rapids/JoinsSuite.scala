@@ -60,11 +60,6 @@ class JoinsSuite extends SparkQueryCompareTestSuite {
     (A, B) => A.join(B, A("longs") === B("longs"), "Right")
   }
 
-  IGNORE_ORDER_testSparkResultsAreEqual2("Test hash full join", longsDf, biggerLongsDf,
-    conf = shuffledJoinConf) {
-    (A, B) => A.join(B, A("longs") === B("longs"), "FullOuter")
-  }
-
   IGNORE_ORDER_testSparkResultsAreEqual2("Test cross join", longsDf, biggerLongsDf,
     conf = shuffledJoinConf) {
     (A, B) => A.join(B.hint("broadcast"), A("longs") < B("longs"), "Cross")

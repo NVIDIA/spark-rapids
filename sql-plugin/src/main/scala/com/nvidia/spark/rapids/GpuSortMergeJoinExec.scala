@@ -17,8 +17,9 @@
 package com.nvidia.spark.rapids
 
 import org.apache.spark.internal.Logging
+import org.apache.spark.sql.catalyst.plans.{ExistenceJoin, FullOuter, InnerLike, JoinType, LeftAnti, LeftOuter, LeftSemi, RightOuter}
 import org.apache.spark.sql.execution.SortExec
-import org.apache.spark.sql.execution.joins.{BuildRight, SortMergeJoinExec}
+import org.apache.spark.sql.execution.joins.{BuildLeft, BuildRight, SortMergeJoinExec}
 
 class GpuSortMergeJoinMeta(
     join: SortMergeJoinExec,
@@ -37,8 +38,14 @@ class GpuSortMergeJoinMeta(
   override val childExprs: Seq[BaseExprMeta[_]] = leftKeys ++ rightKeys ++ condition
 
   override def tagPlanForGpu(): Unit = {
-    // Use conditions from Hash Join
-    GpuHashJoin.tagJoin(this, join.joinType, join.leftKeys, join.rightKeys, join.condition)
+
+    join.joinType match {
+      case FullOuter =>
+        willNotWorkOnGpu("GpuShuffleHashJoin does not support FullOuter joins")
+      case _ =>
+        // Use conditions from Hash Join
+        GpuHashJoin.tagJoin(this, join.joinType, join.leftKeys, join.rightKeys, join.condition)
+    }
 
     if (!conf.enableReplaceSortMergeJoin) {
       willNotWorkOnGpu(s"Not replacing sort merge join with hash join, " +
@@ -64,13 +71,30 @@ class GpuSortMergeJoinMeta(
   }
 
   override def convertToGpu(): GpuExec = {
+    val buildSide = if (canBuildRight(join.joinType)) {
+      BuildRight
+    } else if (canBuildLeft(join.joinType)) {
+      BuildLeft
+    } else {
+      throw new IllegalStateException(s"Cannot build either side for ${join.joinType} join")
+    }
     GpuShuffledHashJoinExec(
       leftKeys.map(_.convertToGpu()),
       rightKeys.map(_.convertToGpu()),
       join.joinType,
-      BuildRight, // just hardcode one side
+      buildSide,
       condition.map(_.convertToGpu()),
       childPlans(0).convertIfNeeded(),
       childPlans(1).convertIfNeeded())
+  }
+
+  private def canBuildRight(joinType: JoinType): Boolean = joinType match {
+    case _: InnerLike | LeftOuter | LeftSemi | LeftAnti | _: ExistenceJoin => true
+    case _ => false
+  }
+
+  private def canBuildLeft(joinType: JoinType): Boolean = joinType match {
+    case _: InnerLike | RightOuter => true
+    case _ => false
   }
 }
