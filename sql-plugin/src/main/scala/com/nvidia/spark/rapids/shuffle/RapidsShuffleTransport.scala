@@ -538,8 +538,9 @@ class DirectByteBufferPool(bufferSize: Long) extends Logging {
   * @param bb buffer to wrap
   * @param pool optional pool
   */
-class RefCountedDirectByteBuffer(bb: ByteBuffer,
-                                 pool: Option[DirectByteBufferPool] = None) extends AutoCloseable {
+class RefCountedDirectByteBuffer(
+    bb: ByteBuffer,
+    pool: Option[DirectByteBufferPool] = None) extends AutoCloseable {
   assert(bb.isDirect, "Only direct buffers are supported")
 
   var refCount: Int = 0

@@ -25,6 +25,7 @@ import com.nvidia.spark.rapids._
 
 import org.apache.spark.TaskContext
 import org.apache.spark.internal.Logging
+import org.apache.spark.shuffle.RapidsShuffleFetchFailedException
 import org.apache.spark.sql.rapids.{GpuShuffleEnv, ShuffleMetricsUpdater}
 import org.apache.spark.sql.vectorized.ColumnarBatch
 import org.apache.spark.storage.{BlockId, BlockManagerId, ShuffleBlockBatchId, ShuffleBlockId}
@@ -47,14 +48,39 @@ class RapidsShuffleIterator(
     rapidsConf: RapidsConf,
     transport: RapidsShuffleTransport,
     blocksByAddress: Array[(BlockManagerId, Seq[(BlockId, Long, Int)])],
-    metricsUpdater: ShuffleMetricsUpdater)
+    metricsUpdater: ShuffleMetricsUpdater,
+    catalog: ShuffleReceivedBufferCatalog = GpuShuffleEnv.getReceivedCatalog)
   extends Iterator[ColumnarBatch]
     with Logging {
 
-  // Used for the producer/consumer pattern, where the producers are a
-  // set of [[RapidsShuffleClient]]s, and the consumer is the executor task,
-  // which is blocked in the iterator's next call
-  private[this] val resolvedBatches = new LinkedBlockingQueue[ShuffleReceivedBufferId]()
+  /**
+    * General trait encapsulating either a buffer or an error. Used to hand off batches
+    * to tasks (in the good case), or exceptions (in the bad case)
+    */
+  trait ShuffleClientResult
+
+  /**
+    * A result for a successful buffer received
+    * @param bufferId - the shuffle received buffer id as tracked in the catalog
+    */
+  case class BufferReceived(
+      bufferId: ShuffleReceivedBufferId) extends ShuffleClientResult
+
+  /**
+    * A result for a failed attempt at receiving block metadata, or corresponding batches.
+    * @param blockManagerId - the offending peer block manager id
+    * @param blockId - shuffle block id that we were fetching
+    * @param mapIndex - the mapIndex (as returned by the `MapOutputTracker` in
+    *                 `blocksByAddress`
+    * @param errorMessage - a human-friendly error to report
+    */
+  case class TransferError(
+      blockManagerId: BlockManagerId,
+      blockId: ShuffleBlockBatchId,
+      mapIndex: Int,
+      errorMessage: String) extends ShuffleClientResult
+
+  private[this] val resolvedBatches = new LinkedBlockingQueue[ShuffleClientResult]()
 
   // Used to track requests that are pending where the number of [[ColumnarBatch]] results is
   // not known yet
@@ -106,7 +132,13 @@ class RapidsShuffleIterator(
 
   private var started: Boolean = false
 
-  private val taskContext = TaskContext.get
+  // NOTE: `mapIndex` is utilized by the `FetchFailedException` to reference
+  // a map output by index from the statuses collection in `MapOutputTracker`.
+  //
+  // This is different than the `mapId` in the `ShuffleBlockBatchId`, because
+  // as of Spark 3.x the default shuffle protocol overloads `mapId` to be
+  // `taskAttemptId`.
+  case class BlockIdMapIndex(id: ShuffleBlockBatchId, mapIndex: Int)
 
   def start(): Unit = {
     logInfo(s"Fetching ${blocksByAddress.size} blocks.")
@@ -118,25 +150,44 @@ class RapidsShuffleIterator(
 
     (local ++ remote).foreach {
       case (blockManagerId: BlockManagerId, blockIds: Seq[(BlockId, Long, Int)]) => {
-        val shuffleRequests: Seq[ShuffleBlockBatchId] = blockIds.map { blockId =>
-          /**
-            * [[ShuffleBlockBatchId]] is an internal optimization in Spark, which will likely never
-            * see it unless explicitly enabled.
-            *
-            * There are other things that can turn it off, but we really don't care too much
-            * about it.
-            */
-          blockId._1 match {
-            case sbbid: ShuffleBlockBatchId => sbbid
-            case sbid: ShuffleBlockId =>
-              ShuffleBlockBatchId(sbid.shuffleId, sbid.mapId, sbid.reduceId, sbid.reduceId)
-            case _ =>
-              throw new IllegalArgumentException(
-                s"${blockId.getClass} $blockId is not currently supported")
+        val shuffleRequestsMapIndex: Seq[BlockIdMapIndex] =
+          blockIds.map { case (blockId, _, mapIndex) =>
+            /**
+              * [[ShuffleBlockBatchId]] is an internal optimization in Spark, which will likely
+              * never see it unless explicitly enabled.
+              *
+              * There are other things that can turn it off, but we really don't care too much
+              * about it.
+              */
+            blockId match {
+              case sbbid: ShuffleBlockBatchId => BlockIdMapIndex(sbbid, mapIndex)
+              case sbid: ShuffleBlockId =>
+                BlockIdMapIndex(
+                  ShuffleBlockBatchId(sbid.shuffleId, sbid.mapId, sbid.reduceId, sbid.reduceId),
+                    mapIndex)
+              case _ =>
+                throw new IllegalArgumentException(
+                  s"${blockId.getClass} $blockId is not currently supported")
+            }
+          }
+
+        val client = try {
+          transport.makeClient(localExecutorId, blockManagerId)
+        } catch {
+          case t: Throwable => {
+            val errorMsg = s"Error getting client to fetch ${blockIds} from ${blockManagerId}: ${t}"
+            logError(errorMsg, t)
+            val BlockIdMapIndex(firstId, firstMapIndex) = shuffleRequestsMapIndex.head
+            throw new RapidsShuffleFetchFailedException(
+              blockManagerId,
+              firstId.shuffleId,
+              firstId.mapId,
+              firstMapIndex,
+              firstId.startReduceId,
+              errorMsg)
           }
         }
 
-        val client = transport.makeClient(localExecutorId, blockManagerId)
         val handler = new RapidsShuffleFetchHandler {
           private[this] var clientExpectedBatches = 0L
           private[this] var clientResolvedBatches = 0L
@@ -144,13 +195,13 @@ class RapidsShuffleIterator(
             if (expectedBatches == 0) {
               throw new IllegalStateException(
                 s"Received an invalid response from shuffle server: " +
-                  s"0 expected batches for $shuffleRequests")
+                  s"0 expected batches for $shuffleRequestsMapIndex")
             }
             pendingFetchesByAddress.remove(blockManagerId)
             batchesInFlight = batchesInFlight + expectedBatches
             totalBatchesExpected = totalBatchesExpected + expectedBatches
             clientExpectedBatches = expectedBatches
-            logDebug(s"Task: ${taskContext.taskAttemptId()} Client $blockManagerId " +
+            logDebug(s"Task: $taskAttemptId Client $blockManagerId " +
               s"Expecting $expectedBatches batches, $batchesInFlight batches currently in " +
               s"flight, total expected by this client: $clientExpectedBatches, total resolved by " +
               s"this client: $clientResolvedBatches")
@@ -167,14 +218,14 @@ class RapidsShuffleIterator(
                 }
                 totalBatchesResolved = totalBatchesResolved + 1
                 clientResolvedBatches = clientResolvedBatches + 1
-                resolvedBatches.offer(bufferId)
+                resolvedBatches.offer(BufferReceived(bufferId))
 
                 if (clientExpectedBatches == clientResolvedBatches) {
-                  logDebug(s"Task: ${taskContext.taskAttemptId()} Client $blockManagerId is " +
+                  logDebug(s"Task: $taskAttemptId Client $blockManagerId is " +
                     s"done fetching batches. Total batches expected $clientExpectedBatches, " +
                     s"total batches resolved $clientResolvedBatches.")
                 } else {
-                  logDebug(s"Task: ${taskContext.taskAttemptId()} Client $blockManagerId is " +
+                  logDebug(s"Task: $taskAttemptId Client $blockManagerId is " +
                     s"NOT done fetching batches. Total batches expected $clientExpectedBatches, " +
                     s"total batches resolved $clientResolvedBatches.")
                 }
@@ -182,10 +233,20 @@ class RapidsShuffleIterator(
                 nvtxRange.close()
               }
             }
+
+          override def transferError(errorMessage: String): Unit = resolvedBatches.synchronized {
+            // If Spark detects a single fetch failure, the whole task has failed
+            // as per `FetchFailedException`. In the future `mapIndex` will come from the
+            // error callback.
+            shuffleRequestsMapIndex.map { case BlockIdMapIndex(id, mapIndex) =>
+              resolvedBatches.offer(TransferError(
+              blockManagerId, id, mapIndex, errorMessage))
+            }
+          }
         }
 
-        logInfo(s"Client $blockManagerId triggered, for ${shuffleRequests.size} blocks")
-        client.doFetch(shuffleRequests, handler)
+        logInfo(s"Client $blockManagerId triggered, for ${shuffleRequestsMapIndex.size} blocks")
+        client.doFetch(shuffleRequestsMapIndex.map(_.id), handler)
         clients = clients :+ client
       }
     }
@@ -194,21 +255,31 @@ class RapidsShuffleIterator(
       s"${clients.size} clients.")
   }
 
-  taskContext.addTaskCompletionListener[Unit] { _ =>
-    //TODO: on task completion we currently don't ask clients to stop/clean resources
+  private[this] def receiveBufferCleaner(): Unit = {
     if (hasNext) {
-      logWarning(s"Iterator for task ${taskContext.taskAttemptId()} closing, " +
-        s"but it is not done. Closing ${resolvedBatches.size()} resolved batches!!")
-      resolvedBatches.forEach(id => {
-        GpuShuffleEnv.getReceivedCatalog.removeBuffer(id)
-      })
+      logWarning(s"Iterator for task ${taskAttemptId} closing, " +
+          s"but it is not done. Closing ${resolvedBatches.size()} resolved batches!!")
+      resolvedBatches.forEach {
+        case BufferReceived(bufferId) =>
+          GpuShuffleEnv.getReceivedCatalog.removeBuffer(bufferId)
+        case _ =>
+      }
     }
   }
+
+  // Used to print log messages, defaulting to a value for unit tests
+  private[this] lazy val taskAttemptId: String =
+    taskContext.map(_.taskAttemptId().toString)
+        .getOrElse("testTaskAttempt")
+
+  private[this] val taskContext: Option[TaskContext] = Option(TaskContext.get())
+
+  //TODO: on task completion we currently don't ask clients to stop/clean resources
+  taskContext.foreach(_.addTaskCompletionListener[Unit](_ => receiveBufferCleaner()))
 
   override def next(): ColumnarBatch = {
     var cb: ColumnarBatch = null
     var sb: RapidsBuffer = null
-    val catalog = GpuShuffleEnv.getReceivedCatalog
     val range = new NvtxRange(s"RapidshuffleIterator.next", NvtxColor.RED)
 
     // If N tasks downstream are accumulating memory we run the risk OOM
@@ -226,7 +297,7 @@ class RapidsShuffleIterator(
     // fetches and so it could produce device memory. Note this is not allowing for some external
     // thread to schedule the fetches for us, it may be something we consider in the future, given
     // memory pressure.
-    GpuSemaphore.acquireIfNecessary(taskContext)
+    taskContext.foreach(GpuSemaphore.acquireIfNecessary)
 
     if (!started) {
       // kick off if we haven't already
@@ -235,23 +306,35 @@ class RapidsShuffleIterator(
     }
 
     val blockedStart = System.currentTimeMillis()
-    val id = resolvedBatches.take()
+    val result = resolvedBatches.take()
     val blockedTime = System.currentTimeMillis() - blockedStart
-
-    val nvtxRangeAfterGettingBatch = new NvtxRange("RapidsShuffleIterator.gotBatch",
-      NvtxColor.PURPLE)
-    try {
-      sb = catalog.acquireBuffer(id)
-      cb = sb.getColumnarBatch
-
-      metricsUpdater.update(blockedTime, 1, sb.size, cb.numRows())
-    } finally {
-      nvtxRangeAfterGettingBatch.close()
-      range.close()
-      if (sb != null) {
-        sb.close()
-      }
-      catalog.removeBuffer(id)
+    result match {
+      case BufferReceived(bufferId) =>
+        val nvtxRangeAfterGettingBatch = new NvtxRange("RapidsShuffleIterator.gotBatch",
+          NvtxColor.PURPLE)
+        try {
+          sb = catalog.acquireBuffer(bufferId)
+          cb = sb.getColumnarBatch
+          metricsUpdater.update(blockedTime, 1, sb.size, cb.numRows())
+        } finally {
+          nvtxRangeAfterGettingBatch.close()
+          range.close()
+          if (sb != null) {
+            sb.close()
+          }
+          catalog.removeBuffer(bufferId)
+        }
+      case TransferError(blockManagerId, shuffleBlockBatchId, mapIndex, errorMessage) =>
+        taskContext.foreach(GpuSemaphore.releaseIfNecessary)
+        val errorMsg = s"Transfer error detected by shuffle iterator, failing task. ${errorMessage}"
+        logError(errorMsg)
+        throw new RapidsShuffleFetchFailedException(
+          blockManagerId,
+          shuffleBlockBatchId.shuffleId,
+          shuffleBlockBatchId.mapId,
+          mapIndex,
+          shuffleBlockBatchId.startReduceId,
+          errorMsg)
     }
     cb
   }
