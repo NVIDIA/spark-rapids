@@ -71,8 +71,9 @@ Name | Description | Default Value
 
 ## Supported GPU Operators and Fine Tuning 
 _The RAPIDS Accelerator for Apache Spark_ can be configured to enable or disable specific 
-GPU accelerated expressions.  Enabling or disabling an expression controls which operators 
-run on the CPU or GPU.  
+GPU accelerated expressions.  Enabled expressions are candidates for GPU execution. If the 
+expression is configured as disabled, the accelerator plugin will not attempt replacement, 
+and it will run on the CPU.  
 
 Please leverage the [`spark.rapids.sql.explain`](#sql.explain) setting to get
 feedback from the plugin as to why parts of a query may not be executing on the GPU.
