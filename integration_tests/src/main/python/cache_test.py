@@ -57,7 +57,6 @@ all_gen_filters = [(StringGen(), "rlike(a, '^(?=.{1,5}$).*')"),
                             pytest.param((FloatGen(special_cases=[FLOAT_MIN, FLOAT_MAX, 0.0, 1.0, -1.0]), "a < 1000"), marks=[incompat]),
                             pytest.param((DoubleGen(special_cases=double_special_cases),"a < 1000"), marks=[incompat])]
 
-conf={"spark.rapids.sql.explain":"ALL"}
 @pytest.mark.parametrize('data_gen', all_gen, ids=idfn)
 @pytest.mark.parametrize('join_type', ['Left', 'Right', 'Inner', 'LeftSemi', 'LeftAnti'], ids=idfn)
 def test_cache_join(data_gen, join_type):
@@ -67,14 +66,14 @@ def test_cache_join(data_gen, join_type):
     def do_join(spark):
         left, right = create_df(spark, data_gen, 500, 500)
         return left.join(right, left.a == right.r_a, join_type).cache()
-    cached_df_cpu = with_cpu_session(do_join, conf)
+    cached_df_cpu = with_cpu_session(do_join)
     if (join_type == 'LeftAnti' or join_type == 'LeftSemi'):
         sort = [asc("a"), asc("b")]
     else:
         sort = [asc("a"), asc("b"), asc("r_a"), asc("r_b")]
 
     from_cpu = cached_df_cpu.sort(sort).collect()
-    cached_df_gpu = with_gpu_session(do_join, conf)
+    cached_df_gpu = with_gpu_session(do_join)
     from_gpu = cached_df_gpu.sort(sort).collect()
     assert_equal(from_cpu, from_gpu)
 
@@ -93,7 +92,7 @@ def test_cached_join_filter(data_gen, join_type):
     def do_join(spark):
         left, right = create_df(spark, data, 500, 500)
         return left.join(right, left.a == right.r_a, join_type).cache()
-    cached_df_cpu = with_cpu_session(do_join, conf)
+    cached_df_cpu = with_cpu_session(do_join)
     if (join_type == 'LeftAnti' or join_type == 'LeftSemi'):
         sort_columns = [asc("a"), asc("b")]
     else:
@@ -102,7 +101,7 @@ def test_cached_join_filter(data_gen, join_type):
     join_from_cpu = cached_df_cpu.sort(sort_columns).collect()
     filter_from_cpu = cached_df_cpu.filter(filter).sort(sort_columns).collect()
 
-    cached_df_gpu = with_gpu_session(do_join, conf)
+    cached_df_gpu = with_gpu_session(do_join)
     join_from_gpu = cached_df_gpu.sort(sort_columns).collect()
     filter_from_gpu = cached_df_gpu.filter(filter).sort(sort_columns).collect()
 
@@ -118,14 +117,14 @@ def test_cache_broadcast_hash_join(data_gen, join_type):
     def do_join(spark):
         left, right = create_df(spark, data_gen, 500, 500)
         return left.join(right.hint("broadcast"), left.a == right.r_a, join_type).cache()
-    cached_df_cpu = with_cpu_session(do_join, conf)
+    cached_df_cpu = with_cpu_session(do_join)
     if (join_type == 'LeftAnti' or join_type == 'LeftSemi'):
         sort = [asc("a"), asc("b")]
     else:
         sort = [asc("a"), asc("b"), asc("r_a"), asc("r_b")]
 
     from_cpu = cached_df_cpu.sort(sort).collect()
-    cached_df_gpu = with_gpu_session(do_join, conf)
+    cached_df_gpu = with_gpu_session(do_join)
     from_gpu = cached_df_gpu.sort(sort).collect()
     assert_equal(from_cpu, from_gpu)
 
@@ -133,7 +132,6 @@ def test_cache_broadcast_hash_join(data_gen, join_type):
 shuffled_conf = {"spark.sql.autoBroadcastJoinThreshold": "160",
                  "spark.sql.join.preferSortMergeJoin": "false",
                  "spark.sql.shuffle.partitions": "2",
-                 "spark.rapids.sql.explain": "ALL",
                  "spark.rapids.sql.exec.BroadcastNestedLoopJoinExec": "true"}
 
 @pytest.mark.parametrize('data_gen', all_gen, ids=idfn)
@@ -185,12 +183,12 @@ def test_cache_posexplode_makearray(spark_tmp_path, data_gen):
     data_path_cpu = spark_tmp_path + '/PARQUET_DATA_CPU'
     def posExplode(spark):
         return four_op_df(spark, data_gen).selectExpr('posexplode(array(b, c, d))', 'a').cache()
-    cached_df_cpu = with_cpu_session(posExplode, conf)
+    cached_df_cpu = with_cpu_session(posExplode)
     cached_df_cpu.write.parquet(data_path_cpu)
     from_cpu = with_cpu_session(lambda spark: spark.read.parquet(data_path_cpu))
 
     data_path_gpu = spark_tmp_path + '/PARQUET_DATA_GPU'
-    cached_df_gpu = with_gpu_session(posExplode, conf)
+    cached_df_gpu = with_gpu_session(posExplode)
     cached_df_gpu.write.parquet(data_path_gpu)
     from_gpu = with_gpu_session(lambda spark: spark.read.parquet(data_path_gpu))
 
@@ -205,10 +203,10 @@ def test_cache_expand_exec(data_gen):
             ('a', data_gen),
             ('b', IntegerGen())], nullable=False), length=length, seed=seed)
 
-    cached_df_cpu = with_cpu_session(op_df, conf).cache()
+    cached_df_cpu = with_cpu_session(op_df).cache()
     from_cpu = with_cpu_session(lambda spark: cached_df_cpu.rollup(f.col("a"), f.col("b")).agg(f.count(f.col("b"))))
 
-    cached_df_gpu = with_gpu_session(op_df, conf).cache()
+    cached_df_gpu = with_gpu_session(op_df).cache()
     from_gpu = with_cpu_session(lambda spark: cached_df_gpu.rollup(f.col("a"), f.col("b")).agg(f.count(f.col("b"))))
 
     sort_col = [asc("a"), asc("b"), asc("count(b)")]
