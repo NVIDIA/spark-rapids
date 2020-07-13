@@ -664,10 +664,11 @@ object RapidsConf {
     if (asTable) {
       println("")
       // scalastyle:off line.size.limit
-      println("""## Fine Tuning
-        |_The RAPIDS Accelerator for Apache Spark_ can be further configured to enable or disable
-        |specific expressions and to control what parts of the query execute using the GPU or
-        |the CPU.
+      println("""## Supported GPU Operators and Fine Tuning 
+        |_The RAPIDS Accelerator for Apache Spark_ can be configured to enable or disable specific 
+        |GPU accelerated expressions.  Enabled expressions are candidates for GPU execution. If the 
+        |expression is configured as disabled, the accelerator plugin will not attempt replacement, 
+        |and it will run on the CPU.  
         |
         |Please leverage the [`spark.rapids.sql.explain`](#sql.explain) setting to get
         |feedback from the plugin as to why parts of a query may not be executing on the GPU.
