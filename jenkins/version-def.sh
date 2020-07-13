@@ -22,7 +22,7 @@ set -e
 PRE_IFS=$IFS
 IFS=";"
 for VAR in $OVERWRITE_PARAMS;do
-    echo $VAR && declare $VAR
+    echo $VAR && export $VAR
 done
 IFS=$PRE_IFS
 
