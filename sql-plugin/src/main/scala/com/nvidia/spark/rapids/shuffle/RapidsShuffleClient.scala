@@ -33,8 +33,26 @@ import org.apache.spark.storage.ShuffleBlockBatchId
   * expected number of batches (Tables) is, and the ids for each table as they are received.
   */
 trait RapidsShuffleFetchHandler {
+  /**
+    * After a response for shuffle metadata is received, the expected number of columnar
+    * batches is communicated back to the caller via this method.
+    * @param expectedBatches - number of columnar batches
+    */
   def start(expectedBatches: Int): Unit
+
+  /**
+    * Called when a buffer is received and has been handed off to the catalog.
+    * @param bufferId - a tracked shuffle buffer id
+    */
   def batchReceived(bufferId: ShuffleReceivedBufferId): Unit
+
+  /**
+    * Called when the transport layer is not able to handle a fetch error for metadata
+    * or buffer fetches.
+    *
+    * @param errorMessage - a string containing an error message
+    */
+  def transferError(errorMessage: String): Unit
 }
 
 /**
@@ -153,6 +171,12 @@ class BufferReceiveState(
     */
   private[this] var isClosed = false
 
+  /**
+    * Becomes true when there is an error detected, allowing the client to close this
+    * [[BufferReceiveState]] prematurely.
+    */
+  private[this] var errorOcurred = false
+
   override def toString: String = {
     s"BufferReceiveState(isDone=$isDone, currentRequestDone=$currentRequestDone, " +
       s"requests=${requests.size}, currentReqIx=$currentRequestIndex, " +
@@ -189,7 +213,7 @@ class BufferReceiveState(
       if (currentRequestDone) {
         require(currentRequestOffset == currentRequest.getLength,
           "Current request marked as done, but not all bounce buffers were consumed?")
-        logDebug(s"Done copying ${currentRequest.tag}")
+        logDebug(s"Done copying ${TransportUtils.formatTag(currentRequest.tag)}")
         val res = buff
         // The buffer [[buff]] is being handed off to the caller.
         // It is the job of the caller to close it.
@@ -197,8 +221,8 @@ class BufferReceiveState(
         needsCleanup = false
         Some(res)
       } else {
-        logDebug(s"More copying left for ${currentRequest.tag}, current offset is " +
-          s"${currentRequestOffset} out of ${currentRequest.getLength}")
+        logDebug(s"More copying left for ${TransportUtils.formatTag(currentRequest.tag)}, " +
+           s"current offset is ${currentRequestOffset} out of ${currentRequest.getLength}")
         needsCleanup = false
         None
       }
@@ -314,8 +338,13 @@ class BufferReceiveState(
   def getCurrentRequestRemaining: Long = currentRequestRemaining
   def getCurrentRequestOffset : Long = currentRequestOffset
 
+  def closeWithError(): Unit = synchronized {
+    errorOcurred = true
+    close()
+  }
+
   override def close(): Unit = synchronized {
-    require(isDone)
+    require(isDone || errorOcurred)
     if (isClosed) {
       throw new IllegalStateException("ALREADY CLOSED")
     }
@@ -353,7 +382,9 @@ class RapidsShuffleClient(
     transport: RapidsShuffleTransport,
     exec: Executor,
     clientCopyExecutor: Executor,
-    maximumMetadataSize: Long) extends Logging {
+    maximumMetadataSize: Long,
+    devStorage: RapidsDeviceMemoryStore = GpuShuffleEnv.getDeviceStorage,
+    catalog: ShuffleReceivedBufferCatalog = GpuShuffleEnv.getReceivedCatalog) extends Logging {
 
   object ShuffleClientOps {
     /**
@@ -501,18 +532,15 @@ class RapidsShuffleClient(
     * @param shuffleRequests blocks to fetch
     * @param handler iterator to callback to
     */
-  private[this] def doHandleMetadataResponse(tx: Transaction,
-                                             resp: RefCountedDirectByteBuffer,
-                                             shuffleRequests: Seq[ShuffleBlockBatchId],
-                                             handler: RapidsShuffleFetchHandler): Unit = {
+  private[this] def doHandleMetadataResponse(
+      tx: Transaction,
+      resp: RefCountedDirectByteBuffer,
+      shuffleRequests: Seq[ShuffleBlockBatchId],
+      handler: RapidsShuffleFetchHandler): Unit = {
     val start = System.currentTimeMillis()
     val handleMetaRange = new NvtxRange("Client.handleMeta", NvtxColor.CYAN)
     try {
       tx.getStatus match {
-        case TransactionStatus.Error =>
-          throw new IllegalStateException(s"Error in metadata request transaction $tx")
-        case TransactionStatus.Cancelled =>
-          throw new IllegalStateException(s"Cancelled metadata request transaction, not handled.")
         case TransactionStatus.Success =>
           // start the receives
           val respBuffer = resp.getBuffer()
@@ -537,7 +565,8 @@ class RapidsShuffleClient(
             asyncOrBlock(FetchRetry(shuffleRequests, handler, metadataResponse.fullResponseSize()))
           }
         case _ =>
-          throw new IllegalStateException(s"Transaction is invalid state $tx")
+          handler.transferError(
+            tx.getErrorMessage.getOrElse(s"Unsuccessful metadata request ${tx}"))
       }
     } finally {
       logDebug(s"Metadata response handled in ${TransportUtils.timeDiffMs(start)} ms")
@@ -563,7 +592,7 @@ class RapidsShuffleClient(
     *                           future). The requests included in this state object originated in
     *                           the transport's throttle logic.
     */
-  private[this] def doIssueBufferReceives(bufferReceiveState: BufferReceiveState): Unit = {
+  private[shuffle] def doIssueBufferReceives(bufferReceiveState: BufferReceiveState): Unit = {
     logDebug(s"At issue for ${bufferReceiveState}, " +
       s"remaining: ${bufferReceiveState.getCurrentRequestRemaining}, " +
       s"offset: ${bufferReceiveState.getCurrentRequestOffset}")
@@ -593,10 +622,21 @@ class RapidsShuffleClient(
 
     connection.receive(buffersToReceive,
       tx => {
-        // TODO: during code review we agreed to make this receive per buffer, s.t. buffers could
-        //  begin go get freed earlier and likely out of order.
-        asyncOnCopyThread(HandleBounceBufferReceive(tx, bufferReceiveState,
-          currentRequest, buffersToReceive))
+        tx.getStatus match {
+          case TransactionStatus.Success =>
+            // TODO: during code review we agreed to make this receive per buffer, s.t.
+            //  buffers could be freed earlier and likely out of order.
+            asyncOnCopyThread(HandleBounceBufferReceive(tx, bufferReceiveState,
+              currentRequest, buffersToReceive))
+          case _ => try {
+            val errMsg = s"Unsuccessful buffer receive ${tx}"
+            logError(errMsg)
+            currentRequest.handler.transferError(errMsg)
+          } finally {
+            tx.close()
+            bufferReceiveState.closeWithError()
+          }
+        }
       })
   }
 
@@ -663,7 +703,6 @@ class RapidsShuffleClient(
   private def queueTransferRequests(metaResponse: MetadataResponse,
                                     handler: RapidsShuffleFetchHandler): Unit = {
     val allTables = metaResponse.tableMetasLength()
-
     logDebug(s"Queueing transfer requests for ${allTables} tables " +
       s"from ${connection.getPeerExecutorId}")
 
@@ -753,13 +792,11 @@ class RapidsShuffleClient(
     * @param meta [[TableMeta]] describing [[buffer]]
     * @return the [[RapidsBufferId]] to be used to look up the buffer from catalog
     */
-  private def track(buffer: DeviceMemoryBuffer, meta: TableMeta): RapidsBufferId = {
-    val catalog = GpuShuffleEnv.getReceivedCatalog
+  private[shuffle] def track(buffer: DeviceMemoryBuffer, meta: TableMeta): RapidsBufferId = {
     val id: ShuffleReceivedBufferId = catalog.nextShuffleReceivedBufferId()
     logDebug(s"Adding buffer id ${id} to catalog")
     if (buffer != null) {
       // add the buffer to the catalog so it is available for spill
-      val devStorage = GpuShuffleEnv.getDeviceStorage
       devStorage.addBuffer(id, buffer, meta, SpillPriorities.INPUT_FROM_SHUFFLE_PRIORITY)
     } else {
       // no device data, just tracking metadata

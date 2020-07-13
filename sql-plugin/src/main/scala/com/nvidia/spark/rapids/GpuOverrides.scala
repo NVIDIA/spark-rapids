@@ -42,7 +42,7 @@ import org.apache.spark.sql.execution.datasources.v2.csv.CSVScan
 import org.apache.spark.sql.execution.datasources.v2.orc.OrcScan
 import org.apache.spark.sql.execution.datasources.v2.parquet.ParquetScan
 import org.apache.spark.sql.execution.exchange.{BroadcastExchangeExec, ShuffleExchangeExec}
-import org.apache.spark.sql.execution.joins.{BroadcastHashJoinExec, BroadcastNestedLoopJoinExec, ShuffledHashJoinExec, SortMergeJoinExec}
+import org.apache.spark.sql.execution.joins.{BroadcastHashJoinExec, BroadcastNestedLoopJoinExec, CartesianProductExec, ShuffledHashJoinExec, SortMergeJoinExec}
 import org.apache.spark.sql.execution.window.WindowExec
 import org.apache.spark.sql.rapids._
 import org.apache.spark.sql.rapids.catalyst.expressions.GpuRand
@@ -137,11 +137,15 @@ abstract class ReplacementRule[INPUT <: BASE, BASE, WRAP_TYPE <: RapidsMeta[INPU
     None
   }
 
-  def confHelp(asTable: Boolean = false): Unit = {
+  def confHelp(asTable: Boolean = false, sparkSQLFunctions: Option[String] = None): Unit = {
     val notesMsg = notes()
     if (asTable) {
       import ConfHelper.makeConfAnchor
-      print(s"${makeConfAnchor(confKey)}|$desc|${notesMsg.isEmpty}|")
+      print(s"${makeConfAnchor(confKey)}")
+      if (sparkSQLFunctions.isDefined) {
+        print(s"|${sparkSQLFunctions.get}")
+      }
+      print(s"|$desc|${notesMsg.isEmpty}|")
       if (notesMsg.isDefined) {
         print(s"${notesMsg.get}")
       } else {
@@ -151,6 +155,9 @@ abstract class ReplacementRule[INPUT <: BASE, BASE, WRAP_TYPE <: RapidsMeta[INPU
     } else {
       println(s"$confKey:")
       println(s"\tEnable (true) or disable (false) the $tag $operationName.")
+      if (sparkSQLFunctions.isDefined) {
+        println(s"\tsql function: ${sparkSQLFunctions.get}")
+      }
       println(s"\t$desc")
       if (notesMsg.isDefined) {
         println(s"\t${notesMsg.get}")
@@ -1719,6 +1726,22 @@ object GpuOverrides {
     exec[BroadcastNestedLoopJoinExec](
       "Implementation of join using brute force",
       (join, conf, p, r) => new GpuBroadcastNestedLoopJoinMeta(join, conf, p, r))
+        .disabledByDefault("large joins can cause out of memory errors"),
+    exec[CartesianProductExec](
+      "Implementation of join using brute force",
+      (join, conf, p, r) => new SparkPlanMeta[CartesianProductExec](join, conf, p, r) {
+        val condition: Option[BaseExprMeta[_]] =
+          join.condition.map(GpuOverrides.wrapExpr(_, conf, Some(this)))
+
+        override val childExprs: Seq[BaseExprMeta[_]] = condition.toSeq
+
+        override def convertToGpu(): GpuExec =
+          GpuCartesianProductExec(
+            childPlans.head.convertIfNeeded(),
+            childPlans(1).convertIfNeeded(),
+            condition.map(_.convertToGpu()),
+            conf.gpuTargetBatchSizeBytes)
+      })
         .disabledByDefault("large joins can cause out of memory errors"),
     exec[SortMergeJoinExec](
       "Sort merge join, replacing with shuffled hash join",

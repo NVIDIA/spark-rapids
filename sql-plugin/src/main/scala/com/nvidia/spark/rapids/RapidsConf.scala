@@ -19,11 +19,12 @@ import java.io.{File, FileOutputStream}
 import java.util
 
 import scala.collection.JavaConverters._
-import scala.collection.mutable.ListBuffer
+import scala.collection.mutable.{HashMap, ListBuffer}
 
 import org.apache.spark.SparkConf
 import org.apache.spark.internal.Logging
 import org.apache.spark.network.util.{ByteUnit, JavaUtils}
+import org.apache.spark.sql.catalyst.analysis.FunctionRegistry
 import org.apache.spark.sql.internal.SQLConf
 
 object ConfHelper {
@@ -90,6 +91,25 @@ object ConfHelper {
     // The anchor cannot be too long, so for now
     val a = key.replaceFirst("spark.rapids.", "")
     "<a name=\"" + s"$a" + "\"></a>" + t
+  }
+
+  def getSqlFunctionsForClass[T](exprClass: Class[T]): Option[Seq[String]] = {
+    sqlFunctionsByClass.get(exprClass.getCanonicalName)
+  }
+
+  lazy val sqlFunctionsByClass: Map[String, Seq[String]] = {
+    val functionsByClass = new HashMap[String, Seq[String]]
+    FunctionRegistry.expressions.foreach { case (sqlFn, (expressionInfo, _)) =>
+      val className = expressionInfo.getClassName
+      val fnSeq = functionsByClass.getOrElse(className, Seq[String]())
+      val fnCleaned = if (sqlFn != "|") {
+        sqlFn
+      } else {
+        "\\|"
+      }
+      functionsByClass.update(className, fnSeq :+ s"`$fnCleaned`")
+    }
+    functionsByClass.toMap
   }
 }
 
@@ -597,6 +617,12 @@ object RapidsConf {
     println("-----|-------------|---------------|------------------")
   }
 
+  private def printToggleHeaderWithSqlFunction(category: String): Unit = {
+    printSectionHeader(category)
+    println("Name | SQL Function(s) | Description | Default Value | Notes")
+    println("-----|-----------------|-------------|---------------|------")
+  }
+
   def help(asTable: Boolean = false): Unit = {
     if (asTable) {
       println("---")
@@ -638,10 +664,11 @@ object RapidsConf {
     if (asTable) {
       println("")
       // scalastyle:off line.size.limit
-      println("""## Fine Tuning
-        |_The RAPIDS Accelerator for Apache Spark_ can be further configured to enable or disable
-        |specific expressions and to control what parts of the query execute using the GPU or
-        |the CPU.
+      println("""## Supported GPU Operators and Fine Tuning 
+        |_The RAPIDS Accelerator for Apache Spark_ can be configured to enable or disable specific 
+        |GPU accelerated expressions.  Enabled expressions are candidates for GPU execution. If the 
+        |expression is configured as disabled, the accelerator plugin will not attempt replacement, 
+        |and it will run on the CPU.  
         |
         |Please leverage the [`spark.rapids.sql.explain`](#sql.explain) setting to get
         |feedback from the plugin as to why parts of a query may not be executing on the GPU.
@@ -652,9 +679,16 @@ object RapidsConf {
         |incompatibilities.""".stripMargin)
       // scalastyle:on line.size.limit
 
-      printToggleHeader("Expressions\n")
+      printToggleHeaderWithSqlFunction("Expressions\n")
     }
-    GpuOverrides.expressions.values.toSeq.sortBy(_.tag.toString).foreach(_.confHelp(asTable))
+    GpuOverrides.expressions.values.toSeq.sortBy(_.tag.toString).foreach { rule =>
+      val sqlFunctions =
+        ConfHelper.getSqlFunctionsForClass(rule.tag.runtimeClass).map(_.mkString(", "))
+
+      // this is only for formatting, this is done to ensure the table has a column for a
+      // row where there isn't a SQL function
+      rule.confHelp(asTable, Some(sqlFunctions.getOrElse(" ")))
+    }
     if (asTable) {
       printToggleHeader("Execution\n")
     }

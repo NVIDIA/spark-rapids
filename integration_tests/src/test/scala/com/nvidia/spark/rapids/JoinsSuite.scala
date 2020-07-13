@@ -38,6 +38,7 @@ class JoinsSuite extends SparkQueryCompareTestSuite {
       .set("spark.sql.join.preferSortMergeJoin", "false")
       .set("spark.sql.shuffle.partitions", "2") // hack to try and work around bug in cudf
       .set("spark.rapids.sql.exec.BroadcastNestedLoopJoinExec", "true")
+      .set("spark.rapids.sql.exec.CartesianProductExec", "true")
 
   IGNORE_ORDER_testSparkResultsAreEqual2("Test hash join", longsDf, biggerLongsDf,
     conf = shuffledJoinConf) {
@@ -67,6 +68,11 @@ class JoinsSuite extends SparkQueryCompareTestSuite {
   IGNORE_ORDER_testSparkResultsAreEqual2("Test cross join", longsDf, biggerLongsDf,
     conf = shuffledJoinConf) {
     (A, B) => A.join(B.hint("broadcast"), A("longs") < B("longs"), "Cross")
+  }
+
+  IGNORE_ORDER_testSparkResultsAreEqual2("Test cross join 2", longsDf, biggerLongsDf,
+    conf = shuffledJoinConf) {
+    (A, B) => A.join(B, A("longs") < B("longs"), "Cross")
   }
 
   // test replacement of sort merge join with hash join
