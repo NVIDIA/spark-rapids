@@ -19,7 +19,9 @@ from data_gen import *
 import pyspark.sql.functions as f
 from spark_session import with_cpu_session, with_gpu_session
 from join_test import create_df
-from marks import incompat, allow_non_gpu
+from generate_expr_test import four_op_df
+from marks import incompat, allow_non_gpu, ignore_order
+from pyspark.sql.functions import asc
 
 def test_passing_gpuExpr_as_Expr():
     assert_gpu_and_cpu_are_equal_collect(
@@ -41,26 +43,29 @@ double_special_cases = [
     NEG_DOUBLE_NAN_MAX_VALUE
 ]
 
-all_gen_no_nulls_filters = [(StringGen(nullable=False), "rlike(a, '^(?=.{1,5}$).*')"),
-                            (ByteGen(nullable=False), "a < 100"),
-                            (ShortGen(nullable=False), "a < 100"),
-                            (IntegerGen(nullable=False), "a < 1000"),
-                            (LongGen(nullable=False), "a < 1000"),
-                            (BooleanGen(nullable=False), "a == false"),
-                            (DateGen(nullable=False), "a > '1/21/2012'"),
-                            (TimestampGen(nullable=False), "a > '1/21/2012'"),
-                            pytest.param((FloatGen(nullable=False, special_cases=[FLOAT_MIN, FLOAT_MAX, 0.0, 1.0, -1.0]), "a < 1000"), marks=[incompat]),
-                            pytest.param((DoubleGen(nullable=False, special_cases=double_special_cases),"a < 1000"), marks=[incompat])]
+all_gen = [StringGen(), ByteGen(), ShortGen(), IntegerGen(), LongGen(),
+           pytest.param(FloatGen(special_cases=[FLOAT_MIN, FLOAT_MAX, 0.0, 1.0, -1.0]), marks=[incompat]), pytest.param(DoubleGen(special_cases=double_special_cases), marks=[incompat]), BooleanGen(), DateGen(), TimestampGen()]
+
+all_gen_filters = [(StringGen(), "rlike(a, '^(?=.{1,5}$).*')"),
+                            (ByteGen(), "a < 100"),
+                            (ShortGen(), "a < 100"),
+                            (IntegerGen(), "a < 1000"),
+                            (LongGen(), "a < 1000"),
+                            (BooleanGen(), "a == false"),
+                            (DateGen(), "a > '1/21/2012'"),
+                            (TimestampGen(), "a > '1/21/2012'"),
+                            pytest.param((FloatGen(special_cases=[FLOAT_MIN, FLOAT_MAX, 0.0, 1.0, -1.0]), "a < 1000"), marks=[incompat]),
+                            pytest.param((DoubleGen(special_cases=double_special_cases),"a < 1000"), marks=[incompat])]
 
 conf={"spark.rapids.sql.explain":"ALL"}
-@pytest.mark.xfail(reason="TODO: github issue")
-@pytest.mark.parametrize('data_gen', all_gen_no_nulls_filters, ids=idfn)
+@pytest.mark.parametrize('data_gen', all_gen, ids=idfn)
 @pytest.mark.parametrize('join_type', ['Left', 'Right', 'Inner', 'LeftSemi', 'LeftAnti'], ids=idfn)
 def test_cache_join(data_gen, join_type):
+    if data_gen.data_type == BooleanType():
+        pytest.xfail("https://github.com/NVIDIA/spark-rapids/issues/350")
     from pyspark.sql.functions import asc
-    data, filter = data_gen # we are not using the filter
     def do_join(spark):
-        left, right = create_df(spark, data, 500, 500)
+        left, right = create_df(spark, data_gen, 500, 500)
         return left.join(right, left.a == right.r_a, join_type).cache()
     cached_df_cpu = with_cpu_session(do_join, conf)
     if (join_type == 'LeftAnti' or join_type == 'LeftSemi'):
@@ -69,20 +74,22 @@ def test_cache_join(data_gen, join_type):
         sort = [asc("a"), asc("b"), asc("r_a"), asc("r_b")]
 
     from_cpu = cached_df_cpu.sort(sort).collect()
-    print('COLLECTED\n{}'.format(from_cpu))
     cached_df_gpu = with_gpu_session(do_join, conf)
     from_gpu = cached_df_gpu.sort(sort).collect()
-    print('COLLECTED\n{}'.format(from_gpu))
     assert_equal(from_cpu, from_gpu)
 
 
-@pytest.mark.xfail(reason="TODO: github issue")
-@pytest.mark.parametrize('data_gen', all_gen_no_nulls_filters, ids=idfn)
+@pytest.mark.parametrize('data_gen', all_gen_filters, ids=idfn)
 @pytest.mark.parametrize('join_type', ['Left', 'Right', 'Inner', 'LeftSemi', 'LeftAnti'], ids=idfn)
+# We are OK running everything on CPU until we complete 'git issue'
+# because we have an explicit check in our code that disallows InMemoryTableScan to have anything other than
+# AttributeReference
 @allow_non_gpu(any=True)
 def test_cached_join_filter(data_gen, join_type):
     from pyspark.sql.functions import asc
     data, filter = data_gen
+    if data.data_type == BooleanType():
+        pytest.xfail("https://github.com/NVIDIA/spark-rapids/issues/350")
     def do_join(spark):
         left, right = create_df(spark, data, 500, 500)
         return left.join(right, left.a == right.r_a, join_type).cache()
@@ -101,3 +108,111 @@ def test_cached_join_filter(data_gen, join_type):
 
     assert_equal(join_from_cpu, join_from_gpu)
     assert_equal(filter_from_cpu, filter_from_gpu)
+
+@pytest.mark.parametrize('data_gen', all_gen, ids=idfn)
+@pytest.mark.parametrize('join_type', ['Left', 'Right', 'Inner', 'LeftSemi', 'LeftAnti'], ids=idfn)
+def test_cache_broadcast_hash_join(data_gen, join_type):
+    if data_gen.data_type == BooleanType():
+        pytest.xfail("https://github.com/NVIDIA/spark-rapids/issues/350")
+    from pyspark.sql.functions import asc
+    def do_join(spark):
+        left, right = create_df(spark, data_gen, 500, 500)
+        return left.join(right.hint("broadcast"), left.a == right.r_a, join_type).cache()
+    cached_df_cpu = with_cpu_session(do_join, conf)
+    if (join_type == 'LeftAnti' or join_type == 'LeftSemi'):
+        sort = [asc("a"), asc("b")]
+    else:
+        sort = [asc("a"), asc("b"), asc("r_a"), asc("r_b")]
+
+    from_cpu = cached_df_cpu.sort(sort).collect()
+    cached_df_gpu = with_gpu_session(do_join, conf)
+    from_gpu = cached_df_gpu.sort(sort).collect()
+    assert_equal(from_cpu, from_gpu)
+
+
+shuffled_conf = {"spark.sql.autoBroadcastJoinThreshold": "160",
+                 "spark.sql.join.preferSortMergeJoin": "false",
+                 "spark.sql.shuffle.partitions": "2",
+                 "spark.rapids.sql.explain": "ALL",
+                 "spark.rapids.sql.exec.BroadcastNestedLoopJoinExec": "true"}
+
+@pytest.mark.parametrize('data_gen', all_gen, ids=idfn)
+@pytest.mark.parametrize('join_type', ['Left', 'Right', 'Inner', 'LeftSemi', 'LeftAnti'], ids=idfn)
+def test_cache_shuffled_hash_join(data_gen, join_type):
+    if data_gen.data_type == BooleanType():
+        pytest.xfail("https://github.com/NVIDIA/spark-rapids/issues/350")
+    from pyspark.sql.functions import asc
+    def do_join(spark):
+        left, right = create_df(spark, data_gen, 50, 500)
+        return left.join(right, left.a == right.r_a, join_type).cache()
+    cached_df_cpu = with_cpu_session(do_join, shuffled_conf)
+    if (join_type == 'LeftAnti' or join_type == 'LeftSemi'):
+        sort = [asc("a"), asc("b")]
+    else:
+        sort = [asc("a"), asc("b"), asc("r_a"), asc("r_b")]
+
+    from_cpu = cached_df_cpu.sort(sort).collect()
+    cached_df_gpu = with_gpu_session(do_join, shuffled_conf)
+    from_gpu = cached_df_gpu.sort(sort).collect()
+    assert_equal(from_cpu, from_gpu)
+
+
+@pytest.mark.parametrize('data_gen', all_gen, ids=idfn)
+@pytest.mark.parametrize('join_type', ['Left', 'Right', 'Inner', 'LeftSemi', 'LeftAnti'], ids=idfn)
+@pytest.mark.skip(reason="this isn't calling the broadcastNestedLoopJoin, come back to it")
+def test_cache_broadcast_nested_loop_join(data_gen, join_type):
+    def do_join(spark):
+        left, right = create_df(spark, data_gen, 50, 50)
+        return left.join(right, left.a == left.a, join_type).cache()
+    cached_df_cpu = with_cpu_session(do_join, shuffled_conf)
+    if (join_type == 'LeftAnti' or join_type == 'LeftSemi'):
+        sort = [asc("a"), asc("b")]
+    else:
+        sort = [asc("a"), asc("b"), asc("r_a"), asc("r_b")]
+
+    from_cpu = cached_df_cpu.sort(sort).collect()
+    cached_df_gpu = with_gpu_session(do_join, shuffled_conf)
+    from_gpu = cached_df_gpu.sort(sort).collect()
+    assert_equal(from_cpu, from_gpu)
+
+#sort locally because of https://github.com/NVIDIA/spark-rapids/issues/84
+#This is a copy of a test from generate_expr_test.py except for the fact that we are caching the df
+@pytest.mark.parametrize('data_gen', all_gen, ids=idfn)
+@allow_non_gpu('InMemoryTableScanExec', 'DataWritingCommandExec')
+def test_cache_posexplode_makearray(spark_tmp_path, data_gen):
+    if data_gen.data_type == BooleanType():
+        pytest.xfail("https://github.com/NVIDIA/spark-rapids/issues/350")
+    data_path_cpu = spark_tmp_path + '/PARQUET_DATA_CPU'
+    def posExplode(spark):
+        return four_op_df(spark, data_gen).selectExpr('posexplode(array(b, c, d))', 'a').cache()
+    cached_df_cpu = with_cpu_session(posExplode, conf)
+    cached_df_cpu.write.parquet(data_path_cpu)
+    from_cpu = with_cpu_session(lambda spark: spark.read.parquet(data_path_cpu))
+
+    data_path_gpu = spark_tmp_path + '/PARQUET_DATA_GPU'
+    cached_df_gpu = with_gpu_session(posExplode, conf)
+    cached_df_gpu.write.parquet(data_path_gpu)
+    from_gpu = with_gpu_session(lambda spark: spark.read.parquet(data_path_gpu))
+
+    sort_col = [asc("pos"), asc("col"), asc("a")]
+    assert_equal(cached_df_cpu.sort(sort_col).collect(), cached_df_gpu.sort(sort_col).collect())
+    assert_equal(from_cpu.sort(sort_col).collect(), from_gpu.sort(sort_col).collect())
+
+@pytest.mark.parametrize('data_gen', all_gen, ids=idfn)
+def test_cache_expand_exec(data_gen):
+    def op_df(spark, length=2048, seed=0):
+        return gen_df(spark, StructGen([
+            ('a', data_gen),
+            ('b', IntegerGen())], nullable=False), length=length, seed=seed)
+
+    cached_df_cpu = with_cpu_session(op_df, conf).cache()
+    from_cpu = with_cpu_session(lambda spark: cached_df_cpu.rollup(f.col("a"), f.col("b")).agg(f.count(f.col("b"))))
+
+    cached_df_gpu = with_gpu_session(op_df, conf).cache()
+    from_gpu = with_cpu_session(lambda spark: cached_df_gpu.rollup(f.col("a"), f.col("b")).agg(f.count(f.col("b"))))
+
+    sort_col = [asc("a"), asc("b"), asc("count(b)")]
+    assert_equal(cached_df_cpu.sort(asc("a"), asc("b")).collect(), cached_df_gpu.sort(asc("a"), asc("b")).collect())
+    assert_equal(from_cpu.sort(sort_col).collect(), from_gpu.sort(sort_col).collect())
+
+
