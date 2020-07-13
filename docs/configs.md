@@ -69,10 +69,11 @@ Name | Description | Default Value
 <a name="sql.shuffle.spillThreads"></a>spark.rapids.sql.shuffle.spillThreads|Number of threads used to spill shuffle data to disk in the background.|6
 <a name="sql.variableFloatAgg.enabled"></a>spark.rapids.sql.variableFloatAgg.enabled|Spark assumes that all operations produce the exact same result each time. This is not true for some floating point aggregations, which can produce slightly different results on the GPU as the aggregation is done in parallel.  This can enable those operations if you know the query is only computing it once.|false
 
-## Fine Tuning
-_The RAPIDS Accelerator for Apache Spark_ can be further configured to enable or disable
-specific expressions and to control what parts of the query execute using the GPU or
-the CPU.
+## Supported GPU Operators and Fine Tuning 
+_The RAPIDS Accelerator for Apache Spark_ can be configured to enable or disable specific 
+GPU accelerated expressions.  Enabled expressions are candidates for GPU execution. If the 
+expression is configured as disabled, the accelerator plugin will not attempt replacement, 
+and it will run on the CPU.  
 
 Please leverage the [`spark.rapids.sql.explain`](#sql.explain) setting to get
 feedback from the plugin as to why parts of a query may not be executing on the GPU.
