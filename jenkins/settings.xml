@@ -42,13 +42,13 @@
           </snapshots>
           <id>central</id>
           <name>sw-spark-maven</name>
-          <url>https://urm.nvidia.com:443/artifactory/sw-spark-maven</url>
+          <url>${env.URM_URL}</url>
         </repository>
         <repository>
           <snapshots />
           <id>snapshots</id>
           <name>sw-spark-maven</name>
-          <url>https://urm.nvidia.com:443/artifactory/sw-spark-maven</url>
+          <url>${env.URM_URL}</url>
         </repository>
       </repositories>
       <pluginRepositories>
@@ -58,13 +58,13 @@
           </snapshots>
           <id>central</id>
           <name>sw-spark-maven</name>
-          <url>https://urm.nvidia.com:443/artifactory/sw-spark-maven</url>
+          <url>${env.URM_URL}</url>
         </pluginRepository>
         <pluginRepository>
           <snapshots />
           <id>snapshots</id>
           <name>sw-spark-maven</name>
-          <url>https://urm.nvidia.com:443/artifactory/sw-spark-maven</url>
+          <url>${env.URM_URL}</url>
         </pluginRepository>
       </pluginRepositories>
       <id>artifactory</id>
@@ -75,18 +75,20 @@
         <repository>
           <id>apache.snapshots</id>
           <name>sw-spark-maven</name>
-          <url>https://urm.nvidia.com:443/artifactory/sw-spark-maven</url>
+          <url>${env.URM_URL}</url>
         </repository>
       </repositories>
     </profile>
     <profile>
-      <id>deploy-to-sh04</id>
+      <id>deploy-to-urm</id>
       <properties>
-        <altDeploymentRepository>sh04-release-repo::http://apt-sh04:8081/repository/xgboost-spark-release</altDeploymentRepository>
+          <altDeploymentRepository>snapshots::default::${env.URM_URL}-local</altDeploymentRepository>
       </properties>
-    </profile>
+     </profile>
   </profiles>
   <activeProfiles>
     <activeProfile>artifactory</activeProfile>
+    <activeProfile>mirror-apache-to-urm</activeProfile>
+    <activeProfile>deploy-to-urm</activeProfile>
   </activeProfiles>
 </settings>

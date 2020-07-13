@@ -23,7 +23,7 @@ nvidia-smi
 
 ARTF_ROOT="$WORKSPACE/.download"
 MVN_GET_CMD="mvn org.apache.maven.plugins:maven-dependency-plugin:2.8:get -B \
-    -DremoteRepositories=$SERVER_URL \
+    $MVN_URM_MIRROR -DremoteRepositories=$URM_URL \
     -Ddest=$ARTF_ROOT"
 
 rm -rf $ARTF_ROOT && mkdir -p $ARTF_ROOT
@@ -37,7 +37,7 @@ export PATH="$SPARK_HOME/bin:$SPARK_HOME/sbin:$PATH"
 tar zxf $SPARK_HOME.tar.gz -C $ARTF_ROOT && \
     rm -f $SPARK_HOME.tar.gz
 
-mvn -U -B "$@" clean verify -Dpytest.TEST_TAGS=''
+mvn -U -B $MVN_URM_MIRROR clean verify -Dpytest.TEST_TAGS=''
 
 # The jacoco coverage should have been collected, but because of how the shade plugin
 # works and jacoco we need to clean some things up so jacoco will only report for the

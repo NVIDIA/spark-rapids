@@ -40,17 +40,9 @@ rm -rf spark-rapids
 mkdir spark-rapids
 tar -zxvf $SPARKTGZ -C spark-rapids
 cd spark-rapids
-mvn clean package || true
+mvn -B clean package || true
 M2DIR=/home/ubuntu/.m2/repository
-CUDF_JAR=./cudf-${CUDF_VERSION}.jar
-mvn install:install-file \
-   -Dmaven.repo.local=$M2DIR \
-   -Dfile=./$CUDF_JAR \
-   -DgroupId=ai.rapids \
-   -DartifactId=cudf \
-   -Dversion=$CUDF_VERSION \
-   -Dclassifier=$CUDA_VERSION \
-   -Dpackaging=jar
+CUDF_JAR=${M2DIR}/ai/rapids/cudf/${CUDF_VERSION}/cudf-${CUDF_VERSION}-${CUDA_VERSION}.jar
 
 # pull normal Spark artifacts and ignore errors then install databricks jars, then build again
 JARDIR=/databricks/jars
@@ -58,7 +50,7 @@ SQLJAR=----workspace_spark_3_0--sql--core--core-hive-2.3__hadoop-2.7_${SCALA_VER
 CATALYSTJAR=----workspace_spark_3_0--sql--catalyst--catalyst-hive-2.3__hadoop-2.7_${SCALA_VERSION}_deploy.jar
 ANNOTJAR=----workspace_spark_3_0--common--tags--tags-hive-2.3__hadoop-2.7_${SCALA_VERSION}_deploy.jar
 COREJAR=----workspace_spark_3_0--core--core-hive-2.3__hadoop-2.7_${SCALA_VERSION}_deploy.jar
-mvn install:install-file \
+mvn -B install:install-file \
    -Dmaven.repo.local=$M2DIR \
    -Dfile=$JARDIR/$COREJAR \
    -DgroupId=org.apache.spark \
@@ -66,7 +58,7 @@ mvn install:install-file \
    -Dversion=$SPARK_VERSION \
    -Dpackaging=jar
 
-mvn install:install-file \
+mvn -B install:install-file \
    -Dmaven.repo.local=$M2DIR \
    -Dfile=$JARDIR/$CATALYSTJAR \
    -DgroupId=org.apache.spark \
@@ -74,7 +66,7 @@ mvn install:install-file \
    -Dversion=$SPARK_VERSION \
    -Dpackaging=jar
 
-mvn install:install-file \
+mvn -B install:install-file \
    -Dmaven.repo.local=$M2DIR \
    -Dfile=$JARDIR/$SQLJAR \
    -DgroupId=org.apache.spark \
@@ -82,7 +74,7 @@ mvn install:install-file \
    -Dversion=$SPARK_VERSION \
    -Dpackaging=jar
 
-mvn install:install-file \
+mvn -B install:install-file \
    -Dmaven.repo.local=$M2DIR \
    -Dfile=$JARDIR/$ANNOTJAR \
    -DgroupId=org.apache.spark \
@@ -90,12 +82,12 @@ mvn install:install-file \
    -Dversion=$SPARK_VERSION \
    -Dpackaging=jar
 
-mvn -Pdatabricks clean package -DskipTests
+mvn -B -Pdatabricks clean package -DskipTests
 
 # Copy so we pick up new built jar and latesty CuDF jar. Note that the jar names has to be
 # exactly what is in the staticly setup Databricks cluster we use. 
 sudo cp dist/target/$RAPIDS_BUILT_JAR $DB_RAPIDS_JAR_LOC
-sudo cp ./$CUDF_JAR $DB_CUDF_JAR_LOC
+sudo cp $CUDF_JAR $DB_CUDF_JAR_LOC
 
 # tests
 export PATH=/databricks/conda/envs/databricks-ml-gpu/bin:/databricks/conda/condabin:$PATH

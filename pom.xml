@@ -321,12 +321,14 @@
                         </execution>
                         <execution>
                             <id>scala-compile-first</id>
+                            <phase>process-resources</phase>
                             <goals>
                                 <goal>compile</goal>
                             </goals>
                         </execution>
                         <execution>
                             <id>scala-test-compile-first</id>
+                            <phase>process-test-resources</phase>
                             <goals>
                                 <goal>testCompile</goal>
                             </goals>
@@ -534,15 +536,14 @@
     </build>
     <repositories>
         <repository>
-            <id>snapshots</id>
-            <name>sw-spark-maven</name>
-            <url>https://urm.nvidia.com:443/artifactory/sw-spark-maven</url>
+            <id>snapshots-repo</id>
+            <url>https://oss.sonatype.org/content/repositories/snapshots</url>
+            <releases>
+                <enabled>false</enabled>
+            </releases>
+            <snapshots>
+                <enabled>true</enabled>
+            </snapshots>
         </repository>
     </repositories>
-    <distributionManagement>
-        <repository>
-            <id>snapshots</id>
-            <url>https://urm.nvidia.com:443/artifactory/sw-spark-maven-local</url>
-        </repository>
-    </distributionManagement>
 </project>

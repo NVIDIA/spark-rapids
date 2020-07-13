@@ -55,7 +55,7 @@ def main():
 
   jsonout = cluster_state(workspace, clusterid, token)
   current_state = jsonout['state']
-  if current_state not in ['RUNNING']:
+  if current_state not in ['RUNNING', 'RESIZING']:
       print("Cluster is not running")
       sys.exit(1)
 

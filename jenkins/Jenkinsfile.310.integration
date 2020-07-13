@@ -1,6 +1,6 @@
 #!/usr/local/env groovy
 /*
- * Copyright (c) 2019-2020, NVIDIA CORPORATION.
+ * Copyright (c) 2020, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,93 +17,73 @@
 
 /**
 *
-* Jenkinsfile for building rapids-plugin
+* Jenkins file for running spark3.1.0 integration tests
 *
 */
+
 @Library('shared-libs') _
 
 def urmUrl="https://${ArtifactoryConstants.ARTIFACTORY_NAME}/artifactory/sw-spark-maven"
 
 pipeline {
-    agent { label 'vanilla' }
+    agent none
 
     options {
         ansiColor('xterm')
-        timeout(time: 120, unit: 'MINUTES')
+        timestamps()
+        timeout(time: 240, unit: 'MINUTES')
         buildDiscarder(logRotator(numToKeepStr: '10'))
     }
 
     parameters {
+        string(name: 'OVERWRITE_PARAMS', defaultValue: '',
+            description: 'parameters format XXX_VER=xxx;YYY_VER=yyy;')
         string(name: 'REF', defaultValue: 'branch-0.2', description: 'Commit to build')
     }
 
     environment {
         JENKINS_ROOT  = 'jenkins'
-        MVN_URM_MIRROR='-s jenkins/settings.xml -P mirror-apache-to-urm'
+        TEST_SCRIPT = '$JENKINS_ROOT/spark-tests.sh'
         LIBCUDF_KERNEL_CACHE_PATH='/tmp/.cudf'
-        URM_CREDS = credentials("svcngcc_artifactory")
         ARTIFACTORY_NAME = "${ArtifactoryConstants.ARTIFACTORY_NAME}"
         URM_URL = "${urmUrl}"
-    }
-
-    triggers {
-        cron('H 5 * * *')
+        MVN_URM_MIRROR='-s jenkins/settings.xml -P mirror-apache-to-urm'
     }
 
     stages {
-        stage('Ubuntu16 CUDA10.1') {
+        stage('IT on 3.1.0-SNAPSHOT') {
             agent { label 'docker-gpu' }
+            environment {SPARK_VER='3.1.0-SNAPSHOT'}
             steps {
                 script {
                     def CUDA_NAME=sh(returnStdout: true,
                         script: '. jenkins/version-def.sh>&2 && echo -n $CUDA_CLASSIFIER | sed "s/-/./g"')
-                    def IMAGE_NAME="$ARTIFACTORY_NAME/sw-spark-docker/plugin:dev-ubuntu16-$CUDA_NAME"
+                    def IMAGE_NAME="$ARTIFACTORY_NAME/sw-spark-docker/plugin:it-centos7-$CUDA_NAME"
                     def CUDA_VER="$CUDA_NAME" - "cuda"
                     sh "docker pull $IMAGE_NAME"
-                    def urmImageID=sh(returnStdout: true, script: "docker inspect -f {{'.Id'}} $IMAGE_NAME")
-                    // Speed up Docker building via '--cache-from $IMAGE_NAME'
-                    def buildImage=docker.build(IMAGE_NAME,
-                        "-f jenkins/Dockerfile.ubuntu16 --build-arg CUDA_VER=$CUDA_VER --cache-from $IMAGE_NAME -t $IMAGE_NAME .")
-                    def buildImageID=sh(returnStdout: true, script: "docker inspect -f {{'.Id'}} $IMAGE_NAME")
-                    if (! buildImageID.equals(urmImageID)) {
-                        echo "Dockerfile updated, upload docker image to URM"
-                        uploadDocker(IMAGE_NAME)
-                    }
-
-                    buildImage.inside("--runtime=nvidia \
-                        -v ${HOME}/.zinc:${HOME}/.zinc:rw") {
-                        sh "jenkins/spark-nightly-build.sh"
+                    docker.image(IMAGE_NAME).inside("--runtime=nvidia -v ${HOME}/.zinc:${HOME}/.zinc:rw") {
+                        sh "bash $TEST_SCRIPT"
                     }
                 }
             }
         }
     } // end of stages
-
     post {
         always {
             script {
+                def status = "failed"
                 if (currentBuild.currentResult == "SUCCESS") {
-                    build(job: 'spark/rapids_integration-0.2-github',
-                          propagate: false,
-                          parameters: [string(name: 'REF', value: 'branch-0.2')])
-
+                    status = "success"
                     slack("#rapidsai-spark-cicd", "Success", color: "#33CC33")
-                } else {
+                }
+                else {
                     slack("#rapidsai-spark-cicd", "Failed", color: "#FF0000")
                 }
             }
+            echo 'Pipeline finished!'
         }
     }
 } // end of pipeline
-
-void uploadDocker(String IMAGE_NAME) {
-    def DOCKER_CMD="docker --config $WORKSPACE/.docker"
-    sh """
-        echo $URM_CREDS_PSW | $DOCKER_CMD login $ARTIFACTORY_NAME -u $URM_CREDS_USR --password-stdin
-        $DOCKER_CMD push $IMAGE_NAME
-        $DOCKER_CMD logout $ARTIFACTORY_NAME
-    """
-}
 
 void slack(Map params = [:], String channel, String message) {
     Map defaultParams = [
