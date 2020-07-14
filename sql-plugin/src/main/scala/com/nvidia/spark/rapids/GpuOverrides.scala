@@ -1478,7 +1478,8 @@ object GpuOverrides {
       (a, conf, p, r) => new UnaryExprMeta[Length](a, conf, p, r) {
         override def convertToGpu(child: Expression): GpuExpression = GpuLength(child)
       })
-  ) ++ ShimLoader.getSparkShims.getExprs).map(r => (r.getClassFor.asSubclass(classOf[Expression]), r)).toMap
+  ) ++ ShimLoader.getSparkShims.getExprs)
+    .map(r => (r.getClassFor.asSubclass(classOf[Expression]), r)).toMap
 
   def wrapScan[INPUT <: Scan](
       scan: INPUT,
@@ -1769,7 +1770,8 @@ object GpuOverrides {
       (windowOp, conf, p, r) =>
         new GpuWindowExecMeta(windowOp, conf, p, r)
     )
-  ) ++ ShimLoader.getSparkShims.getExecs).map(r => (r.getClassFor.asSubclass(classOf[SparkPlan]), r)).toMap
+  ) ++ ShimLoader.getSparkShims.getExecs)
+    .map(r => (r.getClassFor.asSubclass(classOf[SparkPlan]), r)).toMap
 }
 
 case class GpuOverrides() extends Rule[SparkPlan] with Logging {

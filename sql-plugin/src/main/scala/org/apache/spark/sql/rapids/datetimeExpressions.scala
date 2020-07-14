@@ -28,7 +28,6 @@ import org.apache.spark.sql.catalyst.expressions.{BinaryExpression, ExpectsInput
 import org.apache.spark.sql.types._
 import org.apache.spark.sql.vectorized.ColumnarBatch
 import org.apache.spark.unsafe.types.CalendarInterval
-import org.apache.spark.internal.Logging
 
 trait GpuDateUnaryExpression extends GpuUnaryExpression with ImplicitCastInputTypes {
   override def inputTypes: Seq[AbstractDataType] = Seq(DateType)
@@ -122,11 +121,9 @@ case class GpuTimeSub(
     start: Expression,
     interval: Expression,
     timeZoneId: Option[String] = None)
-  extends BinaryExpression with GpuExpression with TimeZoneAwareExpression with ExpectsInputTypes with Logging {
+  extends BinaryExpression with GpuExpression with TimeZoneAwareExpression with ExpectsInputTypes {
 
   def this(start: Expression, interval: Expression) = this(start, interval, None)
-
-  logWarning("in gpu time sub")
 
   override def left: Expression = start
   override def right: Expression = interval

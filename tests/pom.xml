@@ -53,7 +53,6 @@
         </profile>
     </profiles>
 
-
     <dependencies>
         <dependency>
             <groupId>org.scala-lang</groupId>

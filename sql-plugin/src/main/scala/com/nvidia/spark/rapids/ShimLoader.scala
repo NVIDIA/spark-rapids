@@ -138,5 +138,5 @@ object ShimLoader extends Logging {
       SPARK_VERSION
     }
   }
-
 }
+
