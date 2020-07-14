@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019-2020, NVIDIA CORPORATION.
+ * Copyright (c) 2020, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,8 +14,12 @@
  * limitations under the License.
  */
 
-package com.nvidia.spark.rapids
+package com.nvidia.spark.rapids.shims
 
+import ai.rapids.cudf.{NvtxColor, Table}
+
+import com.nvidia.spark.rapids._
+import com.nvidia.spark.rapids.GpuHashJoinBaseMeta
 import com.nvidia.spark.rapids.GpuMetricNames._
 
 import org.apache.spark.TaskContext
@@ -25,48 +29,26 @@ import org.apache.spark.sql.catalyst.expressions.Expression
 import org.apache.spark.sql.catalyst.plans.JoinType
 import org.apache.spark.sql.catalyst.plans.physical.{Distribution, HashClusteredDistribution}
 import org.apache.spark.sql.execution.{BinaryExecNode, SparkPlan}
-import org.apache.spark.sql.execution.joins.{BuildLeft, BuildRight, BuildSide, ShuffledHashJoinExec}
+import org.apache.spark.sql.execution.joins._
 import org.apache.spark.sql.execution.metric.{SQLMetric, SQLMetrics}
 import org.apache.spark.sql.vectorized.ColumnarBatch
+import org.apache.spark.internal.Logging
 
-class GpuShuffledHashJoinMeta(
-    join: ShuffledHashJoinExec,
-    conf: RapidsConf,
-    parent: Option[RapidsMeta[_, _, _]],
-    rule: ConfKeysAndIncompat)
-  extends SparkPlanMeta[ShuffledHashJoinExec](join, conf, parent, rule) {
-  val leftKeys: Seq[BaseExprMeta[_]] =
-    join.leftKeys.map(GpuOverrides.wrapExpr(_, conf, Some(this)))
-  val rightKeys: Seq[BaseExprMeta[_]] =
-    join.rightKeys.map(GpuOverrides.wrapExpr(_, conf, Some(this)))
-  val condition: Option[BaseExprMeta[_]] =
-    join.condition.map(GpuOverrides.wrapExpr(_, conf, Some(this)))
 
-  override val childExprs: Seq[BaseExprMeta[_]] = leftKeys ++ rightKeys ++ condition
+abstract class GpuShuffledHashJoinExecBase31 extends BinaryExecNode with GpuHashJoin31 with Logging {
+  
+  def getBuildSide: GpuBuildSide
 
-  override def tagPlanForGpu(): Unit = {
-    GpuHashJoin.tagJoin(this, join.joinType, join.leftKeys, join.rightKeys, join.condition)
+  protected lazy val (gpuBuildKeys, gpuStreamedKeys) = {
+    require(leftKeys.map(_.dataType) == rightKeys.map(_.dataType),
+      "Join keys from two sides should have same types")
+    val lkeys = GpuBindReferences.bindGpuReferences(leftKeys, left.output)
+    val rkeys = GpuBindReferences.bindGpuReferences(rightKeys, right.output)
+    getBuildSide match {
+      case GpuBuildLeft => (lkeys, rkeys)
+      case GpuBuildRight => (rkeys, lkeys)
+    }
   }
-
-  override def convertToGpu(): GpuExec =
-    GpuShuffledHashJoinExec(
-      leftKeys.map(_.convertToGpu()),
-      rightKeys.map(_.convertToGpu()),
-      join.joinType,
-      join.buildSide,
-      condition.map(_.convertToGpu()),
-      childPlans(0).convertIfNeeded(),
-      childPlans(1).convertIfNeeded())
-}
-
-case class GpuShuffledHashJoinExec(
-    leftKeys: Seq[Expression],
-    rightKeys: Seq[Expression],
-    joinType: JoinType,
-    buildSide: BuildSide,
-    condition: Option[Expression],
-    left: SparkPlan,
-    right: SparkPlan) extends BinaryExecNode with GpuHashJoin {
 
   override lazy val additionalMetrics: Map[String, SQLMetric] = Map(
     "buildDataSize" -> SQLMetrics.createSizeMetric(sparkContext, "build side size"),
@@ -83,9 +65,9 @@ case class GpuShuffledHashJoinExec(
       "GpuShuffledHashJoin does not support the execute() code path.")
   }
 
-  override def childrenCoalesceGoal: Seq[CoalesceGoal] = buildSide match {
-    case BuildLeft => Seq(RequireSingleBatch, null)
-    case BuildRight => Seq(null, RequireSingleBatch)
+  override def childrenCoalesceGoal: Seq[CoalesceGoal] = getBuildSide match {
+    case GpuBuildLeft => Seq(RequireSingleBatch, null)
+    case GpuBuildRight => Seq(null, RequireSingleBatch)
   }
 
   override def doExecuteColumnar() : RDD[ColumnarBatch] = {
@@ -131,5 +113,88 @@ case class GpuShuffledHashJoinExec(
           joinTime, filterTime, totalTime)
       }
     }
+  }
+
+  def doJoinInternal(builtTable: Table,
+      streamedBatch: ColumnarBatch,
+      boundCondition: Option[Expression],
+      numOutputRows: SQLMetric,
+      numJoinOutputRows: SQLMetric,
+      numOutputBatches: SQLMetric,
+      joinTime: SQLMetric,
+      filterTime: SQLMetric): Option[ColumnarBatch] = {
+
+    val streamedTable = try {
+      val streamedKeysBatch = GpuProjectExec.project(streamedBatch, gpuStreamedKeys)
+      try {
+        val combined = combine(streamedKeysBatch, streamedBatch)
+        GpuColumnVector.from(combined)
+      } finally {
+        streamedKeysBatch.close()
+      }
+    } finally {
+      streamedBatch.close()
+    }
+
+    val nvtxRange = new NvtxWithMetrics("hash join", NvtxColor.ORANGE, joinTime)
+    val joined = try {
+      getBuildSide match {
+        case GpuBuildLeft => doJoinLeftRight(builtTable, streamedTable)
+        case GpuBuildRight => doJoinLeftRight(streamedTable, builtTable)
+      }
+    } finally {
+      streamedTable.close()
+      nvtxRange.close()
+    }
+
+    numJoinOutputRows += joined.numRows()
+
+    val tmp = if (boundCondition.isDefined) {
+      GpuFilter(joined, boundCondition.get, numOutputRows, numOutputBatches, filterTime)
+    } else {
+      numOutputRows += joined.numRows()
+      numOutputBatches += 1
+      joined
+    }
+    if (tmp.numRows() == 0) {
+      // Not sure if there is a better way to work around this
+      numOutputBatches.set(numOutputBatches.value - 1)
+      tmp.close()
+      None
+    } else {
+      Some(tmp)
+    }
+  }
+
+}
+
+
+class GpuShuffledHashJoinMeta31(
+    join: ShuffledHashJoinExec,
+    conf: RapidsConf,
+    parent: Option[RapidsMeta[_, _, _]],
+    rule: ConfKeysAndIncompat)
+  extends GpuHashJoinBaseMeta[ShuffledHashJoinExec](join, conf, parent, rule) with Logging {
+
+  val leftKeys: Seq[BaseExprMeta[_]] =
+    join.leftKeys.map(GpuOverrides.wrapExpr(_, conf, Some(this)))
+  val rightKeys: Seq[BaseExprMeta[_]] =
+    join.rightKeys.map(GpuOverrides.wrapExpr(_, conf, Some(this)))
+  val condition: Option[BaseExprMeta[_]] = join.condition.map(
+    GpuOverrides.wrapExpr(_, conf, Some(this)))
+
+  override def tagPlanForGpu(): Unit = {
+    GpuHashJoin31.tagJoin(this, join.joinType, join.leftKeys, join.rightKeys, join.condition)
+  }
+
+  override def convertToGpu(): GpuExec = {
+    GpuShuffledHashJoinExec31(
+      leftKeys.map(_.convertToGpu()),
+      rightKeys.map(_.convertToGpu()),
+      join.joinType,
+      join.buildSide,
+      condition.map(_.convertToGpu()),
+      childPlans(0).convertIfNeeded(),
+      childPlans(1).convertIfNeeded())
   }
 }

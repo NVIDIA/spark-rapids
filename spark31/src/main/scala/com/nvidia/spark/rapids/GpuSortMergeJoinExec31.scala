@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019-2020, NVIDIA CORPORATION.
+ * Copyright (c) 2020, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,18 +14,35 @@
  * limitations under the License.
  */
 
-package com.nvidia.spark.rapids
+package com.nvidia.spark.rapids.shims
 
+import com.nvidia.spark.rapids._
+import com.nvidia.spark.rapids.GpuMetricNames._
+
+import org.apache.spark.sql.catalyst.optimizer.{BuildLeft, BuildRight, BuildSide}
 import org.apache.spark.internal.Logging
-import org.apache.spark.sql.execution.SortExec
-import org.apache.spark.sql.execution.joins.{BuildRight, SortMergeJoinExec}
+import org.apache.spark.sql.execution.joins.BroadcastNestedLoopJoinExec
+import org.apache.spark.sql.execution.joins.ShuffledHashJoinExec
+import org.apache.spark.TaskContext
+import org.apache.spark.rdd.RDD
+import org.apache.spark.sql.catalyst.InternalRow
+import org.apache.spark.sql.catalyst.expressions.Expression
+import org.apache.spark.sql.catalyst.plans.JoinType
+import org.apache.spark.sql.catalyst.plans.physical.{Distribution, HashClusteredDistribution}
+import org.apache.spark.sql.execution.{BinaryExecNode, SortExec, SparkPlan}
+import org.apache.spark.sql.execution.joins._
+import org.apache.spark.sql.execution.metric.{SQLMetric, SQLMetrics}
+import org.apache.spark.sql.vectorized.ColumnarBatch
+import org.apache.spark.internal.Logging
 
-class GpuSortMergeJoinMeta(
+
+
+class GpuSortMergeJoinMeta31(
     join: SortMergeJoinExec,
     conf: RapidsConf,
     parent: Option[RapidsMeta[_, _, _]],
     rule: ConfKeysAndIncompat)
-  extends SparkPlanMeta[SortMergeJoinExec](join, conf, parent, rule) with Logging {
+  extends GpuHashJoinBaseMeta[SortMergeJoinExec](join, conf, parent, rule) with Logging {
 
   val leftKeys: Seq[BaseExprMeta[_]] =
     join.leftKeys.map(GpuOverrides.wrapExpr(_, conf, Some(this)))
@@ -34,11 +51,10 @@ class GpuSortMergeJoinMeta(
   val condition: Option[BaseExprMeta[_]] = join.condition.map(
     GpuOverrides.wrapExpr(_, conf, Some(this)))
 
-  override val childExprs: Seq[BaseExprMeta[_]] = leftKeys ++ rightKeys ++ condition
-
   override def tagPlanForGpu(): Unit = {
+
     // Use conditions from Hash Join
-    GpuHashJoin.tagJoin(this, join.joinType, join.leftKeys, join.rightKeys, join.condition)
+    GpuHashJoin31.tagJoin(this, join.joinType, join.leftKeys, join.rightKeys, join.condition)
 
     if (!conf.enableReplaceSortMergeJoin) {
       willNotWorkOnGpu(s"Not replacing sort merge join with hash join, " +
@@ -62,15 +78,16 @@ class GpuSortMergeJoinMeta(
       }
     }
   }
-
   override def convertToGpu(): GpuExec = {
-    GpuShuffledHashJoinExec(
+    GpuShuffledHashJoinExec31(
       leftKeys.map(_.convertToGpu()),
       rightKeys.map(_.convertToGpu()),
       join.joinType,
-      BuildRight, // just hardcode one side
+      BuildRight,
       condition.map(_.convertToGpu()),
       childPlans(0).convertIfNeeded(),
       childPlans(1).convertIfNeeded())
   }
+
 }
+

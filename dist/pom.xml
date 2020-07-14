@@ -41,6 +41,16 @@
        <artifactId>rapids-4-spark-shuffle_${scala.binary.version}</artifactId>
        <version>${project.version}</version>
     </dependency>
+    <dependency>
+       <groupId>com.nvidia</groupId>
+       <artifactId>rapids-4-spark-shims-spark30_${scala.binary.version}</artifactId>
+       <version>${project.version}</version>
+    </dependency>
+    <dependency>
+       <groupId>com.nvidia</groupId>
+       <artifactId>rapids-4-spark-shims-spark31_${scala.binary.version}</artifactId>
+       <version>${project.version}</version>
+    </dependency>
   </dependencies>
 
   <build>
