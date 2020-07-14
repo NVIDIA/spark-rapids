@@ -65,11 +65,11 @@ class GpuSortMergeJoinMeta(
 
   override def convertToGpu(): GpuExec = {
     GpuShuffledHashJoinExec(
-      leftKeys.map(_.convertToGpu()),
-      rightKeys.map(_.convertToGpu()),
+      leftKeys.map(_.convertToGpu()).asInstanceOf[Seq[GpuExpression]],
+      rightKeys.map(_.convertToGpu()).asInstanceOf[Seq[GpuExpression]],
       join.joinType,
       BuildRight, // just hardcode one side
-      condition.map(_.convertToGpu()),
+      condition.map(_.convertToGpu()).asInstanceOf[Option[GpuExpression]],
       childPlans(0).convertIfNeeded(),
       childPlans(1).convertIfNeeded())
   }

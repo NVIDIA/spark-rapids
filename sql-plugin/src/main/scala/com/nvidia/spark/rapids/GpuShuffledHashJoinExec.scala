@@ -21,7 +21,6 @@ import com.nvidia.spark.rapids.GpuMetricNames._
 import org.apache.spark.TaskContext
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.InternalRow
-import org.apache.spark.sql.catalyst.expressions.Expression
 import org.apache.spark.sql.catalyst.plans.JoinType
 import org.apache.spark.sql.catalyst.plans.physical.{Distribution, HashClusteredDistribution}
 import org.apache.spark.sql.execution.{BinaryExecNode, SparkPlan}
@@ -50,21 +49,21 @@ class GpuShuffledHashJoinMeta(
 
   override def convertToGpu(): GpuExec =
     GpuShuffledHashJoinExec(
-      leftKeys.map(_.convertToGpu()),
-      rightKeys.map(_.convertToGpu()),
+      leftKeys.map(_.convertToGpu()).asInstanceOf[Seq[GpuExpression]],
+      rightKeys.map(_.convertToGpu()).asInstanceOf[Seq[GpuExpression]],
       join.joinType,
       join.buildSide,
-      condition.map(_.convertToGpu()),
+      condition.map(_.convertToGpu()).asInstanceOf[Option[GpuExpression]],
       childPlans(0).convertIfNeeded(),
       childPlans(1).convertIfNeeded())
 }
 
 case class GpuShuffledHashJoinExec(
-    leftKeys: Seq[Expression],
-    rightKeys: Seq[Expression],
+    leftKeys: Seq[GpuExpression],
+    rightKeys: Seq[GpuExpression],
     joinType: JoinType,
     buildSide: BuildSide,
-    condition: Option[Expression],
+    condition: Option[GpuExpression],
     left: SparkPlan,
     right: SparkPlan) extends BinaryExecNode with GpuHashJoin {
 
