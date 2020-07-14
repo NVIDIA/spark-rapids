@@ -37,7 +37,7 @@
         </profile>
     </profiles>
 
-  <properties>
+    <properties>
         <spark.version>3.0.0</spark.version>
     </properties>
 

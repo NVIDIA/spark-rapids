@@ -130,6 +130,9 @@
 	        <rat.consoleOutput>true</rat.consoleOutput>
             </properties>
         </profile>
+        <profile>
+            <id>spark31</id>
+        </profile>
     </profiles>
 
     <properties>
