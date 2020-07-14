@@ -43,21 +43,10 @@ def create_df(spark, data_gen, left_length, right_length):
             .withColumnRenamed("b", "r_b")
     return left, right
 
-# Once https://github.com/NVIDIA/spark-rapids/issues/280 is fixed this test should be deleted
-@ignore_order(local=True)
-@pytest.mark.parametrize('data_gen', all_gen_no_nulls, ids=idfn)
-@pytest.mark.parametrize('join_type', ['FullOuter'], ids=idfn)
-def test_sortmerge_join_no_nulls(data_gen, join_type):
-    def do_join(spark):
-        left, right = create_df(spark, data_gen, 500, 500)
-        return left.join(right, left.a == right.r_a, join_type)
-    assert_gpu_and_cpu_are_equal_collect(do_join, conf=_sortmerge_join_conf)
-
 # local sort because of https://github.com/NVIDIA/spark-rapids/issues/84
 @ignore_order(local=True)
 @pytest.mark.parametrize('data_gen', all_gen, ids=idfn)
-@pytest.mark.parametrize('join_type', ['Left', 'Right', 'Inner', 'LeftSemi', 'LeftAnti', 'Cross',
-    pytest.param('FullOuter', marks=[pytest.mark.xfail(reason='https://github.com/NVIDIA/spark-rapids/issues/280')])], ids=idfn)
+@pytest.mark.parametrize('join_type', ['Left', 'Right', 'Inner', 'LeftSemi', 'LeftAnti', 'Cross', 'FullOuter'], ids=idfn)
 def test_sortmerge_join(data_gen, join_type):
     def do_join(spark):
         left, right = create_df(spark, data_gen, 500, 500)
@@ -65,23 +54,12 @@ def test_sortmerge_join(data_gen, join_type):
     assert_gpu_and_cpu_are_equal_collect(do_join, conf=_sortmerge_join_conf)
 
 
-# Once https://github.com/NVIDIA/spark-rapids/issues/280 is fixed this test should be deleted
-@ignore_order(local=True)
-@pytest.mark.parametrize('data_gen', all_gen_no_nulls, ids=idfn)
-@pytest.mark.parametrize('join_type', ['FullOuter'], ids=idfn)
-def test_broadcast_join_no_nulls(data_gen, join_type):
-    def do_join(spark):
-        left, right = create_df(spark, data_gen, 500, 250)
-        return left.join(broadcast(right), left.a == right.r_a, join_type)
-    assert_gpu_and_cpu_are_equal_collect(do_join)
-
 # local sort because of https://github.com/NVIDIA/spark-rapids/issues/84
 @ignore_order(local=True)
 @pytest.mark.parametrize('data_gen', all_gen, ids=idfn)
 # Not all join types can be translated to a broadcast join, but this tests them to be sure we
 # can handle what spark is doing
-@pytest.mark.parametrize('join_type', ['Left', 'Right', 'Inner', 'LeftSemi', 'LeftAnti', 'Cross',
-    pytest.param('FullOuter', marks=[pytest.mark.xfail(reason='https://github.com/NVIDIA/spark-rapids/issues/280')])], ids=idfn)
+@pytest.mark.parametrize('join_type', ['Left', 'Right', 'Inner', 'LeftSemi', 'LeftAnti', 'Cross', 'FullOuter'], ids=idfn)
 def test_broadcast_join_right_table(data_gen, join_type):
     def do_join(spark):
         left, right = create_df(spark, data_gen, 500, 250)
@@ -147,8 +125,7 @@ def test_broadcast_nested_loop_join_with_conditionals(data_gen, join_type):
 @pytest.mark.parametrize('data_gen', all_gen, ids=idfn)
 # Not all join types can be translated to a broadcast join, but this tests them to be sure we
 # can handle what spark is doing
-@pytest.mark.parametrize('join_type', ['Left', 'Right', 'Inner', 'LeftSemi', 'LeftAnti', 'Cross',
-    pytest.param('FullOuter', marks=[pytest.mark.xfail(reason='https://github.com/NVIDIA/spark-rapids/issues/280')])], ids=idfn)
+@pytest.mark.parametrize('join_type', ['Left', 'Right', 'Inner', 'LeftSemi', 'LeftAnti', 'Cross', 'FullOuter'], ids=idfn)
 def test_broadcast_join_left_table(data_gen, join_type):
     def do_join(spark):
         left, right = create_df(spark, data_gen, 250, 500)

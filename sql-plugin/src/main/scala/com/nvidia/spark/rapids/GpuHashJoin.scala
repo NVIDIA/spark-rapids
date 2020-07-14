@@ -32,15 +32,7 @@ object GpuHashJoin {
       rightKeys: Seq[Expression],
       condition: Option[Expression]): Unit = joinType match {
     case _: InnerLike =>
-    case FullOuter =>
-      if (leftKeys.exists(_.nullable) || rightKeys.exists(_.nullable)) {
-        // https://github.com/rapidsai/cudf/issues/5563
-        meta.willNotWorkOnGpu("Full outer join does not work on nullable keys")
-      }
-      if (condition.isDefined) {
-        meta.willNotWorkOnGpu(s"$joinType joins currently do not support conditions")
-      }
-    case RightOuter | LeftOuter | LeftSemi | LeftAnti =>
+    case FullOuter | RightOuter | LeftOuter | LeftSemi | LeftAnti =>
       if (condition.isDefined) {
         meta.willNotWorkOnGpu(s"$joinType joins currently do not support conditions")
       }
@@ -134,7 +126,7 @@ trait GpuHashJoin extends GpuExec with HashJoin {
       TaskContext.get().addTaskCompletionListener[Unit](_ => closeCb())
 
       def closeCb(): Unit = {
-        nextCb.map(_.close())
+        nextCb.foreach(_.close())
         nextCb = None
       }
 
@@ -224,22 +216,19 @@ trait GpuHashJoin extends GpuExec with HashJoin {
   private[this] def doJoinLeftRight(leftTable: Table, rightTable: Table): ColumnarBatch = {
     val joinedTable = joinType match {
       case LeftOuter => leftTable.onColumns(joinKeyIndices: _*)
-          .leftJoin(rightTable.onColumns(joinKeyIndices: _*))
+          .leftJoin(rightTable.onColumns(joinKeyIndices: _*), false)
       case RightOuter => rightTable.onColumns(joinKeyIndices: _*)
-          .leftJoin(leftTable.onColumns(joinKeyIndices: _*))
-      case _: InnerLike =>
-        leftTable.onColumns(joinKeyIndices: _*).innerJoin(rightTable.onColumns(joinKeyIndices: _*))
-      case LeftSemi =>
-        leftTable.onColumns(joinKeyIndices: _*)
-          .leftSemiJoin(rightTable.onColumns(joinKeyIndices: _*))
-      case LeftAnti =>
-        leftTable.onColumns(joinKeyIndices: _*)
-          .leftAntiJoin(rightTable.onColumns(joinKeyIndices: _*))
-      case FullOuter =>
-        leftTable.onColumns(joinKeyIndices: _*)
-            .fullJoin(rightTable.onColumns(joinKeyIndices: _*))
+          .leftJoin(leftTable.onColumns(joinKeyIndices: _*), false)
+      case _: InnerLike => leftTable.onColumns(joinKeyIndices: _*)
+          .innerJoin(rightTable.onColumns(joinKeyIndices: _*), false)
+      case LeftSemi => leftTable.onColumns(joinKeyIndices: _*)
+          .leftSemiJoin(rightTable.onColumns(joinKeyIndices: _*), false)
+      case LeftAnti => leftTable.onColumns(joinKeyIndices: _*)
+          .leftAntiJoin(rightTable.onColumns(joinKeyIndices: _*), false)
+      case FullOuter => leftTable.onColumns(joinKeyIndices: _*)
+          .fullJoin(rightTable.onColumns(joinKeyIndices: _*), false)
       case _ => throw new NotImplementedError(s"Joint Type ${joinType.getClass} is not currently" +
-        s" supported")
+          s" supported")
     }
     try {
       val result = joinIndices.map(joinIndex =>
