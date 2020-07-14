@@ -16,8 +16,6 @@
 
 package com.nvidia.spark.rapids
 
-import com.nvidia.spark.rapids.SparkSessionHolder.spark
-
 import org.apache.spark.SparkConf
 import org.apache.spark.sql.functions.broadcast
 import org.apache.spark.sql.rapids.execution.GpuBroadcastHashJoinExec
@@ -103,40 +101,43 @@ class JoinsSuite extends SparkQueryCompareTestSuite {
   }
 
   test("broadcast hint isn't propagated after a join") {
-    import spark.sqlContext.implicits._
-    spark.conf.set("spark.sql.autoBroadcastJoinThreshold", "-1")
-    spark.conf.set("spark.rapids.sql.enabled", "true")
-    val df1 = Seq((1, "4"), (2, "2")).toDF("key", "value")
-    val df2 = Seq((1, "1"), (2, "2")).toDF("key", "value")
-    val df3 = df1.join(broadcast(df2), Seq("key"), "inner").drop(df2("key"))
+    val conf = new SparkConf()
+      .set("spark.sql.autoBroadcastJoinThreshold", "-1")
 
-    val df4 = Seq((1, "5"), (2, "5")).toDF("key", "value")
-    val df5 = df4.join(df3, Seq("key"), "inner")
+    withGpuSparkSession(spark => {
+      val df1 = longsDf(spark)
+      val df2 = nonZeroLongsDf(spark)
 
-    val plan = df5.queryExecution.executedPlan
+      val df3 = df1.join(broadcast(df2), Seq("longs"), "inner").drop(df2("longs"))
+      val df4 = longsDf(spark)
+      val df5 = df4.join(df3, Seq("longs"), "inner")
 
-    assert(plan.collect { case p: GpuBroadcastHashJoinExec => p }.size === 1)
-    assert(plan.collect { case p: GpuShuffledHashJoinExec => p }.size === 1)
+      val plan = df5.queryExecution.executedPlan
+
+      assert(plan.collect { case p: GpuBroadcastHashJoinExec => p }.size === 1)
+      assert(plan.collect { case p: GpuShuffledHashJoinExec => p }.size === 1)
+    }, conf)
   }
 
   test("broadcast hint in SQL") {
-    spark.conf.set("spark.rapids.sql.enabled", "true")
-    longsDf(spark).createOrReplaceTempView("t")
-    longsDf(spark).createOrReplaceTempView("u")
+    withGpuSparkSession(spark => {
+      longsDf(spark).createOrReplaceTempView("t")
+      longsDf(spark).createOrReplaceTempView("u")
 
-    for (name <- Seq("BROADCAST", "BROADCASTJOIN", "MAPJOIN")) {
-      val plan1 = spark.sql(s"SELECT /*+ $name(t) */ * FROM t JOIN u ON t.longs = u.longs")
-        .queryExecution.executedPlan
-      val plan2 = spark.sql(s"SELECT /*+ $name(u) */ * FROM t JOIN u ON t.longs = u.longs")
-        .queryExecution.executedPlan
+      for (name <- Seq("BROADCAST", "BROADCASTJOIN", "MAPJOIN")) {
+        val plan1 = spark.sql(s"SELECT /*+ $name(t) */ * FROM t JOIN u ON t.longs = u.longs")
+          .queryExecution.executedPlan
+        val plan2 = spark.sql(s"SELECT /*+ $name(u) */ * FROM t JOIN u ON t.longs = u.longs")
+          .queryExecution.executedPlan
 
-      val res1 = plan1.find(_.isInstanceOf[GpuBroadcastHashJoinExec])
-      val res2 = plan2.find(_.isInstanceOf[GpuBroadcastHashJoinExec])
+        val res1 = plan1.find(_.isInstanceOf[GpuBroadcastHashJoinExec])
+        val res2 = plan2.find(_.isInstanceOf[GpuBroadcastHashJoinExec])
 
-      assert(res1.get.asInstanceOf[GpuBroadcastHashJoinExec].buildSide.toString
-        .equals("BuildLeft"))
-      assert(res2.get.asInstanceOf[GpuBroadcastHashJoinExec].buildSide.toString
-        .equals("BuildRight"))
-    }
+        assert(res1.get.asInstanceOf[GpuBroadcastHashJoinExec].buildSide.toString
+          .equals("BuildLeft"))
+        assert(res2.get.asInstanceOf[GpuBroadcastHashJoinExec].buildSide.toString
+          .equals("BuildRight"))
+      }
+    })
   }
 }
