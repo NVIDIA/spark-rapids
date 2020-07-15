@@ -48,47 +48,41 @@ class GpuTransitionOverrides extends Rule[SparkPlan] {
     }
   }
 
-  def optimizeAdaptiveTransitions(plan: SparkPlan): SparkPlan = {
-    //      println(s"optimizeAdaptiveTransitions: ${plan.getClass}:\n$plan")
-    val newPlan = plan match {
+  def optimizeAdaptiveTransitions(plan: SparkPlan): SparkPlan = plan match {
 
-      case HostColumnarToGpu(r2c: RowToColumnarExec, goal) =>
-        GpuRowToColumnarExec(optimizeAdaptiveTransitions(r2c.child), goal)
+    case HostColumnarToGpu(r2c: RowToColumnarExec, goal) =>
+      GpuRowToColumnarExec(optimizeAdaptiveTransitions(r2c.child), goal)
 
-      case GpuCoalesceBatches(e: GpuShuffleExchangeExec, _) =>
-        // we need to insert the coalesce batches step later, after the query stage has executed
-        optimizeAdaptiveTransitions(e)
+    case GpuCoalesceBatches(e: GpuShuffleExchangeExec, _) =>
+      // we need to insert the coalesce batches step later, after the query stage has executed
+      optimizeAdaptiveTransitions(e)
 
-      case e: GpuCustomShuffleReaderExec =>
-        // this is where we re-insert the GpuCoalesceBatches that we removed from the
-        // shuffle exchange
-        GpuCoalesceBatches(e.copy(child = optimizeAdaptiveTransitions(e.child)),
-            TargetSize(Long.MaxValue))
+    case e: GpuCustomShuffleReaderExec =>
+      // this is where we re-insert the GpuCoalesceBatches that we removed from the
+      // shuffle exchange
+      GpuCoalesceBatches(e.copy(child = optimizeAdaptiveTransitions(e.child)),
+          TargetSize(Long.MaxValue))
 
-      // Query stages that have already executed on the GPU could be used by CPU operators
-      // in future query stages. Note that because these query stages have already executed, we
-      // don't need to recurse down and optimize them again
-      case ColumnarToRowExec(e: BroadcastQueryStageExec) if e.supportsColumnar =>
-        GpuColumnarToRowExec(e)
-      case ColumnarToRowExec(e: ShuffleQueryStageExec) if e.supportsColumnar =>
-        GpuColumnarToRowExec(e)
+    // Query stages that have already executed on the GPU could be used by CPU operators
+    // in future query stages. Note that because these query stages have already executed, we
+    // don't need to recurse down and optimize them again
+    case ColumnarToRowExec(e: BroadcastQueryStageExec) =>
+      GpuColumnarToRowExec(e)
+    case ColumnarToRowExec(e: ShuffleQueryStageExec) =>
+      GpuColumnarToRowExec(e)
 
-      case HostColumnarToGpu(e: BroadcastQueryStageExec, _) => e
-      case HostColumnarToGpu(e: ShuffleQueryStageExec, _) => e
+    case HostColumnarToGpu(e: BroadcastQueryStageExec, _) => e
+    case HostColumnarToGpu(e: ShuffleQueryStageExec, _) => e
 
-      case ColumnarToRowExec(bb: GpuBringBackToHost) =>
-        // TODO really need a transformUp approach here
-        optimizeAdaptiveTransitions(bb.child) match {
-          case e: GpuBroadcastExchangeExec => e
-          case e: GpuShuffleExchangeExec => e
-          case other => GpuColumnarToRowExec(other)
-        }
+    case ColumnarToRowExec(bb: GpuBringBackToHost) =>
+      optimizeAdaptiveTransitions(bb.child) match {
+        case e: GpuBroadcastExchangeExec => e
+        case e: GpuShuffleExchangeExec => e
+        case other => GpuColumnarToRowExec(other)
+      }
 
-      case p =>
-        p.withNewChildren(p.children.map(optimizeAdaptiveTransitions))
-    }
-    //      println(s"optimizeAdaptiveTransitions returning:\n$newPlan")
-    newPlan
+    case p =>
+      p.withNewChildren(p.children.map(optimizeAdaptiveTransitions))
   }
 
   def optimizeCoalesce(plan: SparkPlan): SparkPlan = plan match {
