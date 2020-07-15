@@ -42,8 +42,8 @@ scala version 2.12 is currently supported by the accelerator.
 
 ## Download the RAPIDS jars
 The [accelerator](https://mvnrepository.com/artifact/com.nvidia/rapids-4-spark_2.12) and 
-[cudf](https://mvnrepository.com/artifact/ai.rapids/cudf) jars are available in 
-[download](http://localhost:4000/version/Stable%20Release.html#download) section.
+[cudf](https://mvnrepository.com/artifact/ai.rapids/cudf) jars are available in the 
+[download](/docs/version/stable-release#download) section.
 
 Download the RAPIDS Accelerator for Apache Spark plugin jar. Then download the version of the cudf
 jar that your version of the accelerator depends on. Each cudf jar is for a specific version of
@@ -279,7 +279,7 @@ $SPARK_HOME/bin/spark-shell \
        --conf spark.sql.files.maxPartitionBytes=512m \
        --conf spark.sql.shuffle.partitions=10 \
        --conf spark.plugins=com.nvidia.spark.SQLPlugin \
-       --conf spark.resourceDiscovery.plugin=com.nvidia.spark.ExclusiveModeGpuDiscoveryPlugin \
+       --conf spark.resources.discoveryPlugin=com.nvidia.spark.ExclusiveModeGpuDiscoveryPlugin \
        --conf spark.executor.resource.gpu.discoveryScript=./getGpusResources.sh \
        --files ${SPARK_RAPIDS_DIR}/getGpusResources.sh \
        --jars  ${SPARK_CUDF_JAR},${SPARK_RAPIDS_PLUGIN_JAR}
@@ -328,7 +328,7 @@ $SPARK_HOME/bin/spark-shell \
 ```  
 
 ## RAPIDS Accelerator Configuration and Tuning
-Most of what you need you can get from [tuning guide](http://localhost:4000/tuning-guide.html).
+Most of what you need you can get from [tuning guide](../tuning-guide).
 
 The following configs will hep you to get started but must be configured based on your cluster
 and application.
