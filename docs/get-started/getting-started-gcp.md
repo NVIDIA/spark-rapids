@@ -8,9 +8,9 @@ parent: Getting-Started
 # Getting started with RAPIDS Accelerator on GCP Dataproc
  [Google Cloud Dataproc](https://cloud.google.com/dataproc) is Google Cloud's fully managed Apache Spark and Hadoop service. This guide will walk through the steps to show:
 
-* [How to spin up a Dataproc Cluster Accelerated by GPU](http://localhost:4000/gcp-dataproc/#how-to-spin-up-a-dataproc-cluster-accelerated-by-gpu)
-* [Run a sample Pyspark or Scala ETL and XGBoost training Notebooks on a Dataproc Cluster Accelerated by GPU](http://localhost:4000/gcp-dataproc/#run-pyspark-and-scala-notebook-a-dataproc-cluster-accelerated-by-gpu)
-* [Submit the same sample ETL application as a Spark job to a Dataproc Cluster Accelerated by GPU](http://localhost:4000/gcp-dataproc/#submit-spark-jobs-to-a-dataproc-cluster-accelerated-by-gpu)
+* [How to spin up a Dataproc Cluster Accelerated by GPU](getting-started-gcp#how-to-spin-up-a-dataproc-cluster-accelerated-by-gpu)
+* [Run a sample Pyspark or Scala ETL and XGBoost training Notebooks on a Dataproc Cluster Accelerated by GPU](getting-started-gcp#run-pyspark-and-scala-notebook-a-dataproc-cluster-accelerated-by-gpu)
+* [Submit the same sample ETL application as a Spark job to a Dataproc Cluster Accelerated by GPU](getting-started-gcp#submit-spark-jobs-to-a-dataproc-cluster-accelerated-by-gpu)
 
 
  
