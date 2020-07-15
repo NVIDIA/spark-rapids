@@ -60,11 +60,12 @@ object SparkSessionHolder extends Logging {
     Locale.setDefault(Locale.US)
     SparkSession.builder()
       .master("local[1]")
+      .config("spark.sql.adaptive.enabled", "false")
       .config("spark.rapids.sql.enabled", "false")
       .config("spark.rapids.sql.test.enabled", "false")
       .config("spark.plugins", "com.nvidia.spark.SQLPlugin")
       .config("spark.sql.queryExecutionListeners",
-        "com.nvidia.spark.rapids.ExecutionPlanCaptureCallback")
+        classOf[ExecutionPlanCaptureCallback].getCanonicalName)
       .config("spark.sql.warehouse.dir", sparkWarehouseDir().getAbsolutePath)
       .appName("rapids spark plugin integration tests (scala)")
       .getOrCreate()

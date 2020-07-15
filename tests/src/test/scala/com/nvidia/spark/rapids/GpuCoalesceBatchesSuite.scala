@@ -19,6 +19,7 @@ package com.nvidia.spark.rapids
 import java.io.File
 import java.nio.file.Files
 
+import org.apache.spark.sql.execution.adaptive.ShuffleQueryStageExec
 import org.apache.spark.sql.execution.metric.SQLMetric
 import org.apache.spark.sql.rapids.metrics.source.MockTaskContext
 import org.apache.spark.sql.types.{DataTypes, StructField, StructType}
@@ -186,9 +187,18 @@ class GpuCoalesceBatchesSuite extends SparkQueryCompareTestSuite {
           ExecutionPlanCaptureCallback.getResultWithTimeout())
 
         // ensure that the plan does include the HostColumnarToGpu step
-        val hostColumnarToGpu = executedPlan
-          .find(_.isInstanceOf[HostColumnarToGpu]).get
-          .asInstanceOf[HostColumnarToGpu]
+        val hostColumnarToGpu = executedPlan.find(_.isInstanceOf[ShuffleQueryStageExec]) match {
+          case Some(stage) =>
+            // when AQE is enabled, we need to look in the query stage (which is a leaf node)
+            stage.asInstanceOf[ShuffleQueryStageExec].plan
+                .find(_.isInstanceOf[HostColumnarToGpu]).get
+                .asInstanceOf[HostColumnarToGpu]
+
+          case _ =>
+            executedPlan
+                .find(_.isInstanceOf[HostColumnarToGpu]).get
+                .asInstanceOf[HostColumnarToGpu]
+        }
 
         assert(hostColumnarToGpu.goal == TargetSize(50000))
 
