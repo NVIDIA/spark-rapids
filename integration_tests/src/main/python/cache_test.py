@@ -21,7 +21,6 @@ from spark_session import with_cpu_session, with_gpu_session
 from join_test import create_df
 from generate_expr_test import four_op_df
 from marks import incompat, allow_non_gpu, ignore_order
-from pyspark.sql.functions import asc
 
 def test_passing_gpuExpr_as_Expr():
     assert_gpu_and_cpu_are_equal_collect(
