@@ -427,7 +427,7 @@
                     <artifactId>apache-rat-plugin</artifactId>
                     <version>0.13</version>
                     <configuration>
-			    <consoleOutput>${rat.consoleOutput}</consoleOutput>
+                        <consoleOutput>${rat.consoleOutput}</consoleOutput>
                     </configuration>
                     <executions>
                         <execution>
@@ -481,8 +481,10 @@
                         <exclude>**/.m2/**</exclude>
                         <exclude>.gnupg/**</exclude>
                         <exclude>pom.xml.asc</exclude>
-			<exclude>jenkins/databricks/*.patch</exclude>
-			<exclude>*.jar</exclude>
+                        <exclude>jenkins/databricks/*.patch</exclude>
+                        <exclude>*.jar</exclude>
+                        <exclude>docs/demo/**/*.ipynb</exclude>
+                        <exclude>docs/demo/**/*.zpln</exclude>
                     </excludes>
                 </configuration>
             </plugin>
