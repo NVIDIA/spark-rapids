@@ -44,8 +44,8 @@ object ShimLoader {
   )
 
   /**
-   * Factory method to get an instance of HadoopShims based on the
-   * version of Hadoop on the classpath.
+   * Factory method to get an instance of SparkShims based on the
+   * version of Spark on the classpath.
    */
   def getSparkShims: SparkShims = {
     if (sparkShims == null) {
@@ -74,7 +74,7 @@ object ShimLoader {
   }
 
   private def loadShims[T](classMap: Map[String, String], xface: Class[T]): T = {
-    val vers = getVersion()
+    val vers = getVersion
     val className = classMap.get(vers)
     if (className.isEmpty) {
       throw new Exception(s"No shim layer for $vers")
@@ -97,7 +97,7 @@ object ShimLoader {
       join: BroadcastNestedLoopJoinExec,
       joinType: JoinType,
       condition: Option[Expression]): T = {
-    val vers = getVersion()
+    val vers = getVersion
     val className = classMap.get(vers)
     if (className.isEmpty) {
       throw new Exception(s"No shim layer for $vers")
@@ -125,7 +125,7 @@ object ShimLoader {
     case e: Exception => throw new RuntimeException("Could not load shims in class " + className, e)
   }
 
-  def getVersion(): String = {
+  def getVersion: String = {
     // hack for databricks, try to find something more reliable?
     if (SPARK_BUILD_USER.equals("Databricks")) {
         SPARK_VERSION + "-databricks"
