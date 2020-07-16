@@ -373,7 +373,7 @@ operation “count at ...”, you should see the graph of Spark Execs and some o
 the label Gpu...  For instance, in the screenshot below you will see `GpuRowToColumn`, `GpuFilter`,
 and `GpuColumnarExchange`.  Those correspond to operations that run on the GPU.
 
-![Join Example on Spark SQL UI](../img/join-sql-ui-example.png)
+![Join Example on Spark SQL UI](/docs/img/join-sql-ui-example.png)
 
 ## Advanced Configuration
 
