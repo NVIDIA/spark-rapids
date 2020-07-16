@@ -1,0 +1,1025 @@
+﻿{
+  "paragraphs": [
+    {
+      "text": "%md\n# Introduction to XGBoost Spark with GPU\n\nMortgage is an example of xgboost classifier to do binary classification. This notebook will show you how to load data, train the xgboost model and use this model to predict if a mushroom is \"poisonous\". Camparing to original XGBoost Spark code, there're only one API difference.\n\n## Load libraries\nFirst load some common libraries will be used by both GPU version and CPU version xgboost.",
+      "user": "anonymous",
+      "dateUpdated": "2020-07-13T02:18:45+0000",
+      "config": {
+        "editorMode": "ace/mode/markdown",
+        "editorHide": true,
+        "editorSetting": {
+          "language": "markdown",
+          "editOnDblClick": true
+        },
+        "colWidth": 12,
+        "fontSize": 9,
+        "enabled": true,
+        "results": {}
+      },
+      "settings": {
+        "params": {},
+        "forms": {}
+      },
+      "results": {
+        "code": "SUCCESS",
+        "msg": [
+          {
+            "type": "HTML",
+            "data": "<div class=\"markdown-body\">\n<h1>Introduction to XGBoost Spark with GPU</h1>\n<p>Mortgage is an example of xgboost classifier to do binary classification. This notebook will show you how to load data, train the xgboost model and use this model to predict if a mushroom is &ldquo;poisonous&rdquo;. Camparing to original XGBoost Spark code, there&rsquo;re only one API difference.</p>\n<h2>Load libraries</h2>\n<p>First load some common libraries will be used by both GPU version and CPU version xgboost.</p>\n\n</div>"
+          }
+        ]
+      },
+      "apps": [],
+      "runtimeInfos": {},
+      "progressUpdateIntervalMs": 500,
+      "jobName": "paragraph_1594528580281_1080045385",
+      "id": "20200712-043620_382811823",
+      "dateCreated": "2020-07-12T04:36:20+0000",
+      "dateStarted": "2020-07-13T02:18:45+0000",
+      "dateFinished": "2020-07-13T02:18:45+0000",
+      "status": "FINISHED",
+      "focus": true,
+      "$$hashKey": "object:11086"
+    },
+    {
+      "text": "import ml.dmlc.xgboost4j.scala.spark.{XGBoostClassifier, XGBoostClassificationModel}\nimport org.apache.spark.sql.SparkSession\nimport org.apache.spark.ml.evaluation.MulticlassClassificationEvaluator\nimport org.apache.spark.sql.types.{DoubleType, IntegerType, StructField, StructType}\nimport org.apache.spark.SparkConf",
+      "user": "anonymous",
+      "dateUpdated": "2020-07-13T02:18:45+0000",
+      "config": {
+        "editorMode": "ace/mode/scala",
+        "editorHide": false,
+        "colWidth": 12,
+        "fontSize": 9,
+        "enabled": true,
+        "results": {},
+        "editorSetting": {
+          "language": "scala",
+          "editOnDblClick": false,
+          "completionSupport": true,
+          "completionKey": "TAB"
+        }
+      },
+      "settings": {
+        "params": {},
+        "forms": {}
+      },
+      "results": {
+        "code": "SUCCESS",
+        "msg": [
+          {
+            "type": "TEXT",
+            "data": "import ml.dmlc.xgboost4j.scala.spark.{XGBoostClassifier, XGBoostClassificationModel}\nimport org.apache.spark.sql.SparkSession\nimport org.apache.spark.ml.evaluation.MulticlassClassificationEvaluator\nimport org.apache.spark.sql.types.{DoubleType, IntegerType, StructField, StructType}\nimport org.apache.spark.SparkConf\n"
+          }
+        ]
+      },
+      "apps": [],
+      "runtimeInfos": {},
+      "progressUpdateIntervalMs": 500,
+      "jobName": "paragraph_1594528580282_314340064",
+      "id": "20200712-043620_1400821320",
+      "dateCreated": "2020-07-12T04:36:20+0000",
+      "dateStarted": "2020-07-13T02:18:45+0000",
+      "dateFinished": "2020-07-13T02:18:46+0000",
+      "status": "FINISHED",
+      "$$hashKey": "object:11087"
+    },
+    {
+      "text": "%md\nBesides CPU version requires some extra libraries, such as:\n\n```scala\nimport org.apache.spark.ml.feature.VectorAssembler\nimport org.apache.spark.sql.DataFrame\nimport org.apache.spark.sql.functions._\nimport org.apache.spark.sql.types.FloatType\n```",
+      "user": "anonymous",
+      "dateUpdated": "2020-07-13T02:18:46+0000",
+      "config": {
+        "editorMode": "ace/mode/markdown",
+        "editorHide": true,
+        "editorSetting": {
+          "language": "markdown",
+          "editOnDblClick": true
+        },
+        "colWidth": 12,
+        "fontSize": 9,
+        "enabled": true,
+        "results": {}
+      },
+      "settings": {
+        "params": {},
+        "forms": {}
+      },
+      "results": {
+        "code": "SUCCESS",
+        "msg": [
+          {
+            "type": "HTML",
+            "data": "<div class=\"markdown-body\">\n<p>Besides CPU version requires some extra libraries, such as:</p>\n<pre><code class=\"language-scala\">import org.apache.spark.ml.feature.VectorAssembler\nimport org.apache.spark.sql.DataFrame\nimport org.apache.spark.sql.functions._\nimport org.apache.spark.sql.types.FloatType\n</code></pre>\n\n</div>"
+          }
+        ]
+      },
+      "apps": [],
+      "runtimeInfos": {},
+      "progressUpdateIntervalMs": 500,
+      "jobName": "paragraph_1594528580282_1068889472",
+      "id": "20200712-043620_1625961573",
+      "dateCreated": "2020-07-12T04:36:20+0000",
+      "dateStarted": "2020-07-13T02:18:46+0000",
+      "dateFinished": "2020-07-13T02:18:46+0000",
+      "status": "FINISHED",
+      "$$hashKey": "object:11088"
+    },
+    {
+      "title": "Set the dataset path",
+      "text": "// Update all path with your Dataproc Environment\nval trainPath = \"gs://dataproc-nv-demo/mortgage_full/train/\"\nval evalPath  = \"gs://dataproc-nv-demo/mortgage_full/test/\"\nval transPath = \"gs://dataproc-nv-demo/mortgage_full/test/\"\nval modelPath = \"gs://dataproc-nv-demo/mortgage_full/model/mortgage\"",
+      "user": "anonymous",
+      "dateUpdated": "2020-07-13T02:18:46+0000",
+      "config": {
+        "editorMode": "ace/mode/scala",
+        "editorHide": false,
+        "colWidth": 12,
+        "fontSize": 9,
+        "enabled": true,
+        "results": {},
+        "editorSetting": {
+          "language": "scala",
+          "editOnDblClick": false,
+          "completionSupport": true,
+          "completionKey": "TAB"
+        },
+        "title": true
+      },
+      "settings": {
+        "params": {},
+        "forms": {}
+      },
+      "results": {
+        "code": "SUCCESS",
+        "msg": [
+          {
+            "type": "TEXT",
+            "data": "\u001b[1m\u001b[34mtrainPath\u001b[0m: \u001b[1m\u001b[32mString\u001b[0m = gs://dataproc-nv-demo/mortgage_full/train/\n\u001b[1m\u001b[34mevalPath\u001b[0m: \u001b[1m\u001b[32mString\u001b[0m = gs://dataproc-nv-demo/mortgage_full/test/\n\u001b[1m\u001b[34mtransPath\u001b[0m: \u001b[1m\u001b[32mString\u001b[0m = gs://dataproc-nv-demo/mortgage_full/test/\n\u001b[1m\u001b[34mmodelPath\u001b[0m: \u001b[1m\u001b[32mString\u001b[0m = gs://dataproc-nv-demo/mortgage_full/model/mortgage\n"
+          }
+        ]
+      },
+      "apps": [],
+      "runtimeInfos": {},
+      "progressUpdateIntervalMs": 500,
+      "jobName": "paragraph_1594528580282_1437224612",
+      "id": "20200712-043620_1955827407",
+      "dateCreated": "2020-07-12T04:36:20+0000",
+      "dateStarted": "2020-07-13T02:18:46+0000",
+      "dateFinished": "2020-07-13T02:18:46+0000",
+      "status": "FINISHED",
+      "$$hashKey": "object:11089"
+    },
+    {
+      "text": "%md\n## Build the schema and parameters\nThe mortgage data has 27 columns: 26 features and 1 label. \"deinquency_12\" is the label column. The schema will be used to load data in the future.\n\nThe next block also defines some key parameters used in xgboost training process.",
+      "user": "anonymous",
+      "dateUpdated": "2020-07-13T02:18:46+0000",
+      "config": {
+        "editorMode": "ace/mode/markdown",
+        "editorHide": true,
+        "editorSetting": {
+          "language": "markdown",
+          "editOnDblClick": true
+        },
+        "colWidth": 12,
+        "fontSize": 9,
+        "enabled": true,
+        "results": {}
+      },
+      "settings": {
+        "params": {},
+        "forms": {}
+      },
+      "results": {
+        "code": "SUCCESS",
+        "msg": [
+          {
+            "type": "HTML",
+            "data": "<div class=\"markdown-body\">\n<h2>Build the schema and parameters</h2>\n<p>The mortgage data has 27 columns: 26 features and 1 label. &ldquo;deinquency_12&rdquo; is the label column. The schema will be used to load data in the future.</p>\n<p>The next block also defines some key parameters used in xgboost training process.</p>\n\n</div>"
+          }
+        ]
+      },
+      "apps": [],
+      "runtimeInfos": {},
+      "progressUpdateIntervalMs": 500,
+      "jobName": "paragraph_1594528580282_433144999",
+      "id": "20200712-043620_2043825692",
+      "dateCreated": "2020-07-12T04:36:20+0000",
+      "dateStarted": "2020-07-13T02:18:46+0000",
+      "dateFinished": "2020-07-13T02:18:46+0000",
+      "status": "FINISHED",
+      "$$hashKey": "object:11090"
+    },
+    {
+      "text": "val labelColName = \"delinquency_12\"\nval schema = StructType(List(\n  StructField(\"orig_channel\", DoubleType),\n  StructField(\"first_home_buyer\", DoubleType),\n  StructField(\"loan_purpose\", DoubleType),\n  StructField(\"property_type\", DoubleType),\n  StructField(\"occupancy_status\", DoubleType),\n  StructField(\"property_state\", DoubleType),\n  StructField(\"product_type\", DoubleType),\n  StructField(\"relocation_mortgage_indicator\", DoubleType),\n  StructField(\"seller_name\", DoubleType),\n  StructField(\"mod_flag\", DoubleType),\n  StructField(\"orig_interest_rate\", DoubleType),\n  StructField(\"orig_upb\", IntegerType),\n  StructField(\"orig_loan_term\", IntegerType),\n  StructField(\"orig_ltv\", DoubleType),\n  StructField(\"orig_cltv\", DoubleType),\n  StructField(\"num_borrowers\", DoubleType),\n  StructField(\"dti\", DoubleType),\n  StructField(\"borrower_credit_score\", DoubleType),\n  StructField(\"num_units\", IntegerType),\n  StructField(\"zip\", IntegerType),\n  StructField(\"mortgage_insurance_percent\", DoubleType),\n  StructField(\"current_loan_delinquency_status\", IntegerType),\n  StructField(\"current_actual_upb\", DoubleType),\n  StructField(\"interest_rate\", DoubleType),\n  StructField(\"loan_age\", DoubleType),\n  StructField(\"msa\", DoubleType),\n  StructField(\"non_interest_bearing_upb\", DoubleType),\n  StructField(labelColName, IntegerType)))\n\nval featureNames = schema.filter(_.name != labelColName).map(_.name)",
+      "user": "anonymous",
+      "dateUpdated": "2020-07-13T02:18:46+0000",
+      "config": {
+        "editorMode": "ace/mode/scala",
+        "editorHide": false,
+        "colWidth": 12,
+        "fontSize": 9,
+        "enabled": true,
+        "results": {},
+        "editorSetting": {
+          "language": "scala",
+          "editOnDblClick": false,
+          "completionSupport": true,
+          "completionKey": "TAB"
+        }
+      },
+      "settings": {
+        "params": {},
+        "forms": {}
+      },
+      "results": {
+        "code": "SUCCESS",
+        "msg": [
+          {
+            "type": "TEXT",
+            "data": "\u001b[1m\u001b[34mlabelColName\u001b[0m: \u001b[1m\u001b[32mString\u001b[0m = delinquency_12\n\u001b[1m\u001b[34mschema\u001b[0m: \u001b[1m\u001b[32morg.apache.spark.sql.types.StructType\u001b[0m = StructType(StructField(orig_channel,DoubleType,true), StructField(first_home_buyer,DoubleType,true), StructField(loan_purpose,DoubleType,true), StructField(property_type,DoubleType,true), StructField(occupancy_status,DoubleType,true), StructField(property_state,DoubleType,true), StructField(product_type,DoubleType,true), StructField(relocation_mortgage_indicator,DoubleType,true), StructField(seller_name,DoubleType,true), StructField(mod_flag,DoubleType,true), StructField(orig_interest_rate,DoubleType,true), StructField(orig_upb,IntegerType,true), StructField(orig_loan_term,IntegerType,true), StructField(orig_ltv,DoubleType,true), StructField(orig_cltv...\n"
+          }
+        ]
+      },
+      "apps": [],
+      "runtimeInfos": {},
+      "progressUpdateIntervalMs": 500,
+      "jobName": "paragraph_1594528580282_-318188050",
+      "id": "20200712-043620_542099397",
+      "dateCreated": "2020-07-12T04:36:20+0000",
+      "dateStarted": "2020-07-13T02:18:46+0000",
+      "dateFinished": "2020-07-13T02:18:46+0000",
+      "status": "FINISHED",
+      "$$hashKey": "object:11091"
+    },
+    {
+      "text": "%md\n## Create a new spark session and load data\n\nA new spark session should be created to continue all the following spark operations.\n\nNOTE: in this notebook, the dependency jars have been loaded when installing toree kernel. Alternatively the jars can be loaded into notebook by [%AddJar magic](https://toree.incubator.apache.org/docs/current/user/faq/). However, there's one restriction for `%AddJar`: the jar uploaded can only be available when `AddJar` is called just after a new spark session is created. Do it as below:\n\n```scala\nimport org.apache.spark.sql.SparkSession\nval spark = SparkSession.builder().appName(\"mortgage-GPU\").getOrCreate\n%AddJar file:/data/libs/cudf-XXX-cuda10.jar\n%AddJar file:/data/libs/rapids-4-spark-XXX.jar\n%AddJar file:/data/libs/xgboost4j_3.0-XXX.jar\n%AddJar file:/data/libs/xgboost4j-spark_3.0-XXX.jar\n// ...\n```\n\n##### Please note the new jar \"rapids-4-spark-XXX.jar\" is only needed for GPU version, you can not add it to dependence list for CPU version.",
+      "user": "anonymous",
+      "dateUpdated": "2020-07-13T02:18:47+0000",
+      "config": {
+        "editorMode": "ace/mode/markdown",
+        "editorHide": true,
+        "editorSetting": {
+          "language": "markdown",
+          "editOnDblClick": true
+        },
+        "colWidth": 12,
+        "fontSize": 9,
+        "enabled": true,
+        "results": {}
+      },
+      "settings": {
+        "params": {},
+        "forms": {}
+      },
+      "results": {
+        "code": "SUCCESS",
+        "msg": [
+          {
+            "type": "HTML",
+            "data": "<div class=\"markdown-body\">\n<h2>Create a new spark session and load data</h2>\n<p>A new spark session should be created to continue all the following spark operations.</p>\n<p>NOTE: in this notebook, the dependency jars have been loaded when installing toree kernel. Alternatively the jars can be loaded into notebook by <a href=\"https://toree.incubator.apache.org/docs/current/user/faq/\">%AddJar magic</a>. However, there&rsquo;s one restriction for <code>%AddJar</code>: the jar uploaded can only be available when <code>AddJar</code> is called just after a new spark session is created. Do it as below:</p>\n<pre><code class=\"language-scala\">import org.apache.spark.sql.SparkSession\nval spark = SparkSession.builder().appName(&quot;mortgage-GPU&quot;).getOrCreate\n%AddJar file:/data/libs/cudf-XXX-cuda10.jar\n%AddJar file:/data/libs/rapids-4-spark-XXX.jar\n%AddJar file:/data/libs/xgboost4j_3.0-XXX.jar\n%AddJar file:/data/libs/xgboost4j-spark_3.0-XXX.jar\n// ...\n</code></pre>\n<h5>Please note the new jar &ldquo;rapids-4-spark-XXX.jar&rdquo; is only needed for GPU version, you can not add it to dependence list for CPU version.</h5>\n\n</div>"
+          }
+        ]
+      },
+      "apps": [],
+      "runtimeInfos": {},
+      "progressUpdateIntervalMs": 500,
+      "jobName": "paragraph_1594528580283_-1107372761",
+      "id": "20200712-043620_889594738",
+      "dateCreated": "2020-07-12T04:36:20+0000",
+      "dateStarted": "2020-07-13T02:18:47+0000",
+      "dateFinished": "2020-07-13T02:18:47+0000",
+      "status": "FINISHED",
+      "$$hashKey": "object:11092"
+    },
+    {
+      "text": "// Build the spark session and data reader as usual\nval conf = new SparkConf()\nconf.set(\"spark.executor.instances\", \"20\")\nconf.set(\"spark.executor.cores\", \"7\")\nconf.set(\"spark.task.cpus\", \"7\")\nconf.set(\"spark.executor.memory\", \"24g\")\nconf.set(\"spark.rapids.memory.pinnedPool.size\", \"2G\")\nconf.set(\"spark.executor.memoryOverhead\", \"16G\")\nconf.set(\"spark.executor.extraJavaOptions\", \"-Dai.rapids.cudf.prefer-pinned=true\")\nconf.set(\"spark.locality.wait\", \"0s\")\nconf.set(\"spark.sql.files.maxPartitionBytes\", \"512m\")\nconf.set(\"spark.executor.resource.gpu.amount\", \"1\")\nconf.set(\"spark.task.resource.gpu.amount\", \"1\")\nconf.set(\"spark.plugins\", \"com.nvidia.spark.SQLPlugin\")\nconf.set(\"spark.rapids.sql.hasNans\", \"false\")\nconf.set(\"spark.rapids.sql.batchSizeBytes\", \"512M\")\nconf.set(\"spark.rapids.sql.reader.batchSizeBytes\", \"768M\")\nconf.set(\"spark.rapids.sql.variableFloatAgg.enabled\", \"true\")\nconf.set(\"spark.rapids.memory.gpu.pooling.enabled\", \"false\")\n// conf.set(\"spark.rapids.memory.gpu.allocFraction\", \"0.1\")\nval spark = SparkSession.builder.appName(\"mortgage-gpu\")\n                               .enableHiveSupport()\n                               .config(conf)\n                               .getOrCreate\nval reader = spark.read.option(\"header\", true).schema(schema)",
+      "user": "anonymous",
+      "dateUpdated": "2020-07-13T02:18:47+0000",
+      "config": {
+        "editorMode": "ace/mode/scala",
+        "editorHide": false,
+        "colWidth": 12,
+        "fontSize": 9,
+        "enabled": true,
+        "results": {},
+        "editorSetting": {
+          "language": "scala",
+          "editOnDblClick": false,
+          "completionSupport": true,
+          "completionKey": "TAB"
+        }
+      },
+      "settings": {
+        "params": {},
+        "forms": {}
+      },
+      "results": {
+        "code": "SUCCESS",
+        "msg": [
+          {
+            "type": "TEXT",
+            "data": "\u001b[1m\u001b[34mconf\u001b[0m: \u001b[1m\u001b[32morg.apache.spark.SparkConf\u001b[0m = org.apache.spark.SparkConf@1aab0102\n\u001b[1m\u001b[34mspark\u001b[0m: \u001b[1m\u001b[32morg.apache.spark.sql.SparkSession\u001b[0m = org.apache.spark.sql.SparkSession@1239890f\n\u001b[1m\u001b[34mreader\u001b[0m: \u001b[1m\u001b[32morg.apache.spark.sql.DataFrameReader\u001b[0m = org.apache.spark.sql.DataFrameReader@7a9bb956\n"
+          }
+        ]
+      },
+      "apps": [],
+      "runtimeInfos": {},
+      "progressUpdateIntervalMs": 500,
+      "jobName": "paragraph_1594528580283_-892064929",
+      "id": "20200712-043620_622739089",
+      "dateCreated": "2020-07-12T04:36:20+0000",
+      "dateStarted": "2020-07-13T02:18:47+0000",
+      "dateFinished": "2020-07-13T02:18:53+0000",
+      "status": "FINISHED",
+      "$$hashKey": "object:11093"
+    },
+    {
+      "text": "val trainSet = reader.parquet(trainPath)\nval evalSet  = reader.parquet(evalPath)\nval transSet = reader.parquet(transPath)",
+      "user": "anonymous",
+      "dateUpdated": "2020-07-13T02:18:53+0000",
+      "config": {
+        "editorMode": "ace/mode/scala",
+        "editorHide": false,
+        "colWidth": 12,
+        "fontSize": 9,
+        "enabled": true,
+        "results": {},
+        "editorSetting": {
+          "language": "scala",
+          "editOnDblClick": false,
+          "completionSupport": true,
+          "completionKey": "TAB"
+        }
+      },
+      "settings": {
+        "params": {},
+        "forms": {}
+      },
+      "results": {
+        "code": "SUCCESS",
+        "msg": [
+          {
+            "type": "TEXT",
+            "data": "\u001b[1m\u001b[34mtrainSet\u001b[0m: \u001b[1m\u001b[32morg.apache.spark.sql.DataFrame\u001b[0m = [orig_channel: double, first_home_buyer: double ... 26 more fields]\n\u001b[1m\u001b[34mevalSet\u001b[0m: \u001b[1m\u001b[32morg.apache.spark.sql.DataFrame\u001b[0m = [orig_channel: double, first_home_buyer: double ... 26 more fields]\n\u001b[1m\u001b[34mtransSet\u001b[0m: \u001b[1m\u001b[32morg.apache.spark.sql.DataFrame\u001b[0m = [orig_channel: double, first_home_buyer: double ... 26 more fields]\n"
+          }
+        ]
+      },
+      "apps": [],
+      "runtimeInfos": {},
+      "progressUpdateIntervalMs": 500,
+      "jobName": "paragraph_1594528580283_1108385932",
+      "id": "20200712-043620_562533619",
+      "dateCreated": "2020-07-12T04:36:20+0000",
+      "dateStarted": "2020-07-13T02:18:53+0000",
+      "dateFinished": "2020-07-13T02:18:54+0000",
+      "status": "FINISHED",
+      "$$hashKey": "object:11094"
+    },
+    {
+      "text": "%md\n## Set xgboost parameters and build a XGBoostClassifier\n\nFor CPU version, `num_workers` is recommended being equal to the number of CPU cores, while for GPU version, it should be set to the number of GPUs in Spark cluster.\n\nBesides the `tree_method` for CPU version is also different from that for GPU version. Now only \"gpu_hist\" is supported for training on GPU.\n\n```scala\n// difference in parameters\n  \"num_workers\" -> 12,\n  \"tree_method\" -> \"hist\",\n```",
+      "user": "anonymous",
+      "dateUpdated": "2020-07-13T02:18:54+0000",
+      "config": {
+        "editorMode": "ace/mode/markdown",
+        "editorHide": true,
+        "editorSetting": {
+          "language": "markdown",
+          "editOnDblClick": true
+        },
+        "colWidth": 12,
+        "fontSize": 9,
+        "enabled": true,
+        "results": {}
+      },
+      "settings": {
+        "params": {},
+        "forms": {}
+      },
+      "results": {
+        "code": "SUCCESS",
+        "msg": [
+          {
+            "type": "HTML",
+            "data": "<div class=\"markdown-body\">\n<h2>Set xgboost parameters and build a XGBoostClassifier</h2>\n<p>For CPU version, <code>num_workers</code> is recommended being equal to the number of CPU cores, while for GPU version, it should be set to the number of GPUs in Spark cluster.</p>\n<p>Besides the <code>tree_method</code> for CPU version is also different from that for GPU version. Now only &ldquo;gpu_hist&rdquo; is supported for training on GPU.</p>\n<pre><code class=\"language-scala\">// difference in parameters\n  &quot;num_workers&quot; -&gt; 12,\n  &quot;tree_method&quot; -&gt; &quot;hist&quot;,\n</code></pre>\n\n</div>"
+          }
+        ]
+      },
+      "apps": [],
+      "runtimeInfos": {},
+      "progressUpdateIntervalMs": 500,
+      "jobName": "paragraph_1594528580283_-880026833",
+      "id": "20200712-043620_1948369426",
+      "dateCreated": "2020-07-12T04:36:20+0000",
+      "dateStarted": "2020-07-13T02:18:54+0000",
+      "dateFinished": "2020-07-13T02:18:54+0000",
+      "status": "FINISHED",
+      "$$hashKey": "object:11095"
+    },
+    {
+      "text": "val commParamMap = Map(\n  \"eta\" -> 0.1,\n  \"gamma\" -> 0.1,\n  \"missing\" -> 0.0,\n  \"max_depth\" -> 10,\n  \"max_leaves\" -> 256,\n  \"objective\" -> \"binary:logistic\",\n  \"grow_policy\" -> \"depthwise\",\n  \"min_child_weight\" -> 30,\n  \"lambda\" -> 1,\n  \"scale_pos_weight\" -> 2,\n  \"subsample\" -> 1,\n  \"num_round\" -> 100)\n  \nval xgbParamFinal = commParamMap ++ Map(\"tree_method\" -> \"gpu_hist\", \"num_workers\" -> 20, \"nthread\" -> 7)",
+      "user": "anonymous",
+      "dateUpdated": "2020-07-13T02:18:54+0000",
+      "config": {
+        "editorMode": "ace/mode/scala",
+        "editorHide": false,
+        "colWidth": 12,
+        "fontSize": 9,
+        "enabled": true,
+        "results": {},
+        "editorSetting": {
+          "language": "scala",
+          "editOnDblClick": false,
+          "completionSupport": true,
+          "completionKey": "TAB"
+        }
+      },
+      "settings": {
+        "params": {},
+        "forms": {}
+      },
+      "results": {
+        "code": "SUCCESS",
+        "msg": [
+          {
+            "type": "TEXT",
+            "data": "\u001b[1m\u001b[34mcommParamMap\u001b[0m: \u001b[1m\u001b[32mscala.collection.immutable.Map[String,Any]\u001b[0m = Map(min_child_weight -> 30, grow_policy -> depthwise, scale_pos_weight -> 2, subsample -> 1, lambda -> 1, max_depth -> 10, objective -> binary:logistic, num_round -> 100, missing -> 0.0, eta -> 0.1, max_leaves -> 256, gamma -> 0.1)\n\u001b[1m\u001b[34mxgbParamFinal\u001b[0m: \u001b[1m\u001b[32mscala.collection.immutable.Map[String,Any]\u001b[0m = Map(min_child_weight -> 30, grow_policy -> depthwise, scale_pos_weight -> 2, num_workers -> 20, subsample -> 1, lambda -> 1, max_depth -> 10, objective -> binary:logistic, num_round -> 100, missing -> 0.0, tree_method -> gpu_hist, eta -> 0.1, max_leaves -> 256, gamma -> 0.1, nthread -> 7)\n"
+          }
+        ]
+      },
+      "apps": [],
+      "runtimeInfos": {},
+      "progressUpdateIntervalMs": 500,
+      "jobName": "paragraph_1594528580283_312126552",
+      "id": "20200712-043620_726034129",
+      "dateCreated": "2020-07-12T04:36:20+0000",
+      "dateStarted": "2020-07-13T02:18:54+0000",
+      "dateFinished": "2020-07-13T02:18:54+0000",
+      "status": "FINISHED",
+      "$$hashKey": "object:11096"
+    },
+    {
+      "text": "%md\nHere comes the only API difference,`setFeaturesCol` in CPU version vs `setFeaturesCols` in GPU version.\n\nIn previous block, it said that CPU version needs `VectorAssembler` to assemble multiple feature columns into one column, because `setFeaturesCol` only accepts one feature column with the type of `vector`.\n\nBut `setFeaturesCols` supports multiple columns directly, so set the feautres column names directly to `XGBoostClassifier`. \n\nCPU version:\n\n```scala\nval xgbClassifier  = new XGBoostClassifier(paramMap)\n  .setLabelCol(labelName)\n  .setFeaturesCol(\"features\")\n```",
+      "user": "anonymous",
+      "dateUpdated": "2020-07-13T02:18:54+0000",
+      "config": {
+        "editorMode": "ace/mode/markdown",
+        "editorHide": true,
+        "editorSetting": {
+          "language": "markdown",
+          "editOnDblClick": true
+        },
+        "colWidth": 12,
+        "fontSize": 9,
+        "enabled": true,
+        "results": {}
+      },
+      "settings": {
+        "params": {},
+        "forms": {}
+      },
+      "results": {
+        "code": "SUCCESS",
+        "msg": [
+          {
+            "type": "HTML",
+            "data": "<div class=\"markdown-body\">\n<p>Here comes the only API difference,<code>setFeaturesCol</code> in CPU version vs <code>setFeaturesCols</code> in GPU version.</p>\n<p>In previous block, it said that CPU version needs <code>VectorAssembler</code> to assemble multiple feature columns into one column, because <code>setFeaturesCol</code> only accepts one feature column with the type of <code>vector</code>.</p>\n<p>But <code>setFeaturesCols</code> supports multiple columns directly, so set the feautres column names directly to <code>XGBoostClassifier</code>.</p>\n<p>CPU version:</p>\n<pre><code class=\"language-scala\">val xgbClassifier  = new XGBoostClassifier(paramMap)\n  .setLabelCol(labelName)\n  .setFeaturesCol(&quot;features&quot;)\n</code></pre>\n\n</div>"
+          }
+        ]
+      },
+      "apps": [],
+      "runtimeInfos": {},
+      "progressUpdateIntervalMs": 500,
+      "jobName": "paragraph_1594528580283_1889609272",
+      "id": "20200712-043620_531120952",
+      "dateCreated": "2020-07-12T04:36:20+0000",
+      "dateStarted": "2020-07-13T02:18:54+0000",
+      "dateFinished": "2020-07-13T02:18:54+0000",
+      "status": "FINISHED",
+      "$$hashKey": "object:11097"
+    },
+    {
+      "text": "val xgbClassifier = new XGBoostClassifier(xgbParamFinal)\n      .setLabelCol(labelColName)\n      // === diff ===\n      .setFeaturesCols(featureNames)",
+      "user": "anonymous",
+      "dateUpdated": "2020-07-13T02:18:55+0000",
+      "config": {
+        "editorMode": "ace/mode/scala",
+        "editorHide": false,
+        "colWidth": 12,
+        "fontSize": 9,
+        "enabled": true,
+        "results": {},
+        "editorSetting": {
+          "language": "scala",
+          "editOnDblClick": false,
+          "completionSupport": true,
+          "completionKey": "TAB"
+        }
+      },
+      "settings": {
+        "params": {},
+        "forms": {}
+      },
+      "results": {
+        "code": "SUCCESS",
+        "msg": [
+          {
+            "type": "TEXT",
+            "data": "\u001b[1m\u001b[34mxgbClassifier\u001b[0m: \u001b[1m\u001b[32mml.dmlc.xgboost4j.scala.spark.XGBoostClassifier\u001b[0m = xgbc_2ce07ee0b6cb\n"
+          }
+        ]
+      },
+      "apps": [],
+      "runtimeInfos": {},
+      "progressUpdateIntervalMs": 500,
+      "jobName": "paragraph_1594528580283_-1143522441",
+      "id": "20200712-043620_427072123",
+      "dateCreated": "2020-07-12T04:36:20+0000",
+      "dateStarted": "2020-07-13T02:18:55+0000",
+      "dateFinished": "2020-07-13T02:18:55+0000",
+      "status": "FINISHED",
+      "$$hashKey": "object:11098"
+    },
+    {
+      "text": "%md\n## Benchmark and train\nThe object `benchmark` is used to compute the elapsed time of some operations.\n\nTraining with evaluation sets is also supported in 2 ways, the same as CPU version's behavior:\n\n* Call API `setEvalSets` after initializing an XGBoostClassifier\n\n```scala\nxgbClassifier.setEvalSets(Map(\"eval\" -> evalSet))\n\n```\n\n* Use parameter `eval_sets` when initializing an XGBoostClassifier\n\n```scala\nval paramMapWithEval = paramMap + (\"eval_sets\" -> Map(\"eval\" -> evalSet))\nval xgbClassifierWithEval = new XGBoostClassifier(paramMapWithEval)\n```\n\nHere chooses the API way to set evaluation sets.",
+      "user": "anonymous",
+      "dateUpdated": "2020-07-13T02:18:55+0000",
+      "config": {
+        "editorMode": "ace/mode/markdown",
+        "editorHide": true,
+        "editorSetting": {
+          "language": "markdown",
+          "editOnDblClick": true
+        },
+        "colWidth": 12,
+        "fontSize": 9,
+        "enabled": true,
+        "results": {}
+      },
+      "settings": {
+        "params": {},
+        "forms": {}
+      },
+      "results": {
+        "code": "SUCCESS",
+        "msg": [
+          {
+            "type": "HTML",
+            "data": "<div class=\"markdown-body\">\n<h2>Benchmark and train</h2>\n<p>The object <code>benchmark</code> is used to compute the elapsed time of some operations.</p>\n<p>Training with evaluation sets is also supported in 2 ways, the same as CPU version&rsquo;s behavior:</p>\n<ul>\n<li>Call API <code>setEvalSets</code> after initializing an XGBoostClassifier</li>\n</ul>\n<pre><code class=\"language-scala\">xgbClassifier.setEvalSets(Map(&quot;eval&quot; -&gt; evalSet))\n\n</code></pre>\n<ul>\n<li>Use parameter <code>eval_sets</code> when initializing an XGBoostClassifier</li>\n</ul>\n<pre><code class=\"language-scala\">val paramMapWithEval = paramMap + (&quot;eval_sets&quot; -&gt; Map(&quot;eval&quot; -&gt; evalSet))\nval xgbClassifierWithEval = new XGBoostClassifier(paramMapWithEval)\n</code></pre>\n<p>Here chooses the API way to set evaluation sets.</p>\n\n</div>"
+          }
+        ]
+      },
+      "apps": [],
+      "runtimeInfos": {},
+      "progressUpdateIntervalMs": 500,
+      "jobName": "paragraph_1594528580283_-268123036",
+      "id": "20200712-043620_1915241764",
+      "dateCreated": "2020-07-12T04:36:20+0000",
+      "dateStarted": "2020-07-13T02:18:55+0000",
+      "dateFinished": "2020-07-13T02:18:55+0000",
+      "status": "FINISHED",
+      "$$hashKey": "object:11099"
+    },
+    {
+      "text": "xgbClassifier.setEvalSets(Map(\"eval\" -> evalSet))",
+      "user": "anonymous",
+      "dateUpdated": "2020-07-13T02:18:55+0000",
+      "config": {
+        "editorMode": "ace/mode/scala",
+        "editorHide": false,
+        "colWidth": 12,
+        "fontSize": 9,
+        "enabled": true,
+        "results": {},
+        "editorSetting": {
+          "language": "scala",
+          "editOnDblClick": false,
+          "completionSupport": true,
+          "completionKey": "TAB"
+        }
+      },
+      "settings": {
+        "params": {},
+        "forms": {}
+      },
+      "results": {
+        "code": "SUCCESS",
+        "msg": [
+          {
+            "type": "TEXT",
+            "data": "\u001b[1m\u001b[34mres86\u001b[0m: \u001b[1m\u001b[32mxgbClassifier.type\u001b[0m = xgbc_2ce07ee0b6cb\n"
+          }
+        ]
+      },
+      "apps": [],
+      "runtimeInfos": {},
+      "progressUpdateIntervalMs": 500,
+      "jobName": "paragraph_1594528580283_-1163292247",
+      "id": "20200712-043620_324775014",
+      "dateCreated": "2020-07-12T04:36:20+0000",
+      "dateStarted": "2020-07-13T02:18:55+0000",
+      "dateFinished": "2020-07-13T02:18:55+0000",
+      "status": "FINISHED",
+      "$$hashKey": "object:11100"
+    },
+    {
+      "text": "def benchmark[R](phase: String)(block: => R): (R, Float) = {\n  val t0 = System.currentTimeMillis\n  val result = block // call-by-name\n  val t1 = System.currentTimeMillis\n  println(\"Elapsed time [\" + phase + \"]: \" + ((t1 - t0).toFloat / 1000) + \"s\")\n  (result, (t1 - t0).toFloat / 1000)\n}",
+      "user": "anonymous",
+      "dateUpdated": "2020-07-13T02:18:55+0000",
+      "config": {
+        "editorMode": "ace/mode/scala",
+        "editorHide": false,
+        "colWidth": 12,
+        "fontSize": 9,
+        "enabled": true,
+        "results": {},
+        "editorSetting": {
+          "language": "scala",
+          "editOnDblClick": false,
+          "completionSupport": true,
+          "completionKey": "TAB"
+        }
+      },
+      "settings": {
+        "params": {},
+        "forms": {}
+      },
+      "results": {
+        "code": "SUCCESS",
+        "msg": [
+          {
+            "type": "TEXT",
+            "data": "\u001b[1m\u001b[34mbenchmark\u001b[0m: \u001b[1m\u001b[32m[R](phase: String)(block: => R)(R, Float)\u001b[0m\n"
+          }
+        ]
+      },
+      "apps": [],
+      "runtimeInfos": {},
+      "progressUpdateIntervalMs": 500,
+      "jobName": "paragraph_1594528580284_-196014933",
+      "id": "20200712-043620_1233757982",
+      "dateCreated": "2020-07-12T04:36:20+0000",
+      "dateStarted": "2020-07-13T02:18:55+0000",
+      "dateFinished": "2020-07-13T02:18:55+0000",
+      "status": "FINISHED",
+      "$$hashKey": "object:11101"
+    },
+    {
+      "text": "%md\nCPU version reqires an extra step before fitting data to classifier, using `VectorAssembler` to assemble all feature columns into one column. The following code snip shows how to do the vectorizing.\n\n```scala\nobject Vectorize {\n  def apply(df: DataFrame, featureNames: Seq[String], labelName: String): DataFrame = {\n    val toFloat = df.schema.map(f => col(f.name).cast(FloatType))\n    new VectorAssembler()\n      .setInputCols(featureNames.toArray)\n      .setOutputCol(\"features\")\n      .transform(df.select(toFloat:_*))\n      .select(col(\"features\"), col(labelName))\n  }\n}\n\ntrainSet = Vectorize(trainSet, featureCols, labelName)\nevalSet = Vectorize(evalSet, featureCols, labelName)\ntransSet = Vectorize(transSet, featureCols, labelName)\n\n```\n\n`VectorAssembler` is not needed for GPU version. Just fit the loaded data directly to XGBoostClassifier.",
+      "user": "anonymous",
+      "dateUpdated": "2020-07-13T02:18:56+0000",
+      "config": {
+        "editorMode": "ace/mode/text",
+        "editorHide": false,
+        "editorSetting": {
+          "language": "text",
+          "editOnDblClick": false
+        },
+        "colWidth": 12,
+        "fontSize": 9,
+        "enabled": true,
+        "results": {},
+        "tableHide": false
+      },
+      "settings": {
+        "params": {},
+        "forms": {}
+      },
+      "results": {
+        "code": "SUCCESS",
+        "msg": [
+          {
+            "type": "HTML",
+            "data": "<div class=\"markdown-body\">\n<p>CPU version reqires an extra step before fitting data to classifier, using <code>VectorAssembler</code> to assemble all feature columns into one column. The following code snip shows how to do the vectorizing.</p>\n<pre><code class=\"language-scala\">object Vectorize {\n  def apply(df: DataFrame, featureNames: Seq[String], labelName: String): DataFrame = {\n    val toFloat = df.schema.map(f =&gt; col(f.name).cast(FloatType))\n    new VectorAssembler()\n      .setInputCols(featureNames.toArray)\n      .setOutputCol(&quot;features&quot;)\n      .transform(df.select(toFloat:_*))\n      .select(col(&quot;features&quot;), col(labelName))\n  }\n}\n\ntrainSet = Vectorize(trainSet, featureCols, labelName)\nevalSet = Vectorize(evalSet, featureCols, labelName)\ntransSet = Vectorize(transSet, featureCols, labelName)\n\n</code></pre>\n<p><code>VectorAssembler</code> is not needed for GPU version. Just fit the loaded data directly to XGBoostClassifier.</p>\n\n</div>"
+          }
+        ]
+      },
+      "apps": [],
+      "runtimeInfos": {},
+      "progressUpdateIntervalMs": 500,
+      "jobName": "paragraph_1594528580284_-1513881670",
+      "id": "20200712-043620_618156060",
+      "dateCreated": "2020-07-12T04:36:20+0000",
+      "dateStarted": "2020-07-13T02:18:56+0000",
+      "dateFinished": "2020-07-13T02:18:56+0000",
+      "status": "FINISHED",
+      "$$hashKey": "object:11102"
+    },
+    {
+      "text": "// Start training\nprintln(\"\\n------ Training ------\")\nval (xgbClassificationModel, _) = benchmark(\"train\") {\n  xgbClassifier.fit(trainSet)\n}",
+      "user": "anonymous",
+      "dateUpdated": "2020-07-13T02:18:56+0000",
+      "config": {
+        "editorMode": "ace/mode/scala",
+        "editorHide": false,
+        "colWidth": 12,
+        "fontSize": 9,
+        "enabled": true,
+        "results": {},
+        "editorSetting": {
+          "language": "scala",
+          "editOnDblClick": false,
+          "completionSupport": true,
+          "completionKey": "TAB"
+        }
+      },
+      "settings": {
+        "params": {},
+        "forms": {}
+      },
+      "apps": [],
+      "runtimeInfos": {},
+      "progressUpdateIntervalMs": 500,
+      "jobName": "paragraph_1594528580284_-695049679",
+      "id": "20200712-043620_1418358219",
+      "dateCreated": "2020-07-12T04:36:20+0000",
+      "dateStarted": "2020-07-13T02:18:56+0000",
+      "dateFinished": "2020-07-13T02:26:51+0000",
+      "status": "FINISHED",
+      "$$hashKey": "object:11103",
+      "results": {
+        "code": "SUCCESS",
+        "msg": [
+          {
+            "type": "TEXT",
+            "data": "\n------ Training ------\nTracker started, with env={DMLC_NUM_SERVER=0, DMLC_TRACKER_URI=10.164.0.17, DMLC_TRACKER_PORT=9091, DMLC_NUM_WORKER=20}\nElapsed time [train]: 475.008s\n\u001b[1m\u001b[34mxgbClassificationModel\u001b[0m: \u001b[1m\u001b[32mml.dmlc.xgboost4j.scala.spark.XGBoostClassificationModel\u001b[0m = xgbc_2ce07ee0b6cb\n"
+          }
+        ]
+      }
+    },
+    {
+      "text": "%md\n## Transformation and evaluation\nHere uses `transSet` to evaluate our model and prints some useful columns to show our prediction result. After that `MulticlassClassificationEvaluator` is used to calculate an overall accuracy of our predictions.",
+      "user": "anonymous",
+      "dateUpdated": "2020-07-13T02:26:51+0000",
+      "config": {
+        "editorMode": "ace/mode/markdown",
+        "editorHide": true,
+        "editorSetting": {
+          "language": "markdown",
+          "editOnDblClick": true
+        },
+        "colWidth": 12,
+        "fontSize": 9,
+        "enabled": true,
+        "results": {}
+      },
+      "settings": {
+        "params": {},
+        "forms": {}
+      },
+      "results": {
+        "code": "SUCCESS",
+        "msg": [
+          {
+            "type": "HTML",
+            "data": "<div class=\"markdown-body\">\n<h2>Transformation and evaluation</h2>\n<p>Here uses <code>transSet</code> to evaluate our model and prints some useful columns to show our prediction result. After that <code>MulticlassClassificationEvaluator</code> is used to calculate an overall accuracy of our predictions.</p>\n\n</div>"
+          }
+        ]
+      },
+      "apps": [],
+      "runtimeInfos": {},
+      "progressUpdateIntervalMs": 500,
+      "jobName": "paragraph_1594528580284_1090201866",
+      "id": "20200712-043620_470610364",
+      "dateCreated": "2020-07-12T04:36:20+0000",
+      "dateStarted": "2020-07-13T02:26:51+0000",
+      "dateFinished": "2020-07-13T02:26:51+0000",
+      "status": "FINISHED",
+      "$$hashKey": "object:11104"
+    },
+    {
+      "text": "println(\"\\n------ Transforming ------\")\nval (results, _) = benchmark(\"transform\") {\n  val ret = xgbClassificationModel.transform(transSet).cache()\n  ret\n}\nz.show(results.select(\"orig_channel\", labelColName,\"rawPrediction\",\"probability\",\"prediction\").limit(10))\n\nprintln(\"\\n------Accuracy of Evaluation------\")\nval evaluator = new MulticlassClassificationEvaluator().setLabelCol(labelColName)\nval accuracy = evaluator.evaluate(results)\nprintln(accuracy)",
+      "user": "anonymous",
+      "dateUpdated": "2020-07-13T02:26:51+0000",
+      "config": {
+        "editorMode": "ace/mode/scala",
+        "editorHide": false,
+        "colWidth": 12,
+        "fontSize": 9,
+        "enabled": true,
+        "results": {
+          "1": {
+            "graph": {
+              "mode": "table",
+              "height": 300,
+              "optionOpen": false,
+              "setting": {
+                "table": {
+                  "tableGridState": {},
+                  "tableColumnTypeState": {
+                    "names": {
+                      "orig_channel": "string",
+                      "delinquency_12": "string",
+                      "rawPrediction": "string",
+                      "probability": "string",
+                      "prediction": "string"
+                    },
+                    "updated": false
+                  },
+                  "tableOptionSpecHash": "[{\"name\":\"useFilter\",\"valueType\":\"boolean\",\"defaultValue\":false,\"widget\":\"checkbox\",\"description\":\"Enable filter for columns\"},{\"name\":\"showPagination\",\"valueType\":\"boolean\",\"defaultValue\":false,\"widget\":\"checkbox\",\"description\":\"Enable pagination for better navigation\"},{\"name\":\"showAggregationFooter\",\"valueType\":\"boolean\",\"defaultValue\":false,\"widget\":\"checkbox\",\"description\":\"Enable a footer for displaying aggregated values\"}]",
+                  "tableOptionValue": {
+                    "useFilter": false,
+                    "showPagination": false,
+                    "showAggregationFooter": false
+                  },
+                  "updated": false,
+                  "initialized": false
+                }
+              },
+              "commonSetting": {}
+            }
+          }
+        },
+        "editorSetting": {
+          "language": "scala",
+          "editOnDblClick": false,
+          "completionSupport": true,
+          "completionKey": "TAB"
+        }
+      },
+      "settings": {
+        "params": {},
+        "forms": {}
+      },
+      "results": {
+        "code": "SUCCESS",
+        "msg": [
+          {
+            "type": "TEXT",
+            "data": "\n------ Transforming ------\nElapsed time [transform]: 0.143s\n"
+          },
+          {
+            "type": "TABLE",
+            "data": "orig_channel\tdelinquency_12\trawPrediction\tprobability\tprediction\n4.9E-324\t0\t[5.001231670379639,-5.001231670379639]\t[0.9933153325691819,0.006684667430818081]\t0.0\n1.0E-323\t0\t[6.777693748474121,-6.777693748474121]\t[0.9988623971585184,0.0011376028414815664]\t0.0\n4.9E-324\t0\t[7.609184741973877,-7.609184741973877]\t[0.999504369799979,4.956302000209689E-4]\t0.0\n1.0E-323\t0\t[8.442628860473633,-8.442628860473633]\t[0.9997845634934492,2.1543650655075908E-4]\t0.0\n1.0E-323\t0\t[8.08891773223877,-8.08891773223877]\t[0.9996931724308524,3.068275691475719E-4]\t0.0\n4.9E-324\t0\t[8.863614082336426,-8.863614082336426]\t[0.999858577051782,1.4142294821795076E-4]\t0.0\n1.0E-323\t0\t[8.85793399810791,-8.85793399810791]\t[0.9998577715887222,1.422284112777561E-4]\t0.0\n4.9E-324\t0\t[7.265506744384766,-7.265506744384766]\t[0.9993012417689897,6.98758231010288E-4]\t0.0\n4.9E-324\t0\t[5.615269184112549,-5.615269184112549]\t[0.9963713854085654,0.003628614591434598]\t0.0\n4.9E-324\t0\t[6.023037910461426,-6.023037910461426]\t[0.997583553660661,0.002416446339339018]\t0.0\n"
+          },
+          {
+            "type": "TEXT",
+            "data": "\n------Accuracy of Evaluation------\n0.9982550045083602\n\u001b[1m\u001b[34mresults\u001b[0m: \u001b[1m\u001b[32morg.apache.spark.sql.Dataset[org.apache.spark.sql.Row]\u001b[0m = [orig_channel: double, first_home_buyer: double ... 29 more fields]\n\u001b[1m\u001b[34mevaluator\u001b[0m: \u001b[1m\u001b[32morg.apache.spark.ml.evaluation.MulticlassClassificationEvaluator\u001b[0m = MulticlassClassificationEvaluator: uid=mcEval_62ee3ceb950d, metricName=f1, metricLabel=0.0, beta=1.0, eps=1.0E-15\n\u001b[1m\u001b[34maccuracy\u001b[0m: \u001b[1m\u001b[32mDouble\u001b[0m = 0.9982550045083602\n"
+          }
+        ]
+      },
+      "apps": [],
+      "runtimeInfos": {},
+      "progressUpdateIntervalMs": 500,
+      "jobName": "paragraph_1594528580284_-218421974",
+      "id": "20200712-043620_775095654",
+      "dateCreated": "2020-07-12T04:36:20+0000",
+      "dateStarted": "2020-07-13T02:26:51+0000",
+      "dateFinished": "2020-07-13T02:27:20+0000",
+      "status": "FINISHED",
+      "$$hashKey": "object:11105"
+    },
+    {
+      "title": "Example to save/load the model, predict with the model",
+      "text": "xgbClassificationModel.write.overwrite.save(modelPath)\n\nval modelFromDisk = XGBoostClassificationModel.load(modelPath)\n\nval (results2, _) = benchmark(\"transform2\") {\n  modelFromDisk.transform(transSet)\n}\nz.show(results2.limit(5))",
+      "user": "anonymous",
+      "dateUpdated": "2020-07-13T02:27:20+0000",
+      "config": {
+        "editorMode": "ace/mode/scala",
+        "editorHide": false,
+        "colWidth": 12,
+        "fontSize": 9,
+        "enabled": true,
+        "results": {
+          "1": {
+            "graph": {
+              "mode": "table",
+              "height": 300,
+              "optionOpen": false,
+              "setting": {
+                "table": {
+                  "tableGridState": {},
+                  "tableColumnTypeState": {
+                    "names": {
+                      "orig_channel": "string",
+                      "first_home_buyer": "string",
+                      "loan_purpose": "string",
+                      "property_type": "string",
+                      "occupancy_status": "string",
+                      "property_state": "string",
+                      "product_type": "string",
+                      "relocation_mortgage_indicator": "string",
+                      "seller_name": "string",
+                      "mod_flag": "string",
+                      "orig_interest_rate": "string",
+                      "orig_upb": "string",
+                      "orig_loan_term": "string",
+                      "orig_ltv": "string",
+                      "orig_cltv": "string",
+                      "num_borrowers": "string",
+                      "dti": "string",
+                      "borrower_credit_score": "string",
+                      "num_units": "string",
+                      "zip": "string",
+                      "mortgage_insurance_percent": "string",
+                      "current_loan_delinquency_status": "string",
+                      "current_actual_upb": "string",
+                      "interest_rate": "string",
+                      "loan_age": "string",
+                      "msa": "string",
+                      "non_interest_bearing_upb": "string",
+                      "delinquency_12": "string",
+                      "rawPrediction": "string",
+                      "probability": "string",
+                      "prediction": "string"
+                    },
+                    "updated": false
+                  },
+                  "tableOptionSpecHash": "[{\"name\":\"useFilter\",\"valueType\":\"boolean\",\"defaultValue\":false,\"widget\":\"checkbox\",\"description\":\"Enable filter for columns\"},{\"name\":\"showPagination\",\"valueType\":\"boolean\",\"defaultValue\":false,\"widget\":\"checkbox\",\"description\":\"Enable pagination for better navigation\"},{\"name\":\"showAggregationFooter\",\"valueType\":\"boolean\",\"defaultValue\":false,\"widget\":\"checkbox\",\"description\":\"Enable a footer for displaying aggregated values\"}]",
+                  "tableOptionValue": {
+                    "useFilter": false,
+                    "showPagination": false,
+                    "showAggregationFooter": false
+                  },
+                  "updated": false,
+                  "initialized": false
+                }
+              },
+              "commonSetting": {}
+            }
+          }
+        },
+        "editorSetting": {
+          "language": "scala",
+          "editOnDblClick": false,
+          "completionSupport": true,
+          "completionKey": "TAB"
+        },
+        "title": true
+      },
+      "settings": {
+        "params": {},
+        "forms": {}
+      },
+      "results": {
+        "code": "SUCCESS",
+        "msg": [
+          {
+            "type": "TEXT",
+            "data": "Elapsed time [transform2]: 0.058s\n"
+          },
+          {
+            "type": "TABLE",
+            "data": "orig_channel\tfirst_home_buyer\tloan_purpose\tproperty_type\toccupancy_status\tproperty_state\tproduct_type\trelocation_mortgage_indicator\tseller_name\tmod_flag\torig_interest_rate\torig_upb\torig_loan_term\torig_ltv\torig_cltv\tnum_borrowers\tdti\tborrower_credit_score\tnum_units\tzip\tmortgage_insurance_percent\tcurrent_loan_delinquency_status\tcurrent_actual_upb\tinterest_rate\tloan_age\tmsa\tnon_interest_bearing_upb\tdelinquency_12\trawPrediction\tprobability\tprediction\n4.9E-324\t4.9E-324\t1.0E-323\t4.9E-324\t1.0E-323\t1.24E-322\tnull\t4.9E-324\t4.9E-324\t4.9E-324\t2.75\t278000\t120\t56.0\t56.0\t1.0\t46.0\t624.0\t1\t295\t0.0\t0\t148441.15\t2.75\t13.0\t34820.0\t0.0\t0\t[5.001231670379639,-5.001231670379639]\t[0.9933153325691819,0.006684667430818081]\t0.0\n1.0E-323\t4.9E-324\t1.5E-323\t4.9E-324\t4.9E-324\t4.9E-324\tnull\t4.9E-324\t6.9E-323\t4.9E-324\t4.25\t579000\t360\t72.0\t72.0\t2.0\t44.0\t714.0\t1\t949\t0.0\t0\t568406.57\t4.25\t13.0\t41860.0\t0.0\t0\t[6.777693748474121,-6.777693748474121]\t[0.9988623971585184,0.0011376028414815664]\t0.0\n4.9E-324\t4.9E-324\t1.5E-323\t4.9E-324\t4.9E-324\t4.4E-323\tnull\t4.9E-324\t4.9E-324\t4.9E-324\t4.0\t240000\t360\t80.0\t80.0\t1.0\t18.0\t820.0\t1\t282\t0.0\t0\t236132.18\t4.0\t10.0\t16740.0\t0.0\t0\t[7.609184741973877,-7.609184741973877]\t[0.999504369799979,4.956302000209689E-4]\t0.0\n1.0E-323\t4.9E-324\t1.0E-323\t4.9E-324\t4.9E-324\t1.04E-322\tnull\t4.9E-324\t3.0E-323\t4.9E-324\t3.0\t241000\t180\t44.0\t44.0\t2.0\t44.0\t787.0\t1\t650\t0.0\t0\t230092.59\t3.0\t9.0\t0.0\t0.0\t0\t[8.442628860473633,-8.442628860473633]\t[0.9997845634934492,2.1543650655075908E-4]\t0.0\n1.0E-323\t4.9E-324\t4.9E-324\t1.5E-323\t4.9E-324\t1.0E-323\tnull\t4.9E-324\t4.9E-324\t4.9E-324\t4.25\t177000\t360\t75.0\t75.0\t2.0\t26.0\t792.0\t1\t787\t0.0\t0\t172387.22\t4.25\t18.0\t12420.0\t0.0\t0\t[8.08891773223877,-8.08891773223877]\t[0.9996931724308524,3.068275691475719E-4]\t0.0\n"
+          },
+          {
+            "type": "TEXT",
+            "data": "\u001b[1m\u001b[34mmodelFromDisk\u001b[0m: \u001b[1m\u001b[32mml.dmlc.xgboost4j.scala.spark.XGBoostClassificationModel\u001b[0m = xgbc_2ce07ee0b6cb\n\u001b[1m\u001b[34mresults2\u001b[0m: \u001b[1m\u001b[32morg.apache.spark.sql.DataFrame\u001b[0m = [orig_channel: double, first_home_buyer: double ... 29 more fields]\n"
+          }
+        ]
+      },
+      "apps": [],
+      "runtimeInfos": {},
+      "progressUpdateIntervalMs": 500,
+      "jobName": "paragraph_1594528580284_1907963406",
+      "id": "20200712-043620_1435219490",
+      "dateCreated": "2020-07-12T04:36:20+0000",
+      "dateStarted": "2020-07-13T02:27:20+0000",
+      "dateFinished": "2020-07-13T02:27:23+0000",
+      "status": "FINISHED",
+      "$$hashKey": "object:11106"
+    },
+    {
+      "user": "anonymous",
+      "dateUpdated": "2020-07-12T04:50:45+0000",
+      "config": {
+        "colWidth": 12,
+        "fontSize": 9,
+        "enabled": true,
+        "results": {},
+        "editorSetting": {
+          "language": "scala",
+          "editOnDblClick": false,
+          "completionKey": "TAB",
+          "completionSupport": true
+        },
+        "editorMode": "ace/mode/scala"
+      },
+      "settings": {
+        "params": {},
+        "forms": {}
+      },
+      "apps": [],
+      "runtimeInfos": {},
+      "progressUpdateIntervalMs": 500,
+      "jobName": "paragraph_1594528930033_-558128424",
+      "id": "paragraph_1594528930033_-558128424",
+      "dateCreated": "2020-07-12T04:42:10+0000",
+      "status": "FINISHED",
+      "$$hashKey": "object:11107"
+    }
+  ],
+  "name": "mortgage-gpu-scala",
+  "id": "2FCHJHDT3",
+  "defaultInterpreterGroup": "spark",
+  "version": "0.9.0-preview1",
+  "noteParams": {},
+  "noteForms": {},
+  "angularObjects": {},
+  "config": {
+    "isZeppelinNotebookCronEnable": false,
+    "looknfeel": "default",
+    "personalizedMode": "false"
+  },
+  "info": {
+    "isRunning": true
+  },
+  "path": "/mortgage-gpu-scala"
+}
