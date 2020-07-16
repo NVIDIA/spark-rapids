@@ -57,4 +57,4 @@ This project follows the
 and the Scala conventions detailed above, preferring the latter.
 
 ## Attribution
-Portions adopted from https://github.com/rapidsai/cudf/blob/master/CONTRIBUTING.md
+Portions adopted from https://github.com/rapidsai/cudf/blob/main/CONTRIBUTING.md
