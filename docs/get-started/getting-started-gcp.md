@@ -34,7 +34,7 @@ The configuration will allow users to run any of the [notebooks demo](../demo/GC
 
 
 ```bash
-    export REGION=[Your Prefer GCP Region]
+    export REGION=[Your Preferred GCP Region]
     export GCS_BUCKET=[Your GCS Bucket]
     export CLUSTER_NAME=[Your Cluster Name]
     export NUM_GPUS=4
