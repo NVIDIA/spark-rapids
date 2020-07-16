@@ -209,8 +209,14 @@ class GpuBroadcastMeta(
       case _ => false
     }
     if (!parent.exists(isSupported)) {
-      willNotWorkOnGpu("BroadcastExchange only works on the GPU if being used " +
-        "with a GPU version of BroadcastHashJoinExec or BroadcastNestedLoopJoinExec")
+      if (conf.forceGpuBroadcast) {
+        // This is a temporary workaround so that we can run TPCxBB benchmarks with GPU
+        // broadcasts and the plan is to remove this once we can support GPU broadcasts
+        // reliably with AQE enabled
+      } else {
+        willNotWorkOnGpu("BroadcastExchange only works on the GPU if being used " +
+            "with a GPU version of BroadcastHashJoinExec or BroadcastNestedLoopJoinExec")
+      }
     }
   }
 
