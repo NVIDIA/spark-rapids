@@ -87,7 +87,7 @@ def test_cached_join_filter(data_gen, join_type):
         left, right = create_df(spark, data, 500, 500)
         cached = left.join(right, left.a == right.r_a, join_type).cache()
         cached.count() #populates the cache
-        return cached
+        return cached.filter(filter)
 
     assert_gpu_and_cpu_are_equal_collect(do_join)
 
@@ -137,7 +137,6 @@ def test_cache_broadcast_nested_loop_join(data_gen, join_type):
 
     assert_gpu_and_cpu_are_equal_collect(do_join, conf={'spark.rapids.sql.exec.BroadcastNestedLoopJoinExec': 'true'})
 
-#sort locally because of https://github.com/NVIDIA/spark-rapids/issues/84
 #This is a copy of a test from generate_expr_test.py except for the fact that we are caching the df
 @pytest.mark.parametrize('data_gen', all_gen, ids=idfn)
 @allow_non_gpu('InMemoryTableScanExec', 'DataWritingCommandExec')
