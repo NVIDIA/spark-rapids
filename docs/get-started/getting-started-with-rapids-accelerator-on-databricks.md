@@ -23,11 +23,11 @@ Create a Databricks cluster by going to Clusters, then clicking “+ Create Clus
 4. Select a worker type. On AWS, use nodes with 1 GPU each such as p3.xlarge or g4dn.xlarge. p2 nodes do not meet the architecture requirements for the Spark worker (although they can be used for the driver node). For Azure, choose GPU nodes such as Standard_NC6s_v3
 5. Select the driver type. Generally this can be set to be the same as the worker.
 
-## Advance Cluster Configuration
+## Cluster Configuration
 
 We will need to create an initialization script for the cluster that installs the RAPIDS jars to the cluster.
 
-1. To create the initialization script, import the initialization script notebook from the repo [generate-init-script.ipynb](../demo/Databricks/) to your workspace. See [Managing Notebooks](https://docs.databricks.com/user-guide/notebooks/notebook-manage.html) on how to import a notebook, then open the notebook.
+1. To create the initialization script, import the initialization script notebook from the repo [generate-init-script.ipynb](../demo/Databricks/generate-init-script.ipynb) to your workspace. See [Managing Notebooks](https://docs.databricks.com/user-guide/notebooks/notebook-manage.html) on how to import a notebook, then open the notebook.
 2. Once you are in the notebook, click the “Run All” button.
 3. Ensure that the newly created init.sh script is present in the output from cell 2 and that the contents of the script are correct..
 4. Go back and edit your cluster to configure it to use the init script. To do this, click the “Clusters” button on the left panel, then select your cluster.
