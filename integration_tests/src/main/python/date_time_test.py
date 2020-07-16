@@ -21,8 +21,8 @@ from pyspark.sql.types import *
 import pyspark.sql.functions as f
 
 # We only support literal intervals for TimeSub
-vals = [(1943, 1101), (2693, 2167), (2729, 0), (584, 1563), (44, 1534), (2635, 3319),
-            (1885, 2828), (0, 2463), (932, 2286), (0, 0)]
+vals = [(-584, 1563), (1943, 1101), (2693, 2167), (2729, 0), (44, 1534), (2635, 3319),
+            (1885, -2828), (0, 2463), (932, 2286), (0, 0)]
 @pytest.mark.parametrize('data_gen', vals, ids=idfn)
 def test_timesub(data_gen):
     days, seconds = data_gen
