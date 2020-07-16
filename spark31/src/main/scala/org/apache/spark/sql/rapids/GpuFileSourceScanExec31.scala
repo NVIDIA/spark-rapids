@@ -34,7 +34,7 @@ import org.apache.spark.sql.types.StructType
 import org.apache.spark.sql.vectorized.ColumnarBatch
 import org.apache.spark.util.collection.BitSet
 
-case class GpuFileSourceScanExec(
+case class GpuFileSourceScanExec31(
     @transient relation: HadoopFsRelation,
     output: Seq[Attribute],
     requiredSchema: StructType,
@@ -155,7 +155,7 @@ case class GpuFileSourceScanExec(
   }
 }
 
-object GpuFileSourceScanExec {
+object GpuFileSourceScanExec31 {
   def tagSupport(meta: SparkPlanMeta[FileSourceScanExec]): Unit = {
     meta.wrapped.relation.fileFormat match {
       case _: CSVFileFormat => GpuReadCSVFileFormat.tagSupport(meta)
