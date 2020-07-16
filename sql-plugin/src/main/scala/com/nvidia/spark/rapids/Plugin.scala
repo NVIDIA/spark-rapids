@@ -67,7 +67,7 @@ object RapidsPluginUtils extends Logging {
     if (conf.contains(SQL_PLUGIN_CONF_KEY)) {
       val previousValue = conf.get(SQL_PLUGIN_CONF_KEY).split(",").map(_.trim)
       if (!previousValue.contains(SQL_PLUGIN_NAME)) {
-        conf.set(SQL_PLUGIN_CONF_KEY, previousValue + "," + SQL_PLUGIN_NAME)
+        conf.set(SQL_PLUGIN_CONF_KEY, (previousValue :+ SQL_PLUGIN_NAME).mkString(","))
       } else {
         conf.set(SQL_PLUGIN_CONF_KEY, previousValue.mkString(","))
       }
