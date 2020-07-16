@@ -13,7 +13,7 @@ This guide will run through how to set up the RAPIDS Accelerator for Apache Spar
     * AWS: 7.0 ML (includes Apache Spark 3.0.0, GPU, Scala 2.12)
     * Azure: 7.0 ML (GPU, Scala 2.12, Spark 3.0.0)
 
-The number of GPUs per node dictates the number of Spark executors that can run in that node. Each executor should only be allowed to run 1 task at any given time.
+The number of GPUs per node dictates the number of Spark executors that can run in that node.
 
 ## Start a Databricks Cluster
 Create a Databricks cluster by going to Clusters, then clicking “+ Create Cluster”. Ensure the cluster meets the prerequisites above by configuring it as follows:
