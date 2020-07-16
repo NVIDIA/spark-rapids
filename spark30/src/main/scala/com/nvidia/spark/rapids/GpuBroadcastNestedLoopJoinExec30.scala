@@ -63,8 +63,8 @@ object GpuBroadcastNestedLoopJoinExec30 extends Logging {
   def createInstance(
       left: SparkPlan,
       right: SparkPlan,
-      joinType: JoinType,
       join: BroadcastNestedLoopJoinExec,
+      joinType: JoinType,
       condition: Option[Expression]): GpuBroadcastNestedLoopJoinExecBase= {
     
     /* val buildSide: BuildSide = if (join.isInstanceOf[ShuffledHashJoinExec]) {
