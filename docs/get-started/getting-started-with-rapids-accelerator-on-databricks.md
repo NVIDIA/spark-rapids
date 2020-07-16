@@ -27,7 +27,7 @@ Create a Databricks cluster by going to Clusters, then clicking “+ Create Clus
 
 We will need to create an initialization script for the cluster that installs the RAPIDS jars to the cluster.
 
-1. To create the initialization script, import the initialization script notebook from the repo [generate-init-script.ipynb](../demo/Databricks/) to your workspace. See [Managing Notebooks](https://docs.databricks.com/user-guide/notebooks/notebook-manage.html) on how to import a notebook, then open the notebook.
+1. To create the initialization script, import the initialization script notebook from the repo [generate-init-script.ipynb](../demo/Databricks/generate-init-script.ipynb) to your workspace. See [Managing Notebooks](https://docs.databricks.com/user-guide/notebooks/notebook-manage.html) on how to import a notebook, then open the notebook.
 2. Once you are in the notebook, click the “Run All” button.
 3. Ensure that the newly created init.sh script is present in the output from cell 2 and that the contents of the script are correct..
 4. Go back and edit your cluster to configure it to use the init script. To do this, click the “Clusters” button on the left panel, then select your cluster.
