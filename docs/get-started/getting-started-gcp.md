@@ -66,8 +66,10 @@ To use notebooks with Dataproc cluster, click on the cluster name under Dataproc
 ![Dataproc Web Interfaces](../img/dataproc-service.png)
 
 The notebook will first transcode CSV files into Parquet Files and then run a ETL query to prepare the dataset for Training. In the sample notebook, we use 2016 data as evaluation set and the rest as training set, saving to respective GCS location. 
-First stage with default configuration in notebook should take ~110 seconds (1/3 of CPU execution time with same config) whereas second stage takes ~170 seconds (1/6 of CPU execution time with same config).
-Once data is prepared, we use [Mortgage XGBoost4j Scala Notebook](../demo/GCP/mortgage-xgboost4j-gpu-scala.zpln) in Dataproc Zeppelin service to execute the training job on GPU. Since GITHUB cannot render zeppelin notebook, we prepared a [Jupyter Notebook with Scala code](../demo/GCP/mortgage-xgboost4j-gpu-scala.ipynb) for you to view code content. 
+First stage with default configuration in notebook should take ~110 seconds (1/3 of CPU execution time with same config) whereas second stage takes ~170 seconds (1/7 of CPU execution time with same config). The notebook depends on pre-compiled [Spark RAPIDS SQL plugin](https://mvnrepository.com/artifact/com.nvidia/rapids-4-spark-parent) and [cuDF](https://mvnrepository.com/artifact/ai.rapids/cudf/0.14), which pre-downloaded by GCP Dataproc [RAPIDS init script]().
+
+Once data is prepared, we use [Mortgage XGBoost4j Scala Notebook](../demo/GCP/mortgage-xgboost4j-gpu-scala.zpln) in Dataproc Zeppelin service to execute the training job on GPU. NVIDIA Spark team also ship [Spark XGBoost4j](https://github.com/NVIDIA/spark-xgboost) which is based on [DMLC xgboost](https://github.com/dmlc/xgboost). Precompiled [XGBoost4j]() and [XGBoost4j Spark](https://repo1.maven.org/maven2/com/nvidia/xgboost4j-spark_3.0/1.0.0-0.1.0/) library could be downloaded from maven, it is pre downloaded by GCP [RAPIDS init action](https://github.com/GoogleCloudDataproc/initialization-actions/tree/master/rapids). Since GITHUB cannot render zeppelin notebook, we prepared a [Jupyter Notebook with Scala code](../demo/GCP/mortgage-xgboost4j-gpu-scala.ipynb) for you to view code content. 
+
 The training time should be around 480 seconds (1/10 of CPU execution time with same config). Which is shown under cell:
 ```scala
 // Start training
