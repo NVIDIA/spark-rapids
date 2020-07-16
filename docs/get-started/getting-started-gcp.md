@@ -25,7 +25,7 @@ gcloud services enable storage-api.googleapis.com
 
 After command line environment is setup, log in to your GCP account. We can now create a Dataproc cluster with configuration mentioned below.
 The configuration will allow users to run any of the [notebooks demo](../demo/GCP) on GCP. Alternatively, users can also start a 2*2T4 worker nodes.
-* [GPU Driver](https://github.com/GoogleCloudDataproc/initialization-actions/tree/master/gpu) and [RAPIDS Acclerator for Apache Spark](https://github.com/GoogleCloudDataproc/initialization-actions/tree/master/rapids) through initialization actions
+* [GPU Driver](https://github.com/GoogleCloudDataproc/initialization-actions/tree/master/gpu) and [RAPIDS Acclerator for Apache Spark](https://github.com/GoogleCloudDataproc/initialization-actions/tree/master/rapids) through initialization actions (currently the init action is only updated in US region public buckets as of 07/16/2020)
 * One 8-core master node and 5 32-core worker nodes
 * Four NVIDIA T4 to each worker nodes
 * [Local SSDs](https://cloud.google.com/dataproc/docs/concepts/compute/dataproc-local-ssds) is recommended to improve IO for Spark scratch places  
@@ -48,13 +48,13 @@ gcloud dataproc clusters create $CLUSTER_NAME  \
     --worker-accelerator type=nvidia-tesla-t4,count=$NUM_GPUS \
     --worker-machine-type n1-highmem-32\
     --num-worker-local-ssds 4 \
-    --initialization-actions gs://dataproc-initialization-actions/gpu/install_gpu_driver.sh,gs://dataproc-initialization-actions/rapids/rapids.sh \
+    --initialization-actions gs://goog-dataproc-initialization-actions-${REGION}/gpu/install_gpu_driver.sh,gs://goog-dataproc-initialization-actions-${REGION}/rapids/rapids.sh \
     --optional-components=ANACONDA,JUPYTER,ZEPPELIN \
     --metadata gpu-driver-provider="NVIDIA" \
     --metadata rapids-runtime=SPARK \
     --bucket $GCS_BUCKET \
     --enable-component-gateway \
-    --properties="^#^spark:spark.yarn.unmanagedAM.enabled=false"`
+    --properties="^#^spark:spark.yarn.unmanagedAM.enabled=false"
 ``` 
 This may take around 5-15 minutes to complete. You can navigate to Dataproc clusters tab in the Google Cloud Console to see the progress.
 
