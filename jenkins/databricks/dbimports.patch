@@ -1,5 +1,5 @@
 diff --git a/sql-plugin/src/main/scala/com/nvidia/spark/rapids/GpuHashJoin.scala b/sql-plugin/src/main/scala/com/nvidia/spark/rapids/GpuHashJoin.scala
-index 94b42dc..cf27f4b 100644
+index f0aaec3..eafba2a 100644
 --- a/sql-plugin/src/main/scala/com/nvidia/spark/rapids/GpuHashJoin.scala
 +++ b/sql-plugin/src/main/scala/com/nvidia/spark/rapids/GpuHashJoin.scala
 @@ -19,8 +19,9 @@ import ai.rapids.cudf.{NvtxColor, Table}
@@ -31,16 +31,17 @@ index 7ae310b..3ebde77 100644
  import org.apache.spark.sql.vectorized.ColumnarBatch
  
 diff --git a/sql-plugin/src/main/scala/com/nvidia/spark/rapids/GpuSortMergeJoinExec.scala b/sql-plugin/src/main/scala/com/nvidia/spark/rapids/GpuSortMergeJoinExec.scala
-index 29ba63d..78febd4 100644
+index af7e607..6edf950 100644
 --- a/sql-plugin/src/main/scala/com/nvidia/spark/rapids/GpuSortMergeJoinExec.scala
 +++ b/sql-plugin/src/main/scala/com/nvidia/spark/rapids/GpuSortMergeJoinExec.scala
-@@ -17,8 +17,9 @@
+@@ -17,9 +17,10 @@
  package com.nvidia.spark.rapids
  
  import org.apache.spark.internal.Logging
-+import org.apache.spark.sql.catalyst.optimizer.BuildRight
++import org.apache.spark.sql.catalyst.optimizer.{BuildLeft, BuildRight}
+ import org.apache.spark.sql.catalyst.plans.{ExistenceJoin, FullOuter, InnerLike, JoinType, LeftAnti, LeftOuter, LeftSemi, RightOuter}
  import org.apache.spark.sql.execution.SortExec
--import org.apache.spark.sql.execution.joins.{BuildRight, SortMergeJoinExec}
+-import org.apache.spark.sql.execution.joins.{BuildLeft, BuildRight, SortMergeJoinExec}
 +import org.apache.spark.sql.execution.joins.SortMergeJoinExec
  
  class GpuSortMergeJoinMeta(
