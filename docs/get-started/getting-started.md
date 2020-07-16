@@ -1,42 +1,21 @@
 ---
-layout: default
-title: Getting Started
-nav_order: 2
+layout: page
+title: On-Prem
+nav_order: 1
+parent: Getting-Started
 ---
 
+# Getting Started with RAPIDS Accelerator with on premise cluster or local mode
+## Spark Deployment Methods
+The way you decide to deploy Spark affects the steps you must take to install and setup Spark and
+the RAPIDS Accelerator for Apache Spark. The primary methods of deploy Spark are:
+- Local mode - this is for dev/testing only, not for production
+- Standalone Mode
+- On a YARN cluster
+- On a Kubernetes cluster
 
-# Getting Started with the RAPIDS Accelerator for Apache Spark
-
-## Overview
-The RAPIDS Accelerator for Apache Spark leverages GPUs to accelerate processing via the
-[RAPIDS libraries](http://rapids.ai).
-
-Apache Spark 3.0+ lets users provide a plugin that can replace the backend for SQL and DataFrame
-operations. This requires no API changes from the user. The plugin will replace SQL operations it
-supports with GPU accelerated versions. If an operation is not supported it will fall back to using
-the Spark CPU version. Note that the plugin cannot accelerate operations that manipulate RDDs
-directly.
-
-The accelerator library also provides an implementation of Spark's shuffle that can leverage 
-[UCX](https://www.openucx.org/) to optimize GPU data transfers keeping as much data on the GPU as
-possible and bypassing the CPU to do GPU to GPU transfers.
-
-The GPU accelerated processing plugin does not require the accelerated shuffle implementation.
-However, if accelerated SQL processing is not enabled, the shuffle implementation falls back to the
-default `SortShuffleManager`. 
-
-To enable GPU processing acceleration you will need:
-- Apache Spark 3.0+
-- A spark cluster configured with GPUs that comply with the requirements for the version of 
-  [cudf](https://github.com/rapidsai/cudf).
-    - One GPU per executor.
-- Add the following jars:
-    - A cudf jar that corresponds to the version of CUDA available on your cluster.
-    - RAPIDS Spark accelerator plugin jar.
-- Set the config `spark.plugins` to `com.nvidia.spark.SQLPlugin`
-
-## Prerequisites
-Each node where you are running Spark needs to have the following installed. If you are running
+## Apache Spark Setup for GPU
+Each GPU node where you are running Spark needs to have the following installed. If you are running
 with Docker on Kubernetes then skip these as you will do this as part of the docker build.
 - Install Java 8 - note jdk11 is supported by Spark, but we have been building and testing with
   jdk8, so we suggest using that for now.
@@ -53,39 +32,6 @@ with Docker on Kubernetes then skip these as you will do this as part of the doc
   - `sudo apt-get update`
   - `sudo apt-get -y install cuda`
 
-## Spark GPU Scheduling Overview
-Apache Spark 3.0 now supports GPU scheduling as long as you are using a cluster manager that
-supports it. You can have Spark request GPUs and assign them to tasks. The exact configs you use
-will vary depending on your cluster manager. Here are a few of the configs:
-- Request your executor to have GPUs:
-  - `--conf spark.executor.resource.gpu.amount=1`
-- Specify the number of GPUs per task:
-  - `--conf spark.task.resource.gpu.amount=1`
-- Specify a GPU discovery script (required on YARN and K8S):
-  - `--conf spark.executor.resource.gpu.discoveryScript=./getGpusResources.sh`
-
-See the deployment specific sections for more details and restrictions. Note that
-`spark.task.resource.gpu.amount` can be a decimal amount, so if you want multiple tasks to be run
-on an executor at the same time and assigned to the same GPU you can set this to a decimal value
-less than 1. You would want this setting to correspond to the `spark.executor.cores` setting.  For
-instance, if you have `spark.executor.cores=2` which would allow 2 tasks to run on each executor
-and you want those 2 tasks to run on the same GPU then you would set
-`spark.task.resource.gpu.amount=0.5`.
-
-You can also refer to the official Apache Spark documentation.
-- [Overview](https://github.com/apache/spark/blob/master/docs/configuration.md#custom-resource-scheduling-and-configuration-overview)
-- [Kubernetes specific documentation](https://github.com/apache/spark/blob/master/docs/running-on-kubernetes.md#resource-allocation-and-configuration-overview)
-- [Yarn specific documentation](https://github.com/apache/spark/blob/master/docs/running-on-yarn.md#resource-allocation-and-configuration-overview)
-- [Standalone specific documentation](https://github.com/apache/spark/blob/master/docs/spark-standalone.md#resource-allocation-and-configuration-overview)
-
-## Spark Deployment Methods
-The way you decide to deploy Spark affects the steps you must take to install and setup Spark and
-the RAPIDS Accelerator for Apache Spark. The primary methods of deploy Spark are:
-- Local mode - this is for dev/testing only, not for production
-- Standalone Mode
-- On a YARN cluster
-- On a Kubernetes cluster
-
 Below are sections on installing Spark and the RAPIDS Accelerator on a single node, you may want
 to read the deployment method sections before doing any installations.
 
@@ -95,8 +41,9 @@ To install Apache Spark please follow the official
 scala version 2.12 is currently supported by the accelerator. 
 
 ## Download the RAPIDS jars
-The [accelerator](https://repo1.maven.org/maven2/com/nvidia/rapids-4-spark_2.12/0.1.0/) and 
-[cudf](https://repo.maven.apache.org/maven2/ai/rapids/cudf/0.14/) jars are available in maven central. 
+The [accelerator](https://mvnrepository.com/artifact/com.nvidia/rapids-4-spark_2.12) and 
+[cudf](https://mvnrepository.com/artifact/ai.rapids/cudf) jars are available in the 
+[download](/docs/version/stable-release#download) section.
 
 Download the RAPIDS Accelerator for Apache Spark plugin jar. Then download the version of the cudf
 jar that your version of the accelerator depends on. Each cudf jar is for a specific version of
@@ -107,15 +54,15 @@ CUDA and will not run on other versions. The jars use a maven classifier to keep
 - CUDA 10.2 => classifier cuda10-2
 
 For example, here is a sample version of the jars and cudf with CUDA 10.1 support:
-- cudf-0.14-cuda10-1.jar
+- cudf-0.15-SNAPSHOT-cuda10-1.jar
 - rapids-4-spark_2.12-0.1.0.jar
 
 For simplicity export the location to these jars. This example assumes the sample jars above have
 been placed in the `/opt/sparkRapidsPlugin` directory:
 ```shell 
 export SPARK_RAPIDS_DIR=/opt/sparkRapidsPlugin
-export SPARK_CUDF_JAR=${SPARK_RAPIDS_DIR}/cudf-0.14-cuda10-1.jar
-export SPARK_RAPIDS_PLUGIN_JAR=${SPARK_RAPIDS_DIR}/rapids-4-spark_2.12-0.1.0.jar
+export SPARK_CUDF_JAR=${SPARK_RAPIDS_DIR}/cudf-0.15-SNAPSHOT-cuda10-1.jar
+export SPARK_RAPIDS_PLUGIN_JAR=${SPARK_RAPIDS_DIR}/rapids-4-spark_2.12-0.2.0-SNAPSHOT.jar
 ```
 
 ## Install the GPU Discovery Script
@@ -131,7 +78,7 @@ directory as the plugin jars (`/opt/sparkRapidsPlugin` in the example).
 This is for testing/dev setup only.  It is not to be used in production.  In this mode Spark runs
 everything in a single process on a single node.
 - [Install Spark](#install-spark)
-- [Install the RAPIDS jars](#install-the-rapids-jars)
+- [Install the RAPIDS jars](#download-the-rapids-jars)
 - Launch your Spark shell session
 
 Default configs usually work fine in local mode.  The required changes are setting the config 
@@ -163,7 +110,7 @@ Spark Standalone mode requires starting the Spark master and worker(s). You can 
 machine or multiple machines for distributed setup.
 
 The first step is to [Install Spark](#install-spark), the 
-[RAPIDS Accelerator for Spark jars](#install-the-rapids-jars), and the 
+[RAPIDS Accelerator for Spark jars](#download-the-rapids-jars), and the 
 [GPU discovery script](#install-the-gpu-discovery-script) on all the nodes you want to use.
 After that choose one of the nodes to be your master node and start the master.  Note that the
 master process does **not** need a GPU to function properly.
@@ -226,7 +173,7 @@ $SPARK_HOME/bin/spark-shell \
 ## Running on YARN
 
 YARN requires you to [Install Spark](#install-spark), the
-[RAPIDS Accelerator for Spark jars](#install-the-rapids-jars), and the
+[RAPIDS Accelerator for Spark jars](#download-the-rapids-jars), and the
 [GPU discovery script](#install-the-gpu-discovery-script) on a launcher node. YARN handles
 shipping them to the cluster nodes as needed. If you want to use the GPU scheduling feature in
 Spark it requires YARN version >= 2.10 or >= 3.1.1 and ideally you would use >= 3.1.3 in order to
@@ -248,7 +195,7 @@ use - either 3.x or 2.x.
 - Configure YARN to support
   [GPU scheduling and isolation](https://hadoop.apache.org/docs/r3.1.3/hadoop-yarn/hadoop-yarn-site/UsingGpus.html).
 - Install [Spark](#install-spark), the
-  [RAPIDS Accelerator for Spark jars](#install-the-rapids-jars), and the
+  [RAPIDS Accelerator for Spark jars](#download-the-rapids-jars), and the
   [GPU discovery script](#install-the-gpu-discovery-script) on the node from which you are
   launching your Spark application.
 - Use the following configuration settings when running Spark on YARN, changing the amounts as
@@ -277,7 +224,7 @@ $SPARK_HOME/bin/spark-shell \
 - Configure YARN to support
  [GPU scheduling and isolation](https://hadoop.apache.org/docs/r2.10.0/hadoop-yarn/hadoop-yarn-site/ResourceProfiles.html)
 - Install [Spark](#install-spark), the
-  [RAPIDS Accelerator for Spark jars](#install-the-rapids-jars), and the
+  [RAPIDS Accelerator for Spark jars](#download-the-rapids-jars), and the
   [GPU discovery script](#install-the-gpu-discovery-script) on the node from which you are
   launching your Spark application.
 - Use the following configs when running Spark on YARN, changing the amounts as necessary:
@@ -310,7 +257,7 @@ accessing a GPU at once. Note it does not matter if GPU scheduling support is en
   - Foreach GPU index set it to `EXCLUSIVE_PROCESS` mode:
     - `nvidia-smi -c EXCLUSIVE_PROCESS -i $index`
 - Install [Spark](#install-spark), the
-  [RAPIDS Accelerator for Spark jars](#install-the-rapids-jars), and the
+  [RAPIDS Accelerator for Spark jars](#download-the-rapids-jars), and the
   [GPU discovery script](#install-the-gpu-discovery-script) on the node from which you are
   launching your Spark application.
 - Use the following configs when running Spark on YARN. Note that we are configuring a resource
@@ -332,7 +279,7 @@ $SPARK_HOME/bin/spark-shell \
        --conf spark.sql.files.maxPartitionBytes=512m \
        --conf spark.sql.shuffle.partitions=10 \
        --conf spark.plugins=com.nvidia.spark.SQLPlugin \
-       --conf spark.resourceDiscovery.plugin=com.nvidia.spark.ExclusiveModeGpuDiscoveryPlugin \
+       --conf spark.resources.discoveryPlugin=com.nvidia.spark.ExclusiveModeGpuDiscoveryPlugin \
        --conf spark.executor.resource.gpu.discoveryScript=./getGpusResources.sh \
        --files ${SPARK_RAPIDS_DIR}/getGpusResources.sh \
        --jars  ${SPARK_CUDF_JAR},${SPARK_RAPIDS_PLUGIN_JAR}
@@ -348,7 +295,7 @@ This assumes you have Kubernetes already installed and setup.  These instruction
 to setup a Kubernetes cluster.
 
 - Install [Spark](#install-spark), the
-  [RAPIDS Accelerator for Spark jars](#install-the-rapids-jars), and the
+  [RAPIDS Accelerator for Spark jars](#download-the-rapids-jars), and the
   [GPU discovery script](#install-the-gpu-discovery-script) on the node from which you are
   going to build your Docker image.  Note that you can download these into a local directory and
   untar the Spark `.tar.gz` rather than installing into a location on the machine.
@@ -381,7 +328,7 @@ $SPARK_HOME/bin/spark-shell \
 ```  
 
 ## RAPIDS Accelerator Configuration and Tuning
-Most of what you need you can get from [tuning guide](./tuning-guide.md).
+Most of what you need you can get from [tuning guide](../tuning-guide).
 
 The following configs will hep you to get started but must be configured based on your cluster
 and application.
@@ -426,7 +373,7 @@ operation “count at ...”, you should see the graph of Spark Execs and some o
 the label Gpu...  For instance, in the screenshot below you will see `GpuRowToColumn`, `GpuFilter`,
 and `GpuColumnarExchange`.  Those correspond to operations that run on the GPU.
 
-![Join Example on Spark SQL UI](img/join-sql-ui-example.png)
+![Join Example on Spark SQL UI](/docs/img/join-sql-ui-example.png)
 
 ## Advanced Configuration
 
