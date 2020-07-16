@@ -11,21 +11,21 @@ The list of supported operations is provided [here](../configs.html#supported-gp
 
 Hardware Requirements: 
    
-    GPU Architecture: V100 or T4 (use nvidia-smi command line utility)
+    GPU Architecture: NVIDIA Pascal™ or better (Tested on V100 and T4 GPU)
 
 Software Requirements: 
 
-    OS: Ubuntu 16.04/18.04, RHEL 7.0
+    OS: Ubuntu 16.04 & gcc 5.4 OR Ubuntu 18.04/CentOS 7 & gcc 7.3
+    (RHEL 7 support is provided through CentOS 7 builds/installs)
 
-    NVIDIA Driver: 418.39+ 
+    CUDA & NVIDIA Drivers: 10.1.2 & v418.87+ or 10.2 & v440.33+
     
-    CUDA Version: 10.1 or 10.2
-
     Apache Spark 3.0
   
     Apache Hadoop 2.10+ or 3.1.1+ (3.1.1 for nvidia-docker version 2)
 
     Python 3.x, Scala 2.12, Java 8 
+
 
 ## Download
 * [RAPIDS Spark Package](https://repo1.maven.org/maven2/com/nvidia/rapids-4-spark_2.12/0.1.0/rapids-4-spark_2.12-0.1.0.jar)

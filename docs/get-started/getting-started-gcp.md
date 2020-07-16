@@ -54,7 +54,7 @@ gcloud dataproc clusters create $CLUSTER_NAME  \
     --metadata rapids-runtime=SPARK \
     --bucket $GCS_BUCKET \
     --enable-component-gateway \
-    --properties="^#^spark:spark.yarn.unmanagedAM.enabled=false#spark:spark.task.resource.gpu.amount=0.125#spark:spark.executor.cores=8#spark:spark.task.cpus=1#spark:spark.executor.memory=8G"`
+    --properties="^#^spark:spark.yarn.unmanagedAM.enabled=false"`
 ``` 
 This may take around 5-15 minutes to complete. You can navigate to Dataproc clusters tab in the Google Cloud Console to see the progress.
 
