@@ -178,6 +178,35 @@ class GpuCartesianRDD(
   }
 }
 
+object GpuNoColumnCrossJoin {
+  def divideIntoBatches(rowCounts: RDD[Long],
+      targetSizeBytes: Long,
+      numOutputRows: SQLMetric,
+      numOutputBatches: SQLMetric): RDD[ColumnarBatch] = {
+    // Hash aggregate explodes the rows out, so if we go too large
+    // it can blow up. The size of a Long is 8 bytes so we just go with
+    // that as our estimate, no nulls.
+    val maxRowCount = targetSizeBytes/8
+
+    def divideIntoBatches(rows: Long): Iterable[ColumnarBatch] = {
+      val numBatches = (rows + maxRowCount - 1)/maxRowCount
+      (0L until numBatches).map(i => {
+        val ret = new ColumnarBatch(new Array[ColumnVector](0))
+        if ((i + 1) * maxRowCount > rows) {
+          ret.setNumRows((rows - (i * maxRowCount)).toInt)
+        } else {
+          ret.setNumRows(maxRowCount.toInt)
+        }
+        numOutputRows += ret.numRows()
+        numOutputBatches += 1
+        ret
+      })
+    }
+
+    rowCounts.flatMap(divideIntoBatches)
+  }
+}
+
 case class GpuCartesianProductExec(
     left: SparkPlan,
     right: SparkPlan,
@@ -229,32 +258,16 @@ case class GpuCartesianProductExec(
         ret
       }
 
-      // Hash aggregate explodes the rows out, so if we go too large
-      // it can blow up. The size of a Long is 8 bytes so we just go with
-      // that as our estimate, no nulls.
-      val maxRowCount = targetSizeBytes/8
-
-      def divideIntoBatches(rows: Long): Iterable[ColumnarBatch] = {
-        val numBatches = (rows + maxRowCount - 1)/maxRowCount
-        (0L until numBatches).map(i => {
-          val ret = new ColumnarBatch(new Array[ColumnVector](0))
-          if ((i + 1) * maxRowCount > rows) {
-            ret.setNumRows((rows - (i * maxRowCount)).toInt)
-          } else {
-            ret.setNumRows(maxRowCount.toInt)
-          }
-          numOutputRows += ret.numRows()
-          numOutputBatches += 1
-          ret
-        })
-      }
       val l = left.executeColumnar().map(getRowCountAndClose)
       val r = right.executeColumnar().map(getRowCountAndClose)
       // TODO here too it would probably be best to avoid doing any re-computation
       //  that happens with the built in cartesian, but writing another custom RDD
       //  just for this use case is not worth it without an explicit use case.
-      val prods = l.cartesian(r).map(p => p._1 * p._2)
-      prods.flatMap(divideIntoBatches)
+      GpuNoColumnCrossJoin.divideIntoBatches(
+        l.cartesian(r).map(p => p._1 * p._2),
+        targetSizeBytes,
+        numOutputRows,
+        numOutputBatches)
     } else {
       new GpuCartesianRDD(sparkContext,
         boundCondition,
