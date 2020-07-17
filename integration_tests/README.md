@@ -118,7 +118,7 @@ The marks you care about are all in marks.py
    * `ignore_order` tells the asserts to sort the resulting data because the tests may not produce the results in the same order
    * `incompat` tells the tests to enable incompat operators. It does not enable approximate comparisons for floating point though.
    * `approximate_float` tells the tests to compare floating point values (including double) and allow for an error. This follows `pytest.approx` and will also take `rel` and `abs` args.
-   * `allow_non_gpu` tells the tests that not everything in the query will run on the GPU. You can tell it to allow all CPU fallback by `@allow_non_gpu(any=True)` you can also pass in class names that are white listed for CPU operation.
+   * `allow_non_gpu` tells the tests that not everything in the query will run on the GPU. You can tell it to allow all CPU fallback by `@allow_non_gpu(any=True)` you can also pass in class names that are enabled for CPU operation.
 
 ###  `spark_session.py`
 
