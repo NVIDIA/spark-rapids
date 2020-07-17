@@ -444,6 +444,26 @@ versions of UCX handle loading shared libraries differently, and should not requ
 - `UCX_RNDV_SCHEME=put_zcopy`: Picks the scheme to be used in the [RNDV](https://community.mellanox.com/s/article/understanding-tag-matching-for-developers)
   protocol. In our tests, `put_zcopy` has shown higher performance than other schemes.
   
+### RapidsShuffleManager Fine Tuning
+Here are some settings that could be utilized to fine tune the _RapidsShuffleManager_:
+
+#### Bounce Buffers
+The following configs control the number of bounce buffers, and the size. Please note that for
+device buffers, two pools are created (for sending and receiving). So that this into account when
+sizing your pools. 
+
+The GPU buffers should be smaller than the [`PCI BAR Size`](https://docs.nvidia.com/cuda/gpudirect-rdma/index.html#bar-sizes)
+for your GPU. Please verify the [defaults](configs.md) work in your case.
+
+- `spark.rapids.shuffle.ucx.bounceBuffers.device.count`
+- `spark.rapids.shuffle.ucx.bounceBuffers.host.count`
+- `spark.rapids.shuffle.ucx.bounceBuffers.size`
+
+#### Spillable Store
+This setting controls the amount of host memory (RAM) that can be utilized to spill GPU blocks when
+the GPU is out of memory, before going to disk. Please verify the [defaults](configs.md).
+- `spark.rapids.memory.host.spillStorageSize`
+
 ## Advanced Configuration
 
 See the [RAPIDS Accelerator for Apache Spark Configuration Guide](configs.md) for details on all
