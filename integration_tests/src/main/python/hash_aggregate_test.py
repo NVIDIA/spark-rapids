@@ -14,7 +14,7 @@
 
 import pytest
 
-from asserts import assert_gpu_and_cpu_are_equal_collect
+from asserts import assert_gpu_and_cpu_are_equal_collect, assert_gpu_and_cpu_are_equal_sql
 from data_gen import *
 from pyspark.sql.types import *
 from marks import *
@@ -275,17 +275,15 @@ def test_hash_count_with_filter(data_gen, conf):
 @pytest.mark.parametrize('data_gen', _init_list_no_nans, ids=idfn)
 @pytest.mark.parametrize('conf', get_params(_confs, params_markers_for_confs), ids=idfn)
 def test_hash_multiple_filters(data_gen, conf):
-    df = with_cpu_session(
-        lambda spark : gen_df(spark, data_gen, length=100))
-    df.createOrReplaceTempView("hash_agg_table")
-    assert_gpu_and_cpu_are_equal_collect(
-        lambda spark: spark.sql(
-            'select count(a) filter (where c > 50),' +
-            'count(b) filter (where c > 100),' +
-            # Uncomment after https://github.com/NVIDIA/spark-rapids/issues/155 is fixed
-            # 'avg(b) filter (where b > 20),' +
-            'min(a), max(b) filter (where c > 250) from hash_agg_table group by a'),
-        conf=conf)
+    assert_gpu_and_cpu_are_equal_sql(
+        with_cpu_session(lambda spark : gen_df(spark, data_gen, length=100)),
+        "hash_agg_table",
+        'select count(a) filter (where c > 50),' +
+        'count(b) filter (where c > 100),' +
+        # Uncomment after https://github.com/NVIDIA/spark-rapids/issues/155 is fixed
+        # 'avg(b) filter (where b > 20),' +
+        'min(a), max(b) filter (where c > 250) from hash_agg_table group by a',
+        conf)
 
 
 @pytest.mark.xfail(reason='https://github.com/NVIDIA/spark-rapids/issues/155')
@@ -297,13 +295,11 @@ def test_hash_multiple_filters(data_gen, conf):
     'EqualTo', 'First', 'SortAggregateExec', 'Coalesce')
 @pytest.mark.parametrize('data_gen', [_longs_with_nulls], ids=idfn)
 def test_hash_multiple_filters_fail(data_gen):
-    df = with_cpu_session(
-        lambda spark : gen_df(spark, data_gen, length=100))
-    df.createOrReplaceTempView("hash_agg_table")
-    assert_gpu_and_cpu_are_equal_collect(
-        lambda spark: spark.sql(
-            'select avg(b) filter (where b > 20) from hash_agg_table group by a'),
-        conf=_no_nans_float_conf_partial)
+    assert_gpu_and_cpu_are_equal_sql(
+        with_cpu_session(lambda spark : gen_df(spark, data_gen, length=100)),
+        "hash_agg_table",
+        'select avg(b) filter (where b > 20) from hash_agg_table group by a',
+        _no_nans_float_conf_partial)
 
 
 @ignore_order
@@ -321,21 +317,19 @@ def test_hash_query_max_bug(data_gen):
 @pytest.mark.parametrize('data_gen', [_grpkey_floats_with_nan_zero_grouping_keys,
                                       _grpkey_doubles_with_nan_zero_grouping_keys], ids=idfn)
 def test_hash_agg_with_nan_keys(data_gen):
-    df = with_cpu_session(
-        lambda spark : gen_df(spark, data_gen, length=1024))
-    df.createOrReplaceTempView("hash_agg_table")
-    assert_gpu_and_cpu_are_equal_collect(
-        lambda spark: spark.sql(
-            'select a, '
-                   'count(*) as count_stars, ' 
-                   'count(b) as count_bees, '
-                   'sum(b) as sum_of_bees, '
-                   'max(c) as max_seas, '
-                   'min(c) as min_seas, '
-                   'count(distinct c) as count_distinct_cees, '
-                   'avg(c) as average_seas '
-            'from hash_agg_table group by a'),
-        conf=_no_nans_float_conf)
+    assert_gpu_and_cpu_are_equal_sql(
+        with_cpu_session(lambda spark : gen_df(spark, data_gen, length=1024)),
+        "hash_agg_table",
+        'select a, '
+        'count(*) as count_stars, ' 
+        'count(b) as count_bees, '
+        'sum(b) as sum_of_bees, '
+        'max(c) as max_seas, '
+        'min(c) as min_seas, '
+        'count(distinct c) as count_distinct_cees, '
+        'avg(c) as average_seas '
+        'from hash_agg_table group by a',
+        _no_nans_float_conf)
 
 
 @pytest.mark.xfail(
@@ -347,15 +341,11 @@ def test_hash_agg_with_nan_keys(data_gen):
 @ignore_order
 @pytest.mark.parametrize('data_gen', [ _grpkey_doubles_with_nan_zero_grouping_keys], ids=idfn)
 def test_count_distinct_with_nan_floats(data_gen):
-    df = with_cpu_session(
-        lambda spark : gen_df(spark, data_gen, length=1024))
-    df.createOrReplaceTempView("hash_agg_table")
-    assert_gpu_and_cpu_are_equal_collect(
-        lambda spark: spark.sql(
-            'select a, '
-                   'count(distinct b) as count_distinct_bees '
-            'from hash_agg_table group by a'),
-        conf=_no_nans_float_conf)
+    assert_gpu_and_cpu_are_equal_sql(
+        with_cpu_session(lambda spark : gen_df(spark, data_gen, length=1024)),
+        "hash_agg_table",
+        'select a, count(distinct b) as count_distinct_bees from hash_agg_table group by a',
+        _no_nans_float_conf)
 
 # TODO: Literal tests
 # TODO: First and Last tests
