@@ -76,8 +76,7 @@
         <module>sql-plugin</module>
         <module>tests</module>
         <module>integration_tests</module>
-        <module>spark30</module>
-        <module>spark31</module>
+        <module>shims</module>
         <module>api_validation</module>
     </modules>
 
