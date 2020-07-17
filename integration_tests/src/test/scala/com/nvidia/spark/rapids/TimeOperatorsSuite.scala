@@ -32,15 +32,4 @@ class TimeOperatorsSuite extends SparkQueryCompareTestSuite {
     frame => frame.select(from_unixtime(col("dates"),"dd/LL/yy HH:mm:ss.SSSSSS"))
   }
 
-  testSparkResultsAreEqual("Test timesub - 4000 seconds", epochDf) {
-    frame => frame.selectExpr("cast(dates as timestamp) - (interval 40000 seconds)")
-  }
-
-  testSparkResultsAreEqual("Test timesub - 4 day", epochDf) {
-    frame => frame.selectExpr("cast(dates as timestamp) - (interval 4 days)")
-  }
-
-  testSparkResultsAreEqual("Test timesub - 4 day 1000 seconds", epochDf) {
-    frame => frame.selectExpr("cast(dates as timestamp) - (interval 4 days 1000 seconds)")
-  }
 }
