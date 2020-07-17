@@ -46,7 +46,7 @@ object ApiValidation extends Logging {
     })
   }
 
-  val whiteListExecs = List (
+  val enabledExecs = List (
     "[org.apache.spark.sql.execution.joins.SortMergeJoinExec]",
     "[org.apache.spark.sql.execution.aggregate.HashAggregateExec]"
   )
@@ -73,8 +73,8 @@ object ApiValidation extends Logging {
         // Get SparkExecs argNames and types
       val sparkTypes = stringToTypeTag(e)
 
-      // Proceed only if the Exec is not whitelisted
-      if (!whiteListExecs.contains(sparkTypes.toString().replace("TypeTag", ""))) {
+      // Proceed only if the Exec is not enabled
+      if (!enabledExecs.contains(sparkTypes.toString().replace("TypeTag", ""))) {
         val sparkParameters = getCaseClassAccessors(sparkTypes).map(m => m.name -> m.info)
 
         // Get GpuExecs argNames and Types.

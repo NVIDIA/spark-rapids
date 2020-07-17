@@ -128,7 +128,7 @@ def get_params(init_list, marked_params=[]):
     """
     A method to build the test inputs along with their passed in markers to allow testing
     specific params with their relevant markers. Right now it is used to parametrize _confs with
-    allow_non_gpu which allows some operators to be whitelisted.
+    allow_non_gpu which allows some operators to be enabled.
     However, this can be used with any list of params to the test.
     :arg init_list list of param values to be tested
     :arg marked_params A list of tuples of (params, list of pytest markers)
