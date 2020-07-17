@@ -424,7 +424,6 @@ simplify these settings in the near future):
 --conf spark.executorEnv.UCX_MEMTYPE_CACHE=n \
 --conf spark.executorEnv.UCX_RNDV_SCHEME=put_zcopy \
 --conf spark.executor.extraClassPath=/usr/lib:/usr/lib/ucx:${SPARK_CUDF_JAR}:${SPARK_RAPIDS_PLUGIN_JAR} \
---conf spark.driver.extraClassPath=/usr/lib:/usr/lib/ucx:${SPARK_CUDF_JAR}:${SPARK_RAPIDS_PLUGIN_JAR}
 ```
 
 Please note `extraClassPath`, presently requires the UCX libraries to be added to the classpath. Newer
@@ -453,7 +452,7 @@ device buffers, two pools are created (for sending and receiving). So that this 
 sizing your pools. 
 
 The GPU buffers should be smaller than the [`PCI BAR Size`](https://docs.nvidia.com/cuda/gpudirect-rdma/index.html#bar-sizes)
-for your GPU. Please verify the [defaults](configs.md) work in your case.
+for your GPU. Please verify the [defaults](../configs.md) work in your case.
 
 - `spark.rapids.shuffle.ucx.bounceBuffers.device.count`
 - `spark.rapids.shuffle.ucx.bounceBuffers.host.count`
@@ -461,12 +460,12 @@ for your GPU. Please verify the [defaults](configs.md) work in your case.
 
 #### Spillable Store
 This setting controls the amount of host memory (RAM) that can be utilized to spill GPU blocks when
-the GPU is out of memory, before going to disk. Please verify the [defaults](configs.md).
+the GPU is out of memory, before going to disk. Please verify the [defaults](../configs.md).
 - `spark.rapids.memory.host.spillStorageSize`
 
 ## Advanced Configuration
 
-See the [RAPIDS Accelerator for Apache Spark Configuration Guide](configs.md) for details on all
+See the [RAPIDS Accelerator for Apache Spark Configuration Guide](../configs.md) for details on all
 of the configuration settings specific to the RAPIDS Accelerator for Apache Spark.
 
 ## Monitoring
