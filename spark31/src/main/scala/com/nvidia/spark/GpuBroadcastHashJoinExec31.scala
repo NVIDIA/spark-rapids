@@ -48,8 +48,6 @@ case class GpuBroadcastHashJoinExec31(
     right: SparkPlan) extends GpuBroadcastHashJoinExecBase31 with Logging {
 
 
-  logWarning("Tom in hadh join exec build side is: " + buildSide)
-
   def getBuildSide: GpuBuildSide = {
     buildSide match {
       case BuildRight => GpuBuildRight

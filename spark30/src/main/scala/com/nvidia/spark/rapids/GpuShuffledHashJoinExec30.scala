@@ -48,8 +48,6 @@ case class GpuShuffledHashJoinExec30(
     right: SparkPlan) extends GpuShuffledHashJoinExecBase30 with Logging {
 
 
-  logWarning("Tom in hadh join exec build side is: " + buildSide)
-
   def getBuildSide: GpuBuildSide = {
     buildSide match {
       case BuildRight => GpuBuildRight
@@ -71,10 +69,8 @@ object GpuShuffledHashJoinExec30 extends Logging {
       right: SparkPlan): GpuShuffledHashJoinExec30 = {
     
     val buildSide: BuildSide = if (join.isInstanceOf[ShuffledHashJoinExec]) {
-      logWarning("Tom in shuffled hash join")
       join.asInstanceOf[ShuffledHashJoinExec].buildSide 
     } else {
-      logWarning("Tom in not shuffled hash join")
       BuildRight
     }
     GpuShuffledHashJoinExec30(leftKeys, rightKeys, joinType, buildSide, condition, left, right)

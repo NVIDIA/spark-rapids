@@ -25,6 +25,7 @@ import org.apache.spark.sql.rapids._
 import org.apache.spark.sql.execution.joins.{BuildLeft, BuildRight, BuildSide}
 import org.apache.spark.internal.Logging
 import org.apache.spark.sql.execution._
+import org.apache.spark.sql.execution.datasources.HadoopFsRelation
 import org.apache.spark.sql.execution.joins.{BroadcastNestedLoopJoinExec, BroadcastHashJoinExec, SortMergeJoinExec}
 import org.apache.spark.sql.execution.joins.ShuffledHashJoinExec
 import org.apache.spark.sql.catalyst.expressions._
@@ -117,11 +118,9 @@ class Spark30Shims extends SparkShims with Logging {
     val buildSide = join.buildSide
     buildSide match {
       case e: buildSide.type if e.toString.contains("BuildRight") => {
-        logInfo("Tom buildright " + e)
         GpuBuildRight
       }
       case l: buildSide.type if l.toString.contains("BuildLeft") => {
-        logInfo("Tom buildleft "+ l)
         GpuBuildLeft
       }
       case _ => throw new Exception("unknown buildSide Type")
@@ -132,11 +131,9 @@ class Spark30Shims extends SparkShims with Logging {
     val buildSide = join.buildSide
     buildSide match {
       case e: buildSide.type if e.toString.contains("BuildRight") => {
-        logInfo("bnlje Tom buildright " + e)
         GpuBuildRight
       }
       case l: buildSide.type if l.toString.contains("BuildLeft") => {
-        logInfo("bnlje Tom buildleft "+ l)
         GpuBuildLeft
       }
       case _ => throw new Exception("unknown buildSide Type")
@@ -146,11 +143,9 @@ class Spark30Shims extends SparkShims with Logging {
     val buildSide = join.buildSide
     buildSide match {
       case e: buildSide.type if e.toString.contains("BuildRight") => {
-        logInfo("bnlje Tom buildright " + e)
         GpuBuildRight
       }
       case l: buildSide.type if l.toString.contains("BuildLeft") => {
-        logInfo("bnlje Tom buildleft "+ l)
         GpuBuildLeft
       }
       case _ => throw new Exception("unknown buildSide Type")

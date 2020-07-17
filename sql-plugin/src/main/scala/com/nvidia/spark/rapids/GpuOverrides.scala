@@ -1659,32 +1659,6 @@ object GpuOverrides {
           GpuDataWritingCommandExec(childDataWriteCmds.head.convertToGpu(),
             childPlans.head.convertIfNeeded())
       }),
-    exec[FileSourceScanExec](
-      "Reading data from files, often from Hive tables",
-      (fsse, conf, p, r) => new SparkPlanMeta[FileSourceScanExec](fsse, conf, p, r) {
-        // partition filters and data filters are not run on the GPU
-        override val childExprs: Seq[ExprMeta[_]] = Seq.empty
-
-        override def tagPlanForGpu(): Unit = GpuFileSourceScanExec.tagSupport(this)
-
-        override def convertToGpu(): GpuExec = {
-          val newRelation = HadoopFsRelation(
-            wrapped.relation.location,
-            wrapped.relation.partitionSchema,
-            wrapped.relation.dataSchema,
-            wrapped.relation.bucketSpec,
-            GpuFileSourceScanExec.convertFileFormat(wrapped.relation.fileFormat),
-            wrapped.relation.options)(wrapped.relation.sparkSession)
-          GpuFileSourceScanExec(
-            newRelation,
-            wrapped.output,
-            wrapped.requiredSchema,
-            wrapped.partitionFilters,
-            wrapped.optionalBucketSet,
-            wrapped.dataFilters,
-            wrapped.tableIdentifier)
-        }
-      }),
     exec[LocalLimitExec](
       "Per-partition limiting of results",
       (localLimitExec, conf, p, r) =>

@@ -33,11 +33,16 @@
     <profiles>
         <profile>
             <id>spark31</id>
+            <dependencies>
+            </dependencies>
+        </profile>
+    </profiles>
+
 	    <properties>
-	        <spark.version>3.1.0-SNAPSHOT</spark.version>
+	        <spark.version>3.0.0</spark.version>
                 <slf4j.version>1.7.30</slf4j.version>
 	    </properties>
-            <dependencies>
+    <dependencies>
               <dependency>
                 <groupId>org.slf4j</groupId>
                 <artifactId>jul-to-slf4j</artifactId>
@@ -49,11 +54,6 @@
                 <version>${slf4j.version}</version>
                 <!-- runtime scope is appropriate, but causes SBT build problems -->
               </dependency>
-            </dependencies>
-        </profile>
-    </profiles>
-
-    <dependencies>
         <dependency>
             <groupId>org.scala-lang</groupId>
             <artifactId>scala-library</artifactId>

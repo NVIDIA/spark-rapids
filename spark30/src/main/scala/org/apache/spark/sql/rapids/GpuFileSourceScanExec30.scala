@@ -42,7 +42,7 @@ case class GpuFileSourceScanExec30(
     optionalBucketSet: Option[BitSet],
     dataFilters: Seq[Expression],
     override val tableIdentifier: Option[TableIdentifier])
-    extends DataSourceScanExec with GpuExec {
+    extends DataSourceScanExec with GpuFileSourceScanExecBase with GpuExec {
 
   override val nodeName: String = {
     s"GpuScan $relation ${tableIdentifier.map(_.unquotedString).getOrElse("")}"
@@ -142,9 +142,9 @@ case class GpuFileSourceScanExec30(
 
   override val nodeNamePrefix: String = "Gpu" + wrapped.nodeNamePrefix
 
-  override def doCanonicalize(): GpuFileSourceScanExec = {
+  override def doCanonicalize(): GpuFileSourceScanExec30 = {
     val canonical = wrapped.doCanonicalize()
-    GpuFileSourceScanExec(
+    GpuFileSourceScanExec30(
       canonical.relation,
       canonical.output,
       canonical.requiredSchema,

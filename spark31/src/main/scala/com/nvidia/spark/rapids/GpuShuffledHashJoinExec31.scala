@@ -46,20 +46,6 @@ case class GpuShuffledHashJoinExec31 (
     left: SparkPlan,
     right: SparkPlan) extends GpuShuffledHashJoinExecBase31 with Logging {
 
-
-
-  /*
-  val buildSide: org.apache.spark.sql.execution.joins.BuildSide = {
-    logInfo("Tom gpu build side is: " + gpuBuildSide)
-    val res = gpuBuildSide match {
-      case GpuBuildRight => org.apache.spark.sql.execution.joins.BuildRight
-      case GpuBuildLeft => org.apache.spark.sql.execution.joins.BuildLeft
-    }
-    logInfo("Tom build side is: " + res)
-    res
-  }
-  */
-
   def getBuildSide: GpuBuildSide = {
     buildSide match {
       case BuildRight => GpuBuildRight
@@ -81,10 +67,8 @@ object GpuShuffledHashJoinExec31 extends Logging {
       right: SparkPlan): GpuShuffledHashJoinExec31 = {
 
     val buildSide: BuildSide = if (join.isInstanceOf[ShuffledHashJoinExec]) {
-      logWarning("Tom in shuffled hash join")
       join.asInstanceOf[ShuffledHashJoinExec].buildSide
     } else {
-      logWarning("Tom in not shuffled hash join")
       BuildRight
     }
     GpuShuffledHashJoinExec31(leftKeys, rightKeys, joinType, buildSide, condition, left, right)

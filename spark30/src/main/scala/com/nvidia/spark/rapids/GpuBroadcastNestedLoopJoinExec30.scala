@@ -47,8 +47,6 @@ case class GpuBroadcastNestedLoopJoinExec30(
     condition: Option[Expression]) extends GpuBroadcastNestedLoopJoinExecBase(left, right, join, joinType, condition) with Logging {
 
 
-  logWarning("Tom in broadcast nested loop join exec build side is: ")
-
   def getBuildSide: GpuBuildSide = {
     join.buildSide match {
       case BuildRight => GpuBuildRight
@@ -67,16 +65,7 @@ object GpuBroadcastNestedLoopJoinExec30 extends Logging {
       joinType: JoinType,
       condition: Option[Expression]): GpuBroadcastNestedLoopJoinExecBase= {
     
-    /* val buildSide: BuildSide = if (join.isInstanceOf[ShuffledHashJoinExec]) {
-      logWarning("Tom in shuffled hash join")
-      join.asInstanceOf[ShuffledHashJoinExec].buildSide 
-    } else {
-      logWarning("Tom in not shuffled hash join")
-      BuildRight
-    } */
-    
-    val res = GpuBroadcastNestedLoopJoinExec30(left, right, join, joinType, condition)
-    res
+    GpuBroadcastNestedLoopJoinExec30(left, right, join, joinType, condition)
   }
 
 }

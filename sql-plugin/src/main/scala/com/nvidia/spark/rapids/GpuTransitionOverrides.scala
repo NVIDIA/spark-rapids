@@ -25,7 +25,7 @@ import org.apache.spark.sql.execution.columnar.InMemoryTableScanExec
 import org.apache.spark.sql.execution.command.ExecutedCommandExec
 import org.apache.spark.sql.execution.datasources.v2.DataSourceV2ScanExecBase
 import org.apache.spark.sql.execution.exchange.{Exchange, ShuffleExchangeExec}
-import org.apache.spark.sql.rapids.GpuFileSourceScanExec
+import org.apache.spark.sql.rapids.GpuFileSourceScanExecBase
 
 /**
  * Rules that run after the row to columnar and columnar to row transitions have been inserted.
@@ -252,7 +252,7 @@ class GpuTransitionOverrides extends Rule[SparkPlan] {
         val planOutput = plan.output.toSet
         // avoid checking expressions of GpuFileSourceScanExec since all expressions are
         // processed by driver and not run on GPU.
-        if (!plan.isInstanceOf[GpuFileSourceScanExec]) {
+        if (!plan.isInstanceOf[GpuFileSourceScanExecBase]) {
           plan.expressions.filter(_ match {
             case a: Attribute => !planOutput.contains(a)
             case _ => true
