@@ -391,7 +391,7 @@ transfers within a node that has multiple GPUs. This is possible because the plu
 
 - **Spillable cache**: This store keeps GPU data close by where it was produced, and spills to host memory
 or disk when running out of space due to limited GPU memory, or configuration (when going from host
-to disk). Local tasks (to the producing executor) will short-circuit read from this cache.
+to disk). Tasks local to the producing executor will short-circuit read from this cache.
 
 - **Transport**: Handles block transfers between executors using various means like: _NVLink_, _PCIe_, _Infiniband (IB)_, 
 _RDMA over Converged Ethernet (RoCE)_ or _TCP_, and as configured in UCX, in these scenarios:
