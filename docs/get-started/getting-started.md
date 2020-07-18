@@ -399,14 +399,14 @@ _RDMA over Converged Ethernet (RoCE)_ or _TCP_, and as configured in UCX, in the
   - _Host-to-GPU_ and _Disk-to-GPU_: Shuffle blocks that spilled to host (or disk), but will be manifested 
   in the GPU in the downstream Spark task.
 
-In order to enable the _RapidsShuffleManager_, please follow these steps:
+In order to enable the _RapidsShuffleManager_, please follow these steps (If you don't have 
+Mellanox hardware go to *step 2*):
 
-1) (If you don't have Mellanox hardware go to *step 2*) If you have Mellanox NICs and an Infiniband(IB)
-or RoCE network, please ensure you have the MLNX_OFED [driver installed](https://www.mellanox.com/products/infiniband-drivers/linux/mlnx_ofed), 
-and the [`nv_peer_mem` kernel module](https://www.mellanox.com/products/GPUDirect-RDMA). This will 
-need to be installed on every machine for RDMA transfers to work between the GPU and the NIC. 
+1) If you have Mellanox NICs and an Infiniband(IB) or RoCE network, please ensure you have the 
+MLNX_OFED [driver installed](https://www.mellanox.com/products/infiniband-drivers/linux/mlnx_ofed), 
+and the [`nv_peer_mem` kernel module](https://www.mellanox.com/products/GPUDirect-RDMA).
 
-Without `nv_peer_mem`, IB/RoCE-based transfers will not be zero-copy from the GPU.
+With `nv_peer_mem`, IB/RoCE-based transfers can perform zero-copy transfers directly from GPU memory.
 
 2) Install [UCX 1.8.1](https://github.com/openucx/ucx/releases/tag/v1.8.1). 
 
