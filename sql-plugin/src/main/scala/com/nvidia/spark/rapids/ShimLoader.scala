@@ -20,6 +20,7 @@ import java.util.ServiceLoader
 import scala.collection.JavaConverters._
 import scala.collection.immutable.HashMap
 
+import org.apache.spark.internal.Logging
 import org.apache.spark.sql.catalyst.expressions.Expression
 import org.apache.spark.sql.catalyst.plans.JoinType
 import org.apache.spark.sql.execution.SparkPlan
@@ -27,15 +28,19 @@ import org.apache.spark.sql.execution.joins._
 import org.apache.spark.sql.rapids.execution._
 import org.apache.spark.{SPARK_BUILD_USER, SPARK_VERSION}
 
-object ShimLoader {
+object ShimLoader extends Logging {
+
+  private val sparkVersion = getVersion
+  logInfo(s"Loading shim for version: $sparkVersion")
 
   // This is no ideal but pass the version in here because otherwise loader that match the
   // same version (3.0.0 Apache and 3.0.0 Databricks) would need to know how to differentiate.
   val sparkShimLoaders = ServiceLoader.load(classOf[SparkShimLoader])
-    .asScala.filter(_.matchesVersion(getVersion))
+    .asScala.filter(_.matchesVersion(sparkVersion))
   if (sparkShimLoaders.size > 1) {
     throw new IllegalArgumentException(s"Multiple Spark Shim Loaders found: $sparkShimLoaders")
   }
+  logWarning(s"Found shims: $sparkShimLoaders")
   val loader = sparkShimLoaders.headOption match {
     case Some(loader) => loader
     case None => throw new IllegalArgumentException("Could not find Spark Shim Loader")
