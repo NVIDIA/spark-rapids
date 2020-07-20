@@ -405,8 +405,8 @@ _RDMA over Converged Ethernet (RoCE)_ or _TCP_, and as configured in UCX, in the
   - _Host-to-GPU_ and _Disk-to-GPU_: Shuffle blocks that spilled to host (or disk) but will be manifested 
   in the GPU in the downstream Spark task.
 
-In order to enable the _RapidsShuffleManager_, please follow these steps (If you don't have 
-Mellanox hardware go to *step 2*):
+In order to enable the _RapidsShuffleManager_, please follow these steps. If you don't have 
+Mellanox hardware go to *step 2*:
 
 1) If you have Mellanox NICs and an Infiniband(IB) or RoCE network, please ensure you have the 
 [MLNX_OFED driver](https://www.mellanox.com/products/infiniband-drivers/linux/mlnx_ofed), 
