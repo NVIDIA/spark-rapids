@@ -17,27 +17,12 @@
 package com.nvidia.spark.rapids.shims.spark30
 
 import com.nvidia.spark.rapids._
-import com.nvidia.spark.rapids.GpuMetricNames._
 
-//import org.apache.spark.sql.catalyst.optimizer.{BuildLeft, BuildRight, BuildSide}
-import org.apache.spark.sql.execution.joins.{BuildLeft, BuildRight, BuildSide}
 import org.apache.spark.internal.Logging
-import org.apache.spark.sql.execution.joins.BroadcastNestedLoopJoinExec
-import org.apache.spark.sql.execution.joins.BroadcastHashJoinExec
-import org.apache.spark.TaskContext
-import org.apache.spark.rdd.RDD
-import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.expressions.Expression
-import org.apache.spark.sql.catalyst.plans.physical.{BroadcastDistribution, Distribution, UnspecifiedDistribution}
 import org.apache.spark.sql.catalyst.plans.JoinType
-import org.apache.spark.sql.catalyst.plans.physical.{Distribution, HashClusteredDistribution}
-import org.apache.spark.sql.execution.{BinaryExecNode, SparkPlan}
-import org.apache.spark.sql.execution.joins._
-import org.apache.spark.sql.execution.metric.{SQLMetric, SQLMetrics}
-import org.apache.spark.sql.vectorized.ColumnarBatch
-import org.apache.spark.internal.Logging
-
-
+import org.apache.spark.sql.execution.SparkPlan
+import org.apache.spark.sql.execution.joins.{BroadcastHashJoinExec, BuildLeft, BuildRight, BuildSide}
 
 case class GpuBroadcastHashJoinExec(
     leftKeys: Seq[Expression],
@@ -71,5 +56,4 @@ object GpuBroadcastHashJoinExec extends Logging {
     
     GpuBroadcastHashJoinExec(leftKeys, rightKeys, joinType, join.buildSide, condition, left, right)
   }
-
 }

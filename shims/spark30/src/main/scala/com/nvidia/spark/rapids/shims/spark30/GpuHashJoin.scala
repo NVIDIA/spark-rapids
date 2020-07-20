@@ -15,7 +15,7 @@
  */
 package com.nvidia.spark.rapids.shims.spark30
 
-import ai.rapids.cudf.{NvtxColor, Table}
+import ai.rapids.cudf.Table
 import com.nvidia.spark.rapids.{GpuColumnVector, GpuExec, GpuExpression, RapidsMeta}
 
 import org.apache.spark.TaskContext
@@ -25,7 +25,6 @@ import org.apache.spark.sql.catalyst.plans.{ExistenceJoin, FullOuter, InnerLike,
 import org.apache.spark.sql.execution.joins.HashJoin
 import org.apache.spark.sql.execution.metric.SQLMetric
 import org.apache.spark.sql.vectorized.{ColumnarBatch, ColumnVector}
-import org.apache.spark.sql.execution.joins.ShuffledHashJoinExec
 
 object GpuHashJoin {
   def tagJoin(

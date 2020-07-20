@@ -21,19 +21,29 @@ import java.time.ZoneId
 import com.nvidia.spark.rapids._
 import org.apache.spark.sql.rapids.GpuTimeSub
 import org.apache.spark.sql.rapids.shims.spark30._
-
 import org.apache.spark.sql.catalyst.expressions.aggregate.{First, Last}
 import org.apache.spark.sql.execution.joins.{BuildLeft, BuildRight, BuildSide}
 import org.apache.spark.internal.Logging
 import org.apache.spark.sql.execution._
 import org.apache.spark.sql.execution.datasources.HadoopFsRelation
-import org.apache.spark.sql.execution.joins.{BroadcastNestedLoopJoinExec, BroadcastHashJoinExec, SortMergeJoinExec}
+import org.apache.spark.sql.execution.joins.{BroadcastHashJoinExec, BroadcastNestedLoopJoinExec, SortMergeJoinExec}
 import org.apache.spark.sql.execution.joins.ShuffledHashJoinExec
 import org.apache.spark.sql.catalyst.expressions._
+import org.apache.spark.sql.catalyst.plans.JoinType
+import org.apache.spark.sql.rapids.execution.GpuBroadcastNestedLoopJoinExecBase
 import org.apache.spark.sql.types._
 import org.apache.spark.unsafe.types.{CalendarInterval, UTF8String}
 
 class Spark30Shims extends SparkShims with Logging {
+
+  def getGpuBroadcastNestedLoopJoinShims(
+      left: SparkPlan,
+      right: SparkPlan,
+      join: BroadcastNestedLoopJoinExec,
+      joinType: JoinType,
+      condition: Option[Expression]): GpuBroadcastNestedLoopJoinExecBase = {
+    GpuBroadcastNestedLoopJoinExec(left, right, join, joinType, condition)
+  }
 
   def isGpuHashJoin(plan: SparkPlan): Boolean = {
     plan match {

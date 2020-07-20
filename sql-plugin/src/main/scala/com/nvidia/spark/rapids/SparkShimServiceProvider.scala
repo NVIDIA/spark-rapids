@@ -14,21 +14,12 @@
  * limitations under the License.
  */
 
-package com.nvidia.spark.rapids.shims.spark31
+package com.nvidia.spark.rapids
 
-import com.nvidia.spark.rapids._
-
-class Spark31ShimLoader extends SparkShimLoader {
-
-  val SPARK31VERSIONNAME = "3.1.0-SNAPSHOT"
-
-  def matchesVersion(version: String): Boolean = {
-    version == SPARK31VERSIONNAME
-  }
-
-  def buildShim: SparkShims = {
-    new Spark31Shims()
-  } 
-
+/**
+ * A Spark version shim layer interface.
+ */
+trait SparkShimServiceProvider {
+  def matchesVersion(version:String): Boolean
+  def buildShim: SparkShims
 }
-

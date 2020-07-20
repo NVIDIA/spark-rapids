@@ -18,7 +18,6 @@ package com.nvidia.spark.rapids.shims.spark30
 
 import org.apache.spark.sql.rapids.GpuFirstBase
 import com.nvidia.spark.rapids._
-import com.nvidia.spark.rapids.GpuMetricNames._
 
 import org.apache.spark.sql.catalyst.analysis.TypeCheckResult
 import org.apache.spark.sql.catalyst.analysis.TypeCheckResult.{TypeCheckFailure, TypeCheckSuccess}

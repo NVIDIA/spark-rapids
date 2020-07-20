@@ -78,7 +78,7 @@ class GpuBroadcastNestedLoopJoinMeta(
     if (!buildSide.isInstanceOf[GpuBroadcastExchangeExec]) {
       throw new IllegalStateException("the broadcast must be on the GPU too")
     }
-    ShimLoader.getGpuBroadcastNestedLoopJoinShims(
+    ShimLoader.getSparkShims.getGpuBroadcastNestedLoopJoinShims(
       left, right, join,
       join.joinType,
       condition.map(_.convertToGpu()))

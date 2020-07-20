@@ -18,8 +18,7 @@ package com.nvidia.spark.rapids.shims.spark30
 
 import com.nvidia.spark.rapids._
 
-
-class Spark30ShimLoader extends SparkShimLoader {
+class Spark30ShimServiceProvider extends SparkShimServiceProvider {
 
   val SPARK30VERSIONNAME = "3.0.0"
 
@@ -29,7 +28,5 @@ class Spark30ShimLoader extends SparkShimLoader {
 
   def buildShim: SparkShims = {
     new Spark30Shims()
-  } 
-
+  }
 }
-

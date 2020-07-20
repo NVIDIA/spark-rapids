@@ -32,12 +32,6 @@
     <description>The RAPIDS SQL plugin for Apache Spark Shim Aggregator</description>
     <version>0.2.0-SNAPSHOT</version>
 
-    <profiles>
-        <profile>
-            <id>databricks</id>
-        </profile>
-    </profiles>
-
     <dependencies>
         <dependency>
             <groupId>com.nvidia</groupId>
