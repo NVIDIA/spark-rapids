@@ -48,7 +48,7 @@ project.  For IntelliJ IDEA users, an
 
 This project follows the official
 [Scala style guide](https://docs.scala-lang.org/style/) and the
-[Databricks Scala guide](Databricks Scala guide), preferring the latter.
+[Databricks Scala guide](https://github.com/databricks/scala-style-guide), preferring the latter.
 
 #### Java
 
@@ -56,7 +56,7 @@ This project follows the
 [Oracle Java code conventions](http://www.oracle.com/technetwork/java/codeconvtoc-136057.html)
 and the Scala conventions detailed above, preferring the latter.
 
-## Sign your work
+### Sign your work
 
 We require that all contributors sign-off on their commits. This certifies that the contribution is your original work, or you have rights to submit it under the same license, or a compatible license.
 
@@ -74,10 +74,10 @@ This will append the following to your commit message:
 Signed-off-by: Your Name <your@email.com>
 ```
 
-The sign-off is a simple line at the end of the explanation for the patch. Your signature certifies that you wrote the patch or otherwise have the right to pass it on as an open-source patch. Use your real name, no pseudonyms or anonymous contributions.  If you set your `user.name` and `user.email` git configs, you can sign your commit automatically with git `commit -s`.
+The sign-off is a simple line at the end of the explanation for the patch. Your signature certifies that you wrote the patch or otherwise have the right to pass it on as an open-source patch. Use your real name, no pseudonyms or anonymous contributions.  If you set your `user.name` and `user.email` git configs, you can sign your commit automatically with `git commit -s`.
 
 
-The signoff means you certify the below (from developercertificate.org):
+The signoff means you certify the below (from [developercertificate.org](https://developercertificate.org):
 
 ```
 Developer Certificate of Origin
