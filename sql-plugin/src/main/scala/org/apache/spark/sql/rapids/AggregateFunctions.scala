@@ -430,7 +430,7 @@ case class GpuAverage(child: Expression) extends GpuDeclarativeAggregate {
  * here).
  */
 abstract class GpuFirstBase(child: Expression)
-  extends GpuDeclarativeAggregate with ImplicitCastInputTypes {
+  extends GpuDeclarativeAggregate with ImplicitCastInputTypes with Serializable {
 
   val ignoreNulls: Boolean
 
@@ -466,8 +466,11 @@ abstract class GpuFirstBase(child: Expression)
   override def toString: String = s"gpufirst($child)${if (ignoreNulls) " ignore nulls"}"
 }
 
-case class GpuLast(child: Expression, ignoreNullsExpr: Expression)
-  extends GpuDeclarativeAggregate with ImplicitCastInputTypes {
+abstract class GpuLastBase(child: Expression)
+  extends GpuDeclarativeAggregate with ImplicitCastInputTypes with Serializable {
+
+  val ignoreNulls: Boolean
+
   private lazy val cudfLast = AttributeReference("cudf_last", child.dataType)()
   private lazy val valueSet = AttributeReference("valueSet", BooleanType)()
 
@@ -494,25 +497,7 @@ case class GpuLast(child: Expression, ignoreNullsExpr: Expression)
   override def inputTypes: Seq[AbstractDataType] = Seq(AnyDataType, BooleanType)
   override def nullable: Boolean = true
   override def dataType: DataType = child.dataType
-  override def children: Seq[Expression] = child :: ignoreNullsExpr :: Nil
   // Last is not a deterministic function.
   override lazy val deterministic: Boolean = false
-  private def ignoreNulls: Boolean = ignoreNullsExpr match {
-    case l: Literal => l.value.asInstanceOf[Boolean]
-    case l: GpuLiteral => l.value.asInstanceOf[Boolean]
-    case _ => throw new IllegalArgumentException(
-      s"$this should only receive literals for ignoreNulls expression")
-  }
-  override def checkInputDataTypes(): TypeCheckResult = {
-    val defaultCheck = super.checkInputDataTypes()
-    if (defaultCheck.isFailure) {
-      defaultCheck
-    } else if (!ignoreNullsExpr.foldable) {
-      TypeCheckFailure(s"The second argument of GpuLast must be a boolean literal, but " +
-        s"got: ${ignoreNullsExpr.sql}")
-    } else {
-      TypeCheckSuccess
-    }
-  }
   override def toString: String = s"gpulast($child)${if (ignoreNulls) " ignore nulls"}"
 }

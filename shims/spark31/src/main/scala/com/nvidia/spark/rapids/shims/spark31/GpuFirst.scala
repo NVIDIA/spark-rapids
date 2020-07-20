@@ -23,9 +23,14 @@ import com.nvidia.spark.rapids.GpuMetricNames._
 import org.apache.spark.sql.catalyst.analysis.TypeCheckResult
 import org.apache.spark.sql.catalyst.analysis.TypeCheckResult.{TypeCheckFailure, TypeCheckSuccess}
 import org.apache.spark.sql.catalyst.expressions.Expression
+import org.apache.spark.sql.catalyst.expressions.aggregate.FirstLast
 
 
 case class GpuFirst(child: Expression, ignoreNulls: Boolean) extends GpuFirstBase(child) {
+  def this(child: Expression) = this(child, false)
+  def this(child: Expression, ignoreNullsExpr: Expression) = {
+    this(child, FirstLast.validateIgnoreNullExpr(ignoreNullsExpr, "last"))
+  }
   override def children: Seq[Expression] = child :: Nil
 
   override def checkInputDataTypes(): TypeCheckResult = {

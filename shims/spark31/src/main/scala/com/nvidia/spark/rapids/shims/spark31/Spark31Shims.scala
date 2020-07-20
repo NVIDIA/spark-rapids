@@ -22,7 +22,7 @@ import com.nvidia.spark.rapids._
 import org.apache.spark.sql.rapids.GpuTimeSub
 import org.apache.spark.sql.rapids.shims.spark31._
 
-import org.apache.spark.sql.catalyst.expressions.aggregate.First
+import org.apache.spark.sql.catalyst.expressions.aggregate.{First, Last}
 import org.apache.spark.sql.catalyst.optimizer.{BuildLeft, BuildRight, BuildSide}
 import org.apache.spark.internal.Logging
 import org.apache.spark.sql.execution._
@@ -70,12 +70,14 @@ class Spark31Shims extends SparkShims with Logging {
     GpuOverrides.expr[First](
       "first aggregate operator",
       (a, conf, p, r) => new ExprMeta[First](a, conf, p, r) {
-        // val childt: BaseExprMeta[_] = GpuOverrides.wrapExpr(a.child, conf, Some(this))
-
-        // override val childExprs: Seq[BaseExprMeta[_]] = Seq(childt)
-
         override def convertToGpu(): GpuExpression =
           GpuFirst(childExprs(0).convertToGpu(), a.ignoreNulls)
+      }),
+     GpuOverrides.expr[Last](
+      "last aggregate operator",
+      (a, conf, p, r) => new ExprMeta[Last](a, conf, p, r) {
+        override def convertToGpu(): GpuExpression =
+          GpuLast(childExprs(0).convertToGpu(), a.ignoreNulls)
       }),
     )
   }

@@ -1226,17 +1226,6 @@ object GpuOverrides {
         }
         override def convertToGpu(child: Expression): GpuExpression = GpuMin(child)
       }),
-    expr[Last](
-      "last aggregate operator",
-      (a, conf, p, r) => new ExprMeta[Last](a, conf, p, r) {
-        val child: BaseExprMeta[_] = GpuOverrides.wrapExpr(a.child, conf, Some(this))
-        val ignoreNulls: BaseExprMeta[_] =
-          GpuOverrides.wrapExpr(a.ignoreNullsExpr, conf, Some(this))
-        override val childExprs: Seq[BaseExprMeta[_]] = Seq(child, ignoreNulls)
-
-        override def convertToGpu(): GpuExpression =
-          GpuLast(child.convertToGpu(), ignoreNulls.convertToGpu())
-      }),
     expr[Sum](
       "sum aggregate operator",
       (a, conf, p, r) => new AggExprMeta[Sum](a, conf, p, r) {
