@@ -251,7 +251,7 @@ case class GpuRangeExec(range: org.apache.spark.sql.catalyst.plans.logical.Range
             override def next(): ColumnarBatch =
               withResource(new NvtxWithMetrics("GpuRange", NvtxColor.DARK_GREEN, totalTime)){
                 _ =>
-                  GpuSemaphore.acquireIfNecessary(TaskContext.get())
+                  GpuSemaphore.acquireIfNecessary(taskContext)
                   val start = number
                   val remainingSteps = (safePartitionEnd - start) / step
                   // Start is inclusive so we need to produce at least one row
