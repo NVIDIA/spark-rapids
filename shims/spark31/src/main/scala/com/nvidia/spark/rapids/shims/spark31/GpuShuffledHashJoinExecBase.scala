@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-package com.nvidia.spark.rapids.shims
+package com.nvidia.spark.rapids.shims.spark31
 
 import ai.rapids.cudf.{NvtxColor, Table}
 
@@ -35,7 +35,7 @@ import org.apache.spark.sql.vectorized.ColumnarBatch
 import org.apache.spark.internal.Logging
 
 
-abstract class GpuShuffledHashJoinExecBase31 extends BinaryExecNode with GpuHashJoin31 with Logging {
+abstract class GpuShuffledHashJoinExecBase extends BinaryExecNode with GpuHashJoin with Logging {
   
   def getBuildSide: GpuBuildSide
 
@@ -169,7 +169,7 @@ abstract class GpuShuffledHashJoinExecBase31 extends BinaryExecNode with GpuHash
 }
 
 
-class GpuShuffledHashJoinMeta31(
+class GpuShuffledHashJoinMeta(
     join: ShuffledHashJoinExec,
     conf: RapidsConf,
     parent: Option[RapidsMeta[_, _, _]],
@@ -184,11 +184,11 @@ class GpuShuffledHashJoinMeta31(
     GpuOverrides.wrapExpr(_, conf, Some(this)))
 
   override def tagPlanForGpu(): Unit = {
-    GpuHashJoin31.tagJoin(this, join.joinType, join.leftKeys, join.rightKeys, join.condition)
+    GpuHashJoin.tagJoin(this, join.joinType, join.leftKeys, join.rightKeys, join.condition)
   }
 
   override def convertToGpu(): GpuExec = {
-    GpuShuffledHashJoinExec31(
+    GpuShuffledHashJoinExec(
       leftKeys.map(_.convertToGpu()),
       rightKeys.map(_.convertToGpu()),
       join.joinType,

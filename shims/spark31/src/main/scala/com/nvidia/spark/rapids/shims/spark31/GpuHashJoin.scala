@@ -13,9 +13,10 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package com.nvidia.spark.rapids
+package com.nvidia.spark.rapids.shims.spark31
 
 import ai.rapids.cudf.{NvtxColor, Table}
+import com.nvidia.spark.rapids.{GpuColumnVector, GpuExec, GpuExpression, RapidsMeta}
 
 import org.apache.spark.TaskContext
 import org.apache.spark.internal.Logging
@@ -26,7 +27,7 @@ import org.apache.spark.sql.execution.metric.SQLMetric
 import org.apache.spark.sql.vectorized.{ColumnarBatch, ColumnVector}
 import org.apache.spark.sql.execution.joins.ShuffledHashJoinExec
 
-object GpuHashJoin30 {
+object GpuHashJoin {
   def tagJoin(
       meta: RapidsMeta[_, _, _],
       joinType: JoinType,
@@ -51,7 +52,7 @@ object GpuHashJoin30 {
 }
 
 
-trait GpuHashJoin30 extends GpuExec with HashJoin with Logging {
+trait GpuHashJoin extends GpuExec with HashJoin with Logging {
 
 
   override def output: Seq[Attribute] = {

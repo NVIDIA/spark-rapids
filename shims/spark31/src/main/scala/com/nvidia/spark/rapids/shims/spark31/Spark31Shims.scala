@@ -14,12 +14,13 @@
  * limitations under the License.
  */
 
-package com.nvidia.spark.rapids.shims
+package com.nvidia.spark.rapids.shims.spark31
 
 import java.time.ZoneId
 
 import com.nvidia.spark.rapids._
-import org.apache.spark.sql.rapids._
+import org.apache.spark.sql.rapids.GpuTimeSub
+import org.apache.spark.sql.rapids.shims.spark31._
 
 import org.apache.spark.sql.catalyst.optimizer.{BuildLeft, BuildRight, BuildSide}
 import org.apache.spark.internal.Logging
@@ -36,7 +37,7 @@ class Spark31Shims extends SparkShims with Logging {
 
   def isGpuHashJoin(plan: SparkPlan): Boolean = {
     plan match {
-      case _: GpuHashJoin31 => true
+      case _: GpuHashJoin => true
       case p => false
     }
   }
@@ -50,7 +51,7 @@ class Spark31Shims extends SparkShims with Logging {
         // partition filters and data filters are not run on the GPU
         override val childExprs: Seq[ExprMeta[_]] = Seq.empty
 
-        override def tagPlanForGpu(): Unit = GpuFileSourceScanExec31.tagSupport(this)
+        override def tagPlanForGpu(): Unit = GpuFileSourceScanExec.tagSupport(this)
 
         override def convertToGpu(): GpuExec = {
           val newRelation = HadoopFsRelation(
@@ -58,9 +59,9 @@ class Spark31Shims extends SparkShims with Logging {
             wrapped.relation.partitionSchema,
             wrapped.relation.dataSchema,
             wrapped.relation.bucketSpec,
-            GpuFileSourceScanExec31.convertFileFormat(wrapped.relation.fileFormat),
+            GpuFileSourceScanExec.convertFileFormat(wrapped.relation.fileFormat),
             wrapped.relation.options)(wrapped.relation.sparkSession)
-          GpuFileSourceScanExec31(
+          GpuFileSourceScanExec(
             newRelation,
             wrapped.output,
             wrapped.requiredSchema,
@@ -72,13 +73,13 @@ class Spark31Shims extends SparkShims with Logging {
       }),
     GpuOverrides.exec[SortMergeJoinExec](
       "Sort merge join, replacing with shuffled hash join",
-      (join, conf, p, r) => new GpuSortMergeJoinMeta31(join, conf, p, r)),
+      (join, conf, p, r) => new GpuSortMergeJoinMeta(join, conf, p, r)),
     GpuOverrides.exec[BroadcastHashJoinExec](
       "Implementation of join using broadcast data",
-      (join, conf, p, r) => new GpuBroadcastHashJoinMeta31(join, conf, p, r)),
+      (join, conf, p, r) => new GpuBroadcastHashJoinMeta(join, conf, p, r)),
     GpuOverrides.exec[ShuffledHashJoinExec](
       "Implementation of join using hashed shuffled data",
-      (join, conf, p, r) => new GpuShuffledHashJoinMeta31(join, conf, p, r)),
+      (join, conf, p, r) => new GpuShuffledHashJoinMeta(join, conf, p, r)),
     )
   }
 

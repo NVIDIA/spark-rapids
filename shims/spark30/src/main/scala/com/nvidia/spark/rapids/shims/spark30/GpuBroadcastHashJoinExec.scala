@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-package com.nvidia.spark.rapids.shims
+package com.nvidia.spark.rapids.shims.spark30
 
 import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.GpuMetricNames._
@@ -23,11 +23,12 @@ import com.nvidia.spark.rapids.GpuMetricNames._
 import org.apache.spark.sql.execution.joins.{BuildLeft, BuildRight, BuildSide}
 import org.apache.spark.internal.Logging
 import org.apache.spark.sql.execution.joins.BroadcastNestedLoopJoinExec
-import org.apache.spark.sql.execution.joins.ShuffledHashJoinExec
+import org.apache.spark.sql.execution.joins.BroadcastHashJoinExec
 import org.apache.spark.TaskContext
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.expressions.Expression
+import org.apache.spark.sql.catalyst.plans.physical.{BroadcastDistribution, Distribution, UnspecifiedDistribution}
 import org.apache.spark.sql.catalyst.plans.JoinType
 import org.apache.spark.sql.catalyst.plans.physical.{Distribution, HashClusteredDistribution}
 import org.apache.spark.sql.execution.{BinaryExecNode, SparkPlan}
@@ -38,14 +39,14 @@ import org.apache.spark.internal.Logging
 
 
 
-case class GpuShuffledHashJoinExec30(
+case class GpuBroadcastHashJoinExec(
     leftKeys: Seq[Expression],
     rightKeys: Seq[Expression],
     joinType: JoinType,
     buildSide: BuildSide,
     condition: Option[Expression],
     left: SparkPlan,
-    right: SparkPlan) extends GpuShuffledHashJoinExecBase30 with Logging {
+    right: SparkPlan) extends GpuBroadcastHashJoinExecBase with Logging {
 
 
   def getBuildSide: GpuBuildSide = {
@@ -57,23 +58,18 @@ case class GpuShuffledHashJoinExec30(
   }
 }
 
-object GpuShuffledHashJoinExec30 extends Logging {
+object GpuBroadcastHashJoinExec extends Logging {
 
   def createInstance(
       leftKeys: Seq[Expression],
       rightKeys: Seq[Expression],
       joinType: JoinType,
-      join: SparkPlan,
+      join: BroadcastHashJoinExec,
       condition: Option[Expression],
       left: SparkPlan,
-      right: SparkPlan): GpuShuffledHashJoinExec30 = {
+      right: SparkPlan): GpuBroadcastHashJoinExec = {
     
-    val buildSide: BuildSide = if (join.isInstanceOf[ShuffledHashJoinExec]) {
-      join.asInstanceOf[ShuffledHashJoinExec].buildSide 
-    } else {
-      BuildRight
-    }
-    GpuShuffledHashJoinExec30(leftKeys, rightKeys, joinType, buildSide, condition, left, right)
+    GpuBroadcastHashJoinExec(leftKeys, rightKeys, joinType, join.buildSide, condition, left, right)
   }
 
 }

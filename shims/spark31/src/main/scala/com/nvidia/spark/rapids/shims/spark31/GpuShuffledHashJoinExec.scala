@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-package com.nvidia.spark.rapids.shims
+package com.nvidia.spark.rapids.shims.spark31
 
 import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.GpuMetricNames._
@@ -37,14 +37,14 @@ import org.apache.spark.internal.Logging
 
 
 
-case class GpuShuffledHashJoinExec31 (
+case class GpuShuffledHashJoinExec (
     leftKeys: Seq[Expression],
     rightKeys: Seq[Expression],
     joinType: JoinType,
     buildSide: BuildSide,
     condition: Option[Expression],
     left: SparkPlan,
-    right: SparkPlan) extends GpuShuffledHashJoinExecBase31 with Logging {
+    right: SparkPlan) extends GpuShuffledHashJoinExecBase with Logging {
 
   def getBuildSide: GpuBuildSide = {
     buildSide match {
@@ -55,7 +55,7 @@ case class GpuShuffledHashJoinExec31 (
   }
 }
 
-object GpuShuffledHashJoinExec31 extends Logging {
+object GpuShuffledHashJoinExec extends Logging {
 
   def createInstance(
       leftKeys: Seq[Expression],
@@ -64,14 +64,14 @@ object GpuShuffledHashJoinExec31 extends Logging {
       join: SparkPlan,
       condition: Option[Expression],
       left: SparkPlan,
-      right: SparkPlan): GpuShuffledHashJoinExec31 = {
+      right: SparkPlan): GpuShuffledHashJoinExec = {
 
     val buildSide: BuildSide = if (join.isInstanceOf[ShuffledHashJoinExec]) {
       join.asInstanceOf[ShuffledHashJoinExec].buildSide
     } else {
       BuildRight
     }
-    GpuShuffledHashJoinExec31(leftKeys, rightKeys, joinType, buildSide, condition, left, right)
+    GpuShuffledHashJoinExec(leftKeys, rightKeys, joinType, buildSide, condition, left, right)
   }
 
 }

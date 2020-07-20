@@ -14,11 +14,12 @@
  * limitations under the License.
  */
 
-package org.apache.spark.sql.rapids
+package org.apache.spark.sql.rapids.shims.spark31
 
 import java.util.concurrent.TimeUnit.NANOSECONDS
 
 import com.nvidia.spark.rapids.{GpuExec, GpuReadCSVFileFormat, GpuReadOrcFileFormat, GpuReadParquetFileFormat, SparkPlanMeta}
+import org.apache.spark.sql.rapids.GpuFileSourceScanExecBase
 
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.{InternalRow, TableIdentifier}
@@ -34,7 +35,7 @@ import org.apache.spark.sql.types.StructType
 import org.apache.spark.sql.vectorized.ColumnarBatch
 import org.apache.spark.util.collection.BitSet
 
-case class GpuFileSourceScanExec31(
+case class GpuFileSourceScanExec(
     @transient relation: HadoopFsRelation,
     output: Seq[Attribute],
     requiredSchema: StructType,
@@ -142,9 +143,9 @@ case class GpuFileSourceScanExec31(
 
   override val nodeNamePrefix: String = "Gpu" + wrapped.nodeNamePrefix
 
-  override def doCanonicalize(): GpuFileSourceScanExec31 = {
+  override def doCanonicalize(): GpuFileSourceScanExec = {
     val canonical = wrapped.doCanonicalize()
-    GpuFileSourceScanExec31(
+    GpuFileSourceScanExec(
       canonical.relation,
       canonical.output,
       canonical.requiredSchema,
@@ -155,7 +156,7 @@ case class GpuFileSourceScanExec31(
   }
 }
 
-object GpuFileSourceScanExec31 {
+object GpuFileSourceScanExec {
   def tagSupport(meta: SparkPlanMeta[FileSourceScanExec]): Unit = {
     meta.wrapped.relation.fileFormat match {
       case _: CSVFileFormat => GpuReadCSVFileFormat.tagSupport(meta)

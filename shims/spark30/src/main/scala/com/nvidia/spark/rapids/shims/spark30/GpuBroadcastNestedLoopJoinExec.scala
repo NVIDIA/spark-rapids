@@ -14,20 +14,21 @@
  * limitations under the License.
  */
 
-package com.nvidia.spark.rapids.shims
+package com.nvidia.spark.rapids.shims.spark30
 
 import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.GpuMetricNames._
+import org.apache.spark.sql.rapids.execution._
 
-import org.apache.spark.sql.catalyst.optimizer.{BuildLeft, BuildRight, BuildSide}
+//import org.apache.spark.sql.catalyst.optimizer.{BuildLeft, BuildRight, BuildSide}
+import org.apache.spark.sql.execution.joins.{BuildLeft, BuildRight, BuildSide}
 import org.apache.spark.internal.Logging
 import org.apache.spark.sql.execution.joins.BroadcastNestedLoopJoinExec
-import org.apache.spark.sql.execution.joins.BroadcastHashJoinExec
+import org.apache.spark.sql.execution.joins.ShuffledHashJoinExec
 import org.apache.spark.TaskContext
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.expressions.Expression
-import org.apache.spark.sql.catalyst.plans.physical.{BroadcastDistribution, Distribution, UnspecifiedDistribution}
 import org.apache.spark.sql.catalyst.plans.JoinType
 import org.apache.spark.sql.catalyst.plans.physical.{Distribution, HashClusteredDistribution}
 import org.apache.spark.sql.execution.{BinaryExecNode, SparkPlan}
@@ -38,18 +39,16 @@ import org.apache.spark.internal.Logging
 
 
 
-case class GpuBroadcastHashJoinExec31(
-    leftKeys: Seq[Expression],
-    rightKeys: Seq[Expression],
-    joinType: JoinType,
-    buildSide: BuildSide,
-    condition: Option[Expression],
+case class GpuBroadcastNestedLoopJoinExec(
     left: SparkPlan,
-    right: SparkPlan) extends GpuBroadcastHashJoinExecBase31 with Logging {
+    right: SparkPlan,
+    join: BroadcastNestedLoopJoinExec,
+    joinType: JoinType,
+    condition: Option[Expression]) extends GpuBroadcastNestedLoopJoinExecBase(left, right, join, joinType, condition) with Logging {
 
 
   def getBuildSide: GpuBuildSide = {
-    buildSide match {
+    join.buildSide match {
       case BuildRight => GpuBuildRight
       case BuildLeft => GpuBuildLeft
       case _ => throw new Exception("unknown buildSide Type")
@@ -57,18 +56,16 @@ case class GpuBroadcastHashJoinExec31(
   }
 }
 
-object GpuBroadcastHashJoinExec31 extends Logging {
+object GpuBroadcastNestedLoopJoinExec extends Logging {
 
   def createInstance(
-      leftKeys: Seq[Expression],
-      rightKeys: Seq[Expression],
-      joinType: JoinType,
-      join: BroadcastHashJoinExec,
-      condition: Option[Expression],
       left: SparkPlan,
-      right: SparkPlan): GpuBroadcastHashJoinExec31 = {
+      right: SparkPlan,
+      join: BroadcastNestedLoopJoinExec,
+      joinType: JoinType,
+      condition: Option[Expression]): GpuBroadcastNestedLoopJoinExecBase= {
     
-    GpuBroadcastHashJoinExec31(leftKeys, rightKeys, joinType, join.buildSide, condition, left, right)
+    GpuBroadcastNestedLoopJoinExec(left, right, join, joinType, condition)
   }
 
 }

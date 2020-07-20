@@ -14,11 +14,10 @@
  * limitations under the License.
  */
 
-package com.nvidia.spark.rapids.shims
+package com.nvidia.spark.rapids.shims.spark30
 
 import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.GpuMetricNames._
-import org.apache.spark.sql.rapids.execution._
 
 //import org.apache.spark.sql.catalyst.optimizer.{BuildLeft, BuildRight, BuildSide}
 import org.apache.spark.sql.execution.joins.{BuildLeft, BuildRight, BuildSide}
@@ -39,16 +38,18 @@ import org.apache.spark.internal.Logging
 
 
 
-case class GpuBroadcastNestedLoopJoinExec30(
-    left: SparkPlan,
-    right: SparkPlan,
-    join: BroadcastNestedLoopJoinExec,
+case class GpuShuffledHashJoinExec(
+    leftKeys: Seq[Expression],
+    rightKeys: Seq[Expression],
     joinType: JoinType,
-    condition: Option[Expression]) extends GpuBroadcastNestedLoopJoinExecBase(left, right, join, joinType, condition) with Logging {
+    buildSide: BuildSide,
+    condition: Option[Expression],
+    left: SparkPlan,
+    right: SparkPlan) extends GpuShuffledHashJoinExecBase with Logging {
 
 
   def getBuildSide: GpuBuildSide = {
-    join.buildSide match {
+    buildSide match {
       case BuildRight => GpuBuildRight
       case BuildLeft => GpuBuildLeft
       case _ => throw new Exception("unknown buildSide Type")
@@ -56,16 +57,23 @@ case class GpuBroadcastNestedLoopJoinExec30(
   }
 }
 
-object GpuBroadcastNestedLoopJoinExec30 extends Logging {
+object GpuShuffledHashJoinExec extends Logging {
 
   def createInstance(
-      left: SparkPlan,
-      right: SparkPlan,
-      join: BroadcastNestedLoopJoinExec,
+      leftKeys: Seq[Expression],
+      rightKeys: Seq[Expression],
       joinType: JoinType,
-      condition: Option[Expression]): GpuBroadcastNestedLoopJoinExecBase= {
+      join: SparkPlan,
+      condition: Option[Expression],
+      left: SparkPlan,
+      right: SparkPlan): GpuShuffledHashJoinExec = {
     
-    GpuBroadcastNestedLoopJoinExec30(left, right, join, joinType, condition)
+    val buildSide: BuildSide = if (join.isInstanceOf[ShuffledHashJoinExec]) {
+      join.asInstanceOf[ShuffledHashJoinExec].buildSide 
+    } else {
+      BuildRight
+    }
+    GpuShuffledHashJoinExec(leftKeys, rightKeys, joinType, buildSide, condition, left, right)
   }
 
 }

@@ -16,6 +16,8 @@
 
 package com.nvidia.spark.rapids
 
+import java.util.ServiceLoader
+import scala.collection.JavaConverters._
 import scala.collection.immutable.HashMap
 
 import org.apache.spark.sql.catalyst.expressions.Expression
@@ -27,11 +29,24 @@ import org.apache.spark.{SPARK_BUILD_USER, SPARK_VERSION}
 
 object ShimLoader {
 
+  // This is no ideal but pass the version in here because otherwise loader that match the
+  // same version (3.0.0 Apache and 3.0.0 Databricks) would need to know how to differentiate.
+  val sparkShimLoaders = ServiceLoader.load(classOf[SparkShimLoader])
+    .asScala.filter(_.matchesVersion(getVersion))
+  if (sparkShimLoaders.size > 1) {
+    throw new IllegalArgumentException(s"Multiple Spark Shim Loaders found: $sparkShimLoaders")
+  }
+  val loader = sparkShimLoaders.headOption match {
+    case Some(loader) => loader
+    case None => throw new IllegalArgumentException("Could not find Spark Shim Loader")
+  }
+  private val sparkShims: SparkShims  = loader.buildShim
+
+
   val SPARK30DATABRICKSSVERSIONNAME = "3.0.0-databricks"
   val SPARK30VERSIONNAME = "3.0.0"
   val SPARK31VERSIONNAME = "3.1.0-SNAPSHOT"
 
-  private var sparkShims: SparkShims = null
   private var gpuBroadcastNestedJoinShims: GpuBroadcastNestedLoopJoinExecBase = null
 
   /**
@@ -49,15 +64,16 @@ object ShimLoader {
    */
   def getSparkShims: SparkShims = {
     if (sparkShims == null) {
-      sparkShims = loadShims(SPARK_SHIM_CLASSES, classOf[SparkShims])
+
+      // sparkShims = loadShims(SPARK_SHIM_CLASSES, classOf[SparkShims])
     }
     sparkShims
   }
 
   private val BROADCAST_NESTED_LOOP_JOIN_SHIM_CLASSES = HashMap(
-    SPARK30VERSIONNAME -> "com.nvidia.spark.rapids.shims.GpuBroadcastNestedLoopJoinExec30",
-    SPARK30DATABRICKSSVERSIONNAME -> "com.nvidia.spark.rapids.shims.GpuBroadcastNestedLoopJoinExec300Databricks",
-    SPARK31VERSIONNAME -> "com.nvidia.spark.rapids.shims.GpuBroadcastNestedLoopJoinExec31",
+    SPARK30VERSIONNAME -> "com.nvidia.spark.rapids.shims.spark30.GpuBroadcastNestedLoopJoinExec",
+    SPARK30DATABRICKSSVERSIONNAME -> "com.nvidia.spark.rapids.shims.spark30databricks.GpuBroadcastNestedLoopJoinExec",
+    SPARK31VERSIONNAME -> "com.nvidia.spark.rapids.shims.spark31.GpuBroadcastNestedLoopJoinExec",
   )
 
   def getGpuBroadcastNestedLoopJoinShims(

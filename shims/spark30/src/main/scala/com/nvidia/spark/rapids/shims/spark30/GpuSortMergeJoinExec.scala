@@ -14,12 +14,13 @@
  * limitations under the License.
  */
 
-package com.nvidia.spark.rapids.shims
+package com.nvidia.spark.rapids.shims.spark30
 
 import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.GpuMetricNames._
 
-import org.apache.spark.sql.catalyst.optimizer.{BuildLeft, BuildRight, BuildSide}
+//import org.apache.spark.sql.catalyst.optimizer.{BuildLeft, BuildRight, BuildSide}
+import org.apache.spark.sql.execution.joins.{BuildLeft, BuildRight, BuildSide}
 import org.apache.spark.internal.Logging
 import org.apache.spark.sql.execution.joins.BroadcastNestedLoopJoinExec
 import org.apache.spark.sql.execution.joins.ShuffledHashJoinExec
@@ -37,7 +38,7 @@ import org.apache.spark.internal.Logging
 
 
 
-class GpuSortMergeJoinMeta31(
+class GpuSortMergeJoinMeta(
     join: SortMergeJoinExec,
     conf: RapidsConf,
     parent: Option[RapidsMeta[_, _, _]],
@@ -54,7 +55,7 @@ class GpuSortMergeJoinMeta31(
   override def tagPlanForGpu(): Unit = {
 
     // Use conditions from Hash Join
-    GpuHashJoin31.tagJoin(this, join.joinType, join.leftKeys, join.rightKeys, join.condition)
+    GpuHashJoin.tagJoin(this, join.joinType, join.leftKeys, join.rightKeys, join.condition)
 
     if (!conf.enableReplaceSortMergeJoin) {
       willNotWorkOnGpu(s"Not replacing sort merge join with hash join, " +
@@ -79,7 +80,7 @@ class GpuSortMergeJoinMeta31(
     }
   }
   override def convertToGpu(): GpuExec = {
-    GpuShuffledHashJoinExec31(
+    GpuShuffledHashJoinExec(
       leftKeys.map(_.convertToGpu()),
       rightKeys.map(_.convertToGpu()),
       join.joinType,

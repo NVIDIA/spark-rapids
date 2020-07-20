@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-package com.nvidia.spark.rapids.shims
+package com.nvidia.spark.rapids.shims.spark31
 
 import ai.rapids.cudf.{NvtxColor, Table}
 
@@ -36,7 +36,7 @@ import org.apache.spark.sql.vectorized.ColumnarBatch
 import org.apache.spark.internal.Logging
 
 
-abstract class GpuBroadcastHashJoinExecBase30 extends BinaryExecNode with GpuHashJoin30 with Logging {
+abstract class GpuBroadcastHashJoinExecBase extends BinaryExecNode with GpuHashJoin with Logging {
   
   def getBuildSide: GpuBuildSide
 
@@ -156,7 +156,7 @@ abstract class GpuBroadcastHashJoinExecBase30 extends BinaryExecNode with GpuHas
 }
 
 
-class GpuBroadcastHashJoinMeta30(
+class GpuBroadcastHashJoinMeta(
     join: BroadcastHashJoinExec,
     conf: RapidsConf,
     parent: Option[RapidsMeta[_, _, _]],
@@ -175,7 +175,7 @@ class GpuBroadcastHashJoinMeta30(
   }
 
   override def tagPlanForGpu(): Unit = {
-    GpuHashJoin30.tagJoin(this, join.joinType, join.leftKeys, join.rightKeys, join.condition)
+    GpuHashJoin.tagJoin(this, join.joinType, join.leftKeys, join.rightKeys, join.condition)
 
     val buildSide = getBuildSide(join) match {
       case GpuBuildLeft => childPlans(0)
@@ -202,7 +202,7 @@ class GpuBroadcastHashJoinMeta30(
     if (!buildSide.isInstanceOf[GpuBroadcastExchangeExec]) {
       throw new IllegalStateException("the broadcast must be on the GPU too")
     }
-    GpuBroadcastHashJoinExec30(
+    GpuBroadcastHashJoinExec(
       leftKeys.map(_.convertToGpu()),
       rightKeys.map(_.convertToGpu()),
       join.joinType, join.buildSide,

@@ -14,13 +14,12 @@
  * limitations under the License.
  */
 
-package com.nvidia.spark.rapids.shims
+package com.nvidia.spark.rapids.shims.spark31
 
 import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.GpuMetricNames._
 
-//import org.apache.spark.sql.catalyst.optimizer.{BuildLeft, BuildRight, BuildSide}
-import org.apache.spark.sql.execution.joins.{BuildLeft, BuildRight, BuildSide}
+import org.apache.spark.sql.catalyst.optimizer.{BuildLeft, BuildRight, BuildSide}
 import org.apache.spark.internal.Logging
 import org.apache.spark.sql.execution.joins.BroadcastNestedLoopJoinExec
 import org.apache.spark.sql.execution.joins.BroadcastHashJoinExec
@@ -39,14 +38,14 @@ import org.apache.spark.internal.Logging
 
 
 
-case class GpuBroadcastHashJoinExec30(
+case class GpuBroadcastHashJoinExec(
     leftKeys: Seq[Expression],
     rightKeys: Seq[Expression],
     joinType: JoinType,
     buildSide: BuildSide,
     condition: Option[Expression],
     left: SparkPlan,
-    right: SparkPlan) extends GpuBroadcastHashJoinExecBase30 with Logging {
+    right: SparkPlan) extends GpuBroadcastHashJoinExecBase with Logging {
 
 
   def getBuildSide: GpuBuildSide = {
@@ -58,7 +57,7 @@ case class GpuBroadcastHashJoinExec30(
   }
 }
 
-object GpuBroadcastHashJoinExec30 extends Logging {
+object GpuBroadcastHashJoinExec extends Logging {
 
   def createInstance(
       leftKeys: Seq[Expression],
@@ -67,9 +66,9 @@ object GpuBroadcastHashJoinExec30 extends Logging {
       join: BroadcastHashJoinExec,
       condition: Option[Expression],
       left: SparkPlan,
-      right: SparkPlan): GpuBroadcastHashJoinExec30 = {
+      right: SparkPlan): GpuBroadcastHashJoinExec = {
     
-    GpuBroadcastHashJoinExec30(leftKeys, rightKeys, joinType, join.buildSide, condition, left, right)
+    GpuBroadcastHashJoinExec(leftKeys, rightKeys, joinType, join.buildSide, condition, left, right)
   }
 
 }
