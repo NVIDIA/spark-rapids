@@ -77,7 +77,7 @@ Signed-off-by: Your Name <your@email.com>
 The sign-off is a simple line at the end of the explanation for the patch. Your signature certifies that you wrote the patch or otherwise have the right to pass it on as an open-source patch. Use your real name, no pseudonyms or anonymous contributions.  If you set your `user.name` and `user.email` git configs, you can sign your commit automatically with `git commit -s`.
 
 
-The signoff means you certify the below (from [developercertificate.org](https://developercertificate.org):
+The signoff means you certify the below (from [developercertificate.org](https://developercertificate.org)):
 
 ```
 Developer Certificate of Origin
