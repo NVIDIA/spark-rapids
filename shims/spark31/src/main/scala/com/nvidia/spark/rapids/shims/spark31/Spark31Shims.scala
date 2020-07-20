@@ -22,6 +22,7 @@ import com.nvidia.spark.rapids._
 import org.apache.spark.sql.rapids.GpuTimeSub
 import org.apache.spark.sql.rapids.shims.spark31._
 
+import org.apache.spark.sql.catalyst.expressions.aggregate.First
 import org.apache.spark.sql.catalyst.optimizer.{BuildLeft, BuildRight, BuildSide}
 import org.apache.spark.internal.Logging
 import org.apache.spark.sql.execution._
@@ -41,6 +42,44 @@ class Spark31Shims extends SparkShims with Logging {
       case p => false
     }
   }
+
+  def getExprs: Seq[ExprRule[_ <: Expression]] = {
+    Seq(
+
+    GpuOverrides.expr[TimeAdd](
+      "Subtracts interval from timestamp",
+      (a, conf, p, r) => new BinaryExprMeta[TimeAdd](a, conf, p, r) {
+        override def tagExprForGpu(): Unit = {
+          a.interval match {
+            case Literal(intvl: CalendarInterval, DataTypes.CalendarIntervalType) =>
+              if (intvl.months != 0) {
+                willNotWorkOnGpu("interval months isn't supported")
+              }
+            case _ =>
+              willNotWorkOnGpu("only literals are supported for intervals")
+          }
+          if (ZoneId.of(a.timeZoneId.get).normalized() != GpuOverrides.UTC_TIMEZONE_ID) {
+            willNotWorkOnGpu("Only UTC zone id is supported")
+          }
+        }
+
+        override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression =
+          GpuTimeSub(lhs, rhs)
+      }
+    ),
+    GpuOverrides.expr[First](
+      "first aggregate operator",
+      (a, conf, p, r) => new ExprMeta[First](a, conf, p, r) {
+        // val childt: BaseExprMeta[_] = GpuOverrides.wrapExpr(a.child, conf, Some(this))
+
+        // override val childExprs: Seq[BaseExprMeta[_]] = Seq(childt)
+
+        override def convertToGpu(): GpuExpression =
+          GpuFirst(childExprs(0).convertToGpu(), a.ignoreNulls)
+      }),
+    )
+  }
+
 
   def getExecs: Seq[ExecRule[_ <: SparkPlan]] = {
     Seq(
@@ -80,33 +119,6 @@ class Spark31Shims extends SparkShims with Logging {
     GpuOverrides.exec[ShuffledHashJoinExec](
       "Implementation of join using hashed shuffled data",
       (join, conf, p, r) => new GpuShuffledHashJoinMeta(join, conf, p, r)),
-    )
-  }
-
-  def getExprs: Seq[ExprRule[_ <: Expression]] = {
-    Seq(
-
-    GpuOverrides.expr[TimeAdd](
-      "Subtracts interval from timestamp",
-      (a, conf, p, r) => new BinaryExprMeta[TimeAdd](a, conf, p, r) {
-        override def tagExprForGpu(): Unit = {
-          a.interval match {
-            case Literal(intvl: CalendarInterval, DataTypes.CalendarIntervalType) =>
-              if (intvl.months != 0) {
-                willNotWorkOnGpu("interval months isn't supported")
-              }
-            case _ =>
-              willNotWorkOnGpu("only literals are supported for intervals")
-          }
-          if (ZoneId.of(a.timeZoneId.get).normalized() != GpuOverrides.UTC_TIMEZONE_ID) {
-            willNotWorkOnGpu("Only UTC zone id is supported")
-          }
-        }
-
-        override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression =
-          GpuTimeSub(lhs, rhs)
-      }
-    )
     )
   }
 

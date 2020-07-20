@@ -16,19 +16,25 @@
 
 package com.nvidia.spark.rapids.shims.spark31
 
+import org.apache.spark.sql.rapids.GpuFirstBase
 import com.nvidia.spark.rapids._
+import com.nvidia.spark.rapids.GpuMetricNames._
 
-class Spark31ShimLoader extends SparkShimLoader {
+import org.apache.spark.sql.catalyst.analysis.TypeCheckResult
+import org.apache.spark.sql.catalyst.analysis.TypeCheckResult.{TypeCheckFailure, TypeCheckSuccess}
+import org.apache.spark.sql.catalyst.expressions.Expression
 
-  val SPARK31VERSIONNAME = "3.1.0-SNAPSHOT"
 
-  def matchesVersion(version: String): Boolean = {
-    version == SPARK31VERSIONNAME
+case class GpuFirst(child: Expression, ignoreNulls: Boolean) extends GpuFirstBase(child) {
+  override def children: Seq[Expression] = child :: Nil
+
+  override def checkInputDataTypes(): TypeCheckResult = {
+    val defaultCheck = super.checkInputDataTypes()
+    if (defaultCheck.isFailure) {
+      defaultCheck
+    } else {
+      TypeCheckSuccess
+    }
   }
-
-  def buildShim: SparkShims = {
-    new Spark31Shims()
-  } 
-
 }
 
