@@ -354,12 +354,12 @@ $SPARK_HOME/bin/spark-shell --master yarn \
   --conf spark.locality.wait=0s \
   --conf spark.sql.files.maxPartitionBytes=512m \
   --conf spark.executor.resource.gpu.discoveryScript=./getGpusResources.sh \
-   --conf spark.task.resource.gpu.amount=0.166 \
+  --conf spark.task.resource.gpu.amount=0.166 \
   --conf spark.executor.resource.gpu.amount=1 \
   --files $SPARK_RAPIDS_DIR/getGpusResources.sh
   --jars  ${SPARK_CUDF_JAR},${SPARK_RAPIDS_PLUGIN_JAR}
 ```
-
+  
 ## Example Join Operation
 Once you have started your Spark shell you can run the following commands to do a basic join and
 look at the UI to see that it runs on the GPU.
@@ -375,9 +375,100 @@ and `GpuColumnarExchange`.  Those correspond to operations that run on the GPU.
 
 ![Join Example on Spark SQL UI](../img/join-sql-ui-example.png)
 
+## Enabling RapidsShuffleManager
+---
+**NOTE**
+
+The _RapidsShuffleManager_ is a beta feature!
+
+---
+
+The _RapidsShuffleManager_ is an implementation of the `ShuffleManager` interface in Apache Spark
+that allows custom mechanisms to exchange shuffle data. The _RapidsShuffleManager_ has two components:
+a spillable cache, and a transport that can utilize _Remote Direct Memory Access (RDMA)_ and high-bandwidth 
+transfers within a node that has multiple GPUs. This is possible because the plugin utilizes 
+[Unified Communication X (UCX)](https://www.openucx.org/) as its transport.
+
+- **Spillable cache**: This store keeps GPU data close by where it was produced in device memory,
+but can spill in the following cases:
+  - _GPU out of memory_: If an allocation in the GPU failed to acquire memory, spill will get triggered
+    moving GPU buffers to host to allow for the original allocation to succeed.
+  - _Host spill store filled_: If the host memory store has reached a maximum threshold 
+    (`spark.rapids.memory.host.spillStorageSize`), host buffers will be spilled to disk until
+    the host spill store shrinks back below said configurable threshold.
+    
+  Tasks local to the producing executor will short-circuit read from the cache.
+
+- **Transport**: Handles block transfers between executors using various means like: _NVLink_, _PCIe_, _Infiniband (IB)_, 
+_RDMA over Converged Ethernet (RoCE)_ or _TCP_, and as configured in UCX, in these scenarios:
+  - _GPU-to-GPU_: Shuffle blocks that were able to fit in GPU memory.
+  - _Host-to-GPU_ and _Disk-to-GPU_: Shuffle blocks that spilled to host (or disk) but will be manifested 
+  in the GPU in the downstream Spark task.
+
+In order to enable the _RapidsShuffleManager_, please follow these steps. If you don't have 
+Mellanox hardware go to *step 2*:
+
+1) If you have Mellanox NICs and an Infiniband(IB) or RoCE network, please ensure you have the 
+[MLNX_OFED driver](https://www.mellanox.com/products/infiniband-drivers/linux/mlnx_ofed), 
+and the [`nv_peer_mem` kernel module](https://www.mellanox.com/products/GPUDirect-RDMA) installed.
+
+With `nv_peer_mem`, IB/RoCE-based transfers can perform zero-copy transfers directly from GPU memory.
+
+2) Install [UCX 1.8.1](https://github.com/openucx/ucx/releases/tag/v1.8.1). 
+
+3) You will need to configure your spark job with extra settings for UCX (we are looking to 
+simplify these settings in the near future):
+
+```shell
+...
+--conf spark.shuffle.manager=com.nvidia.spark.RapidsShuffleManager \
+--conf spark.shuffle.service.enabled=false \
+--conf spark.rapids.shuffle.transport.enabled=true \
+--conf spark.executorEnv.UCX_TLS=cuda_copy,cuda_ipc,rc,tcp \
+--conf spark.executorEnv.UCX_ERROR_SIGNALS= \
+--conf spark.executorEnv.UCX_MAX_RNDV_RAILS=1 \
+--conf spark.executorEnv.UCX_MEMTYPE_CACHE=n \
+--conf spark.executor.extraClassPath=/usr/lib:/usr/lib/ucx:${SPARK_CUDF_JAR}:${SPARK_RAPIDS_PLUGIN_JAR}
+```
+
+Please note `extraClassPath`, presently requires the UCX libraries to be added to the classpath. Newer
+versions of UCX handle loading shared libraries differently and should not require this.
+
+### UCX Environment Variables
+- `UCX_TLS`: 
+  - `cuda_copy`, and `cuda_ipc`: enables handling of CUDA memory in UCX, both for copy-based transport
+    and peer-to-peer communication between GPUs (NVLink/PCIe).
+  - `rc`: enables Infiniband and RoCE based transport in UCX.
+  - `tcp`: allows for TCP communication in cases where UCX deems necessary.
+- `UCX_ERROR_SIGNALS=`: Disables UCX signal catching, as it can cause issues with the JVM.
+- `UCX_MAX_RNDV_RAILS=1`: Set this to `1` to disable multi-rail transfers in UCX, where UCX splits
+  data to utilize various channels (e.g. two NICs). A value greater than `1` can cause a performance drop 
+  for high-bandwidth transports between GPUs.
+- `UCX_MEMTYPE_CACHE=n`: Disables a cache in UCX that can cause UCX to fail when running with CUDA buffers. 
+  
+### RapidsShuffleManager Fine Tuning
+Here are some settings that could be utilized to fine tune the _RapidsShuffleManager_:
+
+#### Bounce Buffers
+The following configs control the number of bounce buffers, and the size. Please note that for
+device buffers, two pools are created (for sending and receiving). Take this into account when
+sizing your pools. 
+
+The GPU buffers should be smaller than the [`PCI BAR Size`](https://docs.nvidia.com/cuda/gpudirect-rdma/index.html#bar-sizes)
+for your GPU. Please verify the [defaults](../configs.md) work in your case.
+
+- `spark.rapids.shuffle.ucx.bounceBuffers.device.count`
+- `spark.rapids.shuffle.ucx.bounceBuffers.host.count`
+- `spark.rapids.shuffle.ucx.bounceBuffers.size`
+
+#### Spillable Store
+This setting controls the amount of host memory (RAM) that can be utilized to spill GPU blocks when
+the GPU is out of memory, before going to disk. Please verify the [defaults](../configs.md).
+- `spark.rapids.memory.host.spillStorageSize`
+
 ## Advanced Configuration
 
-See the [RAPIDS Accelerator for Apache Spark Configuration Guide](configs.md) for details on all
+See the [RAPIDS Accelerator for Apache Spark Configuration Guide](../configs.md) for details on all
 of the configuration settings specific to the RAPIDS Accelerator for Apache Spark.
 
 ## Monitoring
