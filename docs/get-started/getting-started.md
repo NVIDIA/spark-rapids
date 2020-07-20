@@ -428,8 +428,7 @@ simplify these settings in the near future):
 --conf spark.executorEnv.UCX_ERROR_SIGNALS= \
 --conf spark.executorEnv.UCX_MAX_RNDV_RAILS=1 \
 --conf spark.executorEnv.UCX_MEMTYPE_CACHE=n \
---conf spark.executorEnv.UCX_RNDV_SCHEME=put_zcopy \
---conf spark.executor.extraClassPath=/usr/lib:/usr/lib/ucx:${SPARK_CUDF_JAR}:${SPARK_RAPIDS_PLUGIN_JAR} \
+--conf spark.executor.extraClassPath=/usr/lib:/usr/lib/ucx:${SPARK_CUDF_JAR}:${SPARK_RAPIDS_PLUGIN_JAR}
 ```
 
 Please note `extraClassPath`, presently requires the UCX libraries to be added to the classpath. Newer
@@ -446,8 +445,6 @@ versions of UCX handle loading shared libraries differently and should not requi
   data to utilize various channels (e.g. two NICs). A value greater than `1` can cause a performance drop 
   for high-bandwidth transports between GPUs.
 - `UCX_MEMTYPE_CACHE=n`: Disables a cache in UCX that can cause UCX to fail when running with CUDA buffers. 
-- `UCX_RNDV_SCHEME=put_zcopy`: Picks the scheme to be used in the [RNDV](https://community.mellanox.com/s/article/understanding-tag-matching-for-developers)
-  protocol. In our tests, `put_zcopy` has shown higher performance than other schemes.
   
 ### RapidsShuffleManager Fine Tuning
 Here are some settings that could be utilized to fine tune the _RapidsShuffleManager_:
