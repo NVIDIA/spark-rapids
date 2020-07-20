@@ -16,6 +16,7 @@ import pytest
 
 from asserts import assert_gpu_and_cpu_are_equal_collect, assert_equal
 from data_gen import *
+from datetime import date
 import pyspark.sql.functions as f
 from spark_session import with_cpu_session, with_gpu_session
 from join_test import create_df
@@ -137,8 +138,17 @@ def test_cache_broadcast_nested_loop_join(data_gen, join_type):
 
     assert_gpu_and_cpu_are_equal_collect(do_join, conf={'spark.rapids.sql.exec.BroadcastNestedLoopJoinExec': 'true'})
 
-#This is a copy of a test from generate_expr_test.py except for the fact that we are caching the df
-@pytest.mark.parametrize('data_gen', all_gen, ids=idfn)
+all_gen_restricting_dates = [StringGen(), ByteGen(), ShortGen(), IntegerGen(), LongGen(),
+           pytest.param(FloatGen(special_cases=[FLOAT_MIN, FLOAT_MAX, 0.0, 1.0, -1.0]), marks=[incompat]),
+           pytest.param(DoubleGen(special_cases=double_special_cases), marks=[incompat]),
+           BooleanGen(),
+           # due to backward compatibility we are avoiding writing dates prior to 1582-10-15
+           # For more detail please look at SPARK-31404
+           # This issue is tracked by https://github.com/NVIDIA/spark-rapids/issues/133 in the plugin
+           DateGen(start=date(1582, 10, 15)),
+           TimestampGen()]
+
+@pytest.mark.parametrize('data_gen', all_gen_restricting_dates, ids=idfn)
 @allow_non_gpu('InMemoryTableScanExec', 'DataWritingCommandExec')
 def test_cache_posexplode_makearray(spark_tmp_path, data_gen):
     if data_gen.data_type == BooleanType():

@@ -416,6 +416,8 @@ class DateGen(DataGen):
         y = int(math.ceil(t/4.0)) * 4
         if ((y % 100) == 0) and ((y % 400) != 0):
             y = y + 4
+        if (y == 10000):
+            y = y - 4
         return y
 
     _epoch = date(1970, 1, 1)
