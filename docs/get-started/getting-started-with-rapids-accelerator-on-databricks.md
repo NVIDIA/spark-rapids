@@ -5,7 +5,7 @@ nav_order: 3
 parent: Getting-Started
 ---
 
-# Getting started with RAPIDS Accelerator for Apache Spark on Databricks
+# Getting started with RAPIDS Accelerator on Databricks
 This guide will run through how to set up the RAPIDS Accelerator for Apache Spark 3.0 on Databricks.  At the end of this guide, the reader will be able to run a sample Apache Spark application that runs on NVIDIA GPUs on Databricks.
 
 ## Prerequisites
