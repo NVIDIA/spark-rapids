@@ -19,7 +19,6 @@ package com.nvidia.spark.rapids
 import java.time.ZoneId
 
 import scala.reflect.ClassTag
-
 import org.apache.spark.internal.Logging
 import org.apache.spark.sql.SparkSession
 import org.apache.spark.sql.catalyst.expressions._
@@ -43,10 +42,12 @@ import org.apache.spark.sql.execution.datasources.v2.orc.OrcScan
 import org.apache.spark.sql.execution.datasources.v2.parquet.ParquetScan
 import org.apache.spark.sql.execution.exchange.{BroadcastExchangeExec, ShuffleExchangeExec}
 import org.apache.spark.sql.execution.joins.{BroadcastHashJoinExec, BroadcastNestedLoopJoinExec, CartesianProductExec, ShuffledHashJoinExec, SortMergeJoinExec}
+import org.apache.spark.sql.execution.python.ArrowEvalPythonExec
 import org.apache.spark.sql.execution.window.WindowExec
 import org.apache.spark.sql.rapids._
 import org.apache.spark.sql.rapids.catalyst.expressions.GpuRand
 import org.apache.spark.sql.rapids.execution.{GpuBroadcastMeta, GpuBroadcastNestedLoopJoinMeta}
+import org.apache.spark.sql.rapids.execution.python.{GpuArrowEvalPythonExec, GpuArrowPythonExecMeta}
 import org.apache.spark.sql.types._
 import org.apache.spark.unsafe.types.{CalendarInterval, UTF8String}
 
@@ -1744,7 +1745,10 @@ object GpuOverrides {
       "Window-operator backend",
       (windowOp, conf, p, r) =>
         new GpuWindowExecMeta(windowOp, conf, p, r)
-    )
+      ),
+    exec[ArrowEvalPythonExec](
+      "The backend for pandas UDF",
+      (py, conf, p, r) => new GpuArrowPythonExecMeta(py, conf, p, r))
   ).map(r => (r.getClassFor.asSubclass(classOf[SparkPlan]), r)).toMap
   val execs: Map[Class[_ <: SparkPlan], ExecRule[_ <: SparkPlan]] =
     commonExecs ++ ShimLoader.getSparkShims.getExecs
