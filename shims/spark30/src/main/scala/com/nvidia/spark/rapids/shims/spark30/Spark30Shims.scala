@@ -51,6 +51,20 @@ class Spark30Shims extends SparkShims with Logging {
     }
   }
 
+  def isGpuBroadcastHashJoin(plan: SparkPlan): Boolean = {
+    plan match {
+      case _: GpuBroadcastHashJoinExec => true
+      case p => false
+    }
+  }
+
+  def isGpuShuffledHashJoin(plan: SparkPlan): Boolean = {
+    plan match {
+      case _: GpuShuffledHashJoinExec => true
+      case p => false
+    }
+  }
+
   def getExecs: Seq[ExecRule[_ <: SparkPlan]] = {
     Seq(
 

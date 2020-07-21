@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020, NVIDIA CORPORATION.
+ * Copyright (c) 2019-2020, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -35,6 +35,61 @@ import org.apache.spark.sql.vectorized.ColumnarBatch
 /**
  *  Spark 3.1 changed packages of BuildLeft, BuildRight, BuildSide
  */
+class GpuBroadcastHashJoinMeta(
+    join: BroadcastHashJoinExec,
+    conf: RapidsConf,
+    parent: Option[RapidsMeta[_, _, _]],
+    rule: ConfKeysAndIncompat)
+  extends GpuHashJoinBaseMeta[BroadcastHashJoinExec](join, conf, parent, rule) {
+
+  val leftKeys: Seq[BaseExprMeta[_]] =
+    join.leftKeys.map(GpuOverrides.wrapExpr(_, conf, Some(this)))
+  val rightKeys: Seq[BaseExprMeta[_]] =
+    join.rightKeys.map(GpuOverrides.wrapExpr(_, conf, Some(this)))
+  val condition: Option[BaseExprMeta[_]] = join.condition.map(
+    GpuOverrides.wrapExpr(_, conf, Some(this)))
+
+  private def getBuildSide(join: BroadcastHashJoinExec): GpuBuildSide = {
+    ShimLoader.getSparkShims.getBuildSide(join)
+  }
+
+  override def tagPlanForGpu(): Unit = {
+    GpuHashJoin.tagJoin(this, join.joinType, join.leftKeys, join.rightKeys, join.condition)
+
+    val buildSide = getBuildSide(join) match {
+      case GpuBuildLeft => childPlans(0)
+      case GpuBuildRight => childPlans(1)
+    }
+
+    if (!buildSide.canThisBeReplaced) {
+      willNotWorkOnGpu("the broadcast for this join must be on the GPU too")
+    }
+
+    if (!canThisBeReplaced) {
+      buildSide.willNotWorkOnGpu("the BroadcastHashJoin this feeds is not on the GPU")
+    }
+  }
+
+  override def convertToGpu(): GpuExec = {
+    val left = childPlans(0).convertIfNeeded()
+    val right = childPlans(1).convertIfNeeded()
+    // The broadcast part of this must be a BroadcastExchangeExec
+    val buildSide = getBuildSide(join) match {
+      case GpuBuildLeft => left
+      case GpuBuildRight => right
+    }
+    if (!buildSide.isInstanceOf[GpuBroadcastExchangeExec]) {
+      throw new IllegalStateException("the broadcast must be on the GPU too")
+    }
+    GpuBroadcastHashJoinExec(
+      leftKeys.map(_.convertToGpu()),
+      rightKeys.map(_.convertToGpu()),
+      join.joinType, join.buildSide,
+      condition.map(_.convertToGpu()),
+      left, right)
+  }
+}
+
 case class GpuBroadcastHashJoinExec(
     leftKeys: Seq[Expression],
     rightKeys: Seq[Expression],
@@ -158,57 +213,3 @@ case class GpuBroadcastHashJoinExec(
   }
 }
 
-class GpuBroadcastHashJoinMeta(
-    join: BroadcastHashJoinExec,
-    conf: RapidsConf,
-    parent: Option[RapidsMeta[_, _, _]],
-    rule: ConfKeysAndIncompat)
-  extends GpuHashJoinBaseMeta[BroadcastHashJoinExec](join, conf, parent, rule) {
-
-  val leftKeys: Seq[BaseExprMeta[_]] =
-    join.leftKeys.map(GpuOverrides.wrapExpr(_, conf, Some(this)))
-  val rightKeys: Seq[BaseExprMeta[_]] =
-    join.rightKeys.map(GpuOverrides.wrapExpr(_, conf, Some(this)))
-  val condition: Option[BaseExprMeta[_]] = join.condition.map(
-    GpuOverrides.wrapExpr(_, conf, Some(this)))
-
-  private def getBuildSide(join: BroadcastHashJoinExec): GpuBuildSide = {
-    ShimLoader.getSparkShims.getBuildSide(join)
-  }
-
-  override def tagPlanForGpu(): Unit = {
-    GpuHashJoin.tagJoin(this, join.joinType, join.leftKeys, join.rightKeys, join.condition)
-
-    val buildSide = getBuildSide(join) match {
-      case GpuBuildLeft => childPlans(0)
-      case GpuBuildRight => childPlans(1)
-    }
-
-    if (!buildSide.canThisBeReplaced) {
-      willNotWorkOnGpu("the broadcast for this join must be on the GPU too")
-    }
-
-    if (!canThisBeReplaced) {
-      buildSide.willNotWorkOnGpu("the BroadcastHashJoin this feeds is not on the GPU")
-    }
-  }
-
-  override def convertToGpu(): GpuExec = {
-    val left = childPlans(0).convertIfNeeded()
-    val right = childPlans(1).convertIfNeeded()
-    // The broadcast part of this must be a BroadcastExchangeExec
-    val buildSide = getBuildSide(join) match {
-      case GpuBuildLeft => left
-      case GpuBuildRight => right
-    }
-    if (!buildSide.isInstanceOf[GpuBroadcastExchangeExec]) {
-      throw new IllegalStateException("the broadcast must be on the GPU too")
-    }
-    GpuBroadcastHashJoinExec(
-      leftKeys.map(_.convertToGpu()),
-      rightKeys.map(_.convertToGpu()),
-      join.joinType, join.buildSide,
-      condition.map(_.convertToGpu()),
-      left, right)
-  }
-}

@@ -1,5 +1,4 @@
 /*
- * rg.apache.spark.sql.rapids
  * Copyright (c) 2019-2020, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");

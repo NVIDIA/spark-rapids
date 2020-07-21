@@ -36,7 +36,7 @@
     </properties>
     <profiles>
         <profile>
-            <id>spark31</id>
+            <id>spark31tests</id>
             <properties>
                 <spark.test.version>3.1.0-SNAPSHOT</spark.test.version>
             </properties>
@@ -78,6 +78,12 @@
         <dependency>
             <groupId>com.nvidia</groupId>
             <artifactId>rapids-4-spark_${scala.binary.version}</artifactId>
+            <version>${project.version}</version>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>com.nvidia</groupId>
+            <artifactId>rapids-4-spark-shims_${scala.binary.version}</artifactId>
             <version>${project.version}</version>
             <scope>test</scope>
         </dependency>

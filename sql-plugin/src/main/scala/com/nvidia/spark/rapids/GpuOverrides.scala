@@ -1672,14 +1672,6 @@ object GpuOverrides {
     exec[BroadcastExchangeExec](
       "The backend for broadcast exchange of data",
       (exchange, conf, p, r) => new GpuBroadcastMeta(exchange, conf, p, r)),
-    /*
-    exec[BroadcastHashJoinExec](
-      "Implementation of join using broadcast data",
-      (join, conf, p, r) => new GpuBroadcastHashJoinMeta(join, conf, p, r)),
-    exec[ShuffledHashJoinExec](
-      "Implementation of join using hashed shuffled data",
-      (join, conf, p, r) => new GpuShuffledHashJoinMeta(join, conf, p, r)),
-    */
     exec[BroadcastNestedLoopJoinExec](
       "Implementation of join using brute force",
       (join, conf, p, r) => new GpuBroadcastNestedLoopJoinMeta(join, conf, p, r))
@@ -1700,11 +1692,6 @@ object GpuOverrides {
             conf.gpuTargetBatchSizeBytes)
       })
         .disabledByDefault("large joins can cause out of memory errors"),
-        /*
-    exec[SortMergeJoinExec](
-      "Sort merge join, replacing with shuffled hash join",
-      (join, conf, p, r) => new GpuSortMergeJoinMeta(join, conf, p, r)),
-    */
     exec[HashAggregateExec](
       "The backend for hash based aggregations",
       (agg, conf, p, r) => new GpuHashAggregateMeta(agg, conf, p, r)),
