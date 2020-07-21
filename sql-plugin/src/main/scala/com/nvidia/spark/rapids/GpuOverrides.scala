@@ -19,7 +19,6 @@ package com.nvidia.spark.rapids
 import java.time.ZoneId
 
 import scala.reflect.ClassTag
-
 import org.apache.spark.internal.Logging
 import org.apache.spark.sql.SparkSession
 import org.apache.spark.sql.catalyst.expressions._
@@ -47,6 +46,7 @@ import org.apache.spark.sql.execution.window.WindowExec
 import org.apache.spark.sql.rapids._
 import org.apache.spark.sql.rapids.catalyst.expressions.GpuRand
 import org.apache.spark.sql.rapids.execution.{GpuBroadcastMeta, GpuBroadcastNestedLoopJoinMeta, GpuCustomShuffleReaderExec, GpuShuffleMeta}
+import org.apache.spark.sql.rapids.execution.python.{GpuArrowEvalPythonExec, GpuArrowPythonExecMeta}
 import org.apache.spark.sql.types._
 import org.apache.spark.unsafe.types.UTF8String
 
@@ -1769,7 +1769,10 @@ object GpuOverrides {
           GpuCustomShuffleReaderExec(childPlans.head.convertIfNeeded(),
             exec.partitionSpecs)
         }
-      })
+      }),
+    exec[ArrowEvalPythonExec](
+      "The backend for pandas UDF",
+      (py, conf, p, r) => new GpuArrowPythonExecMeta(py, conf, p, r))
   ).map(r => (r.getClassFor.asSubclass(classOf[SparkPlan]), r)).toMap
   val execs: Map[Class[_ <: SparkPlan], ExecRule[_ <: SparkPlan]] =
     commonExecs ++ ShimLoader.getSparkShims.getExecs
