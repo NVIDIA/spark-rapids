@@ -34,7 +34,7 @@ import org.apache.spark.sql.execution.metric.{SQLMetric, SQLMetrics}
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
 object GpuJoinUtils {
-  def getBuildSide(buildSide: BuildSide): GpuBuildSide = {
+  def getGpuBuildSide(buildSide: BuildSide): GpuBuildSide = {
     buildSide match {
       case BuildRight => GpuBuildRight
       case BuildLeft => GpuBuildLeft
@@ -60,7 +60,7 @@ case class GpuShuffledHashJoinExec (
       "Join keys from two sides should have same types")
     val lkeys = GpuBindReferences.bindGpuReferences(leftKeys, left.output)
     val rkeys = GpuBindReferences.bindGpuReferences(rightKeys, right.output)
-    GpuJoinUtils.getBuildSide(buildSide) match {
+    GpuJoinUtils.getGpuBuildSide(buildSide) match {
       case GpuBuildLeft => (lkeys, rkeys)
       case GpuBuildRight => (rkeys, lkeys)
     }
@@ -82,7 +82,7 @@ case class GpuShuffledHashJoinExec (
   }
 
   override def childrenCoalesceGoal: Seq[CoalesceGoal] = {
-    GpuJoinUtils.getBuildSide(buildSide) match {
+    GpuJoinUtils.getGpuBuildSide(buildSide) match {
       case GpuBuildLeft => Seq(RequireSingleBatch, null)
       case GpuBuildRight => Seq(null, RequireSingleBatch)
     }
@@ -156,7 +156,7 @@ case class GpuShuffledHashJoinExec (
 
     val nvtxRange = new NvtxWithMetrics("hash join", NvtxColor.ORANGE, joinTime)
     val joined = try {
-      GpuJoinUtils.getBuildSide(buildSide) match {
+      GpuJoinUtils.getGpuBuildSide(buildSide) match {
         case GpuBuildLeft => doJoinLeftRight(builtTable, streamedTable)
         case GpuBuildRight => doJoinLeftRight(streamedTable, builtTable)
       }

@@ -51,7 +51,7 @@ case class GpuBroadcastHashJoinExec(
       "Join keys from two sides should have same types")
     val lkeys = GpuBindReferences.bindGpuReferences(leftKeys, left.output)
     val rkeys = GpuBindReferences.bindGpuReferences(rightKeys, right.output)
-    GpuJoinUtils.getBuildSide(buildSide) match {
+    GpuJoinUtils.getGpuBuildSide(buildSide) match {
       case GpuBuildLeft => (lkeys, rkeys)
       case GpuBuildRight => (rkeys, lkeys)
     }
@@ -64,7 +64,7 @@ case class GpuBroadcastHashJoinExec(
 
   override def requiredChildDistribution: Seq[Distribution] = {
     val mode = HashedRelationBroadcastMode(buildKeys)
-    GpuJoinUtils.getBuildSide(buildSide) match {
+    GpuJoinUtils.getGpuBuildSide(buildSide) match {
       case GpuBuildLeft =>
         BroadcastDistribution(mode) :: UnspecifiedDistribution :: Nil
       case GpuBuildRight =>
@@ -131,7 +131,7 @@ case class GpuBroadcastHashJoinExec(
 
     val nvtxRange = new NvtxWithMetrics("hash join", NvtxColor.ORANGE, joinTime)
     val joined = try {
-      GpuJoinUtils.getBuildSide(buildSide) match {
+      GpuJoinUtils.getGpuBuildSide(buildSide) match {
         case GpuBuildLeft => doJoinLeftRight(builtTable, streamedTable)
         case GpuBuildRight => doJoinLeftRight(streamedTable, builtTable)
       }
