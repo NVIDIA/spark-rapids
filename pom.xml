@@ -487,6 +487,7 @@
                         <exclude>pom.xml.asc</exclude>
 			<exclude>jenkins/databricks/*.patch</exclude>
 			<exclude>*.jar</exclude>
+			<exclude>**/META-INF/services/com.nvidia.spark.rapids.SparkShimServiceProvider</exclude>
                     </excludes>
                 </configuration>
             </plugin>
