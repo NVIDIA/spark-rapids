@@ -19,12 +19,11 @@ import ai.rapids.cudf.Table
 import com.nvidia.spark.rapids.{GpuColumnVector, GpuExec, GpuExpression, RapidsMeta}
 
 import org.apache.spark.TaskContext
-import org.apache.spark.internal.Logging
 import org.apache.spark.sql.catalyst.expressions.{Attribute, Expression}
 import org.apache.spark.sql.catalyst.plans._
 import org.apache.spark.sql.execution.joins.HashJoin
 import org.apache.spark.sql.execution.metric.SQLMetric
-import org.apache.spark.sql.vectorized.{ColumnVector, ColumnarBatch}
+import org.apache.spark.sql.vectorized.{ColumnarBatch, ColumnVector}
 
 object GpuHashJoin {
   def tagJoin(
@@ -34,15 +33,7 @@ object GpuHashJoin {
       rightKeys: Seq[Expression],
       condition: Option[Expression]): Unit = joinType match {
     case _: InnerLike =>
-    case FullOuter =>
-      if (leftKeys.exists(_.nullable) || rightKeys.exists(_.nullable)) {
-        // https://github.com/rapidsai/cudf/issues/5563
-        meta.willNotWorkOnGpu("Full outer join does not work on nullable keys")
-      }
-      if (condition.isDefined) {
-        meta.willNotWorkOnGpu(s"$joinType joins currently do not support conditions")
-      }
-    case RightOuter | LeftOuter | LeftSemi | LeftAnti =>
+    case FullOuter | RightOuter | LeftOuter | LeftSemi | LeftAnti =>
       if (condition.isDefined) {
         meta.willNotWorkOnGpu(s"$joinType joins currently do not support conditions")
       }
@@ -50,9 +41,7 @@ object GpuHashJoin {
   }
 }
 
-
-trait GpuHashJoin extends GpuExec with HashJoin with Logging {
-
+trait GpuHashJoin extends GpuExec with HashJoin {
 
   override def output: Seq[Attribute] = {
     joinType match {
@@ -72,7 +61,6 @@ trait GpuHashJoin extends GpuExec with HashJoin with Logging {
         throw new IllegalArgumentException(s"GpuHashJoin should not take $x as the JoinType")
     }
   }
-
 
  def doJoinInternal(builtTable: Table,
       streamedBatch: ColumnarBatch,

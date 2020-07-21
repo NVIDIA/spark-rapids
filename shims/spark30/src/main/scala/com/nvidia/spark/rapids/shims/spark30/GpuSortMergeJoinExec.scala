@@ -18,16 +18,18 @@ package com.nvidia.spark.rapids.shims.spark30
 
 import com.nvidia.spark.rapids._
 
-import org.apache.spark.internal.Logging
 import org.apache.spark.sql.execution.SortExec
 import org.apache.spark.sql.execution.joins._
 
+/**
+ * HashJoin changed in Spark 3.1 requiring Shim
+ */
 class GpuSortMergeJoinMeta(
     join: SortMergeJoinExec,
     conf: RapidsConf,
     parent: Option[RapidsMeta[_, _, _]],
     rule: ConfKeysAndIncompat)
-  extends GpuHashJoinBaseMeta[SortMergeJoinExec](join, conf, parent, rule) with Logging {
+  extends GpuHashJoinBaseMeta[SortMergeJoinExec](join, conf, parent, rule) {
 
   val leftKeys: Seq[BaseExprMeta[_]] =
     join.leftKeys.map(GpuOverrides.wrapExpr(_, conf, Some(this)))
@@ -63,6 +65,7 @@ class GpuSortMergeJoinMeta(
       }
     }
   }
+
   override def convertToGpu(): GpuExec = {
     GpuShuffledHashJoinExec(
       leftKeys.map(_.convertToGpu()),
@@ -73,6 +76,4 @@ class GpuSortMergeJoinMeta(
       childPlans(0).convertIfNeeded(),
       childPlans(1).convertIfNeeded())
   }
-
 }
-

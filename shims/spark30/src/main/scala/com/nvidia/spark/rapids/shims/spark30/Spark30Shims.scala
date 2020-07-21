@@ -22,17 +22,16 @@ import com.nvidia.spark.rapids._
 import org.apache.spark.sql.rapids.GpuTimeSub
 import org.apache.spark.sql.rapids.shims.spark30._
 import org.apache.spark.sql.catalyst.expressions.aggregate.{First, Last}
-import org.apache.spark.sql.execution.joins.{BuildLeft, BuildRight, BuildSide}
 import org.apache.spark.internal.Logging
 import org.apache.spark.sql.execution._
 import org.apache.spark.sql.execution.datasources.HadoopFsRelation
-import org.apache.spark.sql.execution.joins.{BroadcastHashJoinExec, BroadcastNestedLoopJoinExec, SortMergeJoinExec}
+import org.apache.spark.sql.execution.joins.{BroadcastHashJoinExec, BroadcastNestedLoopJoinExec, HashJoin, SortMergeJoinExec}
 import org.apache.spark.sql.execution.joins.ShuffledHashJoinExec
 import org.apache.spark.sql.catalyst.expressions._
 import org.apache.spark.sql.catalyst.plans.JoinType
 import org.apache.spark.sql.rapids.execution.GpuBroadcastNestedLoopJoinExecBase
 import org.apache.spark.sql.types._
-import org.apache.spark.unsafe.types.{CalendarInterval, UTF8String}
+import org.apache.spark.unsafe.types.CalendarInterval
 
 class Spark30Shims extends SparkShims with Logging {
 
@@ -144,43 +143,12 @@ class Spark30Shims extends SparkShims with Logging {
     )
   }
 
-
-  def getBuildSide(join: ShuffledHashJoinExec): GpuBuildSide = {
-    val buildSide = join.buildSide
-    buildSide match {
-      case e: buildSide.type if e.toString.contains("BuildRight") => {
-        GpuBuildRight
-      }
-      case l: buildSide.type if l.toString.contains("BuildLeft") => {
-        GpuBuildLeft
-      }
-      case _ => throw new Exception("unknown buildSide Type")
-    }
+  def getBuildSide(join: HashJoin): GpuBuildSide = {
+    GpuJoinUtils.getBuildSide(join.buildSide)
   }
 
   def getBuildSide(join: BroadcastNestedLoopJoinExec): GpuBuildSide = {
-    val buildSide = join.buildSide
-    buildSide match {
-      case e: buildSide.type if e.toString.contains("BuildRight") => {
-        GpuBuildRight
-      }
-      case l: buildSide.type if l.toString.contains("BuildLeft") => {
-        GpuBuildLeft
-      }
-      case _ => throw new Exception("unknown buildSide Type")
-    }
-  }
-  def getBuildSide(join: BroadcastHashJoinExec): GpuBuildSide = {
-    val buildSide = join.buildSide
-    buildSide match {
-      case e: buildSide.type if e.toString.contains("BuildRight") => {
-        GpuBuildRight
-      }
-      case l: buildSide.type if l.toString.contains("BuildLeft") => {
-        GpuBuildLeft
-      }
-      case _ => throw new Exception("unknown buildSide Type")
-    }
+    GpuJoinUtils.getBuildSide(join.buildSide)
   }
 }
 

@@ -16,7 +16,7 @@
 
 package com.nvidia.spark.rapids.shims.spark31
 
-import com.nvidia.spark.rapids._
+import com.nvidia.spark.rapids.{SparkShims, SparkShimServiceProvider}
 
 class Spark31ShimServiceProvider extends SparkShimServiceProvider {
 

@@ -16,9 +16,8 @@
 
 package com.nvidia.spark.rapids.shims.spark31
 
-import com.nvidia.spark.rapids._
+import com.nvidia.spark.rapids.{GpuBuildLeft, GpuBuildRight, GpuBuildSide}
 
-import org.apache.spark.internal.Logging
 import org.apache.spark.sql.catalyst.expressions.Expression
 import org.apache.spark.sql.catalyst.optimizer.{BuildLeft, BuildRight}
 import org.apache.spark.sql.catalyst.plans.JoinType
@@ -26,13 +25,16 @@ import org.apache.spark.sql.execution.SparkPlan
 import org.apache.spark.sql.execution.joins.BroadcastNestedLoopJoinExec
 import org.apache.spark.sql.rapids.execution._
 
+/**
+ *  Spark 3.1 changed packages of BuildLeft, BuildRight, BuildSide
+ */
 case class GpuBroadcastNestedLoopJoinExec(
     left: SparkPlan,
     right: SparkPlan,
     join: BroadcastNestedLoopJoinExec,
     joinType: JoinType,
     condition: Option[Expression])
-  extends GpuBroadcastNestedLoopJoinExecBase(left, right, join, joinType, condition) with Logging {
+  extends GpuBroadcastNestedLoopJoinExecBase(left, right, join, joinType, condition) {
 
   def getBuildSide: GpuBuildSide = {
     join.buildSide match {
@@ -40,18 +42,5 @@ case class GpuBroadcastNestedLoopJoinExec(
       case BuildLeft => GpuBuildLeft
       case _ => throw new Exception("unknown buildSide Type")
     }
-  }
-}
-
-object GpuBroadcastNestedLoopJoinExec extends Logging {
-
-  def createInstance(
-      left: SparkPlan,
-      right: SparkPlan,
-      join: BroadcastNestedLoopJoinExec,
-      joinType: JoinType,
-      condition: Option[Expression]): GpuBroadcastNestedLoopJoinExecBase = {
-    
-    GpuBroadcastNestedLoopJoinExec(left, right, join, joinType, condition)
   }
 }

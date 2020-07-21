@@ -16,14 +16,15 @@
 
 package com.nvidia.spark.rapids.shims.spark31
 
-import org.apache.spark.sql.rapids.GpuFirstBase
-
 import org.apache.spark.sql.catalyst.analysis.TypeCheckResult
-import org.apache.spark.sql.catalyst.analysis.TypeCheckResult.{TypeCheckFailure, TypeCheckSuccess}
+import org.apache.spark.sql.catalyst.analysis.TypeCheckResult.TypeCheckSuccess
 import org.apache.spark.sql.catalyst.expressions.Expression
 import org.apache.spark.sql.catalyst.expressions.aggregate.FirstLast
+import org.apache.spark.sql.rapids.GpuFirstBase
 
-
+/**
+ * Parameters to GpuFirst changed in Spark 3.1
+ */
 case class GpuFirst(child: Expression, ignoreNulls: Boolean) extends GpuFirstBase(child) {
   def this(child: Expression) = this(child, false)
   def this(child: Expression, ignoreNullsExpr: Expression) = {

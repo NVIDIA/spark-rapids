@@ -16,14 +16,16 @@
 
 package com.nvidia.spark.rapids.shims.spark30
 
-import org.apache.spark.sql.rapids.GpuLastBase
-import com.nvidia.spark.rapids._
+import com.nvidia.spark.rapids.GpuLiteral
 
 import org.apache.spark.sql.catalyst.analysis.TypeCheckResult
 import org.apache.spark.sql.catalyst.analysis.TypeCheckResult.{TypeCheckFailure, TypeCheckSuccess}
 import org.apache.spark.sql.catalyst.expressions.{Expression, Literal}
+import org.apache.spark.sql.rapids.GpuLastBase
 
-
+/**
+ * Parameters to GpuFirst changed in Spark 3.1
+ */
 case class GpuLast(child: Expression, ignoreNullsExpr: Expression) extends GpuLastBase(child) {
   override def children: Seq[Expression] = child :: ignoreNullsExpr :: Nil
 
