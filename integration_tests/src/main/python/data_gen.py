@@ -293,10 +293,10 @@ class DoubleGen(DataGen):
         self._use_full_range = (self._min_exp == DOUBLE_MIN_EXP) and (self._max_exp == DOUBLE_MAX_EXP)
         if special_cases is None:
             special_cases = [
-                self._make_from(1, self._max_exp, DOUBLE_MAX_FRACTION),
-                self._make_from(0, self._max_exp, DOUBLE_MAX_FRACTION),
-                self._make_from(1, self._min_exp, DOUBLE_MAX_FRACTION),
-                self._make_from(0, self._min_exp, DOUBLE_MAX_FRACTION)
+                self.make_from(1, self._max_exp, DOUBLE_MAX_FRACTION),
+                self.make_from(0, self._max_exp, DOUBLE_MAX_FRACTION),
+                self.make_from(1, self._min_exp, DOUBLE_MAX_FRACTION),
+                self.make_from(0, self._min_exp, DOUBLE_MAX_FRACTION)
             ]
             if self._min_exp <= 0 and self._max_exp >= 0:
                 special_cases.append(0.0)
@@ -312,7 +312,7 @@ class DoubleGen(DataGen):
         super().__init__(DoubleType(), nullable=nullable, special_cases=special_cases)
 
     @staticmethod
-    def _make_from(sign, exp, fraction):
+    def make_from(sign, exp, fraction):
         sign = sign & 1 # 1 bit
         exp = (exp + 1023) & 0x7FF # add bias and 11 bits
         fraction = fraction & DOUBLE_MAX_FRACTION
@@ -338,7 +338,7 @@ class DoubleGen(DataGen):
                 sign = rand.getrandbits(1)
                 exp = rand.randint(self._min_exp, self._max_exp)
                 fraction = rand.getrandbits(52)
-                return self._fixup_nans(self._make_from(sign, exp, fraction))
+                return self._fixup_nans(self.make_from(sign, exp, fraction))
             self._start(rand, gen_part_double)
 
 class BooleanGen(DataGen):
@@ -416,6 +416,8 @@ class DateGen(DataGen):
         y = int(math.ceil(t/4.0)) * 4
         if ((y % 100) == 0) and ((y % 400) != 0):
             y = y + 4
+        if (y == 10000):
+            y = y - 4
         return y
 
     _epoch = date(1970, 1, 1)

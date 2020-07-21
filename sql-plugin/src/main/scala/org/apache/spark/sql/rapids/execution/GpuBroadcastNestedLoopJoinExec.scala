@@ -17,9 +17,10 @@
 package org.apache.spark.sql.rapids.execution
 
 import ai.rapids.cudf.{NvtxColor, Table}
-import com.nvidia.spark.rapids.{Arm, BaseExprMeta, ConfKeysAndIncompat, GpuBindReferences, GpuBuildLeft, GpuBuildRight, GpuBuildSide, GpuColumnVector, GpuExec, GpuExpression, GpuFilter, GpuOverrides, NvtxWithMetrics, RapidsConf, RapidsMeta, ShimLoader, SparkPlanMeta}
+import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.GpuMetricNames.{NUM_OUTPUT_BATCHES, NUM_OUTPUT_ROWS, TOTAL_TIME}
 
+import org.apache.spark.TaskContext
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.expressions.{Attribute, Expression}
@@ -29,6 +30,7 @@ import org.apache.spark.sql.execution.{BinaryExecNode, SparkPlan}
 import org.apache.spark.sql.execution.exchange.ReusedExchangeExec
 import org.apache.spark.sql.execution.joins.BroadcastNestedLoopJoinExec
 import org.apache.spark.sql.execution.metric.{SQLMetric, SQLMetrics}
+import org.apache.spark.sql.rapids.GpuNoColumnCrossJoin
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
 class GpuBroadcastNestedLoopJoinMeta(
@@ -78,10 +80,11 @@ class GpuBroadcastNestedLoopJoinMeta(
     if (!buildSide.isInstanceOf[GpuBroadcastExchangeExec]) {
       throw new IllegalStateException("the broadcast must be on the GPU too")
     }
-    ShimLoader.getSparkShims.getGpuBroadcastNestedLoopJoinShims(
+    ShimLoader.getSparkShims.getGpuBroadcastNestedLoopJoinShim(
       left, right, join,
       join.joinType,
-      condition.map(_.convertToGpu()))
+      condition.map(_.convertToGpu()),
+      conf.gpuTargetBatchSizeBytes)
   }
 }
 
@@ -133,7 +136,8 @@ abstract class GpuBroadcastNestedLoopJoinExecBase(
     right: SparkPlan,
     join: BroadcastNestedLoopJoinExec,
     joinType: JoinType,
-    condition: Option[Expression]) extends BinaryExecNode with GpuExec {
+    condition: Option[Expression],
+    targetSizeBytes: Long) extends BinaryExecNode with GpuExec {
 
   def getBuildSide: GpuBuildSide
 
@@ -201,26 +205,50 @@ abstract class GpuBroadcastNestedLoopJoinExecBase(
     val broadcastedRelation =
       broadcastExchange.executeColumnarBroadcast[SerializeConcatHostBuffersDeserializeBatch]()
 
-    lazy val builtTable: Table = {
-      withResource(new NvtxWithMetrics("build join table", NvtxColor.GREEN, buildTime)) { _ =>
-        val ret = GpuColumnVector.from(broadcastedRelation.value.batch)
-        // Don't warn for a leak, because we cannot control when we are done with this
-        (0 until ret.getNumberOfColumns).foreach( i => {
-          val column = ret.getColumn(i)
-          column.noWarnLeakExpected()
-          buildDataSize += column.getDeviceMemorySize
-        })
+    if (output.isEmpty) {
+      assert(boundCondition.isEmpty)
+
+      lazy val buildCount: Long = {
+        withResource(new NvtxWithMetrics("build join table", NvtxColor.GREEN, buildTime)) { _ =>
+          broadcastedRelation.value.batch.numRows()
+        }
+      }
+
+      def getRowCountAndClose(cb: ColumnarBatch): Long = {
+        val ret = cb.numRows()
+        cb.close()
+        GpuSemaphore.releaseIfNecessary(TaskContext.get())
         ret
       }
-    }
 
-    streamed.executeColumnar().mapPartitions { streamedIter =>
-      joinType match {
-        case _: InnerLike => GpuBroadcastNestedLoopJoinExecBase.innerLikeJoin(streamedIter,
-          builtTable, getBuildSide, boundCondition,
-          joinTime, joinOutputRows, numOutputRows, numOutputBatches, filterTime, totalTime)
-        case _ => throw new IllegalArgumentException(s"$joinType + $getBuildSide is not supported" +
-            s" and should be run on the CPU")
+      val counts = streamed.executeColumnar().map(getRowCountAndClose)
+      GpuNoColumnCrossJoin.divideIntoBatches(
+        counts.map(s => s * buildCount),
+        targetSizeBytes,
+        numOutputRows,
+        numOutputBatches)
+    } else {
+      lazy val builtTable: Table = {
+        withResource(new NvtxWithMetrics("build join table", NvtxColor.GREEN, buildTime)) { _ =>
+          val ret = GpuColumnVector.from(broadcastedRelation.value.batch)
+          // Don't warn for a leak, because we cannot control when we are done with this
+          (0 until ret.getNumberOfColumns).foreach(i => {
+            val column = ret.getColumn(i)
+            column.noWarnLeakExpected()
+            buildDataSize += column.getDeviceMemorySize
+          })
+          ret
+        }
+      }
+
+      streamed.executeColumnar().mapPartitions { streamedIter =>
+        joinType match {
+          case _: InnerLike => GpuBroadcastNestedLoopJoinExecBase.innerLikeJoin(streamedIter,
+            builtTable, getBuildSide, boundCondition,
+            joinTime, joinOutputRows, numOutputRows, numOutputBatches, filterTime, totalTime)
+          case _ => throw new IllegalArgumentException(s"$joinType + $getBuildSide is not supported" +
+              s" and should be run on the CPU")
+        }
       }
     }
   }

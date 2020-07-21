@@ -49,13 +49,14 @@ class Spark30Shims extends SparkShims with Logging {
     SparkEnv.get.mapOutputTracker.getMapSizesByExecutorId(shuffleId, startPartition, endPartition)
   }
 
-  override def getGpuBroadcastNestedLoopJoinShims(
+  override def getGpuBroadcastNestedLoopJoinShim(
       left: SparkPlan,
       right: SparkPlan,
       join: BroadcastNestedLoopJoinExec,
       joinType: JoinType,
-      condition: Option[Expression]): GpuBroadcastNestedLoopJoinExecBase = {
-    GpuBroadcastNestedLoopJoinExec(left, right, join, joinType, condition)
+      condition: Option[Expression],
+      targetSizeBytes: Long): GpuBroadcastNestedLoopJoinExecBase = {
+    GpuBroadcastNestedLoopJoinExec(left, right, join, joinType, condition, targetSizeBytes)
   }
 
   override def isGpuHashJoin(plan: SparkPlan): Boolean = {

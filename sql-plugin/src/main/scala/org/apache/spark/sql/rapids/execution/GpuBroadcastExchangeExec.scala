@@ -41,7 +41,7 @@ import org.apache.spark.sql.execution.joins.{BroadcastHashJoinExec, BroadcastNes
 import org.apache.spark.sql.execution.metric.SQLMetrics
 import org.apache.spark.sql.internal.{SQLConf, StaticSQLConf}
 import org.apache.spark.sql.rapids.execution
-import org.apache.spark.sql.vectorized.ColumnarBatch
+import org.apache.spark.sql.vectorized.{ColumnarBatch, ColumnVector}
 
 @SerialVersionUID(100L)
 class SerializeConcatHostBuffersDeserializeBatch(
@@ -75,6 +75,8 @@ class SerializeConcatHostBuffersDeserializeBatch(
       } finally {
         empty.close()
       }
+    } else if (headers.head.getNumColumns == 0) {
+      JCudfSerialization.writeRowsToStream(out, numRows)
     } else {
       JCudfSerialization.writeConcatedStream(headers, buffers, out)
     }
@@ -83,12 +85,19 @@ class SerializeConcatHostBuffersDeserializeBatch(
   private def readObject(in: ObjectInputStream): Unit = {
     val range = new NvtxRange("DeserializeBatch", NvtxColor.PURPLE)
     try {
-      val tableInfo: JCudfSerialization.TableAndRowCountPair = JCudfSerialization.readTableFrom(in)
+      val tableInfo: JCudfSerialization.TableAndRowCountPair =
+        JCudfSerialization.readTableFrom(in)
       try {
         val table = tableInfo.getTable
-        // This is read as part of the broadcast join so we expect it to leak.
-        (0 until table.getNumberOfColumns).foreach(table.getColumn(_).noWarnLeakExpected())
-        this.batchInternal = GpuColumnVector.from(table)
+        if (table == null) {
+          val numRows = tableInfo.getNumRows
+          this.batchInternal = new ColumnarBatch(new Array[ColumnVector](0))
+          batchInternal.setNumRows(numRows.toInt)
+        } else {
+          // This is read as part of the broadcast join so we expect it to leak.
+          (0 until table.getNumberOfColumns).foreach(table.getColumn(_).noWarnLeakExpected())
+          this.batchInternal = GpuColumnVector.from(table)
+        }
       } finally {
         tableInfo.close()
       }

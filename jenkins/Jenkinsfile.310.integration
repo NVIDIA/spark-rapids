@@ -21,7 +21,7 @@
 *
 */
 
-@Library('shared-libs') _
+@Library(['shared-libs', 'spark-jenkins-shared-lib']) _
 
 def urmUrl="https://${ArtifactoryConstants.ARTIFACTORY_NAME}/artifactory/sw-spark-maven"
 
@@ -88,7 +88,7 @@ pipeline {
 void slack(Map params = [:], String channel, String message) {
     Map defaultParams = [
             color: "#000000",
-            baseUrl: "https://nvidia.slack.com/services/hooks/jenkins-ci/",
+            baseUrl: "${SparkConstants.SLACK_API_ENDPOINT}",
             tokenCredentialId: "slack_token"
     ]
 

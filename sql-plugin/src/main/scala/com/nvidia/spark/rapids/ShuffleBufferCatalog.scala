@@ -109,7 +109,7 @@ class ShuffleBufferCatalog(
     }
   }
 
-  def hasActiveShuffle(shuffleId: Int): Boolean = activeShuffles.contains(shuffleId)
+  def hasActiveShuffle(shuffleId: Int): Boolean = activeShuffles.containsKey(shuffleId)
 
   /** Get all the buffer IDs that correspond to a shuffle block identifier. */
   def blockIdToBuffersIds(blockId: ShuffleBlockId): Array[ShuffleBufferId] = {

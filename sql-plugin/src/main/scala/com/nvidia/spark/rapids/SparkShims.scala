@@ -39,12 +39,13 @@ trait SparkShims {
   def getExprs: Seq[ExprRule[_ <: Expression]]
   def getExecs: Seq[ExecRule[_ <: SparkPlan]]
 
-  def getGpuBroadcastNestedLoopJoinShims(
+  def getGpuBroadcastNestedLoopJoinShim(
     left: SparkPlan,
     right: SparkPlan,
     join: BroadcastNestedLoopJoinExec,
     joinType: JoinType,
-    condition: Option[Expression]): GpuBroadcastNestedLoopJoinExecBase
+    condition: Option[Expression],
+    targetSizeBytes: Long): GpuBroadcastNestedLoopJoinExecBase
 
   def getMapSizesByExecutorId(
     shuffleId: Int,

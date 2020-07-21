@@ -299,3 +299,18 @@ def assert_gpu_and_cpu_are_equal_iterator(func, conf={}):
     so any amount of data can work, just be careful about how long it might take.
     """
     _assert_gpu_and_cpu_are_equal(func, False, conf=conf)
+
+
+def assert_gpu_and_cpu_are_equal_sql(df, tableName, sql, conf=None):
+    """
+    Assert that the specified SQL query produces equal results on CPU and GPU.
+    :param df: Input dataframe
+    :param tableName: Name of table to be created with the dataframe
+    :param sql: SQL query to be run on the specified table
+    :param conf: Any user-specified confs. Empty by default.
+    :return: Assertion failure, if results from CPU and GPU do not match.
+    """
+    if conf is None:
+        conf = {}
+    df.createOrReplaceTempView(tableName)
+    assert_gpu_and_cpu_are_equal_collect(lambda spark: spark.sql(sql), conf)

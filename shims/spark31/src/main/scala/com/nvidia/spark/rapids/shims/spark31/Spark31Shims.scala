@@ -47,13 +47,14 @@ class Spark31Shims extends SparkShims {
       startMapIndex, endMapIndex, startPartition, endPartition)
   }
 
-  override def getGpuBroadcastNestedLoopJoinShims(
+  override def getGpuBroadcastNestedLoopJoinShim(
       left: SparkPlan,
       right: SparkPlan,
       join: BroadcastNestedLoopJoinExec,
       joinType: JoinType,
-      condition: Option[Expression]): GpuBroadcastNestedLoopJoinExecBase = {
-    GpuBroadcastNestedLoopJoinExec(left, right, join, joinType, condition)
+      condition: Option[Expression],
+      targetSizeBytes: Long): GpuBroadcastNestedLoopJoinExecBase = {
+    GpuBroadcastNestedLoopJoinExec(left, right, join, joinType, condition, targetSizeBytes)
   }
 
   override def isGpuHashJoin(plan: SparkPlan): Boolean = {

@@ -32,8 +32,10 @@ case class GpuBroadcastNestedLoopJoinExec(
     right: SparkPlan,
     join: BroadcastNestedLoopJoinExec,
     joinType: JoinType,
-    condition: Option[Expression])
-  extends GpuBroadcastNestedLoopJoinExecBase(left, right, join, joinType, condition) {
+    condition: Option[Expression],
+    targetSizeBytes: Long)
+  extends GpuBroadcastNestedLoopJoinExecBase(left, right, join, joinType, condition,
+    targetSizeBytes) {
 
   def getBuildSide: GpuBuildSide = {
     GpuJoinUtils.getGpuBuildSide(join.buildSide)

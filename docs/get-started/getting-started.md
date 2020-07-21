@@ -1,42 +1,21 @@
 ---
-layout: default
-title: Getting Started
-nav_order: 2
+layout: page
+title: On-Prem
+nav_order: 1
+parent: Getting-Started
 ---
 
+# Getting Started with RAPIDS Accelerator with on premise cluster or local mode
+## Spark Deployment Methods
+The way you decide to deploy Spark affects the steps you must take to install and setup Spark and
+the RAPIDS Accelerator for Apache Spark. The primary methods of deploy Spark are:
+- Local mode - this is for dev/testing only, not for production
+- Standalone Mode
+- On a YARN cluster
+- On a Kubernetes cluster
 
-# Getting Started with the RAPIDS Accelerator for Apache Spark
-
-## Overview
-The RAPIDS Accelerator for Apache Spark leverages GPUs to accelerate processing via the
-[RAPIDS libraries](http://rapids.ai).
-
-Apache Spark 3.0+ lets users provide a plugin that can replace the backend for SQL and DataFrame
-operations. This requires no API changes from the user. The plugin will replace SQL operations it
-supports with GPU accelerated versions. If an operation is not supported it will fall back to using
-the Spark CPU version. Note that the plugin cannot accelerate operations that manipulate RDDs
-directly.
-
-The accelerator library also provides an implementation of Spark's shuffle that can leverage 
-[UCX](https://www.openucx.org/) to optimize GPU data transfers keeping as much data on the GPU as
-possible and bypassing the CPU to do GPU to GPU transfers.
-
-The GPU accelerated processing plugin does not require the accelerated shuffle implementation.
-However, if accelerated SQL processing is not enabled, the shuffle implementation falls back to the
-default `SortShuffleManager`. 
-
-To enable GPU processing acceleration you will need:
-- Apache Spark 3.0+
-- A spark cluster configured with GPUs that comply with the requirements for the version of 
-  [cudf](https://github.com/rapidsai/cudf).
-    - One GPU per executor.
-- Add the following jars:
-    - A cudf jar that corresponds to the version of CUDA available on your cluster.
-    - RAPIDS Spark accelerator plugin jar.
-- Set the config `spark.plugins` to `com.nvidia.spark.SQLPlugin`
-
-## Prerequisites
-Each node where you are running Spark needs to have the following installed. If you are running
+## Apache Spark Setup for GPU
+Each GPU node where you are running Spark needs to have the following installed. If you are running
 with Docker on Kubernetes then skip these as you will do this as part of the docker build.
 - Install Java 8 - note jdk11 is supported by Spark, but we have been building and testing with
   jdk8, so we suggest using that for now.
@@ -53,39 +32,6 @@ with Docker on Kubernetes then skip these as you will do this as part of the doc
   - `sudo apt-get update`
   - `sudo apt-get -y install cuda`
 
-## Spark GPU Scheduling Overview
-Apache Spark 3.0 now supports GPU scheduling as long as you are using a cluster manager that
-supports it. You can have Spark request GPUs and assign them to tasks. The exact configs you use
-will vary depending on your cluster manager. Here are a few of the configs:
-- Request your executor to have GPUs:
-  - `--conf spark.executor.resource.gpu.amount=1`
-- Specify the number of GPUs per task:
-  - `--conf spark.task.resource.gpu.amount=1`
-- Specify a GPU discovery script (required on YARN and K8S):
-  - `--conf spark.executor.resource.gpu.discoveryScript=./getGpusResources.sh`
-
-See the deployment specific sections for more details and restrictions. Note that
-`spark.task.resource.gpu.amount` can be a decimal amount, so if you want multiple tasks to be run
-on an executor at the same time and assigned to the same GPU you can set this to a decimal value
-less than 1. You would want this setting to correspond to the `spark.executor.cores` setting.  For
-instance, if you have `spark.executor.cores=2` which would allow 2 tasks to run on each executor
-and you want those 2 tasks to run on the same GPU then you would set
-`spark.task.resource.gpu.amount=0.5`.
-
-You can also refer to the official Apache Spark documentation.
-- [Overview](https://github.com/apache/spark/blob/master/docs/configuration.md#custom-resource-scheduling-and-configuration-overview)
-- [Kubernetes specific documentation](https://github.com/apache/spark/blob/master/docs/running-on-kubernetes.md#resource-allocation-and-configuration-overview)
-- [Yarn specific documentation](https://github.com/apache/spark/blob/master/docs/running-on-yarn.md#resource-allocation-and-configuration-overview)
-- [Standalone specific documentation](https://github.com/apache/spark/blob/master/docs/spark-standalone.md#resource-allocation-and-configuration-overview)
-
-## Spark Deployment Methods
-The way you decide to deploy Spark affects the steps you must take to install and setup Spark and
-the RAPIDS Accelerator for Apache Spark. The primary methods of deploy Spark are:
-- Local mode - this is for dev/testing only, not for production
-- Standalone Mode
-- On a YARN cluster
-- On a Kubernetes cluster
-
 Below are sections on installing Spark and the RAPIDS Accelerator on a single node, you may want
 to read the deployment method sections before doing any installations.
 
@@ -96,8 +42,8 @@ scala version 2.12 is currently supported by the accelerator.
 
 ## Download the RAPIDS jars
 The [accelerator](https://mvnrepository.com/artifact/com.nvidia/rapids-4-spark_2.12) and 
-[cudf](https://mvnrepository.com/artifact/ai.rapids/cudf) jars are available in 
-[maven central](https://mvnrepository.com/search?q=ai.rapids)
+[cudf](https://mvnrepository.com/artifact/ai.rapids/cudf) jars are available in the 
+[download](/docs/version/stable-release#download) section.
 
 Download the RAPIDS Accelerator for Apache Spark plugin jar. Then download the version of the cudf
 jar that your version of the accelerator depends on. Each cudf jar is for a specific version of
@@ -132,7 +78,7 @@ directory as the plugin jars (`/opt/sparkRapidsPlugin` in the example).
 This is for testing/dev setup only.  It is not to be used in production.  In this mode Spark runs
 everything in a single process on a single node.
 - [Install Spark](#install-spark)
-- [Install the RAPIDS jars](#install-the-rapids-jars)
+- [Install the RAPIDS jars](#download-the-rapids-jars)
 - Launch your Spark shell session
 
 Default configs usually work fine in local mode.  The required changes are setting the config 
@@ -164,7 +110,7 @@ Spark Standalone mode requires starting the Spark master and worker(s). You can 
 machine or multiple machines for distributed setup.
 
 The first step is to [Install Spark](#install-spark), the 
-[RAPIDS Accelerator for Spark jars](#install-the-rapids-jars), and the 
+[RAPIDS Accelerator for Spark jars](#download-the-rapids-jars), and the 
 [GPU discovery script](#install-the-gpu-discovery-script) on all the nodes you want to use.
 After that choose one of the nodes to be your master node and start the master.  Note that the
 master process does **not** need a GPU to function properly.
@@ -227,7 +173,7 @@ $SPARK_HOME/bin/spark-shell \
 ## Running on YARN
 
 YARN requires you to [Install Spark](#install-spark), the
-[RAPIDS Accelerator for Spark jars](#install-the-rapids-jars), and the
+[RAPIDS Accelerator for Spark jars](#download-the-rapids-jars), and the
 [GPU discovery script](#install-the-gpu-discovery-script) on a launcher node. YARN handles
 shipping them to the cluster nodes as needed. If you want to use the GPU scheduling feature in
 Spark it requires YARN version >= 2.10 or >= 3.1.1 and ideally you would use >= 3.1.3 in order to
@@ -249,7 +195,7 @@ use - either 3.x or 2.x.
 - Configure YARN to support
   [GPU scheduling and isolation](https://hadoop.apache.org/docs/r3.1.3/hadoop-yarn/hadoop-yarn-site/UsingGpus.html).
 - Install [Spark](#install-spark), the
-  [RAPIDS Accelerator for Spark jars](#install-the-rapids-jars), and the
+  [RAPIDS Accelerator for Spark jars](#download-the-rapids-jars), and the
   [GPU discovery script](#install-the-gpu-discovery-script) on the node from which you are
   launching your Spark application.
 - Use the following configuration settings when running Spark on YARN, changing the amounts as
@@ -278,7 +224,7 @@ $SPARK_HOME/bin/spark-shell \
 - Configure YARN to support
  [GPU scheduling and isolation](https://hadoop.apache.org/docs/r2.10.0/hadoop-yarn/hadoop-yarn-site/ResourceProfiles.html)
 - Install [Spark](#install-spark), the
-  [RAPIDS Accelerator for Spark jars](#install-the-rapids-jars), and the
+  [RAPIDS Accelerator for Spark jars](#download-the-rapids-jars), and the
   [GPU discovery script](#install-the-gpu-discovery-script) on the node from which you are
   launching your Spark application.
 - Use the following configs when running Spark on YARN, changing the amounts as necessary:
@@ -311,7 +257,7 @@ accessing a GPU at once. Note it does not matter if GPU scheduling support is en
   - Foreach GPU index set it to `EXCLUSIVE_PROCESS` mode:
     - `nvidia-smi -c EXCLUSIVE_PROCESS -i $index`
 - Install [Spark](#install-spark), the
-  [RAPIDS Accelerator for Spark jars](#install-the-rapids-jars), and the
+  [RAPIDS Accelerator for Spark jars](#download-the-rapids-jars), and the
   [GPU discovery script](#install-the-gpu-discovery-script) on the node from which you are
   launching your Spark application.
 - Use the following configs when running Spark on YARN. Note that we are configuring a resource
@@ -349,7 +295,7 @@ This assumes you have Kubernetes already installed and setup.  These instruction
 to setup a Kubernetes cluster.
 
 - Install [Spark](#install-spark), the
-  [RAPIDS Accelerator for Spark jars](#install-the-rapids-jars), and the
+  [RAPIDS Accelerator for Spark jars](#download-the-rapids-jars), and the
   [GPU discovery script](#install-the-gpu-discovery-script) on the node from which you are
   going to build your Docker image.  Note that you can download these into a local directory and
   untar the Spark `.tar.gz` rather than installing into a location on the machine.
@@ -382,7 +328,7 @@ $SPARK_HOME/bin/spark-shell \
 ```  
 
 ## RAPIDS Accelerator Configuration and Tuning
-Most of what you need you can get from [tuning guide](./tuning-guide.md).
+Most of what you need you can get from [tuning guide](../tuning-guide).
 
 The following configs will hep you to get started but must be configured based on your cluster
 and application.
@@ -408,12 +354,12 @@ $SPARK_HOME/bin/spark-shell --master yarn \
   --conf spark.locality.wait=0s \
   --conf spark.sql.files.maxPartitionBytes=512m \
   --conf spark.executor.resource.gpu.discoveryScript=./getGpusResources.sh \
-   --conf spark.task.resource.gpu.amount=0.166 \
+  --conf spark.task.resource.gpu.amount=0.166 \
   --conf spark.executor.resource.gpu.amount=1 \
   --files $SPARK_RAPIDS_DIR/getGpusResources.sh
   --jars  ${SPARK_CUDF_JAR},${SPARK_RAPIDS_PLUGIN_JAR}
 ```
-
+  
 ## Example Join Operation
 Once you have started your Spark shell you can run the following commands to do a basic join and
 look at the UI to see that it runs on the GPU.
@@ -427,11 +373,102 @@ operation “count at ...”, you should see the graph of Spark Execs and some o
 the label Gpu...  For instance, in the screenshot below you will see `GpuRowToColumn`, `GpuFilter`,
 and `GpuColumnarExchange`.  Those correspond to operations that run on the GPU.
 
-![Join Example on Spark SQL UI](img/join-sql-ui-example.png)
+![Join Example on Spark SQL UI](../img/join-sql-ui-example.png)
+
+## Enabling RapidsShuffleManager
+---
+**NOTE**
+
+The _RapidsShuffleManager_ is a beta feature!
+
+---
+
+The _RapidsShuffleManager_ is an implementation of the `ShuffleManager` interface in Apache Spark
+that allows custom mechanisms to exchange shuffle data. The _RapidsShuffleManager_ has two components:
+a spillable cache, and a transport that can utilize _Remote Direct Memory Access (RDMA)_ and high-bandwidth 
+transfers within a node that has multiple GPUs. This is possible because the plugin utilizes 
+[Unified Communication X (UCX)](https://www.openucx.org/) as its transport.
+
+- **Spillable cache**: This store keeps GPU data close by where it was produced in device memory,
+but can spill in the following cases:
+  - _GPU out of memory_: If an allocation in the GPU failed to acquire memory, spill will get triggered
+    moving GPU buffers to host to allow for the original allocation to succeed.
+  - _Host spill store filled_: If the host memory store has reached a maximum threshold 
+    (`spark.rapids.memory.host.spillStorageSize`), host buffers will be spilled to disk until
+    the host spill store shrinks back below said configurable threshold.
+    
+  Tasks local to the producing executor will short-circuit read from the cache.
+
+- **Transport**: Handles block transfers between executors using various means like: _NVLink_, _PCIe_, _Infiniband (IB)_, 
+_RDMA over Converged Ethernet (RoCE)_ or _TCP_, and as configured in UCX, in these scenarios:
+  - _GPU-to-GPU_: Shuffle blocks that were able to fit in GPU memory.
+  - _Host-to-GPU_ and _Disk-to-GPU_: Shuffle blocks that spilled to host (or disk) but will be manifested 
+  in the GPU in the downstream Spark task.
+
+In order to enable the _RapidsShuffleManager_, please follow these steps. If you don't have 
+Mellanox hardware go to *step 2*:
+
+1) If you have Mellanox NICs and an Infiniband(IB) or RoCE network, please ensure you have the 
+[MLNX_OFED driver](https://www.mellanox.com/products/infiniband-drivers/linux/mlnx_ofed), 
+and the [`nv_peer_mem` kernel module](https://www.mellanox.com/products/GPUDirect-RDMA) installed.
+
+With `nv_peer_mem`, IB/RoCE-based transfers can perform zero-copy transfers directly from GPU memory.
+
+2) Install [UCX 1.8.1](https://github.com/openucx/ucx/releases/tag/v1.8.1). 
+
+3) You will need to configure your spark job with extra settings for UCX (we are looking to 
+simplify these settings in the near future):
+
+```shell
+...
+--conf spark.shuffle.manager=com.nvidia.spark.RapidsShuffleManager \
+--conf spark.shuffle.service.enabled=false \
+--conf spark.rapids.shuffle.transport.enabled=true \
+--conf spark.executorEnv.UCX_TLS=cuda_copy,cuda_ipc,rc,tcp \
+--conf spark.executorEnv.UCX_ERROR_SIGNALS= \
+--conf spark.executorEnv.UCX_MAX_RNDV_RAILS=1 \
+--conf spark.executorEnv.UCX_MEMTYPE_CACHE=n \
+--conf spark.executor.extraClassPath=/usr/lib:/usr/lib/ucx:${SPARK_CUDF_JAR}:${SPARK_RAPIDS_PLUGIN_JAR}
+```
+
+Please note `extraClassPath`, presently requires the UCX libraries to be added to the classpath. Newer
+versions of UCX handle loading shared libraries differently and should not require this.
+
+### UCX Environment Variables
+- `UCX_TLS`: 
+  - `cuda_copy`, and `cuda_ipc`: enables handling of CUDA memory in UCX, both for copy-based transport
+    and peer-to-peer communication between GPUs (NVLink/PCIe).
+  - `rc`: enables Infiniband and RoCE based transport in UCX.
+  - `tcp`: allows for TCP communication in cases where UCX deems necessary.
+- `UCX_ERROR_SIGNALS=`: Disables UCX signal catching, as it can cause issues with the JVM.
+- `UCX_MAX_RNDV_RAILS=1`: Set this to `1` to disable multi-rail transfers in UCX, where UCX splits
+  data to utilize various channels (e.g. two NICs). A value greater than `1` can cause a performance drop 
+  for high-bandwidth transports between GPUs.
+- `UCX_MEMTYPE_CACHE=n`: Disables a cache in UCX that can cause UCX to fail when running with CUDA buffers. 
+  
+### RapidsShuffleManager Fine Tuning
+Here are some settings that could be utilized to fine tune the _RapidsShuffleManager_:
+
+#### Bounce Buffers
+The following configs control the number of bounce buffers, and the size. Please note that for
+device buffers, two pools are created (for sending and receiving). Take this into account when
+sizing your pools. 
+
+The GPU buffers should be smaller than the [`PCI BAR Size`](https://docs.nvidia.com/cuda/gpudirect-rdma/index.html#bar-sizes)
+for your GPU. Please verify the [defaults](../configs.md) work in your case.
+
+- `spark.rapids.shuffle.ucx.bounceBuffers.device.count`
+- `spark.rapids.shuffle.ucx.bounceBuffers.host.count`
+- `spark.rapids.shuffle.ucx.bounceBuffers.size`
+
+#### Spillable Store
+This setting controls the amount of host memory (RAM) that can be utilized to spill GPU blocks when
+the GPU is out of memory, before going to disk. Please verify the [defaults](../configs.md).
+- `spark.rapids.memory.host.spillStorageSize`
 
 ## Advanced Configuration
 
-See the [RAPIDS Accelerator for Apache Spark Configuration Guide](configs.md) for details on all
+See the [RAPIDS Accelerator for Apache Spark Configuration Guide](../configs.md) for details on all
 of the configuration settings specific to the RAPIDS Accelerator for Apache Spark.
 
 ## Monitoring

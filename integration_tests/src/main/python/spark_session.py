@@ -48,6 +48,8 @@ def _set_all_confs(conf):
 def reset_spark_session_conf():
     """Reset all of the configs for a given spark session."""
     _set_all_confs(_orig_conf)
+    #We should clear the cache
+    spark.catalog.clearCache()
     # Have to reach into a private member to get access to the API we need
     current_keys = _from_scala_map(spark.conf._jconf.getAll()).keys()
     for key in current_keys:
