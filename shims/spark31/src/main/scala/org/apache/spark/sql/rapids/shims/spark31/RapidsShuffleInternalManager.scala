@@ -18,6 +18,7 @@ package org.apache.spark.sql.rapids.shims.spark31
 
 import org.apache.spark.{SparkConf, TaskContext}
 import org.apache.spark.shuffle._
+import org.apache.spark.sql.rapids.RapidsShuffleInternalManagerBase
 
 /**
  * A shuffle manager optimized for the RAPIDS Plugin For Apache Spark.

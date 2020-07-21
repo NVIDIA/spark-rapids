@@ -19,22 +19,22 @@ package com.nvidia.spark.rapids.shims.spark31
 import java.time.ZoneId
 
 import com.nvidia.spark.rapids._
+import com.nvidia.spark.rapids.spark31.RapidsShuffleManager
 
+import org.apache.spark.sql.catalyst.expressions._
+import org.apache.spark.sql.catalyst.plans.JoinType
 import org.apache.spark.sql.catalyst.expressions.aggregate.{First, Last}
-import org.apache.spark.internal.Logging
 import org.apache.spark.sql.execution._
 import org.apache.spark.sql.execution.datasources.HadoopFsRelation
 import org.apache.spark.sql.execution.joins.{BroadcastHashJoinExec, BroadcastNestedLoopJoinExec, HashJoin, SortMergeJoinExec}
 import org.apache.spark.sql.execution.joins.ShuffledHashJoinExec
-import org.apache.spark.sql.catalyst.expressions._
-import org.apache.spark.sql.catalyst.plans.JoinType
 import org.apache.spark.sql.rapids.GpuTimeSub
 import org.apache.spark.sql.rapids.execution.GpuBroadcastNestedLoopJoinExecBase
 import org.apache.spark.sql.rapids.shims.spark31._
 import org.apache.spark.unsafe.types.CalendarInterval
 import org.apache.spark.sql.types._
 
-class Spark31Shims extends SparkShims with Logging {
+class Spark31Shims extends SparkShims {
 
   override def getGpuBroadcastNestedLoopJoinShims(
       left: SparkPlan,

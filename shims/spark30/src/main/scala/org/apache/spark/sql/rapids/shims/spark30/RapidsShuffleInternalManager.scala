@@ -18,6 +18,7 @@ package org.apache.spark.sql.rapids.shims.spark30
 
 import org.apache.spark.{SparkConf, TaskContext}
 import org.apache.spark.shuffle._
+import org.apache.spark.sql.rapids.{RapidsShuffleInternalManager, RapidsShuffleInternalManagerBase}
 
 /**
  * A shuffle manager optimized for the RAPIDS Plugin For Apache Spark.
@@ -46,8 +47,6 @@ class RapidsShuffleInternalManager(conf: SparkConf, isDriver: Boolean)
 
   def getReader[K, C](
       handle: ShuffleHandle,
-      startMapIndex: Int,
-      endMapIndex: Int,
       startPartition: Int,
       endPartition: Int,
       context: TaskContext,
