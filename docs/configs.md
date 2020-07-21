@@ -230,6 +230,7 @@ Name | Description | Default Value | Notes
 <a name="sql.exec.GlobalLimitExec"></a>spark.rapids.sql.exec.GlobalLimitExec|Limiting of results across partitions|true|None|
 <a name="sql.exec.LocalLimitExec"></a>spark.rapids.sql.exec.LocalLimitExec|Per-partition limiting of results|true|None|
 <a name="sql.exec.ProjectExec"></a>spark.rapids.sql.exec.ProjectExec|The backend for most select, withColumn and dropColumn statements|true|None|
+<a name="sql.exec.RangeExec"></a>spark.rapids.sql.exec.RangeExec|The backend for range operator|true|None|
 <a name="sql.exec.SortExec"></a>spark.rapids.sql.exec.SortExec|The backend for the sort operator|true|None|
 <a name="sql.exec.UnionExec"></a>spark.rapids.sql.exec.UnionExec|The backend for the union operator|true|None|
 <a name="sql.exec.HashAggregateExec"></a>spark.rapids.sql.exec.HashAggregateExec|The backend for hash based aggregations|true|None|

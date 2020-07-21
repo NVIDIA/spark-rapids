@@ -1631,6 +1631,14 @@ object GpuOverrides {
             GpuProjectExec(childExprs.map(_.convertToGpu()), childPlans(0).convertIfNeeded())
         }
       }),
+    exec[RangeExec](
+      "The backend for range operator",
+      (range, conf, p, r) => {
+        new SparkPlanMeta[RangeExec](range, conf, p, r) {
+          override def convertToGpu(): GpuExec =
+            GpuRangeExec(range.range, conf.gpuTargetBatchSizeBytes)
+        }
+      }),
     exec[BatchScanExec](
       "The backend for most file input",
       (p, conf, parent, r) => new SparkPlanMeta[BatchScanExec](p, conf, parent, r) {
