@@ -29,6 +29,7 @@
     <version>0.2.0-SNAPSHOT</version>
 
     <properties>
+        <slf4j.version>1.7.30</slf4j.version>
         <spark.test.version>3.0.0</spark.test.version>
     </properties>
     <profiles>
@@ -41,6 +42,17 @@
     </profiles>
 
     <dependencies>
+        <dependency>
+            <groupId>org.slf4j</groupId>
+            <artifactId>jul-to-slf4j</artifactId>
+            <version>${slf4j.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>org.slf4j</groupId>
+            <artifactId>jcl-over-slf4j</artifactId>
+            <version>${slf4j.version}</version>
+            <!-- runtime scope is appropriate, but causes SBT build problems -->
+        </dependency>
         <dependency>
             <groupId>org.scala-lang</groupId>
             <artifactId>scala-library</artifactId>

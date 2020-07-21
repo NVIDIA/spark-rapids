@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020, NVIDIA CORPORATION.
+ * Copyright (c) 2019-2020, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -39,7 +39,6 @@ class GpuSortMergeJoinMeta(
     GpuOverrides.wrapExpr(_, conf, Some(this)))
 
   override def tagPlanForGpu(): Unit = {
-
     // Use conditions from Hash Join
     GpuHashJoin.tagJoin(this, join.joinType, join.leftKeys, join.rightKeys, join.condition)
 

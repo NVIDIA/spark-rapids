@@ -160,11 +160,11 @@ class Spark30Shims extends SparkShims with Logging {
   }
 
   override def getBuildSide(join: HashJoin): GpuBuildSide = {
-    GpuJoinUtils.getBuildSide(join.buildSide)
+    GpuJoinUtils.getGpuBuildSide(join.buildSide)
   }
 
   override def getBuildSide(join: BroadcastNestedLoopJoinExec): GpuBuildSide = {
-    GpuJoinUtils.getBuildSide(join.buildSide)
+    GpuJoinUtils.getGpuBuildSide(join.buildSide)
   }
 
   override def getRapidsShuffleManagerClass: String = {

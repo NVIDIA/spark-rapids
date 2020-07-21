@@ -62,7 +62,7 @@ trait GpuHashJoin extends GpuExec with HashJoin {
     }
   }
 
- def doJoinInternal(builtTable: Table,
+  def doJoinInternal(builtTable: Table,
       streamedBatch: ColumnarBatch,
       boundCondition: Option[Expression],
       numOutputRows: SQLMetric,
@@ -164,7 +164,7 @@ trait GpuHashJoin extends GpuExec with HashJoin {
     }
   }
 
-  def doJoinLeftRight(leftTable: Table, rightTable: Table): ColumnarBatch = {
+  protected def doJoinLeftRight(leftTable: Table, rightTable: Table): ColumnarBatch = {
     val joinedTable = joinType match {
       case LeftOuter => leftTable.onColumns(joinKeyIndices: _*)
           .leftJoin(rightTable.onColumns(joinKeyIndices: _*))

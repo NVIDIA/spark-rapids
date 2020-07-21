@@ -36,10 +36,6 @@ case class GpuBroadcastNestedLoopJoinExec(
   extends GpuBroadcastNestedLoopJoinExecBase(left, right, join, joinType, condition) {
 
   def getBuildSide: GpuBuildSide = {
-    join.buildSide match {
-      case BuildRight => GpuBuildRight
-      case BuildLeft => GpuBuildLeft
-      case _ => throw new Exception("unknown buildSide Type")
-    }
+    GpuJoinUtils.getGpuBuildSide(join.buildSide)
   }
 }
