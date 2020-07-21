@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-package com.nvidia.spark.rapids
+package com.nvidia.spark.rapids.shims.spark31
 
 import ai.rapids.cudf.{NvtxColor, Table}
 
@@ -34,6 +34,9 @@ import org.apache.spark.sql.vectorized.ColumnarBatch
 import org.apache.spark.internal.Logging
 
 
+/**
+ * This has to be in the shim layer because GpuHashJoin is in shim.
+ */
 abstract class GpuShuffledHashJoinExecBase extends BinaryExecNode with GpuHashJoin with Logging {
   
   def getBuildSide: GpuBuildSide

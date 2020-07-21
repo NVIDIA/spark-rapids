@@ -36,77 +36,23 @@ object ShimLoader extends Logging {
 
   // This is not ideal, but pass the version in here because otherwise loader that match the
   // same version (3.0.0 Apache and 3.0.0 Databricks) would need to know how to differentiate.
-  val sparkShimLoaders = ServiceLoader.load(classOf[SparkShimServiceProvider])
+  private val sparkShimLoaders = ServiceLoader.load(classOf[SparkShimServiceProvider])
     .asScala.filter(_.matchesVersion(sparkVersion))
   if (sparkShimLoaders.size > 1) {
     throw new IllegalArgumentException(s"Multiple Spark Shim Loaders found: $sparkShimLoaders")
   }
   logInfo(s"Found shims: $sparkShimLoaders")
-  val loader = sparkShimLoaders.headOption match {
+  private val loader = sparkShimLoaders.headOption match {
     case Some(loader) => loader
     case None => throw new IllegalArgumentException("Could not find Spark Shim Loader")
   }
-  private val sparkShims: SparkShims  = loader.buildShim
+  private var sparkShims: SparkShims = null
 
-  val SPARK30DATABRICKSSVERSIONNAME = "3.0.0-databricks"
-  val SPARK30VERSIONNAME = "3.0.0"
-  val SPARK31VERSIONNAME = "3.1.0-SNAPSHOT"
-
-  private var gpuBroadcastNestedJoinShims: GpuBroadcastNestedLoopJoinExecBase = null
-
-  private val BROADCAST_NESTED_LOOP_JOIN_SHIM_CLASSES = HashMap(
-    SPARK30VERSIONNAME -> "com.nvidia.spark.rapids.shims.spark30.GpuBroadcastNestedLoopJoinExec",
-    SPARK30DATABRICKSSVERSIONNAME -> "com.nvidia.spark.rapids.shims.spark30databricks.GpuBroadcastNestedLoopJoinExec",
-    SPARK31VERSIONNAME -> "com.nvidia.spark.rapids.shims.spark31.GpuBroadcastNestedLoopJoinExec",
-  )
-
-  def getGpuBroadcastNestedLoopJoinShims(
-      left: SparkPlan,
-      right: SparkPlan,
-      join: BroadcastNestedLoopJoinExec,
-      joinType: JoinType,
-      condition: Option[Expression]): GpuBroadcastNestedLoopJoinExecBase = {
-    if (gpuBroadcastNestedJoinShims == null) {
-      gpuBroadcastNestedJoinShims = loadShimsNestedBroadcastJoin(BROADCAST_NESTED_LOOP_JOIN_SHIM_CLASSES,
-        classOf[GpuBroadcastNestedLoopJoinExecBase], left, right, join, joinType, condition)
+  def getSparkShims: SparkShims = {
+    if (sparkShims == null) {
+      sparkShims = loader.buildShim
     }
-    gpuBroadcastNestedJoinShims
-  }
-
-  private def loadShimsNestedBroadcastJoin[T](
-      classMap: Map[String, String],
-      xface: Class[T],
-      left: SparkPlan,
-      right: SparkPlan,
-      join: BroadcastNestedLoopJoinExec,
-      joinType: JoinType,
-      condition: Option[Expression]): T = {
-    val vers = getVersion
-    val className = classMap.get(vers)
-    if (className.isEmpty) {
-      throw new Exception(s"No shim layer for $vers")
-    } 
-    createShimNestedBroadcastJoin(className.get, xface, left, right, join, joinType, condition)
-  }
-
-  private def createShimNestedBroadcastJoin[T](
-      className: String,
-      xface: Class[T],
-      left: SparkPlan,
-      right: SparkPlan,
-      join: BroadcastNestedLoopJoinExec,
-      joinType: JoinType,
-      condition: Option[Expression]): T = try {
-    val clazz = Class.forName(className)
-    val resultMethod = clazz.getDeclaredMethod("createInstance",
-      classOf[org.apache.spark.sql.execution.SparkPlan],
-      classOf[org.apache.spark.sql.execution.SparkPlan],
-      classOf[org.apache.spark.sql.execution.joins.BroadcastNestedLoopJoinExec],
-      classOf[org.apache.spark.sql.catalyst.plans.JoinType],
-      classOf[scala.Option[org.apache.spark.sql.catalyst.expressions.Expression]])
-    resultMethod.invoke(clazz, left, right, join, joinType, condition).asInstanceOf[T]
-  } catch {
-    case e: Exception => throw new RuntimeException("Could not load shims in class " + className, e)
+    sparkShims
   }
 
   def getVersion: String = {
@@ -118,4 +64,3 @@ object ShimLoader extends Logging {
     }
   }
 }
-
