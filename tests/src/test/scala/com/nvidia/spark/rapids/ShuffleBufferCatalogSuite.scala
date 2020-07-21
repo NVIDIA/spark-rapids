@@ -36,5 +36,7 @@ class ShuffleBufferCatalogSuite extends FunSuite with MockitoSugar {
     assertResult(false)(shuffleCatalog.hasActiveShuffle(123))
     shuffleCatalog.registerShuffle(123)
     assertResult(true)(shuffleCatalog.hasActiveShuffle(123))
+    shuffleCatalog.unregisterShuffle(123)
+    assertResult(false)(shuffleCatalog.hasActiveShuffle(123))
   }
 }
