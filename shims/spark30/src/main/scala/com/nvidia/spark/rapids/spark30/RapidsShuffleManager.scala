@@ -14,10 +14,10 @@
  * limitations under the License.
  */
 
-package com.nvidia.spark
+package com.nvidia.spark.rapids.spark30
 
 import org.apache.spark.SparkConf
-import org.apache.spark.sql.rapids.RapidsShuffleInternalManager
+import org.apache.spark.sql.rapids.shims.spark30.RapidsShuffleInternalManager
 
 /** A shuffle manager optimized for the RAPIDS Plugin for Apache Spark. */
 sealed class RapidsShuffleManager(

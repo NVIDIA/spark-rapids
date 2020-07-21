@@ -16,22 +16,8 @@
 
 package org.apache.spark.sql.rapids.shims.spark30
 
-import ai.rapids.cudf.{NvtxColor, NvtxRange}
-import com.nvidia.spark.rapids._
-import com.nvidia.spark.rapids.format.TableMeta
-import com.nvidia.spark.rapids.shuffle.{RapidsShuffleRequestHandler, RapidsShuffleServer, RapidsShuffleTransport}
-import scala.collection.mutable.ArrayBuffer
-
-import org.apache.spark.{ShuffleDependency, SparkConf, SparkEnv, TaskContext}
-import org.apache.spark.internal.{config, Logging}
-import org.apache.spark.io.CompressionCodec
-import org.apache.spark.network.buffer.ManagedBuffer
-import org.apache.spark.scheduler.MapStatus
+import org.apache.spark.{SparkConf, TaskContext}
 import org.apache.spark.shuffle._
-import org.apache.spark.shuffle.sort.SortShuffleManager
-import org.apache.spark.sql.vectorized.ColumnarBatch
-import org.apache.spark.storage._
-
 
 /**
  * A shuffle manager optimized for the RAPIDS Plugin For Apache Spark.
@@ -42,7 +28,7 @@ import org.apache.spark.storage._
  *       the public class.
  */
 class RapidsShuffleInternalManager(conf: SparkConf, isDriver: Boolean)
-    extends RapidsShuffleInternalManagerBase(conf, isDriver) with Logging {
+    extends RapidsShuffleInternalManagerBase(conf, isDriver) {
 
   override def getReaderForRange[K, C](
       handle: ShuffleHandle,
@@ -54,8 +40,8 @@ class RapidsShuffleInternalManager(conf: SparkConf, isDriver: Boolean)
       metrics: ShuffleReadMetricsReporter): ShuffleReader[K, C] = {
     // NOTE: This type of reader is not possible for gpu shuffle, as we'd need
     // to use the optimization within our manager, and we don't.
-    wrapped.getReaderForRange(unwrapHandle(handle), startMapIndex, endMapIndex,
-      startPartition, endPartition, context, metrics)
+    wrapped.getReaderForRange(RapidsShuffleInternalManager.unwrapHandle(handle),
+      startMapIndex, endMapIndex, startPartition, endPartition, context, metrics)
   }
 
   def getReader[K, C](

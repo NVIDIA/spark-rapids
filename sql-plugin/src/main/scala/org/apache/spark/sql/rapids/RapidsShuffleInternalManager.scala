@@ -192,7 +192,7 @@ abstract class RapidsShuffleInternalManagerBase(conf: SparkConf, isDriver: Boole
 
   private val rapidsConf = new RapidsConf(conf)
 
-  private val wrapped = new SortShuffleManager(conf)
+  protected val wrapped = new SortShuffleManager(conf)
   GpuShuffleEnv.setRapidsShuffleManagerInitialized(true, this.getClass.getCanonicalName)
   logWarning("Rapids Shuffle Plugin Enabled")
 
