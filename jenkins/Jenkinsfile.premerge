@@ -51,7 +51,7 @@ pipeline {
             agent { label 'docker-gpu' }
             steps {
                 script {
-                    sh "Test prebuild!!!!!!"
+                    echo "Test prebuild!!!!!!"
                     def CUDA_NAME=sh(returnStdout: true,
                         script: '. jenkins/version-def.sh>&2 && echo -n $CUDA_CLASSIFIER | sed "s/-/./g"')
                     def IMAGE_NAME="$ARTIFACTORY_NAME/sw-spark-docker/plugin:dev-ubuntu16-$CUDA_NAME"
