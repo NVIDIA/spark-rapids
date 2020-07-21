@@ -301,7 +301,6 @@ abstract class RapidsShuffleInternalManagerBase(conf: SparkConf, isDriver: Boole
       endPartition: Int,
       context: TaskContext,
       metrics: ShuffleReadMetricsReporter): ShuffleReader[K, C] = {
-    // startMapIndex and endMapIndex ignored as we don't support those for gpu shuffle.
     handle match {
       case gpu: GpuShuffleHandle[_, _] =>
         logInfo(s"Asking map output tracker for dependency ${gpu.dependency}, " +
@@ -314,7 +313,8 @@ abstract class RapidsShuffleInternalManagerBase(conf: SparkConf, isDriver: Boole
 
         val nvtxRange = new NvtxRange("getMapSizesByExecId", NvtxColor.CYAN)
         val blocksByAddress = try {
-          env.mapOutputTracker.getMapSizesByExecutorId(gpu.shuffleId, startPartition, endPartition)
+          ShimLoader.getSparkShims.getMapSizesByExecutorId(gpu.shuffleId,
+            startMapIndex, endMapIndex, startPartition, endPartition)
         } finally {
           nvtxRange.close()
         }

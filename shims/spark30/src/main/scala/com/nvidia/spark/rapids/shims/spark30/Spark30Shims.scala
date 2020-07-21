@@ -21,6 +21,7 @@ import java.time.ZoneId
 import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.spark30.RapidsShuffleManager
 
+import org.apache.spark.SparkEnv
 import org.apache.spark.sql.catalyst.expressions.aggregate.{First, Last}
 import org.apache.spark.internal.Logging
 import org.apache.spark.sql.execution._
@@ -33,11 +34,20 @@ import org.apache.spark.sql.rapids.GpuTimeSub
 import org.apache.spark.sql.rapids.execution.GpuBroadcastNestedLoopJoinExecBase
 import org.apache.spark.sql.rapids.shims.spark30._
 import org.apache.spark.sql.types._
+import org.apache.spark.storage.{BlockId, BlockManagerId}
 import org.apache.spark.unsafe.types.CalendarInterval
 
 class Spark30Shims extends SparkShims with Logging {
 
-
+  override def getMapSizesByExecutorId(
+      shuffleId: Int,
+      startMapIndex: Int,
+      endMapIndex: Int,
+      startPartition: Int,
+      endPartition: Int): Iterator[(BlockManagerId, Seq[(BlockId, Long, Int)])] = {
+    // startMapIndex and endMapIndex ignored as we don't support those for gpu shuffle.
+    SparkEnv.get.mapOutputTracker.getMapSizesByExecutorId(shuffleId, startPartition, endPartition)
+  }
 
   override def getGpuBroadcastNestedLoopJoinShims(
       left: SparkPlan,

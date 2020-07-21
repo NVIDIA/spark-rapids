@@ -21,6 +21,7 @@ import org.apache.spark.sql.catalyst.plans.JoinType
 import org.apache.spark.sql.execution.SparkPlan
 import org.apache.spark.sql.execution.joins._
 import org.apache.spark.sql.rapids.execution.GpuBroadcastNestedLoopJoinExecBase
+import org.apache.spark.storage.{BlockId, BlockManagerId}
 
 sealed abstract class GpuBuildSide
 
