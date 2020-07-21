@@ -16,20 +16,18 @@
 ##
 
 import os
-
-from pyspark.worker import main as worker_main
-from pyspark.java_gateway import local_connect_and_auth
+from pyspark.worker import local_connect_and_auth, main as worker_main
 
 # Test print the CUDA_VISIBLE_DEVICES
-print("CUDA visible devices: {}".format(os.environ.get('CUDA_VISIBLE_DEVICES')))
+print("Found CUDA visible devices: {}".format(os.environ.get('CUDA_VISIBLE_DEVICES')))
 
 if __name__ == '__main__':
-    print("main 1")
-    # Copied from pyspark/worker.py
-    # Read information about how to connect back to the JVM from the environment.
     java_port = int(os.environ["PYTHON_WORKER_FACTORY_PORT"])
     auth_secret = os.environ["PYTHON_WORKER_FACTORY_SECRET"]
-    (sock_file, _) = local_connect_and_auth(java_port, auth_secret)
-    print("main 2")
-    worker_main(sock_file, sock_file)
-    print("main 3")
+    (sock_file, sock) = local_connect_and_auth(java_port, auth_secret)
+    # Use the `sock_file` as both input and ouput will cause EOFException in JVM side,
+    # So open a new file object on the same socket as output, similar hehavior
+    # with that in `pyspark.daemon.py`.
+    buffer_size = int(os.environ.get("SPARK_BUFFER_SIZE", 65536))
+    outfile = os.fdopen(os.dup(sock.fileno()), "wb", buffer_size)
+    worker_main(sock_file, outfile)

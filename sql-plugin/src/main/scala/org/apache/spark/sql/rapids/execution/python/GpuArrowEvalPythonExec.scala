@@ -100,7 +100,7 @@ case class GpuArrowEvalPythonExec(
 
     injectGpuInfo(funcs)
     doEvaluate(funcs, argOffsets, iter, schema, context)
-    // FIXME Shall we restore the envVars ?
+    // FIXME Shall we restore the envVars /configs ?
   }
 
   /**
