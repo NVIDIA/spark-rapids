@@ -36,7 +36,7 @@ import org.apache.spark.sql.types._
 
 class Spark31Shims extends SparkShims with Logging {
 
-  def getGpuBroadcastNestedLoopJoinShims(
+  override def getGpuBroadcastNestedLoopJoinShims(
       left: SparkPlan,
       right: SparkPlan,
       join: BroadcastNestedLoopJoinExec,
@@ -45,28 +45,28 @@ class Spark31Shims extends SparkShims with Logging {
     GpuBroadcastNestedLoopJoinExec(left, right, join, joinType, condition)
   }
 
-  def isGpuHashJoin(plan: SparkPlan): Boolean = {
+  override def isGpuHashJoin(plan: SparkPlan): Boolean = {
     plan match {
       case _: GpuHashJoin => true
       case p => false
     }
   }
 
-  def isGpuBroadcastHashJoin(plan: SparkPlan): Boolean = {
+  override def isGpuBroadcastHashJoin(plan: SparkPlan): Boolean = {
     plan match {
       case _: GpuBroadcastHashJoinExec => true
       case p => false
     }
   }
 
-  def isGpuShuffledHashJoin(plan: SparkPlan): Boolean = {
+  override def isGpuShuffledHashJoin(plan: SparkPlan): Boolean = {
     plan match {
       case _: GpuShuffledHashJoinExec => true
       case p => false
     }
   }
 
-  def getExprs: Seq[ExprRule[_ <: Expression]] = {
+  override def getExprs: Seq[ExprRule[_ <: Expression]] = {
     Seq(
 
     GpuOverrides.expr[TimeAdd](
@@ -106,7 +106,7 @@ class Spark31Shims extends SparkShims with Logging {
   }
 
 
-  def getExecs: Seq[ExecRule[_ <: SparkPlan]] = {
+  override def getExecs: Seq[ExecRule[_ <: SparkPlan]] = {
     Seq(
 
     GpuOverrides.exec[FileSourceScanExec](
@@ -147,11 +147,16 @@ class Spark31Shims extends SparkShims with Logging {
     )
   }
 
-  def getBuildSide(join: HashJoin): GpuBuildSide = {
+  override def getBuildSide(join: HashJoin): GpuBuildSide = {
     GpuJoinUtils.getBuildSide(join.buildSide)
   }
 
-  def getBuildSide(join: BroadcastNestedLoopJoinExec): GpuBuildSide = {
+  override def getBuildSide(join: BroadcastNestedLoopJoinExec): GpuBuildSide = {
     GpuJoinUtils.getBuildSide(join.buildSide)
   }
+
+  override def getRapidsShuffleManagerClass: String = {
+    classOf[RapidsShuffleManager].getCanonicalName
+  }
+
 }

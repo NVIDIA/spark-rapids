@@ -35,7 +35,7 @@ import org.apache.spark.unsafe.types.CalendarInterval
 
 class Spark30Shims extends SparkShims with Logging {
 
-  def getGpuBroadcastNestedLoopJoinShims(
+  override def getGpuBroadcastNestedLoopJoinShims(
       left: SparkPlan,
       right: SparkPlan,
       join: BroadcastNestedLoopJoinExec,
@@ -44,28 +44,28 @@ class Spark30Shims extends SparkShims with Logging {
     GpuBroadcastNestedLoopJoinExec(left, right, join, joinType, condition)
   }
 
-  def isGpuHashJoin(plan: SparkPlan): Boolean = {
+  override def isGpuHashJoin(plan: SparkPlan): Boolean = {
     plan match {
       case _: GpuHashJoin => true
       case p => false
     }
   }
 
-  def isGpuBroadcastHashJoin(plan: SparkPlan): Boolean = {
+  override def isGpuBroadcastHashJoin(plan: SparkPlan): Boolean = {
     plan match {
       case _: GpuBroadcastHashJoinExec => true
       case p => false
     }
   }
 
-  def isGpuShuffledHashJoin(plan: SparkPlan): Boolean = {
+  override def isGpuShuffledHashJoin(plan: SparkPlan): Boolean = {
     plan match {
       case _: GpuShuffledHashJoinExec => true
       case p => false
     }
   }
 
-  def getExecs: Seq[ExecRule[_ <: SparkPlan]] = {
+  override def getExecs: Seq[ExecRule[_ <: SparkPlan]] = {
     Seq(
 
     GpuOverrides.exec[FileSourceScanExec](
@@ -106,7 +106,7 @@ class Spark30Shims extends SparkShims with Logging {
     )
   }
 
-  def getExprs: Seq[ExprRule[_ <: Expression]] = {
+  override def getExprs: Seq[ExprRule[_ <: Expression]] = {
     Seq(
     GpuOverrides.expr[TimeSub](
       "Subtracts interval from timestamp",
@@ -157,12 +157,16 @@ class Spark30Shims extends SparkShims with Logging {
     )
   }
 
-  def getBuildSide(join: HashJoin): GpuBuildSide = {
+  override def getBuildSide(join: HashJoin): GpuBuildSide = {
     GpuJoinUtils.getBuildSide(join.buildSide)
   }
 
-  def getBuildSide(join: BroadcastNestedLoopJoinExec): GpuBuildSide = {
+  override def getBuildSide(join: BroadcastNestedLoopJoinExec): GpuBuildSide = {
     GpuJoinUtils.getBuildSide(join.buildSide)
+  }
+
+  override def getRapidsShuffleManagerClass: String = {
+    classOf[RapidsShuffleManager].getCanonicalName
   }
 }
 

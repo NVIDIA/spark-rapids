@@ -33,6 +33,7 @@ trait SparkShims {
   def isGpuHashJoin(plan: SparkPlan): Boolean
   def isGpuBroadcastHashJoin(plan: SparkPlan): Boolean
   def isGpuShuffledHashJoin(plan: SparkPlan): Boolean
+  def getRapidsShuffleManagerClass: String
   def getBuildSide(join: HashJoin): GpuBuildSide
   def getBuildSide(join: BroadcastNestedLoopJoinExec): GpuBuildSide
   def getExprs: Seq[ExprRule[_ <: Expression]]
