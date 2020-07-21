@@ -185,7 +185,7 @@ class RapidsCachingWriter[K, V](
  *       [[com.nvidia.spark.RapidsShuffleManager]] should be used as that is
  *       the public class.
  */
-class RapidsShuffleInternalManager(conf: SparkConf, isDriver: Boolean)
+abstract class RapidsShuffleInternalManagerBase(conf: SparkConf, isDriver: Boolean)
     extends ShuffleManager with Logging {
 
   import RapidsShuffleInternalManager._
@@ -295,7 +295,7 @@ class RapidsShuffleInternalManager(conf: SparkConf, isDriver: Boolean)
     }
   }
 
-  override def getReaderForRange[K, C](
+  def getReaderInternal[K, C](
       handle: ShuffleHandle,
       startMapIndex: Int,
       endMapIndex: Int,
@@ -303,18 +303,7 @@ class RapidsShuffleInternalManager(conf: SparkConf, isDriver: Boolean)
       endPartition: Int,
       context: TaskContext,
       metrics: ShuffleReadMetricsReporter): ShuffleReader[K, C] = {
-    // NOTE: This type of reader is not possible for gpu shuffle, as we'd need
-    // to use the optimization within our manager, and we don't.
-    wrapped.getReaderForRange(unwrapHandle(handle), startMapIndex, endMapIndex,
-      startPartition, endPartition, context, metrics)
-  }
-
-  override def getReader[K, C](
-      handle: ShuffleHandle,
-      startPartition: Int,
-      endPartition: Int,
-      context: TaskContext,
-      metrics: ShuffleReadMetricsReporter): ShuffleReader[K, C] = {
+    // startMapIndex and endMapIndex ignored as we don't support those for gpu shuffle.
     handle match {
       case gpu: GpuShuffleHandle[_, _] =>
         logInfo(s"Asking map output tracker for dependency ${gpu.dependency}, " +
