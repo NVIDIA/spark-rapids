@@ -64,7 +64,7 @@ class GpuShuffleBlockResolver(private val wrapped: ShuffleBlockResolver,
 }
 
 
-object RapidsShuffleInternalManager extends Logging {
+object RapidsShuffleInternalManagerBase extends Logging {
   def unwrapHandle(handle: ShuffleHandle): ShuffleHandle = handle match {
     case gh: GpuShuffleHandle[_, _] => gh.wrapped
     case other => other
@@ -187,8 +187,6 @@ class RapidsCachingWriter[K, V](
  */
 abstract class RapidsShuffleInternalManagerBase(conf: SparkConf, isDriver: Boolean)
     extends ShuffleManager with Logging {
-
-  import RapidsShuffleInternalManager._
 
   private val rapidsConf = new RapidsConf(conf)
 
@@ -329,7 +327,8 @@ abstract class RapidsShuffleInternalManagerBase(conf: SparkConf, isDriver: Boole
           transport,
           catalog)
       case other => {
-        wrapped.getReader(unwrapHandle(other), startPartition, endPartition, context, metrics)
+        val shuffleHandle = RapidsShuffleInternalManagerBase.unwrapHandle(other)
+        wrapped.getReader(shuffleHandle, startPartition, endPartition, context, metrics)
       }
     }
   }

@@ -18,7 +18,7 @@ package org.apache.spark.sql.rapids.shims.spark30
 
 import org.apache.spark.{SparkConf, TaskContext}
 import org.apache.spark.shuffle._
-import org.apache.spark.sql.rapids.{RapidsShuffleInternalManager, RapidsShuffleInternalManagerBase}
+import org.apache.spark.sql.rapids.RapidsShuffleInternalManagerBase
 
 /**
  * A shuffle manager optimized for the RAPIDS Plugin For Apache Spark.
@@ -41,7 +41,7 @@ class RapidsShuffleInternalManager(conf: SparkConf, isDriver: Boolean)
       metrics: ShuffleReadMetricsReporter): ShuffleReader[K, C] = {
     // NOTE: This type of reader is not possible for gpu shuffle, as we'd need
     // to use the optimization within our manager, and we don't.
-    wrapped.getReaderForRange(RapidsShuffleInternalManager.unwrapHandle(handle),
+    wrapped.getReaderForRange(RapidsShuffleInternalManagerBase.unwrapHandle(handle),
       startMapIndex, endMapIndex, startPartition, endPartition, context, metrics)
   }
 

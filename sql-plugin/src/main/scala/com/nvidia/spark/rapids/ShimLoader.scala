@@ -19,20 +19,14 @@ package com.nvidia.spark.rapids
 import java.util.ServiceLoader
 
 import scala.collection.JavaConverters._
-import scala.collection.immutable.HashMap
 
 import org.apache.spark.{SPARK_BUILD_USER, SPARK_VERSION}
 import org.apache.spark.internal.Logging
-import org.apache.spark.sql.catalyst.expressions.Expression
-import org.apache.spark.sql.catalyst.plans.JoinType
-import org.apache.spark.sql.execution.SparkPlan
-import org.apache.spark.sql.execution.joins._
-import org.apache.spark.sql.rapids.execution._
 
 object ShimLoader extends Logging {
 
-  private val sparkVersion = getVersion
-  logInfo(s"Loading shim for version: $sparkVersion")
+  private val sparkVersion = getSparkVersion
+  logInfo(s"Loading shim for Spark version: $sparkVersion")
 
   // This is not ideal, but pass the version in here because otherwise loader that match the
   // same version (3.0.0 Apache and 3.0.0 Databricks) would need to know how to differentiate.
@@ -55,7 +49,7 @@ object ShimLoader extends Logging {
     sparkShims
   }
 
-  def getVersion: String = {
+  def getSparkVersion: String = {
     // hack for databricks, try to find something more reliable?
     if (SPARK_BUILD_USER.equals("Databricks")) {
         SPARK_VERSION + "-databricks"
