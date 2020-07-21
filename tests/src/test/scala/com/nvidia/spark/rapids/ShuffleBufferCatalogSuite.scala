@@ -16,12 +16,6 @@
 
 package com.nvidia.spark.rapids
 
-import java.io.File
-import java.util.NoSuchElementException
-
-import com.nvidia.spark.rapids.StorageTier.StorageTier
-import com.nvidia.spark.rapids.format.TableMeta
-import org.mockito.Mockito._
 import org.scalatest.FunSuite
 import org.scalatest.mockito.MockitoSugar
 
