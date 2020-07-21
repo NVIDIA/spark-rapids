@@ -37,6 +37,8 @@ import org.apache.spark.unsafe.types.CalendarInterval
 
 class Spark30Shims extends SparkShims with Logging {
 
+
+
   override def getGpuBroadcastNestedLoopJoinShims(
       left: SparkPlan,
       right: SparkPlan,

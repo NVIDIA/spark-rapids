@@ -29,7 +29,6 @@ case object GpuBuildRight extends GpuBuildSide
 case object GpuBuildLeft extends GpuBuildSide
 
 trait SparkShims {
-
   def isGpuHashJoin(plan: SparkPlan): Boolean
   def isGpuBroadcastHashJoin(plan: SparkPlan): Boolean
   def isGpuShuffledHashJoin(plan: SparkPlan): Boolean
@@ -38,12 +37,20 @@ trait SparkShims {
   def getBuildSide(join: BroadcastNestedLoopJoinExec): GpuBuildSide
   def getExprs: Seq[ExprRule[_ <: Expression]]
   def getExecs: Seq[ExecRule[_ <: SparkPlan]]
+
   def getGpuBroadcastNestedLoopJoinShims(
     left: SparkPlan,
     right: SparkPlan,
     join: BroadcastNestedLoopJoinExec,
     joinType: JoinType,
     condition: Option[Expression]): GpuBroadcastNestedLoopJoinExecBase
+
+  def getMapSizesByExecutorId(
+    shuffleId: Int,
+    startMapIndex: Int,
+    endMapIndex: Int,
+    startPartition: Int,
+    endPartition: Int): Iterator[(BlockManagerId, Seq[(BlockId, Long, Int)])]
 }
 
 
