@@ -45,18 +45,6 @@ case class GpuBroadcastHashJoinExec(
     left: SparkPlan,
     right: SparkPlan) extends BinaryExecNode with GpuHashJoin {
 
-
-  protected lazy val (gpuBuildKeys, gpuStreamedKeys) = {
-    require(leftKeys.map(_.dataType) == rightKeys.map(_.dataType),
-      "Join keys from two sides should have same types")
-    val lkeys = GpuBindReferences.bindGpuReferences(leftKeys, left.output)
-    val rkeys = GpuBindReferences.bindGpuReferences(rightKeys, right.output)
-    buildSide match {
-      case BuildLeft => (lkeys, rkeys)
-      case BuildRight => (rkeys, lkeys)
-    }
-  }
-
   override lazy val additionalMetrics: Map[String, SQLMetric] = Map(
     "joinOutputRows" -> SQLMetrics.createMetric(sparkContext, "join output rows"),
     "joinTime" -> SQLMetrics.createNanoTimingMetric(sparkContext, "join time"),
@@ -106,57 +94,6 @@ case class GpuBroadcastHashJoinExec(
     rdd.mapPartitions(it =>
       doJoin(builtTable, it, boundCondition, numOutputRows, joinOutputRows,
         numOutputBatches, joinTime, filterTime, totalTime))
-  }
-
-  def doJoinInternal(builtTable: Table,
-      streamedBatch: ColumnarBatch,
-      boundCondition: Option[Expression],
-      numOutputRows: SQLMetric,
-      numJoinOutputRows: SQLMetric,
-      numOutputBatches: SQLMetric,
-      joinTime: SQLMetric,
-      filterTime: SQLMetric): Option[ColumnarBatch] = {
-
-    val streamedTable = try {
-      val streamedKeysBatch = GpuProjectExec.project(streamedBatch, gpuStreamedKeys)
-      try {
-        val combined = combine(streamedKeysBatch, streamedBatch)
-        GpuColumnVector.from(combined)
-      } finally {
-        streamedKeysBatch.close()
-      }
-    } finally {
-      streamedBatch.close()
-    }
-
-    val nvtxRange = new NvtxWithMetrics("hash join", NvtxColor.ORANGE, joinTime)
-    val joined = try {
-      buildSide match {
-        case BuildLeft => doJoinLeftRight(builtTable, streamedTable)
-        case BuildRight => doJoinLeftRight(streamedTable, builtTable)
-      }
-    } finally {
-      streamedTable.close()
-      nvtxRange.close()
-    }
-
-    numJoinOutputRows += joined.numRows()
-
-    val tmp = if (boundCondition.isDefined) {
-      GpuFilter(joined, boundCondition.get, numOutputRows, numOutputBatches, filterTime)
-    } else {
-      numOutputRows += joined.numRows()
-      numOutputBatches += 1
-      joined
-    }
-    if (tmp.numRows() == 0) {
-      // Not sure if there is a better way to work around this
-      numOutputBatches.set(numOutputBatches.value - 1)
-      tmp.close()
-      None
-    } else {
-      Some(tmp)
-    }
   }
 }
 

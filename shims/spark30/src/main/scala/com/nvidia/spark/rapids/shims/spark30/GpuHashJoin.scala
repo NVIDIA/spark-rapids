@@ -15,15 +15,15 @@
  */
 package com.nvidia.spark.rapids.shims.spark30
 
-import ai.rapids.cudf.Table
-import com.nvidia.spark.rapids.{GpuColumnVector, GpuExec, GpuExpression, RapidsMeta}
+import ai.rapids.cudf.{NvtxColor, Table}
+import com.nvidia.spark.rapids._
 
 import org.apache.spark.TaskContext
 import org.apache.spark.sql.catalyst.expressions.{Attribute, Expression}
-import org.apache.spark.sql.catalyst.plans.{ExistenceJoin, FullOuter, InnerLike, JoinType, LeftAnti, LeftExistence, LeftOuter, LeftSemi, RightOuter}
-import org.apache.spark.sql.execution.joins.HashJoin
+import org.apache.spark.sql.catalyst.plans._
+import org.apache.spark.sql.execution.joins.{BuildLeft, BuildRight, HashJoin}
 import org.apache.spark.sql.execution.metric.SQLMetric
-import org.apache.spark.sql.vectorized.{ColumnarBatch, ColumnVector}
+import org.apache.spark.sql.vectorized.{ColumnVector, ColumnarBatch}
 
 object GpuHashJoin {
   def tagJoin(
@@ -62,17 +62,16 @@ trait GpuHashJoin extends GpuExec with HashJoin {
     }
   }
 
-  def doJoinInternal(builtTable: Table,
-      streamedBatch: ColumnarBatch,
-      boundCondition: Option[Expression],
-      numOutputRows: SQLMetric,
-      numJoinOutputRows: SQLMetric,
-      numOutputBatches: SQLMetric,
-      joinTime: SQLMetric,
-      filterTime: SQLMetric): Option[ColumnarBatch]
-
-  protected val gpuBuildKeys: Seq[GpuExpression]
-  protected val gpuStreamedKeys: Seq[GpuExpression]
+  protected lazy val (gpuBuildKeys, gpuStreamedKeys) = {
+    require(leftKeys.map(_.dataType) == rightKeys.map(_.dataType),
+      "Join keys from two sides should have same types")
+    val lkeys = GpuBindReferences.bindGpuReferences(leftKeys, left.output)
+    val rkeys = GpuBindReferences.bindGpuReferences(rightKeys, right.output)
+    buildSide match {
+      case BuildLeft => (lkeys, rkeys)
+      case BuildRight => (rkeys, lkeys)
+    }
+  }
 
   /**
    * Place the columns in left and the columns in right into a single ColumnarBatch
@@ -137,14 +136,14 @@ trait GpuHashJoin extends GpuExec with HashJoin {
           if (stream.hasNext) {
             val cb = stream.next()
             val startTime = System.nanoTime()
-            nextCb = doJoinInternal(builtTable, cb, boundCondition, joinOutputRows, numOutputRows,
+            nextCb = doJoin(builtTable, cb, boundCondition, joinOutputRows, numOutputRows,
               numOutputBatches, joinTime, filterTime)
             totalTime += (System.nanoTime() - startTime)
           } else if (first) {
             // We have to at least try one in some cases
             val startTime = System.nanoTime()
             val cb = GpuColumnVector.emptyBatch(streamedPlan.output.asJava)
-            nextCb = doJoinInternal(builtTable, cb, boundCondition, joinOutputRows, numOutputRows,
+            nextCb = doJoin(builtTable, cb, boundCondition, joinOutputRows, numOutputRows,
               numOutputBatches, joinTime, filterTime)
             totalTime += (System.nanoTime() - startTime)
           }
@@ -164,7 +163,58 @@ trait GpuHashJoin extends GpuExec with HashJoin {
     }
   }
 
-  protected def doJoinLeftRight(leftTable: Table, rightTable: Table): ColumnarBatch = {
+  def doJoin(builtTable: Table,
+      streamedBatch: ColumnarBatch,
+      boundCondition: Option[Expression],
+      numOutputRows: SQLMetric,
+      numJoinOutputRows: SQLMetric,
+      numOutputBatches: SQLMetric,
+      joinTime: SQLMetric,
+      filterTime: SQLMetric): Option[ColumnarBatch] = {
+
+    val streamedTable = try {
+      val streamedKeysBatch = GpuProjectExec.project(streamedBatch, gpuStreamedKeys)
+      try {
+        val combined = combine(streamedKeysBatch, streamedBatch)
+        GpuColumnVector.from(combined)
+      } finally {
+        streamedKeysBatch.close()
+      }
+    } finally {
+      streamedBatch.close()
+    }
+
+    val nvtxRange = new NvtxWithMetrics("hash join", NvtxColor.ORANGE, joinTime)
+    val joined = try {
+      buildSide match {
+        case BuildLeft => doJoinLeftRight(builtTable, streamedTable)
+        case BuildRight => doJoinLeftRight(streamedTable, builtTable)
+      }
+    } finally {
+      streamedTable.close()
+      nvtxRange.close()
+    }
+
+    numJoinOutputRows += joined.numRows()
+
+    val tmp = if (boundCondition.isDefined) {
+      GpuFilter(joined, boundCondition.get, numOutputRows, numOutputBatches, filterTime)
+    } else {
+      numOutputRows += joined.numRows()
+      numOutputBatches += 1
+      joined
+    }
+    if (tmp.numRows() == 0) {
+      // Not sure if there is a better way to work around this
+      numOutputBatches.set(numOutputBatches.value - 1)
+      tmp.close()
+      None
+    } else {
+      Some(tmp)
+    }
+  }
+
+  private[this] def doJoinLeftRight(leftTable: Table, rightTable: Table): ColumnarBatch = {
     val joinedTable = joinType match {
       case LeftOuter => leftTable.onColumns(joinKeyIndices: _*)
           .leftJoin(rightTable.onColumns(joinKeyIndices: _*), false)
