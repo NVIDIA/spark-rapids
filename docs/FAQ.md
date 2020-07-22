@@ -21,7 +21,7 @@ shows stale results.
 
 The RAPIDS Accelerator for Apache Spark requires version 3.0.0 of Apache Spark. Because the plugin
 replaces parts of the physical plan that Apache Spark considers to be internal the code for those
-plans can change even between bug fix releases. As a part of our process we try to stay on top of
+plans can change even between bug fix releases. As a part of our process, we try to stay on top of
 these changes and release updates as quickly as possible.
 
 ### Which distributions are supported?
@@ -42,19 +42,20 @@ Reference Architectures should be available around Q4 2020.
 ### What CUDA versions are supported?
 
 CUDA 10.1 and 10.2 are currently supported, but you need to download the cudf jar that corresponds
-to the version you are using.
+to the version you are using. Please look [here][version/stable-release.md] for download links
+for the stable release.
 
 ### What parts of Apache Spark are accelerated?
 
-Currently, A limited set of SQL and DataFrame operations are supported, please see the
+Currently a limited set of SQL and DataFrame operations are supported, please see the
 [configs](configs.md) for a more complete list of what is supported. Some of structured streaming
-is likely to be accelerated, but we have not been an area of focus right now. Other areas like
+is likely to be accelerated, but it has not been an area of focus right now. Other areas like
 MLLib, GraphX or RDDs are not accelerated.
 
 ### What is the road-map like?
 
-Please take a look at the github repository https://github.com/nvidia/spark-rapids The have issue
-tracking there along with planning for sprints and releases.
+Please look at the github repository https://github.com/nvidia/spark-rapids It contains
+issue tracking and planning for sprints and releases.
 
 ### How much faster will my query run?
 
@@ -83,7 +84,7 @@ starts. If you are only going to run a single query that only takes a few second
 be problematic. In general if you are going to do 30 seconds or more of processing within a single
 session the overhead can be amortized.
 
-### Why is the size of my output Parquet/Orc file different?
+### Why is the size of my output Parquet/ORC file different?
 
 This can come down to a number of factors.  The GPU version often compresses data in smaller chunks
 to get more parallelism and performance. This can result in larger files in some instances. We have
@@ -134,7 +135,7 @@ Yes
 
 Yes, but we don't actively test them.
 
-## Are the java APIs for Spark supported?
+## Are the Java APIs for Spark supported?
 
 Yes, but we don't actively test them.
 
@@ -150,14 +151,14 @@ for the RAPIDS plugin.
 ## How does the performance compare to DataBricks' DeltaEngine?
 
 We have not evaluated the performance yet. DeltaEngine is not open source, so any analysis needs to
-be done with Databricks in some form. When DeltaEngine is generally available if the terms of
-service allow it we will look into doing a comparison.
+be done with Databricks in some form. When DeltaEngine is generally available and the terms of
+service allow it, we will look into doing a comparison.
 
 ### How many tasks can I run per executor? How many should I run per executor?
 
 There is no limit on the number of tasks per executor that you can run.  Generally we recommend 2 to
 6 tasks per executor and 1 GPU per executor. The GPU typically benefits from having 2 tasks run
-in (parallel)[configs.md#sql.concurrentGpuTasks] on it at a time, assuming your GPU has enough
+in [parallel](configs.md#sql.concurrentGpuTasks) on it at a time, assuming your GPU has enough
 memory to support that. Having 2 to 3 times as many tasks off of the GPU as on the GPU allows for
 I/O to be run in parallel with the processing. If you increase the tasks too high you can overload
 the I/O and starting the initial processing can suffer.  But if you have a lot of processing that
@@ -184,3 +185,15 @@ for this issue.
 
 To fix it you can either disable the IOMMU, or you can disable using pinned memory by setting
 [spark.rapids.memory.pinnedPool.size](configs.md#memory.pinnedPool.size) to 0.
+
+# Is speculative execution supported?
+
+Yes, speculative execution in Spark is fine with the RAPIDS accelerator plugin.
+
+As with all speculative execution, it may or may not be beneficial depending on the nature of why a
+particular task is slow and how easily speculation is triggered. You should monitor your Spark jobs
+to see how often task speculation occurs and how often the speculating task (i.e.: the one launched
+later) finishes before the slow task that triggered speculation. If the speculating task often
+finishes first then that's good, it is working as intended. If many tasks are speculating, but the
+original task always finishes first then this is a pure loss, the speculation is adding load to
+the Spark cluster with no benefit.
