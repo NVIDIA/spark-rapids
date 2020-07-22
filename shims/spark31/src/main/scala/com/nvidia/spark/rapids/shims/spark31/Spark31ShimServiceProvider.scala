@@ -23,7 +23,7 @@ class Spark31ShimServiceProvider extends SparkShimServiceProvider {
   val SPARK31VERSIONNAMES = Seq("3.1.0-SNAPSHOT", "3.1.0")
 
   def matchesVersion(version: String): Boolean = {
-    SPARK31VERSIONNAME.contains(version)
+    SPARK31VERSIONNAMES.contains(version)
   }
 
   def buildShim: SparkShims = {

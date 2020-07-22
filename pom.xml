@@ -156,6 +156,7 @@
 	<project.reporting.sourceEncoding>UTF-8</project.reporting.sourceEncoding>
 	<pytest.TEST_TAGS>not qarun</pytest.TEST_TAGS>
 	<rat.consoleOutput>false</rat.consoleOutput>
+	<slf4j.version>1.7.30</slf4j.version>
     </properties>
 
     <dependencyManagement>
@@ -171,6 +172,17 @@
                 <version>${cudf.version}</version>
                 <classifier>${cuda.version}</classifier>
                 <scope>provided</scope>
+            </dependency>
+            <dependency>
+                <groupId>org.slf4j</groupId>
+                <artifactId>jul-to-slf4j</artifactId>
+                <version>${slf4j.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>org.slf4j</groupId>
+                <artifactId>jcl-over-slf4j</artifactId>
+                <version>${slf4j.version}</version>
+                <!-- runtime scope is appropriate, but causes SBT build problems -->
             </dependency>
             <dependency>
                 <groupId>org.scala-lang</groupId>
