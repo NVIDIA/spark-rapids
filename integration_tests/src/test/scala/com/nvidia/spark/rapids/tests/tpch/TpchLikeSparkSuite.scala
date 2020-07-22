@@ -16,8 +16,8 @@
 
 package com.nvidia.spark.rapids.tests.tpch
 
-import com.nvidia.spark.rapids.ShimLoader
 import com.nvidia.spark.rapids.{ColumnarRdd, ExecutionPlanCaptureCallback}
+import com.nvidia.spark.rapids.ShimLoader
 import org.scalatest.{BeforeAndAfterAll, FunSuite}
 
 import org.apache.spark.sql.{DataFrame, SparkSession}
