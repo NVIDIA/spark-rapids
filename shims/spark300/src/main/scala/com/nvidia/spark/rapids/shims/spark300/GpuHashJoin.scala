@@ -20,8 +20,9 @@ import com.nvidia.spark.rapids._
 
 import org.apache.spark.TaskContext
 import org.apache.spark.sql.catalyst.expressions.{Attribute, Expression}
+import org.apache.spark.sql.catalyst.optimizer.{BuildLeft, BuildRight}
 import org.apache.spark.sql.catalyst.plans.{ExistenceJoin, FullOuter, InnerLike, JoinType, LeftAnti, LeftExistence, LeftOuter, LeftSemi, RightOuter}
-import org.apache.spark.sql.execution.joins.{BuildLeft, BuildRight, HashJoin}
+import org.apache.spark.sql.execution.joins.HashJoin
 import org.apache.spark.sql.execution.metric.SQLMetric
 import org.apache.spark.sql.rapids.GpuAnd
 import org.apache.spark.sql.vectorized.{ColumnarBatch, ColumnVector}
