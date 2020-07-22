@@ -34,6 +34,7 @@
 
     <modules>
         <module>spark30</module>
+        <module>spark301</module>
         <module>spark31</module>
         <module>aggregator</module>
     </modules>
