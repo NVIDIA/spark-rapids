@@ -25,6 +25,10 @@ import org.apache.spark.sql.rapids.execution.GpuBroadcastNestedLoopJoinExecBase
 import org.apache.spark.sql.types._
 import org.apache.spark.storage.{BlockId, BlockManagerId}
 
+/**
+ * Spark BuildSide, BuildRight, BuildLeft moved packages in Spark 3.1
+ * so create GPU versions of these that can be agnostic to Spark version.
+ */
 sealed abstract class GpuBuildSide
 
 case object GpuBuildRight extends GpuBuildSide
@@ -65,5 +69,3 @@ trait SparkShims {
     startPartition: Int,
     endPartition: Int): Iterator[(BlockManagerId, Seq[(BlockId, Long, Int)])]
 }
-
-

@@ -18,7 +18,7 @@ package com.nvidia.spark.rapids.shims.spark31
 
 import ai.rapids.cudf.{NvtxColor, Table}
 import com.nvidia.spark.rapids._
-import com.nvidia.spark.rapids.GpuMetricNames.{NUM_OUTPUT_BATCHES, NUM_OUTPUT_ROWS, TOTAL_TIME}
+import com.nvidia.spark.rapids.GpuMetricNames._
 
 import org.apache.spark.TaskContext
 import org.apache.spark.rdd.RDD

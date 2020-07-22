@@ -195,4 +195,3 @@ class Spark30Shims extends SparkShims {
     classOf[RapidsShuffleManager].getCanonicalName
   }
 }
-

@@ -62,9 +62,9 @@ case class GpuFileSourceScanExec(
       // run into any issues in testing using the one we create here.
       @transient val logicalRelation = LogicalRelation(relation)
       try {
-      constructor.newInstance(relation, output, requiredSchema, partitionFilters,
-        optionalBucketSet, dataFilters, tableIdentifier,
-        logicalRelation).asInstanceOf[FileSourceScanExec]
+        constructor.newInstance(relation, output, requiredSchema, partitionFilters,
+          optionalBucketSet, dataFilters, tableIdentifier,
+          logicalRelation).asInstanceOf[FileSourceScanExec]
       } catch {
         case il: IllegalArgumentException =>
           // TODO - workaround until https://github.com/NVIDIA/spark-rapids/issues/354

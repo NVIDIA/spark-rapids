@@ -16,9 +16,8 @@
 
 package com.nvidia.spark.rapids.shims.spark30
 
-import ai.rapids.cudf.{NvtxColor, Table}
 import com.nvidia.spark.rapids._
-import com.nvidia.spark.rapids.GpuMetricNames.{NUM_OUTPUT_BATCHES, NUM_OUTPUT_ROWS, TOTAL_TIME}
+import com.nvidia.spark.rapids.GpuMetricNames._
 
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.InternalRow
@@ -111,6 +110,7 @@ case class GpuBroadcastHashJoinExec(
         UnspecifiedDistribution :: BroadcastDistribution(mode) :: Nil
     }
   }
+
   def broadcastExchange: GpuBroadcastExchangeExec = buildPlan match {
     case gpu: GpuBroadcastExchangeExec => gpu
     case reused: ReusedExchangeExec => reused.child.asInstanceOf[GpuBroadcastExchangeExec]

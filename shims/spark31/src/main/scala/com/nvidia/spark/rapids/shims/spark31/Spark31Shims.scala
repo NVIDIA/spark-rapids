@@ -183,5 +183,4 @@ class Spark31Shims extends SparkShims {
   override def getRapidsShuffleManagerClass: String = {
     classOf[RapidsShuffleManager].getCanonicalName
   }
-
 }
