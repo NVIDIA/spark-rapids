@@ -72,7 +72,7 @@ object GpuSemaphore {
    *       the semaphore is always released by the time the task completes.
    */
   def acquireIfNecessary(context: TaskContext): Unit = {
-    if (enabled) {
+    if (enabled && context != null) {
       getInstance.acquireIfNecessary(context)
     }
   }
@@ -81,7 +81,7 @@ object GpuSemaphore {
    * Tasks must call this when they are finished using the GPU.
    */
   def releaseIfNecessary(context: TaskContext): Unit = {
-    if (enabled) {
+    if (enabled && context != null) {
       getInstance.releaseIfNecessary(context)
     }
   }
