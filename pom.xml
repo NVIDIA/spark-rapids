@@ -501,7 +501,6 @@
                         <exclude>*.jar</exclude>
                         <exclude>docs/demo/**/*.ipynb</exclude>
                         <exclude>docs/demo/**/*.zpln</exclude>
-                        <exclude>**/META-INF/services/com.nvidia.spark.rapids.SparkShimServiceProvider</exclude>
                     </excludes>
                 </configuration>
             </plugin>
