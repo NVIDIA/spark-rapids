@@ -52,19 +52,20 @@ class GpuShuffledHashJoinMeta(
     parent: Option[RapidsMeta[_, _, _]],
     rule: ConfKeysAndIncompat)
   extends SparkPlanMeta[ShuffledHashJoinExec](join, conf, parent, rule) with Logging {
-
   val leftKeys: Seq[BaseExprMeta[_]] =
     join.leftKeys.map(GpuOverrides.wrapExpr(_, conf, Some(this)))
   val rightKeys: Seq[BaseExprMeta[_]] =
     join.rightKeys.map(GpuOverrides.wrapExpr(_, conf, Some(this)))
-  val condition: Option[BaseExprMeta[_]] = join.condition.map(
-    GpuOverrides.wrapExpr(_, conf, Some(this)))
+  val condition: Option[BaseExprMeta[_]] =
+    join.condition.map(GpuOverrides.wrapExpr(_, conf, Some(this)))
+
+  override val childExprs: Seq[BaseExprMeta[_]] = leftKeys ++ rightKeys ++ condition
 
   override def tagPlanForGpu(): Unit = {
     GpuHashJoin.tagJoin(this, join.joinType, join.leftKeys, join.rightKeys, join.condition)
   }
 
-  override def convertToGpu(): GpuExec = {
+  override def convertToGpu(): GpuExec =
     GpuShuffledHashJoinExec(
       leftKeys.map(_.convertToGpu()),
       rightKeys.map(_.convertToGpu()),
@@ -73,7 +74,6 @@ class GpuShuffledHashJoinMeta(
       condition.map(_.convertToGpu()),
       childPlans(0).convertIfNeeded(),
       childPlans(1).convertIfNeeded())
-  }
 }
 
 case class GpuShuffledHashJoinExec (
@@ -84,7 +84,6 @@ case class GpuShuffledHashJoinExec (
     condition: Option[Expression],
     left: SparkPlan,
     right: SparkPlan) extends BinaryExecNode with GpuHashJoin {
-
 
   override lazy val additionalMetrics: Map[String, SQLMetric] = Map(
     "buildDataSize" -> SQLMetrics.createSizeMetric(sparkContext, "build side size"),
@@ -101,11 +100,9 @@ case class GpuShuffledHashJoinExec (
       "GpuShuffledHashJoin does not support the execute() code path.")
   }
 
-  override def childrenCoalesceGoal: Seq[CoalesceGoal] = {
-    buildSide match {
-      case BuildLeft => Seq(RequireSingleBatch, null)
-      case BuildRight => Seq(null, RequireSingleBatch)
-    }
+  override def childrenCoalesceGoal: Seq[CoalesceGoal] = buildSide match {
+    case BuildLeft => Seq(RequireSingleBatch, null)
+    case BuildRight => Seq(null, RequireSingleBatch)
   }
 
   override def doExecuteColumnar() : RDD[ColumnarBatch] = {

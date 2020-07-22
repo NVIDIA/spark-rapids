@@ -18,10 +18,10 @@ package com.nvidia.spark.rapids.shims.spark31
 
 import com.nvidia.spark.rapids._
 
-import org.apache.spark.sql.catalyst.optimizer.{BuildLeft, BuildRight, BuildSide}
+import org.apache.spark.sql.catalyst.optimizer.{BuildLeft, BuildRight}
 import org.apache.spark.sql.catalyst.plans.{ExistenceJoin, FullOuter, InnerLike, JoinType, LeftAnti, LeftOuter, LeftSemi, RightOuter}
 import org.apache.spark.sql.execution.SortExec
-import org.apache.spark.sql.execution.joins._
+import org.apache.spark.sql.execution.joins.SortMergeJoinExec
 
 /**
  * HashJoin changed in Spark 3.1 requiring Shim

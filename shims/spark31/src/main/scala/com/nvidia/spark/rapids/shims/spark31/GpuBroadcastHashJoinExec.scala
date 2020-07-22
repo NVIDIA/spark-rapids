@@ -36,6 +36,59 @@ import org.apache.spark.sql.vectorized.ColumnarBatch
 /**
  *  Spark 3.1 changed packages of BuildLeft, BuildRight, BuildSide
  */
+class GpuBroadcastHashJoinMeta(
+    join: BroadcastHashJoinExec,
+    conf: RapidsConf,
+    parent: Option[RapidsMeta[_, _, _]],
+    rule: ConfKeysAndIncompat)
+  extends SparkPlanMeta[BroadcastHashJoinExec](join, conf, parent, rule) {
+
+  val leftKeys: Seq[BaseExprMeta[_]] =
+    join.leftKeys.map(GpuOverrides.wrapExpr(_, conf, Some(this)))
+  val rightKeys: Seq[BaseExprMeta[_]] =
+    join.rightKeys.map(GpuOverrides.wrapExpr(_, conf, Some(this)))
+  val condition: Option[BaseExprMeta[_]] = join.condition.map(
+    GpuOverrides.wrapExpr(_, conf, Some(this)))
+
+  override val childExprs: Seq[BaseExprMeta[_]] = leftKeys ++ rightKeys ++ condition
+
+  override def tagPlanForGpu(): Unit = {
+    GpuHashJoin.tagJoin(this, join.joinType, join.leftKeys, join.rightKeys, join.condition)
+
+    val buildSide = join.buildSide match {
+      case BuildLeft => childPlans(0)
+      case BuildRight => childPlans(1)
+    }
+
+    if (!buildSide.canThisBeReplaced) {
+      willNotWorkOnGpu("the broadcast for this join must be on the GPU too")
+    }
+
+    if (!canThisBeReplaced) {
+      buildSide.willNotWorkOnGpu("the BroadcastHashJoin this feeds is not on the GPU")
+    }
+  }
+
+  override def convertToGpu(): GpuExec = {
+    val left = childPlans(0).convertIfNeeded()
+    val right = childPlans(1).convertIfNeeded()
+    // The broadcast part of this must be a BroadcastExchangeExec
+    val buildSide = join.buildSide match {
+      case BuildLeft => left
+      case BuildRight => right
+    }
+    if (!buildSide.isInstanceOf[GpuBroadcastExchangeExec]) {
+      throw new IllegalStateException("the broadcast must be on the GPU too")
+    }
+    GpuBroadcastHashJoinExec(
+      leftKeys.map(_.convertToGpu()),
+      rightKeys.map(_.convertToGpu()),
+      join.joinType, join.buildSide,
+      condition.map(_.convertToGpu()),
+      left, right)
+  }
+}
+
 case class GpuBroadcastHashJoinExec(
     leftKeys: Seq[Expression],
     rightKeys: Seq[Expression],
@@ -94,56 +147,5 @@ case class GpuBroadcastHashJoinExec(
     rdd.mapPartitions(it =>
       doJoin(builtTable, it, boundCondition, numOutputRows, joinOutputRows,
         numOutputBatches, joinTime, filterTime, totalTime))
-  }
-}
-
-class GpuBroadcastHashJoinMeta(
-    join: BroadcastHashJoinExec,
-    conf: RapidsConf,
-    parent: Option[RapidsMeta[_, _, _]],
-    rule: ConfKeysAndIncompat)
-  extends SparkPlanMeta[BroadcastHashJoinExec](join, conf, parent, rule) {
-
-  val leftKeys: Seq[BaseExprMeta[_]] =
-    join.leftKeys.map(GpuOverrides.wrapExpr(_, conf, Some(this)))
-  val rightKeys: Seq[BaseExprMeta[_]] =
-    join.rightKeys.map(GpuOverrides.wrapExpr(_, conf, Some(this)))
-  val condition: Option[BaseExprMeta[_]] = join.condition.map(
-    GpuOverrides.wrapExpr(_, conf, Some(this)))
-
-  override def tagPlanForGpu(): Unit = {
-    GpuHashJoin.tagJoin(this, join.joinType, join.leftKeys, join.rightKeys, join.condition)
-
-    val buildSide = join.buildSide match {
-      case BuildLeft => childPlans(0)
-      case BuildRight => childPlans(1)
-    }
-
-    if (!buildSide.canThisBeReplaced) {
-      willNotWorkOnGpu("the broadcast for this join must be on the GPU too")
-    }
-
-    if (!canThisBeReplaced) {
-      buildSide.willNotWorkOnGpu("the BroadcastHashJoin this feeds is not on the GPU")
-    }
-  }
-
-  override def convertToGpu(): GpuExec = {
-    val left = childPlans(0).convertIfNeeded()
-    val right = childPlans(1).convertIfNeeded()
-    // The broadcast part of this must be a BroadcastExchangeExec
-    val buildSide = join.buildSide match {
-      case BuildLeft => left
-      case BuildRight => right
-    }
-    if (!buildSide.isInstanceOf[GpuBroadcastExchangeExec]) {
-      throw new IllegalStateException("the broadcast must be on the GPU too")
-    }
-    GpuBroadcastHashJoinExec(
-      leftKeys.map(_.convertToGpu()),
-      rightKeys.map(_.convertToGpu()),
-      join.joinType, join.buildSide,
-      condition.map(_.convertToGpu()),
-      left, right)
   }
 }

@@ -49,6 +49,8 @@ class GpuBroadcastHashJoinMeta(
   val condition: Option[BaseExprMeta[_]] =
     join.condition.map(GpuOverrides.wrapExpr(_, conf, Some(this)))
 
+  override val childExprs: Seq[BaseExprMeta[_]] = leftKeys ++ rightKeys ++ condition
+
   override def tagPlanForGpu(): Unit = {
     GpuHashJoin.tagJoin(this, join.joinType, join.leftKeys, join.rightKeys, join.condition)
 
@@ -146,4 +148,3 @@ case class GpuBroadcastHashJoinExec(
         numOutputBatches, joinTime, filterTime, totalTime))
   }
 }
-
