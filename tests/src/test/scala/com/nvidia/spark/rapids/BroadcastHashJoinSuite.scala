@@ -36,8 +36,12 @@ class BroadcastHashJoinSuite extends SparkQueryCompareTestSuite {
 
       val plan = df5.queryExecution.executedPlan
 
-      assert(plan.collect { case p if ShimLoader.getSparkShims.isGpuBroadcastHashJoin(p) => p }.size === 1)
-      assert(plan.collect { case p if ShimLoader.getSparkShims.isGpuShuffledHashJoin(p) => p }.size === 1)
+      assert(plan.collect {
+        case p if ShimLoader.getSparkShims.isGpuBroadcastHashJoin(p) => p
+      }.size === 1)
+      assert(plan.collect {
+        case p if ShimLoader.getSparkShims.isGpuShuffledHashJoin(p) => p
+      }.size === 1)
     }, conf)
   }
 
@@ -55,10 +59,10 @@ class BroadcastHashJoinSuite extends SparkQueryCompareTestSuite {
         val res1 = plan1.find(ShimLoader.getSparkShims.isGpuBroadcastHashJoin(_))
         val res2 = plan2.find(ShimLoader.getSparkShims.isGpuBroadcastHashJoin(_))
 
-        assert(
-          ShimLoader.getSparkShims.getBuildSide(res1.get.asInstanceOf[HashJoin]).toString == "GpuBuildLeft")
-        assert(
-          ShimLoader.getSparkShims.getBuildSide(res2.get.asInstanceOf[HashJoin]).toString == "GpuBuildRight")
+        assert(ShimLoader.getSparkShims.getBuildSide(res1.get.asInstanceOf[HashJoin]).toString ==
+          "GpuBuildLeft")
+        assert(ShimLoader.getSparkShims.getBuildSide(res2.get.asInstanceOf[HashJoin]).toString ==
+          "GpuBuildRight")
       }
     })
   }
