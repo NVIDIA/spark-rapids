@@ -1783,10 +1783,14 @@ object GpuOverrides {
 /** Tag the initial plan when AQE is enabled */
 case class GpuOverridesAdaptive() extends Rule[SparkPlan] with Logging {
   override def apply(plan: SparkPlan) :SparkPlan = {
-    println("*** BEFORE tag initial plan ***")
-    println(plan)
+    /// GpuOverrides will walk the plan recursively processing child operators before the parent
+    // operators so that the parents can determine whether they can run on GPU after first seeing
+    // if the children can run on the GPU (in some cases). However, there are some inverted rules
+    // where the child operator will check whether the parent can run on the GPU and for this
+    // reason we have to run the rule twice here. Note that we disregard the GPU plan returned
+    // here and instead rely on side effects of tagging the underlying SparkPlan.
     GpuOverrides().apply(plan)
-    println("*** AFTER tag initial plan ***")
+    GpuOverrides().apply(plan)
     // return the original plan which is now modified as a side-effect of invoking GpuOverrides
     plan
   }

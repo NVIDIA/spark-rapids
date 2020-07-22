@@ -55,18 +55,17 @@ class GpuBroadcastHashJoinMeta(
       case BuildRight => childPlans(1)
     }
 
-    if (conf.forceGpuBroadcast) {
-      // This is a temporary workaround so that we can run TPCxBB benchmarks with GPU
-      // broadcasts and the plan is to remove this once we can support GPU broadcasts
-      // reliably with AQE enabled
-    } else {
-      if (!buildSide.canThisBeReplaced) {
-        willNotWorkOnGpu("the broadcast for this join must be on the GPU too")
-      }
+    buildSide.wrapped match {
+      case _: BroadcastQueryStageExec =>
+        // this already ran on the GPU
+      case _ =>
+        if (!buildSide.canThisBeReplaced) {
+          willNotWorkOnGpu("the broadcast for this join must be on the GPU too")
+        }
 
-      if (!canThisBeReplaced) {
+        if (!canThisBeReplaced) {
           buildSide.willNotWorkOnGpu("the BroadcastHashJoin this feeds is not on the GPU")
-      }
+        }
     }
   }
 
@@ -78,15 +77,13 @@ class GpuBroadcastHashJoinMeta(
       case BuildLeft => left
       case BuildRight => right
     }
-    if (conf.forceGpuBroadcast) {
-      // This is a temporary workaround so that we can run TPCxBB benchmarks with GPU
-      // broadcasts and the plan is to remove this once we can support GPU broadcasts
-      // reliably with AQE enabled
-    } else {
-      if (!buildSide.isInstanceOf[GpuBroadcastExchangeExec]) {
-        throw new IllegalStateException("the broadcast must be on the GPU too")
-      }
+
+    buildSide match {
+      case _: GpuBroadcastExchangeExec =>
+      case _: BroadcastQueryStageExec =>
+      case _ => throw new IllegalStateException("the broadcast must be on the GPU too")
     }
+
     GpuBroadcastHashJoinExec(
       leftKeys.map(_.convertToGpu()),
       rightKeys.map(_.convertToGpu()),

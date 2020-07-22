@@ -599,13 +599,6 @@ object RapidsConf {
     .bytesConf(ByteUnit.BYTE)
     .createWithDefault(50 * 1024)
 
-  val FORCE_GPU_BROADCAST = conf("spark.rapids.sql.forceGpuBroadcast.enabled")
-      .doc("The plugin does not yet reliably support GPU broadcast when AQE is enabled. " +
-          "It will cause queries to fail if there are broadcast joins that are not supported on " +
-          "the GPU. This flag can be enabled to force GPU broadcasts anyway.")
-      .booleanConf
-      .createWithDefault(false)
-
   // USER FACING DEBUG CONFIGS
 
   val EXPLAIN = conf("spark.rapids.sql.explain")
@@ -865,8 +858,6 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
   lazy val shuffleMaxServerTasks: Int = get(SHUFFLE_MAX_SERVER_TASKS)
 
   lazy val shuffleMaxMetadataSize: Long = get(SHUFFLE_MAX_METADATA_SIZE)
-
-  lazy val forceGpuBroadcast: Boolean = get(FORCE_GPU_BROADCAST)
 
   def isOperatorEnabled(key: String, incompat: Boolean, isDisabledByDefault: Boolean): Boolean = {
     val default = !(isDisabledByDefault || incompat) || (incompat && isIncompatEnabled)
