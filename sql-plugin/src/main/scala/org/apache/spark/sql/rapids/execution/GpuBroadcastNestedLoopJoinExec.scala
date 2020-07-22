@@ -246,8 +246,8 @@ abstract class GpuBroadcastNestedLoopJoinExecBase(
           case _: InnerLike => GpuBroadcastNestedLoopJoinExecBase.innerLikeJoin(streamedIter,
             builtTable, getBuildSide, boundCondition,
             joinTime, joinOutputRows, numOutputRows, numOutputBatches, filterTime, totalTime)
-          case _ => throw new IllegalArgumentException(s"$joinType + $getBuildSide is not supported" +
-              s" and should be run on the CPU")
+          case _ => throw new IllegalArgumentException(s"$joinType + $getBuildSide is not" +
+            " supported and should be run on the CPU")
         }
       }
     }

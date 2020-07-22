@@ -60,9 +60,9 @@ case class GpuShuffledHashJoinExec (
       "Join keys from two sides should have same types")
     val lkeys = GpuBindReferences.bindGpuReferences(leftKeys, left.output)
     val rkeys = GpuBindReferences.bindGpuReferences(rightKeys, right.output)
-    GpuJoinUtils.getGpuBuildSide(buildSide) match {
-      case GpuBuildLeft => (lkeys, rkeys)
-      case GpuBuildRight => (rkeys, lkeys)
+    buildSide match {
+      case BuildLeft => (lkeys, rkeys)
+      case BuildRight => (rkeys, lkeys)
     }
   }
 
@@ -82,9 +82,9 @@ case class GpuShuffledHashJoinExec (
   }
 
   override def childrenCoalesceGoal: Seq[CoalesceGoal] = {
-    GpuJoinUtils.getGpuBuildSide(buildSide) match {
-      case GpuBuildLeft => Seq(RequireSingleBatch, null)
-      case GpuBuildRight => Seq(null, RequireSingleBatch)
+    buildSide match {
+      case BuildLeft => Seq(RequireSingleBatch, null)
+      case BuildRight => Seq(null, RequireSingleBatch)
     }
   }
 
@@ -156,9 +156,9 @@ case class GpuShuffledHashJoinExec (
 
     val nvtxRange = new NvtxWithMetrics("hash join", NvtxColor.ORANGE, joinTime)
     val joined = try {
-      GpuJoinUtils.getGpuBuildSide(buildSide) match {
-        case GpuBuildLeft => doJoinLeftRight(builtTable, streamedTable)
-        case GpuBuildRight => doJoinLeftRight(streamedTable, builtTable)
+      buildSide match {
+        case BuildLeft => doJoinLeftRight(builtTable, streamedTable)
+        case BuildRight => doJoinLeftRight(streamedTable, builtTable)
       }
     } finally {
       streamedTable.close()
