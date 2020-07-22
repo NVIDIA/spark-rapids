@@ -417,11 +417,14 @@ With `nv_peer_mem`, IB/RoCE-based transfers can perform zero-copy transfers dire
 2) Install [UCX 1.8.1](https://github.com/openucx/ucx/releases/tag/v1.8.1). 
 
 3) You will need to configure your spark job with extra settings for UCX (we are looking to 
-simplify these settings in the near future):
+simplify these settings in the near future). Choose the version of the shuffle manager
+that matches your Spark version. Currently we support
+Spark 3.0 (com.nvidia.spark.rapids.spark30.RapidsShuffleManager) and
+Spark 3.1 (com.nvidia.spark.rapids.spark31.RapidsShuffleManager):
 
 ```shell
 ...
---conf spark.shuffle.manager=com.nvidia.spark.RapidsShuffleManager \
+--conf spark.shuffle.manager=com.nvidia.spark.rapids.spark30.RapidsShuffleManager \
 --conf spark.shuffle.service.enabled=false \
 --conf spark.rapids.shuffle.transport.enabled=true \
 --conf spark.executorEnv.UCX_TLS=cuda_copy,cuda_ipc,rc,tcp \

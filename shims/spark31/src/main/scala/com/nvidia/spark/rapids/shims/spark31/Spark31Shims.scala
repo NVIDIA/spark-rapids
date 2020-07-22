@@ -93,82 +93,79 @@ class Spark31Shims extends SparkShims {
 
   override def getExprs: Seq[ExprRule[_ <: Expression]] = {
     Seq(
+      GpuOverrides.expr[TimeAdd](
+        "Subtracts interval from timestamp",
+        (a, conf, p, r) => new BinaryExprMeta[TimeAdd](a, conf, p, r) {
+          override def tagExprForGpu(): Unit = {
+            a.interval match {
+              case Literal(intvl: CalendarInterval, DataTypes.CalendarIntervalType) =>
+                if (intvl.months != 0) {
+                  willNotWorkOnGpu("interval months isn't supported")
+                }
+              case _ =>
+                willNotWorkOnGpu("only literals are supported for intervals")
+            }
+            if (ZoneId.of(a.timeZoneId.get).normalized() != GpuOverrides.UTC_TIMEZONE_ID) {
+              willNotWorkOnGpu("Only UTC zone id is supported")
+            }
+          }
 
-    GpuOverrides.expr[TimeAdd](
-      "Subtracts interval from timestamp",
-      (a, conf, p, r) => new BinaryExprMeta[TimeAdd](a, conf, p, r) {
-        override def tagExprForGpu(): Unit = {
-          a.interval match {
-            case Literal(intvl: CalendarInterval, DataTypes.CalendarIntervalType) =>
-              if (intvl.months != 0) {
-                willNotWorkOnGpu("interval months isn't supported")
-              }
-            case _ =>
-              willNotWorkOnGpu("only literals are supported for intervals")
-          }
-          if (ZoneId.of(a.timeZoneId.get).normalized() != GpuOverrides.UTC_TIMEZONE_ID) {
-            willNotWorkOnGpu("Only UTC zone id is supported")
-          }
+          override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression =
+            GpuTimeSub(lhs, rhs)
         }
-
-        override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression =
-          GpuTimeSub(lhs, rhs)
-      }
-    ),
-    GpuOverrides.expr[First](
-      "first aggregate operator",
-      (a, conf, p, r) => new ExprMeta[First](a, conf, p, r) {
-        override def convertToGpu(): GpuExpression =
-          GpuFirst(childExprs(0).convertToGpu(), a.ignoreNulls)
-      }),
-     GpuOverrides.expr[Last](
-      "last aggregate operator",
-      (a, conf, p, r) => new ExprMeta[Last](a, conf, p, r) {
-        override def convertToGpu(): GpuExpression =
-          GpuLast(childExprs(0).convertToGpu(), a.ignoreNulls)
-      }),
+      ),
+      GpuOverrides.expr[First](
+        "first aggregate operator",
+        (a, conf, p, r) => new ExprMeta[First](a, conf, p, r) {
+          override def convertToGpu(): GpuExpression =
+            GpuFirst(childExprs(0).convertToGpu(), a.ignoreNulls)
+        }),
+      GpuOverrides.expr[Last](
+        "last aggregate operator",
+        (a, conf, p, r) => new ExprMeta[Last](a, conf, p, r) {
+          override def convertToGpu(): GpuExpression =
+            GpuLast(childExprs(0).convertToGpu(), a.ignoreNulls)
+        }),
     )
   }
 
-
   override def getExecs: Seq[ExecRule[_ <: SparkPlan]] = {
     Seq(
+      GpuOverrides.exec[FileSourceScanExec](
+        "Reading data from files, often from Hive tables",
+        (fsse, conf, p, r) => new SparkPlanMeta[FileSourceScanExec](fsse, conf, p, r) {
+          // partition filters and data filters are not run on the GPU
+          override val childExprs: Seq[ExprMeta[_]] = Seq.empty
 
-    GpuOverrides.exec[FileSourceScanExec](
-      "Reading data from files, often from Hive tables",
-      (fsse, conf, p, r) => new SparkPlanMeta[FileSourceScanExec](fsse, conf, p, r) {
-        // partition filters and data filters are not run on the GPU
-        override val childExprs: Seq[ExprMeta[_]] = Seq.empty
+          override def tagPlanForGpu(): Unit = GpuFileSourceScanExec.tagSupport(this)
 
-        override def tagPlanForGpu(): Unit = GpuFileSourceScanExec.tagSupport(this)
-
-        override def convertToGpu(): GpuExec = {
-          val newRelation = HadoopFsRelation(
-            wrapped.relation.location,
-            wrapped.relation.partitionSchema,
-            wrapped.relation.dataSchema,
-            wrapped.relation.bucketSpec,
-            GpuFileSourceScanExec.convertFileFormat(wrapped.relation.fileFormat),
-            wrapped.relation.options)(wrapped.relation.sparkSession)
-          GpuFileSourceScanExec(
-            newRelation,
-            wrapped.output,
-            wrapped.requiredSchema,
-            wrapped.partitionFilters,
-            wrapped.optionalBucketSet,
-            wrapped.dataFilters,
-            wrapped.tableIdentifier)
-        }
-      }),
-    GpuOverrides.exec[SortMergeJoinExec](
-      "Sort merge join, replacing with shuffled hash join",
-      (join, conf, p, r) => new GpuSortMergeJoinMeta(join, conf, p, r)),
-    GpuOverrides.exec[BroadcastHashJoinExec](
-      "Implementation of join using broadcast data",
-      (join, conf, p, r) => new GpuBroadcastHashJoinMeta(join, conf, p, r)),
-    GpuOverrides.exec[ShuffledHashJoinExec](
-      "Implementation of join using hashed shuffled data",
-      (join, conf, p, r) => new GpuShuffledHashJoinMeta(join, conf, p, r)),
+          override def convertToGpu(): GpuExec = {
+            val newRelation = HadoopFsRelation(
+              wrapped.relation.location,
+              wrapped.relation.partitionSchema,
+              wrapped.relation.dataSchema,
+              wrapped.relation.bucketSpec,
+              GpuFileSourceScanExec.convertFileFormat(wrapped.relation.fileFormat),
+              wrapped.relation.options)(wrapped.relation.sparkSession)
+            GpuFileSourceScanExec(
+              newRelation,
+              wrapped.output,
+              wrapped.requiredSchema,
+              wrapped.partitionFilters,
+              wrapped.optionalBucketSet,
+              wrapped.dataFilters,
+              wrapped.tableIdentifier)
+          }
+        }),
+      GpuOverrides.exec[SortMergeJoinExec](
+        "Sort merge join, replacing with shuffled hash join",
+        (join, conf, p, r) => new GpuSortMergeJoinMeta(join, conf, p, r)),
+      GpuOverrides.exec[BroadcastHashJoinExec](
+        "Implementation of join using broadcast data",
+        (join, conf, p, r) => new GpuBroadcastHashJoinMeta(join, conf, p, r)),
+      GpuOverrides.exec[ShuffledHashJoinExec](
+        "Implementation of join using hashed shuffled data",
+        (join, conf, p, r) => new GpuShuffledHashJoinMeta(join, conf, p, r)),
     )
   }
 
