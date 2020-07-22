@@ -21,7 +21,6 @@ import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.GpuMetricNames.{NUM_OUTPUT_BATCHES, NUM_OUTPUT_ROWS, TOTAL_TIME}
 
 import org.apache.spark.TaskContext
-import org.apache.spark.internal.Logging
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.expressions.Expression
@@ -51,7 +50,7 @@ class GpuShuffledHashJoinMeta(
     conf: RapidsConf,
     parent: Option[RapidsMeta[_, _, _]],
     rule: ConfKeysAndIncompat)
-  extends SparkPlanMeta[ShuffledHashJoinExec](join, conf, parent, rule) with Logging {
+  extends SparkPlanMeta[ShuffledHashJoinExec](join, conf, parent, rule) {
   val leftKeys: Seq[BaseExprMeta[_]] =
     join.leftKeys.map(GpuOverrides.wrapExpr(_, conf, Some(this)))
   val rightKeys: Seq[BaseExprMeta[_]] =
@@ -76,7 +75,7 @@ class GpuShuffledHashJoinMeta(
       childPlans(1).convertIfNeeded())
 }
 
-case class GpuShuffledHashJoinExec (
+case class GpuShuffledHashJoinExec(
     leftKeys: Seq[Expression],
     rightKeys: Seq[Expression],
     joinType: JoinType,

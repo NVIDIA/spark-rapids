@@ -47,8 +47,8 @@ class GpuBroadcastHashJoinMeta(
     join.leftKeys.map(GpuOverrides.wrapExpr(_, conf, Some(this)))
   val rightKeys: Seq[BaseExprMeta[_]] =
     join.rightKeys.map(GpuOverrides.wrapExpr(_, conf, Some(this)))
-  val condition: Option[BaseExprMeta[_]] = join.condition.map(
-    GpuOverrides.wrapExpr(_, conf, Some(this)))
+  val condition: Option[BaseExprMeta[_]] =
+    join.condition.map(GpuOverrides.wrapExpr(_, conf, Some(this)))
 
   override val childExprs: Seq[BaseExprMeta[_]] = leftKeys ++ rightKeys ++ condition
 
