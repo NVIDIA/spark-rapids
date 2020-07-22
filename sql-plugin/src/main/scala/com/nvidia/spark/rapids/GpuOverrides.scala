@@ -1780,6 +1780,18 @@ object GpuOverrides {
   ).map(r => (r.getClassFor.asSubclass(classOf[SparkPlan]), r)).toMap
 }
 
+/** Tag the initial plan when AQE is enabled */
+case class GpuOverridesAdaptive() extends Rule[SparkPlan] with Logging {
+  override def apply(plan: SparkPlan) :SparkPlan = {
+    println("*** BEFORE tag initial plan ***")
+    println(plan)
+    GpuOverrides().apply(plan)
+    println("*** AFTER tag initial plan ***")
+    // return the original plan which is now modified as a side-effect of invoking GpuOverrides
+    plan
+  }
+}
+
 case class GpuOverrides() extends Rule[SparkPlan] with Logging {
   override def apply(plan: SparkPlan) :SparkPlan = {
     val conf = new RapidsConf(plan.conf)
