@@ -30,12 +30,12 @@ rm -rf $ARTF_ROOT && mkdir -p $ARTF_ROOT
 
 # Download a full version of spark
 $MVN_GET_CMD \
-    -DgroupId=org.apache -DartifactId=spark -Dversion=$SPARK_VER -Dclassifier=bin-hadoop3 -Dpackaging=tar.gz
+    -DgroupId=org.apache -DartifactId=spark -Dversion=$SPARK_VER -Dclassifier=bin-hadoop3.2 -Dpackaging=tgz
 
-export SPARK_HOME="$ARTF_ROOT/spark-$SPARK_VER-bin-hadoop3"
+export SPARK_HOME="$ARTF_ROOT/spark-$SPARK_VER-bin-hadoop3.2"
 export PATH="$SPARK_HOME/bin:$SPARK_HOME/sbin:$PATH"
-tar zxf $SPARK_HOME.tar.gz -C $ARTF_ROOT && \
-    rm -f $SPARK_HOME.tar.gz
+tar zxf $SPARK_HOME.tgz -C $ARTF_ROOT && \
+    rm -f $SPARK_HOME.tgz
 
 mvn -U -B $MVN_URM_MIRROR clean verify -Dpytest.TEST_TAGS=''
 

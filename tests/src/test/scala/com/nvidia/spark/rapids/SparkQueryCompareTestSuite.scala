@@ -53,25 +53,9 @@ object TestResourceFinder {
 
 object SparkSessionHolder extends Logging {
 
-  val spark = {
-    // Timezone is fixed to UTC to allow timestamps to work by default
-    TimeZone.setDefault(TimeZone.getTimeZone("UTC"))
-    // Add Locale setting
-    Locale.setDefault(Locale.US)
-    SparkSession.builder()
-      .master("local[1]")
-      .config("spark.rapids.sql.enabled", "false")
-      .config("spark.rapids.sql.test.enabled", "false")
-      .config("spark.plugins", "com.nvidia.spark.SQLPlugin")
-      .config("spark.sql.queryExecutionListeners",
-        "com.nvidia.spark.rapids.ExecutionPlanCaptureCallback")
-      .config("spark.sql.warehouse.dir", sparkWarehouseDir().getAbsolutePath)
-      .appName("rapids spark plugin integration tests (scala)")
-      .getOrCreate()
-  }
-
-  private[this] val origConf = spark.conf.getAll
-  private[this] val origConfKeys = origConf.keys.toSet
+  private var spark = createSparkSession()
+  private var origConf = spark.conf.getAll
+  private var origConfKeys = origConf.keys.toSet
 
   private def setAllConfs(confs: Array[(String, String)]): Unit = confs.foreach {
     case (key, value) if spark.conf.get(key, null) != value =>
@@ -79,11 +63,45 @@ object SparkSessionHolder extends Logging {
     case _ => // No need to modify it
   }
 
+  private def createSparkSession(): SparkSession = {
+    // Timezone is fixed to UTC to allow timestamps to work by default
+    TimeZone.setDefault(TimeZone.getTimeZone("UTC"))
+    // Add Locale setting
+    Locale.setDefault(Locale.US)
+    SparkSession.builder()
+        .master("local[1]")
+        .config("spark.rapids.sql.enabled", "false")
+        .config("spark.rapids.sql.test.enabled", "false")
+        .config("spark.plugins", "com.nvidia.spark.SQLPlugin")
+        .config("spark.sql.queryExecutionListeners",
+          "com.nvidia.spark.rapids.ExecutionPlanCaptureCallback")
+        .config("spark.sql.warehouse.dir", sparkWarehouseDir.getAbsolutePath)
+        .appName("rapids spark plugin integration tests (scala)")
+        .getOrCreate()
+  }
+
+  private def reinitSession(): Unit = {
+    spark = createSparkSession()
+    origConf = spark.conf.getAll
+    origConfKeys = origConf.keys.toSet
+  }
+
+  def sparkSession: SparkSession = {
+    if (SparkSession.getActiveSession.isEmpty) {
+      reinitSession()
+    }
+    spark
+  }
+
   def resetSparkSessionConf(): Unit = {
-    setAllConfs(origConf.toArray)
-    val currentKeys = spark.conf.getAll.keys.toSet
-    val toRemove = currentKeys -- origConfKeys
-    toRemove.foreach(spark.conf.unset)
+    if (SparkSession.getActiveSession.isEmpty) {
+      reinitSession()
+    } else {
+      setAllConfs(origConf.toArray)
+      val currentKeys = spark.conf.getAll.keys.toSet
+      val toRemove = currentKeys -- origConfKeys
+      toRemove.foreach(spark.conf.unset)
+    }
     logDebug(s"RESET CONF TO: ${spark.conf.getAll}")
   }
 
@@ -95,7 +113,7 @@ object SparkSessionHolder extends Logging {
     f(spark)
   }
 
-  private def sparkWarehouseDir(): File = {
+  private lazy val sparkWarehouseDir: File = {
     val path = Files.createTempDirectory("spark-warehouse")
     val file = new File(path.toString)
     file.deleteOnExit()
