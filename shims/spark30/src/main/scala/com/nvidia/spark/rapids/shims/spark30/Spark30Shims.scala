@@ -22,8 +22,8 @@ import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.spark30.RapidsShuffleManager
 
 import org.apache.spark.SparkEnv
+import org.apache.spark.sql.catalyst.encoders.ExpressionEncoder
 import org.apache.spark.sql.catalyst.expressions.aggregate.{First, Last}
-import org.apache.spark.internal.Logging
 import org.apache.spark.sql.execution._
 import org.apache.spark.sql.execution.datasources.HadoopFsRelation
 import org.apache.spark.sql.execution.joins.{BroadcastHashJoinExec, BroadcastNestedLoopJoinExec, HashJoin, SortMergeJoinExec}
@@ -37,7 +37,20 @@ import org.apache.spark.sql.types._
 import org.apache.spark.storage.{BlockId, BlockManagerId}
 import org.apache.spark.unsafe.types.CalendarInterval
 
-class Spark30Shims extends SparkShims with Logging {
+class Spark30Shims extends SparkShims {
+
+  override   def getScalaUDFAsExpression(
+      function: AnyRef,
+      dataType: DataType,
+      children: Seq[Expression],
+      inputEncoders: Seq[Option[ExpressionEncoder[_]]] = Nil,
+      outputEncoder: Option[ExpressionEncoder[_]] = None,
+      udfName: Option[String] = None,
+      nullable: Boolean = true,
+      udfDeterministic: Boolean = true): Expression = {
+    // outputEncoder is only used in Spark 3.1+
+    ScalaUDF(function, dataType, children, inputEncoders, udfName, nullable, udfDeterministic)
+  }
 
   override def getMapSizesByExecutorId(
       shuffleId: Int,
@@ -127,7 +140,6 @@ class Spark30Shims extends SparkShims with Logging {
       "Subtracts interval from timestamp",
       (a, conf, p, r) => new BinaryExprMeta[TimeSub](a, conf, p, r) {
         override def tagExprForGpu(): Unit = {
-          logWarning("in TimeSub")
           a.interval match {
             case Literal(intvl: CalendarInterval, DataTypes.CalendarIntervalType) =>
               if (intvl.months != 0) {
@@ -142,7 +154,6 @@ class Spark30Shims extends SparkShims with Logging {
         }
 
         override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression = {
-          logWarning("in TimeSub convert")
           GpuTimeSub(lhs, rhs)
         }
       }

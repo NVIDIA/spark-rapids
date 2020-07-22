@@ -16,11 +16,13 @@
 
 package com.nvidia.spark.rapids
 
+import org.apache.spark.sql.catalyst.encoders.ExpressionEncoder
 import org.apache.spark.sql.catalyst.expressions.Expression
 import org.apache.spark.sql.catalyst.plans.JoinType
 import org.apache.spark.sql.execution.SparkPlan
 import org.apache.spark.sql.execution.joins._
 import org.apache.spark.sql.rapids.execution.GpuBroadcastNestedLoopJoinExecBase
+import org.apache.spark.sql.types._
 import org.apache.spark.storage.{BlockId, BlockManagerId}
 
 sealed abstract class GpuBuildSide
@@ -38,6 +40,15 @@ trait SparkShims {
   def getBuildSide(join: BroadcastNestedLoopJoinExec): GpuBuildSide
   def getExprs: Seq[ExprRule[_ <: Expression]]
   def getExecs: Seq[ExecRule[_ <: SparkPlan]]
+  def getScalaUDFAsExpression(
+    function: AnyRef,
+    dataType: DataType,
+    children: Seq[Expression],
+    inputEncoders: Seq[Option[ExpressionEncoder[_]]] = Nil,
+    outputEncoder: Option[ExpressionEncoder[_]] = None,
+    udfName: Option[String] = None,
+    nullable: Boolean = true,
+    udfDeterministic: Boolean = true): Expression
 
   def getGpuBroadcastNestedLoopJoinShim(
     left: SparkPlan,
