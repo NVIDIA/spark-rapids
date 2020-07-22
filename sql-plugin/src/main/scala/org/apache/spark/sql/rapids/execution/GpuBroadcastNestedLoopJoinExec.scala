@@ -255,3 +255,4 @@ abstract class GpuBroadcastNestedLoopJoinExecBase(
     }
   }
 }
+
