@@ -93,7 +93,7 @@ class Spark30Shims extends SparkShims {
     }
   }
 
-  override def getExecs: Seq[ExecRule[_ <: SparkPlan]] = {
+  override def getExecs: Map[Class[_ <: SparkPlan], ExecRule[_ <: SparkPlan]] = {
     Seq(
       GpuOverrides.exec[FileSourceScanExec](
         "Reading data from files, often from Hive tables",
@@ -130,10 +130,11 @@ class Spark30Shims extends SparkShims {
       GpuOverrides.exec[ShuffledHashJoinExec](
         "Implementation of join using hashed shuffled data",
         (join, conf, p, r) => new GpuShuffledHashJoinMeta(join, conf, p, r)),
-    )
+    ).map(r => (r.getClassFor.asSubclass(classOf[SparkPlan]), r)).toMap
   }
 
-  val timeSubRule: ExprRule[_ <: Expression] =
+  override def getExprs: Map[Class[_ <: Expression], ExprRule[_ <: Expression]] = {
+    Seq(
       GpuOverrides.expr[TimeSub](
         "Subtracts interval from timestamp",
         (a, conf, p, r) => new BinaryExprMeta[TimeSub](a, conf, p, r) {
@@ -155,11 +156,7 @@ class Spark30Shims extends SparkShims {
             GpuTimeSub(lhs, rhs)
           }
         }
-      )
-
-  override def getExprs: Seq[ExprRule[_ <: Expression]] = {
-    Seq(
-      timeSubRule,
+      ),
       GpuOverrides.expr[First](
         "first aggregate operator",
         (a, conf, p, r) => new ExprMeta[First](a, conf, p, r) {
@@ -182,7 +179,7 @@ class Spark30Shims extends SparkShims {
           override def convertToGpu(): GpuExpression =
             GpuLast(child.convertToGpu(), ignoreNulls.convertToGpu())
         }),
-    )
+    ).map(r => (r.getClassFor.asSubclass(classOf[Expression]), r)).toMap
   }
 
   override def getBuildSide(join: HashJoin): GpuBuildSide = {

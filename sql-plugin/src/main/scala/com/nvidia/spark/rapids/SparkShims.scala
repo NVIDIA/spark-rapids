@@ -42,8 +42,8 @@ trait SparkShims {
   def getRapidsShuffleManagerClass: String
   def getBuildSide(join: HashJoin): GpuBuildSide
   def getBuildSide(join: BroadcastNestedLoopJoinExec): GpuBuildSide
-  def getExprs: Seq[ExprRule[_ <: Expression]]
-  def getExecs: Seq[ExecRule[_ <: SparkPlan]]
+  def getExprs: Map[Class[_ <: Expression], ExprRule[_ <: Expression]]
+  def getExecs: Map[Class[_ <: SparkPlan], ExecRule[_ <: SparkPlan]]
   def getScalaUDFAsExpression(
     function: AnyRef,
     dataType: DataType,

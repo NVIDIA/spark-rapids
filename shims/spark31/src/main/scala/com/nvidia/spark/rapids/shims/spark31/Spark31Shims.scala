@@ -20,13 +20,12 @@ import java.time.ZoneId
 
 import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.spark31.RapidsShuffleManager
-import com.nvidia.spark.rapids.shims.spark301.{GpuFirst, GpuLast}
+import com.nvidia.spark.rapids.shims.spark301.Spark301Shims
 
 import org.apache.spark.SparkEnv
 import org.apache.spark.sql.catalyst.encoders.ExpressionEncoder
 import org.apache.spark.sql.catalyst.expressions._
 import org.apache.spark.sql.catalyst.plans.JoinType
-import org.apache.spark.sql.catalyst.expressions.aggregate.{First, Last}
 import org.apache.spark.sql.execution._
 import org.apache.spark.sql.execution.datasources.HadoopFsRelation
 import org.apache.spark.sql.execution.joins.{BroadcastHashJoinExec, BroadcastNestedLoopJoinExec, HashJoin, SortMergeJoinExec}
@@ -38,7 +37,7 @@ import org.apache.spark.unsafe.types.CalendarInterval
 import org.apache.spark.sql.types._
 import org.apache.spark.storage.{BlockId, BlockManagerId}
 
-class Spark31Shims extends SparkShims {
+class Spark31Shims extends Spark301Shims {
 
   override def getScalaUDFAsExpression(
       function: AnyRef,
@@ -93,7 +92,7 @@ class Spark31Shims extends SparkShims {
     }
   }
 
-  override def getExprs: Seq[ExprRule[_ <: Expression]] = {
+  override def getExprs: Map[Class[_ <: Expression], ExprRule[_ <: Expression]] = {
     Seq(
       GpuOverrides.expr[TimeAdd](
         "Subtracts interval from timestamp",
@@ -116,22 +115,10 @@ class Spark31Shims extends SparkShims {
             GpuTimeSub(lhs, rhs)
         }
       ),
-      GpuOverrides.expr[First](
-        "first aggregate operator",
-        (a, conf, p, r) => new ExprMeta[First](a, conf, p, r) {
-          override def convertToGpu(): GpuExpression =
-            GpuFirst(childExprs(0).convertToGpu(), a.ignoreNulls)
-        }),
-      GpuOverrides.expr[Last](
-        "last aggregate operator",
-        (a, conf, p, r) => new ExprMeta[Last](a, conf, p, r) {
-          override def convertToGpu(): GpuExpression =
-            GpuLast(childExprs(0).convertToGpu(), a.ignoreNulls)
-        }),
-    )
+    ).map(r => (r.getClassFor.asSubclass(classOf[Expression]), r)).toMap ++ super.exprs301
   }
 
-  override def getExecs: Seq[ExecRule[_ <: SparkPlan]] = {
+  override def getExecs: Map[Class[_ <: SparkPlan], ExecRule[_ <: SparkPlan]] = {
     Seq(
       GpuOverrides.exec[FileSourceScanExec](
         "Reading data from files, often from Hive tables",
@@ -168,7 +155,7 @@ class Spark31Shims extends SparkShims {
       GpuOverrides.exec[ShuffledHashJoinExec](
         "Implementation of join using hashed shuffled data",
         (join, conf, p, r) => new GpuShuffledHashJoinMeta(join, conf, p, r)),
-    )
+    ).map(r => (r.getClassFor.asSubclass(classOf[SparkPlan]), r)).toMap
   }
 
   override def getBuildSide(join: HashJoin): GpuBuildSide = {
