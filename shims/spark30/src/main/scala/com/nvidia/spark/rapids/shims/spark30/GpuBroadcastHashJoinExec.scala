@@ -40,7 +40,7 @@ class GpuBroadcastHashJoinMeta(
     conf: RapidsConf,
     parent: Option[RapidsMeta[_, _, _]],
     rule: ConfKeysAndIncompat)
-  extends GpuHashJoinBaseMeta[BroadcastHashJoinExec](join, conf, parent, rule) {
+  extends SparkPlanMeta[BroadcastHashJoinExec](join, conf, parent, rule) {
 
   val leftKeys: Seq[BaseExprMeta[_]] =
     join.leftKeys.map(GpuOverrides.wrapExpr(_, conf, Some(this)))

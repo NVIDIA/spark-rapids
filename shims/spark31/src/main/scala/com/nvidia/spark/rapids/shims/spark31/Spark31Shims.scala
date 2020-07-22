@@ -38,7 +38,7 @@ import org.apache.spark.storage.{BlockId, BlockManagerId}
 
 class Spark31Shims extends SparkShims {
 
-  override   def getScalaUDFAsExpression(
+  override def getScalaUDFAsExpression(
       function: AnyRef,
       dataType: DataType,
       children: Seq[Expression],

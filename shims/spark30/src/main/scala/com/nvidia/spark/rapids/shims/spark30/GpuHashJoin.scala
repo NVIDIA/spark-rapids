@@ -20,10 +20,10 @@ import com.nvidia.spark.rapids._
 
 import org.apache.spark.TaskContext
 import org.apache.spark.sql.catalyst.expressions.{Attribute, Expression}
-import org.apache.spark.sql.catalyst.plans._
+import org.apache.spark.sql.catalyst.plans.{ExistenceJoin, FullOuter, InnerLike, JoinType, LeftAnti, LeftExistence, LeftOuter, LeftSemi, RightOuter}
 import org.apache.spark.sql.execution.joins.{BuildLeft, BuildRight, HashJoin}
 import org.apache.spark.sql.execution.metric.SQLMetric
-import org.apache.spark.sql.vectorized.{ColumnVector, ColumnarBatch}
+import org.apache.spark.sql.vectorized.{ColumnarBatch, ColumnVector}
 
 object GpuHashJoin {
   def tagJoin(
@@ -163,7 +163,7 @@ trait GpuHashJoin extends GpuExec with HashJoin {
     }
   }
 
-  def doJoin(builtTable: Table,
+  private[this] def doJoin(builtTable: Table,
       streamedBatch: ColumnarBatch,
       boundCondition: Option[Expression],
       numOutputRows: SQLMetric,

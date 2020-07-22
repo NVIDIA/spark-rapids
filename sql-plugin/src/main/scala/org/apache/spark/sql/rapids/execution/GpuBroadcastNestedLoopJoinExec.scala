@@ -139,7 +139,9 @@ abstract class GpuBroadcastNestedLoopJoinExecBase(
     condition: Option[Expression],
     targetSizeBytes: Long) extends BinaryExecNode with GpuExec {
 
-  def getBuildSide: GpuBuildSide
+  // Spark BuildSide, BuildRight, BuildLeft changed packages between Spark versions
+  // so return a GPU version that is agnostic to the Spark version.
+  def getGpuBuildSide: GpuBuildSide
 
   override protected def doExecute(): RDD[InternalRow] =
     throw new IllegalStateException("This should only be called from columnar")
@@ -152,7 +154,7 @@ abstract class GpuBroadcastNestedLoopJoinExecBase(
     "filterTime" -> SQLMetrics.createNanoTimingMetric(sparkContext, "filter time"))
 
   /** BuildRight means the right relation <=> the broadcast relation. */
-  private val (streamed, broadcast) = getBuildSide match {
+  private val (streamed, broadcast) = getGpuBuildSide match {
     case GpuBuildRight => (left, right)
     case GpuBuildLeft => (right, left)
   }
@@ -162,7 +164,7 @@ abstract class GpuBroadcastNestedLoopJoinExecBase(
     case reused: ReusedExchangeExec => reused.child.asInstanceOf[GpuBroadcastExchangeExec]
   }
 
-  override def requiredChildDistribution: Seq[Distribution] = getBuildSide match {
+  override def requiredChildDistribution: Seq[Distribution] = getGpuBuildSide match {
     case GpuBuildLeft =>
       BroadcastDistribution(IdentityBroadcastMode) :: UnspecifiedDistribution :: Nil
     case GpuBuildRight =>
@@ -244,9 +246,9 @@ abstract class GpuBroadcastNestedLoopJoinExecBase(
       streamed.executeColumnar().mapPartitions { streamedIter =>
         joinType match {
           case _: InnerLike => GpuBroadcastNestedLoopJoinExecBase.innerLikeJoin(streamedIter,
-            builtTable, getBuildSide, boundCondition,
+            builtTable, getGpuBuildSide, boundCondition,
             joinTime, joinOutputRows, numOutputRows, numOutputBatches, filterTime, totalTime)
-          case _ => throw new IllegalArgumentException(s"$joinType + $getBuildSide is not" +
+          case _ => throw new IllegalArgumentException(s"$joinType + $getGpuBuildSide is not" +
             " supported and should be run on the CPU")
         }
       }

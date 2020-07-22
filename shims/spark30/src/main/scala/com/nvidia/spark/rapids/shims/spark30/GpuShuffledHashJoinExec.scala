@@ -44,6 +44,36 @@ object GpuJoinUtils {
 /**
  *  Spark 3.1 changed packages of BuildLeft, BuildRight, BuildSide
  */
+class GpuShuffledHashJoinMeta(
+    join: ShuffledHashJoinExec,
+    conf: RapidsConf,
+    parent: Option[RapidsMeta[_, _, _]],
+    rule: ConfKeysAndIncompat)
+  extends SparkPlanMeta[ShuffledHashJoinExec](join, conf, parent, rule) {
+
+  val leftKeys: Seq[BaseExprMeta[_]] =
+    join.leftKeys.map(GpuOverrides.wrapExpr(_, conf, Some(this)))
+  val rightKeys: Seq[BaseExprMeta[_]] =
+    join.rightKeys.map(GpuOverrides.wrapExpr(_, conf, Some(this)))
+  val condition: Option[BaseExprMeta[_]] = join.condition.map(
+    GpuOverrides.wrapExpr(_, conf, Some(this)))
+
+  override def tagPlanForGpu(): Unit = {
+    GpuHashJoin.tagJoin(this, join.joinType, join.leftKeys, join.rightKeys, join.condition)
+  }
+
+  override def convertToGpu(): GpuExec = {
+    GpuShuffledHashJoinExec(
+      leftKeys.map(_.convertToGpu()),
+      rightKeys.map(_.convertToGpu()),
+      join.joinType,
+      join.buildSide,
+      condition.map(_.convertToGpu()),
+      childPlans(0).convertIfNeeded(),
+      childPlans(1).convertIfNeeded())
+  }
+}
+
 case class GpuShuffledHashJoinExec(
     leftKeys: Seq[Expression],
     rightKeys: Seq[Expression],
@@ -118,36 +148,6 @@ case class GpuShuffledHashJoinExec(
           joinTime, filterTime, totalTime)
       }
     }
-  }
-}
-
-class GpuShuffledHashJoinMeta(
-    join: ShuffledHashJoinExec,
-    conf: RapidsConf,
-    parent: Option[RapidsMeta[_, _, _]],
-    rule: ConfKeysAndIncompat)
-  extends GpuHashJoinBaseMeta[ShuffledHashJoinExec](join, conf, parent, rule) {
-
-  val leftKeys: Seq[BaseExprMeta[_]] =
-    join.leftKeys.map(GpuOverrides.wrapExpr(_, conf, Some(this)))
-  val rightKeys: Seq[BaseExprMeta[_]] =
-    join.rightKeys.map(GpuOverrides.wrapExpr(_, conf, Some(this)))
-  val condition: Option[BaseExprMeta[_]] = join.condition.map(
-    GpuOverrides.wrapExpr(_, conf, Some(this)))
-
-  override def tagPlanForGpu(): Unit = {
-    GpuHashJoin.tagJoin(this, join.joinType, join.leftKeys, join.rightKeys, join.condition)
-  }
-
-  override def convertToGpu(): GpuExec = {
-    GpuShuffledHashJoinExec(
-      leftKeys.map(_.convertToGpu()),
-      rightKeys.map(_.convertToGpu()),
-      join.joinType,
-      join.buildSide,
-      condition.map(_.convertToGpu()),
-      childPlans(0).convertIfNeeded(),
-      childPlans(1).convertIfNeeded())
   }
 }
 

@@ -38,7 +38,7 @@ case class GpuBroadcastNestedLoopJoinExec(
   extends GpuBroadcastNestedLoopJoinExecBase(left, right, join, joinType, condition,
     targetSizeBytes) {
 
-  def getBuildSide: GpuBuildSide = {
+  def getGpuBuildSide: GpuBuildSide = {
     GpuJoinUtils.getGpuBuildSide(join.buildSide)
   }
 }

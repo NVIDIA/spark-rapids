@@ -47,18 +47,6 @@ final class NoRuleConfKeysAndIncompat extends ConfKeysAndIncompat {
   override def confKey = "NOT_FOUND"
 }
 
-abstract class GpuHashJoinBaseMeta[INPUT <: SparkPlan](
-    plan: INPUT,
-    conf: RapidsConf,
-    parent: Option[RapidsMeta[_, _, _]],
-    rule: ConfKeysAndIncompat)
-  extends SparkPlanMeta[INPUT](plan, conf, parent, rule) {
-
-    val leftKeys: Seq[BaseExprMeta[_]]
-    val rightKeys: Seq[BaseExprMeta[_]]
-    val condition: Option[BaseExprMeta[_]]
-}
-
 /**
  * Holds metadata about a stage in the physical plan that is separate from the plan itself.
  * This is helpful in deciding when to replace part of the plan with a GPU enabled version.
