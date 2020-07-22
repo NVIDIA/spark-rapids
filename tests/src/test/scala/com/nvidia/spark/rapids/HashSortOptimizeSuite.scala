@@ -21,11 +21,6 @@ import org.scalatest.FunSuite
 import org.apache.spark.SparkConf
 import org.apache.spark.sql.{DataFrame, SparkSession}
 import org.apache.spark.sql.execution.{SortExec, SparkPlan}
-<<<<<<< HEAD
-import org.apache.spark.sql.execution.adaptive.AdaptiveSparkPlanExec
-=======
-import org.apache.spark.sql.rapids.execution.GpuBroadcastHashJoinExec
->>>>>>> origin/branch-0.2
 
 /** Test plan modifications to add optimizing sorts after hash joins in the plan */
 class HashSortOptimizeSuite extends FunSuite {
