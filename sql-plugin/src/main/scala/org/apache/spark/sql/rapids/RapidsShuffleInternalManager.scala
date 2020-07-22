@@ -368,7 +368,7 @@ class RapidsShuffleInternalManager(conf: SparkConf, isDriver: Boolean)
   override def shuffleBlockResolver: ShuffleBlockResolver = resolver
 
   override def stop(): Unit = {
-    GpuShuffleEnv.closeStorage()
+    GpuShuffleEnv.shutdown()
     wrapped.stop()
     server.foreach(_.close())
     transport.foreach(_.close())
