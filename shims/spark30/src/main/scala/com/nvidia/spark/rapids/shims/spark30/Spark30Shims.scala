@@ -133,8 +133,7 @@ class Spark30Shims extends SparkShims {
     )
   }
 
-  override def getExprs: Seq[ExprRule[_ <: Expression]] = {
-    Seq(
+  val timeSubRule: ExprRule[_ <: Expression] =
       GpuOverrides.expr[TimeSub](
         "Subtracts interval from timestamp",
         (a, conf, p, r) => new BinaryExprMeta[TimeSub](a, conf, p, r) {
@@ -156,7 +155,11 @@ class Spark30Shims extends SparkShims {
             GpuTimeSub(lhs, rhs)
           }
         }
-      ),
+      )
+
+  override def getExprs: Seq[ExprRule[_ <: Expression]] = {
+    Seq(
+      timeSubRule,
       GpuOverrides.expr[First](
         "first aggregate operator",
         (a, conf, p, r) => new ExprMeta[First](a, conf, p, r) {

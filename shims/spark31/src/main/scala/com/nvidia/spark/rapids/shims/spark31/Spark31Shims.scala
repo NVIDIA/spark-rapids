@@ -20,6 +20,8 @@ import java.time.ZoneId
 
 import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.spark31.RapidsShuffleManager
+import com.nvidia.spark.rapids.shims.spark301.{GpuFirst, GpuLast}
+
 import org.apache.spark.SparkEnv
 import org.apache.spark.sql.catalyst.encoders.ExpressionEncoder
 import org.apache.spark.sql.catalyst.expressions._
