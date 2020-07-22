@@ -85,4 +85,4 @@ output_path='dbfs:///FileStore/tables/mortgage_parquet_gpu/output/'
 Run the notebook by clicking “Run All”
 
 ## Hints
-Spark logs in Databricks are removed upon cluster shutdown.  It is possible to safe logs in a cloud storage location using Databricks [cluster log delivery](https://docs.databricks.com/clusters/configure.html#cluster-log-delivery-1).  Enable this option before starting the cluster to capture the logs.  
+Spark logs in Databricks are removed upon cluster shutdown.  It is possible to save logs in a cloud storage location using Databricks [cluster log delivery](https://docs.databricks.com/clusters/configure.html#cluster-log-delivery-1).  Enable this option before starting the cluster to capture the logs. 
