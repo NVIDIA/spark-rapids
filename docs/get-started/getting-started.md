@@ -410,15 +410,15 @@ _RDMA over Converged Ethernet (RoCE)_ or _TCP_, and as configured in UCX, in the
 In order to enable the _RapidsShuffleManager_, please follow these steps. If you don't have 
 Mellanox hardware go to *step 2*:
 
-1) If you have Mellanox NICs and an Infiniband(IB) or RoCE network, please ensure you have the 
+1. If you have Mellanox NICs and an Infiniband(IB) or RoCE network, please ensure you have the 
 [MLNX_OFED driver](https://www.mellanox.com/products/infiniband-drivers/linux/mlnx_ofed), 
 and the [`nv_peer_mem` kernel module](https://www.mellanox.com/products/GPUDirect-RDMA) installed.
 
-With `nv_peer_mem`, IB/RoCE-based transfers can perform zero-copy transfers directly from GPU memory.
+    With `nv_peer_mem`, IB/RoCE-based transfers can perform zero-copy transfers directly from GPU memory.
 
-2) Install [UCX 1.8.1](https://github.com/openucx/ucx/releases/tag/v1.8.1). 
+2. Install [UCX 1.8.1](https://github.com/openucx/ucx/releases/tag/v1.8.1). 
 
-3) You will need to configure your spark job with extra settings for UCX (we are looking to 
+3. You will need to configure your spark job with extra settings for UCX (we are looking to 
 simplify these settings in the near future):
 
 ```shell
