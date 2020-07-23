@@ -125,6 +125,8 @@ abstract class RapidsMeta[INPUT <: BASE, BASE, OUTPUT <: BASE](
    */
   final def willNotWorkOnGpu(because: String): Unit = {
     cannotBeReplacedReasons.get.add(because)
+    // annotate the real spark plan with the reason as well so that the information is available
+    // during query stage planning when AQE is on
     wrapped match {
       case p: SparkPlan => p.setTagValue(gpuSupportedTag, because)
       case _ =>

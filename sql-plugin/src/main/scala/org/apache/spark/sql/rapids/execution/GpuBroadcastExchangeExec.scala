@@ -216,8 +216,8 @@ class GpuBroadcastMeta(
     } else {
       // when AQE is enabled and we are planning a new query stage, parent will be None so
       // we need to look at meta-data previously stored on the spark plan
-      wrapped.getTagValue(gpuSupportedTag).getOrElse("true") match {
-        case "true" => /* all good */
+      wrapped.getTagValue(gpuSupportedTag).getOrElse("") match {
+        case "" => /* all good */
         case reasons => willNotWorkOnGpu(reasons)
       }
     }
