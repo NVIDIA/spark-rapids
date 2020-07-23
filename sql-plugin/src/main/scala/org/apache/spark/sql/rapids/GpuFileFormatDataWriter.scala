@@ -226,7 +226,7 @@ class GpuDynamicPartitionDataWriter(
    */
   private lazy val partitionPathExpression: Expression = Concat(
     description.partitionColumns.zipWithIndex.flatMap { case (c, i) =>
-      val partitionName = ScalaUDF(
+      val partitionName = ShimLoader.getSparkShims.getScalaUDFAsExpression(
         ExternalCatalogUtils.getPartitionPathString _,
         StringType,
         Seq(Literal(c.name), Cast(c, StringType, Option(description.timeZoneId))))

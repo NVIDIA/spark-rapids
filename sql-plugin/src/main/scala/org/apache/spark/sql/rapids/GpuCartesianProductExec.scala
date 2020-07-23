@@ -19,7 +19,7 @@ package org.apache.spark.sql.rapids
 import java.io.{IOException, ObjectInputStream, ObjectOutputStream}
 
 import ai.rapids.cudf.{JCudfSerialization, NvtxColor, NvtxRange}
-import com.nvidia.spark.rapids.{Arm, GpuBindReferences, GpuColumnarBatchSerializer, GpuColumnVector, GpuExec, GpuExpression, GpuSemaphore}
+import com.nvidia.spark.rapids.{Arm, GpuBindReferences, GpuBuildLeft, GpuColumnarBatchSerializer, GpuColumnVector, GpuExec, GpuExpression, GpuSemaphore}
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 
 import org.apache.spark.{Dependency, NarrowDependency, Partition, SparkContext, TaskContext}
@@ -28,9 +28,8 @@ import org.apache.spark.serializer.Serializer
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.expressions.{Attribute, Expression}
 import org.apache.spark.sql.execution.{BinaryExecNode, ExplainUtils, SparkPlan}
-import org.apache.spark.sql.execution.joins.BuildLeft
 import org.apache.spark.sql.execution.metric.{SQLMetric, SQLMetrics}
-import org.apache.spark.sql.rapids.execution.GpuBroadcastNestedLoopJoinExec
+import org.apache.spark.sql.rapids.execution.GpuBroadcastNestedLoopJoinExecBase
 import org.apache.spark.sql.vectorized.{ColumnarBatch, ColumnVector}
 import org.apache.spark.util.{CompletionIterator, Utils}
 
@@ -146,10 +145,10 @@ class GpuCartesianRDD(
       // Ideally instead of looping through and recomputing rdd2 for
       // each batch in rdd1 we would instead cache rdd2 in a way that
       // it could spill to disk so we can avoid re-computation
-      val ret = GpuBroadcastNestedLoopJoinExec.innerLikeJoin(
+      val ret = GpuBroadcastNestedLoopJoinExecBase.innerLikeJoin(
         rdd2.iterator(currSplit.s2, context).map(i => i.getBatch),
         table,
-        BuildLeft,
+        GpuBuildLeft,
         boundCondition,
         joinTime,
         joinOutputRows,

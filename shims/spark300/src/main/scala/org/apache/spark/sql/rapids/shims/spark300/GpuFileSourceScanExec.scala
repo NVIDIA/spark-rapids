@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-package org.apache.spark.sql.rapids
+package org.apache.spark.sql.rapids.shims.spark300
 
 import java.util.concurrent.TimeUnit.NANOSECONDS
 
@@ -30,6 +30,7 @@ import org.apache.spark.sql.execution.datasources.csv.CSVFileFormat
 import org.apache.spark.sql.execution.datasources.orc.OrcFileFormat
 import org.apache.spark.sql.execution.datasources.parquet.ParquetFileFormat
 import org.apache.spark.sql.execution.metric.SQLMetric
+import org.apache.spark.sql.rapids.GpuFileSourceScanExecBase
 import org.apache.spark.sql.types.StructType
 import org.apache.spark.sql.vectorized.ColumnarBatch
 import org.apache.spark.util.collection.BitSet
@@ -42,7 +43,7 @@ case class GpuFileSourceScanExec(
     optionalBucketSet: Option[BitSet],
     dataFilters: Seq[Expression],
     override val tableIdentifier: Option[TableIdentifier])
-    extends DataSourceScanExec with GpuExec {
+    extends DataSourceScanExec with GpuFileSourceScanExecBase with GpuExec {
 
   override val nodeName: String = {
     s"GpuScan $relation ${tableIdentifier.map(_.unquotedString).getOrElse("")}"
@@ -60,9 +61,16 @@ case class GpuFileSourceScanExec(
       // that is the logicalRelation. We don't know what its used for exactly but haven't
       // run into any issues in testing using the one we create here.
       @transient val logicalRelation = LogicalRelation(relation)
-      constructor.newInstance(relation, output, requiredSchema, partitionFilters,
-        optionalBucketSet, dataFilters, tableIdentifier,
-        logicalRelation).asInstanceOf[FileSourceScanExec]
+      try {
+        constructor.newInstance(relation, output, requiredSchema, partitionFilters,
+          optionalBucketSet, dataFilters, tableIdentifier,
+          logicalRelation).asInstanceOf[FileSourceScanExec]
+      } catch {
+        case il: IllegalArgumentException =>
+          // TODO - workaround until https://github.com/NVIDIA/spark-rapids/issues/354
+          constructor.newInstance(relation, output, requiredSchema, partitionFilters,
+            optionalBucketSet, None, dataFilters, tableIdentifier).asInstanceOf[FileSourceScanExec]
+      }
     } else {
       constructor.newInstance(relation, output, requiredSchema, partitionFilters,
         optionalBucketSet, dataFilters, tableIdentifier).asInstanceOf[FileSourceScanExec]
