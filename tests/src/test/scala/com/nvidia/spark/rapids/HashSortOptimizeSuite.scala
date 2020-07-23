@@ -21,7 +21,6 @@ import org.scalatest.FunSuite
 import org.apache.spark.SparkConf
 import org.apache.spark.sql.{DataFrame, SparkSession}
 import org.apache.spark.sql.execution.{SortExec, SparkPlan}
-import org.apache.spark.sql.rapids.execution.GpuBroadcastHashJoinExec
 
 /** Test plan modifications to add optimizing sorts after hash joins in the plan */
 class HashSortOptimizeSuite extends FunSuite {
@@ -70,7 +69,7 @@ class HashSortOptimizeSuite extends FunSuite {
       val df2 = buildDataFrame2(spark)
       val rdf = df1.join(df2, df1("a") === df2("x"))
       val plan = rdf.queryExecution.executedPlan
-      val joinNode = plan.find(_.isInstanceOf[GpuBroadcastHashJoinExec])
+      val joinNode = plan.find(ShimLoader.getSparkShims.isGpuBroadcastHashJoin(_))
       assert(joinNode.isDefined, "No broadcast join node found")
       validateOptimizeSort(plan, joinNode.get)
     })
@@ -83,7 +82,7 @@ class HashSortOptimizeSuite extends FunSuite {
       val df2 = buildDataFrame2(spark)
       val rdf = df1.join(df2, df1("a") === df2("x"))
       val plan = rdf.queryExecution.executedPlan
-      val joinNode = plan.find(_.isInstanceOf[GpuShuffledHashJoinExec])
+      val joinNode = plan.find(ShimLoader.getSparkShims.isGpuShuffledHashJoin(_))
       assert(joinNode.isDefined, "No broadcast join node found")
       validateOptimizeSort(plan, joinNode.get)
     })

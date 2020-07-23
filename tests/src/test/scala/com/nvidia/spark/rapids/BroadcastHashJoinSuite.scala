@@ -17,8 +17,8 @@
 package com.nvidia.spark.rapids
 
 import org.apache.spark.SparkConf
+import org.apache.spark.sql.execution.joins.HashJoin
 import org.apache.spark.sql.functions.broadcast
-import org.apache.spark.sql.rapids.execution.GpuBroadcastHashJoinExec
 
 class BroadcastHashJoinSuite extends SparkQueryCompareTestSuite {
 
@@ -36,8 +36,12 @@ class BroadcastHashJoinSuite extends SparkQueryCompareTestSuite {
 
       val plan = df5.queryExecution.executedPlan
 
-      assert(plan.collect { case p: GpuBroadcastHashJoinExec => p }.size === 1)
-      assert(plan.collect { case p: GpuShuffledHashJoinExec => p }.size === 1)
+      assert(plan.collect {
+        case p if ShimLoader.getSparkShims.isGpuBroadcastHashJoin(p) => p
+      }.size === 1)
+      assert(plan.collect {
+        case p if ShimLoader.getSparkShims.isGpuShuffledHashJoin(p) => p
+      }.size === 1)
     }, conf)
   }
 
@@ -52,13 +56,13 @@ class BroadcastHashJoinSuite extends SparkQueryCompareTestSuite {
         val plan2 = spark.sql(s"SELECT /*+ $name(u) */ * FROM t JOIN u ON t.longs = u.longs")
           .queryExecution.executedPlan
 
-        val res1 = plan1.find(_.isInstanceOf[GpuBroadcastHashJoinExec])
-        val res2 = plan2.find(_.isInstanceOf[GpuBroadcastHashJoinExec])
+        val res1 = plan1.find(ShimLoader.getSparkShims.isGpuBroadcastHashJoin(_))
+        val res2 = plan2.find(ShimLoader.getSparkShims.isGpuBroadcastHashJoin(_))
 
-        assert(res1.get.asInstanceOf[GpuBroadcastHashJoinExec].buildSide.toString
-          .equals("BuildLeft"))
-        assert(res2.get.asInstanceOf[GpuBroadcastHashJoinExec].buildSide.toString
-          .equals("BuildRight"))
+        assert(ShimLoader.getSparkShims.getBuildSide(res1.get.asInstanceOf[HashJoin]).toString ==
+          "GpuBuildLeft")
+        assert(ShimLoader.getSparkShims.getBuildSide(res2.get.asInstanceOf[HashJoin]).toString ==
+          "GpuBuildRight")
       }
     })
   }

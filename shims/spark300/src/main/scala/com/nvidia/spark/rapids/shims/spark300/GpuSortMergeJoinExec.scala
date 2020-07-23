@@ -14,19 +14,23 @@
  * limitations under the License.
  */
 
-package com.nvidia.spark.rapids
+package com.nvidia.spark.rapids.shims.spark300
 
-import org.apache.spark.internal.Logging
+import com.nvidia.spark.rapids._
+
 import org.apache.spark.sql.catalyst.plans.{ExistenceJoin, FullOuter, InnerLike, JoinType, LeftAnti, LeftOuter, LeftSemi, RightOuter}
 import org.apache.spark.sql.execution.SortExec
 import org.apache.spark.sql.execution.joins.{BuildLeft, BuildRight, SortMergeJoinExec}
 
+/**
+ * HashJoin changed in Spark 3.1 requiring Shim
+ */
 class GpuSortMergeJoinMeta(
     join: SortMergeJoinExec,
     conf: RapidsConf,
     parent: Option[RapidsMeta[_, _, _]],
     rule: ConfKeysAndIncompat)
-  extends SparkPlanMeta[SortMergeJoinExec](join, conf, parent, rule) with Logging {
+  extends SparkPlanMeta[SortMergeJoinExec](join, conf, parent, rule) {
 
   val leftKeys: Seq[BaseExprMeta[_]] =
     join.leftKeys.map(GpuOverrides.wrapExpr(_, conf, Some(this)))

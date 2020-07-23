@@ -76,6 +76,7 @@
         <module>sql-plugin</module>
         <module>tests</module>
         <module>integration_tests</module>
+        <module>shims</module>
         <module>api_validation</module>
     </modules>
 
@@ -128,6 +129,12 @@
 	        <rat.consoleOutput>true</rat.consoleOutput>
             </properties>
         </profile>
+        <profile>
+            <id>spark301tests</id>
+        </profile>
+        <profile>
+            <id>spark310tests</id>
+        </profile>
     </profiles>
 
     <properties>
@@ -152,6 +159,7 @@
 	<project.reporting.sourceEncoding>UTF-8</project.reporting.sourceEncoding>
 	<pytest.TEST_TAGS>not qarun</pytest.TEST_TAGS>
 	<rat.consoleOutput>false</rat.consoleOutput>
+	<slf4j.version>1.7.30</slf4j.version>
     </properties>
 
     <dependencyManagement>
@@ -167,6 +175,17 @@
                 <version>${cudf.version}</version>
                 <classifier>${cuda.version}</classifier>
                 <scope>provided</scope>
+            </dependency>
+            <dependency>
+                <groupId>org.slf4j</groupId>
+                <artifactId>jul-to-slf4j</artifactId>
+                <version>${slf4j.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>org.slf4j</groupId>
+                <artifactId>jcl-over-slf4j</artifactId>
+                <version>${slf4j.version}</version>
+                <!-- runtime scope is appropriate, but causes SBT build problems -->
             </dependency>
             <dependency>
                 <groupId>org.scala-lang</groupId>
@@ -540,6 +559,16 @@
         <repository>
             <id>snapshots-repo</id>
             <url>https://oss.sonatype.org/content/repositories/snapshots</url>
+            <releases>
+                <enabled>false</enabled>
+            </releases>
+            <snapshots>
+                <enabled>true</enabled>
+            </snapshots>
+        </repository>
+        <repository>
+            <id>apache-snapshots-repo</id>
+            <url>https://repository.apache.org/content/repositories/snapshots/</url>
             <releases>
                 <enabled>false</enabled>
             </releases>

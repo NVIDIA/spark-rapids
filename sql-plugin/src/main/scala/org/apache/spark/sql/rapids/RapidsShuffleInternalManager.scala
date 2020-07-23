@@ -64,7 +64,7 @@ class GpuShuffleBlockResolver(private val wrapped: ShuffleBlockResolver,
 }
 
 
-object RapidsShuffleInternalManager extends Logging {
+object RapidsShuffleInternalManagerBase extends Logging {
   def unwrapHandle(handle: ShuffleHandle): ShuffleHandle = handle match {
     case gh: GpuShuffleHandle[_, _] => gh.wrapped
     case other => other
@@ -182,17 +182,13 @@ class RapidsCachingWriter[K, V](
  * @note This is an internal class to obtain access to the private
  *       `ShuffleManager` and `SortShuffleManager` classes. When configuring
  *       Apache Spark to use the RAPIDS shuffle manager,
- *       [[com.nvidia.spark.RapidsShuffleManager]] should be used as that is
- *       the public class.
  */
-class RapidsShuffleInternalManager(conf: SparkConf, isDriver: Boolean)
+abstract class RapidsShuffleInternalManagerBase(conf: SparkConf, isDriver: Boolean)
     extends ShuffleManager with Logging {
-
-  import RapidsShuffleInternalManager._
 
   private val rapidsConf = new RapidsConf(conf)
 
-  private val wrapped = new SortShuffleManager(conf)
+  protected val wrapped = new SortShuffleManager(conf)
   GpuShuffleEnv.setRapidsShuffleManagerInitialized(true, this.getClass.getCanonicalName)
   logWarning("Rapids Shuffle Plugin Enabled")
 
@@ -295,22 +291,10 @@ class RapidsShuffleInternalManager(conf: SparkConf, isDriver: Boolean)
     }
   }
 
-  override def getReaderForRange[K, C](
+  def getReaderInternal[K, C](
       handle: ShuffleHandle,
       startMapIndex: Int,
       endMapIndex: Int,
-      startPartition: Int,
-      endPartition: Int,
-      context: TaskContext,
-      metrics: ShuffleReadMetricsReporter): ShuffleReader[K, C] = {
-    // NOTE: This type of reader is not possible for gpu shuffle, as we'd need
-    // to use the optimization within our manager, and we don't.
-    wrapped.getReaderForRange(unwrapHandle(handle), startMapIndex, endMapIndex,
-      startPartition, endPartition, context, metrics)
-  }
-
-  override def getReader[K, C](
-      handle: ShuffleHandle,
       startPartition: Int,
       endPartition: Int,
       context: TaskContext,
@@ -327,7 +311,8 @@ class RapidsShuffleInternalManager(conf: SparkConf, isDriver: Boolean)
 
         val nvtxRange = new NvtxRange("getMapSizesByExecId", NvtxColor.CYAN)
         val blocksByAddress = try {
-          env.mapOutputTracker.getMapSizesByExecutorId(gpu.shuffleId, startPartition, endPartition)
+          ShimLoader.getSparkShims.getMapSizesByExecutorId(gpu.shuffleId,
+            startMapIndex, endMapIndex, startPartition, endPartition)
         } finally {
           nvtxRange.close()
         }
@@ -340,7 +325,8 @@ class RapidsShuffleInternalManager(conf: SparkConf, isDriver: Boolean)
           transport,
           catalog)
       case other => {
-        wrapped.getReader(unwrapHandle(other), startPartition, endPartition, context, metrics)
+        val shuffleHandle = RapidsShuffleInternalManagerBase.unwrapHandle(other)
+        wrapped.getReader(shuffleHandle, startPartition, endPartition, context, metrics)
       }
     }
   }

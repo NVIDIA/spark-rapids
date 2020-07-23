@@ -28,7 +28,7 @@ import org.apache.spark.sql.catalyst.plans.{Cross, ExistenceJoin, FullOuter, Inn
 import org.apache.spark.sql.catalyst.plans.physical.{BroadcastDistribution, Distribution, IdentityBroadcastMode, UnspecifiedDistribution}
 import org.apache.spark.sql.execution.{BinaryExecNode, SparkPlan}
 import org.apache.spark.sql.execution.exchange.ReusedExchangeExec
-import org.apache.spark.sql.execution.joins.{BroadcastNestedLoopJoinExec, BuildLeft, BuildRight, BuildSide}
+import org.apache.spark.sql.execution.joins.BroadcastNestedLoopJoinExec
 import org.apache.spark.sql.execution.metric.{SQLMetric, SQLMetrics}
 import org.apache.spark.sql.rapids.GpuNoColumnCrossJoin
 import org.apache.spark.sql.vectorized.ColumnarBatch
@@ -52,9 +52,10 @@ class GpuBroadcastNestedLoopJoinMeta(
       case _ => willNotWorkOnGpu(s"$join.joinType currently is not supported")
     }
 
-    val buildSide = join.buildSide match {
-      case BuildLeft => childPlans.head
-      case BuildRight => childPlans(1)
+    val gpuBuildSide = ShimLoader.getSparkShims.getBuildSide(join)
+    val buildSide = gpuBuildSide match {
+      case GpuBuildLeft => childPlans.head
+      case GpuBuildRight => childPlans(1)
     }
 
     if (!buildSide.canThisBeReplaced) {
@@ -71,26 +72,27 @@ class GpuBroadcastNestedLoopJoinMeta(
     val left = childPlans.head.convertIfNeeded()
     val right = childPlans(1).convertIfNeeded()
     // The broadcast part of this must be a BroadcastExchangeExec
-    val buildSide = join.buildSide match {
-      case BuildLeft => left
-      case BuildRight => right
-    }
+    val gpuBuildSide = ShimLoader.getSparkShims.getBuildSide(join)
+    val buildSide = gpuBuildSide match {
+      case GpuBuildLeft => left
+      case GpuBuildRight => right
+    } 
     if (!buildSide.isInstanceOf[GpuBroadcastExchangeExec]) {
       throw new IllegalStateException("the broadcast must be on the GPU too")
     }
-    GpuBroadcastNestedLoopJoinExec(
-      left, right, join.buildSide,
+    ShimLoader.getSparkShims.getGpuBroadcastNestedLoopJoinShim(
+      left, right, join,
       join.joinType,
       condition.map(_.convertToGpu()),
       conf.gpuTargetBatchSizeBytes)
   }
 }
 
-object GpuBroadcastNestedLoopJoinExec extends Arm {
+object GpuBroadcastNestedLoopJoinExecBase extends Arm {
   def innerLikeJoin(
       streamedIter: Iterator[ColumnarBatch],
       builtTable: Table,
-      buildSide: BuildSide,
+      buildSide: GpuBuildSide,
       boundCondition: Option[GpuExpression],
       joinTime: SQLMetric,
       joinOutputRows: SQLMetric,
@@ -107,8 +109,8 @@ object GpuBroadcastNestedLoopJoinExec extends Arm {
         withResource(new NvtxWithMetrics("join", NvtxColor.ORANGE, joinTime)) { _ =>
           val joinedTable = withResource(streamTable) { tab =>
             buildSide match {
-              case BuildLeft => builtTable.crossJoin(tab)
-              case BuildRight => tab.crossJoin(builtTable)
+              case GpuBuildLeft => builtTable.crossJoin(tab)
+              case GpuBuildRight => tab.crossJoin(builtTable)
             }
           }
           withResource(joinedTable) { jt =>
@@ -129,13 +131,17 @@ object GpuBroadcastNestedLoopJoinExec extends Arm {
   }
 }
 
-case class GpuBroadcastNestedLoopJoinExec(
+abstract class GpuBroadcastNestedLoopJoinExecBase(
     left: SparkPlan,
     right: SparkPlan,
-    buildSide: BuildSide,
+    join: BroadcastNestedLoopJoinExec,
     joinType: JoinType,
     condition: Option[Expression],
     targetSizeBytes: Long) extends BinaryExecNode with GpuExec {
+
+  // Spark BuildSide, BuildRight, BuildLeft changed packages between Spark versions
+  // so return a GPU version that is agnostic to the Spark version.
+  def getGpuBuildSide: GpuBuildSide
 
   override protected def doExecute(): RDD[InternalRow] =
     throw new IllegalStateException("This should only be called from columnar")
@@ -148,9 +154,9 @@ case class GpuBroadcastNestedLoopJoinExec(
     "filterTime" -> SQLMetrics.createNanoTimingMetric(sparkContext, "filter time"))
 
   /** BuildRight means the right relation <=> the broadcast relation. */
-  private val (streamed, broadcast) = buildSide match {
-    case BuildRight => (left, right)
-    case BuildLeft => (right, left)
+  private val (streamed, broadcast) = getGpuBuildSide match {
+    case GpuBuildRight => (left, right)
+    case GpuBuildLeft => (right, left)
   }
 
   def broadcastExchange: GpuBroadcastExchangeExec = broadcast match {
@@ -158,10 +164,10 @@ case class GpuBroadcastNestedLoopJoinExec(
     case reused: ReusedExchangeExec => reused.child.asInstanceOf[GpuBroadcastExchangeExec]
   }
 
-  override def requiredChildDistribution: Seq[Distribution] = buildSide match {
-    case BuildLeft =>
+  override def requiredChildDistribution: Seq[Distribution] = getGpuBuildSide match {
+    case GpuBuildLeft =>
       BroadcastDistribution(IdentityBroadcastMode) :: UnspecifiedDistribution :: Nil
-    case BuildRight =>
+    case GpuBuildRight =>
       UnspecifiedDistribution :: BroadcastDistribution(IdentityBroadcastMode) :: Nil
   }
 
@@ -239,13 +245,14 @@ case class GpuBroadcastNestedLoopJoinExec(
 
       streamed.executeColumnar().mapPartitions { streamedIter =>
         joinType match {
-          case _: InnerLike => GpuBroadcastNestedLoopJoinExec.innerLikeJoin(streamedIter,
-            builtTable, buildSide, boundCondition,
+          case _: InnerLike => GpuBroadcastNestedLoopJoinExecBase.innerLikeJoin(streamedIter,
+            builtTable, getGpuBuildSide, boundCondition,
             joinTime, joinOutputRows, numOutputRows, numOutputBatches, filterTime, totalTime)
-          case _ => throw new IllegalArgumentException(s"$joinType + $buildSide is not supported" +
-              s" and should be run on the CPU")
+          case _ => throw new IllegalArgumentException(s"$joinType + $getGpuBuildSide is not" +
+            " supported and should be run on the CPU")
         }
       }
     }
   }
 }
+

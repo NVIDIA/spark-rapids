@@ -16,7 +16,7 @@
 
 package com.nvidia.spark.rapids.tests.mortgage
 
-import com.nvidia.spark.RapidsShuffleManager
+import com.nvidia.spark.rapids.ShimLoader
 import org.scalatest.FunSuite
 
 import org.apache.spark.sql.SparkSession
@@ -34,7 +34,7 @@ class MortgageSparkSuite extends FunSuite {
       .config("spark.rapids.sql.test.enabled", false)
       .config("spark.rapids.sql.incompatibleOps.enabled", true)
       .config("spark.rapids.sql.hasNans", false)
-    val rapidsShuffle = classOf[RapidsShuffleManager].getCanonicalName
+    val rapidsShuffle = ShimLoader.getSparkShims.getRapidsShuffleManagerClass
     val prop = System.getProperty("rapids.shuffle.manager.override", "false")
     if (prop.equalsIgnoreCase("true")) {
       println("RAPIDS SHUFFLE MANAGER ACTIVE")
