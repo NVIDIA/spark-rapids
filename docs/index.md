@@ -26,7 +26,7 @@ Run your existing Apache Spark applications with no code change. Learn more on h
 
 ![ease-of-use](/img/ease-of-use.png)
 
-## An unified AI framework for ETL + ML/DL  
+## A Unified AI framework for ETL + ML/DL 
 A single pipeline, from ingest to data preparation to model training
 ![spark3cluster](/img/spark3cluster.png)
 
