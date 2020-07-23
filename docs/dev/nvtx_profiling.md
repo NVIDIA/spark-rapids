@@ -37,16 +37,14 @@ For java based profile tests add this to `JAVA_OPTS`
 ```
 export JAVA_OPTS=”-Dai.rapids.cudf.nvtx.enabled=true”
 ```
-To capture the process’ profile run :
-`nsys profile <command>`
+To capture the process’ profile run: `nsys profile <command>` where command can be your Spark shell 
+/ Java program etc.  This works typically in non-distributed mode.
 
-where command can be your Spark shell / Java program etc.
-This works typically in non-distributed mode.
-
-To make it run in Spark’s distributed mode, start the worker with "nsys profile " in front of the
+To make it run in Spark’s distributed mode, start the worker with `nsys profile` in front of the
 worker start command.
-Here is an example that starts up a slave in standalone mode, profiles it and the shell
-until the shell exits (using Ctrl+D) while stopping the slave process at the end."
+
+Here is an example that starts up a worker in standalone mode, profiles it and the shell
+until the shell exits (using Ctrl+D) while stopping the worker process at the end.
 ```
 nsys profile bash -c " \
 CUDA_VISIBLE_DEVICES=0 ${SPARK_HOME}/sbin/start-slave.sh $master_url & \
