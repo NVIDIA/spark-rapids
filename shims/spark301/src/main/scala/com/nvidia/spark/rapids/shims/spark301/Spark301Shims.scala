@@ -17,6 +17,7 @@
 package com.nvidia.spark.rapids.shims.spark301
 
 import com.nvidia.spark.rapids._
+import com.nvidia.spark.rapids.spark301.RapidsShuffleManager
 import com.nvidia.spark.rapids.shims.spark300.Spark300Shims
 
 import org.apache.spark.sql.catalyst.expressions._
@@ -42,5 +43,9 @@ class Spark301Shims extends Spark300Shims {
 
   override def getExprs: Map[Class[_ <: Expression], ExprRule[_ <: Expression]] = {
     super.getExprs ++ exprs301
+  }
+
+  override def getRapidsShuffleManagerClass: String = {
+    classOf[RapidsShuffleManager].getCanonicalName
   }
 }
