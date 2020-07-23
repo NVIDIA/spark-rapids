@@ -32,8 +32,14 @@
         <spark.test.version>3.0.0</spark.test.version>
     </properties>
     <profiles>
+       <profile>
+            <id>spark301tests</id>
+            <properties>
+                <spark.test.version>3.0.1-SNAPSHOT</spark.test.version>
+            </properties>
+        </profile>
         <profile>
-            <id>spark31tests</id>
+            <id>spark310tests</id>
             <properties>
                 <spark.test.version>3.1.0-SNAPSHOT</spark.test.version>
             </properties>

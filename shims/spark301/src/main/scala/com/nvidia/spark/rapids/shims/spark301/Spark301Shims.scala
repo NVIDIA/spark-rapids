@@ -17,13 +17,13 @@
 package com.nvidia.spark.rapids.shims.spark301
 
 import com.nvidia.spark.rapids._
-import com.nvidia.spark.rapids.shims.spark30.Spark30Shims
+import com.nvidia.spark.rapids.shims.spark300.Spark300Shims
 
 import org.apache.spark.sql.catalyst.expressions._
 import org.apache.spark.sql.catalyst.expressions.aggregate.{First, Last}
 import org.apache.spark.sql.execution._
 
-class Spark301Shims extends Spark30Shims {
+class Spark301Shims extends Spark300Shims {
 
   def exprs301: Map[Class[_ <: Expression], ExprRule[_ <: Expression]] = Seq(
     GpuOverrides.expr[First](

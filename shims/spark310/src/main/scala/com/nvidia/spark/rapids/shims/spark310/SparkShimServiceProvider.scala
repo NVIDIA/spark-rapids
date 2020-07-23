@@ -18,7 +18,7 @@ package com.nvidia.spark.rapids.shims.spark310
 
 import com.nvidia.spark.rapids.SparkShims
 
-class Spark31ShimServiceProvider extends com.nvidia.spark.rapids.SparkShimServiceProvider {
+class SparkShimServiceProvider extends com.nvidia.spark.rapids.SparkShimServiceProvider {
 
   val VERSIONNAMES = Seq("3.1.0-SNAPSHOT", "3.1.0")
 

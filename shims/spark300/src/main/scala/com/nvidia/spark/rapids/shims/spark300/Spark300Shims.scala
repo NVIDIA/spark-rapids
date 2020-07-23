@@ -19,7 +19,7 @@ package com.nvidia.spark.rapids.shims.spark300
 import java.time.ZoneId
 
 import com.nvidia.spark.rapids._
-import com.nvidia.spark.rapids.spark30.RapidsShuffleManager
+import com.nvidia.spark.rapids.spark300.RapidsShuffleManager
 
 import org.apache.spark.SparkEnv
 import org.apache.spark.sql.catalyst.encoders.ExpressionEncoder
