@@ -18,36 +18,55 @@ package com.nvidia.spark.rapids.tests.tpcxbb
 
 import java.util.concurrent.TimeUnit.NANOSECONDS
 
+import scala.collection.mutable.ListBuffer
+
 import org.apache.spark.internal.Logging
 import org.apache.spark.sql.{DataFrame, SparkSession}
 
-
 object TpcxbbLikeBench extends Logging {
+
+  /**
+   * This method can be called from Spark shell using the following syntax:
+   *
+   * TpcxbbLikeBench.runBench(spark, Q5Like.apply)
+   */
   def runBench(
       spark: SparkSession,
-      queryRunner: SparkSession => DataFrame): Unit = {
-    var start = System.nanoTime()
-    queryRunner(spark).collect
-    var end = System.nanoTime()
-    println(s"*** Cold run 1 msec: ${NANOSECONDS.toMillis(end - start)}")
+      queryRunner: SparkSession => DataFrame,
+      numColdRuns: Int = 1,
+      numHotRuns: Int = 3): Unit = {
 
-    println("*** Start hot run 1:")
-    start = System.nanoTime()
-    queryRunner(spark).collect
-    end = System.nanoTime()
-    println(s"*** Hot run 1 msec: ${NANOSECONDS.toMillis(end - start)}")
+    val coldRunElapsed = new ListBuffer[Long]()
+    for (i <- 0 until numColdRuns) {
+      println(s"*** Start cold run $i:")
+      val start = System.nanoTime()
+      queryRunner(spark).collect
+      val end = System.nanoTime()
+      val elapsed = NANOSECONDS.toMillis(end - start)
+      coldRunElapsed.append(elapsed)
+      println(s"*** Cold run $i took $elapsed msec.")
+    }
 
-    println("*** Start hot run 2:")
-    start = System.nanoTime()
-    queryRunner(spark).collect
-    end = System.nanoTime()
-    println(s"*** Hot run 2 msec: ${NANOSECONDS.toMillis(end - start)}")
+    val hotRunElapsed = new ListBuffer[Long]()
+    for (i <- 0 until numHotRuns) {
+      println(s"*** Start hot run $i:")
+      val start = System.nanoTime()
+      queryRunner(spark).collect
+      val end = System.nanoTime()
+      val elapsed = NANOSECONDS.toMillis(end - start)
+      hotRunElapsed.append(elapsed)
+      println(s"*** Hot run $i took $elapsed msec.")
+    }
 
-    println("*** Start hot run 3:")
-    start = System.nanoTime()
-    queryRunner(spark).collect
-    end = System.nanoTime()
-    println(s"*** Hot run 3 msec: ${NANOSECONDS.toMillis(end - start)}")
+    for (i <- 0 until numColdRuns) {
+      println(s"Cold run $i took ${coldRunElapsed(i)} msec.")
+    }
+    println(s"Average cold run took ${coldRunElapsed.sum.toDouble/numColdRuns} msec.")
+
+    for (i <- 0 until numHotRuns) {
+      println(s"Hot run $i took ${hotRunElapsed(i)} msec.")
+    }
+    println(s"Average hot run took ${hotRunElapsed.sum.toDouble/numHotRuns} msec.")
   }
 
   def main(args: Array[String]): Unit = {
