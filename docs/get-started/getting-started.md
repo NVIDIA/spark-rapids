@@ -43,7 +43,7 @@ scala version 2.12 is currently supported by the accelerator.
 ## Download the RAPIDS jars
 The [accelerator](https://mvnrepository.com/artifact/com.nvidia/rapids-4-spark_2.12) and 
 [cudf](https://mvnrepository.com/artifact/ai.rapids/cudf) jars are available in the 
-[download](/docs/version/stable-release#download) section.
+[download](../version/stable-release.md#download) section.
 
 Download the RAPIDS Accelerator for Apache Spark plugin jar. Then download the version of the cudf
 jar that your version of the accelerator depends on. Each cudf jar is for a specific version of
