@@ -41,6 +41,17 @@
        <artifactId>rapids-4-spark-shuffle_${scala.binary.version}</artifactId>
        <version>${project.version}</version>
     </dependency>
+    <dependency>
+       <groupId>com.nvidia</groupId>
+       <artifactId>rapids-4-spark-shims-aggregator_${scala.binary.version}</artifactId>
+       <version>${project.version}</version>
+    </dependency>
+    <dependency>
+       <!-- required for conf generation script -->
+       <groupId>org.apache.spark</groupId>
+       <artifactId>spark-sql_${scala.binary.version}</artifactId>
+       <scope>provided</scope>
+    </dependency>
   </dependencies>
 
   <build>
@@ -49,6 +60,9 @@
         <groupId>org.apache.maven.plugins</groupId>
         <artifactId>maven-shade-plugin</artifactId>
         <configuration>
+	  <transformers>
+            <transformer implementation="org.apache.maven.plugins.shade.resource.ServicesResourceTransformer"/>
+	  </transformers>
           <shadedArtifactAttached>false</shadedArtifactAttached>
           <createDependencyReducedPom>true</createDependencyReducedPom>
           <relocations>
@@ -93,6 +107,30 @@
             </goals>
           </execution>
         </executions>
+      </plugin>
+      <plugin>
+        <groupId>net.alchim31.maven</groupId>
+        <artifactId>scala-maven-plugin</artifactId>
+        <executions>
+          <execution>
+            <id>update_config</id>
+            <phase>verify</phase>
+            <goals>
+              <goal>run</goal>
+            </goals>
+          </execution>
+        </executions>
+        <configuration>
+          <launchers>
+            <launcher>
+              <id>update_rapids_config</id>
+              <mainClass>com.nvidia.spark.rapids.RapidsConf</mainClass>
+              <args>
+                <arg>${project.basedir}/../docs/configs.md</arg>
+              </args>
+            </launcher>
+          </launchers>
+        </configuration>
       </plugin>
       <plugin>
         <groupId>org.apache.rat</groupId>

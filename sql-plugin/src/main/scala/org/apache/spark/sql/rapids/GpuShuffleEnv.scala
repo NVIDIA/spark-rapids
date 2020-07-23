@@ -17,7 +17,6 @@
 package org.apache.spark.sql.rapids
 
 import ai.rapids.cudf.{CudaMemInfo, Rmm}
-import com.nvidia.spark.RapidsShuffleManager
 import com.nvidia.spark.rapids._
 
 import org.apache.spark.SparkEnv
@@ -26,7 +25,7 @@ import org.apache.spark.sql.SparkSession
 import org.apache.spark.util.Utils
 
 class GpuShuffleEnv extends Logging {
-  private val RAPIDS_SHUFFLE_CLASS = classOf[RapidsShuffleManager].getCanonicalName
+  private val RAPIDS_SHUFFLE_CLASS = ShimLoader.getSparkShims.getRapidsShuffleManagerClass
   private var isRapidsShuffleManagerInitialized: Boolean  = false
 
   private val catalog = new RapidsBufferCatalog

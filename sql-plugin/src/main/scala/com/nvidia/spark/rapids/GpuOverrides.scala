@@ -46,7 +46,7 @@ import org.apache.spark.sql.execution.joins.{BroadcastHashJoinExec, BroadcastNes
 import org.apache.spark.sql.execution.window.WindowExec
 import org.apache.spark.sql.rapids._
 import org.apache.spark.sql.rapids.catalyst.expressions.GpuRand
-import org.apache.spark.sql.rapids.execution.{GpuBroadcastHashJoinMeta, GpuBroadcastMeta, GpuBroadcastNestedLoopJoinMeta}
+import org.apache.spark.sql.rapids.execution.{GpuBroadcastMeta, GpuBroadcastNestedLoopJoinMeta}
 import org.apache.spark.sql.types._
 import org.apache.spark.unsafe.types.{CalendarInterval, UTF8String}
 
@@ -458,7 +458,7 @@ object GpuOverrides {
       .map(r => r.wrap(expr, conf, parent, r).asInstanceOf[BaseExprMeta[INPUT]])
       .getOrElse(new RuleNotFoundExprMeta(expr, conf, parent))
 
-  val expressions: Map[Class[_ <: Expression], ExprRule[_ <: Expression]] = Seq(
+  val commonExpressions: Map[Class[_ <: Expression], ExprRule[_ <: Expression]] = Seq(
     expr[Literal](
       "holds a static value from the query",
       (lit, conf, p, r) => new ExprMeta[Literal](lit, conf, p, r) {
@@ -713,27 +713,6 @@ object GpuOverrides {
       (a, conf, p, r) => new BinaryExprMeta[DateSub](a, conf, p, r) {
         override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression =
           GpuDateSub(lhs, rhs)
-      }
-    ),
-    expr[TimeSub](
-      "Subtracts interval from timestamp",
-      (a, conf, p, r) => new BinaryExprMeta[TimeSub](a, conf, p, r) {
-        override def tagExprForGpu(): Unit = {
-          a.interval match {
-            case Literal(intvl: CalendarInterval, DataTypes.CalendarIntervalType) =>
-              if (intvl.months != 0) {
-                willNotWorkOnGpu("interval months isn't supported")
-              }
-            case _ =>
-              willNotWorkOnGpu("only literals are supported for intervals")
-          }
-          if (ZoneId.of(a.timeZoneId.get).normalized() != UTC_TIMEZONE_ID) {
-            willNotWorkOnGpu("Only UTC zone id is supported")
-          }
-        }
-
-        override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression =
-          GpuTimeSub(lhs, rhs)
       }
     ),
     expr[NaNvl](
@@ -1224,28 +1203,6 @@ object GpuOverrides {
         }
         override def convertToGpu(child: Expression): GpuExpression = GpuMin(child)
       }),
-    expr[First](
-      "first aggregate operator",
-      (a, conf, p, r) => new ExprMeta[First](a, conf, p, r) {
-        val child: BaseExprMeta[_] = GpuOverrides.wrapExpr(a.child, conf, Some(this))
-        val ignoreNulls: BaseExprMeta[_] =
-          GpuOverrides.wrapExpr(a.ignoreNullsExpr, conf, Some(this))
-        override val childExprs: Seq[BaseExprMeta[_]] = Seq(child, ignoreNulls)
-
-        override def convertToGpu(): GpuExpression =
-          GpuFirst(child.convertToGpu(), ignoreNulls.convertToGpu())
-      }),
-    expr[Last](
-      "last aggregate operator",
-      (a, conf, p, r) => new ExprMeta[Last](a, conf, p, r) {
-        val child: BaseExprMeta[_] = GpuOverrides.wrapExpr(a.child, conf, Some(this))
-        val ignoreNulls: BaseExprMeta[_] =
-          GpuOverrides.wrapExpr(a.ignoreNullsExpr, conf, Some(this))
-        override val childExprs: Seq[BaseExprMeta[_]] = Seq(child, ignoreNulls)
-
-        override def convertToGpu(): GpuExpression =
-          GpuLast(child.convertToGpu(), ignoreNulls.convertToGpu())
-      }),
     expr[Sum](
       "sum aggregate operator",
       (a, conf, p, r) => new AggExprMeta[Sum](a, conf, p, r) {
@@ -1478,6 +1435,9 @@ object GpuOverrides {
       })
   ).map(r => (r.getClassFor.asSubclass(classOf[Expression]), r)).toMap
 
+  val expressions: Map[Class[_ <: Expression], ExprRule[_ <: Expression]] =
+    commonExpressions ++ ShimLoader.getSparkShims.getExprs
+
   def wrapScan[INPUT <: Scan](
       scan: INPUT,
       conf: RapidsConf,
@@ -1619,7 +1579,7 @@ object GpuOverrides {
       .map(r => r.wrap(plan, conf, parent, r).asInstanceOf[SparkPlanMeta[INPUT]])
       .getOrElse(new RuleNotFoundSparkPlanMeta(plan, conf, parent))
 
-  val execs: Map[Class[_ <: SparkPlan], ExecRule[_ <: SparkPlan]] = Seq(
+  val commonExecs: Map[Class[_ <: SparkPlan], ExecRule[_ <: SparkPlan]] = Seq(
     exec[GenerateExec] (
       "The backend for operations that generate more output rows than input rows like explode.",
       (gen, conf, p, r) => new GpuGenerateExecSparkPlanMeta(gen, conf, p, r)),
@@ -1664,32 +1624,6 @@ object GpuOverrides {
           GpuDataWritingCommandExec(childDataWriteCmds.head.convertToGpu(),
             childPlans.head.convertIfNeeded())
       }),
-    exec[FileSourceScanExec](
-      "Reading data from files, often from Hive tables",
-      (fsse, conf, p, r) => new SparkPlanMeta[FileSourceScanExec](fsse, conf, p, r) {
-        // partition filters and data filters are not run on the GPU
-        override val childExprs: Seq[ExprMeta[_]] = Seq.empty
-
-        override def tagPlanForGpu(): Unit = GpuFileSourceScanExec.tagSupport(this)
-
-        override def convertToGpu(): GpuExec = {
-          val newRelation = HadoopFsRelation(
-            wrapped.relation.location,
-            wrapped.relation.partitionSchema,
-            wrapped.relation.dataSchema,
-            wrapped.relation.bucketSpec,
-            GpuFileSourceScanExec.convertFileFormat(wrapped.relation.fileFormat),
-            wrapped.relation.options)(wrapped.relation.sparkSession)
-          GpuFileSourceScanExec(
-            newRelation,
-            wrapped.output,
-            wrapped.requiredSchema,
-            wrapped.partitionFilters,
-            wrapped.optionalBucketSet,
-            wrapped.dataFilters,
-            wrapped.tableIdentifier)
-        }
-      }),
     exec[LocalLimitExec](
       "Per-partition limiting of results",
       (localLimitExec, conf, p, r) =>
@@ -1725,12 +1659,6 @@ object GpuOverrides {
     exec[BroadcastExchangeExec](
       "The backend for broadcast exchange of data",
       (exchange, conf, p, r) => new GpuBroadcastMeta(exchange, conf, p, r)),
-    exec[BroadcastHashJoinExec](
-      "Implementation of join using broadcast data",
-      (join, conf, p, r) => new GpuBroadcastHashJoinMeta(join, conf, p, r)),
-    exec[ShuffledHashJoinExec](
-      "Implementation of join using hashed shuffled data",
-      (join, conf, p, r) => new GpuShuffledHashJoinMeta(join, conf, p, r)),
     exec[BroadcastNestedLoopJoinExec](
       "Implementation of join using brute force",
       (join, conf, p, r) => new GpuBroadcastNestedLoopJoinMeta(join, conf, p, r))
@@ -1751,9 +1679,6 @@ object GpuOverrides {
             conf.gpuTargetBatchSizeBytes)
       })
         .disabledByDefault("large joins can cause out of memory errors"),
-    exec[SortMergeJoinExec](
-      "Sort merge join, replacing with shuffled hash join",
-      (join, conf, p, r) => new GpuSortMergeJoinMeta(join, conf, p, r)),
     exec[HashAggregateExec](
       "The backend for hash based aggregations",
       (agg, conf, p, r) => new GpuHashAggregateMeta(agg, conf, p, r)),
@@ -1772,6 +1697,8 @@ object GpuOverrides {
         new GpuWindowExecMeta(windowOp, conf, p, r)
     )
   ).map(r => (r.getClassFor.asSubclass(classOf[SparkPlan]), r)).toMap
+  val execs: Map[Class[_ <: SparkPlan], ExecRule[_ <: SparkPlan]] =
+    commonExecs ++ ShimLoader.getSparkShims.getExecs
 }
 
 case class GpuOverrides() extends Rule[SparkPlan] with Logging {

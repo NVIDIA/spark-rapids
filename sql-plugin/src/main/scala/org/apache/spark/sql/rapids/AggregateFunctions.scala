@@ -20,7 +20,6 @@ import ai.rapids.cudf
 import com.nvidia.spark.rapids._
 
 import org.apache.spark.sql.catalyst.analysis.TypeCheckResult
-import org.apache.spark.sql.catalyst.analysis.TypeCheckResult.{TypeCheckFailure, TypeCheckSuccess}
 import org.apache.spark.sql.catalyst.expressions.{AttributeReference, AttributeSet, Expression, ExprId, ImplicitCastInputTypes, Literal}
 import org.apache.spark.sql.catalyst.expressions.aggregate.{AggregateMode, Complete, Final, Partial, PartialMerge}
 import org.apache.spark.sql.catalyst.util.TypeUtils
@@ -429,8 +428,11 @@ case class GpuAverage(child: Expression) extends GpuDeclarativeAggregate {
  * to check if the value was set (if we don't ignore nulls, valueSet is true, that's what we do
  * here).
  */
-case class GpuFirst(child: Expression, ignoreNullsExpr: Expression)
-  extends GpuDeclarativeAggregate with ImplicitCastInputTypes {
+abstract class GpuFirstBase(child: Expression)
+  extends GpuDeclarativeAggregate with ImplicitCastInputTypes with Serializable {
+
+  val ignoreNulls: Boolean
+
   private lazy val cudfFirst = AttributeReference("cudf_first", child.dataType)()
   private lazy val valueSet = AttributeReference("valueSet", BooleanType)()
 
@@ -458,31 +460,16 @@ case class GpuFirst(child: Expression, ignoreNullsExpr: Expression)
   override def inputTypes: Seq[AbstractDataType] = Seq(AnyDataType, BooleanType)
   override def nullable: Boolean = true
   override def dataType: DataType = child.dataType
-  override def children: Seq[Expression] = child :: ignoreNullsExpr :: Nil
   // First is not a deterministic function.
   override lazy val deterministic: Boolean = false
-  private def ignoreNulls: Boolean = ignoreNullsExpr match {
-    case l: Literal => l.value.asInstanceOf[Boolean]
-    case l: GpuLiteral => l.value.asInstanceOf[Boolean]
-    case _ => throw new IllegalArgumentException(
-      s"$this should only receive literals for ignoreNulls expression")
-  }
-  override def checkInputDataTypes(): TypeCheckResult = {
-    val defaultCheck = super.checkInputDataTypes()
-    if (defaultCheck.isFailure) {
-      defaultCheck
-    } else if (!ignoreNullsExpr.foldable) {
-      TypeCheckFailure(s"The second argument of GpuFirst must be a boolean literal, but " +
-        s"got: ${ignoreNullsExpr.sql}")
-    } else {
-      TypeCheckSuccess
-    }
-  }
   override def toString: String = s"gpufirst($child)${if (ignoreNulls) " ignore nulls"}"
 }
 
-case class GpuLast(child: Expression, ignoreNullsExpr: Expression)
-  extends GpuDeclarativeAggregate with ImplicitCastInputTypes {
+abstract class GpuLastBase(child: Expression)
+  extends GpuDeclarativeAggregate with ImplicitCastInputTypes with Serializable {
+
+  val ignoreNulls: Boolean
+
   private lazy val cudfLast = AttributeReference("cudf_last", child.dataType)()
   private lazy val valueSet = AttributeReference("valueSet", BooleanType)()
 
@@ -509,25 +496,7 @@ case class GpuLast(child: Expression, ignoreNullsExpr: Expression)
   override def inputTypes: Seq[AbstractDataType] = Seq(AnyDataType, BooleanType)
   override def nullable: Boolean = true
   override def dataType: DataType = child.dataType
-  override def children: Seq[Expression] = child :: ignoreNullsExpr :: Nil
   // Last is not a deterministic function.
   override lazy val deterministic: Boolean = false
-  private def ignoreNulls: Boolean = ignoreNullsExpr match {
-    case l: Literal => l.value.asInstanceOf[Boolean]
-    case l: GpuLiteral => l.value.asInstanceOf[Boolean]
-    case _ => throw new IllegalArgumentException(
-      s"$this should only receive literals for ignoreNulls expression")
-  }
-  override def checkInputDataTypes(): TypeCheckResult = {
-    val defaultCheck = super.checkInputDataTypes()
-    if (defaultCheck.isFailure) {
-      defaultCheck
-    } else if (!ignoreNullsExpr.foldable) {
-      TypeCheckFailure(s"The second argument of GpuLast must be a boolean literal, but " +
-        s"got: ${ignoreNullsExpr.sql}")
-    } else {
-      TypeCheckSuccess
-    }
-  }
   override def toString: String = s"gpulast($child)${if (ignoreNulls) " ignore nulls"}"
 }

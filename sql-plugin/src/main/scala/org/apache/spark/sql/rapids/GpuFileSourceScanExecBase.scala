@@ -14,13 +14,9 @@
  * limitations under the License.
  */
 
-package com.nvidia.spark
+package org.apache.spark.sql.rapids
 
-import org.apache.spark.SparkConf
-import org.apache.spark.sql.rapids.RapidsShuffleInternalManager
-
-/** A shuffle manager optimized for the RAPIDS Plugin for Apache Spark. */
-sealed class RapidsShuffleManager(
-    conf: SparkConf,
-    isDriver: Boolean) extends RapidsShuffleInternalManager(conf, isDriver) {
-}
+/**
+ * Base trait used for GpuFileSourceScanExec to use it in the Shim layer.
+ */
+trait GpuFileSourceScanExecBase

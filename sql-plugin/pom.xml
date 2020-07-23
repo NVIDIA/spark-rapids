@@ -144,26 +144,6 @@
             <plugin>
                 <groupId>net.alchim31.maven</groupId>
                 <artifactId>scala-maven-plugin</artifactId>
-                <executions>
-                    <execution>
-                        <id>update_config</id>
-                        <phase>verify</phase>
-                        <goals>
-                            <goal>run</goal>
-                        </goals>
-                    </execution>
-                </executions>
-                <configuration>
-                    <launchers>
-                        <launcher>
-                            <id>update_rapids_config</id>
-                            <mainClass>com.nvidia.spark.rapids.RapidsConf</mainClass>
-                            <args>
-                                <arg>${project.basedir}/../docs/configs.md</arg>
-                            </args>
-                        </launcher>
-                    </launchers>
-                </configuration>
             </plugin>
             <plugin>
                 <groupId>org.scalastyle</groupId>

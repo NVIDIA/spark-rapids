@@ -16,8 +16,8 @@
 
 package com.nvidia.spark.rapids.tests.tpch
 
-import com.nvidia.spark.RapidsShuffleManager
 import com.nvidia.spark.rapids.{ColumnarRdd, ExecutionPlanCaptureCallback}
+import com.nvidia.spark.rapids.ShimLoader
 import org.scalatest.{BeforeAndAfterAll, FunSuite}
 
 import org.apache.spark.sql.{DataFrame, SparkSession}
@@ -44,7 +44,7 @@ class TpchLikeSparkSuite extends FunSuite with BeforeAndAfterAll {
       .config("spark.rapids.sql.explain", true)
       .config("spark.rapids.sql.incompatibleOps.enabled", true)
       .config("spark.rapids.sql.hasNans", false)
-    val rapidsShuffle = classOf[RapidsShuffleManager].getCanonicalName
+    val rapidsShuffle = ShimLoader.getSparkShims.getRapidsShuffleManagerClass
     val prop = System.getProperty("rapids.shuffle.manager.override", "false")
     if (prop.equalsIgnoreCase("true")) {
       println("RAPIDS SHUFFLE MANAGER ACTIVE")
