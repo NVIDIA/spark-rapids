@@ -16,7 +16,6 @@
 
 package com.nvidia.spark.rapids.shims.spark310
 
-import ai.rapids.cudf.{NvtxColor, Table}
 import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.GpuMetricNames._
 

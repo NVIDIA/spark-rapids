@@ -23,10 +23,7 @@ import org.apache.spark.sql.rapids.RapidsShuffleInternalManagerBase
 /**
  * A shuffle manager optimized for the RAPIDS Plugin For Apache Spark.
  * @note This is an internal class to obtain access to the private
- *       `ShuffleManager` and `SortShuffleManager` classes. When configuring
- *       Apache Spark to use the RAPIDS shuffle manager,
- *       [[com.nvidia.spark.RapidsShuffleManager]] should be used as that is
- *       the public class.
+ *       `ShuffleManager` and `SortShuffleManager` classes.
  */
 class RapidsShuffleInternalManager(conf: SparkConf, isDriver: Boolean)
     extends RapidsShuffleInternalManagerBase(conf, isDriver) {
