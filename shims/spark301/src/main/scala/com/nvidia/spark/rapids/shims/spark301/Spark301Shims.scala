@@ -25,7 +25,7 @@ import org.apache.spark.sql.execution._
 
 class Spark301Shims extends Spark30Shims {
 
-  val exprs301 = Seq(
+  def exprs301: Map[Class[_ <: Expression], ExprRule[_ <: Expression]] = Seq(
     GpuOverrides.expr[First](
       "first aggregate operator",
       (a, conf, p, r) => new ExprMeta[First](a, conf, p, r) {
@@ -38,7 +38,7 @@ class Spark301Shims extends Spark30Shims {
         override def convertToGpu(): GpuExpression =
           GpuLast(childExprs(0).convertToGpu(), a.ignoreNulls)
       }),
-  ).map(r => (r.getClassFor.asSubclass(classOf[SparkPlan]), r)).toMap
+  ).map(r => (r.getClassFor.asSubclass(classOf[Expression]), r)).toMap
 
   override def getExprs: Map[Class[_ <: Expression], ExprRule[_ <: Expression]] = {
     super.getExprs ++ exprs301

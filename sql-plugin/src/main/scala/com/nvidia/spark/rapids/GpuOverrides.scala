@@ -458,7 +458,7 @@ object GpuOverrides {
       .map(r => r.wrap(expr, conf, parent, r).asInstanceOf[BaseExprMeta[INPUT]])
       .getOrElse(new RuleNotFoundExprMeta(expr, conf, parent))
 
-  val expressions: Map[Class[_ <: Expression], ExprRule[_ <: Expression]] = Seq(
+  val commonExpressions: Map[Class[_ <: Expression], ExprRule[_ <: Expression]] = Seq(
     expr[Literal](
       "holds a static value from the query",
       (lit, conf, p, r) => new ExprMeta[Literal](lit, conf, p, r) {
@@ -1433,8 +1433,10 @@ object GpuOverrides {
       (a, conf, p, r) => new UnaryExprMeta[Length](a, conf, p, r) {
         override def convertToGpu(child: Expression): GpuExpression = GpuLength(child)
       })
-  ).map(r => (r.getClassFor.asSubclass(classOf[Expression]), r)).toMap ++
-    ShimLoader.getSparkShims.getExprs
+  ).map(r => (r.getClassFor.asSubclass(classOf[Expression]), r)).toMap
+
+  val expressions: Map[Class[_ <: Expression], ExprRule[_ <: Expression]] =
+    commonExpressions ++ ShimLoader.getSparkShims.getExprs
 
   def wrapScan[INPUT <: Scan](
       scan: INPUT,
@@ -1577,7 +1579,7 @@ object GpuOverrides {
       .map(r => r.wrap(plan, conf, parent, r).asInstanceOf[SparkPlanMeta[INPUT]])
       .getOrElse(new RuleNotFoundSparkPlanMeta(plan, conf, parent))
 
-  val execs: Map[Class[_ <: SparkPlan], ExecRule[_ <: SparkPlan]] = Seq(
+  val commonExecs: Map[Class[_ <: SparkPlan], ExecRule[_ <: SparkPlan]] = Seq(
     exec[GenerateExec] (
       "The backend for operations that generate more output rows than input rows like explode.",
       (gen, conf, p, r) => new GpuGenerateExecSparkPlanMeta(gen, conf, p, r)),
@@ -1694,8 +1696,9 @@ object GpuOverrides {
       (windowOp, conf, p, r) =>
         new GpuWindowExecMeta(windowOp, conf, p, r)
     )
-  ).map(r => (r.getClassFor.asSubclass(classOf[SparkPlan]), r)).toMap ++
-    ShimLoader.getSparkShims.getExecs
+  ).map(r => (r.getClassFor.asSubclass(classOf[SparkPlan]), r)).toMap
+  val execs: Map[Class[_ <: SparkPlan], ExecRule[_ <: SparkPlan]] =
+    commonExecs ++ ShimLoader.getSparkShims.getExecs
 }
 
 case class GpuOverrides() extends Rule[SparkPlan] with Logging {

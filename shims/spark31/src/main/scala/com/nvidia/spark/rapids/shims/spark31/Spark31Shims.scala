@@ -93,7 +93,7 @@ class Spark31Shims extends Spark301Shims {
   }
 
   override def getExprs: Map[Class[_ <: Expression], ExprRule[_ <: Expression]] = {
-    Seq(
+    val exprs31: Map[Class[_ <: Expression], ExprRule[_ <: Expression]] = Seq(
       GpuOverrides.expr[TimeAdd](
         "Subtracts interval from timestamp",
         (a, conf, p, r) => new BinaryExprMeta[TimeAdd](a, conf, p, r) {
@@ -115,7 +115,8 @@ class Spark31Shims extends Spark301Shims {
             GpuTimeSub(lhs, rhs)
         }
       ),
-    ).map(r => (r.getClassFor.asSubclass(classOf[Expression]), r)).toMap ++ super.exprs301
+    ).map(r => (r.getClassFor.asSubclass(classOf[Expression]), r)).toMap
+    exprs31 ++ super.exprs301
   }
 
   override def getExecs: Map[Class[_ <: SparkPlan], ExecRule[_ <: SparkPlan]] = {
