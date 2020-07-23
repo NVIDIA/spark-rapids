@@ -24,7 +24,7 @@ import org.apache.spark.sql.catalyst.expressions.{Expression, Literal}
 import org.apache.spark.sql.rapids.GpuFirstBase
 
 /**
- * Parameters to GpuFirst changed in Spark 3.1
+ * Parameters to GpuFirst changed in 3.0.1
  */
 case class GpuFirst(child: Expression, ignoreNullsExpr: Expression) extends GpuFirstBase(child) {
   override def children: Seq[Expression] = child :: ignoreNullsExpr :: Nil

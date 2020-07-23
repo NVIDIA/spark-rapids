@@ -24,7 +24,7 @@ import org.apache.spark.sql.catalyst.expressions.{Expression, Literal}
 import org.apache.spark.sql.rapids.GpuLastBase
 
 /**
- * Parameters to GpuLast changed in Spark 3.1
+ * Parameters to GpuLast changed in Spark 3.0.1
  */
 case class GpuLast(child: Expression, ignoreNullsExpr: Expression) extends GpuLastBase(child) {
   override def children: Seq[Expression] = child :: ignoreNullsExpr :: Nil

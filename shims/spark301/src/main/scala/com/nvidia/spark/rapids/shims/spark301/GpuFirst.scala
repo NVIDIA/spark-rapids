@@ -23,7 +23,7 @@ import org.apache.spark.sql.catalyst.expressions.aggregate.FirstLast
 import org.apache.spark.sql.rapids.GpuFirstBase
 
 /**
- * Parameters to GpuFirst changed in Spark 3.1
+ * Parameters to GpuFirst changed in Spark 3.0.1
  */
 case class GpuFirst(child: Expression, ignoreNulls: Boolean) extends GpuFirstBase(child) {
   def this(child: Expression) = this(child, false)
