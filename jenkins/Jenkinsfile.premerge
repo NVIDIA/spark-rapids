@@ -59,13 +59,8 @@ pipeline {
                     def buildImage=docker.build(IMAGE_NAME,
                         "-f jenkins/Dockerfile.ubuntu16 --build-arg CUDA_VER=$CUDA_VER --cache-from $IMAGE_NAME -t $IMAGE_NAME .")
                     buildImage.inside("--runtime=nvidia -v ${HOME}/.m2:${HOME}/.m2:rw -v ${HOME}/.zinc:${HOME}/.zinc:rw") {
-                        sh "bash $BUILD_SCRIPT"
-                        step([$class: 'JacocoPublisher',
-                              execPattern: '**/target/jacoco.exec',
-                              classPattern: 'target/jacoco_classes/',
-                              sourcePattern: 'sql-plugin/src/main/java/,sql-plugin/src/main/scala/,shuffle-plugin/src/main/scala/',
-                              sourceInclusionPattern: '**/*.java,**/*.scala'
-                        ])
+                        echo "ghprbSourceBranch: $ghprbSourceBranch,  ghprbTargetBranch: $ghprbTargetBranch "
+                        sh "git branch -vv"
                     }
                 }
             }
