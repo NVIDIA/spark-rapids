@@ -17,7 +17,7 @@
 package com.nvidia.spark.rapids.shuffle
 
 import ai.rapids.cudf.{DeviceMemoryBuffer, MemoryBuffer}
-import com.nvidia.spark.rapids.format.TableMeta
+import com.nvidia.spark.rapids.format.{BufferMeta, TableMeta}
 import org.mockito.{ArgumentCaptor, ArgumentMatchers}
 import org.mockito.ArgumentMatchers._
 import org.mockito.Mockito._
@@ -38,10 +38,23 @@ class RapidsShuffleClientSuite extends RapidsShuffleTestHelper {
   def verifyTableMeta(expected: TableMeta, actual: TableMeta): Unit = {
     assertResult(expected.rowCount())(actual.rowCount())
     assertResult(expected.columnMetasLength())(actual.columnMetasLength())
-    assertResult(expected.bufferMeta().id())(actual.bufferMeta().id())
-    assertResult(expected.bufferMeta().actualSize())(actual.bufferMeta().actualSize())
-    assertResult(expected.bufferMeta().compressedSize())(actual.bufferMeta().compressedSize())
-    assertResult(expected.bufferMeta().codec())(actual.bufferMeta().codec())
+    verifyBufferMeta(expected.bufferMeta, actual.bufferMeta)
+  }
+
+  def verifyBufferMeta(expected: BufferMeta, actual: BufferMeta): Unit = {
+    assertResult(expected.id)(actual.id)
+    assertResult(expected.size)(actual.size)
+    assertResult(expected.uncompressedSize)(actual.uncompressedSize)
+    assertResult(expected.codecBufferDescrsLength)(actual.codecBufferDescrsLength)
+    (0 until expected.codecBufferDescrsLength).foreach { i =>
+      val expectedDescr = expected.codecBufferDescrs(i)
+      val actualDescr = actual.codecBufferDescrs(i)
+      assertResult(expectedDescr.codec)(actualDescr.codec)
+      assertResult(expectedDescr.compressedOffset)(actualDescr.compressedOffset)
+      assertResult(expectedDescr.compressedSize)(actualDescr.compressedSize)
+      assertResult(expectedDescr.uncompressedOffset)(actualDescr.uncompressedOffset)
+      assertResult(expectedDescr.uncompressedSize)(actualDescr.uncompressedSize)
+    }
   }
 
   test("successful metadata fetch") {
@@ -141,7 +154,7 @@ class RapidsShuffleClientSuite extends RapidsShuffleTestHelper {
       val totalReceived = mockConnection.receiveLengths.sum
       val numBuffersUsed = mockConnection.receiveLengths.size
 
-      assertResult(tableMeta.bufferMeta().actualSize())(totalReceived)
+      assertResult(tableMeta.bufferMeta().size())(totalReceived)
       assertResult(11)(numBuffersUsed)
 
       // we would perform 1 request to issue a `TransferRequest`, so the server can start.
@@ -155,7 +168,7 @@ class RapidsShuffleClientSuite extends RapidsShuffleTestHelper {
       verify(mockStorage, times(1))
           .addBuffer(any(), dmbCaptor.capture(), any(), any())
 
-      assertResult(tableMeta.bufferMeta().actualSize())(
+      assertResult(tableMeta.bufferMeta().size())(
         dmbCaptor.getValue.asInstanceOf[DeviceMemoryBuffer].getLength)
 
       // after closing, we should have freed our bounce buffers.
