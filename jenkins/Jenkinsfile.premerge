@@ -59,11 +59,40 @@ pipeline {
                     def buildImage=docker.build(IMAGE_NAME,
                         "-f jenkins/Dockerfile.ubuntu16 --build-arg CUDA_VER=$CUDA_VER --cache-from $IMAGE_NAME -t $IMAGE_NAME .")
                     buildImage.inside("--runtime=nvidia -v ${HOME}/.m2:${HOME}/.m2:rw -v ${HOME}/.zinc:${HOME}/.zinc:rw") {
-                        echo "ghprbSourceBranch: $ghprbSourceBranch,  ghprbTargetBranch: $ghprbTargetBranch "
+                        echo "ghprbActualCommit: $ghprbActualCommit, ghprbActualCommitAuthor: $ghprbActualCommitAuthor, ghprbPullDescription: $ghprbPullDescription, ghprbPullId: $ghprbPullId, ghprbPullLink: $ghprbPullLink, ghprbPullTitle: $ghprbPullTitle, ghprbCommentBody: $ghprbCommentBody sha1 $sha1, ghprbSourceBranch: $ghprbSourceBranch,  ghprbTargetBranch: $ghprbTargetBranch "
                         sh "git branch -vv"
+                        if (!isSignedOff()) {
+                            echo "Signed-off-by check FAIED"
+                            exit(-1)
+                        }
                     }
                 }
             }
         }
     } // end of stages
 } // end of pipeline
+
+boolean isSignedOff() {
+    def target_rev = sh(returnStdout: true,
+            script: "git rev-parse refs/remotes/origin/${ghprbTargetBranch}").trim()
+    sh "git rev-parse refs/remotes/origin/${ghprbTargetBranch}"
+    def revs_arr = sh(returnStdout: true,
+            script: "git log ${target_rev}..${ghprbActualCommit} --pretty=format:%h").split()
+    sh "git log ${target_rev}..${ghprbActualCommit} --pretty=format:%h"
+    echo "target_rev: $target_rev, revs_arr: $revs_arr"
+
+    def signed_off = false
+    for( String commit : revs_arr ) {
+        def signed_log = sh(returnStdout: true,
+                script: "git show ${commit} --shortstat | grep 'Signed-off-by'")
+        sh "git show ${commit} --shortstat | grep 'Signed-off-by'"
+        echo "commit: ${commit}, signed_log: ${signed_log}"
+        // Find `Signed-off-by` comment in one of the commits
+        if (signed_log?.trim()) {
+            signed_off = true
+            break;
+        }
+    }
+
+    return signed_off
+}
