@@ -105,6 +105,19 @@
             <goals>
               <goal>shade</goal>
             </goals>
+            <configuration>
+              <filters>
+                <filter>
+                  <artifact>com.nvidia:rapids-4-spark_2.12:jar:</artifact>
+                  <includes>
+                    <include>META-INF/maven/com/nvidia/rapids-4-spark_2.12/</include>
+                  </includes>
+                  <excludes>
+                    <exclude>com/nvidia/**</exclude>
+                  </excludes>
+                </filter>
+              </filters>
+            </configuration>
           </execution>
         </executions>
       </plugin>
