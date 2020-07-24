@@ -25,9 +25,6 @@ import org.apache.spark.sql.SparkSession
 import org.apache.spark.util.Utils
 
 class GpuShuffleEnv extends Logging {
-  private val RAPIDS_SHUFFLE_CLASS = ShimLoader.getSparkShims.getRapidsShuffleManagerClass
-  private var isRapidsShuffleManagerInitialized: Boolean  = false
-
   private val catalog = new RapidsBufferCatalog
   private var shuffleCatalog: ShuffleBufferCatalog = _
   private var shuffleReceivedBufferCatalog: ShuffleReceivedBufferCatalog = _
@@ -41,19 +38,12 @@ class GpuShuffleEnv extends Logging {
 
   lazy val isRapidsShuffleConfigured: Boolean = {
     conf.contains("spark.shuffle.manager") &&
-      conf.get("spark.shuffle.manager") == RAPIDS_SHUFFLE_CLASS
-  }
-
-  // the shuffle plugin will call this on initialize
-  def setRapidsShuffleManagerInitialized(initialized: Boolean, className: String): Unit = {
-    assert(className == RAPIDS_SHUFFLE_CLASS)
-    logInfo("RapidsShuffleManager is initialized")
-    isRapidsShuffleManagerInitialized = initialized
+      conf.get("spark.shuffle.manager") == GpuShuffleEnv.RAPIDS_SHUFFLE_CLASS
   }
 
   lazy val isRapidsShuffleEnabled: Boolean = {
     val env = SparkEnv.get
-    val isRapidsManager = isRapidsShuffleManagerInitialized
+    val isRapidsManager = GpuShuffleEnv.isRapidsShuffleManagerInitialized
     val externalShuffle = env.blockManager.externalShuffleServiceEnabled
     isRapidsManager && !externalShuffle
   }
@@ -110,7 +100,10 @@ class GpuShuffleEnv extends Logging {
   def getDeviceStorage: RapidsDeviceMemoryStore = deviceStorage
 }
 
-object GpuShuffleEnv {
+object GpuShuffleEnv extends Logging {
+  val RAPIDS_SHUFFLE_CLASS: String = ShimLoader.getSparkShims.getRapidsShuffleManagerClass
+
+  private var isRapidsShuffleManagerInitialized: Boolean  = false
   @volatile private var env: GpuShuffleEnv = _
 
   def init(devInfo: CudaMemInfo): Unit = {
@@ -134,6 +127,10 @@ object GpuShuffleEnv {
 
   def isRapidsShuffleEnabled: Boolean = env.isRapidsShuffleEnabled
 
-  def setRapidsShuffleManagerInitialized(initialized: Boolean, className: String): Unit =
-    env.setRapidsShuffleManagerInitialized(initialized, className)
+  // the shuffle plugin will call this on initialize
+  def setRapidsShuffleManagerInitialized(initialized: Boolean, className: String): Unit = {
+    assert(className == GpuShuffleEnv.RAPIDS_SHUFFLE_CLASS)
+    logInfo("RapidsShuffleManager is initialized")
+    isRapidsShuffleManagerInitialized = initialized
+  }
 }

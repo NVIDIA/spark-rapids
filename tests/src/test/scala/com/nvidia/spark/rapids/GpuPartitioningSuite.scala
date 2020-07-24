@@ -16,15 +16,13 @@
 
 package com.nvidia.spark.rapids
 
-import java.io.File
-
 import ai.rapids.cudf.{Cuda, Table}
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import org.scalatest.FunSuite
 
 import org.apache.spark.SparkConf
 import org.apache.spark.sql.SparkSession
-import org.apache.spark.sql.rapids.{GpuShuffleEnv, RapidsDiskBlockManager}
+import org.apache.spark.sql.rapids.GpuShuffleEnv
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
 class GpuPartitioningSuite extends FunSuite with Arm {
@@ -58,28 +56,10 @@ class GpuPartitioningSuite extends FunSuite with Arm {
     }
   }
 
-  def withGpuSparkSession(conf: SparkConf)(f: SparkSession => Unit): Unit = {
-    SparkSession.getActiveSession.foreach(_.close())
-    val spark = SparkSession.builder()
-        .master("local[1]")
-        .config(conf)
-        .config(RapidsConf.SQL_ENABLED.key, "true")
-        .config("spark.plugins", "com.nvidia.spark.SQLPlugin")
-        .appName(classOf[GpuPartitioningSuite].getSimpleName)
-        .getOrCreate()
-    try {
-      f(spark)
-    } finally {
-      spark.stop()
-      SparkSession.clearActiveSession()
-      SparkSession.clearDefaultSession()
-    }
-  }
-
   test("GPU partition") {
     SparkSession.getActiveSession.foreach(_.close())
     val conf = new SparkConf()
-    withGpuSparkSession(conf) { spark =>
+    TestUtils.withGpuSparkSession(conf) { _ =>
       GpuShuffleEnv.init(Cuda.memGetInfo())
       val partitionIndices = Array(0, 2)
       val gp = new GpuPartitioning {
@@ -87,7 +67,8 @@ class GpuPartitioningSuite extends FunSuite with Arm {
       }
       withResource(buildBatch()) { batch =>
         val columns = GpuColumnVector.extractColumns(batch)
-        withResource(gp.sliceInternalOnGpu(batch, partitionIndices, columns)) { partitions =>
+        val numRows = batch.numRows
+        withResource(gp.sliceInternalOnGpu(numRows, partitionIndices, columns)) { partitions =>
           partitions.zipWithIndex.foreach { case (partBatch, partIndex) =>
             val startRow = partitionIndices(partIndex)
             val endRow = if (partIndex < partitionIndices.length - 1) {

@@ -38,14 +38,13 @@ case class GpuSinglePartitioning(expressions: Seq[Expression])
       Array(batch).zipWithIndex
     } else {
       try {
-        // Need to produce a contiguous table. Until there's a direct way to do this, using
-        // contiguous split as a workaround, closing any degenerate table after the first one.
+        // Nothing needs to be sliced but a contiguous table is needed for GPU shuffle which
+        // slice will produce.
         val sliced = sliceInternalGpuOrCpu(
-          batch,
-          Array(0, batch.numRows),
+          batch.numRows,
+          Array(0),
           GpuColumnVector.extractColumns(batch))
-        sliced.drop(1).foreach(_.close())
-        sliced.take(1).zipWithIndex
+        sliced.zipWithIndex
       } finally {
         batch.close()
       }

@@ -120,6 +120,7 @@ case class GpuRangePartitioning(
       slicedSortedTbl = new Table(sortColumns: _*)
       //get the final column batch, remove the sort order sortColumns
       finalSortedCb = GpuColumnVector.from(sortedTbl, numSortCols, sortedTbl.getNumberOfColumns)
+      val numRows = finalSortedCb.numRows
       partitionColumns = GpuColumnVector.extractColumns(finalSortedCb)
       // get the ranges table and get upper bounds if possible
       // rangeBounds can be empty or of length < numPartitions in cases where the samples are less
@@ -132,7 +133,7 @@ case class GpuRangePartitioning(
         retCv = slicedSortedTbl.upperBound(nullFlags.toArray, rangesTbl, descFlags.toArray)
         parts = parts ++ GpuColumnVector.toIntArray(retCv)
       }
-      slicedCb = sliceInternalGpuOrCpu(finalSortedCb, parts, partitionColumns)
+      slicedCb = sliceInternalGpuOrCpu(numRows, parts, partitionColumns)
     } finally {
       batch.close()
       if (inputCvs != null) {
