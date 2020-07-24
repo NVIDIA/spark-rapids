@@ -16,9 +16,9 @@
 
 package com.nvidia.spark.rapids.shims.spark300db
 
-import com.nvidia.spark.rapids.{SparkShims, SparkShimServiceProvider}
+import com.nvidia.spark.rapids.SparkShims
 
-class Spark301ShimServiceProvider extends SparkShimServiceProvider {
+class SparkShimServiceProvider extends com.nvidia.spark.rapids.SparkShimServiceProvider {
 
   val VERSIONNAMES = Seq("3.0.0-databricks")
 
