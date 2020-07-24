@@ -31,6 +31,7 @@ import org.apache.spark.sql.execution.joins.{BroadcastHashJoinExec, BroadcastNes
 import org.apache.spark.sql.execution.joins.ShuffledHashJoinExec
 import org.apache.spark.sql.rapids.GpuTimeSub
 import org.apache.spark.sql.rapids.execution.GpuBroadcastNestedLoopJoinExecBase
+import org.apache.spark.sql.rapids.shims.spark300db._
 import org.apache.spark.sql.types._
 import org.apache.spark.storage.{BlockId, BlockManagerId}
 
@@ -69,6 +70,32 @@ class Spark300dbShims extends Spark300Shims {
 
   override def getExecs: Map[Class[_ <: SparkPlan], ExecRule[_ <: SparkPlan]] = {
     Seq(
+     GpuOverrides.exec[FileSourceScanExec](
+        "Reading data from files, often from Hive tables",
+        (fsse, conf, p, r) => new SparkPlanMeta[FileSourceScanExec](fsse, conf, p, r) {
+          // partition filters and data filters are not run on the GPU
+          override val childExprs: Seq[ExprMeta[_]] = Seq.empty
+
+          override def tagPlanForGpu(): Unit = GpuFileSourceScanExec.tagSupport(this)
+
+          override def convertToGpu(): GpuExec = {
+            val newRelation = HadoopFsRelation(
+              wrapped.relation.location,
+              wrapped.relation.partitionSchema,
+              wrapped.relation.dataSchema,
+              wrapped.relation.bucketSpec,
+              GpuFileSourceScanExec.convertFileFormat(wrapped.relation.fileFormat),
+              wrapped.relation.options)(wrapped.relation.sparkSession)
+            GpuFileSourceScanExec(
+              newRelation,
+              wrapped.output,
+              wrapped.requiredSchema,
+              wrapped.partitionFilters,
+              wrapped.optionalBucketSet,
+              wrapped.dataFilters,
+              wrapped.tableIdentifier)
+          }
+        }),
       GpuOverrides.exec[SortMergeJoinExec](
         "Sort merge join, replacing with shuffled hash join",
         (join, conf, p, r) => new GpuSortMergeJoinMeta(join, conf, p, r)),
