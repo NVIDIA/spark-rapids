@@ -108,12 +108,12 @@
             <configuration>
               <filters>
                 <filter>
-                  <artifact>com.nvidia:rapids-4-spark_2.12:jar:</artifact>
+                  <artifact>com.nvidia:rapids-4-spark_2.12</artifact>
                   <includes>
-                    <include>META-INF/maven/com/nvidia/rapids-4-spark_2.12/</include>
+                    <include>META-INF/**</include>
                   </includes>
                   <excludes>
-                    <exclude>com/nvidia/**</exclude>
+                    <exclude>META-INF/services/**</exclude>
                   </excludes>
                 </filter>
               </filters>
