@@ -17,10 +17,14 @@
 package com.nvidia.spark.rapids
 
 import java.io.File
+import java.nio.ByteBuffer
 
-import ai.rapids.cudf.{BufferType, ColumnVector, HostColumnVector, Table}
+import ai.rapids.cudf.{BufferType, ColumnVector, DType, HostColumnVector, Table}
 import org.scalatest.Assertions
 
+import org.apache.spark.SparkConf
+import org.apache.spark.sql.SparkSession
+import org.apache.spark.sql.rapids.GpuShuffleEnv
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
 /** A collection of utility methods useful in tests. */
@@ -52,25 +56,44 @@ object TestUtils extends Assertions with Arm {
   def compareColumns(expected: ColumnVector, actual: ColumnVector): Unit = {
     assertResult(expected.getType)(actual.getType)
     assertResult(expected.getRowCount)(actual.getRowCount)
-    withResource(expected.copyToHost()) { expectedHost =>
-      withResource(actual.copyToHost()) { actualHost =>
-        compareColumnBuffers(expectedHost, actualHost, BufferType.DATA)
-        compareColumnBuffers(expectedHost, actualHost, BufferType.VALIDITY)
-        compareColumnBuffers(expectedHost, actualHost, BufferType.OFFSET)
+    withResource(expected.copyToHost()) { e =>
+      withResource(actual.copyToHost()) { a =>
+        (0L until expected.getRowCount).foreach { i =>
+          assertResult(e.isNull(i))(a.isNull(i))
+          if (!e.isNull(i)) {
+            e.getType match {
+              case DType.BOOL8 => assertResult(e.getBoolean(i))(a.getBoolean(i))
+              case DType.INT8 => assertResult(e.getByte(i))(a.getByte(i))
+              case DType.INT16 => assertResult(e.getShort(i))(a.getShort(i))
+              case DType.INT32 => assertResult(e.getInt(i))(a.getInt(i))
+              case DType.INT64 => assertResult(e.getLong(i))(a.getLong(i))
+              case DType.FLOAT32 => assertResult(e.getFloat(i))(a.getFloat(i))
+              case DType.FLOAT64 => assertResult(e.getDouble(i))(a.getDouble(i))
+              case DType.STRING => assertResult(e.getJavaString(i))(a.getJavaString(i))
+              case _ => throw new UnsupportedOperationException("not implemented yet")
+            }
+          }
+        }
       }
     }
   }
 
-  private def compareColumnBuffers(
-      expected: HostColumnVector,
-      actual: HostColumnVector,
-      bufferType: BufferType): Unit = {
-    val expectedBuffer = expected.getHostBufferFor(bufferType)
-    val actualBuffer = actual.getHostBufferFor(bufferType)
-    if (expectedBuffer != null) {
-      assertResult(expectedBuffer.asByteBuffer())(actualBuffer.asByteBuffer())
-    } else {
-      assertResult(null)(actualBuffer)
+  def withGpuSparkSession(conf: SparkConf)(f: SparkSession => Unit): Unit = {
+    SparkSession.getActiveSession.foreach(_.close())
+    val spark = SparkSession.builder()
+        .master("local[1]")
+        .config(conf)
+        .config(RapidsConf.SQL_ENABLED.key, "true")
+        .config("spark.plugins", "com.nvidia.spark.SQLPlugin")
+        .appName(classOf[GpuPartitioningSuite].getSimpleName)
+        .getOrCreate()
+    try {
+      f(spark)
+    } finally {
+      spark.stop()
+      SparkSession.clearActiveSession()
+      SparkSession.clearDefaultSession()
+      GpuShuffleEnv.setRapidsShuffleManagerInitialized(false, GpuShuffleEnv.RAPIDS_SHUFFLE_CLASS)
     }
   }
 }

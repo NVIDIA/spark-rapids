@@ -38,10 +38,10 @@ trait GpuPartitioning extends Partitioning {
     ret
   }
 
-  def sliceInternalOnGpu(batch: ColumnarBatch, partitionIndexes: Array[Int],
+  def sliceInternalOnGpu(numRows: Int, partitionIndexes: Array[Int],
       partitionColumns: Array[GpuColumnVector]): Array[ColumnarBatch] = {
     // The first index will always be 0, so we need to skip it.
-    val batches = if (batch.numRows > 0) {
+    val batches = if (numRows > 0) {
       val parts = partitionIndexes.slice(1, partitionIndexes.length)
       val splits = new ArrayBuffer[ColumnarBatch](numPartitions)
       val table = new Table(partitionColumns.map(_.getBase).toArray: _*)
@@ -69,7 +69,7 @@ trait GpuPartitioning extends Partitioning {
     batches
   }
 
-  def sliceInternalOnCpu(batch: ColumnarBatch, partitionIndexes: Array[Int],
+  def sliceInternalOnCpu(numRows: Int, partitionIndexes: Array[Int],
       partitionColumns: Array[GpuColumnVector]): Array[ColumnarBatch] = {
     // We need to make sure that we have a null count calculated ahead of time.
     // This should be a temp work around.
@@ -87,14 +87,14 @@ trait GpuPartitioning extends Partitioning {
         ret(i - 1) = sliceBatch(hostPartColumns, start, idx)
         start = idx
       }
-      ret(numPartitions - 1) = sliceBatch(hostPartColumns, start, batch.numRows())
+      ret(numPartitions - 1) = sliceBatch(hostPartColumns, start, numRows)
       ret
     } finally {
       hostPartColumns.safeClose()
     }
   }
 
-  def sliceInternalGpuOrCpu(batch: ColumnarBatch, partitionIndexes: Array[Int],
+  def sliceInternalGpuOrCpu(numRows: Int, partitionIndexes: Array[Int],
       partitionColumns: Array[GpuColumnVector]): Array[ColumnarBatch] = {
     val rapidsShuffleEnabled = GpuShuffleEnv.isRapidsShuffleEnabled
     val nvtxRangeKey = if (rapidsShuffleEnabled) {
@@ -107,9 +107,9 @@ trait GpuPartitioning extends Partitioning {
     val sliceRange = new NvtxRange(nvtxRangeKey, NvtxColor.CYAN)
     try {
       if (rapidsShuffleEnabled) {
-        sliceInternalOnGpu(batch, partitionIndexes, partitionColumns)
+        sliceInternalOnGpu(numRows, partitionIndexes, partitionColumns)
       } else {
-        sliceInternalOnCpu(batch, partitionIndexes, partitionColumns)
+        sliceInternalOnCpu(numRows, partitionIndexes, partitionColumns)
       }
     } finally {
       sliceRange.close()
