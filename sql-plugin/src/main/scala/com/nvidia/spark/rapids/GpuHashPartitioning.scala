@@ -121,6 +121,7 @@ case class GpuHashPartitioning(expressions: Seq[Expression], numPartitions: Int)
     //  We are doing this here because the cudf partition command is at this level
     val totalRange = new NvtxRange("Hash partition", NvtxColor.PURPLE)
     try {
+      val numRows = batch.numRows
       val (partitionIndexes, partitionColumns) = {
         val partitionRange = new NvtxRange("partition", NvtxColor.BLUE)
         try {
@@ -129,7 +130,7 @@ case class GpuHashPartitioning(expressions: Seq[Expression], numPartitions: Int)
           partitionRange.close()
         }
       }
-      val ret = sliceInternalGpuOrCpu(batch, partitionIndexes, partitionColumns)
+      val ret = sliceInternalGpuOrCpu(numRows, partitionIndexes, partitionColumns)
       partitionColumns.safeClose()
       // Close the partition columns we copied them as a part of the slice
       ret.zipWithIndex.filter(_._1 != null)
