@@ -754,6 +754,41 @@ trait SparkQueryCompareTestSuite extends FunSuite with Arm {
     compareResults(sort, maxFloatDiff, fromCpu, fromGpu)
   }
 
+  def testExpectedGpuException[T <: Throwable](
+    testName: String,
+    exceptionClass: Class[T],
+    df: SparkSession => DataFrame,
+    conf: SparkConf = new SparkConf(),
+    repart: Integer = 1,
+    sort: Boolean = false,
+    maxFloatDiff: Double = 0.0,
+    incompat: Boolean = false,
+    execsAllowedNonGpu: Seq[String] = Seq.empty,
+    sortBeforeRepart: Boolean = false)(fun: DataFrame => DataFrame): Unit = {
+    val (testConf, qualifiedTestName) =
+      setupTestConfAndQualifierName(testName, incompat, sort, conf, execsAllowedNonGpu,
+        maxFloatDiff, sortBeforeRepart)
+
+    test(qualifiedTestName) {
+      val t = Try({
+        val fromGpu = withGpuSparkSession( session => {
+          var data = df(session)
+          if (repart > 0) {
+            // repartition the data so it is turned into a projection,
+            // not folded into the table scan exec
+            data = data.repartition(repart)
+          }
+          fun(data).collect()
+        }, testConf)
+      })
+      t match {
+        case Failure(e) if e.getClass == exceptionClass => // Good
+        case Failure(e) => throw e
+        case _ => fail("Expected an exception")
+      }
+    }
+  }
+
   def testExpectedExceptionStartsWith[T <: Throwable](
       testName: String,
       exceptionClass: Class[T],
@@ -1567,6 +1602,26 @@ trait SparkQueryCompareTestSuite extends FunSuite with Arm {
       ("-100.0", 27),
       ("-500.0", 0)
     ).toDF("strings", "ints")
+  }
+
+  def oldDatesDf(session: SparkSession): DataFrame = {
+    import session.sqlContext.implicits._
+    Seq(
+      new Date(-141427L * 24 * 60 * 60 * 1000),
+      new Date(-150000L * 24 * 60 * 60 * 1000),
+      Date.valueOf("1582-10-15"),
+      Date.valueOf("1582-10-13")
+    ).toDF("dates")
+  }
+
+  def oldTsDf(session: SparkSession): DataFrame = {
+    import session.sqlContext.implicits._
+    Seq(
+      new Timestamp(-141427L * 24 * 60 * 60 * 1000),
+      new Timestamp(-150000L * 24 * 60 * 60 * 1000),
+      Timestamp.valueOf("1582-10-15 00:01:01"),
+      Timestamp.valueOf("1582-10-13 12:03:12")
+    ).toDF("times")
   }
 
   def utf8RepeatedDf(session: SparkSession): DataFrame = {

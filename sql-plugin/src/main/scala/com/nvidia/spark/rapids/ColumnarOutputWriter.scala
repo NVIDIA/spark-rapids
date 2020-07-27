@@ -18,7 +18,7 @@ package com.nvidia.spark.rapids
 
 import scala.collection.mutable
 
-import ai.rapids.cudf.{HostBufferConsumer, HostMemoryBuffer, NvtxColor, NvtxRange, TableWriter}
+import ai.rapids.cudf.{HostBufferConsumer, HostMemoryBuffer, NvtxColor, NvtxRange, Table, TableWriter}
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import org.apache.hadoop.fs.{FSDataOutputStream, Path}
 import org.apache.hadoop.mapreduce.TaskAttemptContext
@@ -60,7 +60,7 @@ abstract class ColumnarOutputWriterFactory extends Serializable {
  * `org.apache.spark.sql.execution.datasources.OutputWriter`.
  */
 abstract class ColumnarOutputWriter(path: String, context: TaskAttemptContext,
-    dataSchema: StructType, rangeName: String) extends HostBufferConsumer {
+    dataSchema: StructType, rangeName: String) extends HostBufferConsumer with Arm {
 
   val tableWriter: TableWriter
   val conf = context.getConfiguration
@@ -130,6 +130,10 @@ abstract class ColumnarOutputWriter(path: String, context: TaskAttemptContext,
     }
   }
 
+  protected def scanTableBeforeWrite(table: Table): Unit = {
+    // NOOP for now, but allows a child to override this
+  }
+
   /**
    * Writes the columnar batch and returns the time in ns taken to write
    *
@@ -140,17 +144,12 @@ abstract class ColumnarOutputWriter(path: String, context: TaskAttemptContext,
     var needToCloseBatch = true
     try {
       val startTimestamp = System.nanoTime
-      val nvtxRange = new NvtxRange(s"GPU $rangeName write", NvtxColor.BLUE)
-      try {
-        val table = GpuColumnVector.from(batch)
-        try {
+      withResource(new NvtxRange(s"GPU $rangeName write", NvtxColor.BLUE)) { _ =>
+        withResource(GpuColumnVector.from(batch)) { table =>
+          scanTableBeforeWrite(table)
           anythingWritten = true
           tableWriter.write(table)
-        } finally {
-          table.close()
         }
-      } finally {
-        nvtxRange.close()
       }
 
       // Batch is no longer needed, write process from here does not use GPU.
