@@ -1052,14 +1052,14 @@ object GpuOverrides {
           if (in.hset.contains(null)) {
             willNotWorkOnGpu("nulls are not supported")
           }
-          val literalTypes = in.hset.map(Literal(_).dataType).toSeq
+          val literalTypes = in.hset.map(LiteralHelper(_).dataType).toSeq
           if (!areAllSupportedTypes(literalTypes:_*)) {
             val unsupported = literalTypes.filter(!areAllSupportedTypes(_)).mkString(", ")
             willNotWorkOnGpu(s"unsupported literal types: $unsupported")
           }
         }
         override def convertToGpu(): GpuExpression =
-          GpuInSet(childExprs.head.convertToGpu(), in.hset.map(Literal(_)).toSeq)
+          GpuInSet(childExprs.head.convertToGpu(), in.hset.map(LiteralHelper(_)).toSeq)
       }),
     expr[LessThan](
       "< operator",
