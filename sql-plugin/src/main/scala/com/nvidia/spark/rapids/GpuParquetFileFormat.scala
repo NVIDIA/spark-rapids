@@ -25,11 +25,11 @@ import org.apache.parquet.hadoop.util.ContextUtil
 
 import org.apache.spark.internal.Logging
 import org.apache.spark.sql.{Row, SparkSession}
-import org.apache.spark.sql.catalyst.util.RebaseDateTime
 import org.apache.spark.sql.execution.datasources.DataSourceUtils
 import org.apache.spark.sql.execution.datasources.parquet.{ParquetOptions, ParquetWriteSupport}
 import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.internal.SQLConf.ParquetOutputTimestampType
+import org.apache.spark.sql.rapids.RebaseHelper
 import org.apache.spark.sql.rapids.execution.TrampolineUtil
 import org.apache.spark.sql.types.{DateType, StructType, TimestampType}
 
@@ -217,36 +217,10 @@ class GpuParquetWriter(
     context: TaskAttemptContext)
   extends ColumnarOutputWriter(path, context, dataSchema, "Parquet") {
 
-  private[this] def checkIfDateTimeRebaseNeeded(column: ColumnVector): Boolean = {
-    val dtype = column.getType
-    if (dtype == DType.TIMESTAMP_DAYS) {
-      withResource(Scalar.timestampDaysFromInt(RebaseDateTime.lastSwitchGregorianDay)) { minGood =>
-        withResource(column.lessThan(minGood)) { hasBad =>
-          withResource(hasBad.any()) { a =>
-            a.getBoolean
-          }
-        }
-      }
-    } else if (dtype.isTimestamp) {
-      assert(dtype == DType.TIMESTAMP_MICROSECONDS)
-      withResource(
-        Scalar.timestampFromLong(DType.TIMESTAMP_MICROSECONDS,
-          RebaseDateTime.lastSwitchJulianTs)) { minGood =>
-        withResource(column.lessThan(minGood)) { hasBad =>
-          withResource(hasBad.any()) { a =>
-            a.getBoolean
-          }
-        }
-      }
-    } else {
-      false
-    }
-  }
-
   override def scanTableBeforeWrite(table: Table): Unit = {
     if (dateTimeRebaseException) {
       (0 until table.getNumberOfColumns).foreach { i =>
-        if (checkIfDateTimeRebaseNeeded(table.getColumn(i))) {
+        if (RebaseHelper.isDateTimeRebaseNeededWrite(table.getColumn(i))) {
           throw DataSourceUtils.newRebaseExceptionInWrite("Parquet")
         }
       }
