@@ -144,3 +144,12 @@ def test_in(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : unary_op_df(spark, data_gen).select(f.col('a').isin(scalars)))
 
+# The difference between a set in and a regular in is the number of arguments, with the default
+# config setting 10 as the threashold.  Anything over 10 is an InSet
+@pytest.mark.parametrize('data_gen', eq_gens, ids=idfn)
+def test_in_set(data_gen):
+    # nulls are not supported for in on the GPU yet
+    scalars = list(gen_scalars(data_gen, 11, force_no_nulls=True))
+    assert_gpu_and_cpu_are_equal_collect(
+            lambda spark : unary_op_df(spark, data_gen).select(f.col('a').isin(scalars)))
+
