@@ -40,7 +40,7 @@ rm -rf spark-rapids
 mkdir spark-rapids
 tar -zxvf $SPARKTGZ -C spark-rapids
 cd spark-rapids
-mvn -B clean package || true
+mvn -B -Pdatabricks clean package -DskipTests || true
 M2DIR=/home/ubuntu/.m2/repository
 CUDF_JAR=${M2DIR}/ai/rapids/cudf/${CUDF_VERSION}/cudf-${CUDF_VERSION}-${CUDA_VERSION}.jar
 
@@ -105,7 +105,6 @@ sudo ln -s /databricks/jars/ $SPARK_HOME/jars || true
 sudo chmod 777 /databricks/data/logs/
 sudo chmod 777 /databricks/data/logs/*
 echo { \"port\":\"15002\" } > ~/.databricks-connect
-mvn -Pspark300dbtests test
 $SPARK_HOME/bin/spark-submit ./runtests.py --runtime_env="databricks"
 cd /home/ubuntu
 tar -zcvf spark-rapids-built.tgz spark-rapids
