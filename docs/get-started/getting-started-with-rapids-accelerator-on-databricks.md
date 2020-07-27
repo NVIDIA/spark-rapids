@@ -59,7 +59,7 @@ We will need to create an initialization script for the cluster that installs th
 
 ## Import the GPU Mortgage Example Notebook
 Import the example [notebook](../demo/gpu-mortgage_accelerated.ipynb) from the repo into your workspace, then open the notebook.
-Modify the first cell to point to your workspace, and download a larger dataset if needed. You can find the links to the datasets at [docs.rapids.ai](https://docs.rapids.ai/datasets/mortgage-data)
+Modify the first cell to point to your workspace, and download a larger dataset if needed. You can find the links to the datasets at [docs.rapids.ai](https://docs.rapids.ai/datasets/mortgage-data). 
 
 ```bash
 %sh
@@ -74,7 +74,7 @@ mkdir /dbfs/FileStore/tables/mortgage_parquet_gpu/output
 tar xfvz /Users/<your user id>/mortgage_2000.tgz --directory /dbfs/FileStore/tables/mortgage
 ```
 
-In Cell 3, update the data paths if necessary. The example notebook merges the columns and prepares the data for XGoost training. The temp and final output results are written back to the dbfs
+In Cell 3, update the data paths if necessary. The example notebook merges the columns and prepares the data for XGoost training. The temp and final output results are written back to the dbfs. 
 ```bash
 orig_perf_path='dbfs:///FileStore/tables/mortgage/perf/*'
 orig_acq_path='dbfs:///FileStore/tables/mortgage/acq/*'
@@ -82,7 +82,7 @@ tmp_perf_path='dbfs:///FileStore/tables/mortgage_parquet_gpu/perf/'
 tmp_acq_path='dbfs:///FileStore/tables/mortgage_parquet_gpu/acq/'
 output_path='dbfs:///FileStore/tables/mortgage_parquet_gpu/output/'
 ```
-Run the notebook by clicking “Run All”
+Run the notebook by clicking “Run All”. 
 
 ## Hints
 Spark logs in Databricks are removed upon cluster shutdown.  It is possible to save logs in a cloud storage location using Databricks [cluster log delivery](https://docs.databricks.com/clusters/configure.html#cluster-log-delivery-1).  Enable this option before starting the cluster to capture the logs. 
