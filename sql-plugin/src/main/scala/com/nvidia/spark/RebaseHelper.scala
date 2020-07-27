@@ -14,14 +14,14 @@
  * limitations under the License.
  */
 
-package org.apache.spark.sql.rapids
+package com.nvidia.spark
 
 import ai.rapids.cudf.{ColumnVector, DType, Scalar}
 import com.nvidia.spark.rapids.Arm
 
-import org.apache.spark.SparkUpgradeException
 import org.apache.spark.sql.catalyst.util.RebaseDateTime
 import org.apache.spark.sql.internal.SQLConf
+import org.apache.spark.sql.rapids.execution.TrampolineUtil
 
 object RebaseHelper extends Arm {
   private[this] def isDateTimeRebaseNeeded(column: ColumnVector,
@@ -61,7 +61,7 @@ object RebaseHelper extends Arm {
       RebaseDateTime.lastSwitchJulianDay,
       RebaseDateTime.lastSwitchJulianTs)
 
-  def newRebaseExceptionInRead(format: String): SparkUpgradeException = {
+  def newRebaseExceptionInRead(format: String): Exception = {
     val config = if (format == "Parquet") {
       SQLConf.LEGACY_PARQUET_REBASE_MODE_IN_READ.key
     } else if (format == "Avro") {
@@ -69,12 +69,14 @@ object RebaseHelper extends Arm {
     } else {
       throw new IllegalStateException("unrecognized format " + format)
     }
-    new SparkUpgradeException("3.0", "reading dates before 1582-10-15 or timestamps before " +
+    TrampolineUtil.makeSparkUpgradeException("3.0",
+      "reading dates before 1582-10-15 or timestamps before " +
       s"1900-01-01T00:00:00Z from $format files can be ambiguous, as the files may be written by " +
       "Spark 2.x or legacy versions of Hive, which uses a legacy hybrid calendar that is " +
       "different from Spark 3.0+'s Proleptic Gregorian calendar. See more details in " +
       s"SPARK-31404. The RAPIDS Accelerator does not support reading these 'LEGACY' files. To do " +
       s"so you should disable $format support in the RAPIDS Accelerator " +
-      s"or set $config to 'CORRECTED' to read the datetime values as it is.", null)
+      s"or set $config to 'CORRECTED' to read the datetime values as it is.",
+      null)
   }
 }

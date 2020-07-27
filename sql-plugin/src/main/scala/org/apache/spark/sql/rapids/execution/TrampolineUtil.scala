@@ -18,7 +18,7 @@ package org.apache.spark.sql.rapids.execution
 
 import org.json4s.JsonAST
 
-import org.apache.spark.{SparkContext, SparkEnv}
+import org.apache.spark.{SparkContext, SparkEnv, SparkUpgradeException}
 import org.apache.spark.broadcast.Broadcast
 import org.apache.spark.executor.InputMetrics
 import org.apache.spark.sql.catalyst.plans.physical.{BroadcastMode, IdentityBroadcastMode}
@@ -62,4 +62,11 @@ object TrampolineUtil {
 
   def incInputRecordsRows(inputMetrics: InputMetrics, rows: Long): Unit =
     inputMetrics.incRecordsRead(rows)
+
+  def makeSparkUpgradeException(
+                                version: String,
+                                message: String,
+                                cause: Throwable): SparkUpgradeException = {
+    new SparkUpgradeException(version, message, cause)
+  }
 }

@@ -27,6 +27,7 @@ import scala.collection.mutable.ArrayBuffer
 import scala.math.max
 
 import ai.rapids.cudf.{ColumnVector, DType, HostMemoryBuffer, NvtxColor, ParquetOptions, Table}
+import com.nvidia.spark.RebaseHelper
 import com.nvidia.spark.rapids.GpuMetricNames._
 import com.nvidia.spark.rapids.ParquetPartitionReader.CopyRange
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
@@ -56,7 +57,6 @@ import org.apache.spark.sql.execution.datasources.v2.{FilePartitionReaderFactory
 import org.apache.spark.sql.execution.datasources.v2.parquet.ParquetScan
 import org.apache.spark.sql.execution.metric.SQLMetric
 import org.apache.spark.sql.internal.SQLConf
-import org.apache.spark.sql.rapids.RebaseHelper
 import org.apache.spark.sql.rapids.execution.TrampolineUtil
 import org.apache.spark.sql.sources.Filter
 import org.apache.spark.sql.types.{StructType, TimestampType}
@@ -233,7 +233,7 @@ case class GpuParquetPartitionReaderFactory(
     Option(lookupFileMeta(SPARK_VERSION_METADATA_KEY)).map { version =>
       // Files written by Spark 2.4 and earlier follow the legacy hybrid calendar and we need to
       // rebase the datetime values.
-      // Files written by Spark 3.0 and latter may also need the rebase if they were written with
+      // Files written by Spark 3.0 and later may also need the rebase if they were written with
       // the "LEGACY" rebase mode.
       version >= "3.0.0" && lookupFileMeta(SPARK_LEGACY_DATETIME) == null
     }.getOrElse(isCorrectedModeConfig)
