@@ -24,6 +24,6 @@ cd spark-rapids
 echo "Maven mirror is $MVN_URM_MIRROR"
 SERVER_ID='snapshots'
 SERVER_URL="$URM_URL-local"
-FPATH=./dist/target/rapids-4-spark_$SCALA_VERSION-$DATABRICKS_VERSION.jar
+DBJARFPATH=./shims/spark300db/target/rapids-4-spark-shims-spark300-databricks_$SCALA_VERSION-$DATABRICKS_VERSION.jar
 mvn -B deploy:deploy-file $MVN_URM_MIRROR -Durl=$SERVER_URL -DrepositoryId=$SERVER_ID \
-    -Dfile=$FPATH -DpomFile=dist/pom.xml 
+    -Dfile=$DBJARFPATH -DpomFile=shims/spark300db/pom.xml

@@ -40,7 +40,7 @@ rm -rf spark-rapids
 mkdir spark-rapids
 tar -zxvf $SPARKTGZ -C spark-rapids
 cd spark-rapids
-mvn -B clean package || true
+#mvn -B clean package || true
 M2DIR=/home/ubuntu/.m2/repository
 CUDF_JAR=${M2DIR}/ai/rapids/cudf/${CUDF_VERSION}/cudf-${CUDF_VERSION}-${CUDA_VERSION}.jar
 
