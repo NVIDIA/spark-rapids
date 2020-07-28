@@ -20,8 +20,8 @@ import java.time.ZoneId
 
 import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.spark300.RapidsShuffleManager
-
 import org.apache.spark.SparkEnv
+
 import org.apache.spark.sql.catalyst.encoders.ExpressionEncoder
 import org.apache.spark.sql.catalyst.expressions.aggregate.{First, Last}
 import org.apache.spark.sql.execution._
@@ -34,6 +34,8 @@ import org.apache.spark.sql.rapids.GpuTimeSub
 import org.apache.spark.sql.rapids.execution.GpuBroadcastNestedLoopJoinExecBase
 import org.apache.spark.sql.rapids.shims.spark300._
 import org.apache.spark.sql.types._
+import org.apache.spark.sql.{SparkSession, SparkSessionExtensions}
+import org.apache.spark.sql.catalyst.rules.Rule
 import org.apache.spark.storage.{BlockId, BlockManagerId}
 import org.apache.spark.unsafe.types.CalendarInterval
 
@@ -192,5 +194,11 @@ class Spark300Shims extends SparkShims {
 
   override def getRapidsShuffleManagerClass: String = {
     classOf[RapidsShuffleManager].getCanonicalName
+  }
+
+  override def injectQueryStagePrepRule(
+      extensions: SparkSessionExtensions,
+      ruleBuilder: SparkSession => Rule[SparkPlan]): Unit = {
+    // not supported in 3.0.0
   }
 }

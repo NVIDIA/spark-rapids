@@ -50,6 +50,7 @@ class SQLExecPlugin extends (SparkSessionExtensions => Unit) with Logging {
     logWarning("Installing extensions to enable rapids GPU SQL support." +
       s" To disable GPU support set `${RapidsConf.SQL_ENABLED}` to false")
     extensions.injectColumnar(_ => ColumnarOverrideRules())
+    ShimLoader.getSparkShims.injectQueryStagePrepRule(extensions, _ => GpuQueryStagePrepOverrides())
   }
 }
 

@@ -23,6 +23,8 @@ import com.nvidia.spark.rapids.shims.spark300.Spark300Shims
 import org.apache.spark.sql.catalyst.expressions._
 import org.apache.spark.sql.catalyst.expressions.aggregate.{First, Last}
 import org.apache.spark.sql.execution._
+import org.apache.spark.sql.{SparkSession, SparkSessionExtensions}
+import org.apache.spark.sql.catalyst.rules.Rule
 
 class Spark301Shims extends Spark300Shims {
 
@@ -47,5 +49,11 @@ class Spark301Shims extends Spark300Shims {
 
   override def getRapidsShuffleManagerClass: String = {
     classOf[RapidsShuffleManager].getCanonicalName
+  }
+
+  override def injectQueryStagePrepRule(
+      extensions: SparkSessionExtensions,
+      ruleBuilder: SparkSession => Rule[SparkPlan]): Unit = {
+    extensions.injectQueryStagePrepRule(ruleBuilder)
   }
 }
