@@ -76,7 +76,7 @@ pipeline {
             steps {
                 script {
                     sshagent(credentials : ['svcngcc_pubpriv']) {
-                        sh "rm spark-rapids-ci.tgz"
+                        sh "rm -rf spark-rapids-ci.tgz"
                         sh "tar -zcvf spark-rapids-ci.tgz *"
                         sh "python3.6 ./jenkins/databricks/run-tests.py -c $CLUSTER_ID -z ./spark-rapids-ci.tgz -t $DATABRICKS_TOKEN -p /home/svcngcc/.ssh/id_rsa -l ./jenkins/databricks/build.sh -j $CI_RAPIDS_JAR -b $DATABRICKS_VERSION -k $SPARK_VERSION -a $SCALA_VERSION -f $CUDF_VERSION -u $CUDA_VERSION -m $CI_CUDF_JAR"
                         sh "./jenkins/databricks/deploy.sh"
