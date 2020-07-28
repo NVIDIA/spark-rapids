@@ -42,9 +42,9 @@ class MetaUtilsSuite extends FunSuite with Arm {
 
       val bufferMeta = meta.bufferMeta
       assertResult(7)(bufferMeta.id)
-      assertResult(buffer.getLength)(bufferMeta.compressedSize)
-      assertResult(buffer.getLength)(bufferMeta.actualSize)
-      assertResult(CodecType.UNCOMPRESSED)(bufferMeta.codec)
+      assertResult(buffer.getLength)(bufferMeta.size)
+      assertResult(buffer.getLength)(bufferMeta.uncompressedSize)
+      assertResult(0)(bufferMeta.codecBufferDescrsLength)
       assertResult(table.getRowCount)(meta.rowCount)
 
       assertResult(table.getNumberOfColumns)(meta.columnMetasLength)
@@ -73,6 +73,29 @@ class MetaUtilsSuite extends FunSuite with Arm {
           assertResult(null)(columnMeta.offsets)
         }
       }
+    }
+  }
+
+  test("buildTableMeta with codec") {
+    withResource(buildContiguousTable()) { contigTable =>
+      val tableId = 7
+      val codecType = CodecType.COPY
+      val compressedSize: Long = 123
+      val table = contigTable.getTable
+      val buffer = contigTable.getBuffer
+      val meta = MetaUtils.buildTableMeta(tableId, table, buffer, codecType, compressedSize)
+
+      val bufferMeta = meta.bufferMeta
+      assertResult(tableId)(bufferMeta.id)
+      assertResult(compressedSize)(bufferMeta.size)
+      assertResult(table.getRowCount)(meta.rowCount)
+      assertResult(1)(bufferMeta.codecBufferDescrsLength)
+      val codecDescr = bufferMeta.codecBufferDescrs(0)
+      assertResult(codecType)(codecDescr.codec)
+      assertResult(compressedSize)(codecDescr.compressedSize)
+      assertResult(0)(codecDescr.compressedOffset)
+      assertResult(0)(codecDescr.uncompressedOffset)
+      assertResult(buffer.getLength)(codecDescr.uncompressedSize)
     }
   }
 
