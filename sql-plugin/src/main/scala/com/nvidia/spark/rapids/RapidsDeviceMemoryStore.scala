@@ -22,6 +22,10 @@ import com.nvidia.spark.rapids.format.TableMeta
 
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
+/**
+ * Buffer storage using device memory.
+ * @param catalog catalog to register this store
+ */
 class RapidsDeviceMemoryStore(
     catalog: RapidsBufferCatalog) extends RapidsBufferStore("GPU", catalog) {
   override protected def createBuffer(
@@ -42,21 +46,12 @@ class RapidsDeviceMemoryStore(
       table: Table,
       contigBuffer: DeviceMemoryBuffer,
       initialSpillPriority: Long): Unit = {
-    val size = contigBuffer.getLength
-    val meta = MetaUtils.buildTableMeta(id.tableId, table, contigBuffer)
-
-    logDebug(s"Adding table for: [id=$id, size=$size, meta_id=${meta.bufferMeta().id()}, " +
-      s"meta_size=${meta.bufferMeta().actualSize()}, meta_num_cols=${meta.columnMetasLength()}]")
-
-    val buffer = new RapidsDeviceMemoryBuffer(
-      id,
-      size,
-      meta,
-      table,
-      contigBuffer,
-      initialSpillPriority)
-
+    val buffer = uncompressedBufferFromTable(id, table, contigBuffer, initialSpillPriority)
     try {
+      logDebug(s"Adding table for: [id=$id, size=${buffer.size}, " +
+          s"uncompressed=${buffer.meta.bufferMeta.uncompressedSize}, " +
+          s"meta_id=${buffer.meta.bufferMeta.id}, meta_size=${buffer.meta.bufferMeta.size}, " +
+          s"meta_num_cols=${buffer.meta.columnMetasLength}]")
       addBuffer(buffer)
     } catch {
       case t: Throwable =>
@@ -79,16 +74,21 @@ class RapidsDeviceMemoryStore(
       tableMeta: TableMeta,
       initialSpillPriority: Long): Unit = {
     logDebug(s"Adding receive side table for: [id=$id, size=${buffer.getLength}, " +
-        s"meta_id=${tableMeta.bufferMeta().id()}, " +
-        s"meta_size=${tableMeta.bufferMeta().actualSize()}, " +
-        s"meta_num_cols=${tableMeta.columnMetasLength()}]")
+        s"meta_id=${tableMeta.bufferMeta.id}, " +
+        s"meta_size=${tableMeta.bufferMeta.size}, " +
+        s"meta_num_cols=${tableMeta.columnMetasLength}]")
 
-    val batch = MetaUtils.getBatchFromMeta(buffer, tableMeta) // REFCOUNT 1 + # COLS
-    // hold the 1 ref count extra in buffer, it will be removed later in releaseResources
-    val table = try {
-      GpuColumnVector.from(batch) // batch cols have 2 ref count
-    } finally {
-      batch.close() // cols should have single references
+    val table = if (tableMeta.bufferMeta.codecBufferDescrsLength() > 0) {
+      // buffer is compressed so there is no Table.
+      None
+    } else {
+      val batch = MetaUtils.getBatchFromMeta(buffer, tableMeta) // REFCOUNT 1 + # COLS
+      // hold the 1 ref count extra in buffer, it will be removed later in releaseResources
+      try {
+        Some(GpuColumnVector.from(batch)) // batch cols have 2 ref count
+      } finally {
+        batch.close() // cols should have single references
+      }
     }
 
     val buff = new RapidsDeviceMemoryBuffer(
@@ -102,24 +102,46 @@ class RapidsDeviceMemoryStore(
     addBuffer(buff)
   }
 
+  private def uncompressedBufferFromTable(
+      id: RapidsBufferId,
+      table: Table,
+      contigBuffer: DeviceMemoryBuffer,
+      initialSpillPriority: Long): RapidsDeviceMemoryBuffer = {
+    val size = contigBuffer.getLength
+    val meta = MetaUtils.buildTableMeta(id.tableId, table, contigBuffer)
+    new RapidsDeviceMemoryBuffer(
+      id,
+      size,
+      meta,
+      Some(table),
+      contigBuffer,
+      initialSpillPriority)
+  }
+
   class RapidsDeviceMemoryBuffer(
       id: RapidsBufferId,
       size: Long,
       meta: TableMeta,
-      table: Table,
+      table: Option[Table],
       contigBuffer: DeviceMemoryBuffer,
       spillPriority: Long) extends RapidsBufferBase(id, size, meta, spillPriority) {
+    require(table.isDefined || meta.bufferMeta.codecBufferDescrsLength() > 0)
+
     override val storageTier: StorageTier = StorageTier.DEVICE
 
     override protected def releaseResources(): Unit = {
       contigBuffer.close()
-      table.close()
+      table.foreach(_.close())
     }
 
     override def getMemoryBuffer: MemoryBuffer = contigBuffer.slice(0, contigBuffer.getLength)
 
     override def getColumnarBatch: ColumnarBatch = {
-      GpuColumnVector.from(table) //REFCOUNT ++ of all columns
+      if (table.isDefined) {
+        GpuColumnVector.from(table.get) //REFCOUNT ++ of all columns
+      } else {
+        throw new UnsupportedOperationException("compressed buffer support not implemented")
+      }
     }
   }
 }

@@ -32,6 +32,15 @@
     <description>The RAPIDS SQL plugin for Apache Spark Shims</description>
     <version>0.2.0-SNAPSHOT</version>
 
+    <profiles>
+        <profile>
+            <id>databricks</id>
+            <modules>
+                <module>spark300db</module>
+            </modules>
+        </profile>
+    </profiles>
+
     <modules>
         <module>spark300</module>
         <module>spark301</module>

@@ -30,7 +30,7 @@ def read_parquet_sql(data_path):
 
 parquet_gens_list = [[byte_gen, short_gen, int_gen, long_gen, float_gen, double_gen,
     string_gen, boolean_gen, date_gen,
-    TimestampGen(start=datetime(1590, 1, 1, tzinfo=timezone.utc))],
+    TimestampGen(start=datetime(1900, 1, 1, tzinfo=timezone.utc))],
     pytest.param([timestamp_gen], marks=pytest.mark.xfail(reason='https://github.com/NVIDIA/spark-rapids/issues/132'))]
 
 @pytest.mark.parametrize('parquet_gens', parquet_gens_list, ids=idfn)
@@ -80,7 +80,7 @@ parquet_pred_push_gens = [
         string_gen, date_gen,
         # Once https://github.com/NVIDIA/spark-rapids/issues/132 is fixed replace this with
         # timestamp_gen 
-        TimestampGen(start=datetime(1590, 1, 1, tzinfo=timezone.utc))]
+        TimestampGen(start=datetime(1900, 1, 1, tzinfo=timezone.utc))]
 
 @pytest.mark.parametrize('parquet_gen', parquet_pred_push_gens, ids=idfn)
 @pytest.mark.parametrize('read_func', [read_parquet_df, read_parquet_sql])
@@ -102,7 +102,7 @@ parquet_ts_write_options = ['INT96', 'TIMESTAMP_MICROS', 'TIMESTAMP_MILLIS']
 def test_ts_read_round_trip(spark_tmp_path, ts_write, ts_rebase):
     # Once https://github.com/NVIDIA/spark-rapids/issues/132 is fixed replace this with
     # timestamp_gen
-    gen = TimestampGen(start=datetime(1590, 1, 1, tzinfo=timezone.utc))
+    gen = TimestampGen(start=datetime(1900, 1, 1, tzinfo=timezone.utc))
     data_path = spark_tmp_path + '/PARQUET_DATA'
     with_cpu_session(
             lambda spark : unary_op_df(spark, gen).write.parquet(data_path),
@@ -113,7 +113,7 @@ def test_ts_read_round_trip(spark_tmp_path, ts_write, ts_rebase):
 
 parquet_gens_legacy_list = [[byte_gen, short_gen, int_gen, long_gen, float_gen, double_gen,
     string_gen, boolean_gen, DateGen(start=date(1590, 1, 1)),
-    TimestampGen(start=datetime(1590, 1, 1, tzinfo=timezone.utc))],
+    TimestampGen(start=datetime(1900, 1, 1, tzinfo=timezone.utc))],
     pytest.param([timestamp_gen], marks=pytest.mark.xfail(reason='https://github.com/NVIDIA/spark-rapids/issues/133')),
     pytest.param([date_gen], marks=pytest.mark.xfail(reason='https://github.com/NVIDIA/spark-rapids/issues/133'))]
 
@@ -132,7 +132,7 @@ def test_simple_partitioned_read(spark_tmp_path):
     # we should go with a more standard set of generators
     parquet_gens = [byte_gen, short_gen, int_gen, long_gen, float_gen, double_gen,
     string_gen, boolean_gen, DateGen(start=date(1590, 1, 1)),
-    TimestampGen(start=datetime(1590, 1, 1, tzinfo=timezone.utc))]
+    TimestampGen(start=datetime(1900, 1, 1, tzinfo=timezone.utc))]
     gen_list = [('_c' + str(i), gen) for i, gen in enumerate(parquet_gens)]
     first_data_path = spark_tmp_path + '/PARQUET_DATA/key=0'
     with_cpu_session(
@@ -153,7 +153,7 @@ def test_read_merge_schema(spark_tmp_path):
     # we should go with a more standard set of generators
     parquet_gens = [byte_gen, short_gen, int_gen, long_gen, float_gen, double_gen,
     string_gen, boolean_gen, DateGen(start=date(1590, 1, 1)),
-    TimestampGen(start=datetime(1590, 1, 1, tzinfo=timezone.utc))]
+    TimestampGen(start=datetime(1900, 1, 1, tzinfo=timezone.utc))]
     first_gen_list = [('_c' + str(i), gen) for i, gen in enumerate(parquet_gens)]
     first_data_path = spark_tmp_path + '/PARQUET_DATA/key=0'
     with_cpu_session(

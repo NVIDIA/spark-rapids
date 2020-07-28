@@ -25,6 +25,7 @@ SPARK_VERSION=$5
 CUDF_VERSION=$6
 CUDA_VERSION=$7
 CI_CUDF_JAR=$8
+BASE_SPARK_POM_VERSION=$9
 
 echo "Spark version is $SPARK_VERSION"
 echo "scala version is: $SCALA_VERSION"
@@ -40,7 +41,7 @@ rm -rf spark-rapids
 mkdir spark-rapids
 tar -zxvf $SPARKTGZ -C spark-rapids
 cd spark-rapids
-mvn -B clean package || true
+mvn -B -Pdatabricks clean package -DskipTests || true
 M2DIR=/home/ubuntu/.m2/repository
 CUDF_JAR=${M2DIR}/ai/rapids/cudf/${CUDF_VERSION}/cudf-${CUDF_VERSION}-${CUDA_VERSION}.jar
 
@@ -50,13 +51,17 @@ SQLJAR=----workspace_spark_3_0--sql--core--core-hive-2.3__hadoop-2.7_${SCALA_VER
 CATALYSTJAR=----workspace_spark_3_0--sql--catalyst--catalyst-hive-2.3__hadoop-2.7_${SCALA_VERSION}_deploy.jar
 ANNOTJAR=----workspace_spark_3_0--common--tags--tags-hive-2.3__hadoop-2.7_${SCALA_VERSION}_deploy.jar
 COREJAR=----workspace_spark_3_0--core--core-hive-2.3__hadoop-2.7_${SCALA_VERSION}_deploy.jar
+# install the 3.0.0 pom file so we get dependencies
+COREPOM=spark-core_${SCALA_VERSION}-${BASE_SPARK_POM_VERSION}.pom
+COREPOMPATH=$M2DIR/org/apache/spark/spark-core_${SCALA_VERSION}/${BASE_SPARK_POM_VERSION}
 mvn -B install:install-file \
    -Dmaven.repo.local=$M2DIR \
    -Dfile=$JARDIR/$COREJAR \
    -DgroupId=org.apache.spark \
    -DartifactId=spark-core_$SCALA_VERSION \
    -Dversion=$SPARK_VERSION \
-   -Dpackaging=jar
+   -Dpackaging=jar \
+   -DpomFile=$COREPOMPATH/$COREPOM
 
 mvn -B install:install-file \
    -Dmaven.repo.local=$M2DIR \

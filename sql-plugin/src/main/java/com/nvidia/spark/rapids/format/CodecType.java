@@ -5,12 +5,16 @@ package com.nvidia.spark.rapids.format;
 public final class CodecType {
   private CodecType() { }
   /**
+   * data simply copied, codec is only for testing
+   */
+  public static final byte COPY = -1;
+  /**
    * no compression codec was used on the data
    */
   public static final byte UNCOMPRESSED = 0;
 
-  public static final String[] names = { "UNCOMPRESSED", };
+  public static final String[] names = { "COPY", "UNCOMPRESSED", };
 
-  public static String name(int e) { return names[e]; }
+  public static String name(int e) { return names[e - COPY]; }
 }
 

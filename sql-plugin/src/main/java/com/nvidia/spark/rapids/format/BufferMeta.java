@@ -20,39 +20,42 @@ public final class BufferMeta extends Table {
   public int id() { int o = __offset(4); return o != 0 ? bb.getInt(o + bb_pos) : 0; }
   public boolean mutateId(int id) { int o = __offset(4); if (o != 0) { bb.putInt(o + bb_pos, id); return true; } else { return false; } }
   /**
-   * size of the uncompressed buffer data in bytes
+   * size of the buffer data in bytes
    */
-  public long actualSize() { int o = __offset(6); return o != 0 ? bb.getLong(o + bb_pos) : 0L; }
-  public boolean mutateActualSize(long actual_size) { int o = __offset(6); if (o != 0) { bb.putLong(o + bb_pos, actual_size); return true; } else { return false; } }
+  public long size() { int o = __offset(6); return o != 0 ? bb.getLong(o + bb_pos) : 0L; }
+  public boolean mutateSize(long size) { int o = __offset(6); if (o != 0) { bb.putLong(o + bb_pos, size); return true; } else { return false; } }
   /**
-   * size of the compressed buffer data if a codec is used
+   * size of the uncompressed buffer data
    */
-  public long compressedSize() { int o = __offset(8); return o != 0 ? bb.getLong(o + bb_pos) : 0L; }
-  public boolean mutateCompressedSize(long compressed_size) { int o = __offset(8); if (o != 0) { bb.putLong(o + bb_pos, compressed_size); return true; } else { return false; } }
+  public long uncompressedSize() { int o = __offset(8); return o != 0 ? bb.getLong(o + bb_pos) : 0L; }
+  public boolean mutateUncompressedSize(long uncompressed_size) { int o = __offset(8); if (o != 0) { bb.putLong(o + bb_pos, uncompressed_size); return true; } else { return false; } }
   /**
-   * type of compression codec used
+   * array of codec buffer descriptors if the data is compressed
    */
-  public byte codec() { int o = __offset(10); return o != 0 ? bb.get(o + bb_pos) : 0; }
-  public boolean mutateCodec(byte codec) { int o = __offset(10); if (o != 0) { bb.put(o + bb_pos, codec); return true; } else { return false; } }
+  public CodecBufferDescriptor codecBufferDescrs(int j) { return codecBufferDescrs(new CodecBufferDescriptor(), j); }
+  public CodecBufferDescriptor codecBufferDescrs(CodecBufferDescriptor obj, int j) { int o = __offset(10); return o != 0 ? obj.__assign(__indirect(__vector(o) + j * 4), bb) : null; }
+  public int codecBufferDescrsLength() { int o = __offset(10); return o != 0 ? __vector_len(o) : 0; }
 
   public static int createBufferMeta(FlatBufferBuilder builder,
       int id,
-      long actual_size,
-      long compressed_size,
-      byte codec) {
+      long size,
+      long uncompressed_size,
+      int codec_buffer_descrsOffset) {
     builder.startObject(4);
-    BufferMeta.addCompressedSize(builder, compressed_size);
-    BufferMeta.addActualSize(builder, actual_size);
+    BufferMeta.addUncompressedSize(builder, uncompressed_size);
+    BufferMeta.addSize(builder, size);
+    BufferMeta.addCodecBufferDescrs(builder, codec_buffer_descrsOffset);
     BufferMeta.addId(builder, id);
-    BufferMeta.addCodec(builder, codec);
     return BufferMeta.endBufferMeta(builder);
   }
 
   public static void startBufferMeta(FlatBufferBuilder builder) { builder.startObject(4); }
   public static void addId(FlatBufferBuilder builder, int id) { builder.addInt(0, id, 0); }
-  public static void addActualSize(FlatBufferBuilder builder, long actualSize) { builder.addLong(1, actualSize, 0L); }
-  public static void addCompressedSize(FlatBufferBuilder builder, long compressedSize) { builder.addLong(2, compressedSize, 0L); }
-  public static void addCodec(FlatBufferBuilder builder, byte codec) { builder.addByte(3, codec, 0); }
+  public static void addSize(FlatBufferBuilder builder, long size) { builder.addLong(1, size, 0L); }
+  public static void addUncompressedSize(FlatBufferBuilder builder, long uncompressedSize) { builder.addLong(2, uncompressedSize, 0L); }
+  public static void addCodecBufferDescrs(FlatBufferBuilder builder, int codecBufferDescrsOffset) { builder.addOffset(3, codecBufferDescrsOffset, 0); }
+  public static int createCodecBufferDescrsVector(FlatBufferBuilder builder, int[] data) { builder.startVector(4, data.length, 4); for (int i = data.length - 1; i >= 0; i--) builder.addOffset(data[i]); return builder.endVector(); }
+  public static void startCodecBufferDescrsVector(FlatBufferBuilder builder, int numElems) { builder.startVector(4, numElems, 4); }
   public static int endBufferMeta(FlatBufferBuilder builder) {
     int o = builder.endObject();
     return o;

@@ -32,7 +32,7 @@ with Docker on Kubernetes then skip these as you will do this as part of the doc
   - `sudo apt-get update`
   - `sudo apt-get -y install cuda`
 
-Below are sections on installing Spark and the RAPIDS Accelerator on a single node, you may want
+Below are sections on installing Spark and the RAPIDS Accelerator on a single node.  You may want
 to read the deployment method sections before doing any installations.
 
 ## Install Spark
@@ -79,7 +79,7 @@ This is for testing/dev setup only.  It is not to be used in production.  In thi
 everything in a single process on a single node.
 - [Install Spark](#install-spark)
 - [Install the RAPIDS jars](#download-the-rapids-jars)
-- Launch your Spark shell session
+- Launch your Spark shell session. 
 
 Default configs usually work fine in local mode.  The required changes are setting the config 
 `spark.plugins` to `com.nvidia.spark.SQLPlugin` and including the jars as a dependency. All of the
@@ -147,11 +147,13 @@ Now you can go to the master UI at `http://${MASTER_HOST}:8080` and verify all t
 started.
 
 Submitting a Spark application to a standalone mode cluster requires a few configs to be set. These
-configs can be placed in the spark default confs if you want all jobs to use the GPU. The
-plugin requires its jars to be in the executor classpath. Gpu scheduling also requires you to
-ask for GPUs.  In this case we are asking for 1 GPU per executor, the plugin cannot utilize more
-than one, and 4 CPU tasks per executor, but only one task will be on the GPU at a time. This allows
-for overlapping I/O and computation.
+configs can be placed in the Spark default confs if you want all jobs to use the GPU. The plugin
+requires its jars to be in the executor classpath.  GPU scheduling also requires the Spark job to 
+ask for GPUs.  The plugin cannot utilize more than one GPU per executor. 
+
+In this case we are asking for 1 GPU per executor (the plugin cannot utilize more than one), and 4 
+CPU tasks per executor (but only one task will be on the GPU at a time).  This allows for 
+overlapping I/O and computation. 
 
 ```shell 
 $SPARK_HOME/bin/spark-shell \
@@ -245,7 +247,7 @@ $SPARK_HOME/bin/spark-shell \
        --conf spark.executor.resource.gpu.discoveryScript=./getGpusResources.sh \
        --files ${SPARK_RAPIDS_DIR}/getGpusResources.sh \
        --jars  ${SPARK_CUDF_JAR},${SPARK_RAPIDS_PLUGIN_JAR}
-```  
+``` 
 
 ### YARN without Isolation
 If you run YARN without isolation then you can run the RAPIDS Accelerator for Spark as long as you
@@ -330,7 +332,7 @@ $SPARK_HOME/bin/spark-shell \
 ## RAPIDS Accelerator Configuration and Tuning
 Most of what you need you can get from [tuning guide](../tuning-guide).
 
-The following configs will hep you to get started but must be configured based on your cluster
+The following configs will help you to get started but must be configured based on your cluster
 and application.
 
 1. If you are using the KryoSerializer with Spark, e.g.:
@@ -408,20 +410,21 @@ _RDMA over Converged Ethernet (RoCE)_ or _TCP_, and as configured in UCX, in the
 In order to enable the _RapidsShuffleManager_, please follow these steps. If you don't have 
 Mellanox hardware go to *step 2*:
 
-1) If you have Mellanox NICs and an Infiniband(IB) or RoCE network, please ensure you have the 
+1. If you have Mellanox NICs and an Infiniband(IB) or RoCE network, please ensure you have the 
 [MLNX_OFED driver](https://www.mellanox.com/products/infiniband-drivers/linux/mlnx_ofed), 
 and the [`nv_peer_mem` kernel module](https://www.mellanox.com/products/GPUDirect-RDMA) installed.
 
-With `nv_peer_mem`, IB/RoCE-based transfers can perform zero-copy transfers directly from GPU memory.
+    With `nv_peer_mem`, IB/RoCE-based transfers can perform zero-copy transfers directly from GPU memory.
 
-2) Install [UCX 1.8.1](https://github.com/openucx/ucx/releases/tag/v1.8.1). 
+2. Install [UCX 1.8.1](https://github.com/openucx/ucx/releases/tag/v1.8.1). 
 
-3) You will need to configure your spark job with extra settings for UCX (we are looking to 
+
+3. You will need to configure your spark job with extra settings for UCX (we are looking to 
 simplify these settings in the near future). Choose the version of the shuffle manager
 that matches your Spark version. Currently we support
-Spark 3.0.0 (com.nvidia.spark.rapids.spark300.RapidsShuffleManager) and
-Spark 3.0.1 (com.nvidia.spark.rapids.spark301.RapidsShuffleManager) and
-Spark 3.1.0 (com.nvidia.spark.rapids.spark310.RapidsShuffleManager):
+   - Spark 3.0.0 (com.nvidia.spark.rapids.spark300.RapidsShuffleManager) 
+   - Spark 3.0.1 (com.nvidia.spark.rapids.spark301.RapidsShuffleManager) 
+   - Spark 3.1.0 (com.nvidia.spark.rapids.spark310.RapidsShuffleManager)
 
 ```shell
 ...

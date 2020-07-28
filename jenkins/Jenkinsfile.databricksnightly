@@ -44,7 +44,7 @@ pipeline {
         choice(name: 'DEPLOY_TO', choices: ['Urm', 'Local'],
             description: 'Where to deploy artifacts to')
         string(name: 'DATABRICKS_VERSION',
-                defaultValue: '0.2-databricks-SNAPSHOT', description: 'Version to set')
+                defaultValue: '0.2.0-SNAPSHOT', description: 'Version to set')
         string(name: 'CUDF_VERSION',
                 defaultValue: '0.15-SNAPSHOT', description: 'Cudf version to use')
         string(name: 'CUDA_VERSION',
@@ -61,7 +61,7 @@ pipeline {
         URM_CREDS = credentials("svcngcc_artifactory")
         DATABRICKS_TOKEN = credentials("SPARK_DATABRICKS_TOKEN")
         SCALA_VERSION = '2.12'
-        SPARK_VERSION = '3.0.0'
+        SPARK_VERSION = '3.0.0-databricks'
         CI_RAPIDS_JAR = 'rapids-4-spark_2.12-0.1-SNAPSHOT-ci.jar'
         CI_CUDF_JAR = 'cudf-0.14-cuda10-1.jar'
         URM_URL = "${urmUrl}"
@@ -76,8 +76,7 @@ pipeline {
             steps {
                 script {
                     sshagent(credentials : ['svcngcc_pubpriv']) {
-                        sh "mvn -B versions:set -DnewVersion=$DATABRICKS_VERSION && git clean -d -f"
-                        sh "patch -p1 < ./jenkins/databricks/dbimports.patch"
+                        sh "rm spark-rapids-ci.tgz"
                         sh "tar -zcvf spark-rapids-ci.tgz *"
                         sh "python3.6 ./jenkins/databricks/run-tests.py -c $CLUSTER_ID -z ./spark-rapids-ci.tgz -t $DATABRICKS_TOKEN -p /home/svcngcc/.ssh/id_rsa -l ./jenkins/databricks/build.sh -j $CI_RAPIDS_JAR -b $DATABRICKS_VERSION -k $SPARK_VERSION -a $SCALA_VERSION -f $CUDF_VERSION -u $CUDA_VERSION -m $CI_CUDF_JAR"
                         sh "./jenkins/databricks/deploy.sh"
