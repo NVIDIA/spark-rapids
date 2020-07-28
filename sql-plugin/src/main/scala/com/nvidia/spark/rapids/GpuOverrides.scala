@@ -1299,9 +1299,9 @@ object GpuOverrides {
           }
         }
         override def convertToGpu(
-                                     str: Expression,
-                                     width: Expression,
-                                     pad: Expression): GpuExpression =
+            str: Expression,
+            width: Expression,
+            pad: Expression): GpuExpression =
           GpuStringLPad(str, width, pad)
       }),
     expr[StringRPad](
@@ -1321,9 +1321,9 @@ object GpuOverrides {
           }
         }
         override def convertToGpu(
-                                     str: Expression,
-                                     width: Expression,
-                                     pad: Expression): GpuExpression =
+            str: Expression,
+            width: Expression,
+            pad: Expression): GpuExpression =
           GpuStringRPad(str, width, pad)
       }),
     expr[StringLocate](
