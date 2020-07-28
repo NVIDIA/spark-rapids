@@ -147,9 +147,9 @@ case class GpuIsNan(child: Expression) extends GpuUnaryExpression with Predicate
 }
 
 /**
-  * A GPU accelerated predicate that is evaluated to be true if there are at least `n` non-null
-  * and non-NaN values.
-  */
+ * A GPU accelerated predicate that is evaluated to be true if there are at least `n` non-null
+ * and non-NaN values.
+ */
 case class GpuAtLeastNNonNulls(
     n: Int,
     exprs: Seq[Expression])
@@ -160,17 +160,17 @@ case class GpuAtLeastNNonNulls(
   override def toString: String = s"GpuAtLeastNNulls(n, ${children.mkString(",")})"
   override def children: Seq[Expression] = exprs
   /**
-    * Returns the result of evaluating this expression on the entire
-    * `ColumnarBatch`. The result of calling this may be a single [[GpuColumnVector]] or a scalar
-    * value. Scalar values typically happen if they are a part of the expression
-    * i.e. col("a") + 100.
-    * In this case the 100 is a literal that Add would have to be able to handle.
-    *
-    * By convention any [[GpuColumnVector]] returned by [[columnarEval]]
-    * is owned by the caller and will need to be closed by them. This can happen by putting it into
-    * a `ColumnarBatch` and closing the batch or by closing the vector directly if it is a
-    * temporary value.
-    */
+   * Returns the result of evaluating this expression on the entire
+   * `ColumnarBatch`. The result of calling this may be a single [[GpuColumnVector]] or a scalar
+   * value. Scalar values typically happen if they are a part of the expression
+   * i.e. col("a") + 100.
+   * In this case the 100 is a literal that Add would have to be able to handle.
+   *
+   * By convention any [[GpuColumnVector]] returned by [[columnarEval]]
+   * is owned by the caller and will need to be closed by them. This can happen by putting it into
+   * a `ColumnarBatch` and closing the batch or by closing the vector directly if it is a
+   * temporary value.
+   */
   override def columnarEval(batch: ColumnarBatch): Any = {
     val nonNullNanCounts : mutable.Queue[ColumnVector] = new mutable.Queue[ColumnVector]()
     try {
