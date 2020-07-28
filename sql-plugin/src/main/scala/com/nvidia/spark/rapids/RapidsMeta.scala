@@ -23,6 +23,7 @@ import com.nvidia.spark.rapids.GpuOverrides.isStringLit
 import org.apache.spark.sql.catalyst.expressions.{BinaryExpression, ComplexTypeMergingExpression, Expression, String2TrimExpression, TernaryExpression, UnaryExpression}
 import org.apache.spark.sql.catalyst.expressions.aggregate.AggregateFunction
 import org.apache.spark.sql.catalyst.plans.physical.Partitioning
+import org.apache.spark.sql.catalyst.trees.TreeNodeTag
 import org.apache.spark.sql.connector.read.Scan
 import org.apache.spark.sql.execution.SparkPlan
 import org.apache.spark.sql.execution.command.DataWritingCommand
@@ -116,12 +117,21 @@ abstract class RapidsMeta[INPUT <: BASE, BASE, OUTPUT <: BASE](
 
   private var shouldBeRemovedReasons: Option[mutable.Set[String]] = None
 
+  val gpuSupportedTag = TreeNodeTag[String]("rapids.gpu.supported")
+
   /**
    * Call this to indicate that this should not be replaced with a GPU enabled version
    * @param because why it should not be replaced.
    */
-  final def willNotWorkOnGpu(because: String): Unit =
+  final def willNotWorkOnGpu(because: String): Unit = {
     cannotBeReplacedReasons.get.add(because)
+    // annotate the real spark plan with the reason as well so that the information is available
+    // during query stage planning when AQE is on
+    wrapped match {
+      case p: SparkPlan => p.setTagValue(gpuSupportedTag, because)
+      case _ =>
+    }
+  }
 
   final def shouldBeRemoved(because: String): Unit =
     shouldBeRemovedReasons.get.add(because)
