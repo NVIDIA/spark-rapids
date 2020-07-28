@@ -20,22 +20,22 @@ import java.time.ZoneId
 
 import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.spark300.RapidsShuffleManager
-import org.apache.spark.SparkEnv
 
+import org.apache.spark.SparkEnv
+import org.apache.spark.sql.{SparkSession, SparkSessionExtensions}
 import org.apache.spark.sql.catalyst.encoders.ExpressionEncoder
+import org.apache.spark.sql.catalyst.expressions._
 import org.apache.spark.sql.catalyst.expressions.aggregate.{First, Last}
+import org.apache.spark.sql.catalyst.plans.JoinType
+import org.apache.spark.sql.catalyst.rules.Rule
 import org.apache.spark.sql.execution._
 import org.apache.spark.sql.execution.datasources.HadoopFsRelation
 import org.apache.spark.sql.execution.joins.{BroadcastHashJoinExec, BroadcastNestedLoopJoinExec, HashJoin, SortMergeJoinExec}
 import org.apache.spark.sql.execution.joins.ShuffledHashJoinExec
-import org.apache.spark.sql.catalyst.expressions._
-import org.apache.spark.sql.catalyst.plans.JoinType
 import org.apache.spark.sql.rapids.GpuTimeSub
 import org.apache.spark.sql.rapids.execution.GpuBroadcastNestedLoopJoinExecBase
 import org.apache.spark.sql.rapids.shims.spark300._
 import org.apache.spark.sql.types._
-import org.apache.spark.sql.{SparkSession, SparkSessionExtensions}
-import org.apache.spark.sql.catalyst.rules.Rule
 import org.apache.spark.storage.{BlockId, BlockManagerId}
 import org.apache.spark.unsafe.types.CalendarInterval
 
@@ -131,7 +131,7 @@ class Spark300Shims extends SparkShims {
         (join, conf, p, r) => new GpuBroadcastHashJoinMeta(join, conf, p, r)),
       GpuOverrides.exec[ShuffledHashJoinExec](
         "Implementation of join using hashed shuffled data",
-        (join, conf, p, r) => new GpuShuffledHashJoinMeta(join, conf, p, r)),
+        (join, conf, p, r) => new GpuShuffledHashJoinMeta(join, conf, p, r))
     ).map(r => (r.getClassFor.asSubclass(classOf[SparkPlan]), r)).toMap
   }
 
@@ -180,7 +180,7 @@ class Spark300Shims extends SparkShims {
 
           override def convertToGpu(): GpuExpression =
             GpuLast(child.convertToGpu(), ignoreNulls.convertToGpu())
-        }),
+        })
     ).map(r => (r.getClassFor.asSubclass(classOf[Expression]), r)).toMap
   }
 
@@ -199,6 +199,7 @@ class Spark300Shims extends SparkShims {
   override def injectQueryStagePrepRule(
       extensions: SparkSessionExtensions,
       ruleBuilder: SparkSession => Rule[SparkPlan]): Unit = {
-    // not supported in 3.0.0
+    // not supported in 3.0.0 but it doesn't matter because AdaptiveSparkPlanExec in 3.0.0 will
+    // never allow us to replace an Exchange node, so they just stay on CPU
   }
 }
