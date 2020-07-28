@@ -720,15 +720,15 @@ trait BasePad extends GpuTernaryExpression with ImplicitCastInputTypes with Null
   }
 
   override def doColumnar(
-                          str: GpuColumnVector,
-                          len: GpuColumnVector,
-                          pad: GpuColumnVector): GpuColumnVector =
+      str: GpuColumnVector,
+      len: GpuColumnVector,
+      pad: GpuColumnVector): GpuColumnVector =
     throw new IllegalStateException("This is not supported yet")
 
   override def doColumnar(
-                          str: Scalar,
-                          len: GpuColumnVector,
-                          pad: GpuColumnVector): GpuColumnVector =
+      str: Scalar,
+      len: GpuColumnVector,
+      pad: GpuColumnVector): GpuColumnVector =
     throw new IllegalStateException("This is not supported yet")
 
   override def doColumnar(str: Scalar, len: Scalar, pad: GpuColumnVector): GpuColumnVector =
@@ -738,15 +738,15 @@ trait BasePad extends GpuTernaryExpression with ImplicitCastInputTypes with Null
     throw new IllegalStateException("This is not supported yet")
 
   override def doColumnar(
-                          str: GpuColumnVector,
-                          len: Scalar,
-                          pad: GpuColumnVector): GpuColumnVector =
+      str: GpuColumnVector,
+      len: Scalar,
+      pad: GpuColumnVector): GpuColumnVector =
     throw new IllegalStateException("This is not supported yet")
 
   override def doColumnar(
-                          str: GpuColumnVector,
-                          len: GpuColumnVector,
-                          pad: Scalar): GpuColumnVector =
+      str: GpuColumnVector,
+      len: GpuColumnVector,
+      pad: Scalar): GpuColumnVector =
     throw new IllegalStateException("This is not supported yet")
 }
 
