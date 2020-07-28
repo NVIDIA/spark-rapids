@@ -19,8 +19,8 @@ package com.nvidia.spark.rapids.shims.spark310
 import java.time.ZoneId
 
 import com.nvidia.spark.rapids._
-import com.nvidia.spark.rapids.spark310.RapidsShuffleManager
 import com.nvidia.spark.rapids.shims.spark301.Spark301Shims
+import com.nvidia.spark.rapids.spark310.RapidsShuffleManager
 
 import org.apache.spark.SparkEnv
 import org.apache.spark.sql.catalyst.encoders.ExpressionEncoder
@@ -33,9 +33,9 @@ import org.apache.spark.sql.execution.joins.ShuffledHashJoinExec
 import org.apache.spark.sql.rapids.GpuTimeSub
 import org.apache.spark.sql.rapids.execution.GpuBroadcastNestedLoopJoinExecBase
 import org.apache.spark.sql.rapids.shims.spark310._
-import org.apache.spark.unsafe.types.CalendarInterval
 import org.apache.spark.sql.types._
 import org.apache.spark.storage.{BlockId, BlockManagerId}
+import org.apache.spark.unsafe.types.CalendarInterval
 
 class Spark310Shims extends Spark301Shims {
 
@@ -48,7 +48,8 @@ class Spark310Shims extends Spark301Shims {
       udfName: Option[String] = None,
       nullable: Boolean = true,
       udfDeterministic: Boolean = true): Expression = {
-    ScalaUDF(function, dataType, children, inputEncoders, outputEncoder, udfName, nullable, udfDeterministic)
+    ScalaUDF(function, dataType, children, inputEncoders, outputEncoder, udfName, nullable,
+      udfDeterministic)
   }
 
   override def getMapSizesByExecutorId(
@@ -114,7 +115,7 @@ class Spark310Shims extends Spark301Shims {
           override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression =
             GpuTimeSub(lhs, rhs)
         }
-      ),
+      )
     ).map(r => (r.getClassFor.asSubclass(classOf[Expression]), r)).toMap
     exprs310 ++ super.exprs301
   }
@@ -155,7 +156,7 @@ class Spark310Shims extends Spark301Shims {
         (join, conf, p, r) => new GpuBroadcastHashJoinMeta(join, conf, p, r)),
       GpuOverrides.exec[ShuffledHashJoinExec](
         "Implementation of join using hashed shuffled data",
-        (join, conf, p, r) => new GpuShuffledHashJoinMeta(join, conf, p, r)),
+        (join, conf, p, r) => new GpuShuffledHashJoinMeta(join, conf, p, r))
     ).map(r => (r.getClassFor.asSubclass(classOf[SparkPlan]), r)).toMap
   }
 

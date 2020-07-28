@@ -22,7 +22,7 @@ import scala.collection.mutable.ArrayBuffer
 
 import ai.rapids.cudf.{DeviceMemoryBuffer, MemoryBuffer, NvtxColor, NvtxRange}
 import com.nvidia.spark.rapids._
-import com.nvidia.spark.rapids.format.{CodecType, MetadataResponse, TableMeta, TransferState}
+import com.nvidia.spark.rapids.format.{MetadataResponse, TableMeta, TransferState}
 
 import org.apache.spark.internal.Logging
 import org.apache.spark.sql.rapids.GpuShuffleEnv
@@ -67,10 +67,7 @@ case class PendingTransferRequest(client: RapidsShuffleClient,
                                   tableMeta: TableMeta,
                                   tag: Long,
                                   handler: RapidsShuffleFetchHandler) {
-
-  require(tableMeta.bufferMeta().codec() == CodecType.UNCOMPRESSED)
-
-  def getLength: Long = tableMeta.bufferMeta().actualSize()
+  def getLength: Long = tableMeta.bufferMeta.size
 }
 
 /**

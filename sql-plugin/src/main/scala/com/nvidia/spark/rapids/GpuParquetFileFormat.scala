@@ -17,6 +17,7 @@
 package com.nvidia.spark.rapids
 
 import ai.rapids.cudf._
+import com.nvidia.spark.RebaseHelper
 import org.apache.hadoop.mapreduce.{Job, OutputCommitter, TaskAttemptContext}
 import org.apache.parquet.hadoop.{ParquetOutputCommitter, ParquetOutputFormat}
 import org.apache.parquet.hadoop.ParquetOutputFormat.JobSummaryLevel
@@ -25,11 +26,12 @@ import org.apache.parquet.hadoop.util.ContextUtil
 
 import org.apache.spark.internal.Logging
 import org.apache.spark.sql.{Row, SparkSession}
+import org.apache.spark.sql.execution.datasources.DataSourceUtils
 import org.apache.spark.sql.execution.datasources.parquet.{ParquetOptions, ParquetWriteSupport}
 import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.internal.SQLConf.ParquetOutputTimestampType
 import org.apache.spark.sql.rapids.execution.TrampolineUtil
-import org.apache.spark.sql.types.{StructType, TimestampType}
+import org.apache.spark.sql.types.{DateType, StructType, TimestampType}
 
 object GpuParquetFileFormat {
   def tagGpuSupport(
@@ -69,6 +71,21 @@ object GpuParquetFileFormat {
       }
     }
 
+    val schemaHasDates = schema.exists { field =>
+      TrampolineUtil.dataTypeExistsRecursively(field.dataType, _.isInstanceOf[DateType])
+    }
+
+    sqlConf.getConf(SQLConf.LEGACY_PARQUET_REBASE_MODE_IN_WRITE) match {
+      case "EXCEPTION" => //Good
+      case "CORRECTED" => //Good
+      case "LEGACY" =>
+        if (schemaHasDates || schemaHasTimestamps) {
+          meta.willNotWorkOnGpu("LEGACY rebase mode for dates and timestamps is not supported")
+        }
+      case other =>
+        meta.willNotWorkOnGpu(s"$other is not a supported rebase mode")
+    }
+
     if (meta.canThisBeReplaced) {
       Some(new GpuParquetFileFormat)
     } else {
@@ -100,6 +117,9 @@ class GpuParquetFileFormat extends ColumnarFileFormat with Logging {
     val parquetOptions = new ParquetOptions(options, sparkSession.sessionState.conf)
 
     val conf = ContextUtil.getConfiguration(job)
+
+    val dateTimeRebaseException =
+      "EXCEPTION".equals(conf.get(SQLConf.LEGACY_PARQUET_REBASE_MODE_IN_WRITE.key))
 
     val committerClass =
       conf.getClass(
@@ -179,7 +199,7 @@ class GpuParquetFileFormat extends ColumnarFileFormat with Logging {
           path: String,
           dataSchema: StructType,
           context: TaskAttemptContext): ColumnarOutputWriter = {
-        new GpuParquetWriter(path, dataSchema, compressionType, context)
+        new GpuParquetWriter(path, dataSchema, compressionType, dateTimeRebaseException, context)
       }
 
       override def getFileExtension(context: TaskAttemptContext): String = {
@@ -193,8 +213,19 @@ class GpuParquetWriter(
     path: String,
     dataSchema: StructType,
     compressionType: CompressionType,
+    dateTimeRebaseException: Boolean,
     context: TaskAttemptContext)
   extends ColumnarOutputWriter(path, context, dataSchema, "Parquet") {
+
+  override def scanTableBeforeWrite(table: Table): Unit = {
+    if (dateTimeRebaseException) {
+      (0 until table.getNumberOfColumns).foreach { i =>
+        if (RebaseHelper.isDateTimeRebaseNeededWrite(table.getColumn(i))) {
+          throw DataSourceUtils.newRebaseExceptionInWrite("Parquet")
+        }
+      }
+    }
+  }
 
   override val tableWriter: TableWriter = {
     val writeContext = new ParquetWriteSupport().init(conf)

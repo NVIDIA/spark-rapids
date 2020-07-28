@@ -27,6 +27,7 @@ import scala.collection.mutable.ArrayBuffer
 import scala.math.max
 
 import ai.rapids.cudf.{ColumnVector, DType, HostMemoryBuffer, NvtxColor, ParquetOptions, Table}
+import com.nvidia.spark.RebaseHelper
 import com.nvidia.spark.rapids.GpuMetricNames._
 import com.nvidia.spark.rapids.ParquetPartitionReader.CopyRange
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
@@ -56,8 +57,9 @@ import org.apache.spark.sql.execution.datasources.v2.{FilePartitionReaderFactory
 import org.apache.spark.sql.execution.datasources.v2.parquet.ParquetScan
 import org.apache.spark.sql.execution.metric.SQLMetric
 import org.apache.spark.sql.internal.SQLConf
+import org.apache.spark.sql.rapids.execution.TrampolineUtil
 import org.apache.spark.sql.sources.Filter
-import org.apache.spark.sql.types.StructType
+import org.apache.spark.sql.types.{StructType, TimestampType}
 import org.apache.spark.sql.util.CaseInsensitiveStringMap
 import org.apache.spark.sql.vectorized.ColumnarBatch
 import org.apache.spark.util.SerializableConfiguration
@@ -114,6 +116,8 @@ object GpuParquetScan {
       sparkSession: SparkSession,
       readSchema: StructType,
       meta: RapidsMeta[_, _, _]): Unit = {
+    val sqlConf = sparkSession.conf
+
     if (!meta.conf.isParquetEnabled) {
       meta.willNotWorkOnGpu("Parquet input and output has been disabled. To enable set" +
         s"${RapidsConf.ENABLE_PARQUET} to true")
@@ -130,6 +134,10 @@ object GpuParquetScan {
       }
     }
 
+    val schemaHasTimestamps = readSchema.exists { field =>
+      TrampolineUtil.dataTypeExistsRecursively(field.dataType, _.isInstanceOf[TimestampType])
+    }
+
     // Currently timestamp conversion is not supported.
     // If support needs to be added then we need to follow the logic in Spark's
     // ParquetPartitionReaderFactory and VectorizedColumnReader which essentially
@@ -139,8 +147,16 @@ object GpuParquetScan {
     //     were written in that timezone and convert them to UTC timestamps.
     // Essentially this should boil down to a vector subtract of the scalar delta
     // between the configured timezone's delta from UTC on the timestamp data.
-    if (sparkSession.sessionState.conf.isParquetINT96TimestampConversion) {
+    if (schemaHasTimestamps && sparkSession.sessionState.conf.isParquetINT96TimestampConversion) {
       meta.willNotWorkOnGpu("GpuParquetScan does not support int96 timestamp conversion")
+    }
+
+    sqlConf.get(SQLConf.LEGACY_PARQUET_REBASE_MODE_IN_READ.key) match {
+      case "EXCEPTION" => // Good
+      case "CORRECTED" => // Good
+      case "LEGACY" => // Good, but it really is EXCEPTION for us...
+      case other =>
+        meta.willNotWorkOnGpu(s"$other is not a supported read rebase mode")
     }
   }
 }
@@ -164,6 +180,8 @@ case class GpuParquetPartitionReaderFactory(
   private val debugDumpPrefix = rapidsConf.parquetDebugDumpPrefix
   private val maxReadBatchSizeRows = rapidsConf.maxReadBatchSizeRows
   private val maxReadBatchSizeBytes = rapidsConf.maxReadBatchSizeBytes
+  private val isCorrectedRebase =
+    "CORRECTED" == sqlConf.getConf(SQLConf.LEGACY_PARQUET_REBASE_MODE_IN_READ)
 
   override def supportColumnarReads(partition: InputPartition): Boolean = true
 
@@ -177,8 +195,10 @@ case class GpuParquetPartitionReaderFactory(
     ColumnarPartitionReaderWithPartitionValues.newReader(partitionedFile, reader, partitionSchema)
   }
 
-  private def filterClippedSchema(clippedSchema: MessageType,
-      fileSchema: MessageType, isCaseSensitive: Boolean): MessageType = {
+  private def filterClippedSchema(
+      clippedSchema: MessageType,
+      fileSchema: MessageType,
+      isCaseSensitive: Boolean): MessageType = {
     val fs = fileSchema.asGroupType()
     val types = if (isCaseSensitive) {
       val inFile = fs.getFields.asScala.map(_.getName).toSet
@@ -201,6 +221,24 @@ case class GpuParquetPartitionReaderFactory(
     }
   }
 
+  // Copied from Spark
+  private val SPARK_VERSION_METADATA_KEY = "org.apache.spark.version"
+  // Copied from Spark
+  private val SPARK_LEGACY_DATETIME = "org.apache.spark.legacyDateTime"
+
+  def isCorrectedRebaseMode(
+      lookupFileMeta: String => String,
+      isCorrectedModeConfig: Boolean): Boolean = {
+    // If there is no version, we return the mode specified by the config.
+    Option(lookupFileMeta(SPARK_VERSION_METADATA_KEY)).map { version =>
+      // Files written by Spark 2.4 and earlier follow the legacy hybrid calendar and we need to
+      // rebase the datetime values.
+      // Files written by Spark 3.0 and later may also need the rebase if they were written with
+      // the "LEGACY" rebase mode.
+      version >= "3.0.0" && lookupFileMeta(SPARK_LEGACY_DATETIME) == null
+    }.getOrElse(isCorrectedModeConfig)
+  }
+
   private def buildBaseColumnarParquetReader(
       file: PartitionedFile): PartitionReader[ColumnarBatch] = {
     val conf = broadcastedConf.value.value
@@ -216,6 +254,9 @@ case class GpuParquetPartitionReaderFactory(
     } else {
       None
     }
+
+    val isCorrectedRebaseForThis =
+      isCorrectedRebaseMode(footer.getFileMetaData.getKeyValueMetaData.get, isCorrectedRebase)
 
     val blocks = if (pushedFilters.isDefined) {
       // Use the ParquetFileReader to perform dictionary-level filtering
@@ -242,7 +283,7 @@ case class GpuParquetPartitionReaderFactory(
     val clippedBlocks = ParquetPartitionReader.clipBlocks(columnPaths, blocks.asScala)
     new ParquetPartitionReader(conf, file, filePath, clippedBlocks, clippedSchema,
         isCaseSensitive, readDataSchema, debugDumpPrefix, maxReadBatchSizeRows,
-        maxReadBatchSizeBytes, metrics)
+        maxReadBatchSizeBytes, metrics, isCorrectedRebaseForThis)
   }
 }
 
@@ -274,7 +315,8 @@ class ParquetPartitionReader(
     debugDumpPrefix: String,
     maxReadBatchSizeRows: Integer,
     maxReadBatchSizeBytes: Long,
-    execMetrics: Map[String, SQLMetric]) extends PartitionReader[ColumnarBatch] with Logging
+    execMetrics: Map[String, SQLMetric],
+    isCorrectedRebaseMode: Boolean) extends PartitionReader[ColumnarBatch] with Logging
   with ScanWithMetrics with Arm {
   private var isExhausted: Boolean = false
   private var maxDeviceMemory: Long  = 0
@@ -554,6 +596,13 @@ class ParquetPartitionReader(
         GpuSemaphore.acquireIfNecessary(TaskContext.get())
 
         val table = Table.readParquet(parseOpts, dataBuffer, 0, dataSize)
+        if (!isCorrectedRebaseMode) {
+          (0 until table.getNumberOfColumns).foreach { i =>
+            if (RebaseHelper.isDateTimeRebaseNeededRead(table.getColumn(i))) {
+              throw RebaseHelper.newRebaseExceptionInRead("Parquet")
+            }
+          }
+        }
         maxDeviceMemory = max(GpuColumnVector.getTotalDeviceMemoryUsed(table), maxDeviceMemory)
         if (readDataSchema.length < table.getNumberOfColumns) {
           table.close()

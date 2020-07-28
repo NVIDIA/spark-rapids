@@ -18,7 +18,7 @@ package org.apache.spark.sql.rapids
 
 import scala.collection.mutable.ArrayBuffer
 
-import ai.rapids.cudf.{ColumnVector, Scalar, Table}
+import ai.rapids.cudf.{ColumnVector, DType, PadSide, Scalar, Table}
 import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 
@@ -696,3 +696,76 @@ case class GpuSubstringIndex(strExpr: Expression,
           "Internal Error: this version of substring index is not supported")
 }
 
+trait BasePad extends GpuTernaryExpression with ImplicitCastInputTypes with NullIntolerant {
+  val str: Expression
+  val len: Expression
+  val pad: Expression
+  val direction: PadSide
+
+  override def children: Seq[Expression] = str :: len :: pad :: Nil
+  override def dataType: DataType = StringType
+  override def inputTypes: Seq[DataType] = Seq(StringType, IntegerType, StringType)
+
+  override def doColumnar(str: GpuColumnVector, len: Scalar, pad: Scalar): GpuColumnVector = {
+    if (len.isValid && pad.isValid) {
+      val l = math.max(0, len.getInt)
+      withResource(str.getBase.pad(l, direction, pad.getJavaString)) { padded =>
+        GpuColumnVector.from(padded.substring(0, l))
+      }
+    } else {
+      withResource(Scalar.fromNull(DType.STRING)) { ns =>
+        GpuColumnVector.from(ColumnVector.fromScalar(ns, str.getRowCount.toInt))
+      }
+    }
+  }
+
+  override def doColumnar(
+      str: GpuColumnVector,
+      len: GpuColumnVector,
+      pad: GpuColumnVector): GpuColumnVector =
+    throw new IllegalStateException("This is not supported yet")
+
+  override def doColumnar(
+      str: Scalar,
+      len: GpuColumnVector,
+      pad: GpuColumnVector): GpuColumnVector =
+    throw new IllegalStateException("This is not supported yet")
+
+  override def doColumnar(str: Scalar, len: Scalar, pad: GpuColumnVector): GpuColumnVector =
+    throw new IllegalStateException("This is not supported yet")
+
+  override def doColumnar(str: Scalar, len: GpuColumnVector, pad: Scalar): GpuColumnVector =
+    throw new IllegalStateException("This is not supported yet")
+
+  override def doColumnar(
+      str: GpuColumnVector,
+      len: Scalar,
+      pad: GpuColumnVector): GpuColumnVector =
+    throw new IllegalStateException("This is not supported yet")
+
+  override def doColumnar(
+      str: GpuColumnVector,
+      len: GpuColumnVector,
+      pad: Scalar): GpuColumnVector =
+    throw new IllegalStateException("This is not supported yet")
+}
+
+case class GpuStringLPad(str: Expression, len: Expression, pad: Expression)
+  extends BasePad {
+  val direction = PadSide.LEFT
+  override def prettyName: String = "lpad"
+
+  def this(str: Expression, len: Expression) = {
+    this(str, len, GpuLiteral(" ", StringType))
+  }
+}
+
+case class GpuStringRPad(str: Expression, len: Expression, pad: Expression)
+  extends BasePad {
+  val direction = PadSide.RIGHT
+  override def prettyName: String = "rpad"
+
+  def this(str: Expression, len: Expression) = {
+    this(str, len, GpuLiteral(" ", StringType))
+  }
+}
