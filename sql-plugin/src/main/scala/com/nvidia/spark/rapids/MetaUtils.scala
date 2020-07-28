@@ -63,7 +63,7 @@ object MetaUtils {
     BufferMeta.startBufferMeta(fbb)
     BufferMeta.addId(fbb, tableId)
     BufferMeta.addSize(fbb, bufferSize)
-    BufferMeta.addUncompressedSize(fbb, 0)
+    BufferMeta.addUncompressedSize(fbb, bufferSize)
     val bufferMetaOffset = BufferMeta.endBufferMeta(fbb)
     buildTableMeta(fbb, bufferMetaOffset, columns, numRows, buffer.getAddress)
   }

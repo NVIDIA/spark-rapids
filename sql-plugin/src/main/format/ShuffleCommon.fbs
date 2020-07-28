@@ -49,7 +49,7 @@ table BufferMeta {
   /// size of the buffer data in bytes
   size: long;
 
-  /// size of the uncompressed buffer data if the data is compressed otherwise 0
+  /// size of the uncompressed buffer data
   uncompressed_size: long;
 
   /// array of codec buffer descriptors if the data is compressed

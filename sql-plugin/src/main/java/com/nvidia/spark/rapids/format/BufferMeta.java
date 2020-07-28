@@ -25,7 +25,7 @@ public final class BufferMeta extends Table {
   public long size() { int o = __offset(6); return o != 0 ? bb.getLong(o + bb_pos) : 0L; }
   public boolean mutateSize(long size) { int o = __offset(6); if (o != 0) { bb.putLong(o + bb_pos, size); return true; } else { return false; } }
   /**
-   * size of the uncompressed buffer data if the data is compressed otherwise 0
+   * size of the uncompressed buffer data
    */
   public long uncompressedSize() { int o = __offset(8); return o != 0 ? bb.getLong(o + bb_pos) : 0L; }
   public boolean mutateUncompressedSize(long uncompressed_size) { int o = __offset(8); if (o != 0) { bb.putLong(o + bb_pos, uncompressed_size); return true; } else { return false; } }

@@ -43,6 +43,7 @@ class MetaUtilsSuite extends FunSuite with Arm {
       val bufferMeta = meta.bufferMeta
       assertResult(7)(bufferMeta.id)
       assertResult(buffer.getLength)(bufferMeta.size)
+      assertResult(buffer.getLength)(bufferMeta.uncompressedSize)
       assertResult(0)(bufferMeta.codecBufferDescrsLength)
       assertResult(table.getRowCount)(meta.rowCount)
 
