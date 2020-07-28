@@ -294,13 +294,13 @@ trait SparkQueryCompareTestSuite extends FunSuite with Arm {
   }
 
   /**
-    * Runs a test defined by fun, using dataframe df.
-    *
-    * @param df the DataFrame to use as input
-    * @param fun the function to transform the DataFrame (produces another DataFrame)
-    * @param conf spark conf
-    * @return tuple of (cpu results, gpu results) as arrays of Row
-    */
+   * Runs a test defined by fun, using dataframe df.
+   *
+   * @param df the DataFrame to use as input
+   * @param fun the function to transform the DataFrame (produces another DataFrame)
+   * @param conf spark conf
+   * @return tuple of (cpu results, gpu results) as arrays of Row
+   */
   def runOnCpuAndGpu(
       df: SparkSession => DataFrame,
       fun: DataFrame => DataFrame,

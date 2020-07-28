@@ -29,40 +29,40 @@ import org.apache.spark.sql.rapids.GpuShuffleEnv
 import org.apache.spark.storage.ShuffleBlockBatchId
 
 /**
-  * trait used by client consumers ([[RapidsShuffleIterator]]) to gather what the
-  * expected number of batches (Tables) is, and the ids for each table as they are received.
-  */
+ * trait used by client consumers ([[RapidsShuffleIterator]]) to gather what the
+ * expected number of batches (Tables) is, and the ids for each table as they are received.
+ */
 trait RapidsShuffleFetchHandler {
   /**
-    * After a response for shuffle metadata is received, the expected number of columnar
-    * batches is communicated back to the caller via this method.
-    * @param expectedBatches - number of columnar batches
-    */
+   * After a response for shuffle metadata is received, the expected number of columnar
+   * batches is communicated back to the caller via this method.
+   * @param expectedBatches - number of columnar batches
+   */
   def start(expectedBatches: Int): Unit
 
   /**
-    * Called when a buffer is received and has been handed off to the catalog.
-    * @param bufferId - a tracked shuffle buffer id
-    */
+   * Called when a buffer is received and has been handed off to the catalog.
+   * @param bufferId - a tracked shuffle buffer id
+   */
   def batchReceived(bufferId: ShuffleReceivedBufferId): Unit
 
   /**
-    * Called when the transport layer is not able to handle a fetch error for metadata
-    * or buffer fetches.
-    *
-    * @param errorMessage - a string containing an error message
-    */
+   * Called when the transport layer is not able to handle a fetch error for metadata
+   * or buffer fetches.
+   *
+   * @param errorMessage - a string containing an error message
+   */
   def transferError(errorMessage: String): Unit
 }
 
 /**
-  * A helper case class that describes a pending table. It allows
-  * the transport to schedule/throttle these requests to fit within the maximum bytes in flight.
-  * @param client client used to issue the requests
-  * @param tableMeta shuffle metadata describing the table
-  * @param tag a transport specific tag to use for this transfer
-  * @param handler a specific handler that is waiting for this batch
-  */
+ * A helper case class that describes a pending table. It allows
+ * the transport to schedule/throttle these requests to fit within the maximum bytes in flight.
+ * @param client client used to issue the requests
+ * @param tableMeta shuffle metadata describing the table
+ * @param tag a transport specific tag to use for this transfer
+ * @param handler a specific handler that is waiting for this batch
+ */
 case class PendingTransferRequest(client: RapidsShuffleClient,
                                   tableMeta: TableMeta,
                                   tag: Long,
@@ -71,40 +71,40 @@ case class PendingTransferRequest(client: RapidsShuffleClient,
 }
 
 /**
-  * Class describing the state of a set of [[PendingTransferRequest]]s.
-  *
-  * This class is *not thread safe*. The way the code is currently designed, bounce buffers being
-  * used to receive, or copied from, are acted on a sequential basis, in time and in space.
-  *
-  * Callers use this class, like so:
-  *
-  * 1. [[getRequest]]
-  *    - first call:
-  *       - Initializes the state tracking the progress of `currentRequest` and our place in
-  *          `requests` (e.g. offset, bytes remaining)
-  *
-  *    - subsequent calls:
-  *       - if `currentRequest` is not done, it will return the current request. And perform
-  *          sanity checks.
-  *       - if `currentRequest` is done, it will perform sanity checks, and advance to the next
-  *          request in `requests`
-  *
-  * 2. [[consumeBuffers]]
-  *     - first call:
-  *       - The first time around for `currentRequest` it will allocate the actual full device
-  *         buffer that we will copy to, copy data sequentially from the bounce buffer to the 
-  *         target buffer.
-  *     - subsequent calls:
-  *       - continue copy data sequentially from the bounce buffers passed in.
-  *       - When `currentRequest` has been fully received, an optional `DeviceMemoryBuffer` is 
-  *         set, and returned.
-  *
-  * 3. [[close]]
-  *     - once the caller calls close, the bounce buffers are returned to the pool.
-  *
-  * @param transport a transport, which in this case is used to free bounce buffers
-  * @param bounceMemoryBuffers a sequence of `MemoryBuffer` buffers to use for receives
-  */
+ * Class describing the state of a set of [[PendingTransferRequest]]s.
+ *
+ * This class is *not thread safe*. The way the code is currently designed, bounce buffers being
+ * used to receive, or copied from, are acted on a sequential basis, in time and in space.
+ *
+ * Callers use this class, like so:
+ *
+ * 1. [[getRequest]]
+ *    - first call:
+ *       - Initializes the state tracking the progress of `currentRequest` and our place in
+ *          `requests` (e.g. offset, bytes remaining)
+ *
+ *    - subsequent calls:
+ *       - if `currentRequest` is not done, it will return the current request. And perform
+ *          sanity checks.
+ *       - if `currentRequest` is done, it will perform sanity checks, and advance to the next
+ *          request in `requests`
+ *
+ * 2. [[consumeBuffers]]
+ *     - first call:
+ *       - The first time around for `currentRequest` it will allocate the actual full device
+ *         buffer that we will copy to, copy data sequentially from the bounce buffer to the 
+ *         target buffer.
+ *     - subsequent calls:
+ *       - continue copy data sequentially from the bounce buffers passed in.
+ *       - When `currentRequest` has been fully received, an optional `DeviceMemoryBuffer` is 
+ *         set, and returned.
+ *
+ * 3. [[close]]
+ *     - once the caller calls close, the bounce buffers are returned to the pool.
+ *
+ * @param transport a transport, which in this case is used to free bounce buffers
+ * @param bounceMemoryBuffers a sequence of `MemoryBuffer` buffers to use for receives
+ */
 class BufferReceiveState(
     transport: RapidsShuffleTransport,
     val bounceMemoryBuffers: Seq[MemoryBuffer])
@@ -115,63 +115,63 @@ class BufferReceiveState(
   private[this] val requests = new ArrayBuffer[PendingTransferRequest]()
 
   /**
-    * Use by the transport to add to this [[BufferReceiveState]] requests it needs to handle.
-    * @param pendingTransferRequest request to add to this [[BufferReceiveState]]
-    */
+   * Use by the transport to add to this [[BufferReceiveState]] requests it needs to handle.
+   * @param pendingTransferRequest request to add to this [[BufferReceiveState]]
+   */
   def addRequest(pendingTransferRequest: PendingTransferRequest): Unit = synchronized {
     requests.append(pendingTransferRequest)
   }
 
   /**
-    * Holds the target device memory buffer. It is allocated at [[consumeBuffers]] when the first
-    * bounce buffer resolves, and it is also handed off to the caller in the same function.
-    */
+   * Holds the target device memory buffer. It is allocated at [[consumeBuffers]] when the first
+   * bounce buffer resolves, and it is also handed off to the caller in the same function.
+   */
   private[this] var buff: DeviceMemoryBuffer = null
 
   /**
-    * This is the address/length/tag object for the target buffer. It is used only to access a cuda
-    * synchronous copy method. We should do a regular copy from [[buff]] once we use the async
-    * method and add the cuda event synchronization.
-    */
+   * This is the address/length/tag object for the target buffer. It is used only to access a cuda
+   * synchronous copy method. We should do a regular copy from [[buff]] once we use the async
+   * method and add the cuda event synchronization.
+   */
   private[this] var alt: AddressLengthTag = null
 
   /**
-    * True iff this is the last request we are handling. It is used in [[isDone]] to find the
-    * stopping point.
-    */
+   * True iff this is the last request we are handling. It is used in [[isDone]] to find the
+   * stopping point.
+   */
   private[this] var lastRequest: Boolean = false
 
   /**
-    * The index into the [[requests]] sequence pointing to the current request we are handling.
-    * We handle requests sequentially.
-    */
+   * The index into the [[requests]] sequence pointing to the current request we are handling.
+   * We handle requests sequentially.
+   */
   private[this] var currentRequestIndex = -1
 
   /**
-    * Amount of bytes left in the current request.
-    */
+   * Amount of bytes left in the current request.
+   */
   private[this] var currentRequestRemaining: Long = 0L
 
   /**
-    * Byte offset we are currently at. [[getRequest]] uses and resets it, and [[consumeBuffers]]
-    * updates it.
-    */
+   * Byte offset we are currently at. [[getRequest]] uses and resets it, and [[consumeBuffers]]
+   * updates it.
+   */
   private[this] var currentRequestOffset: Long = 0L
 
   /**
-    * The current request (TableMeta, Handler (iterator))
-    */
+   * The current request (TableMeta, Handler (iterator))
+   */
   private[this] var currentRequest: PendingTransferRequest = null
 
   /**
-    * To help debug "closed multiple times" issues
-    */
+   * To help debug "closed multiple times" issues
+   */
   private[this] var isClosed = false
 
   /**
-    * Becomes true when there is an error detected, allowing the client to close this
-    * [[BufferReceiveState]] prematurely.
-    */
+   * Becomes true when there is an error detected, allowing the client to close this
+   * [[BufferReceiveState]] prematurely.
+   */
   private[this] var errorOcurred = false
 
   override def toString: String = {
@@ -182,14 +182,14 @@ class BufferReceiveState(
   }
 
   /**
-    * When a receive transaction is successful, this function is called to consume the bounce
-    * buffers received.
-    *
-    * @note If the target device buffer is not allocated, this function does so.
-    * @param bounceBuffers sequence of buffers that have been received
-    * @return if the current request is complete, returns a shallow copy of the target
-    *         device buffer as an `Option`. Callers will need to close the buffer.
-    */
+   * When a receive transaction is successful, this function is called to consume the bounce
+   * buffers received.
+   *
+   * @note If the target device buffer is not allocated, this function does so.
+   * @param bounceBuffers sequence of buffers that have been received
+   * @return if the current request is complete, returns a shallow copy of the target
+   *         device buffer as an `Option`. Callers will need to close the buffer.
+   */
   def consumeBuffers(
       bounceBuffers: Seq[AddressLengthTag]): Option[DeviceMemoryBuffer] = synchronized {
     var needsCleanup = true
@@ -238,20 +238,20 @@ class BufferReceiveState(
   }
 
   /**
-    * Signals whether this [[BufferReceiveState]] is complete.
-    * @return boolean when at the last request, and that request is fully received
-    */
+   * Signals whether this [[BufferReceiveState]] is complete.
+   * @return boolean when at the last request, and that request is fully received
+   */
   def isDone: Boolean = synchronized {
     lastRequest && currentRequestDone
   }
 
   /**
-    * Return the current (making the next request current, if we are done) request and
-    * whether we advanced (want to kick off a transfer request to the server)
-    *
-    * @return returns the currently working transfer request, and
-    *         true if this is a new request we should be asking the server to trigger
-    */
+   * Return the current (making the next request current, if we are done) request and
+   * whether we advanced (want to kick off a transfer request to the server)
+   *
+   * @return returns the currently working transfer request, and
+   *         true if this is a new request we should be asking the server to trigger
+   */
   def getRequest: (PendingTransferRequest, Boolean) = synchronized {
     require(currentRequestIndex < requests.size,
       "Something went wrong while handling buffer receives. Asking for more buffers than expected")
@@ -301,18 +301,18 @@ class BufferReceiveState(
   }
 
   /**
-    * Used to cut the subset of bounce buffers the client will need to issue receives with.
-    *
-    * This is a subset, because at the moment, the full target length worth of bounce buffers
-    * could have been acquired. If we are at the tail end of receive, and it could be fulfilled
-    * with 1 bounce buffer, for example, we would return 1 bounce buffer here, rather than the
-    * number of buffers in acquired.
-    *
-    * @note that these extra buffers should really just be freed as soon as we realize
-    *       they are of no use.
-    *
-    * @return sequence of [[AddressLengthTag]] pointing to the receive bounce buffers.
-    */
+   * Used to cut the subset of bounce buffers the client will need to issue receives with.
+   *
+   * This is a subset, because at the moment, the full target length worth of bounce buffers
+   * could have been acquired. If we are at the tail end of receive, and it could be fulfilled
+   * with 1 bounce buffer, for example, we would return 1 bounce buffer here, rather than the
+   * number of buffers in acquired.
+   *
+   * @note that these extra buffers should really just be freed as soon as we realize
+   *       they are of no use.
+   *
+   * @return sequence of [[AddressLengthTag]] pointing to the receive bounce buffers.
+   */
   def getBounceBuffersForReceive(): Seq[AddressLengthTag] = synchronized {
     var bounceBufferIx = 0
     var bounceBuffersForTransfer = Seq[AddressLengthTag]()
@@ -351,28 +351,28 @@ class BufferReceiveState(
 }
 
 /**
-  * The client makes requests via a [[Connection]] obtained from the [[RapidsShuffleTransport]].
-  *
-  * The [[Connection]] follows a single threaded callback model, so this class posts operations
-  * to an `Executor` as quickly as it gets them from the [[Connection]].
-  *
-  * This class handles fetch requests from [[RapidsShuffleIterator]], turning them into
-  * [[ShuffleMetadata]] messages, and shuffle `TransferRequest`s.
-  *
-  * Its counterpart is the [[RapidsShuffleServer]] on a specific peer executor, specified by
-  * `connection`.
-  *
-  * @param localExecutorId this id is sent to the server, it is required for the protocol as
-  *                        the server needs to pick an endpoint to send a response back to this
-  *                        executor.
-  * @param connection a connection object against a remote executor
-  * @param transport used to get metadata buffers and to work with the throttle mechanism
-  * @param exec Executor used to handle tasks that take time, and should not be in the
-  *             transport's thread
-  * @param clientCopyExecutor Executors used to handle synchronous mem copies
-  * @param maximumMetadataSize The maximum metadata buffer size we are able to request
-  *                            TODO: this should go away
-  */
+ * The client makes requests via a [[Connection]] obtained from the [[RapidsShuffleTransport]].
+ *
+ * The [[Connection]] follows a single threaded callback model, so this class posts operations
+ * to an `Executor` as quickly as it gets them from the [[Connection]].
+ *
+ * This class handles fetch requests from [[RapidsShuffleIterator]], turning them into
+ * [[ShuffleMetadata]] messages, and shuffle `TransferRequest`s.
+ *
+ * Its counterpart is the [[RapidsShuffleServer]] on a specific peer executor, specified by
+ * `connection`.
+ *
+ * @param localExecutorId this id is sent to the server, it is required for the protocol as
+ *                        the server needs to pick an endpoint to send a response back to this
+ *                        executor.
+ * @param connection a connection object against a remote executor
+ * @param transport used to get metadata buffers and to work with the throttle mechanism
+ * @param exec Executor used to handle tasks that take time, and should not be in the
+ *             transport's thread
+ * @param clientCopyExecutor Executors used to handle synchronous mem copies
+ * @param maximumMetadataSize The maximum metadata buffer size we are able to request
+ *                            TODO: this should go away
+ */
 class RapidsShuffleClient(
     localExecutorId: Long,
     connection: ClientConnection,
@@ -385,48 +385,48 @@ class RapidsShuffleClient(
 
   object ShuffleClientOps {
     /**
-      * When a metadata response is received, this event is issued to handle it.
-      * @param tx the [[Transaction]] to be closed after consuming the response
-      * @param resp the response metadata buffer
-      * @param shuffleRequests blocks to be requested
-      * @param rapidsShuffleFetchHandler the handler (iterator) to callback to
-      */
+     * When a metadata response is received, this event is issued to handle it.
+     * @param tx the [[Transaction]] to be closed after consuming the response
+     * @param resp the response metadata buffer
+     * @param shuffleRequests blocks to be requested
+     * @param rapidsShuffleFetchHandler the handler (iterator) to callback to
+     */
     case class HandleMetadataResponse(tx: Transaction,
                                       resp: RefCountedDirectByteBuffer,
                                       shuffleRequests: Seq[ShuffleBlockBatchId],
                                       rapidsShuffleFetchHandler: RapidsShuffleFetchHandler)
 
     /**
-      * Represents retry due to metadata being larger than expected.
-      *
-      * @param shuffleRequests request to retry
-      * @param rapidsShuffleFetchHandler the handler (iterator) to callback to
-      * @param fullResponseSize response size to allocate to fit the server's response in full
-      */
+     * Represents retry due to metadata being larger than expected.
+     *
+     * @param shuffleRequests request to retry
+     * @param rapidsShuffleFetchHandler the handler (iterator) to callback to
+     * @param fullResponseSize response size to allocate to fit the server's response in full
+     */
     case class FetchRetry(shuffleRequests: Seq[ShuffleBlockBatchId],
                           rapidsShuffleFetchHandler: RapidsShuffleFetchHandler,
                           fullResponseSize: Long)
 
     /**
-      * Used to have this client handle the enclosed [[BufferReceiveState]] asynchronously.
-      *
-      * Until [[bufferReceiveState]] completes, this event will continue to get posted.
-      *
-      * @param bufferReceiveState object containing the state of pending requests to the peer
-      */
+     * Used to have this client handle the enclosed [[BufferReceiveState]] asynchronously.
+     *
+     * Until [[bufferReceiveState]] completes, this event will continue to get posted.
+     *
+     * @param bufferReceiveState object containing the state of pending requests to the peer
+     */
     case class IssueBufferReceives(bufferReceiveState: BufferReceiveState)
 
     /**
-      * When a buffer is received, this event is posted to remove from the progress thread
-      * the copy, and the callback into the iterator.
-      *
-      * Currently not used. There is a TODO below.
-      *
-      * @param tx live transaction for the buffer, to be closed after the buffer is handled
-      * @param bufferReceiveState the object maintaining state for receives
-      * @param currentRequest the request these bounce buffers belong to
-      * @param bounceBuffers buffers used in the transfer, which contain the fragment of the data
-      */
+     * When a buffer is received, this event is posted to remove from the progress thread
+     * the copy, and the callback into the iterator.
+     *
+     * Currently not used. There is a TODO below.
+     *
+     * @param tx live transaction for the buffer, to be closed after the buffer is handled
+     * @param bufferReceiveState the object maintaining state for receives
+     * @param currentRequest the request these bounce buffers belong to
+     * @param bounceBuffers buffers used in the transfer, which contain the fragment of the data
+     */
     case class HandleBounceBufferReceive(tx: Transaction,
                                          bufferReceiveState: BufferReceiveState,
                                          currentRequest: PendingTransferRequest,
@@ -459,24 +459,24 @@ class RapidsShuffleClient(
   }
 
   /**
-    * Pushes a task onto the queue to be handled by the client's copy executor.
-    *
-    * @note - at this stage, tasks in this pool can block (it will grow as needed)
-    *
-    * @param op One of the case classes in [[ShuffleClientOps]]
-    */
+   * Pushes a task onto the queue to be handled by the client's copy executor.
+   *
+   * @note - at this stage, tasks in this pool can block (it will grow as needed)
+   *
+   * @param op One of the case classes in [[ShuffleClientOps]]
+   */
   private[this] def asyncOnCopyThread(op: Any): Unit = {
     clientCopyExecutor.execute(() => handleOp(op))
   }
 
   /**
-    * Starts a fetch request for all the shuffleRequests, using `handler` to communicate
-    * events back to the iterator.
-    *
-    * @param shuffleRequests blocks to fetch
-    * @param handler iterator to callback to
-    * @param metadataSize metadata size to use for this fetch
-    */
+   * Starts a fetch request for all the shuffleRequests, using `handler` to communicate
+   * events back to the iterator.
+   *
+   * @param shuffleRequests blocks to fetch
+   * @param handler iterator to callback to
+   * @param metadataSize metadata size to use for this fetch
+   */
   def doFetch(shuffleRequests: Seq[ShuffleBlockBatchId],
               handler: RapidsShuffleFetchHandler,
               metadataSize: Long = maximumMetadataSize): Unit = {
@@ -522,13 +522,13 @@ class RapidsShuffleClient(
   }
 
   /**
-    * Function to handle MetadataResponses, as a result of the [[HandleMetadataResponse]] event.
-    *
-    * @param tx live metadata response transaction to be closed in this handler
-    * @param resp response buffer, to be closed in this handler
-    * @param shuffleRequests blocks to fetch
-    * @param handler iterator to callback to
-    */
+   * Function to handle MetadataResponses, as a result of the [[HandleMetadataResponse]] event.
+   *
+   * @param tx live metadata response transaction to be closed in this handler
+   * @param resp response buffer, to be closed in this handler
+   * @param shuffleRequests blocks to fetch
+   * @param handler iterator to callback to
+   */
   private[this] def doHandleMetadataResponse(
       tx: Transaction,
       resp: RefCountedDirectByteBuffer,
@@ -574,21 +574,21 @@ class RapidsShuffleClient(
   }
 
   /**
-    * Used by the transport, to schedule receives. The requests are sent to the executor for this
-    * client.
-    * @param bufferReceiveState object tracking the state of pending TransferRequests
-    */
+   * Used by the transport, to schedule receives. The requests are sent to the executor for this
+   * client.
+   * @param bufferReceiveState object tracking the state of pending TransferRequests
+   */
   def issueBufferReceives(bufferReceiveState: BufferReceiveState): Unit = {
     asyncOnCopyThread(IssueBufferReceives(bufferReceiveState))
   }
 
   /**
-    * Issues transfers requests (if the state of [[bufferReceiveState]] advances), or continue to
-    * work a current request (continue receiving bounce buffer sized chunks from a larger receive).
-    * @param bufferReceiveState object maintaining state of requests to be issued (current or
-    *                           future). The requests included in this state object originated in
-    *                           the transport's throttle logic.
-    */
+   * Issues transfers requests (if the state of [[bufferReceiveState]] advances), or continue to
+   * work a current request (continue receiving bounce buffer sized chunks from a larger receive).
+   * @param bufferReceiveState object maintaining state of requests to be issued (current or
+   *                           future). The requests included in this state object originated in
+   *                           the transport's throttle logic.
+   */
   private[shuffle] def doIssueBufferReceives(bufferReceiveState: BufferReceiveState): Unit = {
     logDebug(s"At issue for ${bufferReceiveState}, " +
       s"remaining: ${bufferReceiveState.getCurrentRequestRemaining}, " +
@@ -691,12 +691,12 @@ class RapidsShuffleClient(
   }
 
   /**
-    * Feed into the throttle thread in the transport [[PendingTransferRequest]], to be
-    * issued later via the [[doIssueBufferReceives]] method.
-    *
-    * @param metaResponse metadata response flat buffer
-    * @param handler callback trait (the iterator implements this)
-    */
+   * Feed into the throttle thread in the transport [[PendingTransferRequest]], to be
+   * issued later via the [[doIssueBufferReceives]] method.
+   *
+   * @param metaResponse metadata response flat buffer
+   * @param handler callback trait (the iterator implements this)
+   */
   private def queueTransferRequests(metaResponse: MetadataResponse,
                                     handler: RapidsShuffleFetchHandler): Unit = {
     val allTables = metaResponse.tableMetasLength()
@@ -725,14 +725,14 @@ class RapidsShuffleClient(
   }
 
   /**
-    * This function handles data received in `bounceBuffers`. The data should be copied out
-    * of the buffers, and the function should call into `bufferReceiveState` to advance its
-    * state (consumeBuffers)
-    * @param tx live transaction for these bounce buffers, it should be closed in this function
-    * @param bufferReceiveState state management objects for live transfer requests
-    * @param currentRequest current transfer request being worked on
-    * @param bounceBuffers bounce buffers (just received) containing data to be consumed
-    */
+   * This function handles data received in `bounceBuffers`. The data should be copied out
+   * of the buffers, and the function should call into `bufferReceiveState` to advance its
+   * state (consumeBuffers)
+   * @param tx live transaction for these bounce buffers, it should be closed in this function
+   * @param bufferReceiveState state management objects for live transfer requests
+   * @param currentRequest current transfer request being worked on
+   * @param bounceBuffers bounce buffers (just received) containing data to be consumed
+   */
   def doHandleBounceBufferReceive(tx: Transaction,
                                   bufferReceiveState: BufferReceiveState,
                                   currentRequest: PendingTransferRequest,
@@ -783,12 +783,12 @@ class RapidsShuffleClient(
   }
 
   /**
-    * Hands [[table]] and [[buffer]] to the device storage/catalog, obtaining an id that can be
-    * used to look up the buffer from the catalog going (e.g. from the iterator)
-    * @param buffer contiguous [[DeviceMemoryBuffer]] with the tables' data
-    * @param meta [[TableMeta]] describing [[buffer]]
-    * @return the [[RapidsBufferId]] to be used to look up the buffer from catalog
-    */
+   * Hands [[table]] and [[buffer]] to the device storage/catalog, obtaining an id that can be
+   * used to look up the buffer from the catalog going (e.g. from the iterator)
+   * @param buffer contiguous [[DeviceMemoryBuffer]] with the tables' data
+   * @param meta [[TableMeta]] describing [[buffer]]
+   * @return the [[RapidsBufferId]] to be used to look up the buffer from catalog
+   */
   private[shuffle] def track(buffer: DeviceMemoryBuffer, meta: TableMeta): RapidsBufferId = {
     val id: ShuffleReceivedBufferId = catalog.nextShuffleReceivedBufferId()
     logDebug(s"Adding buffer id ${id} to catalog")

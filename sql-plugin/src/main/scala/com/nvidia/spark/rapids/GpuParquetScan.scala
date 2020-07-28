@@ -288,22 +288,22 @@ case class GpuParquetPartitionReaderFactory(
 }
 
 /**
-  * A PartitionReader that reads a Parquet file split on the GPU.
-  *
-  * Efficiently reading a Parquet split on the GPU requires re-constructing the Parquet file
-  * in memory that contains just the column chunks that are needed. This avoids sending
-  * unnecessary data to the GPU and saves GPU memory.
-  *
-  * @param conf the Hadoop configuration
-  * @param split the file split to read
-  * @param filePath the path to the Parquet file
-  * @param clippedBlocks the block metadata from the original Parquet file that has been clipped
-  *                      to only contain the column chunks to be read
-  * @param clippedParquetSchema the Parquet schema from the original Parquet file that has been
-  *                             clipped to contain only the columns to be read
-  * @param readDataSchema the Spark schema describing what will be read
-  * @param debugDumpPrefix a path prefix to use for dumping the fabricated Parquet data or null
-  */
+ * A PartitionReader that reads a Parquet file split on the GPU.
+ *
+ * Efficiently reading a Parquet split on the GPU requires re-constructing the Parquet file
+ * in memory that contains just the column chunks that are needed. This avoids sending
+ * unnecessary data to the GPU and saves GPU memory.
+ *
+ * @param conf the Hadoop configuration
+ * @param split the file split to read
+ * @param filePath the path to the Parquet file
+ * @param clippedBlocks the block metadata from the original Parquet file that has been clipped
+ *                      to only contain the column chunks to be read
+ * @param clippedParquetSchema the Parquet schema from the original Parquet file that has been
+ *                             clipped to contain only the columns to be read
+ * @param readDataSchema the Spark schema describing what will be read
+ * @param debugDumpPrefix a path prefix to use for dumping the fabricated Parquet data or null
+ */
 class ParquetPartitionReader(
     conf: Configuration,
     split: PartitionedFile,
@@ -433,15 +433,15 @@ class ParquetPartitionReader(
   }
 
   /**
-    * Copies the data corresponding to the clipped blocks in the original file and compute the
-    * block metadata for the output. The output blocks will contain the same column chunk
-    * metadata but with the file offsets updated to reflect the new position of the column data
-    * as written to the output.
-    *
-    * @param in the input stream for the original Parquet file
-    * @param out the output stream to receive the data
-    * @return updated block metadata corresponding to the output
-    */
+   * Copies the data corresponding to the clipped blocks in the original file and compute the
+   * block metadata for the output. The output blocks will contain the same column chunk
+   * metadata but with the file offsets updated to reflect the new position of the column data
+   * as written to the output.
+   *
+   * @param in the input stream for the original Parquet file
+   * @param out the output stream to receive the data
+   * @return updated block metadata corresponding to the output
+   */
   private def copyBlocksData(
       in: FSDataInputStream,
       out: HostMemoryOutputStream,
@@ -675,12 +675,12 @@ object ParquetPartitionReader {
   private case class CopyRange(offset: Long, length: Long)
 
   /**
-    * Build a new BlockMetaData
-    *
-    * @param rowCount the number of rows in this block
-    * @param columns the new column chunks to reference in the new BlockMetaData
-    * @return the new BlockMetaData
-    */
+   * Build a new BlockMetaData
+   *
+   * @param rowCount the number of rows in this block
+   * @param columns the new column chunks to reference in the new BlockMetaData
+   * @return the new BlockMetaData
+   */
   private def newParquetBlock(
       rowCount: Long,
       columns: Seq[ColumnChunkMetaData]): BlockMetaData = {
@@ -698,14 +698,14 @@ object ParquetPartitionReader {
   }
 
   /**
-    * Trim block metadata to contain only the column chunks that occur in the specified columns.
-    * The column chunks that are returned are preserved verbatim
-    * (i.e.: file offsets remain unchanged).
-    *
-    * @param columnPaths the paths of columns to preserve
-    * @param blocks the block metadata from the original Parquet file
-    * @return the updated block metadata with undesired column chunks removed
-    */
+   * Trim block metadata to contain only the column chunks that occur in the specified columns.
+   * The column chunks that are returned are preserved verbatim
+   * (i.e.: file offsets remain unchanged).
+   *
+   * @param columnPaths the paths of columns to preserve
+   * @param blocks the block metadata from the original Parquet file
+   * @return the updated block metadata with undesired column chunks removed
+   */
   private[spark] def clipBlocks(columnPaths: Seq[ColumnPath],
       blocks: Seq[BlockMetaData]): Seq[BlockMetaData] = {
     val pathSet = columnPaths.toSet
