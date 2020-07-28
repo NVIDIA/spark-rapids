@@ -19,7 +19,7 @@ set -ex
 
 . jenkins/version-def.sh
 
-mvn -U -B clean deploy $MVN_URM_MIRROR -Dmaven.repo.local=$WORKSPACE/.m2
+mvn -U -B -Pinclude-databricks clean deploy $MVN_URM_MIRROR -Dmaven.repo.local=$WORKSPACE/.m2
 
 # Parse cudf and spark files from local mvn repo
 jenkins/printJarVersion.sh "CUDFVersion" "${WORKSPACE}/.m2/ai/rapids/cudf/${CUDF_VER}" "cudf-${CUDF_VER}" "-${CUDA_CLASSIFIER}.jar"
