@@ -153,12 +153,12 @@ class RapidsShuffleIterator(
         val shuffleRequestsMapIndex: Seq[BlockIdMapIndex] =
           blockIds.map { case (blockId, _, mapIndex) =>
             /**
-              * [[ShuffleBlockBatchId]] is an internal optimization in Spark, which will likely
-              * never see it unless explicitly enabled.
-              *
-              * There are other things that can turn it off, but we really don't care too much
-              * about it.
-              */
+             * [[ShuffleBlockBatchId]] is an internal optimization in Spark, which will likely
+             * never see it unless explicitly enabled.
+             *
+             * There are other things that can turn it off, but we really don't care too much
+             * about it.
+             */
             blockId match {
               case sbbid: ShuffleBlockBatchId => BlockIdMapIndex(sbbid, mapIndex)
               case sbid: ShuffleBlockId =>

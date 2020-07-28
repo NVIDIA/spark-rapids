@@ -214,18 +214,18 @@ object GpuOrcPartitionReader {
 }
 
 /**
-  * A PartitionReader that reads an ORC file split on the GPU.
-  *
-  * Efficiently reading an ORC split on the GPU requires rebuilding the ORC file
-  * in memory such that only relevant data is present in the memory file.
-  * This avoids sending unnecessary data to the GPU and saves GPU memory.
-  *
-  * @param conf Hadoop configuration
-  * @param partFile file split to read
-  * @param dataSchema Spark schema of the file
-  * @param readDataSchema Spark schema of what will be read from the file
-  * @param debugDumpPrefix path prefix for dumping the memory file or null
-  */
+ * A PartitionReader that reads an ORC file split on the GPU.
+ *
+ * Efficiently reading an ORC split on the GPU requires rebuilding the ORC file
+ * in memory such that only relevant data is present in the memory file.
+ * This avoids sending unnecessary data to the GPU and saves GPU memory.
+ *
+ * @param conf Hadoop configuration
+ * @param partFile file split to read
+ * @param dataSchema Spark schema of the file
+ * @param readDataSchema Spark schema of what will be read from the file
+ * @param debugDumpPrefix path prefix for dumping the memory file or null
+ */
 class GpuOrcPartitionReader(
     conf: Configuration,
     partFile: PartitionedFile,

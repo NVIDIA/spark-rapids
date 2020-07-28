@@ -519,16 +519,16 @@ case class GpuLike(left: Expression, right: Expression, escapeChar: Char)
 
   override def dataType: DataType = BooleanType
   /**
-    * Validate and convert SQL 'like' pattern to a cuDF regular expression.
-    *
-    * Underscores (_) are converted to '.' including newlines and percent signs (%)
-    * are converted to '.*' including newlines, other characters are quoted literally or escaped.
-    * An invalid pattern will throw an `IllegalArgumentException`.
-    *
-    * @param pattern the SQL pattern to convert
-    * @param escapeChar the escape string contains one character.
-    * @return the equivalent cuDF regular expression of the pattern
-    */
+   * Validate and convert SQL 'like' pattern to a cuDF regular expression.
+   *
+   * Underscores (_) are converted to '.' including newlines and percent signs (%)
+   * are converted to '.*' including newlines, other characters are quoted literally or escaped.
+   * An invalid pattern will throw an `IllegalArgumentException`.
+   *
+   * @param pattern the SQL pattern to convert
+   * @param escapeChar the escape string contains one character.
+   * @return the equivalent cuDF regular expression of the pattern
+   */
   def escapeLikeRegex(pattern: String, escapeChar: Char): String = {
     val in = pattern.toIterator
     val out = new StringBuilder()

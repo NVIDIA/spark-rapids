@@ -21,9 +21,9 @@ import ai.rapids.cudf.{NvtxColor, NvtxRange}
 import org.apache.spark.sql.execution.metric.SQLMetric
 
 /**
-  *  NvtxRange with option to pass one or more nano timing metric(s) that are updated upon close
-  *  by the amount of time spent in the range
-  */
+ *  NvtxRange with option to pass one or more nano timing metric(s) that are updated upon close
+ *  by the amount of time spent in the range
+ */
 class NvtxWithMetrics(name: String, color: NvtxColor, val metric: SQLMetric)
     extends NvtxRange(name, color) {
 

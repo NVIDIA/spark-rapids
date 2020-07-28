@@ -28,14 +28,14 @@ import org.apache.spark.sql.types.{DataType, IntegerType, StructField, StructTyp
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
 /**
-  * A GPU accelerated `org.apache.spark.sql.catalyst.plans.physical.Partitioning` that partitions
-  * sortable records by range into roughly equal ranges. The ranges are determined by sampling
-  * the content of the RDD passed in.
-  *
-  * @note The actual number of partitions created might not be the same
-  * as the `numPartitions` parameter, in the case where the number of sampled records is less than
-  * the value of `partitions`.
-  */
+ * A GPU accelerated `org.apache.spark.sql.catalyst.plans.physical.Partitioning` that partitions
+ * sortable records by range into roughly equal ranges. The ranges are determined by sampling
+ * the content of the RDD passed in.
+ *
+ * @note The actual number of partitions created might not be the same
+ * as the `numPartitions` parameter, in the case where the number of sampled records is less than
+ * the value of `partitions`.
+ */
 
 case class GpuRangePartitioning(
     gpuOrdering: Seq[SortOrder],
