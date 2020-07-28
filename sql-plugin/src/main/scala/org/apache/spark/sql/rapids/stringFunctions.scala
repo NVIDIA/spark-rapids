@@ -697,7 +697,6 @@ case class GpuSubstringIndex(strExpr: Expression,
 }
 
 trait BasePad extends GpuTernaryExpression with ImplicitCastInputTypes with NullIntolerant {
-
   val str: Expression
   val len: Expression
   val pad: Expression
@@ -706,7 +705,6 @@ trait BasePad extends GpuTernaryExpression with ImplicitCastInputTypes with Null
   override def children: Seq[Expression] = str :: len :: pad :: Nil
   override def dataType: DataType = StringType
   override def inputTypes: Seq[DataType] = Seq(StringType, IntegerType, StringType)
-  override def prettyName: String = "lpad"
 
   override def doColumnar(str: GpuColumnVector, len: Scalar, pad: Scalar): GpuColumnVector = {
     if (len.isValid && pad.isValid) {
@@ -722,15 +720,15 @@ trait BasePad extends GpuTernaryExpression with ImplicitCastInputTypes with Null
   }
 
   override def doColumnar(
-                             str: GpuColumnVector,
-                             len: GpuColumnVector,
-                             pad: GpuColumnVector): GpuColumnVector =
+                          str: GpuColumnVector,
+                          len: GpuColumnVector,
+                          pad: GpuColumnVector): GpuColumnVector =
     throw new IllegalStateException("This is not supported yet")
 
   override def doColumnar(
-                             str: Scalar,
-                             len: GpuColumnVector,
-                             pad: GpuColumnVector): GpuColumnVector =
+                          str: Scalar,
+                          len: GpuColumnVector,
+                          pad: GpuColumnVector): GpuColumnVector =
     throw new IllegalStateException("This is not supported yet")
 
   override def doColumnar(str: Scalar, len: Scalar, pad: GpuColumnVector): GpuColumnVector =
@@ -740,21 +738,22 @@ trait BasePad extends GpuTernaryExpression with ImplicitCastInputTypes with Null
     throw new IllegalStateException("This is not supported yet")
 
   override def doColumnar(
-                             str: GpuColumnVector,
-                             len: Scalar,
-                             pad: GpuColumnVector): GpuColumnVector =
+                          str: GpuColumnVector,
+                          len: Scalar,
+                          pad: GpuColumnVector): GpuColumnVector =
     throw new IllegalStateException("This is not supported yet")
 
   override def doColumnar(
-                             str: GpuColumnVector,
-                             len: GpuColumnVector,
-                             pad: Scalar): GpuColumnVector =
+                          str: GpuColumnVector,
+                          len: GpuColumnVector,
+                          pad: Scalar): GpuColumnVector =
     throw new IllegalStateException("This is not supported yet")
 }
 
 case class GpuStringLPad(str: Expression, len: Expression, pad: Expression)
   extends BasePad {
   val direction = PadSide.LEFT
+  override def prettyName: String = "lpad"
 
   def this(str: Expression, len: Expression) = {
     this(str, len, GpuLiteral(" ", StringType))
@@ -764,6 +763,7 @@ case class GpuStringLPad(str: Expression, len: Expression, pad: Expression)
 case class GpuStringRPad(str: Expression, len: Expression, pad: Expression)
   extends BasePad {
   val direction = PadSide.RIGHT
+  override def prettyName: String = "rpad"
 
   def this(str: Expression, len: Expression) = {
     this(str, len, GpuLiteral(" ", StringType))
