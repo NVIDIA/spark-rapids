@@ -17,12 +17,11 @@
 package com.nvidia.spark.rapids.shims.spark301
 
 import com.nvidia.spark.rapids._
-import com.nvidia.spark.rapids.spark301.RapidsShuffleManager
 import com.nvidia.spark.rapids.shims.spark300.Spark300Shims
+import com.nvidia.spark.rapids.spark301.RapidsShuffleManager
 
 import org.apache.spark.sql.catalyst.expressions._
 import org.apache.spark.sql.catalyst.expressions.aggregate.{First, Last}
-import org.apache.spark.sql.execution._
 
 class Spark301Shims extends Spark300Shims {
 
@@ -38,7 +37,7 @@ class Spark301Shims extends Spark300Shims {
       (a, conf, p, r) => new ExprMeta[Last](a, conf, p, r) {
         override def convertToGpu(): GpuExpression =
           GpuLast(childExprs(0).convertToGpu(), a.ignoreNulls)
-      }),
+      })
   ).map(r => (r.getClassFor.asSubclass(classOf[Expression]), r)).toMap
 
   override def getExprs: Map[Class[_ <: Expression], ExprRule[_ <: Expression]] = {
