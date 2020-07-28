@@ -35,9 +35,6 @@
    <profiles>
         <profile>
             <id>databricks</id>
-            <activation>
-                <activeByDefault>true</activeByDefault>
-            </activation>
             <dependencies>
                 <dependency>
                     <groupId>com.nvidia</groupId>
@@ -47,12 +44,7 @@
                 </dependency>
             </dependencies>
         </profile>
-        <profile>
-            <!-- just incase someone can't pull databricks as a dependency -->
-            <id>exclude-databricks</id>
-        </profile>
     </profiles>
-
 
     <dependencies>
         <dependency>
