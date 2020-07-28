@@ -47,8 +47,8 @@ class CsvScanSuite extends SparkQueryCompareTestSuite {
   }
 
   /**
-    * Running with an inferred schema results in running things that are not columnar optimized.
-    */
+   * Running with an inferred schema results in running things that are not columnar optimized.
+   */
   ALLOW_NON_GPU_testSparkResultsAreEqual("Test CSV inferred schema",
     intsFromCsvInferredSchema, Seq("FileSourceScanExec", "FilterExec", "CollectLimitExec",
       "GreaterThan", "Length", "StringTrim", "LocalTableScanExec", "DeserializeToObjectExec",

@@ -24,9 +24,9 @@ import org.apache.spark.sql.catalyst.expressions.Expression
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
 /**
-  * RapidsPluginImplicits, adds implicit functions for ColumnarBatch, Seq, Seq[AutoCloseable],
-  * and Array[AutoCloseable] that help make resource management easier within the project.
-  */
+ * RapidsPluginImplicits, adds implicit functions for ColumnarBatch, Seq, Seq[AutoCloseable],
+ * and Array[AutoCloseable] that help make resource management easier within the project.
+ */
 object RapidsPluginImplicits {
   import scala.language.implicitConversions
 
@@ -60,11 +60,11 @@ object RapidsPluginImplicits {
 
   implicit class AutoCloseableSeq[A <: AutoCloseable](val in: SeqLike[A, _]) {
     /**
-      * safeClose: Is an implicit on a sequence of AutoCloseable classes that tries to close each
-      * element of the sequence, even if prior close calls fail. In case of failure in any of the
-      * close calls, an Exception is thrown containing the suppressed exceptions (getSuppressed),
-      * if any.
-      */
+     * safeClose: Is an implicit on a sequence of AutoCloseable classes that tries to close each
+     * element of the sequence, even if prior close calls fail. In case of failure in any of the
+     * close calls, an Exception is thrown containing the suppressed exceptions (getSuppressed),
+     * if any.
+     */
     def safeClose(): Unit = if (in != null) {
       var closeException: Throwable = null
       in.foreach { element =>
@@ -93,57 +93,57 @@ object RapidsPluginImplicits {
 
   class MapsSafely[A, Repr] {
     /**
-      * safeMap: safeMap implementation that is leveraged by other type-specific implicits.
-      *
-      * safeMap has the added safety net that as you produce AutoCloseable values they are
-      * tracked, and if an exception were to occur within the maps's body, it will make every
-      * attempt to close each produced value.
-      *
-      * Note: safeMap will close in case of errors, without any knowledge of whether it should
-      * or not.
-      * Use safeMap only in these circumstances if `fn` increases the reference count,
-      * producing an AutoCloseable, and nothing else is tracking these references:
-      *    a) seq.safeMap(x => {...; x.incRefCount; x})
-      *    b) seq.safeMap(x => GpuColumnVector.from(...))
-      *
-      * Usage of safeMap chained with other maps is a bit confusing:
-      *
-      * seq.map(GpuColumnVector.from).safeMap(couldThrow)
-      *
-      * Will close the column vectors produced from couldThrow up until the time where safeMap
-      * throws.
-      *
-      * The correct pattern of usage in cases like this is:
-      *
-      *   val closeTheseLater = seq.safeMap(GpuColumnVector.from)
-      *   closeTheseLater.safeMap{ x =>
-      *     var success = false
-      *     try {
-      *       val res = couldThrow(x.incRefCount())
-      *       success = true
-      *       res // return a ref count of 2
-      *     } finally {
-      *       if (!success) {
-      *         // in case of an error, we close x as part of normal error handling
-      *         // the exception will be caught by the safeMap, and it will close all
-      *         // AutoCloseables produced before x
-      *         // - Sequence looks like: [2, 2, 2, ..., 2] + x, which has also has a refcount of 2
-      *         x.close() // x now has a ref count of 1, the rest of the sequence has 2s
-      *       }
-      *     }
-      *   } // safeMap cleaned, and now everything has 1s for ref counts (as they were before)
-      *
-      *   closeTheseLater.safeClose() // go from 1 to 0 in all things inside closeTheseLater
-      *
-      * @param in the Seq[A] to map on
-      * @param fn a function that takes A, and produces B (a subclass of AutoCloseable)
-      * @tparam A the type of the elements in Seq
-      * @tparam B the type of the elements produced in the safeMap (should be subclasses of
-      *                AutoCloseable)
-      * @tparam Repr the type of the input collection (needed by builder)
-      * @tparam That the type of the output collection (needed by builder)
-      * @return a sequence of B, in the success case
-      */
+     * safeMap: safeMap implementation that is leveraged by other type-specific implicits.
+     *
+     * safeMap has the added safety net that as you produce AutoCloseable values they are
+     * tracked, and if an exception were to occur within the maps's body, it will make every
+     * attempt to close each produced value.
+     *
+     * Note: safeMap will close in case of errors, without any knowledge of whether it should
+     * or not.
+     * Use safeMap only in these circumstances if `fn` increases the reference count,
+     * producing an AutoCloseable, and nothing else is tracking these references:
+     *    a) seq.safeMap(x => {...; x.incRefCount; x})
+     *    b) seq.safeMap(x => GpuColumnVector.from(...))
+     *
+     * Usage of safeMap chained with other maps is a bit confusing:
+     *
+     * seq.map(GpuColumnVector.from).safeMap(couldThrow)
+     *
+     * Will close the column vectors produced from couldThrow up until the time where safeMap
+     * throws.
+     *
+     * The correct pattern of usage in cases like this is:
+     *
+     *   val closeTheseLater = seq.safeMap(GpuColumnVector.from)
+     *   closeTheseLater.safeMap{ x =>
+     *     var success = false
+     *     try {
+     *       val res = couldThrow(x.incRefCount())
+     *       success = true
+     *       res // return a ref count of 2
+     *     } finally {
+     *       if (!success) {
+     *         // in case of an error, we close x as part of normal error handling
+     *         // the exception will be caught by the safeMap, and it will close all
+     *         // AutoCloseables produced before x
+     *         // - Sequence looks like: [2, 2, 2, ..., 2] + x, which has also has a refcount of 2
+     *         x.close() // x now has a ref count of 1, the rest of the sequence has 2s
+     *       }
+     *     }
+     *   } // safeMap cleaned, and now everything has 1s for ref counts (as they were before)
+     *
+     *   closeTheseLater.safeClose() // go from 1 to 0 in all things inside closeTheseLater
+     *
+     * @param in the Seq[A] to map on
+     * @param fn a function that takes A, and produces B (a subclass of AutoCloseable)
+     * @tparam A the type of the elements in Seq
+     * @tparam B the type of the elements produced in the safeMap (should be subclasses of
+     *                AutoCloseable)
+     * @tparam Repr the type of the input collection (needed by builder)
+     * @tparam That the type of the output collection (needed by builder)
+     * @return a sequence of B, in the success case
+     */
     protected def safeMap[B <: AutoCloseable, That](
         in: SeqLike[A, Repr],
         fn: A => B)
@@ -179,48 +179,48 @@ object RapidsPluginImplicits {
 
   implicit class AutoCloseableProducingSeq[A](val in: Seq[A]) extends MapsSafely[A, Seq[A]] {
     /**
-      * safeMap: implicit map on a Seq[A] that produces Seq[B], where B is a subclass of
-      * AutoCloseable.
-      * See [[MapsSafely.safeMap]] for a more detailed explanation.
-      *
-      * @param fn a function that takes A, and produces B (a subclass of AutoCloseable)
-      * @tparam A the type of the elements in Seq
-      * @tparam B the type of the elements produced in the safeMap (should be subclasses of
-      *             AutoCloseable)
-      * @return a sequence of B, in the success case
-      */
+     * safeMap: implicit map on a Seq[A] that produces Seq[B], where B is a subclass of
+     * AutoCloseable.
+     * See [[MapsSafely.safeMap]] for a more detailed explanation.
+     *
+     * @param fn a function that takes A, and produces B (a subclass of AutoCloseable)
+     * @tparam A the type of the elements in Seq
+     * @tparam B the type of the elements produced in the safeMap (should be subclasses of
+     *             AutoCloseable)
+     * @return a sequence of B, in the success case
+     */
     def safeMap[B <: AutoCloseable](fn: A => B): Seq[B] = super.safeMap(in, fn)
   }
 
   implicit class AutoCloseableProducingArray[A](val in: Array[A]) extends MapsSafely[A, Array[A]] {
     /**
-      * safeMap: implicit map on a Seq[A] that produces Seq[B], where B is a subclass of
-      * AutoCloseable.
-      * See [[MapsSafely.safeMap]] for a more detailed explanation.
-      *
-      * @param fn a function that takes A, and produces B (a subclass of AutoCloseable)
-      * @tparam A the type of the elements in Seq
-      * @tparam B the type of the elements produced in the safeMap (should be subclasses of
-      *             AutoCloseable)
-      * @return a sequence of B, in the success case
-      */
+     * safeMap: implicit map on a Seq[A] that produces Seq[B], where B is a subclass of
+     * AutoCloseable.
+     * See [[MapsSafely.safeMap]] for a more detailed explanation.
+     *
+     * @param fn a function that takes A, and produces B (a subclass of AutoCloseable)
+     * @tparam A the type of the elements in Seq
+     * @tparam B the type of the elements produced in the safeMap (should be subclasses of
+     *             AutoCloseable)
+     * @return a sequence of B, in the success case
+     */
     def safeMap[B <: AutoCloseable : ClassTag](fn: A => B): Array[B] = super.safeMap(in, fn)
   }
 
   implicit class AutoCloseableFromBatchColumns(val in: ColumnarBatch)
     extends MapsSafely[Int, Seq[Int]] {
     /**
-      * safeMap: Is an implicit on ColumnarBatch, that lets you map over the columns
-      * of a batch as if the batch was a Seq[GpuColumnVector], iff safeMap's body is producing
-      * AutoCloseable (otherwise, it is not defined).
-      *
-      * See [[MapsSafely.safeMap]] for a more detailed explanation.
-      *
-      * @param fn a function that takes GpuColumnVector, and returns a subclass of AutoCloseable
-      * @tparam B the type of the elements produced in the safeMap (should be subclasses of
-      *           AutoCloseable)
-      * @return a sequence of B, in the success case
-      */
+     * safeMap: Is an implicit on ColumnarBatch, that lets you map over the columns
+     * of a batch as if the batch was a Seq[GpuColumnVector], iff safeMap's body is producing
+     * AutoCloseable (otherwise, it is not defined).
+     *
+     * See [[MapsSafely.safeMap]] for a more detailed explanation.
+     *
+     * @param fn a function that takes GpuColumnVector, and returns a subclass of AutoCloseable
+     * @tparam B the type of the elements produced in the safeMap (should be subclasses of
+     *           AutoCloseable)
+     * @return a sequence of B, in the success case
+     */
     def safeMap[B <: AutoCloseable](fn: GpuColumnVector => B): Seq[B] = {
       val colIds: Seq[Int] = 0 until in.numCols
       super.safeMap(colIds, (i: Int) => fn(in.column(i).asInstanceOf[GpuColumnVector]))

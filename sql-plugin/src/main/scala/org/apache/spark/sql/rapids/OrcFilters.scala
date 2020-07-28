@@ -37,12 +37,12 @@ import org.apache.spark.sql.types._
 object OrcFilters extends OrcFiltersBase {
 
   /**
-    * Create ORC filter as a SearchArgument instance.
-    *
-    * NOTE: These filters should be pre-filtered by Spark to only contain the
-    *       filters convertible to ORC, so checking what is convertible is
-    *       not necessary here.
-    */
+   * Create ORC filter as a SearchArgument instance.
+   *
+   * NOTE: These filters should be pre-filtered by Spark to only contain the
+   *       filters convertible to ORC, so checking what is convertible is
+   *       not necessary here.
+   */
   def createFilter(schema: StructType, filters: Seq[Filter]): Option[SearchArgument] = {
     val dataTypeMap = schema.map(f => f.name -> f.dataType).toMap
     // Combines all filters using `And` to produce a single conjunction
@@ -56,8 +56,8 @@ object OrcFilters extends OrcFiltersBase {
   }
 
   /**
-    * Get PredicateLeafType which is corresponding to the given DataType.
-    */
+   * Get PredicateLeafType which is corresponding to the given DataType.
+   */
   private def getPredicateLeafType(dataType: DataType) = dataType match {
     case BooleanType => PredicateLeaf.Type.BOOLEAN
     case ByteType | ShortType | IntegerType | LongType => PredicateLeaf.Type.LONG
@@ -70,11 +70,11 @@ object OrcFilters extends OrcFiltersBase {
   }
 
   /**
-    * Cast literal values for filters.
-    *
-    * We need to cast to long because ORC raises exceptions
-    * at 'checkLiteralType' of SearchArgumentImpl.java.
-    */
+   * Cast literal values for filters.
+   *
+   * We need to cast to long because ORC raises exceptions
+   * at 'checkLiteralType' of SearchArgumentImpl.java.
+   */
   private def castLiteralValue(value: Any, dataType: DataType): Any = dataType match {
     case ByteType | ShortType | IntegerType | LongType =>
       value.asInstanceOf[Number].longValue
@@ -86,13 +86,13 @@ object OrcFilters extends OrcFiltersBase {
   }
 
   /**
-    * Build a SearchArgument and return the builder so far.
-    *
-    * @param dataTypeMap a map from the attribute name to its data type.
-    * @param expression the input predicates, which should be fully convertible to SearchArgument.
-    * @param builder the input SearchArgument.Builder.
-    * @return the builder so far.
-    */
+   * Build a SearchArgument and return the builder so far.
+   *
+   * @param dataTypeMap a map from the attribute name to its data type.
+   * @param expression the input predicates, which should be fully convertible to SearchArgument.
+   * @param builder the input SearchArgument.Builder.
+   * @return the builder so far.
+   */
   private def buildSearchArgument(
       dataTypeMap: Map[String, DataType],
       expression: Filter,
@@ -122,13 +122,13 @@ object OrcFilters extends OrcFiltersBase {
   }
 
   /**
-    * Build a SearchArgument for a leaf predicate and return the builder so far.
-    *
-    * @param dataTypeMap a map from the attribute name to its data type.
-    * @param expression the input filter predicates.
-    * @param builder the input SearchArgument.Builder.
-    * @return the builder so far.
-    */
+   * Build a SearchArgument for a leaf predicate and return the builder so far.
+   *
+   * @param dataTypeMap a map from the attribute name to its data type.
+   * @param expression the input filter predicates.
+   * @param builder the input SearchArgument.Builder.
+   * @return the builder so far.
+   */
   private def buildLeafSearchArgument(
       dataTypeMap: Map[String, DataType],
       expression: Filter,

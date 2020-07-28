@@ -23,15 +23,15 @@ import ai.rapids.cudf.MemoryBuffer
 import org.apache.spark.internal.Logging
 
 /**
-  * This classes manages a set of bounce buffers, that are instances of `MemoryBuffer`.
-  * The size/quantity of buffers is configurable, and so is the allocator.
-  * @param poolName a human-friendly name to use for debug logs
-  * @param bufferSize the size of buffer to use
-  * @param numBuffers the number of buffers to allocate on instantiation
-  * @param allocator function that takes a size, and returns a `MemoryBuffer` instance.
-  * @tparam T the specific type of MemoryBuffer i.e. `DeviceMemoryBuffer`,
-  *           `HostMemoryBuffer`, etc.
-  */
+ * This classes manages a set of bounce buffers, that are instances of `MemoryBuffer`.
+ * The size/quantity of buffers is configurable, and so is the allocator.
+ * @param poolName a human-friendly name to use for debug logs
+ * @param bufferSize the size of buffer to use
+ * @param numBuffers the number of buffers to allocate on instantiation
+ * @param allocator function that takes a size, and returns a `MemoryBuffer` instance.
+ * @tparam T the specific type of MemoryBuffer i.e. `DeviceMemoryBuffer`,
+ *           `HostMemoryBuffer`, etc.
+ */
 class BounceBufferManager[T <: MemoryBuffer](
     poolName: String,
     val bufferSize: Long,
@@ -47,11 +47,11 @@ class BounceBufferManager[T <: MemoryBuffer](
   freeBufferMap.set(0, numBuffers)
 
   /**
-    * Acquires a [[MemoryBuffer]] from the pool. Blocks if the pool is empty.
-    *
-    * @note calls to this function should have a lock on this [[BounceBufferManager]]
-    * @return the acquired `MemoryBuffer`
-    */
+   * Acquires a [[MemoryBuffer]] from the pool. Blocks if the pool is empty.
+   *
+   * @note calls to this function should have a lock on this [[BounceBufferManager]]
+   * @return the acquired `MemoryBuffer`
+   */
   private def acquireBuffer(): MemoryBuffer = {
     val start = System.currentTimeMillis()
     var bufferIndex = freeBufferMap.nextSetBit(0)
@@ -73,10 +73,10 @@ class BounceBufferManager[T <: MemoryBuffer](
   }
 
   /**
-    * Acquire `possibleNumBuffers` buffers from the pool. This method will not block.
-    * @param possibleNumBuffers number of buffers to acquire
-    * @return a sequence of `MemoryBuffer`s, or empty if the request can't be satisfied
-    */
+   * Acquire `possibleNumBuffers` buffers from the pool. This method will not block.
+   * @param possibleNumBuffers number of buffers to acquire
+   * @return a sequence of `MemoryBuffer`s, or empty if the request can't be satisfied
+   */
   def acquireBuffersNonBlocking(possibleNumBuffers: Int): Seq[MemoryBuffer] = synchronized {
     if (numFree < possibleNumBuffers) {
       // would block
@@ -89,11 +89,11 @@ class BounceBufferManager[T <: MemoryBuffer](
   }
 
   /**
-    * Acquire `possibleNumBuffers` buffers from the pool. This method will block until
-    * it can get the buffers requested.
-    * @param possibleNumBuffers number of buffers to acquire
-    * @return a sequence of `MemoryBuffer`s
-    */
+   * Acquire `possibleNumBuffers` buffers from the pool. This method will block until
+   * it can get the buffers requested.
+   * @param possibleNumBuffers number of buffers to acquire
+   * @return a sequence of `MemoryBuffer`s
+   */
   def acquireBuffersBlocking(possibleNumBuffers: Int): Seq[MemoryBuffer] = synchronized {
     val res = (0 until possibleNumBuffers).map(_ => acquireBuffer())
     logDebug(s"$poolName at acquire. Has numFree ${numFree}")
@@ -101,9 +101,9 @@ class BounceBufferManager[T <: MemoryBuffer](
   }
 
   /**
-    * Free a `MemoryBuffer`, putting it back into the pool.
-    * @param buffer the memory buffer to free
-    */
+   * Free a `MemoryBuffer`, putting it back into the pool.
+   * @param buffer the memory buffer to free
+   */
   def freeBuffer(buffer: MemoryBuffer): Unit = synchronized {
     require(buffer.getAddress >= rootBuffer.getAddress
       && (buffer.getAddress - rootBuffer.getAddress) % bufferSize == 0,
@@ -119,10 +119,10 @@ class BounceBufferManager[T <: MemoryBuffer](
   }
 
   /**
-    * Returns the root (backing) `MemoryBuffer`. This is used for a transport
-    * that wants to register the bounce buffers against hardware, for pinning purposes.
-    * @return the root (backing) memory buffer
-    */
+   * Returns the root (backing) `MemoryBuffer`. This is used for a transport
+   * that wants to register the bounce buffers against hardware, for pinning purposes.
+   * @return the root (backing) memory buffer
+   */
   def getRootBuffer(): MemoryBuffer = rootBuffer
 
   override def close(): Unit = rootBuffer.close()

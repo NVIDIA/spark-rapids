@@ -33,12 +33,12 @@ import org.apache.spark.util.MutablePair
 class GpuRangePartitioner extends Serializable {
   var rangeBounds: Array[InternalRow] = _
   /**
-    * Sketches the input RDD via reservoir sampling on each partition.
-    *
-    * @param rdd                    the input RDD to sketch
-    * @param sampleSizePerPartition max sample size per partition
-    * @return (total number of items, an array of (partitionId, number of items, sample))
-    */
+   * Sketches the input RDD via reservoir sampling on each partition.
+   *
+   * @param rdd                    the input RDD to sketch
+   * @param sampleSizePerPartition max sample size per partition
+   * @return (total number of items, an array of (partitionId, number of items, sample))
+   */
   def sketch[K: ClassTag](
                            rdd: RDD[K],
                            sampleSizePerPartition: Int): (Long, Array[(Int, Long, Array[K])]) = {
@@ -55,13 +55,13 @@ class GpuRangePartitioner extends Serializable {
   }
 
   /**
-    * Determines the bounds for range partitioning from candidates with weights indicating how many
-    * items each represents. Usually this is 1 over the probability used to sample this candidate.
-    *
-    * @param candidates unordered candidates with weights
-    * @param partitions number of partitions
-    * @return selected bounds
-    */
+   * Determines the bounds for range partitioning from candidates with weights indicating how many
+   * items each represents. Usually this is 1 over the probability used to sample this candidate.
+   *
+   * @param candidates unordered candidates with weights
+   * @param partitions number of partitions
+   * @return selected bounds
+   */
   def determineBounds[K: Ordering : ClassTag](candidates: ArrayBuffer[(K, Float)],
                                               partitions: Int): Array[K] = {
     val ordering = implicitly[Ordering[K]]

@@ -31,18 +31,18 @@ import org.apache.spark.sql.vectorized.ColumnarBatch
 import org.apache.spark.storage.{BlockId, BlockManagerId, ShuffleBlockBatchId, ShuffleBlockId}
 
 /**
-  * An Iterator over columnar batches that fetches blocks using [[RapidsShuffleClient]]s.
-  *
-  * A `transport` instance is used to make [[RapidsShuffleClient]]s that are able to fetch
-  * blocks.
-  *
-  * @param localBlockManagerId the `BlockManagerId` for the local executor
-  * @param rapidsConf plugin configuration
-  * @param transport transport to use to fetch blocks
-  * @param blocksByAddress blocks to fetch
-  * @param metricsUpdater instance of `ShuffleMetricsUpdater` to update the Spark
-  *                       shuffle metrics
-  */
+ * An Iterator over columnar batches that fetches blocks using [[RapidsShuffleClient]]s.
+ *
+ * A `transport` instance is used to make [[RapidsShuffleClient]]s that are able to fetch
+ * blocks.
+ *
+ * @param localBlockManagerId the `BlockManagerId` for the local executor
+ * @param rapidsConf plugin configuration
+ * @param transport transport to use to fetch blocks
+ * @param blocksByAddress blocks to fetch
+ * @param metricsUpdater instance of `ShuffleMetricsUpdater` to update the Spark
+ *                       shuffle metrics
+ */
 class RapidsShuffleIterator(
     localBlockManagerId: BlockManagerId,
     rapidsConf: RapidsConf,
@@ -54,26 +54,26 @@ class RapidsShuffleIterator(
     with Logging {
 
   /**
-    * General trait encapsulating either a buffer or an error. Used to hand off batches
-    * to tasks (in the good case), or exceptions (in the bad case)
-    */
+   * General trait encapsulating either a buffer or an error. Used to hand off batches
+   * to tasks (in the good case), or exceptions (in the bad case)
+   */
   trait ShuffleClientResult
 
   /**
-    * A result for a successful buffer received
-    * @param bufferId - the shuffle received buffer id as tracked in the catalog
-    */
+   * A result for a successful buffer received
+   * @param bufferId - the shuffle received buffer id as tracked in the catalog
+   */
   case class BufferReceived(
       bufferId: ShuffleReceivedBufferId) extends ShuffleClientResult
 
   /**
-    * A result for a failed attempt at receiving block metadata, or corresponding batches.
-    * @param blockManagerId - the offending peer block manager id
-    * @param blockId - shuffle block id that we were fetching
-    * @param mapIndex - the mapIndex (as returned by the `MapOutputTracker` in
-    *                 `blocksByAddress`
-    * @param errorMessage - a human-friendly error to report
-    */
+   * A result for a failed attempt at receiving block metadata, or corresponding batches.
+   * @param blockManagerId - the offending peer block manager id
+   * @param blockId - shuffle block id that we were fetching
+   * @param mapIndex - the mapIndex (as returned by the `MapOutputTracker` in
+   *                 `blocksByAddress`
+   * @param errorMessage - a human-friendly error to report
+   */
   case class TransferError(
       blockManagerId: BlockManagerId,
       blockId: ShuffleBlockBatchId,
@@ -153,12 +153,12 @@ class RapidsShuffleIterator(
         val shuffleRequestsMapIndex: Seq[BlockIdMapIndex] =
           blockIds.map { case (blockId, _, mapIndex) =>
             /**
-              * [[ShuffleBlockBatchId]] is an internal optimization in Spark, which will likely
-              * never see it unless explicitly enabled.
-              *
-              * There are other things that can turn it off, but we really don't care too much
-              * about it.
-              */
+             * [[ShuffleBlockBatchId]] is an internal optimization in Spark, which will likely
+             * never see it unless explicitly enabled.
+             *
+             * There are other things that can turn it off, but we really don't care too much
+             * about it.
+             */
             blockId match {
               case sbbid: ShuffleBlockBatchId => BlockIdMapIndex(sbbid, mapIndex)
               case sbid: ShuffleBlockId =>
