@@ -48,15 +48,11 @@ class RapidsHostMemoryStoreSuite extends FunSuite with Arm with MockitoSugar {
         assertResult(hostStoreMaxSize)(hostStore.numBytesFree)
         devStore.setSpillStore(hostStore)
 
-        val ct = buildContiguousTable()
-        val bufferSize = ct.getBuffer.getLength
-        try {
+        val bufferSize = closeOnExcept(buildContiguousTable()) { ct =>
+          val len = ct.getBuffer.getLength
           // store takes ownership of the table
           devStore.addTable(bufferId, ct.getTable, ct.getBuffer, spillPriority)
-        } catch {
-          case t: Throwable =>
-            ct.close()
-            throw t
+          len
         }
 
         devStore.synchronousSpill(0)
