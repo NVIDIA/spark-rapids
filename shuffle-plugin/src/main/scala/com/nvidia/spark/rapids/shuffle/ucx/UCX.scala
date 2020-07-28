@@ -25,9 +25,8 @@ import java.util.concurrent.atomic.AtomicLong
 import scala.collection.mutable.ArrayBuffer
 
 import ai.rapids.cudf.{MemoryBuffer, NvtxColor, NvtxRange}
-import com.nvidia.spark.rapids.GpuDeviceManager
-import com.nvidia.spark.rapids.shuffle.{AddressLengthTag, ClientConnection, MemoryRegistrationCallback, RapidsShuffleIterator, Transaction, TransportUtils}
 import com.google.common.util.concurrent.ThreadFactoryBuilder
+import com.nvidia.spark.rapids.GpuDeviceManager
 import com.nvidia.spark.rapids.shuffle.{AddressLengthTag, ClientConnection, MemoryRegistrationCallback, TransportUtils}
 import org.openucx.jucx._
 import org.openucx.jucx.ucp._
