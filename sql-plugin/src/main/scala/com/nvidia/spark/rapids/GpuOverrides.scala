@@ -1282,6 +1282,50 @@ object GpuOverrides {
         override def convertToGpu(child: Expression): GpuExpression = GpuLower(child)
       })
       .incompat(CASE_MODIFICATION_INCOMPAT),
+    expr[StringLPad](
+      "Pad a string on the left",
+      (in, conf, p, r) => new TernaryExprMeta[StringLPad](in, conf, p, r) {
+        override def tagExprForGpu(): Unit = {
+          if (!isLit(in.len)) {
+            willNotWorkOnGpu("only literal length is supported")
+          }
+
+          val padLit = extractLit(in.pad)
+          if (padLit.isEmpty) {
+            willNotWorkOnGpu("only literal pad is supported")
+          } else if (padLit.get.value != null &&
+            padLit.get.value.asInstanceOf[UTF8String].toString.length != 1) {
+            willNotWorkOnGpu("only a single character is supported for pad")
+          }
+        }
+        override def convertToGpu(
+            str: Expression,
+            width: Expression,
+            pad: Expression): GpuExpression =
+          GpuStringLPad(str, width, pad)
+      }),
+    expr[StringRPad](
+      "Pad a string on the right",
+      (in, conf, p, r) => new TernaryExprMeta[StringRPad](in, conf, p, r) {
+        override def tagExprForGpu(): Unit = {
+          if (!isLit(in.len)) {
+            willNotWorkOnGpu("only literal length is supported")
+          }
+
+          val padLit = extractLit(in.pad)
+          if (padLit.isEmpty) {
+            willNotWorkOnGpu("only literal pad is supported")
+          } else if (padLit.get.value != null &&
+            padLit.get.value.asInstanceOf[UTF8String].toString.length != 1) {
+            willNotWorkOnGpu("only a single character is supported for pad")
+          }
+        }
+        override def convertToGpu(
+            str: Expression,
+            width: Expression,
+            pad: Expression): GpuExpression =
+          GpuStringRPad(str, width, pad)
+      }),
     expr[StringLocate](
       "Substring search operator",
       (in, conf, p, r) => new TernaryExprMeta[StringLocate](in, conf, p, r) {

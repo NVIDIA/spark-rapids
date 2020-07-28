@@ -160,7 +160,7 @@ class StringGen(DataGen):
             length = int(len(strs))
         except OverflowError:
             length = _MAX_CHOICES
-        return self.with_special_case(lambda rand : strs[rand.randint(0, length)], weight=weight)
+        return self.with_special_case(lambda rand : strs[rand.randrange(0, length)], weight=weight)
 
     def start(self, rand):
         strs = self.base_strs
@@ -168,7 +168,7 @@ class StringGen(DataGen):
             length = int(len(strs))
         except OverflowError:
             length = _MAX_CHOICES
-        self._start(rand, lambda : strs[rand.randint(0, length)])
+        self._start(rand, lambda : strs[rand.randrange(0, length)])
 
 _BYTE_MIN = -(1 << 7)
 _BYTE_MAX = (1 << 7) - 1
