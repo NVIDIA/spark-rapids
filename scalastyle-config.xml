@@ -104,9 +104,9 @@ You can also disable only one rule, by specifying its rule id, as specified in:
     <!-- ================================================================================ -->
 
     <check customId="NoScalaDoc" level="error" class="org.scalastyle.file.RegexChecker"
-           enabled="false">
+           enabled="true">
         <parameters>
-            <parameter name="regex">(?m)^(\s*)/[*][*].*$(\r|)\n^\1 [*]</parameter>
+            <parameter name="regex">(?m)^(\s*)/[*][*].*$(\r|)\n^\1  [*]</parameter>
         </parameters>
         <customMessage>Use Javadoc style indentation for multiline comments</customMessage>
     </check>
