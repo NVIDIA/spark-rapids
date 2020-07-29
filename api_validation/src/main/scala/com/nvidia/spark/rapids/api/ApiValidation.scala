@@ -96,7 +96,7 @@ object ApiValidation extends Logging {
 
         // TODO: Add error handling if Type is not present
         val gpuTypes = classToTypeTag(Class.forName(gpu))
-        
+
         val sparkToGpuExecMap = Map(
           "org.apache.spark.sql.catalyst.expressions.Expression" ->
             "com.nvidia.spark.rapids.GpuExpression",
