@@ -29,7 +29,7 @@ import org.apache.spark.internal.Logging
 import org.apache.spark.sql.vectorized.ColumnarBatch
 import org.apache.spark.storage.ShuffleBlockBatchId
 
-object MetaUtils {
+object MetaUtils extends Arm {
   /**
    * Build a TableMeta message from a Table in contiguous memory
    *
@@ -202,17 +202,12 @@ object MetaUtils {
    * @return columnar batch that must be closed by the caller
    */
   def getBatchFromMeta(deviceBuffer: DeviceMemoryBuffer, meta: TableMeta): ColumnarBatch = {
-    val columns = new ArrayBuffer[GpuColumnVector](meta.columnMetasLength())
-    try {
+    closeOnExcept(new ArrayBuffer[GpuColumnVector](meta.columnMetasLength())) { columns =>
       val columnMeta = new ColumnMeta
       (0 until meta.columnMetasLength).foreach { i =>
         columns.append(makeColumn(deviceBuffer, meta.columnMetas(columnMeta, i)))
       }
       new ColumnarBatch(columns.toArray, meta.rowCount.toInt)
-    } catch {
-      case e: Exception =>
-        columns.foreach(_.close())
-        throw e
     }
   }
 
