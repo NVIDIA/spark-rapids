@@ -328,7 +328,7 @@ class CSVPartitionReader(
     maxRowsPerChunk: Integer,
     maxBytesPerChunk: Long,
     execMetrics: Map[String, SQLMetric])
-  extends PartitionReader[ColumnarBatch] with ScanWithMetrics {
+  extends PartitionReader[ColumnarBatch] with ScanWithMetrics with Arm {
 
   private var batch: Option[ColumnarBatch] = None
   private val lineReader = new HadoopFileLinesReader(partFile, parsedOptions.lineSeparatorInRead,
@@ -380,16 +380,11 @@ class CSVPartitionReader(
    */
   private def growHostBuffer(original: HostMemoryBuffer, needed: Long): HostMemoryBuffer = {
     val newSize = Math.max(original.getLength * 2, needed)
-    val result = HostMemoryBuffer.allocate(newSize)
-    try {
+    closeOnExcept(HostMemoryBuffer.allocate(newSize)) { result =>
       result.copyFromHostBuffer(0, original, 0, original.getLength)
       original.close()
-    } catch {
-      case e: Throwable =>
-        result.close()
-        throw e
+      result
     }
-    result
   }
 
   private def readPartFile(): (HostMemoryBuffer, Long, Integer) = {

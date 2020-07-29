@@ -15,6 +15,8 @@
  */
 package com.nvidia.spark.rapids
 
+import scala.collection.mutable.ArrayBuffer
+
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 
 /** Implementation of the automatic-resource-management pattern */
@@ -35,6 +37,39 @@ trait Arm {
       block(r)
     } finally {
       r.safeClose()
+    }
+  }
+
+  /** Executes the provided code block, closing the resource only if an exception occurs */
+  def closeOnExcept[T <: AutoCloseable, V](r: T)(block: T => V): V = {
+    try {
+      block(r)
+    } catch {
+      case t: Throwable =>
+        r.safeClose()
+        throw t
+    }
+  }
+
+  /** Executes the provided code block, closing the resources only if an exception occurs */
+  def closeOnExcept[T <: AutoCloseable, V](r: Seq[T])(block: Seq[T] => V): V = {
+    try {
+      block(r)
+    } catch {
+      case t: Throwable =>
+        r.safeClose()
+        throw t
+    }
+  }
+
+  /** Executes the provided code block, closing the resources only if an exception occurs */
+  def closeOnExcept[T <: AutoCloseable, V](r: ArrayBuffer[T])(block: ArrayBuffer[T] => V): V = {
+    try {
+      block(r)
+    } catch {
+      case t: Throwable =>
+        r.safeClose()
+        throw t
     }
   }
 }
