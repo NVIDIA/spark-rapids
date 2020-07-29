@@ -32,18 +32,18 @@ import org.apache.spark.internal.Logging
 import org.apache.spark.storage.BlockManagerId
 
 /**
-  * UCXShuffleTransport is the UCX implementation for the `RapidsShuffleTransport`. It provides
-  * a way to create a `RapidsShuffleServer` and one `RapidsShuffleClient` per peer, that are
-  * able to send/receive via UCX.
-  *
-  * Additionally, this class maintains pools of memory used to limit the cost of memory
-  * pinning and registration (bounce buffers), a metadata message pool for small flatbuffers used
-  * to describe shuffled data, and implements a simple throttle mechanism to keep GPU memory
-  * usage at bay by way of configuration settings.
-  *
-  * @param shuffleServerId `BlockManagerId` for this executor
-  * @param rapidsConf plugin configuration
-  */
+ * UCXShuffleTransport is the UCX implementation for the `RapidsShuffleTransport`. It provides
+ * a way to create a `RapidsShuffleServer` and one `RapidsShuffleClient` per peer, that are
+ * able to send/receive via UCX.
+ *
+ * Additionally, this class maintains pools of memory used to limit the cost of memory
+ * pinning and registration (bounce buffers), a metadata message pool for small flatbuffers used
+ * to describe shuffled data, and implements a simple throttle mechanism to keep GPU memory
+ * usage at bay by way of configuration settings.
+ *
+ * @param shuffleServerId `BlockManagerId` for this executor
+ * @param rapidsConf      plugin configuration
+ */
 class UCXShuffleTransport(shuffleServerId: BlockManagerId, rapidsConf: RapidsConf)
   extends RapidsShuffleTransport
     with Logging {
@@ -115,20 +115,20 @@ class UCXShuffleTransport(shuffleServerId: BlockManagerId, rapidsConf: RapidsCon
   }
 
   /**
-    * Initialize the bounce buffer pools that are to be used to send and receive data against UCX
-    *
-    * We have 2 pools for the send side, since buffers may come from spilled memory (host),
-    * or device memory.
-    *
-    * We have 1 pool for the receive side, since all receives are targeted for the GPU.
-    *
-    * The size of buffers is the same for all pools, since send/receive sizes need to match. The
+   * Initialize the bounce buffer pools that are to be used to send and receive data against UCX
+   *
+   * We have 2 pools for the send side, since buffers may come from spilled memory (host),
+   * or device memory.
+   *
+   * We have 1 pool for the receive side, since all receives are targeted for the GPU.
+   *
+   * The size of buffers is the same for all pools, since send/receive sizes need to match. The
    * count can be set independently.
-    *
-    * @param bounceBufferSize the size for a single bounce buffer
-    * @param deviceNumBuffers number of buffers to allocate for the device
-    * @param hostNumBuffers number of buffers to allocate for the host
-    */
+   *
+   * @param bounceBufferSize the size for a single bounce buffer
+   * @param deviceNumBuffers number of buffers to allocate for the device
+   * @param hostNumBuffers   number of buffers to allocate for the host
+   */
   def initBounceBufferPools(
       bounceBufferSize: Long,
       deviceNumBuffers: Int,
@@ -335,11 +335,13 @@ class UCXShuffleTransport(shuffleServerId: BlockManagerId, rapidsConf: RapidsCon
       .setNameFormat(s"shuffle-server-bss-thread-%d")
       .setDaemon(true)
       .build))
+
   /**
-    * Construct a server instance
-    * @param requestHandler used to get metadata info, and acquire tables used in the shuffle.
-    * @return the server instance
-    */
+   * Construct a server instance
+   *
+   * @param requestHandler used to get metadata info, and acquire tables used in the shuffle.
+   * @return the server instance
+   */
   override def makeServer(requestHandler: RapidsShuffleRequestHandler): RapidsShuffleServer = {
     new RapidsShuffleServer(
       this,
@@ -353,13 +355,13 @@ class UCXShuffleTransport(shuffleServerId: BlockManagerId, rapidsConf: RapidsCon
   }
 
   /**
-    * Returns a sequence of bounce buffers if the transport allows for [[neededAmount]] + its
+   * Returns a sequence of bounce buffers if the transport allows for [[neededAmount]] + its
    * inflight tally to be inflight at this time, and bounce buffers are available.
-    *
-    * @param neededAmount amount of bytes needed.
-    * @return optional bounce buffers to be used to for the client to receive if amount of bytes
-    *         needed was allowed into the inflight amount, None otherwise (caller should try again)
-    */
+   *
+   * @param neededAmount amount of bytes needed.
+   * @return optional bounce buffers to be used to for the client to receive if amount of bytes
+   *         needed was allowed into the inflight amount, None otherwise (caller should try again)
+   */
   private def markBytesInFlight(neededAmount: Long)
       : Option[Seq[MemoryBuffer]] = inflightMonitor.synchronized {
     // if it would fit, or we are sending nothing (protects against the buffer that is bigger

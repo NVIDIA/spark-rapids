@@ -27,10 +27,10 @@ import org.openucx.jucx.ucp.UcpRequest
 import org.apache.spark.internal.Logging
 
 /**
-  * This is a private api used within the ucx package.
-  * It is used by [[Transaction]] to call into the UCX functions. It adds the tag
-  * as we use that to track the message and for debugging.
-  */
+ * This is a private api used within the ucx package.
+ * It is used by [[Transaction]] to call into the UCX functions. It adds the tag
+ * as we use that to track the message and for debugging.
+ */
 private[ucx] abstract class UCXTagCallback {
   def onError(alt: AddressLengthTag, ucsStatus: Int, errorMsg: String): Unit
   def onMessageStarted(ucxMessage: UcpRequest): Unit
@@ -118,10 +118,10 @@ class UCXConnection(peerExecutorId: Int, ucx: UCX) extends Connection with Loggi
   private[this] val pendingTransactions = new ConcurrentHashMap[Long, UCXTransaction]()
 
   /**
-    * 1) client gets upper 28 bits
-    * 2) then comes the type, which gets 4 bits
-    * 3) the remaining 32 bits are used for buffer specific tags
-    */
+   * 1) client gets upper 28 bits
+   * 2) then comes the type, which gets 4 bits
+   * 3) the remaining 32 bits are used for buffer specific tags
+   */
   private val requestMsgType:  Long = 0x00000000000000000L
   private val responseMsgType: Long = 0x0000000000000000AL
   private val bufferMsgType:   Long = 0x0000000000000000BL
@@ -333,12 +333,12 @@ object UCXConnection extends Logging {
   }
 
   /**
-    * Given a java `InputStream`, obtain the peer's `WorkerAddress` and executor id,
-    * returning them as a pair.
-    *
-    * @param is management port input stream
-    * @return a tuple of worker address and the peer executor id
-    */
+   * Given a java `InputStream`, obtain the peer's `WorkerAddress` and executor id,
+   * returning them as a pair.
+   *
+   * @param is management port input stream
+   * @return a tuple of worker address and the peer executor id
+   */
   def readHandshakeHeader(is: InputStream): (WorkerAddress, Int) = {
     val maxLen = 1024 * 1024
 
@@ -359,15 +359,15 @@ object UCXConnection extends Logging {
 
 
   /**
-    * Writes a header that is exchanged in the management port. The header contains:
-    *  - UCP Worker address length (4 bytes)
-    *  - UCP Worker address (variable length)
-    *  - Local executor id (4 bytes)
-    *
-    * @param os output stream to write to
-    * @param workerAddress byte buffer that holds the local UCX worker address
-    * @param localExecutorId The local executorId
-    */
+   * Writes a header that is exchanged in the management port. The header contains:
+   *  - UCP Worker address length (4 bytes)
+   *  - UCP Worker address (variable length)
+   *  - Local executor id (4 bytes)
+   *
+   * @param os              output stream to write to
+   * @param workerAddress   byte buffer that holds the local UCX worker address
+   * @param localExecutorId The local executorId
+   */
   def writeHandshakeHeader(os: OutputStream,
                            workerAddress: ByteBuffer,
                            localExecutorId: Int): Unit = {
