@@ -497,7 +497,7 @@ file. To make sure your hs_err_pid.log file goes into the YARN application log d
 the config: `--conf spark.executor.extraJavaOptions="-XX:ErrorFile=<LOG_DIR>/hs_err_pid_%p.log"`
 
 If you want to see why an operation did not run on the GPU you can turn on the configuration:
-[`--conf spark.rapids.sql.explain=NOT_ON_GPU`](configs.md#sql.explain). A log message will then
+[`--conf spark.rapids.sql.explain=NOT_ON_GPU`](../configs.md#sql.explain). A log message will then
 be emitted to the driver log as to why a Spark operation is not able to run on the GPU.
 
 ## Out of GPU Memory
