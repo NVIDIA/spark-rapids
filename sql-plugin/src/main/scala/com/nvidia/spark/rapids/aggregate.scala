@@ -206,24 +206,24 @@ class GpuSortAggregateMeta(
 }
 
 /**
-  * GpuHashAggregateExec - is the GPU version of HashAggregateExec, with some major differences:
-  * - it doesn't support spilling to disk
-  * - it doesn't support strings in the grouping key
-  * - it doesn't support count(col1, col2, ..., colN)
-  * - it doesn't support distinct
-  * @param requiredChildDistributionExpressions this is unchanged by the GPU. It is used in
-  *                                             EnsureRequirements to be able to add shuffle nodes
-  * @param groupingExpressions The expressions that, when applied to the input batch, return the
-  *                            grouping key
-  * @param aggregateExpressions The GpuAggregateExpression instances for this node
-  * @param aggregateAttributes References to each GpuAggregateExpression (attribute references)
-  * @param initialInputBufferOffset this is not used in the GPU version, but it's used to offset
-  *                                 the slot in the aggregation buffer that aggregates should
-  *                                 start referencing
-  * @param resultExpressions the expected output expression of this hash aggregate (which this
-  *                          node should project)
-  * @param child incoming plan (where we get input columns from)
-  */
+ * GpuHashAggregateExec - is the GPU version of HashAggregateExec, with some major differences:
+ * - it doesn't support spilling to disk
+ * - it doesn't support strings in the grouping key
+ * - it doesn't support count(col1, col2, ..., colN)
+ * - it doesn't support distinct
+ * @param requiredChildDistributionExpressions this is unchanged by the GPU. It is used in
+ *                                             EnsureRequirements to be able to add shuffle nodes
+ * @param groupingExpressions The expressions that, when applied to the input batch, return the
+ *                            grouping key
+ * @param aggregateExpressions The GpuAggregateExpression instances for this node
+ * @param aggregateAttributes References to each GpuAggregateExpression (attribute references)
+ * @param initialInputBufferOffset this is not used in the GPU version, but it's used to offset
+ *                                 the slot in the aggregation buffer that aggregates should
+ *                                 start referencing
+ * @param resultExpressions the expected output expression of this hash aggregate (which this
+ *                          node should project)
+ * @param child incoming plan (where we get input columns from)
+ */
 case class GpuHashAggregateExec(
     requiredChildDistributionExpressions: Option[Seq[Expression]],
     groupingExpressions: Seq[Expression],
@@ -531,12 +531,12 @@ case class GpuHashAggregateExec(
   }
 
   /**
-    * concatenateBatches - given two ColumnarBatch instances, return a sequence of GpuColumnVector
-    * that is the concatenated columns of the two input batches.
-    * @param aggregatedInputCb this is an incoming batch
-    * @param aggregatedCb this is a batch that was kept for concatenation
-    * @return Seq[GpuColumnVector] with concatenated vectors
-    */
+   * concatenateBatches - given two ColumnarBatch instances, return a sequence of GpuColumnVector
+   * that is the concatenated columns of the two input batches.
+   * @param aggregatedInputCb this is an incoming batch
+   * @param aggregatedCb this is a batch that was kept for concatenation
+   * @return Seq[GpuColumnVector] with concatenated vectors
+   */
   private def concatenateBatches(aggregatedInputCb: ColumnarBatch, aggregatedCb: ColumnarBatch,
       concatTime: SQLMetric): Seq[GpuColumnVector] = {
     val nvtxRange = new NvtxWithMetrics("concatenateBatches", NvtxColor.BLUE, concatTime)
@@ -568,19 +568,19 @@ case class GpuHashAggregateExec(
   private lazy val completeMode = uniqueModes.contains(Complete)
 
   /**
-    * getCudfAggregates returns a sequence of `cudf.Aggregate`, given the current mode
-    * `AggregateMode`, and a sequence of all expressions for this [[GpuHashAggregateExec]]
-    * node, we get all the expressions as that's important for us to be able to resolve the current
-    * ordinal for this cudf aggregate.
-    *
-    * Examples:
-    * fn = sum, min, max will always be Seq(fn)
-    * avg will be Seq(sum, count) for Partial mode, but Seq(sum, sum) for other modes
-    * count will be Seq(count) for Partial mode, but Seq(sum) for other modes
-    *
-    * @return Seq of `cudf.Aggregate`, with one or more aggregates that correspond to each
-    *         expression in allExpressions
-    */
+   * getCudfAggregates returns a sequence of `cudf.Aggregate`, given the current mode
+   * `AggregateMode`, and a sequence of all expressions for this [[GpuHashAggregateExec]]
+   * node, we get all the expressions as that's important for us to be able to resolve the current
+   * ordinal for this cudf aggregate.
+   *
+   * Examples:
+   * fn = sum, min, max will always be Seq(fn)
+   * avg will be Seq(sum, count) for Partial mode, but Seq(sum, sum) for other modes
+   * count will be Seq(count) for Partial mode, but Seq(sum) for other modes
+   *
+   * @return Seq of `cudf.Aggregate`, with one or more aggregates that correspond to each
+   *         expression in allExpressions
+   */
   def setupReferences(childAttr: AttributeSeq,
       groupingExpressions: Seq[Expression],
       aggregateExpressions: Seq[GpuAggregateExpression]): BoundExpressionsModeAggregates = {
@@ -866,8 +866,8 @@ case class GpuHashAggregateExec(
     "Row-based execution should not occur for this class")
 
   /**
-    * All the attributes that are used for this plan. NOT used for aggregation
-    */
+   * All the attributes that are used for this plan. NOT used for aggregation
+   */
   override lazy val allAttributes: AttributeSeq =
     child.output ++ aggregateBufferAttributes ++ aggregateAttributes ++
       aggregateExpressions.flatMap(_.aggregateFunction.inputAggBufferAttributes)

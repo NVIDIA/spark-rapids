@@ -35,6 +35,12 @@
     </properties>
     <profiles>
         <profile>
+            <id>spark300dbtests</id>
+            <properties>
+                <spark.test.version>3.0.0-databricks</spark.test.version>
+            </properties>
+        </profile>
+        <profile>
             <id>spark301tests</id>
             <properties>
                 <spark.test.version>3.0.1-SNAPSHOT</spark.test.version>

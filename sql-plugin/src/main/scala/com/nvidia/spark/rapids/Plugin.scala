@@ -43,8 +43,8 @@ case class ColumnarOverrideRules() extends ColumnarRule with Logging {
 }
 
 /**
-  * Extension point to enable GPU SQL processing.
-  */
+ * Extension point to enable GPU SQL processing.
+ */
 class SQLExecPlugin extends (SparkSessionExtensions => Unit) with Logging {
   override def apply(extensions: SparkSessionExtensions): Unit = {
     logWarning("Installing extensions to enable rapids GPU SQL support." +

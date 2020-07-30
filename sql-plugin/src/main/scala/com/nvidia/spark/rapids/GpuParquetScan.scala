@@ -26,6 +26,7 @@ import scala.collection.JavaConverters._
 import scala.collection.mutable.{ArrayBuffer, HashSet}
 import scala.math.max
 import ai.rapids.cudf.{ColumnVector, DType, HostMemoryBuffer, NvtxColor, ParquetOptions, Table}
+import com.nvidia.spark.RebaseHelper
 import com.nvidia.spark.rapids.GpuMetricNames._
 import com.nvidia.spark.rapids.ParquetPartitionReader.CopyRange
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
@@ -55,8 +56,9 @@ import org.apache.spark.sql.execution.datasources.v2.rapids.{MultiFilePartitionR
 import org.apache.spark.sql.execution.datasources.v2.parquet.ParquetScan
 import org.apache.spark.sql.execution.metric.SQLMetric
 import org.apache.spark.sql.internal.SQLConf
+import org.apache.spark.sql.rapids.execution.TrampolineUtil
 import org.apache.spark.sql.sources.Filter
-import org.apache.spark.sql.types.StructType
+import org.apache.spark.sql.types.{StructType, TimestampType}
 import org.apache.spark.sql.util.CaseInsensitiveStringMap
 import org.apache.spark.sql.vectorized.ColumnarBatch
 import org.apache.spark.util.SerializableConfiguration
@@ -113,6 +115,8 @@ object GpuParquetScan extends Logging {
       sparkSession: SparkSession,
       readSchema: StructType,
       meta: RapidsMeta[_, _, _]): Unit = {
+    val sqlConf = sparkSession.conf
+
     if (!meta.conf.isParquetEnabled) {
       meta.willNotWorkOnGpu("Parquet input and output has been disabled. To enable set" +
         s"${RapidsConf.ENABLE_PARQUET} to true")
@@ -129,6 +133,10 @@ object GpuParquetScan extends Logging {
       }
     }
 
+    val schemaHasTimestamps = readSchema.exists { field =>
+      TrampolineUtil.dataTypeExistsRecursively(field.dataType, _.isInstanceOf[TimestampType])
+    }
+
     // Currently timestamp conversion is not supported.
     // If support needs to be added then we need to follow the logic in Spark's
     // ParquetPartitionReaderFactory and VectorizedColumnReader which essentially
@@ -138,8 +146,16 @@ object GpuParquetScan extends Logging {
     //     were written in that timezone and convert them to UTC timestamps.
     // Essentially this should boil down to a vector subtract of the scalar delta
     // between the configured timezone's delta from UTC on the timestamp data.
-    if (sparkSession.sessionState.conf.isParquetINT96TimestampConversion) {
+    if (schemaHasTimestamps && sparkSession.sessionState.conf.isParquetINT96TimestampConversion) {
       meta.willNotWorkOnGpu("GpuParquetScan does not support int96 timestamp conversion")
+    }
+
+    sqlConf.get(SQLConf.LEGACY_PARQUET_REBASE_MODE_IN_READ.key) match {
+      case "EXCEPTION" => // Good
+      case "CORRECTED" => // Good
+      case "LEGACY" => // Good, but it really is EXCEPTION for us...
+      case other =>
+        meta.willNotWorkOnGpu(s"$other is not a supported read rebase mode")
     }
   }
 }
@@ -302,6 +318,8 @@ case class GpuParquetPartitionReaderFactory(
   private val debugDumpPrefix = rapidsConf.parquetDebugDumpPrefix
   private val maxReadBatchSizeRows = rapidsConf.maxReadBatchSizeRows
   private val maxReadBatchSizeBytes = rapidsConf.maxReadBatchSizeBytes
+  private val isCorrectedRebase =
+    "CORRECTED" == sqlConf.getConf(SQLConf.LEGACY_PARQUET_REBASE_MODE_IN_READ)
 
   override def supportColumnarReads(partition: InputPartition): Boolean = true
 
@@ -315,8 +333,10 @@ case class GpuParquetPartitionReaderFactory(
     ColumnarPartitionReaderWithPartitionValues.newReader(partitionedFile, reader, partitionSchema)
   }
 
-  private def filterClippedSchema(clippedSchema: MessageType,
-      fileSchema: MessageType, isCaseSensitive: Boolean): MessageType = {
+  private def filterClippedSchema(
+      clippedSchema: MessageType,
+      fileSchema: MessageType,
+      isCaseSensitive: Boolean): MessageType = {
     val fs = fileSchema.asGroupType()
     val types = if (isCaseSensitive) {
       val inFile = fs.getFields.asScala.map(_.getName).toSet
@@ -339,6 +359,24 @@ case class GpuParquetPartitionReaderFactory(
     }
   }
 
+  // Copied from Spark
+  private val SPARK_VERSION_METADATA_KEY = "org.apache.spark.version"
+  // Copied from Spark
+  private val SPARK_LEGACY_DATETIME = "org.apache.spark.legacyDateTime"
+
+  def isCorrectedRebaseMode(
+      lookupFileMeta: String => String,
+      isCorrectedModeConfig: Boolean): Boolean = {
+    // If there is no version, we return the mode specified by the config.
+    Option(lookupFileMeta(SPARK_VERSION_METADATA_KEY)).map { version =>
+      // Files written by Spark 2.4 and earlier follow the legacy hybrid calendar and we need to
+      // rebase the datetime values.
+      // Files written by Spark 3.0 and later may also need the rebase if they were written with
+      // the "LEGACY" rebase mode.
+      version >= "3.0.0" && lookupFileMeta(SPARK_LEGACY_DATETIME) == null
+    }.getOrElse(isCorrectedModeConfig)
+  }
+
   private def buildBaseColumnarParquetReader(
       file: PartitionedFile): PartitionReader[ColumnarBatch] = {
     val conf = broadcastedConf.value.value
@@ -354,6 +392,9 @@ case class GpuParquetPartitionReaderFactory(
     } else {
       None
     }
+
+    val isCorrectedRebaseForThis =
+      isCorrectedRebaseMode(footer.getFileMetaData.getKeyValueMetaData.get, isCorrectedRebase)
 
     val blocks = if (pushedFilters.isDefined) {
       // Use the ParquetFileReader to perform dictionary-level filtering
@@ -380,7 +421,7 @@ case class GpuParquetPartitionReaderFactory(
     val clippedBlocks = ParquetPartitionReader.clipBlocks(columnPaths, blocks.asScala)
     new ParquetPartitionReader(conf, file, filePath, clippedBlocks, clippedSchema,
         isCaseSensitive, readDataSchema, debugDumpPrefix, maxReadBatchSizeRows,
-        maxReadBatchSizeBytes, metrics)
+        maxReadBatchSizeBytes, metrics, isCorrectedRebaseForThis)
   }
 }
 
@@ -392,7 +433,7 @@ case class GpuParquetPartitionReaderFactory(
  * unnecessary data to the GPU and saves GPU memory.
  *
  * @param conf the Hadoop configuration
- * @param splits the file splits to read
+ * @param split the file split to read
  * @param clippedBlocks the block metadata from the original Parquet file that has been clipped
  *                      to only contain the column chunks to be read
  * @param clippedParquetSchema the Parquet schema from the original Parquet file that has been
@@ -780,6 +821,8 @@ class MultiFileParquetPartitionReader(
   * @param readDataSchema the Spark schema describing what will be read
   * @param debugDumpPrefix a path prefix to use for dumping the fabricated Parquet data or null
   */
+=======
+>>>>>>> origin/branch-0.2
 class ParquetPartitionReader(
     conf: Configuration,
     split: PartitionedFile,
@@ -791,7 +834,8 @@ class ParquetPartitionReader(
     debugDumpPrefix: String,
     maxReadBatchSizeRows: Integer,
     maxReadBatchSizeBytes: Long,
-    execMetrics: Map[String, SQLMetric]) extends PartitionReader[ColumnarBatch] with Logging
+    execMetrics: Map[String, SQLMetric],
+    isCorrectedRebaseMode: Boolean) extends PartitionReader[ColumnarBatch] with Logging
   with ScanWithMetrics with Arm {
   private var isExhausted: Boolean = false
   private var maxDeviceMemory: Long  = 0
@@ -908,15 +952,15 @@ class ParquetPartitionReader(
   }
 
   /**
-    * Copies the data corresponding to the clipped blocks in the original file and compute the
-    * block metadata for the output. The output blocks will contain the same column chunk
-    * metadata but with the file offsets updated to reflect the new position of the column data
-    * as written to the output.
-    *
-    * @param in the input stream for the original Parquet file
-    * @param out the output stream to receive the data
-    * @return updated block metadata corresponding to the output
-    */
+   * Copies the data corresponding to the clipped blocks in the original file and compute the
+   * block metadata for the output. The output blocks will contain the same column chunk
+   * metadata but with the file offsets updated to reflect the new position of the column data
+   * as written to the output.
+   *
+   * @param in the input stream for the original Parquet file
+   * @param out the output stream to receive the data
+   * @return updated block metadata corresponding to the output
+   */
   private def copyBlocksData(
       in: FSDataInputStream,
       out: HostMemoryOutputStream,
@@ -1071,6 +1115,13 @@ class ParquetPartitionReader(
         GpuSemaphore.acquireIfNecessary(TaskContext.get())
 
         val table = Table.readParquet(parseOpts, dataBuffer, 0, dataSize)
+        if (!isCorrectedRebaseMode) {
+          (0 until table.getNumberOfColumns).foreach { i =>
+            if (RebaseHelper.isDateTimeRebaseNeededRead(table.getColumn(i))) {
+              throw RebaseHelper.newRebaseExceptionInRead("Parquet")
+            }
+          }
+        }
         maxDeviceMemory = max(GpuColumnVector.getTotalDeviceMemoryUsed(table), maxDeviceMemory)
         if (readDataSchema.length < table.getNumberOfColumns) {
           table.close()
@@ -1143,13 +1194,13 @@ object ParquetPartitionReader {
   private[rapids] case class CopyRange(offset: Long, length: Long)
 
   /**
-    * Build a new BlockMetaData
-    *
-    * @param rowCount the number of rows in this block
-    * @param columns the new column chunks to reference in the new BlockMetaData
-    * @return the new BlockMetaData
-    */
-  private[rapids] def newParquetBlock(
+   * Build a new BlockMetaData
+   *
+   * @param rowCount the number of rows in this block
+   * @param columns the new column chunks to reference in the new BlockMetaData
+   * @return the new BlockMetaData
+   */
+  private def newParquetBlock(
       rowCount: Long,
       columns: Seq[ColumnChunkMetaData]): BlockMetaData = {
     val block = new BlockMetaData
@@ -1166,14 +1217,14 @@ object ParquetPartitionReader {
   }
 
   /**
-    * Trim block metadata to contain only the column chunks that occur in the specified columns.
-    * The column chunks that are returned are preserved verbatim
-    * (i.e.: file offsets remain unchanged).
-    *
-    * @param columnPaths the paths of columns to preserve
-    * @param blocks the block metadata from the original Parquet file
-    * @return the updated block metadata with undesired column chunks removed
-    */
+   * Trim block metadata to contain only the column chunks that occur in the specified columns.
+   * The column chunks that are returned are preserved verbatim
+   * (i.e.: file offsets remain unchanged).
+   *
+   * @param columnPaths the paths of columns to preserve
+   * @param blocks the block metadata from the original Parquet file
+   * @return the updated block metadata with undesired column chunks removed
+   */
   private[spark] def clipBlocks(columnPaths: Seq[ColumnPath],
       blocks: Seq[BlockMetaData]): Seq[BlockMetaData] = {
     val pathSet = columnPaths.toSet

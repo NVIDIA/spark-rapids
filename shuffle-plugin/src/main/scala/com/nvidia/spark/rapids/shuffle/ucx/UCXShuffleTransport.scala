@@ -23,9 +23,9 @@ import java.util.concurrent._
 import scala.collection.mutable
 
 import ai.rapids.cudf.{DeviceMemoryBuffer, HostMemoryBuffer, MemoryBuffer, NvtxColor, NvtxRange}
+import com.google.common.util.concurrent.ThreadFactoryBuilder
 import com.nvidia.spark.rapids.{GpuDeviceManager, RapidsConf}
 import com.nvidia.spark.rapids.shuffle._
-import com.google.common.util.concurrent.ThreadFactoryBuilder
 import com.nvidia.spark.rapids.shuffle.{BounceBufferManager, BufferReceiveState, ClientConnection, PendingTransferRequest, RapidsShuffleClient, RapidsShuffleRequestHandler, RapidsShuffleServer, RapidsShuffleTransport, RefCountedDirectByteBuffer}
 
 import org.apache.spark.internal.Logging

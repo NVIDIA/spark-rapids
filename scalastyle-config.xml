@@ -96,9 +96,6 @@ You can also disable only one rule, by specifying its rule id, as specified in:
     <check level="error" class="org.scalastyle.scalariform.NotImplementedErrorUsage"
            enabled="true"/>
 
-    <!-- This project uses Javadoc rather than Scaladoc so scaladoc checks are disabled -->
-    <check enabled="false" class="org.scalastyle.scalariform.ScalaDocChecker" level="warning"/>
-
     <!-- ================================================================================ -->
     <!--       rules we'd like to enforce, but haven't cleaned up the codebase yet        -->
     <!-- ================================================================================ -->
@@ -106,9 +103,12 @@ You can also disable only one rule, by specifying its rule id, as specified in:
     <check customId="NoScalaDoc" level="error" class="org.scalastyle.file.RegexChecker"
            enabled="false">
         <parameters>
-            <parameter name="regex">(?m)^(\s*)/[*][*].*$(\r|)\n^\1 [*]</parameter>
+            <parameter name="regex">(?m)^(\s*)/[*][*].*$(\r|)\n^\1  [*]</parameter>
         </parameters>
         <customMessage>Use Javadoc style indentation for multiline comments</customMessage>
     </check>
+
+    <!-- This project uses Javadoc rather than Scaladoc so scaladoc checks are disabled -->
+    <check enabled="false" class="org.scalastyle.scalariform.ScalaDocChecker" level="warning"/>
 
 </scalastyle>

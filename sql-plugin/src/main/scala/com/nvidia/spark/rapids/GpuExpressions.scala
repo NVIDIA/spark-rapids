@@ -26,22 +26,17 @@ import org.apache.spark.sql.types.StringType
 import org.apache.spark.sql.vectorized.ColumnarBatch
 import org.apache.spark.unsafe.types.UTF8String
 
-object GpuExpressionsUtils {
+object GpuExpressionsUtils extends Arm {
   def evaluateBoundExpressions[A <: GpuExpression](cb: ColumnarBatch,
       boundExprs: Seq[A]): Seq[GpuColumnVector] = {
     val numCols = boundExprs.length
-    val resultCvs = new ArrayBuffer[GpuColumnVector](numCols)
-    try {
+    closeOnExcept(new ArrayBuffer[GpuColumnVector](numCols)) { resultCvs =>
       for (i <- 0 until numCols) {
         val ref = boundExprs(i)
         resultCvs += ref.columnarEval(cb).asInstanceOf[GpuColumnVector]
       }
-    } catch {
-      case t: Throwable =>
-        resultCvs.safeClose()
-        throw t
+      resultCvs
     }
-    resultCvs
   }
 
   def getTrimString(trimStr: Option[Expression]): String = trimStr match {

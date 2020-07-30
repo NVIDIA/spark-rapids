@@ -25,10 +25,10 @@ import org.apache.spark.sql.types.StructType
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
 /**
-  * A wrapper reader that always appends partition values to the ColumnarBatch produced by the input
-  * reader `fileReader`. Each scalar value is splatted to a column with the same number of
-  * rows as the batch returned by the reader.
-  */
+ * A wrapper reader that always appends partition values to the ColumnarBatch produced by the input
+ * reader `fileReader`. Each scalar value is splatted to a column with the same number of
+ * rows as the batch returned by the reader.
+ */
 class ColumnarPartitionReaderWithPartitionValues(
     fileReader: PartitionReader[ColumnarBatch],
     partitionValues: Array[Scalar]) extends PartitionReader[ColumnarBatch] {

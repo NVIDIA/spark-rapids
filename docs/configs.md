@@ -183,7 +183,9 @@ Name | SQL Function(s) | Description | Default Value | Notes
 <a name="sql.expression.SpecifiedWindowFrame"></a>spark.rapids.sql.expression.SpecifiedWindowFrame| |specification of the width of the group (or "frame") of input rows around which a window function is evaluated|true|None|
 <a name="sql.expression.Sqrt"></a>spark.rapids.sql.expression.Sqrt|`sqrt`|square root|true|None|
 <a name="sql.expression.StartsWith"></a>spark.rapids.sql.expression.StartsWith| |Starts With|true|None|
+<a name="sql.expression.StringLPad"></a>spark.rapids.sql.expression.StringLPad|`lpad`|Pad a string on the left|true|None|
 <a name="sql.expression.StringLocate"></a>spark.rapids.sql.expression.StringLocate|`position`, `locate`|Substring search operator|true|None|
+<a name="sql.expression.StringRPad"></a>spark.rapids.sql.expression.StringRPad|`rpad`|Pad a string on the right|true|None|
 <a name="sql.expression.StringReplace"></a>spark.rapids.sql.expression.StringReplace|`replace`|StringReplace operator|true|None|
 <a name="sql.expression.StringTrim"></a>spark.rapids.sql.expression.StringTrim|`trim`|StringTrim operator|true|None|
 <a name="sql.expression.StringTrimLeft"></a>spark.rapids.sql.expression.StringTrimLeft|`ltrim`|StringTrimLeft operator|true|None|

@@ -35,6 +35,28 @@ def test_substring_index(data_gen,delim):
                 f.substring_index(f.col('a'), delim, -1),
                 f.substring_index(f.col('a'), delim, -4)))
 
+# ONLY LITERAL WIDTH AND PAD ARE SUPPORTED
+def test_lpad():
+    gen = mk_str_gen('.{0,5}')
+    assert_gpu_and_cpu_are_equal_collect(
+            lambda spark: unary_op_df(spark, gen).selectExpr(
+                'LPAD(a, 2, " ")',
+                'LPAD(a, NULL, " ")',
+                'LPAD(a, 5, NULL)',
+                'LPAD(a, 5, "G")',
+                'LPAD(a, -1, "G")'))
+
+# ONLY LITERAL WIDTH AND PAD ARE SUPPORTED
+def test_rpad():
+    gen = mk_str_gen('.{0,5}')
+    assert_gpu_and_cpu_are_equal_collect(
+            lambda spark: unary_op_df(spark, gen).selectExpr(
+                'RPAD(a, 2, " ")',
+                'RPAD(a, NULL, " ")',
+                'RPAD(a, 5, NULL)',
+                'RPAD(a, 5, "G")',
+                'RPAD(a, -1, "G")'))
+
 # ONLY LITERAL SEARCH PARAMS ARE SUPPORTED
 def test_position():
     gen = mk_str_gen('.{0,3}Z_Z.{0,3}A.{0,3}')

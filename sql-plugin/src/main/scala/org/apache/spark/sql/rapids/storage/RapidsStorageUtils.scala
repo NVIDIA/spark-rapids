@@ -23,16 +23,16 @@ import org.apache.spark.storage.StorageUtils
 object RapidsStorageUtils {
   // scalastyle:off line.size.limit
   /**
-    * Calls into spark's `StorageUtils` to expose the [[dispose]] method.
-    *
-    * NOTE: This the spark code as of the writing of this function is:
-    * https://github.com/apache/spark/blob/e9f3f62b2c0f521f3cc23fef381fc6754853ad4f/core/src/main/scala/org/apache/spark/storage/StorageUtils.scala#L206
-    *
-    * If the implementation in Spark later on breaks our build, we may need to replicate
-    * the dispose method here.
-    *
-    * @param buffer byte buffer to dispose
-    */
+   * Calls into spark's `StorageUtils` to expose the [[dispose]] method.
+   *
+   * NOTE: This the spark code as of the writing of this function is:
+   * https://github.com/apache/spark/blob/e9f3f62b2c0f521f3cc23fef381fc6754853ad4f/core/src/main/scala/org/apache/spark/storage/StorageUtils.scala#L206
+   *
+   * If the implementation in Spark later on breaks our build, we may need to replicate
+   * the dispose method here.
+   *
+   * @param buffer byte buffer to dispose
+   */
   // scalastyle:on line.size.limit
   def dispose(buffer: ByteBuffer): Unit = StorageUtils.dispose(buffer)
 }
