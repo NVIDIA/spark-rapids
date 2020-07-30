@@ -80,7 +80,7 @@ case class GpuParquetScan(
   override def createReaderFactory(): PartitionReaderFactory = {
     val broadcastedConf = sparkSession.sparkContext.broadcast(
       new SerializableConfiguration(hadoopConf))
-    GpuParquetPartitionReaderFactory(sparkSession.sessionState.conf, broadcastedConf,
+    GpuParquetMultiPartitionReaderFactory(sparkSession.sessionState.conf, broadcastedConf,
       dataSchema, readDataSchema, readPartitionSchema, pushedFilters, rapidsConf, metrics)
   }
 
@@ -457,7 +457,9 @@ class MultiFileParquetPartitionReader(
     try {
         var succeeded = false
         val allBlocks = filesWithBlocks.values.flatten.toSeq
-        val hmb = HostMemoryBuffer.allocate(calculateParquetOutputSize(allBlocks))
+        val size = calculateParquetOutputSize(allBlocks)
+        logWarning(s"read part files: ${blocks} size is: $size")
+        val hmb = HostMemoryBuffer.allocate(size)
         val out = new HostMemoryOutputStream(hmb)
         try {
           out.write(ParquetPartitionReader.PARQUET_MAGIC)
