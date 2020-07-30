@@ -78,7 +78,7 @@ class MultiFilePartitionReader[T](reader: SmallPartitionedFileReader[T])
       true
     } else {
       close()
-      next()
+      false
     }
   }
 

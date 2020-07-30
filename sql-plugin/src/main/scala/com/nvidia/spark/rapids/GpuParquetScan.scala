@@ -102,7 +102,7 @@ case class GpuParquetScan(
     this.copy(partitionFilters = partitionFilters, dataFilters = dataFilters)
 }
 
-object GpuParquetScan {
+object GpuParquetScan extends Logging {
   def tagSupport(scanMeta: ScanMeta[ParquetScan]): Unit = {
     val scan = scanMeta.wrapped
     val schema = StructType(scan.readDataSchema ++ scan.readPartitionSchema)
@@ -177,7 +177,7 @@ case class GpuParquetMultiPartitionReaderFactory(
     partitionSchema: StructType,
     filters: Array[Filter],
     @transient rapidsConf: RapidsConf,
-    metrics: Map[String, SQLMetric]) extends SmallFilePartitionReaderFactory {
+    metrics: Map[String, SQLMetric]) extends SmallFilePartitionReaderFactory with Logging {
   private val isCaseSensitive = sqlConf.caseSensitiveAnalysis
   private val enableParquetFilterPushDown: Boolean = sqlConf.parquetFilterPushDown
   private val pushDownDate = sqlConf.parquetFilterPushDownDate
@@ -291,7 +291,7 @@ case class GpuParquetPartitionReaderFactory(
     partitionSchema: StructType,
     filters: Array[Filter],
     @transient rapidsConf: RapidsConf,
-    metrics: Map[String, SQLMetric]) extends FilePartitionReaderFactory {
+    metrics: Map[String, SQLMetric]) extends FilePartitionReaderFactory with Logging {
   private val isCaseSensitive = sqlConf.caseSensitiveAnalysis
   private val enableParquetFilterPushDown: Boolean = sqlConf.parquetFilterPushDown
   private val pushDownDate = sqlConf.parquetFilterPushDownDate
@@ -415,7 +415,6 @@ class MultiFileParquetPartitionReader(
   private var isExhausted: Boolean = false
   private var maxDeviceMemory: Long  = 0
   private var batch: Option[ColumnarBatch] = None
-  // TODO - might not need buffered here
   private val blockIterator:  BufferedIterator[(Path, BlockMetaData)] = clippedBlocks.iterator.buffered
   private val copyBufferSize = conf.getInt("parquet.read.allocation.size", 8 * 1024 * 1024)
 
@@ -458,16 +457,16 @@ class MultiFileParquetPartitionReader(
         var succeeded = false
         val allBlocks = filesWithBlocks.values.flatten.toSeq
         val size = calculateParquetOutputSize(allBlocks)
-        logWarning(s"read part files: ${blocks} size is: $size")
         val hmb = HostMemoryBuffer.allocate(size)
         val out = new HostMemoryOutputStream(hmb)
         try {
           out.write(ParquetPartitionReader.PARQUET_MAGIC)
           val allOutputBlocks = scala.collection.mutable.ArrayBuffer[BlockMetaData]()
-          filesWithBlocks.map { case (file, blocks) =>
+          filesWithBlocks.foreach { case (file, blocks) =>
             val in = file.getFileSystem(conf).open(file)
             try {
-              allOutputBlocks ++= copyBlocksData(in, out, blocks)
+              val retBlocks = copyBlocksData(in, out, blocks)
+              allOutputBlocks ++= retBlocks
             } finally {
               in.close()
             }
@@ -504,7 +503,8 @@ class MultiFileParquetPartitionReader(
     // always be at least as big as the updated metadata in the output.
     val out = new CountingOutputStream(new NullOutputStream)
     writeFooter(out, currentChunkedBlocks)
-    size + out.getByteCount
+    // TODO - why am I off 72 bytes???
+    size + out.getByteCount + 74
   }
 
   private def writeFooter(out: OutputStream, blocks: Seq[BlockMetaData]): Unit = {
@@ -809,7 +809,6 @@ class ParquetPartitionReader(
         isExhausted = true
         metrics("peakDevMemory") += maxDeviceMemory
       } else {
-
         batch = readBatch()
       }
     }
