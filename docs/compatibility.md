@@ -267,3 +267,15 @@ Casting from string to timestamp currently has the following limitations.
  milliseconds, with 2 digits each for hours, minutes, and seconds, and 6 digits for milliseconds. 
  Only timezone 'Z' (UTC) is supported. Casting unsupported formats will result in null values. 
  
+## UDF to Catalyst Expressions
+To speedup the process of UDF, spark-rapids introduces a udf-compiler extension to translate UDFs to Catalyst expressions.
+
+To enable this operation on the GPU, set
+[`spark.rapids.sql.udfCompiler.enabled`](configs.md#sql.udfCompiler.enabled) to `true`.
+
+However, Spark may produce different results for a compiled udf and the non-compiled. For example: a udf of `x/y` where `y` happens to be `0`, the compiled catalyst expressions will return `NULL` while the original udf would fail  the entire job with a `java.lang.ArithmeticException: / by zero`
+
+When translating UDFs to Catalyst expressions, the supported UDF functions are limited:
+
+| Operand type                                                | Operation |
+| ------------------------------------------------------------------- | ------------------|

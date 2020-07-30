@@ -350,6 +350,12 @@ object RapidsConf {
     .booleanConf
     .createWithDefault(true)
 
+  val UDF_COMPILER_ENABLED = conf("spark.rapids.sql.udfCompiler.enabled")
+    .doc("When set to true, all UDFs will be compiled to Catalyst expressions by Catalyst " +
+      "Analyzer.")
+    .booleanConf
+    .createWithDefault(false)
+
   val INCOMPATIBLE_OPS = conf("spark.rapids.sql.incompatibleOps.enabled")
     .doc("For operations that work, but are not 100% compatible with the Spark equivalent " +
       "set if they should be enabled by default or disabled by default.")
@@ -751,6 +757,8 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
     _.startsWith("spark.rapids.")).asJava
 
   lazy val isSqlEnabled: Boolean = get(SQL_ENABLED)
+
+  lazy val isUdfCompilerEnabled: Boolean = get(UDF_COMPILER_ENABLED)
 
   lazy val exportColumnarRdd: Boolean = get(EXPORT_COLUMNAR_RDD)
 
