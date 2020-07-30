@@ -34,7 +34,7 @@ To enable GPU processing acceleration you will need:
 ## Spark GPU Scheduling Overview
 Apache Spark 3.0 now supports GPU scheduling as long as you are using a cluster manager that
 supports it. You can have Spark request GPUs and assign them to tasks. The exact configs you use
-will vary depending on your cluster manager. Here are a few of the configs:
+will vary depending on your cluster manager. Here are some example configs:
 - Request your executor to have GPUs:
   - `--conf spark.executor.resource.gpu.amount=1`
 - Specify the number of GPUs per task:
