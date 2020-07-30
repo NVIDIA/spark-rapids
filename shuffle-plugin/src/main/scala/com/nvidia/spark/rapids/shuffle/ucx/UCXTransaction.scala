@@ -30,11 +30,11 @@ import org.openucx.jucx.ucp.UcpRequest
 import org.apache.spark.internal.Logging
 
 /**
-  * Helper enum to describe transaction types supported in UCX
-  * request = is a send and a receive, with the callback happening after the receive
-  * send = is a send of 1 or more messages (callback at the end)
-  * receive is a receive of 1 or more messages (callback at the end)
-  */
+ * Helper enum to describe transaction types supported in UCX
+ * request = is a send and a receive, with the callback happening after the receive
+ * send = is a send of 1 or more messages (callback at the end)
+ * receive is a receive of 1 or more messages (callback at the end)
+ */
 private[ucx] object UCXTransactionType extends Enumeration {
   val Request, Send, Receive = Value
 }
@@ -52,10 +52,10 @@ private[ucx] class UCXTransaction(conn: UCXConnection, val txId: Long)
   def decrementPendingAndGet: Long = pending.decrementAndGet
 
   /**
-    * This will mark the tag as being cancelled for debugging purposes.
-    *
-    * @param tag the cancelled tag
-    */
+   * This will mark the tag as being cancelled for debugging purposes.
+   *
+   * @param tag the cancelled tag
+   */
   def handleTagCancelled(tag: Long): Unit = {
     if (registeredByTag.contains(tag)) {
       val origBuff = registeredByTag(tag)
@@ -64,11 +64,11 @@ private[ucx] class UCXTransaction(conn: UCXConnection, val txId: Long)
   }
 
   /**
-    * This will mark the tag as having an error for debugging purposes.
-    *
-    * @param tag the tag involved in the error
-    * @param errorMsg error description from UCX
-    */
+   * This will mark the tag as having an error for debugging purposes.
+   *
+   * @param tag      the tag involved in the error
+   * @param errorMsg error description from UCX
+   */
   def handleTagError(tag: Long, errorMsg: String): Unit = {
     if (registeredByTag.contains(tag)) {
       val origBuff = registeredByTag(tag)
@@ -78,10 +78,10 @@ private[ucx] class UCXTransaction(conn: UCXConnection, val txId: Long)
   }
 
   /**
-    * This will mark the tag as completed for debugging purposes.
-    *
-    * @param tag the successful tag
-    */
+   * This will mark the tag as completed for debugging purposes.
+   *
+   * @param tag the successful tag
+   */
   def handleTagCompleted(tag: Long): Unit =  {
     if (registeredByTag.contains(tag)){
       val origBuff = registeredByTag(tag)
@@ -159,9 +159,9 @@ private[ucx] class UCXTransaction(conn: UCXConnection, val txId: Long)
   }
 
   /**
-    * TODO: Note that this does not handle a timeout. We still need to do this, the version of UCX
-    *   we build against can cancel messages.
-    */
+   * TODO: Note that this does not handle a timeout. We still need to do this, the version of UCX
+   *  we build against can cancel messages.
+   */
   def waitForCompletion(): Unit = {
     while (status != TransactionStatus.Complete &&
       status != TransactionStatus.Error) {
@@ -185,9 +185,10 @@ private[ucx] class UCXTransaction(conn: UCXConnection, val txId: Long)
   }
 
   /**
-    * Interal function to register a callback against the callback service
-    * @param cb callback function to call using the callbackService.
-    */
+   * Internal function to register a callback against the callback service
+   *
+   * @param cb callback function to call using the callbackService.
+   */
   private def registerCb(cb: TransactionCallback): Unit = {
     txCallback =
       (newStatus: TransactionStatus.Value) => {
@@ -238,8 +239,8 @@ private[ucx] class UCXTransaction(conn: UCXConnection, val txId: Long)
   }
 
   /**
-    * Register an [[AddressLengthTag]] for a send transaction
-    */
+   * Register an [[AddressLengthTag]] for a send transaction
+   */
   def registerForSend(alt: AddressLengthTag): Unit = {
     registeredByTag.put(alt.tag, alt)
     registered += alt
@@ -248,8 +249,8 @@ private[ucx] class UCXTransaction(conn: UCXConnection, val txId: Long)
   }
 
   /**
-    * Register an [[AddressLengthTag]] for a receive transaction
-    */
+   * Register an [[AddressLengthTag]] for a receive transaction
+   */
   def registerForReceive(alt: AddressLengthTag): Unit = {
     registered += alt
     registeredByTag.put(alt.tag, alt)
@@ -262,11 +263,12 @@ private[ucx] class UCXTransaction(conn: UCXConnection, val txId: Long)
   }
 
   /**
-    * Internal function to kick off a [[Transaction]]
-    * @param txType a transaction type to be used for debugging purposes
-    * @param numPending number of messages we expect to see sent/received
-    * @param cb callback to call when done/errored
-    */
+   * Internal function to kick off a [[Transaction]]
+   *
+   * @param txType     a transaction type to be used for debugging purposes
+   * @param numPending number of messages we expect to see sent/received
+   * @param cb         callback to call when done/errored
+   */
   private[ucx] def start(
       txType: UCXTransactionType.Value,
       numPending: Long,
