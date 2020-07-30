@@ -351,8 +351,7 @@ object RapidsConf {
     .createWithDefault(true)
 
   val UDF_COMPILER_ENABLED = conf("spark.rapids.sql.udfCompiler.enabled")
-    .doc("When set to true, all UDFs will be compiled to Catalyst expressions by Catalyst " +
-      "Analyzer.")
+    .doc("When set to true, Scala UDFs will be considered for compilation as Catalyst expressions")
     .booleanConf
     .createWithDefault(false)
 
