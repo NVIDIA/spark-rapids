@@ -97,8 +97,6 @@ def test_broadcast_nested_loop_join(data_gen):
 
 # local sort because of https://github.com/NVIDIA/spark-rapids/issues/84
 @ignore_order(local=True)
-@pytest.mark.xfail(condition=is_databricks_runtime(),
-    reason='https://github.com/NVIDIA/spark-rapids/issues/441')
 @pytest.mark.parametrize('data_gen', all_gen, ids=idfn)
 def test_broadcast_nested_loop_join_special_case(data_gen):
     def do_join(spark):
