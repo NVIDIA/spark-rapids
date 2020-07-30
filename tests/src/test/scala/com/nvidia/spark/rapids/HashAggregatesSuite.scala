@@ -119,7 +119,8 @@ class HashAggregatesSuite extends SparkQueryCompareTestSuite {
       val cpuPlan = df.queryExecution.sparkPlan
       assert(cpuPlan.find(_.isInstanceOf[SortAggregateExec]).isDefined)
 
-      var gpuPlan = df.queryExecution.executedPlan
+      val gpuPlan = df.queryExecution.executedPlan
+      // execute the plan so that the final adaptive plan is available when AQE is on
       df.collect()
 
       gpuPlan match {
@@ -155,6 +156,7 @@ class HashAggregatesSuite extends SparkQueryCompareTestSuite {
       assert(cpuPlan.find(_.isInstanceOf[SortAggregateExec]).isDefined)
 
       val gpuPlan = df.queryExecution.executedPlan
+      // execute the plan so that the final adaptive plan is available when AQE is on
       df.collect()
 
       gpuPlan match {
