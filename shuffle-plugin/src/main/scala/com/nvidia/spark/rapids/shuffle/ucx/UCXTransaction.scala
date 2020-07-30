@@ -69,7 +69,6 @@ private[ucx] class UCXTransaction(conn: UCXConnection, val txId: Long)
    * @param tag      the tag involved in the error
    * @param errorMsg error description from UCX
    */
-   
   def handleTagError(tag: Long, errorMsg: String): Unit = {
     if (registeredByTag.contains(tag)) {
       val origBuff = registeredByTag(tag)
