@@ -821,8 +821,6 @@ class MultiFileParquetPartitionReader(
   * @param readDataSchema the Spark schema describing what will be read
   * @param debugDumpPrefix a path prefix to use for dumping the fabricated Parquet data or null
   */
-=======
->>>>>>> origin/branch-0.2
 class ParquetPartitionReader(
     conf: Configuration,
     split: PartitionedFile,
@@ -1200,7 +1198,7 @@ object ParquetPartitionReader {
    * @param columns the new column chunks to reference in the new BlockMetaData
    * @return the new BlockMetaData
    */
-  private def newParquetBlock(
+  private[rapids] def newParquetBlock(
       rowCount: Long,
       columns: Seq[ColumnChunkMetaData]): BlockMetaData = {
     val block = new BlockMetaData
