@@ -53,7 +53,7 @@ pipeline {
                 script {
                     //Check if a PR has been committed using git signoff
                     if (!isSignedOff()) {
-                        echo "Signed-off-by check FAIED"
+                        echo "Signed-off-by check FAILED"
                         exit(-1)
                     }
 
