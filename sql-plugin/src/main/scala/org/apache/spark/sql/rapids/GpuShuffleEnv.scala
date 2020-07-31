@@ -125,7 +125,7 @@ object GpuShuffleEnv extends Logging {
 
   def getDeviceStorage: RapidsDeviceMemoryStore = env.getDeviceStorage
 
-  def isRapidsShuffleEnabled: Boolean = env.isRapidsShuffleEnabled
+  def isRapidsShuffleEnabled: Boolean = env != null && env.isRapidsShuffleEnabled
 
   // the shuffle plugin will call this on initialize
   def setRapidsShuffleManagerInitialized(initialized: Boolean, className: String): Unit = {
