@@ -17,16 +17,63 @@
 package com.nvidia.spark.rapids.shims.spark301
 
 import com.nvidia.spark.rapids._
-import com.nvidia.spark.rapids.shims.spark300.Spark300Shims
+import com.nvidia.spark.rapids.shims.spark300.{GpuShuffledHashJoinMeta, GpuSortMergeJoinMeta, Spark300Shims}
 import com.nvidia.spark.rapids.spark301.RapidsShuffleManager
 
 import org.apache.spark.sql.{SparkSession, SparkSessionExtensions}
 import org.apache.spark.sql.catalyst.expressions._
 import org.apache.spark.sql.catalyst.expressions.aggregate.{First, Last}
+import org.apache.spark.sql.catalyst.plans.physical.{BroadcastMode, Partitioning}
 import org.apache.spark.sql.catalyst.rules.Rule
-import org.apache.spark.sql.execution.SparkPlan
+import org.apache.spark.sql.execution.{FileSourceScanExec, SparkPlan}
+import org.apache.spark.sql.execution.adaptive.ShuffleQueryStageExec
+import org.apache.spark.sql.execution.datasources.HadoopFsRelation
+import org.apache.spark.sql.execution.exchange.{BroadcastExchangeLike, ShuffleExchangeLike}
+import org.apache.spark.sql.execution.joins.{BroadcastHashJoinExec, ShuffledHashJoinExec, SortMergeJoinExec}
+import org.apache.spark.sql.rapids.execution.{GpuBroadcastExchangeExecBase, GpuShuffleExchangeExecBase}
+import org.apache.spark.sql.rapids.shims.spark300.GpuFileSourceScanExec
 
 class Spark301Shims extends Spark300Shims {
+
+  override def getExecs: Map[Class[_ <: SparkPlan], ExecRule[_ <: SparkPlan]] = {
+    Seq(
+      GpuOverrides.exec[FileSourceScanExec](
+        "Reading data from files, often from Hive tables",
+        (fsse, conf, p, r) => new SparkPlanMeta[FileSourceScanExec](fsse, conf, p, r) {
+          // partition filters and data filters are not run on the GPU
+          override val childExprs: Seq[ExprMeta[_]] = Seq.empty
+
+          override def tagPlanForGpu(): Unit = GpuFileSourceScanExec.tagSupport(this)
+
+          override def convertToGpu(): GpuExec = {
+            val newRelation = HadoopFsRelation(
+              wrapped.relation.location,
+              wrapped.relation.partitionSchema,
+              wrapped.relation.dataSchema,
+              wrapped.relation.bucketSpec,
+              GpuFileSourceScanExec.convertFileFormat(wrapped.relation.fileFormat),
+              wrapped.relation.options)(wrapped.relation.sparkSession)
+            GpuFileSourceScanExec(
+              newRelation,
+              wrapped.output,
+              wrapped.requiredSchema,
+              wrapped.partitionFilters,
+              wrapped.optionalBucketSet,
+              wrapped.dataFilters,
+              wrapped.tableIdentifier)
+          }
+        }),
+      GpuOverrides.exec[SortMergeJoinExec](
+        "Sort merge join, replacing with shuffled hash join",
+        (join, conf, p, r) => new GpuSortMergeJoinMeta(join, conf, p, r)),
+      GpuOverrides.exec[BroadcastHashJoinExec](
+        "Implementation of join using broadcast data",
+        (join, conf, p, r) => new GpuBroadcastHashJoinMeta(join, conf, p, r)),
+      GpuOverrides.exec[ShuffledHashJoinExec](
+        "Implementation of join using hashed shuffled data",
+        (join, conf, p, r) => new GpuShuffledHashJoinMeta(join, conf, p, r))
+    ).map(r => (r.getClassFor.asSubclass(classOf[SparkPlan]), r)).toMap
+  }
 
   def exprs301: Map[Class[_ <: Expression], ExprRule[_ <: Expression]] = Seq(
     GpuOverrides.expr[First](
@@ -50,6 +97,38 @@ class Spark301Shims extends Spark300Shims {
   override def getRapidsShuffleManagerClass: String = {
     classOf[RapidsShuffleManager].getCanonicalName
   }
+
+  override def getGpuBroadcastExchangeExec(
+      mode: BroadcastMode,
+      child: SparkPlan): GpuBroadcastExchangeExecBase = {
+    GpuBroadcastExchangeExec(mode, child)
+  }
+
+  override def getGpuShuffleExchangeExec(
+      outputPartitioning: Partitioning,
+      child: SparkPlan,
+      canChangeNumPartitions: Boolean): GpuShuffleExchangeExecBase = {
+    GpuShuffleExchangeExec(outputPartitioning, child, canChangeNumPartitions)
+  }
+
+  override def getGpuShuffleExchangeExec(
+      queryStage: ShuffleQueryStageExec
+  ): GpuShuffleExchangeExecBase = {
+    queryStage.shuffle.asInstanceOf[GpuShuffleExchangeExecBase]
+  }
+
+  override def isGpuBroadcastHashJoin(plan: SparkPlan): Boolean = {
+    plan match {
+      case _: GpuBroadcastHashJoinExec => true
+      case _ => false
+    }
+  }
+
+  override def isBroadcastExchangeLike(plan: SparkPlan): Boolean =
+    plan.isInstanceOf[BroadcastExchangeLike]
+
+  override def isShuffleExchangeLike(plan: SparkPlan): Boolean =
+    plan.isInstanceOf[ShuffleExchangeLike]
 
   override def injectQueryStagePrepRule(
       extensions: SparkSessionExtensions,

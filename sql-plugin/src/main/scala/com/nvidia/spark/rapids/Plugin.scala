@@ -191,6 +191,7 @@ object ExecutionPlanCaptureCallback {
 
   def assertDidFallBack(gpuPlan: SparkPlan, fallbackCpuClass: String): Unit = {
     val executedPlan = ExecutionPlanCaptureCallback.extractExecutedPlan(Some(gpuPlan))
+    println(executedPlan)
     assert(executedPlan.find(didFallBack(_, fallbackCpuClass)).isDefined,
         s"Could not find $fallbackCpuClass in the GPU plan\n$executedPlan")
   }

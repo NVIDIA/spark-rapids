@@ -25,12 +25,14 @@ class StringFallbackSuite extends SparkQueryCompareTestSuite {
     frame => frame.selectExpr("regexp_replace(strings,'a',strings)")
   }
 
-  testGpuFallback("String regexp_replace null cpu fall back",
-    "RegExpReplace",
-    nullableStringsFromCsv, execsAllowedNonGpu = Seq("ProjectExec", "Alias",
-      "RegExpReplace", "AttributeReference", "Literal")) {
-    frame => frame.selectExpr("regexp_replace(strings,null,'D')")
-  }
+  // This test is no longer valid since SPARK-28481 was implemented in 3.1 because
+  // the expression gets replaced with a null literal
+//  testGpuFallback("String regexp_replace null cpu fall back",
+//    "RegExpReplace",
+//    nullableStringsFromCsv, execsAllowedNonGpu = Seq("ProjectExec", "Alias",
+//      "RegExpReplace", "AttributeReference", "Literal")) {
+//    frame => frame.selectExpr("regexp_replace(strings,null,'D')")
+//  }
 
   testGpuFallback("String regexp_replace input empty cpu fall back",
     "RegExpReplace",

@@ -29,6 +29,7 @@ import org.apache.spark.network.buffer.ManagedBuffer
 import org.apache.spark.scheduler.MapStatus
 import org.apache.spark.shuffle._
 import org.apache.spark.shuffle.sort.SortShuffleManager
+import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.vectorized.ColumnarBatch
 import org.apache.spark.storage._
 
@@ -203,7 +204,12 @@ abstract class RapidsShuffleInternalManagerBase(conf: SparkConf, isDriver: Boole
       logWarning("Rapids Shuffle Plugin is falling back to SortShuffleManager because " +
         "external shuffle is enabled")
     }
-    fallThroughDueToExternalShuffle
+    val isAdaptiveEnabled = conf.get(SQLConf.ADAPTIVE_EXECUTION_ENABLED.key, "false").toBoolean
+    if (isAdaptiveEnabled) {
+      logWarning("Rapids Shuffle Plugin is falling back to SortShuffleManager because " +
+          "Adaptive Query Execution is enabled")
+    }
+    fallThroughDueToExternalShuffle || isAdaptiveEnabled
   }
 
   private lazy val localBlockManagerId = blockManager.blockManagerId
