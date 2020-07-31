@@ -19,7 +19,7 @@ from data_gen import *
 from pyspark.sql.types import *
 from marks import *
 import pyspark.sql.functions as f
-from spark_session import with_cpu_session, with_spark_session
+from spark_session import with_spark_session
 
 _no_nans_float_conf = {'spark.rapids.sql.variableFloatAgg.enabled': 'true',
                        'spark.rapids.sql.hasNans': 'false',
@@ -276,7 +276,7 @@ def test_hash_count_with_filter(data_gen, conf):
 @pytest.mark.parametrize('conf', get_params(_confs, params_markers_for_confs), ids=idfn)
 def test_hash_multiple_filters(data_gen, conf):
     assert_gpu_and_cpu_are_equal_sql(
-        with_cpu_session(lambda spark : gen_df(spark, data_gen, length=100)),
+        lambda spark : gen_df(spark, data_gen, length=100),
         "hash_agg_table",
         'select count(a) filter (where c > 50),' +
         'count(b) filter (where c > 100),' +
@@ -296,7 +296,7 @@ def test_hash_multiple_filters(data_gen, conf):
 @pytest.mark.parametrize('data_gen', [_longs_with_nulls], ids=idfn)
 def test_hash_multiple_filters_fail(data_gen):
     assert_gpu_and_cpu_are_equal_sql(
-        with_cpu_session(lambda spark : gen_df(spark, data_gen, length=100)),
+        lambda spark : gen_df(spark, data_gen, length=100),
         "hash_agg_table",
         'select avg(b) filter (where b > 20) from hash_agg_table group by a',
         _no_nans_float_conf_partial)
@@ -318,7 +318,7 @@ def test_hash_query_max_bug(data_gen):
                                       _grpkey_doubles_with_nan_zero_grouping_keys], ids=idfn)
 def test_hash_agg_with_nan_keys(data_gen):
     assert_gpu_and_cpu_are_equal_sql(
-        with_cpu_session(lambda spark : gen_df(spark, data_gen, length=1024)),
+        lambda spark : gen_df(spark, data_gen, length=1024),
         "hash_agg_table",
         'select a, '
         'count(*) as count_stars, ' 
@@ -342,7 +342,7 @@ def test_hash_agg_with_nan_keys(data_gen):
 @pytest.mark.parametrize('data_gen', [ _grpkey_doubles_with_nan_zero_grouping_keys], ids=idfn)
 def test_count_distinct_with_nan_floats(data_gen):
     assert_gpu_and_cpu_are_equal_sql(
-        with_cpu_session(lambda spark : gen_df(spark, data_gen, length=1024)),
+        lambda spark : gen_df(spark, data_gen, length=1024),
         "hash_agg_table",
         'select a, count(distinct b) as count_distinct_bees from hash_agg_table group by a',
         _no_nans_float_conf)
