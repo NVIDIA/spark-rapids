@@ -16,9 +16,11 @@
 
 package com.nvidia.spark.rapids
 
+import org.apache.spark.sql.{SparkSession, SparkSessionExtensions}
 import org.apache.spark.sql.catalyst.encoders.ExpressionEncoder
 import org.apache.spark.sql.catalyst.expressions.Expression
 import org.apache.spark.sql.catalyst.plans.JoinType
+import org.apache.spark.sql.catalyst.rules.Rule
 import org.apache.spark.sql.execution.SparkPlan
 import org.apache.spark.sql.execution.joins._
 import org.apache.spark.sql.rapids.execution.GpuBroadcastNestedLoopJoinExecBase
@@ -68,4 +70,8 @@ trait SparkShims {
     endMapIndex: Int,
     startPartition: Int,
     endPartition: Int): Iterator[(BlockManagerId, Seq[(BlockId, Long, Int)])]
+
+  def injectQueryStagePrepRule(
+      extensions: SparkSessionExtensions,
+      rule: SparkSession => Rule[SparkPlan])
 }
