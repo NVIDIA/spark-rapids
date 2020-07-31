@@ -46,7 +46,8 @@ class HashAggregatesSuite extends SparkQueryCompareTestSuite {
           case _ => None
         }
       }
-      assert(gpuAgg.isDefined, "as the GPU plan expected a GPU aggregate but did not find any!")
+      assert(gpuAgg.isDefined, s"as the GPU plan expected a GPU aggregate but did not find any! " +
+          s"plan: $plan; executedPlan: $executedPlan")
     }
   }
 
