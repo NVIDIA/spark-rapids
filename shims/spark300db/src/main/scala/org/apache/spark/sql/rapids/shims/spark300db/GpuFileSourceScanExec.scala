@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-package org.apache.spark.sql.rapids.shims.spark300
+package org.apache.spark.sql.rapids.shims.spark300db
 
 import java.util.concurrent.TimeUnit.NANOSECONDS
 
