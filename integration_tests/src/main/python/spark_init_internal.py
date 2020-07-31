@@ -28,5 +28,12 @@ def _spark__init():
     _s.sparkContext.setLogLevel("WARN")
     return _s
 
-spark = _spark__init()
+_spark = _spark__init()
+
+def get_spark_i_know_what_i_am_doing():
+    """
+    Get the current SparkSession. Because of how tests work
+    this should almostnever be called directly
+    """
+    return _spark
 

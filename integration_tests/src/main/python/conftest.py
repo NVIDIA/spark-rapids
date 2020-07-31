@@ -14,7 +14,7 @@
 
 import pytest
 import random
-from spark_init_internal import spark
+from spark_init_internal import get_spark_i_know_what_i_am_doing
 from pyspark.sql.dataframe import DataFrame
 
 _approximate_float_args = None
@@ -175,7 +175,7 @@ def spark_tmp_path(request):
         ret = '/tmp/pyspark_tests/'
     ret = ret + '/' + str(random.randint(0, 1000000)) + '/'
     # Make sure it is there and accessible
-    sc = spark.sparkContext
+    sc = get_spark_i_know_what_i_am_doing().sparkContext
     config = sc._jsc.hadoopConfiguration()
     path = sc._jvm.org.apache.hadoop.fs.Path(ret)
     fs = sc._jvm.org.apache.hadoop.fs.FileSystem.get(config)
@@ -191,13 +191,13 @@ def _get_jvm(spark):
     return spark.sparkContext._jvm
 
 def spark_jvm():
-    return _get_jvm(spark)
+    return _get_jvm(get_spark_i_know_what_i_am_doing())
 
 class TpchRunner:
   def __init__(self, tpch_format, tpch_path):
     self.tpch_format = tpch_format
     self.tpch_path = tpch_path
-    self.setup(spark)
+    self.setup(get_spark_i_know_what_i_am_doing())
 
   def setup(self, spark):
     jvm_session = _get_jvm_session(spark)
@@ -210,6 +210,7 @@ class TpchRunner:
     formats.get(self.tpch_format)(jvm_session, self.tpch_path)
 
   def do_test_query(self, query):
+    spark = get_spark_i_know_what_i_am_doing()
     jvm_session = _get_jvm_session(spark)
     jvm = _get_jvm(spark)
     tests = {
@@ -256,7 +257,7 @@ class TpcxbbRunner:
   def __init__(self, tpcxbb_format, tpcxbb_path):
     self.tpcxbb_format = tpcxbb_format
     self.tpcxbb_path = tpcxbb_path
-    self.setup(spark)
+    self.setup(get_spark_i_know_what_i_am_doing())
 
   def setup(self, spark):
     jvm_session = _get_jvm_session(spark)
@@ -269,6 +270,7 @@ class TpcxbbRunner:
     formats.get(self.tpcxbb_format)(jvm_session,self.tpcxbb_path)
 
   def do_test_query(self, query):
+    spark = get_spark_i_know_what_i_am_doing()
     jvm_session = _get_jvm_session(spark)
     jvm = _get_jvm(spark)
     tests = {
