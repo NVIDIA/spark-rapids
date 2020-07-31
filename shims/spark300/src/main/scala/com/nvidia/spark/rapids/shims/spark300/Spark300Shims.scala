@@ -22,10 +22,12 @@ import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.spark300.RapidsShuffleManager
 
 import org.apache.spark.SparkEnv
+import org.apache.spark.sql.{SparkSession, SparkSessionExtensions}
 import org.apache.spark.sql.catalyst.encoders.ExpressionEncoder
 import org.apache.spark.sql.catalyst.expressions._
 import org.apache.spark.sql.catalyst.expressions.aggregate.{First, Last}
 import org.apache.spark.sql.catalyst.plans.JoinType
+import org.apache.spark.sql.catalyst.rules.Rule
 import org.apache.spark.sql.execution._
 import org.apache.spark.sql.execution.datasources.HadoopFsRelation
 import org.apache.spark.sql.execution.joins.{BroadcastHashJoinExec, BroadcastNestedLoopJoinExec, HashJoin, SortMergeJoinExec}
@@ -192,5 +194,12 @@ class Spark300Shims extends SparkShims {
 
   override def getRapidsShuffleManagerClass: String = {
     classOf[RapidsShuffleManager].getCanonicalName
+  }
+
+  override def injectQueryStagePrepRule(
+      extensions: SparkSessionExtensions,
+      ruleBuilder: SparkSession => Rule[SparkPlan]): Unit = {
+    // not supported in 3.0.0 but it doesn't matter because AdaptiveSparkPlanExec in 3.0.0 will
+    // never allow us to replace an Exchange node, so they just stay on CPU
   }
 }

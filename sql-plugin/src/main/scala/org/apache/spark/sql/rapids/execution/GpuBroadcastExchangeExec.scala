@@ -217,9 +217,18 @@ class GpuBroadcastMeta(
       case _: BroadcastNestedLoopJoinExec => true
       case _ => false
     }
-    if (!parent.exists(isSupported)) {
-      willNotWorkOnGpu("BroadcastExchange only works on the GPU if being used " +
-        "with a GPU version of BroadcastHashJoinExec or BroadcastNestedLoopJoinExec")
+    if (parent.isDefined) {
+      if (!parent.exists(isSupported)) {
+        willNotWorkOnGpu("BroadcastExchange only works on the GPU if being used " +
+            "with a GPU version of BroadcastHashJoinExec or BroadcastNestedLoopJoinExec")
+      }
+    } else {
+      // when AQE is enabled and we are planning a new query stage, parent will be None so
+      // we need to look at meta-data previously stored on the spark plan
+      wrapped.getTagValue(gpuSupportedTag) match {
+        case Some(reason) => willNotWorkOnGpu(reason)
+        case None => // this broadcast is supported on GPU
+      }
     }
   }
 
