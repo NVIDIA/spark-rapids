@@ -246,7 +246,7 @@ trait GpuHashJoin extends GpuExec with HashJoin {
     }
   }
 
- override def inputRDDs(): Seq[RDD[InternalRow]] = {
+  override def inputRDDs(): Seq[RDD[InternalRow]] = {
     throw new UnsupportedOperationException("inputRDDs is used by codegen which we don't support")
   }
 
