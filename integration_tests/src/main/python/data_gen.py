@@ -19,7 +19,7 @@ from pyspark.sql.types import *
 import pyspark.sql.functions as f
 import pytest
 import random
-from spark_session import spark, is_tz_utc
+from spark_session import is_tz_utc
 import sre_yield
 import struct
 
@@ -489,8 +489,8 @@ class ArrayGen(DataGen):
             return [self._child_gen.gen() for _ in range(0, length)]
         self._start(rand, gen_array)
 
-def skip_if_not_utc(spark):
-    if (not is_tz_utc(spark)):
+def skip_if_not_utc():
+    if (not is_tz_utc()):
         pytest.skip('The java system time zone is not set to UTC')
 
 def gen_df(spark, data_gen, length=2048, seed=0):
@@ -504,7 +504,7 @@ def gen_df(spark, data_gen, length=2048, seed=0):
 
     # Before we get too far we need to verify that we can run with timestamps
     if src.contains_ts():
-        skip_if_not_utc(spark)
+        skip_if_not_utc()
 
     rand = random.Random(seed)
     src.start(rand)
@@ -525,7 +525,7 @@ def _gen_scalars_common(data_gen, count, seed=0):
 
     # Before we get too far we need to verify that we can run with timestamps
     if src.contains_ts():
-        skip_if_not_utc(spark)
+        skip_if_not_utc()
 
     rand = random.Random(seed)
     src.start(rand)

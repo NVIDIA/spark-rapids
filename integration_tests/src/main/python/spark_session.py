@@ -13,8 +13,8 @@
 # limitations under the License.
 
 from conftest import is_allowing_any_non_gpu, get_non_gpu_allowed
-from pyspark.sql import SparkSession
-from spark_init_internal import spark as internal_spark
+from pyspark.sql import SparkSession, DataFrame
+from spark_init_internal import get_spark_i_know_what_i_am_doing
 
 def _from_scala_map(scala_map):
     ret = {}
@@ -25,12 +25,12 @@ def _from_scala_map(scala_map):
         ret[key] = scala_map.get(key).get()
     return ret
 
-spark = internal_spark
+_spark = get_spark_i_know_what_i_am_doing()
 # Have to reach into a private member to get access to the API we need
-_orig_conf = _from_scala_map(spark.conf._jconf.getAll())
+_orig_conf = _from_scala_map(_spark.conf._jconf.getAll())
 _orig_conf_keys = _orig_conf.keys()
 
-def is_tz_utc(spark=spark):
+def is_tz_utc(spark=_spark):
     """
     true if the tz is UTC else false
     """
@@ -42,25 +42,32 @@ def is_tz_utc(spark=spark):
 
 def _set_all_confs(conf):
     for key, value in conf.items():
-        if spark.conf.get(key, None) != value:
-            spark.conf.set(key, value)
+        if _spark.conf.get(key, None) != value:
+            _spark.conf.set(key, value)
 
 def reset_spark_session_conf():
     """Reset all of the configs for a given spark session."""
     _set_all_confs(_orig_conf)
     #We should clear the cache
-    spark.catalog.clearCache()
+    _spark.catalog.clearCache()
     # Have to reach into a private member to get access to the API we need
-    current_keys = _from_scala_map(spark.conf._jconf.getAll()).keys()
+    current_keys = _from_scala_map(_spark.conf._jconf.getAll()).keys()
     for key in current_keys:
         if key not in _orig_conf_keys:
-            spark.conf.unset(key)
+            _spark.conf.unset(key)
+
+def _check_for_proper_return_values(something):
+    """We don't want to return an DataFrame or Dataset from a with_spark_session. You will not get what you expect"""
+    if (isinstance(something, DataFrame)):
+        raise RuntimeError("You should never return a DataFrame from a with_*_session, you will not get the results that you expect")
 
 def with_spark_session(func, conf={}):
     """Run func that takes a spark session as input with the given configs set."""
     reset_spark_session_conf()
     _set_all_confs(conf)
-    return func(spark)
+    ret = func(_spark)
+    _check_for_proper_return_values(ret)
+    return ret
 
 def with_cpu_session(func, conf={}):
     """Run func that takes a spark session as input with the given configs set on the CPU."""
