@@ -59,7 +59,7 @@ import org.apache.spark.sql.execution.metric.SQLMetric
 import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.rapids.execution.TrampolineUtil
 import org.apache.spark.sql.sources.Filter
-import org.apache.spark.sql.types.{StructType, TimestampType}
+import org.apache.spark.sql.types.{StringType, StructType, TimestampType}
 import org.apache.spark.sql.util.CaseInsensitiveStringMap
 import org.apache.spark.sql.vectorized.ColumnarBatch
 import org.apache.spark.util.SerializableConfiguration
@@ -132,6 +132,16 @@ object GpuParquetScan {
       if (!GpuColumnVector.isSupportedType(field.dataType)) {
         meta.willNotWorkOnGpu(s"GpuParquetScan does not support fields of type ${field.dataType}")
       }
+    }
+
+    val schemaHasStrings = readSchema.exists { field =>
+      TrampolineUtil.dataTypeExistsRecursively(field.dataType, _.isInstanceOf[StringType])
+    }
+
+    if (sqlConf.get(SQLConf.PARQUET_BINARY_AS_STRING.key,
+      SQLConf.PARQUET_BINARY_AS_STRING.defaultValueString).toBoolean && schemaHasStrings) {
+      meta.willNotWorkOnGpu(s"GpuParquetScan does not support" +
+          s" ${SQLConf.PARQUET_BINARY_AS_STRING.key}")
     }
 
     val schemaHasTimestamps = readSchema.exists { field =>
