@@ -114,18 +114,22 @@ object GpuShuffleEnv extends Logging {
   }
 
   def shutdown(): Unit = {
-    env.closeStorage()
+    Option(env).foreach(_.closeStorage())
   }
 
-  def get: GpuShuffleEnv = env
+  def getShuffleEnv: GpuShuffleEnv = if (env == null) {
+    throw new IllegalStateException("GpuShuffleEnv must be initialized on startup!")
+  } else {
+    env
+  }
 
-  def getCatalog: ShuffleBufferCatalog = env.getCatalog
+  def getCatalog: ShuffleBufferCatalog = getShuffleEnv.getCatalog
 
-  def getReceivedCatalog: ShuffleReceivedBufferCatalog = env.getReceivedCatalog
+  def getReceivedCatalog: ShuffleReceivedBufferCatalog = getShuffleEnv.getReceivedCatalog
 
-  def getDeviceStorage: RapidsDeviceMemoryStore = env.getDeviceStorage
+  def getDeviceStorage: RapidsDeviceMemoryStore = getShuffleEnv.getDeviceStorage
 
-  def isRapidsShuffleEnabled: Boolean = env != null && env.isRapidsShuffleEnabled
+  def isRapidsShuffleEnabled: Boolean = getShuffleEnv.isRapidsShuffleEnabled
 
   // the shuffle plugin will call this on initialize
   def setRapidsShuffleManagerInitialized(initialized: Boolean, className: String): Unit = {
