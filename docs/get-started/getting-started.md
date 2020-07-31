@@ -32,7 +32,7 @@ with Docker on Kubernetes then skip these as you will do this as part of the doc
   - `sudo apt-get update`
   - `sudo apt-get -y install cuda`
 
-Below are sections on installing Spark and the RAPIDS Accelerator on a single node, you may want
+Below are sections on installing Spark and the RAPIDS Accelerator on a single node.  You may want
 to read the deployment method sections before doing any installations.
 
 ## Install Spark
@@ -79,7 +79,7 @@ This is for testing/dev setup only.  It is not to be used in production.  In thi
 everything in a single process on a single node.
 - [Install Spark](#install-spark)
 - [Install the RAPIDS jars](#download-the-rapids-jars)
-- Launch your Spark shell session
+- Launch your Spark shell session. 
 
 Default configs usually work fine in local mode.  The required changes are setting the config 
 `spark.plugins` to `com.nvidia.spark.SQLPlugin` and including the jars as a dependency. All of the
@@ -147,11 +147,13 @@ Now you can go to the master UI at `http://${MASTER_HOST}:8080` and verify all t
 started.
 
 Submitting a Spark application to a standalone mode cluster requires a few configs to be set. These
-configs can be placed in the spark default confs if you want all jobs to use the GPU. The
-plugin requires its jars to be in the executor classpath. Gpu scheduling also requires you to
-ask for GPUs.  In this case we are asking for 1 GPU per executor, the plugin cannot utilize more
-than one, and 4 CPU tasks per executor, but only one task will be on the GPU at a time. This allows
-for overlapping I/O and computation.
+configs can be placed in the Spark default confs if you want all jobs to use the GPU. The plugin
+requires its jars to be in the executor classpath.  GPU scheduling also requires the Spark job to 
+ask for GPUs.  The plugin cannot utilize more than one GPU per executor. 
+
+In this case we are asking for 1 GPU per executor (the plugin cannot utilize more than one), and 4 
+CPU tasks per executor (but only one task will be on the GPU at a time).  This allows for 
+overlapping I/O and computation. 
 
 ```shell 
 $SPARK_HOME/bin/spark-shell \
@@ -245,7 +247,7 @@ $SPARK_HOME/bin/spark-shell \
        --conf spark.executor.resource.gpu.discoveryScript=./getGpusResources.sh \
        --files ${SPARK_RAPIDS_DIR}/getGpusResources.sh \
        --jars  ${SPARK_CUDF_JAR},${SPARK_RAPIDS_PLUGIN_JAR}
-```  
+``` 
 
 ### YARN without Isolation
 If you run YARN without isolation then you can run the RAPIDS Accelerator for Spark as long as you
@@ -330,7 +332,7 @@ $SPARK_HOME/bin/spark-shell \
 ## RAPIDS Accelerator Configuration and Tuning
 Most of what you need you can get from [tuning guide](../tuning-guide).
 
-The following configs will hep you to get started but must be configured based on your cluster
+The following configs will help you to get started but must be configured based on your cluster
 and application.
 
 1. If you are using the KryoSerializer with Spark, e.g.:
@@ -354,12 +356,12 @@ $SPARK_HOME/bin/spark-shell --master yarn \
   --conf spark.locality.wait=0s \
   --conf spark.sql.files.maxPartitionBytes=512m \
   --conf spark.executor.resource.gpu.discoveryScript=./getGpusResources.sh \
-   --conf spark.task.resource.gpu.amount=0.166 \
+  --conf spark.task.resource.gpu.amount=0.166 \
   --conf spark.executor.resource.gpu.amount=1 \
   --files $SPARK_RAPIDS_DIR/getGpusResources.sh
   --jars  ${SPARK_CUDF_JAR},${SPARK_RAPIDS_PLUGIN_JAR}
 ```
-
+  
 ## Example Join Operation
 Once you have started your Spark shell you can run the following commands to do a basic join and
 look at the UI to see that it runs on the GPU.
@@ -373,11 +375,11 @@ operation “count at ...”, you should see the graph of Spark Execs and some o
 the label Gpu...  For instance, in the screenshot below you will see `GpuRowToColumn`, `GpuFilter`,
 and `GpuColumnarExchange`.  Those correspond to operations that run on the GPU.
 
-![Join Example on Spark SQL UI](/docs/img/join-sql-ui-example.png)
+![Join Example on Spark SQL UI](../img/join-sql-ui-example.png)
 
 ## Advanced Configuration
 
-See the [RAPIDS Accelerator for Apache Spark Configuration Guide](configs.md) for details on all
+See the [RAPIDS Accelerator for Apache Spark Configuration Guide](/docs/configs.md) for details on all
 of the configuration settings specific to the RAPIDS Accelerator for Apache Spark.
 
 ## Monitoring
@@ -399,7 +401,7 @@ file. To make sure your hs_err_pid.log file goes into the YARN application log d
 the config: `--conf spark.executor.extraJavaOptions="-XX:ErrorFile=<LOG_DIR>/hs_err_pid_%p.log"`
 
 If you want to see why an operation did not run on the GPU you can turn on the configuration:
-[`--conf spark.rapids.sql.explain=NOT_ON_GPU`](configs.md#sql.explain). A log message will then
+[`--conf spark.rapids.sql.explain=NOT_ON_GPU`](/docs/configs.md#sql.explain). A log message will then
 be emitted to the driver log as to why a Spark operation is not able to run on the GPU.
 
 ## Out of GPU Memory
