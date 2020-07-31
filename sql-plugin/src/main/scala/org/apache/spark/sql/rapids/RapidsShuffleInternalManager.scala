@@ -23,8 +23,7 @@ import com.nvidia.spark.rapids.shuffle.{RapidsShuffleRequestHandler, RapidsShuff
 import scala.collection.mutable.ArrayBuffer
 
 import org.apache.spark.{ShuffleDependency, SparkConf, SparkEnv, TaskContext}
-import org.apache.spark.internal.{config, Logging}
-import org.apache.spark.io.CompressionCodec
+import org.apache.spark.internal.Logging
 import org.apache.spark.network.buffer.ManagedBuffer
 import org.apache.spark.scheduler.MapStatus
 import org.apache.spark.shuffle._
@@ -40,9 +39,8 @@ class GpuShuffleHandle[K, V](
   override def toString: String = s"GPU SHUFFLE HANDLE $shuffleId"
 }
 
-class GpuShuffleBlockResolver(private val wrapped: ShuffleBlockResolver,
-    private val blockManager: BlockManager,
-    private val compressionCodec: CompressionCodec,
+class GpuShuffleBlockResolver(
+    private val wrapped: ShuffleBlockResolver,
     catalog: ShuffleBufferCatalog)
   extends ShuffleBlockResolver with Logging {
   override def getBlockData(blockId: BlockId, dirs: Option[Array[String]]): ManagedBuffer = {
@@ -72,14 +70,11 @@ object RapidsShuffleInternalManagerBase extends Logging {
 }
 
 class RapidsCachingWriter[K, V](
-    conf: SparkConf,
     blockManager: BlockManager,
-    blockResolver: IndexShuffleBlockResolver,
     // Never keep a reference to the ShuffleHandle in the cache as it being GCed triggers
     // the data being released
     handle: GpuShuffleHandle[K, V],
     mapId: Long,
-    compressionCodec: CompressionCodec,
     metrics: ShuffleWriteMetricsReporter,
     catalog: ShuffleBufferCatalog,
     shuffleStorage: RapidsDeviceMemoryStore,
@@ -106,17 +101,27 @@ class RapidsCachingWriter[K, V](
         val blockId = ShuffleBlockId(handle.shuffleId, mapId, partId)
         val bufferId = catalog.nextShuffleBufferId(blockId)
         if (batch.numRows > 0 && batch.numCols > 0) {
-          val buffer = {
-            val buff = batch.column(0).asInstanceOf[GpuColumnVectorFromBuffer].getBuffer
-            buff.slice(0, buff.getLength)
-          }
-
           // Add the table to the shuffle store
-          shuffleStorage.addTable(
-            bufferId,
-            GpuColumnVector.from(batch),
-            buffer,
-            SpillPriorities.OUTPUT_FOR_SHUFFLE_INITIAL_PRIORITY)
+          batch.column(0) match {
+            case c: GpuColumnVectorFromBuffer =>
+              val buffer = c.getBuffer.slice(0, c.getBuffer.getLength)
+              shuffleStorage.addTable(
+                bufferId,
+                GpuColumnVector.from(batch),
+                buffer,
+                SpillPriorities.OUTPUT_FOR_SHUFFLE_INITIAL_PRIORITY)
+            case c: GpuCompressedColumnVector =>
+              val buffer = c.getBuffer.slice(0, c.getBuffer.getLength)
+              val tableMeta = c.getTableMeta
+              // update the table metadata for the buffer ID generated above
+              tableMeta.bufferMeta.mutateId(bufferId.tableId)
+              shuffleStorage.addBuffer(
+                bufferId,
+                buffer,
+                tableMeta,
+                SpillPriorities.OUTPUT_FOR_SHUFFLE_INITIAL_PRIORITY)
+            case c => throw new IllegalStateException(s"Unexpected column type: ${c.getClass}")
+          }
         } else {
           // no device data, tracking only metadata
           val tableMeta = MetaUtils.buildDegenerateTableMeta(bufferId.tableId, batch)
@@ -207,22 +212,11 @@ abstract class RapidsShuffleInternalManagerBase(conf: SparkConf, isDriver: Boole
   }
 
   private lazy val localBlockManagerId = blockManager.blockManagerId
-  private lazy val compressionEnabled: Boolean = conf.get(config.SHUFFLE_COMPRESS)
-  private lazy val compressionCodec: CompressionCodec =
-    if (compressionEnabled) {
-      CompressionCodec.createCodec(conf)
-    } else {
-      null
-    }
 
   private lazy val resolver = if (shouldFallThroughOnEverything) {
     wrapped.shuffleBlockResolver
   } else {
-    new GpuShuffleBlockResolver(
-      wrapped.shuffleBlockResolver,
-      blockManager,
-      compressionCodec,
-      catalog)
+    new GpuShuffleBlockResolver(wrapped.shuffleBlockResolver, catalog)
   }
 
   private[this] lazy val transport: Option[RapidsShuffleTransport] = {
@@ -276,12 +270,10 @@ abstract class RapidsShuffleInternalManagerBase(conf: SparkConf, isDriver: Boole
     handle match {
       case gpu: GpuShuffleHandle[_, _] =>
         registerGpuShuffle(handle.shuffleId)
-        new RapidsCachingWriter(conf,
+        new RapidsCachingWriter(
           env.blockManager,
-          wrapped.shuffleBlockResolver,
           gpu.asInstanceOf[GpuShuffleHandle[K, V]],
           mapId,
-          compressionCodec,
           metrics,
           GpuShuffleEnv.getCatalog,
           GpuShuffleEnv.getDeviceStorage,

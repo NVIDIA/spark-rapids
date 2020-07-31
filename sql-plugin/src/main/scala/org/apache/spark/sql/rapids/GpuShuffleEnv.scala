@@ -41,6 +41,14 @@ class GpuShuffleEnv extends Logging {
       conf.get("spark.shuffle.manager") == GpuShuffleEnv.RAPIDS_SHUFFLE_CLASS
   }
 
+  lazy val rapidsShuffleCodec: Option[TableCompressionCodec] = {
+    if (rapidsConf.shuffleCompressionEnabled) {
+      Some(TableCompressionCodec.getCodec(rapidsConf.shuffleCompressionCodec))
+    } else {
+      None
+    }
+  }
+
   lazy val isRapidsShuffleEnabled: Boolean = {
     val env = SparkEnv.get
     val isRapidsManager = GpuShuffleEnv.isRapidsShuffleManagerInitialized
@@ -126,6 +134,8 @@ object GpuShuffleEnv extends Logging {
   def getDeviceStorage: RapidsDeviceMemoryStore = env.getDeviceStorage
 
   def isRapidsShuffleEnabled: Boolean = env.isRapidsShuffleEnabled
+
+  def rapidsShuffleCodec: Option[TableCompressionCodec] = env.rapidsShuffleCodec
 
   // the shuffle plugin will call this on initialize
   def setRapidsShuffleManagerInitialized(initialized: Boolean, className: String): Unit = {
