@@ -21,6 +21,8 @@ import java.util.concurrent.atomic.{AtomicBoolean, AtomicReference}
 
 import scala.collection.JavaConverters._
 
+import com.nvidia.spark.rapids.python.PythonWorkerSemaphore
+
 import org.apache.spark.{SparkConf, SparkContext}
 import org.apache.spark.api.plugin.{DriverPlugin, ExecutorPlugin, PluginContext}
 import org.apache.spark.internal.Logging
@@ -139,6 +141,7 @@ class RapidsExecutorPlugin extends ExecutorPlugin with Logging {
 
   override def shutdown(): Unit = {
     GpuSemaphore.shutdown()
+    PythonWorkerSemaphore.shutdown()
   }
 }
 

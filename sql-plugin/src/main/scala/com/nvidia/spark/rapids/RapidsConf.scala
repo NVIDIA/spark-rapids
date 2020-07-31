@@ -306,6 +306,15 @@ object RapidsConf {
       .integerConf
       .createWithDefault(1)
 
+  val CONCURRENT_PYTHON_WORKERS = conf("spark.rapids.python.concurrentPythonWorkers")
+      .doc("Set the number of Python worker processes that can execute concurrently per GPU. " +
+          "Python worker processes may temporarily block when the number of concurrent Python " +
+          "worker processes started by the same executor exceeds this amount. Allowing too " +
+          "many concurrent tasks on the same GPU may lead to GPU out of memory errors. " +
+          ">0 means enabled, while <=0 means unlimited")
+      .integerConf
+    .createWithDefault(0)
+
   val SHUFFLE_SPILL_THREADS = conf("spark.rapids.sql.shuffle.spillThreads")
     .doc("Number of threads used to spill shuffle data to disk in the background.")
     .integerConf
@@ -793,6 +802,8 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
   lazy val pinnedPoolSize: Long = get(PINNED_POOL_SIZE)
 
   lazy val concurrentGpuTasks: Int = get(CONCURRENT_GPU_TASKS)
+
+  lazy val concurrentPythonWorkers: Int = get(CONCURRENT_PYTHON_WORKERS)
 
   lazy val isTestEnabled: Boolean = get(TEST_CONF)
 

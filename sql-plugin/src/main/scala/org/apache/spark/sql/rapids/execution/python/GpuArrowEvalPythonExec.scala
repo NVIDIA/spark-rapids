@@ -17,6 +17,8 @@
 package org.apache.spark.sql.rapids.execution.python
 
 import com.nvidia.spark.rapids._
+import com.nvidia.spark.rapids.python.PythonWorkerSemaphore
+
 import scala.collection.JavaConverters._
 
 import org.apache.spark.{SparkEnv, TaskContext}
@@ -99,8 +101,8 @@ case class GpuArrowEvalPythonExec(
       context: TaskContext): Iterator[InternalRow] = {
 
     injectGpuInfo(funcs)
+    PythonWorkerSemaphore.acquireIfNecessary(context)
     doEvaluate(funcs, argOffsets, iter, schema, context)
-    // FIXME Shall we restore the envVars /configs ?
   }
 
   /**
