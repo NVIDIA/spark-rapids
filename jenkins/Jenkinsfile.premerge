@@ -53,8 +53,7 @@ pipeline {
                 script {
                     //Check if a PR has been committed using git signoff
                     if (!isSignedOff()) {
-                        echo "Signed-off-by check FAILED"
-                        exit(-1)
+                        error "Signed-off-by check FAILED"
                     }
 
                     def CUDA_NAME=sh(returnStdout: true,
@@ -88,7 +87,7 @@ boolean isSignedOff() {
     def signed_off = false
     for( String commit : revs_arr ) {
         def signed_log = sh(returnStdout: true,
-                script: "git show ${commit} --shortstat | grep 'Signed-off-by'")
+                script: "git show ${commit} --shortstat | grep 'Signed-off-by' || true")
         echo "commit: ${commit}, signed_log: ${signed_log}"
         // Find `Signed-off-by` comment in one of the commits
         if (signed_log?.trim()) {
