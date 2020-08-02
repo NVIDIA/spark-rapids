@@ -53,26 +53,9 @@ pipeline {
                 script {
                     //Check if a PR has been committed using git signoff
                     if (!isSignedOff()) {
-                        echo "Signed-off-by check FAIED"
-                        exit(-1)
+                        error "Signed-off-by check FAILED"
                     }
-
-                    def CUDA_NAME=sh(returnStdout: true,
-                        script: '. jenkins/version-def.sh>&2 && echo -n $CUDA_CLASSIFIER | sed "s/-/./g"')
-                    def IMAGE_NAME="$ARTIFACTORY_NAME/sw-spark-docker/plugin:dev-ubuntu16-$CUDA_NAME"
-                    sh "docker pull $IMAGE_NAME"
-                    def CUDA_VER="$CUDA_NAME" - "cuda"
-                    def buildImage=docker.build(IMAGE_NAME,
-                        "-f jenkins/Dockerfile.ubuntu16 --build-arg CUDA_VER=$CUDA_VER --cache-from $IMAGE_NAME -t $IMAGE_NAME .")
-                    buildImage.inside("--runtime=nvidia -v ${HOME}/.m2:${HOME}/.m2:rw -v ${HOME}/.zinc:${HOME}/.zinc:rw") {
-                        sh "bash $BUILD_SCRIPT"
-                        step([$class: 'JacocoPublisher',
-                              execPattern: '**/target/jacoco.exec',
-                              classPattern: 'target/jacoco_classes/',
-                              sourcePattern: 'sql-plugin/src/main/java/,sql-plugin/src/main/scala/,shuffle-plugin/src/main/scala/',
-                              sourceInclusionPattern: '**/*.java,**/*.scala'
-                        ])
-                    }
+                    echo "Signed-off-by check PASS"
                 }
             }
         }
@@ -88,7 +71,7 @@ boolean isSignedOff() {
     def signed_off = false
     for( String commit : revs_arr ) {
         def signed_log = sh(returnStdout: true,
-                script: "git show ${commit} --shortstat | grep 'Signed-off-by'")
+                script: "git show ${commit} --shortstat | grep 'Signed-off-by' || true")
         echo "commit: ${commit}, signed_log: ${signed_log}"
         // Find `Signed-off-by` comment in one of the commits
         if (signed_log?.trim()) {
