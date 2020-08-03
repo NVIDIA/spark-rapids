@@ -14,6 +14,7 @@
 
 from conftest import is_incompat, should_sort_on_spark, should_sort_locally, get_float_check, get_limit, spark_jvm
 from datetime import date, datetime
+from decimal import Decimal
 import math
 from pyspark.sql import Row
 import pytest
@@ -73,6 +74,8 @@ def _assert_equal(cpu, gpu, float_check, path):
         assert cpu == gpu, "GPU and CPU date values are different at {}".format(path)
     elif isinstance(cpu, bool):
         assert cpu == gpu, "GPU and CPU boolean values are different at {}".format(path)
+    elif isinstance(cpu, Decimal):
+        assert cpu == gpu, "GPU and CPU decimal values are different at {}".format(path)
     elif (cpu == None):
         assert cpu == gpu, "GPU and CPU are not both null at {}".format(path)
     else:
