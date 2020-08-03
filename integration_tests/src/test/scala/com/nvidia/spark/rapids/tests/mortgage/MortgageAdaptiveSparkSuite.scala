@@ -15,6 +15,9 @@
  */
 package com.nvidia.spark.rapids.tests.mortgage
 
+import org.scalatest.Ignore
+
+@Ignore
 class MortgageAdaptiveSparkSuite extends MortgageSparkSuite {
   override def adaptiveQueryEnabled: Boolean = true
 }
