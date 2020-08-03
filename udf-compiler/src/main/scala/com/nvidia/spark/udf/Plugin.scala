@@ -16,13 +16,13 @@
 
 package com.nvidia.spark.udf
 
+import com.nvidia.spark.rapids.RapidsConf
+
 import org.apache.spark.internal.Logging
 import org.apache.spark.sql.SparkSessionExtensions
 import org.apache.spark.sql.catalyst.expressions.{Alias, Expression, NamedExpression, ScalaUDF}
 import org.apache.spark.sql.catalyst.plans.logical.{LogicalPlan, Project}
 import org.apache.spark.sql.catalyst.rules.Rule
-
-import com.nvidia.spark.rapids.RapidsConf
 
 class Plugin extends Function1[SparkSessionExtensions, Unit] with Logging {
   override def apply(extensions: SparkSessionExtensions): Unit = {
@@ -38,7 +38,35 @@ case class LogicalPlanRules() extends Rule[LogicalPlan] with Logging {
   }
 
   def attemptToReplaceExpression(plan: LogicalPlan, exp: Expression): Expression = {
-    exp
+    val conf = new RapidsConf(plan.conf)
+    // iterating over NamedExpression
+    exp match {
+      case f: ScalaUDF => // found a ScalaUDF
+        GpuScalaUDFLogical(f).compile(conf.isTestEnabled)
+      case _ =>
+        if (exp == null) {
+          exp
+        } else {
+          try {
+            if (exp.children != null && !exp.children.exists(x => x == null)) {
+              exp.withNewChildren(exp.children.map(c => {
+                if (c != null && c.isInstanceOf[Expression]) {
+                  attemptToReplaceExpression(plan, c)
+                } else {
+                  c
+                }
+              }))
+            } else {
+              exp
+            }
+          } catch {
+            case npe: NullPointerException => {
+              println("npe... never mind then")
+              exp
+            }
+          }
+        }
+    }
   }
 
   override def apply(plan: LogicalPlan): LogicalPlan = {
