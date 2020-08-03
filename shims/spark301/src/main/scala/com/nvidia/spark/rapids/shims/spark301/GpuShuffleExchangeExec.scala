@@ -25,7 +25,7 @@ import org.apache.spark.sql.rapids.execution.GpuShuffleExchangeExecBase
 case class GpuShuffleExchangeExec(
     override val outputPartitioning: Partitioning,
     child: SparkPlan,
-    val canChangeNumPartitions: Boolean)
+    canChangeNumPartitions: Boolean)
   extends GpuShuffleExchangeExecBase(outputPartitioning, child) with ShuffleExchangeLike {
 
   override def numMappers: Int = shuffleDependencyColumnar.rdd.getNumPartitions

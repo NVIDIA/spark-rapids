@@ -77,7 +77,7 @@ trait SparkShims {
   def getGpuShuffleExchangeExec(
       outputPartitioning: Partitioning,
       child: SparkPlan,
-      canChangeNumPartitions: Boolean): GpuShuffleExchangeExecBase
+      canChangeNumPartitions: Boolean = true): GpuShuffleExchangeExecBase
 
   def getGpuShuffleExchangeExec(
       queryStage: ShuffleQueryStageExec): GpuShuffleExchangeExecBase
