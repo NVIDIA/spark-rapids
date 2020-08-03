@@ -23,7 +23,7 @@ import java.util.{Collections, Locale}
 
 import scala.annotation.tailrec
 import scala.collection.JavaConverters._
-import scala.collection.mutable.{ArrayBuffer, HashSet}
+import scala.collection.mutable.ArrayBuffer
 import scala.math.max
 import ai.rapids.cudf.{ColumnVector, DType, HostMemoryBuffer, NvtxColor, ParquetOptions, Table}
 import com.nvidia.spark.RebaseHelper
@@ -256,7 +256,7 @@ case class GpuParquetMultiPartitionReaderFactory(
   private def buildBaseColumnarParquetReader(
       files: Array[PartitionedFile]): PartitionReader[ColumnarBatch] = {
     val conf = broadcastedConf.value.value
-    val clippedBlocks = HashSet[(Path, BlockMetaData)]().empty
+    val clippedBlocks = ArrayBuffer[(Path, BlockMetaData)]()
     var clippedSchema: MessageType = null
 
     // TODO - check schema and metadata (types) to make sure files aren't different
@@ -301,7 +301,7 @@ case class GpuParquetMultiPartitionReaderFactory(
       val clipped = ParquetPartitionReader.clipBlocks(columnPaths, blocks.asScala)
       clippedBlocks ++= clipped.map((filePath, _))
     }
-    new MultiFileParquetPartitionReader(conf, files, clippedBlocks.toSeq, clippedSchema,
+    new MultiFileParquetPartitionReader(conf, files, clippedBlocks, clippedSchema,
       isCaseSensitive, readDataSchema, debugDumpPrefix, maxReadBatchSizeRows,
       maxReadBatchSizeBytes, metrics)
   }
@@ -1190,7 +1190,7 @@ class ParquetPartitionReader(
 
     readNextBatch()
 
-    logDebug(s"Loaded $numRows rows from Parquet. Parquet bytes read: $numParquetBytes. " +
+    logWarning(s"Loaded $numRows rows from Parquet. Parquet bytes read: $numParquetBytes. " +
       s"Estimated GPU bytes: $numBytes")
 
     currentChunk
