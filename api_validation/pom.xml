@@ -61,7 +61,7 @@
 		<groupId>net.alchim31.maven</groupId>
                 <artifactId>scala-maven-plugin</artifactId>
                 <configuration>
-                    <mainClass>com.nvidia.spark.api.ApiValidation</mainClass>
+			<mainClass>com.nvidia.spark.rapids.api.ApiValidation</mainClass>
                 </configuration>
 	    </plugin>	
         </plugins>

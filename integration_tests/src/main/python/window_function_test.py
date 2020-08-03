@@ -18,7 +18,6 @@ from asserts import assert_gpu_and_cpu_are_equal_collect, assert_gpu_and_cpu_are
 from data_gen import *
 from pyspark.sql.types import *
 from marks import *
-from spark_session import with_cpu_session
 
 _grpkey_longs_with_no_nulls = [
     ('a', RepeatSeqGen(LongGen(nullable=False), length=20)),
@@ -48,7 +47,7 @@ _grpkey_longs_with_nullable_timestamps = [
                                       _grpkey_longs_with_nullable_timestamps], ids=idfn)
 def test_window_aggs_for_rows(data_gen):
     assert_gpu_and_cpu_are_equal_sql(
-        with_cpu_session(lambda spark : gen_df(spark, data_gen, length=2048)),
+        lambda spark : gen_df(spark, data_gen, length=2048),
         "window_agg_table",
         'select '
         ' sum(c) over '
@@ -72,7 +71,7 @@ def test_window_aggs_for_rows(data_gen):
                                       _grpkey_longs_with_nullable_timestamps], ids=idfn)
 def test_window_aggs_for_ranges(data_gen):
     assert_gpu_and_cpu_are_equal_sql(
-        with_cpu_session(lambda spark: gen_df(spark, data_gen, length=2048)),
+        lambda spark: gen_df(spark, data_gen, length=2048),
         "window_agg_table",
         'select '
         ' sum(c) over '
@@ -102,7 +101,7 @@ def test_window_aggs_for_ranges(data_gen):
 @pytest.mark.parametrize('data_gen', [_grpkey_longs_with_timestamps], ids=idfn)
 def test_window_aggs_for_ranges_of_dates(data_gen):
     assert_gpu_and_cpu_are_equal_sql(
-        with_cpu_session(lambda spark: gen_df(spark, data_gen, length=2048)),
+        lambda spark: gen_df(spark, data_gen, length=2048),
         "window_agg_table",
         'select '
         ' sum(c) over '
@@ -118,7 +117,7 @@ def test_window_aggs_for_ranges_of_dates(data_gen):
 @pytest.mark.parametrize('data_gen', [_grpkey_longs_with_no_nulls], ids=idfn)
 def test_window_aggs_for_rows_count_non_null(data_gen):
     assert_gpu_and_cpu_are_equal_sql(
-        with_cpu_session(lambda spark: gen_df(spark, data_gen, length=2048)),
+        lambda spark: gen_df(spark, data_gen, length=2048),
         "window_agg_table",
         'select '
         ' count(c) over '
