@@ -33,5 +33,4 @@ class ShuffleManagerShim extends ShuffleManagerShimBase {
     shuffleManager.getReader(
       handle, startMapIndex, endMapIndex, startPartition, endPartition, context, metrics)
   }
-
 }

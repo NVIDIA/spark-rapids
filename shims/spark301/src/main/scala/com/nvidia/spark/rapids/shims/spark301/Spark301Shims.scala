@@ -25,7 +25,7 @@ import org.apache.spark.sql.catalyst.expressions._
 import org.apache.spark.sql.catalyst.expressions.aggregate.{First, Last}
 import org.apache.spark.sql.catalyst.plans.physical.{BroadcastMode, Partitioning}
 import org.apache.spark.sql.catalyst.rules.Rule
-import org.apache.spark.sql.execution.{FileSourceScanExec, SparkPlan}
+import org.apache.spark.sql.execution.{BinaryExecNode, FileSourceScanExec, SparkPlan}
 import org.apache.spark.sql.execution.adaptive.ShuffleQueryStageExec
 import org.apache.spark.sql.execution.datasources.HadoopFsRelation
 import org.apache.spark.sql.execution.exchange.{BroadcastExchangeLike, ShuffleExchangeLike}
@@ -36,33 +36,7 @@ import org.apache.spark.sql.rapids.shims.spark300.GpuFileSourceScanExec
 class Spark301Shims extends Spark300Shims {
 
   override def getExecs: Map[Class[_ <: SparkPlan], ExecRule[_ <: SparkPlan]] = {
-    Seq(
-      GpuOverrides.exec[FileSourceScanExec](
-        "Reading data from files, often from Hive tables",
-        (fsse, conf, p, r) => new SparkPlanMeta[FileSourceScanExec](fsse, conf, p, r) {
-          // partition filters and data filters are not run on the GPU
-          override val childExprs: Seq[ExprMeta[_]] = Seq.empty
-
-          override def tagPlanForGpu(): Unit = GpuFileSourceScanExec.tagSupport(this)
-
-          override def convertToGpu(): GpuExec = {
-            val newRelation = HadoopFsRelation(
-              wrapped.relation.location,
-              wrapped.relation.partitionSchema,
-              wrapped.relation.dataSchema,
-              wrapped.relation.bucketSpec,
-              GpuFileSourceScanExec.convertFileFormat(wrapped.relation.fileFormat),
-              wrapped.relation.options)(wrapped.relation.sparkSession)
-            GpuFileSourceScanExec(
-              newRelation,
-              wrapped.output,
-              wrapped.requiredSchema,
-              wrapped.partitionFilters,
-              wrapped.optionalBucketSet,
-              wrapped.dataFilters,
-              wrapped.tableIdentifier)
-          }
-        }),
+    super.getExecs ++ Seq(
       GpuOverrides.exec[SortMergeJoinExec](
         "Sort merge join, replacing with shuffled hash join",
         (join, conf, p, r) => new GpuSortMergeJoinMeta(join, conf, p, r)),
@@ -72,7 +46,7 @@ class Spark301Shims extends Spark300Shims {
       GpuOverrides.exec[ShuffledHashJoinExec](
         "Implementation of join using hashed shuffled data",
         (join, conf, p, r) => new GpuShuffledHashJoinMeta(join, conf, p, r))
-    ).map(r => (r.getClassFor.asSubclass(classOf[SparkPlan]), r)).toMap
+    ).map(r => (r.getClassFor.asSubclass(classOf[SparkPlan]), r))
   }
 
   def exprs301: Map[Class[_ <: Expression], ExprRule[_ <: Expression]] = Seq(
