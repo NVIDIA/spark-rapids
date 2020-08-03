@@ -37,5 +37,4 @@ case class GpuBroadcastExchangeExec(
   override def doCanonicalize(): SparkPlan = {
     GpuBroadcastExchangeExec(mode.canonicalized, child.canonicalized)
   }
-
 }

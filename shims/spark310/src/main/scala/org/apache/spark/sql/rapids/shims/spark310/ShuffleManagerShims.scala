@@ -17,9 +17,9 @@ package org.apache.spark.sql.rapids.shims.spark310
 
 import org.apache.spark.TaskContext
 import org.apache.spark.shuffle.{ShuffleHandle, ShuffleManager, ShuffleReader, ShuffleReadMetricsReporter}
-import org.apache.spark.sql.rapids.ShuffleManagerShims
+import org.apache.spark.sql.rapids.ShuffleManagerShimBase
 
-class ShuffleManager310Shims extends ShuffleManagerShims {
+class ShuffleManagerShim extends ShuffleManagerShimBase {
 
   override def getReader[K, C](
       shuffleManager: ShuffleManager,

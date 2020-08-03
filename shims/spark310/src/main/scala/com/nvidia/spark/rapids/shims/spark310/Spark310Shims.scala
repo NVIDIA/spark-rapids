@@ -31,7 +31,7 @@ import org.apache.spark.sql.execution._
 import org.apache.spark.sql.execution.datasources.HadoopFsRelation
 import org.apache.spark.sql.execution.joins.{BroadcastHashJoinExec, BroadcastNestedLoopJoinExec, HashJoin, SortMergeJoinExec}
 import org.apache.spark.sql.execution.joins.ShuffledHashJoinExec
-import org.apache.spark.sql.rapids.{GpuTimeSub, ShuffleManagerShims}
+import org.apache.spark.sql.rapids.{GpuTimeSub, ShuffleManagerShimBase}
 import org.apache.spark.sql.rapids.execution.{GpuBroadcastExchangeExecBase, GpuBroadcastNestedLoopJoinExecBase, GpuShuffleExchangeExecBase}
 import org.apache.spark.sql.rapids.shims.spark310._
 import org.apache.spark.sql.types._
@@ -173,7 +173,7 @@ class Spark310Shims extends Spark301Shims {
     classOf[RapidsShuffleManager].getCanonicalName
   }
 
-  override def getShuffleManagerShims(): ShuffleManagerShims = {
-    new ShuffleManager310Shims
+  override def getShuffleManagerShims(): ShuffleManagerShimBase = {
+    new ShuffleManagerShim
   }
 }

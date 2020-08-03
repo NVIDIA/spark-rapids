@@ -19,7 +19,7 @@ package org.apache.spark.sql.rapids
 import org.apache.spark.TaskContext
 import org.apache.spark.shuffle.{ShuffleHandle, ShuffleManager, ShuffleReader, ShuffleReadMetricsReporter}
 
-trait ShuffleManagerShims {
+trait ShuffleManagerShimBase {
 
   def getReader[K, C](
       shuffleManager: ShuffleManager,

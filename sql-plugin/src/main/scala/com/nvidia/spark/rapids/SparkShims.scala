@@ -25,7 +25,7 @@ import org.apache.spark.sql.catalyst.rules.Rule
 import org.apache.spark.sql.execution.SparkPlan
 import org.apache.spark.sql.execution.adaptive.ShuffleQueryStageExec
 import org.apache.spark.sql.execution.joins._
-import org.apache.spark.sql.rapids.ShuffleManagerShims
+import org.apache.spark.sql.rapids.ShuffleManagerShimBase
 import org.apache.spark.sql.rapids.execution.{GpuBroadcastExchangeExecBase, GpuBroadcastNestedLoopJoinExecBase, GpuShuffleExchangeExecBase}
 import org.apache.spark.sql.types._
 import org.apache.spark.storage.{BlockId, BlockManagerId}
@@ -80,8 +80,7 @@ trait SparkShims {
       canChangeNumPartitions: Boolean): GpuShuffleExchangeExecBase
 
   def getGpuShuffleExchangeExec(
-      queryStage: ShuffleQueryStageExec
-  ): GpuShuffleExchangeExecBase
+      queryStage: ShuffleQueryStageExec): GpuShuffleExchangeExecBase
 
   def getMapSizesByExecutorId(
     shuffleId: Int,
@@ -94,5 +93,5 @@ trait SparkShims {
       extensions: SparkSessionExtensions,
       rule: SparkSession => Rule[SparkPlan])
 
-  def getShuffleManagerShims(): ShuffleManagerShims
+  def getShuffleManagerShims(): ShuffleManagerShimBase
 }
