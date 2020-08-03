@@ -29,7 +29,17 @@ class StringFallbackSuite extends SparkQueryCompareTestSuite {
     "RegExpReplace",
     nullableStringsFromCsv, execsAllowedNonGpu = Seq("ProjectExec", "Alias",
       "RegExpReplace", "AttributeReference", "Literal")) {
-    frame => frame.selectExpr("regexp_replace(strings,null,'D')")
+    frame => {
+      ShimLoader.getSparkShims.getSparkShimVersion match {
+        case SparkShimVersion(major, minor, _) =>
+          // this test is not valid in Spark 3.1 and later because the expression is
+          // NullIntolerant and gets replaced with a null literal instead
+          val isValidTestForSparkVersion = major <= 3 && minor == 0
+          assume(isValidTestForSparkVersion)
+        case _ =>
+      }
+      frame.selectExpr("regexp_replace(strings,null,'D')")
+    }
   }
 
   testGpuFallback("String regexp_replace input empty cpu fall back",
