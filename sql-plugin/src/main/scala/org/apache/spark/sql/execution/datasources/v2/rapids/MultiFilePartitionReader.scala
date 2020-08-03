@@ -25,7 +25,6 @@ import org.apache.spark.rdd.InputFileBlockHolder
 import org.apache.spark.sql.connector.read.PartitionReader
 import org.apache.spark.sql.execution.QueryExecutionException
 import org.apache.spark.sql.execution.datasources.{PartitionedFile, SchemaColumnConvertNotSupportedException}
-import org.apache.spark.sql.execution.datasources.v2.PartitionedFileReader
 import org.apache.spark.sql.internal.SQLConf
 
 case class SmallPartitionedFileReader[T](

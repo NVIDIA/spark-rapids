@@ -115,15 +115,27 @@ case class GpuFileSourceScanExec(
        |""".stripMargin
   }
 
-  val useSmallFiles = true
-
+  /**
+   * If the small file optimization is enabled then we read all the files before sending down
+   * to the GPU. If it is disabled then we use the standard Spark logic of reading one file
+   * at a time.
+   */
   override def inputRDDs(): Seq[RDD[InternalRow]] = {
-    if (useSmallFiles) {
+    val rapidsConf = new RapidsConf(relation.sparkSession.sessionState.conf)
+    val formatSupportsSmallFiles = wrapped.relation.fileFormat match {
+      case _: ParquetFileFormat => true
+      case _ => false
+    }
+
+    if (rapidsConf.isParquetSmallFilesEnabled && formatSupportsSmallFiles) {
       inputRDD:: Nil
     } else {
       wrapped.inputRDD :: Nil
     }
   }
+
+  // Only used for small files
+  // Direct copy from Spark FileSourceScanExec
 
   private def toAttribute(colName: String): Option[Attribute] =
     output.find(_.name == colName)
@@ -140,7 +152,6 @@ case class GpuFileSourceScanExec(
 
   private lazy val driverMetrics: HashMap[String, Long] = HashMap.empty
 
-
   private def sendDriverMetrics(): Unit = {
     driverMetrics.foreach(e => metrics(e._1).add(e._2))
     val executionId = sparkContext.getLocalProperty(SQLExecution.EXECUTION_ID_KEY)
@@ -148,25 +159,8 @@ case class GpuFileSourceScanExec(
       metrics.filter(e => driverMetrics.contains(e._1)).values.toSeq)
   }
 
-  /** Helper for computing total number and size of files in selected partitions. */
-  private def setFilesNumAndSizeMetric(
-      partitions: Seq[PartitionDirectory],
-      static: Boolean): Unit = {
-    val filesNum = partitions.map(_.files.size.toLong).sum
-    val filesSize = partitions.map(_.files.map(_.getLen).sum).sum
-    if (!static || partitionFilters.filter(isDynamicPruningFilter).isEmpty) {
-      driverMetrics("numFiles") = filesNum
-      driverMetrics("filesSize") = filesSize
-    } else {
-      driverMetrics("staticFilesNum") = filesNum
-      driverMetrics("staticFilesSize") = filesSize
-    }
-  }
-
-
   private def isDynamicPruningFilter(e: Expression): Boolean =
     e.find(_.isInstanceOf[PlanExpression[_]]).isDefined
-
 
   @transient lazy val selectedPartitions: Array[PartitionDirectory] = {
     val optimizerMetadataTimeNs = relation.location.metadataOpsTimeNs.getOrElse(0L)
@@ -183,7 +177,6 @@ case class GpuFileSourceScanExec(
     driverMetrics("metadataTime") = timeTakenMs
     ret
   }.toArray
-
 
   // We can only determine the actual partitions at runtime when a dynamic partition filter is
   // present. This is because such a filter relies on information that is only available at run
@@ -217,29 +210,43 @@ case class GpuFileSourceScanExec(
     dataFilters.flatMap(DataSourceStrategy.translateFilter(_, supportNestedPredicatePushdown))
   }
 
+  /** Helper for computing total number and size of files in selected partitions. */
+  private def setFilesNumAndSizeMetric(
+      partitions: Seq[PartitionDirectory],
+      static: Boolean): Unit = {
+    val filesNum = partitions.map(_.files.size.toLong).sum
+    val filesSize = partitions.map(_.files.map(_.getLen).sum).sum
+    if (!static || partitionFilters.filter(isDynamicPruningFilter).isEmpty) {
+      driverMetrics("numFiles") = filesNum
+      driverMetrics("filesSize") = filesSize
+    } else {
+      driverMetrics("staticFilesNum") = filesNum
+      driverMetrics("staticFilesSize") = filesSize
+    }
+  }
 
+  // Only used for small files optimization
   lazy val inputRDD: RDD[InternalRow] = {
-    val readFile: (PartitionedFile) => Iterator[InternalRow] =
-      relation.fileFormat.buildReaderWithPartitionValues(
-        sparkSession = relation.sparkSession,
-        dataSchema = relation.dataSchema,
-        partitionSchema = relation.partitionSchema,
-        requiredSchema = requiredSchema,
-        filters = pushedDownFilters,
-        options = relation.options,
-        hadoopConf = relation.sparkSession.sessionState.newHadoopConfWithOptions(relation.options))
 
     val readRDD = if (bucketedScan) {
+      // TODO
+      // createBucketedReadRDD(relation.bucketSpec.get, readFile, dynamicallySelectedPartitions,
+      //        relation)
       throw new Exception("haven't implemented bucketting yet")
     } else {
-      createNonBucketedReadRDD(readFile, dynamicallySelectedPartitions, relation)
+      createNonBucketedReadRDD(dynamicallySelectedPartitions, relation)
     }
     sendDriverMetrics()
     readRDD
   }
 
+  /**
+   * Create an RDD for non-bucketed reads.
+   *
+   * @param selectedPartitions Hive-style partition that are part of the read.
+   * @param fsRelation [[HadoopFsRelation]] associated with the read.
+   */
   private def createNonBucketedReadRDD(
-      readFile: (PartitionedFile) => Iterator[InternalRow],
       selectedPartitions: Array[PartitionDirectory],
       fsRelation: HadoopFsRelation): RDD[InternalRow] = {
     val openCostInBytes = fsRelation.sparkSession.sessionState.conf.filesOpenCostInBytes
@@ -268,11 +275,10 @@ case class GpuFileSourceScanExec(
     val partitions =
       FilePartition.getFilePartitions(relation.sparkSession, splitFiles, maxSplitBytes)
 
-    val sparkSession = relation.sparkSession
-    val sqlConf = sparkSession.sessionState.conf
+    val sqlConf = relation.sparkSession.sessionState.conf
     val hadoopConf = relation.sparkSession.sessionState.newHadoopConfWithOptions(relation.options)
     val broadcastedHadoopConf =
-      sparkSession.sparkContext.broadcast(new SerializableConfiguration(hadoopConf))
+      relation.sparkSession.sparkContext.broadcast(new SerializableConfiguration(hadoopConf))
     val factory = GpuParquetMultiPartitionReaderFactory(
       sqlConf,
       broadcastedHadoopConf,
@@ -281,9 +287,10 @@ case class GpuFileSourceScanExec(
       relation.partitionSchema,
       pushedDownFilters.toArray,
       new RapidsConf(sqlConf),
-      PartitionReaderIterator.buildScanMetrics(sparkSession.sparkContext))
+      PartitionReaderIterator.buildScanMetrics(relation.sparkSession.sparkContext))
 
-    new DataSourceRDD(sparkSession.sparkContext, partitions, factory, supportsColumnar)
+    // TODO - is this ok to use over FileScanRDD??
+    new DataSourceRDD(relation.sparkSession.sparkContext, partitions, factory, supportsColumnar)
     // new FileScanRDD(fsRelation.sparkSession, readFile, partitions)
   }
 
@@ -294,7 +301,7 @@ case class GpuFileSourceScanExec(
   override protected def doExecuteColumnar(): RDD[ColumnarBatch] = {
     val numOutputRows = longMetric("numOutputRows")
     val scanTime = longMetric("scanTime")
-    inputRDD.asInstanceOf[RDD[ColumnarBatch]].mapPartitionsInternal { batches =>
+    inputRDDs.head.asInstanceOf[RDD[ColumnarBatch]].mapPartitionsInternal { batches =>
       new Iterator[ColumnarBatch] {
 
         override def hasNext: Boolean = {

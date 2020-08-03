@@ -466,7 +466,8 @@ class MultiFileParquetPartitionReader(
   private var isExhausted: Boolean = false
   private var maxDeviceMemory: Long  = 0
   private var batch: Option[ColumnarBatch] = None
-  private val blockIterator:  BufferedIterator[(Path, BlockMetaData)] = clippedBlocks.iterator.buffered
+  private val blockIterator: BufferedIterator[(Path, BlockMetaData)] =
+    clippedBlocks.iterator.buffered
   private val copyBufferSize = conf.getInt("parquet.read.allocation.size", 8 * 1024 * 1024)
 
   metrics = execMetrics
