@@ -30,5 +30,4 @@ trait ShuffleManagerShimBase {
       endPartition: Int,
       context: TaskContext,
       metrics: ShuffleReadMetricsReporter): ShuffleReader[K, C]
-
 }
