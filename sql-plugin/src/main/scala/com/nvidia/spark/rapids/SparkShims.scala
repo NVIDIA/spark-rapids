@@ -38,8 +38,14 @@ case object GpuBuildRight extends GpuBuildSide
 case object GpuBuildLeft extends GpuBuildSide
 
 sealed abstract class ShimVersion
-case class SparkShimVersion(major: Int, minor: Int, patch: Int) extends ShimVersion
-case class DatabricksShimVersion(major: Int, minor: Int, patch: Int) extends ShimVersion
+
+case class SparkShimVersion(major: Int, minor: Int, patch: Int) extends ShimVersion {
+  override def toString(): String = s"$major.$minor.$patch"
+}
+
+case class DatabricksShimVersion(major: Int, minor: Int, patch: Int) extends ShimVersion {
+  override def toString(): String = s"$major.$minor.$patch-databricks"
+}
 
 trait SparkShims {
   def getSparkShimVersion: ShimVersion
