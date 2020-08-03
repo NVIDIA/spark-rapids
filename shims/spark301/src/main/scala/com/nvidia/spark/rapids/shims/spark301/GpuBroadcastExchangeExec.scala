@@ -21,7 +21,7 @@ import org.apache.spark.sql.catalyst.plans.logical.Statistics
 import org.apache.spark.sql.catalyst.plans.physical.BroadcastMode
 import org.apache.spark.sql.execution.SparkPlan
 import org.apache.spark.sql.execution.exchange.BroadcastExchangeLike
-import org.apache.spark.sql.rapids.execution.GpuBroadcastExchangeExecBase
+import org.apache.spark.sql.rapids.execution.{GpuBroadcastExchangeExec, GpuBroadcastExchangeExecBase}
 
 case class GpuBroadcastExchangeExec(
     mode: BroadcastMode,
@@ -32,6 +32,10 @@ case class GpuBroadcastExchangeExec(
   override def runtimeStatistics: Statistics = {
     val dataSize = metrics("dataSize").value
     Statistics(dataSize)
+  }
+
+  override def doCanonicalize(): SparkPlan = {
+    GpuBroadcastExchangeExec(mode.canonicalized, child.canonicalized)
   }
 
 }

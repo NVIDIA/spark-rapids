@@ -252,10 +252,6 @@ abstract class GpuBroadcastExchangeExecBase(
 
   override def outputPartitioning: Partitioning = BroadcastPartitioning(mode)
 
-//  override def doCanonicalize(): SparkPlan = {
-//    GpuBroadcastExchangeExec(mode.canonicalized, child.canonicalized)
-//  }
-
   @transient
   private lazy val promise = Promise[broadcast.Broadcast[Any]]()
 

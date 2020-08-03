@@ -17,10 +17,14 @@ package com.nvidia.spark.rapids.shims.spark300
 
 import org.apache.spark.sql.catalyst.plans.physical.BroadcastMode
 import org.apache.spark.sql.execution.SparkPlan
-import org.apache.spark.sql.rapids.execution.GpuBroadcastExchangeExecBase
+import org.apache.spark.sql.rapids.execution.{GpuBroadcastExchangeExec, GpuBroadcastExchangeExecBase}
 
 case class GpuBroadcastExchangeExec(
     mode: BroadcastMode,
     child: SparkPlan) extends GpuBroadcastExchangeExecBase(mode, child) {
+
+  override def doCanonicalize(): SparkPlan = {
+    GpuBroadcastExchangeExec(mode.canonicalized, child.canonicalized)
+  }
 
 }

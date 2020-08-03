@@ -35,7 +35,6 @@ class TpchLikeSparkSuite extends FunSuite with BeforeAndAfterAll {
     var builder = SparkSession.builder
       .master("local[2]")
       .appName("TPCHLikeTest")
-      .config("spark.sql.adaptive.enabled", adaptiveQueryEnabled)
       .config("spark.sql.join.preferSortMergeJoin", false)
       .config("spark.sql.shuffle.partitions", 2)
       .config("spark.sql.queryExecutionListeners",
