@@ -498,6 +498,9 @@ class MultiFileParquetPartitionReader(
         var succeeded = false
         val allBlocks = filesWithBlocks.values.flatten.toSeq
         val size = calculateParquetOutputSize(allBlocks)
+        logWarning("checking footer length of each blocks")
+        allBlocks.foreach(b => calculateParquetOutputSize(Seq(b)))
+        logWarning("done checking footer length of each blocks")
         val hmb = HostMemoryBuffer.allocate(size)
         val out = new HostMemoryOutputStream(hmb)
         try {
@@ -507,16 +510,24 @@ class MultiFileParquetPartitionReader(
             val in = file.getFileSystem(conf).open(file)
             try {
               val retBlocks = copyBlocksData(in, out, blocks)
+              val size = calculateParquetOutputSize(retBlocks)
               allOutputBlocks ++= retBlocks
             } finally {
               in.close()
             }
           }
+          val size = calculateParquetOutputSize(allOutputBlocks)
           val footerPos = out.getPos
+          logWarning(s"actual write before write footer count is: ${out.getPos}")
           writeFooter(out, allOutputBlocks)
+          logWarning(s"actual write after write footer count is: ${out.getPos}")
           BytesUtils.writeIntLittleEndian(out, (out.getPos - footerPos).toInt)
+          logWarning(s"write little endian size: ${out.getPos - footerPos}")
+          logWarning(s"wrote little endidan : ${out.getPos}")
           out.write(ParquetPartitionReader.PARQUET_MAGIC)
+          logWarning(s"wrote magic : ${out.getPos}")
           succeeded = true
+          logWarning(s"Actual written out size: ${out.getPos}")
           (hmb, out.getPos)
         } finally {
           if (!succeeded) {
@@ -539,13 +550,17 @@ class MultiFileParquetPartitionReader(
     //       uncompressed size rather than the size in the file.
     size += currentChunkedBlocks.flatMap(_.getColumns.asScala.map(_.getTotalSize)).sum
 
+    logWarning("sizes are: " + currentChunkedBlocks.flatMap(_.getColumns.asScala.map(_.getTotalSize)))
+    logWarning(s"size: $size")
     // Calculate size of the footer metadata.
     // This uses the column metadata from the original file, but that should
     // always be at least as big as the updated metadata in the output.
     val out = new CountingOutputStream(new NullOutputStream)
     writeFooter(out, currentChunkedBlocks)
     // TODO - why am I off 72 bytes???
-    size + out.getByteCount + 74
+    val calcSize = size + out.getByteCount + (currentChunkedBlocks.size * 8)
+    logWarning(s"size is $size footer is ${out.getByteCount} calculated size is: $calcSize")
+    calcSize
   }
 
   private def writeFooter(out: OutputStream, blocks: Seq[BlockMetaData]): Unit = {
