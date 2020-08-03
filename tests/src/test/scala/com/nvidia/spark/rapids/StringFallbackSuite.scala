@@ -30,14 +30,14 @@ class StringFallbackSuite extends SparkQueryCompareTestSuite {
     nullableStringsFromCsv, execsAllowedNonGpu = Seq("ProjectExec", "Alias",
       "RegExpReplace", "AttributeReference", "Literal")) {
     frame => {
-      ShimLoader.getSparkShims.getSparkShimVersion match {
-        case SparkShimVersion(major, minor, _) =>
-          // this test is not valid in Spark 3.1 and later because the expression is
-          // NullIntolerant and gets replaced with a null literal instead
-          val isValidTestForSparkVersion = major <= 3 && minor == 0
-          assume(isValidTestForSparkVersion)
-        case _ =>
+      // this test is only valid in Spark 3.0.x because the expression is NullIntolerant
+      // since Spark 3.1.0 and gets replaced with a null literal instead
+      val isValidTestForSparkVersion = ShimLoader.getSparkShims.getSparkShimVersion match {
+        case SparkShimVersion(major, minor, _) => major == 3 && minor == 0
+        case DatabricksShimVersion(major, minor, _) => major == 7
+        case _ => true
       }
+      assume(isValidTestForSparkVersion)
       frame.selectExpr("regexp_replace(strings,null,'D')")
     }
   }
