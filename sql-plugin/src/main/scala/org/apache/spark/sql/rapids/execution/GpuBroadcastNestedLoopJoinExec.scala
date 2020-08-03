@@ -21,6 +21,7 @@ import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.GpuMetricNames.{NUM_OUTPUT_BATCHES, NUM_OUTPUT_ROWS, TOTAL_TIME}
 
 import org.apache.spark.TaskContext
+import org.apache.spark.broadcast.Broadcast
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.expressions.{Attribute, Expression}
@@ -191,6 +192,32 @@ abstract class GpuBroadcastNestedLoopJoinExecBase(
     }
   }
 
+  private[this] def makeBuiltTable(
+      broadcastRelation: Broadcast[SerializeConcatHostBuffersDeserializeBatch],
+      buildTime: SQLMetric,
+      buildDataSize: SQLMetric): Table = {
+    withResource(new NvtxWithMetrics("build join table", NvtxColor.GREEN, buildTime)) { _ =>
+      val ret = GpuColumnVector.from(broadcastRelation.value.batch)
+      // Don't warn for a leak, because we cannot control when we are done with this
+      (0 until ret.getNumberOfColumns).foreach(i => {
+        val column = ret.getColumn(i)
+        column.noWarnLeakExpected()
+        buildDataSize += column.getDeviceMemorySize
+      })
+      ret
+    }
+  }
+
+  private[this] def computeBuildRowCount(
+      broadcastRelation: Broadcast[SerializeConcatHostBuffersDeserializeBatch],
+      buildTime: SQLMetric,
+      buildDataSize: SQLMetric): Int = {
+    withResource(new NvtxWithMetrics("build join table", NvtxColor.GREEN, buildTime)) { _ =>
+      buildDataSize += 0
+      broadcastRelation.value.batch.numRows()
+    }
+  }
+
   override def doExecuteColumnar(): RDD[ColumnarBatch] = {
     val numOutputRows = longMetric(NUM_OUTPUT_ROWS)
     val numOutputBatches = longMetric(NUM_OUTPUT_BATCHES)
@@ -204,17 +231,19 @@ abstract class GpuBroadcastNestedLoopJoinExecBase(
     val buildTime = longMetric("buildTime")
     val buildDataSize = longMetric("buildDataSize")
 
-    val broadcastedRelation =
+    joinType match {
+      case _: InnerLike => // The only thing we support right now
+      case _ => throw new IllegalArgumentException(s"$joinType + $getGpuBuildSide is not" +
+          " supported and should be run on the CPU")
+    }
+
+    val broadcastRelation =
       broadcastExchange.executeColumnarBroadcast[SerializeConcatHostBuffersDeserializeBatch]()
 
     if (output.isEmpty) {
       assert(boundCondition.isEmpty)
 
-      lazy val buildCount: Long = {
-        withResource(new NvtxWithMetrics("build join table", NvtxColor.GREEN, buildTime)) { _ =>
-          broadcastedRelation.value.batch.numRows()
-        }
-      }
+      lazy val buildCount: Int = computeBuildRowCount(broadcastRelation, buildTime, buildDataSize)
 
       def getRowCountAndClose(cb: ColumnarBatch): Long = {
         val ret = cb.numRows()
@@ -229,28 +258,46 @@ abstract class GpuBroadcastNestedLoopJoinExecBase(
         targetSizeBytes,
         numOutputRows,
         numOutputBatches)
-    } else {
-      lazy val builtTable: Table = {
-        withResource(new NvtxWithMetrics("build join table", NvtxColor.GREEN, buildTime)) { _ =>
-          val ret = GpuColumnVector.from(broadcastedRelation.value.batch)
-          // Don't warn for a leak, because we cannot control when we are done with this
-          (0 until ret.getNumberOfColumns).foreach(i => {
-            val column = ret.getColumn(i)
-            column.noWarnLeakExpected()
-            buildDataSize += column.getDeviceMemorySize
-          })
-          ret
-        }
-      }
+    } else if (broadcast.output.isEmpty) {
+      assert(boundCondition.isEmpty)
+
+      lazy val buildCount: Int = computeBuildRowCount(broadcastRelation, buildTime, buildDataSize)
 
       streamed.executeColumnar().mapPartitions { streamedIter =>
-        joinType match {
-          case _: InnerLike => GpuBroadcastNestedLoopJoinExecBase.innerLikeJoin(streamedIter,
-            builtTable, getGpuBuildSide, boundCondition,
-            joinTime, joinOutputRows, numOutputRows, numOutputBatches, filterTime, totalTime)
-          case _ => throw new IllegalArgumentException(s"$joinType + $getGpuBuildSide is not" +
-            " supported and should be run on the CPU")
+        streamedIter.flatMap { cb =>
+          withResource(cb) { cb =>
+            withResource(GpuColumnVector.from(cb)) { table =>
+              GpuNoColumnCrossJoin.divideIntoBatches(
+                table,
+                buildCount,
+                targetSizeBytes,
+                numOutputRows,
+                numOutputBatches)
+            }
+          }
         }
+      }
+    } else if (streamed.output.isEmpty) {
+      assert(boundCondition.isEmpty)
+
+      // streamed is empty, not sure if this ever actually happens though
+      lazy val builtTable: Table = makeBuiltTable(broadcastRelation, buildTime, buildDataSize)
+      streamed.executeColumnar().flatMap { cb =>
+        withResource(cb) { cb =>
+          GpuNoColumnCrossJoin.divideIntoBatches(
+            builtTable,
+            cb.numRows(),
+            targetSizeBytes,
+            numOutputRows,
+            numOutputBatches)
+        }
+      }
+    } else {
+      lazy val builtTable: Table = makeBuiltTable(broadcastRelation, buildTime, buildDataSize)
+      streamed.executeColumnar().mapPartitions { streamedIter =>
+        GpuBroadcastNestedLoopJoinExecBase.innerLikeJoin(streamedIter,
+          builtTable, getGpuBuildSide, boundCondition,
+          joinTime, joinOutputRows, numOutputRows, numOutputBatches, filterTime, totalTime)
       }
     }
   }

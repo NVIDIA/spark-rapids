@@ -51,6 +51,11 @@ pipeline {
             agent { label 'docker-gpu' }
             steps {
                 script {
+                    //Check if a PR has been committed using git signoff
+                    if (!isSignedOff()) {
+                        error "Signed-off-by check FAILED"
+                    }
+
                     def CUDA_NAME=sh(returnStdout: true,
                         script: '. jenkins/version-def.sh>&2 && echo -n $CUDA_CLASSIFIER | sed "s/-/./g"')
                     def IMAGE_NAME="$ARTIFACTORY_NAME/sw-spark-docker/plugin:dev-ubuntu16-$CUDA_NAME"
@@ -72,3 +77,24 @@ pipeline {
         }
     } // end of stages
 } // end of pipeline
+
+boolean isSignedOff() {
+    def target_rev = sh(returnStdout: true,
+            script: "git rev-parse refs/remotes/origin/${ghprbTargetBranch}").trim()
+    def revs_arr = sh(returnStdout: true,
+            script: "git log ${target_rev}..${ghprbActualCommit} --pretty=format:%h").split()
+
+    def signed_off = false
+    for( String commit : revs_arr ) {
+        def signed_log = sh(returnStdout: true,
+                script: "git show ${commit} --shortstat | grep 'Signed-off-by' || true")
+        echo "commit: ${commit}, signed_log: ${signed_log}"
+        // Find `Signed-off-by` comment in one of the commits
+        if (signed_log?.trim()) {
+            signed_off = true
+            break;
+        }
+    }
+
+    return signed_off
+}

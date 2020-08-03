@@ -18,7 +18,7 @@ package org.apache.spark.sql.rapids
 
 import java.io.{IOException, ObjectInputStream, ObjectOutputStream}
 
-import ai.rapids.cudf.{JCudfSerialization, NvtxColor, NvtxRange}
+import ai.rapids.cudf.{JCudfSerialization, NvtxColor, NvtxRange, Table}
 import com.nvidia.spark.rapids.{Arm, GpuBindReferences, GpuBuildLeft, GpuColumnarBatchSerializer, GpuColumnVector, GpuExec, GpuExpression, GpuSemaphore}
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 
@@ -177,8 +177,9 @@ class GpuCartesianRDD(
   }
 }
 
-object GpuNoColumnCrossJoin {
-  def divideIntoBatches(rowCounts: RDD[Long],
+object GpuNoColumnCrossJoin extends Arm {
+  def divideIntoBatches(
+      rowCounts: RDD[Long],
       targetSizeBytes: Long,
       numOutputRows: SQLMetric,
       numOutputBatches: SQLMetric): RDD[ColumnarBatch] = {
@@ -203,6 +204,22 @@ object GpuNoColumnCrossJoin {
     }
 
     rowCounts.flatMap(divideIntoBatches)
+  }
+
+  def divideIntoBatches(
+      table: Table,
+      numTimes: Long,
+      targetSizeBytes: Long,
+      numOutputRows: SQLMetric,
+      numOutputBatches: SQLMetric): Iterator[ColumnarBatch] = {
+    // TODO if we hit a point where we need to we can divide the data up into batches
+    //  The current use case is likely to be small enough that we are OK without this.
+    assert(numTimes < Int.MaxValue)
+    withResource(table.repeat(numTimes.toInt)) { repeated =>
+      numOutputBatches += 1
+      numOutputRows += repeated.getRowCount
+      Iterator(GpuColumnVector.from(repeated))
+    }
   }
 }
 

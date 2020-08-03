@@ -13,7 +13,7 @@ any way. It uses a 10TB Dataset (scale factor 10,000), stored in parquet. The pr
 a two node DGX-2 cluster. Each node has 96 CPU cores, 1.5TB host memory, 16 V100 GPUs, and 512 GB
 GPU memory.
 
-To get started and try the plugin out use the [getting started guide](./docs/getting-started.md).
+To get started and try the plugin out use the [getting started guide](./docs/get-started/getting-started.md).
 
 ## Compatibility
 

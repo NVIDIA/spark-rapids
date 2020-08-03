@@ -78,9 +78,16 @@
         <module>integration_tests</module>
         <module>shims</module>
         <module>api_validation</module>
+        <module>udf-compiler</module>
     </modules>
 
     <profiles>
+        <profile>
+            <id>udf-compiler</id>
+            <modules>
+                <module>udf-compiler</module>
+            </modules>
+        </profile>
         <profile>
             <id>alpha-features</id>
             <properties>

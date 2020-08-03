@@ -1744,6 +1744,16 @@ object GpuOverrides {
   val execs: Map[Class[_ <: SparkPlan], ExecRule[_ <: SparkPlan]] =
     commonExecs ++ ShimLoader.getSparkShims.getExecs
 }
+/** Tag the initial plan when AQE is enabled */
+case class GpuQueryStagePrepOverrides() extends Rule[SparkPlan] with Logging {
+  override def apply(plan: SparkPlan) :SparkPlan = {
+    // Note that we disregard the GPU plan returned here and instead rely on side effects of
+    // tagging the underlying SparkPlan.
+    GpuOverrides().apply(plan)
+    // return the original plan which is now modified as a side-effect of invoking GpuOverrides
+    plan
+  }
+}
 
 case class GpuOverrides() extends Rule[SparkPlan] with Logging {
   override def apply(plan: SparkPlan) :SparkPlan = {

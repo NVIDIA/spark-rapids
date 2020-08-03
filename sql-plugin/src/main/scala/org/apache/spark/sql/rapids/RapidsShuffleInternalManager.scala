@@ -20,7 +20,7 @@ import ai.rapids.cudf.{NvtxColor, NvtxRange}
 import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.format.TableMeta
 import com.nvidia.spark.rapids.shuffle.{RapidsShuffleRequestHandler, RapidsShuffleServer, RapidsShuffleTransport}
-import scala.collection.mutable.ArrayBuffer
+import scala.collection.mutable.{ArrayBuffer, ListBuffer}
 
 import org.apache.spark.{ShuffleDependency, SparkConf, SparkEnv, TaskContext}
 import org.apache.spark.internal.{config, Logging}
@@ -29,6 +29,7 @@ import org.apache.spark.network.buffer.ManagedBuffer
 import org.apache.spark.scheduler.MapStatus
 import org.apache.spark.shuffle._
 import org.apache.spark.shuffle.sort.SortShuffleManager
+import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.vectorized.ColumnarBatch
 import org.apache.spark.storage._
 
@@ -198,12 +199,18 @@ abstract class RapidsShuffleInternalManagerBase(conf: SparkConf, isDriver: Boole
   private lazy val env = SparkEnv.get
   private lazy val blockManager = env.blockManager
   private lazy val shouldFallThroughOnEverything = {
-    val fallThroughDueToExternalShuffle = !GpuShuffleEnv.isRapidsShuffleEnabled
-    if (fallThroughDueToExternalShuffle) {
-      logWarning("Rapids Shuffle Plugin is falling back to SortShuffleManager because " +
-        "external shuffle is enabled")
+    val fallThroughReasons = new ListBuffer[String]()
+    if (!GpuShuffleEnv.isRapidsShuffleEnabled) {
+      fallThroughReasons += "external shuffle is enabled"
     }
-    fallThroughDueToExternalShuffle
+    if (conf.get(SQLConf.ADAPTIVE_EXECUTION_ENABLED.key).toBoolean) {
+      fallThroughReasons += "adaptive query execution is enabled"
+    }
+    if (fallThroughReasons.nonEmpty) {
+      logWarning(s"Rapids Shuffle Plugin is falling back to SortShuffleManager " +
+          s"because: ${fallThroughReasons.mkString(", ")}")
+    }
+    fallThroughReasons.nonEmpty
   }
 
   private lazy val localBlockManagerId = blockManager.blockManagerId

@@ -111,9 +111,9 @@ class UCX(executorId: Int, usingWakeupFeature: Boolean = true) extends AutoClose
   val registeredMemory = new ArrayBuffer[UcpMemory]
 
   /**
-    * Initializes the UCX context and local worker and starts up the worker progress thread.
-    * UCX worker/endpoint relationship.
-    */
+   * Initializes the UCX context and local worker and starts up the worker progress thread.
+   * UCX worker/endpoint relationship.
+   */
   def init(): Unit = {
     synchronized {
       if (initialized) {
@@ -183,12 +183,12 @@ class UCX(executorId: Int, usingWakeupFeature: Boolean = true) extends AutoClose
   }
 
   /**
-    * Starts a TCP server to listen for external clients, returning with
-    * what port it used.
-    *
-    * @param mgmtHost String the hostname to bind to
-    * @return port bound
-    */
+   * Starts a TCP server to listen for external clients, returning with
+   * what port it used.
+   *
+   * @param mgmtHost String the hostname to bind to
+   * @return port bound
+   */
   def startManagementPort(mgmtHost: String): Int = {
     var portBindAttempts = 100
     var portBound = false
@@ -326,14 +326,15 @@ class UCX(executorId: Int, usingWakeupFeature: Boolean = true) extends AutoClose
   private def ucxWorkerAddress: ByteBuffer = worker.getAddress
 
   /**
-    * Establish a new [[UcpEndpoint]] given a [[WorkerAddress]]. It also
-    * caches them s.t. at [[close]] time we can release resources.
-    * @param endpointId presently an executorId, it is used to distinguish between endpoints
-    *                   when routing messages outbound
-    * @param workerAddress the worker address for the remote endpoint (ucx opaque object)
-    * @return returns a [[UcpEndpoint]] that can later be used to send on (from the
+   * Establish a new [[UcpEndpoint]] given a [[WorkerAddress]]. It also
+   * caches them s.t. at [[close]] time we can release resources.
+   *
+   * @param endpointId    presently an executorId, it is used to distinguish between endpoints
+   *                      when routing messages outbound
+   * @param workerAddress the worker address for the remote endpoint (ucx opaque object)
+   * @return returns a [[UcpEndpoint]] that can later be used to send on (from the
    *         progress thread)
-    */
+   */
   private[ucx] def setupEndpoint(endpointId: Long, workerAddress: WorkerAddress): UcpEndpoint = {
     logDebug(s"Starting/reusing an endpoint to $workerAddress with id $endpointId")
     // create an UCX endpoint using workerAddress
@@ -347,12 +348,12 @@ class UCX(executorId: Int, usingWakeupFeature: Boolean = true) extends AutoClose
   }
 
   /**
-    * Connect to a remote UCX management port.
-    *
-    * @param peerMgmtHost management TCP host
-    * @param peerMgmtPort management TCP port
-    * @return Connection object representing this connection
-    */
+   * Connect to a remote UCX management port.
+   *
+   * @param peerMgmtHost management TCP host
+   * @param peerMgmtPort management TCP port
+   * @return Connection object representing this connection
+   */
   def getConnection(peerExecutorId: Int,
       peerMgmtHost: String,
       peerMgmtPort: Int): ClientConnection = {
@@ -414,11 +415,11 @@ class UCX(executorId: Int, usingWakeupFeature: Boolean = true) extends AutoClose
     executorIdToPeerTag.computeIfAbsent(peerExecutorId, _ => peerTag.incrementAndGet())
 
   /**
-    * Handle an incoming connection on the TCP management port
-    * This will fetch the [[WorkerAddress]] from the peer, and establish a UcpEndpoint
-    *
-    * @param socket an accepted socket to a remote client
-    */
+   * Handle an incoming connection on the TCP management port
+   * This will fetch the [[WorkerAddress]] from the peer, and establish a UcpEndpoint
+   *
+   * @param socket an accepted socket to a remote client
+   */
   private[ucx] def handleSocket(socket: Socket): Unit = {
     val connectionRange =
       new NvtxRange(s"UCX Handle Connection from ${socket.getInetAddress}", NvtxColor.RED)
