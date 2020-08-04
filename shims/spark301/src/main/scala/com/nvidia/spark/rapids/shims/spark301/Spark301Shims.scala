@@ -86,8 +86,7 @@ class Spark301Shims extends Spark300Shims {
   }
 
   override def getGpuShuffleExchangeExec(
-      queryStage: ShuffleQueryStageExec
-  ): GpuShuffleExchangeExecBase = {
+      queryStage: ShuffleQueryStageExec): GpuShuffleExchangeExecBase = {
     queryStage.shuffle.asInstanceOf[GpuShuffleExchangeExecBase]
   }
 

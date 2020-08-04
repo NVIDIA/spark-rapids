@@ -36,7 +36,6 @@ class GpuTransitionOverrides extends Rule[SparkPlan] {
   var conf: RapidsConf = null
 
   def optimizeGpuPlanTransitions(plan: SparkPlan): SparkPlan = {
-
     plan match {
       case HostColumnarToGpu(r2c: RowToColumnarExec, goal) =>
         GpuRowToColumnarExec(optimizeGpuPlanTransitions(r2c.child), goal)
@@ -48,7 +47,6 @@ class GpuTransitionOverrides extends Rule[SparkPlan] {
   }
 
   def optimizeAdaptiveTransitions(plan: SparkPlan): SparkPlan = plan match {
-
     case HostColumnarToGpu(r2c: RowToColumnarExec, goal) =>
       GpuRowToColumnarExec(optimizeAdaptiveTransitions(r2c.child), goal)
 
