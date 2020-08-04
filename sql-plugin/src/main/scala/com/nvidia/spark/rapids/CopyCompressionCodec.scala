@@ -22,7 +22,7 @@ import com.nvidia.spark.rapids.format.{CodecType, TableMeta}
 /** A table compression codec used only for testing that copies the data. */
 class CopyCompressionCodec extends TableCompressionCodec with Arm {
   override val name: String = "COPY"
-  override val codecType: Byte = CodecType.COPY
+  override val codecId: Byte = CodecType.COPY
 
   override def compress(
       tableId: Int,
@@ -33,7 +33,7 @@ class CopyCompressionCodec extends TableCompressionCodec with Arm {
         tableId,
         contigTable.getTable,
         buffer,
-        codecType,
+        codecId,
         outputBuffer.getLength)
       CompressedTable(buffer.getLength, meta, outputBuffer)
     }

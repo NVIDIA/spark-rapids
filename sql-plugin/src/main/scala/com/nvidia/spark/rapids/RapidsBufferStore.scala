@@ -283,9 +283,9 @@ abstract class RapidsBufferStore(
         }
 
         if (meta.bufferMeta.codecBufferDescrsLength > 0) {
-          val compressedBuffer = deviceBuffer
-          deviceBuffer = uncompressBuffer(deviceBuffer, meta.bufferMeta)
-          compressedBuffer.close()
+          withResource(deviceBuffer) { compressedBuffer =>
+            deviceBuffer = uncompressBuffer(compressedBuffer, meta.bufferMeta)
+          }
         }
 
         MetaUtils.getBatchFromMeta(deviceBuffer, meta)
@@ -370,7 +370,7 @@ abstract class RapidsBufferStore(
             val duration = System.nanoTime() - startTime
             val compressedSize = cbd.compressedSize()
             val uncompressedSize = cbd.uncompressedSize
-            logWarning(s"Decompressed buffer with ${codec.name} in ${duration / 1000} us," +
+            logDebug(s"Decompressed buffer with ${codec.name} in ${duration / 1000} us," +
                 s"rate=${compressedSize.toFloat / duration} GB/s " +
                 s"from $compressedSize to $uncompressedSize")
           }

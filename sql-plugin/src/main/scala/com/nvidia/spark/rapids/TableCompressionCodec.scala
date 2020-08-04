@@ -44,7 +44,7 @@ trait TableCompressionCodec {
   val name: String
 
   /** The ID used for this codec.  See the definitions in `CodecType`. */
-  val codecType: Byte
+  val codecId: Byte
 
   /**
    * Compress a contiguous table.
@@ -54,7 +54,7 @@ trait TableCompressionCodec {
    *       memory will require making a copy of the data to a buffer of the appropriate size.
    * @param tableId ID to use for this table
    * @param contigTable contiguous table to compress
-   * @return compressed buffer
+   * @return compressed table
    */
   def compress(tableId: Int, contigTable: ContiguousTable): CompressedTable
 
@@ -87,7 +87,7 @@ trait TableCompressionCodec {
   def createBatchCompressor(maxBatchMemorySize: Long): BatchedTableCompressor
 
   /**
-   * Create a batched compressor instance
+   * Create a batched decompressor instance
    * @param maxBatchMemorySize The upper limit in bytes of temporary and output memory usage at
    *                           which a batch should be decompressed. A single buffer that requires
    *                           temporary and output memory above this limit is allowed but will
@@ -109,10 +109,10 @@ object TableCompressionCodec {
   }
 
   /** Get a compression codec by ID, using a cache. */
-  def getCodec(codecType: Byte): TableCompressionCodec = {
-    codecType match {
+  def getCodec(codecId: Byte): TableCompressionCodec = {
+    codecId match {
       case CodecType.COPY => new CopyCompressionCodec
-      case _ => throw new IllegalArgumentException(s"Unknown codec ID")
+      case _ => throw new IllegalArgumentException(s"Unknown codec ID: $codecId")
     }
   }
 }
@@ -125,9 +125,16 @@ object TableCompressionCodec {
  *                           be compressed individually.
  */
 abstract class BatchedTableCompressor(maxBatchMemorySize: Long) extends AutoCloseable with Arm {
+  // The tables that need to be compressed in the next batch
   private[this] val tables = new ArrayBuffer[ContiguousTable]
+
+  // The temporary compression buffers needed to compress each table in the next batch
   private[this] val tempBuffers = new ArrayBuffer[DeviceMemoryBuffer]
+
+  // The estimate-sized output buffers to hold the compressed output in the next batch
   private[this] val oversizedOutBuffers = new ArrayBuffer[DeviceMemoryBuffer]
+
+  // The compressed outputs of all tables across all batches
   private[this] val results = new ArrayBuffer[CompressedTable]
 
   // temporary and output memory being used as part of the current batch
@@ -138,28 +145,34 @@ abstract class BatchedTableCompressor(maxBatchMemorySize: Long) extends AutoClos
    * batch compressor which is responsible for closing the table.
    * @param contigTable the contiguous table to be compressed
    */
-  def addTable(contigTable: ContiguousTable): Unit = {
+  def addTableToCompress(contigTable: ContiguousTable): Unit = {
     closeOnExcept(contigTable) { contigTable =>
       val tempSize = getTempSpaceNeeded(contigTable.getBuffer)
-      var memNeededThisBuffer = tempSize
-      if (batchMemUsed + memNeededThisBuffer > maxBatchMemorySize) {
+      var memNeededToCompressThisBuffer = tempSize
+      if (batchMemUsed + memNeededToCompressThisBuffer > maxBatchMemorySize) {
         compressBatch()
       }
       val tempBuffer = if (tempSize > 0) {
-        DeviceMemoryBuffer.allocate(memNeededThisBuffer)
+        DeviceMemoryBuffer.allocate(memNeededToCompressThisBuffer)
       } else {
         null
       }
-      closeOnExcept(tempBuffer) { tempBuffer =>
+      try {
         val outputSize = getOutputSpaceNeeded(contigTable.getBuffer, tempBuffer)
-        memNeededThisBuffer += outputSize
-        if (batchMemUsed + memNeededThisBuffer > maxBatchMemorySize) {
+        memNeededToCompressThisBuffer += outputSize
+        if (batchMemUsed + memNeededToCompressThisBuffer > maxBatchMemorySize) {
           compressBatch()
         }
         oversizedOutBuffers += DeviceMemoryBuffer.allocate(outputSize)
         tempBuffers += tempBuffer
         tables += contigTable
-        batchMemUsed += memNeededThisBuffer
+        batchMemUsed += memNeededToCompressThisBuffer
+      } catch {
+        case t: Throwable =>
+          if (tempBuffer != null) {
+            tempBuffer.safeClose()
+          }
+          throw t
       }
     }
   }
@@ -173,7 +186,7 @@ abstract class BatchedTableCompressor(maxBatchMemorySize: Long) extends AutoClos
     var i = 0
     try {
       contigTable.foreach { ct =>
-        addTable(ct)
+        addTableToCompress(ct)
         i += 1
       }
     } catch {
@@ -206,36 +219,34 @@ abstract class BatchedTableCompressor(maxBatchMemorySize: Long) extends AutoClos
     results.safeClose()
   }
 
-  private def compressBatch(): Unit = {
-    if (tables.nonEmpty) {
-      require(oversizedOutBuffers.length == tables.length)
-      require(tempBuffers.length == tables.length)
-      val metas = compress(oversizedOutBuffers.toArray, tables.toArray, tempBuffers.toArray)
-      require(metas.length == tables.length)
+  private def compressBatch(): Unit = if (tables.nonEmpty) {
+    require(oversizedOutBuffers.length == tables.length)
+    require(tempBuffers.length == tables.length)
+    val metas = compress(oversizedOutBuffers.toArray, tables.toArray, tempBuffers.toArray)
+    require(metas.length == tables.length)
 
-      // copy the output data into correctly-sized buffers
-      metas.zipWithIndex.foreach { case (meta, i) =>
-        val oversizedBuffer = oversizedOutBuffers(i)
-        val compressedSize = meta.bufferMeta.size
-        val buffer = if (oversizedBuffer.getLength > compressedSize) {
-          oversizedBuffer.sliceWithCopy(0, compressedSize)
-        } else {
-          // use this buffer as-is, don't close it at the end of this method
-          oversizedOutBuffers(i) = null
-          oversizedBuffer
-        }
-        results += CompressedTable(compressedSize, meta, buffer)
+    // copy the output data into correctly-sized buffers
+    metas.zipWithIndex.foreach { case (meta, i) =>
+      val oversizedBuffer = oversizedOutBuffers(i)
+      val compressedSize = meta.bufferMeta.size
+      val buffer = if (oversizedBuffer.getLength > compressedSize) {
+        oversizedBuffer.sliceWithCopy(0, compressedSize)
+      } else {
+        // use this buffer as-is, don't close it at the end of this method
+        oversizedOutBuffers(i) = null
+        oversizedBuffer
       }
-
-      // free all the inputs to this batch
-      tables.safeClose()
-      tables.clear()
-      tempBuffers.safeClose()
-      tempBuffers.clear()
-      oversizedOutBuffers.safeClose()
-      oversizedOutBuffers.clear()
-      batchMemUsed = 0
+      results += CompressedTable(compressedSize, meta, buffer)
     }
+
+    // free all the inputs to this batch
+    tables.safeClose()
+    tables.clear()
+    tempBuffers.safeClose()
+    tempBuffers.clear()
+    oversizedOutBuffers.safeClose()
+    oversizedOutBuffers.clear()
+    batchMemUsed = 0
   }
 
   /** Return the amount of temporary space needed to compress this buffer */
@@ -269,9 +280,16 @@ abstract class BatchedTableCompressor(maxBatchMemorySize: Long) extends AutoClos
  *                           be compressed individually.
  */
 abstract class BatchedBufferDecompressor(maxBatchMemorySize: Long) extends AutoCloseable with Arm {
+  // The buffers of compressed data that will be decompressed in the next batch
   private[this] val inputBuffers = new ArrayBuffer[DeviceMemoryBuffer]
+
+  // The temporary buffers needed to be decompressed the next batch
   private[this] val tempBuffers = new ArrayBuffer[DeviceMemoryBuffer]
+
+  // The output buffers that will contain the decompressed data in the next batch
   private[this] val outputBuffers = new ArrayBuffer[DeviceMemoryBuffer]
+
+  // The decompressed data results for all input buffers across all batches
   private[this] val results = new ArrayBuffer[DeviceMemoryBuffer]
 
   // temporary and output memory being used as part of the current batch
@@ -280,7 +298,7 @@ abstract class BatchedBufferDecompressor(maxBatchMemorySize: Long) extends AutoC
   /** The codec ID corresponding to this decompressor */
   val codecId: Byte
 
-  def addBufferToDecode(buffer: DeviceMemoryBuffer, meta: BufferMeta): Unit = {
+  def addBufferToDecompress(buffer: DeviceMemoryBuffer, meta: BufferMeta): Unit = {
     closeOnExcept(buffer) { buffer =>
       // Only supports a single codec per buffer for now.
       require(meta.codecBufferDescrsLength == 1)
@@ -313,7 +331,7 @@ abstract class BatchedBufferDecompressor(maxBatchMemorySize: Long) extends AutoC
   /**
    * This must be called after all buffers to be decompressed have been added to retrieve the
    * decompression results.
-   * @return compressed tables
+   * @return decompressed tables
    */
   def finish(): Array[DeviceMemoryBuffer] = {
     // decompress the last batch
@@ -347,8 +365,8 @@ abstract class BatchedBufferDecompressor(maxBatchMemorySize: Long) extends AutoC
   }
 
   /**
-   * Compute the amount of temporary buffer space required to decode a buffer
-   * @param inputBuffer buffer to decode
+   * Compute the amount of temporary buffer space required to decompress a buffer
+   * @param inputBuffer buffer to decompress
    * @return required temporary buffer space in bytes
    */
   protected def decompressTempSpaceNeeded(inputBuffer: DeviceMemoryBuffer): Long

@@ -591,7 +591,7 @@ object RapidsConf {
     .createWithDefault(50 * 1024)
 
   val SHUFFLE_COMPRESSION_ENABLED = conf("spark.rapids.shuffle.compression.enabled")
-      .doc("Whether to enable compression of shuffle buffers")
+      .doc("Whether to enable compression of shuffle buffers when using RAPIDS shuffle")
       .internal()
       .booleanConf
       .createWithDefault(false)

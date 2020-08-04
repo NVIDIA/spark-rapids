@@ -478,7 +478,7 @@ class GpuCoalesceIterator(iter: Iterator[ColumnarBatch],
           val bufferMeta = cv.getTableMeta.bufferMeta
           // don't currently support switching codecs when partitioning
           val buffer = cv.getBuffer.slice(0, cv.getBuffer.getLength)
-          decompressor.addBufferToDecode(buffer, bufferMeta)
+          decompressor.addBufferToDecompress(buffer, bufferMeta)
         }
         closeOnExcept(decompressor.finish()) { outputBuffers =>
           outputBuffers.zipWithIndex.foreach { case (outputBuffer, outputIndex) =>
