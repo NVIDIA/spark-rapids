@@ -16,14 +16,16 @@
 
 package com.nvidia.spark.rapids.shims.spark300
 
-import com.nvidia.spark.rapids.SparkShims
+import com.nvidia.spark.rapids.{SparkShims, SparkShimVersion}
+
+object SparkShimServiceProvider {
+  val VERSION = SparkShimVersion(3, 0, 0)
+}
 
 class SparkShimServiceProvider extends com.nvidia.spark.rapids.SparkShimServiceProvider {
 
-  val VERSIONNAME = "3.0.0"
-
   def matchesVersion(version: String): Boolean = {
-    version == VERSIONNAME
+    version == SparkShimServiceProvider.VERSION.toString()
   }
 
   def buildShim: SparkShims = {

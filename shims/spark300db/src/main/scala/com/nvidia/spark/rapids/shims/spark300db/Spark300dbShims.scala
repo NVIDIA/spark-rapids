@@ -37,6 +37,8 @@ import org.apache.spark.storage.{BlockId, BlockManagerId}
 
 class Spark300dbShims extends Spark300Shims {
 
+  override def getSparkShimVersion: ShimVersion = SparkShimVersionProvider.VERSION
+
   override def getGpuBroadcastNestedLoopJoinShim(
       left: SparkPlan,
       right: SparkPlan,
