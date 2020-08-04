@@ -16,13 +16,16 @@
 
 package org.apache.spark.sql.rapids.execution.python
 
+import ai.rapids.cudf.Cuda
 import com.nvidia.spark.rapids._
+import com.nvidia.spark.rapids.python.PythonConfEntries._
 import com.nvidia.spark.rapids.python.PythonWorkerSemaphore
 
 import scala.collection.JavaConverters._
 
 import org.apache.spark.{SparkEnv, TaskContext}
 import org.apache.spark.api.python.ChainedPythonFunctions
+import org.apache.spark.internal.config.{CPUS_PER_TASK, EXECUTOR_CORES}
 import org.apache.spark.internal.config.Python._
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.InternalRow
@@ -61,14 +64,65 @@ case class GpuArrowEvalPythonExec(
     evalType: Int)
   extends EvalPythonExec(udfs, resultAttrs, child) with GpuExec {
 
+  override def supportsColumnar = false
+  override def doExecuteColumnar(): RDD[ColumnarBatch] = {
+    // TBD
+    super.doExecuteColumnar()
+  }
+
+  private lazy val rapidsConf = new RapidsConf(SparkEnv.get.conf)
+  private lazy val gpuId = GpuDeviceManager.getDeviceId()
+    .getOrElse(throw new IllegalStateException("No gpu id!"))
+    .toString
+  private lazy val isPythonPooledMemEnabled = rapidsConf.get(PYTHON_POOLED_MEM)
+    .getOrElse(rapidsConf.isPooledMemEnabled)
+    .toString
+  private lazy val isPythonUvmEnabled = rapidsConf.get(PYTHON_UVM_ENABLED)
+    .getOrElse(rapidsConf.isUvmEnabled)
+    .toString
+  private lazy val initAllocPerWorker = {
+    val info = Cuda.memGetInfo()
+    // Total size that python workers can use.
+    // If users set it, use it. Otherwise calculate from the conf for JVM side.
+    // FIXME Shall we reserve a little portion (here 0.02) for floating-point error ?
+    val initFactionTotal = rapidsConf.get(PYTHON_RMM_ALLOC_FRACTION)
+      .getOrElse(1 - 0.02 - rapidsConf.rmmAllocFraction)
+    val initAllocTotal = (initFactionTotal * info.total).toLong
+    if (initAllocTotal > info.free) {
+      logWarning(s"Initial RMM allocation(${initAllocTotal / 1024 / 1024.0} MB) for " +
+        s"all the Python workers is larger than free memory(${info.free / 1024 / 1024.0} MB)")
+    } else {
+      logDebug(s"Configure ${initAllocTotal / 1024 / 1024.0}MB GPU memory for " +
+        s"all the Python workers.")
+    }
+    // Calculate the pool size for each Python worker.
+    val concurrentPythonWorkers = rapidsConf.get(CONCURRENT_PYTHON_WORKERS)
+    if (concurrentPythonWorkers > 0) {
+      initAllocTotal / concurrentPythonWorkers
+    } else {
+      // When semaphore is disabled, which should replace the `concurrentPythonWorkers` in the
+      // pool size computation, the number of running tasks or the number of cpu/task slots in
+      // an executor ?
+      // Here choose the later one for simplicity and it can cover most cases.
+      // Even when the former is smaller than the later one, the choice would still work.
+      // FIXME How about AQE or how to get the number of running tasks in an executor?
+      val sparkConf = SparkEnv.get.conf
+      initAllocTotal / (sparkConf.get(EXECUTOR_CORES) / sparkConf.get(CPUS_PER_TASK))
+    }
+  }.toString
+
   private def injectGpuInfo(funcs: Seq[ChainedPythonFunctions]): Unit = {
     // Insert GPU related env(s) into `envVars` for all the PythonFunction(s).
     // Yes `PythonRunner` will only use the first one, but just make sure it will
     // take effect no matter the order changes or not.
     funcs.foreach(_.funcs.foreach { pyF =>
-      val gpuId = GpuDeviceManager.getDeviceId()
-        .getOrElse(throw new IllegalStateException("No device id!"))
-      pyF.envVars.put("CUDA_VISIBLE_DEVICES", gpuId.toString)
+      pyF.envVars.put("CUDA_VISIBLE_DEVICES", gpuId)
+      pyF.envVars.put("RAPIDS_SQL_ENABLED", rapidsConf.isSqlEnabled.toString)
+      pyF.envVars.put("RAPIDS_UVM_ENABLED", isPythonUvmEnabled)
+      pyF.envVars.put("RAPIDS_POOLED_MEM_ENABLED", isPythonPooledMemEnabled)
+      pyF.envVars.put("RAPIDS_POOLED_MEM_SIZE", initAllocPerWorker)
+      // now max size is the same with initial size, may use a different one later.
+      pyF.envVars.put("RAPIDS_POOLED_MEM_MAX_SIZE", initAllocPerWorker)
     })
 
     // Check and overwrite the related conf(s):
@@ -84,12 +138,6 @@ case class GpuArrowEvalPythonExec(
     sparkConf.set(PYTHON_WORKER_MODULE, "rapids.worker")
     logWarning("Disable python daemon to enable customized 'rapids.worker'.")
     sparkConf.set(PYTHON_USE_DAEMON, false)
-  }
-
-  override def supportsColumnar = false
-  override def doExecuteColumnar(): RDD[ColumnarBatch] = {
-    // TBD
-    super.doExecuteColumnar()
   }
 
   // 'evaluate' is from EvalPythonExec.
