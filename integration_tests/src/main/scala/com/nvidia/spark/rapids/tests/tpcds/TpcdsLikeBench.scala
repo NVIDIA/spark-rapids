@@ -76,7 +76,7 @@ object TpcdsLikeBench extends Logging {
     val spark = SparkSession.builder.appName("TPC-DS Like Bench").getOrCreate()
     TpcdsLikeSpark.setupAllParquet(spark, input)
 
-    println(s"*** RUNNING TPCx-BB QUERY $query")
+    println(s"*** RUNNING TPC-DS QUERY $query")
     runBench(spark, query)
   }
 }

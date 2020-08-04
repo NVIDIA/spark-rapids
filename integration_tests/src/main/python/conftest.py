@@ -207,6 +207,8 @@ class TpchRunner:
       "parquet": jvm.com.nvidia.spark.rapids.tests.tpch.TpchLikeSpark.setupAllParquet,
       "orc": jvm.com.nvidia.spark.rapids.tests.tpch.TpchLikeSpark.setupAllOrc
     }
+    if not self.tpch_format in formats:
+        raise RuntimeError("{} is not a supported tpch input type".format(self.tpch_format))
     formats.get(self.tpch_format)(jvm_session, self.tpch_path)
 
   def do_test_query(self, query):
@@ -267,6 +269,8 @@ class TpcxbbRunner:
       "parquet": jvm.com.nvidia.spark.rapids.tests.tpcxbb.TpcxbbLikeSpark.setupAllParquet,
       "orc": jvm.com.nvidia.spark.rapids.tests.tpcxbb.TpcxbbLikeSpark.setupAllOrc
     }
+    if not self.tpcxbb_format in formats:
+        raise RuntimeError("{} is not a supported tpcxbb input type".format(self.tpcxbb_format))
     formats.get(self.tpcxbb_format)(jvm_session,self.tpcxbb_path)
 
   def do_test_query(self, query):
@@ -341,6 +345,8 @@ class TpcdsRunner:
       "parquet": jvm.com.nvidia.spark.rapids.tests.tpcds.TpcdsLikeSpark.setupAllParquet,
       "orc": jvm.com.nvidia.spark.rapids.tests.tpcds.TpcdsLikeSpark.setupAllOrc
     }
+    if not self.tpcds_format in formats:
+        raise RuntimeError("{} is not a supported tpcds input type".format(self.tpcds_format))
     formats.get(self.tpcds_format)(jvm_session,self.tpcds_path)
 
   def do_test_query(self, query):

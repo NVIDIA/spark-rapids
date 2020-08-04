@@ -17,7 +17,7 @@ import pytest
 from asserts import assert_gpu_and_cpu_are_equal_collect
 from marks import incompat, ignore_order, allow_non_gpu, approximate_float
 
-quires = ['q1', 'q2', 'q3', 'q4', 'q5', 'q6', 'q7', 'q8', 'q9',
+queries = ['q1', 'q2', 'q3', 'q4', 'q5', 'q6', 'q7', 'q8', 'q9',
         'q10', 'q11', 'q12', 'q13', 'q14a', 'q14b', 'q15', 'q16', 'q17', 'q18', 'q19',
         'q20', 'q21', 'q22', 'q23a', 'q23b', 'q24a', 'q24b', 'q25', 'q26', 'q27', 'q28', 'q29',
         'q30', 'q31', 'q32', 'q33', 'q34', 'q35', 'q36', 'q37', 'q38', 'q39a', 'q39b',
@@ -33,7 +33,7 @@ quires = ['q1', 'q2', 'q3', 'q4', 'q5', 'q6', 'q7', 'q8', 'q9',
 @ignore_order
 @approximate_float
 @allow_non_gpu(any=True)
-@pytest.mark.parametrize('query', quires)
+@pytest.mark.parametrize('query', queries)
 def test_tpcds(tpcds, query):
   assert_gpu_and_cpu_are_equal_collect(
           lambda spark : tpcds.do_test_query(query))
