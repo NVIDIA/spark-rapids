@@ -207,6 +207,8 @@ class TpchRunner:
       "parquet": jvm.com.nvidia.spark.rapids.tests.tpch.TpchLikeSpark.setupAllParquet,
       "orc": jvm.com.nvidia.spark.rapids.tests.tpch.TpchLikeSpark.setupAllOrc
     }
+    if not self.tpch_format in formats:
+        raise RuntimeError("{} is not a supported tpch input type".format(self.tpch_format))
     formats.get(self.tpch_format)(jvm_session, self.tpch_path)
 
   def do_test_query(self, query):
@@ -267,6 +269,8 @@ class TpcxbbRunner:
       "parquet": jvm.com.nvidia.spark.rapids.tests.tpcxbb.TpcxbbLikeSpark.setupAllParquet,
       "orc": jvm.com.nvidia.spark.rapids.tests.tpcxbb.TpcxbbLikeSpark.setupAllOrc
     }
+    if not self.tpcxbb_format in formats:
+        raise RuntimeError("{} is not a supported tpcxbb input type".format(self.tpcxbb_format))
     formats.get(self.tpcxbb_format)(jvm_session,self.tpcxbb_path)
 
   def do_test_query(self, query):
@@ -327,4 +331,37 @@ def mortgage(request):
     else:
         yield MortgageRunner(mortgage_format, mortgage_path + '/acq', mortgage_path + '/perf')
 
+class TpcdsRunner:
+  def __init__(self, tpcds_format, tpcds_path):
+    self.tpcds_format = tpcds_format
+    self.tpcds_path = tpcds_path
+    self.setup(get_spark_i_know_what_i_am_doing())
+
+  def setup(self, spark):
+    jvm_session = _get_jvm_session(spark)
+    jvm = _get_jvm(spark)
+    formats = {
+      "csv": jvm.com.nvidia.spark.rapids.tests.tpcds.TpcdsLikeSpark.setupAllCSV,
+      "parquet": jvm.com.nvidia.spark.rapids.tests.tpcds.TpcdsLikeSpark.setupAllParquet,
+      "orc": jvm.com.nvidia.spark.rapids.tests.tpcds.TpcdsLikeSpark.setupAllOrc
+    }
+    if not self.tpcds_format in formats:
+        raise RuntimeError("{} is not a supported tpcds input type".format(self.tpcds_format))
+    formats.get(self.tpcds_format)(jvm_session,self.tpcds_path)
+
+  def do_test_query(self, query):
+    spark = get_spark_i_know_what_i_am_doing()
+    jvm_session = _get_jvm_session(spark)
+    jvm = _get_jvm(spark)
+    df = jvm.com.nvidia.spark.rapids.tests.tpcds.TpcdsLikeSpark.run(jvm_session, query)
+    return DataFrame(df, spark.getActiveSession())
+   
+@pytest.fixture(scope="session")
+def tpcds(request):
+  tpcds_format = request.config.getoption("tpcds_format")
+  tpcds_path = request.config.getoption("tpcds_path")
+  if tpcds_path is None:
+    pytest.skip("TPC-DS not configured to run")
+  else:
+    yield TpcdsRunner(tpcds_format, tpcds_path)
 
