@@ -21,6 +21,12 @@ def pytest_addoption(parser):
         "--tpcxbb_path", action="store", default=None, help="path to TPCXbb data"
     )
     parser.addoption(
+        "--tpcds_format", action="store", default="parquet", help="format of TPC-DS data"
+    )
+    parser.addoption(
+        "--tpcds_path", action="store", default=None, help="path to TPC-DS data"
+    )
+    parser.addoption(
         "--tpch_format", action="store", default="parquet", help="format of TPCH data"
     )
     parser.addoption(
