@@ -35,15 +35,13 @@ import org.apache.spark.sql.rapids.execution.{GpuBroadcastExchangeExecBase, GpuC
 class GpuTransitionOverrides extends Rule[SparkPlan] {
   var conf: RapidsConf = null
 
-  def optimizeGpuPlanTransitions(plan: SparkPlan): SparkPlan = {
-    plan match {
-      case HostColumnarToGpu(r2c: RowToColumnarExec, goal) =>
-        GpuRowToColumnarExec(optimizeGpuPlanTransitions(r2c.child), goal)
-      case ColumnarToRowExec(bb: GpuBringBackToHost) =>
-        GpuColumnarToRowExec(optimizeGpuPlanTransitions(bb.child))
-      case p =>
-        p.withNewChildren(p.children.map(optimizeGpuPlanTransitions))
-    }
+  def optimizeGpuPlanTransitions(plan: SparkPlan): SparkPlan = plan match {
+    case HostColumnarToGpu(r2c: RowToColumnarExec, goal) =>
+      GpuRowToColumnarExec(optimizeGpuPlanTransitions(r2c.child), goal)
+    case ColumnarToRowExec(bb: GpuBringBackToHost) =>
+      GpuColumnarToRowExec(optimizeGpuPlanTransitions(bb.child))
+    case p =>
+      p.withNewChildren(p.children.map(optimizeGpuPlanTransitions))
   }
 
   def optimizeAdaptiveTransitions(plan: SparkPlan): SparkPlan = plan match {
