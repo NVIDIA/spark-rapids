@@ -25,10 +25,7 @@ import org.apache.spark.sql.catalyst.expressions.Attribute;
 import org.apache.spark.sql.execution.vectorized.WritableColumnVector;
 import org.apache.spark.sql.types.*;
 import org.apache.spark.sql.vectorized.ColumnVector;
-import org.apache.spark.sql.vectorized.ColumnarArray;
 import org.apache.spark.sql.vectorized.ColumnarBatch;
-import org.apache.spark.sql.vectorized.ColumnarMap;
-import org.apache.spark.unsafe.types.UTF8String;
 
 import java.util.List;
 
@@ -38,7 +35,7 @@ import java.util.List;
  * is on the host, and we want to keep as much of the data on the device as possible.
  * We also provide GPU accelerated versions of the transitions to and from rows.
  */
-public class GpuColumnVector extends ColumnVector {
+public class GpuColumnVector extends GpuColumnVectorBase {
 
   public static final class GpuColumnarBatchBuilder implements AutoCloseable {
     private final ai.rapids.cudf.HostColumnVector.Builder[] builders;
@@ -383,78 +380,6 @@ public class GpuColumnVector extends ColumnVector {
   @Override
   public final int numNulls() {
     return (int) cudfCv.getNullCount();
-  }
-
-  private final static String BAD_ACCESS = "DATA ACCESS MUST BE ON A HOST VECTOR";
-
-  @Override
-  public final boolean isNullAt(int rowId) {
-    throw new IllegalStateException(BAD_ACCESS);
-  }
-
-  @Override
-  public final boolean getBoolean(int rowId) {
-    throw new IllegalStateException(BAD_ACCESS);
-  }
-
-  @Override
-  public final byte getByte(int rowId) {
-    throw new IllegalStateException(BAD_ACCESS);
-  }
-
-  @Override
-  public final short getShort(int rowId) {
-    throw new IllegalStateException(BAD_ACCESS);
-  }
-
-  @Override
-  public final int getInt(int rowId) {
-    throw new IllegalStateException(BAD_ACCESS);
-  }
-
-  @Override
-  public final long getLong(int rowId) {
-    throw new IllegalStateException(BAD_ACCESS);
-  }
-
-  @Override
-  public final float getFloat(int rowId) {
-    throw new IllegalStateException(BAD_ACCESS);
-  }
-
-  @Override
-  public final double getDouble(int rowId) {
-    throw new IllegalStateException(BAD_ACCESS);
-  }
-
-  @Override
-  public final ColumnarArray getArray(int rowId) {
-    throw new IllegalStateException(BAD_ACCESS);
-  }
-
-  @Override
-  public final ColumnarMap getMap(int ordinal) {
-    throw new IllegalStateException(BAD_ACCESS);
-  }
-
-  @Override
-  public final Decimal getDecimal(int rowId, int precision, int scale) {
-    throw new IllegalStateException(BAD_ACCESS);
-  }
-
-  @Override
-  public final UTF8String getUTF8String(int rowId) {
-    throw new IllegalStateException(BAD_ACCESS);
-  }
-
-  @Override
-  public final byte[] getBinary(int rowId) {
-    throw new IllegalStateException(BAD_ACCESS);
-  }
-
-  @Override
-  public final ColumnVector getChild(int ordinal) {
-    throw new IllegalStateException(BAD_ACCESS);
   }
 
   public static final long getTotalDeviceMemoryUsed(ColumnarBatch batch) {

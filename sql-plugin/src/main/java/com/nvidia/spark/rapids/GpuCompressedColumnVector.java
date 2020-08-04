@@ -21,19 +21,15 @@ import ai.rapids.cudf.DeviceMemoryBuffer;
 import com.nvidia.spark.rapids.format.ColumnMeta;
 import com.nvidia.spark.rapids.format.TableMeta;
 import org.apache.spark.sql.types.DataType;
-import org.apache.spark.sql.types.Decimal;
 import org.apache.spark.sql.vectorized.ColumnVector;
-import org.apache.spark.sql.vectorized.ColumnarArray;
 import org.apache.spark.sql.vectorized.ColumnarBatch;
-import org.apache.spark.sql.vectorized.ColumnarMap;
-import org.apache.spark.unsafe.types.UTF8String;
 
 /**
  * A GPU column vector that has been compressed. The columnar data within cannot
  * be accessed directly. This class primarily serves the role of tracking the
  * compressed data and table metadata so it can be decompressed later.
  */
-public final class GpuCompressedColumnVector extends ColumnVector {
+public final class GpuCompressedColumnVector extends GpuColumnVectorBase {
   private final DeviceMemoryBuffer buffer;
   private final TableMeta tableMeta;
 
@@ -94,76 +90,6 @@ public final class GpuCompressedColumnVector extends ColumnVector {
 
   @Override
   public int numNulls() {
-    throw new IllegalStateException("column vector is compressed");
-  }
-
-  @Override
-  public boolean isNullAt(int rowId) {
-    throw new IllegalStateException("column vector is compressed");
-  }
-
-  @Override
-  public boolean getBoolean(int rowId) {
-    throw new IllegalStateException("column vector is compressed");
-  }
-
-  @Override
-  public byte getByte(int rowId) {
-    throw new IllegalStateException("column vector is compressed");
-  }
-
-  @Override
-  public short getShort(int rowId) {
-    throw new IllegalStateException("column vector is compressed");
-  }
-
-  @Override
-  public int getInt(int rowId) {
-    throw new IllegalStateException("column vector is compressed");
-  }
-
-  @Override
-  public long getLong(int rowId) {
-    throw new IllegalStateException("column vector is compressed");
-  }
-
-  @Override
-  public float getFloat(int rowId) {
-    throw new IllegalStateException("column vector is compressed");
-  }
-
-  @Override
-  public double getDouble(int rowId) {
-    throw new IllegalStateException("column vector is compressed");
-  }
-
-  @Override
-  public ColumnarArray getArray(int rowId) {
-    throw new IllegalStateException("column vector is compressed");
-  }
-
-  @Override
-  public ColumnarMap getMap(int ordinal) {
-    throw new IllegalStateException("column vector is compressed");
-  }
-
-  @Override
-  public Decimal getDecimal(int rowId, int precision, int scale) {
-    throw new IllegalStateException("column vector is compressed");
-  }
-
-  @Override
-  public UTF8String getUTF8String(int rowId) {
-    throw new IllegalStateException("column vector is compressed");
-  }
-
-  @Override
-  public byte[] getBinary(int rowId) {
-    throw new IllegalStateException("column vector is compressed");
-  }
-
-  @Override
-  public ColumnVector getChild(int ordinal) {
     throw new IllegalStateException("column vector is compressed");
   }
 }
