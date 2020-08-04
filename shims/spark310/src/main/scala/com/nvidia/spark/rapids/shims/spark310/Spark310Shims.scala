@@ -39,6 +39,8 @@ import org.apache.spark.unsafe.types.CalendarInterval
 
 class Spark310Shims extends Spark301Shims {
 
+  override def getSparkShimVersion: ShimVersion = SparkShimServiceProvider.VERSION
+
   override def getScalaUDFAsExpression(
       function: AnyRef,
       dataType: DataType,
