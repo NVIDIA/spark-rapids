@@ -47,6 +47,8 @@ object GpuHashJoin {
 
 trait GpuHashJoin extends GpuExec with HashJoin {
 
+  override def supportCodegen: Boolean = false
+
   override def output: Seq[Attribute] = {
     joinType match {
       case _: InnerLike =>
