@@ -50,6 +50,9 @@ case class Table(
         .write
         .mode("overwrite")
     tmp
+    // Disabling partitioning on writes.  The original databricks code has
+    // partitioning enabled, but for our data sizes it does not help
+    // We can possibly add it back in for large scale factors.
 //    if (partitionColumns.isEmpty) {
 //      tmp
 //    } else {
@@ -68,6 +71,12 @@ case class Query(name: String, query: String) {
   def apply(spark: SparkSession): DataFrame = spark.sql(query)
 }
 
+/**
+ * A set of tests based off of TPC-DS queries.  The schemas and the queries are based off of
+ * the data bricks code at https://github.com/databricks/spark-sql-perf with a few modifications
+ * to some of the quires so that the names of columns returned is not ambiguous.  This lets our
+ * correctness tests auto sort the data to account for ambiguous ordering.
+ */
 object TpcdsLikeSpark {
 
   def csvToParquet(spark: SparkSession, baseInput: String, baseOutput: String): Unit = {
