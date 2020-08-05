@@ -695,7 +695,7 @@ class MultiFileParquetPartitionReader(
   private def readBatch(): Option[ColumnarBatch] = {
     val nvtxRange = new NvtxWithMetrics("Parquet readBatch", NvtxColor.GREEN, metrics(TOTAL_TIME))
     try {
-      val currentChunkedBlocks = populateCurrentBlockChunk()
+      val (partitionValues, currentChunkedBlocks) = populateCurrentBlockChunk()
       if (readDataSchema.isEmpty) {
         // not reading any data, so return a degenerate ColumnarBatch with the row count
         val numRows = currentChunkedBlocks.map(_._2.getRowCount).sum.toInt
@@ -711,7 +711,7 @@ class MultiFileParquetPartitionReader(
           maybeBatch.foreach { batch =>
             logDebug(s"GPU batch size: ${GpuColumnVector.getTotalDeviceMemoryUsed(batch)} bytes")
           }
-          val withPartitionValues = addPartitionValues(maybeBatch, currentChunkedBlocks.head._3)
+          val withPartitionValues = addPartitionValues(maybeBatch, partitionValues)
           withPartitionValues
         } finally {
           table.foreach(_.close())
@@ -770,12 +770,13 @@ class MultiFileParquetPartitionReader(
   }
 
   private def readToTable(
-      currentChunkedBlocks: Seq[(Path, BlockMetaData, InternalRow)]): Option[Table] = {
+      currentChunkedBlocks: Seq[(Path, BlockMetaData)]): Option[Table] = {
     if (currentChunkedBlocks.isEmpty) {
       return None
     }
 
-    // logWarning(s"read to table blocks is partition ${TaskContext.get().partitionId()} :" + currentChunkedBlocks.mkString(","))
+    // logWarning(s"read to table blocks is partition ${TaskContext.get().partitionId()} :"
+    // + currentChunkedBlocks.mkString(","))
     val (dataBuffer, dataSize) = readPartFile(currentChunkedBlocks)
     try {
       if (dataSize == 0) {
@@ -806,9 +807,9 @@ class MultiFileParquetPartitionReader(
     }
   }
 
-  private def populateCurrentBlockChunk(): Seq[(Path, BlockMetaData, InternalRow)] = {
+  private def populateCurrentBlockChunk(): (InternalRow, Seq[(Path, BlockMetaData)]) = {
 
-    val currentChunk = new ArrayBuffer[(Path, BlockMetaData, InternalRow)]
+    val currentChunk = new ArrayBuffer[(Path, BlockMetaData)]
     var numRows: Long = 0
     var numBytes: Long = 0
     var numParquetBytes: Long = 0
@@ -838,7 +839,8 @@ class MultiFileParquetPartitionReader(
             peekedRowGroup.getRowCount)
           if (numBytes == 0 || numBytes + estimatedBytes <= maxReadBatchSizeBytes) {
             val nextBlock = blockIterator.next()
-            val nextTuple = (nextBlock._1, nextBlock._2, currentPartitionedFile.partitionValues)
+            // TODO - we really only need partitionValues once
+            val nextTuple = (nextBlock._1, nextBlock._2)
             currentChunk += nextTuple
             numRows += currentChunk.last._2.getRowCount
             numParquetBytes += currentChunk.last._2.getTotalByteSize
@@ -854,7 +856,7 @@ class MultiFileParquetPartitionReader(
     logDebug(s"Loaded $numRows rows from Parquet. Parquet bytes read: $numParquetBytes. " +
       s"Estimated GPU bytes: $numBytes")
 
-    currentChunk
+    (currentPartitionedFile.partitionValues, currentChunk)
   }
 
   private def dumpParquetData(
