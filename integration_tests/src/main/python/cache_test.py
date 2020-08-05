@@ -149,7 +149,7 @@ all_gen_restricting_dates = [StringGen(), ByteGen(), ShortGen(), IntegerGen(), L
            TimestampGen()]
 
 @pytest.mark.parametrize('data_gen', all_gen_restricting_dates, ids=idfn)
-@allow_non_gpu('ColumnarToRowExec', 'InMemoryTableScanExec', 'DataWritingCommandExec')
+@allow_non_gpu('DataWritingCommandExec')
 def test_cache_posexplode_makearray(spark_tmp_path, data_gen):
     if data_gen.data_type == BooleanType():
         pytest.xfail("https://github.com/NVIDIA/spark-rapids/issues/350")
