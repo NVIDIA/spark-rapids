@@ -604,8 +604,9 @@ class MultiFileParquetPartitionReader(
     // always be at least as big as the updated metadata in the output.
     val out = new CountingOutputStream(new NullOutputStream)
     writeFooter(out, currentChunkedBlocks)
-    // TODO - why am I off 72 bytes???
-    val calcSize = size + out.getByteCount + (currentChunkedBlocks.size * 8)
+    // TODO - why am I off bytes???  Footer sizes different from when first calculated to when
+    // real ones put in
+    val calcSize = size + out.getByteCount + (currentChunkedBlocks.size * 12)
     // logWarning(s"size is $size footer is ${out.getByteCount} calculated size is: $calcSize")
     calcSize
   }

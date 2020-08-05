@@ -131,7 +131,6 @@ def test_read_round_trip_legacy(spark_tmp_path, parquet_gens):
             lambda spark : spark.read.parquet(data_path))
 
 
-@pytest.mark.skip(reason="no way of currently testing this")
 def test_simple_partitioned_read(spark_tmp_path):
     # Once https://github.com/NVIDIA/spark-rapids/issues/133 and https://github.com/NVIDIA/spark-rapids/issues/132 are fixed 
     # we should go with a more standard set of generators
