@@ -260,6 +260,13 @@ object RapidsConf {
     .checkValue(v => v >= 0 && v <= 1, "The fraction value must be in [0, 1].")
     .createWithDefault(0.9)
 
+  val RMM_ALLOC_MAX_FRACTION = conf("spark.rapids.memory.gpu.maxAllocFraction")
+      .doc("The fraction of total GPU memory that limits the maximum size of the RMM pool. " +
+          "If this is set to 0 then the pool size will not be artificially limited.")
+      .doubleConf
+      .checkValue(v => v >= 0 && v <= 1, "The fraction value must be in [0, 1].")
+      .createWithDefault(0)
+
   val HOST_SPILL_STORAGE_SIZE = conf("spark.rapids.memory.host.spillStorageSize")
     .doc("Amount of off-heap host memory to use for buffering spilled GPU data " +
         "before spilling to local disk")
@@ -766,6 +773,8 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
   lazy val isPooledMemEnabled: Boolean = get(POOLED_MEM)
 
   lazy val rmmAllocFraction: Double = get(RMM_ALLOC_FRACTION)
+
+  lazy val rmmAllocMaxFraction: Double = get(RMM_ALLOC_MAX_FRACTION)
 
   lazy val hostSpillStorageSize: Long = get(HOST_SPILL_STORAGE_SIZE)
 
