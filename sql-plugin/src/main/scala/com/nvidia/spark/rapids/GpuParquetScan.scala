@@ -178,34 +178,6 @@ object GpuParquetScan extends Logging {
 }
 
 /**
- * Similar to Spark FilePartitionReaderFactory but extended to handle multiple files at once.
- */
-abstract class SmallFilePartitionReaderFactory extends PartitionReaderFactory {
-  override def createReader(partition: InputPartition): PartitionReader[InternalRow] = {
-    assert(partition.isInstanceOf[FilePartition])
-    val filePartition = partition.asInstanceOf[FilePartition]
-    val files = filePartition.files
-    val reader = MultiplePartitionedFileReader(files, buildReader(files))
-    new MultiFilePartitionReader[InternalRow](reader)
-  }
-
-  override def createColumnarReader(partition: InputPartition): PartitionReader[ColumnarBatch] = {
-    assert(partition.isInstanceOf[FilePartition])
-    val filePartition = partition.asInstanceOf[FilePartition]
-    val files = filePartition.files
-    val reader = MultiplePartitionedFileReader(files, buildColumnarReader(files))
-    new MultiFilePartitionReader[ColumnarBatch](reader)
-  }
-
-  def buildReader(partitionedFiles: Array[PartitionedFile]): PartitionReader[InternalRow]
-
-  def buildColumnarReader(
-      partitionedFiles: Array[PartitionedFile]): PartitionReader[ColumnarBatch] = {
-    throw new UnsupportedOperationException("Cannot create columnar reader.")
-  }
-}
-
-/**
  * Similar to GpuParquetPartitionReaderFactory but extended for multiple file reading.
  */
 case class GpuParquetMultiPartitionReaderFactory(
@@ -216,7 +188,7 @@ case class GpuParquetMultiPartitionReaderFactory(
     partitionSchema: StructType,
     filters: Array[Filter],
     @transient rapidsConf: RapidsConf,
-    metrics: Map[String, SQLMetric]) extends SmallFilePartitionReaderFactory with Logging {
+    metrics: Map[String, SQLMetric]) extends PartitionReaderFactory with Logging {
   private val isCaseSensitive = sqlConf.caseSensitiveAnalysis
   private val enableParquetFilterPushDown: Boolean = sqlConf.parquetFilterPushDown
   private val pushDownDate = sqlConf.parquetFilterPushDownDate
@@ -230,14 +202,22 @@ case class GpuParquetMultiPartitionReaderFactory(
 
   override def supportColumnarReads(partition: InputPartition): Boolean = true
 
-  override def buildReader(
-      partitionedFiles: Array[PartitionedFile]): PartitionReader[InternalRow] = {
+  override def createReader(partition: InputPartition): PartitionReader[InternalRow] = {
     throw new IllegalStateException("GPU column parser called to read rows")
   }
 
-  override def buildColumnarReader(
+  override def createColumnarReader(partition: InputPartition): PartitionReader[ColumnarBatch] = {
+    assert(partition.isInstanceOf[FilePartition])
+    val filePartition = partition.asInstanceOf[FilePartition]
+    val files = filePartition.files
+    val reader = MultiplePartitionedFileReader(files, buildColumnarReader(files))
+    new MultiFilePartitionReader[ColumnarBatch](reader)
+  }
+
+  def buildColumnarReader(
       partitionedFiles: Array[PartitionedFile]): PartitionReader[ColumnarBatch] = {
     val reader = buildBaseColumnarParquetReader(partitionedFiles)
+    // TODO - need to fix for partition values
     ColumnarPartitionReaderWithPartitionValues.newReader(partitionedFiles(0),
       reader, partitionSchema)
   }
@@ -269,7 +249,7 @@ case class GpuParquetMultiPartitionReaderFactory(
   private def buildBaseColumnarParquetReader(
       files: Array[PartitionedFile]): PartitionReader[ColumnarBatch] = {
     val conf = broadcastedConf.value.value
-    val clippedBlocks = ArrayBuffer[(Path, BlockMetaData)]()
+    val clippedBlocks = ArrayBuffer[(Path, BlockMetaData, PartitionedFile)]()
     var clippedSchema: MessageType = null
 
     // TODO - check schema and metadata (types) to make sure files aren't different
@@ -316,11 +296,11 @@ case class GpuParquetMultiPartitionReaderFactory(
       logWarning(s"file: $file schema: $clippedSchema")
       val columnPaths = clippedSchema.getPaths.asScala.map(x => ColumnPath.get(x: _*))
       val clipped = ParquetPartitionReader.clipBlocks(columnPaths, blocks.asScala)
-      clippedBlocks ++= clipped.map((filePath, _))
+      clippedBlocks ++= clipped.map((filePath, _, file))
     }
     new MultiFileParquetPartitionReader(conf, files, clippedBlocks, clippedSchema,
       isCaseSensitive, readDataSchema, debugDumpPrefix, maxReadBatchSizeRows,
-      maxReadBatchSizeBytes, metrics)
+      maxReadBatchSizeBytes, metrics, partitionSchema)
   }
 }
 
@@ -471,23 +451,41 @@ case class GpuParquetPartitionReaderFactory(
 class MultiFileParquetPartitionReader(
     conf: Configuration,
     splits: Array[PartitionedFile],
-    clippedBlocks: Seq[(Path, BlockMetaData)],
+    clippedBlocks: Seq[(Path, BlockMetaData, PartitionedFile)],
     clippedParquetSchema: MessageType,
     isSchemaCaseSensitive: Boolean,
     readDataSchema: StructType,
     debugDumpPrefix: String,
     maxReadBatchSizeRows: Integer,
     maxReadBatchSizeBytes: Long,
-    execMetrics: Map[String, SQLMetric]) extends PartitionReader[ColumnarBatch] with Logging
+    execMetrics: Map[String, SQLMetric],
+    partitionSchema: StructType) extends PartitionReader[ColumnarBatch] with Logging
   with ScanWithMetrics with Arm {
   private var isExhausted: Boolean = false
   private var maxDeviceMemory: Long  = 0
   private var batch: Option[ColumnarBatch] = None
-  private val blockIterator: BufferedIterator[(Path, BlockMetaData)] =
+  private val blockIterator: BufferedIterator[(Path, BlockMetaData, PartitionedFile)] =
     clippedBlocks.iterator.buffered
   private val copyBufferSize = conf.getInt("parquet.read.allocation.size", 8 * 1024 * 1024)
 
   metrics = execMetrics
+
+  def addPartitionValues(
+      batch: Option[ColumnarBatch],
+      inPartitionValues: InternalRow): Option[ColumnarBatch] = {
+    batch.map { cb =>
+      val partitionValues = inPartitionValues.toSeq(partitionSchema)
+      val partitionScalarTypes = partitionSchema.fields.map(_.dataType)
+      val partitionScalars = partitionValues.zip(partitionScalarTypes).map {
+        case (v, t) => GpuScalar.from(v, t)
+      }.toArray
+      try {
+        ColumnarPartitionReaderWithPartitionValues.addPartitionValues(cb, partitionScalars)
+      } finally {
+        partitionScalars.foreach(_.close())
+      }
+    }
+  }
 
   override def next(): Boolean = {
     batch.foreach(_.close())
@@ -713,7 +711,8 @@ class MultiFileParquetPartitionReader(
           maybeBatch.foreach { batch =>
             logDebug(s"GPU batch size: ${GpuColumnVector.getTotalDeviceMemoryUsed(batch)} bytes")
           }
-          maybeBatch
+          val withPartitionValues = addPartitionValues(maybeBatch, currentChunkedBlocks.head._3)
+          withPartitionValues
         } finally {
           table.foreach(_.close())
         }
@@ -770,7 +769,8 @@ class MultiFileParquetPartitionReader(
     }
   }
 
-  private def readToTable(currentChunkedBlocks: Seq[(Path, BlockMetaData)]): Option[Table] = {
+  private def readToTable(
+      currentChunkedBlocks: Seq[(Path, BlockMetaData, InternalRow)]): Option[Table] = {
     if (currentChunkedBlocks.isEmpty) {
       return None
     }
@@ -806,25 +806,40 @@ class MultiFileParquetPartitionReader(
     }
   }
 
-  private def populateCurrentBlockChunk(): Seq[(Path, BlockMetaData)] = {
+  private def populateCurrentBlockChunk(): Seq[(Path, BlockMetaData, InternalRow)] = {
 
-    val currentChunk = new ArrayBuffer[(Path, BlockMetaData)]
+    val currentChunk = new ArrayBuffer[(Path, BlockMetaData, InternalRow)]
     var numRows: Long = 0
     var numBytes: Long = 0
     var numParquetBytes: Long = 0
+    var currentFile: Path = null
+    var currentPartitionedFile: PartitionedFile = null
 
     @tailrec
     def readNextBatch(): Unit = {
       if (blockIterator.hasNext) {
+        // TODO - check to see if partitionValues different, then have to split it
+        if (currentFile == null || currentFile != blockIterator.head._1) {
+          if (blockIterator.head._3.partitionValues != currentPartitionedFile.partitionValues) {
+            logWarning(s"Partition values for the next file ${blockIterator.head._1}" +
+              s" don't match current $currentFile, splitting it into another batch!")
+            return
+          }
+          currentFile = blockIterator.head._1
+          currentPartitionedFile = blockIterator.head._3
+        }
         val peekedRowGroup = blockIterator.head._2
         if (peekedRowGroup.getRowCount > Integer.MAX_VALUE) {
           throw new UnsupportedOperationException("Too many rows in split")
         }
+
         if (numRows == 0 || numRows + peekedRowGroup.getRowCount <= maxReadBatchSizeRows) {
           val estimatedBytes = GpuBatchUtils.estimateGpuMemory(readDataSchema,
             peekedRowGroup.getRowCount)
           if (numBytes == 0 || numBytes + estimatedBytes <= maxReadBatchSizeBytes) {
-            currentChunk += blockIterator.next()
+            val nextBlock = blockIterator.next()
+            val nextTuple = (nextBlock._1, nextBlock._2, currentPartitionedFile.partitionValues)
+            currentChunk += nextTuple
             numRows += currentChunk.last._2.getRowCount
             numParquetBytes += currentChunk.last._2.getTotalByteSize
             numBytes += estimatedBytes

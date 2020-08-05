@@ -122,13 +122,14 @@ case class GpuFileSourceScanExec(
    */
   override def inputRDDs(): Seq[RDD[InternalRow]] = {
     val rapidsConf = new RapidsConf(relation.sparkSession.sessionState.conf)
-    val formatSupportsSmallFiles = wrapped.relation.fileFormat match {
+    val formatSupportsSmallFilesOptimization = wrapped.relation.fileFormat match {
       case _: ParquetFileFormat => true
       case _ => false
     }
 
-    if (rapidsConf.isParquetSmallFilesEnabled && formatSupportsSmallFiles) {
-      logWarning("using small file enhancement" + rapidsConf.isParquetSmallFilesEnabled + " " + formatSupportsSmallFiles)
+    if (rapidsConf.isParquetSmallFilesEnabled && formatSupportsSmallFilesOptimization) {
+      logWarning("using small file enhancement" +
+        rapidsConf.isParquetSmallFilesEnabled + " " + formatSupportsSmallFilesOptimization)
       inputRDD:: Nil
     } else {
       logWarning("NOT using small file enhancement")
@@ -363,6 +364,7 @@ case class GpuFileSourceScanExec(
 
     val splitFiles = selectedPartitions.flatMap { partition =>
       partition.files.flatMap { file =>
+        logWarning(s"partition values is: ${partition.values}")
         // logWarning(s"partition file order is: $file")
         // getPath() is very expensive so we only want to call it once in this block:
         val filePath = file.getPath
