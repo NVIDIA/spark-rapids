@@ -445,7 +445,6 @@ object RapidsConf {
     .booleanConf
     .createWithDefault(true)
 
-
   val ENABLE_PARQUET_READ = conf("spark.rapids.sql.format.parquet.read.enabled")
     .doc("When set to false disables parquet input acceleration")
     .booleanConf

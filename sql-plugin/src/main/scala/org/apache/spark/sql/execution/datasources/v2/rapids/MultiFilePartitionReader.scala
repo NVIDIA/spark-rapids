@@ -16,7 +16,7 @@
 
 package org.apache.spark.sql.execution.datasources.v2.rapids
 
-import java.io.{FileNotFoundException, IOException}
+import java.io.IOException
 
 import org.apache.parquet.io.ParquetDecodingException
 
@@ -27,7 +27,11 @@ import org.apache.spark.sql.execution.QueryExecutionException
 import org.apache.spark.sql.execution.datasources.{PartitionedFile, SchemaColumnConvertNotSupportedException}
 import org.apache.spark.sql.internal.SQLConf
 
-case class SmallPartitionedFileReader[T](
+
+/**
+ * Equivalent of PartitionedFileReader in Spark but instead has multiple files.
+ */
+case class MultiplePartitionedFileReader[T](
     files: Array[PartitionedFile],
     reader: PartitionReader[T]) extends PartitionReader[T] {
   override def next(): Boolean = reader.next()
@@ -39,7 +43,10 @@ case class SmallPartitionedFileReader[T](
   override def toString: String = files.mkString(",")
 }
 
-class MultiFilePartitionReader[T](reader: SmallPartitionedFileReader[T])
+/**
+ * Similar to FilePartitionReader in Spark but instead has multiple files.
+ */
+class MultiFilePartitionReader[T](reader: MultiplePartitionedFileReader[T])
   extends PartitionReader[T] with Logging {
 
   private var currentReader = reader
@@ -49,8 +56,8 @@ class MultiFilePartitionReader[T](reader: SmallPartitionedFileReader[T])
 
   override def next(): Boolean = {
     // TODO - what to set this to?
-    //val file = reader.files.head
-    // InputFileBlockHolder.set(file.filePath, file.start, file.length)
+    val files = reader.files.map(_.filePath).mkString(",")
+    InputFileBlockHolder.set(files, 0, -1)
 
     if (currentReader == null) {
       return false

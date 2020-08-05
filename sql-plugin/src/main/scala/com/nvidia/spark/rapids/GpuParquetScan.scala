@@ -50,10 +50,10 @@ import org.apache.spark.sql.catalyst.expressions.Expression
 import org.apache.spark.sql.connector.read.{InputPartition, PartitionReader, PartitionReaderFactory}
 import org.apache.spark.sql.execution.QueryExecutionException
 import org.apache.spark.sql.execution.datasources.{FilePartition, PartitionedFile, PartitioningAwareFileIndex}
-import org.apache.spark.sql.execution.datasources.parquet.{ParquetFilters, ParquetReadSupport}
-import org.apache.spark.sql.execution.datasources.v2.{FilePartitionReader, FilePartitionReaderFactory, FileScan, PartitionedFileReader}
-import org.apache.spark.sql.execution.datasources.v2.rapids.{MultiFilePartitionReader, SmallPartitionedFileReader}
+import org.apache.spark.sql.execution.datasources.parquet.{ParquetFileFormat, ParquetFilters, ParquetReadSupport}
+import org.apache.spark.sql.execution.datasources.v2.{FilePartitionReaderFactory, FileScan}
 import org.apache.spark.sql.execution.datasources.v2.parquet.ParquetScan
+import org.apache.spark.sql.execution.datasources.v2.rapids.{MultiFilePartitionReader, MultiplePartitionedFileReader}
 import org.apache.spark.sql.execution.metric.SQLMetric
 import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.rapids.execution.TrampolineUtil
@@ -82,8 +82,15 @@ case class GpuParquetScan(
   override def createReaderFactory(): PartitionReaderFactory = {
     val broadcastedConf = sparkSession.sparkContext.broadcast(
       new SerializableConfiguration(hadoopConf))
-    GpuParquetMultiPartitionReaderFactory(sparkSession.sessionState.conf, broadcastedConf,
-      dataSchema, readDataSchema, readPartitionSchema, pushedFilters, rapidsConf, metrics)
+
+    // TODO - do we want to do any logic up front to check for small files?
+    if (rapidsConf.isParquetSmallFilesEnabled) {
+      GpuParquetMultiPartitionReaderFactory(sparkSession.sessionState.conf, broadcastedConf,
+        dataSchema, readDataSchema, readPartitionSchema, pushedFilters, rapidsConf, metrics)
+    } else {
+      GpuParquetPartitionReaderFactory(sparkSession.sessionState.conf, broadcastedConf,
+        dataSchema, readDataSchema, readPartitionSchema, pushedFilters, rapidsConf, metrics)
+    }
   }
 
   override def equals(obj: Any): Boolean = obj match {
@@ -170,12 +177,15 @@ object GpuParquetScan extends Logging {
   }
 }
 
+/**
+ * Similar to Spark FilePartitionReaderFactory but extended to handle multiple files at once.
+ */
 abstract class SmallFilePartitionReaderFactory extends PartitionReaderFactory {
   override def createReader(partition: InputPartition): PartitionReader[InternalRow] = {
     assert(partition.isInstanceOf[FilePartition])
     val filePartition = partition.asInstanceOf[FilePartition]
     val files = filePartition.files
-    val reader = SmallPartitionedFileReader(files, buildReader(files))
+    val reader = MultiplePartitionedFileReader(files, buildReader(files))
     new MultiFilePartitionReader[InternalRow](reader)
   }
 
@@ -183,7 +193,7 @@ abstract class SmallFilePartitionReaderFactory extends PartitionReaderFactory {
     assert(partition.isInstanceOf[FilePartition])
     val filePartition = partition.asInstanceOf[FilePartition]
     val files = filePartition.files
-    val reader = SmallPartitionedFileReader(files, buildColumnarReader(files))
+    val reader = MultiplePartitionedFileReader(files, buildColumnarReader(files))
     new MultiFilePartitionReader[ColumnarBatch](reader)
   }
 
@@ -195,6 +205,9 @@ abstract class SmallFilePartitionReaderFactory extends PartitionReaderFactory {
   }
 }
 
+/**
+ * Similar to GpuParquetPartitionReaderFactory but extended for multiple file reading.
+ */
 case class GpuParquetMultiPartitionReaderFactory(
     @transient sqlConf: SQLConf,
     broadcastedConf: Broadcast[SerializableConfiguration],
@@ -258,7 +271,6 @@ case class GpuParquetMultiPartitionReaderFactory(
     val conf = broadcastedConf.value.value
     val clippedBlocks = ArrayBuffer[(Path, BlockMetaData)]()
     var clippedSchema: MessageType = null
-    // val blocksPerFile = LinkedHashMap[Path, ArrayBuffer[BlockMetaData]]()
 
     // TODO - check schema and metadata (types) to make sure files aren't different
     // Bobby mentioned something with timestamp types
@@ -301,9 +313,9 @@ case class GpuParquetMultiPartitionReaderFactory(
       // for our own purposes
       // TODO - APPEND or coalesce ?? At least check is different
       clippedSchema = filterClippedSchema(clippedSchemaTmp, fileSchema, isCaseSensitive)
+      logWarning(s"file: $file schema: $clippedSchema")
       val columnPaths = clippedSchema.getPaths.asScala.map(x => ColumnPath.get(x: _*))
       val clipped = ParquetPartitionReader.clipBlocks(columnPaths, blocks.asScala)
-      // blocksPerFile(filePath) ++= blocks.asScala
       clippedBlocks ++= clipped.map((filePath, _))
     }
     new MultiFileParquetPartitionReader(conf, files, clippedBlocks, clippedSchema,
@@ -509,7 +521,6 @@ class MultiFileParquetPartitionReader(
   private def readPartFile(blocks: Seq[(Path, BlockMetaData)]): (HostMemoryBuffer, Long) = {
     val nvtxRange = new NvtxWithMetrics("Buffer file split", NvtxColor.YELLOW,
       metrics("bufferTime"))
-   //  val filesWithBlocks = blocks.groupBy(_._1).map { case (k, v) => (k, v.map(_._2)) }
     // ugly but we want to keep the order
     val filesAndBlocks = LinkedHashMap[Path, ArrayBuffer[BlockMetaData]]()
     blocks.foreach { info =>
@@ -521,66 +532,43 @@ class MultiFileParquetPartitionReader(
     }
 
     try {
-        var succeeded = false
-        //val allBlocks = filesWithBlocks.values.flatten.toSeq
-        val allBlocks = blocks.map(_._2)
-        val size = calculateParquetOutputSize(allBlocks)
-        // logWarning("checking footer length of each blocks")
-        allBlocks.foreach(b => calculateParquetOutputSize(Seq(b)))
-        // logWarning("done checking footer length of each blocks")
-        val hmb = HostMemoryBuffer.allocate(size)
-        val out = new HostMemoryOutputStream(hmb)
-        try {
-          out.write(ParquetPartitionReader.PARQUET_MAGIC)
-          val allOutputBlocks = scala.collection.mutable.ArrayBuffer[BlockMetaData]()
-          filesAndBlocks.foreach { case (file, blocks) =>
-            // logWarning(s"processing partition: ${TaskContext.get().partitionId()} file: $file" + " blocks; " + blocks)
-            val in = file.getFileSystem(conf).open(file)
-            try {
-              val retBlocks = copyBlocksData(in, out, blocks)
-              val size = calculateParquetOutputSize(retBlocks)
-              allOutputBlocks ++= retBlocks
-            } finally {
-              in.close()
-            }
-          }
-          /*
-          var currentFile: Path = null
-          var in: FSDataInputStream = null
+      var succeeded = false
+      val allBlocks = blocks.map(_._2)
+      val size = calculateParquetOutputSize(allBlocks)
+      allBlocks.foreach(b => calculateParquetOutputSize(Seq(b)))
+      val hmb = HostMemoryBuffer.allocate(size)
+      val out = new HostMemoryOutputStream(hmb)
+      try {
+        out.write(ParquetPartitionReader.PARQUET_MAGIC)
+        val allOutputBlocks = scala.collection.mutable.ArrayBuffer[BlockMetaData]()
+        filesAndBlocks.foreach { case (file, blocks) =>
+          val in = file.getFileSystem(conf).open(file)
           try {
-            blocks.foreach { case (file, localBlocks) =>
-              logWarning(s"processing partition: ${TaskContext.get().partitionId()} file: $file" + " blocks; " + blocks)
-              if (currentFile == null || currentFile != file) {
-                currentFile = file
-                if (in != null) in.close()
-                in = file.getFileSystem(conf).open(file)
-              }
-              val retBlocks = copyBlocksData(in, out, localBlocks)
-              val size = calculateParquetOutputSize(retBlocks)
-              allOutputBlocks ++= retBlocks
-            }
+            val retBlocks = copyBlocksData(in, out, blocks)
+            val size = calculateParquetOutputSize(retBlocks)
+            allOutputBlocks ++= retBlocks
           } finally {
-            if (in != null) in.close()
-          }
-          */
-          val size = calculateParquetOutputSize(allOutputBlocks)
-          val footerPos = out.getPos
-          // logWarning(s"actual write before write footer count is: ${out.getPos}")
-          writeFooter(out, allOutputBlocks)
-          // logWarning(s"actual write after write footer count is: ${out.getPos}")
-          BytesUtils.writeIntLittleEndian(out, (out.getPos - footerPos).toInt)
-          // logWarning(s"write little endian size: ${out.getPos - footerPos}")
-          // logWarning(s"wrote little endidan : ${out.getPos}")
-          out.write(ParquetPartitionReader.PARQUET_MAGIC)
-          // logWarning(s"wrote magic : ${out.getPos}")
-          succeeded = true
-          // logWarning(s"Actual written out size: ${out.getPos}")
-          (hmb, out.getPos)
-        } finally {
-          if (!succeeded) {
-            hmb.close()
+            in.close()
           }
         }
+        val size = calculateParquetOutputSize(allOutputBlocks)
+        val footerPos = out.getPos
+        // logWarning(s"actual write before write footer count is: ${out.getPos}")
+        writeFooter(out, allOutputBlocks)
+        // logWarning(s"actual write after write footer count is: ${out.getPos}")
+        BytesUtils.writeIntLittleEndian(out, (out.getPos - footerPos).toInt)
+        // logWarning(s"write little endian size: ${out.getPos - footerPos}")
+        // logWarning(s"wrote little endidan : ${out.getPos}")
+        out.write(ParquetPartitionReader.PARQUET_MAGIC)
+        // logWarning(s"wrote magic : ${out.getPos}")
+        succeeded = true
+        // logWarning(s"Actual written out size: ${out.getPos}")
+        (hmb, out.getPos)
+      } finally {
+        if (!succeeded) {
+          hmb.close()
+        }
+      }
     } finally {
       nvtxRange.close()
     }
@@ -597,7 +585,8 @@ class MultiFileParquetPartitionReader(
     //       uncompressed size rather than the size in the file.
     size += currentChunkedBlocks.flatMap(_.getColumns.asScala.map(_.getTotalSize)).sum
 
-    // logWarning("sizes are: " + currentChunkedBlocks.flatMap(_.getColumns.asScala.map(_.getTotalSize)))
+    // logWarning("sizes are: " +
+    // currentChunkedBlocks.flatMap(_.getColumns.asScala.map(_.getTotalSize)))
     // logWarning(s"size: $size")
     // Calculate size of the footer metadata.
     // This uses the column metadata from the original file, but that should
@@ -869,22 +858,22 @@ class MultiFileParquetPartitionReader(
 
 
 /**
-  * A PartitionReader that reads a Parquet file split on the GPU.
-  *
-  * Efficiently reading a Parquet split on the GPU requires re-constructing the Parquet file
-  * in memory that contains just the column chunks that are needed. This avoids sending
-  * unnecessary data to the GPU and saves GPU memory.
-  *
-  * @param conf the Hadoop configuration
-  * @param split the file split to read
-  * @param filePath the path to the Parquet file
-  * @param clippedBlocks the block metadata from the original Parquet file that has been clipped
-  *                      to only contain the column chunks to be read
-  * @param clippedParquetSchema the Parquet schema from the original Parquet file that has been
-  *                             clipped to contain only the columns to be read
-  * @param readDataSchema the Spark schema describing what will be read
-  * @param debugDumpPrefix a path prefix to use for dumping the fabricated Parquet data or null
-  */
+ * A PartitionReader that reads a Parquet file split on the GPU.
+ *
+ * Efficiently reading a Parquet split on the GPU requires re-constructing the Parquet file
+ * in memory that contains just the column chunks that are needed. This avoids sending
+ * unnecessary data to the GPU and saves GPU memory.
+ *
+ * @param conf the Hadoop configuration
+ * @param split the file split to read
+ * @param filePath the path to the Parquet file
+ * @param clippedBlocks the block metadata from the original Parquet file that has been clipped
+ *                      to only contain the column chunks to be read
+ * @param clippedParquetSchema the Parquet schema from the original Parquet file that has been
+ *                             clipped to contain only the columns to be read
+ * @param readDataSchema the Spark schema describing what will be read
+ * @param debugDumpPrefix a path prefix to use for dumping the fabricated Parquet data or null
+ */
 class ParquetPartitionReader(
     conf: Configuration,
     split: PartitionedFile,

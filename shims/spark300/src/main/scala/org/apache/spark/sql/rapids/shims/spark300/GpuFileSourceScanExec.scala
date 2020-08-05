@@ -19,10 +19,10 @@ package org.apache.spark.sql.rapids.shims.spark300
 import java.util.concurrent.TimeUnit.NANOSECONDS
 
 import scala.collection.mutable.HashMap
-
 import com.nvidia.spark.rapids._
-
+import org.apache.hadoop.fs.Path
 import org.apache.spark.rdd.RDD
+import org.apache.spark.sql.catalyst.catalog.BucketSpec
 import org.apache.spark.sql.catalyst.{InternalRow, TableIdentifier}
 import org.apache.spark.sql.catalyst.expressions.{And, Attribute, AttributeReference, BoundReference, Expression, PlanExpression, Predicate, SortOrder}
 import org.apache.spark.sql.catalyst.plans.physical.Partitioning
@@ -128,17 +128,57 @@ case class GpuFileSourceScanExec(
     }
 
     if (rapidsConf.isParquetSmallFilesEnabled && formatSupportsSmallFiles) {
-      // logWarning("using small file enhancement" + rapidsConf.isParquetSmallFilesEnabled + " " + formatSupportsSmallFiles)
+      logWarning("using small file enhancement" + rapidsConf.isParquetSmallFilesEnabled + " " + formatSupportsSmallFiles)
       inputRDD:: Nil
     } else {
-      // logWarning("NOT using small file enhancement")
+      logWarning("NOT using small file enhancement")
       wrapped.inputRDD :: Nil
     }
   }
 
-  // Only used for small files
-  // Direct copy from Spark FileSourceScanExec
 
+  override protected def doExecute(): RDD[InternalRow] =
+    throw new IllegalStateException(s"Row-based execution should not occur for $this")
+
+  override protected def doExecuteColumnar(): RDD[ColumnarBatch] = {
+    val numOutputRows = longMetric("numOutputRows")
+    val scanTime = longMetric("scanTime")
+    inputRDDs.head.asInstanceOf[RDD[ColumnarBatch]].mapPartitionsInternal { batches =>
+      new Iterator[ColumnarBatch] {
+
+        override def hasNext: Boolean = {
+          // The `FileScanRDD` returns an iterator which scans the file during the `hasNext` call.
+          val startNs = System.nanoTime()
+          val res = batches.hasNext
+          scanTime += NANOSECONDS.toMillis(System.nanoTime() - startNs)
+          res
+        }
+
+        override def next(): ColumnarBatch = {
+          val batch = batches.next()
+          numOutputRows += batch.numRows()
+          batch
+        }
+      }
+    }
+  }
+
+  override val nodeNamePrefix: String = "Gpu" + wrapped.nodeNamePrefix
+
+  override def doCanonicalize(): GpuFileSourceScanExec = {
+    val canonical = wrapped.doCanonicalize()
+    GpuFileSourceScanExec(
+      canonical.relation,
+      canonical.output,
+      canonical.requiredSchema,
+      canonical.partitionFilters,
+      canonical.optionalBucketSet,
+      canonical.dataFilters,
+      canonical.tableIdentifier)
+  }
+
+  /* ------- Start Section only used for small files optimization -------- */
+  // Many of these are direct copies from Spark FileSourceScanExec
   private def toAttribute(colName: String): Option[Attribute] =
     output.find(_.name == colName)
 
@@ -231,10 +271,8 @@ case class GpuFileSourceScanExec(
   lazy val inputRDD: RDD[InternalRow] = {
 
     val readRDD = if (bucketedScan) {
-      // TODO
-      // createBucketedReadRDD(relation.bucketSpec.get, readFile, dynamicallySelectedPartitions,
-      //        relation)
-      throw new Exception("haven't implemented bucketting yet")
+      createBucketedReadRDD(relation.bucketSpec.get, dynamicallySelectedPartitions,
+        relation)
     } else {
       createNonBucketedReadRDD(dynamicallySelectedPartitions, relation)
     }
@@ -243,7 +281,73 @@ case class GpuFileSourceScanExec(
   }
 
   /**
-   * Create an RDD for non-bucketed reads.
+   * Create an RDD for bucketed reads. This function modified to handle multiple
+   * files at once.
+   * The non-bucketed variant of this function is [[createNonBucketedReadRDD]].
+   *
+   * The algorithm is pretty simple: each RDD partition being returned should include all the files
+   * with the same bucket id from all the given Hive partitions.
+   *
+   * @param bucketSpec the bucketing spec.
+   * @param selectedPartitions Hive-style partition that are part of the read.
+   * @param fsRelation [[HadoopFsRelation]] associated with the read.
+   */
+  // TODO - spark 3.1 version has another paramter!!!
+  private def createBucketedReadRDD(
+      bucketSpec: BucketSpec,
+      selectedPartitions: Array[PartitionDirectory],
+      fsRelation: HadoopFsRelation): RDD[InternalRow] = {
+    logInfo(s"Planning with ${bucketSpec.numBuckets} buckets")
+    throw new Exception("haven't tested bucketting yet!")
+
+    val filesGroupedToBuckets =
+      selectedPartitions.flatMap { p =>
+        p.files.map { f =>
+          PartitionedFileUtil.getPartitionedFile(f, f.getPath, p.values)
+        }
+      }.groupBy { f =>
+        BucketingUtils
+          .getBucketId(new Path(f.filePath).getName)
+          .getOrElse(sys.error(s"Invalid bucket file ${f.filePath}"))
+      }
+
+    val prunedFilesGroupedToBuckets = if (optionalBucketSet.isDefined) {
+      val bucketSet = optionalBucketSet.get
+      filesGroupedToBuckets.filter {
+        f => bucketSet.get(f._1)
+      }
+    } else {
+      filesGroupedToBuckets
+    }
+
+    val filePartitions = Seq.tabulate(bucketSpec.numBuckets) { bucketId =>
+      FilePartition(bucketId, prunedFilesGroupedToBuckets.getOrElse(bucketId, Array.empty))
+    }
+
+    val sqlConf = relation.sparkSession.sessionState.conf
+    val hadoopConf = relation.sparkSession.sessionState.newHadoopConfWithOptions(relation.options)
+    val broadcastedHadoopConf =
+      relation.sparkSession.sparkContext.broadcast(new SerializableConfiguration(hadoopConf))
+    val factory = GpuParquetMultiPartitionReaderFactory(
+      sqlConf,
+      broadcastedHadoopConf,
+      relation.dataSchema,
+      requiredSchema,
+      relation.partitionSchema,
+      pushedDownFilters.toArray,
+      new RapidsConf(sqlConf),
+      PartitionReaderIterator.buildScanMetrics(relation.sparkSession.sparkContext))
+
+    // TODO - is this ok to use over FileScanRDD??
+    new DataSourceRDD(relation.sparkSession.sparkContext, filePartitions, factory, supportsColumnar)
+    // new FileScanRDD(fsRelation.sparkSession, readFile, filePartitions)
+
+  }
+
+
+  /**
+   * Create an RDD for non-bucketed reads. This function is modified to handle
+   * multiple files.
    *
    * @param selectedPartitions Hive-style partition that are part of the read.
    * @param fsRelation [[HadoopFsRelation]] associated with the read.
@@ -296,47 +400,7 @@ case class GpuFileSourceScanExec(
     new DataSourceRDD(relation.sparkSession.sparkContext, partitions, factory, supportsColumnar)
     // new FileScanRDD(fsRelation.sparkSession, readFile, partitions)
   }
-
-
-  override protected def doExecute(): RDD[InternalRow] =
-    throw new IllegalStateException(s"Row-based execution should not occur for $this")
-
-  override protected def doExecuteColumnar(): RDD[ColumnarBatch] = {
-    val numOutputRows = longMetric("numOutputRows")
-    val scanTime = longMetric("scanTime")
-    inputRDDs.head.asInstanceOf[RDD[ColumnarBatch]].mapPartitionsInternal { batches =>
-      new Iterator[ColumnarBatch] {
-
-        override def hasNext: Boolean = {
-          // The `FileScanRDD` returns an iterator which scans the file during the `hasNext` call.
-          val startNs = System.nanoTime()
-          val res = batches.hasNext
-          scanTime += NANOSECONDS.toMillis(System.nanoTime() - startNs)
-          res
-        }
-
-        override def next(): ColumnarBatch = {
-          val batch = batches.next()
-          numOutputRows += batch.numRows()
-          batch
-        }
-      }
-    }
-  }
-
-  override val nodeNamePrefix: String = "Gpu" + wrapped.nodeNamePrefix
-
-  override def doCanonicalize(): GpuFileSourceScanExec = {
-    val canonical = wrapped.doCanonicalize()
-    GpuFileSourceScanExec(
-      canonical.relation,
-      canonical.output,
-      canonical.requiredSchema,
-      canonical.partitionFilters,
-      canonical.optionalBucketSet,
-      canonical.dataFilters,
-      canonical.tableIdentifier)
-  }
+  /* ------- end section above only used for small files optimization -------- */
 }
 
 object GpuFileSourceScanExec {
