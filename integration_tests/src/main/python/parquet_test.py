@@ -82,18 +82,22 @@ parquet_pred_push_gens = [
         # timestamp_gen 
         TimestampGen(start=datetime(1900, 1, 1, tzinfo=timezone.utc))]
 
-@pytest.mark.parametrize('parquet_gen', parquet_pred_push_gens, ids=idfn)
+#@ignore_order(local=True)
+@pytest.mark.parametrize('parquet_gen', [int_gen], ids=idfn)
 @pytest.mark.parametrize('read_func', [read_parquet_df, read_parquet_sql])
 def test_pred_push_round_trip(spark_tmp_path, parquet_gen, read_func):
-    data_path = spark_tmp_path + '/ORC_DATA'
-    gen_list = [('a', RepeatSeqGen(parquet_gen, 100)), ('b', parquet_gen)]
+    #data_path = spark_tmp_path + '/PARQUET_DATA'
+    #gen_list = [('a', RepeatSeqGen(parquet_gen, 100)), ('b', parquet_gen)]
     s0 = gen_scalar(parquet_gen, force_no_nulls=True)
-    with_cpu_session(
-            lambda spark : gen_df(spark, gen_list).orderBy('a').write.parquet(data_path),
-            conf={'spark.sql.legacy.parquet.datetimeRebaseModeInWrite': 'CORRECTED'})
+    data_path = "/tmp/pyspark_tests//103371/PARQUET_DATA"
+    #with_cpu_session(
+    #        lambda spark : gen_df(spark, gen_list).orderBy('a').write.parquet(data_path),
+    #        conf={'spark.sql.legacy.parquet.datetimeRebaseModeInWrite': 'CORRECTED', 'spark.rapids.sql.format.parquet.smallFiles.enabled': 'false'})
     rf = read_func(data_path)
     assert_gpu_and_cpu_are_equal_collect(
-            lambda spark: rf(spark).select(f.col('a') >= s0))
+            lambda spark: rf(spark),
+            conf={'spark.rapids.sql.format.parquet.smallFiles.enabled': 'true'})
+            #lambda spark: rf(spark).select(f.col('a') >= s0))
 
 parquet_ts_write_options = ['INT96', 'TIMESTAMP_MICROS', 'TIMESTAMP_MILLIS']
 
@@ -212,7 +216,6 @@ def test_compress_write_round_trip(spark_tmp_path, compress):
             lambda spark, path : spark.read.parquet(path),
             data_path,
             conf={'spark.sql.parquet.compression.codec': compress})
-
 def test_input_meta(spark_tmp_path):
     first_data_path = spark_tmp_path + '/PARQUET_DATA/key=0'
     with_cpu_session(

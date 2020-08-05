@@ -128,8 +128,10 @@ case class GpuFileSourceScanExec(
     }
 
     if (rapidsConf.isParquetSmallFilesEnabled && formatSupportsSmallFiles) {
+      logWarning("using small file enhancement" + rapidsConf.isParquetSmallFilesEnabled + " " + formatSupportsSmallFiles)
       inputRDD:: Nil
     } else {
+      logWarning("NOT using small file enhancement")
       wrapped.inputRDD :: Nil
     }
   }
@@ -257,6 +259,7 @@ case class GpuFileSourceScanExec(
 
     val splitFiles = selectedPartitions.flatMap { partition =>
       partition.files.flatMap { file =>
+        logWarning(s"partition file order is: $file")
         // getPath() is very expensive so we only want to call it once in this block:
         val filePath = file.getPath
         val isSplitable = relation.fileFormat.isSplitable(

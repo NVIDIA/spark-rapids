@@ -23,7 +23,7 @@ import java.util.{Collections, Locale}
 
 import scala.annotation.tailrec
 import scala.collection.JavaConverters._
-import scala.collection.mutable.ArrayBuffer
+import scala.collection.mutable.{ArrayBuffer, LinkedHashMap}
 import scala.math.max
 import ai.rapids.cudf.{ColumnVector, DType, HostMemoryBuffer, NvtxColor, ParquetOptions, Table}
 import com.nvidia.spark.RebaseHelper
@@ -258,10 +258,12 @@ case class GpuParquetMultiPartitionReaderFactory(
     val conf = broadcastedConf.value.value
     val clippedBlocks = ArrayBuffer[(Path, BlockMetaData)]()
     var clippedSchema: MessageType = null
+    val blocksPerFile = LinkedHashMap[Path, ArrayBuffer[BlockMetaData]]()
 
     // TODO - check schema and metadata (types) to make sure files aren't different
     // Bobby mentioned something with timestamp types
     files.map { file =>
+      // logWarning(s"processing file: $file")
       val filePath = new Path(new URI(file.filePath))
       //noinspection ScalaDeprecation
       val footer = ParquetFileReader.readFooter(conf, filePath,
@@ -275,7 +277,9 @@ case class GpuParquetMultiPartitionReaderFactory(
         None
       }
 
+      // logWarning("before pushed filters defined" )
       val blocks = if (pushedFilters.isDefined) {
+        // logWarning("pushed filters defined: " + pushedFilters)
         // Use the ParquetFileReader to perform dictionary-level filtering
         ParquetInputFormat.setFilterPredicate(conf, pushedFilters.get)
         //noinspection ScalaDeprecation
@@ -299,11 +303,12 @@ case class GpuParquetMultiPartitionReaderFactory(
       clippedSchema = filterClippedSchema(clippedSchemaTmp, fileSchema, isCaseSensitive)
       val columnPaths = clippedSchema.getPaths.asScala.map(x => ColumnPath.get(x: _*))
       val clipped = ParquetPartitionReader.clipBlocks(columnPaths, blocks.asScala)
+      blocksPerFile(filePath) ++= blocks.asScala
       clippedBlocks ++= clipped.map((filePath, _))
     }
     new MultiFileParquetPartitionReader(conf, files, clippedBlocks, clippedSchema,
       isCaseSensitive, readDataSchema, debugDumpPrefix, maxReadBatchSizeRows,
-      maxReadBatchSizeBytes, metrics)
+      maxReadBatchSizeBytes, metrics, blocksPerFile)
   }
 }
 
@@ -461,13 +466,14 @@ class MultiFileParquetPartitionReader(
     debugDumpPrefix: String,
     maxReadBatchSizeRows: Integer,
     maxReadBatchSizeBytes: Long,
-    execMetrics: Map[String, SQLMetric]) extends PartitionReader[ColumnarBatch] with Logging
+    execMetrics: Map[String, SQLMetric],
+    blocksPerFile: LinkedHashMap[Path, ArrayBuffer[BlockMetaData]]) extends PartitionReader[ColumnarBatch] with Logging
   with ScanWithMetrics with Arm {
   private var isExhausted: Boolean = false
   private var maxDeviceMemory: Long  = 0
   private var batch: Option[ColumnarBatch] = None
   private val blockIterator: BufferedIterator[(Path, BlockMetaData)] =
-    clippedBlocks.iterator.buffered
+    blocksPerFile.toSeq.iterator.buffered
   private val copyBufferSize = conf.getInt("parquet.read.allocation.size", 8 * 1024 * 1024)
 
   metrics = execMetrics
@@ -507,17 +513,19 @@ class MultiFileParquetPartitionReader(
     val filesWithBlocks = blocks.groupBy(_._1).map { case (k, v) => (k, v.map(_._2)) }
     try {
         var succeeded = false
-        val allBlocks = filesWithBlocks.values.flatten.toSeq
+        //val allBlocks = filesWithBlocks.values.flatten.toSeq
+        val allBlocks = blocks.map(_._2)
         val size = calculateParquetOutputSize(allBlocks)
-        logWarning("checking footer length of each blocks")
+        // logWarning("checking footer length of each blocks")
         allBlocks.foreach(b => calculateParquetOutputSize(Seq(b)))
-        logWarning("done checking footer length of each blocks")
+        // logWarning("done checking footer length of each blocks")
         val hmb = HostMemoryBuffer.allocate(size)
         val out = new HostMemoryOutputStream(hmb)
         try {
           out.write(ParquetPartitionReader.PARQUET_MAGIC)
           val allOutputBlocks = scala.collection.mutable.ArrayBuffer[BlockMetaData]()
-          filesWithBlocks.foreach { case (file, blocks) =>
+          blocks.foreach { case (file, blocks) =>
+            logWarning(s"processing partition: ${TaskContext.get().partitionId()} file: $file" + " blocks; " + blocks)
             val in = file.getFileSystem(conf).open(file)
             try {
               val retBlocks = copyBlocksData(in, out, blocks)
@@ -529,16 +537,16 @@ class MultiFileParquetPartitionReader(
           }
           val size = calculateParquetOutputSize(allOutputBlocks)
           val footerPos = out.getPos
-          logWarning(s"actual write before write footer count is: ${out.getPos}")
+          // logWarning(s"actual write before write footer count is: ${out.getPos}")
           writeFooter(out, allOutputBlocks)
-          logWarning(s"actual write after write footer count is: ${out.getPos}")
+          // logWarning(s"actual write after write footer count is: ${out.getPos}")
           BytesUtils.writeIntLittleEndian(out, (out.getPos - footerPos).toInt)
-          logWarning(s"write little endian size: ${out.getPos - footerPos}")
-          logWarning(s"wrote little endidan : ${out.getPos}")
+          // logWarning(s"write little endian size: ${out.getPos - footerPos}")
+          // logWarning(s"wrote little endidan : ${out.getPos}")
           out.write(ParquetPartitionReader.PARQUET_MAGIC)
-          logWarning(s"wrote magic : ${out.getPos}")
+          // logWarning(s"wrote magic : ${out.getPos}")
           succeeded = true
-          logWarning(s"Actual written out size: ${out.getPos}")
+          // logWarning(s"Actual written out size: ${out.getPos}")
           (hmb, out.getPos)
         } finally {
           if (!succeeded) {
@@ -561,8 +569,8 @@ class MultiFileParquetPartitionReader(
     //       uncompressed size rather than the size in the file.
     size += currentChunkedBlocks.flatMap(_.getColumns.asScala.map(_.getTotalSize)).sum
 
-    logWarning("sizes are: " + currentChunkedBlocks.flatMap(_.getColumns.asScala.map(_.getTotalSize)))
-    logWarning(s"size: $size")
+    // logWarning("sizes are: " + currentChunkedBlocks.flatMap(_.getColumns.asScala.map(_.getTotalSize)))
+    // logWarning(s"size: $size")
     // Calculate size of the footer metadata.
     // This uses the column metadata from the original file, but that should
     // always be at least as big as the updated metadata in the output.
@@ -570,7 +578,7 @@ class MultiFileParquetPartitionReader(
     writeFooter(out, currentChunkedBlocks)
     // TODO - why am I off 72 bytes???
     val calcSize = size + out.getByteCount + (currentChunkedBlocks.size * 8)
-    logWarning(s"size is $size footer is ${out.getByteCount} calculated size is: $calcSize")
+    // logWarning(s"size is $size footer is ${out.getByteCount} calculated size is: $calcSize")
     calcSize
   }
 
@@ -749,6 +757,7 @@ class MultiFileParquetPartitionReader(
       return None
     }
 
+    logWarning(s"read to table blocks is partition ${TaskContext.get().partitionId()} :" + currentChunkedBlocks.mkString(","))
     val (dataBuffer, dataSize) = readPartFile(currentChunkedBlocks)
     try {
       if (dataSize == 0) {
@@ -870,6 +879,7 @@ class ParquetPartitionReader(
   metrics = execMetrics
 
   override def next(): Boolean = {
+    logWarning(s"calling partition reader $filePath")
     batch.foreach(_.close())
     batch = None
     if (!isExhausted) {
@@ -903,6 +913,7 @@ class ParquetPartitionReader(
       metrics("bufferTime"))
     try {
       val in = filePath.getFileSystem(conf).open(filePath)
+      logWarning(s"origin processing file: $filePath")
       try {
         var succeeded = false
         val hmb = HostMemoryBuffer.allocate(calculateParquetOutputSize(blocks))
@@ -1123,6 +1134,7 @@ class ParquetPartitionReader(
       return None
     }
 
+    logWarning("orig read to table blocks is " + currentChunkedBlocks.mkString(","))
     val (dataBuffer, dataSize) = readPartFile(currentChunkedBlocks)
     try {
       if (dataSize == 0) {

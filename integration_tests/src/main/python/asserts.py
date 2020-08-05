@@ -27,6 +27,7 @@ def _assert_equal(cpu, gpu, float_check, path):
         assert len(cpu) == len(gpu), "CPU and GPU row have different lengths at {}".format(path)
         if hasattr(cpu, "__fields__") and hasattr(gpu, "__fields__"):
             for field in cpu.__fields__:
+                print("cpu Tom: {}, gpu Tom: {}".format(cpu, gpu))
                 _assert_equal(cpu[field], gpu[field], float_check, path + [field])
         else:
             for index in range(len(cpu)):

@@ -42,22 +42,28 @@ case class SmallPartitionedFileReader[T](
 class MultiFilePartitionReader[T](reader: SmallPartitionedFileReader[T])
   extends PartitionReader[T] with Logging {
 
+  private var currentReader = reader
   private val sqlConf = SQLConf.get
   private def ignoreMissingFiles = sqlConf.ignoreMissingFiles
   private def ignoreCorruptFiles = sqlConf.ignoreCorruptFiles
 
   override def next(): Boolean = {
     // TODO - what to set this to?
+    //val file = reader.files.head
     // InputFileBlockHolder.set(file.filePath, file.start, file.length)
+
+    if (currentReader == null) {
+      return false
+    }
 
     // In PartitionReader.next(), the current reader proceeds to next record.
     // It might throw RuntimeException/IOException and Spark should handle these exceptions.
     val hasNext = try {
-      reader != null && reader.next()
+      currentReader != null && currentReader.next()
     } catch {
       case e: SchemaColumnConvertNotSupportedException =>
         val message = "Parquet column cannot be converted in " +
-          s"file ${reader.files}. Column: ${e.getColumn}, " +
+          s"file ${currentReader.files}. Column: ${e.getColumn}, " +
           s"Expected: ${e.getLogicalType}, Found: ${e.getPhysicalType}"
         throw new QueryExecutionException(message, e)
       case e: ParquetDecodingException =>
@@ -70,13 +76,14 @@ class MultiFilePartitionReader[T](reader: SmallPartitionedFileReader[T])
         throw e
       case e @ (_: RuntimeException | _: IOException) if ignoreCorruptFiles =>
         logWarning(
-          s"Skipped the rest of the content in the corrupted file: $reader", e)
+          s"Skipped the rest of the content in the corrupted file: $currentReader", e)
         false
     }
     if (hasNext) {
       true
     } else {
       close()
+      currentReader = null
       false
     }
   }
@@ -84,8 +91,9 @@ class MultiFilePartitionReader[T](reader: SmallPartitionedFileReader[T])
   override def get(): T = reader.get()
 
   override def close(): Unit = {
-    if (reader != null) {
-      reader.close()
+    if (currentReader != null) {
+      currentReader.close()
+      currentReader = null
     }
     InputFileBlockHolder.unset()
   }
