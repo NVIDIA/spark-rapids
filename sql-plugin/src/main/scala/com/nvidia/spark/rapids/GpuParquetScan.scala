@@ -819,8 +819,12 @@ class MultiFileParquetPartitionReader(
     @tailrec
     def readNextBatch(): Unit = {
       if (blockIterator.hasNext) {
-        // TODO - check to see if partitionValues different, then have to split it
-        if (currentFile == null || currentFile != blockIterator.head._1) {
+        if (currentFile == null) {
+          currentFile = blockIterator.head._1
+          currentPartitionedFile = blockIterator.head._3
+        }
+        if (currentFile != blockIterator.head._1) {
+          // check to see if partitionValues different, then have to split it
           if (blockIterator.head._3.partitionValues != currentPartitionedFile.partitionValues) {
             logWarning(s"Partition values for the next file ${blockIterator.head._1}" +
               s" don't match current $currentFile, splitting it into another batch!")
@@ -839,7 +843,6 @@ class MultiFileParquetPartitionReader(
             peekedRowGroup.getRowCount)
           if (numBytes == 0 || numBytes + estimatedBytes <= maxReadBatchSizeBytes) {
             val nextBlock = blockIterator.next()
-            // TODO - we really only need partitionValues once
             val nextTuple = (nextBlock._1, nextBlock._2)
             currentChunk += nextTuple
             numRows += currentChunk.last._2.getRowCount
