@@ -82,32 +82,29 @@ case class GpuArrowEvalPythonExec(
     .toString
   private lazy val initAllocPerWorker = {
     val info = Cuda.memGetInfo()
-    // Total size that python workers can use.
-    // If users set it, use it. Otherwise calculate from the conf for JVM side.
-    // FIXME Shall we reserve a little portion (here 0.02) for floating-point error ?
-    val initFactionTotal = rapidsConf.get(PYTHON_RMM_ALLOC_FRACTION)
-      .getOrElse(1 - 0.02 - rapidsConf.rmmAllocFraction)
-    val initAllocTotal = (initFactionTotal * info.total).toLong
+    // Total size that python workers can use. If users set conf `PYTHON_RMM_ALLOC_FRACTION`,
+    // use it. Otherwise use the 90 percent of the free size.
+    val initAllocTotal = rapidsConf.get(PYTHON_RMM_ALLOC_FRACTION)
+      .map(fraction => (fraction * info.total).toLong)
+      .getOrElse((0.9 * info.free).toLong)
     if (initAllocTotal > info.free) {
-      logWarning(s"Initial RMM allocation(${initAllocTotal / 1024 / 1024.0} MB) for " +
-        s"all the Python workers is larger than free memory(${info.free / 1024 / 1024.0} MB)")
+      logWarning(s"Initial RMM allocation(${initAllocTotal / 1024.0 / 1024} MB) for " +
+        s"all the Python workers is larger than free memory(${info.free / 1024.0 / 1024} MB)")
     } else {
-      logDebug(s"Configure ${initAllocTotal / 1024 / 1024.0}MB GPU memory for " +
+      logDebug(s"Configure ${initAllocTotal / 1024.0 / 1024}MB GPU memory for " +
         s"all the Python workers.")
     }
     // Calculate the pool size for each Python worker.
     val concurrentPythonWorkers = rapidsConf.get(CONCURRENT_PYTHON_WORKERS)
-    if (concurrentPythonWorkers > 0) {
+    val sparkConf = SparkEnv.get.conf
+    // Spark does not throw exception even the value of CPUS_PER_TASK is negative, so
+    // return 1 if it is less than zero to continue the task.
+    val cpuTaskSlots = sparkConf.get(EXECUTOR_CORES) / Math.max(1, sparkConf.get(CPUS_PER_TASK))
+    if (0 < concurrentPythonWorkers && concurrentPythonWorkers <= cpuTaskSlots) {
       initAllocTotal / concurrentPythonWorkers
     } else {
-      // When semaphore is disabled, which should replace the `concurrentPythonWorkers` in the
-      // pool size computation, the number of running tasks or the number of cpu/task slots in
-      // an executor ?
-      // Here choose the later one for simplicity and it can cover most cases.
-      // Even when the former is smaller than the later one, the choice would still work.
-      // FIXME How about AQE or how to get the number of running tasks in an executor?
-      val sparkConf = SparkEnv.get.conf
-      initAllocTotal / (sparkConf.get(EXECUTOR_CORES) / sparkConf.get(CPUS_PER_TASK))
+      // When semaphore is disabled or invalid, use the number of cpu task slots instead.
+      initAllocTotal / cpuTaskSlots
     }
   }.toString
 
