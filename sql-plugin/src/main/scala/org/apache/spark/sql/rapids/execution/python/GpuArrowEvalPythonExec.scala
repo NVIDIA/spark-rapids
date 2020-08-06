@@ -80,13 +80,22 @@ case class GpuArrowEvalPythonExec(
   private lazy val isPythonUvmEnabled = rapidsConf.get(PYTHON_UVM_ENABLED)
     .getOrElse(rapidsConf.isUvmEnabled)
     .toString
-  private lazy val initAllocPerWorker = {
+  private lazy val (initAllocPerWorker, maxAllocPerWorker) = {
     val info = Cuda.memGetInfo()
-    // Total size that python workers can use. If users set conf `PYTHON_RMM_ALLOC_FRACTION`,
-    // use it. Otherwise use the 90 percent of the free size.
+    val maxFactionTotal = rapidsConf.get(PYTHON_RMM_MAX_ALLOC_FRACTION)
+    val maxAllocTotal = (maxFactionTotal * info.total).toLong
+    // Initialize pool size for all pythons workers. If the fraction is not set,
+    // use half of the free memory as default.
     val initAllocTotal = rapidsConf.get(PYTHON_RMM_ALLOC_FRACTION)
-      .map(fraction => (fraction * info.total).toLong)
-      .getOrElse((0.9 * info.free).toLong)
+      .map { fraction =>
+        if (0 < maxFactionTotal && maxFactionTotal < fraction) {
+          throw new IllegalArgumentException(s"The value of '$PYTHON_RMM_MAX_ALLOC_FRACTION' " +
+            s"should not be less than that of '$PYTHON_RMM_ALLOC_FRACTION', but found " +
+            s"$maxFactionTotal < $fraction")
+        }
+        (fraction * info.total).toLong
+      }
+      .getOrElse((0.5 * info.free).toLong)
     if (initAllocTotal > info.free) {
       logWarning(s"Initial RMM allocation(${initAllocTotal / 1024.0 / 1024} MB) for " +
         s"all the Python workers is larger than free memory(${info.free / 1024.0 / 1024} MB)")
@@ -94,6 +103,7 @@ case class GpuArrowEvalPythonExec(
       logDebug(s"Configure ${initAllocTotal / 1024.0 / 1024}MB GPU memory for " +
         s"all the Python workers.")
     }
+
     // Calculate the pool size for each Python worker.
     val concurrentPythonWorkers = rapidsConf.get(CONCURRENT_PYTHON_WORKERS)
     val sparkConf = SparkEnv.get.conf
@@ -101,12 +111,12 @@ case class GpuArrowEvalPythonExec(
     // return 1 if it is less than zero to continue the task.
     val cpuTaskSlots = sparkConf.get(EXECUTOR_CORES) / Math.max(1, sparkConf.get(CPUS_PER_TASK))
     if (0 < concurrentPythonWorkers && concurrentPythonWorkers <= cpuTaskSlots) {
-      initAllocTotal / concurrentPythonWorkers
+      (initAllocTotal / concurrentPythonWorkers, maxAllocTotal / concurrentPythonWorkers)
     } else {
       // When semaphore is disabled or invalid, use the number of cpu task slots instead.
-      initAllocTotal / cpuTaskSlots
+      (initAllocTotal / cpuTaskSlots, maxAllocTotal / cpuTaskSlots)
     }
-  }.toString
+  }
 
   private def injectGpuInfo(funcs: Seq[ChainedPythonFunctions]): Unit = {
     // Insert GPU related env(s) into `envVars` for all the PythonFunction(s).
@@ -117,9 +127,8 @@ case class GpuArrowEvalPythonExec(
       pyF.envVars.put("RAPIDS_SQL_ENABLED", rapidsConf.isSqlEnabled.toString)
       pyF.envVars.put("RAPIDS_UVM_ENABLED", isPythonUvmEnabled)
       pyF.envVars.put("RAPIDS_POOLED_MEM_ENABLED", isPythonPooledMemEnabled)
-      pyF.envVars.put("RAPIDS_POOLED_MEM_SIZE", initAllocPerWorker)
-      // now max size is the same with initial size, may use a different one later.
-      pyF.envVars.put("RAPIDS_POOLED_MEM_MAX_SIZE", initAllocPerWorker)
+      pyF.envVars.put("RAPIDS_POOLED_MEM_SIZE", initAllocPerWorker.toString)
+      pyF.envVars.put("RAPIDS_POOLED_MEM_MAX_SIZE", maxAllocPerWorker.toString)
     })
 
     // Check and overwrite the related conf(s):

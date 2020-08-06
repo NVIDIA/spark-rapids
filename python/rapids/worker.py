@@ -44,15 +44,19 @@ def initialize_gpu_mem():
         not be overwritten again by the `import` in UDF, since Python will ignore duplicated
         `import`.
         '''
+        max_long = 2**64 - 1
         pool_size = int(os.environ.get('RAPIDS_POOLED_MEM_SIZE', 0))
-        if 'RAPIDS_POOLED_MEM_MAX_SIZE' in os.environ:
-            pool_max_size = int(os.environ['RAPIDS_POOLED_MEM_MAX_SIZE'])
-        else:
-            pool_max_size = pool_size
+        pool_max_size = int(os.environ.get('RAPIDS_POOLED_MEM_MAX_SIZE', 0))
+        if 0 < pool_max_size < pool_size:
+            raise ValueError("Value of `RAPIDS_POOLED_MEM_MAX_SIZE` should not be less than "
+                             "`RAPIDS_POOLED_MEM_SIZE`.")
+        if pool_max_size == 0:
+            pool_max_size = max_long
         base_t = rmm.mr.ManagedMemoryResource if uvm_enabled else rmm.mr.CudaMemoryResource
         rmm.mr.set_default_resource(rmm.mr.PoolMemoryResource(base_t(), pool_size, pool_max_size))
-        print("DEBUG: Pooled memory, pool size: {}, max size: {}".format(pool_size,
-                                                                         pool_max_size))
+        print("DEBUG: Pooled memory, pool size: {} MiB, max size: {} MiB".format(
+                pool_size / 1024.0 / 1024,
+                ('unlimited' if pool_max_size == max_long else pool_max_size / 1024.0 / 1024)))
     elif uvm_enabled:
         # Will this really be needed for Python ?
         from cudf import rmm

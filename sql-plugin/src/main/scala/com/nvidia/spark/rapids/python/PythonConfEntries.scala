@@ -35,8 +35,18 @@ object PythonConfEntries {
       "(1 - $(spark.rapids.memory.gpu.allocFraction)), since the executor will share the " +
       "GPU with its owning Python workers.")
     .doubleConf
-    .checkValue(v => v >= 0 && v < 1, "The fraction value must be in [0, 1).")
+    .checkValue(v => v >= 0 && v <= 1, "The fraction value for Python workers must be in [0, 1].")
     .createOptional
+
+  val PYTHON_RMM_MAX_ALLOC_FRACTION = conf("spark.rapids.python.memory.gpu.maxAllocFraction")
+    .doc("The fraction of total GPU memory that limits the maximum size of the RMM pool " +
+      "for all the Python workers. It supposes to be less than " +
+      "(1 - $(spark.rapids.memory.gpu.maxAllocFraction)), since the executor will share the " +
+      "GPU with its owning Python workers. when setting to 0 means no limit.")
+    .doubleConf
+    .checkValue(v => v >= 0 && v <= 1, "The value of maxAllocFraction for Python workers must be" +
+      " in [0, 1].")
+    .createWithDefault(0.0)
 
   val PYTHON_POOLED_MEM = conf("spark.rapids.python.memory.gpu.pooling.enabled")
     .doc("Should RMM in Python workers act as a pooling allocator for GPU memory, or" +
