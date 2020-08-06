@@ -30,6 +30,7 @@ import org.apache.spark.sql.catalyst.expressions._
 import org.apache.spark.sql.catalyst.plans.JoinType
 import org.apache.spark.sql.connector.read.Scan
 import org.apache.spark.sql.execution._
+import org.apache.spark.sql.execution.columnar.InMemoryTableScanExec
 import org.apache.spark.sql.execution.datasources.HadoopFsRelation
 import org.apache.spark.sql.execution.datasources.parquet.ParquetFileFormat
 import org.apache.spark.sql.execution.datasources.v2.orc.OrcScan
@@ -38,7 +39,7 @@ import org.apache.spark.sql.execution.joins.{BroadcastHashJoinExec, BroadcastNes
 import org.apache.spark.sql.execution.joins.ShuffledHashJoinExec
 import org.apache.spark.sql.rapids.{GpuFileSourceScanExec, GpuTimeSub, ShuffleManagerShimBase}
 import org.apache.spark.sql.rapids.execution.GpuBroadcastNestedLoopJoinExecBase
-import org.apache.spark.sql.rapids.shims.spark310._
+import org.apache.spark.sql.rapids.shims.spark310.{GpuInMemoryTableScanExec, _}
 import org.apache.spark.sql.types._
 import org.apache.spark.storage.{BlockId, BlockManagerId}
 import org.apache.spark.unsafe.types.CalendarInterval
@@ -163,6 +164,21 @@ class Spark310Shims extends Spark301Shims {
               wrapped.dataFilters,
               wrapped.tableIdentifier,
               canUseSmallFileOpt)
+          }
+        }),
+      GpuOverrides.exec[InMemoryTableScanExec](
+        "Implementation of InMemoryTableScanExec to use GPU accelerated Caching",
+        (scan, conf, p, r) => new SparkPlanMeta[InMemoryTableScanExec](scan, conf, p, r) {
+          override def tagPlanForGpu(): Unit = {
+            if (!scan.relation.cacheBuilder.serializer.isInstanceOf[ParquetCachedBatchSerializer]){
+              willNotWorkOnGpu("DefaultCachedBatchSerializer being used")
+            }
+          }
+          /**
+           * Convert InMemoryTableScanExec to a GPU enabled version.
+           */
+          override def convertToGpu(): GpuExec = {
+            GpuInMemoryTableScanExec(scan.attributes, scan.predicates, scan.relation)
           }
         }),
       GpuOverrides.exec[SortMergeJoinExec](

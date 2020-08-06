@@ -18,7 +18,6 @@ package com.nvidia.spark.rapids
 
 import java.time.ZoneId
 
-import com.nvidia.spark.rapids.cache.ParquetCachedBatchSerializer
 import scala.reflect.ClassTag
 
 import org.apache.spark.internal.Logging
@@ -32,7 +31,6 @@ import org.apache.spark.sql.connector.read.Scan
 import org.apache.spark.sql.execution._
 import org.apache.spark.sql.execution.adaptive.CustomShuffleReaderExec
 import org.apache.spark.sql.execution.aggregate.{HashAggregateExec, SortAggregateExec}
-import org.apache.spark.sql.execution.columnar.InMemoryTableScanExec
 import org.apache.spark.sql.execution.command.{DataWritingCommand, DataWritingCommandExec}
 import org.apache.spark.sql.execution.datasources.{HadoopFsRelation, InsertIntoHadoopFsRelationCommand}
 import org.apache.spark.sql.execution.datasources.csv.CSVFileFormat
@@ -1688,21 +1686,6 @@ object GpuOverrides {
     exec[BroadcastExchangeExec](
       "The backend for broadcast exchange of data",
       (exchange, conf, p, r) => new GpuBroadcastMeta(exchange, conf, p, r)),
-    exec[InMemoryTableScanExec](
-      "Implementation of InMemoryTableScanExec to use GPU accelerated Caching",
-      (scan, conf, p, r) => new SparkPlanMeta[InMemoryTableScanExec](scan, conf, p, r) {
-        override def tagPlanForGpu(): Unit = {
-          if (!scan.relation.cacheBuilder.serializer.isInstanceOf[ParquetCachedBatchSerializer]){
-           willNotWorkOnGpu("DefaultCachedBatchSerializer being used")
-          }
-        }
-        /**
-         * Convert InMemoryTableScanExec to a GPU enabled version.
-         */
-        override def convertToGpu(): GpuExec = {
-          GpuInMemoryTableScanExec(scan.attributes, scan.predicates, scan.relation)
-        }
-      }),
     exec[BroadcastNestedLoopJoinExec](
       "Implementation of join using brute force",
       (join, conf, p, r) => new GpuBroadcastNestedLoopJoinMeta(join, conf, p, r))

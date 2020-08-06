@@ -28,7 +28,6 @@ import org.apache.spark.serializer.Serializer
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.expressions.{Attribute, Expression}
 import org.apache.spark.sql.execution.{BinaryExecNode, ExplainUtils, SparkPlan}
-import org.apache.spark.sql.execution.joins.BuildLeft
 import org.apache.spark.sql.execution.metric.{SQLMetric, SQLMetrics}
 import org.apache.spark.sql.rapids.execution.GpuBroadcastNestedLoopJoinExecBase
 import org.apache.spark.sql.vectorized.{ColumnarBatch, ColumnVector}
