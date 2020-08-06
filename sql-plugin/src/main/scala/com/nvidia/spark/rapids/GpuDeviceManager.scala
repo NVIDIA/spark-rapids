@@ -163,8 +163,14 @@ object GpuDeviceManager extends Logging {
         logWarning(s"Initial RMM allocation(${initialAllocation / 1024 / 1024.0} MB) is " +
           s"larger than free memory(${info.free / 1024 / 1024.0} MB)")
       }
-      val maxAllocation = (conf.rmmAllocMaxFraction * info.total).toLong
-      if (maxAllocation > 0 && maxAllocation < initialAllocation) {
+      val maxAllocation = if (conf.rmmAllocMaxFraction < 1) {
+        (conf.rmmAllocMaxFraction * info.total).toLong
+      } else {
+        // Do not attempt to enforce any artificial pool limit based on queried GPU memory size
+        // if config indicates all GPU memory should be used.
+        Long.MaxValue
+      }
+      if (maxAllocation < initialAllocation) {
         throw new IllegalArgumentException(s"${RapidsConf.RMM_ALLOC_MAX_FRACTION} " +
             s"configured as ${conf.rmmAllocMaxFraction} which is less than the " +
             s"${RapidsConf.RMM_ALLOC_FRACTION} setting of ${conf.rmmAllocFraction}")
