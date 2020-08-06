@@ -28,6 +28,8 @@ import org.apache.spark.sql.execution.SparkPlan
 
 class Spark301Shims extends Spark300Shims {
 
+  override def getSparkShimVersion: ShimVersion = SparkShimServiceProvider.VERSION
+
   def exprs301: Map[Class[_ <: Expression], ExprRule[_ <: Expression]] = Seq(
     GpuOverrides.expr[First](
       "first aggregate operator",

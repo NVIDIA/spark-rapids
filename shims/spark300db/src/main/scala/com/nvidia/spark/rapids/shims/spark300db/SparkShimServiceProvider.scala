@@ -16,14 +16,17 @@
 
 package com.nvidia.spark.rapids.shims.spark300db
 
-import com.nvidia.spark.rapids.SparkShims
+import com.nvidia.spark.rapids.{DatabricksShimVersion, SparkShims}
+
+object SparkShimServiceProvider {
+  val VERSION = DatabricksShimVersion(3, 0, 0)
+  val VERSIONNAMES = Seq(s"$VERSION")
+}
 
 class SparkShimServiceProvider extends com.nvidia.spark.rapids.SparkShimServiceProvider {
 
-  val VERSIONNAMES = Seq("3.0.0-databricks")
-
   def matchesVersion(version: String): Boolean = {
-    VERSIONNAMES.contains(version)
+    SparkShimServiceProvider.VERSIONNAMES.contains(version)
   }
 
   def buildShim: SparkShims = {

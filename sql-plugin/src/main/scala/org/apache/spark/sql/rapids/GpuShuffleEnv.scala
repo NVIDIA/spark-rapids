@@ -58,12 +58,8 @@ class GpuShuffleEnv extends Logging {
       deviceStorage.setSpillStore(hostStorage)
       hostStorage.setSpillStore(diskStorage)
 
-      val spillStart = (devInfo.total * rapidsConf.rmmSpillAsyncStart).toLong
-      val spillStop = (devInfo.total * rapidsConf.rmmSpillAsyncStop).toLong
-      logInfo("Installing GPU memory handler to start spill at " +
-          s"${Utils.bytesToString(spillStart)} and stop at " +
-          s"${Utils.bytesToString(spillStop)}")
-      memoryEventHandler = new DeviceMemoryEventHandler(deviceStorage, spillStart, spillStop)
+      logInfo("Installing GPU memory handler for spill")
+      memoryEventHandler = new DeviceMemoryEventHandler(deviceStorage)
       Rmm.setEventHandler(memoryEventHandler)
 
       shuffleCatalog = new ShuffleBufferCatalog(catalog, diskBlockManager)
