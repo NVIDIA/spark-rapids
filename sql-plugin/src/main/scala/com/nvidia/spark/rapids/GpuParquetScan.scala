@@ -231,8 +231,9 @@ case class GpuParquetMultiPartitionReaderFactory(
       partitionedFiles: Array[PartitionedFile]): PartitionReader[ColumnarBatch] = {
     val reader = buildBaseColumnarParquetReader(partitionedFiles)
     // TODO - need to fix for partition values
-    ColumnarPartitionReaderWithPartitionValues.newReader(partitionedFiles(0),
-      reader, partitionSchema)
+    // ColumnarPartitionReaderWithPartitionValues.newReader(partitionedFiles(0),
+      // reader, partitionSchema)
+    reader
   }
 
   private def filterClippedSchema(clippedSchema: MessageType,
