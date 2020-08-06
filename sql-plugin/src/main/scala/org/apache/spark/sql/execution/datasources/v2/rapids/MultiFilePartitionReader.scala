@@ -55,9 +55,10 @@ class MultiFilePartitionReader[T](reader: MultiplePartitionedFileReader[T])
   private def ignoreCorruptFiles = sqlConf.ignoreCorruptFiles
 
   override def next(): Boolean = {
-    // TODO - what to set this to?
-    val files = reader.files.map(_.filePath).mkString(",")
-    InputFileBlockHolder.set(files, 0, -1)
+    // there is a check for InputFileName expression that shouldn't allow user toget
+    // input file name when the small file optimization is enabled, just set it to
+    // empty string here to indicate its not available.
+    InputFileBlockHolder.set("", 0, -1)
 
     if (currentReader == null) {
       return false

@@ -306,7 +306,7 @@ case class GpuParquetMultiPartitionReaderFactory(
       // for our own purposes
       // TODO - APPEND or coalesce ?? At least check is different
       clippedSchema = filterClippedSchema(clippedSchemaTmp, fileSchema, isCaseSensitive)
-      logWarning(s"file: $file schema: $clippedSchema")
+      // logWarning(s"file: $file schema: $clippedSchema")
       val columnPaths = clippedSchema.getPaths.asScala.map(x => ColumnPath.get(x: _*))
       val clipped = ParquetPartitionReader.clipBlocks(columnPaths, blocks.asScala)
       clippedBlocks ++= clipped.map((filePath, _, file))

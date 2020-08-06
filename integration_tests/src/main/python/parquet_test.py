@@ -255,7 +255,7 @@ def test_compress_write_round_trip(spark_tmp_path, compress, small_file_opt):
             conf={'spark.sql.parquet.compression.codec': compress,
                 'spark.rapids.sql.format.parquet.smallFiles.enabled': small_file_opt})
 
-@pytest.mark.skip(reason="no way of currently testing this")
+#@pytest.mark.skip(reason="no way of currently testing this")
 def test_input_meta(spark_tmp_path):
     first_data_path = spark_tmp_path + '/PARQUET_DATA/key=0'
     with_cpu_session(
