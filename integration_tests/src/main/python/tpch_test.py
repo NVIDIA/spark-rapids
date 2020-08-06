@@ -32,10 +32,10 @@ def test_tpch_q1(tpch, conf):
 @approximate_float
 @incompat
 @allow_non_gpu('TakeOrderedAndProjectExec', 'SortOrder', 'AttributeReference')
-@pytest.mark.parametrize('conf', [_base_conf, _adaptive_conf])
-def test_tpch_q2(tpch, conf):
+# query 2 does not yet work with AQE - see https://github.com/NVIDIA/spark-rapids/issues/275
+def test_tpch_q2(tpch):
   assert_gpu_and_cpu_are_equal_collect(
-          lambda spark : tpch.do_test_query("q2"), conf=conf)
+          lambda spark : tpch.do_test_query("q2"), conf=_base_conf)
 
 @approximate_float
 @allow_non_gpu('TakeOrderedAndProjectExec', 'SortOrder', 'AttributeReference')
