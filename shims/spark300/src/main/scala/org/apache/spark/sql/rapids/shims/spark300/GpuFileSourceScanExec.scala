@@ -414,8 +414,9 @@ object GpuFileSourceScanExec extends Logging {
     val fs = meta.wrapped
     val options = fs.relation.options
     logWarning(s"gpu file source scan exec options ${options}")
-    if (meta.conf.isParquetSmallFilesEnabled && sparkSession.conf
-      .getOption("spark.sql.parquet.mergeSchema").exists(_.toBoolean)) {
+    if (meta.conf.isParquetSmallFilesEnabled && (sparkSession.conf
+      .getOption("spark.sql.parquet.mergeSchema").exists(_.toBoolean) ||
+      options.getOrElse("mergeSchema", "false").toBoolean)) {
       meta.willNotWorkOnGpu("mergeSchema is not supported yet")
     }
 
