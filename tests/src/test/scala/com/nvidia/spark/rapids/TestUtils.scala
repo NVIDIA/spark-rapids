@@ -20,13 +20,14 @@ import java.io.File
 
 import ai.rapids.cudf.{ColumnVector, DType, Table}
 import org.scalatest.Assertions
-
 import org.apache.spark.SparkConf
 import org.apache.spark.sql.SparkSession
 import org.apache.spark.sql.execution.SparkPlan
 import org.apache.spark.sql.execution.adaptive.{AdaptiveSparkPlanExec, BroadcastQueryStageExec, ShuffleQueryStageExec}
 import org.apache.spark.sql.rapids.GpuShuffleEnv
 import org.apache.spark.sql.vectorized.ColumnarBatch
+
+import scala.collection.mutable.ListBuffer
 
 /** A collection of utility methods useful in tests. */
 object TestUtils extends Assertions with Arm {
@@ -62,6 +63,27 @@ object TestUtils extends Assertions with Arm {
       case qs: ShuffleQueryStageExec => findOperator(qs.shuffle, predicate)
       case other => other.children.flatMap(p => findOperator(p, predicate)).headOption
     }
+  }
+
+  /** Return list of  matching predicates present in the plan */
+  def operatorCount(plan: SparkPlan, predicate: SparkPlan => Boolean): Seq[SparkPlan] = {
+    def recurse(
+      plan: SparkPlan,
+      predicate: SparkPlan => Boolean,
+      accum: ListBuffer[SparkPlan]): Seq[SparkPlan] = {
+      plan match {
+        case _ if predicate(plan) =>
+          accum += plan
+          plan.children.flatMap(p => recurse(p, predicate, accum)).headOption
+        case a: AdaptiveSparkPlanExec => recurse(a.executedPlan, predicate, accum)
+        case qs: BroadcastQueryStageExec => recurse(qs.broadcast, predicate, accum)
+        case qs: ShuffleQueryStageExec => recurse(qs.shuffle, predicate, accum)
+        case other => other.children.flatMap(p => recurse(p, predicate, accum)).headOption
+      }
+      accum
+    }
+
+    recurse(plan, predicate, new ListBuffer[SparkPlan]())
   }
 
   /** Compre the equality of two `ColumnVector` instances */
