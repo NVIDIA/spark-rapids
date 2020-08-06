@@ -367,7 +367,7 @@ case class GpuFileSourceScanExec(
 
     val splitFiles = selectedPartitions.flatMap { partition =>
       partition.files.flatMap { file =>
-        logWarning(s"partition values is: ${partition.values}")
+        // logWarning(s"partition values is: ${partition.values}")
         // logWarning(s"partition file order is: $file")
         // getPath() is very expensive so we only want to call it once in this block:
         val filePath = file.getPath
@@ -413,7 +413,7 @@ object GpuFileSourceScanExec extends Logging {
     val sparkSession = meta.wrapped.sqlContext.sparkSession
     val fs = meta.wrapped
     val options = fs.relation.options
-    logWarning(s"gpu file source scan exec options ${options}")
+    // logWarning(s"gpu file source scan exec options ${options}")
     if (meta.conf.isParquetSmallFilesEnabled && (sparkSession.conf
       .getOption("spark.sql.parquet.mergeSchema").exists(_.toBoolean) ||
       options.getOrElse("mergeSchema", "false").toBoolean)) {

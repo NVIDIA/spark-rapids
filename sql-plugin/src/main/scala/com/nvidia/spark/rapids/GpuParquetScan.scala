@@ -547,7 +547,6 @@ class MultiFileParquetPartitionReader(
       var succeeded = false
       val allBlocks = blocks.map(_._2)
       val size = calculateParquetOutputSize(allBlocks)
-      allBlocks.foreach(b => calculateParquetOutputSize(Seq(b)))
       val hmb = HostMemoryBuffer.allocate(size)
       val out = new HostMemoryOutputStream(hmb)
       try {
@@ -607,7 +606,7 @@ class MultiFileParquetPartitionReader(
     writeFooter(out, currentChunkedBlocks)
     // TODO - why am I off bytes???  Footer sizes different from when first calculated to when
     // real ones put in
-    val calcSize = size + out.getByteCount + (currentChunkedBlocks.size * 12)
+    val calcSize = size + out.getByteCount + (currentChunkedBlocks.size * 24)
     // logWarning(s"size is $size footer is ${out.getByteCount} calculated size is: $calcSize")
     calcSize
   }
@@ -1254,8 +1253,8 @@ class ParquetPartitionReader(
 
     readNextBatch()
 
-    logWarning(s"Loaded $numRows rows from Parquet. Parquet bytes read: $numParquetBytes. " +
-      s"Estimated GPU bytes: $numBytes")
+    logDebug(s"Loaded $numRows rows from Parquet. Parquet bytes read: $numParquetBytes. " +
+       s"Estimated GPU bytes: $numBytes")
 
     currentChunk
   }
