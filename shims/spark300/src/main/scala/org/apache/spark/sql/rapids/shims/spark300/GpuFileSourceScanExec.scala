@@ -19,11 +19,14 @@ package org.apache.spark.sql.rapids.shims.spark300
 import java.util.concurrent.TimeUnit.NANOSECONDS
 
 import scala.collection.mutable.HashMap
+
 import com.nvidia.spark.rapids._
 import org.apache.hadoop.fs.Path
+
+import org.apache.spark.internal.Logging
 import org.apache.spark.rdd.RDD
-import org.apache.spark.sql.catalyst.catalog.BucketSpec
 import org.apache.spark.sql.catalyst.{InternalRow, TableIdentifier}
+import org.apache.spark.sql.catalyst.catalog.BucketSpec
 import org.apache.spark.sql.catalyst.expressions.{And, Attribute, AttributeReference, BoundReference, Expression, PlanExpression, Predicate, SortOrder}
 import org.apache.spark.sql.catalyst.plans.physical.Partitioning
 import org.apache.spark.sql.execution._
@@ -405,8 +408,17 @@ case class GpuFileSourceScanExec(
   /* ------- end section above only used for small files optimization -------- */
 }
 
-object GpuFileSourceScanExec {
+object GpuFileSourceScanExec extends Logging {
   def tagSupport(meta: SparkPlanMeta[FileSourceScanExec]): Unit = {
+    val sparkSession = meta.wrapped.sqlContext.sparkSession
+    val fs = meta.wrapped
+    val options = fs.relation.options
+    logWarning(s"gpu file source scan exec options ${options}")
+    if (meta.conf.isParquetSmallFilesEnabled && sparkSession.conf
+      .getOption("spark.sql.parquet.mergeSchema").exists(_.toBoolean)) {
+      meta.willNotWorkOnGpu("mergeSchema is not supported yet")
+    }
+
     meta.wrapped.relation.fileFormat match {
       case _: CSVFileFormat => GpuReadCSVFileFormat.tagSupport(meta)
       case _: OrcFileFormat => GpuReadOrcFileFormat.tagSupport(meta)

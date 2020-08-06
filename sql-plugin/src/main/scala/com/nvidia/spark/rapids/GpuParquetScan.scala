@@ -25,10 +25,12 @@ import scala.annotation.tailrec
 import scala.collection.JavaConverters._
 import scala.collection.mutable.{ArrayBuffer, LinkedHashMap}
 import scala.math.max
+
 import ai.rapids.cudf.{ColumnVector, DType, HostMemoryBuffer, NvtxColor, ParquetOptions, Table}
 import com.nvidia.spark.RebaseHelper
 import com.nvidia.spark.rapids.GpuMetricNames._
 import com.nvidia.spark.rapids.ParquetPartitionReader.CopyRange
+import com.nvidia.spark.rapids.RapidsConf.ENABLE_SMALL_FILES_PARQUET
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import org.apache.commons.io.IOUtils
 import org.apache.commons.io.output.{CountingOutputStream, NullOutputStream}
@@ -41,6 +43,7 @@ import org.apache.parquet.format.converter.ParquetMetadataConverter
 import org.apache.parquet.hadoop.{ParquetFileReader, ParquetInputFormat}
 import org.apache.parquet.hadoop.metadata.{BlockMetaData, ColumnChunkMetaData, ColumnPath, FileMetaData, ParquetMetadata}
 import org.apache.parquet.schema.{GroupType, MessageType, Types}
+
 import org.apache.spark.TaskContext
 import org.apache.spark.broadcast.Broadcast
 import org.apache.spark.internal.Logging
@@ -115,6 +118,10 @@ object GpuParquetScan extends Logging {
   def tagSupport(scanMeta: ScanMeta[ParquetScan]): Unit = {
     val scan = scanMeta.wrapped
     val schema = StructType(scan.readDataSchema ++ scan.readPartitionSchema)
+    if (scanMeta.conf.isParquetSmallFilesEnabled && scan.options.getBoolean("mergeSchema", false)) {
+      scanMeta.willNotWorkOnGpu("mergeSchema is not supported yet with" +
+        s" the small file optimization, disable ${ENABLE_SMALL_FILES_PARQUET.key}")
+    }
     tagSupport(scan.sparkSession, schema, scanMeta)
   }
 
@@ -132,6 +139,12 @@ object GpuParquetScan extends Logging {
     if (!meta.conf.isParquetReadEnabled) {
       meta.willNotWorkOnGpu("Parquet input has been disabled. To enable set" +
         s"${RapidsConf.ENABLE_PARQUET_READ} to true")
+    }
+
+    if (meta.conf.isParquetSmallFilesEnabled && sparkSession.conf
+      .getOption("spark.sql.parquet.mergeSchema").exists(_.toBoolean)) {
+      meta.willNotWorkOnGpu("mergeSchema is not supported yet with" +
+      s" the small file optimization, disable ${ENABLE_SMALL_FILES_PARQUET.key}")
     }
 
     for (field <- readSchema) {
