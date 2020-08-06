@@ -203,7 +203,7 @@ abstract class RapidsShuffleInternalManagerBase(conf: SparkConf, isDriver: Boole
     if (!GpuShuffleEnv.isRapidsShuffleEnabled) {
       fallThroughReasons += "external shuffle is enabled"
     }
-    if (conf.get(SQLConf.ADAPTIVE_EXECUTION_ENABLED.key).toBoolean) {
+    if (SQLConf.get.adaptiveExecutionEnabled) {
       fallThroughReasons += "adaptive query execution is enabled"
     }
     if (fallThroughReasons.nonEmpty) {

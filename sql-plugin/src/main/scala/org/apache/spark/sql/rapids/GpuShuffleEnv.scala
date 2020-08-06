@@ -21,10 +21,8 @@ import com.nvidia.spark.rapids._
 
 import org.apache.spark.SparkEnv
 import org.apache.spark.internal.Logging
-import org.apache.spark.sql.SparkSession
-import org.apache.spark.util.Utils
 
-class GpuShuffleEnv extends Logging {
+class GpuShuffleEnv(rapidsConf: RapidsConf) extends Logging {
   private val catalog = new RapidsBufferCatalog
   private var shuffleCatalog: ShuffleBufferCatalog = _
   private var shuffleReceivedBufferCatalog: ShuffleReceivedBufferCatalog = _
@@ -34,7 +32,6 @@ class GpuShuffleEnv extends Logging {
   private var memoryEventHandler: DeviceMemoryEventHandler = _
 
   private lazy val conf = SparkEnv.get.conf
-  private lazy val rapidsConf = new RapidsConf(SparkSession.active.sqlContext.conf)
 
   lazy val isRapidsShuffleConfigured: Boolean = {
     conf.contains("spark.shuffle.manager") &&
@@ -102,9 +99,9 @@ object GpuShuffleEnv extends Logging {
   private var isRapidsShuffleManagerInitialized: Boolean  = false
   @volatile private var env: GpuShuffleEnv = _
 
-  def init(devInfo: CudaMemInfo): Unit = {
+  def init(conf: RapidsConf, devInfo: CudaMemInfo): Unit = {
     Option(env).foreach(_.closeStorage())
-    val shuffleEnv = new GpuShuffleEnv
+    val shuffleEnv = new GpuShuffleEnv(conf)
     shuffleEnv.initStorage(devInfo)
     env = shuffleEnv
   }

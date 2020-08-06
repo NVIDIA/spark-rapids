@@ -59,7 +59,7 @@ tar zxf $SPARK_HOME.tgz -C $ARTF_ROOT && \
 PARQUET_PERF="$WORKSPACE/integration_tests/src/test/resources/parquet_perf"
 PARQUET_ACQ="$WORKSPACE/integration_tests/src/test/resources/parquet_acq"
 OUTPUT="$WORKSPACE/output"
-BASE_SPARK_SUBMIT_ARGS="--master spark://$HOSTNAME:7077 --executor-memory 32G \
+BASE_SPARK_SUBMIT_ARGS="--master spark://$HOSTNAME:7077 --executor-memory 20G \
     --conf spark.sql.shuffle.partitions=12 \
     --conf spark.driver.extraClassPath=${CUDF_JAR}:${RAPIDS_PLUGIN_JAR} \
     --conf spark.executor.extraClassPath=${CUDF_JAR}:${RAPIDS_PLUGIN_JAR} \
@@ -84,4 +84,4 @@ jps
 echo "----------------------------START TEST------------------------------------"
 rm -rf $OUTPUT
 spark-submit $BASE_SPARK_SUBMIT_ARGS $MORTGAGE_SPARK_SUBMIT_ARGS $TEST_PARAMS
-cd $RAPIDS_INT_TESTS_HOME && spark-submit $BASE_SPARK_SUBMIT_ARGS --jars $RAPIDS_TEST_JAR ./runtests.py -v -rfExXs --std_input_path="$WORKSPACE/integration_tests/src/test/resources/"
+cd $RAPIDS_INT_TESTS_HOME && spark-submit $BASE_SPARK_SUBMIT_ARGS --jars $RAPIDS_TEST_JAR ./runtests.py -v src/main/python/window_function_test.py -rfExXs --std_input_path="$WORKSPACE/integration_tests/src/test/resources/"
