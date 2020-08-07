@@ -138,6 +138,8 @@ object MetaUtils extends Arm {
   def buildDegenerateTableMeta(batch: ColumnarBatch): TableMeta = {
     require(batch.numRows == 0 || batch.numCols == 0, "batch not degenerate")
     if (batch.numCols > 0) {
+      // Batched compression can result in degenerate batches appearing compressed. In that case
+      // the table metadata has already been computed and can be returned directly.
       batch.column(0) match {
         case c: GpuCompressedColumnVector =>
           return c.getTableMeta
