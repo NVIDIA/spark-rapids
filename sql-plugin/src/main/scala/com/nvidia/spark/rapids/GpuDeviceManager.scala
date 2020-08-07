@@ -168,9 +168,9 @@ object GpuDeviceManager extends Logging {
       } else {
         // Do not attempt to enforce any artificial pool limit based on queried GPU memory size
         // if config indicates all GPU memory should be used.
-        Long.MaxValue
+        0
       }
-      if (maxAllocation < initialAllocation) {
+      if (maxAllocation > 0 && maxAllocation < initialAllocation) {
         throw new IllegalArgumentException(s"${RapidsConf.RMM_ALLOC_MAX_FRACTION} " +
             s"configured as ${conf.rmmAllocMaxFraction} which is less than the " +
             s"${RapidsConf.RMM_ALLOC_FRACTION} setting of ${conf.rmmAllocFraction}")
