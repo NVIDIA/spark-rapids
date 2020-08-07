@@ -23,6 +23,20 @@ import pyspark.sql.functions as f
 def mk_str_gen(pattern):
     return StringGen(pattern).with_special_case('').with_special_pattern('.{0,10}')
 
+# Because of limitations in array support we need to combine these two together to make
+# this work. This should be split up into separate tests once support is better.
+def test_split_with_array_index():
+    data_gen = mk_str_gen('([ABC]{0,3}_?){0,7}')
+    delim = '_'
+    assert_gpu_and_cpu_are_equal_collect(
+            lambda spark : unary_op_df(spark, data_gen).selectExpr(
+                'split(a, "AB")[0]',
+                'split(a, "_")[1]',
+                'split(a, "_")[null]',
+                'split(a, "_")[3]',
+                'split(a, "_")[0]',
+                'split(a, "_")[-1]'))
+
 @pytest.mark.parametrize('data_gen,delim', [(mk_str_gen('([ABC]{0,3}_?){0,7}'), '_'),
     (mk_str_gen('([MNP_]{0,3}\\.?){0,5}'), '.'),
     (mk_str_gen('([123]{0,3}\\^?){0,5}'), '^')], ids=idfn)

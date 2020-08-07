@@ -16,6 +16,7 @@
 
 package com.nvidia.spark.rapids;
 
+import ai.rapids.cudf.ColumnViewPointerAccess;
 import ai.rapids.cudf.DType;
 import ai.rapids.cudf.HostColumnVector;
 import ai.rapids.cudf.Scalar;
@@ -201,6 +202,15 @@ public class GpuColumnVector extends ColumnVector {
     }
   }
 
+  protected static final DataType getSparkTypeFrom(ColumnViewPointerAccess access) {
+    DType type = access.getDataType();
+    if (type == DType.LIST) {
+      return new ArrayType(getSparkTypeFrom(access.getChildColumnView(0)), true);
+    } else {
+      return getSparkType(type);
+    }
+  }
+
   /**
    * Create an empty batch from the given format.  This should be used very sparingly because
    * returning an empty batch from an operator is almost always the wrong thing to do.
@@ -300,7 +310,7 @@ public class GpuColumnVector extends ColumnVector {
    * but not both.
    */
   public static final GpuColumnVector from(ai.rapids.cudf.ColumnVector cudfCv) {
-    return new GpuColumnVector(getSparkType(cudfCv.getType()), cudfCv);
+    return new GpuColumnVector(getSparkTypeFrom(cudfCv), cudfCv);
   }
 
   public static final GpuColumnVector from(Scalar scalar, int count) {
