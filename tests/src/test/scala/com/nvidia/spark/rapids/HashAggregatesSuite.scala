@@ -105,6 +105,26 @@ class HashAggregatesSuite extends SparkQueryCompareTestSuite {
       .agg(first(col("c0"), ignoreNulls = true), last(col("c0"), ignoreNulls = true))
   }
 
+  IGNORE_ORDER_testSparkResultsAreEqualWithCapture(
+      "nullable aggregate with not null filter",
+      firstDf,
+      repart = 2) {
+    frame => frame.coalesce(1)
+        .sort(col("c2").asc, col("c0").asc) // force deterministic use case
+        .groupBy(col("c2"))
+        .agg(min(col("c0")).alias("mymin"),
+          max(col("c0")).alias("mymax"))
+        .filter(col("mymin").isNotNull
+            .and(col("mymax").isNotNull))
+  } { (_, gpuPlan) => {
+    checkExecPlan(gpuPlan)
+
+    // IsNotNull filter means that the aggregates should not be nullable
+    val output = gpuPlan.output
+    assert(!output(1).nullable)
+    assert(!output(2).nullable)
+  } }
+
   test("SortAggregateExec is translated correctly ENABLE_HASH_OPTIMIZE_SORT=false") {
 
     val conf = new SparkConf()
