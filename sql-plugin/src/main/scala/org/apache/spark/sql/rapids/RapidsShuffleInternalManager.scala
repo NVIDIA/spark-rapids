@@ -95,10 +95,8 @@ class RapidsCachingWriter[K, V](
         val batch = p._2.asInstanceOf[ColumnarBatch]
         logDebug(s"Caching shuffle_id=${handle.shuffleId} map_id=$mapId, partId=$partId, "
             + s"batch=[num_cols=${batch.numCols()}, num_rows=${batch.numRows()}]")
-        val partSize = GpuColumnVector.extractBases(batch).map(_.getDeviceMemorySize).sum
         recordsWritten = recordsWritten + batch.numRows()
-        bytesWritten = bytesWritten + partSize
-        sizes(partId) += partSize
+        var partSize: Long = 0
         val blockId = ShuffleBlockId(handle.shuffleId, mapId, partId)
         val bufferId = catalog.nextShuffleBufferId(blockId)
         if (batch.numRows > 0 && batch.numCols > 0) {
@@ -106,6 +104,7 @@ class RapidsCachingWriter[K, V](
           batch.column(0) match {
             case c: GpuColumnVectorFromBuffer =>
               val buffer = c.getBuffer.slice(0, c.getBuffer.getLength)
+              partSize = buffer.getLength
               shuffleStorage.addTable(
                 bufferId,
                 GpuColumnVector.from(batch),
@@ -113,6 +112,7 @@ class RapidsCachingWriter[K, V](
                 SpillPriorities.OUTPUT_FOR_SHUFFLE_INITIAL_PRIORITY)
             case c: GpuCompressedColumnVector =>
               val buffer = c.getBuffer.slice(0, c.getBuffer.getLength)
+              partSize = buffer.getLength
               val tableMeta = c.getTableMeta
               // update the table metadata for the buffer ID generated above
               tableMeta.bufferMeta.mutateId(bufferId.tableId)
@@ -123,9 +123,11 @@ class RapidsCachingWriter[K, V](
                 SpillPriorities.OUTPUT_FOR_SHUFFLE_INITIAL_PRIORITY)
             case c => throw new IllegalStateException(s"Unexpected column type: ${c.getClass}")
           }
+          bytesWritten += partSize
+          sizes(partId) += partSize
         } else {
           // no device data, tracking only metadata
-          val tableMeta = MetaUtils.buildDegenerateTableMeta(bufferId.tableId, batch)
+          val tableMeta = MetaUtils.buildDegenerateTableMeta(batch)
           catalog.registerNewBuffer(new DegenerateRapidsBuffer(bufferId, tableMeta))
 
           // The size of the data is really only used to tell if the data should be shuffled or not

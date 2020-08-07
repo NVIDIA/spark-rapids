@@ -63,7 +63,7 @@ class GpuPartitioningSuite extends FunSuite with Arm {
     val conf = new SparkConf().set(RapidsConf.SHUFFLE_COMPRESSION_ENABLED.key, "false")
     TestUtils.withGpuSparkSession(conf) { _ =>
       GpuShuffleEnv.init(new RapidsConf(conf), Cuda.memGetInfo())
-      val partitionIndices = Array(0, 2)
+      val partitionIndices = Array(0, 2, 2)
       val gp = new GpuPartitioning {
         override val numPartitions: Int = partitionIndices.length
       }
@@ -99,11 +99,11 @@ class GpuPartitioningSuite extends FunSuite with Arm {
         .set(RapidsConf.SHUFFLE_COMPRESSION_ENABLED.key, "true")
         .set(RapidsConf.SHUFFLE_COMPRESSION_CODEC.key, "copy")
     TestUtils.withGpuSparkSession(conf) { _ =>
-      GpuShuffleEnv.init(Cuda.memGetInfo())
+      GpuShuffleEnv.init(new RapidsConf(conf), Cuda.memGetInfo())
       val spillPriority = 7L
       val catalog = new RapidsBufferCatalog
       withResource(new RapidsDeviceMemoryStore(catalog)) { deviceStore =>
-        val partitionIndices = Array(0, 2)
+        val partitionIndices = Array(0, 2, 2)
         val gp = new GpuPartitioning {
           override val numPartitions: Int = partitionIndices.length
         }
