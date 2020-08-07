@@ -193,19 +193,20 @@ public class GpuColumnVector extends ColumnVector {
       case TIMESTAMP_DAYS:
         return DataTypes.DateType;
       case TIMESTAMP_MICROSECONDS:
-        return DataTypes.TimestampType; // TODO need to verify that the TimeUnits are correct
+        return DataTypes.TimestampType;
       case STRING:
         return DataTypes.StringType;
       default:
         throw new IllegalArgumentException(type + " is not supported by spark yet.");
-
     }
   }
 
   protected static final DataType getSparkTypeFrom(ColumnViewPointerAccess access) {
     DType type = access.getDataType();
     if (type == DType.LIST) {
-      return new ArrayType(getSparkTypeFrom(access.getChildColumnView(0)), true);
+      try (ColumnViewPointerAccess child = access.getChildColumnView(0)) {
+        return new ArrayType(getSparkTypeFrom(child), true);
+      }
     } else {
       return getSparkType(type);
     }
