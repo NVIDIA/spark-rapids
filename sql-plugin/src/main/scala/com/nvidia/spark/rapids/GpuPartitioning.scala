@@ -54,7 +54,7 @@ trait GpuPartitioning extends Partitioning with Arm {
             withResource(codec.createBatchCompressor(maxCompressionBatchSize)) { compressor =>
               // batchCompress takes ownership of the contiguous tables and will close
               compressor.addTables(contiguousTables)
-              closeOnExcept(compressor.finish()) { compressedTables =>
+              withResource(compressor.finish()) { compressedTables =>
                 compressedTables.foreach(ct => splits.append(GpuCompressedColumnVector.from(ct)))
               }
             }
