@@ -49,7 +49,7 @@ trait GpuPartitioning extends Partitioning with Arm {
       closeOnExcept(new ArrayBuffer[ColumnarBatch](numPartitions)) { splits =>
         val table = new Table(partitionColumns.map(_.getBase).toArray: _*)
         val contiguousTables = withResource(table)(t => t.contiguousSplit(parts: _*))
-        GpuShuffleEnv.get.rapidsShuffleCodec match {
+        GpuShuffleEnv.rapidsShuffleCodec match {
           case Some(codec) =>
             withResource(codec.createBatchCompressor(maxCompressionBatchSize)) { compressor =>
               // batchCompress takes ownership of the contiguous tables and will close
@@ -100,7 +100,7 @@ trait GpuPartitioning extends Partitioning with Arm {
 
   def sliceInternalGpuOrCpu(numRows: Int, partitionIndexes: Array[Int],
       partitionColumns: Array[GpuColumnVector]): Array[ColumnarBatch] = {
-    val rapidsShuffleEnabled = GpuShuffleEnv.get.isRapidsShuffleEnabled
+    val rapidsShuffleEnabled = GpuShuffleEnv.isRapidsShuffleEnabled
     val nvtxRangeKey = if (rapidsShuffleEnabled) {
       "sliceInternalOnGpu"
     } else {

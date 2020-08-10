@@ -46,13 +46,6 @@ class GpuShuffleEnv(rapidsConf: RapidsConf) extends Logging {
     }
   }
 
-  lazy val isRapidsShuffleEnabled: Boolean = {
-    val env = SparkEnv.get
-    val isRapidsManager = GpuShuffleEnv.isRapidsShuffleManagerInitialized
-    val externalShuffle = env.blockManager.externalShuffleServiceEnabled
-    isRapidsManager && !externalShuffle
-  }
-
   def initStorage(devInfo: CudaMemInfo): Unit = {
     if (isRapidsShuffleConfigured) {
       assert(memoryEventHandler == null)
@@ -107,6 +100,31 @@ object GpuShuffleEnv extends Logging {
   private var isRapidsShuffleManagerInitialized: Boolean  = false
   @volatile private var env: GpuShuffleEnv = _
 
+  //
+  // Functions below get called from the driver or executors
+  //
+
+  def isRapidsShuffleEnabled: Boolean = {
+    val isRapidsManager = GpuShuffleEnv.isRapidsShuffleManagerInitialized
+    val externalShuffle = SparkEnv.get.blockManager.externalShuffleServiceEnabled
+    isRapidsManager && !externalShuffle
+  }
+
+  def setRapidsShuffleManagerInitialized(initialized: Boolean, className: String): Unit = {
+    assert(className == GpuShuffleEnv.RAPIDS_SHUFFLE_CLASS)
+    logInfo("RapidsShuffleManager is initialized")
+    isRapidsShuffleManagerInitialized = initialized
+  }
+
+  def shutdown(): Unit = {
+    // in the driver, this will not be set
+    Option(env).foreach(_.closeStorage())
+  }
+
+  //
+  // Functions below only get called from the executor
+  //
+
   def init(conf: RapidsConf, devInfo: CudaMemInfo): Unit = {
     Option(env).foreach(_.closeStorage())
     val shuffleEnv = new GpuShuffleEnv(conf)
@@ -114,26 +132,11 @@ object GpuShuffleEnv extends Logging {
     env = shuffleEnv
   }
 
-  def shutdown(): Unit = {
-    env.closeStorage()
-  }
-
-  def get: GpuShuffleEnv = env
-
   def getCatalog: ShuffleBufferCatalog = env.getCatalog
 
   def getReceivedCatalog: ShuffleReceivedBufferCatalog = env.getReceivedCatalog
 
   def getDeviceStorage: RapidsDeviceMemoryStore = env.getDeviceStorage
 
-  def isRapidsShuffleEnabled: Boolean = env.isRapidsShuffleEnabled
-
   def rapidsShuffleCodec: Option[TableCompressionCodec] = env.rapidsShuffleCodec
-
-  // the shuffle plugin will call this on initialize
-  def setRapidsShuffleManagerInitialized(initialized: Boolean, className: String): Unit = {
-    assert(className == GpuShuffleEnv.RAPIDS_SHUFFLE_CLASS)
-    logInfo("RapidsShuffleManager is initialized")
-    isRapidsShuffleManagerInitialized = initialized
-  }
 }
