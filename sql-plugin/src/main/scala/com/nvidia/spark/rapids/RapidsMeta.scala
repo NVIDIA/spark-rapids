@@ -19,7 +19,9 @@ package com.nvidia.spark.rapids
 import scala.collection.mutable
 
 import com.nvidia.spark.rapids.GpuOverrides.isStringLit
+import com.nvidia.spark.rapids.RapidsConf.INPUT_FILE_EXEC_USED
 
+import org.apache.spark.sql.catalyst.expressions.{InputFileBlockLength, InputFileBlockStart, InputFileName}
 import org.apache.spark.sql.catalyst.expressions.{BinaryExpression, ComplexTypeMergingExpression, Expression, String2TrimExpression, TernaryExpression, UnaryExpression}
 import org.apache.spark.sql.catalyst.expressions.aggregate.AggregateFunction
 import org.apache.spark.sql.catalyst.plans.physical.Partitioning
@@ -437,6 +439,22 @@ abstract class SparkPlanMeta[INPUT <: SparkPlan](plan: INPUT,
     case _ => childPlans.flatMap(_.findShuffleExchanges())
   }
 
+  private def findInputFileQueries(): Seq[Boolean] = wrapped match {
+    case _: InputFileBlockStart => true :: Nil
+    case _: InputFileBlockLength => true :: Nil
+    case _: InputFileName => true :: Nil
+    case _ => childPlans.flatMap(_.findInputFileQueries())
+  }
+
+  private def findInputFileQueries(conf: RapidsConf): Unit = {
+    val usingInputFileExecs = findInputFileQueries().exists(_ == true)
+    // if we found InputFileExecs make sure we aren't using the small file optimization in the
+    // readers
+    if (usingInputFileExecs) {
+      wrapped.sqlContext.sparkSession.conf.set(INPUT_FILE_EXEC_USED.key, "true")
+    }
+  }
+
   private def makeShuffleConsistent(): Unit = {
     val exchanges = findShuffleExchanges()
     if (!exchanges.forall(_.canThisBeReplaced)) {
@@ -466,7 +484,7 @@ abstract class SparkPlanMeta[INPUT <: SparkPlan](plan: INPUT,
   /**
    * Run rules that happen for the entire tree after it has been tagged initially.
    */
-  def runAfterTagRules(): Unit = {
+  def runAfterTagRules(conf: RapidsConf): Unit = {
     // In the first pass tagSelfForGpu will deal with each operator individually.
     // Children will be tagged first and then their parents will be tagged.  This gives
     // flexibility when tagging yourself to look at your children and disable yourself if your
@@ -492,6 +510,7 @@ abstract class SparkPlanMeta[INPUT <: SparkPlan](plan: INPUT,
     // would make a join inconsistent
     fixUpExchangeOverhead()
     fixUpJoinConsistencyIfNeeded()
+    checkInputFileQueries(conf)
   }
 
   override final def tagSelfForGpu(): Unit = {

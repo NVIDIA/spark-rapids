@@ -431,6 +431,12 @@ object RapidsConf {
     .booleanConf
     .createWithDefault(true)
 
+  val INPUT_FILE_EXEC_USED = conf("spark.rapids.sql.using_input_file_exec")
+    .doc("Internal config used when we recognize an input file exec is used")
+    .internal()
+    .booleanConf
+    .createWithDefault(false)
+
   val ENABLE_PARQUET_READ = conf("spark.rapids.sql.format.parquet.read.enabled")
     .doc("When set to false disables parquet input acceleration")
     .booleanConf
@@ -813,6 +819,8 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
   lazy val isParquetEnabled: Boolean = get(ENABLE_PARQUET)
 
   lazy val isParquetSmallFilesEnabled: Boolean = get(ENABLE_SMALL_FILES_PARQUET)
+
+  lazy val isInputFileExecUsed = get(INPUT_FILE_EXEC_USED)
 
   lazy val isParquetReadEnabled: Boolean = get(ENABLE_PARQUET_READ)
 
