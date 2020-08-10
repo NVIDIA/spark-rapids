@@ -60,7 +60,7 @@ class GpuPartitioningSuite extends FunSuite with Arm {
     SparkSession.getActiveSession.foreach(_.close())
     val conf = new SparkConf()
     TestUtils.withGpuSparkSession(conf) { _ =>
-      GpuShuffleEnv.init(Cuda.memGetInfo())
+      GpuShuffleEnv.init(new RapidsConf(conf), Cuda.memGetInfo())
       val partitionIndices = Array(0, 2)
       val gp = new GpuPartitioning {
         override val numPartitions: Int = partitionIndices.length

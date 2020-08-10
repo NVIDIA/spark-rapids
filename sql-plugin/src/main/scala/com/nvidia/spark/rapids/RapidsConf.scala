@@ -258,7 +258,7 @@ object RapidsConf {
       "result in more fragmentation.")
     .doubleConf
     .checkValue(v => v >= 0 && v <= 1, "The fraction value must be in [0, 1].")
-    .createWithDefault(0.9)
+    .createWithDefault(0.5)
 
   val HOST_SPILL_STORAGE_SIZE = conf("spark.rapids.memory.host.spillStorageSize")
     .doc("Amount of off-heap host memory to use for buffering spilled GPU data " +
