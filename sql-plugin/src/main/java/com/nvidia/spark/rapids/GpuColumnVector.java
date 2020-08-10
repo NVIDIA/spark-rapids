@@ -16,7 +16,7 @@
 
 package com.nvidia.spark.rapids;
 
-import ai.rapids.cudf.ColumnViewPointerAccess;
+import ai.rapids.cudf.ColumnViewAccess;
 import ai.rapids.cudf.DType;
 import ai.rapids.cudf.HostColumnVector;
 import ai.rapids.cudf.Scalar;
@@ -201,10 +201,10 @@ public class GpuColumnVector extends ColumnVector {
     }
   }
 
-  protected static final DataType getSparkTypeFrom(ColumnViewPointerAccess access) {
+  protected static final DataType getSparkTypeFrom(ColumnViewAccess access) {
     DType type = access.getDataType();
     if (type == DType.LIST) {
-      try (ColumnViewPointerAccess child = access.getChildColumnView(0)) {
+      try (ColumnViewAccess child = access.getChildColumnViewAccess(0)) {
         return new ArrayType(getSparkTypeFrom(child), true);
       }
     } else {
