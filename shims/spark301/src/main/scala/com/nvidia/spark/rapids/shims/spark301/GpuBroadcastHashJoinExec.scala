@@ -57,17 +57,17 @@ class GpuBroadcastHashJoinMeta(
     }
 
     buildSide.wrapped match {
-     case _: BroadcastQueryStageExec =>
-      // this already ran on GPU
+      case _: BroadcastQueryStageExec =>
+        // this already ran on GPU
 
-     case _ =>
-      if (!buildSide.canThisBeReplaced) {
-       willNotWorkOnGpu("the broadcast for this join must be on the GPU too")
-      }
+      case _ =>
+        if (!buildSide.canThisBeReplaced) {
+          willNotWorkOnGpu("the broadcast for this join must be on the GPU too")
+        }
 
-      if (!canThisBeReplaced) {
-       buildSide.willNotWorkOnGpu("the BroadcastHashJoin this feeds is not on the GPU")
-      }
+        if (!canThisBeReplaced) {
+          buildSide.willNotWorkOnGpu("the BroadcastHashJoin this feeds is not on the GPU")
+        }
     }
   }
 
