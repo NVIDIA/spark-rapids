@@ -217,6 +217,7 @@ case class GpuFileSourceScanExec(
     if (relation.partitionSchemaOption.isDefined) {
       driverMetrics("numPartitions") = ret.length
     }
+    logWarning(s"settings file num and size metrics to: $ret")
     setFilesNumAndSizeMetric(ret, true)
     val timeTakenMs = NANOSECONDS.toMillis(
       (System.nanoTime() - startTime) + optimizerMetadataTimeNs)
@@ -419,6 +420,11 @@ object GpuFileSourceScanExec extends Logging {
       options.getOrElse("mergeSchema", "false").toBoolean)) {
       meta.willNotWorkOnGpu("mergeSchema is not supported yet")
     }
+
+    logWarning("in file source scan exec tag")
+    meta.childPlans.map(p => logWarning(s"child plan is: $p"))
+    meta.childExprs.map(p => logWarning(s"child expr is: $p"))
+
 
     meta.wrapped.relation.fileFormat match {
       case _: CSVFileFormat => GpuReadCSVFileFormat.tagSupport(meta)
