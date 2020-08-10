@@ -1258,13 +1258,6 @@ object GpuOverrides {
       "Returns the name of the file being read, or empty string if not available",
       (a, conf, p, r) => new ExprMeta[InputFileName](a, conf, p, r) {
         override def convertToGpu(): GpuExpression = GpuInputFileName()
-        override def tagExprForGpu(): Unit = {
-          if (conf.isParquetSmallFilesEnabled) {
-            willNotWorkOnGpu("Getting the input file name is not supported with " +
-              "the small file optimization algorithm, if you want to use it please set: " +
-              s"${RapidsConf.ENABLE_SMALL_FILES_PARQUET} to false")
-          }
-        }
       }
     ),
     expr[InputFileBlockStart] (

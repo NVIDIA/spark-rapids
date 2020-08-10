@@ -21,6 +21,7 @@ import scala.collection.mutable
 import com.nvidia.spark.rapids.GpuOverrides.isStringLit
 import com.nvidia.spark.rapids.RapidsConf.INPUT_FILE_EXEC_USED
 
+import org.apache.spark.internal.Logging
 import org.apache.spark.sql.catalyst.expressions.{InputFileBlockLength, InputFileBlockStart, InputFileName}
 import org.apache.spark.sql.catalyst.expressions.{BinaryExpression, ComplexTypeMergingExpression, Expression, String2TrimExpression, TernaryExpression, UnaryExpression}
 import org.apache.spark.sql.catalyst.expressions.aggregate.AggregateFunction
@@ -415,7 +416,7 @@ abstract class SparkPlanMeta[INPUT <: SparkPlan](plan: INPUT,
     conf: RapidsConf,
     parent: Option[RapidsMeta[_, _, _]],
     rule: ConfKeysAndIncompat)
-  extends RapidsMeta[INPUT, SparkPlan, GpuExec](plan, conf, parent, rule) {
+  extends RapidsMeta[INPUT, SparkPlan, GpuExec](plan, conf, parent, rule) with Logging {
 
   override val childPlans: Seq[SparkPlanMeta[_]] =
     plan.children.map(GpuOverrides.wrapPlan(_, conf, Some(this)))
@@ -439,18 +440,64 @@ abstract class SparkPlanMeta[INPUT <: SparkPlan](plan: INPUT,
     case _ => childPlans.flatMap(_.findShuffleExchanges())
   }
 
-  private def findInputFileQueries(): Seq[Boolean] = wrapped match {
-    case _: InputFileBlockStart => true :: Nil
-    case _: InputFileBlockLength => true :: Nil
-    case _: InputFileName => true :: Nil
-    case _ => childPlans.flatMap(_.findInputFileQueries())
+  private def findChildExprFileQueries(exprs: Seq[BaseExprMeta[_]]): Seq[Boolean] = {
+    val queries = exprs.flatMap { expr =>
+      expr.wrapped match {
+        case _: InputFileBlockStart => true :: Nil
+        case _: InputFileBlockLength => true :: Nil
+        case y: InputFileName => {
+          logWarning(s"found inputfilename child expr is: $y")
+          true :: Nil
+        }
+        case x => {
+          logWarning(s"child expr is: $x")
+          findChildExprFileQueries(expr.childExprs)
+        }
+      }
+    }
+    queries
   }
 
-  private def findInputFileQueries(conf: RapidsConf): Unit = {
+  private def findInputFileQueries(): Seq[Boolean] = {
+    logWarning("starting findInputFileQueries")
+    val childfirst = findChildExprFileQueries(childExprs)
+    val childRes = childPlans.flatMap(_.findInputFileQueries())
+    childfirst ++ childRes
+  }
+
+/*
+  private def findInputFileQueries(): Seq[Boolean] = {
+    val queries = childExprs.flatMap { expr =>
+      logWarning(s"expr is: $expr")
+      logWarning(s"expr wrapped is: ${expr.wrapped}")
+      logWarning(s"expr childe wrapped is: ${expr.childExprs}")
+      expr match {
+        case _: InputFileBlockStart => true :: Nil
+        case _: InputFileBlockLength => true :: Nil
+        case y: InputFileName => {
+          logWarning(s"found inputfilename child expr is: $y")
+          true :: Nil
+        }
+        case x => {
+          logWarning(s"child expr is: $x")
+          false :: Nil
+        }
+      }
+      expr.childExprs.flatMap(_.findInputFileQueries())
+    }
+    logWarning(s"queries is $queries")
+    val childRes = childPlans.flatMap(_.findInputFileQueries())
+    queries ++ childRes
+  }
+*/
+
+  private def checkInputFileQueries(conf: RapidsConf): Unit = {
     val usingInputFileExecs = findInputFileQueries().exists(_ == true)
+    logWarning(s"check input file queries using: $usingInputFileExecs")
     // if we found InputFileExecs make sure we aren't using the small file optimization in the
     // readers
     if (usingInputFileExecs) {
+      logWarning("setting conf to true")
       wrapped.sqlContext.sparkSession.conf.set(INPUT_FILE_EXEC_USED.key, "true")
     }
   }
