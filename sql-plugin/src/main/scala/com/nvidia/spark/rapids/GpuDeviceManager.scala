@@ -126,6 +126,11 @@ object GpuDeviceManager extends Logging {
     initializeMemory(addr)
   }
 
+  def shutdown(): Unit = synchronized {
+    Rmm.shutdown()
+    singletonMemoryInitialized = false
+  }
+
   def getResourcesFromTaskContext: Map[String, ResourceInformation] = {
     val tc = TaskContext.get()
     if (tc == null) Map.empty[String, ResourceInformation] else tc.resources()
@@ -158,6 +163,18 @@ object GpuDeviceManager extends Logging {
         logWarning(s"Initial RMM allocation(${initialAllocation / 1024 / 1024.0} MB) is " +
           s"larger than free memory(${info.free / 1024 / 1024.0} MB)")
       }
+      val maxAllocation = if (conf.rmmAllocMaxFraction < 1) {
+        (conf.rmmAllocMaxFraction * info.total).toLong
+      } else {
+        // Do not attempt to enforce any artificial pool limit based on queried GPU memory size
+        // if config indicates all GPU memory should be used.
+        0
+      }
+      if (maxAllocation > 0 && maxAllocation < initialAllocation) {
+        throw new IllegalArgumentException(s"${RapidsConf.RMM_ALLOC_MAX_FRACTION} " +
+            s"configured as ${conf.rmmAllocMaxFraction} which is less than the " +
+            s"${RapidsConf.RMM_ALLOC_FRACTION} setting of ${conf.rmmAllocFraction}")
+      }
       var init = RmmAllocationMode.CUDA_DEFAULT
       val features = ArrayBuffer[String]()
       if (conf.isPooledMemEnabled) {
@@ -189,7 +206,7 @@ object GpuDeviceManager extends Logging {
 
       try {
         Cuda.setDevice(gpuId)
-        Rmm.initialize(init, logConf, initialAllocation)
+        Rmm.initialize(init, logConf, initialAllocation, maxAllocation)
         GpuShuffleEnv.init(conf, info)
       } catch {
         case e: Exception => logError("Could not initialize RMM", e)
