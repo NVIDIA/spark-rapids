@@ -45,6 +45,7 @@ class GpuReadParquetFileFormat extends ParquetFileFormat {
     val sqlConf = sparkSession.sessionState.conf
     val broadcastedHadoopConf =
       sparkSession.sparkContext.broadcast(new SerializableConfiguration(hadoopConf))
+    val metrics = options.asInstanceOf[ReaderOptionsWithMetrics].metrics
     val factory = GpuParquetPartitionReaderFactory(
       sqlConf,
       broadcastedHadoopConf,
@@ -53,7 +54,7 @@ class GpuReadParquetFileFormat extends ParquetFileFormat {
       partitionSchema,
       filters.toArray,
       new RapidsConf(sqlConf),
-      PartitionReaderIterator.buildScanMetrics(sparkSession.sparkContext))
+      metrics)
     PartitionReaderIterator.buildReader(factory)
   }
 

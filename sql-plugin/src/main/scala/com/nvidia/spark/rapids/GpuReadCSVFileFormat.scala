@@ -46,6 +46,7 @@ class GpuReadCSVFileFormat extends CSVFileFormat {
     val sqlConf = sparkSession.sessionState.conf
     val broadcastedHadoopConf =
       sparkSession.sparkContext.broadcast(new SerializableConfiguration(hadoopConf))
+    val metrics = options.asInstanceOf[ReaderOptionsWithMetrics].metrics
     val csvOpts = new CSVOptions(
       options,
       sqlConf.csvColumnPruning,
@@ -61,7 +62,7 @@ class GpuReadCSVFileFormat extends CSVFileFormat {
       csvOpts,
       rapidsConf.maxReadBatchSizeRows,
       rapidsConf.maxReadBatchSizeBytes,
-      PartitionReaderIterator.buildScanMetrics(sparkSession.sparkContext))
+      metrics)
     PartitionReaderIterator.buildReader(factory)
   }
 

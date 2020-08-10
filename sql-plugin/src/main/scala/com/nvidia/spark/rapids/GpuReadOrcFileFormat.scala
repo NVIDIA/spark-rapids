@@ -45,6 +45,7 @@ class GpuReadOrcFileFormat extends OrcFileFormat {
     val sqlConf = sparkSession.sessionState.conf
     val broadcastedHadoopConf =
       sparkSession.sparkContext.broadcast(new SerializableConfiguration(hadoopConf))
+    val metrics = options.asInstanceOf[ReaderOptionsWithMetrics].metrics
     val factory = GpuOrcPartitionReaderFactory(
       sqlConf,
       broadcastedHadoopConf,
@@ -53,7 +54,7 @@ class GpuReadOrcFileFormat extends OrcFileFormat {
       partitionSchema,
       filters.toArray,
       new RapidsConf(sqlConf),
-      PartitionReaderIterator.buildScanMetrics(sparkSession.sparkContext))
+      metrics)
     PartitionReaderIterator.buildReader(factory)
   }
 
