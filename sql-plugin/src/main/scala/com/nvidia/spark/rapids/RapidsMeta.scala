@@ -430,6 +430,34 @@ abstract class SparkPlanMeta[INPUT <: SparkPlan](plan: INPUT,
     wrapped.withNewChildren(childPlans.map(_.convertIfNeeded()))
   }
 
+  private def findChildExprFileQueries(exprs: Seq[BaseExprMeta[_]]): Seq[Boolean] = {
+    val queries = exprs.flatMap { expr =>
+      expr.wrapped match {
+        case _: InputFileBlockStart => true :: Nil
+        case _: InputFileBlockLength => true :: Nil
+        case _: InputFileName => true :: Nil
+        case _ => findChildExprFileQueries(expr.childExprs)
+      }
+    }
+    queries
+  }
+
+  private def findInputFileQueries(): Seq[Boolean] = {
+    val exprsRes = findChildExprFileQueries(childExprs)
+    if (exprsRes.exists(_ == true)) return Seq(true)
+    val plansRes = childPlans.flatMap(_.findInputFileQueries())
+    exprsRes ++ plansRes
+  }
+
+  private def checkInputFileQueries(): Unit = {
+    // if we found InputFileExecs make sure we aren't using the small file optimization
+    // in the readers
+    if (findInputFileQueries().exists(_ == true)) {
+      logWarning("Not able to use small file optimization because looking at InputFile stats")
+      wrapped.sqlContext.sparkSession.conf.set(INPUT_FILE_EXEC_USED.key, "true")
+    }
+  }
+
   private def findShuffleExchanges(): Seq[SparkPlanMeta[ShuffleExchangeExec]] = wrapped match {
     case _: ShuffleExchangeExec =>
       this.asInstanceOf[SparkPlanMeta[ShuffleExchangeExec]] :: Nil
@@ -438,68 +466,6 @@ abstract class SparkPlanMeta[INPUT <: SparkPlan](plan: INPUT,
       case GpuBuildRight => childPlans(0).findShuffleExchanges()
     }
     case _ => childPlans.flatMap(_.findShuffleExchanges())
-  }
-
-  private def findChildExprFileQueries(exprs: Seq[BaseExprMeta[_]]): Seq[Boolean] = {
-    val queries = exprs.flatMap { expr =>
-      expr.wrapped match {
-        case _: InputFileBlockStart => true :: Nil
-        case _: InputFileBlockLength => true :: Nil
-        case y: InputFileName => {
-          logWarning(s"found inputfilename child expr is: $y")
-          true :: Nil
-        }
-        case x => {
-          logWarning(s"child expr is: $x")
-          findChildExprFileQueries(expr.childExprs)
-        }
-      }
-    }
-    queries
-  }
-
-  private def findInputFileQueries(): Seq[Boolean] = {
-    logWarning("starting findInputFileQueries")
-    val childfirst = findChildExprFileQueries(childExprs)
-    val childRes = childPlans.flatMap(_.findInputFileQueries())
-    childfirst ++ childRes
-  }
-
-/*
-  private def findInputFileQueries(): Seq[Boolean] = {
-    val queries = childExprs.flatMap { expr =>
-      logWarning(s"expr is: $expr")
-      logWarning(s"expr wrapped is: ${expr.wrapped}")
-      logWarning(s"expr childe wrapped is: ${expr.childExprs}")
-      expr match {
-        case _: InputFileBlockStart => true :: Nil
-        case _: InputFileBlockLength => true :: Nil
-        case y: InputFileName => {
-          logWarning(s"found inputfilename child expr is: $y")
-          true :: Nil
-        }
-        case x => {
-          logWarning(s"child expr is: $x")
-          false :: Nil
-        }
-      }
-      expr.childExprs.flatMap(_.findInputFileQueries())
-    }
-    logWarning(s"queries is $queries")
-    val childRes = childPlans.flatMap(_.findInputFileQueries())
-    queries ++ childRes
-  }
-*/
-
-  private def checkInputFileQueries(conf: RapidsConf): Unit = {
-    val usingInputFileExecs = findInputFileQueries().exists(_ == true)
-    logWarning(s"check input file queries using: $usingInputFileExecs")
-    // if we found InputFileExecs make sure we aren't using the small file optimization in the
-    // readers
-    if (usingInputFileExecs) {
-      logWarning("setting conf to true")
-      wrapped.sqlContext.sparkSession.conf.set(INPUT_FILE_EXEC_USED.key, "true")
-    }
   }
 
   private def makeShuffleConsistent(): Unit = {
@@ -557,7 +523,7 @@ abstract class SparkPlanMeta[INPUT <: SparkPlan](plan: INPUT,
     // would make a join inconsistent
     fixUpExchangeOverhead()
     fixUpJoinConsistencyIfNeeded()
-    checkInputFileQueries(conf)
+    checkInputFileQueries()
   }
 
   override final def tagSelfForGpu(): Unit = {
