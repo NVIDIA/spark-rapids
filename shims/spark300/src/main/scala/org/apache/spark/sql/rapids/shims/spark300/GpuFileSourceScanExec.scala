@@ -130,7 +130,9 @@ case class GpuFileSourceScanExec(
       case _ => false
     }
 
-    if (rapidsConf.isParquetSmallFilesEnabled && formatSupportsSmallFilesOptimization) {
+    logWarning(s"input file exec used: ${rapidsConf.isInputFileExecUsed}")
+    if (rapidsConf.isParquetSmallFilesEnabled && formatSupportsSmallFilesOptimization
+      && !rapidsConf.isInputFileExecUsed) {
       logWarning("using small file enhancement" +
         rapidsConf.isParquetSmallFilesEnabled + " " + formatSupportsSmallFilesOptimization)
       inputRDD:: Nil
@@ -414,8 +416,8 @@ object GpuFileSourceScanExec extends Logging {
     val sparkSession = meta.wrapped.sqlContext.sparkSession
     val fs = meta.wrapped
     val options = fs.relation.options
-    // logWarning(s"gpu file source scan exec options ${options}")
-    if (meta.conf.isParquetSmallFilesEnabled && (sparkSession.conf
+    logWarning(s"gpu file source scan exec is input file exec used: ${meta.conf.isInputFileExecUsed}")
+    if (meta.conf.isParquetSmallFilesEnabled && !meta.conf.isInputFileExecUsed && (sparkSession.conf
       .getOption("spark.sql.parquet.mergeSchema").exists(_.toBoolean) ||
       options.getOrElse("mergeSchema", "false").toBoolean)) {
       meta.willNotWorkOnGpu("mergeSchema is not supported yet")
