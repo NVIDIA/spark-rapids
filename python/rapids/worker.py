@@ -53,7 +53,7 @@ def initialize_gpu_mem():
         if pool_max_size == 0:
             pool_max_size = max_long
         base_t = rmm.mr.ManagedMemoryResource if uvm_enabled else rmm.mr.CudaMemoryResource
-        rmm.mr.set_default_resource(rmm.mr.PoolMemoryResource(base_t(), pool_size, pool_max_size))
+        rmm.mr.set_current_device_resource(rmm.mr.PoolMemoryResource(base_t(), pool_size, pool_max_size))
         print("DEBUG: Pooled memory, pool size: {} MiB, max size: {} MiB".format(
                 pool_size / 1024.0 / 1024,
                 ('unlimited' if pool_max_size == max_long else pool_max_size / 1024.0 / 1024)))
