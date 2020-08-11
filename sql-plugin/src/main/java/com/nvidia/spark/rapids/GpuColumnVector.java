@@ -16,6 +16,7 @@
 
 package com.nvidia.spark.rapids;
 
+import ai.rapids.cudf.ColumnViewAccess;
 import ai.rapids.cudf.DType;
 import ai.rapids.cudf.HostColumnVector;
 import ai.rapids.cudf.Scalar;
@@ -192,12 +193,22 @@ public class GpuColumnVector extends ColumnVector {
       case TIMESTAMP_DAYS:
         return DataTypes.DateType;
       case TIMESTAMP_MICROSECONDS:
-        return DataTypes.TimestampType; // TODO need to verify that the TimeUnits are correct
+        return DataTypes.TimestampType;
       case STRING:
         return DataTypes.StringType;
       default:
         throw new IllegalArgumentException(type + " is not supported by spark yet.");
+    }
+  }
 
+  protected static final DataType getSparkTypeFrom(ColumnViewAccess access) {
+    DType type = access.getDataType();
+    if (type == DType.LIST) {
+      try (ColumnViewAccess child = access.getChildColumnViewAccess(0)) {
+        return new ArrayType(getSparkTypeFrom(child), true);
+      }
+    } else {
+      return getSparkType(type);
     }
   }
 
@@ -300,7 +311,7 @@ public class GpuColumnVector extends ColumnVector {
    * but not both.
    */
   public static final GpuColumnVector from(ai.rapids.cudf.ColumnVector cudfCv) {
-    return new GpuColumnVector(getSparkType(cudfCv.getType()), cudfCv);
+    return new GpuColumnVector(getSparkTypeFrom(cudfCv), cudfCv);
   }
 
   public static final GpuColumnVector from(Scalar scalar, int count) {
