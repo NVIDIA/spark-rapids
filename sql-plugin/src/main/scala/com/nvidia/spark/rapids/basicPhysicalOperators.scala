@@ -114,7 +114,7 @@ object GpuFilter {
         Seq(filtered, tbl, filterConditionCv, batch).safeClose()
       }
 
-      numOutputBatches += 1
+      numOutputBatches += 10
       numOutputRows += filteredBatch.numRows()
       filteredBatch
     } finally {
@@ -296,6 +296,22 @@ case class GpuRangeExec(range: org.apache.spark.sql.catalyst.plans.logical.Range
     throw new IllegalStateException(s"Row-based execution should not occur for $this")
 }
 
+object unionMetrics {
+  def apply(
+    batch: ColumnarBatch,
+    outputBatches: SQLMetric,
+    outputRows: SQLMetric,
+    totalTime: SQLMetric): ColumnarBatch = {
+    val nvtxRange = new NvtxWithMetrics("ProjectExec", NvtxColor.CYAN, totalTime)
+    try {
+      outputBatches += 1
+      outputRows += batch.numRows()
+      batch
+    } finally {
+      nvtxRange.close()
+    }
+  }
+}
 
 case class GpuUnionExec(children: Seq[SparkPlan]) extends SparkPlan with GpuExec {
   // updating nullability to make all the children consistent
@@ -316,8 +332,18 @@ case class GpuUnionExec(children: Seq[SparkPlan]) extends SparkPlan with GpuExec
   override def doExecute(): RDD[InternalRow] =
     throw new IllegalStateException(s"Row-based execution should not occur for $this")
 
-  override def doExecuteColumnar(): RDD[ColumnarBatch] =
-    sparkContext.union(children.map(_.executeColumnar()))
+  override def doExecuteColumnar(): RDD[ColumnarBatch] = {
+    val numOutputRows = longMetric(NUM_OUTPUT_ROWS)
+    val numOutputBatches = longMetric(NUM_OUTPUT_BATCHES)
+    val totalTime = longMetric(TOTAL_TIME)
+
+    sparkContext.union(children.map(child => {
+      val rdd = child.executeColumnar()
+      rdd.map { batch =>
+        unionMetrics(batch, numOutputBatches, numOutputRows, totalTime)
+      }
+    }))
+  }
 }
 
 case class GpuCoalesceExec(numPartitions: Int, child: SparkPlan)
