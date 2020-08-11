@@ -33,8 +33,7 @@ parquet_gens_list = [[byte_gen, short_gen, int_gen, long_gen, float_gen, double_
     TimestampGen(start=datetime(1900, 1, 1, tzinfo=timezone.utc))],
     pytest.param([timestamp_gen], marks=pytest.mark.xfail(reason='https://github.com/NVIDIA/spark-rapids/issues/132'))]
 
-#@pytest.mark.parametrize('parquet_gens', parquet_gens_list, ids=idfn)
-@pytest.mark.parametrize('parquet_gens', [[int_gen]], ids=idfn)
+@pytest.mark.parametrize('parquet_gens', parquet_gens_list, ids=idfn)
 @pytest.mark.parametrize('read_func', [read_parquet_df, read_parquet_sql])
 @pytest.mark.parametrize('small_file_opt', ["true", "false"])
 @pytest.mark.parametrize('v1_enabled_list', ["", "parquet"])

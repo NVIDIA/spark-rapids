@@ -295,7 +295,6 @@ case class GpuFileSourceScanExec(
    * @param selectedPartitions Hive-style partition that are part of the read.
    * @param fsRelation [[HadoopFsRelation]] associated with the read.
    */
-  // TODO - spark 3.1 version has another parameter!!!
   private def createBucketedReadRDD(
       bucketSpec: BucketSpec,
       selectedPartitions: Array[PartitionDirectory],
@@ -340,6 +339,7 @@ case class GpuFileSourceScanExec(
       new RapidsConf(sqlConf),
       PartitionReaderIterator.buildScanMetrics(relation.sparkSession.sparkContext))
 
+    // note we use the v2 DataSourceRDD instead of FileScanRDD so we don't have to copy more code
     new DataSourceRDD(relation.sparkSession.sparkContext, filePartitions, factory, supportsColumnar)
   }
 
@@ -393,6 +393,7 @@ case class GpuFileSourceScanExec(
       new RapidsConf(sqlConf),
       PartitionReaderIterator.buildScanMetrics(relation.sparkSession.sparkContext))
 
+    // note we use the v2 DataSourceRDD instead of FileScanRDD so we don't have to copy more code
     new DataSourceRDD(relation.sparkSession.sparkContext, partitions, factory, supportsColumnar)
   }
   /* ------- end section above only used for small files optimization -------- */
