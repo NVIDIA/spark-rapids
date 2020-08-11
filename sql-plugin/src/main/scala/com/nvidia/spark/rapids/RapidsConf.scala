@@ -601,7 +601,20 @@ object RapidsConf {
     .bytesConf(ByteUnit.BYTE)
     .createWithDefault(50 * 1024)
 
+  val SHUFFLE_COMPRESSION_CODEC = conf("spark.rapids.shuffle.compression.codec")
+      .doc("The GPU codec used to compress shuffle data when using RAPIDS shuffle. " +
+          "Supported codecs: copy, none")
+      .internal()
+      .stringConf
+      .createWithDefault("none")
+
   // USER FACING DEBUG CONFIGS
+
+  val SHUFFLE_COMPRESSION_MAX_BATCH_MEMORY =
+    conf("spark.rapids.shuffle.compression.maxBatchMemory")
+      .internal()
+      .bytesConf(ByteUnit.BYTE)
+      .createWithDefault(1024 * 1024 * 1024)
 
   val EXPLAIN = conf("spark.rapids.sql.explain")
     .doc("Explain why some parts of a query were not placed on a GPU or not. Possible " +
@@ -860,6 +873,10 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
   lazy val shuffleMaxServerTasks: Int = get(SHUFFLE_MAX_SERVER_TASKS)
 
   lazy val shuffleMaxMetadataSize: Long = get(SHUFFLE_MAX_METADATA_SIZE)
+
+  lazy val shuffleCompressionCodec: String = get(SHUFFLE_COMPRESSION_CODEC)
+
+  lazy val shuffleCompressionMaxBatchMemory: Long = get(SHUFFLE_COMPRESSION_MAX_BATCH_MEMORY)
 
   def isOperatorEnabled(key: String, incompat: Boolean, isDisabledByDefault: Boolean): Boolean = {
     val default = !(isDisabledByDefault || incompat) || (incompat && isIncompatEnabled)

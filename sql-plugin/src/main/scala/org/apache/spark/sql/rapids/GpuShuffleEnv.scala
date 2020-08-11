@@ -16,6 +16,8 @@
 
 package org.apache.spark.sql.rapids
 
+import java.util.Locale
+
 import ai.rapids.cudf.{CudaMemInfo, Rmm}
 import com.nvidia.spark.rapids._
 
@@ -38,6 +40,14 @@ class GpuShuffleEnv(rapidsConf: RapidsConf) extends Logging {
       conf.get("spark.shuffle.manager") == GpuShuffleEnv.RAPIDS_SHUFFLE_CLASS
   }
 
+  lazy val rapidsShuffleCodec: Option[TableCompressionCodec] = {
+    val codecName = rapidsConf.shuffleCompressionCodec.toLowerCase(Locale.ROOT)
+    if (codecName == "none") {
+      None
+    } else {
+      Some(TableCompressionCodec.getCodec(codecName))
+    }
+  }
 
   def initStorage(devInfo: CudaMemInfo): Unit = {
     if (isRapidsShuffleConfigured) {
@@ -130,4 +140,6 @@ object GpuShuffleEnv extends Logging {
   def getReceivedCatalog: ShuffleReceivedBufferCatalog = env.getReceivedCatalog
 
   def getDeviceStorage: RapidsDeviceMemoryStore = env.getDeviceStorage
+
+  def rapidsShuffleCodec: Option[TableCompressionCodec] = env.rapidsShuffleCodec
 }

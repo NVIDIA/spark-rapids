@@ -17,9 +17,8 @@
 package com.nvidia.spark.rapids
 
 import java.io.File
-import java.nio.ByteBuffer
 
-import ai.rapids.cudf.{BufferType, ColumnVector, DType, HostColumnVector, Table}
+import ai.rapids.cudf.{ColumnVector, DType, Table}
 import org.scalatest.Assertions
 
 import org.apache.spark.SparkConf
