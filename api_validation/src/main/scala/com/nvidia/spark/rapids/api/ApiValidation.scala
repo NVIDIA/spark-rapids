@@ -69,16 +69,13 @@ object ApiValidation extends Logging {
     val gpuKeys = gpuExecs.keys
     var printNewline = false
 
-    //val sparver = ShimLoader.getSparkVersion
-    //println("SPARK VERSION is" + sparver)
     val fullClassName = ShimLoader.getSparkShims.getRapidsShuffleManagerClass
-    println(fullClassName)
     var shimVersion = fullClassName.split('.')(4)
-    println(shimVersion)
-    shimVersion match {
-      case "spark301" => {
-        shimVersion = "spark300"
-      }
+    // There is no separate implementation for Execs in spark-3.0.1.
+    shimVersion = if (shimVersion == "spark301") {
+      "spark300"
+    } else {
+      shimVersion
     }
 
     gpuKeys.foreach { e =>
