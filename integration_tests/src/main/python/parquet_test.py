@@ -36,14 +36,16 @@ parquet_gens_list = [[byte_gen, short_gen, int_gen, long_gen, float_gen, double_
 @pytest.mark.parametrize('parquet_gens', parquet_gens_list, ids=idfn)
 @pytest.mark.parametrize('read_func', [read_parquet_df, read_parquet_sql])
 @pytest.mark.parametrize('small_file_opt', ["true", "false"])
-def test_read_round_trip(spark_tmp_path, parquet_gens, read_func, small_file_opt):
+@pytest.mark.parametrize('v1_enabled_list', ["", "parquet"])
+def test_read_round_trip(spark_tmp_path, parquet_gens, read_func, small_file_opt, v1_enabled_list):
     gen_list = [('_c' + str(i), gen) for i, gen in enumerate(parquet_gens)]
     data_path = spark_tmp_path + '/PARQUET_DATA'
     with_cpu_session(
             lambda spark : gen_df(spark, gen_list).write.parquet(data_path),
             conf={'spark.sql.legacy.parquet.datetimeRebaseModeInWrite': 'CORRECTED'})
     assert_gpu_and_cpu_are_equal_collect(read_func(data_path),
-            conf={'spark.rapids.sql.format.parquet.smallFiles.enabled': small_file_opt})
+            conf={'spark.rapids.sql.format.parquet.smallFiles.enabled': small_file_opt,
+                  'spark.sql.sources.useV1SourceList': v1_enabled_list})
 
 @allow_non_gpu('FileSourceScanExec')
 @pytest.mark.parametrize('read_func', [read_parquet_df, read_parquet_sql])
@@ -92,7 +94,6 @@ def test_pred_push_round_trip(spark_tmp_path, parquet_gen, read_func, small_file
     data_path = spark_tmp_path + '/PARQUET_DATA'
     gen_list = [('a', RepeatSeqGen(parquet_gen, 100)), ('b', parquet_gen)]
     s0 = gen_scalar(parquet_gen, force_no_nulls=True)
-    #data_path = "/tmp/pyspark_tests//103371/PARQUET_DATA"
     with_cpu_session(
             lambda spark : gen_df(spark, gen_list).orderBy('a').write.parquet(data_path),
             conf={'spark.sql.legacy.parquet.datetimeRebaseModeInWrite': 'CORRECTED'})

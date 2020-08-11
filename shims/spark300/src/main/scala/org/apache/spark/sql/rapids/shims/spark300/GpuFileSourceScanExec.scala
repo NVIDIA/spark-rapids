@@ -130,18 +130,16 @@ case class GpuFileSourceScanExec(
       case _ => false
     }
 
-    logWarning(s"input file exec used: ${rapidsConf.isInputFileExecUsed}")
     if (rapidsConf.isParquetSmallFilesEnabled && formatSupportsSmallFilesOptimization
       && !rapidsConf.isInputFileExecUsed) {
-      logWarning("using small file enhancement" +
-        rapidsConf.isParquetSmallFilesEnabled + " " + formatSupportsSmallFilesOptimization)
-      inputRDD:: Nil
+      logDebug("Using small file optimization: ${rapidsConf.isParquetSmallFilesEnabled} " +
+        s"format: $formatSupportsSmallFilesOptimization " +
+        s"Inputfile: ${rapidsConf.isInputFileExecUsed}")
+      inputRDD :: Nil
     } else {
-      logWarning("NOT using small file enhancement")
       wrapped.inputRDD :: Nil
     }
   }
-
 
   override protected def doExecute(): RDD[InternalRow] =
     throw new IllegalStateException(s"Row-based execution should not occur for $this")
@@ -276,7 +274,6 @@ case class GpuFileSourceScanExec(
 
   // Only used for small files optimization
   lazy val inputRDD: RDD[InternalRow] = {
-
     val readRDD = if (bucketedScan) {
       createBucketedReadRDD(relation.bucketSpec.get, dynamicallySelectedPartitions,
         relation)
@@ -299,7 +296,7 @@ case class GpuFileSourceScanExec(
    * @param selectedPartitions Hive-style partition that are part of the read.
    * @param fsRelation [[HadoopFsRelation]] associated with the read.
    */
-  // TODO - spark 3.1 version has another paramter!!!
+  // TODO - spark 3.1 version has another parameter!!!
   private def createBucketedReadRDD(
       bucketSpec: BucketSpec,
       selectedPartitions: Array[PartitionDirectory],
@@ -351,7 +348,6 @@ case class GpuFileSourceScanExec(
 
   }
 
-
   /**
    * Create an RDD for non-bucketed reads. This function is modified to handle
    * multiple files.
@@ -370,8 +366,6 @@ case class GpuFileSourceScanExec(
 
     val splitFiles = selectedPartitions.flatMap { partition =>
       partition.files.flatMap { file =>
-        // logWarning(s"partition values is: ${partition.values}")
-        // logWarning(s"partition file order is: $file")
         // getPath() is very expensive so we only want to call it once in this block:
         val filePath = file.getPath
         val isSplitable = relation.fileFormat.isSplitable(
