@@ -16,6 +16,8 @@
 
 package org.apache.spark.sql.rapids
 
+import java.util.Locale
+
 import ai.rapids.cudf.{CudaMemInfo, Rmm}
 import com.nvidia.spark.rapids._
 
@@ -39,10 +41,11 @@ class GpuShuffleEnv(rapidsConf: RapidsConf) extends Logging {
   }
 
   lazy val rapidsShuffleCodec: Option[TableCompressionCodec] = {
-    if (rapidsConf.shuffleCompressionEnabled) {
-      Some(TableCompressionCodec.getCodec(rapidsConf.shuffleCompressionCodec))
-    } else {
+    val codecName = rapidsConf.shuffleCompressionCodec.toLowerCase(Locale.ROOT)
+    if (codecName == "none") {
       None
+    } else {
+      Some(TableCompressionCodec.getCodec(codecName))
     }
   }
 

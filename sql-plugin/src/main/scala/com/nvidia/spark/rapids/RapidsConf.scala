@@ -590,18 +590,12 @@ object RapidsConf {
     .bytesConf(ByteUnit.BYTE)
     .createWithDefault(50 * 1024)
 
-  val SHUFFLE_COMPRESSION_ENABLED = conf("spark.rapids.shuffle.compression.enabled")
-      .doc("Whether to enable compression of shuffle buffers when using RAPIDS shuffle")
-      .internal()
-      .booleanConf
-      .createWithDefault(false)
-
   val SHUFFLE_COMPRESSION_CODEC = conf("spark.rapids.shuffle.compression.codec")
       .doc("The GPU codec used to compress shuffle data when using RAPIDS shuffle. " +
-          "Currently only one codec is supported, copy.")
+          "Supported codecs: copy, none")
       .internal()
       .stringConf
-      .createWithDefault("copy")
+      .createWithDefault("none")
 
   // USER FACING DEBUG CONFIGS
 
@@ -866,8 +860,6 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
   lazy val shuffleMaxServerTasks: Int = get(SHUFFLE_MAX_SERVER_TASKS)
 
   lazy val shuffleMaxMetadataSize: Long = get(SHUFFLE_MAX_METADATA_SIZE)
-
-  lazy val shuffleCompressionEnabled: Boolean = get(SHUFFLE_COMPRESSION_ENABLED)
 
   lazy val shuffleCompressionCodec: String = get(SHUFFLE_COMPRESSION_CODEC)
 

@@ -16,8 +16,6 @@
 
 package com.nvidia.spark.rapids
 
-import java.util.Locale
-
 import scala.collection.mutable.ArrayBuffer
 
 import ai.rapids.cudf.{ContiguousTable, DeviceMemoryBuffer}
@@ -103,7 +101,7 @@ object TableCompressionCodec {
 
   /** Get a compression codec by short name or fully qualified class name */
   def getCodec(name: String): TableCompressionCodec = {
-    val codecId = codecNameToId.getOrElse(name.toLowerCase(Locale.ROOT),
+    val codecId = codecNameToId.getOrElse(name,
       throw new IllegalArgumentException(s"Unknown table codec: $name"))
     getCodec(codecId)
   }

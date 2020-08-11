@@ -60,7 +60,7 @@ class GpuPartitioningSuite extends FunSuite with Arm {
 
   test("GPU partition") {
     SparkSession.getActiveSession.foreach(_.close())
-    val conf = new SparkConf().set(RapidsConf.SHUFFLE_COMPRESSION_ENABLED.key, "false")
+    val conf = new SparkConf().set(RapidsConf.SHUFFLE_COMPRESSION_CODEC.key, "none")
     TestUtils.withGpuSparkSession(conf) { _ =>
       GpuShuffleEnv.init(new RapidsConf(conf), Cuda.memGetInfo())
       val partitionIndices = Array(0, 2, 2)
@@ -96,7 +96,6 @@ class GpuPartitioningSuite extends FunSuite with Arm {
 
   test("GPU partition with compression") {
     val conf = new SparkConf()
-        .set(RapidsConf.SHUFFLE_COMPRESSION_ENABLED.key, "true")
         .set(RapidsConf.SHUFFLE_COMPRESSION_CODEC.key, "copy")
     TestUtils.withGpuSparkSession(conf) { _ =>
       GpuShuffleEnv.init(new RapidsConf(conf), Cuda.memGetInfo())
