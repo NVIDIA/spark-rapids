@@ -16,7 +16,7 @@
 
 package com.nvidia.spark.rapids
 
-import ai.rapids.cudf.{BufferType, ContiguousTable, Table}
+import ai.rapids.cudf.{BufferType, ContiguousTable, DeviceMemoryBuffer, Table}
 import com.nvidia.spark.rapids.format.{CodecType, ColumnMeta}
 import org.scalatest.FunSuite
 
@@ -101,7 +101,7 @@ class MetaUtilsSuite extends FunSuite with Arm {
 
   test("buildDegenerateTableMeta no columns") {
     val degenerateBatch = new ColumnarBatch(Array(), 127)
-    val meta = MetaUtils.buildDegenerateTableMeta(8, degenerateBatch)
+    val meta = MetaUtils.buildDegenerateTableMeta(degenerateBatch)
     assertResult(null)(meta.bufferMeta)
     assertResult(0)(meta.columnMetasLength)
     assertResult(127)(meta.rowCount)
@@ -110,7 +110,7 @@ class MetaUtilsSuite extends FunSuite with Arm {
   test("buildDegenerateTableMeta no rows") {
     val schema = StructType.fromDDL("a INT, b STRING, c DOUBLE")
     withResource(GpuColumnVector.emptyBatch(schema)) { batch =>
-      val meta = MetaUtils.buildDegenerateTableMeta(9, batch)
+      val meta = MetaUtils.buildDegenerateTableMeta(batch)
       assertResult(null)(meta.bufferMeta)
       assertResult(0)(meta.rowCount)
       assertResult(3)(meta.columnMetasLength)
@@ -123,6 +123,33 @@ class MetaUtilsSuite extends FunSuite with Arm {
         assertResult(null)(columnMeta.data)
         assertResult(null)(columnMeta.validity)
         assertResult(null)(columnMeta.offsets)
+      }
+    }
+  }
+
+  test("buildDegenerateTableMeta no rows compressed table") {
+    val schema = StructType.fromDDL("a INT, b STRING, c DOUBLE")
+    withResource(GpuColumnVector.emptyBatch(schema)) { uncompressedBatch =>
+      val uncompressedMeta = MetaUtils.buildDegenerateTableMeta(uncompressedBatch)
+      withResource(DeviceMemoryBuffer.allocate(0)) { buffer =>
+        val compressedTable = CompressedTable(0, uncompressedMeta, buffer)
+        withResource(GpuCompressedColumnVector.from(compressedTable)) { batch =>
+          val meta = MetaUtils.buildDegenerateTableMeta(batch)
+          assertResult(null)(meta.bufferMeta)
+          assertResult(0)(meta.rowCount)
+          assertResult(3)(meta.columnMetasLength)
+          (0 until meta.columnMetasLength).foreach { i =>
+            val columnMeta = meta.columnMetas(i)
+            assertResult(0)(columnMeta.nullCount)
+            assertResult(0)(columnMeta.rowCount)
+            val expectedType = uncompressedBatch.column(i).asInstanceOf[GpuColumnVector]
+                .getBase.getType
+            assertResult(expectedType.getNativeId)(columnMeta.dtype)
+            assertResult(null)(columnMeta.data)
+            assertResult(null)(columnMeta.validity)
+            assertResult(null)(columnMeta.offsets)
+          }
+        }
       }
     }
   }

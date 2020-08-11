@@ -159,6 +159,7 @@ overlapping I/O and computation.
 $SPARK_HOME/bin/spark-shell \
        --master spark://${MASTER_HOST}:7077 \
        --conf spark.executor.extraClassPath=${SPARK_CUDF_JAR}:${SPARK_RAPIDS_PLUGIN_JAR} \
+       --conf spark.driver.extraClassPath=${SPARK_CUDF_JAR}:${SPARK_RAPIDS_PLUGIN_JAR} \
        --conf spark.rapids.sql.concurrentGpuTasks=1 \
        --driver-memory 2G \
        --conf spark.executor.memory=4G \

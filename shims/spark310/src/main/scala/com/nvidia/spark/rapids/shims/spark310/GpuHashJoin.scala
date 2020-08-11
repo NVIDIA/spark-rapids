@@ -19,13 +19,10 @@ import ai.rapids.cudf.{NvtxColor, Table}
 import com.nvidia.spark.rapids._
 
 import org.apache.spark.TaskContext
-import org.apache.spark.rdd.RDD
-import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.expressions.{Attribute, Expression}
-import org.apache.spark.sql.catalyst.expressions.codegen.CodegenContext
 import org.apache.spark.sql.catalyst.optimizer.{BuildLeft, BuildRight}
 import org.apache.spark.sql.catalyst.plans.{ExistenceJoin, FullOuter, InnerLike, JoinType, LeftAnti, LeftExistence, LeftOuter, LeftSemi, RightOuter}
-import org.apache.spark.sql.execution.joins.HashJoin
+import org.apache.spark.sql.execution.joins.HashJoinWithoutCodegen
 import org.apache.spark.sql.execution.metric.SQLMetric
 import org.apache.spark.sql.vectorized.{ColumnarBatch, ColumnVector}
 
@@ -45,9 +42,7 @@ object GpuHashJoin {
   }
 }
 
-trait GpuHashJoin extends GpuExec with HashJoin {
-
-  override def supportCodegen: Boolean = false
+trait GpuHashJoin extends GpuExec with HashJoinWithoutCodegen {
 
   override def output: Seq[Attribute] = {
     joinType match {
@@ -246,14 +241,5 @@ trait GpuHashJoin extends GpuExec with HashJoin {
     } finally {
       joinedTable.close()
     }
-  }
-
-  override def inputRDDs(): Seq[RDD[InternalRow]] = {
-    throw new UnsupportedOperationException("inputRDDs is used by codegen which we don't support")
-  }
-
-  protected override def prepareRelation(ctx: CodegenContext): (String, Boolean) = {
-    throw new UnsupportedOperationException(
-      "prepareRelation is used by codegen which we don't support")
   }
 }
