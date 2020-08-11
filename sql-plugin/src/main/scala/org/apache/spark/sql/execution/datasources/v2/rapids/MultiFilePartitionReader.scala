@@ -27,7 +27,6 @@ import org.apache.spark.sql.execution.QueryExecutionException
 import org.apache.spark.sql.execution.datasources.{PartitionedFile, SchemaColumnConvertNotSupportedException}
 import org.apache.spark.sql.internal.SQLConf
 
-
 /**
  * Equivalent of PartitionedFileReader in Spark but instead has multiple files.
  */
@@ -106,4 +105,3 @@ class MultiFilePartitionReader[T](reader: MultiplePartitionedFileReader[T])
     InputFileBlockHolder.unset()
   }
 }
-

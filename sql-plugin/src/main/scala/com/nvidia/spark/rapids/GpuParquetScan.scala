@@ -195,7 +195,9 @@ object GpuParquetScan extends Logging {
 }
 
 /**
- * Similar to GpuParquetPartitionReaderFactory but extended for multiple file reading.
+ * Similar to GpuParquetPartitionReaderFactory but extended for reading multiple files
+ * in an iteration. This will allow us to read multiple small files and combine them
+ * on the CPU side before sending them down to the GPU.
  */
 case class GpuParquetMultiPartitionReaderFactory(
     @transient sqlConf: SQLConf,
@@ -233,11 +235,7 @@ case class GpuParquetMultiPartitionReaderFactory(
 
   def buildColumnarReader(
       partitionedFiles: Array[PartitionedFile]): PartitionReader[ColumnarBatch] = {
-    val reader = buildBaseColumnarParquetReader(partitionedFiles)
-    // TODO - need to fix for partition values
-    // ColumnarPartitionReaderWithPartitionValues.newReader(partitionedFiles(0),
-      // reader, partitionSchema)
-    reader
+    buildBaseColumnarParquetReader(partitionedFiles)
   }
 
   private def filterClippedSchema(clippedSchema: MessageType,
@@ -270,10 +268,8 @@ case class GpuParquetMultiPartitionReaderFactory(
     val clippedBlocks = ArrayBuffer[(Path, BlockMetaData, PartitionedFile)]()
     var clippedSchema: MessageType = null
 
-    // TODO - check schema and metadata (types) to make sure files aren't different
-    // Bobby mentioned something with timestamp types
     files.map { file =>
-      // logWarning(s"processing file: $file")
+      logWarning(s"processing file: $file")
       val filePath = new Path(new URI(file.filePath))
       //noinspection ScalaDeprecation
       val footer = ParquetFileReader.readFooter(conf, filePath,
@@ -287,9 +283,7 @@ case class GpuParquetMultiPartitionReaderFactory(
         None
       }
 
-      // logWarning("before pushed filters defined" )
       val blocks = if (pushedFilters.isDefined) {
-        // logWarning("pushed filters defined: " + pushedFilters)
         // Use the ParquetFileReader to perform dictionary-level filtering
         ParquetInputFormat.setFilterPredicate(conf, pushedFilters.get)
         //noinspection ScalaDeprecation
@@ -309,9 +303,14 @@ case class GpuParquetMultiPartitionReaderFactory(
       // ParquetReadSupport.clipParquetSchema does most of what we want, but it includes
       // everything in readDataSchema, even if it is not in fileSchema we want to remove those
       // for our own purposes
-      // TODO - APPEND or coalesce ?? At least check is different
-      clippedSchema = filterClippedSchema(clippedSchemaTmp, fileSchema, isCaseSensitive)
-      // logWarning(s"file: $file schema: $clippedSchema")
+      val fileClippedSchema = filterClippedSchema(clippedSchemaTmp, fileSchema, isCaseSensitive)
+      if (clippedSchema != null) {
+        logWarning("clipped schema is " + fileClippedSchema)
+        // TODO - APPEND or coalesce ?? At least check is different
+        // throw if different?
+      } else {
+        clippedSchema = fileClippedSchema
+      }
       val columnPaths = clippedSchema.getPaths.asScala.map(x => ColumnPath.get(x: _*))
       val clipped = ParquetPartitionReader.clipBlocks(columnPaths, blocks.asScala)
       clippedBlocks ++= clipped.map((filePath, _, file))
@@ -321,8 +320,6 @@ case class GpuParquetMultiPartitionReaderFactory(
       maxReadBatchSizeBytes, metrics, partitionSchema)
   }
 }
-
-
 
 case class GpuParquetPartitionReaderFactory(
     @transient sqlConf: SQLConf,
@@ -451,7 +448,7 @@ case class GpuParquetPartitionReaderFactory(
 }
 
 /**
- * A PartitionReader that reads a Parquet file split on the GPU.
+ * A PartitionReader that can read multiple Parquet files up to the certain size.
  *
  * Efficiently reading a Parquet split on the GPU requires re-constructing the Parquet file
  * in memory that contains just the column chunks that are needed. This avoids sending
@@ -488,7 +485,7 @@ class MultiFileParquetPartitionReader(
 
   metrics = execMetrics
 
-  def addPartitionValues(
+  private def addPartitionValues(
       batch: Option[ColumnarBatch],
       inPartitionValues: InternalRow): Option[ColumnarBatch] = {
     batch.map { cb =>
@@ -560,7 +557,6 @@ class MultiFileParquetPartitionReader(
           val in = file.getFileSystem(conf).open(file)
           try {
             val retBlocks = copyBlocksData(in, out, blocks)
-            val size = calculateParquetOutputSize(retBlocks)
             allOutputBlocks ++= retBlocks
           } finally {
             in.close()
@@ -792,8 +788,6 @@ class MultiFileParquetPartitionReader(
       return None
     }
 
-    // logWarning(s"read to table blocks is partition ${TaskContext.get().partitionId()} :"
-    // + currentChunkedBlocks.mkString(","))
     val (dataBuffer, dataSize) = readPartFile(currentChunkedBlocks)
     try {
       if (dataSize == 0) {
