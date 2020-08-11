@@ -89,6 +89,31 @@ class RapidsShuffleClientSuite extends RapidsShuffleTestHelper {
     }
   }
 
+  test("successful degenerate metadata fetch") {
+    when(mockTransaction.getStatus).thenReturn(TransactionStatus.Success)
+    val shuffleRequests = RapidsShuffleTestHelper.getShuffleBlocks
+    val numRows = 100000
+    val numBatches = 3
+
+    RapidsShuffleTestHelper.mockDegenerateMetaResponse(mockTransport, numRows, numBatches)
+
+    // initialize metadata fetch
+    client.doFetch(shuffleRequests.map(_._1), mockHandler)
+
+    // the connection saw one request (for metadata)
+    assertResult(1)(mockConnection.requests.size)
+
+    // upon a successful response, the `start()` method in the fetch handler
+    // will be called with 3 expected batches
+    verify(mockHandler, times(1)).start(ArgumentMatchers.eq(numBatches))
+
+    // nothing gets queued to be received since it's just metadata
+    verify(mockTransport, times(0)).queuePending(any())
+
+    // ensure our handler (iterator) received 3 batches
+    verify(mockHandler, times(numBatches)).batchReceived(any())
+  }
+
   test("errored/cancelled metadata fetch") {
     Seq(TransactionStatus.Error, TransactionStatus.Cancelled).foreach { status =>
       when(mockTransaction.getStatus).thenReturn(status)

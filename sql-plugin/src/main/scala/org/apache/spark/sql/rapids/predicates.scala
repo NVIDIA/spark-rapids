@@ -24,6 +24,16 @@ import org.apache.spark.sql.catalyst.expressions.{Expression, ImplicitCastInputT
 import org.apache.spark.sql.catalyst.util.TypeUtils
 import org.apache.spark.sql.types.{AbstractDataType, AnyDataType, BooleanType, DataType, DoubleType, FloatType}
 
+trait GpuPredicateHelper {
+  protected def splitConjunctivePredicates(condition: Expression): Seq[Expression] = {
+    condition match {
+      case GpuAnd(cond1, cond2) =>
+        splitConjunctivePredicates(cond1) ++ splitConjunctivePredicates(cond2)
+      case other => other :: Nil
+    }
+  }
+}
+
 case class GpuNot(child: Expression) extends CudfUnaryExpression
     with Predicate with ImplicitCastInputTypes with NullIntolerant {
   override def toString: String = s"NOT $child"
