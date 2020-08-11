@@ -72,14 +72,16 @@ parquet_compress_options = ['none', 'uncompressed', 'snappy', 'gzip']
 
 @pytest.mark.parametrize('compress', parquet_compress_options)
 @pytest.mark.parametrize('small_file_opt', ["true", "false"])
-def test_compress_read_round_trip(spark_tmp_path, compress, small_file_opt):
+@pytest.mark.parametrize('v1_enabled_list', ["", "parquet"])
+def test_compress_read_round_trip(spark_tmp_path, compress, small_file_opt, v1_enabled_list):
     data_path = spark_tmp_path + '/PARQUET_DATA'
     with_cpu_session(
             lambda spark : binary_op_df(spark, long_gen).write.parquet(data_path),
             conf={'spark.sql.parquet.compression.codec': compress})
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : spark.read.parquet(data_path),
-            conf={'spark.rapids.sql.format.parquet.smallFiles.enabled': small_file_opt})
+            conf={'spark.rapids.sql.format.parquet.smallFiles.enabled': small_file_opt,
+                  'spark.sql.sources.useV1SourceList': v1_enabled_list})
 
 parquet_pred_push_gens = [
         byte_gen, short_gen, int_gen, long_gen, float_gen, double_gen, boolean_gen,
@@ -91,7 +93,8 @@ parquet_pred_push_gens = [
 @pytest.mark.parametrize('parquet_gen', parquet_pred_push_gens, ids=idfn)
 @pytest.mark.parametrize('read_func', [read_parquet_df, read_parquet_sql])
 @pytest.mark.parametrize('small_file_opt', ["true", "false"])
-def test_pred_push_round_trip(spark_tmp_path, parquet_gen, read_func, small_file_opt):
+@pytest.mark.parametrize('v1_enabled_list', ["", "parquet"])
+def test_pred_push_round_trip(spark_tmp_path, parquet_gen, read_func, small_file_opt, v1_enabled_list):
     data_path = spark_tmp_path + '/PARQUET_DATA'
     gen_list = [('a', RepeatSeqGen(parquet_gen, 100)), ('b', parquet_gen)]
     s0 = gen_scalar(parquet_gen, force_no_nulls=True)
@@ -101,14 +104,16 @@ def test_pred_push_round_trip(spark_tmp_path, parquet_gen, read_func, small_file
     rf = read_func(data_path)
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark: rf(spark).select(f.col('a') >= s0),
-            conf={'spark.rapids.sql.format.parquet.smallFiles.enabled': 'true'})
+            conf={'spark.rapids.sql.format.parquet.smallFiles.enabled': 'true',
+                  'spark.sql.sources.useV1SourceList': v1_enabled_list})
 
 parquet_ts_write_options = ['INT96', 'TIMESTAMP_MICROS', 'TIMESTAMP_MILLIS']
 
 @pytest.mark.parametrize('ts_write', parquet_ts_write_options)
 @pytest.mark.parametrize('ts_rebase', ['CORRECTED', 'LEGACY'])
 @pytest.mark.parametrize('small_file_opt', ["true", "false"])
-def test_ts_read_round_trip(spark_tmp_path, ts_write, ts_rebase, small_file_opt):
+@pytest.mark.parametrize('v1_enabled_list', ["", "parquet"])
+def test_ts_read_round_trip(spark_tmp_path, ts_write, ts_rebase, small_file_opt, v1_enabled_list):
     # Once https://github.com/NVIDIA/spark-rapids/issues/132 is fixed replace this with
     # timestamp_gen
     gen = TimestampGen(start=datetime(1900, 1, 1, tzinfo=timezone.utc))
@@ -119,7 +124,8 @@ def test_ts_read_round_trip(spark_tmp_path, ts_write, ts_rebase, small_file_opt)
                 'spark.sql.parquet.outputTimestampType': ts_write})
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : spark.read.parquet(data_path),
-            conf={'spark.rapids.sql.format.parquet.smallFiles.enabled': small_file_opt})
+            conf={'spark.rapids.sql.format.parquet.smallFiles.enabled': small_file_opt,
+                  'spark.sql.sources.useV1SourceList': v1_enabled_list})
 
 parquet_gens_legacy_list = [[byte_gen, short_gen, int_gen, long_gen, float_gen, double_gen,
     string_gen, boolean_gen, DateGen(start=date(1590, 1, 1)),
@@ -129,7 +135,8 @@ parquet_gens_legacy_list = [[byte_gen, short_gen, int_gen, long_gen, float_gen, 
 
 @pytest.mark.parametrize('parquet_gens', parquet_gens_legacy_list, ids=idfn)
 @pytest.mark.parametrize('small_file_opt', ["true", "false"])
-def test_read_round_trip_legacy(spark_tmp_path, parquet_gens, small_file_opt):
+@pytest.mark.parametrize('v1_enabled_list', ["", "parquet"])
+def test_read_round_trip_legacy(spark_tmp_path, parquet_gens, small_file_opt, v1_enabled_list):
     gen_list = [('_c' + str(i), gen) for i, gen in enumerate(parquet_gens)]
     data_path = spark_tmp_path + '/PARQUET_DATA'
     with_cpu_session(
@@ -137,10 +144,12 @@ def test_read_round_trip_legacy(spark_tmp_path, parquet_gens, small_file_opt):
             conf={'spark.sql.legacy.parquet.datetimeRebaseModeInWrite': 'LEGACY'})
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : spark.read.parquet(data_path),
-            conf={'spark.rapids.sql.format.parquet.smallFiles.enabled': small_file_opt})
+            conf={'spark.rapids.sql.format.parquet.smallFiles.enabled': small_file_opt,
+                  'spark.sql.sources.useV1SourceList': v1_enabled_list})
 
 @pytest.mark.parametrize('small_file_opt', ["true", "false"])
-def test_simple_partitioned_read(spark_tmp_path, small_file_opt):
+@pytest.mark.parametrize('v1_enabled_list', ["", "parquet"])
+def test_simple_partitioned_read(spark_tmp_path, small_file_opt, v1_enabled_list):
     # Once https://github.com/NVIDIA/spark-rapids/issues/133 and https://github.com/NVIDIA/spark-rapids/issues/132 are fixed 
     # we should go with a more standard set of generators
     parquet_gens = [byte_gen, short_gen, int_gen, long_gen, float_gen, double_gen,
@@ -158,11 +167,13 @@ def test_simple_partitioned_read(spark_tmp_path, small_file_opt):
     data_path = spark_tmp_path + '/PARQUET_DATA'
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : spark.read.parquet(data_path),
-            conf={'spark.rapids.sql.format.parquet.smallFiles.enabled': small_file_opt})
+            conf={'spark.rapids.sql.format.parquet.smallFiles.enabled': small_file_opt,
+                  'spark.sql.sources.useV1SourceList': v1_enabled_list})
 
 @pytest.mark.xfail(condition=is_databricks_runtime(),
     reason='https://github.com/NVIDIA/spark-rapids/issues/192')
-def test_read_merge_schema(spark_tmp_path):
+@pytest.mark.parametrize('v1_enabled_list', ["", "parquet"])
+def test_read_merge_schema(spark_tmp_path, v1_enabled_list):
     # Once https://github.com/NVIDIA/spark-rapids/issues/133 and https://github.com/NVIDIA/spark-rapids/issues/132 are fixed 
     # we should go with a more standard set of generators
     parquet_gens = [byte_gen, short_gen, int_gen, long_gen, float_gen, double_gen,
@@ -181,7 +192,8 @@ def test_read_merge_schema(spark_tmp_path):
     data_path = spark_tmp_path + '/PARQUET_DATA'
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : spark.read.option('mergeSchema', 'true').parquet(data_path),
-            conf={'spark.rapids.sql.format.parquet.smallFiles.enabled': 'false'})
+            conf={'spark.rapids.sql.format.parquet.smallFiles.enabled': 'false',
+                  'spark.sql.sources.useV1SourceList': v1_enabled_list})
 
 @allow_non_gpu('ColumnarToRowExec', 'FileScan', 'FileSourceScanExec')
 @pytest.mark.xfail(condition=is_databricks_runtime(),
@@ -207,13 +219,40 @@ def test_read_merge_schema_smallfile_opt(spark_tmp_path):
             lambda spark : spark.read.option('mergeSchema', 'true').parquet(data_path),
             'FileSourceScanExec')
 
+@allow_non_gpu('ColumnarToRowExec')
+@pytest.mark.xfail(condition=is_databricks_runtime(),
+    reason='https://github.com/NVIDIA/spark-rapids/issues/192')
+def test_read_merge_schema_smallfile_opt_v2(spark_tmp_path):
+    # Once https://github.com/NVIDIA/spark-rapids/issues/133 and https://github.com/NVIDIA/spark-rapids/issues/132 are fixed 
+    # we should go with a more standard set of generators
+    parquet_gens = [byte_gen, short_gen, int_gen, long_gen, float_gen, double_gen,
+    string_gen, boolean_gen, DateGen(start=date(1590, 1, 1)),
+    TimestampGen(start=datetime(1900, 1, 1, tzinfo=timezone.utc))]
+    first_gen_list = [('_c' + str(i), gen) for i, gen in enumerate(parquet_gens)]
+    first_data_path = spark_tmp_path + '/PARQUET_DATA/key=0'
+    with_cpu_session(
+            lambda spark : gen_df(spark, first_gen_list).write.parquet(first_data_path),
+            conf={'spark.sql.legacy.parquet.datetimeRebaseModeInWrite': 'LEGACY'})
+    second_gen_list = [(('_c' if i % 2 == 0 else '_b') + str(i), gen) for i, gen in enumerate(parquet_gens)]
+    second_data_path = spark_tmp_path + '/PARQUET_DATA/key=1'
+    with_cpu_session(
+            lambda spark : gen_df(spark, second_gen_list).write.parquet(second_data_path),
+            conf={'spark.sql.legacy.parquet.datetimeRebaseModeInWrite': 'CORRECTED'})
+    data_path = spark_tmp_path + '/PARQUET_DATA'
+    #assert_gpu_and_cpu_are_equal_collect(
+    assert_gpu_fallback_collect(
+            lambda spark : spark.read.option('mergeSchema', 'true').parquet(data_path),
+            'BatchScanExec',
+            conf={'spark.sql.sources.useV1SourceList': ""})
+
 parquet_write_gens_list = [
         [byte_gen, short_gen, int_gen, long_gen, float_gen, double_gen,
             string_gen, boolean_gen, date_gen, timestamp_gen]]
 
 @pytest.mark.parametrize('parquet_gens', parquet_write_gens_list, ids=idfn)
 @pytest.mark.parametrize('small_file_opt', ["true", "false"])
-def test_write_round_trip(spark_tmp_path, parquet_gens, small_file_opt):
+@pytest.mark.parametrize('v1_enabled_list', ["", "parquet"])
+def test_write_round_trip(spark_tmp_path, parquet_gens, small_file_opt, v1_enabled_list):
     gen_list = [('_c' + str(i), gen) for i, gen in enumerate(parquet_gens)]
     data_path = spark_tmp_path + '/PARQUET_DATA'
     assert_gpu_and_cpu_writes_are_equal_collect(
@@ -222,7 +261,8 @@ def test_write_round_trip(spark_tmp_path, parquet_gens, small_file_opt):
             data_path,
             conf={'spark.sql.legacy.parquet.datetimeRebaseModeInWrite': 'CORRECTED',
                 'spark.sql.parquet.outputTimestampType': 'TIMESTAMP_MICROS',
-                'spark.rapids.sql.format.parquet.smallFiles.enabled': small_file_opt})
+                'spark.rapids.sql.format.parquet.smallFiles.enabled': small_file_opt,
+                'spark.sql.sources.useV1SourceList': v1_enabled_list})
 
 parquet_part_write_gens = [
         byte_gen, short_gen, int_gen, long_gen, float_gen, double_gen,
@@ -234,7 +274,8 @@ parquet_part_write_gens = [
 @ignore_order
 @pytest.mark.parametrize('parquet_gen', parquet_part_write_gens, ids=idfn)
 @pytest.mark.parametrize('small_file_opt', ["true", "false"])
-def test_part_write_round_trip(spark_tmp_path, parquet_gen, small_file_opt):
+@pytest.mark.parametrize('v1_enabled_list', ["", "parquet"])
+def test_part_write_round_trip(spark_tmp_path, parquet_gen, small_file_opt, v1_enabled_list):
     gen_list = [('a', RepeatSeqGen(parquet_gen, 10)),
             ('b', parquet_gen)]
     data_path = spark_tmp_path + '/PARQUET_DATA'
@@ -244,19 +285,22 @@ def test_part_write_round_trip(spark_tmp_path, parquet_gen, small_file_opt):
             data_path,
             conf={'spark.sql.legacy.parquet.datetimeRebaseModeInWrite': 'CORRECTED',
                 'spark.sql.parquet.outputTimestampType': 'TIMESTAMP_MICROS',
-                'spark.rapids.sql.format.parquet.smallFiles.enabled': small_file_opt})
+                'spark.rapids.sql.format.parquet.smallFiles.enabled': small_file_opt,
+                'spark.sql.sources.useV1SourceList': v1_enabled_list})
 
 parquet_write_compress_options = ['none', 'uncompressed', 'snappy']
 @pytest.mark.parametrize('compress', parquet_write_compress_options)
 @pytest.mark.parametrize('small_file_opt', ["true", "false"])
-def test_compress_write_round_trip(spark_tmp_path, compress, small_file_opt):
+@pytest.mark.parametrize('v1_enabled_list', ["", "parquet"])
+def test_compress_write_round_trip(spark_tmp_path, compress, small_file_opt, v1_enabled_list):
     data_path = spark_tmp_path + '/PARQUET_DATA'
     assert_gpu_and_cpu_writes_are_equal_collect(
             lambda spark, path : binary_op_df(spark, long_gen).coalesce(1).write.parquet(path),
             lambda spark, path : spark.read.parquet(path),
             data_path,
             conf={'spark.sql.parquet.compression.codec': compress,
-                'spark.rapids.sql.format.parquet.smallFiles.enabled': small_file_opt})
+                'spark.rapids.sql.format.parquet.smallFiles.enabled': small_file_opt,
+                'spark.sql.sources.useV1SourceList': v1_enabled_list})
 
 @pytest.mark.parametrize('small_file_opt', ["true", "false"])
 @pytest.mark.parametrize('v1_enabled_list', ["", "parquet"])
