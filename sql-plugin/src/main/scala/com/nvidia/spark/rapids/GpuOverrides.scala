@@ -19,7 +19,6 @@ package com.nvidia.spark.rapids
 import java.time.ZoneId
 
 import scala.reflect.ClassTag
-
 import org.apache.spark.internal.Logging
 import org.apache.spark.sql.SparkSession
 import org.apache.spark.sql.catalyst.expressions._
@@ -41,13 +40,13 @@ import org.apache.spark.sql.execution.datasources.text.TextFileFormat
 import org.apache.spark.sql.execution.datasources.v2.BatchScanExec
 import org.apache.spark.sql.execution.datasources.v2.csv.CSVScan
 import org.apache.spark.sql.execution.exchange.{BroadcastExchangeExec, ShuffleExchangeExec}
-import org.apache.spark.sql.execution.joins.{BroadcastNestedLoopJoinExec, CartesianProductExec}
-import org.apache.spark.sql.execution.python.ArrowEvalPythonExec
+import org.apache.spark.sql.execution.joins._
+import org.apache.spark.sql.execution.python._
 import org.apache.spark.sql.execution.window.WindowExec
 import org.apache.spark.sql.rapids._
 import org.apache.spark.sql.rapids.catalyst.expressions.GpuRand
 import org.apache.spark.sql.rapids.execution.{GpuBroadcastMeta, GpuBroadcastNestedLoopJoinMeta, GpuCustomShuffleReaderExec, GpuShuffleMeta}
-import org.apache.spark.sql.rapids.execution.python.{GpuArrowEvalPythonExec, GpuArrowPythonExecMeta}
+import org.apache.spark.sql.rapids.execution.python._
 import org.apache.spark.sql.types._
 import org.apache.spark.unsafe.types.UTF8String
 
@@ -1772,8 +1771,17 @@ object GpuOverrides {
         }
       }),
     exec[ArrowEvalPythonExec](
-      "The backend for pandas UDF",
-      (py, conf, p, r) => new GpuArrowPythonExecMeta(py, conf, p, r))
+      "The backend for Scalar Pandas (Iterator) UDFs",
+      (py, conf, p, r) => new GpuArrowEvalPythonExecMeta(py, conf, p, r)),
+    exec[MapInPandasExec](
+      "The backend for Map Pandas Iterator UDF",
+      (mapPy, conf, p, r) => new GpuMapInPandasExecMeta(mapPy, conf, p, r)),
+    exec[FlatMapGroupsInPandasExec](
+      "The backend for Grouped Map Pandas UDF",
+      (flatPy, conf, p, r) => new GpuFlatMapGroupsInPandasExecMeta(flatPy, conf, p, r)),
+    exec[AggregateInPandasExec](
+      "The backend for Grouped Aggregation Pandas UDF",
+      (aggPy, conf, p, r) => new GpuAggregateInPandasExecMeta(aggPy, conf, p, r))
   ).map(r => (r.getClassFor.asSubclass(classOf[SparkPlan]), r)).toMap
   val execs: Map[Class[_ <: SparkPlan], ExecRule[_ <: SparkPlan]] =
     commonExecs ++ ShimLoader.getSparkShims.getExecs
