@@ -301,7 +301,6 @@ case class GpuFileSourceScanExec(
       selectedPartitions: Array[PartitionDirectory],
       fsRelation: HadoopFsRelation): RDD[InternalRow] = {
     logInfo(s"Planning with ${bucketSpec.numBuckets} buckets")
-    throw new Exception("haven't tested bucketting yet!")
 
     val filesGroupedToBuckets =
       selectedPartitions.flatMap { p =>
@@ -341,10 +340,7 @@ case class GpuFileSourceScanExec(
       new RapidsConf(sqlConf),
       PartitionReaderIterator.buildScanMetrics(relation.sparkSession.sparkContext))
 
-    // TODO - is this ok to use over FileScanRDD??
     new DataSourceRDD(relation.sparkSession.sparkContext, filePartitions, factory, supportsColumnar)
-    // new FileScanRDD(fsRelation.sparkSession, readFile, filePartitions)
-
   }
 
   /**
@@ -397,9 +393,7 @@ case class GpuFileSourceScanExec(
       new RapidsConf(sqlConf),
       PartitionReaderIterator.buildScanMetrics(relation.sparkSession.sparkContext))
 
-    // TODO - is this ok to use over FileScanRDD??
     new DataSourceRDD(relation.sparkSession.sparkContext, partitions, factory, supportsColumnar)
-    // new FileScanRDD(fsRelation.sparkSession, readFile, partitions)
   }
   /* ------- end section above only used for small files optimization -------- */
 }
@@ -414,11 +408,6 @@ object GpuFileSourceScanExec extends Logging {
       options.getOrElse("mergeSchema", "false").toBoolean)) {
       meta.willNotWorkOnGpu("mergeSchema is not supported yet")
     }
-
-    logWarning("in file source scan exec tag")
-    meta.childPlans.map(p => logWarning(s"child plan is: $p"))
-    meta.childExprs.map(p => logWarning(s"child expr is: $p"))
-
 
     meta.wrapped.relation.fileFormat match {
       case _: CSVFileFormat => GpuReadCSVFileFormat.tagSupport(meta)

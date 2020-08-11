@@ -321,3 +321,4 @@ def test_input_meta(spark_tmp_path, small_file_opt, v1_enabled_list):
                         'input_file_block_length()'),
             conf={'spark.rapids.sql.format.parquet.smallFiles.enabled': small_file_opt,
                   'spark.sql.sources.useV1SourceList': v1_enabled_list})
+

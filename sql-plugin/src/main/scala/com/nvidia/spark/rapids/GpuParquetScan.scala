@@ -89,7 +89,7 @@ case class GpuParquetScan(
     // conf after the rapidsConf is passed in here.
     val latestConf = new RapidsConf(sparkSession.sessionState.conf)
 
-    logWarning(s"Small file optimization: ${rapidsConf.isParquetSmallFilesEnabled} " +
+    logDebug(s"Small file optimization: ${rapidsConf.isParquetSmallFilesEnabled} " +
       s"Inputfile: ${latestConf.isInputFileExecUsed}")
     if (rapidsConf.isParquetSmallFilesEnabled && !latestConf.isInputFileExecUsed) {
       GpuParquetMultiPartitionReaderFactory(sparkSession.sessionState.conf, broadcastedConf,
