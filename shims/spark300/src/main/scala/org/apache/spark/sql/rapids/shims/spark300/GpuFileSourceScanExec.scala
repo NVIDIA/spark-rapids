@@ -129,12 +129,12 @@ case class GpuFileSourceScanExec(
       case _: ParquetFileFormat => true
       case _ => false
     }
+    logDebug(s"Small file optimization: ${rapidsConf.isParquetSmallFilesEnabled} " +
+      s"format: $formatSupportsSmallFilesOptimization " +
+      s"Inputfile: ${rapidsConf.isInputFileExecUsed}")
 
     if (rapidsConf.isParquetSmallFilesEnabled && formatSupportsSmallFilesOptimization
       && !rapidsConf.isInputFileExecUsed) {
-      logDebug("Using small file optimization: ${rapidsConf.isParquetSmallFilesEnabled} " +
-        s"format: $formatSupportsSmallFilesOptimization " +
-        s"Inputfile: ${rapidsConf.isInputFileExecUsed}")
       inputRDD :: Nil
     } else {
       wrapped.inputRDD :: Nil
@@ -217,7 +217,6 @@ case class GpuFileSourceScanExec(
     if (relation.partitionSchemaOption.isDefined) {
       driverMetrics("numPartitions") = ret.length
     }
-    logWarning(s"settings file num and size metrics to: $ret")
     setFilesNumAndSizeMetric(ret, true)
     val timeTakenMs = NANOSECONDS.toMillis(
       (System.nanoTime() - startTime) + optimizerMetadataTimeNs)
@@ -410,8 +409,7 @@ object GpuFileSourceScanExec extends Logging {
     val sparkSession = meta.wrapped.sqlContext.sparkSession
     val fs = meta.wrapped
     val options = fs.relation.options
-    logWarning(s"gpu file source scan exec is input file exec used: ${meta.conf.isInputFileExecUsed}")
-    if (meta.conf.isParquetSmallFilesEnabled && !meta.conf.isInputFileExecUsed && (sparkSession.conf
+    if (meta.conf.isParquetSmallFilesEnabled && (sparkSession.conf
       .getOption("spark.sql.parquet.mergeSchema").exists(_.toBoolean) ||
       options.getOrElse("mergeSchema", "false").toBoolean)) {
       meta.willNotWorkOnGpu("mergeSchema is not supported yet")

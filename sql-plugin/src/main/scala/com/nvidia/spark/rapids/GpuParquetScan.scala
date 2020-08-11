@@ -85,9 +85,13 @@ case class GpuParquetScan(
   override def createReaderFactory(): PartitionReaderFactory = {
     val broadcastedConf = sparkSession.sparkContext.broadcast(
       new SerializableConfiguration(hadoopConf))
+    // We have to look at the latest conf because we set the input file exec used
+    // conf after the rapidsConf is passed in here.
+    val latestConf = new RapidsConf(sparkSession.sessionState.conf)
 
-    // TODO - do we want to do any logic up front to check for small files?
-    if (rapidsConf.isParquetSmallFilesEnabled) {
+    logWarning(s"Small file optimization: ${rapidsConf.isParquetSmallFilesEnabled} " +
+      s"Inputfile: ${latestConf.isInputFileExecUsed}")
+    if (rapidsConf.isParquetSmallFilesEnabled && !latestConf.isInputFileExecUsed) {
       GpuParquetMultiPartitionReaderFactory(sparkSession.sessionState.conf, broadcastedConf,
         dataSchema, readDataSchema, readPartitionSchema, pushedFilters, rapidsConf, metrics)
     } else {
