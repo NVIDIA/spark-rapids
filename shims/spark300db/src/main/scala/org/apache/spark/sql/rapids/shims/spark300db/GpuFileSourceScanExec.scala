@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-package org.apache.spark.sql.rapids.shims.spark300
+package org.apache.spark.sql.rapids.shims.spark300db
 
 import java.util.concurrent.TimeUnit.NANOSECONDS
 
@@ -129,17 +129,17 @@ case class GpuFileSourceScanExec(
       case _: ParquetFileFormat => true
       case _ => false
     }
+    logDebug(s"Small file optimization: ${rapidsConf.isParquetSmallFilesEnabled} " +
+      s"format: $formatSupportsSmallFilesOptimization " +
+      s"Inputfile: ${rapidsConf.isInputFileExecUsed}")
 
-    if (rapidsConf.isParquetSmallFilesEnabled && formatSupportsSmallFilesOptimization) {
-      logWarning("using small file enhancement" +
-        rapidsConf.isParquetSmallFilesEnabled + " " + formatSupportsSmallFilesOptimization)
-      inputRDD:: Nil
+    if (rapidsConf.isParquetSmallFilesEnabled && formatSupportsSmallFilesOptimization
+      && !rapidsConf.isInputFileExecUsed) {
+      inputRDD :: Nil
     } else {
-      logWarning("NOT using small file enhancement")
       wrapped.inputRDD :: Nil
     }
   }
-
 
   override protected def doExecute(): RDD[InternalRow] =
     throw new IllegalStateException(s"Row-based execution should not occur for $this")
@@ -273,7 +273,6 @@ case class GpuFileSourceScanExec(
 
   // Only used for small files optimization
   lazy val inputRDD: RDD[InternalRow] = {
-
     val readRDD = if (bucketedScan) {
       createBucketedReadRDD(relation.bucketSpec.get, dynamicallySelectedPartitions,
         relation)
@@ -296,13 +295,11 @@ case class GpuFileSourceScanExec(
    * @param selectedPartitions Hive-style partition that are part of the read.
    * @param fsRelation [[HadoopFsRelation]] associated with the read.
    */
-  // TODO - spark 3.1 version has another paramter!!!
   private def createBucketedReadRDD(
       bucketSpec: BucketSpec,
       selectedPartitions: Array[PartitionDirectory],
       fsRelation: HadoopFsRelation): RDD[InternalRow] = {
     logInfo(s"Planning with ${bucketSpec.numBuckets} buckets")
-    throw new Exception("haven't tested bucketting yet!")
 
     val filesGroupedToBuckets =
       selectedPartitions.flatMap { p =>
@@ -342,12 +339,9 @@ case class GpuFileSourceScanExec(
       new RapidsConf(sqlConf),
       PartitionReaderIterator.buildScanMetrics(relation.sparkSession.sparkContext))
 
-    // TODO - is this ok to use over FileScanRDD??
+    // note we use the v2 DataSourceRDD instead of FileScanRDD so we don't have to copy more code
     new DataSourceRDD(relation.sparkSession.sparkContext, filePartitions, factory, supportsColumnar)
-    // new FileScanRDD(fsRelation.sparkSession, readFile, filePartitions)
-
   }
-
 
   /**
    * Create an RDD for non-bucketed reads. This function is modified to handle
@@ -367,8 +361,6 @@ case class GpuFileSourceScanExec(
 
     val splitFiles = selectedPartitions.flatMap { partition =>
       partition.files.flatMap { file =>
-        // logWarning(s"partition values is: ${partition.values}")
-        // logWarning(s"partition file order is: $file")
         // getPath() is very expensive so we only want to call it once in this block:
         val filePath = file.getPath
         val isSplitable = relation.fileFormat.isSplitable(
@@ -401,9 +393,8 @@ case class GpuFileSourceScanExec(
       new RapidsConf(sqlConf),
       PartitionReaderIterator.buildScanMetrics(relation.sparkSession.sparkContext))
 
-    // TODO - is this ok to use over FileScanRDD??
+    // note we use the v2 DataSourceRDD instead of FileScanRDD so we don't have to copy more code
     new DataSourceRDD(relation.sparkSession.sparkContext, partitions, factory, supportsColumnar)
-    // new FileScanRDD(fsRelation.sparkSession, readFile, partitions)
   }
   /* ------- end section above only used for small files optimization -------- */
 }
@@ -413,7 +404,6 @@ object GpuFileSourceScanExec extends Logging {
     val sparkSession = meta.wrapped.sqlContext.sparkSession
     val fs = meta.wrapped
     val options = fs.relation.options
-    // logWarning(s"gpu file source scan exec options ${options}")
     if (meta.conf.isParquetSmallFilesEnabled && (sparkSession.conf
       .getOption("spark.sql.parquet.mergeSchema").exists(_.toBoolean) ||
       options.getOrElse("mergeSchema", "false").toBoolean)) {
