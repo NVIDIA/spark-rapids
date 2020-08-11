@@ -76,8 +76,8 @@ object RapidsShuffleTestHelper extends MockitoSugar with Arm {
     MetaUtils.buildTableMeta(tableId, cols, tbl.getRowCount, contigTable.getBuffer)
   }
 
-  def buildDegenerateMockTableMeta(tableId: Int): TableMeta = {
-    MetaUtils.buildDegenerateTableMeta(tableId, new ColumnarBatch(Array.empty, 123))
+  def buildDegenerateMockTableMeta(): TableMeta = {
+    MetaUtils.buildDegenerateTableMeta(new ColumnarBatch(Array.empty, 123))
   }
 
   def withMockContiguousTable[T](numRows: Long)(body: ContiguousTable => T): T = {
@@ -113,7 +113,7 @@ object RapidsShuffleTestHelper extends MockitoSugar with Arm {
       numRows: Long,
       numBatches: Int,
       maximumResponseSize: Long = 10000): Seq[TableMeta] = {
-    val tableMetas = (0 until numBatches).map(b => buildDegenerateMockTableMeta(b))
+    val tableMetas = (0 until numBatches).map(b => buildDegenerateMockTableMeta())
     val res = ShuffleMetadata.buildMetaResponse(tableMetas, maximumResponseSize)
     val refCountedRes = new RefCountedDirectByteBuffer(res)
     when(mockTransport.getMetaBuffer(any())).thenReturn(refCountedRes)

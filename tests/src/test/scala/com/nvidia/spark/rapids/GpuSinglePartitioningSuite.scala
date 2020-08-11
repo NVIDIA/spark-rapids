@@ -34,8 +34,9 @@ class GpuSinglePartitioningSuite extends FunSuite with Arm {
     }
   }
 
-  test("generates contiguous split") {
+  test("generates contiguous split uncompressed") {
     val conf = new SparkConf().set("spark.shuffle.manager", GpuShuffleEnv.RAPIDS_SHUFFLE_CLASS)
+        .set(RapidsConf.SHUFFLE_COMPRESSION_CODEC.key, "none")
     TestUtils.withGpuSparkSession(conf) { _ =>
       GpuShuffleEnv.init(new RapidsConf(conf), Cuda.memGetInfo())
       val partitioner = GpuSinglePartitioning(Nil)

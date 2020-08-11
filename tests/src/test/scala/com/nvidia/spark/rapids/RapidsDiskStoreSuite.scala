@@ -189,17 +189,12 @@ class RapidsDiskStoreSuite extends FunSuite with BeforeAndAfterEach with Arm wit
       devStore: RapidsDeviceMemoryStore,
       bufferId: RapidsBufferId,
       spillPriority: Long): Long = {
-    val ct = buildContiguousTable()
-    val bufferSize = ct.getBuffer.getLength
-    try {
+    closeOnExcept(buildContiguousTable()) { ct =>
+      val bufferSize = ct.getBuffer.getLength
       // store takes ownership of the table
       devStore.addTable(bufferId, ct.getTable, ct.getBuffer, spillPriority)
-    } catch {
-      case t: Throwable =>
-        ct.close()
-        throw t
+      bufferSize
     }
-    bufferSize
   }
 
   case class MockRapidsBufferId(
