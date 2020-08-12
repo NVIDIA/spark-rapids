@@ -164,8 +164,7 @@ similar issue exists for writing dates as described
 appears to work for dates after the epoch as described
 [here](https://github.com/NVIDIA/spark-rapids/issues/140). 
 
-ORC supports reading `uncompressed`, `snappy` and `zlib` compressed files.  ORC supports 
-writing `uncompressed` and `snappy` compression. 
+The plugin supports reading `uncompressed`, `snappy` and `zlib` ORC files and writing `uncompressed` and `snappy` ORC files. 
 
 ## Parquet
 
@@ -187,8 +186,7 @@ Parquet will not be GPU-accelerated. If the INT96 timestamp format is not requir
 compatibility with other tools then set `spark.sql.parquet.outputTimestampType` to
 `TIMESTAMP_MICROS`.
 
-Parquet supports reading `uncompressed`, `snappy` and `gzip` compressed files.  Parquet writing 
-supports `uncompressed` and `snappy` compression. 
+The plugin supports reading `uncompressed`, `snappy` and `gzip` Parquet files and writing `uncompressed` and `snappy` Parquet files. 
 
 ## Timestamps
 
