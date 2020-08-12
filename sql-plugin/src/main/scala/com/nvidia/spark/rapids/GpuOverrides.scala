@@ -336,6 +336,11 @@ object GpuOverrides {
     "\\S", "\\v", "\\V", "\\w", "\\w", "\\p", "$", "\\b", "\\B", "\\A", "\\G", "\\Z", "\\z", "\\R",
     "?", "|", "(", ")", "{", "}", "\\k", "\\Q", "\\E", ":", "!", "<=", ">")
 
+  def canRegexpBeTreatedLikeARegularString(strLit: UTF8String): Boolean = {
+    val s = strLit.toString
+    !regexList.exists(pattern => s.contains(pattern))
+  }
+
   @scala.annotation.tailrec
   def extractLit(exp: Expression): Option[Literal] = exp match {
     case l: Literal => Some(l)
@@ -1328,6 +1333,12 @@ object GpuOverrides {
             pad: Expression): GpuExpression =
           GpuStringRPad(str, width, pad)
       }),
+    expr[StringSplit](
+       "Splits `str` around occurrences that match `regex`",
+      (in, conf, p, r) => new GpuStringSplitMeta(in, conf, p, r)),
+    expr[GetArrayItem](
+      "Gets the field at `ordinal` in the Array",
+      (in, conf, p, r) => new GpuGetArrayItemMeta(in, conf, p, r)),
     expr[StringLocate](
       "Substring search operator",
       (in, conf, p, r) => new TernaryExprMeta[StringLocate](in, conf, p, r) {

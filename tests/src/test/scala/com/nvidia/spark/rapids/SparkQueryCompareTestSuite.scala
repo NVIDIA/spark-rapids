@@ -28,6 +28,7 @@ import org.apache.spark.SparkConf
 import org.apache.spark.internal.Logging
 import org.apache.spark.sql.{DataFrame, Row, SparkSession}
 import org.apache.spark.sql.execution.SparkPlan
+import org.apache.spark.sql.rapids.execution.TrampolineUtil
 import org.apache.spark.sql.types._
 
 object TestResourceFinder {
@@ -225,6 +226,8 @@ trait SparkQueryCompareTestSuite extends FunSuite with Arm {
   : (Array[Row], SparkPlan, Array[Row], SparkPlan) = {
     conf.setIfMissing("spark.sql.shuffle.partitions", "2")
 
+    // force a new session to avoid accidentally capturing a late callback from a previous query
+    TrampolineUtil.cleanupAnyExistingSession()
     ExecutionPlanCaptureCallback.startCapture()
     var cpuPlan: Option[SparkPlan] = null
     val fromCpu =

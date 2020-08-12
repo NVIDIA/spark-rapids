@@ -18,15 +18,18 @@ package com.nvidia.spark.rapids
 
 import scala.collection.mutable.ArrayBuffer
 
-import ai.rapids.cudf.{ContiguousTable, NvtxColor, NvtxRange, Table}
+import ai.rapids.cudf.{NvtxColor, NvtxRange, Table}
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 
 import org.apache.spark.TaskContext
 import org.apache.spark.sql.catalyst.plans.physical.Partitioning
+import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.rapids.GpuShuffleEnv
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
-trait GpuPartitioning extends Partitioning {
+trait GpuPartitioning extends Partitioning with Arm {
+  private[this] val maxCompressionBatchSize =
+    new RapidsConf(SQLConf.get).shuffleCompressionMaxBatchMemory
 
   def sliceBatch(vectors: Array[RapidsHostColumnVector], start: Int, end: Int): ColumnarBatch = {
     var ret: ColumnarBatch = null
@@ -43,24 +46,25 @@ trait GpuPartitioning extends Partitioning {
     // The first index will always be 0, so we need to skip it.
     val batches = if (numRows > 0) {
       val parts = partitionIndexes.slice(1, partitionIndexes.length)
-      val splits = new ArrayBuffer[ColumnarBatch](numPartitions)
-      val table = new Table(partitionColumns.map(_.getBase).toArray: _*)
-      val contiguousTables: Array[ContiguousTable] = try {
-        table.contiguousSplit(parts: _*)
-      } finally {
-        table.close()
-      }
-      var succeeded = false
-      try {
-        contiguousTables.foreach { ct => splits.append(GpuColumnVectorFromBuffer.from(ct)) }
-        succeeded = true
-      } finally {
-        contiguousTables.foreach(_.close())
-        if (!succeeded) {
-          splits.foreach(_.close())
+      closeOnExcept(new ArrayBuffer[ColumnarBatch](numPartitions)) { splits =>
+        val table = new Table(partitionColumns.map(_.getBase).toArray: _*)
+        val contiguousTables = withResource(table)(t => t.contiguousSplit(parts: _*))
+        GpuShuffleEnv.rapidsShuffleCodec match {
+          case Some(codec) =>
+            withResource(codec.createBatchCompressor(maxCompressionBatchSize)) { compressor =>
+              // batchCompress takes ownership of the contiguous tables and will close
+              compressor.addTables(contiguousTables)
+              withResource(compressor.finish()) { compressedTables =>
+                compressedTables.foreach(ct => splits.append(GpuCompressedColumnVector.from(ct)))
+              }
+            }
+          case None =>
+            withResource(contiguousTables) { cts =>
+              cts.foreach { ct => splits.append(GpuColumnVectorFromBuffer.from(ct)) }
+            }
         }
+        splits.toArray
       }
-      splits.toArray
     } else {
       Array[ColumnarBatch]()
     }

@@ -140,7 +140,12 @@ class RapidsDeviceMemoryStore(
       if (table.isDefined) {
         GpuColumnVector.from(table.get) //REFCOUNT ++ of all columns
       } else {
-        throw new UnsupportedOperationException("compressed buffer support not implemented")
+        val uncompressedBuffer = uncompressBuffer(contigBuffer, meta.bufferMeta)
+        try {
+          MetaUtils.getBatchFromMeta(uncompressedBuffer, meta)
+        } finally {
+          uncompressedBuffer.close()
+        }
       }
     }
   }
