@@ -1777,7 +1777,7 @@ case class GpuOverrides() extends Rule[SparkPlan] with Logging {
     if (conf.isSqlEnabled) {
       val wrap = GpuOverrides.wrapPlan(plan, conf, None)
       wrap.tagForGpu()
-      wrap.runAfterTagRules(conf)
+      wrap.runAfterTagRules()
       val exp = conf.explain
       if (!exp.equalsIgnoreCase("NONE")) {
         logWarning(s"\n${wrap.explain(exp.equalsIgnoreCase("ALL"))}")

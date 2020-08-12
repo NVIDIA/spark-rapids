@@ -194,7 +194,9 @@ object GpuParquetScan extends Logging {
 }
 
 /**
- * Similar to GpuParquetPartitionReaderFactory but extended for multiple file reading.
+ * Similar to GpuParquetPartitionReaderFactory but extended for reading multiple files
+ * in an iteration. This will allow us to read multiple small files and combine them
+ * on the CPU side before sending them down to the GPU.
  */
 case class GpuParquetMultiPartitionReaderFactory(
     @transient sqlConf: SQLConf,
@@ -215,6 +217,8 @@ case class GpuParquetMultiPartitionReaderFactory(
   private val debugDumpPrefix = rapidsConf.parquetDebugDumpPrefix
   private val maxReadBatchSizeRows = rapidsConf.maxReadBatchSizeRows
   private val maxReadBatchSizeBytes = rapidsConf.maxReadBatchSizeBytes
+  private val isCorrectedRebase =
+    "CORRECTED" == sqlConf.getConf(SQLConf.LEGACY_PARQUET_REBASE_MODE_IN_READ)
 
   override def supportColumnarReads(partition: InputPartition): Boolean = true
 
@@ -231,8 +235,25 @@ case class GpuParquetMultiPartitionReaderFactory(
 
   def buildColumnarReader(
       partitionedFiles: Array[PartitionedFile]): PartitionReader[ColumnarBatch] = {
-    val reader = buildBaseColumnarParquetReader(partitionedFiles)
-    reader
+    buildBaseColumnarParquetReader(partitionedFiles)
+  }
+
+  // Copied from Spark
+  private val SPARK_VERSION_METADATA_KEY = "org.apache.spark.version"
+  // Copied from Spark
+  private val SPARK_LEGACY_DATETIME = "org.apache.spark.legacyDateTime"
+
+  def isCorrectedRebaseMode(
+      lookupFileMeta: String => String,
+      isCorrectedModeConfig: Boolean): Boolean = {
+    // If there is no version, we return the mode specified by the config.
+    Option(lookupFileMeta(SPARK_VERSION_METADATA_KEY)).map { version =>
+      // Files written by Spark 2.4 and earlier follow the legacy hybrid calendar and we need to
+      // rebase the datetime values.
+      // Files written by Spark 3.0 and later may also need the rebase if they were written with
+      // the "LEGACY" rebase mode.
+      version >= "3.0.0" && lookupFileMeta(SPARK_LEGACY_DATETIME) == null
+    }.getOrElse(isCorrectedModeConfig)
   }
 
   private def filterClippedSchema(clippedSchema: MessageType,
@@ -240,6 +261,7 @@ case class GpuParquetMultiPartitionReaderFactory(
     val fs = fileSchema.asGroupType()
     val types = if (isCaseSensitive) {
       val inFile = fs.getFields.asScala.map(_.getName).toSet
+
       clippedSchema.asGroupType()
         .getFields.asScala.filter(f => inFile.contains(f.getName))
     } else {
@@ -264,11 +286,10 @@ case class GpuParquetMultiPartitionReaderFactory(
     val conf = broadcastedConf.value.value
     val clippedBlocks = ArrayBuffer[(Path, BlockMetaData, PartitionedFile)]()
     var clippedSchema: MessageType = null
+    var isCorrectedRebaseForThis: Boolean = null
 
-    // TODO - check schema and metadata (types) to make sure files aren't different
-    // Bobby mentioned something with timestamp types
     files.map { file =>
-      // logWarning(s"processing file: $file")
+      logWarning(s"processing file: $file")
       val filePath = new Path(new URI(file.filePath))
       //noinspection ScalaDeprecation
       val footer = ParquetFileReader.readFooter(conf, filePath,
@@ -282,9 +303,18 @@ case class GpuParquetMultiPartitionReaderFactory(
         None
       }
 
-      // logWarning("before pushed filters defined" )
+      // we need to ensure all files we are going to combine have the same datetime rebase mode
+      val isCorrectedRebaseForThisFile =
+        isCorrectedRebaseMode(footer.getFileMetaData.getKeyValueMetaData.get, isCorrectedRebase)
+      if (isCorrectedRebaseForThis == null) {
+        isCorrectedRebaseForThis = isCorrectedRebaseForThisFile
+      } else if (isCorrectedRebaseForThis != isCorrectedRebaseForThisFile) {
+          throw new UnsupportedOperationException("Can't use small file optimization when " +
+            "datetime rebase mode is different across files, turn off " +
+            s"${ENABLE_SMALL_FILES_PARQUET.key} and rerun.")
+      }
+
       val blocks = if (pushedFilters.isDefined) {
-        // logWarning("pushed filters defined: " + pushedFilters)
         // Use the ParquetFileReader to perform dictionary-level filtering
         ParquetInputFormat.setFilterPredicate(conf, pushedFilters.get)
         //noinspection ScalaDeprecation
@@ -304,20 +334,16 @@ case class GpuParquetMultiPartitionReaderFactory(
       // ParquetReadSupport.clipParquetSchema does most of what we want, but it includes
       // everything in readDataSchema, even if it is not in fileSchema we want to remove those
       // for our own purposes
-      // TODO - APPEND or coalesce ?? At least check is different
-      clippedSchema = filterClippedSchema(clippedSchemaTmp, fileSchema, isCaseSensitive)
-      // logWarning(s"file: $file schema: $clippedSchema")
+      val fileClippedSchema = filterClippedSchema(clippedSchemaTmp, fileSchema, isCaseSensitive)
       val columnPaths = clippedSchema.getPaths.asScala.map(x => ColumnPath.get(x: _*))
       val clipped = ParquetPartitionReader.clipBlocks(columnPaths, blocks.asScala)
       clippedBlocks ++= clipped.map((filePath, _, file))
-    }
+    
     new MultiFileParquetPartitionReader(conf, files, clippedBlocks, clippedSchema,
       isCaseSensitive, readDataSchema, debugDumpPrefix, maxReadBatchSizeRows,
-      maxReadBatchSizeBytes, metrics, partitionSchema)
+      maxReadBatchSizeBytes, metrics, partitionSchema, isCorrectedRebaseForThis)
   }
 }
-
-
 
 case class GpuParquetPartitionReaderFactory(
     @transient sqlConf: SQLConf,
@@ -446,7 +472,7 @@ case class GpuParquetPartitionReaderFactory(
 }
 
 /**
- * A PartitionReader that reads a Parquet file split on the GPU.
+ * A PartitionReader that can read multiple Parquet files up to the certain size.
  *
  * Efficiently reading a Parquet split on the GPU requires re-constructing the Parquet file
  * in memory that contains just the column chunks that are needed. This avoids sending
@@ -472,7 +498,8 @@ class MultiFileParquetPartitionReader(
     maxReadBatchSizeRows: Integer,
     maxReadBatchSizeBytes: Long,
     execMetrics: Map[String, SQLMetric],
-    partitionSchema: StructType) extends PartitionReader[ColumnarBatch] with Logging
+    partitionSchema: StructType,
+    isCorrectedRebaseMode: Boolean) extends PartitionReader[ColumnarBatch] with Logging
   with ScanWithMetrics with Arm {
   private var isExhausted: Boolean = false
   private var maxDeviceMemory: Long  = 0
@@ -483,7 +510,7 @@ class MultiFileParquetPartitionReader(
 
   metrics = execMetrics
 
-  def addPartitionValues(
+  private def addPartitionValues(
       batch: Option[ColumnarBatch],
       inPartitionValues: InternalRow): Option[ColumnarBatch] = {
     batch.map { cb =>
@@ -555,7 +582,6 @@ class MultiFileParquetPartitionReader(
           val in = file.getFileSystem(conf).open(file)
           try {
             val retBlocks = copyBlocksData(in, out, blocks)
-            val size = calculateParquetOutputSize(retBlocks)
             allOutputBlocks ++= retBlocks
           } finally {
             in.close()
@@ -787,8 +813,6 @@ class MultiFileParquetPartitionReader(
       return None
     }
 
-    // logWarning(s"read to table blocks is partition ${TaskContext.get().partitionId()} :"
-    // + currentChunkedBlocks.mkString(","))
     val (dataBuffer, dataSize) = readPartFile(currentChunkedBlocks)
     try {
       if (dataSize == 0) {
@@ -805,6 +829,13 @@ class MultiFileParquetPartitionReader(
         GpuSemaphore.acquireIfNecessary(TaskContext.get())
 
         val table = Table.readParquet(parseOpts, dataBuffer, 0, dataSize)
+        if (!isCorrectedRebaseMode) {
+          (0 until table.getNumberOfColumns).foreach { i =>
+            if (RebaseHelper.isDateTimeRebaseNeededRead(table.getColumn(i))) {
+              throw RebaseHelper.newRebaseExceptionInRead("Parquet")
+            }
+          }
+        }
         maxDeviceMemory = max(GpuColumnVector.getTotalDeviceMemoryUsed(table), maxDeviceMemory)
         if (readDataSchema.length < table.getNumberOfColumns) {
           table.close()

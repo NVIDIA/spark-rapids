@@ -271,7 +271,7 @@ abstract class UnixTimeExprMeta[A <: BinaryExpression with TimeZoneAwareExpressi
         }
       } catch {
         case x: TimestampFormatConversionException =>
-          willNotWorkOnGpu(s"Failed to extra stringtype to unit time ${x.getMessage} right: ${expr.right}")
+          willNotWorkOnGpu(s"Failed to convert ${x.reason} ${x.getMessage()}")
       }
     }
   }

@@ -497,7 +497,7 @@ abstract class SparkPlanMeta[INPUT <: SparkPlan](plan: INPUT,
   /**
    * Run rules that happen for the entire tree after it has been tagged initially.
    */
-  def runAfterTagRules(conf: RapidsConf): Unit = {
+  def runAfterTagRules(): Unit = {
     // In the first pass tagSelfForGpu will deal with each operator individually.
     // Children will be tagged first and then their parents will be tagged.  This gives
     // flexibility when tagging yourself to look at your children and disable yourself if your
