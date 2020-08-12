@@ -70,7 +70,7 @@ class MultiFilePartitionReader[T](reader: MultiplePartitionedFileReader[T])
     } catch {
       case e: SchemaColumnConvertNotSupportedException =>
         val message = "Parquet column cannot be converted in " +
-          s"file ${currentReader.files}. Column: ${e.getColumn}, " +
+          s"files ${currentReader.files}. Column: ${e.getColumn}, " +
           s"Expected: ${e.getLogicalType}, Found: ${e.getPhysicalType}"
         throw new QueryExecutionException(message, e)
       case e: ParquetDecodingException =>
