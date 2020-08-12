@@ -14,11 +14,11 @@
  * limitations under the License.
  */
 
-package org.apache.spark.sql.rapids.shims.spark300
+package org.apache.spark.sql.rapids
 
 import java.util.concurrent.TimeUnit.NANOSECONDS
 
-import scala.collection.mutable
+import scala.collection.mutable.HashMap
 
 import com.nvidia.spark.rapids.{GpuExec, GpuMetricNames, GpuReadCSVFileFormat, GpuReadOrcFileFormat, GpuReadParquetFileFormat, ReaderOptionsWithMetrics, SparkPlanMeta}
 import org.apache.hadoop.fs.Path
@@ -26,52 +26,64 @@ import org.apache.hadoop.fs.Path
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.{InternalRow, TableIdentifier}
 import org.apache.spark.sql.catalyst.catalog.BucketSpec
-import org.apache.spark.sql.catalyst.expressions.{And, Ascending, Attribute, AttributeReference, BoundReference, Expression, PlanExpression, Predicate, SortOrder}
+import org.apache.spark.sql.catalyst.expressions.{And, Ascending, Attribute, AttributeReference, BoundReference, DynamicPruningExpression, Expression, Literal, PlanExpression, Predicate, SortOrder}
 import org.apache.spark.sql.catalyst.plans.QueryPlan
 import org.apache.spark.sql.catalyst.plans.physical.{HashPartitioning, Partitioning, UnknownPartitioning}
-import org.apache.spark.sql.execution.{DataSourceScanExec, ExecSubqueryExpression, ExplainUtils, FileSourceScanExec, PartitionedFileUtil, SQLExecution}
+import org.apache.spark.sql.execution.{ExecSubqueryExpression, ExplainUtils, FileSourceScanExec, PartitionedFileUtil, SQLExecution}
 import org.apache.spark.sql.execution.datasources.{BucketingUtils, DataSourceStrategy, DataSourceUtils, FileFormat, FilePartition, FileScanRDD, HadoopFsRelation, PartitionDirectory, PartitionedFile}
 import org.apache.spark.sql.execution.datasources.csv.CSVFileFormat
 import org.apache.spark.sql.execution.datasources.orc.OrcFileFormat
 import org.apache.spark.sql.execution.datasources.parquet.ParquetFileFormat
 import org.apache.spark.sql.execution.metric.{SQLMetric, SQLMetrics}
 import org.apache.spark.sql.internal.SQLConf
-import org.apache.spark.sql.rapids.GpuFileSourceScanExecBase
 import org.apache.spark.sql.types.StructType
 import org.apache.spark.sql.vectorized.ColumnarBatch
 import org.apache.spark.util.collection.BitSet
 
+/**
+ * GPU version of Spark's `FileSourceScanExec`
+ *
+ * @param relation The file-based relation to scan.
+ * @param output Output attributes of the scan, including data attributes and partition attributes.
+ * @param requiredSchema Required schema of the underlying relation, excluding partition columns.
+ * @param partitionFilters Predicates to use for partition pruning.
+ * @param optionalBucketSet Bucket ids for bucket pruning.
+ * @param optionalNumCoalescedBuckets Number of coalesced buckets.
+ * @param dataFilters Filters on non-partition columns.
+ * @param tableIdentifier identifier for the table in the metastore.
+ */
 case class GpuFileSourceScanExec(
     @transient relation: HadoopFsRelation,
     output: Seq[Attribute],
     requiredSchema: StructType,
     partitionFilters: Seq[Expression],
     optionalBucketSet: Option[BitSet],
+    optionalNumCoalescedBuckets: Option[Int],
     dataFilters: Seq[Expression],
-    override val tableIdentifier: Option[TableIdentifier])
-    extends DataSourceScanExec with GpuFileSourceScanExecBase with GpuExec {
+    tableIdentifier: Option[TableIdentifier])
+    extends GpuDataSourceScanExec with GpuExec {
 
   override val nodeName: String = {
     s"GpuScan $relation ${tableIdentifier.map(_.unquotedString).getOrElse("")}"
   }
 
-  private lazy val driverMetrics: mutable.HashMap[String, Long] = mutable.HashMap.empty
+  private lazy val driverMetrics: HashMap[String, Long] = HashMap.empty
 
   /**
    * Send the driver-side metrics. Before calling this function, selectedPartitions has
    * been initialized. See SPARK-26327 for more details.
    */
   private def sendDriverMetrics(): Unit = {
-    driverMetrics.foreach(e => oldmetrics(e._1).add(e._2))
+    driverMetrics.foreach(e => metrics(e._1).add(e._2))
     val executionId = sparkContext.getLocalProperty(SQLExecution.EXECUTION_ID_KEY)
     SQLMetrics.postDriverMetricUpdates(sparkContext, executionId,
-      oldmetrics.filter(e => driverMetrics.contains(e._1)).values.toSeq)
+      metrics.filter(e => driverMetrics.contains(e._1)).values.toSeq)
   }
 
   private def isDynamicPruningFilter(e: Expression): Boolean =
     e.find(_.isInstanceOf[PlanExpression[_]]).isDefined
 
-  @transient private lazy val selectedPartitions: Array[PartitionDirectory] = {
+  @transient lazy val selectedPartitions: Array[PartitionDirectory] = {
     val optimizerMetadataTimeNs = relation.location.metadataOpsTimeNs.getOrElse(0L)
     val startTime = System.nanoTime()
     val ret =
@@ -157,13 +169,14 @@ case class GpuFileSourceScanExec(
       // above
       val spec = relation.bucketSpec.get
       val bucketColumns = spec.bucketColumnNames.flatMap(n => toAttribute(n))
-      val partitioning = HashPartitioning(bucketColumns, spec.numBuckets)
+      val numPartitions = optionalNumCoalescedBuckets.getOrElse(spec.numBuckets)
+      val partitioning = HashPartitioning(bucketColumns, numPartitions)
       val sortColumns =
         spec.sortColumnNames.map(x => toAttribute(x)).takeWhile(x => x.isDefined).map(_.get)
       val shouldCalculateSortOrder =
         conf.getConf(SQLConf.LEGACY_BUCKETED_TABLE_SCAN_OUTPUT_ORDERING) &&
-            sortColumns.nonEmpty &&
-            !hasPartitionsAvailableAtRunTime
+          sortColumns.nonEmpty &&
+          !hasPartitionsAvailableAtRunTime
 
       val sortOrder = if (shouldCalculateSortOrder) {
         // In case of bucketing, its possible to have multiple files belonging to the
@@ -177,7 +190,8 @@ case class GpuFileSourceScanExec(
           files.map(_.getPath.getName).groupBy(file => BucketingUtils.getBucketId(file))
         val singleFilePartitions = bucketToFilesGrouping.forall(p => p._2.length <= 1)
 
-        if (singleFilePartitions) {
+        // TODO SPARK-24528 Sort order is currently ignored if buckets are coalesced.
+        if (singleFilePartitions && optionalNumCoalescedBuckets.isEmpty) {
           // TODO Currently Spark does not support writing columns sorting in descending order
           // so using Ascending order. This can be fixed in future
           sortColumns.map(attribute => SortOrder(attribute, Ascending))
@@ -193,31 +207,6 @@ case class GpuFileSourceScanExec(
     }
   }
 
-  /** SQL metrics generated only for scans using dynamic partition pruning. */
-  private lazy val staticMetrics = if (partitionFilters.filter(isDynamicPruningFilter).nonEmpty) {
-    Map("staticFilesNum" -> SQLMetrics.createMetric(sparkContext, "static number of files read"),
-      "staticFilesSize" -> SQLMetrics.createSizeMetric(sparkContext, "static size of files read"))
-  } else {
-    Map.empty[String, SQLMetric]
-  }
-
-  private lazy val gpuMetrics = GpuMetricNames.buildGpuScanMetrics(sparkContext)
-
-  /** Helper for computing total number and size of files in selected partitions. */
-  private def setFilesNumAndSizeMetric(
-      partitions: Seq[PartitionDirectory],
-      static: Boolean): Unit = {
-    val filesNum = partitions.map(_.files.size.toLong).sum
-    val filesSize = partitions.map(_.files.map(_.getLen).sum).sum
-    if (!static || partitionFilters.filter(isDynamicPruningFilter).isEmpty) {
-      driverMetrics("numFiles") = filesNum
-      driverMetrics("filesSize") = filesSize
-    } else {
-      driverMetrics("staticFilesNum") = filesNum
-      driverMetrics("staticFilesSize") = filesSize
-    }
-  }
-
   @transient
   private lazy val pushedDownFilters = {
     val supportNestedPredicatePushdown = DataSourceUtils.supportNestedPredicatePushdown(relation)
@@ -228,7 +217,8 @@ case class GpuFileSourceScanExec(
     def seqToString(seq: Seq[Any]) = seq.mkString("[", ", ", "]")
     val location = relation.location
     val locationDesc =
-      location.getClass.getSimpleName + seqToString(location.rootPaths)
+      location.getClass.getSimpleName +
+        GpuDataSourceScanExec.buildLocationMetadata(location.rootPaths, maxMetadataValueLength)
     val metadata =
       Map(
         "Format" -> relation.fileFormat.toString,
@@ -246,38 +236,14 @@ case class GpuFileSourceScanExec(
         spec.numBuckets
       }
       metadata + ("SelectedBucketsCount" ->
-          s"$numSelectedBuckets out of ${spec.numBuckets}")
+        (s"$numSelectedBuckets out of ${spec.numBuckets}" +
+          optionalNumCoalescedBuckets.map { b => s" (Coalesced to $b)"}.getOrElse("")))
     } getOrElse {
       metadata
     }
 
     withSelectedBucketsCount
   }
-
-  lazy val oldmetrics = Map(
-    "numOutputRows" -> SQLMetrics.createMetric(sparkContext, "number of output rows"),
-    "numFiles" -> SQLMetrics.createMetric(sparkContext, "number of files read"),
-    "metadataTime" -> SQLMetrics.createTimingMetric(sparkContext, "metadata time"),
-    "filesSize" -> SQLMetrics.createSizeMetric(sparkContext, "size of files read"),
-    "pruningTime" ->
-        SQLMetrics.createTimingMetric(sparkContext, "dynamic partition pruning time")
-  ) ++ {
-    // Tracking scan time has overhead, we can't afford to do it for each row, and can only do
-    // it for each batch.
-    if (supportsColumnar) {
-      Some("scanTime" -> SQLMetrics.createTimingMetric(sparkContext, "scan time"))
-    } else {
-      None
-    }
-  } ++ {
-    if (relation.partitionSchemaOption.isDefined) {
-      Some("numPartitions" -> SQLMetrics.createMetric(sparkContext, "number of partitions read"))
-    } else {
-      None
-    }
-  } ++ staticMetrics
-
-  override lazy val metrics = oldmetrics ++ gpuMetrics
 
   override def verboseStringWithOperatorId(): String = {
     val metadataStr = metadata.toSeq.sorted.filterNot {
@@ -328,6 +294,54 @@ case class GpuFileSourceScanExec(
   override def inputRDDs(): Seq[RDD[InternalRow]] = {
     inputRDD :: Nil
   }
+
+  /** SQL metrics generated only for scans using dynamic partition pruning. */
+  private lazy val staticMetrics = if (partitionFilters.filter(isDynamicPruningFilter).nonEmpty) {
+    Map("staticFilesNum" -> SQLMetrics.createMetric(sparkContext, "static number of files read"),
+      "staticFilesSize" -> SQLMetrics.createSizeMetric(sparkContext, "static size of files read"))
+  } else {
+    Map.empty[String, SQLMetric]
+  }
+
+  private lazy val gpuMetrics = GpuMetricNames.buildGpuScanMetrics(sparkContext)
+
+  /** Helper for computing total number and size of files in selected partitions. */
+  private def setFilesNumAndSizeMetric(
+      partitions: Seq[PartitionDirectory],
+      static: Boolean): Unit = {
+    val filesNum = partitions.map(_.files.size.toLong).sum
+    val filesSize = partitions.map(_.files.map(_.getLen).sum).sum
+    if (!static || partitionFilters.filter(isDynamicPruningFilter).isEmpty) {
+      driverMetrics("numFiles") = filesNum
+      driverMetrics("filesSize") = filesSize
+    } else {
+      driverMetrics("staticFilesNum") = filesNum
+      driverMetrics("staticFilesSize") = filesSize
+    }
+  }
+
+  override lazy val metrics = Map(
+    "numOutputRows" -> SQLMetrics.createMetric(sparkContext, "number of output rows"),
+    "numFiles" -> SQLMetrics.createMetric(sparkContext, "number of files read"),
+    "metadataTime" -> SQLMetrics.createTimingMetric(sparkContext, "metadata time"),
+    "filesSize" -> SQLMetrics.createSizeMetric(sparkContext, "size of files read"),
+    "pruningTime" ->
+      SQLMetrics.createTimingMetric(sparkContext, "dynamic partition pruning time")
+  ) ++ {
+    // Tracking scan time has overhead, we can't afford to do it for each row, and can only do
+    // it for each batch.
+    if (supportsColumnar) {
+      Some("scanTime" -> SQLMetrics.createTimingMetric(sparkContext, "scan time"))
+    } else {
+      None
+    }
+  } ++ {
+    if (relation.partitionSchemaOption.isDefined) {
+      Some("numPartitions" -> SQLMetrics.createMetric(sparkContext, "number of partitions read"))
+    } else {
+      None
+    }
+  } ++ staticMetrics ++ gpuMetrics
 
   override protected def doExecute(): RDD[InternalRow] =
     throw new IllegalStateException(s"Row-based execution should not occur for $this")
@@ -382,8 +396,8 @@ case class GpuFileSourceScanExec(
         }
       }.groupBy { f =>
         BucketingUtils
-            .getBucketId(new Path(f.filePath).getName)
-            .getOrElse(sys.error(s"Invalid bucket file ${f.filePath}"))
+          .getBucketId(new Path(f.filePath).getName)
+          .getOrElse(sys.error(s"Invalid bucket file ${f.filePath}"))
       }
 
     val prunedFilesGroupedToBuckets = if (optionalBucketSet.isDefined) {
@@ -395,8 +409,19 @@ case class GpuFileSourceScanExec(
       filesGroupedToBuckets
     }
 
-    val filePartitions = Seq.tabulate(bucketSpec.numBuckets) { bucketId =>
-      FilePartition(bucketId, prunedFilesGroupedToBuckets.getOrElse(bucketId, Array.empty))
+    val filePartitions = optionalNumCoalescedBuckets.map { numCoalescedBuckets =>
+      logInfo(s"Coalescing to ${numCoalescedBuckets} buckets")
+      val coalescedBuckets = prunedFilesGroupedToBuckets.groupBy(_._1 % numCoalescedBuckets)
+      Seq.tabulate(numCoalescedBuckets) { bucketId =>
+        val partitionedFiles = coalescedBuckets.get(bucketId).map {
+          _.values.flatten.toArray
+        }.getOrElse(Array.empty)
+        FilePartition(bucketId, partitionedFiles)
+      }
+    }.getOrElse {
+      Seq.tabulate(bucketSpec.numBuckets) { bucketId =>
+        FilePartition(bucketId, prunedFilesGroupedToBuckets.getOrElse(bucketId, Array.empty))
+      }
     }
 
     new FileScanRDD(fsRelation.sparkSession, readFile, filePartitions)
@@ -418,7 +443,7 @@ case class GpuFileSourceScanExec(
     val maxSplitBytes =
       FilePartition.maxSplitBytes(fsRelation.sparkSession, selectedPartitions)
     logInfo(s"Planning scan with bin packing, max size: $maxSplitBytes bytes, " +
-        s"open cost is considered as scanning $openCostInBytes bytes.")
+      s"open cost is considered as scanning $openCostInBytes bytes.")
 
     val splitFiles = selectedPartitions.flatMap { partition =>
       partition.files.flatMap { file =>
@@ -443,13 +468,22 @@ case class GpuFileSourceScanExec(
     new FileScanRDD(fsRelation.sparkSession, readFile, partitions)
   }
 
+  // Filters unused DynamicPruningExpression expressions - one which has been replaced
+  // with DynamicPruningExpression(Literal.TrueLiteral) during Physical Planning
+  private def filterUnusedDynamicPruningExpressions(
+      predicates: Seq[Expression]): Seq[Expression] = {
+    predicates.filterNot(_ == DynamicPruningExpression(Literal.TrueLiteral))
+  }
+
   override def doCanonicalize(): GpuFileSourceScanExec = {
     GpuFileSourceScanExec(
       relation,
       output.map(QueryPlan.normalizeExpressions(_, output)),
       requiredSchema,
-      QueryPlan.normalizePredicates(partitionFilters, output),
+      QueryPlan.normalizePredicates(
+        filterUnusedDynamicPruningExpressions(partitionFilters), output),
       optionalBucketSet,
+      optionalNumCoalescedBuckets,
       QueryPlan.normalizePredicates(dataFilters, output),
       None)
   }
