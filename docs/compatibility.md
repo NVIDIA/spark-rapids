@@ -166,7 +166,7 @@ appears to work for dates after the epoch as described
 
 The plugin supports reading `uncompressed`, `snappy` and `zlib` ORC files and writing `uncompressed`
  and `snappy` ORC files.  At this point, the plugin does not have the ability to fall back to the 
- CPU when reading or writing an unsupported compression format, and will error out in that case. 
+ CPU when reading an unsupported compression format, and will error out in that case. 
 
 ## Parquet
 
@@ -190,7 +190,7 @@ compatibility with other tools then set `spark.sql.parquet.outputTimestampType` 
 
 The plugin supports reading `uncompressed`, `snappy` and `gzip` Parquet files and writing 
 `uncompressed` and `snappy` Parquet files.  At this point, the plugin does not have the ability to 
-fall back to the CPU when reading or writing an unsupported compression format, and will error out 
+fall back to the CPU when reading an unsupported compression format, and will error out 
 in that case. 
 
 ## Timestamps
