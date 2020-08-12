@@ -32,7 +32,7 @@ import org.apache.spark.sql.execution._
 import org.apache.spark.sql.execution.adaptive.CustomShuffleReaderExec
 import org.apache.spark.sql.execution.aggregate.{HashAggregateExec, SortAggregateExec}
 import org.apache.spark.sql.execution.command.{DataWritingCommand, DataWritingCommandExec}
-import org.apache.spark.sql.execution.datasources.{HadoopFsRelation, InsertIntoHadoopFsRelationCommand}
+import org.apache.spark.sql.execution.datasources.InsertIntoHadoopFsRelationCommand
 import org.apache.spark.sql.execution.datasources.csv.CSVFileFormat
 import org.apache.spark.sql.execution.datasources.json.JsonFileFormat
 import org.apache.spark.sql.execution.datasources.orc.OrcFileFormat
@@ -40,16 +40,15 @@ import org.apache.spark.sql.execution.datasources.parquet.ParquetFileFormat
 import org.apache.spark.sql.execution.datasources.text.TextFileFormat
 import org.apache.spark.sql.execution.datasources.v2.BatchScanExec
 import org.apache.spark.sql.execution.datasources.v2.csv.CSVScan
-import org.apache.spark.sql.execution.datasources.v2.orc.OrcScan
-import org.apache.spark.sql.execution.datasources.v2.parquet.ParquetScan
 import org.apache.spark.sql.execution.exchange.{BroadcastExchangeExec, ShuffleExchangeExec}
-import org.apache.spark.sql.execution.joins.{BroadcastHashJoinExec, BroadcastNestedLoopJoinExec, CartesianProductExec, ShuffledHashJoinExec, SortMergeJoinExec}
+import org.apache.spark.sql.execution.joins.{BroadcastNestedLoopJoinExec, CartesianProductExec}
+import org.apache.spark.sql.execution.python.ArrowEvalPythonExec
 import org.apache.spark.sql.execution.window.WindowExec
 import org.apache.spark.sql.rapids._
 import org.apache.spark.sql.rapids.catalyst.expressions.GpuRand
 import org.apache.spark.sql.rapids.execution.{GpuBroadcastMeta, GpuBroadcastNestedLoopJoinMeta, GpuCustomShuffleReaderExec, GpuShuffleMeta}
 import org.apache.spark.sql.types._
-import org.apache.spark.unsafe.types.{CalendarInterval, UTF8String}
+import org.apache.spark.unsafe.types.UTF8String
 
 /**
  * Base class for all ReplacementRules
@@ -1243,6 +1242,20 @@ object GpuOverrides {
 
         override def convertToGpu(child: Expression): GpuExpression = GpuAverage(child)
       }),
+    expr[PythonUDF](
+      "UDF run in an external python process. Does not actually run on the GPU, but " +
+          "the transfer of data to/from it can be accelerated.",
+      (a, conf, p, r) => new ExprMeta[PythonUDF](a, conf, p, r) {
+        override def couldReplaceMessage: String = "does not block GPU acceleration"
+        override def noReplacementPossibleMessage(reasons: String): String =
+          s"blocks running on GPU because $reasons"
+
+        override def convertToGpu(): GpuExpression =
+          GpuPythonUDF(a.name, a.func, a.dataType,
+            childExprs.map(_.convertToGpu()),
+            a.evalType, a.udfDeterministic, a.resultId)
+      }
+    ),
     expr[Rand](
       "Generate a random column with i.i.d. uniformly distributed values in [0, 1)",
       (a, conf, p, r) => new UnaryExprMeta[Rand](a, conf, p, r) {
@@ -1657,6 +1670,27 @@ object GpuOverrides {
           override def convertToGpu(): GpuExec =
             GpuLocalLimitExec(localLimitExec.limit, childPlans(0).convertIfNeeded())
         }),
+    exec[ArrowEvalPythonExec](
+      "Runs python UDFs.  The python code does not actually run on the GPU, but the " +
+          "transfer of data between the python process and the java process is accelerated.",
+      (e, conf, p, r) =>
+        new SparkPlanMeta[ArrowEvalPythonExec](e, conf, p, r) {
+          val udfs: Seq[BaseExprMeta[PythonUDF]] =
+            e.udfs.map(GpuOverrides.wrapExpr(_, conf, Some(this)))
+          val resultAttrs: Seq[BaseExprMeta[Attribute]] =
+            e.resultAttrs.map(GpuOverrides.wrapExpr(_, conf, Some(this)))
+          override val childExprs: Seq[BaseExprMeta[_]] = udfs ++ resultAttrs
+
+          override def couldReplaceMessage: String = "could partially run on GPU"
+          override def noReplacementPossibleMessage(reasons: String): String =
+            s"cannot run even partially on the GPU because $reasons"
+
+          override def convertToGpu(): GpuExec =
+            GpuArrowEvalPythonExec(udfs.map(_.convertToGpu()).asInstanceOf[Seq[GpuPythonUDF]],
+              resultAttrs.map(_.convertToGpu()).asInstanceOf[Seq[Attribute]],
+              childPlans.head.convertIfNeeded(),
+              e.evalType)
+        }).disabledByDefault("Performance is not ideal for UDFs that take a long time."),
     exec[GlobalLimitExec](
       "Limiting of results across partitions",
       (globalLimitExec, conf, p, r) =>
