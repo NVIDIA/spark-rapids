@@ -297,6 +297,7 @@ case class GpuRangeExec(range: org.apache.spark.sql.catalyst.plans.logical.Range
     throw new IllegalStateException(s"Row-based execution should not occur for $this")
 }
 
+
 case class GpuUnionExec(children: Seq[SparkPlan]) extends SparkPlan with GpuExec {
   // updating nullability to make all the children consistent
   override def output: Seq[Attribute] = {
