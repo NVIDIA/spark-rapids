@@ -321,3 +321,21 @@ def test_input_meta(spark_tmp_path, small_file_opt, v1_enabled_list):
             conf={'spark.rapids.sql.format.parquet.smallFiles.enabled': small_file_opt,
                   'spark.sql.sources.useV1SourceList': v1_enabled_list})
 
+
+def createBucketedTableAndJoin(spark):
+    spark.range(10e4).write.bucketBy(4, "id").sortBy("id").mode('overwrite').saveAsTable("bucketed_4_10e4")
+    spark.range(10e6).write.bucketBy(4, "id").sortBy("id").mode('overwrite').saveAsTable("bucketed_4_10e6")
+    bucketed_4_10e4 = spark.table("bucketed_4_10e4")
+    bucketed_4_10e6 = spark.table("bucketed_4_10e6")
+    return bucketed_4_10e4.join(bucketed_4_10e6, "id")
+
+@ignore_order
+@allow_non_gpu('DataWritingCommandExec')
+@pytest.mark.parametrize('small_file_opt', ["true", "false"])
+@pytest.mark.parametrize('v1_enabled_list', ["", "parquet"])
+# this test would be better if we could ensure exchanges didn't exist - ie used buckets
+def test_buckets(spark_tmp_path, small_file_opt, v1_enabled_list):
+    assert_gpu_and_cpu_are_equal_collect(createBucketedTableAndJoin,
+            conf={'spark.rapids.sql.format.parquet.smallFiles.enabled': small_file_opt,
+                  'spark.sql.sources.useV1SourceList': v1_enabled_list,
+                  "spark.sql.autoBroadcastJoinThreshold": '-1'})

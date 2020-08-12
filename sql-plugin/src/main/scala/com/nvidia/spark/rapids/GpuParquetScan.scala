@@ -56,7 +56,6 @@ import org.apache.spark.sql.execution.datasources.{FilePartition, PartitionedFil
 import org.apache.spark.sql.execution.datasources.parquet.{ParquetFileFormat, ParquetFilters, ParquetReadSupport}
 import org.apache.spark.sql.execution.datasources.v2.{FilePartitionReaderFactory, FileScan}
 import org.apache.spark.sql.execution.datasources.v2.parquet.ParquetScan
-import org.apache.spark.sql.execution.datasources.v2.rapids.{MultiFilePartitionReader, MultiplePartitionedFileReader}
 import org.apache.spark.sql.execution.metric.SQLMetric
 import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.rapids.execution.TrampolineUtil
@@ -227,16 +226,12 @@ case class GpuParquetMultiPartitionReaderFactory(
     assert(partition.isInstanceOf[FilePartition])
     val filePartition = partition.asInstanceOf[FilePartition]
     val files = filePartition.files
-    val reader = MultiplePartitionedFileReader(files, buildColumnarReader(files))
-    new MultiFilePartitionReader[ColumnarBatch](reader)
+    buildColumnarReader(files)
   }
 
   def buildColumnarReader(
       partitionedFiles: Array[PartitionedFile]): PartitionReader[ColumnarBatch] = {
     val reader = buildBaseColumnarParquetReader(partitionedFiles)
-    // TODO - need to fix for partition values
-    // ColumnarPartitionReaderWithPartitionValues.newReader(partitionedFiles(0),
-      // reader, partitionSchema)
     reader
   }
 
