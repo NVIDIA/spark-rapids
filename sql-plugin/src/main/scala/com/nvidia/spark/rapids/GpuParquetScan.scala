@@ -311,7 +311,8 @@ case class GpuParquetMultiPartitionReaderFactory(
         None
       }
 
-      // we need to ensure all files we are going to combine have the same datetime rebase mode
+      // We need to ensure all files we are going to combine have the same datetime rebase mode.
+      // We could potentially handle this by just splitting the batches up but for now just error.
       val isCorrectedRebaseForThisFile =
         GpuParquetPartitionReaderFactoryBase.isCorrectedRebaseMode(
           footer.getFileMetaData.getKeyValueMetaData.get, isCorrectedRebase)
@@ -686,7 +687,6 @@ class MultiFileParquetPartitionReader(
   private val blockIterator: BufferedIterator[(Path, BlockMetaData, PartitionedFile)] =
     clippedBlocks.iterator.buffered
 
-
   private def addPartitionValues(
       batch: Option[ColumnarBatch],
       inPartitionValues: InternalRow): Option[ColumnarBatch] = {
@@ -721,8 +721,7 @@ class MultiFileParquetPartitionReader(
     batch.isDefined
   }
 
-
-  private def readPartFile(blocks: Seq[(Path, BlockMetaData)]): (HostMemoryBuffer, Long) = {
+  private def readPartFiles(blocks: Seq[(Path, BlockMetaData)]): (HostMemoryBuffer, Long) = {
     val nvtxRange = new NvtxWithMetrics("Buffer file split", NvtxColor.YELLOW,
       metrics("bufferTime"))
     // ugly but we want to keep the order
@@ -839,7 +838,7 @@ class MultiFileParquetPartitionReader(
       return None
     }
 
-    val (dataBuffer, dataSize) = readPartFile(currentChunkedBlocks)
+    val (dataBuffer, dataSize) = readPartFiles(currentChunkedBlocks)
     try {
       if (dataSize == 0) {
         None
