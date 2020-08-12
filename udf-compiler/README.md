@@ -20,6 +20,6 @@ export SPARK_HOME=[your spark distribution directory]
 export JARS=[path to cudf 0.15 jar]
 
 $SPARK_HOME/bin/spark-shell \
---jars $JARS/cudf-0.15-SNAPSHOT-cuda10-1.jar,udf-compiler/target/rapids-4-spark-udf-0.2.0-SNAPSHOT.jar,sql-plugin/target/rapids-4-spark-sql_2.12-0.2.0-SNAPSHOT.jar \
+--jars $JARS/cudf-0.15-SNAPSHOT-cuda10-1.jar,udf-compiler/target/rapids-4-spark-udf_2.12-0.2.0-SNAPSHOT.jar,sql-plugin/target/rapids-4-spark-sql_2.12-0.2.0-SNAPSHOT.jar \
 --conf spark.sql.extensions="com.nvidia.spark.SQLPlugin,com.nvidia.spark.udf.Plugin"
 ```

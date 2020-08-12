@@ -252,13 +252,24 @@ object RapidsConf {
     .stringConf
     .createWithDefault("NONE")
 
+  private val RMM_ALLOC_MAX_FRACTION_KEY = "spark.rapids.memory.gpu.maxAllocFraction"
+
   val RMM_ALLOC_FRACTION = conf("spark.rapids.memory.gpu.allocFraction")
     .doc("The fraction of total GPU memory that should be initially allocated " +
       "for pooled memory. Extra memory will be allocated as needed, but it may " +
-      "result in more fragmentation.")
+      "result in more fragmentation. This must be less than or equal to the maximum limit " +
+      s"configured via $RMM_ALLOC_MAX_FRACTION_KEY.")
     .doubleConf
     .checkValue(v => v >= 0 && v <= 1, "The fraction value must be in [0, 1].")
-    .createWithDefault(0.5)
+    .createWithDefault(0.9)
+
+  val RMM_ALLOC_MAX_FRACTION = conf(RMM_ALLOC_MAX_FRACTION_KEY)
+    .doc("The fraction of total GPU memory that limits the maximum size of the RMM pool. " +
+        s"The value must be greater than or equal to the setting for $RMM_ALLOC_FRACTION. " +
+        "If the value is 1 then no artificial limit will be applied.")
+    .doubleConf
+    .checkValue(v => v >= 0 && v <= 1, "The fraction value must be in [0, 1].")
+    .createWithDefault(1)
 
   val HOST_SPILL_STORAGE_SIZE = conf("spark.rapids.memory.host.spillStorageSize")
     .doc("Amount of off-heap host memory to use for buffering spilled GPU data " +
@@ -601,7 +612,20 @@ object RapidsConf {
     .bytesConf(ByteUnit.BYTE)
     .createWithDefault(50 * 1024)
 
+  val SHUFFLE_COMPRESSION_CODEC = conf("spark.rapids.shuffle.compression.codec")
+      .doc("The GPU codec used to compress shuffle data when using RAPIDS shuffle. " +
+          "Supported codecs: copy, none")
+      .internal()
+      .stringConf
+      .createWithDefault("none")
+
   // USER FACING DEBUG CONFIGS
+
+  val SHUFFLE_COMPRESSION_MAX_BATCH_MEMORY =
+    conf("spark.rapids.shuffle.compression.maxBatchMemory")
+      .internal()
+      .bytesConf(ByteUnit.BYTE)
+      .createWithDefault(1024 * 1024 * 1024)
 
   val EXPLAIN = conf("spark.rapids.sql.explain")
     .doc("Explain why some parts of a query were not placed on a GPU or not. Possible " +
@@ -778,6 +802,8 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
 
   lazy val rmmAllocFraction: Double = get(RMM_ALLOC_FRACTION)
 
+  lazy val rmmAllocMaxFraction: Double = get(RMM_ALLOC_MAX_FRACTION)
+
   lazy val hostSpillStorageSize: Long = get(HOST_SPILL_STORAGE_SIZE)
 
   lazy val hasNans: Boolean = get(HAS_NANS)
@@ -862,6 +888,10 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
   lazy val shuffleMaxServerTasks: Int = get(SHUFFLE_MAX_SERVER_TASKS)
 
   lazy val shuffleMaxMetadataSize: Long = get(SHUFFLE_MAX_METADATA_SIZE)
+
+  lazy val shuffleCompressionCodec: String = get(SHUFFLE_COMPRESSION_CODEC)
+
+  lazy val shuffleCompressionMaxBatchMemory: Long = get(SHUFFLE_COMPRESSION_MAX_BATCH_MEMORY)
 
   def isOperatorEnabled(key: String, incompat: Boolean, isDisabledByDefault: Boolean): Boolean = {
     val default = !(isDisabledByDefault || incompat) || (incompat && isIncompatEnabled)
