@@ -343,7 +343,7 @@ case class GpuParquetMultiPartitionReaderFactory(
       // ParquetReadSupport.clipParquetSchema does most of what we want, but it includes
       // everything in readDataSchema, even if it is not in fileSchema we want to remove those
       // for our own purposes
-      val fileClippedSchema = GpuParquetPartitionReaderFactoryBase.filterClippedSchema(clippedSchemaTmp,
+      clippedSchema = GpuParquetPartitionReaderFactoryBase.filterClippedSchema(clippedSchemaTmp,
         fileSchema, isCaseSensitive)
       val columnPaths = clippedSchema.getPaths.asScala.map(x => ColumnPath.get(x: _*))
       val clipped = ParquetPartitionReader.clipBlocks(columnPaths, blocks.asScala)
@@ -382,7 +382,7 @@ case class GpuParquetPartitionReaderFactory(
 
   override def supportColumnarReads(partition: InputPartition): Boolean = true
 
-  override def buildReader(partition: InputPartition): PartitionReader[InternalRow] = {
+  override def buildReader(partitionedFile: PartitionedFile): PartitionReader[InternalRow] = {
     throw new IllegalStateException("GPU column parser called to read rows")
   }
 
@@ -738,7 +738,7 @@ class MultiFileParquetPartitionReader(
     try {
       var succeeded = false
       val allBlocks = blocks.map(_._2)
-      val size = calculateParquetOutputSize(allBlocks)
+      val size = calculateParquetOutputSizeLocal(allBlocks)
       val hmb = HostMemoryBuffer.allocate(size)
       val out = new HostMemoryOutputStream(hmb)
       try {
@@ -753,7 +753,7 @@ class MultiFileParquetPartitionReader(
             in.close()
           }
         }
-        val size = calculateParquetOutputSize(allOutputBlocks)
+        val size = calculateParquetOutputSizeLocal(allOutputBlocks)
         val footerPos = out.getPos
         // logWarning(s"actual write before write footer count is: ${out.getPos}")
         writeFooter(out, allOutputBlocks)
@@ -777,7 +777,7 @@ class MultiFileParquetPartitionReader(
   }
 
   // todo - BASE CLASS DOESN'T ADD IN EXTRA
-  private def calculateParquetOutputSize(currentChunkedBlocks: Seq[BlockMetaData]): Long = {
+  private def calculateParquetOutputSizeLocal(currentChunkedBlocks: Seq[BlockMetaData]): Long = {
     // start with the size of Parquet magic (at start+end) and footer length values
     var size: Long = 4 + 4 + 4
 
@@ -966,9 +966,7 @@ class ParquetPartitionReader(
     isSchemaCaseSensitive,readDataSchema, debugDumpPrefix, maxReadBatchSizeRows,
     maxReadBatchSizeBytes, execMetrics, isCorrectedRebaseMode) {
 
-
   private val blockIterator :  BufferedIterator[BlockMetaData] = clippedBlocks.iterator.buffered
-
 
   override def next(): Boolean = {
     // logWarning(s"calling partition reader $filePath")
@@ -987,7 +985,6 @@ class ParquetPartitionReader(
     GpuSemaphore.acquireIfNecessary(TaskContext.get())
     batch.isDefined
   }
-
 
   private def readPartFile(blocks: Seq[BlockMetaData]): (HostMemoryBuffer, Long) = {
     val nvtxRange = new NvtxWithMetrics("Buffer file split", NvtxColor.YELLOW,
@@ -1020,7 +1017,6 @@ class ParquetPartitionReader(
       nvtxRange.close()
     }
   }
-
 
   private def readBatch(): Option[ColumnarBatch] = {
     val nvtxRange = new NvtxWithMetrics("Parquet readBatch", NvtxColor.GREEN, metrics(TOTAL_TIME))
