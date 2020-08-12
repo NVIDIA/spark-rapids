@@ -13,6 +13,7 @@
 # limitations under the License.
 
 import pytest
+import py4j
 
 from asserts import assert_gpu_and_cpu_are_equal_collect, assert_gpu_and_cpu_writes_are_equal_collect, assert_gpu_fallback_collect
 from conftest import is_databricks_runtime
@@ -20,7 +21,7 @@ from datetime import date, datetime, timezone
 from data_gen import *
 from marks import *
 from pyspark.sql.types import *
-from spark_session import with_cpu_session
+from spark_session import with_cpu_session, with_gpu_session
 
 def read_parquet_df(data_path):
     return lambda spark : spark.read.parquet(data_path)
@@ -126,6 +127,29 @@ def test_ts_read_round_trip(spark_tmp_path, ts_write, ts_rebase, small_file_opt,
             conf={'spark.rapids.sql.format.parquet.smallFiles.enabled': small_file_opt,
                   'spark.sql.sources.useV1SourceList': v1_enabled_list})
 
+def readParquetCatchException(spark, data_path):
+    with pytest.raises(Exception) as e_info:
+        df = spark.read.parquet(data_path).collect()
+    assert e_info.match(r".*SparkUpgradeException.*")
+
+@pytest.mark.parametrize('ts_write', parquet_ts_write_options)
+@pytest.mark.parametrize('ts_rebase', ['LEGACY'])
+@pytest.mark.parametrize('small_file_opt', ["true", "false"])
+@pytest.mark.parametrize('v1_enabled_list', ["", "parquet"])
+def test_ts_read_fails_datetime_legacy(spark_tmp_path, ts_write, ts_rebase, small_file_opt, v1_enabled_list):
+    # Once https://github.com/NVIDIA/spark-rapids/issues/132 is fixed replace this with
+    # timestamp_gen
+    gen = TimestampGen(start=datetime(1590, 1, 1, tzinfo=timezone.utc))
+    data_path = spark_tmp_path + '/PARQUET_DATA'
+    with_cpu_session(
+            lambda spark : unary_op_df(spark, gen).write.parquet(data_path),
+            conf={'spark.sql.legacy.parquet.datetimeRebaseModeInWrite': ts_rebase,
+                'spark.sql.parquet.outputTimestampType': ts_write})
+    with_gpu_session(
+            lambda spark : readParquetCatchException(spark, data_path),
+            conf={'spark.rapids.sql.format.parquet.smallFiles.enabled': small_file_opt,
+                  'spark.sql.sources.useV1SourceList': v1_enabled_list})
+
 parquet_gens_legacy_list = [[byte_gen, short_gen, int_gen, long_gen, float_gen, double_gen,
     string_gen, boolean_gen, DateGen(start=date(1590, 1, 1)),
     TimestampGen(start=datetime(1900, 1, 1, tzinfo=timezone.utc))],
@@ -168,6 +192,39 @@ def test_simple_partitioned_read(spark_tmp_path, small_file_opt, v1_enabled_list
             lambda spark : spark.read.parquet(data_path),
             conf={'spark.rapids.sql.format.parquet.smallFiles.enabled': small_file_opt,
                   'spark.sql.sources.useV1SourceList': v1_enabled_list})
+
+def readParquetCatchUnsupportedOperationException(spark, data_path):
+    with pytest.raises(Exception) as e_info:
+        df = spark.read.parquet(data_path).collect()
+    assert e_info.match(r".*UnsupportedOperationException.*")
+
+@pytest.mark.parametrize('small_file_opt', ["true"])
+@pytest.mark.parametrize('v1_enabled_list', ["", "parquet"])
+def test_simple_partitioned_read_fail_legacy(spark_tmp_path, small_file_opt, v1_enabled_list):
+    # Once https://github.com/NVIDIA/spark-rapids/issues/133 and https://github.com/NVIDIA/spark-rapids/issues/132 are fixed 
+    # we should go with a more standard set of generators
+
+    # Test should fail with small file optimization due to mixed rebase modes.
+    # We generate small files and asked to read alot per partition so we
+    # get different datetime rebase modes read in same partition.
+    parquet_gens = [byte_gen, double_gen,
+    TimestampGen(start=datetime(1590, 1, 1, tzinfo=timezone.utc))]
+    gen_list = [('_c' + str(i), gen) for i, gen in enumerate(parquet_gens)]
+    first_data_path = spark_tmp_path + '/PARQUET_DATA/key=0'
+    with_cpu_session(
+            lambda spark : gen_df(spark, gen_list, 1).write.parquet(first_data_path),
+            conf={'spark.sql.legacy.parquet.datetimeRebaseModeInWrite': 'LEGACY'})
+    second_data_path = spark_tmp_path + '/PARQUET_DATA/key=1'
+    with_cpu_session(
+            lambda spark : gen_df(spark, gen_list, 1).write.parquet(second_data_path),
+            conf={'spark.sql.legacy.parquet.datetimeRebaseModeInWrite': 'CORRECTED'})
+    data_path = spark_tmp_path + '/PARQUET_DATA'
+    with_gpu_session(
+            lambda spark : readParquetCatchUnsupportedOperationException(spark, data_path),
+            conf={'spark.rapids.sql.format.parquet.smallFiles.enabled': small_file_opt,
+                  'spark.sql.sources.useV1SourceList': v1_enabled_list,
+                  'spark.sql.files.maxPartitionBytes': "1g",
+                  'spark.sql.files.minPartitionNum': '1'})
 
 @pytest.mark.xfail(condition=is_databricks_runtime(),
     reason='https://github.com/NVIDIA/spark-rapids/issues/192')
