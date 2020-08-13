@@ -78,7 +78,7 @@ class GpuBroadcastNestedLoopJoinMeta(
       case GpuBuildLeft => left
       case GpuBuildRight => right
     } 
-    if (!buildSide.isInstanceOf[GpuBroadcastExchangeExec]) {
+    if (!buildSide.isInstanceOf[GpuBroadcastExchangeExecBase]) {
       throw new IllegalStateException("the broadcast must be on the GPU too")
     }
     ShimLoader.getSparkShims.getGpuBroadcastNestedLoopJoinShim(
@@ -160,9 +160,9 @@ abstract class GpuBroadcastNestedLoopJoinExecBase(
     case GpuBuildLeft => (right, left)
   }
 
-  def broadcastExchange: GpuBroadcastExchangeExec = broadcast match {
-    case gpu: GpuBroadcastExchangeExec => gpu
-    case reused: ReusedExchangeExec => reused.child.asInstanceOf[GpuBroadcastExchangeExec]
+  def broadcastExchange: GpuBroadcastExchangeExecBase = broadcast match {
+    case gpu: GpuBroadcastExchangeExecBase => gpu
+    case reused: ReusedExchangeExec => reused.child.asInstanceOf[GpuBroadcastExchangeExecBase]
   }
 
   override def requiredChildDistribution: Seq[Distribution] = getGpuBuildSide match {

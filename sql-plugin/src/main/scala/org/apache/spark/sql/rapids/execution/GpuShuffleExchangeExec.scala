@@ -14,25 +14,27 @@
  * limitations under the License.
  */
 
-package com.nvidia.spark.rapids
+package org.apache.spark.sql.rapids.execution
 
 import scala.collection.AbstractIterator
+import scala.concurrent.Future
 
+import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 
-import org.apache.spark.ShuffleDependency
+import org.apache.spark.{MapOutputStatistics, ShuffleDependency}
 import org.apache.spark.rdd.RDD
 import org.apache.spark.serializer.Serializer
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.errors._
 import org.apache.spark.sql.catalyst.expressions.{Attribute, SortOrder}
+import org.apache.spark.sql.catalyst.plans.logical.Statistics
 import org.apache.spark.sql.catalyst.plans.physical.Partitioning
-import org.apache.spark.sql.execution.SparkPlan
+import org.apache.spark.sql.execution.{ShufflePartitionSpec, SparkPlan}
 import org.apache.spark.sql.execution.exchange.{Exchange, ShuffleExchangeExec}
 import org.apache.spark.sql.execution.metric._
 import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.rapids.GpuShuffleDependency
-import org.apache.spark.sql.rapids.execution.{BatchPartitionIdPassthrough, ShuffledBatchRDD}
 import org.apache.spark.sql.vectorized.ColumnarBatch
 import org.apache.spark.util.MutablePair
 
@@ -49,7 +51,8 @@ class GpuShuffleMeta(
     Seq(GpuOverrides.wrapPart(shuffle.outputPartitioning, conf, Some(this)))
 
   override def convertToGpu(): GpuExec =
-    GpuShuffleExchangeExec(childParts(0).convertToGpu(),
+    ShimLoader.getSparkShims.getGpuShuffleExchangeExec(
+      childParts(0).convertToGpu(),
       childPlans(0).convertIfNeeded(),
       shuffle.canChangeNumPartitions)
 }
@@ -57,10 +60,9 @@ class GpuShuffleMeta(
 /**
  * Performs a shuffle that will result in the desired partitioning.
  */
-case class GpuShuffleExchangeExec(
+abstract class GpuShuffleExchangeExecBase(
     override val outputPartitioning: Partitioning,
-    child: SparkPlan,
-    canChangeNumPartitions: Boolean = true) extends Exchange with GpuExec {
+    child: SparkPlan) extends Exchange with GpuExec {
 
   /**
    * Lots of small output batches we want to group together.
@@ -69,13 +71,26 @@ case class GpuShuffleExchangeExec(
 
   private lazy val writeMetrics =
     SQLShuffleWriteMetricsReporter.createShuffleWriteMetrics(sparkContext)
-  private lazy val readMetrics =
+  lazy val readMetrics =
     SQLShuffleReadMetricsReporter.createShuffleReadMetrics(sparkContext)
   override lazy val additionalMetrics : Map[String, SQLMetric] = Map(
     "dataSize" -> SQLMetrics.createSizeMetric(sparkContext, "data size")
   ) ++ readMetrics ++ writeMetrics
 
   override def nodeName: String = "GpuColumnarExchange"
+
+  // 'mapOutputStatisticsFuture' is only needed when enable AQE.
+  @transient lazy val mapOutputStatisticsFuture: Future[MapOutputStatistics] = {
+    if (inputBatchRDD.getNumPartitions == 0) {
+      Future.successful(null)
+    } else {
+      sparkContext.submitMapStage(shuffleDependencyColumnar)
+    }
+  }
+
+  def shuffleDependency : ShuffleDependency[Int, InternalRow, InternalRow] = {
+    throw new IllegalStateException()
+  }
 
   private val serializer: Serializer =
     new GpuColumnarBatchSerializer(child.output.size, longMetric("dataSize"))
@@ -88,7 +103,7 @@ case class GpuShuffleExchangeExec(
    * the returned ShuffleDependency will be the input of shuffle.
    */
   @transient
-  lazy val shuffleBatchDependency : ShuffleDependency[Int, ColumnarBatch, ColumnarBatch] = {
+  lazy val shuffleDependencyColumnar : ShuffleDependency[Int, ColumnarBatch, ColumnarBatch] = {
     GpuShuffleExchangeExec.prepareBatchShuffleDependency(
       inputBatchRDD,
       child.output,
@@ -106,10 +121,10 @@ case class GpuShuffleExchangeExec(
   protected override def doExecute(): RDD[InternalRow] =
     throw new IllegalStateException(s"Row-based execution should not occur for $this")
 
-  protected override def doExecuteColumnar(): RDD[ColumnarBatch] = attachTree(this, "execute") {
+  override def doExecuteColumnar(): RDD[ColumnarBatch] = attachTree(this, "execute") {
     // Returns the same ShuffleRowRDD if this plan is used by multiple plans.
     if (cachedShuffleRDD == null) {
-      cachedShuffleRDD = new ShuffledBatchRDD(shuffleBatchDependency, metrics ++ readMetrics)
+      cachedShuffleRDD = new ShuffledBatchRDD(shuffleDependencyColumnar, metrics ++ readMetrics)
     }
     cachedShuffleRDD
   }
