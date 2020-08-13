@@ -292,7 +292,7 @@ case class GpuParquetMultiPartitionReaderFactory(
   private def buildBaseColumnarParquetReader(
       files: Array[PartitionedFile]): PartitionReader[ColumnarBatch] = {
     val conf = broadcastedConf.value.value
-    val clippedBlocks = ArrayBuffer[(Path, BlockMetaData, PartitionedFile)]()
+    val clippedBlocks = ArrayBuffer[MultiFileBatchInfo]()
     var clippedSchema: MessageType = null
     var isCorrectedRebaseForThis: Option[Boolean] = None
 
@@ -349,7 +349,8 @@ case class GpuParquetMultiPartitionReaderFactory(
         fileSchema, isCaseSensitive)
       val columnPaths = clippedSchema.getPaths.asScala.map(x => ColumnPath.get(x: _*))
       val clipped = ParquetPartitionReader.clipBlocks(columnPaths, blocks.asScala)
-      clippedBlocks ++= clipped.map((filePath, _, file))
+      clippedBlocks ++=
+        clipped.map(MultiFileBatchInfo(filePath, _, file.partitionValues, clippedSchema))
     }
 
     new MultiFileParquetPartitionReader(conf, files, clippedBlocks, clippedSchema,
@@ -449,7 +450,6 @@ case class GpuParquetPartitionReaderFactory(
  */
 abstract class FileParquetPartitionReaderBase(
     conf  : Configuration,
-    clippedParquetSchema: MessageType,
     isSchemaCaseSensitive: Boolean,
     readDataSchema: StructType,
     debugDumpPrefix: String,
@@ -474,7 +474,9 @@ abstract class FileParquetPartitionReaderBase(
     isExhausted = true
   }
 
-  protected def calculateParquetOutputSize(currentChunkedBlocks: Seq[BlockMetaData]): Long = {
+  protected def calculateParquetOutputSize(
+      currentChunkedBlocks: Seq[BlockMetaData],
+      schema: MessageType): Long = {
     // start with the size of Parquet magic (at start+end) and footer length values
     var size: Long = 4 + 4 + 4
 
@@ -489,15 +491,18 @@ abstract class FileParquetPartitionReaderBase(
     // This uses the column metadata from the original file, but that should
     // always be at least as big as the updated metadata in the output.
     val out = new CountingOutputStream(new NullOutputStream)
-    writeFooter(out, currentChunkedBlocks)
+    writeFooter(out, currentChunkedBlocks, schema)
     size + out.getByteCount
   }
 
-  protected def writeFooter(out: OutputStream, blocks: Seq[BlockMetaData]): Unit = {
+  protected def writeFooter(
+      out: OutputStream,
+      blocks: Seq[BlockMetaData],
+      schema: MessageType): Unit = {
     val colst = blocks.map(_.getColumns.asScala.size).sum
     logWarning("number of blocks is : " + blocks.size + " columns in blockis is " + colst)
 
-    val fileMeta = new FileMetaData(clippedParquetSchema, Collections.emptyMap[String, String],
+    val fileMeta = new FileMetaData(schema, Collections.emptyMap[String, String],
       ParquetPartitionReader.PARQUET_CREATOR)
     val metadataConverter = new ParquetMetadataConverter
     val footer = new ParquetMetadata(fileMeta, blocks.asJava)
@@ -606,11 +611,14 @@ abstract class FileParquetPartitionReaderBase(
     }
   }
 
-  protected def evolveSchemaIfNeededAndClose(inputTable: Table, filePath: String): Table = {
+  protected def evolveSchemaIfNeededAndClose(
+      inputTable: Table,
+      filePath: String,
+      clippedSchema: MessageType): Table = {
     if (readDataSchema.length > inputTable.getNumberOfColumns) {
       // Spark+Parquet schema evolution is relatively simple with only adding/removing columns
       // To type casting or anyting like that
-      val clippedGroups = clippedParquetSchema.asGroupType()
+      val clippedGroups = clippedSchema.asGroupType()
       val newColumns = new Array[ColumnVector](readDataSchema.length)
       try {
         withResource(inputTable) { table =>
@@ -655,6 +663,9 @@ abstract class FileParquetPartitionReaderBase(
   }
 }
 
+private case class MultiFileBatchInfo(filePath: Path, blockMeta: BlockMetaData,
+    partValues: InternalRow, schema: MessageType)
+
 /**
  * A PartitionReader that can read multiple Parquet files up to the certain size.
  *
@@ -674,7 +685,7 @@ abstract class FileParquetPartitionReaderBase(
 class MultiFileParquetPartitionReader(
     conf: Configuration,
     splits: Array[PartitionedFile],
-    clippedBlocks: Seq[(Path, BlockMetaData, PartitionedFile)],
+    clippedBlocks: Seq[MultiFileBatchInfo],
     clippedParquetSchema: MessageType,
     isSchemaCaseSensitive: Boolean,
     readDataSchema: StructType,
@@ -684,10 +695,10 @@ class MultiFileParquetPartitionReader(
     execMetrics: Map[String, SQLMetric],
     partitionSchema: StructType,
     isCorrectedRebaseMode: Boolean) extends
-  FileParquetPartitionReaderBase(conf, clippedParquetSchema,
-    isSchemaCaseSensitive, readDataSchema, debugDumpPrefix, execMetrics) {
+  FileParquetPartitionReaderBase(conf, isSchemaCaseSensitive,
+    readDataSchema, debugDumpPrefix, execMetrics) {
 
-  private val blockIterator: BufferedIterator[(Path, BlockMetaData, PartitionedFile)] =
+  private val blockIterator: BufferedIterator[MultiFileBatchInfo] =
     clippedBlocks.iterator.buffered
 
   private def addPartitionValues(
@@ -724,7 +735,9 @@ class MultiFileParquetPartitionReader(
     batch.isDefined
   }
 
-  private def readPartFiles(blocks: Seq[(Path, BlockMetaData)]): (HostMemoryBuffer, Long) = {
+  private def readPartFiles(
+      blocks: Seq[(Path, BlockMetaData)],
+      currentClippedSchema: MessageType): (HostMemoryBuffer, Long) = {
     val nvtxRange = new NvtxWithMetrics("Buffer file split", NvtxColor.YELLOW,
       metrics("bufferTime"))
     // ugly but we want to keep the order
@@ -740,7 +753,7 @@ class MultiFileParquetPartitionReader(
     try {
       var succeeded = false
       val allBlocks = blocks.map(_._2)
-      val size = calculateParquetOutputSizeLocal(allBlocks)
+      val size = calculateParquetOutputSizeLocal(allBlocks, currentClippedSchema)
       logWarning(s"calculated size for hostmemory buffer: $size")
       val hmb = HostMemoryBuffer.allocate(size)
       val out = new HostMemoryOutputStream(hmb)
@@ -756,10 +769,12 @@ class MultiFileParquetPartitionReader(
             in.close()
           }
         }
-        val actualFooterSize = calculateParquetOutputSizeLocal(allOutputBlocks)
+        val actualFooterSize =
+          calculateParquetOutputSizeLocal(allOutputBlocks, currentClippedSchema)
         val footerPos = out.getPos
-        logWarning(s"actual write before write footer count is: ${out.getPos} actual footer size: $actualFooterSize")
-        writeFooter(out, allOutputBlocks)
+        logWarning(s"actual write before write footer count is: ${out.getPos} actual " +
+          s"footer size: $actualFooterSize")
+        writeFooter(out, allOutputBlocks, currentClippedSchema)
         logWarning(s"actual write after write footer count is: ${out.getPos}")
         BytesUtils.writeIntLittleEndian(out, (out.getPos - footerPos).toInt)
         // logWarning(s"write little endian size: ${out.getPos - footerPos}")
@@ -770,7 +785,8 @@ class MultiFileParquetPartitionReader(
         logWarning(s"Actual written out size: ${out.getPos}")
         // check to make sure actual size matches what we allocated
         if (out.getPos > size) {
-          throw new QueryExecutionException(s"Calculated buffer size $size is to small, actual: ${out.getPos}")
+          throw new QueryExecutionException(s"Calculated buffer size $size is to " +
+            s"small, actual: ${out.getPos}")
         }
         (hmb, out.getPos)
       } finally {
@@ -784,7 +800,9 @@ class MultiFileParquetPartitionReader(
   }
 
   // todo - BASE CLASS DOESN'T ADD IN EXTRA
-  private def calculateParquetOutputSizeLocal(currentChunkedBlocks: Seq[BlockMetaData]): Long = {
+  private def calculateParquetOutputSizeLocal(
+      currentChunkedBlocks: Seq[BlockMetaData],
+      schema: MessageType): Long = {
     // start with the size of Parquet magic (at start+end) and footer length values
     var size: Long = 4 + 4 + 4
 
@@ -802,7 +820,7 @@ class MultiFileParquetPartitionReader(
     // This uses the column metadata from the original file, but that should
     // always be at least as big as the updated metadata in the output.
     val out = new CountingOutputStream(new NullOutputStream)
-    writeFooter(out, currentChunkedBlocks)
+    writeFooter(out, currentChunkedBlocks, schema)
     // we want to add extra memory because the ColumnChunks saved in the Footer have 2 fields
     // file_offset and data_page_offset that get much larger when we are combining files.
     // Here we estimate that by taking the number of columns * number of blocks which should be
@@ -812,14 +830,16 @@ class MultiFileParquetPartitionReader(
     val numColumnChunks = currentChunkedBlocks.head.getColumns().size() * currentChunkedBlocks.size
     val extraMemory = numColumnChunks * 2 * 8
     val calcSize = size + out.getByteCount + extraMemory
-    logWarning(s"size is $size footer is ${out.getByteCount} extra: $extraMemory $numColumnChunks calculated size is: $calcSize")
+    logWarning(s"size is $size footer is ${out.getByteCount} extra: " +
+      s"$extraMemory $numColumnChunks calculated size is: $calcSize")
     calcSize
   }
 
   private def readBatch(): Option[ColumnarBatch] = {
     val nvtxRange = new NvtxWithMetrics("Parquet readBatch", NvtxColor.GREEN, metrics(TOTAL_TIME))
     try {
-      val (partitionValues, currentChunkedBlocks) = populateCurrentBlockChunk()
+      val (currentClippedSchema, partitionValues, currentChunkedBlocks) =
+        populateCurrentBlockChunk()
       if (readDataSchema.isEmpty) {
         // not reading any data, so return a degenerate ColumnarBatch with the row count
         val numRows = currentChunkedBlocks.map(_._2.getRowCount).sum.toInt
@@ -829,7 +849,7 @@ class MultiFileParquetPartitionReader(
           Some(new ColumnarBatch(Array.empty, numRows.toInt))
         }
       } else {
-        val table = readToTable(currentChunkedBlocks)
+        val table = readToTable(currentChunkedBlocks, currentClippedSchema)
         try {
           val maybeBatch = table.map(GpuColumnVector.from)
           maybeBatch.foreach { batch =>
@@ -847,12 +867,13 @@ class MultiFileParquetPartitionReader(
   }
 
   private def readToTable(
-      currentChunkedBlocks: Seq[(Path, BlockMetaData)]): Option[Table] = {
+      currentChunkedBlocks: Seq[(Path, BlockMetaData)],
+      currentClippedSchema: MessageType): Option[Table] = {
     if (currentChunkedBlocks.isEmpty) {
       return None
     }
 
-    val (dataBuffer, dataSize) = readPartFiles(currentChunkedBlocks)
+    val (dataBuffer, dataSize) = readPartFiles(currentChunkedBlocks, currentClippedSchema)
     try {
       if (dataSize == 0) {
         None
@@ -860,7 +881,7 @@ class MultiFileParquetPartitionReader(
         if (debugDumpPrefix != null) {
           dumpParquetData(dataBuffer, dataSize, splits)
         }
-        val fieldNames = clippedParquetSchema.asGroupType()
+        val fieldNames = currentClippedSchema.asGroupType()
           .getFields.asScala.map(_.getName).toArray
         logWarning("getting fieldsNames: " + fieldNames.mkString(","))
         val parseOpts = ParquetOptions.builder()
@@ -887,40 +908,53 @@ class MultiFileParquetPartitionReader(
             s"but read ${table.getNumberOfColumns} from $currentChunkedBlocks")
         }
         metrics(NUM_OUTPUT_BATCHES) += 1
-        Some(evolveSchemaIfNeededAndClose(table, splits.mkString(",")))
+        Some(evolveSchemaIfNeededAndClose(table, splits.mkString(","), currentClippedSchema))
       }
     } finally {
       dataBuffer.close()
     }
   }
 
-  private def populateCurrentBlockChunk(): (InternalRow, Seq[(Path, BlockMetaData)]) = {
+  private def populateCurrentBlockChunk():
+    (MessageType, InternalRow, Seq[(Path, BlockMetaData)]) = {
 
     val currentChunk = new ArrayBuffer[(Path, BlockMetaData)]
     var numRows: Long = 0
     var numBytes: Long = 0
     var numParquetBytes: Long = 0
     var currentFile: Path = null
-    var currentPartitionedFile: PartitionedFile = null
+    var currentPartitionValues: InternalRow = null
+    var currentClippedSchema: MessageType = null
 
     @tailrec
     def readNextBatch(): Unit = {
       if (blockIterator.hasNext) {
         if (currentFile == null) {
-          currentFile = blockIterator.head._1
-          currentPartitionedFile = blockIterator.head._3
+          currentFile = blockIterator.head.filePath
+          currentPartitionValues = blockIterator.head.partValues
+          currentClippedSchema = blockIterator.head.schema
         }
-        if (currentFile != blockIterator.head._1) {
+        if (currentFile != blockIterator.head.filePath) {
           // check to see if partitionValues different, then have to split it
-          if (blockIterator.head._3.partitionValues != currentPartitionedFile.partitionValues) {
+          if (blockIterator.head.partValues != currentPartitionValues) {
             logWarning(s"Partition values for the next file ${blockIterator.head._1}" +
-              s" don't match current $currentFile, splitting it into another batch!")
+              s" doesn't match current $currentFile, splitting it into another batch!")
             return
           }
-          currentFile = blockIterator.head._1
-          currentPartitionedFile = blockIterator.head._3
+          val schemaNewfile =
+            blockIterator.head.schema.asGroupType().getFields.asScala.map(_.getName)
+          val schemaCurrentfile =
+            currentClippedSchema.asGroupType().getFields.asScala.map(_.getName)
+          if (schemaNewfile.sameElements(schemaCurrentfile)) {
+            logWarning(s"File schema for the next file ${blockIterator.head._1}" +
+              s" doesn't match current $currentFile, splitting it into another batch!")
+            return
+          }
+          currentFile = blockIterator.head.filePath
+          currentPartitionValues = blockIterator.head.partValues
+          currentClippedSchema = blockIterator.head.schema
         }
-        val peekedRowGroup = blockIterator.head._2
+        val peekedRowGroup = blockIterator.head.blockMeta
         if (peekedRowGroup.getRowCount > Integer.MAX_VALUE) {
           throw new UnsupportedOperationException("Too many rows in split")
         }
@@ -930,7 +964,7 @@ class MultiFileParquetPartitionReader(
             peekedRowGroup.getRowCount)
           if (numBytes == 0 || numBytes + estimatedBytes <= maxReadBatchSizeBytes) {
             val nextBlock = blockIterator.next()
-            val nextTuple = (nextBlock._1, nextBlock._2)
+            val nextTuple = (nextBlock.filePath, nextBlock.blockMeta)
             currentChunk += nextTuple
             numRows += currentChunk.last._2.getRowCount
             numParquetBytes += currentChunk.last._2.getTotalByteSize
@@ -946,7 +980,7 @@ class MultiFileParquetPartitionReader(
     logDebug(s"Loaded $numRows rows from Parquet. Parquet bytes read: $numParquetBytes. " +
       s"Estimated GPU bytes: $numBytes")
 
-    (currentPartitionedFile.partitionValues, currentChunk)
+    (currentClippedSchema, currentPartitionValues, currentChunk)
   }
 }
 
@@ -980,7 +1014,7 @@ class ParquetPartitionReader(
     maxReadBatchSizeBytes: Long,
     execMetrics: Map[String, SQLMetric],
     isCorrectedRebaseMode: Boolean)  extends
-  FileParquetPartitionReaderBase(conf, clippedParquetSchema,
+  FileParquetPartitionReaderBase(conf,
     isSchemaCaseSensitive, readDataSchema, debugDumpPrefix, execMetrics) {
 
   private val blockIterator :  BufferedIterator[BlockMetaData] = clippedBlocks.iterator.buffered
@@ -1011,13 +1045,14 @@ class ParquetPartitionReader(
       // logWarning(s"origin processing file: $filePath")
       try {
         var succeeded = false
-        val hmb = HostMemoryBuffer.allocate(calculateParquetOutputSize(blocks))
+        val hmb =
+          HostMemoryBuffer.allocate(calculateParquetOutputSize(blocks, clippedParquetSchema))
         try {
           val out = new HostMemoryOutputStream(hmb)
           out.write(ParquetPartitionReader.PARQUET_MAGIC)
           val outputBlocks = copyBlocksData(in, out, blocks)
           val footerPos = out.getPos
-          writeFooter(out, outputBlocks)
+          writeFooter(out, outputBlocks, clippedParquetSchema)
           BytesUtils.writeIntLittleEndian(out, (out.getPos - footerPos).toInt)
           out.write(ParquetPartitionReader.PARQUET_MAGIC)
           succeeded = true
@@ -1105,7 +1140,7 @@ class ParquetPartitionReader(
             s"but read ${table.getNumberOfColumns} from $filePath")
         }
         metrics(NUM_OUTPUT_BATCHES) += 1
-        Some(evolveSchemaIfNeededAndClose(table, filePath.toString))
+        Some(evolveSchemaIfNeededAndClose(table, filePath.toString, clippedParquetSchema))
       }
     } finally {
       dataBuffer.close()
