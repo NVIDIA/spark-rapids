@@ -353,7 +353,7 @@ case class GpuParquetMultiPartitionReaderFactory(
         clipped.map(MultiFilePartitionInfo(filePath, _, file.partitionValues, clippedSchema))
     }
 
-    new MultiFileParquetPartitionReader(conf, files, clippedBlocks, clippedSchema,
+    new MultiFileParquetPartitionReader(conf, files, clippedBlocks,
       isCaseSensitive, readDataSchema, debugDumpPrefix, maxReadBatchSizeRows,
       maxReadBatchSizeBytes, metrics, partitionSchema,
       isCorrectedRebaseForThis.getOrElse(isCorrectedRebase))
@@ -474,25 +474,46 @@ abstract class FileParquetPartitionReaderBase(
     isExhausted = true
   }
 
-  protected def calculateParquetOutputSize(
+  protected def calculateParquetFooterSize(
       currentChunkedBlocks: Seq[BlockMetaData],
       schema: MessageType): Long = {
+    // Calculate size of the footer metadata.
+    // This uses the column metadata from the original file, but that should
+    // always be at least as big as the updated metadata in the output.
+    val out = new CountingOutputStream(new NullOutputStream)
+    writeFooter(out, currentChunkedBlocks, schema)
+    out.getByteCount
+  }
+
+  protected def calculateParquetOutputSize(
+      currentChunkedBlocks: Seq[BlockMetaData],
+      schema: MessageType,
+      handleMultiFiles: Boolean): (Long, Long) = {
     // start with the size of Parquet magic (at start+end) and footer length values
     var size: Long = 4 + 4 + 4
-
-    // add in the size of the row group data
 
     // Calculate the total amount of column data that will be copied
     // NOTE: Avoid using block.getTotalByteSize here as that is the
     //       uncompressed size rather than the size in the file.
     size += currentChunkedBlocks.flatMap(_.getColumns.asScala.map(_.getTotalSize)).sum
 
-    // Calculate size of the footer metadata.
-    // This uses the column metadata from the original file, but that should
-    // always be at least as big as the updated metadata in the output.
-    val out = new CountingOutputStream(new NullOutputStream)
-    writeFooter(out, currentChunkedBlocks, schema)
-    size + out.getByteCount
+    val footerSize = calculateParquetFooterSize(currentChunkedBlocks, schema)
+    val extraMemory = if (handleMultiFiles) {
+      // we want to add extra memory because the ColumnChunks saved in the Footer have 2 fields
+      // file_offset and data_page_offset that get much larger when we are combining files.
+      // Here we estimate that by taking the number of columns * number of blocks which should be
+      // the number of column chunks and then saying there are 2 fields that could be larger and
+      // assume max size of those would be 8 bytes worst case. So we probably allocate to much  here
+      // but it shouldn't be by a huge amount and its better then having to realloc.
+      val numColumnChunks = currentChunkedBlocks.head.getColumns().size() * currentChunkedBlocks.size
+      logWarning(s"extra size is: ${numColumnChunks * 2 * 8}")
+      numColumnChunks * 2 * 8
+    } else {
+      0
+    }
+    val totalSize = size + footerSize + extraMemory
+    logWarning(s"calculated size is : $totalSize, $footerSize")
+    (totalSize, footerSize)
   }
 
   protected def writeFooter(
@@ -677,8 +698,6 @@ private case class MultiFilePartitionInfo(filePath: Path, blockMeta: BlockMetaDa
  * @param split the file split to read
  * @param clippedBlocks the block metadata from the original Parquet file that has been clipped
  *                      to only contain the column chunks to be read
- * @param clippedParquetSchema the Parquet schema from the original Parquet file that has been
- *                             clipped to contain only the columns to be read
  * @param readDataSchema the Spark schema describing what will be read
  * @param debugDumpPrefix a path prefix to use for dumping the fabricated Parquet data or null
  */
@@ -686,7 +705,6 @@ class MultiFileParquetPartitionReader(
     conf: Configuration,
     splits: Array[PartitionedFile],
     clippedBlocks: Seq[MultiFilePartitionInfo],
-    clippedParquetSchema: MessageType,
     isSchemaCaseSensitive: Boolean,
     readDataSchema: StructType,
     debugDumpPrefix: String,
@@ -753,10 +771,11 @@ class MultiFileParquetPartitionReader(
     try {
       var succeeded = false
       val allBlocks = blocks.map(_._2)
-      val size = calculateParquetOutputSizeLocal(allBlocks, currentClippedSchema)
-      logWarning(s"calculated size for hostmemory buffer: $size")
-      val hmb = HostMemoryBuffer.allocate(size)
-      val out = new HostMemoryOutputStream(hmb)
+      val (estTotalSize, estFooterSize) =
+        calculateParquetOutputSize(allBlocks, currentClippedSchema, false)
+      logWarning(s"calculated size for hostmemory buffer: $estTotalSize")
+      var hmb = HostMemoryBuffer.allocate(estTotalSize)
+      var out = new HostMemoryOutputStream(hmb)
       try {
         out.write(ParquetPartitionReader.PARQUET_MAGIC)
         val allOutputBlocks = scala.collection.mutable.ArrayBuffer[BlockMetaData]()
@@ -769,23 +788,48 @@ class MultiFileParquetPartitionReader(
             in.close()
           }
         }
-        val actualFooterSize =
-          calculateParquetOutputSizeLocal(allOutputBlocks, currentClippedSchema)
+        // Not sure how expensive this is, we could throw exception instead if the written
+        // size comes out > then the estimated size
+        val actualFooterSize = calculateParquetFooterSize(allOutputBlocks, currentClippedSchema)
         val footerPos = out.getPos
-        logWarning(s"actual write before write footer count is: ${out.getPos} actual " +
+        logWarning(s"actual write before write footer count is: ${footerPos} actual " +
           s"footer size: $actualFooterSize")
+        // The footer size can change vs the estimated because we are combining more blocks and
+        // offsets are larger, check to make sure we allocated enough memory before writing
+        // the footer. 4 + 4 is for writing size and the ending PARQUET_MAGIC.
+        val newSizeEstimate = footerPos + actualFooterSize + 4 + 4
+        if (newSizeEstimate > estTotalSize) {
+          // realloc memory and copy
+          logWarning(s"the original estimated size $estTotalSize is to small, " +
+            s"reallocing and copying data to bigger buffer size: $newSizeEstimate")
+          val newhmb = HostMemoryBuffer.allocate(newSizeEstimate)
+          var copySucceeded = false
+          try {
+            val newout = new HostMemoryOutputStream(newhmb)
+            val in = new HostMemoryInputStream(hmb, footerPos)
+            IOUtils.copy(in, out)
+            out = newout
+            copySucceeded = true
+          } finally {
+            if (!copySucceeded) {
+              newhmb.close()
+            }
+          }
+          val prevhmb = hmb
+          hmb = newhmb
+          prevhmb.close()
+        } else {
+          out
+        }
         writeFooter(out, allOutputBlocks, currentClippedSchema)
         logWarning(s"actual write after write footer count is: ${out.getPos}")
         BytesUtils.writeIntLittleEndian(out, (out.getPos - footerPos).toInt)
-        // logWarning(s"write little endian size: ${out.getPos - footerPos}")
-        // logWarning(s"wrote little endidan : ${out.getPos}")
         out.write(ParquetPartitionReader.PARQUET_MAGIC)
-        // logWarning(s"wrote magic : ${out.getPos}")
         succeeded = true
         logWarning(s"Actual written out size: ${out.getPos}")
-        // check to make sure actual size matches what we allocated
-        if (out.getPos > size) {
-          throw new QueryExecutionException(s"Calculated buffer size $size is to " +
+        // triple check we didn't go over memory
+        if (out.getPos > estTotalSize) {
+          throw new QueryExecutionException(s"Calculated buffer size $estTotalSize is to " +
             s"small, actual: ${out.getPos}")
         }
         (hmb, out.getPos)
@@ -797,42 +841,6 @@ class MultiFileParquetPartitionReader(
     } finally {
       nvtxRange.close()
     }
-  }
-
-  // todo - BASE CLASS DOESN'T ADD IN EXTRA
-  private def calculateParquetOutputSizeLocal(
-      currentChunkedBlocks: Seq[BlockMetaData],
-      schema: MessageType): Long = {
-    // start with the size of Parquet magic (at start+end) and footer length values
-    var size: Long = 4 + 4 + 4
-
-    // add in the size of the row group data
-
-    // Calculate the total amount of column data that will be copied
-    // NOTE: Avoid using block.getTotalByteSize here as that is the
-    //       uncompressed size rather than the size in the file.
-    size += currentChunkedBlocks.flatMap(_.getColumns.asScala.map(_.getTotalSize)).sum
-
-    // logWarning("sizes are: " +
-    // currentChunkedBlocks.flatMap(_.getColumns.asScala.map(_.getTotalSize)))
-    // logWarning(s"size: $size")
-    // Calculate size of the footer metadata.
-    // This uses the column metadata from the original file, but that should
-    // always be at least as big as the updated metadata in the output.
-    val out = new CountingOutputStream(new NullOutputStream)
-    writeFooter(out, currentChunkedBlocks, schema)
-    // we want to add extra memory because the ColumnChunks saved in the Footer have 2 fields
-    // file_offset and data_page_offset that get much larger when we are combining files.
-    // Here we estimate that by taking the number of columns * number of blocks which should be
-    // the number of column chunks and then saying there are 2 fields that could be larger and
-    // assume max size of those would be 8 bytes worst case. So we probably allocate to much  here
-    // but it shouldn't be by a huge amount and its better then having to realloc.
-    val numColumnChunks = currentChunkedBlocks.head.getColumns().size() * currentChunkedBlocks.size
-    val extraMemory = numColumnChunks * 2 * 8
-    val calcSize = size + out.getByteCount + extraMemory
-    logWarning(s"size is $size footer is ${out.getByteCount} extra: " +
-      s"$extraMemory $numColumnChunks calculated size is: $calcSize")
-    calcSize
   }
 
   private def readBatch(): Option[ColumnarBatch] = {
@@ -1045,8 +1053,10 @@ class ParquetPartitionReader(
       // logWarning(s"origin processing file: $filePath")
       try {
         var succeeded = false
+        val (totalSize, footerSize) =
+          calculateParquetOutputSize(blocks, clippedParquetSchema, false)
         val hmb =
-          HostMemoryBuffer.allocate(calculateParquetOutputSize(blocks, clippedParquetSchema))
+          HostMemoryBuffer.allocate(totalSize)
         try {
           val out = new HostMemoryOutputStream(hmb)
           out.write(ParquetPartitionReader.PARQUET_MAGIC)
