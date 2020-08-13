@@ -568,6 +568,14 @@ case class GpuFileSourceScanExec(
 
 object GpuFileSourceScanExec {
   def tagSupport(meta: SparkPlanMeta[FileSourceScanExec]): Unit = {
+    val sparkSession = meta.wrapped.sqlContext.sparkSession
+    val options = meta.wrapped.relation.options
+    if (meta.conf.isParquetSmallFilesEnabled &&
+      (sparkSession.conf.getOption("spark.sql.parquet.mergeSchema").exists(_.toBoolean) ||
+      options.getOrElse("mergeSchema", "false").toBoolean)) {
+
+      meta.willNotWorkOnGpu("mergeSchema is not supported yet")
+    }
     meta.wrapped.relation.fileFormat match {
       case _: CSVFileFormat => GpuReadCSVFileFormat.tagSupport(meta)
       case _: OrcFileFormat => GpuReadOrcFileFormat.tagSupport(meta)
