@@ -170,7 +170,7 @@ def test_read_round_trip_legacy(spark_tmp_path, parquet_gens, small_file_opt, v1
             conf={'spark.rapids.sql.format.parquet.smallFiles.enabled': small_file_opt,
                   'spark.sql.sources.useV1SourceList': v1_enabled_list})
 
-@pytest.mark.parametrize('small_file_opt', ["true", "false"])
+@pytest.mark.parametrize('small_file_opt', ["false"])
 @pytest.mark.parametrize('v1_enabled_list', ["", "parquet"])
 def test_simple_partitioned_read(spark_tmp_path, small_file_opt, v1_enabled_list):
     # Once https://github.com/NVIDIA/spark-rapids/issues/133 and https://github.com/NVIDIA/spark-rapids/issues/132 are fixed 
