@@ -69,6 +69,16 @@ object ApiValidation extends Logging {
     val gpuKeys = gpuExecs.keys
     var printNewline = false
 
+    val sparkToShimMap = Map("3.0.0" -> "spark300", "3.0.1" -> "spark301", "3.1.0" -> "spark310")
+    val sparkVersion = ShimLoader.getSparkShims.getSparkShimVersion.toString
+    var shimVersion = sparkToShimMap(sparkVersion)
+    // There is no separate implementation for Execs in spark-3.0.1.
+    shimVersion = if (shimVersion == "spark301") {
+      "spark300"
+    } else {
+      shimVersion
+    }
+
     gpuKeys.foreach { e =>
       // Get SparkExecs argNames and types
       val sparkTypes = classToTypeTag(e)
@@ -83,13 +93,15 @@ object ApiValidation extends Logging {
         val execType = sparkTypes.tpe.toString.split('.').last
         val gpu = execType match {
           case "BroadcastExchangeExec" => s"org.apache.spark.sql.rapids.execution.Gpu" + execType
-          case "BroadcastHashJoinExec" => s"com.nvidia.spark.rapids.shims.spark300.Gpu" + execType
-          case "FileSourceScanExec" => s"org.apache.spark.sql.rapids.shims.spark300.Gpu" + execType
+          case "BroadcastHashJoinExec" => s"com.nvidia.spark.rapids.shims." + shimVersion +
+            ".Gpu" + execType
+          case "FileSourceScanExec" => s"org.apache.spark.sql.rapids.shims." + shimVersion +
+            ".Gpu" + execType
           case "CartesianProductExec" => s"org.apache.spark.sql.rapids.Gpu" + execType
           case "BroadcastNestedLoopJoinExec" =>
-            s"com.nvidia.spark.rapids.shims.spark300.Gpu" + execType
+            s"com.nvidia.spark.rapids.shims." + shimVersion + ".Gpu" + execType
           case "SortMergeJoinExec" | "ShuffledHashJoinExec" =>
-            s"com.nvidia.spark.rapids.shims.spark300.GpuShuffledHashJoinExec"
+            s"com.nvidia.spark.rapids.shims." + shimVersion + ".GpuShuffledHashJoinExec"
           case "SortAggregateExec" => s"com.nvidia.spark.rapids.GpuHashAggregateExec"
           case _ => s"com.nvidia.spark.rapids.Gpu" + execType
         }

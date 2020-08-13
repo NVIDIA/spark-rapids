@@ -167,6 +167,9 @@
 	<pytest.TEST_TAGS>not qarun</pytest.TEST_TAGS>
 	<rat.consoleOutput>false</rat.consoleOutput>
 	<slf4j.version>1.7.30</slf4j.version>
+	<spark300.version>3.0.0</spark300.version>
+	<spark301.version>3.0.1-SNAPSHOT</spark301.version>
+	<spark310.version>3.1.0-SNAPSHOT</spark310.version>
     </properties>
 
     <dependencyManagement>
