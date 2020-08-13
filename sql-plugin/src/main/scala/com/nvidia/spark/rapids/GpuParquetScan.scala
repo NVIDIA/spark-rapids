@@ -91,7 +91,7 @@ case class GpuParquetScan(
     logDebug(s"Small file optimization: ${rapidsConf.isParquetSmallFilesEnabled} " +
       s"Inputfile: ${latestConf.isInputFileExecUsed}")
     if (rapidsConf.isParquetSmallFilesEnabled && !latestConf.isInputFileExecUsed) {
-      GpuParquetMultiPartitionReaderFactory(sparkSession.sessionState.conf, broadcastedConf,
+      GpuParquetMultiFilePartitionReaderFactory(sparkSession.sessionState.conf, broadcastedConf,
         dataSchema, readDataSchema, readPartitionSchema, pushedFilters, rapidsConf, metrics)
     } else {
       GpuParquetPartitionReaderFactory(sparkSession.sessionState.conf, broadcastedConf,
@@ -249,7 +249,7 @@ object GpuParquetPartitionReaderFactoryBase {
  * in an iteration. This will allow us to read multiple small files and combine them
  * on the CPU side before sending them down to the GPU.
  */
-case class GpuParquetMultiPartitionReaderFactory(
+case class GpuParquetMultiFilePartitionReaderFactory(
     @transient sqlConf: SQLConf,
     broadcastedConf: Broadcast[SerializableConfiguration],
     dataSchema: StructType,

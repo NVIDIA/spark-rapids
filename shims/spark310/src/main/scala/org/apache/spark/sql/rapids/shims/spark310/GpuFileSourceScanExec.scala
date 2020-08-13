@@ -340,7 +340,7 @@ case class GpuFileSourceScanExec(
     val hadoopConf = relation.sparkSession.sessionState.newHadoopConfWithOptions(relation.options)
     val broadcastedHadoopConf =
       relation.sparkSession.sparkContext.broadcast(new SerializableConfiguration(hadoopConf))
-    val factory = GpuParquetMultiPartitionReaderFactory(
+    val factory = GpuParquetMultiFilePartitionReaderFactory(
       sqlConf,
       broadcastedHadoopConf,
       relation.dataSchema,
@@ -394,7 +394,7 @@ case class GpuFileSourceScanExec(
     val hadoopConf = relation.sparkSession.sessionState.newHadoopConfWithOptions(relation.options)
     val broadcastedHadoopConf =
       relation.sparkSession.sparkContext.broadcast(new SerializableConfiguration(hadoopConf))
-    val factory = GpuParquetMultiPartitionReaderFactory(
+    val factory = GpuParquetMultiFilePartitionReaderFactory(
       sqlConf,
       broadcastedHadoopConf,
       relation.dataSchema,
