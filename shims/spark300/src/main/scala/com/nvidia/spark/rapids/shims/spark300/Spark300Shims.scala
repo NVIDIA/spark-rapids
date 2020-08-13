@@ -27,13 +27,16 @@ import org.apache.spark.sql.catalyst.encoders.ExpressionEncoder
 import org.apache.spark.sql.catalyst.expressions._
 import org.apache.spark.sql.catalyst.expressions.aggregate.{First, Last}
 import org.apache.spark.sql.catalyst.plans.JoinType
+import org.apache.spark.sql.catalyst.plans.physical.{BroadcastMode, Partitioning}
 import org.apache.spark.sql.catalyst.rules.Rule
 import org.apache.spark.sql.execution._
+import org.apache.spark.sql.execution.adaptive.ShuffleQueryStageExec
 import org.apache.spark.sql.execution.datasources.HadoopFsRelation
+import org.apache.spark.sql.execution.exchange.{BroadcastExchangeExec, ShuffleExchangeExec}
 import org.apache.spark.sql.execution.joins.{BroadcastHashJoinExec, BroadcastNestedLoopJoinExec, HashJoin, SortMergeJoinExec}
 import org.apache.spark.sql.execution.joins.ShuffledHashJoinExec
-import org.apache.spark.sql.rapids.GpuTimeSub
-import org.apache.spark.sql.rapids.execution.GpuBroadcastNestedLoopJoinExecBase
+import org.apache.spark.sql.rapids.{GpuTimeSub, ShuffleManagerShimBase}
+import org.apache.spark.sql.rapids.execution.{GpuBroadcastExchangeExecBase, GpuBroadcastNestedLoopJoinExecBase, GpuShuffleExchangeExecBase}
 import org.apache.spark.sql.rapids.shims.spark300._
 import org.apache.spark.sql.types._
 import org.apache.spark.storage.{BlockId, BlockManagerId}
@@ -76,6 +79,24 @@ class Spark300Shims extends SparkShims {
     GpuBroadcastNestedLoopJoinExec(left, right, join, joinType, condition, targetSizeBytes)
   }
 
+  override def getGpuBroadcastExchangeExec(
+      mode: BroadcastMode,
+      child: SparkPlan): GpuBroadcastExchangeExecBase = {
+    GpuBroadcastExchangeExec(mode, child)
+  }
+
+  override def getGpuShuffleExchangeExec(
+      outputPartitioning: Partitioning,
+      child: SparkPlan,
+      canChangeNumPartitions: Boolean): GpuShuffleExchangeExecBase = {
+    GpuShuffleExchangeExec(outputPartitioning, child)
+  }
+
+  override def getGpuShuffleExchangeExec(
+      queryStage: ShuffleQueryStageExec): GpuShuffleExchangeExecBase = {
+    queryStage.shuffle.asInstanceOf[GpuShuffleExchangeExecBase]
+  }
+
   override def isGpuHashJoin(plan: SparkPlan): Boolean = {
     plan match {
       case _: GpuHashJoin => true
@@ -96,6 +117,12 @@ class Spark300Shims extends SparkShims {
       case p => false
     }
   }
+
+  override def isBroadcastExchangeLike(plan: SparkPlan): Boolean =
+    plan.isInstanceOf[BroadcastExchangeExec]
+
+  override def isShuffleExchangeLike(plan: SparkPlan): Boolean =
+    plan.isInstanceOf[ShuffleExchangeExec]
 
   override def getExecs: Map[Class[_ <: SparkPlan], ExecRule[_ <: SparkPlan]] = {
     Seq(
@@ -203,5 +230,9 @@ class Spark300Shims extends SparkShims {
       ruleBuilder: SparkSession => Rule[SparkPlan]): Unit = {
     // not supported in 3.0.0 but it doesn't matter because AdaptiveSparkPlanExec in 3.0.0 will
     // never allow us to replace an Exchange node, so they just stay on CPU
+  }
+
+  override def getShuffleManagerShims(): ShuffleManagerShimBase = {
+    new ShuffleManagerShim
   }
 }
