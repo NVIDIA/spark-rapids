@@ -296,6 +296,7 @@ case class GpuParquetMultiPartitionReaderFactory(
     var clippedSchema: MessageType = null
     var isCorrectedRebaseForThis: Option[Boolean] = None
 
+    logWarning(s"files are: ${files.mkString(",")} for task ${TaskContext.get().partitionId()}")
     files.map { file =>
       logWarning(s"processing file: $file")
       val filePath = new Path(new URI(file.filePath))
@@ -452,10 +453,7 @@ abstract class FileParquetPartitionReaderBase(
     isSchemaCaseSensitive: Boolean,
     readDataSchema: StructType,
     debugDumpPrefix: String,
-    maxReadBatchSizeRows: Integer,
-    maxReadBatchSizeBytes: Long,
-    execMetrics: Map[String, SQLMetric],
-    isCorrectedRebaseMode: Boolean) extends PartitionReader[ColumnarBatch] with Logging
+    execMetrics: Map[String, SQLMetric]) extends PartitionReader[ColumnarBatch] with Logging
   with ScanWithMetrics with Arm {
 
   protected var isExhausted: Boolean = false
@@ -496,11 +494,17 @@ abstract class FileParquetPartitionReaderBase(
   }
 
   protected def writeFooter(out: OutputStream, blocks: Seq[BlockMetaData]): Unit = {
+    val colst = blocks.map(_.getColumns.asScala.size).sum
+    logWarning("number of blocks is : " + blocks.size + " columns in blockis is " + colst)
+
     val fileMeta = new FileMetaData(clippedParquetSchema, Collections.emptyMap[String, String],
       ParquetPartitionReader.PARQUET_CREATOR)
     val metadataConverter = new ParquetMetadataConverter
     val footer = new ParquetMetadata(fileMeta, blocks.asJava)
     val meta = metadataConverter.toParquetMetadata(ParquetPartitionReader.PARQUET_VERSION, footer)
+    logWarning("meta number of row groups is: " + meta.row_groups.size())
+    // logWarning("writing footer with meta: " + meta.toString())
+    // TODO - should do row groups * num columns  to get column chunks
     org.apache.parquet.format.Util.writeFileMetaData(meta, out)
   }
 
@@ -681,8 +685,7 @@ class MultiFileParquetPartitionReader(
     partitionSchema: StructType,
     isCorrectedRebaseMode: Boolean) extends
   FileParquetPartitionReaderBase(conf, clippedParquetSchema,
-    isSchemaCaseSensitive,readDataSchema, debugDumpPrefix, maxReadBatchSizeRows,
-    maxReadBatchSizeBytes, execMetrics, isCorrectedRebaseMode) {
+    isSchemaCaseSensitive, readDataSchema, debugDumpPrefix, execMetrics) {
 
   private val blockIterator: BufferedIterator[(Path, BlockMetaData, PartitionedFile)] =
     clippedBlocks.iterator.buffered
@@ -738,6 +741,7 @@ class MultiFileParquetPartitionReader(
       var succeeded = false
       val allBlocks = blocks.map(_._2)
       val size = calculateParquetOutputSizeLocal(allBlocks)
+      logWarning(s"calculated size for hostmemory buffer: $size")
       val hmb = HostMemoryBuffer.allocate(size)
       val out = new HostMemoryOutputStream(hmb)
       try {
@@ -752,18 +756,22 @@ class MultiFileParquetPartitionReader(
             in.close()
           }
         }
-        val size = calculateParquetOutputSizeLocal(allOutputBlocks)
+        val actualFooterSize = calculateParquetOutputSizeLocal(allOutputBlocks)
         val footerPos = out.getPos
-        // logWarning(s"actual write before write footer count is: ${out.getPos}")
+        logWarning(s"actual write before write footer count is: ${out.getPos} actual footer size: $actualFooterSize")
         writeFooter(out, allOutputBlocks)
-        // logWarning(s"actual write after write footer count is: ${out.getPos}")
+        logWarning(s"actual write after write footer count is: ${out.getPos}")
         BytesUtils.writeIntLittleEndian(out, (out.getPos - footerPos).toInt)
         // logWarning(s"write little endian size: ${out.getPos - footerPos}")
         // logWarning(s"wrote little endidan : ${out.getPos}")
         out.write(ParquetPartitionReader.PARQUET_MAGIC)
         // logWarning(s"wrote magic : ${out.getPos}")
         succeeded = true
-        // logWarning(s"Actual written out size: ${out.getPos}")
+        logWarning(s"Actual written out size: ${out.getPos}")
+        // check to make sure actual size matches what we allocated
+        if (out.getPos > size) {
+          throw new QueryExecutionException(s"Calculated buffer size $size is to small, actual: ${out.getPos}")
+        }
         (hmb, out.getPos)
       } finally {
         if (!succeeded) {
@@ -795,10 +803,16 @@ class MultiFileParquetPartitionReader(
     // always be at least as big as the updated metadata in the output.
     val out = new CountingOutputStream(new NullOutputStream)
     writeFooter(out, currentChunkedBlocks)
-    // TODO - why am I off bytes???  Footer sizes different from when first calculated to when
-    // real ones put in
-    val calcSize = size + out.getByteCount + (currentChunkedBlocks.size * 24)
-    // logWarning(s"size is $size footer is ${out.getByteCount} calculated size is: $calcSize")
+    // we want to add extra memory because the ColumnChunks saved in the Footer have 2 fields
+    // file_offset and data_page_offset that get much larger when we are combining files.
+    // Here we estimate that by taking the number of columns * number of blocks which should be
+    // the number of column chunks and then saying there are 2 fields that could be larger and
+    // assume max size of those would be 8 bytes worst case. So we probably allocate to much  here
+    // but it shouldn't be by a huge amount and its better then having to realloc.
+    val numColumnChunks = currentChunkedBlocks.head.getColumns().size() * currentChunkedBlocks.size
+    val extraMemory = numColumnChunks * 2 * 8
+    val calcSize = size + out.getByteCount + extraMemory
+    logWarning(s"size is $size footer is ${out.getByteCount} extra: $extraMemory $numColumnChunks calculated size is: $calcSize")
     calcSize
   }
 
@@ -846,13 +860,17 @@ class MultiFileParquetPartitionReader(
         if (debugDumpPrefix != null) {
           dumpParquetData(dataBuffer, dataSize, splits)
         }
+        val fieldNames = clippedParquetSchema.asGroupType()
+          .getFields.asScala.map(_.getName).toArray
+        logWarning("getting fieldsNames: " + fieldNames.mkString(","))
         val parseOpts = ParquetOptions.builder()
           .withTimeUnit(DType.TIMESTAMP_MICROSECONDS)
-          .includeColumn(readDataSchema.fieldNames:_*).build()
+          .includeColumn(fieldNames:_*).build()
 
         // about to start using the GPU
         GpuSemaphore.acquireIfNecessary(TaskContext.get())
 
+        logWarning("readDataSchema is : " + readDataSchema.fieldNames.mkString(","))
         val table = Table.readParquet(parseOpts, dataBuffer, 0, dataSize)
         if (!isCorrectedRebaseMode) {
           (0 until table.getNumberOfColumns).foreach { i =>
@@ -861,6 +879,7 @@ class MultiFileParquetPartitionReader(
             }
           }
         }
+        logWarning("actual columsn " + table.getNumberOfColumns)
         maxDeviceMemory = max(GpuColumnVector.getTotalDeviceMemoryUsed(table), maxDeviceMemory)
         if (readDataSchema.length < table.getNumberOfColumns) {
           table.close()
@@ -962,8 +981,7 @@ class ParquetPartitionReader(
     execMetrics: Map[String, SQLMetric],
     isCorrectedRebaseMode: Boolean)  extends
   FileParquetPartitionReaderBase(conf, clippedParquetSchema,
-    isSchemaCaseSensitive,readDataSchema, debugDumpPrefix, maxReadBatchSizeRows,
-    maxReadBatchSizeBytes, execMetrics, isCorrectedRebaseMode) {
+    isSchemaCaseSensitive, readDataSchema, debugDumpPrefix, execMetrics) {
 
   private val blockIterator :  BufferedIterator[BlockMetaData] = clippedBlocks.iterator.buffered
 
@@ -1060,9 +1078,12 @@ class ParquetPartitionReader(
         if (debugDumpPrefix != null) {
           dumpParquetData(dataBuffer, dataSize, Array(split))
         }
+        val fieldNames = clippedParquetSchema.asGroupType()
+          .getFields.asScala.map(_.getName).toArray
+        logWarning("getting fieldsNames: " + fieldNames.mkString(","))
         val parseOpts = ParquetOptions.builder()
           .withTimeUnit(DType.TIMESTAMP_MICROSECONDS)
-          .includeColumn(readDataSchema.fieldNames:_*).build()
+          .includeColumn(fieldNames:_*).build()
 
         // about to start using the GPU
         GpuSemaphore.acquireIfNecessary(TaskContext.get())
@@ -1076,6 +1097,8 @@ class ParquetPartitionReader(
           }
         }
         maxDeviceMemory = max(GpuColumnVector.getTotalDeviceMemoryUsed(table), maxDeviceMemory)
+        logWarning("readDataSchema is : " + readDataSchema.fieldNames.mkString(","))
+        logWarning("actual columsn " + table.getNumberOfColumns)
         if (readDataSchema.length < table.getNumberOfColumns) {
           table.close()
           throw new QueryExecutionException(s"Expected ${readDataSchema.length} columns " +
