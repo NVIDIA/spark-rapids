@@ -20,14 +20,14 @@ import java.io.File
 
 import ai.rapids.cudf.{ColumnVector, DType, Table}
 import org.scalatest.Assertions
+import scala.collection.mutable.ListBuffer
+
 import org.apache.spark.SparkConf
 import org.apache.spark.sql.SparkSession
 import org.apache.spark.sql.execution.SparkPlan
 import org.apache.spark.sql.execution.adaptive.{AdaptiveSparkPlanExec, BroadcastQueryStageExec, ShuffleQueryStageExec}
 import org.apache.spark.sql.rapids.GpuShuffleEnv
 import org.apache.spark.sql.vectorized.ColumnarBatch
-
-import scala.collection.mutable.ListBuffer
 
 /** A collection of utility methods useful in tests. */
 object TestUtils extends Assertions with Arm {
