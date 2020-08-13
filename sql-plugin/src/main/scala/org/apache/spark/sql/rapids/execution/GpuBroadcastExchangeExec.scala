@@ -232,7 +232,6 @@ class GpuBroadcastMeta(
     }
   }
 
-
   override def convertToGpu(): GpuExec = {
     ShimLoader.getSparkShims.getGpuBroadcastExchangeExec(
       exchange.mode, childPlans(0).convertIfNeeded())
