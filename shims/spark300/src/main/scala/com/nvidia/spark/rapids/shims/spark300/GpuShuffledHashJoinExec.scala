@@ -72,7 +72,7 @@ class GpuShuffledHashJoinMeta(
       condition.map(_.convertToGpu()),
       childPlans(0).convertIfNeeded(),
       childPlans(1).convertIfNeeded(),
-      false)
+      isSkewJoin = false)
 }
 
 case class GpuShuffledHashJoinExec(
