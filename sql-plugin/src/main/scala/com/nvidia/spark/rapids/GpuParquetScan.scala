@@ -292,7 +292,7 @@ case class GpuParquetMultiPartitionReaderFactory(
   private def buildBaseColumnarParquetReader(
       files: Array[PartitionedFile]): PartitionReader[ColumnarBatch] = {
     val conf = broadcastedConf.value.value
-    val clippedBlocks = ArrayBuffer[MultiFileBatchInfo]()
+    val clippedBlocks = ArrayBuffer[MultiFilePartitionInfo]()
     var clippedSchema: MessageType = null
     var isCorrectedRebaseForThis: Option[Boolean] = None
 
@@ -350,7 +350,7 @@ case class GpuParquetMultiPartitionReaderFactory(
       val columnPaths = clippedSchema.getPaths.asScala.map(x => ColumnPath.get(x: _*))
       val clipped = ParquetPartitionReader.clipBlocks(columnPaths, blocks.asScala)
       clippedBlocks ++=
-        clipped.map(MultiFileBatchInfo(filePath, _, file.partitionValues, clippedSchema))
+        clipped.map(MultiFilePartitionInfo(filePath, _, file.partitionValues, clippedSchema))
     }
 
     new MultiFileParquetPartitionReader(conf, files, clippedBlocks, clippedSchema,
@@ -663,7 +663,7 @@ abstract class FileParquetPartitionReaderBase(
   }
 }
 
-private case class MultiFileBatchInfo(filePath: Path, blockMeta: BlockMetaData,
+private case class MultiFilePartitionInfo(filePath: Path, blockMeta: BlockMetaData,
     partValues: InternalRow, schema: MessageType)
 
 /**
@@ -685,7 +685,7 @@ private case class MultiFileBatchInfo(filePath: Path, blockMeta: BlockMetaData,
 class MultiFileParquetPartitionReader(
     conf: Configuration,
     splits: Array[PartitionedFile],
-    clippedBlocks: Seq[MultiFileBatchInfo],
+    clippedBlocks: Seq[MultiFilePartitionInfo],
     clippedParquetSchema: MessageType,
     isSchemaCaseSensitive: Boolean,
     readDataSchema: StructType,
@@ -698,7 +698,7 @@ class MultiFileParquetPartitionReader(
   FileParquetPartitionReaderBase(conf, isSchemaCaseSensitive,
     readDataSchema, debugDumpPrefix, execMetrics) {
 
-  private val blockIterator: BufferedIterator[MultiFileBatchInfo] =
+  private val blockIterator: BufferedIterator[MultiFilePartitionInfo] =
     clippedBlocks.iterator.buffered
 
   private def addPartitionValues(
