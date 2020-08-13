@@ -226,8 +226,9 @@ def test_simple_partitioned_read_fail_legacy(spark_tmp_path, small_file_opt, v1_
                   'spark.sql.files.maxPartitionBytes': "1g",
                   'spark.sql.files.minPartitionNum': '1'})
 
-@pytest.mark.parametrize('v1_enabled_list', ["parquet"])
-def test_read_chema_missing_cols(spark_tmp_path, v1_enabled_list):
+@pytest.mark.parametrize('small_file_opt', ["false", "true"])
+@pytest.mark.parametrize('v1_enabled_list', ["", "parquet"])
+def test_read_chema_missing_cols(spark_tmp_path, v1_enabled_list, small_file_opt):
     # Once https://github.com/NVIDIA/spark-rapids/issues/133 and https://github.com/NVIDIA/spark-rapids/issues/132 are fixed 
     # we should go with a more standard set of generators
     parquet_gens = [byte_gen, short_gen, int_gen, long_gen]
@@ -244,7 +245,7 @@ def test_read_chema_missing_cols(spark_tmp_path, v1_enabled_list):
     data_path = spark_tmp_path + '/PARQUET_DATA'
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : spark.read.parquet(data_path),
-            conf={'spark.rapids.sql.format.parquet.smallFiles.enabled': 'true',
+            conf={'spark.rapids.sql.format.parquet.smallFiles.enabled': small_file_opt,
                   'spark.sql.sources.useV1SourceList': v1_enabled_list,
                   'spark.sql.files.maxPartitionBytes': "1g",
                   'spark.sql.files.minPartitionNum': '1'})
