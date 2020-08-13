@@ -222,9 +222,10 @@ class GpuCoalesceBatchesSuite extends SparkQueryCompareTestSuite {
       val df = longsCsvDf(spark)
 
       // A coalesce step is added after the filter to help with the case where much of the
-      // data is filtered out
+      // data is filtered out.  The select is there to prevent the coalesce from being
+      // the last thing in the plan which will cause the coalesce to be optimized out.
       val df2 = df
-        .filter(df.col("six").gt(5))
+        .filter(df.col("six").gt(5)).select(df.col("six") * 2)
 
       val coalesce = df2.queryExecution.executedPlan
         .find(_.isInstanceOf[GpuCoalesceBatches]).get
