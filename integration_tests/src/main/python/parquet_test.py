@@ -288,7 +288,7 @@ def test_read_merge_schema_smallfile_opt(spark_tmp_path):
     first_data_path = spark_tmp_path + '/PARQUET_DATA/key=0'
     with_cpu_session(
             lambda spark : gen_df(spark, first_gen_list).write.parquet(first_data_path),
-            conf={'spark.sql.legacy.parquet.datetimeRebaseModeInWrite': 'LEGACY'})
+            conf={'spark.sql.legacy.parquet.datetimeRebaseModeInWrite': 'CORRECTED'})
     second_gen_list = [(('_c' if i % 2 == 0 else '_b') + str(i), gen) for i, gen in enumerate(parquet_gens)]
     second_data_path = spark_tmp_path + '/PARQUET_DATA/key=1'
     with_cpu_session(
@@ -312,7 +312,7 @@ def test_read_merge_schema_smallfile_opt_v2(spark_tmp_path):
     first_data_path = spark_tmp_path + '/PARQUET_DATA/key=0'
     with_cpu_session(
             lambda spark : gen_df(spark, first_gen_list).write.parquet(first_data_path),
-            conf={'spark.sql.legacy.parquet.datetimeRebaseModeInWrite': 'LEGACY'})
+            conf={'spark.sql.legacy.parquet.datetimeRebaseModeInWrite': 'CORRECTED'})
     second_gen_list = [(('_c' if i % 2 == 0 else '_b') + str(i), gen) for i, gen in enumerate(parquet_gens)]
     second_data_path = spark_tmp_path + '/PARQUET_DATA/key=1'
     with_cpu_session(
