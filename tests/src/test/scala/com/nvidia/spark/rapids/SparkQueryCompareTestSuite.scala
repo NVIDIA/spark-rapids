@@ -71,6 +71,7 @@ object SparkSessionHolder extends Logging {
     Locale.setDefault(Locale.US)
     SparkSession.builder()
         .master("local[1]")
+        .config("spark.sql.adaptive.enabled", "false")
         .config("spark.rapids.sql.enabled", "false")
         .config("spark.rapids.sql.test.enabled", "false")
         .config("spark.plugins", "com.nvidia.spark.SQLPlugin")

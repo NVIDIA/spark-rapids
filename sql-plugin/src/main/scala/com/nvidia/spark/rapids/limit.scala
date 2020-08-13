@@ -29,7 +29,7 @@ import org.apache.spark.sql.catalyst.expressions.{Attribute, SortOrder}
 import org.apache.spark.sql.catalyst.plans.physical.{AllTuples, Distribution, Partitioning, SinglePartition}
 import org.apache.spark.sql.execution.{CollectLimitExec, LimitExec, ShuffledRowRDD, SparkPlan, UnaryExecNode, UnsafeRowSerializer}
 import org.apache.spark.sql.execution.metric.{SQLMetric, SQLMetrics, SQLShuffleReadMetricsReporter, SQLShuffleWriteMetricsReporter}
-import org.apache.spark.sql.rapids.execution.ShuffledBatchRDD
+import org.apache.spark.sql.rapids.execution.{GpuShuffleExchangeExec, ShuffledBatchRDD}
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
 /**
@@ -132,7 +132,7 @@ class GpuCollectLimitMeta(
 
   override def convertToGpu(): GpuExec =
     GpuGlobalLimitExec(collectLimit.limit,
-      GpuShuffleExchangeExec(GpuSinglePartitioning(Seq.empty),
+      ShimLoader.getSparkShims.getGpuShuffleExchangeExec(GpuSinglePartitioning(Seq.empty),
         GpuLocalLimitExec(collectLimit.limit, childPlans(0).convertIfNeeded())))
 
 }

@@ -17,15 +17,16 @@
 package com.nvidia.spark.rapids
 
 import org.apache.spark.sql.catalyst.expressions.{Ascending, Attribute, AttributeReference, Expression, InputFileBlockLength, InputFileBlockStart, InputFileName, SortOrder}
-import org.apache.spark.sql.catalyst.expressions.objects.CreateExternalRow
 import org.apache.spark.sql.catalyst.rules.Rule
 import org.apache.spark.sql.execution._
-import org.apache.spark.sql.execution.adaptive.{AdaptiveSparkPlanExec, CustomShuffleReaderExec, QueryStageExec}
+import org.apache.spark.sql.execution.adaptive.{AdaptiveSparkPlanExec, BroadcastQueryStageExec, CustomShuffleReaderExec, QueryStageExec, ShuffleQueryStageExec}
 import org.apache.spark.sql.execution.columnar.InMemoryTableScanExec
 import org.apache.spark.sql.execution.command.ExecutedCommandExec
 import org.apache.spark.sql.execution.datasources.v2.DataSourceV2ScanExecBase
 import org.apache.spark.sql.execution.exchange.{Exchange, ShuffleExchangeExec}
+import org.apache.spark.sql.execution.joins.{BroadcastHashJoinExec, BroadcastNestedLoopJoinExec}
 import org.apache.spark.sql.rapids.GpuFileSourceScanExecBase
+import org.apache.spark.sql.rapids.execution.{GpuBroadcastExchangeExecBase, GpuCustomShuffleReaderExec, GpuShuffleExchangeExec, GpuShuffleExchangeExecBase}
 
 /**
  * Rules that run after the row to columnar and columnar to row transitions have been inserted.
@@ -41,6 +42,42 @@ class GpuTransitionOverrides extends Rule[SparkPlan] {
       GpuColumnarToRowExec(optimizeGpuPlanTransitions(bb.child))
     case p =>
       p.withNewChildren(p.children.map(optimizeGpuPlanTransitions))
+  }
+
+  def optimizeAdaptiveTransitions(plan: SparkPlan): SparkPlan = plan match {
+    case HostColumnarToGpu(r2c: RowToColumnarExec, goal) =>
+      GpuRowToColumnarExec(optimizeAdaptiveTransitions(r2c.child), goal)
+
+    case GpuCoalesceBatches(e: GpuShuffleExchangeExecBase, _) =>
+      // we need to insert the coalesce batches step later, after the query stage has executed
+      optimizeAdaptiveTransitions(e)
+
+    case e: GpuCustomShuffleReaderExec =>
+      // this is where we re-insert the GpuCoalesceBatches that we removed from the
+      // shuffle exchange
+      GpuCoalesceBatches(e.copy(child = optimizeAdaptiveTransitions(e.child)),
+          TargetSize(Long.MaxValue))
+
+    // Query stages that have already executed on the GPU could be used by CPU operators
+    // in future query stages. Note that because these query stages have already executed, we
+    // don't need to recurse down and optimize them again
+    case ColumnarToRowExec(e: BroadcastQueryStageExec) =>
+      GpuColumnarToRowExec(e)
+    case ColumnarToRowExec(e: ShuffleQueryStageExec) =>
+      GpuColumnarToRowExec(e)
+
+    case HostColumnarToGpu(e: BroadcastQueryStageExec, _) => e
+    case HostColumnarToGpu(e: ShuffleQueryStageExec, _) => e
+
+    case ColumnarToRowExec(bb: GpuBringBackToHost) =>
+      optimizeAdaptiveTransitions(bb.child) match {
+        case e: GpuBroadcastExchangeExecBase => e
+        case e: GpuShuffleExchangeExecBase => e
+        case other => GpuColumnarToRowExec(other)
+      }
+
+    case p =>
+      p.withNewChildren(p.children.map(optimizeAdaptiveTransitions))
   }
 
   def optimizeCoalesce(plan: SparkPlan): SparkPlan = plan match {
@@ -223,7 +260,14 @@ class GpuTransitionOverrides extends Rule[SparkPlan] {
   }
 
   def assertIsOnTheGpu(plan: SparkPlan, conf: RapidsConf): Unit = {
+    val isAdaptiveEnabled = plan.conf.adaptiveExecutionEnabled
     plan match {
+      case e: Exchange if isAdaptiveEnabled &&
+          ShimLoader.getSparkShims.isBroadcastExchangeLike(e) =>
+        // broadcasts are left on CPU for now when AQE is enabled
+      case _: BroadcastHashJoinExec | _: BroadcastNestedLoopJoinExec
+          if isAdaptiveEnabled =>
+        // broadcasts are left on CPU for now when AQE is enabled
       case _: AdaptiveSparkPlanExec | _: QueryStageExec | _: CustomShuffleReaderExec =>
         // we do not yet fully support GPU-acceleration when AQE is enabled, so we skip checking
         // the plan in this case - https://github.com/NVIDIA/spark-rapids/issues/5
@@ -274,7 +318,11 @@ class GpuTransitionOverrides extends Rule[SparkPlan] {
     if (conf.isSqlEnabled) {
       var updatedPlan = insertHashOptimizeSorts(plan)
       updatedPlan = insertCoalesce(insertColumnarFromGpu(updatedPlan))
-      updatedPlan = optimizeCoalesce(optimizeGpuPlanTransitions(updatedPlan))
+      updatedPlan = optimizeCoalesce(if (plan.conf.adaptiveExecutionEnabled) {
+        optimizeAdaptiveTransitions(updatedPlan)
+      } else {
+        optimizeGpuPlanTransitions(updatedPlan)
+      })
       if (conf.exportColumnarRdd) {
         updatedPlan = detectAndTagFinalColumnarOutput(updatedPlan)
       }
