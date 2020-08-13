@@ -69,7 +69,7 @@ object ApiValidation extends Logging {
     val gpuKeys = gpuExecs.keys
     var printNewline = false
 
-    val sparkToShimMap = Map("3.0.0"->"spark300", "3.0.1"->"spark301", "3.1.0"->"spark310")
+    val sparkToShimMap = Map("3.0.0" -> "spark300", "3.0.1" -> "spark301", "3.1.0" -> "spark310")
     val sparkVersion = ShimLoader.getSparkShims.getSparkShimVersion.toString
     var shimVersion = sparkToShimMap(sparkVersion)
     // There is no separate implementation for Execs in spark-3.0.1.
