@@ -17,7 +17,6 @@
 package com.nvidia.spark.rapids
 
 import org.apache.spark.sql.catalyst.expressions.{Ascending, Attribute, AttributeReference, Expression, InputFileBlockLength, InputFileBlockStart, InputFileName, SortOrder}
-import org.apache.spark.sql.catalyst.expressions.objects.CreateExternalRow
 import org.apache.spark.sql.catalyst.rules.Rule
 import org.apache.spark.sql.execution._
 import org.apache.spark.sql.execution.adaptive.{AdaptiveSparkPlanExec, CustomShuffleReaderExec, QueryStageExec}
@@ -25,7 +24,7 @@ import org.apache.spark.sql.execution.columnar.InMemoryTableScanExec
 import org.apache.spark.sql.execution.command.ExecutedCommandExec
 import org.apache.spark.sql.execution.datasources.v2.DataSourceV2ScanExecBase
 import org.apache.spark.sql.execution.exchange.{Exchange, ShuffleExchangeExec}
-import org.apache.spark.sql.rapids.GpuFileSourceScanExecBase
+import org.apache.spark.sql.rapids.{GpuDataSourceScanExec, GpuFileSourceScanExec}
 
 /**
  * Rules that run after the row to columnar and columnar to row transitions have been inserted.
@@ -87,6 +86,7 @@ class GpuTransitionOverrides extends Rule[SparkPlan] {
   private def hasDirectLineToInput(plan: SparkPlan): Boolean = plan match {
     case _: Exchange => false
     case _: DataSourceScanExec => true
+    case _: GpuDataSourceScanExec => true
     case _: DataSourceV2ScanExecBase => true
     case _: RDDScanExec => true // just in case an RDD was reading in data
     case p => p.children.exists(hasDirectLineToInput)
@@ -98,6 +98,7 @@ class GpuTransitionOverrides extends Rule[SparkPlan] {
   private def shouldEnableCoalesce(plan: SparkPlan): Boolean = plan match {
     case _: Exchange => true
     case _: DataSourceScanExec => true
+    case _: GpuDataSourceScanExec => true
     case _: DataSourceV2ScanExecBase => true
     case _: RDDScanExec => true // just in case an RDD was reading in data
     case _ => false
@@ -252,7 +253,7 @@ class GpuTransitionOverrides extends Rule[SparkPlan] {
         val planOutput = plan.output.toSet
         // avoid checking expressions of GpuFileSourceScanExec since all expressions are
         // processed by driver and not run on GPU.
-        if (!plan.isInstanceOf[GpuFileSourceScanExecBase]) {
+        if (!plan.isInstanceOf[GpuFileSourceScanExec]) {
           plan.expressions.filter(_ match {
             case a: Attribute => !planOutput.contains(a)
             case _ => true

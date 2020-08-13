@@ -317,8 +317,19 @@ case class GpuUnionExec(children: Seq[SparkPlan]) extends SparkPlan with GpuExec
   override def doExecute(): RDD[InternalRow] =
     throw new IllegalStateException(s"Row-based execution should not occur for $this")
 
-  override def doExecuteColumnar(): RDD[ColumnarBatch] =
-    sparkContext.union(children.map(_.executeColumnar()))
+  override def doExecuteColumnar(): RDD[ColumnarBatch] = {
+    val numOutputRows = longMetric(NUM_OUTPUT_ROWS)
+    val numOutputBatches = longMetric(NUM_OUTPUT_BATCHES)
+    val totalTime = longMetric(TOTAL_TIME)
+
+    sparkContext.union(children.map(_.executeColumnar())).map { batch =>
+      withResource(new NvtxWithMetrics("Union", NvtxColor.CYAN, totalTime)) { _ =>
+        numOutputBatches += 1
+        numOutputRows += batch.numRows
+        batch
+      }
+    }
+  }
 }
 
 case class GpuCoalesceExec(numPartitions: Int, child: SparkPlan)

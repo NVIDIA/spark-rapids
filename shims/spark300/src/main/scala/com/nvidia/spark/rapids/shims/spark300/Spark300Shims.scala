@@ -32,9 +32,8 @@ import org.apache.spark.sql.execution._
 import org.apache.spark.sql.execution.datasources.HadoopFsRelation
 import org.apache.spark.sql.execution.joins.{BroadcastHashJoinExec, BroadcastNestedLoopJoinExec, HashJoin, SortMergeJoinExec}
 import org.apache.spark.sql.execution.joins.ShuffledHashJoinExec
-import org.apache.spark.sql.rapids.GpuTimeSub
+import org.apache.spark.sql.rapids.{GpuFileSourceScanExec, GpuTimeSub}
 import org.apache.spark.sql.rapids.execution.GpuBroadcastNestedLoopJoinExecBase
-import org.apache.spark.sql.rapids.shims.spark300._
 import org.apache.spark.sql.types._
 import org.apache.spark.storage.{BlockId, BlockManagerId}
 import org.apache.spark.unsafe.types.CalendarInterval
@@ -121,6 +120,7 @@ class Spark300Shims extends SparkShims {
               wrapped.requiredSchema,
               wrapped.partitionFilters,
               wrapped.optionalBucketSet,
+              None,
               wrapped.dataFilters,
               wrapped.tableIdentifier)
           }
