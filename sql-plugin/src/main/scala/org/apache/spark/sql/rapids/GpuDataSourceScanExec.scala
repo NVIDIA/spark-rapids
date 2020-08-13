@@ -22,7 +22,7 @@ import org.apache.hadoop.fs.Path
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.{InternalRow, TableIdentifier}
 import org.apache.spark.sql.catalyst.util.truncatedString
-import org.apache.spark.sql.execution.{ExplainUtils, InputRDDCodegen, LeafExecNode}
+import org.apache.spark.sql.execution.{ExplainUtils, LeafExecNode}
 import org.apache.spark.sql.sources.BaseRelation
 import org.apache.spark.util.Utils
 
@@ -77,7 +77,7 @@ trait GpuDataSourceScanExec extends LeafExecNode {
 
   /**
    * The data being read in.  This is to provide input to the tests in a way compatible with
-   * [[InputRDDCodegen]] which all implementations used to extend.
+   * `InputRDDCodegen` which all implementations used to extend.
    */
   def inputRDDs(): Seq[RDD[InternalRow]]
 }
