@@ -937,7 +937,7 @@ class MultiFileParquetPartitionReader(
         if (currentFile != blockIterator.head.filePath) {
           // check to see if partitionValues different, then have to split it
           if (blockIterator.head.partValues != currentPartitionValues) {
-            logWarning(s"Partition values for the next file ${blockIterator.head._1}" +
+            logWarning(s"Partition values for the next file ${blockIterator.head.filePath}" +
               s" doesn't match current $currentFile, splitting it into another batch!")
             return
           }
@@ -946,7 +946,7 @@ class MultiFileParquetPartitionReader(
           val schemaCurrentfile =
             currentClippedSchema.asGroupType().getFields.asScala.map(_.getName)
           if (schemaNewfile.sameElements(schemaCurrentfile)) {
-            logWarning(s"File schema for the next file ${blockIterator.head._1}" +
+            logWarning(s"File schema for the next file ${blockIterator.head.filePath}" +
               s" doesn't match current $currentFile, splitting it into another batch!")
             return
           }
