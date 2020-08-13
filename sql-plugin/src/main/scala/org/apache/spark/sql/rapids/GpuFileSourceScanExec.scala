@@ -20,7 +20,7 @@ import java.util.concurrent.TimeUnit.NANOSECONDS
 
 import scala.collection.mutable.HashMap
 
-import com.nvidia.spark.rapids.{GpuExec, GpuMetricNames, GpuReadCSVFileFormat, GpuReadOrcFileFormat, GpuReadParquetFileFormat, ReaderOptionsWithMetrics, SparkPlanMeta}
+import com.nvidia.spark.rapids.{GpuExec, GpuMetricNames, GpuReadCSVFileFormat, GpuReadFileFormatWithMetrics, GpuReadOrcFileFormat, GpuReadParquetFileFormat, SparkPlanMeta}
 import org.apache.hadoop.fs.Path
 
 import org.apache.spark.rdd.RDD
@@ -271,15 +271,18 @@ case class GpuFileSourceScanExec(
   }
 
   lazy val inputRDD: RDD[InternalRow] = {
-    val readFile: (PartitionedFile) => Iterator[InternalRow] =
-      relation.fileFormat.buildReaderWithPartitionValues(
+    val readFile: (PartitionedFile) => Iterator[InternalRow] = {
+      val fileFormat = relation.fileFormat.asInstanceOf[GpuReadFileFormatWithMetrics]
+      fileFormat.buildReaderWithPartitionValuesAndMetrics(
         sparkSession = relation.sparkSession,
         dataSchema = relation.dataSchema,
         partitionSchema = relation.partitionSchema,
         requiredSchema = requiredSchema,
         filters = pushedDownFilters,
-        options = ReaderOptionsWithMetrics(relation.options, gpuMetrics),
-        hadoopConf = relation.sparkSession.sessionState.newHadoopConfWithOptions(relation.options))
+        options = relation.options,
+        hadoopConf = relation.sparkSession.sessionState.newHadoopConfWithOptions(relation.options),
+        metrics = metrics)
+    }
 
     val readRDD = if (bucketedScan) {
       createBucketedReadRDD(relation.bucketSpec.get, readFile, dynamicallySelectedPartitions,
@@ -302,8 +305,6 @@ case class GpuFileSourceScanExec(
   } else {
     Map.empty[String, SQLMetric]
   }
-
-  private lazy val gpuMetrics = GpuMetricNames.buildGpuScanMetrics(sparkContext)
 
   /** Helper for computing total number and size of files in selected partitions. */
   private def setFilesNumAndSizeMetric(
@@ -341,7 +342,7 @@ case class GpuFileSourceScanExec(
     } else {
       None
     }
-  } ++ staticMetrics ++ gpuMetrics
+  } ++ staticMetrics ++ GpuMetricNames.buildGpuScanMetrics(sparkContext)
 
   override protected def doExecute(): RDD[InternalRow] =
     throw new IllegalStateException(s"Row-based execution should not occur for $this")

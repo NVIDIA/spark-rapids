@@ -17,13 +17,13 @@
 package com.nvidia.spark.rapids
 
 import org.apache.hadoop.conf.Configuration
-import org.apache.hadoop.mapreduce.Job
 
 import org.apache.spark.sql.SparkSession
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.execution.FileSourceScanExec
-import org.apache.spark.sql.execution.datasources.{OutputWriterFactory, PartitionedFile}
+import org.apache.spark.sql.execution.datasources.PartitionedFile
 import org.apache.spark.sql.execution.datasources.orc.OrcFileFormat
+import org.apache.spark.sql.execution.metric.SQLMetric
 import org.apache.spark.sql.sources.Filter
 import org.apache.spark.sql.types.StructType
 import org.apache.spark.util.SerializableConfiguration
@@ -31,21 +31,19 @@ import org.apache.spark.util.SerializableConfiguration
 /**
  * A FileFormat that allows reading ORC files with the GPU.
  */
-class GpuReadOrcFileFormat extends OrcFileFormat {
-  override def supportBatch(sparkSession: SparkSession, dataSchema: StructType): Boolean = true
-
-  override def buildReaderWithPartitionValues(
+class GpuReadOrcFileFormat extends OrcFileFormat with GpuReadFileFormatWithMetrics {
+  override def buildReaderWithPartitionValuesAndMetrics(
       sparkSession: SparkSession,
       dataSchema: StructType,
       partitionSchema: StructType,
       requiredSchema: StructType,
       filters: Seq[Filter],
       options: Map[String, String],
-      hadoopConf: Configuration): PartitionedFile => Iterator[InternalRow] = {
+      hadoopConf: Configuration,
+      metrics: Map[String, SQLMetric]): PartitionedFile => Iterator[InternalRow] = {
     val sqlConf = sparkSession.sessionState.conf
     val broadcastedHadoopConf =
       sparkSession.sparkContext.broadcast(new SerializableConfiguration(hadoopConf))
-    val metrics = options.asInstanceOf[ReaderOptionsWithMetrics].metrics
     val factory = GpuOrcPartitionReaderFactory(
       sqlConf,
       broadcastedHadoopConf,
@@ -57,12 +55,6 @@ class GpuReadOrcFileFormat extends OrcFileFormat {
       metrics)
     PartitionReaderIterator.buildReader(factory)
   }
-
-  override def prepareWrite(
-      sparkSession: SparkSession,
-      job: Job, options: Map[String, String],
-      dataSchema: StructType): OutputWriterFactory =
-    throw new IllegalStateException(s"${this.getClass.getCanonicalName} should not be writing")
 }
 
 object GpuReadOrcFileFormat {
