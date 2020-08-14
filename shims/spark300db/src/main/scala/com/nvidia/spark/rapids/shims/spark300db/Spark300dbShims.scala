@@ -124,22 +124,29 @@ class Spark300dbShims extends Spark300Shims {
     GpuJoinUtils.getGpuBuildSide(join.buildSide)
   }
 
+  // Databricks has a different version of FileStatus
+  override def getPartitionFileNames(
+      partitions: Seq[PartitionDirectory]): Seq[String] = {
+    val files = partitions.flatMap(partition => partition.files)
+    files.map(_.getPath.getName)
+  }
+
   override def getFileStatusSize(partitions: Seq[PartitionDirectory]): Long = {
     partitions.map(_.files.map(_.getLen).sum).sum
   }
 
   override def getFilesGroupedToBuckets(
-    partitions: Array[PartitionDirectory]):  Map[Int, Array[PartitionedFile]] = {
-      partitions.flatMap { p =>
-        p.files.map { f =>
-          PartitionedFileUtil.getPartitionedFile(f, f.getPath, p.values)
-        }
-      }.groupBy { f =>
-        BucketingUtils
-          .getBucketId(new Path(f.filePath).getName)
-          .getOrElse(sys.error(s"Invalid bucket file ${f.filePath}"))
+      partitions: Array[PartitionDirectory]): Map[Int, Array[PartitionedFile]] = {
+    partitions.flatMap { p =>
+      p.files.map { f =>
+        PartitionedFileUtil.getPartitionedFile(f, f.getPath, p.values)
       }
-   }
+    }.groupBy { f =>
+      BucketingUtils
+        .getBucketId(new Path(f.filePath).getName)
+        .getOrElse(sys.error(s"Invalid bucket file ${f.filePath}"))
+    }
+  }
 
   override def getSplitFiles(
       partitions: Array[PartitionDirectory],

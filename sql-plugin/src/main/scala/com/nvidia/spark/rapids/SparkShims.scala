@@ -108,10 +108,12 @@ trait SparkShims {
       rule: SparkSession => Rule[SparkPlan])
 
   def getShuffleManagerShims(): ShuffleManagerShimBase
-  def getFileStatusSize(partitions: Seq[PartitionDirectory]): Long
-  def getFilesGroupedToBuckets(
+
+  def getPartitionFileNames(partitions: Seq[PartitionDirectory]): Seq[String]
+  def getPartitionFileStatusSize(partitions: Seq[PartitionDirectory]): Long
+  def getPartitionFilesGroupedToBuckets(
     partitions: Array[PartitionDirectory]):  Map[Int, Array[PartitionedFile]]
-  def getSplitFiles(
+  def getPartitionSplitFiles(
       partitions: Array[PartitionDirectory],
       maxSplitBytes: Long,
       relation: HadoopFsRelation): Array[PartitionedFile]

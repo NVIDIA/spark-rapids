@@ -240,24 +240,30 @@ class Spark300Shims extends SparkShims {
     new ShuffleManagerShim
   }
 
-  override def getFileStatusSize(partitions: Seq[PartitionDirectory]): Long = {
+  override def getPartitionFileNames(
+      partitions: Seq[PartitionDirectory]): Seq[String] = {
+    val files = partitions.flatMap(partition => partition.files)
+    files.map(_.getPath.getName)
+  }
+
+  override def getPartitionFileStatusSize(partitions: Seq[PartitionDirectory]): Long = {
     partitions.map(_.files.map(_.getLen).sum).sum
   }
 
-  override def getFilesGroupedToBuckets(
-    partitions: Array[PartitionDirectory]):  Map[Int, Array[PartitionedFile]] = {
-      partitions.flatMap { p =>
-        p.files.map { f =>
-          PartitionedFileUtil.getPartitionedFile(f, f.getPath, p.values)
-        }
-      }.groupBy { f =>
-        BucketingUtils
-          .getBucketId(new Path(f.filePath).getName)
-          .getOrElse(sys.error(s"Invalid bucket file ${f.filePath}"))
+  override def getPartitionFilesGroupedToBuckets(
+      partitions: Array[PartitionDirectory]): Map[Int, Array[PartitionedFile]] = {
+    partitions.flatMap { p =>
+      p.files.map { f =>
+        PartitionedFileUtil.getPartitionedFile(f, f.getPath, p.values)
       }
+    }.groupBy { f =>
+      BucketingUtils
+        .getBucketId(new Path(f.filePath).getName)
+        .getOrElse(sys.error(s"Invalid bucket file ${f.filePath}"))
+    }
   }
 
-  override def getSplitFiles(
+  override def getPartitionSplitFiles(
       partitions: Array[PartitionDirectory],
       maxSplitBytes: Long,
       relation: HadoopFsRelation): Array[PartitionedFile] = {
@@ -278,6 +284,7 @@ class Spark300Shims extends SparkShims {
       }
     }
   }
+
   override def getFileScanRDD(
       sparkSession: SparkSession,
       readFunction: (PartitionedFile) => Iterator[InternalRow],

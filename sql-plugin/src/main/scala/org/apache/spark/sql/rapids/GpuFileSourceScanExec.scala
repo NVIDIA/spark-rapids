@@ -21,7 +21,6 @@ import java.util.concurrent.TimeUnit.NANOSECONDS
 import scala.collection.mutable.HashMap
 
 import com.nvidia.spark.rapids.{GpuExec, GpuMetricNames, GpuReadCSVFileFormat, GpuReadFileFormatWithMetrics, GpuReadOrcFileFormat, GpuReadParquetFileFormat, ShimLoader, SparkPlanMeta}
-import org.apache.hadoop.fs.Path
 
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.{InternalRow, TableIdentifier}
@@ -185,9 +184,9 @@ case class GpuFileSourceScanExec(
         // the RDD partition will not be sorted even if the relation has sort columns set
         // Current solution is to check if all the buckets have a single file in it
 
-        val files = selectedPartitions.flatMap(partition => partition.files)
+        val filesPartNames = ShimLoader.getSparkShims.getPartitionFileNames(selectedPartitions)
         val bucketToFilesGrouping =
-          files.map(_.getPath.getName).groupBy(file => BucketingUtils.getBucketId(file))
+          filesPartNames.groupBy(file => BucketingUtils.getBucketId(file))
         val singleFilePartitions = bucketToFilesGrouping.forall(p => p._2.length <= 1)
 
         // TODO SPARK-24528 Sort order is currently ignored if buckets are coalesced.
@@ -311,7 +310,7 @@ case class GpuFileSourceScanExec(
       partitions: Seq[PartitionDirectory],
       static: Boolean): Unit = {
     val filesNum = partitions.map(_.files.size.toLong).sum
-    val filesSize = ShimLoader.getSparkShims.getFileStatusSize(partitions)
+    val filesSize = ShimLoader.getSparkShims.getPartitionFileStatusSize(partitions)
     if (!static || partitionFilters.filter(isDynamicPruningFilter).isEmpty) {
       driverMetrics("numFiles") = filesNum
       driverMetrics("filesSize") = filesSize
@@ -392,7 +391,7 @@ case class GpuFileSourceScanExec(
     logInfo(s"Planning with ${bucketSpec.numBuckets} buckets")
 
     val filesGroupedToBuckets =
-      ShimLoader.getSparkShims.getFilesGroupedToBuckets(selectedPartitions)
+      ShimLoader.getSparkShims.getPartitionFilesGroupedToBuckets(selectedPartitions)
 
     val prunedFilesGroupedToBuckets = if (optionalBucketSet.isDefined) {
       val bucketSet = optionalBucketSet.get
@@ -441,7 +440,7 @@ case class GpuFileSourceScanExec(
       s"open cost is considered as scanning $openCostInBytes bytes.")
 
     val splitFiles = ShimLoader.getSparkShims
-      .getSplitFiles(selectedPartitions, maxSplitBytes, relation)
+      .getPartitionSplitFiles(selectedPartitions, maxSplitBytes, relation)
       .sortBy(_.length)(implicitly[Ordering[Long]].reverse)
 
     val partitions =
