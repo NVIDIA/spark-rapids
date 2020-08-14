@@ -237,7 +237,7 @@ class GpuOrcPartitionReader(
     maxReadBatchSizeRows: Integer,
     maxReadBatchSizeBytes: Long,
     execMetrics : Map[String, SQLMetric]) extends PartitionReader[ColumnarBatch] with Logging
-  with ScanWithMetrics {
+    with ScanWithMetrics with Arm {
   private var batch: Option[ColumnarBatch] = None
   private val ctx = initializeOrcReaders
   private var maxDeviceMemory: Long = 0
@@ -298,8 +298,7 @@ class GpuOrcPartitionReader(
   }
 
   private def readBatch(): Option[ColumnarBatch] = {
-    val nvtxRange = new NvtxWithMetrics("ORC readBatch", NvtxColor.GREEN, metrics(TOTAL_TIME))
-    try {
+    withResource(new NvtxWithMetrics("ORC readBatch", NvtxColor.GREEN, metrics(TOTAL_TIME))) { _ =>
       val currentStripes = populateCurrentBlockChunk()
       if (readDataSchema.isEmpty) {
         // not reading any data, so return a degenerate ColumnarBatch with the row count
@@ -313,8 +312,6 @@ class GpuOrcPartitionReader(
           table.foreach(_.close())
         }
       }
-    } finally {
-      nvtxRange.close()
     }
   }
 
@@ -664,9 +661,8 @@ class GpuOrcPartitionReader(
   }
 
   private def readPartFile(stripes: Seq[OrcOutputStripe]): (HostMemoryBuffer, Long) = {
-    val nvtxRange = new NvtxWithMetrics("Buffer file split", NvtxColor.YELLOW,
-      metrics("bufferTime"))
-    try {
+    withResource(new NvtxWithMetrics("Buffer file split", NvtxColor.YELLOW,
+        metrics("bufferTime"))) { _ =>
       if (stripes.isEmpty) {
         return (null, 0L)
       }
@@ -684,8 +680,6 @@ class GpuOrcPartitionReader(
           hmb.close()
         }
       }
-    } finally {
-      nvtxRange.close()
     }
   }
 
@@ -708,7 +702,10 @@ class GpuOrcPartitionReader(
         // about to start using the GPU
         GpuSemaphore.acquireIfNecessary(TaskContext.get())
 
-        val table = Table.readORC(parseOpts, dataBuffer, 0, dataSize)
+        val table = withResource(new NvtxWithMetrics("ORC decode", NvtxColor.DARK_GREEN,
+            metrics(GPU_DECODE_TIME))) { _ =>
+          Table.readORC(parseOpts, dataBuffer, 0, dataSize)
+        }
         val batchSizeBytes = GpuColumnVector.getTotalDeviceMemoryUsed(table)
         logDebug(s"GPU batch size: $batchSizeBytes bytes")
         maxDeviceMemory = max(batchSizeBytes, maxDeviceMemory)
