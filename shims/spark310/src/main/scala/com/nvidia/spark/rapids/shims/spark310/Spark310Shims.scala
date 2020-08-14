@@ -30,9 +30,9 @@ import org.apache.spark.sql.execution._
 import org.apache.spark.sql.execution.datasources.HadoopFsRelation
 import org.apache.spark.sql.execution.joins.{BroadcastHashJoinExec, BroadcastNestedLoopJoinExec, HashJoin, SortMergeJoinExec}
 import org.apache.spark.sql.execution.joins.ShuffledHashJoinExec
-import org.apache.spark.sql.rapids
-import org.apache.spark.sql.rapids.{GpuFileSourceScanExec, GpuTimeSub}
+import org.apache.spark.sql.rapids.{GpuFileSourceScanExec, GpuTimeSub, ShuffleManagerShimBase}
 import org.apache.spark.sql.rapids.execution.GpuBroadcastNestedLoopJoinExecBase
+import org.apache.spark.sql.rapids.shims.spark310._
 import org.apache.spark.sql.types._
 import org.apache.spark.storage.{BlockId, BlockManagerId}
 import org.apache.spark.unsafe.types.CalendarInterval
@@ -140,7 +140,7 @@ class Spark310Shims extends Spark301Shims {
               wrapped.relation.bucketSpec,
               GpuFileSourceScanExec.convertFileFormat(wrapped.relation.fileFormat),
               wrapped.relation.options)(wrapped.relation.sparkSession)
-            rapids.GpuFileSourceScanExec(
+            GpuFileSourceScanExec(
               newRelation,
               wrapped.output,
               wrapped.requiredSchema,
@@ -173,5 +173,9 @@ class Spark310Shims extends Spark301Shims {
 
   override def getRapidsShuffleManagerClass: String = {
     classOf[RapidsShuffleManager].getCanonicalName
+  }
+
+  override def getShuffleManagerShims(): ShuffleManagerShimBase = {
+    new ShuffleManagerShim
   }
 }

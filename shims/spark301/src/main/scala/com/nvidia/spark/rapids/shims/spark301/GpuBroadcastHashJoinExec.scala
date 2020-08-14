@@ -5,7 +5,7 @@
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
  *
- *     http://www.apache.org/licenses/LICENSE-2.0
+ *   http://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
@@ -13,30 +13,25 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+package com.nvidia.spark.rapids.shims.spark301
 
-package com.nvidia.spark.rapids.shims.spark310
-
-import com.nvidia.spark.rapids._
-import com.nvidia.spark.rapids.GpuMetricNames._
-import com.nvidia.spark.rapids.shims.spark301.GpuBroadcastExchangeExec
+import com.nvidia.spark.rapids.{BaseExprMeta, ConfKeysAndIncompat, GpuBindReferences, GpuColumnVector, GpuExec, GpuOverrides, GpuProjectExec, RapidsConf, RapidsMeta, SparkPlanMeta}
+import com.nvidia.spark.rapids.GpuMetricNames.{NUM_OUTPUT_BATCHES, NUM_OUTPUT_ROWS, TOTAL_TIME}
+import com.nvidia.spark.rapids.shims.spark300.GpuHashJoin
 
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.expressions.Expression
-import org.apache.spark.sql.catalyst.optimizer.{BuildLeft, BuildRight, BuildSide}
 import org.apache.spark.sql.catalyst.plans.JoinType
 import org.apache.spark.sql.catalyst.plans.physical.{BroadcastDistribution, Distribution, UnspecifiedDistribution}
 import org.apache.spark.sql.execution.{BinaryExecNode, SparkPlan}
 import org.apache.spark.sql.execution.adaptive.BroadcastQueryStageExec
 import org.apache.spark.sql.execution.exchange.ReusedExchangeExec
-import org.apache.spark.sql.execution.joins.{BroadcastHashJoinExec, HashedRelationBroadcastMode}
+import org.apache.spark.sql.execution.joins.{BroadcastHashJoinExec, BuildLeft, BuildRight, BuildSide, HashedRelationBroadcastMode}
 import org.apache.spark.sql.execution.metric.{SQLMetric, SQLMetrics}
 import org.apache.spark.sql.rapids.execution.{GpuBroadcastExchangeExecBase, SerializeConcatHostBuffersDeserializeBatch}
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
-/**
- *  Spark 3.1 changed packages of BuildLeft, BuildRight, BuildSide
- */
 class GpuBroadcastHashJoinMeta(
     join: BroadcastHashJoinExec,
     conf: RapidsConf,
@@ -57,13 +52,13 @@ class GpuBroadcastHashJoinMeta(
     GpuHashJoin.tagJoin(this, join.joinType, join.leftKeys, join.rightKeys, join.condition)
 
     val buildSide = join.buildSide match {
-      case BuildLeft => childPlans(0)
-      case BuildRight => childPlans(1)
+     case BuildLeft => childPlans(0)
+     case BuildRight => childPlans(1)
     }
 
     buildSide.wrapped match {
       case _: BroadcastQueryStageExec =>
-      // this already ran on GPU
+        // this already ran on GPU
 
       case _ =>
         if (!buildSide.canThisBeReplaced) {
@@ -131,7 +126,8 @@ case class GpuBroadcastHashJoinExec(
   }
 
   override def doExecute(): RDD[InternalRow] =
-    throw new IllegalStateException("GpuBroadcastHashJoin does not support row-based processing")
+    throw new IllegalStateException(
+      "GpuBroadcastHashJoin does not support row-based processing")
 
   override def doExecuteColumnar() : RDD[ColumnarBatch] = {
     val numOutputRows = longMetric(NUM_OUTPUT_ROWS)
@@ -162,3 +158,4 @@ case class GpuBroadcastHashJoinExec(
         numOutputBatches, joinTime, filterTime, totalTime))
   }
 }
+

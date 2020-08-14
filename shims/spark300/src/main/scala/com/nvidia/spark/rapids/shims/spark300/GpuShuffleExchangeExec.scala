@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020, NVIDIA CORPORATION. All rights reserved.
+ * Copyright (c) 2020, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -13,12 +13,12 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package com.nvidia.spark.rapids.tests.tpch
+package com.nvidia.spark.rapids.shims.spark300
 
-import org.scalatest.Ignore
+import org.apache.spark.sql.catalyst.plans.physical.Partitioning
+import org.apache.spark.sql.execution.SparkPlan
+import org.apache.spark.sql.rapids.execution.GpuShuffleExchangeExecBase
 
-// we need the AQE suites to have unique names so that they don't overwrite
-// surefire results from the original suites
-class TpchLikeAdaptiveSparkSuite extends TpchLikeSparkSuite {
-  override def adaptiveQueryEnabled: Boolean = true
-}
+case class GpuShuffleExchangeExec(
+    override val outputPartitioning: Partitioning,
+    child: SparkPlan) extends GpuShuffleExchangeExecBase(outputPartitioning, child)
