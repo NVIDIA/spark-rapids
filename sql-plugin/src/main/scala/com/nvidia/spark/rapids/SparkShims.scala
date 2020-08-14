@@ -111,8 +111,7 @@ trait SparkShims {
 
   def getPartitionFileNames(partitions: Seq[PartitionDirectory]): Seq[String]
   def getPartitionFileStatusSize(partitions: Seq[PartitionDirectory]): Long
-  def getPartitionFilesGroupedToBuckets(
-    partitions: Array[PartitionDirectory]):  Map[Int, Array[PartitionedFile]]
+  def getPartitionedFiles(partitions: Array[PartitionDirectory]): Array[PartitionedFile]
   def getPartitionSplitFiles(
       partitions: Array[PartitionDirectory],
       maxSplitBytes: Long,

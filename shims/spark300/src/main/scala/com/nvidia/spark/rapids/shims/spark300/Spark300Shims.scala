@@ -250,16 +250,12 @@ class Spark300Shims extends SparkShims {
     partitions.map(_.files.map(_.getLen).sum).sum
   }
 
-  override def getPartitionFilesGroupedToBuckets(
-      partitions: Array[PartitionDirectory]): Map[Int, Array[PartitionedFile]] = {
+  override def getPartitionedFiles(
+      partitions: Array[PartitionDirectory]): Array[PartitionedFile] = {
     partitions.flatMap { p =>
       p.files.map { f =>
         PartitionedFileUtil.getPartitionedFile(f, f.getPath, p.values)
       }
-    }.groupBy { f =>
-      BucketingUtils
-        .getBucketId(new Path(f.filePath).getName)
-        .getOrElse(sys.error(s"Invalid bucket file ${f.filePath}"))
     }
   }
 
