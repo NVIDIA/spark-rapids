@@ -410,6 +410,7 @@ def createBucketedTableAndJoin(spark):
     bucketed_4_10e6 = spark.table("bucketed_4_10e6")
     return bucketed_4_10e4.join(bucketed_4_10e6, "id")
 
+@pytest.mark.skip(reason="3.0.1 and 3.1.0 tgzs not built with hive")
 @ignore_order
 @allow_non_gpu('DataWritingCommandExec')
 @pytest.mark.parametrize('small_file_opt', ["true", "false"])

@@ -19,8 +19,8 @@ def _spark__init():
     # DO NOT SET ANY OTHER CONFIGS HERE!!!
     # due to bugs in pyspark/pytest it looks like any configs set here
     # can be reset in the middle of a test if specific operations are done (some types of cast etc)
+    # This is needed for parquet bucket tests: enableHiveSupport() \
     _s = SparkSession.builder \
-            .enableHiveSupport() \
             .config('spark.plugins', 'com.nvidia.spark.SQLPlugin') \
             .config('spark.sql.queryExecutionListeners', 'com.nvidia.spark.rapids.ExecutionPlanCaptureCallback')\
             .appName('rapids spark plugin integration tests (python)').getOrCreate()
