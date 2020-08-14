@@ -376,7 +376,6 @@ case class GpuParquetPartitionReaderFactory(
   private val isCorrectedRebase =
     "CORRECTED" == sqlConf.getConf(SQLConf.LEGACY_PARQUET_REBASE_MODE_IN_READ)
 
-
   override def supportColumnarReads(partition: InputPartition): Boolean = true
 
   override def buildReader(partitionedFile: PartitionedFile): PartitionReader[InternalRow] = {
@@ -1102,7 +1101,6 @@ class ParquetPartitionReader(
     }
   }
 
-
   private def readToTable(currentChunkedBlocks: Seq[BlockMetaData]): Option[Table] = {
     if (currentChunkedBlocks.isEmpty) {
       return None
@@ -1177,7 +1175,7 @@ class ParquetPartitionReader(
     readNextBatch()
 
     logDebug(s"Loaded $numRows rows from Parquet. Parquet bytes read: $numParquetBytes. " +
-       s"Estimated GPU bytes: $numBytes")
+      s"Estimated GPU bytes: $numBytes")
 
     currentChunk
   }
@@ -1232,3 +1230,4 @@ object ParquetPartitionReader {
     })
   }
 }
+
