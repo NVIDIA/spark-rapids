@@ -202,6 +202,8 @@ abstract class RapidsShuffleInternalManagerBase(conf: SparkConf, isDriver: Boole
 
   //Many of these values like blockManager are not initialized when the constructor is called,
   // so they all need to be lazy values that are executed when things are first called
+
+  // NOTE: this can be null in the driver side.
   private[this] lazy val catalog = GpuShuffleEnv.getCatalog
   private lazy val env = SparkEnv.get
   private lazy val blockManager = env.blockManager
@@ -284,7 +286,7 @@ abstract class RapidsShuffleInternalManagerBase(conf: SparkConf, isDriver: Boole
           gpu.asInstanceOf[GpuShuffleHandle[K, V]],
           mapId,
           metrics,
-          GpuShuffleEnv.getCatalog,
+          catalog,
           GpuShuffleEnv.getDeviceStorage,
           server)
       case other =>
