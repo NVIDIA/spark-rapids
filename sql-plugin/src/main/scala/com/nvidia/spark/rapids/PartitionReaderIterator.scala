@@ -16,12 +16,11 @@
 
 package com.nvidia.spark.rapids
 
-import org.apache.spark.{SparkContext, TaskContext}
+import org.apache.spark.TaskContext
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.connector.read.PartitionReader
 import org.apache.spark.sql.execution.datasources.PartitionedFile
 import org.apache.spark.sql.execution.datasources.v2.FilePartitionReaderFactory
-import org.apache.spark.sql.execution.metric.{SQLMetric, SQLMetrics}
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
 /**
@@ -59,20 +58,5 @@ object PartitionReaderIterator {
       val reader = factory.buildColumnarReader(file)
       new PartitionReaderIterator(reader).asInstanceOf[Iterator[InternalRow]]
     }
-  }
-
-  // builds the map of metrics needed by the GPU batch scan code
-  def buildScanMetrics(sparkContext: SparkContext): Map[String, SQLMetric] = {
-    Map(
-      GpuMetricNames.NUM_OUTPUT_ROWS -> SQLMetrics.createMetric(sparkContext,
-        GpuMetricNames.DESCRIPTION_NUM_OUTPUT_ROWS),
-      GpuMetricNames.NUM_OUTPUT_BATCHES -> SQLMetrics.createMetric(sparkContext,
-        GpuMetricNames.DESCRIPTION_NUM_OUTPUT_BATCHES),
-      GpuMetricNames.TOTAL_TIME -> SQLMetrics.createNanoTimingMetric(sparkContext,
-        GpuMetricNames.DESCRIPTION_TOTAL_TIME),
-      "bufferTime" -> SQLMetrics.createNanoTimingMetric(sparkContext, "buffer time"),
-      GpuMetricNames.PEAK_DEVICE_MEMORY ->
-        SQLMetrics.createSizeMetric(sparkContext, GpuMetricNames.DESCRIPTION_PEAK_DEVICE_MEMORY)
-    )
   }
 }
