@@ -29,7 +29,7 @@ import org.apache.spark.sql.execution._
 import org.apache.spark.sql.execution.datasources.HadoopFsRelation
 import org.apache.spark.sql.execution.joins.{BroadcastHashJoinExec, BroadcastNestedLoopJoinExec, HashJoin, SortMergeJoinExec}
 import org.apache.spark.sql.execution.joins.ShuffledHashJoinExec
-import org.apache.spark.sql.rapids.GpuTimeSub
+import org.apache.spark.sql.rapids.{GpuFileSourceScanExec, GpuTimeSub}
 import org.apache.spark.sql.rapids.execution.GpuBroadcastNestedLoopJoinExecBase
 import org.apache.spark.sql.rapids.shims.spark300db._
 import org.apache.spark.sql.types._
@@ -94,6 +94,8 @@ class Spark300dbShims extends Spark300Shims {
               wrapped.requiredSchema,
               wrapped.partitionFilters,
               wrapped.optionalBucketSet,
+              // TODO: Does Databricks have coalesced bucketing implemented?
+              None,
               wrapped.dataFilters,
               wrapped.tableIdentifier)
           }
