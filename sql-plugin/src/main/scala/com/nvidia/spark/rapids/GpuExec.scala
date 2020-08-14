@@ -26,6 +26,7 @@ object GpuMetricNames {
 
   // Metric names.
   val BUFFER_TIME = "bufferTime"
+  val GPU_DECODE_TIME = "gpuDecodeTime"
   val NUM_INPUT_ROWS = "numInputRows"
   val NUM_INPUT_BATCHES = "numInputBatches"
   val NUM_OUTPUT_ROWS = "numOutputRows"
@@ -45,6 +46,7 @@ object GpuMetricNames {
     Map(
       NUM_OUTPUT_BATCHES -> SQLMetrics.createMetric(sparkContext, DESCRIPTION_NUM_OUTPUT_BATCHES),
       TOTAL_TIME -> SQLMetrics.createNanoTimingMetric(sparkContext, DESCRIPTION_TOTAL_TIME),
+      GPU_DECODE_TIME -> SQLMetrics.createNanoTimingMetric(sparkContext, "GPU decode time"),
       BUFFER_TIME -> SQLMetrics.createNanoTimingMetric(sparkContext, "buffer time"),
       PEAK_DEVICE_MEMORY -> SQLMetrics.createSizeMetric(sparkContext,
         DESCRIPTION_PEAK_DEVICE_MEMORY))
