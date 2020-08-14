@@ -423,8 +423,6 @@ case class GpuFileSourceScanExec(
         FilePartition(bucketId, prunedFilesGroupedToBuckets.getOrElse(bucketId, Array.empty))
       }
     }
-
-    // new FileScanRDD(fsRelation.sparkSession, readFile, filePartitions)
     ShimLoader.getSparkShims.getFileScanRDD(fsRelation.sparkSession, readFile, filePartitions)
   }
 
@@ -453,7 +451,6 @@ case class GpuFileSourceScanExec(
     val partitions =
       FilePartition.getFilePartitions(relation.sparkSession, splitFiles, maxSplitBytes)
 
-    // new FileScanRDD(fsRelation.sparkSession, readFile, partitions)
     ShimLoader.getSparkShims.getFileScanRDD(fsRelation.sparkSession, readFile, partitions)
   }
 
