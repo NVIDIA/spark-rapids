@@ -34,13 +34,19 @@ class AdaptiveQueryExecSuite
 
     val dfAdaptive = spark.sql(query)
     val planBefore = dfAdaptive.queryExecution.executedPlan
+    // isFinalPlan is a private field so we have to use toString to access it
     assert(planBefore.toString.startsWith("AdaptiveSparkPlan isFinalPlan=false"))
 
     dfAdaptive.collect()
     val planAfter = dfAdaptive.queryExecution.executedPlan
+    // isFinalPlan is a private field so we have to use toString to access it
     assert(planAfter.toString.startsWith("AdaptiveSparkPlan isFinalPlan=true"))
     val adaptivePlan = planAfter.asInstanceOf[AdaptiveSparkPlanExec].executedPlan
 
+    // With AQE, the query is broken down into query stages based on exchange boundaries, so the
+    // final query that is executed depends on the results from its child query stages. There
+    // cannot be any exchange nodes left when the final query is executed because they will
+    // have already been replaced with QueryStageExecs.
     val exchanges = adaptivePlan.collect {
       case e: Exchange => e
     }
