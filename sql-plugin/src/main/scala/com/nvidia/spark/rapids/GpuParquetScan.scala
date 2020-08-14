@@ -291,7 +291,7 @@ case class GpuParquetMultiFilePartitionReaderFactory(
     var clippedSchema: MessageType = null
     var isCorrectedRebaseForThis: Option[Boolean] = None
 
-    logDebug(s"files are: ${files.mkString(",")} for task ${TaskContext.get().partitionId()}")
+    logWarning(s"files num: ${files.size} for task ${TaskContext.get().partitionId()}")
     files.map { file =>
       val filePath = new Path(new URI(file.filePath))
       //noinspection ScalaDeprecation
@@ -498,7 +498,8 @@ abstract class FileParquetPartitionReaderBase(
       // the number of column chunks and then saying there are 2 fields that could be larger and
       // assume max size of those would be 8 bytes worst case. So we probably allocate to much here
       // but it shouldn't be by a huge amount and its better then having to realloc and copy.
-      val numColumnChunks = currentChunkedBlocks.head.getColumns().size() * currentChunkedBlocks.size
+      val numCols = currentChunkedBlocks.head.getColumns().size()
+      val numColumnChunks = numCols * currentChunkedBlocks.size
       logWarning(s"extra size is: ${numColumnChunks * 2 * 8}")
       numColumnChunks * 2 * 8
     } else {
@@ -506,7 +507,7 @@ abstract class FileParquetPartitionReaderBase(
     }
     val totalSize = size + footerSize + extraMemory
     // TODO -remove
-    logWarning(s"calculated size is : $totalSize, $footerSize")
+    logWarning(s"calculated size is : $totalSize, $footerSize, extra: $extraMemory")
     totalSize
   }
 
@@ -777,7 +778,7 @@ class MultiFileParquetPartitionReader(
     try {
       var succeeded = false
       val allBlocks = blocks.map(_._2)
-      val estTotalSize = calculateParquetOutputSize(allBlocks, currentClippedSchema, false)
+      val estTotalSize = calculateParquetOutputSize(allBlocks, currentClippedSchema, true)
       // TODO - remove
       logWarning(s"calculated size for hostmemory buffer: $estTotalSize")
       var hmb = HostMemoryBuffer.allocate(estTotalSize)
@@ -806,7 +807,6 @@ class MultiFileParquetPartitionReader(
         // 4 + 4 is for writing size and the ending PARQUET_MAGIC.
         val realSize = footerPos + actualFooterSize + 4 + 4
         val currentSize = if (realSize > estTotalSize) {
-          // realloc memory and copy
           logWarning(s"The original estimated size $estTotalSize is to small, " +
             s"reallocing and copying data to bigger buffer size: $realSize")
           val prevhmb = hmb
@@ -945,7 +945,7 @@ class MultiFileParquetPartitionReader(
             blockIterator.head.schema.asGroupType().getFields.asScala.map(_.getName)
           val schemaCurrentfile =
             currentClippedSchema.asGroupType().getFields.asScala.map(_.getName)
-          if (schemaNextfile.sameElements(schemaCurrentfile)) {
+          if (!schemaNextfile.sameElements(schemaCurrentfile)) {
             logWarning(s"File schema for the next file ${blockIterator.head.filePath}" +
               s" doesn't match current $currentFile, splitting it into another batch!")
             return
