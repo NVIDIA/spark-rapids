@@ -500,14 +500,14 @@ abstract class FileParquetPartitionReaderBase(
       // but it shouldn't be by a huge amount and its better then having to realloc and copy.
       val numCols = currentChunkedBlocks.head.getColumns().size()
       val numColumnChunks = numCols * currentChunkedBlocks.size
-      logWarning(s"extra size is: ${numColumnChunks * 2 * 8}")
+      // logWarning(s"extra size is: ${numColumnChunks * 2 * 8}")
       numColumnChunks * 2 * 8
     } else {
       0
     }
     val totalSize = size + footerSize + extraMemory
     // TODO -remove
-    logWarning(s"calculated size is : $totalSize, $footerSize, extra: $extraMemory")
+    // logWarning(s"calculated size is : $totalSize, $footerSize, extra: $extraMemory")
     totalSize
   }
 
@@ -780,7 +780,7 @@ class MultiFileParquetPartitionReader(
       val allBlocks = blocks.map(_._2)
       val estTotalSize = calculateParquetOutputSize(allBlocks, currentClippedSchema, true)
       // TODO - remove
-      logWarning(s"calculated size for hostmemory buffer: $estTotalSize")
+      // logWarning(s"calculated size for hostmemory buffer: $estTotalSize")
       var hmb = HostMemoryBuffer.allocate(estTotalSize)
       var out = new HostMemoryOutputStream(hmb)
       try {
@@ -802,8 +802,8 @@ class MultiFileParquetPartitionReader(
         val actualFooterSize = calculateParquetFooterSize(allOutputBlocks, currentClippedSchema)
         val footerPos = out.getPos
         // TODO - remove
-        logWarning(s"actual write before write footer count is: ${footerPos} actual " +
-          s"footer size: $actualFooterSize")
+        // logWarning(s"actual write before write footer count is: ${footerPos} actual " +
+        //  s"footer size: $actualFooterSize")
         // 4 + 4 is for writing size and the ending PARQUET_MAGIC.
         val realSize = footerPos + actualFooterSize + 4 + 4
         val currentSize = if (realSize > estTotalSize) {
@@ -824,7 +824,7 @@ class MultiFileParquetPartitionReader(
         out.write(ParquetPartitionReader.PARQUET_MAGIC)
         succeeded = true
         // TODO - remove
-        logWarning(s"Actual written out size: ${out.getPos}")
+        // logWarning(s"Actual written out size: ${out.getPos}")
         // triple check we didn't go over memory
         if (out.getPos > currentSize) {
           throw new QueryExecutionException(s"Calculated buffer size $currentSize is to " +
@@ -1129,8 +1129,6 @@ class ParquetPartitionReader(
           }
         }
         maxDeviceMemory = max(GpuColumnVector.getTotalDeviceMemoryUsed(table), maxDeviceMemory)
-        logWarning("readDataSchema is : " + readDataSchema.fieldNames.mkString(","))
-        logWarning("actual columsn " + table.getNumberOfColumns)
         if (readDataSchema.length < table.getNumberOfColumns) {
           table.close()
           throw new QueryExecutionException(s"Expected ${readDataSchema.length} columns " +

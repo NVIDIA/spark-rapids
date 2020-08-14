@@ -211,11 +211,11 @@ def test_simple_partitioned_read_fail_legacy(spark_tmp_path, small_file_opt, v1_
     gen_list = [('_c' + str(i), gen) for i, gen in enumerate(parquet_gens)]
     first_data_path = spark_tmp_path + '/PARQUET_DATA/key=0'
     with_cpu_session(
-            lambda spark : gen_df(spark, gen_list, 1).write.parquet(first_data_path),
+            lambda spark : gen_df(spark, gen_list, 1).repartition(1).write.parquet(first_data_path),
             conf={'spark.sql.legacy.parquet.datetimeRebaseModeInWrite': 'LEGACY'})
     second_data_path = spark_tmp_path + '/PARQUET_DATA/key=1'
     with_cpu_session(
-            lambda spark : gen_df(spark, gen_list, 1).write.parquet(second_data_path),
+            lambda spark : gen_df(spark, gen_list, 1).repartition(1).write.parquet(second_data_path),
             conf={'spark.sql.legacy.parquet.datetimeRebaseModeInWrite': 'CORRECTED'})
     data_path = spark_tmp_path + '/PARQUET_DATA'
     with_gpu_session(
@@ -227,7 +227,7 @@ def test_simple_partitioned_read_fail_legacy(spark_tmp_path, small_file_opt, v1_
 
 @pytest.mark.parametrize('small_file_opt', ["false", "true"])
 @pytest.mark.parametrize('v1_enabled_list', ["", "parquet"])
-def test_read_chema_missing_cols(spark_tmp_path, v1_enabled_list, small_file_opt):
+def test_read_schema_missing_cols(spark_tmp_path, v1_enabled_list, small_file_opt):
     # Once https://github.com/NVIDIA/spark-rapids/issues/133 and https://github.com/NVIDIA/spark-rapids/issues/132 are fixed 
     # we should go with a more standard set of generators
     parquet_gens = [byte_gen, short_gen, int_gen, long_gen]
@@ -420,3 +420,24 @@ def test_buckets(spark_tmp_path, small_file_opt, v1_enabled_list):
             conf={'spark.rapids.sql.format.parquet.smallFiles.enabled': small_file_opt,
                   'spark.sql.sources.useV1SourceList': v1_enabled_list,
                   "spark.sql.autoBroadcastJoinThreshold": '-1'})
+
+@pytest.mark.parametrize('v1_enabled_list', ["", "parquet"])
+def test_small_file_memory(spark_tmp_path, v1_enabled_list):
+    # stress the memory usage by creating a lot of small files.
+    # The more files we combine the more the offsets will be different which will cause
+    # footer size to change.
+    # Without the addition of extraMemory in GpuParquetScan this would cause reallocations
+    # of the host memory buffers.
+    cols = [string_gen] * 4
+    gen_list = [('_c' + str(i), gen ) for i, gen in enumerate(cols)]
+    first_data_path = spark_tmp_path + '/PARQUET_DATA'
+    with_cpu_session(
+            lambda spark : gen_df(spark, gen_list).repartition(2000).write.parquet(first_data_path),
+            conf={'spark.sql.legacy.parquet.datetimeRebaseModeInWrite': 'CORRECTED'})
+    data_path = spark_tmp_path + '/PARQUET_DATA'
+    assert_gpu_and_cpu_are_equal_collect(
+            lambda spark : spark.read.parquet(data_path),
+            conf={'spark.rapids.sql.format.parquet.smallFiles.enabled': 'true',
+                  'spark.sql.files.maxPartitionBytes': "1g",
+                  'spark.sql.sources.useV1SourceList': v1_enabled_list})
+
