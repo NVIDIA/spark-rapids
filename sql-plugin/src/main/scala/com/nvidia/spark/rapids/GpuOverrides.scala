@@ -29,6 +29,7 @@ import org.apache.spark.sql.catalyst.plans.physical._
 import org.apache.spark.sql.catalyst.rules.Rule
 import org.apache.spark.sql.connector.read.Scan
 import org.apache.spark.sql.execution._
+import org.apache.spark.sql.execution.adaptive.CustomShuffleReaderExec
 import org.apache.spark.sql.execution.aggregate.{HashAggregateExec, SortAggregateExec}
 import org.apache.spark.sql.execution.command.{DataWritingCommand, DataWritingCommandExec}
 import org.apache.spark.sql.execution.datasources.{HadoopFsRelation, InsertIntoHadoopFsRelationCommand}
@@ -46,7 +47,7 @@ import org.apache.spark.sql.execution.joins.{BroadcastHashJoinExec, BroadcastNes
 import org.apache.spark.sql.execution.window.WindowExec
 import org.apache.spark.sql.rapids._
 import org.apache.spark.sql.rapids.catalyst.expressions.GpuRand
-import org.apache.spark.sql.rapids.execution.{GpuBroadcastMeta, GpuBroadcastNestedLoopJoinMeta}
+import org.apache.spark.sql.rapids.execution.{GpuBroadcastMeta, GpuBroadcastNestedLoopJoinMeta, GpuCustomShuffleReaderExec, GpuShuffleMeta}
 import org.apache.spark.sql.types._
 import org.apache.spark.unsafe.types.{CalendarInterval, UTF8String}
 
@@ -335,6 +336,11 @@ object GpuOverrides {
     "\f", "\\a", "\\e", "\\cx", "[", "]", "^", "&", ".", "*", "\\d", "\\D", "\\h", "\\H", "\\s",
     "\\S", "\\v", "\\V", "\\w", "\\w", "\\p", "$", "\\b", "\\B", "\\A", "\\G", "\\Z", "\\z", "\\R",
     "?", "|", "(", ")", "{", "}", "\\k", "\\Q", "\\E", ":", "!", "<=", ">")
+
+  def canRegexpBeTreatedLikeARegularString(strLit: UTF8String): Boolean = {
+    val s = strLit.toString
+    !regexList.exists(pattern => s.contains(pattern))
+  }
 
   @scala.annotation.tailrec
   def extractLit(exp: Expression): Option[Literal] = exp match {
@@ -1334,6 +1340,12 @@ object GpuOverrides {
             pad: Expression): GpuExpression =
           GpuStringRPad(str, width, pad)
       }),
+    expr[StringSplit](
+       "Splits `str` around occurrences that match `regex`",
+      (in, conf, p, r) => new GpuStringSplitMeta(in, conf, p, r)),
+    expr[GetArrayItem](
+      "Gets the field at `ordinal` in the Array",
+      (in, conf, p, r) => new GpuGetArrayItemMeta(in, conf, p, r)),
     expr[StringLocate](
       "Substring search operator",
       (in, conf, p, r) => new TernaryExprMeta[StringLocate](in, conf, p, r) {
@@ -1750,7 +1762,21 @@ object GpuOverrides {
       "Window-operator backend",
       (windowOp, conf, p, r) =>
         new GpuWindowExecMeta(windowOp, conf, p, r)
-    )
+    ),
+    exec[CustomShuffleReaderExec]("A wrapper of shuffle query stage", (exec, conf, p, r) =>
+      new SparkPlanMeta[CustomShuffleReaderExec](exec, conf, p, r) {
+        override def tagPlanForGpu(): Unit = {
+          if (!exec.child.supportsColumnar) {
+            willNotWorkOnGpu(
+              "Unable to replace CustomShuffleReader due to child not being columnar")
+          }
+        }
+
+        override def convertToGpu(): GpuExec = {
+          GpuCustomShuffleReaderExec(childPlans.head.convertIfNeeded(),
+            exec.partitionSpecs)
+        }
+      })
   ).map(r => (r.getClassFor.asSubclass(classOf[SparkPlan]), r)).toMap
   val execs: Map[Class[_ <: SparkPlan], ExecRule[_ <: SparkPlan]] =
     commonExecs ++ ShimLoader.getSparkShims.getExecs

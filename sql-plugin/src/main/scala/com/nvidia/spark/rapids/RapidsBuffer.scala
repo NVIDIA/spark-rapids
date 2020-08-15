@@ -76,6 +76,7 @@ trait RapidsBuffer extends AutoCloseable {
    * successfully acquired the buffer beforehand.
    * @see [[addReference]]
    * @note It is the responsibility of the caller to close the batch.
+   * @note This may be an expensive operation (e.g.: batch may need to be decompressed).
    */
   def getColumnarBatch: ColumnarBatch
 

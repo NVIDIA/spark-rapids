@@ -164,6 +164,10 @@ similar issue exists for writing dates as described
 appears to work for dates after the epoch as described
 [here](https://github.com/NVIDIA/spark-rapids/issues/140). 
 
+The plugin supports reading `uncompressed`, `snappy` and `zlib` ORC files and writing `uncompressed`
+ and `snappy` ORC files.  At this point, the plugin does not have the ability to fall back to the 
+ CPU when reading an unsupported compression format, and will error out in that case. 
+
 ## Parquet
 
 The Parquet format has more configs because there are multiple versions with some compatibility
@@ -183,6 +187,11 @@ does not support writing timestamps in the INT96 format, so by default writing t
 Parquet will not be GPU-accelerated. If the INT96 timestamp format is not required for
 compatibility with other tools then set `spark.sql.parquet.outputTimestampType` to
 `TIMESTAMP_MICROS`.
+
+The plugin supports reading `uncompressed`, `snappy` and `gzip` Parquet files and writing 
+`uncompressed` and `snappy` Parquet files.  At this point, the plugin does not have the ability to 
+fall back to the CPU when reading an unsupported compression format, and will error out 
+in that case. 
 
 ## Timestamps
 
@@ -277,5 +286,73 @@ However, Spark may produce different results for a compiled udf and the non-comp
 
 When translating UDFs to Catalyst expressions, the supported UDF functions are limited:
 
-| Operand type                                                | Operation |
-| ------------------------------------------------------------------- | ------------------|
+| Operand type             | Operation                                                |
+| -------------------------| ---------------------------------------------------------|
+| Arithmetic Unary         | +x                                                       |
+|                          | -x                                                       |
+| Arithmetic Binary        | lhs + rhs                                                |
+|                          | lhs - rhs                                                |
+|                          | lhs * rhs                                                |
+|                          | lhs / rhs                                                |
+|                          | lhs % rhs                                                |
+| Logical                  | lhs && rhs                                               |
+|                          | lhs &#124;&#124; rhs                                     |
+|                          | !x                                                       |
+| Equality and Relational  | lhs == rhs                                               |
+|                          | lhs < rhs                                                |
+|                          | lhs <= rhs                                               |
+|                          | lhs > rhs                                                |
+|                          | lhs >= rhs                                               |
+| Bitwise                  | lhs & rhs                                                |
+|                          | lhs &#124; rhs                                           |
+|                          | lhs ^ rhs                                                |
+|                          | ~x                                                       |
+|                          | lhs << rhs                                               |
+|                          | lhs >> rhs                                               |
+|                          | lhs >>> rhs                                              |
+| Conditional              | if                                                       |
+|                          | case                                                      |
+| Math                     | abs(x)                                                    |
+|                          | cos(x)                                                   |
+|                          | acos(x)                                                  |
+|                          | asin(x)                                                  |
+|                          | tan(x)                                                   |
+|                          | atan(x)                                                  |
+|                          | tanh(x)                                                  |
+|                          | cosh(x)                                                  |
+|                          | ceil(x)                                                  |
+|                          | floor(x)                                                 |
+|                          | exp(x)                                                   |
+|                          | log(x)                                                   |
+|                          | log10(x)                                                 |
+|                          | sqrt(x)                                                  |
+| Type Cast                | *                                                        |
+| String                   | lhs + rhs                                                |
+|                          | lhs.equalsIgnoreCase(String rhs)                         |
+|                          | x.toUpperCase()                                          |
+|                          | x.trim()                                                 |
+|                          | x.substring(int begin)                                   |
+|                          | x.substring(int begin, int end)                          |
+|                          | x.replace(char oldChar, char newChar)                    |
+|                          | x.replace(CharSequence target, CharSequence replacement) |
+|                          | x.startsWith(String prefix)                              |
+|                          | lhs.equals(Object rhs)                                   |
+|                          | x.toLowerCase()                                          |
+|                          | x.length()                                               |
+|                          | x.endsWith(String suffix)                                |
+|                          | lhs.concat(String rhs)                                   |
+|                          | x.isEmpty()                                              |
+|                          | String.valueOf(boolean b)                                |
+|                          | String.valueOf(char c)                                   |
+|                          | String.valueOf(double d)                                 |
+|                          | String.valueOf(float f)                                  |
+|                          | String.valueOf(int i)                                    |
+|                          | String.valueOf(long l)                                   |
+|                          | x.contains(CharSequence s)                               |
+|                          | x.indexOf(String str)                                    |
+|                          | x.indexOf(String str, int fromIndex)                     |
+|                          |x.replaceAll(String regex, String replacement)            |
+|                          |x.split(String regex)                                     |
+|                          |x.split(String regex, int limit)                          |
+|                          |x.getBytes()                                              |
+|                          |x.getBytes(String charsetName)                            |

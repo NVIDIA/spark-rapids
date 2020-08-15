@@ -16,29 +16,64 @@
 
 package com.nvidia.spark.udf
 
+import ai.rapids.cudf.{NvtxColor, NvtxRange}
+import com.nvidia.spark.rapids.RapidsConf
+
 import org.apache.spark.internal.Logging
 import org.apache.spark.sql.SparkSessionExtensions
 import org.apache.spark.sql.catalyst.expressions.{Alias, Expression, NamedExpression, ScalaUDF}
 import org.apache.spark.sql.catalyst.plans.logical.{LogicalPlan, Project}
 import org.apache.spark.sql.catalyst.rules.Rule
 
-import com.nvidia.spark.rapids.RapidsConf
-
 class Plugin extends Function1[SparkSessionExtensions, Unit] with Logging {
   override def apply(extensions: SparkSessionExtensions): Unit = {
     logWarning("Installing rapids UDF compiler extensions to Spark. The compiler is disabled" +
-      s" by default. To enable it, set `${RapidsConf.UDF_COMPILER_ENABLED}` to true")
+        s" by default. To enable it, set `${RapidsConf.UDF_COMPILER_ENABLED}` to true")
     extensions.injectResolutionRule(_ => LogicalPlanRules())
   }
 }
 
 case class LogicalPlanRules() extends Rule[LogicalPlan] with Logging {
   def replacePartialFunc(plan: LogicalPlan): PartialFunction[Expression, Expression] = {
-    case d: Expression => attemptToReplaceExpression(plan, d)
+    case d: Expression => {
+      val nvtx = new NvtxRange("replace UDF", NvtxColor.BLUE)
+      try {
+        attemptToReplaceExpression(plan, d)
+      } finally {
+        nvtx.close()
+      }
+    }
   }
 
   def attemptToReplaceExpression(plan: LogicalPlan, exp: Expression): Expression = {
-    exp
+    val conf = new RapidsConf(plan.conf)
+    // iterating over NamedExpression
+    exp match {
+      case f: ScalaUDF => // found a ScalaUDF
+        GpuScalaUDFLogical(f).compile(conf.isTestEnabled)
+      case _ =>
+        if (exp == null) {
+          exp
+        } else {
+          try {
+            if (exp.children != null && !exp.children.exists(x => x == null)) {
+              exp.withNewChildren(exp.children.map(c => {
+                if (c != null && c.isInstanceOf[Expression]) {
+                  attemptToReplaceExpression(plan, c)
+                } else {
+                  c
+                }
+              }))
+            } else {
+              exp
+            }
+          } catch {
+            case npe: NullPointerException => {
+              exp
+            }
+          }
+        }
+    }
   }
 
   override def apply(plan: LogicalPlan): LogicalPlan = {
@@ -47,7 +82,7 @@ case class LogicalPlanRules() extends Rule[LogicalPlan] with Logging {
       plan match {
         case project: Project =>
           Project(project.projectList.map(e => attemptToReplaceExpression(plan, e))
-            .asInstanceOf[Seq[NamedExpression]], project.child)
+              .asInstanceOf[Seq[NamedExpression]], project.child)
         case x => {
           x.transformExpressions(replacePartialFunc(plan))
         }

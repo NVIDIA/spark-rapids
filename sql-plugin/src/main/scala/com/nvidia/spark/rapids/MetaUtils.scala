@@ -132,12 +132,20 @@ object MetaUtils extends Arm {
 
   /**
    * Build a TableMeta message for a degenerate table (zero columns or rows)
-   * @param tableId the ID to use for this table
    * @param batch the degenerate columnar batch
    * @return heap-based flatbuffer message
    */
-  def buildDegenerateTableMeta(tableId: Int, batch: ColumnarBatch): TableMeta = {
+  def buildDegenerateTableMeta(batch: ColumnarBatch): TableMeta = {
     require(batch.numRows == 0 || batch.numCols == 0, "batch not degenerate")
+    if (batch.numCols > 0) {
+      // Batched compression can result in degenerate batches appearing compressed. In that case
+      // the table metadata has already been computed and can be returned directly.
+      batch.column(0) match {
+        case c: GpuCompressedColumnVector =>
+          return c.getTableMeta
+        case _ =>
+      }
+    }
     val fbb = new FlatBufferBuilder(1024)
     val columnMetaOffset = if (batch.numCols > 0) {
       val columns = GpuColumnVector.extractBases(batch)

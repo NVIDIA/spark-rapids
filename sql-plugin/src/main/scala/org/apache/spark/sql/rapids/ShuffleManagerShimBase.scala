@@ -16,7 +16,18 @@
 
 package org.apache.spark.sql.rapids
 
-/**
- * Base trait used for GpuFileSourceScanExec to use it in the Shim layer.
- */
-trait GpuFileSourceScanExecBase
+import org.apache.spark.TaskContext
+import org.apache.spark.shuffle.{ShuffleHandle, ShuffleManager, ShuffleReader, ShuffleReadMetricsReporter}
+
+trait ShuffleManagerShimBase {
+
+  def getReader[K, C](
+      shuffleManager: ShuffleManager,
+      handle: ShuffleHandle,
+      startMapIndex: Int,
+      endMapIndex: Int,
+      startPartition: Int,
+      endPartition: Int,
+      context: TaskContext,
+      metrics: ShuffleReadMetricsReporter): ShuffleReader[K, C]
+}
