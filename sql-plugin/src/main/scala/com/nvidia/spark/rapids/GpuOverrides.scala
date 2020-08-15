@@ -1272,6 +1272,12 @@ object GpuOverrides {
         override def convertToGpu(): GpuExpression = GpuInputFileBlockLength()
       }
     ),
+    expr[Md5] (
+      "MD5 hash operator",
+      (a, conf, p, r) => new UnaryExprMeta[Md5](a, conf, p, r) {//is fixed length...
+        override def convertToGpu(child: Expression): GpuExpression = GpuMd5(child)
+      }
+    ),
     expr[Upper](
       "String uppercase operator",
       (a, conf, p, r) => new UnaryExprMeta[Upper](a, conf, p, r) {
