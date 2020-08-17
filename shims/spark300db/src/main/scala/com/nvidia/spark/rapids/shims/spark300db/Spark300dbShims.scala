@@ -30,12 +30,14 @@ import org.apache.spark.sql.catalyst.encoders.ExpressionEncoder
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.expressions._
 import org.apache.spark.sql.catalyst.plans.JoinType
+import org.apache.spark.sql.catalyst.plans.physical.BroadcastMode
 import org.apache.spark.sql.execution._
 import org.apache.spark.sql.execution.datasources.{BucketingUtils, FilePartition, HadoopFsRelation, PartitionDirectory, PartitionedFile}
+import org.apache.spark.sql.execution.exchange.{BroadcastExchangeExec, ShuffleExchangeExec}
 import org.apache.spark.sql.execution.joins.{BroadcastHashJoinExec, BroadcastNestedLoopJoinExec, HashJoin, SortMergeJoinExec}
 import org.apache.spark.sql.execution.joins.ShuffledHashJoinExec
 import org.apache.spark.sql.rapids.{GpuFileSourceScanExec, GpuTimeSub}
-import org.apache.spark.sql.rapids.execution.GpuBroadcastNestedLoopJoinExecBase
+import org.apache.spark.sql.rapids.execution.{GpuBroadcastExchangeExecBase, GpuBroadcastMeta, GpuBroadcastNestedLoopJoinExecBase, GpuShuffleExchangeExecBase, GpuShuffleMeta}
 import org.apache.spark.sql.types._
 import org.apache.spark.storage.{BlockId, BlockManagerId}
 
@@ -51,6 +53,12 @@ class Spark300dbShims extends Spark300Shims {
       condition: Option[Expression],
       targetSizeBytes: Long): GpuBroadcastNestedLoopJoinExecBase = {
     GpuBroadcastNestedLoopJoinExec(left, right, join, joinType, condition, targetSizeBytes)
+  }
+
+  override def getGpuBroadcastExchangeExec(
+      mode: BroadcastMode,
+      child: SparkPlan): GpuBroadcastExchangeExecBase = {
+    GpuBroadcastExchangeExec(mode, child)
   }
 
   override def isGpuHashJoin(plan: SparkPlan): Boolean = {
@@ -131,7 +139,7 @@ class Spark300dbShims extends Spark300Shims {
     files.map(_.getPath.getName)
   }
 
-  override def getFileStatusSize(partitions: Seq[PartitionDirectory]): Long = {
+  override def getPartitionFileStatusSize(partitions: Seq[PartitionDirectory]): Long = {
     partitions.map(_.files.map(_.getLen).sum).sum
   }
 
@@ -144,7 +152,7 @@ class Spark300dbShims extends Spark300Shims {
     }
   }
 
-  override def getSplitFiles(
+  override def getPartitionSplitFiles(
       partitions: Array[PartitionDirectory],
       maxSplitBytes: Long,
       relation: HadoopFsRelation): Array[PartitionedFile] = {
