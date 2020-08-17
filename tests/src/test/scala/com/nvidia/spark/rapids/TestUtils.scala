@@ -86,6 +86,15 @@ object TestUtils extends Assertions with Arm {
     recurse(plan, predicate, new ListBuffer[SparkPlan]())
   }
 
+  /** Return final executed plan */
+  def getFinalPlan(plan: SparkPlan): SparkPlan = {
+    plan match {
+      case a: AdaptiveSparkPlanExec =>
+        a.executedPlan
+      case _ => plan
+    }
+  }
+
   /** Compre the equality of two `ColumnVector` instances */
   def compareColumns(expected: ColumnVector, actual: ColumnVector): Unit = {
     assertResult(expected.getType)(actual.getType)

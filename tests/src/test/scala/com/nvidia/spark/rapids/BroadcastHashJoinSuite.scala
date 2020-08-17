@@ -40,10 +40,10 @@ class BroadcastHashJoinSuite extends SparkQueryCompareTestSuite {
       // execute the plan so that the final adaptive plan is available when AQE is on
       df5.collect()
 
-      val bhjCount = operatorCount(plan, ShimLoader.getSparkShims.isGpuBroadcastHashJoin(_))
+      val bhjCount = operatorCount(plan, ShimLoader.getSparkShims.isGpuBroadcastHashJoin)
       assert(bhjCount.size === 1)
 
-      val shjCount = operatorCount(plan, ShimLoader.getSparkShims.isGpuShuffledHashJoin(_))
+      val shjCount = operatorCount(plan, ShimLoader.getSparkShims.isGpuShuffledHashJoin)
       assert(shjCount.size === 1)
     }, conf)
   }
@@ -57,17 +57,17 @@ class BroadcastHashJoinSuite extends SparkQueryCompareTestSuite {
         val plan1 = spark.sql(s"SELECT /*+ $name(t) */ * FROM t JOIN u ON t.longs = u.longs")
         val plan2 = spark.sql(s"SELECT /*+ $name(u) */ * FROM t JOIN u ON t.longs = u.longs")
 
-        val finalplan1 = plan1.queryExecution.executedPlan
+        val initialPlan1 = plan1.queryExecution.executedPlan
+        // execute the plan so that the final adaptive plan is available when AQE is on
         plan1.collect()
-        val finalPlan1 = findOperator(finalplan1,
-          ShimLoader.getSparkShims.isGpuBroadcastHashJoin(_))
+        val finalPlan1 = findOperator(initialPlan1, ShimLoader.getSparkShims.isGpuBroadcastHashJoin)
         assert(ShimLoader.getSparkShims.getBuildSide
         (finalPlan1.get.asInstanceOf[HashJoin]).toString == "GpuBuildLeft")
 
-        val finalplan2 = plan2.queryExecution.executedPlan
+        val initialPlan2 = plan2.queryExecution.executedPlan
+        // execute the plan so that the final adaptive plan is available when AQE is on
         plan2.collect()
-        val finalPlan2 = findOperator(finalplan2,
-          ShimLoader.getSparkShims.isGpuBroadcastHashJoin(_))
+        val finalPlan2 = findOperator(initialPlan2, ShimLoader.getSparkShims.isGpuBroadcastHashJoin)
         assert(ShimLoader.getSparkShims.
           getBuildSide(finalPlan2.get.asInstanceOf[HashJoin]).toString == "GpuBuildRight")
       }
