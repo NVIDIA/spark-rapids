@@ -13,10 +13,17 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+package com.nvidia.spark.rapids.shims.spark300db
 
-package org.apache.spark.sql.rapids
+import org.apache.spark.sql.catalyst.plans.physical.BroadcastMode
+import org.apache.spark.sql.execution.SparkPlan
+import org.apache.spark.sql.rapids.execution.{GpuBroadcastExchangeExec, GpuBroadcastExchangeExecBase}
 
-/**
- * Base trait used for GpuFileSourceScanExec to use it in the Shim layer.
- */
-trait GpuFileSourceScanExecBase
+case class GpuBroadcastExchangeExec(
+    mode: BroadcastMode,
+    child: SparkPlan) extends GpuBroadcastExchangeExecBase(mode, child) {
+
+  override def doCanonicalize(): SparkPlan = {
+    GpuBroadcastExchangeExec(mode.canonicalized, child.canonicalized)
+  }
+}

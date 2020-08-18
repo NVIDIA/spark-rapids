@@ -18,15 +18,18 @@ package com.nvidia.spark.rapids
 
 import com.nvidia.spark.rapids.GpuMetricNames._
 
+import org.apache.spark.SparkContext
 import org.apache.spark.sql.execution.SparkPlan
 import org.apache.spark.sql.execution.metric.{SQLMetric, SQLMetrics}
 
 object GpuMetricNames {
 
   // Metric names.
-  val NUM_INPUT_ROWS =  "numInputRows"
+  val BUFFER_TIME = "bufferTime"
+  val GPU_DECODE_TIME = "gpuDecodeTime"
+  val NUM_INPUT_ROWS = "numInputRows"
   val NUM_INPUT_BATCHES = "numInputBatches"
-  val NUM_OUTPUT_ROWS =  "numOutputRows"
+  val NUM_OUTPUT_ROWS = "numOutputRows"
   val NUM_OUTPUT_BATCHES = "numOutputBatches"
   val TOTAL_TIME = "totalTime"
   val PEAK_DEVICE_MEMORY = "peakDevMemory"
@@ -38,6 +41,16 @@ object GpuMetricNames {
   val DESCRIPTION_NUM_OUTPUT_BATCHES = "number of output columnar batches"
   val DESCRIPTION_TOTAL_TIME = "total time"
   val DESCRIPTION_PEAK_DEVICE_MEMORY = "peak device memory"
+
+  def buildGpuScanMetrics(sparkContext: SparkContext): Map[String, SQLMetric] = {
+    Map(
+      NUM_OUTPUT_BATCHES -> SQLMetrics.createMetric(sparkContext, DESCRIPTION_NUM_OUTPUT_BATCHES),
+      TOTAL_TIME -> SQLMetrics.createNanoTimingMetric(sparkContext, DESCRIPTION_TOTAL_TIME),
+      GPU_DECODE_TIME -> SQLMetrics.createNanoTimingMetric(sparkContext, "GPU decode time"),
+      BUFFER_TIME -> SQLMetrics.createNanoTimingMetric(sparkContext, "buffer time"),
+      PEAK_DEVICE_MEMORY -> SQLMetrics.createSizeMetric(sparkContext,
+        DESCRIPTION_PEAK_DEVICE_MEMORY))
+  }
 }
 
 trait GpuExec extends SparkPlan with Arm {
