@@ -22,7 +22,9 @@ import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.spark300.RapidsShuffleManager
 
 import org.apache.spark.SparkEnv
+import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.{SparkSession, SparkSessionExtensions}
+import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.encoders.ExpressionEncoder
 import org.apache.spark.sql.catalyst.expressions._
 import org.apache.spark.sql.catalyst.expressions.aggregate.{First, Last}
@@ -31,12 +33,12 @@ import org.apache.spark.sql.catalyst.plans.physical.{BroadcastMode, Partitioning
 import org.apache.spark.sql.catalyst.rules.Rule
 import org.apache.spark.sql.execution._
 import org.apache.spark.sql.execution.adaptive.ShuffleQueryStageExec
-import org.apache.spark.sql.execution.datasources.HadoopFsRelation
+import org.apache.spark.sql.execution.datasources.{BucketingUtils, FilePartition, FileScanRDD, HadoopFsRelation, PartitionDirectory, PartitionedFile}
 import org.apache.spark.sql.execution.exchange.{BroadcastExchangeExec, ShuffleExchangeExec}
 import org.apache.spark.sql.execution.joins.{BroadcastHashJoinExec, BroadcastNestedLoopJoinExec, HashJoin, SortMergeJoinExec}
 import org.apache.spark.sql.execution.joins.ShuffledHashJoinExec
 import org.apache.spark.sql.rapids.{GpuFileSourceScanExec, GpuTimeSub, ShuffleManagerShimBase}
-import org.apache.spark.sql.rapids.execution.{GpuBroadcastExchangeExecBase, GpuBroadcastNestedLoopJoinExecBase, GpuShuffleExchangeExecBase}
+import org.apache.spark.sql.rapids.execution.{GpuBroadcastExchangeExecBase, GpuBroadcastMeta, GpuBroadcastNestedLoopJoinExecBase, GpuShuffleExchangeExecBase, GpuShuffleMeta}
 import org.apache.spark.sql.rapids.shims.spark300._
 import org.apache.spark.sql.types._
 import org.apache.spark.storage.{BlockId, BlockManagerId}
@@ -235,5 +237,53 @@ class Spark300Shims extends SparkShims {
 
   override def getShuffleManagerShims(): ShuffleManagerShimBase = {
     new ShuffleManagerShim
+  }
+
+  override def getPartitionFileNames(
+      partitions: Seq[PartitionDirectory]): Seq[String] = {
+    val files = partitions.flatMap(partition => partition.files)
+    files.map(_.getPath.getName)
+  }
+
+  override def getPartitionFileStatusSize(partitions: Seq[PartitionDirectory]): Long = {
+    partitions.map(_.files.map(_.getLen).sum).sum
+  }
+
+  override def getPartitionedFiles(
+      partitions: Array[PartitionDirectory]): Array[PartitionedFile] = {
+    partitions.flatMap { p =>
+      p.files.map { f =>
+        PartitionedFileUtil.getPartitionedFile(f, f.getPath, p.values)
+      }
+    }
+  }
+
+  override def getPartitionSplitFiles(
+      partitions: Array[PartitionDirectory],
+      maxSplitBytes: Long,
+      relation: HadoopFsRelation): Array[PartitionedFile] = {
+    partitions.flatMap { partition =>
+      partition.files.flatMap { file =>
+        // getPath() is very expensive so we only want to call it once in this block:
+        val filePath = file.getPath
+        val isSplitable = relation.fileFormat.isSplitable(
+          relation.sparkSession, relation.options, filePath)
+        PartitionedFileUtil.splitFiles(
+          sparkSession = relation.sparkSession,
+          file = file,
+          filePath = filePath,
+          isSplitable = isSplitable,
+          maxSplitBytes = maxSplitBytes,
+          partitionValues = partition.values
+        )
+      }
+    }
+  }
+
+  override def getFileScanRDD(
+      sparkSession: SparkSession,
+      readFunction: (PartitionedFile) => Iterator[InternalRow],
+      filePartitions: Seq[FilePartition]): RDD[InternalRow] = {
+    new FileScanRDD(sparkSession, readFunction, filePartitions)
   }
 }
