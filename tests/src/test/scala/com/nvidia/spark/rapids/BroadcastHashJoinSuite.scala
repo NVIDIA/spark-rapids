@@ -36,9 +36,9 @@ class BroadcastHashJoinSuite extends SparkQueryCompareTestSuite {
       val df4 = longsDf(spark)
       val df5 = df4.join(df3, Seq("longs"), "inner")
 
-      val plan = df5.queryExecution.executedPlan
       // execute the plan so that the final adaptive plan is available when AQE is on
       df5.collect()
+      val plan = df5.queryExecution.executedPlan
 
       val bhjCount = operatorCount(plan, ShimLoader.getSparkShims.isGpuBroadcastHashJoin)
       assert(bhjCount.size === 1)
