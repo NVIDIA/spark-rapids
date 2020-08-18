@@ -60,7 +60,37 @@ class AdaptiveQueryExecSuite
     }
   }
 
-  test("SPARK-29544: adaptive skew join with different join types") {
+  test("skewed inner join optimization") {
+    skewJoinTest { spark =>
+      val (_, innerAdaptivePlan) = runAdaptiveAndVerifyResult(
+        spark,
+        "SELECT * FROM skewData1 join skewData2 ON key1 = key2")
+      val innerSmj = findTopLevelSortMergeJoin(innerAdaptivePlan)
+      checkSkewJoin(innerSmj, 2, 1)
+    }
+  }
+
+  test("skewed left outer join optimization") {
+    skewJoinTest { spark =>
+      val (_, leftAdaptivePlan) = runAdaptiveAndVerifyResult(
+        spark,
+        "SELECT * FROM skewData1 left outer join skewData2 ON key1 = key2")
+      val leftSmj = findTopLevelSortMergeJoin(leftAdaptivePlan)
+      checkSkewJoin(leftSmj, 2, 0)
+    }
+  }
+
+  test("skewed right outer join optimization") {
+    skewJoinTest { spark =>
+      val (_, rightAdaptivePlan) = runAdaptiveAndVerifyResult(
+        spark,
+        "SELECT * FROM skewData1 right outer join skewData2 ON key1 = key2")
+      val rightSmj = findTopLevelSortMergeJoin(rightAdaptivePlan)
+      checkSkewJoin(rightSmj, 0, 1)
+    }
+  }
+
+  def skewJoinTest(fun: SparkSession => Unit) {
 
     // this test requires Spark 3.0.1 or later
     val isValidTestForSparkVersion = ShimLoader.getSparkShims.getSparkShimVersion match {
@@ -69,7 +99,7 @@ class AdaptiveQueryExecSuite
       case _ => true
     }
     assume(isValidTestForSparkVersion)
-    
+
     val conf = new SparkConf()
       .set(SQLConf.ADAPTIVE_EXECUTION_ENABLED.key, "true")
       .set(SQLConf.AUTO_BROADCASTJOIN_THRESHOLD.key, "-1")
@@ -77,23 +107,6 @@ class AdaptiveQueryExecSuite
       .set(SQLConf.SHUFFLE_PARTITIONS.key, "100")
       .set(SQLConf.SKEW_JOIN_SKEWED_PARTITION_THRESHOLD.key, "800")
       .set(SQLConf.ADVISORY_PARTITION_SIZE_IN_BYTES.key, "800")
-
-    def checkSkewJoin(
-        joins: Seq[GpuShuffledHashJoinBase],
-        leftSkewNum: Int,
-        rightSkewNum: Int): Unit = {
-      assert(joins.size == 1 && joins.head.isSkewJoin)
-      assert(joins.head.left.collect {
-        case r: GpuCustomShuffleReaderExec => r
-      }.head.partitionSpecs.collect {
-        case p: PartialReducerPartitionSpec => p.reducerIndex
-      }.distinct.length == leftSkewNum)
-      assert(joins.head.right.collect {
-        case r: GpuCustomShuffleReaderExec => r
-      }.head.partitionSpecs.collect {
-        case p: PartialReducerPartitionSpec => p.reducerIndex
-      }.distinct.length == rightSkewNum)
-    }
 
     withGpuSparkSession(spark => {
       import spark.implicits._
@@ -114,28 +127,31 @@ class AdaptiveQueryExecSuite
             'id as "value2")
           .createOrReplaceTempView("skewData2")
 
-      // skewed inner join optimization
-      val (_, innerAdaptivePlan) = runAdaptiveAndVerifyResult(
-        spark,
-        "SELECT * FROM skewData1 join skewData2 ON key1 = key2")
-      val innerSmj = findTopLevelSortMergeJoin(innerAdaptivePlan)
-      checkSkewJoin(innerSmj, 2, 1)
-
-      // skewed left outer join optimization
-      val (_, leftAdaptivePlan) = runAdaptiveAndVerifyResult(
-        spark,
-        "SELECT * FROM skewData1 left outer join skewData2 ON key1 = key2")
-      val leftSmj = findTopLevelSortMergeJoin(leftAdaptivePlan)
-      checkSkewJoin(leftSmj, 2, 0)
-
-      // skewed right outer join optimization
-      val (_, rightAdaptivePlan) = runAdaptiveAndVerifyResult(
-        spark,
-        "SELECT * FROM skewData1 right outer join skewData2 ON key1 = key2")
-      val rightSmj = findTopLevelSortMergeJoin(rightAdaptivePlan)
-      checkSkewJoin(rightSmj, 0, 1)
+      // invoke the test function
+      fun(spark)
 
     }, conf)
+  }
+
+  def checkSkewJoin(
+      joins: Seq[GpuShuffledHashJoinBase],
+      leftSkewNum: Int,
+      rightSkewNum: Int): Unit = {
+    assert(joins.size == 1 && joins.head.isSkewJoin)
+
+    val leftSkew = joins.head.left.collect {
+      case r: GpuCustomShuffleReaderExec => r
+    }.head.partitionSpecs.collect {
+      case p: PartialReducerPartitionSpec => p.reducerIndex
+    }.distinct
+    assert(leftSkew.length == leftSkewNum)
+
+    val rightSkew = joins.head.right.collect {
+      case r: GpuCustomShuffleReaderExec => r
+    }.head.partitionSpecs.collect {
+      case p: PartialReducerPartitionSpec => p.reducerIndex
+    }.distinct
+    assert(rightSkew.length == rightSkewNum)
   }
 
 }
