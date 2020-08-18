@@ -57,17 +57,17 @@ class BroadcastHashJoinSuite extends SparkQueryCompareTestSuite {
         val plan1 = spark.sql(s"SELECT /*+ $name(t) */ * FROM t JOIN u ON t.longs = u.longs")
         val plan2 = spark.sql(s"SELECT /*+ $name(u) */ * FROM t JOIN u ON t.longs = u.longs")
 
-        val initialPlan1 = plan1.queryExecution.executedPlan
         // execute the plan so that the final adaptive plan is available when AQE is on
         plan1.collect()
-        val finalPlan1 = findOperator(initialPlan1, ShimLoader.getSparkShims.isGpuBroadcastHashJoin)
+        val finalPlan1 = findOperator(plan1.queryExecution.executedPlan,
+          ShimLoader.getSparkShims.isGpuBroadcastHashJoin)
         assert(ShimLoader.getSparkShims.getBuildSide
         (finalPlan1.get.asInstanceOf[HashJoin]).toString == "GpuBuildLeft")
 
-        val initialPlan2 = plan2.queryExecution.executedPlan
         // execute the plan so that the final adaptive plan is available when AQE is on
         plan2.collect()
-        val finalPlan2 = findOperator(initialPlan2, ShimLoader.getSparkShims.isGpuBroadcastHashJoin)
+        val finalPlan2 = findOperator(plan2.queryExecution.executedPlan,
+          ShimLoader.getSparkShims.isGpuBroadcastHashJoin)
         assert(ShimLoader.getSparkShims.
           getBuildSide(finalPlan2.get.asInstanceOf[HashJoin]).toString == "GpuBuildRight")
       }
