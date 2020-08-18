@@ -198,10 +198,10 @@ public class GpuColumnVector extends GpuColumnVectorBase {
     }
   }
 
-  protected static final DataType getSparkTypeFrom(ColumnViewAccess access) {
+  protected static final <T> DataType getSparkTypeFrom(ColumnViewAccess<T> access) {
     DType type = access.getDataType();
     if (type == DType.LIST) {
-      try (ColumnViewAccess child = access.getChildColumnViewAccess(0)) {
+      try (ColumnViewAccess<T> child = access.getChildColumnViewAccess(0)) {
         return new ArrayType(getSparkTypeFrom(child), true);
       }
     } else {

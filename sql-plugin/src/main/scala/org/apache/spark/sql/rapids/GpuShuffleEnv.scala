@@ -124,6 +124,12 @@ object GpuShuffleEnv extends Logging {
     Option(env).foreach(_.closeStorage())
   }
 
+  def getCatalog: ShuffleBufferCatalog = if (env == null) {
+    null
+  } else {
+    env.getCatalog
+  }
+
   //
   // Functions below only get called from the executor
   //
@@ -134,8 +140,6 @@ object GpuShuffleEnv extends Logging {
     shuffleEnv.initStorage(devInfo)
     env = shuffleEnv
   }
-
-  def getCatalog: ShuffleBufferCatalog = env.getCatalog
 
   def getReceivedCatalog: ShuffleReceivedBufferCatalog = env.getReceivedCatalog
 

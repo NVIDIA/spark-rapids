@@ -26,10 +26,11 @@ import org.apache.spark.sql.catalyst.optimizer.{BuildLeft, BuildRight, BuildSide
 import org.apache.spark.sql.catalyst.plans.JoinType
 import org.apache.spark.sql.catalyst.plans.physical.{BroadcastDistribution, Distribution, UnspecifiedDistribution}
 import org.apache.spark.sql.execution.{BinaryExecNode, SparkPlan}
+import org.apache.spark.sql.execution.adaptive.BroadcastQueryStageExec
 import org.apache.spark.sql.execution.exchange.ReusedExchangeExec
 import org.apache.spark.sql.execution.joins.{BroadcastHashJoinExec, HashedRelationBroadcastMode}
 import org.apache.spark.sql.execution.metric.{SQLMetric, SQLMetrics}
-import org.apache.spark.sql.rapids.execution.{GpuBroadcastExchangeExec, SerializeConcatHostBuffersDeserializeBatch}
+import org.apache.spark.sql.rapids.execution.SerializeConcatHostBuffersDeserializeBatch
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
 /**
@@ -113,6 +114,9 @@ case class GpuBroadcastHashJoinExec(
   }
 
   def broadcastExchange: GpuBroadcastExchangeExec = buildPlan match {
+    case BroadcastQueryStageExec(_, gpu: GpuBroadcastExchangeExec, _) => gpu
+    case BroadcastQueryStageExec(_, reused: ReusedExchangeExec, _) =>
+      reused.child.asInstanceOf[GpuBroadcastExchangeExec]
     case gpu: GpuBroadcastExchangeExec => gpu
     case reused: ReusedExchangeExec => reused.child.asInstanceOf[GpuBroadcastExchangeExec]
   }

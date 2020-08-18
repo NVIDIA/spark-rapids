@@ -166,6 +166,10 @@ class GpuCoalesceBatchesSuite extends SparkQueryCompareTestSuite {
       .set(RapidsConf.TEST_ALLOWED_NONGPU.key, "FileSourceScanExec")
       .set("spark.rapids.sql.exec.FileSourceScanExec", "false") // force Parquet read onto CPU
       .set("spark.sql.shuffle.partitions", "1")
+      // this test isn't valid when AQE is enabled because the FileScan happens as part of
+      // a query stage that runs on the CPU, wrapped in a CPU Exchange, with a ColumnarToRow
+      // transition inserted
+      .set("spark.sql.adaptive.enabled", "false")
 
     val dir = Files.createTempDirectory("spark-rapids-test").toFile
     val path = new File(dir,
@@ -222,9 +226,10 @@ class GpuCoalesceBatchesSuite extends SparkQueryCompareTestSuite {
       val df = longsCsvDf(spark)
 
       // A coalesce step is added after the filter to help with the case where much of the
-      // data is filtered out
+      // data is filtered out.  The select is there to prevent the coalesce from being
+      // the last thing in the plan which will cause the coalesce to be optimized out.
       val df2 = df
-        .filter(df.col("six").gt(5))
+        .filter(df.col("six").gt(5)).select(df.col("six") * 2)
 
       val coalesce = df2.queryExecution.executedPlan
         .find(_.isInstanceOf[GpuCoalesceBatches]).get
