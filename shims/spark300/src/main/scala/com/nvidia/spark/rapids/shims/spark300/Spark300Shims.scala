@@ -241,7 +241,7 @@ class Spark300Shims extends SparkShims {
     GpuOverrides.scan[ParquetScan](
       "Parquet parsing",
       (a, conf, p, r) => new ScanMeta[ParquetScan](a, conf, p, r) {
-        override def tagSelfForGpu(): Unit = GpuParquetScan.tagSupport(this)
+        override def tagSelfForGpu(): Unit = GpuParquetScanBase.tagSupport(this)
 
         override def convertToGpu(): Scan =
           GpuParquetScan(a.sparkSession,

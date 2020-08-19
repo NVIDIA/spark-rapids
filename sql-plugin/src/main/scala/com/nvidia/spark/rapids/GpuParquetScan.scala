@@ -82,7 +82,7 @@ abstract class GpuParquetScanBase(
   }
 }
 
-object GpuParquetScan {
+object GpuParquetScanBase {
   def tagSupport(scanMeta: ScanMeta[ParquetScan]): Unit = {
     val scan = scanMeta.wrapped
     val schema = StructType(scan.readDataSchema ++ scan.readPartitionSchema)
