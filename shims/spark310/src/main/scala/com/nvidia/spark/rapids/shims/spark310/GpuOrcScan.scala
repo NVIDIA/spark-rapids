@@ -16,7 +16,7 @@
 
 package com.nvidia.spark.rapids.shims.spark310
 
-import com.nvidia.spark.rapids.RapidsConf
+import com.nvidia.spark.rapids.{GpuOrcScanBase, RapidsConf}
 import org.apache.hadoop.conf.Configuration
 import org.apache.hadoop.fs.Path
 
