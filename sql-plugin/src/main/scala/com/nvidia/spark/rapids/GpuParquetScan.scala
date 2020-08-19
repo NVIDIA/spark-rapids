@@ -48,7 +48,6 @@ import org.apache.spark.broadcast.Broadcast
 import org.apache.spark.internal.Logging
 import org.apache.spark.sql.SparkSession
 import org.apache.spark.sql.catalyst.InternalRow
-import org.apache.spark.sql.catalyst.expressions.Expression
 import org.apache.spark.sql.connector.read.{InputPartition, PartitionReader, PartitionReaderFactory}
 import org.apache.spark.sql.execution.QueryExecutionException
 import org.apache.spark.sql.execution.datasources.{PartitionedFile, PartitioningAwareFileIndex}
@@ -60,27 +59,22 @@ import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.rapids.execution.TrampolineUtil
 import org.apache.spark.sql.sources.Filter
 import org.apache.spark.sql.types.{StringType, StructType, TimestampType}
-import org.apache.spark.sql.util.CaseInsensitiveStringMap
 import org.apache.spark.sql.vectorized.ColumnarBatch
 import org.apache.spark.util.SerializableConfiguration
 
 abstract class GpuParquetScanBase(
     sparkSession: SparkSession,
     hadoopConf: Configuration,
-    fileIndex: PartitioningAwareFileIndex,
     dataSchema: StructType,
     readDataSchema: StructType,
     readPartitionSchema: StructType,
     pushedFilters: Array[Filter],
-    options: CaseInsensitiveStringMap,
-    partitionFilters: Seq[Expression],
-    dataFilters: Seq[Expression],
     rapidsConf: RapidsConf)
   extends ScanWithMetrics {
 
-  override def isSplitable(path: Path): Boolean = true
+  def isSplitableBase(path: Path): Boolean = true
 
-  override def createReaderFactory(): PartitionReaderFactory = {
+  def createReaderFactoryBase(): PartitionReaderFactory = {
     val broadcastedConf = sparkSession.sparkContext.broadcast(
       new SerializableConfiguration(hadoopConf))
     GpuParquetPartitionReaderFactory(sparkSession.sessionState.conf, broadcastedConf,
