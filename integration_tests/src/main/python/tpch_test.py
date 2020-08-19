@@ -16,6 +16,7 @@ import pytest
 
 from asserts import assert_gpu_and_cpu_are_equal_collect
 from marks import approximate_float, incompat, ignore_order, allow_non_gpu
+from spark_session import with_spark_session
 
 _base_conf = {'spark.rapids.sql.variableFloatAgg.enabled': 'true',
         'spark.rapids.sql.hasNans': 'false'}
@@ -117,18 +118,27 @@ def test_tpch_q15(tpch, conf):
   assert_gpu_and_cpu_are_equal_collect(
           lambda spark : tpch.do_test_query("q15"))
 
+@pytest.mark.xfail(
+    condition=with_spark_session(lambda spark : not(spark.sparkContext.version < "3.1.0")),
+    reason='https://github.com/NVIDIA/spark-rapids/issues/586')
 @allow_non_gpu('BroadcastNestedLoopJoinExec', 'Or', 'IsNull', 'EqualTo', 'AttributeReference', 'BroadcastExchangeExec')
 @pytest.mark.parametrize('conf', [_base_conf, _adaptive_conf])
 def test_tpch_q16(tpch, conf):
   assert_gpu_and_cpu_are_equal_collect(
           lambda spark : tpch.do_test_query("q16"), conf=conf)
 
+@pytest.mark.xfail(
+    condition=with_spark_session(lambda spark : not(spark.sparkContext.version < "3.1.0")),
+    reason='https://github.com/NVIDIA/spark-rapids/issues/586')
 @approximate_float
 @pytest.mark.parametrize('conf', [_base_conf, _adaptive_conf])
 def test_tpch_q17(tpch, conf):
   assert_gpu_and_cpu_are_equal_collect(
           lambda spark : tpch.do_test_query("q17"), conf=conf)
 
+@pytest.mark.xfail(
+    condition=with_spark_session(lambda spark : not(spark.sparkContext.version < "3.1.0")),
+    reason='https://github.com/NVIDIA/spark-rapids/issues/586')
 @incompat
 @approximate_float
 @allow_non_gpu('TakeOrderedAndProjectExec', 'SortOrder', 'AttributeReference')
@@ -143,6 +153,9 @@ def test_tpch_q19(tpch, conf):
   assert_gpu_and_cpu_are_equal_collect(
           lambda spark : tpch.do_test_query("q19"), conf=conf)
 
+@pytest.mark.xfail(
+    condition=with_spark_session(lambda spark : not(spark.sparkContext.version < "3.1.0")),
+    reason='https://github.com/NVIDIA/spark-rapids/issues/586')
 @pytest.mark.parametrize('conf', [_base_conf, _adaptive_conf])
 def test_tpch_q20(tpch, conf):
   assert_gpu_and_cpu_are_equal_collect(
