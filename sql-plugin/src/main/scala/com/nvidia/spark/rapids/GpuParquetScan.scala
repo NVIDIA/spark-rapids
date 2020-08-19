@@ -323,12 +323,9 @@ case class GpuParquetMultiFilePartitionReaderFactory(
         // Use the ParquetFileReader to perform dictionary-level filtering
         ParquetInputFormat.setFilterPredicate(conf, pushedFilters.get)
         //noinspection ScalaDeprecation
-        val parquetReader = new ParquetFileReader(conf, footer.getFileMetaData, filePath,
-          footer.getBlocks, Collections.emptyList[ColumnDescriptor])
-        try {
+        withResource(new ParquetFileReader(conf, footer.getFileMetaData, filePath,
+          footer.getBlocks, Collections.emptyList[ColumnDescriptor])) { parquetReader =>
           parquetReader.getRowGroups
-        } finally {
-          parquetReader.close()
         }
       } else {
         footer.getBlocks
@@ -362,7 +359,7 @@ case class GpuParquetPartitionReaderFactory(
     partitionSchema: StructType,
     filters: Array[Filter],
     @transient rapidsConf: RapidsConf,
-    metrics: Map[String, SQLMetric]) extends FilePartitionReaderFactory with Logging {
+    metrics: Map[String, SQLMetric]) extends FilePartitionReaderFactory with Arm with Logging {
   private val isCaseSensitive = sqlConf.caseSensitiveAnalysis
   private val enableParquetFilterPushDown: Boolean = sqlConf.parquetFilterPushDown
   private val pushDownDate = sqlConf.parquetFilterPushDownDate
@@ -412,12 +409,9 @@ case class GpuParquetPartitionReaderFactory(
       // Use the ParquetFileReader to perform dictionary-level filtering
       ParquetInputFormat.setFilterPredicate(conf, pushedFilters.get)
       //noinspection ScalaDeprecation
-      val parquetReader = new ParquetFileReader(conf, footer.getFileMetaData, filePath,
-        footer.getBlocks, Collections.emptyList[ColumnDescriptor])
-      try {
+       withResource(new ParquetFileReader(conf, footer.getFileMetaData, filePath,
+        footer.getBlocks, Collections.emptyList[ColumnDescriptor])) { parquetReader =>
         parquetReader.getRowGroups
-      } finally {
-        parquetReader.close()
       }
     } else {
       footer.getBlocks
@@ -842,8 +836,8 @@ class MultiFileParquetPartitionReader(
   }
 
   private def readBatch(): Option[ColumnarBatch] = {
-    val nvtxRange = new NvtxWithMetrics("Parquet readBatch", NvtxColor.GREEN, metrics(TOTAL_TIME))
-    try {
+    withResource(new NvtxWithMetrics("Parquet readBatch", NvtxColor.GREEN,
+        metrics(TOTAL_TIME))) { _ =>
       val (currentClippedSchema, partValues, seqPathsAndBlocks) = populateCurrentBlockChunk()
       if (readDataSchema.isEmpty) {
         // not reading any data, so return a degenerate ColumnarBatch with the row count
@@ -867,8 +861,6 @@ class MultiFileParquetPartitionReader(
           table.foreach(_.close())
         }
       }
-    } finally {
-      nvtxRange.close()
     }
   }
 
@@ -893,7 +885,10 @@ class MultiFileParquetPartitionReader(
         // about to start using the GPU
         GpuSemaphore.acquireIfNecessary(TaskContext.get())
 
-        val table = Table.readParquet(parseOpts, dataBuffer, 0, dataSize)
+        val table = withResource(new NvtxWithMetrics("Parquet decode", NvtxColor.DARK_GREEN,
+            metrics(GPU_DECODE_TIME))) { _ =>
+          Table.readParquet(parseOpts, dataBuffer, 0, dataSize)
+        }
         if (!isCorrectedRebaseMode) {
           (0 until table.getNumberOfColumns).foreach { i =>
             if (RebaseHelper.isDateTimeRebaseNeededRead(table.getColumn(i))) {
@@ -1035,11 +1030,9 @@ class ParquetPartitionReader(
   }
 
   private def readPartFile(blocks: Seq[BlockMetaData]): (HostMemoryBuffer, Long) = {
-    val nvtxRange = new NvtxWithMetrics("Buffer file split", NvtxColor.YELLOW,
-      metrics("bufferTime"))
-    try {
-      val in = filePath.getFileSystem(conf).open(filePath)
-      try {
+    withResource(new NvtxWithMetrics("Buffer file split", NvtxColor.YELLOW,
+        metrics("bufferTime"))) { _ =>
+      withResource(filePath.getFileSystem(conf).open(filePath)) { in =>
         var succeeded = false
         val estTotalSize = calculateParquetOutputSize(blocks, clippedParquetSchema, false)
         val hmb =
@@ -1064,17 +1057,13 @@ class ParquetPartitionReader(
             hmb.close()
           }
         }
-      } finally {
-        in.close()
       }
-    } finally {
-      nvtxRange.close()
     }
   }
 
   private def readBatch(): Option[ColumnarBatch] = {
-    val nvtxRange = new NvtxWithMetrics("Parquet readBatch", NvtxColor.GREEN, metrics(TOTAL_TIME))
-    try {
+    withResource(new NvtxWithMetrics("Parquet readBatch", NvtxColor.GREEN,
+        metrics(TOTAL_TIME))) { _ =>
       val currentChunkedBlocks = populateCurrentBlockChunk()
       if (readDataSchema.isEmpty) {
         // not reading any data, so return a degenerate ColumnarBatch with the row count
@@ -1096,8 +1085,6 @@ class ParquetPartitionReader(
           table.foreach(_.close())
         }
       }
-    } finally {
-      nvtxRange.close()
     }
   }
 
@@ -1120,7 +1107,10 @@ class ParquetPartitionReader(
         // about to start using the GPU
         GpuSemaphore.acquireIfNecessary(TaskContext.get())
 
-        val table = Table.readParquet(parseOpts, dataBuffer, 0, dataSize)
+        val table = withResource(new NvtxWithMetrics("Parquet decode", NvtxColor.DARK_GREEN,
+            metrics(GPU_DECODE_TIME))) { _ =>
+          Table.readParquet(parseOpts, dataBuffer, 0, dataSize)
+        }
         if (!isCorrectedRebaseMode) {
           (0 until table.getNumberOfColumns).foreach { i =>
             if (RebaseHelper.isDateTimeRebaseNeededRead(table.getColumn(i))) {

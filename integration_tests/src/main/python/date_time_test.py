@@ -18,11 +18,15 @@ from data_gen import *
 from datetime import date, datetime, timezone
 from marks import incompat
 from pyspark.sql.types import *
+from spark_session import with_spark_session
 import pyspark.sql.functions as f
 
 # We only support literal intervals for TimeSub
 vals = [(-584, 1563), (1943, 1101), (2693, 2167), (2729, 0), (44, 1534), (2635, 3319),
             (1885, -2828), (0, 2463), (932, 2286), (0, 0)]
+@pytest.mark.xfail(
+    condition=with_spark_session(lambda spark : not(spark.sparkContext.version < "3.1.0")),
+    reason='https://issues.apache.org/jira/browse/SPARK-32640')
 @pytest.mark.parametrize('data_gen', vals, ids=idfn)
 def test_timesub(data_gen):
     days, seconds = data_gen

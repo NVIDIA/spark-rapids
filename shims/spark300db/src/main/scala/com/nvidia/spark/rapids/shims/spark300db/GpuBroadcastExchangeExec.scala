@@ -13,11 +13,11 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package com.nvidia.spark.rapids.shims.spark300
+package com.nvidia.spark.rapids.shims.spark300db
 
 import org.apache.spark.sql.catalyst.plans.physical.BroadcastMode
 import org.apache.spark.sql.execution.SparkPlan
-import org.apache.spark.sql.rapids.execution.GpuBroadcastExchangeExecBase
+import org.apache.spark.sql.rapids.execution.{GpuBroadcastExchangeExec, GpuBroadcastExchangeExecBase}
 
 case class GpuBroadcastExchangeExec(
     mode: BroadcastMode,

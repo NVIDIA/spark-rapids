@@ -20,7 +20,7 @@ import java.util.concurrent.TimeUnit.NANOSECONDS
 
 import scala.collection.mutable.HashMap
 
-import com.nvidia.spark.rapids.{GpuExec, GpuMetricNames, GpuParquetMultiFilePartitionReaderFactory, GpuReadCSVFileFormat, GpuReadFileFormatWithMetrics, GpuReadOrcFileFormat, GpuReadParquetFileFormat, RapidsConf, SparkPlanMeta}
+import com.nvidia.spark.rapids.{GpuExec, GpuMetricNames, GpuParquetMultiFilePartitionReaderFactory, GpuReadCSVFileFormat, GpuReadFileFormatWithMetrics, GpuReadOrcFileFormat, GpuReadParquetFileFormat, RapidsConf, ShimLoader, SparkPlanMeta}
 import org.apache.hadoop.fs.Path
 
 import org.apache.spark.rdd.RDD
@@ -29,8 +29,8 @@ import org.apache.spark.sql.catalyst.catalog.BucketSpec
 import org.apache.spark.sql.catalyst.expressions.{And, Ascending, Attribute, AttributeReference, BoundReference, DynamicPruningExpression, Expression, Literal, PlanExpression, Predicate, SortOrder}
 import org.apache.spark.sql.catalyst.plans.QueryPlan
 import org.apache.spark.sql.catalyst.plans.physical.{HashPartitioning, Partitioning, UnknownPartitioning}
-import org.apache.spark.sql.execution.{ExecSubqueryExpression, ExplainUtils, FileSourceScanExec, PartitionedFileUtil, SQLExecution}
-import org.apache.spark.sql.execution.datasources.{BucketingUtils, DataSourceStrategy, DataSourceUtils, FileFormat, FilePartition, FileScanRDD, HadoopFsRelation, PartitionDirectory, PartitionedFile}
+import org.apache.spark.sql.execution.{ExecSubqueryExpression, ExplainUtils, FileSourceScanExec, SQLExecution}
+import org.apache.spark.sql.execution.datasources.{BucketingUtils, DataSourceStrategy, DataSourceUtils, FileFormat, FilePartition, HadoopFsRelation, PartitionDirectory, PartitionedFile}
 import org.apache.spark.sql.execution.datasources.csv.CSVFileFormat
 import org.apache.spark.sql.execution.datasources.orc.OrcFileFormat
 import org.apache.spark.sql.execution.datasources.parquet.ParquetFileFormat
@@ -187,9 +187,9 @@ case class GpuFileSourceScanExec(
         // the RDD partition will not be sorted even if the relation has sort columns set
         // Current solution is to check if all the buckets have a single file in it
 
-        val files = selectedPartitions.flatMap(partition => partition.files)
+        val filesPartNames = ShimLoader.getSparkShims.getPartitionFileNames(selectedPartitions)
         val bucketToFilesGrouping =
-          files.map(_.getPath.getName).groupBy(file => BucketingUtils.getBucketId(file))
+          filesPartNames.groupBy(file => BucketingUtils.getBucketId(file))
         val singleFilePartitions = bucketToFilesGrouping.forall(p => p._2.length <= 1)
 
         // TODO SPARK-24528 Sort order is currently ignored if buckets are coalesced.
@@ -323,7 +323,7 @@ case class GpuFileSourceScanExec(
       partitions: Seq[PartitionDirectory],
       static: Boolean): Unit = {
     val filesNum = partitions.map(_.files.size.toLong).sum
-    val filesSize = partitions.map(_.files.map(_.getLen).sum).sum
+    val filesSize = ShimLoader.getSparkShims.getPartitionFileStatusSize(partitions)
     if (!static || partitionFilters.filter(isDynamicPruningFilter).isEmpty) {
       driverMetrics("numFiles") = filesNum
       driverMetrics("filesSize") = filesSize
@@ -405,16 +405,15 @@ case class GpuFileSourceScanExec(
       fsRelation: HadoopFsRelation,
       useSmallFileOpt: Boolean): RDD[InternalRow] = {
     logInfo(s"Planning with ${bucketSpec.numBuckets} buckets")
-    val filesGroupedToBuckets =
-      selectedPartitions.flatMap { p =>
-        p.files.map { f =>
-          PartitionedFileUtil.getPartitionedFile(f, f.getPath, p.values)
-        }
-      }.groupBy { f =>
-        BucketingUtils
-          .getBucketId(new Path(f.filePath).getName)
-          .getOrElse(sys.error(s"Invalid bucket file ${f.filePath}"))
-      }
+
+    val partitionedFiles =
+      ShimLoader.getSparkShims.getPartitionedFiles(selectedPartitions)
+
+    val filesGroupedToBuckets = partitionedFiles.groupBy { f =>
+      BucketingUtils
+        .getBucketId(new Path(f.filePath).getName)
+        .getOrElse(sys.error(s"Invalid bucket file ${f.filePath}"))
+    }
 
     val prunedFilesGroupedToBuckets = if (optionalBucketSet.isDefined) {
       val bucketSet = optionalBucketSet.get
@@ -440,7 +439,7 @@ case class GpuFileSourceScanExec(
       }
     }
     if (!useSmallFileOpt) {
-      new FileScanRDD(fsRelation.sparkSession, readFile.get, filePartitions)
+      ShimLoader.getSparkShims.getFileScanRDD(fsRelation.sparkSession, readFile.get, filePartitions)
     } else {
       // here we are making an optimization to read more then 1 file at a time on the CPU side
       // if they are small files before sending it down to the GPU
@@ -485,28 +484,15 @@ case class GpuFileSourceScanExec(
     logInfo(s"Planning scan with bin packing, max size: $maxSplitBytes bytes, " +
       s"open cost is considered as scanning $openCostInBytes bytes.")
 
-    val splitFiles = selectedPartitions.flatMap { partition =>
-      partition.files.flatMap { file =>
-        // getPath() is very expensive so we only want to call it once in this block:
-        val filePath = file.getPath
-        val isSplitable = relation.fileFormat.isSplitable(
-          relation.sparkSession, relation.options, filePath)
-        PartitionedFileUtil.splitFiles(
-          sparkSession = relation.sparkSession,
-          file = file,
-          filePath = filePath,
-          isSplitable = isSplitable,
-          maxSplitBytes = maxSplitBytes,
-          partitionValues = partition.values
-        )
-      }
-    }.sortBy(_.length)(implicitly[Ordering[Long]].reverse)
+    val splitFiles = ShimLoader.getSparkShims
+      .getPartitionSplitFiles(selectedPartitions, maxSplitBytes, relation)
+      .sortBy(_.length)(implicitly[Ordering[Long]].reverse)
 
     val partitions =
       FilePartition.getFilePartitions(relation.sparkSession, splitFiles, maxSplitBytes)
 
     if (!useSmallFileOpt) {
-      new FileScanRDD(fsRelation.sparkSession, readFile.get, partitions)
+      ShimLoader.getSparkShims.getFileScanRDD(fsRelation.sparkSession, readFile.get, partitions)
     } else {
       // here we are making an optimization to read more then 1 file at a time on the CPU side
       // if they are small files before sending it down to the GPU
