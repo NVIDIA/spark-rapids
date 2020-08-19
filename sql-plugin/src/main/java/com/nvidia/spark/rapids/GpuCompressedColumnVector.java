@@ -45,7 +45,7 @@ public final class GpuCompressedColumnVector extends GpuColumnVectorBase {
    * Build a columnar batch from a compressed data buffer and specified table metadata
    * NOTE: The data remains compressed and cannot be accessed directly from the columnar batch.
    */
-  public static ColumnarBatch from(DeviceMemoryBuffer buffer, TableMeta tableMeta) {
+  public static ColumnarBatch from(DeviceMemoryBuffer compressedBuffer, TableMeta tableMeta) {
     long rows = tableMeta.rowCount();
     if (rows != (int) rows) {
       throw new IllegalStateException("Cannot support a batch larger that MAX INT rows");
@@ -59,7 +59,7 @@ public final class GpuCompressedColumnVector extends GpuColumnVectorBase {
         tableMeta.columnMetas(columnMeta, i);
         DType dtype = DType.fromNative(columnMeta.dtype());
         DataType type = GpuColumnVector.getSparkType(dtype);
-        DeviceMemoryBuffer slicedBuffer = buffer.slice(0, buffer.getLength());
+        DeviceMemoryBuffer slicedBuffer = compressedBuffer.slice(0, compressedBuffer.getLength());
         columns[i] = new GpuCompressedColumnVector(type, slicedBuffer, tableMeta);
       }
     } catch (Throwable t) {
