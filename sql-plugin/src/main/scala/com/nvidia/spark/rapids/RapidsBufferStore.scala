@@ -21,8 +21,7 @@ import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicLong
 
 import ai.rapids.cudf.{Cuda, DeviceMemoryBuffer, HostMemoryBuffer, NvtxColor, NvtxRange}
-import com.nvidia.spark.rapids.StorageTier.StorageTier
-import com.nvidia.spark.rapids.format.{BufferMeta, CodecBufferDescriptor, CodecType, TableMeta}
+import com.nvidia.spark.rapids.format.TableMeta
 
 import org.apache.spark.internal.Logging
 import org.apache.spark.sql.vectorized.ColumnarBatch
@@ -267,30 +266,24 @@ abstract class RapidsBufferStore(
       // allocated. Allocations can trigger synchronous spills which can
       // deadlock if another thread holds the device store lock and is trying
       // to spill to this store.
-      var deviceBuffer = DeviceMemoryBuffer.allocate(size)
-      try {
-        val buffer = getMemoryBuffer
-        try {
-          buffer match {
-            case h: HostMemoryBuffer =>
-              logDebug(s"copying from host $h to device $deviceBuffer")
-              deviceBuffer.copyFromHostBuffer(h)
-            case _ => throw new IllegalStateException(
-              "must override getColumnarBatch if not providing a host buffer")
-          }
-        } finally {
-          buffer.close()
+      withResource(DeviceMemoryBuffer.allocate(size)) { deviceBuffer =>
+        withResource(getMemoryBuffer) {
+          case h: HostMemoryBuffer =>
+            logDebug(s"copying from host $h to device $deviceBuffer")
+            deviceBuffer.copyFromHostBuffer(h)
+          case _ => throw new IllegalStateException(
+            "must override getColumnarBatch if not providing a host buffer")
         }
+        columnarBatchFromDeviceBuffer(deviceBuffer)
+      }
+    }
 
-        if (meta.bufferMeta.codecBufferDescrsLength > 0) {
-          withResource(deviceBuffer) { compressedBuffer =>
-            deviceBuffer = uncompressBuffer(compressedBuffer, meta.bufferMeta)
-          }
-        }
-
-        MetaUtils.getBatchFromMeta(deviceBuffer, meta)
-      } finally {
-        deviceBuffer.close()
+    protected def columnarBatchFromDeviceBuffer(devBuffer: DeviceMemoryBuffer): ColumnarBatch = {
+      val bufferMeta = meta.bufferMeta()
+      if (bufferMeta == null || bufferMeta.codecBufferDescrsLength == 0) {
+        MetaUtils.getBatchFromMeta(devBuffer, meta)
+      } else {
+        GpuCompressedColumnVector.from(devBuffer, meta)
       }
     }
 
@@ -340,42 +333,6 @@ abstract class RapidsBufferStore(
       releaseResources()
       memoryFreedMonitor.synchronized {
         memoryFreedMonitor.notifyAll()
-      }
-    }
-
-    protected def uncompressBuffer(
-        compressedBuffer: DeviceMemoryBuffer,
-        meta: BufferMeta): DeviceMemoryBuffer = {
-      closeOnExcept(DeviceMemoryBuffer.allocate(meta.uncompressedSize)) { uncompressedBuffer =>
-        val cbd = new CodecBufferDescriptor
-        (0 until meta.codecBufferDescrsLength).foreach { i =>
-          meta.codecBufferDescrs(cbd, i)
-          if (cbd.codec == CodecType.UNCOMPRESSED) {
-            uncompressedBuffer.copyFromDeviceBufferAsync(
-              cbd.uncompressedOffset,
-              compressedBuffer,
-              cbd.compressedOffset,
-              cbd.compressedSize,
-              Cuda.DEFAULT_STREAM)
-          } else {
-            val startTime = System.nanoTime()
-            val codec = TableCompressionCodec.getCodec(cbd.codec)
-            codec.decompressBuffer(
-              uncompressedBuffer,
-              cbd.uncompressedOffset,
-              cbd.uncompressedSize,
-              compressedBuffer,
-              cbd.compressedOffset,
-              cbd.compressedSize)
-            val duration = System.nanoTime() - startTime
-            val compressedSize = cbd.compressedSize()
-            val uncompressedSize = cbd.uncompressedSize
-            logDebug(s"Decompressed buffer with ${codec.name} in ${duration / 1000} us," +
-                s"rate=${compressedSize.toFloat / duration} GB/s " +
-                s"from $compressedSize to $uncompressedSize")
-          }
-        }
-        uncompressedBuffer
       }
     }
 

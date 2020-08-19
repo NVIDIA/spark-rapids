@@ -480,7 +480,7 @@ class GpuCoalesceIterator(iter: Iterator[ColumnarBatch],
           val buffer = cv.getBuffer.slice(0, cv.getBuffer.getLength)
           decompressor.addBufferToDecompress(buffer, bufferMeta)
         }
-        closeOnExcept(decompressor.finish()) { outputBuffers =>
+        withResource(decompressor.finish()) { outputBuffers =>
           outputBuffers.zipWithIndex.foreach { case (outputBuffer, outputIndex) =>
             val cv = compressedVecs(outputIndex)
             val batchIndex = compressedBatchIndices(outputIndex)
