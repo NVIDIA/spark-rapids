@@ -31,14 +31,18 @@ import org.apache.spark.sql.catalyst.expressions.aggregate.{First, Last}
 import org.apache.spark.sql.catalyst.plans.JoinType
 import org.apache.spark.sql.catalyst.plans.physical.{BroadcastMode, Partitioning}
 import org.apache.spark.sql.catalyst.rules.Rule
+import org.apache.spark.sql.connector.read.Scan
 import org.apache.spark.sql.execution._
 import org.apache.spark.sql.execution.adaptive.ShuffleQueryStageExec
-import org.apache.spark.sql.execution.datasources.{BucketingUtils, FilePartition, FileScanRDD, HadoopFsRelation, PartitionDirectory, PartitionedFile}
+import org.apache.spark.sql.execution.datasources.{FilePartition, FileScanRDD, HadoopFsRelation, PartitionDirectory, PartitionedFile}
+import org.apache.spark.sql.execution.datasources.v2.csv.CSVScan
+import org.apache.spark.sql.execution.datasources.v2.orc.OrcScan
+import org.apache.spark.sql.execution.datasources.v2.parquet.ParquetScan
 import org.apache.spark.sql.execution.exchange.{BroadcastExchangeExec, ShuffleExchangeExec}
 import org.apache.spark.sql.execution.joins.{BroadcastHashJoinExec, BroadcastNestedLoopJoinExec, HashJoin, SortMergeJoinExec}
 import org.apache.spark.sql.execution.joins.ShuffledHashJoinExec
 import org.apache.spark.sql.rapids.{GpuFileSourceScanExec, GpuTimeSub, ShuffleManagerShimBase}
-import org.apache.spark.sql.rapids.execution.{GpuBroadcastExchangeExecBase, GpuBroadcastMeta, GpuBroadcastNestedLoopJoinExecBase, GpuShuffleExchangeExecBase, GpuShuffleMeta}
+import org.apache.spark.sql.rapids.execution.{GpuBroadcastExchangeExecBase, GpuBroadcastNestedLoopJoinExecBase, GpuShuffleExchangeExecBase}
 import org.apache.spark.sql.rapids.shims.spark300._
 import org.apache.spark.sql.types._
 import org.apache.spark.storage.{BlockId, BlockManagerId}
@@ -215,6 +219,46 @@ class Spark300Shims extends SparkShims {
         })
     ).map(r => (r.getClassFor.asSubclass(classOf[Expression]), r)).toMap
   }
+
+  override def getScans: Map[Class[_ <: Scan], ScanRule[_ <: Scan]] = Seq(
+    GpuOverrides.scan[ParquetScan](
+      "Parquet parsing",
+      (a, conf, p, r) => new ScanMeta[ParquetScan](a, conf, p, r) {
+        override def tagSelfForGpu(): Unit = GpuParquetScanBase.tagSupport(this)
+
+        override def convertToGpu(): Scan =
+          GpuParquetScan(a.sparkSession,
+            a.hadoopConf,
+            a.fileIndex,
+            a.dataSchema,
+            a.readDataSchema,
+            a.readPartitionSchema,
+            a.pushedFilters,
+            a.options,
+            a.partitionFilters,
+            a.dataFilters,
+            conf)
+      }),
+    GpuOverrides.scan[OrcScan](
+      "ORC parsing",
+      (a, conf, p, r) => new ScanMeta[OrcScan](a, conf, p, r) {
+        override def tagSelfForGpu(): Unit =
+          GpuOrcScanBase.tagSupport(this)
+
+        override def convertToGpu(): Scan =
+          GpuOrcScan(a.sparkSession,
+            a.hadoopConf,
+            a.fileIndex,
+            a.dataSchema,
+            a.readDataSchema,
+            a.readPartitionSchema,
+            a.options,
+            a.pushedFilters,
+            a.partitionFilters,
+            a.dataFilters,
+            conf)
+      })
+  ).map(r => (r.getClassFor.asSubclass(classOf[Scan]), r)).toMap
 
   override def getBuildSide(join: HashJoin): GpuBuildSide = {
     GpuJoinUtils.getGpuBuildSide(join.buildSide)
