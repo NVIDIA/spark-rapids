@@ -1,0 +1,20 @@
+# A workflow to keep BASE branch up-to-date from HEAD branch
+name: auto-merge HEAD to BASE
+
+on:
+  schedule:
+  - cron: '0 * * * *' # hourly
+
+jobs:
+  auto-merge:
+    runs-on: ubuntu-latest
+    steps:
+    - name: auto-merge job
+      if: ${{ github.ref == 'refs/heads/branch-0.2' }} # make sure this workflow would not be triggered by other refs
+      uses: docker://pxli/automerge:latest # https://gitlab-master.nvidia.com/peixinl/automerge
+      env:
+        OWNER: NVIDIA
+        REPO_NAME: spark-rapids
+        HEAD: branch-0.2
+        BASE: branch-0.3
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
