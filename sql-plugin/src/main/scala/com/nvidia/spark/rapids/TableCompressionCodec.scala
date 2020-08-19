@@ -18,9 +18,11 @@ package com.nvidia.spark.rapids
 
 import scala.collection.mutable.ArrayBuffer
 
-import ai.rapids.cudf.{ContiguousTable, DeviceMemoryBuffer}
+import ai.rapids.cudf.{ContiguousTable, DeviceMemoryBuffer, NvtxColor, NvtxRange}
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import com.nvidia.spark.rapids.format.{BufferMeta, CodecType, TableMeta}
+
+import org.apache.spark.internal.Logging
 
 /**
  * Compressed table descriptor
@@ -122,7 +124,8 @@ object TableCompressionCodec {
  *                           temporary and output memory above this limit is allowed but will
  *                           be compressed individually.
  */
-abstract class BatchedTableCompressor(maxBatchMemorySize: Long) extends AutoCloseable with Arm {
+abstract class BatchedTableCompressor(maxBatchMemorySize: Long) extends AutoCloseable with Arm
+    with Logging {
   // The tables that need to be compressed in the next batch
   private[this] val tables = new ArrayBuffer[ContiguousTable]
 
@@ -220,22 +223,36 @@ abstract class BatchedTableCompressor(maxBatchMemorySize: Long) extends AutoClos
   private def compressBatch(): Unit = if (tables.nonEmpty) {
     require(oversizedOutBuffers.length == tables.length)
     require(tempBuffers.length == tables.length)
-    val metas = compress(oversizedOutBuffers.toArray, tables.toArray, tempBuffers.toArray)
+    val startTime = System.nanoTime()
+    val metas = withResource(new NvtxRange("batch ompress", NvtxColor.ORANGE)) { _ =>
+      compress(oversizedOutBuffers.toArray, tables.toArray, tempBuffers.toArray)
+    }
     require(metas.length == tables.length)
 
+    val inputSize = tables.map(_.getBuffer.getLength).sum
+    var outputSize: Long = 0
+
     // copy the output data into correctly-sized buffers
-    metas.zipWithIndex.foreach { case (meta, i) =>
-      val oversizedBuffer = oversizedOutBuffers(i)
-      val compressedSize = meta.bufferMeta.size
-      val buffer = if (oversizedBuffer.getLength > compressedSize) {
-        oversizedBuffer.sliceWithCopy(0, compressedSize)
-      } else {
-        // use this buffer as-is, don't close it at the end of this method
-        oversizedOutBuffers(i) = null
-        oversizedBuffer
+    withResource(new NvtxRange("copy compressed buffers", NvtxColor.PURPLE)) { _ =>
+      metas.zipWithIndex.foreach { case (meta, i) =>
+        val oversizedBuffer = oversizedOutBuffers(i)
+        val compressedSize = meta.bufferMeta.size
+        outputSize += compressedSize
+        val buffer = if (oversizedBuffer.getLength > compressedSize) {
+          oversizedBuffer.sliceWithCopy(0, compressedSize)
+        } else {
+          // use this buffer as-is, don't close it at the end of this method
+          oversizedOutBuffers(i) = null
+          oversizedBuffer
+        }
+        results += CompressedTable(compressedSize, meta, buffer)
       }
-      results += CompressedTable(compressedSize, meta, buffer)
     }
+
+    val duration = (System.nanoTime() - startTime).toFloat
+    logDebug(s"Compressed ${tables.length} tables from $inputSize to $outputSize " +
+        s"in ${duration / 1000000} msec rate=${inputSize / duration} GB/s " +
+        s"ratio=${outputSize.toFloat/inputSize}")
 
     // free all the inputs to this batch
     tables.safeClose()
@@ -277,7 +294,8 @@ abstract class BatchedTableCompressor(maxBatchMemorySize: Long) extends AutoClos
  *                           temporary and output memory above this limit is allowed but will
  *                           be compressed individually.
  */
-abstract class BatchedBufferDecompressor(maxBatchMemorySize: Long) extends AutoCloseable with Arm {
+abstract class BatchedBufferDecompressor(maxBatchMemorySize: Long) extends AutoCloseable with Arm
+    with Logging {
   // The buffers of compressed data that will be decompressed in the next batch
   private[this] val inputBuffers = new ArrayBuffer[DeviceMemoryBuffer]
 
@@ -343,15 +361,26 @@ abstract class BatchedBufferDecompressor(maxBatchMemorySize: Long) extends AutoC
     inputBuffers.safeClose()
     tempBuffers.safeClose()
     outputBuffers.safeClose()
+    results.safeClose()
   }
 
   protected def decompressBatch(): Unit = {
     if (inputBuffers.nonEmpty) {
       require(outputBuffers.length == inputBuffers.length)
       require(tempBuffers.length == inputBuffers.length)
-      decompress(outputBuffers.toArray, inputBuffers.toArray, tempBuffers.toArray)
+      val startTime = System.nanoTime()
+      withResource(new NvtxRange("batch decompress", NvtxColor.ORANGE)) { _ =>
+        decompress(outputBuffers.toArray, inputBuffers.toArray, tempBuffers.toArray)
+      }
+      val duration = (System.nanoTime - startTime).toFloat
+      val inputSize = inputBuffers.map(_.getLength).sum
+      val outputSize = outputBuffers.map(_.getLength).sum
+
       results ++= outputBuffers
       outputBuffers.clear()
+
+      logDebug(s"Decompressed ${inputBuffers.length} buffers from $inputSize " +
+          s"to $outputSize in ${duration / 1000000} msec rate=${outputSize / duration} GB/s")
 
       // free all the inputs to this batch
       inputBuffers.safeClose()

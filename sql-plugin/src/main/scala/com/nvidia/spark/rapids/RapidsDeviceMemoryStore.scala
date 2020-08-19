@@ -140,12 +140,7 @@ class RapidsDeviceMemoryStore(
       if (table.isDefined) {
         GpuColumnVector.from(table.get) //REFCOUNT ++ of all columns
       } else {
-        val uncompressedBuffer = uncompressBuffer(contigBuffer, meta.bufferMeta)
-        try {
-          MetaUtils.getBatchFromMeta(uncompressedBuffer, meta)
-        } finally {
-          uncompressedBuffer.close()
-        }
+        columnarBatchFromDeviceBuffer(contigBuffer)
       }
     }
   }

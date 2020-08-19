@@ -26,8 +26,12 @@ import org.apache.spark.SparkEnv
 import org.apache.spark.sql.catalyst.encoders.ExpressionEncoder
 import org.apache.spark.sql.catalyst.expressions._
 import org.apache.spark.sql.catalyst.plans.JoinType
+import org.apache.spark.sql.connector.read.Scan
 import org.apache.spark.sql.execution._
 import org.apache.spark.sql.execution.datasources.HadoopFsRelation
+import org.apache.spark.sql.execution.datasources.v2.csv.CSVScan
+import org.apache.spark.sql.execution.datasources.v2.orc.OrcScan
+import org.apache.spark.sql.execution.datasources.v2.parquet.ParquetScan
 import org.apache.spark.sql.execution.joins.{BroadcastHashJoinExec, BroadcastNestedLoopJoinExec, HashJoin, SortMergeJoinExec}
 import org.apache.spark.sql.execution.joins.ShuffledHashJoinExec
 import org.apache.spark.sql.rapids.{GpuFileSourceScanExec, GpuTimeSub, ShuffleManagerShimBase}
@@ -162,6 +166,47 @@ class Spark310Shims extends Spark301Shims {
         (join, conf, p, r) => new GpuShuffledHashJoinMeta(join, conf, p, r))
     ).map(r => (r.getClassFor.asSubclass(classOf[SparkPlan]), r)).toMap
   }
+
+  override def getScans: Map[Class[_ <: Scan], ScanRule[_ <: Scan]] = Seq(
+    GpuOverrides.scan[ParquetScan](
+      "Parquet parsing",
+      (a, conf, p, r) => new ScanMeta[ParquetScan](a, conf, p, r) {
+        override def tagSelfForGpu(): Unit = GpuParquetScanBase.tagSupport(this)
+
+        override def convertToGpu(): Scan =
+          GpuParquetScan(a.sparkSession,
+            a.hadoopConf,
+            a.fileIndex,
+            a.dataSchema,
+            a.readDataSchema,
+            a.readPartitionSchema,
+            a.pushedFilters,
+            a.options,
+            a.partitionFilters,
+            a.dataFilters,
+            conf)
+      }),
+    GpuOverrides.scan[OrcScan](
+      "ORC parsing",
+      (a, conf, p, r) => new ScanMeta[OrcScan](a, conf, p, r) {
+        override def tagSelfForGpu(): Unit =
+          GpuOrcScanBase.tagSupport(this)
+
+        override def convertToGpu(): Scan =
+          GpuOrcScan(a.sparkSession,
+            a.hadoopConf,
+            a.fileIndex,
+            a.dataSchema,
+            a.readDataSchema,
+            a.readPartitionSchema,
+            a.options,
+            a.pushedFilters,
+            a.partitionFilters,
+            a.dataFilters,
+            conf)
+      })
+  ).map(r => (r.getClassFor.asSubclass(classOf[Scan]), r)).toMap
+
 
   override def getBuildSide(join: HashJoin): GpuBuildSide = {
     GpuJoinUtils.getGpuBuildSide(join.buildSide)
