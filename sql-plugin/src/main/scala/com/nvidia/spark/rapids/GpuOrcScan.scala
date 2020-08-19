@@ -62,23 +62,19 @@ import org.apache.spark.sql.util.CaseInsensitiveStringMap
 import org.apache.spark.sql.vectorized.ColumnarBatch
 import org.apache.spark.util.SerializableConfiguration
 
-case class GpuOrcScan(
+abstract class GpuOrcScanBase(
     sparkSession: SparkSession,
     hadoopConf: Configuration,
-    fileIndex: PartitioningAwareFileIndex,
     dataSchema: StructType,
     readDataSchema: StructType,
     readPartitionSchema: StructType,
-    options: CaseInsensitiveStringMap,
     pushedFilters: Array[Filter],
-    partitionFilters: Seq[Expression],
-    dataFilters: Seq[Expression],
     rapidsConf: RapidsConf)
-  extends FileScan with ScanWithMetrics {
+  extends ScanWithMetrics {
 
-  override def isSplitable(path: Path): Boolean = true
+  def isSplitableBase(path: Path): Boolean = true
 
-  override def createReaderFactory(): PartitionReaderFactory = {
+  def createReaderFactoryBase(): PartitionReaderFactory = {
     // Unset any serialized search argument setup by Spark's OrcScanBuilder as
     // it will be incompatible due to shading and potential ORC classifier mismatch.
     hadoopConf.unset(OrcConf.KRYO_SARG.getAttribute)
@@ -88,26 +84,9 @@ case class GpuOrcScan(
     GpuOrcPartitionReaderFactory(sparkSession.sessionState.conf, broadcastedConf,
       dataSchema, readDataSchema, readPartitionSchema, pushedFilters, rapidsConf, metrics)
   }
-
-  override def equals(obj: Any): Boolean = obj match {
-    case o: GpuOrcScan =>
-      super.equals(o) && dataSchema == o.dataSchema && options == o.options &&
-        equivalentFilters(pushedFilters, o.pushedFilters) && rapidsConf == o.rapidsConf
-    case _ => false
-  }
-
-  override def hashCode(): Int = getClass.hashCode()
-
-  override def description(): String = {
-    super.description() + ", PushedFilters: " + seqToString(pushedFilters)
-  }
-
-  override def withFilters(
-      partitionFilters: Seq[Expression], dataFilters: Seq[Expression]): FileScan =
-    this.copy(partitionFilters = partitionFilters, dataFilters = dataFilters)
 }
 
-object GpuOrcScan {
+object GpuOrcScanBase {
   def tagSupport(scanMeta: ScanMeta[OrcScan]): Unit = {
     val scan = scanMeta.wrapped
     val schema = StructType(scan.readDataSchema ++ scan.readPartitionSchema)

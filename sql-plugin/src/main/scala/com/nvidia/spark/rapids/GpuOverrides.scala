@@ -1504,7 +1504,27 @@ object GpuOverrides {
       .map(r => r.wrap(scan, conf, parent, r).asInstanceOf[ScanMeta[INPUT]])
       .getOrElse(new RuleNotFoundScanMeta(scan, conf, parent))
 
-  val scans : Map[Class[_ <: Scan], ScanRule[_ <: Scan]] = ShimLoader.getSparkShims.getScans
+  val commonScans: Map[Class[_ <: Scan], ScanRule[_ <: Scan]] = Seq(
+    GpuOverrides.scan[CSVScan](
+      "CSV parsing",
+      (a, conf, p, r) => new ScanMeta[CSVScan](a, conf, p, r) {
+        override def tagSelfForGpu(): Unit = GpuCSVScan.tagSupport(this)
+
+        override def convertToGpu(): Scan =
+          GpuCSVScan(a.sparkSession,
+            a.fileIndex,
+            a.dataSchema,
+            a.readDataSchema,
+            a.readPartitionSchema,
+            a.options,
+            a.partitionFilters,
+            a.dataFilters,
+            conf.maxReadBatchSizeRows,
+            conf.maxReadBatchSizeBytes)
+      })).map(r => (r.getClassFor.asSubclass(classOf[Scan]), r)).toMap
+
+  val scans: Map[Class[_ <: Scan], ScanRule[_ <: Scan]] =
+    commonScans ++ ShimLoader.getSparkShims.getScans
 
   def wrapPart[INPUT <: Partitioning](
       part: INPUT,
