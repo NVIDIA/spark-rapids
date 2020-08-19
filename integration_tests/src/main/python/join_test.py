@@ -18,6 +18,7 @@ from asserts import assert_gpu_and_cpu_are_equal_collect
 from conftest import is_databricks_runtime
 from data_gen import *
 from marks import ignore_order, allow_non_gpu, incompat
+from spark_session import with_spark_session
 
 all_gen = [StringGen(), ByteGen(), ShortGen(), IntegerGen(), LongGen(),
            BooleanGen(), DateGen(), TimestampGen(),
@@ -149,7 +150,11 @@ _mixed_df2_with_nulls = [('a', RepeatSeqGen(LongGen(nullable=(True, 20.0)), leng
                          ('b', StringGen()), ('c', BooleanGen())]
 
 @ignore_order
-@pytest.mark.parametrize('join_type', ['Left', 'Right', 'Inner', 'LeftSemi', 'LeftAnti', 'FullOuter', 'Cross'], ids=idfn)
+@pytest.mark.parametrize('join_type', ['Left', 'Right', 'Inner', 'LeftSemi', 'LeftAnti',
+    pytest.param('FullOuter', marks=pytest.mark.xfail(
+        condition=with_spark_session(lambda spark : not(spark.sparkContext.version < "3.1.0")),
+        reason='https://github.com/NVIDIA/spark-rapids/issues/575')),
+    'Cross'], ids=idfn)
 def test_broadcast_join_mixed(join_type):
     def do_join(spark):
         left = gen_df(spark, _mixed_df1_with_nulls, length=500)

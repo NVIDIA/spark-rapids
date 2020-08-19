@@ -32,6 +32,7 @@
     <version>0.2.0-SNAPSHOT</version>
 
     <properties>
+        <parquet.version>1.10.1</parquet.version>
         <spark30db.version>3.0.0-databricks</spark30db.version>
     </properties>
 
@@ -58,6 +59,18 @@
             <artifactId>spark-core_${scala.binary.version}</artifactId>
 	    <version>${spark30db.version}</version>
 	    <scope>provided</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.apache.spark</groupId>
+            <artifactId>spark-annotation_${scala.binary.version}</artifactId>
+            <version>${spark30db.version}</version>
+            <scope>provided</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.apache.parquet</groupId>
+            <artifactId>parquet-column</artifactId>
+            <version>${parquet.version}</version>
+            <scope>provided</scope>
         </dependency>
     </dependencies>
 
