@@ -42,8 +42,8 @@ They generally follow TPCH but are not guaranteed to be the same.
 Unit tests exist in the tests directory. This is unconventional and is done so we can run the tests
 on the final shaded version of the plugin. It also helps with how we collect code coverage.
 You can run the unit tests against different versions of Spark using the different profiles. The
-default version runs again Spark 3.0.0, `-Pspark301tests` runs against Spark 3.0.1, and `-Pspark310tests`
-runs unit tests against Spark 3.1.0.
+default version runs again Spark 3.0.0, `-Pspark301tests` runs against Spark 3.0.1, -Pspark302tests
+run against Spark 3.0.2 and `-Pspark310tests runs unit tests against Spark 3.1.0.
 
 ## Integration tests
 
