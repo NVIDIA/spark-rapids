@@ -1,0 +1,294 @@
+#!/usr/bin/env python
+
+# Copyright (c) 2020, NVIDIA CORPORATION.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+"""A simple changelog generator
+
+NOTE: This is a repo-specific script, so you may not use it in other places.
+
+e.g.
+    cd spark-rapids/
+    .github/workflows/changelog/changelog --token=<GITHUB_PERSONAL_ACCESS_TOKEN> --base_refs=branch-0.1,branch-0.2,branch-0.3
+"""
+import os
+import sys
+from argparse import ArgumentParser
+from collections import OrderedDict
+from datetime import date
+
+import requests
+
+parser = ArgumentParser(description="Changelog Generator")
+parser.add_argument("--base_refs", help="list of base refs, separated by comma",
+                    default="branch-0.1,branch-0.2,branch-0.3")
+parser.add_argument("--token", help="github token, will use GITHUB_TOKEN if empty", default='')
+parser.add_argument("--path", help="path for generated changelog file", default='./CHANGELOG.md')
+args = parser.parse_args()
+
+GITHUB_TOKEN = args.token if args.token else os.environ.get('GITHUB_TOKEN')
+assert GITHUB_TOKEN, 'env GITHUB_TOKEN should not be empty'
+
+# Constants
+RELEASE = "Release "
+PULL_REQUESTS = "pullRequests"
+ISSUES = "issues"
+# Subtitles
+INVALID = 'Invalid'
+BUGS_FIXED = 'Bugs Fixed'
+PERFORMANCE = 'Performance'
+FEATURES = 'Features'
+PRS = 'PRs'
+# Labels
+LABEL_WONTFIX, LABEL_INVALID, LABEL_DUPLICATE = 'wontfix', 'invalid', 'duplicate'
+LABEL_BUG = 'bug'
+LABEL_PERFORMANCE, LABEL_SHUFFLE = 'performance', 'shuffle'
+LABEL_FEATURE, LABEL_SQL = 'feature request', 'SQL'
+# Global Vars
+changelog = {}  # changelog dict
+no_project_prs = []  # list of merge pr w/o project
+
+query_pr = """
+query ($baseRefName: String!, $after: String) {
+  repository(name: "spark-rapids", owner: "NVIDIA") {
+    pullRequests(states: [MERGED], baseRefName: $baseRefName, first: 100, after: $after) {
+      totalCount
+      nodes {
+        number
+        title
+        headRefName
+        baseRefName
+        state
+        url
+        labels(first: 10) {
+          nodes {
+            name
+          }
+        }
+        projectCards(first: 10) {
+          nodes {
+            project {
+              name
+            }
+            column {
+              name
+            }
+          }
+        }
+        mergedAt
+      }
+      pageInfo {
+        hasNextPage
+        endCursor
+      }
+    }
+  }
+}
+"""
+
+query_issue = """
+query ($after: String) {
+  repository(name: "spark-rapids", owner: "NVIDIA") {
+    issues(states: [CLOSED], labels: ["SQL", "feature request", "performance", "bug", "shuffle"], first: 100, after: $after) {
+      totalCount
+      nodes {
+        number
+        title
+        state
+        url
+        labels(first: 10) {
+          nodes {
+            name
+          }
+        }
+        projectCards(first: 10) {
+          nodes {
+            project {
+              name
+            }
+            column {
+              name
+            }
+          }
+        }
+        closedAt
+      }
+      pageInfo {
+        hasNextPage
+        endCursor
+      }
+    }
+  }
+}
+"""
+
+
+def process_changelog(resource_type: str):
+    if resource_type == PULL_REQUESTS:
+        items = process_pr()
+        time_field = 'mergedAt'
+    elif resource_type == ISSUES:
+        items = process_issue()
+        time_field = 'closedAt'
+    else:
+        return
+
+    for item in items:
+        if len(item['projectCards']['nodes']) == 0:
+            if resource_type == PULL_REQUESTS:
+                no_project_prs.append(item)
+            continue
+
+        project = item['projectCards']['nodes'][0]['project']['name']
+        if not release_project(project):
+            continue
+
+        if project not in changelog:
+            changelog[project] = {
+                FEATURES: [],
+                PERFORMANCE: [],
+                BUGS_FIXED: [],
+                PRS: [],
+            }
+
+        labels = set()
+        for label in item['labels']['nodes']:
+            labels.add(label['name'])
+        category = rules(labels)
+        if category == INVALID:
+            continue
+        if resource_type == PULL_REQUESTS:
+            category = PRS
+
+        changelog[project][category].append({
+            "number": item['number'],
+            "title": item['title'],
+            "url": item['url'],
+            "time": item[time_field],
+        })
+
+
+def process_pr():
+    pr = []
+    for ref in [x.strip() for x in args.base_refs.split(',')]:
+        pr.extend(fetch(PULL_REQUESTS, {'baseRefName': ref}))
+    return pr
+
+
+def process_issue():
+    return fetch(ISSUES)
+
+
+def fetch(resource_type: str, variables=None):
+    items = []
+    if resource_type == PULL_REQUESTS and variables:
+        q = query_pr
+    elif resource_type == ISSUES:
+        q = query_issue
+        variables = {}
+    else:
+        return items
+
+    has_next = True
+    while has_next:
+        res = post(q, variables)
+        if res.status_code == 200:
+            d = res.json()
+            has_next = d['data']['repository'][resource_type]["pageInfo"]["hasNextPage"]
+            variables['after'] = d['data']['repository'][resource_type]["pageInfo"]["endCursor"]
+            items.extend(d['data']['repository'][resource_type]['nodes'])
+        else:
+            raise Exception("Query failed to run by returning code of {}. {}".format(res.status_code, q))
+    return items
+
+
+def post(query: str, variable: dict):
+    return requests.post('https://api.github.com/graphql',
+                         json={'query': query, 'variables': variable},
+                         headers={"Authorization": f"token {GITHUB_TOKEN}"})
+
+
+def release_project(project_name: str):
+    if project_name.startswith(RELEASE):
+        return True
+    return False
+
+
+def rules(labels: set):
+    if LABEL_WONTFIX in labels or LABEL_INVALID in labels or LABEL_DUPLICATE in labels:
+        return INVALID
+    if LABEL_BUG in labels:
+        return BUGS_FIXED
+    if LABEL_PERFORMANCE in labels or LABEL_SHUFFLE in labels:
+        return PERFORMANCE
+    if LABEL_FEATURE in labels or LABEL_SQL in labels:
+        return FEATURES
+    return INVALID
+
+
+def form_changelog():
+    sorted_dict = OrderedDict(sorted(changelog.items(), reverse=True))
+    subsections = ""
+    for project_name, issues in sorted_dict.items():
+        subsections += f"\n## {project_name}\n"
+        subsections += form_subsection(issues, FEATURES)
+        subsections += form_subsection(issues, PERFORMANCE)
+        subsections += form_subsection(issues, BUGS_FIXED)
+        subsections += form_subsection(issues, PRS)
+    markdown = f"""# Change log
+Generated on {date.today()}
+{subsections}
+"""
+    with open(args.path, "w") as file:
+        file.write(markdown)
+
+
+def form_subsection(issues: dict, subtitle: str):
+    if len(issues[subtitle]) == 0:
+        return ''
+    subsection = f"\n### {subtitle}\n"
+    subsection += "|||\n|:---|:---|"
+    for issue in sorted(issues[subtitle], key=lambda x: x['time'], reverse=True):
+        subsection += f"\n|[#{issue['number']}]({issue['url']})|{issue['title']}|"
+    return subsection
+
+
+def print_no_project_pr():
+    if len(no_project_prs) != 0:
+        print("Merged Pull Requests w/o Project:")
+    for pr in no_project_prs:
+        print(f"{pr['baseRefName']} #{pr['number']} {pr['title']} {pr['url']}")
+
+
+def main():
+    print('Generating changelog ...')
+
+    try:
+        print('Processing pull requests ...')
+        process_changelog(PULL_REQUESTS)
+        print('Processing issues ...')
+        process_changelog(ISSUES)
+        # form doc
+        form_changelog()
+    except Exception as e:  # pylint: disable=broad-except
+        print(e)
+        sys.exit(1)
+
+    print('Done.')
+    # post action
+    print_no_project_pr()
+
+
+if __name__ == '__main__':
+    main()
