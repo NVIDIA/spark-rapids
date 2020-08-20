@@ -132,6 +132,7 @@ case class GpuShuffledHashJoinExec(
             }
           }
         }
+
         val delta = System.nanoTime() - startTime
         buildTime += delta
         totalTime += delta

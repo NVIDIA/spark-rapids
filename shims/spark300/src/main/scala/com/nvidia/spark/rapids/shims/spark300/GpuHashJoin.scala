@@ -158,6 +158,11 @@ trait GpuHashJoin extends GpuExec with HashJoin {
   private[this] lazy val streamedTableNullFilterExpression: GpuExpression =
     mkNullFilterExpr(gpuStreamedKeys)
 
+  /**
+   * Filter the builtBatch if needed.  builtBatch will be closed.
+   * @param builtBatch
+   * @return
+   */
   def filterBuiltTableIfNeeded(builtBatch: ColumnarBatch): ColumnarBatch =
     if (shouldFilterBuiltTableForNulls) {
       GpuFilter(builtBatch, builtTableNullFilterExpression)
