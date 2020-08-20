@@ -15,7 +15,6 @@
 import pytest
 
 from asserts import assert_gpu_and_cpu_are_equal_collect, assert_gpu_and_cpu_writes_are_equal_collect, assert_gpu_fallback_collect
-from conftest import is_databricks_runtime
 from datetime import date, datetime, timezone
 from data_gen import *
 from marks import *
