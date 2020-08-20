@@ -1504,8 +1504,8 @@ object GpuOverrides {
       .map(r => r.wrap(scan, conf, parent, r).asInstanceOf[ScanMeta[INPUT]])
       .getOrElse(new RuleNotFoundScanMeta(scan, conf, parent))
 
-  val scans : Map[Class[_ <: Scan], ScanRule[_ <: Scan]] = Seq(
-    scan[CSVScan](
+  val commonScans: Map[Class[_ <: Scan], ScanRule[_ <: Scan]] = Seq(
+    GpuOverrides.scan[CSVScan](
       "CSV parsing",
       (a, conf, p, r) => new ScanMeta[CSVScan](a, conf, p, r) {
         override def tagSelfForGpu(): Unit = GpuCSVScan.tagSupport(this)
@@ -1521,45 +1521,10 @@ object GpuOverrides {
             a.dataFilters,
             conf.maxReadBatchSizeRows,
             conf.maxReadBatchSizeBytes)
-      }),
-    scan[ParquetScan](
-      "Parquet parsing",
-      (a, conf, p, r) => new ScanMeta[ParquetScan](a, conf, p, r) {
-        override def tagSelfForGpu(): Unit = GpuParquetScan.tagSupport(this)
+      })).map(r => (r.getClassFor.asSubclass(classOf[Scan]), r)).toMap
 
-        override def convertToGpu(): Scan =
-          GpuParquetScan(a.sparkSession,
-            a.hadoopConf,
-            a.fileIndex,
-            a.dataSchema,
-            a.readDataSchema,
-            a.readPartitionSchema,
-            a.pushedFilters,
-            a.options,
-            a.partitionFilters,
-            a.dataFilters,
-            conf)
-      }),
-    scan[OrcScan](
-      "ORC parsing",
-      (a, conf, p, r) => new ScanMeta[OrcScan](a, conf, p, r) {
-        override def tagSelfForGpu(): Unit =
-          GpuOrcScan.tagSupport(this)
-
-        override def convertToGpu(): Scan =
-          GpuOrcScan(a.sparkSession,
-            a.hadoopConf,
-            a.fileIndex,
-            a.dataSchema,
-            a.readDataSchema,
-            a.readPartitionSchema,
-            a.options,
-            a.pushedFilters,
-            a.partitionFilters,
-            a.dataFilters,
-            conf)
-      })
-  ).map(r => (r.getClassFor.asSubclass(classOf[Scan]), r)).toMap
+  val scans: Map[Class[_ <: Scan], ScanRule[_ <: Scan]] =
+    commonScans ++ ShimLoader.getSparkShims.getScans
 
   def wrapPart[INPUT <: Partitioning](
       part: INPUT,

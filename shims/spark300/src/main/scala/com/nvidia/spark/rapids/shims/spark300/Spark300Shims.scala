@@ -22,16 +22,22 @@ import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.spark300.RapidsShuffleManager
 
 import org.apache.spark.SparkEnv
+import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.{SparkSession, SparkSessionExtensions}
+import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.encoders.ExpressionEncoder
 import org.apache.spark.sql.catalyst.expressions._
 import org.apache.spark.sql.catalyst.expressions.aggregate.{First, Last}
 import org.apache.spark.sql.catalyst.plans.JoinType
 import org.apache.spark.sql.catalyst.plans.physical.{BroadcastMode, Partitioning}
 import org.apache.spark.sql.catalyst.rules.Rule
+import org.apache.spark.sql.connector.read.Scan
 import org.apache.spark.sql.execution._
 import org.apache.spark.sql.execution.adaptive.ShuffleQueryStageExec
-import org.apache.spark.sql.execution.datasources.HadoopFsRelation
+import org.apache.spark.sql.execution.datasources.{FilePartition, FileScanRDD, HadoopFsRelation, PartitionDirectory, PartitionedFile}
+import org.apache.spark.sql.execution.datasources.v2.csv.CSVScan
+import org.apache.spark.sql.execution.datasources.v2.orc.OrcScan
+import org.apache.spark.sql.execution.datasources.v2.parquet.ParquetScan
 import org.apache.spark.sql.execution.exchange.{BroadcastExchangeExec, ShuffleExchangeExec}
 import org.apache.spark.sql.execution.joins.{BroadcastHashJoinExec, BroadcastNestedLoopJoinExec, HashJoin, SortMergeJoinExec}
 import org.apache.spark.sql.execution.joins.ShuffledHashJoinExec
@@ -214,6 +220,46 @@ class Spark300Shims extends SparkShims {
     ).map(r => (r.getClassFor.asSubclass(classOf[Expression]), r)).toMap
   }
 
+  override def getScans: Map[Class[_ <: Scan], ScanRule[_ <: Scan]] = Seq(
+    GpuOverrides.scan[ParquetScan](
+      "Parquet parsing",
+      (a, conf, p, r) => new ScanMeta[ParquetScan](a, conf, p, r) {
+        override def tagSelfForGpu(): Unit = GpuParquetScanBase.tagSupport(this)
+
+        override def convertToGpu(): Scan =
+          GpuParquetScan(a.sparkSession,
+            a.hadoopConf,
+            a.fileIndex,
+            a.dataSchema,
+            a.readDataSchema,
+            a.readPartitionSchema,
+            a.pushedFilters,
+            a.options,
+            a.partitionFilters,
+            a.dataFilters,
+            conf)
+      }),
+    GpuOverrides.scan[OrcScan](
+      "ORC parsing",
+      (a, conf, p, r) => new ScanMeta[OrcScan](a, conf, p, r) {
+        override def tagSelfForGpu(): Unit =
+          GpuOrcScanBase.tagSupport(this)
+
+        override def convertToGpu(): Scan =
+          GpuOrcScan(a.sparkSession,
+            a.hadoopConf,
+            a.fileIndex,
+            a.dataSchema,
+            a.readDataSchema,
+            a.readPartitionSchema,
+            a.options,
+            a.pushedFilters,
+            a.partitionFilters,
+            a.dataFilters,
+            conf)
+      })
+  ).map(r => (r.getClassFor.asSubclass(classOf[Scan]), r)).toMap
+
   override def getBuildSide(join: HashJoin): GpuBuildSide = {
     GpuJoinUtils.getGpuBuildSide(join.buildSide)
   }
@@ -235,5 +281,53 @@ class Spark300Shims extends SparkShims {
 
   override def getShuffleManagerShims(): ShuffleManagerShimBase = {
     new ShuffleManagerShim
+  }
+
+  override def getPartitionFileNames(
+      partitions: Seq[PartitionDirectory]): Seq[String] = {
+    val files = partitions.flatMap(partition => partition.files)
+    files.map(_.getPath.getName)
+  }
+
+  override def getPartitionFileStatusSize(partitions: Seq[PartitionDirectory]): Long = {
+    partitions.map(_.files.map(_.getLen).sum).sum
+  }
+
+  override def getPartitionedFiles(
+      partitions: Array[PartitionDirectory]): Array[PartitionedFile] = {
+    partitions.flatMap { p =>
+      p.files.map { f =>
+        PartitionedFileUtil.getPartitionedFile(f, f.getPath, p.values)
+      }
+    }
+  }
+
+  override def getPartitionSplitFiles(
+      partitions: Array[PartitionDirectory],
+      maxSplitBytes: Long,
+      relation: HadoopFsRelation): Array[PartitionedFile] = {
+    partitions.flatMap { partition =>
+      partition.files.flatMap { file =>
+        // getPath() is very expensive so we only want to call it once in this block:
+        val filePath = file.getPath
+        val isSplitable = relation.fileFormat.isSplitable(
+          relation.sparkSession, relation.options, filePath)
+        PartitionedFileUtil.splitFiles(
+          sparkSession = relation.sparkSession,
+          file = file,
+          filePath = filePath,
+          isSplitable = isSplitable,
+          maxSplitBytes = maxSplitBytes,
+          partitionValues = partition.values
+        )
+      }
+    }
+  }
+
+  override def getFileScanRDD(
+      sparkSession: SparkSession,
+      readFunction: (PartitionedFile) => Iterator[InternalRow],
+      filePartitions: Seq[FilePartition]): RDD[InternalRow] = {
+    new FileScanRDD(sparkSession, readFunction, filePartitions)
   }
 }

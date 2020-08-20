@@ -16,14 +16,18 @@
 
 package com.nvidia.spark.rapids
 
+import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.{SparkSession, SparkSessionExtensions}
+import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.encoders.ExpressionEncoder
 import org.apache.spark.sql.catalyst.expressions.Expression
 import org.apache.spark.sql.catalyst.plans.JoinType
 import org.apache.spark.sql.catalyst.plans.physical.{BroadcastMode, Partitioning}
 import org.apache.spark.sql.catalyst.rules.Rule
+import org.apache.spark.sql.connector.read.Scan
 import org.apache.spark.sql.execution.SparkPlan
 import org.apache.spark.sql.execution.adaptive.ShuffleQueryStageExec
+import org.apache.spark.sql.execution.datasources.{FilePartition, HadoopFsRelation, PartitionDirectory, PartitionedFile}
 import org.apache.spark.sql.execution.joins._
 import org.apache.spark.sql.rapids.ShuffleManagerShimBase
 import org.apache.spark.sql.rapids.execution.{GpuBroadcastExchangeExecBase, GpuBroadcastNestedLoopJoinExecBase, GpuShuffleExchangeExecBase}
@@ -62,6 +66,8 @@ trait SparkShims {
   def getBuildSide(join: BroadcastNestedLoopJoinExec): GpuBuildSide
   def getExprs: Map[Class[_ <: Expression], ExprRule[_ <: Expression]]
   def getExecs: Map[Class[_ <: SparkPlan], ExecRule[_ <: SparkPlan]]
+  def getScans: Map[Class[_ <: Scan], ScanRule[_ <: Scan]]
+
   def getScalaUDFAsExpression(
     function: AnyRef,
     dataType: DataType,
@@ -105,4 +111,17 @@ trait SparkShims {
       rule: SparkSession => Rule[SparkPlan])
 
   def getShuffleManagerShims(): ShuffleManagerShimBase
+
+  def getPartitionFileNames(partitions: Seq[PartitionDirectory]): Seq[String]
+  def getPartitionFileStatusSize(partitions: Seq[PartitionDirectory]): Long
+  def getPartitionedFiles(partitions: Array[PartitionDirectory]): Array[PartitionedFile]
+  def getPartitionSplitFiles(
+      partitions: Array[PartitionDirectory],
+      maxSplitBytes: Long,
+      relation: HadoopFsRelation): Array[PartitionedFile]
+  def getFileScanRDD(
+    sparkSession: SparkSession,
+    readFunction: (PartitionedFile) => Iterator[InternalRow],
+    filePartitions: Seq[FilePartition]): RDD[InternalRow]
 }
+

@@ -63,7 +63,7 @@ object GpuReadOrcFileFormat {
     if (fsse.relation.options.getOrElse("mergeSchema", "false").toBoolean) {
       meta.willNotWorkOnGpu("mergeSchema and schema evolution is not supported yet")
     }
-    GpuOrcScan.tagSupport(
+    GpuOrcScanBase.tagSupport(
       fsse.sqlContext.sparkSession,
       fsse.requiredSchema,
       meta

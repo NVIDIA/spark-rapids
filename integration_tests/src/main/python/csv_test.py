@@ -119,9 +119,12 @@ def read_csv_sql(data_path, schema, header, sep):
     ('str.csv', _good_str_schema, ',', True)
     ])
 @pytest.mark.parametrize('read_func', [read_csv_df, read_csv_sql])
-def test_basic_read(std_input_path, name, schema, sep, header, read_func):
+@pytest.mark.parametrize('v1_enabled_list', ["", "csv"])
+def test_basic_read(std_input_path, name, schema, sep, header, read_func, v1_enabled_list):
+    updated_conf=_enable_ts_conf
+    updated_conf['spark.sql.sources.useV1SourceList']=v1_enabled_list
     assert_gpu_and_cpu_are_equal_collect(read_func(std_input_path + '/' + name, schema, header, sep),
-            conf=_enable_ts_conf)
+            conf=updated_conf)
 
 csv_supported_gens = [
         # Spark does not escape '\r' or '\n' even though it uses it to mark end of record
@@ -141,15 +144,18 @@ csv_supported_gens = [
 
 @approximate_float
 @pytest.mark.parametrize('data_gen', csv_supported_gens, ids=idfn)
-def test_round_trip(spark_tmp_path, data_gen):
+@pytest.mark.parametrize('v1_enabled_list', ["", "csv"])
+def test_round_trip(spark_tmp_path, data_gen, v1_enabled_list):
     gen = StructGen([('a', data_gen)], nullable=False)
     data_path = spark_tmp_path + '/CSV_DATA'
     schema = gen.data_type
+    updated_conf=_enable_ts_conf
+    updated_conf['spark.sql.sources.useV1SourceList']=v1_enabled_list
     with_cpu_session(
             lambda spark : gen_df(spark, gen).write.csv(data_path))
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : spark.read.schema(schema).csv(data_path),
-            conf=_enable_ts_conf)
+            conf=updated_conf)
 
 @allow_non_gpu('FileSourceScanExec')
 @pytest.mark.parametrize('read_func', [read_csv_df, read_csv_sql])
@@ -174,7 +180,8 @@ def test_csv_fallback(spark_tmp_path, read_func, disable_conf):
 csv_supported_date_formats = ['yyyy-MM-dd', 'yyyy/MM/dd', 'yyyy-MM', 'yyyy/MM',
         'MM-yyyy', 'MM/yyyy', 'MM-dd-yyyy', 'MM/dd/yyyy']
 @pytest.mark.parametrize('date_format', csv_supported_date_formats, ids=idfn)
-def test_date_formats_round_trip(spark_tmp_path, date_format):
+@pytest.mark.parametrize('v1_enabled_list', ["", "csv"])
+def test_date_formats_round_trip(spark_tmp_path, date_format, v1_enabled_list):
     gen = StructGen([('a', DateGen())], nullable=False)
     data_path = spark_tmp_path + '/CSV_DATA'
     schema = gen.data_type
@@ -186,7 +193,8 @@ def test_date_formats_round_trip(spark_tmp_path, date_format):
             lambda spark : spark.read\
                     .schema(schema)\
                     .option('dateFormat', date_format)\
-                    .csv(data_path))
+                    .csv(data_path),
+            conf={'spark.sql.sources.useV1SourceList': v1_enabled_list})
 
 csv_supported_ts_parts = ['', # Just the date
         "'T'HH:mm:ss.SSSXXX",
@@ -199,7 +207,8 @@ csv_supported_ts_parts = ['', # Just the date
 
 @pytest.mark.parametrize('ts_part', csv_supported_ts_parts)
 @pytest.mark.parametrize('date_format', csv_supported_date_formats)
-def test_ts_formats_round_trip(spark_tmp_path, date_format, ts_part):
+@pytest.mark.parametrize('v1_enabled_list', ["", "csv"])
+def test_ts_formats_round_trip(spark_tmp_path, date_format, ts_part, v1_enabled_list):
     full_format = date_format + ts_part
     # Once https://github.com/NVIDIA/spark-rapids/issues/122 is fixed the full range should be used
     data_gen = TimestampGen(start=datetime(1902, 1, 1, tzinfo=timezone.utc),
@@ -211,14 +220,17 @@ def test_ts_formats_round_trip(spark_tmp_path, date_format, ts_part):
             lambda spark : gen_df(spark, gen).write\
                     .option('timestampFormat', full_format)\
                     .csv(data_path))
+    updated_conf=_enable_ts_conf
+    updated_conf['spark.sql.sources.useV1SourceList']=v1_enabled_list
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : spark.read\
                     .schema(schema)\
                     .option('timestampFormat', full_format)\
                     .csv(data_path),
-            conf=_enable_ts_conf)
+            conf=updated_conf)
 
-def test_input_meta(spark_tmp_path):
+@pytest.mark.parametrize('v1_enabled_list', ["", "csv"])
+def test_input_meta(spark_tmp_path, v1_enabled_list):
     gen = StructGen([('a', long_gen), ('b', long_gen)], nullable=False) 
     first_data_path = spark_tmp_path + '/CSV_DATA/key=0'
     with_cpu_session(
@@ -234,4 +246,5 @@ def test_input_meta(spark_tmp_path):
                     .selectExpr('a',
                         'input_file_name()',
                         'input_file_block_start()',
-                        'input_file_block_length()'))
+                        'input_file_block_length()'),
+            conf={'spark.sql.sources.useV1SourceList': v1_enabled_list})
