@@ -309,6 +309,15 @@ case class Instruction(opcode: Int, operand: Int, instructionStr: String) extend
         mathOp(lambdaReflection, method.getName, args) :: rest,
         cond,
         expr)
+    } else if (declaringClassName.equals("scala.Predef$")) {
+      State(locals,
+        predefOp(lambdaReflection, method.getName, args) :: rest,
+        cond,
+        expr)
+    } else if (declaringClassName.equals("java.lang.Double")) {
+      State(locals, doubleOp(method.getName, args) :: rest, cond, expr)
+    } else if (declaringClassName.equals("java.lang.Float")) {
+      State(locals, floatOp(method.getName, args) :: rest, cond, expr)
     } else if (declaringClassName.equals("java.lang.String")) {
       State(locals, stringOp(method.getName, args) :: rest, cond, expr)
     } else if (declaringClassName.equals("java.lang.StringBuilder")) {
@@ -324,7 +333,25 @@ case class Instruction(opcode: Int, operand: Int, instructionStr: String) extend
     }
   }
 
-  def mathOp(lambdaReflection: LambdaReflection,
+  private def checkArgs(methodName: String,
+                        expectedTypes: List[DataType],
+                        args: List[Expression]): Unit = {
+    if (args.length != expectedTypes.length) {
+      throw new SparkException(
+        s"${methodName} operation expects ${expectedTypes.length} " +
+            s"argument(s), including an objref, but instead got ${args.length} " +
+            s"argument(s)")
+    }
+    args.view.zip(expectedTypes.view).foreach { case (arg, expectedType) =>
+      if (arg.dataType != expectedType) {
+        throw new SparkException(s"${arg.dataType} argument found for " +
+            s"${methodName} where " +
+            s"${expectedType} argument is expected.")
+      }
+    }
+  }
+
+  private def mathOp(lambdaReflection: LambdaReflection,
       methodName: String, args: List[Expression]): Expression = {
     // Math unary functions
     if (args.length != 2) {
@@ -364,56 +391,86 @@ case class Instruction(opcode: Int, operand: Int, instructionStr: String) extend
     }
   }
 
-  def stringOp(methodName: String, args: List[Expression]): Expression = {
-    def checkArgs(expectedTypes: List[DataType]): Unit = {
-      if (args.length != expectedTypes.length) {
-        throw new SparkException(
-          s"String.${methodName} operation expects ${expectedTypes.length} " +
-              s"argument(s), including an objref, but instead got ${args.length} " +
-              s"argument(s)")
-      }
-      args.view.zip(expectedTypes.view).foreach { case (arg, expectedType) =>
-        if (arg.dataType != expectedType) {
-          throw new SparkException(s"${arg.dataType} argument found for " +
-              s"String.${methodName} where " +
-              s"${expectedType} argument is expected.")
+  private def predefOp(lambdaReflection: LambdaReflection,
+      methodName: String, args: List[Expression]): Expression = {
+    // Make sure that the objref is scala.math.package$.
+    args.head match {
+      case Literal(index, IntegerType) =>
+        if (!lambdaReflection.lookupField(index.asInstanceOf[Int])
+            .getType.getName.equals("scala.Predef$")) {
+          throw new SparkException("Unsupported predef function objref: " + args.head)
         }
-      }
+      case _ =>
+        throw new SparkException("Unsupported predef function objref: " + args.head)
     }
+    // Translate to Catalyst
+    methodName match {
+      case "double2Double" =>
+        checkArgs(methodName, List(IntegerType, DoubleType), args)
+        args.last
+      case "float2Float" =>
+        checkArgs(methodName, List(IntegerType, FloatType), args)
+        args.last
+      case _ => throw new SparkException("Unsupported predef function: " + methodName)
+    }
+  }
 
+ private def doubleOp(methodName: String, args: List[Expression]): Expression = {
+    methodName match {
+      case "isNaN" =>
+        checkArgs(methodName, List(DoubleType), args)
+        IsNaN(args.head)
+      case _ =>
+        throw new SparkException(s"Unsupported Double function: " +
+            s"Double.${methodName}")
+    }
+  }
+
+ private def floatOp(methodName: String, args: List[Expression]): Expression = {
+    methodName match {
+      case "isNaN" =>
+        checkArgs(methodName, List(FloatType), args)
+        IsNaN(args.head)
+      case _ =>
+        throw new SparkException(s"Unsupported Float function: " +
+            s"Float.${methodName}")
+    }
+  }
+
+ private def stringOp(methodName: String, args: List[Expression]): Expression = {
     methodName match {
       case "concat" =>
-        checkArgs(List(StringType, StringType))
+        checkArgs(methodName, List(StringType, StringType), args)
         Concat(args)
       case "contains" =>
-        checkArgs(List(StringType, StringType))
+        checkArgs(methodName, List(StringType, StringType), args)
         Contains(args.head, args.last)
       case "endsWith" =>
-        checkArgs(List(StringType, StringType))
+        checkArgs(methodName, List(StringType, StringType), args)
         EndsWith(args.head, args.last)
       case "equals" =>
-        checkArgs(List(StringType, StringType))
+        checkArgs(methodName, List(StringType, StringType), args)
         Cast(EqualNullSafe(args.head, args.last), IntegerType)
       case "equalsIgnoreCase" =>
-        checkArgs(List(StringType, StringType))
+        checkArgs(methodName, List(StringType, StringType), args)
         Cast(EqualNullSafe(Upper(args.head), Upper(args.last)), IntegerType)
       case "isEmpty" =>
-        checkArgs(List(StringType))
+        checkArgs(methodName, List(StringType), args)
         Cast(EqualTo(Length(args.head), Literal(0)), IntegerType)
       case "length" =>
-        checkArgs(List(StringType))
+        checkArgs(methodName, List(StringType), args)
         Length(args.head)
       case "startsWith" =>
-        checkArgs(List(StringType, StringType))
+        checkArgs(methodName, List(StringType, StringType), args)
         StartsWith(args.head, args.last)
       case "toLowerCase" =>
-        checkArgs(List(StringType))
+        checkArgs(methodName, List(StringType), args)
         Lower(args.head)
       case "toUpperCase" =>
-        checkArgs(List(StringType))
+        checkArgs(methodName, List(StringType), args)
         Upper(args.head)
       case "trim" =>
-        checkArgs(List(StringType))
+        checkArgs(methodName, List(StringType), args)
         StringTrim(args.head)
       case "replace" =>
         if (args.length != 3) {
@@ -436,7 +493,7 @@ case class Instruction(opcode: Int, operand: Int, instructionStr: String) extend
               s"${args(2).dataType}")
         }
       case "substring" =>
-        checkArgs(StringType :: List.fill(args.length - 1)(IntegerType))
+        checkArgs(methodName, StringType :: List.fill(args.length - 1)(IntegerType), args)
         Substring(args(0),
           Add(args(1), Literal(1)),
           Subtract(if (args.length == 3) args(2) else Length(args(0)),
@@ -485,14 +542,14 @@ case class Instruction(opcode: Int, operand: Int, instructionStr: String) extend
                 s"argument(s)")
         }
       case "replaceAll" =>
-        checkArgs(List(StringType, StringType, StringType))
+        checkArgs(methodName, List(StringType, StringType, StringType), args)
         RegExpReplace(args(0), args(1), args(2))
       case "split" =>
         if (args.length == 2) {
-          checkArgs(List(StringType, StringType))
+          checkArgs(methodName, List(StringType, StringType), args)
           StringSplit(args(0), args(1), Literal(-1))
         } else if (args.length == 3) {
-          checkArgs(List(StringType, StringType, IntegerType))
+          checkArgs(methodName, List(StringType, StringType, IntegerType), args)
           StringSplit(args(0), args(1), args(2))
         } else {
           throw new SparkException(
@@ -502,10 +559,10 @@ case class Instruction(opcode: Int, operand: Int, instructionStr: String) extend
         }
       case "getBytes" =>
         if (args.length == 1) {
-          checkArgs(List(StringType))
+          checkArgs(methodName, List(StringType), args)
           Encode(args.head, Literal(Charset.defaultCharset.toString))
         } else if (args.length == 2) {
-          checkArgs(List(StringType, StringType))
+          checkArgs(methodName, List(StringType, StringType), args)
           Encode(args.head, args.last)
         } else {
           throw new SparkException(
