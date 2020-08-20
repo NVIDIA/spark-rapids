@@ -268,7 +268,7 @@ case class GpuParquetMultiFilePartitionReaderFactory(
     var clippedSchema: MessageType = null
     var isCorrectedRebaseForThis: Option[Boolean] = None
 
-    logWarning(s"files num: ${files.size} for task ${TaskContext.get().partitionId()}")
+    logDebug(s"Number files being read: ${files.size} for task ${TaskContext.get().partitionId()}")
     files.map { file =>
       val filePath = new Path(new URI(file.filePath))
       //noinspection ScalaDeprecation
