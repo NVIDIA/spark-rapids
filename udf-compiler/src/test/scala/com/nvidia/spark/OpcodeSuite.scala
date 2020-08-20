@@ -16,7 +16,12 @@
 
 package com.nvidia.spark
 
+import java.nio.charset.Charset
+import java.time.{LocalDate, LocalDateTime}
+import java.time.format.DateTimeFormatter
+
 import com.nvidia.spark.rapids.RapidsConf
+import org.scalatest.Assertions._
 import org.scalatest.FunSuite
 
 import org.apache.spark.SparkConf
@@ -1824,4 +1829,134 @@ class OpcodeSuite extends FunSuite {
     val ref = dataset.withColumn("new",lit("this is the string".getBytes("US-ASCII")))
     checkEquiv(result, ref)
   }
+
+  test("Float - isNaN - True") {
+    val myudf: (Float) => Boolean = a => {
+      a.isNaN()
+    }
+    val u = makeUdf(myudf)
+    val dataset = List(Float.NaN).toDF("x").repartition(1)
+    val result = dataset.withColumn("new", u(col("x")))
+    val ref = dataset.withColumn("new", lit(Float.NaN.isNaN))
+    assert(udfIsCompiled(result))
+    checkEquiv(result, ref)
+  }
+  test("Float - isNaN - False") {
+    val myudf: (Float) => Boolean = a => {
+      a.isNaN()
+    }
+    val u = makeUdf(myudf)
+    val dataset = List(2f).toDF("x").repartition(1)
+    val result = dataset.withColumn("new", u(col("x")))
+    val ref = dataset.withColumn("new", lit(false))
+    assert(udfIsCompiled(result))
+    checkEquiv(result, ref)
+  }
+  test("Double - isNaN - True") {
+    val myudf: (Double) => Boolean = a => {
+      a.isNaN()
+    }
+    val u = makeUdf(myudf)
+    val dataset = List(Double.NaN).toDF("x").repartition(1)
+    val result = dataset.withColumn("new", u(col("x")))
+    val ref = dataset.withColumn("new", lit(Double.NaN.isNaN))
+    assert(udfIsCompiled(result))
+    checkEquiv(result, ref)
+  }
+  test("Double - isNaN - False") {
+    val myudf: (Float) => Boolean = a => {
+      a.isNaN()
+    }
+    val u = makeUdf(myudf)
+    val dataset = List(2D).toDF("x").repartition(1)
+    val result = dataset.withColumn("new", u(col("x")))
+    val ref = dataset.withColumn("new", lit(false))
+    assert(udfIsCompiled(result))
+    checkEquiv(result, ref)
+  }
+
+  test("Get day of month from LocalDateTime string") {
+    val myudf: (String) => String = a => {
+      val formatter = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")
+      val ldt = LocalDateTime.parse(a, formatter)
+      ldt.getDayOfMonth.toString
+    }
+    val u = makeUdf(myudf)
+    val dataset = Seq("2020-08-20 01:23:45").toDF("DateTime").repartition(1)
+    val result = dataset.withColumn("dayOfMonth", u(col("DateTime")))
+    val ref = dataset.withColumn("dayOfMonth", dayofmonth(col("DateTime")))
+    assert(udfIsCompiled(result))
+    checkEquiv(result, ref)
+  }
+
+  test("Get hour from LocalDateTime string") {
+    val myudf: (String) => String = a => {
+      val formatter = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")
+      val ldt = LocalDateTime.parse(a, formatter)
+      ldt.getHour.toString
+    }
+    val u = makeUdf(myudf)
+    val dataset = Seq("2020-08-20 01:23:45").toDF("DateTime").repartition(1)
+    val result = dataset.withColumn("hour", u(col("DateTime")))
+    val ref = dataset.withColumn("hour", hour(col("DateTime")))
+    assert(udfIsCompiled(result))
+    checkEquiv(result, ref)
+  }
+
+  test("Get minute from LocalDateTime string") {
+    val myudf: (String) => String = a => {
+      val formatter = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")
+      val ldt = LocalDateTime.parse(a, formatter)
+      ldt.getMinute.toString
+    }
+    val u = makeUdf(myudf)
+    val dataset = Seq("2020-08-20 01:23:45").toDF("DateTime").repartition(1)
+    val result = dataset.withColumn("minute", u(col("DateTime")))
+    val ref = dataset.withColumn("minute", minute(col("DateTime")))
+    assert(udfIsCompiled(result))
+    checkEquiv(result, ref)
+  }
+
+  test("get month from LocalDataTime string") {
+    val myudf: (String) => String = a => {
+      val formatter = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")
+      val ldt = LocalDateTime.parse(a, formatter)
+      ldt.getMonthValue.toString
+    }
+    val u = makeUdf(myudf)
+    val dataset = Seq("2020-08-20 01:23:45").toDF("DateTime").repartition(1)
+    val result = dataset.withColumn("month", u(col("DateTime")))
+    val ref = dataset.withColumn("month", month(col("DateTime")))
+    assert(udfIsCompiled(result))
+    checkEquiv(result, ref)
+  }
+
+  test("get second from LocalDateTime string") {
+    val myudf: (String) => String = a => {
+      val formatter = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")
+      val ldt = LocalDateTime.parse(a, formatter)
+      ldt.getSecond.toString
+    }
+    val u = makeUdf(myudf)
+    val dataset = Seq("2020-08-20 01:23:45").toDF("DateTime").repartition(1)
+    val result = dataset.withColumn("month", u(col("DateTime")))
+    val ref = dataset.withColumn("month", second(col("DateTime")))
+    assert(udfIsCompiled(result))
+    checkEquiv(result, ref)
+  }
+
+  test("get year from LocalDateTime string") {
+    val myudf: (String) => String = a => {
+      val formatter = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")
+      val ldt = LocalDateTime.parse(a, formatter)
+      ldt.getYear.toString
+    }
+    val u = makeUdf(myudf)
+    val dataset = Seq("2020-08-20 01:23:45").toDF("DateTime").repartition(1)
+    val result = dataset.withColumn("month", u(col("DateTime")))
+    val ref = dataset.withColumn("month", year(col("DateTime")))
+    assert(udfIsCompiled(result))
+    checkEquiv(result, ref)
+  }
+
 }
