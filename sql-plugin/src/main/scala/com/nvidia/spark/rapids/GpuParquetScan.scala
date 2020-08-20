@@ -71,7 +71,7 @@ abstract class GpuParquetScanBase(
     readPartitionSchema: StructType,
     pushedFilters: Array[Filter],
     rapidsConf: RapidsConf)
-  extends ScanWithMetrics {
+  extends ScanWithMetrics with Logging {
 
   def isSplitableBase(path: Path): Boolean = true
 
