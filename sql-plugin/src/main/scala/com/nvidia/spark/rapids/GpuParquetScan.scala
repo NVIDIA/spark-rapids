@@ -221,6 +221,9 @@ object GpuParquetPartitionReaderFactoryBase {
   }
 }
 
+private case class MultiFilePartitionInfo(filePath: Path, blockMeta: BlockMetaData,
+    partValues: InternalRow, schema: MessageType)
+
 /**
  * Similar to GpuParquetPartitionReaderFactory but extended for reading multiple files
  * in an iteration. This will allow us to read multiple small files and combine them
@@ -643,9 +646,6 @@ abstract class FileParquetPartitionReaderBase(
     }
   }
 }
-
-private case class MultiFilePartitionInfo(filePath: Path, blockMeta: BlockMetaData,
-    partValues: InternalRow, schema: MessageType)
 
 /**
  * A PartitionReader that can read multiple Parquet files up to the certain size.

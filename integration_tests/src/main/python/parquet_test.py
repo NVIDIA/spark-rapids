@@ -318,7 +318,6 @@ def test_read_merge_schema_smallfile_opt_v2(spark_tmp_path):
             lambda spark : gen_df(spark, second_gen_list).write.parquet(second_data_path),
             conf={'spark.sql.legacy.parquet.datetimeRebaseModeInWrite': 'CORRECTED'})
     data_path = spark_tmp_path + '/PARQUET_DATA'
-    #assert_gpu_and_cpu_are_equal_collect(
     assert_gpu_fallback_collect(
             lambda spark : spark.read.option('mergeSchema', 'true').parquet(data_path),
             'BatchScanExec',
