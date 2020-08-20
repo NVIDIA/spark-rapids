@@ -180,4 +180,8 @@ class Spark300dbShims extends Spark300Shims {
       filePartitions: Seq[FilePartition]): RDD[InternalRow] = {
     new GpuFileScanRDD(sparkSession, readFunction, filePartitions)
   }
+
+  override def createFilePartition(index: Int, files: Array[PartitionedFile]): FilePartition = {
+    FilePartition(index, files)
+  }
 }

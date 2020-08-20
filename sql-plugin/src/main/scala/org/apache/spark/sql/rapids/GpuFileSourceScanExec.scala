@@ -431,11 +431,12 @@ case class GpuFileSourceScanExec(
         val partitionedFiles = coalescedBuckets.get(bucketId).map {
           _.values.flatten.toArray
         }.getOrElse(Array.empty)
-        FilePartition(bucketId, partitionedFiles)
+        ShimLoader.getSparkShims.createFilePartition(bucketId, partitionedFiles)
       }
     }.getOrElse {
       Seq.tabulate(bucketSpec.numBuckets) { bucketId =>
-        FilePartition(bucketId, prunedFilesGroupedToBuckets.getOrElse(bucketId, Array.empty))
+        ShimLoader.getSparkShims.createFilePartition(bucketId,
+          prunedFilesGroupedToBuckets.getOrElse(bucketId, Array.empty))
       }
     }
     if (!useSmallFileOpt) {

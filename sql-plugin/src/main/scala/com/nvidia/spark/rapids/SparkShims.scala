@@ -112,6 +112,8 @@ trait SparkShims {
 
   def getShuffleManagerShims(): ShuffleManagerShimBase
 
+  def createFilePartition(index: Int, files: Array[PartitionedFile]): FilePartition
+
   def getPartitionFileNames(partitions: Seq[PartitionDirectory]): Seq[String]
   def getPartitionFileStatusSize(partitions: Seq[PartitionDirectory]): Long
   def getPartitionedFiles(partitions: Array[PartitionDirectory]): Array[PartitionedFile]
