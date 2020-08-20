@@ -21,6 +21,7 @@ import java.util.concurrent.TimeUnit.NANOSECONDS
 import scala.collection.mutable.HashMap
 
 import com.nvidia.spark.rapids.{GpuExec, GpuMetricNames, GpuParquetMultiFilePartitionReaderFactory, GpuReadCSVFileFormat, GpuReadFileFormatWithMetrics, GpuReadOrcFileFormat, GpuReadParquetFileFormat, RapidsConf, ShimLoader, SparkPlanMeta}
+import com.nvidia.spark.rapids.RapidsConf.ENABLE_SMALL_FILES_PARQUET
 import org.apache.hadoop.fs.Path
 
 import org.apache.spark.rdd.RDD
@@ -561,7 +562,8 @@ object GpuFileSourceScanExec {
       (sparkSession.conf.getOption("spark.sql.parquet.mergeSchema").exists(_.toBoolean) ||
       options.getOrElse("mergeSchema", "false").toBoolean)) {
 
-      meta.willNotWorkOnGpu("mergeSchema is not supported yet")
+      meta.willNotWorkOnGpu("mergeSchema is not supported yet with" +
+        s" the small file optimization, please disable ${ENABLE_SMALL_FILES_PARQUET.key}")
     }
     meta.wrapped.relation.fileFormat match {
       case _: CSVFileFormat => GpuReadCSVFileFormat.tagSupport(meta)
