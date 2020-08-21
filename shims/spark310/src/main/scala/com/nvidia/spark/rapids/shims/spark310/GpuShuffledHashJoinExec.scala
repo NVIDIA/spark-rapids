@@ -26,9 +26,10 @@ import org.apache.spark.sql.catalyst.expressions.Expression
 import org.apache.spark.sql.catalyst.optimizer.{BuildLeft, BuildRight, BuildSide}
 import org.apache.spark.sql.catalyst.plans.JoinType
 import org.apache.spark.sql.catalyst.plans.physical.{Distribution, HashClusteredDistribution}
-import org.apache.spark.sql.execution.{BinaryExecNode, SparkPlan}
+import org.apache.spark.sql.execution.SparkPlan
 import org.apache.spark.sql.execution.joins.ShuffledHashJoinExec
 import org.apache.spark.sql.execution.metric.{SQLMetric, SQLMetrics}
+import org.apache.spark.sql.rapids.execution.GpuShuffledHashJoinBase
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
 object GpuJoinUtils {
@@ -71,7 +72,8 @@ class GpuShuffledHashJoinMeta(
       join.buildSide,
       condition.map(_.convertToGpu()),
       childPlans(0).convertIfNeeded(),
-      childPlans(1).convertIfNeeded())
+      childPlans(1).convertIfNeeded(),
+      isSkewJoin = false)
 }
 
 case class GpuShuffledHashJoinExec(
@@ -81,7 +83,17 @@ case class GpuShuffledHashJoinExec(
     buildSide: BuildSide,
     condition: Option[Expression],
     left: SparkPlan,
-    right: SparkPlan) extends BinaryExecNode with GpuHashJoin {
+    right: SparkPlan,
+    override val isSkewJoin: Boolean)
+  extends GpuShuffledHashJoinBase(
+    leftKeys,
+    rightKeys,
+    joinType,
+    condition,
+    left,
+    right,
+    isSkewJoin)
+  with GpuHashJoin {
 
   override lazy val additionalMetrics: Map[String, SQLMetric] = Map(
     "buildDataSize" -> SQLMetrics.createSizeMetric(sparkContext, "build side size"),
