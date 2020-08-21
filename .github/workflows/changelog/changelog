@@ -166,7 +166,7 @@ def process_changelog(resource_type: str):
         for label in item['labels']['nodes']:
             labels.add(label['name'])
         category = rules(labels)
-        if category == INVALID:
+        if resource_type == ISSUES and category == INVALID:
             continue
         if resource_type == PULL_REQUESTS:
             category = PRS
