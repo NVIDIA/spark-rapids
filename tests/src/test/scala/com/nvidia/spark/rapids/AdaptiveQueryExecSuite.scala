@@ -122,7 +122,7 @@ class AdaptiveQueryExecSuite
       spark
           .range(0, 1000, 1, 10)
           .select(
-            when('id < 250, 249)
+            when('id < 500, 249)
                 .otherwise('id).as("key2"),
             'id as "value2")
           .createOrReplaceTempView("skewData2")
