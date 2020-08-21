@@ -16,6 +16,7 @@
 
 package com.nvidia.spark.rapids
 
+import com.nvidia.spark.rapids.TestUtils.{findOperator, getFinalPlan}
 import org.scalatest.FunSuite
 
 import org.apache.spark.SparkConf
@@ -69,7 +70,10 @@ class HashSortOptimizeSuite extends FunSuite {
       val df2 = buildDataFrame2(spark)
       val rdf = df1.join(df2, df1("a") === df2("x"))
       val plan = rdf.queryExecution.executedPlan
-      val joinNode = plan.find(ShimLoader.getSparkShims.isGpuBroadcastHashJoin(_))
+      // execute the plan so that the final adaptive plan is available when AQE is on
+      rdf.collect()
+
+      val joinNode = findOperator(plan, ShimLoader.getSparkShims.isGpuBroadcastHashJoin(_))
       assert(joinNode.isDefined, "No broadcast join node found")
       validateOptimizeSort(plan, joinNode.get)
     })
@@ -82,7 +86,9 @@ class HashSortOptimizeSuite extends FunSuite {
       val df2 = buildDataFrame2(spark)
       val rdf = df1.join(df2, df1("a") === df2("x"))
       val plan = rdf.queryExecution.executedPlan
-      val joinNode = plan.find(ShimLoader.getSparkShims.isGpuShuffledHashJoin(_))
+      // execute the plan so that the final adaptive plan is available when AQE is on
+      rdf.collect()
+      val joinNode = findOperator(plan, ShimLoader.getSparkShims.isGpuShuffledHashJoin(_))
       assert(joinNode.isDefined, "No broadcast join node found")
       validateOptimizeSort(plan, joinNode.get)
     })
@@ -106,7 +112,10 @@ class HashSortOptimizeSuite extends FunSuite {
       val df2 = buildDataFrame2(spark)
       val rdf = df1.join(df2, df1("a") === df2("x")).orderBy(df1("a"))
       val plan = rdf.queryExecution.executedPlan
-      val numSorts = plan.map {
+      // Get the final executed plan when AQE is either enabled or disabled.
+      val finalPlan = getFinalPlan(plan)
+
+      val numSorts = finalPlan.map {
         case _: SortExec | _: GpuSortExec => 1
         case _ => 0
       }.sum

@@ -59,14 +59,17 @@ object TpcdsLikeBench extends Logging {
     }
 
     for (i <- 0 until numColdRuns) {
-      println(s"Cold run $i took ${coldRunElapsed(i)} msec.")
+      println(s"Cold run $i for query $query took ${coldRunElapsed(i)} msec.")
     }
     println(s"Average cold run took ${coldRunElapsed.sum.toDouble/numColdRuns} msec.")
 
     for (i <- 0 until numHotRuns) {
-      println(s"Hot run $i took ${hotRunElapsed(i)} msec.")
+      println(s"Hot run $i for query $query took ${hotRunElapsed(i)} msec.")
     }
-    println(s"Average hot run took ${hotRunElapsed.sum.toDouble/numHotRuns} msec.")
+    println(s"Query $query: " +
+        s"best: ${hotRunElapsed.min} msec; " +
+        s"worst: ${hotRunElapsed.max} msec; " +
+        s"average: ${hotRunElapsed.sum.toDouble/numHotRuns} msec.")
   }
 
   def main(args: Array[String]): Unit = {

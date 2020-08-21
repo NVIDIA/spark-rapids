@@ -217,6 +217,9 @@ abstract class AbstractGpuCoalesceIterator(origIter: Iterator[ColumnarBatch],
       case h: RapidsHostColumnVector =>
         val buff = h.getBase.getHostBufferFor(BufferType.DATA)
         if (buff == null) 0 else buff.getLength
+      case g: GpuCompressedColumnVector =>
+        val columnMeta = g.getTableMeta.columnMetas(index)
+        columnMeta.data().length()
       case _ =>
         defaultSize
     }
@@ -480,7 +483,7 @@ class GpuCoalesceIterator(iter: Iterator[ColumnarBatch],
           val buffer = cv.getBuffer.slice(0, cv.getBuffer.getLength)
           decompressor.addBufferToDecompress(buffer, bufferMeta)
         }
-        closeOnExcept(decompressor.finish()) { outputBuffers =>
+        withResource(decompressor.finish()) { outputBuffers =>
           outputBuffers.zipWithIndex.foreach { case (outputBuffer, outputIndex) =>
             val cv = compressedVecs(outputIndex)
             val batchIndex = compressedBatchIndices(outputIndex)
