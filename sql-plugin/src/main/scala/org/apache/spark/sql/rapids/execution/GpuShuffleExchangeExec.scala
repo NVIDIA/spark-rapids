@@ -28,9 +28,8 @@ import org.apache.spark.serializer.Serializer
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.errors._
 import org.apache.spark.sql.catalyst.expressions.{Attribute, SortOrder}
-import org.apache.spark.sql.catalyst.plans.logical.Statistics
 import org.apache.spark.sql.catalyst.plans.physical.Partitioning
-import org.apache.spark.sql.execution.{ShufflePartitionSpec, SparkPlan}
+import org.apache.spark.sql.execution.SparkPlan
 import org.apache.spark.sql.execution.exchange.{Exchange, ShuffleExchangeExec}
 import org.apache.spark.sql.execution.metric._
 import org.apache.spark.sql.internal.SQLConf
@@ -110,7 +109,8 @@ abstract class GpuShuffleExchangeExecBase(
       outputPartitioning,
       serializer,
       metrics,
-      writeMetrics)
+      writeMetrics,
+      additionalMetrics)
   }
 
   /**
@@ -137,7 +137,8 @@ object GpuShuffleExchangeExec {
       newPartitioning: Partitioning,
       serializer: Serializer,
       metrics: Map[String, SQLMetric],
-      writeMetrics: Map[String, SQLMetric])
+      writeMetrics: Map[String, SQLMetric],
+      additionalMetrics: Map[String, SQLMetric])
   : ShuffleDependency[Int, ColumnarBatch, ColumnarBatch] = {
     val isRoundRobin = newPartitioning match {
       case _: GpuRoundRobinPartitioning => true
@@ -228,7 +229,8 @@ object GpuShuffleExchangeExec {
       rddWithPartitionIds,
       new BatchPartitionIdPassthrough(newPartitioning.numPartitions),
       serializer,
-      shuffleWriterProcessor = ShuffleExchangeExec.createShuffleWriteProcessor(writeMetrics))
+      shuffleWriterProcessor = ShuffleExchangeExec.createShuffleWriteProcessor(writeMetrics),
+      metrics = additionalMetrics)
 
     dependency
   }
