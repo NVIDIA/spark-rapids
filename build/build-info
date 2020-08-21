@@ -30,7 +30,3 @@ echo_build_properties() {
 }
 
 echo_build_properties $1
-
-# Parse cudf and spark files from local mvn repo
-${WORKSPACE}/jenkins/printJarVersion.sh "cudf_version" "${WORKSPACE}/.m2/ai/rapids/cudf/${CUDF_VER}" "cudf-${CUDF_VER}" "-${CUDA_CLASSIFIER}.jar"
-${WORKSPACE}/jenkins/printJarVersion.sh "spark_version" "${WORKSPACE}/.m2/org/apache/spark/spark-core_2.12/${SPARK_VER}" "spark-core_2.12-${SPARK_VER}" ".jar"

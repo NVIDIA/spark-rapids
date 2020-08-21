@@ -20,6 +20,7 @@ function print_ver(){
     REPO=$2
     VERSION=$3
     SUFFIX=$4
+    SERVER_ID=$5
     
     if [[ "$VERSION" == *"-SNAPSHOT" ]]; then
         PREFIX=${VERSION%-SNAPSHOT}
@@ -31,4 +32,4 @@ function print_ver(){
     fi
 }
 
-print_ver $1 $2 $3 $4
+print_ver $1 $2 $3 $4 $5
