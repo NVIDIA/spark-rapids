@@ -22,6 +22,7 @@ set -ex
 mvn -U -B -Pinclude-databricks clean deploy $MVN_URM_MIRROR -Dmaven.repo.local=$WORKSPACE/.m2
 # Run unit tests against other spark versions
 mvn -U -B -Pspark301tests test $MVN_URM_MIRROR -Dmaven.repo.local=$WORKSPACE/.m2
+mvn -U -B -Pspark302tests test $MVN_URM_MIRROR -Dmaven.repo.local=$WORKSPACE/.m2
 mvn -U -B -Pspark310tests test $MVN_URM_MIRROR -Dmaven.repo.local=$WORKSPACE/.m2
 
 # Parse cudf and spark files from local mvn repo

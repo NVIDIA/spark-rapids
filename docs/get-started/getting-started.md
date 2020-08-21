@@ -425,6 +425,7 @@ simplify these settings in the near future). Choose the version of the shuffle m
 that matches your Spark version. Currently we support
    - Spark 3.0.0 (com.nvidia.spark.rapids.spark300.RapidsShuffleManager) 
    - Spark 3.0.1 (com.nvidia.spark.rapids.spark301.RapidsShuffleManager) 
+   - Spark 3.0.2 (com.nvidia.spark.rapids.spark302.RapidsShuffleManager) 
    - Spark 3.1.0 (com.nvidia.spark.rapids.spark310.RapidsShuffleManager)
 
 ```shell
