@@ -119,6 +119,10 @@ class AdaptiveQueryExecSuite
                 .otherwise('id).as("key1"),
             'id as "value1")
           .createOrReplaceTempView("skewData1")
+
+      // note that the skew amount here has been modified compared to the original Spark test to
+      // compensate for the effects of compression when running on GPU which can change the
+      // partition sizes substantially
       spark
           .range(0, 1000, 1, 10)
           .select(
