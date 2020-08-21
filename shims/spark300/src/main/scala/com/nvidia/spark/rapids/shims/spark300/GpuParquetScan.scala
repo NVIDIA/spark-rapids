@@ -41,9 +41,11 @@ case class GpuParquetScan(
     options: CaseInsensitiveStringMap,
     partitionFilters: Seq[Expression],
     dataFilters: Seq[Expression],
-    rapidsConf: RapidsConf)
+    rapidsConf: RapidsConf,
+    supportsSmallFileOpt: Boolean = true)
   extends GpuParquetScanBase(sparkSession, hadoopConf, dataSchema,
-     readDataSchema, readPartitionSchema, pushedFilters, rapidsConf) with FileScan {
+    readDataSchema, readPartitionSchema, pushedFilters, rapidsConf,
+    supportsSmallFileOpt) with FileScan {
 
   override def isSplitable(path: Path): Boolean = super.isSplitableBase(path)
 
@@ -52,7 +54,8 @@ case class GpuParquetScan(
   override def equals(obj: Any): Boolean = obj match {
     case p: GpuParquetScan =>
       super.equals(p) && dataSchema == p.dataSchema && options == p.options &&
-        equivalentFilters(pushedFilters, p.pushedFilters) && rapidsConf == p.rapidsConf
+        equivalentFilters(pushedFilters, p.pushedFilters) && rapidsConf == p.rapidsConf &&
+        supportsSmallFileOpt == p.supportsSmallFileOpt
     case _ => false
   }
 

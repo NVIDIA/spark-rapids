@@ -169,7 +169,7 @@ def test_read_round_trip_legacy(spark_tmp_path, parquet_gens, small_file_opt, v1
             conf={'spark.rapids.sql.format.parquet.smallFiles.enabled': small_file_opt,
                   'spark.sql.sources.useV1SourceList': v1_enabled_list})
 
-@pytest.mark.parametrize('small_file_opt', ["false"])
+@pytest.mark.parametrize('small_file_opt', ["true", "false"])
 @pytest.mark.parametrize('v1_enabled_list', ["", "parquet"])
 def test_simple_partitioned_read(spark_tmp_path, small_file_opt, v1_enabled_list):
     # Once https://github.com/NVIDIA/spark-rapids/issues/133 and https://github.com/NVIDIA/spark-rapids/issues/132 are fixed 
@@ -191,39 +191,6 @@ def test_simple_partitioned_read(spark_tmp_path, small_file_opt, v1_enabled_list
             lambda spark : spark.read.parquet(data_path),
             conf={'spark.rapids.sql.format.parquet.smallFiles.enabled': small_file_opt,
                   'spark.sql.sources.useV1SourceList': v1_enabled_list})
-
-def readParquetCatchUnsupportedOperationException(spark, data_path):
-    with pytest.raises(Exception) as e_info:
-        df = spark.read.parquet(data_path).collect()
-    assert e_info.match(r".*UnsupportedOperationException.*")
-
-@pytest.mark.parametrize('small_file_opt', ["true"])
-@pytest.mark.parametrize('v1_enabled_list', ["", "parquet"])
-def test_simple_partitioned_read_fail_legacy(spark_tmp_path, small_file_opt, v1_enabled_list):
-    # Once https://github.com/NVIDIA/spark-rapids/issues/133 and https://github.com/NVIDIA/spark-rapids/issues/132 are fixed 
-    # we should go with a more standard set of generators
-
-    # Test should fail with small file optimization due to mixed rebase modes.
-    # We generate small files and asked to read alot per partition so we
-    # get different datetime rebase modes read in same partition.
-    parquet_gens = [byte_gen, double_gen,
-    TimestampGen(start=datetime(1590, 1, 1, tzinfo=timezone.utc))]
-    gen_list = [('_c' + str(i), gen) for i, gen in enumerate(parquet_gens)]
-    first_data_path = spark_tmp_path + '/PARQUET_DATA/key=0'
-    with_cpu_session(
-            lambda spark : gen_df(spark, gen_list, 1).repartition(1).write.parquet(first_data_path),
-            conf={'spark.sql.legacy.parquet.datetimeRebaseModeInWrite': 'LEGACY'})
-    second_data_path = spark_tmp_path + '/PARQUET_DATA/key=1'
-    with_cpu_session(
-            lambda spark : gen_df(spark, gen_list, 1).repartition(1).write.parquet(second_data_path),
-            conf={'spark.sql.legacy.parquet.datetimeRebaseModeInWrite': 'CORRECTED'})
-    data_path = spark_tmp_path + '/PARQUET_DATA'
-    with_gpu_session(
-            lambda spark : readParquetCatchUnsupportedOperationException(spark, data_path),
-            conf={'spark.rapids.sql.format.parquet.smallFiles.enabled': small_file_opt,
-                  'spark.sql.sources.useV1SourceList': v1_enabled_list,
-                  'spark.sql.files.maxPartitionBytes': "1g",
-                  'spark.sql.files.minPartitionNum': '1'})
 
 @pytest.mark.parametrize('small_file_opt', ["false", "true"])
 @pytest.mark.parametrize('v1_enabled_list', ["", "parquet"])
@@ -251,8 +218,9 @@ def test_read_schema_missing_cols(spark_tmp_path, v1_enabled_list, small_file_op
 
 @pytest.mark.xfail(condition=is_databricks_runtime(),
     reason='https://github.com/NVIDIA/spark-rapids/issues/192')
+@pytest.mark.parametrize('small_file_opt', ["false", "true"])
 @pytest.mark.parametrize('v1_enabled_list', ["", "parquet"])
-def test_read_merge_schema(spark_tmp_path, v1_enabled_list):
+def test_read_merge_schema(spark_tmp_path, v1_enabled_list, small_file_opt):
     # Once https://github.com/NVIDIA/spark-rapids/issues/133 and https://github.com/NVIDIA/spark-rapids/issues/132 are fixed 
     # we should go with a more standard set of generators
     parquet_gens = [byte_gen, short_gen, int_gen, long_gen, float_gen, double_gen,
@@ -271,13 +239,12 @@ def test_read_merge_schema(spark_tmp_path, v1_enabled_list):
     data_path = spark_tmp_path + '/PARQUET_DATA'
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : spark.read.option('mergeSchema', 'true').parquet(data_path),
-            conf={'spark.rapids.sql.format.parquet.smallFiles.enabled': 'false',
+            conf={'spark.rapids.sql.format.parquet.smallFiles.enabled': small_file_opt,
                   'spark.sql.sources.useV1SourceList': v1_enabled_list})
 
-@allow_non_gpu('ColumnarToRowExec', 'FileScan', 'FileSourceScanExec')
-@pytest.mark.xfail(condition=is_databricks_runtime(),
-    reason='https://github.com/NVIDIA/spark-rapids/issues/192')
-def test_read_merge_schema_smallfile_opt(spark_tmp_path):
+@pytest.mark.parametrize('small_file_opt', ["false", "true"])
+@pytest.mark.parametrize('v1_enabled_list', ["", "parquet"])
+def test_read_merge_schema_from_conf(spark_tmp_path, v1_enabled_list, small_file_opt):
     # Once https://github.com/NVIDIA/spark-rapids/issues/133 and https://github.com/NVIDIA/spark-rapids/issues/132 are fixed 
     # we should go with a more standard set of generators
     parquet_gens = [byte_gen, short_gen, int_gen, long_gen, float_gen, double_gen,
@@ -287,41 +254,18 @@ def test_read_merge_schema_smallfile_opt(spark_tmp_path):
     first_data_path = spark_tmp_path + '/PARQUET_DATA/key=0'
     with_cpu_session(
             lambda spark : gen_df(spark, first_gen_list).write.parquet(first_data_path),
-            conf={'spark.sql.legacy.parquet.datetimeRebaseModeInWrite': 'CORRECTED'})
+            conf={'spark.sql.legacy.parquet.datetimeRebaseModeInWrite': 'LEGACY'})
     second_gen_list = [(('_c' if i % 2 == 0 else '_b') + str(i), gen) for i, gen in enumerate(parquet_gens)]
     second_data_path = spark_tmp_path + '/PARQUET_DATA/key=1'
     with_cpu_session(
             lambda spark : gen_df(spark, second_gen_list).write.parquet(second_data_path),
             conf={'spark.sql.legacy.parquet.datetimeRebaseModeInWrite': 'CORRECTED'})
     data_path = spark_tmp_path + '/PARQUET_DATA'
-    assert_gpu_fallback_collect(
-            lambda spark : spark.read.option('mergeSchema', 'true').parquet(data_path),
-            'FileSourceScanExec')
-
-@allow_non_gpu('ColumnarToRowExec')
-@pytest.mark.xfail(condition=is_databricks_runtime(),
-    reason='https://github.com/NVIDIA/spark-rapids/issues/192')
-def test_read_merge_schema_smallfile_opt_v2(spark_tmp_path):
-    # Once https://github.com/NVIDIA/spark-rapids/issues/133 and https://github.com/NVIDIA/spark-rapids/issues/132 are fixed 
-    # we should go with a more standard set of generators
-    parquet_gens = [byte_gen, short_gen, int_gen, long_gen, float_gen, double_gen,
-    string_gen, boolean_gen, DateGen(start=date(1590, 1, 1)),
-    TimestampGen(start=datetime(1900, 1, 1, tzinfo=timezone.utc))]
-    first_gen_list = [('_c' + str(i), gen) for i, gen in enumerate(parquet_gens)]
-    first_data_path = spark_tmp_path + '/PARQUET_DATA/key=0'
-    with_cpu_session(
-            lambda spark : gen_df(spark, first_gen_list).write.parquet(first_data_path),
-            conf={'spark.sql.legacy.parquet.datetimeRebaseModeInWrite': 'CORRECTED'})
-    second_gen_list = [(('_c' if i % 2 == 0 else '_b') + str(i), gen) for i, gen in enumerate(parquet_gens)]
-    second_data_path = spark_tmp_path + '/PARQUET_DATA/key=1'
-    with_cpu_session(
-            lambda spark : gen_df(spark, second_gen_list).write.parquet(second_data_path),
-            conf={'spark.sql.legacy.parquet.datetimeRebaseModeInWrite': 'CORRECTED'})
-    data_path = spark_tmp_path + '/PARQUET_DATA'
-    assert_gpu_fallback_collect(
-            lambda spark : spark.read.option('mergeSchema', 'true').parquet(data_path),
-            'BatchScanExec',
-            conf={'spark.sql.sources.useV1SourceList': ""})
+    assert_gpu_and_cpu_are_equal_collect(
+            lambda spark : spark.read.parquet(data_path),
+            conf={'spark.rapids.sql.format.parquet.smallFiles.enabled': small_file_opt,
+                  'spark.sql.parquet.mergeSchema': "true",
+                  'spark.sql.sources.useV1SourceList': v1_enabled_list})
 
 parquet_write_gens_list = [
         [byte_gen, short_gen, int_gen, long_gen, float_gen, double_gen,

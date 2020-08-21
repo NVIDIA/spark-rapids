@@ -19,10 +19,7 @@ package com.nvidia.spark.rapids
 import scala.collection.mutable
 
 import com.nvidia.spark.rapids.GpuOverrides.isStringLit
-import com.nvidia.spark.rapids.RapidsConf.INPUT_FILE_EXEC_USED
 
-import org.apache.spark.internal.Logging
-import org.apache.spark.sql.catalyst.expressions.{InputFileBlockLength, InputFileBlockStart, InputFileName}
 import org.apache.spark.sql.catalyst.expressions.{BinaryExpression, ComplexTypeMergingExpression, Expression, String2TrimExpression, TernaryExpression, UnaryExpression}
 import org.apache.spark.sql.catalyst.expressions.aggregate.AggregateFunction
 import org.apache.spark.sql.catalyst.plans.physical.Partitioning
@@ -32,7 +29,7 @@ import org.apache.spark.sql.execution.SparkPlan
 import org.apache.spark.sql.execution.command.DataWritingCommand
 import org.apache.spark.sql.execution.exchange.ShuffleExchangeExec
 import org.apache.spark.sql.execution.joins.{BroadcastHashJoinExec, ShuffledHashJoinExec, SortMergeJoinExec}
-import org.apache.spark.sql.types.{DataType}
+import org.apache.spark.sql.types.DataType
 
 trait ConfKeysAndIncompat {
   val operationName: String
@@ -416,7 +413,7 @@ abstract class SparkPlanMeta[INPUT <: SparkPlan](plan: INPUT,
     conf: RapidsConf,
     parent: Option[RapidsMeta[_, _, _]],
     rule: ConfKeysAndIncompat)
-  extends RapidsMeta[INPUT, SparkPlan, GpuExec](plan, conf, parent, rule) with Logging {
+  extends RapidsMeta[INPUT, SparkPlan, GpuExec](plan, conf, parent, rule) {
 
   override val childPlans: Seq[SparkPlanMeta[_]] =
     plan.children.map(GpuOverrides.wrapPlan(_, conf, Some(this)))
@@ -428,34 +425,6 @@ abstract class SparkPlanMeta[INPUT <: SparkPlan](plan: INPUT,
 
   override def convertToCpu(): SparkPlan = {
     wrapped.withNewChildren(childPlans.map(_.convertIfNeeded()))
-  }
-
-  private def findChildExprFileQueries(exprs: Seq[BaseExprMeta[_]]): Seq[Boolean] = {
-    val queries = exprs.flatMap { expr =>
-      expr.wrapped match {
-        case _: InputFileBlockStart => true :: Nil
-        case _: InputFileBlockLength => true :: Nil
-        case _: InputFileName => true :: Nil
-        case _ => findChildExprFileQueries(expr.childExprs)
-      }
-    }
-    queries
-  }
-
-  private def findInputFileQueries(): Seq[Boolean] = {
-    val exprsRes = findChildExprFileQueries(childExprs)
-    if (exprsRes.exists(_ == true)) return Seq(true)
-    val plansRes = childPlans.flatMap(_.findInputFileQueries())
-    exprsRes ++ plansRes
-  }
-
-  private def checkInputFileQueries(): Unit = {
-    // if we found InputFileExecs make sure we aren't using the small file optimization
-    // in the readers
-    if (findInputFileQueries().exists(_ == true)) {
-      logWarning("Not able to use small file optimization because looking at InputFile stats")
-      wrapped.sqlContext.sparkSession.conf.set(INPUT_FILE_EXEC_USED.key, "true")
-    }
   }
 
   private def findShuffleExchanges(): Seq[SparkPlanMeta[ShuffleExchangeExec]] = wrapped match {
@@ -523,7 +492,6 @@ abstract class SparkPlanMeta[INPUT <: SparkPlan](plan: INPUT,
     // would make a join inconsistent
     fixUpExchangeOverhead()
     fixUpJoinConsistencyIfNeeded()
-    checkInputFileQueries()
   }
 
   override final def tagSelfForGpu(): Unit = {

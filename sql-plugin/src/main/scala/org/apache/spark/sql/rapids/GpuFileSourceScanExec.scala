@@ -21,7 +21,6 @@ import java.util.concurrent.TimeUnit.NANOSECONDS
 import scala.collection.mutable.HashMap
 
 import com.nvidia.spark.rapids.{GpuExec, GpuMetricNames, GpuParquetMultiFilePartitionReaderFactory, GpuReadCSVFileFormat, GpuReadFileFormatWithMetrics, GpuReadOrcFileFormat, GpuReadParquetFileFormat, RapidsConf, ShimLoader, SparkPlanMeta}
-import com.nvidia.spark.rapids.RapidsConf.ENABLE_SMALL_FILES_PARQUET
 import org.apache.hadoop.fs.Path
 
 import org.apache.spark.rdd.RDD
@@ -54,6 +53,7 @@ import org.apache.spark.util.collection.BitSet
  * @param optionalNumCoalescedBuckets Number of coalesced buckets.
  * @param dataFilters Filters on non-partition columns.
  * @param tableIdentifier identifier for the table in the metastore.
+ * @param supportsSmallFileOpt indicates if we should use the small file optimization.
  */
 case class GpuFileSourceScanExec(
     @transient relation: HadoopFsRelation,
@@ -63,7 +63,8 @@ case class GpuFileSourceScanExec(
     optionalBucketSet: Option[BitSet],
     optionalNumCoalescedBuckets: Option[Int],
     dataFilters: Seq[Expression],
-    tableIdentifier: Option[TableIdentifier])
+    tableIdentifier: Option[TableIdentifier],
+    supportsSmallFileOpt: Boolean = true)
     extends GpuDataSourceScanExec with GpuExec {
 
   override val nodeName: String = {
@@ -279,8 +280,7 @@ case class GpuFileSourceScanExec(
    * at a time.
    */
   lazy val inputRDD: RDD[InternalRow] = {
-    val useSmallFileOpt = canUseSmallFileOptimization
-    val readFile: Option[(PartitionedFile) => Iterator[InternalRow]] = if (!useSmallFileOpt) {
+    val readFile: Option[(PartitionedFile) => Iterator[InternalRow]] = if (!supportsSmallFileOpt) {
       val fileFormat = relation.fileFormat.asInstanceOf[GpuReadFileFormatWithMetrics]
       val reader = fileFormat.buildReaderWithPartitionValuesAndMetrics(
         sparkSession = relation.sparkSession,
@@ -299,9 +299,10 @@ case class GpuFileSourceScanExec(
 
     val readRDD = if (bucketedScan) {
       createBucketedReadRDD(relation.bucketSpec.get, readFile, dynamicallySelectedPartitions,
-        relation, useSmallFileOpt)
+        relation, supportsSmallFileOpt)
     } else {
-      createNonBucketedReadRDD(readFile, dynamicallySelectedPartitions, relation, useSmallFileOpt)
+      createNonBucketedReadRDD(readFile, dynamicallySelectedPartitions,
+        relation, supportsSmallFileOpt)
     }
     sendDriverMetrics()
     readRDD
@@ -536,35 +537,10 @@ case class GpuFileSourceScanExec(
       QueryPlan.normalizePredicates(dataFilters, output),
       None)
   }
-
-  private def canUseSmallFileOptimization: Boolean = {
-    // get up to date conf because isInputFileExecUsed is set at runtime
-    val rapidsConf = new RapidsConf(relation.sparkSession.sessionState.conf)
-    val formatSupportsSmallFilesOptimization = relation.fileFormat match {
-      case _: ParquetFileFormat => true
-      case _ => false
-    }
-    logDebug(s"Small file optimization: ${rapidsConf.isParquetSmallFilesEnabled} " +
-      s"format: $formatSupportsSmallFilesOptimization " +
-      s"Inputfile: ${rapidsConf.isInputFileExecUsed}")
-
-    (rapidsConf.isParquetSmallFilesEnabled && formatSupportsSmallFilesOptimization
-      && !rapidsConf.isInputFileExecUsed)
-  }
-
 }
 
 object GpuFileSourceScanExec {
   def tagSupport(meta: SparkPlanMeta[FileSourceScanExec]): Unit = {
-    val sparkSession = meta.wrapped.sqlContext.sparkSession
-    val options = meta.wrapped.relation.options
-    if (meta.conf.isParquetSmallFilesEnabled &&
-      (sparkSession.conf.getOption("spark.sql.parquet.mergeSchema").exists(_.toBoolean) ||
-      options.getOrElse("mergeSchema", "false").toBoolean)) {
-
-      meta.willNotWorkOnGpu("mergeSchema is not supported yet with" +
-        s" the small file optimization, please disable ${ENABLE_SMALL_FILES_PARQUET.key}")
-    }
     meta.wrapped.relation.fileFormat match {
       case _: CSVFileFormat => GpuReadCSVFileFormat.tagSupport(meta)
       case _: OrcFileFormat => GpuReadOrcFileFormat.tagSupport(meta)

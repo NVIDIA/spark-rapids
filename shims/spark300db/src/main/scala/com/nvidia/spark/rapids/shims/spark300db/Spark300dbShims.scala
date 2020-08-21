@@ -184,4 +184,9 @@ class Spark300dbShims extends Spark300Shims {
   override def createFilePartition(index: Int, files: Array[PartitionedFile]): FilePartition = {
     FilePartition(index, files)
   }
+
+  override def copyFileSourceScanExec(scanExec: GpuFileSourceScanExec,
+      supportsSmallFileOpt: Boolean): GpuFileSourceScanExec = {
+    scanExec.copy(supportsSmallFileOpt=supportsSmallFileOpt)
+  }
 }

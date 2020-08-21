@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019, NVIDIA CORPORATION.
+ * Copyright (c) 2019-2020, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -54,11 +54,17 @@ object ColumnarPartitionReaderWithPartitionValues {
       baseReader: PartitionReader[ColumnarBatch],
       partitionSchema: StructType): PartitionReader[ColumnarBatch] = {
     val partitionValues = partFile.partitionValues.toSeq(partitionSchema)
+    val partitionScalars = createPartitionValues(partitionValues, partitionSchema)
+    new ColumnarPartitionReaderWithPartitionValues(baseReader, partitionScalars)
+  }
+
+  def createPartitionValues(
+      partitionValues: Seq[Any],
+      partitionSchema: StructType): Array[Scalar] = {
     val partitionScalarTypes = partitionSchema.fields.map(_.dataType)
-    val partitionScalars = partitionValues.zip(partitionScalarTypes).map {
+    partitionValues.zip(partitionScalarTypes).safeMap {
       case (v, t) => GpuScalar.from(v, t)
     }.toArray
-    new ColumnarPartitionReaderWithPartitionValues(baseReader, partitionScalars)
   }
 
   def addPartitionValues(
