@@ -28,13 +28,14 @@ import org.apache.spark.network.buffer.ManagedBuffer
 import org.apache.spark.scheduler.MapStatus
 import org.apache.spark.shuffle._
 import org.apache.spark.shuffle.sort.SortShuffleManager
+import org.apache.spark.sql.execution.metric.SQLMetric
 import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.vectorized.ColumnarBatch
 import org.apache.spark.storage._
 
 class GpuShuffleHandle[K, V](
     val wrapped: ShuffleHandle,
-    override val dependency: ShuffleDependency[K, V, V])
+    override val dependency: GpuShuffleDependency[K, V, V])
   extends BaseShuffleHandle(wrapped.shuffleId, dependency) {
 
   override def toString: String = s"GPU SHUFFLE HANDLE $shuffleId"
@@ -76,14 +77,16 @@ class RapidsCachingWriter[K, V](
     // the data being released
     handle: GpuShuffleHandle[K, V],
     mapId: Long,
-    metrics: ShuffleWriteMetricsReporter,
+    metricsReporter: ShuffleWriteMetricsReporter,
     catalog: ShuffleBufferCatalog,
     shuffleStorage: RapidsDeviceMemoryStore,
-    rapidsShuffleServer: Option[RapidsShuffleServer]) extends ShuffleWriter[K, V] with Logging {
+    rapidsShuffleServer: Option[RapidsShuffleServer],
+    metrics: Map[String, SQLMetric]) extends ShuffleWriter[K, V] with Logging {
 
   private val numParts = handle.dependency.partitioner.numPartitions
   private val sizes = new Array[Long](numParts)
   private val writtenBufferIds = new ArrayBuffer[ShuffleBufferId](numParts)
+  private val uncompressedMetric: SQLMetric = metrics("dataSize")
 
   override def write(records: Iterator[Product2[K, V]]): Unit = {
     val nvtxRange = new NvtxRange("RapidsCachingWriter.write", NvtxColor.CYAN)
@@ -105,6 +108,7 @@ class RapidsCachingWriter[K, V](
             case c: GpuColumnVectorFromBuffer =>
               val buffer = c.getBuffer.slice(0, c.getBuffer.getLength)
               partSize = buffer.getLength
+              uncompressedMetric += partSize
               shuffleStorage.addTable(
                 bufferId,
                 GpuColumnVector.from(batch),
@@ -116,6 +120,7 @@ class RapidsCachingWriter[K, V](
               val tableMeta = c.getTableMeta
               // update the table metadata for the buffer ID generated above
               tableMeta.bufferMeta.mutateId(bufferId.tableId)
+              uncompressedMetric += tableMeta.bufferMeta().uncompressedSize()
               shuffleStorage.addBuffer(
                 bufferId,
                 buffer,
@@ -141,8 +146,8 @@ class RapidsCachingWriter[K, V](
         }
         writtenBufferIds.append(bufferId)
       }
-      metrics.incBytesWritten(bytesWritten)
-      metrics.incRecordsWritten(recordsWritten)
+      metricsReporter.incBytesWritten(bytesWritten)
+      metricsReporter.incRecordsWritten(recordsWritten)
     } finally {
       nvtxRange.close()
     }
@@ -266,7 +271,8 @@ abstract class RapidsShuffleInternalManagerBase(conf: SparkConf, isDriver: Boole
     // Always register with the wrapped handler so we can write to it ourselves if needed
     val orig = wrapped.registerShuffle(shuffleId, dependency)
     if (!shouldFallThroughOnEverything && dependency.isInstanceOf[GpuShuffleDependency[K, V, C]]) {
-      val handle = new GpuShuffleHandle(orig, dependency.asInstanceOf[ShuffleDependency[K, V, V]])
+      val handle = new GpuShuffleHandle(orig,
+        dependency.asInstanceOf[GpuShuffleDependency[K, V, V]])
       handle
     } else {
       orig
@@ -277,7 +283,7 @@ abstract class RapidsShuffleInternalManagerBase(conf: SparkConf, isDriver: Boole
       handle: ShuffleHandle,
       mapId: Long,
       context: TaskContext,
-      metrics: ShuffleWriteMetricsReporter): ShuffleWriter[K, V] = {
+      metricsReporter: ShuffleWriteMetricsReporter): ShuffleWriter[K, V] = {
     handle match {
       case gpu: GpuShuffleHandle[_, _] =>
         registerGpuShuffle(handle.shuffleId)
@@ -285,12 +291,13 @@ abstract class RapidsShuffleInternalManagerBase(conf: SparkConf, isDriver: Boole
           env.blockManager,
           gpu.asInstanceOf[GpuShuffleHandle[K, V]],
           mapId,
-          metrics,
+          metricsReporter,
           catalog,
           GpuShuffleEnv.getDeviceStorage,
-          server)
+          server,
+          gpu.dependency.metrics)
       case other =>
-        wrapped.getWriter(other, mapId, context, metrics)
+        wrapped.getWriter(other, mapId, context, metricsReporter)
     }
   }
 
