@@ -217,6 +217,9 @@ abstract class AbstractGpuCoalesceIterator(origIter: Iterator[ColumnarBatch],
       case h: RapidsHostColumnVector =>
         val buff = h.getBase.getHostBufferFor(BufferType.DATA)
         if (buff == null) 0 else buff.getLength
+      case g: GpuCompressedColumnVector =>
+        val columnMeta = g.getTableMeta.columnMetas(index)
+        columnMeta.data().length()
       case _ =>
         defaultSize
     }
