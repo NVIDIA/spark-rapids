@@ -15,7 +15,6 @@
 import pytest
 
 from asserts import assert_gpu_and_cpu_are_equal_collect, assert_gpu_and_cpu_writes_are_equal_collect, assert_gpu_fallback_collect
-from conftest import is_databricks_runtime
 from datetime import date, datetime, timezone
 from data_gen import *
 from marks import *
@@ -157,8 +156,6 @@ def test_simple_partitioned_read(spark_tmp_path, v1_enabled_list):
             lambda spark : spark.read.parquet(data_path),
             conf={'spark.sql.sources.useV1SourceList': v1_enabled_list})
 
-@pytest.mark.xfail(condition=is_databricks_runtime(),
-    reason='https://github.com/NVIDIA/spark-rapids/issues/192')
 @pytest.mark.parametrize('v1_enabled_list', ["", "parquet"])
 def test_read_merge_schema(spark_tmp_path, v1_enabled_list):
     # Once https://github.com/NVIDIA/spark-rapids/issues/133 and https://github.com/NVIDIA/spark-rapids/issues/132 are fixed 
