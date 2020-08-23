@@ -551,9 +551,8 @@
                             <!-- Execute the shell script to generate cudf & spark dependency info -->
                             <target>
                                 <mkdir dir="${project.build.directory}/extra-resources"/>
-                                <mkdir dir="${project.build.directory}/tmp"/>
                                 <exec executable="bash" output="${project.build.directory}/extra-resources/dependency-info.properties">
-                                    <arg value="${user.dir}/build/dependency-info"/>
+                                    <arg value="${user.dir}/build/dependency-info.sh"/>
                                     <arg value="${cudf.version}"/>
                                     <arg value="${cuda.version}"/>
                                     <arg value="${spark.version}"/>

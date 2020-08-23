@@ -32,6 +32,7 @@
     <version>0.2.0-SNAPSHOT</version>
 
     <!-- Set 'spark.version' for the shims layer -->
+    <!-- Create a separate file 'dependency-info.properties' in the jar to save cudf & spark version info -->
     <properties>
         <spark.version>${spark301.version}</spark.version>
     </properties>
