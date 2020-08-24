@@ -47,7 +47,7 @@ AUTH_HEADERS = {
 def create():
     url = f'{API_URL}/repos/{OWNER}/{REPO_NAME}/pulls'
     params = {
-        'title': f'[auto-merge] {HEAD} to {BASE} [ci skip]',
+        'title': f'[auto-merge] {HEAD} to {BASE} [skip ci] [bot]',
         'head': HEAD,
         'base': BASE,
         'body': f'auto-merge triggered by github actions on `{HEAD}` to create a PR keeping `{BASE}` up-to-date. If '

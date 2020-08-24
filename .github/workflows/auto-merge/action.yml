@@ -12,11 +12,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-FROM python:alpine
+name: 'auto-merge action'
+description: 'auto-merge HEAD to BASE'
+runs:
+  using: 'docker'
+  image: 'Dockerfile'
 
-WORKDIR /
-COPY automerge .
-RUN pip install requests && chmod +x automerge
-
-# require envs: OWNER,REPO_NAME,HEAD,BASE,GITHUB_TOKEN
-ENTRYPOINT ["/automerge"]
