@@ -80,9 +80,8 @@ abstract class GpuParquetScanBase(
     val broadcastedConf = sparkSession.sparkContext.broadcast(
       new SerializableConfiguration(hadoopConf))
 
-    logDebug(s"Small file optimization: ${rapidsConf.isParquetSmallFilesEnabled} " +
-      s"supportsSmallFileOpt: $supportsSmallFileOpt")
-    if (rapidsConf.isParquetSmallFilesEnabled && supportsSmallFileOpt) {
+    logDebug(s"Small file optimization support: $supportsSmallFileOpt")
+    if (supportsSmallFileOpt) {
       GpuParquetMultiFilePartitionReaderFactory(sparkSession.sessionState.conf, broadcastedConf,
         dataSchema, readDataSchema, readPartitionSchema, pushedFilters, rapidsConf, metrics)
     } else {

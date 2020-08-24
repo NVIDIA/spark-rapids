@@ -180,7 +180,7 @@ class GpuTransitionOverrides extends Rule[SparkPlan] {
 
   // This walks from the output to the input to look for any uses of InputFileName,
   // InputFileBlockStart, or InputFileBlockLength when we use a Parquet read because
-  // we can't support or small file optimization when this is used.
+  // we can't support the small file optimization when this is used.
   private def updateScansForInput(plan: SparkPlan,
       disableUntilInput: Boolean = false): SparkPlan = plan match {
     case batchScan: GpuBatchScanExec =>

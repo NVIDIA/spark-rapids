@@ -33,6 +33,7 @@ import org.apache.spark.sql.catalyst.plans.JoinType
 import org.apache.spark.sql.catalyst.plans.physical.BroadcastMode
 import org.apache.spark.sql.execution._
 import org.apache.spark.sql.execution.datasources.{BucketingUtils, FilePartition, HadoopFsRelation, PartitionDirectory, PartitionedFile}
+import org.apache.spark.sql.execution.datasources.parquet.ParquetFileFormat
 import org.apache.spark.sql.execution.exchange.{BroadcastExchangeExec, ShuffleExchangeExec}
 import org.apache.spark.sql.execution.joins.{BroadcastHashJoinExec, BroadcastNestedLoopJoinExec, HashJoin, SortMergeJoinExec}
 import org.apache.spark.sql.execution.joins.ShuffledHashJoinExec
@@ -93,13 +94,23 @@ class Spark300dbShims extends Spark300Shims {
           override def tagPlanForGpu(): Unit = GpuFileSourceScanExec.tagSupport(this)
 
           override def convertToGpu(): GpuExec = {
+            val sparkSession = wrapped.relation.sparkSession
+            val options = wrapped.relation.options
             val newRelation = HadoopFsRelation(
               wrapped.relation.location,
               wrapped.relation.partitionSchema,
               wrapped.relation.dataSchema,
               wrapped.relation.bucketSpec,
               GpuFileSourceScanExec.convertFileFormat(wrapped.relation.fileFormat),
-              wrapped.relation.options)(wrapped.relation.sparkSession)
+              options)(sparkSession)
+            val isParquet = newRelation.fileFormat match {
+              case _: ParquetFileFormat => true
+              case _: GpuReadParquetFileFormat => true
+              case _ => false
+            }
+            val canUseSmallFileOpt = (isParquet && conf.isParquetSmallFilesEnabled &&
+              !(options.getOrElse("mergeSchema", "false").toBoolean ||
+                sparkSession.conf.getOption("spark.sql.parquet.mergeSchema").exists(_.toBoolean)))
             GpuFileSourceScanExec(
               newRelation,
               wrapped.output,
@@ -109,7 +120,8 @@ class Spark300dbShims extends Spark300Shims {
               // TODO: Does Databricks have coalesced bucketing implemented?
               None,
               wrapped.dataFilters,
-              wrapped.tableIdentifier)
+              wrapped.tableIdentifier,
+              canUseSamllFileOpt)
           }
         }),
       GpuOverrides.exec[SortMergeJoinExec](
