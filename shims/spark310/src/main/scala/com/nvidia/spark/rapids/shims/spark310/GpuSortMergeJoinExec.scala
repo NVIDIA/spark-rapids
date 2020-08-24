@@ -84,7 +84,8 @@ class GpuSortMergeJoinMeta(
       buildSide,
       condition.map(_.convertToGpu()),
       childPlans(0).convertIfNeeded(),
-      childPlans(1).convertIfNeeded())
+      childPlans(1).convertIfNeeded(),
+      join.isSkewJoin)
   }
 
   /**

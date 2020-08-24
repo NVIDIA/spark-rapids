@@ -15,7 +15,6 @@
 import pytest
 
 from asserts import assert_gpu_and_cpu_are_equal_collect, assert_gpu_and_cpu_writes_are_equal_collect, assert_gpu_fallback_collect
-from conftest import is_databricks_runtime
 from datetime import date, datetime, timezone
 from data_gen import *
 from marks import *
@@ -216,8 +215,6 @@ def test_read_schema_missing_cols(spark_tmp_path, v1_enabled_list, small_file_op
                   'spark.sql.files.maxPartitionBytes': "1g",
                   'spark.sql.files.minPartitionNum': '1'})
 
-@pytest.mark.xfail(condition=is_databricks_runtime(),
-    reason='https://github.com/NVIDIA/spark-rapids/issues/192')
 @pytest.mark.parametrize('small_file_opt', ["false", "true"])
 @pytest.mark.parametrize('v1_enabled_list', ["", "parquet"])
 def test_read_merge_schema(spark_tmp_path, v1_enabled_list, small_file_opt):
