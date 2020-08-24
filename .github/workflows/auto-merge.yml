@@ -25,12 +25,14 @@ jobs:
   auto-merge:
     runs-on: ubuntu-latest
     steps:
-    - name: auto-merge job
-      if: github.event.pull_request.merged == true
-      uses: ./.github/workflows/auto-merge
-      env:
-        OWNER: NVIDIA
-        REPO_NAME: spark-rapids
-        HEAD: branch-0.2
-        BASE: branch-0.3
-        GITHUB_TOKEN: ${{ secrets.NVAUTO_TOKEN }}
+      - uses: actions/checkout@v2
+
+      - name: auto-merge job
+        if: github.event.pull_request.merged == true
+        uses: ./.github/workflows/auto-merge
+        env:
+          OWNER: NVIDIA
+          REPO_NAME: spark-rapids
+          HEAD: branch-0.2
+          BASE: branch-0.3
+          GITHUB_TOKEN: ${{ secrets.NVAUTO_TOKEN }}
