@@ -142,7 +142,8 @@ def process_changelog(resource_type: str):
         items = process_issue()
         time_field = 'closedAt'
     else:
-        return
+        print(f"[process_changelog] Invalid type: {resource_type}")
+        sys.exit(1)
 
     for item in items:
         if len(item['projectCards']['nodes']) == 0:
@@ -169,6 +170,8 @@ def process_changelog(resource_type: str):
         if resource_type == ISSUES and category == INVALID:
             continue
         if resource_type == PULL_REQUESTS:
+            if item['title'].endswith('[bot]'):  # skip auto-gen PR
+                continue
             category = PRS
 
         changelog[project][category].append({
