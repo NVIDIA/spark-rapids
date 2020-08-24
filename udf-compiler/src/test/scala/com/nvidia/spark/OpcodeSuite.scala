@@ -1875,11 +1875,40 @@ class OpcodeSuite extends FunSuite {
     checkEquiv(result, ref)
   }
 
+  test("Non-literal date time pattern - fallback test") {
+    val myudf: (String, String) => Int = (a, pattern) => {
+      val formatter = DateTimeFormatter.ofPattern(pattern)
+      val ldt = LocalDateTime.parse(a, formatter)
+      ldt.getDayOfMonth
+    }
+    val u = makeUdf(myudf)
+    val dataset = Seq(("2020-08-20 01:23:45", "yyyy-MM-dd HH:mm:ss"))
+      .toDF("DateTime", "Pattern").repartition(1)
+    val result = dataset.withColumn("dayOfMonth", u(col("DateTime"), col("Pattern")))
+    val ref = dataset.withColumn("dayOfMonth", dayofmonth(col("DateTime")))
+    assert(!udfIsCompiled(result))
+    checkEquiv(result, ref)
+  }
+
+  test("Unsupported date time pattern - fallback test") {
+    val myudf: (String) => Int = a => {
+      val formatter = DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm:ss")
+      val ldt = LocalDateTime.parse(a, formatter)
+      ldt.getDayOfMonth
+    }
+    val u = makeUdf(myudf)
+    val dataset = Seq("2020-08-20T01:23:45").toDF("DateTime").repartition(1)
+    val result = dataset.withColumn("dayOfMonth", u(col("DateTime")))
+    val ref = dataset.withColumn("dayOfMonth", dayofmonth(col("DateTime")))
+    assert(!udfIsCompiled(result))
+    checkEquiv(result, ref)
+  }
+
   test("Get day of month from LocalDateTime string") {
-    val myudf: (String) => String = a => {
+    val myudf: (String) => Int = a => {
       val formatter = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")
       val ldt = LocalDateTime.parse(a, formatter)
-      ldt.getDayOfMonth.toString
+      ldt.getDayOfMonth
     }
     val u = makeUdf(myudf)
     val dataset = Seq("2020-08-20 01:23:45").toDF("DateTime").repartition(1)
@@ -1890,10 +1919,10 @@ class OpcodeSuite extends FunSuite {
   }
 
   test("Get hour from LocalDateTime string") {
-    val myudf: (String) => String = a => {
+    val myudf: (String) => Int = a => {
       val formatter = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")
       val ldt = LocalDateTime.parse(a, formatter)
-      ldt.getHour.toString
+      ldt.getHour
     }
     val u = makeUdf(myudf)
     val dataset = Seq("2020-08-20 01:23:45").toDF("DateTime").repartition(1)
@@ -1904,10 +1933,10 @@ class OpcodeSuite extends FunSuite {
   }
 
   test("Get minute from LocalDateTime string") {
-    val myudf: (String) => String = a => {
+    val myudf: (String) => Int = a => {
       val formatter = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")
       val ldt = LocalDateTime.parse(a, formatter)
-      ldt.getMinute.toString
+      ldt.getMinute
     }
     val u = makeUdf(myudf)
     val dataset = Seq("2020-08-20 01:23:45").toDF("DateTime").repartition(1)
@@ -1918,10 +1947,10 @@ class OpcodeSuite extends FunSuite {
   }
 
   test("get month from LocalDataTime string") {
-    val myudf: (String) => String = a => {
+    val myudf: (String) => Int = a => {
       val formatter = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")
       val ldt = LocalDateTime.parse(a, formatter)
-      ldt.getMonthValue.toString
+      ldt.getMonthValue
     }
     val u = makeUdf(myudf)
     val dataset = Seq("2020-08-20 01:23:45").toDF("DateTime").repartition(1)
@@ -1932,10 +1961,10 @@ class OpcodeSuite extends FunSuite {
   }
 
   test("get second from LocalDateTime string") {
-    val myudf: (String) => String = a => {
+    val myudf: (String) => Int = a => {
       val formatter = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")
       val ldt = LocalDateTime.parse(a, formatter)
-      ldt.getSecond.toString
+      ldt.getSecond
     }
     val u = makeUdf(myudf)
     val dataset = Seq("2020-08-20 01:23:45").toDF("DateTime").repartition(1)
@@ -1946,10 +1975,10 @@ class OpcodeSuite extends FunSuite {
   }
 
   test("get year from LocalDateTime string") {
-    val myudf: (String) => String = a => {
+    val myudf: (String) => Int = a => {
       val formatter = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")
       val ldt = LocalDateTime.parse(a, formatter)
-      ldt.getYear.toString
+      ldt.getYear
     }
     val u = makeUdf(myudf)
     val dataset = Seq("2020-08-20 01:23:45").toDF("DateTime").repartition(1)

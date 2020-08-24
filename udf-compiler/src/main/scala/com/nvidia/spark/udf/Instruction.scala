@@ -73,6 +73,53 @@ private object Repr {
     var string: Expression = Literal.default(StringType)
   }
 
+  case class DateTimeFormatter private (private val pattern: Expression) extends CompilerInternal("java.time.format.DateTimeFormatter") {
+    def invoke(methodName: String, args: List[Expression]): Expression = {
+      methodName match {
+        case _ =>
+          throw new SparkException(s"Unsupported DateTimeFormatter op ${methodName}")
+      }
+    }
+  }
+  object DateTimeFormatter {
+    private def apply(pattern: Expression): DateTimeFormatter = { new DateTimeFormatter(pattern) }
+    def ofPattern(pattern: Expression): DateTimeFormatter = {
+      pattern match {
+        case StringLiteral(patternString) =>
+          if (patternString == sparkDateTimePattern) {
+            DateTimeFormatter(pattern)
+          } else {
+            throw new SparkException(s"${patternString} is an unsupported pattern. " +
+                s"${sparkDateTimePattern} is the only supported pattern " +
+                s"for DateTimeFormatter.ofPattern")
+          }
+        case _ =>
+          throw new SparkException("Only String literal is supported for DateTimeFormatter.ofPattern")
+      }
+    }
+    private val sparkDateTimePattern: String = "yyyy-MM-dd HH:mm:ss"
+  }
+
+  case class LocalDateTime private (private val dateTime: Expression) extends CompilerInternal("java.time.LocalDateTime") {
+    def invoke(methodName: String, args: List[Expression]): Expression = {
+      methodName match {
+        case "getYear" => Year(dateTime)
+        case "getMonthValue" => Month(dateTime)
+        case "getDayOfMonth" => DayOfMonth(dateTime)
+        case "getHour" => Hour(dateTime)
+        case "getMinute" => Minute(dateTime)
+        case "getSecond" => Second(dateTime)
+        case _ =>
+          throw new SparkException(s"Unsupported DateTimeFormatter op ${methodName}")
+      }
+    }
+  }
+  object LocalDateTime {
+    private def apply(pattern: Expression): LocalDateTime = { new LocalDateTime(pattern) }
+    def parse(text: Expression, formatter: DateTimeFormatter): LocalDateTime = {
+      LocalDateTime(text)
+    }
+  }
 }
 
 /**
@@ -327,9 +374,13 @@ case class Instruction(opcode: Int, operand: Int, instructionStr: String) extend
       val retval = args.head.asInstanceOf[Repr.StringBuilder]
           .invoke(method.getName, args.tail)
       State(locals, retval :: rest, cond, expr)
+    } else if (declaringClassName.equals("java.time.format.DateTimeFormatter")) {
+      State(locals, dateTimeFormatterOp(method.getName, args) :: rest, cond, expr)
+    } else if (declaringClassName.equals("java.time.LocalDateTime")) {
+      State(locals, localDateTimeOp(method.getName, args) :: rest, cond, expr)
     } else {
       // Other functions
-      throw new SparkException("Unsupported instruction: " + Opcode.INVOKEVIRTUAL)
+      throw new SparkException("Unsupported instruction: " + Opcode.INVOKEVIRTUAL + s"${declaringClassName}")
     }
   }
 
@@ -573,6 +624,34 @@ case class Instruction(opcode: Int, operand: Int, instructionStr: String) extend
       case _ =>
         throw new SparkException(s"Unsupported string function: " +
             s"String.${methodName}")
+    }
+  }
+
+  private def dateTimeFormatterOp(methodName: String, args: List[Expression]): Expression = {
+    methodName match {
+      case "ofPattern" =>
+        checkArgs(methodName, List(StringType), args)
+        Repr.DateTimeFormatter.ofPattern(args.head)
+      case _ =>
+        throw new SparkException(s"Unsupported function: " +
+            s"DateTimeFormatter.${methodName}")
+    }
+  }
+
+  private def localDateTimeOp(methodName: String, args: List[Expression]): Expression = {
+    methodName match {
+      case "parse" =>
+        checkArgs(methodName, List(StringType), List(args.head))
+        if (!args.last.isInstanceOf[Repr.DateTimeFormatter]) {
+          throw new SparkException("Unexpected argument for LocalDateTime.parse")
+        }
+        Repr.LocalDateTime.parse(args.head, args.last.asInstanceOf[Repr.DateTimeFormatter])
+      case "getYear" | "getMonthValue" | "getDayOfMonth" |
+           "getHour" | "getMinute" | "getSecond" =>
+        args.head.asInstanceOf[Repr.LocalDateTime].invoke(methodName, args.tail)
+      case _ =>
+        throw new SparkException(s"Unsupported function: " +
+            s"DateTimeFormatter.${methodName}")
     }
   }
 }
