@@ -16,7 +16,7 @@ FROM python:alpine
 
 WORKDIR /
 COPY automerge .
-RUN pip install requests && chmod +x automerge
+RUN pip install requests && chmod +x /automerge
 
 # require envs: OWNER,REPO_NAME,HEAD,BASE,GITHUB_TOKEN
 ENTRYPOINT ["/automerge"]

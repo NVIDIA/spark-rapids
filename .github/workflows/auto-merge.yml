@@ -16,9 +16,6 @@
 name: auto-merge HEAD to BASE
 
 on:
-  push:
-    branches:
-    - branch-0.2
   pull_request:
     branches:
     - branch-0.2
@@ -29,7 +26,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
     - name: auto-merge job
-      if: github.ref == 'refs/heads/branch-0.2' && (github.event_name == 'push' || (github.event_name == 'pull_request' && github.event.pull_request.merged == true))
+      if: github.event.pull_request.merged == true
       uses: ./.github/workflows/auto-merge
       env:
         OWNER: NVIDIA
