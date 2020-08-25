@@ -73,7 +73,7 @@ private object Repr {
     var string: Expression = Literal.default(StringType)
   }
 
-  case class DateTimeFormatter private (private val pattern: Expression) extends CompilerInternal("java.time.format.DateTimeFormatter") {
+  case class DateTimeFormatter private (private[Repr] val pattern: Expression) extends CompilerInternal("java.time.format.DateTimeFormatter") {
     def invoke(methodName: String, args: List[Expression]): Expression = {
       methodName match {
         case _ =>
@@ -82,22 +82,8 @@ private object Repr {
     }
   }
   object DateTimeFormatter {
-    private def apply(pattern: Expression): DateTimeFormatter = { new DateTimeFormatter(pattern) }
-    def ofPattern(pattern: Expression): DateTimeFormatter = {
-      pattern match {
-        case StringLiteral(patternString) =>
-          if (patternString == sparkDateTimePattern) {
-            DateTimeFormatter(pattern)
-          } else {
-            throw new SparkException(s"${patternString} is an unsupported pattern. " +
-                s"${sparkDateTimePattern} is the only supported pattern " +
-                s"for DateTimeFormatter.ofPattern")
-          }
-        case _ =>
-          throw new SparkException("Only String literal is supported for DateTimeFormatter.ofPattern")
-      }
-    }
-    private val sparkDateTimePattern: String = "yyyy-MM-dd HH:mm:ss"
+    private def apply(pattern: Expression): DateTimeFormatter = new DateTimeFormatter(pattern)
+    def ofPattern(pattern: Expression): DateTimeFormatter = DateTimeFormatter(pattern)
   }
 
   case class LocalDateTime private (private val dateTime: Expression) extends CompilerInternal("java.time.LocalDateTime") {
@@ -117,7 +103,7 @@ private object Repr {
   object LocalDateTime {
     private def apply(pattern: Expression): LocalDateTime = { new LocalDateTime(pattern) }
     def parse(text: Expression, formatter: DateTimeFormatter): LocalDateTime = {
-      LocalDateTime(text)
+      LocalDateTime(new ParseToTimestamp(text, formatter.pattern))
     }
   }
 }
@@ -412,7 +398,7 @@ case class Instruction(opcode: Int, operand: Int, instructionStr: String) extend
     }
     // Make sure that the objref is scala.math.package$.
     args.head match {
-      case Literal(index, IntegerType) =>
+      case IntegerLiteral(index) =>
         if (!lambdaReflection.lookupField(index.asInstanceOf[Int])
             .getType.getName.equals("scala.math.package$")) {
           throw new SparkException("Unsupported math function objref: " + args.head)
@@ -446,7 +432,7 @@ case class Instruction(opcode: Int, operand: Int, instructionStr: String) extend
       methodName: String, args: List[Expression]): Expression = {
     // Make sure that the objref is scala.math.package$.
     args.head match {
-      case Literal(index, IntegerType) =>
+      case IntegerLiteral(index) =>
         if (!lambdaReflection.lookupField(index.asInstanceOf[Int])
             .getType.getName.equals("scala.Predef$")) {
           throw new SparkException("Unsupported predef function objref: " + args.head)
