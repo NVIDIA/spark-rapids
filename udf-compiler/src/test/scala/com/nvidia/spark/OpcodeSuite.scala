@@ -385,7 +385,6 @@ class OpcodeSuite extends FunSuite {
     checkEquiv(result, ref)
   }
 
-  // misc. tests. Boolean check currently failing, can't handle true/false
   test("Boolean check") {
     val myudf: () => Boolean = () => {
       var myBool : Boolean = true
