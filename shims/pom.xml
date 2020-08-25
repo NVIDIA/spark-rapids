@@ -39,13 +39,21 @@
                 <module>spark300db</module>
             </modules>
         </profile>
+        <profile>
+            <id>snapshot-shims</id>
+            <activation>
+                <activeByDefault>true</activeByDefault>
+            </activation>
+            <modules>
+                <module>spark301</module>
+                <module>spark302</module>
+                <module>spark310</module>
+            </modules>
+        </profile>
     </profiles>
 
     <modules>
         <module>spark300</module>
-        <module>spark301</module>
-        <module>spark302</module>
-        <module>spark310</module>
         <module>aggregator</module>
     </modules>
     <dependencies>
@@ -67,15 +75,6 @@
             <plugin>
                 <groupId>net.alchim31.maven</groupId>
                 <artifactId>scala-maven-plugin</artifactId>
-            </plugin>
-            <plugin>
-                <groupId>org.apache.rat</groupId>
-                <artifactId>apache-rat-plugin</artifactId>
-                <configuration>
-                    <excludes>
-                        <exclude>**/src/main/resources/META-INF/services/*</exclude>
-                    </excludes>
-                </configuration>
             </plugin>
             <plugin>
                 <groupId>org.scalastyle</groupId>
