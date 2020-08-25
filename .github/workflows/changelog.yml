@@ -44,17 +44,18 @@ jobs:
         with:
           token: ${{ secrets.NVAUTO_TOKEN }}
           commit-message: "changelog-gen on ${{ steps.dt.outputs.date }}"
-          committer: nvauto <@> # will update PR when internal IT ticket got resolved
-          author: nvauto <@> # will update PR when internal IT ticket got resolved
+          committer: nvauto <70000568+nvauto@users.noreply.github.com>
+          author: nvauto <70000568+nvauto@users.noreply.github.com>
           signoff: true
-          branch: changelog-night-update
+          branch: changelog-gen
           title: '[DOC] Update CHANGELOG.md on ${{ steps.dt.outputs.date }} [skip ci] [bot]'
           body: |
             changelog-gen runs on ${{ steps.dt.outputs.date }}
 
-            check script stdout: [job_${{ github.run_id }}](https://github.com/NVIDIA/spark-rapids/actions/runs/${{ github.run_id }})
+            check action log: [run_${{ github.run_id }}](https://github.com/NVIDIA/spark-rapids/actions/runs/${{ github.run_id }})
 
-            Please review the generated CHANGELOG.md, then merge or close the PR and do not forget to **delete** the remote branch.
+            Please review the generated CHANGELOG.md,
+            then merge or close the PR, and feel free to **delete** the remote branch.
           labels: |
             documentation
           team-reviewers: |

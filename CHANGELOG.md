@@ -1,5 +1,5 @@
 # Change log
-Generated on 2020-08-24
+Generated on 2020-08-25
 
 ## Release 0.2
 
@@ -48,6 +48,7 @@ Generated on 2020-08-24
 ### Bugs Fixed
 |||
 |:---|:---|
+|[#598](https://github.com/NVIDIA/spark-rapids/issues/598)|[BUG] Non-deterministic output from MapOutputTracker.getStatistics() with AQE on GPU|
 |[#192](https://github.com/NVIDIA/spark-rapids/issues/192)|[BUG] test_read_merge_schema fails on Databricks|
 |[#569](https://github.com/NVIDIA/spark-rapids/issues/569)|[BUG] left_semi_join operation is abnormal and serious time-consuming|
 |[#341](https://github.com/NVIDIA/spark-rapids/issues/341)|[BUG] Document compression formats for readers/writers|
