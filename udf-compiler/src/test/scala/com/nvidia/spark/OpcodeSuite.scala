@@ -397,21 +397,30 @@ class OpcodeSuite extends FunSuite {
     checkEquiv(result, ref)
   }
 
-  // the test below is a one-off test used to test the functionality of LDC, also covers ASTORE_0.
-  // currently having trouble verifying output
-
+  // the test covers the functionality of LDC as well as ASTORE_0.
   test("LDC tests") {
-    class Placeholder {
-      val myudf: () => (String) = () => {
-        val myString : String = "a"
-        myString
+    // A nested object, LDCTests, is used to ensure ldc is used instead of
+    // ldc_w.
+    // Without this nested object, "a" would be added to the constant pool of
+    // OpcodeSuite, and, depending on the number of entries in the constant
+    // pool, ldc_w might be generated.
+    // With this nested object, we know "a" would be added to the constant pool
+    // of LDCTests and the constant pool of LDCTests is small enough to
+    // guarantee the generation of ldc.
+    object LDCTests {
+      def run(): Unit = {
+        val myudf: () => (String) = () => {
+          val myString : String = "a"
+          myString
+        }
+        val u = makeUdf(myudf)
+        val dataset = List("a").toDS()
+        val result = dataset.withColumn("new", u())
+        val ref = dataset.withColumn("new",lit("a"))
+        checkEquiv(result, ref)
       }
-      val u = makeUdf(myudf)
-      val dataset = List("a").toDS()
-      val result = dataset.withColumn("new", u())
-      val ref = dataset.withColumn("new",lit("a"))
-      checkEquiv(result, ref)
     }
+    LDCTests.run
   }
 
   // this test makes sure we can handle udfs with more than 2 args
