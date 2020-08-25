@@ -121,7 +121,7 @@ class Spark300dbShims extends Spark300Shims {
               None,
               wrapped.dataFilters,
               wrapped.tableIdentifier,
-              canUseSamllFileOpt)
+              canUseSmallFileOpt)
           }
         }),
       GpuOverrides.exec[SortMergeJoinExec](
