@@ -16,7 +16,7 @@
 name: changelog-gen
 
 on:
-  pull_request:
+  pull_request_target:
     branches:
       - branch-0.2
     types: [closed]
