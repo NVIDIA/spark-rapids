@@ -163,14 +163,17 @@
         <test.include.tags></test.include.tags>
         <rapids.shuffle.manager.override>false</rapids.shuffle.manager.override>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
-	<project.reporting.sourceEncoding>UTF-8</project.reporting.sourceEncoding>
-	<pytest.TEST_TAGS>not qarun</pytest.TEST_TAGS>
-	<rat.consoleOutput>false</rat.consoleOutput>
-	<slf4j.version>1.7.30</slf4j.version>
-	<spark300.version>3.0.0</spark300.version>
-	<spark301.version>3.0.1-SNAPSHOT</spark301.version>
-	<spark302.version>3.0.2-SNAPSHOT</spark302.version>
-	<spark310.version>3.1.0-SNAPSHOT</spark310.version>
+        <project.reporting.sourceEncoding>UTF-8</project.reporting.sourceEncoding>
+        <pytest.TEST_TAGS>not qarun</pytest.TEST_TAGS>
+        <rat.consoleOutput>false</rat.consoleOutput>
+        <slf4j.version>1.7.30</slf4j.version>
+        <spark300.version>3.0.0</spark300.version>
+        <!--
+         If you update a dependendy version so it is no longer a SNAPSHOT
+         please update the snapshot-shims profile as well so it is accurate -->
+        <spark301.version>3.0.1-SNAPSHOT</spark301.version>
+        <spark302.version>3.0.2-SNAPSHOT</spark302.version>
+        <spark310.version>3.1.0-SNAPSHOT</spark310.version>
     </properties>
 
     <dependencyManagement>
@@ -506,6 +509,7 @@
                         <exclude>.pytest_cache/**</exclude>
                         <exclude>.github/pull_request_template.md</exclude>
                         <exclude>**/*.md</exclude>
+                        <exclude>**/*.iml</exclude>
                         <exclude>NOTICE-binary</exclude>
                         <exclude>docs/dev/idea-code-style-settings.xml</exclude>
                         <exclude>**/.m2/**</exclude>
@@ -515,6 +519,7 @@
                         <exclude>*.jar</exclude>
                         <exclude>docs/demo/**/*.ipynb</exclude>
                         <exclude>docs/demo/**/*.zpln</exclude>
+                        <exclude>**/src/main/resources/META-INF/services/*</exclude>
                     </excludes>
                 </configuration>
             </plugin>
