@@ -41,7 +41,7 @@ rm -rf spark-rapids
 mkdir spark-rapids
 tar -zxvf $SPARKTGZ -C spark-rapids
 cd spark-rapids
-mvn -B -Pdatabricks clean package -DskipTests || true
+mvn -B '-Pdatabricks,!snapshot-shims' clean package -DskipTests || true
 M2DIR=/home/ubuntu/.m2/repository
 CUDF_JAR=${M2DIR}/ai/rapids/cudf/${CUDF_VERSION}/cudf-${CUDF_VERSION}-${CUDA_VERSION}.jar
 
@@ -87,7 +87,7 @@ mvn -B install:install-file \
    -Dversion=$SPARK_VERSION \
    -Dpackaging=jar
 
-mvn -B -Pdatabricks clean package -DskipTests
+mvn -B '-Pdatabricks,!snapshot-shims' clean package -DskipTests
 
 # Copy so we pick up new built jar and latesty CuDF jar. Note that the jar names has to be
 # exactly what is in the staticly setup Databricks cluster we use. 
