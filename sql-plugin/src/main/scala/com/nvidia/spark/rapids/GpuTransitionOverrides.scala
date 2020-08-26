@@ -191,12 +191,8 @@ class GpuTransitionOverrides extends Rule[SparkPlan] {
         batchScan
       }
     case fileSourceScan: GpuFileSourceScanExec =>
-      val isParquet = fileSourceScan.relation.fileFormat match {
-        case _: ParquetFileFormat => true
-        case _: GpuParquetFileFormat => true
-        case _ => false
-      }
-      if (isParquet && (disableUntilInput || disableScanUntilInput(fileSourceScan))) {
+      if (fileSourceScan.supportsSmallFileOpt == true &&
+        (disableUntilInput || disableScanUntilInput(fileSourceScan))) {
         ShimLoader.getSparkShims.copyFileSourceScanExec(fileSourceScan, false)
       } else {
         fileSourceScan

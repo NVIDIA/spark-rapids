@@ -103,14 +103,11 @@ class Spark300dbShims extends Spark300Shims {
               wrapped.relation.bucketSpec,
               GpuFileSourceScanExec.convertFileFormat(wrapped.relation.fileFormat),
               options)(sparkSession)
-            val isParquet = newRelation.fileFormat match {
-              case _: ParquetFileFormat => true
-              case _: GpuReadParquetFileFormat => true
+            val canUseSmallFileOpt = newRelation.fileFormat match {
+              case _: ParquetFileFormat =>
+                GpuParquetScanBase.canUseSmallFileParquetOpt(conf, options, sparkSession)
               case _ => false
             }
-            val canUseSmallFileOpt = (isParquet && conf.isParquetSmallFilesEnabled &&
-              !(options.getOrElse("mergeSchema", "false").toBoolean ||
-                sparkSession.conf.getOption("spark.sql.parquet.mergeSchema").exists(_.toBoolean)))
             GpuFileSourceScanExec(
               newRelation,
               wrapped.output,

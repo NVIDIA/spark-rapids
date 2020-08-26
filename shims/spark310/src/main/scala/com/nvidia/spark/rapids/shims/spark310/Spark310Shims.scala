@@ -18,6 +18,8 @@ package com.nvidia.spark.rapids.shims.spark310
 
 import java.time.ZoneId
 
+import scala.collection.JavaConverters._
+
 import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.shims.spark301.Spark301Shims
 import com.nvidia.spark.rapids.spark310.RapidsShuffleManager
@@ -146,14 +148,11 @@ class Spark310Shims extends Spark301Shims {
               wrapped.relation.bucketSpec,
               GpuFileSourceScanExec.convertFileFormat(wrapped.relation.fileFormat),
               options)(sparkSession)
-            val isParquet = newRelation.fileFormat match {
-              case _: ParquetFileFormat => true
-              case _: GpuReadParquetFileFormat => true
+            val canUseSmallFileOpt = newRelation.fileFormat match {
+              case _: ParquetFileFormat =>
+                GpuParquetScanBase.canUseSmallFileParquetOpt(conf, options, sparkSession)
               case _ => false
             }
-            val canUseSmallFileOpt = (isParquet && conf.isParquetSmallFilesEnabled &&
-              !(options.getOrElse("mergeSchema", "false").toBoolean ||
-                sparkSession.conf.getOption("spark.sql.parquet.mergeSchema").exists(_.toBoolean)))
             GpuFileSourceScanExec(
               newRelation,
               wrapped.output,
@@ -185,9 +184,8 @@ class Spark310Shims extends Spark301Shims {
         override def tagSelfForGpu(): Unit = GpuParquetScanBase.tagSupport(this)
 
         override def convertToGpu(): Scan = {
-          val canUseSmallFileOpt = (conf.isParquetSmallFilesEnabled &&
-            !(a.options.getBoolean("mergeSchema", false) ||
-              a.sparkSession.conf.getOption("spark.sql.parquet.mergeSchema").exists(_.toBoolean)))
+          val canUseSmallFileOpt = GpuParquetScanBase.canUseSmallFileParquetOpt(conf,
+            a.options.asCaseSensitiveMap().asScala.toMap, a.sparkSession)
           GpuParquetScan(a.sparkSession,
             a.hadoopConf,
             a.fileIndex,

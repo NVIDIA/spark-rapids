@@ -155,6 +155,15 @@ object GpuParquetScanBase {
         meta.willNotWorkOnGpu(s"$other is not a supported read rebase mode")
     }
   }
+
+  def canUseSmallFileParquetOpt(
+      conf: RapidsConf,
+      options: Map[String, String],
+      sparkSession: SparkSession): Boolean = {
+    (conf.isParquetSmallFilesEnabled &&
+      !(options.getOrElse("mergeSchema", "false").toBoolean ||
+        sparkSession.conf.getOption("spark.sql.parquet.mergeSchema").exists(_.toBoolean)))
+  }
 }
 
 /**
@@ -637,10 +646,8 @@ class MultiFileParquetPartitionReader(
       val partitionValues = inPartitionValues.toSeq(partitionSchema)
       val partitionScalars = ColumnarPartitionReaderWithPartitionValues
         .createPartitionValues(partitionValues, partitionSchema)
-      try {
-        ColumnarPartitionReaderWithPartitionValues.addPartitionValues(cb, partitionScalars)
-      } finally {
-        partitionScalars.foreach(_.close())
+      withResource(partitionScalars) { scalars =>
+        ColumnarPartitionReaderWithPartitionValues.addPartitionValues(cb, scalars)
       }
     }
   }

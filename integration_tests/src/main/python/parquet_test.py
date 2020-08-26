@@ -102,7 +102,7 @@ def test_pred_push_round_trip(spark_tmp_path, parquet_gen, read_func, small_file
     rf = read_func(data_path)
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark: rf(spark).select(f.col('a') >= s0),
-            conf={'spark.rapids.sql.format.parquet.smallFiles.enabled': 'true',
+            conf={'spark.rapids.sql.format.parquet.smallFiles.enabled': small_file_opt,
                   'spark.sql.sources.useV1SourceList': v1_enabled_list})
 
 parquet_ts_write_options = ['INT96', 'TIMESTAMP_MICROS', 'TIMESTAMP_MILLIS']
