@@ -18,6 +18,7 @@ package org.apache.spark.sql.rapids
 
 import ai.rapids.cudf.{ColumnVector, Scalar}
 import com.nvidia.spark.rapids.{GpuColumnVector, GpuLeafExpression}
+import org.apache.hadoop.fs.Path
 
 import org.apache.spark.rdd.InputFileBlockHolder
 import org.apache.spark.sql.types.{DataType, LongType, StringType}
@@ -50,6 +51,12 @@ case class GpuInputFileName() extends GpuLeafExpression {
     } finally {
       scalar.close()
     }
+  }
+}
+
+object InputFileUtils {
+  def setInputFileBlock(filePath: String, start: Long, length: Long): Unit = {
+    InputFileBlockHolder.set(filePath, start, length)
   }
 }
 
