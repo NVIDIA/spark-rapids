@@ -29,7 +29,7 @@ import org.apache.spark.sql.execution.SparkPlan
 import org.apache.spark.sql.execution.command.DataWritingCommand
 import org.apache.spark.sql.execution.exchange.ShuffleExchangeExec
 import org.apache.spark.sql.execution.joins.{BroadcastHashJoinExec, ShuffledHashJoinExec, SortMergeJoinExec}
-import org.apache.spark.sql.types.{CalendarIntervalType, DataType, DataTypes, StringType}
+import org.apache.spark.sql.types.DataType
 
 trait ConfKeysAndIncompat {
   val operationName: String

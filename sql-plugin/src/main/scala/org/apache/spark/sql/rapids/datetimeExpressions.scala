@@ -271,7 +271,7 @@ abstract class UnixTimeExprMeta[A <: BinaryExpression with TimeZoneAwareExpressi
         }
       } catch {
         case x: TimestampFormatConversionException =>
-          willNotWorkOnGpu(x.getMessage)
+          willNotWorkOnGpu(s"Failed to convert ${x.reason} ${x.getMessage()}")
       }
     }
   }

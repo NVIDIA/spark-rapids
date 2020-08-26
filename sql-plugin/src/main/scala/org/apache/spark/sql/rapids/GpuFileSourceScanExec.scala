@@ -20,7 +20,7 @@ import java.util.concurrent.TimeUnit.NANOSECONDS
 
 import scala.collection.mutable.HashMap
 
-import com.nvidia.spark.rapids.{GpuExec, GpuMetricNames, GpuReadCSVFileFormat, GpuReadFileFormatWithMetrics, GpuReadOrcFileFormat, GpuReadParquetFileFormat, ShimLoader, SparkPlanMeta}
+import com.nvidia.spark.rapids.{GpuExec, GpuMetricNames, GpuParquetMultiFilePartitionReaderFactory, GpuReadCSVFileFormat, GpuReadFileFormatWithMetrics, GpuReadOrcFileFormat, GpuReadParquetFileFormat, RapidsConf, ShimLoader, SparkPlanMeta}
 import org.apache.hadoop.fs.Path
 
 import org.apache.spark.rdd.RDD
@@ -34,10 +34,12 @@ import org.apache.spark.sql.execution.datasources.{BucketingUtils, DataSourceStr
 import org.apache.spark.sql.execution.datasources.csv.CSVFileFormat
 import org.apache.spark.sql.execution.datasources.orc.OrcFileFormat
 import org.apache.spark.sql.execution.datasources.parquet.ParquetFileFormat
+import org.apache.spark.sql.execution.datasources.v2.DataSourceRDD
 import org.apache.spark.sql.execution.metric.{SQLMetric, SQLMetrics}
 import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.types.StructType
 import org.apache.spark.sql.vectorized.ColumnarBatch
+import org.apache.spark.util.SerializableConfiguration
 import org.apache.spark.util.collection.BitSet
 
 /**
@@ -51,6 +53,7 @@ import org.apache.spark.util.collection.BitSet
  * @param optionalNumCoalescedBuckets Number of coalesced buckets.
  * @param dataFilters Filters on non-partition columns.
  * @param tableIdentifier identifier for the table in the metastore.
+ * @param supportsSmallFileOpt indicates if we should use the small file optimization.
  */
 case class GpuFileSourceScanExec(
     @transient relation: HadoopFsRelation,
@@ -60,7 +63,8 @@ case class GpuFileSourceScanExec(
     optionalBucketSet: Option[BitSet],
     optionalNumCoalescedBuckets: Option[Int],
     dataFilters: Seq[Expression],
-    tableIdentifier: Option[TableIdentifier])
+    tableIdentifier: Option[TableIdentifier],
+    supportsSmallFileOpt: Boolean = true)
     extends GpuDataSourceScanExec with GpuExec {
 
   override val nodeName: String = {
@@ -270,25 +274,35 @@ case class GpuFileSourceScanExec(
        |""".stripMargin
   }
 
+  /**
+   * If the small file optimization is enabled then we read all the files before sending down
+   * to the GPU. If it is disabled then we use the standard Spark logic of reading one file
+   * at a time.
+   */
   lazy val inputRDD: RDD[InternalRow] = {
-    val readFile: (PartitionedFile) => Iterator[InternalRow] = {
+    val readFile: Option[(PartitionedFile) => Iterator[InternalRow]] = if (!supportsSmallFileOpt) {
       val fileFormat = relation.fileFormat.asInstanceOf[GpuReadFileFormatWithMetrics]
-      fileFormat.buildReaderWithPartitionValuesAndMetrics(
+      val reader = fileFormat.buildReaderWithPartitionValuesAndMetrics(
         sparkSession = relation.sparkSession,
         dataSchema = relation.dataSchema,
         partitionSchema = relation.partitionSchema,
         requiredSchema = requiredSchema,
         filters = pushedDownFilters,
         options = relation.options,
-        hadoopConf = relation.sparkSession.sessionState.newHadoopConfWithOptions(relation.options),
+        hadoopConf =
+          relation.sparkSession.sessionState.newHadoopConfWithOptions(relation.options),
         metrics = metrics)
+      Some(reader)
+    } else {
+      None
     }
 
     val readRDD = if (bucketedScan) {
       createBucketedReadRDD(relation.bucketSpec.get, readFile, dynamicallySelectedPartitions,
-        relation)
+        relation, supportsSmallFileOpt)
     } else {
-      createNonBucketedReadRDD(readFile, dynamicallySelectedPartitions, relation)
+      createNonBucketedReadRDD(readFile, dynamicallySelectedPartitions,
+        relation, supportsSmallFileOpt)
     }
     sendDriverMetrics()
     readRDD
@@ -380,15 +394,18 @@ case class GpuFileSourceScanExec(
    * with the same bucket id from all the given Hive partitions.
    *
    * @param bucketSpec the bucketing spec.
-   * @param readFile a function to read each (part of a) file.
+   * @param readFile an optional function to read each (part of a) file. Used
+   *                 when not using the small file optimization.
    * @param selectedPartitions Hive-style partition that are part of the read.
    * @param fsRelation [[HadoopFsRelation]] associated with the read.
+   * @param useSmallFileOpt whether to create an RDD using small file optimization.
    */
   private def createBucketedReadRDD(
       bucketSpec: BucketSpec,
-      readFile: (PartitionedFile) => Iterator[InternalRow],
+      readFile: Option[(PartitionedFile) => Iterator[InternalRow]],
       selectedPartitions: Array[PartitionDirectory],
-      fsRelation: HadoopFsRelation): RDD[InternalRow] = {
+      fsRelation: HadoopFsRelation,
+      useSmallFileOpt: Boolean): RDD[InternalRow] = {
     logInfo(s"Planning with ${bucketSpec.numBuckets} buckets")
 
     val partitionedFiles =
@@ -416,28 +433,54 @@ case class GpuFileSourceScanExec(
         val partitionedFiles = coalescedBuckets.get(bucketId).map {
           _.values.flatten.toArray
         }.getOrElse(Array.empty)
-        FilePartition(bucketId, partitionedFiles)
+        ShimLoader.getSparkShims.createFilePartition(bucketId, partitionedFiles)
       }
     }.getOrElse {
       Seq.tabulate(bucketSpec.numBuckets) { bucketId =>
-        FilePartition(bucketId, prunedFilesGroupedToBuckets.getOrElse(bucketId, Array.empty))
+        ShimLoader.getSparkShims.createFilePartition(bucketId,
+          prunedFilesGroupedToBuckets.getOrElse(bucketId, Array.empty))
       }
     }
-    ShimLoader.getSparkShims.getFileScanRDD(fsRelation.sparkSession, readFile, filePartitions)
+    if (!useSmallFileOpt) {
+      ShimLoader.getSparkShims.getFileScanRDD(fsRelation.sparkSession, readFile.get, filePartitions)
+    } else {
+      // here we are making an optimization to read more then 1 file at a time on the CPU side
+      // if they are small files before sending it down to the GPU
+      val sqlConf = relation.sparkSession.sessionState.conf
+      val hadoopConf = relation.sparkSession.sessionState.newHadoopConfWithOptions(relation.options)
+      val broadcastedHadoopConf =
+        relation.sparkSession.sparkContext.broadcast(new SerializableConfiguration(hadoopConf))
+      val factory = GpuParquetMultiFilePartitionReaderFactory(
+        sqlConf,
+        broadcastedHadoopConf,
+        relation.dataSchema,
+        requiredSchema,
+        relation.partitionSchema,
+        pushedDownFilters.toArray,
+        new RapidsConf(sqlConf),
+        metrics)
+
+      // note we use the v2 DataSourceRDD instead of FileScanRDD so we don't have to copy more code
+      new DataSourceRDD(relation.sparkSession.sparkContext, filePartitions,
+        factory, supportsColumnar)
+    }
   }
 
   /**
    * Create an RDD for non-bucketed reads.
    * The bucketed variant of this function is [[createBucketedReadRDD]].
    *
-   * @param readFile a function to read each (part of a) file.
+   * @param readFile an optional function to read each (part of a) file. Used when
+   *                 not using the small file optimization.
    * @param selectedPartitions Hive-style partition that are part of the read.
    * @param fsRelation [[HadoopFsRelation]] associated with the read.
+   * @param useSmallFileOpt whether to create an RDD using small file optimization.
    */
   private def createNonBucketedReadRDD(
-      readFile: (PartitionedFile) => Iterator[InternalRow],
+      readFile: Option[(PartitionedFile) => Iterator[InternalRow]],
       selectedPartitions: Array[PartitionDirectory],
-      fsRelation: HadoopFsRelation): RDD[InternalRow] = {
+      fsRelation: HadoopFsRelation,
+      useSmallFileOpt: Boolean): RDD[InternalRow] = {
     val openCostInBytes = fsRelation.sparkSession.sessionState.conf.filesOpenCostInBytes
     val maxSplitBytes =
       FilePartition.maxSplitBytes(fsRelation.sparkSession, selectedPartitions)
@@ -451,7 +494,28 @@ case class GpuFileSourceScanExec(
     val partitions =
       FilePartition.getFilePartitions(relation.sparkSession, splitFiles, maxSplitBytes)
 
-    ShimLoader.getSparkShims.getFileScanRDD(fsRelation.sparkSession, readFile, partitions)
+    if (!useSmallFileOpt) {
+      ShimLoader.getSparkShims.getFileScanRDD(fsRelation.sparkSession, readFile.get, partitions)
+    } else {
+      // here we are making an optimization to read more then 1 file at a time on the CPU side
+      // if they are small files before sending it down to the GPU
+      val sqlConf = relation.sparkSession.sessionState.conf
+      val hadoopConf = relation.sparkSession.sessionState.newHadoopConfWithOptions(relation.options)
+      val broadcastedHadoopConf =
+        relation.sparkSession.sparkContext.broadcast(new SerializableConfiguration(hadoopConf))
+      val factory = GpuParquetMultiFilePartitionReaderFactory(
+        sqlConf,
+        broadcastedHadoopConf,
+        relation.dataSchema,
+        requiredSchema,
+        relation.partitionSchema,
+        pushedDownFilters.toArray,
+        new RapidsConf(sqlConf),
+        metrics)
+
+      // note we use the v2 DataSourceRDD instead of FileScanRDD so we don't have to copy more code
+      new DataSourceRDD(relation.sparkSession.sparkContext, partitions, factory, supportsColumnar)
+    }
   }
 
   // Filters unused DynamicPruningExpression expressions - one which has been replaced

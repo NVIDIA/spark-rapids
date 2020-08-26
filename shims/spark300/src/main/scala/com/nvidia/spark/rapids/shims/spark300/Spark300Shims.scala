@@ -18,6 +18,8 @@ package com.nvidia.spark.rapids.shims.spark300
 
 import java.time.ZoneId
 
+import scala.collection.JavaConverters._
+
 import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.spark300.RapidsShuffleManager
 
@@ -35,7 +37,7 @@ import org.apache.spark.sql.connector.read.Scan
 import org.apache.spark.sql.execution._
 import org.apache.spark.sql.execution.adaptive.ShuffleQueryStageExec
 import org.apache.spark.sql.execution.datasources.{FilePartition, FileScanRDD, HadoopFsRelation, PartitionDirectory, PartitionedFile}
-import org.apache.spark.sql.execution.datasources.v2.csv.CSVScan
+import org.apache.spark.sql.execution.datasources.parquet.ParquetFileFormat
 import org.apache.spark.sql.execution.datasources.v2.orc.OrcScan
 import org.apache.spark.sql.execution.datasources.v2.parquet.ParquetScan
 import org.apache.spark.sql.execution.exchange.{BroadcastExchangeExec, ShuffleExchangeExec}
@@ -141,13 +143,20 @@ class Spark300Shims extends SparkShims {
           override def tagPlanForGpu(): Unit = GpuFileSourceScanExec.tagSupport(this)
 
           override def convertToGpu(): GpuExec = {
+            val sparkSession = wrapped.relation.sparkSession
+            val options = wrapped.relation.options
             val newRelation = HadoopFsRelation(
               wrapped.relation.location,
               wrapped.relation.partitionSchema,
               wrapped.relation.dataSchema,
               wrapped.relation.bucketSpec,
               GpuFileSourceScanExec.convertFileFormat(wrapped.relation.fileFormat),
-              wrapped.relation.options)(wrapped.relation.sparkSession)
+              options)(sparkSession)
+            val canUseSmallFileOpt = newRelation.fileFormat match {
+              case _: ParquetFileFormat =>
+                GpuParquetScanBase.canUseSmallFileParquetOpt(conf, options, sparkSession)
+              case _ => false
+            }
             GpuFileSourceScanExec(
               newRelation,
               wrapped.output,
@@ -156,7 +165,8 @@ class Spark300Shims extends SparkShims {
               wrapped.optionalBucketSet,
               None,
               wrapped.dataFilters,
-              wrapped.tableIdentifier)
+              wrapped.tableIdentifier,
+              canUseSmallFileOpt)
           }
         }),
       GpuOverrides.exec[SortMergeJoinExec](
@@ -226,7 +236,10 @@ class Spark300Shims extends SparkShims {
       (a, conf, p, r) => new ScanMeta[ParquetScan](a, conf, p, r) {
         override def tagSelfForGpu(): Unit = GpuParquetScanBase.tagSupport(this)
 
-        override def convertToGpu(): Scan =
+        override def convertToGpu(): Scan = {
+          val canUseSmallFileOpt =
+            GpuParquetScanBase.canUseSmallFileParquetOpt(conf,
+              a.options.asCaseSensitiveMap().asScala.toMap, a.sparkSession)
           GpuParquetScan(a.sparkSession,
             a.hadoopConf,
             a.fileIndex,
@@ -237,7 +250,9 @@ class Spark300Shims extends SparkShims {
             a.options,
             a.partitionFilters,
             a.dataFilters,
-            conf)
+            conf,
+            canUseSmallFileOpt)
+        }
       }),
     GpuOverrides.scan[OrcScan](
       "ORC parsing",
@@ -329,5 +344,21 @@ class Spark300Shims extends SparkShims {
       readFunction: (PartitionedFile) => Iterator[InternalRow],
       filePartitions: Seq[FilePartition]): RDD[InternalRow] = {
     new FileScanRDD(sparkSession, readFunction, filePartitions)
+  }
+
+  override def createFilePartition(index: Int, files: Array[PartitionedFile]): FilePartition = {
+    FilePartition(index, files)
+  }
+
+  override def copyParquetBatchScanExec(batchScanExec: GpuBatchScanExec,
+        supportsSmallFileOpt: Boolean): GpuBatchScanExec = {
+    val scan = batchScanExec.scan.asInstanceOf[GpuParquetScan]
+    val scanCopy = scan.copy(supportsSmallFileOpt=supportsSmallFileOpt)
+    batchScanExec.copy(scan=scanCopy)
+  }
+
+  override def copyFileSourceScanExec(scanExec: GpuFileSourceScanExec,
+      supportsSmallFileOpt: Boolean): GpuFileSourceScanExec = {
+    scanExec.copy(supportsSmallFileOpt=supportsSmallFileOpt)
   }
 }
