@@ -1,0 +1,132 @@
+#!/usr/bin/env python
+
+# Copyright (c) 2020, NVIDIA CORPORATION.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+"""A auto-merge tool
+
+Create a PR to merge HEAD to BASE branch.
+The PR will be automatically merged if no conflict. Otherwise, manual operation will be required.
+"""
+
+import os
+import sys
+import time
+
+import requests
+
+# ENV
+OWNER = os.environ.get('OWNER')
+assert OWNER, 'env OWNER should not be empty'
+REPO_NAME = os.environ.get('REPO_NAME')
+assert REPO_NAME, 'env REPO_NAME should not be empty'
+HEAD = os.environ.get('HEAD')
+assert HEAD, 'env HEAD should not be empty'
+BASE = os.environ.get('BASE')
+assert BASE, 'env BASE should not be empty'
+GITHUB_TOKEN = os.environ.get('GITHUB_TOKEN')
+assert GITHUB_TOKEN, 'env GITHUB_TOKEN should not be empty'
+# static
+API_URL = 'https://api.github.com'
+AUTH_HEADERS = {
+    'Authorization': 'token ' + GITHUB_TOKEN
+}
+
+
+def create():
+    url = f'{API_URL}/repos/{OWNER}/{REPO_NAME}/pulls'
+    params = {
+        'title': f'[auto-merge] {HEAD} to {BASE} [skip ci] [bot]',
+        'head': HEAD,
+        'base': BASE,
+        'body': f'auto-merge triggered by github actions on `{HEAD}` to create a PR keeping `{BASE}` up-to-date. If '
+                'this PR is unable to be merged due to conflicts, it will remain open until manually fix.',
+        'maintainer_can_modify': True
+    }
+    r = requests.post(url, headers=AUTH_HEADERS, json=params)
+    if r.status_code == 201:
+        print('SUCCESS - create PR')
+        pull = r.json()
+        number = str(pull['number'])
+        sha = str(pull['head']['sha'])
+        return number, sha, False
+    if r.status_code == 422:
+        print('SUCCESS - No commits')
+        print(r.json())
+        return '', '', True
+    # FAILURE
+    print('FAILURE - create PR')
+    print(f'status code: {r.status_code}')
+    print(r.json())
+    sys.exit(1)
+
+
+def auto_merge(number, sha):
+    url = f'{API_URL}/repos/{OWNER}/{REPO_NAME}/pulls/{number}/merge'
+    params = {
+        'sha': sha,
+        'merge_method': 'merge'
+    }
+    r = requests.put(url, headers=AUTH_HEADERS, json=params)
+    if r.status_code == 200:
+        comment(number, '**SUCCESS** - auto-merge')
+        print('SUCCESS - auto-merge')
+        sys.exit(0)
+    else:
+        comment(number, """**FAILURE** - Unable to auto-merge due to conflicts. Manual operation is required.
+
+To maintainers, please use the following steps to fix the merge conflicts manually:
+This is a example to fix conflict from `branch-0.2` to `branch-0.3`
+```bash
+git fetch <spark-rapids_remote>
+git checkout -b branch-0.3-merge-branch-0.2 <spark-rapids_remote>/branch-0.3
+git merge <spark-rapids_remote>/branch-0.2
+# fix the merge conflict, then
+git commit -am "merge branch-0.2 to branch-0.3"
+git push <your forked remote> branch-0.3-merge-branch-0.2
+```
+When this is done, create a PR targets the base branch (`branch-0.3` in this example). 
+Once the PR get merged, close the auto-merge PR. 
+""")
+        print('FAILURE - auto-merge')
+        print(f'status code: {r.status_code}')
+        print(r.json())
+        sys.exit(1)
+
+
+def comment(number, content):
+    url = f'{API_URL}/repos/{OWNER}/{REPO_NAME}/issues/{number}/comments'
+    params = {
+        'body': content
+    }
+    r = requests.post(url, headers=AUTH_HEADERS, json=params)
+    if r.status_code == 201:
+        print('SUCCESS - create comment')
+    else:
+        print('FAILURE - create comment')
+        print(f'status code: {r.status_code}')
+        print(r.json())
+
+
+def main():
+    number, sha, term = create()
+    if term:
+        sys.exit(0)
+
+    time.sleep(10)  # sleep, then comment
+    auto_merge(number, sha)
+
+
+if __name__ == "__main__":
+    main()
