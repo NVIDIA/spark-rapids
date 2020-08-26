@@ -31,7 +31,7 @@ jobs:
         if: github.event.pull_request.merged == true
         uses: ./.github/workflows/changelog
         env:
-          GITHUB_TOKEN: ${{ secrets.NVAUTO_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN}}
 
       - name: Get date
         id: dt
@@ -42,10 +42,8 @@ jobs:
         uses: peter-evans/create-pull-request@v3
         if: github.event.pull_request.merged == true
         with:
-          token: ${{ secrets.NVAUTO_TOKEN }}
+          token: ${{ secrets.GITHUB_TOKEN }}
           commit-message: "changelog-gen on ${{ steps.dt.outputs.date }}"
-          committer: nvauto <70000568+nvauto@users.noreply.github.com>
-          author: nvauto <70000568+nvauto@users.noreply.github.com>
           signoff: true
           branch: changelog-gen
           title: '[DOC] Update CHANGELOG.md on ${{ steps.dt.outputs.date }} [skip ci] [bot]'

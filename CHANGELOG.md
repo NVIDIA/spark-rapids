@@ -1,6 +1,12 @@
 # Change log
-Generated on 2020-08-25
+Generated on 2020-08-26
 
+## Release 0.3
+
+### Performance
+|||
+|:---|:---|
+|[#5](https://github.com/NVIDIA/spark-rapids/issues/5)|[FEA] Support Adaptive Execution|
 ## Release 0.2
 
 ### Features
