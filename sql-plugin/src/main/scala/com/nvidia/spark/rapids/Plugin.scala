@@ -35,7 +35,7 @@ import org.apache.spark.sql.util.QueryExecutionListener
 
 case class ColumnarOverrideRules() extends ColumnarRule with Logging {
   val overrides: Rule[SparkPlan] = GpuOverrides()
-  val overrideTransitions: Rule[SparkPlan] = new GpuTransitionOverrides()
+  val overrideTransitions: Rule[SparkPlan] = ShimLoader.getSparkShims.getGpuTransitionOverrides
 
   override def preColumnarTransitions : Rule[SparkPlan] = overrides
 

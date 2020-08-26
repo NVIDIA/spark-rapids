@@ -28,6 +28,7 @@ import org.apache.spark.SparkEnv
 import org.apache.spark.sql.catalyst.encoders.ExpressionEncoder
 import org.apache.spark.sql.catalyst.expressions._
 import org.apache.spark.sql.catalyst.plans.JoinType
+import org.apache.spark.sql.catalyst.rules.Rule
 import org.apache.spark.sql.connector.read.Scan
 import org.apache.spark.sql.execution._
 import org.apache.spark.sql.execution.columnar.InMemoryTableScanExec
@@ -39,7 +40,7 @@ import org.apache.spark.sql.execution.joins.{BroadcastHashJoinExec, BroadcastNes
 import org.apache.spark.sql.execution.joins.ShuffledHashJoinExec
 import org.apache.spark.sql.rapids.{GpuFileSourceScanExec, GpuTimeSub, ShuffleManagerShimBase}
 import org.apache.spark.sql.rapids.execution.GpuBroadcastNestedLoopJoinExecBase
-import org.apache.spark.sql.rapids.shims.spark310.{GpuInMemoryTableScanExec, _}
+import org.apache.spark.sql.rapids.shims.spark310.{GpuInMemoryTableScanExec, GpuTransitionOverrides, _}
 import org.apache.spark.sql.types._
 import org.apache.spark.storage.{BlockId, BlockManagerId}
 import org.apache.spark.unsafe.types.CalendarInterval
@@ -263,6 +264,10 @@ class Spark310Shims extends Spark301Shims {
 
   override def copyFileSourceScanExec(scanExec: GpuFileSourceScanExec,
       supportsSmallFileOpt: Boolean): GpuFileSourceScanExec = {
-    scanExec.copy(supportsSmallFileOpt=supportsSmallFileOpt)
+    scanExec.copy(supportsSmallFileOpt = supportsSmallFileOpt)
+  }
+
+  override def getGpuTransitionOverrides: Rule[SparkPlan] = {
+    new GpuTransitionOverrides()
   }
 }
