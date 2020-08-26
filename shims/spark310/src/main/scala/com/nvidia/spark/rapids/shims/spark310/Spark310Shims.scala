@@ -18,6 +18,8 @@ package com.nvidia.spark.rapids.shims.spark310
 
 import java.time.ZoneId
 
+import scala.collection.JavaConverters._
+
 import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.shims.spark301.Spark301Shims
 import com.nvidia.spark.rapids.spark310.RapidsShuffleManager
@@ -29,7 +31,7 @@ import org.apache.spark.sql.catalyst.plans.JoinType
 import org.apache.spark.sql.connector.read.Scan
 import org.apache.spark.sql.execution._
 import org.apache.spark.sql.execution.datasources.HadoopFsRelation
-import org.apache.spark.sql.execution.datasources.v2.csv.CSVScan
+import org.apache.spark.sql.execution.datasources.parquet.ParquetFileFormat
 import org.apache.spark.sql.execution.datasources.v2.orc.OrcScan
 import org.apache.spark.sql.execution.datasources.v2.parquet.ParquetScan
 import org.apache.spark.sql.execution.joins.{BroadcastHashJoinExec, BroadcastNestedLoopJoinExec, HashJoin, SortMergeJoinExec}
@@ -137,13 +139,20 @@ class Spark310Shims extends Spark301Shims {
           override def tagPlanForGpu(): Unit = GpuFileSourceScanExec.tagSupport(this)
 
           override def convertToGpu(): GpuExec = {
+            val sparkSession = wrapped.relation.sparkSession
+            val options = wrapped.relation.options
             val newRelation = HadoopFsRelation(
               wrapped.relation.location,
               wrapped.relation.partitionSchema,
               wrapped.relation.dataSchema,
               wrapped.relation.bucketSpec,
               GpuFileSourceScanExec.convertFileFormat(wrapped.relation.fileFormat),
-              wrapped.relation.options)(wrapped.relation.sparkSession)
+              options)(sparkSession)
+            val canUseSmallFileOpt = newRelation.fileFormat match {
+              case _: ParquetFileFormat =>
+                GpuParquetScanBase.canUseSmallFileParquetOpt(conf, options, sparkSession)
+              case _ => false
+            }
             GpuFileSourceScanExec(
               newRelation,
               wrapped.output,
@@ -152,7 +161,8 @@ class Spark310Shims extends Spark301Shims {
               wrapped.optionalBucketSet,
               wrapped.optionalNumCoalescedBuckets,
               wrapped.dataFilters,
-              wrapped.tableIdentifier)
+              wrapped.tableIdentifier,
+              canUseSmallFileOpt)
           }
         }),
       GpuOverrides.exec[SortMergeJoinExec](
@@ -173,7 +183,9 @@ class Spark310Shims extends Spark301Shims {
       (a, conf, p, r) => new ScanMeta[ParquetScan](a, conf, p, r) {
         override def tagSelfForGpu(): Unit = GpuParquetScanBase.tagSupport(this)
 
-        override def convertToGpu(): Scan =
+        override def convertToGpu(): Scan = {
+          val canUseSmallFileOpt = GpuParquetScanBase.canUseSmallFileParquetOpt(conf,
+            a.options.asCaseSensitiveMap().asScala.toMap, a.sparkSession)
           GpuParquetScan(a.sparkSession,
             a.hadoopConf,
             a.fileIndex,
@@ -184,7 +196,9 @@ class Spark310Shims extends Spark301Shims {
             a.options,
             a.partitionFilters,
             a.dataFilters,
-            conf)
+            conf,
+            canUseSmallFileOpt)
+        }
       }),
     GpuOverrides.scan[OrcScan](
       "ORC parsing",
@@ -222,5 +236,17 @@ class Spark310Shims extends Spark301Shims {
 
   override def getShuffleManagerShims(): ShuffleManagerShimBase = {
     new ShuffleManagerShim
+  }
+
+  override def copyParquetBatchScanExec(batchScanExec: GpuBatchScanExec,
+      supportsSmallFileOpt: Boolean): GpuBatchScanExec = {
+    val scan = batchScanExec.scan.asInstanceOf[GpuParquetScan]
+    val scanCopy = scan.copy(supportsSmallFileOpt = supportsSmallFileOpt)
+    batchScanExec.copy(scan = scanCopy)
+  }
+
+  override def copyFileSourceScanExec(scanExec: GpuFileSourceScanExec,
+      supportsSmallFileOpt: Boolean): GpuFileSourceScanExec = {
+    scanExec.copy(supportsSmallFileOpt=supportsSmallFileOpt)
   }
 }

@@ -40,6 +40,15 @@ trait Arm {
     }
   }
 
+  /** Executes the provided code block and then closes the array of resources */
+  def withResource[T <: AutoCloseable, V](r: Array[T])(block: Array[T] => V): V = {
+    try {
+      block(r)
+    } finally {
+      r.safeClose()
+    }
+  }
+
   /** Executes the provided code block, closing the resource only if an exception occurs */
   def closeOnExcept[T <: AutoCloseable, V](r: T)(block: T => V): V = {
     try {

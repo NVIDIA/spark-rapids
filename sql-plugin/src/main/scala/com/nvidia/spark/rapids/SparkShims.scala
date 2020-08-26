@@ -29,7 +29,7 @@ import org.apache.spark.sql.execution.SparkPlan
 import org.apache.spark.sql.execution.adaptive.ShuffleQueryStageExec
 import org.apache.spark.sql.execution.datasources.{FilePartition, HadoopFsRelation, PartitionDirectory, PartitionedFile}
 import org.apache.spark.sql.execution.joins._
-import org.apache.spark.sql.rapids.ShuffleManagerShimBase
+import org.apache.spark.sql.rapids.{GpuFileSourceScanExec, ShuffleManagerShimBase}
 import org.apache.spark.sql.rapids.execution.{GpuBroadcastExchangeExecBase, GpuBroadcastNestedLoopJoinExecBase, GpuShuffleExchangeExecBase}
 import org.apache.spark.sql.types._
 import org.apache.spark.storage.{BlockId, BlockManagerId}
@@ -112,6 +112,8 @@ trait SparkShims {
 
   def getShuffleManagerShims(): ShuffleManagerShimBase
 
+  def createFilePartition(index: Int, files: Array[PartitionedFile]): FilePartition
+
   def getPartitionFileNames(partitions: Seq[PartitionDirectory]): Seq[String]
   def getPartitionFileStatusSize(partitions: Seq[PartitionDirectory]): Long
   def getPartitionedFiles(partitions: Array[PartitionDirectory]): Array[PartitionedFile]
@@ -123,5 +125,11 @@ trait SparkShims {
     sparkSession: SparkSession,
     readFunction: (PartitionedFile) => Iterator[InternalRow],
     filePartitions: Seq[FilePartition]): RDD[InternalRow]
+
+  def copyParquetBatchScanExec(batchScanExec: GpuBatchScanExec,
+      supportsSmallFileOpt: Boolean): GpuBatchScanExec
+
+  def copyFileSourceScanExec(scanExec: GpuFileSourceScanExec,
+      supportsSmallFileOpt: Boolean): GpuFileSourceScanExec
 }
 

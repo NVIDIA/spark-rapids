@@ -437,6 +437,13 @@ object RapidsConf {
     .booleanConf
     .createWithDefault(true)
 
+  val ENABLE_SMALL_FILES_PARQUET = conf("spark.rapids.sql.format.parquet.smallFiles.enabled")
+    .doc("When set to true, handles reading multiple small files within a partition more " +
+      "efficiently by combining multiple files on the CPU side before sending to the GPU. " +
+      "Recommended unless user needs mergeSchema option or schema evolution.")
+    .booleanConf
+    .createWithDefault(true)
+
   val ENABLE_PARQUET_READ = conf("spark.rapids.sql.format.parquet.read.enabled")
     .doc("When set to false disables parquet input acceleration")
     .booleanConf
@@ -832,6 +839,8 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
   lazy val isCsvTimestampEnabled: Boolean = get(ENABLE_CSV_TIMESTAMPS)
 
   lazy val isParquetEnabled: Boolean = get(ENABLE_PARQUET)
+
+  lazy val isParquetSmallFilesEnabled: Boolean = get(ENABLE_SMALL_FILES_PARQUET)
 
   lazy val isParquetReadEnabled: Boolean = get(ENABLE_PARQUET_READ)
 
