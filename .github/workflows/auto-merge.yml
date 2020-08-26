@@ -35,4 +35,4 @@ jobs:
           REPO_NAME: spark-rapids
           HEAD: branch-0.2
           BASE: branch-0.3
-          GITHUB_TOKEN: ${{ secrets.NVAUTO_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
