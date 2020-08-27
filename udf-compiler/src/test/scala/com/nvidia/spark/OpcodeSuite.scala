@@ -44,11 +44,25 @@ class OpcodeSuite extends FunSuite {
 
   // Utility Function for checking equivalency of Dataset type
   def checkEquiv[T](ds1: Dataset[T], ds2: Dataset[T]) : Unit = {
+    assert(udfIsCompiled(ds1))
+    compareResult(ds1, ds2)
+  }
+
+  def checkEquivNotCompiled[T](ds1: Dataset[T], ds2: Dataset[T]): Unit = {
+    assert(!udfIsCompiled(ds1))
+    compareResult(ds1, ds2)
+  }
+
+  def compareResult[T](ds1: Dataset[T], ds2: Dataset[T]): Unit = {
     val resultdf = ds1.toDF()
     val refdf = ds2.toDF()
     val columns = refdf.schema.fields.map(_.name)
     val selectiveDifferences = columns.map(col => refdf.select(col).except(resultdf.select(col)))
     selectiveDifferences.map(diff => { assert(diff.count==0) } )
+  }
+
+  def udfIsCompiled[T](ds: Dataset[T]): Boolean = {
+    !ds.queryExecution.analyzed.toString().contains("UDF")
   }
 
   // START OF TESTS
@@ -872,7 +886,7 @@ class OpcodeSuite extends FunSuite {
     val dataset = List(2.0,5.0).toDS()
     val result = dataset.withColumn("new", u1('value))
     val ref = dataset.withColumn("new", logalias(col("value")+1.0))
-    checkEquiv(result, ref)
+    checkEquivNotCompiled(result, ref)
   }
 
   test("conditional doubles test2") {
@@ -1411,7 +1425,7 @@ class OpcodeSuite extends FunSuite {
     val dataset = List((1,5)).toDF("x","y")
     val result = dataset.withColumn("new", u(col("x"),col("y")))
     val ref = dataset.withColumn("new", lit(5))
-    checkEquiv(result, ref)
+    checkEquivNotCompiled(result, ref)
   }
 
   // Tests for string ops
@@ -1655,7 +1669,7 @@ class OpcodeSuite extends FunSuite {
     val dataset = List("mh7mmmm").toDF("x").repartition(1)
     val result = dataset.withColumn("new", u(col("x")))
     val ref = dataset.withColumn("new", lit(55)) // utf8 for "7"
-    checkEquiv(result, ref)
+    checkEquivNotCompiled(result, ref)
   }
 
   test("string test - contains") {
@@ -1688,7 +1702,7 @@ class OpcodeSuite extends FunSuite {
     val dataset = List("abcde").toDF("x").repartition(1)
     val result = dataset.withColumn("new", u(col("x")))
     val ref = dataset.withColumn("new",lit(2))
-    checkEquiv(result, ref)
+    checkEquivNotCompiled(result, ref)
   }
 
   test("string test - indexOf - case 3 - char - utf value,int") {
@@ -1699,7 +1713,7 @@ class OpcodeSuite extends FunSuite {
     val dataset = List("abcde").toDF("x").repartition(1)
     val result = dataset.withColumn("new", u(col("x")))
     val ref = dataset.withColumn("new",lit(2))
-    checkEquiv(result, ref)
+    checkEquivNotCompiled(result, ref)
   }
 
   test("string test - indexOf - case 4 - char - utf value") {
@@ -1710,7 +1724,7 @@ class OpcodeSuite extends FunSuite {
     val dataset = List("abcde").toDF("x").repartition(1)
     val result = dataset.withColumn("new", u(col("x")))
     val ref = dataset.withColumn("new",lit(2))
-    checkEquiv(result, ref)
+    checkEquivNotCompiled(result, ref)
   }
 
   test("string test - indexOf - case 5 - char - single quotes") {
@@ -1721,7 +1735,7 @@ class OpcodeSuite extends FunSuite {
     val dataset = List("abcde").toDF("x").repartition(1)
     val result = dataset.withColumn("new", u(col("x")))
     val ref = dataset.withColumn("new",lit(2))
-    checkEquiv(result, ref)
+    checkEquivNotCompiled(result, ref)
   }
 
   test("string test - indexOf - case 6 - str") {
@@ -1746,7 +1760,7 @@ class OpcodeSuite extends FunSuite {
     val dataset = List("abcde").toDF("x").repartition(1)
     val result = dataset.withColumn("new", u(col("x")))
     val ref = dataset.withColumn("new",lit(99))
-    checkEquiv(result, ref)
+    checkEquivNotCompiled(result, ref)
   }
 
   // this test is an expected fallback to JVM execution due to no support for String.matches method
@@ -1759,7 +1773,7 @@ class OpcodeSuite extends FunSuite {
     val dataset = List("thisfile.txt").toDF("x").repartition(1)
     val result = dataset.withColumn("new", u(col("x")))
     val ref = dataset.withColumn("new",lit(true))
-    checkEquiv(result, ref)
+    checkEquivNotCompiled(result, ref)
   }
 
   test("string test - replaceAll method") {
