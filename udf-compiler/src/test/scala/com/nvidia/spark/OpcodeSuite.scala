@@ -1841,6 +1841,7 @@ class OpcodeSuite extends FunSuite {
     assert(udfIsCompiled(result))
     checkEquiv(result, ref)
   }
+
   test("Float - isNaN - False") {
     val myudf: (Float) => Boolean = a => {
       a.isNaN()
@@ -1852,6 +1853,7 @@ class OpcodeSuite extends FunSuite {
     assert(udfIsCompiled(result))
     checkEquiv(result, ref)
   }
+
   test("Double - isNaN - True") {
     val myudf: (Double) => Boolean = a => {
       a.isNaN()
@@ -1863,6 +1865,7 @@ class OpcodeSuite extends FunSuite {
     assert(udfIsCompiled(result))
     checkEquiv(result, ref)
   }
+
   test("Double - isNaN - False") {
     val myudf: (Float) => Boolean = a => {
       a.isNaN()
