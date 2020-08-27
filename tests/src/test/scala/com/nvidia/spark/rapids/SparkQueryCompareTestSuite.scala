@@ -1234,6 +1234,14 @@ trait SparkQueryCompareTestSuite extends FunSuite with Arm {
     ).toDF("doubles")
   }
 
+  def nullDf(session: SparkSession): DataFrame = {
+    import session.sqlContext.implicits._
+    Seq[(java.lang.Long, java.lang.Long)](
+      (100L, 15L),
+      (100L, null)
+    ).toDF("longs", "more_longs")
+  }
+
   def mixedDoubleDf(session: SparkSession): DataFrame = {
     import session.sqlContext.implicits._
     Seq[(java.lang.Double, java.lang.Double)](
