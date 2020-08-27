@@ -43,6 +43,9 @@
             <directory>${project.build.directory}/extra-resources</directory>
             <filtering>true</filtering>
           </resource>
+          <resource>
+            <directory>src/main/resources</directory>
+          </resource>
         </resources>
     </build>
 
