@@ -94,6 +94,28 @@ class GpuHashAggregateMeta(
             s"'final', 'complete', or 'all'")
       }
     }
+    hashAggReplaceMode match {
+      case "partial" => {
+        // In partial mode, if there are non distinct functions and multiple distinct functions
+        // non distinct functions are computed using First operator. The final result would be
+        // incorrect for non distinct functions for partition size > 1. Falling back to CPU for
+        // this special case.
+        if (agg.aggregateExpressions.exists(e => e.aggregateFunction.isInstanceOf[First])) {
+          val count = agg.aggregateExpressions.flatMap(expr =>
+            expr.children.flatMap {
+              _.collect {
+              case a: Count => a
+            }
+          })
+          if (count.size > 1) {
+            willNotWorkOnGpu("Aggregate of non distinct functions with multiple distinct " +
+              "functions is non deterministic for non distinct functions as it is computed using " +
+              "First.")
+          }
+        }
+      }
+      case _ =>
+    }
     if (!conf.partialMergeDistinctEnabled && hashAggMode.contains(PartialMerge)) {
       willNotWorkOnGpu("Replacing Partial Merge aggregates disabled. " +
         s"Set ${conf.partialMergeDistinctEnabled} to true if desired")
@@ -187,6 +209,28 @@ class GpuSortAggregateMeta(
             s"${hashAggReplaceMode} is not valid. Valid options are: 'partial', 'final', " +
             s"'complete', or 'all'")
       }
+    }
+    hashAggReplaceMode match {
+      case "partial" => {
+        // In partial mode, if there are non distinct functions and multiple distinct functions
+        // non distinct functions are computed using First operator. The final result would be
+        // incorrect for non distinct functions for partition size > 1. Falling back to CPU for
+        // this special case.
+        if (agg.aggregateExpressions.exists(e => e.aggregateFunction.isInstanceOf[First])) {
+          val count = agg.aggregateExpressions.flatMap(expr =>
+            expr.children.flatMap {
+              _.collect {
+                case a: Count => a
+              }
+            })
+          if (count.size > 1) {
+            willNotWorkOnGpu("Aggregate of non distinct functions with multiple distinct " +
+              "functions is non deterministic for non distinct functions as it is computed using " +
+              "First.")
+          }
+        }
+      }
+      case _ =>
     }
   }
 

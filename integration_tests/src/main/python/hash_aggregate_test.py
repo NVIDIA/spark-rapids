@@ -218,32 +218,9 @@ def test_hash_multiple_mode_query(data_gen, conf):
                  f.countDistinct('b'),
                  f.sum('a'),
                  f.min('a'),
-                 f.max('a')
-                 # Add the following line back in
-                 # after https://github.com/NVIDIA/spark-rapids/issues/153 is fixed.
-                 # f.countDistinct('c')
-                ), conf=conf)
-
-
-# Remove this test and add back the countDistinct mentioned above
-# once https://github.com/NVIDIA/spark-rapids/issues/153 is fixed.
-@allow_non_gpu(
-    'HashAggregateExec', 'AggregateExpression',
-    'AttributeReference', 'Alias', 'Sum', 'Count', 'Max', 'Min', 'Average', 'Cast',
-    'KnownFloatingPointNormalized', 'NormalizeNaNAndZero', 'GreaterThan', 'Literal', 'If',
-    'EqualTo', 'First', 'SortAggregateExec', 'Coalesce')
-@ignore_order
-@pytest.mark.xfail(reason='https://github.com/NVIDIA/spark-rapids/issues/153')
-@pytest.mark.parametrize('data_gen', [_longs_with_nulls], ids=idfn)
-def test_hash_multiple_distincts_fail(data_gen):
-    print_params(data_gen)
-    assert_gpu_and_cpu_are_equal_collect(
-        lambda spark: gen_df(spark, data_gen, length=3)
-            .groupby('a')
-            .agg(f.count('a'),
-                 f.countDistinct('b'),
+                 f.max('a'),
                  f.countDistinct('c')
-                ), conf=_no_nans_float_conf_partial)
+                ), conf=conf)
 
 
 @approximate_float
