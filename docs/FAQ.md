@@ -27,9 +27,9 @@ these changes and release updates as quickly as possible.
 ### Which distributions are supported?
 
 The RAPIDS Accelerator for Apache Spark officially supports
-[Apache Spark](get-started/getting-started-on-prem),
-[Databricks Runtime 7.0](get-started/getting-started-databricks)
-and [Google Cloud Dataproc](get-started/getting-started-gcp).
+[Apache Spark](get-started/getting-started-on-prem.md),
+[Databricks Runtime 7.0](get-started/getting-started-databricks.md)
+and [Google Cloud Dataproc](get-started/getting-started-gcp.md).
 Most distributions based off of Apache Spark 3.0.0 should work, but because the plugin replaces
 parts of the physical plan that Apache Spark considers to be internal the code for those plans
 can change from one distribution to another. We are working with most cloud service providers to
@@ -42,13 +42,13 @@ Reference architectures should be available around Q4 2020.
 ### What CUDA versions are supported?
 
 CUDA 10.1 and 10.2 are currently supported, but you need to download the cudf jar that corresponds
-to the version you are using. Please look [here][version/stable-release] for download links
+to the version you are using. Please look [here][version/stable-release.md] for download links
 for the stable release.
 
 ### What parts of Apache Spark are accelerated?
 
 Currently a limited set of SQL and DataFrame operations are supported, please see the
-[configs](configs) for a more complete list of what is supported. Some of structured streaming
+[configs](configs.md) for a more complete list of what is supported. Some of structured streaming
 is likely to be accelerated, but it has not been an area of focus right now. Other areas like
 MLLib, GraphX or RDDs are not accelerated.
 

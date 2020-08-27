@@ -193,6 +193,13 @@ The plugin supports reading `uncompressed`, `snappy` and `gzip` Parquet files an
 fall back to the CPU when reading an unsupported compression format, and will error out 
 in that case. 
 
+## Regular Expressions
+The RAPIDS Accelerator for Apache Spark currently supports string literal matches, not wildcard 
+matches. 
+
+If a null char '\0' is in a string that is being matched by a regular expression, `LIKE` sees it as 
+the end of the string.  This will be fixed in a future release. The issue is [here](https://github.com/NVIDIA/spark-rapids/issues/119).
+
 ## Timestamps
 
 Spark stores timestamps internally relative to the JVM time zone.  Converting an
