@@ -23,8 +23,7 @@ import org.apache.spark.TaskContext
 import org.apache.spark.api.python.{ChainedPythonFunctions, PythonEvalType}
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.InternalRow
-import org.apache.spark.sql.catalyst.expressions.{Ascending, Attribute,
-  AttributeSet, Expression, PythonUDF, SortOrder}
+import org.apache.spark.sql.catalyst.expressions._
 import org.apache.spark.sql.catalyst.plans.physical.{AllTuples, ClusteredDistribution,
   Distribution, Partitioning}
 import org.apache.spark.sql.execution.{SparkPlan, UnaryExecNode}
@@ -68,7 +67,7 @@ case class GpuFlatMapGroupsInPandasExec(
     super.doExecuteColumnar()
   }
 
-  // Most code is copied from MapInPandasExec, except two GPU related calls
+  // Most code is copied from FlatMapGroupsInPandasExec, except two GPU related calls
   private val sessionLocalTimeZone = conf.sessionLocalTimeZone
   private val pythonRunnerConf = ArrowUtils.getPythonRunnerConfMap(conf)
   private val pandasFunction = func.asInstanceOf[PythonUDF].func
