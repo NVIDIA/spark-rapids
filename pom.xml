@@ -544,25 +544,6 @@
                             <goal>run</goal>
                         </goals>
                     </execution>
-                    <execution>
-                        <id>dependency</id>
-                        <phase>generate-resources</phase>
-                        <configuration>
-                            <!-- Execute the shell script to generate cudf & spark dependency info -->
-                            <target>
-                                <mkdir dir="${project.build.directory}/extra-resources"/>
-                                <exec executable="bash" output="${project.build.directory}/extra-resources/dependency-info.properties">
-                                    <arg value="${user.dir}/build/dependency-info.sh"/>
-                                    <arg value="${cudf.version}"/>
-                                    <arg value="${cuda.version}"/>
-                                    <arg value="${spark.version}"/>
-                                </exec>
-                            </target>
-                        </configuration>
-                        <goals>
-                            <goal>run</goal>
-                        </goals>
-                    </execution>
                 </executions>
             </plugin>
             <plugin>

@@ -32,8 +32,34 @@
     <version>0.2.0-SNAPSHOT</version>
 
     <!-- Set 'spark.version' for the shims layer -->
-    <!-- Create a separate file 'dependency-info.properties' in the jar to save cudf & spark version info -->
+    <!-- Create a separate file 'SPARK_VER.properties' in the jar to save cudf & spark version info -->
     <build>
+        <plugins>
+            <plugin>
+                <artifactId>maven-antrun-plugin</artifactId>
+                <executions>
+                    <execution>
+                        <id>dependency</id>
+                        <phase>generate-resources</phase>
+                        <configuration>
+                            <target>
+                                <mkdir dir="${project.build.directory}/extra-resources"/>
+                                <exec executable="bash" output="${project.build.directory}/extra-resources/${spark30db.version}-info.properties">
+                                    <arg value="${user.dir}/build/dependency-info.sh"/>
+                                    <arg value="${cudf.version}"/>
+                                    <arg value="${cuda.version}"/>
+                                    <arg value="${spark30db.version}"/>
+                                </exec>
+                            </target>
+                        </configuration>
+                        <goals>
+                            <goal>run</goal>
+                        </goals>
+                    </execution>
+                </executions>
+            </plugin>
+        </plugins>
+
         <resources>
           <resource>
             <!-- Include the properties file to provide the build information. -->
@@ -48,7 +74,6 @@
     <properties>
         <parquet.version>1.10.1</parquet.version>
         <spark30db.version>3.0.0-databricks</spark30db.version>
-        <spark.version>${spark30db.version}</spark.version>
     </properties>
 
     <dependencies>
