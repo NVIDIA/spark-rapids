@@ -38,9 +38,10 @@ import org.apache.spark.sql.execution.datasources.v2.orc.OrcScan
 import org.apache.spark.sql.execution.datasources.v2.parquet.ParquetScan
 import org.apache.spark.sql.execution.joins.{BroadcastHashJoinExec, BroadcastNestedLoopJoinExec, HashJoin, SortMergeJoinExec}
 import org.apache.spark.sql.execution.joins.ShuffledHashJoinExec
+import org.apache.spark.sql.internal.StaticSQLConf
 import org.apache.spark.sql.rapids.{GpuFileSourceScanExec, GpuTimeSub, ShuffleManagerShimBase}
 import org.apache.spark.sql.rapids.execution.GpuBroadcastNestedLoopJoinExecBase
-import org.apache.spark.sql.rapids.shims.spark310.{GpuInMemoryTableScanExec, GpuTransitionOverrides, _}
+import org.apache.spark.sql.rapids.shims.spark310.{GpuInMemoryTableScanExec, ShuffleManagerShim}
 import org.apache.spark.sql.types._
 import org.apache.spark.storage.{BlockId, BlockManagerId}
 import org.apache.spark.unsafe.types.CalendarInterval
@@ -171,7 +172,7 @@ class Spark310Shims extends Spark301Shims {
         "Implementation of InMemoryTableScanExec to use GPU accelerated Caching",
         (scan, conf, p, r) => new SparkPlanMeta[InMemoryTableScanExec](scan, conf, p, r) {
           override def tagPlanForGpu(): Unit = {
-            if (!scan.relation.cacheBuilder.serializer.isInstanceOf[ParquetCachedBatchSerializer]){
+            if (!scan.relation.cacheBuilder.serializer.isInstanceOf[ParquetCachedBatchSerializer]) {
               willNotWorkOnGpu("DefaultCachedBatchSerializer being used")
             }
           }
@@ -267,7 +268,13 @@ class Spark310Shims extends Spark301Shims {
     scanExec.copy(supportsSmallFileOpt = supportsSmallFileOpt)
   }
 
-  override def getGpuTransitionOverrides: Rule[SparkPlan] = {
-    new GpuTransitionOverrides()
+  override def getGpuColumnarToRowTransition(plan: SparkPlan): String = {
+    val serName = plan.conf.getConf(StaticSQLConf.SPARK_CACHE_SERIALIZER)
+    val serClass = Class.forName(serName)
+    if (serClass == classOf[ParquetCachedBatchSerializer]) {
+      classOf[org.apache.spark.sql.rapids.shims.spark310.GpuColumnarToRowExec].getName
+    } else {
+      classOf[GpuColumnarToRowExec].getName
+    }
   }
 }

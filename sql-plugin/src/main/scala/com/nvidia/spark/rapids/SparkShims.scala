@@ -65,7 +65,7 @@ trait SparkShims {
   def getBuildSide(join: HashJoin): GpuBuildSide
   def getBuildSide(join: BroadcastNestedLoopJoinExec): GpuBuildSide
   def getExprs: Map[Class[_ <: Expression], ExprRule[_ <: Expression]]
-  def getGpuTransitionOverrides: Rule[SparkPlan]
+  def getGpuColumnarToRowTransition(plan: SparkPlan): String
   def getExecs: Map[Class[_ <: SparkPlan], ExecRule[_ <: SparkPlan]]
   def getScans: Map[Class[_ <: Scan], ScanRule[_ <: Scan]]
 

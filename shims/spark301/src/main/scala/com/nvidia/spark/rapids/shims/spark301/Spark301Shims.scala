@@ -109,7 +109,7 @@ class Spark301Shims extends Spark300Shims {
     extensions.injectQueryStagePrepRule(ruleBuilder)
   }
 
-  override def getGpuTransitionOverrides: Rule[SparkPlan] = {
-    new GpuTransitionOverrides()
+  override def getGpuColumnarToRowTransition(plan: SparkPlan): String = {
+    classOf[GpuColumnarToRowExec].getName
   }
 }

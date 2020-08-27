@@ -32,7 +32,7 @@ import org.apache.spark.sql.rapids.execution.GpuColumnToRowMapPartitionsRDD
 import org.apache.spark.sql.types.DataType
 import org.apache.spark.sql.vectorized.{ColumnarBatch, ColumnVector}
 
-case class GpuColumnarToRowExec(child: SparkPlan, exportColumnarRdd: Boolean = false) 
+abstract class GpuColumnarToRowExecParent(child: SparkPlan, exportColumnarRdd: Boolean)
     extends UnaryExecNode with CodegenSupport with GpuExec {
   // We need to do this so the assertions don't fail
   override def supportsColumnar = false
@@ -282,3 +282,6 @@ case class GpuColumnarToRowExec(child: SparkPlan, exportColumnarRdd: Boolean = f
      """.stripMargin
   }
 }
+
+case class GpuColumnarToRowExec(child: SparkPlan, exportColumnarRdd: Boolean = false)
+   extends GpuColumnarToRowExecParent(child, exportColumnarRdd)
