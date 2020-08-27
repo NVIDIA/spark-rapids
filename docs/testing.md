@@ -57,7 +57,8 @@ whatever cluster you have configured.
 
 To run the tests separate from the build go to the `integration_tests` directory and submit
 `run_tests.py` through `spark-submit`.  Be sure to include the necessary jars for the RAPIDS
-plugin either with `spark-submit` or with the cluster when it is [setup](getting-started-on-prem.md).
+plugin either with `spark-submit` or with the cluster when it is 
+[setup](get-started/getting-started-on-prem.md).
 The command line arguments to `run_tests.py` are the same as for 
 [pytest](https://docs.pytest.org/en/latest/usage.html). The only reason we have a separate script
 is that `spark-submit` uses python if the file name ends with `.py`.
