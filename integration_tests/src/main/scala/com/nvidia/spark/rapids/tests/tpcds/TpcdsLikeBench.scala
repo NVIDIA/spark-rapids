@@ -21,7 +21,7 @@ import java.util.concurrent.TimeUnit.NANOSECONDS
 import scala.collection.mutable.ListBuffer
 
 import org.apache.spark.internal.Logging
-import org.apache.spark.sql.SparkSession
+import org.apache.spark.sql.{DataFrame, Row, SparkSession}
 
 object TpcdsLikeBench extends Logging {
 
@@ -47,21 +47,31 @@ object TpcdsLikeBench extends Logging {
       println(s"*** Cold run $i took $elapsed msec.")
     }
 
+    var df: DataFrame = null
+    var results: Array[Row] = null
     val hotRunElapsed = new ListBuffer[Long]()
     for (i <- 0 until numHotRuns) {
       println(s"*** Start hot run $i:")
       val start = System.nanoTime()
-      TpcdsLikeSpark.run(spark, query).collect
+      df = TpcdsLikeSpark.run(spark, query)
+      results = df.collect
       val end = System.nanoTime()
       val elapsed = NANOSECONDS.toMillis(end - start)
       hotRunElapsed.append(elapsed)
       println(s"*** Hot run $i took $elapsed msec.")
     }
 
+    // for easier comparison between running with different configs, show query plan, sample data,
+    // and row count
+    df.show()
+    println(s"Row count: ${results.length}")
+
+    // show summary of performance at end
     for (i <- 0 until numColdRuns) {
       println(s"Cold run $i for query $query took ${coldRunElapsed(i)} msec.")
     }
-    println(s"Average cold run took ${coldRunElapsed.sum.toDouble/numColdRuns} msec.")
+    println(s"Average cold run for query $query took " +
+        s"${coldRunElapsed.sum.toDouble/numColdRuns} msec.")
 
     for (i <- 0 until numHotRuns) {
       println(s"Hot run $i for query $query took ${hotRunElapsed(i)} msec.")
