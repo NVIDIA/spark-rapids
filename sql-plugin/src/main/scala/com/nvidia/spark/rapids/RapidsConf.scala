@@ -253,6 +253,7 @@ object RapidsConf {
     .createWithDefault("NONE")
 
   private val RMM_ALLOC_MAX_FRACTION_KEY = "spark.rapids.memory.gpu.maxAllocFraction"
+  private val RMM_ALLOC_RESERVE_KEY = "spark.rapids.memory.gpu.reserve"
 
   val RMM_ALLOC_FRACTION = conf("spark.rapids.memory.gpu.allocFraction")
     .doc("The fraction of total GPU memory that should be initially allocated " +
@@ -266,10 +267,17 @@ object RapidsConf {
   val RMM_ALLOC_MAX_FRACTION = conf(RMM_ALLOC_MAX_FRACTION_KEY)
     .doc("The fraction of total GPU memory that limits the maximum size of the RMM pool. " +
         s"The value must be greater than or equal to the setting for $RMM_ALLOC_FRACTION. " +
-        "If the value is 1 then no artificial limit will be applied.")
+        "Note that this limit will be reduced by the reserve memory configured in " +
+        s"$RMM_ALLOC_RESERVE_KEY.")
     .doubleConf
     .checkValue(v => v >= 0 && v <= 1, "The fraction value must be in [0, 1].")
     .createWithDefault(1)
+
+  val RMM_ALLOC_RESERVE = conf(RMM_ALLOC_RESERVE_KEY)
+      .doc("The amount of GPU memory that should remain unallocated by RMM and left for " +
+          "system use such as memory needed for kernels, kernel launches or JIT compilation.")
+      .bytesConf(ByteUnit.BYTE)
+      .createWithDefault(ByteUnit.MiB.toBytes(1024))
 
   val HOST_SPILL_STORAGE_SIZE = conf("spark.rapids.memory.host.spillStorageSize")
     .doc("Amount of off-heap host memory to use for buffering spilled GPU data " +
@@ -799,6 +807,8 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
   lazy val rmmAllocFraction: Double = get(RMM_ALLOC_FRACTION)
 
   lazy val rmmAllocMaxFraction: Double = get(RMM_ALLOC_MAX_FRACTION)
+
+  lazy val rmmAllocReserve: Long = get(RMM_ALLOC_RESERVE)
 
   lazy val hostSpillStorageSize: Long = get(HOST_SPILL_STORAGE_SIZE)
 
