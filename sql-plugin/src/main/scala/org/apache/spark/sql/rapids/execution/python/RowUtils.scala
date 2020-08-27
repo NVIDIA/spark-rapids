@@ -14,15 +14,15 @@
  * limitations under the License.
  */
 
-package org.apache.spark.sql.execution.python.rapids
+package org.apache.spark.sql.rapids.execution.python
 
 import java.io._
 
 import com.google.common.io.Closeables
 
-import org.apache.spark.{SparkEnv, SparkException}
 import org.apache.spark.io.NioBufferedFileInputStream
 import org.apache.spark.memory.{MemoryConsumer, SparkOutOfMemoryError, TaskMemoryManager}
+import org.apache.spark.{SparkEnv, SparkException}
 import org.apache.spark.serializer.SerializerManager
 import org.apache.spark.sql.catalyst.expressions.UnsafeRow
 import org.apache.spark.unsafe.Platform

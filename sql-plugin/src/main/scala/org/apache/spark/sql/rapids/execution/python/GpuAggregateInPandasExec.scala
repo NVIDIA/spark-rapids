@@ -21,22 +21,21 @@ import java.io.File
 import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.python.PythonWorkerSemaphore
 
+import scala.collection.mutable.ArrayBuffer
+
 import org.apache.spark.{SparkEnv, TaskContext}
 import org.apache.spark.api.python.{ChainedPythonFunctions, PythonEvalType}
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.InternalRow
-import org.apache.spark.sql.catalyst.expressions.{Ascending, Attribute, AttributeSet, Expression, JoinedRow, NamedExpression, PythonUDF, SortOrder, UnsafeProjection, UnsafeRow}
-import org.apache.spark.sql.catalyst.plans.physical.{AllTuples, ClusteredDistribution, Distribution, Partitioning}
+import org.apache.spark.sql.catalyst.expressions._
+import org.apache.spark.sql.catalyst.plans.physical.{AllTuples, ClusteredDistribution,
+  Distribution, Partitioning}
 import org.apache.spark.sql.execution.{GroupedIterator, SparkPlan, UnaryExecNode}
 import org.apache.spark.sql.execution.python.{AggregateInPandasExec, ArrowPythonRunner}
-import org.apache.spark.sql.execution.python.rapids._
-import org.apache.spark.sql.execution.python.rapids.GpuPandasUtils._
 import org.apache.spark.sql.types.{DataType, StructField, StructType}
 import org.apache.spark.sql.util.ArrowUtils
 import org.apache.spark.sql.vectorized.ColumnarBatch
 import org.apache.spark.util.Utils
-
-import scala.collection.mutable.ArrayBuffer
 
 
 class GpuAggregateInPandasExecMeta(
@@ -72,7 +71,7 @@ case class GpuAggregateInPandasExec(
     super.doExecuteColumnar()
   }
 
-  // Most code is copied from MapInPandasExec, except two GPU related calls
+  // Most code is copied from AggregateInPandasExec, except two GPU related calls
   override val output: Seq[Attribute] = resultExpressions.map(_.toAttribute)
 
   override def outputPartitioning: Partitioning = child.outputPartitioning

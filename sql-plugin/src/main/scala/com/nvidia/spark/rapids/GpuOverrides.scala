@@ -1757,7 +1757,13 @@ object GpuOverrides {
       (flatPy, conf, p, r) => new GpuFlatMapGroupsInPandasExecMeta(flatPy, conf, p, r)),
     exec[AggregateInPandasExec](
       "The backend for Grouped Aggregation Pandas UDF",
-      (aggPy, conf, p, r) => new GpuAggregateInPandasExecMeta(aggPy, conf, p, r))
+      (aggPy, conf, p, r) => new GpuAggregateInPandasExecMeta(aggPy, conf, p, r)),
+    exec[FlatMapCoGroupsInPandasExec](
+      "The backend for CoGrouped Aggregation Pandas UDF",
+      (flatCoPy, conf, p, r) => new GpuFlatMapCoGroupsInPandasExecMeta(flatCoPy, conf, p, r)),
+    exec[WindowInPandasExec](
+      "The backend for Pandas UDF with window functions",
+      (winPy, conf, p, r) => new GpuWindowInPandasExecMeta(winPy, conf, p, r))
   ).map(r => (r.getClassFor.asSubclass(classOf[SparkPlan]), r)).toMap
   val execs: Map[Class[_ <: SparkPlan], ExecRule[_ <: SparkPlan]] =
     commonExecs ++ ShimLoader.getSparkShims.getExecs
