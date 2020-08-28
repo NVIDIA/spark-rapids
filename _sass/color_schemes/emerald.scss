@@ -1,1 +1,8 @@
 $link-color: #008564;
+// For screen widths minimum 66.5rem, the .side-bar width is the (width of the parent element minus the $nav-width + $content-width ) / 2 plus the $nav-width
+// To reduce the sidebar increase the $content-width variable, which is defined as 800px by default
+// See also https://github.com/pmarsceill/just-the-docs/blob/master/_sass/layout.scss for the definition of .side-bar and the custom.scss file for default variable values
+// The generated value in just-the-docs-default.css will be: 
+// @media (min-width: 66.5rem) { .side-bar { width: calc((100% - 1264px) / 2 + 264px); min-width: 264px; } }
+$content-width: 1000px;
+$nav-width: 264px;

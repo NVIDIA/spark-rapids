@@ -15,7 +15,7 @@ The RAPIDS Accelerator for Apache Spark combines the power of the <a href="https
 
 ## Performance & Cost Benefits
 Rapids Accelerator for Apache Spark reaps the benefit of GPU performance while saving infrastructure costs.
-![Perf-cost](/docs/img/Perf-cost.png)
+![Perf-cost](/docs/img/perf-cost.png)
 *ETL for FannieMae Mortgage Dataset (~200GB) as shown in our [demo](https://databricks.com/session_na20/deep-dive-into-gpu-support-in-apache-spark-3-x). Costs based on Cloud T4 GPU instance market price & V100 GPU price on Databricks Standard edition
 
 
