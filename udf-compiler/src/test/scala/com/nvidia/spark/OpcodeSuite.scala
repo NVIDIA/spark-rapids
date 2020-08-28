@@ -54,10 +54,7 @@ class OpcodeSuite extends FunSuite {
   }
 
   def compareResult[T](ds1: Dataset[T], ds2: Dataset[T]): Unit = {
-    val resultdf = ds1.toDF()
-    val refdf = ds2.toDF()
-    val columns = refdf.schema.fields.map(_.name)
-    columns.map(col => assert(refdf.select(col).collect.sameElements(resultdf.select(col).collect)))
+    ds1.collect.zip(ds2.collect).foreach{case (x, y) => assert(x == y)}
   }
 
   def udfIsCompiled[T](ds: Dataset[T]): Boolean = {
