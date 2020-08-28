@@ -19,6 +19,8 @@ package com.nvidia.spark.rapids
 import com.nvidia.spark.rapids.GpuMetricNames._
 
 import org.apache.spark.SparkContext
+import org.apache.spark.sql.catalyst.expressions.{Alias, AttributeReference, ExprId}
+import org.apache.spark.sql.catalyst.plans.QueryPlan
 import org.apache.spark.sql.execution.SparkPlan
 import org.apache.spark.sql.execution.metric.{SQLMetric, SQLMetrics}
 
@@ -88,4 +90,34 @@ trait GpuExec extends SparkPlan with Arm {
       case c: GpuExpression => c.disableCoalesceUntilInput()
       case _ => false
     }
+
+  /**
+   * Defines how the canonicalization should work for the current plan.
+   */
+  override protected def doCanonicalize(): SparkPlan = {
+    val canonicalizedChildren = children.map(_.canonicalized)
+    var id = -1
+    mapExpressions {
+      case a: Alias =>
+        id += 1
+        // As the root of the expression, Alias will always take an arbitrary exprId, we need to
+        // normalize that for equality testing, by assigning expr id from 0 incrementally. The
+        // alias name doesn't matter and should be erased.
+        val normalizedChild = QueryPlan.normalizeExpressions(a.child, allAttributes)
+        Alias(normalizedChild, "")(ExprId(id), a.qualifier)
+      case a: GpuAlias =>
+        id += 1
+        // As the root of the expression, Alias will always take an arbitrary exprId, we need to
+        // normalize that for equality testing, by assigning expr id from 0 incrementally. The
+        // alias name doesn't matter and should be erased.
+        val normalizedChild = QueryPlan.normalizeExpressions(a.child, allAttributes)
+        GpuAlias(normalizedChild, "")(ExprId(id), a.qualifier)
+      case ar: AttributeReference if allAttributes.indexOf(ar.exprId) == -1 =>
+        // Top level `AttributeReference` may also be used for output like `Alias`, we should
+        // normalize the exprId too.
+        id += 1
+        ar.withExprId(ExprId(id)).canonicalized
+      case other => QueryPlan.normalizeExpressions(other, allAttributes)
+    }.withNewChildren(canonicalizedChildren)
+  }
 }
