@@ -57,8 +57,7 @@ class OpcodeSuite extends FunSuite {
     val resultdf = ds1.toDF()
     val refdf = ds2.toDF()
     val columns = refdf.schema.fields.map(_.name)
-    val selectiveDifferences = columns.map(col => refdf.select(col).except(resultdf.select(col)))
-    selectiveDifferences.map(diff => { assert(diff.count==0) } )
+    columns.map(col => assert(refdf.select(col).collect.sameElements(resultdf.select(col).collect)))
   }
 
   def udfIsCompiled[T](ds: Dataset[T]): Boolean = {
@@ -94,7 +93,7 @@ class OpcodeSuite extends FunSuite {
       .toDF("x", "y")
       .repartition(1)
     val result = df.withColumn("new", u(col("x"), col("y")))
-    val equiv = df.withColumn("new", col("x") && col("y"))
+    val equiv = df.withColumn("new", !(col("x") && col("y")))
     checkEquiv(result, equiv)
   }
 
