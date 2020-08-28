@@ -79,7 +79,28 @@ class GpuHashAggregateMeta(
         case "partial" => if (hashAggMode.contains(Final) || hashAggMode.contains(Complete)) {
           // replacing only Partial hash aggregates, so a Final or Complete one should not replace
           willNotWorkOnGpu("Replacing Final or Complete hash aggregates disabled")
-         }
+        }
+          // In partial mode, if there are non distinct functions and multiple distinct functions
+          // non distinct functions are computed using First operator. The final result would be
+          // incorrect for non distinct functions for partition size > 1. Reason for this is - if
+          // the first batch computed and sent to CPU doesn't contain all the rows required to
+          // comput non distinct function(s), then Spark would consider that value as final result
+          // (due to First)Falling back to CPU for this special case.
+          if (agg.aggregateExpressions.exists(e => e.aggregateFunction.isInstanceOf[First])) {
+            val distinctAggs = agg.aggregateExpressions.flatMap(expr =>
+              expr.children.map {
+                _.collect {
+                  case a: Count => a
+                  case b: Average => b
+                }
+              })
+            if (distinctAggs.size > 1) {
+              willNotWorkOnGpu("Aggregate of non distinct functions with multiple distinct " +
+                "functions is non deterministic for non distinct functions as it is computed " +
+                "using " +
+                "First.")
+            }
+          }
         case "final" => if (hashAggMode.contains(Partial) || hashAggMode.contains(Complete)) {
           // replacing only Final hash aggregates, so a Partial or Complete one should not replace
           willNotWorkOnGpu("Replacing Partial or Complete hash aggregates disabled")
@@ -93,31 +114,6 @@ class GpuHashAggregateMeta(
             s"$hashAggReplaceMode is not valid. Valid options are: 'partial', " +
             s"'final', 'complete', or 'all'")
       }
-    }
-    hashAggReplaceMode match {
-      case "partial" => {
-        // In partial mode, if there are non distinct functions and multiple distinct functions
-        // non distinct functions are computed using First operator. The final result would be
-        // incorrect for non distinct functions for partition size > 1. Reason for this is - if the
-        // first batch computed and sent to CPU doesn't contain all the rows required to compute
-        // non distinct function(s), then Spark would consider that value as final result(due to
-        // First)Falling back to CPU for this special case.
-        if (agg.aggregateExpressions.exists(e => e.aggregateFunction.isInstanceOf[First])) {
-          val count = agg.aggregateExpressions.flatMap(expr =>
-            expr.children.flatMap {
-              _.collect {
-              case a: Count => a
-              case b: Average => b
-            }
-          })
-          if (count.size > 1) {
-            willNotWorkOnGpu("Aggregate of non distinct functions with multiple distinct " +
-              "functions is non deterministic for non distinct functions as it is computed using " +
-              "First.")
-          }
-        }
-      }
-      case _ =>
     }
     if (!conf.partialMergeDistinctEnabled && hashAggMode.contains(PartialMerge)) {
       willNotWorkOnGpu("Replacing Partial Merge aggregates disabled. " +
@@ -198,7 +194,27 @@ class GpuSortAggregateMeta(
         case "partial" => if (hashAggMode.contains(Final) || hashAggMode.contains(Complete)) {
           // replacing only Partial hash aggregates, so a Final or Commplete one should not replace
           willNotWorkOnGpu("Replacing Final or Complete hash aggregates disabled")
-         }
+        }
+          // In partial mode, if there are non distinct functions and multiple distinct functions
+          // non distinct functions are computed using First operator. The final result would be
+          // incorrect for non distinct functions for partition size > 1. Reason for this is - if
+          // the first batch computed and sent to CPU doesn't contain all the rows required to
+          // compute non distinct function(s), then Spark would consider that value as final result
+          // (due to First)Falling back to CPU for this special case.
+          if (agg.aggregateExpressions.exists(e => e.aggregateFunction.isInstanceOf[First])) {
+            val distinctAggs = agg.aggregateExpressions.flatMap(expr =>
+              expr.children.map {
+                _.collect {
+                  case a: Count => a
+                  case b: Average => b
+                }
+              })
+            if (distinctAggs.size > 1) {
+              willNotWorkOnGpu("Aggregate of non distinct functions with multiple distinct " +
+                "functions is non deterministic for non distinct functions as it is computed " +
+                "using First.")
+            }
+          }
         case "final" => if (hashAggMode.contains(Partial) || hashAggMode.contains(Complete)) {
           // replacing only Final hash aggregates, so a Partial or Complete one should not replace
           willNotWorkOnGpu("Replacing Partial or Complete hash aggregates disabled")
@@ -212,31 +228,6 @@ class GpuSortAggregateMeta(
             s"${hashAggReplaceMode} is not valid. Valid options are: 'partial', 'final', " +
             s"'complete', or 'all'")
       }
-    }
-    hashAggReplaceMode match {
-      case "partial" => {
-        // In partial mode, if there are non distinct functions and multiple distinct functions
-        // non distinct functions are computed using First operator. The final result would be
-        // incorrect for non distinct functions for partition size > 1. Reason for this is - if the
-        // first batch computed and sent to CPU doesn't contain all the rows required to compute
-        // non distinct function(s), then Spark would consider that value as final result(due to
-        // First)Falling back to CPU for this special case.
-        if (agg.aggregateExpressions.exists(e => e.aggregateFunction.isInstanceOf[First])) {
-          val count = agg.aggregateExpressions.flatMap(expr =>
-            expr.children.flatMap {
-              _.collect {
-                case a: Count => a
-                case b: Average => b
-              }
-            })
-          if (count.size > 1) {
-            willNotWorkOnGpu("Aggregate of non distinct functions with multiple distinct " +
-              "functions is non deterministic for non distinct functions as it is computed using " +
-              "First.")
-          }
-        }
-      }
-      case _ =>
     }
   }
 
