@@ -880,7 +880,7 @@ class OpcodeSuite extends FunSuite {
     checkEquiv(result, ref)
   }
 
-  test("math functions - unsupported") {
+  test("FALLBACK TO CPU: math functions - unsupported") {
     val myudf1: Double => Double = x => { math.log1p(x) }
     val u1 = makeUdf(myudf1)
     val dataset = List(2.0,5.0).toDS()
@@ -1413,7 +1413,7 @@ class OpcodeSuite extends FunSuite {
     checkEquiv(result2, ref2)
   }
 
-  test("loops - fallback test") {
+  test("FALLBACK TO CPU: loops - fallback test") {
     val myudf: (Int, Int) => Int = (a,b) => {
       var myVar : Int = 0
       for (indexVar <- a to b){
@@ -1661,7 +1661,7 @@ class OpcodeSuite extends FunSuite {
     checkEquiv(result, ref)
   }
 
-  test("string test - charAt") {
+  test("FALLBACK TO CPU: string test - charAt") {
     val myudf: (String) => Int = a => {
       a.charAt(2).toInt
     }
@@ -1694,7 +1694,7 @@ class OpcodeSuite extends FunSuite {
     checkEquiv(result, ref)
   }
 
-  test("string test - indexOf - case 2 - char - single quotes,int") {
+  test("FALLBACK TO CPU: string test - indexOf - case 2 - char - single quotes,int") {
     val myudf: (String) => Int = a => {
       a.indexOf('c',1)
     }
@@ -1705,7 +1705,7 @@ class OpcodeSuite extends FunSuite {
     checkEquivNotCompiled(result, ref)
   }
 
-  test("string test - indexOf - case 3 - char - utf value,int") {
+  test("FALLBACK TO CPU: string test - indexOf - case 3 - char - utf value,int") {
     val myudf: (String) => Int = a => {
       a.indexOf(99,1)
     }
@@ -1716,7 +1716,7 @@ class OpcodeSuite extends FunSuite {
     checkEquivNotCompiled(result, ref)
   }
 
-  test("string test - indexOf - case 4 - char - utf value") {
+  test("FALLBACK TO CPU: string test - indexOf - case 4 - char - utf value") {
     val myudf: (String) => Int = a => {
       a.indexOf(99)
     }
@@ -1727,7 +1727,7 @@ class OpcodeSuite extends FunSuite {
     checkEquivNotCompiled(result, ref)
   }
 
-  test("string test - indexOf - case 5 - char - single quotes") {
+  test("FALLBACK TO CPU: string test - indexOf - case 5 - char - single quotes") {
     val myudf: (String) => Int = a => {
       a.indexOf('c')
     }
@@ -1751,8 +1751,7 @@ class OpcodeSuite extends FunSuite {
 
   // this test is an expected fallback to JVM execution due to no support for String.codePointAt
   // method
-  test("string test - codePointAt method. " +
-    "Unsupported and expected to fail/fall back to default JVM execution") {
+  test("FALLBACK TO CPU: string test - codePointAt method. ") {
     val myudf: (String) => Int = a => {
       a.codePointAt(2)
     }
@@ -1764,8 +1763,7 @@ class OpcodeSuite extends FunSuite {
   }
 
   // this test is an expected fallback to JVM execution due to no support for String.matches method
-  test("string test - matches method. " +
-    "Unsupported and expected to fail/fall back to default JVM execution") {
+  test("FALLBACK TO CPU: string test - matches method. ") {
     val myudf: (String) => Boolean = a => {
       a.matches("[a-z]*.txt" )
     }
