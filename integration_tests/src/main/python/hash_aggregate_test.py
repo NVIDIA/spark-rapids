@@ -236,6 +236,21 @@ def test_hash_multiple_mode_query_avg_distincts(data_gen, conf):
         conf=conf)
 
 
+@approximate_float
+@ignore_order
+@incompat
+@pytest.mark.parametrize('data_gen', _init_list_no_nans, ids=idfn)
+@pytest.mark.parametrize('conf', get_params(_confs, params_markers_for_confs),
+                         ids=idfn)
+def test_hash_query_avg_multiple_distincts_with_non_distinct(data_gen, conf):
+    assert_gpu_and_cpu_are_equal_sql(
+        lambda spark : gen_df(spark, data_gen, length=100),
+        "hash_agg_table",
+        'select avg(a),' +
+        'avg(distinct b),' +
+        'avg(distinct c) from hash_agg_table group by a',
+        conf)
+
 @ignore_order
 @pytest.mark.parametrize('data_gen', _init_list_no_nans, ids=idfn)
 @pytest.mark.parametrize('conf', get_params(_confs, params_markers_for_confs), ids=idfn)

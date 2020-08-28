@@ -98,13 +98,16 @@ class GpuHashAggregateMeta(
       case "partial" => {
         // In partial mode, if there are non distinct functions and multiple distinct functions
         // non distinct functions are computed using First operator. The final result would be
-        // incorrect for non distinct functions for partition size > 1. Falling back to CPU for
-        // this special case.
+        // incorrect for non distinct functions for partition size > 1. Reason for this is - if the
+        // first batch computed and sent to CPU doesn't contain all the rows required to compute
+        // non distinct function(s), then Spark would consider that value as final result(due to
+        // First)Falling back to CPU for this special case.
         if (agg.aggregateExpressions.exists(e => e.aggregateFunction.isInstanceOf[First])) {
           val count = agg.aggregateExpressions.flatMap(expr =>
             expr.children.flatMap {
               _.collect {
               case a: Count => a
+              case b: Average => b
             }
           })
           if (count.size > 1) {
@@ -214,13 +217,16 @@ class GpuSortAggregateMeta(
       case "partial" => {
         // In partial mode, if there are non distinct functions and multiple distinct functions
         // non distinct functions are computed using First operator. The final result would be
-        // incorrect for non distinct functions for partition size > 1. Falling back to CPU for
-        // this special case.
+        // incorrect for non distinct functions for partition size > 1. Reason for this is - if the
+        // first batch computed and sent to CPU doesn't contain all the rows required to compute
+        // non distinct function(s), then Spark would consider that value as final result(due to
+        // First)Falling back to CPU for this special case.
         if (agg.aggregateExpressions.exists(e => e.aggregateFunction.isInstanceOf[First])) {
           val count = agg.aggregateExpressions.flatMap(expr =>
             expr.children.flatMap {
               _.collect {
                 case a: Count => a
+                case b: Count => b
               }
             })
           if (count.size > 1) {
