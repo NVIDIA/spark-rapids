@@ -226,7 +226,7 @@ class GpuSortAggregateMeta(
             expr.children.flatMap {
               _.collect {
                 case a: Count => a
-                case b: Count => b
+                case b: Average => b
               }
             })
           if (count.size > 1) {

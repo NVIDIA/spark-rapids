@@ -248,7 +248,11 @@ def test_hash_query_avg_multiple_distincts_with_non_distinct(data_gen, conf):
         "hash_agg_table",
         'select avg(a),' +
         'avg(distinct b),' +
-        'avg(distinct c) from hash_agg_table group by a',
+        'avg(distinct c),' +
+        'count(a),' +
+        'sum(a),' +
+        'min(a),'+
+        'max(a) from hash_agg_table group by a',
         conf)
 
 @ignore_order
