@@ -154,27 +154,52 @@ object GpuDeviceManager extends Logging {
     }
   }
 
+  private def toMB(x: Long): Double = x / 1024 / 1024.0
+
+  private def computeRmmInitSizes(conf: RapidsConf, info: CudaMemInfo): (Long, Long) = {
+    // Align workaround for https://github.com/rapidsai/rmm/issues/527
+    def truncateToAlignment(x: Long): Long = x & ~511L
+
+    var initialAllocation = truncateToAlignment((conf.rmmAllocFraction * info.total).toLong)
+    if (initialAllocation > info.free) {
+      logWarning(s"Initial RMM allocation (${toMB(initialAllocation)} MB) is " +
+          s"larger than free memory (${toMB(info.free)} MB)")
+    }
+    val maxAllocation = truncateToAlignment((conf.rmmAllocMaxFraction * info.total).toLong)
+    if (maxAllocation < initialAllocation) {
+      throw new IllegalArgumentException(s"${RapidsConf.RMM_ALLOC_MAX_FRACTION} " +
+          s"configured as ${conf.rmmAllocMaxFraction} which is less than the " +
+          s"${RapidsConf.RMM_ALLOC_FRACTION} setting of ${conf.rmmAllocFraction}")
+    }
+    val reserveAmount = conf.rmmAllocReserve
+    if (reserveAmount >= maxAllocation) {
+      throw new IllegalArgumentException(s"RMM reserve memory (${toMB(reserveAmount)} MB) " +
+          s"larger than maximum pool size (${toMB(maxAllocation)} MB). Check the settings for " +
+          s"${RapidsConf.RMM_ALLOC_MAX_FRACTION} (=${conf.rmmAllocFraction}) and " +
+          s"${RapidsConf.RMM_ALLOC_RESERVE} (=$reserveAmount)")
+    }
+    val adjustedMaxAllocation = truncateToAlignment(maxAllocation - reserveAmount)
+    if (initialAllocation > adjustedMaxAllocation) {
+      logWarning(s"Initial RMM allocation (${toMB(initialAllocation)} MB) is larger than " +
+          s"the adjusted maximum allocation (${toMB(adjustedMaxAllocation)} MB), " +
+          "lowering initial allocation to the adjusted maximum allocation.")
+      initialAllocation = adjustedMaxAllocation
+    }
+
+    // Currently a max limit only works in pooled mode.  Need a general limit resource wrapper
+    // as requested in https://github.com/rapidsai/rmm/issues/442 to support for all RMM modes.
+    if (conf.isPooledMemEnabled) {
+      (initialAllocation, adjustedMaxAllocation)
+    } else {
+      (initialAllocation, 0)
+    }
+  }
+
   private def initializeRmm(gpuId: Int, rapidsConf: Option[RapidsConf] = None): Unit = {
     if (!Rmm.isInitialized) {
       val conf = rapidsConf.getOrElse(new RapidsConf(SparkEnv.get.conf))
       val info = Cuda.memGetInfo()
-      val initialAllocation = (conf.rmmAllocFraction * info.total).toLong
-      if (initialAllocation > info.free) {
-        logWarning(s"Initial RMM allocation(${initialAllocation / 1024 / 1024.0} MB) is " +
-          s"larger than free memory(${info.free / 1024 / 1024.0} MB)")
-      }
-      val maxAllocation = if (conf.rmmAllocMaxFraction < 1) {
-        (conf.rmmAllocMaxFraction * info.total).toLong
-      } else {
-        // Do not attempt to enforce any artificial pool limit based on queried GPU memory size
-        // if config indicates all GPU memory should be used.
-        0
-      }
-      if (maxAllocation > 0 && maxAllocation < initialAllocation) {
-        throw new IllegalArgumentException(s"${RapidsConf.RMM_ALLOC_MAX_FRACTION} " +
-            s"configured as ${conf.rmmAllocMaxFraction} which is less than the " +
-            s"${RapidsConf.RMM_ALLOC_FRACTION} setting of ${conf.rmmAllocFraction}")
-      }
+      val (initialAllocation, maxAllocation) = computeRmmInitSizes(conf, info)
       var init = RmmAllocationMode.CUDA_DEFAULT
       val features = ArrayBuffer[String]()
       if (conf.isPooledMemEnabled) {
@@ -202,7 +227,8 @@ object GpuDeviceManager extends Logging {
       deviceId = Some(gpuId)
 
       logInfo(s"Initializing RMM${features.mkString(" ", " ", "")} " +
-        s"${initialAllocation / 1024 / 1024.0} MB on gpuId $gpuId")
+          s"initial size = ${toMB(initialAllocation)} MB, " +
+          s"max size = ${toMB(maxAllocation)} MB on gpuId $gpuId")
 
       try {
         Cuda.setDevice(gpuId)
