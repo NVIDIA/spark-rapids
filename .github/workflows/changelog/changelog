@@ -35,12 +35,11 @@ release -> project: Release {release}, branch: branch-{release}
 e.g.
     0.1 -> project: Release 0.1, branch: branch-0.1
     0.2 -> project: Release 0.2, branch: branch-0.2
-    0.3 -> project: Release 0.3, branch: branch-0.3
 
 Usage:
     cd spark-rapids/
-    # generate changelog for release 0.1,0.2,0.3 to ./CHANGELOG.md
-    .github/workflows/changelog/changelog --token=<GITHUB_PERSONAL_ACCESS_TOKEN> --releases=0.1,0.2,0.3
+    # generate changelog for release 0.1,0.2 to ./CHANGELOG.md
+    .github/workflows/changelog/changelog --token=<GITHUB_PERSONAL_ACCESS_TOKEN> --releases=0.1,0.2
     # generate changelog for release 0.1,0.2 to /tmp/CHANGELOG.md
     GITHUB_TOKEN=XXX .github/workflows/changelog/changelog --releases=0.1,0.2 --path=/tmp/CHANGELOG.md
 """
@@ -54,7 +53,7 @@ import requests
 
 parser = ArgumentParser(description="Changelog Generator")
 parser.add_argument("--releases", help="list of release versions, separated by comma",
-                    default="0.1,0.2,0.3")
+                    default="0.1,0.2")
 parser.add_argument("--token", help="github token, will use GITHUB_TOKEN if empty", default='')
 parser.add_argument("--path", help="path for generated changelog file", default='./CHANGELOG.md')
 args = parser.parse_args()
