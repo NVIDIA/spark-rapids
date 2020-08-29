@@ -1838,7 +1838,6 @@ class OpcodeSuite extends FunSuite {
     val dataset = List(Float.NaN).toDF("x").repartition(1)
     val result = dataset.withColumn("new", u(col("x")))
     val ref = dataset.withColumn("new", lit(Float.NaN.isNaN))
-    assert(udfIsCompiled(result))
     checkEquiv(result, ref)
   }
 
@@ -1850,7 +1849,6 @@ class OpcodeSuite extends FunSuite {
     val dataset = List(2f).toDF("x").repartition(1)
     val result = dataset.withColumn("new", u(col("x")))
     val ref = dataset.withColumn("new", lit(false))
-    assert(udfIsCompiled(result))
     checkEquiv(result, ref)
   }
 
@@ -1862,7 +1860,6 @@ class OpcodeSuite extends FunSuite {
     val dataset = List(Double.NaN).toDF("x").repartition(1)
     val result = dataset.withColumn("new", u(col("x")))
     val ref = dataset.withColumn("new", lit(Double.NaN.isNaN))
-    assert(udfIsCompiled(result))
     checkEquiv(result, ref)
   }
 
@@ -1874,7 +1871,6 @@ class OpcodeSuite extends FunSuite {
     val dataset = List(2D).toDF("x").repartition(1)
     val result = dataset.withColumn("new", u(col("x")))
     val ref = dataset.withColumn("new", lit(false))
-    assert(udfIsCompiled(result))
     checkEquiv(result, ref)
   }
 
@@ -1889,7 +1885,6 @@ class OpcodeSuite extends FunSuite {
       .toDF("DateTime", "Pattern").repartition(1)
     val result = dataset.withColumn("dayOfMonth", u(col("DateTime"), col("Pattern")))
     val ref = dataset.withColumn("dayOfMonth", dayofmonth(col("DateTime")))
-    assert(udfIsCompiled(result))
     checkEquiv(result, ref)
   }
 
@@ -1903,8 +1898,7 @@ class OpcodeSuite extends FunSuite {
     val dataset = Seq("2020-08-20T01:23:45").toDF("DateTime").repartition(1)
     val result = dataset.withColumn("dayOfMonth", u(col("DateTime")))
     val ref = dataset.withColumn("dayOfMonth", dayofmonth(col("DateTime")))
-    assert(!udfIsCompiled(result))
-    checkEquiv(result, ref)
+    checkEquivNotCompiled(result, ref)
   }
 
   test("Get day of month from LocalDateTime string") {
@@ -1917,7 +1911,6 @@ class OpcodeSuite extends FunSuite {
     val dataset = Seq("2020-08-20T01:23:45").toDF("DateTime").repartition(1)
     val result = dataset.withColumn("dayOfMonth", u(col("DateTime")))
     val ref = dataset.withColumn("dayOfMonth", dayofmonth(col("DateTime")))
-    assert(udfIsCompiled(result))
     checkEquiv(result, ref)
   }
 
@@ -1931,7 +1924,6 @@ class OpcodeSuite extends FunSuite {
     val dataset = Seq("08-20-2020 01:23:45").toDF("DateTime").repartition(1)
     val result = dataset.withColumn("hour", u(col("DateTime")))
     val ref = dataset.withColumn("hour", hour(to_timestamp(col("DateTime"), "MM-dd-yyyy HH:mm:ss")))
-    assert(udfIsCompiled(result))
     checkEquiv(result, ref)
   }
 
@@ -1945,7 +1937,6 @@ class OpcodeSuite extends FunSuite {
     val dataset = Seq("2020-08-20 01:23:45").toDF("DateTime").repartition(1)
     val result = dataset.withColumn("minute", u(col("DateTime")))
     val ref = dataset.withColumn("minute", minute(col("DateTime")))
-    assert(udfIsCompiled(result))
     checkEquiv(result, ref)
   }
 
@@ -1959,7 +1950,6 @@ class OpcodeSuite extends FunSuite {
     val dataset = Seq("2020-Aug-20").toDF("DateTime").repartition(1)
     val result = dataset.withColumn("month", u(col("DateTime")))
     val ref = dataset.withColumn("month", month(to_timestamp(col("DateTime"), "yyyy-MMM-dd")))
-    assert(udfIsCompiled(result))
     checkEquiv(result, ref)
   }
 
@@ -1973,7 +1963,6 @@ class OpcodeSuite extends FunSuite {
     val dataset = Seq("01:23:45").toDF("DateTime").repartition(1)
     val result = dataset.withColumn("month", u(col("DateTime")))
     val ref = dataset.withColumn("month", second(col("DateTime")))
-    assert(udfIsCompiled(result))
     checkEquiv(result, ref)
   }
 
@@ -1987,8 +1976,6 @@ class OpcodeSuite extends FunSuite {
     val dataset = Seq("2020-08-20").toDF("DateTime").repartition(1)
     val result = dataset.withColumn("month", u(col("DateTime")))
     val ref = dataset.withColumn("month", year(col("DateTime")))
-    assert(udfIsCompiled(result))
     checkEquiv(result, ref)
   }
-
 }
