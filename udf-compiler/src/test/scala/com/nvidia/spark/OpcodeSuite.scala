@@ -15,25 +15,22 @@
  */
 
 package com.nvidia.spark
+
+import com.nvidia.spark.rapids.RapidsConf
+import org.scalatest.FunSuite
+
 import org.apache.spark.SparkConf
+import org.apache.spark.sql.{Dataset, SparkSession}
 import org.apache.spark.sql.expressions.UserDefinedFunction
 import org.apache.spark.sql.functions._
 import org.apache.spark.sql.functions.{udf => makeUdf}
-import org.apache.spark.sql.{Dataset, SparkSession}
-import org.scalatest.FunSuite
-
-import org.scalatest.Assertions._
 import org.apache.spark.sql.functions.{log => logalias}
-import java.nio.charset.Charset
-
-import com.nvidia.spark.rapids.RapidsConf
-
-
 
 class OpcodeSuite extends FunSuite {
 
   val conf: SparkConf = new SparkConf()
     .set("spark.sql.extensions", "com.nvidia.spark.udf.Plugin")
+    .set("spark.rapids.sql.udfCompiler.enabled", "true")
     .set(RapidsConf.EXPLAIN.key, "true")
 
   val spark: SparkSession =
@@ -45,19 +42,1786 @@ class OpcodeSuite extends FunSuite {
 
   import spark.implicits._
 
-// Utility Function for checking equivalency of Dataset type
+  // Utility Function for checking equivalency of Dataset type
   def checkEquiv[T](ds1: Dataset[T], ds2: Dataset[T]) : Unit = {
-    ds1.explain(true)
-    ds2.explain(true)
-    val resultdf = ds1.toDF()
-    val refdf = ds2.toDF()
-    ds1.show
-    ds2.show
-    val columns = refdf.schema.fields.map(_.name)
-    val selectiveDifferences = columns.map(col => refdf.select(col).except(resultdf.select(col)))
-    selectiveDifferences.map(diff => { assert(diff.count==0) } )
-    ds1.show
-    ds2.show
+    assert(udfIsCompiled(ds1))
+    compareResult(ds1, ds2)
+  }
+
+  def checkEquivNotCompiled[T](ds1: Dataset[T], ds2: Dataset[T]): Unit = {
+    assert(!udfIsCompiled(ds1))
+    compareResult(ds1, ds2)
+  }
+
+  def compareResult[T](ds1: Dataset[T], ds2: Dataset[T]): Unit = {
+    ds1.collect.zip(ds2.collect).foreach{case (x, y) => assert(x == y)}
+  }
+
+  def udfIsCompiled[T](ds: Dataset[T]): Boolean = {
+    !ds.queryExecution.analyzed.toString().contains("UDF")
+  }
+
+  // START OF TESTS
+
+  test("not boolean") {
+    val myudf: Boolean => Boolean = { x => !x }
+    val u = makeUdf(myudf)
+    val dataset = List(true, false, true, false).toDS().repartition(1)
+    val result = dataset.withColumn("new", u('value))
+    val equiv = dataset.withColumn("new", not(col("value")))
+    checkEquiv(result, equiv)
+  }
+
+  test("and boolean") {
+    val myudf: (Boolean, Boolean) => Boolean = { (a, b) => a && b }
+    val u = makeUdf(myudf)
+    val df = List((false, false), (false, true), (true, false), (true, true))
+      .toDF("x", "y")
+      .repartition(1)
+    val result = df.withColumn("new", u(col("x"), col("y")))
+    val equiv = df.withColumn("new", col("x") && col("y"))
+    checkEquiv(result, equiv)
+  }
+
+  test("not(and boolean)") {
+    val myudf: (Boolean, Boolean) => Boolean = { (a, b) => !(a && b) }
+    val u = makeUdf(myudf)
+    val df = List((false, false), (false, true), (true, false), (true, true))
+      .toDF("x", "y")
+      .repartition(1)
+    val result = df.withColumn("new", u(col("x"), col("y")))
+    val equiv = df.withColumn("new", !(col("x") && col("y")))
+    checkEquiv(result, equiv)
+  }
+
+  test("or boolean") {
+    val myudf: (Boolean, Boolean) => Boolean = { (a, b) => a || b }
+    val u = makeUdf(myudf)
+    val df = List((false, false), (false, true), (true, false), (true, true))
+      .toDF("x", "y")
+      .repartition(1)
+    val result = df.withColumn("new", u(col("x"), col("y")))
+    val equiv = df.withColumn("new", col("x") || col("y"))
+    checkEquiv(result, equiv)
+  }
+
+  // conditional tests, all but test0 fall back to JVM execution
+  test("conditional floats") {
+    val myudf: Float => Float = { x =>
+      val t =
+        if (x > 1.0f && x < 3.7f) {
+          (if (x > 1.1f && x < 2.0f) 1.0f else 1.1f) + 24.0f
+        } else {
+          if (x < 0.1f) 2.3f else 4.1f
+        }
+      t + 2.2f
+    }
+    val u = makeUdf(myudf)
+    val dataset = List(2.0f).toDS()
+    val result = dataset.withColumn("new", u('value))
+    val ref = dataset.withColumn("new", lit(27.300001f))
+    checkEquiv(result, ref)
+    val dataset2 = List(4.0f).toDS()
+    val result2 = dataset2.withColumn("new", u('value))
+    val ref2 = dataset2.withColumn("new", lit(6.3f))
+    checkEquiv(result2, ref2)
+  }
+
+  test("conditional doubles") {
+    val myudf: Double => Double = { x =>
+      val t =
+        if (x > 1.0 && x <= 3.7) {
+          (if (x >= 1.1 && x < 2.1) 1.0 else 1.1) + 24.0
+        } else {
+          if (x < 1.1) 2.3 else 4.1
+        }
+      t + 2.2
+    }
+    val u = makeUdf(myudf)
+    val dataset = List(1.0).toDS()
+    val result = dataset.withColumn("new", u('value))
+    val ref = dataset.withColumn("new", lit(4.5))
+    checkEquiv(result, ref)
+    val dataset2 = List(2.0).toDS()
+    val result2 = dataset2.withColumn("new", u('value))
+    val ref2 = dataset2.withColumn("new", lit(27.2))
+    checkEquiv(result2, ref2)
+  }
+
+  test("conditional ints") {
+    val myudf: Int => Int = { x =>
+      val t =
+        if (x > 1 && x < 5) {
+          10
+        } else {
+          if (x > 7) 20 else 30
+        }
+      t + 5
+    }
+    val u = makeUdf(myudf)
+    val dataset = List(2).toDS()
+    val result = dataset.withColumn("new",u('value))
+    val ref = dataset.withColumn("new", lit(15))
+    checkEquiv(result, ref)
+    val dataset2 = List(8).toDS()
+    val result2 = dataset2.withColumn("new", u('value))
+    val ref2 = dataset2.withColumn("new", lit(25))
+    checkEquiv(result2, ref2)
+  }
+
+  test("conditional longs") {
+    val myudf: Long => Long = { x =>
+      val t =
+        if (x > 1L && x < 5L) {
+          10L
+        } else {
+          if (x > 7L) 20L else 30L
+        }
+      t + 5L
+    }
+    val u = makeUdf(myudf)
+    val dataset = List(2L).toDS()
+    val result = dataset.withColumn("new", u('value))
+    val ref = dataset.withColumn("new", lit(15L))
+    checkEquiv(result, ref)
+    val dataset2 = List(8L).toDS()
+    val result2 = dataset2.withColumn("new", u('value))
+    val ref2 = dataset2.withColumn("new", lit(25L))
+    checkEquiv(result2, ref2)
+  }
+
+  // tests for load and store operations, also cover +/-/* operators for int,long,double,float
+  test("LLOAD_<n> odd") {
+    val dataset = List((1,1L,1L)).toDF("x","y","z")
+    val myudf: (Int, Long, Long) => Long = (a,b,c) => {
+      (b+c)*c-b
+    }
+    val u = makeUdf(myudf)
+    val result = dataset.withColumn("new",u(col("x"),col("y"),col("z")))
+    val ref = dataset.withColumn("new",(col("y")+col("z"))*col("z") - col("y"))
+    checkEquiv(result, ref)
+  }
+
+  test("DLOAD_<n> odd") {
+    val dataset = List((1,1.0,1.0)).toDF("x","y","z")
+    val myudf: (Int, Double, Double) => Double = (a,b,c) => {
+      (b+c)*b-c
+    }
+    val u = makeUdf(myudf)
+    val result = dataset.withColumn("new", u(col("x"),col("y"),col("z")))
+    val ref = dataset.withColumn("new",(col("y")+col("z"))*col("y")-col("z"))
+    checkEquiv(result, ref)
+  }
+
+  test("DLOAD_<n> even") {
+    val dataset = List((1.0,1.0)).toDF("x","y")
+    val myudf: (Double, Double) => Double = (a,b) => {
+      (a+b)*a-b
+    }
+    val u = makeUdf(myudf)
+    val result = dataset.withColumn("new",u(col("x"),col("y")))
+    val ref = dataset.withColumn("new",(col("x")+col("y"))*col("x")-col("y"))
+    checkEquiv(result, ref)
+  }
+
+  test("LLOAD_<n> even") {
+    val dataset = List((1L,1L)).toDF("x","y")
+    val myudf: (Long, Long) => Long = (a,b) => {
+      (a+b)*a-b
+    }
+    val u = makeUdf(myudf)
+    val result = dataset.withColumn("new",u(col("x"),col("y")))
+    val ref = dataset.withColumn("new",(col("x")+col("y"))*col("x")-col("y"))
+    checkEquiv(result, ref)
+  }
+
+  test("ILOAD_<n> all") {
+    val dataset = List((1,1,1,1)).toDF("x","y","z","w")
+    val myudf: (Int, Int, Int, Int) => Int = (a,b,c,d) => {
+      (a+b-c)*d
+    }
+    val u = makeUdf(myudf)
+    val result = dataset.withColumn("new",u(col("x"),col("y"),col("z"),col("w")))
+    val ref = dataset.withColumn("new",(col("z")+col("y")-col("z"))*col("w"))
+    checkEquiv(result, ref)
+  }
+
+  test("FLOAD_<n> all") {
+    val dataset = List((1.0f,1.0f,1.0f,1.0f)).toDF("x","y","z","w")
+    val myudf: (Float, Float, Float, Float) => Float = (a,b,c,d) => {
+      (a+b-c)*d
+    }
+    val u = makeUdf(myudf)
+    val result = dataset.withColumn("new",u(col("x"),col("y"),col("z"),col("w")))
+    val ref = dataset.withColumn("new",(col("x")+col("y")-col("z"))*col("w"))
+    checkEquiv(result, ref)
+  }
+
+  test("ISTORE_<n> all") {
+    val myudf: () => Int = () => {
+      var myInt : Int = 1
+      var myInt2 : Int = 1
+      var myInt3 : Int = myInt
+      var myInt4 : Int = myInt * myInt3
+      myInt4
+    }
+    val dataset = List(1).toDS()
+    val u = makeUdf(myudf)
+    val result = dataset.withColumn("new", u())
+    val ref = dataset.withColumn("new",lit(1))
+    checkEquiv(result, ref)
+  }
+
+  test("DSTORE_<n> even") {
+    val myudf: () => Double = () => {
+      var myDoub : Double = 0.0
+      var myDoub2 : Double = 1.0 - myDoub
+      myDoub2
+    }
+    val dataset = List(1).toDS()
+    val u = makeUdf(myudf)
+    val result = dataset.withColumn("new", u())
+    val ref = dataset.withColumn("new",lit(1.0))
+    checkEquiv(result, ref)
+  }
+
+  test("DSTORE_<n> odd") {
+    val myudf: (Int) => Double = (a) => {
+      var myDoub : Double = 1.0
+      var myDoub2 : Double = 1.0 * myDoub
+      myDoub2
+    }
+    val dataset = List(1).toDS()
+    val u = makeUdf(myudf)
+    val result = dataset.withColumn("new", u(col("value")))
+    val ref = dataset.withColumn("new",lit(1.0))
+    checkEquiv(result, ref)
+  }
+
+  test("ALOAD_0") {
+    val myudf: (String,String,String,String) => String = (a,b,c,d) => {
+      a
+    }
+    val dataset = List(("a","b","c","d")).toDF("x","y","z","w")
+    val u = makeUdf(myudf)
+    val result = dataset.withColumn("new",u(col("x"),col("y"),col("z"),col("w")))
+    val ref = dataset.withColumn("new",col("x"))
+    checkEquiv(result, ref)
+  }
+
+  test("ALOAD_1") {
+    val myudf: (String,String,String,String) => String = (a,b,c,d) => {
+      b
+    }
+    val dataset = List(("a","b","c","d")).toDF("x","y","z","w")
+    val u = makeUdf(myudf)
+    val result = dataset.withColumn("new",u(col("x"),col("y"),col("z"),col("w")))
+    val ref = dataset.withColumn("new",col("y"))
+    checkEquiv(result, ref)
+  }
+
+  test("ALOAD_2") {
+    val myudf: (String,String,String,String) => String = (a,b,c,d) => {
+      c
+    }
+    val dataset = List(("a","b","c","d")).toDF("x","y","z","w")
+    val u = makeUdf(myudf)
+    val result = dataset.withColumn("new",u(col("x"),col("y"),col("z"),col("w")))
+    val ref = dataset.withColumn("new",col("z"))
+    checkEquiv(result, ref)
+  }
+
+  test("ALOAD_3") {
+    val myudf: (String,String,String,String) => String = (a,b,c,d) => {
+      d
+    }
+    val dataset = List(("a","b","c","d")).toDF("x","y","z","w")
+    val u = makeUdf(myudf)
+    val result = dataset.withColumn("new",u(col("x"),col("y"),col("z"),col("w")))
+    val ref = dataset.withColumn("new",col("w"))
+    checkEquiv(result, ref)
+  }
+
+  test("ASTORE_1,2,3") {
+    val myudf: (String) => String = (a) => {
+      val myString : String = a
+      val myString2 : String = myString
+      val myString3 : String = myString2
+      myString3
+    }
+    val dataset = List("a").toDS()
+    val u = makeUdf(myudf)
+    val result = dataset.withColumn("new",u(col("value")))
+    val ref = dataset.withColumn("new",col("value"))
+    checkEquiv(result, ref)
+  }
+
+  test("FSTORE_1,2,3") {
+    val myudf: (Float) => Float = (a) => {
+      var myFloat : Float = a
+      var myFloat2 : Float = myFloat + a
+      var myFloat3 : Float = myFloat2 + a
+      myFloat3
+    }
+    val dataset = List(5.0f).toDS()
+    val u = makeUdf(myudf)
+    val result = dataset.withColumn("new", u(col("value")))
+    val ref = dataset.withColumn("new",col("value")*3)
+    checkEquiv(result, ref)
+  }
+
+
+  test("LSTORE_2") {
+    val myudf: (Long) => Long = (a) => {
+      var myLong : Long = a
+      myLong
+    }
+    val dataset = List(5L).toDS()
+    val u = makeUdf(myudf)
+    val result = dataset.withColumn("new", u(col("value")))
+    val ref = dataset.withColumn("new",col("value"))
+    checkEquiv(result, ref)
+  }
+
+  test("LSTORE_3") {
+    val myudf: (Int, Long) => Long = (a,b) => {
+      var myLong : Long = b
+      myLong
+    }
+    val dataset = List((1,5L)).toDF("x","y")
+    val u = makeUdf(myudf)
+    val result = dataset.withColumn("new", u(col("x"),col("y")))
+    val ref = dataset.withColumn("new",col("y"))
+    checkEquiv(result, ref)
+  }
+
+  test("Boolean check") {
+    val myudf: () => Boolean = () => {
+      var myBool : Boolean = true
+      myBool
+    }
+    val dataset = List(true).toDS()
+    val u = makeUdf(myudf)
+    val result = dataset.withColumn("new",u())
+    val ref = dataset.withColumn("new",lit(true))
+    checkEquiv(result, ref)
+  }
+
+  // the test covers the functionality of LDC as well as ASTORE_0.
+  test("LDC tests") {
+    // A nested object, LDCTests, is used to ensure ldc is used instead of
+    // ldc_w.
+    // Without this nested object, "a" would be added to the constant pool of
+    // OpcodeSuite, and, depending on the number of entries in the constant
+    // pool, ldc_w might be generated.
+    // With this nested object, we know "a" would be added to the constant pool
+    // of LDCTests and the constant pool of LDCTests is small enough to
+    // guarantee the generation of ldc.
+    object LDCTests {
+      def run(): Unit = {
+        val myudf: () => (String) = () => {
+          val myString : String = "a"
+          myString
+        }
+        val u = makeUdf(myudf)
+        val dataset = List("a").toDS()
+        val result = dataset.withColumn("new", u())
+        val ref = dataset.withColumn("new",lit("a"))
+        checkEquiv(result, ref)
+      }
+    }
+    LDCTests.run
+  }
+
+  // this test makes sure we can handle udfs with more than 2 args
+  test("UDF 4 args") {
+    val myudf: (Int, Int, Int, Int) => Int = (w,x,y,z) => { w+x+y+z }
+    val u = makeUdf(myudf)
+    val dataset = List((1,2,3,4),(2,3,4,5),(3,4,5,6),(4,5,6,7)).toDF("x","y","z","w")
+    val result = dataset.withColumn("new", u(col("x"), col("y"), col("z"), col("w")))
+    val ref = dataset.withColumn("new", col("x")+col("y")+col("z")+col("w"))
+    checkEquiv(result, ref)
+  }
+
+  // this test covers getstatic and invokevirtual, shows we can handle math ops (only acos/asin)
+  test("math functions - trig - (a)sin and (a)cos") {
+    val myudf1: Double => Double = x => { math.cos(x) }
+    val u1 = makeUdf(myudf1)
+    val myudf2: Double => Double = x => { math.sin(x) }
+    val u2 = makeUdf(myudf2)
+    val myudf3: Double => Double = x => { math.acos(x) }
+    val u3 = makeUdf(myudf3)
+    val myudf4: Double => Double = x => { math.asin(x) }
+    val u4 = makeUdf(myudf4)
+    val dataset = List(1.0,2.0,3.0).toDS()
+    val result = dataset.withColumn("new", u1('value)+u2('value)+u3('value)+u4('value))
+    val ref = dataset.withColumn("new",
+      cos(col("value"))+sin(col("value"))+acos(col("value"))+asin(col("value")))
+    checkEquiv(result, ref)
+  }
+
+  test("math functions - trig - (a)tan(h) and cosh") {
+    val myudf1: Double => Double = x => { math.tan(x) }
+    val u1 = makeUdf(myudf1)
+    val myudf2: Double => Double = x => { math.atan(x) }
+    val u2 = makeUdf(myudf2)
+    val myudf3: Double => Double = x => { math.cosh(x) }
+    val u3 = makeUdf(myudf3)
+    val myudf4: Double => Double = x => { math.tanh(x) }
+    val u4 = makeUdf(myudf4)
+    val dataset = List(1.0,2.0,3.0).toDS()
+    val result = dataset.withColumn("new", u1('value)+u2('value)+u3('value)+u4('value))
+    val ref = dataset.withColumn("new",
+      tan(col("value")) + atan(col("value")) + cosh(col("value")) + tanh(col("value")))
+    checkEquiv(result, ref)
+  }
+
+  test("math functions - abs, ceil, floor") {
+    val myudf1: Double => Double = x => { math.abs(x) }
+    val u1 = makeUdf(myudf1)
+    val myudf2: Double => Double = x => { math.ceil(x) }
+    val u2 = makeUdf(myudf2)
+    val myudf3: Double => Double = x => { math.floor(x) }
+    val u3 = makeUdf(myudf3)
+    val dataset = List(-0.5,0.5).toDS()
+    val result = dataset.withColumn("new", u2(u1('value))+u3(u1('value)))
+    val ref = dataset.withColumn("new", ceil(abs(col("value"))) + floor(abs(col("value"))))
+    checkEquiv(result, ref)
+  }
+
+  test("math functions - exp, log, log10, sqrt") {
+    val myudf1: Double => Double = x => { math.exp(x) }
+    val u1 = makeUdf(myudf1)
+    val myudf2: Double => Double = x => { math.log(x) }
+    val u2 = makeUdf(myudf2)
+    val myudf3: Double => Double = x => { math.log10(x) }
+    val u3 = makeUdf(myudf3)
+    val myudf4: Double => Double = x => { math.sqrt(x) }
+    val u4 = makeUdf(myudf4)
+    val dataset = List(2.0,5.0).toDS()
+    val result = dataset.withColumn("new", u1('value)+u2('value)+u3('value)+u4('value))
+    val ref = dataset.withColumn("new",
+      exp(col("value"))+logalias(col("value"))+log10(col("value"))+sqrt(col("value")))
+    checkEquiv(result, ref)
+  }
+
+  test("FSTORE_0, LSTORE_1") {
+    val myudf: () => Float = () => {
+      var myFloat : Float = 1.0f
+      var myLong : Long = 1L
+      myFloat
+    }
+    val dataset = List(5.0f).toDS()
+    val u = makeUdf(myudf)
+    val result = dataset.withColumn("new", u())
+    val ref = dataset.withColumn("new",lit(1.0f))
+    checkEquiv(result, ref)
+  }
+
+  test("LSTORE_0") {
+    val myudf: () => Long = () => {
+      var myLong : Long = 1L
+      myLong
+    }
+    val dataset = List(1L).toDS()
+    val u = makeUdf(myudf)
+    val result = dataset.withColumn("new", u())
+    val ref = dataset.withColumn("new",lit(1L))
+    checkEquiv(result, ref)
+  }
+
+  test("ILOAD") {
+    val myudf: (Int, Int, Int, Int, Int, Long, Float, Double) => Int = (a,b,c,d,e,f,g,h) => {
+      e
+    }
+    val u = makeUdf(myudf)
+    val dataset = List((1,2,3,4,5,1L,1.0f,1.0)).toDF("a","b","c","d","e","f","g","h")
+    val result = dataset.withColumn("new",
+      u(col("a"),col("b"),col("c"),col("d"),
+        col("e"),col("f"),col("g"),col("h")))
+    val ref = dataset.withColumn("new", lit(5))
+    checkEquiv(result, ref)
+  }
+
+  test("LLOAD") {
+    val myudf: (Int, Int, Int, Int, Int, Long, Float, Double) => Long = (a,b,c,d,e,f,g,h) => {
+      f
+    }
+    val u = makeUdf(myudf)
+    val dataset = List((1,2,3,4,5,1L,1.0f,1.0)).toDF("a","b","c","d","e","f","g","h")
+    val result = dataset.withColumn("new",
+      u(col("a"),col("b"),col("c"),col("d"),
+        col("e"),col("f"),col("g"),col("h")))
+    val ref = dataset.withColumn("new", lit(1L))
+    checkEquiv(result, ref)
+  }
+
+  test("FLOAD") {
+    val myudf: (Int, Int, Int, Int, Int, Long, Float, Double) => Float = (a,b,c,d,e,f,g,h) => {
+      g
+    }
+    val u = makeUdf(myudf)
+    val dataset = List((1,2,3,4,5,1L,1.0f,1.0)).toDF("a","b","c","d","e","f","g","h")
+    val result = dataset.withColumn("new",
+      u(col("a"),col("b"),col("c"),col("d"),
+        col("e"),col("f"),col("g"),col("h")))
+    val ref = dataset.withColumn("new", lit(1.0f))
+    checkEquiv(result, ref)
+  }
+
+  test("DLOAD") {
+    val myudf: (Int, Int, Int, Int, Int, Long, Float, Double) => Double = (a,b,c,d,e,f,g,h) => {
+      h
+    }
+    val u = makeUdf(myudf)
+    val dataset = List((1,2,3,4,5,1L,1.0f,1.0)).toDF("a","b","c","d","e","f","g","h")
+    val result = dataset.withColumn("new",
+      u(col("a"),col("b"),col("c"),col("d"),
+        col("e"),col("f"),col("g"),col("h")))
+    val ref = dataset.withColumn("new", lit(1.0))
+    checkEquiv(result, ref)
+  }
+
+  test("Cast Double to Int") {
+    val myudf: () => Int = () => {
+      var myVar : Double = 0.0
+      myVar = myVar + 1.0
+      val myVar2 : Int = myVar.toInt
+      myVar2
+    }
+    val u = makeUdf(myudf)
+    val dataset = List(1).toDS()
+    val result = dataset.withColumn("new", u())
+    val ref = dataset.withColumn("new", lit(1))
+    checkEquiv(result, ref)
+  }
+
+  test("Cast Float to Int") {
+    val myudf: () => Int = () => {
+      var myVar : Float = 0.0f
+      myVar = myVar + 1.0f + 2.0f
+      val myVar2 : Int = myVar.toInt
+      myVar2
+    }
+    val u = makeUdf(myudf)
+    val dataset = List(1).toDS()
+    val result = dataset.withColumn("new", u())
+    val ref = dataset.withColumn("new", lit(3))
+    checkEquiv(result, ref)
+  }
+
+  test("Cast Long to Int") {
+    val myudf: () => Int = () => {
+      var myVar : Long = 0L
+      myVar = myVar + 1L
+      val myVar2 : Int = myVar.toInt
+      myVar2
+    }
+    val u = makeUdf(myudf)
+    val dataset = List(1).toDS()
+    val result = dataset.withColumn("new", u())
+    val ref = dataset.withColumn("new", lit(1L))
+    checkEquiv(result, ref)
+  }
+
+  test("Cast Int to Long") {
+    val myudf: () => Long = () => {
+      var myVar : Int = 0
+      myVar = myVar + 1 + 2 + 3 + 4 + 5
+      val myVar2 : Long = myVar.toLong
+      myVar2
+    }
+    val u = makeUdf(myudf)
+    val dataset = List(1).toDS()
+    val result = dataset.withColumn("new", u())
+    val ref = dataset.withColumn("new", lit(15L))
+    checkEquiv(result, ref)
+  }
+
+  test("Cast Float to Long") {
+    val myudf: () => Long = () => {
+      var myVar : Float = 0.0f
+      myVar = myVar + 1.0f + 2.0f
+      val myVar2 : Long = myVar.toLong
+      myVar2
+    }
+    val u = makeUdf(myudf)
+    val dataset = List(1).toDS()
+    val result = dataset.withColumn("new", u())
+    val ref = dataset.withColumn("new", lit(3L))
+    checkEquiv(result, ref)
+  }
+
+  test("Cast Double to Long") {
+    val myudf: () => Long = () => {
+      var myVar : Double = 0.0
+      myVar = myVar + 1.0
+      val myVar2 : Long = myVar.toLong
+      myVar2
+    }
+    val u = makeUdf(myudf)
+    val dataset = List(1).toDS()
+    val result = dataset.withColumn("new", u())
+    val ref = dataset.withColumn("new", lit(1L))
+    checkEquiv(result, ref)
+  }
+
+
+  test("Cast Int to Float") {
+    val myudf: () => Float = () => {
+      var myVar : Int = 0
+      myVar = myVar + 1 + 2 + 3 + 4 + 5
+      val myVar2 : Float = myVar.toFloat
+      myVar2
+    }
+    val u = makeUdf(myudf)
+    val dataset = List(1).toDS()
+    val result = dataset.withColumn("new", u())
+    val ref = dataset.withColumn("new", lit(15.0f))
+    checkEquiv(result, ref)
+  }
+
+  test("Cast Long to Float") {
+    val myudf: () => Float = () => {
+      var myVar : Long = 0L
+      myVar = myVar + 1L
+      val myVar2 : Float = myVar.toFloat
+      myVar2
+    }
+    val u = makeUdf(myudf)
+    val dataset = List(1).toDS()
+    val result = dataset.withColumn("new", u())
+    val ref = dataset.withColumn("new", lit(1.0f))
+    checkEquiv(result, ref)
+  }
+
+  test("Cast Double to Float") {
+    val myudf: () => Float = () => {
+      var myVar : Double = 0.0
+      myVar = myVar + 1.0
+      val myVar2 : Float = myVar.toFloat
+      myVar2
+    }
+    val u = makeUdf(myudf)
+    val dataset = List(1).toDS()
+    val result = dataset.withColumn("new", u())
+    val ref = dataset.withColumn("new", lit(1.0f))
+    checkEquiv(result, ref)
+  }
+
+  test("Cast Int to Double") {
+    val myudf: () => Double = () => {
+      var myVar : Int = 0
+      myVar = myVar + 1 + 2 + 3 + 4 + 5
+      val myVar2 : Double = myVar.toDouble
+      myVar2
+    }
+    val u = makeUdf(myudf)
+    val dataset = List(1).toDS()
+    val result = dataset.withColumn("new", u())
+    val ref = dataset.withColumn("new", lit(15.0))
+    checkEquiv(result, ref)
+  }
+
+  test("Cast Long to Double") {
+    val myudf: () => Double = () => {
+      var myVar : Long = 0L
+      myVar = myVar + 1L
+      val myVar2 : Double = myVar.toDouble
+      myVar2
+    }
+    val u = makeUdf(myudf)
+    val dataset = List(1).toDS()
+    val result = dataset.withColumn("new", u())
+    val ref = dataset.withColumn("new", lit(1.0))
+    checkEquiv(result, ref)
+  }
+
+  test("Cast Float to Double") {
+    val myudf: () => Double = () => {
+      var myVar : Float = 0.0f
+      myVar = myVar + 1.0f + 2.0f
+      val myVar2 : Double = myVar.toDouble
+      myVar2
+    }
+    val u = makeUdf(myudf)
+    val dataset = List(1).toDS()
+    val result = dataset.withColumn("new", u())
+    val ref = dataset.withColumn("new", lit(3.0))
+    checkEquiv(result, ref)
+  }
+
+
+  test("Cast Int to Short") {
+    val myudf: () => Short = () => {
+      var myVar : Int = 1
+      val myVar2 : Short = myVar.toShort
+      myVar2
+    }
+    val u = makeUdf(myudf)
+    val myShort : Short = 1
+    val dataset = List(1).toDS()
+    val result = dataset.withColumn("new", u())
+    val ref = dataset.withColumn("new", lit(myShort))
+    checkEquiv(result, ref)
+  }
+
+  test("Cast Int to Byte") {
+    val myudf: () => Byte = () => {
+      var myVar : Int = 1
+      val myVar2 : Byte = myVar.toByte
+      myVar2
+    }
+    val u = makeUdf(myudf)
+    val myByte : Byte = 1
+    val dataset = List(1).toDS()
+    val result = dataset.withColumn("new", u())
+    val ref = dataset.withColumn("new", lit(myByte))
+    checkEquiv(result, ref)
+  }
+
+  test("ALOAD opcode") {
+    val myudf: (Int, Int, Int, Int, String) => String = (a,b,c,d,e) => {
+      e
+    }
+    val u = makeUdf(myudf)
+    val dataset = List((1,2,3,4,"a")).toDF("x","y","z","w","a")
+    val result = dataset.withColumn("new", u(col("x"),col("y"),col("z"),col("w"),col("a")))
+    val ref = dataset.withColumn("new", lit("a"))
+    checkEquiv(result, ref)
+  }
+
+  test("IFNONNULL opcode") {
+    val myudf: (String, String) => String = (a,b) => {
+      if (null==a) {
+        a
+      } else {
+        b
+      }
+    }
+    val u = makeUdf(myudf)
+    val dataset = List(("","z")).toDF("x","y")
+    val result = dataset.withColumn("new", u(col("x"),col("y")))
+    val ref = dataset.withColumn("new", lit("z"))
+    checkEquiv(result, ref)
+  }
+
+  test("IFNULL opcode") {
+    val myudf: (String, String) => String = (a,b) => {
+      if (null!=a) {
+        b
+      } else {
+        a
+      }
+    }
+    val u = makeUdf(myudf)
+    val dataset = List(("","z")).toDF("x","y")
+    val result = dataset.withColumn("new", u(col("x"),col("y")))
+    val ref = dataset.withColumn("new", lit("z"))
+    checkEquiv(result, ref)
+  }
+
+  test("IFNE opcode") {
+    val myudf: (Double, Double) => Double = (a,b) => {
+      if (a==b) {
+        b
+      } else {
+        a
+      }
+    }
+    val u = makeUdf(myudf)
+    val dataset = List((1.0,2.0)).toDF("x","y")
+    val result = dataset.withColumn("new", u(col("x"),col("y")))
+    val ref = dataset.withColumn("new", lit(1.0))
+    checkEquiv(result, ref)
+  }
+
+  test("IFEQ opcode") {
+    val myudf: (Double, Double) => Double = (a,b) => {
+      if (a != b) {
+        b
+      } else {
+        a
+      }
+    }
+    val u = makeUdf(myudf)
+    val dataset = List((1.0,2.0)).toDF("x","y")
+    val result = dataset.withColumn("new", u(col("x"),col("y")))
+    val ref = dataset.withColumn("new", lit(2.0))
+    checkEquiv(result, ref)
+  }
+
+  test("LDC_W opcode") {
+    val myudf: () => String = () => {
+      val myString : String = "a"
+      myString
+    }
+    val u = makeUdf(myudf)
+    val dataset = List(1.0).toDS()
+    val result = dataset.withColumn("new", u())
+    val ref = dataset.withColumn("new", lit("a"))
+    checkEquiv(result, ref)
+  }
+
+  test("DUP opcode") {
+    val myudf: (Int) => Int = (a) => {
+      val mine : Int = (a + a)*a
+      val mine2 : Int = a*mine + a
+      mine2
+    }
+    val u = makeUdf(myudf)
+    val dataset = List(2).toDS()
+    val result = dataset.withColumn("new", u('value))
+    val ref = dataset.withColumn("new", lit(18))
+    checkEquiv(result, ref)
+  }
+
+  test("FALLBACK TO CPU: math functions - unsupported") {
+    val myudf1: Double => Double = x => { math.log1p(x) }
+    val u1 = makeUdf(myudf1)
+    val dataset = List(2.0,5.0).toDS()
+    val result = dataset.withColumn("new", u1('value))
+    val ref = dataset.withColumn("new", logalias(col("value")+1.0))
+    checkEquivNotCompiled(result, ref)
+  }
+
+  test("conditional doubles test2") {
+    val myudf: Double => Double = { x =>
+      val t =
+        if (x < 2.0 && x < 3.7) {
+          5.0
+        } else {
+          6.0
+        }
+      t + 2.2
+    }
+    val u = makeUdf(myudf)
+    val dataset = List(1.0).toDS()
+    val result = dataset.withColumn("new", u('value))
+    val ref = dataset.withColumn("new", lit(7.2))
+    checkEquiv(result, ref)
+    val dataset2 = List(3.0).toDS()
+    val result2 = dataset2.withColumn("new", u('value))
+    val ref2 = dataset2.withColumn("new", lit(8.2))
+    checkEquiv(result2, ref2)
+  }
+
+  test("conditional doubles test3") {
+    val myudf: Double => Double = { x =>
+      val t =
+        if (x <= 2.0 && x <= 3.7) {
+          5.0
+        } else {
+          6.0
+        }
+      t + 2.2
+    }
+    val u = makeUdf(myudf)
+    val dataset = List(1.0).toDS()
+    val result = dataset.withColumn("new", u('value))
+    val ref = dataset.withColumn("new", lit(7.2))
+    checkEquiv(result, ref)
+    val dataset2 = List(3.0).toDS()
+    val result2 = dataset2.withColumn("new", u('value))
+    val ref2 = dataset2.withColumn("new", lit(8.2))
+    checkEquiv(result2, ref2)
+  }
+
+  test("conditional doubles test4") {
+    val myudf: Double => Double = { x =>
+      val t =
+        if (x > 2.0 && x >= 3.7) {
+          5.0
+        } else {
+          6.0
+        }
+      t + 2.2
+    }
+    val u = makeUdf(myudf)
+    val dataset = List(1.0).toDS()
+    val result = dataset.withColumn("new", u('value))
+    val ref = dataset.withColumn("new", lit(8.2))
+    checkEquiv(result, ref)
+    val dataset2 = List(4.0).toDS()
+    val result2 = dataset2.withColumn("new", u('value))
+    val ref2 = dataset2.withColumn("new", lit(7.2))
+    checkEquiv(result2, ref2)
+  }
+
+  test("conditional ints test2") {
+    val myudf: Int => Int = { x =>
+      val t =
+        if (x > 1 && x <= 3) {
+          (if (x >= 2 && x < 3) 0 else 1) + 2
+        } else {
+          if (x != 1) 3 else 4
+        }
+      t + 5
+    }
+    val u = makeUdf(myudf)
+    val dataset = List(1).toDS()
+    val result = dataset.withColumn("new", u('value))
+    val ref = dataset.withColumn("new", lit(9))
+    checkEquiv(result, ref)
+    val dataset2 = List(2).toDS()
+    val result2 = dataset2.withColumn("new", u('value))
+    val ref2 = dataset2.withColumn("new", lit(7))
+    checkEquiv(result2, ref2)
+  }
+
+  test("conditional ints test3") {
+    val myudf: Int => Int = { x =>
+      val t =
+        if (x > 1 && x <= 3) {
+          (if (x >= 2 && x < 3) -1 else 1) + 2
+        } else {
+          if (x == 1) 3 else 4
+        }
+      t + 5
+    }
+    val u = makeUdf(myudf)
+    val dataset = List(1).toDS()
+    val result = dataset.withColumn("new", u('value))
+    val ref = dataset.withColumn("new", lit(8))
+    checkEquiv(result, ref)
+    val dataset2 = List(2).toDS()
+    val result2 = dataset2.withColumn("new", u('value))
+    val ref2 = dataset2.withColumn("new", lit(6))
+    checkEquiv(result2, ref2)
+  }
+
+  test("double div and mod") {
+    val myudf: Double => Double = { x =>
+      val ret : Double = (-x / 2.0) % 2.0
+      ret
+    }
+    val u = makeUdf(myudf)
+    val dataset = List(-8.0).toDS()
+    val result = dataset.withColumn("new", u('value))
+    val ref = dataset.withColumn("new", lit(0.0))
+    checkEquiv(result, ref)
+    val dataset2 = List(-9.0).toDS()
+    val result2 = dataset2.withColumn("new", u('value))
+    val ref2 = dataset2.withColumn("new", lit(0.5))
+    checkEquiv(result2, ref2)
+  }
+
+  test("float div and mod") {
+    val myudf: Float => Float = { x =>
+      val temp1 : Float = -x / 2.0f
+      val ret : Float = temp1 % 2.0f
+      ret
+    }
+    val u = makeUdf(myudf)
+    val dataset = List(-8.0f).toDS()
+    val result = dataset.withColumn("new", u('value))
+    val ref = dataset.withColumn("new", lit(0.0f))
+    checkEquiv(result, ref)
+    val dataset2 = List(-9.0f).toDS()
+    val result2 = dataset2.withColumn("new", u('value))
+    val ref2 = dataset2.withColumn("new", lit(0.5f))
+    checkEquiv(result2, ref2)
+  }
+
+
+  test("int div and mod") {
+    val myudf: Int => Int = { x =>
+      val temp1 : Int = -x / 2
+      val ret : Int = temp1 % 2
+      ret
+    }
+    val u = makeUdf(myudf)
+    val dataset = List(-8).toDS()
+    val result = dataset.withColumn("new", u('value))
+    val ref = dataset.withColumn("new", lit(0))
+    checkEquiv(result, ref)
+    val dataset2 = List(-10).toDS()
+    val result2 = dataset2.withColumn("new", u('value))
+    val ref2 = dataset2.withColumn("new", lit(1))
+    checkEquiv(result2, ref2)
+  }
+
+  test("long div and mod") {
+    val myudf: Long => Long = { x =>
+      val temp1 : Long = -x / 2
+      val ret : Long = temp1 % 2
+      ret
+    }
+    val u = makeUdf(myudf)
+    val dataset = List(-8L).toDS()
+    val result = dataset.withColumn("new", u('value))
+    val ref = dataset.withColumn("new", lit(0L))
+    checkEquiv(result, ref)
+    val dataset2 = List(-10L).toDS()
+    val result2 = dataset2.withColumn("new", u('value))
+    val ref2 = dataset2.withColumn("new", lit(1L))
+    checkEquiv(result2, ref2)
+  }
+
+  test("int bitwise") {
+    val myudf: Int => Int = { x =>
+      val temp2 : Int = (x >> 2) >>> 1
+      val temp3 : Int = temp2 << 1
+      val ret : Int = x & (x | (temp2 ^ temp3))
+      ret
+    }
+    val u = makeUdf(myudf)
+    val dataset = List(16).toDS()
+    val result = dataset.withColumn("new", u('value))
+    val ref = dataset.withColumn("new", lit(16))
+    checkEquiv(result, ref)
+  }
+
+  test("long bitwise") {
+    val myudf: Long => Long = { x =>
+      val ret : Long = x & (x | ((x >> 2) >>> 1 ^ (x >> 2) >>> 1 << 1))
+      ret
+    }
+    val u = makeUdf(myudf)
+    val dataset = List(16L).toDS()
+    val result = dataset.withColumn("new", u('value))
+    val ref = dataset.withColumn("new", lit(16L))
+    checkEquiv(result, ref)
+  }
+
+  test("TABLESWITCH TEST") {
+    val myudf: (Int) => Int = a => {
+      a match {
+        case 2 => a+a;
+        case 3 => a*a;
+        case _ => a-a
+      }
+    }
+
+    val u = makeUdf(myudf)
+    val dataset = List(2).toDS()
+    val result = dataset.withColumn("new", u('value))
+    val ref = dataset.withColumn("new", lit(4))
+    checkEquiv(result, ref)
+    val dataset2 = List(3).toDS()
+    val result2 = dataset2.withColumn("new", u('value))
+    val ref2 = dataset2.withColumn("new", lit(9))
+    checkEquiv(result2, ref2)
+    val dataset3 = List(4).toDS()
+    val result3 = dataset3.withColumn("new", u('value))
+    val ref3 = dataset3.withColumn("new", lit(0))
+    checkEquiv(result3, ref3)
+  }
+
+  test("LOOKUPSWITCH TEST") {
+    val myudf: (Int) => Int = a => {
+      a match {
+        case 1 => a+a;
+        case 100 => a*a;
+        case _ => a-a
+      }
+    }
+
+    val u = makeUdf(myudf)
+    val dataset = List(1).toDS()
+    val result = dataset.withColumn("new", u('value))
+    val ref = dataset.withColumn("new", lit(2))
+    checkEquiv(result, ref)
+    val dataset2 = List(100).toDS()
+    val result2 = dataset2.withColumn("new", u('value))
+    val ref2 = dataset2.withColumn("new", lit(10000))
+    checkEquiv(result2, ref2)
+    val dataset3 = List(4).toDS()
+    val result3 = dataset3.withColumn("new", u('value))
+    val ref3 = dataset3.withColumn("new", lit(0))
+    checkEquiv(result3, ref3)
+  }
+
+  test("float constant in a function call") {
+    val myudf: (Float) => Float = x => {
+      val myFloat : Float = math.abs(-2.0f)
+      myFloat
+    }
+    val u = makeUdf(myudf)
+    val dataset = List(1.0f).toDS()
+    val result = dataset.withColumn("new", u('value))
+    val ref = dataset.withColumn("new", lit(2.0f))
+    checkEquiv(result, ref)
+  }
+
+  test("int constant in a function call") {
+    val myudf: (Int) => Int = x => {
+      val myInt : Int = math.abs(-2)
+      myInt
+    }
+    val u = makeUdf(myudf)
+    val dataset = List(1).toDS()
+    val result = dataset.withColumn("new", u('value))
+    val ref = dataset.withColumn("new", lit(2))
+    checkEquiv(result, ref)
+  }
+
+  test("conditional ints - AND(LT,LT)") {
+    val myudf: Int => Int = { x =>
+      val t =
+        if (x < 1 && x < 3) {
+          2
+        } else {
+          3
+        }
+      t + 5
+    }
+    val u = makeUdf(myudf)
+    val dataset = List(0).toDS()
+    val result = dataset.withColumn("new", u('value))
+    val ref = dataset.withColumn("new", lit(7))
+    checkEquiv(result, ref)
+    val dataset2 = List(2).toDS()
+    val result2 = dataset2.withColumn("new", u('value))
+    val ref2 = dataset2.withColumn("new", lit(8))
+    checkEquiv(result2, ref2)
+  }
+
+  test("conditional ints - AND(LTE,LTE)") {
+    val myudf: Int => Int = { x =>
+      val t =
+        if (x <= 1 && x <= 3) {
+          2
+        } else {
+          3
+        }
+      t + 5
+    }
+    val u = makeUdf(myudf)
+    val dataset = List(1).toDS()
+    val result = dataset.withColumn("new", u('value))
+    val ref = dataset.withColumn("new", lit(7))
+    checkEquiv(result, ref)
+    val dataset2 = List(2).toDS()
+    val result2 = dataset2.withColumn("new", u('value))
+    val ref2 = dataset2.withColumn("new", lit(8))
+    checkEquiv(result2, ref2)
+  }
+
+  test("conditional ints - AND(LTE,LT)") {
+    val myudf: Int => Int = { x =>
+      val t =
+        if (x <= 1 && x < 3) {
+          2
+        } else {
+          3
+        }
+      t + 5
+    }
+    val u = makeUdf(myudf)
+    val dataset = List(1).toDS()
+    val result = dataset.withColumn("new", u('value))
+    val ref = dataset.withColumn("new", lit(7))
+    checkEquiv(result, ref)
+    val dataset2 = List(2).toDS()
+    val result2 = dataset2.withColumn("new", u('value))
+    val ref2 = dataset2.withColumn("new", lit(8))
+    checkEquiv(result2, ref2)
+  }
+
+  test("conditional ints - AND(GT,GT)") {
+    val myudf: Int => Int = { x =>
+      val t =
+        if (x > 1 && x > 3) {
+          2
+        } else {
+          3
+        }
+      t + 5
+    }
+    val u = makeUdf(myudf)
+    val dataset = List(0).toDS()
+    val result = dataset.withColumn("new", u('value))
+    val ref = dataset.withColumn("new", lit(8))
+    checkEquiv(result, ref)
+    val dataset2 = List(4).toDS()
+    val result2 = dataset2.withColumn("new", u('value))
+    val ref2 = dataset2.withColumn("new", lit(7))
+    checkEquiv(result2, ref2)
+  }
+
+
+  test("conditional ints - AND(GT,GTE)") {
+    val myudf: Int => Int = { x =>
+      val t =
+        if (x > 1 && x >= 3) {
+          2
+        } else {
+          3
+        }
+      t + 5
+    }
+    val u = makeUdf(myudf)
+    val dataset = List(0).toDS()
+    val result = dataset.withColumn("new", u('value))
+    val ref = dataset.withColumn("new", lit(8))
+    checkEquiv(result, ref)
+    val dataset2 = List(3).toDS()
+    val result2 = dataset2.withColumn("new", u('value))
+    val ref2 = dataset2.withColumn("new", lit(7))
+    checkEquiv(result2, ref2)
+  }
+
+  test("conditional ints - OR(GT,GTE)") {
+    val myudf: Int => Int = { x =>
+      val t =
+        if (x < 1 && x <= 3) {
+          2
+        } else {
+          3
+        }
+      t + 5
+    }
+    val u = makeUdf(myudf)
+    val dataset = List(0).toDS()
+    val result = dataset.withColumn("new", u('value))
+    val ref = dataset.withColumn("new", lit(7))
+    checkEquiv(result, ref)
+    val dataset2 = List(4).toDS()
+    val result2 = dataset2.withColumn("new", u('value))
+    val ref2 = dataset2.withColumn("new", lit(8))
+    checkEquiv(result2, ref2)
+  }
+
+  test("conditional longs - AND(LT,LT)") {
+    val myudf: Long => Long = { x =>
+      val t =
+        if (x < 1L && x < 3L) {
+          2L
+        } else {
+          3L
+        }
+      t + 5L
+    }
+    val u = makeUdf(myudf)
+    val dataset = List(0L).toDS()
+    val result = dataset.withColumn("new", u('value))
+    val ref = dataset.withColumn("new", lit(7L))
+    checkEquiv(result, ref)
+    val dataset2 = List(2L).toDS()
+    val result2 = dataset2.withColumn("new", u('value))
+    val ref2 = dataset2.withColumn("new", lit(8L))
+    checkEquiv(result2, ref2)
+  }
+
+  test("conditional longs - AND(LTE,LTE)") {
+    val myudf: Long => Long = { x =>
+      val t =
+        if (x <= 1L && x <= 3L) {
+          2L
+        } else {
+          3L
+        }
+      t + 5L
+    }
+    val u = makeUdf(myudf)
+    val dataset = List(1L).toDS()
+    val result = dataset.withColumn("new", u('value))
+    val ref = dataset.withColumn("new", lit(7L))
+    checkEquiv(result, ref)
+    val dataset2 = List(2L).toDS()
+    val result2 = dataset2.withColumn("new", u('value))
+    val ref2 = dataset2.withColumn("new", lit(8L))
+    checkEquiv(result2, ref2)
+  }
+
+  test("conditional longs - AND(LTE,LT)") {
+    val myudf: Long => Long = { x =>
+      val t =
+        if (x <= 1L && x < 3L) {
+          2L
+        } else {
+          3L
+        }
+      t + 5L
+    }
+    val u = makeUdf(myudf)
+    val dataset = List(1L).toDS()
+    val result = dataset.withColumn("new", u('value))
+    val ref = dataset.withColumn("new", lit(7L))
+    checkEquiv(result, ref)
+    val dataset2 = List(2L).toDS()
+    val result2 = dataset2.withColumn("new", u('value))
+    val ref2 = dataset2.withColumn("new", lit(8L))
+    checkEquiv(result2, ref2)
+  }
+
+  test("conditional longs - AND(GT,GT)") {
+    val myudf: Long => Long = { x =>
+      val t =
+        if (x > 1L && x > 3L) {
+          2L
+        } else {
+          3L
+        }
+      t + 5L
+    }
+    val u = makeUdf(myudf)
+    val dataset = List(0L).toDS()
+    val result = dataset.withColumn("new", u('value))
+    val ref = dataset.withColumn("new", lit(8L))
+    checkEquiv(result, ref)
+    val dataset2 = List(4L).toDS()
+    val result2 = dataset2.withColumn("new", u('value))
+    val ref2 = dataset2.withColumn("new", lit(7L))
+    checkEquiv(result2, ref2)
+  }
+
+  test("conditional longs - AND(GT,GTE)") {
+    val myudf: Long => Long = { x =>
+      val t =
+        if (x > 1L && x >= 3L) {
+          2L
+        } else {
+          3L
+        }
+      t + 5L
+    }
+    val u = makeUdf(myudf)
+    val dataset = List(0L).toDS()
+    val result = dataset.withColumn("new", u('value))
+    val ref = dataset.withColumn("new", lit(8L))
+    checkEquiv(result, ref)
+    val dataset2 = List(3L).toDS()
+    val result2 = dataset2.withColumn("new", u('value))
+    val ref2 = dataset2.withColumn("new", lit(7L))
+    checkEquiv(result2, ref2)
+  }
+
+  test("conditional longs - OR(GT,GTE)") {
+    val myudf: Long => Long = { x =>
+      val t =
+        if (x < 1L && x <= 3L) {
+          2L
+        } else {
+          3L
+        }
+      t + 5L
+    }
+    val u = makeUdf(myudf)
+    val dataset = List(0L).toDS()
+    val result = dataset.withColumn("new", u('value))
+    val ref = dataset.withColumn("new", lit(7L))
+    checkEquiv(result, ref)
+    val dataset2 = List(4L).toDS()
+    val result2 = dataset2.withColumn("new", u('value))
+    val ref2 = dataset2.withColumn("new", lit(8L))
+    checkEquiv(result2, ref2)
+  }
+
+  test("FALLBACK TO CPU: loops - fallback test") {
+    val myudf: (Int, Int) => Int = (a,b) => {
+      var myVar : Int = 0
+      for (indexVar <- a to b){
+        myVar = myVar + 1
+      }
+      myVar
+    }
+    val u = makeUdf(myudf)
+    val dataset = List((1,5)).toDF("x","y")
+    val result = dataset.withColumn("new", u(col("x"),col("y")))
+    val ref = dataset.withColumn("new", lit(5))
+    checkEquivNotCompiled(result, ref)
+  }
+
+  // Tests for string ops
+
+  test("string test - + concat") {
+    val myudf: (String, String) => String = (a,b) => {
+      a+b
+    }
+    val u = makeUdf(myudf)
+    val dataset = List(("Hello"," World"),("Oh"," Hello")).toDF("x","y").repartition(1)
+    val result = dataset.withColumn("new", u(col("x"),col("y")))
+    val ref = dataset.withColumn("new", concat(col("x"),col("y")))
+    checkEquiv(result, ref)
+  }
+
+  test("string test - concat method") {
+    val myudf: (String, String) => String = (a,b) => {
+      a.concat(b)
+    }
+    val u = makeUdf(myudf)
+    val dataset = List(("Hello"," World"),("Oh"," Hello")).toDF("x","y").repartition(1)
+    val result = dataset.withColumn("new", u(col("x"),col("y")))
+    val ref = dataset.withColumn("new", concat(col("x"),col("y")))
+    checkEquiv(result, ref)
+  }
+
+  test("string test - equalsIgnoreCase") {
+    val myudf: (String, String) => Boolean = (a,b) => {
+      a.equalsIgnoreCase(b)
+    }
+    val u = makeUdf(myudf)
+    val dataset = List(("Hello","hELLO"),("helLo","HeLLo")).toDF("x","y").repartition(1)
+    val result = dataset.withColumn("new", u(col("x"),col("y")))
+    val ref = dataset.withColumn("new", upper(col("x")).equalTo(upper(col("y"))))
+    checkEquiv(result, ref)
+  }
+
+  test("string test - toUpperCase") {
+    val myudf: (String) => String = a => {
+      a.toUpperCase()
+    }
+    val u = makeUdf(myudf)
+    val dataset = List("hello").toDF("x").repartition(1)
+    val result = dataset.withColumn("new", u(col("x")))
+    val ref = dataset.withColumn("new", lit("HELLO"))
+    checkEquiv(result, ref)
+  }
+
+  test("string test - toLowerCase") {
+    val myudf: (String) => String = a => {
+      a.toLowerCase()
+    }
+    val u = makeUdf(myudf)
+    val dataset = List("HELLO").toDF("x").repartition(1)
+    val result = dataset.withColumn("new", u(col("x")))
+    val ref = dataset.withColumn("new", lit("hello"))
+    checkEquiv(result, ref)
+  }
+
+  test("string test - trim") {
+    val myudf: (String) => String = a => {
+      a.trim()
+    }
+    val u = makeUdf(myudf)
+    val dataset = List("   hello   ").toDF("x").repartition(1)
+    val result = dataset.withColumn("new", u(col("x")))
+    val ref = dataset.withColumn("new", lit("hello"))
+    checkEquiv(result, ref)
+  }
+
+  test("string test - subtring - start index") {
+    val myudf: (String) => String = a => {
+      a.substring(2)
+    }
+    val u = makeUdf(myudf)
+    val dataset = List("hello").toDF("x").repartition(1)
+    val result = dataset.withColumn("new", u(col("x")))
+    val ref = dataset.withColumn("new", lit("llo"))
+    checkEquiv(result, ref)
+  }
+
+  test("string test - subtring - start and end index") {
+    val myudf: (String) => String = a => {
+      a.substring(2,7)
+    }
+    val u = makeUdf(myudf)
+    val dataset = List("hello sir").toDF("x").repartition(1)
+    val result = dataset.withColumn("new", u(col("x")))
+    val ref = dataset.withColumn("new", lit("llo s"))
+    checkEquiv(result, ref)
+  }
+
+  test("string test - replace character") {
+    val myudf: (String) => String = a => {
+      a.replace("r","s")
+    }
+    val u = makeUdf(myudf)
+    val dataset = List("rocket").toDF("x").repartition(1)
+    val result = dataset.withColumn("new", u(col("x")))
+    val ref = dataset.withColumn("new", lit("socket"))
+    checkEquiv(result, ref)
+  }
+
+  test("string test - replace character sequence") {
+    val myudf: (String) => String = a => {
+      a.replace("r","fr")
+    }
+    val u = makeUdf(myudf)
+    val dataset = List("rocket").toDF("x").repartition(1)
+    val result = dataset.withColumn("new", u(col("x")))
+    val ref = dataset.withColumn("new", lit("frocket"))
+    checkEquiv(result, ref)
+  }
+
+  test("string test - startsWith") {
+    val myudf: (String) => Boolean = a => {
+      a.startsWith("ro")
+    }
+    val u = makeUdf(myudf)
+    val dataset = List("rocket", "frocket").toDF("x").repartition(1)
+    val result = dataset.withColumn("new", u(col("x")))
+    val ref = dataset.withColumn("new", col("x").startsWith("ro"))
+    checkEquiv(result, ref)
+  }
+
+  test("string test - endsWith") {
+    val myudf: (String) => Boolean = a => {
+      a.endsWith("et")
+    }
+    val u = makeUdf(myudf)
+    val dataset = List("rocket", "frocknah").toDF("x").repartition(1)
+    val result = dataset.withColumn("new", u(col("x")))
+    val ref = dataset.withColumn("new", col("x").endsWith("et"))
+    checkEquiv(result, ref)
+  }
+
+  test("string test - equals") {
+    val myudf: (String, String) => Boolean = (a,b) => {
+      a.equals(b)
+    }
+    val u = makeUdf(myudf)
+    val dataset = List(("rocket", "frocket"),("yep", "yep")).toDF("x","y").repartition(1)
+    val result = dataset.withColumn("new", u(col("x"),col("y")))
+    val ref = dataset.withColumn("new", lit(col("x").equalTo(col("y"))))
+    checkEquiv(result, ref)
+  }
+
+  test("string test - length") {
+    val myudf: (String) => Int = a => {
+      a.length()
+    }
+    val u = makeUdf(myudf)
+    val dataset = List("rocket","").toDF("x").repartition(1)
+    val result = dataset.withColumn("new", u(col("x")))
+    val ref = dataset.withColumn("new", length(col("x")))
+    checkEquiv(result, ref)
+  }
+
+  test("string test - isEmpty") {
+    val myudf: (String) => Boolean = a => {
+      a.isEmpty()
+    }
+    val u = makeUdf(myudf)
+    val dataset = List("rocket","").toDF("x").repartition(1)
+    val result = dataset.withColumn("new", u(col("x")))
+    val ref = dataset.withColumn("new", lit(length(col("x")).equalTo(0)))
+    checkEquiv(result, ref)
+  }
+
+  test("string test - valueOf - Boolean") {
+    val myudf: (Boolean) => String = a => {
+      String.valueOf(a)
+    }
+    val u = makeUdf(myudf)
+    val dataset = List(true).toDF("x").repartition(1)
+    val result = dataset.withColumn("new", u(col("x")))
+    val ref = dataset.withColumn("new", lit("true"))
+    checkEquiv(result, ref)
+  }
+
+  test("string test - valueOf - Char") {
+    val myudf: (Char) => String = a => {
+      String.valueOf(a)
+    }
+    val u = makeUdf(myudf)
+    val dataset = List(5).toDF("x").repartition(1)
+    val result = dataset.withColumn("new", u(col("x")))
+    val ref = dataset.withColumn("new", lit("5"))
+    checkEquiv(result, ref)
+  }
+
+  test("string test - valueOf - Double") {
+    val myudf: (Double) => String = a => {
+      String.valueOf(a)
+    }
+    val u = makeUdf(myudf)
+    val dataset = List(2.0).toDF("x").repartition(1)
+    val result = dataset.withColumn("new", u(col("x")))
+    val ref = dataset.withColumn("new", lit("2.0"))
+    checkEquiv(result, ref)
+  }
+
+  test("string test - valueOf - Float") {
+    val myudf: (Float) => String = a => {
+      String.valueOf(a)
+    }
+    val u = makeUdf(myudf)
+    val dataset = List(2.0f).toDF("x").repartition(1)
+    val result = dataset.withColumn("new", u(col("x")))
+    val ref = dataset.withColumn("new", lit("2.0"))
+    checkEquiv(result, ref)
+  }
+
+  test("string test - valueOf - Int") {
+    val myudf: (Int) => String = a => {
+      String.valueOf(a)
+    }
+    val u = makeUdf(myudf)
+    val dataset = List(2).toDF("x").repartition(1)
+    val result = dataset.withColumn("new", u(col("x")))
+    val ref = dataset.withColumn("new", lit("2"))
+    checkEquiv(result, ref)
+  }
+
+  test("string test - valueOf - Long") {
+    val myudf: (Long) => String = a => {
+      String.valueOf(a)
+    }
+    val u = makeUdf(myudf)
+    val dataset = List(2L).toDF("x").repartition(1)
+    val result = dataset.withColumn("new", u(col("x")))
+    val ref = dataset.withColumn("new", lit("2"))
+    checkEquiv(result, ref)
+  }
+
+  test("FALLBACK TO CPU: string test - charAt") {
+    val myudf: (String) => Int = a => {
+      a.charAt(2).toInt
+    }
+    val u = makeUdf(myudf)
+    val dataset = List("mh7mmmm").toDF("x").repartition(1)
+    val result = dataset.withColumn("new", u(col("x")))
+    val ref = dataset.withColumn("new", lit(55)) // utf8 for "7"
+    checkEquivNotCompiled(result, ref)
+  }
+
+  test("string test - contains") {
+    val myudf: (String) => Boolean = a => {
+      a.contains("hmmm")
+    }
+    val u = makeUdf(myudf)
+    val dataset = List("mh7mmmm","mhmmmm").toDF("x").repartition(1)
+    val result = dataset.withColumn("new", u(col("x")))
+    val ref = dataset.withColumn("new", col("x").contains("hmmm"))
+    checkEquiv(result, ref)
+  }
+
+  test("string test - indexOf - case 1 - str,int") {
+    val myudf: (String) => Int = a => {
+      a.indexOf("c",1)
+    }
+    val u = makeUdf(myudf)
+    val dataset = List("abcde").toDF("x").repartition(1)
+    val result = dataset.withColumn("new", u(col("x")))
+    val ref = dataset.withColumn("new",lit(2))
+    checkEquiv(result, ref)
+  }
+
+  test("FALLBACK TO CPU: string test - indexOf - case 2 - char - single quotes,int") {
+    val myudf: (String) => Int = a => {
+      a.indexOf('c',1)
+    }
+    val u = makeUdf(myudf)
+    val dataset = List("abcde").toDF("x").repartition(1)
+    val result = dataset.withColumn("new", u(col("x")))
+    val ref = dataset.withColumn("new",lit(2))
+    checkEquivNotCompiled(result, ref)
+  }
+
+  test("FALLBACK TO CPU: string test - indexOf - case 3 - char - utf value,int") {
+    val myudf: (String) => Int = a => {
+      a.indexOf(99,1)
+    }
+    val u = makeUdf(myudf)
+    val dataset = List("abcde").toDF("x").repartition(1)
+    val result = dataset.withColumn("new", u(col("x")))
+    val ref = dataset.withColumn("new",lit(2))
+    checkEquivNotCompiled(result, ref)
+  }
+
+  test("FALLBACK TO CPU: string test - indexOf - case 4 - char - utf value") {
+    val myudf: (String) => Int = a => {
+      a.indexOf(99)
+    }
+    val u = makeUdf(myudf)
+    val dataset = List("abcde").toDF("x").repartition(1)
+    val result = dataset.withColumn("new", u(col("x")))
+    val ref = dataset.withColumn("new",lit(2))
+    checkEquivNotCompiled(result, ref)
+  }
+
+  test("FALLBACK TO CPU: string test - indexOf - case 5 - char - single quotes") {
+    val myudf: (String) => Int = a => {
+      a.indexOf('c')
+    }
+    val u = makeUdf(myudf)
+    val dataset = List("abcde").toDF("x").repartition(1)
+    val result = dataset.withColumn("new", u(col("x")))
+    val ref = dataset.withColumn("new",lit(2))
+    checkEquivNotCompiled(result, ref)
+  }
+
+  test("string test - indexOf - case 6 - str") {
+    val myudf: (String) => Int = a => {
+      a.indexOf("c")
+    }
+    val u = makeUdf(myudf)
+    val dataset = List("abcde").toDF("x").repartition(1)
+    val result = dataset.withColumn("new", u(col("x")))
+    val ref = dataset.withColumn("new",lit(2))
+    checkEquiv(result, ref)
+  }
+
+  // this test is an expected fallback to JVM execution due to no support for String.codePointAt
+  // method
+  test("FALLBACK TO CPU: string test - codePointAt method. ") {
+    val myudf: (String) => Int = a => {
+      a.codePointAt(2)
+    }
+    val u = makeUdf(myudf)
+    val dataset = List("abcde").toDF("x").repartition(1)
+    val result = dataset.withColumn("new", u(col("x")))
+    val ref = dataset.withColumn("new",lit(99))
+    checkEquivNotCompiled(result, ref)
+  }
+
+  // this test is an expected fallback to JVM execution due to no support for String.matches method
+  test("FALLBACK TO CPU: string test - matches method. ") {
+    val myudf: (String) => Boolean = a => {
+      a.matches("[a-z]*.txt" )
+    }
+    val u = makeUdf(myudf)
+    val dataset = List("thisfile.txt").toDF("x").repartition(1)
+    val result = dataset.withColumn("new", u(col("x")))
+    val ref = dataset.withColumn("new",lit(true))
+    checkEquivNotCompiled(result, ref)
+  }
+
+  test("string test - replaceAll method") {
+    val myudf: (String) => String = a => {
+      a.replaceAll("m{2}.m{2}","replaced")
+    }
+    val u = makeUdf(myudf)
+    val dataset = List("mmhmm.txt").toDF("x").repartition(1)
+    val result = dataset.withColumn("new", u(col("x")))
+    val ref = dataset.withColumn("new",lit("replaced.txt"))
+    checkEquiv(result, ref)
+  }
+
+  test("string test - split method - case 1") {
+    val myudf: (String) => Array[String] = a => {
+      a.split("l{2}.l{2}")
+    }
+    val u = makeUdf(myudf)
+    val dataset = List("firstllollsecond").toDF("x").repartition(1)
+    val result = dataset.withColumn("new", u(col("x")))
+    val ref = dataset.withColumn("new",lit(Array("first","second")))
+    checkEquiv(result, ref)
+  }
+
+  test("string test - split method - case 2") {
+    val myudf: (String) => Array[String] = a => {
+      a.split("l{2}.l{2}",3)
+    }
+    val u = makeUdf(myudf)
+    val dataset = List("firstllollsecondllollthirdllollfourth").toDF("x").repartition(1)
+    val result = dataset.withColumn("new", u(col("x")))
+    val ref = dataset.withColumn("new",lit(Array("first","second","thirdllollfourth")))
+    checkEquiv(result, ref)
+  }
+
+  test("string test - getBytes - case 1 - default platform charset") {
+    val myudf: (String) => Array[Byte] = a => {
+      a.getBytes()
+    }
+    val u = makeUdf(myudf)
+    val dataset = List("this is the string").toDF("x").repartition(1)
+    val result = dataset.withColumn("new", u(col("x")))
+    val ref = dataset.withColumn("new",lit("this is the string".getBytes()))
+    checkEquiv(result, ref)
+  }
+
+  test("string test - getBytes - case 2 - charsetName -- string") {
+    val myudf: (String) => Array[Byte] = a => {
+      a.getBytes("US-ASCII")
+    }
+    val u = makeUdf(myudf)
+    val dataset = List("this is the string").toDF("x").repartition(1)
+    val result = dataset.withColumn("new", u(col("x")))
+    val ref = dataset.withColumn("new",lit("this is the string".getBytes("US-ASCII")))
+    checkEquiv(result, ref)
   }
 }
-
