@@ -528,7 +528,9 @@ object Instruction {
     val opcode: Int = codeIterator.byteAt(offset)
     val operand: Int = opcode match {
       case Opcode.ALOAD | Opcode.DLOAD | Opcode.FLOAD |
-           Opcode.ILOAD | Opcode.LLOAD | Opcode.LDC =>
+           Opcode.ILOAD | Opcode.LLOAD | Opcode.LDC |
+           Opcode.ASTORE | Opcode.DSTORE | Opcode.FSTORE |
+           Opcode.ISTORE | Opcode.LSTORE =>
         codeIterator.byteAt(offset + 1)
       case Opcode.BIPUSH =>
         codeIterator.signedByteAt(offset + 1)
