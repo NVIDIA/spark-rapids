@@ -37,15 +37,15 @@ e.g.
     0.2 -> project: Release 0.2, branch: branch-0.2
 
 Dependencies:
-	- requests
+    - requests
 
 Usage:
     cd spark-rapids/
 
-	# generate changelog for release 0.1,0.2
-	scripts/changelog --token=<GITHUB_PERSONAL_ACCESS_TOKEN> --releases=0.1,0.2
+    # generate changelog for release 0.1,0.2
+    scripts/changelog --token=<GITHUB_PERSONAL_ACCESS_TOKEN> --releases=0.1,0.2
 
-	# generate changelog for release 0.1,0.2 to /tmp/CHANGELOG.md
+    # generate changelog for release 0.1,0.2 to /tmp/CHANGELOG.md
     GITHUB_TOKEN=XXX scripts/changelog --releases=0.1,0.2 --path=/tmp/CHANGELOG.md
 """
 import os
@@ -55,17 +55,6 @@ from collections import OrderedDict
 from datetime import date
 
 import requests
-
-parser = ArgumentParser(description="Changelog Generator")
-parser.add_argument("--releases", help="list of release versions, separated by comma",
-                    default="0.1,0.2")
-parser.add_argument("--token", help="github token, will use GITHUB_TOKEN if empty", default='')
-parser.add_argument("--path", help="path for generated changelog file", default='./CHANGELOG.md')
-args = parser.parse_args()
-
-GITHUB_TOKEN = args.token if args.token else os.environ.get('GITHUB_TOKEN')
-assert GITHUB_TOKEN, 'env GITHUB_TOKEN should not be empty'
-
 
 # Constants
 RELEASE = "Release"
@@ -82,12 +71,7 @@ LABEL_WONTFIX, LABEL_INVALID, LABEL_DUPLICATE = 'wontfix', 'invalid', 'duplicate
 LABEL_BUG = 'bug'
 LABEL_PERFORMANCE, LABEL_SHUFFLE = 'performance', 'shuffle'
 LABEL_FEATURE, LABEL_SQL = 'feature request', 'SQL'
-# Global Vars
-changelog = {}  # changelog dict
-no_project_prs = []  # list of merge pr w/o project
-releases = {x.strip() for x in args.releases.split(',')}
-projects = {f"{RELEASE} {rel}" for rel in releases}
-
+# Queries
 query_pr = """
 query ($baseRefName: String!, $after: String) {
   repository(name: "spark-rapids", owner: "NVIDIA") {
@@ -125,7 +109,6 @@ query ($baseRefName: String!, $after: String) {
   }
 }
 """
-
 query_issue = """
 query ($after: String) {
   repository(name: "spark-rapids", owner: "NVIDIA") {
@@ -163,9 +146,9 @@ query ($after: String) {
 """
 
 
-def process_changelog(resource_type: str):
+def process_changelog(resource_type: str, changelog: dict, releases: set, projects: set, no_project_prs: list):
     if resource_type == PULL_REQUESTS:
-        items = process_pr()
+        items = process_pr(releases)
         time_field = 'mergedAt'
     elif resource_type == ISSUES:
         items = process_issue()
@@ -181,7 +164,7 @@ def process_changelog(resource_type: str):
             continue
 
         project = item['projectCards']['nodes'][0]['project']['name']
-        if not release_project(project):
+        if not release_project(project, projects):
             continue
 
         if project not in changelog:
@@ -211,7 +194,7 @@ def process_changelog(resource_type: str):
         })
 
 
-def process_pr():
+def process_pr(releases: set):
     pr = []
     for rel in releases:
         pr.extend(fetch(PULL_REQUESTS, {'baseRefName': f"branch-{rel}"}))
@@ -222,7 +205,7 @@ def process_issue():
     return fetch(ISSUES)
 
 
-def fetch(resource_type: str, variables=None):
+def fetch(resource_type: str, variables: dict = None):
     items = []
     if resource_type == PULL_REQUESTS and variables:
         q = query_pr
@@ -251,7 +234,7 @@ def post(query: str, variable: dict):
                          headers={"Authorization": f"token {GITHUB_TOKEN}"})
 
 
-def release_project(project_name: str):
+def release_project(project_name: str, projects: set):
     if project_name in projects:
         return True
     return False
@@ -269,7 +252,7 @@ def rules(labels: set):
     return INVALID
 
 
-def form_changelog():
+def form_changelog(path: str, changelog: dict):
     sorted_dict = OrderedDict(sorted(changelog.items(), reverse=True))
     subsections = ""
     for project_name, issues in sorted_dict.items():
@@ -282,7 +265,7 @@ def form_changelog():
 Generated on {date.today()}
 {subsections}
 """
-    with open(args.path, "w") as file:
+    with open(path, "w") as file:
         file.write(markdown)
 
 
@@ -296,31 +279,50 @@ def form_subsection(issues: dict, subtitle: str):
     return subsection
 
 
-def print_no_project_pr():
+def print_no_project_pr(no_project_prs: list):
     if len(no_project_prs) != 0:
         print("Merged Pull Requests w/o Project:")
     for pr in no_project_prs:
         print(f"{pr['baseRefName']} #{pr['number']} {pr['title']} {pr['url']}")
 
 
-def main():
+def main(rels: str, path: str):
     print('Generating changelog ...')
 
     try:
+        changelog = {}  # changelog dict
+        releases = {x.strip() for x in rels.split(',')}
+        projects = {f"{RELEASE} {rel}" for rel in releases}
+        no_project_prs = []  # list of merge pr w/o project
+
         print('Processing pull requests ...')
-        process_changelog(PULL_REQUESTS)
+        process_changelog(resource_type=PULL_REQUESTS, changelog=changelog,
+                          releases=releases, projects=projects,
+                          no_project_prs=no_project_prs)
         print('Processing issues ...')
-        process_changelog(ISSUES)
+        process_changelog(resource_type=ISSUES, changelog=changelog,
+                          releases=releases, projects=projects,
+                          no_project_prs=no_project_prs)
         # form doc
-        form_changelog()
+        form_changelog(path=path, changelog=changelog)
     except Exception as e:  # pylint: disable=broad-except
         print(e)
         sys.exit(1)
 
     print('Done.')
     # post action
-    print_no_project_pr()
+    print_no_project_pr(no_project_prs=no_project_prs)
 
 
 if __name__ == '__main__':
-    main()
+    parser = ArgumentParser(description="Changelog Generator")
+    parser.add_argument("--releases", help="list of release versions, separated by comma",
+                        default="0.1,0.2")
+    parser.add_argument("--token", help="github token, will use GITHUB_TOKEN if empty", default='')
+    parser.add_argument("--path", help="path for generated changelog file", default='./CHANGELOG.md')
+    args = parser.parse_args()
+
+    GITHUB_TOKEN = args.token if args.token else os.environ.get('GITHUB_TOKEN')
+    assert GITHUB_TOKEN, 'env GITHUB_TOKEN should not be empty'
+
+    main(rels=args.releases, path=args.path)
