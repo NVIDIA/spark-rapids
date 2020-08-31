@@ -36,12 +36,17 @@ e.g.
     0.1 -> project: Release 0.1, branch: branch-0.1
     0.2 -> project: Release 0.2, branch: branch-0.2
 
+Dependencies:
+	- requests
+
 Usage:
     cd spark-rapids/
-    # generate changelog for release 0.1,0.2 to ./CHANGELOG.md
-    .github/workflows/changelog/changelog --token=<GITHUB_PERSONAL_ACCESS_TOKEN> --releases=0.1,0.2
-    # generate changelog for release 0.1,0.2 to /tmp/CHANGELOG.md
-    GITHUB_TOKEN=XXX .github/workflows/changelog/changelog --releases=0.1,0.2 --path=/tmp/CHANGELOG.md
+
+	# generate changelog for release 0.1,0.2
+	scripts/changelog --token=<GITHUB_PERSONAL_ACCESS_TOKEN> --releases=0.1,0.2
+
+	# generate changelog for release 0.1,0.2 to /tmp/CHANGELOG.md
+    GITHUB_TOKEN=XXX scripts/changelog --releases=0.1,0.2 --path=/tmp/CHANGELOG.md
 """
 import os
 import sys
