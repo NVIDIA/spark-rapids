@@ -12,11 +12,21 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-FROM python:alpine
+# A workflow to trigger blossom-CI on self-hosted runner
+name: blossom-ci trigger
 
-WORKDIR /
-COPY signoff-check .
-RUN pip install PyGithub && chmod +x /signoff-check
+on:
+  issue_comment:
+    types: [created]
+    
+jobs:
+  build:
+    if: github.event.comment.body == 'build'
+    runs-on: [self-hosted, linux, blossom]
 
-# require envs: OWNER,REPO_NAME,GITHUB_TOKEN,PULL_NUMBER
-ENTRYPOINT ["/signoff-check"]
+    steps:
+    - name: trigger blossom ci
+      run: blossom-ci
+      env:
+        CI_SERVER: ${{ secrets.CI_SERVER }}
+        REPO_TOKEN: ${{ secrets.GITHUB_TOKEN }}
