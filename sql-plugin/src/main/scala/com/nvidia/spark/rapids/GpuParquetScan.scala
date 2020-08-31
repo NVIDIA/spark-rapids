@@ -809,6 +809,7 @@ class MultiFileParquetPartitionReader(
         if (!isCorrectRebaseMode) {
           (0 until table.getNumberOfColumns).foreach { i =>
             if (RebaseHelper.isDateTimeRebaseNeededRead(table.getColumn(i))) {
+              table.close()
               throw RebaseHelper.newRebaseExceptionInRead("Parquet")
             }
           }
@@ -1040,6 +1041,7 @@ class ParquetPartitionReader(
         if (!isCorrectedRebaseMode) {
           (0 until table.getNumberOfColumns).foreach { i =>
             if (RebaseHelper.isDateTimeRebaseNeededRead(table.getColumn(i))) {
+              table.close()
               throw RebaseHelper.newRebaseExceptionInRead("Parquet")
             }
           }
