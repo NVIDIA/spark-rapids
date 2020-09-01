@@ -39,8 +39,8 @@ jobs:
       - name: Synopsys Detect
         uses: blackducksoftware/github-action@2.0.1
         with:
-          args: |
-            --blackduck.url="${{ secrets.BLACKDUCK_URL}}" |
-            --blackduck.api.token="${{ secrets.BLACKDUCK_API_TOKEN}}" |
-            --detect.force.success=true |
+          args: >
+            --blackduck.url="${{ secrets.BLACKDUCK_URL}}" 
+            --blackduck.api.token="${{ secrets.BLACKDUCK_API_TOKEN}}" 
+            --detect.force.success=true 
             --detect.maven.build.command="-pl='${{ env.PROJECTS }} -am'"
