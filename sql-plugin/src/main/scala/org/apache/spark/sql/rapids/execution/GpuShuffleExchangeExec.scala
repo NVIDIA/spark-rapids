@@ -52,10 +52,7 @@ class GpuShuffleMeta(
   override def tagPlanForGpu(): Unit = {
     // when AQE is enabled, we need to look at meta-data previously stored on the spark plan
     // during pre-query stage preparation
-    wrapped.getTagValue(gpuSupportedTag) match {
-      case Some(reason) => willNotWorkOnGpu(reason)
-      case None => // this exchange is supported on GPU
-    }
+    wrapped.getTagValue(gpuSupportedTag).foreach(willNotWorkOnGpu)
   }
 
   override def convertToGpu(): GpuExec =
