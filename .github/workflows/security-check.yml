@@ -34,13 +34,15 @@ jobs:
 
       - name: fetch projects
         run: |
-          echo ::set-output name=projects::$(mvn --also-make dependency:tree | grep maven-dependency-plugin | awk '{ out="com.nvidia:"$(NF-1);print out }' | xargs | sed -e 's/ /,/g')        
+          echo ::set-env name=projects::$(mvn --also-make dependency:tree | grep maven-dependency-plugin | awk '{ out="com.nvidia:"$(NF-1);print out }' | xargs | sed -e 's/ /,/g')        
 
       - name: Synopsys Detect
         uses: blackducksoftware/github-action@2.0.1
+        env:
+          PROJECTS: ${{ env.projects }}
         with:
           args: >
             --blackduck.url="${{ secrets.BLACKDUCK_URL}}" 
             --blackduck.api.token="${{ secrets.BLACKDUCK_API_TOKEN}}" 
             --detect.force.success=false 
-            --detect.maven.build.command="-pl='${{ steps.vars.outputs.projects }} -am'"
+            --detect.maven.build.command="-pl='$PROJECTS -am'"
