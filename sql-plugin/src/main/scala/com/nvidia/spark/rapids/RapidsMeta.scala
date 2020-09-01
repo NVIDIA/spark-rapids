@@ -448,6 +448,11 @@ abstract class SparkPlanMeta[INPUT <: SparkPlan](plan: INPUT,
   }
 
   private def makeShuffleConsistent(): Unit = {
+    // during query execution when AQE is enabled, the plan could consist of a mixture of
+    // ShuffleExchangeExec nodes for exchanges that have not started executing yet, and
+    // ShuffleQueryStageExec nodes for exchanges that have already started executing. This code
+    // attempts to tag ShuffleExchangeExec nodes for CPU if other exchanges (either
+    // ShuffleExchangeExec or ShuffleQueryStageExec nodes) were also tagged for CPU.
     val exchanges = findShuffleExchanges()
     val queryStages = findShuffleQueryStages()
 
@@ -459,8 +464,11 @@ abstract class SparkPlanMeta[INPUT <: SparkPlan](plan: INPUT,
             " on the CPU and GPU hashing is not consistent with the CPU version"))
       }
     } else if (exchanges.isEmpty) {
-        // we only have query stages, and we cannot do anything to modify them at this point
+      // we only have query stages, and we cannot do anything to modify them at this point
+      // since they already started to execute
     } else {
+      // there is a mix of ShuffleExchangeExec and ShuffleQueryStageExec so we need to tag any
+      // ShuffleExchangeExec nodes based on the other nodes
       val exchangesCanBeReplaced = exchanges.forall(_.canThisBeReplaced)
       val queryStagesCouldBeReplaced = queryStages.forall(_.plan.isInstanceOf[GpuExec])
       (exchangesCanBeReplaced, queryStagesCouldBeReplaced) match {
@@ -470,7 +478,7 @@ abstract class SparkPlanMeta[INPUT <: SparkPlan](plan: INPUT,
         case (false, true) =>
           throw new IllegalStateException(
             "Shuffle exchange cannot be replaced but a query stage " +
-                "was already created already on GPU")
+                "was already created on GPU")
         case _ =>
           // all good
       }
