@@ -146,12 +146,13 @@ query ($after: String) {
 """
 
 
-def process_changelog(resource_type: str, changelog: dict, releases: set, projects: set, no_project_prs: list):
+def process_changelog(resource_type: str, changelog: dict, releases: set, projects: set, no_project_prs: list,
+                      token: str):
     if resource_type == PULL_REQUESTS:
-        items = process_pr(releases)
+        items = process_pr(releases=releases, token=token)
         time_field = 'mergedAt'
     elif resource_type == ISSUES:
-        items = process_issue()
+        items = process_issue(token=token)
         time_field = 'closedAt'
     else:
         print(f"[process_changelog] Invalid type: {resource_type}")
@@ -194,18 +195,18 @@ def process_changelog(resource_type: str, changelog: dict, releases: set, projec
         })
 
 
-def process_pr(releases: set):
+def process_pr(releases: set, token: str):
     pr = []
     for rel in releases:
-        pr.extend(fetch(PULL_REQUESTS, {'baseRefName': f"branch-{rel}"}))
+        pr.extend(fetch(resource_type=PULL_REQUESTS, token=token, variables={'baseRefName': f"branch-{rel}"}))
     return pr
 
 
-def process_issue():
-    return fetch(ISSUES)
+def process_issue(token: str):
+    return fetch(resource_type=ISSUES, token=token)
 
 
-def fetch(resource_type: str, variables: dict = None):
+def fetch(resource_type: str, token: str, variables: dict = None):
     items = []
     if resource_type == PULL_REQUESTS and variables:
         q = query_pr
@@ -217,7 +218,7 @@ def fetch(resource_type: str, variables: dict = None):
 
     has_next = True
     while has_next:
-        res = post(q, variables)
+        res = post(query=q, token=token, variable=variables)
         if res.status_code == 200:
             d = res.json()
             has_next = d['data']['repository'][resource_type]["pageInfo"]["hasNextPage"]
@@ -228,10 +229,10 @@ def fetch(resource_type: str, variables: dict = None):
     return items
 
 
-def post(query: str, variable: dict):
+def post(query: str, token: str, variable: dict):
     return requests.post('https://api.github.com/graphql',
                          json={'query': query, 'variables': variable},
-                         headers={"Authorization": f"token {GITHUB_TOKEN}"})
+                         headers={"Authorization": f"token {token}"})
 
 
 def release_project(project_name: str, projects: set):
@@ -286,7 +287,7 @@ def print_no_project_pr(no_project_prs: list):
         print(f"{pr['baseRefName']} #{pr['number']} {pr['title']} {pr['url']}")
 
 
-def main(rels: str, path: str):
+def main(rels: str, path: str, token: str):
     print('Generating changelog ...')
 
     try:
@@ -298,11 +299,11 @@ def main(rels: str, path: str):
         print('Processing pull requests ...')
         process_changelog(resource_type=PULL_REQUESTS, changelog=changelog,
                           releases=releases, projects=projects,
-                          no_project_prs=no_project_prs)
+                          no_project_prs=no_project_prs, token=token)
         print('Processing issues ...')
         process_changelog(resource_type=ISSUES, changelog=changelog,
                           releases=releases, projects=projects,
-                          no_project_prs=no_project_prs)
+                          no_project_prs=no_project_prs, token=token)
         # form doc
         form_changelog(path=path, changelog=changelog)
     except Exception as e:  # pylint: disable=broad-except
@@ -322,7 +323,7 @@ if __name__ == '__main__':
     parser.add_argument("--path", help="path for generated changelog file", default='./CHANGELOG.md')
     args = parser.parse_args()
 
-    GITHUB_TOKEN = args.token if args.token else os.environ.get('GITHUB_TOKEN')
-    assert GITHUB_TOKEN, 'env GITHUB_TOKEN should not be empty'
+    github_token = args.token if args.token else os.environ.get('GITHUB_TOKEN')
+    assert github_token, 'env GITHUB_TOKEN should not be empty'
 
-    main(rels=args.releases, path=args.path)
+    main(rels=args.releases, path=args.path, token=github_token)
