@@ -42,5 +42,5 @@ jobs:
           args: >
             --blackduck.url="${{ secrets.BLACKDUCK_URL}}" 
             --blackduck.api.token="${{ secrets.BLACKDUCK_API_TOKEN}}" 
-            --detect.force.success=true 
+            --detect.force.success=false 
             --detect.maven.build.command="-pl='${{ env.PROJECTS }} -am'"
