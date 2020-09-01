@@ -49,6 +49,15 @@ class GpuShuffleMeta(
   override val childParts: scala.Seq[PartMeta[_]] =
     Seq(GpuOverrides.wrapPart(shuffle.outputPartitioning, conf, Some(this)))
 
+  override def tagPlanForGpu(): Unit = {
+    // when AQE is enabled, we need to look at meta-data previously stored on the spark plan
+    // during pre-query stage preparation
+    wrapped.getTagValue(gpuSupportedTag) match {
+      case Some(reason) => willNotWorkOnGpu(reason)
+      case None => // this broadcast is supported on GPU
+    }
+  }
+
   override def convertToGpu(): GpuExec =
     ShimLoader.getSparkShims.getGpuShuffleExchangeExec(
       childParts(0).convertToGpu(),
