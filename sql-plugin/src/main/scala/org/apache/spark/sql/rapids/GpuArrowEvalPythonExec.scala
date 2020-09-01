@@ -24,11 +24,10 @@ import java.util.concurrent.atomic.AtomicBoolean
 
 import scala.collection.mutable
 import scala.collection.mutable.ArrayBuffer
-
 import ai.rapids.cudf.{ArrowIPCWriterOptions, HostBufferConsumer, HostBufferProvider, HostMemoryBuffer, NvtxColor, NvtxRange, StreamedTableReader, Table}
 import com.nvidia.spark.rapids.{Arm, GpuBindReferences, GpuColumnVector, GpuExec, GpuProjectExec, GpuUnevaluable}
 import com.nvidia.spark.rapids.GpuMetricNames._
-
+import com.nvidia.spark.rapids.python.PythonWorkerSemaphore
 import org.apache.spark.{SparkEnv, TaskContext}
 import org.apache.spark.api.python.{BasePythonRunner, ChainedPythonFunctions, PythonEvalType, PythonFunction, PythonRDD, SpecialLengths}
 import org.apache.spark.rdd.RDD
@@ -39,6 +38,7 @@ import org.apache.spark.sql.execution.{SparkPlan, UnaryExecNode}
 import org.apache.spark.sql.execution.metric.{SQLMetric, SQLMetrics}
 import org.apache.spark.sql.execution.python.PythonUDFRunner
 import org.apache.spark.sql.internal.SQLConf
+import org.apache.spark.sql.rapids.execution.python.GpuPythonHelper
 import org.apache.spark.sql.types.{DataType, StructField, StructType}
 import org.apache.spark.sql.util.ArrowUtils
 import org.apache.spark.sql.vectorized.ColumnarBatch
@@ -457,6 +457,9 @@ case class GpuArrowEvalPythonExec(
         queue.add(batch)
         GpuProjectExec.project(batch, boundReferences)
       }
+
+      GpuPythonHelper.injectGpuInfo(pyFuncs)
+      PythonWorkerSemaphore.acquireIfNecessary(context)
 
       val outputBatchIterator = new GpuArrowPythonRunner(
         pyFuncs,

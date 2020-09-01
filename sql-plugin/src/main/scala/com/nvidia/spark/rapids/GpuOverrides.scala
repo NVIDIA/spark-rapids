@@ -19,6 +19,7 @@ package com.nvidia.spark.rapids
 import java.time.ZoneId
 
 import scala.reflect.ClassTag
+
 import org.apache.spark.internal.Logging
 import org.apache.spark.sql.SparkSession
 import org.apache.spark.sql.catalyst.expressions._
@@ -1770,9 +1771,6 @@ object GpuOverrides {
             exec.partitionSpecs)
         }
       }),
-    exec[ArrowEvalPythonExec](
-      "The backend for Scalar Pandas (Iterator) UDFs",
-      (py, conf, p, r) => new GpuArrowEvalPythonExecMeta(py, conf, p, r)),
     exec[MapInPandasExec](
       "The backend for Map Pandas Iterator UDF",
       (mapPy, conf, p, r) => new GpuMapInPandasExecMeta(mapPy, conf, p, r)),
