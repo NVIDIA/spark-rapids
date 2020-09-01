@@ -54,7 +54,7 @@ class GpuShuffleMeta(
     // during pre-query stage preparation
     wrapped.getTagValue(gpuSupportedTag) match {
       case Some(reason) => willNotWorkOnGpu(reason)
-      case None => // this broadcast is supported on GPU
+      case None => // this exchange is supported on GPU
     }
   }
 
