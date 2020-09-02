@@ -473,18 +473,9 @@ abstract class SparkPlanMeta[INPUT <: SparkPlan](plan: INPUT,
     } else {
       // there is a mix of ShuffleExchangeExec and ShuffleQueryStageExec so we need to tag any
       // ShuffleExchangeExec nodes based on the other nodes
-      val exchangesCanBeReplaced = exchanges.forall(_.canThisBeReplaced)
-      val queryStagesCouldBeReplaced = queryStages.forall(_.plan.isInstanceOf[GpuExec])
-      (exchangesCanBeReplaced, queryStagesCouldBeReplaced) match {
-        case (_, false) =>
-          exchanges.foreach(_.willNotWorkOnGpu("other exchanges that feed the same join are" +
-              " on the CPU and GPU hashing is not consistent with the CPU version"))
-        case (false, true) =>
-          throw new IllegalStateException(
-            "Shuffle exchange cannot be replaced but a query stage " +
-                "was already created on GPU")
-        case _ =>
-          // all good
+      if (!exchanges.forall(_.canThisBeReplaced) ||
+          !queryStages.forall(_.plan.isInstanceOf[GpuExec])) {
+        exchanges.foreach(_.willNotWorkOnGpu(consistentExchangeMessage))
       }
     }
   }

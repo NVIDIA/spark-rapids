@@ -118,13 +118,8 @@ class JoinsSuite extends SparkQueryCompareTestSuite {
 
   private def testFixUpJoinConsistencyIfNeeded(aqe: Boolean) {
 
-    val conf = new SparkConf()
+    val conf = shuffledJoinConf.clone()
         .set("spark.sql.adaptive.enabled", String.valueOf(aqe))
-        .set("spark.sql.autoBroadcastJoinThreshold", "160")
-        .set("spark.sql.join.preferSortMergeJoin", "false")
-        .set("spark.sql.shuffle.partitions", "2") // hack to try and work around bug in cudf
-        .set("spark.rapids.sql.exec.BroadcastNestedLoopJoinExec", "true")
-        .set("spark.rapids.sql.exec.CartesianProductExec", "true")
         .set("spark.rapids.sql.test.allowedNonGpu",
           "BroadcastHashJoinExec,SortMergeJoinExec,SortExec,Upper")
         .set("spark.rapids.sql.incompatibleOps.enabled", "false") // force UPPER onto CPU
@@ -153,6 +148,7 @@ class JoinsSuite extends SparkQueryCompareTestSuite {
 
       val join = left.join(right, upper(col("c1")) === col("c4"))
 
+      // call collect so that we get the final executed plan when AQE is on
       join.collect()
 
       val shuffleExec = TestUtils
