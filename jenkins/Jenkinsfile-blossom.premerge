@@ -82,7 +82,6 @@ spec:
           - key: nvidia.com/gpu_type
             operator: In
             values:
-            - GA100-E4720-DVT
             - Tesla_V100S_PCIE_32GB
             - Tesla_V100_PCIE_32GB
             - Tesla_T4
