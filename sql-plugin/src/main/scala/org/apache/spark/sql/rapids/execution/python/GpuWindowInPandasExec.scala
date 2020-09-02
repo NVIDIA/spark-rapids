@@ -46,17 +46,27 @@ class GpuWindowInPandasExecMeta(
     rule: ConfKeysAndIncompat)
   extends SparkPlanMeta[WindowInPandasExec](winPandas, conf, parent, rule) {
 
-  // Handle the child expressions(Python UDF) ourselves.
+  override def couldReplaceMessage: String = "could partially run on GPU"
+  override def noReplacementPossibleMessage(reasons: String): String =
+    s"cannot run even partially on the GPU because $reasons"
+
+  // Ignore the expressions since columnar way is not supported yet
   override val childExprs: Seq[BaseExprMeta[_]] = Seq.empty
 
   override def convertToGpu(): GpuExec =
     GpuWindowInPandasExec(
-      wrapped.windowExpression, wrapped.partitionSpec, wrapped.orderSpec, wrapped.child
+      winPandas.windowExpression,
+      winPandas.partitionSpec,
+      winPandas.orderSpec,
+      childPlans.head.convertIfNeeded()
     )
 }
 
 /**
- * This is the GPU version of WindowInPandasExec
+ * This GpuWindowInPandasExec aims at supporting running Pandas UDF code
+ * on GPU at Python side.
+ *
+ * (Currently it will not run on GPU itself, since the columnar way is not implemented yet.)
  *
  */
 case class GpuWindowInPandasExec(

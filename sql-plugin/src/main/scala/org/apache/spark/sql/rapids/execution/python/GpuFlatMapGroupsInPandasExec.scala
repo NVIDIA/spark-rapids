@@ -41,17 +41,28 @@ class GpuFlatMapGroupsInPandasExecMeta(
     rule: ConfKeysAndIncompat)
   extends SparkPlanMeta[FlatMapGroupsInPandasExec](flatPandas, conf, parent, rule) {
 
-  // Handle the child expressions(Python UDF) ourselves.
+  override def couldReplaceMessage: String = "could partially run on GPU"
+  override def noReplacementPossibleMessage(reasons: String): String =
+    s"cannot run even partially on the GPU because $reasons"
+
+  // Ignore the expressions since columnar way is not supported yet
   override val childExprs: Seq[BaseExprMeta[_]] = Seq.empty
 
   override def convertToGpu(): GpuExec =
     GpuFlatMapGroupsInPandasExec(
-      wrapped.groupingAttributes, wrapped.func, wrapped.output, wrapped.child
+      flatPandas.groupingAttributes,
+      flatPandas.func,
+      flatPandas.output,
+      childPlans.head.convertIfNeeded()
     )
 }
 
 /**
- * This is the GPU version of FlatMapGroupsInPandasExec
+ *
+ * This GpuFlatMapGroupsInPandasExec aims at supporting running Pandas functional code
+ * on GPU at Python side.
+ *
+ * (Currently it will not run on GPU itself, since the columnar way is not implemented yet.)
  *
  */
 case class GpuFlatMapGroupsInPandasExec(

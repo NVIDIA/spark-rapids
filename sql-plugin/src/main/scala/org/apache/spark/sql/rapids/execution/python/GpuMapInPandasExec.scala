@@ -41,12 +41,18 @@ class GpuMapInPandasExecMeta(
     rule: ConfKeysAndIncompat)
   extends SparkPlanMeta[MapInPandasExec](mapPandas, conf, parent, rule) {
 
-  // Handle the child expressions(Python UDF) ourselves.
+  override def couldReplaceMessage: String = "could partially run on GPU"
+  override def noReplacementPossibleMessage(reasons: String): String =
+    s"cannot run even partially on the GPU because $reasons"
+
+  // Ignore the udf since columnar way is not supported yet
   override val childExprs: Seq[BaseExprMeta[_]] = Seq.empty
 
   override def convertToGpu(): GpuExec =
     GpuMapInPandasExec(
-      wrapped.func, wrapped.output, wrapped.child
+      mapPandas.func,
+      mapPandas.output,
+      childPlans.head.convertIfNeeded()
     )
 }
 
@@ -54,7 +60,10 @@ class GpuMapInPandasExecMeta(
  * A relation produced by applying a function that takes an iterator of pandas DataFrames
  * and outputs an iterator of pandas DataFrames.
  *
- * This is the GPU version of MapInPandasExec
+ * This GpuMapInPandasExec aims at supporting running Pandas functional code
+ * on GPU at Python side.
+ *
+ * (Currently it will not run on GPU itself, since the columnar way is not implemented yet.)
  *
  */
 case class GpuMapInPandasExec(

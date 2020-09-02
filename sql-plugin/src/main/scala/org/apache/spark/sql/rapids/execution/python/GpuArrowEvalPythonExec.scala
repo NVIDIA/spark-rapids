@@ -15,34 +15,33 @@
  * limitations under the License.
  */
 
-package org.apache.spark.sql.rapids
-
+package org.apache.spark.sql.rapids.execution.python
 
 import java.io.{DataInputStream, DataOutputStream}
 import java.net.Socket
 import java.util.concurrent.atomic.AtomicBoolean
 
-import scala.collection.mutable
-import scala.collection.mutable.ArrayBuffer
-import ai.rapids.cudf.{ArrowIPCWriterOptions, HostBufferConsumer, HostBufferProvider, HostMemoryBuffer, NvtxColor, NvtxRange, StreamedTableReader, Table}
-import com.nvidia.spark.rapids.{Arm, GpuBindReferences, GpuColumnVector, GpuExec, GpuProjectExec, GpuUnevaluable}
+import ai.rapids.cudf._
 import com.nvidia.spark.rapids.GpuMetricNames._
+import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.python.PythonWorkerSemaphore
-import org.apache.spark.{SparkEnv, TaskContext}
-import org.apache.spark.api.python.{BasePythonRunner, ChainedPythonFunctions, PythonEvalType, PythonFunction, PythonRDD, SpecialLengths}
+import org.apache.spark.api.python._
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.expressions._
 import org.apache.spark.sql.catalyst.util.toPrettySQL
-import org.apache.spark.sql.execution.{SparkPlan, UnaryExecNode}
 import org.apache.spark.sql.execution.metric.{SQLMetric, SQLMetrics}
 import org.apache.spark.sql.execution.python.PythonUDFRunner
+import org.apache.spark.sql.execution.{SparkPlan, UnaryExecNode}
 import org.apache.spark.sql.internal.SQLConf
-import org.apache.spark.sql.rapids.execution.python.GpuPythonHelper
 import org.apache.spark.sql.types.{DataType, StructField, StructType}
 import org.apache.spark.sql.util.ArrowUtils
 import org.apache.spark.sql.vectorized.ColumnarBatch
 import org.apache.spark.util.Utils
+import org.apache.spark.{SparkEnv, TaskContext}
+
+import scala.collection.mutable
+import scala.collection.mutable.ArrayBuffer
 
 class RebatchingIterator(
     wrapped: Iterator[ColumnarBatch],
@@ -369,7 +368,7 @@ class StreamToBufferProvider(inputStream: DataInputStream) extends HostBufferPro
 
 /**
  * A physical plan that evaluates a [[GpuPythonUDF]]. The transformation of the data to arrow
- * happens on the GPU (practically a noop), But execution of the UDFs are on the CPU.
+ * happens on the GPU (practically a noop), But execution of the UDFs are on the CPU or GPU.
  */
 case class GpuArrowEvalPythonExec(
     udfs: Seq[GpuPythonUDF],

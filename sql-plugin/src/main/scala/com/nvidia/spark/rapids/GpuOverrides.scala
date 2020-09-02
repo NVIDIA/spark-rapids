@@ -1773,19 +1773,24 @@ object GpuOverrides {
       }),
     exec[MapInPandasExec](
       "The backend for Map Pandas Iterator UDF",
-      (mapPy, conf, p, r) => new GpuMapInPandasExecMeta(mapPy, conf, p, r)),
+      (mapPy, conf, p, r) => new GpuMapInPandasExecMeta(mapPy, conf, p, r))
+        .disabledByDefault("Performance is not ideal now."),
     exec[FlatMapGroupsInPandasExec](
       "The backend for Grouped Map Pandas UDF",
-      (flatPy, conf, p, r) => new GpuFlatMapGroupsInPandasExecMeta(flatPy, conf, p, r)),
+      (flatPy, conf, p, r) => new GpuFlatMapGroupsInPandasExecMeta(flatPy, conf, p, r))
+        .disabledByDefault("Performance is not ideal now."),
     exec[AggregateInPandasExec](
       "The backend for Grouped Aggregation Pandas UDF",
-      (aggPy, conf, p, r) => new GpuAggregateInPandasExecMeta(aggPy, conf, p, r)),
+      (aggPy, conf, p, r) => new GpuAggregateInPandasExecMeta(aggPy, conf, p, r))
+        .disabledByDefault("Performance is not ideal now."),
     exec[FlatMapCoGroupsInPandasExec](
       "The backend for CoGrouped Aggregation Pandas UDF",
-      (flatCoPy, conf, p, r) => new GpuFlatMapCoGroupsInPandasExecMeta(flatCoPy, conf, p, r)),
+      (flatCoPy, conf, p, r) => new GpuFlatMapCoGroupsInPandasExecMeta(flatCoPy, conf, p, r))
+        .disabledByDefault("Performance is not ideal now."),
     exec[WindowInPandasExec](
       "The backend for Pandas UDF with window functions",
       (winPy, conf, p, r) => new GpuWindowInPandasExecMeta(winPy, conf, p, r))
+        .disabledByDefault("Performance is not ideal now.")
   ).map(r => (r.getClassFor.asSubclass(classOf[SparkPlan]), r)).toMap
   val execs: Map[Class[_ <: SparkPlan], ExecRule[_ <: SparkPlan]] =
     commonExecs ++ ShimLoader.getSparkShims.getExecs
