@@ -51,7 +51,7 @@ CUDA and will not run on other versions. The jars use a maven classifier to keep
 
 - CUDA 10.1 => classifier cuda10-1
 - CUDA 10.2 => classifier cuda10-2
-- CUDA 11.0 => classifier cuda11-0
+- CUDA 11.0 => classifier cuda11
 
 For example, here is a sample version of the jars and cudf with CUDA 10.1 support:
 - cudf-0.15-cuda10-1.jar
