@@ -366,7 +366,7 @@ case class Instruction(opcode: Int, operand: Int, instructionStr: String) extend
       State(locals, localDateTimeOp(method.getName, args) :: rest, cond, expr)
     } else {
       // Other functions
-      throw new SparkException("Unsupported instruction: " + Opcode.INVOKEVIRTUAL + s"${declaringClassName}")
+      throw new SparkException(s"Unsupported instruction: ${Opcode.INVOKEVIRTUAL} ${declaringClassName}")
     }
   }
 
