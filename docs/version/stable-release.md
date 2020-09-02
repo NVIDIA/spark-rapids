@@ -17,7 +17,7 @@ Software Requirements:
 
 	OS: Ubuntu 16.04 & gcc 5.4 OR Ubuntu 18.04/CentOS 7 & gcc 7.3
 	
-	CUDA & Nvidia Drivers: 10.1.2 & v418.87+ or 10.2, 11.0 & v440.33+
+	CUDA & Nvidia Drivers: 10.1.2 & v418.87+, 10.2 & v440.33+ or 11.0 & v450.51+
 	
 	Apache Spark 3.0, 3.0.1
 	
