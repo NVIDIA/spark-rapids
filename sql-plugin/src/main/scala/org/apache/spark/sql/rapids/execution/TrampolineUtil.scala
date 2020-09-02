@@ -22,6 +22,7 @@ import org.apache.spark.{SparkContext, SparkEnv, SparkUpgradeException}
 import org.apache.spark.broadcast.Broadcast
 import org.apache.spark.executor.InputMetrics
 import org.apache.spark.sql.SparkSession
+import org.apache.spark.sql.catalyst.expressions.Attribute
 import org.apache.spark.sql.catalyst.plans.physical.{BroadcastMode, IdentityBroadcastMode}
 import org.apache.spark.sql.execution.SparkPlan
 import org.apache.spark.sql.execution.joins.HashedRelationBroadcastMode
@@ -73,4 +74,10 @@ object TrampolineUtil {
 
   /** Shuts down and cleans up any existing Spark session */
   def cleanupAnyExistingSession(): Unit = SparkSession.cleanupAnyExistingSession()
+
+  /** Return true if the Attribute passed is one of aggregates in the list */
+  def validateAggregate(agg: Attribute): Boolean = {
+    val allAggs = List("min", "max", "avg", "sum", "count", "first", "last")
+    allAggs.contains(agg.toString().split("\\(")(0))
+  }
 }
