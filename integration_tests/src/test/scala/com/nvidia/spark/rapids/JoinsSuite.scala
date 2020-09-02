@@ -106,8 +106,8 @@ class JoinsSuite extends SparkQueryCompareTestSuite {
   test("fixUpJoinConsistencyIfNeeded AQE on") {
     // this test is only valid in Spark 3.0.1 and later due to AQE supporting the plugin
     val isValidTestForSparkVersion = ShimLoader.getSparkShims.getSparkShimVersion match {
-      case SparkShimVersion(major, minor, patch) => major == 3 && (minor > 0 || patch == 1)
-      case DatabricksShimVersion(major, minor, patch) => major == 3 && (minor > 0 || patch == 1)
+      case SparkShimVersion(3, 0, 0) => false
+      case DatabricksShimVersion(3, 0, 0) => false
       case _ => true
     }
     assume(isValidTestForSparkVersion)
