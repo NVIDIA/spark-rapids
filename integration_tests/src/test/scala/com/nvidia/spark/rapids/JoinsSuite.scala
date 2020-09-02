@@ -17,11 +17,10 @@
 package com.nvidia.spark.rapids
 
 import org.apache.spark.SparkConf
-
+import org.apache.spark.sql.DataFrame
 import org.apache.spark.sql.catalyst.trees.TreeNodeTag
 import org.apache.spark.sql.execution.exchange.ShuffleExchangeExec
 import org.apache.spark.sql.functions.{col, upper}
-import org.apache.spark.sql.DataFrame
 
 class JoinsSuite extends SparkQueryCompareTestSuite {
 
