@@ -26,8 +26,14 @@ case class Table(
     partitionColumns: Seq[String],
     schema: StructType) {
 
-  private[this] def path(basePath: String) =
-    basePath + "/" + name + ".dat"
+  private[this] def path(basePath: String, appendDat: Boolean = true) = {
+    val rest = if (appendDat) {
+      ".dat"
+    } else {
+      ""
+    }
+    basePath + "/" + name + rest
+  }
 
   def readCSV(spark: SparkSession, basePath: String): DataFrame =
     spark.read.option("delimiter", "|")
@@ -37,11 +43,19 @@ case class Table(
   def setupCSV(spark: SparkSession, basePath: String): Unit =
     readCSV(spark, basePath).createOrReplaceTempView(name)
 
-  def setupParquet(spark: SparkSession, basePath: String): Unit =
-    spark.read.parquet(path(basePath)).createOrReplaceTempView(name)
+  def setupParquet(spark: SparkSession, basePath: String, appendDat: Boolean = true): Unit =
+    spark.read.parquet(path(basePath, appendDat)).createOrReplaceTempView(name)
 
   def setupOrc(spark: SparkSession, basePath: String): Unit =
     spark.read.orc(path(basePath)).createOrReplaceTempView(name)
+
+  def setup(
+      spark: SparkSession,
+      basePath: String,
+      format: String,
+      appendDat: Boolean = true): Unit = {
+    spark.read.format(format).load(path(basePath, appendDat)).createOrReplaceTempView(name)
+  }
 
   private def setupWrite(
       spark: SparkSession,
@@ -127,12 +141,20 @@ object TpcdsLikeSpark {
     tables.foreach(_.setupCSV(spark, basePath))
   }
 
-  def setupAllParquet(spark: SparkSession, basePath: String): Unit = {
-    tables.foreach(_.setupParquet(spark, basePath))
+  def setupAllParquet(spark: SparkSession, basePath: String, appendDat: Boolean = true): Unit = {
+    tables.foreach(_.setupParquet(spark, basePath, appendDat))
   }
 
   def setupAllOrc(spark: SparkSession, basePath: String): Unit = {
     tables.foreach(_.setupOrc(spark, basePath))
+  }
+
+  def setupAll(
+      spark: SparkSession,
+      basePath: String,
+      format: String,
+      appendDat: Boolean = true): Unit = {
+    tables.foreach(_.setup(spark, basePath, format, appendDat))
   }
 
   private val tables = Array(

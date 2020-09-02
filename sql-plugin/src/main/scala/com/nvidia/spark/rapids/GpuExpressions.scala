@@ -91,6 +91,11 @@ trait GpuExpression extends Expression with Unevaluable with Arm {
    * temporary value.
    */
   def columnarEval(batch: ColumnarBatch): Any
+
+  override lazy val canonicalized: Expression = {
+    val canonicalizedChildren = children.map(_.canonicalized)
+    GpuCanonicalize.execute(withNewChildren(canonicalizedChildren))
+  }
 }
 
 abstract class GpuLeafExpression extends GpuExpression {
