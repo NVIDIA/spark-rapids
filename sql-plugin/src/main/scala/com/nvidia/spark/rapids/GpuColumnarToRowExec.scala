@@ -32,7 +32,7 @@ import org.apache.spark.sql.rapids.execution.GpuColumnToRowMapPartitionsRDD
 import org.apache.spark.sql.types.DataType
 import org.apache.spark.sql.vectorized.{ColumnarBatch, ColumnVector}
 
-abstract class GpuColumnarToRowExecParent(child: SparkPlan, exportColumnarRdd: Boolean)
+abstract class GpuColumnarToRowExecParent(child: SparkPlan, val exportColumnarRdd: Boolean)
     extends UnaryExecNode with CodegenSupport with GpuExec {
   // We need to do this so the assertions don't fail
   override def supportsColumnar = false
@@ -94,7 +94,7 @@ abstract class GpuColumnarToRowExecParent(child: SparkPlan, exportColumnarRdd: B
             val devCb = batches.next()
             val nvtxRange = new NvtxWithMetrics("ColumnarToRow: batch", NvtxColor.RED, totalTime)
             try {
-              cb = new ColumnarBatch(GpuColumnVector.extractColumns(devCb).map(_.copyToHost()), 
+              cb = new ColumnarBatch(GpuColumnVector.extractColumns(devCb).map(_.copyToHost()),
                 devCb.numRows())
               it = cb.rowIterator()
               numInputBatches += 1
@@ -211,7 +211,7 @@ abstract class GpuColumnarToRowExecParent(child: SparkPlan, exportColumnarRdd: B
            |    });
            | }
            """.stripMargin.trim)
-      s"$initTCListenerFuncName();" }, forceInline=true)
+      s"$initTCListenerFuncName();" }, forceInline = true)
 
     val idx = ctx.addMutableState(CodeGenerator.JAVA_INT, "batchIdx") // init as batchIdx = 0
     val columnVectorClzs = child.vectorTypes.getOrElse(
@@ -283,5 +283,11 @@ abstract class GpuColumnarToRowExecParent(child: SparkPlan, exportColumnarRdd: B
   }
 }
 
-case class GpuColumnarToRowExec(child: SparkPlan, exportColumnarRdd: Boolean = false)
+object GpuColumnarToRowExecParent {
+  def unapply(arg: GpuColumnarToRowExecParent): Option[(SparkPlan, Boolean)] = {
+    Option(Tuple2(arg.child, arg.exportColumnarRdd))
+  }
+}
+
+case class GpuColumnarToRowExec(child: SparkPlan, override val exportColumnarRdd: Boolean = false)
    extends GpuColumnarToRowExecParent(child, exportColumnarRdd)

@@ -20,5 +20,5 @@ import com.nvidia.spark.rapids.GpuColumnarToRowExecParent
 
 import org.apache.spark.sql.execution.{ColumnarToRowTransition, SparkPlan}
 
-case class GpuColumnarToRowExec(child: SparkPlan, exportColumnarRdd: Boolean = false) 
+case class GpuColumnarToRowExec(child: SparkPlan, override val exportColumnarRdd: Boolean = false)
     extends GpuColumnarToRowExecParent(child, exportColumnarRdd) with ColumnarToRowTransition
