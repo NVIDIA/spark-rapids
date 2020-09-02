@@ -17,9 +17,11 @@
 package com.nvidia.spark.rapids
 
 import org.apache.spark.SparkConf
+
 import org.apache.spark.sql.catalyst.trees.TreeNodeTag
 import org.apache.spark.sql.execution.exchange.ShuffleExchangeExec
 import org.apache.spark.sql.functions.{col, upper}
+import org.apache.spark.sql.DataFrame
 
 class JoinsSuite extends SparkQueryCompareTestSuite {
 
@@ -127,16 +129,13 @@ class JoinsSuite extends SparkQueryCompareTestSuite {
     withGpuSparkSession(spark => {
       import spark.implicits._
 
-      def createStringDF(name: String, upper: Boolean = false) = {
-
+      def createStringDF(name: String, upper: Boolean = false): DataFrame = {
         val countryNames = (0 until 1000).map(i => s"country_$i")
-
-        val df = if (upper) {
+        if (upper) {
           countryNames.map(_.toUpperCase).toDF(name)
         } else {
           countryNames.toDF(name)
         }
-        df.repartition(3)
       }
 
       val left = createStringDF("c1")
@@ -144,7 +143,6 @@ class JoinsSuite extends SparkQueryCompareTestSuite {
 
       val right = createStringDF("c3")
           .join(createStringDF("c4"), col("c3") === col("c4"))
-          .repartition(7)
 
       val join = left.join(right, upper(col("c1")) === col("c4"))
 
@@ -156,9 +154,7 @@ class JoinsSuite extends SparkQueryCompareTestSuite {
           .get
 
       val gpuSupportedTag = TreeNodeTag[Set[String]]("rapids.gpu.supported")
-
       val reasons = shuffleExec.getTagValue(gpuSupportedTag).getOrElse(Set.empty)
-
       assert(reasons.contains(
           "other exchanges that feed the same join are on the CPU and GPU " +
           "hashing is not consistent with the CPU version"))
