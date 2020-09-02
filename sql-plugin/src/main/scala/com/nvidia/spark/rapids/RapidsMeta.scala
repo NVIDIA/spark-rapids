@@ -118,7 +118,7 @@ abstract class RapidsMeta[INPUT <: BASE, BASE, OUTPUT <: BASE](
 
   private var shouldBeRemovedReasons: Option[mutable.Set[String]] = None
 
-  val gpuSupportedTag = TreeNodeTag[String]("rapids.gpu.supported")
+  val gpuSupportedTag = TreeNodeTag[Set[String]]("rapids.gpu.supported")
 
   /**
    * Call this to indicate that this should not be replaced with a GPU enabled version
@@ -129,7 +129,9 @@ abstract class RapidsMeta[INPUT <: BASE, BASE, OUTPUT <: BASE](
     // annotate the real spark plan with the reason as well so that the information is available
     // during query stage planning when AQE is on
     wrapped match {
-      case p: SparkPlan => p.setTagValue(gpuSupportedTag, because)
+      case p: SparkPlan =>
+        p.setTagValue(gpuSupportedTag,
+          p.getTagValue(gpuSupportedTag).getOrElse(Set.empty) + because)
       case _ =>
     }
   }
@@ -456,12 +458,14 @@ abstract class SparkPlanMeta[INPUT <: SparkPlan](plan: INPUT,
     val exchanges = findShuffleExchanges()
     val queryStages = findShuffleQueryStages()
 
+    val consistentExchangeMessage = "other exchanges that feed the same join are" +
+        " on the CPU and GPU hashing is not consistent with the CPU version"
+
     if (queryStages.isEmpty) {
       // this is the original logic which works fine when AQE is disabled and also for
       // initial preparation before query stage creation when AQE is enabled
       if (!exchanges.forall(_.canThisBeReplaced)) {
-        exchanges.foreach(_.willNotWorkOnGpu("other exchanges that feed the same join are" +
-            " on the CPU and GPU hashing is not consistent with the CPU version"))
+        exchanges.foreach(_.willNotWorkOnGpu(consistentExchangeMessage))
       }
     } else if (exchanges.isEmpty) {
       // we only have query stages, and we cannot do anything to modify them at this point

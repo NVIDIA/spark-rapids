@@ -17,6 +17,9 @@
 package com.nvidia.spark.rapids
 
 import org.apache.spark.SparkConf
+import org.apache.spark.sql.catalyst.trees.TreeNodeTag
+import org.apache.spark.sql.execution.exchange.ShuffleExchangeExec
+import org.apache.spark.sql.functions.{col, upper}
 
 class JoinsSuite extends SparkQueryCompareTestSuite {
 
@@ -97,4 +100,75 @@ class JoinsSuite extends SparkQueryCompareTestSuite {
     mixedDfWithNulls, mixedDfWithNulls, sortBeforeRepart = true) {
     (A, B) => A.join(B, A("longs") === B("longs"), "LeftAnti")
   }
+
+  test("fixUpJoinConsistencyIfNeeded AQE on") {
+    // this test is only valid in Spark 3.0.1 and later due to AQE supporting the plugin
+    val isValidTestForSparkVersion = ShimLoader.getSparkShims.getSparkShimVersion match {
+      case SparkShimVersion(major, minor, patch) => major == 3 && (minor > 0 || patch == 1)
+      case DatabricksShimVersion(major, minor, patch) => major == 3 && (minor > 0 || patch == 1)
+      case _ => true
+    }
+    assume(isValidTestForSparkVersion)
+    testFixUpJoinConsistencyIfNeeded(true)
+  }
+
+  test("fixUpJoinConsistencyIfNeeded AQE off") {
+    testFixUpJoinConsistencyIfNeeded(false)
+  }
+
+  private def testFixUpJoinConsistencyIfNeeded(aqe: Boolean) {
+
+    val conf = new SparkConf()
+        .set("spark.sql.adaptive.enabled", String.valueOf(aqe))
+        .set("spark.sql.autoBroadcastJoinThreshold", "160")
+        .set("spark.sql.join.preferSortMergeJoin", "false")
+        .set("spark.sql.shuffle.partitions", "2") // hack to try and work around bug in cudf
+        .set("spark.rapids.sql.exec.BroadcastNestedLoopJoinExec", "true")
+        .set("spark.rapids.sql.exec.CartesianProductExec", "true")
+        .set("spark.rapids.sql.test.allowedNonGpu",
+          "BroadcastHashJoinExec,SortMergeJoinExec,SortExec,Upper")
+        .set("spark.rapids.sql.incompatibleOps.enabled", "false") // force UPPER onto CPU
+
+    withGpuSparkSession(spark => {
+      import spark.implicits._
+
+      def createStringDF(name: String, upper: Boolean = false) = {
+
+        val countryNames = (0 until 1000).map(i => s"country_$i")
+
+        val df = if (upper) {
+          countryNames.map(_.toUpperCase).toDF(name)
+        } else {
+          countryNames.toDF(name)
+        }
+        df.repartition(3)
+      }
+
+      val left = createStringDF("c1")
+          .join(createStringDF("c2"), col("c1") === col("c2"))
+
+      val right = createStringDF("c3")
+          .join(createStringDF("c4"), col("c3") === col("c4"))
+          .repartition(7)
+
+      val join = left.join(right, upper(col("c1")) === col("c4"))
+
+      join.collect()
+
+      val shuffleExec = TestUtils
+          .findOperator(join.queryExecution.executedPlan, _.isInstanceOf[ShuffleExchangeExec])
+          .get
+
+      val gpuSupportedTag = TreeNodeTag[Set[String]]("rapids.gpu.supported")
+
+      val reasons = shuffleExec.getTagValue(gpuSupportedTag).getOrElse(Set.empty)
+
+      assert(reasons.contains(
+          "other exchanges that feed the same join are on the CPU and GPU " +
+          "hashing is not consistent with the CPU version"))
+
+    }, conf)
+
+  }
+
 }

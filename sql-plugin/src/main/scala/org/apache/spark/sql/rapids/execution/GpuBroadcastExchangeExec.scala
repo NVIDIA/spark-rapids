@@ -225,7 +225,7 @@ class GpuBroadcastMeta(
     }
     // when AQE is enabled and we are planning a new query stage, we need to look at meta-data
     // previously stored on the spark plan to determine whether this exchange can run on GPU
-    wrapped.getTagValue(gpuSupportedTag).foreach(willNotWorkOnGpu)
+    wrapped.getTagValue(gpuSupportedTag).foreach(_.foreach(willNotWorkOnGpu))
   }
 
   override def convertToGpu(): GpuExec = {
