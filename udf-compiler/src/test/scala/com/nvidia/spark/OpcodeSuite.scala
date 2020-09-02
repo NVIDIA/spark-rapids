@@ -1978,4 +1978,18 @@ class OpcodeSuite extends FunSuite {
     val ref = dataset.withColumn("month", year(col("DateTime")))
     checkEquiv(result, ref)
   }
+
+  test("Get hour from zoned LocalDateTime string") {
+    val myudf: (String) => Int = a => {
+      val formatter = DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm:ssZZZZZ'['VV']'")
+      val ldt = LocalDateTime.parse(a, formatter)
+      ldt.getHour
+    }
+    val u = makeUdf(myudf)
+    val dataset = Seq("2011-12-03T10:15:30+01:00[Europe/Paris]",
+                      "2011-12-03T10:15:30+09:00[Asia/Tokyo]").toDF("DateTime").repartition(1)
+    val result = dataset.withColumn("hour", u(col("DateTime")))
+    val ref = dataset.withColumn("hour", lit(10))
+    checkEquiv(result, ref)
+  }
 }
