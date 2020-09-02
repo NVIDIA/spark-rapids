@@ -82,7 +82,6 @@ object GpuPythonHelper extends Logging {
     // take effect no matter the order changes or not.
     funcs.foreach(_.funcs.foreach { pyF =>
       pyF.envVars.put("CUDA_VISIBLE_DEVICES", gpuId)
-      pyF.envVars.put("RAPIDS_SQL_ENABLED", rapidsConf.isSqlEnabled.toString)
       pyF.envVars.put("RAPIDS_UVM_ENABLED", isPythonUvmEnabled)
       pyF.envVars.put("RAPIDS_POOLED_MEM_ENABLED", isPythonPooledMemEnabled)
       pyF.envVars.put("RAPIDS_POOLED_MEM_SIZE", initAllocPerWorker.toString)

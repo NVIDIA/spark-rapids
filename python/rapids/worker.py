@@ -23,14 +23,6 @@ def initialize_gpu_mem():
     # CUDA device(s) info
     print("INFO: Found CUDA visible device(s): {}".format(os.environ.get('CUDA_VISIBLE_DEVICES')))
 
-    # SQL plugin info
-    if 'RAPIDS_SQL_ENABLED' in os.environ:
-        sql_enabled = os.environ.get('RAPIDS_SQL_ENABLED').lower() == 'true'
-        print("INFO: rapids python worker is running with sql plugin {}".format(
-            'enabled' if sql_enabled else 'disabled'))
-    else:
-        print("INFO: rapids python worker is running without sql plugin.")
-
     # Initialize RMM only when requiring to enable pooled or managed memory.
     pool_enabled = os.environ.get('RAPIDS_POOLED_MEM_ENABLED', 'false').lower() == 'true'
     uvm_enabled = os.environ.get('RAPIDS_UVM_ENABLED', 'false').lower() == 'true'
