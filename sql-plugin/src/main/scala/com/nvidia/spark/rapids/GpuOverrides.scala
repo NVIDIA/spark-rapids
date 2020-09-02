@@ -29,7 +29,7 @@ import org.apache.spark.sql.catalyst.plans.physical._
 import org.apache.spark.sql.catalyst.rules.Rule
 import org.apache.spark.sql.connector.read.Scan
 import org.apache.spark.sql.execution._
-import org.apache.spark.sql.execution.adaptive.CustomShuffleReaderExec
+import org.apache.spark.sql.execution.adaptive.{AdaptiveSparkPlanExec, BroadcastQueryStageExec, CustomShuffleReaderExec, ShuffleQueryStageExec}
 import org.apache.spark.sql.execution.aggregate.{HashAggregateExec, SortAggregateExec}
 import org.apache.spark.sql.execution.command.{DataWritingCommand, DataWritingCommandExec}
 import org.apache.spark.sql.execution.datasources.{HadoopFsRelation, InsertIntoHadoopFsRelationCommand}
@@ -1735,6 +1735,24 @@ object GpuOverrides {
           GpuCustomShuffleReaderExec(childPlans.head.convertIfNeeded(),
             exec.partitionSpecs)
         }
+      }),
+    exec[AdaptiveSparkPlanExec]("Adaptive query", (exec, conf, p, r) =>
+      new SparkPlanMeta[AdaptiveSparkPlanExec](exec, conf, p, r) {
+        override def tagPlanForGpu(): Unit =
+          willNotWorkOnGpu("this is an adaptive plan")
+        override def convertToGpu(): GpuExec = throw new IllegalStateException()
+      }),
+    exec[BroadcastQueryStageExec]("Broadcast query stage", (exec, conf, p, r) =>
+      new SparkPlanMeta[BroadcastQueryStageExec](exec, conf, p, r) {
+        override def tagPlanForGpu(): Unit =
+          willNotWorkOnGpu("this query stage already started executing")
+        override def convertToGpu(): GpuExec = throw new IllegalStateException()
+      }),
+    exec[ShuffleQueryStageExec]("Shuffle query stage", (exec, conf, p, r) =>
+      new SparkPlanMeta[ShuffleQueryStageExec](exec, conf, p, r) {
+        override def tagPlanForGpu(): Unit =
+          willNotWorkOnGpu("this query stage already started executing")
+        override def convertToGpu(): GpuExec = throw new IllegalStateException()
       })
   ).map(r => (r.getClassFor.asSubclass(classOf[SparkPlan]), r)).toMap
   val execs: Map[Class[_ <: SparkPlan], ExecRule[_ <: SparkPlan]] =
