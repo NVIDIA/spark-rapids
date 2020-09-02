@@ -26,5 +26,5 @@ mvn -U -B -Pspark302tests,snapshot-shims test $MVN_URM_MIRROR -Dmaven.repo.local
 mvn -U -B -Pspark310tests,snapshot-shims test $MVN_URM_MIRROR -Dmaven.repo.local=$WORKSPACE/.m2
 
 # Parse cudf and spark files from local mvn repo
-jenkins/printJarVersion.sh "CUDFVersion" "${WORKSPACE}/.m2/ai/rapids/cudf/${CUDF_VER}" "cudf-${CUDF_VER}" "-${CUDA_CLASSIFIER}.jar"
-jenkins/printJarVersion.sh "SPARKVersion" "${WORKSPACE}/.m2/org/apache/spark/spark-core_2.12/${SPARK_VER}" "spark-core_2.12-${SPARK_VER}" ".jar"
+jenkins/printJarVersion.sh "CUDFVersion" "${WORKSPACE}/.m2/ai/rapids/cudf/${CUDF_VER}" "cudf-${CUDF_VER}" "-${CUDA_CLASSIFIER}.jar" $SERVER_ID
+jenkins/printJarVersion.sh "SPARKVersion" "${WORKSPACE}/.m2/org/apache/spark/spark-core_2.12/${SPARK_VER}" "spark-core_2.12-${SPARK_VER}" ".jar" $SERVER_ID

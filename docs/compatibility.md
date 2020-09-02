@@ -177,7 +177,7 @@ For reads when `spark.sql.legacy.parquet.datetimeRebaseModeInWrite` is set to `C
 between the Julian and Gregorian calendars are wrong, but dates are fine. When 
 `spark.sql.legacy.parquet.datetimeRebaseModeInWrite` is set to `LEGACY`, however both dates and
 timestamps are read incorrectly before the Gregorian calendar transition as described
-[here]('https://github.com/NVIDIA/spark-rapids/issues/133).
+[here](https://github.com/NVIDIA/spark-rapids/issues/133).
 
 When writing `spark.sql.legacy.parquet.datetimeRebaseModeInWrite` is currently ignored as described
 [here](https://github.com/NVIDIA/spark-rapids/issues/144).
@@ -192,6 +192,13 @@ The plugin supports reading `uncompressed`, `snappy` and `gzip` Parquet files an
 `uncompressed` and `snappy` Parquet files.  At this point, the plugin does not have the ability to 
 fall back to the CPU when reading an unsupported compression format, and will error out 
 in that case. 
+
+## Regular Expressions
+The RAPIDS Accelerator for Apache Spark currently supports string literal matches, not wildcard 
+matches. 
+
+If a null char '\0' is in a string that is being matched by a regular expression, `LIKE` sees it as 
+the end of the string.  This will be fixed in a future release. The issue is [here](https://github.com/NVIDIA/spark-rapids/issues/119).
 
 ## Timestamps
 
@@ -235,18 +242,18 @@ The following formats/patterns are supported on the GPU. Timezone of UTC is assu
 
 | Format or Pattern     | Supported on GPU? |
 | --------------------- | ----------------- |
-| `"yyyy"`              | Yes.              |
-| `"yyyy-[M]M"`         | Yes.              |
-| `"yyyy-[M]M "`        | Yes.              |
-| `"yyyy-[M]M-[d]d"`    | Yes.              |
-| `"yyyy-[M]M-[d]d "`   | Yes.              |
-| `"yyyy-[M]M-[d]d *"`  | Yes.              |
-| `"yyyy-[M]M-[d]d T*"` | Yes.              |
-| `"epoch"`             | Yes.              |
-| `"now"`               | Yes.              |
-| `"today"`             | Yes.              |
-| `"tomorrow"`          | Yes.              |
-| `"yesterday"`         | Yes.              |
+| `"yyyy"`              | Yes               |
+| `"yyyy-[M]M"`         | Yes               |
+| `"yyyy-[M]M "`        | Yes               |
+| `"yyyy-[M]M-[d]d"`    | Yes               |
+| `"yyyy-[M]M-[d]d "`   | Yes               |
+| `"yyyy-[M]M-[d]d *"`  | Yes               |
+| `"yyyy-[M]M-[d]d T*"` | Yes               |
+| `"epoch"`             | Yes               |
+| `"now"`               | Yes               |
+| `"today"`             | Yes               |
+| `"tomorrow"`          | Yes               |
+| `"yesterday"`         | Yes               |
 
 ## String to Timestamp
 
@@ -257,22 +264,22 @@ Casting from string to timestamp currently has the following limitations.
 
 | Format or Pattern                                                   | Supported on GPU? |
 | ------------------------------------------------------------------- | ------------------|
-| `"yyyy"`                                                            | Yes.              |
-| `"yyyy-[M]M"`                                                       | Yes.              |
-| `"yyyy-[M]M "`                                                      | Yes.              |
-| `"yyyy-[M]M-[d]d"`                                                  | Yes.              |
-| `"yyyy-[M]M-[d]d "`                                                 | Yes.              |
-| `"yyyy-[M]M-[d]dT[h]h:[m]m:[s]s.[ms][ms][ms][us][us][us][zone_id]"` | Partial [1].      |
-| `"yyyy-[M]M-[d]d [h]h:[m]m:[s]s.[ms][ms][ms][us][us][us][zone_id]"` | Partial [1].      |
-| `"[h]h:[m]m:[s]s.[ms][ms][ms][us][us][us][zone_id]"`                | Partial [1].      |
-| `"T[h]h:[m]m:[s]s.[ms][ms][ms][us][us][us][zone_id]"`               | Partial [1].      |
-| `"epoch"`                                                           | Yes.              |
-| `"now"`                                                             | Yes.              |
-| `"today"`                                                           | Yes.              |
-| `"tomorrow"`                                                        | Yes.              |
-| `"yesterday"`                                                       | Yes.              |
+| `"yyyy"`                                                            | Yes               |
+| `"yyyy-[M]M"`                                                       | Yes               |
+| `"yyyy-[M]M "`                                                      | Yes               |
+| `"yyyy-[M]M-[d]d"`                                                  | Yes               |
+| `"yyyy-[M]M-[d]d "`                                                 | Yes               |
+| `"yyyy-[M]M-[d]dT[h]h:[m]m:[s]s.[ms][ms][ms][us][us][us][zone_id]"` | Partial [\[1\]](#Footnote1)       |
+| `"yyyy-[M]M-[d]d [h]h:[m]m:[s]s.[ms][ms][ms][us][us][us][zone_id]"` | Partial [\[1\]](#Footnote1)       |
+| `"[h]h:[m]m:[s]s.[ms][ms][ms][us][us][us][zone_id]"`                | Partial [\[1\]](#Footnote1)       |
+| `"T[h]h:[m]m:[s]s.[ms][ms][ms][us][us][us][zone_id]"`               | Partial [\[1\]](#Footnote1)       |
+| `"epoch"`                                                           | Yes               |
+| `"now"`                                                             | Yes               |
+| `"today"`                                                           | Yes               |
+| `"tomorrow"`                                                        | Yes               |
+| `"yesterday"`                                                       | Yes               |
 
-- [1] The timestamp portion must be complete in terms of hours, minutes, seconds, and
+- <a name="Footnote1"></a>[1] The timestamp portion must be complete in terms of hours, minutes, seconds, and
  milliseconds, with 2 digits each for hours, minutes, and seconds, and 6 digits for milliseconds. 
  Only timezone 'Z' (UTC) is supported. Casting unsupported formats will result in null values. 
  
