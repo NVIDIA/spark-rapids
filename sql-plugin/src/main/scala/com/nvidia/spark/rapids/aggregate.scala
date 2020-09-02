@@ -26,11 +26,11 @@ import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import org.apache.spark.TaskContext
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.InternalRow
-import org.apache.spark.sql.catalyst.expressions.{Attribute, AttributeSeq, AttributeSet, Expression, NamedExpression}
+import org.apache.spark.sql.catalyst.expressions.{Alias, Attribute, AttributeReference, AttributeSeq, AttributeSet, Expression, NamedExpression}
 import org.apache.spark.sql.catalyst.expressions.aggregate._
-import org.apache.spark.sql.catalyst.plans.physical.{AllTuples, ClusteredDistribution, Distribution, Partitioning, UnspecifiedDistribution}
+import org.apache.spark.sql.catalyst.plans.physical.{AllTuples, ClusteredDistribution, Distribution, HashPartitioning, Partitioning, UnspecifiedDistribution}
 import org.apache.spark.sql.catalyst.util.truncatedString
-import org.apache.spark.sql.execution.{SparkPlan, UnaryExecNode}
+import org.apache.spark.sql.execution.{ExplainUtils, SparkPlan, UnaryExecNode}
 import org.apache.spark.sql.execution.aggregate.{HashAggregateExec, SortAggregateExec}
 import org.apache.spark.sql.execution.metric.{SQLMetric, SQLMetrics}
 import org.apache.spark.sql.rapids.{CudfAggregate, GpuAggregateExpression, GpuDeclarativeAggregate}
@@ -232,6 +232,17 @@ case class GpuHashAggregateExec(
     initialInputBufferOffset: Int,
     resultExpressions: Seq[NamedExpression],
     child: SparkPlan) extends UnaryExecNode with GpuExec with Arm {
+
+  override def verboseStringWithOperatorId(): String = {
+    s"""
+       |$formattedNodeName
+       |${ExplainUtils.generateFieldString("Input", child.output)}
+       |${ExplainUtils.generateFieldString("Keys", groupingExpressions)}
+       |${ExplainUtils.generateFieldString("Functions", aggregateExpressions)}
+       |${ExplainUtils.generateFieldString("Aggregate Attributes", aggregateAttributes)}
+       |${ExplainUtils.generateFieldString("Results", resultExpressions)}
+       |""".stripMargin
+  }
 
   case class BoundExpressionsModeAggregates(boundInputReferences: Seq[GpuExpression] ,
     boundFinalProjections: Option[scala.Seq[GpuExpression]],
@@ -834,6 +845,8 @@ case class GpuHashAggregateExec(
     "concatTime"-> SQLMetrics.createNanoTimingMetric(sparkContext, "time in batch concat")
   )
 
+  protected def outputExpressions: Seq[NamedExpression] = resultExpressions
+
   //
   // This section is derived (copied in most cases) from HashAggregateExec
   //
@@ -841,7 +854,33 @@ case class GpuHashAggregateExec(
     aggregateExpressions.flatMap(_.aggregateFunction.aggBufferAttributes)
   }
 
-  override def outputPartitioning: Partitioning = child.outputPartitioning
+  final override def outputPartitioning: Partitioning = {
+    if (hasAlias) {
+      child.outputPartitioning match {
+        case h: GpuHashPartitioning => h.copy(expressions = replaceAliases(h.expressions))
+        case h: HashPartitioning => h.copy(expressions = replaceAliases(h.expressions))
+        case other => other
+      }
+    } else {
+      child.outputPartitioning
+    }
+  }
+
+  protected def hasAlias: Boolean = outputExpressions.collectFirst { case _: Alias => }.isDefined
+
+  protected def replaceAliases(exprs: Seq[Expression]): Seq[Expression] = {
+    exprs.map {
+      case a: AttributeReference => replaceAlias(a).getOrElse(a)
+      case other => other
+    }
+  }
+
+  protected def replaceAlias(attr: AttributeReference): Option[Attribute] = {
+    outputExpressions.collectFirst {
+      case a @ Alias(child: AttributeReference, _) if child.semanticEquals(attr) =>
+        a.toAttribute
+    }
+  }
 
   // Used in de-duping and optimizer rules
   override def producedAttributes: AttributeSet =
