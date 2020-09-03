@@ -1414,7 +1414,7 @@ class OpcodeSuite extends FunSuite {
     checkEquiv(result2, ref2)
   }
 
-  test("FALLBACK TO CPU: loops - fallback test") {
+  test("FALLBACK TO CPU: loops") {
     val myudf: (Int, Int) => Int = (a,b) => {
       var myVar : Int = 0
       for (indexVar <- a to b){
@@ -1874,7 +1874,7 @@ class OpcodeSuite extends FunSuite {
     checkEquiv(result, ref)
   }
 
-  test("Non-literal date time pattern") {
+  test("FALLBACK TO CPU: Non-literal date time pattern") {
     val myudf: (String, String) => Int = (a, pattern) => {
       val formatter = DateTimeFormatter.ofPattern(pattern)
       val ldt = LocalDateTime.parse(a, formatter)
@@ -1885,10 +1885,10 @@ class OpcodeSuite extends FunSuite {
       .toDF("DateTime", "Pattern").repartition(1)
     val result = dataset.withColumn("dayOfMonth", u(col("DateTime"), col("Pattern")))
     val ref = dataset.withColumn("dayOfMonth", dayofmonth(col("DateTime")))
-    checkEquiv(result, ref)
+    checkEquivNotCompiled(result, ref)
   }
 
-  test("Unsupported date time pattern - fallback test") {
+  test("FALLBACK TO CPU: Unsupported date time pattern") {
     val myudf: (String) => Int = a => {
       val formatter = DateTimeFormatter.ISO_LOCAL_DATE_TIME
       val ldt = LocalDateTime.parse(a, formatter)
@@ -1979,7 +1979,7 @@ class OpcodeSuite extends FunSuite {
     checkEquiv(result, ref)
   }
 
-  test("Get hour from zoned LocalDateTime string") {
+  test("FALLBACK TO CPU: Get hour from zoned LocalDateTime string") {
     val myudf: (String) => Int = a => {
       val formatter = DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm:ssZZZZZ'['VV']'")
       val ldt = LocalDateTime.parse(a, formatter)
@@ -1990,6 +1990,19 @@ class OpcodeSuite extends FunSuite {
                       "2011-12-03T10:15:30+09:00[Asia/Tokyo]").toDF("DateTime").repartition(1)
     val result = dataset.withColumn("hour", u(col("DateTime")))
     val ref = dataset.withColumn("hour", lit(10))
+    checkEquivNotCompiled(result, ref)
+  }
+
+  test("Get hour from pattern with escaped text") {
+    val myudf: (String) => Int = a => {
+      val formatter = DateTimeFormatter.ofPattern("yyyy-MM-dd'''VX'HH:mm:ss'''''Z'''")
+      val ldt = LocalDateTime.parse(a, formatter)
+      ldt.getHour
+    }
+    val u = makeUdf(myudf)
+    val dataset = Seq("2011-12-03'VX10:15:30''Z'").toDF("DateTime").repartition(1)
+    val result = dataset.withColumn("hour", u(col("DateTime")))
+    val ref = dataset.withColumn("hour", lit(myudf("2011-12-03'VX10:15:30''Z'")))
     checkEquiv(result, ref)
   }
 }

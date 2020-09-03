@@ -614,10 +614,30 @@ case class Instruction(opcode: Int, operand: Int, instructionStr: String) extend
   }
 
   private def dateTimeFormatterOp(methodName: String, args: List[Expression]): Expression = {
+    def checkPattern(pattern: String): Boolean = {
+      pattern.foldLeft(false){
+        case (escapedText, '\'') => !escapedText
+        case (false, c) if "VzOXxZ".exists(_ == c) =>
+          // The pattern isn't timezone agnostic.
+          throw new SparkException("Unsupported pattern: " +
+            "only timezone agnostic patterns are supported")
+        case (escapedText, _) => escapedText
+      }
+    }
     methodName match {
       case "ofPattern" =>
         checkArgs(methodName, List(StringType), args)
-        Repr.DateTimeFormatter.ofPattern(args.head)
+        // The pattern needs to be known at compile time as we need to check
+        // whether the pattern is timezone agnostic.  If it isn't, it needs
+        // to fall back to JVM.
+        args.head match {
+          case StringLiteral(pattern) =>
+            checkPattern(pattern)
+            Repr.DateTimeFormatter.ofPattern(args.head)
+          case _ =>
+            // The pattern isn't known at compile time.
+            throw new SparkException("Unsupported pattern: only string literals are supported")
+        }
       case _ =>
         throw new SparkException(s"Unsupported function: " +
             s"DateTimeFormatter.${methodName}")
