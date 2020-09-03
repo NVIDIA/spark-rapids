@@ -23,6 +23,7 @@ def initialize_gpu_mem():
     # CUDA device(s) info
     print("INFO: Found CUDA visible device(s): {}".format(os.environ.get('CUDA_VISIBLE_DEVICES')))
 
+<<<<<<< HEAD
     # SQL plugin info
     if 'RAPIDS_SQL_ENABLED' in os.environ:
         sql_enabled = os.environ.get('RAPIDS_SQL_ENABLED').lower() == 'true'
@@ -31,6 +32,8 @@ def initialize_gpu_mem():
     else:
         print("INFO: rapids python worker is running without sql plugin.")
 
+=======
+>>>>>>> 3f94ac8b608e311c181892fc72756d894627037f
     # Initialize RMM only when requiring to enable pooled or managed memory.
     pool_enabled = os.environ.get('RAPIDS_POOLED_MEM_ENABLED', 'false').lower() == 'true'
     uvm_enabled = os.environ.get('RAPIDS_UVM_ENABLED', 'false').lower() == 'true'
@@ -59,9 +62,14 @@ def initialize_gpu_mem():
         base_t = rmm.mr.ManagedMemoryResource if uvm_enabled else rmm.mr.CudaMemoryResource
         rmm.mr.set_current_device_resource(rmm.mr.PoolMemoryResource(base_t(), pool_size, pool_max_size))
     elif uvm_enabled:
+<<<<<<< HEAD
         # Will this really be needed for Python ?
         from cudf import rmm
         rmm.mr.set_default_resource(rmm.mr.ManagedMemoryResource())
+=======
+        from cudf import rmm
+        rmm.mr.set_current_device_resource(rmm.mr.ManagedMemoryResource())
+>>>>>>> 3f94ac8b608e311c181892fc72756d894627037f
     else:
         # Do nothing, whether to use RMM (default mode) or not depends on UDF definition.
         pass

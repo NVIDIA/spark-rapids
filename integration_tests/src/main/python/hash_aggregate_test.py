@@ -280,26 +280,9 @@ def test_hash_multiple_filters(data_gen, conf):
         "hash_agg_table",
         'select count(a) filter (where c > 50),' +
         'count(b) filter (where c > 100),' +
-        # Uncomment after https://github.com/NVIDIA/spark-rapids/issues/155 is fixed
-        # 'avg(b) filter (where b > 20),' +
+        'avg(b) filter (where b > 20),' +
         'min(a), max(b) filter (where c > 250) from hash_agg_table group by a',
         conf)
-
-
-@pytest.mark.xfail(reason='https://github.com/NVIDIA/spark-rapids/issues/155')
-@ignore_order
-@allow_non_gpu(
-    'HashAggregateExec', 'AggregateExpression',
-    'AttributeReference', 'Alias', 'Sum', 'Count', 'Max', 'Min', 'Average', 'Cast',
-    'KnownFloatingPointNormalized', 'NormalizeNaNAndZero', 'GreaterThan', 'Literal', 'If',
-    'EqualTo', 'First', 'SortAggregateExec', 'Coalesce')
-@pytest.mark.parametrize('data_gen', [_longs_with_nulls], ids=idfn)
-def test_hash_multiple_filters_fail(data_gen):
-    assert_gpu_and_cpu_are_equal_sql(
-        lambda spark : gen_df(spark, data_gen, length=100),
-        "hash_agg_table",
-        'select avg(b) filter (where b > 20) from hash_agg_table group by a',
-        _no_nans_float_conf_partial)
 
 
 @ignore_order

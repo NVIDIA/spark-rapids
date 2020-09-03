@@ -14,9 +14,17 @@
  * limitations under the License.
  */
 
-package org.apache.spark.sql.rapids
+package com.nvidia.spark.rapids.shims.spark302
 
-/**
- * Base trait used for GpuFileSourceScanExec to use it in the Shim layer.
- */
-trait GpuFileSourceScanExecBase
+import com.nvidia.spark.rapids.ShimVersion
+import com.nvidia.spark.rapids.shims.spark301.Spark301Shims
+import com.nvidia.spark.rapids.spark302.RapidsShuffleManager
+
+class Spark302Shims extends Spark301Shims {
+
+  override def getSparkShimVersion: ShimVersion = SparkShimServiceProvider.VERSION
+
+  override def getRapidsShuffleManagerClass: String = {
+    classOf[RapidsShuffleManager].getCanonicalName
+  }
+}

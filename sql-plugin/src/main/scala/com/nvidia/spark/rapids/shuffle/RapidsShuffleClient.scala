@@ -705,11 +705,11 @@ class RapidsShuffleClient(
 
     val ptrs = new ArrayBuffer[PendingTransferRequest](allTables)
     (0 until allTables).foreach { i =>
-      val tableMeta = metaResponse.tableMetas(i)
+      val tableMeta = ShuffleMetadata.copyTableMetaToHeap(metaResponse.tableMetas(i))
       if (tableMeta.bufferMeta() != null) {
         ptrs += PendingTransferRequest(
           this,
-          ShuffleMetadata.copyTableMetaToHeap(tableMeta),
+          tableMeta,
           connection.assignBufferTag(tableMeta.bufferMeta().id),
           handler)
       } else {

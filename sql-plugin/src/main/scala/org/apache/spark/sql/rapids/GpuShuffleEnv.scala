@@ -16,15 +16,15 @@
 
 package org.apache.spark.sql.rapids
 
+import java.util.Locale
+
 import ai.rapids.cudf.{CudaMemInfo, Rmm}
 import com.nvidia.spark.rapids._
 
 import org.apache.spark.SparkEnv
 import org.apache.spark.internal.Logging
-import org.apache.spark.sql.SparkSession
-import org.apache.spark.util.Utils
 
-class GpuShuffleEnv extends Logging {
+class GpuShuffleEnv(rapidsConf: RapidsConf) extends Logging {
   private val catalog = new RapidsBufferCatalog
   private var shuffleCatalog: ShuffleBufferCatalog = _
   private var shuffleReceivedBufferCatalog: ShuffleReceivedBufferCatalog = _
@@ -34,18 +34,19 @@ class GpuShuffleEnv extends Logging {
   private var memoryEventHandler: DeviceMemoryEventHandler = _
 
   private lazy val conf = SparkEnv.get.conf
-  private lazy val rapidsConf = new RapidsConf(SparkSession.active.sqlContext.conf)
 
   lazy val isRapidsShuffleConfigured: Boolean = {
     conf.contains("spark.shuffle.manager") &&
       conf.get("spark.shuffle.manager") == GpuShuffleEnv.RAPIDS_SHUFFLE_CLASS
   }
 
-  lazy val isRapidsShuffleEnabled: Boolean = {
-    val env = SparkEnv.get
-    val isRapidsManager = GpuShuffleEnv.isRapidsShuffleManagerInitialized
-    val externalShuffle = env.blockManager.externalShuffleServiceEnabled
-    isRapidsManager && !externalShuffle
+  lazy val rapidsShuffleCodec: Option[TableCompressionCodec] = {
+    val codecName = rapidsConf.shuffleCompressionCodec.toLowerCase(Locale.ROOT)
+    if (codecName == "none") {
+      None
+    } else {
+      Some(TableCompressionCodec.getCodec(codecName))
+    }
   }
 
   def initStorage(devInfo: CudaMemInfo): Unit = {
@@ -102,31 +103,47 @@ object GpuShuffleEnv extends Logging {
   private var isRapidsShuffleManagerInitialized: Boolean  = false
   @volatile private var env: GpuShuffleEnv = _
 
-  def init(devInfo: CudaMemInfo): Unit = {
-    Option(env).foreach(_.closeStorage())
-    val shuffleEnv = new GpuShuffleEnv
-    shuffleEnv.initStorage(devInfo)
-    env = shuffleEnv
+  //
+  // Functions below get called from the driver or executors
+  //
+
+  def isRapidsShuffleEnabled: Boolean = {
+    val isRapidsManager = GpuShuffleEnv.isRapidsShuffleManagerInitialized
+    val externalShuffle = SparkEnv.get.blockManager.externalShuffleServiceEnabled
+    isRapidsManager && !externalShuffle
   }
 
-  def shutdown(): Unit = {
-    env.closeStorage()
-  }
-
-  def get: GpuShuffleEnv = env
-
-  def getCatalog: ShuffleBufferCatalog = env.getCatalog
-
-  def getReceivedCatalog: ShuffleReceivedBufferCatalog = env.getReceivedCatalog
-
-  def getDeviceStorage: RapidsDeviceMemoryStore = env.getDeviceStorage
-
-  def isRapidsShuffleEnabled: Boolean = env.isRapidsShuffleEnabled
-
-  // the shuffle plugin will call this on initialize
   def setRapidsShuffleManagerInitialized(initialized: Boolean, className: String): Unit = {
     assert(className == GpuShuffleEnv.RAPIDS_SHUFFLE_CLASS)
     logInfo("RapidsShuffleManager is initialized")
     isRapidsShuffleManagerInitialized = initialized
   }
+
+  def shutdown(): Unit = {
+    // in the driver, this will not be set
+    Option(env).foreach(_.closeStorage())
+  }
+
+  def getCatalog: ShuffleBufferCatalog = if (env == null) {
+    null
+  } else {
+    env.getCatalog
+  }
+
+  //
+  // Functions below only get called from the executor
+  //
+
+  def init(conf: RapidsConf, devInfo: CudaMemInfo): Unit = {
+    Option(env).foreach(_.closeStorage())
+    val shuffleEnv = new GpuShuffleEnv(conf)
+    shuffleEnv.initStorage(devInfo)
+    env = shuffleEnv
+  }
+
+  def getReceivedCatalog: ShuffleReceivedBufferCatalog = env.getReceivedCatalog
+
+  def getDeviceStorage: RapidsDeviceMemoryStore = env.getDeviceStorage
+
+  def rapidsShuffleCodec: Option[TableCompressionCodec] = env.rapidsShuffleCodec
 }

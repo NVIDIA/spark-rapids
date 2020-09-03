@@ -140,7 +140,7 @@ class RapidsDeviceMemoryStore(
       if (table.isDefined) {
         GpuColumnVector.from(table.get) //REFCOUNT ++ of all columns
       } else {
-        throw new UnsupportedOperationException("compressed buffer support not implemented")
+        columnarBatchFromDeviceBuffer(contigBuffer)
       }
     }
   }

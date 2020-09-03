@@ -1,5 +1,9 @@
 /*
+<<<<<<< HEAD
  * Copyright (c) 2019-2020, NVIDIA CORPORATION.
+=======
+ * Copyright (c) 2020, NVIDIA CORPORATION.
+>>>>>>> 3f94ac8b608e311c181892fc72756d894627037f
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -20,7 +24,10 @@ import java.io.File
 
 import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.python.PythonWorkerSemaphore
+<<<<<<< HEAD
 
+=======
+>>>>>>> 3f94ac8b608e311c181892fc72756d894627037f
 import scala.collection.mutable.ArrayBuffer
 
 import org.apache.spark.{SparkEnv, TaskContext}
@@ -45,17 +52,40 @@ class GpuAggregateInPandasExecMeta(
     rule: ConfKeysAndIncompat)
   extends SparkPlanMeta[AggregateInPandasExec](aggPandas, conf, parent, rule) {
 
+<<<<<<< HEAD
   // Handle the child expressions(Python UDF) ourselves.
+=======
+  override def couldReplaceMessage: String = "could partially run on GPU"
+  override def noReplacementPossibleMessage(reasons: String): String =
+    s"cannot run even partially on the GPU because $reasons"
+
+  // Ignore the expressions since columnar way is not supported yet
+>>>>>>> 3f94ac8b608e311c181892fc72756d894627037f
   override val childExprs: Seq[BaseExprMeta[_]] = Seq.empty
 
   override def convertToGpu(): GpuExec =
     GpuAggregateInPandasExec(
+<<<<<<< HEAD
       wrapped.groupingExpressions, wrapped.udfExpressions, wrapped.resultExpressions, wrapped.child
     )
 }
 
 /**
  * This is the GPU version of AggregateInPandasExec
+=======
+      aggPandas.groupingExpressions,
+      aggPandas.udfExpressions,
+      aggPandas.resultExpressions,
+      childPlans.head.convertIfNeeded()
+    )
+}
+
+/*
+ * This GpuAggregateInPandasExec aims at supporting running Pandas UDF code
+ * on GPU at Python side.
+ *
+ * (Currently it will not run on GPU itself, since the columnar way is not implemented yet.)
+>>>>>>> 3f94ac8b608e311c181892fc72756d894627037f
  *
  */
 case class GpuAggregateInPandasExec(
@@ -67,8 +97,12 @@ case class GpuAggregateInPandasExec(
 
   override def supportsColumnar = false
   override def doExecuteColumnar(): RDD[ColumnarBatch] = {
+<<<<<<< HEAD
     // TBD
     super.doExecuteColumnar()
+=======
+    throw new IllegalStateException(s"Columnar execution is not supported by $this yet")
+>>>>>>> 3f94ac8b608e311c181892fc72756d894627037f
   }
 
   // Most code is copied from AggregateInPandasExec, except two GPU related calls

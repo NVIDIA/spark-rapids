@@ -57,7 +57,7 @@ pipeline {
                     sh "mkdir -p ${HOME}/.zinc"
                     docker.image("$IMAGE_NAME").inside("--runtime=nvidia -v ${HOME}/.m2:${HOME}/.m2:rw \
                         -v ${HOME}/.zinc:${HOME}/.zinc:rw") {
-                        sh "mvn -U -B clean install $MVN_MIRROR -P source-javadoc"
+                        sh "mvn -U -B clean install $MVN_MIRROR -P 'source-javadoc,!snapshot-shims'"
                     }
                 }
             }

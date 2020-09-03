@@ -19,14 +19,12 @@ import ai.rapids.cudf.{NvtxColor, Table}
 import com.nvidia.spark.rapids._
 
 import org.apache.spark.TaskContext
-import org.apache.spark.rdd.RDD
-import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.expressions.{Attribute, Expression}
-import org.apache.spark.sql.catalyst.expressions.codegen.CodegenContext
 import org.apache.spark.sql.catalyst.optimizer.{BuildLeft, BuildRight}
 import org.apache.spark.sql.catalyst.plans.{ExistenceJoin, FullOuter, InnerLike, JoinType, LeftAnti, LeftExistence, LeftOuter, LeftSemi, RightOuter}
-import org.apache.spark.sql.execution.joins.HashJoin
+import org.apache.spark.sql.execution.joins.HashJoinWithoutCodegen
 import org.apache.spark.sql.execution.metric.SQLMetric
+import org.apache.spark.sql.rapids.GpuAnd
 import org.apache.spark.sql.vectorized.{ColumnarBatch, ColumnVector}
 
 object GpuHashJoin {
@@ -43,11 +41,14 @@ object GpuHashJoin {
       }
     case _ => meta.willNotWorkOnGpu(s"$joinType currently is not supported")
   }
+
+  def incRefCount(cb: ColumnarBatch): ColumnarBatch = {
+    GpuColumnVector.extractBases(cb).foreach(_.incRefCount())
+    cb
+  }
 }
 
-trait GpuHashJoin extends GpuExec with HashJoin {
-
-  override def supportCodegen: Boolean = false
+trait GpuHashJoin extends GpuExec with HashJoinWithoutCodegen {
 
   override def output: Seq[Attribute] = {
     joinType match {
@@ -116,6 +117,58 @@ trait GpuHashJoin extends GpuExec with HashJoin {
       output.indices.map (v => v + joinLength)
   }
 
+  // Spark adds in rules to filter out nulls for some types of joins, but it does not
+  // guarantee 100% that all nulls will be filtered out by the time they get to
+  // this point, but because of https://github.com/rapidsai/cudf/issues/6052
+  // we need to filter out the nulls ourselves until it is fixed.
+  // InnerLike | LeftSemi =>
+  //   filter left and right keys
+  // RightOuter =>
+  //   filter left keys
+  // LeftOuter | LeftAnti =>
+  //   filter right keys
+
+  private[this] lazy val shouldFilterBuiltTableForNulls: Boolean = {
+    val builtAnyNullable = gpuBuildKeys.exists(_.nullable)
+    (joinType, buildSide) match {
+      case (_: InnerLike | LeftSemi, _) => builtAnyNullable
+      case (RightOuter, BuildLeft) => builtAnyNullable
+      case (LeftOuter | LeftAnti, BuildRight) => builtAnyNullable
+      case _ => false
+    }
+  }
+
+  private[this] lazy val shouldFilterStreamTableForNulls: Boolean = {
+    val streamedAnyNullable = gpuStreamedKeys.exists(_.nullable)
+    (joinType, buildSide) match {
+      case (_: InnerLike | LeftSemi, _) => streamedAnyNullable
+      case (RightOuter, BuildRight) => streamedAnyNullable
+      case (LeftOuter | LeftAnti, BuildLeft) => streamedAnyNullable
+      case _ => false
+    }
+  }
+
+  private[this] def mkNullFilterExpr(exprs: Seq[GpuExpression]): GpuExpression =
+    exprs.zipWithIndex.map { kv =>
+      GpuIsNotNull(GpuBoundReference(kv._2, kv._1.dataType, kv._1.nullable))
+    }.reduce(GpuAnd)
+
+  private[this] lazy val builtTableNullFilterExpression: GpuExpression =
+    mkNullFilterExpr(gpuBuildKeys)
+
+  private[this] lazy val streamedTableNullFilterExpression: GpuExpression =
+    mkNullFilterExpr(gpuStreamedKeys)
+
+  def filterBuiltTableIfNeeded(builtBatch: ColumnarBatch): ColumnarBatch =
+    if (shouldFilterBuiltTableForNulls) {
+      GpuFilter(builtBatch, builtTableNullFilterExpression)
+    } else {
+      builtBatch
+    }
+
+  private[this] def filterStreamedTable(streamedBatch:ColumnarBatch): ColumnarBatch =
+    GpuFilter(streamedBatch, streamedTableNullFilterExpression)
+
   def doJoin(builtTable: Table,
       stream: Iterator[ColumnarBatch],
       boundCondition: Option[Expression],
@@ -140,7 +193,11 @@ trait GpuHashJoin extends GpuExec with HashJoin {
       override def hasNext: Boolean = {
         while (nextCb.isEmpty && (first || stream.hasNext)) {
           if (stream.hasNext) {
-            val cb = stream.next()
+            val cb = if (shouldFilterStreamTableForNulls) {
+              filterStreamedTable(stream.next())
+            } else {
+              stream.next()
+            }
             val startTime = System.nanoTime()
             nextCb = doJoin(builtTable, cb, boundCondition, joinOutputRows, numOutputRows,
               numOutputBatches, joinTime, filterTime)
@@ -246,14 +303,5 @@ trait GpuHashJoin extends GpuExec with HashJoin {
     } finally {
       joinedTable.close()
     }
-  }
-
-  override def inputRDDs(): Seq[RDD[InternalRow]] = {
-    throw new UnsupportedOperationException("inputRDDs is used by codegen which we don't support")
-  }
-
-  protected override def prepareRelation(ctx: CodegenContext): (String, Boolean) = {
-    throw new UnsupportedOperationException(
-      "prepareRelation is used by codegen which we don't support")
   }
 }

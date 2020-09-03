@@ -1,5 +1,9 @@
 /*
+<<<<<<< HEAD
  * Copyright (c) 2019-2020, NVIDIA CORPORATION.
+=======
+ * Copyright (c) 2020, NVIDIA CORPORATION.
+>>>>>>> 3f94ac8b608e311c181892fc72756d894627037f
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -42,11 +46,20 @@ class GpuFlatMapCoGroupsInPandasExecMeta(
     rule: ConfKeysAndIncompat)
   extends SparkPlanMeta[FlatMapCoGroupsInPandasExec](flatPandas, conf, parent, rule) {
 
+<<<<<<< HEAD
   // Handle the child expressions(Python UDF) ourselves.
+=======
+  override def couldReplaceMessage: String = "could partially run on GPU"
+  override def noReplacementPossibleMessage(reasons: String): String =
+    s"cannot run even partially on the GPU because $reasons"
+
+  // Ignore the expressions since columnar way is not supported yet
+>>>>>>> 3f94ac8b608e311c181892fc72756d894627037f
   override val childExprs: Seq[BaseExprMeta[_]] = Seq.empty
 
   override def convertToGpu(): GpuExec =
     GpuFlatMapCoGroupsInPandasExec(
+<<<<<<< HEAD
       wrapped.leftGroup, wrapped.rightGroup,
       wrapped.func, wrapped.output,
       wrapped.left, wrapped.right
@@ -55,6 +68,21 @@ class GpuFlatMapCoGroupsInPandasExecMeta(
 
 /**
  * This is the GPU version of FlatMapCoGroupsInPandasExec
+=======
+      flatPandas.leftGroup, flatPandas.rightGroup,
+      flatPandas.func,
+      flatPandas.output,
+      childPlans.head.convertIfNeeded(), childPlans(1).convertIfNeeded()
+    )
+}
+
+/*
+ *
+ * This GpuFlatMapCoGroupsInPandasExec aims at supporting running Pandas functional code
+ * on GPU at Python side.
+ *
+ * (Currently it will not run on GPU itself, since the columnar way is not implemented yet.)
+>>>>>>> 3f94ac8b608e311c181892fc72756d894627037f
  *
  */
 case class GpuFlatMapCoGroupsInPandasExec(
@@ -68,8 +96,12 @@ case class GpuFlatMapCoGroupsInPandasExec(
 
   override def supportsColumnar = false
   override def doExecuteColumnar(): RDD[ColumnarBatch] = {
+<<<<<<< HEAD
     // TBD
     super.doExecuteColumnar()
+=======
+    throw new IllegalStateException(s"Columnar execution is not supported by $this yet")
+>>>>>>> 3f94ac8b608e311c181892fc72756d894627037f
   }
 
   // Most code is copied from FlatMapCoGroupsInPandasExec, except two GPU related calls

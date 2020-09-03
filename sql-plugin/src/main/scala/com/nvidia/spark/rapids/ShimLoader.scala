@@ -38,7 +38,8 @@ object ShimLoader extends Logging {
   logInfo(s"Found shims: $sparkShimLoaders")
   private val loader = sparkShimLoaders.headOption match {
     case Some(loader) => loader
-    case None => throw new IllegalArgumentException("Could not find Spark Shim Loader")
+    case None =>
+      throw new IllegalArgumentException(s"Could not find Spark Shim Loader for $sparkVersion")
   }
   private var sparkShims: SparkShims = null
 

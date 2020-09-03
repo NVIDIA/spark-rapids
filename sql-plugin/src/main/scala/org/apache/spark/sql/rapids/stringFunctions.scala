@@ -22,7 +22,7 @@ import ai.rapids.cudf.{ColumnVector, DType, PadSide, Scalar, Table}
 import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 
-import org.apache.spark.sql.catalyst.expressions.{ExpectsInputTypes, Expression, ImplicitCastInputTypes, NullIntolerant, Predicate, SubstringIndex}
+import org.apache.spark.sql.catalyst.expressions.{ExpectsInputTypes, Expression, ImplicitCastInputTypes, NullIntolerant, Predicate, StringSplit, SubstringIndex}
 import org.apache.spark.sql.types._
 import org.apache.spark.sql.vectorized.ColumnarBatch
 import org.apache.spark.unsafe.types.UTF8String
@@ -768,4 +768,96 @@ case class GpuStringRPad(str: Expression, len: Expression, pad: Expression)
   def this(str: Expression, len: Expression) = {
     this(str, len, GpuLiteral(" ", StringType))
   }
+}
+
+class GpuStringSplitMeta(
+    expr: StringSplit,
+    conf: RapidsConf,
+    parent: Option[RapidsMeta[_, _, _]],
+    rule: ConfKeysAndIncompat)
+    extends TernaryExprMeta[StringSplit](expr, conf, parent, rule) {
+  import GpuOverrides._
+
+  override def tagExprForGpu(): Unit = {
+    val regexp = extractLit(expr.regex)
+    if (regexp.isEmpty) {
+      willNotWorkOnGpu("only literal regexp values are supported")
+    } else {
+      val str = regexp.get.value.asInstanceOf[UTF8String]
+      if (str != null) {
+        if (!canRegexpBeTreatedLikeARegularString(str)) {
+          willNotWorkOnGpu("regular expressions are not supported yet")
+        }
+        if (str.numChars() == 0) {
+          willNotWorkOnGpu("An empty regex is not supported yet")
+        }
+      } else {
+        willNotWorkOnGpu("null regex is not supported yet")
+      }
+    }
+    if (!isLit(expr.limit)) {
+      willNotWorkOnGpu("only literal limit is supported")
+    }
+  }
+  override def convertToGpu(
+      str: Expression,
+      regexp: Expression,
+      limit: Expression): GpuExpression =
+    GpuStringSplit(str, regexp, limit)
+
+  // For now we support all of the possible input and output types for this operator
+  override def areAllSupportedTypes(types: DataType*): Boolean = true
+}
+
+case class GpuStringSplit(str: Expression, regex: Expression, limit: Expression)
+    extends GpuTernaryExpression with ImplicitCastInputTypes {
+
+  override def dataType: DataType = ArrayType(StringType)
+  override def inputTypes: Seq[DataType] = Seq(StringType, StringType, IntegerType)
+  override def children: Seq[Expression] = str :: regex :: limit :: Nil
+
+  def this(exp: Expression, regex: Expression) = this(exp, regex, GpuLiteral(-1, IntegerType))
+
+  override def prettyName: String = "split"
+
+  override def doColumnar(str: GpuColumnVector, regex: Scalar, limit: Scalar): GpuColumnVector = {
+    val intLimit = limit.getInt
+    GpuColumnVector.from(str.getBase.stringSplitRecord(regex, intLimit))
+  }
+
+  override def doColumnar(
+      str: GpuColumnVector,
+      regex: GpuColumnVector,
+      limit: GpuColumnVector): GpuColumnVector =
+    throw new IllegalStateException("This is not supported yet")
+
+  override def doColumnar(
+      str: Scalar,
+      regex: GpuColumnVector,
+      limit: GpuColumnVector): GpuColumnVector =
+    throw new IllegalStateException("This is not supported yet")
+
+  override def doColumnar(
+      str: Scalar,
+      regex: Scalar,
+      limit: GpuColumnVector): GpuColumnVector =
+    throw new IllegalStateException("This is not supported yet")
+
+  override def doColumnar(
+      str: Scalar,
+      regex: GpuColumnVector,
+      limit: Scalar): GpuColumnVector =
+    throw new IllegalStateException("This is not supported yet")
+
+  override def doColumnar(
+      str: GpuColumnVector,
+      regex: Scalar,
+      limit: GpuColumnVector): GpuColumnVector =
+    throw new IllegalStateException("This is not supported yet")
+
+  override def doColumnar(
+      str: GpuColumnVector,
+      regex: GpuColumnVector,
+      limit: Scalar): GpuColumnVector =
+    throw new IllegalStateException("This is not supported yet")
 }

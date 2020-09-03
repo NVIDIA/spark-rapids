@@ -21,7 +21,6 @@ import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicLong
 
 import ai.rapids.cudf.{Cuda, DeviceMemoryBuffer, HostMemoryBuffer, NvtxColor, NvtxRange}
-import com.nvidia.spark.rapids.StorageTier.StorageTier
 import com.nvidia.spark.rapids.format.TableMeta
 
 import org.apache.spark.internal.Logging
@@ -236,7 +235,7 @@ abstract class RapidsBufferStore(
       override val id: RapidsBufferId,
       override val size: Long,
       override val meta: TableMeta,
-      initialSpillPriority: Long) extends RapidsBuffer {
+      initialSpillPriority: Long) extends RapidsBuffer with Arm {
     private[this] var isValid = true
     protected[this] var refcount = 0
     private[this] var spillPriority: Long = initialSpillPriority
@@ -267,23 +266,24 @@ abstract class RapidsBufferStore(
       // allocated. Allocations can trigger synchronous spills which can
       // deadlock if another thread holds the device store lock and is trying
       // to spill to this store.
-      val deviceBuffer = DeviceMemoryBuffer.allocate(size)
-      try {
-        val buffer = getMemoryBuffer
-        try {
-          buffer match {
-            case h: HostMemoryBuffer =>
-              logDebug(s"copying from host $h to device $deviceBuffer")
-              deviceBuffer.copyFromHostBuffer(h)
-            case _ => throw new IllegalStateException(
-              "must override getColumnarBatch if not providing a host buffer")
-          }
-        } finally {
-          buffer.close()
+      withResource(DeviceMemoryBuffer.allocate(size)) { deviceBuffer =>
+        withResource(getMemoryBuffer) {
+          case h: HostMemoryBuffer =>
+            logDebug(s"copying from host $h to device $deviceBuffer")
+            deviceBuffer.copyFromHostBuffer(h)
+          case _ => throw new IllegalStateException(
+            "must override getColumnarBatch if not providing a host buffer")
         }
-        MetaUtils.getBatchFromMeta(deviceBuffer, meta)
-      } finally {
-        deviceBuffer.close()
+        columnarBatchFromDeviceBuffer(deviceBuffer)
+      }
+    }
+
+    protected def columnarBatchFromDeviceBuffer(devBuffer: DeviceMemoryBuffer): ColumnarBatch = {
+      val bufferMeta = meta.bufferMeta()
+      if (bufferMeta == null || bufferMeta.codecBufferDescrsLength == 0) {
+        MetaUtils.getBatchFromMeta(devBuffer, meta)
+      } else {
+        GpuCompressedColumnVector.from(devBuffer, meta)
       }
     }
 

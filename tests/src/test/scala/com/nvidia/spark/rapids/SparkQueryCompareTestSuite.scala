@@ -28,6 +28,7 @@ import org.apache.spark.SparkConf
 import org.apache.spark.internal.Logging
 import org.apache.spark.sql.{DataFrame, Row, SparkSession}
 import org.apache.spark.sql.execution.SparkPlan
+import org.apache.spark.sql.rapids.execution.TrampolineUtil
 import org.apache.spark.sql.types._
 
 object TestResourceFinder {
@@ -70,6 +71,7 @@ object SparkSessionHolder extends Logging {
     Locale.setDefault(Locale.US)
     SparkSession.builder()
         .master("local[1]")
+        .config("spark.sql.adaptive.enabled", "false")
         .config("spark.rapids.sql.enabled", "false")
         .config("spark.rapids.sql.test.enabled", "false")
         .config("spark.plugins", "com.nvidia.spark.SQLPlugin")
@@ -225,6 +227,8 @@ trait SparkQueryCompareTestSuite extends FunSuite with Arm {
   : (Array[Row], SparkPlan, Array[Row], SparkPlan) = {
     conf.setIfMissing("spark.sql.shuffle.partitions", "2")
 
+    // force a new session to avoid accidentally capturing a late callback from a previous query
+    TrampolineUtil.cleanupAnyExistingSession()
     ExecutionPlanCaptureCallback.startCapture()
     var cpuPlan: Option[SparkPlan] = null
     val fromCpu =
@@ -1228,6 +1232,14 @@ trait SparkQueryCompareTestSuite extends FunSuite with Arm {
       1.0d,
       2.0d
     ).toDF("doubles")
+  }
+
+  def nullDf(session: SparkSession): DataFrame = {
+    import session.sqlContext.implicits._
+    Seq[(java.lang.Long, java.lang.Long)](
+      (100L, 15L),
+      (100L, null)
+    ).toDF("longs", "more_longs")
   }
 
   def mixedDoubleDf(session: SparkSession): DataFrame = {

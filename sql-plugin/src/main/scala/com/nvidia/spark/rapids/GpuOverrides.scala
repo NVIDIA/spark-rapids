@@ -28,9 +28,10 @@ import org.apache.spark.sql.catalyst.plans.physical._
 import org.apache.spark.sql.catalyst.rules.Rule
 import org.apache.spark.sql.connector.read.Scan
 import org.apache.spark.sql.execution._
+import org.apache.spark.sql.execution.adaptive.CustomShuffleReaderExec
 import org.apache.spark.sql.execution.aggregate.{HashAggregateExec, SortAggregateExec}
 import org.apache.spark.sql.execution.command.{DataWritingCommand, DataWritingCommandExec}
-import org.apache.spark.sql.execution.datasources.{HadoopFsRelation, InsertIntoHadoopFsRelationCommand}
+import org.apache.spark.sql.execution.datasources.InsertIntoHadoopFsRelationCommand
 import org.apache.spark.sql.execution.datasources.csv.CSVFileFormat
 import org.apache.spark.sql.execution.datasources.json.JsonFileFormat
 import org.apache.spark.sql.execution.datasources.orc.OrcFileFormat
@@ -38,18 +39,20 @@ import org.apache.spark.sql.execution.datasources.parquet.ParquetFileFormat
 import org.apache.spark.sql.execution.datasources.text.TextFileFormat
 import org.apache.spark.sql.execution.datasources.v2.BatchScanExec
 import org.apache.spark.sql.execution.datasources.v2.csv.CSVScan
-import org.apache.spark.sql.execution.datasources.v2.orc.OrcScan
-import org.apache.spark.sql.execution.datasources.v2.parquet.ParquetScan
 import org.apache.spark.sql.execution.exchange.{BroadcastExchangeExec, ShuffleExchangeExec}
 import org.apache.spark.sql.execution.joins._
 import org.apache.spark.sql.execution.python._
 import org.apache.spark.sql.execution.window.WindowExec
 import org.apache.spark.sql.rapids._
 import org.apache.spark.sql.rapids.catalyst.expressions.GpuRand
+<<<<<<< HEAD
 import org.apache.spark.sql.rapids.execution.{GpuBroadcastMeta, GpuBroadcastNestedLoopJoinMeta}
+=======
+import org.apache.spark.sql.rapids.execution.{GpuBroadcastMeta, GpuBroadcastNestedLoopJoinMeta, GpuCustomShuffleReaderExec, GpuShuffleMeta}
+>>>>>>> 3f94ac8b608e311c181892fc72756d894627037f
 import org.apache.spark.sql.rapids.execution.python._
 import org.apache.spark.sql.types._
-import org.apache.spark.unsafe.types.{CalendarInterval, UTF8String}
+import org.apache.spark.unsafe.types.UTF8String
 
 /**
  * Base class for all ReplacementRules
@@ -336,6 +339,11 @@ object GpuOverrides {
     "\f", "\\a", "\\e", "\\cx", "[", "]", "^", "&", ".", "*", "\\d", "\\D", "\\h", "\\H", "\\s",
     "\\S", "\\v", "\\V", "\\w", "\\w", "\\p", "$", "\\b", "\\B", "\\A", "\\G", "\\Z", "\\z", "\\R",
     "?", "|", "(", ")", "{", "}", "\\k", "\\Q", "\\E", ":", "!", "<=", ">")
+
+  def canRegexpBeTreatedLikeARegularString(strLit: UTF8String): Boolean = {
+    val s = strLit.toString
+    !regexList.exists(pattern => s.contains(pattern))
+  }
 
   @scala.annotation.tailrec
   def extractLit(exp: Expression): Option[Literal] = exp match {
@@ -1238,6 +1246,20 @@ object GpuOverrides {
 
         override def convertToGpu(child: Expression): GpuExpression = GpuAverage(child)
       }),
+    expr[PythonUDF](
+      "UDF run in an external python process. Does not actually run on the GPU, but " +
+          "the transfer of data to/from it can be accelerated.",
+      (a, conf, p, r) => new ExprMeta[PythonUDF](a, conf, p, r) {
+        override def couldReplaceMessage: String = "does not block GPU acceleration"
+        override def noReplacementPossibleMessage(reasons: String): String =
+          s"blocks running on GPU because $reasons"
+
+        override def convertToGpu(): GpuExpression =
+          GpuPythonUDF(a.name, a.func, a.dataType,
+            childExprs.map(_.convertToGpu()),
+            a.evalType, a.udfDeterministic, a.resultId)
+      }
+    ),
     expr[Rand](
       "Generate a random column with i.i.d. uniformly distributed values in [0, 1)",
       (a, conf, p, r) => new UnaryExprMeta[Rand](a, conf, p, r) {
@@ -1329,6 +1351,12 @@ object GpuOverrides {
             pad: Expression): GpuExpression =
           GpuStringRPad(str, width, pad)
       }),
+    expr[StringSplit](
+       "Splits `str` around occurrences that match `regex`",
+      (in, conf, p, r) => new GpuStringSplitMeta(in, conf, p, r)),
+    expr[GetArrayItem](
+      "Gets the field at `ordinal` in the Array",
+      (in, conf, p, r) => new GpuGetArrayItemMeta(in, conf, p, r)),
     expr[StringLocate](
       "Substring search operator",
       (in, conf, p, r) => new TernaryExprMeta[StringLocate](in, conf, p, r) {
@@ -1493,8 +1521,8 @@ object GpuOverrides {
       .map(r => r.wrap(scan, conf, parent, r).asInstanceOf[ScanMeta[INPUT]])
       .getOrElse(new RuleNotFoundScanMeta(scan, conf, parent))
 
-  val scans : Map[Class[_ <: Scan], ScanRule[_ <: Scan]] = Seq(
-    scan[CSVScan](
+  val commonScans: Map[Class[_ <: Scan], ScanRule[_ <: Scan]] = Seq(
+    GpuOverrides.scan[CSVScan](
       "CSV parsing",
       (a, conf, p, r) => new ScanMeta[CSVScan](a, conf, p, r) {
         override def tagSelfForGpu(): Unit = GpuCSVScan.tagSupport(this)
@@ -1510,45 +1538,10 @@ object GpuOverrides {
             a.dataFilters,
             conf.maxReadBatchSizeRows,
             conf.maxReadBatchSizeBytes)
-      }),
-    scan[ParquetScan](
-      "Parquet parsing",
-      (a, conf, p, r) => new ScanMeta[ParquetScan](a, conf, p, r) {
-        override def tagSelfForGpu(): Unit = GpuParquetScan.tagSupport(this)
+      })).map(r => (r.getClassFor.asSubclass(classOf[Scan]), r)).toMap
 
-        override def convertToGpu(): Scan =
-          GpuParquetScan(a.sparkSession,
-            a.hadoopConf,
-            a.fileIndex,
-            a.dataSchema,
-            a.readDataSchema,
-            a.readPartitionSchema,
-            a.pushedFilters,
-            a.options,
-            a.partitionFilters,
-            a.dataFilters,
-            conf)
-      }),
-    scan[OrcScan](
-      "ORC parsing",
-      (a, conf, p, r) => new ScanMeta[OrcScan](a, conf, p, r) {
-        override def tagSelfForGpu(): Unit =
-          GpuOrcScan.tagSupport(this)
-
-        override def convertToGpu(): Scan =
-          GpuOrcScan(a.sparkSession,
-            a.hadoopConf,
-            a.fileIndex,
-            a.dataSchema,
-            a.readDataSchema,
-            a.readPartitionSchema,
-            a.options,
-            a.pushedFilters,
-            a.partitionFilters,
-            a.dataFilters,
-            conf)
-      })
-  ).map(r => (r.getClassFor.asSubclass(classOf[Scan]), r)).toMap
+  val scans: Map[Class[_ <: Scan], ScanRule[_ <: Scan]] =
+    commonScans ++ ShimLoader.getSparkShims.getScans
 
   def wrapPart[INPUT <: Partitioning](
       part: INPUT,
@@ -1681,6 +1674,28 @@ object GpuOverrides {
           override def convertToGpu(): GpuExec =
             GpuLocalLimitExec(localLimitExec.limit, childPlans(0).convertIfNeeded())
         }),
+    exec[ArrowEvalPythonExec](
+      "The backend of the Scalar Pandas UDFs, it supports running the Python UDFs code on GPU" +
+        " when calling cuDF APIs in the UDF, also accelerates the data transfer between the" +
+        " Java process and Python process",
+      (e, conf, p, r) =>
+        new SparkPlanMeta[ArrowEvalPythonExec](e, conf, p, r) {
+          val udfs: Seq[BaseExprMeta[PythonUDF]] =
+            e.udfs.map(GpuOverrides.wrapExpr(_, conf, Some(this)))
+          val resultAttrs: Seq[BaseExprMeta[Attribute]] =
+            e.resultAttrs.map(GpuOverrides.wrapExpr(_, conf, Some(this)))
+          override val childExprs: Seq[BaseExprMeta[_]] = udfs ++ resultAttrs
+
+          override def couldReplaceMessage: String = "could partially run on GPU"
+          override def noReplacementPossibleMessage(reasons: String): String =
+            s"cannot run even partially on the GPU because $reasons"
+
+          override def convertToGpu(): GpuExec =
+            GpuArrowEvalPythonExec(udfs.map(_.convertToGpu()).asInstanceOf[Seq[GpuPythonUDF]],
+              resultAttrs.map(_.convertToGpu()).asInstanceOf[Seq[Attribute]],
+              childPlans.head.convertIfNeeded(),
+              e.evalType)
+        }).disabledByDefault("Performance is not ideal for UDFs that take a long time"),
     exec[GlobalLimitExec](
       "Limiting of results across partitions",
       (globalLimitExec, conf, p, r) =>
@@ -1745,6 +1760,7 @@ object GpuOverrides {
       "Window-operator backend",
       (windowOp, conf, p, r) =>
         new GpuWindowExecMeta(windowOp, conf, p, r)
+<<<<<<< HEAD
       ),
     exec[ArrowEvalPythonExec](
       "The backend for Scalar Pandas (Iterator) UDFs",
@@ -1764,6 +1780,48 @@ object GpuOverrides {
     exec[WindowInPandasExec](
       "The backend for Pandas UDF with window functions",
       (winPy, conf, p, r) => new GpuWindowInPandasExecMeta(winPy, conf, p, r))
+=======
+    ),
+    exec[CustomShuffleReaderExec]("A wrapper of shuffle query stage", (exec, conf, p, r) =>
+      new SparkPlanMeta[CustomShuffleReaderExec](exec, conf, p, r) {
+        override def tagPlanForGpu(): Unit = {
+          if (!exec.child.supportsColumnar) {
+            willNotWorkOnGpu(
+              "Unable to replace CustomShuffleReader due to child not being columnar")
+          }
+        }
+
+        override def convertToGpu(): GpuExec = {
+          GpuCustomShuffleReaderExec(childPlans.head.convertIfNeeded(),
+            exec.partitionSpecs)
+        }
+      }),
+    exec[MapInPandasExec](
+      "The backend for Map Pandas Iterator UDF, it runs on CPU itself now but supports running" +
+        " the Python UDFs code on GPU when calling cuDF APIs in the UDF",
+      (mapPy, conf, p, r) => new GpuMapInPandasExecMeta(mapPy, conf, p, r))
+        .disabledByDefault("Performance is not ideal now"),
+    exec[FlatMapGroupsInPandasExec](
+      "The backend for Grouped Map Pandas UDF, it runs on CPU itself now but supports running" +
+        " the Python UDFs code on GPU when calling cuDF APIs in the UDF",
+      (flatPy, conf, p, r) => new GpuFlatMapGroupsInPandasExecMeta(flatPy, conf, p, r))
+        .disabledByDefault("Performance is not ideal now"),
+    exec[AggregateInPandasExec](
+      "The backend for Grouped Aggregation Pandas UDF, it runs on CPU itself now but supports" +
+        " running the Python UDFs code on GPU when calling cuDF APIs in the UDF",
+      (aggPy, conf, p, r) => new GpuAggregateInPandasExecMeta(aggPy, conf, p, r))
+        .disabledByDefault("Performance is not ideal now"),
+    exec[FlatMapCoGroupsInPandasExec](
+      "The backend for CoGrouped Aggregation Pandas UDF, it runs on CPU itself now but supports" +
+        " running the Python UDFs code on GPU when calling cuDF APIs in the UDF",
+      (flatCoPy, conf, p, r) => new GpuFlatMapCoGroupsInPandasExecMeta(flatCoPy, conf, p, r))
+        .disabledByDefault("Performance is not ideal now"),
+    exec[WindowInPandasExec](
+      "The backend for Pandas UDF with window functions, it runs on CPU itself now but supports" +
+        " running the Python UDFs code on GPU when calling cuDF APIs in the UDF",
+      (winPy, conf, p, r) => new GpuWindowInPandasExecMeta(winPy, conf, p, r))
+        .disabledByDefault("Performance is not ideal now")
+>>>>>>> 3f94ac8b608e311c181892fc72756d894627037f
   ).map(r => (r.getClassFor.asSubclass(classOf[SparkPlan]), r)).toMap
   val execs: Map[Class[_ <: SparkPlan], ExecRule[_ <: SparkPlan]] =
     commonExecs ++ ShimLoader.getSparkShims.getExecs

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019, NVIDIA CORPORATION.
+ * Copyright (c) 2019-2020, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -39,23 +39,7 @@ class ColumnarPartitionReaderWithPartitionValues(
       fileReader.get()
     } else {
       val fileBatch: ColumnarBatch = fileReader.get()
-      var partitionColumns: Array[GpuColumnVector] = null
-      try {
-        partitionColumns = buildPartitionColumns(fileBatch.numRows)
-        val fileBatchCols = (0 until fileBatch.numCols).map(fileBatch.column)
-        val resultCols = fileBatchCols ++ partitionColumns
-        val result = new ColumnarBatch(resultCols.toArray, fileBatch.numRows)
-        fileBatchCols.foreach(_.asInstanceOf[GpuColumnVector].incRefCount())
-        partitionColumns = null
-        result
-      } finally {
-        if (fileBatch != null) {
-          fileBatch.close()
-        }
-        if (partitionColumns != null) {
-          partitionColumns.safeClose()
-        }
-      }
+      ColumnarPartitionReaderWithPartitionValues.addPartitionValues(fileBatch, partitionValues)
     }
   }
 
@@ -63,8 +47,51 @@ class ColumnarPartitionReaderWithPartitionValues(
     fileReader.close()
     partitionValues.foreach(_.close())
   }
+}
 
-  private def buildPartitionColumns(numRows: Int): Array[GpuColumnVector] = {
+object ColumnarPartitionReaderWithPartitionValues {
+  def newReader(partFile: PartitionedFile,
+      baseReader: PartitionReader[ColumnarBatch],
+      partitionSchema: StructType): PartitionReader[ColumnarBatch] = {
+    val partitionValues = partFile.partitionValues.toSeq(partitionSchema)
+    val partitionScalars = createPartitionValues(partitionValues, partitionSchema)
+    new ColumnarPartitionReaderWithPartitionValues(baseReader, partitionScalars)
+  }
+
+  def createPartitionValues(
+      partitionValues: Seq[Any],
+      partitionSchema: StructType): Array[Scalar] = {
+    val partitionScalarTypes = partitionSchema.fields.map(_.dataType)
+    partitionValues.zip(partitionScalarTypes).safeMap {
+      case (v, t) => GpuScalar.from(v, t)
+    }.toArray
+  }
+
+  def addPartitionValues(
+      fileBatch: ColumnarBatch,
+      partitionValues: Array[Scalar]): ColumnarBatch = {
+    var partitionColumns: Array[GpuColumnVector] = null
+    try {
+      partitionColumns = buildPartitionColumns(fileBatch.numRows, partitionValues)
+      val fileBatchCols = (0 until fileBatch.numCols).map(fileBatch.column)
+      val resultCols = fileBatchCols ++ partitionColumns
+      val result = new ColumnarBatch(resultCols.toArray, fileBatch.numRows)
+      fileBatchCols.foreach(_.asInstanceOf[GpuColumnVector].incRefCount())
+      partitionColumns = null
+      result
+    } finally {
+      if (fileBatch != null) {
+        fileBatch.close()
+      }
+      if (partitionColumns != null) {
+        partitionColumns.safeClose()
+      }
+    }
+  }
+
+  private def buildPartitionColumns(
+      numRows: Int,
+      partitionValues: Array[Scalar]): Array[GpuColumnVector] = {
     var succeeded = false
     val result = new Array[GpuColumnVector](partitionValues.length)
     try {
@@ -79,18 +106,5 @@ class ColumnarPartitionReaderWithPartitionValues(
         result.filter(_ != null).safeClose()
       }
     }
-  }
-}
-
-object ColumnarPartitionReaderWithPartitionValues {
-  def newReader(partFile: PartitionedFile,
-      baseReader: PartitionReader[ColumnarBatch],
-      partitionSchema: StructType): PartitionReader[ColumnarBatch] = {
-    val partitionValues = partFile.partitionValues.toSeq(partitionSchema)
-    val partitionScalarTypes = partitionSchema.fields.map(_.dataType)
-    val partitionScalars = partitionValues.zip(partitionScalarTypes).map {
-      case (v, t) => GpuScalar.from(v, t)
-    }.toArray
-    new ColumnarPartitionReaderWithPartitionValues(baseReader, partitionScalars)
   }
 }

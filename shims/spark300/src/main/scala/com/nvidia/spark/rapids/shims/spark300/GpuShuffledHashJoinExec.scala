@@ -25,9 +25,10 @@ import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.expressions.Expression
 import org.apache.spark.sql.catalyst.plans.JoinType
 import org.apache.spark.sql.catalyst.plans.physical.{Distribution, HashClusteredDistribution}
-import org.apache.spark.sql.execution.{BinaryExecNode, SparkPlan}
+import org.apache.spark.sql.execution.SparkPlan
 import org.apache.spark.sql.execution.joins.{BuildLeft, BuildRight, BuildSide, ShuffledHashJoinExec}
 import org.apache.spark.sql.execution.metric.{SQLMetric, SQLMetrics}
+import org.apache.spark.sql.rapids.execution.GpuShuffledHashJoinBase
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
 object GpuJoinUtils {
@@ -70,7 +71,8 @@ class GpuShuffledHashJoinMeta(
       join.buildSide,
       condition.map(_.convertToGpu()),
       childPlans(0).convertIfNeeded(),
-      childPlans(1).convertIfNeeded())
+      childPlans(1).convertIfNeeded(),
+      isSkewJoin = false)
 }
 
 case class GpuShuffledHashJoinExec(
@@ -80,7 +82,17 @@ case class GpuShuffledHashJoinExec(
     buildSide: BuildSide,
     condition: Option[Expression],
     left: SparkPlan,
-    right: SparkPlan) extends BinaryExecNode with GpuHashJoin {
+    right: SparkPlan,
+    override val isSkewJoin: Boolean)
+  extends GpuShuffledHashJoinBase(
+    leftKeys,
+    rightKeys,
+    joinType,
+    condition,
+    left,
+    right,
+    isSkewJoin)
+  with GpuHashJoin {
 
   override lazy val additionalMetrics: Map[String, SQLMetric] = Map(
     "buildDataSize" -> SQLMetrics.createSizeMetric(sparkContext, "build side size"),
@@ -117,20 +129,20 @@ case class GpuShuffledHashJoinExec(
     streamedPlan.executeColumnar().zipPartitions(buildPlan.executeColumnar()) {
       (streamIter, buildIter) => {
         var combinedSize = 0
+
         val startTime = System.nanoTime()
-        val buildBatch =
-          ConcatAndConsumeAll.getSingleBatchWithVerification(buildIter, localBuildOutput)
-        val keys = GpuProjectExec.project(buildBatch, gpuBuildKeys)
-        val builtTable = try {
-          // Combine does not inc any reference counting
-          val combined = combine(keys, buildBatch)
-          combinedSize =
-            GpuColumnVector.extractColumns(combined)
-              .map(_.getBase.getDeviceMemorySize).sum.toInt
-          GpuColumnVector.from(combined)
-        } finally {
-          keys.close()
-          buildBatch.close()
+        val builtTable = withResource(ConcatAndConsumeAll.getSingleBatchWithVerification(
+          buildIter, localBuildOutput)) { buildBatch: ColumnarBatch =>
+          withResource(GpuProjectExec.project(buildBatch, gpuBuildKeys)) { keys =>
+            val combined = GpuHashJoin.incRefCount(combine(keys, buildBatch))
+            val filtered = filterBuiltTableIfNeeded(combined)
+            combinedSize =
+                GpuColumnVector.extractColumns(filtered)
+                    .map(_.getBase.getDeviceMemorySize).sum.toInt
+            withResource(filtered) { filtered =>
+              GpuColumnVector.from(filtered)
+            }
+          }
         }
 
         val delta = System.nanoTime() - startTime

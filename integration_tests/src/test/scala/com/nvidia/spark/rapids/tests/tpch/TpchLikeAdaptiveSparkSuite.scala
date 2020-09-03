@@ -19,7 +19,6 @@ import org.scalatest.Ignore
 
 // we need the AQE suites to have unique names so that they don't overwrite
 // surefire results from the original suites
-@Ignore
 class TpchLikeAdaptiveSparkSuite extends TpchLikeSparkSuite {
   override def adaptiveQueryEnabled: Boolean = true
 }

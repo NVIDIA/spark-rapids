@@ -20,11 +20,11 @@ package org.apache.spark.sql.rapids.execution
 import java.util
 
 import ai.rapids.cudf.NvtxColor
-import com.nvidia.spark.rapids.{GpuMetricNames, NvtxWithMetrics}
+import com.nvidia.spark.rapids.{GpuMetricNames, NvtxWithMetrics, ShimLoader}
 
 import org.apache.spark._
 import org.apache.spark.rdd.RDD
-import org.apache.spark.sql.execution.{CoalescedPartitioner, CoalescedPartitionSpec, PartialMapperPartitionSpec, PartialReducerPartitionSpec, ShuffledRowRDDPartition, ShufflePartitionSpec}
+import org.apache.spark.sql.execution.{CoalescedPartitioner, CoalescedPartitionSpec, PartialMapperPartitionSpec, PartialReducerPartitionSpec, ShufflePartitionSpec}
 import org.apache.spark.sql.execution.metric.{SQLMetric, SQLShuffleReadMetricsReporter}
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
@@ -160,6 +160,7 @@ class ShuffledBatchRDD(
     // `SQLShuffleReadMetricsReporter` will update its own metrics for SQL exchange operator,
     // as well as the `tempMetrics` for basic shuffle metrics.
     val sqlMetricsReporter = new SQLShuffleReadMetricsReporter(tempMetrics, metrics)
+    val shuffleManagerShims = ShimLoader.getSparkShims.getShuffleManagerShims()
     val reader = split.asInstanceOf[ShuffledBatchRDDPartition].spec match {
       case CoalescedPartitionSpec(startReducerIndex, endReducerIndex) =>
         SparkEnv.get.shuffleManager.getReader(
@@ -170,7 +171,8 @@ class ShuffledBatchRDD(
           sqlMetricsReporter)
 
       case PartialReducerPartitionSpec(reducerIndex, startMapIndex, endMapIndex) =>
-        SparkEnv.get.shuffleManager.getReaderForRange(
+        shuffleManagerShims.getReader(
+          SparkEnv.get.shuffleManager,
           dependency.shuffleHandle,
           startMapIndex,
           endMapIndex,
@@ -180,7 +182,8 @@ class ShuffledBatchRDD(
           sqlMetricsReporter)
 
       case PartialMapperPartitionSpec(mapIndex, startReducerIndex, endReducerIndex) =>
-        SparkEnv.get.shuffleManager.getReaderForRange(
+        shuffleManagerShims.getReader(
+          SparkEnv.get.shuffleManager,
           dependency.shuffleHandle,
           mapIndex,
           mapIndex + 1,

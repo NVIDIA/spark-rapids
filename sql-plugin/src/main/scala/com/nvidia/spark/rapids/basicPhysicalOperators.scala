@@ -28,6 +28,7 @@ import org.apache.spark.sql.catalyst.expressions.{Attribute, AttributeReference,
 import org.apache.spark.sql.catalyst.plans.physical.{Partitioning, RangePartitioning, SinglePartition, UnknownPartitioning}
 import org.apache.spark.sql.execution.{LeafExecNode, SparkPlan, UnaryExecNode}
 import org.apache.spark.sql.execution.metric.SQLMetric
+import org.apache.spark.sql.rapids.GpuPredicateHelper
 import org.apache.spark.sql.rapids.execution.TrampolineUtil
 import org.apache.spark.sql.vectorized.{ColumnarBatch, ColumnVector}
 
@@ -93,42 +94,44 @@ case class GpuProjectExec(projectList: Seq[Expression], child: SparkPlan)
 /**
  * Run a filter on a batch.  The batch will be consumed.
  */
-object GpuFilter {
+object GpuFilter extends Arm {
   def apply(
       batch: ColumnarBatch,
       boundCondition: Expression,
       numOutputRows: SQLMetric,
       numOutputBatches: SQLMetric,
       filterTime: SQLMetric): ColumnarBatch = {
-    val nvtxRange = new NvtxWithMetrics("filter batch", NvtxColor.YELLOW, filterTime)
-    try {
-      var filterConditionCv: GpuColumnVector = null
-      var tbl: cudf.Table = null
-      var filtered: cudf.Table = null
-      val filteredBatch = try {
-        filterConditionCv = boundCondition.columnarEval(batch).asInstanceOf[GpuColumnVector]
-        tbl = GpuColumnVector.from(batch)
-        filtered = tbl.filter(filterConditionCv.getBase)
-        GpuColumnVector.from(filtered)
-      } finally {
-        Seq(filtered, tbl, filterConditionCv, batch).safeClose()
-      }
-
+    withResource(new NvtxWithMetrics("filter batch", NvtxColor.YELLOW, filterTime)) { _ =>
+      val filteredBatch = GpuFilter(batch, boundCondition)
       numOutputBatches += 1
       numOutputRows += filteredBatch.numRows()
       filteredBatch
+    }
+  }
+
+  def apply(
+      batch: ColumnarBatch,
+      boundCondition: Expression) : ColumnarBatch = {
+    var filterConditionCv: GpuColumnVector = null
+    var tbl: cudf.Table = null
+    var filtered: cudf.Table = null
+    try {
+      filterConditionCv = boundCondition.columnarEval(batch).asInstanceOf[GpuColumnVector]
+      tbl = GpuColumnVector.from(batch)
+      filtered = tbl.filter(filterConditionCv.getBase)
+      GpuColumnVector.from(filtered)
     } finally {
-      nvtxRange.close()
+      Seq(filtered, tbl, filterConditionCv, batch).safeClose()
     }
   }
 }
 
 case class GpuFilterExec(condition: Expression, child: SparkPlan)
-    extends UnaryExecNode with PredicateHelper with GpuExec {
+    extends UnaryExecNode with GpuPredicateHelper with GpuExec {
 
   // Split out all the IsNotNulls from condition.
   private val (notNullPreds, _) = splitConjunctivePredicates(condition).partition {
-    case IsNotNull(a) => isNullIntolerant(a) && a.references.subsetOf(child.outputSet)
+    case GpuIsNotNull(a) => isNullIntolerant(a) && a.references.subsetOf(child.outputSet)
     case _ => false
   }
 
@@ -316,8 +319,19 @@ case class GpuUnionExec(children: Seq[SparkPlan]) extends SparkPlan with GpuExec
   override def doExecute(): RDD[InternalRow] =
     throw new IllegalStateException(s"Row-based execution should not occur for $this")
 
-  override def doExecuteColumnar(): RDD[ColumnarBatch] =
-    sparkContext.union(children.map(_.executeColumnar()))
+  override def doExecuteColumnar(): RDD[ColumnarBatch] = {
+    val numOutputRows = longMetric(NUM_OUTPUT_ROWS)
+    val numOutputBatches = longMetric(NUM_OUTPUT_BATCHES)
+    val totalTime = longMetric(TOTAL_TIME)
+
+    sparkContext.union(children.map(_.executeColumnar())).map { batch =>
+      withResource(new NvtxWithMetrics("Union", NvtxColor.CYAN, totalTime)) { _ =>
+        numOutputBatches += 1
+        numOutputRows += batch.numRows
+        batch
+      }
+    }
+  }
 }
 
 case class GpuCoalesceExec(numPartitions: Int, child: SparkPlan)

@@ -1,5 +1,9 @@
 /*
+<<<<<<< HEAD
  * Copyright (c) 2019-2020, NVIDIA CORPORATION.
+=======
+ * Copyright (c) 2020, NVIDIA CORPORATION.
+>>>>>>> 3f94ac8b608e311c181892fc72756d894627037f
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -20,9 +24,15 @@ import java.io._
 
 import com.google.common.io.Closeables
 
+<<<<<<< HEAD
 import org.apache.spark.io.NioBufferedFileInputStream
 import org.apache.spark.memory.{MemoryConsumer, SparkOutOfMemoryError, TaskMemoryManager}
 import org.apache.spark.{SparkEnv, SparkException}
+=======
+import org.apache.spark.{SparkEnv, SparkException}
+import org.apache.spark.io.NioBufferedFileInputStream
+import org.apache.spark.memory.{MemoryConsumer, SparkOutOfMemoryError, TaskMemoryManager}
+>>>>>>> 3f94ac8b608e311c181892fc72756d894627037f
 import org.apache.spark.serializer.SerializerManager
 import org.apache.spark.sql.catalyst.expressions.UnsafeRow
 import org.apache.spark.unsafe.Platform
@@ -40,6 +50,7 @@ import org.apache.spark.unsafe.memory.MemoryBlock
 private[sql] trait RowQueue {
 
   /**
+<<<<<<< HEAD
     * Add a row to the end of it, returns true iff the row has been added to the queue.
     */
   def add(row: UnsafeRow): Boolean
@@ -54,6 +65,22 @@ private[sql] trait RowQueue {
   /**
     * Cleanup all the resources.
     */
+=======
+   * Add a row to the end of it, returns true iff the row has been added to the queue.
+   */
+  def add(row: UnsafeRow): Boolean
+
+  /**
+   * Retrieve and remove the first row, returns null if it's empty.
+   *
+   * It can only be called after add is called, otherwise it will fail (NPE).
+   */
+  def remove(): UnsafeRow
+
+  /**
+   * Cleanup all the resources.
+   */
+>>>>>>> 3f94ac8b608e311c181892fc72756d894627037f
   def close(): Unit
 }
 

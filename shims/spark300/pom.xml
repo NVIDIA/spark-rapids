@@ -31,9 +31,45 @@
     <description>The RAPIDS SQL plugin for Apache Spark 3.0.0 Shim</description>
     <version>0.2.0-SNAPSHOT</version>
 
-    <properties>
-        <spark300.version>3.0.0</spark300.version>
-    </properties>
+    <!-- Set 'spark.version' for the shims layer -->
+    <!-- Create a separate file 'SPARK_VER.properties' in the jar to save cudf & spark version info -->
+    <build>
+        <plugins>
+            <plugin>
+                <artifactId>maven-antrun-plugin</artifactId>
+                <executions>
+                    <execution>
+                        <id>dependency</id>
+                        <phase>generate-resources</phase>
+                        <configuration>
+                            <target>
+                                <mkdir dir="${project.build.directory}/extra-resources"/>
+                                <exec executable="bash" output="${project.build.directory}/extra-resources/spark-${spark300.version}-info.properties">
+                                    <arg value="${user.dir}/build/dependency-info.sh"/>
+                                    <arg value="${cudf.version}"/>
+                                    <arg value="${cuda.version}"/>
+                                    <arg value="${spark300.version}"/>
+                                </exec>
+                            </target>
+                        </configuration>
+                        <goals>
+                            <goal>run</goal>
+                        </goals>
+                    </execution>
+                </executions>
+            </plugin>
+        </plugins>
+
+        <resources>
+          <resource>
+            <!-- Include the properties file to provide the build information. -->
+            <directory>${project.build.directory}/extra-resources</directory>
+          </resource>
+          <resource>
+            <directory>src/main/resources</directory>
+          </resource>
+        </resources>
+    </build>
 
     <dependencies>
         <dependency>

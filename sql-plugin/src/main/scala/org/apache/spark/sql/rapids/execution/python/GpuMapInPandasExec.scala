@@ -1,5 +1,9 @@
 /*
+<<<<<<< HEAD
  * Copyright (c) 2019-2020, NVIDIA CORPORATION.
+=======
+ * Copyright (c) 2020, NVIDIA CORPORATION.
+>>>>>>> 3f94ac8b608e311c181892fc72756d894627037f
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,7 +22,10 @@ package org.apache.spark.sql.rapids.execution.python
 
 import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.python.PythonWorkerSemaphore
+<<<<<<< HEAD
 
+=======
+>>>>>>> 3f94ac8b608e311c181892fc72756d894627037f
 import scala.collection.JavaConverters._
 
 import org.apache.spark.TaskContext
@@ -41,11 +48,20 @@ class GpuMapInPandasExecMeta(
     rule: ConfKeysAndIncompat)
   extends SparkPlanMeta[MapInPandasExec](mapPandas, conf, parent, rule) {
 
+<<<<<<< HEAD
   // Handle the child expressions(Python UDF) ourselves.
+=======
+  override def couldReplaceMessage: String = "could partially run on GPU"
+  override def noReplacementPossibleMessage(reasons: String): String =
+    s"cannot run even partially on the GPU because $reasons"
+
+  // Ignore the udf since columnar way is not supported yet
+>>>>>>> 3f94ac8b608e311c181892fc72756d894627037f
   override val childExprs: Seq[BaseExprMeta[_]] = Seq.empty
 
   override def convertToGpu(): GpuExec =
     GpuMapInPandasExec(
+<<<<<<< HEAD
       wrapped.func, wrapped.output, wrapped.child
     )
 }
@@ -55,6 +71,22 @@ class GpuMapInPandasExecMeta(
  * and outputs an iterator of pandas DataFrames.
  *
  * This is the GPU version of MapInPandasExec
+=======
+      mapPandas.func,
+      mapPandas.output,
+      childPlans.head.convertIfNeeded()
+    )
+}
+
+/*
+ * A relation produced by applying a function that takes an iterator of pandas DataFrames
+ * and outputs an iterator of pandas DataFrames.
+ *
+ * This GpuMapInPandasExec aims at supporting running Pandas functional code
+ * on GPU at Python side.
+ *
+ * (Currently it will not run on GPU itself, since the columnar way is not implemented yet.)
+>>>>>>> 3f94ac8b608e311c181892fc72756d894627037f
  *
  */
 case class GpuMapInPandasExec(
@@ -65,8 +97,12 @@ case class GpuMapInPandasExec(
 
   override def supportsColumnar = false
   override def doExecuteColumnar(): RDD[ColumnarBatch] = {
+<<<<<<< HEAD
     // TBD
     super.doExecuteColumnar()
+=======
+    throw new IllegalStateException(s"Columnar execution is not supported by $this yet")
+>>>>>>> 3f94ac8b608e311c181892fc72756d894627037f
   }
 
   // Most code is copied from MapInPandasExec, except two GPU related calls

@@ -29,7 +29,7 @@ import org.apache.spark.sql.execution.SparkPlan
 import org.apache.spark.sql.execution.command.DataWritingCommand
 import org.apache.spark.sql.execution.exchange.ShuffleExchangeExec
 import org.apache.spark.sql.execution.joins.{BroadcastHashJoinExec, ShuffledHashJoinExec, SortMergeJoinExec}
-import org.apache.spark.sql.types.{CalendarIntervalType, DataType, DataTypes, StringType}
+import org.apache.spark.sql.types.DataType
 
 trait ConfKeysAndIncompat {
   val operationName: String
@@ -224,12 +224,14 @@ abstract class RapidsMeta[INPUT <: BASE, BASE, OUTPUT <: BASE](
   private def indent(append: StringBuilder, depth: Int): Unit =
     append.append("  " * depth)
 
+  def couldReplaceMessage: String = "could run on GPU"
+  def noReplacementPossibleMessage(reasons: String): String = s"cannot run on GPU because $reasons"
+
   private def willWorkOnGpuInfo: String = cannotBeReplacedReasons match {
     case None => "NOT EVALUATED FOR GPU YET"
-    case Some(v) if v.isEmpty => "could run on GPU"
+    case Some(v) if v.isEmpty => couldReplaceMessage
     case Some(v) =>
-      val reasons = v mkString "; "
-      s"cannot run on GPU because ${reasons}"
+      noReplacementPossibleMessage(v mkString "; ")
   }
 
   private def willBeRemovedInfo: String = shouldBeRemovedReasons match {
@@ -237,7 +239,7 @@ abstract class RapidsMeta[INPUT <: BASE, BASE, OUTPUT <: BASE](
     case Some(v) if v.isEmpty => ""
     case Some(v) =>
       val reasons = v mkString "; "
-      s" but is going to be removed because ${reasons}"
+      s" but is going to be removed because $reasons"
   }
 
   /**
@@ -399,7 +401,7 @@ final class RuleNotFoundDataWritingCommandMeta[INPUT <: DataWritingCommand](
     extends DataWritingCommandMeta[INPUT](cmd, conf, parent, new NoRuleConfKeysAndIncompat) {
 
   override def tagSelfForGpu(): Unit = {
-    willNotWorkOnGpu(s"no GPU enabled version of command ${cmd.getClass} could be found")
+    willNotWorkOnGpu(s"no GPU accelerated version of command ${cmd.getClass} could be found")
   }
 
   override def convertToGpu(): GpuDataWritingCommand =

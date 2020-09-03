@@ -17,13 +17,15 @@
 package com.nvidia.spark.rapids
 
 import java.io.File
-import java.nio.ByteBuffer
 
-import ai.rapids.cudf.{BufferType, ColumnVector, DType, HostColumnVector, Table}
+import ai.rapids.cudf.{ColumnVector, DType, Table}
 import org.scalatest.Assertions
+import scala.collection.mutable.ListBuffer
 
 import org.apache.spark.SparkConf
 import org.apache.spark.sql.SparkSession
+import org.apache.spark.sql.execution.SparkPlan
+import org.apache.spark.sql.execution.adaptive.{AdaptiveSparkPlanExec, BroadcastQueryStageExec, ShuffleQueryStageExec}
 import org.apache.spark.sql.rapids.GpuShuffleEnv
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
@@ -49,6 +51,47 @@ object TestUtils extends Assertions with Arm {
     (0 until expected.numCols).foreach { i =>
       compareColumns(expected.column(i).asInstanceOf[GpuColumnVector].getBase,
         actual.column(i).asInstanceOf[GpuColumnVector].getBase)
+    }
+  }
+
+  /** Recursively check if the predicate matches in the given plan */
+  def findOperator(plan: SparkPlan, predicate: SparkPlan => Boolean): Option[SparkPlan] = {
+    plan match {
+      case _ if predicate(plan) => Some(plan)
+      case a: AdaptiveSparkPlanExec => findOperator(a.executedPlan, predicate)
+      case qs: BroadcastQueryStageExec => findOperator(qs.broadcast, predicate)
+      case qs: ShuffleQueryStageExec => findOperator(qs.shuffle, predicate)
+      case other => other.children.flatMap(p => findOperator(p, predicate)).headOption
+    }
+  }
+
+  /** Return list of  matching predicates present in the plan */
+  def operatorCount(plan: SparkPlan, predicate: SparkPlan => Boolean): Seq[SparkPlan] = {
+    def recurse(
+      plan: SparkPlan,
+      predicate: SparkPlan => Boolean,
+      accum: ListBuffer[SparkPlan]): Seq[SparkPlan] = {
+      plan match {
+        case _ if predicate(plan) =>
+          accum += plan
+          plan.children.flatMap(p => recurse(p, predicate, accum)).headOption
+        case a: AdaptiveSparkPlanExec => recurse(a.executedPlan, predicate, accum)
+        case qs: BroadcastQueryStageExec => recurse(qs.broadcast, predicate, accum)
+        case qs: ShuffleQueryStageExec => recurse(qs.shuffle, predicate, accum)
+        case other => other.children.flatMap(p => recurse(p, predicate, accum)).headOption
+      }
+      accum
+    }
+
+    recurse(plan, predicate, new ListBuffer[SparkPlan]())
+  }
+
+  /** Return final executed plan */
+  def getFinalPlan(plan: SparkPlan): SparkPlan = {
+    plan match {
+      case a: AdaptiveSparkPlanExec =>
+        a.executedPlan
+      case _ => plan
     }
   }
 
