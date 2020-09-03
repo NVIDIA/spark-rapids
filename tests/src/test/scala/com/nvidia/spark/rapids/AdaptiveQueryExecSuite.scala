@@ -112,7 +112,7 @@ class AdaptiveQueryExecSuite
             .asInstanceOf[AdaptiveSparkPlanExec]
 
         // even though the write couldn't run on GPU, the read should have done
-        adaptivePlan.executedPlan.isInstanceOf[GpuExec]
+        assert(adaptivePlan.executedPlan.isInstanceOf[GpuExec])
 
     }, conf)
   }
