@@ -18,8 +18,7 @@ from asserts import assert_gpu_and_cpu_are_equal_collect, assert_equal
 from data_gen import *
 from datetime import date
 import pyspark.sql.functions as f
-from spark_session import with_cpu_session, with_gpu_session
-from spark_init_internal import spark_version
+from spark_session import with_cpu_session, with_gpu_session, with_spark_session
 from join_test import create_df
 from generate_expr_test import four_op_df
 from marks import incompat, allow_non_gpu, ignore_order
@@ -62,8 +61,9 @@ all_gen_filters = [(StringGen(), "rlike(a, '^(?=.{1,5}$).*')"),
 @pytest.mark.parametrize('join_type', ['Left', 'Right', 'Inner', 'LeftSemi', 'LeftAnti'], ids=idfn)
 @ignore_order
 def test_cache_join(data_gen, join_type):
-    if spark_version() == "3.0.0" and data_gen.data_type == BooleanType():
-        pytest.xfail("https://github.com/NVIDIA/spark-rapids/issues/350")
+    if with_spark_session(lambda spark : spark.sparkContext.version == "3.0.0") \
+            and data_gen.data_type == BooleanType():
+        pytest.xfail("https://issues.apache.org/jira/browse/SPARK-32672")
 
     def do_join(spark):
         left, right = create_df(spark, data_gen, 500, 500)
@@ -82,8 +82,9 @@ def test_cache_join(data_gen, join_type):
 @ignore_order
 def test_cached_join_filter(data_gen, join_type):
     data, filter = data_gen
-    if spark_version() == "3.0.0" and data.data_type == BooleanType():
-        pytest.xfail("https://github.com/NVIDIA/spark-rapids/issues/350")
+    if with_spark_session(lambda spark : spark.sparkContext.version == "3.0.0") \
+            and data.data_type == BooleanType():
+        pytest.xfail("https://issues.apache.org/jira/browse/SPARK-32672")
 
     def do_join(spark):
         left, right = create_df(spark, data, 500, 500)
@@ -97,8 +98,9 @@ def test_cached_join_filter(data_gen, join_type):
 @pytest.mark.parametrize('join_type', ['Left', 'Right', 'Inner', 'LeftSemi', 'LeftAnti'], ids=idfn)
 @ignore_order
 def test_cache_broadcast_hash_join(data_gen, join_type):
-    if spark_version() == "3.0.0" and data_gen.data_type == BooleanType():
-        pytest.xfail("https://github.com/NVIDIA/spark-rapids/issues/350")
+    if with_spark_session(lambda spark : spark.sparkContext.version == "3.0.0") \
+            and data_gen.data_type == BooleanType():
+        pytest.xfail("https://issues.apache.org/jira/browse/SPARK-32672")
 
     def do_join(spark):
         left, right = create_df(spark, data_gen, 500, 500)
@@ -117,8 +119,9 @@ shuffled_conf = {"spark.sql.autoBroadcastJoinThreshold": "160",
 @pytest.mark.parametrize('join_type', ['Left', 'Right', 'Inner', 'LeftSemi', 'LeftAnti'], ids=idfn)
 @ignore_order
 def test_cache_shuffled_hash_join(data_gen, join_type):
-    if spark_version() == "3.0.0" and data_gen.data_type == BooleanType():
-        pytest.xfail("https://github.com/NVIDIA/spark-rapids/issues/350")
+    if with_spark_session(lambda spark : spark.sparkContext.version == "3.0.0") \
+            and data_gen.data_type == BooleanType():
+        pytest.xfail("https://issues.apache.org/jira/browse/SPARK-32672")
 
     def do_join(spark):
         left, right = create_df(spark, data_gen, 50, 500)
@@ -152,8 +155,9 @@ all_gen_restricting_dates = [StringGen(), ByteGen(), ShortGen(), IntegerGen(), L
 @pytest.mark.parametrize('data_gen', all_gen_restricting_dates, ids=idfn)
 @allow_non_gpu('InMemoryTableScanExec', 'DataWritingCommandExec')
 def test_cache_posexplode_makearray(spark_tmp_path, data_gen):
-    if spark_version() == "3.0.0" and data_gen.data_type == BooleanType():
-        pytest.xfail("https://github.com/NVIDIA/spark-rapids/issues/350")
+    if with_spark_session(lambda spark : spark.sparkContext.version == "3.0.0") \
+            and data_gen.data_type == BooleanType():
+        pytest.xfail("https://issues.apache.org/jira/browse/SPARK-32672")
     data_path_cpu = spark_tmp_path + '/PARQUET_DATA_CPU'
     data_path_gpu = spark_tmp_path + '/PARQUET_DATA_GPU'
     def write_posExplode(data_path):
