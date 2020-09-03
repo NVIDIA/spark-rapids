@@ -61,6 +61,9 @@ all_gen_filters = [(StringGen(), "rlike(a, '^(?=.{1,5}$).*')"),
 @pytest.mark.parametrize('join_type', ['Left', 'Right', 'Inner', 'LeftSemi', 'LeftAnti'], ids=idfn)
 @ignore_order
 def test_cache_join(data_gen, join_type):
+    if data_gen.data_type == BooleanType():
+        pytest.xfail("https://github.com/NVIDIA/spark-rapids/issues/350")
+
     def do_join(spark):
         left, right = create_df(spark, data_gen, 500, 500)
         cached = left.join(right, left.a == right.r_a, join_type).cache()
@@ -78,6 +81,8 @@ def test_cache_join(data_gen, join_type):
 @ignore_order
 def test_cached_join_filter(data_gen, join_type):
     data, filter = data_gen
+    if data.data_type == BooleanType():
+        pytest.xfail("https://github.com/NVIDIA/spark-rapids/issues/350")
 
     def do_join(spark):
         left, right = create_df(spark, data, 500, 500)
@@ -91,6 +96,8 @@ def test_cached_join_filter(data_gen, join_type):
 @pytest.mark.parametrize('join_type', ['Left', 'Right', 'Inner', 'LeftSemi', 'LeftAnti'], ids=idfn)
 @ignore_order
 def test_cache_broadcast_hash_join(data_gen, join_type):
+    if data_gen.data_type == BooleanType():
+        pytest.xfail("https://github.com/NVIDIA/spark-rapids/issues/350")
 
     def do_join(spark):
         left, right = create_df(spark, data_gen, 500, 500)
@@ -109,6 +116,8 @@ shuffled_conf = {"spark.sql.autoBroadcastJoinThreshold": "160",
 @pytest.mark.parametrize('join_type', ['Left', 'Right', 'Inner', 'LeftSemi', 'LeftAnti'], ids=idfn)
 @ignore_order
 def test_cache_shuffled_hash_join(data_gen, join_type):
+    if data_gen.data_type == BooleanType():
+        pytest.xfail("https://github.com/NVIDIA/spark-rapids/issues/350")
 
     def do_join(spark):
         left, right = create_df(spark, data_gen, 50, 500)
@@ -142,7 +151,8 @@ all_gen_restricting_dates = [StringGen(), ByteGen(), ShortGen(), IntegerGen(), L
 @pytest.mark.parametrize('data_gen', all_gen_restricting_dates, ids=idfn)
 @allow_non_gpu('InMemoryTableScanExec', 'DataWritingCommandExec')
 def test_cache_posexplode_makearray(spark_tmp_path, data_gen):
-
+    if data_gen.data_type == BooleanType():
+        pytest.xfail("https://github.com/NVIDIA/spark-rapids/issues/350")
     data_path_cpu = spark_tmp_path + '/PARQUET_DATA_CPU'
     data_path_gpu = spark_tmp_path + '/PARQUET_DATA_GPU'
     def write_posExplode(data_path):
