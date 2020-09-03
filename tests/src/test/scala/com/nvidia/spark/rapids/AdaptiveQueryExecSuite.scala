@@ -99,6 +99,7 @@ class AdaptiveQueryExecSuite
       // DataWritingCommandExec does not get translated to GPU because the plugin
       // currently doesn't support the CreateDataSourceTableAsSelectCommand command
       .set(RapidsConf.TEST_ALLOWED_NONGPU.key, "DataWritingCommandExec")
+      .set("spark.rapids.sql.exec.DataWritingCommandExec", "false")
 
       withGpuSparkSession(spark => {
         frameFromParquet("timestamp-date-test.parquet")(spark)
@@ -112,7 +113,8 @@ class AdaptiveQueryExecSuite
             .asInstanceOf[AdaptiveSparkPlanExec]
 
         // even though the write couldn't run on GPU, the read should have done
-        assert(adaptivePlan.executedPlan.isInstanceOf[GpuExec])
+        assert(TestUtils.findOperator(adaptivePlan.executedPlan,
+          _.isInstanceOf[GpuExec]).isDefined)
 
     }, conf)
   }
