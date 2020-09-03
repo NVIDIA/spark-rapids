@@ -33,10 +33,19 @@ import org.apache.spark.sql.catalyst.util.truncatedString
 import org.apache.spark.sql.execution.{ExplainUtils, SparkPlan, UnaryExecNode}
 import org.apache.spark.sql.execution.aggregate.{HashAggregateExec, SortAggregateExec}
 import org.apache.spark.sql.execution.metric.{SQLMetric, SQLMetrics}
-import org.apache.spark.sql.rapids.execution.TrampolineUtil.validateAggregate
 import org.apache.spark.sql.rapids.{CudfAggregate, GpuAggregateExpression, GpuDeclarativeAggregate}
 import org.apache.spark.sql.types.{DoubleType, FloatType}
 import org.apache.spark.sql.vectorized.{ColumnarBatch, ColumnVector}
+
+object AggregateUtils {
+  /** Return true if the Attribute passed is one of aggregates in the list */
+  def validateAggregate(agg: AttributeSet): Boolean = {
+    val distinctAggs = List("avg", "sum", "count")
+    val res = agg.toSeq.exists(
+      agg => distinctAggs.exists(distinctAgg => agg.name.contains(distinctAgg)))
+    res
+  }
+}
 
 class GpuHashAggregateMeta(
     agg: HashAggregateExec,
@@ -96,17 +105,15 @@ class GpuHashAggregateMeta(
               // multiple distinct the plan is rewritten by `RewriteDistinctAggregates` where
               // regular aggregations and every distinct aggregation is calculated in a separate
               // group.
-              if (e.aggregateFunction.isInstanceOf[First] &&
-                e.aggregateFunction.asInstanceOf[First].child.isInstanceOf[If]) {
-                // Get the aggregate from references of `If`
-                val aggRefs = e.aggregateFunction.references
-                val isMultipleDistinctAggs = validateAggregate(aggRefs)
-
-                if (isMultipleDistinctAggs) {
-                  willNotWorkOnGpu("Aggregate of non-distinct functions with multiple distinct " +
-                    "functions is non deterministic for non-distinct functions as it is " +
-                    "computed using First.")
-                }
+              e.aggregateFunction match {
+                case first: First if first.child.isInstanceOf[If] =>
+                  // Get the aggregate from references of `If` and validate if we should fall back
+                  if (AggregateUtils.validateAggregate(e.aggregateFunction.references)) {
+                    willNotWorkOnGpu("Aggregate of non-distinct functions with multiple distinct " +
+                      "functions is non deterministic for non-distinct functions as it is " +
+                      "computed using First.")
+                  }
+                case _ =>
               }
             })
           }
@@ -219,17 +226,15 @@ class GpuSortAggregateMeta(
               // multiple distinct the plan is rewritten by `RewriteDistinctAggregates` where
               // regular aggregations and every distinct aggregation is calculated in a separate
               // group.
-              if (e.aggregateFunction.isInstanceOf[First] &&
-                e.aggregateFunction.asInstanceOf[First].child.isInstanceOf[If]) {
-                // Get the aggregate from references of `If`
-                val aggRefs = e.aggregateFunction.references
-                val isMultipleDistinctAggs = validateAggregate(aggRefs)
-
-                if (isMultipleDistinctAggs) {
-                  willNotWorkOnGpu("Aggregate of non-distinct functions with multiple distinct " +
-                    "functions is non deterministic for non-distinct functions as it is " +
-                    "computed using First.")
-                }
+              e.aggregateFunction match {
+                case first: First if first.child.isInstanceOf[If] =>
+                  // Get the aggregate from references of `If` and validate if we should fall back
+                  if (AggregateUtils.validateAggregate(e.aggregateFunction.references)) {
+                    willNotWorkOnGpu("Aggregate of non-distinct functions with multiple distinct " +
+                      "functions is non deterministic for non-distinct functions as it is " +
+                      "computed using First.")
+                  }
+                case _ =>
               }
             })
           }
