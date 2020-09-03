@@ -40,3 +40,6 @@ def get_spark_i_know_what_i_am_doing():
     This is to guarantee that the session and it's config is setup in a repeatable way.
     """
     return _spark
+
+def spark_version():
+    return _spark.version
