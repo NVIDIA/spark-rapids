@@ -45,9 +45,7 @@ class GpuTransitionOverrides extends Rule[SparkPlan] {
   }
 
   private def getColumnarToRowExec(plan: SparkPlan, exportColumnRdd: Boolean = false) = {
-    Class.forName(ShimLoader.getSparkShims.getGpuColumnarToRowTransition(plan))
-      .getConstructors()(0).newInstance(plan, exportColumnRdd.asInstanceOf[Object])
-      .asInstanceOf[GpuColumnarToRowExecParent]
+    ShimLoader.getSparkShims.getGpuColumnarToRowTransition(plan, exportColumnRdd)
   }
 
   def optimizeAdaptiveTransitions(plan: SparkPlan): SparkPlan = plan match {

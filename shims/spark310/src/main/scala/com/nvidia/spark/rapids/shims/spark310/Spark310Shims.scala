@@ -268,13 +268,14 @@ class Spark310Shims extends Spark301Shims {
     scanExec.copy(supportsSmallFileOpt = supportsSmallFileOpt)
   }
 
-  override def getGpuColumnarToRowTransition(plan: SparkPlan): String = {
+  override def getGpuColumnarToRowTransition(plan: SparkPlan,
+     exportColumnRdd: Boolean): GpuColumnarToRowExecParent = {
     val serName = plan.conf.getConf(StaticSQLConf.SPARK_CACHE_SERIALIZER)
     val serClass = Class.forName(serName)
     if (serClass == classOf[ParquetCachedBatchSerializer]) {
-      classOf[org.apache.spark.sql.rapids.shims.spark310.GpuColumnarToRowExec].getName
+      org.apache.spark.sql.rapids.shims.spark310.GpuColumnarToRowTransitionExec(plan)
     } else {
-      classOf[GpuColumnarToRowExec].getName
+      GpuColumnarToRowExec(plan)
     }
   }
 }

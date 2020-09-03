@@ -33,8 +33,6 @@ case class GpuInMemoryTableScanExec(
   attributes: Seq[Attribute],
   predicates: Seq[Expression],
   @transient relation: InMemoryRelation) extends LeafExecNode with GpuExec {
-    override lazy val metrics = Map(
-      "numOutputRows" -> SQLMetrics.createMetric(sparkContext, "number of output rows"))
 
     override val nodeName: String = {
       relation.cacheBuilder.tableName match {
@@ -66,42 +64,6 @@ case class GpuInMemoryTableScanExec(
           conf).map { cb =>
         numOutputRows += cb.numRows()
         cb
-      }
-    }
-
-    private lazy val inputRDD: RDD[InternalRow] = {
-      if (enableAccumulatorsForTest) {
-        readPartitions.setValue(0)
-        readBatches.setValue(0)
-      }
-
-      val numOutputRows = longMetric("numOutputRows")
-      // Using these variables here to avoid serialization of entire objects (if referenced
-      // directly) within the map Partitions closure.
-      val relOutput = relation.output
-      val serializer = relation.cacheBuilder.serializer
-
-      // update SQL metrics
-      val withMetrics =
-        filteredCachedBatches().map{ batch =>
-          if (enableAccumulatorsForTest) {
-            readBatches.add(1)
-          }
-          numOutputRows += batch.numRows
-          batch
-        }
-      val rows = serializer.convertCachedBatchToInternalRow(withMetrics, relOutput, attributes,
-        conf)
-      if (enableAccumulatorsForTest) {
-        def incParts(index: Int, iter: Iterator[InternalRow]): Iterator[InternalRow] = {
-          if (iter.hasNext) {
-            readPartitions.add(1)
-          }
-          iter
-        }
-        rows.mapPartitionsWithIndexInternal(incParts)
-      } else {
-        rows
       }
     }
 
@@ -144,7 +106,7 @@ case class GpuInMemoryTableScanExec(
     }
 
     protected override def doExecute(): RDD[InternalRow] = {
-      inputRDD
+      throw new UnsupportedOperationException("This Exec only deals with Columnar Data")
     }
 
     protected override def doExecuteColumnar(): RDD[ColumnarBatch] = {

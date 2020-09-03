@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019-2020, NVIDIA CORPORATION.
+ * Copyright (c) 2020, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -20,5 +20,5 @@ import com.nvidia.spark.rapids.GpuColumnarToRowExecParent
 
 import org.apache.spark.sql.execution.{ColumnarToRowTransition, SparkPlan}
 
-case class GpuColumnarToRowExec(child: SparkPlan, override val exportColumnarRdd: Boolean = false)
+case class GpuColumnarToRowTransitionExec(child: SparkPlan, override val exportColumnarRdd: Boolean = false)
     extends GpuColumnarToRowExecParent(child, exportColumnarRdd) with ColumnarToRowTransition

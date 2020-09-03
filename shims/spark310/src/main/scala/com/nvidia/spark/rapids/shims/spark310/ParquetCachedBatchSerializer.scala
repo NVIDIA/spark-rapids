@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019-2020, NVIDIA CORPORATION.
+ * Copyright (c) 2020, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -21,7 +21,6 @@ import scala.collection.mutable
 import ai.rapids.cudf._
 import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.GpuColumnVector.GpuColumnarBatchBuilder
-import com.nvidia.spark.rapids.GpuMetricNames.{NUM_INPUT_ROWS, NUM_OUTPUT_BATCHES, NUM_OUTPUT_ROWS, TOTAL_TIME}
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 
 import org.apache.spark.TaskContext
@@ -29,29 +28,18 @@ import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.expressions.{Attribute, Expression}
 import org.apache.spark.sql.columnar.{CachedBatch, CachedBatchSerializer}
-import org.apache.spark.sql.execution.metric.SQLMetrics
 import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.types.{StructField, StructType}
 import org.apache.spark.sql.vectorized.ColumnarBatch
 import org.apache.spark.storage.StorageLevel
+import scala.collection.JavaConverters._
 
-class ParquetCachedBatch(val numRows: Int) extends CachedBatch with HostBufferConsumer
-  with AutoCloseable with Serializable {
+class ParquetBufferConsumer(val numRows: Int) extends HostBufferConsumer with AutoCloseable {
   @transient private[this] val offHeapBuffers = mutable.Queue[(HostMemoryBuffer, Long)]()
-  private[this] var buffer: Array[Byte] = null
-  private var bytes: Long = 0
+  private var buffer: Array[Byte] = null
 
-  override def sizeInBytes: Long = {
-    if (bytes == 0) {
-      val toProcess = offHeapBuffers.dequeueAll(_ => true)
-      bytes = toProcess.unzip._2.sum
-    }
-    bytes
-  }
-
-  override def handleBuffer(hostMemoryBuffer: HostMemoryBuffer, len: Long): Unit = {
-    offHeapBuffers += Tuple2(hostMemoryBuffer, len)
-    bytes += len
+  override def handleBuffer(buffer: HostMemoryBuffer, len: Long): Unit = {
+    offHeapBuffers += Tuple2(buffer, len)
   }
 
   def getBuffer(): Array[Byte] = {
@@ -62,14 +50,17 @@ class ParquetCachedBatch(val numRows: Int) extends CachedBatch with HostBufferCo
   }
 
   def close(): Unit = {
-    writeBuffers()
+    if (buffer == null) {
+      writeBuffers()
+    }
   }
 
-  def writeBuffers(): Unit = {
+  private def writeBuffers(): Unit = {
     // this could be problematic if the buffers are big as their cumulative length could be more
     // than an Int.MAX_SIZE. We could just have a list of buffers in that case and iterate over them
-    buffer = new Array(sizeInBytes.toInt)
     val toProcess = offHeapBuffers.dequeueAll(_ => true)
+    val bytes = toProcess.unzip._2.sum
+    buffer = new Array(bytes.toInt)
     try {
       var offset: Int = 0
       toProcess.foreach(ops => {
@@ -87,6 +78,20 @@ class ParquetCachedBatch(val numRows: Int) extends CachedBatch with HostBufferCo
   }
 }
 
+object ParquetCachedBatch {
+  def apply(parquetBuff: ParquetBufferConsumer): ParquetCachedBatch = {
+    new ParquetCachedBatch(parquetBuff.numRows, parquetBuff.getBuffer())
+  }
+}
+
+case class ParquetCachedBatch(numRows: Int, buffer: Array[Byte]) extends CachedBatch {
+  override def sizeInBytes: Long = buffer.length
+}
+
+/**
+ * Spark wants the producer to close the batch. We have a listener in this iterator that will close
+ * the batch after the task is completed
+ */
 private case class CloseableColumnBatchIterator(iter: Iterator[ColumnarBatch]) extends
   Iterator[ColumnarBatch] {
   var cb: ColumnarBatch = null
@@ -132,66 +137,66 @@ class ParquetCachedBatchSerializer extends CachedBatchSerializer with Arm {
                                        schema: Seq[Attribute],
                                        storageLevel: StorageLevel,
                                        conf: SQLConf): RDD[CachedBatch] = {
-    val parquetCB = input.map(batch => {
-      var gpuCB: ColumnarBatch = null
-      try {
-        // check if the data is already on GPU
-        if (!batch.column(0).isInstanceOf[GpuColumnVector]) {
-          val s = StructType(
-            schema.map(a => StructField(a.name, a.dataType, a.nullable, a.metadata)))
-          gpuCB = new GpuColumnarBatchBuilder(s, batch.numRows(), batch).build(batch.numRows())
-          batch.close()
-        } else {
-          gpuCB = batch
-        }
-        // now compress it using ParquetWriter
+    def putOnGpuIfNeeded(batch: ColumnarBatch): ColumnarBatch = {
+      if (batch.numCols() > 0 && !batch.column(0).isInstanceOf[GpuColumnVector]) {
+        val s = StructType(
+          schema.map(a => StructField(a.name, a.dataType, a.nullable, a.metadata)))
+        val gpuCB = new GpuColumnarBatchBuilder(s, batch.numRows(), batch).build(batch.numRows())
+        batch.close()
+        gpuCB
+      } else {
+        batch
+      }
+    }
+
+    input.map(batch => {
+      withResource(putOnGpuIfNeeded(batch)) { gpuCB =>
         compressColumnarBatchWithParquet(gpuCB)
-      } finally {
-        gpuCB.close()
       }
     })
-    parquetCB
   }
 
   private def compressColumnarBatchWithParquet(gpuCB: ColumnarBatch) = {
-    val buffer = new ParquetCachedBatch(gpuCB.numRows())
+    val buffer = new ParquetBufferConsumer(gpuCB.numRows())
     withResource(GpuColumnVector.from(gpuCB)) { table =>
       withResource(Table.writeParquetChunked(ParquetWriterOptions.DEFAULT, buffer)) { writer =>
         writer.write(table)
       }
     }
-    buffer.writeBuffers()
-    buffer.asInstanceOf[CachedBatch]
+    ParquetCachedBatch(buffer).asInstanceOf[CachedBatch]
   }
 
   /**
    * This method decodes the CachedBatch leaving it on the GPU to avoid the extra copying back to
    * the host
-   * @param input
-   * @param cacheAttributes
-   * @param selectedAttributes
-   * @param conf
-   * @return
+   * @param input the cached batches that should be converted.
+   * @param cacheAttributes the attributes of the data in the batch.
+   * @param selectedAttributes the fields that should be loaded from the data and the order they
+   *                           should appear in the output batch.
+   * @param conf the configuration for the job.
+   * @return an RDD of the input cached batches transformed into the ColumnarBatch format.
    */
   def gpuConvertCachedBatchToColumnarBatch(input: RDD[CachedBatch],
     cacheAttributes: Seq[Attribute],
     selectedAttributes: Seq[Attribute],
     conf: SQLConf): RDD[ColumnarBatch] = {
-    val cbRdd = convertCachedBatchToColumnarInternal(input, cacheAttributes, selectedAttributes)
-    cbRdd
+    convertCachedBatchToColumnarInternal(input, cacheAttributes, selectedAttributes)
   }
 
   private def convertCachedBatchToColumnarInternal(input: RDD[CachedBatch],
     cacheAttributes: Seq[Attribute],
     selectedAttributes: Seq[Attribute]) = {
+
     val requestedColumnIndices = selectedAttributes.map(a =>
       cacheAttributes.map(_.exprId).indexOf(a.exprId))
+    val requestedColumnNames = selectedAttributes.map(a => a.name)
 
-    // if plugin enabled
     val cbRdd: RDD[ColumnarBatch] = input.map(batch => {
       if (batch.isInstanceOf[ParquetCachedBatch]) {
         val parquetCB = batch.asInstanceOf[ParquetCachedBatch]
-        withResource(Table.readParquet(ParquetOptions.DEFAULT, parquetCB.getBuffer(), 0,
+        val parquetOptions = ParquetOptions.builder().includeColumn(requestedColumnNames
+           .asJavaCollection).build()
+        withResource(Table.readParquet(parquetOptions, parquetCB.buffer, 0,
           parquetCB.sizeInBytes)) { table =>
           withResource(GpuColumnVector.from(table)) { cb =>
             val cols = GpuColumnVector.extractColumns(cb)
@@ -216,17 +221,15 @@ class ParquetCachedBatchSerializer extends CachedBatchSerializer with Arm {
    * @return an RDD of the input cached batches transformed into the ColumnarBatch format.
    */
   override def convertCachedBatchToColumnarBatch(input: RDD[CachedBatch],
-                                                 cacheAttributes: Seq[Attribute],
-                                                 selectedAttributes: Seq[Attribute],
-                                                 conf: SQLConf): RDD[ColumnarBatch] = {
+     cacheAttributes: Seq[Attribute],
+     selectedAttributes: Seq[Attribute],
+     conf: SQLConf): RDD[ColumnarBatch] = {
     val batches = convertCachedBatchToColumnarInternal(input, cacheAttributes,
       selectedAttributes)
     val cbRdd = batches.map(batch => {
-      val cols = GpuColumnVector.extractColumns(batch)
-      try {
-        new ColumnarBatch(cols.map(_.copyToHost()).toArray, batch.numRows())
-      } finally {
-        cols.map(_.close())
+      withResource(batch) { gpuBatch =>
+        val cols = GpuColumnVector.extractColumns(gpuBatch)
+        new ColumnarBatch(cols.map(_.copyToHost()).toArray, gpuBatch.numRows())
       }
     })
     cbRdd.mapPartitions(iter => new CloseableColumnBatchIterator(iter))
@@ -245,24 +248,11 @@ class ParquetCachedBatchSerializer extends CachedBatchSerializer with Arm {
                                 cacheAttributes: Seq[Attribute],
                                 selectedAttributes: Seq[Attribute],
                                 conf: SQLConf): RDD[InternalRow] = {
-    val requestedColumnIndices = selectedAttributes.map(a =>
-      cacheAttributes.map(_.exprId).indexOf(a.exprId))
-    // if plugin enabled
-    val cbRdd: RDD[InternalRow] = input.map(batch => {
-      if (batch.isInstanceOf[ParquetCachedBatch]) {
-        val parquetCB = batch.asInstanceOf[ParquetCachedBatch]
-        withResource(Table.readParquet(ParquetOptions.DEFAULT, parquetCB.getBuffer(), 0,
-          parquetCB.sizeInBytes)) { table =>
-          withResource(GpuColumnVector.from(table)) { cb =>
-            val cols = GpuColumnVector.extractColumns(cb)
-            InternalRow(requestedColumnIndices.map(ordinal => cols(ordinal)).map(_.copyToHost()))
-          }
-        }
-      } else {
-        throw new IllegalStateException("I don't know how to convert this batch")
-      }
+    val cb = convertCachedBatchToColumnarBatch(input, cacheAttributes, selectedAttributes, conf)
+    val rowRdd = cb.mapPartitions(iter => {
+      new ColumnarToRowIterator(iter)
     })
-    cbRdd
+    rowRdd
   }
 
   /**
@@ -280,18 +270,14 @@ class ParquetCachedBatchSerializer extends CachedBatchSerializer with Arm {
      conf: SQLConf): RDD[CachedBatch] = {
     val s = StructType(schema.map(a => StructField(a.name, a.dataType, a.nullable, a.metadata)))
     val converters = new GpuRowToColumnConverter(s)
-    val numInputRows = SQLMetrics.createMetric(input.context, NUM_INPUT_ROWS)
-    val numOutputBatches = SQLMetrics.createMetric(input.context, NUM_OUTPUT_BATCHES)
-    val numOutputRows = SQLMetrics.createMetric(input.context, NUM_OUTPUT_ROWS)
-    val totalTime = SQLMetrics.createMetric(input.context, TOTAL_TIME)
     val columnarBatchRdd = input.mapPartitions(iter => {
-      new RowToColumnarIterator(iter, s, RequireSingleBatch, converters, totalTime, numInputRows,
-        numOutputRows, numOutputBatches)
+      new RowToColumnarIterator(iter, s, RequireSingleBatch, converters)
     })
     columnarBatchRdd.map(cb => {
-      val cachedBatch = compressColumnarBatchWithParquet(cb)
-      cb.close()
-      cachedBatch
+      withResource(cb) { columnarBatch =>
+        val cachedBatch = compressColumnarBatchWithParquet(columnarBatch)
+        cachedBatch
+      }
     })
   }
 

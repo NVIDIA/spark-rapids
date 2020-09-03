@@ -16,9 +16,8 @@
 
 package com.nvidia.spark.rapids
 
-import ai.rapids.cudf.NvtxColor
+import ai.rapids.cudf.{NvtxColor, NvtxRange}
 import com.nvidia.spark.rapids.GpuMetricNames._
-
 import org.apache.spark.TaskContext
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.InternalRow
@@ -30,7 +29,83 @@ import org.apache.spark.sql.execution.{CodegenSupport, SparkPlan, UnaryExecNode}
 import org.apache.spark.sql.execution.metric.{SQLMetric, SQLMetrics}
 import org.apache.spark.sql.rapids.execution.GpuColumnToRowMapPartitionsRDD
 import org.apache.spark.sql.types.DataType
-import org.apache.spark.sql.vectorized.{ColumnarBatch, ColumnVector}
+import org.apache.spark.sql.vectorized.{ColumnVector, ColumnarBatch}
+
+class ColumnarToRowIterator(batches: Iterator[ColumnarBatch], numInputBatches: SQLMetric = null,
+   numOutputRows: SQLMetric = null, totalTime: SQLMetric = null) extends Iterator[InternalRow] {
+  // GPU batches read in must be closed by the receiver (us)
+  @transient var cb: ColumnarBatch = null
+  var it: java.util.Iterator[InternalRow] = null
+
+  TaskContext.get().addTaskCompletionListener[Unit](_ => closeCurrentBatch())
+
+  private def closeCurrentBatch(): Unit = {
+    if (cb != null) {
+      cb.close()
+      cb = null
+    }
+  }
+
+  def loadNextBatch(): Unit = {
+    closeCurrentBatch()
+    if (it != null) {
+      it = null
+    }
+    if (batches.hasNext) {
+      val devCb = batches.next()
+      val nvtxRange = if (totalTime != null) {
+        new NvtxWithMetrics("ColumnarToRow: batch", NvtxColor.RED, totalTime)
+      } else {
+        new NvtxRange("ColumnarToRow: batch", NvtxColor.RED)
+      }
+
+      try {
+        cb = new ColumnarBatch(GpuColumnVector.extractColumns(devCb).map(_.copyToHost()),
+          devCb.numRows())
+        it = cb.rowIterator()
+        if (numInputBatches != null) {
+          numInputBatches += 1
+        }
+        // In order to match the numOutputRows metric in the generated code we update
+        // numOutputRows for each batch. This is less accurate than doing it at output
+        // because it will over count the number of rows output in the case of a limit,
+        // but it is more efficient.
+        if (numOutputRows != null) {
+          numOutputRows += cb.numRows()
+        }
+      } finally {
+        devCb.close()
+        // Leaving the GPU for a while
+        GpuSemaphore.releaseIfNecessary(TaskContext.get())
+        nvtxRange.close()
+      }
+    }
+  }
+
+  override def hasNext: Boolean = {
+    val itHasNext = it != null && it.hasNext
+    if (!itHasNext) {
+      loadNextBatch()
+      it != null && it.hasNext
+    } else {
+      itHasNext
+    }
+  }
+
+  override def next(): InternalRow = {
+    if (it == null || !it.hasNext) {
+      loadNextBatch()
+    }
+    if (it == null) {
+      throw new NoSuchElementException()
+    }
+    it.next()
+  }
+
+  // This is to convert the InternalRow to an UnsafeRow. Even though the type is
+  // InternalRow some operations downstream operations like collect require it to
+  // be UnsafeRow
+}
 
 abstract class GpuColumnarToRowExecParent(child: SparkPlan, val exportColumnarRdd: Boolean)
     extends UnaryExecNode with CodegenSupport with GpuExec {
@@ -71,71 +146,7 @@ abstract class GpuColumnarToRowExecParent(child: SparkPlan, val exportColumnarRd
     val f = (batches: Iterator[ColumnarBatch]) => {
       // UnsafeProjection is not serializable so do it on the executor side
       val toUnsafe = UnsafeProjection.create(localOutput, localOutput)
-      new Iterator[InternalRow] {
-        // GPU batches read in must be closed by the receiver (us)
-        @transient var cb: ColumnarBatch = null
-        var it: java.util.Iterator[InternalRow] = null
-
-        TaskContext.get().addTaskCompletionListener[Unit](_ => closeCurrentBatch())
-
-        private def closeCurrentBatch(): Unit = {
-          if (cb != null) {
-            cb.close()
-            cb = null
-          }
-        }
-
-        def loadNextBatch(): Unit = {
-          closeCurrentBatch()
-          if (it != null) {
-            it = null
-          }
-          if (batches.hasNext) {
-            val devCb = batches.next()
-            val nvtxRange = new NvtxWithMetrics("ColumnarToRow: batch", NvtxColor.RED, totalTime)
-            try {
-              cb = new ColumnarBatch(GpuColumnVector.extractColumns(devCb).map(_.copyToHost()),
-                devCb.numRows())
-              it = cb.rowIterator()
-              numInputBatches += 1
-              // In order to match the numOutputRows metric in the generated code we update
-              // numOutputRows for each batch. This is less accurate than doing it at output
-              // because it will over count the number of rows output in the case of a limit,
-              // but it is more efficient.
-              numOutputRows += cb.numRows()
-            } finally {
-              devCb.close()
-              // Leaving the GPU for a while
-              GpuSemaphore.releaseIfNecessary(TaskContext.get())
-              nvtxRange.close()
-            }
-          }
-        }
-
-        override def hasNext: Boolean = {
-          val itHasNext = it != null && it.hasNext
-          if (!itHasNext) {
-            loadNextBatch()
-            it != null && it.hasNext
-          } else {
-            itHasNext
-          }
-        }
-
-        override def next(): InternalRow = {
-          if (it == null || !it.hasNext) {
-            loadNextBatch()
-          }
-          if (it == null) {
-            throw new NoSuchElementException()
-          }
-          it.next()
-        }
-
-        // This is to convert the InternalRow to an UnsafeRow. Even though the type is
-        // InternalRow some operations downstream operations like collect require it to
-        // be UnsafeRow
-      }.map(toUnsafe)
+      new ColumnarToRowIterator(batches, numInputBatches, numOutputRows, totalTime).map(toUnsafe)
     }
 
     val cdata = child.executeColumnar()
