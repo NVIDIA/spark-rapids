@@ -172,6 +172,8 @@
                         <exclude>src/test/resources/**</exclude>
                         <exclude>**/*.md</exclude>
                         <exclude>.pytest_cache/**</exclude>
+                        <exclude>metastore_db/**</exclude>
+                        <exclude>spark-wearhouse/**</exclude>
                     </excludes>
                 </configuration>
             </plugin>
