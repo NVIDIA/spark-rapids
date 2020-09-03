@@ -29,7 +29,7 @@ import org.apache.spark.sql.catalyst.plans.physical._
 import org.apache.spark.sql.catalyst.rules.Rule
 import org.apache.spark.sql.connector.read.Scan
 import org.apache.spark.sql.execution._
-import org.apache.spark.sql.execution.adaptive.CustomShuffleReaderExec
+import org.apache.spark.sql.execution.adaptive.{AdaptiveSparkPlanExec, BroadcastQueryStageExec, CustomShuffleReaderExec, ShuffleQueryStageExec}
 import org.apache.spark.sql.execution.aggregate.{HashAggregateExec, SortAggregateExec}
 import org.apache.spark.sql.execution.command.{DataWritingCommand, DataWritingCommandExec}
 import org.apache.spark.sql.execution.datasources.{HadoopFsRelation, InsertIntoHadoopFsRelationCommand}
@@ -1735,7 +1735,13 @@ object GpuOverrides {
           GpuCustomShuffleReaderExec(childPlans.head.convertIfNeeded(),
             exec.partitionSpecs)
         }
-      })
+      }),
+    exec[AdaptiveSparkPlanExec]("Wrapper for adaptive query plan", (exec, conf, p, _) =>
+      new DoNotReplaceSparkPlanMeta[AdaptiveSparkPlanExec](exec, conf, p)),
+    exec[BroadcastQueryStageExec]("Broadcast query stage", (exec, conf, p, _) =>
+      new DoNotReplaceSparkPlanMeta[BroadcastQueryStageExec](exec, conf, p)),
+    exec[ShuffleQueryStageExec]("Shuffle query stage", (exec, conf, p, _) =>
+      new DoNotReplaceSparkPlanMeta[ShuffleQueryStageExec](exec, conf, p))
   ).map(r => (r.getClassFor.asSubclass(classOf[SparkPlan]), r)).toMap
   val execs: Map[Class[_ <: SparkPlan], ExecRule[_ <: SparkPlan]] =
     commonExecs ++ ShimLoader.getSparkShims.getExecs
