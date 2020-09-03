@@ -1736,24 +1736,12 @@ object GpuOverrides {
             exec.partitionSpecs)
         }
       }),
-    exec[AdaptiveSparkPlanExec]("Adaptive query", (exec, conf, p, r) =>
-      new SparkPlanMeta[AdaptiveSparkPlanExec](exec, conf, p, r) {
-        override def tagPlanForGpu(): Unit =
-          willNotWorkOnGpu("this is an adaptive plan")
-        override def convertToGpu(): GpuExec = throw new IllegalStateException()
-      }),
-    exec[BroadcastQueryStageExec]("Broadcast query stage", (exec, conf, p, r) =>
-      new SparkPlanMeta[BroadcastQueryStageExec](exec, conf, p, r) {
-        override def tagPlanForGpu(): Unit =
-          willNotWorkOnGpu("this query stage already started executing")
-        override def convertToGpu(): GpuExec = throw new IllegalStateException()
-      }),
-    exec[ShuffleQueryStageExec]("Shuffle query stage", (exec, conf, p, r) =>
-      new SparkPlanMeta[ShuffleQueryStageExec](exec, conf, p, r) {
-        override def tagPlanForGpu(): Unit =
-          willNotWorkOnGpu("this query stage already started executing")
-        override def convertToGpu(): GpuExec = throw new IllegalStateException()
-      })
+    exec[AdaptiveSparkPlanExec]("Wrapper for adaptive query plan", (exec, conf, p, _) =>
+      new DoNotReplaceSparkPlanMeta[AdaptiveSparkPlanExec](exec, conf, p)),
+    exec[BroadcastQueryStageExec]("Broadcast query stage", (exec, conf, p, _) =>
+      new DoNotReplaceSparkPlanMeta[BroadcastQueryStageExec](exec, conf, p)),
+    exec[ShuffleQueryStageExec]("Shuffle query stage", (exec, conf, p, _) =>
+      new DoNotReplaceSparkPlanMeta[ShuffleQueryStageExec](exec, conf, p))
   ).map(r => (r.getClassFor.asSubclass(classOf[SparkPlan]), r)).toMap
   val execs: Map[Class[_ <: SparkPlan], ExecRule[_ <: SparkPlan]] =
     commonExecs ++ ShimLoader.getSparkShims.getExecs

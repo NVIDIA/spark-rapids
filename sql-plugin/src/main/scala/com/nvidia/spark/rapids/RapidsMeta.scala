@@ -224,6 +224,8 @@ abstract class RapidsMeta[INPUT <: BASE, BASE, OUTPUT <: BASE](
   private def indent(append: StringBuilder, depth: Int): Unit =
     append.append("  " * depth)
 
+  def suppressWillWorkOnGpuInfo: Boolean = false
+
   private def willWorkOnGpuInfo: String = cannotBeReplacedReasons match {
     case None => "NOT EVALUATED FOR GPU YET"
     case Some(v) if v.isEmpty => "could run on GPU"
@@ -253,7 +255,7 @@ abstract class RapidsMeta[INPUT <: BASE, BASE, OUTPUT <: BASE](
    * @param all should all the data be printed or just what does not work on the GPU?
    */
   protected def print(strBuilder: StringBuilder, depth: Int, all: Boolean): Unit = {
-    if (all || !canThisBeReplaced) {
+    if ((all || !canThisBeReplaced) && !suppressWillWorkOnGpuInfo) {
       indent(strBuilder, depth)
       strBuilder.append(if (canThisBeReplaced) "*" else "!")
 
@@ -565,6 +567,25 @@ final class RuleNotFoundSparkPlanMeta[INPUT <: SparkPlan](
 
   override def tagPlanForGpu(): Unit =
     willNotWorkOnGpu(s"no GPU enabled version of operator ${plan.getClass} could be found")
+
+  override def convertToGpu(): GpuExec =
+    throw new IllegalStateException("Cannot be converted to GPU")
+}
+
+/**
+ * Metadata for `SparkPlan` that should not be replaced.
+ */
+final class DoNotReplaceSparkPlanMeta[INPUT <: SparkPlan](
+    plan: INPUT,
+    conf: RapidsConf,
+    parent: Option[RapidsMeta[_, _, _]])
+    extends SparkPlanMeta[INPUT](plan, conf, parent, new NoRuleConfKeysAndIncompat) {
+
+  /** We don't want to spam the user with messages about these operators */
+  override def suppressWillWorkOnGpuInfo: Boolean = true
+
+  override def tagPlanForGpu(): Unit =
+    willNotWorkOnGpu(s"there is no need to replace ${plan.getClass}")
 
   override def convertToGpu(): GpuExec =
     throw new IllegalStateException("Cannot be converted to GPU")
