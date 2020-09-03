@@ -152,7 +152,7 @@ _mixed_df2_with_nulls = [('a', RepeatSeqGen(LongGen(nullable=(True, 20.0)), leng
 @ignore_order
 @pytest.mark.parametrize('join_type', ['Left', 'Right', 'Inner', 'LeftSemi', 'LeftAnti',
     pytest.param('FullOuter', marks=pytest.mark.xfail(
-        condition=with_spark_session(lambda spark : not(is_before_spark_310())),
+        condition=not(is_before_spark_310()),
         reason='https://github.com/NVIDIA/spark-rapids/issues/575')),
     'Cross'], ids=idfn)
 def test_broadcast_join_mixed(join_type):

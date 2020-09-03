@@ -25,7 +25,7 @@ import pyspark.sql.functions as f
 vals = [(-584, 1563), (1943, 1101), (2693, 2167), (2729, 0), (44, 1534), (2635, 3319),
             (1885, -2828), (0, 2463), (932, 2286), (0, 0)]
 @pytest.mark.xfail(
-    condition=with_spark_session(lambda spark : not(is_before_spark_310())),
+    condition=not(is_before_spark_310()),
     reason='https://issues.apache.org/jira/browse/SPARK-32640')
 @pytest.mark.parametrize('data_gen', vals, ids=idfn)
 def test_timesub(data_gen):

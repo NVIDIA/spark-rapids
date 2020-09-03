@@ -200,7 +200,7 @@ def test_compress_write_round_trip(spark_tmp_path, compress):
             conf={'spark.sql.orc.compression.codec': compress})
 
 @pytest.mark.xfail(
-    condition=with_spark_session(lambda spark : not(is_before_spark_310())),
+    condition=not(is_before_spark_310()),
     reason='https://github.com/NVIDIA/spark-rapids/issues/576')
 def test_input_meta(spark_tmp_path):
     first_data_path = spark_tmp_path + '/ORC_DATA/key=0'

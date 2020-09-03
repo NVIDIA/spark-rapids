@@ -360,7 +360,7 @@ def test_expm1(data_gen):
             lambda spark : unary_op_df(spark, data_gen).selectExpr('expm1(a)'))
 
 @pytest.mark.xfail(
-    condition=with_spark_session(lambda spark : not(is_before_spark_310())),
+    condition=not(is_before_spark_310()),
     reason='https://issues.apache.org/jira/browse/SPARK-32640')
 @approximate_float
 @pytest.mark.parametrize('data_gen', double_gens, ids=idfn)
@@ -369,7 +369,7 @@ def test_log(data_gen):
             lambda spark : unary_op_df(spark, data_gen).selectExpr('log(a)'))
 
 @pytest.mark.xfail(
-    condition=with_spark_session(lambda spark : not(is_before_spark_310())),
+    condition=not(is_before_spark_310()),
     reason='https://issues.apache.org/jira/browse/SPARK-32640')
 @approximate_float
 @pytest.mark.parametrize('data_gen', double_gens, ids=idfn)
@@ -378,7 +378,7 @@ def test_log1p(data_gen):
             lambda spark : unary_op_df(spark, data_gen).selectExpr('log1p(a)'))
 
 @pytest.mark.xfail(
-    condition=with_spark_session(lambda spark : not(is_before_spark_310())),
+    condition=not(is_before_spark_310()),
     reason='https://issues.apache.org/jira/browse/SPARK-32640')
 @approximate_float
 @pytest.mark.parametrize('data_gen', double_gens, ids=idfn)
@@ -387,7 +387,7 @@ def test_log2(data_gen):
             lambda spark : unary_op_df(spark, data_gen).selectExpr('log2(a)'))
 
 @pytest.mark.xfail(
-    condition=with_spark_session(lambda spark : not(is_before_spark_310())),
+    condition=not(is_before_spark_310()),
     reason='https://issues.apache.org/jira/browse/SPARK-32640')
 @approximate_float
 @pytest.mark.parametrize('data_gen', double_gens, ids=idfn)
