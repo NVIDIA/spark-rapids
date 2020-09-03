@@ -20,6 +20,7 @@ import org.apache.spark.SparkConf
 import org.apache.spark.sql.SparkSession
 import org.apache.spark.sql.execution.{PartialReducerPartitionSpec, SparkPlan}
 import org.apache.spark.sql.execution.adaptive.{AdaptiveSparkPlanExec, AdaptiveSparkPlanHelper}
+import org.apache.spark.sql.execution.command.DataWritingCommandExec
 import org.apache.spark.sql.execution.exchange.Exchange
 import org.apache.spark.sql.functions.when
 import org.apache.spark.sql.internal.SQLConf
@@ -88,6 +89,28 @@ class AdaptiveQueryExecSuite
       val rightSmj = findTopLevelSortMergeJoin(rightAdaptivePlan)
       checkSkewJoin(rightSmj, 0, 1)
     }
+  }
+
+  test("SPARK-30953: InsertAdaptiveSparkPlan should apply AQE on child plan of write commands") {
+
+    val conf = new SparkConf()
+      .set(SQLConf.ADAPTIVE_EXECUTION_ENABLED.key, "true")
+      .set(SQLConf.ADAPTIVE_EXECUTION_FORCE_APPLY.key, "true")
+      .set(RapidsConf.TEST_ALLOWED_NONGPU.key, "DataWritingCommandExec")
+
+      withGpuSparkSession(spark => {
+        frameFromParquet("timestamp-date-test.parquet")(spark)
+          .createOrReplaceTempView("testData")
+
+        val df = spark.sql("CREATE TABLE t1 USING parquet AS SELECT * FROM testData")
+        val plan = df.queryExecution.executedPlan
+        assert(plan.isInstanceOf[DataWritingCommandExec])
+        assert(plan.asInstanceOf[DataWritingCommandExec].child.isInstanceOf[AdaptiveSparkPlanExec])
+
+        // check that the query executes without error
+        df.collect()
+
+    }, conf)
   }
 
   def skewJoinTest(fun: SparkSession => Unit) {
