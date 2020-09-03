@@ -92,10 +92,10 @@ class GpuHashAggregateMeta(
         }
           // In partial mode, if there are non-distinct functions and multiple distinct functions,
           // non-distinct functions are computed using the First operator. The final result would be
-          // incorrect for non distinct functions for partition size > 1. Reason for this is - if
+          // incorrect for non-distinct functions for partition size > 1. Reason for this is - if
           // the first batch computed and sent to CPU doesn't contain all the rows required to
-          // compute non distinct function(s), then Spark would consider that value as final result
-          // (due to First)Falling back to CPU for this special case.
+          // compute non-distinct function(s), then Spark would consider that value as final result
+          // (due to First). Fall back to CPU in this case.
           if (agg.aggregateExpressions.exists(e => e.aggregateFunction.isInstanceOf[First])) {
             agg.aggregateExpressions.foreach(e => {
               // Check if there is an `If` within `First`. This is included in the plan only when
@@ -110,7 +110,7 @@ class GpuHashAggregateMeta(
                   // Get the aggregate from references of `If` and validate if we should fall back
                   if (AggregateUtils.validateAggregate(e.aggregateFunction.references)) {
                     willNotWorkOnGpu("Aggregate of non-distinct functions with multiple distinct " +
-                      "functions is non deterministic for non-distinct functions as it is " +
+                      "functions is non-deterministic for non-distinct functions as it is " +
                       "computed using First.")
                   }
                 case _ =>
@@ -213,10 +213,10 @@ class GpuSortAggregateMeta(
         }
           // In partial mode, if there are non-distinct functions and multiple distinct functions,
           // non-distinct functions are computed using the First operator. The final result would be
-          // incorrect for non distinct functions for partition size > 1. Reason for this is - if
+          // incorrect for non-distinct functions for partition size > 1. Reason for this is - if
           // the first batch computed and sent to CPU doesn't contain all the rows required to
-          // compute non distinct function(s), then Spark would consider that value as final result
-          // (due to First)Falling back to CPU for this special case.
+          // compute non-distinct function(s), then Spark would consider that value as final result
+          // (due to First). Fall back to CPU in this case.
           if (agg.aggregateExpressions.exists(e => e.aggregateFunction.isInstanceOf[First])) {
             agg.aggregateExpressions.foreach(e => {
               // Check if there is an `If` within `First`. This is included in the plan only when
@@ -231,7 +231,7 @@ class GpuSortAggregateMeta(
                   // Get the aggregate from references of `If` and validate if we should fall back
                   if (AggregateUtils.validateAggregate(e.aggregateFunction.references)) {
                     willNotWorkOnGpu("Aggregate of non-distinct functions with multiple distinct " +
-                      "functions is non deterministic for non-distinct functions as it is " +
+                      "functions is non-deterministic for non-distinct functions as it is " +
                       "computed using First.")
                   }
                 case _ =>
