@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019-2020, NVIDIA CORPORATION.
+ * Copyright (c) 2020, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -57,7 +57,7 @@ class GpuFlatMapGroupsInPandasExecMeta(
     )
 }
 
-/**
+/*
  *
  * This GpuFlatMapGroupsInPandasExec aims at supporting running Pandas functional code
  * on GPU at Python side.
@@ -74,8 +74,7 @@ case class GpuFlatMapGroupsInPandasExec(
 
   override def supportsColumnar = false
   override def doExecuteColumnar(): RDD[ColumnarBatch] = {
-    // TBD
-    super.doExecuteColumnar()
+    throw new IllegalStateException(s"Columnar execution is not supported by $this yet")
   }
 
   // Most code is copied from FlatMapGroupsInPandasExec, except two GPU related calls

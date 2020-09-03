@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019-2020, NVIDIA CORPORATION.
+ * Copyright (c) 2020, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,7 +18,6 @@ package org.apache.spark.sql.rapids.execution.python
 
 import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.python.PythonWorkerSemaphore
-
 import scala.collection.JavaConverters._
 
 import org.apache.spark.TaskContext
@@ -56,7 +55,7 @@ class GpuMapInPandasExecMeta(
     )
 }
 
-/**
+/*
  * A relation produced by applying a function that takes an iterator of pandas DataFrames
  * and outputs an iterator of pandas DataFrames.
  *
@@ -74,8 +73,7 @@ case class GpuMapInPandasExec(
 
   override def supportsColumnar = false
   override def doExecuteColumnar(): RDD[ColumnarBatch] = {
-    // TBD
-    super.doExecuteColumnar()
+    throw new IllegalStateException(s"Columnar execution is not supported by $this yet")
   }
 
   // Most code is copied from MapInPandasExec, except two GPU related calls

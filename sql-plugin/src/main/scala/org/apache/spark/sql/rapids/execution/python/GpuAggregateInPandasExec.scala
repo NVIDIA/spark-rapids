@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019-2020, NVIDIA CORPORATION.
+ * Copyright (c) 2020, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -20,7 +20,6 @@ import java.io.File
 
 import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.python.PythonWorkerSemaphore
-
 import scala.collection.mutable.ArrayBuffer
 
 import org.apache.spark.{SparkEnv, TaskContext}
@@ -61,7 +60,7 @@ class GpuAggregateInPandasExecMeta(
     )
 }
 
-/**
+/*
  * This GpuAggregateInPandasExec aims at supporting running Pandas UDF code
  * on GPU at Python side.
  *
@@ -77,8 +76,7 @@ case class GpuAggregateInPandasExec(
 
   override def supportsColumnar = false
   override def doExecuteColumnar(): RDD[ColumnarBatch] = {
-    // TBD
-    super.doExecuteColumnar()
+    throw new IllegalStateException(s"Columnar execution is not supported by $this yet")
   }
 
   // Most code is copied from AggregateInPandasExec, except two GPU related calls

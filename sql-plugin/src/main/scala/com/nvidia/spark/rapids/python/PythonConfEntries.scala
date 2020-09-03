@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019-2020, NVIDIA CORPORATION.
+ * Copyright (c) 2020, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -59,4 +59,8 @@ object PythonConfEntries {
       "python workers. This is an experimental feature.")
     .booleanConf
     .createOptional
+
+  // An empty function called by RapidsConf to initialize the config definitions above for
+  // doc generation
+  def init(): Unit = {}
 }

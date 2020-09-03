@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019-2020, NVIDIA CORPORATION.
+ * Copyright (c) 2020, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -20,7 +20,6 @@ import java.io.File
 
 import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.python.PythonWorkerSemaphore
-
 import scala.collection.JavaConverters._
 import scala.collection.mutable.ArrayBuffer
 
@@ -62,7 +61,7 @@ class GpuWindowInPandasExecMeta(
     )
 }
 
-/**
+/*
  * This GpuWindowInPandasExec aims at supporting running Pandas UDF code
  * on GPU at Python side.
  *
@@ -78,8 +77,7 @@ case class GpuWindowInPandasExec(
 
   override def supportsColumnar = false
   override def doExecuteColumnar(): RDD[ColumnarBatch] = {
-    // TBD
-    super.doExecuteColumnar()
+    throw new IllegalStateException(s"Columnar execution is not supported by $this yet")
   }
 
   // Most code is copied from WindowInPandasExec, except two GPU related calls
@@ -104,20 +102,20 @@ case class GpuWindowInPandasExec(
 
   override def outputPartitioning: Partitioning = child.outputPartitioning
 
-  /**
-    * Helper functions and data structures for window bounds
-    *
-    * It contains:
-    * (1) Total number of window bound indices in the python input row
-    * (2) Function from frame index to its lower bound column index in the python input row
-    * (3) Function from frame index to its upper bound column index in the python input row
-    * (4) Seq from frame index to its window bound type
-    */
+  /*
+   * Helper functions and data structures for window bounds
+   *
+   * It contains:
+   * (1) Total number of window bound indices in the python input row
+   * (2) Function from frame index to its lower bound column index in the python input row
+   * (3) Function from frame index to its upper bound column index in the python input row
+   * (4) Seq from frame index to its window bound type
+   */
   private type WindowBoundHelpers = (Int, Int => Int, Int => Int, Seq[WindowBoundType])
 
-  /**
-    * Enum for window bound types. Used only inside this class.
-    */
+  /*
+   * Enum for window bound types. Used only inside this class.
+   */
   private sealed case class WindowBoundType(value: String)
   private object UnboundedWindow extends WindowBoundType("unbounded")
   private object BoundedWindow extends WindowBoundType("bounded")
@@ -136,9 +134,9 @@ case class GpuWindowInPandasExec(
     }
   }
 
-  /**
-    * See [[WindowBoundHelpers]] for details.
-    */
+  /*
+   * See [[WindowBoundHelpers]] for details.
+   */
   private def computeWindowBoundHelpers(
                                          factories: Seq[InternalRow => WindowFunctionFrame]
                                        ): WindowBoundHelpers = {

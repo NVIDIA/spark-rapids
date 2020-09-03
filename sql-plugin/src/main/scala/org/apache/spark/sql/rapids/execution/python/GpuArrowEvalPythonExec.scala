@@ -1,4 +1,6 @@
 /*
+ * Copyright (c) 2020, NVIDIA CORPORATION.
+ *
  * Licensed to the Apache Software Foundation (ASF) under one or more
  * contributor license agreements.  See the NOTICE file distributed with
  * this work for additional information regarding copyright ownership.
@@ -22,26 +24,27 @@ import java.net.Socket
 import java.util.concurrent.atomic.AtomicBoolean
 
 import ai.rapids.cudf._
-import com.nvidia.spark.rapids.GpuMetricNames._
 import com.nvidia.spark.rapids._
+import com.nvidia.spark.rapids.GpuMetricNames._
 import com.nvidia.spark.rapids.python.PythonWorkerSemaphore
+import scala.collection.mutable
+import scala.collection.mutable.ArrayBuffer
+
+import org.apache.spark.{SparkEnv, TaskContext}
 import org.apache.spark.api.python._
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.expressions._
 import org.apache.spark.sql.catalyst.util.toPrettySQL
+import org.apache.spark.sql.execution.{SparkPlan, UnaryExecNode}
 import org.apache.spark.sql.execution.metric.{SQLMetric, SQLMetrics}
 import org.apache.spark.sql.execution.python.PythonUDFRunner
-import org.apache.spark.sql.execution.{SparkPlan, UnaryExecNode}
 import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.types.{DataType, StructField, StructType}
 import org.apache.spark.sql.util.ArrowUtils
 import org.apache.spark.sql.vectorized.ColumnarBatch
 import org.apache.spark.util.Utils
-import org.apache.spark.{SparkEnv, TaskContext}
 
-import scala.collection.mutable
-import scala.collection.mutable.ArrayBuffer
 
 class RebatchingIterator(
     wrapped: Iterator[ColumnarBatch],
@@ -131,7 +134,7 @@ class BatchQueue extends AutoCloseable {
   }
 }
 
-/**
+/*
  * Helper functions for [[GpuPythonUDF]]
  */
 object GpuPythonUDF {
@@ -155,7 +158,7 @@ object GpuPythonUDF {
   def isWindowPandasUDF(e: Expression): Boolean = isGroupedAggPandasUDF(e)
 }
 
-/**
+/*
  * A serialized version of a Python lambda function. This is a special expression, which needs a
  * dedicated physical operator to execute it, and thus can't be pushed down to data sources.
  */
@@ -185,7 +188,7 @@ case class GpuPythonUDF(
   }
 }
 
-/**
+/*
  * A trait that can be mixed-in with `BasePythonRunner`. It implements the logic from
  * Python (Arrow) to GPU/JVM (ColumnarBatch).
  */
@@ -256,7 +259,7 @@ trait GpuPythonArrowOutput extends Arm { self: BasePythonRunner[_, ColumnarBatch
 }
 
 
-/**
+/*
  * Similar to `PythonUDFRunner`, but exchange data with Python worker via Arrow stream.
  */
 class GpuArrowPythonRunner(
@@ -366,7 +369,7 @@ class StreamToBufferProvider(inputStream: DataInputStream) extends HostBufferPro
   }
 }
 
-/**
+/*
  * A physical plan that evaluates a [[GpuPythonUDF]]. The transformation of the data to arrow
  * happens on the GPU (practically a noop), But execution of the UDFs are on the CPU or GPU.
  */

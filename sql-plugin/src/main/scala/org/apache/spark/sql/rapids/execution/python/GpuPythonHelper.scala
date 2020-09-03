@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019-2020, NVIDIA CORPORATION.
+ * Copyright (c) 2020, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -28,7 +28,8 @@ import org.apache.spark.internal.config.Python.{PYTHON_USE_DAEMON, PYTHON_WORKER
 
 object GpuPythonHelper extends Logging {
 
-  private lazy val rapidsConf = new RapidsConf(SparkEnv.get.conf)
+  private lazy val sparkConf = SparkEnv.get.conf
+  private lazy val rapidsConf = new RapidsConf(sparkConf)
   private lazy val gpuId = GpuDeviceManager.getDeviceId()
     .getOrElse(throw new IllegalStateException("No gpu id!"))
     .toString
@@ -64,7 +65,6 @@ object GpuPythonHelper extends Logging {
 
     // Calculate the pool size for each Python worker.
     val concurrentPythonWorkers = rapidsConf.get(CONCURRENT_PYTHON_WORKERS)
-    val sparkConf = SparkEnv.get.conf
     // Spark does not throw exception even the value of CPUS_PER_TASK is negative, so
     // return 1 if it is less than zero to continue the task.
     val cpuTaskSlots = sparkConf.get(EXECUTOR_CORES) / Math.max(1, sparkConf.get(CPUS_PER_TASK))
@@ -92,7 +92,6 @@ object GpuPythonHelper extends Logging {
     // - pyspark worker module.
     //   For GPU case, need to customize the worker module for the GPU initialization
     //   and de-initialization
-    val sparkConf = SparkEnv.get.conf
     sparkConf.get(PYTHON_WORKER_MODULE).foreach(value =>
       if (value != "rapids.worker") {
         logWarning(s"Found PySpark worker is set to '$value', overwrite it to 'rapids.worker'.")

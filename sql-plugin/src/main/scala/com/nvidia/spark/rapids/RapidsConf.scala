@@ -781,6 +781,8 @@ object RapidsConf {
     }
   }
   def main(args: Array[String]): Unit = {
+    // Include the configs in PythonConfEntries
+    com.nvidia.spark.rapids.python.PythonConfEntries.init()
     val out = new FileOutputStream(new File(args(0)))
     Console.withOut(out) {
       Console.withErr(out) {

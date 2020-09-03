@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019-2020, NVIDIA CORPORATION.
+ * Copyright (c) 2020, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -23,7 +23,7 @@ import org.apache.spark.sql.execution.SparkPlan
 import org.apache.spark.sql.execution.python.PandasGroupUtils
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
-/**
+/*
  * This is to expose the APIs of PandasGroupUtils to rapids Execs
  */
 private[sql] object GpuPandasUtils {

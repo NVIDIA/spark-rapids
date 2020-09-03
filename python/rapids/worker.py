@@ -51,9 +51,8 @@ def initialize_gpu_mem():
         base_t = rmm.mr.ManagedMemoryResource if uvm_enabled else rmm.mr.CudaMemoryResource
         rmm.mr.set_current_device_resource(rmm.mr.PoolMemoryResource(base_t(), pool_size, pool_max_size))
     elif uvm_enabled:
-        # Will this really be needed for Python ?
         from cudf import rmm
-        rmm.mr.set_default_resource(rmm.mr.ManagedMemoryResource())
+        rmm.mr.set_current_device_resource(rmm.mr.ManagedMemoryResource())
     else:
         # Do nothing, whether to use RMM (default mode) or not depends on UDF definition.
         pass
