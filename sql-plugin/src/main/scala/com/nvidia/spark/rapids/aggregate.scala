@@ -36,7 +36,7 @@ import org.apache.spark.sql.execution.metric.{SQLMetric, SQLMetrics}
 import org.apache.spark.sql.rapids.execution.TrampolineUtil.validateAggregate
 import org.apache.spark.sql.rapids.{CudfAggregate, GpuAggregateExpression, GpuDeclarativeAggregate}
 import org.apache.spark.sql.types.{DoubleType, FloatType}
-import org.apache.spark.sql.vectorized.{ColumnVector, ColumnarBatch}
+import org.apache.spark.sql.vectorized.{ColumnarBatch, ColumnVector}
 
 class GpuHashAggregateMeta(
     agg: HashAggregateExec,
@@ -81,28 +81,31 @@ class GpuHashAggregateMeta(
           // replacing only Partial hash aggregates, so a Final or Complete one should not replace
           willNotWorkOnGpu("Replacing Final or Complete hash aggregates disabled")
         }
-          // In partial mode, if there are non distinct functions and multiple distinct functions
-          // non distinct functions are computed using First operator. The final result would be
+          // In partial mode, if there are non-distinct functions and multiple distinct functions,
+          // non-distinct functions are computed using the First operator. The final result would be
           // incorrect for non distinct functions for partition size > 1. Reason for this is - if
           // the first batch computed and sent to CPU doesn't contain all the rows required to
-          // comput non distinct function(s), then Spark would consider that value as final result
+          // compute non distinct function(s), then Spark would consider that value as final result
           // (due to First)Falling back to CPU for this special case.
           if (agg.aggregateExpressions.exists(e => e.aggregateFunction.isInstanceOf[First])) {
             agg.aggregateExpressions.foreach(e => {
               // Check if there is an `If` within `First`. This is included in the plan only when
-              // multiple distinct is present in the query.  We fall back to CPU in this case when
-              // the references of `If` is an aggregate.
-              if (e.aggregateFunction.isInstanceOf[First]) {
-                val t = e.aggregateFunction.asInstanceOf[First].child.isInstanceOf[If]
-                if (t) {
-                  // Get the aggregate from references of `If`
-                  val aggRefs = e.aggregateFunction.references.tail.head
-                  val aggType = validateAggregate(aggRefs)
-                  if (aggType) {
-                    willNotWorkOnGpu("Aggregate of non distinct functions with multiple distinct " +
-                      "functions is non deterministic for non distinct functions as it is " +
-                      "computed using First.")
-                  }
+              // multiple distinct is present in the query. We fall back to CPU in this case when
+              // the references of `If` is an aggregate. We cannot call `isDistinct` here on
+              // aggregateExpressions to get the total number of distinct functions. If there are
+              // multiple distinct the plan is rewritten by `RewriteDistinctAggregates` where
+              // regular aggregations and every distinct aggregation is calculated in a separate
+              // group.
+              if (e.aggregateFunction.isInstanceOf[First] &&
+                e.aggregateFunction.asInstanceOf[First].child.isInstanceOf[If]) {
+                // Get the aggregate from references of `If`
+                val aggRefs = e.aggregateFunction.references
+                val isMultipleDistinctAggs = validateAggregate(aggRefs)
+
+                if (isMultipleDistinctAggs) {
+                  willNotWorkOnGpu("Aggregate of non-distinct functions with multiple distinct " +
+                    "functions is non deterministic for non-distinct functions as it is " +
+                    "computed using First.")
                 }
               }
             })
@@ -201,8 +204,8 @@ class GpuSortAggregateMeta(
           // replacing only Partial hash aggregates, so a Final or Commplete one should not replace
           willNotWorkOnGpu("Replacing Final or Complete hash aggregates disabled")
         }
-          // In partial mode, if there are non distinct functions and multiple distinct functions
-          // non distinct functions are computed using First operator. The final result would be
+          // In partial mode, if there are non-distinct functions and multiple distinct functions,
+          // non-distinct functions are computed using the First operator. The final result would be
           // incorrect for non distinct functions for partition size > 1. Reason for this is - if
           // the first batch computed and sent to CPU doesn't contain all the rows required to
           // compute non distinct function(s), then Spark would consider that value as final result
@@ -210,19 +213,22 @@ class GpuSortAggregateMeta(
           if (agg.aggregateExpressions.exists(e => e.aggregateFunction.isInstanceOf[First])) {
             agg.aggregateExpressions.foreach(e => {
               // Check if there is an `If` within `First`. This is included in the plan only when
-              // multiple distinct is present in the query.  We fall back to CPU in this case when
-              // the references of `If` is an aggregate.
-              if (e.aggregateFunction.isInstanceOf[First]) {
-                val t = e.aggregateFunction.asInstanceOf[First].child.isInstanceOf[If]
-                if (t) {
-                  // Get the aggregate from references of `If`
-                  val aggRefs = e.aggregateFunction.references.tail.head
-                  val aggType = validateAggregate(aggRefs)
-                  if (aggType) {
-                    willNotWorkOnGpu("Aggregate of non distinct functions with multiple distinct " +
-                      "functions is non deterministic for non distinct functions as it is " +
-                      "computed using First.")
-                  }
+              // multiple distinct is present in the query. We fall back to CPU in this case when
+              // the references of `If` is an aggregate. We cannot call `isDistinct` here on
+              // aggregateExpressions to get the total number of distinct functions. If there are
+              // multiple distinct the plan is rewritten by `RewriteDistinctAggregates` where
+              // regular aggregations and every distinct aggregation is calculated in a separate
+              // group.
+              if (e.aggregateFunction.isInstanceOf[First] &&
+                e.aggregateFunction.asInstanceOf[First].child.isInstanceOf[If]) {
+                // Get the aggregate from references of `If`
+                val aggRefs = e.aggregateFunction.references
+                val isMultipleDistinctAggs = validateAggregate(aggRefs)
+
+                if (isMultipleDistinctAggs) {
+                  willNotWorkOnGpu("Aggregate of non-distinct functions with multiple distinct " +
+                    "functions is non deterministic for non-distinct functions as it is " +
+                    "computed using First.")
                 }
               }
             })
