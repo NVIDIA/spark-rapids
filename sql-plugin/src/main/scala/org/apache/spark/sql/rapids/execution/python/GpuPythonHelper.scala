@@ -24,11 +24,16 @@ import org.apache.spark.SparkEnv
 import org.apache.spark.api.python.ChainedPythonFunctions
 import org.apache.spark.internal.Logging
 import org.apache.spark.internal.config.{CPUS_PER_TASK, EXECUTOR_CORES}
-import org.apache.spark.internal.config.Python.{PYTHON_USE_DAEMON, PYTHON_WORKER_MODULE}
+import org.apache.spark.internal.config.Python._
 
 object GpuPythonHelper extends Logging {
 
   private lazy val sparkConf = SparkEnv.get.conf
+  private lazy val useDaemon = {
+    val useDaemonEnabled = sparkConf.get(PYTHON_USE_DAEMON)
+    // This flag is ignored on Windows as it's unable to fork.
+    !System.getProperty("os.name").startsWith("Windows") && useDaemonEnabled
+  }
   private lazy val rapidsConf = new RapidsConf(sparkConf)
   private lazy val gpuId = GpuDeviceManager.getDeviceId()
     .getOrElse(throw new IllegalStateException("No gpu id!"))
@@ -88,17 +93,24 @@ object GpuPythonHelper extends Logging {
       pyF.envVars.put("RAPIDS_POOLED_MEM_MAX_SIZE", maxAllocPerWorker.toString)
     })
 
-    // Check and overwrite the related conf(s):
-    // - pyspark worker module.
-    //   For GPU case, need to customize the worker module for the GPU initialization
-    //   and de-initialization
-    sparkConf.get(PYTHON_WORKER_MODULE).foreach(value =>
-      if (value != "rapids.worker") {
-        logWarning(s"Found PySpark worker is set to '$value', overwrite it to 'rapids.worker'.")
-      }
-    )
-    sparkConf.set(PYTHON_WORKER_MODULE, "rapids.worker")
-    logWarning("Disable python daemon to enable customized 'rapids.worker'.")
-    sparkConf.set(PYTHON_USE_DAEMON, false)
+    // Check and overwrite the related conf(s) to launch our rapids daemon or worker for
+    // the GPU initialization.
+    // - python worker module if useDaemon is false, otherwise
+    // - python daemon module.
+    if (useDaemon) {
+      sparkConf.get(PYTHON_DAEMON_MODULE).foreach(value =>
+        if (value != "rapids.daemon") {
+          logWarning(s"Found PySpark daemon is set to '$value', overwrite to 'rapids.daemon'.")
+        }
+      )
+      sparkConf.set(PYTHON_DAEMON_MODULE, "rapids.daemon")
+    } else {
+      sparkConf.get(PYTHON_WORKER_MODULE).foreach(value =>
+        if (value != "rapids.worker") {
+          logWarning(s"Found PySpark worker is set to '$value', overwrite to 'rapids.worker'.")
+        }
+      )
+      sparkConf.set(PYTHON_WORKER_MODULE, "rapids.worker")
+    }
   }
 }
