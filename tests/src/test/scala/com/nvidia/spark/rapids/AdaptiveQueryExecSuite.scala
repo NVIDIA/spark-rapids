@@ -91,11 +91,13 @@ class AdaptiveQueryExecSuite
     }
   }
 
-  test("SPARK-30953: InsertAdaptiveSparkPlan should apply AQE on child plan of write commands") {
+  test("Plugin should translate child plan of write commands to GPU") {
 
     val conf = new SparkConf()
       .set(SQLConf.ADAPTIVE_EXECUTION_ENABLED.key, "true")
       .set(SQLConf.ADAPTIVE_EXECUTION_FORCE_APPLY.key, "true")
+      // DataWritingCommandExec does not get translated to GPU because the plugin
+      // currently doesn't support the CreateDataSourceTableAsSelectCommand command
       .set(RapidsConf.TEST_ALLOWED_NONGPU.key, "DataWritingCommandExec")
 
       withGpuSparkSession(spark => {
@@ -103,12 +105,14 @@ class AdaptiveQueryExecSuite
           .createOrReplaceTempView("testData")
 
         val df = spark.sql("CREATE TABLE t1 USING parquet AS SELECT * FROM testData")
-        val plan = df.queryExecution.executedPlan
-        assert(plan.isInstanceOf[DataWritingCommandExec])
-        assert(plan.asInstanceOf[DataWritingCommandExec].child.isInstanceOf[AdaptiveSparkPlanExec])
-
-        // check that the query executes without error
         df.collect()
+
+        val adaptivePlan = df.queryExecution.executedPlan
+            .asInstanceOf[DataWritingCommandExec].child
+            .asInstanceOf[AdaptiveSparkPlanExec]
+
+        // even though the write couldn't run on GPU, the read should have done
+        adaptivePlan.executedPlan.isInstanceOf[GpuExec]
 
     }, conf)
   }
