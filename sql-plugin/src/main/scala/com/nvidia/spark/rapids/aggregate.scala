@@ -38,12 +38,36 @@ import org.apache.spark.sql.types.{DoubleType, FloatType}
 import org.apache.spark.sql.vectorized.{ColumnarBatch, ColumnVector}
 
 object AggregateUtils {
-  /** Return true if the Attribute passed is one of aggregates in the list */
-  def validateAggregate(agg: AttributeSet): Boolean = {
-    val distinctAggs = List("avg", "sum", "count")
-    val res = agg.toSeq.exists(
-      agg => distinctAggs.exists(distinctAgg => agg.name.contains(distinctAgg)))
-    res
+
+  private val aggs = List("min", "max", "avg", "sum", "count", "first", "last")
+
+  /**
+   * Return true if the Attribute passed is one of aggregates in the aggs list.
+   * Use it with caution. We are comparing the name of a column looking for anything that matches
+   * with the values in aggs.
+   **/
+  def validateAggregate(attribute: AttributeSet): Boolean = {
+    attribute.toSeq.exists(
+      agg => aggs.exists(distinctAgg => agg.name.contains(distinctAgg)))
+  }
+
+  /** Return true if there are multiple distinct functions along with non distinct functions */
+  def fallbackToCpu(aggExpr: Seq[AggregateExpression]): Boolean = {
+    // Check if there is an `If` within `First`. This is included in the plan for non-distinct
+    // functions only when multiple distincts along with non-distinct functions are present in the
+    // query. We fall back to CPU in this case when references of `If` are an aggregate. We cannot
+    // call `isDistinct` here on aggregateExpressions to get the total number of distinct functions.
+    // If there are multiple distincts, the plan is rewritten by `RewriteDistinctAggregates` where
+    // regular aggregations and every distinct aggregation is calculated in a separate group.
+    aggExpr.map(e => e.aggregateFunction).exists { func => {
+      func match {
+        case First(If(_, _, _), _) if validateAggregate(func.references) => {
+          true
+        }
+        case _ => false
+      }
+    }
+    }
   }
 }
 
@@ -96,26 +120,10 @@ class GpuHashAggregateMeta(
           // the first batch computed and sent to CPU doesn't contain all the rows required to
           // compute non-distinct function(s), then Spark would consider that value as final result
           // (due to First). Fall back to CPU in this case.
-          if (agg.aggregateExpressions.exists(e => e.aggregateFunction.isInstanceOf[First])) {
-            agg.aggregateExpressions.foreach(e => {
-              // Check if there is an `If` within `First`. This is included in the plan only when
-              // multiple distinct is present in the query. We fall back to CPU in this case when
-              // the references of `If` is an aggregate. We cannot call `isDistinct` here on
-              // aggregateExpressions to get the total number of distinct functions. If there are
-              // multiple distinct the plan is rewritten by `RewriteDistinctAggregates` where
-              // regular aggregations and every distinct aggregation is calculated in a separate
-              // group.
-              e.aggregateFunction match {
-                case first: First if first.child.isInstanceOf[If] =>
-                  // Get the aggregate from references of `If` and validate if we should fall back
-                  if (AggregateUtils.validateAggregate(e.aggregateFunction.references)) {
-                    willNotWorkOnGpu("Aggregate of non-distinct functions with multiple distinct " +
-                      "functions is non-deterministic for non-distinct functions as it is " +
-                      "computed using First.")
-                  }
-                case _ =>
-              }
-            })
+          if (AggregateUtils.fallbackToCpu(agg.aggregateExpressions)) {
+            willNotWorkOnGpu("Aggregates of non-distinct functions with multiple distinct " +
+              "functions are non-deterministic for non-distinct functions as it is " +
+              "computed using First.")
           }
         case "final" => if (hashAggMode.contains(Partial) || hashAggMode.contains(Complete)) {
           // replacing only Final hash aggregates, so a Partial or Complete one should not replace
@@ -217,26 +225,10 @@ class GpuSortAggregateMeta(
           // the first batch computed and sent to CPU doesn't contain all the rows required to
           // compute non-distinct function(s), then Spark would consider that value as final result
           // (due to First). Fall back to CPU in this case.
-          if (agg.aggregateExpressions.exists(e => e.aggregateFunction.isInstanceOf[First])) {
-            agg.aggregateExpressions.foreach(e => {
-              // Check if there is an `If` within `First`. This is included in the plan only when
-              // multiple distinct is present in the query. We fall back to CPU in this case when
-              // the references of `If` is an aggregate. We cannot call `isDistinct` here on
-              // aggregateExpressions to get the total number of distinct functions. If there are
-              // multiple distinct the plan is rewritten by `RewriteDistinctAggregates` where
-              // regular aggregations and every distinct aggregation is calculated in a separate
-              // group.
-              e.aggregateFunction match {
-                case first: First if first.child.isInstanceOf[If] =>
-                  // Get the aggregate from references of `If` and validate if we should fall back
-                  if (AggregateUtils.validateAggregate(e.aggregateFunction.references)) {
-                    willNotWorkOnGpu("Aggregate of non-distinct functions with multiple distinct " +
-                      "functions is non-deterministic for non-distinct functions as it is " +
-                      "computed using First.")
-                  }
-                case _ =>
-              }
-            })
+          if (AggregateUtils.fallbackToCpu(agg.aggregateExpressions)) {
+            willNotWorkOnGpu("Aggregates of non-distinct functions with multiple distinct " +
+              "functions are non-deterministic for non-distinct functions as it is " +
+              "computed using First.")
           }
         case "final" => if (hashAggMode.contains(Partial) || hashAggMode.contains(Complete)) {
           // replacing only Final hash aggregates, so a Partial or Complete one should not replace
