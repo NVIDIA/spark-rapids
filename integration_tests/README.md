@@ -39,7 +39,7 @@ Most clusters probably will not have the RAPIDS plugin installed in the cluster 
 If just want to verify the SQL replacement is working you will need to add the `rapids-4-spark` and `cudf` jars to your `spark-submit` command.
 
 ```
-$SPARK_HOME/bin/spark-submit --jars "rapids-4-spark_2.12-0.2.0-SNAPSHOT.jar,cudf-0.15-SNAPSHOT.jar" ./runtests.py
+$SPARK_HOME/bin/spark-submit --jars "rapids-4-spark_2.12-0.2.0-SNAPSHOT.jar,cudf-0.15.jar" ./runtests.py
 ```
 
 You don't have to enable the plugin for this to work, the test framework will do that for you.
@@ -70,7 +70,7 @@ The TPCxBB, TPCH, and Mortgage tests in this framework can be enabled by providi
 As an example, here is the `spark-submit` command with the TPCxBB parameters:
 
 ```
-$SPARK_HOME/bin/spark-submit --jars "rapids-4-spark_2.12-0.2.0-SNAPSHOT.jar,cudf-0.15-SNAPSHOT.jar,rapids-4-spark-tests_2.12-0.2.0-SNAPSHOT.jar" ./runtests.py --tpcxbb_format="csv" --tpcxbb_path="/path/to/tpcxbb/csv"
+$SPARK_HOME/bin/spark-submit --jars "rapids-4-spark_2.12-0.2.0-SNAPSHOT.jar,cudf-0.15.jar,rapids-4-spark-tests_2.12-0.2.0-SNAPSHOT.jar" ./runtests.py --tpcxbb_format="csv" --tpcxbb_path="/path/to/tpcxbb/csv"
 ```
 
 ## Writing tests
