@@ -27,30 +27,14 @@ from argparse import ArgumentParser
 
 from github import Github
 
-parser = ArgumentParser(description="signoff check")
-parser.add_argument("--owner", help="repo owner", default='')
-parser.add_argument("--repo_name", help="repo name", default='')
-parser.add_argument("--token", help="github token, will use GITHUB_TOKEN if empty", default='')
-parser.add_argument("--pull_number", help="pull request number", type=int)
-args = parser.parse_args()
-
-OWNER = args.owner if args.owner else os.environ.get('OWNER')
-assert OWNER, 'env OWNER should not be empty'
-REPO_NAME = args.repo_name if args.repo_name else os.environ.get('REPO_NAME')
-assert REPO_NAME, 'env REPO_NAME should not be empty'
-GITHUB_TOKEN = args.token if args.token else os.environ.get('GITHUB_TOKEN')
-assert GITHUB_TOKEN, 'env GITHUB_TOKEN should not be empty'
-PULL_NUMBER = args.pull_number if args.pull_number else int(os.environ.get('PULL_NUMBER'))
-assert PULL_NUMBER, 'env PULL_NUMBER should not be empty'
-
-signoff_re = re.compile('Signed-off-by:')
+SIGNOFF_REGEX = re.compile('Signed-off-by:')
 
 
-def signoff():
-    gh = Github(GITHUB_TOKEN, per_page=100, user_agent='signoff-check', verify=True)
-    pr = gh.get_repo(f"{OWNER}/{REPO_NAME}").get_pull(PULL_NUMBER)
+def signoff(token: str, owner: str, repo_name: str, pull_number: int):
+    gh = Github(token, per_page=100, user_agent='signoff-check', verify=True)
+    pr = gh.get_repo(f"{owner}/{repo_name}").get_pull(pull_number)
     for c in pr.get_commits():
-        if signoff_re.search(c.commit.message):
+        if SIGNOFF_REGEX.search(c.commit.message):
             print('Found signoff.\n')
             print(f"Commit sha:\n{c.commit.sha}")
             print(f"Commit message:\n{c.commit.message}")
@@ -58,9 +42,9 @@ def signoff():
     return False
 
 
-def main():
+def main(token: str, owner: str, repo_name: str, pull_number: int):
     try:
-        if not signoff():
+        if not signoff(token, owner, repo_name, pull_number):
             raise Exception('No commits w/ signoff')
     except Exception as e:  # pylint: disable=broad-except
         print(e)
@@ -68,4 +52,20 @@ def main():
 
 
 if __name__ == '__main__':
-    main()
+    parser = ArgumentParser(description="signoff check")
+    parser.add_argument("--owner", help="repo owner", default='')
+    parser.add_argument("--repo_name", help="repo name", default='')
+    parser.add_argument("--token", help="github token, will use GITHUB_TOKEN if empty", default='')
+    parser.add_argument("--pull_number", help="pull request number", type=int)
+    args = parser.parse_args()
+
+    GITHUB_TOKEN = args.token if args.token else os.environ.get('GITHUB_TOKEN')
+    assert GITHUB_TOKEN, 'env GITHUB_TOKEN should not be empty'
+    OWNER = args.owner if args.owner else os.environ.get('OWNER')
+    assert OWNER, 'env OWNER should not be empty'
+    REPO_NAME = args.repo_name if args.repo_name else os.environ.get('REPO_NAME')
+    assert REPO_NAME, 'env REPO_NAME should not be empty'
+    PULL_NUMBER = args.pull_number if args.pull_number else int(os.environ.get('PULL_NUMBER'))
+    assert PULL_NUMBER, 'env PULL_NUMBER should not be empty'
+
+    main(token=GITHUB_TOKEN, owner=OWNER, repo_name=REPO_NAME, pull_number=PULL_NUMBER)
