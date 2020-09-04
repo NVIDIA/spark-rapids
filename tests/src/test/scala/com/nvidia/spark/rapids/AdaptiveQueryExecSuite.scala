@@ -235,6 +235,10 @@ class AdaptiveQueryExecSuite
       // Even with local shuffle reader, the query stage reuse can also work.
       val ex = findReusedExchange(adaptivePlan)
       assert(ex.size == 1)
+      assert(ShimLoader.getSparkShims.isShuffleExchangeLike(ex.head.child))
+
+      //TODO this fails, so it looks like we might have a bug around re-using GPU exchanges
+      //assert(ex.head.child.isInstanceOf[GpuExec])
 
     }, conf)
   }
