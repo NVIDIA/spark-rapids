@@ -17,7 +17,8 @@
 """A auto-merge tool
 
 Create a PR to merge HEAD to BASE branch.
-The PR will be automatically merged if no conflict. Otherwise, manual operation will be required.
+NOTE:
+    The generated PR should be automatically merged if no conflict. Otherwise, manual operation will be required.
 """
 
 import os
@@ -26,42 +27,32 @@ import time
 
 import requests
 
-# ENV
-OWNER = os.environ.get('OWNER')
-assert OWNER, 'env OWNER should not be empty'
-REPO_NAME = os.environ.get('REPO_NAME')
-assert REPO_NAME, 'env REPO_NAME should not be empty'
-HEAD = os.environ.get('HEAD')
-assert HEAD, 'env HEAD should not be empty'
-BASE = os.environ.get('BASE')
-assert BASE, 'env BASE should not be empty'
-GITHUB_TOKEN = os.environ.get('GITHUB_TOKEN')
-assert GITHUB_TOKEN, 'env GITHUB_TOKEN should not be empty'
 # static
 API_URL = 'https://api.github.com'
-AUTH_HEADERS = {
-    'Authorization': 'token ' + GITHUB_TOKEN
-}
 
 
-def create():
-    url = f'{API_URL}/repos/{OWNER}/{REPO_NAME}/pulls'
+def create(github_token: str, owner: str, repo_name: str, head: str, base: str):
+    auth_header = {
+        'Authorization': 'token ' + github_token
+    }
+
+    url = f'{API_URL}/repos/{owner}/{repo_name}/pulls'
     params = {
-        'title': f'[auto-merge] {HEAD} to {BASE} [skip ci] [bot]',
-        'head': HEAD,
-        'base': BASE,
-        'body': f'auto-merge triggered by github actions on `{HEAD}` to create a PR keeping `{BASE}` up-to-date. If '
+        'title': f'[auto-merge] {head} to {base} [skip ci] [bot]',
+        'head': head,
+        'base': base,
+        'body': f'auto-merge triggered by github actions on `{head}` to create a PR keeping `{base}` up-to-date. If '
                 'this PR is unable to be merged due to conflicts, it will remain open until manually fix.',
         'maintainer_can_modify': True
     }
-    r = requests.post(url, headers=AUTH_HEADERS, json=params)
+    r = requests.post(url, headers=auth_header, json=params)
     if r.status_code == 201:
         print('SUCCESS - create PR')
         pull = r.json()
         number = str(pull['number'])
         sha = str(pull['head']['sha'])
         return number, sha, False
-    if r.status_code == 422:
+    if r.status_code == 422:  # early-terminate if no commits between HEAD and BASE
         print('SUCCESS - No commits')
         print(r.json())
         return '', '', True
@@ -72,45 +63,59 @@ def create():
     sys.exit(1)
 
 
-def auto_merge(number, sha):
-    url = f'{API_URL}/repos/{OWNER}/{REPO_NAME}/pulls/{number}/merge'
-    params = {
-        'sha': sha,
-        'merge_method': 'merge'
-    }
-    r = requests.put(url, headers=AUTH_HEADERS, json=params)
-    if r.status_code == 200:
-        comment(number, '**SUCCESS** - auto-merge')
-        print('SUCCESS - auto-merge')
-        sys.exit(0)
-    else:
-        comment(number, """**FAILURE** - Unable to auto-merge due to conflicts. Manual operation is required.
+def auto_merge(github_token: str, nvauto_token: str, owner: str, repo_name: str, number: str, commit_id: str):
+    try:
+        # auto-approve PR
+        approve_url = f'{API_URL}/repos/{owner}/{repo_name}/pulls/{number}/reviews'
+        approve_params = {
+            'commit_id': commit_id,
+            'event': 'APPROVE',
+            'body': 'auto-approved',
+        }
+        r = requests.post(approve_url, headers={'Authorization': 'token ' + nvauto_token}, json=approve_params)
+        if r.status_code == 200:
+            comment(github_token=github_token, owner=owner, repo_name=repo_name, number=number,
+                    content='**SUCCESS** - auto-approve')
+            print('SUCCESS - auto-approve')
+        else:
+            print('FAILURE - auto-approve')
+            raise Exception(r.json())
 
-To maintainers, please use the following steps to fix the merge conflicts manually:
-This is a example to fix conflict from `branch-0.2` to `branch-0.3`
-```bash
-git fetch <spark-rapids_remote>
-git checkout -b branch-0.3-merge-branch-0.2 <spark-rapids_remote>/branch-0.3
-git merge <spark-rapids_remote>/branch-0.2
-# fix the merge conflict, then
-git commit -am "merge branch-0.2 to branch-0.3"
-git push <your forked remote> branch-0.3-merge-branch-0.2
+        # auto-merge PR
+        merge_url = f'{API_URL}/repos/{owner}/{repo_name}/pulls/{number}/merge'
+        merge_params = {
+            'sha': commit_id,
+            'merge_method': 'merge',
+        }
+        r = requests.put(merge_url, headers={'Authorization': 'token ' + github_token}, json=merge_params)
+        if r.status_code == 200:
+            comment(github_token=github_token, owner=owner, repo_name=repo_name, number=number,
+                    content='**SUCCESS** - auto-merge')
+            print('SUCCESS - auto-merge')
+            sys.exit(0)
+        else:
+            print('FAILURE - auto-merge')
+            raise Exception(r.json())
+    except Exception as e:
+        comment(github_token=github_token, owner=owner, repo_name=repo_name, number=number,
+                content=f"""**FAILURE** - Unable to auto-merge. Manual operation is required.
+```json
+{e}
 ```
-When this is done, create a PR targets the base branch (`branch-0.3` in this example). 
-Once the PR get merged, close the auto-merge PR. 
 """)
-        print('FAILURE - auto-merge')
-        print(f'status code: {r.status_code}')
-        print(r.json())
+        print(e)
         sys.exit(1)
 
 
-def comment(number, content):
-    url = f'{API_URL}/repos/{OWNER}/{REPO_NAME}/issues/{number}/comments'
+def comment(github_token: str, owner: str, repo_name: str, number: str, content: str):
+    auth_header = {
+        'Authorization': 'token ' + github_token
+    }
+    url = f'{API_URL}/repos/{owner}/{repo_name}/issues/{number}/comments'
     params = {
         'body': content
     }
-    r = requests.post(url, headers=AUTH_HEADERS, json=params)
+    r = requests.post(url, headers=auth_header, json=params)
     if r.status_code == 201:
         print('SUCCESS - create comment')
     else:
@@ -119,14 +124,32 @@ def comment(number, content):
         print(r.json())
 
 
-def main():
-    number, sha, term = create()
-    if term:
-        sys.exit(0)
+def main(github_token: str, nvauto_token: str, owner: str, repo_name: str, head: str, base: str):
+    try:
+        number, sha, term = create(github_token=github_token, owner=owner, repo_name=repo_name, head=head, base=base)
+        if term:
+            sys.exit(0)
 
-    time.sleep(10)  # sleep, then comment
-    auto_merge(number, sha)
+        time.sleep(300)  # sleep 5 minutes, then try auto-merge
+        auto_merge(github_token=github_token, nvauto_token=nvauto_token,
+                   owner=owner, repo_name=repo_name, number=number, commit_id=sha)
+    except Exception as e:
+        print("Unexpected error: ", e)
+        exit(-1)
 
 
 if __name__ == "__main__":
-    main()
+    GITHUB_TOKEN = os.environ.get('GITHUB_TOKEN')
+    assert GITHUB_TOKEN, 'env GITHUB_TOKEN should not be empty'
+    NVAUTO_TOKEN = os.environ.get('NVAUTO_TOKEN')
+    assert NVAUTO_TOKEN, 'env NVAUTO_TOKEN should not be empty'
+    OWNER = os.environ.get('OWNER')
+    assert OWNER, 'env OWNER should not be empty'
+    REPO_NAME = os.environ.get('REPO_NAME')
+    assert REPO_NAME, 'env REPO_NAME should not be empty'
+    HEAD = os.environ.get('HEAD')
+    assert HEAD, 'env HEAD should not be empty'
+    BASE = os.environ.get('BASE')
+    assert BASE, 'env BASE should not be empty'
+
+    main(github_token=GITHUB_TOKEN, nvauto_token=NVAUTO_TOKEN, owner=OWNER, repo_name=REPO_NAME, head=HEAD, base=BASE)
