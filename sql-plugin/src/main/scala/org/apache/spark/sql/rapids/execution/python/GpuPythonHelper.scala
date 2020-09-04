@@ -20,7 +20,7 @@ import ai.rapids.cudf.Cuda
 import com.nvidia.spark.rapids.{GpuDeviceManager, RapidsConf}
 import com.nvidia.spark.rapids.python.PythonConfEntries._
 
-import org.apache.spark.SparkEnv
+import org.apache.spark.{SparkConf, SparkEnv}
 import org.apache.spark.api.python.ChainedPythonFunctions
 import org.apache.spark.internal.Logging
 import org.apache.spark.internal.config.{CPUS_PER_TASK, EXECUTOR_CORES}
@@ -28,13 +28,9 @@ import org.apache.spark.internal.config.Python._
 
 object GpuPythonHelper extends Logging {
 
-  private lazy val sparkConf = SparkEnv.get.conf
-  private lazy val useDaemon = {
-    val useDaemonEnabled = sparkConf.get(PYTHON_USE_DAEMON)
-    // This flag is ignored on Windows as it's unable to fork.
-    !System.getProperty("os.name").startsWith("Windows") && useDaemonEnabled
-  }
+  private val sparkConf = SparkEnv.get.conf
   private lazy val rapidsConf = new RapidsConf(sparkConf)
+  private lazy val isPythonOnGpuEnabled = rapidsConf.get(PYTHON_GPU_ENABLED)
   private lazy val gpuId = GpuDeviceManager.getDeviceId()
     .getOrElse(throw new IllegalStateException("No gpu id!"))
     .toString
@@ -81,36 +77,60 @@ object GpuPythonHelper extends Logging {
     }
   }
 
+  // Called in each task at the executor side
   def injectGpuInfo(funcs: Seq[ChainedPythonFunctions]): Unit = {
-    // Insert GPU related env(s) into `envVars` for all the PythonFunction(s).
-    // Yes `PythonRunner` will only use the first one, but just make sure it will
-    // take effect no matter the order changes or not.
-    funcs.foreach(_.funcs.foreach { pyF =>
-      pyF.envVars.put("CUDA_VISIBLE_DEVICES", gpuId)
-      pyF.envVars.put("RAPIDS_UVM_ENABLED", isPythonUvmEnabled)
-      pyF.envVars.put("RAPIDS_POOLED_MEM_ENABLED", isPythonPooledMemEnabled)
-      pyF.envVars.put("RAPIDS_POOLED_MEM_SIZE", initAllocPerWorker.toString)
-      pyF.envVars.put("RAPIDS_POOLED_MEM_MAX_SIZE", maxAllocPerWorker.toString)
-    })
+    if (isPythonOnGpuEnabled) {
+      // Insert GPU related env(s) into `envVars` for all the PythonFunction(s).
+      // Yes `PythonRunner` will only use the first one, but just make sure it will
+      // take effect no matter the order changes or not.
+      funcs.foreach(_.funcs.foreach { pyF =>
+        pyF.envVars.put("CUDA_VISIBLE_DEVICES", gpuId)
+        pyF.envVars.put("RAPIDS_UVM_ENABLED", isPythonUvmEnabled)
+        pyF.envVars.put("RAPIDS_POOLED_MEM_ENABLED", isPythonPooledMemEnabled)
+        pyF.envVars.put("RAPIDS_POOLED_MEM_SIZE", initAllocPerWorker.toString)
+        pyF.envVars.put("RAPIDS_POOLED_MEM_MAX_SIZE", maxAllocPerWorker.toString)
+      })
+    }
+  }
 
-    // Check and overwrite the related conf(s) to launch our rapids daemon or worker for
-    // the GPU initialization.
-    // - python worker module if useDaemon is false, otherwise
-    // - python daemon module.
-    if (useDaemon) {
-      sparkConf.get(PYTHON_DAEMON_MODULE).foreach(value =>
-        if (value != "rapids.daemon") {
-          logWarning(s"Found PySpark daemon is set to '$value', overwrite to 'rapids.daemon'.")
+  // Check the related conf(s) to launch our rapids daemon or worker for
+  // the GPU initialization.
+  // - python worker module if useDaemon is false, otherwise
+  // - python daemon module.
+  // This is called at driver side
+  def checkPythonConfigs(conf: SparkConf): Unit = {
+    val isPythonOnGpuEnabled = new RapidsConf(conf).get(PYTHON_GPU_ENABLED)
+    if (isPythonOnGpuEnabled) {
+      val useDaemon = {
+        val useDaemonEnabled = conf.get(PYTHON_USE_DAEMON)
+        // This flag is ignored on Windows as it's unable to fork.
+        !System.getProperty("os.name").startsWith("Windows") && useDaemonEnabled
+      }
+      if (useDaemon) {
+        val oDaemon = conf.get(PYTHON_DAEMON_MODULE)
+        if (oDaemon.nonEmpty) {
+          val daemon = oDaemon.get
+          if (daemon != "rapids.daemon") {
+            throw new IllegalArgumentException("Python daemon module config conflicts." +
+              s" Expect 'rapids.daemon' but set to $daemon")
+          }
+        } else {
+          // Set daemon only when not specified
+          conf.set(PYTHON_DAEMON_MODULE, "rapids.daemon")
         }
-      )
-      sparkConf.set(PYTHON_DAEMON_MODULE, "rapids.daemon")
-    } else {
-      sparkConf.get(PYTHON_WORKER_MODULE).foreach(value =>
-        if (value != "rapids.worker") {
-          logWarning(s"Found PySpark worker is set to '$value', overwrite to 'rapids.worker'.")
+      } else {
+        val oWorker = conf.get(PYTHON_WORKER_MODULE)
+        if (oWorker.nonEmpty) {
+          val worker = oWorker.get
+          if (worker != "rapids.worker") {
+            throw new IllegalArgumentException("Python worker module config conflicts." +
+              s" Expect 'rapids.worker' but set to $worker")
+          }
+        } else {
+          // Set worker only when not specified
+          conf.set(PYTHON_WORKER_MODULE, "rapids.worker")
         }
-      )
-      sparkConf.set(PYTHON_WORKER_MODULE, "rapids.worker")
+      }
     }
   }
 }

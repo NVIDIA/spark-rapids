@@ -20,6 +20,13 @@ import com.nvidia.spark.rapids.RapidsConf.conf
 
 object PythonConfEntries {
 
+  val PYTHON_GPU_ENABLED = conf("spark.rapids.python.gpu.enabled")
+    .doc("Enable (true) or disable (false) the support of running Python Pandas UDFs" +
+      " on the GPU. When enabled, Pandas UDFs can call cuDF APIs for acceleration." +
+      " This is an experimental feature.")
+    .booleanConf
+    .createWithDefault(false)
+
   val CONCURRENT_PYTHON_WORKERS = conf("spark.rapids.python.concurrentPythonWorkers")
     .doc("Set the number of Python worker processes that can execute concurrently per GPU. " +
       "Python worker processes may temporarily block when the number of concurrent Python " +
