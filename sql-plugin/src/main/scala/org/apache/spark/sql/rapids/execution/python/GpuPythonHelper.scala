@@ -32,12 +32,8 @@ import org.apache.spark.internal.config.Python.{PYTHON_USE_DAEMON, PYTHON_WORKER
 
 object GpuPythonHelper extends Logging {
 
-<<<<<<< HEAD
-  private lazy val rapidsConf = new RapidsConf(SparkEnv.get.conf)
-=======
   private lazy val sparkConf = SparkEnv.get.conf
   private lazy val rapidsConf = new RapidsConf(sparkConf)
->>>>>>> 3f94ac8b608e311c181892fc72756d894627037f
   private lazy val gpuId = GpuDeviceManager.getDeviceId()
     .getOrElse(throw new IllegalStateException("No gpu id!"))
     .toString
@@ -73,10 +69,6 @@ object GpuPythonHelper extends Logging {
 
     // Calculate the pool size for each Python worker.
     val concurrentPythonWorkers = rapidsConf.get(CONCURRENT_PYTHON_WORKERS)
-<<<<<<< HEAD
-    val sparkConf = SparkEnv.get.conf
-=======
->>>>>>> 3f94ac8b608e311c181892fc72756d894627037f
     // Spark does not throw exception even the value of CPUS_PER_TASK is negative, so
     // return 1 if it is less than zero to continue the task.
     val cpuTaskSlots = sparkConf.get(EXECUTOR_CORES) / Math.max(1, sparkConf.get(CPUS_PER_TASK))
@@ -94,10 +86,6 @@ object GpuPythonHelper extends Logging {
     // take effect no matter the order changes or not.
     funcs.foreach(_.funcs.foreach { pyF =>
       pyF.envVars.put("CUDA_VISIBLE_DEVICES", gpuId)
-<<<<<<< HEAD
-      pyF.envVars.put("RAPIDS_SQL_ENABLED", rapidsConf.isSqlEnabled.toString)
-=======
->>>>>>> 3f94ac8b608e311c181892fc72756d894627037f
       pyF.envVars.put("RAPIDS_UVM_ENABLED", isPythonUvmEnabled)
       pyF.envVars.put("RAPIDS_POOLED_MEM_ENABLED", isPythonPooledMemEnabled)
       pyF.envVars.put("RAPIDS_POOLED_MEM_SIZE", initAllocPerWorker.toString)
@@ -108,10 +96,6 @@ object GpuPythonHelper extends Logging {
     // - pyspark worker module.
     //   For GPU case, need to customize the worker module for the GPU initialization
     //   and de-initialization
-<<<<<<< HEAD
-    val sparkConf = SparkEnv.get.conf
-=======
->>>>>>> 3f94ac8b608e311c181892fc72756d894627037f
     sparkConf.get(PYTHON_WORKER_MODULE).foreach(value =>
       if (value != "rapids.worker") {
         logWarning(s"Found PySpark worker is set to '$value', overwrite it to 'rapids.worker'.")

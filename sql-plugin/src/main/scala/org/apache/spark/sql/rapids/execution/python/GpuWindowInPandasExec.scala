@@ -24,10 +24,6 @@ import java.io.File
 
 import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.python.PythonWorkerSemaphore
-<<<<<<< HEAD
-
-=======
->>>>>>> 3f94ac8b608e311c181892fc72756d894627037f
 import scala.collection.JavaConverters._
 import scala.collection.mutable.ArrayBuffer
 
@@ -53,27 +49,15 @@ class GpuWindowInPandasExecMeta(
     rule: ConfKeysAndIncompat)
   extends SparkPlanMeta[WindowInPandasExec](winPandas, conf, parent, rule) {
 
-<<<<<<< HEAD
-  // Handle the child expressions(Python UDF) ourselves.
-=======
   override def couldReplaceMessage: String = "could partially run on GPU"
   override def noReplacementPossibleMessage(reasons: String): String =
     s"cannot run even partially on the GPU because $reasons"
 
   // Ignore the expressions since columnar way is not supported yet
->>>>>>> 3f94ac8b608e311c181892fc72756d894627037f
   override val childExprs: Seq[BaseExprMeta[_]] = Seq.empty
 
   override def convertToGpu(): GpuExec =
     GpuWindowInPandasExec(
-<<<<<<< HEAD
-      wrapped.windowExpression, wrapped.partitionSpec, wrapped.orderSpec, wrapped.child
-    )
-}
-
-/**
- * This is the GPU version of WindowInPandasExec
-=======
       winPandas.windowExpression,
       winPandas.partitionSpec,
       winPandas.orderSpec,
@@ -86,7 +70,6 @@ class GpuWindowInPandasExecMeta(
  * on GPU at Python side.
  *
  * (Currently it will not run on GPU itself, since the columnar way is not implemented yet.)
->>>>>>> 3f94ac8b608e311c181892fc72756d894627037f
  *
  */
 case class GpuWindowInPandasExec(
@@ -98,12 +81,7 @@ case class GpuWindowInPandasExec(
 
   override def supportsColumnar = false
   override def doExecuteColumnar(): RDD[ColumnarBatch] = {
-<<<<<<< HEAD
-    // TBD
-    super.doExecuteColumnar()
-=======
     throw new IllegalStateException(s"Columnar execution is not supported by $this yet")
->>>>>>> 3f94ac8b608e311c181892fc72756d894627037f
   }
 
   // Most code is copied from WindowInPandasExec, except two GPU related calls
@@ -128,22 +106,6 @@ case class GpuWindowInPandasExec(
 
   override def outputPartitioning: Partitioning = child.outputPartitioning
 
-<<<<<<< HEAD
-  /**
-    * Helper functions and data structures for window bounds
-    *
-    * It contains:
-    * (1) Total number of window bound indices in the python input row
-    * (2) Function from frame index to its lower bound column index in the python input row
-    * (3) Function from frame index to its upper bound column index in the python input row
-    * (4) Seq from frame index to its window bound type
-    */
-  private type WindowBoundHelpers = (Int, Int => Int, Int => Int, Seq[WindowBoundType])
-
-  /**
-    * Enum for window bound types. Used only inside this class.
-    */
-=======
   /*
    * Helper functions and data structures for window bounds
    *
@@ -158,7 +120,6 @@ case class GpuWindowInPandasExec(
   /*
    * Enum for window bound types. Used only inside this class.
    */
->>>>>>> 3f94ac8b608e311c181892fc72756d894627037f
   private sealed case class WindowBoundType(value: String)
   private object UnboundedWindow extends WindowBoundType("unbounded")
   private object BoundedWindow extends WindowBoundType("bounded")
@@ -177,15 +138,9 @@ case class GpuWindowInPandasExec(
     }
   }
 
-<<<<<<< HEAD
-  /**
-    * See [[WindowBoundHelpers]] for details.
-    */
-=======
   /*
    * See [[WindowBoundHelpers]] for details.
    */
->>>>>>> 3f94ac8b608e311c181892fc72756d894627037f
   private def computeWindowBoundHelpers(
                                          factories: Seq[InternalRow => WindowFunctionFrame]
                                        ): WindowBoundHelpers = {

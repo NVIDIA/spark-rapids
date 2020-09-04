@@ -26,21 +26,6 @@ import com.nvidia.spark.rapids.python.PythonConfEntries.CONCURRENT_PYTHON_WORKER
 import org.apache.spark.{SparkEnv, TaskContext}
 import org.apache.spark.internal.Logging
 
-<<<<<<< HEAD
-/**
-  * PythonWorkerSemaphore is used to limit the number of Python workers(processes) to be started
-  * by an executor.
-  *
-  * This PythonWorkerSemaphore will not initialize the GPU, different from GpuSemaphore. Since
-  * tasks calling the API `acquireIfNecessary` are supposed not to use the GPU directly, but
-  * delegate the permits to the Python workers respectively.
-  *
-  * Call `acquireIfNecessary` or `releaseIfNecessary` directly when needed, since the inner
-  * semaphore will be initialized implicitly, but need to call `shutdown` explicitly to release
-  * the inner semaphore when no longer needed.
-  *
-  */
-=======
 /*
  * PythonWorkerSemaphore is used to limit the number of Python workers(processes) to be started
  * by an executor.
@@ -54,7 +39,6 @@ import org.apache.spark.internal.Logging
  * the inner semaphore when no longer needed.
  *
  */
->>>>>>> 3f94ac8b608e311c181892fc72756d894627037f
 object PythonWorkerSemaphore extends Logging {
 
   private lazy val workersPerGpu = new RapidsConf(SparkEnv.get.conf)
@@ -77,15 +61,6 @@ object PythonWorkerSemaphore extends Logging {
     instance
   }
 
-<<<<<<< HEAD
-  /**
-    * Tasks must call this when they begin to start a Python worker who will use GPU.
-    * If the task has not already acquired the GPU semaphore then it is acquired,
-    * blocking if necessary.
-    * NOTE: A task completion listener will automatically be installed to ensure
-    *       the semaphore is always released by the time the task completes.
-    */
-=======
   /*
    * Tasks must call this when they begin to start a Python worker who will use GPU.
    * If the task has not already acquired the GPU semaphore then it is acquired,
@@ -93,39 +68,25 @@ object PythonWorkerSemaphore extends Logging {
    * NOTE: A task completion listener will automatically be installed to ensure
    *       the semaphore is always released by the time the task completes.
    */
->>>>>>> 3f94ac8b608e311c181892fc72756d894627037f
   def acquireIfNecessary(context: TaskContext): Unit = {
     if (enabled && context != null) {
       getInstance.acquireIfNecessary(context)
     }
   }
 
-<<<<<<< HEAD
-  /**
-    * Tasks must call this when they are finished using the GPU.
-    */
-=======
   /*
    * Tasks must call this when they are finished using the GPU.
    */
->>>>>>> 3f94ac8b608e311c181892fc72756d894627037f
   def releaseIfNecessary(context: TaskContext): Unit = {
     if (enabled && context != null) {
       getInstance.releaseIfNecessary(context)
     }
   }
 
-<<<<<<< HEAD
-  /**
-    * Release the inner semaphore.
-    * NOTE: This does not wait for active tasks to release!
-    */
-=======
   /*
    * Release the inner semaphore.
    * NOTE: This does not wait for active tasks to release!
    */
->>>>>>> 3f94ac8b608e311c181892fc72756d894627037f
   def shutdown(): Unit = synchronized {
     if (instance != null) {
       instance.shutdown()

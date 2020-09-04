@@ -45,27 +45,15 @@ class GpuFlatMapGroupsInPandasExecMeta(
     rule: ConfKeysAndIncompat)
   extends SparkPlanMeta[FlatMapGroupsInPandasExec](flatPandas, conf, parent, rule) {
 
-<<<<<<< HEAD
-  // Handle the child expressions(Python UDF) ourselves.
-=======
   override def couldReplaceMessage: String = "could partially run on GPU"
   override def noReplacementPossibleMessage(reasons: String): String =
     s"cannot run even partially on the GPU because $reasons"
 
   // Ignore the expressions since columnar way is not supported yet
->>>>>>> 3f94ac8b608e311c181892fc72756d894627037f
   override val childExprs: Seq[BaseExprMeta[_]] = Seq.empty
 
   override def convertToGpu(): GpuExec =
     GpuFlatMapGroupsInPandasExec(
-<<<<<<< HEAD
-      wrapped.groupingAttributes, wrapped.func, wrapped.output, wrapped.child
-    )
-}
-
-/**
- * This is the GPU version of FlatMapGroupsInPandasExec
-=======
       flatPandas.groupingAttributes,
       flatPandas.func,
       flatPandas.output,
@@ -79,7 +67,6 @@ class GpuFlatMapGroupsInPandasExecMeta(
  * on GPU at Python side.
  *
  * (Currently it will not run on GPU itself, since the columnar way is not implemented yet.)
->>>>>>> 3f94ac8b608e311c181892fc72756d894627037f
  *
  */
 case class GpuFlatMapGroupsInPandasExec(
@@ -91,12 +78,7 @@ case class GpuFlatMapGroupsInPandasExec(
 
   override def supportsColumnar = false
   override def doExecuteColumnar(): RDD[ColumnarBatch] = {
-<<<<<<< HEAD
-    // TBD
-    super.doExecuteColumnar()
-=======
     throw new IllegalStateException(s"Columnar execution is not supported by $this yet")
->>>>>>> 3f94ac8b608e311c181892fc72756d894627037f
   }
 
   // Most code is copied from FlatMapGroupsInPandasExec, except two GPU related calls

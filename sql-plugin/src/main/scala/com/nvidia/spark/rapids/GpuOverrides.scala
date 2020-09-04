@@ -19,6 +19,7 @@ package com.nvidia.spark.rapids
 import java.time.ZoneId
 
 import scala.reflect.ClassTag
+
 import org.apache.spark.internal.Logging
 import org.apache.spark.sql.SparkSession
 import org.apache.spark.sql.catalyst.expressions._
