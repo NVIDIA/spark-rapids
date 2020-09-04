@@ -99,7 +99,7 @@ case class GpuAggregateExpression(origAggregateFunction: GpuAggregateFunction,
 
     override def dataType: DataType = aggregateFunction.dataType
 
-    override def children: Seq[Expression] = aggregateFunction.children
+    override def children: Seq[Expression] = Seq(aggregateFunction, filter)
 
     override val initialValues: Seq[GpuExpression] =
       aggregateFunction.asInstanceOf[GpuDeclarativeAggregate].initialValues
@@ -136,13 +136,13 @@ case class GpuAggregateExpression(origAggregateFunction: GpuAggregateFunction,
       normalizedAggFunc.canonicalized.asInstanceOf[GpuAggregateFunction],
       mode,
       isDistinct,
-      filter,
+      filter.map(_.canonicalized),
       ExprId(0))
   }
 
   override def nullable: Boolean = aggregateFunction.nullable
   override def dataType: DataType = aggregateFunction.dataType
-  override def children: Seq[Expression] = aggregateFunction.children
+  override def children: Seq[Expression] = aggregateFunction +: filter.toSeq
 
   @transient
   override lazy val references: AttributeSet = {
@@ -285,7 +285,7 @@ abstract class GpuDeclarativeAggregate extends GpuAggregateFunction with GpuUnev
 }
 
 case class GpuMin(child: Expression) extends GpuDeclarativeAggregate {
-  private lazy val cudfMin = AttributeReference("cudf_min", child.dataType)()
+  private lazy val cudfMin = AttributeReference("min", child.dataType)()
 
   override lazy val inputProjection: Seq[Expression] = Seq(child)
   override lazy val updateExpressions: Seq[GpuExpression] = Seq(new CudfMin(cudfMin))
@@ -305,7 +305,7 @@ case class GpuMin(child: Expression) extends GpuDeclarativeAggregate {
 }
 
 case class GpuMax(child: Expression) extends GpuDeclarativeAggregate {
-  private lazy val cudfMax = AttributeReference("cudf_max", child.dataType)()
+  private lazy val cudfMax = AttributeReference("max", child.dataType)()
 
   override lazy val inputProjection: Seq[Expression] = Seq(child)
   override lazy val updateExpressions: Seq[GpuExpression] = Seq(new CudfMax(cudfMax))
@@ -331,7 +331,7 @@ case class GpuSum(child: Expression)
     case _ => LongType
   }
 
-  private lazy val cudfSum = AttributeReference("cudf_sum", resultType)()
+  private lazy val cudfSum = AttributeReference("sum", resultType)()
 
   override lazy val inputProjection: Seq[Expression] = Seq(child)
   override lazy val updateExpressions: Seq[GpuExpression] = Seq(new CudfSum(cudfSum))
@@ -353,7 +353,7 @@ case class GpuSum(child: Expression)
 
 case class GpuCount(children: Seq[Expression]) extends GpuDeclarativeAggregate {
   // counts are Long
-  private lazy val cudfCount = AttributeReference("cudf_count", LongType)()
+  private lazy val cudfCount = AttributeReference("count", LongType)()
 
   override lazy val inputProjection: Seq[Expression] = Seq(children.head)
   override lazy val updateExpressions: Seq[GpuExpression] = Seq(new CudfCount(cudfCount))
@@ -371,8 +371,8 @@ case class GpuCount(children: Seq[Expression]) extends GpuDeclarativeAggregate {
 
 case class GpuAverage(child: Expression) extends GpuDeclarativeAggregate {
   // averages are either Decimal or Double. We don't support decimal yet, so making this double.
-  private lazy val cudfSum = AttributeReference("cudf_sum", DoubleType)()
-  private lazy val cudfCount = AttributeReference("cudf_count", LongType)()
+  private lazy val cudfSum = AttributeReference("sum", DoubleType)()
+  private lazy val cudfCount = AttributeReference("count", LongType)()
 
   private def toDoubleLit(v: Any): GpuLiteral = {
     val litVal = v match {
@@ -444,7 +444,7 @@ abstract class GpuFirstBase(child: Expression)
 
   val ignoreNulls: Boolean
 
-  private lazy val cudfFirst = AttributeReference("cudf_first", child.dataType)()
+  private lazy val cudfFirst = AttributeReference("first", child.dataType)()
   private lazy val valueSet = AttributeReference("valueSet", BooleanType)()
 
   override lazy val inputProjection: Seq[Expression] =
@@ -481,7 +481,7 @@ abstract class GpuLastBase(child: Expression)
 
   val ignoreNulls: Boolean
 
-  private lazy val cudfLast = AttributeReference("cudf_last", child.dataType)()
+  private lazy val cudfLast = AttributeReference("last", child.dataType)()
   private lazy val valueSet = AttributeReference("valueSet", BooleanType)()
 
   override lazy val inputProjection: Seq[Expression] =

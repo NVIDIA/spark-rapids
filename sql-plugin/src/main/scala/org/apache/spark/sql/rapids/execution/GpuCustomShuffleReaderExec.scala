@@ -39,7 +39,14 @@ case class GpuCustomShuffleReaderExec(
     child: SparkPlan,
     partitionSpecs: Seq[ShufflePartitionSpec]) extends UnaryExecNode with GpuExec  {
 
-  override lazy val additionalMetrics: Map[String, SQLMetric] = Map(
+  /**
+   * We intentionally override metrics in this case rather than overriding additionalMetrics so
+   * that NUM_OUTPUT_ROWS and NUM_OUTPUT_BATCHES are removed, since this operator does not
+   * report any data for those metrics.
+   *
+   * The Spark version of this operator does not output any metrics.
+   */
+  override lazy val metrics: Map[String, SQLMetric] = Map(
     TOTAL_TIME -> SQLMetrics.createNanoTimingMetric(sparkContext, DESCRIPTION_TOTAL_TIME)
   )
 
