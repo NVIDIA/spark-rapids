@@ -60,14 +60,15 @@ object AggregateUtils {
     // call `isDistinct` here on aggregateExpressions to get the total number of distinct functions.
     // If there are multiple distincts, the plan is rewritten by `RewriteDistinctAggregates` where
     // regular aggregations and every distinct aggregation is calculated in a separate group.
-    aggExprs.map(e => e.aggregateFunction).exists { func => {
-      func match {
-        case First(If(_, _, _), _) if validateAggregate(func.references) => {
-          true
+    aggExprs.map(e => e.aggregateFunction).exists {
+      func => {
+        func match {
+          case First(If(_, _, _), _) if validateAggregate(func.references) => {
+            true
+          }
+          case _ => false
         }
-        case _ => false
       }
-    }
     }
   }
 }
