@@ -36,6 +36,6 @@ jobs:
           REPO_NAME: spark-rapids
           HEAD: branch-0.2
           BASE: branch-0.3
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }} # use to create and merge PR
-          NVAUTO_TOKEN: ${{ secrets.NVAUTO_TOKEN }} # PR has to be approved by a different token
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }} # use to approve and merge PR
+          NVAUTO_TOKEN: ${{ secrets.NVAUTO_TOKEN }} # use to trigger checks.
 
