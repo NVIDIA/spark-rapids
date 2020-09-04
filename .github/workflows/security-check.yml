@@ -17,8 +17,6 @@ name: security check
 
 on:
   pull_request_target:
-    branches:
-      - branch-*
     types: [opened, reopened, synchronize]
 
 jobs:

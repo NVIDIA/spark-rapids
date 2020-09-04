@@ -91,6 +91,7 @@ spec:
 def githubHelper // blossom github helper
 def IMAGE_PREMERGE // temp image for premerge test
 def PREMERGE_TAG
+def skipped = false
 
 pipeline {
     agent {
@@ -123,11 +124,26 @@ pipeline {
             steps {
                 script {
                     githubHelper = GithubHelper.getInstance("${GITHUB_TOKEN}", githubData)
+                    def title = githubHelper.getIssue().title
+
+                    if (title ==~ /.*\[skip ci\].*/) {
+                        githubHelper.updateCommitStatus("$BUILD_URL", "Skipped", GitHubCommitState.SUCCESS)
+                        currentBuild.result == "SUCCESS"
+                        skipped = true
+                        return
+                    }
                 }
             }
         }
 
         stage('Build docker image') {
+            when {
+                beforeAgent true
+                expression {
+                    !skipped
+                }
+            }
+
             agent {
                 kubernetes {
                     label "premerge-docker-${BUILD_TAG}"
@@ -178,6 +194,13 @@ pipeline {
 
         // TODO: support parallel testing for different spark versions
         stage('Premerge Test') {
+            when {
+                beforeAgent true
+                expression {
+                    !skipped
+                }
+            }
+
             agent {
                 kubernetes {
                     label "premerge-test-${BUILD_TAG}"
@@ -219,6 +242,10 @@ pipeline {
     post {
         always {
             script {
+                if (skipped) {
+                    return
+                }
+
                 deleteDockerTempTag(PREMERGE_TAG) // clean premerge temp image
                 if (currentBuild.currentResult == "SUCCESS") {
                     githubHelper.updateCommitStatus("$BUILD_URL", "Success", GitHubCommitState.SUCCESS)
