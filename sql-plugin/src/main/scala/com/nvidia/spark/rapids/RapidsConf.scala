@@ -291,13 +291,6 @@ object RapidsConf {
     .booleanConf
     .createWithDefault(true)
 
-  val UVM_ENABLED = conf("spark.rapids.memory.uvm.enabled")
-    .doc("UVM or universal memory can allow main host memory to act essentially as swap " +
-      "for device(GPU) memory. This allows the GPU to process more data than fits in memory, but " +
-      "can result in slower processing. This is an experimental feature.")
-    .booleanConf
-    .createWithDefault(false)
-
   val CONCURRENT_GPU_TASKS = conf("spark.rapids.sql.concurrentGpuTasks")
       .doc("Set the number of tasks that can execute concurrently per GPU. " +
           "Tasks may temporarily block when the number of concurrent tasks in the executor " +
@@ -333,6 +326,14 @@ object RapidsConf {
     .createWithDefault(Integer.MAX_VALUE)
 
   // Internal Features
+
+  val UVM_ENABLED = conf("spark.rapids.memory.uvm.enabled")
+    .doc("UVM or universal memory can allow main host memory to act essentially as swap " +
+      "for device(GPU) memory. This allows the GPU to process more data than fits in memory, but " +
+      "can result in slower processing. This is an experimental feature.")
+    .internal()
+    .booleanConf
+    .createWithDefault(false)
 
   val EXPORT_COLUMNAR_RDD = conf("spark.rapids.sql.exportColumnarRdd")
     .doc("Spark has no simply way to export columnar RDD data.  This turns on special " +

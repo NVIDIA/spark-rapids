@@ -14,7 +14,7 @@
 
 from conftest import is_allowing_any_non_gpu, get_non_gpu_allowed
 from pyspark.sql import SparkSession, DataFrame
-from spark_init_internal import get_spark_i_know_what_i_am_doing
+from spark_init_internal import get_spark_i_know_what_i_am_doing, spark_version
 
 def _from_scala_map(scala_map):
     ret = {}
@@ -90,3 +90,8 @@ def with_gpu_session(func, conf={}):
         copy['spark.rapids.sql.test.allowedNonGpu'] = ','.join(get_non_gpu_allowed())
     return with_spark_session(func, conf=copy)
 
+def is_spark_300():
+    return spark_version() == "3.0.0"
+
+def is_before_spark_310():
+    return spark_version() < "3.1.0"
