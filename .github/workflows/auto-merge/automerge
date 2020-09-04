@@ -99,7 +99,7 @@ def auto_merge(github_token: str, nvauto_token: str, owner: str, repo_name: str,
     except Exception as e:
         comment(github_token=github_token, owner=owner, repo_name=repo_name, number=number,
                 content=f"""**FAILURE** - Unable to auto-merge. Manual operation is required.
-```json
+```
 {e}
 ```
 """)
@@ -131,7 +131,7 @@ def main(github_token: str, nvauto_token: str, owner: str, repo_name: str, head:
             sys.exit(0)
 
         # skip pre-merge blossom CI w/ [skip ci] in PR title
-        comment(github_token=github_token, owner=owner, repo_name=repo_name, number=number, content='build')
+        comment(github_token=nvauto_token, owner=owner, repo_name=repo_name, number=number, content='build')
 
         time.sleep(600)  # sleep 10 minutes, then try auto-merge
         auto_merge(github_token=github_token, nvauto_token=nvauto_token,
