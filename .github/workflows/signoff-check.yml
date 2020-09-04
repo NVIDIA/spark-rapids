@@ -17,8 +17,6 @@ name: signoff check
 
 on:
   pull_request_target:
-    branches:
-      - branch-*
     types: [opened, synchronize, reopened]
 
 jobs:
