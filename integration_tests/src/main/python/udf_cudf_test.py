@@ -14,7 +14,9 @@
 
 import pytest
 import pandas as pd
+import time
 from typing import Iterator
+from pyspark.sql import Window
 from pyspark.sql.functions import pandas_udf, PandasUDFType
 from spark_session import with_cpu_session, with_gpu_session
 from marks import udf, allow_non_gpu
@@ -25,13 +27,40 @@ _conf = {
         'spark.rapids.sql.exec.FlatMapGroupsInPandasExec': 'true',
         'spark.rapids.sql.exec.AggregateInPandasExec': 'true',
         'spark.rapids.sql.exec.FlatMapCoGroupsInPandasExec': 'true',
+        'spark.rapids.sql.exec.WindowInPandasExec': 'true',
         'spark.rapids.python.gpu.enabled': 'true'
         }
+
+def _create_df(spark):
+    return spark.createDataFrame(
+            [(1, 1.0), (1, 2.0), (2, 3.0), (2, 5.0), (2, 10.0)],
+            ("id", "v")
+        )
+
+def _assert_cpu_gpu(cpu_func, gpu_func, cpu_conf={}, gpu_conf={}, is_sort=False):
+    print('### CPU RUN ###')
+    cpu_start = time.time()
+    cpu_ret = with_cpu_session(cpu_func, conf=cpu_conf)
+    cpu_end = time.time()
+    print('### GPU RUN ###')
+    gpu_start = time.time()
+    gpu_ret = with_gpu_session(gpu_func, conf=gpu_conf)
+    gpu_end = time.time()
+    print('### WRITE: GPU TOOK {} CPU TOOK {} ###'.format(
+        gpu_end - gpu_start, cpu_end - cpu_start))
+    print('### CPU RETURN ###')
+    print(cpu_ret)
+    print('### GPU RETURN ###')
+    print(gpu_ret)
+    if is_sort:
+        assert cpu_ret.sort() == gpu_ret.sort()
+    else:
+        assert cpu_ret == gpu_ret
+        
 
 @pandas_udf('int')
 def _plus_one_cpu_func(v: pd.Series) -> pd.Series:
     return v + 1
-
 
 @pandas_udf('int')
 def _plus_one_gpu_func(v: pd.Series) -> pd.Series:
@@ -40,28 +69,18 @@ def _plus_one_gpu_func(v: pd.Series) -> pd.Series:
     gpu_serises = gpu_serises + 1
     return gpu_serises.to_pandas()
 
-
 @allow_non_gpu(any=True)
 @udf
 def test_with_column():
     def cpu_run(spark):
-        df = spark.createDataFrame(
-            [(1, 1.0), (1, 2.0), (2, 3.0), (2, 5.0), (2, 10.0)],
-            ("id", "v")
-        )
+        df = _create_df(spark) 
         return df.withColumn("v1", _plus_one_cpu_func(df.v)).collect()
 
     def gpu_run(spark):
-        df = spark.createDataFrame(
-            [(1, 1.0), (1, 2.0), (2, 3.0), (2, 5.0), (2, 10.0)],
-            ("id", "v")
-        )
+        df = _create_df(spark)
         return df.withColumn("v1", _plus_one_gpu_func(df.v)).collect()
-    cpu_ret = with_cpu_session(cpu_run, conf=_conf)
-    gpu_ret = with_gpu_session(gpu_run, conf=_conf)
-    print(cpu_ret)
-    print(gpu_ret)
-    assert cpu_ret == gpu_ret
+    
+    _assert_cpu_gpu(cpu_run, gpu_run, gpu_conf=_conf)
 
 @allow_non_gpu(any=True)
 @udf
@@ -72,12 +91,8 @@ def test_sql():
     def gpu_run(spark):
         _ = spark.udf.register("add_one_gpu", _plus_one_gpu_func)
         return spark.sql("SELECT add_one_gpu(id) FROM range(3)").collect()
-    cpu_ret = with_cpu_session(cpu_run, conf=_conf)
-    gpu_ret = with_gpu_session(gpu_run, conf=_conf)
-    print(cpu_ret)
-    print(gpu_ret)
-    assert cpu_ret == gpu_ret
-
+    
+    _assert_cpu_gpu(cpu_run, gpu_run, gpu_conf=_conf)
 
 
 @pandas_udf("long")
@@ -97,47 +112,37 @@ def _plus_one_gpu_iter_func(iterator: Iterator[pd.Series]) -> Iterator[pd.Series
 @udf
 def test_select():
     def cpu_run(spark):
-        df = spark.createDataFrame(
-            [(1, 1.0), (1, 2.0), (2, 3.0), (2, 5.0), (2, 10.0)],
-            ("id", "v")
-        )
+        df = _create_df(spark)
         return df.select(_plus_one_cpu_iter_func(df.v)).collect()
 
     def gpu_run(spark):
-        df = spark.createDataFrame(
-            [(1, 1.0), (1, 2.0), (2, 3.0), (2, 5.0), (2, 10.0)],
-            ("id", "v")
-        )
+        df = _create_df(spark)
         return df.select(_plus_one_gpu_iter_func(df.v)).collect()
-    cpu_ret = with_cpu_session(cpu_run, conf=_conf)
-    gpu_ret = with_gpu_session(gpu_run, conf=_conf)
-    print(cpu_ret)
-    print(gpu_ret)
-    assert cpu_ret == gpu_ret
+    
+    _assert_cpu_gpu(cpu_run, gpu_run, gpu_conf=_conf)
+
 
 @allow_non_gpu(any=True)
 @udf
 def test_map_in_pandas():
     def cpu_run(spark):
-        df = spark.createDataFrame([(1, 21), (2, 30)], ("id", "age"))
+        df = _create_df(spark)
         def _filter_cpu_func(iterator):
             for pdf in iterator:
                 yield pdf[pdf.id == 1]
         return df.mapInPandas(_filter_cpu_func, df.schema).collect()
 
     def gpu_run(spark):
-        df = spark.createDataFrame([(1, 21), (2, 30)], ("id", "age"))
+        df = _create_df(spark)
         def _filter_gpu_func(iterator):
             import cudf
             for pdf in iterator:
                 gdf = cudf.from_pandas(pdf)
                 yield gdf[gdf.id == 1].to_pandas()
         return df.mapInPandas(_filter_gpu_func, df.schema).collect()
-    cpu_ret = with_cpu_session(cpu_run, conf=_conf)
-    gpu_ret = with_gpu_session(gpu_run, conf=_conf)
-    print(cpu_ret)
-    print(gpu_ret)
-    assert cpu_ret == gpu_ret
+    
+    _assert_cpu_gpu(cpu_run, gpu_run, gpu_conf=_conf)
+
 
 #To solve: Invalid udf: the udf argument must be a pandas_udf of type GROUPED_MAP
 #need to add udf type
@@ -157,53 +162,37 @@ def _normalize_gpu_func(df):
 @udf
 def test_group_apply():
     def cpu_run(spark):
-        df = spark.createDataFrame(
-            [(1, 1.0), (1, 2.0), (2, 3.0), (2, 5.0), (2, 10.0)],
-            ("id", "v")
-        )
+        df = _create_df(spark)
         return df.groupby("id").apply(_normalize_cpu_func).collect()
 
     def gpu_run(spark):
-        df = spark.createDataFrame(
-            [(1, 1.0), (1, 2.0), (2, 3.0), (2, 5.0), (2, 10.0)],
-            ("id", "v")
-        )
+        df = _create_df(spark)
         return df.groupby("id").apply(_normalize_gpu_func).collect()
-    cpu_ret = with_cpu_session(cpu_run, conf=_conf)
-    gpu_ret = with_gpu_session(gpu_run, conf=_conf)
-    print(cpu_ret)
-    print(gpu_ret)
-    assert cpu_ret.sort() == gpu_ret.sort()
+    
+    _assert_cpu_gpu(cpu_run, gpu_run, gpu_conf=_conf, is_sort=True)
+
 
 @allow_non_gpu(any=True)
 @udf
 def test_group_apply_in_pandas():
     def cpu_run(spark):
-        df = spark.createDataFrame(
-            [(1, 1.0), (1, 2.0), (2, 3.0), (2, 5.0), (2, 10.0)],
-            ("id", "v")
-        )
+        df = _create_df(spark)
         def _normalize_cpu_in_pandas_func(df):
             v = df.v
             return df.assign(v=(v - v.mean()) / v.std())
         return df.groupby("id").applyInPandas(_normalize_cpu_in_pandas_func, df.schema).collect()
 
     def gpu_run(spark):
-        df = spark.createDataFrame(
-            [(1, 1.0), (1, 2.0), (2, 3.0), (2, 5.0), (2, 10.0)],
-            ("id", "v")
-        )
+        df = _create_df(spark)
         def _normalize_gpu_in_pandas_func(df):
             import cudf
             gdf = cudf.from_pandas(df)
             v = gdf.v
             return gdf.assign(v=(v - v.mean()) / v.std()).to_pandas()
         return df.groupby("id").applyInPandas(_normalize_gpu_in_pandas_func, df.schema).collect()
-    cpu_ret = with_cpu_session(cpu_run, conf=_conf)
-    gpu_ret = with_gpu_session(gpu_run, conf=_conf)
-    print(cpu_ret)
-    print(gpu_ret)
-    assert cpu_ret.sort() == gpu_ret.sort()
+    
+    _assert_cpu_gpu(cpu_run, gpu_run, gpu_conf=_conf, is_sort=True)
+
 
 @pandas_udf("int")  
 def _sum_cpu_func(v: pd.Series) -> int:
@@ -219,23 +208,15 @@ def _sum_gpu_func(v: pd.Series) -> int:
 @udf
 def test_group_agg():
     def cpu_run(spark):
-        df = spark.createDataFrame(
-            [(1, 1.0), (1, 2.0), (2, 3.0), (2, 5.0), (2, 10.0)],
-            ("id", "v")
-        )
+        df = _create_df(spark)
         return df.groupby("id").agg(_sum_cpu_func(df.v)).collect()
 
     def gpu_run(spark):
-        df = spark.createDataFrame(
-            [(1, 1.0), (1, 2.0), (2, 3.0), (2, 5.0), (2, 10.0)],
-            ("id", "v")
-        )
+        df = _create_df(spark)
         return df.groupby("id").agg(_sum_gpu_func(df.v)).collect()
-    cpu_ret = with_cpu_session(cpu_run, conf=_conf)
-    gpu_ret = with_gpu_session(gpu_run, conf=_conf)
-    print(cpu_ret)
-    print(gpu_ret)
-    assert cpu_ret.sort() == gpu_ret.sort()
+    
+    _assert_cpu_gpu(cpu_run, gpu_run, gpu_conf=_conf, is_sort=True)
+
 
 @allow_non_gpu(any=True)
 @udf
@@ -250,11 +231,24 @@ def test_sql_group():
         q = "SELECT sum_gpu_udf(v1) FROM VALUES (3, 0), (2, 0), (1, 1) tbl(v1, v2) GROUP BY v2"
         return spark.sql(q).collect()
 
-    cpu_ret = with_cpu_session(cpu_run, conf=_conf)
-    gpu_ret = with_gpu_session(gpu_run, conf=_conf)
-    print(cpu_ret)
-    print(gpu_ret)
-    assert cpu_ret.sort() == gpu_ret.sort()
+    _assert_cpu_gpu(cpu_run, gpu_run, gpu_conf=_conf, is_sort=True)
+
+
+@allow_non_gpu(any=True)
+@udf
+def test_window():
+    def cpu_run(spark):
+        df = _create_df(spark)
+        w = Window.partitionBy('id').rowsBetween(Window.unboundedPreceding, Window.unboundedFollowing)
+        return df.withColumn('sum_v', _sum_cpu_func('v').over(w)).collect()
+
+    def gpu_run(spark):
+        df = _create_df(spark)
+        w = Window.partitionBy('id').rowsBetween(Window.unboundedPreceding, Window.unboundedFollowing)
+        return df.withColumn('sum_v', _sum_gpu_func('v').over(w)).collect()
+
+    _assert_cpu_gpu(cpu_run, gpu_run, gpu_conf=_conf, is_sort=True) 
+
 
 @allow_non_gpu(any=True)
 @udf
@@ -284,9 +278,6 @@ def test_cogroup():
             return gl.merge(gr, on="time").to_pandas()
         return df1.groupby("id").cogroup(df2.groupby("id")).applyInPandas(_gpu_join_func, schema="time int, id_x int, id_y int, v1 double, v2 string").collect()
 
-    cpu_ret = with_cpu_session(cpu_run, conf=_conf)
-    gpu_ret = with_gpu_session(gpu_run, conf=_conf)
-    print(cpu_ret)
-    print(gpu_ret)
-    assert cpu_ret.sort() == gpu_ret.sort()
+    _assert_cpu_gpu(cpu_run, gpu_run, gpu_conf=_conf, is_sort=True)
+
 

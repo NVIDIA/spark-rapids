@@ -45,11 +45,7 @@ import org.apache.spark.sql.execution.python._
 import org.apache.spark.sql.execution.window.WindowExec
 import org.apache.spark.sql.rapids._
 import org.apache.spark.sql.rapids.catalyst.expressions.GpuRand
-<<<<<<< HEAD
-import org.apache.spark.sql.rapids.execution.{GpuBroadcastMeta, GpuBroadcastNestedLoopJoinMeta}
-=======
 import org.apache.spark.sql.rapids.execution.{GpuBroadcastMeta, GpuBroadcastNestedLoopJoinMeta, GpuCustomShuffleReaderExec, GpuShuffleMeta}
->>>>>>> 3f94ac8b608e311c181892fc72756d894627037f
 import org.apache.spark.sql.rapids.execution.python._
 import org.apache.spark.sql.types._
 import org.apache.spark.unsafe.types.UTF8String
@@ -1760,27 +1756,6 @@ object GpuOverrides {
       "Window-operator backend",
       (windowOp, conf, p, r) =>
         new GpuWindowExecMeta(windowOp, conf, p, r)
-<<<<<<< HEAD
-      ),
-    exec[ArrowEvalPythonExec](
-      "The backend for Scalar Pandas (Iterator) UDFs",
-      (py, conf, p, r) => new GpuArrowEvalPythonExecMeta(py, conf, p, r)),
-    exec[MapInPandasExec](
-      "The backend for Map Pandas Iterator UDF",
-      (mapPy, conf, p, r) => new GpuMapInPandasExecMeta(mapPy, conf, p, r)),
-    exec[FlatMapGroupsInPandasExec](
-      "The backend for Grouped Map Pandas UDF",
-      (flatPy, conf, p, r) => new GpuFlatMapGroupsInPandasExecMeta(flatPy, conf, p, r)),
-    exec[AggregateInPandasExec](
-      "The backend for Grouped Aggregation Pandas UDF",
-      (aggPy, conf, p, r) => new GpuAggregateInPandasExecMeta(aggPy, conf, p, r)),
-    exec[FlatMapCoGroupsInPandasExec](
-      "The backend for CoGrouped Aggregation Pandas UDF",
-      (flatCoPy, conf, p, r) => new GpuFlatMapCoGroupsInPandasExecMeta(flatCoPy, conf, p, r)),
-    exec[WindowInPandasExec](
-      "The backend for Pandas UDF with window functions",
-      (winPy, conf, p, r) => new GpuWindowInPandasExecMeta(winPy, conf, p, r))
-=======
     ),
     exec[CustomShuffleReaderExec]("A wrapper of shuffle query stage", (exec, conf, p, r) =>
       new SparkPlanMeta[CustomShuffleReaderExec](exec, conf, p, r) {
@@ -1821,7 +1796,6 @@ object GpuOverrides {
         " running the Python UDFs code on GPU when calling cuDF APIs in the UDF",
       (winPy, conf, p, r) => new GpuWindowInPandasExecMeta(winPy, conf, p, r))
         .disabledByDefault("Performance is not ideal now")
->>>>>>> 3f94ac8b608e311c181892fc72756d894627037f
   ).map(r => (r.getClassFor.asSubclass(classOf[SparkPlan]), r)).toMap
   val execs: Map[Class[_ <: SparkPlan], ExecRule[_ <: SparkPlan]] =
     commonExecs ++ ShimLoader.getSparkShims.getExecs
