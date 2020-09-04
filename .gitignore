@@ -26,3 +26,5 @@ scalastyle-on-compile.generated.xml
 scalastyle-output.xml
 scalastyle.txt
 target/
+*/metastore_db
+*/spark-warehouse
