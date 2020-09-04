@@ -21,7 +21,11 @@ from pyspark.worker import local_connect_and_auth, main as worker_main
 
 def initialize_gpu_mem():
     # CUDA device(s) info
-    print("INFO: Found CUDA visible device(s): {}".format(os.environ.get('CUDA_VISIBLE_DEVICES')))
+    cuda_devices_str = os.environ.get('CUDA_VISIBLE_DEVICES')
+    print("INFO: Found CUDA visible device(s): {}".format(cuda_devices_str))
+    if not cuda_devices_str:
+        # ignore initialzation if no GPU(s) is provided
+        return
 
     # Initialize RMM only when requiring to enable pooled or managed memory.
     pool_enabled = os.environ.get('RAPIDS_POOLED_MEM_ENABLED', 'false').lower() == 'true'
