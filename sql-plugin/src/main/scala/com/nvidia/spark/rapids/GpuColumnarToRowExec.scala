@@ -18,6 +18,7 @@ package com.nvidia.spark.rapids
 
 import ai.rapids.cudf.{NvtxColor, NvtxRange}
 import com.nvidia.spark.rapids.GpuMetricNames._
+
 import org.apache.spark.TaskContext
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.InternalRow
@@ -29,7 +30,7 @@ import org.apache.spark.sql.execution.{CodegenSupport, SparkPlan, UnaryExecNode}
 import org.apache.spark.sql.execution.metric.{SQLMetric, SQLMetrics}
 import org.apache.spark.sql.rapids.execution.GpuColumnToRowMapPartitionsRDD
 import org.apache.spark.sql.types.DataType
-import org.apache.spark.sql.vectorized.{ColumnVector, ColumnarBatch}
+import org.apache.spark.sql.vectorized.{ColumnarBatch, ColumnVector}
 
 class ColumnarToRowIterator(batches: Iterator[ColumnarBatch], numInputBatches: SQLMetric = null,
    numOutputRows: SQLMetric = null, totalTime: SQLMetric = null) extends Iterator[InternalRow] {

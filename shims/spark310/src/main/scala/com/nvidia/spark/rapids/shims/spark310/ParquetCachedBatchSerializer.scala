@@ -16,6 +16,7 @@
 
 package com.nvidia.spark.rapids.shims.spark310
 
+import scala.collection.JavaConverters._
 import scala.collection.mutable
 
 import ai.rapids.cudf._
@@ -32,7 +33,6 @@ import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.types.{StructField, StructType}
 import org.apache.spark.sql.vectorized.ColumnarBatch
 import org.apache.spark.storage.StorageLevel
-import scala.collection.JavaConverters._
 
 class ParquetBufferConsumer(val numRows: Int) extends HostBufferConsumer with AutoCloseable {
   @transient private[this] val offHeapBuffers = mutable.Queue[(HostMemoryBuffer, Long)]()
@@ -189,13 +189,12 @@ class ParquetCachedBatchSerializer extends CachedBatchSerializer with Arm {
 
     val requestedColumnIndices = selectedAttributes.map(a =>
       cacheAttributes.map(_.exprId).indexOf(a.exprId))
-    val requestedColumnNames = selectedAttributes.map(a => a.name)
 
     val cbRdd: RDD[ColumnarBatch] = input.map(batch => {
       if (batch.isInstanceOf[ParquetCachedBatch]) {
         val parquetCB = batch.asInstanceOf[ParquetCachedBatch]
-        val parquetOptions = ParquetOptions.builder().includeColumn(requestedColumnNames
-           .asJavaCollection).build()
+        val parquetOptions = ParquetOptions.builder().includeColumn(requestedColumnIndices
+           .map(i => "_col"+i).asJavaCollection).build()
         withResource(Table.readParquet(parquetOptions, parquetCB.buffer, 0,
           parquetCB.sizeInBytes)) { table =>
           withResource(GpuColumnVector.from(table)) { cb =>
