@@ -18,7 +18,7 @@ from asserts import assert_gpu_and_cpu_are_equal_collect
 from data_gen import *
 from marks import incompat, approximate_float
 from pyspark.sql.types import *
-from spark_session import with_spark_session
+from spark_session import with_spark_session, is_before_spark_310
 import pyspark.sql.functions as f
 
 @pytest.mark.parametrize('data_gen', numeric_gens, ids=idfn)
@@ -360,7 +360,7 @@ def test_expm1(data_gen):
             lambda spark : unary_op_df(spark, data_gen).selectExpr('expm1(a)'))
 
 @pytest.mark.xfail(
-    condition=with_spark_session(lambda spark : not(spark.sparkContext.version < "3.1.0")),
+    condition=not(is_before_spark_310()),
     reason='https://issues.apache.org/jira/browse/SPARK-32640')
 @approximate_float
 @pytest.mark.parametrize('data_gen', double_gens, ids=idfn)
@@ -369,7 +369,7 @@ def test_log(data_gen):
             lambda spark : unary_op_df(spark, data_gen).selectExpr('log(a)'))
 
 @pytest.mark.xfail(
-    condition=with_spark_session(lambda spark : not(spark.sparkContext.version < "3.1.0")),
+    condition=not(is_before_spark_310()),
     reason='https://issues.apache.org/jira/browse/SPARK-32640')
 @approximate_float
 @pytest.mark.parametrize('data_gen', double_gens, ids=idfn)
@@ -378,7 +378,7 @@ def test_log1p(data_gen):
             lambda spark : unary_op_df(spark, data_gen).selectExpr('log1p(a)'))
 
 @pytest.mark.xfail(
-    condition=with_spark_session(lambda spark : not(spark.sparkContext.version < "3.1.0")),
+    condition=not(is_before_spark_310()),
     reason='https://issues.apache.org/jira/browse/SPARK-32640')
 @approximate_float
 @pytest.mark.parametrize('data_gen', double_gens, ids=idfn)
@@ -387,7 +387,7 @@ def test_log2(data_gen):
             lambda spark : unary_op_df(spark, data_gen).selectExpr('log2(a)'))
 
 @pytest.mark.xfail(
-    condition=with_spark_session(lambda spark : not(spark.sparkContext.version < "3.1.0")),
+    condition=not(is_before_spark_310()),
     reason='https://issues.apache.org/jira/browse/SPARK-32640')
 @approximate_float
 @pytest.mark.parametrize('data_gen', double_gens, ids=idfn)

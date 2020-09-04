@@ -19,7 +19,7 @@ from data_gen import *
 from pyspark.sql.types import *
 from marks import *
 import pyspark.sql.functions as f
-from spark_session import with_spark_session
+from spark_session import with_spark_session, is_spark_300
 
 _no_nans_float_conf = {'spark.rapids.sql.variableFloatAgg.enabled': 'true',
                        'spark.rapids.sql.hasNans': 'false',
@@ -316,7 +316,7 @@ def test_hash_agg_with_nan_keys(data_gen):
 
 
 @pytest.mark.xfail(
-    condition=with_spark_session(lambda spark : spark.sparkContext.version == "3.0.0"),
+    condition=with_spark_session(lambda spark : is_spark_300()),
     reason="[SPARK-32038][SQL] NormalizeFloatingNumbers should also work on distinct aggregate "
            "(https://github.com/apache/spark/pull/28876) "
            "Fixed in later Apache Spark releases.")
