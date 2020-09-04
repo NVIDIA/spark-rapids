@@ -47,8 +47,7 @@ object AggregateUtils {
    * with the values in aggs.
    */
   def validateAggregate(attribute: AttributeSet): Boolean = {
-    attribute.toSeq.exists(
-      attr => aggs.exists(agg => attr.name.contains(agg)))
+    attribute.toSeq.exists(attr => aggs.exists(agg => attr.name.contains(agg)))
   }
 
   /**
