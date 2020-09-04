@@ -46,21 +46,21 @@ object AggregateUtils {
    * Use it with caution. We are comparing the name of a column looking for anything that matches
    * with the values in aggs.
    */
-  def validateAggregate(attribute: AttributeSet): Boolean = {
-    attribute.toSeq.exists(attr => aggs.exists(agg => attr.name.contains(agg)))
+  def validateAggregate(attributes: AttributeSet): Boolean = {
+    attributes.toSeq.exists(attr => aggs.exists(agg => attr.name.contains(agg)))
   }
 
   /**
    * Return true if there are multiple distinct functions along with non-distinct functions.
    */
-  def shouldFallbackMultiDistinct(aggExpr: Seq[AggregateExpression]): Boolean = {
+  def shouldFallbackMultiDistinct(aggExprs: Seq[AggregateExpression]): Boolean = {
     // Check if there is an `If` within `First`. This is included in the plan for non-distinct
     // functions only when multiple distincts along with non-distinct functions are present in the
     // query. We fall back to CPU in this case when references of `If` are an aggregate. We cannot
     // call `isDistinct` here on aggregateExpressions to get the total number of distinct functions.
     // If there are multiple distincts, the plan is rewritten by `RewriteDistinctAggregates` where
     // regular aggregations and every distinct aggregation is calculated in a separate group.
-    aggExpr.map(e => e.aggregateFunction).exists { func => {
+    aggExprs.map(e => e.aggregateFunction).exists { func => {
       func match {
         case First(If(_, _, _), _) if validateAggregate(func.references) => {
           true
