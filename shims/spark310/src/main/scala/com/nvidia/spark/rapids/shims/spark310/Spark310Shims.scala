@@ -102,30 +102,7 @@ class Spark310Shims extends Spark301Shims {
   }
 
   override def getExprs: Map[Class[_ <: Expression], ExprRule[_ <: Expression]] = {
-    val exprs310: Map[Class[_ <: Expression], ExprRule[_ <: Expression]] = Seq(
-      GpuOverrides.expr[TimeAdd](
-        "Subtracts interval from timestamp",
-        (a, conf, p, r) => new BinaryExprMeta[TimeAdd](a, conf, p, r) {
-          override def tagExprForGpu(): Unit = {
-            a.interval match {
-              case Literal(intvl: CalendarInterval, DataTypes.CalendarIntervalType) =>
-                if (intvl.months != 0) {
-                  willNotWorkOnGpu("interval months isn't supported")
-                }
-              case _ =>
-                willNotWorkOnGpu("only literals are supported for intervals")
-            }
-            if (ZoneId.of(a.timeZoneId.get).normalized() != GpuOverrides.UTC_TIMEZONE_ID) {
-              willNotWorkOnGpu("Only UTC zone id is supported")
-            }
-          }
-
-          override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression =
-            GpuTimeSub(lhs, rhs)
-        }
-      )
-    ).map(r => (r.getClassFor.asSubclass(classOf[Expression]), r)).toMap
-    exprs310 ++ super.exprs301
+    super.exprs301
   }
 
   override def getExecs: Map[Class[_ <: SparkPlan], ExecRule[_ <: SparkPlan]] = {

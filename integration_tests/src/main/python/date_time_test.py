@@ -35,6 +35,15 @@ def test_timesub(data_gen):
         lambda spark: unary_op_df(spark, TimestampGen(start=datetime(15, 1, 1, tzinfo=timezone.utc)), seed=1)
             .selectExpr("a - (interval {} days {} seconds)".format(days, seconds)))
 
+@pytest.mark.parametrize('data_gen', vals, ids=idfn)
+def test_timeadd(data_gen):
+    days, seconds = data_gen
+    assert_gpu_and_cpu_are_equal_collect(
+        # We are starting at year 0005 to make sure we don't go before year 0001
+        # and beyond year 10000 while doing TimeAdd
+        lambda spark: unary_op_df(spark, TimestampGen(start=datetime(5, 1, 1, tzinfo=timezone.utc), end=datetime(15, 1, 1, tzinfo=timezone.utc)), seed=1)
+            .selectExpr("a + (interval {} days {} seconds)".format(days, seconds)))
+
 @pytest.mark.parametrize('data_gen', date_gens, ids=idfn)
 def test_datediff(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
