@@ -318,8 +318,8 @@ When translating UDFs to Catalyst expressions, the supported UDF functions are l
 |                          | lhs >> rhs                                               |
 |                          | lhs >>> rhs                                              |
 | Conditional              | if                                                       |
-|                          | case                                                      |
-| Math                     | abs(x)                                                    |
+|                          | case                                                     |
+| Math                     | abs(x)                                                   |
 |                          | cos(x)                                                   |
 |                          | acos(x)                                                  |
 |                          | asin(x)                                                  |
@@ -358,8 +358,14 @@ When translating UDFs to Catalyst expressions, the supported UDF functions are l
 |                          | x.contains(CharSequence s)                               |
 |                          | x.indexOf(String str)                                    |
 |                          | x.indexOf(String str, int fromIndex)                     |
-|                          |x.replaceAll(String regex, String replacement)            |
-|                          |x.split(String regex)                                     |
-|                          |x.split(String regex, int limit)                          |
-|                          |x.getBytes()                                              |
-|                          |x.getBytes(String charsetName)                            |
+|                          | x.replaceAll(String regex, String replacement)           |
+|                          | x.split(String regex)                                    |
+|                          | x.split(String regex, int limit)                         |
+|                          | x.getBytes()                                             |
+|                          | x.getBytes(String charsetName)                           |
+| Date and Time            | LocalDateTime.parse(x, DateTimeFormatter.ofPattern(pattern)).getYear       |
+|                          | LocalDateTime.parse(x, DateTimeFormatter.ofPattern(pattern)).getMonthValue |
+|                          | LocalDateTime.parse(x, DateTimeFormatter.ofPattern(pattern)).getDayOfMonth |
+|                          | LocalDateTime.parse(x, DateTimeFormatter.ofPattern(pattern)).getHour       |
+|                          | LocalDateTime.parse(x, DateTimeFormatter.ofPattern(pattern)).getMinute     |
+|                          | LocalDateTime.parse(x, DateTimeFormatter.ofPattern(pattern)).getSecond     |
