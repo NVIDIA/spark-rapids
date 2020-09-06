@@ -26,6 +26,7 @@ import org.apache.spark.sql.catalyst.plans.physical.Partitioning
 import org.apache.spark.sql.catalyst.trees.TreeNodeTag
 import org.apache.spark.sql.connector.read.Scan
 import org.apache.spark.sql.execution.SparkPlan
+import org.apache.spark.sql.execution.adaptive.ShuffleQueryStageExec
 import org.apache.spark.sql.execution.command.DataWritingCommand
 import org.apache.spark.sql.execution.exchange.ShuffleExchangeExec
 import org.apache.spark.sql.execution.joins.{BroadcastHashJoinExec, ShuffledHashJoinExec, SortMergeJoinExec}
@@ -117,7 +118,7 @@ abstract class RapidsMeta[INPUT <: BASE, BASE, OUTPUT <: BASE](
 
   private var shouldBeRemovedReasons: Option[mutable.Set[String]] = None
 
-  val gpuSupportedTag = TreeNodeTag[String]("rapids.gpu.supported")
+  val gpuSupportedTag = TreeNodeTag[Set[String]]("rapids.gpu.supported")
 
   /**
    * Call this to indicate that this should not be replaced with a GPU enabled version
@@ -128,7 +129,9 @@ abstract class RapidsMeta[INPUT <: BASE, BASE, OUTPUT <: BASE](
     // annotate the real spark plan with the reason as well so that the information is available
     // during query stage planning when AQE is on
     wrapped match {
-      case p: SparkPlan => p.setTagValue(gpuSupportedTag, because)
+      case p: SparkPlan =>
+        p.setTagValue(gpuSupportedTag,
+          p.getTagValue(gpuSupportedTag).getOrElse(Set.empty) + because)
       case _ =>
     }
   }
@@ -429,6 +432,15 @@ abstract class SparkPlanMeta[INPUT <: SparkPlan](plan: INPUT,
     wrapped.withNewChildren(childPlans.map(_.convertIfNeeded()))
   }
 
+  private def findShuffleQueryStages(): Seq[ShuffleQueryStageExec] = wrapped match {
+    case stage: ShuffleQueryStageExec => stage :: Nil
+    case bkj: BroadcastHashJoinExec => ShimLoader.getSparkShims.getBuildSide(bkj) match {
+      case GpuBuildLeft => childPlans(1).findShuffleQueryStages()
+      case GpuBuildRight => childPlans(0).findShuffleQueryStages()
+    }
+    case _ => childPlans.flatMap(_.findShuffleQueryStages())
+  }
+
   private def findShuffleExchanges(): Seq[SparkPlanMeta[ShuffleExchangeExec]] = wrapped match {
     case _: ShuffleExchangeExec =>
       this.asInstanceOf[SparkPlanMeta[ShuffleExchangeExec]] :: Nil
@@ -440,10 +452,33 @@ abstract class SparkPlanMeta[INPUT <: SparkPlan](plan: INPUT,
   }
 
   private def makeShuffleConsistent(): Unit = {
+    // during query execution when AQE is enabled, the plan could consist of a mixture of
+    // ShuffleExchangeExec nodes for exchanges that have not started executing yet, and
+    // ShuffleQueryStageExec nodes for exchanges that have already started executing. This code
+    // attempts to tag ShuffleExchangeExec nodes for CPU if other exchanges (either
+    // ShuffleExchangeExec or ShuffleQueryStageExec nodes) were also tagged for CPU.
     val exchanges = findShuffleExchanges()
-    if (!exchanges.forall(_.canThisBeReplaced)) {
-      exchanges.foreach(_.willNotWorkOnGpu("other exchanges that feed the same join are" +
-        " on the CPU and GPU hashing is not consistent with the CPU version"))
+    val queryStages = findShuffleQueryStages()
+
+    val consistentExchangeMessage = "other exchanges that feed the same join are" +
+        " on the CPU and GPU hashing is not consistent with the CPU version"
+
+    if (queryStages.isEmpty) {
+      // this is the original logic which works fine when AQE is disabled and also for
+      // initial preparation before query stage creation when AQE is enabled
+      if (!exchanges.forall(_.canThisBeReplaced)) {
+        exchanges.foreach(_.willNotWorkOnGpu(consistentExchangeMessage))
+      }
+    } else if (exchanges.isEmpty) {
+      // we only have query stages, and we cannot do anything to modify them at this point
+      // since they already started to execute
+    } else {
+      // there is a mix of ShuffleExchangeExec and ShuffleQueryStageExec so we need to tag any
+      // ShuffleExchangeExec nodes based on the other nodes
+      if (!exchanges.forall(_.canThisBeReplaced) ||
+          !queryStages.forall(_.plan.isInstanceOf[GpuExec])) {
+        exchanges.foreach(_.willNotWorkOnGpu(consistentExchangeMessage))
+      }
     }
   }
 
