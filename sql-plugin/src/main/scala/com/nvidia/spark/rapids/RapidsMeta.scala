@@ -26,9 +26,9 @@ import org.apache.spark.sql.catalyst.plans.physical.Partitioning
 import org.apache.spark.sql.catalyst.trees.TreeNodeTag
 import org.apache.spark.sql.connector.read.Scan
 import org.apache.spark.sql.execution.SparkPlan
-import org.apache.spark.sql.execution.adaptive.ShuffleQueryStageExec
+import org.apache.spark.sql.execution.adaptive.{QueryStageExec, ShuffleQueryStageExec}
 import org.apache.spark.sql.execution.command.DataWritingCommand
-import org.apache.spark.sql.execution.exchange.ShuffleExchangeExec
+import org.apache.spark.sql.execution.exchange.{ReusedExchangeExec, ShuffleExchangeExec}
 import org.apache.spark.sql.execution.joins.{BroadcastHashJoinExec, ShuffledHashJoinExec, SortMergeJoinExec}
 import org.apache.spark.sql.types.DataType
 
@@ -463,6 +463,14 @@ abstract class SparkPlanMeta[INPUT <: SparkPlan](plan: INPUT,
     val consistentExchangeMessage = "other exchanges that feed the same join are" +
         " on the CPU, and GPU hashing is not consistent with the CPU version"
 
+    def isGpuQueryStage(qs: QueryStageExec): Boolean = {
+      qs.plan match {
+        case _: GpuExec => true
+        case ReusedExchangeExec(_, _: GpuExec) => true
+        case _ => false
+      }
+    }
+
     if (queryStages.isEmpty) {
       // this is the original logic which works fine when AQE is disabled and also for
       // initial preparation before query stage creation when AQE is enabled
@@ -471,16 +479,29 @@ abstract class SparkPlanMeta[INPUT <: SparkPlan](plan: INPUT,
       }
     } else if (exchanges.isEmpty) {
       // we only have query stages, and we cannot do anything to modify them at this point
-      // since they already started to execute
+      // since they already started to execute, but we verify that they are both on CPU or
+      // both on GPU
+      if (queryStages.map(isGpuQueryStage).distinct.size == 2) {
+        throw new IllegalStateException("Join needs both inputs to run on CPU, or both inputs " +
+            "to run on GPU, but the input query stages were mixed between CPU and GPU")
+      }
     } else {
       // there is a mix of ShuffleExchangeExec and ShuffleQueryStageExec so we need to tag any
       // ShuffleExchangeExec nodes based on the other nodes
-      if (!exchanges.forall(_.canThisBeReplaced) ||
-          !queryStages.forall(_.plan.isInstanceOf[GpuExec])) {
+      if (!(exchanges.forall(_.canThisBeReplaced) &&
+          queryStages.forall(isGpuQueryStage))) {
+
         exchanges.foreach(_.willNotWorkOnGpu(consistentExchangeMessage))
+
+        // also make sure sure all query stages are on CPU
+        if (queryStages.exists(isGpuQueryStage)) {
+          throw new IllegalStateException("Join needs to run on CPU but at least one input " +
+              "query stage ran on GPU")
+        }
       }
     }
   }
+
 
   private def fixUpJoinConsistencyIfNeeded(): Unit = {
     childPlans.foreach(_.fixUpJoinConsistencyIfNeeded())
