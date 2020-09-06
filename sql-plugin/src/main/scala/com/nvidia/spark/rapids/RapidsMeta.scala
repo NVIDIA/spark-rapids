@@ -461,7 +461,7 @@ abstract class SparkPlanMeta[INPUT <: SparkPlan](plan: INPUT,
     val queryStages = findShuffleQueryStages()
 
     val consistentExchangeMessage = "other exchanges that feed the same join are" +
-        " on the CPU and GPU hashing is not consistent with the CPU version"
+        " on the CPU, and GPU hashing is not consistent with the CPU version"
 
     if (queryStages.isEmpty) {
       // this is the original logic which works fine when AQE is disabled and also for

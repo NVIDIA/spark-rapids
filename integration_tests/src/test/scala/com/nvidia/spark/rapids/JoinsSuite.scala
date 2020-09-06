@@ -155,7 +155,7 @@ class JoinsSuite extends SparkQueryCompareTestSuite {
       val gpuSupportedTag = TreeNodeTag[Set[String]]("rapids.gpu.supported")
       val reasons = shuffleExec.getTagValue(gpuSupportedTag).getOrElse(Set.empty)
       assert(reasons.contains(
-          "other exchanges that feed the same join are on the CPU and GPU " +
+          "other exchanges that feed the same join are on the CPU, and GPU " +
           "hashing is not consistent with the CPU version"))
 
     }, conf)
