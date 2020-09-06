@@ -77,7 +77,8 @@ class Spark301Shims extends Spark300Shims {
   override def getMapSizesByExecutorId(
       shuffleId: Int,
       startMapIndex: Int,
-      endMapIndex: Int, startPartition: Int,
+      endMapIndex: Int,
+      startPartition: Int,
       endPartition: Int): Iterator[(BlockManagerId, Seq[(BlockId, Long, Int)])] = {
     SparkEnv.get.mapOutputTracker.getMapSizesByRange(shuffleId,
       startMapIndex, endMapIndex, startPartition, endPartition)
