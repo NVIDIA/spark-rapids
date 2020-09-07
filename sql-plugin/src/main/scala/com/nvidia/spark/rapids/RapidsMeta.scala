@@ -432,18 +432,13 @@ abstract class SparkPlanMeta[INPUT <: SparkPlan](plan: INPUT,
     wrapped.withNewChildren(childPlans.map(_.convertIfNeeded()))
   }
 
-  private def findShuffleQueryStages(): Seq[ShuffleQueryStageExec] = wrapped match {
-    case stage: ShuffleQueryStageExec => stage :: Nil
-    case bkj: BroadcastHashJoinExec => ShimLoader.getSparkShims.getBuildSide(bkj) match {
-      case GpuBuildLeft => childPlans(1).findShuffleQueryStages()
-      case GpuBuildRight => childPlans(0).findShuffleQueryStages()
-    }
-    case _ => childPlans.flatMap(_.findShuffleQueryStages())
-  }
-
-  private def findShuffleExchanges(): Seq[SparkPlanMeta[ShuffleExchangeExec]] = wrapped match {
+  private def findShuffleExchanges(): Seq[Either[
+      SparkPlanMeta[QueryStageExec],
+      SparkPlanMeta[ShuffleExchangeExec]]] = wrapped match {
+    case _: ShuffleQueryStageExec =>
+      Left(this.asInstanceOf[SparkPlanMeta[QueryStageExec]]) :: Nil
     case _: ShuffleExchangeExec =>
-      this.asInstanceOf[SparkPlanMeta[ShuffleExchangeExec]] :: Nil
+      Right(this.asInstanceOf[SparkPlanMeta[ShuffleExchangeExec]]) :: Nil
     case bkj: BroadcastHashJoinExec => ShimLoader.getSparkShims.getBuildSide(bkj) match {
       case GpuBuildLeft => childPlans(1).findShuffleExchanges()
       case GpuBuildRight => childPlans(0).findShuffleExchanges()
@@ -457,14 +452,15 @@ abstract class SparkPlanMeta[INPUT <: SparkPlan](plan: INPUT,
     // ShuffleQueryStageExec nodes for exchanges that have already started executing. This code
     // attempts to tag ShuffleExchangeExec nodes for CPU if other exchanges (either
     // ShuffleExchangeExec or ShuffleQueryStageExec nodes) were also tagged for CPU.
-    val exchanges = findShuffleExchanges()
-    val queryStages = findShuffleQueryStages()
+    val shuffleExchanges = findShuffleExchanges()
+    val queryStages = shuffleExchanges.filter(_.isLeft).map(_.left.get)
+    val exchanges = shuffleExchanges.filter(_.isRight).map(_.right.get)
 
     val consistentExchangeMessage = "other exchanges that feed the same join are" +
         " on the CPU, and GPU hashing is not consistent with the CPU version"
 
-    def isGpuQueryStage(qs: QueryStageExec): Boolean = {
-      qs.plan match {
+    def isGpuQueryStage(qs: SparkPlanMeta[QueryStageExec]): Boolean = {
+      qs.wrapped.plan match {
         case _: GpuExec => true
         case ReusedExchangeExec(_, _: GpuExec) => true
         case _ => false
