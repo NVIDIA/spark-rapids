@@ -84,8 +84,8 @@ spec:
             values:
             - Tesla_V100S_PCIE_32GB
             - Tesla_V100_PCIE_32GB
-            - Tesla_T4
             - TITAN_RTX
+            - Tesla_T4
 """
 
 def githubHelper // blossom github helper
@@ -103,9 +103,9 @@ pipeline {
 
     options {
         ansiColor('xterm')
-        buildDiscarder(logRotator(numToKeepStr: '30'))
+        buildDiscarder(logRotator(numToKeepStr: '50'))
         skipDefaultCheckout true
-        timeout(time: 120, unit: 'MINUTES')
+        timeout(time: 180, unit: 'MINUTES')
     }
 
     environment {
@@ -120,7 +120,7 @@ pipeline {
     }
 
     stages {
-        stage("init githubHelper") {
+        stage("Init githubHelper") {
             steps {
                 script {
                     githubHelper = GithubHelper.getInstance("${GITHUB_TOKEN}", githubData)
@@ -134,7 +134,7 @@ pipeline {
                     }
                 }
             }
-        }
+        } // end of Init githubHelper
 
         stage('Build docker image') {
             when {
