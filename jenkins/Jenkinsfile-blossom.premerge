@@ -25,7 +25,6 @@
 @Library('blossom-github-lib@master')
 import ipp.blossom.*
 
-
 def pluginDockerBuild = """
 apiVersion: v1
 kind: Pod
@@ -115,6 +114,7 @@ pipeline {
         LIBCUDF_KERNEL_CACHE_PATH = '/tmp/.cudf'
         ARTIFACTORY_NAME = "${ArtifactoryConstants.ARTIFACTORY_NAME}"
         GITHUB_TOKEN = credentials("github-token")
+        // TODO: rename this credential after we shutdown premerge pipine on ngcc
         URM_CREDS = credentials("svcngcc_artifactory")
         URM_URL = "https://${ArtifactoryConstants.ARTIFACTORY_NAME}/artifactory/sw-spark-maven"
     }
