@@ -66,13 +66,13 @@ object GpuPythonHelper extends Logging {
 
     // Calculate the pool size for each Python worker.
     val concurrentPythonWorkers = rapidsConf.get(CONCURRENT_PYTHON_WORKERS)
-    // Spark does not throw exception even the value of CPUS_PER_TASK is negative, so
-    // return 1 if it is less than zero to continue the task.
-    val cpuTaskSlots = sparkConf.get(EXECUTOR_CORES) / Math.max(1, sparkConf.get(CPUS_PER_TASK))
-    if (0 < concurrentPythonWorkers && concurrentPythonWorkers <= cpuTaskSlots) {
+    if (0 < concurrentPythonWorkers) {
       (initAllocTotal / concurrentPythonWorkers, maxAllocTotal / concurrentPythonWorkers)
     } else {
       // When semaphore is disabled or invalid, use the number of cpu task slots instead.
+      // Spark does not throw exception even the value of CPUS_PER_TASK is negative, so
+      // return 1 if it is less than zero to continue the task.
+      val cpuTaskSlots = sparkConf.get(EXECUTOR_CORES) / Math.max(1, sparkConf.get(CPUS_PER_TASK))
       (initAllocTotal / cpuTaskSlots, maxAllocTotal / cpuTaskSlots)
     }
   }
@@ -107,6 +107,11 @@ object GpuPythonHelper extends Logging {
         !System.getProperty("os.name").startsWith("Windows") && useDaemonEnabled
       }
       if (useDaemon) {
+        if (conf.get(PYTHON_WORKER_REUSE)) {
+          logWarning(s"Setting '${PYTHON_WORKER_REUSE.key}' to false is recommended when" +
+            s" running Pandas UDF on the GPU, but found it is set to true, making the GPU memory" +
+            s" may not be released in time." )
+        }
         val oDaemon = conf.get(PYTHON_DAEMON_MODULE)
         if (oDaemon.nonEmpty) {
           val daemon = oDaemon.get
