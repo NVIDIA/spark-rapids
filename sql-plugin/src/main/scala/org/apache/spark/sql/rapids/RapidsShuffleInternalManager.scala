@@ -217,9 +217,6 @@ abstract class RapidsShuffleInternalManagerBase(conf: SparkConf, isDriver: Boole
     if (!GpuShuffleEnv.isRapidsShuffleEnabled) {
       fallThroughReasons += "external shuffle is enabled"
     }
-    if (SQLConf.get.adaptiveExecutionEnabled) {
-      fallThroughReasons += "adaptive query execution is enabled"
-    }
     if (fallThroughReasons.nonEmpty) {
       logWarning(s"Rapids Shuffle Plugin is falling back to SortShuffleManager " +
           s"because: ${fallThroughReasons.mkString(", ")}")
