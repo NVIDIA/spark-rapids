@@ -746,8 +746,8 @@ class MultiFileParquetPartitionReader(
         if (fileBlockMeta.blocks.length == 0) {
           // no blocks so return null buffer and size 0
           return HostMemoryBuffersWithMetaData(fileBlockMeta.isCorrectedRebaseMode,
-            fileBlockMeta.schema, fileBlockMeta.partValues, Array((null, 0)), file.filePath,
-            file.start, file.length)
+            fileBlockMeta.schema, fileBlockMeta.partValues, Array((null, 0)),
+            file.filePath, file.start, file.length)
         }
         blockChunkIter = fileBlockMeta.blocks.iterator.buffered
         if (isDone) {
@@ -774,7 +774,7 @@ class MultiFileParquetPartitionReader(
             }
             if (isDone) {
               // got close before finishing
-              hostBuffers.foreach(_._1.close())
+              hostBuffers.foreach(_._1.safeClose())
               HostMemoryBuffersWithMetaData(fileBlockMeta.isCorrectedRebaseMode,
                 fileBlockMeta.schema, fileBlockMeta.partValues, Array((null, 0)),
                 file.filePath, file.start, file.length)
@@ -786,8 +786,8 @@ class MultiFileParquetPartitionReader(
           }
         }
       } catch {
-        case e: Exception =>
-          hostBuffers.foreach(_._1.close())
+        case e: Throwable =>
+          hostBuffers.foreach(_._1.safeClose())
           throw e
       }
     }
