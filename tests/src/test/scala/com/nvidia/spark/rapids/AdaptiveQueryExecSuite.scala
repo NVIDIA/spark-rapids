@@ -262,6 +262,9 @@ class AdaptiveQueryExecSuite
   }
 
   test("Exchange reuse") {
+
+    assumeSpark301orLater()
+
     val conf = new SparkConf()
         .set(SQLConf.ADAPTIVE_EXECUTION_ENABLED.key, "true")
         .set(SQLConf.AUTO_BROADCASTJOIN_THRESHOLD.key, "-1")
@@ -360,6 +363,16 @@ class AdaptiveQueryExecSuite
       case p: PartialReducerPartitionSpec => p.reducerIndex
     }.distinct
     assert(rightSkew.length == rightSkewNum)
+  }
+
+  private def assumeSpark301orLater(): Unit = {
+    // all AQE tests requires Spark 3.0.1 or later
+    val isValidTestForSparkVersion = ShimLoader.getSparkShims.getSparkShimVersion match {
+      case SparkShimVersion(3, 0, 0) => false
+      case DatabricksShimVersion(3, 0, 0) => false
+      case _ => true
+    }
+    assume(isValidTestForSparkVersion)
   }
 
   private def setupTestData(spark: SparkSession): Unit = {
