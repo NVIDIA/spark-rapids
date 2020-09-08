@@ -108,5 +108,4 @@ class Spark301Shims extends Spark300Shims {
       ruleBuilder: SparkSession => Rule[SparkPlan]): Unit = {
     extensions.injectQueryStagePrepRule(ruleBuilder)
   }
-
 }

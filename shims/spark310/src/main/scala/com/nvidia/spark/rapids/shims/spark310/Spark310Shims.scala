@@ -173,7 +173,7 @@ class Spark310Shims extends Spark301Shims {
         (scan, conf, p, r) => new SparkPlanMeta[InMemoryTableScanExec](scan, conf, p, r) {
           override def tagPlanForGpu(): Unit = {
             if (!scan.relation.cacheBuilder.serializer.isInstanceOf[ParquetCachedBatchSerializer]) {
-              willNotWorkOnGpu("DefaultCachedBatchSerializer being used")
+              willNotWorkOnGpu("ParquetCachedBatchSerializer is not being used")
             }
           }
           /**

@@ -56,10 +56,13 @@ class ParquetBufferConsumer(val numRows: Int) extends HostBufferConsumer with Au
   }
 
   private def writeBuffers(): Unit = {
-    // this could be problematic if the buffers are big as their cumulative length could be more
-    // than an Int.MAX_SIZE. We could just have a list of buffers in that case and iterate over them
     val toProcess = offHeapBuffers.dequeueAll(_ => true)
+    // this could be problematic if the buffers are big as their cumulative length could be more
+    // than Int.MAX_SIZE. We could just have a list of buffers in that case and iterate over them
     val bytes = toProcess.unzip._2.sum
+
+    // for now assert bytes are less than Int.MaxValue
+    assert(bytes < Int.MaxValue)
     buffer = new Array(bytes.toInt)
     try {
       var offset: Int = 0
@@ -67,9 +70,6 @@ class ParquetBufferConsumer(val numRows: Int) extends HostBufferConsumer with Au
         val origBuffer = ops._1
         val len = ops._2.toInt
         origBuffer.asByteBuffer().get(buffer, offset, len)
-        for (i <- 0  until len) {
-          assert(origBuffer.getByte(i) == buffer(offset + i.toInt))
-        }
         offset = offset + len
       })
     } finally {
@@ -156,14 +156,14 @@ class ParquetCachedBatchSerializer extends CachedBatchSerializer with Arm {
     })
   }
 
-  private def compressColumnarBatchWithParquet(gpuCB: ColumnarBatch) = {
+  private def compressColumnarBatchWithParquet(gpuCB: ColumnarBatch): ParquetCachedBatch = {
     val buffer = new ParquetBufferConsumer(gpuCB.numRows())
     withResource(GpuColumnVector.from(gpuCB)) { table =>
       withResource(Table.writeParquetChunked(ParquetWriterOptions.DEFAULT, buffer)) { writer =>
         writer.write(table)
       }
     }
-    ParquetCachedBatch(buffer).asInstanceOf[CachedBatch]
+    ParquetCachedBatch(buffer)
   }
 
   /**

@@ -238,10 +238,7 @@ Name | Description | Default Value | Notes
 <a name="sql.exec.RangeExec"></a>spark.rapids.sql.exec.RangeExec|The backend for range operator|true|None|
 <a name="sql.exec.SortExec"></a>spark.rapids.sql.exec.SortExec|The backend for the sort operator|true|None|
 <a name="sql.exec.UnionExec"></a>spark.rapids.sql.exec.UnionExec|The backend for the union operator|true|None|
-<a name="sql.exec.AdaptiveSparkPlanExec"></a>spark.rapids.sql.exec.AdaptiveSparkPlanExec|Wrapper for adaptive query plan|true|None|
-<a name="sql.exec.BroadcastQueryStageExec"></a>spark.rapids.sql.exec.BroadcastQueryStageExec|Broadcast query stage|true|None|
 <a name="sql.exec.CustomShuffleReaderExec"></a>spark.rapids.sql.exec.CustomShuffleReaderExec|A wrapper of shuffle query stage|true|None|
-<a name="sql.exec.ShuffleQueryStageExec"></a>spark.rapids.sql.exec.ShuffleQueryStageExec|Shuffle query stage|true|None|
 <a name="sql.exec.HashAggregateExec"></a>spark.rapids.sql.exec.HashAggregateExec|The backend for hash based aggregations|true|None|
 <a name="sql.exec.SortAggregateExec"></a>spark.rapids.sql.exec.SortAggregateExec|The backend for sort based aggregations|true|None|
 <a name="sql.exec.DataWritingCommandExec"></a>spark.rapids.sql.exec.DataWritingCommandExec|Writing data|true|None|
