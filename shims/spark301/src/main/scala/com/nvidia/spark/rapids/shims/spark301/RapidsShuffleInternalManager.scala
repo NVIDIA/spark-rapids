@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-package org.apache.spark.sql.rapids.shims.spark300
+package org.apache.spark.sql.rapids.shims.spark301
 
 import org.apache.spark.{SparkConf, TaskContext}
 import org.apache.spark.shuffle._
@@ -48,4 +48,5 @@ class RapidsShuffleInternalManager(conf: SparkConf, isDriver: Boolean)
       metrics: ShuffleReadMetricsReporter): ShuffleReader[K, C] = {
     getReaderInternal(handle, 0, Int.MaxValue, startPartition, endPartition, context, metrics)
   }
+
 }
