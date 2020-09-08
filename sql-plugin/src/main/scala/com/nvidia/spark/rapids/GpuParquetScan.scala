@@ -787,12 +787,8 @@ class MultiFileParquetPartitionReader(
         }
       } catch {
         case e: Exception =>
-          if (!isDone) {
-            logError(s"Exception in Parquet file read thread, ${e.getMessage}", e)
-          }
           hostBuffers.foreach(_._1.close())
-          return HostMemoryBuffersWithMetaData(false, null, null, Array((null, 0)),
-            file.filePath, file.start, file.length, Some(e))
+          throw e
       }
     }
   }
@@ -862,11 +858,11 @@ class MultiFileParquetPartitionReader(
         currentFileHostBuffers = None
         if (filesToRead > 0 && !isDone) {
           val fileBufsAndMeta = tasks.poll.get()
-          if (fileBufsAndMeta.error.isDefined) {
+          /* if (fileBufsAndMeta.error.isDefined) {
             logError(s"Exception while reading file ${fileBufsAndMeta.fileName} " +
               s"at start ${fileBufsAndMeta.fileStart} in thread", fileBufsAndMeta.error.get)
             throw fileBufsAndMeta.error.get
-          }
+          } */
           filesToRead -= 1
           InputFileUtils.setInputFileBlock(fileBufsAndMeta.fileName, fileBufsAndMeta.fileStart,
             fileBufsAndMeta.fileLength)
