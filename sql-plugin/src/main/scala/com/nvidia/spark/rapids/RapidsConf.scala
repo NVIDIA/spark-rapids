@@ -459,7 +459,8 @@ object RapidsConf {
   val PARQUET_MULTITHREAD_READ_NUM_THREADS =
     conf("spark.rapids.sql.format.parquet.multiThreadedRead.numThreads")
       .doc("The maximum number of threads, on the executor, to use for reading small " +
-        "parquet files in parallel.")
+        "parquet files in parallel. This can not be changed at runtime after the executor has" +
+        "started.")
       .integerConf
       .createWithDefault(20)
 
