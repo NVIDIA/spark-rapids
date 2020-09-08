@@ -16,9 +16,12 @@
 
 package com.nvidia.spark.rapids.python
 
-import com.nvidia.spark.rapids.{GpuSemaphore, RapidsConf}
+import java.util.concurrent.{ConcurrentHashMap, Semaphore}
+
+import com.nvidia.spark.rapids.RapidsConf
 import com.nvidia.spark.rapids.python.PythonConfEntries.{CONCURRENT_PYTHON_WORKERS,
   PYTHON_GPU_ENABLED}
+import org.apache.commons.lang3.mutable.MutableInt
 
 import org.apache.spark.{SparkEnv, TaskContext}
 import org.apache.spark.internal.Logging
@@ -44,14 +47,14 @@ object PythonWorkerSemaphore extends Logging {
 
   // DO NOT ACCESS DIRECTLY!  Use `getInstance` instead.
   @volatile
-  private var instance: GpuSemaphore = _
+  private var instance: PythonWorkerSemaphore = _
 
-  private def getInstance(): GpuSemaphore = {
+  private def getInstance(): PythonWorkerSemaphore = {
     if (instance == null) {
-      GpuSemaphore.synchronized {
+      synchronized {
         if (instance == null) {
           logDebug(s"Initialize the python workers semaphore with number: $workersPerGpu")
-          instance = new GpuSemaphore(workersPerGpu, false)
+          instance = new PythonWorkerSemaphore(workersPerGpu)
         }
       }
     }
@@ -88,6 +91,55 @@ object PythonWorkerSemaphore extends Logging {
     if (instance != null) {
       instance.shutdown()
       instance = null
+    }
+  }
+}
+
+private final class PythonWorkerSemaphore(tasksPerGpu: Int) extends Logging {
+  private val semaphore = new Semaphore(tasksPerGpu)
+  // Map to track which tasks have acquired the semaphore.
+  private val activeTasks = new ConcurrentHashMap[Long, MutableInt]
+
+  def acquireIfNecessary(context: TaskContext): Unit = {
+    val taskAttemptId = context.taskAttemptId()
+    val refs = activeTasks.get(taskAttemptId)
+    if (refs == null) {
+      // first time this task has been seen
+      activeTasks.put(taskAttemptId, new MutableInt(1))
+      context.addTaskCompletionListener[Unit](completeTask)
+    } else {
+      refs.increment()
+    }
+    logDebug(s"Task $taskAttemptId acquiring GPU for python worker")
+    semaphore.acquire()
+  }
+
+  def releaseIfNecessary(context: TaskContext): Unit = {
+    val taskAttemptId = context.taskAttemptId()
+    val refs = activeTasks.get(taskAttemptId)
+    if (refs != null && refs.getValue > 0) {
+      logDebug(s"Task $taskAttemptId releasing GPU for python worker")
+      semaphore.release(refs.getValue)
+      refs.setValue(0)
+    }
+  }
+
+  def completeTask(context: TaskContext): Unit = {
+    val taskAttemptId = context.taskAttemptId()
+    val refs = activeTasks.remove(taskAttemptId)
+    if (refs == null) {
+      throw new IllegalStateException(s"Completion of unknown task $taskAttemptId")
+    }
+    if (refs.getValue > 0) {
+      logDebug(s"Task $taskAttemptId releasing all GPU resources for python worker")
+      semaphore.release(refs.getValue)
+    }
+  }
+
+  def shutdown(): Unit = {
+    if (!activeTasks.isEmpty) {
+      logDebug(s"Shutting down Python worker semaphore with ${activeTasks.size} " +
+        s"tasks still registered")
     }
   }
 }

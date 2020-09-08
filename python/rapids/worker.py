@@ -22,7 +22,8 @@ from pyspark.worker import local_connect_and_auth, main as worker_main
 def initialize_gpu_mem():
     # CUDA device(s) info
     cuda_devices_str = os.environ.get('CUDA_VISIBLE_DEVICES')
-    print("INFO: Found CUDA visible device(s): {}".format(cuda_devices_str))
+    print("INFO: Process {} found CUDA visible device(s): {}".format(
+        os.getpid(), cuda_devices_str))
     if not cuda_devices_str:
         # ignore initialzation if no GPU(s) is provided
         return

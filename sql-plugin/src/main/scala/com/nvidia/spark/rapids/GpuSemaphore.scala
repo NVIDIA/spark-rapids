@@ -98,8 +98,7 @@ object GpuSemaphore {
   }
 }
 
-private[rapids] final class GpuSemaphore(tasksPerGpu: Int, initGpu: Boolean = true)
-    extends Logging {
+private final class GpuSemaphore(tasksPerGpu: Int) extends Logging {
   private val semaphore = new Semaphore(tasksPerGpu)
   // Map to track which tasks have acquired the semaphore.
   private val activeTasks = new ConcurrentHashMap[Long, MutableInt]
@@ -119,9 +118,7 @@ private[rapids] final class GpuSemaphore(tasksPerGpu: Int, initGpu: Boolean = tr
           activeTasks.put(taskAttemptId, new MutableInt(1))
           context.addTaskCompletionListener[Unit](completeTask)
         }
-        if (initGpu) {
-          GpuDeviceManager.initializeFromTask()
-        }
+        GpuDeviceManager.initializeFromTask()
       }
     } finally {
       nvtxRange.close()
