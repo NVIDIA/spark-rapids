@@ -62,7 +62,7 @@ class ParquetBufferConsumer(val numRows: Int) extends HostBufferConsumer with Au
     val bytes = toProcess.unzip._2.sum
 
     // for now assert bytes are less than Int.MaxValue
-    assert(bytes < Int.MaxValue)
+    assert(bytes <= Int.MaxValue)
     buffer = new Array(bytes.toInt)
     try {
       var offset: Int = 0
