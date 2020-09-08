@@ -22,7 +22,7 @@ import com.nvidia.spark.rapids.AdaptiveQueryExecSuite.TEST_FILES_ROOT
 import org.scalatest.BeforeAndAfterEach
 
 import org.apache.spark.SparkConf
-import org.apache.spark.sql.{DataFrame, SaveMode, SparkSession}
+import org.apache.spark.sql.{Dataset, Row, SaveMode, SparkSession}
 import org.apache.spark.sql.execution.{PartialReducerPartitionSpec, SparkPlan}
 import org.apache.spark.sql.execution.adaptive.{AdaptiveSparkPlanExec, AdaptiveSparkPlanHelper, BroadcastQueryStageExec, ShuffleQueryStageExec}
 import org.apache.spark.sql.execution.command.DataWritingCommandExec
@@ -232,13 +232,11 @@ class AdaptiveQueryExecSuite
       val shj = findTopLevelGpuShuffleHashJoin(adaptivePlan)
       assert(shj.size == 3)
 
-      // Even with local shuffle reader, the query stage reuse can also work.
+      // one of the GPU exchanges should have been re-used
       val ex = findReusedExchange(adaptivePlan)
       assert(ex.size == 1)
       assert(ShimLoader.getSparkShims.isShuffleExchangeLike(ex.head.child))
-
-      //TODO this fails, so it looks like we might have a bug around re-using GPU exchanges
-      //assert(ex.head.child.isInstanceOf[GpuExec])
+      assert(ex.head.child.isInstanceOf[GpuExec])
 
     }, conf)
   }
@@ -318,32 +316,37 @@ class AdaptiveQueryExecSuite
   }
 
   /** Ported from org.apache.spark.sql.test.SQLTestData */
-  private def testData(spark: SparkSession): DataFrame = {
+  private def testData(spark: SparkSession) {
     import spark.implicits._
     val data: Seq[(Int, String)] = (1 to 100).map(i => (i, i.toString))
     val df = data.toDF("key", "value")
         .repartition(6)
-    df.createOrReplaceTempView("testData")
-    df
-  }
+    registerAsParquetTable(spark, df, "testData")  }
 
   /** Ported from org.apache.spark.sql.test.SQLTestData */
-  private def testData2(spark: SparkSession): DataFrame = {
+  private def testData2(spark: SparkSession) {
     import spark.implicits._
     val df = Seq[(Int, Int)]((1, 1), (1, 2), (2, 1), (2, 2), (3, 1), (3, 2))
       .toDF("a", "b")
       .repartition(2)
-    df.createOrReplaceTempView("testData2")
-    df
+    registerAsParquetTable(spark, df, "testData2")
   }
 
   /** Ported from org.apache.spark.sql.test.SQLTestData */
-  private def testData3(spark: SparkSession): DataFrame = {
+  private def testData3(spark: SparkSession) {
     import spark.implicits._
     val df = Seq[(Int, Option[Int])]((1, None), (2, Some(2)))
       .toDF("a", "b")
         .repartition(6)
-    df.createOrReplaceTempView("testData3")
-    df
+    registerAsParquetTable(spark, df, "testData3")
   }
+
+  private def registerAsParquetTable(spark: SparkSession, df: Dataset[Row], name: String) {
+    val path = new File(TEST_FILES_ROOT, s"$name.parquet").getAbsolutePath
+    df.write
+        .mode(SaveMode.Overwrite)
+        .parquet(path)
+    spark.read.parquet(path).createOrReplaceTempView(name)
+  }
+
 }
