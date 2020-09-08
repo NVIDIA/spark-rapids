@@ -126,10 +126,10 @@ def manager():
                     os.dup2(devnull.fileno(), 0)
                     devnull.close()
 
-                    # GPU context setup
-                    initialize_gpu_mem()
-
                     try:
+                        # GPU context setup
+                        initialize_gpu_mem()
+
                         # Acknowledge that the fork was successful
                         outfile = sock.makefile(mode="wb")
                         write_int(os.getpid(), outfile)
