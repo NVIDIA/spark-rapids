@@ -20,15 +20,15 @@ import java.io.File
 
 import com.nvidia.spark.rapids.AdaptiveQueryExecSuite.TEST_FILES_ROOT
 import org.scalatest.BeforeAndAfterEach
-
 import org.apache.spark.SparkConf
+
 import org.apache.spark.sql.{Dataset, Row, SaveMode, SparkSession}
 import org.apache.spark.sql.execution.{PartialReducerPartitionSpec, SparkPlan}
 import org.apache.spark.sql.execution.adaptive.{AdaptiveSparkPlanExec, AdaptiveSparkPlanHelper, BroadcastQueryStageExec, ShuffleQueryStageExec}
 import org.apache.spark.sql.execution.command.DataWritingCommandExec
 import org.apache.spark.sql.execution.exchange.{Exchange, ReusedExchangeExec}
 import org.apache.spark.sql.execution.joins.SortMergeJoinExec
-import org.apache.spark.sql.functions.when
+import org.apache.spark.sql.functions.{col, when}
 import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.rapids.execution.{GpuCustomShuffleReaderExec, GpuShuffledHashJoinBase}
 
@@ -244,6 +244,61 @@ class AdaptiveQueryExecSuite
     }, conf)
   }
 
+  test("multiple joins") {
+
+    assumeSpark301orLater()
+
+    val conf = new SparkConf()
+        .set(SQLConf.ADAPTIVE_EXECUTION_ENABLED.key, "true")
+        .set(SQLConf.AUTO_BROADCASTJOIN_THRESHOLD.key, "-1") // force SMJ
+        .set(RapidsConf.ENABLE_CAST_STRING_TO_INTEGER.key, "true")
+
+    withGpuSparkSession(spark => {
+      setupTestData(spark)
+      val (plan, adaptivePlan) = runAdaptiveAndVerifyResult(spark,
+        """
+          |WITH t4 AS (
+          |  SELECT * FROM lowercaseData t2 JOIN testData3 t3 ON t2.n = t3.a where t2.n = '1'
+          |)
+          |SELECT * FROM testData
+          |JOIN testData2 t2 ON key = t2.a
+          |JOIN t4 ON t2.b = t4.a
+          |WHERE value = 1
+        """.stripMargin)
+      val smj = findTopLevelSortMergeJoin(plan)
+      assert(smj.size == 3)
+
+      println(adaptivePlan)
+
+      // note that Spark would use BHJ here but we replace with SHJ
+      val bhj = findTopLevelGpuShuffleHashJoin(adaptivePlan)
+      assert(bhj.size == 3)
+
+      // After applied the 'OptimizeLocalShuffleReader' rule, we can convert all the four
+      // shuffle reader to local shuffle reader in the bottom two 'BroadcastHashJoin'.
+      // For the top level 'BroadcastHashJoin', the probe side is not shuffle query stage
+      // and the build side shuffle query stage is also converted to local shuffle reader.
+      checkNumLocalShuffleReaders(adaptivePlan)
+    }, conf)
+  }
+
+  private def checkNumLocalShuffleReaders(
+      plan: SparkPlan, numShufflesWithoutLocalReader: Int = 0): Unit = {
+    val numShuffles = collect(plan) {
+      case s: ShuffleQueryStageExec => s
+    }.length
+
+    val numLocalReaders = collect(plan) {
+      case reader: GpuCustomShuffleReaderExec if reader.isLocalReader => reader
+    }
+    numLocalReaders.foreach { r =>
+      val rdd = r.executeColumnar()
+      val parts = rdd.partitions
+      assert(parts.forall(rdd.preferredLocations(_).nonEmpty))
+    }
+    assert(numShuffles === (numLocalReaders.length + numShufflesWithoutLocalReader))
+  }
+
   def skewJoinTest(fun: SparkSession => Unit) {
 
     assumeSpark301orLater()
@@ -320,14 +375,16 @@ class AdaptiveQueryExecSuite
     testData(spark)
     testData2(spark)
     testData3(spark)
+    lowerCaseData(spark)
   }
 
   /** Ported from org.apache.spark.sql.test.SQLTestData */
   private def testData(spark: SparkSession) {
     import spark.implicits._
     val data: Seq[(Int, String)] = (1 to 100).map(i => (i, i.toString))
-    val df = data.toDF("key", "value")
-        .repartition(6)
+    val df = data
+      .toDF("key", "value")
+      .repartition(col("key"))
     registerAsParquetTable(spark, df, "testData")  }
 
   /** Ported from org.apache.spark.sql.test.SQLTestData */
@@ -335,7 +392,7 @@ class AdaptiveQueryExecSuite
     import spark.implicits._
     val df = Seq[(Int, Int)]((1, 1), (1, 2), (2, 1), (2, 2), (3, 1), (3, 2))
       .toDF("a", "b")
-      .repartition(2)
+      .repartition(col("a"))
     registerAsParquetTable(spark, df, "testData2")
   }
 
@@ -344,8 +401,21 @@ class AdaptiveQueryExecSuite
     import spark.implicits._
     val df = Seq[(Int, Option[Int])]((1, None), (2, Some(2)))
       .toDF("a", "b")
-        .repartition(6)
+      .repartition(col("a"))
     registerAsParquetTable(spark, df, "testData3")
+  }
+
+  /** Ported from org.apache.spark.sql.test.SQLTestData */
+  private def lowerCaseData(spark: SparkSession) {
+    import spark.implicits._
+    val df = Seq[(Int, String)](
+      (1, "a"),
+      (2, "b"),
+      (3, "c"),
+      (4, "d"))
+      .toDF("n", "l")
+      .repartition(col("n"))
+    registerAsParquetTable(spark, df, "lowercaseData")
   }
 
   private def registerAsParquetTable(spark: SparkSession, df: Dataset[Row], name: String) {
