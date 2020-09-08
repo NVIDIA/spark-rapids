@@ -584,11 +584,8 @@ abstract class FileParquetPartitionReaderBase(
     withResource(new NvtxWithMetrics("Buffer file split", NvtxColor.YELLOW,
       metrics("bufferTime"))) { _ =>
       withResource(filePath.getFileSystem(conf).open(filePath)) { in =>
-        var succeeded = false
         val estTotalSize = calculateParquetOutputSize(blocks, clippedSchema)
-        val hmb =
-          HostMemoryBuffer.allocate(estTotalSize)
-        try {
+        closeOnExcept(HostMemoryBuffer.allocate(estTotalSize)) { hmb =>
           val out = new HostMemoryOutputStream(hmb)
           out.write(ParquetPartitionReader.PARQUET_MAGIC)
           val outputBlocks = copyBlocksData(in, out, blocks)
@@ -597,17 +594,12 @@ abstract class FileParquetPartitionReaderBase(
 
           BytesUtils.writeIntLittleEndian(out, (out.getPos - footerPos).toInt)
           out.write(ParquetPartitionReader.PARQUET_MAGIC)
-          succeeded = true
           // check we didn't go over memory
           if (out.getPos > estTotalSize) {
             throw new QueryExecutionException(s"Calculated buffer size $estTotalSize is to " +
               s"small, actual written: ${out.getPos}")
           }
           (hmb, out.getPos)
-        } finally {
-          if (!succeeded) {
-            hmb.close()
-          }
         }
       }
     }
