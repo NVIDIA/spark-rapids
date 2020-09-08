@@ -36,12 +36,11 @@ import org.apache.spark.sql.execution.datasources.v2.orc.OrcScan
 import org.apache.spark.sql.execution.datasources.v2.parquet.ParquetScan
 import org.apache.spark.sql.execution.joins.{BroadcastHashJoinExec, BroadcastNestedLoopJoinExec, HashJoin, SortMergeJoinExec}
 import org.apache.spark.sql.execution.joins.ShuffledHashJoinExec
-import org.apache.spark.sql.rapids.{GpuFileSourceScanExec, GpuTimeSub, ShuffleManagerShimBase}
+import org.apache.spark.sql.rapids.{GpuFileSourceScanExec, ShuffleManagerShimBase}
 import org.apache.spark.sql.rapids.execution.GpuBroadcastNestedLoopJoinExecBase
 import org.apache.spark.sql.rapids.shims.spark310._
 import org.apache.spark.sql.types._
 import org.apache.spark.storage.{BlockId, BlockManagerId}
-import org.apache.spark.unsafe.types.CalendarInterval
 
 class Spark310Shims extends Spark301Shims {
 
@@ -102,30 +101,7 @@ class Spark310Shims extends Spark301Shims {
   }
 
   override def getExprs: Map[Class[_ <: Expression], ExprRule[_ <: Expression]] = {
-    val exprs310: Map[Class[_ <: Expression], ExprRule[_ <: Expression]] = Seq(
-      GpuOverrides.expr[TimeAdd](
-        "Subtracts interval from timestamp",
-        (a, conf, p, r) => new BinaryExprMeta[TimeAdd](a, conf, p, r) {
-          override def tagExprForGpu(): Unit = {
-            a.interval match {
-              case Literal(intvl: CalendarInterval, DataTypes.CalendarIntervalType) =>
-                if (intvl.months != 0) {
-                  willNotWorkOnGpu("interval months isn't supported")
-                }
-              case _ =>
-                willNotWorkOnGpu("only literals are supported for intervals")
-            }
-            if (ZoneId.of(a.timeZoneId.get).normalized() != GpuOverrides.UTC_TIMEZONE_ID) {
-              willNotWorkOnGpu("Only UTC zone id is supported")
-            }
-          }
-
-          override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression =
-            GpuTimeSub(lhs, rhs)
-        }
-      )
-    ).map(r => (r.getClassFor.asSubclass(classOf[Expression]), r)).toMap
-    exprs310 ++ super.exprs301
+    super.exprs301
   }
 
   override def getExecs: Map[Class[_ <: SparkPlan], ExecRule[_ <: SparkPlan]] = {

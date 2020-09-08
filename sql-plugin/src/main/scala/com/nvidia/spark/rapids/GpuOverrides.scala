@@ -47,7 +47,7 @@ import org.apache.spark.sql.rapids._
 import org.apache.spark.sql.rapids.catalyst.expressions.GpuRand
 import org.apache.spark.sql.rapids.execution.{GpuBroadcastMeta, GpuBroadcastNestedLoopJoinMeta, GpuCustomShuffleReaderExec, GpuShuffleMeta}
 import org.apache.spark.sql.types._
-import org.apache.spark.unsafe.types.UTF8String
+import org.apache.spark.unsafe.types.{CalendarInterval, UTF8String}
 
 /**
  * Base class for all ReplacementRules
@@ -907,6 +907,28 @@ object GpuOverrides {
           GpuDateDiff(lhs, rhs)
         }
     }),
+    expr[TimeAdd](
+      "Adds interval to timestamp",
+      (a, conf, p, r) => new BinaryExprMeta[TimeAdd](a, conf, p, r) {
+        override def tagExprForGpu(): Unit = {
+          a.interval match {
+            case Literal(intvl: CalendarInterval, DataTypes.CalendarIntervalType) =>
+              if (intvl.months != 0) {
+                willNotWorkOnGpu("interval months isn't supported")
+              }
+            case _ =>
+              willNotWorkOnGpu("only literals are supported for intervals")
+          }
+          if (ZoneId.of(a.timeZoneId.get).normalized() != GpuOverrides.UTC_TIMEZONE_ID) {
+            willNotWorkOnGpu("Only UTC zone id is supported")
+          }
+        }
+
+        override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression = {
+          GpuTimeAdd(lhs, rhs)
+        }
+      }
+    ),
     expr[ToUnixTimestamp](
       "Returns the UNIX timestamp of the given time",
       (a, conf, p, r) => new UnixTimeExprMeta[ToUnixTimestamp](a, conf, p, r){
