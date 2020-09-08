@@ -493,7 +493,8 @@ The _GPU Scheduling for Pandas UDF_ is the support for [UDF(user defined functio
 
 To enable _GPU Scheduling for Pandas UDF_, you need to configure your spark job with extra settings.
 
-1. Currently the python files are packed into the dist jar. 
+1. Make sure GPU exclusive mode is disabled.
+2. Currently the python files are packed into the dist jar. 
 
 
     On Yarn, you need to add
@@ -507,9 +508,10 @@ To enable _GPU Scheduling for Pandas UDF_, you need to configure your spark job 
     ```shell
     ...
     --conf spark.executorEnv.PYTHONPATH=${SPARK_RAPIDS_PLUGIN_JAR}
+    --py-files ${SPARK_RAPIDS_PLUGIN_JAR}
     ```
 
-2. Enable GPU Scheduling for Pandas UDF.
+3. Enable GPU Scheduling for Pandas UDF.
 
     ```shell
     ...
@@ -522,9 +524,10 @@ To enable _GPU Scheduling for Pandas UDF_, you need to configure your spark job 
     --conf spark.rapids.sql.exec.WindowInPandasExec=true
     ```
 
-Please note the _GPU Scheduling for Pandas UDF_ only support scalar udf and Scalar iterator udf currently. 
+Please note the data transfer acceleration only support scalar UDF and Scalar iterator UDF currently. 
 You could choose the exec you need to enable.
 
+To find details on the Python configuration, please see the [RAPIDS Accelerator for Apache Spark Configuration Guide](../configs.md).
 
 
 
