@@ -573,9 +573,9 @@ final class RuleNotFoundSparkPlanMeta[INPUT <: SparkPlan](
 }
 
 /**
- * Metadata for `SparkPlan` that should not be replaced.
+ * Metadata for `SparkPlan` that should not be replaced or have any kind of warning for
  */
-final class DoNotReplaceSparkPlanMeta[INPUT <: SparkPlan](
+final class DoNotReplaceOrWarnSparkPlanMeta[INPUT <: SparkPlan](
     plan: INPUT,
     conf: RapidsConf,
     parent: Option[RapidsMeta[_, _, _]])
