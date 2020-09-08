@@ -321,13 +321,6 @@ object RapidsConf {
     .booleanConf
     .createWithDefault(true)
 
-  val UVM_ENABLED = conf("spark.rapids.memory.uvm.enabled")
-    .doc("UVM or universal memory can allow main host memory to act essentially as swap " +
-      "for device(GPU) memory. This allows the GPU to process more data than fits in memory, but " +
-      "can result in slower processing. This is an experimental feature.")
-    .booleanConf
-    .createWithDefault(false)
-
   val CONCURRENT_GPU_TASKS = conf("spark.rapids.sql.concurrentGpuTasks")
       .doc("Set the number of tasks that can execute concurrently per GPU. " +
           "Tasks may temporarily block when the number of concurrent tasks in the executor " +
@@ -363,6 +356,14 @@ object RapidsConf {
     .createWithDefault(Integer.MAX_VALUE)
 
   // Internal Features
+
+  val UVM_ENABLED = conf("spark.rapids.memory.uvm.enabled")
+    .doc("UVM or universal memory can allow main host memory to act essentially as swap " +
+      "for device(GPU) memory. This allows the GPU to process more data than fits in memory, but " +
+      "can result in slower processing. This is an experimental feature.")
+    .internal()
+    .booleanConf
+    .createWithDefault(false)
 
   val EXPORT_COLUMNAR_RDD = conf("spark.rapids.sql.exportColumnarRdd")
     .doc("Spark has no simply way to export columnar RDD data.  This turns on special " +
@@ -698,7 +699,7 @@ object RapidsConf {
         |On startup use: `--conf [conf key]=[conf value]`. For example:
         |
         |```
-        |${SPARK_HOME}/bin/spark --jars 'rapids-4-spark_2.12-0.2.0-SNAPSHOT.jar,cudf-0.15-SNAPSHOT-cuda10-1.jar' \
+        |${SPARK_HOME}/bin/spark --jars 'rapids-4-spark_2.12-0.2.0-SNAPSHOT.jar,cudf-0.15-cuda10-1.jar' \
         |--conf spark.plugins=com.nvidia.spark.SQLPlugin \
         |--conf spark.rapids.sql.incompatibleOps.enabled=true
         |```

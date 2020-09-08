@@ -51,7 +51,13 @@ class GpuWindowExpressionMeta(
     windowFunction match {
       case aggregateExpression : AggregateExpression =>
         aggregateExpression.aggregateFunction match {
-          case Count(_) | Sum(_) | Min(_) | Max(_) => // Supported.
+          case Count(exp) => {
+            if (!exp.forall(x => x.isInstanceOf[Literal])) {
+              willNotWorkOnGpu(s"Currently, only COUNT(1) and COUNT(*) are supported. " +
+                s"COUNT($exp) is not supported in windowing.")
+            }
+          }
+          case Sum(_) | Min(_) | Max(_) => // Supported.
           case other: AggregateFunction =>
             willNotWorkOnGpu(s"AggregateFunction ${other.prettyName} " +
               s"is not supported in windowing.")

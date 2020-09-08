@@ -27,7 +27,6 @@ class WindowFunctionSuite extends SparkQueryCompareTestSuite {
       sum("dollars").over(windowSpec),
       min("dollars").over(windowSpec),
       max("dollars").over(windowSpec),
-      count("dollars").over(windowSpec),
       count("*").over(windowSpec)
     )
 
@@ -36,7 +35,6 @@ class WindowFunctionSuite extends SparkQueryCompareTestSuite {
       sum("dollars").over(windowSpec),
       min("dollars").over(windowSpec),
       max("dollars").over(windowSpec),
-      count("dollars").over(windowSpec),
       row_number().over(windowSpec),
       count("*").over(windowSpec)
     )
@@ -130,7 +128,7 @@ class WindowFunctionSuite extends SparkQueryCompareTestSuite {
            |   SUM(dollars)   OVER $windowClause,
            |   MIN(dollars)   OVER $windowClause,
            |   MAX(dollars)   OVER $windowClause,
-           |   COUNT(dollars) OVER $windowClause,
+           |   COUNT(1) OVER $windowClause,
            |   COUNT(*)       OVER $windowClause
            | FROM mytable
            |
@@ -403,6 +401,34 @@ class WindowFunctionSuite extends SparkQueryCompareTestSuite {
            |  MAX(dateLong) OVER (PARTITION BY uid   ORDER BY dateLong                     ASC  ROWS  BETWEEN CURRENT ROW and UNBOUNDED FOLLOWING) sixth
            | FROM mytable
            |""".stripMargin)
+      // scalastyle:on line.size.limit
+    }
+  }
+
+  ALLOW_NON_GPU_testSparkResultsAreEqual(
+    "[Window] [RANGE] [ ASC] [-2 DAYS, 3 DAYS] ",
+    windowTestDfOrc,
+    Seq("AggregateExpression",
+      "Alias",
+      "AttributeReference",
+      "Count",
+      "Literal",
+      "SpecifiedWindowFrame",
+      "WindowExec",
+      "WindowExpression",
+      "WindowSpecDefinition")) {
+    (df : DataFrame) => {
+      df.createOrReplaceTempView("mytable")
+      // scalastyle:off line.size.limit
+      df.sparkSession.sql(
+        """
+          | SELECT COUNT(dollars+1) OVER
+          |   (PARTITION BY uid
+          |    ORDER BY CAST(dateLong AS TIMESTAMP) ASC
+          |    RANGE BETWEEN INTERVAL 2 DAYS PRECEDING AND INTERVAL 3 DAYS FOLLOWING)
+          | FROM mytable
+          |
+          |""".stripMargin)
       // scalastyle:on line.size.limit
     }
   }

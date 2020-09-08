@@ -19,7 +19,7 @@ from data_gen import *
 from pyspark.sql.types import *
 from marks import *
 import pyspark.sql.functions as f
-from spark_session import with_spark_session
+from spark_session import with_spark_session, is_spark_300
 
 _no_nans_float_conf = {'spark.rapids.sql.variableFloatAgg.enabled': 'true',
                        'spark.rapids.sql.hasNans': 'false',
@@ -218,32 +218,10 @@ def test_hash_multiple_mode_query(data_gen, conf):
                  f.countDistinct('b'),
                  f.sum('a'),
                  f.min('a'),
-                 f.max('a')
-                 # Add the following line back in
-                 # after https://github.com/NVIDIA/spark-rapids/issues/153 is fixed.
-                 # f.countDistinct('c')
-                ), conf=conf)
-
-
-# Remove this test and add back the countDistinct mentioned above
-# once https://github.com/NVIDIA/spark-rapids/issues/153 is fixed.
-@allow_non_gpu(
-    'HashAggregateExec', 'AggregateExpression',
-    'AttributeReference', 'Alias', 'Sum', 'Count', 'Max', 'Min', 'Average', 'Cast',
-    'KnownFloatingPointNormalized', 'NormalizeNaNAndZero', 'GreaterThan', 'Literal', 'If',
-    'EqualTo', 'First', 'SortAggregateExec', 'Coalesce')
-@ignore_order
-@pytest.mark.xfail(reason='https://github.com/NVIDIA/spark-rapids/issues/153')
-@pytest.mark.parametrize('data_gen', [_longs_with_nulls], ids=idfn)
-def test_hash_multiple_distincts_fail(data_gen):
-    print_params(data_gen)
-    assert_gpu_and_cpu_are_equal_collect(
-        lambda spark: gen_df(spark, data_gen, length=3)
-            .groupby('a')
-            .agg(f.count('a'),
-                 f.countDistinct('b'),
+                 f.max('a'),
+                 f.sumDistinct('b'),
                  f.countDistinct('c')
-                ), conf=_no_nans_float_conf_partial)
+                ), conf=conf)
 
 
 @approximate_float
@@ -257,6 +235,44 @@ def test_hash_multiple_mode_query_avg_distincts(data_gen, conf):
         lambda spark: gen_df(spark, data_gen, length=100)
             .selectExpr('avg(distinct a)', 'avg(distinct b)','avg(distinct c)'),
         conf=conf)
+
+
+@approximate_float
+@ignore_order
+@incompat
+@pytest.mark.parametrize('data_gen', _init_list_no_nans, ids=idfn)
+@pytest.mark.parametrize('conf', get_params(_confs, params_markers_for_confs),
+                         ids=idfn)
+def test_hash_query_multiple_distincts_with_non_distinct(data_gen, conf):
+    assert_gpu_and_cpu_are_equal_sql(
+        lambda spark : gen_df(spark, data_gen, length=100),
+        "hash_agg_table",
+        'select avg(a),' +
+        'avg(distinct b),' +
+        'avg(distinct c),' +
+        'sum(distinct a),' +
+        'count(distinct b),' +
+        'count(a),' +
+        'sum(a),' +
+        'min(a),'+
+        'max(a) from hash_agg_table group by a',
+        conf)
+
+
+@approximate_float
+@ignore_order
+@incompat
+@pytest.mark.parametrize('data_gen', _init_list_no_nans, ids=idfn)
+@pytest.mark.parametrize('conf', get_params(_confs, params_markers_for_confs),
+                         ids=idfn)
+def test_hash_query_max_with_multiple_distincts(data_gen, conf):
+    assert_gpu_and_cpu_are_equal_sql(
+        lambda spark : gen_df(spark, data_gen, length=100),
+        "hash_agg_table",
+        'select max(c),' +
+        'sum(distinct a),' +
+        'count(distinct b) from hash_agg_table group by a',
+        conf)
 
 
 @ignore_order
@@ -316,7 +332,7 @@ def test_hash_agg_with_nan_keys(data_gen):
 
 
 @pytest.mark.xfail(
-    condition=with_spark_session(lambda spark : spark.sparkContext.version == "3.0.0"),
+    condition=with_spark_session(lambda spark : is_spark_300()),
     reason="[SPARK-32038][SQL] NormalizeFloatingNumbers should also work on distinct aggregate "
            "(https://github.com/apache/spark/pull/28876) "
            "Fixed in later Apache Spark releases.")
