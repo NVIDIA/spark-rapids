@@ -650,7 +650,8 @@ abstract class FileParquetPartitionReaderBase(
 
 }
 
-// Singleton threadpool that is used across all the tasks
+// Singleton threadpool that is used across all the tasks.
+// Please note that the TaskContext is not set in these threads and should not be used.
 object MultiFileThreadPoolFactory {
 
   private var threadPool: Option[ThreadPoolExecutor] = None
@@ -743,6 +744,8 @@ class MultiFileParquetPartitionReader(
      * If there was an error then the error field is set. If there were no blocks the buffer
      * is returned as null.  If there were no columns but rows (count() operation) then the
      * buffer is null and the size is the number of rows.
+     *
+     * Note that the TaskContext is not set in these threads and should not be used.
      */
     override def call(): HostMemoryBuffersWithMetaData = {
       val hostBuffers = new ArrayBuffer[(HostMemoryBuffer, Long)]
