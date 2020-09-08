@@ -28,14 +28,14 @@ import org.apache.spark.sql.rapids.execution.TrampolineUtil
  * return the same answer given any input (i.e. false negatives are possible).
  *
  * The following rules are applied:
- *  - Names and nullability hints for [[org.apache.spark.sql.types.DataType]]s are stripped.
- *  - Names for [[GetStructField]] are stripped.
- *  - TimeZoneId for [[Cast]] and [[AnsiCast]] are stripped if `needsTimeZone` is false.
- *  - Commutative and associative operations ([[Add]] and [[Multiply]]) have their children ordered
+ *  - Names and nullability hints for `org.apache.spark.sql.types.DataTypes` are stripped.
+ *  - Names for `GetStructField` are stripped.
+ *  - TimeZoneId for `Cast` and `AnsiCast` are stripped if `needsTimeZone` is false.
+ *  - Commutative and associative operations (`Add` and `Multiply`) have their children ordered
  *    by `hashCode`.
- *  - [[EqualTo]] and [[EqualNullSafe]] are reordered by `hashCode`.
- *  - Other comparisons ([[GreaterThan]], [[LessThan]]) are reversed by `hashCode`.
- *  - Elements in [[In]] are reordered by `hashCode`.
+ *  - `EqualTo` and `EqualNullSafe` are reordered by hashCode.
+ *  - Other comparisons (`GreaterThan`, `LessThan`) are reversed by `hashCode`.
+ *  - Elements in `In` are reordered by `hashCode`.
  *
  *  This is essentially a copy of the Spark `Canonicalize` class but updated for GPU operators
  */
