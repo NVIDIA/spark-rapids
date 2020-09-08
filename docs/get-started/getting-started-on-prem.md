@@ -483,7 +483,7 @@ The GPU Scheduling is a quite beta feature!
 
 ---
 
-The _GPU Scheduling for Pandas UDF_ is the support for [UDF(user defined function)](https://spark.apache.org/docs/latest/api/python/pyspark.sql.html?highlight=udf#pyspark.sql.functions.udf). The  _GPU Scheduling for Pandas UDF_ has two components: 
+The _GPU Scheduling for Pandas UDF_  is one of the GPU things support for [UDF(user defined function)](https://spark.apache.org/docs/3.0.0/sql-pyspark-pandas-with-arrow.html). The  _GPU Scheduling for Pandas UDF_ has two components: 
 
 - **Share GPU with JVM**: Let the Python process share JVM GPU. The Python process could run on the same GPU with JVM.
 
