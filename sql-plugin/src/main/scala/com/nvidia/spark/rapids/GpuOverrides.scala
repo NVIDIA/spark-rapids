@@ -908,7 +908,7 @@ object GpuOverrides {
         }
     }),
     expr[TimeAdd](
-      "Adds interval from timestamp",
+      "Adds interval to timestamp",
       (a, conf, p, r) => new BinaryExprMeta[TimeAdd](a, conf, p, r) {
         override def tagExprForGpu(): Unit = {
           a.interval match {
