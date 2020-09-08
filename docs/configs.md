@@ -198,6 +198,7 @@ Name | SQL Function(s) | Description | Default Value | Notes
 <a name="sql.expression.Subtract"></a>spark.rapids.sql.expression.Subtract|`-`|Subtraction|true|None|
 <a name="sql.expression.Tan"></a>spark.rapids.sql.expression.Tan|`tan`|Tangent|true|None|
 <a name="sql.expression.Tanh"></a>spark.rapids.sql.expression.Tanh|`tanh`|Hyperbolic tangent|true|None|
+<a name="sql.expression.TimeAdd"></a>spark.rapids.sql.expression.TimeAdd| |Adds interval to timestamp|true|None|
 <a name="sql.expression.TimeSub"></a>spark.rapids.sql.expression.TimeSub| |Subtracts interval from timestamp|true|None|
 <a name="sql.expression.ToDegrees"></a>spark.rapids.sql.expression.ToDegrees|`degrees`|Converts radians to degrees|true|None|
 <a name="sql.expression.ToRadians"></a>spark.rapids.sql.expression.ToRadians|`radians`|Converts degrees to radians|true|None|
