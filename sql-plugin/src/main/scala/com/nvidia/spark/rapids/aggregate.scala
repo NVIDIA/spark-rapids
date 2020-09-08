@@ -247,7 +247,7 @@ class GpuSortAggregateMeta(
       }
     }
 
-    // make sure this is last check - if this is SortAggregate, the children can be Sorts and we
+    // make sure this is the last check - if this is SortAggregate, the children can be Sorts and we
     // want to validate they can run on GPU and remove them before replacing this with a
     // HashAggregate.  We don't want to do this if there is a first or last aggregate,
     // because dropping the sort will make them no longer deterministic.
