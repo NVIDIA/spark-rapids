@@ -36,6 +36,7 @@ class RapidsShuffleInternalManager(conf: SparkConf, isDriver: Boolean)
       endPartition: Int,
       context: TaskContext,
       metrics: ShuffleReadMetricsReporter): ShuffleReader[K, C] = {
-    getReaderInternal(handle, 0, Int.MaxValue, startPartition, endPartition, context, metrics)
+    getReaderInternal(handle, startMapIndex, endMapIndex, startPartition, endPartition, context,
+      metrics)
   }
 }
