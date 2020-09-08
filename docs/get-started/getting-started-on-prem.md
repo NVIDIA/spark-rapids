@@ -141,7 +141,7 @@ Now for each worker node:
       serially provide a password for each worker.
     - Run `$SPARK_HOME/sbin/start-slaves.sh`
 - For a single worker:
-  - `$SPARK_HOME/bin/start-slave.sh spark://${MASTER_HOST}:7077`
+  - `$SPARK_HOME/sbin/start-slave.sh spark://${MASTER_HOST}:7077`
   
 Now you can go to the master UI at `http://${MASTER_HOST}:8080` and verify all the workers have
 started.
