@@ -716,7 +716,7 @@ class MultiFileParquetPartitionReader(
 
   case class HostMemoryBuffersWithMetaData(isCorrectRebaseMode: Boolean, clippedSchema: MessageType,
       partValues: InternalRow, memBuffersAndSizes: Array[(HostMemoryBuffer, Long)],
-      fileName: String, fileStart: Long, fileLength: Long, error: Option[Exception])
+      fileName: String, fileStart: Long, fileLength: Long)
 
   private var filesToRead = 0
   private var currentFileHostBuffers: Option[HostMemoryBuffersWithMetaData] = None
@@ -747,7 +747,7 @@ class MultiFileParquetPartitionReader(
           // no blocks so return null buffer and size 0
           return HostMemoryBuffersWithMetaData(fileBlockMeta.isCorrectedRebaseMode,
             fileBlockMeta.schema, fileBlockMeta.partValues, Array((null, 0)), file.filePath,
-            file.start, file.length, None)
+            file.start, file.length)
         }
         blockChunkIter = fileBlockMeta.blocks.iterator.buffered
         if (isDone) {
@@ -755,14 +755,14 @@ class MultiFileParquetPartitionReader(
           HostMemoryBuffersWithMetaData(
             fileBlockMeta.isCorrectedRebaseMode,
             fileBlockMeta.schema, fileBlockMeta.partValues, Array((null, 0)),
-            file.filePath, file.start, file.length, None)
+            file.filePath, file.start, file.length)
         } else {
           if (readDataSchema.isEmpty) {
             val numRows = fileBlockMeta.blocks.map(_.getRowCount).sum.toInt
             // overload size to be number of rows with null buffer
             HostMemoryBuffersWithMetaData(fileBlockMeta.isCorrectedRebaseMode,
               fileBlockMeta.schema, fileBlockMeta.partValues, Array((null, numRows)),
-              file.filePath, file.start, file.length, None)
+              file.filePath, file.start, file.length)
 
           } else {
             val filePath = new Path(new URI(file.filePath))
@@ -777,11 +777,11 @@ class MultiFileParquetPartitionReader(
               hostBuffers.foreach(_._1.close())
               HostMemoryBuffersWithMetaData(fileBlockMeta.isCorrectedRebaseMode,
                 fileBlockMeta.schema, fileBlockMeta.partValues, Array((null, 0)),
-                file.filePath, file.start, file.length, None)
+                file.filePath, file.start, file.length)
             } else {
               HostMemoryBuffersWithMetaData(fileBlockMeta.isCorrectedRebaseMode,
                 fileBlockMeta.schema, fileBlockMeta.partValues, hostBuffers.toArray,
-                file.filePath, file.start, file.length, None)
+                file.filePath, file.start, file.length)
             }
           }
         }
@@ -858,11 +858,6 @@ class MultiFileParquetPartitionReader(
         currentFileHostBuffers = None
         if (filesToRead > 0 && !isDone) {
           val fileBufsAndMeta = tasks.poll.get()
-          /* if (fileBufsAndMeta.error.isDefined) {
-            logError(s"Exception while reading file ${fileBufsAndMeta.fileName} " +
-              s"at start ${fileBufsAndMeta.fileStart} in thread", fileBufsAndMeta.error.get)
-            throw fileBufsAndMeta.error.get
-          } */
           filesToRead -= 1
           InputFileUtils.setInputFileBlock(fileBufsAndMeta.fileName, fileBufsAndMeta.fileStart,
             fileBufsAndMeta.fileLength)
