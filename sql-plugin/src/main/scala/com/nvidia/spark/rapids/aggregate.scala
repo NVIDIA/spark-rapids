@@ -30,7 +30,7 @@ import org.apache.spark.sql.catalyst.expressions.{Alias, Attribute, AttributeRef
 import org.apache.spark.sql.catalyst.expressions.aggregate._
 import org.apache.spark.sql.catalyst.plans.physical.{AllTuples, ClusteredDistribution, Distribution, HashPartitioning, Partitioning, UnspecifiedDistribution}
 import org.apache.spark.sql.catalyst.util.truncatedString
-import org.apache.spark.sql.execution.{ExplainUtils, SparkPlan, UnaryExecNode}
+import org.apache.spark.sql.execution.{ExplainUtils, SortExec, SparkPlan, UnaryExecNode}
 import org.apache.spark.sql.execution.aggregate.{HashAggregateExec, SortAggregateExec}
 import org.apache.spark.sql.execution.metric.{SQLMetric, SQLMetrics}
 import org.apache.spark.sql.rapids.{CudfAggregate, GpuAggregateExpression, GpuDeclarativeAggregate}
@@ -246,6 +246,34 @@ class GpuSortAggregateMeta(
             s"'complete', or 'all'")
       }
     }
+
+    // make sure this is the last check - if this is SortAggregate, the children can be Sorts and we
+    // want to validate they can run on GPU and remove them before replacing this with a
+    // HashAggregate.  We don't want to do this if there is a first or last aggregate,
+    // because dropping the sort will make them no longer deterministic.
+    // In the future we might be able to pull the sort functionality into the aggregate so
+    // we can sort a single batch at a time and sort the combined result as well which would help
+    // with data skew.
+    val hasFirstOrLast = agg.aggregateExpressions.exists { agg =>
+      agg.aggregateFunction match {
+        case _: First => true
+        case _: Last => true
+        case _ => false
+      }
+    }
+    if (canThisBeReplaced && !hasFirstOrLast) {
+      childPlans.foreach { plan =>
+        if (plan.wrapped.isInstanceOf[SortExec]) {
+          if (!plan.canThisBeReplaced) {
+            willNotWorkOnGpu(s"can't replace sortAggregate because one of the SortExec's before " +
+              s"can't be replaced.")
+          } else {
+            plan.shouldBeRemoved("removing SortExec as part replacing sortAggregate with " +
+              s"hashAggregate")
+          }
+        }
+      }
+    }
   }
 
   override def convertToGpu(): GpuExec = {
@@ -260,7 +288,6 @@ class GpuSortAggregateMeta(
       resultExpressions.map(_.convertToGpu()).asInstanceOf[Seq[NamedExpression]],
       childPlans(0).convertIfNeeded())
   }
-
 }
 
 /**
