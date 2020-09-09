@@ -128,8 +128,7 @@ class Spark310Shims extends Spark301Shims {
               GpuFileSourceScanExec.convertFileFormat(wrapped.relation.fileFormat),
               options)(sparkSession)
             val canUseSmallFileOpt = newRelation.fileFormat match {
-              case _: ParquetFileFormat =>
-                GpuParquetScanBase.canUseSmallFileParquetOpt(conf, options, sparkSession)
+              case _: ParquetFileFormat => conf.isParquetMultiThreadReadEnabled
               case _ => false
             }
             GpuFileSourceScanExec(
@@ -178,8 +177,6 @@ class Spark310Shims extends Spark301Shims {
         override def tagSelfForGpu(): Unit = GpuParquetScanBase.tagSupport(this)
 
         override def convertToGpu(): Scan = {
-          val canUseSmallFileOpt = GpuParquetScanBase.canUseSmallFileParquetOpt(conf,
-            a.options.asCaseSensitiveMap().asScala.toMap, a.sparkSession)
           GpuParquetScan(a.sparkSession,
             a.hadoopConf,
             a.fileIndex,
@@ -191,7 +188,7 @@ class Spark310Shims extends Spark301Shims {
             a.partitionFilters,
             a.dataFilters,
             conf,
-            canUseSmallFileOpt)
+            conf.isParquetMultiThreadReadEnabled)
         }
       }),
     GpuOverrides.scan[OrcScan](
