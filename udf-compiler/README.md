@@ -10,16 +10,10 @@ From `rapids-plugin-4-spark` root directory, use this command to run the `Opcode
 mvn test -DwildcardSuites=com.nvidia.spark.OpcodeSuite
 ```
 
-How to run spark shell
-----------------------
+How to run
+----------
 
-To run the spark-shell, you need a `SPARK_HOME`, the `cudf-0.15-cuda10-1.jar`, and the jars produced in the plugin. The cudf jar will be downloaded when mvn test (or package) is run into the ~/.m2 directory. It's easy to get the jar from this directory, and place somewhere accessible. In the case below, the cudf jar is assumed to be in a directory `$JARS`:
+The UDF compiler is included in the rapids-4-spark jar that is produced by the `dist` maven project.  Set up your cluster to run the RAPIDS Accelerator for Apache Spark
+and set the spark config `spark.sql.extensions` to include `com.nvidia.spark.udf.Plugin`.
 
-```
-export SPARK_HOME=[your spark distribution directory]
-export JARS=[path to cudf 0.15 jar]
-
-$SPARK_HOME/bin/spark-shell \
---jars $JARS/cudf-0.15-cuda10-1.jar,udf-compiler/target/rapids-4-spark-udf_2.12-0.2.0-SNAPSHOT.jar,sql-plugin/target/rapids-4-spark-sql_2.12-0.2.0-SNAPSHOT.jar \
---conf spark.sql.extensions="com.nvidia.spark.SQLPlugin,com.nvidia.spark.udf.Plugin"
-```
+The plugin is still disabled by default and you will need to set `spark.rapids.sql.udfCompiler.enabled` to `true` to enable it. 
