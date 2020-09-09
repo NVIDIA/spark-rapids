@@ -107,11 +107,6 @@ object GpuPythonHelper extends Logging {
         !System.getProperty("os.name").startsWith("Windows") && useDaemonEnabled
       }
       if (useDaemon) {
-        if (conf.get(PYTHON_WORKER_REUSE)) {
-          logWarning(s"Setting '${PYTHON_WORKER_REUSE.key}' to false is recommended when" +
-            s" running Pandas UDF on the GPU, but found it is set to true, making the GPU memory" +
-            s" may not be released in time." )
-        }
         val oDaemon = conf.get(PYTHON_DAEMON_MODULE)
         if (oDaemon.nonEmpty) {
           val daemon = oDaemon.get
