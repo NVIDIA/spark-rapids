@@ -51,9 +51,9 @@ pipeline {
     }
 
     stages {
-        stage('IT on 3.0.1-SNAPSHOT') {
+        stage('IT on 3.0.1') {
             agent { label 'docker-gpu' }
-            environment {SPARK_VER='3.0.1-SNAPSHOT'}
+            environment {SPARK_VER='3.0.1'}
             steps {
                 script {
                     def CUDA_NAME=sh(returnStdout: true,
