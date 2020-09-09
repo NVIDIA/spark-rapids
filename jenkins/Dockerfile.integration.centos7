@@ -57,9 +57,8 @@ RUN conda install -c rapidsai-nightly -c nvidia -c conda-forge \
 RUN conda install spacy && \
     python -m spacy download en_core_web_sm
 
-RUN conda install -c anaconda  pytest requests pandas pyarrow
+RUN conda install -c anaconda pytest requests pandas pyarrow
 RUN conda install -c conda-forge sre_yield
-RUN conda clean -a
 
 # Set ENV for mvn
 ENV JAVA_HOME "/usr/lib/jvm/java-1.8.0-openjdk"
