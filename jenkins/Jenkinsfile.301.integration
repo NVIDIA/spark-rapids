@@ -38,7 +38,7 @@ pipeline {
     parameters {
         string(name: 'OVERWRITE_PARAMS', defaultValue: '',
             description: 'parameters format XXX_VER=xxx;YYY_VER=yyy;')
-        string(name: 'REF', defaultValue: 'branch-0.2', description: 'Commit to build')
+        string(name: 'REF', defaultValue: 'branch-0.3', description: 'Commit to build')
     }
 
     environment {
