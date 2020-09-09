@@ -119,4 +119,5 @@ def main():
     auto_merge(number, sha)
 
 
-main()
+if __name__ == '__main__':
+    main()
