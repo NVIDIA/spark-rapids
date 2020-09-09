@@ -22,7 +22,7 @@ import org.mockito.ArgumentMatchers._
 import org.mockito.Mockito._
 
 import org.apache.spark.TaskContext
-import org.apache.spark.shuffle.RapidsShuffleFetchFailedException
+import org.apache.spark.shuffle.{RapidsShuffleFetchFailedException, RapidsShuffleTimeoutException}
 import org.apache.spark.sql.rapids.ShuffleMetricsUpdater
 import org.apache.spark.sql.vectorized.{ColumnarBatch, ColumnVector}
 
@@ -35,7 +35,8 @@ class RapidsShuffleIteratorSuite extends RapidsShuffleTestHelper {
       null,
       mockTransport,
       blocksByAddress,
-      null)
+      null,
+      mockCatalog)
 
     when(mockTransaction.getStatus).thenReturn(TransactionStatus.Error)
 
@@ -53,10 +54,11 @@ class RapidsShuffleIteratorSuite extends RapidsShuffleTestHelper {
 
       val cl = new RapidsShuffleIterator(
         RapidsShuffleTestHelper.makeMockBlockManager("1", "1"),
-        null,
+        mockConf,
         mockTransport,
         blocksByAddress,
-        null)
+        null,
+        mockCatalog)
 
       val ac = ArgumentCaptor.forClass(classOf[RapidsShuffleFetchHandler])
       when(mockTransport.makeClient(any(), any())).thenReturn(client)
@@ -73,6 +75,29 @@ class RapidsShuffleIteratorSuite extends RapidsShuffleTestHelper {
     }
   }
 
+  test("a timeout while waiting for batches raises a fetch failure") {
+    val blocksByAddress = RapidsShuffleTestHelper.getBlocksByAddress
+
+    val cl = spy(new RapidsShuffleIterator(
+      RapidsShuffleTestHelper.makeMockBlockManager("1", "1"),
+      mockConf,
+      mockTransport,
+      blocksByAddress,
+      null,
+      mockCatalog))
+
+    val ac = ArgumentCaptor.forClass(classOf[RapidsShuffleFetchHandler])
+    when(mockTransport.makeClient(any(), any())).thenReturn(client)
+    doNothing().when(client).doFetch(any(), ac.capture(), any())
+
+    // signal a timeout to the iterator
+    when(cl.pollForResult(any())).thenReturn(None)
+
+    assertThrows[RapidsShuffleTimeoutException](cl.next())
+
+    newMocks()
+  }
+
   test("a new good batch is queued") {
     val blocksByAddress = RapidsShuffleTestHelper.getBlocksByAddress
 
@@ -80,7 +105,7 @@ class RapidsShuffleIteratorSuite extends RapidsShuffleTestHelper {
 
     val cl = new RapidsShuffleIterator(
       RapidsShuffleTestHelper.makeMockBlockManager("1", "1"),
-      null,
+      mockConf,
       mockTransport,
       blocksByAddress,
       mockMetrics,

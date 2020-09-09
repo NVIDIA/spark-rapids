@@ -19,7 +19,7 @@ package com.nvidia.spark.rapids.shuffle
 import java.util.concurrent.Executor
 
 import ai.rapids.cudf.{ColumnVector, ContiguousTable}
-import com.nvidia.spark.rapids.{Arm, GpuColumnVector, MetaUtils, RapidsDeviceMemoryStore, ShuffleMetadata, ShuffleReceivedBufferCatalog}
+import com.nvidia.spark.rapids.{Arm, GpuColumnVector, MetaUtils, RapidsConf, RapidsDeviceMemoryStore, ShuffleMetadata, ShuffleReceivedBufferCatalog}
 import com.nvidia.spark.rapids.format.TableMeta
 import org.mockito.ArgumentMatchers.any
 import org.mockito.Mockito.{spy, when}
@@ -42,6 +42,7 @@ class RapidsShuffleTestHelper extends FunSuite
   var mockHandler: RapidsShuffleFetchHandler = _
   var mockStorage: RapidsDeviceMemoryStore = _
   var mockCatalog: ShuffleReceivedBufferCatalog = _
+  var mockConf: RapidsConf = _
   var client: RapidsShuffleClient = _
 
   override def beforeEach(): Unit = {
@@ -57,6 +58,7 @@ class RapidsShuffleTestHelper extends FunSuite
     mockHandler = mock[RapidsShuffleFetchHandler]
     mockStorage = mock[RapidsDeviceMemoryStore]
     mockCatalog = mock[ShuffleReceivedBufferCatalog]
+    mockConf = mock[RapidsConf]
     client = spy(new RapidsShuffleClient(
       1,
       mockConnection,
