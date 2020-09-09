@@ -446,12 +446,32 @@ object RapidsConf {
     .booleanConf
     .createWithDefault(true)
 
-  val ENABLE_SMALL_FILES_PARQUET = conf("spark.rapids.sql.format.parquet.smallFiles.enabled")
-    .doc("When set to true, handles reading multiple small files within a partition more " +
-      "efficiently by combining multiple files on the CPU side before sending to the GPU. " +
-      "Recommended unless user needs mergeSchema option or schema evolution.")
+  val ENABLE_MULTITHREAD_PARQUET_READS = conf(
+    "spark.rapids.sql.format.parquet.multiThreadedRead.enabled")
+    .doc("When set to true, reads multiple small files within a partition more efficiently " +
+      "by reading each file in a separate thread in parallel on the CPU side before " +
+      "sending to the GPU. Limited by " +
+      "spark.rapids.sql.format.parquet.multiThreadedRead.numThreads " +
+      "and spark.rapids.sql.format.parquet.multiThreadedRead.maxNumFileProcessed")
     .booleanConf
     .createWithDefault(true)
+
+  val PARQUET_MULTITHREAD_READ_NUM_THREADS =
+    conf("spark.rapids.sql.format.parquet.multiThreadedRead.numThreads")
+      .doc("The maximum number of threads, on the executor, to use for reading small " +
+        "parquet files in parallel. This can not be changed at runtime after the executor has" +
+        "started.")
+      .integerConf
+      .createWithDefault(20)
+
+  val PARQUET_MULTITHREAD_READ_MAX_NUM_FILES_PARALLEL =
+    conf("spark.rapids.sql.format.parquet.multiThreadedRead.maxNumFilesParallel")
+      .doc("A limit on the maximum number of files per task processed in parallel on the CPU " +
+        "side before the file is sent to the GPU. This affects the amount of host memory used " +
+        "when reading the files in parallel.")
+      .integerConf
+      .checkValue(v => v > 0, "The maximum number of files must be greater than 0.")
+      .createWithDefault(Integer.MAX_VALUE)
 
   val ENABLE_PARQUET_READ = conf("spark.rapids.sql.format.parquet.read.enabled")
     .doc("When set to false disables parquet input acceleration")
@@ -695,11 +715,11 @@ object RapidsConf {
     if (asTable) {
       println("")
       // scalastyle:off line.size.limit
-      println("""## Supported GPU Operators and Fine Tuning 
-        |_The RAPIDS Accelerator for Apache Spark_ can be configured to enable or disable specific 
-        |GPU accelerated expressions.  Enabled expressions are candidates for GPU execution. If the 
-        |expression is configured as disabled, the accelerator plugin will not attempt replacement, 
-        |and it will run on the CPU.  
+      println("""## Supported GPU Operators and Fine Tuning
+        |_The RAPIDS Accelerator for Apache Spark_ can be configured to enable or disable specific
+        |GPU accelerated expressions.  Enabled expressions are candidates for GPU execution. If the
+        |expression is configured as disabled, the accelerator plugin will not attempt replacement,
+        |and it will run on the CPU.
         |
         |Please leverage the [`spark.rapids.sql.explain`](#sql.explain) setting to get
         |feedback from the plugin as to why parts of a query may not be executing on the GPU.
@@ -851,7 +871,11 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
 
   lazy val isParquetEnabled: Boolean = get(ENABLE_PARQUET)
 
-  lazy val isParquetSmallFilesEnabled: Boolean = get(ENABLE_SMALL_FILES_PARQUET)
+  lazy val isParquetMultiThreadReadEnabled: Boolean = get(ENABLE_MULTITHREAD_PARQUET_READS)
+
+  lazy val parquetMultiThreadReadNumThreads: Int = get(PARQUET_MULTITHREAD_READ_NUM_THREADS)
+
+  lazy val maxNumParquetFilesParallel: Int = get(PARQUET_MULTITHREAD_READ_MAX_NUM_FILES_PARALLEL)
 
   lazy val isParquetReadEnabled: Boolean = get(ENABLE_PARQUET_READ)
 
