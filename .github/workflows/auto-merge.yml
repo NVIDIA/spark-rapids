@@ -23,16 +23,17 @@ on:
 
 jobs:
   auto-merge:
+    if: github.event.pull_request.merged == true
     runs-on: ubuntu-latest
+
     steps:
       - uses: actions/checkout@v2
 
       - name: auto-merge job
-        if: github.event.pull_request.merged == true
         uses: ./.github/workflows/auto-merge
         env:
           OWNER: NVIDIA
           REPO_NAME: spark-rapids
           HEAD: branch-0.2
           BASE: branch-0.3
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          AUTOMERGE_TOKEN: ${{ secrets.AUTOMERGE_TOKEN }} # use to merge PR
