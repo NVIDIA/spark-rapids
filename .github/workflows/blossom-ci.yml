@@ -40,7 +40,7 @@ jobs:
         id: pull_request_data
         uses: octokit/request-action@v2.x
         with:
-          route: GET /repos/:repository/pulls/:issue_id
+          route: 'GET /repos/:repository/pulls/:issue_id'
           repository: ${{ github.repository }}
           issue_id: ${{ github.event.issue.number }}
         env:
@@ -53,7 +53,7 @@ jobs:
       - name: Update status
         uses: octokit/request-action@v2.x
         with:
-          route: POST /repos/:repository/statuses/:sha
+          route: 'POST /repos/:repository/statuses/:sha'
           repository: ${{ github.repository }}
           sha: ${{ fromJson(steps.pull_request_data.outputs.data).head.sha }}
           target_url: "https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}"
@@ -75,8 +75,9 @@ jobs:
         with:
           java-version: 1.8
 
-      - name: Maven install
-        run: mvn clean install -DskipTests -T 1.5C
+      - name: Get project data (maven)
+          run: |
+            echo ::set-env name=projects::$(mvn -am dependency:tree | grep maven-dependency-plugin | awk '{ out="com.nvidia:"$(NF-1);print out }' | grep rapids | xargs | sed -e 's/ /,/g')
 
       - name: Add mask
         run: echo "::add-mask::${{ secrets.BLACKDUCK_URL }}"
@@ -90,6 +91,7 @@ jobs:
           args: >
             --blackduck.url="https://${{ secrets.BLACKDUCK_URL }}"
             --blackduck.api.token="${{ secrets.BLACKDUCK_API_TOKEN }}"
+            --detect.maven.build.command="-pl='$PROJECTS -am'"
             --detect.force.success=false
             --detect.parallel.processors=0
             --detect.project.name="${{ github.repository }}"

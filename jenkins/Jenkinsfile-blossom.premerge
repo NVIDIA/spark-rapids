@@ -40,6 +40,9 @@ spec:
       requests:
         cpu: 4
         memory: 8Gi
+      limits:
+        cpu: 8
+        memory: 16Gi
     env:
       - name: DOCKER_HOST
         value: tcp://localhost:2375
@@ -67,6 +70,8 @@ spec:
         cpu: 8
         memory: 16Gi
       limits:
+        cpu: 16
+        memory: 32Gi
         nvidia.com/gpu: 1
     restartPolicy: Never
     backoffLimit: 2
@@ -114,7 +119,7 @@ pipeline {
         LIBCUDF_KERNEL_CACHE_PATH = '/tmp/.cudf'
         ARTIFACTORY_NAME = "${ArtifactoryConstants.ARTIFACTORY_NAME}"
         GITHUB_TOKEN = credentials("github-token")
-        // TODO: rename this credential after we shutdown premerge pipine on ngcc
+        // TODO: rename this credential after we shutdown premerge pipeline on ngcc
         URM_CREDS = credentials("svcngcc_artifactory")
         URM_URL = "https://${ArtifactoryConstants.ARTIFACTORY_NAME}/artifactory/sw-spark-maven"
     }
