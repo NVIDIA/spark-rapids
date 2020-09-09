@@ -28,17 +28,20 @@ import org.apache.spark.SparkEnv
 import org.apache.spark.sql.catalyst.encoders.ExpressionEncoder
 import org.apache.spark.sql.catalyst.expressions._
 import org.apache.spark.sql.catalyst.plans.JoinType
+import org.apache.spark.sql.catalyst.rules.Rule
 import org.apache.spark.sql.connector.read.Scan
 import org.apache.spark.sql.execution._
+import org.apache.spark.sql.execution.columnar.InMemoryTableScanExec
 import org.apache.spark.sql.execution.datasources.HadoopFsRelation
 import org.apache.spark.sql.execution.datasources.parquet.ParquetFileFormat
 import org.apache.spark.sql.execution.datasources.v2.orc.OrcScan
 import org.apache.spark.sql.execution.datasources.v2.parquet.ParquetScan
 import org.apache.spark.sql.execution.joins.{BroadcastHashJoinExec, BroadcastNestedLoopJoinExec, HashJoin, SortMergeJoinExec}
 import org.apache.spark.sql.execution.joins.ShuffledHashJoinExec
+import org.apache.spark.sql.internal.StaticSQLConf
 import org.apache.spark.sql.rapids.{GpuFileSourceScanExec, ShuffleManagerShimBase}
 import org.apache.spark.sql.rapids.execution.GpuBroadcastNestedLoopJoinExecBase
-import org.apache.spark.sql.rapids.shims.spark310._
+import org.apache.spark.sql.rapids.shims.spark310.{GpuInMemoryTableScanExec, ShuffleManagerShim}
 import org.apache.spark.sql.types._
 import org.apache.spark.storage.{BlockId, BlockManagerId}
 
@@ -141,6 +144,21 @@ class Spark310Shims extends Spark301Shims {
               canUseSmallFileOpt)
           }
         }),
+      GpuOverrides.exec[InMemoryTableScanExec](
+        "Implementation of InMemoryTableScanExec to use GPU accelerated Caching",
+        (scan, conf, p, r) => new SparkPlanMeta[InMemoryTableScanExec](scan, conf, p, r) {
+          override def tagPlanForGpu(): Unit = {
+            if (!scan.relation.cacheBuilder.serializer.isInstanceOf[ParquetCachedBatchSerializer]) {
+              willNotWorkOnGpu("ParquetCachedBatchSerializer is not being used")
+            }
+          }
+          /**
+           * Convert InMemoryTableScanExec to a GPU enabled version.
+           */
+          override def convertToGpu(): GpuExec = {
+            GpuInMemoryTableScanExec(scan.attributes, scan.predicates, scan.relation)
+          }
+        }),
       GpuOverrides.exec[SortMergeJoinExec](
         "Sort merge join, replacing with shuffled hash join",
         (join, conf, p, r) => new GpuSortMergeJoinMeta(join, conf, p, r)),
@@ -223,6 +241,17 @@ class Spark310Shims extends Spark301Shims {
 
   override def copyFileSourceScanExec(scanExec: GpuFileSourceScanExec,
       supportsSmallFileOpt: Boolean): GpuFileSourceScanExec = {
-    scanExec.copy(supportsSmallFileOpt=supportsSmallFileOpt)
+    scanExec.copy(supportsSmallFileOpt = supportsSmallFileOpt)
+  }
+
+  override def getGpuColumnarToRowTransition(plan: SparkPlan,
+     exportColumnRdd: Boolean): GpuColumnarToRowExecParent = {
+    val serName = plan.conf.getConf(StaticSQLConf.SPARK_CACHE_SERIALIZER)
+    val serClass = Class.forName(serName)
+    if (serClass == classOf[ParquetCachedBatchSerializer]) {
+      org.apache.spark.sql.rapids.shims.spark310.GpuColumnarToRowTransitionExec(plan)
+    } else {
+      GpuColumnarToRowExec(plan)
+    }
   }
 }

@@ -16,7 +16,7 @@
 
 package com.nvidia.spark.rapids
 
-import ai.rapids.cudf.NvtxColor
+import ai.rapids.cudf.{NvtxColor, NvtxRange}
 import com.nvidia.spark.rapids.GpuColumnVector.GpuColumnarBatchBuilder
 import com.nvidia.spark.rapids.GpuMetricNames._
 import com.nvidia.spark.rapids.GpuRowToColumnConverter.{FixedWidthTypeConverter, VariableWidthTypeConverter}
@@ -363,10 +363,10 @@ class RowToColumnarIterator(
     localSchema: StructType,
     localGoal: CoalesceGoal,
     converters: GpuRowToColumnConverter,
-    totalTime: SQLMetric,
-    numInputRows: SQLMetric,
-    numOutputRows: SQLMetric,
-    numOutputBatches: SQLMetric) extends Iterator[ColumnarBatch] {
+    totalTime: SQLMetric = null,
+    numInputRows: SQLMetric = null,
+    numOutputRows: SQLMetric = null,
+    numOutputBatches: SQLMetric = null) extends Iterator[ColumnarBatch] {
 
   private val dataTypes: Array[DataType] = localSchema.fields.map(_.dataType)
   private val variableWidthColumnCount = dataTypes.count(dt => !GpuBatchUtils.isFixedWidth(dt))
@@ -431,15 +431,26 @@ class RowToColumnarIterator(
       // option here
       Option(TaskContext.get()).foreach(GpuSemaphore.acquireIfNecessary)
 
-      val buildRange = new NvtxWithMetrics("RowToColumnar", NvtxColor.GREEN, totalTime)
+      var buildRange: NvtxRange = null
+      if (totalTime != null) {
+        buildRange = new NvtxWithMetrics("RowToColumnar", NvtxColor.GREEN, totalTime)
+      } else {
+        buildRange = new NvtxRange("RowToColumnar", NvtxColor.GREEN)
+      }
       val ret = try {
         builders.build(rowCount)
       } finally {
         buildRange.close()
       }
-      numInputRows += rowCount
-      numOutputRows += rowCount
-      numOutputBatches += 1
+      if (numInputRows != null) {
+        numInputRows += rowCount
+      }
+      if (numOutputRows != null) {
+        numOutputRows += rowCount
+      }
+      if (numOutputBatches != null) {
+        numOutputBatches += 1
+      }
 
       // refine the targetRows estimate based on the average of all batches processed so far
       totalOutputBytes += GpuColumnVector.getTotalDeviceMemoryUsed(ret)

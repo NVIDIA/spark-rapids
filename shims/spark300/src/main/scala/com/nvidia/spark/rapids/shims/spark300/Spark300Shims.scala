@@ -359,6 +359,11 @@ class Spark300Shims extends SparkShims {
 
   override def copyFileSourceScanExec(scanExec: GpuFileSourceScanExec,
       supportsSmallFileOpt: Boolean): GpuFileSourceScanExec = {
-    scanExec.copy(supportsSmallFileOpt=supportsSmallFileOpt)
+    scanExec.copy(supportsSmallFileOpt = supportsSmallFileOpt)
+  }
+
+  override def getGpuColumnarToRowTransition(plan: SparkPlan,
+     exportColumnRdd: Boolean): GpuColumnarToRowExecParent = {
+    GpuColumnarToRowExec(plan, exportColumnRdd)
   }
 }
