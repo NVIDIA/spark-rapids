@@ -479,11 +479,11 @@ the GPU is out of memory, before going to disk. Please verify the [defaults](../
 ---
 **NOTE**
 
-The _GPU Scheduling for Pandas UDF_ is a quite beta feature!
+The _GPU Scheduling for Pandas UDF_ is an experimental feature, and may change at any point it time.
 
 ---
 
-The _GPU Scheduling for Pandas UDF_ is one of the GPU things support for [Pandas UDF(user defined function)](https://spark.apache.org/docs/3.0.0/sql-pyspark-pandas-with-arrow.html#pandas-udfs-aka-vectorized-udfs). The  _GPU Scheduling for Pandas UDF_ has two components: 
+_GPU Scheduling for Pandas UDF_ is built on Apache Spark's [Pandas UDF(user defined function)](https://spark.apache.org/docs/3.0.0/sql-pyspark-pandas-with-arrow.html#pandas-udfs-aka-vectorized-udfs), and has two components: 
 
 - **Share GPU with JVM**: Let the Python process share JVM GPU. The Python process could run on the same GPU with JVM.
 
@@ -493,7 +493,7 @@ The _GPU Scheduling for Pandas UDF_ is one of the GPU things support for [Pandas
 
 To enable _GPU Scheduling for Pandas UDF_, you need to configure your spark job with extra settings.
 
-1. Make sure GPU exclusive mode is disabled.
+1. Make sure GPU exclusive mode is disabled. Note that this will not work if you are using exclusive mode to assign GPUs under spark.
 2. Currently the python files are packed into the spark rapids plugin jar. 
 
     On Yarn, you need to add
