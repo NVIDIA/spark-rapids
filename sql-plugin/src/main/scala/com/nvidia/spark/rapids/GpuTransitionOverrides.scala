@@ -22,7 +22,6 @@ import org.apache.spark.sql.execution._
 import org.apache.spark.sql.execution.adaptive.{AdaptiveSparkPlanExec, BroadcastQueryStageExec, CustomShuffleReaderExec, QueryStageExec, ShuffleQueryStageExec}
 import org.apache.spark.sql.execution.columnar.InMemoryTableScanExec
 import org.apache.spark.sql.execution.command.ExecutedCommandExec
-import org.apache.spark.sql.execution.datasources.parquet.ParquetFileFormat
 import org.apache.spark.sql.execution.datasources.v2.DataSourceV2ScanExecBase
 import org.apache.spark.sql.execution.exchange.{Exchange, ShuffleExchangeExec}
 import org.apache.spark.sql.execution.joins.{BroadcastHashJoinExec, BroadcastNestedLoopJoinExec}
@@ -40,9 +39,13 @@ class GpuTransitionOverrides extends Rule[SparkPlan] {
     case HostColumnarToGpu(r2c: RowToColumnarExec, goal) =>
       GpuRowToColumnarExec(optimizeGpuPlanTransitions(r2c.child), goal)
     case ColumnarToRowExec(bb: GpuBringBackToHost) =>
-      GpuColumnarToRowExec(optimizeGpuPlanTransitions(bb.child))
+      getColumnarToRowExec(optimizeGpuPlanTransitions(bb.child))
     case p =>
       p.withNewChildren(p.children.map(optimizeGpuPlanTransitions))
+  }
+
+  private def getColumnarToRowExec(plan: SparkPlan, exportColumnRdd: Boolean = false) = {
+    ShimLoader.getSparkShims.getGpuColumnarToRowTransition(plan, exportColumnRdd)
   }
 
   def optimizeAdaptiveTransitions(plan: SparkPlan): SparkPlan = plan match {
@@ -63,9 +66,9 @@ class GpuTransitionOverrides extends Rule[SparkPlan] {
     // in future query stages. Note that because these query stages have already executed, we
     // don't need to recurse down and optimize them again
     case ColumnarToRowExec(e: BroadcastQueryStageExec) =>
-      GpuColumnarToRowExec(e)
+      getColumnarToRowExec(e)
     case ColumnarToRowExec(e: ShuffleQueryStageExec) =>
-      GpuColumnarToRowExec(e)
+      getColumnarToRowExec(e)
 
     case HostColumnarToGpu(e: BroadcastQueryStageExec, _) => e
     case HostColumnarToGpu(e: ShuffleQueryStageExec, _) => e
@@ -74,7 +77,7 @@ class GpuTransitionOverrides extends Rule[SparkPlan] {
       optimizeAdaptiveTransitions(bb.child) match {
         case e: GpuBroadcastExchangeExecBase => e
         case e: GpuShuffleExchangeExecBase => e
-        case other => GpuColumnarToRowExec(other)
+        case other => getColumnarToRowExec(other)
       }
 
     case p =>
@@ -82,7 +85,7 @@ class GpuTransitionOverrides extends Rule[SparkPlan] {
   }
 
   def optimizeCoalesce(plan: SparkPlan): SparkPlan = plan match {
-    case c2r: GpuColumnarToRowExec if c2r.child.isInstanceOf[GpuCoalesceBatches] =>
+    case c2r: GpuColumnarToRowExecParent if c2r.child.isInstanceOf[GpuCoalesceBatches] =>
       // Don't build a batch if we are just going to go back to ROWS
       val co = c2r.child.asInstanceOf[GpuCoalesceBatches]
       c2r.withNewChildren(co.children.map(optimizeCoalesce))
@@ -326,7 +329,7 @@ class GpuTransitionOverrides extends Rule[SparkPlan] {
           throw new IllegalArgumentException("It looks like some operations were " +
             s"pushed down to InMemoryTableScanExec ${imts.expressions.mkString(",")}")
         }
-      case _: GpuColumnarToRowExec => () // Ignored
+      case _: GpuColumnarToRowExecParent => () // Ignored
       case _: ExecutedCommandExec => () // Ignored
       case _: RDDScanExec => () // Ignored
       case _: ShuffleExchangeExec => () // Ignored for now, we don't force it to the GPU if
@@ -352,9 +355,9 @@ class GpuTransitionOverrides extends Rule[SparkPlan] {
   }
 
   def detectAndTagFinalColumnarOutput(plan: SparkPlan): SparkPlan = plan match {
-    case d: DeserializeToObjectExec if d.child.isInstanceOf[GpuColumnarToRowExec] =>
-      val gpuColumnar = d.child.asInstanceOf[GpuColumnarToRowExec]
-      plan.withNewChildren(Seq(GpuColumnarToRowExec(gpuColumnar.child, true)))
+    case d: DeserializeToObjectExec if d.child.isInstanceOf[GpuColumnarToRowExecParent] =>
+      val gpuColumnar = d.child.asInstanceOf[GpuColumnarToRowExecParent]
+      plan.withNewChildren(Seq(getColumnarToRowExec(gpuColumnar.child, true)))
     case _ => plan
   }
 
