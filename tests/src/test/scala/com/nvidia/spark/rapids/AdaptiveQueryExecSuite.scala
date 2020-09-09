@@ -20,8 +20,8 @@ import java.io.File
 
 import com.nvidia.spark.rapids.AdaptiveQueryExecSuite.TEST_FILES_ROOT
 import org.scalatest.BeforeAndAfterEach
-import org.apache.spark.SparkConf
 
+import org.apache.spark.SparkConf
 import org.apache.spark.sql.{Dataset, Row, SaveMode, SparkSession}
 import org.apache.spark.sql.execution.{PartialReducerPartitionSpec, SparkPlan}
 import org.apache.spark.sql.execution.adaptive.{AdaptiveSparkPlanExec, AdaptiveSparkPlanHelper, BroadcastQueryStageExec, ShuffleQueryStageExec}
@@ -250,7 +250,9 @@ class AdaptiveQueryExecSuite
 
     val conf = new SparkConf()
         .set(SQLConf.ADAPTIVE_EXECUTION_ENABLED.key, "true")
-        .set(SQLConf.AUTO_BROADCASTJOIN_THRESHOLD.key, "-1") // force SMJ
+        .set(SQLConf.AUTO_BROADCASTJOIN_THRESHOLD.key, "1000")
+        // disable DemoteBroadcastHashJoin rule from removing BHJ due to empty partitions
+        .set(SQLConf.NON_EMPTY_PARTITION_RATIO_FOR_BROADCAST_JOIN.key, "0")
         .set(RapidsConf.ENABLE_CAST_STRING_TO_INTEGER.key, "true")
 
     withGpuSparkSession(spark => {
@@ -265,25 +267,25 @@ class AdaptiveQueryExecSuite
           |JOIN t4 ON t2.b = t4.a
           |WHERE value = 1
         """.stripMargin)
+
       val smj = findTopLevelSortMergeJoin(plan)
       assert(smj.size == 3)
 
-      println(adaptivePlan)
-
-      // note that Spark would use BHJ here but we replace with SHJ
-      val bhj = findTopLevelGpuShuffleHashJoin(adaptivePlan)
+      val bhj = findTopLevelGpuBroadcastHashJoin(adaptivePlan)
       assert(bhj.size == 3)
 
       // After applied the 'OptimizeLocalShuffleReader' rule, we can convert all the four
       // shuffle reader to local shuffle reader in the bottom two 'BroadcastHashJoin'.
       // For the top level 'BroadcastHashJoin', the probe side is not shuffle query stage
       // and the build side shuffle query stage is also converted to local shuffle reader.
-      checkNumLocalShuffleReaders(adaptivePlan)
+      val localShuffleReaders = checkNumLocalShuffleReaders(adaptivePlan)
+      assert(localShuffleReaders == 5)
+
     }, conf)
   }
 
   private def checkNumLocalShuffleReaders(
-      plan: SparkPlan, numShufflesWithoutLocalReader: Int = 0): Unit = {
+      plan: SparkPlan, numShufflesWithoutLocalReader: Int = 0): Int = {
     val numShuffles = collect(plan) {
       case s: ShuffleQueryStageExec => s
     }.length
@@ -297,6 +299,7 @@ class AdaptiveQueryExecSuite
       assert(parts.forall(rdd.preferredLocations(_).nonEmpty))
     }
     assert(numShuffles === (numLocalReaders.length + numShufflesWithoutLocalReader))
+    numLocalReaders.length
   }
 
   def skewJoinTest(fun: SparkSession => Unit) {
@@ -381,7 +384,7 @@ class AdaptiveQueryExecSuite
   /** Ported from org.apache.spark.sql.test.SQLTestData */
   private def testData(spark: SparkSession) {
     import spark.implicits._
-    val data: Seq[(Int, String)] = (1 to 100).map(i => (i, i.toString))
+    val data: Seq[(Int, String)] = (1 to 10000).map(i => (i, i.toString))
     val df = data
       .toDF("key", "value")
       .repartition(col("key"))
@@ -408,11 +411,12 @@ class AdaptiveQueryExecSuite
   /** Ported from org.apache.spark.sql.test.SQLTestData */
   private def lowerCaseData(spark: SparkSession) {
     import spark.implicits._
-    val df = Seq[(Int, String)](
-      (1, "a"),
-      (2, "b"),
-      (3, "c"),
-      (4, "d"))
+    // note that this differs from the original Spark test by generating a larger data set so that
+    // we can trigger larger stats in the logical mode, preventing BHJ, and then our queries filter
+    // this down to a smaller data set so that SMJ can be replaced with BHJ at execution time when
+    // AQE is enabled
+    val data: Seq[(Int, String)] = (0 to 10000).map(i => (i, if (i<5) i.toString else "z"))
+    val df = data
       .toDF("n", "l")
       .repartition(col("n"))
     registerAsParquetTable(spark, df, "lowercaseData")
