@@ -141,7 +141,7 @@ Now for each worker node:
       serially provide a password for each worker.
     - Run `$SPARK_HOME/sbin/start-slaves.sh`
 - For a single worker:
-  - `$SPARK_HOME/bin/start-slave.sh spark://${MASTER_HOST}:7077`
+  - `$SPARK_HOME/sbin/start-slave.sh spark://${MASTER_HOST}:7077`
   
 Now you can go to the master UI at `http://${MASTER_HOST}:8080` and verify all the workers have
 started.
@@ -302,8 +302,9 @@ to setup a Kubernetes cluster.
   [GPU discovery script](#install-the-gpu-discovery-script) on the node from which you are
   going to build your Docker image.  Note that you can download these into a local directory and
   untar the Spark `.tar.gz` rather than installing into a location on the machine.
+- Include the RAPIDS Accelerator for Spark jars in the Spark /jars directory
 - Download the sample
-  [Dockerfile.cuda](https://drive.google.com/open?id=1ah7I1DQEB4Wqz5t2KK2UsctGrxDwWpeJ) or create
+  [Dockerfile.cuda](Dockerfile.cuda) or create
   your own.
 - Update the Dockerfile with the filenames for Spark and the RAPIDS Accelerator for Spark jars
   that you downloaded.  Include anything else application-specific that you need.
