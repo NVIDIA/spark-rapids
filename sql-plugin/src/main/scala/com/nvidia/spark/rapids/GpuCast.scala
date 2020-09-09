@@ -72,7 +72,7 @@ class CastExprMeta[INPUT <: CastBase](
     }
     if (!conf.isCastStringToTimestampEnabled && fromType == DataTypes.StringType
       && toType == DataTypes.TimestampType) {
-      willNotWorkOnGpu("The GPU only supports a subset of formats " +
+      willNotWorkOnGpu("the GPU only supports a subset of formats " +
         "when casting strings to timestamps. Refer to the CAST documentation " +
         "for more details. To enable this operation on the GPU, set" +
         s" ${RapidsConf.ENABLE_CAST_STRING_TO_TIMESTAMP} to true.")
