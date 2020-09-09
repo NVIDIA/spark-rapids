@@ -87,9 +87,9 @@ pipeline {
                           propagate: false,
                           parameters: [string(name: 'REF', value: 'branch-0.2')])
 
-                    slack("#rapidsai-spark-cicd", "Success", color: "#33CC33")
+                    slack("#swrapids-spark-cicd", "Success", color: "#33CC33")
                 } else {
-                    slack("#rapidsai-spark-cicd", "Failed", color: "#FF0000")
+                    slack("#swrapids-spark-cicd", "Failed", color: "#FF0000")
                 }
             }
         }
