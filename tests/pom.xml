@@ -43,7 +43,7 @@
         <profile>
             <id>spark301tests</id>
             <properties>
-                <spark.test.version>3.0.1-SNAPSHOT</spark.test.version>
+                <spark.test.version>3.0.1</spark.test.version>
             </properties>
         </profile>
         <profile>
