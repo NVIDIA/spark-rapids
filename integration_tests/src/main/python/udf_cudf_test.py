@@ -21,7 +21,7 @@ from pyspark.sql.functions import pandas_udf, PandasUDFType
 from spark_session import with_cpu_session, with_gpu_session
 from marks import allow_non_gpu, cudf_udf
 
-cudf = pytest.importorskip("cudf")
+import cudf
 
 _conf = {
         'spark.rapids.sql.exec.ArrowEvalPythonExec':'true',
