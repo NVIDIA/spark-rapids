@@ -233,7 +233,8 @@ object GpuDeviceManager extends Logging {
       try {
         Cuda.setDevice(gpuId)
         Rmm.initialize(init, logConf, initialAllocation, maxAllocation)
-        GpuShuffleEnv.init(conf, info)
+        RapidsBufferCatalog.init(conf)
+        GpuShuffleEnv.init(conf)
       } catch {
         case e: Exception => logError("Could not initialize RMM", e)
       }

@@ -43,7 +43,7 @@ class RapidsHostMemoryStoreSuite extends FunSuite with Arm with MockitoSugar {
     val hostStoreMaxSize = 1L * 1024 * 1024
     val catalog = spy(new RapidsBufferCatalog)
     withResource(new RapidsDeviceMemoryStore(catalog)) { devStore =>
-      withResource(new RapidsHostMemoryStore(catalog, hostStoreMaxSize)) { hostStore =>
+      withResource(new RapidsHostMemoryStore(hostStoreMaxSize, catalog)) { hostStore =>
         assertResult(0)(hostStore.currentSize)
         assertResult(hostStoreMaxSize)(hostStore.numBytesFree)
         devStore.setSpillStore(hostStore)
@@ -76,7 +76,7 @@ class RapidsHostMemoryStoreSuite extends FunSuite with Arm with MockitoSugar {
     val hostStoreMaxSize = 1L * 1024 * 1024
     val catalog = new RapidsBufferCatalog
     withResource(new RapidsDeviceMemoryStore(catalog)) { devStore =>
-      withResource(new RapidsHostMemoryStore(catalog, hostStoreMaxSize)) { hostStore =>
+      withResource(new RapidsHostMemoryStore(hostStoreMaxSize, catalog)) { hostStore =>
         devStore.setSpillStore(hostStore)
         var ct = buildContiguousTable()
         try {
@@ -111,7 +111,7 @@ class RapidsHostMemoryStoreSuite extends FunSuite with Arm with MockitoSugar {
     val hostStoreMaxSize = 1L * 1024 * 1024
     val catalog = new RapidsBufferCatalog
     withResource(new RapidsDeviceMemoryStore(catalog)) { devStore =>
-      withResource(new RapidsHostMemoryStore(catalog, hostStoreMaxSize)) { hostStore =>
+      withResource(new RapidsHostMemoryStore(hostStoreMaxSize, catalog)) { hostStore =>
         devStore.setSpillStore(hostStore)
         var ct = buildContiguousTable()
         try {

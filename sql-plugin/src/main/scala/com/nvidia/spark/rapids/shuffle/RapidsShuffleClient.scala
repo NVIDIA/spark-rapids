@@ -380,7 +380,7 @@ class RapidsShuffleClient(
     exec: Executor,
     clientCopyExecutor: Executor,
     maximumMetadataSize: Long,
-    devStorage: RapidsDeviceMemoryStore = GpuShuffleEnv.getDeviceStorage,
+    devStorage: RapidsDeviceMemoryStore = RapidsBufferCatalog.getDeviceStorage,
     catalog: ShuffleReceivedBufferCatalog = GpuShuffleEnv.getReceivedCatalog) extends Logging {
 
   object ShuffleClientOps {
