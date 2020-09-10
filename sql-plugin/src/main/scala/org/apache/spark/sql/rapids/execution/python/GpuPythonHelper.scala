@@ -82,57 +82,53 @@ object GpuPythonHelper extends Logging {
 
   // Called in each task at the executor side
   def injectGpuInfo(funcs: Seq[ChainedPythonFunctions], isPythonOnGpuEnabled: Boolean): Unit = {
-    if (isPythonOnGpuEnabled) {
-      // Insert GPU related env(s) into `envVars` for all the PythonFunction(s).
-      // Yes `PythonRunner` will only use the first one, but just make sure it will
-      // take effect no matter the order changes or not.
-      funcs.foreach(_.funcs.foreach { pyF =>
-        pyF.envVars.put("CUDA_VISIBLE_DEVICES", gpuId)
-        pyF.envVars.put("RAPIDS_UVM_ENABLED", isPythonUvmEnabled)
-        pyF.envVars.put("RAPIDS_POOLED_MEM_ENABLED", isPythonPooledMemEnabled)
-        pyF.envVars.put("RAPIDS_POOLED_MEM_SIZE", initAllocPerWorker.toString)
-        pyF.envVars.put("RAPIDS_POOLED_MEM_MAX_SIZE", maxAllocPerWorker.toString)
-      })
-    }
+    // Insert GPU related env(s) into `envVars` for all the PythonFunction(s).
+    // Yes `PythonRunner` will only use the first one, but just make sure it will
+    // take effect no matter the order changes or not.
+    funcs.foreach(_.funcs.foreach { pyF =>
+      pyF.envVars.put("CUDA_VISIBLE_DEVICES", gpuId)
+      pyF.envVars.put("RAPIDS_PYTHON_ENABLED", isPythonOnGpuEnabled.toString)
+      pyF.envVars.put("RAPIDS_UVM_ENABLED", isPythonUvmEnabled)
+      pyF.envVars.put("RAPIDS_POOLED_MEM_ENABLED", isPythonPooledMemEnabled)
+      pyF.envVars.put("RAPIDS_POOLED_MEM_SIZE", initAllocPerWorker.toString)
+      pyF.envVars.put("RAPIDS_POOLED_MEM_MAX_SIZE", maxAllocPerWorker.toString)
+    })
   }
 
-  // Check the related conf(s) to launch our rapids daemon or worker for
-  // the GPU initialization.
+  // Always check the related conf(s) to launch our rapids daemon or worker for
+  // the GPU initialization when python on gpu enabled.
   // - python worker module if useDaemon is false, otherwise
   // - python daemon module.
   // This is called at driver side
   def checkPythonConfigs(conf: SparkConf): Unit = {
-    val isPythonOnGpuEnabled = new RapidsConf(conf).get(PYTHON_GPU_ENABLED)
-    if (isPythonOnGpuEnabled) {
-      val useDaemon = {
-        val useDaemonEnabled = conf.get(PYTHON_USE_DAEMON)
-        // This flag is ignored on Windows as it's unable to fork.
-        !System.getProperty("os.name").startsWith("Windows") && useDaemonEnabled
-      }
-      if (useDaemon) {
-        val oDaemon = conf.get(PYTHON_DAEMON_MODULE)
-        if (oDaemon.nonEmpty) {
-          val daemon = oDaemon.get
-          if (daemon != "rapids.daemon") {
-            throw new IllegalArgumentException("Python daemon module config conflicts." +
-              s" Expect 'rapids.daemon' but set to $daemon")
-          }
-        } else {
-          // Set daemon only when not specified
-          conf.set(PYTHON_DAEMON_MODULE, "rapids.daemon")
+    val useDaemon = {
+      val useDaemonEnabled = conf.get(PYTHON_USE_DAEMON)
+      // This flag is ignored on Windows as it's unable to fork.
+      !System.getProperty("os.name").startsWith("Windows") && useDaemonEnabled
+    }
+    if (useDaemon) {
+      val oDaemon = conf.get(PYTHON_DAEMON_MODULE)
+      if (oDaemon.nonEmpty) {
+        val daemon = oDaemon.get
+        if (daemon != "rapids.daemon") {
+          throw new IllegalArgumentException("Python daemon module config conflicts." +
+            s" Expect 'rapids.daemon' but set to $daemon")
         }
       } else {
-        val oWorker = conf.get(PYTHON_WORKER_MODULE)
-        if (oWorker.nonEmpty) {
-          val worker = oWorker.get
-          if (worker != "rapids.worker") {
-            throw new IllegalArgumentException("Python worker module config conflicts." +
-              s" Expect 'rapids.worker' but set to $worker")
-          }
-        } else {
-          // Set worker only when not specified
-          conf.set(PYTHON_WORKER_MODULE, "rapids.worker")
+        // Set daemon only when not specified
+        conf.set(PYTHON_DAEMON_MODULE, "rapids.daemon")
+      }
+    } else {
+      val oWorker = conf.get(PYTHON_WORKER_MODULE)
+      if (oWorker.nonEmpty) {
+        val worker = oWorker.get
+        if (worker != "rapids.worker") {
+          throw new IllegalArgumentException("Python worker module config conflicts." +
+            s" Expect 'rapids.worker' but set to $worker")
         }
+      } else {
+        // Set worker only when not specified
+        conf.set(PYTHON_WORKER_MODULE, "rapids.worker")
       }
     }
   }

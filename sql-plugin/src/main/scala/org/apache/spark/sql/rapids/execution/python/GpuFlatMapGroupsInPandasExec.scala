@@ -99,7 +99,7 @@ case class GpuFlatMapGroupsInPandasExec(
     Seq(groupingAttributes.map(SortOrder(_, Ascending)))
 
   override protected def doExecute(): RDD[InternalRow] = {
-    val isPythonOnGpuEnabled = GpuPythonHelper.isPythonOnGpuEnabled(conf)
+    lazy val isPythonOnGpuEnabled = GpuPythonHelper.isPythonOnGpuEnabled(conf)
     val inputRDD = child.execute()
 
     val (dedupAttributes, argOffsets) = resolveArgOffsets(child, groupingAttributes)
@@ -111,8 +111,10 @@ case class GpuFlatMapGroupsInPandasExec(
         .map { case (_, x) => x }
 
       // Start of GPU things
-      GpuPythonHelper.injectGpuInfo(chainedFunc, isPythonOnGpuEnabled)
-      PythonWorkerSemaphore.acquireIfNecessary(TaskContext.get())
+      if (isPythonOnGpuEnabled) {
+        GpuPythonHelper.injectGpuInfo(chainedFunc, isPythonOnGpuEnabled)
+        PythonWorkerSemaphore.acquireIfNecessary(TaskContext.get())
+      }
       // End of GPU things
 
       val runner = new ArrowPythonRunner(
