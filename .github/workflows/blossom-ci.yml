@@ -112,3 +112,4 @@ jobs:
           BLACKDUCK_PROJECT_VERSION: "${{ github.run_id }}"
           CI_SERVER: ${{ secrets.CI_SERVER }}
           REPO_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
