@@ -21,7 +21,7 @@ import com.nvidia.spark.rapids.RapidsConf.conf
 
 object PythonConfEntries {
 
-  val PYTHON_GPU_ENABLED = conf("spark.rapids.python.gpu.enabled")
+  val PYTHON_GPU_ENABLED = conf("spark.rapids.sql.python.gpu.enabled")
     .doc("This is an experimental feature and is likely to change in the future." +
       " Enable (true) or disable (false) support for scheduling Python Pandas UDFs with" +
       " GPU resources. When enabled, pandas UDFs are assumed to share the same GPU that" +

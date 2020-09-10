@@ -102,6 +102,7 @@ case class GpuFlatMapCoGroupsInPandasExec(
   }
 
   override protected def doExecute(): RDD[InternalRow] = {
+    val isPythonOnGpuEnabled = GpuPythonHelper.isPythonOnGpuEnabled(conf)
 
     val (leftDedup, leftArgOffsets) = resolveArgOffsets(left, leftGroup)
     val (rightDedup, rightArgOffsets) = resolveArgOffsets(right, rightGroup)
@@ -116,7 +117,7 @@ case class GpuFlatMapCoGroupsInPandasExec(
           .map { case (_, l, r) => (l, r) }
 
         // Start of GPU things
-        GpuPythonHelper.injectGpuInfo(chainedFunc)
+        GpuPythonHelper.injectGpuInfo(chainedFunc, isPythonOnGpuEnabled)
         PythonWorkerSemaphore.acquireIfNecessary(TaskContext.get())
         // End of GPU things
 

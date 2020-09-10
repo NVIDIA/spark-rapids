@@ -86,6 +86,7 @@ case class GpuMapInPandasExec(
   override def outputPartitioning: Partitioning = child.outputPartitioning
 
   override protected def doExecute(): RDD[InternalRow] = {
+    val isPythonOnGpuEnabled = GpuPythonHelper.isPythonOnGpuEnabled(conf)
     child.execute().mapPartitionsInternal { inputIter =>
       // Single function with one struct.
       val argOffsets = Array(Array(0))
@@ -105,7 +106,7 @@ case class GpuMapInPandasExec(
       val context = TaskContext.get()
 
       // Start of GPU things
-      GpuPythonHelper.injectGpuInfo(chainedFunc)
+      GpuPythonHelper.injectGpuInfo(chainedFunc, isPythonOnGpuEnabled)
       PythonWorkerSemaphore.acquireIfNecessary(context)
       // End of GPU things
 

@@ -110,6 +110,7 @@ case class GpuAggregateInPandasExec(
     Seq(groupingExpressions.map(SortOrder(_, Ascending)))
 
   override protected def doExecute(): RDD[InternalRow] = {
+    val isPythonOnGpuEnabled = GpuPythonHelper.isPythonOnGpuEnabled(conf)
     val inputRDD = child.execute()
 
     val sessionLocalTimeZone = conf.sessionLocalTimeZone
@@ -168,7 +169,7 @@ case class GpuAggregateInPandasExec(
       }
 
       // Start of GPU things
-      GpuPythonHelper.injectGpuInfo(pyFuncs)
+      GpuPythonHelper.injectGpuInfo(pyFuncs, isPythonOnGpuEnabled)
       PythonWorkerSemaphore.acquireIfNecessary(context)
       // End of GPU things
 

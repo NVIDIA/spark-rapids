@@ -174,6 +174,7 @@ case class GpuWindowInPandasExec(
   }
 
   protected override def doExecute(): RDD[InternalRow] = {
+    val isPythonOnGpuEnabled = GpuPythonHelper.isPythonOnGpuEnabled(conf)
     // Unwrap the expressions and factories from the map.
     val expressionsWithFrameIndex =
       windowFrameExpressionFactoryPairs.map(_._1).zipWithIndex.flatMap {
@@ -380,7 +381,7 @@ case class GpuWindowInPandasExec(
       }
 
       // Start of GPU things
-      GpuPythonHelper.injectGpuInfo(pyFuncs)
+      GpuPythonHelper.injectGpuInfo(pyFuncs, isPythonOnGpuEnabled)
       PythonWorkerSemaphore.acquireIfNecessary(TaskContext.get())
       // End of GPU things
 

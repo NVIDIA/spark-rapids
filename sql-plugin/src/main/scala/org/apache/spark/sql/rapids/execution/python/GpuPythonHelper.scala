@@ -25,12 +25,12 @@ import org.apache.spark.api.python.ChainedPythonFunctions
 import org.apache.spark.internal.Logging
 import org.apache.spark.internal.config.{CPUS_PER_TASK, EXECUTOR_CORES}
 import org.apache.spark.internal.config.Python._
+import org.apache.spark.sql.internal.SQLConf
 
 object GpuPythonHelper extends Logging {
 
   private val sparkConf = SparkEnv.get.conf
   private lazy val rapidsConf = new RapidsConf(sparkConf)
-  private lazy val isPythonOnGpuEnabled = rapidsConf.get(PYTHON_GPU_ENABLED)
   private lazy val gpuId = GpuDeviceManager.getDeviceId()
     .getOrElse(throw new IllegalStateException("No gpu id!"))
     .toString
@@ -77,8 +77,11 @@ object GpuPythonHelper extends Logging {
     }
   }
 
+  def isPythonOnGpuEnabled(sqlConf: SQLConf): Boolean = new RapidsConf(sqlConf)
+    .get(PYTHON_GPU_ENABLED)
+
   // Called in each task at the executor side
-  def injectGpuInfo(funcs: Seq[ChainedPythonFunctions]): Unit = {
+  def injectGpuInfo(funcs: Seq[ChainedPythonFunctions], isPythonOnGpuEnabled: Boolean): Unit = {
     if (isPythonOnGpuEnabled) {
       // Insert GPU related env(s) into `envVars` for all the PythonFunction(s).
       // Yes `PythonRunner` will only use the first one, but just make sure it will
