@@ -160,6 +160,7 @@ abstract class AbstractGpuCoalesceIterator(origIter: Iterator[ColumnarBatch],
   private val iter = new RemoveEmptyBatchIterator(origIter, numInputBatches)
   private var onDeck: Option[ColumnarBatch] = None
   private var batchInitialized: Boolean = false
+  private var collectMetric: Option[MetricRange] = None
 
   /** We need to track the sizes of string columns to make sure we don't exceed 2GB */
   private val stringFieldIndices: Array[Int] = schema.fields.zipWithIndex
@@ -174,7 +175,17 @@ abstract class AbstractGpuCoalesceIterator(origIter: Iterator[ColumnarBatch],
   Option(TaskContext.get())
     .foreach(_.addTaskCompletionListener[Unit](_ => onDeck.foreach(_.close())))
 
-  override def hasNext: Boolean = onDeck.isDefined || iter.hasNext
+  override def hasNext: Boolean = {
+    collectMetric.getOrElse {
+      collectMetric = Some(new MetricRange(collectTime))
+    }
+    val res = onDeck.isDefined || iter.hasNext
+    if (!res) {
+      collectMetric.foreach(_.close())
+      collectMetric = None
+    }
+    res
+  }
 
   /**
    * Called first to initialize any state needed for a new batch to be created.
@@ -261,7 +272,6 @@ abstract class AbstractGpuCoalesceIterator(origIter: Iterator[ColumnarBatch],
         numBytes += columnSizes.sum
       }
 
-      val collect = new MetricRange(collectTime)
       try {
 
         // there is a hard limit of 2^31 rows
@@ -339,7 +349,8 @@ abstract class AbstractGpuCoalesceIterator(origIter: Iterator[ColumnarBatch],
           s"and $numBytes bytes")
 
       } finally {
-        collect.close()
+        collectMetric.foreach(_.close())
+        collectMetric = None
       }
 
       val concatRange = new NvtxWithMetrics(s"$opName concat", NvtxColor.CYAN, concatTime)
