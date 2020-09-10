@@ -144,7 +144,6 @@ class AdaptiveQueryExecSuite
             "WHERE t2.a = 5" // filter on partition key to force dynamic partition pruning
       )
       df.collect()
-      df.explain()
 
       // assert that DPP did cause this to run as a non-AQE plan
       assert(!df.queryExecution.executedPlan.isInstanceOf[AdaptiveSparkPlanExec])
