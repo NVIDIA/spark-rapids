@@ -21,7 +21,6 @@ from pyspark.sql.functions import pandas_udf, PandasUDFType
 from spark_session import with_cpu_session, with_gpu_session
 from marks import allow_non_gpu, cudf_udf
 
-import cudf
 
 _conf = {
         'spark.rapids.sql.exec.ArrowEvalPythonExec':'true',
@@ -63,6 +62,7 @@ def _plus_one_cpu_func(v: pd.Series) -> pd.Series:
 
 @pandas_udf('int')
 def _plus_one_gpu_func(v: pd.Series) -> pd.Series:
+    import cudf
     gpu_serises = cudf.Series(v)
     gpu_serises = gpu_serises + 1
     return gpu_serises.to_pandas()
@@ -102,6 +102,7 @@ def _plus_one_cpu_iter_func(iterator: Iterator[pd.Series]) -> Iterator[pd.Series
 
 @pandas_udf("long")
 def _plus_one_gpu_iter_func(iterator: Iterator[pd.Series]) -> Iterator[pd.Series]:
+    import cudf
     for s in iterator:
         gpu_serises = cudf.Series(s)
         gpu_serises = gpu_serises + 1
@@ -135,6 +136,7 @@ def test_map_in_pandas():
     def gpu_run(spark):
         df = _create_df(spark)
         def _filter_gpu_func(iterator):
+            import cudf
             for pdf in iterator:
                 gdf = cudf.from_pandas(pdf)
                 yield gdf[gdf.id == 1].to_pandas()
@@ -152,6 +154,7 @@ def _normalize_cpu_func(df):
 
 @pandas_udf("id long, v double", PandasUDFType.GROUPED_MAP)
 def _normalize_gpu_func(df):
+    import cudf
     gdf = cudf.from_pandas(df)
     v = gdf.v
     return gdf.assign(v=(v - v.mean()) / v.std()).to_pandas()
@@ -183,6 +186,7 @@ def test_group_apply_in_pandas():
     def gpu_run(spark):
         df = _create_df(spark)
         def _normalize_gpu_in_pandas_func(df):
+            import cudf
             gdf = cudf.from_pandas(df)
             v = gdf.v
             return gdf.assign(v=(v - v.mean()) / v.std()).to_pandas()
@@ -197,6 +201,7 @@ def _sum_cpu_func(v: pd.Series) -> int:
 
 @pandas_udf("integer")  
 def _sum_gpu_func(v: pd.Series) -> int:
+    import cudf
     gpu_serises = cudf.Series(v)
     return gpu_serises.sum()
 
@@ -268,6 +273,7 @@ def test_cogroup():
                 [(20000101, 1, "x"), (20000101, 2, "y")],
                 ("time", "id", "v2"))
         def _gpu_join_func(l, r):
+            import cudf
             gl = cudf.from_pandas(l)
             gr = cudf.from_pandas(r)
             return gl.merge(gr, on="time").to_pandas()
