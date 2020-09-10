@@ -178,7 +178,7 @@ abstract class AbstractGpuCoalesceIterator(origIter: Iterator[ColumnarBatch],
     .foreach(_.addTaskCompletionListener[Unit](_ => onDeck.foreach(_.close())))
 
   override def hasNext: Boolean = {
-    collectMetric.getOrElse {
+    if (!collectMetric.isDefined) {
       // use one being not set as indicator that neither are intialized to avoid
       // 2 checks or extra initialized variable
       collectMetric = Some(new MetricRange(collectTime))
