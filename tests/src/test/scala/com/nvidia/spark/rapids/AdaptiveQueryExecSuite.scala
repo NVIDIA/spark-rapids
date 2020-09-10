@@ -110,6 +110,7 @@ class AdaptiveQueryExecSuite
   }
 
   test("Join partitioned tables") {
+    assumeSpark301orLater
 
     val conf = new SparkConf()
         .set(SQLConf.ADAPTIVE_EXECUTION_ENABLED.key, "true")
@@ -241,14 +242,7 @@ class AdaptiveQueryExecSuite
   }
 
   def skewJoinTest(fun: SparkSession => Unit) {
-
-    // this test requires Spark 3.0.1 or later
-    val isValidTestForSparkVersion = ShimLoader.getSparkShims.getSparkShimVersion match {
-      case SparkShimVersion(3, 0, 0) => false
-      case DatabricksShimVersion(3, 0, 0) => false
-      case _ => true
-    }
-    assume(isValidTestForSparkVersion)
+    assumeSpark301orLater
 
     val conf = new SparkConf()
       .set(SQLConf.ADAPTIVE_EXECUTION_ENABLED.key, "true")
@@ -285,6 +279,17 @@ class AdaptiveQueryExecSuite
       fun(spark)
 
     }, conf)
+  }
+
+  /** most of the AQE tests requires Spark 3.0.1 or later */
+  private def assumeSpark301orLater = {
+    val sparkShimVersion = ShimLoader.getSparkShims.getSparkShimVersion
+    val isValidTestForSparkVersion = sparkShimVersion match {
+      case SparkShimVersion(3, 0, 0) => false
+      case DatabricksShimVersion(3, 0, 0) => false
+      case _ => true
+    }
+    assume(isValidTestForSparkVersion)
   }
 
   def checkSkewJoin(

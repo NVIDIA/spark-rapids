@@ -54,7 +54,8 @@ class GpuTransitionOverrides extends Rule[SparkPlan] {
     case HostColumnarToGpu(r2c: RowToColumnarExec, goal) =>
       GpuRowToColumnarExec(optimizeAdaptiveTransitions(r2c.child, Some(r2c)), goal)
 
-    case GpuCoalesceBatches(e: GpuShuffleExchangeExecBase, _) if parent.isEmpty =>
+    case ColumnarToRowExec(GpuBringBackToHost(
+      GpuCoalesceBatches(e: GpuShuffleExchangeExecBase, _))) if parent.isEmpty =>
       // If this coalesced exchange has no parent it means that this plan is being created
       // as a query stage when AQE is on. Because we must return an operator that implements
       // ShuffleExchangeLike we need to remove the GpuCoalesceBatches operator here and
