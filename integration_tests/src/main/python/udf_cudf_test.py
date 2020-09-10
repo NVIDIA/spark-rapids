@@ -19,7 +19,7 @@ from typing import Iterator
 from pyspark.sql import Window
 from pyspark.sql.functions import pandas_udf, PandasUDFType
 from spark_session import with_cpu_session, with_gpu_session
-from marks import allow_non_gpu
+from marks import allow_non_gpu, cudf_udf
 
 cudf = pytest.importorskip("cudf")
 
@@ -70,6 +70,7 @@ def _plus_one_gpu_func(v: pd.Series) -> pd.Series:
 
 @allow_non_gpu(any=True)
 @pytest.mark.skip("exception in docker: OSError: Invalid IPC stream: negative continuation token, skip for now")
+@cudf_udf
 def test_with_column():
     def cpu_run(spark):
         df = _create_df(spark) 
@@ -83,6 +84,7 @@ def test_with_column():
 
 @allow_non_gpu(any=True)
 @pytest.mark.skip("exception in docker: OSError: Invalid IPC stream: negative continuation token, skip for now")
+@cudf_udf
 def test_sql():
     def cpu_run(spark):
         _ = spark.udf.register("add_one_cpu", _plus_one_cpu_func)
@@ -108,6 +110,7 @@ def _plus_one_gpu_iter_func(iterator: Iterator[pd.Series]) -> Iterator[pd.Series
         
 @allow_non_gpu(any=True)
 @pytest.mark.skip("exception in docker: OSError: Invalid IPC stream: negative continuation token, skip for now")
+@cudf_udf
 def test_select():
     def cpu_run(spark):
         df = _create_df(spark)
@@ -121,6 +124,7 @@ def test_select():
 
 
 @allow_non_gpu('GpuMapInPandasExec','PythonUDF')
+@cudf_udf
 def test_map_in_pandas():
     def cpu_run(spark):
         df = _create_df(spark)
@@ -154,6 +158,7 @@ def _normalize_gpu_func(df):
     return gdf.assign(v=(v - v.mean()) / v.std()).to_pandas()
 
 @allow_non_gpu('GpuFlatMapGroupsInPandasExec','PythonUDF')
+@cudf_udf
 def test_group_apply():
     def cpu_run(spark):
         df = _create_df(spark)
@@ -167,6 +172,7 @@ def test_group_apply():
 
 
 @allow_non_gpu('GpuFlatMapGroupsInPandasExec','PythonUDF')
+@cudf_udf
 def test_group_apply_in_pandas():
     def cpu_run(spark):
         df = _create_df(spark)
@@ -196,6 +202,7 @@ def _sum_gpu_func(v: pd.Series) -> int:
     return gpu_serises.sum()
 
 @allow_non_gpu('GpuAggregateInPandasExec','PythonUDF','Alias')
+@cudf_udf
 def test_group_agg():
     def cpu_run(spark):
         df = _create_df(spark)
@@ -209,6 +216,7 @@ def test_group_agg():
 
 
 @allow_non_gpu('GpuAggregateInPandasExec','PythonUDF','Alias')
+@cudf_udf
 def test_sql_group():
     def cpu_run(spark):
         _ = spark.udf.register("sum_cpu_udf", _sum_cpu_func)
@@ -224,6 +232,7 @@ def test_sql_group():
 
 
 @allow_non_gpu('GpuWindowInPandasExec','PythonUDF','Alias','WindowExpression','WindowSpecDefinition','SpecifiedWindowFrame','UnboundedPreceding$', 'UnboundedFollowing$')
+@cudf_udf
 def test_window():
     def cpu_run(spark):
         df = _create_df(spark)
@@ -239,6 +248,7 @@ def test_window():
 
 
 @allow_non_gpu('GpuFlatMapCoGroupsInPandasExec','PythonUDF')
+@cudf_udf
 def test_cogroup():
     def cpu_run(spark):
         df1 = spark.createDataFrame(
