@@ -108,12 +108,12 @@ sudo ln -s /databricks/jars/ $SPARK_HOME/jars || true
 sudo chmod 777 /databricks/data/logs/
 sudo chmod 777 /databricks/data/logs/*
 echo { \"port\":\"15002\" } > ~/.databricks-connect
-if [ `ls $DB_JAR_LOC/rapids* | wc -l` > 1 ]; then
+if [ `ls $DB_JAR_LOC/rapids* | wc -l` -gt 1 ]; then
     echo "ERROR: Too many rapids jars in $DB_JAR_LOC"
     ls $DB_JAR_LOC/rapids*
     exit 1
 fi
-if [ `ls $DB_JAR_LOC/cudf* | wc -l` > 1 ]; then
+if [ `ls $DB_JAR_LOC/cudf* | wc -l` -gt 1 ]; then
     echo "ERROR: Too many cudf jars in $DB_JAR_LOC"
     ls $DB_JAR_LOC/cudf*
     exit 1
