@@ -34,6 +34,8 @@ import org.apache.spark.sql.rapids.execution.TrampolineUtil
 import org.apache.spark.sql.types.{DateType, StructType, TimestampType}
 
 object GpuParquetFileFormat {
+  val PARQUET_WRITE_TIMESTAMP_CAST_TO_MILLIS = "com.nvidia.spark.rapids.parquet.write.castToMillis"
+
   def tagGpuSupport(
       meta: RapidsMeta[_, _, _],
       spark: SparkSession,
@@ -64,9 +66,9 @@ object GpuParquetFileFormat {
       TrampolineUtil.dataTypeExistsRecursively(field.dataType, _.isInstanceOf[TimestampType])
     }
     if (schemaHasTimestamps) {
-      // TODO: Could support TIMESTAMP_MILLIS by performing cast on all timestamp input columns
       sqlConf.parquetOutputTimestampType match {
         case ParquetOutputTimestampType.TIMESTAMP_MICROS =>
+        case ParquetOutputTimestampType.TIMESTAMP_MILLIS =>
         case t => meta.willNotWorkOnGpu(s"Output timestamp type $t is not supported")
       }
     }
@@ -162,11 +164,15 @@ class GpuParquetFileFormat extends ColumnarFileFormat with Logging {
     val outputTimestampType = sparkSession.sessionState.conf.parquetOutputTimestampType
     if (outputTimestampType != ParquetOutputTimestampType.TIMESTAMP_MICROS) {
       val hasTimestamps = dataSchema.exists { field =>
-        TrampolineUtil.dataTypeExistsRecursively(field.dataType, _.isInstanceOf[TimestampType])
+        TrampolineUtil.dataTypeExistsRecursively(field.dataType, f => {
+          f.isInstanceOf[TimestampType]
+        })
       }
-      if (hasTimestamps) {
+      if (hasTimestamps && outputTimestampType != ParquetOutputTimestampType.TIMESTAMP_MILLIS) {
         throw new UnsupportedOperationException(
           s"Unsupported output timestamp type: $outputTimestampType")
+      } else if (hasTimestamps) {
+        conf.set(GpuParquetFileFormat.PARQUET_WRITE_TIMESTAMP_CAST_TO_MILLIS, "true")
       }
     }
     conf.set(SQLConf.PARQUET_OUTPUT_TIMESTAMP_TYPE.key, outputTimestampType.toString)

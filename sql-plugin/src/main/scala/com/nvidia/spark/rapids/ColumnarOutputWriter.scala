@@ -18,14 +18,14 @@ package com.nvidia.spark.rapids
 
 import scala.collection.mutable
 
-import ai.rapids.cudf.{HostBufferConsumer, HostMemoryBuffer, NvtxColor, NvtxRange, Table, TableWriter}
+import ai.rapids.cudf.{DType, HostBufferConsumer, HostMemoryBuffer, NvtxColor, NvtxRange, Table, TableWriter}
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import org.apache.hadoop.fs.{FSDataOutputStream, Path}
 import org.apache.hadoop.mapreduce.TaskAttemptContext
 
 import org.apache.spark.TaskContext
 import org.apache.spark.sql.rapids.{ColumnarWriteTaskStatsTracker, GpuWriteTaskStatsTracker}
-import org.apache.spark.sql.types.StructType
+import org.apache.spark.sql.types.{DataTypes, StructType}
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
 /**
@@ -105,12 +105,27 @@ abstract class ColumnarOutputWriter(path: String, context: TaskAttemptContext,
    */
   def write(batch: ColumnarBatch, statsTrackers: Seq[ColumnarWriteTaskStatsTracker]): Unit = {
     var needToCloseBatch = true
+    val castToMillis = conf.get(GpuParquetFileFormat.PARQUET_WRITE_TIMESTAMP_CAST_TO_MILLIS,
+      "false")
+    val newBatch: ColumnarBatch = if (castToMillis.equals("true")) {
+      new ColumnarBatch(GpuColumnVector.extractColumns(batch).map(cv => {
+        if (cv.dataType() == DataTypes.TimestampType) {
+          new GpuColumnVector(DataTypes.TimestampType, withResource(cv.getBase()) { v =>
+            v.castTo(DType.TIMESTAMP_MILLISECONDS)
+          })
+        } else {
+          cv
+        }
+      }))
+    } else {
+      batch
+    }
     try {
       val writeStartTimestamp = System.nanoTime
       val writeRange = new NvtxRange("File write", NvtxColor.YELLOW)
       val gpuTime = try {
         needToCloseBatch = false
-        writeBatch(batch)
+        writeBatch(newBatch)
       } finally {
         writeRange.close()
       }
@@ -125,7 +140,7 @@ abstract class ColumnarOutputWriter(path: String, context: TaskAttemptContext,
       }
     } finally {
       if (needToCloseBatch) {
-        batch.close()
+        newBatch.close()
       }
     }
   }
