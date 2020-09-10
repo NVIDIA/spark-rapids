@@ -77,8 +77,13 @@ object GpuPythonHelper extends Logging {
     }
   }
 
-  def isPythonOnGpuEnabled(sqlConf: SQLConf): Boolean = new RapidsConf(sqlConf)
-    .get(PYTHON_GPU_ENABLED)
+  def isPythonOnGpuEnabled(sqlConf: SQLConf): Boolean = {
+    val pythonEnabled = new RapidsConf(sqlConf).get(PYTHON_GPU_ENABLED)
+    if (pythonEnabled) {
+      checkPythonConfigs(sparkConf)
+    }
+    pythonEnabled
+  }
 
   // Called in each task at the executor side
   def injectGpuInfo(funcs: Seq[ChainedPythonFunctions], isPythonOnGpuEnabled: Boolean): Unit = {
@@ -95,12 +100,11 @@ object GpuPythonHelper extends Logging {
     })
   }
 
-  // Always check the related conf(s) to launch our rapids daemon or worker for
+  // Check the related conf(s) to launch our rapids daemon or worker for
   // the GPU initialization when python on gpu enabled.
   // - python worker module if useDaemon is false, otherwise
   // - python daemon module.
-  // This is called at driver side
-  def checkPythonConfigs(conf: SparkConf): Unit = {
+  private[sql] def checkPythonConfigs(conf: SparkConf): Unit = synchronized {
     val useDaemon = {
       val useDaemonEnabled = conf.get(PYTHON_USE_DAEMON)
       // This flag is ignored on Windows as it's unable to fork.

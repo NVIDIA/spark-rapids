@@ -33,7 +33,6 @@ import org.apache.spark.sql.catalyst.rules.Rule
 import org.apache.spark.sql.execution._
 import org.apache.spark.sql.execution.adaptive.AdaptiveSparkPlanExec
 import org.apache.spark.sql.internal.StaticSQLConf
-import org.apache.spark.sql.rapids.execution.python.GpuPythonHelper
 import org.apache.spark.sql.util.QueryExecutionListener
 
 case class ColumnarOverrideRules() extends ColumnarRule with Logging {
@@ -98,8 +97,6 @@ object RapidsPluginUtils extends Logging {
         s"the Rapids SQL Plugin. Please disable the rapids plugin or use a supported serializer " +
         s"serializer ($JAVA_SERIALIZER_NAME, $KRYO_SERIALIZER_NAME).")
     }
-
-    GpuPythonHelper.checkPythonConfigs(conf)
   }
 }
 
