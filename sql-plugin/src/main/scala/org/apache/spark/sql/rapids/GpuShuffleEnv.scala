@@ -18,20 +18,14 @@ package org.apache.spark.sql.rapids
 
 import java.util.Locale
 
-import ai.rapids.cudf.{CudaMemInfo, Rmm}
 import com.nvidia.spark.rapids._
 
 import org.apache.spark.SparkEnv
 import org.apache.spark.internal.Logging
 
 class GpuShuffleEnv(rapidsConf: RapidsConf) extends Logging {
-  private val catalog = new RapidsBufferCatalog
   private var shuffleCatalog: ShuffleBufferCatalog = _
   private var shuffleReceivedBufferCatalog: ShuffleReceivedBufferCatalog = _
-  private var deviceStorage: RapidsDeviceMemoryStore = _
-  private var hostStorage: RapidsHostMemoryStore = _
-  private var diskStorage: RapidsDiskStore = _
-  private var memoryEventHandler: DeviceMemoryEventHandler = _
 
   private lazy val conf = SparkEnv.get.conf
 
@@ -49,52 +43,19 @@ class GpuShuffleEnv(rapidsConf: RapidsConf) extends Logging {
     }
   }
 
-  def initStorage(devInfo: CudaMemInfo): Unit = {
+  def init(): Unit = {
     if (isRapidsShuffleConfigured) {
-      assert(memoryEventHandler == null)
-      deviceStorage = new RapidsDeviceMemoryStore(catalog)
-      hostStorage = new RapidsHostMemoryStore(catalog, rapidsConf.hostSpillStorageSize)
       val diskBlockManager = new RapidsDiskBlockManager(conf)
-      diskStorage = new RapidsDiskStore(catalog, diskBlockManager)
-      deviceStorage.setSpillStore(hostStorage)
-      hostStorage.setSpillStore(diskStorage)
-
-      logInfo("Installing GPU memory handler for spill")
-      memoryEventHandler = new DeviceMemoryEventHandler(deviceStorage)
-      Rmm.setEventHandler(memoryEventHandler)
-
-      shuffleCatalog = new ShuffleBufferCatalog(catalog, diskBlockManager)
-      shuffleReceivedBufferCatalog = new ShuffleReceivedBufferCatalog(catalog, diskBlockManager)
-    }
-  }
-
-  def closeStorage(): Unit = {
-    logInfo("Closing shuffle storage")
-    if (memoryEventHandler != null) {
-      // Workaround for shutdown ordering problems where device buffers allocated with this handler
-      // are being freed after the handler is destroyed
-      //Rmm.clearEventHandler()
-      memoryEventHandler = null
-    }
-    if (deviceStorage != null) {
-      deviceStorage.close()
-      deviceStorage = null
-    }
-    if (hostStorage != null) {
-      hostStorage.close()
-      hostStorage = null
-    }
-    if (diskStorage != null) {
-      diskStorage.close()
-      diskStorage = null
+      shuffleCatalog =
+          new ShuffleBufferCatalog(RapidsBufferCatalog.singleton, diskBlockManager)
+      shuffleReceivedBufferCatalog =
+          new ShuffleReceivedBufferCatalog(RapidsBufferCatalog.singleton, diskBlockManager)
     }
   }
 
   def getCatalog: ShuffleBufferCatalog = shuffleCatalog
 
   def getReceivedCatalog: ShuffleReceivedBufferCatalog = shuffleReceivedBufferCatalog
-
-  def getDeviceStorage: RapidsDeviceMemoryStore = deviceStorage
 }
 
 object GpuShuffleEnv extends Logging {
@@ -119,11 +80,6 @@ object GpuShuffleEnv extends Logging {
     isRapidsShuffleManagerInitialized = initialized
   }
 
-  def shutdown(): Unit = {
-    // in the driver, this will not be set
-    Option(env).foreach(_.closeStorage())
-  }
-
   def getCatalog: ShuffleBufferCatalog = if (env == null) {
     null
   } else {
@@ -134,16 +90,13 @@ object GpuShuffleEnv extends Logging {
   // Functions below only get called from the executor
   //
 
-  def init(conf: RapidsConf, devInfo: CudaMemInfo): Unit = {
-    Option(env).foreach(_.closeStorage())
+  def init(conf: RapidsConf): Unit = {
     val shuffleEnv = new GpuShuffleEnv(conf)
-    shuffleEnv.initStorage(devInfo)
+    shuffleEnv.init()
     env = shuffleEnv
   }
 
   def getReceivedCatalog: ShuffleReceivedBufferCatalog = env.getReceivedCatalog
-
-  def getDeviceStorage: RapidsDeviceMemoryStore = env.getDeviceStorage
 
   def rapidsShuffleCodec: Option[TableCompressionCodec] = env.rapidsShuffleCodec
 }

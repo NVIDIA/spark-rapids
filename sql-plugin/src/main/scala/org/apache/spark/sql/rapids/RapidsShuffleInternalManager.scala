@@ -290,7 +290,7 @@ abstract class RapidsShuffleInternalManagerBase(conf: SparkConf, isDriver: Boole
           mapId,
           metricsReporter,
           catalog,
-          GpuShuffleEnv.getDeviceStorage,
+          RapidsBufferCatalog.getDeviceStorage,
           server,
           gpu.dependency.metrics)
       case other =>
@@ -361,7 +361,6 @@ abstract class RapidsShuffleInternalManagerBase(conf: SparkConf, isDriver: Boole
   override def shuffleBlockResolver: ShuffleBlockResolver = resolver
 
   override def stop(): Unit = {
-    GpuShuffleEnv.shutdown()
     wrapped.stop()
     server.foreach(_.close())
     transport.foreach(_.close())

@@ -214,6 +214,20 @@ class HostToGpuCoalesceIterator(iter: Iterator[ColumnarBatch],
     totalRows = 0
     peakDevMemory.set(maxDeviceMemory)
   }
+
+  private var onDeck: Option[ColumnarBatch] = None
+
+  override protected def hasOnDeck: Boolean = onDeck.isDefined
+  override protected def saveOnDeck(batch: ColumnarBatch): Unit = onDeck = Some(batch)
+  override protected def clearOnDeck(): Unit = {
+    onDeck.foreach(_.close())
+    onDeck = None
+  }
+  override protected def popOnDeck(): ColumnarBatch = {
+    val ret = onDeck.get
+    onDeck = None
+    ret
+  }
 }
 
 /**

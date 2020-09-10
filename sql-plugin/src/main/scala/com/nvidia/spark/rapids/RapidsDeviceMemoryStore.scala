@@ -26,8 +26,8 @@ import org.apache.spark.sql.vectorized.ColumnarBatch
  * Buffer storage using device memory.
  * @param catalog catalog to register this store
  */
-class RapidsDeviceMemoryStore(
-    catalog: RapidsBufferCatalog) extends RapidsBufferStore("GPU", catalog) {
+class RapidsDeviceMemoryStore(catalog: RapidsBufferCatalog = RapidsBufferCatalog.singleton)
+    extends RapidsBufferStore("GPU", catalog) {
   override protected def createBuffer(
       other: RapidsBuffer,
       stream: Cuda.Stream): RapidsBufferBase = {
