@@ -19,14 +19,18 @@ package com.nvidia.spark.rapids
 import java.util.concurrent.ConcurrentHashMap
 import java.util.function.BiFunction
 
-import scala.collection.mutable.ArrayBuffer
-
+import ai.rapids.cudf.{DeviceMemoryBuffer, Rmm, Table}
 import com.nvidia.spark.rapids.StorageTier.StorageTier
 import com.nvidia.spark.rapids.format.TableMeta
 
+import org.apache.spark.SparkEnv
 import org.apache.spark.internal.Logging
+import org.apache.spark.sql.rapids.RapidsDiskBlockManager
 
-/** Catalog for lookup of buffers by ID */
+/**
+ * Catalog for lookup of buffers by ID. The constructor is only visible for testing, generally
+ * `RapidsBufferCatalog.singleton` should be used instead.
+ */
 class RapidsBufferCatalog extends Logging {
   /** Map of buffer IDs to buffers */
   private[this] val bufferMap = new ConcurrentHashMap[RapidsBufferId, RapidsBuffer]
@@ -99,6 +103,95 @@ class RapidsBufferCatalog extends Logging {
   }
 }
 
-object RapidsBufferCatalog {
+object RapidsBufferCatalog extends Logging {
   private val MAX_BUFFER_LOOKUP_ATTEMPTS = 100
+
+  val singleton = new RapidsBufferCatalog
+  private var deviceStorage: RapidsDeviceMemoryStore = _
+  private var hostStorage: RapidsHostMemoryStore = _
+  private var diskStorage: RapidsDiskStore = _
+  private var memoryEventHandler: DeviceMemoryEventHandler = _
+
+  private lazy val conf = SparkEnv.get.conf
+
+  def init(rapidsConf: RapidsConf): Unit = {
+    // We are going to re-initialize so make sure all of the old things were closed...
+    closeImpl()
+    assert(memoryEventHandler == null)
+    deviceStorage = new RapidsDeviceMemoryStore()
+    hostStorage = new RapidsHostMemoryStore(rapidsConf.hostSpillStorageSize)
+    val diskBlockManager = new RapidsDiskBlockManager(conf)
+    diskStorage = new RapidsDiskStore(diskBlockManager)
+    deviceStorage.setSpillStore(hostStorage)
+    hostStorage.setSpillStore(diskStorage)
+
+    logInfo("Installing GPU memory handler for spill")
+    memoryEventHandler = new DeviceMemoryEventHandler(deviceStorage)
+    Rmm.setEventHandler(memoryEventHandler)
+  }
+
+  def close(): Unit = {
+    logInfo("Closing storage")
+    closeImpl()
+  }
+
+  private def closeImpl(): Unit = {
+    if (memoryEventHandler != null) {
+      // Workaround for shutdown ordering problems where device buffers allocated with this handler
+      // are being freed after the handler is destroyed
+      //Rmm.clearEventHandler()
+      memoryEventHandler = null
+    }
+
+    if (deviceStorage != null) {
+      deviceStorage.close()
+      deviceStorage = null
+    }
+    if (hostStorage != null) {
+      hostStorage.close()
+      hostStorage = null
+    }
+    if (diskStorage != null) {
+      diskStorage.close()
+      diskStorage = null
+    }
+  }
+
+  def getDeviceStorage: RapidsDeviceMemoryStore = deviceStorage
+
+  /**
+   * Adds a contiguous table to the device storage, taking ownership of the table.
+   * @param id buffer ID to associate with this buffer
+   * @param table cudf table based from the contiguous buffer
+   * @param contigBuffer device memory buffer backing the table
+   * @param initialSpillPriority starting spill priority value for the buffer
+   */
+  def addTable(
+      id: RapidsBufferId,
+      table: Table,
+      contigBuffer: DeviceMemoryBuffer,
+      initialSpillPriority: Long): Unit =
+    deviceStorage.addTable(id, table, contigBuffer, initialSpillPriority)
+
+  /**
+   * Adds a buffer to the device storage, taking ownership of the buffer.
+   * @param id buffer ID to associate with this buffer
+   * @param buffer buffer that will be owned by the store
+   * @param tableMeta metadata describing the buffer layout
+   * @param initialSpillPriority starting spill priority value for the buffer
+   */
+  def addBuffer(
+      id: RapidsBufferId,
+      buffer: DeviceMemoryBuffer,
+      tableMeta: TableMeta,
+      initialSpillPriority: Long): Unit =
+    deviceStorage.addBuffer(id, buffer, tableMeta, initialSpillPriority)
+
+  /**
+   * Lookup the buffer that corresponds to the specified buffer ID and acquire it.
+   * NOTE: It is the responsibility of the caller to close the buffer.
+   * @param id buffer identifier
+   * @return buffer that has been acquired
+   */
+  def acquireBuffer(id: RapidsBufferId): RapidsBuffer = singleton.acquireBuffer(id)
 }

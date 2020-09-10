@@ -38,7 +38,7 @@ class GpuSinglePartitioningSuite extends FunSuite with Arm {
     val conf = new SparkConf().set("spark.shuffle.manager", GpuShuffleEnv.RAPIDS_SHUFFLE_CLASS)
         .set(RapidsConf.SHUFFLE_COMPRESSION_CODEC.key, "none")
     TestUtils.withGpuSparkSession(conf) { _ =>
-      GpuShuffleEnv.init(new RapidsConf(conf), Cuda.memGetInfo())
+      GpuShuffleEnv.init(new RapidsConf(conf))
       val partitioner = GpuSinglePartitioning(Nil)
       withResource(buildBatch()) { expected =>
         // partition will consume batch, so make a new batch with incremented refcounts
