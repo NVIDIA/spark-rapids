@@ -163,7 +163,6 @@ abstract class AbstractGpuCoalesceIterator(origIter: Iterator[ColumnarBatch],
   private var collectMetric: Option[MetricRange] = None
   private var totalMetric: Option[MetricRange] = None
 
-
   /** We need to track the sizes of string columns to make sure we don't exceed 2GB */
   private val stringFieldIndices: Array[Int] = schema.fields.zipWithIndex
     .filter(_._1.dataType == DataTypes.StringType)
