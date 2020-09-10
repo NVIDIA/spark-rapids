@@ -30,7 +30,6 @@ _conf = {
         'spark.rapids.sql.exec.AggregateInPandasExec': 'true',
         'spark.rapids.sql.exec.FlatMapCoGroupsInPandasExec': 'true',
         'spark.rapids.sql.exec.WindowInPandasExec': 'true',
-        'spark.rapids.python.gpu.enabled': 'true'
         }
 
 def _create_df(spark):
@@ -144,8 +143,8 @@ def test_map_in_pandas():
     _assert_cpu_gpu(cpu_run, gpu_run, gpu_conf=_conf)
 
 
-#To solve: Invalid udf: the udf argument must be a pandas_udf of type GROUPED_MAP
-#need to add udf type
+# To solve: Invalid udf: the udf argument must be a pandas_udf of type GROUPED_MAP
+# need to add udf type
 @pandas_udf("id long, v double", PandasUDFType.GROUPED_MAP)
 def _normalize_cpu_func(df):
     v = df.v
