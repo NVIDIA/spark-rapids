@@ -419,7 +419,7 @@ case class GpuArrowEvalPythonExec(
     val numInputRows = longMetric(NUM_INPUT_ROWS)
     val numInputBatches = longMetric(NUM_INPUT_BATCHES)
 
-    val isPythonOnGpuEnabled = GpuPythonHelper.isPythonOnGpuEnabled(conf)
+    lazy val isPythonOnGpuEnabled = GpuPythonHelper.isPythonOnGpuEnabled(conf)
     val inputRDD = child.executeColumnar()
     inputRDD.mapPartitions { iter =>
       val queue: BatchQueue = new BatchQueue()
@@ -461,8 +461,10 @@ case class GpuArrowEvalPythonExec(
         GpuProjectExec.project(batch, boundReferences)
       }
 
-      GpuPythonHelper.injectGpuInfo(pyFuncs, isPythonOnGpuEnabled)
-      PythonWorkerSemaphore.acquireIfNecessary(context)
+      if (isPythonOnGpuEnabled) {
+        GpuPythonHelper.injectGpuInfo(pyFuncs, isPythonOnGpuEnabled)
+        PythonWorkerSemaphore.acquireIfNecessary(context)
+      }
 
       val outputBatchIterator = new GpuArrowPythonRunner(
         pyFuncs,

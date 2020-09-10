@@ -19,8 +19,7 @@ package com.nvidia.spark.rapids.python
 import java.util.concurrent.{ConcurrentHashMap, Semaphore}
 
 import com.nvidia.spark.rapids.RapidsConf
-import com.nvidia.spark.rapids.python.PythonConfEntries.{CONCURRENT_PYTHON_WORKERS,
-  PYTHON_GPU_ENABLED}
+import com.nvidia.spark.rapids.python.PythonConfEntries.CONCURRENT_PYTHON_WORKERS
 import org.apache.commons.lang3.mutable.MutableInt
 
 import org.apache.spark.{SparkEnv, TaskContext}
@@ -43,7 +42,7 @@ object PythonWorkerSemaphore extends Logging {
 
   private lazy val rapidsConf = new RapidsConf(SparkEnv.get.conf)
   private lazy val workersPerGpu = rapidsConf.get(CONCURRENT_PYTHON_WORKERS)
-  private lazy val enabled = workersPerGpu > 0 && rapidsConf.get(PYTHON_GPU_ENABLED)
+  private lazy val enabled = workersPerGpu > 0
 
   // DO NOT ACCESS DIRECTLY!  Use `getInstance` instead.
   @volatile

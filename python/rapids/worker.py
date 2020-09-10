@@ -22,12 +22,14 @@ from pyspark.worker import local_connect_and_auth, main as worker_main
 def initialize_gpu_mem():
     # CUDA device(s) info
     cuda_devices_str = os.environ.get('CUDA_VISIBLE_DEVICES')
-    print("INFO: Process {} found CUDA visible device(s): {}".format(
-        os.getpid(), cuda_devices_str))
-    if not cuda_devices_str:
-        # ignore initialzation if no GPU(s) is provided
+    python_gpu_disabled = os.environ.get('RAPIDS_PYTHON_ENABLED', 'false').lower() == 'false'
+    if python_gpu_disabled or not cuda_devices_str:
+        # Skip gpu initialization due to no CUDA device or python on gpu is disabled.
+        # One case to come here is the test runs with cpu session in integration tests.
         return
 
+    print("INFO: Process {} found CUDA visible device(s): {}".format(
+        os.getpid(), cuda_devices_str))
     # Initialize RMM only when requiring to enable pooled or managed memory.
     pool_enabled = os.environ.get('RAPIDS_POOLED_MEM_ENABLED', 'false').lower() == 'true'
     uvm_enabled = os.environ.get('RAPIDS_UVM_ENABLED', 'false').lower() == 'true'
