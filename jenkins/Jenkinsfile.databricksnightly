@@ -44,14 +44,14 @@ pipeline {
         choice(name: 'DEPLOY_TO', choices: ['Urm', 'Local'],
             description: 'Where to deploy artifacts to')
         string(name: 'DATABRICKS_VERSION',
-                defaultValue: '0.2.0-SNAPSHOT', description: 'Version to set')
+                defaultValue: '0.3.0-SNAPSHOT', description: 'Version to set')
         string(name: 'CUDF_VERSION',
                 defaultValue: '0.15', description: 'Cudf version to use')
         string(name: 'CUDA_VERSION',
                 defaultValue: 'cuda10-1', description: 'cuda version to use')
         string(name: 'CLUSTER_ID',
-                defaultValue: '0617-140138-umiak14', description: 'databricks cluster id')
-        string(name: 'REF', defaultValue: 'branch-0.2', description: 'Commit to build')
+                defaultValue: '0909-141326-pawl52', description: 'databricks cluster id')
+        string(name: 'REF', defaultValue: 'branch-0.3', description: 'Commit to build')
     }
 
     environment {

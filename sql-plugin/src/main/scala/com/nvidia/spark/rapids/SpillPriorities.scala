@@ -42,9 +42,16 @@ object SpillPriorities {
 
   /**
    * Priorities for buffers received from shuffle.
-   * Shuffle input buffers are about to be read by a task, so only spill
-   * them if there's no other choice.
+   * Shuffle input buffers are about to be read by a task, so spill
+   * them if there's no other choice, but leave some space at the end of the priority range
+   * so there can be some things after it.
    */
-  // TODO: Should these be ordered amongst themselves? Maybe consider buffer size?
-  val INPUT_FROM_SHUFFLE_PRIORITY: Long = Long.MaxValue
+  val INPUT_FROM_SHUFFLE_PRIORITY: Long = Long.MaxValue - 1000
+
+  /**
+   * Priority for buffers in coalesce batch that did not fit into the batch we are working on.
+   * Most of the time this is shuffle input data that we read early so it should be slightly higher
+   * priority to keep around than other input shuffle buffers.
+   */
+  val COALESCE_BATCH_ON_DECK_PRIORITY: Long = INPUT_FROM_SHUFFLE_PRIORITY + 1
 }
