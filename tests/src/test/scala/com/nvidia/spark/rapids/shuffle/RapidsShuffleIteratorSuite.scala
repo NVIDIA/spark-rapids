@@ -32,7 +32,7 @@ class RapidsShuffleIteratorSuite extends RapidsShuffleTestHelper {
 
     val cl = new RapidsShuffleIterator(
       RapidsShuffleTestHelper.makeMockBlockManager("1", "1"),
-      null,
+      mockConf,
       mockTransport,
       blocksByAddress,
       null,

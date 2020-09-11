@@ -80,7 +80,13 @@ class RapidsShuffleIterator(
       mapIndex: Int,
       errorMessage: String) extends ShuffleClientResult
 
+  // when batches (or errors) arrive from the transport, the are pushed
+  // to the `resolvedBatches` queue.
   private[this] val resolvedBatches = new LinkedBlockingQueue[ShuffleClientResult]()
+
+  // a user configurable timeout in seconds for the maximum time the iterator
+  // will wait for a batch to appear in `resolvedBatches`
+  private[this] val timeoutSeconds = rapidsConf.shuffleFetchTimeout
 
   // Used to track requests that are pending where the number of [[ColumnarBatch]] results is
   // not known yet
@@ -311,7 +317,7 @@ class RapidsShuffleIterator(
 
     val blockedStart = System.currentTimeMillis()
     var result: Option[ShuffleClientResult] = None
-    val timeoutSeconds = rapidsConf.shuffleFetchTimeout
+
     result = pollForResult(timeoutSeconds)
     val blockedTime = System.currentTimeMillis() - blockedStart
     result match {
