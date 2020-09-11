@@ -102,6 +102,10 @@
               <include>LICENSE</include>
             </includes>
           </resource>
+          <resource>
+            <!-- Include python files for Python UDF support. -->
+            <directory>${project.basedir}/../python/</directory>
+          </resource>
         </resources>
         <plugins>
             <plugin>
