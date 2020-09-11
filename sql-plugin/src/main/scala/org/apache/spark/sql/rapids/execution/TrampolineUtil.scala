@@ -73,4 +73,6 @@ object TrampolineUtil {
 
   /** Shuts down and cleans up any existing Spark session */
   def cleanupAnyExistingSession(): Unit = SparkSession.cleanupAnyExistingSession()
+
+  def asNullable(dt: DataType): DataType = dt.asNullable
 }

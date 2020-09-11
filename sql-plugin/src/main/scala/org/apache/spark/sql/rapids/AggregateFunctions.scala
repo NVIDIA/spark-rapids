@@ -66,50 +66,50 @@ trait GpuAggregateFunction extends GpuExpression {
   }
 }
 
+case class WrappedAggFunction(aggregateFunction: GpuAggregateFunction, filter: Expression)
+    extends GpuDeclarativeAggregate {
+  override val inputProjection: Seq[GpuExpression] = {
+    val caseWhenExpressions = aggregateFunction.inputProjection.map { ip =>
+      // special case average with null result from the filter as expected values should be
+      // (0.0,0) for (sum, count)
+      val initialValue: Expression =
+        aggregateFunction match {
+          case _ : GpuAverage => ip.dataType match {
+            case doubleType: DoubleType => GpuLiteral(0D, doubleType)
+            case _ : LongType => GpuLiteral(0L, LongType)
+          }
+          case _ => GpuLiteral(null, ip.dataType)
+        }
+      val filterConditional = GpuCaseWhen(Seq((filter, ip)))
+      GpuCaseWhen(Seq((GpuIsNotNull(filterConditional), filterConditional)), Some(initialValue))
+    }
+    caseWhenExpressions
+  }
+  /** Attributes of fields in aggBufferSchema. */
+  override def aggBufferAttributes: Seq[AttributeReference] =
+    aggregateFunction.aggBufferAttributes
+  override def nullable: Boolean = aggregateFunction.nullable
+
+  override def dataType: DataType = aggregateFunction.dataType
+
+  override def children: Seq[Expression] = Seq(aggregateFunction, filter)
+
+  override val initialValues: Seq[GpuExpression] =
+    aggregateFunction.asInstanceOf[GpuDeclarativeAggregate].initialValues
+  override val updateExpressions: Seq[Expression] =
+    aggregateFunction.asInstanceOf[GpuDeclarativeAggregate].updateExpressions
+  override val mergeExpressions: Seq[GpuExpression] =
+    aggregateFunction.asInstanceOf[GpuDeclarativeAggregate].mergeExpressions
+  override val evaluateExpression: Expression =
+    aggregateFunction.asInstanceOf[GpuDeclarativeAggregate].evaluateExpression
+}
+
 case class GpuAggregateExpression(origAggregateFunction: GpuAggregateFunction,
                                   mode: AggregateMode,
                                   isDistinct: Boolean,
                                   filter: Option[Expression],
                                   resultId: ExprId)
   extends GpuExpression with GpuUnevaluable {
-
-  case class WrappedAggFunction(aggregateFunction: GpuAggregateFunction, filter: Expression)
-    extends GpuDeclarativeAggregate {
-    override val inputProjection: Seq[GpuExpression] = {
-      val caseWhenExpressions = aggregateFunction.inputProjection.map { ip =>
-        // special case average with null result from the filter as expected values should be
-        // (0.0,0) for (sum, count)
-        val initialValue: Expression =
-          origAggregateFunction match {
-            case _ : GpuAverage => ip.dataType match {
-              case doubleType: DoubleType => GpuLiteral(0D, doubleType)
-              case _ : LongType => GpuLiteral(0L, LongType)
-            }
-            case _ => GpuLiteral(null, ip.dataType)
-          }
-        val filterConditional = GpuCaseWhen(Seq((filter, ip)))
-        GpuCaseWhen(Seq((GpuIsNotNull(filterConditional), filterConditional)), Some(initialValue))
-      }
-      caseWhenExpressions
-    }
-    /** Attributes of fields in aggBufferSchema. */
-    override def aggBufferAttributes: Seq[AttributeReference] =
-      aggregateFunction.aggBufferAttributes
-    override def nullable: Boolean = aggregateFunction.nullable
-
-    override def dataType: DataType = aggregateFunction.dataType
-
-    override def children: Seq[Expression] = aggregateFunction.children
-
-    override val initialValues: Seq[GpuExpression] =
-      aggregateFunction.asInstanceOf[GpuDeclarativeAggregate].initialValues
-    override val updateExpressions: Seq[Expression] =
-      aggregateFunction.asInstanceOf[GpuDeclarativeAggregate].updateExpressions
-    override val mergeExpressions: Seq[GpuExpression] =
-      aggregateFunction.asInstanceOf[GpuDeclarativeAggregate].mergeExpressions
-    override val evaluateExpression: Expression =
-      aggregateFunction.asInstanceOf[GpuDeclarativeAggregate].evaluateExpression
-  }
 
   val aggregateFunction = if (filter.isDefined) {
     WrappedAggFunction(origAggregateFunction, filter.get)
@@ -136,13 +136,13 @@ case class GpuAggregateExpression(origAggregateFunction: GpuAggregateFunction,
       normalizedAggFunc.canonicalized.asInstanceOf[GpuAggregateFunction],
       mode,
       isDistinct,
-      filter,
+      filter.map(_.canonicalized),
       ExprId(0))
   }
 
   override def nullable: Boolean = aggregateFunction.nullable
   override def dataType: DataType = aggregateFunction.dataType
-  override def children: Seq[Expression] = aggregateFunction.children
+  override def children: Seq[Expression] = aggregateFunction +: filter.toSeq
 
   @transient
   override lazy val references: AttributeSet = {
@@ -285,7 +285,7 @@ abstract class GpuDeclarativeAggregate extends GpuAggregateFunction with GpuUnev
 }
 
 case class GpuMin(child: Expression) extends GpuDeclarativeAggregate {
-  private lazy val cudfMin = AttributeReference("cudf_min", child.dataType)()
+  private lazy val cudfMin = AttributeReference("min", child.dataType)()
 
   override lazy val inputProjection: Seq[Expression] = Seq(child)
   override lazy val updateExpressions: Seq[GpuExpression] = Seq(new CudfMin(cudfMin))
@@ -305,7 +305,7 @@ case class GpuMin(child: Expression) extends GpuDeclarativeAggregate {
 }
 
 case class GpuMax(child: Expression) extends GpuDeclarativeAggregate {
-  private lazy val cudfMax = AttributeReference("cudf_max", child.dataType)()
+  private lazy val cudfMax = AttributeReference("max", child.dataType)()
 
   override lazy val inputProjection: Seq[Expression] = Seq(child)
   override lazy val updateExpressions: Seq[GpuExpression] = Seq(new CudfMax(cudfMax))
@@ -331,7 +331,7 @@ case class GpuSum(child: Expression)
     case _ => LongType
   }
 
-  private lazy val cudfSum = AttributeReference("cudf_sum", resultType)()
+  private lazy val cudfSum = AttributeReference("sum", resultType)()
 
   override lazy val inputProjection: Seq[Expression] = Seq(child)
   override lazy val updateExpressions: Seq[GpuExpression] = Seq(new CudfSum(cudfSum))
@@ -353,7 +353,7 @@ case class GpuSum(child: Expression)
 
 case class GpuCount(children: Seq[Expression]) extends GpuDeclarativeAggregate {
   // counts are Long
-  private lazy val cudfCount = AttributeReference("cudf_count", LongType)()
+  private lazy val cudfCount = AttributeReference("count", LongType)()
 
   override lazy val inputProjection: Seq[Expression] = Seq(children.head)
   override lazy val updateExpressions: Seq[GpuExpression] = Seq(new CudfCount(cudfCount))
@@ -371,8 +371,8 @@ case class GpuCount(children: Seq[Expression]) extends GpuDeclarativeAggregate {
 
 case class GpuAverage(child: Expression) extends GpuDeclarativeAggregate {
   // averages are either Decimal or Double. We don't support decimal yet, so making this double.
-  private lazy val cudfSum = AttributeReference("cudf_sum", DoubleType)()
-  private lazy val cudfCount = AttributeReference("cudf_count", LongType)()
+  private lazy val cudfSum = AttributeReference("sum", DoubleType)()
+  private lazy val cudfCount = AttributeReference("count", LongType)()
 
   private def toDoubleLit(v: Any): GpuLiteral = {
     val litVal = v match {
@@ -444,7 +444,7 @@ abstract class GpuFirstBase(child: Expression)
 
   val ignoreNulls: Boolean
 
-  private lazy val cudfFirst = AttributeReference("cudf_first", child.dataType)()
+  private lazy val cudfFirst = AttributeReference("first", child.dataType)()
   private lazy val valueSet = AttributeReference("valueSet", BooleanType)()
 
   override lazy val inputProjection: Seq[Expression] =
@@ -481,7 +481,7 @@ abstract class GpuLastBase(child: Expression)
 
   val ignoreNulls: Boolean
 
-  private lazy val cudfLast = AttributeReference("cudf_last", child.dataType)()
+  private lazy val cudfLast = AttributeReference("last", child.dataType)()
   private lazy val valueSet = AttributeReference("valueSet", BooleanType)()
 
   override lazy val inputProjection: Seq[Expression] =

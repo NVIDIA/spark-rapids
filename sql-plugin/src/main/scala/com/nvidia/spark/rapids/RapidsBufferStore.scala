@@ -192,7 +192,7 @@ abstract class RapidsBufferStore(
   protected def createBuffer(buffer: RapidsBuffer, stream: Cuda.Stream): RapidsBufferBase
 
   /** Update bookkeeping for a new buffer */
-  protected def addBuffer(buffer: RapidsBufferBase): Unit = {
+  protected def addBuffer(buffer: RapidsBufferBase): Unit = synchronized {
     buffers.add(buffer)
     catalog.registerNewBuffer(buffer)
   }

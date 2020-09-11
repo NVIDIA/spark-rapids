@@ -49,7 +49,7 @@ def main():
   db_version = '0.1-databricks-SNAPSHOT'
   scala_version = '2.12'
   spark_version = '3.0.0'
-  cudf_version = '0.15-SNAPSHOT'
+  cudf_version = '0.15'
   cuda_version = 'cuda10-1'
   ci_cudf_jar = 'cudf-0.14-cuda10-1.jar'
   base_spark_pom_version = '3.0.0'

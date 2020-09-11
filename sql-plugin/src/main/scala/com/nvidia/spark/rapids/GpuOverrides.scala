@@ -29,25 +29,25 @@ import org.apache.spark.sql.catalyst.plans.physical._
 import org.apache.spark.sql.catalyst.rules.Rule
 import org.apache.spark.sql.connector.read.Scan
 import org.apache.spark.sql.execution._
-import org.apache.spark.sql.execution.adaptive.CustomShuffleReaderExec
+import org.apache.spark.sql.execution.adaptive.{AdaptiveSparkPlanExec, BroadcastQueryStageExec, CustomShuffleReaderExec, ShuffleQueryStageExec}
 import org.apache.spark.sql.execution.aggregate.{HashAggregateExec, SortAggregateExec}
-import org.apache.spark.sql.execution.command.{DataWritingCommand, DataWritingCommandExec}
-import org.apache.spark.sql.execution.datasources.{HadoopFsRelation, InsertIntoHadoopFsRelationCommand}
+import org.apache.spark.sql.execution.command.{DataWritingCommand, DataWritingCommandExec, ExecutedCommandExec}
+import org.apache.spark.sql.execution.datasources.InsertIntoHadoopFsRelationCommand
 import org.apache.spark.sql.execution.datasources.csv.CSVFileFormat
 import org.apache.spark.sql.execution.datasources.json.JsonFileFormat
 import org.apache.spark.sql.execution.datasources.orc.OrcFileFormat
 import org.apache.spark.sql.execution.datasources.parquet.ParquetFileFormat
 import org.apache.spark.sql.execution.datasources.text.TextFileFormat
-import org.apache.spark.sql.execution.datasources.v2.BatchScanExec
+import org.apache.spark.sql.execution.datasources.v2.{AlterNamespaceSetPropertiesExec, AlterTableExec, AtomicReplaceTableExec, BatchScanExec, CreateNamespaceExec, CreateTableExec, DeleteFromTableExec, DescribeNamespaceExec, DescribeTableExec, DropNamespaceExec, DropTableExec, RefreshTableExec, RenameTableExec, ReplaceTableExec, SetCatalogAndNamespaceExec, ShowCurrentNamespaceExec, ShowNamespacesExec, ShowTablePropertiesExec, ShowTablesExec}
 import org.apache.spark.sql.execution.datasources.v2.csv.CSVScan
-import org.apache.spark.sql.execution.datasources.v2.orc.OrcScan
-import org.apache.spark.sql.execution.datasources.v2.parquet.ParquetScan
 import org.apache.spark.sql.execution.exchange.{BroadcastExchangeExec, ShuffleExchangeExec}
-import org.apache.spark.sql.execution.joins.{BroadcastHashJoinExec, BroadcastNestedLoopJoinExec, CartesianProductExec, ShuffledHashJoinExec, SortMergeJoinExec}
+import org.apache.spark.sql.execution.joins._
+import org.apache.spark.sql.execution.python._
 import org.apache.spark.sql.execution.window.WindowExec
 import org.apache.spark.sql.rapids._
 import org.apache.spark.sql.rapids.catalyst.expressions.GpuRand
 import org.apache.spark.sql.rapids.execution.{GpuBroadcastMeta, GpuBroadcastNestedLoopJoinMeta, GpuCustomShuffleReaderExec, GpuShuffleMeta}
+import org.apache.spark.sql.rapids.execution.python._
 import org.apache.spark.sql.types._
 import org.apache.spark.unsafe.types.{CalendarInterval, UTF8String}
 
@@ -71,6 +71,7 @@ abstract class ReplacementRule[INPUT <: BASE, BASE, WRAP_TYPE <: RapidsMeta[INPU
 
   private var _incompatDoc: Option[String] = None
   private var _disabledDoc: Option[String] = None
+  private var _visible: Boolean = true
 
   override def incompatDoc: Option[String] = _incompatDoc
   override def disabledMsg: Option[String] = _disabledDoc
@@ -92,6 +93,11 @@ abstract class ReplacementRule[INPUT <: BASE, BASE, WRAP_TYPE <: RapidsMeta[INPU
    */
   final def disabledByDefault(str: String) : this.type = {
     _disabledDoc = Some(str)
+    this
+  }
+
+  final def invisible(): this.type = {
+    _visible = false
     this
   }
 
@@ -139,32 +145,34 @@ abstract class ReplacementRule[INPUT <: BASE, BASE, WRAP_TYPE <: RapidsMeta[INPU
   }
 
   def confHelp(asTable: Boolean = false, sparkSQLFunctions: Option[String] = None): Unit = {
-    val notesMsg = notes()
-    if (asTable) {
-      import ConfHelper.makeConfAnchor
-      print(s"${makeConfAnchor(confKey)}")
-      if (sparkSQLFunctions.isDefined) {
-        print(s"|${sparkSQLFunctions.get}")
-      }
-      print(s"|$desc|${notesMsg.isEmpty}|")
-      if (notesMsg.isDefined) {
-        print(s"${notesMsg.get}")
+    if (_visible) {
+      val notesMsg = notes()
+      if (asTable) {
+        import ConfHelper.makeConfAnchor
+        print(s"${makeConfAnchor(confKey)}")
+        if (sparkSQLFunctions.isDefined) {
+          print(s"|${sparkSQLFunctions.get}")
+        }
+        print(s"|$desc|${notesMsg.isEmpty}|")
+        if (notesMsg.isDefined) {
+          print(s"${notesMsg.get}")
+        } else {
+          print("None")
+        }
+        println("|")
       } else {
-        print("None")
+        println(s"$confKey:")
+        println(s"\tEnable (true) or disable (false) the $tag $operationName.")
+        if (sparkSQLFunctions.isDefined) {
+          println(s"\tsql function: ${sparkSQLFunctions.get}")
+        }
+        println(s"\t$desc")
+        if (notesMsg.isDefined) {
+          println(s"\t${notesMsg.get}")
+        }
+        println(s"\tdefault: ${notesMsg.isEmpty}")
+        println()
       }
-      println("|")
-    } else {
-      println(s"$confKey:")
-      println(s"\tEnable (true) or disable (false) the $tag $operationName.")
-      if (sparkSQLFunctions.isDefined) {
-        println(s"\tsql function: ${sparkSQLFunctions.get}")
-      }
-      println(s"\t$desc")
-      if (notesMsg.isDefined) {
-        println(s"\t${notesMsg.get}")
-      }
-      println(s"\tdefault: ${notesMsg.isEmpty}")
-      println()
     }
   }
 
@@ -434,6 +442,22 @@ object GpuOverrides {
     assert(desc != null)
     assert(doWrap != null)
     new PartRule[INPUT](doWrap, desc, tag)
+  }
+
+  /**
+   * Create an exec rule that should never be replaced, because it is something that should always
+   * run on the CPU, or should just be ignored totally for what ever reason.
+   */
+  def neverReplaceExec[INPUT <: SparkPlan](desc: String)
+      (implicit tag: ClassTag[INPUT]): ExecRule[INPUT] = {
+    assert(desc != null)
+    def doWrap(
+        exec: INPUT,
+        conf: RapidsConf,
+        p: Option[RapidsMeta[_, _, _]],
+        cc: ConfKeysAndIncompat) =
+      new DoNotReplaceOrWarnSparkPlanMeta[INPUT](exec, conf, p)
+    new ExecRule[INPUT](doWrap, desc, tag).invisible()
   }
 
   def exec[INPUT <: SparkPlan](
@@ -879,12 +903,34 @@ object GpuOverrides {
           GpuKnownFloatingPointNormalized(child)
       }),
     expr[DateDiff](
-      "Returns the number of days from startDate to endDate", 
+      "Returns the number of days from startDate to endDate",
       (a, conf, p, r) => new BinaryExprMeta[DateDiff](a, conf, p, r) {
         override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression = {
           GpuDateDiff(lhs, rhs)
         }
     }),
+    expr[TimeAdd](
+      "Adds interval to timestamp",
+      (a, conf, p, r) => new BinaryExprMeta[TimeAdd](a, conf, p, r) {
+        override def tagExprForGpu(): Unit = {
+          a.interval match {
+            case Literal(intvl: CalendarInterval, DataTypes.CalendarIntervalType) =>
+              if (intvl.months != 0) {
+                willNotWorkOnGpu("interval months isn't supported")
+              }
+            case _ =>
+              willNotWorkOnGpu("only literals are supported for intervals")
+          }
+          if (ZoneId.of(a.timeZoneId.get).normalized() != GpuOverrides.UTC_TIMEZONE_ID) {
+            willNotWorkOnGpu("Only UTC zone id is supported")
+          }
+        }
+
+        override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression = {
+          GpuTimeAdd(lhs, rhs)
+        }
+      }
+    ),
     expr[ToUnixTimestamp](
       "Returns the UNIX timestamp of the given time",
       (a, conf, p, r) => new UnixTimeExprMeta[ToUnixTimestamp](a, conf, p, r){
@@ -1243,6 +1289,20 @@ object GpuOverrides {
 
         override def convertToGpu(child: Expression): GpuExpression = GpuAverage(child)
       }),
+    expr[PythonUDF](
+      "UDF run in an external python process. Does not actually run on the GPU, but " +
+          "the transfer of data to/from it can be accelerated.",
+      (a, conf, p, r) => new ExprMeta[PythonUDF](a, conf, p, r) {
+        override def couldReplaceMessage: String = "does not block GPU acceleration"
+        override def noReplacementPossibleMessage(reasons: String): String =
+          s"blocks running on GPU because $reasons"
+
+        override def convertToGpu(): GpuExpression =
+          GpuPythonUDF(a.name, a.func, a.dataType,
+            childExprs.map(_.convertToGpu()),
+            a.evalType, a.udfDeterministic, a.resultId)
+      }
+    ),
     expr[Rand](
       "Generate a random column with i.i.d. uniformly distributed values in [0, 1)",
       (a, conf, p, r) => new UnaryExprMeta[Rand](a, conf, p, r) {
@@ -1544,7 +1604,7 @@ object GpuOverrides {
         override def convertToGpu(): GpuPartitioning =
           GpuHashPartitioning(childExprs.map(_.convertToGpu()), hp.numPartitions)
       }),
-    part[RangePartitioning]( 
+    part[RangePartitioning](
       "Range partitioning",
       (rp, conf, p, r) => new PartMeta[RangePartitioning](rp, conf, p, r) {
         override val childExprs: Seq[BaseExprMeta[_]] =
@@ -1565,14 +1625,14 @@ object GpuOverrides {
           }
         }
       }),
-    part[RoundRobinPartitioning]( 
+    part[RoundRobinPartitioning](
       "Round robin partitioning",
       (rrp, conf, p, r) => new PartMeta[RoundRobinPartitioning](rrp, conf, p, r) {
         override def convertToGpu(): GpuPartitioning = {
           GpuRoundRobinPartitioning(rrp.numPartitions)
         }
       }),
-    part[SinglePartition.type]( 
+    part[SinglePartition.type](
       "Single partitioning",
       (sp, conf, p, r) => new PartMeta[SinglePartition.type](sp, conf, p, r) {
         override val childExprs: Seq[ExprMeta[_]] = Seq.empty[ExprMeta[_]]
@@ -1657,6 +1717,28 @@ object GpuOverrides {
           override def convertToGpu(): GpuExec =
             GpuLocalLimitExec(localLimitExec.limit, childPlans(0).convertIfNeeded())
         }),
+    exec[ArrowEvalPythonExec](
+      "The backend of the Scalar Pandas UDFs, it supports running the Python UDFs code on GPU" +
+        " when calling cuDF APIs in the UDF, also accelerates the data transfer between the" +
+        " Java process and Python process",
+      (e, conf, p, r) =>
+        new SparkPlanMeta[ArrowEvalPythonExec](e, conf, p, r) {
+          val udfs: Seq[BaseExprMeta[PythonUDF]] =
+            e.udfs.map(GpuOverrides.wrapExpr(_, conf, Some(this)))
+          val resultAttrs: Seq[BaseExprMeta[Attribute]] =
+            e.resultAttrs.map(GpuOverrides.wrapExpr(_, conf, Some(this)))
+          override val childExprs: Seq[BaseExprMeta[_]] = udfs ++ resultAttrs
+
+          override def couldReplaceMessage: String = "could partially run on GPU"
+          override def noReplacementPossibleMessage(reasons: String): String =
+            s"cannot run even partially on the GPU because $reasons"
+
+          override def convertToGpu(): GpuExec =
+            GpuArrowEvalPythonExec(udfs.map(_.convertToGpu()).asInstanceOf[Seq[GpuPythonUDF]],
+              resultAttrs.map(_.convertToGpu()).asInstanceOf[Seq[Attribute]],
+              childPlans.head.convertIfNeeded(),
+              e.evalType)
+        }).disabledByDefault("Performance is not ideal for UDFs that take a long time"),
     exec[GlobalLimitExec](
       "Limiting of results across partitions",
       (globalLimitExec, conf, p, r) =>
@@ -1735,7 +1817,54 @@ object GpuOverrides {
           GpuCustomShuffleReaderExec(childPlans.head.convertIfNeeded(),
             exec.partitionSpecs)
         }
-      })
+      }),
+    exec[MapInPandasExec](
+      "The backend for Map Pandas Iterator UDF, it runs on CPU itself now but supports running" +
+        " the Python UDFs code on GPU when calling cuDF APIs in the UDF",
+      (mapPy, conf, p, r) => new GpuMapInPandasExecMeta(mapPy, conf, p, r))
+        .disabledByDefault("Performance is not ideal now"),
+    exec[FlatMapGroupsInPandasExec](
+      "The backend for Grouped Map Pandas UDF, it runs on CPU itself now but supports running" +
+        " the Python UDFs code on GPU when calling cuDF APIs in the UDF",
+      (flatPy, conf, p, r) => new GpuFlatMapGroupsInPandasExecMeta(flatPy, conf, p, r))
+        .disabledByDefault("Performance is not ideal now"),
+    exec[AggregateInPandasExec](
+      "The backend for Grouped Aggregation Pandas UDF, it runs on CPU itself now but supports" +
+        " running the Python UDFs code on GPU when calling cuDF APIs in the UDF",
+      (aggPy, conf, p, r) => new GpuAggregateInPandasExecMeta(aggPy, conf, p, r))
+        .disabledByDefault("Performance is not ideal now"),
+    exec[FlatMapCoGroupsInPandasExec](
+      "The backend for CoGrouped Aggregation Pandas UDF, it runs on CPU itself now but supports" +
+        " running the Python UDFs code on GPU when calling cuDF APIs in the UDF",
+      (flatCoPy, conf, p, r) => new GpuFlatMapCoGroupsInPandasExecMeta(flatCoPy, conf, p, r))
+        .disabledByDefault("Performance is not ideal now"),
+    exec[WindowInPandasExec](
+      "The backend for Pandas UDF with window functions, it runs on CPU itself now but supports" +
+        " running the Python UDFs code on GPU when calling cuDF APIs in the UDF",
+      (winPy, conf, p, r) => new GpuWindowInPandasExecMeta(winPy, conf, p, r))
+        .disabledByDefault("Performance is not ideal now"),
+    neverReplaceExec[AlterNamespaceSetPropertiesExec]("Namespace metadata operation"),
+    neverReplaceExec[CreateNamespaceExec]("Namespace metadata operation"),
+    neverReplaceExec[DescribeNamespaceExec]("Namespace metadata operation"),
+    neverReplaceExec[DropNamespaceExec]("Namespace metadata operation"),
+    neverReplaceExec[SetCatalogAndNamespaceExec]("Namesapce metadata operation"),
+    neverReplaceExec[ShowCurrentNamespaceExec]("Namesapce metadata operation"),
+    neverReplaceExec[ShowNamespacesExec]("Namesapce metadata operation"),
+    neverReplaceExec[ExecutedCommandExec]("Table metadata operation"),
+    neverReplaceExec[AlterTableExec]("Table metadata operation"),
+    neverReplaceExec[CreateTableExec]("Table metadata operation"),
+    neverReplaceExec[DeleteFromTableExec]("Table metadata operation"),
+    neverReplaceExec[DescribeTableExec]("Table metadata operation"),
+    neverReplaceExec[DropTableExec]("Table metadata operation"),
+    neverReplaceExec[AtomicReplaceTableExec]("Table metadata operation"),
+    neverReplaceExec[RefreshTableExec]("Table metadata operation"),
+    neverReplaceExec[RenameTableExec]("Table metadata operation"),
+    neverReplaceExec[ReplaceTableExec]("Table metadata operation"),
+    neverReplaceExec[ShowTablePropertiesExec]("Table metadata operation"),
+    neverReplaceExec[ShowTablesExec]("Table metadata operation"),
+    neverReplaceExec[AdaptiveSparkPlanExec]("Wrapper for adaptive query plan"),
+    neverReplaceExec[BroadcastQueryStageExec]("Broadcast query stage"),
+    neverReplaceExec[ShuffleQueryStageExec]("Shuffle query stage")
   ).map(r => (r.getClassFor.asSubclass(classOf[SparkPlan]), r)).toMap
   val execs: Map[Class[_ <: SparkPlan], ExecRule[_ <: SparkPlan]] =
     commonExecs ++ ShimLoader.getSparkShims.getExecs
@@ -1760,7 +1889,10 @@ case class GpuOverrides() extends Rule[SparkPlan] with Logging {
       wrap.runAfterTagRules()
       val exp = conf.explain
       if (!exp.equalsIgnoreCase("NONE")) {
-        logWarning(s"\n${wrap.explain(exp.equalsIgnoreCase("ALL"))}")
+        val explain = wrap.explain(exp.equalsIgnoreCase("ALL"))
+        if (!explain.isEmpty) {
+          logWarning(s"\n$explain")
+        }
       }
       val convertedPlan = wrap.convertIfNeeded()
       addSortsIfNeeded(convertedPlan, conf)

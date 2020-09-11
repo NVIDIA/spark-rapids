@@ -36,7 +36,7 @@ pipeline {
 
     options {
         ansiColor('xterm')
-        timeout(time: 120, unit: 'MINUTES')
+        timeout(time: 180, unit: 'MINUTES')
         buildDiscarder(logRotator(numToKeepStr: '10'))
     }
 
@@ -46,7 +46,7 @@ pipeline {
         string(name: 'DATABRICKS_VERSION',
                 defaultValue: '0.2.0-SNAPSHOT', description: 'Version to set')
         string(name: 'CUDF_VERSION',
-                defaultValue: '0.15-SNAPSHOT', description: 'Cudf version to use')
+                defaultValue: '0.15', description: 'Cudf version to use')
         string(name: 'CUDA_VERSION',
                 defaultValue: 'cuda10-1', description: 'cuda version to use')
         string(name: 'CLUSTER_ID',
@@ -90,9 +90,9 @@ pipeline {
             script {
                 sh "python3.6 ./jenkins/databricks/shutdown.py -c $CLUSTER_ID -t $DATABRICKS_TOKEN || true"
                 if (currentBuild.currentResult == "SUCCESS") {
-                    slack("#rapidsai-spark-cicd", "Success", color: "#33CC33")
+                    slack("#swrapids-spark-cicd", "Success", color: "#33CC33")
                 } else {
-                    slack("#rapidsai-spark-cicd", "Failed", color: "#FF0000")
+                    slack("#swrapids-spark-cicd", "Failed", color: "#FF0000")
                 }
             }
         }

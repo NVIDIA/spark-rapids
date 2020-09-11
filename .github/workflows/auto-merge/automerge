@@ -17,7 +17,8 @@
 """A auto-merge tool
 
 Create a PR to merge HEAD to BASE branch.
-The PR will be automatically merged if no conflict. Otherwise, manual operation will be required.
+NOTE:
+    The generated PR should be automatically merged if no conflict. Otherwise, manual operation will be required.
 """
 
 import os
@@ -35,12 +36,12 @@ HEAD = os.environ.get('HEAD')
 assert HEAD, 'env HEAD should not be empty'
 BASE = os.environ.get('BASE')
 assert BASE, 'env BASE should not be empty'
-GITHUB_TOKEN = os.environ.get('GITHUB_TOKEN')
-assert GITHUB_TOKEN, 'env GITHUB_TOKEN should not be empty'
+AUTOMERGE_TOKEN = os.environ.get('AUTOMERGE_TOKEN')
+assert AUTOMERGE_TOKEN, 'env AUTOMERGE_TOKEN should not be empty'
 # static
 API_URL = 'https://api.github.com'
 AUTH_HEADERS = {
-    'Authorization': 'token ' + GITHUB_TOKEN
+    'Authorization': 'token ' + AUTOMERGE_TOKEN
 }
 
 
@@ -61,7 +62,7 @@ def create():
         number = str(pull['number'])
         sha = str(pull['head']['sha'])
         return number, sha, False
-    if r.status_code == 422:
+    if r.status_code == 422:  # early-terminate if no commits between HEAD and BASE
         print('SUCCESS - No commits')
         print(r.json())
         return '', '', True
@@ -84,22 +85,12 @@ def auto_merge(number, sha):
         print('SUCCESS - auto-merge')
         sys.exit(0)
     else:
-        comment(number, """**FAILURE** - Unable to auto-merge due to conflicts. Manual operation is required.
-
-To maintainers, please use the following steps to fix the merge conflicts manually:
-This is a example to fix conflict from `branch-0.2` to `branch-0.3`
-```bash
-git fetch <spark-rapids_remote>
-git checkout -b branch-0.3-merge-branch-0.2 <spark-rapids_remote>/branch-0.3
-git merge <spark-rapids_remote>/branch-0.2
-# fix the merge conflict, then
-git commit -am "merge branch-0.2 to branch-0.3"
-git push <your forked remote> branch-0.3-merge-branch-0.2
-```
-When this is done, create a PR targets the base branch (`branch-0.3` in this example). 
-Once the PR get merged, close the auto-merge PR. 
-""")
         print('FAILURE - auto-merge')
+        comment(number=number, content=f"""**FAILURE** - Unable to auto-merge. Manual operation is required.
+```
+{r.json()}
+```
+""")
         print(f'status code: {r.status_code}')
         print(r.json())
         sys.exit(1)
@@ -124,9 +115,9 @@ def main():
     if term:
         sys.exit(0)
 
-    time.sleep(10)  # sleep, then comment
+    time.sleep(10)  # sleep 10s, then try auto-merge
     auto_merge(number, sha)
 
 
-if __name__ == "__main__":
+if __name__ == '__main__':
     main()

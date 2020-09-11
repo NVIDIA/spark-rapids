@@ -41,3 +41,5 @@ def get_spark_i_know_what_i_am_doing():
     """
     return _spark
 
+def spark_version():
+    return _spark.version

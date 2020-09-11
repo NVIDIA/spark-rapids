@@ -19,7 +19,7 @@ from datetime import date, datetime, timezone
 from data_gen import *
 from marks import *
 from pyspark.sql.types import *
-from spark_session import with_cpu_session, with_spark_session
+from spark_session import with_cpu_session, with_spark_session, is_before_spark_310
 
 def read_orc_df(data_path):
     return lambda spark : spark.read.orc(data_path)
@@ -200,7 +200,7 @@ def test_compress_write_round_trip(spark_tmp_path, compress):
             conf={'spark.sql.orc.compression.codec': compress})
 
 @pytest.mark.xfail(
-    condition=with_spark_session(lambda spark : not(spark.sparkContext.version < "3.1.0")),
+    condition=not(is_before_spark_310()),
     reason='https://github.com/NVIDIA/spark-rapids/issues/576')
 def test_input_meta(spark_tmp_path):
     first_data_path = spark_tmp_path + '/ORC_DATA/key=0'

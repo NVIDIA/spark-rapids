@@ -14,6 +14,9 @@
 # limitations under the License.
 set -ex
 
+SCRIPTPATH="$( cd "$(dirname "$0")" >/dev/null 2>&1 ; pwd -P )"
+cd "$SCRIPTPATH"
+
 if [[ $( echo ${SKIP_TESTS} | tr [:upper:] [:lower:] ) == "true" ]];
 then
     echo "PYTHON INTEGRATION TESTS SKIPPED..."
@@ -22,9 +25,9 @@ then
     >&2 echo "SPARK_HOME IS NOT SET CANNOT RUN PYTHON INTEGRATION TESTS..."
 else
     echo "WILL RUN TESTS WITH SPARK_HOME: ${SPARK_HOME}"
-    CUDF_JARS=$(echo ./target/dependency/cudf-*.jar)
-    PLUGIN_JARS=$(echo ../dist/target/rapids-4-spark*.jar)
-    TEST_JARS=$(echo ./target/rapids-4-spark-integration-tests*.jar)
+    CUDF_JARS=$(echo "$SCRIPTPATH"/target/dependency/cudf-*.jar)
+    PLUGIN_JARS=$(echo "$SCRIPTPATH"/../dist/target/rapids-4-spark*.jar)
+    TEST_JARS=$(echo "$SCRIPTPATH"/target/rapids-4-spark-integration-tests*.jar)
     ALL_JARS="$CUDF_JARS $PLUGIN_JARS $TEST_JARS"
     echo "AND PLUGIN JARS: $ALL_JARS"
     if [[ "${TEST}" != "" ]];
@@ -35,5 +38,19 @@ else
     then
         TEST_TAGS="-m $TEST_TAGS"
     fi
-    "$SPARK_HOME"/bin/spark-submit --jars "${ALL_JARS// /,}" --conf "spark.driver.extraJavaOptions=-Duser.timezone=GMT $COVERAGE_SUBMIT_FLAGS" --conf 'spark.executor.extraJavaOptions=-Duser.timezone=GMT' --conf 'spark.sql.session.timeZone=UTC' --conf 'spark.sql.shuffle.partitions=12' $SPARK_SUBMIT_FLAGS ./runtests.py -v -rfExXs "$TEST_TAGS" --std_input_path=./src/test/resources/ "$TEST_ARGS" $RUN_TEST_PARAMS "$@"
+    RUN_DIR="$SCRIPTPATH"/target/run_dir
+    mkdir -p "$RUN_DIR"
+    cd "$RUN_DIR"
+    "$SPARK_HOME"/bin/spark-submit --jars "${ALL_JARS// /,}" \
+        --conf "spark.driver.extraJavaOptions=-Duser.timezone=GMT $COVERAGE_SUBMIT_FLAGS" \
+        --conf 'spark.executor.extraJavaOptions=-Duser.timezone=GMT' \
+        --conf 'spark.sql.session.timeZone=UTC' \
+        --conf 'spark.sql.shuffle.partitions=12' \
+        $SPARK_SUBMIT_FLAGS \
+        "$SCRIPTPATH"/runtests.py --rootdir "$SCRIPTPATH" "$SCRIPTPATH"/src/main/python \
+          -v -rfExXs "$TEST_TAGS" \
+          --std_input_path="$SCRIPTPATH"/src/test/resources/ \
+          "$TEST_ARGS" \
+          $RUN_TEST_PARAMS \
+          "$@"
 fi

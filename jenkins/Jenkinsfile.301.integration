@@ -51,9 +51,9 @@ pipeline {
     }
 
     stages {
-        stage('IT on 3.0.1-SNAPSHOT') {
+        stage('IT on 3.0.1') {
             agent { label 'docker-gpu' }
-            environment {SPARK_VER='3.0.1-SNAPSHOT'}
+            environment {SPARK_VER='3.0.1'}
             steps {
                 script {
                     def CUDA_NAME=sh(returnStdout: true,
@@ -74,10 +74,10 @@ pipeline {
                 def status = "failed"
                 if (currentBuild.currentResult == "SUCCESS") {
                     status = "success"
-                    slack("#rapidsai-spark-cicd", "Success", color: "#33CC33")
+                    slack("#swrapids-spark-cicd", "Success", color: "#33CC33")
                 }
                 else {
-                    slack("#rapidsai-spark-cicd", "Failed", color: "#FF0000")
+                    slack("#swrapids-spark-cicd", "Failed", color: "#FF0000")
                 }
             }
             echo 'Pipeline finished!'

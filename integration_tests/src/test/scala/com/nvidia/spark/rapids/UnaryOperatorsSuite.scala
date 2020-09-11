@@ -16,11 +16,12 @@
 
 package com.nvidia.spark.rapids
 
+import org.apache.spark.sql.functions.{col, lit}
+
 class UnaryOperatorsSuite extends SparkQueryCompareTestSuite {
-  // TODO need a way to fill a column from a string
-  //  testSparkResultsAreEqual("Test literal string values in select", mixedFloatDf) {
-  //    frame => frame.select(col("floats"), lit("test"))
-  //  }
+  testSparkResultsAreEqual("Test literal string values in select", mixedFloatDf) {
+    frame => frame.select(col("floats"), lit("test"))
+  }
 
   testSparkResultsAreEqual("Test EulerNumber", singularDoubleDf) {
     frame => frame.selectExpr("e()")

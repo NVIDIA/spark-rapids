@@ -26,16 +26,52 @@ import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import org.apache.spark.TaskContext
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.InternalRow
-import org.apache.spark.sql.catalyst.expressions.{Attribute, AttributeSeq, AttributeSet, Expression, NamedExpression}
+import org.apache.spark.sql.catalyst.expressions.{Alias, Attribute, AttributeReference, AttributeSeq, AttributeSet, Expression, If, NamedExpression}
 import org.apache.spark.sql.catalyst.expressions.aggregate._
-import org.apache.spark.sql.catalyst.plans.physical.{AllTuples, ClusteredDistribution, Distribution, Partitioning, UnspecifiedDistribution}
+import org.apache.spark.sql.catalyst.plans.physical.{AllTuples, ClusteredDistribution, Distribution, HashPartitioning, Partitioning, UnspecifiedDistribution}
 import org.apache.spark.sql.catalyst.util.truncatedString
-import org.apache.spark.sql.execution.{SparkPlan, UnaryExecNode}
+import org.apache.spark.sql.execution.{ExplainUtils, SortExec, SparkPlan, UnaryExecNode}
 import org.apache.spark.sql.execution.aggregate.{HashAggregateExec, SortAggregateExec}
 import org.apache.spark.sql.execution.metric.{SQLMetric, SQLMetrics}
 import org.apache.spark.sql.rapids.{CudfAggregate, GpuAggregateExpression, GpuDeclarativeAggregate}
 import org.apache.spark.sql.types.{DoubleType, FloatType}
 import org.apache.spark.sql.vectorized.{ColumnarBatch, ColumnVector}
+
+object AggregateUtils {
+
+  private val aggs = List("min", "max", "avg", "sum", "count", "first", "last")
+
+  /**
+   * Return true if the Attribute passed is one of aggregates in the aggs list.
+   * Use it with caution. We are comparing the name of a column looking for anything that matches
+   * with the values in aggs.
+   */
+  def validateAggregate(attributes: AttributeSet): Boolean = {
+    attributes.toSeq.exists(attr => aggs.exists(agg => attr.name.contains(agg)))
+  }
+
+  /**
+   * Return true if there are multiple distinct functions along with non-distinct functions.
+   */
+  def shouldFallbackMultiDistinct(aggExprs: Seq[AggregateExpression]): Boolean = {
+    // Check if there is an `If` within `First`. This is included in the plan for non-distinct
+    // functions only when multiple distincts along with non-distinct functions are present in the
+    // query. We fall back to CPU in this case when references of `If` are an aggregate. We cannot
+    // call `isDistinct` here on aggregateExpressions to get the total number of distinct functions.
+    // If there are multiple distincts, the plan is rewritten by `RewriteDistinctAggregates` where
+    // regular aggregations and every distinct aggregation is calculated in a separate group.
+    aggExprs.map(e => e.aggregateFunction).exists {
+      func => {
+        func match {
+          case First(If(_, _, _), _) if validateAggregate(func.references) => {
+            true
+          }
+          case _ => false
+        }
+      }
+    }
+  }
+}
 
 class GpuHashAggregateMeta(
     agg: HashAggregateExec,
@@ -79,7 +115,18 @@ class GpuHashAggregateMeta(
         case "partial" => if (hashAggMode.contains(Final) || hashAggMode.contains(Complete)) {
           // replacing only Partial hash aggregates, so a Final or Complete one should not replace
           willNotWorkOnGpu("Replacing Final or Complete hash aggregates disabled")
-         }
+        }
+          // In partial mode, if there are non-distinct functions and multiple distinct functions,
+          // non-distinct functions are computed using the First operator. The final result would be
+          // incorrect for non-distinct functions for partition size > 1. Reason for this is - if
+          // the first batch computed and sent to CPU doesn't contain all the rows required to
+          // compute non-distinct function(s), then Spark would consider that value as final result
+          // (due to First). Fall back to CPU in this case.
+          if (AggregateUtils.shouldFallbackMultiDistinct(agg.aggregateExpressions)) {
+            willNotWorkOnGpu("Aggregates of non-distinct functions with multiple distinct " +
+              "functions are non-deterministic for non-distinct functions as it is " +
+              "computed using First.")
+          }
         case "final" => if (hashAggMode.contains(Partial) || hashAggMode.contains(Complete)) {
           // replacing only Final hash aggregates, so a Partial or Complete one should not replace
           willNotWorkOnGpu("Replacing Partial or Complete hash aggregates disabled")
@@ -173,7 +220,18 @@ class GpuSortAggregateMeta(
         case "partial" => if (hashAggMode.contains(Final) || hashAggMode.contains(Complete)) {
           // replacing only Partial hash aggregates, so a Final or Commplete one should not replace
           willNotWorkOnGpu("Replacing Final or Complete hash aggregates disabled")
-         }
+        }
+          // In partial mode, if there are non-distinct functions and multiple distinct functions,
+          // non-distinct functions are computed using the First operator. The final result would be
+          // incorrect for non-distinct functions for partition size > 1. Reason for this is - if
+          // the first batch computed and sent to CPU doesn't contain all the rows required to
+          // compute non-distinct function(s), then Spark would consider that value as final result
+          // (due to First). Fall back to CPU in this case.
+          if (AggregateUtils.shouldFallbackMultiDistinct(agg.aggregateExpressions)) {
+            willNotWorkOnGpu("Aggregates of non-distinct functions with multiple distinct " +
+              "functions are non-deterministic for non-distinct functions as it is " +
+              "computed using First.")
+          }
         case "final" => if (hashAggMode.contains(Partial) || hashAggMode.contains(Complete)) {
           // replacing only Final hash aggregates, so a Partial or Complete one should not replace
           willNotWorkOnGpu("Replacing Partial or Complete hash aggregates disabled")
@@ -186,6 +244,34 @@ class GpuSortAggregateMeta(
           throw new IllegalArgumentException(s"The hash aggregate replacement mode " +
             s"${hashAggReplaceMode} is not valid. Valid options are: 'partial', 'final', " +
             s"'complete', or 'all'")
+      }
+    }
+
+    // make sure this is the last check - if this is SortAggregate, the children can be Sorts and we
+    // want to validate they can run on GPU and remove them before replacing this with a
+    // HashAggregate.  We don't want to do this if there is a first or last aggregate,
+    // because dropping the sort will make them no longer deterministic.
+    // In the future we might be able to pull the sort functionality into the aggregate so
+    // we can sort a single batch at a time and sort the combined result as well which would help
+    // with data skew.
+    val hasFirstOrLast = agg.aggregateExpressions.exists { agg =>
+      agg.aggregateFunction match {
+        case _: First => true
+        case _: Last => true
+        case _ => false
+      }
+    }
+    if (canThisBeReplaced && !hasFirstOrLast) {
+      childPlans.foreach { plan =>
+        if (plan.wrapped.isInstanceOf[SortExec]) {
+          if (!plan.canThisBeReplaced) {
+            willNotWorkOnGpu(s"can't replace sortAggregate because one of the SortExec's before " +
+              s"can't be replaced.")
+          } else {
+            plan.shouldBeRemoved("removing SortExec as part replacing sortAggregate with " +
+              s"hashAggregate")
+          }
+        }
       }
     }
   }
@@ -202,7 +288,6 @@ class GpuSortAggregateMeta(
       resultExpressions.map(_.convertToGpu()).asInstanceOf[Seq[NamedExpression]],
       childPlans(0).convertIfNeeded())
   }
-
 }
 
 /**
@@ -232,6 +317,17 @@ case class GpuHashAggregateExec(
     initialInputBufferOffset: Int,
     resultExpressions: Seq[NamedExpression],
     child: SparkPlan) extends UnaryExecNode with GpuExec with Arm {
+
+  override def verboseStringWithOperatorId(): String = {
+    s"""
+       |$formattedNodeName
+       |${ExplainUtils.generateFieldString("Input", child.output)}
+       |${ExplainUtils.generateFieldString("Keys", groupingExpressions)}
+       |${ExplainUtils.generateFieldString("Functions", aggregateExpressions)}
+       |${ExplainUtils.generateFieldString("Aggregate Attributes", aggregateAttributes)}
+       |${ExplainUtils.generateFieldString("Results", resultExpressions)}
+       |""".stripMargin
+  }
 
   case class BoundExpressionsModeAggregates(boundInputReferences: Seq[GpuExpression] ,
     boundFinalProjections: Option[scala.Seq[GpuExpression]],
@@ -834,6 +930,8 @@ case class GpuHashAggregateExec(
     "concatTime"-> SQLMetrics.createNanoTimingMetric(sparkContext, "time in batch concat")
   )
 
+  protected def outputExpressions: Seq[NamedExpression] = resultExpressions
+
   //
   // This section is derived (copied in most cases) from HashAggregateExec
   //
@@ -841,7 +939,33 @@ case class GpuHashAggregateExec(
     aggregateExpressions.flatMap(_.aggregateFunction.aggBufferAttributes)
   }
 
-  override def outputPartitioning: Partitioning = child.outputPartitioning
+  final override def outputPartitioning: Partitioning = {
+    if (hasAlias) {
+      child.outputPartitioning match {
+        case h: GpuHashPartitioning => h.copy(expressions = replaceAliases(h.expressions))
+        case h: HashPartitioning => h.copy(expressions = replaceAliases(h.expressions))
+        case other => other
+      }
+    } else {
+      child.outputPartitioning
+    }
+  }
+
+  protected def hasAlias: Boolean = outputExpressions.collectFirst { case _: Alias => }.isDefined
+
+  protected def replaceAliases(exprs: Seq[Expression]): Seq[Expression] = {
+    exprs.map {
+      case a: AttributeReference => replaceAlias(a).getOrElse(a)
+      case other => other
+    }
+  }
+
+  protected def replaceAlias(attr: AttributeReference): Option[Attribute] = {
+    outputExpressions.collectFirst {
+      case a @ Alias(child: AttributeReference, _) if child.semanticEquals(attr) =>
+        a.toAttribute
+    }
+  }
 
   // Used in de-duping and optimizer rules
   override def producedAttributes: AttributeSet =
