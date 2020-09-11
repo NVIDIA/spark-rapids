@@ -183,6 +183,7 @@ trait GpuHashJoin extends GpuExec with HashJoin {
       numOutputRows: SQLMetric,
       joinOutputRows: SQLMetric,
       numOutputBatches: SQLMetric,
+      streamTime: SQLMetric,
       joinTime: SQLMetric,
       filterTime: SQLMetric,
       totalTime: SQLMetric): Iterator[ColumnarBatch] = {
@@ -201,8 +202,9 @@ trait GpuHashJoin extends GpuExec with HashJoin {
       override def hasNext: Boolean = {
         while (nextCb.isEmpty && (first || stream.hasNext)) {
           if (stream.hasNext) {
-            val cb = stream.next()
             val startTime = System.nanoTime()
+            val cb = stream.next()
+            streamTime += (System.nanoTime() - startTime)
             nextCb = doJoin(builtTable, cb, boundCondition, joinOutputRows, numOutputRows,
               numOutputBatches, joinTime, filterTime)
             totalTime += (System.nanoTime() - startTime)
@@ -210,6 +212,7 @@ trait GpuHashJoin extends GpuExec with HashJoin {
             // We have to at least try one in some cases
             val startTime = System.nanoTime()
             val cb = GpuColumnVector.emptyBatch(streamedPlan.output.asJava)
+            streamTime += (System.nanoTime() - startTime)
             nextCb = doJoin(builtTable, cb, boundCondition, joinOutputRows, numOutputRows,
               numOutputBatches, joinTime, filterTime)
             totalTime += (System.nanoTime() - startTime)
