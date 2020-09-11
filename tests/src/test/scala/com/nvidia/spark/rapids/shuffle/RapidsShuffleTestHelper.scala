@@ -79,10 +79,6 @@ class RapidsShuffleTestHelper extends FunSuite
     mockConf = mock[RapidsConf]
     testMetricsUpdater = spy(new TestShuffleMetricsUpdater)
 
-    val sparkEnvMock = mock[SparkEnv]
-    when(sparkEnvMock.conf).thenReturn(new SparkConf())
-    SparkEnv.set(sparkEnvMock)
-
     client = spy(new RapidsShuffleClient(
       1,
       mockConnection,

@@ -149,6 +149,11 @@ object GpuShuffleEnv extends Logging {
 
   def shuffleFetchTimeoutSeconds: Long = {
     val sparkEnv = SparkEnv.get
-    sparkEnv.conf.getTimeAsSeconds("spark.network.timeout", "120")
+    val defaultValue = 120
+    if (sparkEnv != null) {
+      sparkEnv.conf.getTimeAsSeconds("spark.network.timeout", defaultValue.toString)
+    } else {
+      defaultValue
+    }
   }
 }
