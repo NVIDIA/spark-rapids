@@ -34,8 +34,6 @@ import org.apache.spark.sql.rapids.execution.TrampolineUtil
 import org.apache.spark.sql.types.{DateType, StructType, TimestampType}
 
 object GpuParquetFileFormat {
-  val PARQUET_WRITE_TIMESTAMP_CAST_TO_MILLIS = "com.nvidia.spark.rapids.parquet.write.castToMillis"
-
   def tagGpuSupport(
       meta: RapidsMeta[_, _, _],
       spark: SparkSession,
@@ -171,8 +169,6 @@ class GpuParquetFileFormat extends ColumnarFileFormat with Logging {
       if (hasTimestamps && outputTimestampType != ParquetOutputTimestampType.TIMESTAMP_MILLIS) {
         throw new UnsupportedOperationException(
           s"Unsupported output timestamp type: $outputTimestampType")
-      } else if (hasTimestamps) {
-        conf.set(GpuParquetFileFormat.PARQUET_WRITE_TIMESTAMP_CAST_TO_MILLIS, "true")
       }
     }
     conf.set(SQLConf.PARQUET_OUTPUT_TIMESTAMP_TYPE.key, outputTimestampType.toString)

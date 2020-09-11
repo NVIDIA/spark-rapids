@@ -125,14 +125,18 @@ def test_ts_read_round_trip(spark_tmp_path, ts_write, ts_rebase, mt_opt, v1_enab
             conf={'spark.rapids.sql.format.parquet.multiThreadedRead.enabled': mt_opt,
                   'spark.sql.sources.useV1SourceList': v1_enabled_list})
 
-def test_parquet_write_ts_millis(spark_tmp_path):
+@pytest.mark.parametrize('ts_type', ['TIMESTAMP_MILLIS'])
+@pytest.mark.parametrize('ts_rebase', ['CORRECTED'])
+def test_parquet_write_ts_millis(spark_tmp_path, ts_type, ts_rebase):
     gen = TimestampGen()
     data_path = spark_tmp_path + '/PARQUET_DATA'
     with_gpu_session(
         lambda spark : unary_op_df(spark, gen).write.parquet(data_path),
-        conf={'spark.sql.parquet.outputTimestampType': 'TIMESTAMP_MILLIS'})
+        conf={'spark.sql.legacy.parquet.datetimeRebaseModeInWrite': ts_rebase,
+              'spark.sql.parquet.outputTimestampType': ts_type})
     assert_gpu_and_cpu_are_equal_collect(
-        lambda spark : spark.read.parquet(data_path))
+        lambda spark : spark.read.parquet(data_path),
+        conf={'spark.sql.legacy.parquet.datetimeRebaseModeInWrite': ts_rebase})
 
 def readParquetCatchException(spark, data_path):
     with pytest.raises(Exception) as e_info:

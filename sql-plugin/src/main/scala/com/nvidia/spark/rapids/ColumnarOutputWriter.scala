@@ -24,6 +24,8 @@ import org.apache.hadoop.fs.{FSDataOutputStream, Path}
 import org.apache.hadoop.mapreduce.TaskAttemptContext
 
 import org.apache.spark.TaskContext
+import org.apache.spark.sql.internal.SQLConf
+import org.apache.spark.sql.internal.SQLConf.ParquetOutputTimestampType
 import org.apache.spark.sql.rapids.{ColumnarWriteTaskStatsTracker, GpuWriteTaskStatsTracker}
 import org.apache.spark.sql.types.{DataTypes, StructType}
 import org.apache.spark.sql.vectorized.ColumnarBatch
@@ -105,18 +107,19 @@ abstract class ColumnarOutputWriter(path: String, context: TaskAttemptContext,
    */
   def write(batch: ColumnarBatch, statsTrackers: Seq[ColumnarWriteTaskStatsTracker]): Unit = {
     var needToCloseBatch = true
-    val castToMillis = conf.get(GpuParquetFileFormat.PARQUET_WRITE_TIMESTAMP_CAST_TO_MILLIS,
-      "false")
-    val newBatch: ColumnarBatch = if (castToMillis.equals("true")) {
-      new ColumnarBatch(GpuColumnVector.extractColumns(batch).map(cv => {
-        if (cv.dataType() == DataTypes.TimestampType) {
-          new GpuColumnVector(DataTypes.TimestampType, withResource(cv.getBase()) { v =>
-            v.castTo(DType.TIMESTAMP_MILLISECONDS)
-          })
-        } else {
-          cv
+    val outputTimestampType = conf.get(SQLConf.PARQUET_OUTPUT_TIMESTAMP_TYPE.key)
+    val newBatch = if (outputTimestampType == ParquetOutputTimestampType.TIMESTAMP_MILLIS) {
+      new ColumnarBatch(GpuColumnVector.extractColumns(batch).map {
+        cv => {
+          cv.dataType() match {
+            case DataTypes.TimestampType => new GpuColumnVector(DataTypes.TimestampType,
+              withResource(cv.getBase()) { v =>
+                v.castTo(DType.TIMESTAMP_MILLISECONDS)
+              })
+            case _ => cv
+          }
         }
-      }))
+      })
     } else {
       batch
     }
