@@ -162,6 +162,8 @@ abstract class AbstractGpuCoalesceIterator(origIter: Iterator[ColumnarBatch],
     opName: String) extends Iterator[ColumnarBatch] with Logging {
   private val iter = new RemoveEmptyBatchIterator(origIter, numInputBatches)
   private var batchInitialized: Boolean = false
+  private var collectMetric: Option[MetricRange] = None
+  private var totalMetric: Option[MetricRange] = None
 
   /**
    * Return true if there is something saved on deck for later processing.
@@ -196,7 +198,22 @@ abstract class AbstractGpuCoalesceIterator(origIter: Iterator[ColumnarBatch],
   Option(TaskContext.get())
       .foreach(_.addTaskCompletionListener[Unit]( _ => clearOnDeck()))
 
-  override def hasNext: Boolean = hasOnDeck || iter.hasNext
+  override def hasNext: Boolean = {
+    if (!collectMetric.isDefined) {
+      // use one being not set as indicator that neither are intialized to avoid
+      // 2 checks or extra initialized variable
+      collectMetric = Some(new MetricRange(collectTime))
+      totalMetric = Some(new MetricRange(totalTime))
+    }
+    val res = hasOnDeck || iter.hasNext
+    if (!res) {
+      collectMetric.foreach(_.close())
+      collectMetric = None
+      totalMetric.foreach(_.close())
+      totalMetric = None
+    }
+    res
+  }
 
   /**
    * Called first to initialize any state needed for a new batch to be created.
@@ -258,9 +275,6 @@ abstract class AbstractGpuCoalesceIterator(origIter: Iterator[ColumnarBatch],
    * @return The coalesced batch
    */
   override def next(): ColumnarBatch = {
-
-    val total = new MetricRange(totalTime)
-
     // reset batch state
     batchInitialized = false
     batchRowLimit = 0
@@ -282,7 +296,6 @@ abstract class AbstractGpuCoalesceIterator(origIter: Iterator[ColumnarBatch],
         numBytes += columnSizes.sum
       }
 
-      val collect = new MetricRange(collectTime)
       try {
 
         // there is a hard limit of 2^31 rows
@@ -360,7 +373,8 @@ abstract class AbstractGpuCoalesceIterator(origIter: Iterator[ColumnarBatch],
           s"and $numBytes bytes")
 
       } finally {
-        collect.close()
+        collectMetric.foreach(_.close())
+        collectMetric = None
       }
 
       val concatRange = new NvtxWithMetrics(s"$opName concat", NvtxColor.CYAN, concatTime)
@@ -372,7 +386,8 @@ abstract class AbstractGpuCoalesceIterator(origIter: Iterator[ColumnarBatch],
       ret
     } finally {
       cleanupConcatIsDone()
-      total.close()
+      totalMetric.foreach(_.close())
+      totalMetric = None
     }
   }
 
