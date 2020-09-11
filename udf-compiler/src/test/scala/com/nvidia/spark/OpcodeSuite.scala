@@ -2005,4 +2005,85 @@ class OpcodeSuite extends FunSuite {
     val ref = dataset.withColumn("hour", lit(myudf("2011-12-03'VX10:15:30''Z'")))
     checkEquiv(result, ref)
   }
+
+  test("Empty string construction") {
+    val myudf: () => String = () => ""
+    val u = makeUdf(myudf)
+    val dataset = spark.sql("select null").repartition(1)
+    val result = dataset.select(u().as("emptyStr"))
+    val ref = dataset.select(lit("").as("emptyStr"))
+    checkEquiv(result, ref)
+  }
+
+  test("Empty array construction - Boolean") {
+    val myudf: () => Array[Boolean] = () => Array.empty[Boolean]
+    val u = makeUdf(myudf)
+    val dataset = spark.sql("select null").repartition(1)
+    val result = dataset.select(u().as("emptyArrOfBoolean"))
+    val ref = dataset.select(lit(Array.empty[Boolean]).as("emptyArrOfBoolean"))
+    checkEquiv(result, ref)
+  }
+
+  test("Empty array construction - Byte") {
+    val myudf: () => Array[Byte] = () => Array.empty[Byte]
+    val u = makeUdf(myudf)
+    val dataset = spark.sql("select null").repartition(1)
+    val result = dataset.select(u().as("emptyArrOfByte"))
+    val ref = dataset.select(lit(Array.empty[Byte]).as("emptyArrOfByte"))
+    checkEquiv(result, ref)
+  }
+
+  test("Empty array construction - Short") {
+    val myudf: () => Array[Short] = () => Array.empty[Short]
+    val u = makeUdf(myudf)
+    val dataset = spark.sql("select null").repartition(1)
+    val result = dataset.select(u().as("emptyArrOfShort"))
+    val ref = dataset.select(lit(Array.empty[Short]).as("emptyArrOfShort"))
+    checkEquiv(result, ref)
+  }
+
+  test("Empty array construction - Int") {
+    val myudf: () => Array[Int] = () => Array.empty[Int]
+    val u = makeUdf(myudf)
+    val dataset = spark.sql("select null").repartition(1)
+    val result = dataset.select(u().as("emptyArrOfInt"))
+    val ref = dataset.select(lit(Array.empty[Int]).as("emptyArrOfInt"))
+    checkEquiv(result, ref)
+  }
+
+  test("Empty array construction - Long") {
+    val myudf: () => Array[Long] = () => Array.empty[Long]
+    val u = makeUdf(myudf)
+    val dataset = spark.sql("select null").repartition(1)
+    val result = dataset.select(u().as("emptyArrOfLong"))
+    val ref = dataset.select(lit(Array.empty[Long]).as("emptyArrOfLong"))
+    checkEquiv(result, ref)
+  }
+
+  test("Empty array construction - Float") {
+    val myudf: () => Array[Float] = () => Array.empty[Float]
+    val u = makeUdf(myudf)
+    val dataset = spark.sql("select null").repartition(1)
+    val result = dataset.select(u().as("emptyArrOfFloat"))
+    val ref = dataset.select(lit(Array.empty[Float]).as("emptyArrOfFloat"))
+    checkEquiv(result, ref)
+  }
+
+  test("Empty array construction - Double") {
+    val myudf: () => Array[Double] = () => Array.empty[Double]
+    val u = makeUdf(myudf)
+    val dataset = spark.sql("select null").repartition(1)
+    val result = dataset.select(u().as("emptyArrOfDbl"))
+    val ref = dataset.select(lit(Array.empty[Double]).as("emptyArrOfDbl"))
+    checkEquiv(result, ref)
+  }
+
+  test("Empty array construction - String") {
+    val myudf: () => Array[String] = () => Array.empty[String]
+    val u = makeUdf(myudf)
+    val dataset = spark.sql("select null").repartition(1)
+    val result = dataset.select(u().as("emptyArrOfStr"))
+    val ref = dataset.select(lit(Array.empty[String]).as("emptyArrOfStr"))
+    checkEquiv(result, ref)
+  }
 }
