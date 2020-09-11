@@ -19,10 +19,10 @@ shows stale results.
 
 ### What versions of Apache Spark does the RAPIDS Accelerator for Apache Spark support?
 
-The RAPIDS Accelerator for Apache Spark requires version 3.0.0 of Apache Spark. Because the plugin
-replaces parts of the physical plan that Apache Spark considers to be internal the code for those
-plans can change even between bug fix releases. As a part of our process, we try to stay on top of
-these changes and release updates as quickly as possible.
+The RAPIDS Accelerator for Apache Spark requires version 3.0.0 or 3.0.1 of Apache Spark. Because the
+plugin replaces parts of the physical plan that Apache Spark considers to be internal the code for
+those plans can change even between bug fix releases. As a part of our process, we try to stay on
+top of these changes and release updates as quickly as possible.
 
 ### Which distributions are supported?
 
@@ -41,9 +41,9 @@ Reference architectures should be available around Q4 2020.
 
 ### What CUDA versions are supported?
 
-CUDA 10.1 and 10.2 are currently supported, but you need to download the cudf jar that corresponds
-to the version you are using. Please look [here][version/stable-release.md] for download links
-for the stable release.
+CUDA 10.1, 10.2 and 11.0 are currently supported, but you need to download the cudf jar that 
+corresponds to the version you are using. Please look [here][version/stable-release.md] for download 
+links for the stable release.
 
 ### What parts of Apache Spark are accelerated?
 
