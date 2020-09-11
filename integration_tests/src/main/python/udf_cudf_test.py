@@ -124,6 +124,7 @@ def test_select():
     _assert_cpu_gpu(cpu_run, gpu_run, gpu_conf=_conf)
 
 
+@pytest.mark.skip("https://github.com/NVIDIA/spark-rapids/issues/746")
 @allow_non_gpu('GpuMapInPandasExec','PythonUDF')
 @cudf_udf
 def test_map_in_pandas():
@@ -160,6 +161,7 @@ def _normalize_gpu_func(df):
     v = gdf.v
     return gdf.assign(v=(v - v.mean()) / v.std()).to_pandas()
 
+@pytest.mark.skip("https://github.com/NVIDIA/spark-rapids/issues/746")
 @allow_non_gpu('GpuFlatMapGroupsInPandasExec','PythonUDF')
 @cudf_udf
 def test_group_apply():
@@ -174,6 +176,7 @@ def test_group_apply():
     _assert_cpu_gpu(cpu_run, gpu_run, gpu_conf=_conf, is_sort=True)
 
 
+@pytest.mark.skip("https://github.com/NVIDIA/spark-rapids/issues/746")
 @allow_non_gpu('GpuFlatMapGroupsInPandasExec','PythonUDF')
 @cudf_udf
 def test_group_apply_in_pandas():
@@ -206,6 +209,7 @@ def _sum_gpu_func(v: pd.Series) -> int:
     gpu_serises = cudf.Series(v)
     return gpu_serises.sum()
 
+@pytest.mark.skip("https://github.com/NVIDIA/spark-rapids/issues/746")
 @allow_non_gpu('GpuAggregateInPandasExec','PythonUDF','Alias')
 @cudf_udf
 def test_group_agg():
@@ -220,6 +224,7 @@ def test_group_agg():
     _assert_cpu_gpu(cpu_run, gpu_run, gpu_conf=_conf, is_sort=True)
 
 
+@pytest.mark.skip("https://github.com/NVIDIA/spark-rapids/issues/746")
 @allow_non_gpu('GpuAggregateInPandasExec','PythonUDF','Alias')
 @cudf_udf
 def test_sql_group():
@@ -236,6 +241,7 @@ def test_sql_group():
     _assert_cpu_gpu(cpu_run, gpu_run, gpu_conf=_conf, is_sort=True)
 
 
+@pytest.mark.skip("https://github.com/NVIDIA/spark-rapids/issues/746")
 @allow_non_gpu('GpuWindowInPandasExec','PythonUDF','Alias','WindowExpression','WindowSpecDefinition','SpecifiedWindowFrame','UnboundedPreceding$', 'UnboundedFollowing$')
 @cudf_udf
 def test_window():
@@ -252,6 +258,7 @@ def test_window():
     _assert_cpu_gpu(cpu_run, gpu_run, gpu_conf=_conf, is_sort=True) 
 
 
+@pytest.mark.skip("https://github.com/NVIDIA/spark-rapids/issues/746")
 @allow_non_gpu('GpuFlatMapCoGroupsInPandasExec','PythonUDF')
 @cudf_udf
 def test_cogroup():
