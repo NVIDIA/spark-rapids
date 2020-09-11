@@ -24,6 +24,16 @@ Should be enough to get the basics started.
 
 `sre_yield` provides a set of APIs to generate string data from a regular expression.
 
+### pandas
+`pip install pandas`
+
+`pandas` is a fast, powerful, flexible and easy to use open source data analysis and manipulation tool.
+
+### pyarrow
+`pip install pyarrow`
+
+`pyarrow` provides a Python API for functionality provided by the Arrow C++ libraries, along with tools for Arrow integration and interoperability with pandas, NumPy, and other software in the Python ecosystem.
+
 ## Running
 
 Running the tests follows the pytest conventions, the main difference is using
