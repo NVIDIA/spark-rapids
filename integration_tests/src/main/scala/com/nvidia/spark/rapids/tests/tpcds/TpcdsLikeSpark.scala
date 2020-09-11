@@ -35,19 +35,19 @@ case class Table(
     basePath + "/" + name + rest
   }
 
-  def readCSV(spark: SparkSession, basePath: String): DataFrame =
+  def readCSV(spark: SparkSession, basePath: String, appendDat: Boolean = true): DataFrame =
     spark.read.option("delimiter", "|")
         .schema(schema)
-        .csv(path(basePath))
+        .csv(path(basePath, appendDat))
 
-  def setupCSV(spark: SparkSession, basePath: String): Unit =
-    readCSV(spark, basePath).createOrReplaceTempView(name)
+  def setupCSV(spark: SparkSession, basePath: String, appendDat: Boolean = true): Unit =
+    readCSV(spark, basePath, appendDat).createOrReplaceTempView(name)
 
   def setupParquet(spark: SparkSession, basePath: String, appendDat: Boolean = true): Unit =
     spark.read.parquet(path(basePath, appendDat)).createOrReplaceTempView(name)
 
-  def setupOrc(spark: SparkSession, basePath: String): Unit =
-    spark.read.orc(path(basePath)).createOrReplaceTempView(name)
+  def setupOrc(spark: SparkSession, basePath: String, appendDat: Boolean = true): Unit =
+    spark.read.orc(path(basePath, appendDat)).createOrReplaceTempView(name)
 
   def setup(
       spark: SparkSession,
@@ -137,16 +137,16 @@ object TpcdsLikeSpark {
     tables.foreach(_.csvToOrc(spark, baseInput, baseOutput, writePartitioning))
   }
 
-  def setupAllCSV(spark: SparkSession, basePath: String): Unit = {
-    tables.foreach(_.setupCSV(spark, basePath))
+  def setupAllCSV(spark: SparkSession, basePath: String, appendDat: Boolean = true): Unit = {
+    tables.foreach(_.setupCSV(spark, basePath, appendDat))
   }
 
   def setupAllParquet(spark: SparkSession, basePath: String, appendDat: Boolean = true): Unit = {
     tables.foreach(_.setupParquet(spark, basePath, appendDat))
   }
 
-  def setupAllOrc(spark: SparkSession, basePath: String): Unit = {
-    tables.foreach(_.setupOrc(spark, basePath))
+  def setupAllOrc(spark: SparkSession, basePath: String, appendDat: Boolean = true): Unit = {
+    tables.foreach(_.setupOrc(spark, basePath, appendDat))
   }
 
   def setupAll(

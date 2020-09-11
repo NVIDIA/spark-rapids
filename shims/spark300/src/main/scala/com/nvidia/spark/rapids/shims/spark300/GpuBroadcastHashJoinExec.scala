@@ -137,15 +137,10 @@ case class GpuBroadcastHashJoinExec(
     val boundCondition = condition.map(GpuBindReferences.bindReference(_, output))
 
     lazy val builtTable = {
-      val ret = withResource(
-        GpuProjectExec.project(broadcastRelation.value.batch, gpuBuildKeys)) { keys =>
-        val combined = GpuHashJoin.incRefCount(combine(keys, broadcastRelation.value.batch))
-        val filtered = filterBuiltTableIfNeeded(combined)
-        withResource(filtered) { filtered =>
-          GpuColumnVector.from(filtered)
-        }
-      }
-
+      // TODO clean up intermediate results...
+      val keys = GpuProjectExec.project(broadcastRelation.value.batch, gpuBuildKeys)
+      val combined = combine(keys, broadcastRelation.value.batch)
+      val ret = GpuColumnVector.from(combined)
       // Don't warn for a leak, because we cannot control when we are done with this
       (0 until ret.getNumberOfColumns).foreach(ret.getColumn(_).noWarnLeakExpected())
       ret

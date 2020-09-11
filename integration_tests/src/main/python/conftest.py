@@ -347,7 +347,7 @@ class TpcdsRunner:
     }
     if not self.tpcds_format in formats:
         raise RuntimeError("{} is not a supported tpcds input type".format(self.tpcds_format))
-    formats.get(self.tpcds_format)(jvm_session,self.tpcds_path)
+    formats.get(self.tpcds_format)(jvm_session, self.tpcds_path, True)
 
   def do_test_query(self, query):
     spark = get_spark_i_know_what_i_am_doing()
