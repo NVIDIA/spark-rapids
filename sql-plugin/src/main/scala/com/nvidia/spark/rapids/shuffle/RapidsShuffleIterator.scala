@@ -42,6 +42,8 @@ import org.apache.spark.storage.{BlockId, BlockManagerId, ShuffleBlockBatchId, S
  * @param blocksByAddress blocks to fetch
  * @param metricsUpdater instance of `ShuffleMetricsUpdater` to update the Spark
  *                       shuffle metrics
+ * @param timeoutSeconds a timeout in seconds, that the iterator will wait while polling
+ *                       for batches
  */
 class RapidsShuffleIterator(
     localBlockManagerId: BlockManagerId,
@@ -49,7 +51,8 @@ class RapidsShuffleIterator(
     transport: RapidsShuffleTransport,
     blocksByAddress: Array[(BlockManagerId, Seq[(BlockId, Long, Int)])],
     metricsUpdater: ShuffleMetricsUpdater,
-    catalog: ShuffleReceivedBufferCatalog = GpuShuffleEnv.getReceivedCatalog)
+    catalog: ShuffleReceivedBufferCatalog = GpuShuffleEnv.getReceivedCatalog,
+    timeoutSeconds: Long = GpuShuffleEnv.shuffleFetchTimeoutSeconds)
   extends Iterator[ColumnarBatch]
     with Logging {
 
@@ -83,10 +86,6 @@ class RapidsShuffleIterator(
   // when batches (or errors) arrive from the transport, the are pushed
   // to the `resolvedBatches` queue.
   private[this] val resolvedBatches = new LinkedBlockingQueue[ShuffleClientResult]()
-
-  // a user configurable timeout in seconds for the maximum time the iterator
-  // will wait for a batch to appear in `resolvedBatches`
-  private[this] lazy val timeoutSeconds = GpuShuffleEnv.shuffleFetchTimeoutSeconds
 
   // Used to track requests that are pending where the number of [[ColumnarBatch]] results is
   // not known yet

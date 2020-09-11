@@ -34,7 +34,8 @@ class RapidsShuffleIteratorSuite extends RapidsShuffleTestHelper {
       mockTransport,
       blocksByAddress,
       testMetricsUpdater,
-      mockCatalog)
+      mockCatalog,
+      123)
 
     when(mockTransaction.getStatus).thenReturn(TransactionStatus.Error)
 
@@ -54,13 +55,14 @@ class RapidsShuffleIteratorSuite extends RapidsShuffleTestHelper {
 
       val blocksByAddress = RapidsShuffleTestHelper.getBlocksByAddress
 
-      val cl = new RapidsShuffleIterator(
+      val cl = spy(new RapidsShuffleIterator(
         RapidsShuffleTestHelper.makeMockBlockManager("1", "1"),
         mockConf,
         mockTransport,
         blocksByAddress,
         testMetricsUpdater,
-        mockCatalog)
+        mockCatalog,
+        123))
 
       val ac = ArgumentCaptor.forClass(classOf[RapidsShuffleFetchHandler])
       when(mockTransport.makeClient(any(), any())).thenReturn(client)
@@ -92,7 +94,8 @@ class RapidsShuffleIteratorSuite extends RapidsShuffleTestHelper {
       mockTransport,
       blocksByAddress,
       testMetricsUpdater,
-      mockCatalog))
+      mockCatalog,
+      123))
 
     val ac = ArgumentCaptor.forClass(classOf[RapidsShuffleFetchHandler])
     when(mockTransport.makeClient(any(), any())).thenReturn(client)
@@ -121,7 +124,8 @@ class RapidsShuffleIteratorSuite extends RapidsShuffleTestHelper {
       mockTransport,
       blocksByAddress,
       testMetricsUpdater,
-      mockCatalog)
+      mockCatalog,
+      123)
 
     when(mockTransaction.getStatus).thenReturn(TransactionStatus.Error)
 
