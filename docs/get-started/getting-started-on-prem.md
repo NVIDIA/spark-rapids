@@ -37,7 +37,8 @@ to read the deployment method sections before doing any installations.
 
 ## Install Spark
 To install Apache Spark please follow the official 
-[instructions](https://spark.apache.org/docs/latest/#launching-on-a-cluster). Please note that only
+[instructions](https://spark.apache.org/docs/latest/#launching-on-a-cluster). Supported versions of
+Spark are listed on the [stable release](stable-release.md) page.  Please note that only
 scala version 2.12 is currently supported by the accelerator. 
 
 ## Download the RAPIDS jars
@@ -62,7 +63,7 @@ been placed in the `/opt/sparkRapidsPlugin` directory:
 ```shell 
 export SPARK_RAPIDS_DIR=/opt/sparkRapidsPlugin
 export SPARK_CUDF_JAR=${SPARK_RAPIDS_DIR}/cudf-0.15-cuda10-1.jar
-export SPARK_RAPIDS_PLUGIN_JAR=${SPARK_RAPIDS_DIR}/rapids-4-spark_2.12-0.2.0-SNAPSHOT.jar
+export SPARK_RAPIDS_PLUGIN_JAR=${SPARK_RAPIDS_DIR}/rapids-4-spark_2.12-0.2.0.jar
 ```
 
 ## Install the GPU Discovery Script
@@ -289,10 +290,13 @@ $SPARK_HOME/bin/spark-shell \
 ```  
 
 ## Running on Kubernetes
-Kubernetes requires a Docker image to run Spark. Generally you put everything you need in
-that Docker image - Spark, the RAPIDS Accelerator for Spark jars, and the discovery script.
-Alternatively they would need to be on a drive that is mounted when your Spark application runs.
-Here we will assume you have created a Docker image that contains all of them.
+Kubernetes requires a Docker image to run Spark.  Generally everything needed is in the Docker
+image - Spark, the RAPIDS Accelerator for Spark jars, and the discovery script.  See this
+[Dockerfile.cuda](Dockerfile.cuda) example.
+
+Alternatively the jars and discovery script would need to be on a drive that is mounted when your
+Spark application runs.  Here we will assume you have created a Docker image that contains the
+RAPIDS jars, cudf jars and discovery script.
 
 This assumes you have Kubernetes already installed and setup.  These instructions do not cover how
 to setup a Kubernetes cluster.

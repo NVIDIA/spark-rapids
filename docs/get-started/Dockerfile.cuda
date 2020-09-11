@@ -1,12 +1,11 @@
 #
-# Licensed to the Apache Software Foundation (ASF) under one or more
-# contributor license agreements.  See the NOTICE file distributed with
-# this work for additional information regarding copyright ownership.
-# The ASF licenses this file to You under the Apache License, Version 2.0
-# (the "License"); you may not use this file except in compliance with
-# the License.  You may obtain a copy of the License at
+# Copyright (c) 2020, NVIDIA CORPORATION. All rights reserved.
 #
-#    http://www.apache.org/licenses/LICENSE-2.0
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
 #
 # Unless required by applicable law or agreed to in writing, software
 # distributed under the License is distributed on an "AS IS" BASIS,
@@ -24,11 +23,11 @@ ENV JAVA_HOME /usr/lib/jvm/java-1.8.0-openjdk-amd64
 ENV PATH $PATH:/usr/lib/jvm/java-1.8.0-openjdk-amd64/jre/bin:/usr/lib/jvm/java-1.8.0-openjdk-amd64/bin
 
 # Before building the docker image, first build and make a Spark distribution following
-# the instructions in http://spark.apache.org/docs/latest/building-spark.html.
+# the instructions in http://spark.apache.org/docs/3.0.1/building-spark.html
 # If this docker file is being used in the context of building your images from a Spark
 # distribution, the docker build command should be invoked from the top level directory
 # of the Spark distribution. E.g.:
-# docker build -t spark:latest -f kubernetes/dockerfiles/spark/Dockerfile .
+# docker build -t spark:3.0.1 -f kubernetes/dockerfiles/spark/Dockerfile .
 
 RUN set -ex && \
     ln -s /lib /lib64 && \
@@ -44,19 +43,17 @@ RUN set -ex && \
     echo "auth required pam_wheel.so use_uid" >> /etc/pam.d/su && \
     chgrp root /etc/passwd && chmod ug+rw /etc/passwd
 
-COPY spark-3.0.0-SNAPSHOT-bin-hadoop3/jars /opt/spark/jars
-COPY spark-3.0.0-SNAPSHOT-bin-hadoop3/bin /opt/spark/bin
-COPY spark-3.0.0-SNAPSHOT-bin-hadoop3/sbin /opt/spark/sbin
-COPY spark-3.0.0-SNAPSHOT-bin-hadoop3/kubernetes/dockerfiles/spark/entrypoint.sh /opt/
-COPY spark-3.0.0-SNAPSHOT-bin-hadoop3/examples /opt/spark/examples
-COPY spark-3.0.0-SNAPSHOT-bin-hadoop3/kubernetes/tests /opt/spark/tests
-COPY spark-3.0.0-SNAPSHOT-bin-hadoop3/data /opt/spark/data
+COPY spark-3.0.1-bin-hadoop3.2/jars /opt/spark/jars
+COPY spark-3.0.1-bin-hadoop3.2/bin /opt/spark/bin
+COPY spark-3.0.1-bin-hadoop3.2/sbin /opt/spark/sbin
+COPY spark-3.0.1-bin-hadoop3.2/kubernetes/dockerfiles/spark/entrypoint.sh /opt/
+COPY spark-3.0.1-bin-hadoop3.2/examples /opt/spark/examples
+COPY spark-3.0.1-bin-hadoop3.2/kubernetes/tests /opt/spark/tests
+COPY spark-3.0.1-bin-hadoop3.2/data /opt/spark/data
 
-COPY cudf-0.13-20200303.085125-29-cuda10-1.jar /opt/sparkRapidsPlugin
-COPY rapids-4-spark-0.1-20200302.173442-61.jar /opt/sparkRapidsPlugin
+COPY cudf-0.15-cuda10-1.jar /opt/sparkRapidsPlugin
+COPY rapids-4-spark_2.12-0.2.0.jar /opt/sparkRapidsPlugin
 COPY getGpusResources.sh /opt/sparkRapidsPlugin
-#COPY tpch-q4.py /opt/tpch/
-#COPY transcode-files-to-parquet.py /opt/tpch/
 
 RUN mkdir /opt/spark/python
 # TODO: Investigate running both pip and pip3 via virtualenvs
@@ -71,8 +68,8 @@ RUN apt-get update && \
     # Removed the .cache to save space
     rm -r /root/.cache && rm -rf /var/cache/apt/*
 
-COPY spark-3.0.0-SNAPSHOT-bin-hadoop3/python/pyspark /opt/spark/python/pyspark
-COPY spark-3.0.0-SNAPSHOT-bin-hadoop3/python/lib /opt/spark/python/lib
+COPY spark-3.0.1-bin-hadoop3.2/python/pyspark /opt/spark/python/pyspark
+COPY spark-3.0.1-bin-hadoop3.2/python/lib /opt/spark/python/lib
 
 ENV SPARK_HOME /opt/spark
 
