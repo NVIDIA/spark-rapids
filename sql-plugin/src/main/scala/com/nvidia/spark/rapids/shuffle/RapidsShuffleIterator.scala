@@ -86,7 +86,7 @@ class RapidsShuffleIterator(
 
   // a user configurable timeout in seconds for the maximum time the iterator
   // will wait for a batch to appear in `resolvedBatches`
-  private[this] val timeoutSeconds = rapidsConf.shuffleFetchTimeout
+  private[this] lazy val timeoutSeconds = GpuShuffleEnv.shuffleFetchTimeoutSeconds
 
   // Used to track requests that are pending where the number of [[ColumnarBatch]] results is
   // not known yet
@@ -338,6 +338,7 @@ class RapidsShuffleIterator(
         }
       case Some(TransferError(blockManagerId, shuffleBlockBatchId, mapIndex, errorMessage)) =>
         taskContext.foreach(GpuSemaphore.releaseIfNecessary)
+        metricsUpdater.update(blockedTime, 0, 0, 0)
         val errorMsg = s"Transfer error detected by shuffle iterator, failing task. ${errorMessage}"
         logError(errorMsg)
         throw new RapidsShuffleFetchFailedException(
@@ -351,6 +352,7 @@ class RapidsShuffleIterator(
         // NOTE: this isn't perfect, since what we really want is the transport to
         // bubble this error, but for now we'll make this a fatal exception.
         taskContext.foreach(GpuSemaphore.releaseIfNecessary)
+        metricsUpdater.update(blockedTime, 0, 0, 0)
         val errMsg = s"Timed out after ${timeoutSeconds} seconds while waiting for a shuffle batch."
         logError(errMsg)
         throw new RapidsShuffleTimeoutException(errMsg)

@@ -146,4 +146,9 @@ object GpuShuffleEnv extends Logging {
   def getDeviceStorage: RapidsDeviceMemoryStore = env.getDeviceStorage
 
   def rapidsShuffleCodec: Option[TableCompressionCodec] = env.rapidsShuffleCodec
+
+  def shuffleFetchTimeoutSeconds: Long = {
+    val sparkEnv = SparkEnv.get
+    sparkEnv.conf.getTimeAsSeconds("spark.network.timeout", "120")
+  }
 }

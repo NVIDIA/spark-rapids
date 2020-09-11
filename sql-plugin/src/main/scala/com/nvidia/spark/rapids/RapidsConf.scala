@@ -17,7 +17,6 @@ package com.nvidia.spark.rapids
 
 import java.io.{File, FileOutputStream}
 import java.util
-import java.util.concurrent.TimeUnit
 
 import scala.collection.JavaConverters._
 import scala.collection.mutable.{HashMap, ListBuffer}
@@ -223,10 +222,6 @@ class ConfBuilder(val key: String, val register: ConfEntry[_] => Unit) {
 
   def stringConf: TypedConfBuilder[String] = {
     new TypedConfBuilder[String](this, identity[String])
-  }
-
-  def timeConf(unit: TimeUnit): TypedConfBuilder[Long] = {
-    new TypedConfBuilder[Long](this, JavaUtils.timeStringAs(_, unit))
   }
 }
 
@@ -558,14 +553,6 @@ object RapidsConf {
     .internal()
     .booleanConf
     .createWithDefault(true)
-
-  // USER FACING SHUFFLE CONFIGS
-  val SHUFFLE_FETCH_TIMEOUT  = conf("spark.rapids.shuffle.fetchTimeout")
-    .doc("Timeout that the RapidsShuffleIterator will wait for a resolved batch. " +
-        "It defaults to 120s since this is the value that Spark uses for " +
-        "`spark.network.timeout`.")
-    .timeConf(TimeUnit.SECONDS)
-    .createWithDefault(120)
 
   val SHUFFLE_TRANSPORT_ENABLE = conf("spark.rapids.shuffle.transport.enabled")
     .doc("When set to true, enable the Rapids Shuffle Transport for accelerated shuffle.")
@@ -933,8 +920,6 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
   lazy val shuffleCompressionCodec: String = get(SHUFFLE_COMPRESSION_CODEC)
 
   lazy val shuffleCompressionMaxBatchMemory: Long = get(SHUFFLE_COMPRESSION_MAX_BATCH_MEMORY)
-
-  lazy val shuffleFetchTimeout: Long = get(SHUFFLE_FETCH_TIMEOUT)
 
   def isOperatorEnabled(key: String, incompat: Boolean, isDisabledByDefault: Boolean): Boolean = {
     val default = !(isDisabledByDefault || incompat) || (incompat && isIncompatEnabled)

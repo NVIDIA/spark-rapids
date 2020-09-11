@@ -21,9 +21,7 @@ import org.mockito.ArgumentCaptor
 import org.mockito.ArgumentMatchers._
 import org.mockito.Mockito._
 
-import org.apache.spark.TaskContext
 import org.apache.spark.shuffle.{RapidsShuffleFetchFailedException, RapidsShuffleTimeoutException}
-import org.apache.spark.sql.rapids.ShuffleMetricsUpdater
 import org.apache.spark.sql.vectorized.{ColumnarBatch, ColumnVector}
 
 class RapidsShuffleIteratorSuite extends RapidsShuffleTestHelper {
@@ -35,7 +33,7 @@ class RapidsShuffleIteratorSuite extends RapidsShuffleTestHelper {
       mockConf,
       mockTransport,
       blocksByAddress,
-      null,
+      testMetricsUpdater,
       mockCatalog)
 
     when(mockTransaction.getStatus).thenReturn(TransactionStatus.Error)
@@ -44,6 +42,10 @@ class RapidsShuffleIteratorSuite extends RapidsShuffleTestHelper {
 
     assert(cl.hasNext)
     assertThrows[RapidsShuffleFetchFailedException](cl.next())
+
+    // not invoked, since we never blocked
+    verify(testMetricsUpdater, times(0))
+        .update(any(), any(), any(), any())
   }
 
   test("a transport error/cancellation raises a fetch failure") {
@@ -57,7 +59,7 @@ class RapidsShuffleIteratorSuite extends RapidsShuffleTestHelper {
         mockConf,
         mockTransport,
         blocksByAddress,
-        null,
+        testMetricsUpdater,
         mockCatalog)
 
       val ac = ArgumentCaptor.forClass(classOf[RapidsShuffleFetchHandler])
@@ -71,6 +73,12 @@ class RapidsShuffleIteratorSuite extends RapidsShuffleTestHelper {
       assert(cl.hasNext)
       assertThrows[RapidsShuffleFetchFailedException](cl.next())
 
+      verify(testMetricsUpdater, times(1))
+          .update(any(), any(), any(), any())
+      assertResult(0)(testMetricsUpdater.totalRemoteBlocksFetched)
+      assertResult(0)(testMetricsUpdater.totalRemoteBytesRead)
+      assertResult(0)(testMetricsUpdater.totalRowsFetched)
+
       newMocks()
     }
   }
@@ -83,7 +91,7 @@ class RapidsShuffleIteratorSuite extends RapidsShuffleTestHelper {
       mockConf,
       mockTransport,
       blocksByAddress,
-      null,
+      testMetricsUpdater,
       mockCatalog))
 
     val ac = ArgumentCaptor.forClass(classOf[RapidsShuffleFetchHandler])
@@ -95,20 +103,24 @@ class RapidsShuffleIteratorSuite extends RapidsShuffleTestHelper {
 
     assertThrows[RapidsShuffleTimeoutException](cl.next())
 
+    verify(testMetricsUpdater, times(1))
+        .update(any(), any(), any(), any())
+    assertResult(0)(testMetricsUpdater.totalRemoteBlocksFetched)
+    assertResult(0)(testMetricsUpdater.totalRemoteBytesRead)
+    assertResult(0)(testMetricsUpdater.totalRowsFetched)
+
     newMocks()
   }
 
   test("a new good batch is queued") {
     val blocksByAddress = RapidsShuffleTestHelper.getBlocksByAddress
 
-    val mockMetrics = mock[ShuffleMetricsUpdater]
-
     val cl = new RapidsShuffleIterator(
       RapidsShuffleTestHelper.makeMockBlockManager("1", "1"),
       mockConf,
       mockTransport,
       blocksByAddress,
-      mockMetrics,
+      testMetricsUpdater,
       mockCatalog)
 
     when(mockTransaction.getStatus).thenReturn(TransactionStatus.Error)
@@ -132,5 +144,10 @@ class RapidsShuffleIteratorSuite extends RapidsShuffleTestHelper {
 
     assert(cl.hasNext)
     assertResult(cb)(cl.next())
+    assertResult(1)(testMetricsUpdater.totalRemoteBlocksFetched)
+    assertResult(mockBuffer.size)(testMetricsUpdater.totalRemoteBytesRead)
+    assertResult(10)(testMetricsUpdater.totalRowsFetched)
+
+    newMocks()
   }
 }

@@ -27,8 +27,25 @@ import org.scalatest.{BeforeAndAfterEach, FunSuite}
 import org.scalatest.mockito.MockitoSugar
 import scala.collection.mutable.ArrayBuffer
 
+import org.apache.spark.{SparkConf, SparkEnv}
+import org.apache.spark.sql.rapids.ShuffleMetricsUpdater
 import org.apache.spark.sql.vectorized.ColumnarBatch
 import org.apache.spark.storage.{BlockId, BlockManagerId, ShuffleBlockBatchId}
+
+class TestShuffleMetricsUpdater extends ShuffleMetricsUpdater {
+  var totalRemoteBlocksFetched = 0L
+  var totalRemoteBytesRead = 0L
+  var totalRowsFetched = 0L
+  override def update(
+      fetchWaitTimeInMs: Long,
+      remoteBlocksFetched: Long,
+      remoteBytesRead: Long,
+      rowsFetched: Long): Unit = {
+    totalRemoteBlocksFetched += remoteBlocksFetched
+    totalRemoteBytesRead += remoteBytesRead
+    totalRowsFetched += rowsFetched
+  }
+}
 
 class RapidsShuffleTestHelper extends FunSuite
     with BeforeAndAfterEach
@@ -43,6 +60,7 @@ class RapidsShuffleTestHelper extends FunSuite
   var mockStorage: RapidsDeviceMemoryStore = _
   var mockCatalog: ShuffleReceivedBufferCatalog = _
   var mockConf: RapidsConf = _
+  var testMetricsUpdater: TestShuffleMetricsUpdater = _
   var client: RapidsShuffleClient = _
 
   override def beforeEach(): Unit = {
@@ -59,6 +77,12 @@ class RapidsShuffleTestHelper extends FunSuite
     mockStorage = mock[RapidsDeviceMemoryStore]
     mockCatalog = mock[ShuffleReceivedBufferCatalog]
     mockConf = mock[RapidsConf]
+    testMetricsUpdater = spy(new TestShuffleMetricsUpdater)
+
+    val sparkEnvMock = mock[SparkEnv]
+    when(sparkEnvMock.conf).thenReturn(new SparkConf())
+    SparkEnv.set(sparkEnvMock)
+
     client = spy(new RapidsShuffleClient(
       1,
       mockConnection,
