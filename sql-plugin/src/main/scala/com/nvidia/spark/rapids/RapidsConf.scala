@@ -145,6 +145,29 @@ class ConfEntryWithDefault[T](key: String, converter: String => T, doc: String,
   }
 }
 
+class OptionalConfEntry[T](key: String, val rawConverter: String => T, doc: String,
+    isInternal: Boolean)
+  extends ConfEntry[Option[T]](key, s => Some(rawConverter(s)), doc, isInternal) {
+
+  override def get(conf: Map[String, String]): Option[T] = {
+    conf.get(key).map(rawConverter)
+  }
+
+  override def help(asTable: Boolean = false): Unit = {
+    if (!isInternal) {
+      if (asTable) {
+        import ConfHelper.makeConfAnchor
+        println(s"${makeConfAnchor(key)}|$doc|None")
+      } else {
+        println(s"$key:")
+        println(s"\t$doc")
+        println("\tNone")
+        println()
+      }
+    }
+  }
+}
+
 class TypedConfBuilder[T](
     val parent: ConfBuilder,
     val converter: String => T,
@@ -180,6 +203,13 @@ class TypedConfBuilder[T](
   def toSequence: TypedConfBuilder[Seq[T]] = {
     new TypedConfBuilder(parent, ConfHelper.stringToSeq(_, converter),
       ConfHelper.seqToString(_, stringConverter))
+  }
+
+  def createOptional: OptionalConfEntry[T] = {
+    val ret = new OptionalConfEntry[T](parent.key, converter,
+      parent.doc, parent.isInternal)
+    parent.register(ret)
+    ret
   }
 }
 
@@ -772,6 +802,8 @@ object RapidsConf {
     }
   }
   def main(args: Array[String]): Unit = {
+    // Include the configs in PythonConfEntries
+    com.nvidia.spark.rapids.python.PythonConfEntries.init()
     val out = new FileOutputStream(new File(args(0)))
     Console.withOut(out) {
       Console.withErr(out) {
