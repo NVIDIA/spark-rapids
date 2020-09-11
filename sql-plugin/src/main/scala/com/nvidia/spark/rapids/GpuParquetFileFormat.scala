@@ -64,10 +64,9 @@ object GpuParquetFileFormat {
       TrampolineUtil.dataTypeExistsRecursively(field.dataType, _.isInstanceOf[TimestampType])
     }
     if (schemaHasTimestamps) {
-      sqlConf.parquetOutputTimestampType match {
-        case ParquetOutputTimestampType.TIMESTAMP_MICROS =>
-        case ParquetOutputTimestampType.TIMESTAMP_MILLIS =>
-        case t => meta.willNotWorkOnGpu(s"Output timestamp type $t is not supported")
+      if(!isOutputTimestampTypeSupported(sqlConf.parquetOutputTimestampType)) {
+        meta.willNotWorkOnGpu(s"Output timestamp type " +
+          s"${sqlConf.parquetOutputTimestampType} is not supported")
       }
     }
 
@@ -98,6 +97,15 @@ object GpuParquetFileFormat {
       case "NONE" | "UNCOMPRESSED" => Some(CompressionType.NONE)
       case "SNAPPY" => Some(CompressionType.SNAPPY)
       case _ => None
+    }
+  }
+
+  def isOutputTimestampTypeSupported(
+     outputTimestampType: ParquetOutputTimestampType.Value): Boolean = {
+    outputTimestampType match {
+      case ParquetOutputTimestampType.TIMESTAMP_MICROS |
+           ParquetOutputTimestampType.TIMESTAMP_MILLIS => true
+      case _ => false
     }
   }
 }
@@ -160,13 +168,13 @@ class GpuParquetFileFormat extends ColumnarFileFormat with Logging {
       sparkSession.sessionState.conf.writeLegacyParquetFormat.toString)
 
     val outputTimestampType = sparkSession.sessionState.conf.parquetOutputTimestampType
-    if (outputTimestampType != ParquetOutputTimestampType.TIMESTAMP_MICROS) {
+    if(!GpuParquetFileFormat.isOutputTimestampTypeSupported(outputTimestampType)) {
       val hasTimestamps = dataSchema.exists { field =>
         TrampolineUtil.dataTypeExistsRecursively(field.dataType, f => {
           f.isInstanceOf[TimestampType]
         })
       }
-      if (hasTimestamps && outputTimestampType != ParquetOutputTimestampType.TIMESTAMP_MILLIS) {
+      if (hasTimestamps) {
         throw new UnsupportedOperationException(
           s"Unsupported output timestamp type: $outputTimestampType")
       }
