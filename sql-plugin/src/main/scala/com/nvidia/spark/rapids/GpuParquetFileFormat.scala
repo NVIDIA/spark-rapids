@@ -170,9 +170,7 @@ class GpuParquetFileFormat extends ColumnarFileFormat with Logging {
     val outputTimestampType = sparkSession.sessionState.conf.parquetOutputTimestampType
     if(!GpuParquetFileFormat.isOutputTimestampTypeSupported(outputTimestampType)) {
       val hasTimestamps = dataSchema.exists { field =>
-        TrampolineUtil.dataTypeExistsRecursively(field.dataType, f => {
-          f.isInstanceOf[TimestampType]
-        })
+        TrampolineUtil.dataTypeExistsRecursively(field.dataType, _.isInstanceOf[TimestampType])
       }
       if (hasTimestamps) {
         throw new UnsupportedOperationException(
