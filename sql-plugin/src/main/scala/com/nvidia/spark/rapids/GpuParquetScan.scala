@@ -924,13 +924,17 @@ class MultiFileParquetPartitionReader(
   private def addPartitionValues(
       batch: Option[ColumnarBatch],
       inPartitionValues: InternalRow): Option[ColumnarBatch] = {
-    batch.map { cb =>
-      val partitionValues = inPartitionValues.toSeq(partitionSchema)
-      val partitionScalars = ColumnarPartitionReaderWithPartitionValues
-        .createPartitionValues(partitionValues, partitionSchema)
-      withResource(partitionScalars) { scalars =>
-        ColumnarPartitionReaderWithPartitionValues.addPartitionValues(cb, scalars)
+    if (partitionSchema.nonEmpty) {
+      batch.map { cb =>
+        val partitionValues = inPartitionValues.toSeq(partitionSchema)
+        val partitionScalars = ColumnarPartitionReaderWithPartitionValues
+            .createPartitionValues(partitionValues, partitionSchema)
+        withResource(partitionScalars) { scalars =>
+          ColumnarPartitionReaderWithPartitionValues.addPartitionValues(cb, scalars)
+        }
       }
+    } else {
+      batch
     }
   }
 
@@ -945,9 +949,12 @@ class MultiFileParquetPartitionReader(
       // shouldn't ever get here
       None
     }
-    // not reading any data, so return a degenerate ColumnarBatch with the row count
+    // not reading any data, but add in partition data if needed
     if (hostBuffer == null) {
-      return Some(new ColumnarBatch(Array.empty, dataSize.toInt))
+      // Someone is going to process this data, even if it is just a row count
+      GpuSemaphore.acquireIfNecessary(TaskContext.get())
+      val emptyBatch = new ColumnarBatch(Array.empty, dataSize.toInt)
+      return addPartitionValues(Some(emptyBatch), partValues)
     }
     val table = withResource(hostBuffer) { _ =>
       if (debugDumpPrefix != null) {

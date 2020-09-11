@@ -85,11 +85,7 @@ spec:
         - matchExpressions:
           - key: nvidia.com/gpu_type
             operator: In
-            values:
-            - Tesla_V100S_PCIE_32GB
-            - Tesla_V100_PCIE_32GB
-            - TITAN_RTX
-            - Tesla_T4
+            values: GPU_TYPES
 """
 
 def githubHelper // blossom github helper
@@ -122,6 +118,7 @@ pipeline {
         // TODO: rename this credential after we shutdown premerge pipeline on ngcc
         URM_CREDS = credentials("svcngcc_artifactory")
         URM_URL = "https://${ArtifactoryConstants.ARTIFACTORY_NAME}/artifactory/sw-spark-maven"
+        GPU_TYPES = credentials("pre-merge_gpu_types")
     }
 
     stages {
@@ -192,6 +189,7 @@ pipeline {
                         uploadDocker(IMAGE_PREMERGE)
 
                         pluginPremerge = pluginPremerge.replace("IMAGE_PREMERGE", "$IMAGE_PREMERGE")
+                        pluginPremerge = pluginPremerge.replace("GPU_TYPES", "$GPU_TYPES")
                     }
                 }
             }

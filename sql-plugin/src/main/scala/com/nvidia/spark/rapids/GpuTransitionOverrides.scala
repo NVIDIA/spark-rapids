@@ -48,18 +48,27 @@ class GpuTransitionOverrides extends Rule[SparkPlan] {
     ShimLoader.getSparkShims.getGpuColumnarToRowTransition(plan, exportColumnRdd)
   }
 
-  def optimizeAdaptiveTransitions(plan: SparkPlan): SparkPlan = plan match {
+  def optimizeAdaptiveTransitions(
+      plan: SparkPlan,
+      parent: Option[SparkPlan]): SparkPlan = plan match {
     case HostColumnarToGpu(r2c: RowToColumnarExec, goal) =>
-      GpuRowToColumnarExec(optimizeAdaptiveTransitions(r2c.child), goal)
+      GpuRowToColumnarExec(optimizeAdaptiveTransitions(r2c.child, Some(r2c)), goal)
 
-    case GpuCoalesceBatches(e: GpuShuffleExchangeExecBase, _) =>
-      // we need to insert the coalesce batches step later, after the query stage has executed
-      optimizeAdaptiveTransitions(e)
+    case ColumnarToRowExec(GpuBringBackToHost(
+      GpuCoalesceBatches(e: GpuShuffleExchangeExecBase, _))) if parent.isEmpty =>
+      // If this coalesced exchange has no parent it means that this plan is being created
+      // as a query stage when AQE is on. Because we must return an operator that implements
+      // ShuffleExchangeLike we need to remove the GpuCoalesceBatches operator here and
+      // re-insert it around the GpuCustomShuffleReaderExec in the parent query stage when that
+      // is created. Another option would be to create a custom operator that combines
+      // GpuCoalesceBatches and GpuShuffleExchangeExec and return that here instead. See
+      // https://github.com/NVIDIA/spark-rapids/issues/719 for more information.
+      optimizeAdaptiveTransitions(e, Some(plan))
 
     case e: GpuCustomShuffleReaderExec =>
       // this is where we re-insert the GpuCoalesceBatches that we removed from the
       // shuffle exchange
-      GpuCoalesceBatches(e.copy(child = optimizeAdaptiveTransitions(e.child)),
+      GpuCoalesceBatches(e.copy(child = optimizeAdaptiveTransitions(e.child, Some(e))),
           TargetSize(Long.MaxValue))
 
     // Query stages that have already executed on the GPU could be used by CPU operators
@@ -74,14 +83,14 @@ class GpuTransitionOverrides extends Rule[SparkPlan] {
     case HostColumnarToGpu(e: ShuffleQueryStageExec, _) => e
 
     case ColumnarToRowExec(bb: GpuBringBackToHost) =>
-      optimizeAdaptiveTransitions(bb.child) match {
+      optimizeAdaptiveTransitions(bb.child, Some(bb)) match {
         case e: GpuBroadcastExchangeExecBase => e
         case e: GpuShuffleExchangeExecBase => e
         case other => getColumnarToRowExec(other)
       }
 
     case p =>
-      p.withNewChildren(p.children.map(optimizeAdaptiveTransitions))
+      p.withNewChildren(p.children.map(c => optimizeAdaptiveTransitions(c, Some(p))))
   }
 
   def optimizeCoalesce(plan: SparkPlan): SparkPlan = plan match {
@@ -325,7 +334,7 @@ class GpuTransitionOverrides extends Rule[SparkPlan] {
       var updatedPlan = insertHashOptimizeSorts(plan)
       updatedPlan = insertCoalesce(insertColumnarFromGpu(updatedPlan))
       updatedPlan = optimizeCoalesce(if (plan.conf.adaptiveExecutionEnabled) {
-        optimizeAdaptiveTransitions(updatedPlan)
+        optimizeAdaptiveTransitions(updatedPlan, None)
       } else {
         optimizeGpuPlanTransitions(updatedPlan)
       })
