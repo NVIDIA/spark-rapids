@@ -20,12 +20,14 @@ import java.util.concurrent.ConcurrentHashMap
 import java.util.function.BiFunction
 
 import ai.rapids.cudf.{DeviceMemoryBuffer, Rmm, Table}
+import com.nvidia.spark.rapids.RapidsPluginImplicits.AutoCloseableArray
 import com.nvidia.spark.rapids.StorageTier.StorageTier
 import com.nvidia.spark.rapids.format.TableMeta
 
-import org.apache.spark.SparkEnv
+import org.apache.spark.{SparkConf, SparkEnv}
 import org.apache.spark.internal.Logging
 import org.apache.spark.sql.rapids.RapidsDiskBlockManager
+import org.apache.spark.sql.vectorized.ColumnarBatch
 
 /**
  * Catalog for lookup of buffers by ID. The constructor is only visible for testing, generally
@@ -103,7 +105,7 @@ class RapidsBufferCatalog extends Logging {
   }
 }
 
-object RapidsBufferCatalog extends Logging {
+object RapidsBufferCatalog extends Logging with Arm {
   private val MAX_BUFFER_LOOKUP_ATTEMPTS = 100
 
   val singleton = new RapidsBufferCatalog
@@ -112,7 +114,15 @@ object RapidsBufferCatalog extends Logging {
   private var diskStorage: RapidsDiskStore = _
   private var memoryEventHandler: DeviceMemoryEventHandler = _
 
-  private lazy val conf = SparkEnv.get.conf
+  private lazy val conf: SparkConf = {
+    val env = SparkEnv.get
+    if (env != null) {
+      env.conf
+    } else {
+      // For some unit tests
+      new SparkConf()
+    }
+  }
 
   def init(rapidsConf: RapidsConf): Unit = {
     // We are going to re-initialize so make sure all of the old things were closed...
@@ -186,6 +196,41 @@ object RapidsBufferCatalog extends Logging {
       tableMeta: TableMeta,
       initialSpillPriority: Long): Unit =
     deviceStorage.addBuffer(id, buffer, tableMeta, initialSpillPriority)
+
+  /**
+   * Adds a batch to the device storage, taking ownership of the batch. It will try to be smart
+   * and only copy the data into a contiguous buffer if the incoming batch is not already
+   * contiguous.
+   * @param id buffer ID to associate with this buffer
+   * @param batch batch to be processed
+   * @param initialSpillPriority starting spill priority value for the buffer
+   */
+  def addBatch(
+      id: RapidsBufferId,
+      batch: ColumnarBatch,
+      initialSpillPriority: Long): Unit = {
+    val numColumns = batch.numCols()
+    if (numColumns > 0 && batch.column(0).isInstanceOf[GpuCompressedColumnVector]) {
+      val cv = batch.column(0).asInstanceOf[GpuCompressedColumnVector]
+      deviceStorage.addBuffer(id, cv.getBuffer, cv.getTableMeta, initialSpillPriority)
+    } else if (numColumns > 0 &&
+        (0 until numColumns)
+            .forall(i => batch.column(i).isInstanceOf[GpuColumnVectorFromBuffer])) {
+      val cv = batch.column(0).asInstanceOf[GpuColumnVectorFromBuffer]
+      withResource(GpuColumnVector.from(batch)) { table =>
+        deviceStorage.addTable(id, table, cv.getBuffer, initialSpillPriority)
+      }
+    } else {
+      withResource(batch) { batch =>
+        withResource(GpuColumnVector.from(batch)) { tmpTable =>
+          val contigTables = tmpTable.contiguousSplit(batch.numRows())
+          val tab = contigTables.head
+          contigTables.tail.safeClose()
+          deviceStorage.addTable(id, tab.getTable, tab.getBuffer, initialSpillPriority)
+        }
+      }
+    }
+  }
 
   /**
    * Lookup the buffer that corresponds to the specified buffer ID and acquire it.
