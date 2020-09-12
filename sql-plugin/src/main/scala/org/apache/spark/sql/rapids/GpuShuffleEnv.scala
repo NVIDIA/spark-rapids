@@ -95,6 +95,10 @@ class GpuShuffleEnv(rapidsConf: RapidsConf) extends Logging {
   def getReceivedCatalog: ShuffleReceivedBufferCatalog = shuffleReceivedBufferCatalog
 
   def getDeviceStorage: RapidsDeviceMemoryStore = deviceStorage
+
+  def getShuffleFetchTimeoutSeconds: Long = {
+    conf.getTimeAsSeconds("spark.network.timeout", "120s")
+  }
 }
 
 object GpuShuffleEnv extends Logging {
@@ -146,4 +150,6 @@ object GpuShuffleEnv extends Logging {
   def getDeviceStorage: RapidsDeviceMemoryStore = env.getDeviceStorage
 
   def rapidsShuffleCodec: Option[TableCompressionCodec] = env.rapidsShuffleCodec
+
+  def shuffleFetchTimeoutSeconds: Long = env.getShuffleFetchTimeoutSeconds
 }
