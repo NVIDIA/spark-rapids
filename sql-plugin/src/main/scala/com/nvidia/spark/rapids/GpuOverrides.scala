@@ -41,11 +41,13 @@ import org.apache.spark.sql.execution.datasources.text.TextFileFormat
 import org.apache.spark.sql.execution.datasources.v2.{AlterNamespaceSetPropertiesExec, AlterTableExec, AtomicReplaceTableExec, BatchScanExec, CreateNamespaceExec, CreateTableExec, DeleteFromTableExec, DescribeNamespaceExec, DescribeTableExec, DropNamespaceExec, DropTableExec, RefreshTableExec, RenameTableExec, ReplaceTableExec, SetCatalogAndNamespaceExec, ShowCurrentNamespaceExec, ShowNamespacesExec, ShowTablePropertiesExec, ShowTablesExec}
 import org.apache.spark.sql.execution.datasources.v2.csv.CSVScan
 import org.apache.spark.sql.execution.exchange.{BroadcastExchangeExec, ShuffleExchangeExec}
-import org.apache.spark.sql.execution.joins.{BroadcastNestedLoopJoinExec, CartesianProductExec}
+import org.apache.spark.sql.execution.joins._
+import org.apache.spark.sql.execution.python._
 import org.apache.spark.sql.execution.window.WindowExec
 import org.apache.spark.sql.rapids._
 import org.apache.spark.sql.rapids.catalyst.expressions.GpuRand
 import org.apache.spark.sql.rapids.execution.{GpuBroadcastMeta, GpuBroadcastNestedLoopJoinMeta, GpuCustomShuffleReaderExec, GpuShuffleMeta}
+import org.apache.spark.sql.rapids.execution.python._
 import org.apache.spark.sql.types._
 import org.apache.spark.unsafe.types.{CalendarInterval, UTF8String}
 
@@ -1287,6 +1289,20 @@ object GpuOverrides {
 
         override def convertToGpu(child: Expression): GpuExpression = GpuAverage(child)
       }),
+    expr[PythonUDF](
+      "UDF run in an external python process. Does not actually run on the GPU, but " +
+          "the transfer of data to/from it can be accelerated.",
+      (a, conf, p, r) => new ExprMeta[PythonUDF](a, conf, p, r) {
+        override def couldReplaceMessage: String = "does not block GPU acceleration"
+        override def noReplacementPossibleMessage(reasons: String): String =
+          s"blocks running on GPU because $reasons"
+
+        override def convertToGpu(): GpuExpression =
+          GpuPythonUDF(a.name, a.func, a.dataType,
+            childExprs.map(_.convertToGpu()),
+            a.evalType, a.udfDeterministic, a.resultId)
+      }
+    ),
     expr[Rand](
       "Generate a random column with i.i.d. uniformly distributed values in [0, 1)",
       (a, conf, p, r) => new UnaryExprMeta[Rand](a, conf, p, r) {
@@ -1701,6 +1717,28 @@ object GpuOverrides {
           override def convertToGpu(): GpuExec =
             GpuLocalLimitExec(localLimitExec.limit, childPlans(0).convertIfNeeded())
         }),
+    exec[ArrowEvalPythonExec](
+      "The backend of the Scalar Pandas UDFs, it supports running the Python UDFs code on GPU" +
+        " when calling cuDF APIs in the UDF, also accelerates the data transfer between the" +
+        " Java process and Python process",
+      (e, conf, p, r) =>
+        new SparkPlanMeta[ArrowEvalPythonExec](e, conf, p, r) {
+          val udfs: Seq[BaseExprMeta[PythonUDF]] =
+            e.udfs.map(GpuOverrides.wrapExpr(_, conf, Some(this)))
+          val resultAttrs: Seq[BaseExprMeta[Attribute]] =
+            e.resultAttrs.map(GpuOverrides.wrapExpr(_, conf, Some(this)))
+          override val childExprs: Seq[BaseExprMeta[_]] = udfs ++ resultAttrs
+
+          override def couldReplaceMessage: String = "could partially run on GPU"
+          override def noReplacementPossibleMessage(reasons: String): String =
+            s"cannot run even partially on the GPU because $reasons"
+
+          override def convertToGpu(): GpuExec =
+            GpuArrowEvalPythonExec(udfs.map(_.convertToGpu()).asInstanceOf[Seq[GpuPythonUDF]],
+              resultAttrs.map(_.convertToGpu()).asInstanceOf[Seq[Attribute]],
+              childPlans.head.convertIfNeeded(),
+              e.evalType)
+        }).disabledByDefault("Performance is not ideal for UDFs that take a long time"),
     exec[GlobalLimitExec](
       "Limiting of results across partitions",
       (globalLimitExec, conf, p, r) =>
@@ -1780,6 +1818,31 @@ object GpuOverrides {
             exec.partitionSpecs)
         }
       }),
+    exec[MapInPandasExec](
+      "The backend for Map Pandas Iterator UDF, it runs on CPU itself now but supports running" +
+        " the Python UDFs code on GPU when calling cuDF APIs in the UDF",
+      (mapPy, conf, p, r) => new GpuMapInPandasExecMeta(mapPy, conf, p, r))
+        .disabledByDefault("Performance is not ideal now"),
+    exec[FlatMapGroupsInPandasExec](
+      "The backend for Grouped Map Pandas UDF, it runs on CPU itself now but supports running" +
+        " the Python UDFs code on GPU when calling cuDF APIs in the UDF",
+      (flatPy, conf, p, r) => new GpuFlatMapGroupsInPandasExecMeta(flatPy, conf, p, r))
+        .disabledByDefault("Performance is not ideal now"),
+    exec[AggregateInPandasExec](
+      "The backend for Grouped Aggregation Pandas UDF, it runs on CPU itself now but supports" +
+        " running the Python UDFs code on GPU when calling cuDF APIs in the UDF",
+      (aggPy, conf, p, r) => new GpuAggregateInPandasExecMeta(aggPy, conf, p, r))
+        .disabledByDefault("Performance is not ideal now"),
+    exec[FlatMapCoGroupsInPandasExec](
+      "The backend for CoGrouped Aggregation Pandas UDF, it runs on CPU itself now but supports" +
+        " running the Python UDFs code on GPU when calling cuDF APIs in the UDF",
+      (flatCoPy, conf, p, r) => new GpuFlatMapCoGroupsInPandasExecMeta(flatCoPy, conf, p, r))
+        .disabledByDefault("Performance is not ideal now"),
+    exec[WindowInPandasExec](
+      "The backend for Pandas UDF with window functions, it runs on CPU itself now but supports" +
+        " running the Python UDFs code on GPU when calling cuDF APIs in the UDF",
+      (winPy, conf, p, r) => new GpuWindowInPandasExecMeta(winPy, conf, p, r))
+        .disabledByDefault("Performance is not ideal now"),
     neverReplaceExec[AlterNamespaceSetPropertiesExec]("Namespace metadata operation"),
     neverReplaceExec[CreateNamespaceExec]("Namespace metadata operation"),
     neverReplaceExec[DescribeNamespaceExec]("Namespace metadata operation"),

@@ -37,7 +37,8 @@ to read the deployment method sections before doing any installations.
 
 ## Install Spark
 To install Apache Spark please follow the official 
-[instructions](https://spark.apache.org/docs/latest/#launching-on-a-cluster). Please note that only
+[instructions](https://spark.apache.org/docs/latest/#launching-on-a-cluster). Supported versions of
+Spark are listed on the [stable release](stable-release.md) page.  Please note that only
 scala version 2.12 is currently supported by the accelerator. 
 
 ## Download the RAPIDS jars
@@ -51,18 +52,19 @@ CUDA and will not run on other versions. The jars use a maven classifier to keep
 
 - CUDA 10.1 => classifier cuda10-1
 - CUDA 10.2 => classifier cuda10-2
-- CUDA 11.0 => classifier cuda11-0
+- CUDA 11.0 => classifier cuda11
 
 For example, here is a sample version of the jars and cudf with CUDA 10.1 support:
 - cudf-0.15-cuda10-1.jar
-- rapids-4-spark_2.12-0.1.0.jar
+- rapids-4-spark_2.12-0.2.0.jar
+
 
 For simplicity export the location to these jars. This example assumes the sample jars above have
 been placed in the `/opt/sparkRapidsPlugin` directory:
 ```shell 
 export SPARK_RAPIDS_DIR=/opt/sparkRapidsPlugin
 export SPARK_CUDF_JAR=${SPARK_RAPIDS_DIR}/cudf-0.15-cuda10-1.jar
-export SPARK_RAPIDS_PLUGIN_JAR=${SPARK_RAPIDS_DIR}/rapids-4-spark_2.12-0.2.0-SNAPSHOT.jar
+export SPARK_RAPIDS_PLUGIN_JAR=${SPARK_RAPIDS_DIR}/rapids-4-spark_2.12-0.2.0.jar
 ```
 
 ## Install the GPU Discovery Script
@@ -289,10 +291,13 @@ $SPARK_HOME/bin/spark-shell \
 ```  
 
 ## Running on Kubernetes
-Kubernetes requires a Docker image to run Spark. Generally you put everything you need in
-that Docker image - Spark, the RAPIDS Accelerator for Spark jars, and the discovery script.
-Alternatively they would need to be on a drive that is mounted when your Spark application runs.
-Here we will assume you have created a Docker image that contains all of them.
+Kubernetes requires a Docker image to run Spark.  Generally everything needed is in the Docker
+image - Spark, the RAPIDS Accelerator for Spark jars, and the discovery script.  See this
+[Dockerfile.cuda](Dockerfile.cuda) example.
+
+Alternatively the jars and discovery script would need to be on a drive that is mounted when your
+Spark application runs.  Here we will assume you have created a Docker image that contains the
+RAPIDS jars, cudf jars and discovery script.
 
 This assumes you have Kubernetes already installed and setup.  These instructions do not cover how
 to setup a Kubernetes cluster.
@@ -302,8 +307,9 @@ to setup a Kubernetes cluster.
   [GPU discovery script](#install-the-gpu-discovery-script) on the node from which you are
   going to build your Docker image.  Note that you can download these into a local directory and
   untar the Spark `.tar.gz` rather than installing into a location on the machine.
+- Include the RAPIDS Accelerator for Spark jars in the Spark /jars directory
 - Download the sample
-  [Dockerfile.cuda](https://drive.google.com/open?id=1ah7I1DQEB4Wqz5t2KK2UsctGrxDwWpeJ) or create
+  [Dockerfile.cuda](Dockerfile.cuda) or create
   your own.
 - Update the Dockerfile with the filenames for Spark and the RAPIDS Accelerator for Spark jars
   that you downloaded.  Include anything else application-specific that you need.
@@ -474,6 +480,71 @@ for your GPU. Please verify the [defaults](../configs.md) work in your case.
 This setting controls the amount of host memory (RAM) that can be utilized to spill GPU blocks when
 the GPU is out of memory, before going to disk. Please verify the [defaults](../configs.md).
 - `spark.rapids.memory.host.spillStorageSize`
+
+##  GPU Scheduling For Pandas UDF
+---
+**NOTE**
+
+The _GPU Scheduling for Pandas UDF_ is an experimental feature, and may change at any point it time.
+
+---
+
+_GPU Scheduling for Pandas UDF_ is built on Apache Spark's [Pandas UDF(user defined function)](https://spark.apache.org/docs/3.0.0/sql-pyspark-pandas-with-arrow.html#pandas-udfs-aka-vectorized-udfs), and has two components: 
+
+- **Share GPU with JVM**: Let the Python process share JVM GPU. The Python process could run on the same GPU with JVM.
+
+- **Increase Speed**: Make the data transport faster between JVM process and Python process.
+
+
+
+To enable _GPU Scheduling for Pandas UDF_, you need to configure your spark job with extra settings.
+
+1. Make sure GPU exclusive mode is disabled. Note that this will not work if you are using exclusive mode to assign GPUs under spark.
+2. Currently the python files are packed into the spark rapids plugin jar. 
+
+    On Yarn, you need to add
+    ```shell
+    ...
+    --py-files ${SPARK_RAPIDS_PLUGIN_JAR}
+    ```
+
+
+    On Standalone, you need to add
+    ```shell
+    ...
+    --conf spark.executorEnv.PYTHONPATH=rapids-4-spark_2.12-0.2.0-SNAPSHOT.jar \
+    --py-files ${SPARK_RAPIDS_PLUGIN_JAR}
+    ```
+
+3. Enable GPU Scheduling for Pandas UDF.
+
+    ```shell
+    ...
+    --conf spark.rapids.python.gpu.enabled=true \
+    --conf spark.rapids.python.memory.gpu.pooling.enabled=false \
+    --conf spark.rapids.sql.exec.ArrowEvalPythonExec=true \
+    --conf spark.rapids.sql.exec.MapInPandasExec=true \
+    --conf spark.rapids.sql.exec.FlatMapGroupsInPandasExec=true \
+    --conf spark.rapids.sql.exec.AggregateInPandasExec=true \
+    --conf spark.rapids.sql.exec.FlatMapCoGroupsInPandasExec=true \
+    --conf spark.rapids.sql.exec.WindowInPandasExec=true
+    ```
+
+Please note the data transfer acceleration only supports scalar UDF and Scalar iterator UDF currently. 
+You could choose the exec you need to enable.
+
+### Other Configuration
+
+Following configuration settings are also for _GPU Scheduling for Pandas UDF_
+```
+spark.rapids.python.concurrentPythonWorkers
+spark.rapids.python.memory.gpu.allocFraction
+spark.rapids.python.memory.gpu.maxAllocFraction
+```
+
+To find details on the above Python configuration settings, please see the [RAPIDS Accelerator for Apache Spark Configuration Guide](../configs.md).
+
+
 
 ## Advanced Configuration
 

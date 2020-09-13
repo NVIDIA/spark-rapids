@@ -100,6 +100,7 @@ case class GpuBroadcastHashJoinExec(
 
   override lazy val additionalMetrics: Map[String, SQLMetric] = Map(
     "joinOutputRows" -> SQLMetrics.createMetric(sparkContext, "join output rows"),
+    "streamTime" -> SQLMetrics.createNanoTimingMetric(sparkContext, "stream time"),
     "joinTime" -> SQLMetrics.createNanoTimingMetric(sparkContext, "join time"),
     "filterTime" -> SQLMetrics.createNanoTimingMetric(sparkContext, "filter time"))
 
@@ -128,6 +129,7 @@ case class GpuBroadcastHashJoinExec(
     val numOutputRows = longMetric(NUM_OUTPUT_ROWS)
     val numOutputBatches = longMetric(NUM_OUTPUT_BATCHES)
     val totalTime = longMetric(TOTAL_TIME)
+    val streamTime = longMetric("streamTime")
     val joinTime = longMetric("joinTime")
     val filterTime = longMetric("filterTime")
     val joinOutputRows = longMetric("joinOutputRows")
@@ -138,15 +140,10 @@ case class GpuBroadcastHashJoinExec(
     val boundCondition = condition.map(GpuBindReferences.bindReference(_, output))
 
     lazy val builtTable = {
-      val ret = withResource(
-        GpuProjectExec.project(broadcastRelation.value.batch, gpuBuildKeys)) { keys =>
-        val combined = GpuHashJoin.incRefCount(combine(keys, broadcastRelation.value.batch))
-        val filtered = filterBuiltTableIfNeeded(combined)
-        withResource(filtered) { filtered =>
-          GpuColumnVector.from(filtered)
-        }
-      }
-
+      // TODO clean up intermediate results...
+      val keys = GpuProjectExec.project(broadcastRelation.value.batch, gpuBuildKeys)
+      val combined = combine(keys, broadcastRelation.value.batch)
+      val ret = GpuColumnVector.from(combined)
       // Don't warn for a leak, because we cannot control when we are done with this
       (0 until ret.getNumberOfColumns).foreach(ret.getColumn(_).noWarnLeakExpected())
       ret
@@ -155,6 +152,6 @@ case class GpuBroadcastHashJoinExec(
     val rdd = streamedPlan.executeColumnar()
     rdd.mapPartitions(it =>
       doJoin(builtTable, it, boundCondition, numOutputRows, joinOutputRows,
-        numOutputBatches, joinTime, filterTime, totalTime))
+        numOutputBatches, streamTime, joinTime, filterTime, totalTime))
   }
 }
