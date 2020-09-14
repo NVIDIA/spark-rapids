@@ -20,32 +20,31 @@ import org.apache.spark.sql.catalyst.expressions.Expression
 import org.apache.spark.sql.types.{DataType, IntegerType}
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
-case class GpuSinglePartitioning(expressions: Seq[GpuExpression])
+case class GpuSinglePartitioning(expressions: Seq[Expression])
   extends GpuExpression with GpuPartitioning {
   /**
-    * Returns the result of evaluating this expression on the entire `ColumnarBatch`.
-    * The result of calling this may be a single [[GpuColumnVector]] or a scalar value.
-    * Scalar values typically happen if they are a part of the expression i.e. col("a") + 100.
-    * In this case the 100 is a literal that Add would have to be able to handle.
-    *
-    * By convention any [[GpuColumnVector]] returned by [[columnarEval]]
-    * is owned by the caller and will need to be closed by them. This can happen by putting it
-    * into a `ColumnarBatch` and closing the batch or by closing the vector directly if it is a
-    * temporary value.
-    */
+   * Returns the result of evaluating this expression on the entire `ColumnarBatch`.
+   * The result of calling this may be a single [[GpuColumnVector]] or a scalar value.
+   * Scalar values typically happen if they are a part of the expression i.e. col("a") + 100.
+   * In this case the 100 is a literal that Add would have to be able to handle.
+   *
+   * By convention any [[GpuColumnVector]] returned by [[columnarEval]]
+   * is owned by the caller and will need to be closed by them. This can happen by putting it
+   * into a `ColumnarBatch` and closing the batch or by closing the vector directly if it is a
+   * temporary value.
+   */
   override def columnarEval(batch: ColumnarBatch): Any = {
     if (batch.numCols == 0) {
       Array(batch).zipWithIndex
     } else {
       try {
-        // Need to produce a contiguous table. Until there's a direct way to do this, using
-        // contiguous split as a workaround, closing any degenerate table after the first one.
+        // Nothing needs to be sliced but a contiguous table is needed for GPU shuffle which
+        // slice will produce.
         val sliced = sliceInternalGpuOrCpu(
-          batch,
-          Array(0, batch.numRows),
+          batch.numRows,
+          Array(0),
           GpuColumnVector.extractColumns(batch))
-        sliced.drop(1).foreach(_.close())
-        sliced.take(1).zipWithIndex
+        sliced.zipWithIndex
       } finally {
         batch.close()
       }

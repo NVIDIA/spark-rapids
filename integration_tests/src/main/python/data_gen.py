@@ -19,7 +19,7 @@ from pyspark.sql.types import *
 import pyspark.sql.functions as f
 import pytest
 import random
-from spark_session import spark, is_tz_utc
+from spark_session import is_tz_utc
 import sre_yield
 import struct
 
@@ -160,7 +160,7 @@ class StringGen(DataGen):
             length = int(len(strs))
         except OverflowError:
             length = _MAX_CHOICES
-        return self.with_special_case(lambda rand : strs[rand.randint(0, length)], weight=weight)
+        return self.with_special_case(lambda rand : strs[rand.randrange(0, length)], weight=weight)
 
     def start(self, rand):
         strs = self.base_strs
@@ -168,7 +168,7 @@ class StringGen(DataGen):
             length = int(len(strs))
         except OverflowError:
             length = _MAX_CHOICES
-        self._start(rand, lambda : strs[rand.randint(0, length)])
+        self._start(rand, lambda : strs[rand.randrange(0, length)])
 
 _BYTE_MIN = -(1 << 7)
 _BYTE_MAX = (1 << 7) - 1
@@ -293,10 +293,10 @@ class DoubleGen(DataGen):
         self._use_full_range = (self._min_exp == DOUBLE_MIN_EXP) and (self._max_exp == DOUBLE_MAX_EXP)
         if special_cases is None:
             special_cases = [
-                self._make_from(1, self._max_exp, DOUBLE_MAX_FRACTION),
-                self._make_from(0, self._max_exp, DOUBLE_MAX_FRACTION),
-                self._make_from(1, self._min_exp, DOUBLE_MAX_FRACTION),
-                self._make_from(0, self._min_exp, DOUBLE_MAX_FRACTION)
+                self.make_from(1, self._max_exp, DOUBLE_MAX_FRACTION),
+                self.make_from(0, self._max_exp, DOUBLE_MAX_FRACTION),
+                self.make_from(1, self._min_exp, DOUBLE_MAX_FRACTION),
+                self.make_from(0, self._min_exp, DOUBLE_MAX_FRACTION)
             ]
             if self._min_exp <= 0 and self._max_exp >= 0:
                 special_cases.append(0.0)
@@ -312,7 +312,7 @@ class DoubleGen(DataGen):
         super().__init__(DoubleType(), nullable=nullable, special_cases=special_cases)
 
     @staticmethod
-    def _make_from(sign, exp, fraction):
+    def make_from(sign, exp, fraction):
         sign = sign & 1 # 1 bit
         exp = (exp + 1023) & 0x7FF # add bias and 11 bits
         fraction = fraction & DOUBLE_MAX_FRACTION
@@ -338,7 +338,7 @@ class DoubleGen(DataGen):
                 sign = rand.getrandbits(1)
                 exp = rand.randint(self._min_exp, self._max_exp)
                 fraction = rand.getrandbits(52)
-                return self._fixup_nans(self._make_from(sign, exp, fraction))
+                return self._fixup_nans(self.make_from(sign, exp, fraction))
             self._start(rand, gen_part_double)
 
 class BooleanGen(DataGen):
@@ -416,6 +416,8 @@ class DateGen(DataGen):
         y = int(math.ceil(t/4.0)) * 4
         if ((y % 100) == 0) and ((y % 400) != 0):
             y = y + 4
+        if (y == 10000):
+            y = y - 4
         return y
 
     _epoch = date(1970, 1, 1)
@@ -487,8 +489,8 @@ class ArrayGen(DataGen):
             return [self._child_gen.gen() for _ in range(0, length)]
         self._start(rand, gen_array)
 
-def skip_if_not_utc(spark):
-    if (not is_tz_utc(spark)):
+def skip_if_not_utc():
+    if (not is_tz_utc()):
         pytest.skip('The java system time zone is not set to UTC')
 
 def gen_df(spark, data_gen, length=2048, seed=0):
@@ -502,7 +504,7 @@ def gen_df(spark, data_gen, length=2048, seed=0):
 
     # Before we get too far we need to verify that we can run with timestamps
     if src.contains_ts():
-        skip_if_not_utc(spark)
+        skip_if_not_utc()
 
     rand = random.Random(seed)
     src.start(rand)
@@ -523,7 +525,7 @@ def _gen_scalars_common(data_gen, count, seed=0):
 
     # Before we get too far we need to verify that we can run with timestamps
     if src.contains_ts():
-        skip_if_not_utc(spark)
+        skip_if_not_utc()
 
     rand = random.Random(seed)
     src.start(rand)

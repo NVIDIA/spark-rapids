@@ -24,7 +24,7 @@ import com.nvidia.spark.rapids.GpuColumnVector.GpuColumnarBatchBuilder
 
 import org.apache.spark.rdd.{PartitionPruningRDD, RDD}
 import org.apache.spark.sql.catalyst.InternalRow
-import org.apache.spark.sql.catalyst.expressions.{Attribute, BoundReference, UnsafeProjection}
+import org.apache.spark.sql.catalyst.expressions.{Attribute, BindReferences, BoundReference, SortOrder, UnsafeProjection}
 import org.apache.spark.sql.catalyst.expressions.codegen.LazilyGeneratedOrdering
 import org.apache.spark.sql.types.StructType
 import org.apache.spark.sql.vectorized.ColumnarBatch
@@ -33,12 +33,12 @@ import org.apache.spark.util.MutablePair
 class GpuRangePartitioner extends Serializable {
   var rangeBounds: Array[InternalRow] = _
   /**
-    * Sketches the input RDD via reservoir sampling on each partition.
-    *
-    * @param rdd                    the input RDD to sketch
-    * @param sampleSizePerPartition max sample size per partition
-    * @return (total number of items, an array of (partitionId, number of items, sample))
-    */
+   * Sketches the input RDD via reservoir sampling on each partition.
+   *
+   * @param rdd                    the input RDD to sketch
+   * @param sampleSizePerPartition max sample size per partition
+   * @return (total number of items, an array of (partitionId, number of items, sample))
+   */
   def sketch[K: ClassTag](
                            rdd: RDD[K],
                            sampleSizePerPartition: Int): (Long, Array[(Int, Long, Array[K])]) = {
@@ -55,13 +55,13 @@ class GpuRangePartitioner extends Serializable {
   }
 
   /**
-    * Determines the bounds for range partitioning from candidates with weights indicating how many
-    * items each represents. Usually this is 1 over the probability used to sample this candidate.
-    *
-    * @param candidates unordered candidates with weights
-    * @param partitions number of partitions
-    * @return selected bounds
-    */
+   * Determines the bounds for range partitioning from candidates with weights indicating how many
+   * items each represents. Usually this is 1 over the probability used to sample this candidate.
+   *
+   * @param candidates unordered candidates with weights
+   * @param partitions number of partitions
+   * @return selected bounds
+   */
   def determineBounds[K: Ordering : ClassTag](candidates: ArrayBuffer[(K, Float)],
                                               partitions: Int): Array[K] = {
     val ordering = implicitly[Ordering[K]]
@@ -92,13 +92,12 @@ class GpuRangePartitioner extends Serializable {
     bounds.toArray
   }
 
-  def createRangeBounds(partitions: Int, gpuOrdering: Seq[GpuSortOrder], rdd: RDD[ColumnarBatch],
+  def createRangeBounds(partitions: Int, gpuOrdering: Seq[SortOrder], rdd: RDD[ColumnarBatch],
                         outputAttributes: Seq[Attribute],
                         samplePointsPerPartitionHint: Int): Unit = {
 
     val orderingAttributes = gpuOrdering.zipWithIndex.map { case (ord, i) =>
-      val sortOrder = ord.toSortOrder
-      sortOrder.copy(child = BoundReference(i, sortOrder.dataType, sortOrder.nullable))
+      ord.copy(child = BoundReference(i, ord.dataType, ord.nullable))
     }
     implicit val ordering: LazilyGeneratedOrdering = new LazilyGeneratedOrdering(orderingAttributes)
     val rowsRDD = rddForSampling(partitions, gpuOrdering, rdd, outputAttributes)
@@ -155,11 +154,13 @@ class GpuRangePartitioner extends Serializable {
     this.rangeBounds = rangeBounds.asInstanceOf[Array[InternalRow]]
   }
 
-  def rddForSampling(partitions: Int, gpuOrdering: Seq[GpuSortOrder], rdd: RDD[ColumnarBatch],
+  def rddForSampling(partitions: Int, gpuOrdering: Seq[SortOrder], rdd: RDD[ColumnarBatch],
                      outputAttributes: Seq[Attribute]) : RDD[MutablePair[InternalRow, Null]] = {
 
-    val sortingExpressions = gpuOrdering.map(so => so.toSortOrder)
-    lazy val toUnsafe = UnsafeProjection.create(sortingExpressions.map(_.child), outputAttributes)
+    val sortingExpressions = gpuOrdering
+    lazy val toUnsafe = UnsafeProjection.create(
+      sortingExpressions.map(_.child),
+      outputAttributes)
     val rowsRDD = rdd.mapPartitions {
       batches => {
         new Iterator[InternalRow] {

@@ -22,10 +22,31 @@
     <parent>
         <groupId>com.nvidia</groupId>
         <artifactId>rapids-4-spark-parent</artifactId>
-        <version>0.1.0</version>
+        <version>0.2.0</version>
     </parent>
     <artifactId>rapids-4-spark-api-validation</artifactId>
-    <version>0.1.0</version>
+    <version>0.2.0</version>
+
+    <profiles>
+        <profile>
+            <id>spark300</id>
+            <properties>
+                <spark.version>${spark300.version}</spark.version>
+            </properties>
+        </profile>
+        <profile>
+            <id>spark301</id>
+            <properties>
+                <spark.version>${spark301.version}</spark.version>
+            </properties>
+        </profile>
+        <profile>
+            <id>spark310</id>
+            <properties>
+                <spark.version>${spark310.version}</spark.version>
+            </properties>
+        </profile>
+    </profiles>
 
     <dependencies>
         <dependency>
@@ -35,6 +56,7 @@
         <dependency>
             <groupId>org.apache.spark</groupId>
             <artifactId>spark-sql_${scala.binary.version}</artifactId>
+            <version>${spark.version}</version>
         </dependency>
         <dependency>
             <groupId>org.scalatest</groupId>
@@ -53,6 +75,12 @@
             <version>${project.version}</version>
             <scope>provided</scope>
         </dependency>
+        <dependency>
+            <groupId>com.nvidia</groupId>
+	        <artifactId>rapids-4-spark-shims-aggregator_${scala.binary.version}</artifactId>
+            <version>0.2.0</version>
+            <scope>provided</scope>
+        </dependency>
     </dependencies>
 
     <build>
@@ -61,7 +89,7 @@
 		<groupId>net.alchim31.maven</groupId>
                 <artifactId>scala-maven-plugin</artifactId>
                 <configuration>
-                    <mainClass>com.nvidia.spark.api.ApiValidation</mainClass>
+			<mainClass>com.nvidia.spark.rapids.api.ApiValidation</mainClass>
                 </configuration>
 	    </plugin>	
         </plugins>

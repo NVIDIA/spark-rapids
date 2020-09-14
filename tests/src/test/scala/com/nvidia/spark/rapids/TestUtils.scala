@@ -16,13 +16,25 @@
 
 package com.nvidia.spark.rapids
 
-import ai.rapids.cudf.{BufferType, ColumnVector, HostColumnVector, Table}
-import org.scalatest.Assertions
+import java.io.File
 
+import ai.rapids.cudf.{ColumnVector, DType, Table}
+import org.scalatest.Assertions
+import scala.collection.mutable.ListBuffer
+
+import org.apache.spark.SparkConf
+import org.apache.spark.sql.SparkSession
+import org.apache.spark.sql.execution.SparkPlan
+import org.apache.spark.sql.execution.adaptive.{AdaptiveSparkPlanExec, BroadcastQueryStageExec, ShuffleQueryStageExec}
+import org.apache.spark.sql.rapids.GpuShuffleEnv
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
 /** A collection of utility methods useful in tests. */
 object TestUtils extends Assertions with Arm {
+  def getTempDir(basename: String): File = new File(
+    System.getProperty("test.build.data", System.getProperty("java.io.tmpdir", "/tmp")),
+    basename)
+
   /** Compare the equality of two tables */
   def compareTables(expected: Table, actual: Table): Unit = {
     assertResult(expected.getRowCount)(actual.getRowCount)
@@ -42,29 +54,89 @@ object TestUtils extends Assertions with Arm {
     }
   }
 
+  /** Recursively check if the predicate matches in the given plan */
+  def findOperator(plan: SparkPlan, predicate: SparkPlan => Boolean): Option[SparkPlan] = {
+    plan match {
+      case _ if predicate(plan) => Some(plan)
+      case a: AdaptiveSparkPlanExec => findOperator(a.executedPlan, predicate)
+      case qs: BroadcastQueryStageExec => findOperator(qs.broadcast, predicate)
+      case qs: ShuffleQueryStageExec => findOperator(qs.shuffle, predicate)
+      case other => other.children.flatMap(p => findOperator(p, predicate)).headOption
+    }
+  }
+
+  /** Return list of  matching predicates present in the plan */
+  def operatorCount(plan: SparkPlan, predicate: SparkPlan => Boolean): Seq[SparkPlan] = {
+    def recurse(
+      plan: SparkPlan,
+      predicate: SparkPlan => Boolean,
+      accum: ListBuffer[SparkPlan]): Seq[SparkPlan] = {
+      plan match {
+        case _ if predicate(plan) =>
+          accum += plan
+          plan.children.flatMap(p => recurse(p, predicate, accum)).headOption
+        case a: AdaptiveSparkPlanExec => recurse(a.executedPlan, predicate, accum)
+        case qs: BroadcastQueryStageExec => recurse(qs.broadcast, predicate, accum)
+        case qs: ShuffleQueryStageExec => recurse(qs.shuffle, predicate, accum)
+        case other => other.children.flatMap(p => recurse(p, predicate, accum)).headOption
+      }
+      accum
+    }
+
+    recurse(plan, predicate, new ListBuffer[SparkPlan]())
+  }
+
+  /** Return final executed plan */
+  def getFinalPlan(plan: SparkPlan): SparkPlan = {
+    plan match {
+      case a: AdaptiveSparkPlanExec =>
+        a.executedPlan
+      case _ => plan
+    }
+  }
+
   /** Compre the equality of two `ColumnVector` instances */
   def compareColumns(expected: ColumnVector, actual: ColumnVector): Unit = {
     assertResult(expected.getType)(actual.getType)
     assertResult(expected.getRowCount)(actual.getRowCount)
-    withResource(expected.copyToHost()) { expectedHost =>
-      withResource(actual.copyToHost()) { actualHost =>
-        compareColumnBuffers(expectedHost, actualHost, BufferType.DATA)
-        compareColumnBuffers(expectedHost, actualHost, BufferType.VALIDITY)
-        compareColumnBuffers(expectedHost, actualHost, BufferType.OFFSET)
+    withResource(expected.copyToHost()) { e =>
+      withResource(actual.copyToHost()) { a =>
+        (0L until expected.getRowCount).foreach { i =>
+          assertResult(e.isNull(i))(a.isNull(i))
+          if (!e.isNull(i)) {
+            e.getType match {
+              case DType.BOOL8 => assertResult(e.getBoolean(i))(a.getBoolean(i))
+              case DType.INT8 => assertResult(e.getByte(i))(a.getByte(i))
+              case DType.INT16 => assertResult(e.getShort(i))(a.getShort(i))
+              case DType.INT32 => assertResult(e.getInt(i))(a.getInt(i))
+              case DType.INT64 => assertResult(e.getLong(i))(a.getLong(i))
+              case DType.FLOAT32 => assertResult(e.getFloat(i))(a.getFloat(i))
+              case DType.FLOAT64 => assertResult(e.getDouble(i))(a.getDouble(i))
+              case DType.STRING => assertResult(e.getJavaString(i))(a.getJavaString(i))
+              case _ => throw new UnsupportedOperationException("not implemented yet")
+            }
+          }
+        }
       }
     }
   }
 
-  private def compareColumnBuffers(
-      expected: HostColumnVector,
-      actual: HostColumnVector,
-      bufferType: BufferType): Unit = {
-    val expectedBuffer = expected.getHostBufferFor(bufferType)
-    val actualBuffer = actual.getHostBufferFor(bufferType)
-    if (expectedBuffer != null) {
-      assertResult(expectedBuffer.asByteBuffer())(actualBuffer.asByteBuffer())
-    } else {
-      assertResult(null)(actualBuffer)
+  def withGpuSparkSession(conf: SparkConf)(f: SparkSession => Unit): Unit = {
+    SparkSession.getActiveSession.foreach(_.close())
+    val spark = SparkSession.builder()
+        .master("local[1]")
+        .config(conf)
+        .config(RapidsConf.SQL_ENABLED.key, "true")
+        .config("spark.plugins", "com.nvidia.spark.SQLPlugin")
+        .appName(classOf[GpuPartitioningSuite].getSimpleName)
+        .getOrCreate()
+    try {
+      f(spark)
+    } finally {
+      spark.stop()
+      SparkSession.clearActiveSession()
+      SparkSession.clearDefaultSession()
+      GpuShuffleEnv.setRapidsShuffleManagerInitialized(false, GpuShuffleEnv.RAPIDS_SHUFFLE_CLASS)
     }
   }
 }

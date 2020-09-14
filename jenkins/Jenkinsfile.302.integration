@@ -1,0 +1,99 @@
+#!/usr/local/env groovy
+/*
+ * Copyright (c) 2020, NVIDIA CORPORATION.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+/**
+*
+* Jenkins file for running spark3.0.2 integration tests
+*
+*/
+
+@Library(['shared-libs', 'spark-jenkins-shared-lib']) _
+
+def urmUrl="https://${ArtifactoryConstants.ARTIFACTORY_NAME}/artifactory/sw-spark-maven"
+
+pipeline {
+    agent none
+
+    options {
+        ansiColor('xterm')
+        timestamps()
+        timeout(time: 240, unit: 'MINUTES')
+        buildDiscarder(logRotator(numToKeepStr: '10'))
+    }
+
+    parameters {
+        string(name: 'OVERWRITE_PARAMS', defaultValue: '',
+            description: 'parameters format XXX_VER=xxx;YYY_VER=yyy;')
+        string(name: 'REF', defaultValue: 'branch-0.2', description: 'Commit to build')
+    }
+
+    environment {
+        JENKINS_ROOT  = 'jenkins'
+        TEST_SCRIPT = '$JENKINS_ROOT/spark-tests.sh'
+        LIBCUDF_KERNEL_CACHE_PATH='/tmp/.cudf'
+        ARTIFACTORY_NAME = "${ArtifactoryConstants.ARTIFACTORY_NAME}"
+        URM_URL = "${urmUrl}"
+        MVN_URM_MIRROR='-s jenkins/settings.xml -P mirror-apache-to-urm'
+    }
+
+    stages {
+        stage('IT on 3.0.2-SNAPSHOT') {
+            agent { label 'docker-gpu' }
+            environment {SPARK_VER='3.0.2-SNAPSHOT'}
+            steps {
+                script {
+                    def CUDA_NAME=sh(returnStdout: true,
+                        script: '. jenkins/version-def.sh>&2 && echo -n $CUDA_CLASSIFIER | sed "s/-/./g"')
+                    def IMAGE_NAME="$ARTIFACTORY_NAME/sw-spark-docker/plugin:it-centos7-$CUDA_NAME"
+                    def CUDA_VER="$CUDA_NAME" - "cuda"
+                    sh "docker pull $IMAGE_NAME"
+                    docker.image(IMAGE_NAME).inside("--runtime=nvidia -v ${HOME}/.zinc:${HOME}/.zinc:rw") {
+                        sh "bash $TEST_SCRIPT"
+                    }
+                }
+            }
+        }
+    } // end of stages
+    post {
+        always {
+            script {
+                def status = "failed"
+                if (currentBuild.currentResult == "SUCCESS") {
+                    status = "success"
+                    slack("#swrapids-spark-cicd", "Success", color: "#33CC33")
+                }
+                else {
+                    slack("#swrapids-spark-cicd", "Failed", color: "#FF0000")
+                }
+            }
+            echo 'Pipeline finished!'
+        }
+    }
+} // end of pipeline
+
+void slack(Map params = [:], String channel, String message) {
+    Map defaultParams = [
+            color: "#000000",
+            baseUrl: "${SparkConstants.SLACK_API_ENDPOINT}",
+            tokenCredentialId: "slack_token"
+    ]
+
+    params["channel"] = channel
+    params["message"] = "${BUILD_URL}\n" + message
+
+    slackSend(defaultParams << params)
+}

@@ -14,6 +14,7 @@
 
 from conftest import is_incompat, should_sort_on_spark, should_sort_locally, get_float_check, get_limit, spark_jvm
 from datetime import date, datetime
+from decimal import Decimal
 import math
 from pyspark.sql import Row
 import pytest
@@ -73,6 +74,8 @@ def _assert_equal(cpu, gpu, float_check, path):
         assert cpu == gpu, "GPU and CPU date values are different at {}".format(path)
     elif isinstance(cpu, bool):
         assert cpu == gpu, "GPU and CPU boolean values are different at {}".format(path)
+    elif isinstance(cpu, Decimal):
+        assert cpu == gpu, "GPU and CPU decimal values are different at {}".format(path)
     elif (cpu == None):
         assert cpu == gpu, "GPU and CPU are not both null at {}".format(path)
     else:
@@ -299,3 +302,21 @@ def assert_gpu_and_cpu_are_equal_iterator(func, conf={}):
     so any amount of data can work, just be careful about how long it might take.
     """
     _assert_gpu_and_cpu_are_equal(func, False, conf=conf)
+
+
+def assert_gpu_and_cpu_are_equal_sql(df_fun, table_name, sql, conf=None):
+    """
+    Assert that the specified SQL query produces equal results on CPU and GPU.
+    :param df_fun: a function that will create the dataframe
+    :param table_name: Name of table to be created with the dataframe
+    :param sql: SQL query to be run on the specified table
+    :param conf: Any user-specified confs. Empty by default.
+    :return: Assertion failure, if results from CPU and GPU do not match.
+    """
+    if conf is None:
+        conf = {}
+    def do_it_all(spark):
+        df = df_fun(spark)
+        df.createOrReplaceTempView(table_name)
+        return spark.sql(sql)
+    assert_gpu_and_cpu_are_equal_collect(do_it_all, conf)

@@ -53,6 +53,12 @@ case class GpuInputFileName() extends GpuLeafExpression {
   }
 }
 
+object InputFileUtils {
+  def setInputFileBlock(filePath: String, start: Long, length: Long): Unit = {
+    InputFileBlockHolder.set(filePath, start, length)
+  }
+}
+
 /**
  * Returns the start offset of the block being read, or -1 if not available.
  * This is extra difficult because we cannot coalesce batches in between when this

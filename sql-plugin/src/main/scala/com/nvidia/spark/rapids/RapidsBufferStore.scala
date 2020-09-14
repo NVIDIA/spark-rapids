@@ -21,7 +21,6 @@ import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicLong
 
 import ai.rapids.cudf.{Cuda, DeviceMemoryBuffer, HostMemoryBuffer, NvtxColor, NvtxRange}
-import com.nvidia.spark.rapids.StorageTier.StorageTier
 import com.nvidia.spark.rapids.format.TableMeta
 
 import org.apache.spark.internal.Logging
@@ -87,16 +86,12 @@ abstract class RapidsBufferStore(
     def getTotalBytes: Long = synchronized { totalBytesStored }
   }
 
-  private[this] val spilledBytesStored = new AtomicLong(0L)
   private[this] val pendingFreeBytes = new AtomicLong(0L)
 
   private[this] val buffers = new BufferTracker
 
   /** Tracks buffers that are waiting on outstanding references to be freed. */
   private[this] val pendingFreeBuffers = new ConcurrentHashMap[RapidsBufferId, RapidsBufferBase]
-
-  /** Tracks buffers that have been spilled but remain in this store. */
-  private[this] val spilledBuffers = new ConcurrentHashMap[RapidsBufferId, RapidsBufferBase]
 
   /** A monitor that can be used to wait for memory to be freed from this store. */
   protected[this] val memoryFreedMonitor = new Object
@@ -156,9 +151,7 @@ abstract class RapidsBufferStore(
         var waited = false
         var exhausted = false
         while (!exhausted && buffers.getTotalBytes > targetTotalSize) {
-          if (freeSpilledBuffers(targetTotalSize)) {
-            waited = false
-          } else if (trySpillAndFreeBuffer(stream)) {
+          if (trySpillAndFreeBuffer(stream)) {
             waited = false
           } else {
             if (!waited && pendingFreeBytes.get > 0) {
@@ -187,50 +180,6 @@ abstract class RapidsBufferStore(
     }
   }
 
-  def asyncSpillSingleBuffer(targetUnspilledSize: Long, stream: Cuda.Stream): Boolean =
-    synchronized {
-      require(targetUnspilledSize >= 0)
-      val unspilledSize = buffers.getTotalBytes - spilledBytesStored.get
-      if (unspilledSize <= targetUnspilledSize) {
-        return false
-      }
-      val bufferToSpill = buffers.nextSpillableBuffer()
-      if (bufferToSpill == null) {
-        return false
-      }
-      // If unable to get a reference then its a race condition where the buffer was invalidated
-      // just as we were going to spill it. Either way, indicate to the caller that a spillable
-      // buffer was found and more may be available in subsequent invocations.
-      if (bufferToSpill.addReference()) {
-        val newBuffer = try {
-          logInfo(s"Async spilling $bufferToSpill to ${spillStore.name}")
-          spillStore.copyBuffer(bufferToSpill, stream)
-        } finally {
-          bufferToSpill.close()
-        }
-        if (newBuffer != null) {
-          bufferToSpill.markAsSpilled()
-        }
-      }
-      true
-    }
-
-  /**
-   * Free buffers that has already been spilled via asynchronous spill to
-   * reach the specified target store total size.
-   * @param targetTotalSize desired total size of the store
-   * @return true if at least one spilled buffer was found, false otherwise
-   */
-  def freeSpilledBuffers(targetTotalSize: Long): Boolean = {
-    val it = spilledBuffers.values().iterator()
-    val result = it.hasNext
-    while (it.hasNext && buffers.getTotalBytes > targetTotalSize) {
-      val buffer = it.next()
-      buffer.free()
-    }
-    result
-  }
-
   /**
    * Create a new buffer from an existing buffer in another store.
    * If the data transfer will be performed asynchronously, this method is responsible for
@@ -243,7 +192,7 @@ abstract class RapidsBufferStore(
   protected def createBuffer(buffer: RapidsBuffer, stream: Cuda.Stream): RapidsBufferBase
 
   /** Update bookkeeping for a new buffer */
-  protected def addBuffer(buffer: RapidsBufferBase): Unit = {
+  protected def addBuffer(buffer: RapidsBufferBase): Unit = synchronized {
     buffers.add(buffer)
     catalog.registerNewBuffer(buffer)
   }
@@ -281,36 +230,12 @@ abstract class RapidsBufferStore(
     }
   }
 
-  /**
-   * Update the catalog for an already spilled buffer that was freed.
-   * Since the buffer was spilled, another store in the spill chain
-   * now contains the buffer that should be listed in the catalog,
-   * and this method finds which store in the chain has that buffer.
-   * @param tier the storage tier of the spilled buffer that was freed
-   * @param id the buffer ID of the spilled buffer that was freed
-   */
-  @scala.annotation.tailrec
-  private def updateCatalog(tier: StorageTier, id: RapidsBufferId): Unit = {
-    val buffer = buffers.get(id)
-    if (buffer != null) {
-      catalog.updateBufferMap(tier, buffer)
-    } else {
-      // buffer is not in this store, try the next store
-      if (spillStore != null) {
-        spillStore.updateCatalog(tier, id)
-      } else {
-        // buffer may have been deleted in another thread
-        logDebug(s"Ignoring catalog update on unknown buffer $id")
-      }
-    }
-  }
-
   /** Base class for all buffers in this store. */
   abstract class RapidsBufferBase(
       override val id: RapidsBufferId,
       override val size: Long,
       override val meta: TableMeta,
-      initialSpillPriority: Long) extends RapidsBuffer {
+      initialSpillPriority: Long) extends RapidsBuffer with Arm {
     private[this] var isValid = true
     protected[this] var refcount = 0
     private[this] var spillPriority: Long = initialSpillPriority
@@ -329,17 +254,6 @@ abstract class RapidsBufferStore(
       refcount > 0
     }
 
-    def markAsSpilled(): Unit = synchronized {
-      if (isValid) {
-        spilledBuffers.put(id, this)
-        spilledBytesStored.addAndGet(size)
-      } else {
-        // Spilled a buffer that was freed in the interim. The spill store
-        // needs to update the catalog or free if no longer in the catalog.
-        spillStore.updateCatalog(storageTier, id)
-      }
-    }
-
     override def addReference(): Boolean = synchronized {
       if (isValid) {
         refcount += 1
@@ -352,23 +266,24 @@ abstract class RapidsBufferStore(
       // allocated. Allocations can trigger synchronous spills which can
       // deadlock if another thread holds the device store lock and is trying
       // to spill to this store.
-      val deviceBuffer = DeviceMemoryBuffer.allocate(size)
-      try {
-        val buffer = getMemoryBuffer
-        try {
-          buffer match {
-            case h: HostMemoryBuffer =>
-              logDebug(s"copying from host $h to device $deviceBuffer")
-              deviceBuffer.copyFromHostBuffer(h)
-            case _ => throw new IllegalStateException(
-              "must override getColumnarBatch if not providing a host buffer")
-          }
-        } finally {
-          buffer.close()
+      withResource(DeviceMemoryBuffer.allocate(size)) { deviceBuffer =>
+        withResource(getMemoryBuffer) {
+          case h: HostMemoryBuffer =>
+            logDebug(s"copying from host $h to device $deviceBuffer")
+            deviceBuffer.copyFromHostBuffer(h)
+          case _ => throw new IllegalStateException(
+            "must override getColumnarBatch if not providing a host buffer")
         }
-        MetaUtils.getBatchFromMeta(deviceBuffer, meta)
-      } finally {
-        deviceBuffer.close()
+        columnarBatchFromDeviceBuffer(deviceBuffer)
+      }
+    }
+
+    protected def columnarBatchFromDeviceBuffer(devBuffer: DeviceMemoryBuffer): ColumnarBatch = {
+      val bufferMeta = meta.bufferMeta()
+      if (bufferMeta == null || bufferMeta.codecBufferDescrsLength == 0) {
+        MetaUtils.getBatchFromMeta(devBuffer, meta)
+      } else {
+        GpuCompressedColumnVector.from(devBuffer, meta)
       }
     }
 
@@ -393,12 +308,6 @@ abstract class RapidsBufferStore(
       if (isValid) {
         isValid = false
         buffers.remove(id)
-        if (spilledBuffers.remove(id) != null) {
-          spillStore.updateCatalog(storageTier, id)
-          spilledBytesStored.addAndGet(-size)
-          logDebug(s"$name store freed pre-spilled buffer size=$size")
-        }
-
         if (refcount == 0) {
           freeBuffer()
         } else {

@@ -15,6 +15,18 @@
 # limitations under the License.
 #
 
+# Argument(s):
+#   SIGN_FILE:  true/false, whether to sign the jar/pom file to de deployed
+#   DATABRICKS: true/fasle, whether deploying for databricks
+#
+# Used environment(s):
+#   SQL_PL:         The path of module 'sql-plugin', relative to project root path.
+#   DIST_PL:        The path of module 'dist', relative to project root path.
+#   SERVER_ID:      The repository id for this deployment.
+#   SERVER_URL:     The url where to deploy artifacts.
+#   GPG_PASSPHRASE: The passphrase used to sign files, only required when <SIGN_FILE> is true.
+###
+
 set -e
 SIGN_FILE=$1
 DATABRICKS=$2
@@ -32,8 +44,8 @@ if [ "$DATABRICKS" == true ]; then
     cd spark-rapids
 fi
 
-ART_ID=`mvn exec:exec -q -pl $DIST_PL -Dexec.executable=echo -Dexec.args='${project.artifactId}'`
-ART_VER=`mvn exec:exec -q -pl $DIST_PL -Dexec.executable=echo -Dexec.args='${project.version}'`
+ART_ID=`mvn help:evaluate -q -pl $DIST_PL -Dexpression=project.artifactId -DforceStdout`
+ART_VER=`mvn help:evaluate -q -pl $DIST_PL -Dexpression=project.version -DforceStdout`
 
 FPATH="$DIST_PL/target/$ART_ID-$ART_VER"
 
@@ -44,13 +56,13 @@ echo "Plan to deploy ${FPATH}.jar to $SERVER_URL (ID:$SERVER_ID)"
 
 if [ "$SIGN_FILE" == true ]; then
     # No javadoc and sources jar is generated for shade artifact only. Use 'sql-plugin' instead
-    SQL_ART_ID=`mvn exec:exec -q -pl $SQL_PL -Dexec.executable=echo -Dexec.args='${project.artifactId}'`
-    SQL_ART_VER=`mvn exec:exec -q -pl $SQL_PL -Dexec.executable=echo -Dexec.args='${project.version}'`
+    SQL_ART_ID=`mvn help:evaluate -q -pl $SQL_PL -Dexpression=project.artifactId -DforceStdout`
+    SQL_ART_VER=`mvn help:evaluate -q -pl $SQL_PL -Dexpression=project.version -DforceStdout`
     JS_FPATH="${SQL_PL}/target/${SQL_ART_ID}-${SQL_ART_VER}"
     SRC_DOC_JARS="-Dsources=${JS_FPATH}-sources.jar -Djavadoc=${JS_FPATH}-javadoc.jar"
     DEPLOY_CMD="mvn -B gpg:sign-and-deploy-file -s jenkins/settings.xml -Dgpg.passphrase=$GPG_PASSPHRASE"
 else
-    DEPLOY_CMD="mvn -B deploy:deploy-file -s jenkins/settings.xml"
+    DEPLOY_CMD="mvn -B '-Pinclude-databricks,!snapshot-shims' deploy:deploy-file -s jenkins/settings.xml"
 fi
 
 echo "Deploy CMD: $DEPLOY_CMD"
@@ -63,7 +75,7 @@ $DEPLOY_CMD -Durl=$SERVER_URL -DrepositoryId=$SERVER_ID \
 
 ###### Deploy the artifact jar(s) ######
 
+# Distribution jar is a shaded artifact so use the reduced dependency pom.
 $DEPLOY_CMD -Durl=$SERVER_URL -DrepositoryId=$SERVER_ID \
             $SRC_DOC_JARS \
-            -Dfile=$FPATH.jar -DpomFile=${DIST_PL}/pom.xml
-
+            -Dfile=$FPATH.jar -DpomFile=${DIST_PL}/dependency-reduced-pom.xml

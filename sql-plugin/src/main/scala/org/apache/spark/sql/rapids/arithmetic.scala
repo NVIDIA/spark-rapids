@@ -19,10 +19,10 @@ package org.apache.spark.sql.rapids
 import ai.rapids.cudf._
 import com.nvidia.spark.rapids._
 
-import org.apache.spark.sql.catalyst.expressions.{ExpectsInputTypes, NullIntolerant}
+import org.apache.spark.sql.catalyst.expressions.{ExpectsInputTypes, Expression, NullIntolerant}
 import org.apache.spark.sql.types._
 
-case class GpuUnaryMinus(child: GpuExpression) extends GpuUnaryExpression
+case class GpuUnaryMinus(child: Expression) extends GpuUnaryExpression
     with ExpectsInputTypes with NullIntolerant {
   override def inputTypes: Seq[AbstractDataType] = Seq(TypeCollection.NumericAndInterval)
 
@@ -42,7 +42,7 @@ case class GpuUnaryMinus(child: GpuExpression) extends GpuUnaryExpression
   }
 }
 
-case class GpuUnaryPositive(child: GpuExpression) extends GpuUnaryExpression
+case class GpuUnaryPositive(child: Expression) extends GpuUnaryExpression
     with ExpectsInputTypes with NullIntolerant {
   override def prettyName: String = "positive"
 
@@ -55,7 +55,7 @@ case class GpuUnaryPositive(child: GpuExpression) extends GpuUnaryExpression
   override def doColumnar(input: GpuColumnVector) : GpuColumnVector = input
 }
 
-case class GpuAbs(child: GpuExpression) extends CudfUnaryExpression
+case class GpuAbs(child: Expression) extends CudfUnaryExpression
     with ExpectsInputTypes with NullIntolerant {
   override def inputTypes: Seq[AbstractDataType] = Seq(NumericType)
 
@@ -70,7 +70,7 @@ abstract class CudfBinaryArithmetic extends CudfBinaryOperator with NullIntolera
   override lazy val resolved: Boolean = childrenResolved && checkInputDataTypes().isSuccess
 }
 
-case class GpuAdd(left: GpuExpression, right: GpuExpression) extends CudfBinaryArithmetic {
+case class GpuAdd(left: Expression, right: Expression) extends CudfBinaryArithmetic {
   override def inputType: AbstractDataType = TypeCollection.NumericAndInterval
 
   override def symbol: String = "+"
@@ -78,7 +78,7 @@ case class GpuAdd(left: GpuExpression, right: GpuExpression) extends CudfBinaryA
   override def binaryOp: BinaryOp = BinaryOp.ADD
 }
 
-case class GpuSubtract(left: GpuExpression, right: GpuExpression) extends CudfBinaryArithmetic {
+case class GpuSubtract(left: Expression, right: Expression) extends CudfBinaryArithmetic {
   override def inputType: AbstractDataType = TypeCollection.NumericAndInterval
 
   override def symbol: String = "-"
@@ -86,7 +86,7 @@ case class GpuSubtract(left: GpuExpression, right: GpuExpression) extends CudfBi
   override def binaryOp: BinaryOp = BinaryOp.SUB
 }
 
-case class GpuMultiply(left: GpuExpression, right: GpuExpression) extends CudfBinaryArithmetic {
+case class GpuMultiply(left: Expression, right: Expression) extends CudfBinaryArithmetic {
   override def inputType: AbstractDataType = NumericType
 
   override def symbol: String = "*"
@@ -186,7 +186,7 @@ trait GpuDivModLike extends CudfBinaryArithmetic {
 }
 
 // This is for doubles and floats...
-case class GpuDivide(left: GpuExpression, right: GpuExpression) extends GpuDivModLike {
+case class GpuDivide(left: Expression, right: Expression) extends GpuDivModLike {
   override def inputType: AbstractDataType = TypeCollection(DoubleType, DecimalType)
 
   override def symbol: String = "/"
@@ -194,7 +194,7 @@ case class GpuDivide(left: GpuExpression, right: GpuExpression) extends GpuDivMo
   override def binaryOp: BinaryOp = BinaryOp.TRUE_DIV
 }
 
-case class GpuIntegralDivide(left: GpuExpression, right: GpuExpression) extends GpuDivModLike {
+case class GpuIntegralDivide(left: Expression, right: Expression) extends GpuDivModLike {
   override def inputType: AbstractDataType = TypeCollection(IntegralType, DecimalType)
 
   override def dataType: DataType = LongType
@@ -207,7 +207,7 @@ case class GpuIntegralDivide(left: GpuExpression, right: GpuExpression) extends 
   override def sqlOperator: String = "div"
 }
 
-case class GpuRemainder(left: GpuExpression, right: GpuExpression) extends GpuDivModLike {
+case class GpuRemainder(left: Expression, right: Expression) extends GpuDivModLike {
   override def inputType: AbstractDataType = NumericType
 
   override def symbol: String = "%"
@@ -216,7 +216,7 @@ case class GpuRemainder(left: GpuExpression, right: GpuExpression) extends GpuDi
 }
 
 
-case class GpuPmod(left: GpuExpression, right: GpuExpression) extends GpuDivModLike {
+case class GpuPmod(left: Expression, right: Expression) extends GpuDivModLike {
   override def inputType: AbstractDataType = NumericType
 
   override def binaryOp: BinaryOp = BinaryOp.PMOD

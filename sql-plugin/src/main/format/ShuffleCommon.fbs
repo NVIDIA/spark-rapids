@@ -15,20 +15,43 @@
 namespace com.nvidia.spark.rapids.format;
 
 enum CodecType : byte {
+  /// data simply copied, codec is only for testing
+  COPY = -1,
+
   /// no compression codec was used on the data
-  UNCOMPRESSED = 0
+  UNCOMPRESSED = 0,
+}
+
+/// Descriptor for a compressed buffer
+table CodecBufferDescriptor {
+  /// the compression codec used
+  codec: CodecType;
+
+  /// byte offset from the start of the enclosing compressed buffer
+  /// where the compressed data begins
+  compressed_offset: long;
+
+  /// size of the compressed data in bytes
+  compressed_size: long;
+
+  /// byte offset from the start of the enclosing uncompressed buffer
+  /// where the uncompressed data should be written
+  uncompressed_offset: long;
+
+  /// size of the uncompressed data in bytes
+  uncompressed_size: long;
 }
 
 table BufferMeta {
   /// ID of this buffer
   id: int;
 
-  /// size of the uncompressed buffer data in bytes
-  actual_size: long;
+  /// size of the buffer data in bytes
+  size: long;
 
-  /// size of the compressed buffer data if a codec is used
-  compressed_size: long;
+  /// size of the uncompressed buffer data
+  uncompressed_size: long;
 
-  /// type of compression codec used
-  codec: CodecType;
+  /// array of codec buffer descriptors if the data is compressed
+  codec_buffer_descrs: [CodecBufferDescriptor];
 }

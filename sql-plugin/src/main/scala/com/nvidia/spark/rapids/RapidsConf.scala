@@ -19,11 +19,12 @@ import java.io.{File, FileOutputStream}
 import java.util
 
 import scala.collection.JavaConverters._
-import scala.collection.mutable.ListBuffer
+import scala.collection.mutable.{HashMap, ListBuffer}
 
 import org.apache.spark.SparkConf
 import org.apache.spark.internal.Logging
 import org.apache.spark.network.util.{ByteUnit, JavaUtils}
+import org.apache.spark.sql.catalyst.analysis.FunctionRegistry
 import org.apache.spark.sql.internal.SQLConf
 
 object ConfHelper {
@@ -91,6 +92,25 @@ object ConfHelper {
     val a = key.replaceFirst("spark.rapids.", "")
     "<a name=\"" + s"$a" + "\"></a>" + t
   }
+
+  def getSqlFunctionsForClass[T](exprClass: Class[T]): Option[Seq[String]] = {
+    sqlFunctionsByClass.get(exprClass.getCanonicalName)
+  }
+
+  lazy val sqlFunctionsByClass: Map[String, Seq[String]] = {
+    val functionsByClass = new HashMap[String, Seq[String]]
+    FunctionRegistry.expressions.foreach { case (sqlFn, (expressionInfo, _)) =>
+      val className = expressionInfo.getClassName
+      val fnSeq = functionsByClass.getOrElse(className, Seq[String]())
+      val fnCleaned = if (sqlFn != "|") {
+        sqlFn
+      } else {
+        "\\|"
+      }
+      functionsByClass.update(className, fnSeq :+ s"`$fnCleaned`")
+    }
+    functionsByClass.toMap
+  }
 }
 
 abstract class ConfEntry[T](val key: String, val converter: String => T,
@@ -119,6 +139,29 @@ class ConfEntryWithDefault[T](key: String, converter: String => T, doc: String,
         println(s"$key:")
         println(s"\t$doc")
         println(s"\tdefault $defaultValue")
+        println()
+      }
+    }
+  }
+}
+
+class OptionalConfEntry[T](key: String, val rawConverter: String => T, doc: String,
+    isInternal: Boolean)
+  extends ConfEntry[Option[T]](key, s => Some(rawConverter(s)), doc, isInternal) {
+
+  override def get(conf: Map[String, String]): Option[T] = {
+    conf.get(key).map(rawConverter)
+  }
+
+  override def help(asTable: Boolean = false): Unit = {
+    if (!isInternal) {
+      if (asTable) {
+        import ConfHelper.makeConfAnchor
+        println(s"${makeConfAnchor(key)}|$doc|None")
+      } else {
+        println(s"$key:")
+        println(s"\t$doc")
+        println("\tNone")
         println()
       }
     }
@@ -160,6 +203,13 @@ class TypedConfBuilder[T](
   def toSequence: TypedConfBuilder[Seq[T]] = {
     new TypedConfBuilder(parent, ConfHelper.stringToSeq(_, converter),
       ConfHelper.seqToString(_, stringConverter))
+  }
+
+  def createOptional: OptionalConfEntry[T] = {
+    val ret = new OptionalConfEntry[T](parent.key, converter,
+      parent.doc, parent.isInternal)
+    parent.register(ret)
+    ret
   }
 }
 
@@ -232,27 +282,32 @@ object RapidsConf {
     .stringConf
     .createWithDefault("NONE")
 
+  private val RMM_ALLOC_MAX_FRACTION_KEY = "spark.rapids.memory.gpu.maxAllocFraction"
+  private val RMM_ALLOC_RESERVE_KEY = "spark.rapids.memory.gpu.reserve"
+
   val RMM_ALLOC_FRACTION = conf("spark.rapids.memory.gpu.allocFraction")
     .doc("The fraction of total GPU memory that should be initially allocated " +
       "for pooled memory. Extra memory will be allocated as needed, but it may " +
-      "result in more fragmentation.")
+      "result in more fragmentation. This must be less than or equal to the maximum limit " +
+      s"configured via $RMM_ALLOC_MAX_FRACTION_KEY.")
     .doubleConf
     .checkValue(v => v >= 0 && v <= 1, "The fraction value must be in [0, 1].")
     .createWithDefault(0.9)
 
-  val RMM_SPILL_ASYNC_START = conf("spark.rapids.memory.gpu.spillAsyncStart")
-    .doc("Fraction of device memory utilization at which data will start " +
-        "spilling asynchronously to free up device memory")
+  val RMM_ALLOC_MAX_FRACTION = conf(RMM_ALLOC_MAX_FRACTION_KEY)
+    .doc("The fraction of total GPU memory that limits the maximum size of the RMM pool. " +
+        s"The value must be greater than or equal to the setting for $RMM_ALLOC_FRACTION. " +
+        "Note that this limit will be reduced by the reserve memory configured in " +
+        s"$RMM_ALLOC_RESERVE_KEY.")
     .doubleConf
     .checkValue(v => v >= 0 && v <= 1, "The fraction value must be in [0, 1].")
-    .createWithDefault(0.9)
+    .createWithDefault(1)
 
-  val RMM_SPILL_ASYNC_STOP = conf("spark.rapids.memory.gpu.spillAsyncStop")
-    .doc("Fraction of device memory utilization at which data will stop " +
-        "spilling asynchronously to free up device memory")
-    .doubleConf
-    .checkValue(v => v >= 0 && v <= 1, "The fraction value must be in [0, 1].")
-    .createWithDefault(0.8)
+  val RMM_ALLOC_RESERVE = conf(RMM_ALLOC_RESERVE_KEY)
+      .doc("The amount of GPU memory that should remain unallocated by RMM and left for " +
+          "system use such as memory needed for kernels, kernel launches or JIT compilation.")
+      .bytesConf(ByteUnit.BYTE)
+      .createWithDefault(ByteUnit.MiB.toBytes(1024))
 
   val HOST_SPILL_STORAGE_SIZE = conf("spark.rapids.memory.host.spillStorageSize")
     .doc("Amount of off-heap host memory to use for buffering spilled GPU data " +
@@ -265,13 +320,6 @@ object RapidsConf {
       "through to CUDA memory allocation directly.")
     .booleanConf
     .createWithDefault(true)
-
-  val UVM_ENABLED = conf("spark.rapids.memory.uvm.enabled")
-    .doc("UVM or universal memory can allow main host memory to act essentially as swap " +
-      "for device(GPU) memory. This allows the GPU to process more data than fits in memory, but " +
-      "can result in slower processing. This is an experimental feature.")
-    .booleanConf
-    .createWithDefault(false)
 
   val CONCURRENT_GPU_TASKS = conf("spark.rapids.sql.concurrentGpuTasks")
       .doc("Set the number of tasks that can execute concurrently per GPU. " +
@@ -309,6 +357,14 @@ object RapidsConf {
 
   // Internal Features
 
+  val UVM_ENABLED = conf("spark.rapids.memory.uvm.enabled")
+    .doc("UVM or universal memory can allow main host memory to act essentially as swap " +
+      "for device(GPU) memory. This allows the GPU to process more data than fits in memory, but " +
+      "can result in slower processing. This is an experimental feature.")
+    .internal()
+    .booleanConf
+    .createWithDefault(false)
+
   val EXPORT_COLUMNAR_RDD = conf("spark.rapids.sql.exportColumnarRdd")
     .doc("Spark has no simply way to export columnar RDD data.  This turns on special " +
       "processing/tagging that allows the RDD to be picked back apart into a Columnar RDD.")
@@ -329,6 +385,11 @@ object RapidsConf {
     .doc("Enable (true) or disable (false) sql operations on the GPU")
     .booleanConf
     .createWithDefault(true)
+
+  val UDF_COMPILER_ENABLED = conf("spark.rapids.sql.udfCompiler.enabled")
+    .doc("When set to true, Scala UDFs will be considered for compilation as Catalyst expressions")
+    .booleanConf
+    .createWithDefault(false)
 
   val INCOMPATIBLE_OPS = conf("spark.rapids.sql.incompatibleOps.enabled")
     .doc("For operations that work, but are not 100% compatible with the Spark equivalent " +
@@ -415,6 +476,33 @@ object RapidsConf {
     .booleanConf
     .createWithDefault(true)
 
+  val ENABLE_MULTITHREAD_PARQUET_READS = conf(
+    "spark.rapids.sql.format.parquet.multiThreadedRead.enabled")
+    .doc("When set to true, reads multiple small files within a partition more efficiently " +
+      "by reading each file in a separate thread in parallel on the CPU side before " +
+      "sending to the GPU. Limited by " +
+      "spark.rapids.sql.format.parquet.multiThreadedRead.numThreads " +
+      "and spark.rapids.sql.format.parquet.multiThreadedRead.maxNumFileProcessed")
+    .booleanConf
+    .createWithDefault(true)
+
+  val PARQUET_MULTITHREAD_READ_NUM_THREADS =
+    conf("spark.rapids.sql.format.parquet.multiThreadedRead.numThreads")
+      .doc("The maximum number of threads, on the executor, to use for reading small " +
+        "parquet files in parallel. This can not be changed at runtime after the executor has " +
+        "started.")
+      .integerConf
+      .createWithDefault(20)
+
+  val PARQUET_MULTITHREAD_READ_MAX_NUM_FILES_PARALLEL =
+    conf("spark.rapids.sql.format.parquet.multiThreadedRead.maxNumFilesParallel")
+      .doc("A limit on the maximum number of files per task processed in parallel on the CPU " +
+        "side before the file is sent to the GPU. This affects the amount of host memory used " +
+        "when reading the files in parallel.")
+      .integerConf
+      .checkValue(v => v > 0, "The maximum number of files must be greater than 0.")
+      .createWithDefault(Integer.MAX_VALUE)
+
   val ENABLE_PARQUET_READ = conf("spark.rapids.sql.format.parquet.read.enabled")
     .doc("When set to false disables parquet input acceleration")
     .booleanConf
@@ -496,7 +584,6 @@ object RapidsConf {
     .booleanConf
     .createWithDefault(true)
 
-  // USER FACING SHUFFLE CONFIGS
   val SHUFFLE_TRANSPORT_ENABLE = conf("spark.rapids.shuffle.transport.enabled")
     .doc("When set to true, enable the Rapids Shuffle Transport for accelerated shuffle.")
     .booleanConf
@@ -579,7 +666,20 @@ object RapidsConf {
     .bytesConf(ByteUnit.BYTE)
     .createWithDefault(50 * 1024)
 
+  val SHUFFLE_COMPRESSION_CODEC = conf("spark.rapids.shuffle.compression.codec")
+      .doc("The GPU codec used to compress shuffle data when using RAPIDS shuffle. " +
+          "Supported codecs: copy, none")
+      .internal()
+      .stringConf
+      .createWithDefault("none")
+
   // USER FACING DEBUG CONFIGS
+
+  val SHUFFLE_COMPRESSION_MAX_BATCH_MEMORY =
+    conf("spark.rapids.shuffle.compression.maxBatchMemory")
+      .internal()
+      .bytesConf(ByteUnit.BYTE)
+      .createWithDefault(1024 * 1024 * 1024)
 
   val EXPLAIN = conf("spark.rapids.sql.explain")
     .doc("Explain why some parts of a query were not placed on a GPU or not. Possible " +
@@ -593,8 +693,14 @@ object RapidsConf {
 
   private def printToggleHeader(category: String): Unit = {
     printSectionHeader(category)
-    println("Name | Description | Default Value | Incompatibilities")
+    println("Name | Description | Default Value | Notes")
     println("-----|-------------|---------------|------------------")
+  }
+
+  private def printToggleHeaderWithSqlFunction(category: String): Unit = {
+    printSectionHeader(category)
+    println("Name | SQL Function(s) | Description | Default Value | Notes")
+    println("-----|-----------------|-------------|---------------|------")
   }
 
   def help(asTable: Boolean = false): Unit = {
@@ -606,13 +712,13 @@ object RapidsConf {
       println("---")
       println(s"<!-- Generated by RapidsConf.help. DO NOT EDIT! -->")
       // scalastyle:off line.size.limit
-      println("""# Rapids Plugin 4 Spark Configuration
+      println("""# RAPIDS Accelerator for Apache Spark Configuration
         |The following is the list of options that `rapids-plugin-4-spark` supports.
         |
         |On startup use: `--conf [conf key]=[conf value]`. For example:
         |
         |```
-        |${SPARK_HOME}/bin/spark --jars 'rapids-4-spark_2.12-0.1-SNAPSHOT.jar,cudf-0.14-SNAPSHOT-cuda10.jar' \
+        |${SPARK_HOME}/bin/spark --jars 'rapids-4-spark_2.12-0.2.0.jar,cudf-0.15-cuda10-1.jar' \
         |--conf spark.plugins=com.nvidia.spark.SQLPlugin \
         |--conf spark.rapids.sql.incompatibleOps.enabled=true
         |```
@@ -638,10 +744,11 @@ object RapidsConf {
     if (asTable) {
       println("")
       // scalastyle:off line.size.limit
-      println("""## Fine Tuning
-        |_The RAPIDS Accelerator for Apache Spark_ can be further configured to enable or disable
-        |specific expressions and to control what parts of the query execute using the GPU or
-        |the CPU.
+      println("""## Supported GPU Operators and Fine Tuning
+        |_The RAPIDS Accelerator for Apache Spark_ can be configured to enable or disable specific
+        |GPU accelerated expressions.  Enabled expressions are candidates for GPU execution. If the
+        |expression is configured as disabled, the accelerator plugin will not attempt replacement,
+        |and it will run on the CPU.
         |
         |Please leverage the [`spark.rapids.sql.explain`](#sql.explain) setting to get
         |feedback from the plugin as to why parts of a query may not be executing on the GPU.
@@ -652,9 +759,16 @@ object RapidsConf {
         |incompatibilities.""".stripMargin)
       // scalastyle:on line.size.limit
 
-      printToggleHeader("Expressions\n")
+      printToggleHeaderWithSqlFunction("Expressions\n")
     }
-    GpuOverrides.expressions.values.toSeq.sortBy(_.tag.toString).foreach(_.confHelp(asTable))
+    GpuOverrides.expressions.values.toSeq.sortBy(_.tag.toString).foreach { rule =>
+      val sqlFunctions =
+        ConfHelper.getSqlFunctionsForClass(rule.tag.runtimeClass).map(_.mkString(", "))
+
+      // this is only for formatting, this is done to ensure the table has a column for a
+      // row where there isn't a SQL function
+      rule.confHelp(asTable, Some(sqlFunctions.getOrElse(" ")))
+    }
     if (asTable) {
       printToggleHeader("Execution\n")
     }
@@ -687,6 +801,8 @@ object RapidsConf {
     }
   }
   def main(args: Array[String]): Unit = {
+    // Include the configs in PythonConfEntries
+    com.nvidia.spark.rapids.python.PythonConfEntries.init()
     val out = new FileOutputStream(new File(args(0)))
     Console.withOut(out) {
       Console.withErr(out) {
@@ -718,6 +834,8 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
 
   lazy val isSqlEnabled: Boolean = get(SQL_ENABLED)
 
+  lazy val isUdfCompilerEnabled: Boolean = get(UDF_COMPILER_ENABLED)
+
   lazy val exportColumnarRdd: Boolean = get(EXPORT_COLUMNAR_RDD)
 
   lazy val isIncompatEnabled: Boolean = get(INCOMPATIBLE_OPS)
@@ -740,9 +858,9 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
 
   lazy val rmmAllocFraction: Double = get(RMM_ALLOC_FRACTION)
 
-  lazy val rmmSpillAsyncStart: Double = get(RMM_SPILL_ASYNC_START)
+  lazy val rmmAllocMaxFraction: Double = get(RMM_ALLOC_MAX_FRACTION)
 
-  lazy val rmmSpillAsyncStop: Double = get(RMM_SPILL_ASYNC_STOP)
+  lazy val rmmAllocReserve: Long = get(RMM_ALLOC_RESERVE)
 
   lazy val hostSpillStorageSize: Long = get(HOST_SPILL_STORAGE_SIZE)
 
@@ -783,6 +901,12 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
   lazy val isCsvTimestampEnabled: Boolean = get(ENABLE_CSV_TIMESTAMPS)
 
   lazy val isParquetEnabled: Boolean = get(ENABLE_PARQUET)
+
+  lazy val isParquetMultiThreadReadEnabled: Boolean = get(ENABLE_MULTITHREAD_PARQUET_READS)
+
+  lazy val parquetMultiThreadReadNumThreads: Int = get(PARQUET_MULTITHREAD_READ_NUM_THREADS)
+
+  lazy val maxNumParquetFilesParallel: Int = get(PARQUET_MULTITHREAD_READ_MAX_NUM_FILES_PARALLEL)
 
   lazy val isParquetReadEnabled: Boolean = get(ENABLE_PARQUET_READ)
 
@@ -825,8 +949,12 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
 
   lazy val shuffleMaxMetadataSize: Long = get(SHUFFLE_MAX_METADATA_SIZE)
 
-  def isOperatorEnabled(key: String, incompat: Boolean): Boolean = {
-    val default = !incompat || (incompat && isIncompatEnabled)
+  lazy val shuffleCompressionCodec: String = get(SHUFFLE_COMPRESSION_CODEC)
+
+  lazy val shuffleCompressionMaxBatchMemory: Long = get(SHUFFLE_COMPRESSION_MAX_BATCH_MEMORY)
+
+  def isOperatorEnabled(key: String, incompat: Boolean, isDisabledByDefault: Boolean): Boolean = {
+    val default = !(isDisabledByDefault || incompat) || (incompat && isIncompatEnabled)
     conf.get(key).map(toBoolean(_, key)).getOrElse(default)
   }
 }

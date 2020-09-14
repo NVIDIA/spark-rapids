@@ -46,13 +46,24 @@ properly with the plugin but would have worked with plain Spark. Because of this
 floating point aggregations are off by default but can be enabled with the config
 [`spark.rapids.sql.variableFloatAgg.enabled`](configs.md#sql.variableFloatAgg.enabled).
 
-Additionally, some aggregations on floating point columns that contain NaNs can produce
+Additionally, some aggregations on floating point columns that contain `NaN` can produce
 incorrect results. More details on this behavior can be found
 [here](https://github.com/NVIDIA/spark-rapids/issues/87)
 and in this cudf [feature request](https://github.com/rapidsai/cudf/issues/4753).
-If it is known with certainty that the floating point columns do not contain NaNs,
+If it is known with certainty that the floating point columns do not contain `NaN`,
 set [`spark.rapids.sql.hasNans`](configs.md#sql.hasNans) to `false` to run GPU enabled
 aggregations on them.
+
+### `0.0` vs `-0.0`
+
+Floating point allows zero to be encoded as `0.0` and `-0.0`, but the standard says that
+they should be interpreted as the same. Most databases normalize these values to always
+be `0.0`. Spark does this in some cases but not all as is documented
+[here](https://issues.apache.org/jira/browse/SPARK-32110). The underlying implementation of
+this plugin treats them as the same for essentially all processing. This can result in some
+differences with Spark for operations like
+[sorting](https://github.com/NVIDIA/spark-rapids/issues/84),
+[joins, and comparisons](https://github.com/NVIDIA/spark-rapids/issues/294).
 
 ## Unicode
 
@@ -153,6 +164,10 @@ similar issue exists for writing dates as described
 appears to work for dates after the epoch as described
 [here](https://github.com/NVIDIA/spark-rapids/issues/140). 
 
+The plugin supports reading `uncompressed`, `snappy` and `zlib` ORC files and writing `uncompressed`
+ and `snappy` ORC files.  At this point, the plugin does not have the ability to fall back to the 
+ CPU when reading an unsupported compression format, and will error out in that case. 
+
 ## Parquet
 
 The Parquet format has more configs because there are multiple versions with some compatibility
@@ -162,7 +177,7 @@ For reads when `spark.sql.legacy.parquet.datetimeRebaseModeInWrite` is set to `C
 between the Julian and Gregorian calendars are wrong, but dates are fine. When 
 `spark.sql.legacy.parquet.datetimeRebaseModeInWrite` is set to `LEGACY`, however both dates and
 timestamps are read incorrectly before the Gregorian calendar transition as described
-[here]('https://github.com/NVIDIA/spark-rapids/issues/133).
+[here](https://github.com/NVIDIA/spark-rapids/issues/133).
 
 When writing `spark.sql.legacy.parquet.datetimeRebaseModeInWrite` is currently ignored as described
 [here](https://github.com/NVIDIA/spark-rapids/issues/144).
@@ -172,6 +187,18 @@ does not support writing timestamps in the INT96 format, so by default writing t
 Parquet will not be GPU-accelerated. If the INT96 timestamp format is not required for
 compatibility with other tools then set `spark.sql.parquet.outputTimestampType` to
 `TIMESTAMP_MICROS`.
+
+The plugin supports reading `uncompressed`, `snappy` and `gzip` Parquet files and writing 
+`uncompressed` and `snappy` Parquet files.  At this point, the plugin does not have the ability to 
+fall back to the CPU when reading an unsupported compression format, and will error out 
+in that case. 
+
+## Regular Expressions
+The RAPIDS Accelerator for Apache Spark currently supports string literal matches, not wildcard 
+matches. 
+
+If a null char '\0' is in a string that is being matched by a regular expression, `LIKE` sees it as 
+the end of the string.  This will be fixed in a future release. The issue is [here](https://github.com/NVIDIA/spark-rapids/issues/119).
 
 ## Timestamps
 
@@ -215,18 +242,18 @@ The following formats/patterns are supported on the GPU. Timezone of UTC is assu
 
 | Format or Pattern     | Supported on GPU? |
 | --------------------- | ----------------- |
-| `"yyyy"`              | Yes.              |
-| `"yyyy-[M]M"`         | Yes.              |
-| `"yyyy-[M]M "`        | Yes.              |
-| `"yyyy-[M]M-[d]d"`    | Yes.              |
-| `"yyyy-[M]M-[d]d "`   | Yes.              |
-| `"yyyy-[M]M-[d]d *"`  | Yes.              |
-| `"yyyy-[M]M-[d]d T*"` | Yes.              |
-| `"epoch"`             | Yes.              |
-| `"now"`               | Yes.              |
-| `"today"`             | Yes.              |
-| `"tomorrow"`          | Yes.              |
-| `"yesterday"`         | Yes.              |
+| `"yyyy"`              | Yes               |
+| `"yyyy-[M]M"`         | Yes               |
+| `"yyyy-[M]M "`        | Yes               |
+| `"yyyy-[M]M-[d]d"`    | Yes               |
+| `"yyyy-[M]M-[d]d "`   | Yes               |
+| `"yyyy-[M]M-[d]d *"`  | Yes               |
+| `"yyyy-[M]M-[d]d T*"` | Yes               |
+| `"epoch"`             | Yes               |
+| `"now"`               | Yes               |
+| `"today"`             | Yes               |
+| `"tomorrow"`          | Yes               |
+| `"yesterday"`         | Yes               |
 
 ## String to Timestamp
 
@@ -237,22 +264,108 @@ Casting from string to timestamp currently has the following limitations.
 
 | Format or Pattern                                                   | Supported on GPU? |
 | ------------------------------------------------------------------- | ------------------|
-| `"yyyy"`                                                            | Yes.              |
-| `"yyyy-[M]M"`                                                       | Yes.              |
-| `"yyyy-[M]M "`                                                      | Yes.              |
-| `"yyyy-[M]M-[d]d"`                                                  | Yes.              |
-| `"yyyy-[M]M-[d]d "`                                                 | Yes.              |
-| `"yyyy-[M]M-[d]dT[h]h:[m]m:[s]s.[ms][ms][ms][us][us][us][zone_id]"` | Partial [1].      |
-| `"yyyy-[M]M-[d]d [h]h:[m]m:[s]s.[ms][ms][ms][us][us][us][zone_id]"` | Partial [1].      |
-| `"[h]h:[m]m:[s]s.[ms][ms][ms][us][us][us][zone_id]"`                | Partial [1].      |
-| `"T[h]h:[m]m:[s]s.[ms][ms][ms][us][us][us][zone_id]"`               | Partial [1].      |
-| `"epoch"`                                                           | Yes.              |
-| `"now"`                                                             | Yes.              |
-| `"today"`                                                           | Yes.              |
-| `"tomorrow"`                                                        | Yes.              |
-| `"yesterday"`                                                       | Yes.              |
+| `"yyyy"`                                                            | Yes               |
+| `"yyyy-[M]M"`                                                       | Yes               |
+| `"yyyy-[M]M "`                                                      | Yes               |
+| `"yyyy-[M]M-[d]d"`                                                  | Yes               |
+| `"yyyy-[M]M-[d]d "`                                                 | Yes               |
+| `"yyyy-[M]M-[d]dT[h]h:[m]m:[s]s.[ms][ms][ms][us][us][us][zone_id]"` | Partial [\[1\]](#Footnote1)       |
+| `"yyyy-[M]M-[d]d [h]h:[m]m:[s]s.[ms][ms][ms][us][us][us][zone_id]"` | Partial [\[1\]](#Footnote1)       |
+| `"[h]h:[m]m:[s]s.[ms][ms][ms][us][us][us][zone_id]"`                | Partial [\[1\]](#Footnote1)       |
+| `"T[h]h:[m]m:[s]s.[ms][ms][ms][us][us][us][zone_id]"`               | Partial [\[1\]](#Footnote1)       |
+| `"epoch"`                                                           | Yes               |
+| `"now"`                                                             | Yes               |
+| `"today"`                                                           | Yes               |
+| `"tomorrow"`                                                        | Yes               |
+| `"yesterday"`                                                       | Yes               |
 
-- [1] The timestamp portion must be complete in terms of hours, minutes, seconds, and
+- <a name="Footnote1"></a>[1] The timestamp portion must be complete in terms of hours, minutes, seconds, and
  milliseconds, with 2 digits each for hours, minutes, and seconds, and 6 digits for milliseconds. 
  Only timezone 'Z' (UTC) is supported. Casting unsupported formats will result in null values. 
  
+## UDF to Catalyst Expressions
+To speedup the process of UDF, spark-rapids introduces a udf-compiler extension to translate UDFs to Catalyst expressions.
+
+To enable this operation on the GPU, set
+[`spark.rapids.sql.udfCompiler.enabled`](configs.md#sql.udfCompiler.enabled) to `true`.
+
+However, Spark may produce different results for a compiled udf and the non-compiled. For example: a udf of `x/y` where `y` happens to be `0`, the compiled catalyst expressions will return `NULL` while the original udf would fail  the entire job with a `java.lang.ArithmeticException: / by zero`
+
+When translating UDFs to Catalyst expressions, the supported UDF functions are limited:
+
+| Operand type             | Operation                                                |
+| -------------------------| ---------------------------------------------------------|
+| Arithmetic Unary         | +x                                                       |
+|                          | -x                                                       |
+| Arithmetic Binary        | lhs + rhs                                                |
+|                          | lhs - rhs                                                |
+|                          | lhs * rhs                                                |
+|                          | lhs / rhs                                                |
+|                          | lhs % rhs                                                |
+| Logical                  | lhs && rhs                                               |
+|                          | lhs &#124;&#124; rhs                                     |
+|                          | !x                                                       |
+| Equality and Relational  | lhs == rhs                                               |
+|                          | lhs < rhs                                                |
+|                          | lhs <= rhs                                               |
+|                          | lhs > rhs                                                |
+|                          | lhs >= rhs                                               |
+| Bitwise                  | lhs & rhs                                                |
+|                          | lhs &#124; rhs                                           |
+|                          | lhs ^ rhs                                                |
+|                          | ~x                                                       |
+|                          | lhs << rhs                                               |
+|                          | lhs >> rhs                                               |
+|                          | lhs >>> rhs                                              |
+| Conditional              | if                                                       |
+|                          | case                                                     |
+| Math                     | abs(x)                                                   |
+|                          | cos(x)                                                   |
+|                          | acos(x)                                                  |
+|                          | asin(x)                                                  |
+|                          | tan(x)                                                   |
+|                          | atan(x)                                                  |
+|                          | tanh(x)                                                  |
+|                          | cosh(x)                                                  |
+|                          | ceil(x)                                                  |
+|                          | floor(x)                                                 |
+|                          | exp(x)                                                   |
+|                          | log(x)                                                   |
+|                          | log10(x)                                                 |
+|                          | sqrt(x)                                                  |
+| Type Cast                | *                                                        |
+| String                   | lhs + rhs                                                |
+|                          | lhs.equalsIgnoreCase(String rhs)                         |
+|                          | x.toUpperCase()                                          |
+|                          | x.trim()                                                 |
+|                          | x.substring(int begin)                                   |
+|                          | x.substring(int begin, int end)                          |
+|                          | x.replace(char oldChar, char newChar)                    |
+|                          | x.replace(CharSequence target, CharSequence replacement) |
+|                          | x.startsWith(String prefix)                              |
+|                          | lhs.equals(Object rhs)                                   |
+|                          | x.toLowerCase()                                          |
+|                          | x.length()                                               |
+|                          | x.endsWith(String suffix)                                |
+|                          | lhs.concat(String rhs)                                   |
+|                          | x.isEmpty()                                              |
+|                          | String.valueOf(boolean b)                                |
+|                          | String.valueOf(char c)                                   |
+|                          | String.valueOf(double d)                                 |
+|                          | String.valueOf(float f)                                  |
+|                          | String.valueOf(int i)                                    |
+|                          | String.valueOf(long l)                                   |
+|                          | x.contains(CharSequence s)                               |
+|                          | x.indexOf(String str)                                    |
+|                          | x.indexOf(String str, int fromIndex)                     |
+|                          | x.replaceAll(String regex, String replacement)           |
+|                          | x.split(String regex)                                    |
+|                          | x.split(String regex, int limit)                         |
+|                          | x.getBytes()                                             |
+|                          | x.getBytes(String charsetName)                           |
+| Date and Time            | LocalDateTime.parse(x, DateTimeFormatter.ofPattern(pattern)).getYear       |
+|                          | LocalDateTime.parse(x, DateTimeFormatter.ofPattern(pattern)).getMonthValue |
+|                          | LocalDateTime.parse(x, DateTimeFormatter.ofPattern(pattern)).getDayOfMonth |
+|                          | LocalDateTime.parse(x, DateTimeFormatter.ofPattern(pattern)).getHour       |
+|                          | LocalDateTime.parse(x, DateTimeFormatter.ofPattern(pattern)).getMinute     |
+|                          | LocalDateTime.parse(x, DateTimeFormatter.ofPattern(pattern)).getSecond     |

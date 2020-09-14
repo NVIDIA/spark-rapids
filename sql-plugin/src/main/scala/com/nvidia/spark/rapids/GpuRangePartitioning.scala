@@ -22,39 +22,32 @@ import ai.rapids.cudf.{ColumnVector, Table}
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 
 import org.apache.spark.sql.catalyst.InternalRow
+import org.apache.spark.sql.catalyst.expressions.SortOrder
 import org.apache.spark.sql.catalyst.plans.physical.{ClusteredDistribution, Distribution, OrderedDistribution}
 import org.apache.spark.sql.types.{DataType, IntegerType, StructField, StructType}
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
 /**
-  * A GPU accelerated `org.apache.spark.sql.catalyst.plans.physical.Partitioning` that partitions
-  * sortable records by range into roughly equal ranges. The ranges are determined by sampling
-  * the content of the RDD passed in.
-  *
-  * @note The actual number of partitions created might not be the same
-  * as the `numPartitions` parameter, in the case where the number of sampled records is less than
-  * the value of `partitions`.
-  */
+ * A GPU accelerated `org.apache.spark.sql.catalyst.plans.physical.Partitioning` that partitions
+ * sortable records by range into roughly equal ranges. The ranges are determined by sampling
+ * the content of the RDD passed in.
+ *
+ * @note The actual number of partitions created might not be the same
+ * as the `numPartitions` parameter, in the case where the number of sampled records is less than
+ * the value of `partitions`.
+ */
 
 case class GpuRangePartitioning(
-    gpuOrdering: Seq[GpuSortOrder],
+    gpuOrdering: Seq[SortOrder],
     numPartitions: Int,
-    part: GpuRangePartitioner)
+    part: GpuRangePartitioner,
+    schema: StructType)
   extends GpuExpression with GpuPartitioning {
 
   var rangeBounds: Array[InternalRow] = _
-  var schema: StructType = new StructType()
-  gpuOrdering.foreach { ord =>
-    val sortOrder = ord.toSortOrder
-    sortOrder.child.references.foreach(field => {
-      schema = schema.add(StructField(field.name, field.dataType))
-    })
-  }
 
-  override def children: Seq[GpuExpression] = gpuOrdering
-
+  override def children: Seq[SortOrder] = gpuOrdering
   override def nullable: Boolean = false
-
   override def dataType: DataType = IntegerType
 
   override def satisfies0(required: Distribution): Boolean = {
@@ -127,6 +120,7 @@ case class GpuRangePartitioning(
       slicedSortedTbl = new Table(sortColumns: _*)
       //get the final column batch, remove the sort order sortColumns
       finalSortedCb = GpuColumnVector.from(sortedTbl, numSortCols, sortedTbl.getNumberOfColumns)
+      val numRows = finalSortedCb.numRows
       partitionColumns = GpuColumnVector.extractColumns(finalSortedCb)
       // get the ranges table and get upper bounds if possible
       // rangeBounds can be empty or of length < numPartitions in cases where the samples are less
@@ -139,7 +133,7 @@ case class GpuRangePartitioning(
         retCv = slicedSortedTbl.upperBound(nullFlags.toArray, rangesTbl, descFlags.toArray)
         parts = parts ++ GpuColumnVector.toIntArray(retCv)
       }
-      slicedCb = sliceInternalGpuOrCpu(finalSortedCb, parts, partitionColumns)
+      slicedCb = sliceInternalGpuOrCpu(numRows, parts, partitionColumns)
     } finally {
       batch.close()
       if (inputCvs != null) {

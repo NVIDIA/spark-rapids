@@ -67,6 +67,7 @@ case class GpuRoundRobinPartitioning(numPartitions: Int)
     }
     val totalRange = new NvtxRange("Round Robin partition", NvtxColor.PURPLE)
     try {
+      val numRows = batch.numRows
       val (partitionIndexes, partitionColumns) = {
         val partitionRange = new NvtxRange("partition", NvtxColor.BLUE)
         try {
@@ -77,7 +78,7 @@ case class GpuRoundRobinPartitioning(numPartitions: Int)
         }
       }
       val ret: Array[ColumnarBatch] =
-        sliceInternalGpuOrCpu(batch, partitionIndexes, partitionColumns)
+        sliceInternalGpuOrCpu(numRows, partitionIndexes, partitionColumns)
       partitionColumns.safeClose()
       // Close the partition columns we copied them as a part of the slice
       ret.zipWithIndex.filter(_._1 != null)

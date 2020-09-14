@@ -22,8 +22,9 @@ import ai.rapids.cudf.{BinaryOp, ColumnVector, DType, Scalar}
 import com.nvidia.spark.rapids.{BinaryExprMeta, ConfKeysAndIncompat, DateUtils, GpuBinaryExpression, GpuColumnVector, GpuExpression, GpuOverrides, GpuScalar, GpuUnaryExpression, RapidsConf, RapidsMeta}
 import com.nvidia.spark.rapids.DateUtils.TimestampFormatConversionException
 import com.nvidia.spark.rapids.GpuOverrides.extractStringLit
+import com.nvidia.spark.rapids.RapidsPluginImplicits._
 
-import org.apache.spark.sql.catalyst.expressions.{BinaryExpression, ExpectsInputTypes, Expression, ImplicitCastInputTypes, NullIntolerant, TimeZoneAwareExpression, UnixTime}
+import org.apache.spark.sql.catalyst.expressions.{BinaryExpression, ExpectsInputTypes, Expression, ImplicitCastInputTypes, NullIntolerant, TimeZoneAwareExpression}
 import org.apache.spark.sql.types._
 import org.apache.spark.sql.vectorized.ColumnarBatch
 import org.apache.spark.unsafe.types.CalendarInterval
@@ -47,7 +48,38 @@ trait GpuTimeUnaryExpression extends GpuUnaryExpression with TimeZoneAwareExpres
   override lazy val resolved: Boolean = childrenResolved && checkInputDataTypes().isSuccess
 }
 
-case class GpuMinute(child: GpuExpression, timeZoneId: Option[String] = None)
+case class GpuWeekDay(child: Expression)
+    extends GpuDateUnaryExpression {
+
+  override protected def doColumnar(input: GpuColumnVector): GpuColumnVector = {
+    withResource(Scalar.fromShort(1.toShort)) { one =>
+      withResource(input.getBase.weekDay()) { weekday => // We want Monday = 0, CUDF Monday = 1
+        GpuColumnVector.from(weekday.sub(one))
+      }
+    }
+  }
+}
+
+case class GpuDayOfWeek(child: Expression)
+    extends GpuDateUnaryExpression {
+
+  override protected def doColumnar(input: GpuColumnVector): GpuColumnVector = {
+    // Cudf returns Monday = 1, ...
+    // We want Sunday = 1, ..., so add a day before we extract the day of the week
+    val nextInts = withResource(Scalar.fromInt(1)) { one =>
+      withResource(input.getBase.asInts()) { ints =>
+        ints.add(one)
+      }
+    }
+    withResource(nextInts) { nextInts =>
+      withResource(nextInts.asTimestampDays()) { daysAgain =>
+        GpuColumnVector.from(daysAgain.weekDay())
+      }
+    }
+  }
+}
+
+case class GpuMinute(child: Expression, timeZoneId: Option[String] = None)
     extends GpuTimeUnaryExpression {
 
   override def withTimeZone(timeZoneId: String): TimeZoneAwareExpression =
@@ -58,7 +90,7 @@ case class GpuMinute(child: GpuExpression, timeZoneId: Option[String] = None)
   }
 }
 
-case class GpuSecond(child: GpuExpression, timeZoneId: Option[String] = None)
+case class GpuSecond(child: Expression, timeZoneId: Option[String] = None)
     extends GpuTimeUnaryExpression {
 
   override def withTimeZone(timeZoneId: String): TimeZoneAwareExpression =
@@ -69,7 +101,7 @@ case class GpuSecond(child: GpuExpression, timeZoneId: Option[String] = None)
   }
 }
 
-case class GpuHour(child: GpuExpression, timeZoneId: Option[String] = None)
+case class GpuHour(child: Expression, timeZoneId: Option[String] = None)
   extends GpuTimeUnaryExpression {
 
   override def withTimeZone(timeZoneId: String): TimeZoneAwareExpression =
@@ -85,16 +117,17 @@ case class GpuYear(child: Expression) extends GpuDateUnaryExpression {
     GpuColumnVector.from(input.getBase.year())
 }
 
-case class GpuTimeSub(
-    start: GpuExpression,
-    interval: GpuExpression,
+abstract class GpuTimeMath(
+    start: Expression,
+    interval: Expression,
     timeZoneId: Option[String] = None)
-  extends BinaryExpression with GpuExpression with TimeZoneAwareExpression with ExpectsInputTypes {
+   extends BinaryExpression with GpuExpression with TimeZoneAwareExpression with ExpectsInputTypes
+   with Serializable {
 
-  def this(start: GpuExpression, interval: GpuExpression) = this(start, interval, None)
+  def this(start: Expression, interval: Expression) = this(start, interval, None)
 
-  override def left: GpuExpression = start
-  override def right: GpuExpression = interval
+  override def left: Expression = start
+  override def right: Expression = interval
 
   override def toString: String = s"$left - $right"
   override def sql: String = s"${left.sql} - ${right.sql}"
@@ -103,10 +136,6 @@ case class GpuTimeSub(
   override def dataType: DataType = TimestampType
 
   override lazy val resolved: Boolean = childrenResolved && checkInputDataTypes().isSuccess
-
-  override def withTimeZone(timeZoneId: String): TimeZoneAwareExpression = {
-    copy(timeZoneId = Option(timeZoneId))
-  }
 
   override def columnarEval(batch: ColumnarBatch): Any = {
     var lhs: Any = null
@@ -120,15 +149,17 @@ case class GpuTimeSub(
           if (intvl.months != 0) {
             throw new UnsupportedOperationException("Months aren't supported at the moment")
           }
-          val usToSub = intvl.days * 24 * 60 * 60 * 1000 * 1000L + intvl.microseconds
-          if (usToSub > 0) {
+          val usToSub = intvl.days.toLong * 24 * 60 * 60 * 1000 * 1000 + intvl.microseconds
+          if (usToSub != 0) {
             withResource(Scalar.fromLong(usToSub)) { us_s =>
               withResource(l.getBase.castTo(DType.INT64)) { us =>
-                withResource(us.sub(us_s)) {longResult =>
+                withResource(intervalMath(us_s, us)) { longResult =>
                   GpuColumnVector.from(longResult.castTo(DType.TIMESTAMP_MICROSECONDS))
                 }
               }
             }
+          } else {
+            l.incRefCount()
           }
         case _ =>
           throw new UnsupportedOperationException("GpuTimeSub takes column and interval as an " +
@@ -142,6 +173,36 @@ case class GpuTimeSub(
         rhs.asInstanceOf[AutoCloseable].close()
       }
     }
+  }
+
+  def intervalMath(us_s: Scalar, us: ColumnVector): ColumnVector
+}
+
+case class GpuTimeAdd(start: Expression,
+                      interval: Expression,
+                      timeZoneId: Option[String] = None)
+  extends GpuTimeMath(start, interval, timeZoneId) {
+
+  override def withTimeZone(timeZoneId: String): TimeZoneAwareExpression = {
+    copy(timeZoneId = Option(timeZoneId))
+  }
+
+  override def intervalMath(us_s: Scalar, us: ColumnVector): ColumnVector = {
+    us.add(us_s)
+  }
+}
+
+case class GpuTimeSub(start: Expression,
+                       interval: Expression,
+                       timeZoneId: Option[String] = None)
+  extends GpuTimeMath(start, interval, timeZoneId) {
+
+  override def withTimeZone(timeZoneId: String): TimeZoneAwareExpression = {
+    copy(timeZoneId = Option(timeZoneId))
+  }
+
+  def intervalMath(us_s: Scalar, us: ColumnVector): ColumnVector = {
+    us.sub(us_s)
   }
 }
 
@@ -187,6 +248,21 @@ case class GpuDateDiff(endDate: Expression, startDate: Expression)
   }
 }
 
+case class GpuQuarter(child: Expression) extends GpuDateUnaryExpression {
+  override def doColumnar(input: GpuColumnVector): GpuColumnVector = {
+    val tmp = withResource(Scalar.fromInt(2)) { two =>
+      withResource(input.getBase.month()) { month =>
+        month.add(two)
+      }
+    }
+    withResource(tmp) { tmp =>
+      withResource(Scalar.fromInt(3)) { three =>
+        GpuColumnVector.from(tmp.div(three))
+      }
+    }
+  }
+}
+
 case class GpuMonth(child: Expression) extends GpuDateUnaryExpression {
   override def doColumnar(input: GpuColumnVector): GpuColumnVector =
     GpuColumnVector.from(input.getBase.month())
@@ -195,6 +271,11 @@ case class GpuMonth(child: Expression) extends GpuDateUnaryExpression {
 case class GpuDayOfMonth(child: Expression) extends GpuDateUnaryExpression {
   override def doColumnar(input: GpuColumnVector): GpuColumnVector =
     GpuColumnVector.from(input.getBase.day())
+}
+
+case class GpuDayOfYear(child: Expression) extends GpuDateUnaryExpression {
+  override def doColumnar(input: GpuColumnVector): GpuColumnVector =
+    GpuColumnVector.from(input.getBase.dayOfYear())
 }
 
 abstract class UnixTimeExprMeta[A <: BinaryExpression with TimeZoneAwareExpression]
@@ -217,7 +298,7 @@ abstract class UnixTimeExprMeta[A <: BinaryExpression with TimeZoneAwareExpressi
         }
       } catch {
         case x: TimestampFormatConversionException =>
-          willNotWorkOnGpu(x.getMessage)
+          willNotWorkOnGpu(s"Failed to convert ${x.reason} ${x.getMessage()}")
       }
     }
   }
@@ -305,8 +386,8 @@ abstract class GpuToTimestampImproved extends GpuToTimestamp {
   }
 }
 
-case class GpuUnixTimestamp(strTs: GpuExpression,
-   format: GpuExpression,
+case class GpuUnixTimestamp(strTs: Expression,
+   format: Expression,
    strf: String,
    timeZoneId: Option[String] = None) extends GpuToTimestamp {
   override def strfFormat = strf
@@ -314,13 +395,13 @@ case class GpuUnixTimestamp(strTs: GpuExpression,
     copy(timeZoneId = Option(timeZoneId))
   }
 
-  override def left: GpuExpression = strTs
-  override def right: GpuExpression = format
+  override def left: Expression = strTs
+  override def right: Expression = format
 
 }
 
-case class GpuToUnixTimestamp(strTs: GpuExpression,
-   format: GpuExpression,
+case class GpuToUnixTimestamp(strTs: Expression,
+   format: Expression,
    strf: String,
    timeZoneId: Option[String] = None) extends GpuToTimestamp {
   override def strfFormat = strf
@@ -328,13 +409,13 @@ case class GpuToUnixTimestamp(strTs: GpuExpression,
     copy(timeZoneId = Option(timeZoneId))
   }
 
-  override def left: GpuExpression = strTs
-  override def right: GpuExpression = format
+  override def left: Expression = strTs
+  override def right: Expression = format
 
 }
 
-case class GpuUnixTimestampImproved(strTs: GpuExpression,
-   format: GpuExpression,
+case class GpuUnixTimestampImproved(strTs: Expression,
+   format: Expression,
    strf: String,
    timeZoneId: Option[String] = None) extends GpuToTimestampImproved {
   override def strfFormat = strf
@@ -342,13 +423,13 @@ case class GpuUnixTimestampImproved(strTs: GpuExpression,
     copy(timeZoneId = Option(timeZoneId))
   }
 
-  override def left: GpuExpression = strTs
-  override def right: GpuExpression = format
+  override def left: Expression = strTs
+  override def right: Expression = format
 
 }
 
-case class GpuToUnixTimestampImproved(strTs: GpuExpression,
-   format: GpuExpression,
+case class GpuToUnixTimestampImproved(strTs: Expression,
+   format: Expression,
    strf: String,
    timeZoneId: Option[String] = None) extends GpuToTimestampImproved {
   override def strfFormat = strf
@@ -356,14 +437,14 @@ case class GpuToUnixTimestampImproved(strTs: GpuExpression,
     copy(timeZoneId = Option(timeZoneId))
   }
 
-  override def left: GpuExpression = strTs
-  override def right: GpuExpression = format
+  override def left: Expression = strTs
+  override def right: Expression = format
 
 }
 
 case class GpuFromUnixTime(
-    sec: GpuExpression,
-    format: GpuExpression,
+    sec: Expression,
+    format: Expression,
     strfFormat: String,
     timeZoneId: Option[String] = None)
   extends GpuBinaryExpression with TimeZoneAwareExpression with ImplicitCastInputTypes {
@@ -397,11 +478,11 @@ case class GpuFromUnixTime(
 
   override def inputTypes: Seq[AbstractDataType] = Seq(LongType, StringType)
 
-  override def left: GpuExpression = sec
+  override def left: Expression = sec
 
   // we aren't using this "right" GpuExpression, as it was already converted in the GpuOverrides
   // while creating the expressions map and passed down here as strfFormat
-  override def right: GpuExpression = format
+  override def right: Expression = format
 
   override def dataType: DataType = StringType
 
@@ -443,23 +524,37 @@ trait GpuDateMathBase extends GpuBinaryExpression with ExpectsInputTypes {
   }
 }
 
-case class GpuDateSub(startDate: GpuExpression, days: GpuExpression)
+case class GpuDateSub(startDate: Expression, days: Expression)
   extends GpuDateMathBase {
 
-  override def left: GpuExpression = startDate
-  override def right: GpuExpression = days
+  override def left: Expression = startDate
+  override def right: Expression = days
 
   override def prettyName: String = "date_sub"
 
   override def binaryOp: BinaryOp = BinaryOp.SUB
 }
 
-case class GpuDateAdd(startDate: GpuExpression, days: GpuExpression) extends GpuDateMathBase {
+case class GpuDateAdd(startDate: Expression, days: Expression) extends GpuDateMathBase {
 
-  override def left: GpuExpression = startDate
-  override def right: GpuExpression = days
+  override def left: Expression = startDate
+  override def right: Expression = days
 
   override def prettyName: String = "date_add"
 
   override def binaryOp: BinaryOp = BinaryOp.ADD
+}
+
+case class GpuLastDay(startDate: Expression)
+    extends GpuUnaryExpression with ImplicitCastInputTypes {
+  override def child: Expression = startDate
+
+  override def inputTypes: Seq[AbstractDataType] = Seq(DateType)
+
+  override def dataType: DataType = DateType
+
+  override def prettyName: String = "last_day"
+
+  override protected def doColumnar(input: GpuColumnVector): GpuColumnVector =
+    GpuColumnVector.from(input.getBase.lastDayOfMonth())
 }

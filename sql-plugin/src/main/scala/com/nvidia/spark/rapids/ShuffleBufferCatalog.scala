@@ -109,7 +109,7 @@ class ShuffleBufferCatalog(
     }
   }
 
-  def hasActiveShuffle(shuffleId: Int): Boolean = activeShuffles.contains(shuffleId)
+  def hasActiveShuffle(shuffleId: Int): Boolean = activeShuffles.containsKey(shuffleId)
 
   /** Get all the buffer IDs that correspond to a shuffle block identifier. */
   def blockIdToBuffersIds(blockId: ShuffleBlockId): Array[ShuffleBufferId] = {
@@ -200,6 +200,17 @@ class ShuffleBufferCatalog(
   def acquireBuffer(tableId: Int): RapidsBuffer = {
     val shuffleBufferId = getShuffleBufferId(tableId)
     acquireBuffer(shuffleBufferId)
+  }
+
+  /**
+   * Remove a buffer and table given a buffer ID
+   * NOTE: This function is not thread safe! The caller should only invoke if
+   * the [[ShuffleBufferId]] being removed is not being utilized by another thread.
+   * @param id buffer identifier
+   */
+  def removeBuffer(id: ShuffleBufferId): Unit = {
+    tableMap.remove(id.tableId)
+    catalog.removeBuffer(id)
   }
 }
 

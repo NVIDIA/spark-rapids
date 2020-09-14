@@ -26,7 +26,7 @@ import org.apache.spark.sql.catalyst.plans.physical.{ClusteredDistribution, Dist
 import org.apache.spark.sql.types.{DataType, IntegerType}
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
-case class GpuHashPartitioning(expressions: Seq[GpuExpression], numPartitions: Int)
+case class GpuHashPartitioning(expressions: Seq[Expression], numPartitions: Int)
   extends GpuExpression with GpuPartitioning {
 
   override def children: Seq[Expression] = expressions
@@ -47,8 +47,10 @@ case class GpuHashPartitioning(expressions: Seq[GpuExpression], numPartitions: I
     }
   }
 
-  def getGpuKeyColumns(batch: ColumnarBatch) : Array[GpuColumnVector] =
-    expressions.map(_.columnarEval(batch).asInstanceOf[GpuColumnVector]).toArray
+  def getGpuKeyColumns(batch: ColumnarBatch) : Array[GpuColumnVector] = {
+    expressions.map(_.columnarEval(batch)
+        .asInstanceOf[GpuColumnVector]).toArray
+  }
 
   def getGpuDataColumns(batch: ColumnarBatch) : Array[GpuColumnVector] =
     GpuColumnVector.extractColumns(batch)
@@ -119,6 +121,7 @@ case class GpuHashPartitioning(expressions: Seq[GpuExpression], numPartitions: I
     //  We are doing this here because the cudf partition command is at this level
     val totalRange = new NvtxRange("Hash partition", NvtxColor.PURPLE)
     try {
+      val numRows = batch.numRows
       val (partitionIndexes, partitionColumns) = {
         val partitionRange = new NvtxRange("partition", NvtxColor.BLUE)
         try {
@@ -127,7 +130,7 @@ case class GpuHashPartitioning(expressions: Seq[GpuExpression], numPartitions: I
           partitionRange.close()
         }
       }
-      val ret = sliceInternalGpuOrCpu(batch, partitionIndexes, partitionColumns)
+      val ret = sliceInternalGpuOrCpu(numRows, partitionIndexes, partitionColumns)
       partitionColumns.safeClose()
       // Close the partition columns we copied them as a part of the slice
       ret.zipWithIndex.filter(_._1 != null)

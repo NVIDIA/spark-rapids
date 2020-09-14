@@ -18,15 +18,20 @@ package com.nvidia.spark.rapids
 
 import com.nvidia.spark.rapids.GpuMetricNames._
 
+import org.apache.spark.SparkContext
+import org.apache.spark.sql.catalyst.expressions.{Alias, AttributeReference, ExprId}
+import org.apache.spark.sql.catalyst.plans.QueryPlan
 import org.apache.spark.sql.execution.SparkPlan
 import org.apache.spark.sql.execution.metric.{SQLMetric, SQLMetrics}
 
 object GpuMetricNames {
 
   // Metric names.
-  val NUM_INPUT_ROWS =  "numInputRows"
+  val BUFFER_TIME = "bufferTime"
+  val GPU_DECODE_TIME = "gpuDecodeTime"
+  val NUM_INPUT_ROWS = "numInputRows"
   val NUM_INPUT_BATCHES = "numInputBatches"
-  val NUM_OUTPUT_ROWS =  "numOutputRows"
+  val NUM_OUTPUT_ROWS = "numOutputRows"
   val NUM_OUTPUT_BATCHES = "numOutputBatches"
   val TOTAL_TIME = "totalTime"
   val PEAK_DEVICE_MEMORY = "peakDevMemory"
@@ -38,6 +43,16 @@ object GpuMetricNames {
   val DESCRIPTION_NUM_OUTPUT_BATCHES = "number of output columnar batches"
   val DESCRIPTION_TOTAL_TIME = "total time"
   val DESCRIPTION_PEAK_DEVICE_MEMORY = "peak device memory"
+
+  def buildGpuScanMetrics(sparkContext: SparkContext): Map[String, SQLMetric] = {
+    Map(
+      NUM_OUTPUT_BATCHES -> SQLMetrics.createMetric(sparkContext, DESCRIPTION_NUM_OUTPUT_BATCHES),
+      TOTAL_TIME -> SQLMetrics.createNanoTimingMetric(sparkContext, DESCRIPTION_TOTAL_TIME),
+      GPU_DECODE_TIME -> SQLMetrics.createNanoTimingMetric(sparkContext, "GPU decode time"),
+      BUFFER_TIME -> SQLMetrics.createNanoTimingMetric(sparkContext, "buffer time"),
+      PEAK_DEVICE_MEMORY -> SQLMetrics.createSizeMetric(sparkContext,
+        DESCRIPTION_PEAK_DEVICE_MEMORY))
+  }
 }
 
 trait GpuExec extends SparkPlan with Arm {
@@ -75,4 +90,34 @@ trait GpuExec extends SparkPlan with Arm {
       case c: GpuExpression => c.disableCoalesceUntilInput()
       case _ => false
     }
+
+  /**
+   * Defines how the canonicalization should work for the current plan.
+   */
+  override protected def doCanonicalize(): SparkPlan = {
+    val canonicalizedChildren = children.map(_.canonicalized)
+    var id = -1
+    mapExpressions {
+      case a: Alias =>
+        id += 1
+        // As the root of the expression, Alias will always take an arbitrary exprId, we need to
+        // normalize that for equality testing, by assigning expr id from 0 incrementally. The
+        // alias name doesn't matter and should be erased.
+        val normalizedChild = QueryPlan.normalizeExpressions(a.child, allAttributes)
+        Alias(normalizedChild, "")(ExprId(id), a.qualifier)
+      case a: GpuAlias =>
+        id += 1
+        // As the root of the expression, Alias will always take an arbitrary exprId, we need to
+        // normalize that for equality testing, by assigning expr id from 0 incrementally. The
+        // alias name doesn't matter and should be erased.
+        val normalizedChild = QueryPlan.normalizeExpressions(a.child, allAttributes)
+        GpuAlias(normalizedChild, "")(ExprId(id), a.qualifier)
+      case ar: AttributeReference if allAttributes.indexOf(ar.exprId) == -1 =>
+        // Top level `AttributeReference` may also be used for output like `Alias`, we should
+        // normalize the exprId too.
+        id += 1
+        ar.withExprId(ExprId(id)).canonicalized
+      case other => QueryPlan.normalizeExpressions(other, allAttributes)
+    }.withNewChildren(canonicalizedChildren)
+  }
 }

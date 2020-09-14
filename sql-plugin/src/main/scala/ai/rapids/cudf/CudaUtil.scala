@@ -18,15 +18,15 @@ package ai.rapids.cudf
 
 object CudaUtil {
   /**
-    * Copy from `src` buffer, starting at `srcOffset`,
-    * to a destination buffer `dst` starting at `dstOffset`,
-    * `length` bytes, in the default stream.
-    * @param src source buffer
-    * @param srcOffset source offset
-    * @param dst destination buffer
-    * @param dstOffset destination offset
-    * @param length amount to copy
-    */
+   * Copy from `src` buffer, starting at `srcOffset`,
+   * to a destination buffer `dst` starting at `dstOffset`,
+   * `length` bytes, in the default stream.
+   * @param src source buffer
+   * @param srcOffset source offset
+   * @param dst destination buffer
+   * @param dstOffset destination offset
+   * @param length amount to copy
+   */
   def copy(src: MemoryBuffer, srcOffset: Long, dst: MemoryBuffer,
            dstOffset: Long, length: Long): Unit = {
     Cuda.memcpy(

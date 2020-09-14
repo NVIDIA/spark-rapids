@@ -17,6 +17,7 @@ import pytest
 from asserts import assert_gpu_and_cpu_are_equal_collect
 from data_gen import *
 from marks import incompat, approximate_float
+from spark_session import with_cpu_session
 from pyspark.sql.types import *
 import pyspark.sql.functions as f
 
@@ -137,10 +138,23 @@ def test_filter_with_lit(expr):
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : unary_op_df(spark, LongGen()).filter(expr))
 
+# Spark supports two different versions of 'IN', and it depends on the spark.sql.optimizer.inSetConversionThreshold conf
+# This is to test entries under that value.
 @pytest.mark.parametrize('data_gen', eq_gens, ids=idfn)
 def test_in(data_gen):
     # nulls are not supported for in on the GPU yet
-    scalars = list(gen_scalars(data_gen, 5, force_no_nulls=True))
+    num_entries = int(with_cpu_session(lambda spark: spark.conf.get('spark.sql.optimizer.inSetConversionThreshold'))) - 1
+    scalars = list(gen_scalars(data_gen, num_entries, force_no_nulls=True))
+    assert_gpu_and_cpu_are_equal_collect(
+            lambda spark : unary_op_df(spark, data_gen).select(f.col('a').isin(scalars)))
+
+# Spark supports two different versions of 'IN', and it depends on the spark.sql.optimizer.inSetConversionThreshold conf
+# This is to test entries over that value.
+@pytest.mark.parametrize('data_gen', eq_gens, ids=idfn)
+def test_in_set(data_gen):
+    # nulls are not supported for in on the GPU yet
+    num_entries = int(with_cpu_session(lambda spark: spark.conf.get('spark.sql.optimizer.inSetConversionThreshold'))) + 1
+    scalars = list(gen_scalars(data_gen, num_entries, force_no_nulls=True))
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : unary_op_df(spark, data_gen).select(f.col('a').isin(scalars)))
 

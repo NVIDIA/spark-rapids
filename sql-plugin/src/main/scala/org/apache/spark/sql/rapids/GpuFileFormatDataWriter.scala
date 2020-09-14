@@ -192,7 +192,7 @@ class GpuDynamicPartitionDataWriter(
 
   /** Extracts the partition values out of an input batch. */
   private lazy val getPartitionColumns: ColumnarBatch => Table = {
-    val expressions = GpuBindReferences.bindReferences(
+    val expressions = GpuBindReferences.bindGpuReferences(
       description.partitionColumns,
       description.allColumns)
     cb => {
@@ -207,7 +207,7 @@ class GpuDynamicPartitionDataWriter(
 
   /** Extracts the output values of an input batch. */
   private lazy val getOutputColumns: ColumnarBatch => Table = {
-    val expressions = GpuBindReferences.bindReferences(
+    val expressions = GpuBindReferences.bindGpuReferences(
       description.dataColumns,
       description.allColumns)
     cb => {
@@ -226,7 +226,7 @@ class GpuDynamicPartitionDataWriter(
    */
   private lazy val partitionPathExpression: Expression = Concat(
     description.partitionColumns.zipWithIndex.flatMap { case (c, i) =>
-      val partitionName = ScalaUDF(
+      val partitionName = ShimLoader.getSparkShims.getScalaUDFAsExpression(
         ExternalCatalogUtils.getPartitionPathString _,
         StringType,
         Seq(Literal(c.name), Cast(c, StringType, Option(description.timeZoneId))))
