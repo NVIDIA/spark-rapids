@@ -106,6 +106,7 @@ Generated on 2020-09-14
 ### PRs
 |||
 |:---|:---|
+|[#758](https://github.com/NVIDIA/spark-rapids/pull/758)|Skip the udf test fails periodically.|
 |[#752](https://github.com/NVIDIA/spark-rapids/pull/752)|Fix snapshot plugin jar version in docs|
 |[#751](https://github.com/NVIDIA/spark-rapids/pull/751)|Correct the channel for cudf installation|
 |[#754](https://github.com/NVIDIA/spark-rapids/pull/754)|Filter nulls from joins where possible to improve performance|
@@ -360,7 +361,12 @@ Generated on 2020-09-14
 |[#214](https://github.com/NVIDIA/spark-rapids/pull/214)|[REVIEW] Test failure to pass Attribute as GpuAttribute|
 |[#211](https://github.com/NVIDIA/spark-rapids/pull/211)|Add project leads to pom developer list|
 |[#210](https://github.com/NVIDIA/spark-rapids/pull/210)|Updated coverage docs|
+|[#195](https://github.com/NVIDIA/spark-rapids/pull/195)|Support public release for plugin jar|
+|[#208](https://github.com/NVIDIA/spark-rapids/pull/208)|Remove unneeded comment from pom.xml|
+|[#191](https://github.com/NVIDIA/spark-rapids/pull/191)|WindowExec handle different spark distributions|
+|[#181](https://github.com/NVIDIA/spark-rapids/pull/181)|Remove INCOMPAT for NormalizeNanAndZero, KnownFloatingPointNormalized|
 |[#196](https://github.com/NVIDIA/spark-rapids/pull/196)|Update Spark dependency to the released 3.0.0 artifacts|
+|[#206](https://github.com/NVIDIA/spark-rapids/pull/206)|Change groupID to 'com.nvidia' in IT scripts|
 |[#202](https://github.com/NVIDIA/spark-rapids/pull/202)|Fixed issue for contains when searching for an empty string|
 |[#201](https://github.com/NVIDIA/spark-rapids/pull/201)|Fix name of scan|
 |[#200](https://github.com/NVIDIA/spark-rapids/pull/200)|Fix issue with GpuAttributeReference not overrideing references|
