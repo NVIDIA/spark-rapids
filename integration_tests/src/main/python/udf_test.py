@@ -74,6 +74,7 @@ def test_single_aggregate_udf(data_gen):
                 pandas_sum(f.col('a'))),
             conf=arrow_udf_conf)
 
+@pytest.mark.skip("https://github.com/NVIDIA/spark-rapids/issues/757")
 @ignore_order
 @allow_non_gpu('AggregateInPandasExec', 'PythonUDF', 'Alias')
 @pytest.mark.parametrize('data_gen', integral_gens, ids=idfn)

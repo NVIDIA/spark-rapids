@@ -584,7 +584,6 @@ object RapidsConf {
     .booleanConf
     .createWithDefault(true)
 
-  // USER FACING SHUFFLE CONFIGS
   val SHUFFLE_TRANSPORT_ENABLE = conf("spark.rapids.shuffle.transport.enabled")
     .doc("When set to true, enable the Rapids Shuffle Transport for accelerated shuffle.")
     .booleanConf
