@@ -23,6 +23,7 @@ import org.apache.spark.sql.catalyst.expressions.{Attribute, Expression}
 import org.apache.spark.sql.catalyst.plans.{ExistenceJoin, FullOuter, InnerLike, JoinType, LeftAnti, LeftExistence, LeftOuter, LeftSemi, RightOuter}
 import org.apache.spark.sql.execution.joins.{BuildLeft, BuildRight, HashJoin}
 import org.apache.spark.sql.execution.metric.SQLMetric
+import org.apache.spark.sql.rapids.GpuAnd
 import org.apache.spark.sql.vectorized.{ColumnarBatch, ColumnVector}
 
 object GpuHashJoin {
@@ -38,6 +39,11 @@ object GpuHashJoin {
         meta.willNotWorkOnGpu(s"$joinType joins currently do not support conditions")
       }
     case _ => meta.willNotWorkOnGpu(s"$joinType currently is not supported")
+  }
+
+  def incRefCount(cb: ColumnarBatch): ColumnarBatch = {
+    GpuColumnVector.extractBases(cb).foreach(_.incRefCount())
+    cb
   }
 }
 
@@ -110,6 +116,67 @@ trait GpuHashJoin extends GpuExec with HashJoin {
       output.indices.map (v => v + joinLength)
   }
 
+  // Spark adds in rules to filter out nulls for some types of joins, but it does not
+  // guarantee 100% that all nulls will be filtered out by the time they get to
+  // this point, but because of https://github.com/rapidsai/cudf/issues/6052
+  // we need to filter out the nulls ourselves until it is fixed.
+  // InnerLike | LeftSemi =>
+  //   filter left and right keys
+  // RightOuter =>
+  //   filter left keys
+  // LeftOuter | LeftAnti =>
+  //   filter right keys
+
+  private[this] lazy val shouldFilterBuiltTableForNulls: Boolean = {
+    val builtAnyNullable = gpuBuildKeys.exists(_.nullable)
+    (joinType, buildSide) match {
+      case (_: InnerLike | LeftSemi, _) => builtAnyNullable
+      case (RightOuter, BuildLeft) => builtAnyNullable
+      case (LeftOuter | LeftAnti, BuildRight) => builtAnyNullable
+      case _ => false
+    }
+  }
+
+  private[this] lazy val shouldFilterStreamTableForNulls: Boolean = {
+    val streamedAnyNullable = gpuStreamedKeys.exists(_.nullable)
+    (joinType, buildSide) match {
+      case (_: InnerLike | LeftSemi, _) => streamedAnyNullable
+      case (RightOuter, BuildRight) => streamedAnyNullable
+      case (LeftOuter | LeftAnti, BuildLeft) => streamedAnyNullable
+      case _ => false
+    }
+  }
+
+  private[this] def mkNullFilterExpr(exprs: Seq[GpuExpression]): GpuExpression =
+    exprs.zipWithIndex.map { kv =>
+      GpuIsNotNull(GpuBoundReference(kv._2, kv._1.dataType, kv._1.nullable))
+    }.reduce(GpuAnd)
+
+  private[this] lazy val builtTableNullFilterExpression: GpuExpression =
+    mkNullFilterExpr(gpuBuildKeys)
+
+  private[this] lazy val streamedTableNullFilterExpression: GpuExpression =
+    mkNullFilterExpr(gpuStreamedKeys)
+
+  /**
+   * Filter the builtBatch if needed.  builtBatch will be closed.
+   * @param builtBatch
+   * @return
+   */
+  def filterBuiltTableIfNeeded(builtBatch: ColumnarBatch): ColumnarBatch =
+    if (shouldFilterBuiltTableForNulls) {
+      GpuFilter(builtBatch, builtTableNullFilterExpression)
+    } else {
+      builtBatch
+    }
+
+  private[this] def filterStreamedTableIfNeeded(streamedBatch:ColumnarBatch): ColumnarBatch =
+    if (shouldFilterStreamTableForNulls) {
+      GpuFilter(streamedBatch, streamedTableNullFilterExpression)
+    } else {
+      streamedBatch
+    }
+
   def doJoin(builtTable: Table,
       stream: Iterator[ColumnarBatch],
       boundCondition: Option[Expression],
@@ -172,16 +239,14 @@ trait GpuHashJoin extends GpuExec with HashJoin {
       joinTime: SQLMetric,
       filterTime: SQLMetric): Option[ColumnarBatch] = {
 
-    val streamedTable = try {
-      val streamedKeysBatch = GpuProjectExec.project(streamedBatch, gpuStreamedKeys)
-      try {
-        val combined = combine(streamedKeysBatch, streamedBatch)
-        GpuColumnVector.from(combined)
-      } finally {
-        streamedKeysBatch.close()
+    val combined = withResource(streamedBatch) { streamedBatch =>
+      withResource(GpuProjectExec.project(streamedBatch, gpuStreamedKeys)) {
+        streamedKeysBatch =>
+          GpuHashJoin.incRefCount(combine(streamedKeysBatch, streamedBatch))
       }
-    } finally {
-      streamedBatch.close()
+    }
+    val streamedTable = withResource(filterStreamedTableIfNeeded(combined)) { cb =>
+      GpuColumnVector.from(cb)
     }
 
     val nvtxRange = new NvtxWithMetrics("hash join", NvtxColor.ORANGE, joinTime)
