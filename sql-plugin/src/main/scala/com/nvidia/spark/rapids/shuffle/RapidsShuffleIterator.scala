@@ -16,16 +16,16 @@
 
 package com.nvidia.spark.rapids.shuffle
 
-import java.util.concurrent.LinkedBlockingQueue
+import java.util.concurrent.{LinkedBlockingQueue, TimeUnit}
 
 import scala.collection.mutable
 
 import ai.rapids.cudf.{NvtxColor, NvtxRange}
-import com.nvidia.spark.rapids._
+import com.nvidia.spark.rapids.{GpuSemaphore, RapidsBuffer, RapidsConf, ShuffleReceivedBufferCatalog, ShuffleReceivedBufferId}
 
 import org.apache.spark.TaskContext
 import org.apache.spark.internal.Logging
-import org.apache.spark.shuffle.RapidsShuffleFetchFailedException
+import org.apache.spark.shuffle.{RapidsShuffleFetchFailedException, RapidsShuffleTimeoutException}
 import org.apache.spark.sql.rapids.{GpuShuffleEnv, ShuffleMetricsUpdater}
 import org.apache.spark.sql.vectorized.ColumnarBatch
 import org.apache.spark.storage.{BlockId, BlockManagerId, ShuffleBlockBatchId, ShuffleBlockId}
@@ -42,6 +42,8 @@ import org.apache.spark.storage.{BlockId, BlockManagerId, ShuffleBlockBatchId, S
  * @param blocksByAddress blocks to fetch
  * @param metricsUpdater instance of `ShuffleMetricsUpdater` to update the Spark
  *                       shuffle metrics
+ * @param timeoutSeconds a timeout in seconds, that the iterator will wait while polling
+ *                       for batches
  */
 class RapidsShuffleIterator(
     localBlockManagerId: BlockManagerId,
@@ -49,7 +51,8 @@ class RapidsShuffleIterator(
     transport: RapidsShuffleTransport,
     blocksByAddress: Array[(BlockManagerId, Seq[(BlockId, Long, Int)])],
     metricsUpdater: ShuffleMetricsUpdater,
-    catalog: ShuffleReceivedBufferCatalog = GpuShuffleEnv.getReceivedCatalog)
+    catalog: ShuffleReceivedBufferCatalog = GpuShuffleEnv.getReceivedCatalog,
+    timeoutSeconds: Long = GpuShuffleEnv.shuffleFetchTimeoutSeconds)
   extends Iterator[ColumnarBatch]
     with Logging {
 
@@ -80,6 +83,8 @@ class RapidsShuffleIterator(
       mapIndex: Int,
       errorMessage: String) extends ShuffleClientResult
 
+  // when batches (or errors) arrive from the transport, the are pushed
+  // to the `resolvedBatches` queue.
   private[this] val resolvedBatches = new LinkedBlockingQueue[ShuffleClientResult]()
 
   // Used to track requests that are pending where the number of [[ColumnarBatch]] results is
@@ -277,6 +282,10 @@ class RapidsShuffleIterator(
   //TODO: on task completion we currently don't ask clients to stop/clean resources
   taskContext.foreach(_.addTaskCompletionListener[Unit](_ => receiveBufferCleaner()))
 
+  def pollForResult(timeoutSeconds: Long): Option[ShuffleClientResult] = {
+    Option(resolvedBatches.poll(timeoutSeconds, TimeUnit.SECONDS))
+  }
+
   override def next(): ColumnarBatch = {
     var cb: ColumnarBatch = null
     var sb: RapidsBuffer = null
@@ -306,10 +315,12 @@ class RapidsShuffleIterator(
     }
 
     val blockedStart = System.currentTimeMillis()
-    val result = resolvedBatches.take()
+    var result: Option[ShuffleClientResult] = None
+
+    result = pollForResult(timeoutSeconds)
     val blockedTime = System.currentTimeMillis() - blockedStart
     result match {
-      case BufferReceived(bufferId) =>
+      case Some(BufferReceived(bufferId)) =>
         val nvtxRangeAfterGettingBatch = new NvtxRange("RapidsShuffleIterator.gotBatch",
           NvtxColor.PURPLE)
         try {
@@ -324,8 +335,9 @@ class RapidsShuffleIterator(
           }
           catalog.removeBuffer(bufferId)
         }
-      case TransferError(blockManagerId, shuffleBlockBatchId, mapIndex, errorMessage) =>
+      case Some(TransferError(blockManagerId, shuffleBlockBatchId, mapIndex, errorMessage)) =>
         taskContext.foreach(GpuSemaphore.releaseIfNecessary)
+        metricsUpdater.update(blockedTime, 0, 0, 0)
         val errorMsg = s"Transfer error detected by shuffle iterator, failing task. ${errorMessage}"
         logError(errorMsg)
         throw new RapidsShuffleFetchFailedException(
@@ -335,6 +347,16 @@ class RapidsShuffleIterator(
           mapIndex,
           shuffleBlockBatchId.startReduceId,
           errorMsg)
+      case None =>
+        // NOTE: this isn't perfect, since what we really want is the transport to
+        // bubble this error, but for now we'll make this a fatal exception.
+        taskContext.foreach(GpuSemaphore.releaseIfNecessary)
+        metricsUpdater.update(blockedTime, 0, 0, 0)
+        val errMsg = s"Timed out after ${timeoutSeconds} seconds while waiting for a shuffle batch."
+        logError(errMsg)
+        throw new RapidsShuffleTimeoutException(errMsg)
+      case _ =>
+        throw new IllegalStateException(s"Invalid result type $result")
     }
     cb
   }
