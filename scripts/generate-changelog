@@ -257,14 +257,13 @@ def form_changelog(path: str, changelog: dict):
     sorted_dict = OrderedDict(sorted(changelog.items(), reverse=True))
     subsections = ""
     for project_name, issues in sorted_dict.items():
-        subsections += f"\n## {project_name}\n"
+        subsections += f"\n\n## {project_name}"
         subsections += form_subsection(issues, FEATURES)
         subsections += form_subsection(issues, PERFORMANCE)
         subsections += form_subsection(issues, BUGS_FIXED)
         subsections += form_subsection(issues, PRS)
     markdown = f"""# Change log
-Generated on {date.today()}
-{subsections}
+Generated on {date.today()}{subsections}
 """
     with open(path, "w") as file:
         file.write(markdown)
@@ -273,8 +272,8 @@ Generated on {date.today()}
 def form_subsection(issues: dict, subtitle: str):
     if len(issues[subtitle]) == 0:
         return ''
-    subsection = f"\n### {subtitle}\n"
-    subsection += "|||\n|:---|:---|"
+    subsection = f"\n\n### {subtitle}"
+    subsection += "\n|||\n|:---|:---|"
     for issue in sorted(issues[subtitle], key=lambda x: x['time'], reverse=True):
         subsection += f"\n|[#{issue['number']}]({issue['url']})|{issue['title']}|"
     return subsection
