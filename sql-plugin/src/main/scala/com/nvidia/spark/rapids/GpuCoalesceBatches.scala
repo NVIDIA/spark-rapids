@@ -297,11 +297,11 @@ abstract class AbstractGpuCoalesceIterator(
             // types are supported, this logic will need to be enhanced to take offset and validity
             // buffers into account since they could account for a larger percentage of overall
             // memory usage.
-            val wouldBeStringColumnSizes = {
+            val wouldBeStringColumnSizes =
             stringFieldIndices.map(i => getColumnDataSize(cb, i, wouldBeColumnSizes(i)))
               .zip(stringColumnSizes)
               .map(pair => pair._1 + pair._2)
-            }
+
             if (wouldBeRows > Int.MaxValue) {
               if (goal == RequireSingleBatch) {
                 throw new IllegalStateException("A single batch is required for this operation," +
