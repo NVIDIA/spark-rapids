@@ -21,7 +21,6 @@ import java.nio.charset.StandardCharsets
 
 import org.apache.hadoop.fs.Path
 import org.apache.parquet.hadoop.ParquetFileReader
-
 import org.apache.spark.{SparkConf, SparkException}
 
 /**
@@ -96,6 +95,21 @@ class ParquetWriterSuite extends SparkQueryCompareTestSuite {
     oldDatesDf,
     new SparkConf().set("spark.sql.legacy.parquet.datetimeRebaseModeInWrite", "EXCEPTION")) {
     val tempFile = File.createTempFile("oldDates", "parquet")
+    tempFile.delete()
+    frame => {
+      frame.write.mode("overwrite").parquet(tempFile.getAbsolutePath)
+      frame
+    }
+  }
+
+  testExpectedGpuException(
+    "Old timestamps millis in EXCEPTION mode",
+    classOf[SparkException],
+    oldTsDf,
+    new SparkConf()
+      .set("spark.sql.legacy.parquet.datetimeRebaseModeInWrite", "EXCEPTION")
+      .set("spark.sql.parquet.outputTimestampType", "TIMESTAMP_MILLIS")) {
+    val tempFile = File.createTempFile("oldTimeStamp", "parquet")
     tempFile.delete()
     frame => {
       frame.write.mode("overwrite").parquet(tempFile.getAbsolutePath)

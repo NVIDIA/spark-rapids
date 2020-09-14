@@ -18,7 +18,6 @@ package com.nvidia.spark
 
 import ai.rapids.cudf.{ColumnVector, DType, Scalar}
 import com.nvidia.spark.rapids.Arm
-
 import org.apache.spark.sql.catalyst.util.RebaseDateTime
 import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.rapids.execution.TrampolineUtil
@@ -39,7 +38,7 @@ object RebaseHelper extends Arm {
     } else if (dtype.isTimestamp) {
       assert(dtype == DType.TIMESTAMP_MICROSECONDS)
       withResource(
-        Scalar.timestampFromLong(DType.TIMESTAMP_MICROSECONDS, startTs)) { minGood =>
+        Scalar.timestampFromLong(column.getDataType, startTs)) { minGood =>
         withResource(column.lessThan(minGood)) { hasBad =>
           withResource(hasBad.any()) { a =>
             a.getBoolean

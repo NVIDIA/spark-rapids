@@ -66,7 +66,6 @@ abstract class ColumnarOutputWriter(path: String, context: TaskAttemptContext,
 
   val tableWriter: TableWriter
   val conf = context.getConfiguration
-  val outputTimestampType = conf.get(SQLConf.PARQUET_OUTPUT_TIMESTAMP_TYPE.key)
 
   private[this] val outputStream: FSDataOutputStream = {
     val hadoopPath = new Path(path)
@@ -108,28 +107,13 @@ abstract class ColumnarOutputWriter(path: String, context: TaskAttemptContext,
    */
   def write(batch: ColumnarBatch, statsTrackers: Seq[ColumnarWriteTaskStatsTracker]): Unit = {
     var needToCloseBatch = true
-    val newBatch =
-      if (outputTimestampType == ParquetOutputTimestampType.TIMESTAMP_MILLIS.toString) {
-        new ColumnarBatch(GpuColumnVector.extractColumns(batch).map {
-          cv => {
-            cv.dataType() match {
-              case DataTypes.TimestampType => new GpuColumnVector(DataTypes.TimestampType,
-                withResource(cv.getBase()) { v =>
-                  v.castTo(DType.TIMESTAMP_MILLISECONDS)
-                })
-              case _ => cv
-            }
-          }
-        })
-      } else {
-        batch
-      }
+
     try {
       val writeStartTimestamp = System.nanoTime
       val writeRange = new NvtxRange("File write", NvtxColor.YELLOW)
       val gpuTime = try {
         needToCloseBatch = false
-        writeBatch(newBatch)
+        writeBatch(batch)
       } finally {
         writeRange.close()
       }
@@ -144,7 +128,7 @@ abstract class ColumnarOutputWriter(path: String, context: TaskAttemptContext,
       }
     } finally {
       if (needToCloseBatch) {
-        newBatch.close()
+        batch.close()
       }
     }
   }

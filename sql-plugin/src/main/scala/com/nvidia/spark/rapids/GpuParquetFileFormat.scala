@@ -23,15 +23,16 @@ import org.apache.parquet.hadoop.{ParquetOutputCommitter, ParquetOutputFormat}
 import org.apache.parquet.hadoop.ParquetOutputFormat.JobSummaryLevel
 import org.apache.parquet.hadoop.codec.CodecConfig
 import org.apache.parquet.hadoop.util.ContextUtil
-
 import org.apache.spark.internal.Logging
 import org.apache.spark.sql.{Row, SparkSession}
 import org.apache.spark.sql.execution.datasources.DataSourceUtils
 import org.apache.spark.sql.execution.datasources.parquet.{ParquetOptions, ParquetWriteSupport}
 import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.internal.SQLConf.ParquetOutputTimestampType
+import org.apache.spark.sql.rapids.ColumnarWriteTaskStatsTracker
 import org.apache.spark.sql.rapids.execution.TrampolineUtil
-import org.apache.spark.sql.types.{DateType, StructType, TimestampType}
+import org.apache.spark.sql.types.{DataTypes, DateType, StructType, TimestampType}
+import org.apache.spark.sql.vectorized.ColumnarBatch
 
 object GpuParquetFileFormat {
   def tagGpuSupport(
@@ -225,6 +226,8 @@ class GpuParquetWriter(
     context: TaskAttemptContext)
   extends ColumnarOutputWriter(path, context, dataSchema, "Parquet") {
 
+  val outputTimestampType = conf.get(SQLConf.PARQUET_OUTPUT_TIMESTAMP_TYPE.key)
+
   override def scanTableBeforeWrite(table: Table): Unit = {
     if (dateTimeRebaseException) {
       (0 until table.getNumberOfColumns).foreach { i =>
@@ -235,6 +238,32 @@ class GpuParquetWriter(
     }
   }
 
+  /**
+   * Persists a columnar batch. Invoked on the executor side. When writing to dynamically
+   * partitioned tables, dynamic partition columns are not included in columns to be written.
+   * NOTE: It is the writer's responsibility to close the batch.
+   */
+  override def write(batch: ColumnarBatch,
+     statsTrackers: Seq[ColumnarWriteTaskStatsTracker]): Unit = {
+    val newBatch =
+      if (outputTimestampType == ParquetOutputTimestampType.TIMESTAMP_MILLIS.toString) {
+        new ColumnarBatch(GpuColumnVector.extractColumns(batch).map {
+          cv => {
+            cv.dataType() match {
+              case DataTypes.TimestampType => new GpuColumnVector(DataTypes.TimestampType,
+                withResource(cv.getBase()) { v =>
+                  v.castTo(DType.TIMESTAMP_MILLISECONDS)
+                })
+              case _ => cv
+            }
+          }
+        })
+      } else {
+        batch
+      }
+
+    super.write(newBatch, statsTrackers)
+  }
   override val tableWriter: TableWriter = {
     val writeContext = new ParquetWriteSupport().init(conf)
     val builder = ParquetWriterOptions.builder()
