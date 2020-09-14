@@ -44,8 +44,8 @@ if [ "$DATABRICKS" == true ]; then
     cd spark-rapids
 fi
 
-ART_ID=`mvn exec:exec -q -pl $DIST_PL -Dexec.executable=echo -Dexec.args='${project.artifactId}'`
-ART_VER=`mvn exec:exec -q -pl $DIST_PL -Dexec.executable=echo -Dexec.args='${project.version}'`
+ART_ID=`mvn help:evaluate -q -pl $DIST_PL -Dexpression=project.artifactId -DforceStdout`
+ART_VER=`mvn help:evaluate -q -pl $DIST_PL -Dexpression=project.version -DforceStdout`
 
 FPATH="$DIST_PL/target/$ART_ID-$ART_VER"
 
@@ -56,11 +56,11 @@ echo "Plan to deploy ${FPATH}.jar to $SERVER_URL (ID:$SERVER_ID)"
 
 if [ "$SIGN_FILE" == true ]; then
     # No javadoc and sources jar is generated for shade artifact only. Use 'sql-plugin' instead
-    SQL_ART_ID=`mvn exec:exec -q -pl $SQL_PL -Dexec.executable=echo -Dexec.args='${project.artifactId}'`
-    SQL_ART_VER=`mvn exec:exec -q -pl $SQL_PL -Dexec.executable=echo -Dexec.args='${project.version}'`
+    SQL_ART_ID=`mvn help:evaluate -q -pl $SQL_PL -Dexpression=project.artifactId -DforceStdout`
+    SQL_ART_VER=`mvn help:evaluate -q -pl $SQL_PL -Dexpression=project.version -DforceStdout`
     JS_FPATH="${SQL_PL}/target/${SQL_ART_ID}-${SQL_ART_VER}"
     SRC_DOC_JARS="-Dsources=${JS_FPATH}-sources.jar -Djavadoc=${JS_FPATH}-javadoc.jar"
-    DEPLOY_CMD="mvn -B '-Pinclude-databricks,!snapshot-shims' gpg:sign-and-deploy-file -s jenkins/settings.xml -Dgpg.passphrase=$GPG_PASSPHRASE"
+    DEPLOY_CMD="mvn -B gpg:sign-and-deploy-file -s jenkins/settings.xml -Dgpg.passphrase=$GPG_PASSPHRASE"
 else
     DEPLOY_CMD="mvn -B '-Pinclude-databricks,!snapshot-shims' deploy:deploy-file -s jenkins/settings.xml"
 fi
