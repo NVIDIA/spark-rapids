@@ -43,7 +43,7 @@ import org.apache.spark.sql.execution.datasources.{HadoopFileLinesReader, Partit
 import org.apache.spark.sql.execution.datasources.csv.CSVDataSource
 import org.apache.spark.sql.execution.datasources.v2._
 import org.apache.spark.sql.execution.datasources.v2.csv.CSVScan
-import org.apache.spark.sql.execution.metric.{SQLMetric, SQLMetrics}
+import org.apache.spark.sql.execution.metric.SQLMetric
 import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.types.{DateType, StructField, StructType, TimestampType}
 import org.apache.spark.sql.util.CaseInsensitiveStringMap
@@ -59,10 +59,7 @@ case class GpuBatchScanExec(
 
   override def supportsColumnar = true
 
-  override lazy val additionalMetrics = Map(
-    "bufferTime" -> SQLMetrics.createNanoTimingMetric(sparkContext, "buffer time"),
-    "peakDevMemory" -> SQLMetrics.createSizeMetric(sparkContext, "peak device memory")
-  )
+  override lazy val additionalMetrics = GpuMetricNames.buildGpuScanMetrics(sparkContext)
 
   scan match {
     case s: ScanWithMetrics => s.metrics = metrics ++ additionalMetrics
@@ -328,7 +325,7 @@ class CSVPartitionReader(
     maxRowsPerChunk: Integer,
     maxBytesPerChunk: Long,
     execMetrics: Map[String, SQLMetric])
-  extends PartitionReader[ColumnarBatch] with ScanWithMetrics {
+  extends PartitionReader[ColumnarBatch] with ScanWithMetrics with Arm {
 
   private var batch: Option[ColumnarBatch] = None
   private val lineReader = new HadoopFileLinesReader(partFile, parsedOptions.lineSeparatorInRead,
@@ -380,22 +377,16 @@ class CSVPartitionReader(
    */
   private def growHostBuffer(original: HostMemoryBuffer, needed: Long): HostMemoryBuffer = {
     val newSize = Math.max(original.getLength * 2, needed)
-    val result = HostMemoryBuffer.allocate(newSize)
-    try {
+    closeOnExcept(HostMemoryBuffer.allocate(newSize)) { result =>
       result.copyFromHostBuffer(0, original, 0, original.getLength)
       original.close()
-    } catch {
-      case e: Throwable =>
-        result.close()
-        throw e
+      result
     }
-    result
   }
 
-  private def readPartFile(): (HostMemoryBuffer, Long, Integer) = {
-    val nvtxRange = new NvtxWithMetrics("Buffer file split", NvtxColor.YELLOW,
-      metrics("bufferTime"))
-    try {
+  private def readPartFile(): (HostMemoryBuffer, Long) = {
+    withResource(new NvtxWithMetrics("Buffer file split", NvtxColor.YELLOW,
+        metrics("bufferTime"))) { _ =>
       isFirstChunkForIterator = false
       val separator = parsedOptions.lineSeparatorInRead.getOrElse(Array('\n'.toByte))
       var succeeded = false
@@ -429,15 +420,12 @@ class CSVPartitionReader(
           hmb.close()
         }
       }
-      (hmb, totalSize, totalRows)
-    } finally {
-      nvtxRange.close()
+      (hmb, totalSize)
     }
   }
 
   private def readBatch(): Option[ColumnarBatch] = {
-    val nvtxRange = new NvtxWithMetrics("CSV readBatch", NvtxColor.GREEN, metrics(TOTAL_TIME))
-    try {
+    withResource(new NvtxWithMetrics("CSV readBatch", NvtxColor.GREEN, metrics(TOTAL_TIME))) { _ =>
       val hasHeader = partFile.start == 0 && isFirstChunkForIterator && parsedOptions.headerFlag
       val table = readToTable(hasHeader)
       try {
@@ -450,13 +438,11 @@ class CSVPartitionReader(
         metrics(NUM_OUTPUT_BATCHES) += 1
         table.foreach(_.close())
       }
-    } finally {
-      nvtxRange.close()
     }
   }
 
   private def readToTable(hasHeader: Boolean): Option[Table] = {
-    val (dataBuffer, dataSize, totalRows) = readPartFile()
+    val (dataBuffer, dataSize) = readPartFile()
     try {
       if (dataSize == 0) {
         None
@@ -474,7 +460,10 @@ class CSVPartitionReader(
         GpuSemaphore.acquireIfNecessary(TaskContext.get())
 
         // The buffer that is sent down
-        val table = Table.readCSV(cudfSchema, csvOpts, dataBuffer, 0, dataSize)
+        val table = withResource(new NvtxWithMetrics("CSV decode", NvtxColor.DARK_GREEN,
+            metrics(GPU_DECODE_TIME))) { _ =>
+          Table.readCSV(cudfSchema, csvOpts, dataBuffer, 0, dataSize)
+        }
         maxDeviceMemory = max(GpuColumnVector.getTotalDeviceMemoryUsed(table), maxDeviceMemory)
         val numColumns = table.getNumberOfColumns
         if (newReadDataSchema.length != numColumns) {

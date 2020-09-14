@@ -21,8 +21,8 @@ import com.nvidia.spark.rapids.GpuMetricNames._
 
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.InternalRow
-import org.apache.spark.sql.catalyst.expressions.{Attribute, NamedExpression, SortOrder}
-import org.apache.spark.sql.catalyst.plans.physical.Partitioning
+import org.apache.spark.sql.catalyst.expressions.{Ascending, Attribute, Expression, NamedExpression, SortOrder}
+import org.apache.spark.sql.catalyst.plans.physical.{AllTuples, ClusteredDistribution, Distribution, Partitioning}
 import org.apache.spark.sql.execution.{SparkPlan, UnaryExecNode}
 import org.apache.spark.sql.execution.metric.{SQLMetric, SQLMetrics}
 import org.apache.spark.sql.execution.window.WindowExec
@@ -66,8 +66,13 @@ class GpuWindowExecMeta(windowExec: WindowExec,
 
   private val (inputWindowExpressions, resultColumnsOnly) = getWindowExpression
 
-  val windowExpressions: Seq[ExprMeta[NamedExpression]] =
+  val windowExpressions: Seq[BaseExprMeta[NamedExpression]] =
     inputWindowExpressions.map(GpuOverrides.wrapExpr(_, conf, Some(this)))
+
+  val partitionSpec: Seq[BaseExprMeta[Expression]] =
+    windowExec.partitionSpec.map(GpuOverrides.wrapExpr(_, conf, Some(this)))
+  val orderSpec: Seq[BaseExprMeta[SortOrder]] =
+    windowExec.orderSpec.map(GpuOverrides.wrapExpr(_, conf, Some(this)))
 
   override def tagPlanForGpu(): Unit = {
 
@@ -83,6 +88,8 @@ class GpuWindowExecMeta(windowExec: WindowExec,
   override def convertToGpu(): GpuExec = {
     GpuWindowExec(
       windowExpressions.map(_.convertToGpu()),
+      partitionSpec.map(_.convertToGpu()),
+      orderSpec.map(_.convertToGpu().asInstanceOf[SortOrder]),
       childPlans.head.convertIfNeeded(),
       resultColumnsOnly
     )
@@ -90,7 +97,9 @@ class GpuWindowExecMeta(windowExec: WindowExec,
 }
 
 case class GpuWindowExec(
-    windowExpressionAliases: Seq[GpuExpression],
+    windowExpressionAliases: Seq[Expression],
+    partitionSpec: Seq[Expression],
+    orderSpec: Seq[SortOrder],
     child: SparkPlan,
     resultColumnsOnly: Boolean
   ) extends UnaryExecNode with GpuExec {
@@ -100,6 +109,18 @@ case class GpuWindowExec(
   } else {
     child.output ++ windowExpressionAliases.map(_.asInstanceOf[NamedExpression].toAttribute)
   }
+
+  override def requiredChildDistribution: Seq[Distribution] = {
+    if (partitionSpec.isEmpty) {
+      // Only show warning when the number of bytes is larger than 100 MiB?
+      logWarning("No Partition Defined for Window operation! Moving all data to a single "
+        + "partition, this can cause serious performance degradation.")
+      AllTuples :: Nil
+    } else ClusteredDistribution(partitionSpec) :: Nil
+  }
+
+  override def requiredChildOrdering: Seq[Seq[SortOrder]] =
+    Seq(partitionSpec.map(SortOrder(_, Ascending)) ++ orderSpec)
 
   override def outputOrdering: Seq[SortOrder] = child.outputOrdering
 
@@ -131,8 +152,7 @@ case class GpuWindowExec(
 
     // Address bindings for all expressions evaluated by WindowExec.
     val boundProjectList = windowExpressionAliases.map(
-      alias => GpuBindReferences.bindReference(alias, child.output)
-    )
+      alias => GpuBindReferences.bindReference(alias, child.output))
 
     // Bind aggregation column.
     boundProjectList.map(

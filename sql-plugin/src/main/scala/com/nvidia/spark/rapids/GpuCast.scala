@@ -70,9 +70,16 @@ class CastExprMeta[INPUT <: CastBase](
         "operation on the GPU, set" +
         s" ${RapidsConf.ENABLE_CAST_STRING_TO_INTEGER} to true.")
     }
+    if (!conf.isCastStringToTimestampEnabled && fromType == DataTypes.StringType
+      && toType == DataTypes.TimestampType) {
+      willNotWorkOnGpu("the GPU only supports a subset of formats " +
+        "when casting strings to timestamps. Refer to the CAST documentation " +
+        "for more details. To enable this operation on the GPU, set" +
+        s" ${RapidsConf.ENABLE_CAST_STRING_TO_TIMESTAMP} to true.")
+    }
   }
 
-  override def convertToGpu(child: GpuExpression): GpuExpression =
+  override def convertToGpu(child: Expression): GpuExpression =
     GpuCast(child, toType, ansiEnabled, cast.timeZoneId)
 }
 
@@ -179,7 +186,7 @@ object GpuCast {
  * Casts using the GPU
  */
 case class GpuCast(
-    child: GpuExpression,
+    child: Expression,
     dataType: DataType,
     ansiMode: Boolean = false,
     timeZoneId: Option[String] = None)
@@ -359,25 +366,35 @@ case class GpuCast(
           withResource(input.getBase.nansToNulls()) { inputWithNansToNull =>
             withResource(FloatUtils.infinityToNulls(inputWithNansToNull)) {
               inputWithoutNanAndInfinity =>
-                withResource(inputWithoutNanAndInfinity.mul(microsPerSec)) { inputTimesMicrosCv =>
-                  GpuColumnVector.from(inputTimesMicrosCv.castTo(DType.TIMESTAMP_MICROSECONDS))
+                withResource(inputWithoutNanAndInfinity.mul(microsPerSec, DType.INT64)) {
+                  inputTimesMicrosCv =>
+                    GpuColumnVector.from(inputTimesMicrosCv.castTo(DType.TIMESTAMP_MICROSECONDS))
                 }
             }
+          }
+        }
+      case (BooleanType, TimestampType) =>
+        // cudf requires casting to a long first.
+        withResource(input.getBase.castTo(DType.INT64)) { longs =>
+          GpuColumnVector.from(longs.castTo(cudfType))
+        }
+      case (BooleanType | ByteType | ShortType | IntegerType, TimestampType) =>
+        // cudf requires casting to a long first
+        withResource(input.getBase.castTo(DType.INT64)) { longs =>
+          withResource(longs.castTo(DType.TIMESTAMP_SECONDS)) { timestampSecs =>
+            GpuColumnVector.from(timestampSecs.castTo(cudfType))
           }
         }
       case (_: NumericType, TimestampType) =>
         // Spark casting to timestamp assumes value is in seconds, but timestamps
         // are tracked in microseconds.
-        val timestampSecs = input.getBase.castTo(DType.TIMESTAMP_SECONDS)
-        try {
+        withResource(input.getBase.castTo(DType.TIMESTAMP_SECONDS)) { timestampSecs =>
           GpuColumnVector.from(timestampSecs.castTo(cudfType))
-        } finally {
-          timestampSecs.close();
         }
+      case (FloatType, LongType) | (DoubleType, IntegerType | LongType) =>
         // Float.NaN => Int is casted to a zero but float.NaN => Long returns a small negative
         // number Double.NaN => Int | Long, returns a small negative number so Nans have to be
         // converted to zero first
-      case (FloatType, LongType) | (DoubleType, IntegerType | LongType) =>
         withResource(FloatUtils.nanToZero(input.getBase)) { inputWithNansToZero =>
           GpuColumnVector.from(inputWithNansToZero.castTo(cudfType))
         }

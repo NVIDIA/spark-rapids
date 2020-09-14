@@ -23,16 +23,19 @@ import com.nvidia.spark.rapids.GpuOverrides.isStringLit
 import org.apache.spark.sql.catalyst.expressions.{BinaryExpression, ComplexTypeMergingExpression, Expression, String2TrimExpression, TernaryExpression, UnaryExpression}
 import org.apache.spark.sql.catalyst.expressions.aggregate.AggregateFunction
 import org.apache.spark.sql.catalyst.plans.physical.Partitioning
+import org.apache.spark.sql.catalyst.trees.TreeNodeTag
 import org.apache.spark.sql.connector.read.Scan
 import org.apache.spark.sql.execution.SparkPlan
+import org.apache.spark.sql.execution.adaptive.{QueryStageExec, ShuffleQueryStageExec}
 import org.apache.spark.sql.execution.command.DataWritingCommand
-import org.apache.spark.sql.execution.exchange.ShuffleExchangeExec
-import org.apache.spark.sql.execution.joins.{BroadcastHashJoinExec, BuildLeft, BuildRight, ShuffledHashJoinExec, SortMergeJoinExec}
-import org.apache.spark.sql.types.{CalendarIntervalType, DataType, DataTypes, StringType}
+import org.apache.spark.sql.execution.exchange.{ReusedExchangeExec, ShuffleExchangeExec}
+import org.apache.spark.sql.execution.joins.{BroadcastHashJoinExec, ShuffledHashJoinExec, SortMergeJoinExec}
+import org.apache.spark.sql.types.DataType
 
 trait ConfKeysAndIncompat {
   val operationName: String
   def incompatDoc: Option[String] = None
+  def disabledMsg: Option[String] = None
 
   def confKey: String
 }
@@ -74,7 +77,7 @@ abstract class RapidsMeta[INPUT <: BASE, BASE, OUTPUT <: BASE](
   /**
    * The wrapped expressions that should be examined
    */
-  val childExprs: Seq[ExprMeta[_]]
+  val childExprs: Seq[BaseExprMeta[_]]
 
   /**
    * The wrapped scans that should be examined
@@ -115,12 +118,23 @@ abstract class RapidsMeta[INPUT <: BASE, BASE, OUTPUT <: BASE](
 
   private var shouldBeRemovedReasons: Option[mutable.Set[String]] = None
 
+  val gpuSupportedTag = TreeNodeTag[Set[String]]("rapids.gpu.supported")
+
   /**
    * Call this to indicate that this should not be replaced with a GPU enabled version
    * @param because why it should not be replaced.
    */
-  final def willNotWorkOnGpu(because: String): Unit =
+  final def willNotWorkOnGpu(because: String): Unit = {
     cannotBeReplacedReasons.get.add(because)
+    // annotate the real spark plan with the reason as well so that the information is available
+    // during query stage planning when AQE is on
+    wrapped match {
+      case p: SparkPlan =>
+        p.setTagValue(gpuSupportedTag,
+          p.getTagValue(gpuSupportedTag).getOrElse(Set.empty) + because)
+      case _ =>
+    }
+  }
 
   final def shouldBeRemoved(because: String): Unit =
     shouldBeRemovedReasons.get.add(because)
@@ -159,6 +173,8 @@ abstract class RapidsMeta[INPUT <: BASE, BASE, OUTPUT <: BASE](
   final val operationName: String = rule.operationName
   final val incompatDoc: Option[String] = rule.incompatDoc
   def isIncompat: Boolean = incompatDoc.isDefined
+  final val disabledMsg: Option[String] = rule.disabledMsg
+  def isDisabledByDefault: Boolean = disabledMsg.isDefined
 
   def initReasons(): Unit = {
     cannotBeReplacedReasons = Some(mutable.Set[String]())
@@ -179,16 +195,20 @@ abstract class RapidsMeta[INPUT <: BASE, BASE, OUTPUT <: BASE](
 
     initReasons()
 
-    if (!conf.isOperatorEnabled(confKey, isIncompat)) {
+    if (!conf.isOperatorEnabled(confKey, isIncompat, isDisabledByDefault)) {
       if (isIncompat && !conf.isIncompatEnabled) {
         willNotWorkOnGpu(s"the GPU version of ${wrapped.getClass.getSimpleName}" +
-          s" is not 100% compatible with the Spark version. ${incompatDoc.get}. To enable this" +
-          s" ${operationName} despite the incompatibilities please set the config" +
-          s" ${confKey} to true. You could also set ${RapidsConf.INCOMPATIBLE_OPS} to true" +
-          s" to enable all incompatible ops")
+            s" is not 100% compatible with the Spark version. ${incompatDoc.get}. To enable this" +
+            s" $operationName despite the incompatibilities please set the config" +
+            s" $confKey to true. You could also set ${RapidsConf.INCOMPATIBLE_OPS} to true" +
+            s" to enable all incompatible ops")
+      } else if (isDisabledByDefault) {
+        willNotWorkOnGpu(s"the $operationName ${wrapped.getClass.getSimpleName} has" +
+            s" been disabled, and is disabled by default because ${disabledMsg.get}. Set $confKey" +
+            s" to true if you wish to enable it")
       } else {
-        willNotWorkOnGpu(s"the ${operationName} ${wrapped.getClass.getSimpleName} has" +
-          s" been disabled. Set ${confKey} to true if you wish to enable it")
+        willNotWorkOnGpu(s"the $operationName ${wrapped.getClass.getSimpleName} has" +
+            s" been disabled. Set $confKey to true if you wish to enable it")
       }
     }
 
@@ -207,12 +227,15 @@ abstract class RapidsMeta[INPUT <: BASE, BASE, OUTPUT <: BASE](
   private def indent(append: StringBuilder, depth: Int): Unit =
     append.append("  " * depth)
 
+  def couldReplaceMessage: String = "could run on GPU"
+  def noReplacementPossibleMessage(reasons: String): String = s"cannot run on GPU because $reasons"
+  def suppressWillWorkOnGpuInfo: Boolean = false
+
   private def willWorkOnGpuInfo: String = cannotBeReplacedReasons match {
     case None => "NOT EVALUATED FOR GPU YET"
-    case Some(v) if v.isEmpty => "could run on GPU"
+    case Some(v) if v.isEmpty => couldReplaceMessage
     case Some(v) =>
-      val reasons = v mkString "; "
-      s"cannot run on GPU because ${reasons}"
+      noReplacementPossibleMessage(v mkString "; ")
   }
 
   private def willBeRemovedInfo: String = shouldBeRemovedReasons match {
@@ -220,7 +243,7 @@ abstract class RapidsMeta[INPUT <: BASE, BASE, OUTPUT <: BASE](
     case Some(v) if v.isEmpty => ""
     case Some(v) =>
       val reasons = v mkString "; "
-      s" but is going to be removed because ${reasons}"
+      s" but is going to be removed because $reasons"
   }
 
   /**
@@ -236,7 +259,7 @@ abstract class RapidsMeta[INPUT <: BASE, BASE, OUTPUT <: BASE](
    * @param all should all the data be printed or just what does not work on the GPU?
    */
   protected def print(strBuilder: StringBuilder, depth: Int, all: Boolean): Unit = {
-    if (all || !canThisBeReplaced) {
+    if ((all || !canThisBeReplaced) && !suppressWillWorkOnGpuInfo) {
       indent(strBuilder, depth)
       strBuilder.append(if (canThisBeReplaced) "*" else "!")
 
@@ -286,7 +309,7 @@ abstract class PartMeta[INPUT <: Partitioning](part: INPUT,
   extends RapidsMeta[INPUT, Partitioning, GpuPartitioning](part, conf, parent, rule) {
 
   override val childPlans: Seq[SparkPlanMeta[_]] = Seq.empty
-  override val childExprs: Seq[ExprMeta[_]] = Seq.empty
+  override val childExprs: Seq[BaseExprMeta[_]] = Seq.empty
   override val childScans: Seq[ScanMeta[_]] = Seq.empty
   override val childParts: Seq[PartMeta[_]] = Seq.empty
   override val childDataWriteCmds: Seq[DataWritingCommandMeta[_]] = Seq.empty
@@ -328,7 +351,7 @@ abstract class ScanMeta[INPUT <: Scan](scan: INPUT,
   extends RapidsMeta[INPUT, Scan, Scan](scan, conf, parent, rule) {
 
   override val childPlans: Seq[SparkPlanMeta[_]] = Seq.empty
-  override val childExprs: Seq[ExprMeta[_]] = Seq.empty
+  override val childExprs: Seq[BaseExprMeta[_]] = Seq.empty
   override val childScans: Seq[ScanMeta[_]] = Seq.empty
   override val childParts: Seq[PartMeta[_]] = Seq.empty
   override val childDataWriteCmds: Seq[DataWritingCommandMeta[_]] = Seq.empty
@@ -364,7 +387,7 @@ abstract class DataWritingCommandMeta[INPUT <: DataWritingCommand](
     extends RapidsMeta[INPUT, DataWritingCommand, GpuDataWritingCommand](cmd, conf, parent, rule) {
 
   override val childPlans: Seq[SparkPlanMeta[_]] = Seq.empty
-  override val childExprs: Seq[ExprMeta[_]] = Seq.empty
+  override val childExprs: Seq[BaseExprMeta[_]] = Seq.empty
   override val childScans: Seq[ScanMeta[_]] = Seq.empty
   override val childParts: Seq[PartMeta[_]] = Seq.empty
   override val childDataWriteCmds: Seq[DataWritingCommandMeta[_]] = Seq.empty
@@ -382,7 +405,7 @@ final class RuleNotFoundDataWritingCommandMeta[INPUT <: DataWritingCommand](
     extends DataWritingCommandMeta[INPUT](cmd, conf, parent, new NoRuleConfKeysAndIncompat) {
 
   override def tagSelfForGpu(): Unit = {
-    willNotWorkOnGpu(s"no GPU enabled version of command ${cmd.getClass} could be found")
+    willNotWorkOnGpu(s"no GPU accelerated version of command ${cmd.getClass} could be found")
   }
 
   override def convertToGpu(): GpuDataWritingCommand =
@@ -400,7 +423,7 @@ abstract class SparkPlanMeta[INPUT <: SparkPlan](plan: INPUT,
 
   override val childPlans: Seq[SparkPlanMeta[_]] =
     plan.children.map(GpuOverrides.wrapPlan(_, conf, Some(this)))
-  override val childExprs: Seq[ExprMeta[_]] =
+  override val childExprs: Seq[BaseExprMeta[_]] =
     plan.expressions.map(GpuOverrides.wrapExpr(_, conf, Some(this)))
   override val childScans: Seq[ScanMeta[_]] = Seq.empty
   override val childParts: Seq[PartMeta[_]] = Seq.empty
@@ -410,23 +433,56 @@ abstract class SparkPlanMeta[INPUT <: SparkPlan](plan: INPUT,
     wrapped.withNewChildren(childPlans.map(_.convertIfNeeded()))
   }
 
-  private def findShuffleExchanges(): Seq[SparkPlanMeta[ShuffleExchangeExec]] = wrapped match {
+  private def findShuffleExchanges(): Seq[Either[
+      SparkPlanMeta[QueryStageExec],
+      SparkPlanMeta[ShuffleExchangeExec]]] = wrapped match {
+    case _: ShuffleQueryStageExec =>
+      Left(this.asInstanceOf[SparkPlanMeta[QueryStageExec]]) :: Nil
     case _: ShuffleExchangeExec =>
-      this.asInstanceOf[SparkPlanMeta[ShuffleExchangeExec]] :: Nil
-    case bkj: BroadcastHashJoinExec => bkj.buildSide match {
-      case BuildLeft => childPlans(1).findShuffleExchanges()
-      case BuildRight => childPlans(0).findShuffleExchanges()
+      Right(this.asInstanceOf[SparkPlanMeta[ShuffleExchangeExec]]) :: Nil
+    case bkj: BroadcastHashJoinExec => ShimLoader.getSparkShims.getBuildSide(bkj) match {
+      case GpuBuildLeft => childPlans(1).findShuffleExchanges()
+      case GpuBuildRight => childPlans(0).findShuffleExchanges()
     }
     case _ => childPlans.flatMap(_.findShuffleExchanges())
   }
 
   private def makeShuffleConsistent(): Unit = {
-    val exchanges = findShuffleExchanges()
-    if (!exchanges.forall(_.canThisBeReplaced)) {
-      exchanges.foreach(_.willNotWorkOnGpu("other exchanges that feed the same join are" +
-        " on the CPU and GPU hashing is not consistent with the CPU version"))
+    // during query execution when AQE is enabled, the plan could consist of a mixture of
+    // ShuffleExchangeExec nodes for exchanges that have not started executing yet, and
+    // ShuffleQueryStageExec nodes for exchanges that have already started executing. This code
+    // attempts to tag ShuffleExchangeExec nodes for CPU if other exchanges (either
+    // ShuffleExchangeExec or ShuffleQueryStageExec nodes) were also tagged for CPU.
+    val shuffleExchanges = findShuffleExchanges()
+
+    def canThisBeReplaced(plan: Either[
+        SparkPlanMeta[QueryStageExec],
+        SparkPlanMeta[ShuffleExchangeExec]]): Boolean = {
+      plan match {
+        case Left(qs) => qs.wrapped.plan match {
+          case _: GpuExec => true
+          case ReusedExchangeExec(_, _: GpuExec) => true
+          case _ => false
+        }
+        case Right(e) => e.canThisBeReplaced
+      }
+    }
+
+    // if we can't convert all exchanges to GPU then we need to make sure that all of them
+    // run on the CPU instead
+    if (!shuffleExchanges.forall(canThisBeReplaced)) {
+      // tag any exchanges that have not been converted to query stages yet
+      shuffleExchanges.filter(_.isRight)
+          .foreach(_.right.get.willNotWorkOnGpu("other exchanges that feed the same join are" +
+              " on the CPU, and GPU hashing is not consistent with the CPU version"))
+      // verify that no query stages already got converted to GPU
+      if (shuffleExchanges.filter(_.isLeft).exists(canThisBeReplaced)) {
+        throw new IllegalStateException("Join needs to run on CPU but at least one input " +
+            "query stage ran on GPU")
+      }
     }
   }
+
 
   private def fixUpJoinConsistencyIfNeeded(): Unit = {
     childPlans.foreach(_.fixUpJoinConsistencyIfNeeded())
@@ -554,17 +610,36 @@ final class RuleNotFoundSparkPlanMeta[INPUT <: SparkPlan](
 }
 
 /**
+ * Metadata for `SparkPlan` that should not be replaced or have any kind of warning for
+ */
+final class DoNotReplaceOrWarnSparkPlanMeta[INPUT <: SparkPlan](
+    plan: INPUT,
+    conf: RapidsConf,
+    parent: Option[RapidsMeta[_, _, _]])
+    extends SparkPlanMeta[INPUT](plan, conf, parent, new NoRuleConfKeysAndIncompat) {
+
+  /** We don't want to spam the user with messages about these operators */
+  override def suppressWillWorkOnGpuInfo: Boolean = true
+
+  override def tagPlanForGpu(): Unit =
+    willNotWorkOnGpu(s"there is no need to replace ${plan.getClass}")
+
+  override def convertToGpu(): GpuExec =
+    throw new IllegalStateException("Cannot be converted to GPU")
+}
+
+/**
  * Base class for metadata around `Expression`.
  */
-abstract class ExprMeta[INPUT <: Expression](
+abstract class BaseExprMeta[INPUT <: Expression](
     expr: INPUT,
     conf: RapidsConf,
     parent: Option[RapidsMeta[_, _, _]],
     rule: ConfKeysAndIncompat)
-  extends RapidsMeta[INPUT, Expression, GpuExpression](expr, conf, parent, rule) {
+  extends RapidsMeta[INPUT, Expression, Expression](expr, conf, parent, rule) {
 
   override val childPlans: Seq[SparkPlanMeta[_]] = Seq.empty
-  override val childExprs: Seq[ExprMeta[_]] =
+  override val childExprs: Seq[BaseExprMeta[_]] =
     expr.children.map(GpuOverrides.wrapExpr(_, conf, Some(this)))
   override val childScans: Seq[ScanMeta[_]] = Seq.empty
   override val childParts: Seq[PartMeta[_]] = Seq.empty
@@ -601,6 +676,16 @@ abstract class ExprMeta[INPUT <: Expression](
   def tagExprForGpu(): Unit = {}
 }
 
+abstract class ExprMeta[INPUT <: Expression](
+    expr: INPUT,
+    conf: RapidsConf,
+    parent: Option[RapidsMeta[_, _, _]],
+    rule: ConfKeysAndIncompat)
+    extends BaseExprMeta[INPUT](expr, conf, parent, rule) {
+
+  override def convertToGpu(): GpuExpression
+}
+
 /**
  * Base class for metadata around `UnaryExpression`.
  */
@@ -614,7 +699,7 @@ abstract class UnaryExprMeta[INPUT <: UnaryExpression](
   override final def convertToGpu(): GpuExpression =
     convertToGpu(childExprs(0).convertToGpu())
 
-  def convertToGpu(child: GpuExpression): GpuExpression
+  def convertToGpu(child: Expression): GpuExpression
 }
 
 /**
@@ -630,7 +715,7 @@ abstract class AggExprMeta[INPUT <: AggregateFunction](
   override final def convertToGpu(): GpuExpression =
     convertToGpu(childExprs(0).convertToGpu())
 
-  def convertToGpu(child: GpuExpression): GpuExpression
+  def convertToGpu(child: Expression): GpuExpression
 }
 
 /**
@@ -646,7 +731,7 @@ abstract class BinaryExprMeta[INPUT <: BinaryExpression](
   override final def convertToGpu(): GpuExpression =
     convertToGpu(childExprs(0).convertToGpu(), childExprs(1).convertToGpu())
 
-  def convertToGpu(lhs: GpuExpression, rhs: GpuExpression): GpuExpression
+  def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression
 }
 
 /**
@@ -663,8 +748,8 @@ abstract class TernaryExprMeta[INPUT <: TernaryExpression](
     convertToGpu(childExprs(0).convertToGpu(), childExprs(1).convertToGpu(),
                  childExprs(2).convertToGpu())
 
-  def convertToGpu(val0: GpuExpression, val1: GpuExpression,
-                   val2: GpuExpression): GpuExpression
+  def convertToGpu(val0: Expression, val1: Expression,
+                   val2: Expression): GpuExpression
 }
 
 abstract class String2TrimExpressionMeta[INPUT <: String2TrimExpression](
@@ -690,7 +775,7 @@ abstract class String2TrimExpressionMeta[INPUT <: String2TrimExpression](
     convertToGpu(childExprs(0).convertToGpu(), trimParam)
   }
 
-  def convertToGpu(column: GpuExpression, target: Option[GpuExpression] = None): GpuExpression
+  def convertToGpu(column: Expression, target: Option[Expression] = None): GpuExpression
 }
 
 /**
@@ -705,7 +790,7 @@ abstract class ComplexTypeMergingExprMeta[INPUT <: ComplexTypeMergingExpression]
   override final def convertToGpu(): GpuExpression =
     convertToGpu(childExprs.map(_.convertToGpu()))
 
-  def convertToGpu(childExprs: Seq[GpuExpression]): GpuExpression
+  def convertToGpu(childExprs: Seq[Expression]): GpuExpression
 }
 
 /**

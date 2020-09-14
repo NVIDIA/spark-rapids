@@ -19,37 +19,28 @@ set -ex
 
 nvidia-smi
 
-if [ "$SPARK_VER"x == x ];then
-    SPARK_VER="3.0.0"
-fi
-
-SCALA_BINARY_VER=${SCALA_BINARY_VER:-2.12}
-
-#default maven server urm
-if [ "$SERVER_URL"x == x ]; then
-    SERVER_URL="https://urm.nvidia.com:443/artifactory/sw-spark-maven"
-fi
-
-echo "CUDA_CLASSIFIER: $CUDA_CLASSIFIER SPARK_VER: $SPARK_VER, \
-    SCALA_BINARY_VER: $SCALA_BINARY_VER, SERVER_URL: $SERVER_URL"
+. jenkins/version-def.sh
 
 ARTF_ROOT="$WORKSPACE/.download"
 MVN_GET_CMD="mvn org.apache.maven.plugins:maven-dependency-plugin:2.8:get -B \
-    -DremoteRepositories=$SERVER_URL \
+    $MVN_URM_MIRROR -DremoteRepositories=$URM_URL \
     -Ddest=$ARTF_ROOT"
 
 rm -rf $ARTF_ROOT && mkdir -p $ARTF_ROOT
 
 # Download a full version of spark
 $MVN_GET_CMD \
-    -DgroupId=org.apache -DartifactId=spark -Dversion=$SPARK_VER -Dclassifier=bin-hadoop3 -Dpackaging=tar.gz
+    -DgroupId=org.apache -DartifactId=spark -Dversion=$SPARK_VER -Dclassifier=bin-hadoop3.2 -Dpackaging=tgz
 
-export SPARK_HOME="$ARTF_ROOT/spark-$SPARK_VER-bin-hadoop3"
+export SPARK_HOME="$ARTF_ROOT/spark-$SPARK_VER-bin-hadoop3.2"
 export PATH="$SPARK_HOME/bin:$SPARK_HOME/sbin:$PATH"
-tar zxf $SPARK_HOME.tar.gz -C $ARTF_ROOT && \
-    rm -f $SPARK_HOME.tar.gz
+tar zxf $SPARK_HOME.tgz -C $ARTF_ROOT && \
+    rm -f $SPARK_HOME.tgz
 
-mvn -U -B "$@" clean verify -Dpytest.TEST_TAGS=''
+mvn -U -B $MVN_URM_MIRROR '-Pinclude-databricks,!snapshot-shims' clean verify -Dpytest.TEST_TAGS='not cudf_udf'
+# Run the unit tests for other Spark versions but dont run full python integration tests
+env -u SPARK_HOME mvn -U -B $MVN_URM_MIRROR -Pspark301tests,snapshot-shims test -Dpytest.TEST_TAGS='not cudf_udf'
+env -u SPARK_HOME mvn -U -B $MVN_URM_MIRROR -Pspark310tests,snapshot-shims test -Dpytest.TEST_TAGS='not cudf_udf'
 
 # The jacoco coverage should have been collected, but because of how the shade plugin
 # works and jacoco we need to clean some things up so jacoco will only report for the

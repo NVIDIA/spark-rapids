@@ -21,12 +21,12 @@ import java.io.{InputStream, IOException, OutputStream}
 import ai.rapids.cudf.HostMemoryBuffer
 
 /**
-  * An implementation of OutputStream that writes to a HostMemoryBuffer.
-  *
-  * NOTE: Closing this output stream does NOT close the buffer!
-  *
-  * @param buffer the buffer to receive written data
-  */
+ * An implementation of OutputStream that writes to a HostMemoryBuffer.
+ *
+ * NOTE: Closing this output stream does NOT close the buffer!
+ *
+ * @param buffer the buffer to receive written data
+ */
 class HostMemoryOutputStream(buffer: HostMemoryBuffer) extends OutputStream {
   private var pos: Long = 0
 
@@ -49,13 +49,13 @@ class HostMemoryOutputStream(buffer: HostMemoryBuffer) extends OutputStream {
 }
 
 /**
-  * An implementation of InputStream that reads from a HostMemoryBuffer.
-  *
-  * NOTE: Closing this input stream does NOT close the buffer!
-  *
-  * @param hmb the buffer from which to read data
-  * @param hmbLength the amount of data available in the buffer
-  */
+ * An implementation of InputStream that reads from a HostMemoryBuffer.
+ *
+ * NOTE: Closing this input stream does NOT close the buffer!
+ *
+ * @param hmb the buffer from which to read data
+ * @param hmbLength the amount of data available in the buffer
+ */
 class HostMemoryInputStream(
     hmb: HostMemoryBuffer,
     hmbLength: Long) extends InputStream {

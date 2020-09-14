@@ -23,12 +23,20 @@ import javax.xml.bind.DatatypeConverter
 import ai.rapids.cudf.{DType, Scalar}
 import org.json4s.JsonAST.{JField, JNull, JString}
 
+import org.apache.spark.sql.catalyst.expressions.Literal
 import org.apache.spark.sql.catalyst.util.{DateFormatter, DateTimeUtils, TimestampFormatter}
 import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.rapids.execution.TrampolineUtil
 import org.apache.spark.sql.types._
 import org.apache.spark.sql.vectorized.ColumnarBatch
 import org.apache.spark.unsafe.types.UTF8String
+
+object LiteralHelper {
+  def apply(v: Any): Literal = v match {
+    case u: UTF8String => Literal(u, StringType)
+    case allOthers => Literal(allOthers)
+  }
+}
 
 object GpuScalar {
   def scalaTypeToDType(v: Any): DType = {

@@ -16,32 +16,13 @@
 #
 
 set -ex
-if [ "$CUDF_VER"x == x ];then
-    CUDF_VER="0.14"
-fi
 
-if [ "$PROJECT_VER"x == x ];then
-    PROJECT_VER="0.1-SNAPSHOT"
-fi
-
-if [ "$SPARK_VER"x == x ];then
-    SPARK_VER="3.0.0"
-fi
-
-SCALA_BINARY_VER=${SCALA_BINARY_VER:-2.12}
-
-#default maven server urm
-if [ "$SERVER_URL"x == x ]; then
-    SERVER_URL="https://urm.nvidia.com:443/artifactory/sw-spark-maven"
-fi
-
-echo "CUDF_VER: $CUDF_VER, CUDA_CLASSIFIER: $CUDA_CLASSIFIER, PROJECT_VER: $PROJECT_VER \
-        SPARK_VER: $SPARK_VER, SCALA_BINARY_VER: $SCALA_BINARY_VER, SERVER_URL: $SERVER_URL"
+. jenkins/version-def.sh
 
 ARTF_ROOT="$WORKSPACE/jars"
 MVN_GET_CMD="mvn org.apache.maven.plugins:maven-dependency-plugin:2.8:get -B \
     -Dmaven.repo.local=$WORKSPACE/.m2 \
-    -DremoteRepositories=$SERVER_URL \
+    $MVN_URM_MIRROR -DremoteRepositories=$URM_URL \
     -Ddest=$ARTF_ROOT"
 
 rm -rf $ARTF_ROOT && mkdir -p $ARTF_ROOT
@@ -68,12 +49,12 @@ RAPDIS_INT_TESTS_TGZ="$ARTF_ROOT/rapids-4-spark-integration-tests_${SCALA_BINARY
 tar xzf "$RAPDIS_INT_TESTS_TGZ" -C $ARTF_ROOT && rm -f "$RAPDIS_INT_TESTS_TGZ"
 
 $MVN_GET_CMD \
-    -DgroupId=org.apache -DartifactId=spark -Dversion=$SPARK_VER -Dclassifier=bin-hadoop3 -Dpackaging=tar.gz
+    -DgroupId=org.apache -DartifactId=spark -Dversion=$SPARK_VER -Dclassifier=bin-hadoop3.2 -Dpackaging=tgz
 
-SPARK_HOME="$ARTF_ROOT/spark-$SPARK_VER-bin-hadoop3"
+SPARK_HOME="$ARTF_ROOT/spark-$SPARK_VER-bin-hadoop3.2"
 export PATH="$SPARK_HOME/bin:$SPARK_HOME/sbin:$PATH"
-tar zxf $SPARK_HOME.tar.gz -C $ARTF_ROOT && \
-    rm -f $SPARK_HOME.tar.gz
+tar zxf $SPARK_HOME.tgz -C $ARTF_ROOT && \
+    rm -f $SPARK_HOME.tgz
 
 PARQUET_PERF="$WORKSPACE/integration_tests/src/test/resources/parquet_perf"
 PARQUET_ACQ="$WORKSPACE/integration_tests/src/test/resources/parquet_acq"
@@ -89,6 +70,12 @@ MORTGAGE_SPARK_SUBMIT_ARGS=" --conf spark.plugins=com.nvidia.spark.SQLPlugin \
     --class com.nvidia.spark.rapids.tests.mortgage.Main \
     $RAPIDS_TEST_JAR"
 
+# need to disable pooling for udf test to prevent cudaErrorMemoryAllocation
+CUDF_UDF_TEST_ARGS="--conf spark.rapids.python.memory.gpu.pooling.enabled=false \
+    --conf spark.rapids.memory.gpu.pooling.enabled=false \
+    --conf spark.executorEnv.PYTHONPATH=rapids-4-spark_2.12-0.2.0-SNAPSHOT.jar \
+    --py-files ${RAPIDS_PLUGIN_JAR}"
+
 TEST_PARAMS="$SPARK_VER $PARQUET_PERF $PARQUET_ACQ $OUTPUT"
 
 export PATH="$SPARK_HOME/bin:$SPARK_HOME/sbin:$PATH"
@@ -103,4 +90,5 @@ jps
 echo "----------------------------START TEST------------------------------------"
 rm -rf $OUTPUT
 spark-submit $BASE_SPARK_SUBMIT_ARGS $MORTGAGE_SPARK_SUBMIT_ARGS $TEST_PARAMS
-cd $RAPIDS_INT_TESTS_HOME && spark-submit $BASE_SPARK_SUBMIT_ARGS --jars $RAPIDS_TEST_JAR ./runtests.py -v -rfExXs --std_input_path="$WORKSPACE/integration_tests/src/test/resources/"
+cd $RAPIDS_INT_TESTS_HOME && spark-submit $BASE_SPARK_SUBMIT_ARGS --jars $RAPIDS_TEST_JAR ./runtests.py -m "not cudf_udf" -v -rfExXs --std_input_path="$WORKSPACE/integration_tests/src/test/resources/"
+spark-submit $BASE_SPARK_SUBMIT_ARGS $CUDF_UDF_TEST_ARGS --jars $RAPIDS_TEST_JAR ./runtests.py -m "cudf_udf" -v -rfExXs

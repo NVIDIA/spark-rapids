@@ -1,4 +1,5 @@
 # RAPIDS Accelerator For Apache Spark
+NOTE: For the latest stable [README.md](https://github.com/nvidia/spark-rapids/blob/main/README.md) ensure you are on the main branch. The RAPIDS Accelerator for Apache Spark provides a set of plugins for Apache Spark that leverage GPUs to accelerate processing via the RAPIDS libraries and UCX. Documentation on the current release can be found [here](https://nvidia.github.io/spark-rapids/). 
 
 The RAPIDS Accelerator for Apache Spark provides a set of plugins for 
 [Apache Spark](https://spark.apache.org) that leverage GPUs to accelerate processing
@@ -12,7 +13,7 @@ any way. It uses a 10TB Dataset (scale factor 10,000), stored in parquet. The pr
 a two node DGX-2 cluster. Each node has 96 CPU cores, 1.5TB host memory, 16 V100 GPUs, and 512 GB
 GPU memory.
 
-To get started and try the plugin out use the [getting started guide](./docs/getting-started.md).
+To get started and try the plugin out use the [getting started guide](./docs/get-started/getting-started.md).
 
 ## Compatibility
 
@@ -34,13 +35,16 @@ The plugin has a set of Spark configs that control its behavior and are document
 We use github issues to track bugs, feature requests, and to try and answer questions. You
 may file one [here](https://github.com/NVIDIA/spark-rapids/issues/new/choose).
 
-## Releases
-
-| Version | Description |
-|---------|-------------|
-
-
 ## Build
+
+There are two types of branches in this repository:
+
+* `branch-[version]`: are development branches which can change often. Note that we merge into 
+  the branch with the greatest version number, as that is our default branch.
+
+* `main`: is the branch with the latest released code, and the version tag (i.e. `v0.1.0`)
+  is held here. `main` will change with new releases, but otherwise it should not change with
+  every pull request merged, making it a more stable branch.
 
 We use maven for most aspects of the build. Some important parts of the build execute in
 the "verify" phase of maven.  We recommend when building at least running to the "verify" phase.   

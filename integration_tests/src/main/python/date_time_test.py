@@ -13,13 +13,33 @@
 # limitations under the License.
 
 import pytest
-
 from asserts import assert_gpu_and_cpu_are_equal_collect
 from data_gen import *
-from datetime import date, datetime, timedelta, timezone
+from datetime import date, datetime, timezone
 from marks import incompat
 from pyspark.sql.types import *
+from spark_session import with_spark_session, is_before_spark_310
 import pyspark.sql.functions as f
+
+# We only support literal intervals for TimeSub
+vals = [(-584, 1563), (1943, 1101), (2693, 2167), (2729, 0), (44, 1534), (2635, 3319),
+            (1885, -2828), (0, 2463), (932, 2286), (0, 0)]
+@pytest.mark.parametrize('data_gen', vals, ids=idfn)
+def test_timesub(data_gen):
+    days, seconds = data_gen
+    assert_gpu_and_cpu_are_equal_collect(
+        # We are starting at year 0015 to make sure we don't go before year 0001 while doing TimeSub
+        lambda spark: unary_op_df(spark, TimestampGen(start=datetime(15, 1, 1, tzinfo=timezone.utc)), seed=1)
+            .selectExpr("a - (interval {} days {} seconds)".format(days, seconds)))
+
+@pytest.mark.parametrize('data_gen', vals, ids=idfn)
+def test_timeadd(data_gen):
+    days, seconds = data_gen
+    assert_gpu_and_cpu_are_equal_collect(
+        # We are starting at year 0005 to make sure we don't go before year 0001
+        # and beyond year 10000 while doing TimeAdd
+        lambda spark: unary_op_df(spark, TimestampGen(start=datetime(5, 1, 1, tzinfo=timezone.utc), end=datetime(15, 1, 1, tzinfo=timezone.utc)), seed=1)
+            .selectExpr("a + (interval {} days {} seconds)".format(days, seconds)))
 
 @pytest.mark.parametrize('data_gen', date_gens, ids=idfn)
 def test_datediff(data_gen):
@@ -42,6 +62,22 @@ def test_minute():
 def test_second():
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark : unary_op_df(spark, timestamp_gen).selectExpr('second(a)'))
+
+def test_quarter():
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark : unary_op_df(spark, date_gen).selectExpr('quarter(a)'))
+
+def test_weekday():
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark : unary_op_df(spark, date_gen).selectExpr('weekday(a)'))
+
+def test_dayofweek():
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark : unary_op_df(spark, date_gen).selectExpr('dayofweek(a)'))
+
+def test_last_day():
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark : unary_op_df(spark, date_gen).selectExpr('last_day(a)'))
 
 # We have to set the upper/lower limit on IntegerGen so the date_add doesn't overflow
 # Python uses proleptic gregorian date which extends Gregorian calendar as it always existed and
@@ -118,6 +154,11 @@ def test_month(data_gen):
 def test_dayofmonth(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : unary_op_df(spark, data_gen).select(f.dayofmonth(f.col('a'))))
+
+@pytest.mark.parametrize('data_gen', date_gens, ids=idfn)
+def test_dayofyear(data_gen):
+    assert_gpu_and_cpu_are_equal_collect(
+            lambda spark : unary_op_df(spark, data_gen).select(f.dayofyear(f.col('a'))))
 
 @incompat #Really only the string is
 @pytest.mark.parametrize('data_gen', date_n_time_gens, ids=idfn)

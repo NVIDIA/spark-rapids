@@ -23,7 +23,7 @@ tar -zxvf ../spark-rapids-built.tgz
 cd spark-rapids
 echo "Maven mirror is $MVN_URM_MIRROR"
 SERVER_ID='snapshots'
-SERVER_URL='https://urm.nvidia.com:443/artifactory/sw-spark-maven-local'
-FPATH=./dist/target/rapids-4-spark_2.12-0.1.0-databricks.jar
-mvn -B deploy:deploy-file $MVN_URM_MIRROR -Durl=$SERVER_URL -DrepositoryId=$SERVER_ID \
-    -Dfile=$FPATH -DpomFile=dist/pom.xml 
+SERVER_URL="$URM_URL-local"
+DBJARFPATH=./shims/spark300db/target/rapids-4-spark-shims-spark300-databricks_$SCALA_VERSION-$DATABRICKS_VERSION.jar
+mvn -B deploy:deploy-file $MVN_URM_MIRROR '-P!snapshot-shims' -Durl=$SERVER_URL -DrepositoryId=$SERVER_ID \
+    -Dfile=$DBJARFPATH -DpomFile=shims/spark300db/pom.xml

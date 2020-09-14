@@ -23,6 +23,20 @@ import pyspark.sql.functions as f
 def mk_str_gen(pattern):
     return StringGen(pattern).with_special_case('').with_special_pattern('.{0,10}')
 
+# Because of limitations in array support we need to combine these two together to make
+# this work. This should be split up into separate tests once support is better.
+def test_split_with_array_index():
+    data_gen = mk_str_gen('([ABC]{0,3}_?){0,7}')
+    delim = '_'
+    assert_gpu_and_cpu_are_equal_collect(
+            lambda spark : unary_op_df(spark, data_gen).selectExpr(
+                'split(a, "AB")[0]',
+                'split(a, "_")[1]',
+                'split(a, "_")[null]',
+                'split(a, "_")[3]',
+                'split(a, "_")[0]',
+                'split(a, "_")[-1]'))
+
 @pytest.mark.parametrize('data_gen,delim', [(mk_str_gen('([ABC]{0,3}_?){0,7}'), '_'),
     (mk_str_gen('([MNP_]{0,3}\\.?){0,5}'), '.'),
     (mk_str_gen('([123]{0,3}\\^?){0,5}'), '^')], ids=idfn)
@@ -34,6 +48,28 @@ def test_substring_index(data_gen,delim):
                 f.substring_index(f.col('a'), delim, 0),
                 f.substring_index(f.col('a'), delim, -1),
                 f.substring_index(f.col('a'), delim, -4)))
+
+# ONLY LITERAL WIDTH AND PAD ARE SUPPORTED
+def test_lpad():
+    gen = mk_str_gen('.{0,5}')
+    assert_gpu_and_cpu_are_equal_collect(
+            lambda spark: unary_op_df(spark, gen).selectExpr(
+                'LPAD(a, 2, " ")',
+                'LPAD(a, NULL, " ")',
+                'LPAD(a, 5, NULL)',
+                'LPAD(a, 5, "G")',
+                'LPAD(a, -1, "G")'))
+
+# ONLY LITERAL WIDTH AND PAD ARE SUPPORTED
+def test_rpad():
+    gen = mk_str_gen('.{0,5}')
+    assert_gpu_and_cpu_are_equal_collect(
+            lambda spark: unary_op_df(spark, gen).selectExpr(
+                'RPAD(a, 2, " ")',
+                'RPAD(a, NULL, " ")',
+                'RPAD(a, 5, NULL)',
+                'RPAD(a, 5, "G")',
+                'RPAD(a, -1, "G")'))
 
 # ONLY LITERAL SEARCH PARAMS ARE SUPPORTED
 def test_position():
@@ -95,23 +131,12 @@ def test_rtrim():
                 'TRIM(TRAILING NULL FROM a)',
                 'TRIM(TRAILING "" FROM a)'))
 
-# Once https://github.com/NVIDIA/spark-rapids/issues/112 is fixed this should be
-# deleted and the corresponding lines in the other tests should be uncommented
-@pytest.mark.xfail(reason='https://github.com/NVIDIA/spark-rapids/issues/112')
-def test_start_n_ends_with_xfail():
-    gen = mk_str_gen('[Ab\ud720]{3}A.{0,3}Z[Ab\ud720]{3}')
-    assert_gpu_and_cpu_are_equal_collect(
-            lambda spark: unary_op_df(spark, gen).select(
-                f.col('a').startswith(''),
-                f.col('a').endswith('')))
-
 def test_startswith():
     gen = mk_str_gen('[Ab\ud720]{3}A.{0,3}Z[Ab\ud720]{3}')
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark: unary_op_df(spark, gen).select(
                 f.col('a').startswith('A'),
-                #https://github.com/NVIDIA/spark-rapids/issues/112
-                #f.col('a').startswith(''),
+                f.col('a').startswith(''),
                 f.col('a').startswith(None),
                 f.col('a').startswith('A\ud720')))
 
@@ -121,8 +146,7 @@ def test_endswith():
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark: unary_op_df(spark, gen).select(
                 f.col('a').endswith('A'),
-                #https://github.com/NVIDIA/spark-rapids/issues/112
-                #f.col('a').endswith(''),
+                f.col('a').endswith(''),
                 f.col('a').endswith(None),
                 f.col('a').endswith('A\ud720')))
 

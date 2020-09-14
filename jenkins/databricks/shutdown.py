@@ -31,7 +31,7 @@ def main():
   clusterid = '0617-140138-umiak14'
 
   try:
-      opts, args = getopt.getopt(sys.argv[1:], 'hs:t:c',
+      opts, args = getopt.getopt(sys.argv[1:], 'hs:t:c:',
                                  ['workspace=', 'token=', 'clusterid='])
   except getopt.GetoptError:
       print(
@@ -55,7 +55,7 @@ def main():
 
   jsonout = cluster_state(workspace, clusterid, token)
   current_state = jsonout['state']
-  if current_state not in ['RUNNING']:
+  if current_state not in ['RUNNING', 'RESIZING']:
       print("Cluster is not running")
       sys.exit(1)
 

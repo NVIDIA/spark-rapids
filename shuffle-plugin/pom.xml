@@ -22,14 +22,14 @@
     <parent>
         <groupId>com.nvidia</groupId>
         <artifactId>rapids-4-spark-parent</artifactId>
-        <version>0.1.0</version>
+        <version>0.2.0-SNAPSHOT</version>
     </parent>
 
     <groupId>com.nvidia</groupId>
     <artifactId>rapids-4-spark-shuffle_2.12</artifactId>
     <name>RAPIDS Accelerator for Apache Spark Shuffle Plugin</name>
     <description>Accelerated shuffle plugin for the RAPIDS plugin for Apache Spark</description>
-    <version>0.1.0</version>
+    <version>0.2.0-SNAPSHOT</version>
 
     <dependencies>
         <dependency>
@@ -123,6 +123,10 @@
             <plugin>
                 <groupId>org.apache.rat</groupId>
                 <artifactId>apache-rat-plugin</artifactId>
+            </plugin>
+            <plugin>
+                <groupId>org.scalastyle</groupId>
+                <artifactId>scalastyle-maven-plugin</artifactId>
             </plugin>
         </plugins>
     </build>

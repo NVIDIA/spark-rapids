@@ -28,6 +28,7 @@ import org.apache.spark.SparkConf
 import org.apache.spark.internal.Logging
 import org.apache.spark.sql.{DataFrame, Row, SparkSession}
 import org.apache.spark.sql.execution.SparkPlan
+import org.apache.spark.sql.rapids.execution.TrampolineUtil
 import org.apache.spark.sql.types._
 
 object TestResourceFinder {
@@ -52,25 +53,10 @@ object TestResourceFinder {
 }
 
 object SparkSessionHolder extends Logging {
-  val spark = {
-    // Timezone is fixed to UTC to allow timestamps to work by default
-    TimeZone.setDefault(TimeZone.getTimeZone("UTC"))
-    // Add Locale setting
-    Locale.setDefault(Locale.US)
-    SparkSession.builder()
-      .master("local[1]")
-      .config("spark.rapids.sql.enabled", "false")
-      .config("spark.rapids.sql.test.enabled", "false")
-      .config("spark.plugins", "com.nvidia.spark.SQLPlugin")
-      .config("spark.sql.queryExecutionListeners",
-        "com.nvidia.spark.rapids.ExecutionPlanCaptureCallback")
-      .config("spark.sql.warehouse.dir", sparkWarehouseDir().getAbsolutePath)
-      .appName("rapids spark plugin integration tests (scala)")
-      .getOrCreate()
-  }
 
-  private[this] val origConf = spark.conf.getAll
-  private[this] val origConfKeys = origConf.keys.toSet
+  private var spark = createSparkSession()
+  private var origConf = spark.conf.getAll
+  private var origConfKeys = origConf.keys.toSet
 
   private def setAllConfs(confs: Array[(String, String)]): Unit = confs.foreach {
     case (key, value) if spark.conf.get(key, null) != value =>
@@ -78,11 +64,46 @@ object SparkSessionHolder extends Logging {
     case _ => // No need to modify it
   }
 
+  private def createSparkSession(): SparkSession = {
+    // Timezone is fixed to UTC to allow timestamps to work by default
+    TimeZone.setDefault(TimeZone.getTimeZone("UTC"))
+    // Add Locale setting
+    Locale.setDefault(Locale.US)
+    SparkSession.builder()
+        .master("local[1]")
+        .config("spark.sql.adaptive.enabled", "false")
+        .config("spark.rapids.sql.enabled", "false")
+        .config("spark.rapids.sql.test.enabled", "false")
+        .config("spark.plugins", "com.nvidia.spark.SQLPlugin")
+        .config("spark.sql.queryExecutionListeners",
+          "com.nvidia.spark.rapids.ExecutionPlanCaptureCallback")
+        .config("spark.sql.warehouse.dir", sparkWarehouseDir.getAbsolutePath)
+        .appName("rapids spark plugin integration tests (scala)")
+        .getOrCreate()
+  }
+
+  private def reinitSession(): Unit = {
+    spark = createSparkSession()
+    origConf = spark.conf.getAll
+    origConfKeys = origConf.keys.toSet
+  }
+
+  def sparkSession: SparkSession = {
+    if (SparkSession.getActiveSession.isEmpty) {
+      reinitSession()
+    }
+    spark
+  }
+
   def resetSparkSessionConf(): Unit = {
-    setAllConfs(origConf.toArray)
-    val currentKeys = spark.conf.getAll.keys.toSet
-    val toRemove = currentKeys -- origConfKeys
-    toRemove.foreach(spark.conf.unset)
+    if (SparkSession.getActiveSession.isEmpty) {
+      reinitSession()
+    } else {
+      setAllConfs(origConf.toArray)
+      val currentKeys = spark.conf.getAll.keys.toSet
+      val toRemove = currentKeys -- origConfKeys
+      toRemove.foreach(spark.conf.unset)
+    }
     logDebug(s"RESET CONF TO: ${spark.conf.getAll}")
   }
 
@@ -94,7 +115,7 @@ object SparkSessionHolder extends Logging {
     f(spark)
   }
 
-  private def sparkWarehouseDir(): File = {
+  private lazy val sparkWarehouseDir: File = {
     val path = Files.createTempDirectory("spark-warehouse")
     val file = new File(path.toString)
     file.deleteOnExit()
@@ -206,6 +227,8 @@ trait SparkQueryCompareTestSuite extends FunSuite with Arm {
   : (Array[Row], SparkPlan, Array[Row], SparkPlan) = {
     conf.setIfMissing("spark.sql.shuffle.partitions", "2")
 
+    // force a new session to avoid accidentally capturing a late callback from a previous query
+    TrampolineUtil.cleanupAnyExistingSession()
     ExecutionPlanCaptureCallback.startCapture()
     var cpuPlan: Option[SparkPlan] = null
     val fromCpu =
@@ -275,13 +298,13 @@ trait SparkQueryCompareTestSuite extends FunSuite with Arm {
   }
 
   /**
-    * Runs a test defined by fun, using dataframe df.
-    *
-    * @param df the DataFrame to use as input
-    * @param fun the function to transform the DataFrame (produces another DataFrame)
-    * @param conf spark conf
-    * @return tuple of (cpu results, gpu results) as arrays of Row
-    */
+   * Runs a test defined by fun, using dataframe df.
+   *
+   * @param df the DataFrame to use as input
+   * @param fun the function to transform the DataFrame (produces another DataFrame)
+   * @param conf spark conf
+   * @return tuple of (cpu results, gpu results) as arrays of Row
+   */
   def runOnCpuAndGpu(
       df: SparkSession => DataFrame,
       fun: DataFrame => DataFrame,
@@ -382,6 +405,20 @@ trait SparkQueryCompareTestSuite extends FunSuite with Arm {
       sortBeforeRepart = sortBeforeRepart)(fun)
   }
 
+  def ALLOW_NON_GPU_testSparkResultsAreEqualWithCapture(
+      testName: String,
+      df: SparkSession => DataFrame,
+      execsAllowedNonGpu: Seq[String],
+      conf: SparkConf = new SparkConf(),
+      sortBeforeRepart: Boolean = false)
+      (fun: DataFrame => DataFrame)
+      (validateCapturedPlans: (SparkPlan, SparkPlan) => Unit): Unit = {
+    testSparkResultsAreEqualWithCapture(testName, df,
+      conf=conf,
+      execsAllowedNonGpu=execsAllowedNonGpu,
+      sortBeforeRepart = sortBeforeRepart)(fun)(validateCapturedPlans)
+  }
+
   def IGNORE_ORDER_ALLOW_NON_GPU_testSparkResultsAreEqual(
       testName: String,
       df: SparkSession => DataFrame,
@@ -397,6 +434,23 @@ trait SparkQueryCompareTestSuite extends FunSuite with Arm {
       sortBeforeRepart = sortBeforeRepart)(fun)
   }
 
+  def IGNORE_ORDER_ALLOW_NON_GPU_testSparkResultsAreEqualWithCapture(
+      testName: String,
+      df: SparkSession => DataFrame,
+      execsAllowedNonGpu: Seq[String],
+      repart: Integer = 1,
+      conf: SparkConf = new SparkConf(),
+      sortBeforeRepart: Boolean = false)
+      (fun: DataFrame => DataFrame)
+      (validateCapturedPlans: (SparkPlan, SparkPlan) => Unit): Unit = {
+    testSparkResultsAreEqualWithCapture(testName, df,
+      conf=conf,
+      execsAllowedNonGpu=execsAllowedNonGpu,
+      repart=repart,
+      sort=true,
+      sortBeforeRepart = sortBeforeRepart)(fun)(validateCapturedPlans)
+  }
+
   def IGNORE_ORDER_testSparkResultsAreEqual(
       testName: String,
       df: SparkSession => DataFrame,
@@ -408,6 +462,21 @@ trait SparkQueryCompareTestSuite extends FunSuite with Arm {
       repart=repart,
       sort=true,
       sortBeforeRepart = sortBeforeRepart)(fun)
+  }
+
+  def IGNORE_ORDER_testSparkResultsAreEqualWithCapture(
+      testName: String,
+      df: SparkSession => DataFrame,
+      repart: Integer = 1,
+      conf: SparkConf = new SparkConf(),
+      sortBeforeRepart: Boolean = false)
+      (fun: DataFrame => DataFrame)
+      (validateCapturedPlans: (SparkPlan, SparkPlan) => Unit): Unit = {
+    testSparkResultsAreEqualWithCapture(testName, df,
+      conf=conf,
+      repart=repart,
+      sort=true,
+      sortBeforeRepart = sortBeforeRepart)(fun)(validateCapturedPlans)
   }
 
   def INCOMPAT_IGNORE_ORDER_testSparkResultsAreEqual(
@@ -643,6 +712,31 @@ trait SparkQueryCompareTestSuite extends FunSuite with Arm {
     }
   }
 
+  def testSparkResultsAreEqualWithCapture(
+      testName: String,
+      df: SparkSession => DataFrame,
+      conf: SparkConf = new SparkConf(),
+      repart: Integer = 1,
+      sort: Boolean = false,
+      maxFloatDiff: Double = 0.0,
+      incompat: Boolean = false,
+      execsAllowedNonGpu: Seq[String] = Seq.empty,
+      sortBeforeRepart: Boolean = false)
+      (fun: DataFrame => DataFrame)
+      (validateCapturedPlans: (SparkPlan, SparkPlan) => Unit): Unit = {
+
+    val (testConf, qualifiedTestName) =
+      setupTestConfAndQualifierName(testName, incompat, sort, conf, execsAllowedNonGpu,
+        maxFloatDiff, sortBeforeRepart)
+    test(qualifiedTestName) {
+      val (fromCpu, cpuPlan, fromGpu, gpuPlan) = runOnCpuAndGpuWithCapture(df, fun,
+        conf = testConf,
+        repart = repart)
+      compareResults(sort, maxFloatDiff, fromCpu, fromGpu)
+      validateCapturedPlans(cpuPlan, gpuPlan)
+    }
+  }
+
   /** Create a DataFrame from a sequence of values and execution a transformation on CPU and GPU,
    *  and compare results */
   def testUnaryFunction(
@@ -662,6 +756,41 @@ trait SparkQueryCompareTestSuite extends FunSuite with Arm {
       repart = repart)
 
     compareResults(sort, maxFloatDiff, fromCpu, fromGpu)
+  }
+
+  def testExpectedGpuException[T <: Throwable](
+    testName: String,
+    exceptionClass: Class[T],
+    df: SparkSession => DataFrame,
+    conf: SparkConf = new SparkConf(),
+    repart: Integer = 1,
+    sort: Boolean = false,
+    maxFloatDiff: Double = 0.0,
+    incompat: Boolean = false,
+    execsAllowedNonGpu: Seq[String] = Seq.empty,
+    sortBeforeRepart: Boolean = false)(fun: DataFrame => DataFrame): Unit = {
+    val (testConf, qualifiedTestName) =
+      setupTestConfAndQualifierName(testName, incompat, sort, conf, execsAllowedNonGpu,
+        maxFloatDiff, sortBeforeRepart)
+
+    test(qualifiedTestName) {
+      val t = Try({
+        val fromGpu = withGpuSparkSession( session => {
+          var data = df(session)
+          if (repart > 0) {
+            // repartition the data so it is turned into a projection,
+            // not folded into the table scan exec
+            data = data.repartition(repart)
+          }
+          fun(data).collect()
+        }, testConf)
+      })
+      t match {
+        case Failure(e) if e.getClass == exceptionClass => // Good
+        case Failure(e) => throw e
+        case _ => fail("Expected an exception")
+      }
+    }
   }
 
   def testExpectedExceptionStartsWith[T <: Throwable](
@@ -1105,6 +1234,14 @@ trait SparkQueryCompareTestSuite extends FunSuite with Arm {
     ).toDF("doubles")
   }
 
+  def nullDf(session: SparkSession): DataFrame = {
+    import session.sqlContext.implicits._
+    Seq[(java.lang.Long, java.lang.Long)](
+      (100L, 15L),
+      (100L, null)
+    ).toDF("longs", "more_longs")
+  }
+
   def mixedDoubleDf(session: SparkSession): DataFrame = {
     import session.sqlContext.implicits._
     Seq[(java.lang.Double, java.lang.Double)](
@@ -1477,6 +1614,26 @@ trait SparkQueryCompareTestSuite extends FunSuite with Arm {
       ("-100.0", 27),
       ("-500.0", 0)
     ).toDF("strings", "ints")
+  }
+
+  def oldDatesDf(session: SparkSession): DataFrame = {
+    import session.sqlContext.implicits._
+    Seq(
+      new Date(-141427L * 24 * 60 * 60 * 1000),
+      new Date(-150000L * 24 * 60 * 60 * 1000),
+      Date.valueOf("1582-10-15"),
+      Date.valueOf("1582-10-13")
+    ).toDF("dates")
+  }
+
+  def oldTsDf(session: SparkSession): DataFrame = {
+    import session.sqlContext.implicits._
+    Seq(
+      new Timestamp(-141427L * 24 * 60 * 60 * 1000),
+      new Timestamp(-150000L * 24 * 60 * 60 * 1000),
+      Timestamp.valueOf("1582-10-15 00:01:01"),
+      Timestamp.valueOf("1582-10-13 12:03:12")
+    ).toDF("times")
   }
 
   def utf8RepeatedDf(session: SparkSession): DataFrame = {

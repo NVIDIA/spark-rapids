@@ -45,40 +45,34 @@ import org.apache.spark.broadcast.Broadcast
 import org.apache.spark.internal.Logging
 import org.apache.spark.sql.SparkSession
 import org.apache.spark.sql.catalyst.InternalRow
-import org.apache.spark.sql.catalyst.expressions.Expression
 import org.apache.spark.sql.catalyst.util.CaseInsensitiveMap
 import org.apache.spark.sql.connector.read.{InputPartition, PartitionReader, PartitionReaderFactory}
 import org.apache.spark.sql.execution.QueryExecutionException
-import org.apache.spark.sql.execution.datasources.{PartitionedFile, PartitioningAwareFileIndex}
+import org.apache.spark.sql.execution.datasources.PartitionedFile
 import org.apache.spark.sql.execution.datasources.orc.OrcUtils
-import org.apache.spark.sql.execution.datasources.v2.{FilePartitionReaderFactory, FileScan}
+import org.apache.spark.sql.execution.datasources.v2.FilePartitionReaderFactory
 import org.apache.spark.sql.execution.datasources.v2.orc.OrcScan
 import org.apache.spark.sql.execution.metric.SQLMetric
 import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.rapids.OrcFilters
 import org.apache.spark.sql.sources.Filter
 import org.apache.spark.sql.types.StructType
-import org.apache.spark.sql.util.CaseInsensitiveStringMap
 import org.apache.spark.sql.vectorized.ColumnarBatch
 import org.apache.spark.util.SerializableConfiguration
 
-case class GpuOrcScan(
+abstract class GpuOrcScanBase(
     sparkSession: SparkSession,
     hadoopConf: Configuration,
-    fileIndex: PartitioningAwareFileIndex,
     dataSchema: StructType,
     readDataSchema: StructType,
     readPartitionSchema: StructType,
-    options: CaseInsensitiveStringMap,
     pushedFilters: Array[Filter],
-    partitionFilters: Seq[Expression],
-    dataFilters: Seq[Expression],
     rapidsConf: RapidsConf)
-  extends FileScan with ScanWithMetrics {
+  extends ScanWithMetrics {
 
-  override def isSplitable(path: Path): Boolean = true
+  def isSplitableBase(path: Path): Boolean = true
 
-  override def createReaderFactory(): PartitionReaderFactory = {
+  def createReaderFactoryBase(): PartitionReaderFactory = {
     // Unset any serialized search argument setup by Spark's OrcScanBuilder as
     // it will be incompatible due to shading and potential ORC classifier mismatch.
     hadoopConf.unset(OrcConf.KRYO_SARG.getAttribute)
@@ -88,26 +82,9 @@ case class GpuOrcScan(
     GpuOrcPartitionReaderFactory(sparkSession.sessionState.conf, broadcastedConf,
       dataSchema, readDataSchema, readPartitionSchema, pushedFilters, rapidsConf, metrics)
   }
-
-  override def equals(obj: Any): Boolean = obj match {
-    case o: GpuOrcScan =>
-      super.equals(o) && dataSchema == o.dataSchema && options == o.options &&
-        equivalentFilters(pushedFilters, o.pushedFilters) && rapidsConf == o.rapidsConf
-    case _ => false
-  }
-
-  override def hashCode(): Int = getClass.hashCode()
-
-  override def description(): String = {
-    super.description() + ", PushedFilters: " + seqToString(pushedFilters)
-  }
-
-  override def withFilters(
-      partitionFilters: Seq[Expression], dataFilters: Seq[Expression]): FileScan =
-    this.copy(partitionFilters = partitionFilters, dataFilters = dataFilters)
 }
 
-object GpuOrcScan {
+object GpuOrcScanBase {
   def tagSupport(scanMeta: ScanMeta[OrcScan]): Unit = {
     val scan = scanMeta.wrapped
     val schema = StructType(scan.readDataSchema ++ scan.readPartitionSchema)
@@ -179,14 +156,14 @@ case class GpuOrcPartitionReaderFactory(
 
 object GpuOrcPartitionReader {
   /**
-    * This class describes a stripe that will appear in the ORC output memory file.
-    *
-    * @param infoBuilder builder for output stripe info that has been populated with
-    *                    all fields except those that can only be known when the file
-    *                    is being written (e.g.: file offset, compressed footer length)
-    * @param footer stripe footer
-    * @param inputDataRanges input file ranges (based at file offset 0) of stripe data
-    */
+   * This class describes a stripe that will appear in the ORC output memory file.
+   *
+   * @param infoBuilder builder for output stripe info that has been populated with
+   *                    all fields except those that can only be known when the file
+   *                    is being written (e.g.: file offset, compressed footer length)
+   * @param footer stripe footer
+   * @param inputDataRanges input file ranges (based at file offset 0) of stripe data
+   */
   private case class OrcOutputStripe(
       infoBuilder: OrcProto.StripeInformation.Builder,
       footer: OrcProto.StripeFooter,
@@ -200,32 +177,32 @@ object GpuOrcPartitionReader {
     OrcProto.Stream.Kind.ROW_INDEX)
 
   /**
-    * This class holds fields needed to read and iterate over the OrcFile
-    *
-    * @param updatedReadSchema read schema mapped to the file's field names
-    * @param evolution ORC SchemaEvolution
-    * @param dataReader ORC DataReader
-    * @param orcReader ORC Input File Reader
-    * @param blockIterator An iterator over the ORC output stripes
-    */
+   * This class holds fields needed to read and iterate over the OrcFile
+   *
+   * @param updatedReadSchema read schema mapped to the file's field names
+   * @param evolution ORC SchemaEvolution
+   * @param dataReader ORC DataReader
+   * @param orcReader ORC Input File Reader
+   * @param blockIterator An iterator over the ORC output stripes
+   */
   private case class OrcPartitionReaderContext(updatedReadSchema: TypeDescription,
     evolution: SchemaEvolution, dataReader: DataReader, orcReader: Reader,
     blockIterator: BufferedIterator[OrcOutputStripe])
 }
 
 /**
-  * A PartitionReader that reads an ORC file split on the GPU.
-  *
-  * Efficiently reading an ORC split on the GPU requires rebuilding the ORC file
-  * in memory such that only relevant data is present in the memory file.
-  * This avoids sending unnecessary data to the GPU and saves GPU memory.
-  *
-  * @param conf Hadoop configuration
-  * @param partFile file split to read
-  * @param dataSchema Spark schema of the file
-  * @param readDataSchema Spark schema of what will be read from the file
-  * @param debugDumpPrefix path prefix for dumping the memory file or null
-  */
+ * A PartitionReader that reads an ORC file split on the GPU.
+ *
+ * Efficiently reading an ORC split on the GPU requires rebuilding the ORC file
+ * in memory such that only relevant data is present in the memory file.
+ * This avoids sending unnecessary data to the GPU and saves GPU memory.
+ *
+ * @param conf Hadoop configuration
+ * @param partFile file split to read
+ * @param dataSchema Spark schema of the file
+ * @param readDataSchema Spark schema of what will be read from the file
+ * @param debugDumpPrefix path prefix for dumping the memory file or null
+ */
 class GpuOrcPartitionReader(
     conf: Configuration,
     partFile: PartitionedFile,
@@ -237,7 +214,7 @@ class GpuOrcPartitionReader(
     maxReadBatchSizeRows: Integer,
     maxReadBatchSizeBytes: Long,
     execMetrics : Map[String, SQLMetric]) extends PartitionReader[ColumnarBatch] with Logging
-  with ScanWithMetrics {
+    with ScanWithMetrics with Arm {
   private var batch: Option[ColumnarBatch] = None
   private val ctx = initializeOrcReaders
   private var maxDeviceMemory: Long = 0
@@ -298,8 +275,7 @@ class GpuOrcPartitionReader(
   }
 
   private def readBatch(): Option[ColumnarBatch] = {
-    val nvtxRange = new NvtxWithMetrics("ORC readBatch", NvtxColor.GREEN, metrics(TOTAL_TIME))
-    try {
+    withResource(new NvtxWithMetrics("ORC readBatch", NvtxColor.GREEN, metrics(TOTAL_TIME))) { _ =>
       val currentStripes = populateCurrentBlockChunk()
       if (readDataSchema.isEmpty) {
         // not reading any data, so return a degenerate ColumnarBatch with the row count
@@ -313,19 +289,17 @@ class GpuOrcPartitionReader(
           table.foreach(_.close())
         }
       }
-    } finally {
-      nvtxRange.close()
     }
   }
 
   /**
-    * Build an integer array that maps the original ORC file's column IDs
-    * to column IDs in the memory file. Columns that are not present in
-    * the memory file will have a mapping of -1.
-    *
-    * @param evolution ORC SchemaEvolution
-    * @return column mapping array
-    */
+   * Build an integer array that maps the original ORC file's column IDs
+   * to column IDs in the memory file. Columns that are not present in
+   * the memory file will have a mapping of -1.
+   *
+   * @param evolution ORC SchemaEvolution
+   * @return column mapping array
+   */
   private def columnRemap(evolution: SchemaEvolution): Array[Int] = {
     val fileIncluded = evolution.getFileIncluded
     if (fileIncluded != null) {
@@ -346,17 +320,17 @@ class GpuOrcPartitionReader(
   }
 
   /**
-    * Build the output stripe descriptors for what will appear in the ORC memory file.
-    *
-    * @param stripes descriptors for the ORC input stripes, filtered to what is in the split
-    * @param evolution ORC SchemaEvolution
-    * @param sargApp ORC search argument applier
-    * @param sargColumns mapping of ORC search argument columns
-    * @param ignoreNonUtf8BloomFilter true if bloom filters other than UTF8 should be ignored
-    * @param writerVersion writer version from the original ORC input file
-    * @param dataReader ORC DataReader
-    * @return output stripes descriptors
-    */
+   * Build the output stripe descriptors for what will appear in the ORC memory file.
+   *
+   * @param stripes descriptors for the ORC input stripes, filtered to what is in the split
+   * @param evolution ORC SchemaEvolution
+   * @param sargApp ORC search argument applier
+   * @param sargColumns mapping of ORC search argument columns
+   * @param ignoreNonUtf8BloomFilter true if bloom filters other than UTF8 should be ignored
+   * @param writerVersion writer version from the original ORC input file
+   * @param dataReader ORC DataReader
+   * @return output stripes descriptors
+   */
   private def buildOutputStripes(
       stripes: Seq[StripeInformation],
       evolution: SchemaEvolution,
@@ -392,14 +366,14 @@ class GpuOrcPartitionReader(
   }
 
   /**
-    * Build the output stripe descriptor for a corresponding input stripe
-    * that should be copied to the ORC memory file.
-    *
-    * @param inputStripe input stripe descriptor
-    * @param inputFooter input stripe footer
-    * @param columnMapping mapping of input column IDs to output column IDs
-    * @return output stripe descriptor
-    */
+   * Build the output stripe descriptor for a corresponding input stripe
+   * that should be copied to the ORC memory file.
+   *
+   * @param inputStripe input stripe descriptor
+   * @param inputFooter input stripe footer
+   * @param columnMapping mapping of input column IDs to output column IDs
+   * @return output stripe descriptor
+   */
   private def buildOutputStripe(
       inputStripe: StripeInformation,
       inputFooter: OrcProto.StripeFooter,
@@ -564,13 +538,13 @@ class GpuOrcPartitionReader(
   }
 
   /**
-    * Check if the read schema is compatible with the file schema.
-    *
-    * @param fileSchema input file's ORC schema
-    * @param readSchema ORC schema for what will be read
-    * @param isCaseAware true if field names are case-sensitive
-    * @return read schema mapped to the file's field names
-    */
+   * Check if the read schema is compatible with the file schema.
+   *
+   * @param fileSchema input file's ORC schema
+   * @param readSchema ORC schema for what will be read
+   * @param isCaseAware true if field names are case-sensitive
+   * @return read schema mapped to the file's field names
+   */
   private def checkSchemaCompatibility(
       fileSchema: TypeDescription,
       readSchema: TypeDescription,
@@ -602,15 +576,15 @@ class GpuOrcPartitionReader(
   }
 
   /**
-    * Build an ORC search argument applier that can filter input file splits
-    * when predicate push-down filters have been specified.
-    *
-    * @param orcReader ORC input file reader
-    * @param readerOpts ORC reader options
-    * @param evolution ORC SchemaEvolution
-    * @param useUTCTimestamp true if timestamps are UTC
-    * @return the search argument applier and search argument column mapping
-    */
+   * Build an ORC search argument applier that can filter input file splits
+   * when predicate push-down filters have been specified.
+   *
+   * @param orcReader ORC input file reader
+   * @param readerOpts ORC reader options
+   * @param evolution ORC SchemaEvolution
+   * @param useUTCTimestamp true if timestamps are UTC
+   * @return the search argument applier and search argument column mapping
+   */
   private def getSearchApplier(
       orcReader: Reader,
       readerOpts: Reader.Options,
@@ -664,9 +638,8 @@ class GpuOrcPartitionReader(
   }
 
   private def readPartFile(stripes: Seq[OrcOutputStripe]): (HostMemoryBuffer, Long) = {
-    val nvtxRange = new NvtxWithMetrics("Buffer file split", NvtxColor.YELLOW,
-      metrics("bufferTime"))
-    try {
+    withResource(new NvtxWithMetrics("Buffer file split", NvtxColor.YELLOW,
+        metrics("bufferTime"))) { _ =>
       if (stripes.isEmpty) {
         return (null, 0L)
       }
@@ -684,8 +657,6 @@ class GpuOrcPartitionReader(
           hmb.close()
         }
       }
-    } finally {
-      nvtxRange.close()
     }
   }
 
@@ -708,7 +679,10 @@ class GpuOrcPartitionReader(
         // about to start using the GPU
         GpuSemaphore.acquireIfNecessary(TaskContext.get())
 
-        val table = Table.readORC(parseOpts, dataBuffer, 0, dataSize)
+        val table = withResource(new NvtxWithMetrics("ORC decode", NvtxColor.DARK_GREEN,
+            metrics(GPU_DECODE_TIME))) { _ =>
+          Table.readORC(parseOpts, dataBuffer, 0, dataSize)
+        }
         val batchSizeBytes = GpuColumnVector.getTotalDeviceMemoryUsed(table)
         logDebug(s"GPU batch size: $batchSizeBytes bytes")
         maxDeviceMemory = max(batchSizeBytes, maxDeviceMemory)

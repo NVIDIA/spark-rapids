@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019, NVIDIA CORPORATION.
+ * Copyright (c) 2019-2020, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,49 +17,73 @@
 package com.nvidia.spark.rapids
 
 import org.apache.spark.internal.Logging
-import org.apache.spark.sql.catalyst.expressions.AttributeSeq
+import org.apache.spark.sql.catalyst.expressions.{AttributeReference, AttributeSeq, Expression, SortOrder}
 import org.apache.spark.sql.types.DataType
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
 object GpuBindReferences extends Logging {
 
-  // Mostly copied from BoundAttribute.scala so we can do columnar processing
-  def bindReference[A <: GpuExpression](
-      expression: A,
-      input: AttributeSeq,
-      allowFailures: Boolean = false): A = {
-    expression.transform { case a: GpuAttributeReference =>
-      val ordinal = input.indexOf(a.exprId)
-      if (ordinal == -1) {
-        if (allowFailures) {
-          a
-        } else {
-          sys.error(s"Couldn't find $a in ${input.attrs.mkString("[", ",", "]")}")
+  private[this] def postBindCheck[A <: Expression](base: A): Unit = {
+    base.foreach { expr =>
+      // The condition is needed to have it match what transform
+      // looks at, otherwise we can check things that would not be modified.
+      if (expr.containsChild.nonEmpty) {
+        expr match {
+          case _: GpuExpression =>
+          case _: SortOrder =>
+          case other =>
+            throw new IllegalArgumentException(
+              s"Bound an expression that shouldn't be here ${other.getClass}")
         }
-      } else {
-        GpuBoundReference(ordinal, a.dataType, input(ordinal).nullable)
       }
-    }.asInstanceOf[A]
+    }
   }
 
+  // Mostly copied from BoundAttribute.scala so we can do columnar processing
+  private[this] def bindRefInternal[A <: Expression, R <: Expression](
+      expression: A,
+      input: AttributeSeq): R = {
+    val ret = expression.transform {
+      case a: AttributeReference =>
+        val ordinal = input.indexOf(a.exprId)
+        if (ordinal == -1) {
+          sys.error(s"Couldn't find $a in ${input.attrs.mkString("[", ",", "]")}")
+        } else {
+          GpuBoundReference(ordinal, a.dataType, input(ordinal).nullable)
+        }
+    }.asInstanceOf[R]
+    postBindCheck(ret)
+    ret
+  }
+
+  def bindGpuReference[A <: Expression](
+      expression: A,
+      input: AttributeSeq): GpuExpression =
+    bindRefInternal(expression, input)
+
   /**
-   * bindReferences[GpuExpression]: a helper function to bind given expressions to
-   * an input schema where the expressions are GpuExpressions.
+   * A helper function to bind given expressions to an input schema where the expressions are
+   * to be processed on the GPU, and the result type indicates this.
    */
-  def bindReferences[A <: GpuExpression](
+  def bindGpuReferences[A <: Expression](
       expressions: Seq[A],
-      input: AttributeSeq): Seq[A] = {
-    expressions.map(GpuBindReferences.bindReference(_, input))
-  }
+      input: AttributeSeq): Seq[GpuExpression] =
+    expressions.map(GpuBindReferences.bindGpuReference(_, input))
+
+  def bindReference[A <: Expression](
+      expression: A,
+      input: AttributeSeq): A =
+    bindRefInternal(expression, input)
 
   /**
-   * A version of `bindReferences` that takes `AttributeSeq` as its expressions
+   * A helper function to bind given expressions to an input schema where the expressions are
+   * to be processed on the GPU.  Most of the time `bindGpuReferences` should be used, unless
+   * you know that the return type is `SortOrder` or is a comment trait like `Attribute`.
    */
-  def bindReferences(expressions: AttributeSeq, input: AttributeSeq): Seq[GpuExpression] = {
-    bindReferences(expressions.attrs.map(ref => GpuAttributeReference(
-      ref.name, ref.dataType, ref.nullable, ref.metadata)(ref.exprId, ref.qualifier)),
-      input)
-  }
+  def bindReferences[A <: Expression](
+      expressions: Seq[A],
+      input: AttributeSeq): Seq[A] =
+    expressions.map(GpuBindReferences.bindReference(_, input))
 }
 
 case class GpuBoundReference(ordinal: Int, dataType: DataType, nullable: Boolean)

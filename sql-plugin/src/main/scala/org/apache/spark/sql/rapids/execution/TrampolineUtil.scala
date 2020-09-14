@@ -18,9 +18,11 @@ package org.apache.spark.sql.rapids.execution
 
 import org.json4s.JsonAST
 
-import org.apache.spark.{SparkContext, SparkEnv}
+import org.apache.spark.{SparkContext, SparkEnv, SparkUpgradeException}
 import org.apache.spark.broadcast.Broadcast
-import org.apache.spark.sql.catalyst.plans.physical.BroadcastMode
+import org.apache.spark.executor.InputMetrics
+import org.apache.spark.sql.SparkSession
+import org.apache.spark.sql.catalyst.plans.physical.{BroadcastMode, IdentityBroadcastMode}
 import org.apache.spark.sql.execution.SparkPlan
 import org.apache.spark.sql.execution.joins.HashedRelationBroadcastMode
 import org.apache.spark.sql.types.{DataType, StructType}
@@ -29,8 +31,10 @@ import org.apache.spark.util.Utils
 object TrampolineUtil {
   def doExecuteBroadcast[T](child: SparkPlan): Broadcast[T] = child.doExecuteBroadcast()
 
-  def isHashedRelation(mode: BroadcastMode): Boolean = {
-    mode.isInstanceOf[HashedRelationBroadcastMode]
+  def isSupportedRelation(mode: BroadcastMode): Boolean = mode match {
+    case _ : HashedRelationBroadcastMode => true
+    case IdentityBroadcastMode => true
+    case _ => false
   }
 
   def structTypeMerge(left: DataType, right: DataType): DataType = StructType.merge(left, right)
@@ -56,4 +60,19 @@ object TrampolineUtil {
   def dataTypeExistsRecursively(dt: DataType, f: DataType => Boolean): Boolean = {
     dt.existsRecursively(f)
   }
+
+  def incInputRecordsRows(inputMetrics: InputMetrics, rows: Long): Unit =
+    inputMetrics.incRecordsRead(rows)
+
+  def makeSparkUpgradeException(
+                                version: String,
+                                message: String,
+                                cause: Throwable): SparkUpgradeException = {
+    new SparkUpgradeException(version, message, cause)
+  }
+
+  /** Shuts down and cleans up any existing Spark session */
+  def cleanupAnyExistingSession(): Unit = SparkSession.cleanupAnyExistingSession()
+
+  def asNullable(dt: DataType): DataType = dt.asNullable
 }

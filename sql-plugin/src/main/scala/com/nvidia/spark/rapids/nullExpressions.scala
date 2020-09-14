@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019, NVIDIA CORPORATION.
+ * Copyright (c) 2019-2020, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -45,7 +45,7 @@ object GpuNvl {
   }
 }
 
-case class GpuCoalesce(children: Seq[GpuExpression]) extends GpuExpression with
+case class GpuCoalesce(children: Seq[Expression]) extends GpuExpression with
   ComplexTypeMergingExpression {
 
   override def columnarEval(batch: ColumnarBatch): Any = {
@@ -119,7 +119,7 @@ case class GpuCoalesce(children: Seq[GpuExpression]) extends GpuExpression with
  * UnaryOp
  */
 
-case class GpuIsNull(child: GpuExpression) extends GpuUnaryExpression with Predicate {
+case class GpuIsNull(child: Expression) extends GpuUnaryExpression with Predicate {
   override def nullable: Boolean = false
 
   override def sql: String = s"(${child.sql} IS NULL)"
@@ -128,7 +128,7 @@ case class GpuIsNull(child: GpuExpression) extends GpuUnaryExpression with Predi
     GpuColumnVector.from(input.getBase.isNull)
 }
 
-case class GpuIsNotNull(child: GpuExpression) extends GpuUnaryExpression with Predicate {
+case class GpuIsNotNull(child: Expression) extends GpuUnaryExpression with Predicate {
   override def nullable: Boolean = false
 
   override def sql: String = s"(${child.sql} IS NOT NULL)"
@@ -137,7 +137,7 @@ case class GpuIsNotNull(child: GpuExpression) extends GpuUnaryExpression with Pr
     GpuColumnVector.from(input.getBase.isNotNull)
 }
 
-case class GpuIsNan(child: GpuExpression) extends GpuUnaryExpression with Predicate {
+case class GpuIsNan(child: Expression) extends GpuUnaryExpression with Predicate {
   override def nullable: Boolean = false
 
   override def sql: String = s"(${child.sql} IS NAN)"
@@ -147,12 +147,12 @@ case class GpuIsNan(child: GpuExpression) extends GpuUnaryExpression with Predic
 }
 
 /**
-  * A GPU accelerated predicate that is evaluated to be true if there are at least `n` non-null
-  * and non-NaN values.
-  */
+ * A GPU accelerated predicate that is evaluated to be true if there are at least `n` non-null
+ * and non-NaN values.
+ */
 case class GpuAtLeastNNonNulls(
     n: Int,
-    exprs: Seq[GpuExpression])
+    exprs: Seq[Expression])
   extends GpuExpression
   with Predicate {
   override def nullable: Boolean = false
@@ -160,17 +160,17 @@ case class GpuAtLeastNNonNulls(
   override def toString: String = s"GpuAtLeastNNulls(n, ${children.mkString(",")})"
   override def children: Seq[Expression] = exprs
   /**
-    * Returns the result of evaluating this expression on the entire
-    * `ColumnarBatch`. The result of calling this may be a single [[GpuColumnVector]] or a scalar
-    * value. Scalar values typically happen if they are a part of the expression
-    * i.e. col("a") + 100.
-    * In this case the 100 is a literal that Add would have to be able to handle.
-    *
-    * By convention any [[GpuColumnVector]] returned by [[columnarEval]]
-    * is owned by the caller and will need to be closed by them. This can happen by putting it into
-    * a `ColumnarBatch` and closing the batch or by closing the vector directly if it is a
-    * temporary value.
-    */
+   * Returns the result of evaluating this expression on the entire
+   * `ColumnarBatch`. The result of calling this may be a single [[GpuColumnVector]] or a scalar
+   * value. Scalar values typically happen if they are a part of the expression
+   * i.e. col("a") + 100.
+   * In this case the 100 is a literal that Add would have to be able to handle.
+   *
+   * By convention any [[GpuColumnVector]] returned by [[columnarEval]]
+   * is owned by the caller and will need to be closed by them. This can happen by putting it into
+   * a `ColumnarBatch` and closing the batch or by closing the vector directly if it is a
+   * temporary value.
+   */
   override def columnarEval(batch: ColumnarBatch): Any = {
     val nonNullNanCounts : mutable.Queue[ColumnVector] = new mutable.Queue[ColumnVector]()
     try {
@@ -247,7 +247,7 @@ case class GpuAtLeastNNonNulls(
   }
 }
 
-case class GpuNaNvl(left: GpuExpression, right: GpuExpression) extends GpuBinaryExpression {
+case class GpuNaNvl(left: Expression, right: Expression) extends GpuBinaryExpression {
   override def doColumnar(lhs: GpuColumnVector, rhs: GpuColumnVector): GpuColumnVector = {
     var islhsNotNan: ColumnVector = null
     try {

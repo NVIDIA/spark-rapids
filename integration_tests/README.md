@@ -24,6 +24,16 @@ Should be enough to get the basics started.
 
 `sre_yield` provides a set of APIs to generate string data from a regular expression.
 
+### pandas
+`pip install pandas`
+
+`pandas` is a fast, powerful, flexible and easy to use open source data analysis and manipulation tool.
+
+### pyarrow
+`pip install pyarrow`
+
+`pyarrow` provides a Python API for functionality provided by the Arrow C++ libraries, along with tools for Arrow integration and interoperability with pandas, NumPy, and other software in the Python ecosystem.
+
 ## Running
 
 Running the tests follows the pytest conventions, the main difference is using
@@ -39,7 +49,7 @@ Most clusters probably will not have the RAPIDS plugin installed in the cluster 
 If just want to verify the SQL replacement is working you will need to add the `rapids-4-spark` and `cudf` jars to your `spark-submit` command.
 
 ```
-$SPARK_HOME/bin/spark-submit --jars "rapids-4-spark_2.12-0.1-SNAPSHOT.jar,cudf-0.14.jar" ./runtests.py
+$SPARK_HOME/bin/spark-submit --jars "rapids-4-spark_2.12-0.2.0-SNAPSHOT.jar,cudf-0.15.jar" ./runtests.py
 ```
 
 You don't have to enable the plugin for this to work, the test framework will do that for you.
@@ -70,7 +80,7 @@ The TPCxBB, TPCH, and Mortgage tests in this framework can be enabled by providi
 As an example, here is the `spark-submit` command with the TPCxBB parameters:
 
 ```
-$SPARK_HOME/bin/spark-submit --jars "rapids-4-spark_2.12-0.1-SNAPSHOT.jar,cudf-0.14.jar,rapids-4-spark-tests_2.12-0.1-SNAPSHOT.jar" ./runtests.py --tpcxbb_format="csv" --tpcxbb_path="/path/to/tpcxbb/csv"
+$SPARK_HOME/bin/spark-submit --jars "rapids-4-spark_2.12-0.2.0-SNAPSHOT.jar,cudf-0.15.jar,rapids-4-spark-tests_2.12-0.2.0-SNAPSHOT.jar" ./runtests.py --tpcxbb_format="csv" --tpcxbb_path="/path/to/tpcxbb/csv"
 ```
 
 ## Writing tests
@@ -118,7 +128,7 @@ The marks you care about are all in marks.py
    * `ignore_order` tells the asserts to sort the resulting data because the tests may not produce the results in the same order
    * `incompat` tells the tests to enable incompat operators. It does not enable approximate comparisons for floating point though.
    * `approximate_float` tells the tests to compare floating point values (including double) and allow for an error. This follows `pytest.approx` and will also take `rel` and `abs` args.
-   * `allow_non_gpu` tells the tests that not everything in the query will run on the GPU. You can tell it to allow all CPU fallback by `@allow_non_gpu(any=True)` you can also pass in class names that are white listed for CPU operation.
+   * `allow_non_gpu` tells the tests that not everything in the query will run on the GPU. You can tell it to allow all CPU fallback by `@allow_non_gpu(any=True)` you can also pass in class names that are enabled for CPU operation.
 
 ###  `spark_session.py`
 

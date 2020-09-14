@@ -1,0 +1,275 @@
+#!/usr/local/env groovy
+/*
+ * Copyright (c) 2020, NVIDIA CORPORATION.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+/**
+ *
+ * Jenkinsfile for building rapids-plugin on blossom
+ *
+ */
+
+@Library('shared-libs') _
+@Library('blossom-github-lib@master')
+import ipp.blossom.*
+
+def pluginDockerBuild = """
+apiVersion: v1
+kind: Pod
+spec:
+  containers:
+  - name: plugin-docker
+    image: docker:19.03.12
+    command:
+    - sleep
+    args:
+    - 99d
+    resources:
+      requests:
+        cpu: 4
+        memory: 8Gi
+      limits:
+        cpu: 8
+        memory: 16Gi
+    env:
+      - name: DOCKER_HOST
+        value: tcp://localhost:2375
+  - name: plugin-docker-daemon
+    image: docker:19.03.12-dind
+    securityContext:
+      privileged: true
+    env:
+      - name: DOCKER_TLS_CERTDIR
+        value: ""
+  nodeSelector:
+    kubernetes.io/os: linux
+"""
+
+def pluginPremerge = """
+apiVersion: v1
+kind: Pod
+spec:
+  containers:
+  - name: plugin-premerge
+    image: IMAGE_PREMERGE
+    imagePullPolicy: Always
+    resources:
+      requests:
+        cpu: 8
+        memory: 16Gi
+      limits:
+        cpu: 16
+        memory: 32Gi
+        nvidia.com/gpu: 1
+    restartPolicy: Never
+    backoffLimit: 2
+    tty: true
+  nodeSelector:
+    kubernetes.io/os: linux
+  affinity:
+    nodeAffinity:
+      requiredDuringSchedulingIgnoredDuringExecution:
+        nodeSelectorTerms:
+        - matchExpressions:
+          - key: nvidia.com/gpu_type
+            operator: In
+            values: GPU_TYPES
+"""
+
+def githubHelper // blossom github helper
+def IMAGE_PREMERGE // temp image for premerge test
+def PREMERGE_TAG
+def skipped = false
+
+pipeline {
+    agent {
+        kubernetes {
+            label "premerge-init-${BUILD_TAG}"
+            cloud 'sc-ipp-blossom-prod'
+        }
+    }
+
+    options {
+        ansiColor('xterm')
+        buildDiscarder(logRotator(numToKeepStr: '50'))
+        skipDefaultCheckout true
+        timeout(time: 180, unit: 'MINUTES')
+    }
+
+    environment {
+        JENKINS_ROOT = 'jenkins'
+        PREMERGE_SCRIPT = '$JENKINS_ROOT/spark-premerge-build.sh'
+        MVN_URM_MIRROR = '-s jenkins/settings.xml -P mirror-apache-to-urm'
+        LIBCUDF_KERNEL_CACHE_PATH = '/tmp/.cudf'
+        ARTIFACTORY_NAME = "${ArtifactoryConstants.ARTIFACTORY_NAME}"
+        GITHUB_TOKEN = credentials("github-token")
+        // TODO: rename this credential after we shutdown premerge pipeline on ngcc
+        URM_CREDS = credentials("svcngcc_artifactory")
+        URM_URL = "https://${ArtifactoryConstants.ARTIFACTORY_NAME}/artifactory/sw-spark-maven"
+        GPU_TYPES = credentials("pre-merge_gpu_types")
+    }
+
+    stages {
+        stage("Init githubHelper") {
+            steps {
+                script {
+                    githubHelper = GithubHelper.getInstance("${GITHUB_TOKEN}", githubData)
+                    def title = githubHelper.getIssue().title
+
+                    if (title ==~ /.*\[skip ci\].*/) {
+                        githubHelper.updateCommitStatus("$BUILD_URL", "Skipped", GitHubCommitState.SUCCESS)
+                        currentBuild.result == "SUCCESS"
+                        skipped = true
+                        return
+                    }
+                }
+            }
+        } // end of Init githubHelper
+
+        stage('Build docker image') {
+            when {
+                beforeAgent true
+                expression {
+                    !skipped
+                }
+            }
+
+            agent {
+                kubernetes {
+                    label "premerge-docker-${BUILD_TAG}"
+                    cloud 'sc-ipp-blossom-prod'
+                    yaml "$pluginDockerBuild"
+                }
+            }
+
+            steps {
+                script {
+                    githubHelper.updateCommitStatus("$BUILD_URL", "Running", GitHubCommitState.PENDING)
+
+                    currentBuild.description = githubHelper.getBuildDescription()
+                    checkout(
+                            changelog: false,
+                            poll: true,
+                            scm: [
+                                    $class: 'GitSCM', branches: [[name: "pr/" + githubHelper.getPRNumber()]],
+                                    doGenerateSubmoduleConfigurations: false,
+                                    submoduleCfg: [],
+                                    userRemoteConfigs: [[
+                                        credentialsId: 'github-token',
+                                        url: githubHelper.getCloneUrl(),
+                                        refspec: '+refs/pull/*/head:refs/remotes/origin/pr/*']]
+                            ]
+                    )
+
+                    container('plugin-docker') {
+                        def CUDA_NAME = sh(returnStdout: true,
+                                script: '. jenkins/version-def.sh>&2 && echo -n $CUDA_CLASSIFIER | sed "s/-/./g"')
+
+                        IMAGE_TAG = "dev-ubuntu16-${CUDA_NAME}"
+                        CACHE_IMAGE_NAME = "${ARTIFACTORY_NAME}/sw-spark-docker/plugin:${IMAGE_TAG}"
+
+                        sh "docker pull $CACHE_IMAGE_NAME || true"
+
+                        PREMERGE_TAG = "${IMAGE_TAG}-${BUILD_TAG}"
+                        IMAGE_PREMERGE = "${ARTIFACTORY_NAME}/sw-spark-docker-local/plugin:${PREMERGE_TAG}"
+                        def CUDA_VER = "$CUDA_NAME" - "cuda"
+                        docker.build(IMAGE_PREMERGE, "-f jenkins/Dockerfile-blossom.ubuntu16 --build-arg CUDA_VER=$CUDA_VER --cache-from $CACHE_IMAGE_NAME -t $IMAGE_PREMERGE .")
+                        uploadDocker(IMAGE_PREMERGE)
+
+                        pluginPremerge = pluginPremerge.replace("IMAGE_PREMERGE", "$IMAGE_PREMERGE")
+                        pluginPremerge = pluginPremerge.replace("GPU_TYPES", "$GPU_TYPES")
+                    }
+                }
+            }
+        } // end of Build docker image
+
+        // TODO: support parallel testing for different spark versions
+        stage('Premerge Test') {
+            when {
+                beforeAgent true
+                expression {
+                    !skipped
+                }
+            }
+
+            agent {
+                kubernetes {
+                    label "premerge-test-${BUILD_TAG}"
+                    cloud 'sc-ipp-blossom-prod'
+                    yaml "$pluginPremerge"
+                }
+            }
+
+            steps {
+                script {
+                    checkout(
+                            changelog: false,
+                            poll: true,
+                            scm: [
+                                    $class: 'GitSCM', branches: [[name: "pr/" + githubHelper.getPRNumber()]],
+                                    doGenerateSubmoduleConfigurations: false,
+                                    submoduleCfg: [],
+                                    userRemoteConfigs: [[
+                                        credentialsId: 'github-token',
+                                        url: githubHelper.getCloneUrl(),
+                                        refspec: '+refs/pull/*/head:refs/remotes/origin/pr/*']]
+                            ]
+                    )
+
+                    container('plugin-premerge') {
+                        sh "$PREMERGE_SCRIPT"
+                        step([$class                : 'JacocoPublisher',
+                              execPattern           : '**/target/jacoco.exec',
+                              classPattern          : 'target/jacoco_classes/',
+                              sourcePattern         : 'sql-plugin/src/main/java/,sql-plugin/src/main/scala/,shuffle-plugin/src/main/scala/',
+                              sourceInclusionPattern: '**/*.java,**/*.scala'
+                        ])
+                    }
+                }
+            }
+        } // end of Premerge Test
+    } // end of stages
+
+    post {
+        always {
+            script {
+                if (skipped) {
+                    return
+                }
+
+                deleteDockerTempTag(PREMERGE_TAG) // clean premerge temp image
+                if (currentBuild.currentResult == "SUCCESS") {
+                    githubHelper.updateCommitStatus("$BUILD_URL", "Success", GitHubCommitState.SUCCESS)
+                } else {
+                    githubHelper.updateCommitStatus("$BUILD_URL", "Fail", GitHubCommitState.FAILURE)
+                }
+            }
+        }
+    }
+
+} // end of pipeline
+
+void uploadDocker(String IMAGE_NAME) {
+    def DOCKER_CMD = "docker --config $WORKSPACE/.docker"
+    sh """
+        echo $URM_CREDS_PSW | $DOCKER_CMD login $ARTIFACTORY_NAME -u $URM_CREDS_USR --password-stdin
+        $DOCKER_CMD push $IMAGE_NAME
+        $DOCKER_CMD logout $ARTIFACTORY_NAME
+    """
+}
+
+void deleteDockerTempTag(String tag) {
+    sh "curl -u $URM_CREDS_USR:$URM_CREDS_PSW -XDELETE https://${ARTIFACTORY_NAME}/artifactory/sw-spark-docker-local/plugin/${tag} || true"
+}

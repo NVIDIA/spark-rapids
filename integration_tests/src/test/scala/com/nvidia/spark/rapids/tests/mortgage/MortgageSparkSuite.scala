@@ -16,17 +16,25 @@
 
 package com.nvidia.spark.rapids.tests.mortgage
 
-import com.nvidia.spark.RapidsShuffleManager
+import com.nvidia.spark.rapids.ShimLoader
 import org.scalatest.FunSuite
 
 import org.apache.spark.sql.SparkSession
 import org.apache.spark.sql.functions._
 
 class MortgageSparkSuite extends FunSuite {
+
+  /**
+   * This is intentionally a def rather than a val so that scalatest uses the correct value (from
+   * this class or the derived class) when registering tests.
+   */
+  def adaptiveQueryEnabled = false
+
   lazy val  session: SparkSession = {
     var builder = SparkSession.builder
       .master("local[2]")
       .appName("MortgageTests")
+      .config("spark.sql.adaptive.enabled", adaptiveQueryEnabled)
       .config("spark.sql.join.preferSortMergeJoin", false)
       .config("spark.sql.shuffle.partitions", 2)
       .config("spark.plugins", "com.nvidia.spark.SQLPlugin")
@@ -34,7 +42,7 @@ class MortgageSparkSuite extends FunSuite {
       .config("spark.rapids.sql.test.enabled", false)
       .config("spark.rapids.sql.incompatibleOps.enabled", true)
       .config("spark.rapids.sql.hasNans", false)
-    val rapidsShuffle = classOf[RapidsShuffleManager].getCanonicalName
+    val rapidsShuffle = ShimLoader.getSparkShims.getRapidsShuffleManagerClass
     val prop = System.getProperty("rapids.shuffle.manager.override", "false")
     if (prop.equalsIgnoreCase("true")) {
       println("RAPIDS SHUFFLE MANAGER ACTIVE")

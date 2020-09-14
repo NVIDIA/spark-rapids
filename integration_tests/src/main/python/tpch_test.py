@@ -16,125 +16,163 @@ import pytest
 
 from asserts import assert_gpu_and_cpu_are_equal_collect
 from marks import approximate_float, incompat, ignore_order, allow_non_gpu
+from spark_session import with_spark_session, is_before_spark_310
 
 _base_conf = {'spark.rapids.sql.variableFloatAgg.enabled': 'true',
         'spark.rapids.sql.hasNans': 'false'}
 
+_adaptive_conf = _base_conf.copy()
+_adaptive_conf.update({'spark.sql.adaptive.enabled': 'true'})
+
 @approximate_float
-def test_tpch_q1(tpch):
+@pytest.mark.parametrize('conf', [_base_conf, _adaptive_conf])
+def test_tpch_q1(tpch, conf):
   assert_gpu_and_cpu_are_equal_collect(
-          lambda spark : tpch.do_test_query("q1"), conf=_base_conf)
+          lambda spark : tpch.do_test_query("q1"), conf=conf)
 
 @approximate_float
 @incompat
 @allow_non_gpu('TakeOrderedAndProjectExec', 'SortOrder', 'AttributeReference')
-def test_tpch_q2(tpch):
+@pytest.mark.parametrize('conf', [_base_conf, _adaptive_conf])
+def test_tpch_q2(tpch, conf):
   assert_gpu_and_cpu_are_equal_collect(
-          lambda spark : tpch.do_test_query("q2"), conf=_base_conf)
+          lambda spark : tpch.do_test_query("q2"), conf=conf)
 
 @approximate_float
 @allow_non_gpu('TakeOrderedAndProjectExec', 'SortOrder', 'AttributeReference')
-def test_tpch_q3(tpch):
+@pytest.mark.parametrize('conf', [_base_conf, _adaptive_conf])
+def test_tpch_q3(tpch, conf):
   assert_gpu_and_cpu_are_equal_collect(
-          lambda spark : tpch.do_test_query("q3"), conf=_base_conf)
+          lambda spark : tpch.do_test_query("q3"), conf=conf)
 
-def test_tpch_q4(tpch):
+@pytest.mark.parametrize('conf', [_base_conf, _adaptive_conf])
+def test_tpch_q4(tpch, conf):
   assert_gpu_and_cpu_are_equal_collect(
-          lambda spark : tpch.do_test_query("q4"), conf=_base_conf)
-
-@approximate_float
-def test_tpch_q5(tpch):
-  assert_gpu_and_cpu_are_equal_collect(
-          lambda spark : tpch.do_test_query("q5"), conf=_base_conf)
+          lambda spark : tpch.do_test_query("q4"), conf=conf)
 
 @approximate_float
-def test_tpch_q6(tpch):
+@pytest.mark.parametrize('conf', [_base_conf, _adaptive_conf])
+def test_tpch_q5(tpch, conf):
   assert_gpu_and_cpu_are_equal_collect(
-          lambda spark : tpch.do_test_query("q6"), conf=_base_conf)
+          lambda spark : tpch.do_test_query("q5"), conf=conf)
 
 @approximate_float
-def test_tpch_q7(tpch):
+@pytest.mark.parametrize('conf', [_base_conf, _adaptive_conf])
+def test_tpch_q6(tpch, conf):
   assert_gpu_and_cpu_are_equal_collect(
-          lambda spark : tpch.do_test_query("q7"), conf=_base_conf)
+          lambda spark : tpch.do_test_query("q6"), conf=conf)
 
 @approximate_float
-def test_tpch_q8(tpch):
+@pytest.mark.parametrize('conf', [_base_conf, _adaptive_conf])
+def test_tpch_q7(tpch, conf):
   assert_gpu_and_cpu_are_equal_collect(
-          lambda spark : tpch.do_test_query("q8"), conf=_base_conf)
+          lambda spark : tpch.do_test_query("q7"), conf=conf)
 
 @approximate_float
-def test_tpch_q9(tpch):
+@pytest.mark.parametrize('conf', [_base_conf, _adaptive_conf])
+def test_tpch_q8(tpch, conf):
   assert_gpu_and_cpu_are_equal_collect(
-          lambda spark : tpch.do_test_query("q9"), conf=_base_conf)
+          lambda spark : tpch.do_test_query("q8"), conf=conf)
+
+@approximate_float
+@pytest.mark.parametrize('conf', [_base_conf, _adaptive_conf])
+def test_tpch_q9(tpch, conf):
+  assert_gpu_and_cpu_are_equal_collect(
+          lambda spark : tpch.do_test_query("q9"), conf=conf)
 
 @incompat
 @approximate_float
 @allow_non_gpu('TakeOrderedAndProjectExec', 'SortOrder', 'AttributeReference')
-def test_tpch_q10(tpch):
+@pytest.mark.parametrize('conf', [_base_conf, _adaptive_conf])
+def test_tpch_q10(tpch, conf):
   assert_gpu_and_cpu_are_equal_collect(
-          lambda spark : tpch.do_test_query("q10"), conf=_base_conf)
+          lambda spark : tpch.do_test_query("q10"), conf=conf)
 
 @approximate_float
 @allow_non_gpu('FilterExec', 'And', 'IsNotNull', 'GreaterThan', 'AttributeReference', 'ScalarSubquery')
-def test_tpch_q11(tpch):
+@pytest.mark.parametrize('conf', [_base_conf, _adaptive_conf])
+def test_tpch_q11(tpch, conf):
   assert_gpu_and_cpu_are_equal_collect(
-          lambda spark : tpch.do_test_query("q11"), conf=_base_conf)
+          lambda spark : tpch.do_test_query("q11"), conf=conf)
 
-def test_tpch_q12(tpch):
+@pytest.mark.parametrize('conf', [_base_conf, _adaptive_conf])
+def test_tpch_q12(tpch, conf):
   assert_gpu_and_cpu_are_equal_collect(
-          lambda spark : tpch.do_test_query("q12"), conf=_base_conf)
+          lambda spark : tpch.do_test_query("q12"), conf=conf)
 
-def test_tpch_q13(tpch):
+@pytest.mark.parametrize('conf', [_base_conf, _adaptive_conf])
+def test_tpch_q13(tpch, conf):
   assert_gpu_and_cpu_are_equal_collect(
-          lambda spark : tpch.do_test_query("q13"), conf=_base_conf)
+          lambda spark : tpch.do_test_query("q13"), conf=conf)
 
 @approximate_float
-def test_tpch_q14(tpch):
+@pytest.mark.parametrize('conf', [_base_conf, _adaptive_conf])
+def test_tpch_q14(tpch, conf):
   assert_gpu_and_cpu_are_equal_collect(
-          lambda spark : tpch.do_test_query("q14"), conf=_base_conf)
+          lambda spark : tpch.do_test_query("q14"), conf=conf)
 
 #fp sum does not work on Q15
 @allow_non_gpu(any=True)
-def test_tpch_q15(tpch):
+@pytest.mark.parametrize('conf', [_base_conf, _adaptive_conf])
+def test_tpch_q15(tpch, conf):
   assert_gpu_and_cpu_are_equal_collect(
           lambda spark : tpch.do_test_query("q15"))
 
+@pytest.mark.xfail(
+    condition=not(is_before_spark_310()),
+    reason='https://github.com/NVIDIA/spark-rapids/issues/586')
 @allow_non_gpu('BroadcastNestedLoopJoinExec', 'Or', 'IsNull', 'EqualTo', 'AttributeReference', 'BroadcastExchangeExec')
-def test_tpch_q16(tpch):
+@pytest.mark.parametrize('conf', [_base_conf, _adaptive_conf])
+def test_tpch_q16(tpch, conf):
   assert_gpu_and_cpu_are_equal_collect(
-          lambda spark : tpch.do_test_query("q16"), conf=_base_conf)
+          lambda spark : tpch.do_test_query("q16"), conf=conf)
 
+@pytest.mark.xfail(
+    condition=not(is_before_spark_310()),
+    reason='https://github.com/NVIDIA/spark-rapids/issues/586')
 @approximate_float
-def test_tpch_q17(tpch):
+@pytest.mark.parametrize('conf', [_base_conf, _adaptive_conf])
+def test_tpch_q17(tpch, conf):
   assert_gpu_and_cpu_are_equal_collect(
-          lambda spark : tpch.do_test_query("q17"), conf=_base_conf)
+          lambda spark : tpch.do_test_query("q17"), conf=conf)
 
+@pytest.mark.xfail(
+    condition=not(is_before_spark_310()),
+    reason='https://github.com/NVIDIA/spark-rapids/issues/586')
 @incompat
 @approximate_float
 @allow_non_gpu('TakeOrderedAndProjectExec', 'SortOrder', 'AttributeReference')
-def test_tpch_q18(tpch):
+@pytest.mark.parametrize('conf', [_base_conf, _adaptive_conf])
+def test_tpch_q18(tpch, conf):
   assert_gpu_and_cpu_are_equal_collect(
-          lambda spark : tpch.do_test_query("q18"), conf=_base_conf)
+          lambda spark : tpch.do_test_query("q18"), conf=conf)
 
 @approximate_float
-def test_tpch_q19(tpch):
+@pytest.mark.parametrize('conf', [_base_conf, _adaptive_conf])
+def test_tpch_q19(tpch, conf):
   assert_gpu_and_cpu_are_equal_collect(
-          lambda spark : tpch.do_test_query("q19"), conf=_base_conf)
+          lambda spark : tpch.do_test_query("q19"), conf=conf)
 
-def test_tpch_q20(tpch):
+@pytest.mark.xfail(
+    condition=not(is_before_spark_310()),
+    reason='https://github.com/NVIDIA/spark-rapids/issues/586')
+@pytest.mark.parametrize('conf', [_base_conf, _adaptive_conf])
+def test_tpch_q20(tpch, conf):
   assert_gpu_and_cpu_are_equal_collect(
-          lambda spark : tpch.do_test_query("q20"), conf=_base_conf)
+          lambda spark : tpch.do_test_query("q20"), conf=conf)
 
 @allow_non_gpu('TakeOrderedAndProjectExec', 'SortOrder', 'AttributeReference',
         'SortMergeJoinExec', 'BroadcastHashJoinExec', 'BroadcastExchangeExec',
         'Alias', 'Not', 'EqualTo')
-def test_tpch_q21(tpch):
+@pytest.mark.parametrize('conf', [_base_conf, _adaptive_conf])
+def test_tpch_q21(tpch, conf):
   assert_gpu_and_cpu_are_equal_collect(
-          lambda spark : tpch.do_test_query("q21"), conf=_base_conf)
+          lambda spark : tpch.do_test_query("q21"), conf=conf)
 
 @approximate_float
 #Once ScalarSubqery if fixed the rest should just work
 @allow_non_gpu('FilterExec', 'And', 'AttributeReference', 'IsNotNull', 'In', 'Substring', 'Literal', 'GreaterThan', 'ScalarSubquery')
-def test_tpch_q22(tpch):
+@pytest.mark.parametrize('conf', [_base_conf, _adaptive_conf])
+def test_tpch_q22(tpch, conf):
   assert_gpu_and_cpu_are_equal_collect(
-          lambda spark : tpch.do_test_query("q22"), conf=_base_conf)
+          lambda spark : tpch.do_test_query("q22"), conf=conf)

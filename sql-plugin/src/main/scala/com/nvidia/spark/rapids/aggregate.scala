@@ -26,16 +26,52 @@ import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import org.apache.spark.TaskContext
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.InternalRow
-import org.apache.spark.sql.catalyst.expressions.{Attribute, AttributeSeq, AttributeSet, NamedExpression}
+import org.apache.spark.sql.catalyst.expressions.{Alias, Attribute, AttributeReference, AttributeSeq, AttributeSet, Expression, If, NamedExpression}
 import org.apache.spark.sql.catalyst.expressions.aggregate._
-import org.apache.spark.sql.catalyst.plans.physical.{AllTuples, ClusteredDistribution, Distribution, Partitioning, UnspecifiedDistribution}
+import org.apache.spark.sql.catalyst.plans.physical.{AllTuples, ClusteredDistribution, Distribution, HashPartitioning, Partitioning, UnspecifiedDistribution}
 import org.apache.spark.sql.catalyst.util.truncatedString
-import org.apache.spark.sql.execution.{SparkPlan, UnaryExecNode}
+import org.apache.spark.sql.execution.{ExplainUtils, SortExec, SparkPlan, UnaryExecNode}
 import org.apache.spark.sql.execution.aggregate.{HashAggregateExec, SortAggregateExec}
 import org.apache.spark.sql.execution.metric.{SQLMetric, SQLMetrics}
 import org.apache.spark.sql.rapids.{CudfAggregate, GpuAggregateExpression, GpuDeclarativeAggregate}
 import org.apache.spark.sql.types.{DoubleType, FloatType}
 import org.apache.spark.sql.vectorized.{ColumnarBatch, ColumnVector}
+
+object AggregateUtils {
+
+  private val aggs = List("min", "max", "avg", "sum", "count", "first", "last")
+
+  /**
+   * Return true if the Attribute passed is one of aggregates in the aggs list.
+   * Use it with caution. We are comparing the name of a column looking for anything that matches
+   * with the values in aggs.
+   */
+  def validateAggregate(attributes: AttributeSet): Boolean = {
+    attributes.toSeq.exists(attr => aggs.exists(agg => attr.name.contains(agg)))
+  }
+
+  /**
+   * Return true if there are multiple distinct functions along with non-distinct functions.
+   */
+  def shouldFallbackMultiDistinct(aggExprs: Seq[AggregateExpression]): Boolean = {
+    // Check if there is an `If` within `First`. This is included in the plan for non-distinct
+    // functions only when multiple distincts along with non-distinct functions are present in the
+    // query. We fall back to CPU in this case when references of `If` are an aggregate. We cannot
+    // call `isDistinct` here on aggregateExpressions to get the total number of distinct functions.
+    // If there are multiple distincts, the plan is rewritten by `RewriteDistinctAggregates` where
+    // regular aggregations and every distinct aggregation is calculated in a separate group.
+    aggExprs.map(e => e.aggregateFunction).exists {
+      func => {
+        func match {
+          case First(If(_, _, _), _) if validateAggregate(func.references) => {
+            true
+          }
+          case _ => false
+        }
+      }
+    }
+  }
+}
 
 class GpuHashAggregateMeta(
     agg: HashAggregateExec,
@@ -43,18 +79,18 @@ class GpuHashAggregateMeta(
     parent: Option[RapidsMeta[_, _, _]],
     rule: ConfKeysAndIncompat)
   extends SparkPlanMeta[HashAggregateExec](agg, conf, parent, rule) {
-  private val requiredChildDistributionExpressions: Option[Seq[ExprMeta[_]]] =
+  private val requiredChildDistributionExpressions: Option[Seq[BaseExprMeta[_]]] =
     agg.requiredChildDistributionExpressions.map(_.map(GpuOverrides.wrapExpr(_, conf, Some(this))))
-  private val groupingExpressions: Seq[ExprMeta[_]] =
+  private val groupingExpressions: Seq[BaseExprMeta[_]] =
     agg.groupingExpressions.map(GpuOverrides.wrapExpr(_, conf, Some(this)))
-  private val aggregateExpressions: Seq[ExprMeta[_]] =
+  private val aggregateExpressions: Seq[BaseExprMeta[_]] =
     agg.aggregateExpressions.map(GpuOverrides.wrapExpr(_, conf, Some(this)))
-  private val aggregateAttributes: Seq[ExprMeta[_]] =
+  private val aggregateAttributes: Seq[BaseExprMeta[_]] =
     agg.aggregateAttributes.map(GpuOverrides.wrapExpr(_, conf, Some(this)))
-  private val resultExpressions: Seq[ExprMeta[_]] =
+  private val resultExpressions: Seq[BaseExprMeta[_]] =
     agg.resultExpressions.map(GpuOverrides.wrapExpr(_, conf, Some(this)))
 
-  override val childExprs: Seq[ExprMeta[_]] =
+  override val childExprs: Seq[BaseExprMeta[_]] =
     requiredChildDistributionExpressions.getOrElse(Seq.empty) ++
       groupingExpressions ++
       aggregateExpressions ++
@@ -69,7 +105,6 @@ class GpuHashAggregateMeta(
         willNotWorkOnGpu("First/Last reductions are not supported on GPU")
       }
     }
-    val groupingExpressionTypes = agg.groupingExpressions.map(_.dataType)
     if (agg.resultExpressions.isEmpty) {
       willNotWorkOnGpu("result expressions is empty")
     }
@@ -80,7 +115,18 @@ class GpuHashAggregateMeta(
         case "partial" => if (hashAggMode.contains(Final) || hashAggMode.contains(Complete)) {
           // replacing only Partial hash aggregates, so a Final or Complete one should not replace
           willNotWorkOnGpu("Replacing Final or Complete hash aggregates disabled")
-         }
+        }
+          // In partial mode, if there are non-distinct functions and multiple distinct functions,
+          // non-distinct functions are computed using the First operator. The final result would be
+          // incorrect for non-distinct functions for partition size > 1. Reason for this is - if
+          // the first batch computed and sent to CPU doesn't contain all the rows required to
+          // compute non-distinct function(s), then Spark would consider that value as final result
+          // (due to First). Fall back to CPU in this case.
+          if (AggregateUtils.shouldFallbackMultiDistinct(agg.aggregateExpressions)) {
+            willNotWorkOnGpu("Aggregates of non-distinct functions with multiple distinct " +
+              "functions are non-deterministic for non-distinct functions as it is " +
+              "computed using First.")
+          }
         case "final" => if (hashAggMode.contains(Partial) || hashAggMode.contains(Complete)) {
           // replacing only Final hash aggregates, so a Partial or Complete one should not replace
           willNotWorkOnGpu("Replacing Partial or Complete hash aggregates disabled")
@@ -109,15 +155,16 @@ class GpuHashAggregateMeta(
     }
   }
 
-  override def convertToGpu(): GpuExec =
+  override def convertToGpu(): GpuExec = {
     GpuHashAggregateExec(
       requiredChildDistributionExpressions.map(_.map(_.convertToGpu())),
       groupingExpressions.map(_.convertToGpu()),
       aggregateExpressions.map(_.convertToGpu()).asInstanceOf[Seq[GpuAggregateExpression]],
-      aggregateAttributes.map(_.convertToGpu()).asInstanceOf[Seq[GpuAttributeReference]],
+      aggregateAttributes.map(_.convertToGpu()).asInstanceOf[Seq[Attribute]],
       agg.initialInputBufferOffset,
       resultExpressions.map(_.convertToGpu()).asInstanceOf[Seq[NamedExpression]],
       childPlans(0).convertIfNeeded())
+  }
 }
 
 class GpuSortAggregateMeta(
@@ -126,18 +173,18 @@ class GpuSortAggregateMeta(
   parent: Option[RapidsMeta[_, _, _]],
   rule: ConfKeysAndIncompat) extends SparkPlanMeta[SortAggregateExec](agg, conf, parent, rule) {
 
-  private val requiredChildDistributionExpressions: Option[Seq[ExprMeta[_]]] =
+  private val requiredChildDistributionExpressions: Option[Seq[BaseExprMeta[_]]] =
     agg.requiredChildDistributionExpressions.map(_.map(GpuOverrides.wrapExpr(_, conf, Some(this))))
-  private val groupingExpressions: Seq[ExprMeta[_]] =
+  private val groupingExpressions: Seq[BaseExprMeta[_]] =
     agg.groupingExpressions.map(GpuOverrides.wrapExpr(_, conf, Some(this)))
-  private val aggregateExpressions: Seq[ExprMeta[_]] =
+  private val aggregateExpressions: Seq[BaseExprMeta[_]] =
     agg.aggregateExpressions.map(GpuOverrides.wrapExpr(_, conf, Some(this)))
-  private val aggregateAttributes: Seq[ExprMeta[_]] =
+  private val aggregateAttributes: Seq[BaseExprMeta[_]] =
     agg.aggregateAttributes.map(GpuOverrides.wrapExpr(_, conf, Some(this)))
-  private val resultExpressions: Seq[ExprMeta[_]] =
+  private val resultExpressions: Seq[BaseExprMeta[_]] =
     agg.resultExpressions.map(GpuOverrides.wrapExpr(_, conf, Some(this)))
 
-  override val childExprs: Seq[ExprMeta[_]] =
+  override val childExprs: Seq[BaseExprMeta[_]] =
     requiredChildDistributionExpressions.getOrElse(Seq.empty) ++
       groupingExpressions ++
       aggregateExpressions ++
@@ -173,7 +220,18 @@ class GpuSortAggregateMeta(
         case "partial" => if (hashAggMode.contains(Final) || hashAggMode.contains(Complete)) {
           // replacing only Partial hash aggregates, so a Final or Commplete one should not replace
           willNotWorkOnGpu("Replacing Final or Complete hash aggregates disabled")
-         }
+        }
+          // In partial mode, if there are non-distinct functions and multiple distinct functions,
+          // non-distinct functions are computed using the First operator. The final result would be
+          // incorrect for non-distinct functions for partition size > 1. Reason for this is - if
+          // the first batch computed and sent to CPU doesn't contain all the rows required to
+          // compute non-distinct function(s), then Spark would consider that value as final result
+          // (due to First). Fall back to CPU in this case.
+          if (AggregateUtils.shouldFallbackMultiDistinct(agg.aggregateExpressions)) {
+            willNotWorkOnGpu("Aggregates of non-distinct functions with multiple distinct " +
+              "functions are non-deterministic for non-distinct functions as it is " +
+              "computed using First.")
+          }
         case "final" => if (hashAggMode.contains(Partial) || hashAggMode.contains(Complete)) {
           // replacing only Final hash aggregates, so a Partial or Complete one should not replace
           willNotWorkOnGpu("Replacing Partial or Complete hash aggregates disabled")
@@ -188,6 +246,34 @@ class GpuSortAggregateMeta(
             s"'complete', or 'all'")
       }
     }
+
+    // make sure this is the last check - if this is SortAggregate, the children can be Sorts and we
+    // want to validate they can run on GPU and remove them before replacing this with a
+    // HashAggregate.  We don't want to do this if there is a first or last aggregate,
+    // because dropping the sort will make them no longer deterministic.
+    // In the future we might be able to pull the sort functionality into the aggregate so
+    // we can sort a single batch at a time and sort the combined result as well which would help
+    // with data skew.
+    val hasFirstOrLast = agg.aggregateExpressions.exists { agg =>
+      agg.aggregateFunction match {
+        case _: First => true
+        case _: Last => true
+        case _ => false
+      }
+    }
+    if (canThisBeReplaced && !hasFirstOrLast) {
+      childPlans.foreach { plan =>
+        if (plan.wrapped.isInstanceOf[SortExec]) {
+          if (!plan.canThisBeReplaced) {
+            willNotWorkOnGpu(s"can't replace sortAggregate because one of the SortExec's before " +
+              s"can't be replaced.")
+          } else {
+            plan.shouldBeRemoved("removing SortExec as part replacing sortAggregate with " +
+              s"hashAggregate")
+          }
+        }
+      }
+    }
   }
 
   override def convertToGpu(): GpuExec = {
@@ -197,45 +283,55 @@ class GpuSortAggregateMeta(
       requiredChildDistributionExpressions.map(_.map(_.convertToGpu())),
       groupingExpressions.map(_.convertToGpu()),
       aggregateExpressions.map(_.convertToGpu()).asInstanceOf[Seq[GpuAggregateExpression]],
-      aggregateAttributes.map(_.convertToGpu()).asInstanceOf[Seq[GpuAttributeReference]],
+      aggregateAttributes.map(_.convertToGpu()).asInstanceOf[Seq[Attribute]],
       agg.initialInputBufferOffset,
       resultExpressions.map(_.convertToGpu()).asInstanceOf[Seq[NamedExpression]],
       childPlans(0).convertIfNeeded())
   }
-
 }
 
 /**
-  * GpuHashAggregateExec - is the GPU version of HashAggregateExec, with some major differences:
-  * - it doesn't support spilling to disk
-  * - it doesn't support strings in the grouping key
-  * - it doesn't support count(col1, col2, ..., colN)
-  * - it doesn't support distinct
-  * @param requiredChildDistributionExpressions this is unchanged by the GPU. It is used in
-  *                                             EnsureRequirements to be able to add shuffle nodes
-  * @param groupingExpressions The expressions that, when applied to the input batch, return the
-  *                            grouping key
-  * @param aggregateExpressions The GpuAggregateExpression instances for this node
-  * @param aggregateAttributes References to each GpuAggregateExpression (attribute references)
-  * @param initialInputBufferOffset this is not used in the GPU version, but it's used to offset
-  *                                 the slot in the aggregation buffer that aggregates should
-  *                                 start referencing
-  * @param resultExpressions the expected output expression of this hash aggregate (which this
-  *                          node should project)
-  * @param child incoming plan (where we get input columns from)
-  */
-case class GpuHashAggregateExec(requiredChildDistributionExpressions: Option[Seq[GpuExpression]],
-                           groupingExpressions: Seq[GpuExpression],
-                           aggregateExpressions: Seq[GpuAggregateExpression],
-                           aggregateAttributes: Seq[GpuAttributeReference],
-                           initialInputBufferOffset: Int,
-                           //TODO: make resultExpressions a GpuNamedExpression
-                           resultExpressions: Seq[NamedExpression],
-                           child: SparkPlan) extends UnaryExecNode with GpuExec with Arm {
+ * GpuHashAggregateExec - is the GPU version of HashAggregateExec, with some major differences:
+ * - it doesn't support spilling to disk
+ * - it doesn't support strings in the grouping key
+ * - it doesn't support count(col1, col2, ..., colN)
+ * - it doesn't support distinct
+ * @param requiredChildDistributionExpressions this is unchanged by the GPU. It is used in
+ *                                             EnsureRequirements to be able to add shuffle nodes
+ * @param groupingExpressions The expressions that, when applied to the input batch, return the
+ *                            grouping key
+ * @param aggregateExpressions The GpuAggregateExpression instances for this node
+ * @param aggregateAttributes References to each GpuAggregateExpression (attribute references)
+ * @param initialInputBufferOffset this is not used in the GPU version, but it's used to offset
+ *                                 the slot in the aggregation buffer that aggregates should
+ *                                 start referencing
+ * @param resultExpressions the expected output expression of this hash aggregate (which this
+ *                          node should project)
+ * @param child incoming plan (where we get input columns from)
+ */
+case class GpuHashAggregateExec(
+    requiredChildDistributionExpressions: Option[Seq[Expression]],
+    groupingExpressions: Seq[Expression],
+    aggregateExpressions: Seq[GpuAggregateExpression],
+    aggregateAttributes: Seq[Attribute],
+    initialInputBufferOffset: Int,
+    resultExpressions: Seq[NamedExpression],
+    child: SparkPlan) extends UnaryExecNode with GpuExec with Arm {
+
+  override def verboseStringWithOperatorId(): String = {
+    s"""
+       |$formattedNodeName
+       |${ExplainUtils.generateFieldString("Input", child.output)}
+       |${ExplainUtils.generateFieldString("Keys", groupingExpressions)}
+       |${ExplainUtils.generateFieldString("Functions", aggregateExpressions)}
+       |${ExplainUtils.generateFieldString("Aggregate Attributes", aggregateAttributes)}
+       |${ExplainUtils.generateFieldString("Results", resultExpressions)}
+       |""".stripMargin
+  }
 
   case class BoundExpressionsModeAggregates(boundInputReferences: Seq[GpuExpression] ,
     boundFinalProjections: Option[scala.Seq[GpuExpression]],
-    boundResultReferences: scala.Seq[GpuExpression] ,
+    boundResultReferences: scala.Seq[Expression] ,
     aggModeCudfAggregates: scala.Seq[(AggregateMode, scala.Seq[CudfAggregate])])
   // This handles GPU hash aggregation without spilling.
   //
@@ -502,15 +598,14 @@ case class GpuHashAggregateExec(requiredChildDistributionExpressions: Option[Seq
         }
         childCvs.safeClose()
         concatCvs.safeClose()
-        (Seq(batch, aggregatedInputCb, aggregatedCb, finalCb))
+        Seq(batch, aggregatedInputCb, aggregatedCb, finalCb)
           .safeClose()
       }
     }}
   }
 
   private def processIncomingBatch(batch: ColumnarBatch,
-      boundInputReferences: Seq[GpuExpression]): Seq[GpuColumnVector] = {
-
+      boundInputReferences: Seq[Expression]): Seq[GpuColumnVector] = {
     boundInputReferences.safeMap { ref =>
       val in = ref.columnarEval(batch)
       val childCv = in match {
@@ -532,12 +627,12 @@ case class GpuHashAggregateExec(requiredChildDistributionExpressions: Option[Seq
   }
 
   /**
-    * concatenateBatches - given two ColumnarBatch instances, return a sequence of GpuColumnVector
-    * that is the concatenated columns of the two input batches.
-    * @param aggregatedInputCb this is an incoming batch
-    * @param aggregatedCb this is a batch that was kept for concatenation
-    * @return Seq[GpuColumnVector] with concatenated vectors
-    */
+   * concatenateBatches - given two ColumnarBatch instances, return a sequence of GpuColumnVector
+   * that is the concatenated columns of the two input batches.
+   * @param aggregatedInputCb this is an incoming batch
+   * @param aggregatedCb this is a batch that was kept for concatenation
+   * @return Seq[GpuColumnVector] with concatenated vectors
+   */
   private def concatenateBatches(aggregatedInputCb: ColumnarBatch, aggregatedCb: ColumnarBatch,
       concatTime: SQLMetric): Seq[GpuColumnVector] = {
     val nvtxRange = new NvtxWithMetrics("concatenateBatches", NvtxColor.BLUE, concatTime)
@@ -569,21 +664,21 @@ case class GpuHashAggregateExec(requiredChildDistributionExpressions: Option[Seq
   private lazy val completeMode = uniqueModes.contains(Complete)
 
   /**
-    * getCudfAggregates returns a sequence of `cudf.Aggregate`, given the current mode
-    * `AggregateMode`, and a sequence of all expressions for this [[GpuHashAggregateExec]]
-    * node, we get all the expressions as that's important for us to be able to resolve the current
-    * ordinal for this cudf aggregate.
-    *
-    * Examples:
-    * fn = sum, min, max will always be Seq(fn)
-    * avg will be Seq(sum, count) for Partial mode, but Seq(sum, sum) for other modes
-    * count will be Seq(count) for Partial mode, but Seq(sum) for other modes
-    *
-    * @return Seq of `cudf.Aggregate`, with one or more aggregates that correspond to each
-    *         expression in allExpressions
-    */
+   * getCudfAggregates returns a sequence of `cudf.Aggregate`, given the current mode
+   * `AggregateMode`, and a sequence of all expressions for this [[GpuHashAggregateExec]]
+   * node, we get all the expressions as that's important for us to be able to resolve the current
+   * ordinal for this cudf aggregate.
+   *
+   * Examples:
+   * fn = sum, min, max will always be Seq(fn)
+   * avg will be Seq(sum, count) for Partial mode, but Seq(sum, sum) for other modes
+   * count will be Seq(count) for Partial mode, but Seq(sum) for other modes
+   *
+   * @return Seq of `cudf.Aggregate`, with one or more aggregates that correspond to each
+   *         expression in allExpressions
+   */
   def setupReferences(childAttr: AttributeSeq,
-      groupingExpressions: Seq[GpuExpression],
+      groupingExpressions: Seq[Expression],
       aggregateExpressions: Seq[GpuAggregateExpression]): BoundExpressionsModeAggregates = {
 
     val groupingAttributes = groupingExpressions.map(_.asInstanceOf[NamedExpression].toAttribute)
@@ -607,10 +702,10 @@ case class GpuHashAggregateExec(requiredChildDistributionExpressions: Option[Seq
 
     val aggModeCudfAggregates = aggregateExpressions.zipWithIndex.map { case (expr, modeIndex) =>
       val cudfAggregates = if (expr.mode == Partial || expr.mode == Complete) {
-        GpuBindReferences.bindReferences(updateExpressionsSeq(modeIndex), aggBufferAttributes)
+        GpuBindReferences.bindGpuReferences(updateExpressionsSeq(modeIndex), aggBufferAttributes)
           .asInstanceOf[Seq[CudfAggregate]]
       } else {
-        GpuBindReferences.bindReferences(mergeExpressionsSeq(modeIndex), aggBufferAttributes)
+        GpuBindReferences.bindGpuReferences(mergeExpressionsSeq(modeIndex), aggBufferAttributes)
           .asInstanceOf[Seq[CudfAggregate]]
       }
       (expr.mode, cudfAggregates)
@@ -640,13 +735,13 @@ case class GpuHashAggregateExec(requiredChildDistributionExpressions: Option[Seq
         _.aggregateFunction.aggBufferAttributes)
 
     // Partial with no distinct or when modes are empty
-    val inputProjections: Seq[GpuExpression] = groupingExpressions ++ aggregateExpressions
+    val inputProjections: Seq[Expression] = groupingExpressions ++ aggregateExpressions
       .flatMap(_.aggregateFunction.inputProjection)
 
     var distinctAttributes = Seq[Attribute]()
-    var distinctExpressions = Seq[GpuExpression]()
+    var distinctExpressions = Seq[Expression]()
     var nonDistinctAttributes = Seq[Attribute]()
-    var nonDistinctExpressions = Seq[GpuExpression]()
+    var nonDistinctExpressions = Seq[Expression]()
     uniqueModes.foreach {
       case PartialMerge =>
         nonDistinctAttributes = mergeAttributesNonDistinct
@@ -686,15 +781,15 @@ case class GpuHashAggregateExec(requiredChildDistributionExpressions: Option[Seq
     //   for Partial and non distinct merge expressions for PartialMerge.
     // - Final mode: we pick the columns in the order as handed to us.
     val boundInputReferences = if (uniqueModes.contains(PartialMerge)) {
-      GpuBindReferences.bindReferences(inputBindExpressions, resultingBindAttributes)
+      GpuBindReferences.bindGpuReferences(inputBindExpressions, resultingBindAttributes)
     } else if (finalMode) {
-      GpuBindReferences.bindReferences(childAttr, childAttr)
+      GpuBindReferences.bindGpuReferences(childAttr.attrs.asInstanceOf[Seq[Expression]], childAttr)
     } else {
-      GpuBindReferences.bindReferences(inputProjections, childAttr)
+      GpuBindReferences.bindGpuReferences(inputProjections, childAttr)
     }
 
     val boundFinalProjections = if (finalMode || completeMode) {
-      Some(GpuBindReferences.bindReferences(finalProjections, aggBufferAttributes))
+      Some(GpuBindReferences.bindGpuReferences(finalProjections, aggBufferAttributes))
     } else {
       None
     }
@@ -710,24 +805,24 @@ case class GpuHashAggregateExec(requiredChildDistributionExpressions: Option[Seq
     // - Final or Complete mode: we use resultExpressions to pick out the correct columns that
     //   finalReferences has pre-processed for us
     val boundResultReferences = if (partialMode) {
-      GpuBindReferences.bindReferences(
-        resultExpressions.asInstanceOf[Seq[GpuExpression]],
+      GpuBindReferences.bindGpuReferences(
+        resultExpressions,
         resultExpressions.map(_.toAttribute))
     } else if (finalMode || completeMode) {
-      GpuBindReferences.bindReferences(
-        resultExpressions.asInstanceOf[Seq[GpuExpression]],
-        finalAttributes.asInstanceOf[Seq[GpuAttributeReference]])
+      GpuBindReferences.bindGpuReferences(
+        resultExpressions,
+        finalAttributes)
     } else {
-      GpuBindReferences.bindReferences(
-        resultExpressions.asInstanceOf[Seq[GpuExpression]],
-        groupingAttributes.asInstanceOf[Seq[GpuAttributeReference]])
+      GpuBindReferences.bindGpuReferences(
+        resultExpressions,
+        groupingAttributes)
     }
     BoundExpressionsModeAggregates(boundInputReferences, boundFinalProjections,
       boundResultReferences, aggModeCudfAggregates)
   }
 
   def computeAggregate(toAggregateCvs: Seq[GpuColumnVector],
-                       groupingExpressions: Seq[GpuExpression],
+                       groupingExpressions: Seq[Expression],
                        aggModeCudfAggregates : Seq[(AggregateMode, Seq[CudfAggregate])],
                        merge : Boolean,
                        computeAggTime: SQLMetric): ColumnarBatch  = {
@@ -835,6 +930,8 @@ case class GpuHashAggregateExec(requiredChildDistributionExpressions: Option[Seq
     "concatTime"-> SQLMetrics.createNanoTimingMetric(sparkContext, "time in batch concat")
   )
 
+  protected def outputExpressions: Seq[NamedExpression] = resultExpressions
+
   //
   // This section is derived (copied in most cases) from HashAggregateExec
   //
@@ -842,7 +939,33 @@ case class GpuHashAggregateExec(requiredChildDistributionExpressions: Option[Seq
     aggregateExpressions.flatMap(_.aggregateFunction.aggBufferAttributes)
   }
 
-  override def outputPartitioning: Partitioning = child.outputPartitioning
+  final override def outputPartitioning: Partitioning = {
+    if (hasAlias) {
+      child.outputPartitioning match {
+        case h: GpuHashPartitioning => h.copy(expressions = replaceAliases(h.expressions))
+        case h: HashPartitioning => h.copy(expressions = replaceAliases(h.expressions))
+        case other => other
+      }
+    } else {
+      child.outputPartitioning
+    }
+  }
+
+  protected def hasAlias: Boolean = outputExpressions.collectFirst { case _: Alias => }.isDefined
+
+  protected def replaceAliases(exprs: Seq[Expression]): Seq[Expression] = {
+    exprs.map {
+      case a: AttributeReference => replaceAlias(a).getOrElse(a)
+      case other => other
+    }
+  }
+
+  protected def replaceAlias(attr: AttributeReference): Option[Attribute] = {
+    outputExpressions.collectFirst {
+      case a @ Alias(child: AttributeReference, _) if child.semanticEquals(attr) =>
+        a.toAttribute
+    }
+  }
 
   // Used in de-duping and optimizer rules
   override def producedAttributes: AttributeSet =
@@ -867,8 +990,8 @@ case class GpuHashAggregateExec(requiredChildDistributionExpressions: Option[Seq
     "Row-based execution should not occur for this class")
 
   /**
-    * All the attributes that are used for this plan. NOT used for aggregation
-    */
+   * All the attributes that are used for this plan. NOT used for aggregation
+   */
   override lazy val allAttributes: AttributeSeq =
     child.output ++ aggregateBufferAttributes ++ aggregateAttributes ++
       aggregateExpressions.flatMap(_.aggregateFunction.inputAggBufferAttributes)

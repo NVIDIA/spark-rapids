@@ -16,14 +16,20 @@
 #
 
 function print_ver(){
-    type=$1
-    repo=$2
-    prefix=$3
-    suffix=$4
-    timestamp=`grep -oP '(?<=timestamp>)[^<]+' < $repo/maven-metadata-snapshots.xml`
-    buildnumber=`grep -oP '(?<=buildNumber>)[^<]+' < $repo/maven-metadata-snapshots.xml`
-    echo $type: $prefix$timestamp-$buildnumber$suffix
+    TAG=$1
+    REPO=$2
+    VERSION=$3
+    SUFFIX=$4
+    SERVER_ID=$5
+    
+    if [[ "$VERSION" == *"-SNAPSHOT" ]]; then
+        PREFIX=${VERSION%-SNAPSHOT}
+        TIMESTAMP=`grep -oP '(?<=timestamp>)[^<]+' < $REPO/maven-metadata-$SERVER_ID.xml`
+        BUILD_NUM=`grep -oP '(?<=buildNumber>)[^<]+' < $REPO/maven-metadata-$SERVER_ID.xml`
+        echo $TAG=$PREFIX-$TIMESTAMP-$BUILD_NUM$SUFFIX
+    else
+        echo $TAG=$VERSION$SUFFIX
+    fi
 }
 
-print_ver $1 $2 $3 $4
-
+print_ver $1 $2 $3 $4 $5
