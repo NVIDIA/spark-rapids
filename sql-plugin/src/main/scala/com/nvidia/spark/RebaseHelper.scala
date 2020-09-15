@@ -38,7 +38,7 @@ object RebaseHelper extends Arm {
     } else if (dtype.isTimestamp) {
       assert(dtype == DType.TIMESTAMP_MICROSECONDS)
       withResource(
-        Scalar.timestampFromLong(column.getDataType, startTs)) { minGood =>
+        Scalar.timestampFromLong(DType.TIMESTAMP_MICROSECONDS, startTs)) { minGood =>
         withResource(column.lessThan(minGood)) { hasBad =>
           withResource(hasBad.any()) { a =>
             a.getBoolean
