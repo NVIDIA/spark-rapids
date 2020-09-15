@@ -34,17 +34,31 @@ object BenchUtils {
    * Run the specified number of cold and hot runs and record the timings and summary of the
    * query and results to file, including all Spark configuration options and environment
    * variables.
+   *
+   * @param spark The Spark session
+   * @param queryRunner Function to create a DataFrame from the Spark session.
+   * @param queryDescription A query name to be written to the JSON file.
+   * @param filenameStub The prefix the for the JSON file. The current timestamp will be appended
+   *                     to ensure that filenames are unique and that results are not inadvertently
+   *                     overwritten.
+   * @param numColdRuns The number of cold runs.
+   * @param numHotRuns The number of hot runs.
+   * @param maxResultsToRecord The maximum number of result rows to collect and store in the
+   *                           output JSON file. This can be used as a sanity check to compare
+   *                           to previous runs but is not intended to be used for full results
+   *                           verification. Setting this to `None` will capture all result rows,
+   *                           and setting this to `Some(0)` will skip recording results.
    */
   def runBench(
       spark: SparkSession,
       queryRunner: SparkSession => DataFrame,
       queryDescription: String,
       filenameStub: String,
-      numColdRuns: Int = 1,
-      numHotRuns: Int = 3,
-      maxResultsToRecord: Option[Int] = None): Unit = {
+      numColdRuns: Int,
+      numHotRuns: Int,
+      maxResultsToRecord: Option[Int]): Unit = {
 
-    val now = Instant.now()
+    val queryStartTime = Instant.now()
 
     var df: DataFrame = null
     var results: Seq[Row] = null
@@ -83,7 +97,7 @@ object BenchUtils {
     println(s"Average hot run took ${hotRunElapsed.sum.toDouble/numHotRuns} msec.")
 
     // write results to file
-    val filename = s"$filenameStub-${now.toEpochMilli}.json"
+    val filename = s"$filenameStub-${queryStartTime.toEpochMilli}.json"
     println(s"Saving results to $filename")
 
     // try not to leak secrets
@@ -101,14 +115,19 @@ object BenchUtils {
       df.queryExecution.executedPlan.toString()
     )
 
-    // record the first N rows for later verification
-    // note that this sorting isn't entirely deterministic due to rounding differences between
-    // CPU and GPU but it works well enough for the TPC-DS and TPCxBB benchmarks
-    val sortedResults = results.sortBy(_.mkString(","))
-    val partialResults = maxResultsToRecord match {
-      case Some(n) => sortedResults.take(n).map(row => row.toSeq)
-      case _ => sortedResults.map(row => row.toSeq)
+    def sortResults(): Seq[Row] = {
+      // note that this sorting isn't entirely deterministic due to rounding differences between
+      // CPU and GPU but it works well enough for the TPC-DS and TPCxBB benchmarks
+      results.sortBy(_.mkString(","))
     }
+
+    // Optionally, record the first `maxResultsToRecord` rows for later verification.
+    val partialResults = maxResultsToRecord match {
+      case Some(0) => Seq.empty
+      case Some(n) => sortResults().take(n).map(row => row.toSeq)
+      case _ => sortResults().map(row => row.toSeq)
+    }
+
     val resultSummary = ResultSummary(
       results.length,
       maxResultsToRecord,
@@ -117,7 +136,7 @@ object BenchUtils {
 
     val report = BenchmarkReport(
       filename,
-      now.toEpochMilli,
+      queryStartTime.toEpochMilli,
       environment,
       queryDescription,
       queryPlan,

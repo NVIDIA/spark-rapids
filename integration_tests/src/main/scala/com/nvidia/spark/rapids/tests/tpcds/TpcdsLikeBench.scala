@@ -31,13 +31,23 @@ object TpcdsLikeBench extends Logging {
    * This method can be called from Spark shell using the following syntax:
    *
    * TpcdsLikeBench.runBench(spark, "q5")
+   *
+   * @param spark The Spark session
+   * @param query The name of the query to run e.g. "q5"
+   * @param numColdRuns The number of cold runs.
+   * @param numHotRuns The number of hot runs.
+   * @param maxResultsToRecord The maximum number of result rows to collect and store in the
+   *                           output JSON file. This can be used as a sanity check to compare
+   *                           to previous runs but is not intended to be used for full results
+   *                           verification. Setting this to `None` will capture all result rows,
+   *                           and setting this to `Some(0)` will skip recording results.
    */
   def runBench(
       spark: SparkSession,
       query: String,
       numColdRuns: Int = 1,
       numHotRuns: Int = 3,
-      maxResultsToRecord: Option[Int] = None): Unit = {
+      maxResultsToRecord: Option[Int] = Some(0)): Unit = {
     BenchUtils.runBench(
       spark,
       spark => TpcdsLikeSpark.query(query)(spark),
