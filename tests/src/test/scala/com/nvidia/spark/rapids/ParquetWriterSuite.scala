@@ -21,6 +21,7 @@ import java.nio.charset.StandardCharsets
 
 import org.apache.hadoop.fs.Path
 import org.apache.parquet.hadoop.ParquetFileReader
+
 import org.apache.spark.{SparkConf, SparkException}
 
 /**

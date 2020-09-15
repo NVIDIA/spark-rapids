@@ -18,6 +18,7 @@ package com.nvidia.spark
 
 import ai.rapids.cudf.{ColumnVector, DType, Scalar}
 import com.nvidia.spark.rapids.Arm
+
 import org.apache.spark.sql.catalyst.util.RebaseDateTime
 import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.rapids.execution.TrampolineUtil
