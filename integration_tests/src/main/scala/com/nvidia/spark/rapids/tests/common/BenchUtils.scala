@@ -40,7 +40,7 @@ object BenchUtils {
    * @param resultsAction Optional action to perform after creating the DataFrame, with default
    *                      behavior of calling df.collect() but user could provide function to
    *                      save results to CSV or Parquet instead.
-   * @param filenameStub The prefix the for the output file. The current timestamp will be appended
+   * @param filenameStub The prefix for the output file. The current timestamp will be appended
    *                     to ensure that filenames are unique and that results are not inadvertently
    *                     overwritten.
    * @param numColdRuns The number of cold runs.
