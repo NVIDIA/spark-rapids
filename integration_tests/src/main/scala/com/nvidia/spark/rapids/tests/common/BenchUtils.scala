@@ -71,6 +71,10 @@ object BenchUtils {
       val elapsed = NANOSECONDS.toMillis(end - start)
       queryTimes.append(elapsed)
       println(s"*** Iteration $i took $elapsed msec.")
+
+      // cause Spark to call unregisterShuffle
+      System.gc()
+      System.gc()
     }
 
     // summarize all query times
