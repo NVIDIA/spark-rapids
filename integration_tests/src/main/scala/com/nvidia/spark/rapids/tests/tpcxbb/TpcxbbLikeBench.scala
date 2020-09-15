@@ -19,7 +19,7 @@ package com.nvidia.spark.rapids.tests.tpcxbb
 import com.nvidia.spark.rapids.tests.common.BenchUtils
 
 import org.apache.spark.internal.Logging
-import org.apache.spark.sql.{DataFrame, SaveMode, SparkSession}
+import org.apache.spark.sql.{DataFrame, SparkSession}
 
 object TpcxbbLikeBench extends Logging {
 

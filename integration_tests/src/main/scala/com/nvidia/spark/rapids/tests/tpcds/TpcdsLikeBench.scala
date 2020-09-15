@@ -16,10 +16,6 @@
 
 package com.nvidia.spark.rapids.tests.tpcds
 
-import java.util.concurrent.TimeUnit.NANOSECONDS
-
-import scala.collection.mutable.ListBuffer
-
 import com.nvidia.spark.rapids.tests.common.BenchUtils
 
 import org.apache.spark.internal.Logging
