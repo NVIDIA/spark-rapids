@@ -104,8 +104,7 @@ class Spark300dbShims extends Spark300Shims {
               GpuFileSourceScanExec.convertFileFormat(wrapped.relation.fileFormat),
               options)(sparkSession)
             val canUseSmallFileOpt = newRelation.fileFormat match {
-              case _: ParquetFileFormat =>
-                GpuParquetScanBase.canUseSmallFileParquetOpt(conf, options, sparkSession)
+              case _: ParquetFileFormat => conf.isParquetMultiThreadReadEnabled
               case _ => false
             }
             GpuFileSourceScanExec(

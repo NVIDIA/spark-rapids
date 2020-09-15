@@ -20,6 +20,7 @@ import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.shims.spark300.{GpuShuffledHashJoinMeta, GpuSortMergeJoinMeta, Spark300Shims}
 import com.nvidia.spark.rapids.spark301.RapidsShuffleManager
 
+import org.apache.spark.SparkEnv
 import org.apache.spark.sql.{SparkSession, SparkSessionExtensions}
 import org.apache.spark.sql.catalyst.expressions._
 import org.apache.spark.sql.catalyst.expressions.aggregate.{First, Last}
@@ -30,6 +31,7 @@ import org.apache.spark.sql.execution.adaptive.ShuffleQueryStageExec
 import org.apache.spark.sql.execution.exchange.{BroadcastExchangeLike, ShuffleExchangeLike}
 import org.apache.spark.sql.execution.joins.{BroadcastHashJoinExec, ShuffledHashJoinExec, SortMergeJoinExec}
 import org.apache.spark.sql.rapids.execution.{GpuBroadcastExchangeExecBase, GpuShuffleExchangeExecBase}
+import org.apache.spark.storage.{BlockId, BlockManagerId}
 
 class Spark301Shims extends Spark300Shims {
 
@@ -70,6 +72,16 @@ class Spark301Shims extends Spark300Shims {
 
   override def getRapidsShuffleManagerClass: String = {
     classOf[RapidsShuffleManager].getCanonicalName
+  }
+
+  override def getMapSizesByExecutorId(
+      shuffleId: Int,
+      startMapIndex: Int,
+      endMapIndex: Int,
+      startPartition: Int,
+      endPartition: Int): Iterator[(BlockManagerId, Seq[(BlockId, Long, Int)])] = {
+    SparkEnv.get.mapOutputTracker.getMapSizesByRange(shuffleId,
+      startMapIndex, endMapIndex, startPartition, endPartition)
   }
 
   override def getGpuBroadcastExchangeExec(

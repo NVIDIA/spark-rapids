@@ -22,7 +22,7 @@
     <parent>
         <groupId>com.nvidia</groupId>
         <artifactId>rapids-4-spark-parent</artifactId>
-        <version>0.2.0-SNAPSHOT</version>
+        <version>0.3.0-SNAPSHOT</version>
         <relativePath>../pom.xml</relativePath>
     </parent>
     <groupId>com.nvidia</groupId>
@@ -30,7 +30,7 @@
     <packaging>pom</packaging>
     <name>RAPIDS Accelerator for Apache Spark SQL Plugin Shims</name>
     <description>The RAPIDS SQL plugin for Apache Spark Shims</description>
-    <version>0.2.0-SNAPSHOT</version>
+    <version>0.3.0-SNAPSHOT</version>
 
     <profiles>
         <profile>
@@ -45,7 +45,6 @@
                 <activeByDefault>true</activeByDefault>
             </activation>
             <modules>
-                <module>spark301</module>
                 <module>spark302</module>
                 <module>spark310</module>
             </modules>
@@ -54,6 +53,7 @@
 
     <modules>
         <module>spark300</module>
+        <module>spark301</module>
         <module>aggregator</module>
     </modules>
     <dependencies>

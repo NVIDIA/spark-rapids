@@ -129,6 +129,55 @@ class AdaptiveQueryExecSuite
     }
   }
 
+  test("Join partitioned tables") {
+    assumeSpark301orLater
+
+    val conf = new SparkConf()
+        .set(SQLConf.ADAPTIVE_EXECUTION_ENABLED.key, "true")
+        .set(SQLConf.AUTO_BROADCASTJOIN_THRESHOLD.key, "-1") // force shuffle exchange
+
+    withGpuSparkSession(spark => {
+      import spark.implicits._
+
+      val path = new File(TEST_FILES_ROOT, "test.parquet").getAbsolutePath
+      (0 until 100)
+          .map(i => (i,i*5))
+          .toDF("a", "b")
+          .write
+          .mode(SaveMode.Overwrite)
+          .parquet(path)
+      spark.read.parquet(path).createOrReplaceTempView("testData")
+
+      spark.sql("DROP TABLE IF EXISTS t1").collect()
+      spark.sql("DROP TABLE IF EXISTS t2").collect()
+
+      spark.sql("CREATE TABLE t1 (a INT, b INT) USING parquet").collect()
+      spark.sql("CREATE TABLE t2 (a INT, b INT) USING parquet PARTITIONED BY (a)").collect()
+
+      spark.sql("INSERT INTO TABLE t1 SELECT a, b FROM testData").collect()
+      spark.sql("INSERT INTO TABLE t2 SELECT a, b FROM testData").collect()
+
+      val df = spark.sql(
+        "SELECT t1.a, t2.b " +
+            "FROM t1 " +
+            "JOIN t2 " +
+            "ON t1.a = t2.a " +
+            "WHERE t2.a = 5" // filter on partition key to force dynamic partition pruning
+      )
+      df.collect()
+
+      // assert that DPP did cause this to run as a non-AQE plan
+      assert(!df.queryExecution.executedPlan.isInstanceOf[AdaptiveSparkPlanExec])
+
+      // assert that both inputs to the SHJ are coalesced
+      val shj = TestUtils.findOperator(df.queryExecution.executedPlan,
+        _.isInstanceOf[GpuShuffledHashJoinBase]).get
+      assert(shj.children.length == 2)
+      assert(shj.children.forall(_.isInstanceOf[GpuCoalesceBatches]))
+
+    }, conf)
+  }
+
   test("Plugin should translate child plan of GPU DataWritingCommandExec to GPU") {
 
     val conf = new SparkConf()
@@ -214,7 +263,7 @@ class AdaptiveQueryExecSuite
 
   test("Exchange reuse") {
 
-    assumeSpark301orLater()
+    assumeSpark301orLater
 
     val conf = new SparkConf()
         .set(SQLConf.ADAPTIVE_EXECUTION_ENABLED.key, "true")
@@ -246,7 +295,7 @@ class AdaptiveQueryExecSuite
 
   test("multiple joins") {
 
-    assumeSpark301orLater()
+    assumeSpark301orLater
 
     val conf = new SparkConf()
         .set(SQLConf.ADAPTIVE_EXECUTION_ENABLED.key, "true")
@@ -304,7 +353,7 @@ class AdaptiveQueryExecSuite
 
   def skewJoinTest(fun: SparkSession => Unit) {
 
-    assumeSpark301orLater()
+    assumeSpark301orLater
 
     val conf = new SparkConf()
       .set(SQLConf.ADAPTIVE_EXECUTION_ENABLED.key, "true")
@@ -343,6 +392,17 @@ class AdaptiveQueryExecSuite
     }, conf)
   }
 
+  /** most of the AQE tests requires Spark 3.0.1 or later */
+  private def assumeSpark301orLater = {
+    val sparkShimVersion = ShimLoader.getSparkShims.getSparkShimVersion
+    val isValidTestForSparkVersion = sparkShimVersion match {
+      case SparkShimVersion(3, 0, 0) => false
+      case DatabricksShimVersion(3, 0, 0) => false
+      case _ => true
+    }
+    assume(isValidTestForSparkVersion)
+  }
+
   def checkSkewJoin(
       joins: Seq[GpuShuffledHashJoinBase],
       leftSkewNum: Int,
@@ -364,16 +424,6 @@ class AdaptiveQueryExecSuite
     assert(rightSkew.length == rightSkewNum)
   }
 
-  private def assumeSpark301orLater(): Unit = {
-    // all AQE tests requires Spark 3.0.1 or later
-    val isValidTestForSparkVersion = ShimLoader.getSparkShims.getSparkShimVersion match {
-      case SparkShimVersion(3, 0, 0) => false
-      case DatabricksShimVersion(3, 0, 0) => false
-      case _ => true
-    }
-    assume(isValidTestForSparkVersion)
-  }
-
   private def setupTestData(spark: SparkSession): Unit = {
     testData(spark)
     testData2(spark)
@@ -388,7 +438,8 @@ class AdaptiveQueryExecSuite
     val df = data
       .toDF("key", "value")
       .repartition(col("key"))
-    registerAsParquetTable(spark, df, "testData")  }
+    registerAsParquetTable(spark, df, "testData")
+  }
 
   /** Ported from org.apache.spark.sql.test.SQLTestData */
   private def testData2(spark: SparkSession) {

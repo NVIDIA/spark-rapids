@@ -26,8 +26,9 @@ import com.nvidia.spark.rapids.format.TableMeta
  * @param maxSize maximum size in bytes for all buffers in this store
  */
 class RapidsHostMemoryStore(
-    catalog: RapidsBufferCatalog,
-    maxSize: Long) extends RapidsBufferStore("host", catalog) {
+    maxSize: Long,
+    catalog: RapidsBufferCatalog = RapidsBufferCatalog.singleton)
+    extends RapidsBufferStore("host", catalog) {
   private[this] val pool = HostMemoryBuffer.allocate(maxSize, false)
   private[this] val addressAllocator = new AddressSpaceAllocator(maxSize)
 

@@ -38,7 +38,8 @@ object RapidsBufferStore {
  */
 abstract class RapidsBufferStore(
     val name: String,
-    catalog: RapidsBufferCatalog) extends AutoCloseable with Logging {
+    catalog: RapidsBufferCatalog = RapidsBufferCatalog.singleton)
+    extends AutoCloseable with Logging {
 
   private class BufferTracker {
     private[this] val comparator: Comparator[RapidsBufferBase] =

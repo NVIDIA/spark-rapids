@@ -36,10 +36,8 @@ class RapidsShuffleInternalManager(conf: SparkConf, isDriver: Boolean)
       endPartition: Int,
       context: TaskContext,
       metrics: ShuffleReadMetricsReporter): ShuffleReader[K, C] = {
-    // NOTE: This type of reader is not possible for gpu shuffle, as we'd need
-    // to use the optimization within our manager, and we don't.
-    wrapped.getReaderForRange(RapidsShuffleInternalManagerBase.unwrapHandle(handle),
-      startMapIndex, endMapIndex, startPartition, endPartition, context, metrics)
+    getReaderInternal(handle, startMapIndex, endMapIndex, startPartition, endPartition, context,
+      metrics)
   }
 
   def getReader[K, C](

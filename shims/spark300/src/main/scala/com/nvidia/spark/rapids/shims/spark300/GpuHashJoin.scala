@@ -170,8 +170,12 @@ trait GpuHashJoin extends GpuExec with HashJoin {
       builtBatch
     }
 
-  private[this] def filterStreamedTable(streamedBatch:ColumnarBatch): ColumnarBatch =
-    GpuFilter(streamedBatch, streamedTableNullFilterExpression)
+  private[this] def filterStreamedTableIfNeeded(streamedBatch:ColumnarBatch): ColumnarBatch =
+    if (shouldFilterStreamTableForNulls) {
+      GpuFilter(streamedBatch, streamedTableNullFilterExpression)
+    } else {
+      streamedBatch
+    }
 
   def doJoin(builtTable: Table,
       stream: Iterator[ColumnarBatch],
@@ -197,11 +201,7 @@ trait GpuHashJoin extends GpuExec with HashJoin {
       override def hasNext: Boolean = {
         while (nextCb.isEmpty && (first || stream.hasNext)) {
           if (stream.hasNext) {
-            val cb = if (shouldFilterStreamTableForNulls) {
-              filterStreamedTable(stream.next())
-            } else {
-              stream.next()
-            }
+            val cb = stream.next()
             val startTime = System.nanoTime()
             nextCb = doJoin(builtTable, cb, boundCondition, joinOutputRows, numOutputRows,
               numOutputBatches, joinTime, filterTime)
@@ -239,16 +239,14 @@ trait GpuHashJoin extends GpuExec with HashJoin {
       joinTime: SQLMetric,
       filterTime: SQLMetric): Option[ColumnarBatch] = {
 
-    val streamedTable = try {
-      val streamedKeysBatch = GpuProjectExec.project(streamedBatch, gpuStreamedKeys)
-      try {
-        val combined = combine(streamedKeysBatch, streamedBatch)
-        GpuColumnVector.from(combined)
-      } finally {
-        streamedKeysBatch.close()
+    val combined = withResource(streamedBatch) { streamedBatch =>
+      withResource(GpuProjectExec.project(streamedBatch, gpuStreamedKeys)) {
+        streamedKeysBatch =>
+          GpuHashJoin.incRefCount(combine(streamedKeysBatch, streamedBatch))
       }
-    } finally {
-      streamedBatch.close()
+    }
+    val streamedTable = withResource(filterStreamedTableIfNeeded(combined)) { cb =>
+      GpuColumnVector.from(cb)
     }
 
     val nvtxRange = new NvtxWithMetrics("hash join", NvtxColor.ORANGE, joinTime)

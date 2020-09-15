@@ -145,6 +145,29 @@ class ConfEntryWithDefault[T](key: String, converter: String => T, doc: String,
   }
 }
 
+class OptionalConfEntry[T](key: String, val rawConverter: String => T, doc: String,
+    isInternal: Boolean)
+  extends ConfEntry[Option[T]](key, s => Some(rawConverter(s)), doc, isInternal) {
+
+  override def get(conf: Map[String, String]): Option[T] = {
+    conf.get(key).map(rawConverter)
+  }
+
+  override def help(asTable: Boolean = false): Unit = {
+    if (!isInternal) {
+      if (asTable) {
+        import ConfHelper.makeConfAnchor
+        println(s"${makeConfAnchor(key)}|$doc|None")
+      } else {
+        println(s"$key:")
+        println(s"\t$doc")
+        println("\tNone")
+        println()
+      }
+    }
+  }
+}
+
 class TypedConfBuilder[T](
     val parent: ConfBuilder,
     val converter: String => T,
@@ -180,6 +203,13 @@ class TypedConfBuilder[T](
   def toSequence: TypedConfBuilder[Seq[T]] = {
     new TypedConfBuilder(parent, ConfHelper.stringToSeq(_, converter),
       ConfHelper.seqToString(_, stringConverter))
+  }
+
+  def createOptional: OptionalConfEntry[T] = {
+    val ret = new OptionalConfEntry[T](parent.key, converter,
+      parent.doc, parent.isInternal)
+    parent.register(ret)
+    ret
   }
 }
 
@@ -446,12 +476,32 @@ object RapidsConf {
     .booleanConf
     .createWithDefault(true)
 
-  val ENABLE_SMALL_FILES_PARQUET = conf("spark.rapids.sql.format.parquet.smallFiles.enabled")
-    .doc("When set to true, handles reading multiple small files within a partition more " +
-      "efficiently by combining multiple files on the CPU side before sending to the GPU. " +
-      "Recommended unless user needs mergeSchema option or schema evolution.")
+  val ENABLE_MULTITHREAD_PARQUET_READS = conf(
+    "spark.rapids.sql.format.parquet.multiThreadedRead.enabled")
+    .doc("When set to true, reads multiple small files within a partition more efficiently " +
+      "by reading each file in a separate thread in parallel on the CPU side before " +
+      "sending to the GPU. Limited by " +
+      "spark.rapids.sql.format.parquet.multiThreadedRead.numThreads " +
+      "and spark.rapids.sql.format.parquet.multiThreadedRead.maxNumFileProcessed")
     .booleanConf
     .createWithDefault(true)
+
+  val PARQUET_MULTITHREAD_READ_NUM_THREADS =
+    conf("spark.rapids.sql.format.parquet.multiThreadedRead.numThreads")
+      .doc("The maximum number of threads, on the executor, to use for reading small " +
+        "parquet files in parallel. This can not be changed at runtime after the executor has " +
+        "started.")
+      .integerConf
+      .createWithDefault(20)
+
+  val PARQUET_MULTITHREAD_READ_MAX_NUM_FILES_PARALLEL =
+    conf("spark.rapids.sql.format.parquet.multiThreadedRead.maxNumFilesParallel")
+      .doc("A limit on the maximum number of files per task processed in parallel on the CPU " +
+        "side before the file is sent to the GPU. This affects the amount of host memory used " +
+        "when reading the files in parallel.")
+      .integerConf
+      .checkValue(v => v > 0, "The maximum number of files must be greater than 0.")
+      .createWithDefault(Integer.MAX_VALUE)
 
   val ENABLE_PARQUET_READ = conf("spark.rapids.sql.format.parquet.read.enabled")
     .doc("When set to false disables parquet input acceleration")
@@ -534,7 +584,6 @@ object RapidsConf {
     .booleanConf
     .createWithDefault(true)
 
-  // USER FACING SHUFFLE CONFIGS
   val SHUFFLE_TRANSPORT_ENABLE = conf("spark.rapids.shuffle.transport.enabled")
     .doc("When set to true, enable the Rapids Shuffle Transport for accelerated shuffle.")
     .booleanConf
@@ -639,6 +688,17 @@ object RapidsConf {
     .stringConf
     .createWithDefault("NONE")
 
+  val SHIMS_PROVIDER_OVERRIDE = conf("spark.rapids.shims-provider-override")
+    .internal()
+    .doc("Overrides the automatic Spark shim detection logic and forces a specific shims " +
+      "provider class to be used. Set to the fully qualified shims provider class to use. " +
+      "If you are using a custom Spark version such as Spark 3.0.0.0 then this can be used to " +
+      "specify the shims provider that matches the base Spark version of Spark 3.0.0, i.e.: " +
+      "com.nvidia.spark.rapids.shims.spark300.SparkShimServiceProvider. If you modified Spark " +
+      "then there is no guarantee the RAPIDS Accelerator will function properly.")
+    .stringConf
+    .createOptional
+
   private def printSectionHeader(category: String): Unit =
     println(s"\n### $category")
 
@@ -669,7 +729,7 @@ object RapidsConf {
         |On startup use: `--conf [conf key]=[conf value]`. For example:
         |
         |```
-        |${SPARK_HOME}/bin/spark --jars 'rapids-4-spark_2.12-0.2.0-SNAPSHOT.jar,cudf-0.15-cuda10-1.jar' \
+        |${SPARK_HOME}/bin/spark --jars 'rapids-4-spark_2.12-0.2.0.jar,cudf-0.15-cuda10-1.jar' \
         |--conf spark.plugins=com.nvidia.spark.SQLPlugin \
         |--conf spark.rapids.sql.incompatibleOps.enabled=true
         |```
@@ -695,11 +755,11 @@ object RapidsConf {
     if (asTable) {
       println("")
       // scalastyle:off line.size.limit
-      println("""## Supported GPU Operators and Fine Tuning 
-        |_The RAPIDS Accelerator for Apache Spark_ can be configured to enable or disable specific 
-        |GPU accelerated expressions.  Enabled expressions are candidates for GPU execution. If the 
-        |expression is configured as disabled, the accelerator plugin will not attempt replacement, 
-        |and it will run on the CPU.  
+      println("""## Supported GPU Operators and Fine Tuning
+        |_The RAPIDS Accelerator for Apache Spark_ can be configured to enable or disable specific
+        |GPU accelerated expressions.  Enabled expressions are candidates for GPU execution. If the
+        |expression is configured as disabled, the accelerator plugin will not attempt replacement,
+        |and it will run on the CPU.
         |
         |Please leverage the [`spark.rapids.sql.explain`](#sql.explain) setting to get
         |feedback from the plugin as to why parts of a query may not be executing on the GPU.
@@ -752,6 +812,8 @@ object RapidsConf {
     }
   }
   def main(args: Array[String]): Unit = {
+    // Include the configs in PythonConfEntries
+    com.nvidia.spark.rapids.python.PythonConfEntries.init()
     val out = new FileOutputStream(new File(args(0)))
     Console.withOut(out) {
       Console.withErr(out) {
@@ -851,7 +913,11 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
 
   lazy val isParquetEnabled: Boolean = get(ENABLE_PARQUET)
 
-  lazy val isParquetSmallFilesEnabled: Boolean = get(ENABLE_SMALL_FILES_PARQUET)
+  lazy val isParquetMultiThreadReadEnabled: Boolean = get(ENABLE_MULTITHREAD_PARQUET_READS)
+
+  lazy val parquetMultiThreadReadNumThreads: Int = get(PARQUET_MULTITHREAD_READ_NUM_THREADS)
+
+  lazy val maxNumParquetFilesParallel: Int = get(PARQUET_MULTITHREAD_READ_MAX_NUM_FILES_PARALLEL)
 
   lazy val isParquetReadEnabled: Boolean = get(ENABLE_PARQUET_READ)
 
@@ -897,6 +963,8 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
   lazy val shuffleCompressionCodec: String = get(SHUFFLE_COMPRESSION_CODEC)
 
   lazy val shuffleCompressionMaxBatchMemory: Long = get(SHUFFLE_COMPRESSION_MAX_BATCH_MEMORY)
+
+  lazy val shimsProviderOverride: Option[String] = get(SHIMS_PROVIDER_OVERRIDE)
 
   def isOperatorEnabled(key: String, incompat: Boolean, isDisabledByDefault: Boolean): Boolean = {
     val default = !(isDisabledByDefault || incompat) || (incompat && isIncompatEnabled)

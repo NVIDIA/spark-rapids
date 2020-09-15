@@ -66,50 +66,50 @@ trait GpuAggregateFunction extends GpuExpression {
   }
 }
 
+case class WrappedAggFunction(aggregateFunction: GpuAggregateFunction, filter: Expression)
+    extends GpuDeclarativeAggregate {
+  override val inputProjection: Seq[GpuExpression] = {
+    val caseWhenExpressions = aggregateFunction.inputProjection.map { ip =>
+      // special case average with null result from the filter as expected values should be
+      // (0.0,0) for (sum, count)
+      val initialValue: Expression =
+        aggregateFunction match {
+          case _ : GpuAverage => ip.dataType match {
+            case doubleType: DoubleType => GpuLiteral(0D, doubleType)
+            case _ : LongType => GpuLiteral(0L, LongType)
+          }
+          case _ => GpuLiteral(null, ip.dataType)
+        }
+      val filterConditional = GpuCaseWhen(Seq((filter, ip)))
+      GpuCaseWhen(Seq((GpuIsNotNull(filterConditional), filterConditional)), Some(initialValue))
+    }
+    caseWhenExpressions
+  }
+  /** Attributes of fields in aggBufferSchema. */
+  override def aggBufferAttributes: Seq[AttributeReference] =
+    aggregateFunction.aggBufferAttributes
+  override def nullable: Boolean = aggregateFunction.nullable
+
+  override def dataType: DataType = aggregateFunction.dataType
+
+  override def children: Seq[Expression] = Seq(aggregateFunction, filter)
+
+  override val initialValues: Seq[GpuExpression] =
+    aggregateFunction.asInstanceOf[GpuDeclarativeAggregate].initialValues
+  override val updateExpressions: Seq[Expression] =
+    aggregateFunction.asInstanceOf[GpuDeclarativeAggregate].updateExpressions
+  override val mergeExpressions: Seq[GpuExpression] =
+    aggregateFunction.asInstanceOf[GpuDeclarativeAggregate].mergeExpressions
+  override val evaluateExpression: Expression =
+    aggregateFunction.asInstanceOf[GpuDeclarativeAggregate].evaluateExpression
+}
+
 case class GpuAggregateExpression(origAggregateFunction: GpuAggregateFunction,
                                   mode: AggregateMode,
                                   isDistinct: Boolean,
                                   filter: Option[Expression],
                                   resultId: ExprId)
   extends GpuExpression with GpuUnevaluable {
-
-  case class WrappedAggFunction(aggregateFunction: GpuAggregateFunction, filter: Expression)
-    extends GpuDeclarativeAggregate {
-    override val inputProjection: Seq[GpuExpression] = {
-      val caseWhenExpressions = aggregateFunction.inputProjection.map { ip =>
-        // special case average with null result from the filter as expected values should be
-        // (0.0,0) for (sum, count)
-        val initialValue: Expression =
-          origAggregateFunction match {
-            case _ : GpuAverage => ip.dataType match {
-              case doubleType: DoubleType => GpuLiteral(0D, doubleType)
-              case _ : LongType => GpuLiteral(0L, LongType)
-            }
-            case _ => GpuLiteral(null, ip.dataType)
-          }
-        val filterConditional = GpuCaseWhen(Seq((filter, ip)))
-        GpuCaseWhen(Seq((GpuIsNotNull(filterConditional), filterConditional)), Some(initialValue))
-      }
-      caseWhenExpressions
-    }
-    /** Attributes of fields in aggBufferSchema. */
-    override def aggBufferAttributes: Seq[AttributeReference] =
-      aggregateFunction.aggBufferAttributes
-    override def nullable: Boolean = aggregateFunction.nullable
-
-    override def dataType: DataType = aggregateFunction.dataType
-
-    override def children: Seq[Expression] = Seq(aggregateFunction, filter)
-
-    override val initialValues: Seq[GpuExpression] =
-      aggregateFunction.asInstanceOf[GpuDeclarativeAggregate].initialValues
-    override val updateExpressions: Seq[Expression] =
-      aggregateFunction.asInstanceOf[GpuDeclarativeAggregate].updateExpressions
-    override val mergeExpressions: Seq[GpuExpression] =
-      aggregateFunction.asInstanceOf[GpuDeclarativeAggregate].mergeExpressions
-    override val evaluateExpression: Expression =
-      aggregateFunction.asInstanceOf[GpuDeclarativeAggregate].evaluateExpression
-  }
 
   val aggregateFunction = if (filter.isDefined) {
     WrappedAggFunction(origAggregateFunction, filter.get)

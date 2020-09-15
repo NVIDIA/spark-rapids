@@ -149,7 +149,7 @@ all_gen_restricting_dates = [StringGen(), ByteGen(), ShortGen(), IntegerGen(), L
            TimestampGen()]
 
 @pytest.mark.parametrize('data_gen', all_gen_restricting_dates, ids=idfn)
-@allow_non_gpu('InMemoryTableScanExec', 'DataWritingCommandExec')
+@allow_non_gpu('DataWritingCommandExec')
 def test_cache_posexplode_makearray(spark_tmp_path, data_gen):
     if is_spark_300() and data_gen.data_type == BooleanType():
         pytest.xfail("https://issues.apache.org/jira/browse/SPARK-32672")

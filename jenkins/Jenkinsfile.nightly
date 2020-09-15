@@ -29,12 +29,12 @@ pipeline {
 
     options {
         ansiColor('xterm')
-        timeout(time: 120, unit: 'MINUTES')
+        timeout(time: 180, unit: 'MINUTES')
         buildDiscarder(logRotator(numToKeepStr: '10'))
     }
 
     parameters {
-        string(name: 'REF', defaultValue: 'branch-0.2', description: 'Commit to build')
+        string(name: 'REF', defaultValue: 'branch-0.3', description: 'Commit to build')
     }
 
     environment {
@@ -83,13 +83,13 @@ pipeline {
         always {
             script {
                 if (currentBuild.currentResult == "SUCCESS") {
-                    build(job: 'spark/rapids_integration-0.2-github',
+                    build(job: 'spark/rapids_integration-0.3-github',
                           propagate: false,
-                          parameters: [string(name: 'REF', value: 'branch-0.2')])
+                          parameters: [string(name: 'REF', value: 'branch-0.3')])
 
-                    slack("#rapidsai-spark-cicd", "Success", color: "#33CC33")
+                    slack("#swrapids-spark-cicd", "Success", color: "#33CC33")
                 } else {
-                    slack("#rapidsai-spark-cicd", "Failed", color: "#FF0000")
+                    slack("#swrapids-spark-cicd", "Failed", color: "#FF0000")
                 }
             }
         }

@@ -40,7 +40,7 @@ pipeline {
             description: 'parameters format XXX_VER=xxx;YYY_VER=yyy;')
         string(name: 'CUDA_CLASSIFIER', defaultValue: 'cuda10-1',
             description: '-Dclassifier=\n\n cuda10-1, cuda10-2, EMPTY as cuda10-1')
-        string(name: 'REF', defaultValue: 'branch-0.2', description: 'Commit to build')
+        string(name: 'REF', defaultValue: 'branch-0.3', description: 'Commit to build')
     }
 
     environment {
@@ -88,10 +88,10 @@ pipeline {
                 def status = "failed"
                 if (currentBuild.currentResult == "SUCCESS") {
                     status = "success"
-                    slack("#rapidsai-spark-cicd", "Success", color: "#33CC33")
+                    slack("#swrapids-spark-cicd", "Success", color: "#33CC33")
                 }
                 else {
-                    slack("#rapidsai-spark-cicd", "Failed", color: "#FF0000")
+                    slack("#swrapids-spark-cicd", "Failed", color: "#FF0000")
                 }
             }
             echo 'Pipeline finished!'
