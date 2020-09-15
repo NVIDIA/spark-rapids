@@ -419,11 +419,10 @@ class GpuCoalesceIterator(iter: Iterator[ColumnarBatch],
   private[this] var codec: TableCompressionCodec = _
 
   private[this] def popAllDecompressed(): Array[ColumnarBatch] = {
-    val wip = batches.map(_.getColumnarBatch())
-    batches.safeClose()
-    batches.clear()
+    closeOnExcept(batches.map(_.getColumnarBatch())) { wip =>
+      batches.safeClose()
+      batches.clear()
 
-    try {
       val compressedBatchIndices = wip.zipWithIndex.filter { pair =>
         GpuCompressedColumnVector.isBatchCompressed(pair._1)
       }.map(_._2)
@@ -453,12 +452,8 @@ class GpuCoalesceIterator(iter: Iterator[ColumnarBatch],
           }
         }
       }
-    } catch {
-      case t: Throwable =>
-        wip.safeClose()
-        throw t
+      wip.toArray
     }
-    wip.toArray
   }
 
   override def concatAllAndPutOnGPU(): ColumnarBatch = {

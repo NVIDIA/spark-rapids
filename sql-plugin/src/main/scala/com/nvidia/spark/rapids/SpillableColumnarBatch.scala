@@ -16,20 +16,62 @@
 
 package com.nvidia.spark.rapids
 
+import com.nvidia.spark.rapids.RapidsPluginImplicits.AutoCloseableArray
+
 import org.apache.spark.sql.rapids.TempSpillBufferId
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
 /**
- * A class that holds a ColumnarBatch that can be spilled
+ * Holds a ColumnarBatch that the backing buffers on it can be spilled.
  */
-class SpillableColumnarBatch private (id: TempSpillBufferId, rowCount: Int)
-    extends Arm with AutoCloseable {
+trait SpillableColumnarBatch extends AutoCloseable {
+  /**
+   * The number of rows stored in this batch.
+   */
+  def numRows(): Int
+
+  /**
+   * Set a new spill priority.
+   */
+  def setSpillPriority(priority: Long): Unit
+
+  /**
+   * Get the columnar batch.
+   * @note It is the responsibility of the caller to close the batch.
+   * @note If the buffer is compressed data then the resulting batch will be built using
+   *       `GpuCompressedColumnVector`, and it is the responsibility of the caller to deal
+   *       with decompressing the data if necessary.
+   */
+  def getColumnarBatch(): ColumnarBatch
+}
+
+/**
+ * Cudf does not support a table with columns and no rows. This takes care of making one of those
+ * spillable, even though in reality there is no backing buffer.  It does this by just keeping the
+ * row count in memory, and not dealing with the catalog at all.
+ */
+class JustRowsColumnarBatch(numRows: Int) extends SpillableColumnarBatch {
+  override def numRows(): Int = numRows
+  override def setSpillPriority(priority: Long): Unit = () // NOOP nothing to spill
+  override def getColumnarBatch(): ColumnarBatch =
+    new ColumnarBatch(Array.empty, numRows)
+  override def close(): Unit = () // NOOP nothing to close
+}
+
+/**
+ * The implementation of [[SpillableColumnarBatch]] that points to buffers that can be spilled.
+ * @note the buffer should be in the cache by the time this is created and this is taking over
+ *       ownership of the life cycle of the batch.  So don't call this constructor directly please
+ *       use `SpillableColumnarBatch.apply` instead.
+ */
+class SpillableColumnarBatchImpl (id: TempSpillBufferId, rowCount: Int)
+    extends  SpillableColumnarBatch with Arm {
   private var closed = false
 
   /**
    * The number of rows stored in this batch.
    */
-  def numRows(): Int = rowCount
+  override def numRows(): Int = rowCount
 
   /**
    * The ID that this is stored under.
@@ -40,7 +82,7 @@ class SpillableColumnarBatch private (id: TempSpillBufferId, rowCount: Int)
   /**
    * Set a new spill priority.
    */
-  def setSpillPriority(priority: Long): Unit = {
+  override def setSpillPriority(priority: Long): Unit = {
     withResource(RapidsBufferCatalog.acquireBuffer(id)) { rapidsBuffer =>
       rapidsBuffer.setSpillPriority(priority)
     }
@@ -53,7 +95,7 @@ class SpillableColumnarBatch private (id: TempSpillBufferId, rowCount: Int)
    *       `GpuCompressedColumnVector`, and it is the responsibility of the caller to deal
    *       with decompressing the data if necessary.
    */
-  def getColumnarBatch(): ColumnarBatch = {
+  override def getColumnarBatch(): ColumnarBatch = {
     withResource(RapidsBufferCatalog.acquireBuffer(id)) { rapidsBuffer =>
       rapidsBuffer.getColumnarBatch
     }
@@ -72,16 +114,48 @@ class SpillableColumnarBatch private (id: TempSpillBufferId, rowCount: Int)
   }
 }
 
-object SpillableColumnarBatch {
+object SpillableColumnarBatch extends Arm {
   /**
    * Create a new SpillableColumnarBatch.
-   * @note this takes over ownership of batch, and batch should not be used after this unless
-   *       you have incremented the reference count on it beforehand.
+   * @note This takes over ownership of batch, and batch should not be used after this.
    */
   def apply(batch: ColumnarBatch, priority: Long): SpillableColumnarBatch = {
     val numRows = batch.numRows()
-    val id = TempSpillBufferId()
-    RapidsBufferCatalog.addBatch(id, batch, priority)
-    new SpillableColumnarBatch(id, numRows)
+    if (batch.numCols() <= 0) {
+      // We consumed it
+      batch.close()
+      new JustRowsColumnarBatch(numRows)
+    } else {
+      val id = TempSpillBufferId()
+      addBatch(id, batch, priority)
+      new SpillableColumnarBatchImpl(id, numRows)
+    }
+  }
+
+  private[this] def addBatch(
+      id: RapidsBufferId,
+      batch: ColumnarBatch,
+      initialSpillPriority: Long): Unit = {
+    val numColumns = batch.numCols()
+    if (GpuCompressedColumnVector.isBatchCompressed(batch)) {
+      val cv = batch.column(0).asInstanceOf[GpuCompressedColumnVector]
+      RapidsBufferCatalog.addBuffer(id, cv.getBuffer, cv.getTableMeta, initialSpillPriority)
+    } else if (numColumns > 0 &&
+        (0 until numColumns)
+            .forall(i => batch.column(i).isInstanceOf[GpuColumnVectorFromBuffer])) {
+      val cv = batch.column(0).asInstanceOf[GpuColumnVectorFromBuffer]
+      withResource(GpuColumnVector.from(batch)) { table =>
+        RapidsBufferCatalog.addTable(id, table, cv.getBuffer, initialSpillPriority)
+      }
+    } else {
+      withResource(batch) { batch =>
+        withResource(GpuColumnVector.from(batch)) { tmpTable =>
+          val contigTables = tmpTable.contiguousSplit(batch.numRows())
+          val tab = contigTables.head
+          contigTables.tail.safeClose()
+          RapidsBufferCatalog.addTable(id, tab.getTable, tab.getBuffer, initialSpillPriority)
+        }
+      }
+    }
   }
 }

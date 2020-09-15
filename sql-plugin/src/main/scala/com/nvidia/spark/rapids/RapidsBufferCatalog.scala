@@ -198,41 +198,6 @@ object RapidsBufferCatalog extends Logging with Arm {
     deviceStorage.addBuffer(id, buffer, tableMeta, initialSpillPriority)
 
   /**
-   * Adds a batch to the device storage, taking ownership of the batch. It will try to be smart
-   * and only copy the data into a contiguous buffer if the incoming batch is not already
-   * contiguous.
-   * @param id buffer ID to associate with this buffer
-   * @param batch batch to be processed
-   * @param initialSpillPriority starting spill priority value for the buffer
-   */
-  def addBatch(
-      id: RapidsBufferId,
-      batch: ColumnarBatch,
-      initialSpillPriority: Long): Unit = {
-    val numColumns = batch.numCols()
-    if (numColumns > 0 && batch.column(0).isInstanceOf[GpuCompressedColumnVector]) {
-      val cv = batch.column(0).asInstanceOf[GpuCompressedColumnVector]
-      deviceStorage.addBuffer(id, cv.getBuffer, cv.getTableMeta, initialSpillPriority)
-    } else if (numColumns > 0 &&
-        (0 until numColumns)
-            .forall(i => batch.column(i).isInstanceOf[GpuColumnVectorFromBuffer])) {
-      val cv = batch.column(0).asInstanceOf[GpuColumnVectorFromBuffer]
-      withResource(GpuColumnVector.from(batch)) { table =>
-        deviceStorage.addTable(id, table, cv.getBuffer, initialSpillPriority)
-      }
-    } else {
-      withResource(batch) { batch =>
-        withResource(GpuColumnVector.from(batch)) { tmpTable =>
-          val contigTables = tmpTable.contiguousSplit(batch.numRows())
-          val tab = contigTables.head
-          contigTables.tail.safeClose()
-          deviceStorage.addTable(id, tab.getTable, tab.getBuffer, initialSpillPriority)
-        }
-      }
-    }
-  }
-
-  /**
    * Lookup the buffer that corresponds to the specified buffer ID and acquire it.
    * NOTE: It is the responsibility of the caller to close the buffer.
    * @param id buffer identifier
