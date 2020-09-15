@@ -688,6 +688,13 @@ object RapidsConf {
     .stringConf
     .createWithDefault("NONE")
 
+  val SHIMS_PROVIDER_OVERRIDE = conf("spark.rapids.shims-provider-override")
+    .internal()
+    .doc("Overrides the automatic Spark shim detection logic and forces a specific shims " +
+      "provider class to be used. Set to the fully qualified shims provider class to use.")
+    .stringConf
+    .createOptional
+
   private def printSectionHeader(category: String): Unit =
     println(s"\n### $category")
 
@@ -952,6 +959,8 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
   lazy val shuffleCompressionCodec: String = get(SHUFFLE_COMPRESSION_CODEC)
 
   lazy val shuffleCompressionMaxBatchMemory: Long = get(SHUFFLE_COMPRESSION_MAX_BATCH_MEMORY)
+
+  lazy val shimsProviderOverride: Option[String] = get(SHIMS_PROVIDER_OVERRIDE)
 
   def isOperatorEnabled(key: String, incompat: Boolean, isDisabledByDefault: Boolean): Boolean = {
     val default = !(isDisabledByDefault || incompat) || (incompat && isIncompatEnabled)
