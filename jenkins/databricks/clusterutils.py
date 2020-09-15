@@ -12,7 +12,11 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+from datetime import datetime
 import json
+import time
+import os
+import requests
 
 class ClusterUtils(object):
 
@@ -24,7 +28,8 @@ class ClusterUtils(object):
         runtime = 70
         dt = datetime.now()
         date = dt.microsecond
-        uniq_name = runtime + "-" + branch + "-" date
+        print("date is %s" % date)
+        uniq_name = runtime + "-" + branch # + "-" date
         cluster_name = "CI-GPU-databricks-" + uniq_name
         templ = {}
         templ['cluster_name'] = cluster_name
@@ -59,17 +64,17 @@ class ClusterUtils(object):
 
 
     @staticmethod
-    def wait_for_cluster_start():
+    def wait_for_cluster_start(workspace, clusterid, token):
         p = 0
         waiting = True
         master_addr = None
         while waiting:
             time.sleep(30)
-            jsonout = cluster_state(workspace, clusterid, token)
+            jsonout = ClusterUtils.cluster_state(workspace, clusterid, token)
             current_state = jsonout['state']
             print(clusterid + " state:" + current_state)
             if current_state in ['RUNNING']:
-                master_addr = get_master_addr(jsonout)
+                master_addr = ClusterUtils.get_master_addr(jsonout)
                 break
             if current_state in ['INTERNAL_ERROR', 'SKIPPED', 'TERMINATED'] or p >= 20:
                 if p >= 20:
@@ -77,10 +82,11 @@ class ClusterUtils(object):
                 sys.exit(4)
             p = p + 1
         print("Done starting cluster")
+        return master_addr
 
 
     @staticmethod
-    def start_existing_cluster(clusterid):
+    def start_existing_cluster(workspace, clusterid, token):
         print("Starting cluster: " + clusterid)
         resp = requests.post(workspace + "/api/2.0/clusters/start", headers={'Authorization': 'Bearer %s' % token}, json={'cluster_id': clusterid})
         print("start response is %s" % resp.text)
@@ -98,6 +104,7 @@ class ClusterUtils(object):
     @staticmethod
     def get_master_addr(jsonout):
         current_state = jsonout['state']
+        master_addr = None
         if current_state in ['RUNNING']:
             driver = jsonout['driver']
             master_addr = driver["public_dns"]

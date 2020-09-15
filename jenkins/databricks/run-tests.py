@@ -19,7 +19,7 @@ import getopt
 import time
 import os
 import subprocess
-import ClusterUtils
+from clusterutils import ClusterUtils
 
 
 def main():
@@ -106,6 +106,7 @@ def main():
   print('-m is ' + ci_cudf_jar)
   print('-v is ' + base_spark_pom_version)
 
+  master_addr = None
   if skip_start is None:
       jsonout = ClusterUtils.cluster_state(workspace, clusterid, token)
       current_state = jsonout['state']
@@ -114,11 +115,11 @@ def main():
           sys.exit(3)
 
 
-      ClusterUtils.start_existing_cluster(clusterid)
+      ClusterUtils.start_existing_cluster(workspace, clusterid, token)
       #print("Starting cluster: " + clusterid)
       #resp = requests.post(workspace + "/api/2.0/clusters/start", headers={'Authorization': 'Bearer %s' % token}, json={'cluster_id': clusterid})
       #print("start response is %s" % resp.text)
-      ClusterUtils.wait_for_cluster_start()
+      master_addr = ClusterUtils.wait_for_cluster_start(workspace, clusterid, token)
       #p = 0
       #waiting = True
       #master_addr = None
@@ -144,24 +145,24 @@ def main():
       print("Error, didn't get master address")
       sys.exit(5)
   print("Master node address is: %s" % master_addr)
-  print("Copying script")
-  rsync_command = "rsync -I -Pave \"ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -p 2200 -i %s\" %s ubuntu@%s:%s" % (private_key_file, local_script, master_addr, script_dest)
-  print("rsync command: %s" % rsync_command)
-  subprocess.check_call(rsync_command, shell = True)
-
-  print("Copying source")
-  rsync_command = "rsync -I -Pave \"ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -p 2200 -i %s\" %s ubuntu@%s:%s" % (private_key_file, source_tgz, master_addr, tgz_dest)
-  print("rsync command: %s" % rsync_command)
-  subprocess.check_call(rsync_command, shell = True)
-
-  ssh_command = "ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null ubuntu@%s -p 2200 -i %s %s %s %s %s %s %s %s %s %s %s 2>&1 | tee buildout; if [ `echo ${PIPESTATUS[0]}` -ne 0 ]; then false; else true; fi" % (master_addr, private_key_file, script_dest, tgz_dest, db_version, scala_version, ci_rapids_jar, spark_version, cudf_version, cuda_version, ci_cudf_jar, base_spark_pom_version)
-  print("ssh command: %s" % ssh_command)
-  subprocess.check_call(ssh_command, shell = True)
-
-  print("Copying built tarball back")
-  rsync_command = "rsync  -I -Pave \"ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -p 2200 -i %s\" ubuntu@%s:/home/ubuntu/spark-rapids-built.tgz ./" % (private_key_file, master_addr)
-  print("rsync command to get built tarball: %s" % rsync_command)
-  subprocess.check_call(rsync_command, shell = True)
-
+  #print("Copying script")
+  #rsync_command = "rsync -I -Pave \"ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -p 2200 -i %s\" %s ubuntu@%s:%s" % (private_key_file, local_script, master_addr, script_dest)
+  #print("rsync command: %s" % rsync_command)
+  #subprocess.check_call(rsync_command, shell = True)
+#
+#  print("Copying source")
+#  rsync_command = "rsync -I -Pave \"ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -p 2200 -i %s\" %s ubuntu@%s:%s" % (private_key_file, source_tgz, master_addr, tgz_dest)
+#  print("rsync command: %s" % rsync_command)
+#  subprocess.check_call(rsync_command, shell = True)
+#
+#  ssh_command = "ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null ubuntu@%s -p 2200 -i %s %s %s %s %s %s %s %s %s %s %s 2>&1 | tee buildout; if [ `echo ${PIPESTATUS[0]}` -ne 0 ]; then false; else true; fi" % (master_addr, private_key_file, script_dest, tgz_dest, db_version, scala_version, ci_rapids_jar, spark_version, cudf_version, cuda_version, ci_cudf_jar, base_spark_pom_version)
+#  print("ssh command: %s" % ssh_command)
+#  subprocess.check_call(ssh_command, shell = True)
+#
+#  print("Copying built tarball back")
+#  rsync_command = "rsync  -I -Pave \"ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -p 2200 -i %s\" ubuntu@%s:/home/ubuntu/spark-rapids-built.tgz ./" % (private_key_file, master_addr)
+#  print("rsync command to get built tarball: %s" % rsync_command)
+#  subprocess.check_call(rsync_command, shell = True)
+#
 if __name__ == '__main__':
   main()
