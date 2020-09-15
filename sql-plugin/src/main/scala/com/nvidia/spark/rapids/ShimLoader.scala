@@ -20,32 +20,50 @@ import java.util.ServiceLoader
 
 import scala.collection.JavaConverters._
 
-import org.apache.spark.{SPARK_BUILD_USER, SPARK_VERSION}
+import org.apache.spark.{SPARK_BUILD_USER, SPARK_VERSION, SparkConf}
 import org.apache.spark.internal.Logging
 
 object ShimLoader extends Logging {
-
-  private val sparkVersion = getSparkVersion
-  logInfo(s"Loading shim for Spark version: $sparkVersion")
-
-  // This is not ideal, but pass the version in here because otherwise loader that match the
-  // same version (3.0.0 Apache and 3.0.0 Databricks) would need to know how to differentiate.
-  private val sparkShimLoaders = ServiceLoader.load(classOf[SparkShimServiceProvider])
-    .asScala.filter(_.matchesVersion(sparkVersion))
-  if (sparkShimLoaders.size > 1) {
-    throw new IllegalArgumentException(s"Multiple Spark Shim Loaders found: $sparkShimLoaders")
-  }
-  logInfo(s"Found shims: $sparkShimLoaders")
-  private val loader = sparkShimLoaders.headOption match {
-    case Some(loader) => loader
-    case None =>
-      throw new IllegalArgumentException(s"Could not find Spark Shim Loader for $sparkVersion")
-  }
   private var sparkShims: SparkShims = null
+
+  private def detectShimProvider(): SparkShimServiceProvider = {
+    val sparkVersion = getSparkVersion
+    logInfo(s"Loading shim for Spark version: $sparkVersion")
+
+    // This is not ideal, but pass the version in here because otherwise loader that match the
+    // same version (3.0.0 Apache and 3.0.0 Databricks) would need to know how to differentiate.
+    val sparkShimLoaders = ServiceLoader.load(classOf[SparkShimServiceProvider])
+        .asScala.filter(_.matchesVersion(sparkVersion))
+    if (sparkShimLoaders.size > 1) {
+      throw new IllegalArgumentException(s"Multiple Spark Shim Loaders found: $sparkShimLoaders")
+    }
+    logInfo(s"Found shims: $sparkShimLoaders")
+    val loader = sparkShimLoaders.headOption match {
+      case Some(loader) => loader
+      case None =>
+        throw new IllegalArgumentException(s"Could not find Spark Shim Loader for $sparkVersion")
+    }
+    loader
+  }
+
+  private def findShimProvider(): SparkShimServiceProvider = {
+    val conf = new RapidsConf(new SparkConf())
+    if (conf.shimsProviderOverride.isEmpty) {
+      detectShimProvider()
+    } else {
+      val classname = conf.shimsProviderOverride.get
+      logWarning(s"Overriding Spark shims provider to $classname. " +
+          "This may be an untested configuration!")
+      val providerClass = Class.forName(classname)
+      val constructor = providerClass.getConstructor()
+      constructor.newInstance().asInstanceOf[SparkShimServiceProvider]
+    }
+  }
 
   def getSparkShims: SparkShims = {
     if (sparkShims == null) {
-      sparkShims = loader.buildShim
+      val provider = findShimProvider()
+      sparkShims = provider.buildShim
     }
     sparkShims
   }
