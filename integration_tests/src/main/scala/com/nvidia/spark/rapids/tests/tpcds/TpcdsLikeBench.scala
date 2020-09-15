@@ -20,6 +20,8 @@ import java.util.concurrent.TimeUnit.NANOSECONDS
 
 import scala.collection.mutable.ListBuffer
 
+import com.nvidia.spark.rapids.tests.common.BenchUtils
+
 import org.apache.spark.internal.Logging
 import org.apache.spark.sql.SparkSession
 
@@ -35,51 +37,28 @@ object TpcdsLikeBench extends Logging {
       query: String,
       numColdRuns: Int = 1,
       numHotRuns: Int = 3): Unit = {
-
-    val coldRunElapsed = new ListBuffer[Long]()
-    for (i <- 0 until numColdRuns) {
-      println(s"*** Start cold run $i:")
-      val start = System.nanoTime()
-      TpcdsLikeSpark.run(spark, query).collect
-      val end = System.nanoTime()
-      val elapsed = NANOSECONDS.toMillis(end - start)
-      coldRunElapsed.append(elapsed)
-      println(s"*** Cold run $i took $elapsed msec.")
-    }
-
-    val hotRunElapsed = new ListBuffer[Long]()
-    for (i <- 0 until numHotRuns) {
-      println(s"*** Start hot run $i:")
-      val start = System.nanoTime()
-      TpcdsLikeSpark.run(spark, query).collect
-      val end = System.nanoTime()
-      val elapsed = NANOSECONDS.toMillis(end - start)
-      hotRunElapsed.append(elapsed)
-      println(s"*** Hot run $i took $elapsed msec.")
-    }
-
-    for (i <- 0 until numColdRuns) {
-      println(s"Cold run $i for query $query took ${coldRunElapsed(i)} msec.")
-    }
-    println(s"Average cold run took ${coldRunElapsed.sum.toDouble/numColdRuns} msec.")
-
-    for (i <- 0 until numHotRuns) {
-      println(s"Hot run $i for query $query took ${hotRunElapsed(i)} msec.")
-    }
-    println(s"Query $query: " +
-        s"best: ${hotRunElapsed.min} msec; " +
-        s"worst: ${hotRunElapsed.max} msec; " +
-        s"average: ${hotRunElapsed.sum.toDouble/numHotRuns} msec.")
+    BenchUtils.runBench(
+      spark,
+      spark => TpcdsLikeSpark.query(query)(spark),
+      query,
+      s"tpcds-$query",
+      numColdRuns,
+      numHotRuns)
   }
 
+  /**
+   * The main method can be invoked by using spark-submit.
+   */
   def main(args: Array[String]): Unit = {
     val input = args(0)
-    val query = args(1)
 
     val spark = SparkSession.builder.appName("TPC-DS Like Bench").getOrCreate()
     TpcdsLikeSpark.setupAllParquet(spark, input)
 
-    println(s"*** RUNNING TPC-DS QUERY $query")
-    runBench(spark, query)
+    args.drop(1).foreach(query => {
+      println(s"*** RUNNING TPC-DS QUERY $query")
+      runBench(spark, query)
+    })
+
   }
 }
