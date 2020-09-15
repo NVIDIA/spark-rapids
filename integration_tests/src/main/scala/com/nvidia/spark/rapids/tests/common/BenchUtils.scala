@@ -42,7 +42,7 @@ object BenchUtils {
       filenameStub: String,
       numColdRuns: Int = 1,
       numHotRuns: Int = 3,
-      maxResultsToRecord: Int = 100): Unit = {
+      maxResultsToRecord: Option[Int] = None): Unit = {
 
     val now = Instant.now()
 
@@ -102,12 +102,17 @@ object BenchUtils {
     )
 
     // record the first N rows for later verification
+    // note that this sorting isn't entirely deterministic due to rounding differences between
+    // CPU and GPU but it works well enough for the TPC-DS and TPCxBB benchmarks
+    val sortedResults = results.sortBy(_.mkString(","))
+    val partialResults = maxResultsToRecord match {
+      case Some(n) => sortedResults.take(n).map(row => row.toSeq)
+      case _ => sortedResults.map(row => row.toSeq)
+    }
     val resultSummary = ResultSummary(
       results.length,
       maxResultsToRecord,
-      // note that this sorting isn't entirely deterministic due to rounding differences between
-      // CPU and GPU but it works well enough for the TPC-DS and TPCxBB benchmarks
-      results.sortBy(_.mkString(",")).take(maxResultsToRecord).map(row => row.toSeq)
+      partialResults
     )
 
     val report = BenchmarkReport(
@@ -161,7 +166,7 @@ case class BenchmarkReport(
 /** Summary about the data returned by the query, including first N rows */
 case class ResultSummary(
     rowCount: Long,
-    partialResultLimit: Int,
+    partialResultLimit: Option[Int],
     partialResults: Seq[Seq[Any]])
 
 /** Details about the query plan */

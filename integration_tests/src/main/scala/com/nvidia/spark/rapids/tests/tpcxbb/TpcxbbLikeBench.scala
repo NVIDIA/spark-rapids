@@ -26,20 +26,22 @@ object TpcxbbLikeBench extends Logging {
   /**
    * This method can be called from Spark shell using the following syntax:
    *
-   * TpcxbbLikeBench.runBench(spark, "q5"")
+   * TpcxbbLikeBench.runBench(spark, "q5")
    */
   def runBench(
       spark: SparkSession,
       query: String,
       numColdRuns: Int = 1,
-      numHotRuns: Int = 3): Unit = {
+      numHotRuns: Int = 3,
+      maxResultsToRecord: Option[Int] = None): Unit = {
     BenchUtils.runBench(
       spark,
       getQuery(query),
       query,
       s"tpcxbb-$query",
       numColdRuns,
-      numHotRuns)
+      numHotRuns,
+      maxResultsToRecord)
   }
 
   def main(args: Array[String]): Unit = {
