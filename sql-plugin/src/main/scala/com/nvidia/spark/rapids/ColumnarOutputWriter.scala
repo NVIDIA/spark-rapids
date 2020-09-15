@@ -18,16 +18,14 @@ package com.nvidia.spark.rapids
 
 import scala.collection.mutable
 
-import ai.rapids.cudf.{DType, HostBufferConsumer, HostMemoryBuffer, NvtxColor, NvtxRange, Table, TableWriter}
+import ai.rapids.cudf.{HostBufferConsumer, HostMemoryBuffer, NvtxColor, NvtxRange, Table, TableWriter}
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import org.apache.hadoop.fs.{FSDataOutputStream, Path}
 import org.apache.hadoop.mapreduce.TaskAttemptContext
 
 import org.apache.spark.TaskContext
-import org.apache.spark.sql.internal.SQLConf
-import org.apache.spark.sql.internal.SQLConf.ParquetOutputTimestampType
 import org.apache.spark.sql.rapids.{ColumnarWriteTaskStatsTracker, GpuWriteTaskStatsTracker}
-import org.apache.spark.sql.types.{DataTypes, StructType}
+import org.apache.spark.sql.types.StructType
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
 /**
@@ -107,7 +105,6 @@ abstract class ColumnarOutputWriter(path: String, context: TaskAttemptContext,
    */
   def write(batch: ColumnarBatch, statsTrackers: Seq[ColumnarWriteTaskStatsTracker]): Unit = {
     var needToCloseBatch = true
-
     try {
       val writeStartTimestamp = System.nanoTime
       val writeRange = new NvtxRange("File write", NvtxColor.YELLOW)
