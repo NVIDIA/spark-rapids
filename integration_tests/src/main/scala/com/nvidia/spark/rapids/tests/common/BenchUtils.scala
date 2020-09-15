@@ -43,8 +43,7 @@ object BenchUtils {
    * @param filenameStub The prefix for the output file. The current timestamp will be appended
    *                     to ensure that filenames are unique and that results are not inadvertently
    *                     overwritten.
-   * @param numColdRuns The number of cold runs.
-   * @param numHotRuns The number of hot runs.
+   * @param iterations The number of times to run the query.
    */
   def runBench(
       spark: SparkSession,
@@ -52,48 +51,43 @@ object BenchUtils {
       resultsAction: Option[DataFrame => Unit],
       queryDescription: String,
       filenameStub: String,
-      numColdRuns: Int,
-      numHotRuns: Int,
+      iterations: Int
     ): Unit = {
+
+    assert(iterations>0)
 
     val queryStartTime = Instant.now()
 
     val action: DataFrame => Unit = resultsAction.getOrElse(_.collect())
 
     var df: DataFrame = null
-    val coldRunElapsed = new ListBuffer[Long]()
-    for (i <- 0 until numColdRuns) {
-      println(s"*** Start cold run $i:")
+    val queryTimes = new ListBuffer[Long]()
+    for (i <- 0 until iterations) {
+      println(s"*** Start iteration $i:")
       val start = System.nanoTime()
       df = createDataFrame(spark)
       action(df)
       val end = System.nanoTime()
       val elapsed = NANOSECONDS.toMillis(end - start)
-      coldRunElapsed.append(elapsed)
-      println(s"*** Cold run $i took $elapsed msec.")
+      queryTimes.append(elapsed)
+      println(s"*** Iteration $i took $elapsed msec.")
     }
 
-    val hotRunElapsed = new ListBuffer[Long]()
-    for (i <- 0 until numHotRuns) {
-      println(s"*** Start hot run $i:")
-      val start = System.nanoTime()
-      df = createDataFrame(spark)
-      action(df)
-      val end = System.nanoTime()
-      val elapsed = NANOSECONDS.toMillis(end - start)
-      hotRunElapsed.append(elapsed)
-      println(s"*** Hot run $i took $elapsed msec.")
+    // summarize all query times
+    for (i <- 0 until iterations) {
+      println(s"Iteration $i took ${queryTimes(i)} msec.")
     }
 
-    for (i <- 0 until numColdRuns) {
-      println(s"Cold run $i took ${coldRunElapsed(i)} msec.")
+    // for multiple runs, summarize cold/hot timings
+    if (iterations > 1) {
+      println(s"Cold run: ${queryTimes(0)} msec.")
+      val hotRuns = queryTimes.drop(1)
+      val numHotRuns = hotRuns.length
+      println(s"Best of $numHotRuns hot run(s): ${hotRuns.min} msec.")
+      println(s"Worst of $numHotRuns hot run(s): ${hotRuns.max} msec.")
+      println(s"Average of $numHotRuns hot run(s): " +
+          s"${hotRuns.sum.toDouble/numHotRuns} msec.")
     }
-    println(s"Average cold run took ${coldRunElapsed.sum.toDouble/numColdRuns} msec.")
-
-    for (i <- 0 until numHotRuns) {
-      println(s"Hot run $i took ${hotRunElapsed(i)} msec.")
-    }
-    println(s"Average hot run took ${hotRunElapsed.sum.toDouble/numHotRuns} msec.")
 
     // write results to file
     val filename = s"$filenameStub-${queryStartTime.toEpochMilli}.json"
@@ -120,8 +114,7 @@ object BenchUtils {
       environment,
       queryDescription,
       queryPlan,
-      coldRunElapsed,
-      hotRunElapsed)
+      queryTimes)
 
     writeReport(report, filename)
   }
@@ -157,8 +150,7 @@ case class BenchmarkReport(
     env: Environment,
     query: String,
     queryPlan: QueryPlan,
-    coldRun: Seq[Long],
-    hotRun: Seq[Long])
+    queryTimes: Seq[Long])
 
 /** Details about the query plan */
 case class QueryPlan(

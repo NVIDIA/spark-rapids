@@ -33,23 +33,20 @@ object TpcxbbLikeBench extends Logging {
    * @param action Optional action to perform after creating the DataFrame, with default
    *               behavior of calling df.collect() but user could provide function to
    *               save results to CSV or Parquet instead.
-   * @param numColdRuns The number of cold runs.
-   * @param numHotRuns The number of hot runs.
+   * @param iterations The number of times to run the query.
    */
   def runBench(
       spark: SparkSession,
       query: String,
       action: Option[DataFrame => Unit] = None,
-      numColdRuns: Int = 1,
-      numHotRuns: Int = 3): Unit = {
+      iterations: Int = 3): Unit = {
     BenchUtils.runBench(
       spark,
       getQuery(query),
       action,
       query,
       s"tpcxbb-$query",
-      numColdRuns,
-      numHotRuns)
+      iterations)
   }
 
   def main(args: Array[String]): Unit = {
