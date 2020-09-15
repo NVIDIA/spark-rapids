@@ -11,6 +11,7 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+from datetime import datetime
 import json
 import requests
 import sys
@@ -18,22 +19,8 @@ import getopt
 import time
 import os
 import subprocess
+import ClusterUtils
 
-def cluster_state(workspace, clusterid, token):
-  clusterresp = requests.get(workspace + "/api/2.0/clusters/get?cluster_id=%s" % clusterid, headers={'Authorization': 'Bearer %s' % token})
-  clusterjson = clusterresp.text
-  print("cluster response is %s" % clusterjson)
-  jsonout = json.loads(clusterjson)
-  return jsonout
-
-def get_master_addr(jsonout):
-  current_state = jsonout['state']
-  if current_state in ['RUNNING']:
-      driver = jsonout['driver']
-      master_addr = driver["public_dns"]
-      return master_addr
-  else:
-      return None
 
 def main():
   workspace = 'https://dbc-9ff9942e-a9c4.cloud.databricks.com'
@@ -120,36 +107,38 @@ def main():
   print('-v is ' + base_spark_pom_version)
 
   if skip_start is None:
-      jsonout = cluster_state(workspace, clusterid, token)
+      jsonout = ClusterUtils.cluster_state(workspace, clusterid, token)
       current_state = jsonout['state']
       if current_state in ['RUNNING']:
           print("Cluster is already running - perhaps build/tests already running?")
           sys.exit(3)
 
-      print("Starting cluster: " + clusterid)
-      resp = requests.post(workspace + "/api/2.0/clusters/start", headers={'Authorization': 'Bearer %s' % token}, json={'cluster_id': clusterid})
-      print("start response is %s" % resp.text)
-      p = 0
-      waiting = True
-      master_addr = None
-      while waiting:
-          time.sleep(30)
-          jsonout = cluster_state(workspace, clusterid, token)
-          current_state = jsonout['state']
-          print(clusterid + " state:" + current_state)
-          if current_state in ['RUNNING']:
-              master_addr = get_master_addr(jsonout)
-              break
-          if current_state in ['INTERNAL_ERROR', 'SKIPPED', 'TERMINATED'] or p >= 20:
-              if p >= 20:
-                 print("Waited %d times already, stopping" % p)
-              sys.exit(4)
-          p = p + 1
-   
-      print("Done starting cluster")
+
+      ClusterUtils.start_existing_cluster(clusterid)
+      #print("Starting cluster: " + clusterid)
+      #resp = requests.post(workspace + "/api/2.0/clusters/start", headers={'Authorization': 'Bearer %s' % token}, json={'cluster_id': clusterid})
+      #print("start response is %s" % resp.text)
+      ClusterUtils.wait_for_cluster_start()
+      #p = 0
+      #waiting = True
+      #master_addr = None
+      #while waiting:
+      #    time.sleep(30)
+      #    jsonout = ClusterUtils.cluster_state(workspace, clusterid, token)
+      #    current_state = jsonout['state']
+      #    print(clusterid + " state:" + current_state)
+      #    if current_state in ['RUNNING']:
+      #        master_addr = get_master_addr(jsonout)
+      #        break
+      #    if current_state in ['INTERNAL_ERROR', 'SKIPPED', 'TERMINATED'] or p >= 20:
+      #        if p >= 20:
+      #           print("Waited %d times already, stopping" % p)
+      #        sys.exit(4)
+      #    p = p + 1
+      #print("Done starting cluster")
   else:
-      jsonout = cluster_state(workspace, clusterid, token)
-      master_addr = get_master_addr(jsonout)
+      jsonout = ClusterUtils.cluster_state(workspace, clusterid, token)
+      master_addr = ClusterUtils.get_master_addr(jsonout)
 
   if master_addr is None:
       print("Error, didn't get master address")
