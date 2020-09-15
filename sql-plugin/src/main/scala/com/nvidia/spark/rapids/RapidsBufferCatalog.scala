@@ -20,12 +20,14 @@ import java.util.concurrent.ConcurrentHashMap
 import java.util.function.BiFunction
 
 import ai.rapids.cudf.{DeviceMemoryBuffer, Rmm, Table}
+import com.nvidia.spark.rapids.RapidsPluginImplicits.AutoCloseableArray
 import com.nvidia.spark.rapids.StorageTier.StorageTier
 import com.nvidia.spark.rapids.format.TableMeta
 
-import org.apache.spark.SparkEnv
+import org.apache.spark.{SparkConf, SparkEnv}
 import org.apache.spark.internal.Logging
 import org.apache.spark.sql.rapids.RapidsDiskBlockManager
+import org.apache.spark.sql.vectorized.ColumnarBatch
 
 /**
  * Catalog for lookup of buffers by ID. The constructor is only visible for testing, generally
@@ -103,7 +105,7 @@ class RapidsBufferCatalog extends Logging {
   }
 }
 
-object RapidsBufferCatalog extends Logging {
+object RapidsBufferCatalog extends Logging with Arm {
   private val MAX_BUFFER_LOOKUP_ATTEMPTS = 100
 
   val singleton = new RapidsBufferCatalog
@@ -112,7 +114,15 @@ object RapidsBufferCatalog extends Logging {
   private var diskStorage: RapidsDiskStore = _
   private var memoryEventHandler: DeviceMemoryEventHandler = _
 
-  private lazy val conf = SparkEnv.get.conf
+  private lazy val conf: SparkConf = {
+    val env = SparkEnv.get
+    if (env != null) {
+      env.conf
+    } else {
+      // For some unit tests
+      new SparkConf()
+    }
+  }
 
   def init(rapidsConf: RapidsConf): Unit = {
     // We are going to re-initialize so make sure all of the old things were closed...

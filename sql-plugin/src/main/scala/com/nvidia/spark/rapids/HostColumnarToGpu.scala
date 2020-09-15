@@ -151,7 +151,6 @@ class HostToGpuCoalesceIterator(iter: Iterator[ColumnarBatch],
     collectTime,
     concatTime,
     totalTime,
-    peakDevMemory,
     opName) {
 
   // RequireSingleBatch goal is intentionally not supported in this iterator

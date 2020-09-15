@@ -54,4 +54,9 @@ object SpillPriorities {
    * priority to keep around than other input shuffle buffers.
    */
   val COALESCE_BATCH_ON_DECK_PRIORITY: Long = INPUT_FROM_SHUFFLE_PRIORITY + 1
+
+  /**
+   * Priority for buffers in coalesce batch that are being held before the coalesce.
+   */
+  val COALESCE_BATCH_PRIORITY: Long = COALESCE_BATCH_ON_DECK_PRIORITY + 100
 }
