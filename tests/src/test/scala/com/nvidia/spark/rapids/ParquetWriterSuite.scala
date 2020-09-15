@@ -104,6 +104,21 @@ class ParquetWriterSuite extends SparkQueryCompareTestSuite {
   }
 
   testExpectedGpuException(
+    "Old timestamps millis in EXCEPTION mode",
+    classOf[SparkException],
+    oldTsDf,
+    new SparkConf()
+      .set("spark.sql.legacy.parquet.datetimeRebaseModeInWrite", "EXCEPTION")
+      .set("spark.sql.parquet.outputTimestampType", "TIMESTAMP_MILLIS")) {
+    val tempFile = File.createTempFile("oldTimeStamp", "parquet")
+    tempFile.delete()
+    frame => {
+      frame.write.mode("overwrite").parquet(tempFile.getAbsolutePath)
+      frame
+    }
+  }
+
+  testExpectedGpuException(
     "Old timestamps in EXCEPTION mode",
     classOf[SparkException],
     oldTsDf,

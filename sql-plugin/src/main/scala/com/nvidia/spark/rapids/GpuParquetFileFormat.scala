@@ -30,8 +30,10 @@ import org.apache.spark.sql.execution.datasources.DataSourceUtils
 import org.apache.spark.sql.execution.datasources.parquet.{ParquetOptions, ParquetWriteSupport}
 import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.internal.SQLConf.ParquetOutputTimestampType
+import org.apache.spark.sql.rapids.ColumnarWriteTaskStatsTracker
 import org.apache.spark.sql.rapids.execution.TrampolineUtil
-import org.apache.spark.sql.types.{DateType, StructType, TimestampType}
+import org.apache.spark.sql.types.{DataTypes, DateType, StructType, TimestampType}
+import org.apache.spark.sql.vectorized.ColumnarBatch
 
 object GpuParquetFileFormat {
   def tagGpuSupport(
@@ -64,10 +66,9 @@ object GpuParquetFileFormat {
       TrampolineUtil.dataTypeExistsRecursively(field.dataType, _.isInstanceOf[TimestampType])
     }
     if (schemaHasTimestamps) {
-      // TODO: Could support TIMESTAMP_MILLIS by performing cast on all timestamp input columns
-      sqlConf.parquetOutputTimestampType match {
-        case ParquetOutputTimestampType.TIMESTAMP_MICROS =>
-        case t => meta.willNotWorkOnGpu(s"Output timestamp type $t is not supported")
+      if(!isOutputTimestampTypeSupported(sqlConf.parquetOutputTimestampType)) {
+        meta.willNotWorkOnGpu(s"Output timestamp type " +
+          s"${sqlConf.parquetOutputTimestampType} is not supported")
       }
     }
 
@@ -98,6 +99,15 @@ object GpuParquetFileFormat {
       case "NONE" | "UNCOMPRESSED" => Some(CompressionType.NONE)
       case "SNAPPY" => Some(CompressionType.SNAPPY)
       case _ => None
+    }
+  }
+
+  def isOutputTimestampTypeSupported(
+     outputTimestampType: ParquetOutputTimestampType.Value): Boolean = {
+    outputTimestampType match {
+      case ParquetOutputTimestampType.TIMESTAMP_MICROS |
+           ParquetOutputTimestampType.TIMESTAMP_MILLIS => true
+      case _ => false
     }
   }
 }
@@ -160,7 +170,7 @@ class GpuParquetFileFormat extends ColumnarFileFormat with Logging {
       sparkSession.sessionState.conf.writeLegacyParquetFormat.toString)
 
     val outputTimestampType = sparkSession.sessionState.conf.parquetOutputTimestampType
-    if (outputTimestampType != ParquetOutputTimestampType.TIMESTAMP_MICROS) {
+    if(!GpuParquetFileFormat.isOutputTimestampTypeSupported(outputTimestampType)) {
       val hasTimestamps = dataSchema.exists { field =>
         TrampolineUtil.dataTypeExistsRecursively(field.dataType, _.isInstanceOf[TimestampType])
       }
@@ -217,6 +227,8 @@ class GpuParquetWriter(
     context: TaskAttemptContext)
   extends ColumnarOutputWriter(path, context, dataSchema, "Parquet") {
 
+  val outputTimestampType = conf.get(SQLConf.PARQUET_OUTPUT_TIMESTAMP_TYPE.key)
+
   override def scanTableBeforeWrite(table: Table): Unit = {
     if (dateTimeRebaseException) {
       (0 until table.getNumberOfColumns).foreach { i =>
@@ -227,6 +239,32 @@ class GpuParquetWriter(
     }
   }
 
+  /**
+   * Persists a columnar batch. Invoked on the executor side. When writing to dynamically
+   * partitioned tables, dynamic partition columns are not included in columns to be written.
+   * NOTE: It is the writer's responsibility to close the batch.
+   */
+  override def write(batch: ColumnarBatch,
+     statsTrackers: Seq[ColumnarWriteTaskStatsTracker]): Unit = {
+    val newBatch =
+      if (outputTimestampType == ParquetOutputTimestampType.TIMESTAMP_MILLIS.toString) {
+        new ColumnarBatch(GpuColumnVector.extractColumns(batch).map {
+          cv => {
+            cv.dataType() match {
+              case DataTypes.TimestampType => new GpuColumnVector(DataTypes.TimestampType,
+                withResource(cv.getBase()) { v =>
+                  v.castTo(DType.TIMESTAMP_MILLISECONDS)
+                })
+              case _ => cv
+            }
+          }
+        })
+      } else {
+        batch
+      }
+
+    super.write(newBatch, statsTrackers)
+  }
   override val tableWriter: TableWriter = {
     val writeContext = new ParquetWriteSupport().init(conf)
     val builder = ParquetWriterOptions.builder()
