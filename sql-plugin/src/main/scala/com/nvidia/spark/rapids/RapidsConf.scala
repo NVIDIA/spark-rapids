@@ -691,7 +691,11 @@ object RapidsConf {
   val SHIMS_PROVIDER_OVERRIDE = conf("spark.rapids.shims-provider-override")
     .internal()
     .doc("Overrides the automatic Spark shim detection logic and forces a specific shims " +
-      "provider class to be used. Set to the fully qualified shims provider class to use.")
+      "provider class to be used. Set to the fully qualified shims provider class to use. " +
+      "If you are using a custom Spark version such as Spark 3.0.0.0 then this can be used to " +
+      "specify the shims provider that matches the base Spark version of Spark 3.0.0, i.e.: " +
+      "com.nvidia.spark.rapids.shims.spark300.SparkShimServiceProvider. If you modified Spark " +
+      "then there is no guarantee the RAPIDS Accelerator will function properly.")
     .stringConf
     .createOptional
 
