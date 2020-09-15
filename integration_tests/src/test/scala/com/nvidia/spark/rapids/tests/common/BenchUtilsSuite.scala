@@ -31,10 +31,6 @@ class BenchUtilsSuite extends FunSuite with BeforeAndAfterEach {
         "3.0.1"),
       query = "q1",
       queryPlan = QueryPlan("logical", "physical"),
-      results = ResultSummary(
-        rowCount = 100,
-        partialResultLimit = Some(100),
-        partialResults = Seq()),
       coldRun = Seq(123),
       hotRun = Seq(99, 88, 77))
 

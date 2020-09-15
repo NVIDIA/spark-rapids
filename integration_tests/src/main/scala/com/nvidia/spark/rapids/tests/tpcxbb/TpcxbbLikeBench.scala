@@ -19,7 +19,7 @@ package com.nvidia.spark.rapids.tests.tpcxbb
 import com.nvidia.spark.rapids.tests.common.BenchUtils
 
 import org.apache.spark.internal.Logging
-import org.apache.spark.sql.{DataFrame, SparkSession}
+import org.apache.spark.sql.{DataFrame, SaveMode, SparkSession}
 
 object TpcxbbLikeBench extends Logging {
 
@@ -30,28 +30,26 @@ object TpcxbbLikeBench extends Logging {
    *
    * @param spark The Spark session
    * @param query The name of the query to run e.g. "q5"
+   * @param action Optional action to perform after creating the DataFrame, with default
+   *               behavior of calling df.collect() but user could provide function to
+   *               save results to CSV or Parquet instead.
    * @param numColdRuns The number of cold runs.
    * @param numHotRuns The number of hot runs.
-   * @param maxResultsToRecord The maximum number of result rows to collect and store in the
-   *                           output JSON file. This can be used as a sanity check to compare
-   *                           to previous runs but is not intended to be used for full results
-   *                           verification. Setting this to `None` will capture all result rows,
-   *                           and setting this to `Some(0)` will skip recording results.
    */
   def runBench(
       spark: SparkSession,
       query: String,
+      action: Option[DataFrame => Unit] = None,
       numColdRuns: Int = 1,
-      numHotRuns: Int = 3,
-      maxResultsToRecord: Option[Int] = Some(0)): Unit = {
+      numHotRuns: Int = 3): Unit = {
     BenchUtils.runBench(
       spark,
       getQuery(query),
+      action,
       query,
       s"tpcxbb-$query",
       numColdRuns,
-      numHotRuns,
-      maxResultsToRecord)
+      numHotRuns)
   }
 
   def main(args: Array[String]): Unit = {

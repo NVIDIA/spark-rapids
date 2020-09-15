@@ -26,7 +26,7 @@ import org.json4s.jackson.JsonMethods.parse
 import org.json4s.jackson.Serialization.writePretty
 
 import org.apache.spark.{SPARK_BUILD_USER, SPARK_VERSION}
-import org.apache.spark.sql.{DataFrame, Row, SparkSession}
+import org.apache.spark.sql.{DataFrame, SparkSession}
 
 object BenchUtils {
 
@@ -36,38 +36,37 @@ object BenchUtils {
    * variables.
    *
    * @param spark The Spark session
-   * @param queryRunner Function to create a DataFrame from the Spark session.
-   * @param queryDescription A query name to be written to the JSON file.
-   * @param filenameStub The prefix the for the JSON file. The current timestamp will be appended
+   * @param createDataFrame Function to create a DataFrame from the Spark session.
+   * @param resultsAction Optional action to perform after creating the DataFrame, with default
+   *                      behavior of calling df.collect() but user could provide function to
+   *                      save results to CSV or Parquet instead.
+   * @param filenameStub The prefix the for the output file. The current timestamp will be appended
    *                     to ensure that filenames are unique and that results are not inadvertently
    *                     overwritten.
    * @param numColdRuns The number of cold runs.
    * @param numHotRuns The number of hot runs.
-   * @param maxResultsToRecord The maximum number of result rows to collect and store in the
-   *                           output JSON file. This can be used as a sanity check to compare
-   *                           to previous runs but is not intended to be used for full results
-   *                           verification. Setting this to `None` will capture all result rows,
-   *                           and setting this to `Some(0)` will skip recording results.
    */
   def runBench(
       spark: SparkSession,
-      queryRunner: SparkSession => DataFrame,
+      createDataFrame: SparkSession => DataFrame,
+      resultsAction: Option[DataFrame => Unit],
       queryDescription: String,
       filenameStub: String,
       numColdRuns: Int,
       numHotRuns: Int,
-      maxResultsToRecord: Option[Int]): Unit = {
+    ): Unit = {
 
     val queryStartTime = Instant.now()
 
+    val action: DataFrame => Unit = resultsAction.getOrElse(_.collect())
+
     var df: DataFrame = null
-    var results: Seq[Row] = null
     val coldRunElapsed = new ListBuffer[Long]()
     for (i <- 0 until numColdRuns) {
       println(s"*** Start cold run $i:")
       val start = System.nanoTime()
-      df = queryRunner(spark)
-      results = df.collect
+      df = createDataFrame(spark)
+      action(df)
       val end = System.nanoTime()
       val elapsed = NANOSECONDS.toMillis(end - start)
       coldRunElapsed.append(elapsed)
@@ -78,8 +77,8 @@ object BenchUtils {
     for (i <- 0 until numHotRuns) {
       println(s"*** Start hot run $i:")
       val start = System.nanoTime()
-      df = queryRunner(spark)
-      results = df.collect
+      df = createDataFrame(spark)
+      action(df)
       val end = System.nanoTime()
       val elapsed = NANOSECONDS.toMillis(end - start)
       hotRunElapsed.append(elapsed)
@@ -98,7 +97,7 @@ object BenchUtils {
 
     // write results to file
     val filename = s"$filenameStub-${queryStartTime.toEpochMilli}.json"
-    println(s"Saving results to $filename")
+    println(s"Saving benchmark report to $filename")
 
     // try not to leak secrets
     val redacted = Seq("TOKEN", "SECRET", "PASSWORD")
@@ -115,32 +114,12 @@ object BenchUtils {
       df.queryExecution.executedPlan.toString()
     )
 
-    def sortResults(): Seq[Row] = {
-      // note that this sorting isn't entirely deterministic due to rounding differences between
-      // CPU and GPU but it works well enough for the TPC-DS and TPCxBB benchmarks
-      results.sortBy(_.mkString(","))
-    }
-
-    // Optionally, record the first `maxResultsToRecord` rows for later verification.
-    val partialResults = maxResultsToRecord match {
-      case Some(0) => Seq.empty
-      case Some(n) => sortResults().take(n).map(row => row.toSeq)
-      case _ => sortResults().map(row => row.toSeq)
-    }
-
-    val resultSummary = ResultSummary(
-      results.length,
-      maxResultsToRecord,
-      partialResults
-    )
-
     val report = BenchmarkReport(
       filename,
       queryStartTime.toEpochMilli,
       environment,
       queryDescription,
       queryPlan,
-      resultSummary,
       coldRunElapsed,
       hotRunElapsed)
 
@@ -178,15 +157,8 @@ case class BenchmarkReport(
     env: Environment,
     query: String,
     queryPlan: QueryPlan,
-    results: ResultSummary,
     coldRun: Seq[Long],
     hotRun: Seq[Long])
-
-/** Summary about the data returned by the query, including first N rows */
-case class ResultSummary(
-    rowCount: Long,
-    partialResultLimit: Option[Int],
-    partialResults: Seq[Seq[Any]])
 
 /** Details about the query plan */
 case class QueryPlan(
