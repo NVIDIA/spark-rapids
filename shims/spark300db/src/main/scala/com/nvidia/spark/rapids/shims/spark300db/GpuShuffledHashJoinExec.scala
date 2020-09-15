@@ -118,20 +118,20 @@ case class GpuShuffledHashJoinExec(
     streamedPlan.executeColumnar().zipPartitions(buildPlan.executeColumnar()) {
       (streamIter, buildIter) => {
         var combinedSize = 0
+
         val startTime = System.nanoTime()
-        val buildBatch =
-          ConcatAndConsumeAll.getSingleBatchWithVerification(buildIter, localBuildOutput)
-        val keys = GpuProjectExec.project(buildBatch, gpuBuildKeys)
-        val builtTable = try {
-          // Combine does not inc any reference counting
-          val combined = combine(keys, buildBatch)
-          combinedSize =
-            GpuColumnVector.extractColumns(combined)
-              .map(_.getBase.getDeviceMemorySize).sum.toInt
-          GpuColumnVector.from(combined)
-        } finally {
-          keys.close()
-          buildBatch.close()
+        val builtTable = withResource(ConcatAndConsumeAll.getSingleBatchWithVerification(
+          buildIter, localBuildOutput)) { buildBatch: ColumnarBatch =>
+          withResource(GpuProjectExec.project(buildBatch, gpuBuildKeys)) { keys =>
+            val combined = GpuHashJoin.incRefCount(combine(keys, buildBatch))
+            val filtered = filterBuiltTableIfNeeded(combined)
+            combinedSize =
+                GpuColumnVector.extractColumns(filtered)
+                    .map(_.getBase.getDeviceMemorySize).sum.toInt
+            withResource(filtered) { filtered =>
+              GpuColumnVector.from(filtered)
+            }
+          }
         }
 
         val delta = System.nanoTime() - startTime

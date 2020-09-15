@@ -23,8 +23,8 @@ queries = ['q1', 'q2', 'q3', 'q4', 'q5', 'q6', 'q7', 'q8', 'q9',
         'q30', 'q31', 'q32', 'q33', 'q34', 'q35', 'q36', 'q37', 'q38', 'q39a', 'q39b',
         'q40', 'q41', 'q42', 'q43', 'q44', 'q45', 'q46', 'q47', 'q48', 'q49',
         'q50', 'q51', 'q52', 'q53', 'q54', 'q55', 'q56', 'q57', 'q58', 'q59',
-        'q60', 'q61', 'q62', 'q63', 'q64', 'q65', 'q66', 'q67', 'q68', 'q69',
-        'q70', 'q71', 'q72', 'q73', 'q74', 'q75', 'q76', 'q77', 'q78', 'q79',
+        'q60', 'q61', 'q62', 'q63', 'q64', 'q65', 'q66',        'q68', 'q69',
+               'q71', 'q72', 'q73', 'q74', 'q75', 'q76', 'q77', 'q78', 'q79',
         'q80', 'q81', 'q82', 'q83', 'q84', 'q85', 'q86', 'q87', 'q88', 'q89',
         'q90', 'q91', 'q92', 'q93', 'q94', 'q95', 'q96', 'q97', 'q98', 'q99',
         'ss_max', 'ss_maxb']
@@ -35,5 +35,17 @@ queries = ['q1', 'q2', 'q3', 'q4', 'q5', 'q6', 'q7', 'q8', 'q9',
 @allow_non_gpu(any=True)
 @pytest.mark.parametrize('query', queries)
 def test_tpcds(tpcds, query):
+  assert_gpu_and_cpu_are_equal_collect(
+          lambda spark : tpcds.do_test_query(query),
+          conf={'spark.rapids.sql.variableFloatAgg.enabled': 'true'})
+
+no_var_agg_queries = ['q67', 'q70']
+
+@incompat
+@ignore_order
+@approximate_float
+@allow_non_gpu(any=True)
+@pytest.mark.parametrize('query', no_var_agg_queries)
+def test_tpcds_no_var_agg(tpcds, query):
   assert_gpu_and_cpu_are_equal_collect(
           lambda spark : tpcds.do_test_query(query))

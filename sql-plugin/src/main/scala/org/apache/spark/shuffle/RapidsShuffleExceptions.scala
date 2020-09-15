@@ -28,3 +28,5 @@ class RapidsShuffleFetchFailedException(
     extends FetchFailedException(
       bmAddress, shuffleId, mapId, mapIndex, reduceId, message) {
 }
+
+class RapidsShuffleTimeoutException(message: String) extends Exception(message)
