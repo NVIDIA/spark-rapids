@@ -333,6 +333,7 @@ When translating UDFs to Catalyst expressions, the supported UDF functions are l
 |                          | log(x)                                                   |
 |                          | log10(x)                                                 |
 |                          | sqrt(x)                                                  |
+|                          | x.isNaN                                                  |
 | Type Cast                | *                                                        |
 | String                   | lhs + rhs                                                |
 |                          | lhs.equalsIgnoreCase(String rhs)                         |
@@ -369,3 +370,11 @@ When translating UDFs to Catalyst expressions, the supported UDF functions are l
 |                          | LocalDateTime.parse(x, DateTimeFormatter.ofPattern(pattern)).getHour       |
 |                          | LocalDateTime.parse(x, DateTimeFormatter.ofPattern(pattern)).getMinute     |
 |                          | LocalDateTime.parse(x, DateTimeFormatter.ofPattern(pattern)).getSecond     |
+| Empty array creation     | Array.empty[Boolean]                                     |
+|                          | Array.empty[Byte]                                        |
+|                          | Array.empty[Short]                                       |
+|                          | Array.empty[Int]                                         |
+|                          | Array.empty[Long]                                        |
+|                          | Array.empty[Float]                                       |
+|                          | Array.empty[Double]                                      |
+|                          | Array.empty[String]                                      |
