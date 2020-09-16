@@ -20,12 +20,13 @@ import scala.collection.mutable
 
 import com.nvidia.spark.rapids.GpuOverrides.isStringLit
 
+import org.apache.spark.internal.Logging
 import org.apache.spark.sql.catalyst.expressions.{BinaryExpression, ComplexTypeMergingExpression, Expression, String2TrimExpression, TernaryExpression, UnaryExpression}
 import org.apache.spark.sql.catalyst.expressions.aggregate.AggregateFunction
 import org.apache.spark.sql.catalyst.plans.physical.Partitioning
 import org.apache.spark.sql.catalyst.trees.TreeNodeTag
 import org.apache.spark.sql.connector.read.Scan
-import org.apache.spark.sql.execution.SparkPlan
+import org.apache.spark.sql.execution.{FileSourceScanExec, SparkPlan}
 import org.apache.spark.sql.execution.adaptive.{QueryStageExec, ShuffleQueryStageExec}
 import org.apache.spark.sql.execution.command.DataWritingCommand
 import org.apache.spark.sql.execution.exchange.{ReusedExchangeExec, ShuffleExchangeExec}
@@ -419,7 +420,7 @@ abstract class SparkPlanMeta[INPUT <: SparkPlan](plan: INPUT,
     conf: RapidsConf,
     parent: Option[RapidsMeta[_, _, _]],
     rule: ConfKeysAndIncompat)
-  extends RapidsMeta[INPUT, SparkPlan, GpuExec](plan, conf, parent, rule) {
+  extends RapidsMeta[INPUT, SparkPlan, GpuExec](plan, conf, parent, rule) with Logging {
 
   override val childPlans: Seq[SparkPlanMeta[_]] =
     plan.children.map(GpuOverrides.wrapPlan(_, conf, Some(this)))
@@ -447,6 +448,17 @@ abstract class SparkPlanMeta[INPUT <: SparkPlan](plan: INPUT,
     case _ => childPlans.flatMap(_.findShuffleExchanges())
   }
 
+  private def findBucketedReads(): Seq[Boolean] = wrapped match {
+    case f: FileSourceScanExec =>
+      if (f.bucketedScan) {
+        true :: Nil
+      } else {
+        false :: Nil
+      }
+    case _ =>
+      childPlans.flatMap(_.findBucketedReads())
+  }
+
   private def makeShuffleConsistent(): Unit = {
     // during query execution when AQE is enabled, the plan could consist of a mixture of
     // ShuffleExchangeExec nodes for exchanges that have not started executing yet, and
@@ -454,6 +466,9 @@ abstract class SparkPlanMeta[INPUT <: SparkPlan](plan: INPUT,
     // attempts to tag ShuffleExchangeExec nodes for CPU if other exchanges (either
     // ShuffleExchangeExec or ShuffleQueryStageExec nodes) were also tagged for CPU.
     val shuffleExchanges = findShuffleExchanges()
+    // if any of the table reads are bucketed then we can't do the shuffle on the
+    // GPU because the hashing is different between the CPU and GPU
+    val bucketedReads = findBucketedReads().exists(_ == true)
 
     def canThisBeReplaced(plan: Either[
         SparkPlanMeta[QueryStageExec],
@@ -468,13 +483,17 @@ abstract class SparkPlanMeta[INPUT <: SparkPlan](plan: INPUT,
       }
     }
 
-    // if we can't convert all exchanges to GPU then we need to make sure that all of them
-    // run on the CPU instead
-    if (!shuffleExchanges.forall(canThisBeReplaced)) {
+    // if we are reading from a bucketed table or if we can't convert all exchanges to GPU
+    // then we need to make sure that all of them run on the CPU instead
+    if (bucketedReads || !shuffleExchanges.forall(canThisBeReplaced)) {
+      val errMsg = if (bucketedReads) {
+        "can't support shuffle on the GPU with bucketed reads!"
+      } else {
+        "other exchanges that feed the same join are on the CPU, and GPU hashing is " +
+          "not consistent with the CPU version"
+      }
       // tag any exchanges that have not been converted to query stages yet
-      shuffleExchanges.filter(_.isRight)
-          .foreach(_.right.get.willNotWorkOnGpu("other exchanges that feed the same join are" +
-              " on the CPU, and GPU hashing is not consistent with the CPU version"))
+      shuffleExchanges.filter(_.isRight).foreach(_.right.get.willNotWorkOnGpu(errMsg))
       // verify that no query stages already got converted to GPU
       if (shuffleExchanges.filter(_.isLeft).exists(canThisBeReplaced)) {
         throw new IllegalStateException("Join needs to run on CPU but at least one input " +
@@ -483,6 +502,9 @@ abstract class SparkPlanMeta[INPUT <: SparkPlan](plan: INPUT,
     }
   }
 
+  private def checkBucketedRead(): Unit = {
+
+  }
 
   private def fixUpJoinConsistencyIfNeeded(): Unit = {
     childPlans.foreach(_.fixUpJoinConsistencyIfNeeded())
