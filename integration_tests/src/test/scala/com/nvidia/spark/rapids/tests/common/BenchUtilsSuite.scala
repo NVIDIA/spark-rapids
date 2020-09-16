@@ -21,8 +21,6 @@ import com.nvidia.spark.rapids.AdaptiveQueryExecSuite.TEST_FILES_ROOT
 import com.nvidia.spark.rapids.TestUtils
 import org.scalatest.{BeforeAndAfterEach, FunSuite}
 
-import org.apache.spark.sql.SaveMode
-
 object BenchUtilsSuite {
   val TEST_FILES_ROOT: File = TestUtils.getTempDir(this.getClass.getSimpleName)
 }
