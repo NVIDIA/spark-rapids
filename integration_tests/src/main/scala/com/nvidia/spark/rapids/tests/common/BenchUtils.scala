@@ -253,11 +253,20 @@ object BenchUtils {
    * precision.
    *
    * This is only suitable for data sets that can fit in the driver's memory.
-   */
-  def compareResults(df1: DataFrame, df2: DataFrame, epsilon: Double = 0.00001): Unit = {
 
-    val result1: Seq[Seq[Any]] = collectAndSort(df1)
-    val result2: Seq[Seq[Any]] = collectAndSort(df2)
+   * @param df1 DataFrame to compare.
+   * @param df2 DataFrame to compare.
+   * @param ignoreOrdering Sort the data collected from the DataFrames before comparing them.
+   * @param epsilon Allow for differences in precision when comparing floating point values.
+   */
+  def compareResults(
+      df1: DataFrame,
+      df2: DataFrame,
+      ignoreOrdering: Boolean,
+      epsilon: Double = 0.00001): Unit = {
+
+    val result1: Seq[Seq[Any]] = collectResults(df1, ignoreOrdering)
+    val result2: Seq[Seq[Any]] = collectResults(df2, ignoreOrdering)
 
     val allMatch = result1.length == result2.length && result1.zip(result2).forall {
       case (l, r) => rowEqual(l, r, epsilon)
@@ -287,11 +296,16 @@ object BenchUtils {
 
   }
 
-  private def collectAndSort(df: DataFrame): Seq[Seq[Any]] = {
-    // note that CPU and GPU results could, at least theoretically, end up being sorted
-    // differently because precision of floating-point values can vary but this seems to work
-    // well enough so far when comparing output from the TPC-* queries
-    df.collect().map(_.toSeq).sortBy(_.mkString(","))
+  private def collectResults(df: DataFrame, ignoreOrdering: Boolean): Seq[Seq[Any]] = {
+    val results = df.collect().map(_.toSeq)
+    if (ignoreOrdering) {
+      // note that CPU and GPU results could, at least theoretically, end up being sorted
+      // differently because precision of floating-point values can vary but this seems to work
+      // well enough so far when comparing output from the TPC-* queries
+      results.sortBy(_.mkString(","))
+    } else {
+      results
+    }
   }
 
   private def rowEqual(row1: Seq[Any], row2: Seq[Any], epsilon: Double): Boolean = {
@@ -303,7 +317,7 @@ object BenchUtils {
   // this is copied from SparkQueryCompareTestSuite
   private def compare(expected: Any, actual: Any, epsilon: Double): Boolean = {
     def doublesAreEqualWithinPercentage(expected: Double, actual: Double): (String, Boolean) = {
-      if (!compare(expected, actual)) {
+      if (!compare(expected, actual, epsilon)) {
         if (expected != 0) {
           val v = Math.abs((expected - actual) / expected)
           (s"\n\nABS($expected - $actual) / ABS($actual) == $v is not <= $epsilon ",  v <= epsilon)
@@ -325,7 +339,7 @@ object BenchUtils {
         a.length == b.length && a.zip(b).forall { case (l, r) => compare(l, r, epsilon) }
       case (a: Map[_, _], b: Map[_, _]) =>
         a.size == b.size && a.keys.forall { aKey =>
-          b.keys.find(bKey => compare(aKey, bKey))
+          b.keys.find(bKey => compare(aKey, bKey, epsilon))
               .exists(bKey => compare(a(aKey), b(bKey), epsilon))
         }
       case (a: Iterable[_], b: Iterable[_]) =>
