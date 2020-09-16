@@ -1,2 +1,0 @@
-[ 24496][12:47:47:703335][info  ] ----- RMM LOG BEGIN [PTDS DISABLED] -----
-[ 24496][12:47:47:703379][info  ] [A][Stream 0x1][Upstream 22857154560B]
