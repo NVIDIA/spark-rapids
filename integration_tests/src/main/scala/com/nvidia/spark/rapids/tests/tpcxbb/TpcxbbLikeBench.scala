@@ -39,14 +39,16 @@ object TpcxbbLikeBench extends Logging {
       spark: SparkSession,
       query: String,
       action: Option[DataFrame => Unit] = None,
-      iterations: Int = 3): Unit = {
+      iterations: Int = 3,
+      gcBetweenRuns: Boolean = false): Unit = {
     BenchUtils.runBench(
       spark,
       getQuery(query),
       action,
       query,
       s"tpcxbb-$query",
-      iterations)
+      iterations,
+      gcBetweenRuns)
   }
 
   def main(args: Array[String]): Unit = {

@@ -39,14 +39,16 @@ object TpcdsLikeBench extends Logging {
       spark: SparkSession,
       query: String,
       action: Option[DataFrame => Unit] = None,
-      iterations: Int = 3): Unit = {
+      iterations: Int = 3,
+      gcBetweenRuns: Boolean = false): Unit = {
     BenchUtils.runBench(
       spark,
       spark => TpcdsLikeSpark.query(query)(spark),
       action,
       query,
       s"tpcds-$query",
-      iterations)
+      iterations,
+      gcBetweenRuns)
   }
 
   /**

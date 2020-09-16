@@ -51,7 +51,8 @@ object BenchUtils {
       resultsAction: Option[DataFrame => Unit],
       queryDescription: String,
       filenameStub: String,
-      iterations: Int
+      iterations: Int,
+      gcBetweenRuns: Boolean
     ): Unit = {
 
     assert(iterations>0)
@@ -73,8 +74,10 @@ object BenchUtils {
       println(s"*** Iteration $i took $elapsed msec.")
 
       // cause Spark to call unregisterShuffle
-      System.gc()
-      System.gc()
+      if (gcBetweenRuns) {
+        System.gc()
+        System.gc()
+      }
     }
 
     // summarize all query times
@@ -102,6 +105,10 @@ object BenchUtils {
     val envVars: Map[String, String] = sys.env
         .filterNot(entry => redacted.exists(entry._1.toUpperCase.contains))
 
+    val testConfiguration = TestConfiguration(
+      gcBetweenRuns
+    )
+
     val environment = Environment(
       envVars,
       sparkConf = df.sparkSession.conf.getAll,
@@ -116,6 +123,7 @@ object BenchUtils {
       filename,
       queryStartTime.toEpochMilli,
       environment,
+      testConfiguration,
       queryDescription,
       queryPlan,
       queryTimes)
@@ -152,9 +160,15 @@ case class BenchmarkReport(
     filename: String,
     startTime: Long,
     env: Environment,
+    testConfiguration: TestConfiguration,
     query: String,
     queryPlan: QueryPlan,
     queryTimes: Seq[Long])
+
+/** Configuration options that affect how the tests are run */
+case class TestConfiguration(
+    gcBetweenRuns: Boolean
+)
 
 /** Details about the query plan */
 case class QueryPlan(
