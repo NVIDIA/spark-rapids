@@ -17,7 +17,6 @@ package com.nvidia.spark.rapids.tests.common
 
 import java.io.{File, FileOutputStream}
 import java.time.Instant
-import java.util.Date
 import java.util.concurrent.TimeUnit.NANOSECONDS
 
 import scala.collection.mutable.ListBuffer
@@ -28,7 +27,7 @@ import org.json4s.jackson.Serialization.writePretty
 
 import org.apache.spark.{SPARK_BUILD_USER, SPARK_VERSION}
 import org.apache.spark.sql.{DataFrame, Row, SaveMode, SparkSession}
-import org.apache.spark.sql.execution.streaming.FileStreamSource.Timestamp
+import org.apache.spark.sql.functions.col
 
 object BenchUtils {
 
@@ -263,13 +262,13 @@ object BenchUtils {
       df1: DataFrame,
       df2: DataFrame,
       ignoreOrdering: Boolean,
+      maxErrors: Int = 10,
       epsilon: Double = 0.00001): Unit = {
 
     val result1: Seq[Seq[Any]] = collectResults(df1, ignoreOrdering)
     val result2: Seq[Seq[Any]] = collectResults(df2, ignoreOrdering)
 
     if (result1.length == result2.length) {
-      val maxErrors = 10
       var errors = 0
       var i = 0;
       while (i < result1.length && errors < maxErrors) {
@@ -278,8 +277,15 @@ object BenchUtils {
         if (!rowEqual(l, r, epsilon)) {
           println(s"Row $i:\n${l.mkString(",")}\n${r.mkString(",")}\n")
           errors += 1
+          if (errors == maxErrors) {
+            println(s"Aborting comparison after reaching maximum of $maxErrors errors")
+          }
         }
         i += 1
+      }
+
+      if (errors==0) {
+        println(s"Results match")
       }
 
     } else {
@@ -290,47 +296,16 @@ object BenchUtils {
   private def collectResults(df: DataFrame, ignoreOrdering: Boolean): Seq[Seq[Any]] = {
     println("Collecting rows from DataFrame")
     val t1 = System.currentTimeMillis()
-    val rows = df.collect()
+    val rows = if (ignoreOrdering) {
+      // let Spark do the sorting
+      df.sort(df.columns.map(col): _*).collect()
+    } else {
+      df.collect()
+    }
     val t2 = System.currentTimeMillis()
     println(s"Collected ${rows.length} in ${(t2-t1)/1000.0} seconds")
-
-    val results = rows.map(_.toSeq)
-
-    if (ignoreOrdering) {
-      // note that CPU and GPU results could, at least theoretically, end up being sorted
-      // differently because precision of floating-point values can vary but this seems to work
-      // well enough so far when comparing output from the TPC-* queries
-      println("Sorting rows")
-      val t1 = System.currentTimeMillis()
-      val sorted = results.sortWith((l,r) => isLessThan(l,r))
-      val t2 = System.currentTimeMillis()
-      println(s"Sorted ${rows.length} rows in ${(t2-t1)/1000.0} seconds")
-      sorted
-
-    } else {
-      results
-    }
+    rows.map(_.toSeq)
   }
-
-  private def isLessThan(l: Seq[Any], r: Seq[Any]): Boolean = {
-    for (i <- l.indices) {
-      val cmp = (l(i), r(i)) match {
-        case (a: String, b: String) => a.compareTo(b)
-        case (a: Float, b: Float) => a.compareTo(b)
-        case (a: Double, b: Double) => a.compareTo(b)
-        case (a: Date, b: Date) => a.compareTo(b)
-        case (a: Timestamp, b: Timestamp) => a.compareTo(b)
-        case (a, b) => String.valueOf(a).compareTo(String.valueOf(b))
-      }
-      if (cmp < 0) {
-        return true
-      } else if (cmp > 0) {
-        return false
-      }
-    }
-    false
-  }
-
 
   private def rowEqual(row1: Seq[Any], row2: Seq[Any], epsilon: Double): Boolean = {
     row1.zip(row2).forall {
