@@ -29,6 +29,7 @@ class BenchUtilsSuite extends FunSuite with BeforeAndAfterEach {
         Map("foo" -> "bar"),
         Map("spark.sql.adaptive.enabled" -> "true"),
         "3.0.1"),
+      TestConfiguration(gcBetweenRuns = false),
       query = "q1",
       queryPlan = QueryPlan("logical", "physical"),
       queryTimes = Seq(99, 88, 77))
