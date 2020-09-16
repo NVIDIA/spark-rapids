@@ -291,7 +291,8 @@ parquet_write_gens_list = [
 @pytest.mark.parametrize('parquet_gens', parquet_write_gens_list, ids=idfn)
 @pytest.mark.parametrize('mt_opt', ["true", "false"])
 @pytest.mark.parametrize('v1_enabled_list', ["", "parquet"])
-def test_write_round_trip(spark_tmp_path, parquet_gens, mt_opt, v1_enabled_list):
+@pytest.mark.parametrize('ts_type', ["TIMESTAMP_MICROS", "TIMESTAMP_MILLIS"])
+def test_write_round_trip(spark_tmp_path, parquet_gens, mt_opt, v1_enabled_list, ts_type):
     gen_list = [('_c' + str(i), gen) for i, gen in enumerate(parquet_gens)]
     data_path = spark_tmp_path + '/PARQUET_DATA'
     assert_gpu_and_cpu_writes_are_equal_collect(
@@ -299,9 +300,22 @@ def test_write_round_trip(spark_tmp_path, parquet_gens, mt_opt, v1_enabled_list)
             lambda spark, path: spark.read.parquet(path),
             data_path,
             conf={'spark.sql.legacy.parquet.datetimeRebaseModeInWrite': 'CORRECTED',
-                'spark.sql.parquet.outputTimestampType': 'TIMESTAMP_MICROS',
+                'spark.sql.parquet.outputTimestampType': ts_type,
                 'spark.rapids.sql.format.parquet.multiThreadedRead.enabled': mt_opt,
                 'spark.sql.sources.useV1SourceList': v1_enabled_list})
+
+@pytest.mark.parametrize('ts_type', ['TIMESTAMP_MILLIS', 'TIMESTAMP_MICROS'])
+@pytest.mark.parametrize('ts_rebase', ['CORRECTED'])
+@ignore_order
+def test_write_ts_millis(spark_tmp_path, ts_type, ts_rebase):
+    gen = TimestampGen()
+    data_path = spark_tmp_path + '/PARQUET_DATA'
+    assert_gpu_and_cpu_writes_are_equal_collect(
+        lambda spark, path: unary_op_df(spark, gen).write.parquet(path),
+        lambda spark, path: spark.read.parquet(path),
+        data_path,
+        conf={'spark.sql.legacy.parquet.datetimeRebaseModeInWrite': ts_rebase,
+              'spark.sql.parquet.outputTimestampType': ts_type})
 
 parquet_part_write_gens = [
         byte_gen, short_gen, int_gen, long_gen, float_gen, double_gen,
@@ -314,7 +328,8 @@ parquet_part_write_gens = [
 @pytest.mark.parametrize('parquet_gen', parquet_part_write_gens, ids=idfn)
 @pytest.mark.parametrize('mt_opt', ["true", "false"])
 @pytest.mark.parametrize('v1_enabled_list', ["", "parquet"])
-def test_part_write_round_trip(spark_tmp_path, parquet_gen, mt_opt, v1_enabled_list):
+@pytest.mark.parametrize('ts_type', ['TIMESTAMP_MILLIS', 'TIMESTAMP_MICROS'])
+def test_part_write_round_trip(spark_tmp_path, parquet_gen, mt_opt, v1_enabled_list, ts_type):
     gen_list = [('a', RepeatSeqGen(parquet_gen, 10)),
             ('b', parquet_gen)]
     data_path = spark_tmp_path + '/PARQUET_DATA'
@@ -323,7 +338,7 @@ def test_part_write_round_trip(spark_tmp_path, parquet_gen, mt_opt, v1_enabled_l
             lambda spark, path: spark.read.parquet(path),
             data_path,
             conf={'spark.sql.legacy.parquet.datetimeRebaseModeInWrite': 'CORRECTED',
-                'spark.sql.parquet.outputTimestampType': 'TIMESTAMP_MICROS',
+                'spark.sql.parquet.outputTimestampType': ts_type,
                 'spark.rapids.sql.format.parquet.multiThreadedRead.enabled': mt_opt,
                 'spark.sql.sources.useV1SourceList': v1_enabled_list})
 

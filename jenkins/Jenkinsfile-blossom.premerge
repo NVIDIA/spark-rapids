@@ -233,7 +233,7 @@ pipeline {
                         step([$class                : 'JacocoPublisher',
                               execPattern           : '**/target/jacoco.exec',
                               classPattern          : 'target/jacoco_classes/',
-                              sourcePattern         : 'sql-plugin/src/main/java/,sql-plugin/src/main/scala/,shuffle-plugin/src/main/scala/',
+                              sourcePattern         : 'shuffle-plugin/src/main/scala/,udf-compiler/src/main/scala/,sql-plugin/src/main/java/,sql-plugin/src/main/scala/,shims/spark310/src/main/scala/,shims/spark300/src/main/scala/,shims/spark300db/src/main/scala/,shims/spark301/src/main/scala/,shims/spark302/src/main/scala/',
                               sourceInclusionPattern: '**/*.java,**/*.scala'
                         ])
                     }
