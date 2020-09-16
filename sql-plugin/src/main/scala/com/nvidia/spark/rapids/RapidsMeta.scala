@@ -454,6 +454,10 @@ abstract class SparkPlanMeta[INPUT <: SparkPlan](plan: INPUT,
       } else {
         false :: Nil
       }
+    case _: ShuffleExchangeExec =>
+      // if we find a shuffle before a scan then it doesn't matter if its
+      // a bucketed read
+      false :: Nil
     case _ =>
       childPlans.flatMap(_.findBucketedReads())
   }
@@ -486,7 +490,8 @@ abstract class SparkPlanMeta[INPUT <: SparkPlan](plan: INPUT,
     // then we need to make sure that all of them run on the CPU instead
     if (bucketedReads || !shuffleExchanges.forall(canThisBeReplaced)) {
       val errMsg = if (bucketedReads) {
-        "can't support shuffle on the GPU with bucketed reads!"
+        "can't support shuffle on the GPU when doing a join that reads directly from a " +
+          "bucketed table!"
       } else {
         "other exchanges that feed the same join are on the CPU, and GPU hashing is " +
           "not consistent with the CPU version"
