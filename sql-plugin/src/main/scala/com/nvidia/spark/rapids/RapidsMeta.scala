@@ -20,7 +20,6 @@ import scala.collection.mutable
 
 import com.nvidia.spark.rapids.GpuOverrides.isStringLit
 
-import org.apache.spark.internal.Logging
 import org.apache.spark.sql.catalyst.expressions.{BinaryExpression, ComplexTypeMergingExpression, Expression, String2TrimExpression, TernaryExpression, UnaryExpression}
 import org.apache.spark.sql.catalyst.expressions.aggregate.AggregateFunction
 import org.apache.spark.sql.catalyst.plans.physical.Partitioning
@@ -420,7 +419,7 @@ abstract class SparkPlanMeta[INPUT <: SparkPlan](plan: INPUT,
     conf: RapidsConf,
     parent: Option[RapidsMeta[_, _, _]],
     rule: ConfKeysAndIncompat)
-  extends RapidsMeta[INPUT, SparkPlan, GpuExec](plan, conf, parent, rule) with Logging {
+  extends RapidsMeta[INPUT, SparkPlan, GpuExec](plan, conf, parent, rule) {
 
   override val childPlans: Seq[SparkPlanMeta[_]] =
     plan.children.map(GpuOverrides.wrapPlan(_, conf, Some(this)))
@@ -500,10 +499,6 @@ abstract class SparkPlanMeta[INPUT <: SparkPlan](plan: INPUT,
             "query stage ran on GPU")
       }
     }
-  }
-
-  private def checkBucketedRead(): Unit = {
-
   }
 
   private def fixUpJoinConsistencyIfNeeded(): Unit = {
