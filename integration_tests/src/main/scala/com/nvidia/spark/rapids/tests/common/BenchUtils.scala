@@ -303,7 +303,7 @@ object BenchUtils {
       df.collect()
     }
     val t2 = System.currentTimeMillis()
-    println(s"Collected ${rows.length} in ${(t2-t1)/1000.0} seconds")
+    println(s"Collected ${rows.length} rows in ${(t2-t1)/1000.0} seconds")
     rows.map(_.toSeq)
   }
 
