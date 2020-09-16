@@ -315,9 +315,9 @@ object BenchUtils {
   }
 
   // this is copied from SparkQueryCompareTestSuite
-  private def compare(expected: Any, actual: Any, epsilon: Double): Boolean = {
+  private def compare(expected: Any, actual: Any, epsilon: Double = 0.0): Boolean = {
     def doublesAreEqualWithinPercentage(expected: Double, actual: Double): (String, Boolean) = {
-      if (!compare(expected, actual, epsilon)) {
+      if (!compare(expected, actual)) {
         if (expected != 0) {
           val v = Math.abs((expected - actual) / expected)
           (s"\n\nABS($expected - $actual) / ABS($actual) == $v is not <= $epsilon ",  v <= epsilon)
@@ -339,8 +339,8 @@ object BenchUtils {
         a.length == b.length && a.zip(b).forall { case (l, r) => compare(l, r, epsilon) }
       case (a: Map[_, _], b: Map[_, _]) =>
         a.size == b.size && a.keys.forall { aKey =>
-          b.keys.find(bKey => compare(aKey, bKey, epsilon))
-              .exists(bKey => compare(a(aKey), b(bKey), epsilon))
+          b.keys.find(bKey => compare(aKey, bKey))
+              .exists(bKey => compare(a(aKey), b(bKey)))
         }
       case (a: Iterable[_], b: Iterable[_]) =>
         a.size == b.size && a.zip(b).forall { case (l, r) => compare(l, r, epsilon) }
