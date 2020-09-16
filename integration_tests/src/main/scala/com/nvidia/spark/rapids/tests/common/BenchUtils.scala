@@ -18,6 +18,7 @@ package com.nvidia.spark.rapids.tests.common
 import java.io.{BufferedWriter, File, FileOutputStream, FileWriter}
 import java.time.Instant
 import java.util.concurrent.TimeUnit.NANOSECONDS
+import java.util.Date
 
 import scala.collection.JavaConverters._
 import scala.collection.mutable.ListBuffer
@@ -26,9 +27,10 @@ import com.github.difflib.DiffUtils
 import org.json4s.DefaultFormats
 import org.json4s.jackson.JsonMethods.parse
 import org.json4s.jackson.Serialization.writePretty
-
 import org.apache.spark.{SPARK_BUILD_USER, SPARK_VERSION}
+
 import org.apache.spark.sql.{DataFrame, Row, SaveMode, SparkSession}
+import org.apache.spark.sql.execution.streaming.FileStreamSource.Timestamp
 
 object BenchUtils {
 
@@ -268,45 +270,69 @@ object BenchUtils {
     val result1: Seq[Seq[Any]] = collectResults(df1, ignoreOrdering)
     val result2: Seq[Seq[Any]] = collectResults(df2, ignoreOrdering)
 
-    val allMatch = result1.length == result2.length && result1.zip(result2).forall {
-      case (l, r) => rowEqual(l, r, epsilon)
-    }
-
-    if (allMatch) {
-      println("Results match (allowing for differences in precision).")
-    } else {
-      val filename = s"diff-${System.currentTimeMillis()}.txt"
-      println(s"Results do not match. Writing diff to $filename")
-
-      val w = new BufferedWriter(new FileWriter(filename))
-
-      val deltas = DiffUtils.diff(
-        result1.map(_.mkString("\t")).asJava,
-        result2.map(_.mkString("\t")).asJava,
-        false).getDeltas.asScala
-
-      deltas.foreach { delta =>
-        w.write(delta.getType.toString + "\n")
-        w.write(delta.getSource.toString + "\n")
-        w.write(delta.getTarget.toString + "\n")
+    if (result1.length == result2.length) {
+      val maxErrors = 10
+      var errors = 0
+      var i = 0;
+      while (i < result1.length && errors < maxErrors) {
+        val l = result1(i)
+        val r = result2(i)
+        if (!rowEqual(l, r, epsilon)) {
+          println(s"Row $i:\n${l.mkString(",")}\n${r.mkString(",")}\n")
+          errors += 1
+        }
+        i += 1
       }
 
-      w.close()
+    } else {
+      println(s"Row counts do not match: ${result1.length} != ${result2.length}")
     }
-
   }
 
   private def collectResults(df: DataFrame, ignoreOrdering: Boolean): Seq[Seq[Any]] = {
-    val results = df.collect().map(_.toSeq)
+    println("Collecting rows from DataFrame")
+    val t1 = System.currentTimeMillis()
+    val rows = df.collect()
+    val t2 = System.currentTimeMillis()
+    println(s"Collected ${rows.length} in ${(t2-t1)/1000.0} seconds")
+
+    val results = rows.map(_.toSeq)
+
     if (ignoreOrdering) {
       // note that CPU and GPU results could, at least theoretically, end up being sorted
       // differently because precision of floating-point values can vary but this seems to work
       // well enough so far when comparing output from the TPC-* queries
-      results.sortBy(_.mkString(","))
+      println("Sorting rows")
+      val t1 = System.currentTimeMillis()
+      val sorted = results.sortWith((l,r) => isLessThan(l,r))
+      val t2 = System.currentTimeMillis()
+      println(s"Sorted ${rows.length} rows in ${(t2-t1)/1000.0} seconds")
+      sorted
+
     } else {
       results
     }
   }
+
+  private def isLessThan(l: Seq[Any], r: Seq[Any]): Boolean = {
+    for (i <- l.indices) {
+      val cmp = (l(i), r(i)) match {
+        case (a: String, b: String) => a.compareTo(b)
+        case (a: Float, b: Float) => a.compareTo(b)
+        case (a: Double, b: Double) => a.compareTo(b)
+        case (a: Date, b: Date) => a.compareTo(b)
+        case (a: Timestamp, b: Timestamp) => a.compareTo(b)
+        case (a, b) => String.valueOf(a).compareTo(String.valueOf(b))
+      }
+      if (cmp < 0) {
+        return true
+      } else if (cmp > 0) {
+        return false
+      }
+    }
+    false
+  }
+
 
   private def rowEqual(row1: Seq[Any], row2: Seq[Any], epsilon: Double): Boolean = {
     row1.zip(row2).forall {
