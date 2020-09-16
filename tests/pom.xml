@@ -134,6 +134,7 @@
                 <configuration>
                     <excludes>
                         <exclude>src/test/resources/**</exclude>
+                        <exclude>rmm_log.txt</exclude>
                     </excludes>
                 </configuration>
             </plugin>

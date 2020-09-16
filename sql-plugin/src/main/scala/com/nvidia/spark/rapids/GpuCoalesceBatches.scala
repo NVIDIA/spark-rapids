@@ -21,7 +21,6 @@ import scala.collection.mutable.ArrayBuffer
 import ai.rapids.cudf.{BufferType, NvtxColor, Table}
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import com.nvidia.spark.rapids.SpillPriorities.COALESCE_BATCH_ON_DECK_PRIORITY
-import com.nvidia.spark.rapids.format.{ColumnMeta, SubBufferMeta, TableMeta}
 
 import org.apache.spark.TaskContext
 import org.apache.spark.internal.Logging
@@ -31,7 +30,6 @@ import org.apache.spark.sql.catalyst.expressions.Attribute
 import org.apache.spark.sql.catalyst.plans.physical.Partitioning
 import org.apache.spark.sql.execution.{SparkPlan, UnaryExecNode}
 import org.apache.spark.sql.execution.metric.{SQLMetric, SQLMetrics}
-import org.apache.spark.sql.rapids.TempSpillBufferId
 import org.apache.spark.sql.types.{DataTypes, StructType}
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
@@ -115,40 +113,8 @@ object RequireSingleBatch extends CoalesceGoal {
 
 case class TargetSize(override val targetSizeBytes: Long) extends CoalesceGoal
 
-class RemoveEmptyBatchIterator(iter: Iterator[ColumnarBatch],
-    numFiltered: SQLMetric) extends Iterator[ColumnarBatch] {
-  private var onDeck: Option[ColumnarBatch] = None
-
-  // note that TaskContext.get() can return null during unit testing so we wrap it in an
-  // option here
-  Option(TaskContext.get())
-    .foreach(_.addTaskCompletionListener[Unit](_ => onDeck.foreach(_.close())))
-
-  override def hasNext: Boolean = {
-    while (onDeck.isEmpty && iter.hasNext) {
-      val cb = iter.next()
-      val rows = cb.numRows()
-      if (rows > 0) {
-        onDeck = Some(cb)
-      } else {
-        numFiltered += 1
-        cb.close()
-      }
-    }
-    onDeck.isDefined
-  }
-
-  override def next(): ColumnarBatch =
-    if (onDeck.isDefined || hasNext) {
-      val ret = onDeck.get
-      onDeck = None
-      ret
-    } else {
-      throw new NoSuchElementException()
-    }
-}
-
-abstract class AbstractGpuCoalesceIterator(origIter: Iterator[ColumnarBatch],
+abstract class AbstractGpuCoalesceIterator(
+    iter: Iterator[ColumnarBatch],
     schema: StructType,
     goal: CoalesceGoal,
     numInputRows: SQLMetric,
@@ -158,9 +124,7 @@ abstract class AbstractGpuCoalesceIterator(origIter: Iterator[ColumnarBatch],
     collectTime: SQLMetric,
     concatTime: SQLMetric,
     totalTime: SQLMetric,
-    peakDevMemory: SQLMetric,
     opName: String) extends Iterator[ColumnarBatch] with Logging {
-  private val iter = new RemoveEmptyBatchIterator(origIter, numInputBatches)
   private var batchInitialized: Boolean = false
   private var collectMetric: Option[MetricRange] = None
   private var totalMetric: Option[MetricRange] = None
@@ -199,18 +163,29 @@ abstract class AbstractGpuCoalesceIterator(origIter: Iterator[ColumnarBatch],
       .foreach(_.addTaskCompletionListener[Unit]( _ => clearOnDeck()))
 
   override def hasNext: Boolean = {
-    if (!collectMetric.isDefined) {
+    if (collectMetric.isEmpty) {
       // use one being not set as indicator that neither are intialized to avoid
       // 2 checks or extra initialized variable
       collectMetric = Some(new MetricRange(collectTime))
       totalMetric = Some(new MetricRange(totalTime))
     }
-    val res = hasOnDeck || iter.hasNext
+    while (!hasOnDeck && iter.hasNext) {
+      val cb = iter.next()
+      val numRows = cb.numRows()
+      numInputBatches += 1
+      numInputRows += numRows
+      if (numRows > 0) {
+        saveOnDeck(cb)
+      } else {
+        cb.close()
+      }
+    }
+    val res = hasOnDeck
     if (!res) {
-      collectMetric.foreach(_.close())
-      collectMetric = None
       totalMetric.foreach(_.close())
       totalMetric = None
+      collectMetric.foreach(_.close())
+      collectMetric = None
     }
     res
   }
@@ -284,16 +259,17 @@ abstract class AbstractGpuCoalesceIterator(origIter: Iterator[ColumnarBatch],
       var numBytes: Long = 0
       var columnSizes: Array[Long] = schema.fields.indices.map(_ => 0L).toArray
       var stringColumnSizes: Array[Long] = stringFieldIndices.map(_ => 0L)
-      var numBatches = 0
 
       // check if there is a batch "on deck" from a previous call to next()
       if (hasOnDeck) {
         val batch = popOnDeck()
-        addBatch(batch)
-        numBatches += 1
         numRows += batch.numRows()
         columnSizes = getColumnSizes(batch)
         numBytes += columnSizes.sum
+        stringColumnSizes = stringFieldIndices.map(i => getColumnDataSize(batch, i, columnSizes(i)))
+            .zip(stringColumnSizes)
+            .map(pair => pair._1 + pair._2)
+        addBatch(batch)
       }
 
       try {
@@ -349,7 +325,6 @@ abstract class AbstractGpuCoalesceIterator(origIter: Iterator[ColumnarBatch],
               saveOnDeck(cb)
             } else {
               addBatch(cb)
-              numBatches += 1
               numRows = wouldBeRows
               numBytes = wouldBeBytes
               columnSizes = wouldBeColumnSizes
@@ -368,9 +343,6 @@ abstract class AbstractGpuCoalesceIterator(origIter: Iterator[ColumnarBatch],
 
         numOutputRows += numRows
         numOutputBatches += 1
-
-        logDebug(s"Combined $numBatches input batches containing $numRows rows " +
-          s"and $numBytes bytes")
 
       } finally {
         collectMetric.foreach(_.close())
@@ -398,7 +370,6 @@ abstract class AbstractGpuCoalesceIterator(origIter: Iterator[ColumnarBatch],
     }
     addBatchToConcat(batch)
   }
-
 }
 
 class GpuCoalesceIterator(iter: Iterator[ColumnarBatch],
@@ -424,169 +395,96 @@ class GpuCoalesceIterator(iter: Iterator[ColumnarBatch],
     collectTime,
     concatTime,
     totalTime,
-    peakDevMemory,
     opName) with Arm {
 
-  private var batches: ArrayBuffer[ColumnarBatch] = ArrayBuffer.empty
+  private val batches: ArrayBuffer[SpillableColumnarBatch] = ArrayBuffer.empty
   private var maxDeviceMemory: Long = 0
 
-  // batch indices that are compressed batches
-  private[this] var compressedBatchIndices: ArrayBuffer[Int] = ArrayBuffer.empty
+  override def initNewBatch(): Unit = {
+    batches.safeClose()
+    batches.clear()
+  }
+
+  override def addBatchToConcat(batch: ColumnarBatch): Unit =
+    batches.append(SpillableColumnarBatch(batch, SpillPriorities.COALESCE_BATCH_PRIORITY))
+
+  override def getColumnSizes(cb: ColumnarBatch): Array[Long] = {
+    if (!GpuCompressedColumnVector.isBatchCompressed(cb)) {
+      GpuColumnVector.extractBases(cb).map(_.getDeviceMemorySize)
+    } else {
+      GpuCompressedColumnVector.getUncompressedColumnSizes(cb)
+    }
+  }
 
   private[this] var codec: TableCompressionCodec = _
 
-  override def initNewBatch(): Unit = {
-    batches.clear()
-    compressedBatchIndices.clear()
-  }
+  private[this] def popAllDecompressed(): Array[ColumnarBatch] = {
+    closeOnExcept(batches.map(_.getColumnarBatch())) { wip =>
+      batches.safeClose()
+      batches.clear()
 
-  override def addBatchToConcat(batch: ColumnarBatch): Unit = {
-    if (isBatchCompressed(batch)) {
-      compressedBatchIndices += batches.size
-    }
-    batches += batch
-  }
-
-  private def isBatchCompressed(batch: ColumnarBatch): Boolean = {
-    if (batch.numCols == 0) {
-      false
-    } else {
-      batch.column(0) match {
-        case _: GpuCompressedColumnVector => true
-        case _ => false
+      val compressedBatchIndices = wip.zipWithIndex.filter { pair =>
+        GpuCompressedColumnVector.isBatchCompressed(pair._1)
+      }.map(_._2)
+      if (compressedBatchIndices.nonEmpty) {
+        val compressedVecs = compressedBatchIndices.map { batchIndex =>
+          wip(batchIndex).column(0).asInstanceOf[GpuCompressedColumnVector]
+        }
+        if (codec == null) {
+          val descr = compressedVecs.head.getTableMeta.bufferMeta.codecBufferDescrs(0)
+          codec = TableCompressionCodec.getCodec(descr.codec)
+        }
+        withResource(codec.createBatchDecompressor(maxDecompressBatchMemory)) { decompressor =>
+          compressedVecs.foreach { cv =>
+            val bufferMeta = cv.getTableMeta.bufferMeta
+            // don't currently support switching codecs when partitioning
+            val buffer = cv.getBuffer.slice(0, cv.getBuffer.getLength)
+            decompressor.addBufferToDecompress(buffer, bufferMeta)
+          }
+          withResource(decompressor.finish()) { outputBuffers =>
+            outputBuffers.zipWithIndex.foreach { case (outputBuffer, outputIndex) =>
+              val cv = compressedVecs(outputIndex)
+              val batchIndex = compressedBatchIndices(outputIndex)
+              val compressedBatch = wip(batchIndex)
+              wip(batchIndex) = MetaUtils.getBatchFromMeta(outputBuffer, cv.getTableMeta)
+              compressedBatch.close()
+            }
+          }
+        }
       }
-    }
-  }
-
-  private def getUncompressedColumnSizes(tableMeta: TableMeta): Array[Long] = {
-    val numCols = tableMeta.columnMetasLength
-    val columnMeta = new ColumnMeta
-    val subBufferMetaObj = new SubBufferMeta
-    val sizes = new Array[Long](numCols)
-    (0 until numCols).foreach { i =>
-      tableMeta.columnMetas(columnMeta, i)
-      var subBuffer = columnMeta.data(subBufferMetaObj)
-      if (subBuffer != null) {
-        sizes(i) += subBuffer.length
-      }
-      subBuffer = columnMeta.offsets(subBufferMetaObj)
-      if (subBuffer != null) {
-        sizes(i) += subBuffer.length
-      }
-      subBuffer = columnMeta.validity(subBufferMetaObj)
-      if (subBuffer != null) {
-        sizes(i) += subBuffer.length
-      }
-    }
-    sizes
-  }
-
-  override def getColumnSizes(cb: ColumnarBatch): Array[Long] = {
-    if (!isBatchCompressed(cb)) {
-      GpuColumnVector.extractBases(cb).map(_.getDeviceMemorySize)
-    } else {
-      val compressedVector = cb.column(0).asInstanceOf[GpuCompressedColumnVector]
-      val tableMeta = compressedVector.getTableMeta
-      require(tableMeta.columnMetasLength == cb.numCols)
-      getUncompressedColumnSizes(tableMeta)
+      wip.toArray
     }
   }
 
   override def concatAllAndPutOnGPU(): ColumnarBatch = {
-    decompressBatches()
-    val tmp = batches.toArray
-    // Clear the buffer so we don't close it again (buildNonEmptyBatch closed it for us).
-    batches = ArrayBuffer.empty
-    val ret = ConcatAndConsumeAll.buildNonEmptyBatch(tmp)
+    val ret = ConcatAndConsumeAll.buildNonEmptyBatch(popAllDecompressed())
     // sum of current batches and concatenating batches. Approximately sizeof(ret * 2).
     maxDeviceMemory = GpuColumnVector.getTotalDeviceMemoryUsed(ret) * 2
     ret
   }
 
-  private def decompressBatches(): Unit = {
-    if (compressedBatchIndices.nonEmpty) {
-      val compressedVecs = compressedBatchIndices.map { batchIndex =>
-        batches(batchIndex).column(0).asInstanceOf[GpuCompressedColumnVector]
-      }
-      if (codec == null) {
-        val descr = compressedVecs.head.getTableMeta.bufferMeta.codecBufferDescrs(0)
-        codec = TableCompressionCodec.getCodec(descr.codec)
-      }
-      withResource(codec.createBatchDecompressor(maxDecompressBatchMemory)) { decompressor =>
-        compressedVecs.foreach { cv =>
-          val bufferMeta = cv.getTableMeta.bufferMeta
-          // don't currently support switching codecs when partitioning
-          val buffer = cv.getBuffer.slice(0, cv.getBuffer.getLength)
-          decompressor.addBufferToDecompress(buffer, bufferMeta)
-        }
-        withResource(decompressor.finish()) { outputBuffers =>
-          outputBuffers.zipWithIndex.foreach { case (outputBuffer, outputIndex) =>
-            val cv = compressedVecs(outputIndex)
-            val batchIndex = compressedBatchIndices(outputIndex)
-            val compressedBatch = batches(batchIndex)
-            batches(batchIndex) = MetaUtils.getBatchFromMeta(outputBuffer, cv.getTableMeta)
-            compressedBatch.close()
-          }
-        }
-      }
-    }
-  }
-
   override def cleanupConcatIsDone(): Unit = {
     peakDevMemory.set(maxDeviceMemory)
-    batches.foreach(_.close())
+    batches.clear()
   }
 
-  private var onDeck: Option[TempSpillBufferId] = None
+  private var onDeck: Option[SpillableColumnarBatch] = None
 
   override protected def hasOnDeck: Boolean = onDeck.isDefined
 
   override protected def saveOnDeck(batch: ColumnarBatch): Unit = {
     assert(onDeck.isEmpty)
-    val id = TempSpillBufferId()
-    val priority = COALESCE_BATCH_ON_DECK_PRIORITY
-    val numColumns = batch.numCols()
-
-    if (numColumns > 0 && batch.column(0).isInstanceOf[GpuCompressedColumnVector]) {
-      val cv = batch.column(0).asInstanceOf[GpuCompressedColumnVector]
-      RapidsBufferCatalog.addBuffer(id, cv.getBuffer, cv.getTableMeta, priority)
-    } else if (numColumns > 0 &&
-        (0 until numColumns)
-            .forall(i => batch.column(i).isInstanceOf[GpuColumnVectorFromBuffer])) {
-      val cv = batch.column(0).asInstanceOf[GpuColumnVectorFromBuffer]
-      withResource(GpuColumnVector.from(batch)) { table =>
-        RapidsBufferCatalog.addTable(id, table, cv.getBuffer, priority)
-      }
-    } else {
-      withResource(batch) { batch =>
-        withResource(GpuColumnVector.from(batch)) { tmpTable =>
-          val contigTables = tmpTable.contiguousSplit(batch.numRows())
-          val tab = contigTables.head
-          contigTables.tail.safeClose()
-          RapidsBufferCatalog.addTable(id, tab.getTable, tab.getBuffer, priority)
-        }
-      }
-    }
-
-    onDeck = Some(id)
+    onDeck = Some(SpillableColumnarBatch(batch, COALESCE_BATCH_ON_DECK_PRIORITY))
   }
 
   override protected def clearOnDeck(): Unit = {
-    onDeck.foreach { id =>
-      withResource(RapidsBufferCatalog.acquireBuffer(id)) { rapidsBuffer =>
-        rapidsBuffer.free()
-      }
-    }
+    onDeck.foreach(_.close())
     onDeck = None
   }
 
   override protected def popOnDeck(): ColumnarBatch = {
-    val id = onDeck.get
-    val ret = withResource(RapidsBufferCatalog.acquireBuffer(id)) { rapidsBuffer =>
-      rapidsBuffer.free()
-      rapidsBuffer.getColumnarBatch
-    }
-    onDeck = None
+    val ret = onDeck.get.getColumnarBatch()
+    clearOnDeck()
     ret
   }
 }

@@ -15,20 +15,18 @@
  */
 package com.nvidia.spark.rapids.tests.common
 
-import java.io.{BufferedWriter, File, FileOutputStream, FileWriter}
+import java.io.{File, FileOutputStream}
 import java.time.Instant
-import java.util.concurrent.TimeUnit.NANOSECONDS
 import java.util.Date
+import java.util.concurrent.TimeUnit.NANOSECONDS
 
-import scala.collection.JavaConverters._
 import scala.collection.mutable.ListBuffer
 
-import com.github.difflib.DiffUtils
 import org.json4s.DefaultFormats
 import org.json4s.jackson.JsonMethods.parse
 import org.json4s.jackson.Serialization.writePretty
-import org.apache.spark.{SPARK_BUILD_USER, SPARK_VERSION}
 
+import org.apache.spark.{SPARK_BUILD_USER, SPARK_VERSION}
 import org.apache.spark.sql.{DataFrame, Row, SaveMode, SparkSession}
 import org.apache.spark.sql.execution.streaming.FileStreamSource.Timestamp
 
