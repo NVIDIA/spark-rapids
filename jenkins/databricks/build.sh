@@ -26,7 +26,6 @@ CUDF_VERSION=$6
 CUDA_VERSION=$7
 CI_CUDF_JAR=$8
 BASE_SPARK_POM_VERSION=$9
-export WORKSPACE=`pwd`
 
 echo "Spark version is $SPARK_VERSION"
 echo "scala version is: $SCALA_VERSION"
@@ -42,6 +41,7 @@ rm -rf spark-rapids
 mkdir spark-rapids
 tar -zxvf $SPARKTGZ -C spark-rapids
 cd spark-rapids
+export WORKSPACE=`pwd`
 mvn -B '-Pdatabricks,!snapshot-shims' clean package -DskipTests || true
 M2DIR=/home/ubuntu/.m2/repository
 CUDF_JAR=${M2DIR}/ai/rapids/cudf/${CUDF_VERSION}/cudf-${CUDF_VERSION}-${CUDA_VERSION}.jar
