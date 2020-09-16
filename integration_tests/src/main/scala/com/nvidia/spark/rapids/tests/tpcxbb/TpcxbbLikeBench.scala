@@ -19,36 +19,92 @@ package com.nvidia.spark.rapids.tests.tpcxbb
 import com.nvidia.spark.rapids.tests.common.BenchUtils
 
 import org.apache.spark.internal.Logging
-import org.apache.spark.sql.{DataFrame, SparkSession}
+import org.apache.spark.sql.{DataFrame, SaveMode, SparkSession}
 
 object TpcxbbLikeBench extends Logging {
 
   /**
-   * This method can be called from Spark shell using the following syntax:
+   * This method performs a benchmark of executing a query and collecting the results to the
+   * driver and can be called from Spark shell using the following syntax:
    *
-   * TpcxbbLikeBench.runBench(spark, "q5")
+   * TpcxbbLikeBench.collect(spark, "q5", 3)
    *
    * @param spark The Spark session
    * @param query The name of the query to run e.g. "q5"
-   * @param action Optional action to perform after creating the DataFrame, with default
-   *               behavior of calling df.collect() but user could provide function to
-   *               save results to CSV or Parquet instead.
    * @param iterations The number of times to run the query.
    */
-  def runBench(
+  def collect(
       spark: SparkSession,
       query: String,
-      action: Option[DataFrame => Unit] = None,
       iterations: Int = 3,
       gcBetweenRuns: Boolean = false): Unit = {
-    BenchUtils.runBench(
+    BenchUtils.collect(
       spark,
-      getQuery(query),
-      action,
+      spark => getQuery(query)(spark),
       query,
-      s"tpcxbb-$query",
+      s"tpcxbb-$query-collect",
       iterations,
       gcBetweenRuns)
+  }
+
+  /**
+   * This method performs a benchmark of executing a query and writing the results to CSV files
+   * and can be called from Spark shell using the following syntax:
+   *
+   * TpcxbbLikeBench.writeCsv(spark, "q5", 3, "/path/to/write")
+   *
+   * @param spark The Spark session
+   * @param query The name of the query to run e.g. "q5"
+   * @param iterations The number of times to run the query.
+   */
+  def writeCsv(
+      spark: SparkSession,
+      query: String,
+      path: String,
+      mode: SaveMode = SaveMode.Overwrite,
+      writeOptions: Map[String, String] = Map.empty,
+      iterations: Int = 3,
+      gcBetweenRuns: Boolean = false): Unit = {
+    BenchUtils.writeCsv(
+      spark,
+      spark => getQuery(query)(spark),
+      query,
+      s"tpcxbb-$query-csv",
+      iterations,
+      gcBetweenRuns,
+      path,
+      mode,
+      writeOptions)
+  }
+
+  /**
+   * This method performs a benchmark of executing a query and writing the results to Parquet files
+   * and can be called from Spark shell using the following syntax:
+   *
+   * TpcxbbLikeBench.writeParquet(spark, "q5", 3, "/path/to/write")
+   *
+   * @param spark The Spark session
+   * @param query The name of the query to run e.g. "q5"
+   * @param iterations The number of times to run the query.
+   */
+  def writeParquet(
+      spark: SparkSession,
+      query: String,
+      path: String,
+      mode: SaveMode = SaveMode.Overwrite,
+      writeOptions: Map[String, String] = Map.empty,
+      iterations: Int = 3,
+      gcBetweenRuns: Boolean = false): Unit = {
+    BenchUtils.writeParquet(
+      spark,
+      spark => getQuery(query)(spark),
+      query,
+      s"tpcxbb-$query-parquet",
+      iterations,
+      gcBetweenRuns,
+      path,
+      mode,
+      writeOptions)
   }
 
   def main(args: Array[String]): Unit = {
@@ -59,7 +115,7 @@ object TpcxbbLikeBench extends Logging {
 
     args.drop(1).foreach(query => {
       println(s"*** RUNNING TPCx-BB QUERY $query")
-      runBench(spark, query)
+      collect(spark, query)
     })
   }
 

@@ -6,6 +6,8 @@ import com.nvidia.spark.rapids.AdaptiveQueryExecSuite.TEST_FILES_ROOT
 import com.nvidia.spark.rapids.TestUtils
 import org.scalatest.{BeforeAndAfterEach, FunSuite}
 
+import org.apache.spark.sql.SaveMode
+
 object BenchUtilsSuite {
   val TEST_FILES_ROOT: File = TestUtils.getTempDir(this.getClass.getSimpleName)
 }
@@ -29,7 +31,9 @@ class BenchUtilsSuite extends FunSuite with BeforeAndAfterEach {
         Map("foo" -> "bar"),
         Map("spark.sql.adaptive.enabled" -> "true"),
         "3.0.1"),
-      TestConfiguration(gcBetweenRuns = false),
+      testConfiguration = TestConfiguration(gcBetweenRuns = false),
+      action = "csv",
+      writeOptions = Map("header" -> "true"),
       query = "q1",
       queryPlan = QueryPlan("logical", "physical"),
       queryTimes = Seq(99, 88, 77))

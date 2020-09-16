@@ -186,14 +186,40 @@ object BenchUtils {
       df.queryExecution.executedPlan.toString()
     )
 
-    val report = BenchmarkReport(
-      filename,
-      queryStartTime.toEpochMilli,
-      environment,
-      testConfiguration,
-      queryDescription,
-      queryPlan,
-      queryTimes)
+    val report = resultsAction match {
+      case Collect() => BenchmarkReport(
+        filename,
+        queryStartTime.toEpochMilli,
+        environment,
+        testConfiguration,
+        "collect",
+        Map.empty,
+        queryDescription,
+        queryPlan,
+        queryTimes)
+
+      case w: WriteCsv => BenchmarkReport(
+        filename,
+        queryStartTime.toEpochMilli,
+        environment,
+        testConfiguration,
+        "csv",
+        w.writeOptions,
+        queryDescription,
+        queryPlan,
+        queryTimes)
+
+      case w: WriteParquet => BenchmarkReport(
+        filename,
+        queryStartTime.toEpochMilli,
+        environment,
+        testConfiguration,
+        "parquet",
+        w.writeOptions,
+        queryDescription,
+        queryPlan,
+        queryTimes)
+    }
 
     writeReport(report, filename)
   }
@@ -228,6 +254,8 @@ case class BenchmarkReport(
     startTime: Long,
     env: Environment,
     testConfiguration: TestConfiguration,
+    action: String,
+    writeOptions: Map[String, String],
     query: String,
     queryPlan: QueryPlan,
     queryTimes: Seq[Long])
