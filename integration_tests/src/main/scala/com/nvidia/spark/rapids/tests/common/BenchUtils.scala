@@ -15,18 +15,20 @@
  */
 package com.nvidia.spark.rapids.tests.common
 
-import java.io.{File, FileOutputStream}
+import java.io.{BufferedWriter, File, FileOutputStream, FileWriter}
 import java.time.Instant
 import java.util.concurrent.TimeUnit.NANOSECONDS
 
+import scala.collection.JavaConverters._
 import scala.collection.mutable.ListBuffer
 
+import com.github.difflib.DiffUtils
 import org.json4s.DefaultFormats
 import org.json4s.jackson.JsonMethods.parse
 import org.json4s.jackson.Serialization.writePretty
 
 import org.apache.spark.{SPARK_BUILD_USER, SPARK_VERSION}
-import org.apache.spark.sql.{DataFrame, SaveMode, SparkSession}
+import org.apache.spark.sql.{DataFrame, Row, SaveMode, SparkSession}
 
 object BenchUtils {
 
@@ -246,6 +248,112 @@ object BenchUtils {
     }
   }
 
+  /**
+   * Perform a diff of the results collected from two DataFrames, allowing for differences in
+   * precision.
+   *
+   * This is only suitable for data sets that can fit in the driver's memory.
+   */
+  def compareResults(df1: DataFrame, df2: DataFrame, epsilon: Double = 0.00001): Unit = {
+
+    val result1: Seq[Seq[Any]] = collectAndSort(df1)
+    val result2: Seq[Seq[Any]] = collectAndSort(df2)
+
+    val allMatch = result1.length == result2.length && result1.zip(result2).forall {
+      case (l, r) => rowEqual(l, r, epsilon)
+    }
+
+    if (allMatch) {
+      println("Results match (allowing for differences in precision).")
+    } else {
+      val filename = s"diff-${System.currentTimeMillis()}.txt"
+      println(s"Results do not match. Writing diff to $filename")
+
+      val w = new BufferedWriter(new FileWriter(filename))
+
+      val deltas = DiffUtils.diff(
+        result1.map(_.mkString("\t")).asJava,
+        result2.map(_.mkString("\t")).asJava,
+        false).getDeltas.asScala
+
+      deltas.foreach { delta =>
+        w.write(delta.getType.toString + "\n")
+        w.write(delta.getSource.toString + "\n")
+        w.write(delta.getTarget.toString + "\n")
+      }
+
+      w.close()
+    }
+
+  }
+
+  private def collectAndSort(df: DataFrame): Seq[Seq[Any]] = {
+    // note that CPU and GPU results could, at least theoretically, end up being sorted
+    // differently because precision of floating-point values can vary but this seems to work
+    // well enough so far when comparing output from the TPC-* queries
+    df.collect().map(_.toSeq).sortBy(_.mkString(","))
+  }
+
+  private def rowEqual(row1: Seq[Any], row2: Seq[Any], epsilon: Double): Boolean = {
+    row1.zip(row2).forall {
+      case (l, r) => compare(l, r, epsilon)
+    }
+  }
+
+  // this is copied from SparkQueryCompareTestSuite
+  private def compare(expected: Any, actual: Any, epsilon: Double): Boolean = {
+    def doublesAreEqualWithinPercentage(expected: Double, actual: Double): (String, Boolean) = {
+      if (!compare(expected, actual)) {
+        if (expected != 0) {
+          val v = Math.abs((expected - actual) / expected)
+          (s"\n\nABS($expected - $actual) / ABS($actual) == $v is not <= $epsilon ",  v <= epsilon)
+        } else {
+          val v = Math.abs(expected - actual)
+          (s"\n\nABS($expected - $actual) == $v is not <= $epsilon ",  v <= epsilon)
+        }
+      } else {
+        ("SUCCESS", true)
+      }
+    }
+    (expected, actual) match {
+      case (a: Float, b: Float) if a.isNaN && b.isNaN => true
+      case (a: Double, b: Double) if a.isNaN && b.isNaN => true
+      case (null, null) => true
+      case (null, _) => false
+      case (_, null) => false
+      case (a: Array[_], b: Array[_]) =>
+        a.length == b.length && a.zip(b).forall { case (l, r) => compare(l, r, epsilon) }
+      case (a: Map[_, _], b: Map[_, _]) =>
+        a.size == b.size && a.keys.forall { aKey =>
+          b.keys.find(bKey => compare(aKey, bKey))
+              .exists(bKey => compare(a(aKey), b(bKey), epsilon))
+        }
+      case (a: Iterable[_], b: Iterable[_]) =>
+        a.size == b.size && a.zip(b).forall { case (l, r) => compare(l, r, epsilon) }
+      case (a: Product, b: Product) =>
+        compare(a.productIterator.toSeq, b.productIterator.toSeq, epsilon)
+      case (a: Row, b: Row) =>
+        compare(a.toSeq, b.toSeq, epsilon)
+      // 0.0 == -0.0, turn float/double to bits before comparison, to distinguish 0.0 and -0.0.
+      case (a: Double, b: Double) if epsilon <= 0 =>
+        java.lang.Double.doubleToRawLongBits(a) == java.lang.Double.doubleToRawLongBits(b)
+      case (a: Double, b: Double) if epsilon > 0 =>
+        val ret = doublesAreEqualWithinPercentage(a, b)
+        if (!ret._2) {
+          System.err.println(ret._1 + " (double)")
+        }
+        ret._2
+      case (a: Float, b: Float) if epsilon <= 0 =>
+        java.lang.Float.floatToRawIntBits(a) == java.lang.Float.floatToRawIntBits(b)
+      case (a: Float, b: Float) if epsilon > 0 =>
+        val ret = doublesAreEqualWithinPercentage(a, b)
+        if (!ret._2) {
+          System.err.println(ret._1 + " (float)")
+        }
+        ret._2
+      case (a, b) => a == b
+    }
+  }
 }
 
 /** Top level benchmark report class */
