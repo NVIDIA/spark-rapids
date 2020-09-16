@@ -26,9 +26,70 @@ import org.json4s.jackson.JsonMethods.parse
 import org.json4s.jackson.Serialization.writePretty
 
 import org.apache.spark.{SPARK_BUILD_USER, SPARK_VERSION}
-import org.apache.spark.sql.{DataFrame, SparkSession}
+import org.apache.spark.sql.{DataFrame, SaveMode, SparkSession}
 
 object BenchUtils {
+
+  /** Perform benchmark of calling collect */
+  def collect(
+      spark: SparkSession,
+      createDataFrame: SparkSession => DataFrame,
+      queryDescription: String,
+      filenameStub: String,
+      iterations: Int,
+      gcBetweenRuns: Boolean
+  ): Unit = {
+    runBench(
+      spark,
+      createDataFrame,
+      Collect(),
+      queryDescription,
+      filenameStub,
+      iterations,
+      gcBetweenRuns)
+  }
+
+  /** Perform benchmark of writing results to CSV */
+  def writeCsv(
+      spark: SparkSession,
+      createDataFrame: SparkSession => DataFrame,
+      queryDescription: String,
+      filenameStub: String,
+      iterations: Int,
+      gcBetweenRuns: Boolean,
+      path: String,
+      mode: SaveMode = SaveMode.Overwrite,
+      writeOptions: Map[String, String] = Map.empty): Unit = {
+    runBench(
+      spark,
+      createDataFrame,
+      WriteParquet(path, mode, writeOptions),
+      queryDescription,
+      filenameStub,
+      iterations,
+      gcBetweenRuns)
+  }
+
+  /** Perform benchmark of writing results to Parquet */
+  def writeParquet(
+      spark: SparkSession,
+      createDataFrame: SparkSession => DataFrame,
+      queryDescription: String,
+      filenameStub: String,
+      iterations: Int,
+      gcBetweenRuns: Boolean,
+      path: String,
+      mode: SaveMode = SaveMode.Overwrite,
+      writeOptions: Map[String, String] = Map.empty): Unit = {
+    runBench(
+      spark,
+      createDataFrame,
+      WriteParquet(path, mode, writeOptions),
+      queryDescription,
+      filenameStub,
+      iterations,
+      gcBetweenRuns)
+  }
 
   /**
    * Run the specified number of cold and hot runs and record the timings and summary of the
@@ -48,7 +109,7 @@ object BenchUtils {
   def runBench(
       spark: SparkSession,
       createDataFrame: SparkSession => DataFrame,
-      resultsAction: Option[DataFrame => Unit],
+      resultsAction: ResultsAction,
       queryDescription: String,
       filenameStub: String,
       iterations: Int,
@@ -59,15 +120,21 @@ object BenchUtils {
 
     val queryStartTime = Instant.now()
 
-    val action: DataFrame => Unit = resultsAction.getOrElse(_.collect())
-
     var df: DataFrame = null
     val queryTimes = new ListBuffer[Long]()
     for (i <- 0 until iterations) {
       println(s"*** Start iteration $i:")
       val start = System.nanoTime()
       df = createDataFrame(spark)
-      action(df)
+
+      resultsAction match {
+        case Collect() => df.collect()
+        case WriteCsv(path, mode, options) =>
+          df.write.mode(mode).options(options).csv(path)
+        case WriteParquet(path, mode, options) =>
+          df.write.mode(mode).options(options).parquet(path)
+      }
+
       val end = System.nanoTime()
       val elapsed = NANOSECONDS.toMillis(end - start)
       queryTimes.append(elapsed)
@@ -180,3 +247,17 @@ case class Environment(
     envVars: Map[String, String],
     sparkConf: Map[String, String],
     sparkVersion: String)
+
+sealed trait ResultsAction
+
+case class Collect() extends ResultsAction
+
+case class WriteCsv(
+    path: String,
+    mode: SaveMode,
+    writeOptions: Map[String, String]) extends ResultsAction
+
+case class WriteParquet(
+    path: String,
+    mode: SaveMode,
+    writeOptions: Map[String, String]) extends ResultsAction
