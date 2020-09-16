@@ -4688,6 +4688,8 @@ object TpcdsLikeSpark {
         |""".stripMargin)
   ).map(q => (q.name, q)).toMap
 
+  def query(name: String) = queries(name)
+
   def run(spark: SparkSession, name: String): DataFrame =
     queries(name)(spark)
 }
