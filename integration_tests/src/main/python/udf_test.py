@@ -29,8 +29,7 @@ try:
 except Exception as e:
     pytestmark = pytest.mark.skip(reason=str(e))
 
-arrow_udf_conf = {'spark.sql.execution.arrow.pyspark.enabled': 'true',
-        'spark.rapids.sql.exec.ArrowEvalPythonExec': 'true'}
+arrow_udf_conf = {'spark.sql.execution.arrow.pyspark.enabled': 'true'}
 
 ####################################################################
 # NOTE: pytest does not play well with pyspark udfs, because pyspark

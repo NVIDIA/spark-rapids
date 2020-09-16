@@ -1718,9 +1718,9 @@ object GpuOverrides {
             GpuLocalLimitExec(localLimitExec.limit, childPlans(0).convertIfNeeded())
         }),
     exec[ArrowEvalPythonExec](
-      "The backend of the Scalar Pandas UDFs, it supports running the Python UDFs code on GPU" +
-        " when calling cuDF APIs in the UDF, also accelerates the data transfer between the" +
-        " Java process and Python process",
+      "The backend of the Scalar Pandas UDFs. Accelerates the data transfer between the" +
+          " Java process and Python process. It also supports running the Python UDFs code on" +
+          " the GPU when enabled",
       (e, conf, p, r) =>
         new SparkPlanMeta[ArrowEvalPythonExec](e, conf, p, r) {
           val udfs: Seq[BaseExprMeta[PythonUDF]] =
@@ -1738,7 +1738,7 @@ object GpuOverrides {
               resultAttrs.map(_.convertToGpu()).asInstanceOf[Seq[Attribute]],
               childPlans.head.convertIfNeeded(),
               e.evalType)
-        }).disabledByDefault("Performance is not ideal for UDFs that take a long time"),
+        }),
     exec[GlobalLimitExec](
       "Limiting of results across partitions",
       (globalLimitExec, conf, p, r) =>

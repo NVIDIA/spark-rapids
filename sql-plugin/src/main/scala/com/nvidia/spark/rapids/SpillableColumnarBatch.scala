@@ -144,8 +144,11 @@ object SpillableColumnarBatch extends Arm {
         (0 until numColumns)
             .forall(i => batch.column(i).isInstanceOf[GpuColumnVectorFromBuffer])) {
       val cv = batch.column(0).asInstanceOf[GpuColumnVectorFromBuffer]
-      withResource(GpuColumnVector.from(batch)) { table =>
-        RapidsBufferCatalog.addTable(id, table, cv.getBuffer, initialSpillPriority)
+      withResource(batch) { batch =>
+        val table = GpuColumnVector.from(batch)
+        val buff = cv.getBuffer
+        buff.incRefCount()
+        RapidsBufferCatalog.addTable(id, table, buff, initialSpillPriority)
       }
     } else {
       withResource(batch) { batch =>
