@@ -138,8 +138,12 @@ object SpillableColumnarBatch extends Arm {
       initialSpillPriority: Long): Unit = {
     val numColumns = batch.numCols()
     if (GpuCompressedColumnVector.isBatchCompressed(batch)) {
-      val cv = batch.column(0).asInstanceOf[GpuCompressedColumnVector]
-      RapidsBufferCatalog.addBuffer(id, cv.getBuffer, cv.getTableMeta, initialSpillPriority)
+      withResource(batch) { batch =>
+        val cv = batch.column(0).asInstanceOf[GpuCompressedColumnVector]
+        val buff = cv.getBuffer
+        buff.incRefCount()
+        RapidsBufferCatalog.addBuffer(id, buff, cv.getTableMeta, initialSpillPriority)
+      }
     } else if (numColumns > 0 &&
         (0 until numColumns)
             .forall(i => batch.column(i).isInstanceOf[GpuColumnVectorFromBuffer])) {
