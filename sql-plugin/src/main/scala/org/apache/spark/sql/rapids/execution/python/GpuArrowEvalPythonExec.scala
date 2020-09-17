@@ -23,15 +23,17 @@ import java.io.{DataInputStream, DataOutputStream}
 import java.net.Socket
 import java.util.concurrent.atomic.AtomicBoolean
 
-import ai.rapids.cudf._
-import com.nvidia.spark.rapids._
-import com.nvidia.spark.rapids.GpuMetricNames._
-import com.nvidia.spark.rapids.python.PythonWorkerSemaphore
 import scala.collection.mutable
 import scala.collection.mutable.ArrayBuffer
 
+import ai.rapids.cudf.{ArrowIPCOptions, ArrowIPCWriterOptions, HostBufferConsumer, HostBufferProvider, HostMemoryBuffer, NvtxColor, NvtxRange, StreamedTableReader, Table}
+import com.nvidia.spark.rapids.{Arm, ConcatAndConsumeAll, GpuBindReferences, GpuColumnVector, GpuColumnVectorFromBuffer, GpuExec, GpuProjectExec, GpuSemaphore, GpuUnevaluable, SpillableColumnarBatch, SpillPriorities}
+import com.nvidia.spark.rapids.GpuMetricNames._
+import com.nvidia.spark.rapids.RapidsPluginImplicits._
+import com.nvidia.spark.rapids.python.PythonWorkerSemaphore
+
 import org.apache.spark.{SparkEnv, TaskContext}
-import org.apache.spark.api.python._
+import org.apache.spark.api.python.{BasePythonRunner, ChainedPythonFunctions, PythonEvalType, PythonFunction, PythonRDD, SpecialLengths}
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.expressions._
@@ -45,96 +47,182 @@ import org.apache.spark.sql.util.ArrowUtils
 import org.apache.spark.sql.vectorized.ColumnarBatch
 import org.apache.spark.util.Utils
 
-
-class RebatchingIterator(
+/**
+ * This iterator will round incoming batches to multiples of targetRoundoff rows, if possible.
+ * The last batch might not be a multiple of it.
+ * @param wrapped the incoming ColumnarBatch iterator.
+ * @param targetRoundoff the target multiple number of rows
+ * @param inputRows metric for rows read.
+ * @param inputBatches metric for batches read
+ */
+class RebatchingRoundoffIterator(
     wrapped: Iterator[ColumnarBatch],
-    targetRowSize: Int,
+    targetRoundoff: Int,
     inputRows: SQLMetric,
     inputBatches: SQLMetric)
     extends Iterator[ColumnarBatch] with Arm {
-  var pending: Table = _
+  var pending: Option[SpillableColumnarBatch] = None
 
-  override def hasNext: Boolean = pending != null || wrapped.hasNext
+  TaskContext.get().addTaskCompletionListener[Unit]{ _ =>
+    pending.foreach(_.close())
+    pending = None
+  }
 
-  private[this] def updatePending(): Unit = {
-    if (pending == null) {
-      withResource(wrapped.next()) { cb =>
-        inputBatches += 1
-        inputRows += cb.numRows()
-        pending = GpuColumnVector.from(cb)
+  override def hasNext: Boolean = pending.isDefined || wrapped.hasNext
+
+  private[this] def popPending(): ColumnarBatch = {
+    withResource(pending.get) { scb =>
+      pending = None
+      scb.getColumnarBatch()
+    }
+  }
+
+  private[this] def concat(l: ColumnarBatch, r: ColumnarBatch): ColumnarBatch = {
+    withResource(GpuColumnVector.from(l)) { lTable =>
+      withResource(GpuColumnVector.from(r)) { rTable =>
+        withResource(Table.concatenate(lTable, rTable)) { concatTable =>
+          GpuColumnVector.from(concatTable)
+        }
       }
     }
   }
 
-  override def next(): ColumnarBatch = {
-    updatePending()
+  private[this] def fillAndConcat(batches: ArrayBuffer[SpillableColumnarBatch]): ColumnarBatch = {
+    var rowsSoFar = batches.map(_.numRows()).sum
+    while (wrapped.hasNext && rowsSoFar < targetRoundoff) {
+      val got = wrapped.next()
+      rowsSoFar += got.numRows()
+      batches.append(SpillableColumnarBatch(got, SpillPriorities.ACTIVE_BATCHING_PRIORITY))
+    }
+    val toConcat = batches.safeMap(_.getColumnarBatch()).toArray
+    ConcatAndConsumeAll.buildNonEmptyBatch(toConcat)
+  }
 
-    while (pending.getRowCount < targetRowSize) {
-      if (wrapped.hasNext) {
-        val combined = withResource(wrapped.next()) { cb =>
-          inputBatches += 1
-          inputRows += cb.numRows()
-          withResource(GpuColumnVector.from(cb)) { nextTable =>
-            Table.concatenate(pending, nextTable)
+  override def next(): ColumnarBatch = {
+    GpuSemaphore.acquireIfNecessary(TaskContext.get())
+
+    val combined : ColumnarBatch = if (pending.isDefined) {
+      if (!wrapped.hasNext) {
+        // No more data return what is in pending
+        popPending()
+      } else {
+        // Don't read pending yet, because we are going to call next to get enough data.
+        // The target number of rows is typically small enough that we will be able to do this
+        // in a single call.
+        val rowsNeeded = targetRoundoff - pending.get.numRows()
+        val cb = wrapped.next()
+        if (cb.numRows() >= rowsNeeded) {
+          withResource(cb) { cb =>
+            withResource(popPending()) { fromPending =>
+              concat(fromPending, cb)
+            }
+          }
+        } else {
+          // If that does not work then we will need to fall back to slower special case code
+          val batches: ArrayBuffer[SpillableColumnarBatch] = ArrayBuffer.empty
+          try {
+            val localPending = pending.get
+            localPending.setSpillPriority(SpillPriorities.ACTIVE_BATCHING_PRIORITY)
+            batches.append(localPending)
+            pending = None
+            batches.append(SpillableColumnarBatch(cb, SpillPriorities.ACTIVE_BATCHING_PRIORITY))
+            fillAndConcat(batches)
+          } finally {
+            batches.safeClose()
           }
         }
-        pending.close()
-        pending = combined
+      }
+    } else {
+      val cb = wrapped.next()
+      if (cb.numRows() >= targetRoundoff) {
+        cb
       } else {
-        // No more to data so return what is left
-        val ret = withResource(pending) { p =>
-          GpuColumnVector.from(p)
+        val batches: ArrayBuffer[SpillableColumnarBatch] = ArrayBuffer.empty
+        try {
+          batches.append(SpillableColumnarBatch(cb, SpillPriorities.ACTIVE_BATCHING_PRIORITY))
+          fillAndConcat(batches)
+        } finally {
+          batches.safeClose()
         }
-        pending = null
-        return ret
       }
     }
 
-    // We got lucky
-    if (pending.getRowCount == targetRowSize) {
-      val ret = withResource(pending) { p =>
-        GpuColumnVector.from(p)
-      }
-      pending = null
-      return ret
+    val rc: Long = combined.numRows()
+
+    if (rc % targetRoundoff == 0 || rc < targetRoundoff) {
+      return combined
     }
 
-    val split = pending.contiguousSplit(targetRowSize)
-    split.foreach(_.getBuffer.close())
-    pending.close()
-    pending = split(1).getTable
-    withResource(split.head.getTable) { ret =>
-      GpuColumnVector.from(ret)
+    val splitIndex = (targetRoundoff * (rc/targetRoundoff)).toInt
+    val split = withResource(combined) { combinedCb =>
+      withResource(GpuColumnVector.from(combinedCb)) { combinedTable =>
+        combinedTable.contiguousSplit(splitIndex)
+      }
+    }
+    withResource(split) { split =>
+      assert(pending.isEmpty)
+      pending =
+          Some(SpillableColumnarBatch(GpuColumnVectorFromBuffer.from(split.last),
+            SpillPriorities.ACTIVE_ON_DECK_PRIORITY))
+      GpuColumnVectorFromBuffer.from(split.head)
     }
   }
 }
 
-// TODO extend this with spilling and other wonderful things
-class BatchQueue extends AutoCloseable {
-  // TODO for now we will use an built in queue
-  private val queue: mutable.Queue[ColumnarBatch] = mutable.Queue[ColumnarBatch]()
+/**
+ * A simple queue that holds the pending batches that need to line up with
+ * and combined with batches comming back from python
+ */
+class BatchQueue extends AutoCloseable with Arm {
+  private val queue: mutable.Queue[SpillableColumnarBatch] =
+    mutable.Queue[SpillableColumnarBatch]()
+  private var isSet = false
 
   def add(batch: ColumnarBatch): Unit = synchronized {
-    // If you cannot add something blow up
-    queue.enqueue(batch)
+    queue.enqueue(SpillableColumnarBatch(batch, SpillPriorities.ACTIVE_ON_DECK_PRIORITY))
+    if (!isSet) {
+      // Wake up anyone waiting for the first batch.
+      isSet = true
+      notifyAll()
+    }
   }
 
   def remove(): ColumnarBatch = synchronized {
     if (queue.isEmpty) {
       null
     } else {
-      queue.dequeue()
+      withResource(queue.dequeue()) { scp =>
+        scp.getColumnarBatch()
+      }
     }
   }
 
+  def hasNext: Boolean = synchronized {
+    if (!isSet) {
+      wait()
+    }
+    queue.nonEmpty
+  }
+
+  /**
+   * Get the number of rows in the next batch, without actually getting the batch.
+   */
+  def peekBatchSize: Int = synchronized {
+    queue.head.numRows()
+  }
+
   override def close(): Unit = synchronized {
+    if (!isSet) {
+      isSet = true
+      notifyAll()
+    }
     while(queue.nonEmpty) {
       queue.dequeue().close()
     }
   }
 }
 
-/*
+/**
  * Helper functions for [[GpuPythonUDF]]
  */
 object GpuPythonUDF {
@@ -158,7 +246,7 @@ object GpuPythonUDF {
   def isWindowPandasUDF(e: Expression): Boolean = isGroupedAggPandasUDF(e)
 }
 
-/*
+/**
  * A serialized version of a Python lambda function. This is a special expression, which needs a
  * dedicated physical operator to execute it, and thus can't be pushed down to data sources.
  */
@@ -188,11 +276,13 @@ case class GpuPythonUDF(
   }
 }
 
-/*
+/**
  * A trait that can be mixed-in with `BasePythonRunner`. It implements the logic from
  * Python (Arrow) to GPU/JVM (ColumnarBatch).
  */
 trait GpuPythonArrowOutput extends Arm { self: BasePythonRunner[_, ColumnarBatch] =>
+
+  def minReadTargetBatchSize: Int = 1
 
   protected def newReaderIterator(
       stream: DataInputStream,
@@ -221,10 +311,17 @@ trait GpuPythonArrowOutput extends Arm { self: BasePythonRunner[_, ColumnarBatch
           throw writerThread.exception.get
         }
         try {
+          // Because of batching and other things we have to be sure that we release the semaphore
+          // before any operation that could block. This is because we are using multiple threads
+          // for a single task and the GpuSemaphore might not wake up both threads associated with
+          // the task, so a reader can be blocked waiting for data, while a writer is waiting on
+          // the semaphore
+          GpuSemaphore.releaseIfNecessary(TaskContext.get())
           if (arrowReader != null && batchLoaded) {
+            // The GpuSemaphore is acquired in a callback
             val table =
               withResource(new NvtxRange("read python batch", NvtxColor.DARK_GREEN)) { _ =>
-                arrowReader.getNextIfAvailable
+                arrowReader.getNextIfAvailable(minReadTargetBatchSize)
               }
             if (table == null) {
               batchLoaded = false
@@ -240,7 +337,10 @@ trait GpuPythonArrowOutput extends Arm { self: BasePythonRunner[_, ColumnarBatch
           } else {
             stream.readInt() match {
               case SpecialLengths.START_ARROW_STREAM =>
-                arrowReader = Table.readArrowIPCChunked(new StreamToBufferProvider(stream))
+                val builder = ArrowIPCOptions.builder()
+                builder.withCallback(() => GpuSemaphore.acquireIfNecessary(TaskContext.get()))
+                arrowReader = Table.readArrowIPCChunked(builder.build(),
+                  new StreamToBufferProvider(stream))
                 read()
               case SpecialLengths.TIMING_DATA =>
                 handleTimingData()
@@ -259,7 +359,7 @@ trait GpuPythonArrowOutput extends Arm { self: BasePythonRunner[_, ColumnarBatch
 }
 
 
-/*
+/**
  * Similar to `PythonUDFRunner`, but exchange data with Python worker via Arrow stream.
  */
 class GpuArrowPythonRunner(
@@ -268,7 +368,8 @@ class GpuArrowPythonRunner(
     argOffsets: Array[Array[Int]],
     schema: StructType,
     timeZoneId: String,
-    conf: Map[String, String])
+    conf: Map[String, String],
+    batchSize: Long)
     extends BasePythonRunner[ColumnarBatch, ColumnarBatch](funcs, evalType, argOffsets)
         with GpuPythonArrowOutput {
 
@@ -301,6 +402,11 @@ class GpuArrowPythonRunner(
       protected override def writeIteratorToStream(dataOut: DataOutputStream): Unit = {
         val writer = {
           val builder = ArrowIPCWriterOptions.builder()
+          builder.withMaxChunkSize(batchSize)
+          builder.withCallback((table: Table) => {
+            table.close()
+            GpuSemaphore.releaseIfNecessary(TaskContext.get())
+          })
           schema.foreach { field =>
             if (field.nullable) {
               builder.withColumnNames(field.name)
@@ -312,14 +418,16 @@ class GpuArrowPythonRunner(
         }
         Utils.tryWithSafeFinally {
           while(inputIterator.hasNext) {
-            withResource(inputIterator.next()) { nextBatch =>
-              withResource(GpuColumnVector.from(nextBatch)) { table =>
-                withResource(new NvtxRange("write python batch", NvtxColor.DARK_GREEN)) { _ =>
-                  writer.write(table)
-                }
-              }
+            val table = withResource(inputIterator.next()) { nextBatch =>
+              GpuColumnVector.from(nextBatch)
+            }
+            withResource(new NvtxRange("write python batch", NvtxColor.DARK_GREEN)) { _ =>
+              // The callback will handle closing table and releasing the semaphore
+              writer.write(table)
             }
           }
+          // The iterator can grab the semaphore even on an empty batch
+          GpuSemaphore.releaseIfNecessary(TaskContext.get())
         } {
           writer.close()
           dataOut.flush()
@@ -369,9 +477,9 @@ class StreamToBufferProvider(inputStream: DataInputStream) extends HostBufferPro
   }
 }
 
-/*
+/**
  * A physical plan that evaluates a [[GpuPythonUDF]]. The transformation of the data to arrow
- * happens on the GPU (practically a noop), But execution of the UDFs are on the CPU or GPU.
+ * happens on the GPU (practically a noop), But execution of the UDFs are on the CPU.
  */
 case class GpuArrowEvalPythonExec(
     udfs: Seq[GpuPythonUDF],
@@ -455,10 +563,14 @@ case class GpuArrowEvalPythonExec(
       })
 
       val boundReferences = GpuBindReferences.bindReferences(allInputs, child.output)
-      val batchedIterator = new RebatchingIterator(iter, batchSize, numInputRows, numInputBatches)
+      val batchedIterator = new RebatchingRoundoffIterator(iter, batchSize,
+        numInputRows, numInputBatches)
       val projectedIterator = batchedIterator.map { batch =>
+        // We have to do the project before we add the batch because the batch might be closed
+        // when it is added
+        val ret = GpuProjectExec.project(batch, boundReferences)
         queue.add(batch)
-        GpuProjectExec.project(batch, boundReferences)
+        ret
       }
 
       if (isPythonOnGpuEnabled) {
@@ -466,27 +578,52 @@ case class GpuArrowEvalPythonExec(
         PythonWorkerSemaphore.acquireIfNecessary(context)
       }
 
+      var targetReadBatchSize = 1
+
       val outputBatchIterator = new GpuArrowPythonRunner(
         pyFuncs,
         evalType,
         argOffsets,
         schema,
         sessionLocalTimeZone,
-        pythonRunnerConf).compute(projectedIterator,
+        pythonRunnerConf,
+        batchSize){
+        override def minReadTargetBatchSize: Int = targetReadBatchSize
+      }.compute(projectedIterator,
         context.partitionId(),
         context)
 
-      outputBatchIterator.map { outputBatch =>
-        withResource(outputBatch) { outBatch =>
-          withResource(queue.remove()) { origBatch =>
-            val rows = origBatch.numRows()
-            assert(outBatch.numRows() == rows)
-            val lColumns = GpuColumnVector.extractColumns(origBatch)
-            val rColumns = GpuColumnVector.extractColumns(outBatch)
-            numOutputBatches += 1
-            numOutputRows += rows
-            new ColumnarBatch(lColumns.map(_.incRefCount()) ++ rColumns.map(_.incRefCount()),
-              rows)
+      new Iterator[ColumnarBatch] {
+        // for hasNext we are waiting on the queue to have something inserted into it
+        // instead of waiting for a result to be ready from python. The reason for this
+        // is to let us know the target number of rows in the batch that we want when reading.
+        // It is a bit hacked up but it works. In the future when we support spilling we should
+        // store the number of rows separate from the batch. That way we can get the target batch
+        // size out without needing to grab the GpuSemaphore which we cannot do if we might block
+        // on a read operation.
+        override def hasNext: Boolean = queue.hasNext
+
+        private [this] def combine(origBatch: ColumnarBatch, table: Table): ColumnarBatch = {
+          val lColumns = GpuColumnVector.extractColumns(origBatch)
+          val rColumns = GpuColumnVector.extractColumns(table)
+          new ColumnarBatch(lColumns.map(_.incRefCount()) ++ rColumns.map(_.incRefCount()),
+            origBatch.numRows())
+        }
+
+        override def next(): ColumnarBatch = {
+          val numRows = queue.peekBatchSize
+          // This is a bit of a hack, but it lets us set what we want to read without
+          // copying/rewriting a lot of the abstraction that spark has in place.
+          targetReadBatchSize = numRows
+          withResource(outputBatchIterator.next()) { cb =>
+            withResource(GpuColumnVector.from(cb)) { fromPython =>
+              assert(fromPython.getRowCount == numRows)
+              withResource(queue.remove()) { origBatch =>
+                numOutputBatches += 1
+                numOutputRows += numRows
+                combine(origBatch, fromPython)
+              }
+            }
           }
         }
       }
