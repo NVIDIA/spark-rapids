@@ -62,7 +62,7 @@ if [ "$SIGN_FILE" == true ]; then
     SRC_DOC_JARS="-Dsources=${JS_FPATH}-sources.jar -Djavadoc=${JS_FPATH}-javadoc.jar"
     DEPLOY_CMD="mvn -B gpg:sign-and-deploy-file -s jenkins/settings.xml -Dgpg.passphrase=$GPG_PASSPHRASE"
 else
-    DEPLOY_CMD="mvn -B '-Pinclude-databricks,!snapshot-shims' deploy:deploy-file -s jenkins/settings.xml"
+    DEPLOY_CMD="mvn -B deploy:deploy-file -s jenkins/settings.xml"
 fi
 
 echo "Deploy CMD: $DEPLOY_CMD"
