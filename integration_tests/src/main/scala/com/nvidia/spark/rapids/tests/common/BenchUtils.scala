@@ -28,7 +28,10 @@ import org.json4s.jackson.Serialization.writePretty
 
 import org.apache.spark.{SPARK_BUILD_USER, SPARK_VERSION}
 import org.apache.spark.sql.{DataFrame, Row, SaveMode, SparkSession}
+import org.apache.spark.sql.execution.{QueryExecution, SparkPlan}
+import org.apache.spark.sql.execution.adaptive.{AdaptiveSparkPlanExec, QueryStageExec}
 import org.apache.spark.sql.functions.col
+import org.apache.spark.sql.util.QueryExecutionListener
 
 object BenchUtils {
 
@@ -122,9 +125,17 @@ object BenchUtils {
 
     val queryStartTime = Instant.now()
 
+    val queryPlansWithMetrics = new ListBuffer[SparkPlanNode]()
+
     var df: DataFrame = null
     val queryTimes = new ListBuffer[Long]()
     for (i <- 0 until iterations) {
+
+      // capture spark plan metrics on the final run
+      if (i+1 == iterations) {
+        spark.listenerManager.register(new BenchmarkListener(queryPlansWithMetrics))
+      }
+
       println(s"*** Start iteration $i:")
       val start = System.nanoTime()
       df = createDataFrame(spark)
@@ -198,6 +209,7 @@ object BenchUtils {
         Map.empty,
         queryDescription,
         queryPlan,
+        queryPlansWithMetrics,
         queryTimes)
 
       case w: WriteCsv => BenchmarkReport(
@@ -209,6 +221,7 @@ object BenchUtils {
         w.writeOptions,
         queryDescription,
         queryPlan,
+        queryPlansWithMetrics,
         queryTimes)
 
       case w: WriteParquet => BenchmarkReport(
@@ -220,6 +233,7 @@ object BenchUtils {
         w.writeOptions,
         queryDescription,
         queryPlan,
+        queryPlansWithMetrics,
         queryTimes)
     }
 
@@ -412,6 +426,28 @@ object BenchUtils {
   }
 }
 
+class BenchmarkListener(list: ListBuffer[SparkPlanNode]) extends QueryExecutionListener {
+
+  override def onSuccess(funcName: String, qe: QueryExecution, durationNs: Long): Unit = {
+    def toJson(plan: SparkPlan): SparkPlanNode = {
+      val children: Seq[SparkPlanNode] = plan match {
+        case s: AdaptiveSparkPlanExec => Seq(toJson(s.executedPlan))
+        case s: QueryStageExec => Seq(toJson(s.plan))
+        case _ => plan.children.map(child => toJson(child))
+      }
+      val metrics: Seq[SparkSQLMetric] = plan.metrics
+          .map(m => SparkSQLMetric(m._1, m._2.metricType, m._2.value)).toSeq
+
+      SparkPlanNode(plan.nodeName, metrics, children)
+    }
+    list += toJson(qe.executedPlan)
+  }
+
+  override def onFailure(funcName: String, qe: QueryExecution, exception: Exception): Unit = {
+    exception.printStackTrace()
+  }
+}
+
 /** Top level benchmark report class */
 case class BenchmarkReport(
     filename: String,
@@ -422,6 +458,7 @@ case class BenchmarkReport(
     writeOptions: Map[String, String],
     query: String,
     queryPlan: QueryPlan,
+    queryPlans: Seq[SparkPlanNode],
     queryTimes: Seq[Long])
 
 /** Configuration options that affect how the tests are run */
@@ -433,6 +470,16 @@ case class TestConfiguration(
 case class QueryPlan(
     logical: String,
     executedPlan: String)
+
+case class SparkPlanNode(
+    name: String,
+    metrics: Seq[SparkSQLMetric],
+    children: Seq[SparkPlanNode])
+
+case class SparkSQLMetric(
+    name: String,
+    metricType: String,
+    value: Any)
 
 /** Details about the environment where the benchmark ran */
 case class Environment(
