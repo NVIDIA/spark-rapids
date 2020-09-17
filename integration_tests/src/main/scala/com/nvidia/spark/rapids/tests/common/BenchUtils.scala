@@ -15,9 +15,10 @@
  */
 package com.nvidia.spark.rapids.tests.common
 
-import java.io.{File, FileOutputStream}
+import java.io.{File, FileOutputStream, FileWriter, PrintWriter}
 import java.time.Instant
 import java.util.concurrent.TimeUnit.NANOSECONDS
+import java.util.concurrent.atomic.AtomicInteger
 
 import scala.collection.convert.ImplicitConversions.`iterator asScala`
 import scala.collection.mutable.ListBuffer
@@ -253,6 +254,92 @@ object BenchUtils {
     os.close()
   }
 
+  /**
+   * Generate a DOT graph for one query plan, or showing differences between two query plans.
+   *
+   * Diff mode is intended for comparing query plans that are expected to have the same
+   * structure, such as two different runs of the same query but with different tuning options.
+   *
+   * When running in diff mode, any differences in SQL metrics are shown. Also, if the plan
+   * starts to deviate then the graph will show where the plans deviate and will not recurse
+   * further.
+   *
+   * Example usage:
+   *
+   * <pre>
+   * val a = BenchUtils.readReport(new File("tpcxbb-q5-parquet-config1.json"))
+   * val b = BenchUtils.readReport(new File("tpcxbb-q5-parquet-config2.json"))
+   * BenchUtils.generateDotGraph(a.queryPlans.head, Some(b.queryPlans.head), "/tmp/graph.dot")
+   * </pre>
+   *
+   * Graphviz and other tools can be used to generate images from DOT files.
+   *
+   * See https://graphviz.org/pdf/dotguide.pdf for a description of DOT files.
+   */
+  def generateDotGraph(a: SparkPlanNode, b: Option[SparkPlanNode], filename: String): Unit = {
+
+    val idGen = new AtomicInteger()
+
+    /** Skip WholeStageCodegen and InputAdapter nodes when producing the graph */
+    def skipWrappers(p: SparkPlanNode): SparkPlanNode = {
+      if (p.children.length == 1) {
+        p.name match {
+          case name if name.startsWith("WholeStageCodegen") => skipWrappers(p.children.head)
+          case "InputAdapter" => skipWrappers(p.children.head)
+          case _ => p
+        }
+      } else {
+        p
+      }
+    }
+
+    /** Recursively graph the operator nodes in the spark plan */
+    def writeGraph(
+        w: PrintWriter,
+        plan1: SparkPlanNode,
+        plan2: SparkPlanNode, id: Int = 0)
+    : Unit = {
+      val a = skipWrappers(plan1)
+      val b = skipWrappers(plan2)
+      if (a.name == b.name && a.children.length == b.children.length) {
+        val metricNames = (a.metrics.map(_.name) ++ b.metrics.map(_.name)).distinct
+        val metrics = metricNames.map(name => {
+          val l = a.metrics.find(_.name == name).map(_.value).getOrElse("???")
+          val r = b.metrics.find(_.name == name).map(_.value).getOrElse("???")
+          if (l == r) {
+            s"$name: $l"
+          } else {
+            s"$name: $l / $r"
+          }
+        }).mkString("\n")
+
+        w.println(
+          s"""node$id [shape=box,
+             |label = "${a.name} #${a.id}\n
+             |$metrics"];
+             | /* ${a.description} */
+             |""".stripMargin)
+        a.children.indices.foreach(i => {
+            val childId = idGen.incrementAndGet()
+            writeGraph(w, a.children(i), b.children(i), childId);
+            w.println(s"node$id -> node$childId;")
+          })
+      } else {
+        // plans have diverged - cannot recurse further
+        w.println(
+          s"""node$id [shape=box, color=red,
+             |label = "plans diverge here: ${a.name} vs ${b.name}"];""".stripMargin)
+      }
+    }
+
+    // write the dot graph to a file
+    val w = new PrintWriter(new FileWriter(filename))
+    w.println("digraph G {")
+    writeGraph(w, a, b.getOrElse(a), 0)
+    w.println("}")
+    w.close()
+  }
+
   def getSparkVersion: String = {
     // hack for databricks, try to find something more reliable?
     if (SPARK_BUILD_USER.equals("Databricks")) {
@@ -438,7 +525,12 @@ class BenchmarkListener(list: ListBuffer[SparkPlanNode]) extends QueryExecutionL
       val metrics: Seq[SparkSQLMetric] = plan.metrics
           .map(m => SparkSQLMetric(m._1, m._2.metricType, m._2.value)).toSeq
 
-      SparkPlanNode(plan.nodeName, metrics, children)
+      SparkPlanNode(
+        plan.id,
+        plan.nodeName,
+        plan.simpleStringWithNodeId(),
+        metrics,
+        children)
     }
     list += toJson(qe.executedPlan)
   }
@@ -472,7 +564,9 @@ case class QueryPlan(
     executedPlan: String)
 
 case class SparkPlanNode(
+    id: Int,
     name: String,
+    description: String,
     metrics: Seq[SparkSQLMetric],
     children: Seq[SparkPlanNode])
 
