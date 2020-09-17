@@ -17,6 +17,7 @@ package com.nvidia.spark.rapids.tests.common
 
 import java.io.{File, FileOutputStream, FileWriter, PrintWriter}
 import java.time.Instant
+import java.util.concurrent.TimeUnit
 import java.util.concurrent.TimeUnit.NANOSECONDS
 import java.util.concurrent.atomic.AtomicInteger
 
@@ -31,6 +32,7 @@ import org.apache.spark.{SPARK_BUILD_USER, SPARK_VERSION}
 import org.apache.spark.sql.{DataFrame, Row, SaveMode, SparkSession}
 import org.apache.spark.sql.execution.{QueryExecution, SparkPlan}
 import org.apache.spark.sql.execution.adaptive.{AdaptiveSparkPlanExec, QueryStageExec}
+import org.apache.spark.sql.execution.metric.SQLMetrics
 import org.apache.spark.sql.functions.col
 import org.apache.spark.sql.util.QueryExecutionListener
 
@@ -302,14 +304,32 @@ object BenchUtils {
       val a = skipWrappers(plan1)
       val b = skipWrappers(plan2)
       if (a.name == b.name && a.children.length == b.children.length) {
-        val metricNames = (a.metrics.map(_.name) ++ b.metrics.map(_.name)).distinct
+        val metricNames = (a.metrics.map(_.name) ++ b.metrics.map(_.name)).distinct.sorted
         val metrics = metricNames.map(name => {
-          val l = a.metrics.find(_.name == name).map(_.value).getOrElse("???")
-          val r = b.metrics.find(_.name == name).map(_.value).getOrElse("???")
-          if (l == r) {
-            s"$name: $l"
-          } else {
-            s"$name: $l / $r"
+          val l = a.metrics.find(_.name == name)
+          val r = b.metrics.find(_.name == name)
+          if (l.isDefined && r.isDefined) {
+            val metric1 = l.get
+            val metric2 = r.get
+            if (metric1.value == metric2.value) {
+              s"$name: ${metric1.value}"
+            } else {
+              metric1.metricType match {
+                case "nsTiming" =>
+                  val n1 = metric1.value.toString.toLong
+                  val n2 = metric2.value.toString.toLong
+                  val pct = Math.signum(n2-n1) * Math.abs(n2-n1) * 100.0 / n1
+                  val pctStr = if (pct < 0) {
+                    f"$pct%.1f"
+                  } else {
+                    f"+$pct%.1f"
+                  }
+                  s"$name: ${TimeUnit.NANOSECONDS.toSeconds(n1)} / " +
+                      s"${TimeUnit.NANOSECONDS.toSeconds(n2)} s ($pctStr %)"
+                case _ =>
+                  s"$name: ${metric1.value} / ${metric2.value}"
+              }
+            }
           }
         }).mkString("\n")
 
