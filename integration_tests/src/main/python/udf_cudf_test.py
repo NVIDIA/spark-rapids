@@ -13,12 +13,18 @@
 # limitations under the License.
 
 import pandas as pd
+import pytest
 import time
 from typing import Iterator
 from pyspark.sql import Window
 from pyspark.sql.functions import pandas_udf, PandasUDFType
+from spark_init_internal import spark_version
 from spark_session import with_cpu_session, with_gpu_session
 from marks import allow_non_gpu, cudf_udf
+
+
+pytestmark = pytest.mark.skipif(spark_version() >= '3.1.0',
+    reason="Pandas UDF on GPU tests don't support Spark 3.1.0+ yet")
 
 
 _conf = {
