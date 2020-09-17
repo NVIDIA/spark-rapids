@@ -27,3 +27,7 @@ SERVER_URL="$URM_URL-local"
 DBJARFPATH=./shims/spark300db/target/rapids-4-spark-shims-spark300-databricks_$SCALA_VERSION-$DATABRICKS_VERSION.jar
 mvn -B deploy:deploy-file $MVN_URM_MIRROR '-P!snapshot-shims' -Durl=$SERVER_URL -DrepositoryId=$SERVER_ID \
     -Dfile=$DBJARFPATH -DpomFile=shims/spark300db/pom.xml
+
+TESTSJARFPATH=integration_tests/target/rapids-4-spark-integration-tests_$SCALA_VERSION-$DATABRICKS_VERSION.jar
+mvn -B deploy:deploy-file $MVN_URM_MIRROR '-P!snapshot-shims' -Durl=$SERVER_URL -DrepositoryId=$SERVER_ID \
+    -Dfile=$TESTSJARFPATH -DpomFile=integration_tests/pom.xml
