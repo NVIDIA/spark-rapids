@@ -251,12 +251,31 @@ object BenchUtils {
    * Perform a diff of the results collected from two DataFrames, allowing for differences in
    * precision.
    *
-   * This is only suitable for data sets that can fit in the driver's memory.
-
-   * @param df1 DataFrame to compare.
-   * @param df2 DataFrame to compare.
+   * The intended usage is to run timed benchmarks that write results to file and then separately
+   * use this utility to compare those result sets. This code performs a sort and a collect and
+   * is only suitable for data sets that can fit in the driver's memory. For larger datasets,
+   * a better approach would be to convert the results to single files, download them locally
+   * and adapt this Scala code to read those files directly (without using Spark).
+   *
+   * Example usage:
+   *
+   * <pre>
+   * scala> val cpu = spark.read.parquet("/data/q5-cpu")
+   * scala> val gpu = spark.read.parquet("/data/q5-gpu")
+   * scala> import com.nvidia.spark.rapids.tests.common._
+   * scala> BenchUtils.compareResults(cpu, gpu, ignoreOrdering=true, epsilon=0.0)
+   * Collecting rows from DataFrame
+   * Collected 989754 rows in 7.701 seconds
+   * Collecting rows from DataFrame
+   * Collected 989754 rows in 2.325 seconds
+   * Results match
+   * </pre>
+   *
+   * @param df1            DataFrame to compare.
+   * @param df2            DataFrame to compare.
    * @param ignoreOrdering Sort the data collected from the DataFrames before comparing them.
-   * @param epsilon Allow for differences in precision when comparing floating point values.
+   * @param maxErrors      Maximum number of differences to report.
+   * @param epsilon        Allow for differences in precision when comparing floating point values.
    */
   def compareResults(
       df1: DataFrame,
