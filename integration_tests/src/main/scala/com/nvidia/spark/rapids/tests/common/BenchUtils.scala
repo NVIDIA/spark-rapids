@@ -32,7 +32,6 @@ import org.apache.spark.{SPARK_BUILD_USER, SPARK_VERSION}
 import org.apache.spark.sql.{DataFrame, Row, SaveMode, SparkSession}
 import org.apache.spark.sql.execution.{QueryExecution, SparkPlan}
 import org.apache.spark.sql.execution.adaptive.{AdaptiveSparkPlanExec, QueryStageExec}
-import org.apache.spark.sql.execution.metric.SQLMetrics
 import org.apache.spark.sql.functions.col
 import org.apache.spark.sql.util.QueryExecutionListener
 
@@ -318,7 +317,7 @@ object BenchUtils {
                 case "nsTiming" =>
                   val n1 = metric1.value.toString.toLong
                   val n2 = metric2.value.toString.toLong
-                  val pct = Math.signum(n2-n1) * Math.abs(n2-n1) * 100.0 / n1
+                  val pct = (n2-n1) * 100.0 / n1
                   val pctStr = if (pct < 0) {
                     f"$pct%.1f"
                   } else {
