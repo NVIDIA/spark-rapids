@@ -49,14 +49,13 @@ object SpillPriorities {
   val INPUT_FROM_SHUFFLE_PRIORITY: Long = Long.MaxValue - 1000
 
   /**
-   * Priority for buffers in coalesce batch that did not fit into the batch we are working on.
-   * Most of the time this is shuffle input data that we read early so it should be slightly higher
-   * priority to keep around than other input shuffle buffers.
+   * Priority for buffers that are waiting for next to be called.  i.e. data held between
+   * calls to `hasNext` and `next` or between different calls to `next`.
    */
-  val COALESCE_BATCH_ON_DECK_PRIORITY: Long = INPUT_FROM_SHUFFLE_PRIORITY + 1
+  val ACTIVE_ON_DECK_PRIORITY: Long = INPUT_FROM_SHUFFLE_PRIORITY + 1
 
   /**
-   * Priority for buffers in coalesce batch that are being held before the coalesce.
+   * Priority for multiple buffers being buffered within a call to next.
    */
-  val COALESCE_BATCH_PRIORITY: Long = COALESCE_BATCH_ON_DECK_PRIORITY + 100
+  val ACTIVE_BATCHING_PRIORITY: Long = ACTIVE_ON_DECK_PRIORITY + 100
 }

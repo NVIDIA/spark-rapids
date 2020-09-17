@@ -20,7 +20,6 @@ import scala.collection.mutable.ArrayBuffer
 
 import ai.rapids.cudf.{BufferType, NvtxColor, Table}
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
-import com.nvidia.spark.rapids.SpillPriorities.COALESCE_BATCH_ON_DECK_PRIORITY
 
 import org.apache.spark.TaskContext
 import org.apache.spark.internal.Logging
@@ -406,7 +405,7 @@ class GpuCoalesceIterator(iter: Iterator[ColumnarBatch],
   }
 
   override def addBatchToConcat(batch: ColumnarBatch): Unit =
-    batches.append(SpillableColumnarBatch(batch, SpillPriorities.COALESCE_BATCH_PRIORITY))
+    batches.append(SpillableColumnarBatch(batch, SpillPriorities.ACTIVE_BATCHING_PRIORITY))
 
   override def getColumnSizes(cb: ColumnarBatch): Array[Long] = {
     if (!GpuCompressedColumnVector.isBatchCompressed(cb)) {
@@ -474,7 +473,7 @@ class GpuCoalesceIterator(iter: Iterator[ColumnarBatch],
 
   override protected def saveOnDeck(batch: ColumnarBatch): Unit = {
     assert(onDeck.isEmpty)
-    onDeck = Some(SpillableColumnarBatch(batch, COALESCE_BATCH_ON_DECK_PRIORITY))
+    onDeck = Some(SpillableColumnarBatch(batch, SpillPriorities.ACTIVE_ON_DECK_PRIORITY))
   }
 
   override protected def clearOnDeck(): Unit = {

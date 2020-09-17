@@ -23,7 +23,6 @@ from marks import allow_non_gpu, cudf_udf
 
 
 _conf = {
-        'spark.rapids.sql.exec.ArrowEvalPythonExec':'true',
         'spark.rapids.sql.exec.MapInPandasExec':'true',
         'spark.rapids.sql.exec.FlatMapGroupsInPandasExec': 'true',
         'spark.rapids.sql.exec.AggregateInPandasExec': 'true',

@@ -344,6 +344,12 @@ public class GpuColumnVector extends GpuColumnVectorBase {
     return vectors;
   }
 
+  public static final GpuColumnVector[] extractColumns(Table table) {
+    try (ColumnarBatch batch = from(table)) {
+      return extractColumns(batch);
+    }
+  }
+
   private final ai.rapids.cudf.ColumnVector cudfCv;
 
   /**
