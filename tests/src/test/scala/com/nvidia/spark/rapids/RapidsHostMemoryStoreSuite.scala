@@ -18,9 +18,10 @@ package com.nvidia.spark.rapids
 
 import java.io.File
 
-import ai.rapids.cudf.{ContiguousTable, HostMemoryBuffer, Table}
-import org.mockito.ArgumentMatchers
-import org.mockito.Mockito.{spy, verify}
+import ai.rapids.cudf.{ContiguousTable, Cuda, HostColumnVector, HostMemoryBuffer, Table}
+import com.nvidia.spark.rapids.RapidsPluginImplicits._
+import org.mockito.{ArgumentCaptor, ArgumentMatchers}
+import org.mockito.Mockito.{never, spy, verify}
 import org.scalatest.FunSuite
 import org.scalatest.mockito.MockitoSugar
 
@@ -34,6 +35,17 @@ class RapidsHostMemoryStoreSuite extends FunSuite with Arm with MockitoSugar {
         .column(5.0, 2.0, 3.0, 1.0)
         .build()) { table =>
       table.contiguousSplit()(0)
+    }
+  }
+
+  private def buildContiguousTable(numRows: Int): ContiguousTable = {
+    val vals = (0 until numRows).map(_.toLong)
+    withResource(HostColumnVector.fromLongs(vals:_*)) { hcv =>
+      withResource(hcv.copyToDevice()) { cv =>
+        withResource(new Table(cv)) { table =>
+          table.contiguousSplit()(0)
+        }
+      }
     }
   }
 
@@ -132,6 +144,52 @@ class RapidsHostMemoryStoreSuite extends FunSuite with Arm with MockitoSugar {
           if (ct != null) {
             ct.close()
           }
+        }
+      }
+    }
+  }
+
+  test("buffer exceeds maximum size") {
+    val bigBufferId = MockRapidsBufferId(7)
+    val smallBufferId = MockRapidsBufferId(8)
+    val spillPriority = -10
+    val hostStoreMaxSize = 256
+    val catalog = new RapidsBufferCatalog
+    withResource(new RapidsDeviceMemoryStore(catalog)) { devStore =>
+      val mockStore = mock[RapidsBufferStore]
+      withResource(new RapidsHostMemoryStore(hostStoreMaxSize, catalog)) { hostStore =>
+        devStore.setSpillStore(hostStore)
+        hostStore.setSpillStore(mockStore)
+        var bigTable: ContiguousTable = null
+        var smallTable: ContiguousTable = null
+        try {
+          bigTable = buildContiguousTable(1024 * 1024)
+          smallTable = buildContiguousTable(1)
+          withResource(GpuColumnVector.from(bigTable.getTable)) { expectedBatch =>
+            // store takes ownership of the table
+            devStore.addTable(bigBufferId, bigTable.getTable, bigTable.getBuffer, spillPriority)
+            bigTable = null
+
+            devStore.synchronousSpill(0)
+            verify(mockStore, never()).copyBuffer(ArgumentMatchers.any[RapidsBuffer],
+              ArgumentMatchers.any[Cuda.Stream])
+            withResource(catalog.acquireBuffer(bigBufferId)) { buffer =>
+              assertResult(StorageTier.HOST)(buffer.storageTier)
+              withResource(buffer.getColumnarBatch) { actualBatch =>
+                TestUtils.compareBatches(expectedBatch, actualBatch)
+              }
+            }
+
+            devStore.addTable(smallBufferId, smallTable.getTable, smallTable.getBuffer,
+              spillPriority)
+            smallTable = null
+            devStore.synchronousSpill(0)
+            val ac: ArgumentCaptor[RapidsBuffer] = ArgumentCaptor.forClass(classOf[RapidsBuffer])
+            verify(mockStore).copyBuffer(ac.capture(), ArgumentMatchers.any[Cuda.Stream])
+            assertResult(bigBufferId)(ac.getValue.id)
+          }
+        } finally {
+          Seq(bigTable, smallTable).safeClose()
         }
       }
     }
