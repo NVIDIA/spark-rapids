@@ -330,7 +330,7 @@ class AdaptiveQueryExecSuite
 
     val conf = new SparkConf()
       .set(SQLConf.ADAPTIVE_EXECUTION_ENABLED.key, "true")
-      .set(SQLConf.AUTO_BROADCASTJOIN_THRESHOLD.key, "1000")
+      .set(SQLConf.AUTO_BROADCASTJOIN_THRESHOLD.key, "500")
       // disable DemoteBroadcastHashJoin rule from removing BHJ due to empty partitions
       .set(SQLConf.NON_EMPTY_PARTITION_RATIO_FOR_BROADCAST_JOIN.key, "0")
       .set(RapidsConf.ENABLE_CAST_STRING_TO_INTEGER.key, "true")
