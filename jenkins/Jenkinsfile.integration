@@ -58,6 +58,8 @@ pipeline {
             agent { label 'docker-gpu' }
             steps {
                 script {
+                    def CUDF_VER=sh(returnStdout: true,
+                        script: '. jenkins/version-def.sh>&2 && echo -n $CUDF_VER') - "-SNAPSHOT"
                     def CUDA_NAME=sh(returnStdout: true,
                         script: '. jenkins/version-def.sh>&2 && echo -n $CUDA_CLASSIFIER | sed "s/-/./g"')
                     def IMAGE_NAME="$ARTIFACTORY_NAME/sw-spark-docker/plugin:it-centos7-$CUDA_NAME"
@@ -67,7 +69,7 @@ pipeline {
                     // Speed up Docker building via '--cache-from $IMAGE_NAME'
                     def buildImage=docker.build(IMAGE_NAME,
                         "-f jenkins/Dockerfile.integration.centos7 --build-arg CUDA_VER=$CUDA_VER \
-                            --build-arg URM_URL=$URM_URL --cache-from $IMAGE_NAME -t $IMAGE_NAME .")
+                            --build-arg URM_URL=$URM_URL --build-arg CUDF_VER=$CUDF_VER --cache-from $IMAGE_NAME -t $IMAGE_NAME .")
                     def buildImageID=sh(returnStdout: true, script: "docker inspect -f {{'.Id'}} $IMAGE_NAME")
                     if (! buildImageID.equals(urmImageID)) {
                         echo "Dockerfile updated, upload docker image to URM"
