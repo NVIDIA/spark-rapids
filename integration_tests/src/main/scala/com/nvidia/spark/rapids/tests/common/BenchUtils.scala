@@ -104,8 +104,8 @@ object BenchUtils {
    *                        behavior of calling df.collect() but user could provide function to
    *                        save results to CSV or Parquet instead.
    * @param filenameStub    The prefix for the output file. The current timestamp will be appended
-   *                        to ensure that filenames are unique and that results are not inadvertently
-   *                        overwritten.
+   *                        to ensure that filenames are unique and that results are not
+   *                        inadvertently overwritten.
    * @param iterations      The number of times to run the query.
    */
   def runBench(
