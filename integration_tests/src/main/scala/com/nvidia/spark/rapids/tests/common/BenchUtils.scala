@@ -275,7 +275,7 @@ object BenchUtils {
    * @param df1            DataFrame to compare.
    * @param df2            DataFrame to compare.
    * @param ignoreOrdering Sort the data collected from the DataFrames before comparing them.
-   * @param useIterator    When set to true, use `toLocalIterator`` to load one partition at a time
+   * @param useIterator    When set to true, use `toLocalIterator` to load one partition at a time
    *                       into driver memory, reducing memory usage at the cost of performance
    *                       because processing will be single-threaded.
    * @param maxErrors      Maximum number of differences to report.
