@@ -299,32 +299,40 @@ object BenchUtils {
       i
     }
 
-    val result1 = collectResults(df1, ignoreOrdering, useIterator)
-    val result2 = collectResults(df2, ignoreOrdering, useIterator)
+    val count1 = df1.count()
+    val count2 = df2.count()
 
-    var errors = 0
-    var i = 0
-    while (result1.hasNext && result2.hasNext && errors < maxErrors) {
-      val l = result1.next()
-      val r = result2.next()
-      if (!rowEqual(l, r, epsilon)) {
-        println(s"Row $i:\n${l.mkString(",")}\n${r.mkString(",")}\n")
-        errors += 1
+    if (count1 == count2) {
+      println(s"Both DataFrames contain $count1 rows")
+      val result1 = collectResults(df1, ignoreOrdering, useIterator)
+      val result2 = collectResults(df2, ignoreOrdering, useIterator)
+
+      var errors = 0
+      var i = 0
+      while (result1.hasNext && result2.hasNext && errors < maxErrors) {
+        val l = result1.next()
+        val r = result2.next()
+        if (!rowEqual(l, r, epsilon)) {
+          println(s"Row $i:\n${l.mkString(",")}\n${r.mkString(",")}\n")
+          errors += 1
+        }
+        i += 1
       }
-      i += 1
-    }
-    println(s"Processed $i rows")
+      println(s"Processed $i rows")
 
-    if (errors == maxErrors) {
-      println(s"Aborting comparison after reaching maximum of $maxErrors errors")
-    } else if (result1.hasNext) {
-      println(s"df1 has additional ${countRemaining(result1)} rows")
-    } else if (result2.hasNext) {
-      println(s"df2 has additional ${countRemaining(result2)} rows")
-    } else if (errors == 0) {
-      println(s"Results match")
+      if (errors == maxErrors) {
+        println(s"Aborting comparison after reaching maximum of $maxErrors errors")
+      } else if (result1.hasNext) {
+        println(s"df1 has additional ${countRemaining(result1)} rows")
+      } else if (result2.hasNext) {
+        println(s"df2 has additional ${countRemaining(result2)} rows")
+      } else if (errors == 0) {
+        println(s"Results match")
+      } else {
+        println(s"There were $errors errors")
+      }
     } else {
-      println(s"There were $errors errors")
+      println(s"DataFrame row counts do not match: $count1 != $count2")
     }
   }
 
