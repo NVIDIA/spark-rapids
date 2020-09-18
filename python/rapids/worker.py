@@ -52,6 +52,8 @@ def initialize_gpu_mem():
                              "`RAPIDS_POOLED_MEM_SIZE`.")
         if pool_max_size == 0:
             pool_max_size = max_size
+        pool_max_size = pool_max_size >> 8 << 8
+        pool_size = pool_size >> 8 << 8
         print("DEBUG: Pooled memory, pool size: {} MiB, max size: {} MiB".format(
                 pool_size / 1024.0 / 1024,
                 ('unlimited' if pool_max_size == max_size else pool_max_size / 1024.0 / 1024)))
