@@ -201,6 +201,11 @@ abstract class RapidsShuffleInternalManagerBase(conf: SparkConf, isDriver: Boole
 
   private val rapidsConf = new RapidsConf(conf)
 
+  // set the shim override if specified since the shuffle manager loads early
+  if (rapidsConf.shimsProviderOverride.isDefined) {
+    ShimLoader.setSparkShimProviderClass(rapidsConf.shimsProviderOverride.get)
+  }
+
   protected val wrapped = new SortShuffleManager(conf)
   GpuShuffleEnv.setRapidsShuffleManagerInitialized(true, this.getClass.getCanonicalName)
   logWarning("Rapids Shuffle Plugin Enabled")
