@@ -31,15 +31,27 @@ class RapidsHostMemoryStore(
     extends RapidsBufferStore("host", catalog) {
   private[this] val pool = HostMemoryBuffer.allocate(maxSize, false)
   private[this] val addressAllocator = new AddressSpaceAllocator(maxSize)
+  private[this] var haveLoggedMaxExceeded = false
 
-  // Returns an allocated host buffer and whether the allocation is from the pinned pool
+  // Returns an allocated host buffer and whether the allocation is from the internal pool
   private def allocateHostBuffer(size: Long): (HostMemoryBuffer, Boolean) = {
-    require(size <= maxSize, s"allocating a buffer of $size bytes beyond max of $maxSize")
+    // spill to keep within the targeted size
+    synchronousSpill(math.max(maxSize - size, 0))
+
     var buffer: HostMemoryBuffer = null
     while (buffer == null) {
       buffer = PinnedMemoryPool.tryAllocate(size)
       if (buffer != null) {
-        return (buffer, true)
+        return (buffer, false)
+      }
+
+      if (size > maxSize) {
+        if (!haveLoggedMaxExceeded) {
+          logWarning(s"Exceeding host spill max of $maxSize bytes to accommodate a buffer of " +
+              s"$size bytes. Consider increasing host spill store size.")
+          haveLoggedMaxExceeded = true
+        }
+        return (HostMemoryBuffer.allocate(size), false)
       }
 
       val allocation = addressAllocator.allocate(size)
@@ -50,7 +62,7 @@ class RapidsHostMemoryStore(
         synchronousSpill(targetSize)
       }
     }
-    (buffer, false)
+    (buffer, true)
   }
 
   override protected def createBuffer(
@@ -99,13 +111,13 @@ class RapidsHostMemoryStore(
       meta: TableMeta,
       spillPriority: Long,
       buffer: HostMemoryBuffer,
-      isPinned: Boolean) extends RapidsBufferBase(id, size, meta, spillPriority) {
+      isInternalPoolAllocated: Boolean) extends RapidsBufferBase(id, size, meta, spillPriority) {
     override val storageTier: StorageTier = StorageTier.HOST
 
     override def getMemoryBuffer: MemoryBuffer = buffer.slice(0, buffer.getLength)
 
     override protected def releaseResources(): Unit = {
-      if (!isPinned) {
+      if (isInternalPoolAllocated) {
         assert(buffer.getAddress >= pool.getAddress)
         assert(buffer.getAddress < pool.getAddress + pool.getLength)
         addressAllocator.free(buffer.getAddress - pool.getAddress)
