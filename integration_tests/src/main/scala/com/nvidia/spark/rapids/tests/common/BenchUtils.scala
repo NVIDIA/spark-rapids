@@ -289,16 +289,6 @@ object BenchUtils {
       maxErrors: Int = 10,
       epsilon: Double = 0.00001): Unit = {
 
-    /** Count remaining items in iterator without loading fully into memory */
-    def countRemaining(it: Iterator[Seq[Any]]): Int = {
-      var i = 0
-      while (it.hasNext) {
-        it.next()
-        i += 0
-      }
-      i
-    }
-
     val count1 = df1.count()
     val count2 = df2.count()
 
@@ -309,7 +299,7 @@ object BenchUtils {
 
       var errors = 0
       var i = 0
-      while (result1.hasNext && result2.hasNext && errors < maxErrors) {
+      while (i < count1 && errors < maxErrors) {
         val l = result1.next()
         val r = result2.next()
         if (!rowEqual(l, r, epsilon)) {
@@ -322,10 +312,6 @@ object BenchUtils {
 
       if (errors == maxErrors) {
         println(s"Aborting comparison after reaching maximum of $maxErrors errors")
-      } else if (result1.hasNext) {
-        println(s"df1 has additional ${countRemaining(result1)} rows")
-      } else if (result2.hasNext) {
-        println(s"df2 has additional ${countRemaining(result2)} rows")
       } else if (errors == 0) {
         println(s"Results match")
       } else {
