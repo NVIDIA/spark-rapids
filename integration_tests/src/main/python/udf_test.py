@@ -77,9 +77,9 @@ def test_single_aggregate_udf(data_gen):
 @allow_non_gpu('AggregateInPandasExec', 'PythonUDF', 'Alias')
 @pytest.mark.parametrize('data_gen', integral_gens, ids=idfn)
 def test_group_aggregate_udf(data_gen):
-    @f.pandas_udf('double')
-    def pandas_sum(to_process: pd.Series) -> float:
-        return to_process.sum()
+    @f.pandas_udf('long')
+    def pandas_sum(to_process: pd.Series) -> int:
+        return to_process.max()
 
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : binary_op_df(spark, data_gen)\
@@ -91,9 +91,9 @@ def test_group_aggregate_udf(data_gen):
 @allow_non_gpu('WindowInPandasExec', 'PythonUDF', 'WindowExpression', 'Alias', 'WindowSpecDefinition', 'SpecifiedWindowFrame', 'UnboundedPreceding$', 'UnboundedFollowing$')
 @pytest.mark.parametrize('data_gen', integral_gens, ids=idfn)
 def test_window_aggregate_udf(data_gen):
-    @f.pandas_udf('double')
-    def pandas_sum(to_process: pd.Series) -> float:
-        return to_process.sum()
+    @f.pandas_udf('long')
+    def pandas_sum(to_process: pd.Series) -> int:
+        return to_process.max()
 
     w = Window\
             .partitionBy('a') \
