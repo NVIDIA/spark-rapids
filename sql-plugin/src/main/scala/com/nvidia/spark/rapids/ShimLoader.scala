@@ -20,10 +20,11 @@ import java.util.ServiceLoader
 
 import scala.collection.JavaConverters._
 
-import org.apache.spark.{SPARK_BUILD_USER, SPARK_VERSION, SparkConf}
+import org.apache.spark.{SPARK_BUILD_USER, SPARK_VERSION}
 import org.apache.spark.internal.Logging
 
 object ShimLoader extends Logging {
+  private var shimProviderClass: String = null
   private var sparkShims: SparkShims = null
 
   private def detectShimProvider(): SparkShimServiceProvider = {
@@ -47,14 +48,12 @@ object ShimLoader extends Logging {
   }
 
   private def findShimProvider(): SparkShimServiceProvider = {
-    val conf = new RapidsConf(new SparkConf())
-    if (conf.shimsProviderOverride.isEmpty) {
+    if (shimProviderClass == null) {
       detectShimProvider()
     } else {
-      val classname = conf.shimsProviderOverride.get
-      logWarning(s"Overriding Spark shims provider to $classname. " +
+      logWarning(s"Overriding Spark shims provider to $shimProviderClass. " +
           "This may be an untested configuration!")
-      val providerClass = Class.forName(classname)
+      val providerClass = Class.forName(shimProviderClass)
       val constructor = providerClass.getConstructor()
       constructor.newInstance().asInstanceOf[SparkShimServiceProvider]
     }
@@ -75,5 +74,9 @@ object ShimLoader extends Logging {
     } else {
       SPARK_VERSION
     }
+  }
+
+  def setSparkShimProviderClass(classname: String): Unit = {
+    shimProviderClass = classname
   }
 }
