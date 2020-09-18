@@ -19,6 +19,7 @@ import java.io.{File, FileOutputStream}
 import java.time.Instant
 import java.util.concurrent.TimeUnit.NANOSECONDS
 
+import scala.collection.convert.ImplicitConversions.`iterator asScala`
 import scala.collection.mutable.ListBuffer
 
 import org.json4s.DefaultFormats
@@ -97,15 +98,15 @@ object BenchUtils {
    * query and results to file, including all Spark configuration options and environment
    * variables.
    *
-   * @param spark The Spark session
+   * @param spark           The Spark session
    * @param createDataFrame Function to create a DataFrame from the Spark session.
-   * @param resultsAction Optional action to perform after creating the DataFrame, with default
-   *                      behavior of calling df.collect() but user could provide function to
-   *                      save results to CSV or Parquet instead.
-   * @param filenameStub The prefix for the output file. The current timestamp will be appended
-   *                     to ensure that filenames are unique and that results are not inadvertently
-   *                     overwritten.
-   * @param iterations The number of times to run the query.
+   * @param resultsAction   Optional action to perform after creating the DataFrame, with default
+   *                        behavior of calling df.collect() but user could provide function to
+   *                        save results to CSV or Parquet instead.
+   * @param filenameStub    The prefix for the output file. The current timestamp will be appended
+   *                        to ensure that filenames are unique and that results are not inadvertently
+   *                        overwritten.
+   * @param iterations      The number of times to run the query.
    */
   def runBench(
       spark: SparkSession,
@@ -115,9 +116,9 @@ object BenchUtils {
       filenameStub: String,
       iterations: Int,
       gcBetweenRuns: Boolean
-    ): Unit = {
+  ): Unit = {
 
-    assert(iterations>0)
+    assert(iterations > 0)
 
     val queryStartTime = Instant.now()
 
@@ -161,7 +162,7 @@ object BenchUtils {
       println(s"Best of $numHotRuns hot run(s): ${hotRuns.min} msec.")
       println(s"Worst of $numHotRuns hot run(s): ${hotRuns.max} msec.")
       println(s"Average of $numHotRuns hot run(s): " +
-          s"${hotRuns.sum.toDouble/numHotRuns} msec.")
+          s"${hotRuns.sum.toDouble / numHotRuns} msec.")
     }
 
     // write results to file
@@ -274,6 +275,9 @@ object BenchUtils {
    * @param df1            DataFrame to compare.
    * @param df2            DataFrame to compare.
    * @param ignoreOrdering Sort the data collected from the DataFrames before comparing them.
+   * @param useIterator    When set to true, use `toLocalIterator`` to load one partition at a time
+   *                       into driver memory, reducing memory usage at the cost of performance
+   *                       because processing will be single-threaded.
    * @param maxErrors      Maximum number of differences to report.
    * @param epsilon        Allow for differences in precision when comparing floating point values.
    */
@@ -281,49 +285,75 @@ object BenchUtils {
       df1: DataFrame,
       df2: DataFrame,
       ignoreOrdering: Boolean,
+      useIterator: Boolean = false,
       maxErrors: Int = 10,
       epsilon: Double = 0.00001): Unit = {
 
-    val result1: Seq[Seq[Any]] = collectResults(df1, ignoreOrdering)
-    val result2: Seq[Seq[Any]] = collectResults(df2, ignoreOrdering)
-
-    if (result1.length == result2.length) {
-      var errors = 0
-      var i = 0;
-      while (i < result1.length && errors < maxErrors) {
-        val l = result1(i)
-        val r = result2(i)
-        if (!rowEqual(l, r, epsilon)) {
-          println(s"Row $i:\n${l.mkString(",")}\n${r.mkString(",")}\n")
-          errors += 1
-          if (errors == maxErrors) {
-            println(s"Aborting comparison after reaching maximum of $maxErrors errors")
-          }
-        }
-        i += 1
+    /** Count remaining items in iterator without loading fully into memory */
+    def countRemaining(it: Iterator[Seq[Any]]): Int = {
+      var i = 0
+      while (it.hasNext) {
+        it.next()
+        i += 0
       }
+      i
+    }
 
-      if (errors==0) {
-        println(s"Results match")
+    val result1 = collectResults(df1, ignoreOrdering, useIterator)
+    val result2 = collectResults(df2, ignoreOrdering, useIterator)
+
+    var errors = 0
+    var i = 0
+    while (result1.hasNext && result2.hasNext && errors < maxErrors) {
+      val l = result1.next()
+      val r = result2.next()
+      if (!rowEqual(l, r, epsilon)) {
+        println(s"Row $i:\n${l.mkString(",")}\n${r.mkString(",")}\n")
+        errors += 1
       }
+      i += 1
+    }
+    println(s"Processed $i rows")
 
+    if (errors == maxErrors) {
+      println(s"Aborting comparison after reaching maximum of $maxErrors errors")
+    } else if (result1.hasNext) {
+      println(s"df1 has additional ${countRemaining(result1)} rows")
+    } else if (result2.hasNext) {
+      println(s"df2 has additional ${countRemaining(result2)} rows")
+    } else if (errors == 0) {
+      println(s"Results match")
     } else {
-      println(s"Row counts do not match: ${result1.length} != ${result2.length}")
+      println(s"There were $errors errors")
     }
   }
 
-  private def collectResults(df: DataFrame, ignoreOrdering: Boolean): Seq[Seq[Any]] = {
-    println("Collecting rows from DataFrame")
-    val t1 = System.currentTimeMillis()
-    val rows = if (ignoreOrdering) {
+  private def collectResults(
+      df: DataFrame,
+      ignoreOrdering: Boolean,
+      useIterator: Boolean): Iterator[Seq[Any]] = {
+
+    // apply sorting if specified
+    val resultDf = if (ignoreOrdering) {
       // let Spark do the sorting
-      df.sort(df.columns.map(col): _*).collect()
+      df.sort(df.columns.map(col): _*)
     } else {
-      df.collect()
+      df
     }
-    val t2 = System.currentTimeMillis()
-    println(s"Collected ${rows.length} rows in ${(t2-t1)/1000.0} seconds")
-    rows.map(_.toSeq)
+
+    val it: Iterator[Row] = if (useIterator) {
+      resultDf.toLocalIterator()
+    } else {
+      println("Collecting rows from DataFrame")
+      val t1 = System.currentTimeMillis()
+      val rows = resultDf.collect()
+      val t2 = System.currentTimeMillis()
+      println(s"Collected ${rows.length} rows in ${(t2-t1)/1000.0} seconds")
+      rows.toIterator
+    }
+
+    // map Iterator[Row] to Iterator[Seq[Any]]
+    it.map(_.toSeq)
   }
 
   private def rowEqual(row1: Seq[Any], row2: Seq[Any], epsilon: Double): Boolean = {
