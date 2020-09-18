@@ -1,11 +1,12 @@
 # Change log
-Generated on 2020-09-14
+Generated on 2020-09-18
 
 ## Release 0.2
 
 ### Features
 |||
 |:---|:---|
+|[#696](https://github.com/NVIDIA/spark-rapids/issues/696)|[FEA] run integration tests against SPARK-3.0.1|
 |[#455](https://github.com/NVIDIA/spark-rapids/issues/455)|[FEA] Support UCX shuffle with optimized AQE|
 |[#510](https://github.com/NVIDIA/spark-rapids/issues/510)|[FEA] Investigate libcudf features needed to support struct schema pruning during loads|
 |[#541](https://github.com/NVIDIA/spark-rapids/issues/541)|[FEA] Scala UDF:Support for null Value operands|
@@ -13,14 +14,17 @@ Generated on 2020-09-14
 |[#499](https://github.com/NVIDIA/spark-rapids/issues/499)|[FEA] disable any kind of warnings about ExecutedCommandExec not being on the GPU|
 |[#540](https://github.com/NVIDIA/spark-rapids/issues/540)|[FEA] Scala UDF: Support for String replaceFirst()|
 |[#340](https://github.com/NVIDIA/spark-rapids/issues/340)|[FEA] widen the rendered Jekyll pages|
+|[#602](https://github.com/NVIDIA/spark-rapids/issues/602)|[FEA] don't release with any -SNAPSHOT dependencies|
 |[#579](https://github.com/NVIDIA/spark-rapids/issues/579)|[FEA] Auto-merge between branches|
 |[#515](https://github.com/NVIDIA/spark-rapids/issues/515)|[FEA] Write tests for AQE skewed join optimization|
 |[#452](https://github.com/NVIDIA/spark-rapids/issues/452)|[FEA] Update HashSortOptimizerSuite to work with AQE|
 |[#454](https://github.com/NVIDIA/spark-rapids/issues/454)|[FEA] Update GpuCoalesceBatchesSuite to work with AQE enabled|
+|[#354](https://github.com/NVIDIA/spark-rapids/issues/354)|[FEA]Spark 3.1 FileSourceScanExec adds parameter optionalNumCoalescedBuckets|
 |[#566](https://github.com/NVIDIA/spark-rapids/issues/566)|[FEA] Add support for StringSplit with an array index.|
 |[#524](https://github.com/NVIDIA/spark-rapids/issues/524)|[FEA] Add GPU specific metrics to GpuFileSourceScanExec|
 |[#494](https://github.com/NVIDIA/spark-rapids/issues/494)|[FEA] Add some AQE-specific tests to the PySpark test suite|
 |[#146](https://github.com/NVIDIA/spark-rapids/issues/146)|[FEA] Python tests should support running with Adaptive Query Execution enabled|
+|[#465](https://github.com/NVIDIA/spark-rapids/issues/465)|[FEA] Audit: Update script to audit multiple versions of Spark |
 |[#488](https://github.com/NVIDIA/spark-rapids/issues/488)|[FEA] Ability to limit total GPU memory used|
 |[#70](https://github.com/NVIDIA/spark-rapids/issues/70)|[FEA] Support StringSplit|
 |[#403](https://github.com/NVIDIA/spark-rapids/issues/403)|[FEA] Add in support for GetArrayItem|
@@ -37,6 +41,7 @@ Generated on 2020-09-14
 |[#232](https://github.com/NVIDIA/spark-rapids/issues/232)|[FEA] Audit SortExec |
 |[#236](https://github.com/NVIDIA/spark-rapids/issues/236)|[FEA] Audit ShuffleExchangeExec |
 |[#355](https://github.com/NVIDIA/spark-rapids/issues/355)|[FEA] Support Multiple Spark versions in the same jar|
+|[#385](https://github.com/NVIDIA/spark-rapids/issues/385)|[FEA] Support RangeExec on the GPU|
 |[#317](https://github.com/NVIDIA/spark-rapids/issues/317)|[FEA] Write test wrapper to run SQL queries via pyspark|
 |[#235](https://github.com/NVIDIA/spark-rapids/issues/235)|[FEA] Audit BroadcastExchangeExec|
 |[#234](https://github.com/NVIDIA/spark-rapids/issues/234)|[FEA] Audit BatchScanExec|
@@ -60,6 +65,7 @@ Generated on 2020-09-14
 ### Bugs Fixed
 |||
 |:---|:---|
+|[#780](https://github.com/NVIDIA/spark-rapids/issues/780)|[BUG] Inner Join dropping data with bucketed Table input|
 |[#569](https://github.com/NVIDIA/spark-rapids/issues/569)|[BUG] left_semi_join operation is abnormal and serious time-consuming|
 |[#744](https://github.com/NVIDIA/spark-rapids/issues/744)|[BUG] TPC-DS query 6 now produces incorrect results.|
 |[#718](https://github.com/NVIDIA/spark-rapids/issues/718)|[BUG] GpuBroadcastHashJoinExec ArrayIndexOutOfBoundsException|
@@ -71,6 +77,7 @@ Generated on 2020-09-14
 |[#671](https://github.com/NVIDIA/spark-rapids/issues/671)|[BUG] Databricks hash_aggregate_test fails trying to canonicalize a WrappedAggFunction|
 |[#218](https://github.com/NVIDIA/spark-rapids/issues/218)|[BUG] Window function COUNT(x) includes null-values, when it shouldn't|
 |[#153](https://github.com/NVIDIA/spark-rapids/issues/153)|[BUG] Incorrect output from partial-only hash aggregates with multiple distincts and non-distinct functions|
+|[#656](https://github.com/NVIDIA/spark-rapids/issues/656)|[BUG] integration tests produce hive metadata files|
 |[#607](https://github.com/NVIDIA/spark-rapids/issues/607)|[BUG] Fix misleading "cannot run on GPU" warnings when AQE is enabled|
 |[#630](https://github.com/NVIDIA/spark-rapids/issues/630)|[BUG] GpuCustomShuffleReader metrics always show zero rows/batches output|
 |[#643](https://github.com/NVIDIA/spark-rapids/issues/643)|[BUG] race condition while registering a buffer and spilling at the same time|
@@ -82,6 +89,7 @@ Generated on 2020-09-14
 |[#598](https://github.com/NVIDIA/spark-rapids/issues/598)|[BUG] Non-deterministic output from MapOutputTracker.getStatistics() with AQE on GPU|
 |[#192](https://github.com/NVIDIA/spark-rapids/issues/192)|[BUG] test_read_merge_schema fails on Databricks|
 |[#341](https://github.com/NVIDIA/spark-rapids/issues/341)|[BUG] Document compression formats for readers/writers|
+|[#587](https://github.com/NVIDIA/spark-rapids/issues/587)|[BUG] Spark3.1 changed FileScan which means or GpuScans need to be added to shim layer|
 |[#362](https://github.com/NVIDIA/spark-rapids/issues/362)|[BUG] Implement getReaderForRange in the RapidsShuffleManager|
 |[#528](https://github.com/NVIDIA/spark-rapids/issues/528)|[BUG] HashAggregateSuite "Avg Distinct with filter" no longer valid when testing against Spark 3.1.0|
 |[#416](https://github.com/NVIDIA/spark-rapids/issues/416)|[BUG] Fix Spark 3.1.0 integration tests|
@@ -93,19 +101,28 @@ Generated on 2020-09-14
 |[#269](https://github.com/NVIDIA/spark-rapids/issues/269)|Needed to add `--conf spark.driver.extraClassPath=` |
 |[#473](https://github.com/NVIDIA/spark-rapids/issues/473)|[BUG] PartMerge:countDistinct:sum fails sporadically|
 |[#531](https://github.com/NVIDIA/spark-rapids/issues/531)|[BUG] Temporary RMM workaround needs to be removed|
+|[#532](https://github.com/NVIDIA/spark-rapids/issues/532)|[BUG] NPE when enabling shuffle manager|
 |[#525](https://github.com/NVIDIA/spark-rapids/issues/525)|[BUG] GpuFilterExec reports incorrect nullability of output in some cases|
+|[#483](https://github.com/NVIDIA/spark-rapids/issues/483)|[BUG] Multiple scans for the same parquet data source|
 |[#382](https://github.com/NVIDIA/spark-rapids/issues/382)|[BUG] Spark3.1 StringFallbackSuite regexp_replace null cpu fall back test fails.|
+|[#489](https://github.com/NVIDIA/spark-rapids/issues/489)|[FEA] Fix Spark 3.1 GpuHashJoin since it now requires CodegenSupport|
 |[#441](https://github.com/NVIDIA/spark-rapids/issues/441)|[BUG] test_broadcast_nested_loop_join_special_case fails on databricks|
 |[#347](https://github.com/NVIDIA/spark-rapids/issues/347)|[BUG] Failed to read Parquet file generated by GPU-enabled Spark.|
 |[#433](https://github.com/NVIDIA/spark-rapids/issues/433)|`InSet` operator produces an error for Strings|
 |[#144](https://github.com/NVIDIA/spark-rapids/issues/144)|[BUG] spark.sql.legacy.parquet.datetimeRebaseModeInWrite is ignored|
 |[#323](https://github.com/NVIDIA/spark-rapids/issues/323)|[BUG] GpuBroadcastNestedLoopJoinExec can fail if there are no columns|
+|[#356](https://github.com/NVIDIA/spark-rapids/issues/356)|[BUG] Integration cache test for BroadcastNestedLoopJoin failure|
 |[#280](https://github.com/NVIDIA/spark-rapids/issues/280)|[BUG] Full Outer Join does not work on nullable keys|
 |[#149](https://github.com/NVIDIA/spark-rapids/issues/149)|[BUG] Spark driver fails to load native libs when running on node without CUDA|
 
 ### PRs
 |||
 |:---|:---|
+|[#793](https://github.com/NVIDIA/spark-rapids/pull/793)|Update Jenkins scripts for release|
+|[#798](https://github.com/NVIDIA/spark-rapids/pull/798)|Fix shims provider override config not being seen by executors|
+|[#785](https://github.com/NVIDIA/spark-rapids/pull/785)|Make shuffle run on CPU if we do a join where we read from bucketed table|
+|[#765](https://github.com/NVIDIA/spark-rapids/pull/765)|Add config to override shims provider class|
+|[#759](https://github.com/NVIDIA/spark-rapids/pull/759)|Add CHANGELOG for release 0.2|
 |[#758](https://github.com/NVIDIA/spark-rapids/pull/758)|Skip the udf test fails periodically.|
 |[#752](https://github.com/NVIDIA/spark-rapids/pull/752)|Fix snapshot plugin jar version in docs|
 |[#751](https://github.com/NVIDIA/spark-rapids/pull/751)|Correct the channel for cudf installation|
