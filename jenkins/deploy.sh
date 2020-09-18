@@ -84,5 +84,7 @@ $DEPLOY_CMD -Durl=$SERVER_URL -DrepositoryId=$SERVER_ID \
 TESTS_ART_ID=`mvn help:evaluate -q -pl $TESTS_PL -Dexpression=project.artifactId -DforceStdout`
 TESTS_ART_VER=`mvn help:evaluate -q -pl $TESTS_PL -Dexpression=project.version -DforceStdout`
 TESTS_FPATH="$TESTS_PL/target/$TESTS_ART_ID-$TESTS_ART_VER"
+TESTS_DOC_JARS="-Dsources=${TESTS_FPATH}-sources.jar -Djavadoc=${TESTS_FPATH}-javadoc.jar"
 $DEPLOY_CMD -Durl=$SERVER_URL -DrepositoryId=$SERVER_ID \
+            $TESTS_DOC_JARS \
             -Dfile=$TESTS_FPATH.jar -DpomFile=${TESTS_PL}/pom.xml
