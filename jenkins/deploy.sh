@@ -62,7 +62,7 @@ if [ "$SIGN_FILE" == true ]; then
     SRC_DOC_JARS="-Dsources=${JS_FPATH}-sources.jar -Djavadoc=${JS_FPATH}-javadoc.jar"
     DEPLOY_CMD="mvn -B gpg:sign-and-deploy-file -s jenkins/settings.xml -Dgpg.passphrase=$GPG_PASSPHRASE"
 else
-    DEPLOY_CMD="mvn -B '-Pinclude-databricks,!snapshot-shims' deploy:deploy-file -s jenkins/settings.xml"
+    DEPLOY_CMD="mvn -B deploy:deploy-file -s jenkins/settings.xml"
 fi
 
 echo "Deploy CMD: $DEPLOY_CMD"
@@ -79,3 +79,10 @@ $DEPLOY_CMD -Durl=$SERVER_URL -DrepositoryId=$SERVER_ID \
 $DEPLOY_CMD -Durl=$SERVER_URL -DrepositoryId=$SERVER_ID \
             $SRC_DOC_JARS \
             -Dfile=$FPATH.jar -DpomFile=${DIST_PL}/dependency-reduced-pom.xml
+
+###### Deploy integration tests jar(s) ######
+TESTS_ART_ID=`mvn help:evaluate -q -pl $TESTS_PL -Dexpression=project.artifactId -DforceStdout`
+TESTS_ART_VER=`mvn help:evaluate -q -pl $TESTS_PL -Dexpression=project.version -DforceStdout`
+TESTS_FPATH="$TESTS_PL/target/$TESTS_ART_ID-$TESTS_ART_VER"
+$DEPLOY_CMD -Durl=$SERVER_URL -DrepositoryId=$SERVER_ID \
+            -Dfile=$TESTS_FPATH.jar -DpomFile=${TESTS_PL}/pom.xml
