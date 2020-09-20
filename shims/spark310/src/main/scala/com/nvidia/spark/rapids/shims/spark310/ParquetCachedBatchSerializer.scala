@@ -16,8 +16,11 @@
 
 package com.nvidia.spark.rapids.shims.spark310
 
+import java.io.{BufferedOutputStream, File, FileOutputStream}
+
 import scala.collection.JavaConverters._
 import scala.collection.mutable
+import scala.collection.mutable.ArrayBuffer
 
 import ai.rapids.cudf._
 import com.nvidia.spark.rapids._
@@ -26,11 +29,14 @@ import com.nvidia.spark.rapids.RapidsPluginImplicits._
 
 import org.apache.spark.TaskContext
 import org.apache.spark.rdd.RDD
+import org.apache.spark.sql.SparkSession
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.expressions.{Attribute, Expression}
 import org.apache.spark.sql.columnar.{CachedBatch, CachedBatchSerializer}
+import org.apache.spark.sql.execution.datasources.{FilePartition, FileScanRDD, PartitionedFile}
+import org.apache.spark.sql.execution.datasources.parquet.ParquetFileFormat
 import org.apache.spark.sql.internal.SQLConf
-import org.apache.spark.sql.types.{StructField, StructType}
+import org.apache.spark.sql.types._
 import org.apache.spark.sql.vectorized.ColumnarBatch
 import org.apache.spark.storage.StorageLevel
 
@@ -122,7 +128,14 @@ private case class CloseableColumnBatchIterator(iter: Iterator[ColumnarBatch]) e
 class ParquetCachedBatchSerializer extends CachedBatchSerializer with Arm {
   override def supportsColumnarInput(schema: Seq[Attribute]): Boolean = true
 
-  override def supportsColumnarOutput(schema: StructType): Boolean = true
+  override def supportsColumnarOutput(schema: StructType): Boolean = schema.fields.forall(f =>
+    f.dataType match {
+      // We support columnar output for types supported by cudf. Not including ListType for now
+      // for simplicity
+      case BooleanType | ByteType | ShortType | IntegerType | LongType |
+           FloatType | DoubleType => true
+      case _ => false
+    })
 
   /**
    * Convert an `RDD[ColumnarBatch]` into an `RDD[CachedBatch]` in preparation for caching the data.
@@ -231,7 +244,7 @@ class ParquetCachedBatchSerializer extends CachedBatchSerializer with Arm {
         new ColumnarBatch(cols.map(_.copyToHost()).toArray, gpuBatch.numRows())
       }
     })
-    cbRdd.mapPartitions(iter => new CloseableColumnBatchIterator(iter))
+    cbRdd.mapPartitions(iter => CloseableColumnBatchIterator(iter))
   }
 
   /**
@@ -247,11 +260,51 @@ class ParquetCachedBatchSerializer extends CachedBatchSerializer with Arm {
                                 cacheAttributes: Seq[Attribute],
                                 selectedAttributes: Seq[Attribute],
                                 conf: SQLConf): RDD[InternalRow] = {
-    val cb = convertCachedBatchToColumnarBatch(input, cacheAttributes, selectedAttributes, conf)
-    val rowRdd = cb.mapPartitions(iter => {
-      new ColumnarToRowIterator(iter)
-    })
-    rowRdd
+    val rapidsConf = new RapidsConf(conf)
+    if (rapidsConf.isSqlEnabled) {
+      val cb = convertCachedBatchToColumnarBatch(input, cacheAttributes, selectedAttributes, conf)
+      val rowRdd = cb.mapPartitions(iter => {
+        new ColumnarToRowIterator(iter)
+      })
+      rowRdd
+    } else {
+      convertCachedBatchToInternalRowCpu(input, conf, cacheAttributes, selectedAttributes)
+    }
+  }
+
+  val datetimeRebaseMode = SQLConf.get.getConf(SQLConf.LEGACY_PARQUET_REBASE_MODE_IN_READ)
+
+  private def convertCachedBatchToInternalRowCpu(input: RDD[CachedBatch],
+     conf: SQLConf, schema: Seq[Attribute], attr: Seq[Attribute]): RDD[InternalRow] = {
+
+    val parquetFileFormat = new ParquetFileFormat()
+    val dataSchema = StructType(schema.map(a => StructField(a.name, a.dataType, a.nullable, a
+      .metadata)))
+    val requiredSchema = StructType(attr.map(a => StructField(a.name, a.dataType, a.nullable, a
+      .metadata)))
+    val readFile = parquetFileFormat.buildReaderWithPartitionValues(SparkSession.active, dataSchema,
+      dataSchema, requiredSchema, Seq.empty, null, new org.apache.hadoop.conf.Configuration())
+
+    // create a temp file until we figure out how to use the buffer directly into a file
+    val partitionedFiles = new ArrayBuffer[PartitionedFile]
+    var maxSplitSize = 0L
+    input.foreach { cb =>
+      val batch = cb.asInstanceOf[ParquetCachedBatch]
+      val cached = File.createTempFile("cachedBatch", null)
+      val target = new BufferedOutputStream(new FileOutputStream(cached))
+      try {
+        batch.buffer.foreach( target.write(_) )
+      }
+      finally {
+        target.close
+      }
+      maxSplitSize = if (maxSplitSize < batch.sizeInBytes) batch.sizeInBytes else maxSplitSize
+      partitionedFiles += PartitionedFile(InternalRow.empty, cached.getAbsolutePath, 0,
+        cb.asInstanceOf[ParquetCachedBatch].buffer.length)
+    }
+    val filePartitions = FilePartition.getFilePartitions(SparkSession.active, partitionedFiles,
+      maxSplitSize)
+    new FileScanRDD(SparkSession.active, readFile, filePartitions)
   }
 
   /**

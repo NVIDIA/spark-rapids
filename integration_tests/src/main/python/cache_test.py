@@ -178,3 +178,12 @@ def test_cache_expand_exec(data_gen):
 
     assert_gpu_and_cpu_are_equal_collect(op_df)
 
+@pytest.mark.parametrize('data_gen',[LongGen()], ids=idfn)
+def test_basic_cache(data_gen):
+    def gen_df(spark):
+        cached = unary_op_df(spark, data_gen).cache()
+        cached.count() # loads cache
+        return cached.filter("a < 1000").collect()
+
+    vals = with_cpu_session(gen_df)
+    print(vals)
