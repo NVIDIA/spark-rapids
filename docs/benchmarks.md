@@ -112,22 +112,14 @@ If data needs sorting before comparison, this is delegated to Spark before colle
 Example usage from spark-shell:
 
 ```
-scala> val cpu = spark.read.parquet("/data/tpcxbb/q5-cpu")
-scala> val gpu = spark.read.parquet("/data/tpcxbb/q5-gpu")
-scala> import com.nvidia.spark.rapids.tests.common._
-scala> BenchUtils.compareResults(cpu, gpu, ignoreOrdering=true, epsilon=0.0001)
-Collecting rows from DataFrame
-Collected 989754 rows in 7.701 seconds                                               
-Collecting rows from DataFrame
-Collected 989754 rows in 2.325 seconds                                               
-Results match
+val cpu = spark.read.parquet("/data/tpcxbb/q5-cpu")
+val gpu = spark.read.parquet("/data/tpcxbb/q5-gpu")
+import com.nvidia.spark.rapids.tests.common._
+BenchUtils.compareResults(cpu, gpu, ignoreOrdering=true, epsilon=0.0001)
 ```
+
+This will report on any differences between the two dataframes.
 
 ## Performance Tuning
 
 Please refer to the [Tuning Guide](tuning-guide.md) for information on performance tuning.
-
-
-
-
-
