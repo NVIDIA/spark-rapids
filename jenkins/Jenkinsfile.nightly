@@ -31,6 +31,7 @@ pipeline {
         ansiColor('xterm')
         timeout(time: 180, unit: 'MINUTES')
         buildDiscarder(logRotator(numToKeepStr: '10'))
+        parallelsAlwaysFailFast()
     }
 
     parameters {
@@ -76,17 +77,38 @@ pipeline {
                     }
                 }
             }
-        }
+        } // end of Ubuntu16 CUDA10.1
+
+        stage('Trigger integration tests') {
+            when {
+                beforeAgent true
+                expression { currentBuild.currentResult == "SUCCESS" }
+            }
+
+            parallel {
+                stage('trigger integration test for spark-3.0.0') {
+                    steps {
+                        build(job: 'spark/rapids_integration-0.3-github',
+                                propagate: false,
+                                parameters: [string(name: 'REF', value: 'branch-0.3')])
+                    }
+                }
+
+                stage('trigger integration test for spark-3.0.1') {
+                    steps {
+                        build(job: 'spark/rapids_integration-3.0.1-0.3-github',
+                                propagate: false,
+                                parameters: [string(name: 'REF', value: 'branch-0.3')])
+                    }
+                }
+            }
+        } // end of Trigger integration tests
     } // end of stages
 
     post {
         always {
             script {
                 if (currentBuild.currentResult == "SUCCESS") {
-                    build(job: 'spark/rapids_integration-0.3-github',
-                          propagate: false,
-                          parameters: [string(name: 'REF', value: 'branch-0.3')])
-
                     slack("#swrapids-spark-cicd", "Success", color: "#33CC33")
                 } else {
                     slack("#swrapids-spark-cicd", "Failed", color: "#FF0000")
