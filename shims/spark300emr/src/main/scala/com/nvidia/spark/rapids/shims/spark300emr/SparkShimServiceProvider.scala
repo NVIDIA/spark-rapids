@@ -25,8 +25,7 @@ object SparkShimServiceProvider {
 class SparkShimServiceProvider extends com.nvidia.spark.rapids.SparkShimServiceProvider {
 
   def matchesVersion(version: String): Boolean = {
-    // emr version looks like 3.0.0-amzn-0
-    // TODO - do we need to add in . for something like 3.0.0-amzn-0.0 or similar?
+    // EMR version looks like 3.0.0-amzn-0
     val amznVersion = (SparkShimServiceProvider.VERSION.toString + raw"(-\d+)").r
     version match {
         case amznVersion(_*) => true

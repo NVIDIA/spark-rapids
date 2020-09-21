@@ -20,11 +20,39 @@ import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.shims.spark300.Spark300Shims
 import com.nvidia.spark.rapids.spark300emr.RapidsShuffleManager
 
+import org.apache.spark.rdd.RDD
+import org.apache.spark.sql.SparkSession
+import org.apache.spark.sql.catalyst.InternalRow
+import org.apache.spark.sql.execution.datasources.{FilePartition, FileScanRDD, HadoopFsRelation, PartitionDirectory, PartitionedFile}
+
 class Spark300EMRShims extends Spark300Shims {
 
   override def getSparkShimVersion: ShimVersion = SparkShimServiceProvider.VERSION
 
   override def getRapidsShuffleManagerClass: String = {
     classOf[RapidsShuffleManager].getCanonicalName
+
+  }
+
+  // use reflection here so we don't have to compile against their jars
+  override def getFileScanRDD(
+      sparkSession: SparkSession,
+      readFunction: (PartitionedFile) => Iterator[InternalRow],
+      filePartitions: Seq[FilePartition]): RDD[InternalRow] = {
+
+    val tclass = classOf[org.apache.spark.sql.execution.datasources.FileScanRDD]
+    val constructors = tclass.getConstructors()
+    if (constructors.size > 1) {
+      throw new IllegalStateException(s"Only expected 1 constructor for FileScanRDD")
+    }
+    val constructor = constructors(0)
+    val instance = if (constructor.getParameterCount() == 4) {
+      constructor.newInstance(sparkSession, readFunction, filePartitions, None)
+    } else if (constructor.getParameterCount() == 3) {
+      constructor.newInstance(sparkSession, readFunction, filePartitions)
+    } else {
+      throw new IllegalStateException("Could not find appropriate constructor for FileScan RDD")
+    }
+    instance.asInstanceOf[FileScanRDD]
   }
 }
