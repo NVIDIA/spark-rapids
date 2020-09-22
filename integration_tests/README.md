@@ -61,7 +61,7 @@ You do need to have access to a compatible GPU with the needed CUDA drivers. The
 ### Runtime Environment
 
 `--runtime_env` is used to specify the environment you are running the tests in. Valid values are `databricks` and `emr`. This is generally used
-when certain environment have different behavior.
+when certain environments have different behavior.
 
 ### timezone
 
