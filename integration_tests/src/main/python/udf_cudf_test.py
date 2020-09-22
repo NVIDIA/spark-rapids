@@ -70,7 +70,7 @@ def _plus_one_gpu_func(v: pd.Series) -> pd.Series:
 @allow_non_gpu(any=True)
 @pytest.mark.skip("exception in docker: OSError: Invalid IPC stream: negative continuation token, skip for now")
 @cudf_udf
-def test_with_column():
+def test_with_column(enable_cudf_udf):
     def cpu_run(spark):
         df = _create_df(spark) 
         return df.withColumn("v1", _plus_one_cpu_func(df.v)).collect()
@@ -84,7 +84,7 @@ def test_with_column():
 @allow_non_gpu(any=True)
 @pytest.mark.skip("exception in docker: OSError: Invalid IPC stream: negative continuation token, skip for now")
 @cudf_udf
-def test_sql():
+def test_sql(enable_cudf_udf):
     def cpu_run(spark):
         _ = spark.udf.register("add_one_cpu", _plus_one_cpu_func)
         return spark.sql("SELECT add_one_cpu(id) FROM range(3)").collect()
@@ -111,7 +111,7 @@ def _plus_one_gpu_iter_func(iterator: Iterator[pd.Series]) -> Iterator[pd.Series
 @allow_non_gpu(any=True)
 @pytest.mark.skip("exception in docker: OSError: Invalid IPC stream: negative continuation token, skip for now")
 @cudf_udf
-def test_select():
+def test_select(enable_cudf_udf):
     def cpu_run(spark):
         df = _create_df(spark)
         return df.select(_plus_one_cpu_iter_func(df.v)).collect()
@@ -126,7 +126,7 @@ def test_select():
 @pytest.mark.skip("https://github.com/NVIDIA/spark-rapids/issues/746")
 @allow_non_gpu('GpuMapInPandasExec','PythonUDF')
 @cudf_udf
-def test_map_in_pandas():
+def test_map_in_pandas(enable_cudf_udf):
     def cpu_run(spark):
         df = _create_df(spark)
         def _filter_cpu_func(iterator):
@@ -163,7 +163,7 @@ def _normalize_gpu_func(df):
 @pytest.mark.skip("https://github.com/NVIDIA/spark-rapids/issues/746")
 @allow_non_gpu('GpuFlatMapGroupsInPandasExec','PythonUDF')
 @cudf_udf
-def test_group_apply():
+def test_group_apply(enable_cudf_udf):
     def cpu_run(spark):
         df = _create_df(spark)
         return df.groupby("id").apply(_normalize_cpu_func).collect()
@@ -178,7 +178,7 @@ def test_group_apply():
 @pytest.mark.skip("https://github.com/NVIDIA/spark-rapids/issues/746")
 @allow_non_gpu('GpuFlatMapGroupsInPandasExec','PythonUDF')
 @cudf_udf
-def test_group_apply_in_pandas():
+def test_group_apply_in_pandas(enable_cudf_udf):
     def cpu_run(spark):
         df = _create_df(spark)
         def _normalize_cpu_in_pandas_func(df):
@@ -211,7 +211,7 @@ def _sum_gpu_func(v: pd.Series) -> int:
 @pytest.mark.skip("https://github.com/NVIDIA/spark-rapids/issues/746")
 @allow_non_gpu('GpuAggregateInPandasExec','PythonUDF','Alias')
 @cudf_udf
-def test_group_agg():
+def test_group_agg(enable_cudf_udf):
     def cpu_run(spark):
         df = _create_df(spark)
         return df.groupby("id").agg(_sum_cpu_func(df.v)).collect()
@@ -226,7 +226,7 @@ def test_group_agg():
 @pytest.mark.skip("https://github.com/NVIDIA/spark-rapids/issues/746")
 @allow_non_gpu('GpuAggregateInPandasExec','PythonUDF','Alias')
 @cudf_udf
-def test_sql_group():
+def test_sql_group(enable_cudf_udf):
     def cpu_run(spark):
         _ = spark.udf.register("sum_cpu_udf", _sum_cpu_func)
         q = "SELECT sum_cpu_udf(v1) FROM VALUES (3, 0), (2, 0), (1, 1) tbl(v1, v2) GROUP BY v2"
@@ -243,7 +243,7 @@ def test_sql_group():
 @pytest.mark.skip("https://github.com/NVIDIA/spark-rapids/issues/746")
 @allow_non_gpu('GpuWindowInPandasExec','PythonUDF','Alias','WindowExpression','WindowSpecDefinition','SpecifiedWindowFrame','UnboundedPreceding$', 'UnboundedFollowing$')
 @cudf_udf
-def test_window():
+def test_window(enable_cudf_udf):
     def cpu_run(spark):
         df = _create_df(spark)
         w = Window.partitionBy('id').rowsBetween(Window.unboundedPreceding, Window.unboundedFollowing)
@@ -260,7 +260,7 @@ def test_window():
 @pytest.mark.skip("https://github.com/NVIDIA/spark-rapids/issues/746")
 @allow_non_gpu('GpuFlatMapCoGroupsInPandasExec','PythonUDF')
 @cudf_udf
-def test_cogroup():
+def test_cogroup(enable_cudf_udf):
     def cpu_run(spark):
         df1 = spark.createDataFrame(
                 [(20000101, 1, 1.0), (20000101, 2, 2.0), (20000102, 1, 3.0), (20000102, 2, 4.0)],
