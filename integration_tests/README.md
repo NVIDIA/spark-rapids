@@ -60,7 +60,7 @@ You do need to have access to a compatible GPU with the needed CUDA drivers. The
 
 ### Runtime Environment
 
-`--runtime_env` is used to specify the environment you are running the tests in. generally Valid values are `databricks` and `emr`. This is generally used
+`--runtime_env` is used to specify the environment you are running the tests in. Valid values are `databricks` and `emr`. This is generally used
 when certain environment have different behavior.
 
 ### timezone
@@ -139,4 +139,3 @@ The marks you care about are all in marks.py
 
 For the most part you can ignore this file. It provides the underlying Spark session to operations that need it, but most tests should interact with
 it through `asserts.py`.
-
