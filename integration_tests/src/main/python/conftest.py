@@ -59,6 +59,9 @@ def is_apache_runtime():
 def is_databricks_runtime():
     return runtime_env() == "databricks"
 
+def is_emr_runtime():
+    return runtime_env() == "emr"
+
 _limit = -1
 
 def get_limit():

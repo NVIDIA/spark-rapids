@@ -165,6 +165,8 @@ def test_broadcast_join_mixed(join_type):
 
 @ignore_order
 @allow_non_gpu('DataWritingCommandExec')
+@pytest.mark.xfail(condition=is_emr_runtime(),
+    reason='https://github.com/NVIDIA/spark-rapids/issues/821')
 @pytest.mark.parametrize('repartition', ["true", "false"], ids=idfn)
 def test_join_bucketed_table(repartition):
     def do_join(spark):
