@@ -15,7 +15,7 @@
 import pytest
 from pyspark.sql.functions import broadcast
 from asserts import assert_gpu_and_cpu_are_equal_collect
-from conftest import is_databricks_runtime
+from conftest import is_databricks_runtime, is_emr_runtime
 from data_gen import *
 from marks import ignore_order, allow_non_gpu, incompat
 from spark_session import with_spark_session, is_before_spark_310
@@ -165,6 +165,8 @@ def test_broadcast_join_mixed(join_type):
 
 @ignore_order
 @allow_non_gpu('DataWritingCommandExec')
+@pytest.mark.xfail(condition=is_emr_runtime(),
+    reason='https://github.com/NVIDIA/spark-rapids/issues/821')
 @pytest.mark.parametrize('repartition', ["true", "false"], ids=idfn)
 def test_join_bucketed_table(repartition):
     def do_join(spark):
