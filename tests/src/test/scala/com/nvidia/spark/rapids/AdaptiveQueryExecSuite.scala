@@ -395,7 +395,8 @@ class AdaptiveQueryExecSuite
   }
 
   private def checkNumLocalShuffleReaders(
-    plan: SparkPlan, numShufflesWithoutLocalReader: Int = 0): Int = {
+    plan: SparkPlan,
+    numShufflesWithoutLocalReader: Int = 0): Int = {
     val numShuffles = collect(plan) {
       case s: ShuffleQueryStageExec => s
     }.length
