@@ -23,7 +23,7 @@ import com.nvidia.spark.rapids.spark300emr.RapidsShuffleManager
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.SparkSession
 import org.apache.spark.sql.catalyst.InternalRow
-import org.apache.spark.sql.execution.datasources.{FilePartition, FileScanRDD, HadoopFsRelation, PartitionDirectory, PartitionedFile}
+import org.apache.spark.sql.execution.datasources.{FilePartition, FileScanRDD, PartitionedFile}
 
 class Spark300EMRShims extends Spark300Shims {
 
@@ -31,7 +31,6 @@ class Spark300EMRShims extends Spark300Shims {
 
   override def getRapidsShuffleManagerClass: String = {
     classOf[RapidsShuffleManager].getCanonicalName
-
   }
 
   // use reflection here so we don't have to compile against their jars
