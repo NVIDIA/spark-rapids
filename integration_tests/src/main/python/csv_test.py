@@ -175,7 +175,8 @@ def test_csv_fallback(spark_tmp_path, read_func, disable_conf):
     assert_gpu_fallback_collect(
             lambda spark : reader(spark).select(f.col('*'), f.col('_c2') + f.col('_c3')),
             'FileSourceScanExec',
-            conf={disable_conf: 'false'})
+            conf={disable_conf: 'false',
+                "spark.sql.sources.useV1SourceList": "csv"})
 
 csv_supported_date_formats = ['yyyy-MM-dd', 'yyyy/MM/dd', 'yyyy-MM', 'yyyy/MM',
         'MM-yyyy', 'MM/yyyy', 'MM-dd-yyyy', 'MM/dd/yyyy']
