@@ -97,8 +97,8 @@ To enable cudf_udf tests, need following pre requirements:
    
 To run cudf_udf tests, need following configuration changes:   
    * Add configurations `--py-files` and `spark.executorEnv.PYTHONPATH` to specify the plugin jar for python modules 'rapids/daemon' 'rapids/worker'.
-   * Decrease `spark.rapids.memory.gpu.allocFraction` and `spark.rapids.python.memory.gpu.allocFraction` to reserve enough GPU memory for Python processes in case of out-of-memory.
-   * Add `spark.rapids.python.concurrentPythonWorkers` to reserve enough GPU memory for Python processes in case of out-of-memory.
+   * Decrease `spark.rapids.memory.gpu.allocFraction` to reserve enough GPU memory for Python processes in case of out-of-memory.
+   * Add `spark.rapids.python.concurrentPythonWorkers` and `spark.rapids.python.memory.gpu.allocFraction` to reserve enough GPU memory for Python processes in case of out-of-memory.
 
 As an example, here is the `spark-submit` command with the cudf_udf parameter:
 
