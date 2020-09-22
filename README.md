@@ -15,6 +15,8 @@ GPU memory.
 
 To get started and try the plugin out use the [getting started guide](./docs/get-started/getting-started.md).
 
+For more information about these benchmarks, see the [benchmark guide](./docs/benchmarks.md).
+
 ## Compatibility
 
 The SQL plugin tries to produce results that are bit for bit identical with Apache Spark.
