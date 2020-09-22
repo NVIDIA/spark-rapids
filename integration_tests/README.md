@@ -85,7 +85,7 @@ $SPARK_HOME/bin/spark-submit --jars "rapids-4-spark_2.12-0.3.0-SNAPSHOT.jar,cudf
 
 ### Enabling cudf_udf Tests
 
-The cudf_tests disabled by default because of complicated environment setup. The cudf_udf tests in this framework can be enabled by providing option:
+The cudf_tests are disabled by default because of complicated environment setup. The cudf_udf tests in this framework can be enabled by providing option:
 
    * `cudf_udf` (optional, defaults to "False")
 
