@@ -83,6 +83,21 @@ As an example, here is the `spark-submit` command with the TPCxBB parameters:
 $SPARK_HOME/bin/spark-submit --jars "rapids-4-spark_2.12-0.3.0-SNAPSHOT.jar,cudf-0.16-SNAPSHOT.jar,rapids-4-spark-tests_2.12-0.3.0-SNAPSHOT.jar" ./runtests.py --tpcxbb_format="csv" --tpcxbb_path="/path/to/tpcxbb/csv"
 ```
 
+### Enabling cudf_udf Tests
+
+The cudf_udf tests in this framework can be enabled by providing following option:
+
+   * `cudf_udf` (optional, defaults to "False")
+
+To enable cudf_udf tests, need to install Cudf library. This library could be installed via Conda, the detail could be found at [here](https://rapids.ai/start.html). Please follow the steps to choose the version based on your environment and install the cudf library.  
+
+As an example, here is the `spark-submit` command with the cudf_udf parameters:
+
+```
+$SPARK_HOME/bin/spark-submit --jars "rapids-4-spark_2.12-0.3.0-SNAPSHOT.jar,cudf-0.16-SNAPSHOT.jar,rapids-4-spark-tests_2.12-0.3.0-SNAPSHOT.jar" ./runtests.py --cudf_udf
+```
+
+
 ## Writing tests
 
 There are a number of libraries provided to help someone write new tests.
