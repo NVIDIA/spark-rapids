@@ -201,9 +201,10 @@ trait GpuHashJoin extends GpuExec with HashJoinWithoutCodegen {
       }
 
       override def hasNext: Boolean = {
-        while (nextCb.isEmpty && (first || stream.hasNext)) {
+        var may_continue = true
+        while (nextCb.isEmpty && may_continue) {
+          val startTime = System.nanoTime()
           if (stream.hasNext) {
-            val startTime = System.nanoTime()
             val cb = stream.next()
             streamTime += (System.nanoTime() - startTime)
             nextCb = doJoin(builtTable, cb, boundCondition, joinOutputRows, numOutputRows,
@@ -211,12 +212,13 @@ trait GpuHashJoin extends GpuExec with HashJoinWithoutCodegen {
             totalTime += (System.nanoTime() - startTime)
           } else if (first) {
             // We have to at least try one in some cases
-            val startTime = System.nanoTime()
             val cb = GpuColumnVector.emptyBatch(streamedPlan.output.asJava)
             streamTime += (System.nanoTime() - startTime)
             nextCb = doJoin(builtTable, cb, boundCondition, joinOutputRows, numOutputRows,
               numOutputBatches, joinTime, filterTime)
             totalTime += (System.nanoTime() - startTime)
+          } else {
+            may_continue = false
           }
           first = false
         }
