@@ -324,44 +324,6 @@ class AdaptiveQueryExecSuite
     }, conf)
   }
 
-  test("multiple joins with aggregate") {
-
-    assumeSpark301orLater
-
-    val conf = new SparkConf()
-      .set(SQLConf.ADAPTIVE_EXECUTION_ENABLED.key, "true")
-      .set(SQLConf.AUTO_BROADCASTJOIN_THRESHOLD.key, "500")
-      // disable DemoteBroadcastHashJoin rule from removing BHJ due to empty partitions
-      .set(SQLConf.NON_EMPTY_PARTITION_RATIO_FOR_BROADCAST_JOIN.key, "0")
-      .set(RapidsConf.ENABLE_CAST_STRING_TO_INTEGER.key, "true")
-
-    withGpuSparkSession(spark => {
-      setupTestData(spark)
-      val (plan, adaptivePlan) = runAdaptiveAndVerifyResult(spark,
-        """
-          |WITH t4 AS (
-          |  SELECT * FROM lowercaseData t2 JOIN (
-          |    select a, sum(b) from testData3 group by a
-          |  ) t3 ON t2.n = t3.a where t2.n = '1'
-          |)
-          |SELECT * FROM testData
-          |JOIN testData2 t2 ON key = t2.a
-          |JOIN t4 ON t2.b = t4.a
-          |WHERE value = 1
-        """.stripMargin)
-
-      val smj = findTopLevelSortMergeJoin(plan)
-      assert(smj.size == 3)
-
-      val bhj = findTopLevelGpuBroadcastHashJoin(adaptivePlan)
-      assert(bhj.size == 3)
-
-      // The shuffle added by Aggregate can't apply local reader.
-      checkNumLocalShuffleReaders(adaptivePlan, 1)
-
-    }, conf)
-  }
-
   test("Verify the reader is LocalShuffleReaderExec") {
 
     assumeSpark301orLater
