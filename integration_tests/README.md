@@ -87,12 +87,12 @@ $SPARK_HOME/bin/spark-submit --jars "rapids-4-spark_2.12-0.3.0-SNAPSHOT.jar,cudf
 
 The cudf_tests disabled by default because of complicated environment setup. The cudf_udf tests in this framework can be enabled by providing option:
 
-   * `cudf_udf` (optional, defaults to "False", )
+   * `cudf_udf` (optional, defaults to "False")
 
 cudf_udf tests needs a couple of different settings, it may need to run separately.
 
 To enable cudf_udf tests, need following pre requirements:
-   * Install Cudf library. This library could be installed via Conda, the details could be found at [here](https://rapids.ai/start.html). Please follow the steps to choose the version based on your environment and install the cudf library.
+   * Install Cudf library. The instruction could be found at [here](https://rapids.ai/start.html). Please follow the steps to choose the version based on your environment and install the cudf library via Conda or use other ways like building from source.
    * Disable the GPU exclusive mode. The sample command is `sudo nvidia-smi -c DEFAULT`
    
 To run cudf_udf tests, need following configuration changes:   
