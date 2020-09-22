@@ -135,7 +135,6 @@ class AdaptiveQueryExecSuite
     val conf = new SparkConf()
         .set(SQLConf.ADAPTIVE_EXECUTION_ENABLED.key, "true")
         .set(SQLConf.AUTO_BROADCASTJOIN_THRESHOLD.key, "-1") // force shuffle exchange
-        .set(SQLConf.PARQUET_COMPRESSION.key, "uncompressed")
 
     withGpuSparkSession(spark => {
       import spark.implicits._
@@ -184,7 +183,6 @@ class AdaptiveQueryExecSuite
     val conf = new SparkConf()
         .set(SQLConf.ADAPTIVE_EXECUTION_ENABLED.key, "true")
         .set(SQLConf.ADAPTIVE_EXECUTION_FORCE_APPLY.key, "true")
-        .set(SQLConf.PARQUET_COMPRESSION.key, "uncompressed")
 
     withGpuSparkSession(spark => {
       import spark.implicits._
@@ -227,7 +225,6 @@ class AdaptiveQueryExecSuite
       // the read will still happen on GPU with a CPU write
       .set(RapidsConf.TEST_ALLOWED_NONGPU.key, "DataWritingCommandExec")
       .set("spark.rapids.sql.exec.DataWritingCommandExec", "false")
-      .set(SQLConf.PARQUET_COMPRESSION.key, "uncompressed")
 
       withGpuSparkSession(spark => {
         import spark.implicits._
@@ -271,7 +268,6 @@ class AdaptiveQueryExecSuite
     val conf = new SparkConf()
         .set(SQLConf.ADAPTIVE_EXECUTION_ENABLED.key, "true")
         .set(SQLConf.AUTO_BROADCASTJOIN_THRESHOLD.key, "-1")
-        .set(SQLConf.PARQUET_COMPRESSION.key, "uncompressed")
 
     withGpuSparkSession(spark => {
       setupTestData(spark)
@@ -309,7 +305,6 @@ class AdaptiveQueryExecSuite
       .set(SQLConf.ADVISORY_PARTITION_SIZE_IN_BYTES.key, "50")
       // disable DemoteBroadcastHashJoin rule from removing BHJ due to empty partitions
       .set(SQLConf.NON_EMPTY_PARTITION_RATIO_FOR_BROADCAST_JOIN.key, "0")
-      .set(SQLConf.PARQUET_COMPRESSION.key, "uncompressed")
 
     withGpuSparkSession(spark => {
       setupTestData(spark)
@@ -341,7 +336,6 @@ class AdaptiveQueryExecSuite
       .set(SQLConf.NON_EMPTY_PARTITION_RATIO_FOR_BROADCAST_JOIN.key, "0")
       .set(SQLConf.SHUFFLE_PARTITIONS.key, "5")
       .set(RapidsConf.ENABLE_CAST_STRING_TO_INTEGER.key, "true")
-      .set(SQLConf.PARQUET_COMPRESSION.key, "uncompressed")
 
     withGpuSparkSession(spark => {
       setupTestData(spark)
