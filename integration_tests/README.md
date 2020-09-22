@@ -58,6 +58,11 @@ All of the tests will run in a single application.  They just enable and disable
 
 You do need to have access to a compatible GPU with the needed CUDA drivers. The exact details of how to set this up are beyond the scope of this document, but the Spark feature for scheduling GPUs does make this very simple if you have it configured.
 
+### Runtime Environment
+
+`--runtime_env` is used to specify the environment you are running the tests in. generally Valid values are `databricks` and `emr`. This is generally used
+when certain environment have different behavior.
+
 ### timezone
 
 The RAPIDS plugin currently only supports the UTC time zone. Spark uses the default system time zone unless explicitly set otherwise.
