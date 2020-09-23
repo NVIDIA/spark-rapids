@@ -64,7 +64,7 @@ The benchmarks can be executed in two modes currently:
 The following commands can be entered into spark-shell to register the data files that the 
 benchmark will query.
 
-```
+```scala
 import com.nvidia.spark.rapids.tests.tpcds._
 TpcdsLikeSpark.setupAllParquet(spark, "/path/to/tpcds")
 ```
