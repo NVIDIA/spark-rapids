@@ -183,7 +183,6 @@ def test_basic_cache(data_gen):
     def gen_df(spark):
         cached = unary_op_df(spark, data_gen).cache()
         cached.count() # loads cache
-        return cached.filter("a < 1000").collect()
+        return debug_df(cached)
 
-    vals = with_cpu_session(gen_df)
-    print(vals)
+    assert_gpu_and_cpu_are_equal_collect(gen_df)

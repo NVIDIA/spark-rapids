@@ -16,7 +16,8 @@
 
 package com.nvidia.spark.rapids.shims.spark310
 
-import java.io.{BufferedOutputStream, File, FileOutputStream}
+import java.io.{BufferedOutputStream, ByteArrayInputStream, File, FileOutputStream}
+import java.nio.{ByteBuffer, ByteOrder}
 
 import scala.collection.JavaConverters._
 import scala.collection.mutable
@@ -26,19 +27,52 @@ import ai.rapids.cudf._
 import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.GpuColumnVector.GpuColumnarBatchBuilder
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
+import org.apache.avro.util.ByteBufferInputStream
+import org.apache.hadoop.conf.Configuration
+import org.apache.parquet.hadoop.{ParquetFileReader, ParquetInputFormat}
+import org.apache.parquet.io.{DelegatingSeekableInputStream, InputFile, SeekableInputStream}
 
 import org.apache.spark.TaskContext
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.SparkSession
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.expressions.{Attribute, Expression}
+import org.apache.spark.sql.catalyst.expressions.codegen.GenerateUnsafeProjection
+import org.apache.spark.sql.catalyst.util.DateTimeUtils
 import org.apache.spark.sql.columnar.{CachedBatch, CachedBatchSerializer}
-import org.apache.spark.sql.execution.datasources.{FilePartition, FileScanRDD, PartitionedFile}
-import org.apache.spark.sql.execution.datasources.parquet.ParquetFileFormat
+import org.apache.spark.sql.execution.datasources.DataSourceUtils
+import org.apache.spark.sql.execution.datasources.parquet.{ParquetReadSupport, ParquetRecordMaterializer, ParquetToSparkSchemaConverter, ParquetWriteSupport}
 import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.types._
 import org.apache.spark.sql.vectorized.ColumnarBatch
 import org.apache.spark.storage.StorageLevel
+import org.apache.spark.util.SerializableConfiguration
+
+class ByteArrayInputFile(buff: Array[Byte]) extends InputFile {
+
+  private class SeekableByteArrayInputStream(buff: Array[Byte]) extends ByteArrayInputStream(buff) {
+    def getSeekableStream: SeekableInputStream = {
+      val byteBuffer = ByteBuffer.wrap(buff).order(ByteOrder.LITTLE_ENDIAN)
+      new DelegatingSeekableInputStream(new ByteBufferInputStream(List(byteBuffer).asJava)) {
+        override def getPos: Long = byteBuffer.position()
+
+        override def seek(newPos: Long): Unit = {
+          assert(newPos <= Int.MaxValue && newPos >= Int.MinValue)
+          byteBuffer.position(newPos.toInt)
+        }
+      }
+    }
+
+    def getLength: Long = buff.length
+
+  }
+
+  private val stream = new SeekableByteArrayInputStream(buff)
+
+  override def getLength: Long = stream.getLength
+
+  override def newStream(): SeekableInputStream = stream.getSeekableStream
+}
 
 class ParquetBufferConsumer(val numRows: Int) extends HostBufferConsumer with AutoCloseable {
   @transient private[this] val offHeapBuffers = mutable.Queue[(HostMemoryBuffer, Long)]()
@@ -147,13 +181,12 @@ class ParquetCachedBatchSerializer extends CachedBatchSerializer with Arm {
    * @return The data converted into a format more suitable for caching.
    */
   override def convertColumnarBatchToCachedBatch(input: RDD[ColumnarBatch],
-                                       schema: Seq[Attribute],
-                                       storageLevel: StorageLevel,
-                                       conf: SQLConf): RDD[CachedBatch] = {
+     schema: Seq[Attribute],
+     storageLevel: StorageLevel,
+     conf: SQLConf): RDD[CachedBatch] = {
     def putOnGpuIfNeeded(batch: ColumnarBatch): ColumnarBatch = {
       if (batch.numCols() > 0 && !batch.column(0).isInstanceOf[GpuColumnVector]) {
-        val s = StructType(
-          schema.map(a => StructField(a.name, a.dataType, a.nullable, a.metadata)))
+        val s: StructType = getSchemaFromAttributeSeq(schema)
         val gpuCB = new GpuColumnarBatchBuilder(s, batch.numRows(), batch).build(batch.numRows())
         batch.close()
         gpuCB
@@ -167,6 +200,12 @@ class ParquetCachedBatchSerializer extends CachedBatchSerializer with Arm {
         compressColumnarBatchWithParquet(gpuCB)
       }
     })
+  }
+
+  private def getSchemaFromAttributeSeq(schema: Seq[Attribute]) = {
+    val s = StructType(
+      schema.map(a => StructField(a.name, a.dataType, a.nullable, a.metadata)))
+    s
   }
 
   private def compressColumnarBatchWithParquet(gpuCB: ColumnarBatch): ParquetCachedBatch = {
@@ -200,8 +239,7 @@ class ParquetCachedBatchSerializer extends CachedBatchSerializer with Arm {
     cacheAttributes: Seq[Attribute],
     selectedAttributes: Seq[Attribute]) = {
 
-    val requestedColumnIndices = selectedAttributes.map(a =>
-      cacheAttributes.map(_.exprId).indexOf(a.exprId))
+    val requestedColumnIndices = getRequestedColumnIndices(selectedAttributes, cacheAttributes)
 
     val cbRdd: RDD[ColumnarBatch] = input.map(batch => {
       if (batch.isInstanceOf[ParquetCachedBatch]) {
@@ -223,8 +261,14 @@ class ParquetCachedBatchSerializer extends CachedBatchSerializer with Arm {
     cbRdd
   }
 
+  private def getRequestedColumnIndices(selectedAttributes: Seq[Attribute],
+     cacheAttributes: Seq[Attribute]) = {
+    selectedAttributes.map(a => cacheAttributes.map(_.exprId).indexOf(a.exprId))
+  }
+
   /**
    * Convert the cached data into a ColumnarBatch taking the result data back to the host
+   *
    * @param input the cached batches that should be converted.
    * @param cacheAttributes the attributes of the data in the batch.
    * @param selectedAttributes the fields that should be loaded from the data and the order they
@@ -274,37 +318,127 @@ class ParquetCachedBatchSerializer extends CachedBatchSerializer with Arm {
 
   val datetimeRebaseMode = SQLConf.get.getConf(SQLConf.LEGACY_PARQUET_REBASE_MODE_IN_READ)
 
-  private def convertCachedBatchToInternalRowCpu(input: RDD[CachedBatch],
-     conf: SQLConf, schema: Seq[Attribute], attr: Seq[Attribute]): RDD[InternalRow] = {
+  private def convertCachedBatchToInternalRowCpu(input: RDD[CachedBatch], sqlConf: SQLConf,
+     cacheAttributes: Seq[Attribute],
+     selectedAttributes: Seq[Attribute]): RDD[InternalRow] = {
 
-    val parquetFileFormat = new ParquetFileFormat()
-    val dataSchema = StructType(schema.map(a => StructField(a.name, a.dataType, a.nullable, a
-      .metadata)))
-    val requiredSchema = StructType(attr.map(a => StructField(a.name, a.dataType, a.nullable, a
-      .metadata)))
-    val readFile = parquetFileFormat.buildReaderWithPartitionValues(SparkSession.active, dataSchema,
-      dataSchema, requiredSchema, Seq.empty, null, new org.apache.hadoop.conf.Configuration())
+    val sparkSession = SparkSession.active
+    val hadoopConf = getHadoopConf(getSchemaFromAttributeSeq(cacheAttributes), sqlConf)
+    val timestampConversion: Boolean = sqlConf.isParquetINT96TimestampConversion
+    val broadcastedHadoopConf =
+      sparkSession.sparkContext.broadcast(new SerializableConfiguration(hadoopConf))
 
-    // create a temp file until we figure out how to use the buffer directly into a file
-    val partitionedFiles = new ArrayBuffer[PartitionedFile]
-    var maxSplitSize = 0L
-    input.foreach { cb =>
-      val batch = cb.asInstanceOf[ParquetCachedBatch]
-      val cached = File.createTempFile("cachedBatch", null)
-      val target = new BufferedOutputStream(new FileOutputStream(cached))
-      try {
-        batch.buffer.foreach( target.write(_) )
+    input.mapPartitions {
+      cbIter => {
+        new Iterator[InternalRow]() {
+          var iter: Iterator[InternalRow] = null
+
+          override def hasNext: Boolean = (iter != null && iter.hasNext) || cbIter.hasNext
+
+          override def next(): InternalRow = {
+            if (iter == null || !iter.hasNext) {
+              iter = convertColumnarBatchToInternalRowIter()
+            }
+            if (iter.hasNext) {
+              iter.next()
+            } else {
+              InternalRow.empty
+            }
+          }
+
+          def convertColumnarBatchToInternalRowIter(): Iterator[InternalRow] = {
+            val parquetCachedBatch = cbIter.next().asInstanceOf[ParquetCachedBatch]
+            val inputFile = new ByteArrayInputFile(parquetCachedBatch.buffer)
+
+            val requestedParquetColumns = // right now get everything
+              getRequestedColumnIndices(cacheAttributes, cacheAttributes).map { i => "_col" + i }
+
+            val requestedSchema = cacheAttributes.zipWithIndex.map {
+              case (attr, i) => attr.withName(requestedParquetColumns(i))
+            }
+
+            val sharedConf = broadcastedHadoopConf.value.value
+            val parquetFileReader = ParquetFileReader.open(inputFile)
+            val footerFileMetaData = parquetFileReader.getFileMetaData
+            val parquetSchema = parquetFileReader.getFooter.getFileMetaData.getSchema
+
+            def isCreatedByParquetMr: Boolean =
+              footerFileMetaData.getCreatedBy().startsWith("parquet-mr")
+
+            val convertTz =
+              if (timestampConversion && !isCreatedByParquetMr) {
+                Some(DateTimeUtils.getZoneId(sharedConf.get(SQLConf.SESSION_LOCAL_TIMEZONE.key)))
+              } else {
+                None
+              }
+            val datetimeRebaseMode = DataSourceUtils.datetimeRebaseMode(
+              footerFileMetaData.getKeyValueMetaData.get,
+              SQLConf.get.getConf(SQLConf.LEGACY_PARQUET_REBASE_MODE_IN_READ))
+            val cached = File.createTempFile("cachedBatch", null)
+            val stream = new BufferedOutputStream(new FileOutputStream(cached))
+            try {
+              stream.write(parquetCachedBatch.buffer)
+            } finally {
+              stream.close()
+            }
+
+            val unsafeRows = new ArrayBuffer[InternalRow]
+            import org.apache.parquet.io.ColumnIOFactory
+            var pages = parquetFileReader.readNextRowGroup()
+            while (pages != null) {
+              val rows = pages.getRowCount
+              val columnIO = new ColumnIOFactory().getColumnIO(parquetSchema)
+              val recordReader =
+                columnIO.getRecordReader(pages, new ParquetRecordMaterializer(parquetSchema,
+                  getSchemaFromAttributeSeq(requestedSchema),
+                  new ParquetToSparkSchemaConverter(sharedConf), convertTz, datetimeRebaseMode))
+              for (i <- 0 until rows.toInt) {
+                val row = recordReader.read
+                unsafeRows += row.copy()
+              }
+              pages = parquetFileReader.readNextRowGroup()
+            }
+            parquetFileReader.close()
+            val iter = unsafeRows.iterator
+            val unsafeProjection =
+              GenerateUnsafeProjection.generate(requestedSchema, requestedSchema)
+            iter.map(unsafeProjection)
+          }
+        }
       }
-      finally {
-        target.close
-      }
-      maxSplitSize = if (maxSplitSize < batch.sizeInBytes) batch.sizeInBytes else maxSplitSize
-      partitionedFiles += PartitionedFile(InternalRow.empty, cached.getAbsolutePath, 0,
-        cb.asInstanceOf[ParquetCachedBatch].buffer.length)
     }
-    val filePartitions = FilePartition.getFilePartitions(SparkSession.active, partitionedFiles,
-      maxSplitSize)
-    new FileScanRDD(SparkSession.active, readFile, filePartitions)
+  }
+
+  private def getHadoopConf(requiredSchema: StructType, sqlConf: SQLConf): Configuration = {
+    val hadoopConf = new Configuration()
+
+    hadoopConf.set(ParquetInputFormat.READ_SUPPORT_CLASS, classOf[ParquetReadSupport].getName)
+    hadoopConf.set(
+      ParquetReadSupport.SPARK_ROW_REQUESTED_SCHEMA,
+      requiredSchema.json)
+    hadoopConf.set(
+      ParquetWriteSupport.SPARK_ROW_SCHEMA,
+      requiredSchema.json)
+    hadoopConf.set(
+      SQLConf.SESSION_LOCAL_TIMEZONE.key,
+      sqlConf.sessionLocalTimeZone)
+    hadoopConf.setBoolean(
+      SQLConf.NESTED_SCHEMA_PRUNING_ENABLED.key,
+      sqlConf.nestedSchemaPruningEnabled)
+    hadoopConf.setBoolean(
+      SQLConf.CASE_SENSITIVE.key,
+      sqlConf.caseSensitiveAnalysis)
+
+    ParquetWriteSupport.setSchema(requiredSchema, hadoopConf)
+
+    // Sets flags for `ParquetToSparkSchemaConverter`
+    hadoopConf.setBoolean(
+      SQLConf.PARQUET_BINARY_AS_STRING.key,
+      sqlConf.isParquetBinaryAsString)
+    hadoopConf.setBoolean(
+      SQLConf.PARQUET_INT96_AS_TIMESTAMP.key,
+      sqlConf.isParquetINT96AsTimestamp)
+    hadoopConf
   }
 
   /**
