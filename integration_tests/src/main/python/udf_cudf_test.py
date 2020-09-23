@@ -14,15 +14,18 @@
 
 import pytest
 
-pd = pytest.importorskip("pandas", reason="pandas is required for pandas UDF testing")
+from pyspark.sql.pandas.utils import require_minimum_pyarrow_version, require_minimum_pandas_version
+try:
+    require_minimum_pandas_version()
+except Exception as e:
+    pytestmark = pytest.mark.skip(reason=str(e))
 
-from pyspark.sql.pandas.utils import require_minimum_pyarrow_version
 try:
     require_minimum_pyarrow_version()
 except Exception as e:
     pytestmark = pytest.mark.skip(reason=str(e))
 
-
+import pandas as pd
 import time
 from typing import Iterator
 from pyspark.sql import Window

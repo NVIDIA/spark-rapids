@@ -14,9 +14,12 @@
 
 import pytest
 
-pd = pytest.importorskip("pandas", reason="pandas is required for pandas UDF testing")
+from pyspark.sql.pandas.utils import require_minimum_pyarrow_version, require_minimum_pandas_version
+try:
+    require_minimum_pandas_version()
+except Exception as e:
+    pytestmark = pytest.mark.skip(reason=str(e))
 
-from pyspark.sql.pandas.utils import require_minimum_pyarrow_version
 try:
     require_minimum_pyarrow_version()
 except Exception as e:
@@ -28,6 +31,7 @@ from marks import incompat, approximate_float, allow_non_gpu, ignore_order
 from pyspark.sql import Window
 from pyspark.sql.types import *
 import pyspark.sql.functions as f
+import pandas as pd
 from typing import Iterator, Tuple
 
 arrow_udf_conf = {'spark.sql.execution.arrow.pyspark.enabled': 'true'}
