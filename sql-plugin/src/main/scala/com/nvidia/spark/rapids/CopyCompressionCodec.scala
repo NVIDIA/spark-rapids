@@ -16,8 +16,9 @@
 
 package com.nvidia.spark.rapids
 
-import ai.rapids.cudf.{ContiguousTable, Cuda, DeviceMemoryBuffer}
-import com.nvidia.spark.rapids.format.{CodecType, TableMeta}
+import ai.rapids.cudf.{BaseDeviceMemoryBuffer, ContiguousTable, Cuda, DeviceMemoryBuffer}
+import com.nvidia.spark.rapids.RapidsPluginImplicits._
+import com.nvidia.spark.rapids.format.{BufferMeta, CodecType}
 
 /** A table compression codec used only for testing that copies the data. */
 class CopyCompressionCodec extends TableCompressionCodec with Arm {
@@ -63,25 +64,19 @@ class CopyCompressionCodec extends TableCompressionCodec with Arm {
 }
 
 class BatchedCopyCompressor(maxBatchMemory: Long) extends BatchedTableCompressor(maxBatchMemory) {
-  override protected def getTempSpaceNeeded(buffer: DeviceMemoryBuffer): Long = 0
-
-  override protected def getOutputSpaceNeeded(
-      dataBuffer: DeviceMemoryBuffer,
-      tempBuffer: DeviceMemoryBuffer): Long = dataBuffer.getLength
-
-  override protected def compress(
-      outputBuffers: Array[DeviceMemoryBuffer],
-      tables: Array[ContiguousTable],
-      tempBuffers: Array[DeviceMemoryBuffer]): Array[TableMeta] = {
-    outputBuffers.zip(tables).map { case (outBuffer, ct) =>
+  override protected def compress(tables: Array[ContiguousTable]): Array[CompressedTable] = {
+    tables.safeMap { ct =>
       val inBuffer = ct.getBuffer
-      outBuffer.copyFromDeviceBufferAsync(0, inBuffer, 0, inBuffer.getLength, Cuda.DEFAULT_STREAM)
-      MetaUtils.buildTableMeta(
-        0,
-        ct.getTable,
-        inBuffer,
-        CodecType.COPY,
-        outBuffer.getLength)
+      closeOnExcept(DeviceMemoryBuffer.allocate(inBuffer.getLength)) { outBuffer =>
+        outBuffer.copyFromDeviceBufferAsync(0, inBuffer, 0, inBuffer.getLength, Cuda.DEFAULT_STREAM)
+        val meta = MetaUtils.buildTableMeta(
+          0,
+          ct.getTable,
+          inBuffer,
+          CodecType.COPY,
+          outBuffer.getLength)
+        CompressedTable(outBuffer.getLength, meta, outBuffer)
+      }
     }
   }
 }
@@ -90,15 +85,14 @@ class BatchedCopyDecompressor(maxBatchMemory: Long)
     extends BatchedBufferDecompressor(maxBatchMemory) {
   override val codecId: Byte = CodecType.COPY
 
-  override def decompressTempSpaceNeeded(inputBuffer: DeviceMemoryBuffer): Long = 0
-
   override def decompress(
-      outputBuffers: Array[DeviceMemoryBuffer],
-      inputBuffers: Array[DeviceMemoryBuffer],
-      tempBuffers: Array[DeviceMemoryBuffer]): Unit = {
-    outputBuffers.zip(inputBuffers).foreach { case (outputBuffer, inputBuffer) =>
-      outputBuffer.copyFromDeviceBufferAsync(0, inputBuffer, 0,
-        outputBuffer.getLength, Cuda.DEFAULT_STREAM)
+      inputBuffers: Array[BaseDeviceMemoryBuffer],
+      bufferMetas: Array[BufferMeta]): Array[DeviceMemoryBuffer] = {
+    inputBuffers.safeMap { inBuffer =>
+      closeOnExcept(DeviceMemoryBuffer.allocate(inBuffer.getLength)) { buffer =>
+        buffer.copyFromDeviceBufferAsync(0, inBuffer, 0, inBuffer.getLength, Cuda.DEFAULT_STREAM)
+        buffer
+      }
     }
   }
 }

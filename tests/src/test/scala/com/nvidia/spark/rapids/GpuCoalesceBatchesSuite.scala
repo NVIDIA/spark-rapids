@@ -408,7 +408,7 @@ class GpuCoalesceBatchesSuite extends SparkQueryCompareTestSuite {
   }
 
   private def buildCompressedBatch(start: Int, numRows: Int): ColumnarBatch = {
-    val codec = TableCompressionCodec.getCodec(CodecType.COPY)
+    val codec = TableCompressionCodec.getCodec(CodecType.NVCOMP_LZ4)
     withResource(codec.createBatchCompressor(0)) { compressor =>
       compressor.addTableToCompress(buildContiguousTable(start, numRows))
       GpuCompressedColumnVector.from(compressor.finish().head)
