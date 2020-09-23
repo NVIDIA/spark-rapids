@@ -200,8 +200,8 @@ trait GpuHashJoin extends GpuExec with HashJoin {
       }
 
       override def hasNext: Boolean = {
-        var may_continue = true
-        while (nextCb.isEmpty && may_continue) {
+        var mayContinue = true
+        while (nextCb.isEmpty && mayContinue) {
           val startTime = System.nanoTime()
           if (stream.hasNext) {
             val cb = stream.next()
@@ -217,7 +217,7 @@ trait GpuHashJoin extends GpuExec with HashJoin {
               numOutputBatches, joinTime, filterTime)
             totalTime += (System.nanoTime() - startTime)
           } else {
-            may_continue = false
+            mayContinue = false
           }
           first = false
         }
