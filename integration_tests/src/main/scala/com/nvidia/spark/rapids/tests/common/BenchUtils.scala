@@ -279,7 +279,7 @@ object BenchUtils {
    */
   def generateDotGraph(a: SparkPlanNode, b: Option[SparkPlanNode], filename: String): Unit = {
 
-    val idGen = new AtomicInteger()
+    var nextId = 0
 
     /** Skip WholeStageCodegen and InputAdapter nodes when producing the graph */
     def skipWrappers(p: SparkPlanNode): SparkPlanNode = {
@@ -339,7 +339,8 @@ object BenchUtils {
              | /* ${a.description} */
              |""".stripMargin)
         a.children.indices.foreach(i => {
-            val childId = idGen.incrementAndGet()
+            val childId = nextId
+            nextId += 1
             writeGraph(w, a.children(i), b.children(i), childId);
             w.println(s"node$id -> node$childId;")
           })
