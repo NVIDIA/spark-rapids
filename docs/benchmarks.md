@@ -111,7 +111,7 @@ If data needs sorting before comparison, this is delegated to Spark before colle
 
 Example usage from spark-shell:
 
-```
+```scala
 val cpu = spark.read.parquet("/data/tpcxbb/q5-cpu")
 val gpu = spark.read.parquet("/data/tpcxbb/q5-gpu")
 import com.nvidia.spark.rapids.tests.common._
