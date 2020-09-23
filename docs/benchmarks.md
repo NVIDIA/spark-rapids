@@ -41,7 +41,7 @@ The `integration_test` module contains code for converting the CSV data sets to 
 
 The following commands can be entered into spark-shell to perform the conversion.
 
-```
+```scala
 import com.nvidia.spark.rapids.tests.tpcds._
 TpcdsLikeSpark.csvToParquet(spark, "/path/to/input", "/path/to/output")
 ```
