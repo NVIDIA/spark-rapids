@@ -17,6 +17,7 @@
 package org.apache.spark.sql.rapids
 
 import ai.rapids.cudf
+import ai.rapids.cudf.Aggregation
 import com.nvidia.spark.rapids._
 
 import org.apache.spark.sql.catalyst.analysis.TypeCheckResult
@@ -111,7 +112,7 @@ case class GpuAggregateExpression(origAggregateFunction: GpuAggregateFunction,
                                   resultId: ExprId)
   extends GpuExpression with GpuUnevaluable {
 
-  val aggregateFunction = if (filter.isDefined) {
+  val aggregateFunction: GpuAggregateFunction = if (filter.isDefined) {
     WrappedAggFunction(origAggregateFunction, filter.get)
   } else {
     origAggregateFunction
@@ -170,8 +171,8 @@ abstract case class CudfAggregate(ref: Expression) extends GpuUnevaluable {
   def getOrdinal(ref: Expression): Int = ref.asInstanceOf[GpuBoundReference].ordinal
   val updateReductionAggregate: cudf.ColumnVector => cudf.Scalar
   val mergeReductionAggregate: cudf.ColumnVector => cudf.Scalar
-  val updateAggregate: cudf.Aggregate
-  val mergeAggregate: cudf.Aggregate
+  val updateAggregate: Aggregation
+  val mergeAggregate: Aggregation
 
   def dataType: DataType = ref.dataType
   def nullable: Boolean = ref.nullable
@@ -185,9 +186,8 @@ class CudfCount(ref: Expression) extends CudfAggregate(ref) {
     (col: cudf.ColumnVector) => cudf.Scalar.fromLong(col.getRowCount - col.getNullCount)
   override val mergeReductionAggregate: cudf.ColumnVector => cudf.Scalar =
     (col: cudf.ColumnVector) => col.sum
-  override lazy val updateAggregate: cudf.Aggregate =
-    cudf.Table.count(getOrdinal(ref), includeNulls)
-  override lazy val mergeAggregate: cudf.Aggregate = cudf.Table.sum(getOrdinal(ref))
+  override lazy val updateAggregate: Aggregation = Aggregation.count(includeNulls)
+  override lazy val mergeAggregate: Aggregation = Aggregation.sum()
   override def toString(): String = "CudfCount"
 }
 
@@ -196,8 +196,8 @@ class CudfSum(ref: Expression) extends CudfAggregate(ref) {
     (col: cudf.ColumnVector) => col.sum
   override val mergeReductionAggregate: cudf.ColumnVector => cudf.Scalar =
     (col: cudf.ColumnVector) => col.sum
-  override lazy val updateAggregate: cudf.Aggregate = cudf.Table.sum(getOrdinal(ref))
-  override lazy val mergeAggregate: cudf.Aggregate = cudf.Table.sum(getOrdinal(ref))
+  override lazy val updateAggregate: Aggregation = Aggregation.sum()
+  override lazy val mergeAggregate: Aggregation = Aggregation.sum()
   override def toString(): String = "CudfSum"
 }
 
@@ -206,8 +206,8 @@ class CudfMax(ref: Expression) extends CudfAggregate(ref) {
     (col: cudf.ColumnVector) => col.max
   override val mergeReductionAggregate: cudf.ColumnVector => cudf.Scalar =
     (col: cudf.ColumnVector) => col.max
-  override lazy val updateAggregate: cudf.Aggregate = cudf.Table.max(getOrdinal(ref))
-  override lazy val mergeAggregate: cudf.Aggregate = cudf.Table.max(getOrdinal(ref))
+  override lazy val updateAggregate: Aggregation = Aggregation.max()
+  override lazy val mergeAggregate: Aggregation = Aggregation.max()
   override def toString(): String = "CudfMax"
 }
 
@@ -216,48 +216,41 @@ class CudfMin(ref: Expression) extends CudfAggregate(ref) {
     (col: cudf.ColumnVector) => col.min
   override val mergeReductionAggregate: cudf.ColumnVector => cudf.Scalar =
     (col: cudf.ColumnVector) => col.min
-  override lazy val updateAggregate: cudf.Aggregate = cudf.Table.min(getOrdinal(ref))
-  override lazy val mergeAggregate: cudf.Aggregate = cudf.Table.min(getOrdinal(ref))
+  override lazy val updateAggregate: Aggregation = Aggregation.min()
+  override lazy val mergeAggregate: Aggregation = Aggregation.min()
   override def toString(): String = "CudfMin"
 }
 
 abstract class CudfFirstLastBase(ref: Expression) extends CudfAggregate(ref) {
+  val includeNulls: Boolean
+  val offset: Int
+
   override val updateReductionAggregate: cudf.ColumnVector => cudf.Scalar =
-    (col: cudf.ColumnVector) =>
-      throw new UnsupportedOperationException("first/last reduction not supported on GPU")
+    (col: cudf.ColumnVector) => col.reduce(Aggregation.nth(offset, includeNulls))
   override val mergeReductionAggregate: cudf.ColumnVector => cudf.Scalar =
-    (col: cudf.ColumnVector) =>
-      throw new UnsupportedOperationException("first/last reduction not supported on GPU")
+    (col: cudf.ColumnVector) => col.reduce(Aggregation.nth(offset, includeNulls))
+  override lazy val updateAggregate: Aggregation = Aggregation.nth(offset, includeNulls)
+  override lazy val mergeAggregate: Aggregation = Aggregation.nth(offset, includeNulls)
 }
 
 class CudfFirstIncludeNulls(ref: Expression) extends CudfFirstLastBase(ref) {
-  val includeNulls = true
-  override lazy val updateAggregate: cudf.Aggregate =
-    cudf.Table.first(getOrdinal(ref), includeNulls)
-  override lazy val mergeAggregate: cudf.Aggregate =
-    cudf.Table.first(getOrdinal(ref), includeNulls)
+  override val includeNulls: Boolean = true
+  override val offset: Int = 0
 }
 
 class CudfFirstExcludeNulls(ref: Expression) extends CudfFirstLastBase(ref) {
-  val includeNulls = false
-  override lazy val updateAggregate: cudf.Aggregate =
-    cudf.Table.first(getOrdinal(ref), includeNulls)
-  override lazy val mergeAggregate: cudf.Aggregate =
-    cudf.Table.first(getOrdinal(ref), includeNulls)
+  override val includeNulls: Boolean = false
+  override val offset: Int = 0
 }
 
 class CudfLastIncludeNulls(ref: Expression) extends CudfFirstLastBase(ref) {
-  val includeNulls = true
-  override lazy val updateAggregate: cudf.Aggregate =
-    cudf.Table.last(getOrdinal(ref), includeNulls)
-  override lazy val mergeAggregate: cudf.Aggregate = cudf.Table.last(getOrdinal(ref), includeNulls)
+  override val includeNulls: Boolean = true
+  override val offset: Int = -1
 }
 
 class CudfLastExcludeNulls(ref: Expression) extends CudfFirstLastBase(ref) {
-  val includeNulls = false
-  override lazy val updateAggregate: cudf.Aggregate =
-    cudf.Table.last(getOrdinal(ref), includeNulls)
-  override lazy val mergeAggregate: cudf.Aggregate = cudf.Table.last(getOrdinal(ref), includeNulls)
+  override val includeNulls: Boolean = false
+  override val offset: Int = -1
 }
 
 abstract class GpuDeclarativeAggregate extends GpuAggregateFunction with GpuUnevaluable {

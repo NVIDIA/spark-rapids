@@ -348,3 +348,51 @@ def test_count_distinct_with_nan_floats(data_gen):
 
 # TODO: Literal tests
 # TODO: First and Last tests
+
+# REDUCTIONS
+
+non_nan_all_basic_gens = [byte_gen, short_gen, int_gen, long_gen,
+        # nans and -0.0 cannot work because of nan support in min/max, -0.0 == 0.0 in cudf for distinct and
+        # https://github.com/NVIDIA/spark-rapids/issues/84 in the ordering
+        FloatGen(no_nans=True, special_cases=[]), DoubleGen(no_nans=True, special_cases=[]),
+        string_gen, boolean_gen, date_gen, timestamp_gen]
+
+
+@pytest.mark.parametrize('data_gen', non_nan_all_basic_gens, ids=idfn)
+def test_generic_reductions(data_gen):
+    assert_gpu_and_cpu_are_equal_collect(
+            # Coalesce and sort are to make sure that first and last, which are non-deterministic
+            # become deterministic
+            lambda spark : binary_op_df(spark, data_gen)\
+                    .coalesce(1)\
+                    .sortWithinPartitions('b').selectExpr(
+                'min(a)',
+                'max(a)',
+                'first(a)',
+                'last(a)',
+                'count(a)',
+                'count(1)'),
+            conf = _no_nans_float_conf)
+
+@pytest.mark.parametrize('data_gen', non_nan_all_basic_gens, ids=idfn)
+def test_distinct_count_reductions(data_gen):
+    assert_gpu_and_cpu_are_equal_collect(
+            lambda spark : binary_op_df(spark, data_gen).selectExpr(
+                'count(DISTINCT a)'))
+
+@pytest.mark.xfail(reason='https://github.com/NVIDIA/spark-rapids/issues/837')
+@pytest.mark.parametrize('data_gen', [float_gen, double_gen], ids=idfn)
+def test_distinct_float_count_reductions(data_gen):
+    assert_gpu_and_cpu_are_equal_collect(
+            lambda spark : binary_op_df(spark, data_gen).selectExpr(
+                'count(DISTINCT a)'))
+
+@approximate_float
+@pytest.mark.parametrize('data_gen', numeric_gens, ids=idfn)
+def test_arithmetic_reductions(data_gen):
+    assert_gpu_and_cpu_are_equal_collect(
+            lambda spark : unary_op_df(spark, data_gen).selectExpr(
+                'sum(a)',
+                'avg(a)'),
+            conf = _no_nans_float_conf)
+
