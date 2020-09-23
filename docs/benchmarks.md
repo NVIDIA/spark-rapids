@@ -79,7 +79,7 @@ TpcdsLikeBench.collect(spark, "q5", iterations=3)
 The benchmark can be executed with the following syntax to execute the query and write the results 
 to Parquet. There is also a `writeCsv` method for writing the output to CSV files.
 
-```
+```scala
 TpcdsLikeBench.writeParquet(spark, "q5", "/data/output/tpcds/q5", iterations=3)
 ```
 
