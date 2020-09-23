@@ -19,7 +19,6 @@ import java.io.{File, FileOutputStream, FileWriter, PrintWriter}
 import java.time.Instant
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.TimeUnit.NANOSECONDS
-import java.util.concurrent.atomic.AtomicInteger
 
 import scala.collection.convert.ImplicitConversions.`iterator asScala`
 import scala.collection.mutable.ListBuffer
