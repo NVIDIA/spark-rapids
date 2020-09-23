@@ -16,7 +16,7 @@
 
 package com.nvidia.spark.rapids.shims.spark310
 
-import java.io.{BufferedOutputStream, ByteArrayInputStream, File, FileOutputStream}
+import java.io.ByteArrayInputStream
 import java.nio.{ByteBuffer, ByteOrder}
 
 import scala.collection.JavaConverters._
@@ -43,6 +43,7 @@ import org.apache.spark.sql.columnar.{CachedBatch, CachedBatchSerializer}
 import org.apache.spark.sql.execution.datasources.DataSourceUtils
 import org.apache.spark.sql.execution.datasources.parquet.{ParquetReadSupport, ParquetRecordMaterializer, ParquetToSparkSchemaConverter, ParquetWriteSupport}
 import org.apache.spark.sql.internal.SQLConf
+import org.apache.spark.sql.internal.SQLConf.LegacyBehaviorPolicy
 import org.apache.spark.sql.types._
 import org.apache.spark.sql.vectorized.ColumnarBatch
 import org.apache.spark.storage.StorageLevel
@@ -52,6 +53,7 @@ class ByteArrayInputFile(buff: Array[Byte]) extends InputFile {
 
   private class SeekableByteArrayInputStream(buff: Array[Byte]) extends ByteArrayInputStream(buff) {
     def getSeekableStream: SeekableInputStream = {
+      // ParquetFileReader reads in little endian! :shrugs
       val byteBuffer = ByteBuffer.wrap(buff).order(ByteOrder.LITTLE_ENDIAN)
       new DelegatingSeekableInputStream(new ByteBufferInputStream(List(byteBuffer).asJava)) {
         override def getPos: Long = byteBuffer.position()
@@ -371,16 +373,6 @@ class ParquetCachedBatchSerializer extends CachedBatchSerializer with Arm {
               } else {
                 None
               }
-            val datetimeRebaseMode = DataSourceUtils.datetimeRebaseMode(
-              footerFileMetaData.getKeyValueMetaData.get,
-              SQLConf.get.getConf(SQLConf.LEGACY_PARQUET_REBASE_MODE_IN_READ))
-            val cached = File.createTempFile("cachedBatch", null)
-            val stream = new BufferedOutputStream(new FileOutputStream(cached))
-            try {
-              stream.write(parquetCachedBatch.buffer)
-            } finally {
-              stream.close()
-            }
 
             val unsafeRows = new ArrayBuffer[InternalRow]
             import org.apache.parquet.io.ColumnIOFactory
@@ -391,7 +383,8 @@ class ParquetCachedBatchSerializer extends CachedBatchSerializer with Arm {
               val recordReader =
                 columnIO.getRecordReader(pages, new ParquetRecordMaterializer(parquetSchema,
                   getSchemaFromAttributeSeq(requestedSchema),
-                  new ParquetToSparkSchemaConverter(sharedConf), convertTz, datetimeRebaseMode))
+                  new ParquetToSparkSchemaConverter(sharedConf), convertTz,
+                  LegacyBehaviorPolicy.CORRECTED))
               for (i <- 0 until rows.toInt) {
                 val row = recordReader.read
                 unsafeRows += row.copy()
@@ -428,6 +421,8 @@ class ParquetCachedBatchSerializer extends CachedBatchSerializer with Arm {
     hadoopConf.setBoolean(
       SQLConf.CASE_SENSITIVE.key,
       sqlConf.caseSensitiveAnalysis)
+    hadoopConf.set(
+      SQLConf.LEGACY_PARQUET_REBASE_MODE_IN_WRITE.key, LegacyBehaviorPolicy.CORRECTED.toString)
 
     ParquetWriteSupport.setSchema(requiredSchema, hadoopConf)
 

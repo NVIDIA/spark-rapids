@@ -148,9 +148,13 @@ all_gen_restricting_dates = [StringGen(), ByteGen(), ShortGen(), IntegerGen(), L
            DateGen(start=date(1582, 10, 15)),
            TimestampGen()]
 
+parquet_ts_write_options = ['INT96', 'TIMESTAMP_MICROS', 'TIMESTAMP_MILLIS']
+
 @pytest.mark.parametrize('data_gen', all_gen_restricting_dates, ids=idfn)
+@pytest.mark.parametrize('ts_rebase', ['CORRECTED', 'LEGACY'])
+@pytest.mark.parametrize('ts_write', parquet_ts_write_options)
 @allow_non_gpu('DataWritingCommandExec')
-def test_cache_posexplode_makearray(spark_tmp_path, data_gen):
+def test_cache_posexplode_makearray(spark_tmp_path, data_gen, ts_rebase, ts_write):
     if is_spark_300() and data_gen.data_type == BooleanType():
         pytest.xfail("https://issues.apache.org/jira/browse/SPARK-32672")
     data_path_cpu = spark_tmp_path + '/PARQUET_DATA_CPU'
@@ -162,8 +166,14 @@ def test_cache_posexplode_makearray(spark_tmp_path, data_gen):
             cached.write.parquet(data_path)
             spark.read.parquet(data_path)
         return posExplode
-    from_cpu = with_cpu_session(write_posExplode(data_path_cpu))
-    from_gpu = with_gpu_session(write_posExplode(data_path_gpu))
+    from_cpu = with_cpu_session(write_posExplode(data_path_cpu),
+                  conf={'spark.sql.legacy.parquet.datetimeRebaseModeInWrite': ts_rebase,
+                        'spark.sql.legacy.parquet.datetimeRebaseModeInRead' : ts_rebase,
+                        'spark.sql.parquet.outputTimestampType': ts_write})
+    from_gpu = with_gpu_session(write_posExplode(data_path_gpu),
+                  conf={'spark.sql.legacy.parquet.datetimeRebaseModeInWrite': ts_rebase,
+                        'spark.sql.legacy.parquet.datetimeRebaseModeInRead' : ts_rebase,
+                        'spark.sql.parquet.outputTimestampType': ts_write})
     assert_equal(from_cpu, from_gpu)
 
 @pytest.mark.parametrize('data_gen', all_gen, ids=idfn)
