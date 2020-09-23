@@ -85,14 +85,14 @@ $SPARK_HOME/bin/spark-submit --jars "rapids-4-spark_2.12-0.3.0-SNAPSHOT.jar,cudf
 
 ### Enabling cudf_udf Tests
 
-The cudf_udf tests in this framework are testing Pandas UDF(user-defined function) with cuDF. They are disabled by default because of complicated environment setup and can be enabled by providing option:
+The cudf_udf tests in this framework are testing Pandas UDF(user-defined function) with cuDF, which is still an experimental feature. They are disabled by default because of complicated environment setup and can be enabled by providing option:
 
    * `cudf_udf` (optional, defaults to "False")
 
 cudf_udf tests needs a couple of different settings, they may need to run separately.
 
 To enable cudf_udf tests, need following pre requirements:
-   * Install cuDF library on all the nodes running executors. The instruction could be found at [here](https://rapids.ai/start.html). Please follow the steps to choose the version based on your environment and install the cuDF library via Conda or use other ways like building from source.
+   * Install cuDF Python library on all the nodes running executors. The instruction could be found at [here](https://rapids.ai/start.html). Please follow the steps to choose the version based on your environment and install the cuDF library via Conda or use other ways like building from source.
    * Disable the GPU exclusive mode on all the nodes running executors. The sample command is `sudo nvidia-smi -c DEFAULT`
    
 To run cudf_udf tests, need following configuration changes:   
