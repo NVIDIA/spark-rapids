@@ -72,7 +72,7 @@ TpcdsLikeSpark.setupAllParquet(spark, "/path/to/tpcds")
 The benchmark can be executed with the following syntax to execute the query and collect the 
 results to the driver.
 
-```
+```scala
 TpcdsLikeBench.collect(spark, "q5", iterations=3)
 ```
 
