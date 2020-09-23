@@ -53,12 +53,14 @@ trait TableCompressionCodec {
    *       memory will require making a copy of the data to a buffer of the appropriate size.
    * @param tableId ID to use for this table
    * @param contigTable contiguous table to compress
+   * @param stream CUDA stream to use
    * @return compressed table
    */
-  def compress(tableId: Int, contigTable: ContiguousTable): CompressedTable
+  def compress(tableId: Int, contigTable: ContiguousTable, stream: Cuda.Stream): CompressedTable
 
   /**
-   * Decompress the compressed data buffer from a table compression operation.
+   * Decompress the compressed data buffer from a table compression operation asynchronously
+   * using the specified stream.
    * @note The compressed buffer is NOT closed by this method.
    * @param outputBuffer buffer where uncompressed data will be written
    * @param outputOffset offset in the uncompressed buffer to start writing data
@@ -66,14 +68,16 @@ trait TableCompressionCodec {
    * @param inputBuffer buffer containing the compressed data
    * @param inputOffset offset in the compressed buffer where compressed data starts
    * @param inputLength length of the compressed data in bytes
+   * @param stream CUDA stream to use
    */
-  def decompressBuffer(
+  def decompressBufferAsync(
       outputBuffer: DeviceMemoryBuffer,
       outputOffset: Long,
       outputLength: Long,
       inputBuffer: DeviceMemoryBuffer,
       inputOffset: Long,
-      inputLength: Long): Unit
+      inputLength: Long,
+      stream: Cuda.Stream): Unit
 
   /**
    * Create a batched compressor instance
@@ -81,9 +85,10 @@ trait TableCompressionCodec {
    *                           which a batch should be compressed. A single table that requires
    *                           temporary and output memory above this limit is allowed but will
    *                           be compressed individually.
+   * @param stream CUDA stream to use for compression
    * @return batched compressor instance
    */
-  def createBatchCompressor(maxBatchMemorySize: Long): BatchedTableCompressor
+  def createBatchCompressor(maxBatchMemorySize: Long, stream: Cuda.Stream): BatchedTableCompressor
 
   /**
    * Create a batched decompressor instance
@@ -91,9 +96,12 @@ trait TableCompressionCodec {
    *                           which a batch should be decompressed. A single buffer that requires
    *                           temporary and output memory above this limit is allowed but will
    *                           be decompressed individually.
+   * @param stream CUDA stream to use for decompression
    * @return batched decompressor instance
    */
-  def createBatchDecompressor(maxBatchMemorySize: Long): BatchedBufferDecompressor
+  def createBatchDecompressor(
+      maxBatchMemorySize: Long,
+      stream: Cuda.Stream): BatchedBufferDecompressor
 }
 
 object TableCompressionCodec {
@@ -124,9 +132,10 @@ object TableCompressionCodec {
  *                           which a batch should be compressed. A single table that requires
  *                           estimated output memory above this limit is allowed but will
  *                           be compressed individually.
+ * @param stream CUDA stream to use
  */
-abstract class BatchedTableCompressor(maxBatchMemorySize: Long) extends AutoCloseable with Arm
-    with Logging {
+abstract class BatchedTableCompressor(maxBatchMemorySize: Long, stream: Cuda.Stream)
+    extends AutoCloseable with Arm with Logging {
   // The tables that need to be compressed in the next batch
   private[this] val tables = new ArrayBuffer[ContiguousTable]
 
@@ -198,7 +207,7 @@ abstract class BatchedTableCompressor(maxBatchMemorySize: Long) extends AutoClos
   private def compressBatch(): Unit = if (tables.nonEmpty) {
     withResource(new NvtxRange("batch compress", NvtxColor.ORANGE)) { _ =>
       val startTime = System.nanoTime()
-      val compressedTables = compress(tables.toArray)
+      val compressedTables = compress(tables.toArray, stream)
       results ++= compressedTables
       require(compressedTables.length == tables.length)
 
@@ -233,7 +242,7 @@ abstract class BatchedTableCompressor(maxBatchMemorySize: Long) extends AutoClos
           val newBuffer = if (ct.buffer.getLength > ct.compressedSize) {
             closeOnExcept(DeviceMemoryBuffer.allocate(ct.compressedSize)) { buffer =>
               buffer.copyFromDeviceBufferAsync(
-                0, ct.buffer, 0, ct.compressedSize, Cuda.DEFAULT_STREAM)
+                0, ct.buffer, 0, ct.compressedSize, stream)
               buffer
             }
           } else {
@@ -248,9 +257,12 @@ abstract class BatchedTableCompressor(maxBatchMemorySize: Long) extends AutoClos
   /**
    * Batch-compress contiguous tables
    * @param tables contiguous tables to compress
+   * @param stream CUDA stream to use
    * @return compressed tables. Table IDs in the `TableMeta` should be set to 0.
    */
-  protected def compress(tables: Array[ContiguousTable]): Array[CompressedTable]
+  protected def compress(
+      tables: Array[ContiguousTable],
+      stream: Cuda.Stream): Array[CompressedTable]
 }
 
 /**
@@ -258,9 +270,10 @@ abstract class BatchedTableCompressor(maxBatchMemorySize: Long) extends AutoClos
  * @param maxBatchMemorySize The upper limit in bytes of output memory usage at which a batch
  *                           should be decompressed. A single table that requires output memory
  *                           above this limit is allowed but will be decompressed individually.
+ * @param stream CUDA stream to use
  */
-abstract class BatchedBufferDecompressor(maxBatchMemorySize: Long) extends AutoCloseable with Arm
-    with Logging {
+abstract class BatchedBufferDecompressor(maxBatchMemorySize: Long, stream: Cuda.Stream)
+    extends AutoCloseable with Arm with Logging {
   // The buffers of compressed data that will be decompressed in the next batch
   private[this] val inputBuffers = new ArrayBuffer[BaseDeviceMemoryBuffer]
 
@@ -300,10 +313,11 @@ abstract class BatchedBufferDecompressor(maxBatchMemorySize: Long) extends AutoC
 
   /**
    * This must be called after all buffers to be decompressed have been added to retrieve the
-   * decompression results.
+   * decompression results. Note that the decompression may still be occurring asynchronously
+   * using the CUDA stream specified when the decompressor was instantiated.
    * @return decompressed tables
    */
-  def finish(): Array[DeviceMemoryBuffer] = {
+  def finishAsync(): Array[DeviceMemoryBuffer] = {
     // decompress the last batch
     decompressBatch()
     val resultsArray = results.toArray
@@ -323,7 +337,7 @@ abstract class BatchedBufferDecompressor(maxBatchMemorySize: Long) extends AutoC
     if (inputBuffers.nonEmpty) {
       withResource(new NvtxRange("batch decompress", NvtxColor.ORANGE)) { _ =>
         val startTime = System.nanoTime()
-        val uncompressedBuffers = decompress(inputBuffers.toArray, bufferMetas.toArray)
+        val uncompressedBuffers = decompressAsync(inputBuffers.toArray, bufferMetas.toArray, stream)
         results ++= uncompressedBuffers
         require(uncompressedBuffers.length == inputBuffers.length)
         if (log.isDebugEnabled) {
@@ -347,9 +361,11 @@ abstract class BatchedBufferDecompressor(maxBatchMemorySize: Long) extends AutoC
    * Decompress a batch of compressed buffers
    * @param inputBuffers buffers that contain the compressed input
    * @param bufferMetas corresponding metadata for each compressed input buffer
+   * @param stream CUDA stream to use
    * @return buffers that contain the uncompressed output
    */
-  protected def decompress(
+  protected def decompressAsync(
       inputBuffers: Array[BaseDeviceMemoryBuffer],
-      bufferMetas: Array[BufferMeta]): Array[DeviceMemoryBuffer]
+      bufferMetas: Array[BufferMeta],
+      stream: Cuda.Stream): Array[DeviceMemoryBuffer]
 }

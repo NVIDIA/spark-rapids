@@ -18,7 +18,7 @@ package com.nvidia.spark.rapids
 
 import scala.collection.mutable.ArrayBuffer
 
-import ai.rapids.cudf.{ContiguousTable, NvtxColor, NvtxRange, Table}
+import ai.rapids.cudf.{ContiguousTable, Cuda, NvtxColor, NvtxRange, Table}
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 
 import org.apache.spark.TaskContext
@@ -125,7 +125,8 @@ trait GpuPartitioning extends Partitioning with Arm {
       outputBatches: ArrayBuffer[ColumnarBatch],
       codec: TableCompressionCodec,
       contiguousTables: Array[ContiguousTable]): Unit = {
-    withResource(codec.createBatchCompressor(maxCompressionBatchSize)) { compressor =>
+    withResource(codec.createBatchCompressor(maxCompressionBatchSize,
+        Cuda.DEFAULT_STREAM)) { compressor =>
       // tracks batches with no data and the corresponding output index for the batch
       val emptyBatches = new ArrayBuffer[(ColumnarBatch, Int)]
 

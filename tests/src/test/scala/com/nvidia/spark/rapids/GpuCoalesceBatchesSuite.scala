@@ -21,7 +21,7 @@ import java.nio.file.Files
 
 import scala.collection.immutable.HashMap
 
-import ai.rapids.cudf.{ContiguousTable, HostColumnVector, Table}
+import ai.rapids.cudf.{ContiguousTable, Cuda, HostColumnVector, Table}
 import com.nvidia.spark.rapids.format.CodecType
 
 import org.apache.spark.sql.execution.metric.SQLMetric
@@ -409,7 +409,7 @@ class GpuCoalesceBatchesSuite extends SparkQueryCompareTestSuite {
 
   private def buildCompressedBatch(start: Int, numRows: Int): ColumnarBatch = {
     val codec = TableCompressionCodec.getCodec(CodecType.NVCOMP_LZ4)
-    withResource(codec.createBatchCompressor(0)) { compressor =>
+    withResource(codec.createBatchCompressor(0, Cuda.DEFAULT_STREAM)) { compressor =>
       compressor.addTableToCompress(buildContiguousTable(start, numRows))
       GpuCompressedColumnVector.from(compressor.finish().head)
     }
