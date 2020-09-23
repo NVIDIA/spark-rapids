@@ -29,7 +29,7 @@ import org.json4s.jackson.Serialization.writePretty
 
 import org.apache.spark.{SPARK_BUILD_USER, SPARK_VERSION}
 import org.apache.spark.sql.{DataFrame, Row, SaveMode, SparkSession}
-import org.apache.spark.sql.execution.{QueryExecution, SparkPlan}
+import org.apache.spark.sql.execution.{InputAdapter, QueryExecution, SparkPlan, WholeStageCodegenExec}
 import org.apache.spark.sql.execution.adaptive.{AdaptiveSparkPlanExec, QueryStageExec}
 import org.apache.spark.sql.functions.col
 import org.apache.spark.sql.util.QueryExecutionListener
@@ -278,29 +278,14 @@ object BenchUtils {
    */
   def generateDotGraph(a: SparkPlanNode, b: Option[SparkPlanNode], filename: String): Unit = {
 
-    var nextId = 0
-
-    /** Skip WholeStageCodegen and InputAdapter nodes when producing the graph */
-    def skipWrappers(p: SparkPlanNode): SparkPlanNode = {
-      if (p.children.length == 1) {
-        p.name match {
-          case name if name.startsWith("WholeStageCodegen") => skipWrappers(p.children.head)
-          case "InputAdapter" => skipWrappers(p.children.head)
-          case _ => p
-        }
-      } else {
-        p
-      }
-    }
+    var nextId = 1
 
     /** Recursively graph the operator nodes in the spark plan */
     def writeGraph(
         w: PrintWriter,
-        plan1: SparkPlanNode,
-        plan2: SparkPlanNode, id: Int = 0)
-    : Unit = {
-      val a = skipWrappers(plan1)
-      val b = skipWrappers(plan2)
+        a: SparkPlanNode,
+        b: SparkPlanNode,
+        id: Int = 0): Unit = {
       if (a.name == b.name && a.children.length == b.children.length) {
         val metricNames = (a.metrics.map(_.name) ++ b.metrics.map(_.name)).distinct.sorted
         val metrics = metricNames.map(name => {
@@ -536,20 +521,25 @@ class BenchmarkListener(list: ListBuffer[SparkPlanNode]) extends QueryExecutionL
 
   override def onSuccess(funcName: String, qe: QueryExecution, durationNs: Long): Unit = {
     def toJson(plan: SparkPlan): SparkPlanNode = {
-      val children: Seq[SparkPlanNode] = plan match {
-        case s: AdaptiveSparkPlanExec => Seq(toJson(s.executedPlan))
-        case s: QueryStageExec => Seq(toJson(s.plan))
-        case _ => plan.children.map(child => toJson(child))
-      }
-      val metrics: Seq[SparkSQLMetric] = plan.metrics
-          .map(m => SparkSQLMetric(m._1, m._2.metricType, m._2.value)).toSeq
+      plan match {
+        case WholeStageCodegenExec(child) => toJson(child)
+        case InputAdapter(child) => toJson(child)
+        case _ =>
+          val children: Seq[SparkPlanNode] = plan match {
+            case s: AdaptiveSparkPlanExec => Seq(toJson(s.executedPlan))
+            case s: QueryStageExec => Seq(toJson(s.plan))
+            case _ => plan.children.map(child => toJson(child))
+          }
+          val metrics: Seq[SparkSQLMetric] = plan.metrics
+              .map(m => SparkSQLMetric(m._1, m._2.metricType, m._2.value)).toSeq
 
-      SparkPlanNode(
-        plan.id,
-        plan.nodeName,
-        plan.simpleStringWithNodeId(),
-        metrics,
-        children)
+          SparkPlanNode(
+            plan.id,
+            plan.nodeName,
+            plan.simpleStringWithNodeId(),
+            metrics,
+            children)
+      }
     }
     list += toJson(qe.executedPlan)
   }
