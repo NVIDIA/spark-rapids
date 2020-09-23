@@ -33,6 +33,7 @@ class NvcompLZ4CompressionCodec extends TableCompressionCodec with Arm {
     val tableBuffer = contigTable.getBuffer
     val (compressedSize, oversizedBuffer) = NvcompLZ4CompressionCodec.compress(tableBuffer, stream)
     closeOnExcept(oversizedBuffer) { oversizedBuffer =>
+      require(compressedSize <= oversizedBuffer.getLength, "compressed buffer overrun")
       val tableMeta = MetaUtils.buildTableMeta(
         tableId,
         contigTable.getTable,
@@ -90,6 +91,7 @@ object NvcompLZ4CompressionCodec extends Arm {
       closeOnExcept(DeviceMemoryBuffer.allocate(outputSize)) { outputBuffer =>
         compressedSize = LZ4Compressor.compress(input, CompressionType.CHAR, LZ4_CHUNK_SIZE,
           tempBuffer, outputBuffer, stream)
+        require(compressedSize <= outputBuffer.getLength, "compressed buffer overrun")
         (compressedSize, outputBuffer)
       }
     }
@@ -133,6 +135,7 @@ class BatchedNvcompLZ4Compressor(maxBatchMemorySize: Long, stream: Cuda.Stream)
       buffers.zipWithIndex.map { case (buffer, i) =>
         val contigTable = tables(i)
         val compressedSize = compressedSizes(i)
+        require(compressedSize <= buffer.getLength, "compressed buffer overrun")
         val meta = MetaUtils.buildTableMeta(
           tableId = 0,
           contigTable.getTable,
