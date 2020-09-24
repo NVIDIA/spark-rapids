@@ -86,9 +86,9 @@ $SPARK_HOME/bin/spark-submit --jars "rapids-4-spark_2.12-0.3.0-SNAPSHOT.jar,cudf
 ### Enabling cudf_udf Tests
 
 The cudf_udf tests in this framework are testing Pandas UDF(user-defined function) with cuDF. They are disabled by default not only because of the complicated environment setup, but also because GPU resources scheduling for Pandas UDF is an experimental feature now, the performance may not always be better.
-The tests can be enabled by providing option:
+The tests can be enabled by just appending the option `--cudf_udf` to the command.
 
-   * `cudf_udf` (optional, defaults to "False")
+   * `--cudf_udf` (enable the cudf_udf tests when provided, and remove this option if you want to disable the tests)
 
 cudf_udf tests needs a couple of different settings, they may need to run separately.
 
