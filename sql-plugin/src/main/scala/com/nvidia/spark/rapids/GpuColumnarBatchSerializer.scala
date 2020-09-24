@@ -151,13 +151,13 @@ private class GpuColumnarBatchSerializerInstance(
             try {
               val tableInfo = JCudfSerialization.readTableFrom(dIn)
               try {
-                val table = tableInfo.getTable
-                if (table == null && tableInfo.getNumRows == 0) {
+                val contigTable = tableInfo.getContiguousTable
+                if (contigTable == null && tableInfo.getNumRows == 0) {
                   dIn.close()
                   None
                 } else {
-                  if (table != null) {
-                    Some(GpuColumnVector.from(table))
+                  if (contigTable != null) {
+                    Some(GpuColumnVectorFromBuffer.from(contigTable))
                   } else {
                     Some(new ColumnarBatch(Array.empty, tableInfo.getNumRows))
                   }
