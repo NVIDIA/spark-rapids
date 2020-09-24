@@ -36,10 +36,13 @@ _conf = {
         'spark.rapids.sql.python.gpu.enabled': 'true'
         }
 
+small_data = [(1, 1.0), (1, 2.0), (2, 3.0), (2, 5.0), (2, 10.0)]
 
-def _create_df(spark):
-    elements = list(map(lambda i: (i, i/1.0), range(1, 5000)))
-    return spark.createDataFrame(elements * 2, ("id", "v"))
+large_data = list(map(lambda i: (i, i/1.0), range(1, 5000))) * 2
+
+
+def _create_df(spark, data=large_data):
+    return spark.createDataFrame(data, ("id", "v"))
 
 
 # since this test requires to run different functions on CPU and GPU(need cudf),
@@ -76,13 +79,14 @@ def _plus_one_gpu_func(v: pd.Series) -> pd.Series:
 
 
 @cudf_udf
-def test_with_column(enable_cudf_udf):
+@pytest.mark.parametrize('data', [small_data, large_data], ids=['small data', 'large data'])
+def test_with_column(enable_cudf_udf, data):
     def cpu_run(spark):
-        df = _create_df(spark) 
+        df = _create_df(spark, data)
         return df.withColumn("v1", _plus_one_cpu_func(df.v)).collect()
 
     def gpu_run(spark):
-        df = _create_df(spark)
+        df = _create_df(spark, data)
         return df.withColumn("v1", _plus_one_gpu_func(df.v)).collect()
 
     _assert_cpu_gpu(cpu_run, gpu_run, gpu_conf=_conf)
