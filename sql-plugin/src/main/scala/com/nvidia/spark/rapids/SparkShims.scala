@@ -54,6 +54,10 @@ case class DatabricksShimVersion(major: Int, minor: Int, patch: Int) extends Shi
   override def toString(): String = s"$major.$minor.$patch-databricks"
 }
 
+case class EMRShimVersion(major: Int, minor: Int, patch: Int) extends ShimVersion {
+  override def toString(): String = s"$major.$minor.$patch-amzn"
+}
+
 trait SparkShims {
   def getSparkShimVersion: ShimVersion
   def isGpuHashJoin(plan: SparkPlan): Boolean
