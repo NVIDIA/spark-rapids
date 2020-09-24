@@ -349,10 +349,10 @@ class ParquetCachedBatchSerializer extends CachedBatchSerializer with Arm {
             val parquetCachedBatch = cbIter.next().asInstanceOf[ParquetCachedBatch]
             val inputFile = new ByteArrayInputFile(parquetCachedBatch.buffer)
 
-            val requestedParquetColumns =
-              getRequestedColumnIndices(selectedAttributes, cacheAttributes).map { i => "_col" + i }
+            val requestedParquetColumns = // for now get everything
+              getRequestedColumnIndices(cacheAttributes, cacheAttributes).map { i => "_col" + i }
 
-            val requestedSchema = selectedAttributes.zipWithIndex.map {
+            val requestedSchema = cacheAttributes.zipWithIndex.map {
               case (attr, i) => attr.withName(requestedParquetColumns(i))
             }
 
