@@ -27,12 +27,6 @@ import org.apache.spark.sql.types.StructType
 
 /**
  * This class exposes the ParquetRecordMaterializer
- *
- * @param parquetSchema
- * @param catalystSchema
- * @param schemaConverter
- * @param convertTz
- * @param datetimeRebaseMode
  */
 class ParquetRecordMaterializer(parquetSchema: MessageType,
    catalystSchema: StructType,
