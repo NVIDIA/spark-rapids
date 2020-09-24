@@ -16,6 +16,8 @@
 
 package com.nvidia.spark.rapids
 
+import com.nvidia.spark.rapids.TestUtils.{findOperator, operatorCount}
+
 import org.apache.spark.SparkConf
 import org.apache.spark.sql.execution.joins.HashJoin
 import org.apache.spark.sql.functions.broadcast
@@ -34,14 +36,15 @@ class BroadcastHashJoinSuite extends SparkQueryCompareTestSuite {
       val df4 = longsDf(spark)
       val df5 = df4.join(df3, Seq("longs"), "inner")
 
+      // execute the plan so that the final adaptive plan is available when AQE is on
+      df5.collect()
       val plan = df5.queryExecution.executedPlan
 
-      assert(plan.collect {
-        case p if ShimLoader.getSparkShims.isGpuBroadcastHashJoin(p) => p
-      }.size === 1)
-      assert(plan.collect {
-        case p if ShimLoader.getSparkShims.isGpuShuffledHashJoin(p) => p
-      }.size === 1)
+      val bhjCount = operatorCount(plan, ShimLoader.getSparkShims.isGpuBroadcastHashJoin)
+      assert(bhjCount.size === 1)
+
+      val shjCount = operatorCount(plan, ShimLoader.getSparkShims.isGpuShuffledHashJoin)
+      assert(shjCount.size === 1)
     }, conf)
   }
 
@@ -52,17 +55,21 @@ class BroadcastHashJoinSuite extends SparkQueryCompareTestSuite {
 
       for (name <- Seq("BROADCAST", "BROADCASTJOIN", "MAPJOIN")) {
         val plan1 = spark.sql(s"SELECT /*+ $name(t) */ * FROM t JOIN u ON t.longs = u.longs")
-          .queryExecution.executedPlan
         val plan2 = spark.sql(s"SELECT /*+ $name(u) */ * FROM t JOIN u ON t.longs = u.longs")
-          .queryExecution.executedPlan
 
-        val res1 = plan1.find(ShimLoader.getSparkShims.isGpuBroadcastHashJoin(_))
-        val res2 = plan2.find(ShimLoader.getSparkShims.isGpuBroadcastHashJoin(_))
+        // execute the plan so that the final adaptive plan is available when AQE is on
+        plan1.collect()
+        val finalPlan1 = findOperator(plan1.queryExecution.executedPlan,
+          ShimLoader.getSparkShims.isGpuBroadcastHashJoin)
+        assert(ShimLoader.getSparkShims.getBuildSide
+        (finalPlan1.get.asInstanceOf[HashJoin]).toString == "GpuBuildLeft")
 
-        assert(ShimLoader.getSparkShims.getBuildSide(res1.get.asInstanceOf[HashJoin]).toString ==
-          "GpuBuildLeft")
-        assert(ShimLoader.getSparkShims.getBuildSide(res2.get.asInstanceOf[HashJoin]).toString ==
-          "GpuBuildRight")
+        // execute the plan so that the final adaptive plan is available when AQE is on
+        plan2.collect()
+        val finalPlan2 = findOperator(plan2.queryExecution.executedPlan,
+          ShimLoader.getSparkShims.isGpuBroadcastHashJoin)
+        assert(ShimLoader.getSparkShims.
+          getBuildSide(finalPlan2.get.asInstanceOf[HashJoin]).toString == "GpuBuildRight")
       }
     })
   }

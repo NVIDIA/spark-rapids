@@ -22,6 +22,7 @@ import javassist.{ClassClassPath, ClassPool, CtBehavior, CtClass, CtField}
 import javassist.bytecode.{CodeIterator, ConstPool, Descriptor}
 
 import org.apache.spark.SparkException
+import org.apache.spark.sql.types._
 
 //
 // Reflection using SerializedLambda and javassist.
@@ -38,6 +39,7 @@ case class LambdaReflection(private val classPool: ClassPool,
       case ConstPool.CONST_Float => constPool.getFloatInfo(constPoolIndex)
       case ConstPool.CONST_Double => constPool.getDoubleInfo(constPoolIndex)
       case ConstPool.CONST_String => constPool.getStringInfo(constPoolIndex)
+      case ConstPool.CONST_Class => constPool.getClassInfo(constPoolIndex)
       case _ => throw new SparkException("Unsupported constant")
     }
   }
@@ -77,10 +79,7 @@ case class LambdaReflection(private val classPool: ClassPool,
   // Get the CtClass object for the class that capture the lambda.
   private val ctClass = {
     val name = serializedLambda.getCapturingClass.replace('/', '.')
-    val loader = Thread.currentThread().getContextClassLoader
-    // scalastyle:off classforname
-    val classForName = Class.forName(name, true, loader)
-    // scalastyle:on classforname
+    val classForName = LambdaReflection.getClass(name)
     classPool.insertClassPath(new ClassClassPath(classForName))
     classPool.getCtClass(name)
   }
@@ -121,6 +120,35 @@ object LambdaReflection {
 
     val classPool = new ClassPool(true)
     LambdaReflection(classPool, serializedLambda)
+  }
+
+  def getClass(name: String): Class[_] = {
+    // scalastyle:off classforname
+    Class.forName(name, true, Thread.currentThread().getContextClassLoader)
+    // scalastyle:on classforname
+  }
+
+  def parseTypeSig(sig: String): DataType = {
+    if (sig.head == '[') {
+      val elementType = parseTypeSig(sig.tail)
+      if (elementType == ByteType) {
+        DataTypes.BinaryType
+      } else {
+        DataTypes.createArrayType(parseTypeSig(sig.tail))
+      }
+    } else {
+      sig match {
+        case "Z" => BooleanType
+        case "B" => ByteType
+        case "S" => ShortType
+        case "I" => IntegerType
+        case "J" => LongType
+        case "F" => FloatType
+        case "D" => DoubleType
+        case "Ljava.lang.String;" => StringType
+        case _ => throw new SparkException("Unsupported type signature")
+      }
+    }
   }
 }
 

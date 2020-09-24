@@ -1,0 +1,40 @@
+#
+# Copyright (c) 2020, NVIDIA CORPORATION. All rights reserved.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+#
+
+###
+#
+# Build the image for rapids-plugin development environment
+#
+# Arguments: CUDA_VER=10.1 or 10.2
+#
+###
+
+ARG CUDA_VER=10.1
+
+FROM nvidia/cuda:${CUDA_VER}-runtime-ubuntu16.04
+
+#Install java-8, maven, docker image
+RUN apt-get update -y && \
+    apt-get install -y software-properties-common
+RUN add-apt-repository ppa:deadsnakes/ppa && \
+    apt-get update -y && \
+    apt-get install -y maven \
+    openjdk-8-jdk python3.6 python3-pip tzdata git
+
+RUN ln -s /usr/bin/python3.6 /usr/bin/python
+RUN python -m pip install pytest sre_yield requests pandas pyarrow
+
+RUN apt install -y inetutils-ping expect

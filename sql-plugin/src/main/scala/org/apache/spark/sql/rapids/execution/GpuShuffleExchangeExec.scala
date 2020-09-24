@@ -28,9 +28,8 @@ import org.apache.spark.serializer.Serializer
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.errors._
 import org.apache.spark.sql.catalyst.expressions.{Attribute, SortOrder}
-import org.apache.spark.sql.catalyst.plans.logical.Statistics
 import org.apache.spark.sql.catalyst.plans.physical.Partitioning
-import org.apache.spark.sql.execution.{ShufflePartitionSpec, SparkPlan}
+import org.apache.spark.sql.execution.SparkPlan
 import org.apache.spark.sql.execution.exchange.{Exchange, ShuffleExchangeExec}
 import org.apache.spark.sql.execution.metric._
 import org.apache.spark.sql.internal.SQLConf
@@ -49,6 +48,12 @@ class GpuShuffleMeta(
   override val childExprs: scala.Seq[ExprMeta[_]] = Seq.empty
   override val childParts: scala.Seq[PartMeta[_]] =
     Seq(GpuOverrides.wrapPart(shuffle.outputPartitioning, conf, Some(this)))
+
+  override def tagPlanForGpu(): Unit = {
+    // when AQE is enabled and we are planning a new query stage, we need to look at meta-data
+    // previously stored on the spark plan to determine whether this exchange can run on GPU
+    wrapped.getTagValue(gpuSupportedTag).foreach(_.foreach(willNotWorkOnGpu))
+  }
 
   override def convertToGpu(): GpuExec =
     ShimLoader.getSparkShims.getGpuShuffleExchangeExec(
@@ -110,7 +115,8 @@ abstract class GpuShuffleExchangeExecBase(
       outputPartitioning,
       serializer,
       metrics,
-      writeMetrics)
+      writeMetrics,
+      additionalMetrics)
   }
 
   /**
@@ -137,7 +143,8 @@ object GpuShuffleExchangeExec {
       newPartitioning: Partitioning,
       serializer: Serializer,
       metrics: Map[String, SQLMetric],
-      writeMetrics: Map[String, SQLMetric])
+      writeMetrics: Map[String, SQLMetric],
+      additionalMetrics: Map[String, SQLMetric])
   : ShuffleDependency[Int, ColumnarBatch, ColumnarBatch] = {
     val isRoundRobin = newPartitioning match {
       case _: GpuRoundRobinPartitioning => true
@@ -228,7 +235,8 @@ object GpuShuffleExchangeExec {
       rddWithPartitionIds,
       new BatchPartitionIdPassthrough(newPartitioning.numPartitions),
       serializer,
-      shuffleWriterProcessor = ShuffleExchangeExec.createShuffleWriteProcessor(writeMetrics))
+      shuffleWriterProcessor = ShuffleExchangeExec.createShuffleWriteProcessor(writeMetrics),
+      metrics = additionalMetrics)
 
     dependency
   }

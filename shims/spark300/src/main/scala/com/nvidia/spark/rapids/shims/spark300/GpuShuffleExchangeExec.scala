@@ -22,3 +22,4 @@ import org.apache.spark.sql.rapids.execution.GpuShuffleExchangeExecBase
 case class GpuShuffleExchangeExec(
     override val outputPartitioning: Partitioning,
     child: SparkPlan) extends GpuShuffleExchangeExecBase(outputPartitioning, child)
+

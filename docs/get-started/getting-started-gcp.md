@@ -22,7 +22,10 @@ gcloud services enable storage-api.googleapis.com
 ``` 
 
 After the command line environment is setup, log in to your GCP account.  You can now create a Dataproc cluster with the configuration shown below.
-The configuration will allow users to run any of the [notebook demos](../demo/GCP) on GCP.  Alternatively, users can also start 2*2T4 worker nodes.
+The configuration will allow users to run any of the [notebook demos](https://github.com/NVIDIA/spark-rapids/tree/branch-0.2/docs/demo/GCP) on GCP.  Alternatively, users can also start 2*2T4 worker nodes.
+
+The script below will initialize with the following: 
+
 * [GPU Driver](https://github.com/GoogleCloudDataproc/initialization-actions/tree/master/gpu) and [RAPIDS Acclerator for Apache Spark](https://github.com/GoogleCloudDataproc/initialization-actions/tree/master/rapids) through initialization actions (the init action is only available in US region public buckets as of 2020-07-16)
 * One 8-core master node and 5 32-core worker nodes
 * Four NVIDIA T4 for each worker node
@@ -32,7 +35,7 @@ The configuration will allow users to run any of the [notebook demos](../demo/GC
 
 
 ```bash
-    export REGION=[Your Prefer GCP Region]
+    export REGION=[Your Preferred GCP Region]
     export GCS_BUCKET=[Your GCS Bucket]
     export CLUSTER_NAME=[Your Cluster Name]
     export NUM_GPUS=4
@@ -63,9 +66,9 @@ To use notebooks with a Dataproc cluster, click on the cluster name under the Da
 
 ![Dataproc Web Interfaces](../img/dataproc-service.png)
 
-The notebook will first transcode CSV files into Parquet files and then run an ETL query to prepare the dataset for training.  In the sample notebook, we use 2016 data as the evaluation set and the rest as a training set, saving to respective GCS locations.  Using the default notebook configuration the first stage should take ~110 seconds (1/3 of CPU execution time with same config) and the second stage takes ~170 seconds (1/7 of CPU execution time with same config).  The notebook depends on the pre-compiled [Spark RAPIDS SQL plugin](https://mvnrepository.com/artifact/com.nvidia/rapids-4-spark-parent) and [cuDF](https://mvnrepository.com/artifact/ai.rapids/cudf/0.14), which are pre-downloaded by the GCP Dataproc [RAPIDS init script]().
+The notebook will first transcode CSV files into Parquet files and then run an ETL query to prepare the dataset for training.  In the sample notebook, we use 2016 data as the evaluation set and the rest as a training set, saving to respective GCS locations.  Using the default notebook configuration the first stage should take ~110 seconds (1/3 of CPU execution time with same config) and the second stage takes ~170 seconds (1/7 of CPU execution time with same config).  The notebook depends on the pre-compiled [Spark RAPIDS SQL plugin](https://mvnrepository.com/artifact/com.nvidia/rapids-4-spark) and [cuDF](https://mvnrepository.com/artifact/ai.rapids/cudf/0.15), which are pre-downloaded by the GCP Dataproc [RAPIDS init script](https://github.com/GoogleCloudDataproc/initialization-actions/tree/master/rapids).
 
-Once data is prepared, we use the [Mortgage XGBoost4j Scala Notebook](../demo/GCP/mortgage-xgboost4j-gpu-scala.zpln) in Dataproc's Zeppelin service to execute the training job on the GPU.  NVIDIA also ships [Spark XGBoost4j](https://github.com/NVIDIA/spark-xgboost) which is based on [DMLC xgboost](https://github.com/dmlc/xgboost).  Precompiled [XGBoost4j]() and [XGBoost4j Spark](https://repo1.maven.org/maven2/com/nvidia/xgboost4j-spark_3.0/1.0.0-0.1.0/) libraries can be downloaded from maven.  They are pre-downloaded by the GCP [RAPIDS init action](https://github.com/GoogleCloudDataproc/initialization-actions/tree/master/rapids).  Since github cannot render a Zeppelin notebook, we prepared a [Jupyter Notebook with Scala code](../demo/GCP/mortgage-xgboost4j-gpu-scala.ipynb) for you to view the code content. 
+Once data is prepared, we use the [Mortgage XGBoost4j Scala Notebook](../demo/GCP/mortgage-xgboost4j-gpu-scala.zpln) in Dataproc's Zeppelin service to execute the training job on the GPU.  NVIDIA also ships [Spark XGBoost4j](https://github.com/NVIDIA/spark-xgboost) which is based on [DMLC xgboost](https://github.com/dmlc/xgboost).  Precompiled [XGBoost4j](https://repo1.maven.org/maven2/com/nvidia/xgboost4j_3.0/) and [XGBoost4j Spark](https://repo1.maven.org/maven2/com/nvidia/xgboost4j-spark_3.0/1.0.0-0.1.0/) libraries can be downloaded from maven.  They are pre-downloaded by the GCP [RAPIDS init action](https://github.com/GoogleCloudDataproc/initialization-actions/tree/master/rapids).  Since github cannot render a Zeppelin notebook, we prepared a [Jupyter Notebook with Scala code](../demo/GCP/mortgage-xgboost4j-gpu-scala.ipynb) for you to view the code content. 
 
 The training time should be around 480 seconds (1/10 of CPU execution time with same config).  This is shown under cell:
 ```scala

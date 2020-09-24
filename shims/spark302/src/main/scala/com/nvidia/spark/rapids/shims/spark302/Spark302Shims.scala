@@ -14,17 +14,17 @@
  * limitations under the License.
  */
 
-package org.apache.spark.shuffle
+package com.nvidia.spark.rapids.shims.spark302
 
-import org.apache.spark.storage.BlockManagerId
+import com.nvidia.spark.rapids.ShimVersion
+import com.nvidia.spark.rapids.shims.spark301.Spark301Shims
+import com.nvidia.spark.rapids.spark302.RapidsShuffleManager
 
-class RapidsShuffleFetchFailedException(
-    bmAddress: BlockManagerId,
-    shuffleId: Int,
-    mapId: Long,
-    mapIndex: Int,
-    reduceId: Int,
-    message: String)
-    extends FetchFailedException(
-      bmAddress, shuffleId, mapId, mapIndex, reduceId, message) {
+class Spark302Shims extends Spark301Shims {
+
+  override def getSparkShimVersion: ShimVersion = SparkShimServiceProvider.VERSION
+
+  override def getRapidsShuffleManagerClass: String = {
+    classOf[RapidsShuffleManager].getCanonicalName
+  }
 }

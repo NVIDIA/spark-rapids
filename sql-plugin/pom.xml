@@ -22,13 +22,13 @@
     <parent>
         <groupId>com.nvidia</groupId>
         <artifactId>rapids-4-spark-parent</artifactId>
-        <version>0.2.0-SNAPSHOT</version>
+        <version>0.3.0-SNAPSHOT</version>
     </parent>
     <groupId>com.nvidia</groupId>
     <artifactId>rapids-4-spark-sql_2.12</artifactId>
     <name>RAPIDS Accelerator for Apache Spark SQL Plugin</name>
     <description>The RAPIDS SQL plugin for Apache Spark</description>
-    <version>0.2.0-SNAPSHOT</version>
+    <version>0.3.0-SNAPSHOT</version>
 
     <dependencies>
         <dependency>
@@ -101,6 +101,10 @@
               <!-- The NOTICE will be taken care of by the antrun task below -->
               <include>LICENSE</include>
             </includes>
+          </resource>
+          <resource>
+            <!-- Include python files for Python UDF support. -->
+            <directory>${project.basedir}/../python/</directory>
           </resource>
         </resources>
         <plugins>

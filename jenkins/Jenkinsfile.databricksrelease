@@ -1,0 +1,110 @@
+#!/usr/local/env groovy
+/*
+ * Copyright (c) 2020, NVIDIA CORPORATION.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+/**
+*
+* Jenkinsfile for building rapids-plugin on Databricks
+*
+*/
+@Library(['shared-libs', 'spark-jenkins-shared-lib']) _
+
+def urmUrl="https://${ArtifactoryConstants.ARTIFACTORY_NAME}/artifactory/sw-spark-maven"
+
+pipeline {
+    agent {
+        docker {
+            label 'docker-gpu'
+            image "${ArtifactoryConstants.ARTIFACTORY_NAME}/sw-spark-docker/plugin:dev-ubuntu16-cuda10.1"
+            args '--runtime=nvidia -v ${HOME}/.m2:${HOME}/.m2:rw \
+                -v ${HOME}/.zinc:${HOME}/.zinc:rw'
+        }
+    }
+
+    options {
+        ansiColor('xterm')
+        timeout(time: 180, unit: 'MINUTES')
+        buildDiscarder(logRotator(numToKeepStr: '10'))
+    }
+
+    parameters {
+        choice(name: 'DEPLOY_TO', choices: ['Local', 'Urm'],
+            description: 'Where to deploy artifacts to')
+        string(name: 'DATABRICKS_VERSION',
+                defaultValue: '0.2.0', description: 'Version to set')
+        string(name: 'CUDF_VERSION',
+                defaultValue: '0.15', description: 'Cudf version to use')
+        string(name: 'CUDA_VERSION',
+                defaultValue: 'cuda10-1', description: 'cuda version to use')
+        string(name: 'CLUSTER_ID',
+                defaultValue: '0828-071715-knack867', description: 'databricks cluster id')
+        string(name: 'REF', defaultValue: 'main', description: 'Commit to build')
+    }
+
+    environment {
+        JENKINS_ROOT  = 'jenkins'
+        MVN_URM_MIRROR='-s jenkins/settings.xml -P mirror-apache-to-urm'
+        LIBCUDF_KERNEL_CACHE_PATH='/tmp'
+        URM_CREDS = credentials("svcngcc_artifactory")
+        DATABRICKS_TOKEN = credentials("TIM_DATABRICKS_TOKEN")
+        DATABRICKS_SECRET = credentials("TIM_DATABRICKS_SECRET")
+        SCALA_VERSION = '2.12'
+        SPARK_VERSION = '3.0.0-databricks'
+        CI_RAPIDS_JAR = 'rapids-4-spark_2.12-0.1-SNAPSHOT-ci.jar'
+        CI_CUDF_JAR = 'cudf-0.14-cuda10-1.jar'
+        URM_URL = "${urmUrl}"
+    }
+
+    stages {
+        stage('Ubuntu16 CUDA10.1') {
+            steps {
+                script {
+                    sshagent(credentials : ['svcngcc_pubpriv']) {
+                        sh "rm -rf spark-rapids-ci.tgz"
+                        sh "tar -zvcf spark-rapids-ci.tgz *"
+                        sh "python3.6 ./jenkins/databricks/run-tests.py -c $CLUSTER_ID -z ./spark-rapids-ci.tgz -t $DATABRICKS_TOKEN -p $DATABRICKS_SECRET -l ./jenkins/databricks/build.sh -j $CI_RAPIDS_JAR -b $DATABRICKS_VERSION -k $SPARK_VERSION -a $SCALA_VERSION -f $CUDF_VERSION -u $CUDA_VERSION -m $CI_CUDF_JAR"
+                        sh "./jenkins/databricks/deploy.sh"
+                    }
+                }
+            }
+        }
+    } // end of stages
+    post {
+        always {
+            script {
+                sh "python3.6 ./jenkins/databricks/shutdown.py -c $CLUSTER_ID -t $DATABRICKS_TOKEN || true"
+                if (currentBuild.currentResult == "SUCCESS") {
+                    slack("#swrapids-spark-cicd", "Success", color: "#33CC33")
+                } else {
+                    slack("#swrapids-spark-cicd", "Failed", color: "#FF0000")
+                }
+            }
+        }
+    }
+} // end of pipeline
+
+void slack(Map params = [:], String channel, String message) {
+    Map defaultParams = [
+            color: "#000000",
+            baseUrl: "${SparkConstants.SLACK_API_ENDPOINT}",
+            tokenCredentialId: "slack_token"
+    ]
+
+    params["channel"] = channel
+    params["message"] = "${BUILD_URL}\n" + message
+
+    slackSend(defaultParams << params)
+}
