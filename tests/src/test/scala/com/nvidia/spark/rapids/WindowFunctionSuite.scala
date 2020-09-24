@@ -39,6 +39,12 @@ class WindowFunctionSuite extends SparkQueryCompareTestSuite {
       count("*").over(windowSpec)
     )
 
+  testSparkResultsAreEqual("[Window] [ROWS/RANGE] [default] ", windowTestDfOrc) {
+    val rowsWindow = Window.partitionBy("uid")
+        .orderBy("dateLong")
+    windowAggregationTester(rowsWindow)
+  }
+
   testSparkResultsAreEqual("[Window] [ROWS] [-2, 3] ", windowTestDfOrc) {
     val rowsWindow = Window.partitionBy("uid")
                            .orderBy("dateLong")
