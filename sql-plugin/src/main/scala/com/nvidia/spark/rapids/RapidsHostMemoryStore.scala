@@ -40,6 +40,7 @@ class RapidsHostMemoryStore(
     // spill to keep within the targeted size
     val amountSpilled = synchronousSpill(math.max(maxSize - size, 0))
     if (amountSpilled != 0) {
+      logInfo(s"Spilled $amountSpilled bytes from the host memory store")
       TrampolineUtil.incTaskMetricsDiskBytesSpilled(amountSpilled)
     }
 

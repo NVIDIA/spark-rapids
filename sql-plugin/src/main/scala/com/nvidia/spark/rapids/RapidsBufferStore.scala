@@ -150,7 +150,7 @@ abstract class RapidsBufferStore(
     if (buffers.getTotalBytes > targetTotalSize) {
       val nvtx = new NvtxRange(nvtxSyncSpillName, NvtxColor.ORANGE)
       try {
-        logInfo(s"$name store spilling to reduce usage from " +
+        logDebug(s"$name store spilling to reduce usage from " +
             s"${buffers.getTotalBytes} to $targetTotalSize bytes")
         var waited = false
         var exhausted = false
