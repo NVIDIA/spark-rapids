@@ -59,6 +59,9 @@ def is_apache_runtime():
 def is_databricks_runtime():
     return runtime_env() == "databricks"
 
+def is_emr_runtime():
+    return runtime_env() == "emr"
+
 _limit = -1
 
 def get_limit():
@@ -364,4 +367,10 @@ def tpcds(request):
     pytest.skip("TPC-DS not configured to run")
   else:
     yield TpcdsRunner(tpcds_format, tpcds_path)
+
+@pytest.fixture(scope="session")
+def enable_cudf_udf(request):
+    enable_udf_cudf = request.config.getoption("cudf_udf")
+    if not enable_udf_cudf:
+        pytest.skip("cudf_udf not configured to run")
 

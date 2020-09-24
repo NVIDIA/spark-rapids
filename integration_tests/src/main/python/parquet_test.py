@@ -62,7 +62,8 @@ def test_parquet_fallback(spark_tmp_path, read_func, disable_conf):
     assert_gpu_fallback_collect(
             lambda spark : reader(spark).select(f.col('*'), f.col('_c2') + f.col('_c3')),
             'FileSourceScanExec',
-            conf={disable_conf: 'false'})
+            conf={disable_conf: 'false',
+                "spark.sql.sources.useV1SourceList": "parquet"})
 
 parquet_compress_options = ['none', 'uncompressed', 'snappy', 'gzip']
 # The following need extra jars 'lzo', 'lz4', 'brotli', 'zstd'
