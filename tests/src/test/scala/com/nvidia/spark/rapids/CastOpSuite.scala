@@ -250,7 +250,8 @@ class CastOpSuite extends GpuExpressionTestSuite {
       col("longs").cast(ShortType),
       col("longs").cast(FloatType),
       col("longs").cast(DoubleType),
-      col("longs").cast(TimestampType))
+      col("longs").cast(TimestampType),
+      col("longs").cast(BinaryType))
   }
 
   testSparkResultsAreEqual("Test cast from float", mixedFloatDf) {
@@ -263,7 +264,8 @@ class CastOpSuite extends GpuExpressionTestSuite {
       col("floats").cast(ShortType),
       col("floats").cast(FloatType),
       col("floats").cast(DoubleType),
-    col("floats").cast(TimestampType))
+      col("floats").cast(TimestampType),
+      col("floats").cast(BinaryType))
   }
 
   testSparkResultsAreEqual("Test cast from double", doubleWithNansDf) {
@@ -276,7 +278,8 @@ class CastOpSuite extends GpuExpressionTestSuite {
       col("doubles").cast(ShortType),
       col("doubles").cast(FloatType),
       col("doubles").cast(DoubleType),
-      col("doubles").cast(TimestampType))
+      col("doubles").cast(TimestampType),
+      col("doubles").cast(BinaryType))
   }
 
   ignore("Test cast from double to string") {
@@ -417,6 +420,11 @@ class CastOpSuite extends GpuExpressionTestSuite {
     frame => frame.select(
       col("c0").cast(FloatType))
   }
+
+  testSparkResultsAreEqual("Test cast from strings to binary", floatsAsStrings) {
+    frame => frame.select(
+      col("c0").cast(BinaryType))
+  }
 }
 
 /** Data shared between CastOpSuite and AnsiCastOpSuite. */
@@ -489,6 +497,11 @@ object CastOpSuite {
     shortValues.map(_.toDouble).toDF("c0")
   }
 
+  // def shortsAsBinary(session: SparkSession): DataFrame = {
+  //   import session.sqlContext.implicits._
+  //   shortValues.map(_.toBinary).toDF("c0")
+  // }
+
   def shortsAsTimestamps(session: SparkSession): DataFrame = {
     import session.sqlContext.implicits._
     shortValues.map(value => new Timestamp(value)).toDF("c0")
@@ -514,6 +527,11 @@ object CastOpSuite {
     intValues.map(_.toDouble).toDF("c0")
   }
 
+  // def intsAsBinary(session: SparkSession): DataFrame = {
+  //   import session.sqlContext.implicits._
+  //   intValues.map(_.toBinary).toDF("c0")
+  // }
+
   def intsAsTimestamps(session: SparkSession): DataFrame = {
     import session.sqlContext.implicits._
     intValues.map(value => new Timestamp(value)).toDF("c0")
@@ -533,6 +551,11 @@ object CastOpSuite {
     import session.sqlContext.implicits._
     longValues.map(_.toDouble).toDF("c0")
   }
+
+  // def longsAsBinary(session: SparkSession): DataFrame = {
+  //   import session.sqlContext.implicits._
+  //   longValues.map(_.toBinary).toDF("c0")
+  // }
 
   def longsAsTimestamps(session: SparkSession): DataFrame = {
     import session.sqlContext.implicits._

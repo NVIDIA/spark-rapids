@@ -136,6 +136,7 @@ object GpuCast {
         case FloatType | DoubleType => true
         case StringType => true
         case TimestampType => true
+        case BinaryType => true
         case _ => false
       }
       case FloatType | DoubleType => to match {
@@ -168,6 +169,7 @@ object GpuCast {
         case ByteType | ShortType | IntegerType | LongType | FloatType | DoubleType => true
         case DateType => true
         case TimestampType => true
+        case BinaryType => true
         case _ => false
       }
       case _ => false
@@ -446,6 +448,9 @@ case class GpuCast(
               }
           }
         }
+
+      case (ShortType | IntegerType | LongType | FloatType | DoubleType | StringType, BinaryType) =>
+        new GpuColumnVector(BinaryType, input.getBase.asByteList(true))
 
       case _ =>
         GpuColumnVector.from(input.getBase.castTo(cudfType))
