@@ -22,12 +22,14 @@ import java.util.concurrent.TimeUnit.NANOSECONDS
 
 import scala.collection.convert.ImplicitConversions.`iterator asScala`
 import scala.collection.mutable.ListBuffer
+import scala.util.Try
 
 import org.json4s.DefaultFormats
 import org.json4s.jackson.JsonMethods.parse
 import org.json4s.jackson.Serialization.writePretty
 
 import org.apache.spark.{SPARK_BUILD_USER, SPARK_VERSION}
+import org.apache.spark.scheduler.{SparkListener, SparkListenerStageCompleted}
 import org.apache.spark.sql.{DataFrame, Row, SaveMode, SparkSession}
 import org.apache.spark.sql.execution.{InputAdapter, QueryExecution, SparkPlan, WholeStageCodegenExec}
 import org.apache.spark.sql.execution.adaptive.{AdaptiveSparkPlanExec, QueryStageExec}
@@ -127,14 +129,16 @@ object BenchUtils {
     val queryStartTime = Instant.now()
 
     val queryPlansWithMetrics = new ListBuffer[SparkPlanNode]()
+    val stageMetrics = new ListBuffer[StageMetrics]()
 
     var df: DataFrame = null
     val queryTimes = new ListBuffer[Long]()
     for (i <- 0 until iterations) {
 
-      // capture spark plan metrics on the final run
+      // capture spark metrics on the final run
       if (i+1 == iterations) {
         spark.listenerManager.register(new BenchmarkListener(queryPlansWithMetrics))
+        spark.sparkContext.addSparkListener(new BenchSparkListener(stageMetrics))
       }
 
       println(s"*** Start iteration $i:")
@@ -211,6 +215,7 @@ object BenchUtils {
         queryDescription,
         queryPlan,
         queryPlansWithMetrics,
+        stageMetrics,
         queryTimes)
 
       case w: WriteCsv => BenchmarkReport(
@@ -223,6 +228,7 @@ object BenchUtils {
         queryDescription,
         queryPlan,
         queryPlansWithMetrics,
+        stageMetrics,
         queryTimes)
 
       case w: WriteParquet => BenchmarkReport(
@@ -235,6 +241,7 @@ object BenchUtils {
         queryDescription,
         queryPlan,
         queryPlansWithMetrics,
+        stageMetrics,
         queryTimes)
     }
 
@@ -549,6 +556,42 @@ class BenchmarkListener(list: ListBuffer[SparkPlanNode]) extends QueryExecutionL
   }
 }
 
+class BenchSparkListener(executionMetrics: ListBuffer[StageMetrics]) extends SparkListener {
+  override def onStageCompleted(stageCompleted: SparkListenerStageCompleted): Unit = {
+    val stageInfo = stageCompleted.stageInfo
+    val taskMetrics = stageInfo.taskMetrics
+
+    val stageMetrics = stageInfo.accumulables.map(acc => Try {
+      val name = acc._2.name.getOrElse("")
+      val value = acc._2.value.getOrElse(0L).asInstanceOf[Long]
+      name -> value
+    }).filter(_.isSuccess)
+        .map(_.get)
+        .filter(_._1.nonEmpty)
+        .toMap
+
+    val taskMetricsSummary = Map(
+      "executorDeserializeTime" -> taskMetrics.executorDeserializeTime,
+      "executorDeserializeCpuTime" -> taskMetrics.executorDeserializeCpuTime,
+      "executorRunTime" -> taskMetrics.executorRunTime,
+      "executorCpuTime" -> taskMetrics.executorCpuTime,
+      "resultSize" -> taskMetrics.resultSize,
+      "jvmGCTime" -> taskMetrics.jvmGCTime,
+      "resultSerializationTime" -> taskMetrics.resultSerializationTime,
+      "memoryBytesSpilled" -> taskMetrics.memoryBytesSpilled,
+      "memoryBytesSpilled" -> taskMetrics.memoryBytesSpilled,
+      "diskBytesSpilled" -> taskMetrics.diskBytesSpilled,
+      "peakExecutionMemory" -> taskMetrics.peakExecutionMemory
+    )
+
+    executionMetrics += StageMetrics(
+      stageInfo.stageId,
+      stageInfo.numTasks,
+      stageMetrics,
+      taskMetricsSummary)
+  }
+}
+
 /** Top level benchmark report class */
 case class BenchmarkReport(
     filename: String,
@@ -560,6 +603,7 @@ case class BenchmarkReport(
     query: String,
     queryPlan: QueryPlan,
     queryPlans: Seq[SparkPlanNode],
+    stageMetrics: Seq[StageMetrics],
     queryTimes: Seq[Long])
 
 /** Configuration options that affect how the tests are run */
@@ -583,6 +627,14 @@ case class SparkSQLMetric(
     name: String,
     metricType: String,
     value: Any)
+
+/** Summary of stage-level metrics */
+case class StageMetrics(
+    stageId: Long,
+    taskCount: Int,
+    stageMetrics: Map[String, Long],
+    taskMetrics: Map[String, Long],
+)
 
 /** Details about the environment where the benchmark ran */
 case class Environment(

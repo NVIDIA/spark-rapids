@@ -21,6 +21,8 @@ import com.nvidia.spark.rapids.AdaptiveQueryExecSuite.TEST_FILES_ROOT
 import com.nvidia.spark.rapids.TestUtils
 import org.scalatest.{BeforeAndAfterEach, FunSuite}
 
+import org.apache.spark.sql.SparkSession
+
 object BenchUtilsSuite {
   val TEST_FILES_ROOT: File = TestUtils.getTempDir(this.getClass.getSimpleName)
 }
@@ -34,6 +36,29 @@ class BenchUtilsSuite extends FunSuite with BeforeAndAfterEach {
   override def afterEach(): Unit = {
     org.apache.commons.io.FileUtils.deleteDirectory(TEST_FILES_ROOT)
   }
+
+  test("collect metrics") {
+    val spark = SparkSession.builder().master("local[*]").getOrCreate()
+
+    val filenameStub = s"test-collect-metrics"
+
+    BenchUtils.runBench(
+      spark,
+      spark => spark.range(100).toDF("a"),
+      Collect(),
+      queryDescription = "test",
+      filenameStub = new File(TEST_FILES_ROOT, filenameStub).getAbsolutePath,
+      iterations = 1,
+      gcBetweenRuns = false
+    )
+
+    val files = TEST_FILES_ROOT.list((_: File, s: String) => s.startsWith(filenameStub))
+    assert(files.length==1)
+
+    val report = BenchUtils.readReport(new File(TEST_FILES_ROOT, files.head))
+    assert(report.stageMetrics.nonEmpty)
+  }
+
 
   test("round-trip serialize benchmark results") {
 
@@ -49,6 +74,7 @@ class BenchUtilsSuite extends FunSuite with BeforeAndAfterEach {
       writeOptions = Map("header" -> "true"),
       query = "q1",
       queryPlan = QueryPlan("logical", "physical"),
+      Seq.empty,
       Seq.empty,
       queryTimes = Seq(99, 88, 77))
 
