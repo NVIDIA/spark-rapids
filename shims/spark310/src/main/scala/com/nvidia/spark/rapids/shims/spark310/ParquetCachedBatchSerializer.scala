@@ -205,9 +205,7 @@ class ParquetCachedBatchSerializer extends CachedBatchSerializer with Arm {
   }
 
   private def getSchemaFromAttributeSeq(schema: Seq[Attribute]) = {
-    val s = StructType(
-      schema.map(a => StructField(a.name, a.dataType, a.nullable, a.metadata)))
-    s
+    StructType(schema.map(a => StructField(a.name, a.dataType, a.nullable, a.metadata)))
   }
 
   private def compressColumnarBatchWithParquet(gpuCB: ColumnarBatch): ParquetCachedBatch = {
@@ -304,9 +302,9 @@ class ParquetCachedBatchSerializer extends CachedBatchSerializer with Arm {
    * @return RDD of the rows that were stored in the cached batches.
    */
   override def convertCachedBatchToInternalRow(input: RDD[CachedBatch],
-                                cacheAttributes: Seq[Attribute],
-                                selectedAttributes: Seq[Attribute],
-                                conf: SQLConf): RDD[InternalRow] = {
+     cacheAttributes: Seq[Attribute],
+     selectedAttributes: Seq[Attribute],
+     conf: SQLConf): RDD[InternalRow] = {
     val rapidsConf = new RapidsConf(conf)
     if (rapidsConf.isSqlEnabled) {
       val cb = convertCachedBatchToColumnarInternal(input, cacheAttributes, selectedAttributes)
@@ -318,8 +316,6 @@ class ParquetCachedBatchSerializer extends CachedBatchSerializer with Arm {
       convertCachedBatchToInternalRowCpu(input, conf, cacheAttributes, selectedAttributes)
     }
   }
-
-  val datetimeRebaseMode = SQLConf.get.getConf(SQLConf.LEGACY_PARQUET_REBASE_MODE_IN_READ)
 
   private def convertCachedBatchToInternalRowCpu(input: RDD[CachedBatch], sqlConf: SQLConf,
      cacheAttributes: Seq[Attribute],
@@ -353,10 +349,10 @@ class ParquetCachedBatchSerializer extends CachedBatchSerializer with Arm {
             val parquetCachedBatch = cbIter.next().asInstanceOf[ParquetCachedBatch]
             val inputFile = new ByteArrayInputFile(parquetCachedBatch.buffer)
 
-            val requestedParquetColumns = // right now get everything
-              getRequestedColumnIndices(cacheAttributes, cacheAttributes).map { i => "_col" + i }
+            val requestedParquetColumns =
+              getRequestedColumnIndices(selectedAttributes, cacheAttributes).map { i => "_col" + i }
 
-            val requestedSchema = cacheAttributes.zipWithIndex.map {
+            val requestedSchema = selectedAttributes.zipWithIndex.map {
               case (attr, i) => attr.withName(requestedParquetColumns(i))
             }
 
