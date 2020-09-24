@@ -15,8 +15,9 @@
  */
 package com.nvidia.spark.rapids.tests.common
 
-import java.io.{File, FileOutputStream}
+import java.io.{File, FileOutputStream, FileWriter, PrintWriter}
 import java.time.Instant
+import java.util.concurrent.TimeUnit
 import java.util.concurrent.TimeUnit.NANOSECONDS
 
 import scala.collection.convert.ImplicitConversions.`iterator asScala`
@@ -28,7 +29,10 @@ import org.json4s.jackson.Serialization.writePretty
 
 import org.apache.spark.{SPARK_BUILD_USER, SPARK_VERSION}
 import org.apache.spark.sql.{DataFrame, Row, SaveMode, SparkSession}
+import org.apache.spark.sql.execution.{InputAdapter, QueryExecution, SparkPlan, WholeStageCodegenExec}
+import org.apache.spark.sql.execution.adaptive.{AdaptiveSparkPlanExec, QueryStageExec}
 import org.apache.spark.sql.functions.col
+import org.apache.spark.sql.util.QueryExecutionListener
 
 object BenchUtils {
 
@@ -122,9 +126,17 @@ object BenchUtils {
 
     val queryStartTime = Instant.now()
 
+    val queryPlansWithMetrics = new ListBuffer[SparkPlanNode]()
+
     var df: DataFrame = null
     val queryTimes = new ListBuffer[Long]()
     for (i <- 0 until iterations) {
+
+      // capture spark plan metrics on the final run
+      if (i+1 == iterations) {
+        spark.listenerManager.register(new BenchmarkListener(queryPlansWithMetrics))
+      }
+
       println(s"*** Start iteration $i:")
       val start = System.nanoTime()
       df = createDataFrame(spark)
@@ -198,6 +210,7 @@ object BenchUtils {
         Map.empty,
         queryDescription,
         queryPlan,
+        queryPlansWithMetrics,
         queryTimes)
 
       case w: WriteCsv => BenchmarkReport(
@@ -209,6 +222,7 @@ object BenchUtils {
         w.writeOptions,
         queryDescription,
         queryPlan,
+        queryPlansWithMetrics,
         queryTimes)
 
       case w: WriteParquet => BenchmarkReport(
@@ -220,6 +234,7 @@ object BenchUtils {
         w.writeOptions,
         queryDescription,
         queryPlan,
+        queryPlansWithMetrics,
         queryTimes)
     }
 
@@ -237,6 +252,96 @@ object BenchUtils {
     val os = new FileOutputStream(filename)
     os.write(writePretty(report).getBytes)
     os.close()
+  }
+
+  /**
+   * Generate a DOT graph for one query plan, or showing differences between two query plans.
+   *
+   * Diff mode is intended for comparing query plans that are expected to have the same
+   * structure, such as two different runs of the same query but with different tuning options.
+   *
+   * When running in diff mode, any differences in SQL metrics are shown. Also, if the plan
+   * starts to deviate then the graph will show where the plans deviate and will not recurse
+   * further.
+   *
+   * Example usage:
+   *
+   * <pre>
+   * val a = BenchUtils.readReport(new File("tpcxbb-q5-parquet-config1.json"))
+   * val b = BenchUtils.readReport(new File("tpcxbb-q5-parquet-config2.json"))
+   * BenchUtils.generateDotGraph(a.queryPlans.head, Some(b.queryPlans.head), "/tmp/graph.dot")
+   * </pre>
+   *
+   * Graphviz and other tools can be used to generate images from DOT files.
+   *
+   * See https://graphviz.org/pdf/dotguide.pdf for a description of DOT files.
+   */
+  def generateDotGraph(a: SparkPlanNode, b: Option[SparkPlanNode], filename: String): Unit = {
+
+    var nextId = 1
+
+    /** Recursively graph the operator nodes in the spark plan */
+    def writeGraph(
+        w: PrintWriter,
+        a: SparkPlanNode,
+        b: SparkPlanNode,
+        id: Int = 0): Unit = {
+      if (a.name == b.name && a.children.length == b.children.length) {
+        val metricNames = (a.metrics.map(_.name) ++ b.metrics.map(_.name)).distinct.sorted
+        val metrics = metricNames.map(name => {
+          val l = a.metrics.find(_.name == name)
+          val r = b.metrics.find(_.name == name)
+          if (l.isDefined && r.isDefined) {
+            val metric1 = l.get
+            val metric2 = r.get
+            if (metric1.value == metric2.value) {
+              s"$name: ${metric1.value}"
+            } else {
+              metric1.metricType match {
+                case "nsTiming" =>
+                  val n1 = metric1.value.toString.toLong
+                  val n2 = metric2.value.toString.toLong
+                  val pct = (n2-n1) * 100.0 / n1
+                  val pctStr = if (pct < 0) {
+                    f"$pct%.1f"
+                  } else {
+                    f"+$pct%.1f"
+                  }
+                  s"$name: ${TimeUnit.NANOSECONDS.toSeconds(n1)} / " +
+                      s"${TimeUnit.NANOSECONDS.toSeconds(n2)} s ($pctStr %)"
+                case _ =>
+                  s"$name: ${metric1.value} / ${metric2.value}"
+              }
+            }
+          }
+        }).mkString("\n")
+
+        w.println(
+          s"""node$id [shape=box,
+             |label = "${a.name} #${a.id}\n
+             |$metrics"];
+             | /* ${a.description} */
+             |""".stripMargin)
+        a.children.indices.foreach(i => {
+            val childId = nextId
+            nextId += 1
+            writeGraph(w, a.children(i), b.children(i), childId);
+            w.println(s"node$id -> node$childId;")
+          })
+      } else {
+        // plans have diverged - cannot recurse further
+        w.println(
+          s"""node$id [shape=box, color=red,
+             |label = "plans diverge here: ${a.name} vs ${b.name}"];""".stripMargin)
+      }
+    }
+
+    // write the dot graph to a file
+    val w = new PrintWriter(new FileWriter(filename))
+    w.println("digraph G {")
+    writeGraph(w, a, b.getOrElse(a), 0)
+    w.println("}")
+    w.close()
   }
 
   def getSparkVersion: String = {
@@ -412,6 +517,38 @@ object BenchUtils {
   }
 }
 
+class BenchmarkListener(list: ListBuffer[SparkPlanNode]) extends QueryExecutionListener {
+
+  override def onSuccess(funcName: String, qe: QueryExecution, durationNs: Long): Unit = {
+    def toJson(plan: SparkPlan): SparkPlanNode = {
+      plan match {
+        case WholeStageCodegenExec(child) => toJson(child)
+        case InputAdapter(child) => toJson(child)
+        case _ =>
+          val children: Seq[SparkPlanNode] = plan match {
+            case s: AdaptiveSparkPlanExec => Seq(toJson(s.executedPlan))
+            case s: QueryStageExec => Seq(toJson(s.plan))
+            case _ => plan.children.map(child => toJson(child))
+          }
+          val metrics: Seq[SparkSQLMetric] = plan.metrics
+              .map(m => SparkSQLMetric(m._1, m._2.metricType, m._2.value)).toSeq
+
+          SparkPlanNode(
+            plan.id,
+            plan.nodeName,
+            plan.simpleStringWithNodeId(),
+            metrics,
+            children)
+      }
+    }
+    list += toJson(qe.executedPlan)
+  }
+
+  override def onFailure(funcName: String, qe: QueryExecution, exception: Exception): Unit = {
+    exception.printStackTrace()
+  }
+}
+
 /** Top level benchmark report class */
 case class BenchmarkReport(
     filename: String,
@@ -422,6 +559,7 @@ case class BenchmarkReport(
     writeOptions: Map[String, String],
     query: String,
     queryPlan: QueryPlan,
+    queryPlans: Seq[SparkPlanNode],
     queryTimes: Seq[Long])
 
 /** Configuration options that affect how the tests are run */
@@ -433,6 +571,18 @@ case class TestConfiguration(
 case class QueryPlan(
     logical: String,
     executedPlan: String)
+
+case class SparkPlanNode(
+    id: Int,
+    name: String,
+    description: String,
+    metrics: Seq[SparkSQLMetric],
+    children: Seq[SparkPlanNode])
+
+case class SparkSQLMetric(
+    name: String,
+    metricType: String,
+    value: Any)
 
 /** Details about the environment where the benchmark ran */
 case class Environment(
