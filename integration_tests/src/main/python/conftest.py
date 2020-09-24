@@ -59,6 +59,9 @@ def is_apache_runtime():
 def is_databricks_runtime():
     return runtime_env() == "databricks"
 
+def is_emr_runtime():
+    return runtime_env() == "emr"
+
 _limit = -1
 
 def get_limit():
@@ -347,7 +350,7 @@ class TpcdsRunner:
     }
     if not self.tpcds_format in formats:
         raise RuntimeError("{} is not a supported tpcds input type".format(self.tpcds_format))
-    formats.get(self.tpcds_format)(jvm_session,self.tpcds_path)
+    formats.get(self.tpcds_format)(jvm_session, self.tpcds_path, True)
 
   def do_test_query(self, query):
     spark = get_spark_i_know_what_i_am_doing()
@@ -364,4 +367,10 @@ def tpcds(request):
     pytest.skip("TPC-DS not configured to run")
   else:
     yield TpcdsRunner(tpcds_format, tpcds_path)
+
+@pytest.fixture(scope="session")
+def enable_cudf_udf(request):
+    enable_udf_cudf = request.config.getoption("cudf_udf")
+    if not enable_udf_cudf:
+        pytest.skip("cudf_udf not configured to run")
 

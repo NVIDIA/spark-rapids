@@ -13,14 +13,14 @@ One set is based off of the mortgage dataset you can download
 and are in the `com.nvidia.spark.rapids.tests.mortgage` package.
 
 The other is based off of TPCH. You can use the TPCH `dbgen` tool to generate data for them.  They
-are in the `com.nvidia.spark.rapids.tests.tpch` package. `dbgen` has various options, one way to
+are in the `com.nvidia.spark.rapids.tests.tpch` package. `dbgen` has various options to
 generate the data. Please refer to the documentation that comes with dbgen on how to use it, but
-we typically run with the default options and only increase the scale factor dependig on the test.
+we typically run with the default options and only increase the scale factor depending on the test.
 ```shell 
 dbgen -b dists.dss -s 10
 ```
 
-You can include the test jar `rapids-4-spark-integration-tests_2.12-0.2.0-SNAPSHOT.jar` with the
+You can include the test jar `rapids-4-spark-integration-tests_2.12-0.3.0-SNAPSHOT.jar` with the
 Spark --jars option to get the TPCH tests. To setup for the queries you can run 
 `TpchLikeSpark.setupAllCSV` for CSV formatted data or `TpchLikeSpark.setupAllParquet`
 for parquet formatted data.  Both of those take the Spark session, and a path to the dbgen
@@ -42,8 +42,10 @@ They generally follow TPCH but are not guaranteed to be the same.
 Unit tests exist in the tests directory. This is unconventional and is done so we can run the tests
 on the final shaded version of the plugin. It also helps with how we collect code coverage.
 You can run the unit tests against different versions of Spark using the different profiles. The
-default version runs again Spark 3.0.0, `-Pspark301tests` runs against Spark 3.0.1, and `-Pspark310tests`
-runs unit tests against Spark 3.1.0.
+default version runs again Spark 3.0.0, to run against other version use one of the following profiles:
+   - `-Pspark301tests` (Spark 3.0.1)
+   - `-Pspark302tests` (Spark 3.0.2)
+   - `-Pspark310tests` (Spark 3.1.0)
 
 ## Integration tests
 
@@ -55,7 +57,8 @@ whatever cluster you have configured.
 
 To run the tests separate from the build go to the `integration_tests` directory and submit
 `run_tests.py` through `spark-submit`.  Be sure to include the necessary jars for the RAPIDS
-plugin either with `spark-submit` or with the cluster when it is [setup](getting-started.md).
+plugin either with `spark-submit` or with the cluster when it is 
+[setup](get-started/getting-started-on-prem.md).
 The command line arguments to `run_tests.py` are the same as for 
 [pytest](https://docs.pytest.org/en/latest/usage.html). The only reason we have a separate script
 is that `spark-submit` uses python if the file name ends with `.py`.
@@ -80,7 +83,7 @@ individually, so you don't risk running unit tests along with the integration te
 http://www.scalatest.org/user_guide/using_the_scalatest_shell
 
 ```shell 
-spark-shell --jars rapids-4-spark-tests_2.12-0.2.0-SNAPSHOT-tests.jar,rapids-4-spark-integration-tests_2.12-0.2.0-SNAPSHOT-tests.jar,scalatest_2.12-3.0.5.jar,scalactic_2.12-3.0.5.jar
+spark-shell --jars rapids-4-spark-tests_2.12-0.3.0-SNAPSHOT-tests.jar,rapids-4-spark-integration-tests_2.12-0.3.0-SNAPSHOT-tests.jar,scalatest_2.12-3.0.5.jar,scalactic_2.12-3.0.5.jar
 ```
 
 First you import the `scalatest_shell` and tell the tests where they can find the test files you

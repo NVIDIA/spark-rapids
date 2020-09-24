@@ -1,0 +1,114 @@
+# Copyright (c) 2020, NVIDIA CORPORATION.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+# A workflow to trigger blossom-CI on self-hosted runner
+name: Blossom-CI
+on:
+  issue_comment:
+    types: [created]
+
+jobs:
+  authorization:
+    name: Authorization
+    # trigger on pre-defined text
+    if: github.event.comment.body == 'build'
+    runs-on: [self-hosted, linux, blossom]
+    steps:
+      - name: Check if comment is issued by authorized person
+        run: blossom-ci
+        env:
+          OPERATION: 'AUTH'
+          VERSION: '1'
+
+  vulnerability-scan-job:
+    name: Vulnerability scan job
+    needs: [authorization]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Get pull request data
+        id: pull_request_data
+        uses: octokit/request-action@v2.x
+        with:
+          route: 'GET /repos/:repository/pulls/:issue_id'
+          repository: ${{ github.repository }}
+          issue_id: ${{ github.event.issue.number }}
+        env:
+          GITHUB_TOKEN: "${{ secrets.GITHUB_TOKEN }}"
+
+      - name: Set blackduck project version
+        id: blackduck-project-version
+        run: echo "${{ fromJson(steps.pull_request_data.outputs.data).head.ref }}-${{ github.run_id }}"
+
+      - name: Update status
+        uses: octokit/request-action@v2.x
+        with:
+          route: 'POST /repos/:repository/statuses/:sha'
+          repository: ${{ github.repository }}
+          sha: ${{ fromJson(steps.pull_request_data.outputs.data).head.sha }}
+          target_url: "https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          description: "vulnerability scan running"
+          state: "pending"
+          context: "blossom-ci"
+        env:
+          GITHUB_TOKEN: "${{ secrets.GITHUB_TOKEN }}"
+
+      - name: Checkout code
+        uses: actions/checkout@v2
+        with:
+          repository: ${{ fromJson(steps.pull_request_data.outputs.data).head.repo.full_name }}
+          ref: ${{ fromJson(steps.pull_request_data.outputs.data).head.ref }}
+          lfs: 'true'
+
+      - name: Setup java
+        uses: actions/setup-java@v1
+        with:
+          java-version: 1.8
+
+      - name: Get project data (maven)
+        run: |
+          echo ::set-env name=projects::$(mvn -am dependency:tree | grep maven-dependency-plugin | awk '{ out="com.nvidia:"$(NF-1);print out }' | grep rapids | xargs | sed -e 's/ /,/g')
+
+      - name: Add mask
+        run: echo "::add-mask::${{ secrets.BLACKDUCK_URL }}"
+
+      - name: Run synopsys detect
+        id: scan_result
+        uses: blackducksoftware/github-action@2.0.1
+        env:
+          PROJECTS: ${{ env.projects }}
+        with:
+          args: >
+            --blackduck.url="https://${{ secrets.BLACKDUCK_URL }}"
+            --blackduck.api.token="${{ secrets.BLACKDUCK_API_TOKEN }}"
+            --detect.maven.build.command="-pl='$PROJECTS -am'"
+            --detect.force.success=false
+            --detect.parallel.processors=0
+            --detect.project.name="${{ github.repository }}"
+            --detect.project.version.name="${{ github.run_id }}"
+
+  vulnerability-check-trigger:
+    name: Vulnerability check & start ci job
+    needs: [vulnerability-scan-job]
+    runs-on: [self-hosted, linux, blossom]
+    steps:
+      - name: Check for new issue in vulnerability scan & start ci job
+        run: blossom-ci
+        env:
+          OPERATION: 'SCAN-CHECK-CI-JOB-START'
+          VERSION: '1'
+          BLACKDUCK_TOKEN: "${{ secrets.BLACKDUCK_API_TOKEN }}"
+          BLACKDUCK_URL: "${{ secrets.BLACKDUCK_URL }}"
+          BLACKDUCK_PROJECT_VERSION: "${{ github.run_id }}"
+          CI_SERVER: ${{ secrets.CI_SERVER }}
+          REPO_TOKEN: ${{ secrets.GITHUB_TOKEN }}

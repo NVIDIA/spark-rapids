@@ -29,7 +29,7 @@ pipeline {
 
     options {
         ansiColor('xterm')
-        timeout(time: 120, unit: 'MINUTES')
+        timeout(time: 180, unit: 'MINUTES')
         buildDiscarder(logRotator(numToKeepStr: '10'))
     }
 
@@ -46,6 +46,7 @@ pipeline {
         MVN_MIRROR='-s jenkins/settings.xml -P mirror-apache-to-urm'
         DIST_PL='dist'
         SQL_PL='sql-plugin'
+        TESTS_PL='integration_tests'
         URM_URL = "${urmUrl}"
     }
 
@@ -57,7 +58,8 @@ pipeline {
                     sh "mkdir -p ${HOME}/.zinc"
                     docker.image("$IMAGE_NAME").inside("--runtime=nvidia -v ${HOME}/.m2:${HOME}/.m2:rw \
                         -v ${HOME}/.zinc:${HOME}/.zinc:rw") {
-                        sh "mvn -U -B clean install $MVN_MIRROR -P source-javadoc"
+                        sh "mvn dependency:purge-local-repository -DmanualInclude='com.nvidia:rapids-4-spark-shims-spark300-databricks_2.12' \
+                                -U -B clean install $MVN_MIRROR -P 'include-databricks,source-javadoc,!snapshot-shims'"
                     }
                 }
             }

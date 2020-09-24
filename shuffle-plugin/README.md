@@ -9,13 +9,15 @@ In order to build the Rapids Shuffle Plugin, you need jucx-1.8.0.jar. The curren
 
 ```
 git clone git@github.com:openucx/ucx.git
+cd ucx
 git checkout 99c7a73cc
 ```
 
-2. Making sure you have `autotools` installed, create a build directory inside `ucx`:
+2. Making sure you have `autotools` installed, run `autogen.sh` to generate the `configure` script,  
+and then create a build directory inside `ucx`:
 
 ```
-cd ucx
+./autogen.sh
 mkdir build
 cd build
 ```

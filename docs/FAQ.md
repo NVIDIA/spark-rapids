@@ -19,16 +19,16 @@ shows stale results.
 
 ### What versions of Apache Spark does the RAPIDS Accelerator for Apache Spark support?
 
-The RAPIDS Accelerator for Apache Spark requires version 3.0.0 of Apache Spark. Because the plugin
-replaces parts of the physical plan that Apache Spark considers to be internal the code for those
-plans can change even between bug fix releases. As a part of our process, we try to stay on top of
-these changes and release updates as quickly as possible.
+The RAPIDS Accelerator for Apache Spark requires version 3.0.0 or 3.0.1 of Apache Spark. Because the
+plugin replaces parts of the physical plan that Apache Spark considers to be internal the code for
+those plans can change even between bug fix releases. As a part of our process, we try to stay on
+top of these changes and release updates as quickly as possible.
 
 ### Which distributions are supported?
 
 The RAPIDS Accelerator for Apache Spark officially supports
-[Apache Spark](get-started/getting-started.md),
-[Databricks Runtime 7.0](get-started/getting-started-with-rapids-accelerator-on-databricks.md)
+[Apache Spark](get-started/getting-started-on-prem.md),
+[Databricks Runtime 7.0](get-started/getting-started-databricks.md)
 and [Google Cloud Dataproc](get-started/getting-started-gcp.md).
 Most distributions based off of Apache Spark 3.0.0 should work, but because the plugin replaces
 parts of the physical plan that Apache Spark considers to be internal the code for those plans
@@ -37,13 +37,13 @@ set up testing and validation on their distributions.
 
 ### What is the right hardware setup to run GPU accelerated Spark?
 
-Reference Architectures should be available around Q4 2020.
+Reference architectures should be available around Q4 2020.
 
 ### What CUDA versions are supported?
 
-CUDA 10.1 and 10.2 are currently supported, but you need to download the cudf jar that corresponds
-to the version you are using. Please look [here][version/stable-release.md] for download links
-for the stable release.
+CUDA 10.1, 10.2 and 11.0 are currently supported, but you need to download the cudf jar that 
+corresponds to the version you are using. Please look [here][version/stable-release.md] for download 
+links for the stable release.
 
 ### What parts of Apache Spark are accelerated?
 
@@ -75,7 +75,7 @@ speedup, with a 4x speedup typical. We have seen as high as 100x in some specifi
 * Writing Parquet/ORC
 * Reading CSV
 * Transcoding (reading an input file and doing minimal processing before writing it out again,
-possibly in a different format, like CSV to parquet)
+possibly in a different format, like CSV to Parquet)
 
 ### Are there initialization costs?
 
@@ -114,8 +114,9 @@ Yes, DPP still works.  It might not be as efficient as it could be, and we are w
 
 ### Is Adaptive Query Execution (AQE) Supported?
 
-We are in the process of making sure AQE works. Some parts work now, but other parts require some
-changes to the internals of Spark, that we are working with the community to be able to support.
+In the 0.2 release, AQE is supported but all exchanges will default to the CPU.  As of the 0.3 
+release, running on Spark 3.0.1 and higher any operation that is supported on GPU will now stay on 
+the GPU when AQE is enabled. 
 
 ### Are cache and persist supported?
 
@@ -127,7 +128,7 @@ the Spark community on changes that would allow us to accelerate compression whe
 No, that is not currently supported. It would require much larger changes to Apache Spark to be able
 to support this.
 
-### Is pyspark supported?
+### Is PySpark supported?
 
 Yes
 
@@ -135,20 +136,20 @@ Yes
 
 Yes, but we don't actively test them.
 
-## Are the Java APIs for Spark supported?
+### Are the Java APIs for Spark supported?
 
 Yes, but we don't actively test them.
 
-## Are the Scala APIs for Spark supported?
+### Are the Scala APIs for Spark supported?
 
 Yes
 
-## Is the GPU needed on the driver?  Are there any benefits to having a GPU on the driver?
+### Is the GPU needed on the driver?  Are there any benefits to having a GPU on the driver?
 
 The GPU is not needed on the driver and there is no benefit to having one available on the driver
 for the RAPIDS plugin.
 
-## How does the performance compare to DataBricks' DeltaEngine?
+### How does the performance compare to DataBricks' DeltaEngine?
 
 We have not evaluated the performance yet. DeltaEngine is not open source, so any analysis needs to
 be done with Databricks in some form. When DeltaEngine is generally available and the terms of
@@ -186,7 +187,7 @@ for this issue.
 To fix it you can either disable the IOMMU, or you can disable using pinned memory by setting
 [spark.rapids.memory.pinnedPool.size](configs.md#memory.pinnedPool.size) to 0.
 
-# Is speculative execution supported?
+### Is speculative execution supported?
 
 Yes, speculative execution in Spark is fine with the RAPIDS accelerator plugin.
 

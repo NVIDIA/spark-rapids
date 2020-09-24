@@ -90,23 +90,6 @@ class HashAggregatesSuite extends SparkQueryCompareTestSuite {
       .agg(first(col("c0"), ignoreNulls = true), last(col("c0"), ignoreNulls = true))
   }
 
-  testExpectedExceptionStartsWith("test unsorted agg with first and last no grouping",
-    classOf[IllegalArgumentException],
-    "Part of the plan is not columnar", firstDf, repart = 2) {
-    frame => frame
-      .coalesce(1)
-      .agg(first(col("c0"), ignoreNulls = true), last(col("c0"), ignoreNulls = true))
-  }
-
-  testExpectedExceptionStartsWith("test sorted agg with first and last no grouping",
-    classOf[IllegalArgumentException],
-    "Part of the plan is not columnar", firstDf, repart = 2) {
-    frame => frame
-      .coalesce(1)
-      .sort(col("c2").asc, col("c0").asc) // force deterministic use case
-      .agg(first(col("c0"), ignoreNulls = true), last(col("c0"), ignoreNulls = true))
-  }
-
   IGNORE_ORDER_testSparkResultsAreEqualWithCapture(
       "nullable aggregate with not null filter",
       firstDf,
@@ -731,20 +714,6 @@ class HashAggregatesSuite extends SparkQueryCompareTestSuite {
 
   IGNORE_ORDER_testSparkResultsAreEqual("grouping expressions 2", longsCsvDf) {
     frame => frame.groupBy(col("more_longs") + col("longs")).agg(min("longs"))
-  }
-
-  testExpectedExceptionStartsWith("first without grouping",
-    classOf[IllegalArgumentException],
-    "Part of the plan is not columnar",
-    intCsvDf) {
-    frame => frame.agg(first("ints", false))
-  }
-
-  testExpectedExceptionStartsWith("last without grouping",
-    classOf[IllegalArgumentException],
-    "Part of the plan is not columnar",
-    intCsvDf) {
-    frame => frame.agg(first("ints", false))
   }
 
   IGNORE_ORDER_testSparkResultsAreEqual("first ignoreNulls=false", intCsvDf) {
@@ -1634,5 +1603,46 @@ class HashAggregatesSuite extends SparkQueryCompareTestSuite {
       .set(RapidsConf.HAS_NANS.key, "false")
       .set(RapidsConf.ENABLE_FLOAT_AGG.key, "true")) {
     frame => frame.groupBy(col("double")).agg(sum(col("int")))
+  }
+
+  testSparkResultsAreEqual("Agg expression with filter avg with nulls", nullDf, execsAllowedNonGpu =
+    Seq("HashAggregateExec", "AggregateExpression", "AttributeReference", "Alias", "Average",
+      "Count", "Cast"),
+    conf = partialOnlyConf, repart = 2) {
+    frame => frame.createOrReplaceTempView("testTable")
+      frame.sparkSession.sql(
+        s"""
+           | SELECT
+           |   avg(more_longs) filter (where more_longs > 2)
+           | FROM testTable
+           |   group by longs
+           |""".stripMargin)
+  }
+
+  testSparkResultsAreEqual("Agg expression with filter count with nulls",
+    nullDf, execsAllowedNonGpu = Seq("HashAggregateExec", "AggregateExpression",
+      "AttributeReference", "Alias", "Count", "Cast"),
+    conf = partialOnlyConf, repart = 2) {
+    frame => frame.createOrReplaceTempView("testTable")
+      frame.sparkSession.sql(
+        s"""
+           | SELECT
+           |   count(more_longs) filter (where more_longs > 2)
+           | FROM testTable
+           |   group by longs
+           |""".stripMargin)
+  }
+
+  testSparkResultsAreEqual("Agg expression with filter sum with nulls", nullDf, execsAllowedNonGpu =
+    Seq("HashAggregateExec", "AggregateExpression", "AttributeReference", "Alias", "Sum", "Cast"),
+    conf = partialOnlyConf, repart = 2) {
+    frame => frame.createOrReplaceTempView("testTable")
+      frame.sparkSession.sql(
+        s"""
+           | SELECT
+           |   sum(more_longs) filter (where more_longs > 2)
+           | FROM testTable
+           |   group by longs
+           |""".stripMargin)
   }
 }

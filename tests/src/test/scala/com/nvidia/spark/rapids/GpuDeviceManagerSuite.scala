@@ -34,6 +34,7 @@ class GpuDeviceManagerSuite extends FunSuite with Arm {
         .set(RapidsConf.POOLED_MEM.key, "true")
         .set(RapidsConf.RMM_ALLOC_FRACTION.key, initPoolFraction.toString)
         .set(RapidsConf.RMM_ALLOC_MAX_FRACTION.key, maxPoolFraction.toString)
+        .set(RapidsConf.RMM_ALLOC_RESERVE.key, "0")
     try {
       TestUtils.withGpuSparkSession(conf) { _ =>
         val initPoolSize = (totalGpuSize * initPoolFraction).toLong
@@ -41,7 +42,7 @@ class GpuDeviceManagerSuite extends FunSuite with Arm {
         // initial allocation should fit within initial pool size
         withResource(DeviceMemoryBuffer.allocate(allocSize)) { _ =>
           // this should grow the pool
-          withResource(DeviceMemoryBuffer.allocate(allocSize)) { _ =>
+          withResource(DeviceMemoryBuffer.allocate(allocSize / 2)) { _ =>
             assertThrows[OutOfMemoryError] {
               // this should exceed the specified pool limit
               DeviceMemoryBuffer.allocate(allocSize).close()
@@ -49,6 +50,29 @@ class GpuDeviceManagerSuite extends FunSuite with Arm {
           }
         }
       }
+    } finally {
+      GpuDeviceManager.shutdown()
+    }
+  }
+
+  test("RMM reserve larger than max") {
+    SparkSession.getActiveSession.foreach(_.close())
+    GpuDeviceManager.shutdown()
+    val rapidsConf = new RapidsConf(Map(RapidsConf.RMM_ALLOC_RESERVE.key -> "200g"))
+    assertThrows[IllegalArgumentException] {
+      GpuDeviceManager.initializeMemory(None, Some(rapidsConf))
+    }
+  }
+
+  test("RMM init equals max") {
+    SparkSession.getActiveSession.foreach(_.close())
+    GpuDeviceManager.shutdown()
+    val rapidsConf = new RapidsConf(Map(
+      RapidsConf.RMM_ALLOC_RESERVE.key -> "0",
+      RapidsConf.RMM_ALLOC_FRACTION.key -> "0.3",
+      RapidsConf.RMM_ALLOC_MAX_FRACTION.key -> "0.3"))
+    try {
+      GpuDeviceManager.initializeMemory(None, Some(rapidsConf))
     } finally {
       GpuDeviceManager.shutdown()
     }

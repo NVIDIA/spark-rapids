@@ -19,6 +19,8 @@ package com.nvidia.spark.rapids
 import java.io.File
 import java.nio.file.Files
 
+import scala.collection.immutable.HashMap
+
 import ai.rapids.cudf.{ContiguousTable, HostColumnVector, Table}
 import com.nvidia.spark.rapids.format.CodecType
 
@@ -59,6 +61,11 @@ class GpuCoalesceBatchesSuite extends SparkQueryCompareTestSuite {
   }
 
   test("limit batches by string size") {
+    // TODO figure out a better way to deal with the Rmm Event handler
+    // because we cannot do this multiple times without issues.
+
+    // If this test is run on it's own this is needed.
+    // RapidsBufferCatalog.init(new RapidsConf(new HashMap[String, String]()))
 
     val schema = new StructType(Array(
       StructField("a", DataTypes.DoubleType),
@@ -97,7 +104,8 @@ class GpuCoalesceBatchesSuite extends SparkQueryCompareTestSuite {
       override def getColumnDataSize(cb: ColumnarBatch, index: Int, default: Long): Long =
         index match {
           case 0 => 64L
-          case 1 => (Int.MaxValue / 4 * 3).toLong
+          case 1 => ((Int.MaxValue / 4) * 3).toLong
+          case _ => default
         }
     }
 
@@ -166,6 +174,10 @@ class GpuCoalesceBatchesSuite extends SparkQueryCompareTestSuite {
       .set(RapidsConf.TEST_ALLOWED_NONGPU.key, "FileSourceScanExec")
       .set("spark.rapids.sql.exec.FileSourceScanExec", "false") // force Parquet read onto CPU
       .set("spark.sql.shuffle.partitions", "1")
+      // this test isn't valid when AQE is enabled because the FileScan happens as part of
+      // a query stage that runs on the CPU, wrapped in a CPU Exchange, with a ColumnarToRow
+      // transition inserted
+      .set("spark.sql.adaptive.enabled", "false")
 
     val dir = Files.createTempDirectory("spark-rapids-test").toFile
     val path = new File(dir,

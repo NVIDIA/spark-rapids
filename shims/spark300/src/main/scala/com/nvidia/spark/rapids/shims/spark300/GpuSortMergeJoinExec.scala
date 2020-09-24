@@ -50,7 +50,7 @@ class GpuSortMergeJoinMeta(
         s"see ${RapidsConf.ENABLE_REPLACE_SORTMERGEJOIN.key}")
     }
 
-    // make sure this is last check - if this is SortMergeJoin, the children can be Sorts and we
+    // make sure this is the last check - if this is SortMergeJoin, the children can be Sorts and we
     // want to validate they can run on GPU and remove them before replacing this with a
     // ShuffleHashJoin
     if (canThisBeReplaced) {
@@ -83,7 +83,8 @@ class GpuSortMergeJoinMeta(
       buildSide,
       condition.map(_.convertToGpu()),
       childPlans(0).convertIfNeeded(),
-      childPlans(1).convertIfNeeded())
+      childPlans(1).convertIfNeeded(),
+      join.isSkewJoin)
   }
 
   /**

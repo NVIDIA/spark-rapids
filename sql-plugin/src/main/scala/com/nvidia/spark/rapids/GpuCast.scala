@@ -70,6 +70,13 @@ class CastExprMeta[INPUT <: CastBase](
         "operation on the GPU, set" +
         s" ${RapidsConf.ENABLE_CAST_STRING_TO_INTEGER} to true.")
     }
+    if (!conf.isCastStringToTimestampEnabled && fromType == DataTypes.StringType
+      && toType == DataTypes.TimestampType) {
+      willNotWorkOnGpu("the GPU only supports a subset of formats " +
+        "when casting strings to timestamps. Refer to the CAST documentation " +
+        "for more details. To enable this operation on the GPU, set" +
+        s" ${RapidsConf.ENABLE_CAST_STRING_TO_TIMESTAMP} to true.")
+    }
   }
 
   override def convertToGpu(child: Expression): GpuExpression =

@@ -41,7 +41,8 @@ rm -rf spark-rapids
 mkdir spark-rapids
 tar -zxvf $SPARKTGZ -C spark-rapids
 cd spark-rapids
-mvn -B -Pdatabricks clean package -DskipTests || true
+export WORKSPACE=`pwd`
+mvn -B '-Pdatabricks,!snapshot-shims' clean package -DskipTests || true
 M2DIR=/home/ubuntu/.m2/repository
 CUDF_JAR=${M2DIR}/ai/rapids/cudf/${CUDF_VERSION}/cudf-${CUDF_VERSION}-${CUDA_VERSION}.jar
 
@@ -87,11 +88,13 @@ mvn -B install:install-file \
    -Dversion=$SPARK_VERSION \
    -Dpackaging=jar
 
-mvn -B -Pdatabricks clean package -DskipTests
+mvn -B '-Pdatabricks,!snapshot-shims' clean package -DskipTests
 
 # Copy so we pick up new built jar and latesty CuDF jar. Note that the jar names has to be
 # exactly what is in the staticly setup Databricks cluster we use. 
+echo "Copying rapids jars: dist/target/$RAPIDS_BUILT_JAR $DB_RAPIDS_JAR_LOC"
 sudo cp dist/target/$RAPIDS_BUILT_JAR $DB_RAPIDS_JAR_LOC
+echo "Copying cudf jars: $CUDF_JAR $DB_CUDF_JAR_LOC"
 sudo cp $CUDF_JAR $DB_CUDF_JAR_LOC
 
 # tests
@@ -106,6 +109,16 @@ sudo ln -s /databricks/jars/ $SPARK_HOME/jars || true
 sudo chmod 777 /databricks/data/logs/
 sudo chmod 777 /databricks/data/logs/*
 echo { \"port\":\"15002\" } > ~/.databricks-connect
+if [ `ls $DB_JAR_LOC/rapids* | wc -l` -gt 1 ]; then
+    echo "ERROR: Too many rapids jars in $DB_JAR_LOC"
+    ls $DB_JAR_LOC/rapids*
+    exit 1
+fi
+if [ `ls $DB_JAR_LOC/cudf* | wc -l` -gt 1 ]; then
+    echo "ERROR: Too many cudf jars in $DB_JAR_LOC"
+    ls $DB_JAR_LOC/cudf*
+    exit 1
+fi
 $SPARK_HOME/bin/spark-submit ./runtests.py --runtime_env="databricks"
 cd /home/ubuntu
 tar -zcvf spark-rapids-built.tgz spark-rapids

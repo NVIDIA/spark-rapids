@@ -117,11 +117,12 @@ case class GpuYear(child: Expression) extends GpuDateUnaryExpression {
     GpuColumnVector.from(input.getBase.year())
 }
 
-case class GpuTimeSub(
+abstract class GpuTimeMath(
     start: Expression,
     interval: Expression,
     timeZoneId: Option[String] = None)
-  extends BinaryExpression with GpuExpression with TimeZoneAwareExpression with ExpectsInputTypes {
+   extends BinaryExpression with GpuExpression with TimeZoneAwareExpression with ExpectsInputTypes
+   with Serializable {
 
   def this(start: Expression, interval: Expression) = this(start, interval, None)
 
@@ -135,10 +136,6 @@ case class GpuTimeSub(
   override def dataType: DataType = TimestampType
 
   override lazy val resolved: Boolean = childrenResolved && checkInputDataTypes().isSuccess
-
-  override def withTimeZone(timeZoneId: String): TimeZoneAwareExpression = {
-    copy(timeZoneId = Option(timeZoneId))
-  }
 
   override def columnarEval(batch: ColumnarBatch): Any = {
     var lhs: Any = null
@@ -156,7 +153,7 @@ case class GpuTimeSub(
           if (usToSub != 0) {
             withResource(Scalar.fromLong(usToSub)) { us_s =>
               withResource(l.getBase.castTo(DType.INT64)) { us =>
-                withResource(us.sub(us_s)) {longResult =>
+                withResource(intervalMath(us_s, us)) { longResult =>
                   GpuColumnVector.from(longResult.castTo(DType.TIMESTAMP_MICROSECONDS))
                 }
               }
@@ -176,6 +173,36 @@ case class GpuTimeSub(
         rhs.asInstanceOf[AutoCloseable].close()
       }
     }
+  }
+
+  def intervalMath(us_s: Scalar, us: ColumnVector): ColumnVector
+}
+
+case class GpuTimeAdd(start: Expression,
+                      interval: Expression,
+                      timeZoneId: Option[String] = None)
+  extends GpuTimeMath(start, interval, timeZoneId) {
+
+  override def withTimeZone(timeZoneId: String): TimeZoneAwareExpression = {
+    copy(timeZoneId = Option(timeZoneId))
+  }
+
+  override def intervalMath(us_s: Scalar, us: ColumnVector): ColumnVector = {
+    us.add(us_s)
+  }
+}
+
+case class GpuTimeSub(start: Expression,
+                       interval: Expression,
+                       timeZoneId: Option[String] = None)
+  extends GpuTimeMath(start, interval, timeZoneId) {
+
+  override def withTimeZone(timeZoneId: String): TimeZoneAwareExpression = {
+    copy(timeZoneId = Option(timeZoneId))
+  }
+
+  def intervalMath(us_s: Scalar, us: ColumnVector): ColumnVector = {
+    us.sub(us_s)
   }
 }
 
@@ -271,7 +298,7 @@ abstract class UnixTimeExprMeta[A <: BinaryExpression with TimeZoneAwareExpressi
         }
       } catch {
         case x: TimestampFormatConversionException =>
-          willNotWorkOnGpu(x.getMessage)
+          willNotWorkOnGpu(s"Failed to convert ${x.reason} ${x.getMessage()}")
       }
     }
   }

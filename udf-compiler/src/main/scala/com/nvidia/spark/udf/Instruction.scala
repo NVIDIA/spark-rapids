@@ -73,6 +73,41 @@ private object Repr {
     var string: Expression = Literal.default(StringType)
   }
 
+  case class DateTimeFormatter private (private[Repr] val pattern: Expression) extends CompilerInternal("java.time.format.DateTimeFormatter") {
+    def invoke(methodName: String, args: List[Expression]): Expression = {
+      methodName match {
+        case _ =>
+          throw new SparkException(s"Unsupported DateTimeFormatter op ${methodName}")
+      }
+    }
+  }
+  object DateTimeFormatter {
+    private def apply(pattern: Expression): DateTimeFormatter = new DateTimeFormatter(pattern)
+    def ofPattern(pattern: Expression): DateTimeFormatter = DateTimeFormatter(pattern)
+  }
+
+  case class LocalDateTime private (private val dateTime: Expression) extends CompilerInternal("java.time.LocalDateTime") {
+    def invoke(methodName: String, args: List[Expression]): Expression = {
+      methodName match {
+        case "getYear" => Year(dateTime)
+        case "getMonthValue" => Month(dateTime)
+        case "getDayOfMonth" => DayOfMonth(dateTime)
+        case "getHour" => Hour(dateTime)
+        case "getMinute" => Minute(dateTime)
+        case "getSecond" => Second(dateTime)
+        case _ =>
+          throw new SparkException(s"Unsupported DateTimeFormatter op ${methodName}")
+      }
+    }
+  }
+  object LocalDateTime {
+    private def apply(pattern: Expression): LocalDateTime = { new LocalDateTime(pattern) }
+    def parse(text: Expression, formatter: DateTimeFormatter): LocalDateTime = {
+      LocalDateTime(new ParseToTimestamp(text, formatter.pattern))
+    }
+  }
+
+  case class ClassTag[T](classTag: scala.reflect.ClassTag[T]) extends CompilerInternal("scala.reflect.ClassTag")
 }
 
 /**
@@ -144,6 +179,7 @@ case class Instruction(opcode: Int, operand: Int, instructionStr: String) extend
       case Opcode.D2I | Opcode.F2I | Opcode.L2I => cast(state, IntegerType)
       case Opcode.D2L | Opcode.F2L | Opcode.I2L => cast(state, LongType)
       case Opcode.I2S => cast(state, ShortType)
+      case Opcode.CHECKCAST => checkcast(lambdaReflection, state)
       // Branching instructions
       // if_acmp<cond> isn't supported.
       case Opcode.IF_ICMPEQ => ifCmp(state, (x, y) => simplify(EqualTo(x, y)))
@@ -276,6 +312,15 @@ case class Instruction(opcode: Int, operand: Int, instructionStr: String) extend
     State(locals, Cast(top, dataType) :: rest, cond, expr)
   }
 
+  private def checkcast(lambdaReflection: LambdaReflection, state: State): State = {
+    val State(locals, top :: rest, cond, expr) = state
+    val typeName = lambdaReflection.lookupClassName(operand)
+    if (LambdaReflection.parseTypeSig(typeName) != top.dataType) {
+      throw new SparkException(s"checkcast failed: ${typeName}")
+    }
+    state
+  }
+
   private def ifCmp(state: State,
       predicate: (Expression, Expression) => Expression): State = {
     val State(locals, op2 :: op1 :: rest, cond, expr) = state
@@ -309,6 +354,25 @@ case class Instruction(opcode: Int, operand: Int, instructionStr: String) extend
         mathOp(lambdaReflection, method.getName, args) :: rest,
         cond,
         expr)
+    } else if (declaringClassName.equals("scala.Predef$")) {
+      State(locals,
+        predefOp(lambdaReflection, method.getName, args) :: rest,
+        cond,
+        expr)
+    } else if (declaringClassName.equals("scala.Array$")) {
+      State(locals,
+        arrayOp(lambdaReflection, method.getName, args) :: rest,
+        cond,
+        expr)
+    } else if (declaringClassName.equals("scala.reflect.ClassTag$")) {
+      State(locals,
+        classTagOp(lambdaReflection, method.getName, args) :: rest,
+        cond,
+        expr)
+    } else if (declaringClassName.equals("java.lang.Double")) {
+      State(locals, doubleOp(method.getName, args) :: rest, cond, expr)
+    } else if (declaringClassName.equals("java.lang.Float")) {
+      State(locals, floatOp(method.getName, args) :: rest, cond, expr)
     } else if (declaringClassName.equals("java.lang.String")) {
       State(locals, stringOp(method.getName, args) :: rest, cond, expr)
     } else if (declaringClassName.equals("java.lang.StringBuilder")) {
@@ -318,13 +382,35 @@ case class Instruction(opcode: Int, operand: Int, instructionStr: String) extend
       val retval = args.head.asInstanceOf[Repr.StringBuilder]
           .invoke(method.getName, args.tail)
       State(locals, retval :: rest, cond, expr)
+    } else if (declaringClassName.equals("java.time.format.DateTimeFormatter")) {
+      State(locals, dateTimeFormatterOp(method.getName, args) :: rest, cond, expr)
+    } else if (declaringClassName.equals("java.time.LocalDateTime")) {
+      State(locals, localDateTimeOp(method.getName, args) :: rest, cond, expr)
     } else {
       // Other functions
-      throw new SparkException("Unsupported instruction: " + Opcode.INVOKEVIRTUAL)
+      throw new SparkException(s"Unsupported instruction: ${Opcode.INVOKEVIRTUAL} ${declaringClassName}")
     }
   }
 
-  def mathOp(lambdaReflection: LambdaReflection,
+  private def checkArgs(methodName: String,
+                        expectedTypes: List[DataType],
+                        args: List[Expression]): Unit = {
+    if (args.length != expectedTypes.length) {
+      throw new SparkException(
+        s"${methodName} operation expects ${expectedTypes.length} " +
+            s"argument(s), including an objref, but instead got ${args.length} " +
+            s"argument(s)")
+    }
+    args.view.zip(expectedTypes.view).foreach { case (arg, expectedType) =>
+      if (arg.dataType != expectedType) {
+        throw new SparkException(s"${arg.dataType} argument found for " +
+            s"${methodName} where " +
+            s"${expectedType} argument is expected.")
+      }
+    }
+  }
+
+  private def mathOp(lambdaReflection: LambdaReflection,
       methodName: String, args: List[Expression]): Expression = {
     // Math unary functions
     if (args.length != 2) {
@@ -334,7 +420,7 @@ case class Instruction(opcode: Int, operand: Int, instructionStr: String) extend
     }
     // Make sure that the objref is scala.math.package$.
     args.head match {
-      case Literal(index, IntegerType) =>
+      case IntegerLiteral(index) =>
         if (!lambdaReflection.lookupField(index.asInstanceOf[Int])
             .getType.getName.equals("scala.math.package$")) {
           throw new SparkException("Unsupported math function objref: " + args.head)
@@ -364,56 +450,171 @@ case class Instruction(opcode: Int, operand: Int, instructionStr: String) extend
     }
   }
 
-  def stringOp(methodName: String, args: List[Expression]): Expression = {
-    def checkArgs(expectedTypes: List[DataType]): Unit = {
-      if (args.length != expectedTypes.length) {
-        throw new SparkException(
-          s"String.${methodName} operation expects ${expectedTypes.length} " +
-              s"argument(s), including an objref, but instead got ${args.length} " +
-              s"argument(s)")
-      }
-      args.view.zip(expectedTypes.view).foreach { case (arg, expectedType) =>
-        if (arg.dataType != expectedType) {
-          throw new SparkException(s"${arg.dataType} argument found for " +
-              s"String.${methodName} where " +
-              s"${expectedType} argument is expected.")
+  private def predefOp(lambdaReflection: LambdaReflection,
+      methodName: String, args: List[Expression]): Expression = {
+    // Make sure that the objref is scala.math.package$.
+    args.head match {
+      case IntegerLiteral(index) =>
+        if (!lambdaReflection.lookupField(index.asInstanceOf[Int])
+            .getType.getName.equals("scala.Predef$")) {
+          throw new SparkException("Unsupported predef function objref: " + args.head)
         }
-      }
+      case _ =>
+        throw new SparkException("Unsupported predef function objref: " + args.head)
     }
+    // Translate to Catalyst
+    methodName match {
+      case "double2Double" =>
+        checkArgs(methodName, List(IntegerType, DoubleType), args)
+        args.last
+      case "float2Float" =>
+        checkArgs(methodName, List(IntegerType, FloatType), args)
+        args.last
+      case _ => throw new SparkException("Unsupported predef function: " + methodName)
+    }
+  }
 
+  private def arrayOp(lambdaReflection: LambdaReflection,
+      methodName: String, args: List[Expression]): Expression = {
+    // Make sure that the objref is scala.math.package$.
+    args.head match {
+      case IntegerLiteral(index) =>
+        if (!lambdaReflection.lookupField(index.asInstanceOf[Int])
+            .getType.getName.equals("scala.Array$")) {
+          throw new SparkException("Unsupported array function objref: " + args.head)
+        }
+      case _ =>
+        throw new SparkException("Unsupported array function objref: " + args.head)
+    }
+    // Translate to Catalyst
+    methodName match {
+      case "empty" =>
+        if (args.last.isInstanceOf[Repr.ClassTag[_]]) {
+          val classTag = args.last.asInstanceOf[Repr.ClassTag[_]].classTag
+          if (classTag == scala.reflect.ClassTag.Boolean) {
+            Literal(Array.empty[Boolean])
+          } else if (classTag == scala.reflect.ClassTag.Byte) {
+            Literal(Array.empty[Byte])
+          } else if (classTag == scala.reflect.ClassTag.Short) {
+            Literal(Array.empty[Short])
+          } else if (classTag == scala.reflect.ClassTag.Int) {
+            Literal(Array.empty[Int])
+          } else if (classTag == scala.reflect.ClassTag.Long) {
+            Literal(Array.empty[Long])
+          } else if (classTag == scala.reflect.ClassTag.Float) {
+            Literal(Array.empty[Float])
+          } else if (classTag == scala.reflect.ClassTag.Double) {
+            Literal(Array.empty[Double])
+          } else if (classTag == scala.reflect.ClassTag("".getClass)) {
+            Literal(Array.empty[String])
+          } else {
+            throw new SparkException("Unsupported data type for Array.empty")
+          }
+        } else {
+          throw new SparkException("Unexpected argument for Array.empty")
+        }
+      case _ => throw new SparkException("Unsupported array function: " + methodName)
+    }
+  }
+
+  private def classTagOp(lambdaReflection: LambdaReflection,
+      methodName: String, args: List[Expression]): Expression = {
+    // Make sure that the objref is scala.math.package$.
+    args.head match {
+      case IntegerLiteral(index) =>
+        if (!lambdaReflection.lookupField(index.asInstanceOf[Int])
+            .getType.getName.equals("scala.reflect.ClassTag$")) {
+          throw new SparkException("Unsupported classTag function objref: " + args.head)
+        }
+      case _ =>
+        throw new SparkException("Unsupported classTag function objref: " + args.head)
+    }
+    // Translate to Catalyst
+    methodName match {
+      case "Boolean" =>
+        checkArgs(methodName, List(IntegerType), args)
+        new Repr.ClassTag(scala.reflect.ClassTag.Boolean)
+      case "Byte" =>
+        checkArgs(methodName, List(IntegerType), args)
+        new Repr.ClassTag(scala.reflect.ClassTag.Byte)
+      case "Short" =>
+        checkArgs(methodName, List(IntegerType), args)
+        new Repr.ClassTag(scala.reflect.ClassTag.Short)
+      case "Int" =>
+        checkArgs(methodName, List(IntegerType), args)
+        new Repr.ClassTag(scala.reflect.ClassTag.Int)
+      case "Long" =>
+        checkArgs(methodName, List(IntegerType), args)
+        new Repr.ClassTag(scala.reflect.ClassTag.Long)
+      case "Float" =>
+        checkArgs(methodName, List(IntegerType), args)
+        new Repr.ClassTag(scala.reflect.ClassTag.Float)
+      case "Double" =>
+        checkArgs(methodName, List(IntegerType), args)
+        new Repr.ClassTag(scala.reflect.ClassTag.Double)
+      case "apply" =>
+        checkArgs(methodName, List(IntegerType, StringType), args)
+        new Repr.ClassTag(scala.reflect.ClassTag.apply(LambdaReflection.getClass(args.last.toString)))
+      case _ => throw new SparkException("Unsupported classTag function: " + methodName)
+    }
+  }
+
+ private def doubleOp(methodName: String, args: List[Expression]): Expression = {
+    methodName match {
+      case "isNaN" =>
+        checkArgs(methodName, List(DoubleType), args)
+        IsNaN(args.head)
+      case _ =>
+        throw new SparkException(s"Unsupported Double function: " +
+            s"Double.${methodName}")
+    }
+  }
+
+ private def floatOp(methodName: String, args: List[Expression]): Expression = {
+    methodName match {
+      case "isNaN" =>
+        checkArgs(methodName, List(FloatType), args)
+        IsNaN(args.head)
+      case _ =>
+        throw new SparkException(s"Unsupported Float function: " +
+            s"Float.${methodName}")
+    }
+  }
+
+ private def stringOp(methodName: String, args: List[Expression]): Expression = {
     methodName match {
       case "concat" =>
-        checkArgs(List(StringType, StringType))
+        checkArgs(methodName, List(StringType, StringType), args)
         Concat(args)
       case "contains" =>
-        checkArgs(List(StringType, StringType))
+        checkArgs(methodName, List(StringType, StringType), args)
         Contains(args.head, args.last)
       case "endsWith" =>
-        checkArgs(List(StringType, StringType))
+        checkArgs(methodName, List(StringType, StringType), args)
         EndsWith(args.head, args.last)
       case "equals" =>
-        checkArgs(List(StringType, StringType))
+        checkArgs(methodName, List(StringType, StringType), args)
         Cast(EqualNullSafe(args.head, args.last), IntegerType)
       case "equalsIgnoreCase" =>
-        checkArgs(List(StringType, StringType))
+        checkArgs(methodName, List(StringType, StringType), args)
         Cast(EqualNullSafe(Upper(args.head), Upper(args.last)), IntegerType)
       case "isEmpty" =>
-        checkArgs(List(StringType))
+        checkArgs(methodName, List(StringType), args)
         Cast(EqualTo(Length(args.head), Literal(0)), IntegerType)
       case "length" =>
-        checkArgs(List(StringType))
+        checkArgs(methodName, List(StringType), args)
         Length(args.head)
       case "startsWith" =>
-        checkArgs(List(StringType, StringType))
+        checkArgs(methodName, List(StringType, StringType), args)
         StartsWith(args.head, args.last)
       case "toLowerCase" =>
-        checkArgs(List(StringType))
+        checkArgs(methodName, List(StringType), args)
         Lower(args.head)
       case "toUpperCase" =>
-        checkArgs(List(StringType))
+        checkArgs(methodName, List(StringType), args)
         Upper(args.head)
       case "trim" =>
-        checkArgs(List(StringType))
+        checkArgs(methodName, List(StringType), args)
         StringTrim(args.head)
       case "replace" =>
         if (args.length != 3) {
@@ -436,7 +637,7 @@ case class Instruction(opcode: Int, operand: Int, instructionStr: String) extend
               s"${args(2).dataType}")
         }
       case "substring" =>
-        checkArgs(StringType :: List.fill(args.length - 1)(IntegerType))
+        checkArgs(methodName, StringType :: List.fill(args.length - 1)(IntegerType), args)
         Substring(args(0),
           Add(args(1), Literal(1)),
           Subtract(if (args.length == 3) args(2) else Length(args(0)),
@@ -485,14 +686,14 @@ case class Instruction(opcode: Int, operand: Int, instructionStr: String) extend
                 s"argument(s)")
         }
       case "replaceAll" =>
-        checkArgs(List(StringType, StringType, StringType))
+        checkArgs(methodName, List(StringType, StringType, StringType), args)
         RegExpReplace(args(0), args(1), args(2))
       case "split" =>
         if (args.length == 2) {
-          checkArgs(List(StringType, StringType))
+          checkArgs(methodName, List(StringType, StringType), args)
           StringSplit(args(0), args(1), Literal(-1))
         } else if (args.length == 3) {
-          checkArgs(List(StringType, StringType, IntegerType))
+          checkArgs(methodName, List(StringType, StringType, IntegerType), args)
           StringSplit(args(0), args(1), args(2))
         } else {
           throw new SparkException(
@@ -502,10 +703,10 @@ case class Instruction(opcode: Int, operand: Int, instructionStr: String) extend
         }
       case "getBytes" =>
         if (args.length == 1) {
-          checkArgs(List(StringType))
+          checkArgs(methodName, List(StringType), args)
           Encode(args.head, Literal(Charset.defaultCharset.toString))
         } else if (args.length == 2) {
-          checkArgs(List(StringType, StringType))
+          checkArgs(methodName, List(StringType, StringType), args)
           Encode(args.head, args.last)
         } else {
           throw new SparkException(
@@ -518,6 +719,54 @@ case class Instruction(opcode: Int, operand: Int, instructionStr: String) extend
             s"String.${methodName}")
     }
   }
+
+  private def dateTimeFormatterOp(methodName: String, args: List[Expression]): Expression = {
+    def checkPattern(pattern: String): Boolean = {
+      pattern.foldLeft(false){
+        case (escapedText, '\'') => !escapedText
+        case (false, c) if "VzOXxZ".exists(_ == c) =>
+          // The pattern isn't timezone agnostic.
+          throw new SparkException("Unsupported pattern: " +
+            "only timezone agnostic patterns are supported")
+        case (escapedText, _) => escapedText
+      }
+    }
+    methodName match {
+      case "ofPattern" =>
+        checkArgs(methodName, List(StringType), args)
+        // The pattern needs to be known at compile time as we need to check
+        // whether the pattern is timezone agnostic.  If it isn't, it needs
+        // to fall back to JVM.
+        args.head match {
+          case StringLiteral(pattern) =>
+            checkPattern(pattern)
+            Repr.DateTimeFormatter.ofPattern(args.head)
+          case _ =>
+            // The pattern isn't known at compile time.
+            throw new SparkException("Unsupported pattern: only string literals are supported")
+        }
+      case _ =>
+        throw new SparkException(s"Unsupported function: " +
+            s"DateTimeFormatter.${methodName}")
+    }
+  }
+
+  private def localDateTimeOp(methodName: String, args: List[Expression]): Expression = {
+    methodName match {
+      case "parse" =>
+        checkArgs(methodName, List(StringType), List(args.head))
+        if (!args.last.isInstanceOf[Repr.DateTimeFormatter]) {
+          throw new SparkException("Unexpected argument for LocalDateTime.parse")
+        }
+        Repr.LocalDateTime.parse(args.head, args.last.asInstanceOf[Repr.DateTimeFormatter])
+      case "getYear" | "getMonthValue" | "getDayOfMonth" |
+           "getHour" | "getMinute" | "getSecond" =>
+        args.head.asInstanceOf[Repr.LocalDateTime].invoke(methodName, args.tail)
+      case _ =>
+        throw new SparkException(s"Unsupported function: " +
+            s"DateTimeFormatter.${methodName}")
+    }
+  }
 }
 
 /**
@@ -528,11 +777,13 @@ object Instruction {
     val opcode: Int = codeIterator.byteAt(offset)
     val operand: Int = opcode match {
       case Opcode.ALOAD | Opcode.DLOAD | Opcode.FLOAD |
-           Opcode.ILOAD | Opcode.LLOAD | Opcode.LDC =>
+           Opcode.ILOAD | Opcode.LLOAD | Opcode.LDC |
+           Opcode.ASTORE | Opcode.DSTORE | Opcode.FSTORE |
+           Opcode.ISTORE | Opcode.LSTORE =>
         codeIterator.byteAt(offset + 1)
       case Opcode.BIPUSH =>
         codeIterator.signedByteAt(offset + 1)
-      case Opcode.LDC_W | Opcode.LDC2_W | Opcode.NEW |
+      case Opcode.LDC_W | Opcode.LDC2_W | Opcode.NEW | Opcode.CHECKCAST |
            Opcode.INVOKESTATIC | Opcode.INVOKEVIRTUAL | Opcode.INVOKEINTERFACE |
            Opcode.INVOKESPECIAL | Opcode.GETSTATIC =>
         codeIterator.u16bitAt(offset + 1)

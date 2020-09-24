@@ -16,67 +16,118 @@
 
 package com.nvidia.spark.rapids.tests.tpcxbb
 
-import java.util.concurrent.TimeUnit.NANOSECONDS
-
-import scala.collection.mutable.ListBuffer
+import com.nvidia.spark.rapids.tests.common.BenchUtils
 
 import org.apache.spark.internal.Logging
-import org.apache.spark.sql.{DataFrame, SparkSession}
+import org.apache.spark.sql.{DataFrame, SaveMode, SparkSession}
 
 object TpcxbbLikeBench extends Logging {
 
   /**
-   * This method can be called from Spark shell using the following syntax:
+   * This method performs a benchmark of executing a query and collecting the results to the
+   * driver and can be called from Spark shell using the following syntax:
    *
-   * TpcxbbLikeBench.runBench(spark, Q5Like.apply)
+   * TpcxbbLikeBench.collect(spark, "q5", 3)
+   *
+   * @param spark The Spark session
+   * @param query The name of the query to run e.g. "q5"
+   * @param iterations The number of times to run the query.
    */
-  def runBench(
+  def collect(
       spark: SparkSession,
-      queryRunner: SparkSession => DataFrame,
-      numColdRuns: Int = 1,
-      numHotRuns: Int = 3): Unit = {
+      query: String,
+      iterations: Int = 3,
+      gcBetweenRuns: Boolean = false): Unit = {
+    BenchUtils.collect(
+      spark,
+      spark => getQuery(query)(spark),
+      query,
+      s"tpcxbb-$query-collect",
+      iterations,
+      gcBetweenRuns)
+  }
 
-    val coldRunElapsed = new ListBuffer[Long]()
-    for (i <- 0 until numColdRuns) {
-      println(s"*** Start cold run $i:")
-      val start = System.nanoTime()
-      queryRunner(spark).collect
-      val end = System.nanoTime()
-      val elapsed = NANOSECONDS.toMillis(end - start)
-      coldRunElapsed.append(elapsed)
-      println(s"*** Cold run $i took $elapsed msec.")
-    }
+  /**
+   * This method performs a benchmark of executing a query and writing the results to CSV files
+   * and can be called from Spark shell using the following syntax:
+   *
+   * TpcxbbLikeBench.writeCsv(spark, "q5", 3, "/path/to/write")
+   *
+   * @param spark The Spark session
+   * @param query The name of the query to run e.g. "q5"
+   * @param iterations The number of times to run the query.
+   */
+  def writeCsv(
+      spark: SparkSession,
+      query: String,
+      path: String,
+      mode: SaveMode = SaveMode.Overwrite,
+      writeOptions: Map[String, String] = Map.empty,
+      iterations: Int = 3,
+      gcBetweenRuns: Boolean = false): Unit = {
+    BenchUtils.writeCsv(
+      spark,
+      spark => getQuery(query)(spark),
+      query,
+      s"tpcxbb-$query-csv",
+      iterations,
+      gcBetweenRuns,
+      path,
+      mode,
+      writeOptions)
+  }
 
-    val hotRunElapsed = new ListBuffer[Long]()
-    for (i <- 0 until numHotRuns) {
-      println(s"*** Start hot run $i:")
-      val start = System.nanoTime()
-      queryRunner(spark).collect
-      val end = System.nanoTime()
-      val elapsed = NANOSECONDS.toMillis(end - start)
-      hotRunElapsed.append(elapsed)
-      println(s"*** Hot run $i took $elapsed msec.")
-    }
-
-    for (i <- 0 until numColdRuns) {
-      println(s"Cold run $i took ${coldRunElapsed(i)} msec.")
-    }
-    println(s"Average cold run took ${coldRunElapsed.sum.toDouble/numColdRuns} msec.")
-
-    for (i <- 0 until numHotRuns) {
-      println(s"Hot run $i took ${hotRunElapsed(i)} msec.")
-    }
-    println(s"Average hot run took ${hotRunElapsed.sum.toDouble/numHotRuns} msec.")
+  /**
+   * This method performs a benchmark of executing a query and writing the results to Parquet files
+   * and can be called from Spark shell using the following syntax:
+   *
+   * TpcxbbLikeBench.writeParquet(spark, "q5", 3, "/path/to/write")
+   *
+   * @param spark The Spark session
+   * @param query The name of the query to run e.g. "q5"
+   * @param iterations The number of times to run the query.
+   */
+  def writeParquet(
+      spark: SparkSession,
+      query: String,
+      path: String,
+      mode: SaveMode = SaveMode.Overwrite,
+      writeOptions: Map[String, String] = Map.empty,
+      iterations: Int = 3,
+      gcBetweenRuns: Boolean = false): Unit = {
+    BenchUtils.writeParquet(
+      spark,
+      spark => getQuery(query)(spark),
+      query,
+      s"tpcxbb-$query-parquet",
+      iterations,
+      gcBetweenRuns,
+      path,
+      mode,
+      writeOptions)
   }
 
   def main(args: Array[String]): Unit = {
     val input = args(0)
-    val queryIndex = args(1).toInt
 
     val spark = SparkSession.builder.appName("TPCxBB Bench").getOrCreate()
     TpcxbbLikeSpark.setupAllParquet(spark, input)
 
-    val queryRunner: SparkSession => DataFrame = queryIndex match {
+    args.drop(1).foreach(query => {
+      println(s"*** RUNNING TPCx-BB QUERY $query")
+      collect(spark, query)
+    })
+  }
+
+  def getQuery(query: String): SparkSession => DataFrame = {
+
+    val queryIndex = if (query.startsWith("q")) {
+      query.substring(1).toInt
+    } else {
+      query.toInt
+    }
+
+    queryIndex match {
       case 1 => Q1Like.apply
       case 2 => Q2Like.apply
       case 3 => Q3Like.apply
@@ -110,7 +161,5 @@ object TpcxbbLikeBench extends Logging {
       case _ => throw new IllegalArgumentException(s"Unknown TPCx-BB query number: $queryIndex")
     }
 
-    println(s"*** RUNNING TPCx-BB QUERY $queryIndex")
-    runBench(spark, queryRunner)
   }
 }
