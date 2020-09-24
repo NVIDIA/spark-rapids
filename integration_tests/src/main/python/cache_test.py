@@ -184,7 +184,7 @@ def test_cache_expand_exec(data_gen):
             ('a', data_gen),
             ('b', IntegerGen())], nullable=False), length=length, seed=seed).cache()
         cached.count() # populate the cache
-        return cached.rollup(f.col("a"), f.col("b")).agg(f.count(f.col("b")))
+        return cached.rollup(f.col("a"), f.col("b")).agg(f.col("b"))
 
     assert_gpu_and_cpu_are_equal_collect(op_df)
 

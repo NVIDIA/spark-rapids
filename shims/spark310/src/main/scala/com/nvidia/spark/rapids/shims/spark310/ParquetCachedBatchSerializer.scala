@@ -295,6 +295,7 @@ class ParquetCachedBatchSerializer extends CachedBatchSerializer with Arm {
 
   /**
    * Convert the cached batch into `InternalRow`s.
+   *
    * @param input the cached batches that should be converted.
    * @param cacheAttributes the attributes of the data in the batch.
    * @param selectedAttributes the field that should be loaded from the data and the order they
@@ -308,7 +309,7 @@ class ParquetCachedBatchSerializer extends CachedBatchSerializer with Arm {
                                 conf: SQLConf): RDD[InternalRow] = {
     val rapidsConf = new RapidsConf(conf)
     if (rapidsConf.isSqlEnabled) {
-      val cb = convertCachedBatchToColumnarBatch(input, cacheAttributes, selectedAttributes, conf)
+      val cb = convertCachedBatchToColumnarInternal(input, cacheAttributes, selectedAttributes)
       val rowRdd = cb.mapPartitions(iter => {
         new ColumnarToRowIterator(iter)
       })
