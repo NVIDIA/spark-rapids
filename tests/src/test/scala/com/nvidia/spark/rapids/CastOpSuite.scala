@@ -264,8 +264,7 @@ class CastOpSuite extends GpuExpressionTestSuite {
       col("floats").cast(ShortType),
       col("floats").cast(FloatType),
       col("floats").cast(DoubleType),
-      col("floats").cast(TimestampType),
-      col("floats").cast(BinaryType))
+      col("floats").cast(TimestampType))
   }
 
   testSparkResultsAreEqual("Test cast from double", doubleWithNansDf) {
@@ -278,8 +277,7 @@ class CastOpSuite extends GpuExpressionTestSuite {
       col("doubles").cast(ShortType),
       col("doubles").cast(FloatType),
       col("doubles").cast(DoubleType),
-      col("doubles").cast(TimestampType),
-      col("doubles").cast(BinaryType))
+      col("doubles").cast(TimestampType))
   }
 
   ignore("Test cast from double to string") {
