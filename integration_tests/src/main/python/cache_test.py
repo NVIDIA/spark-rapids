@@ -148,11 +148,9 @@ all_gen_restricting_dates = [StringGen(), ByteGen(), ShortGen(), IntegerGen(), L
            DateGen(start=date(1582, 10, 15)),
            TimestampGen()]
 
-parquet_ts_write_options = ['INT96', 'TIMESTAMP_MICROS', 'TIMESTAMP_MILLIS']
-
 @pytest.mark.parametrize('data_gen', all_gen_restricting_dates, ids=idfn)
 @pytest.mark.parametrize('ts_rebase', ['CORRECTED', 'LEGACY'])
-@pytest.mark.parametrize('ts_write', parquet_ts_write_options)
+@pytest.mark.parametrize('ts_write', ['INT96', 'TIMESTAMP_MICROS', 'TIMESTAMP_MILLIS'])
 @allow_non_gpu('DataWritingCommandExec')
 def test_cache_posexplode_makearray(spark_tmp_path, data_gen, ts_rebase, ts_write):
     if is_spark_300() and data_gen.data_type == BooleanType():

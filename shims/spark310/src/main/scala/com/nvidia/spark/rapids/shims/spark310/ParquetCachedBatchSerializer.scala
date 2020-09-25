@@ -16,7 +16,6 @@
 
 package com.nvidia.spark.rapids.shims.spark310
 
-import java.io.ByteArrayInputStream
 import java.nio.{ByteBuffer, ByteOrder}
 
 import scala.collection.JavaConverters._
@@ -39,10 +38,9 @@ import org.apache.spark.sql.SparkSession
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.expressions.{Attribute, Expression}
 import org.apache.spark.sql.catalyst.expressions.codegen.GenerateUnsafeProjection
-import org.apache.spark.sql.catalyst.util.DateTimeUtils
 import org.apache.spark.sql.columnar.{CachedBatch, CachedBatchSerializer}
-import org.apache.spark.sql.execution.datasources.DataSourceUtils
-import org.apache.spark.sql.execution.datasources.parquet.{ParquetReadSupport, ParquetRecordMaterializer, ParquetToSparkSchemaConverter, ParquetWriteSupport}
+import org.apache.spark.sql.execution.datasources.parquet.{ParquetReadSupport, ParquetToSparkSchemaConverter, ParquetWriteSupport}
+import org.apache.spark.sql.execution.datasources.parquet.rapids.ParquetRecordMaterializer
 import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.internal.SQLConf.LegacyBehaviorPolicy
 import org.apache.spark.sql.types._
@@ -52,29 +50,20 @@ import org.apache.spark.util.SerializableConfiguration
 
 class ByteArrayInputFile(buff: Array[Byte]) extends InputFile {
 
-  private class SeekableByteArrayInputStream(buff: Array[Byte]) extends ByteArrayInputStream(buff) {
-    def getSeekableStream: SeekableInputStream = {
-      // ParquetFileReader reads in little endian! :shrugs
-      val byteBuffer = ByteBuffer.wrap(buff).order(ByteOrder.LITTLE_ENDIAN)
-      new DelegatingSeekableInputStream(new ByteBufferInputStream(List(byteBuffer).asJava)) {
-        override def getPos: Long = byteBuffer.position()
+  override def getLength: Long = buff.length
 
-        override def seek(newPos: Long): Unit = {
-          assert(newPos <= Int.MaxValue && newPos >= Int.MinValue)
-          byteBuffer.position(newPos.toInt)
-        }
+  override def newStream(): SeekableInputStream = {
+    // ParquetFileReader reads in little endian! :shrugs
+    val byteBuffer = ByteBuffer.wrap(buff).order(ByteOrder.LITTLE_ENDIAN)
+    new DelegatingSeekableInputStream(new ByteBufferInputStream(List(byteBuffer).asJava)) {
+      override def getPos: Long = byteBuffer.position()
+
+      override def seek(newPos: Long): Unit = {
+        assert(newPos <= Int.MaxValue && newPos >= Int.MinValue)
+        byteBuffer.position(newPos.toInt)
       }
     }
-
-    def getLength: Long = buff.length
-
   }
-
-  private val stream = new SeekableByteArrayInputStream(buff)
-
-  override def getLength: Long = stream.getLength
-
-  override def newStream(): SeekableInputStream = stream.getSeekableStream
 }
 
 class ParquetBufferConsumer(val numRows: Int) extends HostBufferConsumer with AutoCloseable {
@@ -166,8 +155,7 @@ class ParquetCachedBatchSerializer extends CachedBatchSerializer with Arm {
   override def supportsColumnarInput(schema: Seq[Attribute]): Boolean = true
 
   override def supportsColumnarOutput(schema: StructType): Boolean = schema.fields.forall(f =>
-    SQLConf.get.parquetVectorizedReaderEnabled && (isSupportedByCudf(f.dataType) ||
-      isSupportedBySparkColumnar(f.dataType)))
+    isSupportedByCudf(f.dataType) || isSupportedBySparkColumnar(f.dataType))
 
   private def isSupportedByCudf(dataType: DataType): Boolean =
       GpuColumnVector.isSupportedType(dataType)
@@ -413,8 +401,8 @@ class ParquetCachedBatchSerializer extends CachedBatchSerializer with Arm {
 
   private def getHadoopConf(requestedSchema: StructType,
      sqlConf: SQLConf) : Configuration = {
-    val hadoopConf = new Configuration()
 
+    val hadoopConf = new Configuration()
     hadoopConf.set(ParquetInputFormat.READ_SUPPORT_CLASS, classOf[ParquetReadSupport].getName)
     hadoopConf.set(
       ParquetReadSupport.SPARK_ROW_REQUESTED_SCHEMA,
@@ -422,10 +410,9 @@ class ParquetCachedBatchSerializer extends CachedBatchSerializer with Arm {
     hadoopConf.set(
       ParquetWriteSupport.SPARK_ROW_SCHEMA,
       requestedSchema.json)
-    // we support UTC time only on cudf
     hadoopConf.set(
       SQLConf.SESSION_LOCAL_TIMEZONE.key,
-      "UTC")
+      sqlConf.sessionLocalTimeZone)
 
     hadoopConf.set(
       SQLConf.LEGACY_PARQUET_REBASE_MODE_IN_WRITE.key, LegacyBehaviorPolicy.CORRECTED.toString)
