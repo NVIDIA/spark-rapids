@@ -35,6 +35,7 @@ class OpcodeSuite extends FunSuite {
 
   val conf: SparkConf = new SparkConf()
     .set("spark.sql.extensions", "com.nvidia.spark.udf.Plugin")
+    .set("spark.rapids.sql.test.enabled", "true")
     .set("spark.rapids.sql.udfCompiler.enabled", "true")
     .set(RapidsConf.EXPLAIN.key, "true")
 
@@ -2085,5 +2086,21 @@ class OpcodeSuite extends FunSuite {
     val result = dataset.select(u().as("emptyArrOfStr"))
     val ref = dataset.select(lit(Array.empty[String]).as("emptyArrOfStr"))
     checkEquiv(result, ref)
+  }
+
+  test("Arbitrary function call inside UDF - ") {
+    def simple_func(str: String): Int = {
+      str.length
+    }
+    val myudf: (String) => Int = str => {
+      simple_func(str)
+    }
+    val u = makeUdf(myudf)
+    val dataset = List("hello", "world").toDS()
+    val result = dataset.withColumn("new", u(col("value")))
+    val ref = dataset.withColumn("new", length(col("value")))
+    result.explain(true)
+    result.show
+//    checkEquiv(result, ref)
   }
 }
