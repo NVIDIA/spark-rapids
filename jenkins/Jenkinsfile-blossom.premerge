@@ -46,6 +46,7 @@ spec:
       limits:
         cpu: 8
         memory: 16Gi
+        nvidia.com/gpu: 1
     env:
       - name: DOCKER_HOST
         value: tcp://localhost:2375
