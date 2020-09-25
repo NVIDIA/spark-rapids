@@ -586,6 +586,7 @@ class BenchSparkListener(executionMetrics: ListBuffer[StageMetrics]) extends Spa
 
     executionMetrics += StageMetrics(
       stageInfo.stageId,
+      stageInfo.parentIds,
       stageInfo.numTasks,
       stageMetrics,
       taskMetricsSummary)
@@ -630,7 +631,8 @@ case class SparkSQLMetric(
 
 /** Summary of stage-level metrics */
 case class StageMetrics(
-    stageId: Long,
+    stageId: Int,
+    parentIds: Seq[Int],
     taskCount: Int,
     stageMetrics: Map[String, Long],
     taskMetrics: Map[String, Long],
