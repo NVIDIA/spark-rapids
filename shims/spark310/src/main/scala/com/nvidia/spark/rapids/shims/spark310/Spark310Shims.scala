@@ -169,8 +169,8 @@ class Spark310Shims extends Spark301Shims {
         "Implementation of join using hashed shuffled data",
         (join, conf, p, r) => new GpuShuffledHashJoinMeta(join, conf, p, r)),
       GpuOverrides.exec[WindowInPandasExec](
-          "The backend for Pandas UDF with window functions, it runs on CPU itself now but supports" +
-                " running the Python UDFs code on GPU when calling cuDF APIs in the UDF",
+          "The backend for Pandas UDF with window functions, it runs on CPU itself now but" +
+          " supports running the Python UDFs code on GPU when calling cuDF APIs in the UDF",
       (winPy, conf, p, r) => new GpuWindowInPandasExecMeta(winPy, conf, p, r))
         .disabledByDefault("Performance is not ideal now")
     ).map(r => (r.getClassFor.asSubclass(classOf[SparkPlan]), r)).toMap
