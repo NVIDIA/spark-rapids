@@ -336,7 +336,6 @@ class ParquetCachedBatchSerializer extends CachedBatchSerializer with Arm {
 
     val sparkSession = SparkSession.active
     val hadoopConf = getHadoopConf(getSchemaFromAttributeSeq(selectedAttributes), sqlConf)
-    val timestampConversion: Boolean = sqlConf.isParquetINT96TimestampConversion
     val broadcastedHadoopConf =
       sparkSession.sparkContext.broadcast(new SerializableConfiguration(hadoopConf))
 
@@ -382,15 +381,7 @@ class ParquetCachedBatchSerializer extends CachedBatchSerializer with Arm {
             val footerFileMetaData = parquetFileReader.getFileMetaData
             val parquetSchema = parquetFileReader.getFooter.getFileMetaData.getSchema
 
-            def isCreatedByParquetMr: Boolean =
-              footerFileMetaData.getCreatedBy().startsWith("parquet-mr")
-
-            val convertTz =
-              if (timestampConversion && !isCreatedByParquetMr) {
-                Some(DateTimeUtils.getZoneId(sharedConf.get(SQLConf.SESSION_LOCAL_TIMEZONE.key)))
-              } else {
-                None
-              }
+            val convertTz = None // as we are using hadoop and parquet mr
 
             val unsafeRows = new ArrayBuffer[InternalRow]
             import org.apache.parquet.io.ColumnIOFactory
@@ -431,27 +422,16 @@ class ParquetCachedBatchSerializer extends CachedBatchSerializer with Arm {
     hadoopConf.set(
       ParquetWriteSupport.SPARK_ROW_SCHEMA,
       requestedSchema.json)
+    // we support UTC time only on cudf
     hadoopConf.set(
       SQLConf.SESSION_LOCAL_TIMEZONE.key,
-      sqlConf.sessionLocalTimeZone)
-    hadoopConf.setBoolean(
-      SQLConf.NESTED_SCHEMA_PRUNING_ENABLED.key,
-      sqlConf.nestedSchemaPruningEnabled)
-    hadoopConf.setBoolean(
-      SQLConf.CASE_SENSITIVE.key,
-      sqlConf.caseSensitiveAnalysis)
+      "UTC")
+
     hadoopConf.set(
       SQLConf.LEGACY_PARQUET_REBASE_MODE_IN_WRITE.key, LegacyBehaviorPolicy.CORRECTED.toString)
 
     ParquetWriteSupport.setSchema(requestedSchema, hadoopConf)
 
-    // Sets flags for `ParquetToSparkSchemaConverter`
-    hadoopConf.setBoolean(
-      SQLConf.PARQUET_BINARY_AS_STRING.key,
-      sqlConf.isParquetBinaryAsString)
-    hadoopConf.setBoolean(
-      SQLConf.PARQUET_INT96_AS_TIMESTAMP.key,
-      sqlConf.isParquetINT96AsTimestamp)
     hadoopConf
   }
 
