@@ -147,10 +147,13 @@ all_gen_restricting_dates = [StringGen(), ByteGen(), ShortGen(), IntegerGen(), L
            # This issue is tracked by https://github.com/NVIDIA/spark-rapids/issues/133 in the plugin
            DateGen(start=date(1582, 10, 15)),
            TimestampGen()]
+parquet_ts_write_options = ['INT96', 'TIMESTAMP_MICROS', 'TIMESTAMP_MILLIS']
 
+@pytest.mark.parametrize('ts_write', parquet_ts_write_options)
+@pytest.mark.parametrize('ts_rebase', ['CORRECTED', 'LEGACY'])
 @pytest.mark.parametrize('data_gen', all_gen_restricting_dates, ids=idfn)
 @allow_non_gpu('DataWritingCommandExec')
-def test_cache_posexplode_makearray(spark_tmp_path, data_gen):
+def test_cache_posexplode_makearray(spark_tmp_path, data_gen, ts_rebase, ts_write):
     if is_spark_300() and data_gen.data_type == BooleanType():
         pytest.xfail("https://issues.apache.org/jira/browse/SPARK-32672")
     data_path_cpu = spark_tmp_path + '/PARQUET_DATA_CPU'
@@ -162,8 +165,12 @@ def test_cache_posexplode_makearray(spark_tmp_path, data_gen):
             cached.write.parquet(data_path)
             spark.read.parquet(data_path)
         return posExplode
-    from_cpu = with_cpu_session(write_posExplode(data_path_cpu))
-    from_gpu = with_gpu_session(write_posExplode(data_path_gpu))
+    from_cpu = with_cpu_session(write_posExplode(data_path_cpu),
+                 conf={'spark.sql.legacy.parquet.datetimeRebaseModeInWrite': ts_rebase,
+                       'spark.sql.parquet.outputTimestampType': ts_write})
+    from_gpu = with_gpu_session(write_posExplode(data_path_gpu),
+                  conf={'spark.sql.legacy.parquet.datetimeRebaseModeInWrite': ts_rebase,
+                        'spark.sql.parquet.outputTimestampType': ts_write})
     assert_equal(from_cpu, from_gpu)
 
 @pytest.mark.parametrize('data_gen', all_gen, ids=idfn)
@@ -174,7 +181,7 @@ def test_cache_expand_exec(data_gen):
             ('a', data_gen),
             ('b', IntegerGen())], nullable=False), length=length, seed=seed).cache()
         cached.count() # populate the cache
-        return cached.rollup(f.col("a"), f.col("b")).agg(f.count(f.col("b")))
+        return cached.rollup(f.col("a"), f.col("b")).agg(f.col("b"))
 
     assert_gpu_and_cpu_are_equal_collect(op_df)
 
