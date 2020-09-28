@@ -323,7 +323,8 @@ object RapidsConf {
 
   val POOLED_MEM_STRATEGY = conf("spark.rapids.memory.gpu.pooling.strategy")
     .doc("The strategy to use for the RMM pooling allocator. Valid values are \"DEFAULT\" and " +
-      "\"ARENA\".")
+      "\"ARENA\". This configuration only takes effect when " +
+      "spark.rapids.memory.gpu.pooling.enabled is set to true.")
     .stringConf
     .createWithDefault("ARENA")
 
