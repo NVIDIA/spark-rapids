@@ -40,6 +40,21 @@ public final class GpuColumnVectorFromBuffer extends GpuColumnVector {
   public static ColumnarBatch from(ContiguousTable contigTable) {
     DeviceMemoryBuffer buffer = contigTable.getBuffer();
     Table table = contigTable.getTable();
+    return from(table, buffer);
+  }
+
+  /**
+   * Get a ColumnarBatch from a set of columns in a table, and the corresponding device buffer,
+   * which backs such columns. The resulting batch is composed of columns which are instances of
+   * GpuColumnVectorFromBuffer. This will increment the reference count for all columns
+   * converted so you will need to close both the table that is passed in and the batch
+   * returned to be sure that there are no leaks.
+   *
+   * @param table a table with columns at offsets of `buffer`
+   * @param buffer a device buffer that packs data for columns in `table`
+   * @return batch of GpuColumnVectorFromBuffer instances derived from the table and buffer
+   */
+  public static ColumnarBatch from(Table table, DeviceMemoryBuffer buffer) {
     long rows = table.getRowCount();
     if (rows != (int) rows) {
       throw new IllegalStateException("Cannot support a batch larger that MAX INT rows");
