@@ -16,92 +16,182 @@
 
 package com.nvidia.spark.rapids.tests.tpch
 
-import java.util.concurrent.TimeUnit
+import com.nvidia.spark.rapids.tests.common.BenchUtils
+import org.rogach.scallop.ScallopConf
 
-import com.nvidia.spark.rapids.tests.DebugRange
+import org.apache.spark.sql.{SaveMode, SparkSession}
 
-import org.apache.spark.sql.SparkSession
+object TpchLikeBench {
 
-object Benchmarks {
-  def session: SparkSession = {
-    val builder = SparkSession.builder.appName("TPCHLikeJob")
+  /**
+   * This method performs a benchmark of executing a query and collecting the results to the
+   * driver and can be called from Spark shell using the following syntax:
+   *
+   * TpchLikeBench.collect(spark, "q5", 3)
+   *
+   * @param spark The Spark session
+   * @param query The name of the query to run e.g. "q5"
+   * @param iterations The number of times to run the query.
+   * @param gcBetweenRuns Whether to call `System.gc` between iterations to cause Spark to
+   *                      call `unregisterShuffle`
+   */
+  def collect(
+      spark: SparkSession,
+      query: String,
+      iterations: Int = 3,
+      gcBetweenRuns: Boolean = false): Unit = {
+    BenchUtils.collect(
+      spark,
+      spark => getQuery(query)(spark),
+      query,
+      s"tpch-$query-collect",
+      iterations,
+      gcBetweenRuns)
+  }
 
-    val master = System.getenv("SPARK_MASTER")
-    if (master != null) {
-      builder.master(master)
+  /**
+   * This method performs a benchmark of executing a query and writing the results to CSV files
+   * and can be called from Spark shell using the following syntax:
+   *
+   * TpchLikeBench.writeCsv(spark, "q5", 3, "/path/to/write")
+   *
+   * @param spark The Spark session
+   * @param query The name of the query to run e.g. "q5"
+   * @param path The path to write the results to
+   * @param mode The SaveMode to use when writing the results
+   * @param writeOptions Write options
+   * @param iterations The number of times to run the query.
+   * @param gcBetweenRuns Whether to call `System.gc` between iterations to cause Spark to
+   *                      call `unregisterShuffle`
+   */
+  def writeCsv(
+      spark: SparkSession,
+      query: String,
+      path: String,
+      mode: SaveMode = SaveMode.Overwrite,
+      writeOptions: Map[String, String] = Map.empty,
+      iterations: Int = 3,
+      gcBetweenRuns: Boolean = false): Unit = {
+    BenchUtils.writeCsv(
+      spark,
+      spark => getQuery(query)(spark),
+      query,
+      s"tpch-$query-csv",
+      iterations,
+      gcBetweenRuns,
+      path,
+      mode,
+      writeOptions)
+  }
+
+  /**
+   * This method performs a benchmark of executing a query and writing the results to Parquet files
+   * and can be called from Spark shell using the following syntax:
+   *
+   * TpchLikeBench.writeParquet(spark, "q5", 3, "/path/to/write")
+   *
+   * @param spark The Spark session
+   * @param query The name of the query to run e.g. "q5"
+   * @param path The path to write the results to
+   * @param mode The SaveMode to use when writing the results
+   * @param writeOptions Write options
+   * @param iterations The number of times to run the query.
+   * @param gcBetweenRuns Whether to call `System.gc` between iterations to cause Spark to
+   *                      call `unregisterShuffle`
+   */
+  def writeParquet(
+      spark: SparkSession,
+      query: String,
+      path: String,
+      mode: SaveMode = SaveMode.Overwrite,
+      writeOptions: Map[String, String] = Map.empty,
+      iterations: Int = 3,
+      gcBetweenRuns: Boolean = false): Unit = {
+    BenchUtils.writeParquet(
+      spark,
+      spark => getQuery(query)(spark),
+      query,
+      s"tpch-$query-parquet",
+      iterations,
+      gcBetweenRuns,
+      path,
+      mode,
+      writeOptions)
+  }
+
+  /**
+   * The main method can be invoked by using spark-submit.
+   */
+  def main(args: Array[String]): Unit = {
+    val conf = new Conf(args)
+
+    val spark = SparkSession.builder.appName("TPC-H Like Bench").getOrCreate()
+    conf.inputFormat().toLowerCase match {
+      case "parquet" => TpchLikeSpark.setupAllParquet(spark, conf.input())
+      case "csv" => TpchLikeSpark.setupAllCSV(spark, conf.input())
+      case other =>
+        println(s"Invalid input format: $other")
+        System.exit(-1)
     }
 
-    val spark = builder.getOrCreate()
-    spark.sparkContext.setLogLevel("warn")
-
-    spark.sqlContext.clearCache()
-
-    spark
+    println(s"*** RUNNING TPC-H QUERY ${conf.query()}")
+    conf.output.toOption match {
+      case Some(path) => conf.outputFormat().toLowerCase match {
+        case "parquet" =>
+          writeParquet(
+            spark,
+            conf.query(),
+            path,
+            iterations = conf.iterations())
+        case "csv" =>
+          writeCsv(
+            spark,
+            conf.query(),
+            path,
+            iterations = conf.iterations())
+        case _ =>
+          println("Invalid or unspecified output format")
+          System.exit(-1)
+      }
+      case _ =>
+        collect(spark, conf.query(), conf.iterations())
+    }
   }
 
-  def runQueries(output: String, args: Array[String]): Unit = {
-    (1 until args.length).foreach(index => {
-      val query = args(index)
-      System.err.println(s"QUERY: ${query}")
-      val df = query match {
-        case "1" => Q1Like(session)
-        case "2" => Q2Like(session)
-        case "3" => Q3Like(session)
-        case "4" => Q4Like(session)
-        case "5" => Q5Like(session)
-        case "6" => Q6Like(session)
-        case "7" => Q7Like(session)
-        case "8" => Q8Like(session)
-        case "9" => Q9Like(session)
-        case "10" => Q10Like(session)
-        case "11" => Q11Like(session)
-        case "12" => Q12Like(session)
-        case "13" => Q13Like(session)
-        case "14" => Q14Like(session)
-        case "15" => Q15Like(session)
-        case "16" => Q16Like(session)
-        case "17" => Q17Like(session)
-        case "18" => Q18Like(session)
-        case "19" => Q19Like(session)
-        case "20" => Q20Like(session)
-        case "21" => Q21Like(session)
-        case "22" => Q22Like(session)
-      }
-      val start = System.nanoTime()
-      val range = new DebugRange(s"QUERY: ${query}")
-      try {
-        df.write.mode("overwrite").csv(output + "/" + query)
-      } finally {
-        range.close()
-      }
-      val end = System.nanoTime()
-      System.err.println(s"QUERY: ${query} took ${TimeUnit.NANOSECONDS.toMillis(end - start)} ms")
-    })
+  private def getQuery(query: String)(spark: SparkSession) = {
+    query match {
+      case "q1" => Q1Like(spark)
+      case "q2" => Q2Like(spark)
+      case "q3" => Q3Like(spark)
+      case "q4" => Q4Like(spark)
+      case "q5" => Q5Like(spark)
+      case "q6" => Q6Like(spark)
+      case "q7" => Q7Like(spark)
+      case "q8" => Q8Like(spark)
+      case "q9" => Q9Like(spark)
+      case "q10" => Q10Like(spark)
+      case "q11" => Q11Like(spark)
+      case "q12" => Q12Like(spark)
+      case "q13" => Q13Like(spark)
+      case "q14" => Q14Like(spark)
+      case "q15" => Q15Like(spark)
+      case "q16" => Q16Like(spark)
+      case "q17" => Q17Like(spark)
+      case "q18" => Q18Like(spark)
+      case "q19" => Q19Like(spark)
+      case "q20" => Q20Like(spark)
+      case "q21" => Q21Like(spark)
+      case "q22" => Q22Like(spark)
+    }
   }
 }
 
-object CSV {
-
-  def main(args: Array[String]): Unit = {
-    val input = args(0)
-    val output = args(1)
-
-    val session = Benchmarks.session
-
-    TpchLikeSpark.setupAllCSV(session, input)
-    Benchmarks.runQueries(output, args.slice(1, args.length))
-  }
-}
-
-object Parquet {
-
-  def main(args: Array[String]): Unit = {
-    val input = args(0)
-    val output = args(1)
-
-    val session = Benchmarks.session
-
-    TpchLikeSpark.setupAllParquet(session, input)
-    Benchmarks.runQueries(output, args.slice(1, args.length))
-  }
+class Conf(arguments: Seq[String]) extends ScallopConf(arguments) {
+  val input = opt[String](required = true)
+  val inputFormat = opt[String](required = true)
+  val query = opt[String](required = true)
+  val iterations = opt[Int](default = Some(3))
+  val output = opt[String](required = false)
+  val outputFormat = opt[String](required = false)
+  verify()
 }

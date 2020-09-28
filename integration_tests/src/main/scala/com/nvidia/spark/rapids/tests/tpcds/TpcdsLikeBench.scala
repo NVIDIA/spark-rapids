@@ -17,9 +17,10 @@
 package com.nvidia.spark.rapids.tests.tpcds
 
 import com.nvidia.spark.rapids.tests.common.BenchUtils
+import org.rogach.scallop.ScallopConf
 
 import org.apache.spark.internal.Logging
-import org.apache.spark.sql.{DataFrame, SaveMode, SparkSession}
+import org.apache.spark.sql.{SaveMode, SparkSession}
 
 object TpcdsLikeBench extends Logging {
 
@@ -32,6 +33,8 @@ object TpcdsLikeBench extends Logging {
    * @param spark The Spark session
    * @param query The name of the query to run e.g. "q5"
    * @param iterations The number of times to run the query.
+   * @param gcBetweenRuns Whether to call `System.gc` between iterations to cause Spark to
+   *                      call `unregisterShuffle`
    */
   def collect(
       spark: SparkSession,
@@ -55,7 +58,12 @@ object TpcdsLikeBench extends Logging {
    *
    * @param spark The Spark session
    * @param query The name of the query to run e.g. "q5"
+   * @param path The path to write the results to
+   * @param mode The SaveMode to use when writing the results
+   * @param writeOptions Write options
    * @param iterations The number of times to run the query.
+   * @param gcBetweenRuns Whether to call `System.gc` between iterations to cause Spark to
+   *                      call `unregisterShuffle`
    */
   def writeCsv(
       spark: SparkSession,
@@ -85,7 +93,12 @@ object TpcdsLikeBench extends Logging {
    *
    * @param spark The Spark session
    * @param query The name of the query to run e.g. "q5"
-   * @param iterations The number of times to run the query.
+   * @param path The path to write the results to
+   * @param mode The SaveMode to use when writing the results
+   * @param writeOptions Write options
+   * @param iterations The number of times to run the query
+   * @param gcBetweenRuns Whether to call `System.gc` between iterations to cause Spark to
+   *                      call `unregisterShuffle`
    */
   def writeParquet(
       spark: SparkSession,
@@ -111,15 +124,49 @@ object TpcdsLikeBench extends Logging {
    * The main method can be invoked by using spark-submit.
    */
   def main(args: Array[String]): Unit = {
-    val input = args(0)
+    val conf = new Conf(args)
 
     val spark = SparkSession.builder.appName("TPC-DS Like Bench").getOrCreate()
-    TpcdsLikeSpark.setupAllParquet(spark, input)
+    conf.inputFormat().toLowerCase match {
+      case "parquet" => TpcdsLikeSpark.setupAllParquet(spark, conf.input())
+      case "csv" => TpcdsLikeSpark.setupAllCSV(spark, conf.input())
+      case other =>
+        println(s"Invalid input format: $other")
+        System.exit(-1)
+    }
 
-    args.drop(1).foreach(query => {
-      println(s"*** RUNNING TPC-DS QUERY $query")
-      collect(spark, query)
-    })
-
+    println(s"*** RUNNING TPC-DS QUERY ${conf.query()}")
+    conf.output.toOption match {
+      case Some(path) => conf.outputFormat().toLowerCase match {
+        case "parquet" =>
+          writeParquet(
+            spark,
+            conf.query(),
+            path,
+            iterations = conf.iterations())
+        case "csv" =>
+          writeCsv(
+            spark,
+            conf.query(),
+            path,
+            iterations = conf.iterations())
+        case _ =>
+          println("Invalid or unspecified output format")
+          System.exit(-1)
+      }
+      case _ =>
+        collect(spark, conf.query(), conf.iterations())
+    }
   }
 }
+
+class Conf(arguments: Seq[String]) extends ScallopConf(arguments) {
+  val input = opt[String](required = true)
+  val inputFormat = opt[String](required = true)
+  val query = opt[String](required = true)
+  val iterations = opt[Int](default = Some(3))
+  val output = opt[String](required = false)
+  val outputFormat = opt[String](required = false)
+  verify()
+}
+
