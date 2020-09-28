@@ -32,6 +32,7 @@ import org.apache.spark.sql.{DataFrame, Row, SaveMode, SparkSession}
 import org.apache.spark.sql.execution.{InputAdapter, QueryExecution, SparkPlan, WholeStageCodegenExec}
 import org.apache.spark.sql.execution.adaptive.{AdaptiveSparkPlanExec, QueryStageExec}
 import org.apache.spark.sql.functions.col
+import org.apache.spark.sql.types.DataTypes
 import org.apache.spark.sql.util.QueryExecutionListener
 
 object BenchUtils {
@@ -69,7 +70,7 @@ object BenchUtils {
     runBench(
       spark,
       createDataFrame,
-      WriteParquet(path, mode, writeOptions),
+      WriteCsv(path, mode, writeOptions),
       queryDescription,
       filenameStub,
       iterations,
@@ -399,6 +400,12 @@ object BenchUtils {
 
     if (count1 == count2) {
       println(s"Both DataFrames contain $count1 rows")
+
+      if (!ignoreOrdering && (df1.rdd.getNumPartitions > 1 || df2.rdd.getNumPartitions > 1)) {
+        throw new IllegalStateException("Cannot run with ignoreOrdering=false because one or " +
+            "more inputs have multiple partitions")
+      }
+
       val result1 = collectResults(df1, ignoreOrdering, useIterator)
       val result2 = collectResults(df2, ignoreOrdering, useIterator)
 
@@ -435,7 +442,11 @@ object BenchUtils {
     // apply sorting if specified
     val resultDf = if (ignoreOrdering) {
       // let Spark do the sorting
-      df.sort(df.columns.map(col): _*)
+      val nonFloatCols = df.schema.fields
+          .filter(field => !(field.dataType == DataTypes.FloatType ||
+              field.dataType == DataTypes.DoubleType))
+          .map(field => col(field.name))
+      df.sort(nonFloatCols: _*)
     } else {
       df
     }
