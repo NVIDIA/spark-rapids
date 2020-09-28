@@ -186,10 +186,10 @@ def test_cache_expand_exec(data_gen):
 
     assert_gpu_and_cpu_are_equal_collect(op_df)
 
-def test_cache_some():
+def test_cache_partial_load():
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark : two_col_df(spark, IntegerGen(), string_gen)
             .select(f.col("a"), f.col("b"))
             .cache()
-            .limit(50).select(f.col("a"))
+            .limit(50).select(f.col("b"))
     )

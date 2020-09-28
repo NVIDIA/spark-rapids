@@ -53,13 +53,14 @@ class ByteArrayInputFile(buff: Array[Byte]) extends InputFile {
   override def getLength: Long = buff.length
 
   override def newStream(): SeekableInputStream = {
-    // ParquetFileReader reads in little endian! :shrugs
-    val byteBuffer = ByteBuffer.wrap(buff).order(ByteOrder.LITTLE_ENDIAN)
+    val byteBuffer = ByteBuffer.wrap(buff)
     new DelegatingSeekableInputStream(new ByteBufferInputStream(List(byteBuffer).asJava)) {
       override def getPos: Long = byteBuffer.position()
 
       override def seek(newPos: Long): Unit = {
-        assert(newPos <= Int.MaxValue && newPos >= Int.MinValue)
+        if (newPos <= Int.MaxValue || newPos >= Int.MinValue) {
+          throw new IllegalStateException("seek value is out of supported range " + newPos)
+        }
         byteBuffer.position(newPos.toInt)
       }
     }
@@ -155,10 +156,8 @@ class ParquetCachedBatchSerializer extends CachedBatchSerializer with Arm {
   override def supportsColumnarInput(schema: Seq[Attribute]): Boolean = true
 
   override def supportsColumnarOutput(schema: StructType): Boolean = schema.fields.forall(f =>
-    isSupportedByCudf(f.dataType) || isSupportedBySparkColumnar(f.dataType))
-
-  private def isSupportedByCudf(dataType: DataType): Boolean =
-      GpuColumnVector.isSupportedType(dataType)
+    // only check spark b/c if we are on the GPU then we will be calling the gpu method regardless
+    isSupportedBySparkColumnar(f.dataType))
 
   private def isSupportedBySparkColumnar(dataType: DataType): Boolean =
     // AtomicType check. Everything is supported besides Structs, Maps or UDFs
@@ -187,10 +186,13 @@ class ParquetCachedBatchSerializer extends CachedBatchSerializer with Arm {
     if (rapidsConf.isSqlEnabled) {
       def putOnGpuIfNeeded(batch: ColumnarBatch): ColumnarBatch = {
         if (batch.numCols() > 0 && !batch.column(0).isInstanceOf[GpuColumnVector]) {
-          val s: StructType = getSchemaFromAttributeSeq(schema)
+          val s: StructType = schema.toStructType
           val gpuCB = new GpuColumnarBatchBuilder(s, batch.numRows(), batch).build(batch.numRows())
           batch.close()
           gpuCB
+        } else if (batch.numCols() == 0) {
+          // TODO: fallback on the CPU
+          throw new IllegalStateException("We don't allow batches with no columns")
         } else {
           batch
         }
@@ -202,12 +204,9 @@ class ParquetCachedBatchSerializer extends CachedBatchSerializer with Arm {
         }
       })
     } else {
+      // TODO: need to implement writing ColumnarBatches on the CPU using Parquet writer
       throw new UnsupportedOperationException("Can't convert ColumnarBatch to CachedBatch on CPU")
     }
-  }
-
-  private def getSchemaFromAttributeSeq(schema: Seq[Attribute]) = {
-    StructType(schema.map(a => StructField(a.name, a.dataType, a.nullable, a.metadata)))
   }
 
   private def compressColumnarBatchWithParquet(gpuCB: ColumnarBatch): ParquetCachedBatch = {
@@ -239,9 +238,9 @@ class ParquetCachedBatchSerializer extends CachedBatchSerializer with Arm {
 
   private def convertCachedBatchToColumnarInternal(input: RDD[CachedBatch],
     cacheAttributes: Seq[Attribute],
-    selectedAttributes: Seq[Attribute]) = {
+    selectedAttributes: Seq[Attribute]): RDD[ColumnarBatch] = {
 
-    val requestedColumnIndices = getColumnIndices(selectedAttributes)
+    val requestedColumnIndices = getColumnIndices(selectedAttributes, cacheAttributes)
 
     val cbRdd: RDD[ColumnarBatch] = input.map(batch => {
       if (batch.isInstanceOf[ParquetCachedBatch]) {
@@ -252,8 +251,7 @@ class ParquetCachedBatchSerializer extends CachedBatchSerializer with Arm {
           parquetCB.sizeInBytes)) { table =>
           withResource(GpuColumnVector.from(table)) { cb =>
             val cols = GpuColumnVector.extractColumns(cb)
-            new ColumnarBatch(requestedColumnIndices.map(ordinal =>
-              cols(ordinal).incRefCount()).toArray, cb.numRows())
+            new ColumnarBatch(cols.map(_.incRefCount()).toArray, cb.numRows())
           }
         }
       } else {
@@ -263,8 +261,9 @@ class ParquetCachedBatchSerializer extends CachedBatchSerializer with Arm {
     cbRdd
   }
 
-  private def getColumnIndices(selectedAttributes: Seq[Attribute]) = {
-    selectedAttributes.map(a => selectedAttributes.map(_.exprId).indexOf(a.exprId))
+  private def getColumnIndices(selectedAttributes: Seq[Attribute],
+     cacheAttributes: Seq[Attribute]): Seq[Int] = {
+    selectedAttributes.map(a => cacheAttributes.map(_.exprId).indexOf(a.exprId))
   }
 
   /**
@@ -306,24 +305,9 @@ class ParquetCachedBatchSerializer extends CachedBatchSerializer with Arm {
      cacheAttributes: Seq[Attribute],
      selectedAttributes: Seq[Attribute],
      conf: SQLConf): RDD[InternalRow] = {
-    val rapidsConf = new RapidsConf(conf)
-    if (rapidsConf.isSqlEnabled) {
-      val cb = convertCachedBatchToColumnarInternal(input, cacheAttributes, selectedAttributes)
-      val rowRdd = cb.mapPartitions(iter => {
-        new ColumnarToRowIterator(iter)
-      })
-      rowRdd
-    } else {
-      convertCachedBatchToInternalRowCpu(input, conf, cacheAttributes, selectedAttributes)
-    }
-  }
-
-  private def convertCachedBatchToInternalRowCpu(input: RDD[CachedBatch], sqlConf: SQLConf,
-     cacheAttributes: Seq[Attribute],
-     selectedAttributes: Seq[Attribute]): RDD[InternalRow] = {
 
     val sparkSession = SparkSession.active
-    val hadoopConf = getHadoopConf(getSchemaFromAttributeSeq(selectedAttributes), sqlConf)
+    val hadoopConf = getHadoopConf(selectedAttributes.toStructType, conf)
     val broadcastedHadoopConf =
       sparkSession.sparkContext.broadcast(new SerializableConfiguration(hadoopConf))
 
@@ -350,14 +334,14 @@ class ParquetCachedBatchSerializer extends CachedBatchSerializer with Arm {
             val inputFile = new ByteArrayInputFile(parquetCachedBatch.buffer)
 
             val catalystColumns =
-              getColumnIndices(cacheAttributes).map { i => "_col" + i }
+              getColumnIndices(cacheAttributes, cacheAttributes).map { i => "_col" + i }
 
             val catalystSchema = cacheAttributes.zipWithIndex.map {
               case (attr, i) => attr.withName(catalystColumns(i))
             }
 
             val selectedColumns =
-              getColumnIndices(selectedAttributes).map { i => "_col" + i }
+              getColumnIndices(selectedAttributes, cacheAttributes).map { i => "_col" + i }
 
             val requestedSchema = selectedAttributes.zipWithIndex.map {
               case (attr, i) => attr.withName(selectedColumns(i))
@@ -366,7 +350,6 @@ class ParquetCachedBatchSerializer extends CachedBatchSerializer with Arm {
             val sharedConf = broadcastedHadoopConf.value.value
             val options = HadoopReadOptions.builder(sharedConf).build()
             val parquetFileReader = ParquetFileReader.open(inputFile, options)
-            val footerFileMetaData = parquetFileReader.getFileMetaData
             val parquetSchema = parquetFileReader.getFooter.getFileMetaData.getSchema
 
             val convertTz = None // as we are using hadoop and parquet mr
@@ -379,7 +362,7 @@ class ParquetCachedBatchSerializer extends CachedBatchSerializer with Arm {
               val columnIO = new ColumnIOFactory().getColumnIO(parquetSchema)
               val recordReader =
                 columnIO.getRecordReader(pages, new ParquetRecordMaterializer(parquetSchema,
-                  getSchemaFromAttributeSeq(catalystSchema),
+                  catalystSchema.toStructType,
                   new ParquetToSparkSchemaConverter(sharedConf), convertTz,
                   LegacyBehaviorPolicy.CORRECTED))
               for (i <- 0 until rows.toInt) {
@@ -402,7 +385,7 @@ class ParquetCachedBatchSerializer extends CachedBatchSerializer with Arm {
   private def getHadoopConf(requestedSchema: StructType,
      sqlConf: SQLConf) : Configuration = {
 
-    val hadoopConf = new Configuration()
+    val hadoopConf = new Configuration(false)
     hadoopConf.set(ParquetInputFormat.READ_SUPPORT_CLASS, classOf[ParquetReadSupport].getName)
     hadoopConf.set(
       ParquetReadSupport.SPARK_ROW_REQUESTED_SCHEMA,
@@ -435,7 +418,7 @@ class ParquetCachedBatchSerializer extends CachedBatchSerializer with Arm {
      schema: Seq[Attribute],
      storageLevel: StorageLevel,
      conf: SQLConf): RDD[CachedBatch] = {
-    val s = StructType(schema.map(a => StructField(a.name, a.dataType, a.nullable, a.metadata)))
+    val s = schema.toStructType
     val converters = new GpuRowToColumnConverter(s)
     val columnarBatchRdd = input.mapPartitions(iter => {
       new RowToColumnarIterator(iter, s, RequireSingleBatch, converters)
