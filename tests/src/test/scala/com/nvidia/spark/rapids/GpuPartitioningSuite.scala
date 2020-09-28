@@ -96,7 +96,7 @@ class GpuPartitioningSuite extends FunSuite with Arm {
 
   test("GPU partition with compression") {
     val conf = new SparkConf()
-        .set(RapidsConf.SHUFFLE_COMPRESSION_CODEC.key, "copy")
+        .set(RapidsConf.SHUFFLE_COMPRESSION_CODEC.key, "lz4")
     TestUtils.withGpuSparkSession(conf) { _ =>
       GpuShuffleEnv.init(new RapidsConf(conf))
       val spillPriority = 7L
@@ -121,18 +121,29 @@ class GpuPartitioningSuite extends FunSuite with Arm {
               assertResult(expectedRows)(partBatch.numRows)
               val columns = (0 until partBatch.numCols).map(i => partBatch.column(i))
               columns.foreach { column =>
-                assert(column.isInstanceOf[GpuCompressedColumnVector])
-                assertResult(expectedRows) {
-                  column.asInstanceOf[GpuCompressedColumnVector].getTableMeta.rowCount
+                // batches with any rows should be compressed, and
+                // batches with no rows should not be compressed.
+                val actualRows = column match {
+                  case c: GpuCompressedColumnVector =>
+                    val rows = c.getTableMeta.rowCount
+                    assert(rows != 0)
+                    rows
+                  case c: GpuColumnVector =>
+                    val rows = c.getRowCount
+                    assert(rows == 0)
+                    rows
                 }
+                assertResult(expectedRows)(actualRows)
               }
-              val gccv = columns.head.asInstanceOf[GpuCompressedColumnVector]
-              val bufferId = MockRapidsBufferId(partIndex)
-              val devBuffer = gccv.getBuffer.slice(0, gccv.getBuffer.getLength)
-              deviceStore.addBuffer(bufferId, devBuffer, gccv.getTableMeta, spillPriority)
-              withResource(buildSubBatch(batch, startRow, endRow)) { expectedBatch =>
-                withResource(catalog.acquireBuffer(bufferId)) { buffer =>
-                  compareBatches(expectedBatch, buffer.getColumnarBatch)
+              if (GpuCompressedColumnVector.isBatchCompressed(partBatch)) {
+                val gccv = columns.head.asInstanceOf[GpuCompressedColumnVector]
+                val bufferId = MockRapidsBufferId(partIndex)
+                val devBuffer = gccv.getBuffer.slice(0, gccv.getBuffer.getLength)
+                deviceStore.addBuffer(bufferId, devBuffer, gccv.getTableMeta, spillPriority)
+                withResource(buildSubBatch(batch, startRow, endRow)) { expectedBatch =>
+                  withResource(catalog.acquireBuffer(bufferId)) { buffer =>
+                    compareBatches(expectedBatch, buffer.getColumnarBatch)
+                  }
                 }
               }
             }

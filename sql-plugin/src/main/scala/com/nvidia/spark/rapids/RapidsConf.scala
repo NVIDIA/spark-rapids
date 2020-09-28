@@ -668,7 +668,7 @@ object RapidsConf {
 
   val SHUFFLE_COMPRESSION_CODEC = conf("spark.rapids.shuffle.compression.codec")
       .doc("The GPU codec used to compress shuffle data when using RAPIDS shuffle. " +
-          "Supported codecs: copy, none")
+          "Supported codecs: lz4, copy, none")
       .internal()
       .stringConf
       .createWithDefault("none")
