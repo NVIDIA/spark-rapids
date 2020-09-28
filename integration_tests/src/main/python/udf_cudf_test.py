@@ -12,8 +12,20 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import pandas as pd
 import pytest
+
+from pyspark.sql.pandas.utils import require_minimum_pyarrow_version, require_minimum_pandas_version
+try:
+    require_minimum_pandas_version()
+except Exception as e:
+    pytestmark = pytest.mark.skip(reason=str(e))
+
+try:
+    require_minimum_pyarrow_version()
+except Exception as e:
+    pytestmark = pytest.mark.skip(reason=str(e))
+
+import pandas as pd
 import time
 from distutils.version import LooseVersion
 from typing import Iterator
