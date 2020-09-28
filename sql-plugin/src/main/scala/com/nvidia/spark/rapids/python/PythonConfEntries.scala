@@ -16,7 +16,7 @@
 
 package com.nvidia.spark.rapids.python
 
-import com.nvidia.spark.rapids.RapidsConf.{ARENA_MEM, POOLED_MEM, UVM_ENABLED}
+import com.nvidia.spark.rapids.RapidsConf.{POOLED_MEM, UVM_ENABLED}
 import com.nvidia.spark.rapids.RapidsConf.conf
 
 object PythonConfEntries {
@@ -61,13 +61,6 @@ object PythonConfEntries {
     .doc("Should RMM in Python workers act as a pooling allocator for GPU memory, or" +
       " should it just pass through to CUDA memory allocation directly. When not specified," +
       s" It will honor the value of config '${POOLED_MEM.key}'")
-    .booleanConf
-    .createOptional
-
-  val PYTHON_ARENA_MEM = conf("spark.rapids.python.memory.gpu.arena.enabled")
-    .doc("Should RMM in Python workers use the arena allocator for GPU memory, or should " +
-      "it use the default pooling allocator. When not specified," +
-      s" It will honor the value of config '${ARENA_MEM.key}'")
     .booleanConf
     .createOptional
 

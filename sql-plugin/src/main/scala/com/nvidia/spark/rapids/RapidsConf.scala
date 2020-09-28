@@ -321,7 +321,7 @@ object RapidsConf {
     .booleanConf
     .createWithDefault(true)
 
-  val ARENA_MEM = conf("spark.rapids.memory.gpu.arena.enabled")
+  val POOLED_ARENA = conf("spark.rapids.memory.gpu.pooling.arena.enabled")
     .doc("Should RMM use the arena allocator for GPU memory, or should it use the default " +
       "pooling allocator.")
     .booleanConf
@@ -873,7 +873,7 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
 
   lazy val isPooledMemEnabled: Boolean = get(POOLED_MEM)
 
-  lazy val isArenaMemEnabled: Boolean = get(ARENA_MEM)
+  lazy val isPooledArenaEnabled: Boolean = get(POOLED_ARENA)
 
   lazy val rmmAllocFraction: Double = get(RMM_ALLOC_FRACTION)
 
