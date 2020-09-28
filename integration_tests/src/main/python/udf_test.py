@@ -14,20 +14,25 @@
 
 import pytest
 
+from pyspark.sql.pandas.utils import require_minimum_pyarrow_version, require_minimum_pandas_version
+try:
+    require_minimum_pandas_version()
+except Exception as e:
+    pytestmark = pytest.mark.skip(reason=str(e))
+
+try:
+    require_minimum_pyarrow_version()
+except Exception as e:
+    pytestmark = pytest.mark.skip(reason=str(e))
+
 from asserts import assert_gpu_and_cpu_are_equal_collect
 from data_gen import *
 from marks import incompat, approximate_float, allow_non_gpu, ignore_order
 from pyspark.sql import Window
 from pyspark.sql.types import *
 import pyspark.sql.functions as f
-from pyspark.sql.pandas.utils import require_minimum_pyarrow_version
 import pandas as pd
 from typing import Iterator, Tuple
-
-try:
-    require_minimum_pyarrow_version()
-except Exception as e:
-    pytestmark = pytest.mark.skip(reason=str(e))
 
 arrow_udf_conf = {'spark.sql.execution.arrow.pyspark.enabled': 'true'}
 
