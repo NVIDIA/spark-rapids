@@ -100,6 +100,7 @@ case class GpuBroadcastHashJoinExec(
 
   override lazy val additionalMetrics: Map[String, SQLMetric] = Map(
     "joinOutputRows" -> SQLMetrics.createMetric(sparkContext, "join output rows"),
+    "streamTime" -> SQLMetrics.createNanoTimingMetric(sparkContext, "stream time"),
     "joinTime" -> SQLMetrics.createNanoTimingMetric(sparkContext, "join time"),
     "filterTime" -> SQLMetrics.createNanoTimingMetric(sparkContext, "filter time"))
 
@@ -128,6 +129,7 @@ case class GpuBroadcastHashJoinExec(
     val numOutputRows = longMetric(NUM_OUTPUT_ROWS)
     val numOutputBatches = longMetric(NUM_OUTPUT_BATCHES)
     val totalTime = longMetric(TOTAL_TIME)
+    val streamTime = longMetric("streamTime")
     val joinTime = longMetric("joinTime")
     val filterTime = longMetric("filterTime")
     val joinOutputRows = longMetric("joinOutputRows")
@@ -155,6 +157,6 @@ case class GpuBroadcastHashJoinExec(
     val rdd = streamedPlan.executeColumnar()
     rdd.mapPartitions(it =>
       doJoin(builtTable, it, boundCondition, numOutputRows, joinOutputRows,
-        numOutputBatches, joinTime, filterTime, totalTime))
+        numOutputBatches, streamTime, joinTime, filterTime, totalTime))
   }
 }
