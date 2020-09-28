@@ -321,11 +321,11 @@ object RapidsConf {
     .booleanConf
     .createWithDefault(true)
 
-  val POOLED_ARENA = conf("spark.rapids.memory.gpu.pooling.arena.enabled")
-    .doc("Should RMM use the arena allocator for GPU memory, or should it use the default " +
-      "pooling allocator.")
-    .booleanConf
-    .createWithDefault(true)
+  val POOLED_MEM_STRATEGY = conf("spark.rapids.memory.gpu.pooling.strategy")
+    .doc("The strategy to use for the RMM pooling allocator. Valid values are \"DEFAULT\" and " +
+      "\"ARENA\".")
+    .stringConf
+    .createWithDefault("ARENA")
 
   val CONCURRENT_GPU_TASKS = conf("spark.rapids.sql.concurrentGpuTasks")
       .doc("Set the number of tasks that can execute concurrently per GPU. " +
@@ -873,7 +873,7 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
 
   lazy val isPooledMemEnabled: Boolean = get(POOLED_MEM)
 
-  lazy val isPooledArenaEnabled: Boolean = get(POOLED_ARENA)
+  lazy val pooledMemStrategy: String = get(POOLED_MEM_STRATEGY)
 
   lazy val rmmAllocFraction: Double = get(RMM_ALLOC_FRACTION)
 

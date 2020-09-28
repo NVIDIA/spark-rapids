@@ -203,15 +203,18 @@ object GpuDeviceManager extends Logging {
       var init = RmmAllocationMode.CUDA_DEFAULT
       val features = ArrayBuffer[String]()
       if (conf.isPooledMemEnabled) {
-        if (conf.isPooledArenaEnabled) {
-          init = init | RmmAllocationMode.ARENA
-          features += "ARENA"
-        } else {
-          init = init | RmmAllocationMode.POOL
-          features += "POOLED"
+        init = conf.pooledMemStrategy match {
+          case c if "default".equalsIgnoreCase(c) =>
+            features += "POOLED"
+            init | RmmAllocationMode.POOL
+          case c if "arena".equalsIgnoreCase(c) =>
+            features += "ARENA"
+            init | RmmAllocationMode.ARENA
+          case c =>
+            logWarning(
+              s"RMM pooled memory strategy set to '$c' is not supported and is being ignored.")
+            init
         }
-      } else if (conf.isPooledArenaEnabled) {
-        throw new IllegalStateException("Pooling arena is enabled but pooling is not")
       }
       if (conf.isUvmEnabled) {
         init = init | RmmAllocationMode.CUDA_MANAGED_MEMORY
@@ -283,7 +286,7 @@ object GpuDeviceManager extends Logging {
     private[this] val devId = getDeviceId.getOrElse {
       throw new IllegalStateException("Device ID is not set")
     }
-    
+
     override def newThread(runnable: Runnable): Thread = {
       factory.newThread(() => {
         Cuda.setDevice(devId)
