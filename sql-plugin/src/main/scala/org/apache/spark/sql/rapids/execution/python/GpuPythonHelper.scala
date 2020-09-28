@@ -37,6 +37,9 @@ object GpuPythonHelper extends Logging {
   private lazy val isPythonPooledMemEnabled = rapidsConf.get(PYTHON_POOLED_MEM)
     .getOrElse(rapidsConf.isPooledMemEnabled)
     .toString
+  private lazy val isPythonArenaMemEnabled = rapidsConf.get(PYTHON_ARENA_MEM)
+    .getOrElse(rapidsConf.isArenaMemEnabled)
+    .toString
   private lazy val isPythonUvmEnabled = rapidsConf.get(PYTHON_UVM_ENABLED)
     .getOrElse(rapidsConf.isUvmEnabled)
     .toString
@@ -95,6 +98,7 @@ object GpuPythonHelper extends Logging {
       pyF.envVars.put("RAPIDS_PYTHON_ENABLED", isPythonOnGpuEnabled.toString)
       pyF.envVars.put("RAPIDS_UVM_ENABLED", isPythonUvmEnabled)
       pyF.envVars.put("RAPIDS_POOLED_MEM_ENABLED", isPythonPooledMemEnabled)
+      pyF.envVars.put("RAPIDS_ARENA_MEM_ENABLED", isPythonArenaMemEnabled)
       pyF.envVars.put("RAPIDS_POOLED_MEM_SIZE", initAllocPerWorker.toString)
       pyF.envVars.put("RAPIDS_POOLED_MEM_MAX_SIZE", maxAllocPerWorker.toString)
     })

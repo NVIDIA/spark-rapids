@@ -188,7 +188,7 @@ object GpuDeviceManager extends Logging {
 
     // Currently a max limit only works in pooled mode.  Need a general limit resource wrapper
     // as requested in https://github.com/rapidsai/rmm/issues/442 to support for all RMM modes.
-    if (conf.isPooledMemEnabled) {
+    if (conf.isPooledMemEnabled || conf.isArenaMemEnabled) {
       (initialAllocation, adjustedMaxAllocation)
     } else {
       (initialAllocation, 0)
@@ -205,6 +205,10 @@ object GpuDeviceManager extends Logging {
       if (conf.isPooledMemEnabled) {
         init = init | RmmAllocationMode.POOL
         features += "POOLED"
+      }
+      if (conf.isArenaMemEnabled) {
+        init = init | RmmAllocationMode.ARENA
+        features += "ARENA"
       }
       if (conf.isUvmEnabled) {
         init = init | RmmAllocationMode.CUDA_MANAGED_MEMORY
