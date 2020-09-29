@@ -16,7 +16,7 @@
 
 package com.nvidia.spark.rapids
 
-import ai.rapids.cudf.{Aggregation, AggregationOverWindow, DType, Table, WindowOptions}
+import ai.rapids.cudf.{DType, Table, WindowAggregate, WindowOptions}
 import com.nvidia.spark.rapids.GpuOverrides.wrapExpr
 
 import org.apache.spark.sql.catalyst.analysis.TypeCheckResult
@@ -243,11 +243,11 @@ object GpuWindowExpression {
   def getRowBasedWindowFrame(columnIndex : Int,
                              aggExpression : Expression,
                              windowSpec : GpuSpecifiedWindowFrame)
-  : AggregationOverWindow = {
+  : WindowAggregate = {
 
     // FIXME: Currently, only negative or 0 values are supported.
     var lower = getBoundaryValue(windowSpec.lower)
-    if (lower > 0) {
+    if(lower > 0) {
       throw new IllegalStateException(
         s"Lower-bounds ahead of current row is not supported. Found $lower")
     }
@@ -272,25 +272,24 @@ object GpuWindowExpression {
     val windowOption = WindowOptions.builder().minPeriods(1)
       .window(lower, upper).build()
 
-    val agg: Aggregation = aggExpression match {
+    aggExpression match {
       case gpuAggregateExpression : GpuAggregateExpression =>
         gpuAggregateExpression.aggregateFunction match {
-          case GpuCount(_) => Aggregation.count()
-          case GpuSum(_) => Aggregation.sum()
-          case GpuMin(_) => Aggregation.min()
-          case GpuMax(_) => Aggregation.max()
+          case GpuCount(_) => WindowAggregate.count(columnIndex, windowOption)
+          case GpuSum(_) => WindowAggregate.sum(columnIndex, windowOption)
+          case GpuMin(_) => WindowAggregate.min(columnIndex, windowOption)
+          case GpuMax(_) => WindowAggregate.max(columnIndex, windowOption)
           case anythingElse =>
             throw new UnsupportedOperationException(
               s"Unsupported aggregation: ${anythingElse.prettyName}")
         }
       case _: GpuRowNumber =>
-        // ROW_NUMBER does not depend on input column values, but it still should be fine
-        Aggregation.rowNumber()
+        // ROW_NUMBER does not depend on input column values.
+        WindowAggregate.row_number(0, windowOption)
       case anythingElse =>
         throw new UnsupportedOperationException(
           s"Unsupported window aggregation: ${anythingElse.prettyName}")
     }
-    agg.onColumn(columnIndex).overWindow(windowOption)
   }
 
   def getRangeBasedWindowFrame(aggColumnIndex : Int,
@@ -298,7 +297,7 @@ object GpuWindowExpression {
                                aggExpression : Expression,
                                windowSpec : GpuSpecifiedWindowFrame,
                                timestampIsAscending : Boolean)
-  : AggregationOverWindow = {
+  : WindowAggregate = {
 
     // FIXME: Currently, only negative or 0 values are supported.
     var lower = getBoundaryValue(windowSpec.lower)
@@ -333,12 +332,12 @@ object GpuWindowExpression {
 
     val windowOption = windowOptionBuilder.build()
 
-    val agg: Aggregation = aggExpression match {
+    aggExpression match {
       case gpuAggExpression : GpuAggregateExpression => gpuAggExpression.aggregateFunction match {
-        case GpuCount(_) => Aggregation.count()
-        case GpuSum(_) => Aggregation.sum()
-        case GpuMin(_) => Aggregation.min()
-        case GpuMax(_) => Aggregation.max()
+        case GpuCount(_) => WindowAggregate.count(aggColumnIndex, windowOption)
+        case GpuSum(_) => WindowAggregate.sum(aggColumnIndex, windowOption)
+        case GpuMin(_) => WindowAggregate.min(aggColumnIndex, windowOption)
+        case GpuMax(_) => WindowAggregate.max(aggColumnIndex, windowOption)
         case anythingElse =>
           throw new UnsupportedOperationException(
             s"Unsupported aggregation: ${anythingElse.prettyName}")
@@ -347,7 +346,6 @@ object GpuWindowExpression {
         throw new UnsupportedOperationException(
           s"Unsupported window aggregation: ${anythingElse.prettyName}")
     }
-    agg.onColumn(aggColumnIndex).overWindow(windowOption)
   }
 
   def getBoundaryValue(boundary : Expression) : Int = boundary match {

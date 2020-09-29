@@ -98,7 +98,6 @@ case class GpuShuffledHashJoinExec(
   override lazy val additionalMetrics: Map[String, SQLMetric] = Map(
     "buildDataSize" -> SQLMetrics.createSizeMetric(sparkContext, "build side size"),
     "buildTime" -> SQLMetrics.createNanoTimingMetric(sparkContext, "build time"),
-    "streamTime" -> SQLMetrics.createNanoTimingMetric(sparkContext, "stream time"),
     "joinTime" -> SQLMetrics.createNanoTimingMetric(sparkContext, "join time"),
     "joinOutputRows" -> SQLMetrics.createMetric(sparkContext, "join output rows"),
     "filterTime" -> SQLMetrics.createNanoTimingMetric(sparkContext, "filter time"))
@@ -122,7 +121,6 @@ case class GpuShuffledHashJoinExec(
     val numOutputBatches = longMetric(NUM_OUTPUT_BATCHES)
     val totalTime = longMetric(TOTAL_TIME)
     val buildTime = longMetric("buildTime")
-    val streamTime = longMetric("streamTime")
     val joinTime = longMetric("joinTime")
     val filterTime = longMetric("filterTime")
     val joinOutputRows = longMetric("joinOutputRows")
@@ -157,7 +155,7 @@ case class GpuShuffledHashJoinExec(
 
         doJoin(builtTable, streamIter, boundCondition,
           numOutputRows, joinOutputRows, numOutputBatches,
-          streamTime, joinTime, filterTime, totalTime)
+          joinTime, filterTime, totalTime)
       }
     }
   }

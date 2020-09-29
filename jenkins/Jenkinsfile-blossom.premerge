@@ -46,7 +46,6 @@ spec:
       limits:
         cpu: 8
         memory: 16Gi
-        nvidia.com/gpu: 1
     env:
       - name: DOCKER_HOST
         value: tcp://localhost:2375
@@ -85,7 +84,14 @@ spec:
     tty: true
   nodeSelector:
     kubernetes.io/os: linux
-    nvidia.com/gpu_type: GPU_TYPE
+  affinity:
+    nodeAffinity:
+      requiredDuringSchedulingIgnoredDuringExecution:
+        nodeSelectorTerms:
+        - matchExpressions:
+          - key: nvidia.com/gpu_type
+            operator: In
+            values: GPU_TYPES
 """
 
 def githubHelper // blossom github helper
@@ -117,7 +123,7 @@ pipeline {
         GITHUB_TOKEN = credentials("github-token")
         URM_CREDS = credentials("urm_creds")
         URM_URL = "https://${ArtifactoryConstants.ARTIFACTORY_NAME}/artifactory/sw-spark-maven"
-        GPU_TYPE = credentials("pre-merge_gpu_type")
+        GPU_TYPES = credentials("pre-merge_gpu_types")
         PVC = credentials("pvc")
         CUSTOM_WORKSPACE = "/home/jenkins/agent/workspace/${BUILD_TAG}"
     }
@@ -191,7 +197,7 @@ pipeline {
                         uploadDocker(IMAGE_PREMERGE)
 
                         pluginPremerge = pluginPremerge.replace("IMAGE_PREMERGE", "$IMAGE_PREMERGE")
-                        pluginPremerge = pluginPremerge.replace("GPU_TYPE", "$GPU_TYPE")
+                        pluginPremerge = pluginPremerge.replace("GPU_TYPES", "$GPU_TYPES")
                     }
                 }
             }

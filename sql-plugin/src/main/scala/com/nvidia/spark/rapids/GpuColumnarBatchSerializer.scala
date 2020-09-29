@@ -34,13 +34,17 @@ import org.apache.spark.sql.vectorized.ColumnarBatch
  * Serializer for serializing `ColumnarBatch`s during shuffle.
  * The batches will be stored in an internal format specific to rapids.
  */
-class GpuColumnarBatchSerializer(dataSize: SQLMetric = null) extends Serializer with Serializable {
+class GpuColumnarBatchSerializer(
+      numFields: Int,
+      dataSize: SQLMetric = null) extends Serializer with Serializable {
   override def newInstance(): SerializerInstance =
-    new GpuColumnarBatchSerializerInstance(dataSize)
+    new GpuColumnarBatchSerializerInstance(numFields, dataSize)
   override def supportsRelocationOfSerializedObjects: Boolean = true
 }
 
-private class GpuColumnarBatchSerializerInstance(dataSize: SQLMetric) extends SerializerInstance {
+private class GpuColumnarBatchSerializerInstance(
+    numFields: Int,
+    dataSize: SQLMetric) extends SerializerInstance {
 
   override def serializeStream(out: OutputStream): SerializationStream = new SerializationStream {
     private[this] val dOut: DataOutputStream =
@@ -147,13 +151,13 @@ private class GpuColumnarBatchSerializerInstance(dataSize: SQLMetric) extends Se
             try {
               val tableInfo = JCudfSerialization.readTableFrom(dIn)
               try {
-                val contigTable = tableInfo.getContiguousTable
-                if (contigTable == null && tableInfo.getNumRows == 0) {
+                val table = tableInfo.getTable
+                if (table == null && tableInfo.getNumRows == 0) {
                   dIn.close()
                   None
                 } else {
-                  if (contigTable != null) {
-                    Some(GpuColumnVectorFromBuffer.from(contigTable))
+                  if (table != null) {
+                    Some(GpuColumnVector.from(table))
                   } else {
                     Some(new ColumnarBatch(Array.empty, tableInfo.getNumRows))
                   }

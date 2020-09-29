@@ -18,9 +18,7 @@ package com.nvidia.spark.rapids
 
 import ai.rapids.cudf.{NvtxColor, NvtxRange, RmmEventHandler}
 
-import org.apache.spark.TaskContext
 import org.apache.spark.internal.Logging
-import org.apache.spark.sql.rapids.execution.TrampolineUtil
 
 /**
  * RMM event handler to trigger spilling from the device memory store.
@@ -47,10 +45,8 @@ class DeviceMemoryEventHandler(store: RapidsDeviceMemoryStore)
           return false
         }
         val targetSize = Math.max(storeSize - allocSize, 0)
-        logDebug(s"Targeting device store size of $targetSize bytes")
-        val amountSpilled = store.synchronousSpill(targetSize)
-        logInfo(s"Spilled $amountSpilled bytes from the device store")
-        TrampolineUtil.incTaskMetricsMemoryBytesSpilled(amountSpilled)
+        logInfo(s"Targeting device store size of $targetSize bytes")
+        store.synchronousSpill(targetSize)
         true
       } finally {
         nvtx.close()

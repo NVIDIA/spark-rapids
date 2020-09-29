@@ -17,7 +17,6 @@
 package com.nvidia.spark.rapids.tests.tpcxbb
 
 import com.nvidia.spark.rapids.tests.common.BenchUtils
-import org.rogach.scallop.ScallopConf
 
 import org.apache.spark.internal.Logging
 import org.apache.spark.sql.{DataFrame, SaveMode, SparkSession}
@@ -29,11 +28,10 @@ object TpcxbbLikeBench extends Logging {
    * driver and can be called from Spark shell using the following syntax:
    *
    * TpcxbbLikeBench.collect(spark, "q5", 3)
+   *
    * @param spark The Spark session
    * @param query The name of the query to run e.g. "q5"
    * @param iterations The number of times to run the query.
-   * @param gcBetweenRuns Whether to call `System.gc` between iterations to cause Spark to
-   *                      call `unregisterShuffle`
    */
   def collect(
       spark: SparkSession,
@@ -57,12 +55,7 @@ object TpcxbbLikeBench extends Logging {
    *
    * @param spark The Spark session
    * @param query The name of the query to run e.g. "q5"
-   * @param path The path to write the results to
-   * @param mode The SaveMode to use when writing the results
-   * @param writeOptions Write options
    * @param iterations The number of times to run the query.
-   * @param gcBetweenRuns Whether to call `System.gc` between iterations to cause Spark to
-   *                      call `unregisterShuffle`
    */
   def writeCsv(
       spark: SparkSession,
@@ -92,12 +85,7 @@ object TpcxbbLikeBench extends Logging {
    *
    * @param spark The Spark session
    * @param query The name of the query to run e.g. "q5"
-   * @param path The path to write the results to
-   * @param mode The SaveMode to use when writing the results
-   * @param writeOptions Write options
    * @param iterations The number of times to run the query.
-   * @param gcBetweenRuns Whether to call `System.gc` between iterations to cause Spark to
-   *                      call `unregisterShuffle`
    */
   def writeParquet(
       spark: SparkSession,
@@ -120,40 +108,15 @@ object TpcxbbLikeBench extends Logging {
   }
 
   def main(args: Array[String]): Unit = {
-    val conf = new Conf(args)
+    val input = args(0)
 
     val spark = SparkSession.builder.appName("TPCxBB Bench").getOrCreate()
+    TpcxbbLikeSpark.setupAllParquet(spark, input)
 
-    conf.inputFormat().toLowerCase match {
-      case "parquet" => TpcxbbLikeSpark.setupAllParquet(spark, conf.input())
-      case "csv" => TpcxbbLikeSpark.setupAllCSV(spark, conf.input())
-      case other =>
-        println(s"Invalid input format: $other")
-        System.exit(-1)
-    }
-
-    println(s"*** RUNNING TPCx-BB QUERY ${conf.query()}")
-    conf.output.toOption match {
-      case Some(path) => conf.outputFormat().toLowerCase match {
-        case "parquet" =>
-          writeParquet(
-            spark,
-            conf.query(),
-            path,
-            iterations = conf.iterations())
-        case "csv" =>
-          writeCsv(
-            spark,
-            conf.query(),
-            path,
-            iterations = conf.iterations())
-        case _ =>
-          println("Invalid or unspecified output format")
-          System.exit(-1)
-      }
-      case _ =>
-        collect(spark, conf.query(), conf.iterations())
-    }
+    args.drop(1).foreach(query => {
+      println(s"*** RUNNING TPCx-BB QUERY $query")
+      collect(spark, query)
+    })
   }
 
   def getQuery(query: String): SparkSession => DataFrame = {
@@ -197,15 +160,6 @@ object TpcxbbLikeBench extends Logging {
       case 30 => Q30Like.apply
       case _ => throw new IllegalArgumentException(s"Unknown TPCx-BB query number: $queryIndex")
     }
-  }
-}
 
-class Conf(arguments: Seq[String]) extends ScallopConf(arguments) {
-  val input = opt[String](required = true)
-  val inputFormat = opt[String](required = true)
-  val query = opt[String](required = true)
-  val iterations = opt[Int](default = Some(3))
-  val output = opt[String](required = false)
-  val outputFormat = opt[String](required = false)
-  verify()
+  }
 }

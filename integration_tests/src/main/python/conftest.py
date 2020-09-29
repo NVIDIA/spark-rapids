@@ -368,9 +368,3 @@ def tpcds(request):
   else:
     yield TpcdsRunner(tpcds_format, tpcds_path)
 
-@pytest.fixture(scope="session")
-def enable_cudf_udf(request):
-    enable_udf_cudf = request.config.getoption("cudf_udf")
-    if not enable_udf_cudf:
-        pytest.skip("cudf_udf not configured to run")
-

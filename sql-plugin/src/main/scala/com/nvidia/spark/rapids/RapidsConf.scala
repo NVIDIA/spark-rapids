@@ -482,7 +482,7 @@ object RapidsConf {
       "by reading each file in a separate thread in parallel on the CPU side before " +
       "sending to the GPU. Limited by " +
       "spark.rapids.sql.format.parquet.multiThreadedRead.numThreads " +
-      "and spark.rapids.sql.format.parquet.multiThreadedRead.maxNumFilesParallel")
+      "and spark.rapids.sql.format.parquet.multiThreadedRead.maxNumFileProcessed")
     .booleanConf
     .createWithDefault(true)
 
@@ -668,7 +668,7 @@ object RapidsConf {
 
   val SHUFFLE_COMPRESSION_CODEC = conf("spark.rapids.shuffle.compression.codec")
       .doc("The GPU codec used to compress shuffle data when using RAPIDS shuffle. " +
-          "Supported codecs: lz4, copy, none")
+          "Supported codecs: copy, none")
       .internal()
       .stringConf
       .createWithDefault("none")

@@ -187,14 +187,6 @@ class BatchQueue extends AutoCloseable with Arm {
     }
   }
 
-  def finish(): Unit = synchronized {
-    if (!isSet) {
-      // Wake up anyone waiting for the first batch.
-      isSet = true
-      notifyAll()
-    }
-  }
-
   def remove(): ColumnarBatch = synchronized {
     if (queue.isEmpty) {
       null
@@ -377,8 +369,7 @@ class GpuArrowPythonRunner(
     schema: StructType,
     timeZoneId: String,
     conf: Map[String, String],
-    batchSize: Long,
-    onDataWriteFinished: () => Unit)
+    batchSize: Long)
     extends BasePythonRunner[ColumnarBatch, ColumnarBatch](funcs, evalType, argOffsets)
         with GpuPythonArrowOutput {
 
@@ -440,7 +431,6 @@ class GpuArrowPythonRunner(
         } {
           writer.close()
           dataOut.flush()
-          if (onDataWriteFinished != null) onDataWriteFinished()
         }
       }
     }
@@ -597,8 +587,7 @@ case class GpuArrowEvalPythonExec(
         schema,
         sessionLocalTimeZone,
         pythonRunnerConf,
-        batchSize,
-        () => queue.finish()){
+        batchSize){
         override def minReadTargetBatchSize: Int = targetReadBatchSize
       }.compute(projectedIterator,
         context.partitionId(),

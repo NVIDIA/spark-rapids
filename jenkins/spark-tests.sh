@@ -17,8 +17,6 @@
 
 set -ex
 
-nvidia-smi
-
 . jenkins/version-def.sh
 
 ARTF_ROOT="$WORKSPACE/jars"
@@ -61,9 +59,7 @@ tar zxf $SPARK_HOME.tgz -C $ARTF_ROOT && \
 PARQUET_PERF="$WORKSPACE/integration_tests/src/test/resources/parquet_perf"
 PARQUET_ACQ="$WORKSPACE/integration_tests/src/test/resources/parquet_acq"
 OUTPUT="$WORKSPACE/output"
-BASE_SPARK_SUBMIT_ARGS="--master spark://$HOSTNAME:7077 \
-    --executor-memory 12G \
-    --total-executor-cores 6 \
+BASE_SPARK_SUBMIT_ARGS="--master spark://$HOSTNAME:7077 --executor-memory 32G \
     --conf spark.sql.shuffle.partitions=12 \
     --conf spark.driver.extraClassPath=${CUDF_JAR}:${RAPIDS_PLUGIN_JAR} \
     --conf spark.executor.extraClassPath=${CUDF_JAR}:${RAPIDS_PLUGIN_JAR} \
@@ -74,13 +70,11 @@ MORTGAGE_SPARK_SUBMIT_ARGS=" --conf spark.plugins=com.nvidia.spark.SQLPlugin \
     --class com.nvidia.spark.rapids.tests.mortgage.Main \
     $RAPIDS_TEST_JAR"
 
-RAPIDS_FILE_NAME=${RAPIDS_PLUGIN_JAR##*/}
-CUDF_UDF_TEST_ARGS="--conf spark.rapids.memory.gpu.allocFraction=0.1 \
-    --conf spark.rapids.python.memory.gpu.allocFraction=0.1 \
-    --conf spark.rapids.python.concurrentPythonWorkers=2 \
-    --conf spark.executorEnv.PYTHONPATH=${RAPIDS_FILE_NAME} \
-    --conf spark.pyspark.python=/opt/conda/bin/python \
-    --py-files ${RAPIDS_PLUGIN_JAR}" # explicitly specify python binary path in env w/ multiple python versions
+# need to disable pooling for udf test to prevent cudaErrorMemoryAllocation
+CUDF_UDF_TEST_ARGS="--conf spark.rapids.python.memory.gpu.pooling.enabled=false \
+    --conf spark.rapids.memory.gpu.pooling.enabled=false \
+    --conf spark.executorEnv.PYTHONPATH=rapids-4-spark_2.12-0.3.0-SNAPSHOT.jar \
+    --py-files ${RAPIDS_PLUGIN_JAR}"
 
 TEST_PARAMS="$SPARK_VER $PARQUET_PERF $PARQUET_ACQ $OUTPUT"
 
@@ -96,5 +90,5 @@ jps
 echo "----------------------------START TEST------------------------------------"
 rm -rf $OUTPUT
 spark-submit $BASE_SPARK_SUBMIT_ARGS $MORTGAGE_SPARK_SUBMIT_ARGS $TEST_PARAMS
-cd $RAPIDS_INT_TESTS_HOME && spark-submit $BASE_SPARK_SUBMIT_ARGS --jars $RAPIDS_TEST_JAR ./runtests.py -v -rfExXs --std_input_path="$WORKSPACE/integration_tests/src/test/resources/"
-spark-submit $BASE_SPARK_SUBMIT_ARGS $CUDF_UDF_TEST_ARGS --jars $RAPIDS_TEST_JAR ./runtests.py -m "cudf_udf" -v -rfExXs --cudf_udf
+cd $RAPIDS_INT_TESTS_HOME && spark-submit $BASE_SPARK_SUBMIT_ARGS --jars $RAPIDS_TEST_JAR ./runtests.py -m "not cudf_udf" -v -rfExXs --std_input_path="$WORKSPACE/integration_tests/src/test/resources/"
+spark-submit $BASE_SPARK_SUBMIT_ARGS $CUDF_UDF_TEST_ARGS --jars $RAPIDS_TEST_JAR ./runtests.py -m "cudf_udf" -v -rfExXs

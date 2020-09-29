@@ -20,8 +20,6 @@ import ai.rapids.cudf.{Cuda, DeviceMemoryBuffer, HostMemoryBuffer, MemoryBuffer,
 import com.nvidia.spark.rapids.StorageTier.StorageTier
 import com.nvidia.spark.rapids.format.TableMeta
 
-import org.apache.spark.sql.rapids.execution.TrampolineUtil
-
 /**
  * A buffer store using host memory.
  * @param catalog buffer catalog to use with this store
@@ -38,11 +36,7 @@ class RapidsHostMemoryStore(
   // Returns an allocated host buffer and whether the allocation is from the internal pool
   private def allocateHostBuffer(size: Long): (HostMemoryBuffer, Boolean) = {
     // spill to keep within the targeted size
-    val amountSpilled = synchronousSpill(math.max(maxSize - size, 0))
-    if (amountSpilled != 0) {
-      logInfo(s"Spilled $amountSpilled bytes from the host memory store")
-      TrampolineUtil.incTaskMetricsDiskBytesSpilled(amountSpilled)
-    }
+    synchronousSpill(math.max(maxSize - size, 0))
 
     var buffer: HostMemoryBuffer = null
     while (buffer == null) {

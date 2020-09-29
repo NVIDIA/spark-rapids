@@ -133,31 +133,26 @@ abstract class RapidsBufferStore(
   /**
    * Free memory in this store by spilling buffers to the spill store synchronously.
    * @param targetTotalSize maximum total size of this store after spilling completes
-   * @return number of bytes that were spilled
    */
-  def synchronousSpill(targetTotalSize: Long): Long = synchronousSpill(targetTotalSize, null)
+  def synchronousSpill(targetTotalSize: Long): Unit = synchronousSpill(targetTotalSize, null)
 
   /**
    * Free memory in this store by spilling buffers to the spill store synchronously.
    * @param targetTotalSize maximum total size of this store after spilling completes
    * @param stream CUDA stream to use or null for default stream
-   * @return number of bytes that were spilled
    */
-  def synchronousSpill(targetTotalSize: Long, stream: Cuda.Stream): Long = {
-    require(targetTotalSize >= 0, s"Negative spill target size: $targetTotalSize")
+  def synchronousSpill(targetTotalSize: Long, stream: Cuda.Stream): Unit = {
+    assert(targetTotalSize >= 0)
 
-    var totalSpilled: Long = 0
     if (buffers.getTotalBytes > targetTotalSize) {
       val nvtx = new NvtxRange(nvtxSyncSpillName, NvtxColor.ORANGE)
       try {
-        logDebug(s"$name store spilling to reduce usage from " +
+        logInfo(s"$name store spilling to reduce usage from " +
             s"${buffers.getTotalBytes} to $targetTotalSize bytes")
         var waited = false
         var exhausted = false
         while (!exhausted && buffers.getTotalBytes > targetTotalSize) {
-          val amountSpilled = trySpillAndFreeBuffer(stream)
-          if (amountSpilled != 0) {
-            totalSpilled += amountSpilled
+          if (trySpillAndFreeBuffer(stream)) {
             waited = false
           } else {
             if (!waited && pendingFreeBytes.get > 0) {
@@ -184,8 +179,6 @@ abstract class RapidsBufferStore(
         nvtx.close()
       }
     }
-
-    totalSpilled
   }
 
   /**
@@ -209,12 +202,12 @@ abstract class RapidsBufferStore(
     buffers.freeAll()
   }
 
-  private def trySpillAndFreeBuffer(stream: Cuda.Stream): Long = synchronized {
+  private def trySpillAndFreeBuffer(stream: Cuda.Stream): Boolean = synchronized {
     val bufferToSpill = buffers.nextSpillableBuffer()
     if (bufferToSpill != null) {
       spillAndFreeBuffer(bufferToSpill, stream)
     }
-    bufferToSpill.size
+    bufferToSpill != null
   }
 
   private def spillAndFreeBuffer(buffer: RapidsBufferBase, stream: Cuda.Stream): Unit = {
