@@ -22,10 +22,9 @@
 #    URM_URL=<maven repo url>
 ###
 ARG CUDA_VER=10.1
+FROM nvidia/cuda:${CUDA_VER}-runtime-centos7
 ARG CUDF_VER
 ARG URM_URL
-
-FROM nvidia/cuda:${CUDA_VER}-runtime-centos7
 
 #Install java-8, maven, docker image
 RUN yum update -y && \
