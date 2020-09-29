@@ -49,6 +49,7 @@ class BenchUtilsSuite extends FunSuite with BeforeAndAfterEach {
       writeOptions = Map("header" -> "true"),
       query = "q1",
       queryPlan = QueryPlan("logical", "physical"),
+      Seq.empty,
       queryTimes = Seq(99, 88, 77))
 
     val filename = s"$TEST_FILES_ROOT/BenchUtilsSuite-${System.currentTimeMillis()}.json"

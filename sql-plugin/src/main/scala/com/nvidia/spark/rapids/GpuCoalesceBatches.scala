@@ -18,7 +18,7 @@ package com.nvidia.spark.rapids
 
 import scala.collection.mutable.ArrayBuffer
 
-import ai.rapids.cudf.{BufferType, NvtxColor, Table}
+import ai.rapids.cudf.{BufferType, Cuda, NvtxColor, Table}
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 
 import org.apache.spark.TaskContext
@@ -433,14 +433,15 @@ class GpuCoalesceIterator(iter: Iterator[ColumnarBatch],
           val descr = compressedVecs.head.getTableMeta.bufferMeta.codecBufferDescrs(0)
           codec = TableCompressionCodec.getCodec(descr.codec)
         }
-        withResource(codec.createBatchDecompressor(maxDecompressBatchMemory)) { decompressor =>
+        withResource(codec.createBatchDecompressor(maxDecompressBatchMemory,
+            Cuda.DEFAULT_STREAM)) { decompressor =>
           compressedVecs.foreach { cv =>
             val bufferMeta = cv.getTableMeta.bufferMeta
             // don't currently support switching codecs when partitioning
             val buffer = cv.getBuffer.slice(0, cv.getBuffer.getLength)
             decompressor.addBufferToDecompress(buffer, bufferMeta)
           }
-          withResource(decompressor.finish()) { outputBuffers =>
+          withResource(decompressor.finishAsync()) { outputBuffers =>
             outputBuffers.zipWithIndex.foreach { case (outputBuffer, outputIndex) =>
               val cv = compressedVecs(outputIndex)
               val batchIndex = compressedBatchIndices(outputIndex)
