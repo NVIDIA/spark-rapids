@@ -16,7 +16,7 @@
 
 package com.nvidia.spark.rapids.shims.spark310
 
-import java.nio.{ByteBuffer, ByteOrder}
+import java.nio.ByteBuffer
 
 import scala.collection.JavaConverters._
 import scala.collection.mutable
@@ -169,9 +169,14 @@ class ParquetCachedBatchSerializer extends CachedBatchSerializer with Arm {
       case _ => false
     }
 
+  def isSupportedByCudf(schema: Seq[Attribute]): Boolean = {
+    schema.forall(a => GpuColumnVector.isSupportedType(a.dataType))
+  }
+
   /**
    * Convert an `RDD[ColumnarBatch]` into an `RDD[CachedBatch]` in preparation for caching the data.
    * This method uses Parquet Writer on the GPU to write the cached batch
+   *
    * @param input the input `RDD` to be converted.
    * @param schema the schema of the data being stored.
    * @param storageLevel where the data will be stored.
@@ -183,22 +188,22 @@ class ParquetCachedBatchSerializer extends CachedBatchSerializer with Arm {
      storageLevel: StorageLevel,
      conf: SQLConf): RDD[CachedBatch] = {
     val rapidsConf = new RapidsConf(conf)
-    if (rapidsConf.isSqlEnabled) {
+    if (rapidsConf.isSqlEnabled && isSupportedByCudf(schema)) {
       def putOnGpuIfNeeded(batch: ColumnarBatch): ColumnarBatch = {
-        if (batch.numCols() > 0 && !batch.column(0).isInstanceOf[GpuColumnVector]) {
+        if (!batch.column(0).isInstanceOf[GpuColumnVector]) {
           val s: StructType = schema.toStructType
           val gpuCB = new GpuColumnarBatchBuilder(s, batch.numRows(), batch).build(batch.numRows())
           batch.close()
           gpuCB
-        } else if (batch.numCols() == 0) {
-          // TODO: fallback on the CPU
-          throw new IllegalStateException("We don't allow batches with no columns")
         } else {
           batch
         }
       }
 
       input.map(batch => {
+        if (batch.numCols() == 0) {
+          ParquetCachedBatch(batch.numRows(), new Array[Byte](0))
+        }
         withResource(putOnGpuIfNeeded(batch)) { gpuCB =>
           compressColumnarBatchWithParquet(gpuCB)
         }
