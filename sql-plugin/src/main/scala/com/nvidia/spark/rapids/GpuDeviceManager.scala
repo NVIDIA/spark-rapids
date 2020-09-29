@@ -211,15 +211,18 @@ object GpuDeviceManager extends Logging {
             features += "ARENA"
             init | RmmAllocationMode.ARENA
           case c if "none".equalsIgnoreCase(c) =>
-            logWarning(
-              s"RMM pooling is enabled but the pool is set to '$c', pooling is now disabled.")
+            // Pooling is disabled.
             init
           case c =>
-            logWarning(
-              s"RMM pool set to '$c' is not supported and is being ignored.")
+            logError(s"RMM pool set to '$c' is not supported.")
             init
         }
+      } else if (!"none".equalsIgnoreCase(conf.rmmPool)) {
+        logWarning("RMM pool is disabled since spark.rapids.memory.gpu.pooling.enabled is set " +
+          "to false; however, this configuration is deprecated and the behavior may change in a " +
+          "future release.")
       }
+
       if (conf.isUvmEnabled) {
         init = init | RmmAllocationMode.CUDA_MANAGED_MEMORY
         features += "UVM"

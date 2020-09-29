@@ -323,9 +323,10 @@ object RapidsConf {
     .createWithDefault(true)
 
   val RMM_POOL = conf("spark.rapids.memory.gpu.pool")
-    .doc("Select the RMM pooling allocator to use. Valid values are \"DEFAULT\" and \"ARENA\". " +
-      "If set to \"NONE\", pooling is disabled and RMM just passes through to CUDA memory " +
-      "allocation directly.")
+    .doc("Select the RMM pooling allocator to use. Valid values are \"DEFAULT\", \"ARENA\", and " +
+      "\"NONE\". With \"DEFAULT\", `rmm::mr::pool_memory_resource` is used; with \"ARENA\", " +
+      "`rmm::mr::arena_memory_resource` is used. If set to \"NONE\", pooling is disabled and RMM " +
+      "just passes through to CUDA memory allocation directly.")
     .stringConf
     .createWithDefault("ARENA")
 
