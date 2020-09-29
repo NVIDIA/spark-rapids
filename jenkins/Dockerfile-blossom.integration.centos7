@@ -1,5 +1,5 @@
 #
-# Copyright (c) 2019-2020, NVIDIA CORPORATION. All rights reserved.
+# Copyright (c) 2020, NVIDIA CORPORATION. All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -30,7 +30,7 @@ FROM nvidia/cuda:${CUDA_VER}-runtime-centos7
 #Install java-8, maven, docker image
 RUN yum update -y && \
     yum install -y centos-release-scl && \
-    yum install -y java-1.8.0-openjdk-devel wget
+    yum install -y java-1.8.0-openjdk-devel wget expect
 
 # The default mvn verision is 3.05 on centos7 docker container.
 # The plugin: net.alchim31.maven requires a higher mvn version.
@@ -54,7 +54,3 @@ RUN conda install -y -c rapidsai -c rapidsai-nightly -c nvidia -c conda-forge -c
 
 # Set ENV for mvn
 ENV JAVA_HOME "/usr/lib/jvm/java-1.8.0-openjdk"
-
-RUN groupadd --gid 30 dip
-RUN adduser --uid 26576 --gid 30 --shell /bin/bash svcngcc
-USER svcngcc
