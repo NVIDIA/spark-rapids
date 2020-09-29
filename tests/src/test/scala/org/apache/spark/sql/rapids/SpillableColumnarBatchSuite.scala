@@ -19,13 +19,11 @@ package org.apache.spark.sql.rapids
 import java.util.UUID
 
 import ai.rapids.cudf.MemoryBuffer
-import com.nvidia.spark.rapids.{Arm, RapidsBuffer, RapidsBufferCatalog, RapidsBufferId, RapidsConf, SpillableColumnarBatchImpl, StorageTier}
+import com.nvidia.spark.rapids.{Arm, RapidsBuffer, RapidsBufferCatalog, RapidsBufferId, SpillableColumnarBatchImpl, StorageTier}
 import com.nvidia.spark.rapids.StorageTier.StorageTier
 import com.nvidia.spark.rapids.format.TableMeta
 import org.scalatest.FunSuite
-import org.scalatest.mockito.MockitoSugar
 
-import org.apache.spark.SparkConf
 import org.apache.spark.sql.vectorized.ColumnarBatch
 import org.apache.spark.storage.TempLocalBlockId
 
