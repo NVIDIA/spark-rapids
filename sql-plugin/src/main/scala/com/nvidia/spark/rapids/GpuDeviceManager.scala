@@ -203,16 +203,20 @@ object GpuDeviceManager extends Logging {
       var init = RmmAllocationMode.CUDA_DEFAULT
       val features = ArrayBuffer[String]()
       if (conf.isPooledMemEnabled) {
-        init = conf.pooledMemStrategy match {
+        init = conf.rmmPool match {
           case c if "default".equalsIgnoreCase(c) =>
             features += "POOLED"
             init | RmmAllocationMode.POOL
           case c if "arena".equalsIgnoreCase(c) =>
             features += "ARENA"
             init | RmmAllocationMode.ARENA
+          case c if "none".equalsIgnoreCase(c) =>
+            logWarning(
+              s"RMM pooling is enabled but the pool is set to '$c', pooling is now disabled.")
+            init
           case c =>
             logWarning(
-              s"RMM pooled memory strategy set to '$c' is not supported and is being ignored.")
+              s"RMM pool set to '$c' is not supported and is being ignored.")
             init
         }
       }

@@ -317,14 +317,15 @@ object RapidsConf {
 
   val POOLED_MEM = conf("spark.rapids.memory.gpu.pooling.enabled")
     .doc("Should RMM act as a pooling allocator for GPU memory, or should it just pass " +
-      "through to CUDA memory allocation directly.")
+      "through to CUDA memory allocation directly. DEPRECATED: please use " +
+      "spark.rapids.memory.gpu.pool instead.")
     .booleanConf
     .createWithDefault(true)
 
-  val POOLED_MEM_STRATEGY = conf("spark.rapids.memory.gpu.pooling.strategy")
-    .doc("The strategy to use for the RMM pooling allocator. Valid values are \"DEFAULT\" and " +
-      "\"ARENA\". This configuration only takes effect when " +
-      "spark.rapids.memory.gpu.pooling.enabled is set to true.")
+  val RMM_POOL = conf("spark.rapids.memory.gpu.pool")
+    .doc("Select the RMM pooling allocator to use. Valid values are \"DEFAULT\" and \"ARENA\". " +
+      "If set to \"NONE\", pooling is disabled and RMM just passes through to CUDA memory " +
+      "allocation directly.")
     .stringConf
     .createWithDefault("ARENA")
 
@@ -874,7 +875,7 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
 
   lazy val isPooledMemEnabled: Boolean = get(POOLED_MEM)
 
-  lazy val pooledMemStrategy: String = get(POOLED_MEM_STRATEGY)
+  lazy val rmmPool: String = get(RMM_POOL)
 
   lazy val rmmAllocFraction: Double = get(RMM_ALLOC_FRACTION)
 
