@@ -214,8 +214,7 @@ object GpuDeviceManager extends Logging {
             // Pooling is disabled.
             init
           case c =>
-            logError(s"RMM pool set to '$c' is not supported.")
-            init
+            throw new IllegalArgumentException(s"RMM pool set to '$c' is not supported.")
         }
       } else if (!"none".equalsIgnoreCase(conf.rmmPool)) {
         logWarning("RMM pool is disabled since spark.rapids.memory.gpu.pooling.enabled is set " +
