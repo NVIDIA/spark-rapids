@@ -482,7 +482,7 @@ object RapidsConf {
       "by reading each file in a separate thread in parallel on the CPU side before " +
       "sending to the GPU. Limited by " +
       "spark.rapids.sql.format.parquet.multiThreadedRead.numThreads " +
-      "and spark.rapids.sql.format.parquet.multiThreadedRead.maxNumFileProcessed")
+      "and spark.rapids.sql.format.parquet.multiThreadedRead.maxNumFilesParallel")
     .booleanConf
     .createWithDefault(true)
 
