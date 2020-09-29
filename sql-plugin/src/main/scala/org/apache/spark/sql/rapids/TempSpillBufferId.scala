@@ -41,7 +41,7 @@ object TempSpillBufferId {
   }
 }
 
-class TempSpillBufferId private(
+case class TempSpillBufferId private(
     override val tableId: Int,
     bufferId: TempLocalBlockId) extends RapidsBufferId {
 
