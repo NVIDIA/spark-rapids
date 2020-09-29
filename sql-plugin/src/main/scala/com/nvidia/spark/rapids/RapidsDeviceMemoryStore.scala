@@ -138,7 +138,7 @@ class RapidsDeviceMemoryStore(catalog: RapidsBufferCatalog = RapidsBufferCatalog
 
     override def getColumnarBatch: ColumnarBatch = {
       if (table.isDefined) {
-        GpuColumnVector.from(table.get) //REFCOUNT ++ of all columns
+        GpuColumnVectorFromBuffer.from(table.get, contigBuffer) //REFCOUNT ++ of all columns
       } else {
         columnarBatchFromDeviceBuffer(contigBuffer)
       }
