@@ -98,13 +98,6 @@ class GpuHashAggregateMeta(
       resultExpressions
 
   override def tagPlanForGpu(): Unit = {
-    if (agg.groupingExpressions.isEmpty) {
-      // first/last reductions not supported yet
-      if (agg.aggregateExpressions.exists(e => e.aggregateFunction.isInstanceOf[First] ||
-        e.aggregateFunction.isInstanceOf[Last])) {
-        willNotWorkOnGpu("First/Last reductions are not supported on GPU")
-      }
-    }
     if (agg.resultExpressions.isEmpty) {
       willNotWorkOnGpu("result expressions is empty")
     }
@@ -192,13 +185,6 @@ class GpuSortAggregateMeta(
       resultExpressions
 
   override def tagPlanForGpu(): Unit = {
-    if (agg.groupingExpressions.isEmpty) {
-      // first/last reductions not supported yet
-      if (agg.aggregateExpressions.exists(e => e.aggregateFunction.isInstanceOf[First] ||
-        e.aggregateFunction.isInstanceOf[Last])) {
-        willNotWorkOnGpu("First/Last reductions are not supported on GPU")
-      }
-    }
     if (GpuOverrides.isAnyStringLit(agg.groupingExpressions)) {
       willNotWorkOnGpu("string literal values are not supported in a hash aggregate")
     }
@@ -842,9 +828,9 @@ case class GpuHashAggregateExec(
           val aggregates = aggModeCudfAggregates.flatMap(_._2)
           val cudfAggregates = aggModeCudfAggregates.flatMap { case (mode, aggregates) =>
             if ((mode == Partial || mode == Complete) && !merge) {
-              aggregates.map(a => a.updateAggregate)
+              aggregates.map(a => a.updateAggregate.onColumn(a.getOrdinal(a.ref)))
             } else {
-              aggregates.map(a => a.mergeAggregate)
+              aggregates.map(a => a.mergeAggregate.onColumn(a.getOrdinal(a.ref)))
             }
           }
           tbl = new cudf.Table(toAggregateCvs.map(_.getBase): _*)

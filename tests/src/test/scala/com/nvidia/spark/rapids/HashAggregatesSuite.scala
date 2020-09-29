@@ -90,23 +90,6 @@ class HashAggregatesSuite extends SparkQueryCompareTestSuite {
       .agg(first(col("c0"), ignoreNulls = true), last(col("c0"), ignoreNulls = true))
   }
 
-  testExpectedExceptionStartsWith("test unsorted agg with first and last no grouping",
-    classOf[IllegalArgumentException],
-    "Part of the plan is not columnar", firstDf, repart = 2) {
-    frame => frame
-      .coalesce(1)
-      .agg(first(col("c0"), ignoreNulls = true), last(col("c0"), ignoreNulls = true))
-  }
-
-  testExpectedExceptionStartsWith("test sorted agg with first and last no grouping",
-    classOf[IllegalArgumentException],
-    "Part of the plan is not columnar", firstDf, repart = 2) {
-    frame => frame
-      .coalesce(1)
-      .sort(col("c2").asc, col("c0").asc) // force deterministic use case
-      .agg(first(col("c0"), ignoreNulls = true), last(col("c0"), ignoreNulls = true))
-  }
-
   IGNORE_ORDER_testSparkResultsAreEqualWithCapture(
       "nullable aggregate with not null filter",
       firstDf,
@@ -731,20 +714,6 @@ class HashAggregatesSuite extends SparkQueryCompareTestSuite {
 
   IGNORE_ORDER_testSparkResultsAreEqual("grouping expressions 2", longsCsvDf) {
     frame => frame.groupBy(col("more_longs") + col("longs")).agg(min("longs"))
-  }
-
-  testExpectedExceptionStartsWith("first without grouping",
-    classOf[IllegalArgumentException],
-    "Part of the plan is not columnar",
-    intCsvDf) {
-    frame => frame.agg(first("ints", false))
-  }
-
-  testExpectedExceptionStartsWith("last without grouping",
-    classOf[IllegalArgumentException],
-    "Part of the plan is not columnar",
-    intCsvDf) {
-    frame => frame.agg(first("ints", false))
   }
 
   IGNORE_ORDER_testSparkResultsAreEqual("first ignoreNulls=false", intCsvDf) {

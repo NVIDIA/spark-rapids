@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020, NVIDIA CORPORATION. All rights reserved.
+ * Copyright (c) 2019, NVIDIA CORPORATION. All rights reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,21 +14,20 @@
  * limitations under the License.
  */
 
-package com.nvidia.spark.rapids.tests.tpcds
+package com.nvidia.spark.rapids.tests.tpch
 
 import com.nvidia.spark.rapids.tests.common.BenchUtils
 import org.rogach.scallop.ScallopConf
 
-import org.apache.spark.internal.Logging
 import org.apache.spark.sql.{SaveMode, SparkSession}
 
-object TpcdsLikeBench extends Logging {
+object TpchLikeBench {
 
   /**
    * This method performs a benchmark of executing a query and collecting the results to the
    * driver and can be called from Spark shell using the following syntax:
    *
-   * TpcdsLikeBench.collect(spark, "q5", 3)
+   * TpchLikeBench.collect(spark, "q5", 3)
    *
    * @param spark The Spark session
    * @param query The name of the query to run e.g. "q5"
@@ -43,9 +42,9 @@ object TpcdsLikeBench extends Logging {
       gcBetweenRuns: Boolean = false): Unit = {
     BenchUtils.collect(
       spark,
-      spark => TpcdsLikeSpark.query(query)(spark),
+      spark => getQuery(query)(spark),
       query,
-      s"tpcds-$query-collect",
+      s"tpch-$query-collect",
       iterations,
       gcBetweenRuns)
   }
@@ -54,7 +53,7 @@ object TpcdsLikeBench extends Logging {
    * This method performs a benchmark of executing a query and writing the results to CSV files
    * and can be called from Spark shell using the following syntax:
    *
-   * TpcdsLikeBench.writeCsv(spark, "q5", 3, "/path/to/write")
+   * TpchLikeBench.writeCsv(spark, "q5", 3, "/path/to/write")
    *
    * @param spark The Spark session
    * @param query The name of the query to run e.g. "q5"
@@ -75,9 +74,9 @@ object TpcdsLikeBench extends Logging {
       gcBetweenRuns: Boolean = false): Unit = {
     BenchUtils.writeCsv(
       spark,
-      spark => TpcdsLikeSpark.query(query)(spark),
+      spark => getQuery(query)(spark),
       query,
-      s"tpcds-$query-csv",
+      s"tpch-$query-csv",
       iterations,
       gcBetweenRuns,
       path,
@@ -89,14 +88,14 @@ object TpcdsLikeBench extends Logging {
    * This method performs a benchmark of executing a query and writing the results to Parquet files
    * and can be called from Spark shell using the following syntax:
    *
-   * TpcdsLikeBench.writeParquet(spark, "q5", 3, "/path/to/write")
+   * TpchLikeBench.writeParquet(spark, "q5", 3, "/path/to/write")
    *
    * @param spark The Spark session
    * @param query The name of the query to run e.g. "q5"
    * @param path The path to write the results to
    * @param mode The SaveMode to use when writing the results
    * @param writeOptions Write options
-   * @param iterations The number of times to run the query
+   * @param iterations The number of times to run the query.
    * @param gcBetweenRuns Whether to call `System.gc` between iterations to cause Spark to
    *                      call `unregisterShuffle`
    */
@@ -110,9 +109,9 @@ object TpcdsLikeBench extends Logging {
       gcBetweenRuns: Boolean = false): Unit = {
     BenchUtils.writeParquet(
       spark,
-      spark => TpcdsLikeSpark.query(query)(spark),
+      spark => getQuery(query)(spark),
       query,
-      s"tpcds-$query-parquet",
+      s"tpch-$query-parquet",
       iterations,
       gcBetweenRuns,
       path,
@@ -126,16 +125,16 @@ object TpcdsLikeBench extends Logging {
   def main(args: Array[String]): Unit = {
     val conf = new Conf(args)
 
-    val spark = SparkSession.builder.appName("TPC-DS Like Bench").getOrCreate()
+    val spark = SparkSession.builder.appName("TPC-H Like Bench").getOrCreate()
     conf.inputFormat().toLowerCase match {
-      case "parquet" => TpcdsLikeSpark.setupAllParquet(spark, conf.input())
-      case "csv" => TpcdsLikeSpark.setupAllCSV(spark, conf.input())
+      case "parquet" => TpchLikeSpark.setupAllParquet(spark, conf.input())
+      case "csv" => TpchLikeSpark.setupAllCSV(spark, conf.input())
       case other =>
         println(s"Invalid input format: $other")
         System.exit(-1)
     }
 
-    println(s"*** RUNNING TPC-DS QUERY ${conf.query()}")
+    println(s"*** RUNNING TPC-H QUERY ${conf.query()}")
     conf.output.toOption match {
       case Some(path) => conf.outputFormat().toLowerCase match {
         case "parquet" =>
@@ -158,6 +157,33 @@ object TpcdsLikeBench extends Logging {
         collect(spark, conf.query(), conf.iterations())
     }
   }
+
+  private def getQuery(query: String)(spark: SparkSession) = {
+    query match {
+      case "q1" => Q1Like(spark)
+      case "q2" => Q2Like(spark)
+      case "q3" => Q3Like(spark)
+      case "q4" => Q4Like(spark)
+      case "q5" => Q5Like(spark)
+      case "q6" => Q6Like(spark)
+      case "q7" => Q7Like(spark)
+      case "q8" => Q8Like(spark)
+      case "q9" => Q9Like(spark)
+      case "q10" => Q10Like(spark)
+      case "q11" => Q11Like(spark)
+      case "q12" => Q12Like(spark)
+      case "q13" => Q13Like(spark)
+      case "q14" => Q14Like(spark)
+      case "q15" => Q15Like(spark)
+      case "q16" => Q16Like(spark)
+      case "q17" => Q17Like(spark)
+      case "q18" => Q18Like(spark)
+      case "q19" => Q19Like(spark)
+      case "q20" => Q20Like(spark)
+      case "q21" => Q21Like(spark)
+      case "q22" => Q22Like(spark)
+    }
+  }
 }
 
 class Conf(arguments: Seq[String]) extends ScallopConf(arguments) {
@@ -169,4 +195,3 @@ class Conf(arguments: Seq[String]) extends ScallopConf(arguments) {
   val outputFormat = opt[String](required = false)
   verify()
 }
-
