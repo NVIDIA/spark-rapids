@@ -495,16 +495,14 @@ case class GpuCast(
     // The time is off by 1 second if the result is < 0
     val adjustedTimestamp = withResource(input.getBase
         .castTo(DType.TIMESTAMP_MICROSECONDS)) { micros =>
-      withResource(micros.castTo(DType.INT64)) { micros =>
         withResource(Scalar.fromLong(1000000)) { oneSecond =>
-          withResource(micros.sub(oneSecond)) { plusOne =>
+          withResource(micros.sub(oneSecond)) { subOne =>
             withResource(Scalar.fromLong(0)) { zero =>
               withResource(micros.lessThan(zero)) { neg =>
-                neg.ifElse(plusOne, micros)
+                neg.ifElse(subOne, micros)
               }
             }
           }
-        }
       }
     }
     withResource(adjustedTimestamp) { adjustedTimestamp =>
