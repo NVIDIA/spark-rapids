@@ -20,14 +20,12 @@ import java.util.concurrent.ConcurrentHashMap
 import java.util.function.BiFunction
 
 import ai.rapids.cudf.{DeviceMemoryBuffer, Rmm, Table}
-import com.nvidia.spark.rapids.RapidsPluginImplicits.AutoCloseableArray
 import com.nvidia.spark.rapids.StorageTier.StorageTier
 import com.nvidia.spark.rapids.format.TableMeta
 
 import org.apache.spark.{SparkConf, SparkEnv}
 import org.apache.spark.internal.Logging
 import org.apache.spark.sql.rapids.RapidsDiskBlockManager
-import org.apache.spark.sql.vectorized.ColumnarBatch
 
 /**
  * Catalog for lookup of buffers by ID. The constructor is only visible for testing, generally
@@ -103,6 +101,9 @@ class RapidsBufferCatalog extends Logging {
       buffer.free()
     }
   }
+
+  /** Return the number of buffers currently in the catalog. */
+  def numBuffers: Int = bufferMap.size()
 }
 
 object RapidsBufferCatalog extends Logging with Arm {
@@ -204,4 +205,7 @@ object RapidsBufferCatalog extends Logging with Arm {
    * @return buffer that has been acquired
    */
   def acquireBuffer(id: RapidsBufferId): RapidsBuffer = singleton.acquireBuffer(id)
+
+  /** Remove a buffer ID from the catalog and release the resources of the registered buffer. */
+  def removeBuffer(id: RapidsBufferId): Unit = singleton.removeBuffer(id)
 }
