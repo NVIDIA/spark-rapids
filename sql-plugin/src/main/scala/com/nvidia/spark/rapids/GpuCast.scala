@@ -493,23 +493,23 @@ case class GpuCast(
   private def castTimestampToString(input: GpuColumnVector) = {
     // https://github.com/rapidsai/cudf/issues/5166
     // The time is off by 1 second if the result is < 0
-    val adjustedMillis = withResource(input.getBase
+    val adjustedTimestamp = withResource(input.getBase
         .castTo(DType.TIMESTAMP_MICROSECONDS)) { micros =>
-      withResource(micros.castTo(DType.INT64)) { ms =>
+      withResource(micros.castTo(DType.INT64)) { micros =>
         withResource(Scalar.fromLong(1000000)) { oneSecond =>
-          withResource(ms.sub(oneSecond)) { plusOne =>
+          withResource(micros.sub(oneSecond)) { plusOne =>
             withResource(Scalar.fromLong(0)) { zero =>
-              withResource(ms.lessThan(zero)) { neg =>
-                neg.ifElse(plusOne, ms)
+              withResource(micros.lessThan(zero)) { neg =>
+                neg.ifElse(plusOne, micros)
               }
             }
           }
         }
       }
     }
-    withResource(adjustedMillis) { adjustedMillis =>
-      withResource(adjustedMillis.castTo(DType.TIMESTAMP_MICROSECONDS)) { ms =>
-        withResource(ms.asStrings("%Y-%m-%d %H:%M:%S.%3f")) { cv =>
+    withResource(adjustedTimestamp) { adjustedTimestamp =>
+      withResource(adjustedTimestamp.castTo(DType.TIMESTAMP_MICROSECONDS)) { micros =>
+        withResource(micros.asStrings("%Y-%m-%d %H:%M:%S.%3f")) { cv =>
           GpuColumnVector.from(cv.stringReplaceWithBackrefs(
             GpuCast.TIMESTAMP_TRUNCATE_REGEX, "\\1\\2\\3"))
         }
