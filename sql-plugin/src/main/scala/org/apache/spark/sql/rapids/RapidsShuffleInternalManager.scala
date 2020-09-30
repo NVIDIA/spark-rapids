@@ -29,7 +29,6 @@ import org.apache.spark.scheduler.MapStatus
 import org.apache.spark.shuffle._
 import org.apache.spark.shuffle.sort.SortShuffleManager
 import org.apache.spark.sql.execution.metric.SQLMetric
-import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.vectorized.ColumnarBatch
 import org.apache.spark.storage._
 
@@ -331,7 +330,6 @@ abstract class RapidsShuffleInternalManagerBase(conf: SparkConf, isDriver: Boole
 
         new RapidsCachingReader(rapidsConf, localBlockManagerId,
           blocksByAddress,
-          gpu,
           context,
           metrics,
           transport,

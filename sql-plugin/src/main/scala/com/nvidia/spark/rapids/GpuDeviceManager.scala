@@ -203,9 +203,25 @@ object GpuDeviceManager extends Logging {
       var init = RmmAllocationMode.CUDA_DEFAULT
       val features = ArrayBuffer[String]()
       if (conf.isPooledMemEnabled) {
-        init = init | RmmAllocationMode.POOL
-        features += "POOLED"
+        init = conf.rmmPool match {
+          case c if "default".equalsIgnoreCase(c) =>
+            features += "POOLED"
+            init | RmmAllocationMode.POOL
+          case c if "arena".equalsIgnoreCase(c) =>
+            features += "ARENA"
+            init | RmmAllocationMode.ARENA
+          case c if "none".equalsIgnoreCase(c) =>
+            // Pooling is disabled.
+            init
+          case c =>
+            throw new IllegalArgumentException(s"RMM pool set to '$c' is not supported.")
+        }
+      } else if (!"none".equalsIgnoreCase(conf.rmmPool)) {
+        logWarning("RMM pool is disabled since spark.rapids.memory.gpu.pooling.enabled is set " +
+          "to false; however, this configuration is deprecated and the behavior may change in a " +
+          "future release.")
       }
+
       if (conf.isUvmEnabled) {
         init = init | RmmAllocationMode.CUDA_MANAGED_MEMORY
         features += "UVM"
@@ -276,7 +292,7 @@ object GpuDeviceManager extends Logging {
     private[this] val devId = getDeviceId.getOrElse {
       throw new IllegalStateException("Device ID is not set")
     }
-    
+
     override def newThread(runnable: Runnable): Thread = {
       factory.newThread(() => {
         Cuda.setDevice(devId)
