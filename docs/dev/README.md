@@ -1,7 +1,7 @@
 ---
 layout: page
 title: Developer Overview
-nav_order: 8
+nav_order: 9
 has_children: true
 permalink: /developer-overview/
 ---
@@ -172,20 +172,24 @@ On startup use: `--conf [conf key]=[conf value]`. For example:
 [...]
 ```
 
-### Input Expressions and Output Attributes
-For the common case of nodes expecting GPU columnar data as input and
+### Expressions
+For nodes expecting GPU columnar data as input and
 producing GPU columnar data as output, the child node(s) passed to the case
-class constructor should have the `GpuExpression` type.
-
-Note that any attribute references that appear in the node's `output` should
-*not* be `GpuAttributeReference` instances but rather normal
-`AttributeReference` instances.  Using `GpuAttributeReference` instances in
-the node's `output` can cause these attributes to find their way into
-non-plugin nodes in the plan that are unaware of `GpuAttributeReference`,
-causing an error when planning the query.
+class constructor should have the `Expression` type.  This is a little
+odd because they should all be instances of `GpuExpression` except for
+`AttributeReference` and `SortOrder`. This is needed because `AttributeReference`
+is weaved into a lot of the magic that is built into Spark expressions.
+`SortOrder` is similar as Spark itself will insert `SortOrder` instances into
+the plan automatically in many cases.  These are both `Unevaluable` expressions
+so they should never be run columnar or otherwise.  These `Expressions` should be
+bound using `GpuBindReferences` which will make sure that all `AttributeReference`
+instances are replaced with `GpuBoundReference` implementations and everything is
+on the GPU. So after calling `GpuBindReferences.bindReferences` you should be able
+to cast the result to `GpuExpression` unless you know you have a SortOrder in there,
+which should be rare.
 
 ### The GPU Semaphore
-Typically Spark runs a task per CPU core, but there are often many more CPU
+Typically, Spark runs a task per CPU core, but there are often many more CPU
 cores than GPUs.  This can lead to situations where Spark wants to run more
 concurrent tasks than can reasonably fit on a GPU.  The plugin works around
 this problem with the `GpuSemaphore` object.  This object acts as a traffic
@@ -219,7 +223,7 @@ options, e.g.:
 
 ## Debugging Tips
 An easy way to debug the plugin is to run in
-[Spark local mode](https://jaceklaskowski.gitbooks.io/mastering-apache-spark/local/spark-local.html).
+[Spark local mode](http://spark.apache.org/docs/latest/submitting-applications.html#master-urls).
 This runs the Spark driver and executor all in the same JVM process, making it
 easy for breakpoints to catch everything.  You do not have to worry about
 whether the code is executing on the driver or the executor, since they are

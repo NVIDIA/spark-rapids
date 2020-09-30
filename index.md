@@ -20,11 +20,15 @@ Rapids Accelerator for Apache Spark reaps the benefit of GPU performance while s
 
 
 ## Ease of Use
-Run your existing Apache Spark applications with no code change. Learn more on how to [get started](/Getting-Started/).
+Run your existing Apache Spark applications with no code change.  Launch Spark with the RAPIDS Accelerator for Apache Spark plugin jar and enable a configuration setting: 
 
 `spark.conf.set('spark.rapids.sql.enabled','true')`
 
+The following is an example of a physical plan with operators running on the GPU: 
+
 ![ease-of-use](/docs/img/ease-of-use.png)
+
+Learn more on how to [get started](get-started/getting-started.md).
 
 ## A Unified AI framework for ETL + ML/DL 
 A single pipeline, from ingest to data preparation to model training
