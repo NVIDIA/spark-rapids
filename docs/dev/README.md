@@ -223,7 +223,7 @@ options, e.g.:
 
 ## Debugging Tips
 An easy way to debug the plugin is to run in
-[Spark local mode](https://spark.apache.org/docs/latest/spark-standalone.html).
+[Spark local mode](http://spark.apache.org/docs/latest/submitting-applications.html#master-urls).
 This runs the Spark driver and executor all in the same JVM process, making it
 easy for breakpoints to catch everything.  You do not have to worry about
 whether the code is executing on the driver or the executor, since they are
