@@ -136,6 +136,8 @@ public class GpuColumnVector extends GpuColumnVectorBase {
       return DType.FLOAT64;
     } else if (type instanceof ByteType) {
       return DType.INT8;
+    } else if (type instanceof BinaryType) {
+      return DType.LIST;
     } else if (type instanceof BooleanType) {
       return DType.BOOL8;
     } else if (type instanceof ShortType) {
@@ -309,6 +311,10 @@ public class GpuColumnVector extends GpuColumnVectorBase {
    */
   public static final GpuColumnVector from(ai.rapids.cudf.ColumnVector cudfCv) {
     return new GpuColumnVector(getSparkTypeFrom(cudfCv), cudfCv);
+  }
+
+  public static final GpuColumnVector from(DataType type, typai.rapids.cudf.ColumnVector cudfCv) {
+    return new GpuColumnVector(type, cudfCv);
   }
 
   public static final GpuColumnVector from(Scalar scalar, int count) {

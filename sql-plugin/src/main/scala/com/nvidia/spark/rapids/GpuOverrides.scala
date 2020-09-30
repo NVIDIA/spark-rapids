@@ -396,6 +396,7 @@ object GpuOverrides {
 
   def isSupportedType(dataType: DataType): Boolean = dataType match {
       case BooleanType => true
+      case BinaryType => true
       case ByteType => true
       case ShortType => true
       case IntegerType => true

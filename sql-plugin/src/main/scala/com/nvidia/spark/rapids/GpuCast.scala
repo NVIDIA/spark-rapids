@@ -456,7 +456,7 @@ case class GpuCast(
           }
         }
 
-      case (ShortType | IntegerType | LongType | FloatType | DoubleType | StringType, BinaryType) =>
+      case (ShortType | IntegerType | LongType | ByteType | StringType, BinaryType) =>
         new GpuColumnVector(BinaryType, input.getBase.asByteList(true))
 
       case _ =>
