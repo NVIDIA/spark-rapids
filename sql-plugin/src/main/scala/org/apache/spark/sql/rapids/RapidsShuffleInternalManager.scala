@@ -105,7 +105,8 @@ class RapidsCachingWriter[K, V](
           // Add the table to the shuffle store
           batch.column(0) match {
             case c: GpuColumnVectorFromBuffer =>
-              val buffer = c.getBuffer.slice(0, c.getBuffer.getLength)
+              val buffer = c.getBuffer
+              buffer.incRefCount()
               partSize = buffer.getLength
               uncompressedMetric += partSize
               shuffleStorage.addTable(
@@ -114,7 +115,8 @@ class RapidsCachingWriter[K, V](
                 buffer,
                 SpillPriorities.OUTPUT_FOR_SHUFFLE_INITIAL_PRIORITY)
             case c: GpuCompressedColumnVector =>
-              val buffer = c.getBuffer.slice(0, c.getBuffer.getLength)
+              val buffer = c.getBuffer
+              buffer.incRefCount()
               partSize = buffer.getLength
               val tableMeta = c.getTableMeta
               // update the table metadata for the buffer ID generated above

@@ -134,7 +134,10 @@ class RapidsDeviceMemoryStore(catalog: RapidsBufferCatalog = RapidsBufferCatalog
       table.foreach(_.close())
     }
 
-    override def getMemoryBuffer: MemoryBuffer = contigBuffer.slice(0, contigBuffer.getLength)
+    override def getMemoryBuffer: MemoryBuffer = {
+      contigBuffer.incRefCount()
+      contigBuffer
+    }
 
     override def getColumnarBatch: ColumnarBatch = {
       if (table.isDefined) {

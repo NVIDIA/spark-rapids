@@ -419,9 +419,10 @@ class GpuCoalesceIterator(iter: Iterator[ColumnarBatch],
         withResource(codec.createBatchDecompressor(maxDecompressBatchMemory,
             Cuda.DEFAULT_STREAM)) { decompressor =>
           compressedVecs.foreach { cv =>
+            val buffer = cv.getBuffer
             val bufferMeta = cv.getTableMeta.bufferMeta
             // don't currently support switching codecs when partitioning
-            val buffer = cv.getBuffer.slice(0, cv.getBuffer.getLength)
+            buffer.incRefCount()
             decompressor.addBufferToDecompress(buffer, bufferMeta)
           }
           withResource(decompressor.finishAsync()) { outputBuffers =>
