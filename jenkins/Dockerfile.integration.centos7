@@ -23,6 +23,7 @@
 ###
 ARG CUDA_VER=10.1
 FROM nvidia/cuda:${CUDA_VER}-runtime-centos7
+ARG CUDA_VER
 ARG CUDF_VER
 ARG URM_URL
 
