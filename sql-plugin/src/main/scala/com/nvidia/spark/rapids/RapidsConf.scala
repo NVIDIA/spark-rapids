@@ -317,9 +317,18 @@ object RapidsConf {
 
   val POOLED_MEM = conf("spark.rapids.memory.gpu.pooling.enabled")
     .doc("Should RMM act as a pooling allocator for GPU memory, or should it just pass " +
-      "through to CUDA memory allocation directly.")
+      "through to CUDA memory allocation directly. DEPRECATED: please use " +
+      "spark.rapids.memory.gpu.pool instead.")
     .booleanConf
     .createWithDefault(true)
+
+  val RMM_POOL = conf("spark.rapids.memory.gpu.pool")
+    .doc("Select the RMM pooling allocator to use. Valid values are \"DEFAULT\", \"ARENA\", and " +
+      "\"NONE\". With \"DEFAULT\", `rmm::mr::pool_memory_resource` is used; with \"ARENA\", " +
+      "`rmm::mr::arena_memory_resource` is used. If set to \"NONE\", pooling is disabled and RMM " +
+      "just passes through to CUDA memory allocation directly.")
+    .stringConf
+    .createWithDefault("ARENA")
 
   val CONCURRENT_GPU_TASKS = conf("spark.rapids.sql.concurrentGpuTasks")
       .doc("Set the number of tasks that can execute concurrently per GPU. " +
@@ -866,6 +875,8 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
   lazy val isUvmEnabled: Boolean = get(UVM_ENABLED)
 
   lazy val isPooledMemEnabled: Boolean = get(POOLED_MEM)
+
+  lazy val rmmPool: String = get(RMM_POOL)
 
   lazy val rmmAllocFraction: Double = get(RMM_ALLOC_FRACTION)
 
