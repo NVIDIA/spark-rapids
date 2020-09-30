@@ -491,10 +491,26 @@ case class GpuCast(
   }
 
   private def castTimestampToString(input: GpuColumnVector) = {
-    GpuColumnVector.from(
-      withResource(input.getBase.asStrings("%Y-%m-%d %H:%M:%S.%3f")) { cv =>
-        cv.stringReplaceWithBackrefs(GpuCast.TIMESTAMP_TRUNCATE_REGEX,"\\1\\2\\3")
-      })
+    withResource(input.getBase.castTo(DType.TIMESTAMP_MILLISECONDS)) { ms =>
+      withResource(ms.castTo(DType.INT64)) { ms =>
+        withResource(Scalar.fromLong(1000)) { oneSecondMillis =>
+          withResource(ms.sub(oneSecondMillis)) { plusOne =>
+            withResource(Scalar.fromLong(0)) { zero =>
+              withResource(ms.lessThan(zero)) { neg =>
+                withResource(neg.ifElse(plusOne, ms)) { adjustedMillis =>
+                  withResource(adjustedMillis.castTo(DType.TIMESTAMP_MILLISECONDS)) { x =>
+                    withResource(x.asStrings("%Y-%m-%d %H:%M:%S.%3f")) { cv =>
+                      GpuColumnVector.from(cv.stringReplaceWithBackrefs(
+                        GpuCast.TIMESTAMP_TRUNCATE_REGEX, "\\1\\2\\3"))
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
   }
 
   private def castFloatingTypeToString(input: GpuColumnVector): GpuColumnVector = {

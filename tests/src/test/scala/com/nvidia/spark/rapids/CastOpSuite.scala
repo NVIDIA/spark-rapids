@@ -692,7 +692,10 @@ object CastOpSuite {
     import session.sqlContext.implicits._
     val df = new SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSS")
     val timestampStrings = Seq(
-      "2020-12-31T11:59:59.999",
+      "1920-12-31T11:59:59.999",
+      "1969-12-31T23:59:59.999",
+      "1970-01-01T00:00:00.000",
+      "1970-01-01T00:00:00.999",
       "2020-12-31T11:59:59.990",
       "2020-12-31T11:59:59.900",
       "2020-12-31T11:59:59.000",
