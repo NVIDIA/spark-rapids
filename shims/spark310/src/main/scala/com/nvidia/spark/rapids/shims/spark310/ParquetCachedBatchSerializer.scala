@@ -16,7 +16,7 @@
 
 package com.nvidia.spark.rapids.shims.spark310
 
-import java.io.{File, InputStream}
+import java.io.{ByteArrayOutputStream, File, InputStream}
 import java.nio.ByteBuffer
 import java.nio.file.Files
 
@@ -30,8 +30,8 @@ import com.nvidia.spark.rapids.GpuColumnVector.GpuColumnarBatchBuilder
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import org.apache.hadoop.conf.Configuration
 import org.apache.parquet.HadoopReadOptions
-import org.apache.parquet.hadoop.{ParquetFileReader, ParquetInputFormat}
-import org.apache.parquet.io.{DelegatingSeekableInputStream, InputFile, SeekableInputStream}
+import org.apache.parquet.hadoop.{ParquetFileReader, ParquetInputFormat, ParquetOutputFileFormat}
+import org.apache.parquet.io.{DelegatingPositionOutputStream, DelegatingSeekableInputStream, InputFile, OutputFile, PositionOutputStream, SeekableInputStream}
 
 import org.apache.spark.TaskContext
 import org.apache.spark.rdd.RDD
@@ -119,6 +119,41 @@ class ByteArrayInputFile(buff: Array[Byte]) extends InputFile {
       }
     }
   }
+}
+
+class ByteArrayOutputFile(stream: ByteArrayOutputStream) extends OutputFile {
+  // default to 32 MB: large enough to minimize the impact of seeks
+  var blockSize = 32L * 1024 * 1024
+
+  override def create(blockSizeHint: Long): PositionOutputStream = {
+    blockSize = blockSizeHint
+    new DelegatingPositionOutputStream(stream) {
+      var pos = 0
+      override def getPos: Long = pos
+
+      override def write(b: Int): Unit = {
+        super.write(b)
+        pos += Integer.BYTES
+      }
+
+      override def write(b: Array[Byte]): Unit = {
+        super.write(b)
+        pos += b.length
+      }
+
+      override def write(b: Array[Byte], off: Int, len: Int): Unit = {
+        super.write(b, off, len)
+        pos += len
+      }
+    }
+  }
+
+  override def createOrOverwrite(blockSizeHint: Long): PositionOutputStream =
+    throw new UnsupportedOperationException("Don't need to overwrite")
+
+  override def supportsBlockSize(): Boolean = true
+
+  override def defaultBlockSize(): Long = blockSize
 }
 
 class ParquetBufferConsumer(val numRows: Int) extends HostBufferConsumer with AutoCloseable {
@@ -477,6 +512,11 @@ class ParquetCachedBatchSerializer extends CachedBatchSerializer with Arm {
     hadoopConf.set(
       SQLConf.LEGACY_PARQUET_REBASE_MODE_IN_WRITE.key, LegacyBehaviorPolicy.CORRECTED.toString)
 
+    hadoopConf.set(SQLConf.PARQUET_OUTPUT_TIMESTAMP_TYPE.key,
+      SQLConf.ParquetOutputTimestampType.TIMESTAMP_MICROS.toString)
+
+    hadoopConf.setBoolean(SQLConf.PARQUET_WRITE_LEGACY_FORMAT.key, false)
+
     ParquetWriteSupport.setSchema(requestedSchema, hadoopConf)
 
     hadoopConf
@@ -495,22 +535,74 @@ class ParquetCachedBatchSerializer extends CachedBatchSerializer with Arm {
      schema: Seq[Attribute],
      storageLevel: StorageLevel,
      conf: SQLConf): RDD[CachedBatch] = {
-    val s = schema.toStructType
-    val converters = new GpuRowToColumnConverter(s)
-    val columnarBatchRdd = input.mapPartitions(iter => {
-      new RowToColumnarIterator(iter, s, RequireSingleBatch, converters)
-    })
-    columnarBatchRdd.map(cb => {
-      withResource(cb) { columnarBatch =>
-        val cachedBatch = compressColumnarBatchWithParquet(columnarBatch)
-        cachedBatch
+
+    val parquetSchema = schema.zip(getColumnIndices(schema, schema)).map {
+      case (attr, index) => attr.withName("_col" + index)
+    }
+
+    val rapidsConf = new RapidsConf(conf)
+    val sparkSession = SparkSession.active
+
+    val hadoopConf = getHadoopConf(parquetSchema.toStructType, conf)
+    val broadcastedHadoopConf =
+      sparkSession.sparkContext.broadcast(new SerializableConfiguration(hadoopConf))
+
+
+    SQLConf.get.setConfString(SQLConf.LEGACY_PARQUET_REBASE_MODE_IN_WRITE.key,
+      LegacyBehaviorPolicy.CORRECTED.toString)
+
+    val broadcastedConf = sparkSession.sparkContext.broadcast(conf)
+
+    if (rapidsConf.isSqlEnabled && isSupportedByCudf(schema)) {
+      val s = schema.toStructType
+      val converters = new GpuRowToColumnConverter(s)
+      val columnarBatchRdd = input.mapPartitions(iter => {
+        new RowToColumnarIterator(iter, s, RequireSingleBatch, converters)
+      })
+      columnarBatchRdd.map(cb => {
+        withResource(cb) { columnarBatch =>
+          val cachedBatch = compressColumnarBatchWithParquet(columnarBatch)
+          cachedBatch
+        }
+      })
+    } else {
+      // fallback to the CPU
+      input.mapPartitions {
+        cbIter =>
+          new Iterator[CachedBatch]() {
+            private val parquetOutputFormat =
+              SQLConf.withExistingConf(broadcastedConf.value) {
+                new ParquetOutputFileFormat()
+              }
+
+            override def hasNext: Boolean = cbIter.hasNext
+
+            override def next(): CachedBatch = {
+              // Each partition will be a single parquet file
+              var rows = 0
+              val stream = new ByteArrayOutputStream()
+              val outputFile: OutputFile = new ByteArrayOutputFile(stream)
+
+              val recordWriter = parquetOutputFormat.getRecordWriter(outputFile,
+                broadcastedHadoopConf.value.value)
+
+              while (cbIter.hasNext) {
+                rows += 1
+                val row = cbIter.next()
+                recordWriter.write(null, row)
+              }
+              // passing null as context isn't used in this method
+              recordWriter.close(null)
+              ParquetCachedBatch(rows, stream.toByteArray)
+            }
+          }
       }
-    })
+    }
   }
 
   override def buildFilter(predicates: Seq[Expression],
      cachedAttributes: Seq[Attribute]): (Int, Iterator[CachedBatch]) => Iterator[CachedBatch] = {
-        //essentially a noop
-        (partId: Int, b: Iterator[CachedBatch]) => b
+    //essentially a noop
+    (partId: Int, b: Iterator[CachedBatch]) => b
   }
 }
