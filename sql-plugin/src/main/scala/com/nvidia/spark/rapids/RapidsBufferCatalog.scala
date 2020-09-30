@@ -137,7 +137,7 @@ object RapidsBufferCatalog extends Logging with Arm {
     hostStorage.setSpillStore(diskStorage)
 
     logInfo("Installing GPU memory handler for spill")
-    memoryEventHandler = new DeviceMemoryEventHandler(deviceStorage)
+    memoryEventHandler = new DeviceMemoryEventHandler(deviceStorage, rapidsConf.gpuOomDumpDir)
     Rmm.setEventHandler(memoryEventHandler)
   }
 

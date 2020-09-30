@@ -282,6 +282,13 @@ object RapidsConf {
     .stringConf
     .createWithDefault("NONE")
 
+  val GPU_OOM_DUMP_DIR = conf("spark.rapids.memory.gpu.oomDumpDir")
+    .doc("The path to a local directory where a heap dump will be created if the GPU " +
+      "encounters an unrecoverable out-of-memory (OOM) error. The filename will be of the " +
+      "form: \"gpu-oom-<pid>.hprof\" where <pid> is the process ID.")
+    .stringConf
+    .createOptional
+
   private val RMM_ALLOC_MAX_FRACTION_KEY = "spark.rapids.memory.gpu.maxAllocFraction"
   private val RMM_ALLOC_RESERVE_KEY = "spark.rapids.memory.gpu.reserve"
 
@@ -871,6 +878,8 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
   lazy val testingAllowedNonGpu: Seq[String] = get(TEST_ALLOWED_NONGPU)
 
   lazy val rmmDebugLocation: String = get(RMM_DEBUG)
+
+  lazy val gpuOomDumpDir: Option[String] = get(GPU_OOM_DUMP_DIR)
 
   lazy val isUvmEnabled: Boolean = get(UVM_ENABLED)
 
