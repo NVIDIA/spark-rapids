@@ -6,8 +6,28 @@ parent: Version
 ---
 
 ## Stable Release - v0.2.0
-This is the second public release of the RAPIDS Accelerator for Apache Spark. 
-The list of supported operations is provided [here](../configs.md#supported-gpu-operators-and-fine-tuning)
+This is the second public release of the RAPIDS Accelerator for Apache Spark.  Adaptive Query
+Execution [SPARK-31412](https://issues.apache.org/jira/browse/SPARK-31412) is a new enhancement that
+was included in Spark 3.0 that alters the physical execution plan dynamically to improve the
+performance of the query.  The RAPIDS Accelerator v0.2 introduces Adaptive Query Execution (AQE) for
+GPUs and leverages columnar processing
+[SPARK-32332](https://issues.apache.org/jira/browse/SPARK-32332) starting from Spark 3.0.1. 
+
+Another enhancement in v0.2 is improvement in reading small Parquet files.  This feature takes into
+account the scenario where input data can be stored across many small files.  By leveraging multiple
+CPU threads v0.2 delivers up to 6x performance improvement over the previous release for small
+Parquet file reads.
+
+The RAPIDS Accelerator introduces a beta feature that accelerates [Spark shuffle for
+GPUs](/docs/get-started/getting-started-on-prem.md#enabling-rapidsshufflemanager).  Accelerated
+shuffle makes use of high bandwidth transfers between GPUs (NVLink or p2p over PCIe) and leverages
+RDMA (RoCE or Infiniband) for remote transfers. 
+
+The list of all supported operations is provided
+[here](../configs.md#supported-gpu-operators-and-fine-tuning).
+
+For a detailed list of v0.2.0 changes, please refer to the
+[CHANGELOG](https://github.com/NVIDIA/spark-rapids/blob/main/CHANGELOG.md). 
 
 Hardware Requirements: 
 
