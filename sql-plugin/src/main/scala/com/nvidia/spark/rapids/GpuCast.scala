@@ -506,10 +506,12 @@ case class GpuCast(
         }
       }
     }
-    withResource(adjustedMillis.castTo(DType.TIMESTAMP_MILLISECONDS)) { ms =>
-      withResource(ms.asStrings("%Y-%m-%d %H:%M:%S.%3f")) { cv =>
-        GpuColumnVector.from(cv.stringReplaceWithBackrefs(
-          GpuCast.TIMESTAMP_TRUNCATE_REGEX, "\\1\\2\\3"))
+    withResource(adjustedMillis) { adjustedMillis =>
+      withResource(adjustedMillis.castTo(DType.TIMESTAMP_MILLISECONDS)) { ms =>
+        withResource(ms.asStrings("%Y-%m-%d %H:%M:%S.%3f")) { cv =>
+          GpuColumnVector.from(cv.stringReplaceWithBackrefs(
+            GpuCast.TIMESTAMP_TRUNCATE_REGEX, "\\1\\2\\3"))
+        }
       }
     }
   }
