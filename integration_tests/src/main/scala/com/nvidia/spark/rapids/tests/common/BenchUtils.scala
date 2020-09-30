@@ -579,7 +579,6 @@ class BenchSparkListener(executionMetrics: ListBuffer[StageMetrics]) extends Spa
       "jvmGCTime" -> taskMetrics.jvmGCTime,
       "resultSerializationTime" -> taskMetrics.resultSerializationTime,
       "memoryBytesSpilled" -> taskMetrics.memoryBytesSpilled,
-      "memoryBytesSpilled" -> taskMetrics.memoryBytesSpilled,
       "diskBytesSpilled" -> taskMetrics.diskBytesSpilled,
       "peakExecutionMemory" -> taskMetrics.peakExecutionMemory
     )
@@ -635,7 +634,7 @@ case class StageMetrics(
     parentIds: Seq[Int],
     taskCount: Int,
     stageMetrics: Map[String, Long],
-    taskMetrics: Map[String, Long],
+    taskMetrics: Map[String, Long]
 )
 
 /** Details about the environment where the benchmark ran */
