@@ -246,7 +246,8 @@ abstract class BatchedTableCompressor(maxBatchMemorySize: Long, stream: Cuda.Str
               buffer
             }
           } else {
-            ct.buffer.slice(0, ct.buffer.getLength)
+            ct.buffer.incRefCount()
+            ct.buffer
           }
           CompressedTable(ct.compressedSize, ct.meta, newBuffer)
         }
