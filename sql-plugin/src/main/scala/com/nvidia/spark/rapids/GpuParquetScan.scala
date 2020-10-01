@@ -16,8 +16,8 @@
 
 package com.nvidia.spark.rapids
 
-import java.io.OutputStream
-import java.net.URI
+import java.io.{File, OutputStream}
+import java.net.{URI, URISyntaxException}
 import java.nio.charset.StandardCharsets
 import java.util.{Collections, Locale}
 import java.util.concurrent._
@@ -63,7 +63,7 @@ import org.apache.spark.sql.rapids.execution.TrampolineUtil
 import org.apache.spark.sql.sources.Filter
 import org.apache.spark.sql.types.{StringType, StructType, TimestampType}
 import org.apache.spark.sql.vectorized.ColumnarBatch
-import org.apache.spark.util.{SerializableConfiguration, Utils}
+import org.apache.spark.util.SerializableConfiguration
 
 abstract class GpuParquetScanBase(
     sparkSession: SparkSession,
@@ -312,8 +312,20 @@ case class GpuParquetMultiFilePartitionReaderFactory(
     throw new IllegalStateException("GPU column parser called to read rows")
   }
 
+  def resolveURI(path: String): URI = {
+    try {
+      val uri = new URI(path)
+      if (uri.getScheme() != null) {
+        return uri
+      }
+    } catch {
+      case e: URISyntaxException =>
+    }
+    new File(path).getAbsoluteFile().toURI()
+  }
+
   private def isCloudFileSystem(filePath: String): Boolean = {
-    val uri = Utils.resolveURI(filePath)
+    val uri = resolveURI(filePath)
     val scheme = uri.getScheme
     if (allCloudSchemes.contains(scheme)) {
       true
@@ -781,7 +793,7 @@ class MultiFileParquetPartitionReader(
       }
     }
   }
-  class ParquetReadRunner(
+  class ParquetCopyBlocksRunner(
       file: Path,
       outhmb: HostMemoryBuffer,
       blocks: ArrayBuffer[BlockMetaData],
@@ -858,7 +870,7 @@ class MultiFileParquetPartitionReader(
           // logWarning(s"slicing buffers offset: $offset, size $fileBlockSize")
           val outLocal = hmb.slice(offset, fileBlockSize)
           tasks.add(MultiFileThreadPoolFactory.submitToThreadPool(
-            new ParquetReadRunner(file, outLocal, blocks, offset, System.nanoTime()), 10))
+            new ParquetCopyBlocksRunner(file, outLocal, blocks, offset, System.nanoTime()), 10))
           offset += fileBlockSize
         }
 
