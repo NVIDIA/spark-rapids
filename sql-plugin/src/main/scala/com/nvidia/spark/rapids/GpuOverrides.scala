@@ -1750,7 +1750,7 @@ object GpuOverrides {
       "Reduce to single partition and apply limit",
       (collectLimitExec, conf, p, r) => new GpuCollectLimitMeta(collectLimitExec, conf, p, r))
         .disabledByDefault("Collect Limit replacement can be slower on the GPU, if huge number " +
-          "of rows in a batch it could help by limiting the number transfered from GPU to CPU"),
+          "of rows in a batch it could help by limiting the number of rows transferred from GPU to CPU"),
     exec[FilterExec](
       "The backend for most filter statements",
       (filter, conf, p, r) => new SparkPlanMeta[FilterExec](filter, conf, p, r) {
