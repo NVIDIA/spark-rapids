@@ -341,7 +341,7 @@ case class GpuParquetMultiFilePartitionReaderFactory(
     val filePaths = files.map(_.filePath)
     // TODO - do we really want to check all files?? see what perf is
     val start = System.nanoTime()
-    logWarning(s"files paths are : $filePaths")
+    logWarning(s"files paths are : ${filePaths.mkString(",")}")
     val isCloud = filePaths.map(isCloudFileSystem).contains(true)
     logWarning(s"is cloud is: $isCloud")
     logWarning(s"checking all files took: ${System.nanoTime() - start}")
