@@ -26,9 +26,9 @@ import ai.rapids.cudf._
 import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.GpuColumnVector.GpuColumnarBatchBuilder
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
-import org.apache.avro.util.ByteBufferInputStream
 import org.apache.hadoop.conf.Configuration
 import org.apache.parquet.HadoopReadOptions
+import org.apache.parquet.bytes.ByteBufferInputStream
 import org.apache.parquet.hadoop.{ParquetFileReader, ParquetInputFormat}
 import org.apache.parquet.io.{DelegatingSeekableInputStream, InputFile, SeekableInputStream}
 
@@ -54,7 +54,7 @@ class ByteArrayInputFile(buff: Array[Byte]) extends InputFile {
 
   override def newStream(): SeekableInputStream = {
     val byteBuffer = ByteBuffer.wrap(buff)
-    new DelegatingSeekableInputStream(new ByteBufferInputStream(List(byteBuffer).asJava)) {
+    new DelegatingSeekableInputStream(ByteBufferInputStream.wrap(byteBuffer)) {
       override def getPos: Long = byteBuffer.position()
 
       override def seek(newPos: Long): Unit = {
@@ -203,9 +203,10 @@ class ParquetCachedBatchSerializer extends CachedBatchSerializer with Arm {
       input.map(batch => {
         if (batch.numCols() == 0) {
           ParquetCachedBatch(batch.numRows(), new Array[Byte](0))
-        }
-        withResource(putOnGpuIfNeeded(batch)) { gpuCB =>
-          compressColumnarBatchWithParquet(gpuCB)
+        } else {
+          withResource(putOnGpuIfNeeded(batch)) { gpuCB =>
+            compressColumnarBatchWithParquet(gpuCB)
+          }
         }
       })
     } else {
@@ -254,10 +255,7 @@ class ParquetCachedBatchSerializer extends CachedBatchSerializer with Arm {
            .map(i => "_col"+i).asJavaCollection).build()
         withResource(Table.readParquet(parquetOptions, parquetCB.buffer, 0,
           parquetCB.sizeInBytes)) { table =>
-          withResource(GpuColumnVector.from(table)) { cb =>
-            val cols = GpuColumnVector.extractColumns(cb)
-            new ColumnarBatch(cols.map(_.incRefCount()).toArray, cb.numRows())
-          }
+          GpuColumnVector.from(table)
         }
       } else {
         throw new IllegalStateException("I don't know how to convert this batch")
@@ -306,7 +304,8 @@ class ParquetCachedBatchSerializer extends CachedBatchSerializer with Arm {
    * @param conf the configuration for the job.
    * @return RDD of the rows that were stored in the cached batches.
    */
-  override def convertCachedBatchToInternalRow(input: RDD[CachedBatch],
+  override def convertCachedBatchToInternalRow(
+     input: RDD[CachedBatch],
      cacheAttributes: Seq[Attribute],
      selectedAttributes: Seq[Attribute],
      conf: SQLConf): RDD[InternalRow] = {
@@ -321,17 +320,21 @@ class ParquetCachedBatchSerializer extends CachedBatchSerializer with Arm {
         new Iterator[InternalRow]() {
           var iter: Iterator[InternalRow] = null
 
-          override def hasNext: Boolean = (iter != null && iter.hasNext) || cbIter.hasNext
+          override def hasNext: Boolean = {
+            // either the current iterator has an element,
+            // else go over the batch and get the next non-degenerate iterator
+            (iter != null && iter.hasNext) ||
+            {
+              while (cbIter.hasNext && !iter.hasNext) {
+                iter = convertColumnarBatchToInternalRowIter()
+              }
+              iter.hasNext
+            }
+          }
 
           override def next(): InternalRow = {
-            if (iter == null || !iter.hasNext) {
-              iter = convertColumnarBatchToInternalRowIter()
-            }
-            if (iter.hasNext) {
-              iter.next()
-            } else {
-              InternalRow.empty
-            }
+            // will return the next InternalRow if hasNext() is true, otherwise undefined behavior
+            iter.next()
           }
 
           def convertColumnarBatchToInternalRowIter(): Iterator[InternalRow] = {
@@ -341,15 +344,15 @@ class ParquetCachedBatchSerializer extends CachedBatchSerializer with Arm {
             val catalystColumns =
               getColumnIndices(cacheAttributes, cacheAttributes).map { i => "_col" + i }
 
-            val catalystSchema = cacheAttributes.zipWithIndex.map {
-              case (attr, i) => attr.withName(catalystColumns(i))
+            val catalystSchema = cacheAttributes.zip(catalystColumns).map {
+              case (attr, name) => attr.withName(name)
             }
 
             val selectedColumns =
               getColumnIndices(selectedAttributes, cacheAttributes).map { i => "_col" + i }
 
-            val requestedSchema = selectedAttributes.zipWithIndex.map {
-              case (attr, i) => attr.withName(selectedColumns(i))
+            val requestedSchema = selectedAttributes.zip(selectedColumns).map {
+              case (attr, name) => attr.withName(name)
             }
 
             val sharedConf = broadcastedHadoopConf.value.value
