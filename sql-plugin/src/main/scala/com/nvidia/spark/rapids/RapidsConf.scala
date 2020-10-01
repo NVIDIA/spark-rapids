@@ -715,6 +715,12 @@ object RapidsConf {
     .stringConf
     .createOptional
 
+  val CLOUD_SCHEMES = conf("spark.rapids.cloudSchemes")
+    .doc("Comma separated list of URI schemes that are to be considered in the cloud.")
+    .stringConf
+    .toSequence
+    .createOptional
+
   private def printSectionHeader(category: String): Unit =
     println(s"\n### $category")
 
@@ -985,6 +991,8 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
   lazy val shuffleCompressionMaxBatchMemory: Long = get(SHUFFLE_COMPRESSION_MAX_BATCH_MEMORY)
 
   lazy val shimsProviderOverride: Option[String] = get(SHIMS_PROVIDER_OVERRIDE)
+
+  lazy val getCloudSchemes: Option[Seq[String]] = get(CLOUD_SCHEMES)
 
   def isOperatorEnabled(key: String, incompat: Boolean, isDisabledByDefault: Boolean): Boolean = {
     val default = !(isDisabledByDefault || incompat) || (incompat && isIncompatEnabled)
