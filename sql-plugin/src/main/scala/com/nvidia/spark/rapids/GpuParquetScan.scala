@@ -301,7 +301,7 @@ case class GpuParquetMultiFilePartitionReaderFactory(
 
   // TODO - others? do we want these to be purely overrides or additive?
   private val configCloudSchemes = rapidsConf.getCloudSchemes
-  private val CLOUD_SCHEMES = Seq("dbfs", "s3", "s3a", "s3n", "wasb", "gs")
+  private val CLOUD_SCHEMES = Seq("dbfs", "s3", "s3a", "s3n", "wasbs", "gs")
   private val allCloudSchemes = CLOUD_SCHEMES ++ configCloudSchemes.getOrElse(Seq.empty)
 
   private val filterHandler = new GpuParquetFileFilterHandler(sqlConf)
@@ -341,7 +341,9 @@ case class GpuParquetMultiFilePartitionReaderFactory(
     val filePaths = files.map(_.filePath)
     // TODO - do we really want to check all files?? see what perf is
     val start = System.nanoTime()
+    logWarning(s"files paths are : $filePaths")
     val isCloud = filePaths.map(isCloudFileSystem).contains(true)
+    logWarning(s"is cloud is: $isCloud")
     logWarning(s"checking all files took: ${System.nanoTime() - start}")
     val conf = broadcastedConf.value.value
     logDebug(s"Number files being read: ${files.size} for task ${TaskContext.get().partitionId()}")
