@@ -509,7 +509,7 @@ case class GpuCast(
     }
     withResource(adjustedTimestamp) { adjustedTimestamp =>
       withResource(adjustedTimestamp.castTo(DType.TIMESTAMP_MICROSECONDS)) { micros =>
-        withResource(micros.asStrings("%Y-%m-%d %H:%M:%S.%3f")) { cv =>
+        withResource(micros.asStrings("%Y-%m-%d %H:%M:%S.%6f")) { cv =>
           GpuColumnVector.from(cv.stringReplaceWithBackrefs(
             GpuCast.TIMESTAMP_TRUNCATE_REGEX, "\\1\\2\\3"))
         }
