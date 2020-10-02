@@ -33,7 +33,7 @@ object TpcdsLikeBench extends Logging {
    * @param spark The Spark session
    * @param query The name of the query to run e.g. "q5"
    * @param iterations The number of times to run the query.
-   * @param resultFilenameStub Optional name for the generated JSON summary file.
+   * @param summaryFilePrefix Optional prefix for the generated JSON summary file.
    * @param gcBetweenRuns Whether to call `System.gc` between iterations to cause Spark to
    *                      call `unregisterShuffle`
    */
@@ -41,13 +41,13 @@ object TpcdsLikeBench extends Logging {
       spark: SparkSession,
       query: String,
       iterations: Int = 3,
-      resultFilenameStub: Option[String] = None,
+      summaryFilePrefix: Option[String] = None,
       gcBetweenRuns: Boolean = false): Unit = {
     BenchUtils.collect(
       spark,
       spark => TpcdsLikeSpark.query(query)(spark),
       query,
-      resultFilenameStub.getOrElse(s"tpcds-$query-collect"),
+      summaryFilePrefix.getOrElse(s"tpcds-$query-collect"),
       iterations,
       gcBetweenRuns)
   }
@@ -64,7 +64,7 @@ object TpcdsLikeBench extends Logging {
    * @param mode The SaveMode to use when writing the results
    * @param writeOptions Write options
    * @param iterations The number of times to run the query.
-   * @param resultFilenameStub Optional name for the generated JSON summary file.
+   * @param summaryFilePrefix Optional prefix for the generated JSON summary file.
    * @param gcBetweenRuns Whether to call `System.gc` between iterations to cause Spark to
    *                      call `unregisterShuffle`
    */
@@ -75,13 +75,13 @@ object TpcdsLikeBench extends Logging {
       mode: SaveMode = SaveMode.Overwrite,
       writeOptions: Map[String, String] = Map.empty,
       iterations: Int = 3,
-      resultFilenameStub: Option[String] = None,
+      summaryFilePrefix: Option[String] = None,
       gcBetweenRuns: Boolean = false): Unit = {
     BenchUtils.writeCsv(
       spark,
       spark => TpcdsLikeSpark.query(query)(spark),
       query,
-      resultFilenameStub.getOrElse(s"tpcds-$query-csv"),
+      summaryFilePrefix.getOrElse(s"tpcds-$query-csv"),
       iterations,
       gcBetweenRuns,
       path,
@@ -101,7 +101,7 @@ object TpcdsLikeBench extends Logging {
    * @param mode The SaveMode to use when writing the results
    * @param writeOptions Write options
    * @param iterations The number of times to run the query
-   * @param resultFilenameStub Optional name for the generated JSON summary file.
+   * @param summaryFilePrefix Optional prefix for the generated JSON summary file.
    * @param gcBetweenRuns Whether to call `System.gc` between iterations to cause Spark to
    *                      call `unregisterShuffle`
    */
@@ -112,13 +112,13 @@ object TpcdsLikeBench extends Logging {
       mode: SaveMode = SaveMode.Overwrite,
       writeOptions: Map[String, String] = Map.empty,
       iterations: Int = 3,
-      resultFilenameStub: Option[String] = None,
+      summaryFilePrefix: Option[String] = None,
       gcBetweenRuns: Boolean = false): Unit = {
     BenchUtils.writeParquet(
       spark,
       spark => TpcdsLikeSpark.query(query)(spark),
       query,
-      resultFilenameStub.getOrElse(s"tpcds-$query-parquet"),
+      summaryFilePrefix.getOrElse(s"tpcds-$query-parquet"),
       iterations,
       gcBetweenRuns,
       path,
@@ -150,14 +150,14 @@ object TpcdsLikeBench extends Logging {
             conf.query(),
             path,
             iterations = conf.iterations(),
-            resultFilenameStub = conf.name.toOption)
+            summaryFilePrefix = conf.summaryFilePrefix.toOption)
         case "csv" =>
           writeCsv(
             spark,
             conf.query(),
             path,
             iterations = conf.iterations(),
-            resultFilenameStub = conf.name.toOption)
+            summaryFilePrefix = conf.summaryFilePrefix.toOption)
         case _ =>
           println("Invalid or unspecified output format")
           System.exit(-1)
@@ -167,7 +167,7 @@ object TpcdsLikeBench extends Logging {
           spark,
           conf.query(),
           conf.iterations(),
-          resultFilenameStub = conf.name.toOption)
+          summaryFilePrefix = conf.summaryFilePrefix.toOption)
     }
   }
 }
@@ -179,7 +179,7 @@ class Conf(arguments: Seq[String]) extends ScallopConf(arguments) {
   val iterations = opt[Int](default = Some(3))
   val output = opt[String](required = false)
   val outputFormat = opt[String](required = false)
-  val name = opt[String](required = false)
+  val summaryFilePrefix = opt[String](required = false)
   verify()
 }
 
