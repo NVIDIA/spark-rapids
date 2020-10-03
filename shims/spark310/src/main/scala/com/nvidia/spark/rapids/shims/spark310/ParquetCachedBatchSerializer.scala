@@ -16,7 +16,9 @@
 
 package com.nvidia.spark.rapids.shims.spark310
 
+import java.io.{File, InputStream}
 import java.nio.ByteBuffer
+import java.nio.file.Files
 
 import scala.collection.JavaConverters._
 import scala.collection.mutable
@@ -28,7 +30,6 @@ import com.nvidia.spark.rapids.GpuColumnVector.GpuColumnarBatchBuilder
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import org.apache.hadoop.conf.Configuration
 import org.apache.parquet.HadoopReadOptions
-import org.apache.parquet.bytes.ByteBufferInputStream
 import org.apache.parquet.hadoop.{ParquetFileReader, ParquetInputFormat}
 import org.apache.parquet.io.{DelegatingSeekableInputStream, InputFile, SeekableInputStream}
 
@@ -48,17 +49,70 @@ import org.apache.spark.sql.vectorized.ColumnarBatch
 import org.apache.spark.storage.StorageLevel
 import org.apache.spark.util.SerializableConfiguration
 
+/**
+ * copied from Spark org.apache.spark.util.ByteBufferInputStream
+ */
+class ByteBufferInputStream(private var buffer: ByteBuffer)
+  extends InputStream {
+
+  override def read(): Int = {
+    if (buffer == null || buffer.remaining() == 0) {
+      cleanUp()
+      -1
+    } else {
+      buffer.get() & 0xFF
+    }
+  }
+
+  override def read(dest: Array[Byte]): Int = {
+    read(dest, 0, dest.length)
+  }
+
+  override def read(dest: Array[Byte], offset: Int, length: Int): Int = {
+    if (buffer == null || buffer.remaining() == 0) {
+      cleanUp()
+      -1
+    } else {
+      val amountToGet = math.min(buffer.remaining(), length)
+      buffer.get(dest, offset, amountToGet)
+      amountToGet
+    }
+  }
+
+  override def skip(bytes: Long): Long = {
+    if (buffer != null) {
+      val amountToSkip = math.min(bytes, buffer.remaining).toInt
+      buffer.position(buffer.position() + amountToSkip)
+      if (buffer.remaining() == 0) {
+        cleanUp()
+      }
+      amountToSkip
+    } else {
+      0L
+    }
+  }
+
+  /**
+   * Clean up the buffer, and potentially dispose of it using StorageUtils.dispose().
+   */
+  private def cleanUp(): Unit = {
+    if (buffer != null) {
+      buffer = null
+    }
+  }
+}
+
 class ByteArrayInputFile(buff: Array[Byte]) extends InputFile {
 
   override def getLength: Long = buff.length
 
   override def newStream(): SeekableInputStream = {
     val byteBuffer = ByteBuffer.wrap(buff)
-    new DelegatingSeekableInputStream(ByteBufferInputStream.wrap(byteBuffer)) {
+    new DelegatingSeekableInputStream(new ByteBufferInputStream(byteBuffer)) {
       override def getPos: Long = byteBuffer.position()
 
       override def seek(newPos: Long): Unit = {
-        if (newPos <= Int.MaxValue || newPos >= Int.MinValue) {
+        if (newPos > Int.MaxValue || newPos < Int.MinValue) {
           throw new IllegalStateException("seek value is out of supported range " + newPos)
         }
         byteBuffer.position(newPos.toInt)
@@ -320,16 +374,17 @@ class ParquetCachedBatchSerializer extends CachedBatchSerializer with Arm {
         new Iterator[InternalRow]() {
           var iter: Iterator[InternalRow] = null
 
-          override def hasNext: Boolean = {
+          override def hasNext: Boolean =
             // either the current iterator has an element,
             // else go over the batch and get the next non-degenerate iterator
-            (iter != null && iter.hasNext) ||
-            {
-              while (cbIter.hasNext && !iter.hasNext) {
-                iter = convertColumnarBatchToInternalRowIter()
-              }
-              iter.hasNext
+            (iter != null && iter.hasNext) || doesNextValidIteratorHasNext
+
+
+          private def doesNextValidIteratorHasNext: Boolean = {
+            while (cbIter.hasNext && (iter == null || !iter.hasNext)) {
+              iter = convertColumnarBatchToInternalRowIter
             }
+            iter != null && iter.hasNext
           }
 
           override def next(): InternalRow = {
@@ -337,10 +392,12 @@ class ParquetCachedBatchSerializer extends CachedBatchSerializer with Arm {
             iter.next()
           }
 
-          def convertColumnarBatchToInternalRowIter(): Iterator[InternalRow] = {
+          def convertColumnarBatchToInternalRowIter: Iterator[InternalRow] = {
             val parquetCachedBatch = cbIter.next().asInstanceOf[ParquetCachedBatch]
             val inputFile = new ByteArrayInputFile(parquetCachedBatch.buffer)
 
+            Files.write(File.createTempFile("cachedBatch", null).toPath,
+              parquetCachedBatch.buffer)
             val catalystColumns =
               getColumnIndices(cacheAttributes, cacheAttributes).map { i => "_col" + i }
 
@@ -382,7 +439,7 @@ class ParquetCachedBatchSerializer extends CachedBatchSerializer with Arm {
             parquetFileReader.close()
             val iter = unsafeRows.iterator
             val unsafeProjection =
-              GenerateUnsafeProjection.generate(requestedSchema, requestedSchema)
+              GenerateUnsafeProjection.generate(requestedSchema, catalystSchema)
             iter.map(unsafeProjection)
           }
         }
@@ -393,7 +450,7 @@ class ParquetCachedBatchSerializer extends CachedBatchSerializer with Arm {
   private def getHadoopConf(requestedSchema: StructType,
      sqlConf: SQLConf) : Configuration = {
 
-    val hadoopConf = new Configuration(false)
+    val hadoopConf = new Configuration()
     hadoopConf.set(ParquetInputFormat.READ_SUPPORT_CLASS, classOf[ParquetReadSupport].getName)
     hadoopConf.set(
       ParquetReadSupport.SPARK_ROW_REQUESTED_SCHEMA,
@@ -404,6 +461,9 @@ class ParquetCachedBatchSerializer extends CachedBatchSerializer with Arm {
     hadoopConf.set(
       SQLConf.SESSION_LOCAL_TIMEZONE.key,
       sqlConf.sessionLocalTimeZone)
+
+    hadoopConf.setBoolean(SQLConf.PARQUET_BINARY_AS_STRING.key, false)
+    hadoopConf.setBoolean(SQLConf.PARQUET_INT96_AS_TIMESTAMP.key, false)
 
     hadoopConf.set(
       SQLConf.LEGACY_PARQUET_REBASE_MODE_IN_WRITE.key, LegacyBehaviorPolicy.CORRECTED.toString)
