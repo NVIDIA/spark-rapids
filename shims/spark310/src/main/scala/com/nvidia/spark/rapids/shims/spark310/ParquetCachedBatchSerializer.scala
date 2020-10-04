@@ -450,7 +450,7 @@ class ParquetCachedBatchSerializer extends CachedBatchSerializer with Arm {
   private def getHadoopConf(requestedSchema: StructType,
      sqlConf: SQLConf) : Configuration = {
 
-    val hadoopConf = new Configuration()
+    val hadoopConf = new Configuration(false)
     hadoopConf.set(ParquetInputFormat.READ_SUPPORT_CLASS, classOf[ParquetReadSupport].getName)
     hadoopConf.set(
       ParquetReadSupport.SPARK_ROW_REQUESTED_SCHEMA,
