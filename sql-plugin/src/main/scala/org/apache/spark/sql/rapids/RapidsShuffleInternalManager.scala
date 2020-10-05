@@ -29,7 +29,6 @@ import org.apache.spark.scheduler.MapStatus
 import org.apache.spark.shuffle._
 import org.apache.spark.shuffle.sort.SortShuffleManager
 import org.apache.spark.sql.execution.metric.SQLMetric
-import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.vectorized.ColumnarBatch
 import org.apache.spark.storage._
 
@@ -106,7 +105,8 @@ class RapidsCachingWriter[K, V](
           // Add the table to the shuffle store
           batch.column(0) match {
             case c: GpuColumnVectorFromBuffer =>
-              val buffer = c.getBuffer.slice(0, c.getBuffer.getLength)
+              val buffer = c.getBuffer
+              buffer.incRefCount()
               partSize = buffer.getLength
               uncompressedMetric += partSize
               shuffleStorage.addTable(
@@ -115,7 +115,8 @@ class RapidsCachingWriter[K, V](
                 buffer,
                 SpillPriorities.OUTPUT_FOR_SHUFFLE_INITIAL_PRIORITY)
             case c: GpuCompressedColumnVector =>
-              val buffer = c.getBuffer.slice(0, c.getBuffer.getLength)
+              val buffer = c.getBuffer
+              buffer.incRefCount()
               partSize = buffer.getLength
               val tableMeta = c.getTableMeta
               // update the table metadata for the buffer ID generated above
@@ -331,7 +332,6 @@ abstract class RapidsShuffleInternalManagerBase(conf: SparkConf, isDriver: Boole
 
         new RapidsCachingReader(rapidsConf, localBlockManagerId,
           blocksByAddress,
-          gpu,
           context,
           metrics,
           transport,

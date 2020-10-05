@@ -282,6 +282,13 @@ object RapidsConf {
     .stringConf
     .createWithDefault("NONE")
 
+  val GPU_OOM_DUMP_DIR = conf("spark.rapids.memory.gpu.oomDumpDir")
+    .doc("The path to a local directory where a heap dump will be created if the GPU " +
+      "encounters an unrecoverable out-of-memory (OOM) error. The filename will be of the " +
+      "form: \"gpu-oom-<pid>.hprof\" where <pid> is the process ID.")
+    .stringConf
+    .createOptional
+
   private val RMM_ALLOC_MAX_FRACTION_KEY = "spark.rapids.memory.gpu.maxAllocFraction"
   private val RMM_ALLOC_RESERVE_KEY = "spark.rapids.memory.gpu.reserve"
 
@@ -317,9 +324,18 @@ object RapidsConf {
 
   val POOLED_MEM = conf("spark.rapids.memory.gpu.pooling.enabled")
     .doc("Should RMM act as a pooling allocator for GPU memory, or should it just pass " +
-      "through to CUDA memory allocation directly.")
+      "through to CUDA memory allocation directly. DEPRECATED: please use " +
+      "spark.rapids.memory.gpu.pool instead.")
     .booleanConf
     .createWithDefault(true)
+
+  val RMM_POOL = conf("spark.rapids.memory.gpu.pool")
+    .doc("Select the RMM pooling allocator to use. Valid values are \"DEFAULT\", \"ARENA\", and " +
+      "\"NONE\". With \"DEFAULT\", `rmm::mr::pool_memory_resource` is used; with \"ARENA\", " +
+      "`rmm::mr::arena_memory_resource` is used. If set to \"NONE\", pooling is disabled and RMM " +
+      "just passes through to CUDA memory allocation directly.")
+    .stringConf
+    .createWithDefault("ARENA")
 
   val CONCURRENT_GPU_TASKS = conf("spark.rapids.sql.concurrentGpuTasks")
       .doc("Set the number of tasks that can execute concurrently per GPU. " +
@@ -863,9 +879,13 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
 
   lazy val rmmDebugLocation: String = get(RMM_DEBUG)
 
+  lazy val gpuOomDumpDir: Option[String] = get(GPU_OOM_DUMP_DIR)
+
   lazy val isUvmEnabled: Boolean = get(UVM_ENABLED)
 
   lazy val isPooledMemEnabled: Boolean = get(POOLED_MEM)
+
+  lazy val rmmPool: String = get(RMM_POOL)
 
   lazy val rmmAllocFraction: Double = get(RMM_ALLOC_FRACTION)
 

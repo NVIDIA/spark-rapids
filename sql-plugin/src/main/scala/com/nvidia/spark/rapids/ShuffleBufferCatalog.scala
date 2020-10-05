@@ -49,7 +49,7 @@ case class ShuffleBufferId(
 /** Catalog for lookup of shuffle buffers by block ID */
 class ShuffleBufferCatalog(
     catalog: RapidsBufferCatalog,
-    diskBlockManager: RapidsDiskBlockManager) extends Logging {
+    diskBlockManager: RapidsDiskBlockManager) extends Arm with Logging {
   /**
    * Information stored for each active shuffle.
    * NOTE: ArrayBuffer in blockMap must be explicitly locked when using it!
@@ -175,6 +175,16 @@ class ShuffleBufferCatalog(
    * existing buffer was registered with the same buffer ID.
    */
   def registerNewBuffer(buffer: RapidsBuffer): Unit = catalog.registerNewBuffer(buffer)
+
+  /**
+   * Update the spill priority of a shuffle buffer that soon will be read locally.
+   * @param id shuffle buffer identifier of buffer to update
+   */
+  def updateSpillPriorityForLocalRead(id: ShuffleBufferId): Unit = {
+    withResource(catalog.acquireBuffer(id)) { buffer =>
+      buffer.setSpillPriority(SpillPriorities.INPUT_FROM_SHUFFLE_PRIORITY)
+    }
+  }
 
   /**
    * Lookup the shuffle buffer that corresponds to the specified shuffle buffer ID and acquire it.

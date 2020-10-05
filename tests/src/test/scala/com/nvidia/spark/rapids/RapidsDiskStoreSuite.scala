@@ -127,9 +127,9 @@ class RapidsDiskStoreSuite extends FunSuite with BeforeAndAfterEach with Arm wit
           val expectedBuffer = withResource(catalog.acquireBuffer(bufferId)) { buffer =>
             assertResult(StorageTier.DEVICE)(buffer.storageTier)
             withResource(buffer.getMemoryBuffer) { devbuf =>
-              withResource(HostMemoryBuffer.allocate(devbuf.getLength)) { hostbuf =>
+              closeOnExcept(HostMemoryBuffer.allocate(devbuf.getLength)) { hostbuf =>
                 hostbuf.copyFromDeviceBuffer(devbuf.asInstanceOf[DeviceMemoryBuffer])
-                hostbuf.slice(0, hostbuf.getLength)
+                hostbuf
               }
             }
           }
