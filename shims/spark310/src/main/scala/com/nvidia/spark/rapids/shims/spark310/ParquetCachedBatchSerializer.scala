@@ -389,7 +389,16 @@ class ParquetCachedBatchSerializer extends CachedBatchSerializer with Arm {
 
           override def next(): InternalRow = {
             // will return the next InternalRow if hasNext() is true, otherwise undefined behavior
-            iter.next()
+            // we still want to make sure iter != null
+            while (iter == null && cbIter.hasNext) {
+              iter = convertColumnarBatchToInternalRowIter
+            }
+            if (iter != null) {
+              iter.next()
+            } else {
+              throw new NoSuchElementException("No valid CachedBatch iterators found in the " +
+                "partitions")
+            }
           }
 
           def convertColumnarBatchToInternalRowIter: Iterator[InternalRow] = {
