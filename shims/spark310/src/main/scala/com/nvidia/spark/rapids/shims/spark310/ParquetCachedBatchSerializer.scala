@@ -491,7 +491,8 @@ class ParquetCachedBatchSerializer extends CachedBatchSerializer with Arm {
    * @param conf the config for the query.
    * @return The data converted into a format more suitable for caching.
    */
-  override def convertInternalRowToCachedBatch(input: RDD[InternalRow],
+  override def convertInternalRowToCachedBatch(
+     input: RDD[InternalRow],
      schema: Seq[Attribute],
      storageLevel: StorageLevel,
      conf: SQLConf): RDD[CachedBatch] = {
