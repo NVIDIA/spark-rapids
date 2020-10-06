@@ -405,8 +405,6 @@ class ParquetCachedBatchSerializer extends CachedBatchSerializer with Arm {
             val parquetCachedBatch = cbIter.next().asInstanceOf[ParquetCachedBatch]
             val inputFile = new ByteArrayInputFile(parquetCachedBatch.buffer)
 
-            Files.write(File.createTempFile("cachedBatch", null).toPath,
-              parquetCachedBatch.buffer)
             val catalystColumns =
               getColumnIndices(cacheAttributes, cacheAttributes).map { i => "_col" + i }
 
