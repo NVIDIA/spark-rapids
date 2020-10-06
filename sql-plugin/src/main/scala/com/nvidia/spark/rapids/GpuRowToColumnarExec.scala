@@ -17,6 +17,7 @@
 package com.nvidia.spark.rapids
 
 import ai.rapids.cudf.{NvtxColor, NvtxRange}
+import ai.rapids.cudf.HostColumnVector.StructData
 import com.nvidia.spark.rapids.GpuColumnVector.GpuColumnarBatchBuilder
 import com.nvidia.spark.rapids.GpuMetricNames._
 import com.nvidia.spark.rapids.GpuRowToColumnConverter.{FixedWidthTypeConverter, VariableWidthTypeConverter}
@@ -32,6 +33,9 @@ import org.apache.spark.sql.execution.metric.{SQLMetric, SQLMetrics}
 import org.apache.spark.sql.rapids.execution.TrampolineUtil
 import org.apache.spark.sql.types._
 import org.apache.spark.sql.vectorized.ColumnarBatch
+
+import scala.collection.JavaConverters._
+import scala.collection.mutable.ArrayBuffer
 
 private class GpuRowToColumnConverter(schema: StructType) extends Serializable {
   private val converters = schema.fields.map {
@@ -63,15 +67,15 @@ private object GpuRowToColumnConverter {
   private abstract class FixedWidthTypeConverter extends TypeConverter {
     /** Append row value to the column builder */
     def append(row: SpecializedGetters,
-        column: Int,
-        builder: ai.rapids.cudf.HostColumnVector.Builder): Unit
+      column: Int,
+      builder: ai.rapids.cudf.HostColumnVector.ColumnBuilder): Unit
   }
 
   private abstract class VariableWidthTypeConverter extends TypeConverter {
     /** Append row value to the column builder and return the number of data bytes written */
     def append(row: SpecializedGetters,
-        column: Int,
-        builder: ai.rapids.cudf.HostColumnVector.Builder): Long
+      column: Int,
+      builder: ai.rapids.cudf.HostColumnVector.ColumnBuilder): Long
   }
 
   private def getConverterForType(dataType: DataType, nullable: Boolean): TypeConverter = {
@@ -105,9 +109,8 @@ private object GpuRowToColumnConverter {
       // (f) => getConverterForType(f.dataType)))
       // NOT SUPPORTED YET
       // case dt: DecimalType => new DecimalConverter(dt)
-      // NOT SUPPORTED YET
-      // case mt: MapType => new MapConverter(getConverterForType(mt.keyType),
-      //  getConverterForType(mt.valueType))
+      //       NOT SUPPORTED YET
+      case (MapType(_, _, _), true) => MapConverter
       case (unknown, _) => throw new UnsupportedOperationException(
         s"Type $unknown not supported")
     }
@@ -115,8 +118,8 @@ private object GpuRowToColumnConverter {
 
   private object BooleanConverter extends FixedWidthTypeConverter {
     override def append(row: SpecializedGetters,
-        column: Int,
-        builder: ai.rapids.cudf.HostColumnVector.Builder): Unit =
+      column: Int,
+      builder: ai.rapids.cudf.HostColumnVector.ColumnBuilder): Unit =
       if (row.isNullAt(column)) {
         builder.appendNull()
       } else {
@@ -126,15 +129,15 @@ private object GpuRowToColumnConverter {
 
   private object NotNullBooleanConverter extends FixedWidthTypeConverter {
     override def append(row: SpecializedGetters,
-        column: Int,
-        builder: ai.rapids.cudf.HostColumnVector.Builder): Unit =
+      column: Int,
+      builder: ai.rapids.cudf.HostColumnVector.ColumnBuilder): Unit =
       builder.append(if (row.getBoolean(column)) 1.toByte else 0.toByte)
   }
 
   private object ByteConverter extends FixedWidthTypeConverter {
     override def append(row: SpecializedGetters,
-        column: Int,
-        builder: ai.rapids.cudf.HostColumnVector.Builder): Unit =
+      column: Int,
+      builder: ai.rapids.cudf.HostColumnVector.ColumnBuilder): Unit =
       if (row.isNullAt(column)) {
         builder.appendNull()
       } else {
@@ -144,15 +147,15 @@ private object GpuRowToColumnConverter {
 
   private object NotNullByteConverter extends FixedWidthTypeConverter {
     override def append(row: SpecializedGetters,
-        column: Int,
-        builder: ai.rapids.cudf.HostColumnVector.Builder): Unit =
+      column: Int,
+      builder: ai.rapids.cudf.HostColumnVector.ColumnBuilder): Unit =
       builder.append(row.getByte(column))
   }
 
   private object ShortConverter extends FixedWidthTypeConverter {
     override def append(row: SpecializedGetters,
-        column: Int,
-        builder: ai.rapids.cudf.HostColumnVector.Builder): Unit =
+      column: Int,
+      builder: ai.rapids.cudf.HostColumnVector.ColumnBuilder): Unit =
       if (row.isNullAt(column)) {
         builder.appendNull()
       } else {
@@ -162,15 +165,15 @@ private object GpuRowToColumnConverter {
 
   private object NotNullShortConverter extends FixedWidthTypeConverter {
     override def append(row: SpecializedGetters,
-        column: Int,
-        builder: ai.rapids.cudf.HostColumnVector.Builder): Unit =
+      column: Int,
+      builder: ai.rapids.cudf.HostColumnVector.ColumnBuilder): Unit =
       builder.append(row.getShort(column))
   }
 
   private object IntConverter extends FixedWidthTypeConverter {
     override def append(row: SpecializedGetters,
-        column: Int,
-        builder: ai.rapids.cudf.HostColumnVector.Builder): Unit =
+      column: Int,
+      builder: ai.rapids.cudf.HostColumnVector.ColumnBuilder): Unit =
       if (row.isNullAt(column)) {
         builder.appendNull()
       } else {
@@ -180,15 +183,15 @@ private object GpuRowToColumnConverter {
 
   private object NotNullIntConverter extends FixedWidthTypeConverter {
     override def append(row: SpecializedGetters,
-        column: Int,
-        builder: ai.rapids.cudf.HostColumnVector.Builder): Unit =
+      column: Int,
+      builder: ai.rapids.cudf.HostColumnVector.ColumnBuilder): Unit =
       builder.append(row.getInt(column))
   }
 
   private object FloatConverter extends FixedWidthTypeConverter {
     override def append(row: SpecializedGetters,
-        column: Int,
-        builder: ai.rapids.cudf.HostColumnVector.Builder): Unit =
+      column: Int,
+      builder: ai.rapids.cudf.HostColumnVector.ColumnBuilder): Unit =
       if (row.isNullAt(column)) {
         builder.appendNull()
       } else {
@@ -198,15 +201,15 @@ private object GpuRowToColumnConverter {
 
   private object NotNullFloatConverter extends FixedWidthTypeConverter {
     override def append(row: SpecializedGetters,
-        column: Int,
-        builder: ai.rapids.cudf.HostColumnVector.Builder): Unit =
+      column: Int,
+      builder: ai.rapids.cudf.HostColumnVector.ColumnBuilder): Unit =
       builder.append(row.getFloat(column))
   }
 
   private object LongConverter extends FixedWidthTypeConverter {
     override def append(row: SpecializedGetters,
-        column: Int,
-        builder: ai.rapids.cudf.HostColumnVector.Builder): Unit =
+      column: Int,
+      builder: ai.rapids.cudf.HostColumnVector.ColumnBuilder): Unit =
       if (row.isNullAt(column)) {
         builder.appendNull()
       } else {
@@ -216,15 +219,15 @@ private object GpuRowToColumnConverter {
 
   private object NotNullLongConverter extends FixedWidthTypeConverter {
     override def append(row: SpecializedGetters,
-        column: Int,
-        builder: ai.rapids.cudf.HostColumnVector.Builder): Unit =
+      column: Int,
+      builder: ai.rapids.cudf.HostColumnVector.ColumnBuilder): Unit =
       builder.append(row.getLong(column))
   }
 
   private object DoubleConverter extends FixedWidthTypeConverter {
     override def append(row: SpecializedGetters,
-        column: Int,
-        builder: ai.rapids.cudf.HostColumnVector.Builder): Unit =
+      column: Int,
+      builder: ai.rapids.cudf.HostColumnVector.ColumnBuilder): Unit =
       if (row.isNullAt(column)) {
         builder.appendNull()
       } else {
@@ -234,15 +237,14 @@ private object GpuRowToColumnConverter {
 
   private object NotNullDoubleConverter extends FixedWidthTypeConverter {
     override def append(row: SpecializedGetters,
-        column: Int,
-        builder: ai.rapids.cudf.HostColumnVector.Builder): Unit =
+      column: Int,
+      builder: ai.rapids.cudf.HostColumnVector.ColumnBuilder): Unit =
       builder.append(row.getDouble(column))
   }
 
   private object StringConverter extends VariableWidthTypeConverter {
     override def append(row: SpecializedGetters,
-        column: Int, builder:
-    ai.rapids.cudf.HostColumnVector.Builder): Long =
+      column: Int, builder: ai.rapids.cudf.HostColumnVector.ColumnBuilder): Long =
       if (row.isNullAt(column)) {
         builder.appendNull()
         0
@@ -253,109 +255,104 @@ private object GpuRowToColumnConverter {
 
   private object NotNullStringConverter extends VariableWidthTypeConverter {
     override def append(row: SpecializedGetters,
-        column: Int,
-        builder: ai.rapids.cudf.HostColumnVector.Builder): Long = {
+      column: Int,
+      builder: ai.rapids.cudf.HostColumnVector.ColumnBuilder): Long = {
       val bytes = row.getUTF8String(column).getBytes
       builder.appendUTF8String(bytes)
       bytes.length
     }
   }
-//
-//  private object CalendarConverter extends FixedWidthTypeConverter {
-//    override def append(row: SpecializedGetters,
+
+  private case object MapConverter
+    extends VariableWidthTypeConverter {
+    override def append(row: SpecializedGetters,
+      column: Int, builder: ai.rapids.cudf.HostColumnVector.ColumnBuilder): Long = {
+      val m = row.getMap(column)
+      val numElements = m.numElements()
+      val srcKeys = m.keyArray()
+      val srcValues = m.valueArray()
+      val listOfData = new ArrayBuffer[StructData](numElements)
+      (0 until srcKeys.numElements()).foreach { i =>
+        val values = new ArrayBuffer[AnyRef]()
+        values += new String(srcKeys.getUTF8String(i).getBytes)
+        values += new String(srcValues.getUTF8String(i).getBytes)
+        listOfData += new StructData(values.asJava)
+      }
+      builder.appendLists(listOfData.asJava)
+      numElements
+    }
+  }
+  //  private object CalendarConverter extends FixedWidthTypeConverter {
+  //    override def append(row: SpecializedGetters,
   //    column: Int,
   //    builder: ai.rapids.cudf.HostColumnVector.Builder): Unit = {
-//      if (row.isNullAt(column)) {
-//        builder.appendNull()
-//      } else {
-//        val c = row.getInterval(column)
-//        cv.appendStruct(false)
-//        cv.getChild(0).appendInt(c.months)
-//        cv.getChild(1).appendLong(c.microseconds)
-//      }
-//    }
-//  }
-//
-//  private case class ArrayConverter(childConverter: TypeConverter) extends TypeConverter {
-//    override def append(row: SpecializedGetters,
+  //      if (row.isNullAt(column)) {
+  //        builder.appendNull()
+  //      } else {
+  //        val c = row.getInterval(column)
+  //        cv.appendStruct(false)
+  //        cv.getChild(0).appendInt(c.months)
+  //        cv.getChild(1).appendLong(c.microseconds)
+  //      }
+  //    }
+  //  }
+  //
+  //  private case class ArrayConverter(childConverter: TypeConverter) extends TypeConverter {
+  //    override def append(row: SpecializedGetters,
+  //      column: Int,
+  //      builder: ai.rapids.cudf.HostColumnVector.Builder): Unit = {
+  //      if (row.isNullAt(column)) {
+  //        builder.appendNull()
+  //      } else {
+  //        val values = row.getArray(column)
+  //        val numElements = values.numElements()
+  //        cv.appendArray(numElements)
+  //        val arrData = cv.arrayData()
+  //        for (i <- 0 until numElements) {
+  //          childConverter.append(values, i, arrData)
+  //        }
+  //      }
+  //    }
+  //  }
+  //
+  //  private case class StructConverter(
+  //      childConverters: Array[TypeConverter]) extends TypeConverter {
+  //    override def append(row: SpecializedGetters,
   //    column: Int,
   //    builder: ai.rapids.cudf.HostColumnVector.Builder): Unit = {
-//      if (row.isNullAt(column)) {
-//        builder.appendNull()
-//      } else {
-//        val values = row.getArray(column)
-//        val numElements = values.numElements()
-//        cv.appendArray(numElements)
-//        val arrData = cv.arrayData()
-//        for (i <- 0 until numElements) {
-//          childConverter.append(values, i, arrData)
-//        }
-//      }
-//    }
-//  }
-//
-//  private case class StructConverter(
-//      childConverters: Array[TypeConverter]) extends TypeConverter {
-//    override def append(row: SpecializedGetters,
+  //      if (row.isNullAt(column)) {
+  //        builder.appendNull()
+  //      } else {
+  //        cv.appendStruct(false)
+  //        val data = row.getStruct(column, childConverters.length)
+  //        for (i <- 0 until childConverters.length) {
+  //          childConverters(i).append(data, i, cv.getChild(i))
+  //        }
+  //      }
+  //    }
+  //  }
+  //
+  //  private case class DecimalConverter(dt: DecimalType) extends TypeConverter {
+  //    override def append(row: SpecializedGetters,
   //    column: Int,
   //    builder: ai.rapids.cudf.HostColumnVector.Builder): Unit = {
-//      if (row.isNullAt(column)) {
-//        builder.appendNull()
-//      } else {
-//        cv.appendStruct(false)
-//        val data = row.getStruct(column, childConverters.length)
-//        for (i <- 0 until childConverters.length) {
-//          childConverters(i).append(data, i, cv.getChild(i))
-//        }
-//      }
-//    }
-//  }
-//
-//  private case class DecimalConverter(dt: DecimalType) extends TypeConverter {
-//    override def append(row: SpecializedGetters,
-  //    column: Int,
-  //    builder: ai.rapids.cudf.HostColumnVector.Builder): Unit = {
-//      if (row.isNullAt(column)) {
-//        builder.appendNull()
-//      } else {
-//        val d = row.getDecimal(column, dt.precision, dt.scale)
-//        if (dt.precision <= Decimal.MAX_INT_DIGITS) {
-//          cv.appendInt(d.toUnscaledLong.toInt)
-//        } else if (dt.precision <= Decimal.MAX_LONG_DIGITS) {
-//          cv.appendLong(d.toUnscaledLong)
-//        } else {
-//          val integer = d.toJavaBigDecimal.unscaledValue
-//          val bytes = integer.toByteArray
-//          cv.appendByteArray(bytes, 0, bytes.length)
-//        }
-//      }
-//    }
-//  }
-//
-//  private case class MapConverter(keyConverter: TypeConverter, valueConverter: TypeConverter)
-//      extends TypeConverter {
-//    override def append(row: SpecializedGetters,
-  //    column: Int,
-  //    builder: ai.rapids.cudf.HostColumnVector.Builder): Unit = {
-//      if (row.isNullAt(column)) {
-//        builder.appendNull()
-//      } else {
-//        val m = row.getMap(column)
-//        val keys = cv.getChild(0)
-//        val values = cv.getChild(1)
-//        val numElements = m.numElements()
-//        cv.appendArray(numElements)
-//
-//        val srcKeys = m.keyArray()
-//        val srcValues = m.valueArray()
-//
-//        for (i <- 0 until numElements) {
-//          keyConverter.append(srcKeys, i, keys)
-//          valueConverter.append(srcValues, i, values)
-//        }
-//      }
-//    }
-//  }
+  //      if (row.isNullAt(column)) {
+  //        builder.appendNull()
+  //      } else {
+  //        val d = row.getDecimal(column, dt.precision, dt.scale)
+  //        if (dt.precision <= Decimal.MAX_INT_DIGITS) {
+  //          cv.appendInt(d.toUnscaledLong.toInt)
+  //        } else if (dt.precision <= Decimal.MAX_LONG_DIGITS) {
+  //          cv.appendLong(d.toUnscaledLong)
+  //        } else {
+  //          val integer = d.toJavaBigDecimal.unscaledValue
+  //          val bytes = integer.toByteArray
+  //          cv.appendByteArray(bytes, 0, bytes.length)
+  //        }
+  //      }
+  //    }
+  //  }
+  //
 }
 
 class RowToColumnarIterator(

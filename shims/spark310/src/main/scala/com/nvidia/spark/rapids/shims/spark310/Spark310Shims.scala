@@ -21,6 +21,7 @@ import java.time.ZoneId
 import scala.collection.JavaConverters._
 
 import com.nvidia.spark.rapids._
+import com.nvidia.spark.rapids.GpuOverrides.isSupportedType
 import com.nvidia.spark.rapids.shims.spark301.Spark301Shims
 import com.nvidia.spark.rapids.spark310.RapidsShuffleManager
 
@@ -196,6 +197,11 @@ class Spark310Shims extends Spark301Shims {
             conf,
             conf.isParquetMultiThreadReadEnabled)
         }
+        def isSupported(t: DataType) = t match {
+          case MapType(StringType, StringType, true) => true
+          case _ => isSupportedType(t)
+        }
+        override def areAllSupportedTypes(types: DataType*): Boolean = types.forall(isSupported)
       }),
     GpuOverrides.scan[OrcScan](
       "ORC parsing",

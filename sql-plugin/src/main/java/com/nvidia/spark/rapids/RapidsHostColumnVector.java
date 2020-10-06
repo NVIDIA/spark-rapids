@@ -17,6 +17,10 @@
 
 package com.nvidia.spark.rapids;
 
+import ai.rapids.cudf.DeviceMemoryBuffer;
+import ai.rapids.cudf.DType;
+import ai.rapids.cudf.HostMemoryBuffer;
+
 import org.apache.spark.sql.types.DataType;
 import org.apache.spark.sql.types.Decimal;
 import org.apache.spark.sql.vectorized.ColumnVector;
@@ -24,6 +28,8 @@ import org.apache.spark.sql.vectorized.ColumnarArray;
 import org.apache.spark.sql.vectorized.ColumnarBatch;
 import org.apache.spark.sql.vectorized.ColumnarMap;
 import org.apache.spark.unsafe.types.UTF8String;
+
+import java.util.Optional;
 
 /**
  * A GPU accelerated version of the Spark ColumnVector.
@@ -143,7 +149,62 @@ public final class RapidsHostColumnVector extends ColumnVector {
 
   @Override
   public ColumnarMap getMap(int ordinal) {
-    throw new IllegalStateException("Maps are currently not supported by rapids cudf");
+    ai.rapids.cudf.ColumnViewAccess<HostMemoryBuffer> structHcv = cudfCv.getChildColumnViewAccess(0);
+    // keys
+    ai.rapids.cudf.ColumnViewAccess<HostMemoryBuffer> firstHcv = structHcv.getChildColumnViewAccess(0);
+    // values
+    ai.rapids.cudf.ColumnViewAccess<HostMemoryBuffer> secondHcv = structHcv.getChildColumnViewAccess(1);
+
+    //first keys column get all buffers
+    DeviceMemoryBuffer firstDevData = null;
+    DeviceMemoryBuffer firstDevOffset = null;
+    DeviceMemoryBuffer firstDevValid = null;
+    HostMemoryBuffer firstData = firstHcv.getDataBuffer();
+    HostMemoryBuffer firstOffset = firstHcv.getOffsetBuffer();
+    HostMemoryBuffer firstValid = firstHcv.getValidityBuffer();
+    if (firstData != null) {
+      firstDevData = DeviceMemoryBuffer.allocate(firstData.getLength());
+      firstDevData.copyFromHostBuffer(0, firstData, 0, firstData.getLength());
+    }
+    if (firstOffset != null) {
+      firstDevOffset = DeviceMemoryBuffer.allocate(firstOffset.getLength());
+      firstDevOffset.copyFromHostBuffer(0, firstOffset, 0, firstOffset.getLength());
+    }
+    if (firstValid != null) {
+      firstDevValid = DeviceMemoryBuffer.allocate(firstValid.getLength());
+      firstDevValid.copyFromHostBuffer(0, firstValid, 0, firstValid.getLength());
+    }
+    //second values column get all buffers
+    DeviceMemoryBuffer secondDevData = null;
+    DeviceMemoryBuffer secondDevOffset = null;
+    DeviceMemoryBuffer secondDevValid = null;
+    HostMemoryBuffer secondData = secondHcv.getDataBuffer();
+    HostMemoryBuffer secondOffset = secondHcv.getOffsetBuffer();
+    HostMemoryBuffer secondValid = secondHcv.getValidityBuffer();
+    if (secondData != null) {
+      secondDevData = DeviceMemoryBuffer.allocate(secondData.getLength());
+      secondDevData.copyFromHostBuffer(0, secondData, 0, secondData.getLength());
+    }
+    if (secondOffset != null) {
+      secondDevOffset = DeviceMemoryBuffer.allocate(secondOffset.getLength());
+      secondDevOffset.copyFromHostBuffer(0, secondOffset, 0, secondOffset.getLength());
+    }
+    if (secondValid != null) {
+      secondDevValid = DeviceMemoryBuffer.allocate(secondValid.getLength());
+      secondDevValid.copyFromHostBuffer(0, secondValid, 0, secondValid.getLength());
+    }
+
+    ai.rapids.cudf.ColumnVector firstDevCv = new ai.rapids.cudf.ColumnVector(firstHcv.getDataType(),
+        firstHcv.getRowCount(), Optional.of(firstHcv.getNullCount()),
+        firstDevData, firstDevValid, firstDevOffset);
+    ai.rapids.cudf.ColumnVector secondDevCv = new ai.rapids.cudf.ColumnVector(secondHcv.getDataType(),
+        secondHcv.getRowCount(), Optional.of(secondHcv.getNullCount()),
+        secondDevData, secondDevValid, secondDevOffset);
+    GpuColumnVector finFirstCv = GpuColumnVector.from(firstDevCv);
+    GpuColumnVector finSecondCv = GpuColumnVector.from(secondDevCv);
+    //TODO: test more that offset and len are right
+    return new ColumnarMap(finFirstCv.copyToHost(),finSecondCv.copyToHost(),
+        ordinal* DType.INT32.getSizeInBytes(), (ordinal + 1)* DType.INT32.getSizeInBytes());
   }
 
   @Override

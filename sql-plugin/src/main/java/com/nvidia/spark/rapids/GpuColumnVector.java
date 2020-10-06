@@ -22,12 +22,14 @@ import ai.rapids.cudf.HostColumnVector;
 import ai.rapids.cudf.Scalar;
 import ai.rapids.cudf.Schema;
 import ai.rapids.cudf.Table;
+
 import org.apache.spark.sql.catalyst.expressions.Attribute;
 import org.apache.spark.sql.execution.vectorized.WritableColumnVector;
 import org.apache.spark.sql.types.*;
 import org.apache.spark.sql.vectorized.ColumnVector;
 import org.apache.spark.sql.vectorized.ColumnarBatch;
 
+import java.util.Arrays;
 import java.util.List;
 
 /**
@@ -39,7 +41,7 @@ import java.util.List;
 public class GpuColumnVector extends GpuColumnVectorBase {
 
   public static final class GpuColumnarBatchBuilder implements AutoCloseable {
-    private final ai.rapids.cudf.HostColumnVector.Builder[] builders;
+    private final ai.rapids.cudf.HostColumnVector.ColumnBuilder[] builders;
     private final StructField[] fields;
 
     /**
@@ -54,7 +56,7 @@ public class GpuColumnVector extends GpuColumnVectorBase {
     public GpuColumnarBatchBuilder(StructType schema, int rows, ColumnarBatch batch) {
       fields = schema.fields();
       int len = fields.length;
-      builders = new ai.rapids.cudf.HostColumnVector.Builder[len];
+      builders = new ai.rapids.cudf.HostColumnVector.ColumnBuilder[len];
       boolean success = false;
       try {
         for (int i = 0; i < len; i++) {
@@ -68,31 +70,41 @@ public class GpuColumnVector extends GpuColumnVectorBase {
             if (batch != null) {
               ColumnVector cv = batch.column(i);
               if (cv instanceof WritableColumnVector) {
-                WritableColumnVector wcv = (WritableColumnVector)cv;
+                WritableColumnVector wcv = (WritableColumnVector) cv;
                 if (!wcv.hasDictionary()) {
-                  bufferSize = wcv.getArrayOffset(rows-1) +
+                  bufferSize = wcv.getArrayOffset(rows - 1) +
                       wcv.getArrayLength(rows - 1);
                 }
               }
             }
-            builders[i] = ai.rapids.cudf.HostColumnVector.builder(rows, bufferSize);
+            builders[i] = new ai.rapids.cudf.HostColumnVector.ColumnBuilder(new HostColumnVector.BasicType(true, DType.STRING), rows);
+          } else if (type == DType.LIST) {
+            System.out.println("MAIN ROWS=" + rows);
+            builders[i] = new ai.rapids.cudf.HostColumnVector.ColumnBuilder(new HostColumnVector.ListType(true,
+                new HostColumnVector.StructType(true, Arrays.asList(
+                    new HostColumnVector.BasicType(true, DType.STRING),
+                    new HostColumnVector.BasicType(true, DType.STRING)))), rows);
           } else {
-            builders[i] = ai.rapids.cudf.HostColumnVector.builder(type, rows);
+            builders[i] = new ai.rapids.cudf.HostColumnVector.ColumnBuilder(new HostColumnVector.BasicType(true, type), rows);
           }
           success = true;
         }
       } finally {
         if (!success) {
-          for (ai.rapids.cudf.HostColumnVector.Builder b: builders) {
+          for (ai.rapids.cudf.HostColumnVector.ColumnBuilder b: builders) {
             if (b != null) {
-              b.close();
+              try {
+                b.close();
+              } catch (Exception e) {
+                e.printStackTrace();
+              }
             }
           }
         }
       }
     }
 
-    public ai.rapids.cudf.HostColumnVector.Builder builder(int i) {
+    public ai.rapids.cudf.HostColumnVector.ColumnBuilder builder(int i) {
       return builders[i];
     }
 
@@ -121,9 +133,13 @@ public class GpuColumnVector extends GpuColumnVectorBase {
 
     @Override
     public void close() {
-      for (ai.rapids.cudf.HostColumnVector.Builder b: builders) {
+      for (ai.rapids.cudf.HostColumnVector.ColumnBuilder b: builders) {
         if (b != null) {
-          b.close();
+          try {
+            b.close();
+          } catch (Exception e) {
+            e.printStackTrace();
+          }
         }
       }
     }
@@ -150,6 +166,8 @@ public class GpuColumnVector extends GpuColumnVectorBase {
       return DType.TIMESTAMP_MICROSECONDS;
     } else if (type instanceof StringType) {
       return DType.STRING;
+    } else if (type instanceof MapType) {
+      return DType.LIST;
     }
     return null;
   }
@@ -202,7 +220,21 @@ public class GpuColumnVector extends GpuColumnVectorBase {
     DType type = access.getDataType();
     if (type == DType.LIST) {
       try (ColumnViewAccess<T> child = access.getChildColumnViewAccess(0)) {
-        return new ArrayType(getSparkTypeFrom(child), true);
+        DataType ret;
+        if (child.getDataType() == DType.STRUCT) {
+          try (ColumnViewAccess<T> firstChild = child.getChildColumnViewAccess(0);
+               ColumnViewAccess<T> secondChild = child.getChildColumnViewAccess(1)) {
+            if (firstChild.getDataType() == DType.STRING && secondChild.getDataType() == DType.STRING) {
+              ret = new MapType(DataTypes.StringType, DataTypes.StringType, true);
+            } else {
+              throw new IllegalStateException("Maps with non string type fields is not" +
+                  "supported and something has gone wrong!");
+            }
+          }
+        } else {
+          ret = new ArrayType(getSparkTypeFrom(child), true);
+        }
+        return ret;
       }
     } else {
       return getSparkType(type);
