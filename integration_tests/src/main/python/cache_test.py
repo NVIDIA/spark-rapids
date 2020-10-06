@@ -27,6 +27,7 @@ enableVectorizedConf = [{"spark.sql.inMemoryColumnarStorage.enableVectorizedRead
                         {"spark.sql.inMemoryColumnarStorage.enableVectorizedReader" : "false"}]
 
 @pytest.mark.parametrize('enableVectorizedConf', enableVectorizedConf, ids=idfn)
+@allow_non_gpu('CollectLimitExec')
 def test_passing_gpuExpr_as_Expr(enableVectorizedConf):
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark : unary_op_df(spark, string_gen)
@@ -201,6 +202,7 @@ def test_cache_expand_exec(data_gen, enableVectorizedConf):
     assert_gpu_and_cpu_are_equal_collect(op_df, conf = enableVectorizedConf)
 
 @pytest.mark.parametrize('enableVectorizedConf', enableVectorizedConf, ids=idfn)
+@allow_non_gpu('CollectLimitExec')
 def test_cache_partial_load(enableVectorizedConf):
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark : two_col_df(spark, IntegerGen(), string_gen)
