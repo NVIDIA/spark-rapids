@@ -238,7 +238,7 @@ Name | SQL Function(s) | Description | Default Value | Notes
 Name | Description | Default Value | Notes
 -----|-------------|---------------|------------------
 <a name="sql.exec.CoalesceExec"></a>spark.rapids.sql.exec.CoalesceExec|The backend for the dataframe coalesce method|true|None|
-<a name="sql.exec.CollectLimitExec"></a>spark.rapids.sql.exec.CollectLimitExec|Reduce to single partition and apply limit|true|None|
+<a name="sql.exec.CollectLimitExec"></a>spark.rapids.sql.exec.CollectLimitExec|Reduce to single partition and apply limit|false|This is disabled by default because Collect Limit replacement can be slower on the GPU, if huge number of rows in a batch it could help by limiting the number of rows transferred from GPU to CPU|
 <a name="sql.exec.ExpandExec"></a>spark.rapids.sql.exec.ExpandExec|The backend for the expand operator|true|None|
 <a name="sql.exec.FileSourceScanExec"></a>spark.rapids.sql.exec.FileSourceScanExec|Reading data from files, often from Hive tables|true|None|
 <a name="sql.exec.FilterExec"></a>spark.rapids.sql.exec.FilterExec|The backend for most filter statements|true|None|
