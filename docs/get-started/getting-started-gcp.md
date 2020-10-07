@@ -43,7 +43,7 @@ The script below will initialize with the following:
 
 gcloud dataproc clusters create $CLUSTER_NAME  \
     --region $REGION \
-    --image-version=preview-ubuntu \
+    --image-version=preview-ubuntu18 \
     --master-machine-type n1-standard-16 \
     --num-workers $NUM_WORKERS \
     --worker-accelerator type=nvidia-tesla-t4,count=$NUM_GPUS \
