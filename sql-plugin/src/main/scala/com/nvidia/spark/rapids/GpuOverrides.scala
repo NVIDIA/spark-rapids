@@ -1767,7 +1767,10 @@ object GpuOverrides {
         }),
     exec[CollectLimitExec](
       "Reduce to single partition and apply limit",
-      (collectLimitExec, conf, p, r) => new GpuCollectLimitMeta(collectLimitExec, conf, p, r)),
+      (collectLimitExec, conf, p, r) => new GpuCollectLimitMeta(collectLimitExec, conf, p, r))
+        .disabledByDefault("Collect Limit replacement can be slower on the GPU, if huge number " +
+          "of rows in a batch it could help by limiting the number of rows transferred from " +
+          "GPU to CPU"),
     exec[FilterExec](
       "The backend for most filter statements",
       (filter, conf, p, r) => new SparkPlanMeta[FilterExec](filter, conf, p, r) {
@@ -1856,11 +1859,6 @@ object GpuOverrides {
       "The backend for CoGrouped Aggregation Pandas UDF, it runs on CPU itself now but supports" +
         " running the Python UDFs code on GPU when calling cuDF APIs in the UDF",
       (flatCoPy, conf, p, r) => new GpuFlatMapCoGroupsInPandasExecMeta(flatCoPy, conf, p, r))
-        .disabledByDefault("Performance is not ideal now"),
-    exec[WindowInPandasExec](
-      "The backend for Pandas UDF with window functions, it runs on CPU itself now but supports" +
-        " running the Python UDFs code on GPU when calling cuDF APIs in the UDF",
-      (winPy, conf, p, r) => new GpuWindowInPandasExecMeta(winPy, conf, p, r))
         .disabledByDefault("Performance is not ideal now"),
     neverReplaceExec[AlterNamespaceSetPropertiesExec]("Namespace metadata operation"),
     neverReplaceExec[CreateNamespaceExec]("Namespace metadata operation"),

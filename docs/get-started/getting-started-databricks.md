@@ -42,14 +42,10 @@ We will need to create an initialization script for the cluster that installs th
 
     ```bash
     spark.plugins com.nvidia.spark.SQLPlugin
-    spark.sql.parquet.filterPushdown false
-    spark.rapids.sql.incompatibleOps.enabled true
     spark.rapids.memory.pinnedPool.size 2G
     spark.task.resource.gpu.amount 0.1
     spark.rapids.sql.concurrentGpuTasks 2
     spark.locality.wait 0s
-    spark.hadoop.mapreduce.fileoutputcommitter.algorithm.version 2
-    spark.executor.extraJavaOptions "-Dai.rapids.cudf.prefer-pinned=true"
     ```
 
     ![Spark Config](../img/sparkconfig.png)

@@ -43,14 +43,14 @@ The script below will initialize with the following:
 
 gcloud dataproc clusters create $CLUSTER_NAME  \
     --region $REGION \
-    --image-version=preview-ubuntu \
+    --image-version=preview-ubuntu18 \
     --master-machine-type n1-standard-16 \
     --num-workers $NUM_WORKERS \
     --worker-accelerator type=nvidia-tesla-t4,count=$NUM_GPUS \
     --worker-machine-type n1-highmem-32\
     --num-worker-local-ssds 4 \
     --initialization-actions gs://goog-dataproc-initialization-actions-${REGION}/gpu/install_gpu_driver.sh,gs://goog-dataproc-initialization-actions-${REGION}/rapids/rapids.sh \
-    --optional-components=ANACONDA,JUPYTER,ZEPPELIN \
+    --optional-components=JUPYTER,ZEPPELIN \
     --metadata gpu-driver-provider="NVIDIA" \
     --metadata rapids-runtime=SPARK \
     --bucket $GCS_BUCKET \

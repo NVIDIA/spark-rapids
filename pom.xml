@@ -304,6 +304,11 @@
                 <version>1.11.0</version>
             </dependency>
             <dependency>
+                <groupId>org.rogach</groupId>
+                <artifactId>scallop_${scala.binary.version}</artifactId>
+                <version>3.5.1</version>
+            </dependency>
+            <dependency>
                 <groupId>org.scalatest</groupId>
                 <artifactId>scalatest_${scala.binary.version}</artifactId>
                 <version>3.0.5</version>

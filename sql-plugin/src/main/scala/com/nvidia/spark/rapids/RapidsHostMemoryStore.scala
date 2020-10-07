@@ -120,7 +120,10 @@ class RapidsHostMemoryStore(
       isInternalPoolAllocated: Boolean) extends RapidsBufferBase(id, size, meta, spillPriority) {
     override val storageTier: StorageTier = StorageTier.HOST
 
-    override def getMemoryBuffer: MemoryBuffer = buffer.slice(0, buffer.getLength)
+    override def getMemoryBuffer: MemoryBuffer = {
+      buffer.incRefCount()
+      buffer
+    }
 
     override protected def releaseResources(): Unit = {
       if (isInternalPoolAllocated) {

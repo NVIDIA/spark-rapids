@@ -99,7 +99,7 @@ supported for other types.
 
 ### CSV Dates
 Parsing a `timestamp` as a `date` does not work. The details are documented in this
-[issue](https://github.com/NVIDIA/spark-rapids/issues/122).
+[issue](https://github.com/NVIDIA/spark-rapids/issues/869).
 
 Only a limited set of formats are supported when parsing dates.
 
@@ -115,10 +115,9 @@ Only a limited set of formats are supported when parsing dates.
 The reality is that all of these formats are supported at the same time. The plugin
 will only disable itself if you set a format that it does not support.
 
-### CSV Timestamps
-The CSV parser only works for timestamps that are after 1902 and before the end of 2038.
-This is documented in this [issue](https://github.com/NVIDIA/spark-rapids/issues/122).
+As a work around you can parse the column as a timestamp and then cast it to a date.
 
+### CSV Timestamps
 The CSV parser does not support time zones.  It will ignore any trailing time zone
 information, despite the format asking for a `XXX` or `[XXX]`. As such it is off by
 default and you can enable it by setting 

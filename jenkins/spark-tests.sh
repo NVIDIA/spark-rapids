@@ -17,6 +17,8 @@
 
 set -ex
 
+nvidia-smi
+
 . jenkins/version-def.sh
 
 ARTF_ROOT="$WORKSPACE/jars"
@@ -59,7 +61,9 @@ tar zxf $SPARK_HOME.tgz -C $ARTF_ROOT && \
 PARQUET_PERF="$WORKSPACE/integration_tests/src/test/resources/parquet_perf"
 PARQUET_ACQ="$WORKSPACE/integration_tests/src/test/resources/parquet_acq"
 OUTPUT="$WORKSPACE/output"
-BASE_SPARK_SUBMIT_ARGS="--master spark://$HOSTNAME:7077 --executor-memory 32G \
+BASE_SPARK_SUBMIT_ARGS="--master spark://$HOSTNAME:7077 \
+    --executor-memory 12G \
+    --total-executor-cores 6 \
     --conf spark.sql.shuffle.partitions=12 \
     --conf spark.driver.extraClassPath=${CUDF_JAR}:${RAPIDS_PLUGIN_JAR} \
     --conf spark.executor.extraClassPath=${CUDF_JAR}:${RAPIDS_PLUGIN_JAR} \
@@ -75,7 +79,8 @@ CUDF_UDF_TEST_ARGS="--conf spark.rapids.memory.gpu.allocFraction=0.1 \
     --conf spark.rapids.python.memory.gpu.allocFraction=0.1 \
     --conf spark.rapids.python.concurrentPythonWorkers=2 \
     --conf spark.executorEnv.PYTHONPATH=${RAPIDS_FILE_NAME} \
-    --py-files ${RAPIDS_PLUGIN_JAR}"
+    --conf spark.pyspark.python=/opt/conda/bin/python \
+    --py-files ${RAPIDS_PLUGIN_JAR}" # explicitly specify python binary path in env w/ multiple python versions
 
 TEST_PARAMS="$SPARK_VER $PARQUET_PERF $PARQUET_ACQ $OUTPUT"
 

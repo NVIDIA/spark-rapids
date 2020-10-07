@@ -23,6 +23,7 @@ from join_test import create_df
 from generate_expr_test import four_op_df
 from marks import incompat, allow_non_gpu, ignore_order
 
+@allow_non_gpu('CollectLimitExec')
 def test_passing_gpuExpr_as_Expr():
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark : unary_op_df(spark, string_gen)
