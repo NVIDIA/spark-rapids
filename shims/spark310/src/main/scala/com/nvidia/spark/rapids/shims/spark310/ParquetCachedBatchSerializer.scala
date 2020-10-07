@@ -374,15 +374,11 @@ class ParquetCachedBatchSerializer extends CachedBatchSerializer with Arm {
         new Iterator[InternalRow]() {
           var iter: Iterator[InternalRow] = null
 
-          override def hasNext: Boolean =
-            // either the current iterator has an element,
-            // else go over the batch and get the next non-degenerate iterator
-            (iter != null && iter.hasNext) || doesNextValidIteratorHasNext
-
-
-          private def doesNextValidIteratorHasNext: Boolean = {
-            while (cbIter.hasNext && (iter == null || !iter.hasNext)) {
-              iter = convertColumnarBatchToInternalRowIter
+          override def hasNext: Boolean = {
+            // go over the batch and get the next non-degenerate iterator
+            // and return if it hasNext
+            while ((iter == null || !iter.hasNext) && cbIter.hasNext) {
+              iter = convertCachedBatchToInternalRowIter
             }
             iter != null && iter.hasNext
           }
@@ -391,7 +387,7 @@ class ParquetCachedBatchSerializer extends CachedBatchSerializer with Arm {
             // will return the next InternalRow if hasNext() is true, otherwise undefined behavior
             // we still want to make sure iter != null
             while (iter == null && cbIter.hasNext) {
-              iter = convertColumnarBatchToInternalRowIter
+              iter = convertCachedBatchToInternalRowIter
             }
             if (iter != null) {
               iter.next()
@@ -401,7 +397,7 @@ class ParquetCachedBatchSerializer extends CachedBatchSerializer with Arm {
             }
           }
 
-          def convertColumnarBatchToInternalRowIter: Iterator[InternalRow] = {
+          def convertCachedBatchToInternalRowIter: Iterator[InternalRow] = {
             val parquetCachedBatch = cbIter.next().asInstanceOf[ParquetCachedBatch]
             val inputFile = new ByteArrayInputFile(parquetCachedBatch.buffer)
 
