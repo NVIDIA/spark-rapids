@@ -89,10 +89,12 @@ def test_multi_types_window_aggs_for_rows_lead_lag(a_gen, b_gen, c_gen):
             ('a', RepeatSeqGen(a_gen, length=20)),
             ('b', b_gen),
             ('c', c_gen)]
-    # TODO range based appears to be the default without rowsBetween
-    # and fails horribly even when there is no rangeBetween
-    # ordering needs to include c because with nulls and especially on booleans
-    # it is possible to get a different ordering when it is ambiguous
+    # By default for many operations a range of unbounded to unbounded is used
+    # This will not work until https://github.com/NVIDIA/spark-rapids/issues/216
+    # is fixed.
+
+    # Ordering needs to include c because with nulls and especially on booleans
+    # it is possible to get a different ordering when it is ambiguous.
     baseWindowSpec = Window.partitionBy('a').orderBy('b', 'c')
     inclusiveWindowSpec = baseWindowSpec.rowsBetween(-10, 100)
 
@@ -124,9 +126,11 @@ def test_multi_types_window_aggs_for_rows(a_gen, b_gen, c_gen):
             ('a', RepeatSeqGen(a_gen, length=20)),
             ('b', b_gen),
             ('c', c_gen)]
-    # TODO range based appears to be the default without rowsBetween
-    # and fails horribly even when there is no rangeBetween
-    # ordering needs to include c because with nulls and especially on booleans
+    # By default for many operations a range of unbounded to unbounded is used
+    # This will not work until https://github.com/NVIDIA/spark-rapids/issues/216
+    # is fixed.
+
+    # Ordering needs to include c because with nulls and especially on booleans
     # it is possible to get a different ordering when it is ambiguous
     baseWindowSpec = Window.partitionBy('a').orderBy('b', 'c')
     inclusiveWindowSpec = baseWindowSpec.rowsBetween(-10, 100)

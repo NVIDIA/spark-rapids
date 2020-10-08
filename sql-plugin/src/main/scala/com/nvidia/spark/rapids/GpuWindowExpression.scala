@@ -76,8 +76,9 @@ class GpuWindowExpressionMeta(
         aggregateExpression.aggregateFunction match {
           // Count does not work in these cases because of a bug in cudf where a rolling count
           // does not do the correct thing for null entries
-          // TODO link to issue.
-          // Once that is fixed this can be deleted and the check will fall through.
+          // Once https://github.com/rapidsai/cudf/issues/6343
+          // is fixed this can be deleted and the check will go to the next case
+          // where it will match and pass.
           case Count(exp) =>
             if (!exp.forall(x => x.isInstanceOf[Literal])) {
               willNotWorkOnGpu(s"Currently, only COUNT(1) and COUNT(*) are supported. " +
@@ -359,7 +360,9 @@ object GpuWindowExpression {
         .window(lower, upper)
         .timestampColumnIndex(timeColumnIndex)
 
-    // TODO should we check this out?
+    // We only support a single time based column to order by right now, so just verify
+    // that it is correct.
+    assert(orderSpec.length == 1)
     if (orderSpec.head.isAscending) {
       windowOptionBuilder.timestampAscending()
     } else {
@@ -783,9 +786,12 @@ abstract class OffsetWindowFunctionMeta[INPUT <: OffsetWindowFunction] (
   }
 }
 
-case class GpuLead(input: Expression, offset: Expression, default: Expression)
-    extends GpuAggregateWindowFunction {
-  private val parsedOffset = offset match {
+trait GpuOffsetWindowFunction extends GpuAggregateWindowFunction {
+  protected val input: Expression
+  protected val offset: Expression
+  protected val default: Expression
+
+  protected val parsedOffset: Int = offset match {
     case GpuLiteral(o: Int, IntegerType) => o
     case other =>
       throw new IllegalStateException(s"$other is not a supported offset type")
@@ -799,6 +805,10 @@ case class GpuLead(input: Expression, offset: Expression, default: Expression)
     case GpuLiteral(v, _) if v == null => Seq(input)
     case _ => Seq(input, default)
   }
+}
+
+case class GpuLead(input: Expression, offset: Expression, default: Expression)
+    extends GpuOffsetWindowFunction {
 
   override def windowAggregation(inputs: Seq[(ColumnVector, Int)]): AggregationOnColumn = {
     val in = inputs.toArray
@@ -812,22 +822,7 @@ case class GpuLead(input: Expression, offset: Expression, default: Expression)
 }
 
 case class GpuLag(input: Expression, offset: Expression, default: Expression)
-    extends GpuAggregateWindowFunction {
-  // TODO a lot of this should be common
-  private val parsedOffset = offset match {
-    case GpuLiteral(o: Int, IntegerType) => o
-    case other =>
-      throw new IllegalStateException(s"$other is not a supported offset type")
-  }
-  override def nullable: Boolean = default == null || default.nullable || input.nullable
-  override def dataType: DataType = input.dataType
-
-  override def children: Seq[Expression] = Seq(input, offset, default)
-
-  override val windowInputProjection: Seq[Expression] = default match {
-    case GpuLiteral(v, _) if v == null => Seq(input)
-    case _ => Seq(input, default)
-  }
+    extends GpuOffsetWindowFunction {
 
   override def windowAggregation(inputs: Seq[(ColumnVector, Int)]): AggregationOnColumn = {
     val in = inputs.toArray
