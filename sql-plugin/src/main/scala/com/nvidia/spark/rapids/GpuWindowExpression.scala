@@ -84,7 +84,7 @@ class GpuWindowExpressionMeta(
               willNotWorkOnGpu(s"Currently, only COUNT(1) and COUNT(*) are supported. " +
                   s"COUNT($exp) is not supported in windowing.")
             }
-          // Sadly not all aggregations work for window operations yet, os explicitly allow the
+          // Sadly not all aggregations work for window operations yet, so explicitly allow the
           // ones that do work.
           case Count(_) | Sum(_) | Min(_) | Max(_) => // Supported.
           case other: AggregateFunction =>
