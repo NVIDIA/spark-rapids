@@ -114,7 +114,7 @@ def test_multi_types_window_aggs_for_rows_lead_lag(a_gen, b_gen, c_gen):
                 .withColumn('row_num', f.row_number().over(baseWindowSpec))
     assert_gpu_and_cpu_are_equal_collect(do_it, conf={'spark.rapids.sql.hasNans': 'false'})
 
-# lead and lag don't currently work for strig columns, so redo the tests, but just for strings
+# lead and lag don't currently work for string columns, so redo the tests, but just for strings
 # without lead and lag
 @ignore_order
 @approximate_float
