@@ -45,7 +45,7 @@
             </dependencies>
         </profile>
         <profile>
-            <id>databricks</id>
+            <id>databricks301</id>
             <dependencies>
                 <dependency>
                     <groupId>com.nvidia</groupId>
