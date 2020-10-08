@@ -19,8 +19,8 @@ package com.nvidia.spark.rapids.shims.spark301db
 import java.time.ZoneId
 
 import com.nvidia.spark.rapids._
-import com.nvidia.spark.rapids.shims.spark300db.{GpuFileScanRDD, GpuFileSourceScanExec, GpuJoinUtils, GpuShuffledHashJoinMeta, GpuSortMergeJoinMeta, Spark300Shims}
 import com.nvidia.spark.rapids.shims.spark301.Spark301Shims
+import com.nvidia.spark.rapids.shims.spark301db._
 import org.apache.hadoop.fs.Path
 
 import org.apache.spark.rdd.RDD
