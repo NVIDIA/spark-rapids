@@ -30,8 +30,9 @@ import org.apache.spark.sql.catalyst.encoders.ExpressionEncoder
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.expressions._
 import org.apache.spark.sql.catalyst.plans.JoinType
-import org.apache.spark.sql.catalyst.plans.physical.BroadcastMode
+import org.apache.spark.sql.catalyst.plans.physical.{BroadcastMode, Partitioning}
 import org.apache.spark.sql.execution._
+import org.apache.spark.sql.execution.adaptive.ShuffleQueryStageExec
 import org.apache.spark.sql.execution.datasources.{BucketingUtils, FilePartition, HadoopFsRelation, PartitionDirectory, PartitionedFile}
 import org.apache.spark.sql.execution.datasources.parquet.ParquetFileFormat
 import org.apache.spark.sql.execution.exchange.{BroadcastExchangeExec, ShuffleExchangeExec}
@@ -197,5 +198,17 @@ class Spark301dbShims extends Spark301Shims {
   override def copyFileSourceScanExec(scanExec: GpuFileSourceScanExec,
       supportsSmallFileOpt: Boolean): GpuFileSourceScanExec = {
     scanExec.copy(supportsSmallFileOpt=supportsSmallFileOpt)
+  }
+
+  override def getGpuShuffleExchangeExec(
+      outputPartitioning: Partitioning,
+      child: SparkPlan,
+      canChangeNumPartitions: Boolean): GpuShuffleExchangeExecBase = {
+    GpuShuffleExchangeExec(outputPartitioning, child, canChangeNumPartitions)
+  }
+
+  override def getGpuShuffleExchangeExec(
+      queryStage: ShuffleQueryStageExec): GpuShuffleExchangeExecBase = {
+    queryStage.shuffle.asInstanceOf[GpuShuffleExchangeExecBase]
   }
 }
