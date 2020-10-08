@@ -41,8 +41,8 @@ def main():
     the location of the relevant JAR files to be used:
 
     - SPARK_RAPIDS_PLUGIN_JAR
-    - $SPARK_RAPIDS_PLUGIN_INTEGRATION_TEST_JAR
-    - $CUDF_JAR
+    - SPARK_RAPIDS_PLUGIN_INTEGRATION_TEST_JAR
+    - CUDF_JAR
 
     """
 
