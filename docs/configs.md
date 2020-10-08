@@ -155,7 +155,9 @@ Name | SQL Function(s) | Description | Default Value | Notes
 <a name="sql.expression.IsNotNull"></a>spark.rapids.sql.expression.IsNotNull|`isnotnull`|Checks if a value is not null|true|None|
 <a name="sql.expression.IsNull"></a>spark.rapids.sql.expression.IsNull|`isnull`|Checks if a value is null|true|None|
 <a name="sql.expression.KnownFloatingPointNormalized"></a>spark.rapids.sql.expression.KnownFloatingPointNormalized| |Tag to prevent redundant normalization|true|None|
+<a name="sql.expression.Lag"></a>spark.rapids.sql.expression.Lag|`lag`|Window function that returns N entries behind this one|true|None|
 <a name="sql.expression.LastDay"></a>spark.rapids.sql.expression.LastDay|`last_day`|Returns the last day of the month which the date belongs to|true|None|
+<a name="sql.expression.Lead"></a>spark.rapids.sql.expression.Lead|`lead`|Window function that returns N entries ahead of this one|true|None|
 <a name="sql.expression.Length"></a>spark.rapids.sql.expression.Length|`length`, `character_length`, `char_length`|String character length|true|None|
 <a name="sql.expression.LessThan"></a>spark.rapids.sql.expression.LessThan|`<`|< operator|true|None|
 <a name="sql.expression.LessThanOrEqual"></a>spark.rapids.sql.expression.LessThanOrEqual|`<=`|<= operator|true|None|
