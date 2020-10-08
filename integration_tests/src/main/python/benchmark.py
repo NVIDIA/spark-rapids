@@ -61,6 +61,8 @@ def main():
                     help='One or more configuration filenames to run')
     parser.add_argument('--query', type=str, nargs='+',
                     help='Queries to run')
+    parser.add_argument('--iterations',
+                        help='The number of iterations to run (defaults to 1)')
 
     args = parser.parse_args()
 
@@ -103,7 +105,11 @@ def main():
 
             cmd.append("--query " + query)
             cmd.append("--summary-file-prefix " + summary_file_prefix)
-            cmd.append("--iterations 1")
+
+            if args.iterations is None:
+                cmd.append("--iterations 1")
+            else:
+                cmd.append("--iterations {}".format(args.iterations))
 
             cmd = template.strip() + "\n  " + " ".join(cmd).strip()
 
