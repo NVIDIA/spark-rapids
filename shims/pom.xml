@@ -37,6 +37,7 @@
             <id>databricks</id>
             <modules>
                 <module>spark300db</module>
+                <module>spark301db</module>
             </modules>
         </profile>
         <profile>
