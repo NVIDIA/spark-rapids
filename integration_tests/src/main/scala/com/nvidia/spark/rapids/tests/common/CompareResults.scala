@@ -41,7 +41,12 @@ object CompareResults {
   def main(arg: Array[String]): Unit = {
     val conf = new Conf(arg)
 
-    val spark = SparkSession.builder.appName("CompareResults").getOrCreate()
+    val spark = SparkSession.builder
+        .appName("CompareResults")
+        // disable plugin so that we can see FilePartition rather than DatasourceRDDPartition and
+        // can retrieve individual partition filenames
+        .config("spark.rapids.sql.enabled", "false")
+        .getOrCreate()
 
     val (df1, df2) = conf.inputFormat() match {
       case "csv" =>
@@ -50,9 +55,17 @@ object CompareResults {
         (spark.read.parquet(conf.input1()), spark.read.parquet(conf.input2()))
     }
 
+    val readPathAction = conf.inputFormat() match {
+      case "csv" =>
+        path: String => spark.read.csv(path)
+      case "parquet" =>
+        path: String => spark.read.parquet(path)
+    }
+
     BenchUtils.compareResults(
       df1,
       df2,
+      readPathAction,
       conf.ignoreOrdering(),
       conf.useIterator(),
       conf.maxErrors(),
