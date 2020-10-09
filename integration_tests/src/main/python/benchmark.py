@@ -33,7 +33,12 @@ def main():
 
     In this example, configuration key-value pairs will be loaded from cpu.properties and
     gpu-ucx-on.properties and appended to a spark-submit-template.txt to build the spark-submit
-    commands to run the benchmark.
+    commands to run the benchmark. These configuration property files simply contain key-value
+    pairs in the format key=value with one pair per line. For example:
+
+    spark.executor.cores=2
+    spark.rapids.sql.enabled=true
+    spark.sql.adaptive.enabled=true
 
     The spark-submit-template.txt file should contain the command to call spark-submit along
     with any cluster-specific configuration options and any spark configuration settings that
