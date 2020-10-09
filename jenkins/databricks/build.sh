@@ -17,15 +17,14 @@
 
 set -e
 
-SPARKTGZ=$1
-DATABRICKS_VERSION=$2
-SCALA_VERSION=$3
-CI_RAPIDS_JAR=$4
-SPARK_VERSION=$5
-CUDF_VERSION=$6
-CUDA_VERSION=$7
-CI_CUDF_JAR=$8
-BASE_SPARK_POM_VERSION=$9
+DATABRICKS_VERSION=0.3.0-SNAPSHOT
+SCALA_VERSION=2.12
+CI_RAPIDS_JAR=rapids-4-spark_2.12-0.1-SNAPSHOT-ci.jar
+SPARK_VERSION=3.0.1-databricks
+CUDF_VERSION=0.16-SNAPSHOT
+CUDA_VERSION=cuda10-1
+CI_CUDF_JAR=cudf-0.14-cuda10-1.jar
+BASE_SPARK_POM_VERSION=3.0.0
 
 echo "Spark version is $SPARK_VERSION"
 echo "scala version is: $SCALA_VERSION"
@@ -37,12 +36,12 @@ DB_CUDF_JAR_LOC=$DB_JAR_LOC/$CI_CUDF_JAR
 RAPIDS_BUILT_JAR=rapids-4-spark_$SCALA_VERSION-$DATABRICKS_VERSION.jar
 
 sudo apt install -y maven
-rm -rf spark-rapids
-mkdir spark-rapids
-tar -zxvf $SPARKTGZ -C spark-rapids
-cd spark-rapids
+#rm -rf spark-rapids
+#mkdir spark-rapids
+#tar -zxvf $SPARKTGZ -C spark-rapids
+#cd spark-rapids
 export WORKSPACE=`pwd`
-mvn -B '-Pdatabricks,!snapshot-shims' clean package -DskipTests || true
+mvn -B '-Pdatabricks301,!snapshot-shims' clean package -DskipTests || true
 M2DIR=/home/ubuntu/.m2/repository
 CUDF_JAR=${M2DIR}/ai/rapids/cudf/${CUDF_VERSION}/cudf-${CUDF_VERSION}-${CUDA_VERSION}.jar
 
@@ -88,7 +87,7 @@ mvn -B install:install-file \
    -Dversion=$SPARK_VERSION \
    -Dpackaging=jar
 
-mvn -B '-Pdatabricks,!snapshot-shims' clean package -DskipTests
+mvn -B '-Pdatabricks301,!snapshot-shims' clean package -DskipTests
 
 # Copy so we pick up new built jar and latesty CuDF jar. Note that the jar names has to be
 # exactly what is in the staticly setup Databricks cluster we use. 
