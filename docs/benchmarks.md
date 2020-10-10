@@ -67,7 +67,7 @@ plugin does not yet support decimal types but these will be supported in a futur
 The benchmarks can be executed in two modes currently:
 
 - Execute the query and collect the results to the driver
-- Execute the query and write the results to disk (in Parquet or Orc format)
+- Execute the query and write the results to disk (in Parquet or ORC format)
 
 The following commands can be entered into spark-shell to register the data files that the 
 benchmark will query.
