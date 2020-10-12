@@ -205,6 +205,13 @@ Spark stores timestamps internally relative to the JVM time zone.  Converting an
 arbitrary timestamp between time zones is not currently supported on the GPU. Therefore operations
 involving timestamps will only be GPU-accelerated if the time zone used by the JVM is UTC.
 
+## Window Functions
+
+Because of ordering differences between the CPU and the GPU window functions especially row based
+window functions like `row_number`, `lead`, and `lag` can produce different results if the ordering
+includes both `-0.0` and `0.0`, or if the ordering is ambiguous. Spark can produce
+different results from one run to another if the ordering is ambiguous on a window function too.
+
 ## Casting between types
 
 In general, performing `cast` and `ansi_cast` operations on the GPU is compatible with the same operations on the CPU. However, there are some exceptions. For this reason, certain casts are disabled on the GPU by default and require configuration options to be specified to enable them. 

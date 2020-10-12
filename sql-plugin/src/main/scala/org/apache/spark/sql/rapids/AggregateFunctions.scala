@@ -17,7 +17,7 @@
 package org.apache.spark.sql.rapids
 
 import ai.rapids.cudf
-import ai.rapids.cudf.Aggregation
+import ai.rapids.cudf.{Aggregation, AggregationOnColumn, ColumnVector}
 import com.nvidia.spark.rapids._
 
 import org.apache.spark.sql.catalyst.analysis.TypeCheckResult
@@ -277,7 +277,8 @@ abstract class GpuDeclarativeAggregate extends GpuAggregateFunction with GpuUnev
     aggBufferAttributes.map(_.newInstance())
 }
 
-case class GpuMin(child: Expression) extends GpuDeclarativeAggregate {
+case class GpuMin(child: Expression) extends GpuDeclarativeAggregate
+    with GpuAggregateWindowFunction {
   private lazy val cudfMin = AttributeReference("min", child.dataType)()
 
   override lazy val inputProjection: Seq[Expression] = Seq(child)
@@ -295,9 +296,15 @@ case class GpuMin(child: Expression) extends GpuDeclarativeAggregate {
   override def children: Seq[Expression] = child :: Nil
   override def checkInputDataTypes(): TypeCheckResult =
     TypeUtils.checkForOrderingExpr(child.dataType, "function gpu min")
+
+  // WINDOW FUNCTION
+  override lazy val windowInputProjection: Seq[Expression] = inputProjection
+  override def windowAggregation(inputs: Seq[(ColumnVector, Int)]): AggregationOnColumn =
+    Aggregation.min().onColumn(inputs.head._2)
 }
 
-case class GpuMax(child: Expression) extends GpuDeclarativeAggregate {
+case class GpuMax(child: Expression) extends GpuDeclarativeAggregate
+    with GpuAggregateWindowFunction {
   private lazy val cudfMax = AttributeReference("max", child.dataType)()
 
   override lazy val inputProjection: Seq[Expression] = Seq(child)
@@ -315,10 +322,15 @@ case class GpuMax(child: Expression) extends GpuDeclarativeAggregate {
   override def children: Seq[Expression] = child :: Nil
   override def checkInputDataTypes(): TypeCheckResult =
     TypeUtils.checkForOrderingExpr(child.dataType, "function gpu max")
+
+  // WINDOW FUNCTION
+  override lazy val windowInputProjection: Seq[Expression] = inputProjection
+  override def windowAggregation(inputs: Seq[(ColumnVector, Int)]): AggregationOnColumn =
+    Aggregation.max().onColumn(inputs.head._2)
 }
 
 case class GpuSum(child: Expression)
-  extends GpuDeclarativeAggregate with ImplicitCastInputTypes {
+  extends GpuDeclarativeAggregate with ImplicitCastInputTypes with GpuAggregateWindowFunction {
   private lazy val resultType = child.dataType match {
     case _: DoubleType => DoubleType
     case _ => LongType
@@ -342,9 +354,15 @@ case class GpuSum(child: Expression)
   override def inputTypes: Seq[AbstractDataType] = Seq(NumericType)
   override def checkInputDataTypes(): TypeCheckResult =
     TypeUtils.checkForNumericExpr(child.dataType, "function gpu sum")
+
+  // WINDOW FUNCTION
+  override lazy val windowInputProjection: Seq[Expression] = inputProjection
+  override def windowAggregation(inputs: Seq[(ColumnVector, Int)]): AggregationOnColumn =
+    Aggregation.sum().onColumn(inputs.head._2)
 }
 
-case class GpuCount(children: Seq[Expression]) extends GpuDeclarativeAggregate {
+case class GpuCount(children: Seq[Expression]) extends GpuDeclarativeAggregate
+    with GpuAggregateWindowFunction {
   // counts are Long
   private lazy val cudfCount = AttributeReference("count", LongType)()
 
@@ -360,6 +378,13 @@ case class GpuCount(children: Seq[Expression]) extends GpuDeclarativeAggregate {
   // Copied from Count
   override def nullable: Boolean = false
   override def dataType: DataType = LongType
+
+  // WINDOW FUNCTION
+  // countDistinct is not supported for window functions in spark right now.
+  // we could support it by doing an `Aggregation.nunique(false)`
+  override lazy val windowInputProjection: Seq[Expression] = inputProjection
+  override def windowAggregation(inputs: Seq[(ColumnVector, Int)]): AggregationOnColumn =
+    Aggregation.count(false).onColumn(inputs.head._2)
 }
 
 case class GpuAverage(child: Expression) extends GpuDeclarativeAggregate {

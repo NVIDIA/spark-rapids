@@ -494,8 +494,13 @@ object GpuOverrides {
       (lit, conf, p, r) => new ExprMeta[Literal](lit, conf, p, r) {
         override def convertToGpu(): GpuExpression = GpuLiteral(lit.value, lit.dataType)
 
-        // There are so many of these that we don't need to print them out.
-        override def print(append: StringBuilder, depth: Int, all: Boolean): Unit = {}
+        // There are so many of these that we don't need to print them out, unless it
+        // will not work on the GPU
+        override def print(append: StringBuilder, depth: Int, all: Boolean): Unit = {
+          if (!this.canThisBeReplaced) {
+            super.print(append, depth, all)
+          }
+        }
 
         /**
          * We are overriding this method because currently we only support CalendarIntervalType
@@ -598,6 +603,20 @@ object GpuOverrides {
       "Window function that returns the index for the row within the aggregation window",
       (rowNumber, conf, p, r) => new ExprMeta[RowNumber](rowNumber, conf, p, r) {
         override def convertToGpu(): GpuExpression = GpuRowNumber()
+      }
+    ),
+    expr[Lead](
+      "Window function that returns N entries ahead of this one",
+      (lead, conf, p, r) => new OffsetWindowFunctionMeta[Lead](lead, conf, p, r) {
+        override def convertToGpu(): GpuExpression =
+          GpuLead(input.convertToGpu(), offset.convertToGpu(), default.convertToGpu())
+      }
+    ),
+    expr[Lag](
+      "Window function that returns N entries behind this one",
+      (lag, conf, p, r) => new OffsetWindowFunctionMeta[Lag](lag, conf, p, r) {
+        override def convertToGpu(): GpuExpression =
+          GpuLag(input.convertToGpu(), offset.convertToGpu(), default.convertToGpu())
       }
     ),
     expr[UnaryMinus](
