@@ -765,7 +765,6 @@ SELECT_PRE_ORDER_SQL=[
 ("SELECT FIRST(floatF) as res FROM test_table GROUP BY intF", "FIRST(floatF) GROUP BY intF", "floatF"),
 ("SELECT FIRST(doubleF) as res FROM test_table GROUP BY intF", "FIRST(doubleF) GROUP BY intF", "doubleF"),
 ("SELECT FIRST(booleanF) as res FROM test_table GROUP BY intF", "FIRST(booleanF) GROUP BY intF", "booleanF"),
-("SELECT FIRST(strF) as res FROM test_table GROUP BY intF", "FIRST(strF) GROUP BY intF", "strF"),
 ("SELECT FIRST(dateF) as res FROM test_table GROUP BY intF", "FIRST(dateF) GROUP BY intF", "dateF"),
 ("SELECT FIRST(timestampF) as res FROM test_table GROUP BY intF", "FIRST(timestampF) GROUP BY intF", "timestampF"),
 ("SELECT FIRST(byteF) as res FROM test_table GROUP BY intF, shortF", "FIRST(byteF) GROUP BY intF, shortF", "byteF"),
@@ -778,12 +777,17 @@ SELECT_PRE_ORDER_SQL=[
 ("SELECT LAST(floatF) as res FROM test_table GROUP BY intF", "LAST(floatF) GROUP BY intF", "floatF"),
 ("SELECT LAST(doubleF) as res FROM test_table GROUP BY intF", "LAST(doubleF) GROUP BY intF", "doubleF"),
 ("SELECT LAST(booleanF) as res FROM test_table GROUP BY intF", "LAST(booleanF) GROUP BY intF", "booleanF"),
-("SELECT LAST(strF) as res FROM test_table GROUP BY intF", "LAST(strF) GROUP BY intF", "strF"),
 ("SELECT LAST(dateF) as res FROM test_table GROUP BY intF", "LAST(dateF) GROUP BY intF", "dateF"),
 ("SELECT LAST(timestampF) as res FROM test_table GROUP BY intF", "LAST(timestampF) GROUP BY intF", "timestampF"),
 
 ("SELECT byteF, SUM(byteF) OVER (PARTITION BY shortF ORDER BY intF ROWS BETWEEN 2 PRECEDING AND 2 FOLLOWING ) as res FROM test_table", "byteF, SUM(byteF) OVER (PARTITION BY shortF ORDER BY intF ROWS BETWEEN 2 PRECEDING AND 2 FOLLOWING ) as res", "byteF"),
 ("SELECT SUM(intF) OVER (PARTITION BY byteF ORDER BY byteF ROWS BETWEEN 1 PRECEDING AND 1 FOLLOWING ) as res FROM test_table", "SUM(intF) OVER (PARTITION BY byteF ORDER BY byteF ROWS BETWEEN 1 PRECEDING AND 1 FOLLOWING ) as res", "intF"),
+# Aggregations with variable width outputs, like strings, are done using a sort aggregation on the CPU
+# There are a number of issues related to this and getting the GPU to match. If either of these
+# queries fail it is likely related to sorting in spark, and there may not be a lot that we can
+# do to fix this.
+("SELECT LAST(strF) as res FROM test_table GROUP BY intF", "LAST(strF) GROUP BY intF", "strF"),
+("SELECT FIRST(strF) as res FROM test_table GROUP BY intF", "FIRST(strF) GROUP BY intF", "strF"),
 ]
 '''
 ("SELECT LAST(byteF) FROM test_table", "LAST(byteF)"),
