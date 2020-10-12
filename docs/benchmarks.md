@@ -67,7 +67,7 @@ plugin does not yet support decimal types but these will be supported in a futur
 The benchmarks can be executed in two modes currently:
 
 - Execute the query and collect the results to the driver
-- Execute the query and write the results to disk (in Parquet or Orc format)
+- Execute the query and write the results to disk (in Parquet, CSV, or ORC format)
 
 The following commands can be entered into spark-shell to register the data files that the 
 benchmark will query.
@@ -85,7 +85,8 @@ TpcdsLikeBench.collect(spark, "q5", iterations=3)
 ```
 
 The benchmark can be executed with the following syntax to execute the query and write the results 
-to Parquet. There is also a `writeCsv` method for writing the output to CSV files.
+to Parquet. There are also `writeCsv` and `writeOrc` methods for writing the output to CSV or ORC 
+files.
 
 ```scala
 TpcdsLikeBench.writeParquet(spark, "q5", "/data/output/tpcds/q5", iterations=3)
