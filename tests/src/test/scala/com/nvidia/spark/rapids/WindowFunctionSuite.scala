@@ -40,7 +40,8 @@ class WindowFunctionSuite extends SparkQueryCompareTestSuite {
     )
 
   testSparkResultsAreEqual("[Window] [ROWS/RANGE] [default] ", windowTestDfOrcNonNullable,
-      execsAllowedNonGpu=Seq("DeserializeToObjectExec", "CreateExternalRow", "Invoke", "StaticInvoke")) {
+      execsAllowedNonGpu=Seq("DeserializeToObjectExec", "CreateExternalRow",
+        "Invoke", "StaticInvoke")) {
     val rowsWindow = Window.partitionBy("uid")
         .orderBy("dateLong")
     windowAggregationTester(rowsWindow)
