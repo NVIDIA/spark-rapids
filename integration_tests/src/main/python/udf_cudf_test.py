@@ -279,6 +279,16 @@ def test_sql_group(enable_cudf_udf):
                'SpecifiedWindowFrame','UnboundedPreceding$', 'UnboundedFollowing$')
 @cudf_udf
 def test_window(enable_cudf_udf):
+    @pandas_udf("int")
+    def _sum_cpu_func(v: pd.Series) -> int:
+        return v.sum()
+
+    @pandas_udf("integer")
+    def _sum_gpu_func(v: pd.Series) -> int:
+        import cudf
+        gpu_series = cudf.Series(v)
+        return gpu_series.sum()
+
     def cpu_run(spark):
         df = _create_df(spark)
         w = Window.partitionBy('id').rowsBetween(Window.unboundedPreceding, Window.unboundedFollowing)
