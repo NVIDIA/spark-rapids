@@ -250,6 +250,18 @@ object BenchUtils {
         queryPlansWithMetrics,
         queryTimes)
 
+      case w: WriteOrc => BenchmarkReport(
+        filename,
+        queryStartTime.toEpochMilli,
+        environment,
+        testConfiguration,
+        "orc",
+        w.writeOptions,
+        queryDescription,
+        queryPlan,
+        queryPlansWithMetrics,
+        queryTimes)
+
       case w: WriteParquet => BenchmarkReport(
         filename,
         queryStartTime.toEpochMilli,
