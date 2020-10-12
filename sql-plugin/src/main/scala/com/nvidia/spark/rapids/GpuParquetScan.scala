@@ -312,7 +312,7 @@ case class GpuParquetMultiFilePartitionReaderFactory(
     throw new IllegalStateException("GPU column parser called to read rows")
   }
 
-  def resolveURI(path: String): URI = {
+  private def resolveURI(path: String): URI = {
     try {
       val uri = new URI(path)
       if (uri.getScheme() != null) {
@@ -347,6 +347,7 @@ case class GpuParquetMultiFilePartitionReaderFactory(
     logWarning(s"checking all files took: ${System.nanoTime() - start}")
     val conf = broadcastedConf.value.value
     logDebug(s"Number files being read: ${files.size} for task ${TaskContext.get().partitionId()}")
+    logInfo(s"using the optimized file reader, cloud=$isCloud")
     if (isCloud) {
       buildBaseColumnarParquetReaderForCloud(files, conf)
     } else {
@@ -378,7 +379,8 @@ case class GpuParquetMultiFilePartitionReaderFactory(
 
     new MultiFileParquetPartitionReader(conf, files, clippedBlocks,
       isCaseSensitive, readDataSchema, debugDumpPrefix,
-      maxReadBatchSizeRows, maxReadBatchSizeBytes, metrics, partitionSchema)
+      maxReadBatchSizeRows, maxReadBatchSizeBytes, metrics,
+      partitionSchema, numThreads)
   }
 }
 
@@ -753,18 +755,26 @@ object MultiFileThreadPoolFactory {
 }
 
 /**
- * A PartitionReader that can read multiple Parquet files up to the certain size.
+ * A PartitionReader that can read multiple Parquet files up to the certain size. It will
+ * coalesce small files together and copy the block data in a separate thread pool to speed
+ * up processing the small files before sending down to the GPU.
  *
  * Efficiently reading a Parquet split on the GPU requires re-constructing the Parquet file
  * in memory that contains just the column chunks that are needed. This avoids sending
  * unnecessary data to the GPU and saves GPU memory.
  *
  * @param conf the Hadoop configuration
- * @param split the file split to read
+ * @param splits the partitioned files to read
  * @param clippedBlocks the block metadata from the original Parquet file that has been clipped
  *                      to only contain the column chunks to be read
+ * @param isSchemaCaseSensitive whether schema is case sensitive
  * @param readDataSchema the Spark schema describing what will be read
  * @param debugDumpPrefix a path prefix to use for dumping the fabricated Parquet data or null
+ * @param maxReadBatchSizeRows soft limit on the maximum number of rows the reader reads per batch
+ * @param maxReadBatchSizeBytes soft limit on the maximum number of bytes the reader reads per batch
+ * @param execMetrics metrics
+ * @param partitionSchema Schema of partitions.
+ * @param numThreads the size of the threadpool
  */
 class MultiFileParquetPartitionReader(
     conf: Configuration,
@@ -776,7 +786,8 @@ class MultiFileParquetPartitionReader(
     maxReadBatchSizeRows: Integer,
     maxReadBatchSizeBytes: Long,
     execMetrics: Map[String, SQLMetric],
-    partitionSchema: StructType)
+    partitionSchema: StructType,
+    numThreads: Int)
   extends FileParquetPartitionReaderBase(conf, isSchemaCaseSensitive, readDataSchema,
     debugDumpPrefix, execMetrics) {
 
@@ -786,15 +797,20 @@ class MultiFileParquetPartitionReader(
   private def addPartitionValues(
       batch: Option[ColumnarBatch],
       inPartitionValues: InternalRow): Option[ColumnarBatch] = {
-    batch.map { cb =>
-      val partitionValues = inPartitionValues.toSeq(partitionSchema)
-      val partitionScalars = ColumnarPartitionReaderWithPartitionValues
-        .createPartitionValues(partitionValues, partitionSchema)
-      withResource(partitionScalars) { scalars =>
-        ColumnarPartitionReaderWithPartitionValues.addPartitionValues(cb, scalars)
+    if (partitionSchema.nonEmpty) {
+      batch.map { cb =>
+        val partitionValues = inPartitionValues.toSeq(partitionSchema)
+        val partitionScalars = ColumnarPartitionReaderWithPartitionValues
+          .createPartitionValues(partitionValues, partitionSchema)
+        withResource(partitionScalars) { scalars =>
+          ColumnarPartitionReaderWithPartitionValues.addPartitionValues(cb, scalars)
+        }
       }
+    } else {
+      batch
     }
   }
+
   class ParquetCopyBlocksRunner(
       file: Path,
       outhmb: HostMemoryBuffer,
@@ -802,13 +818,12 @@ class MultiFileParquetPartitionReader(
       offset: Long,
       startTs: Long)
     extends Callable[Seq[BlockMetaData]] {
+
     override def call(): Seq[BlockMetaData] = {
-      // logWarning(s"copy file $file offset: $offset")
       var out = new HostMemoryOutputStream(outhmb)
       val res = withResource(file.getFileSystem(conf).open(file)) { in =>
         copyBlocksData(in, out, blocks, offset)
       }
-      // logWarning(s"time to copy data from start is ${System.nanoTime() - startTs}")
       outhmb.close()
       res
     }
@@ -833,14 +848,16 @@ class MultiFileParquetPartitionReader(
 
   private def reallocHostBufferAndCopy(
       in: HostMemoryInputStream,
-      newSizeEstimate: Long): (HostMemoryBuffer, HostMemoryOutputStream) = {
+      newSizeEstimate: Long): HostMemoryBuffer = {
     // realloc memory and copy
     closeOnExcept(HostMemoryBuffer.allocate(newSizeEstimate)) { newhmb =>
       val newout = new HostMemoryOutputStream(newhmb)
       IOUtils.copy(in, newout)
-      (newhmb, newout)
+      newout.close()
+      newhmb
     }
   }
+
   private def readPartFiles(
       blocks: Seq[(Path, BlockMetaData)],
       clippedSchema: MessageType): (HostMemoryBuffer, Long) = {
@@ -860,7 +877,6 @@ class MultiFileParquetPartitionReader(
       var succeeded = false
       val allBlocks = blocks.map(_._2)
       val initTotalSize = calculateParquetOutputSize(allBlocks, clippedSchema, true)
-      // logWarning(s"total size is $initTotalSize")
       var hmb = HostMemoryBuffer.allocate(initTotalSize)
       var out = new HostMemoryOutputStream(hmb)
       try {
@@ -869,10 +885,12 @@ class MultiFileParquetPartitionReader(
         val allOutputBlocks = scala.collection.mutable.ArrayBuffer[BlockMetaData]()
         filesAndBlocks.foreach { case (file, blocks) =>
           val fileBlockSize = blocks.flatMap(_.getColumns.asScala.map(_.getTotalSize)).sum
-          // logWarning(s"slicing buffers offset: $offset, size $fileBlockSize")
+          // use a single buffer and slice it up for different files if we need
           val outLocal = hmb.slice(offset, fileBlockSize)
+          // copy the blocks for each file in parallel using background threads
           tasks.add(MultiFileThreadPoolFactory.submitToThreadPool(
-            new ParquetCopyBlocksRunner(file, outLocal, blocks, offset, System.nanoTime()), 10))
+            new ParquetCopyBlocksRunner(file, outLocal, blocks, offset, System.nanoTime()),
+            numThreads))
           offset += fileBlockSize
         }
 
@@ -881,33 +899,44 @@ class MultiFileParquetPartitionReader(
           allOutputBlocks ++= result
         }
 
-        val lenLeft = initTotalSize - offset
-        // logWarning(s"offset to slice for footer is $offset left is $lenLeft")
-        val finalizehmb = hmb.slice(offset, lenLeft)
-        out.close()
-        val footerout = new HostMemoryOutputStream(finalizehmb)
         // The footer size can change vs the initial estimated because we are combining more blocks
         //  and offsets are larger, check to make sure we allocated enough memory before writing.
         // Not sure how expensive this is, we could throw exception instead if the written
         // size comes out > then the estimated size.
-        // val actualFooterSize = calculateParquetFooterSize(allOutputBlocks, clippedSchema)
-        val footerPos = offset
-        // val bufferSize = initTotalSize
-        writeFooter(footerout, allOutputBlocks, clippedSchema)
-        val footerSize = (footerout.getPos - 0).toInt
-        BytesUtils.writeIntLittleEndian(footerout, footerSize)
-        footerout.write(ParquetPartitionReader.PARQUET_MAGIC)
+        val actualFooterSize = calculateParquetFooterSize(allOutputBlocks, clippedSchema)
+        // 4 + 4 is for writing size and the ending PARQUET_MAGIC.
+        val bufferSizeReq = offset + actualFooterSize + 4 + 4
+        out.close()
+        val totalBufferSize = if (bufferSizeReq > initTotalSize) {
+          logWarning(s"The original estimated size $initTotalSize is to small, " +
+            s"reallocing and copying data to bigger buffer size: $bufferSizeReq")
+          val prevhmb = hmb
+          val in = new HostMemoryInputStream(prevhmb, offset)
+          val newhmb = reallocHostBufferAndCopy(in, bufferSizeReq)
+          hmb = newhmb
+          prevhmb.close()
+          bufferSizeReq
+        } else {
+          initTotalSize
+        }
+        val lenLeft = totalBufferSize - offset
+        val finalizehmb = hmb.slice(offset, lenLeft)
+        out = new HostMemoryOutputStream(finalizehmb)
+        writeFooter(out, allOutputBlocks, clippedSchema)
+        val footerSize = out.getPos.toInt
+        BytesUtils.writeIntLittleEndian(out, footerSize)
+        out.write(ParquetPartitionReader.PARQUET_MAGIC)
         succeeded = true
+        val amountWritten = offset + footerSize
         // triple check we didn't go over memory
-        // if (out.getPos > bufferSize) {
-        //   throw new QueryExecutionException(s"Calculated buffer size $bufferSize is to " +
-        //    s"small, actual written: ${out.getPos}")
-        //  }
-        val datasize = footerPos + footerout.getPos
+        if ((amountWritten) > totalBufferSize) {
+           throw new QueryExecutionException(s"Calculated buffer size $totalBufferSize is to " +
+            s"small, actual written: ${amountWritten}")
+        }
         if (finalizehmb != null) {
           finalizehmb.close()
         }
-        (hmb, datasize)
+        (hmb, amountWritten)
       } finally {
         if (!succeeded) {
           hmb.close()
@@ -927,7 +956,10 @@ class MultiFileParquetPartitionReader(
         if (numRows == 0) {
           None
         } else {
-          Some(new ColumnarBatch(Array.empty, numRows.toInt))
+          // Someone is going to process this data, even if it is just a row count
+          GpuSemaphore.acquireIfNecessary(TaskContext.get())
+          val emptyBatch = new ColumnarBatch(Array.empty, numRows.toInt)
+          addPartitionValues(Some(emptyBatch), partValues)
         }
       } else {
         val table = readToTable(seqPathsAndBlocks, clippedSchema, isCorrectRebaseMode)
@@ -995,7 +1027,7 @@ class MultiFileParquetPartitionReader(
   }
 
   private def populateCurrentBlockChunk():
-  (Boolean, MessageType, InternalRow, Seq[(Path, BlockMetaData)]) = {
+      (Boolean, MessageType, InternalRow, Seq[(Path, BlockMetaData)]) = {
 
     val currentChunk = new ArrayBuffer[(Path, BlockMetaData)]
     var numRows: Long = 0
@@ -1070,8 +1102,9 @@ class MultiFileParquetPartitionReader(
   }
 }
 
-  /**
- * A PartitionReader that can read multiple Parquet files in parallel.
+/**
+ * A PartitionReader that can read multiple Parquet files in parallel. This is most efficient
+ * running in a cloud environment where the I/O of reading is slow.
  *
  * Efficiently reading a Parquet split on the GPU requires re-constructing the Parquet file
  * in memory that contains just the column chunks that are needed. This avoids sending
