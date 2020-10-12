@@ -168,6 +168,8 @@ object BenchUtils {
         case Collect() => df.collect()
         case WriteCsv(path, mode, options) =>
           df.write.mode(mode).options(options).csv(path)
+        case WriteOrc(path, mode, options) =>
+          df.write.mode(mode).options(options).orc(path)
         case WriteParquet(path, mode, options) =>
           df.write.mode(mode).options(options).parquet(path)
       }
