@@ -921,15 +921,15 @@ class MultiFileParquetPartitionReader(
         }
         val lenLeft = totalBufferSize - offset
         val finalizehmb = hmb.slice(offset, lenLeft)
-        out = new HostMemoryOutputStream(finalizehmb)
-        writeFooter(out, allOutputBlocks, clippedSchema)
-        val footerSize = out.getPos.toInt
-        BytesUtils.writeIntLittleEndian(out, footerSize)
-        out.write(ParquetPartitionReader.PARQUET_MAGIC)
+        val footerOut = new HostMemoryOutputStream(finalizehmb)
+        writeFooter(footerOut, allOutputBlocks, clippedSchema)
+        val footerSize = footerOut.getPos
+        BytesUtils.writeIntLittleEndian(footerOut, footerSize.toInt)
+        footerOut.write(ParquetPartitionReader.PARQUET_MAGIC)
         succeeded = true
         val amountWritten = offset + footerSize
         // triple check we didn't go over memory
-        if ((amountWritten) > totalBufferSize) {
+        if (amountWritten > totalBufferSize) {
            throw new QueryExecutionException(s"Calculated buffer size $totalBufferSize is to " +
             s"small, actual written: ${amountWritten}")
         }
