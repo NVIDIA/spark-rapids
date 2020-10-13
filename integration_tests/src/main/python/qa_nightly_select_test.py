@@ -145,10 +145,14 @@ _qa_conf = {
         'spark.rapids.sql.variableFloatAgg.enabled': 'true',
         'spark.rapids.sql.hasNans': 'false',
         'spark.rapids.sql.castStringToFloat.enabled': 'true',
-        'spark.rapids.sql.castFloatToString.enabled': 'true',
-        # some of the first/last tests need a single partition to work reliably when run on a large cluster.
-        'spark.sql.shuffle.partitions': '1'
+        'spark.rapids.sql.castFloatToString.enabled': 'true'
         }
+
+_first_last_qa_conf = _qa_conf.copy()
+_first_last_qa_conf.update({
+    # some of the first/last tests need a single partition to work reliably when run on a large cluster.
+    'spark.sql.shuffle.partitions': '1'
+    })
 
 @approximate_float
 @incompat
@@ -199,7 +203,7 @@ def test_select_first_last(sql_query_line, pytestconfig):
     if sql_query:
         print(sql_query)
         with_cpu_session(lambda spark: num_stringDf_first_last(spark, sql_query_line[2]))
-        assert_gpu_and_cpu_are_equal_collect(lambda spark: spark.sql(sql_query), conf=_qa_conf)
+        assert_gpu_and_cpu_are_equal_collect(lambda spark: spark.sql(sql_query), conf=_first_last_qa_conf)
 
 @approximate_float(abs=1e-6)
 @incompat
