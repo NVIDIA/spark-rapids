@@ -545,7 +545,10 @@ case class GpuFileSourceScanExec(
       optionalBucketSet,
       optionalNumCoalescedBuckets,
       QueryPlan.normalizePredicates(dataFilters, output),
-      None)
+      None,
+      supportsMultiFileOpt,
+      canUseMultiThreadRead,
+      canUseCoalesceFilesRead)
   }
 }
 

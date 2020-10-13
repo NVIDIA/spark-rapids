@@ -360,17 +360,17 @@ case class GpuParquetMultiFilePartitionReaderFactory(
       throw new IllegalStateException("can't use the Multifile reader when both " +
         "canUseMultiThreadRead and canUseCoalesceFilesRead are off!")
     }
-    logWarning(s"files paths are : ${filePaths.mkString(",")}")
+    // logWarning(s"files paths are : ${filePaths.mkString(",")}")
     val isCloud = if (canUseMultiThreadRead) {
       filePaths.map(isCloudFileSystem).contains(true)
     } else {
       false
     }
-    logWarning(s"is cloud is: $isCloud")
-    logWarning(s"checking all files took: ${System.nanoTime() - start}")
+    // logWarning(s"is cloud is: $isCloud")
+    l// ogWarning(s"checking all files took: ${System.nanoTime() - start}")
     val conf = broadcastedConf.value.value
-    logDebug(s"Number files being read: ${files.size} for task ${TaskContext.get().partitionId()}")
-    logInfo(s"using the optimized file reader, cloud=$isCloud")
+    // logDebug(s"Number files being read: ${files.size} for task ${TaskContext.get().partitionId()}")
+    // logInfo(s"using the optimized file reader, cloud=$isCloud")
     if ((canUseMultiThreadRead && isCloud) || !canUseCoalesceFilesRead) {
       buildBaseColumnarParquetReaderForCloud(files, conf)
     } else {
