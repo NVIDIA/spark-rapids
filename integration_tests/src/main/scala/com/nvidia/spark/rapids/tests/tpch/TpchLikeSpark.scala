@@ -24,6 +24,18 @@ import org.apache.spark.sql.types._
 // scalastyle:off line.size.limit
 
 object TpchLikeSpark {
+
+  val tables = Seq(
+    "orders",
+    "lineitem",
+    "customer",
+    "nation",
+    "part",
+    "partsupp",
+    "region",
+    "supplier"
+  )
+
   def csvToParquet(spark: SparkSession, basePath: String, baseOutput: String): Unit = {
     readOrdersCSV(spark, basePath + "/orders.tbl").write.parquet(baseOutput + "/orders.tbl")
     readLineitemCSV(spark, basePath + "/lineitem.tbl").write.parquet(baseOutput + "/lineitem.tbl")

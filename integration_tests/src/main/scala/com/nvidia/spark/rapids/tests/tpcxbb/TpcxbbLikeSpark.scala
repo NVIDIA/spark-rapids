@@ -23,6 +23,28 @@ import org.apache.spark.sql.types._
 
 // DecimalType to DoubleType, bigint to LongType
 object TpcxbbLikeSpark {
+
+  val tables = Seq(
+    "customer",
+    "customer_address",
+    "item",
+    "store_sales",
+    "date_dim",
+    "store",
+    "customer_demographics",
+    "product_reviews",
+    "web_sales",
+    "web_clickstreams",
+    "household_demographics",
+    "web_page",
+    "time_dim",
+    "web_returns",
+    "warehouse",
+    "promotion",
+    "store_returns",
+    "inventory",
+    "item_marketprices")
+
   def csvToParquet(spark: SparkSession, basePath: String, baseOutput: String): Unit = {
     readCustomerCSV(spark, basePath + "/customer/").write.parquet(baseOutput + "/customer/")
     readCustomerAddressCSV(spark, basePath + "/customer_address/").write.parquet(baseOutput + "/customer_address/")

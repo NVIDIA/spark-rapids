@@ -16,7 +16,7 @@
 
 package com.nvidia.spark.rapids.tests.tpch
 
-import com.nvidia.spark.rapids.tests.common.BenchUtils
+import com.nvidia.spark.rapids.tests.common.{BenchUtils, InputSpecification}
 import org.rogach.scallop.ScallopConf
 
 import org.apache.spark.sql.{SaveMode, SparkSession}
@@ -30,6 +30,8 @@ object TpchLikeBench {
    * TpchLikeBench.collect(spark, "q5", 3)
    *
    * @param spark The Spark session
+   * @param inputPath The path to the source data set
+   * @param inputFormat The source data format (parquet, csv, or orc)
    * @param query The name of the query to run e.g. "q5"
    * @param iterations The number of times to run the query.
    * @param summaryFilePrefix Optional prefix for the generated JSON summary file.
@@ -38,13 +40,18 @@ object TpchLikeBench {
    */
   def collect(
       spark: SparkSession,
+      inputPath: String,
+      inputFormat: String,
       query: String,
       iterations: Int = 3,
       summaryFilePrefix: Option[String] = None,
       gcBetweenRuns: Boolean = false): Unit = {
+    // register the source data
+    val input = setupAll(spark, inputPath, inputFormat)
+    // run the benchmark
     BenchUtils.collect(
       spark,
-      null,
+      input,
       spark => getQuery(query)(spark),
       query,
       summaryFilePrefix.getOrElse(s"tpch-$query-collect"),
@@ -59,6 +66,8 @@ object TpchLikeBench {
    * TpchLikeBench.writeCsv(spark, "q5", 3, "/path/to/write")
    *
    * @param spark The Spark session
+   * @param inputPath The path to the source data set
+   * @param inputFormat The source data format (parquet, csv, or orc)
    * @param query The name of the query to run e.g. "q5"
    * @param path The path to write the results to
    * @param mode The SaveMode to use when writing the results
@@ -70,6 +79,8 @@ object TpchLikeBench {
    */
   def writeCsv(
       spark: SparkSession,
+      inputPath: String,
+      inputFormat: String,
       query: String,
       path: String,
       mode: SaveMode = SaveMode.Overwrite,
@@ -77,9 +88,12 @@ object TpchLikeBench {
       iterations: Int = 3,
       summaryFilePrefix: Option[String] = None,
       gcBetweenRuns: Boolean = false): Unit = {
+    // register the source data
+    val input = setupAll(spark, inputPath, inputFormat)
+    // run the benchmark
     BenchUtils.writeCsv(
       spark,
-      null,
+      input,
       spark => getQuery(query)(spark),
       query,
       summaryFilePrefix.getOrElse(s"tpch-$query-csv"),
@@ -97,6 +111,8 @@ object TpchLikeBench {
    * TpchLikeBench.writeOrc(spark, "q5", 3, "/path/to/write")
    *
    * @param spark The Spark session
+   * @param inputPath The path to the source data set
+   * @param inputFormat The source data format (parquet, csv, or orc)
    * @param query The name of the query to run e.g. "q5"
    * @param path The path to write the results to
    * @param mode The SaveMode to use when writing the results
@@ -108,6 +124,8 @@ object TpchLikeBench {
    */
   def writeOrc(
       spark: SparkSession,
+      inputPath: String,
+      inputFormat: String,
       query: String,
       path: String,
       mode: SaveMode = SaveMode.Overwrite,
@@ -115,9 +133,12 @@ object TpchLikeBench {
       iterations: Int = 3,
       summaryFilePrefix: Option[String] = None,
       gcBetweenRuns: Boolean = false): Unit = {
+    // register the source data
+    val input = setupAll(spark, inputPath, inputFormat)
+    // run the benchmark
     BenchUtils.writeOrc(
       spark,
-      null,
+      input,
       spark => getQuery(query)(spark),
       query,
       summaryFilePrefix.getOrElse(s"tpch-$query-csv"),
@@ -135,6 +156,8 @@ object TpchLikeBench {
    * TpchLikeBench.writeParquet(spark, "q5", 3, "/path/to/write")
    *
    * @param spark The Spark session
+   * @param inputPath The path to the source data set
+   * @param inputFormat The source data format (parquet, csv, or orc)
    * @param query The name of the query to run e.g. "q5"
    * @param path The path to write the results to
    * @param mode The SaveMode to use when writing the results
@@ -146,6 +169,8 @@ object TpchLikeBench {
    */
   def writeParquet(
       spark: SparkSession,
+      inputPath: String,
+      inputFormat: String,
       query: String,
       path: String,
       mode: SaveMode = SaveMode.Overwrite,
@@ -153,9 +178,12 @@ object TpchLikeBench {
       iterations: Int = 3,
       summaryFilePrefix: Option[String] = None,
       gcBetweenRuns: Boolean = false): Unit = {
+    // register the source data
+    val input = setupAll(spark, inputPath, inputFormat)
+    // run the benchmark
     BenchUtils.writeParquet(
       spark,
-      null,
+      input,
       spark => getQuery(query)(spark),
       query,
       summaryFilePrefix.getOrElse(s"tpch-$query-parquet"),
@@ -166,20 +194,29 @@ object TpchLikeBench {
       writeOptions)
   }
 
+  def setupAll(spark: SparkSession, path: String, format: String): InputSpecification = {
+    format match {
+      case "parquet" => TpchLikeSpark.setupAllParquet(spark, path)
+      case "csv" => TpchLikeSpark.setupAllCSV(spark, path)
+      case "orc" => TpchLikeSpark.setupAllOrc(spark, path)
+      case other =>
+        throw new RuntimeException(s"Invalid input format: $other")
+    }
+    val partitions: Map[String, Seq[String]] = TpchLikeSpark.tables
+        .map(name => name -> spark.table(name).inputFiles.toSeq)
+        .toMap
+    InputSpecification(
+      path,
+      format,
+      partitions)
+  }
+
   /**
    * The main method can be invoked by using spark-submit.
    */
   def main(args: Array[String]): Unit = {
     val conf = new Conf(args)
-
     val spark = SparkSession.builder.appName("TPC-H Like Bench").getOrCreate()
-    conf.inputFormat().toLowerCase match {
-      case "parquet" => TpchLikeSpark.setupAllParquet(spark, conf.input())
-      case "csv" => TpchLikeSpark.setupAllCSV(spark, conf.input())
-      case other =>
-        println(s"Invalid input format: $other")
-        System.exit(-1)
-    }
 
     println(s"*** RUNNING TPC-H QUERY ${conf.query()}")
     conf.output.toOption match {
@@ -187,6 +224,8 @@ object TpchLikeBench {
         case "parquet" =>
           writeParquet(
             spark,
+            conf.input(),
+            conf.inputFormat(),
             conf.query(),
             path,
             iterations = conf.iterations(),
@@ -194,6 +233,8 @@ object TpchLikeBench {
         case "csv" =>
           writeCsv(
             spark,
+            conf.input(),
+            conf.inputFormat(),
             conf.query(),
             path,
             iterations = conf.iterations(),
@@ -201,6 +242,8 @@ object TpchLikeBench {
         case "orc" =>
           writeOrc(
             spark,
+            conf.input(),
+            conf.inputFormat(),
             conf.query(),
             path,
             iterations = conf.iterations(),
@@ -212,6 +255,8 @@ object TpchLikeBench {
       case _ =>
         collect(
           spark,
+          conf.input(),
+          conf.inputFormat(),
           conf.query(),
           conf.iterations(),
           summaryFilePrefix = conf.summaryFilePrefix.toOption)
