@@ -15,6 +15,7 @@
 
 from pyspark.sql.types import *
 from pyspark import SparkConf, SparkContext, SQLContext
+import pyspark.sql.functions as f
 import datetime
 from argparse import ArgumentParser
 from decimal import Decimal
@@ -123,7 +124,18 @@ def num_stringDf_first_last(spark, field_name):
             ("NVIDIASPARKTEAM", 0, 50, 0, -20, 2.012, 4.000013, -4.01, False, tm, dt),
             (None, 0, 500, -3200, 0, 0.0, 0.0, -4.01, False, tm, dt),
             ("phuoc", 30, 500, 3200, -20, 20.12, 4.000013, 4.01, False, tm, dt)]
-    df = spark.createDataFrame(data,schema=schema).repartition(1).orderBy(field_name)
+    # First/Last have a lot of odd issues with getting these tests to pass
+    # They are non-deterministic unless you have a single partition that is sorted
+    # that is why we are coalesce to a single partition and sort within the partition
+    # also for sort aggregations (done when variable width types like strings are in the output)
+    # spark will re-sort the data based off of the grouping key.  Spark sort appears to
+    # have no guarantee about being a stable sort.  In practice I have found that
+    # sorting the data desc with nulls last matches with what spark is doing, but
+    # there is no real guarantee that it will continue to work, so if the first/last
+    # tests fail on strings this might be the cause of it.
+    df = spark.createDataFrame(data,schema=schema)\
+            .coalesce(1)\
+            .sortWithinPartitions(f.col(field_name).desc_nulls_last())
     df.createOrReplaceTempView("test_table")
 
 def idfn(val):
@@ -133,8 +145,14 @@ _qa_conf = {
         'spark.rapids.sql.variableFloatAgg.enabled': 'true',
         'spark.rapids.sql.hasNans': 'false',
         'spark.rapids.sql.castStringToFloat.enabled': 'true',
-        'spark.rapids.sql.castFloatToString.enabled': 'true',
+        'spark.rapids.sql.castFloatToString.enabled': 'true'
         }
+
+_first_last_qa_conf = _qa_conf.copy()
+_first_last_qa_conf.update({
+    # some of the first/last tests need a single partition to work reliably when run on a large cluster.
+    'spark.sql.shuffle.partitions': '1'
+    })
 
 @approximate_float
 @incompat
@@ -185,7 +203,7 @@ def test_select_first_last(sql_query_line, pytestconfig):
     if sql_query:
         print(sql_query)
         with_cpu_session(lambda spark: num_stringDf_first_last(spark, sql_query_line[2]))
-        assert_gpu_and_cpu_are_equal_collect(lambda spark: spark.sql(sql_query), conf=_qa_conf)
+        assert_gpu_and_cpu_are_equal_collect(lambda spark: spark.sql(sql_query), conf=_first_last_qa_conf)
 
 @approximate_float(abs=1e-6)
 @incompat
