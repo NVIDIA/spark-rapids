@@ -1813,7 +1813,24 @@ trait SparkQueryCompareTestSuite extends FunSuite with Arm {
     )))(_)
   }
 
-  def windowTestDfOrc : SparkSession => DataFrame = {
+  private def setNullableStateForAllColumns(df: DataFrame, nullable: Boolean) : DataFrame = {
+    // get schema
+    val schema = df.schema
+    // modify [[StructField] with name `cn`
+    val newSchema = StructType(schema.map {
+      case StructField(c, t, _, m) ⇒ StructField(c, t, nullable = nullable, m)
+    })
+    // apply new schema
+    df.sqlContext.createDataFrame(df.rdd, newSchema)
+  }
+
+  def windowTestDfOrcNonNullable: SparkSession => DataFrame = {
+    frameFromOrcNonNullableColumns(
+      filename="window-function-test-nonull.orc"
+    )(_)
+  }
+
+  def windowTestDfOrc: SparkSession => DataFrame = {
     frameFromOrc(
       filename="window-function-test.orc"
     )(_)
@@ -1827,6 +1844,14 @@ trait SparkQueryCompareTestSuite extends FunSuite with Arm {
   def frameFromOrc(filename: String): SparkSession => DataFrame = {
     val path = TestResourceFinder.getResourcePath(filename)
     s: SparkSession => s.read.orc(path)
+  }
+
+  def frameFromOrcNonNullableColumns(filename: String): SparkSession => DataFrame = {
+    val path = TestResourceFinder.getResourcePath(filename)
+    s: SparkSession => {
+      val df = s.read.orc(path)
+      setNullableStateForAllColumns(df, false)
+    }
   }
 
   /** Transform a sequence of values into a DataFrame with one column */
