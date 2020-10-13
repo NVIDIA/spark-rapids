@@ -76,13 +76,17 @@ abstract class GpuParquetScanBase(
     supportsSmallFileOpt: Boolean)
   extends ScanWithMetrics with Logging {
 
+  logWarning("read data scheam si " + readDataSchema)
+  logWarning("read partition schema si " + readPartitionSchema)
+  logWarning("supports small file opt is: " + supportsSmallFileOpt)
+
   def isSplitableBase(path: Path): Boolean = true
 
   def createReaderFactoryBase(): PartitionReaderFactory = {
     val broadcastedConf = sparkSession.sparkContext.broadcast(
       new SerializableConfiguration(hadoopConf))
 
-    logDebug(s"Small file optimization support: $supportsSmallFileOpt")
+    logWarning(s"Small file optimization support: $supportsSmallFileOpt")
     if (supportsSmallFileOpt) {
       GpuParquetMultiFilePartitionReaderFactory(sparkSession.sessionState.conf, broadcastedConf,
         dataSchema, readDataSchema, readPartitionSchema, pushedFilters, rapidsConf, metrics)
@@ -830,6 +834,7 @@ class MultiFileParquetPartitionReader(
   }
 
   override def next(): Boolean = {
+    logWarning("supports small file opt is: " )
     batch.foreach(_.close())
     batch = None
     if (!isDone) {
@@ -880,6 +885,7 @@ class MultiFileParquetPartitionReader(
       var hmb = HostMemoryBuffer.allocate(initTotalSize)
       var out = new HostMemoryOutputStream(hmb)
       try {
+        logWarning("read part files for consolidating files")
         out.write(ParquetPartitionReader.PARQUET_MAGIC)
         var offset = out.getPos
         val allOutputBlocks = scala.collection.mutable.ArrayBuffer[BlockMetaData]()
@@ -1268,6 +1274,7 @@ class MultiFileCloudParquetPartitionReader(
   }
 
   override def next(): Boolean = {
+    logWarning("opt supports small file cloud opt is: ")
     withResource(new NvtxWithMetrics("Parquet readBatch", NvtxColor.GREEN,
       metrics(TOTAL_TIME))) { _ =>
       if (isInitted == false) {
@@ -1465,6 +1472,7 @@ class ParquetPartitionReader(
   private val blockIterator:  BufferedIterator[BlockMetaData] = clippedBlocks.iterator.buffered
 
   override def next(): Boolean = {
+    logWarning("no small opt supports small file opt is: " )
     batch.foreach(_.close())
     batch = None
     if (!isDone) {

@@ -35,8 +35,9 @@ parquet_gens_list = [[byte_gen, short_gen, int_gen, long_gen, float_gen, double_
 @pytest.mark.parametrize('parquet_gens', parquet_gens_list, ids=idfn)
 @pytest.mark.parametrize('read_func', [read_parquet_df, read_parquet_sql])
 @pytest.mark.parametrize('mt_opt', ["true", "false"])
+@pytest.mark.parametrize('cloud', ["", "file"])
 @pytest.mark.parametrize('v1_enabled_list', ["", "parquet"])
-def test_read_round_trip(spark_tmp_path, parquet_gens, read_func, mt_opt, v1_enabled_list):
+def test_read_round_trip(spark_tmp_path, parquet_gens, read_func, mt_opt, cloud, v1_enabled_list):
     gen_list = [('_c' + str(i), gen) for i, gen in enumerate(parquet_gens)]
     data_path = spark_tmp_path + '/PARQUET_DATA'
     with_cpu_session(
@@ -44,7 +45,8 @@ def test_read_round_trip(spark_tmp_path, parquet_gens, read_func, mt_opt, v1_ena
             conf={'spark.sql.legacy.parquet.datetimeRebaseModeInWrite': 'CORRECTED'})
     assert_gpu_and_cpu_are_equal_collect(read_func(data_path),
             conf={'spark.rapids.sql.format.parquet.multiThreadedRead.enabled': mt_opt,
-                  'spark.sql.sources.useV1SourceList': v1_enabled_list})
+                  'spark.sql.sources.useV1SourceList': v1_enabled_list,
+                  'spark.rapids.cloudSchemes': cloud})
 
 @allow_non_gpu('FileSourceScanExec')
 @pytest.mark.parametrize('read_func', [read_parquet_df, read_parquet_sql])
@@ -72,7 +74,8 @@ parquet_compress_options = ['none', 'uncompressed', 'snappy', 'gzip']
 @pytest.mark.parametrize('compress', parquet_compress_options)
 @pytest.mark.parametrize('mt_opt', ["true", "false"])
 @pytest.mark.parametrize('v1_enabled_list', ["", "parquet"])
-def test_compress_read_round_trip(spark_tmp_path, compress, mt_opt, v1_enabled_list):
+@pytest.mark.parametrize('cloud', ["", "file"])
+def test_compress_read_round_trip(spark_tmp_path, compress, mt_opt, v1_enabled_list, cloud):
     data_path = spark_tmp_path + '/PARQUET_DATA'
     with_cpu_session(
             lambda spark : binary_op_df(spark, long_gen).write.parquet(data_path),
@@ -80,7 +83,8 @@ def test_compress_read_round_trip(spark_tmp_path, compress, mt_opt, v1_enabled_l
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : spark.read.parquet(data_path),
             conf={'spark.rapids.sql.format.parquet.multiThreadedRead.enabled': mt_opt,
-                  'spark.sql.sources.useV1SourceList': v1_enabled_list})
+                  'spark.sql.sources.useV1SourceList': v1_enabled_list,
+                  'spark.rapids.cloudSchemes': cloud})
 
 parquet_pred_push_gens = [
         byte_gen, short_gen, int_gen, long_gen, float_gen, double_gen, boolean_gen,
@@ -92,8 +96,9 @@ parquet_pred_push_gens = [
 @pytest.mark.parametrize('parquet_gen', parquet_pred_push_gens, ids=idfn)
 @pytest.mark.parametrize('read_func', [read_parquet_df, read_parquet_sql])
 @pytest.mark.parametrize('mt_opt', ["true", "false"])
+@pytest.mark.parametrize('cloud', ["", "file"])
 @pytest.mark.parametrize('v1_enabled_list', ["", "parquet"])
-def test_pred_push_round_trip(spark_tmp_path, parquet_gen, read_func, mt_opt, v1_enabled_list):
+def test_pred_push_round_trip(spark_tmp_path, parquet_gen, read_func, mt_opt, v1_enabled_list, cloud):
     data_path = spark_tmp_path + '/PARQUET_DATA'
     gen_list = [('a', RepeatSeqGen(parquet_gen, 100)), ('b', parquet_gen)]
     s0 = gen_scalar(parquet_gen, force_no_nulls=True)
@@ -104,15 +109,17 @@ def test_pred_push_round_trip(spark_tmp_path, parquet_gen, read_func, mt_opt, v1
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark: rf(spark).select(f.col('a') >= s0),
             conf={'spark.rapids.sql.format.parquet.multiThreadedRead.enabled': mt_opt,
-                  'spark.sql.sources.useV1SourceList': v1_enabled_list})
+                  'spark.sql.sources.useV1SourceList': v1_enabled_list,
+                  'spark.rapids.cloudSchemes': cloud})
 
 parquet_ts_write_options = ['INT96', 'TIMESTAMP_MICROS', 'TIMESTAMP_MILLIS']
 
 @pytest.mark.parametrize('ts_write', parquet_ts_write_options)
 @pytest.mark.parametrize('ts_rebase', ['CORRECTED', 'LEGACY'])
 @pytest.mark.parametrize('mt_opt', ["true", "false"])
+@pytest.mark.parametrize('cloud', ["", "file"])
 @pytest.mark.parametrize('v1_enabled_list', ["", "parquet"])
-def test_ts_read_round_trip(spark_tmp_path, ts_write, ts_rebase, mt_opt, v1_enabled_list):
+def test_ts_read_round_trip(spark_tmp_path, ts_write, ts_rebase, mt_opt, v1_enabled_list, cloud):
     # Once https://github.com/NVIDIA/spark-rapids/issues/132 is fixed replace this with
     # timestamp_gen
     gen = TimestampGen(start=datetime(1900, 1, 1, tzinfo=timezone.utc))
@@ -124,6 +131,7 @@ def test_ts_read_round_trip(spark_tmp_path, ts_write, ts_rebase, mt_opt, v1_enab
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : spark.read.parquet(data_path),
             conf={'spark.rapids.sql.format.parquet.multiThreadedRead.enabled': mt_opt,
+                  'spark.rapids.cloudSchemes': cloud,
                   'spark.sql.sources.useV1SourceList': v1_enabled_list})
 
 def readParquetCatchException(spark, data_path):
@@ -134,8 +142,9 @@ def readParquetCatchException(spark, data_path):
 @pytest.mark.parametrize('ts_write', parquet_ts_write_options)
 @pytest.mark.parametrize('ts_rebase', ['LEGACY'])
 @pytest.mark.parametrize('mt_opt', ["true", "false"])
+@pytest.mark.parametrize('cloud', ["", "file"])
 @pytest.mark.parametrize('v1_enabled_list', ["", "parquet"])
-def test_ts_read_fails_datetime_legacy(spark_tmp_path, ts_write, ts_rebase, mt_opt, v1_enabled_list):
+def test_ts_read_fails_datetime_legacy(spark_tmp_path, ts_write, ts_rebase, mt_opt, v1_enabled_list, cloud):
     # Once https://github.com/NVIDIA/spark-rapids/issues/132 is fixed replace this with
     # timestamp_gen
     gen = TimestampGen(start=datetime(1590, 1, 1, tzinfo=timezone.utc))
@@ -147,6 +156,7 @@ def test_ts_read_fails_datetime_legacy(spark_tmp_path, ts_write, ts_rebase, mt_o
     with_gpu_session(
             lambda spark : readParquetCatchException(spark, data_path),
             conf={'spark.rapids.sql.format.parquet.multiThreadedRead.enabled': mt_opt,
+                  'spark.rapids.cloudSchemes': cloud,
                   'spark.sql.sources.useV1SourceList': v1_enabled_list})
 
 parquet_gens_legacy_list = [[byte_gen, short_gen, int_gen, long_gen, float_gen, double_gen,
@@ -157,8 +167,9 @@ parquet_gens_legacy_list = [[byte_gen, short_gen, int_gen, long_gen, float_gen, 
 
 @pytest.mark.parametrize('parquet_gens', parquet_gens_legacy_list, ids=idfn)
 @pytest.mark.parametrize('mt_opt', ["true", "false"])
+@pytest.mark.parametrize('cloud', ["", "file"])
 @pytest.mark.parametrize('v1_enabled_list', ["", "parquet"])
-def test_read_round_trip_legacy(spark_tmp_path, parquet_gens, mt_opt, v1_enabled_list):
+def test_read_round_trip_legacy(spark_tmp_path, parquet_gens, mt_opt, v1_enabled_list, cloud):
     gen_list = [('_c' + str(i), gen) for i, gen in enumerate(parquet_gens)]
     data_path = spark_tmp_path + '/PARQUET_DATA'
     with_cpu_session(
@@ -167,11 +178,13 @@ def test_read_round_trip_legacy(spark_tmp_path, parquet_gens, mt_opt, v1_enabled
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : spark.read.parquet(data_path),
             conf={'spark.rapids.sql.format.parquet.multiThreadedRead.enabled': mt_opt,
+                  'spark.rapids.cloudSchemes': cloud,
                   'spark.sql.sources.useV1SourceList': v1_enabled_list})
 
 @pytest.mark.parametrize('mt_opt', ["true", "false"])
+@pytest.mark.parametrize('cloud', ["", "file"])
 @pytest.mark.parametrize('v1_enabled_list', ["", "parquet"])
-def test_simple_partitioned_read(spark_tmp_path, mt_opt, v1_enabled_list):
+def test_simple_partitioned_read(spark_tmp_path, mt_opt, v1_enabled_list, cloud):
     # Once https://github.com/NVIDIA/spark-rapids/issues/133 and https://github.com/NVIDIA/spark-rapids/issues/132 are fixed 
     # we should go with a more standard set of generators
     parquet_gens = [byte_gen, short_gen, int_gen, long_gen, float_gen, double_gen,
@@ -190,12 +203,14 @@ def test_simple_partitioned_read(spark_tmp_path, mt_opt, v1_enabled_list):
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : spark.read.parquet(data_path),
             conf={'spark.rapids.sql.format.parquet.multiThreadedRead.enabled': mt_opt,
+                  'spark.rapids.cloudSchemes': cloud,
                   'spark.sql.sources.useV1SourceList': v1_enabled_list})
 
 # In this we are reading the data, but only reading the key the data was partitioned by
 @pytest.mark.parametrize('mt_opt', ["true", "false"])
+@pytest.mark.parametrize('cloud', ["", "file"])
 @pytest.mark.parametrize('v1_enabled_list', ["", "parquet"])
-def test_partitioned_read_just_partitions(spark_tmp_path, mt_opt, v1_enabled_list):
+def test_partitioned_read_just_partitions(spark_tmp_path, mt_opt, v1_enabled_list, cloud):
     parquet_gens = [byte_gen]
     gen_list = [('_c' + str(i), gen) for i, gen in enumerate(parquet_gens)]
     first_data_path = spark_tmp_path + '/PARQUET_DATA/key=0'
@@ -210,11 +225,13 @@ def test_partitioned_read_just_partitions(spark_tmp_path, mt_opt, v1_enabled_lis
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : spark.read.parquet(data_path).select("key"),
             conf={'spark.rapids.sql.format.parquet.multiThreadedRead.enabled': mt_opt,
+                  'spark.rapids.cloudSchemes': cloud,
                   'spark.sql.sources.useV1SourceList': v1_enabled_list})
 
 @pytest.mark.parametrize('mt_opt', ["false", "true"])
+@pytest.mark.parametrize('cloud', ["", "file"])
 @pytest.mark.parametrize('v1_enabled_list', ["", "parquet"])
-def test_read_schema_missing_cols(spark_tmp_path, v1_enabled_list, mt_opt):
+def test_read_schema_missing_cols(spark_tmp_path, v1_enabled_list, mt_opt, cloud):
     # Once https://github.com/NVIDIA/spark-rapids/issues/133 and https://github.com/NVIDIA/spark-rapids/issues/132 are fixed 
     # we should go with a more standard set of generators
     parquet_gens = [byte_gen, short_gen, int_gen, long_gen]
@@ -232,13 +249,15 @@ def test_read_schema_missing_cols(spark_tmp_path, v1_enabled_list, mt_opt):
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : spark.read.parquet(data_path),
             conf={'spark.rapids.sql.format.parquet.multiThreadedRead.enabled': mt_opt,
+                  'spark.rapids.cloudSchemes': cloud,
                   'spark.sql.sources.useV1SourceList': v1_enabled_list,
                   'spark.sql.files.maxPartitionBytes': "1g",
                   'spark.sql.files.minPartitionNum': '1'})
 
 @pytest.mark.parametrize('mt_opt', ["false", "true"])
+@pytest.mark.parametrize('cloud', ["", "file"])
 @pytest.mark.parametrize('v1_enabled_list', ["", "parquet"])
-def test_read_merge_schema(spark_tmp_path, v1_enabled_list, mt_opt):
+def test_read_merge_schema(spark_tmp_path, v1_enabled_list, mt_opt, cloud):
     # Once https://github.com/NVIDIA/spark-rapids/issues/133 and https://github.com/NVIDIA/spark-rapids/issues/132 are fixed 
     # we should go with a more standard set of generators
     parquet_gens = [byte_gen, short_gen, int_gen, long_gen, float_gen, double_gen,
@@ -258,11 +277,13 @@ def test_read_merge_schema(spark_tmp_path, v1_enabled_list, mt_opt):
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : spark.read.option('mergeSchema', 'true').parquet(data_path),
             conf={'spark.rapids.sql.format.parquet.multiThreadedRead.enabled': mt_opt,
-                  'spark.sql.sources.useV1SourceList': v1_enabled_list})
+                  'spark.sql.sources.useV1SourceList': v1_enabled_list,
+                  'spark.rapids.cloudSchemes': cloud})
 
 @pytest.mark.parametrize('mt_opt', ["false", "true"])
+@pytest.mark.parametrize('cloud', ["", "file"])
 @pytest.mark.parametrize('v1_enabled_list', ["", "parquet"])
-def test_read_merge_schema_from_conf(spark_tmp_path, v1_enabled_list, mt_opt):
+def test_read_merge_schema_from_conf(spark_tmp_path, v1_enabled_list, mt_opt, cloud):
     # Once https://github.com/NVIDIA/spark-rapids/issues/133 and https://github.com/NVIDIA/spark-rapids/issues/132 are fixed 
     # we should go with a more standard set of generators
     parquet_gens = [byte_gen, short_gen, int_gen, long_gen, float_gen, double_gen,
@@ -283,6 +304,7 @@ def test_read_merge_schema_from_conf(spark_tmp_path, v1_enabled_list, mt_opt):
             lambda spark : spark.read.parquet(data_path),
             conf={'spark.rapids.sql.format.parquet.multiThreadedRead.enabled': mt_opt,
                   'spark.sql.parquet.mergeSchema': "true",
+                  'spark.rapids.cloudSchemes': cloud,
                   'spark.sql.sources.useV1SourceList': v1_enabled_list})
 
 parquet_write_gens_list = [
@@ -291,9 +313,10 @@ parquet_write_gens_list = [
 
 @pytest.mark.parametrize('parquet_gens', parquet_write_gens_list, ids=idfn)
 @pytest.mark.parametrize('mt_opt', ["true", "false"])
+@pytest.mark.parametrize('cloud', ["", "file"])
 @pytest.mark.parametrize('v1_enabled_list', ["", "parquet"])
 @pytest.mark.parametrize('ts_type', ["TIMESTAMP_MICROS", "TIMESTAMP_MILLIS"])
-def test_write_round_trip(spark_tmp_path, parquet_gens, mt_opt, v1_enabled_list, ts_type):
+def test_write_round_trip(spark_tmp_path, parquet_gens, mt_opt, v1_enabled_list, ts_type, cloud):
     gen_list = [('_c' + str(i), gen) for i, gen in enumerate(parquet_gens)]
     data_path = spark_tmp_path + '/PARQUET_DATA'
     assert_gpu_and_cpu_writes_are_equal_collect(
@@ -303,6 +326,7 @@ def test_write_round_trip(spark_tmp_path, parquet_gens, mt_opt, v1_enabled_list,
             conf={'spark.sql.legacy.parquet.datetimeRebaseModeInWrite': 'CORRECTED',
                 'spark.sql.parquet.outputTimestampType': ts_type,
                 'spark.rapids.sql.format.parquet.multiThreadedRead.enabled': mt_opt,
+                'spark.rapids.cloudSchemes': cloud,
                 'spark.sql.sources.useV1SourceList': v1_enabled_list})
 
 @pytest.mark.parametrize('ts_type', ['TIMESTAMP_MILLIS', 'TIMESTAMP_MICROS'])
@@ -328,9 +352,10 @@ parquet_part_write_gens = [
 @ignore_order
 @pytest.mark.parametrize('parquet_gen', parquet_part_write_gens, ids=idfn)
 @pytest.mark.parametrize('mt_opt', ["true", "false"])
+@pytest.mark.parametrize('cloud', ["", "file"])
 @pytest.mark.parametrize('v1_enabled_list', ["", "parquet"])
 @pytest.mark.parametrize('ts_type', ['TIMESTAMP_MILLIS', 'TIMESTAMP_MICROS'])
-def test_part_write_round_trip(spark_tmp_path, parquet_gen, mt_opt, v1_enabled_list, ts_type):
+def test_part_write_round_trip(spark_tmp_path, parquet_gen, mt_opt, v1_enabled_list, ts_type, cloud):
     gen_list = [('a', RepeatSeqGen(parquet_gen, 10)),
             ('b', parquet_gen)]
     data_path = spark_tmp_path + '/PARQUET_DATA'
@@ -341,25 +366,29 @@ def test_part_write_round_trip(spark_tmp_path, parquet_gen, mt_opt, v1_enabled_l
             conf={'spark.sql.legacy.parquet.datetimeRebaseModeInWrite': 'CORRECTED',
                 'spark.sql.parquet.outputTimestampType': ts_type,
                 'spark.rapids.sql.format.parquet.multiThreadedRead.enabled': mt_opt,
+                'spark.rapids.cloudSchemes': cloud,
                 'spark.sql.sources.useV1SourceList': v1_enabled_list})
 
 parquet_write_compress_options = ['none', 'uncompressed', 'snappy']
 @pytest.mark.parametrize('compress', parquet_write_compress_options)
 @pytest.mark.parametrize('mt_opt', ["true", "false"])
+@pytest.mark.parametrize('cloud', ["", "file"])
 @pytest.mark.parametrize('v1_enabled_list', ["", "parquet"])
-def test_compress_write_round_trip(spark_tmp_path, compress, mt_opt, v1_enabled_list):
+def test_compress_write_round_trip(spark_tmp_path, compress, mt_opt, v1_enabled_list, cloud):
     data_path = spark_tmp_path + '/PARQUET_DATA'
     assert_gpu_and_cpu_writes_are_equal_collect(
             lambda spark, path : binary_op_df(spark, long_gen).coalesce(1).write.parquet(path),
             lambda spark, path : spark.read.parquet(path),
             data_path,
             conf={'spark.sql.parquet.compression.codec': compress,
+                'spark.rapids.cloudSchemes': cloud,
                 'spark.rapids.sql.format.parquet.multiThreadedRead.enabled': mt_opt,
                 'spark.sql.sources.useV1SourceList': v1_enabled_list})
 
 @pytest.mark.parametrize('mt_opt', ["true", "false"])
+@pytest.mark.parametrize('cloud', ["", "file"])
 @pytest.mark.parametrize('v1_enabled_list', ["", "parquet"])
-def test_input_meta(spark_tmp_path, mt_opt, v1_enabled_list):
+def test_input_meta(spark_tmp_path, mt_opt, v1_enabled_list, cloud):
     first_data_path = spark_tmp_path + '/PARQUET_DATA/key=0'
     with_cpu_session(
             lambda spark : unary_op_df(spark, long_gen).write.parquet(first_data_path))
@@ -375,8 +404,8 @@ def test_input_meta(spark_tmp_path, mt_opt, v1_enabled_list):
                         'input_file_block_start()',
                         'input_file_block_length()'),
             conf={'spark.rapids.sql.format.parquet.multiThreadedRead.enabled': mt_opt,
+                  'spark.rapids.cloudSchemes': cloud,
                   'spark.sql.sources.useV1SourceList': v1_enabled_list})
-
 
 def createBucketedTableAndJoin(spark):
     spark.range(10e4).write.bucketBy(4, "id").sortBy("id").mode('overwrite').saveAsTable("bucketed_4_10e4")
@@ -388,12 +417,14 @@ def createBucketedTableAndJoin(spark):
 @ignore_order
 @allow_non_gpu('DataWritingCommandExec')
 @pytest.mark.parametrize('mt_opt', ["true", "false"])
+@pytest.mark.parametrize('cloud', ["", "file"])
 @pytest.mark.parametrize('v1_enabled_list', ["", "parquet"])
 # this test would be better if we could ensure exchanges didn't exist - ie used buckets
-def test_buckets(spark_tmp_path, mt_opt, v1_enabled_list):
+def test_buckets(spark_tmp_path, mt_opt, v1_enabled_list, cloud):
     assert_gpu_and_cpu_are_equal_collect(createBucketedTableAndJoin,
             conf={'spark.rapids.sql.format.parquet.multiThreadedRead.enabled': mt_opt,
                   'spark.sql.sources.useV1SourceList': v1_enabled_list,
+                  'spark.rapids.cloudSchemes': cloud,
                   "spark.sql.autoBroadcastJoinThreshold": '-1'})
 
 @pytest.mark.parametrize('v1_enabled_list', ["", "parquet"])

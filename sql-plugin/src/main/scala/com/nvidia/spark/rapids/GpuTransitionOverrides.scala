@@ -174,6 +174,54 @@ class GpuTransitionOverrides extends Rule[SparkPlan] {
     plan.expressions.exists(disableCoalesceUntilInput)
   }
 
+  private def disableScanUntilInput(exec: Expression): Boolean = {
+    exec match {
+      case _: InputFileName => true
+      case _: InputFileBlockStart => true
+      case _: InputFileBlockLength => true
+      case _: GpuInputFileName => true
+      case _: GpuInputFileBlockStart => true
+      case _: GpuInputFileBlockLength => true
+      case e => e.children.exists(disableScanUntilInput)
+    }
+  }
+
+  private def disableScanUntilInput(plan: SparkPlan): Boolean = {
+    plan.expressions.exists(disableScanUntilInput)
+  }
+
+  // This walks from the output to the input to look for any uses of InputFileName,
+  // InputFileBlockStart, or InputFileBlockLength when we use a Parquet read because
+  // we can't support the small file optimization when this is used.
+  private def updateScansForInput(plan: SparkPlan,
+      disableUntilInput: Boolean = false): SparkPlan = plan match {
+    case batchScan: GpuBatchScanExec =>
+      if (batchScan.scan.isInstanceOf[GpuParquetScanBase] &&
+        (disableUntilInput || disableScanUntilInput(batchScan))) {
+        logWarning("replacing gpu batchscan exec")
+        val t = ShimLoader.getSparkShims.copyParquetBatchScanExec(batchScan, false)
+        logWarning("copied batch scan: " + t)
+        t
+      } else {
+        logWarning("not replacing gpu batchscan exec")
+        batchScan
+      }
+    case fileSourceScan: GpuFileSourceScanExec =>
+      if (fileSourceScan.supportsSmallFileOpt == true &&
+        (disableUntilInput || disableScanUntilInput(fileSourceScan))) {
+        logWarning("replacing gpu file source exec")
+        ShimLoader.getSparkShims.copyFileSourceScanExec(fileSourceScan, false)
+      } else {
+        logWarning("not replacing gpu file source exec")
+        fileSourceScan
+      }
+    case p =>
+      val planDisableUntilInput = disableScanUntilInput(p) && hasDirectLineToInput(p)
+      p.withNewChildren(p.children.map(c => {
+        updateScansForInput(c, planDisableUntilInput || disableUntilInput)
+      }))
+  }
+
   // This walks from the output to the input so disableUntilInput can walk its way from when
   // we hit something that cannot allow for coalesce up until the input
   private def insertCoalesce(plan: SparkPlan,
@@ -332,6 +380,8 @@ class GpuTransitionOverrides extends Rule[SparkPlan] {
     this.conf = new RapidsConf(plan.conf)
     if (conf.isSqlEnabled) {
       var updatedPlan = insertHashOptimizeSorts(plan)
+      // updatedPlan = updateScansForInput(updatedPlan)
+      logWarning("updatedPlan is " + updatedPlan)
       updatedPlan = insertCoalesce(insertColumnarFromGpu(updatedPlan))
       updatedPlan = optimizeCoalesce(if (plan.conf.adaptiveExecutionEnabled) {
         optimizeAdaptiveTransitions(updatedPlan, None)
