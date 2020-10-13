@@ -140,13 +140,13 @@ class GpuWindowExpressionMeta(
               }
             }
             if (allNotTime) {
-              val allNullable = orderSpec.forall(_.nullable)
+              val anyNullable = orderSpec.exists(_.nullable)
               val areLowerAndUpperOkay =
                 (lower == 0 || lower == Int.MaxValue || lower == Int.MinValue) &&
                     (upper == 0 || upper == Int.MaxValue || upper == Int.MinValue)
-              if (!allNullable || !areLowerAndUpperOkay) {
-                willNotWorkOnGpu("range based windows on non-date/time columns is only" +
-                    " supported if the columns are nullable and for very specific rage values.")
+              if (anyNullable || !areLowerAndUpperOkay) {
+                willNotWorkOnGpu("range based windows on non-date/time columns is only supported" +
+                    " if the columns are not nullable and for very specific range values.")
               }
             } else if (allTime){
               if (orderSpec.length > 1) {
