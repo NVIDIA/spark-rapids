@@ -519,7 +519,7 @@ SELECT_SQL = [
 ("SELECT MIN(intF) FROM test_table", "MIN(intF)"),
 ("SELECT MAX(intF) FROM test_table", "MAX(intF)"),
 ("SELECT AVG(intF) FROM test_table", "AVG(intF)"),
-("SELECT intF, shortF FROM test_table ORDER by intF", "intF, shortF ORDER by intF"),
+("SELECT intF, shortF FROM test_table ORDER by intF, shortF", "intF, shortF ORDER by intF, shortF"),
 
 ("SELECT dateF, COALESCE(dateF,'N/A') FROM test_table", "dateF, COALESCE(dateF,'N/A')"),
 ("SELECT timestampF, COALESCE(timestampF,'N/A') FROM test_table", "timestampF, COALESCE(timestampF,'N/A')"),
