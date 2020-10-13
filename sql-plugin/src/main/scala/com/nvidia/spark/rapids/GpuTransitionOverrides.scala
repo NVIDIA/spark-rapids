@@ -198,8 +198,11 @@ class GpuTransitionOverrides extends Rule[SparkPlan] {
     case batchScan: GpuBatchScanExec =>
       if (batchScan.scan.isInstanceOf[GpuParquetScanBase] &&
         (disableUntilInput || disableScanUntilInput(batchScan))) {
+        val parquetScanBase = batchScan.asInstanceOf[GpuParquetScanBase]
         logWarning("replacing gpu batchscan exec")
-        val t = ShimLoader.getSparkShims.copyParquetBatchScanExec(batchScan, false)
+        val t = ShimLoader.getSparkShims.copyParquetBatchScanExec(batchScan,
+          parquetScanBase.getSupportsMultiFileOpt,
+          parquetScanBase.getCanUseMultiThreadRead, false)
         logWarning("copied batch scan: " + t)
         t
       } else {
@@ -207,10 +210,12 @@ class GpuTransitionOverrides extends Rule[SparkPlan] {
         batchScan
       }
     case fileSourceScan: GpuFileSourceScanExec =>
-      if (fileSourceScan.supportsSmallFileOpt == true &&
+      if (fileSourceScan.supportsMultiFileOpt == true &&
         (disableUntilInput || disableScanUntilInput(fileSourceScan))) {
         logWarning("replacing gpu file source exec")
-        ShimLoader.getSparkShims.copyFileSourceScanExec(fileSourceScan, false)
+        ShimLoader.getSparkShims.copyFileSourceScanExec(fileSourceScan,
+          fileSourceScan.supportsMultiFileOpt,
+          fileSourceScan.canUseMultiThreadRead, false)
       } else {
         logWarning("not replacing gpu file source exec")
         fileSourceScan

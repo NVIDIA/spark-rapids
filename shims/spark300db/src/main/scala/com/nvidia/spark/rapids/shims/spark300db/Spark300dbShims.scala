@@ -103,8 +103,16 @@ class Spark300dbShims extends Spark300Shims {
               wrapped.relation.bucketSpec,
               GpuFileSourceScanExec.convertFileFormat(wrapped.relation.fileFormat),
               options)(sparkSession)
-            val canUseSmallFileOpt = newRelation.fileFormat match {
+            val canUseMultiThreadRead = newRelation.fileFormat match {
               case _: ParquetFileFormat => conf.isParquetMultiThreadReadEnabled
+              case _ => false
+            }
+            val canUseCoalesceFilesRead = newRelation.fileFormat match {
+              case _: ParquetFileFormat => conf.isParquetCoalesceFileReadEnabled
+              case _ => false
+            }
+            val supportsMultiFileOpt = newRelation.fileFormat match {
+              case _: ParquetFileFormat => conf.isParquetSmallFilesEnabled
               case _ => false
             }
             GpuFileSourceScanExec(
@@ -117,7 +125,9 @@ class Spark300dbShims extends Spark300Shims {
               None,
               wrapped.dataFilters,
               wrapped.tableIdentifier,
-              canUseSmallFileOpt)
+              supportsMultiFileOpt,
+              canUseMultiThreadRead,
+              canUseCoalesceFilesRead)
           }
         }),
       GpuOverrides.exec[SortMergeJoinExec](
@@ -193,8 +203,24 @@ class Spark300dbShims extends Spark300Shims {
     FilePartition(index, files)
   }
 
-  override def copyFileSourceScanExec(scanExec: GpuFileSourceScanExec,
-      supportsSmallFileOpt: Boolean): GpuFileSourceScanExec = {
-    scanExec.copy(supportsSmallFileOpt=supportsSmallFileOpt)
+  override def copyParquetBatchScanExec(
+      batchScanExec: GpuBatchScanExec,
+      supportsMultiFileOpt: Boolean,
+      canUseMultiThreadRead: Boolean,
+      canUseCoalesceFilesRead: Boolean): GpuBatchScanExec = {
+    val scan = batchScanExec.scan.asInstanceOf[GpuParquetScan]
+    val scanCopy = scan.copy(supportsMultiFileOpt=supportsMultiFileOpt,
+      canUseMultiThreadRead=canUseMultiThreadRead, canUseCoalesceFilesRead=canUseCoalesceFilesRead)
+    batchScanExec.copy(scan=scanCopy)
   }
+
+  override def copyFileSourceScanExec(
+      scanExec: GpuFileSourceScanExec,
+      supportsMultiFileOpt: Boolean,
+      canUseMultiThreadRead: Boolean,
+      canUseCoalesceFilesRead: Boolean): GpuFileSourceScanExec = {
+    scanExec.copy(supportsMultiFileOpt = supportsMultiFileOpt,
+      canUseMultiThreadRead=canUseMultiThreadRead, canUseCoalesceFilesRead=canUseCoalesceFilesRead)
+  }
+
 }

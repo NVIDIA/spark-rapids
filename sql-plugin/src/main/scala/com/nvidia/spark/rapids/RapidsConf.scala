@@ -492,13 +492,38 @@ object RapidsConf {
     .booleanConf
     .createWithDefault(true)
 
+  val ENABLE_SMALL_FILES_PARQUET = conf("spark.rapids.sql.format.parquet.smallFilesOpt.enabled")
+    .doc("When set to true, handles reading multiple small files within a partition more " +
+      "efficiently. The algorithm used is either coalescing files for local filesystems or " +
+      "reading files using multiple parallel threads for cloud filesystems. See " +
+      "spark.rapids.sql.format.parquet.coalesceFiles.enabled, " +
+      "spark.rapids.sql.format.parquet.multiThreadedRead.enabled, and " +
+      "spark.rapids.cloudSchemes.")
+    .booleanConf
+    .createWithDefault(true)
+
+  val ENABLE_COALESCE_FILES_PARQUET_READS = conf(
+    "spark.rapids.sql.format.parquet.coalesceFiles.enabled")
+    .doc("When set to true, allows for reads multiple small files within a partition more " +
+      "efficiently by coalescing multiple small files into a single buffer the CPU side before " +
+      "sending to the GPU. This optimization is used when reading from a local filesystem. " +
+      "spark.rapids.cloudSchemes is used to determine if the file is from a local filesystem. " +
+      "This does also copy blocks from a file in parallel using background threads and " +
+      "the number of threads used is controlled by " +
+      "spark.rapids.sql.format.parquet.multiThreadedRead.numThreads. " +
+      "For cloud filesystems see: spark.rapids.sql.format.parquet.multiThreadedRead.enabled.")
+    .booleanConf
+    .createWithDefault(true)
+
   val ENABLE_MULTITHREAD_PARQUET_READS = conf(
     "spark.rapids.sql.format.parquet.multiThreadedRead.enabled")
-    .doc("When set to true, reads multiple small files within a partition more efficiently " +
-      "by reading each file in a separate thread in parallel on the CPU side before " +
-      "sending to the GPU. Limited by " +
-      "spark.rapids.sql.format.parquet.multiThreadedRead.numThreads " +
-      "and spark.rapids.sql.format.parquet.multiThreadedRead.maxNumFilesParallel")
+    .doc("When set to true, allows for reads multiple small files within a partition more " +
+      "efficiently by reading each file in a separate thread in parallel on the CPU side before " +
+      "sending to the GPU. This optimization is used when reading from a cloud blob store. " +
+      "spark.rapids.cloudSchemes is used to determine if the file is from a cloud filesystem. " +
+      "Limited by spark.rapids.sql.format.parquet.multiThreadedRead.numThreads " +
+      "and spark.rapids.sql.format.parquet.multiThreadedRead.maxNumFilesParallel. " +
+      "For non-cloud filesystems see: spark.rapids.sql.format.parquet.coalesceFiles.enabled.")
     .booleanConf
     .createWithDefault(true)
 
@@ -938,6 +963,10 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
   lazy val isCsvTimestampEnabled: Boolean = get(ENABLE_CSV_TIMESTAMPS)
 
   lazy val isParquetEnabled: Boolean = get(ENABLE_PARQUET)
+
+  lazy val isParquetCoalesceFileReadEnabled: Boolean = get(ENABLE_COALESCE_FILES_PARQUET_READS)
+
+  lazy val isParquetSmallFilesEnabled: Boolean = get(ENABLE_SMALL_FILES_PARQUET)
 
   lazy val isParquetMultiThreadReadEnabled: Boolean = get(ENABLE_MULTITHREAD_PARQUET_READS)
 

@@ -73,23 +73,32 @@ abstract class GpuParquetScanBase(
     readPartitionSchema: StructType,
     pushedFilters: Array[Filter],
     rapidsConf: RapidsConf,
-    supportsSmallFileOpt: Boolean)
+    supportsMultiFileOpt: Boolean,
+    canUseMultiThreadRead: Boolean,
+    canUseCoalesceFilesRead: Boolean)
   extends ScanWithMetrics with Logging {
 
-  logWarning("read data scheam si " + readDataSchema)
-  logWarning("read partition schema si " + readPartitionSchema)
-  logWarning("supports small file opt is: " + supportsSmallFileOpt)
+  def getSupportsMultiFileOpt: Boolean = supportsMultiFileOpt
+
+  def getCanUseMultiThreadRead: Boolean = canUseMultiThreadRead
+
+  def getCanUseCoalesceFilesRead: Boolean = canUseCoalesceFilesRead
 
   def isSplitableBase(path: Path): Boolean = true
+
+  private def useMultiFileReader: Boolean =
+    supportsMultiFileOpt && (canUseMultiThreadRead || canUseCoalesceFilesRead)
 
   def createReaderFactoryBase(): PartitionReaderFactory = {
     val broadcastedConf = sparkSession.sparkContext.broadcast(
       new SerializableConfiguration(hadoopConf))
 
-    logWarning(s"Small file optimization support: $supportsSmallFileOpt")
-    if (supportsSmallFileOpt) {
+    logWarning(s"Small file optimization support: $supportsMultiFileOpt " +
+      s"$canUseMultiThreadRead $canUseCoalesceFilesRead")
+    if (useMultiFileReader) {
       GpuParquetMultiFilePartitionReaderFactory(sparkSession.sessionState.conf, broadcastedConf,
-        dataSchema, readDataSchema, readPartitionSchema, pushedFilters, rapidsConf, metrics)
+        dataSchema, readDataSchema, readPartitionSchema, pushedFilters, rapidsConf, metrics,
+        canUseMultiThreadRead, canUseCoalesceFilesRead)
     } else {
       GpuParquetPartitionReaderFactory(sparkSession.sessionState.conf, broadcastedConf,
         dataSchema, readDataSchema, readPartitionSchema, pushedFilters, rapidsConf, metrics)
@@ -295,7 +304,9 @@ case class GpuParquetMultiFilePartitionReaderFactory(
     partitionSchema: StructType,
     filters: Array[Filter],
     @transient rapidsConf: RapidsConf,
-    metrics: Map[String, SQLMetric]) extends PartitionReaderFactory with Arm with Logging {
+    metrics: Map[String, SQLMetric],
+    canUseMultiThreadRead: Boolean,
+    canUseCoalesceFilesRead: Boolean) extends PartitionReaderFactory with Arm with Logging {
   private val isCaseSensitive = sqlConf.caseSensitiveAnalysis
   private val debugDumpPrefix = rapidsConf.parquetDebugDumpPrefix
   private val maxReadBatchSizeRows = rapidsConf.maxReadBatchSizeRows
@@ -345,14 +356,22 @@ case class GpuParquetMultiFilePartitionReaderFactory(
     val filePaths = files.map(_.filePath)
     // TODO - do we really want to check all files?? see what perf is
     val start = System.nanoTime()
+    if (!canUseMultiThreadRead && !canUseCoalesceFilesRead) {
+      throw new IllegalStateException("can't use the Multifile reader when both " +
+        "canUseMultiThreadRead and canUseCoalesceFilesRead are off!")
+    }
     logWarning(s"files paths are : ${filePaths.mkString(",")}")
-    val isCloud = filePaths.map(isCloudFileSystem).contains(true)
+    val isCloud = if (canUseMultiThreadRead) {
+      filePaths.map(isCloudFileSystem).contains(true)
+    } else {
+      false
+    }
     logWarning(s"is cloud is: $isCloud")
     logWarning(s"checking all files took: ${System.nanoTime() - start}")
     val conf = broadcastedConf.value.value
     logDebug(s"Number files being read: ${files.size} for task ${TaskContext.get().partitionId()}")
     logInfo(s"using the optimized file reader, cloud=$isCloud")
-    if (isCloud) {
+    if ((canUseMultiThreadRead && isCloud) || !canUseCoalesceFilesRead) {
       buildBaseColumnarParquetReaderForCloud(files, conf)
     } else {
       buildBaseColumnarParquetReader(files, conf)

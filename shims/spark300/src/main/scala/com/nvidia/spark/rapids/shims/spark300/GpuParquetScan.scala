@@ -42,10 +42,12 @@ case class GpuParquetScan(
     partitionFilters: Seq[Expression],
     dataFilters: Seq[Expression],
     rapidsConf: RapidsConf,
-    supportsSmallFileOpt: Boolean = true)
+    supportsMultiFileOpt: Boolean = true,
+    canUseMultiThreadRead: Boolean = true,
+    canUseCoalesceFilesRead: Boolean = true)
   extends GpuParquetScanBase(sparkSession, hadoopConf, dataSchema,
     readDataSchema, readPartitionSchema, pushedFilters, rapidsConf,
-    supportsSmallFileOpt) with FileScan {
+    supportsMultiFileOpt, canUseMultiThreadRead, canUseCoalesceFilesRead) with FileScan {
 
   override def isSplitable(path: Path): Boolean = super.isSplitableBase(path)
 
@@ -55,7 +57,10 @@ case class GpuParquetScan(
     case p: GpuParquetScan =>
       super.equals(p) && dataSchema == p.dataSchema && options == p.options &&
         equivalentFilters(pushedFilters, p.pushedFilters) && rapidsConf == p.rapidsConf &&
-        supportsSmallFileOpt == p.supportsSmallFileOpt
+        supportsMultiFileOpt == p.supportsMultiFileOpt &&
+        canUseMultiThreadRead == p.canUseMultiThreadRead &&
+        canUseCoalesceFilesRead == p.canUseCoalesceFilesRead
+
     case _ => false
   }
 
