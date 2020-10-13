@@ -78,6 +78,27 @@ object BenchUtils {
       gcBetweenRuns)
   }
 
+  /** Perform benchmark of writing results to ORC */
+  def writeOrc(
+      spark: SparkSession,
+      createDataFrame: SparkSession => DataFrame,
+      queryDescription: String,
+      filenameStub: String,
+      iterations: Int,
+      gcBetweenRuns: Boolean,
+      path: String,
+      mode: SaveMode = SaveMode.Overwrite,
+      writeOptions: Map[String, String] = Map.empty): Unit = {
+    runBench(
+      spark,
+      createDataFrame,
+      WriteOrc(path, mode, writeOptions),
+      queryDescription,
+      filenameStub,
+      iterations,
+      gcBetweenRuns)
+  }
+
   /** Perform benchmark of writing results to Parquet */
   def writeParquet(
       spark: SparkSession,
@@ -147,6 +168,8 @@ object BenchUtils {
         case Collect() => df.collect()
         case WriteCsv(path, mode, options) =>
           df.write.mode(mode).options(options).csv(path)
+        case WriteOrc(path, mode, options) =>
+          df.write.mode(mode).options(options).orc(path)
         case WriteParquet(path, mode, options) =>
           df.write.mode(mode).options(options).parquet(path)
       }
@@ -221,6 +244,18 @@ object BenchUtils {
         environment,
         testConfiguration,
         "csv",
+        w.writeOptions,
+        queryDescription,
+        queryPlan,
+        queryPlansWithMetrics,
+        queryTimes)
+
+      case w: WriteOrc => BenchmarkReport(
+        filename,
+        queryStartTime.toEpochMilli,
+        environment,
+        testConfiguration,
+        "orc",
         w.writeOptions,
         queryDescription,
         queryPlan,
@@ -632,6 +667,11 @@ sealed trait ResultsAction
 case class Collect() extends ResultsAction
 
 case class WriteCsv(
+    path: String,
+    mode: SaveMode,
+    writeOptions: Map[String, String]) extends ResultsAction
+
+case class WriteOrc(
     path: String,
     mode: SaveMode,
     writeOptions: Map[String, String]) extends ResultsAction
