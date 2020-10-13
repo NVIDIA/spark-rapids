@@ -41,6 +41,7 @@ object BenchUtils {
   /** Perform benchmark of calling collect */
   def collect(
       spark: SparkSession,
+      input: InputSpecification,
       createDataFrame: SparkSession => DataFrame,
       queryDescription: String,
       filenameStub: String,
@@ -49,6 +50,7 @@ object BenchUtils {
   ): Unit = {
     runBench(
       spark,
+      input,
       createDataFrame,
       Collect(),
       queryDescription,
@@ -60,6 +62,7 @@ object BenchUtils {
   /** Perform benchmark of writing results to CSV */
   def writeCsv(
       spark: SparkSession,
+      input: InputSpecification,
       createDataFrame: SparkSession => DataFrame,
       queryDescription: String,
       filenameStub: String,
@@ -70,6 +73,7 @@ object BenchUtils {
       writeOptions: Map[String, String] = Map.empty): Unit = {
     runBench(
       spark,
+      input,
       createDataFrame,
       WriteCsv(path, mode, writeOptions),
       queryDescription,
@@ -81,6 +85,7 @@ object BenchUtils {
   /** Perform benchmark of writing results to ORC */
   def writeOrc(
       spark: SparkSession,
+      input: InputSpecification,
       createDataFrame: SparkSession => DataFrame,
       queryDescription: String,
       filenameStub: String,
@@ -91,6 +96,7 @@ object BenchUtils {
       writeOptions: Map[String, String] = Map.empty): Unit = {
     runBench(
       spark,
+      input,
       createDataFrame,
       WriteOrc(path, mode, writeOptions),
       queryDescription,
@@ -102,6 +108,7 @@ object BenchUtils {
   /** Perform benchmark of writing results to Parquet */
   def writeParquet(
       spark: SparkSession,
+      input: InputSpecification,
       createDataFrame: SparkSession => DataFrame,
       queryDescription: String,
       filenameStub: String,
@@ -112,6 +119,7 @@ object BenchUtils {
       writeOptions: Map[String, String] = Map.empty): Unit = {
     runBench(
       spark,
+      input,
       createDataFrame,
       WriteParquet(path, mode, writeOptions),
       queryDescription,
@@ -126,6 +134,7 @@ object BenchUtils {
    * variables.
    *
    * @param spark           The Spark session
+   * @param input           Metadata about the input data set.
    * @param createDataFrame Function to create a DataFrame from the Spark session.
    * @param resultsAction   Optional action to perform after creating the DataFrame, with default
    *                        behavior of calling df.collect() but user could provide function to
@@ -137,6 +146,7 @@ object BenchUtils {
    */
   def runBench(
       spark: SparkSession,
+      input: InputSpecification,
       createDataFrame: SparkSession => DataFrame,
       resultsAction: ResultsAction,
       queryDescription: String,
@@ -231,6 +241,7 @@ object BenchUtils {
         queryStartTime.toEpochMilli,
         environment,
         testConfiguration,
+        input,
         "collect",
         Map.empty,
         queryDescription,
@@ -243,6 +254,7 @@ object BenchUtils {
         queryStartTime.toEpochMilli,
         environment,
         testConfiguration,
+        input,
         "csv",
         w.writeOptions,
         queryDescription,
@@ -255,6 +267,7 @@ object BenchUtils {
         queryStartTime.toEpochMilli,
         environment,
         testConfiguration,
+        input,
         "orc",
         w.writeOptions,
         queryDescription,
@@ -267,6 +280,7 @@ object BenchUtils {
         queryStartTime.toEpochMilli,
         environment,
         testConfiguration,
+        input,
         "parquet",
         w.writeOptions,
         queryDescription,
@@ -627,6 +641,7 @@ case class BenchmarkReport(
     startTime: Long,
     env: Environment,
     testConfiguration: TestConfiguration,
+    input: InputSpecification,
     action: String,
     writeOptions: Map[String, String],
     query: String,
@@ -661,6 +676,11 @@ case class Environment(
     envVars: Map[String, String],
     sparkConf: Map[String, String],
     sparkVersion: String)
+
+case class InputSpecification(
+    path: String,
+    format: String,
+    partitions: Map[String, Seq[String]])
 
 sealed trait ResultsAction
 

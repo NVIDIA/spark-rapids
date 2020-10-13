@@ -45,6 +45,7 @@ class BenchUtilsSuite extends FunSuite with BeforeAndAfterEach {
         Map("spark.sql.adaptive.enabled" -> "true"),
         "3.0.1"),
       testConfiguration = TestConfiguration(gcBetweenRuns = false),
+      input = InputSpecification("", "", Map.empty),
       action = "csv",
       writeOptions = Map("header" -> "true"),
       query = "q1",

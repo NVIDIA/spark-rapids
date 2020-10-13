@@ -44,6 +44,7 @@ object TpcxbbLikeBench extends Logging {
       gcBetweenRuns: Boolean = false): Unit = {
     BenchUtils.collect(
       spark,
+      null,
       spark => getQuery(query)(spark),
       query,
       summaryFilePrefix.getOrElse(s"tpcxbb-$query-collect"),
@@ -78,6 +79,7 @@ object TpcxbbLikeBench extends Logging {
       gcBetweenRuns: Boolean = false): Unit = {
     BenchUtils.writeCsv(
       spark,
+      null,
       spark => getQuery(query)(spark),
       query,
       summaryFilePrefix.getOrElse(s"tpcxbb-$query-csv"),
@@ -115,6 +117,7 @@ object TpcxbbLikeBench extends Logging {
       gcBetweenRuns: Boolean = false): Unit = {
     BenchUtils.writeOrc(
       spark,
+      null,
       spark => getQuery(query)(spark),
       query,
       summaryFilePrefix.getOrElse(s"tpcxbb-$query-csv"),
@@ -152,6 +155,7 @@ object TpcxbbLikeBench extends Logging {
       gcBetweenRuns: Boolean = false): Unit = {
     BenchUtils.writeParquet(
       spark,
+      null,
       spark => getQuery(query)(spark),
       query,
       summaryFilePrefix.getOrElse(s"tpcxbb-$query-parquet"),

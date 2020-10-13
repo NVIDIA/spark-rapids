@@ -157,7 +157,7 @@ object TpcdsLikeSpark {
     tables.foreach(_.setup(spark, basePath, format, appendDat))
   }
 
-  private val tables = Array(
+  val tables = Array(
     Table(
       "catalog_sales",
       Seq("cs_sold_date_sk"),
