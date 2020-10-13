@@ -90,6 +90,43 @@ object TpcdsLikeBench extends Logging {
   }
 
   /**
+   * This method performs a benchmark of executing a query and writing the results to ORC files
+   * and can be called from Spark shell using the following syntax:
+   *
+   * TpcdsLikeBench.writeOrc(spark, "q5", 3, "/path/to/write")
+   *
+   * @param spark The Spark session
+   * @param query The name of the query to run e.g. "q5"
+   * @param path The path to write the results to
+   * @param mode The SaveMode to use when writing the results
+   * @param writeOptions Write options
+   * @param iterations The number of times to run the query.
+   * @param summaryFilePrefix Optional prefix for the generated JSON summary file.
+   * @param gcBetweenRuns Whether to call `System.gc` between iterations to cause Spark to
+   *                      call `unregisterShuffle`
+   */
+  def writeOrc(
+      spark: SparkSession,
+      query: String,
+      path: String,
+      mode: SaveMode = SaveMode.Overwrite,
+      writeOptions: Map[String, String] = Map.empty,
+      iterations: Int = 3,
+      summaryFilePrefix: Option[String] = None,
+      gcBetweenRuns: Boolean = false): Unit = {
+    BenchUtils.writeOrc(
+      spark,
+      spark => TpcdsLikeSpark.query(query)(spark),
+      query,
+      summaryFilePrefix.getOrElse(s"tpcds-$query-csv"),
+      iterations,
+      gcBetweenRuns,
+      path,
+      mode,
+      writeOptions)
+  }
+
+  /**
    * This method performs a benchmark of executing a query and writing the results to Parquet files
    * and can be called from Spark shell using the following syntax:
    *
@@ -153,6 +190,13 @@ object TpcdsLikeBench extends Logging {
             summaryFilePrefix = conf.summaryFilePrefix.toOption)
         case "csv" =>
           writeCsv(
+            spark,
+            conf.query(),
+            path,
+            iterations = conf.iterations(),
+            summaryFilePrefix = conf.summaryFilePrefix.toOption)
+        case "orc" =>
+          writeOrc(
             spark,
             conf.query(),
             path,

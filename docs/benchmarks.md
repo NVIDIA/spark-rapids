@@ -59,14 +59,15 @@ for `spark.default.parallelism`, which by default is based on the number of avai
 cores. This value can be set explicitly to better control the size of the output files.
 
 It should also be noted that no decimal types will be output. The conversion code uses explicit 
-schemas to ensure that decimal types are converted to floating-point types instead.
+schemas to ensure that decimal types are converted to floating-point types instead because the
+plugin does not yet support decimal types but these will be supported in a future release.
 
-## Running Benchmarks
+## Running Benchmarks from a Spark shell
 
 The benchmarks can be executed in two modes currently:
 
 - Execute the query and collect the results to the driver
-- Execute the query and write the results to disk (in Parquet or CSV format)
+- Execute the query and write the results to disk (in Parquet, CSV, or ORC format)
 
 The following commands can be entered into spark-shell to register the data files that the 
 benchmark will query.
@@ -84,10 +85,36 @@ TpcdsLikeBench.collect(spark, "q5", iterations=3)
 ```
 
 The benchmark can be executed with the following syntax to execute the query and write the results 
-to Parquet. There is also a `writeCsv` method for writing the output to CSV files.
+to Parquet. There are also `writeCsv` and `writeOrc` methods for writing the output to CSV or ORC 
+files.
 
 ```scala
 TpcdsLikeBench.writeParquet(spark, "q5", "/data/output/tpcds/q5", iterations=3)
+```
+
+## Running Benchmarks from spark-submit
+
+Each of the TPC-* derived benchmarks has a command-line interface, allowing it to be submitted 
+to Spark using `spark-submit` which can be more practical than using the Spark shell when 
+running a series of benchmarks using automation.
+
+Here is an example `spark-submit` command for running TPC-DS query 5, reading from Parquet and 
+writing results to Parquet. The `--output` and `--output-format` arguments can be omitted to 
+have the benchmark call `collect()` on the results instead. 
+
+```bash
+$SPARK_HOME/bin/spark-submit \
+    --master $SPARK_MASTER_URL \
+    --jars $SPARK_RAPIDS_PLUGIN_JAR,$CUDF_JAR \
+    --class com.nvidia.spark.rapids.tests.tpcds.TpcdsLikeBench \
+    $SPARK_RAPIDS_PLUGIN_INTEGRATION_TEST_JAR \
+    --input /raid/tpcds-3TB-parquet-largefiles \
+    --input-format parquet \
+    --output /raid/tpcds-output/tpcds-q5-cpu \
+    --output-format parquet \
+    --query q5 \
+    --summary-file-prefix tpcds-q5-cpu \
+    --iterations 1
 ```
 
 ## Benchmark JSON Output
@@ -126,6 +153,19 @@ BenchUtils.compareResults(cpu, gpu, ignoreOrdering=true, epsilon=0.0001)
 ```
 
 This will report on any differences between the two dataframes.
+
+The verification utility can also be run using `spark-submit` using the following syntax.
+
+```bash
+$SPARK_HOME/bin/spark-submit \
+    --master $SPARK_MASTER_URL \
+    --jars $SPARK_RAPIDS_PLUGIN_JAR,$CUDF_JAR \
+    --class com.nvidia.spark.rapids.tests.common.CompareResults \
+    $SPARK_RAPIDS_PLUGIN_INTEGRATION_TEST_JAR \
+    --input1 /path/to/result1 \
+    --input2 /path/to/result2 \
+    --input-format parquet
+```
 
 ## Performance Tuning
 
