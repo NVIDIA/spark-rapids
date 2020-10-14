@@ -134,14 +134,10 @@ trait SparkShims {
 
   def copyParquetBatchScanExec(
       batchScanExec: GpuBatchScanExec,
-      supportsMultiFileOpt: Boolean,
-      canUseMultiThreadRead: Boolean,
       canUseCoalesceFilesRead: Boolean): GpuBatchScanExec
 
   def copyFileSourceScanExec(
       scanExec: GpuFileSourceScanExec,
-      supportsMultiFileOpt: Boolean,
-      canUseMultiThreadRead: Boolean,
       canUseCoalesceFilesRead: Boolean): GpuFileSourceScanExec
 }
 

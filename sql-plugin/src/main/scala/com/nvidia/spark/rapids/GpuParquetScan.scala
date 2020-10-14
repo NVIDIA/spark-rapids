@@ -93,8 +93,6 @@ abstract class GpuParquetScanBase(
     val broadcastedConf = sparkSession.sparkContext.broadcast(
       new SerializableConfiguration(hadoopConf))
 
-    // logWarning(s"Small file optimization support: $supportsMultiFileOpt " +
-    //   s"$canUseMultiThreadRead $canUseCoalesceFilesRead")
     if (useMultiFileReader) {
       GpuParquetMultiFilePartitionReaderFactory(sparkSession.sessionState.conf, broadcastedConf,
         dataSchema, readDataSchema, readPartitionSchema, pushedFilters, rapidsConf, metrics,
@@ -315,7 +313,6 @@ case class GpuParquetMultiFilePartitionReaderFactory(
   private val numThreads = rapidsConf.parquetMultiThreadReadNumThreads
   private val maxNumFileProcessed = rapidsConf.maxNumParquetFilesParallel
 
-  // TODO - others? do we want these to be purely overrides or additive?
   private val configCloudSchemes = rapidsConf.getCloudSchemes
   private val CLOUD_SCHEMES = Seq("dbfs", "s3", "s3a", "s3n", "wasbs", "gs")
   private val allCloudSchemes = CLOUD_SCHEMES ++ configCloudSchemes.getOrElse(Seq.empty)
@@ -355,7 +352,6 @@ case class GpuParquetMultiFilePartitionReaderFactory(
     val filePartition = partition.asInstanceOf[FilePartition]
     val files = filePartition.files
     val filePaths = files.map(_.filePath)
-    // TODO - do we really want to check all files?? see what perf is
     val start = System.nanoTime()
     if (!canUseMultiThreadRead && !canUseCoalesceFilesRead) {
       throw new IllegalStateException("can't use the Multifile reader when both " +

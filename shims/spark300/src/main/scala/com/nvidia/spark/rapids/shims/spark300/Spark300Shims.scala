@@ -364,22 +364,16 @@ class Spark300Shims extends SparkShims {
 
   override def copyParquetBatchScanExec(
       batchScanExec: GpuBatchScanExec,
-      supportsMultiFileOpt: Boolean,
-      canUseMultiThreadRead: Boolean,
       canUseCoalesceFilesRead: Boolean): GpuBatchScanExec = {
     val scan = batchScanExec.scan.asInstanceOf[GpuParquetScan]
-    val scanCopy = scan.copy(supportsMultiFileOpt=supportsMultiFileOpt,
-      canUseMultiThreadRead=canUseMultiThreadRead, canUseCoalesceFilesRead=canUseCoalesceFilesRead)
+    val scanCopy = scan.copy(canUseCoalesceFilesRead=canUseCoalesceFilesRead)
     batchScanExec.copy(scan=scanCopy)
   }
 
   override def copyFileSourceScanExec(
       scanExec: GpuFileSourceScanExec,
-      supportsMultiFileOpt: Boolean,
-      canUseMultiThreadRead: Boolean,
       canUseCoalesceFilesRead: Boolean): GpuFileSourceScanExec = {
-    scanExec.copy(supportsMultiFileOpt = supportsMultiFileOpt,
-      canUseMultiThreadRead=canUseMultiThreadRead, canUseCoalesceFilesRead=canUseCoalesceFilesRead)
+    scanExec.copy(canUseCoalesceFilesRead=canUseCoalesceFilesRead)
   }
 
   override def getGpuColumnarToRowTransition(plan: SparkPlan,
