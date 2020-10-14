@@ -367,7 +367,7 @@ case class GpuParquetMultiFilePartitionReaderFactory(
       false
     }
     // logWarning(s"is cloud is: $isCloud")
-    l// ogWarning(s"checking all files took: ${System.nanoTime() - start}")
+    // logWarning(s"checking all files took: ${System.nanoTime() - start}")
     val conf = broadcastedConf.value.value
     // logDebug(s"Number files being read: ${files.size} for task ${TaskContext.get().partitionId()}")
     // logInfo(s"using the optimized file reader, cloud=$isCloud")

@@ -287,7 +287,7 @@ case class GpuFileSourceScanExec(
    */
   lazy val inputRDD: RDD[InternalRow] = {
     val readFile: Option[(PartitionedFile) => Iterator[InternalRow]] =
-      if (!canUseMultiThreadRead && !canUseCoalesceFilesRead) {
+      if (!useMultiFileReader) {
         val fileFormat = relation.fileFormat.asInstanceOf[GpuReadFileFormatWithMetrics]
         val reader = fileFormat.buildReaderWithPartitionValuesAndMetrics(
           sparkSession = relation.sparkSession,
