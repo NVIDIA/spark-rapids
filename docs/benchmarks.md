@@ -29,6 +29,27 @@ benchmark.
 | TPC-xBB   | com.nvidia.spark.rapids.tests.tpcxbb | TpcxbbLikeSpark, TpcxbbLikeBench |
 | TPC-H     | com.nvidia.spark.rapids.tests.tpch   | TpchLikeSpark, TpchLikeBench     |
 
+### Generating TPC-DS data in parallel
+
+The `dsdgen` tool provided by the [TPC-DS Data Generator](https://github.com/databricks/tpcds-kit) 
+is single-threaded and can take a long time to generate large scale factor data sets. The tool does
+provide support for generating one partition at a time, allowing the data generation to be run
+in parallel, but the generated files cannot be directly consumed by Apache Spark because they are
+not stored in a compatible directory structure. The 
+[tpcds_gen.py](../integration_tests/src/main/python/tpcds_gen.py) Python script in this project
+provides a convenient way to run `dsdgen` in parallel and then move the resulting files into an 
+appropriate directory structure.
+
+```bash
+python tpcds-gen.py \
+    --dsdgen-dir /opt/tpcds-kit/tools/ \
+    --dir=./tpcds-output \
+    --scale-factor 100 \
+    --partitions 8
+```
+
+After running this example, the directory `./tpcds-output` will contain one directory per table.
+
 ## Spark Shell
 
 The integration test jar needs to be added to the `--jars` configuration option when launching the
