@@ -71,12 +71,11 @@ def test_parquet_fallback(spark_tmp_path, read_func, disable_conf):
     reader = read_func(data_path)
     with_cpu_session(
             lambda spark : gen_df(spark, gen).write.parquet(data_path))
-    reader_confs.update({'spark.sql.sources.useV1SourceList': "parquet",
-            disable_conf: 'false'})
     assert_gpu_fallback_collect(
             lambda spark : reader(spark).select(f.col('*'), f.col('_c2') + f.col('_c3')),
             'FileSourceScanExec',
-            conf=reader_confs)
+             conf={disable_conf: 'false',
+                  "spark.sql.sources.useV1SourceList": "parquet"})
 
 parquet_compress_options = ['none', 'uncompressed', 'snappy', 'gzip']
 # The following need extra jars 'lzo', 'lz4', 'brotli', 'zstd'
@@ -84,7 +83,8 @@ parquet_compress_options = ['none', 'uncompressed', 'snappy', 'gzip']
 
 @pytest.mark.parametrize('compress', parquet_compress_options)
 @pytest.mark.parametrize('reader_confs', reader_opt_confs)
-def test_compress_read_round_trip(spark_tmp_path, compress, reader_confs):
+@pytest.mark.parametrize('v1_enabled_list', ["", "parquet"])
+def test_compress_read_round_trip(spark_tmp_path, compress, v1_enabled_list, reader_confs):
     data_path = spark_tmp_path + '/PARQUET_DATA'
     with_cpu_session(
             lambda spark : binary_op_df(spark, long_gen).write.parquet(data_path),
@@ -290,7 +290,7 @@ def test_read_merge_schema_from_conf(spark_tmp_path, v1_enabled_list, reader_con
     with_cpu_session(
             lambda spark : gen_df(spark, second_gen_list).write.parquet(second_data_path),
             conf={'spark.sql.legacy.parquet.datetimeRebaseModeInWrite': 'CORRECTED'})
-    eader_confs.update({'spark.sql.sources.useV1SourceList': v1_enabled_list,
+    reader_confs.update({'spark.sql.sources.useV1SourceList': v1_enabled_list,
           'spark.sql.parquet.mergeSchema': "true"})
     data_path = spark_tmp_path + '/PARQUET_DATA'
     assert_gpu_and_cpu_are_equal_collect(
@@ -402,9 +402,10 @@ def createBucketedTableAndJoin(spark):
 @pytest.mark.parametrize('v1_enabled_list', ["", "parquet"])
 # this test would be better if we could ensure exchanges didn't exist - ie used buckets
 def test_buckets(spark_tmp_path, v1_enabled_list, reader_confs):
+    reader_confs.update({'spark.sql.sources.useV1SourceList': v1_enabled_list,
+          "spark.sql.autoBroadcastJoinThreshold": '-1'})
     assert_gpu_and_cpu_are_equal_collect(createBucketedTableAndJoin,
-            conf=reader_confs.update({'spark.sql.sources.useV1SourceList': v1_enabled_list,
-                  "spark.sql.autoBroadcastJoinThreshold": '-1'}))
+            conf=reader_confs)
 
 @pytest.mark.parametrize('v1_enabled_list', ["", "parquet"])
 def test_small_file_memory(spark_tmp_path, v1_enabled_list):
@@ -420,9 +421,11 @@ def test_small_file_memory(spark_tmp_path, v1_enabled_list):
             lambda spark : gen_df(spark, gen_list).repartition(2000).write.parquet(first_data_path),
             conf={'spark.sql.legacy.parquet.datetimeRebaseModeInWrite': 'CORRECTED'})
     data_path = spark_tmp_path + '/PARQUET_DATA'
-    reader_confs.update({'spark.sql.sources.useV1SourceList': v1_enabled_list,
-            'spark.sql.files.maxPartitionBytes': "1g"})
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : spark.read.parquet(data_path),
-            conf=reader_confs)
+            conf={'spark.rapids.sql.format.parquet.smallFilesOpt.enabled': 'true',
+                  'spark.rapids.sql.format.parquet.multiThreadedRead.enabled': 'false',
+                  'spark.rapids.sql.format.parquet.coalesceFiles.enabled': 'true',
+                  'spark.sql.sources.useV1SourceList': v1_enabled_list,
+                  'spark.sql.files.maxPartitionBytes': "1g"})
 
