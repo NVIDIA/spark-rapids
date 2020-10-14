@@ -93,13 +93,14 @@ abstract class GpuParquetScanBase(
     val broadcastedConf = sparkSession.sparkContext.broadcast(
       new SerializableConfiguration(hadoopConf))
 
-    logWarning(s"Small file optimization support: $supportsMultiFileOpt " +
-      s"$canUseMultiThreadRead $canUseCoalesceFilesRead")
+    // logWarning(s"Small file optimization support: $supportsMultiFileOpt " +
+    //   s"$canUseMultiThreadRead $canUseCoalesceFilesRead")
     if (useMultiFileReader) {
       GpuParquetMultiFilePartitionReaderFactory(sparkSession.sessionState.conf, broadcastedConf,
         dataSchema, readDataSchema, readPartitionSchema, pushedFilters, rapidsConf, metrics,
         canUseMultiThreadRead, canUseCoalesceFilesRead)
     } else {
+      logWarning("Using the original per file parquet reader")
       GpuParquetPartitionReaderFactory(sparkSession.sessionState.conf, broadcastedConf,
         dataSchema, readDataSchema, readPartitionSchema, pushedFilters, rapidsConf, metrics)
     }
@@ -372,8 +373,10 @@ case class GpuParquetMultiFilePartitionReaderFactory(
     // logDebug(s"Number files being read: ${files.size} for task ${TaskContext.get().partitionId()}")
     // logInfo(s"using the optimized file reader, cloud=$isCloud")
     if ((canUseMultiThreadRead && isCloud) || !canUseCoalesceFilesRead) {
+      logWarning("Using the multi-threaded multi-file parquet reader")
       buildBaseColumnarParquetReaderForCloud(files, conf)
     } else {
+      logWarning("Using the coalesce multi-file parquet reader")
       buildBaseColumnarParquetReader(files, conf)
     }
   }
@@ -853,7 +856,7 @@ class MultiFileParquetPartitionReader(
   }
 
   override def next(): Boolean = {
-    logWarning("supports small file opt is: " )
+    // logWarning("supports small file opt is: " )
     batch.foreach(_.close())
     batch = None
     if (!isDone) {
@@ -904,7 +907,7 @@ class MultiFileParquetPartitionReader(
       var hmb = HostMemoryBuffer.allocate(initTotalSize)
       var out = new HostMemoryOutputStream(hmb)
       try {
-        logWarning("read part files for consolidating files")
+        // logWarning("read part files for consolidating files")
         out.write(ParquetPartitionReader.PARQUET_MAGIC)
         var offset = out.getPos
         val allOutputBlocks = scala.collection.mutable.ArrayBuffer[BlockMetaData]()
@@ -1293,7 +1296,7 @@ class MultiFileCloudParquetPartitionReader(
   }
 
   override def next(): Boolean = {
-    logWarning("opt supports small file cloud opt is: ")
+    // logWarning("opt supports small file cloud opt is: ")
     withResource(new NvtxWithMetrics("Parquet readBatch", NvtxColor.GREEN,
       metrics(TOTAL_TIME))) { _ =>
       if (isInitted == false) {
@@ -1491,7 +1494,7 @@ class ParquetPartitionReader(
   private val blockIterator:  BufferedIterator[BlockMetaData] = clippedBlocks.iterator.buffered
 
   override def next(): Boolean = {
-    logWarning("no small opt supports small file opt is: " )
+    // logWarning("no small opt supports small file opt is: " )
     batch.foreach(_.close())
     batch = None
     if (!isDone) {
