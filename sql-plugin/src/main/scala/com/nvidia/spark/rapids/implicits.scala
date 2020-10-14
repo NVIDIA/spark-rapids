@@ -65,13 +65,14 @@ object RapidsPluginImplicits {
      * close calls, an Exception is thrown containing the suppressed exceptions (getSuppressed),
      * if any.
      */
-    def safeClose(): Unit = if (in != null) {
+    def safeClose(error: Throwable = null): Unit = if (in != null) {
       var closeException: Throwable = null
       in.foreach { element =>
         if (element != null) {
           try {
             element.close()
           } catch {
+            case e: Throwable if error != null => error.addSuppressed(e)
             case e: Throwable if closeException == null => closeException = e
             case e: Throwable => closeException.addSuppressed(e)
           }
@@ -86,8 +87,8 @@ object RapidsPluginImplicits {
   }
 
   implicit class AutoCloseableArray[A <: AutoCloseable](val in: Array[A]) {
-    def safeClose(): Unit = if (in != null) {
-      in.toSeq.safeClose()
+    def safeClose(e: Throwable = null): Unit = if (in != null) {
+      in.toSeq.safeClose(e)
     }
   }
 
