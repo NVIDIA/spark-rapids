@@ -310,7 +310,7 @@ object BenchUtils {
       case (Some(_), Some(_)) =>
         // this should be unreachable due to earlier validation
         throw new IllegalArgumentException(
-          s"Cannot both coalesce and repartition the same table: ${name.mkString(",")}")
+          s"Cannot both coalesce and repartition the same table: $name")
       case (Some(n), _) => df.coalesce(n)
       case (_, Some(n)) => df.repartition(n)
       case _ => df

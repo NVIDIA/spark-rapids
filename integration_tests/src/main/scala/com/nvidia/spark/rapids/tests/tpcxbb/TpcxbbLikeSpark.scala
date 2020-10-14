@@ -2098,7 +2098,6 @@ object ConvertFiles {
    */
   def main(arg: Array[String]): Unit = {
     val conf = new FileConversionConf(arg)
-    BenchUtils.validateCoalesceRepartition(conf.coalesce, conf.repartition)
     val spark = SparkSession.builder.appName("TPC-xBB Like File Conversion").getOrCreate()
     conf.outputFormat() match {
       case "parquet" =>
@@ -2128,6 +2127,7 @@ class FileConversionConf(arguments: Seq[String]) extends ScallopConf(arguments) 
   val repartition = propsLong[Int]("repartition")
   val withPartitioning = opt[Boolean](default = Some(false))
   verify()
+  BenchUtils.validateCoalesceRepartition(coalesce, repartition)
 }
 
 // scalastyle:on line.size.limit
