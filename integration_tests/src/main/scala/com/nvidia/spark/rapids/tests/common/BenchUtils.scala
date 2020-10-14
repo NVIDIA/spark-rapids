@@ -26,9 +26,9 @@ import scala.collection.mutable.ListBuffer
 import org.json4s.DefaultFormats
 import org.json4s.jackson.JsonMethods.parse
 import org.json4s.jackson.Serialization.writePretty
-
 import org.apache.spark.{SPARK_BUILD_USER, SPARK_VERSION}
-import org.apache.spark.sql.{DataFrame, Row, SaveMode, SparkSession}
+
+import org.apache.spark.sql.{DataFrame, DataFrameWriter, Row, SaveMode, SparkSession}
 import org.apache.spark.sql.execution.{InputAdapter, QueryExecution, SparkPlan, WholeStageCodegenExec}
 import org.apache.spark.sql.execution.adaptive.{AdaptiveSparkPlanExec, QueryStageExec}
 import org.apache.spark.sql.execution.datasources.FilePartition
@@ -290,6 +290,33 @@ object BenchUtils {
     os.write(writePretty(report).getBytes)
     os.close()
   }
+
+  def validateCoalesceRepartition(
+      coalesce: Map[String, Int],
+      repartition: Map[String, Int]): Unit = {
+    val duplicates = coalesce.keys.filter(name => repartition.contains(name))
+    if (duplicates.nonEmpty) {
+      throw new IllegalArgumentException(
+        s"Cannot both coalesce and repartition the same table: ${duplicates.mkString(",")}")
+    }
+  }
+
+  def applyCoalesceRepartition(
+      name: String,
+      df: DataFrame,
+      coalesce: Map[String, Int],
+      repartition: Map[String, Int]): DataFrame = {
+    (coalesce.get(name), repartition.get(name)) match {
+      case (Some(_), Some(_)) =>
+        // this should be unreachable due to earlier validation
+        throw new IllegalArgumentException(
+          s"Cannot both coalesce and repartition the same table: ${name.mkString(",")}")
+      case (Some(n), _) => df.coalesce(n)
+      case (_, Some(n)) => df.repartition(n)
+      case _ => df
+    }
+  }
+
 
   /**
    * Generate a DOT graph for one query plan, or showing differences between two query plans.
