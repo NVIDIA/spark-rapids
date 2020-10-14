@@ -112,6 +112,8 @@ case class GpuWindowExec(
     } else ClusteredDistribution(partitionSpec) :: Nil
   }
 
+  override def childrenCoalesceGoal: Seq[CoalesceGoal] = Seq(RequireSingleBatch)
+
   override def requiredChildOrdering: Seq[Seq[SortOrder]] =
     Seq(partitionSpec.map(SortOrder(_, Ascending)) ++ orderSpec)
 
