@@ -74,16 +74,6 @@ class GpuWindowExpressionMeta(
     windowFunction match {
       case aggregateExpression : AggregateExpression =>
         aggregateExpression.aggregateFunction match {
-          // Count does not work in these cases because of a bug in cudf where a rolling count
-          // does not do the correct thing for null entries
-          // Once https://github.com/rapidsai/cudf/issues/6343
-          // is fixed this can be deleted and the check will go to the next case
-          // where it will match and pass.
-          case Count(exp) =>
-            if (!exp.forall(x => x.isInstanceOf[Literal])) {
-              willNotWorkOnGpu(s"Currently, only COUNT(1) and COUNT(*) are supported. " +
-                  s"COUNT($exp) is not supported in windowing.")
-            }
           // Sadly not all aggregations work for window operations yet, so explicitly allow the
           // ones that do work.
           case Count(_) | Sum(_) | Min(_) | Max(_) => // Supported.

@@ -136,7 +136,8 @@ class WindowFunctionSuite extends SparkQueryCompareTestSuite {
            |   SUM(dollars)   OVER $windowClause,
            |   MIN(dollars)   OVER $windowClause,
            |   MAX(dollars)   OVER $windowClause,
-           |   COUNT(1) OVER $windowClause,
+           |   COUNT(dollars) OVER $windowClause,
+           |   COUNT(1)       OVER $windowClause,
            |   COUNT(*)       OVER $windowClause
            | FROM mytable
            |
