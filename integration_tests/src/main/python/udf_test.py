@@ -66,6 +66,7 @@ def test_iterator_math_udf(data_gen):
                 my_udf(f.col('a'), f.col('b'))),
             conf=arrow_udf_conf)
 
+@approximate_float
 @allow_non_gpu('AggregateInPandasExec', 'PythonUDF', 'Alias')
 @pytest.mark.parametrize('data_gen', integral_gens, ids=idfn)
 def test_single_aggregate_udf(data_gen):
