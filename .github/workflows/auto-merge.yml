@@ -39,3 +39,4 @@ jobs:
           HEAD: branch-0.2
           BASE: branch-0.3
           AUTOMERGE_TOKEN: ${{ secrets.AUTOMERGE_TOKEN }} # use to merge PR
+          
