@@ -22,7 +22,8 @@ def main():
 
     Example usage:
 
-    python benchmark.py
+    python benchmark.py \
+      --template /path/to/template \
       --benchmark tpcds \
       --input /path/to/input \
       --input-format parquet \
