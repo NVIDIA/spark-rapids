@@ -28,7 +28,7 @@ def main():
       --input-format parquet \
       --output /path/to/output \
       --output-format parquet \
-      --configs cpu gpu-ucx-on
+      --configs cpu gpu-ucx-on \
       --query q4 q5
 
     In this example, configuration key-value pairs will be loaded from cpu.properties and
