@@ -356,6 +356,12 @@ object GpuOverrides {
       KnownFloatingPointNormalized(canonicalizeToCpuForSortOrder(g.child)).canonicalized
     case g: GpuNormalizeNaNAndZero =>
       NormalizeNaNAndZero(canonicalizeToCpuForSortOrder(g.child)).canonicalized
+    case g: GpuAlias =>
+      Alias(canonicalizeToCpuForSortOrder(g.child), g.name)(
+        g.exprId,
+        g.qualifier,
+        g.explicitMetadata)
+          .canonicalized
     case o: GpuExpression =>
       throw new IllegalStateException(s"${o.getClass} is not expected to be a part of a SortOrder")
     case other => other.canonicalized
