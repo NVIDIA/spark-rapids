@@ -192,9 +192,6 @@ abstract class GpuBroadcastNestedLoopJoinExecBase(
     }
   }
 
-  // No Guarantee
-  def outputBatching: CoalesceGoal = null
-
   private[this] def makeBuiltTable(
       broadcastRelation: Broadcast[SerializeConcatHostBuffersDeserializeBatch],
       buildTime: SQLMetric,

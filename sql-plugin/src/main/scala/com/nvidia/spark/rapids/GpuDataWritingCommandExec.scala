@@ -62,9 +62,6 @@ case class GpuDataWritingCommandExec(cmd: GpuDataWritingCommand, child: SparkPla
 
   override def output: Seq[Attribute] = cmd.output
 
-  // There is no output and no guarantee of what it would look like if there were
-  override def outputBatching: CoalesceGoal = null
-
   override def nodeName: String = "Execute " + cmd.nodeName
 
   // override the default one, otherwise the `cmd.nodeName` will appear twice from simpleString

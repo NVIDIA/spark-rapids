@@ -101,9 +101,6 @@ case class GpuFlatMapCoGroupsInPandasExec(
       .map(SortOrder(_, Ascending)) :: rightGroup.map(SortOrder(_, Ascending)) :: Nil
   }
 
-  // No guarantee on the batch size you will get
-  override def outputBatching: CoalesceGoal = null
-
   override protected def doExecute(): RDD[InternalRow] = {
     lazy val isPythonOnGpuEnabled = GpuPythonHelper.isPythonOnGpuEnabled(conf)
 

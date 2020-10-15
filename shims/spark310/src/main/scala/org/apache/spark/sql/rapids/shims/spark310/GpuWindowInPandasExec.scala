@@ -103,9 +103,6 @@ case class GpuWindowInPandasExec(
 
   override def outputPartitioning: Partitioning = child.outputPartitioning
 
-  // This is a bit hacked up and actually works on rows so ignore this for now
-  override def outputBatching: CoalesceGoal = null
-  
   /*
    * Helper functions and data structures for window bounds
    *

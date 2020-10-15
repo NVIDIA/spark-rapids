@@ -166,9 +166,6 @@ case class GpuFilterExec(condition: Expression, child: SparkPlan)
 
   override def outputPartitioning: Partitioning = child.outputPartitioning
 
-  // No guarantee on the batch size you will get
-  override def outputBatching: CoalesceGoal = null
-
   override def doExecute(): RDD[InternalRow] =
     throw new IllegalStateException(s"Row-based execution should not occur for $this")
 

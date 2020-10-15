@@ -72,7 +72,7 @@ trait GpuHashJoin extends GpuExec with HashJoin {
   // If we have a single batch streamed in then we will produce a single batch of output
   // otherwise it can get smaller or bigger, we just don't know.  When we support out of
   // core joins this will change
-  def outputBatching: CoalesceGoal = {
+  override def outputBatching: CoalesceGoal = {
     val batching = buildSide match {
       case BuildLeft => GpuExec.outputBatching(right)
       case BuildRight => GpuExec.outputBatching(left)

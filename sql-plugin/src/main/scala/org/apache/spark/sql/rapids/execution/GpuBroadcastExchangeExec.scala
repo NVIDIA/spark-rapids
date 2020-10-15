@@ -247,7 +247,7 @@ abstract class GpuBroadcastExchangeExecBase(
   override def outputPartitioning: Partitioning = BroadcastPartitioning(mode)
 
   // For now all broadcasts produce a single batch. We might need to change that at some point
-  def outputBatching: CoalesceGoal = RequireSingleBatch
+  override def outputBatching: CoalesceGoal = RequireSingleBatch
 
   @transient
   private lazy val promise = Promise[broadcast.Broadcast[Any]]()

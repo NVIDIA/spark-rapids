@@ -81,8 +81,9 @@ trait GpuExec extends SparkPlan with Arm {
   /**
    * Lets a SparkPlan indicate what guarantees, if any, its output batch has.
    * This lets us bypass GpuCoalesceBatch calls where ever possible.
+   * Returning a null indicates no guarantee at all, which is the default.
    */
-  def outputBatching: CoalesceGoal
+  def outputBatching: CoalesceGoal = null
 
   override def supportsColumnar = true
 

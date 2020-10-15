@@ -304,9 +304,6 @@ case class GpuHashAggregateExec(
     resultExpressions: Seq[NamedExpression],
     child: SparkPlan) extends UnaryExecNode with GpuExec with Arm {
 
-  // TODO do we have a guarantee that we will output one and only one batch?
-  override def outputBatching: CoalesceGoal = null
-
   override def verboseStringWithOperatorId(): String = {
     s"""
        |$formattedNodeName

@@ -27,7 +27,7 @@ import scala.collection.mutable
 import scala.collection.mutable.ArrayBuffer
 
 import ai.rapids.cudf.{ArrowIPCOptions, ArrowIPCWriterOptions, HostBufferConsumer, HostBufferProvider, HostMemoryBuffer, NvtxColor, NvtxRange, StreamedTableReader, Table}
-import com.nvidia.spark.rapids.{Arm, CoalesceGoal, ConcatAndConsumeAll, GpuBindReferences, GpuColumnVector, GpuColumnVectorFromBuffer, GpuExec, GpuProjectExec, GpuSemaphore, GpuUnevaluable, SpillableColumnarBatch, SpillPriorities}
+import com.nvidia.spark.rapids.{Arm, ConcatAndConsumeAll, GpuBindReferences, GpuColumnVector, GpuColumnVectorFromBuffer, GpuExec, GpuProjectExec, GpuSemaphore, GpuUnevaluable, SpillableColumnarBatch, SpillPriorities}
 import com.nvidia.spark.rapids.GpuMetricNames._
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import com.nvidia.spark.rapids.python.PythonWorkerSemaphore
@@ -499,9 +499,6 @@ case class GpuArrowEvalPythonExec(
 
   // We split the input batch up into small pieces when sending to python for compatibility reasons
   override def coalesceAfter: Boolean = true
-
-  // No guarantee on the batch size you will get
-  override def outputBatching: CoalesceGoal = null
 
   override def output: Seq[Attribute] = child.output ++ resultAttrs
 

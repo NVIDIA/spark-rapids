@@ -53,7 +53,4 @@ case class GpuBringBackToHost(child: SparkPlan) extends UnaryExecNode with GpuEx
       }
     })
   }
-
-  // It does not really make a difference on the host anyways
-  override def outputBatching: CoalesceGoal = GpuExec.outputBatching(child)
 }
