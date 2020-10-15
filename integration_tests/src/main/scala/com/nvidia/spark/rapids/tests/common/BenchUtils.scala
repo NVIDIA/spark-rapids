@@ -291,6 +291,33 @@ object BenchUtils {
     os.close()
   }
 
+  def validateCoalesceRepartition(
+      coalesce: Map[String, Int],
+      repartition: Map[String, Int]): Unit = {
+    val duplicates = coalesce.keys.filter(name => repartition.contains(name))
+    if (duplicates.nonEmpty) {
+      throw new IllegalArgumentException(
+        s"Cannot both coalesce and repartition the same table: ${duplicates.mkString(",")}")
+    }
+  }
+
+  def applyCoalesceRepartition(
+      name: String,
+      df: DataFrame,
+      coalesce: Map[String, Int],
+      repartition: Map[String, Int]): DataFrame = {
+    (coalesce.get(name), repartition.get(name)) match {
+      case (Some(_), Some(_)) =>
+        // this should be unreachable due to earlier validation
+        throw new IllegalArgumentException(
+          s"Cannot both coalesce and repartition the same table: $name")
+      case (Some(n), _) => df.coalesce(n)
+      case (_, Some(n)) => df.repartition(n)
+      case _ => df
+    }
+  }
+
+
   /**
    * Generate a DOT graph for one query plan, or showing differences between two query plans.
    *
