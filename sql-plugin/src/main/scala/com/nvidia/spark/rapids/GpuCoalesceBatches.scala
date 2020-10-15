@@ -103,7 +103,7 @@ object CoalesceGoal {
     case _ => b
   }
 
-  def satisfies(found: CoalesceGoal, required: CoalesceGoal) = (found, required) match {
+  def satisfies(found: CoalesceGoal, required: CoalesceGoal): Boolean = (found, required) match {
     case (RequireSingleBatch, _) => true
     case (_, RequireSingleBatch) => false
     case (TargetSize(foundSize), TargetSize(requiredSize)) => foundSize >= requiredSize
