@@ -73,7 +73,7 @@ It is also possible to use `spark-submit` to run the file conversion process.
 $SPARK_HOME/bin/spark-submit \
     --master $SPARK_MASTER_URL \
     --jars $SPARK_RAPIDS_PLUGIN_JAR,$CUDF_JAR \
-    --class com.nvidia.spark.rapids.tests.tpcds.FileConversion \
+    --class com.nvidia.spark.rapids.tests.tpcds.ConvertFiles \
     $SPARK_RAPIDS_PLUGIN_INTEGRATION_TEST_JAR \
     --input /path/to/input \
     --output /path/to/output \
