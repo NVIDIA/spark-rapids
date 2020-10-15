@@ -85,6 +85,9 @@ case class GpuMapInPandasExec(
 
   override def outputPartitioning: Partitioning = child.outputPartitioning
 
+  // No guarantee on the batch size you will get
+  override def outputBatching: CoalesceGoal = null
+
   override protected def doExecute(): RDD[InternalRow] = {
     lazy val isPythonOnGpuEnabled = GpuPythonHelper.isPythonOnGpuEnabled(conf)
     child.execute().mapPartitionsInternal { inputIter =>

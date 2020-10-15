@@ -112,6 +112,9 @@ case class GpuGenerateExec(
 
   override def outputPartitioning: Partitioning = child.outputPartitioning
 
+  // No guarantee, but we might be able to infer something in the future.
+  override def outputBatching: CoalesceGoal = null
+
   override def doExecute(): RDD[InternalRow] =
     throw new IllegalStateException(s"Row-based execution should not occur for $this")
 

@@ -19,7 +19,7 @@ package org.apache.spark.sql.rapids
 import java.io.{IOException, ObjectInputStream, ObjectOutputStream}
 
 import ai.rapids.cudf.{JCudfSerialization, NvtxColor, NvtxRange, Table}
-import com.nvidia.spark.rapids.{Arm, GpuBindReferences, GpuBuildLeft, GpuColumnVector, GpuExec, GpuExpression, GpuSemaphore}
+import com.nvidia.spark.rapids.{Arm, CoalesceGoal, GpuBindReferences, GpuBuildLeft, GpuColumnVector, GpuExec, GpuExpression, GpuSemaphore}
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 
 import org.apache.spark.{Dependency, NarrowDependency, Partition, SparkContext, TaskContext}
@@ -228,6 +228,9 @@ case class GpuCartesianProductExec(
     condition: Option[Expression],
     targetSizeBytes: Long) extends BinaryExecNode with GpuExec {
   override def output: Seq[Attribute]= left.output ++ right.output
+
+  // no guarantee (although it should be at least as big as the min)
+  override def outputBatching: CoalesceGoal = null
 
   override def verboseStringWithOperatorId(): String = {
     val joinCondStr = if (condition.isDefined) s"${condition.get}" else "None"

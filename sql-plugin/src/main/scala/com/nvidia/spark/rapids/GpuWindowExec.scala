@@ -121,6 +121,9 @@ case class GpuWindowExec(
 
   override def outputPartitioning: Partitioning = child.outputPartitioning
 
+  // We require a single batch and that is what we produce
+  override def outputBatching: CoalesceGoal = RequireSingleBatch
+
   override protected def doExecute(): RDD[InternalRow] =
     throw new IllegalStateException(s"Row-based execution should not happen, in $this.")
 

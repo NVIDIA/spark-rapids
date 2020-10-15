@@ -55,6 +55,13 @@ object GpuMetricNames {
   }
 }
 
+object GpuExec {
+  def outputBatching(sp: SparkPlan): CoalesceGoal = sp match {
+    case gpu: GpuExec => gpu.outputBatching
+    case _ => null
+  }
+}
+
 trait GpuExec extends SparkPlan with Arm {
   /**
    * If true is returned batches after this will be coalesced.  This should
@@ -70,6 +77,12 @@ trait GpuExec extends SparkPlan with Arm {
    * batches.  This provides a way to express those desires.
    */
   def childrenCoalesceGoal: Seq[CoalesceGoal] = Seq.fill(children.size)(null)
+
+  /**
+   * Lets a SparkPlan indicate what guarantees, if any, its output batch has.
+   * This lets us bypass GpuCoalesceBatch calls where ever possible.
+   */
+  def outputBatching: CoalesceGoal
 
   override def supportsColumnar = true
 

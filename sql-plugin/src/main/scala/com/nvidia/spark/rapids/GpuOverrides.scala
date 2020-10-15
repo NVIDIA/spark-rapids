@@ -352,6 +352,10 @@ object GpuOverrides {
 
   private def canonicalizeToCpuForSortOrder(exp: Expression): Expression = exp match {
     case g: GpuLiteral => Literal(g.value, g.dataType).canonicalized
+    case g: GpuKnownFloatingPointNormalized =>
+      KnownFloatingPointNormalized(canonicalizeToCpuForSortOrder(g.child)).canonicalized
+    case g: GpuNormalizeNaNAndZero =>
+      NormalizeNaNAndZero(canonicalizeToCpuForSortOrder(g.child)).canonicalized
     case o: GpuExpression =>
       throw new IllegalStateException(s"${o.getClass} is not expected to be a part of a SortOrder")
     case other => other.canonicalized
@@ -371,9 +375,9 @@ object GpuOverrides {
 
   private def orderingSatisfies(ordering1: Seq[SortOrder], ordering2: Seq[SortOrder]): Boolean = {
     // We cannot use SortOrder.orderingSatisfies because there is a corner case where
-    // a Literal can be a part of SortOrder, which then results in errors
+    // some operators like a Literal can be a part of SortOrder, which then results in errors
     // because we may have converted it over to a GpuLiteral at that point and a Literal
-    // is not equivalent to a GpuLiteral, even though it probably should be.
+    // is not equivalent to a GpuLiteral, even though it should be.
     if (ordering2.isEmpty) {
       true
     } else if (ordering2.length > ordering1.length) {

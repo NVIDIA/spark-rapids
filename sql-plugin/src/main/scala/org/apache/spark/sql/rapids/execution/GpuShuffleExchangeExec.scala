@@ -74,6 +74,9 @@ abstract class GpuShuffleExchangeExecBase(
    */
   override def coalesceAfter: Boolean = true
 
+  // There is no guarantee
+  override def outputBatching: CoalesceGoal = null
+
   private lazy val writeMetrics =
     SQLShuffleWriteMetricsReporter.createShuffleWriteMetrics(sparkContext)
   lazy val readMetrics =

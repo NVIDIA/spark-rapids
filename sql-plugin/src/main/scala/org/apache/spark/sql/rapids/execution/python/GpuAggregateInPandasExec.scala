@@ -94,6 +94,9 @@ case class GpuAggregateInPandasExec(
     }
   }
 
+  // No guarantee on the batch size you will get
+  override def outputBatching: CoalesceGoal = null
+
   private def collectFunctions(udf: PythonUDF): (ChainedPythonFunctions, Seq[Expression]) = {
     udf.children match {
       case Seq(u: PythonUDF) =>

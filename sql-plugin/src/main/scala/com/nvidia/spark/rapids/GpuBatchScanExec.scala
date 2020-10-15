@@ -77,6 +77,9 @@ case class GpuBatchScanExec(
   override def doCanonicalize(): GpuBatchScanExec = {
     this.copy(output = output.map(QueryPlan.normalizeExpressions(_, output)))
   }
+
+  // No guarantee
+  override def outputBatching: CoalesceGoal = null
 }
 
 trait ScanWithMetrics {

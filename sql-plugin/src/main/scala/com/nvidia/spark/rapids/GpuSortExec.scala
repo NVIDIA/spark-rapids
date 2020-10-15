@@ -70,6 +70,10 @@ case class GpuSortExec(
   override def requiredChildDistribution: Seq[Distribution] =
     if (global) OrderedDistribution(sparkSortOrder) :: Nil else UnspecifiedDistribution :: Nil
 
+  // Eventually this might change, but for now we will produce a single batch, which is the same
+  // as what we require from our input.
+  override def outputBatching: CoalesceGoal = RequireSingleBatch
+
   override def doExecute(): RDD[InternalRow] =
     throw new IllegalStateException(s"Row-based execution should not occur for $this")
 

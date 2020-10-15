@@ -16,7 +16,7 @@
 
 package org.apache.spark.sql.rapids.shims.spark310
 
-import com.nvidia.spark.rapids.GpuExec
+import com.nvidia.spark.rapids.{CoalesceGoal, GpuExec}
 import com.nvidia.spark.rapids.shims.spark310.ParquetCachedBatchSerializer
 
 import org.apache.spark.rdd.RDD
@@ -26,7 +26,6 @@ import org.apache.spark.sql.catalyst.plans.QueryPlan
 import org.apache.spark.sql.catalyst.plans.physical.Partitioning
 import org.apache.spark.sql.execution.{LeafExecNode, SparkPlan}
 import org.apache.spark.sql.execution.columnar.InMemoryRelation
-import org.apache.spark.sql.execution.metric.SQLMetrics
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
 case class GpuInMemoryTableScanExec(
@@ -68,6 +67,9 @@ case class GpuInMemoryTableScanExec(
     }
 
     override def output: Seq[Attribute] = attributes
+
+    // No Guarantees
+    override def outputBatching: CoalesceGoal = null
 
     private def updateAttribute(expr: Expression): Expression = {
       // attributes can be pruned so using relation's output.

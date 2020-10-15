@@ -125,6 +125,9 @@ abstract class GpuColumnarToRowExecParent(child: SparkPlan, val exportColumnarRd
 
   override def supportCodegen: Boolean = !exportColumnarRdd
 
+  // There is no batching after this it is all rows
+  override def outputBatching: CoalesceGoal = null
+
   // Override the original metrics to remove NUM_OUTPUT_BATCHES, which makes no sense.
   override lazy val metrics: Map[String, SQLMetric] = Map(
     NUM_OUTPUT_ROWS -> SQLMetrics.createMetric(sparkContext, DESCRIPTION_NUM_OUTPUT_ROWS),
