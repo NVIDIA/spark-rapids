@@ -1183,7 +1183,6 @@ class FileConversionConf(arguments: Seq[String]) extends ScallopConf(arguments) 
   val outputFormat = opt[String](required = true)
   val coalesce = propsLong[Int]("coalesce")
   val repartition = propsLong[Int]("repartition")
-  val withPartitioning = opt[Boolean](default = Some(false))
   verify()
   BenchUtils.validateCoalesceRepartition(coalesce, repartition)
 }
