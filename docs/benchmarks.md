@@ -25,9 +25,9 @@ benchmark.
 
 | Benchmark | Package                              | Class Names                      |
 |-----------|--------------------------------------|----------------------------------|
-| TPC-DS    | com.nvidia.spark.rapids.tests.tpcds  | TpcdsLikeSpark, TpcdsLikeBench   |
-| TPC-xBB   | com.nvidia.spark.rapids.tests.tpcxbb | TpcxbbLikeSpark, TpcxbbLikeBench |
-| TPC-H     | com.nvidia.spark.rapids.tests.tpch   | TpchLikeSpark, TpchLikeBench     |
+| TPC-DS    | com.nvidia.spark.rapids.tests.tpcds  | ConvertFiles, TpcdsLikeBench   |
+| TPC-xBB   | com.nvidia.spark.rapids.tests.tpcxbb | ConvertFiles, TpcxbbLikeBench  |
+| TPC-H     | com.nvidia.spark.rapids.tests.tpch   | ConvertFiles, TpchLikeBench    |
 
 ## Spark Shell
 
@@ -55,8 +55,32 @@ TpcdsLikeSpark.csvToParquet(spark, "/path/to/input", "/path/to/output")
 
 Note that the code for converting CSV to Parquet does not explicitly specify the number of 
 partitions to write, so the size of the resulting parquet files will vary depending on the value 
-for `spark.default.parallelism`, which by default is based on the number of available executor 
-cores. This value can be set explicitly to better control the size of the output files.
+for `spark.default.parallelism`, which by default is based on the number of available executor
+cores. However, the file conversion methods accept `coalesce` and `repartition` arguments to
+better control the size of the partitions on a per-table basis.
+
+Example using `coalesce` and `repartition` options to control the number and size of partitions
+for specific tables.
+
+```scala
+TpcdsLikeSpark.csvToParquet(spark, "/path/to/input", "/path/to/output", 
+  coalesce=Map("customer_address" -> 1), repartition=Map("web_sales" -> 256))
+```
+
+It is also possible to use `spark-submit` to run the file conversion process.
+
+```bash
+$SPARK_HOME/bin/spark-submit \
+    --master $SPARK_MASTER_URL \
+    --jars $SPARK_RAPIDS_PLUGIN_JAR,$CUDF_JAR \
+    --class com.nvidia.spark.rapids.tests.tpcds.ConvertFiles \
+    $SPARK_RAPIDS_PLUGIN_INTEGRATION_TEST_JAR \
+    --input /path/to/input \
+    --output /path/to/output \
+    --output-format parquet \
+    --coalesce customer_address=1 \
+    --repartition web_sales=256 inventory=128
+```
 
 It should also be noted that no decimal types will be output. The conversion code uses explicit 
 schemas to ensure that decimal types are converted to floating-point types instead because the
