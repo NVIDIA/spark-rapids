@@ -40,12 +40,12 @@ def main():
     spark.rapids.sql.enabled=true
     spark.sql.adaptive.enabled=true
 
-    The spark-submit-template.txt file should contain the command to call spark-submit along
+    A template file must be provided, containing the command to call spark-submit along
     with any cluster-specific configuration options and any spark configuration settings that
     will be common to all benchmark runs. The template should end with a line-continuation
     symbol since additional --conf options will be appended for each benchmark run.
 
-    Example spark-submit-template.txt:
+    Example template:
 
     $SPARK_HOME/bin/spark-submit \
       --master $SPARK_MASTER_URL \
@@ -66,21 +66,23 @@ def main():
     """
 
     parser = argparse.ArgumentParser(description='Run TPC benchmarks.')
-    parser.add_argument('--benchmark',
+    parser.add_argument('--benchmark', required=True,
                         help='Name of benchmark to run (tpcds, tpcxbb, tpch)')
-    parser.add_argument('--input',
+    parser.add_argument('--template', required=True,
+                        help='Path to a template script that invokes spark-submit')
+    parser.add_argument('--input', required=True,
                     help='Path to source data set')
-    parser.add_argument('--input-format',
+    parser.add_argument('--input-format', required=True,
                         help='Format of input data set (parquet or csv)')
-    parser.add_argument('--output',
+    parser.add_argument('--output', required=True,
                     help='Path to write query output to')
-    parser.add_argument('--output-format',
+    parser.add_argument('--output-format', required=True,
                         help='Format to write to (parquet or orc)')
-    parser.add_argument('--configs', type=str, nargs='+',
+    parser.add_argument('--configs', required=True, type=str, nargs='+',
                     help='One or more configuration filenames to run')
-    parser.add_argument('--query', type=str, nargs='+',
+    parser.add_argument('--query', required=True, type=str, nargs='+',
                     help='Queries to run')
-    parser.add_argument('--iterations',
+    parser.add_argument('--iterations', required=True,
                         help='The number of iterations to run (defaults to 1)')
 
     args = parser.parse_args()
@@ -94,9 +96,7 @@ def main():
     else:
         sys.exit("invalid benchmark name")
 
-    spark_submit_template = "spark-submit-template.txt"
-
-    with open(spark_submit_template, "r") as myfile:
+    with open(args.template, "r") as myfile:
         template = myfile.read()
 
     for config_name in args.configs:
