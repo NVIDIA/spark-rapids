@@ -384,3 +384,4 @@ When translating UDFs to Catalyst expressions, the supported UDF functions are l
 |                          | Array.empty[Float]                                       |
 |                          | Array.empty[Double]                                      |
 |                          | Array.empty[String]                                      |
+| Method call              | Only if the method being called <ol><li>consists of operations supported by the UDF compiler, and</li><li>is one of the folllowing:<ul><li>a final method, or</li><li>a method in a final class, or</li><li>a method in a final object</li></ul></li></ol> |
