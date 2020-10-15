@@ -59,4 +59,14 @@ class BenchUtilsSuite extends FunSuite with BeforeAndAfterEach {
     assert(report == report2)
   }
 
+  test("validate coalesce/repartition arguments - no duplicates") {
+    BenchUtils.validateCoalesceRepartition(Map("a" -> 1, "b" -> 1), Map("c" -> 1, "d" -> 1))
+  }
+
+  test("validate coalesce/repartition arguments - with duplicates") {
+    assertThrows[IllegalArgumentException] {
+      BenchUtils.validateCoalesceRepartition(Map("a" -> 1, "b" -> 1), Map("c" -> 1, "b" -> 1))
+    }
+  }
+
 }
