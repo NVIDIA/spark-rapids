@@ -495,11 +495,6 @@ object CastOpSuite {
     shortValues.map(_.toDouble).toDF("c0")
   }
 
-  // def shortsAsBinary(session: SparkSession): DataFrame = {
-  //   import session.sqlContext.implicits._
-  //   shortValues.map(_.toBinary).toDF("c0")
-  // }
-
   def shortsAsTimestamps(session: SparkSession): DataFrame = {
     import session.sqlContext.implicits._
     shortValues.map(value => new Timestamp(value)).toDF("c0")
@@ -525,11 +520,6 @@ object CastOpSuite {
     intValues.map(_.toDouble).toDF("c0")
   }
 
-  // def intsAsBinary(session: SparkSession): DataFrame = {
-  //   import session.sqlContext.implicits._
-  //   intValues.map(_.toBinary).toDF("c0")
-  // }
-
   def intsAsTimestamps(session: SparkSession): DataFrame = {
     import session.sqlContext.implicits._
     intValues.map(value => new Timestamp(value)).toDF("c0")
@@ -549,11 +539,6 @@ object CastOpSuite {
     import session.sqlContext.implicits._
     longValues.map(_.toDouble).toDF("c0")
   }
-
-  // def longsAsBinary(session: SparkSession): DataFrame = {
-  //   import session.sqlContext.implicits._
-  //   longValues.map(_.toBinary).toDF("c0")
-  // }
 
   def longsAsTimestamps(session: SparkSession): DataFrame = {
     import session.sqlContext.implicits._

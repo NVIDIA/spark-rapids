@@ -313,7 +313,7 @@ public class GpuColumnVector extends GpuColumnVectorBase {
     return new GpuColumnVector(getSparkTypeFrom(cudfCv), cudfCv);
   }
 
-  public static final GpuColumnVector from(DataType type, typai.rapids.cudf.ColumnVector cudfCv) {
+  public static final GpuColumnVector from(DataType type, ai.rapids.cudf.ColumnVector cudfCv) {
     return new GpuColumnVector(type, cudfCv);
   }
 
