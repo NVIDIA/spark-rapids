@@ -157,6 +157,12 @@ Care should be taken to ensure that no sensitive information is captured from th
 before sharing these JSON files. Environment variables with names containing the words `PASSWORD`, 
 `TOKEN`, or `SECRET` are filtered out, but this may not be sufficient to prevent leaking secrets.
 
+## Automating Benchmarks
+
+For convenience, the [benchmark.py](../integration_tests/src/main/python/benchmark.py) script is
+provided, allowing benchmarks to be run in an automated way with multiple configurations. Example
+usage is provided in the documentation within the script.
+
 ## Verifying Results
 
 It is important to verify that queries actually produced the correct output, especially when 
