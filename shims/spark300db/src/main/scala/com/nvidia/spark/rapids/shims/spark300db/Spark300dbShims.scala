@@ -207,18 +207,9 @@ class Spark300dbShims extends Spark300Shims {
     FilePartition(index, files)
   }
 
-  override def copyParquetBatchScanExec(
-      batchScanExec: GpuBatchScanExec,
-      canUseCoalesceFilesRead: Boolean): GpuBatchScanExec = {
-    val scan = batchScanExec.scan.asInstanceOf[GpuParquetScan]
-    val scanCopy = scan.copy(canUseCoalesceFilesRead=canUseCoalesceFilesRead)
-    batchScanExec.copy(scan=scanCopy)
-  }
-
   override def copyFileSourceScanExec(
       scanExec: GpuFileSourceScanExec,
       canUseCoalesceFilesRead: Boolean): GpuFileSourceScanExec = {
     scanExec.copy(canUseCoalesceFilesRead=canUseCoalesceFilesRead)
   }
-
 }
