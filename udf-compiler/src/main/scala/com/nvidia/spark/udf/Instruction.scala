@@ -106,6 +106,8 @@ private object Repr {
       LocalDateTime(new ParseToTimestamp(text, formatter.pattern))
     }
   }
+
+  case class ClassTag[T](classTag: scala.reflect.ClassTag[T]) extends CompilerInternal("scala.reflect.ClassTag")
 }
 
 /**
@@ -177,6 +179,7 @@ case class Instruction(opcode: Int, operand: Int, instructionStr: String) extend
       case Opcode.D2I | Opcode.F2I | Opcode.L2I => cast(state, IntegerType)
       case Opcode.D2L | Opcode.F2L | Opcode.I2L => cast(state, LongType)
       case Opcode.I2S => cast(state, ShortType)
+      case Opcode.CHECKCAST => checkcast(lambdaReflection, state)
       // Branching instructions
       // if_acmp<cond> isn't supported.
       case Opcode.IF_ICMPEQ => ifCmp(state, (x, y) => simplify(EqualTo(x, y)))
@@ -309,6 +312,15 @@ case class Instruction(opcode: Int, operand: Int, instructionStr: String) extend
     State(locals, Cast(top, dataType) :: rest, cond, expr)
   }
 
+  private def checkcast(lambdaReflection: LambdaReflection, state: State): State = {
+    val State(locals, top :: rest, cond, expr) = state
+    val typeName = lambdaReflection.lookupClassName(operand)
+    if (LambdaReflection.parseTypeSig(typeName) != top.dataType) {
+      throw new SparkException(s"checkcast failed: ${typeName}")
+    }
+    state
+  }
+
   private def ifCmp(state: State,
       predicate: (Expression, Expression) => Expression): State = {
     val State(locals, op2 :: op1 :: rest, cond, expr) = state
@@ -345,6 +357,16 @@ case class Instruction(opcode: Int, operand: Int, instructionStr: String) extend
     } else if (declaringClassName.equals("scala.Predef$")) {
       State(locals,
         predefOp(lambdaReflection, method.getName, args) :: rest,
+        cond,
+        expr)
+    } else if (declaringClassName.equals("scala.Array$")) {
+      State(locals,
+        arrayOp(lambdaReflection, method.getName, args) :: rest,
+        cond,
+        expr)
+    } else if (declaringClassName.equals("scala.reflect.ClassTag$")) {
+      State(locals,
+        classTagOp(lambdaReflection, method.getName, args) :: rest,
         cond,
         expr)
     } else if (declaringClassName.equals("java.lang.Double")) {
@@ -449,6 +471,91 @@ case class Instruction(opcode: Int, operand: Int, instructionStr: String) extend
         checkArgs(methodName, List(IntegerType, FloatType), args)
         args.last
       case _ => throw new SparkException("Unsupported predef function: " + methodName)
+    }
+  }
+
+  private def arrayOp(lambdaReflection: LambdaReflection,
+      methodName: String, args: List[Expression]): Expression = {
+    // Make sure that the objref is scala.math.package$.
+    args.head match {
+      case IntegerLiteral(index) =>
+        if (!lambdaReflection.lookupField(index.asInstanceOf[Int])
+            .getType.getName.equals("scala.Array$")) {
+          throw new SparkException("Unsupported array function objref: " + args.head)
+        }
+      case _ =>
+        throw new SparkException("Unsupported array function objref: " + args.head)
+    }
+    // Translate to Catalyst
+    methodName match {
+      case "empty" =>
+        if (args.last.isInstanceOf[Repr.ClassTag[_]]) {
+          val classTag = args.last.asInstanceOf[Repr.ClassTag[_]].classTag
+          if (classTag == scala.reflect.ClassTag.Boolean) {
+            Literal(Array.empty[Boolean])
+          } else if (classTag == scala.reflect.ClassTag.Byte) {
+            Literal(Array.empty[Byte])
+          } else if (classTag == scala.reflect.ClassTag.Short) {
+            Literal(Array.empty[Short])
+          } else if (classTag == scala.reflect.ClassTag.Int) {
+            Literal(Array.empty[Int])
+          } else if (classTag == scala.reflect.ClassTag.Long) {
+            Literal(Array.empty[Long])
+          } else if (classTag == scala.reflect.ClassTag.Float) {
+            Literal(Array.empty[Float])
+          } else if (classTag == scala.reflect.ClassTag.Double) {
+            Literal(Array.empty[Double])
+          } else if (classTag == scala.reflect.ClassTag("".getClass)) {
+            Literal(Array.empty[String])
+          } else {
+            throw new SparkException("Unsupported data type for Array.empty")
+          }
+        } else {
+          throw new SparkException("Unexpected argument for Array.empty")
+        }
+      case _ => throw new SparkException("Unsupported array function: " + methodName)
+    }
+  }
+
+  private def classTagOp(lambdaReflection: LambdaReflection,
+      methodName: String, args: List[Expression]): Expression = {
+    // Make sure that the objref is scala.math.package$.
+    args.head match {
+      case IntegerLiteral(index) =>
+        if (!lambdaReflection.lookupField(index.asInstanceOf[Int])
+            .getType.getName.equals("scala.reflect.ClassTag$")) {
+          throw new SparkException("Unsupported classTag function objref: " + args.head)
+        }
+      case _ =>
+        throw new SparkException("Unsupported classTag function objref: " + args.head)
+    }
+    // Translate to Catalyst
+    methodName match {
+      case "Boolean" =>
+        checkArgs(methodName, List(IntegerType), args)
+        new Repr.ClassTag(scala.reflect.ClassTag.Boolean)
+      case "Byte" =>
+        checkArgs(methodName, List(IntegerType), args)
+        new Repr.ClassTag(scala.reflect.ClassTag.Byte)
+      case "Short" =>
+        checkArgs(methodName, List(IntegerType), args)
+        new Repr.ClassTag(scala.reflect.ClassTag.Short)
+      case "Int" =>
+        checkArgs(methodName, List(IntegerType), args)
+        new Repr.ClassTag(scala.reflect.ClassTag.Int)
+      case "Long" =>
+        checkArgs(methodName, List(IntegerType), args)
+        new Repr.ClassTag(scala.reflect.ClassTag.Long)
+      case "Float" =>
+        checkArgs(methodName, List(IntegerType), args)
+        new Repr.ClassTag(scala.reflect.ClassTag.Float)
+      case "Double" =>
+        checkArgs(methodName, List(IntegerType), args)
+        new Repr.ClassTag(scala.reflect.ClassTag.Double)
+      case "apply" =>
+        checkArgs(methodName, List(IntegerType, StringType), args)
+        new Repr.ClassTag(scala.reflect.ClassTag.apply(LambdaReflection.getClass(args.last.toString)))
+      case _ => throw new SparkException("Unsupported classTag function: " + methodName)
     }
   }
 
@@ -676,7 +783,7 @@ object Instruction {
         codeIterator.byteAt(offset + 1)
       case Opcode.BIPUSH =>
         codeIterator.signedByteAt(offset + 1)
-      case Opcode.LDC_W | Opcode.LDC2_W | Opcode.NEW |
+      case Opcode.LDC_W | Opcode.LDC2_W | Opcode.NEW | Opcode.CHECKCAST |
            Opcode.INVOKESTATIC | Opcode.INVOKEVIRTUAL | Opcode.INVOKEINTERFACE |
            Opcode.INVOKESPECIAL | Opcode.GETSTATIC =>
         codeIterator.u16bitAt(offset + 1)

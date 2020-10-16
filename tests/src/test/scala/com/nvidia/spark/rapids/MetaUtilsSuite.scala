@@ -83,7 +83,7 @@ class MetaUtilsSuite extends FunSuite with Arm {
       val compressedSize: Long = 123
       val table = contigTable.getTable
       val buffer = contigTable.getBuffer
-      val meta = MetaUtils.buildTableMeta(tableId, table, buffer, codecType, compressedSize)
+      val meta = MetaUtils.buildTableMeta(Some(tableId), table, buffer, codecType, compressedSize)
 
       val bufferMeta = meta.bufferMeta
       assertResult(tableId)(bufferMeta.id)

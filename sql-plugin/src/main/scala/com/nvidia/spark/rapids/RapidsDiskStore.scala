@@ -28,8 +28,9 @@ import org.apache.spark.sql.rapids.RapidsDiskBlockManager
 
 /** A buffer store using files on the local disks. */
 class RapidsDiskStore(
-    catalog: RapidsBufferCatalog,
-    diskBlockManager: RapidsDiskBlockManager) extends RapidsBufferStore("disk", catalog) {
+    diskBlockManager: RapidsDiskBlockManager,
+    catalog: RapidsBufferCatalog = RapidsBufferCatalog.singleton)
+    extends RapidsBufferStore("disk", catalog) {
   private[this] val sharedBufferFiles = new ConcurrentHashMap[RapidsBufferId, File]
 
   override def createBuffer(
@@ -103,7 +104,8 @@ class RapidsDiskStore(
         logDebug(s"Created mmap buffer for $path $fileOffset:$size")
         hostBuffer = Some(mappedBuffer)
       }
-      hostBuffer.map(b => b.slice(0, b.getLength)).get
+      hostBuffer.foreach(_.incRefCount())
+      hostBuffer.get
     }
 
     override def close(): Unit = synchronized {

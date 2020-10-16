@@ -26,8 +26,8 @@ import org.apache.spark.sql.vectorized.ColumnarBatch
  * Buffer storage using device memory.
  * @param catalog catalog to register this store
  */
-class RapidsDeviceMemoryStore(
-    catalog: RapidsBufferCatalog) extends RapidsBufferStore("GPU", catalog) {
+class RapidsDeviceMemoryStore(catalog: RapidsBufferCatalog = RapidsBufferCatalog.singleton)
+    extends RapidsBufferStore("GPU", catalog) {
   override protected def createBuffer(
       other: RapidsBuffer,
       stream: Cuda.Stream): RapidsBufferBase = {
@@ -134,11 +134,14 @@ class RapidsDeviceMemoryStore(
       table.foreach(_.close())
     }
 
-    override def getMemoryBuffer: MemoryBuffer = contigBuffer.slice(0, contigBuffer.getLength)
+    override def getMemoryBuffer: MemoryBuffer = {
+      contigBuffer.incRefCount()
+      contigBuffer
+    }
 
     override def getColumnarBatch: ColumnarBatch = {
       if (table.isDefined) {
-        GpuColumnVector.from(table.get) //REFCOUNT ++ of all columns
+        GpuColumnVectorFromBuffer.from(table.get, contigBuffer) //REFCOUNT ++ of all columns
       } else {
         columnarBatchFromDeviceBuffer(contigBuffer)
       }

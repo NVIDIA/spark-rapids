@@ -25,7 +25,7 @@ import org.apache.spark.sql.catalyst.expressions.aggregate.AggregateFunction
 import org.apache.spark.sql.catalyst.plans.physical.Partitioning
 import org.apache.spark.sql.catalyst.trees.TreeNodeTag
 import org.apache.spark.sql.connector.read.Scan
-import org.apache.spark.sql.execution.SparkPlan
+import org.apache.spark.sql.execution.{FileSourceScanExec, SparkPlan}
 import org.apache.spark.sql.execution.adaptive.{QueryStageExec, ShuffleQueryStageExec}
 import org.apache.spark.sql.execution.command.DataWritingCommand
 import org.apache.spark.sql.execution.exchange.{ReusedExchangeExec, ShuffleExchangeExec}
@@ -227,14 +227,15 @@ abstract class RapidsMeta[INPUT <: BASE, BASE, OUTPUT <: BASE](
   private def indent(append: StringBuilder, depth: Int): Unit =
     append.append("  " * depth)
 
+  def couldReplaceMessage: String = "could run on GPU"
+  def noReplacementPossibleMessage(reasons: String): String = s"cannot run on GPU because $reasons"
   def suppressWillWorkOnGpuInfo: Boolean = false
 
   private def willWorkOnGpuInfo: String = cannotBeReplacedReasons match {
     case None => "NOT EVALUATED FOR GPU YET"
-    case Some(v) if v.isEmpty => "could run on GPU"
+    case Some(v) if v.isEmpty => couldReplaceMessage
     case Some(v) =>
-      val reasons = v mkString "; "
-      s"cannot run on GPU because ${reasons}"
+      noReplacementPossibleMessage(v mkString "; ")
   }
 
   private def willBeRemovedInfo: String = shouldBeRemovedReasons match {
@@ -242,7 +243,7 @@ abstract class RapidsMeta[INPUT <: BASE, BASE, OUTPUT <: BASE](
     case Some(v) if v.isEmpty => ""
     case Some(v) =>
       val reasons = v mkString "; "
-      s" but is going to be removed because ${reasons}"
+      s" but is going to be removed because $reasons"
   }
 
   /**
@@ -404,7 +405,7 @@ final class RuleNotFoundDataWritingCommandMeta[INPUT <: DataWritingCommand](
     extends DataWritingCommandMeta[INPUT](cmd, conf, parent, new NoRuleConfKeysAndIncompat) {
 
   override def tagSelfForGpu(): Unit = {
-    willNotWorkOnGpu(s"no GPU enabled version of command ${cmd.getClass} could be found")
+    willNotWorkOnGpu(s"no GPU accelerated version of command ${cmd.getClass} could be found")
   }
 
   override def convertToGpu(): GpuDataWritingCommand =
@@ -446,6 +447,21 @@ abstract class SparkPlanMeta[INPUT <: SparkPlan](plan: INPUT,
     case _ => childPlans.flatMap(_.findShuffleExchanges())
   }
 
+  private def findBucketedReads(): Seq[Boolean] = wrapped match {
+    case f: FileSourceScanExec =>
+      if (f.bucketedScan) {
+        true :: Nil
+      } else {
+        false :: Nil
+      }
+    case _: ShuffleExchangeExec =>
+      // if we find a shuffle before a scan then it doesn't matter if its
+      // a bucketed read
+      false :: Nil
+    case _ =>
+      childPlans.flatMap(_.findBucketedReads())
+  }
+
   private def makeShuffleConsistent(): Unit = {
     // during query execution when AQE is enabled, the plan could consist of a mixture of
     // ShuffleExchangeExec nodes for exchanges that have not started executing yet, and
@@ -453,6 +469,9 @@ abstract class SparkPlanMeta[INPUT <: SparkPlan](plan: INPUT,
     // attempts to tag ShuffleExchangeExec nodes for CPU if other exchanges (either
     // ShuffleExchangeExec or ShuffleQueryStageExec nodes) were also tagged for CPU.
     val shuffleExchanges = findShuffleExchanges()
+    // if any of the table reads are bucketed then we can't do the shuffle on the
+    // GPU because the hashing is different between the CPU and GPU
+    val bucketedReads = findBucketedReads().exists(_ == true)
 
     def canThisBeReplaced(plan: Either[
         SparkPlanMeta[QueryStageExec],
@@ -467,13 +486,18 @@ abstract class SparkPlanMeta[INPUT <: SparkPlan](plan: INPUT,
       }
     }
 
-    // if we can't convert all exchanges to GPU then we need to make sure that all of them
-    // run on the CPU instead
-    if (!shuffleExchanges.forall(canThisBeReplaced)) {
+    // if we are reading from a bucketed table or if we can't convert all exchanges to GPU
+    // then we need to make sure that all of them run on the CPU instead
+    if (bucketedReads || !shuffleExchanges.forall(canThisBeReplaced)) {
+      val errMsg = if (bucketedReads) {
+        "can't support shuffle on the GPU when doing a join that reads directly from a " +
+          "bucketed table!"
+      } else {
+        "other exchanges that feed the same join are on the CPU, and GPU hashing is " +
+          "not consistent with the CPU version"
+      }
       // tag any exchanges that have not been converted to query stages yet
-      shuffleExchanges.filter(_.isRight)
-          .foreach(_.right.get.willNotWorkOnGpu("other exchanges that feed the same join are" +
-              " on the CPU, and GPU hashing is not consistent with the CPU version"))
+      shuffleExchanges.filter(_.isRight).foreach(_.right.get.willNotWorkOnGpu(errMsg))
       // verify that no query stages already got converted to GPU
       if (shuffleExchanges.filter(_.isLeft).exists(canThisBeReplaced)) {
         throw new IllegalStateException("Join needs to run on CPU but at least one input " +
@@ -481,7 +505,6 @@ abstract class SparkPlanMeta[INPUT <: SparkPlan](plan: INPUT,
       }
     }
   }
-
 
   private def fixUpJoinConsistencyIfNeeded(): Unit = {
     childPlans.foreach(_.fixUpJoinConsistencyIfNeeded())

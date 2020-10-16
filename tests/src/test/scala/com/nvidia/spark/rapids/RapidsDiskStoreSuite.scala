@@ -53,9 +53,9 @@ class RapidsDiskStoreSuite extends FunSuite with BeforeAndAfterEach with Arm wit
     val hostStoreMaxSize = 1L * 1024 * 1024
     val catalog = spy(new RapidsBufferCatalog)
     withResource(new RapidsDeviceMemoryStore(catalog)) { devStore =>
-      withResource(new RapidsHostMemoryStore(catalog, hostStoreMaxSize)) { hostStore =>
+      withResource(new RapidsHostMemoryStore(hostStoreMaxSize, catalog)) { hostStore =>
         devStore.setSpillStore(hostStore)
-        withResource(new RapidsDiskStore(catalog, mock[RapidsDiskBlockManager])) { diskStore =>
+        withResource(new RapidsDiskStore(mock[RapidsDiskBlockManager], catalog)) { diskStore =>
           assertResult(0)(diskStore.currentSize)
           hostStore.setSpillStore(diskStore)
           val bufferSize = addTableToStore(devStore, bufferId, spillPriority)
@@ -89,9 +89,9 @@ class RapidsDiskStoreSuite extends FunSuite with BeforeAndAfterEach with Arm wit
     val hostStoreMaxSize = 1L * 1024 * 1024
     val catalog = new RapidsBufferCatalog
     withResource(new RapidsDeviceMemoryStore(catalog)) { devStore =>
-      withResource(new RapidsHostMemoryStore(catalog, hostStoreMaxSize)) { hostStore =>
+      withResource(new RapidsHostMemoryStore(hostStoreMaxSize, catalog)) { hostStore =>
         devStore.setSpillStore(hostStore)
-        withResource(new RapidsDiskStore(catalog, mock[RapidsDiskBlockManager])) { diskStore =>
+        withResource(new RapidsDiskStore(mock[RapidsDiskBlockManager], catalog)) { diskStore =>
           hostStore.setSpillStore(diskStore)
           addTableToStore(devStore, bufferId, spillPriority)
           val expectedBatch = withResource(catalog.acquireBuffer(bufferId)) { buffer =>
@@ -119,17 +119,17 @@ class RapidsDiskStoreSuite extends FunSuite with BeforeAndAfterEach with Arm wit
     val hostStoreMaxSize = 1L * 1024 * 1024
     val catalog = new RapidsBufferCatalog
     withResource(new RapidsDeviceMemoryStore(catalog)) { devStore =>
-      withResource(new RapidsHostMemoryStore(catalog, hostStoreMaxSize)) { hostStore =>
+      withResource(new RapidsHostMemoryStore(hostStoreMaxSize, catalog)) { hostStore =>
         devStore.setSpillStore(hostStore)
-        withResource(new RapidsDiskStore(catalog, mock[RapidsDiskBlockManager])) { diskStore =>
+        withResource(new RapidsDiskStore(mock[RapidsDiskBlockManager], catalog)) { diskStore =>
           hostStore.setSpillStore(diskStore)
           addTableToStore(devStore, bufferId, spillPriority)
           val expectedBuffer = withResource(catalog.acquireBuffer(bufferId)) { buffer =>
             assertResult(StorageTier.DEVICE)(buffer.storageTier)
             withResource(buffer.getMemoryBuffer) { devbuf =>
-              withResource(HostMemoryBuffer.allocate(devbuf.getLength)) { hostbuf =>
+              closeOnExcept(HostMemoryBuffer.allocate(devbuf.getLength)) { hostbuf =>
                 hostbuf.copyFromDeviceBuffer(devbuf.asInstanceOf[DeviceMemoryBuffer])
-                hostbuf.slice(0, hostbuf.getLength)
+                hostbuf
               }
             }
           }
@@ -166,9 +166,9 @@ class RapidsDiskStoreSuite extends FunSuite with BeforeAndAfterEach with Arm wit
     val hostStoreMaxSize = 1L * 1024 * 1024
     val catalog = new RapidsBufferCatalog
     withResource(new RapidsDeviceMemoryStore(catalog)) { devStore =>
-      withResource(new RapidsHostMemoryStore(catalog, hostStoreMaxSize)) { hostStore =>
+      withResource(new RapidsHostMemoryStore(hostStoreMaxSize, catalog)) { hostStore =>
         devStore.setSpillStore(hostStore)
-        withResource(new RapidsDiskStore(catalog, mock[RapidsDiskBlockManager])) { diskStore =>
+        withResource(new RapidsDiskStore(mock[RapidsDiskBlockManager], catalog)) { diskStore =>
           hostStore.setSpillStore(diskStore)
           addTableToStore(devStore, bufferId, spillPriority)
           devStore.synchronousSpill(0)

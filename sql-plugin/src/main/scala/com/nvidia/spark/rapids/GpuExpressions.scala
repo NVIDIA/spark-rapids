@@ -16,12 +16,10 @@
 
 package com.nvidia.spark.rapids
 
-import scala.collection.mutable.ArrayBuffer
-
 import ai.rapids.cudf.{BinaryOp, BinaryOperable, DType, Scalar, UnaryOp}
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 
-import org.apache.spark.sql.catalyst.expressions.{BinaryExpression, BinaryOperator, ComplexTypeMergingExpression, Expression, String2TrimExpression, TernaryExpression, UnaryExpression, Unevaluable}
+import org.apache.spark.sql.catalyst.expressions._
 import org.apache.spark.sql.types.StringType
 import org.apache.spark.sql.vectorized.ColumnarBatch
 import org.apache.spark.unsafe.types.UTF8String
@@ -29,13 +27,9 @@ import org.apache.spark.unsafe.types.UTF8String
 object GpuExpressionsUtils extends Arm {
   def evaluateBoundExpressions[A <: GpuExpression](cb: ColumnarBatch,
       boundExprs: Seq[A]): Seq[GpuColumnVector] = {
-    val numCols = boundExprs.length
-    closeOnExcept(new ArrayBuffer[GpuColumnVector](numCols)) { resultCvs =>
-      for (i <- 0 until numCols) {
-        val ref = boundExprs(i)
-        resultCvs += ref.columnarEval(cb).asInstanceOf[GpuColumnVector]
-      }
-      resultCvs
+    withResource(GpuProjectExec.project(cb, boundExprs)) { cb =>
+      (0 until cb.numCols()).map(cb.column(_).asInstanceOf[GpuColumnVector].incRefCount())
+          .toArray.toSeq
     }
   }
 

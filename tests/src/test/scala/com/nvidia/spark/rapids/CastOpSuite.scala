@@ -17,7 +17,7 @@
 package com.nvidia.spark.rapids
 
 import java.sql.Timestamp
-import java.text.SimpleDateFormat
+import java.time.LocalDateTime
 import java.util.TimeZone
 
 import org.apache.spark.SparkConf
@@ -690,9 +690,13 @@ object CastOpSuite {
 
   def validTimestamps(session: SparkSession): DataFrame = {
     import session.sqlContext.implicits._
-    val df = new SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSS")
     val timestampStrings = Seq(
-      "2020-12-31T11:59:59.999",
+      "1920-12-31T11:59:59.999",
+      "1969-12-31T23:59:59.999",
+      "1969-12-31T23:59:59.999999",
+      "1970-01-01T00:00:00.000",
+      "1970-01-01T00:00:00.999",
+      "1970-01-01T00:00:00.999111",
       "2020-12-31T11:59:59.990",
       "2020-12-31T11:59:59.900",
       "2020-12-31T11:59:59.000",
@@ -702,8 +706,7 @@ object CastOpSuite {
       "2020-12-31T11:00:00.000"
     )
     val timestamps = timestampStrings
-      .map(s => df.parse(s))
-      .map(d => new Timestamp(d.getTime))
+      .map(s => Timestamp.valueOf(LocalDateTime.parse(s)))
 
     timestamps.toDF("c0")
   }

@@ -145,6 +145,29 @@ class ConfEntryWithDefault[T](key: String, converter: String => T, doc: String,
   }
 }
 
+class OptionalConfEntry[T](key: String, val rawConverter: String => T, doc: String,
+    isInternal: Boolean)
+  extends ConfEntry[Option[T]](key, s => Some(rawConverter(s)), doc, isInternal) {
+
+  override def get(conf: Map[String, String]): Option[T] = {
+    conf.get(key).map(rawConverter)
+  }
+
+  override def help(asTable: Boolean = false): Unit = {
+    if (!isInternal) {
+      if (asTable) {
+        import ConfHelper.makeConfAnchor
+        println(s"${makeConfAnchor(key)}|$doc|None")
+      } else {
+        println(s"$key:")
+        println(s"\t$doc")
+        println("\tNone")
+        println()
+      }
+    }
+  }
+}
+
 class TypedConfBuilder[T](
     val parent: ConfBuilder,
     val converter: String => T,
@@ -180,6 +203,13 @@ class TypedConfBuilder[T](
   def toSequence: TypedConfBuilder[Seq[T]] = {
     new TypedConfBuilder(parent, ConfHelper.stringToSeq(_, converter),
       ConfHelper.seqToString(_, stringConverter))
+  }
+
+  def createOptional: OptionalConfEntry[T] = {
+    val ret = new OptionalConfEntry[T](parent.key, converter,
+      parent.doc, parent.isInternal)
+    parent.register(ret)
+    ret
   }
 }
 
@@ -252,6 +282,13 @@ object RapidsConf {
     .stringConf
     .createWithDefault("NONE")
 
+  val GPU_OOM_DUMP_DIR = conf("spark.rapids.memory.gpu.oomDumpDir")
+    .doc("The path to a local directory where a heap dump will be created if the GPU " +
+      "encounters an unrecoverable out-of-memory (OOM) error. The filename will be of the " +
+      "form: \"gpu-oom-<pid>.hprof\" where <pid> is the process ID.")
+    .stringConf
+    .createOptional
+
   private val RMM_ALLOC_MAX_FRACTION_KEY = "spark.rapids.memory.gpu.maxAllocFraction"
   private val RMM_ALLOC_RESERVE_KEY = "spark.rapids.memory.gpu.reserve"
 
@@ -287,9 +324,18 @@ object RapidsConf {
 
   val POOLED_MEM = conf("spark.rapids.memory.gpu.pooling.enabled")
     .doc("Should RMM act as a pooling allocator for GPU memory, or should it just pass " +
-      "through to CUDA memory allocation directly.")
+      "through to CUDA memory allocation directly. DEPRECATED: please use " +
+      "spark.rapids.memory.gpu.pool instead.")
     .booleanConf
     .createWithDefault(true)
+
+  val RMM_POOL = conf("spark.rapids.memory.gpu.pool")
+    .doc("Select the RMM pooling allocator to use. Valid values are \"DEFAULT\", \"ARENA\", and " +
+      "\"NONE\". With \"DEFAULT\", `rmm::mr::pool_memory_resource` is used; with \"ARENA\", " +
+      "`rmm::mr::arena_memory_resource` is used. If set to \"NONE\", pooling is disabled and RMM " +
+      "just passes through to CUDA memory allocation directly.")
+    .stringConf
+    .createWithDefault("ARENA")
 
   val CONCURRENT_GPU_TASKS = conf("spark.rapids.sql.concurrentGpuTasks")
       .doc("Set the number of tasks that can execute concurrently per GPU. " +
@@ -452,7 +498,7 @@ object RapidsConf {
       "by reading each file in a separate thread in parallel on the CPU side before " +
       "sending to the GPU. Limited by " +
       "spark.rapids.sql.format.parquet.multiThreadedRead.numThreads " +
-      "and spark.rapids.sql.format.parquet.multiThreadedRead.maxNumFileProcessed")
+      "and spark.rapids.sql.format.parquet.multiThreadedRead.maxNumFilesParallel")
     .booleanConf
     .createWithDefault(true)
 
@@ -554,7 +600,6 @@ object RapidsConf {
     .booleanConf
     .createWithDefault(true)
 
-  // USER FACING SHUFFLE CONFIGS
   val SHUFFLE_TRANSPORT_ENABLE = conf("spark.rapids.shuffle.transport.enabled")
     .doc("When set to true, enable the Rapids Shuffle Transport for accelerated shuffle.")
     .booleanConf
@@ -639,7 +684,7 @@ object RapidsConf {
 
   val SHUFFLE_COMPRESSION_CODEC = conf("spark.rapids.shuffle.compression.codec")
       .doc("The GPU codec used to compress shuffle data when using RAPIDS shuffle. " +
-          "Supported codecs: copy, none")
+          "Supported codecs: lz4, copy, none")
       .internal()
       .stringConf
       .createWithDefault("none")
@@ -658,6 +703,17 @@ object RapidsConf {
       "a query that did not go on the GPU")
     .stringConf
     .createWithDefault("NONE")
+
+  val SHIMS_PROVIDER_OVERRIDE = conf("spark.rapids.shims-provider-override")
+    .internal()
+    .doc("Overrides the automatic Spark shim detection logic and forces a specific shims " +
+      "provider class to be used. Set to the fully qualified shims provider class to use. " +
+      "If you are using a custom Spark version such as Spark 3.0.0.0 then this can be used to " +
+      "specify the shims provider that matches the base Spark version of Spark 3.0.0, i.e.: " +
+      "com.nvidia.spark.rapids.shims.spark300.SparkShimServiceProvider. If you modified Spark " +
+      "then there is no guarantee the RAPIDS Accelerator will function properly.")
+    .stringConf
+    .createOptional
 
   private def printSectionHeader(category: String): Unit =
     println(s"\n### $category")
@@ -689,7 +745,7 @@ object RapidsConf {
         |On startup use: `--conf [conf key]=[conf value]`. For example:
         |
         |```
-        |${SPARK_HOME}/bin/spark --jars 'rapids-4-spark_2.12-0.2.0-SNAPSHOT.jar,cudf-0.15-cuda10-1.jar' \
+        |${SPARK_HOME}/bin/spark --jars 'rapids-4-spark_2.12-0.3.0-SNAPSHOT.jar,cudf-0.16-SNAPSHOT-cuda10-1.jar' \
         |--conf spark.plugins=com.nvidia.spark.SQLPlugin \
         |--conf spark.rapids.sql.incompatibleOps.enabled=true
         |```
@@ -772,6 +828,8 @@ object RapidsConf {
     }
   }
   def main(args: Array[String]): Unit = {
+    // Include the configs in PythonConfEntries
+    com.nvidia.spark.rapids.python.PythonConfEntries.init()
     val out = new FileOutputStream(new File(args(0)))
     Console.withOut(out) {
       Console.withErr(out) {
@@ -821,9 +879,13 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
 
   lazy val rmmDebugLocation: String = get(RMM_DEBUG)
 
+  lazy val gpuOomDumpDir: Option[String] = get(GPU_OOM_DUMP_DIR)
+
   lazy val isUvmEnabled: Boolean = get(UVM_ENABLED)
 
   lazy val isPooledMemEnabled: Boolean = get(POOLED_MEM)
+
+  lazy val rmmPool: String = get(RMM_POOL)
 
   lazy val rmmAllocFraction: Double = get(RMM_ALLOC_FRACTION)
 
@@ -921,6 +983,8 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
   lazy val shuffleCompressionCodec: String = get(SHUFFLE_COMPRESSION_CODEC)
 
   lazy val shuffleCompressionMaxBatchMemory: Long = get(SHUFFLE_COMPRESSION_MAX_BATCH_MEMORY)
+
+  lazy val shimsProviderOverride: Option[String] = get(SHIMS_PROVIDER_OVERRIDE)
 
   def isOperatorEnabled(key: String, incompat: Boolean, isDisabledByDefault: Boolean): Boolean = {
     val default = !(isDisabledByDefault || incompat) || (incompat && isIncompatEnabled)

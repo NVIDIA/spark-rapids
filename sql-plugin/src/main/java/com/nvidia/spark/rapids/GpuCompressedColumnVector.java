@@ -19,6 +19,7 @@ package com.nvidia.spark.rapids;
 import ai.rapids.cudf.DType;
 import ai.rapids.cudf.DeviceMemoryBuffer;
 import com.nvidia.spark.rapids.format.ColumnMeta;
+import com.nvidia.spark.rapids.format.SubBufferMeta;
 import com.nvidia.spark.rapids.format.TableMeta;
 import org.apache.spark.sql.types.DataType;
 import org.apache.spark.sql.vectorized.ColumnVector;
@@ -41,6 +42,40 @@ public final class GpuCompressedColumnVector extends GpuColumnVectorBase {
     return from(compressedTable.buffer(), compressedTable.meta());
   }
 
+  public static boolean isBatchCompressed(ColumnarBatch batch) {
+    if (batch.numCols() == 0) {
+      return false;
+    } else {
+      return batch.column(0) instanceof GpuCompressedColumnVector;
+    }
+  }
+
+  public static long[] getUncompressedColumnSizes(ColumnarBatch batch) {
+    GpuCompressedColumnVector compressedVector = (GpuCompressedColumnVector)batch.column(0);
+    TableMeta tableMeta = compressedVector.getTableMeta();
+    assert (tableMeta.columnMetasLength() == batch.numCols());
+    int numCols = tableMeta.columnMetasLength();
+    ColumnMeta columnMeta = new ColumnMeta();
+    SubBufferMeta subBufferMetaObj = new SubBufferMeta();
+    long[] sizes = new long[numCols];
+    for (int i = 0; i < numCols; i++) {
+      tableMeta.columnMetas(columnMeta, i);
+      SubBufferMeta subBuffer = columnMeta.data(subBufferMetaObj);
+      if (subBuffer != null) {
+        sizes[i] += subBuffer.length();
+      }
+      subBuffer = columnMeta.offsets(subBufferMetaObj);
+      if (subBuffer != null) {
+        sizes[i] += subBuffer.length();
+      }
+      subBuffer = columnMeta.validity(subBufferMetaObj);
+      if (subBuffer != null) {
+        sizes[i] += subBuffer.length();
+      }
+    }
+    return sizes;
+  }
+
   /**
    * Build a columnar batch from a compressed data buffer and specified table metadata
    * NOTE: The data remains compressed and cannot be accessed directly from the columnar batch.
@@ -59,8 +94,8 @@ public final class GpuCompressedColumnVector extends GpuColumnVectorBase {
         tableMeta.columnMetas(columnMeta, i);
         DType dtype = DType.fromNative(columnMeta.dtype());
         DataType type = GpuColumnVector.getSparkType(dtype);
-        DeviceMemoryBuffer slicedBuffer = compressedBuffer.slice(0, compressedBuffer.getLength());
-        columns[i] = new GpuCompressedColumnVector(type, slicedBuffer, tableMeta);
+        compressedBuffer.incRefCount();
+        columns[i] = new GpuCompressedColumnVector(type, compressedBuffer, tableMeta);
       }
     } catch (Throwable t) {
       for (int i = 0; i < numColumns; ++i) {

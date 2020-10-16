@@ -20,6 +20,9 @@ enum CodecType : byte {
 
   /// no compression codec was used on the data
   UNCOMPRESSED = 0,
+
+  /// data compressed with the nvcomp LZ4 codec
+  NVCOMP_LZ4 = 1,
 }
 
 /// Descriptor for a compressed buffer

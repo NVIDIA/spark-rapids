@@ -19,7 +19,9 @@ package com.nvidia.spark.rapids
 import java.io.File
 import java.nio.file.Files
 
-import ai.rapids.cudf.{ContiguousTable, HostColumnVector, Table}
+import scala.collection.immutable.HashMap
+
+import ai.rapids.cudf.{ContiguousTable, Cuda, HostColumnVector, Table}
 import com.nvidia.spark.rapids.format.CodecType
 
 import org.apache.spark.sql.execution.metric.SQLMetric
@@ -59,6 +61,11 @@ class GpuCoalesceBatchesSuite extends SparkQueryCompareTestSuite {
   }
 
   test("limit batches by string size") {
+    // TODO figure out a better way to deal with the Rmm Event handler
+    // because we cannot do this multiple times without issues.
+
+    // If this test is run on it's own this is needed.
+    // RapidsBufferCatalog.init(new RapidsConf(new HashMap[String, String]()))
 
     val schema = new StructType(Array(
       StructField("a", DataTypes.DoubleType),
@@ -97,7 +104,8 @@ class GpuCoalesceBatchesSuite extends SparkQueryCompareTestSuite {
       override def getColumnDataSize(cb: ColumnarBatch, index: Int, default: Long): Long =
         index match {
           case 0 => 64L
-          case 1 => (Int.MaxValue / 4 * 3).toLong
+          case 1 => ((Int.MaxValue / 4) * 3).toLong
+          case _ => default
         }
     }
 
@@ -400,8 +408,8 @@ class GpuCoalesceBatchesSuite extends SparkQueryCompareTestSuite {
   }
 
   private def buildCompressedBatch(start: Int, numRows: Int): ColumnarBatch = {
-    val codec = TableCompressionCodec.getCodec(CodecType.COPY)
-    withResource(codec.createBatchCompressor(0)) { compressor =>
+    val codec = TableCompressionCodec.getCodec(CodecType.NVCOMP_LZ4)
+    withResource(codec.createBatchCompressor(0, Cuda.DEFAULT_STREAM)) { compressor =>
       compressor.addTableToCompress(buildContiguousTable(start, numRows))
       GpuCompressedColumnVector.from(compressor.finish().head)
     }

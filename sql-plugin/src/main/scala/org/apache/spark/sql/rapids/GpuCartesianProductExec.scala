@@ -19,12 +19,11 @@ package org.apache.spark.sql.rapids
 import java.io.{IOException, ObjectInputStream, ObjectOutputStream}
 
 import ai.rapids.cudf.{JCudfSerialization, NvtxColor, NvtxRange, Table}
-import com.nvidia.spark.rapids.{Arm, GpuBindReferences, GpuBuildLeft, GpuColumnarBatchSerializer, GpuColumnVector, GpuExec, GpuExpression, GpuSemaphore}
+import com.nvidia.spark.rapids.{Arm, GpuBindReferences, GpuBuildLeft, GpuColumnVector, GpuExec, GpuExpression, GpuSemaphore}
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 
 import org.apache.spark.{Dependency, NarrowDependency, Partition, SparkContext, TaskContext}
 import org.apache.spark.rdd.RDD
-import org.apache.spark.serializer.Serializer
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.expressions.{Attribute, Expression}
 import org.apache.spark.sql.execution.{BinaryExecNode, ExplainUtils, SparkPlan}
@@ -243,9 +242,6 @@ case class GpuCartesianProductExec(
     "joinOutputRows" -> SQLMetrics.createMetric(sparkContext, "join output rows"),
     "filterTime" -> SQLMetrics.createNanoTimingMetric(sparkContext, "filter time"),
     "dataSize" -> SQLMetrics.createMetric(sparkContext, "size of shuffled data"))
-
-  private val serializer: Serializer =
-    new GpuColumnarBatchSerializer(output.size, longMetric("dataSize"))
 
   protected override def doExecute(): RDD[InternalRow] =
     throw new IllegalStateException("This should only be called from columnar")

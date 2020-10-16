@@ -16,67 +16,211 @@
 
 package com.nvidia.spark.rapids.tests.tpcxbb
 
-import java.util.concurrent.TimeUnit.NANOSECONDS
-
-import scala.collection.mutable.ListBuffer
+import com.nvidia.spark.rapids.tests.common.BenchUtils
+import org.rogach.scallop.ScallopConf
 
 import org.apache.spark.internal.Logging
-import org.apache.spark.sql.{DataFrame, SparkSession}
+import org.apache.spark.sql.{DataFrame, SaveMode, SparkSession}
 
 object TpcxbbLikeBench extends Logging {
 
   /**
-   * This method can be called from Spark shell using the following syntax:
+   * This method performs a benchmark of executing a query and collecting the results to the
+   * driver and can be called from Spark shell using the following syntax:
    *
-   * TpcxbbLikeBench.runBench(spark, Q5Like.apply)
+   * TpcxbbLikeBench.collect(spark, "q5", 3)
+   * @param spark The Spark session
+   * @param query The name of the query to run e.g. "q5"
+   * @param iterations The number of times to run the query.
+   * @param summaryFilePrefix Optional prefix for the generated JSON summary file.
+   * @param gcBetweenRuns Whether to call `System.gc` between iterations to cause Spark to
+   *                      call `unregisterShuffle`
    */
-  def runBench(
+  def collect(
       spark: SparkSession,
-      queryRunner: SparkSession => DataFrame,
-      numColdRuns: Int = 1,
-      numHotRuns: Int = 3): Unit = {
+      query: String,
+      iterations: Int = 3,
+      summaryFilePrefix: Option[String] = None,
+      gcBetweenRuns: Boolean = false): Unit = {
+    BenchUtils.collect(
+      spark,
+      spark => getQuery(query)(spark),
+      query,
+      summaryFilePrefix.getOrElse(s"tpcxbb-$query-collect"),
+      iterations,
+      gcBetweenRuns)
+  }
 
-    val coldRunElapsed = new ListBuffer[Long]()
-    for (i <- 0 until numColdRuns) {
-      println(s"*** Start cold run $i:")
-      val start = System.nanoTime()
-      queryRunner(spark).collect
-      val end = System.nanoTime()
-      val elapsed = NANOSECONDS.toMillis(end - start)
-      coldRunElapsed.append(elapsed)
-      println(s"*** Cold run $i took $elapsed msec.")
-    }
+  /**
+   * This method performs a benchmark of executing a query and writing the results to CSV files
+   * and can be called from Spark shell using the following syntax:
+   *
+   * TpcxbbLikeBench.writeCsv(spark, "q5", 3, "/path/to/write")
+   *
+   * @param spark The Spark session
+   * @param query The name of the query to run e.g. "q5"
+   * @param path The path to write the results to
+   * @param mode The SaveMode to use when writing the results
+   * @param writeOptions Write options
+   * @param iterations The number of times to run the query.
+   * @param summaryFilePrefix Optional prefix for the generated JSON summary file.
+   * @param gcBetweenRuns Whether to call `System.gc` between iterations to cause Spark to
+   *                      call `unregisterShuffle`
+   */
+  def writeCsv(
+      spark: SparkSession,
+      query: String,
+      path: String,
+      mode: SaveMode = SaveMode.Overwrite,
+      writeOptions: Map[String, String] = Map.empty,
+      iterations: Int = 3,
+      summaryFilePrefix: Option[String] = None,
+      gcBetweenRuns: Boolean = false): Unit = {
+    BenchUtils.writeCsv(
+      spark,
+      spark => getQuery(query)(spark),
+      query,
+      summaryFilePrefix.getOrElse(s"tpcxbb-$query-csv"),
+      iterations,
+      gcBetweenRuns,
+      path,
+      mode,
+      writeOptions)
+  }
 
-    val hotRunElapsed = new ListBuffer[Long]()
-    for (i <- 0 until numHotRuns) {
-      println(s"*** Start hot run $i:")
-      val start = System.nanoTime()
-      queryRunner(spark).collect
-      val end = System.nanoTime()
-      val elapsed = NANOSECONDS.toMillis(end - start)
-      hotRunElapsed.append(elapsed)
-      println(s"*** Hot run $i took $elapsed msec.")
-    }
+  /**
+   * This method performs a benchmark of executing a query and writing the results to ORC files
+   * and can be called from Spark shell using the following syntax:
+   *
+   * TpcxbbLikeBench.writeOrc(spark, "q5", 3, "/path/to/write")
+   *
+   * @param spark The Spark session
+   * @param query The name of the query to run e.g. "q5"
+   * @param path The path to write the results to
+   * @param mode The SaveMode to use when writing the results
+   * @param writeOptions Write options
+   * @param iterations The number of times to run the query.
+   * @param summaryFilePrefix Optional prefix for the generated JSON summary file.
+   * @param gcBetweenRuns Whether to call `System.gc` between iterations to cause Spark to
+   *                      call `unregisterShuffle`
+   */
+  def writeOrc(
+      spark: SparkSession,
+      query: String,
+      path: String,
+      mode: SaveMode = SaveMode.Overwrite,
+      writeOptions: Map[String, String] = Map.empty,
+      iterations: Int = 3,
+      summaryFilePrefix: Option[String] = None,
+      gcBetweenRuns: Boolean = false): Unit = {
+    BenchUtils.writeOrc(
+      spark,
+      spark => getQuery(query)(spark),
+      query,
+      summaryFilePrefix.getOrElse(s"tpcxbb-$query-csv"),
+      iterations,
+      gcBetweenRuns,
+      path,
+      mode,
+      writeOptions)
+  }
 
-    for (i <- 0 until numColdRuns) {
-      println(s"Cold run $i took ${coldRunElapsed(i)} msec.")
-    }
-    println(s"Average cold run took ${coldRunElapsed.sum.toDouble/numColdRuns} msec.")
-
-    for (i <- 0 until numHotRuns) {
-      println(s"Hot run $i took ${hotRunElapsed(i)} msec.")
-    }
-    println(s"Average hot run took ${hotRunElapsed.sum.toDouble/numHotRuns} msec.")
+  /**
+   * This method performs a benchmark of executing a query and writing the results to Parquet files
+   * and can be called from Spark shell using the following syntax:
+   *
+   * TpcxbbLikeBench.writeParquet(spark, "q5", 3, "/path/to/write")
+   *
+   * @param spark The Spark session
+   * @param query The name of the query to run e.g. "q5"
+   * @param path The path to write the results to
+   * @param mode The SaveMode to use when writing the results
+   * @param writeOptions Write options
+   * @param iterations The number of times to run the query.
+   * @param summaryFilePrefix Optional prefix for the generated JSON summary file.
+   * @param gcBetweenRuns Whether to call `System.gc` between iterations to cause Spark to
+   *                      call `unregisterShuffle`
+   */
+  def writeParquet(
+      spark: SparkSession,
+      query: String,
+      path: String,
+      mode: SaveMode = SaveMode.Overwrite,
+      writeOptions: Map[String, String] = Map.empty,
+      iterations: Int = 3,
+      summaryFilePrefix: Option[String] = None,
+      gcBetweenRuns: Boolean = false): Unit = {
+    BenchUtils.writeParquet(
+      spark,
+      spark => getQuery(query)(spark),
+      query,
+      summaryFilePrefix.getOrElse(s"tpcxbb-$query-parquet"),
+      iterations,
+      gcBetweenRuns,
+      path,
+      mode,
+      writeOptions)
   }
 
   def main(args: Array[String]): Unit = {
-    val input = args(0)
-    val queryIndex = args(1).toInt
+    val conf = new Conf(args)
 
     val spark = SparkSession.builder.appName("TPCxBB Bench").getOrCreate()
-    TpcxbbLikeSpark.setupAllParquet(spark, input)
 
-    val queryRunner: SparkSession => DataFrame = queryIndex match {
+    conf.inputFormat().toLowerCase match {
+      case "parquet" => TpcxbbLikeSpark.setupAllParquet(spark, conf.input())
+      case "csv" => TpcxbbLikeSpark.setupAllCSV(spark, conf.input())
+      case other =>
+        println(s"Invalid input format: $other")
+        System.exit(-1)
+    }
+
+    println(s"*** RUNNING TPCx-BB QUERY ${conf.query()}")
+    conf.output.toOption match {
+      case Some(path) => conf.outputFormat().toLowerCase match {
+        case "parquet" =>
+          writeParquet(
+            spark,
+            conf.query(),
+            path,
+            iterations = conf.iterations(),
+            summaryFilePrefix = conf.summaryFilePrefix.toOption)
+        case "csv" =>
+          writeCsv(
+            spark,
+            conf.query(),
+            path,
+            iterations = conf.iterations(),
+            summaryFilePrefix = conf.summaryFilePrefix.toOption)
+        case "orc" =>
+          writeOrc(
+            spark,
+            conf.query(),
+            path,
+            iterations = conf.iterations(),
+            summaryFilePrefix = conf.summaryFilePrefix.toOption)
+        case _ =>
+          println("Invalid or unspecified output format")
+          System.exit(-1)
+      }
+      case _ =>
+        collect(
+          spark,
+          conf.query(),
+          conf.iterations(),
+          summaryFilePrefix = conf.summaryFilePrefix.toOption)
+    }
+  }
+
+  def getQuery(query: String): SparkSession => DataFrame = {
+
+    val queryIndex = if (query.startsWith("q")) {
+      query.substring(1).toInt
+    } else {
+      query.toInt
+    }
+
+    queryIndex match {
       case 1 => Q1Like.apply
       case 2 => Q2Like.apply
       case 3 => Q3Like.apply
@@ -109,8 +253,16 @@ object TpcxbbLikeBench extends Logging {
       case 30 => Q30Like.apply
       case _ => throw new IllegalArgumentException(s"Unknown TPCx-BB query number: $queryIndex")
     }
-
-    println(s"*** RUNNING TPCx-BB QUERY $queryIndex")
-    runBench(spark, queryRunner)
   }
+}
+
+class Conf(arguments: Seq[String]) extends ScallopConf(arguments) {
+  val input = opt[String](required = true)
+  val inputFormat = opt[String](required = true)
+  val query = opt[String](required = true)
+  val iterations = opt[Int](default = Some(3))
+  val output = opt[String](required = false)
+  val outputFormat = opt[String](required = false)
+  val summaryFilePrefix = opt[String](required = false)
+  verify()
 }

@@ -42,9 +42,20 @@ object SpillPriorities {
 
   /**
    * Priorities for buffers received from shuffle.
-   * Shuffle input buffers are about to be read by a task, so only spill
-   * them if there's no other choice.
+   * Shuffle input buffers are about to be read by a task, so spill
+   * them if there's no other choice, but leave some space at the end of the priority range
+   * so there can be some things after it.
    */
-  // TODO: Should these be ordered amongst themselves? Maybe consider buffer size?
-  val INPUT_FROM_SHUFFLE_PRIORITY: Long = Long.MaxValue
+  val INPUT_FROM_SHUFFLE_PRIORITY: Long = Long.MaxValue - 1000
+
+  /**
+   * Priority for buffers that are waiting for next to be called.  i.e. data held between
+   * calls to `hasNext` and `next` or between different calls to `next`.
+   */
+  val ACTIVE_ON_DECK_PRIORITY: Long = INPUT_FROM_SHUFFLE_PRIORITY + 1
+
+  /**
+   * Priority for multiple buffers being buffered within a call to next.
+   */
+  val ACTIVE_BATCHING_PRIORITY: Long = ACTIVE_ON_DECK_PRIORITY + 100
 }

@@ -21,6 +21,8 @@ import java.util.concurrent.atomic.{AtomicBoolean, AtomicReference}
 
 import scala.collection.JavaConverters._
 
+import com.nvidia.spark.rapids.python.PythonWorkerSemaphore
+
 import org.apache.spark.{SparkConf, SparkContext}
 import org.apache.spark.api.plugin.{DriverPlugin, ExecutorPlugin, PluginContext}
 import org.apache.spark.internal.Logging
@@ -105,7 +107,11 @@ class RapidsDriverPlugin extends DriverPlugin with Logging {
   override def init(sc: SparkContext, pluginContext: PluginContext): util.Map[String, String] = {
     val sparkConf = pluginContext.conf
     RapidsPluginUtils.fixupConfigs(sparkConf)
-    new RapidsConf(sparkConf).rapidsConfMap
+    val conf = new RapidsConf(sparkConf)
+    if (conf.shimsProviderOverride.isDefined) {
+      ShimLoader.setSparkShimProviderClass(conf.shimsProviderOverride.get)
+    }
+    conf.rapidsConfMap
   }
 }
 
@@ -118,6 +124,9 @@ class RapidsExecutorPlugin extends ExecutorPlugin with Logging {
       extraConf: util.Map[String, String]): Unit = {
     try {
       val conf = new RapidsConf(extraConf.asScala.toMap)
+      if (conf.shimsProviderOverride.isDefined) {
+        ShimLoader.setSparkShimProviderClass(conf.shimsProviderOverride.get)
+      }
 
       // we rely on the Rapids Plugin being run with 1 GPU per executor so we can initialize
       // on executor startup.
@@ -139,6 +148,7 @@ class RapidsExecutorPlugin extends ExecutorPlugin with Logging {
 
   override def shutdown(): Unit = {
     GpuSemaphore.shutdown()
+    PythonWorkerSemaphore.shutdown()
   }
 }
 

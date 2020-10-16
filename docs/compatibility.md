@@ -99,7 +99,7 @@ supported for other types.
 
 ### CSV Dates
 Parsing a `timestamp` as a `date` does not work. The details are documented in this
-[issue](https://github.com/NVIDIA/spark-rapids/issues/122).
+[issue](https://github.com/NVIDIA/spark-rapids/issues/869).
 
 Only a limited set of formats are supported when parsing dates.
 
@@ -115,10 +115,9 @@ Only a limited set of formats are supported when parsing dates.
 The reality is that all of these formats are supported at the same time. The plugin
 will only disable itself if you set a format that it does not support.
 
-### CSV Timestamps
-The CSV parser only works for timestamps that are after 1902 and before the end of 2038.
-This is documented in this [issue](https://github.com/NVIDIA/spark-rapids/issues/122).
+As a work around you can parse the column as a timestamp and then cast it to a date.
 
+### CSV Timestamps
 The CSV parser does not support time zones.  It will ignore any trailing time zone
 information, despite the format asking for a `XXX` or `[XXX]`. As such it is off by
 default and you can enable it by setting 
@@ -206,6 +205,13 @@ Spark stores timestamps internally relative to the JVM time zone.  Converting an
 arbitrary timestamp between time zones is not currently supported on the GPU. Therefore operations
 involving timestamps will only be GPU-accelerated if the time zone used by the JVM is UTC.
 
+## Window Functions
+
+Because of ordering differences between the CPU and the GPU window functions especially row based
+window functions like `row_number`, `lead`, and `lag` can produce different results if the ordering
+includes both `-0.0` and `0.0`, or if the ordering is ambiguous. Spark can produce
+different results from one run to another if the ordering is ambiguous on a window function too.
+
 ## Casting between types
 
 In general, performing `cast` and `ansi_cast` operations on the GPU is compatible with the same operations on the CPU. However, there are some exceptions. For this reason, certain casts are disabled on the GPU by default and require configuration options to be specified to enable them. 
@@ -287,7 +293,7 @@ Casting from string to timestamp currently has the following limitations.
 To speedup the process of UDF, spark-rapids introduces a udf-compiler extension to translate UDFs to Catalyst expressions.
 
 To enable this operation on the GPU, set
-[`spark.rapids.sql.udfCompiler.enabled`](configs.md#sql.udfCompiler.enabled) to `true`.
+[`spark.rapids.sql.udfCompiler.enabled`](configs.md#sql.udfCompiler.enabled) to `true`, and `spark.sql.extensions=com.nvidia.spark.udf.Plugin`.
 
 However, Spark may produce different results for a compiled udf and the non-compiled. For example: a udf of `x/y` where `y` happens to be `0`, the compiled catalyst expressions will return `NULL` while the original udf would fail  the entire job with a `java.lang.ArithmeticException: / by zero`
 
@@ -333,6 +339,7 @@ When translating UDFs to Catalyst expressions, the supported UDF functions are l
 |                          | log(x)                                                   |
 |                          | log10(x)                                                 |
 |                          | sqrt(x)                                                  |
+|                          | x.isNaN                                                  |
 | Type Cast                | *                                                        |
 | String                   | lhs + rhs                                                |
 |                          | lhs.equalsIgnoreCase(String rhs)                         |
@@ -369,3 +376,11 @@ When translating UDFs to Catalyst expressions, the supported UDF functions are l
 |                          | LocalDateTime.parse(x, DateTimeFormatter.ofPattern(pattern)).getHour       |
 |                          | LocalDateTime.parse(x, DateTimeFormatter.ofPattern(pattern)).getMinute     |
 |                          | LocalDateTime.parse(x, DateTimeFormatter.ofPattern(pattern)).getSecond     |
+| Empty array creation     | Array.empty[Boolean]                                     |
+|                          | Array.empty[Byte]                                        |
+|                          | Array.empty[Short]                                       |
+|                          | Array.empty[Int]                                         |
+|                          | Array.empty[Long]                                        |
+|                          | Array.empty[Float]                                       |
+|                          | Array.empty[Double]                                      |
+|                          | Array.empty[String]                                      |
