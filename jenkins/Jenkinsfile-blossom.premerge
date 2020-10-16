@@ -198,6 +198,8 @@ pipeline {
         } // end of Build docker image
 
         // TODO: support parallel testing for different spark versions
+stage ("Parallel Tests") {
+    parallel {
         stage('Premerge Test') {
             when {
                 beforeAgent true
@@ -230,6 +232,78 @@ pipeline {
                 }
             }
         } // end of Premerge Test
+
+        // TODO: support parallel testing for different spark versions
+        stage('Databricks Test') {
+            when {
+                beforeAgent true
+                expression {
+                    !skipped
+                }
+            }
+
+            agent {
+                kubernetes {
+                    label "premerge-test-${BUILD_TAG}"
+                    cloud 'sc-ipp-blossom-prod'
+                    yaml "$pluginPremerge"
+                    workspaceVolume persistentVolumeClaimWorkspaceVolume(claimName: "${PVC}", readOnly: false)
+                    customWorkspace "${CUSTOM_WORKSPACE}"
+                }
+            }
+
+            environment {
+                DATABRICKS_TOKEN = credentials("SPARK_DATABRICKS_TOKEN")
+                DATABRICKS_SECRET = credentials("SPARK_DATABRICKS_SECRET")
+                BUILD_CLUSTER_ID = '1015-114738-tilde12'
+                TEST_CLUSTER_ID = '0916-144915-ulcer295'
+                SPARK_VERSION = '3.0.0-databricks'
+                CI_RAPIDS_JAR = 'rapids-4-spark_2.12-0.1-SNAPSHOT-ci.jar'
+                CI_CUDF_JAR = 'cudf-0.14-cuda10-1.jar'
+            }
+
+            steps {
+                script {
+                    container('plugin-premerge') {
+                        def VER_INFO = sh(returnStdout: true,
+                            script: '. jenkins/version-def.sh>&2 && echo -n "CUDA_CLASSIFIER=$CUDA_CLASSIFIER;SCALA_VERSION=$SCALA_BINARY_VER;CUDF_VERSION=$CUDF_VER;DATABRICKS_VERSION=$PROJECT_VER;"')
+                        def CUDA_CLASSIFIER=subString(VER_INFO, 'CUDA_CLASSIFIER=', ';')
+                        def SCALA_VERSION=subString(VER_INFO, 'SCALA_VERSION=', ';')
+                        def CUDF_VERSION=subString(VER_INFO, 'CUDF_VERSION=', ';')
+                        def DATABRICKS_VERSION=subString(VER_INFO, 'DATABRICKS_VERSION=', ';')
+                        sh "rm -rf spark-rapids-ci.tgz"
+                        sh "tar -zcf spark-rapids-ci.tgz *"
+                        sshagent(credentials : ['svcngcc_pubpriv']) {
+                            def CMD_COMMOM = "python3.6 ./jenkins/databricks/run-tests.py \
+                                -z ./spark-rapids-ci.tgz -t $DATABRICKS_TOKEN -j $CI_RAPIDS_JAR \
+                                -b $DATABRICKS_VERSION -k $SPARK_VERSION -a $SCALA_VERSION \
+                                -f $CUDF_VERSION -u $CUDA_CLASSIFIER -m $CI_CUDF_JAR"
+
+                            // Build in CPU DB cluster
+                            sh "$CMD_COMMOM -c $BUILD_CLUSTER_ID \
+                                -l ./jenkins/databricks/build-premerge.sh"
+
+                            // Stop CPU DB cluster
+                            sh "python3.6 ./jenkins/databricks/shutdown.py -c $BUILD_CLUSTER_ID -t $DATABRICKS_TOKEN"
+                            // Test in GPU DB cluster
+                            sh "$CMD_COMMOM -c $TEST_CLUSTER_ID \
+                                -l ./jenkins/databricks/test-premerge.sh"
+                        }
+                    }
+                }
+            }
+            post {
+                always {
+                    script {
+                        // Always stop build and test cluster
+                        sh "python3.6 ./jenkins/databricks/shutdown.py -c $BUILD_CLUSTER_ID -t $DATABRICKS_TOKEN || true"
+                        sh "python3.6 ./jenkins/databricks/shutdown.py -c $TEST_CLUSTER_ID -t $DATABRICKS_TOKEN || true"
+                   }
+               }
+            }
+        }// end of Databricks Test
+    }// end of parallel
+}// end of parallel stage
     } // end of stages
 
     post {
@@ -248,7 +322,6 @@ pipeline {
             }
         }
     }
-
 } // end of pipeline
 
 void uploadDocker(String IMAGE_NAME) {
@@ -262,4 +335,16 @@ void uploadDocker(String IMAGE_NAME) {
 
 void deleteDockerTempTag(String tag) {
     sh "curl -u $URM_CREDS_USR:$URM_CREDS_PSW -XDELETE https://${ARTIFACTORY_NAME}/artifactory/sw-spark-docker-local/plugin/${tag} || true"
+}
+
+/**
+ * Extract from @str the sub string between @strStart and @strEnd
+ */
+String subString(String str, String strStart, String strEnd) {
+    int startIndex = str.indexOf(strStart);
+    int endIndex = str.indexOf(strEnd, startIndex);
+    if (startIndex < 0 || endIndex <= startIndex ) {
+        return ""
+    }
+    return str.substring(startIndex, endIndex).substring(strStart.length());
 }
