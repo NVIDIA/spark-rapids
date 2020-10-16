@@ -12,7 +12,12 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from pyspark.sql import SparkSession
+try:
+    from pyspark.sql import SparkSession
+except ImportError as error:
+    import findspark
+    findspark.init()
+    from pyspark.sql import SparkSession
 
 def _spark__init():
     #Force the RapidsPlugin to be enabled, so it blows up if the classpath is not set properly
@@ -20,10 +25,31 @@ def _spark__init():
     # due to bugs in pyspark/pytest it looks like any configs set here
     # can be reset in the middle of a test if specific operations are done (some types of cast etc)
     # enableHiveSupport() is needed for parquet bucket tests
-    _s = SparkSession.builder \
+    #TODO need to figure out a better way to do this optionally
+    import os
+    _sb = SparkSession.builder
+    _sb.config('spark.master', 'local') \
+            .config('spark.ui.showConsoleProgress', 'false') \
+            .config('spark.driver.extraClassPath', os.environ['EXTRA_CP']) \
+            .config('spark.sql.session.timeZone', 'UTC') \
+            .config('spark.sql.shuffle.partitions', '12') \
+            .config('spark.rapids.memory.gpu.allocFraction', '0.125')\
+            .config('spark.rapids.memory.gpu.maxAllocFraction', '0.2')\
             .config('spark.plugins', 'com.nvidia.spark.SQLPlugin') \
-            .config('spark.sql.queryExecutionListeners', 'com.nvidia.spark.rapids.ExecutionPlanCaptureCallback')\
-            .enableHiveSupport() \
+            .config('spark.sql.queryExecutionListeners', 'com.nvidia.spark.rapids.ExecutionPlanCaptureCallback')
+
+    if ('PYTEST_XDIST_WORKER' in os.environ):
+        wid = os.environ['PYTEST_XDIST_WORKER']
+        d = "./derby_{}".format(wid)
+        if not os.path.exists(d):
+            os.makedirs(d)
+        _sb.config('spark.driver.extraJavaOptions', '-Duser.timezone=GMT -Dderby.system.home={}'.format(d)) \
+                .config('spark.executor.extraJavaOptions', '-Duser.timezone=GMT')
+    else:
+        _sb.config('spark.driver.extraJavaOptions', '-Duser.timezone=GMT') \
+                .config('spark.executor.extraJavaOptions', '-Duser.timezone=GMT')
+ 
+    _s = _sb.enableHiveSupport() \
             .appName('rapids spark plugin integration tests (python)').getOrCreate()
     #TODO catch the ClassNotFound error that happens if the classpath is not set up properly and
     # make it a better error message
