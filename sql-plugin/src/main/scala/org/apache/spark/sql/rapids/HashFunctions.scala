@@ -16,18 +16,24 @@
 
 package org.apache.spark.sql.rapids
 
-import ai.rapids.cudf.{ColumnVector, DType}
+import ai.rapids.cudf.{BinaryOp, ColumnVector, DType}
 import com.nvidia.spark.rapids.{GpuColumnVector, GpuUnaryExpression}
+
 import org.apache.spark.sql.catalyst.expressions.{Expression, ImplicitCastInputTypes, NullIntolerant}
 import org.apache.spark.sql.types._
 
-case class GpuMd5(child: Expression) extends GpuUnaryExpression with ImplicitCastInputTypes with NullIntolerant {
+case class GpuMd5(child: Expression)
+  extends GpuUnaryExpression with ImplicitCastInputTypes with NullIntolerant {
   override def toString: String = s"md5($child)"
   override def inputTypes: Seq[AbstractDataType] = Seq(BinaryType)
   override def dataType: DataType = StringType
 
   override def doColumnar(input: GpuColumnVector): GpuColumnVector = {
     val fullResult = ColumnVector.md5Hash(input.getBase)
-    GpuColumnVector.from(fullResult.mergeAndSetValidity(BinaryOp.BITWISE_AND, input.getBase))
+    try {
+      GpuColumnVector.from(fullResult.mergeAndSetValidity(BinaryOp.BITWISE_AND, input.getBase))
+    } finally {
+      fullResult.close()
+    }
   }
 }
