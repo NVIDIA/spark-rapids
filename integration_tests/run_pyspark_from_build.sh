@@ -41,13 +41,15 @@ else
     RUN_DIR="$SCRIPTPATH"/target/run_dir
     mkdir -p "$RUN_DIR"
     cd "$RUN_DIR"
-    "$SPARK_HOME"/bin/spark-submit --jars "${ALL_JARS// /,}" \
-        --conf "spark.driver.extraJavaOptions=-Duser.timezone=GMT $COVERAGE_SUBMIT_FLAGS" \
-        --conf 'spark.executor.extraJavaOptions=-Duser.timezone=GMT' \
-        --conf 'spark.sql.session.timeZone=UTC' \
-        --conf 'spark.sql.shuffle.partitions=12' \
-        $SPARK_SUBMIT_FLAGS \
-        "$SCRIPTPATH"/runtests.py --rootdir "$SCRIPTPATH" "$SCRIPTPATH"/src/main/python \
+    export EXTRA_CP="${ALL_JARS// /:}"
+    #"$SPARK_HOME"/bin/spark-submit --jars "${ALL_JARS// /,}" \
+    #    --conf "spark.driver.extraJavaOptions=-Duser.timezone=GMT $COVERAGE_SUBMIT_FLAGS" \
+    #    --conf 'spark.executor.extraJavaOptions=-Duser.timezone=GMT' \
+    #    --conf 'spark.sql.session.timeZone=UTC' \
+    #    --conf 'spark.sql.shuffle.partitions=12' \
+    #    $SPARK_SUBMIT_FLAGS \
+    python      "$SCRIPTPATH"/runtests.py --rootdir "$SCRIPTPATH" "$SCRIPTPATH"/src/main/python \
+          -n 4 \
           -v -rfExXs "$TEST_TAGS" \
           --std_input_path="$SCRIPTPATH"/src/test/resources/ \
           "$TEST_ARGS" \

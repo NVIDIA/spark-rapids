@@ -378,11 +378,11 @@ def test_input_meta(spark_tmp_path, mt_opt, v1_enabled_list):
                   'spark.sql.sources.useV1SourceList': v1_enabled_list})
 
 
-def createBucketedTableAndJoin(spark):
-    spark.range(10e4).write.bucketBy(4, "id").sortBy("id").mode('overwrite').saveAsTable("bucketed_4_10e4")
-    spark.range(10e6).write.bucketBy(4, "id").sortBy("id").mode('overwrite').saveAsTable("bucketed_4_10e6")
-    bucketed_4_10e4 = spark.table("bucketed_4_10e4")
-    bucketed_4_10e6 = spark.table("bucketed_4_10e6")
+def createBucketedTableAndJoin(spark, tbl_1, tbl_2):
+    spark.range(10e4).write.bucketBy(4, "id").sortBy("id").mode('overwrite').saveAsTable(tbl_1)
+    spark.range(10e6).write.bucketBy(4, "id").sortBy("id").mode('overwrite').saveAsTable(tbl_2)
+    bucketed_4_10e4 = spark.table(tbl_1)
+    bucketed_4_10e6 = spark.table(tbl_2)
     return bucketed_4_10e4.join(bucketed_4_10e6, "id")
 
 @ignore_order
@@ -390,8 +390,10 @@ def createBucketedTableAndJoin(spark):
 @pytest.mark.parametrize('mt_opt', ["true", "false"])
 @pytest.mark.parametrize('v1_enabled_list', ["", "parquet"])
 # this test would be better if we could ensure exchanges didn't exist - ie used buckets
-def test_buckets(spark_tmp_path, mt_opt, v1_enabled_list):
-    assert_gpu_and_cpu_are_equal_collect(createBucketedTableAndJoin,
+def test_buckets(spark_tmp_path, mt_opt, v1_enabled_list, spark_tmp_table_factory):
+    def do_it(spark):
+        return createBucketedTableAndJoin(spark, spark_tmp_table_factory.get(), spark_tmp_table_factory.get())
+    assert_gpu_and_cpu_are_equal_collect(do_it,
             conf={'spark.rapids.sql.format.parquet.multiThreadedRead.enabled': mt_opt,
                   'spark.sql.sources.useV1SourceList': v1_enabled_list,
                   "spark.sql.autoBroadcastJoinThreshold": '-1'})
