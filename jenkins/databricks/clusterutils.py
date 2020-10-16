@@ -17,19 +17,21 @@ import json
 import time
 import os
 import requests
+import sys
 
 class ClusterUtils(object):
 
     @staticmethod
-    def generate_create_templ(sshKey):
-        ssh_key = 'SSH public key\\nssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQDB+ValakyoKn7w+iBRoAi1KlLVH4yVmRXhLCZs1qUECBAhbck2o8Lgjp5wJ+epdT3+EAP2+t/zlK1mU9tTylidapR4fZuIk9ApoQSLOUEXcUtHkPpZulIoGAq78HoyiEs1sKovc6ULvpymjdnQ3ogCZlTlP9uqmL2E4kbtrNCNL0SVj/w10AqzrJ5lqQgO5dIdDRMHW2sv88JI1VLlfiSsofa9RdI7hDRuCnfZ0+dv2URJGGzGt2BkdEmk9t5F1BMpuXvZ8HzOYdACzw0U+THBOk9d4CACUYMyO1XqlXwoYweNKRnigXDCRaTWGFBzTkugRuW/BZBccTR1ON430uRB svcngcc@nvidia.com'
-        init_script_loc = 'dbfs:/databricks/ci_init_scripts'
-        branch = branch-0.3
-        runtime = 70
+    def generate_create_templ(sshKey, initScriptFile):
+        if not sshKey:
+            sshKey= 'SSH public key\\nssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQDB+ValakyoKn7w+iBRoAi1KlLVH4yVmRXhLCZs1qUECBAhbck2o8Lgjp5wJ+epdT3+EAP2+t/zlK1mU9tTylidapR4fZuIk9ApoQSLOUEXcUtHkPpZulIoGAq78HoyiEs1sKovc6ULvpymjdnQ3ogCZlTlP9uqmL2E4kbtrNCNL0SVj/w10AqzrJ5lqQgO5dIdDRMHW2sv88JI1VLlfiSsofa9RdI7hDRuCnfZ0+dv2URJGGzGt2BkdEmk9t5F1BMpuXvZ8HzOYdACzw0U+THBOk9d4CACUYMyO1XqlXwoYweNKRnigXDCRaTWGFBzTkugRuW/BZBccTR1ON430uRB svcngcc@nvidia.com'
+        init_script_loc = 'dbfs:/databricks/ci_init_scripts/' + initScriptFile
+        branch = 'branch-0.3'
+        runtime = '70'
         dt = datetime.now()
         date = dt.microsecond
         print("date is %s" % date)
-        uniq_name = runtime + "-" + branch # + "-" date
+        uniq_name = runtime + "-" + branch + "-" + str(date)
         cluster_name = "CI-GPU-databricks-" + uniq_name
         templ = {}
         templ['cluster_name'] = cluster_name
@@ -44,19 +46,20 @@ class ClusterUtils(object):
                 }
         templ['node_type_id'] = "g4dn.xlarge"
         templ['driver_node_type_id'] = "g4dn.xlarge"
-        templ['ssh_public_keys'] = [ ssh_key ]
+        templ['ssh_public_keys'] = [ sshKey ]
         templ['num_workers'] = 1
-        # only need these when enabling the plugin
-        templ['spark_conf'] = { 'spark.plugins': 'com.nvidia.spark.SQLPlugin', }
-        templ['init_scripts'] = []
-        templ['init_scripts'].append({ "dbfs": { "destination": init_script_loc } })
+        if initScriptFile:
+            # only need these when enabling the plugin
+            templ['spark_conf'] = { 'spark.plugins': 'com.nvidia.spark.SQLPlugin', }
+            templ['init_scripts'] = []
+            templ['init_scripts'].append({ "dbfs": { "destination": init_script_loc } })
 
         return templ
 
 
     @staticmethod
-    def create_cluster(jsonCreateTempl):
-        resp = requests.post(workspace + "api/2.0/clusters/create", headers={'Authorization': 'Bearer %s' % token}, json=jsonCreateTempl)
+    def create_cluster(workspace, jsonCreateTempl, token):
+        resp = requests.post(workspace + "/api/2.0/clusters/create", headers={'Authorization': 'Bearer %s' % token}, json=jsonCreateTempl)
         print("create response is %s" % resp.text)
         clusterid = resp.json()['cluster_id']
         print("cluster id is %s" % clusterid)
