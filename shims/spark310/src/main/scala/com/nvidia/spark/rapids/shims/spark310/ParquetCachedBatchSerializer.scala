@@ -548,10 +548,10 @@ class ParquetCachedBatchSerializer extends CachedBatchSerializer with Arm {
     val broadcastedConf = sparkSession.sparkContext.broadcast(conf)
 
     if (rapidsConf.isSqlEnabled && isSupportedByCudf(schema)) {
-      val s = schema.toStructType
-      val converters = new GpuRowToColumnConverter(s)
+      val structSchema = schema.toStructType
+      val converters = new GpuRowToColumnConverter(structSchema)
       val columnarBatchRdd = input.mapPartitions(iter => {
-        new RowToColumnarIterator(iter, s, RequireSingleBatch, converters)
+        new RowToColumnarIterator(iter, structSchema, RequireSingleBatch, converters)
       })
       columnarBatchRdd.map(cb => {
         withResource(cb) { columnarBatch =>
@@ -624,9 +624,9 @@ class ParquetOutputFileFormat {
     val validating = getValidation(conf)
 
     val init = writeSupport.init(conf)
-    val w = new ParquetFileWriter(output, init.getSchema,
+    val writer = new ParquetFileWriter(output, init.getSchema,
       Mode.CREATE, blockSize, maxPaddingSize)
-    w.start()
+    writer.start()
 
     val maxLoad = conf.getFloat(MEMORY_POOL_RATIO, DEFAULT_MEMORY_POOL_RATIO)
     val minAllocation = conf.getLong(MIN_MEMORY_ALLOCATION, DEFAULT_MIN_MEMORY_ALLOCATION)
@@ -639,9 +639,9 @@ class ParquetOutputFileFormat {
 
     val codecFactory = new CodecFactory(conf, getPageSize(conf))
 
-    new ParquetRecordWriter[InternalRow](w, writeSupport, init.getSchema, init.getExtraMetaData,
-      blockSize, getPageSize(conf), codecFactory.getCompressor(CompressionCodecName.UNCOMPRESSED),
-      getDictionaryPageSize(conf), getEnableDictionary(conf), validating, writerVersion,
-      memoryManager)
+    new ParquetRecordWriter[InternalRow](writer, writeSupport, init.getSchema,
+      init.getExtraMetaData, blockSize, getPageSize(conf),
+      codecFactory.getCompressor(CompressionCodecName.UNCOMPRESSED), getDictionaryPageSize(conf),
+      getEnableDictionary(conf), validating, writerVersion, memoryManager)
   }
 }
