@@ -87,7 +87,7 @@ def main():
           ci_cudf_jar = arg
       elif opt in ('-v', '--basesparkpomversion'):
           base_spark_pom_version = arg
-      elif opt in ('-w', '--ssheky'):
+      elif opt in ('-w', '--sshkey'):
           sshKey = arg
 
   print('-s is ' + workspace)
@@ -108,6 +108,7 @@ def main():
   print('-u is ' + cuda_version)
   print('-m is ' + ci_cudf_jar)
   print('-v is ' + base_spark_pom_version)
+  print('-w is ' + sshKey)
 
   master_addr = None
   if skip_start is None:
@@ -123,7 +124,6 @@ def main():
           print("Cluster is already running - perhaps build/tests already running?")
           sys.exit(3)
 
-
       ClusterUtils.start_existing_cluster(workspace, clusterid, token)
       master_addr = ClusterUtils.wait_for_cluster_start(workspace, clusterid, token)
   else:
@@ -134,7 +134,6 @@ def main():
       print("Error, didn't get master address")
       sys.exit(5)
   print("Master node address is: %s" % master_addr)
-
   print("Copying script")
   rsync_command = "rsync -I -Pave \"ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -p 2200 -i %s\" %s ubuntu@%s:%s" % (private_key_file, local_script, master_addr, script_dest)
   print("rsync command: %s" % rsync_command)
