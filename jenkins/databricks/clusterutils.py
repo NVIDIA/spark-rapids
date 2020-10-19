@@ -22,21 +22,19 @@ import sys
 class ClusterUtils(object):
 
     @staticmethod
-    def generate_create_templ(sshKey, initScriptFile):
-        if not sshKey:
-            sshKey= 'SSH public key\\nssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQDB+ValakyoKn7w+iBRoAi1KlLVH4yVmRXhLCZs1qUECBAhbck2o8Lgjp5wJ+epdT3+EAP2+t/zlK1mU9tTylidapR4fZuIk9ApoQSLOUEXcUtHkPpZulIoGAq78HoyiEs1sKovc6ULvpymjdnQ3ogCZlTlP9uqmL2E4kbtrNCNL0SVj/w10AqzrJ5lqQgO5dIdDRMHW2sv88JI1VLlfiSsofa9RdI7hDRuCnfZ0+dv2URJGGzGt2BkdEmk9t5F1BMpuXvZ8HzOYdACzw0U+THBOk9d4CACUYMyO1XqlXwoYweNKRnigXDCRaTWGFBzTkugRuW/BZBccTR1ON430uRB svcngcc@nvidia.com'
+    def generate_create_templ(sshKey, initScriptFile, version):
+        # TODO (in followup) - create directory if not there
         init_script_loc = 'dbfs:/databricks/ci_init_scripts/' + initScriptFile
-        branch = 'branch-0.3'
-        runtime = '70'
         dt = datetime.now()
+        databricks_runtime_version = '7.0.x-gpu-ml-scala2.12'
+        idle_timeout = 240
         date = dt.microsecond
-        print("date is %s" % date)
-        uniq_name = runtime + "-" + branch + "-" + str(date)
+        uniq_name = version + "-" + str(date)
         cluster_name = "CI-GPU-databricks-" + uniq_name
         templ = {}
         templ['cluster_name'] = cluster_name
         print("cluster name is going to be %s" % cluster_name)
-        templ['spark_version'] = "7.0.x-gpu-ml-scala2.12"
+        templ['spark_version'] = databricks_runtime_version
         templ['aws_attributes'] = {
                     "zone_id": "us-west-2a",
                     "first_on_demand": 1,
@@ -44,8 +42,11 @@ class ClusterUtils(object):
                     "spot_bid_price_percent": 100,
                     "ebs_volume_count": 0
                 }
-        templ['node_type_id'] = "g4dn.xlarge"
-        templ['driver_node_type_id'] = "g4dn.xlarge"
+        templ['autotermination_minutes'] = idle_timeout
+        templ['enable_elastic_disk'] = 'false'
+        templ['enable_local_disk_encryption'] = 'false'
+        templ['node_type_id'] = 'g4dn.xlarge'
+        templ['driver_node_type_id'] = 'g4dn.xlarge'
         templ['ssh_public_keys'] = [ sshKey ]
         templ['num_workers'] = 1
         if initScriptFile:
@@ -89,6 +90,28 @@ class ClusterUtils(object):
 
 
     @staticmethod
+    def terminate_cluster(workspace, clusterid, token):
+        jsonout = ClusterUtils.cluster_state(workspace, clusterid, token)
+        current_state = jsonout['state']
+        if current_state not in ['RUNNING', 'RESIZING']:
+            print("Cluster is not running")
+            sys.exit(1)
+
+        print("Stopping cluster: " + clusterid)
+        resp = requests.post(workspace + "/api/2.0/clusters/delete", headers={'Authorization': 'Bearer %s' % token}, json={'cluster_id': clusterid})
+        print("stop response is %s" % resp.text)
+        print("Done stopping cluster")
+
+
+    @staticmethod
+    def delete_cluster(workspace, clusterid, token):
+        print("Deleting cluster: " + clusterid)
+        resp = requests.post(workspace + "/api/2.0/clusters/permanent-delete", headers={'Authorization': 'Bearer %s' % token}, json={'cluster_id': clusterid})
+        print("delete response is %s" % resp.text)
+        print("Done deleting cluster")
+
+
+    @staticmethod
     def start_existing_cluster(workspace, clusterid, token):
         print("Starting cluster: " + clusterid)
         resp = requests.post(workspace + "/api/2.0/clusters/start", headers={'Authorization': 'Bearer %s' % token}, json={'cluster_id': clusterid})
@@ -114,3 +137,13 @@ class ClusterUtils(object):
             return master_addr
         else:
             return None
+
+
+    @staticmethod
+    def cluster_list(workspace, token):
+        clusterresp = requests.get(workspace + "/api/2.0/clusters/list", headers={'Authorization': 'Bearer %s' % token})
+        clusterjson = clusterresp.text
+        print("cluster list is %s" % clusterjson)
+        jsonout = json.loads(clusterjson)
+        return jsonout
+

@@ -25,15 +25,15 @@ from clusterutils import ClusterUtils
 def main():
   workspace = 'https://dbc-9ff9942e-a9c4.cloud.databricks.com'
   token = ''
-  clusterid = '0617-140138-umiak14'
   private_key_file = "~/.ssh/id_rsa"
-  skip_start = None
+  skip_create = None
   local_script = 'build.sh'
   script_dest = '/home/ubuntu/build.sh'
   source_tgz = 'spark-rapids-ci.tgz'
   tgz_dest = '/home/ubuntu/spark-rapids-ci.tgz'
   ci_rapids_jar = 'rapids-4-spark_2.12-0.1-SNAPSHOT-ci.jar'
-  db_version = '0.1-databricks-SNAPSHOT'
+  # the plugin version to use for the jar we build against databricks
+  db_version = '0.3.0-SNAPSHOT'
   scala_version = '2.12'
   spark_version = '3.0.0'
   cudf_version = '0.16-SNAPSHOT'
@@ -41,19 +41,21 @@ def main():
   ci_cudf_jar = 'cudf-0.14-cuda10-1.jar'
   base_spark_pom_version = '3.0.0'
   sshKey = ''
+  clusterid_out_file = ''
+  clusterid = ''
 
   try:
-      opts, args = getopt.getopt(sys.argv[1:], 'hs:t:c:p:l:nd:z:j:b:k:a:f:u:m:v:w:',
-                                 ['workspace=', 'token=', 'clusterid=', 'private=', 'nostart=', 'localscript=', 'dest=', 'sparktgz=', 'cirapidsjar=', 'databricksversion=', 'sparkversion=', 'scalaversion=', 'cudfversion=', 'cudaversion=', 'cicudfjar=', 'basesparkpomversion=', 'sshkey='])
+      opts, args = getopt.getopt(sys.argv[1:], 'hs:t:c:p:l:nd:z:j:b:k:a:f:u:m:v:w:o:',
+                                 ['workspace=', 'token=', 'private=', 'nocreate=', 'localscript=', 'dest=', 'sparktgz=', 'cirapidsjar=', 'databricksversion=', 'sparkversion=', 'scalaversion=', 'cudfversion=', 'cudaversion=', 'cicudfjar=', 'basesparkpomversion=', 'sshkey=', 'clusteroutfile='])
   except getopt.GetoptError:
       print(
-          'run-tests.py -s <workspace> -t <token> -c <clusterid> -p <privatekeyfile> -n <skipstartingcluster> -l <localscript> -d <scriptdestinatino> -z <sparktgz> -j <cirapidsjar> -b <databricksversion> -k <sparkversion> -a <scalaversion> -f <cudfversion> -u <cudaversion> -m <cicudfjar> -v <basesparkpomversion>')
+          'run-tests.py -s <workspace> -t <token> -c <clusterid> -p <privatekeyfile> -n <skipstartingcluster> -l <localscript> -d <scriptdestinatino> -z <sparktgz> -j <cirapidsjar> -b <databricksversion> -k <sparkversion> -a <scalaversion> -f <cudfversion> -u <cudaversion> -m <cicudfjar> -v <basesparkpomversion> -o <clusteridoutfile>')
       sys.exit(2)
 
   for opt, arg in opts:
       if opt == '-h':
           print(
-              'run-tests.py -s <workspace> -t <token> -c <clusterid> -p <privatekeyfile> -n <skipstartingcluster> -l <localscript> -d <scriptdestinatino>, -z <sparktgz> -j <cirapidsjar> -b <databricksversion> -k <sparkversion> -a <scalaversion> -f <cudfversion> -u <cudaversion> -m <cicudfjar> -v <basesparkpomversion>')
+              'run-tests.py -s <workspace> -t <token> -c <clusterid> -p <privatekeyfile> -n <skipstartingcluster> -l <localscript> -d <scriptdestinatino>, -z <sparktgz> -j <cirapidsjar> -b <databricksversion> -k <sparkversion> -a <scalaversion> -f <cudfversion> -u <cudaversion> -m <cicudfjar> -v <basesparkpomversion> -o <clusteridoutfile>')
           sys.exit()
       elif opt in ('-s', '--workspace'):
           workspace = arg
@@ -63,8 +65,8 @@ def main():
           clusterid = arg
       elif opt in ('-p', '--private'):
           private_key_file = arg
-      elif opt in ('-n', '--nostart'):
-          skip_start = arg
+      elif opt in ('-n', '--nocreate'):
+          skip_create = arg
       elif opt in ('-l', '--localscript'):
           local_script = arg
       elif opt in ('-d', '--dest'):
@@ -89,14 +91,16 @@ def main():
           base_spark_pom_version = arg
       elif opt in ('-w', '--sshkey'):
           sshKey = arg
+      elif opt in ('-o', '--clusteridoutputfile'):
+          clusterid_out_file= arg
 
   print('-s is ' + workspace)
   print('-c is ' + clusterid)
   print('-p is ' + private_key_file)
-  if skip_start is not None:
-      print("-n: skip start")
+  if skip_create is not None:
+      print("-n: skip create")
   else:
-      print("-n: don't skip start")
+      print("-n: don't skip create")
   print('-l is ' + local_script)
   print('-d is ' + script_dest)
   print('-z is ' + source_tgz)
@@ -109,24 +113,31 @@ def main():
   print('-m is ' + ci_cudf_jar)
   print('-v is ' + base_spark_pom_version)
   print('-w is ' + sshKey)
+  print('-o is ' + clusterid_out_file)
 
   master_addr = None
-  if skip_start is None:
+  if skip_create is None:
       # generate cluster template
       initScriptFile = ''
-      templ = ClusterUtils.generate_create_templ(sshKey, initScriptFile)
-      newclusterId = ClusterUtils.create_cluster(workspace, templ, token)
-      clusterid = newclusterId
+      if not clusterid_out_file:
+          print("You must specify an output file for the clusterid: use -o option")
+          sys.exit(3)
+      templ = ClusterUtils.generate_create_templ(sshKey, initScriptFile, db_version)
+      clusterid = ClusterUtils.create_cluster(workspace, templ, token)
+      with open(clusterid_out_file, 'a') as id_file:
+          id_file.write(clusterid)
       print("Using cluster id is %s" % clusterid)
       jsonout = ClusterUtils.cluster_state(workspace, clusterid, token)
       current_state = jsonout['state']
       if current_state in ['RUNNING']:
           print("Cluster is already running - perhaps build/tests already running?")
-          sys.exit(3)
+          sys.exit(4)
 
-      ClusterUtils.start_existing_cluster(workspace, clusterid, token)
       master_addr = ClusterUtils.wait_for_cluster_start(workspace, clusterid, token)
   else:
+      if not clusterid:
+          print("You must specify a cluster id when skipping create")
+          sys.exit(6)
       jsonout = ClusterUtils.cluster_state(workspace, clusterid, token)
       master_addr = ClusterUtils.get_master_addr(jsonout)
 

@@ -11,28 +11,19 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-import json
-import requests
-import sys
+from clusterutils import ClusterUtils
 import getopt
-import time
-import os
-
-def cluster_state(workspace, clusterid, token):
-  clusterresp = requests.get(workspace + "/api/2.0/clusters/get?cluster_id=%s" % clusterid, headers={'Authorization': 'Bearer %s' % token})
-  clusterjson = clusterresp.text
-  print("cluster response is %s" % clusterjson)
-  jsonout = json.loads(clusterjson)
-  return jsonout
+import sys
 
 def main():
   workspace = 'https://dbc-9ff9942e-a9c4.cloud.databricks.com'
   token = ''
   clusterid = '0617-140138-umiak14'
+  delete = False
 
   try:
-      opts, args = getopt.getopt(sys.argv[1:], 'hs:t:c:',
-                                 ['workspace=', 'token=', 'clusterid='])
+      opts, args = getopt.getopt(sys.argv[1:], 'hs:t:c:d',
+                                 ['workspace=', 'token=', 'clusterid=', 'delete'])
   except getopt.GetoptError:
       print(
           'shutdown.py -s <workspace> -t <token> -c <clusterid>')
@@ -49,20 +40,16 @@ def main():
           token = arg
       elif opt in ('-c', '--clusterid'):
           clusterid = arg
+      elif opt in ('-d', '--delete'):
+          delete = True
 
   print('-s is ' + workspace)
   print('-c is ' + clusterid)
 
-  jsonout = cluster_state(workspace, clusterid, token)
-  current_state = jsonout['state']
-  if current_state not in ['RUNNING', 'RESIZING']:
-      print("Cluster is not running")
-      sys.exit(1)
-
-  print("Stopping cluster: " + clusterid)
-  resp = requests.post(workspace + "/api/2.0/clusters/delete", headers={'Authorization': 'Bearer %s' % token}, json={'cluster_id': clusterid})
-  print("stop response is %s" % resp.text)
-  print("Done stopping cluster")
+  if delete:
+      ClusterUtils.delete_cluster(workspace, clusterid, token)
+  else:
+      ClusterUtils.terminate_cluster(workspace, clusterid, token)
 
 if __name__ == '__main__':
   main()
