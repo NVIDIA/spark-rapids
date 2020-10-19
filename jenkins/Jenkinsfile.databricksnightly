@@ -82,7 +82,6 @@ pipeline {
                         sh "rm -rf spark-rapids-ci.tgz"
                         sh "tar -zcvf spark-rapids-ci.tgz *"
                         sh "python3.6 ./jenkins/databricks/run-tests.py -z ./spark-rapids-ci.tgz -t $DATABRICKS_TOKEN -p /home/svcngcc/.ssh/id_rsa -l ./jenkins/databricks/build.sh -j $CI_RAPIDS_JAR -b $DATABRICKS_VERSION -k $SPARK_VERSION_TO_INSTALL_JARS -a $SCALA_VERSION -f $CUDF_VERSION -u $CUDA_VERSION -m $CI_CUDF_JAR -w $PUBLIC_KEY -o $CLUSTER_ID_LOC"
-                        sh "cat $CLUSTER_ID_LOC"
                         sh "./jenkins/databricks/deploy.sh"
                     }
                 }
@@ -92,8 +91,6 @@ pipeline {
     post {
         always {
             script {
-                sh "echo ${WORKSPACE}"
-                sh "ls -la ${WORKSPACE}"
                 def ID_FROM_FILE = readFile "${env.CLUSTER_ID_LOC}"
                 sh "python3.6 ./jenkins/databricks/shutdown.py -c ${ID_FROM_FILE} -t $DATABRICKS_TOKEN -d || true"
                 if (currentBuild.currentResult == "SUCCESS") {
