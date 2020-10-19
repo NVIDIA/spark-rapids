@@ -90,7 +90,7 @@ pipeline {
     post {
         always {
             script {
-                sh "CLUSTER_ID=$(cat $CLUSTER_ID_LOC)"
+                sh "CLUSTER_ID=cat $CLUSTER_ID_LOC"
                 sh "echo \"CLUSTER ID is: $CLUSTER_ID\""
                 sh "python3.6 ./jenkins/databricks/shutdown.py -c $CLUSTER_ID -t $DATABRICKS_TOKEN -d || true"
                 if (currentBuild.currentResult == "SUCCESS") {
