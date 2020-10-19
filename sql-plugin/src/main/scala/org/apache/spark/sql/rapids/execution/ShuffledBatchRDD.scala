@@ -192,15 +192,7 @@ class ShuffledBatchRDD(
           context,
           sqlMetricsReporter)
     }
-    var ret : Iterator[ColumnarBatch] = null
-    val nvtxRange = new NvtxWithMetrics(
-      "Shuffle getPartitions", NvtxColor.DARK_GREEN, metrics(GpuMetricNames.TOTAL_TIME))
-    try {
-      ret = reader.read().asInstanceOf[Iterator[Product2[Int, ColumnarBatch]]].map(_._2)
-    } finally {
-      nvtxRange.close()
-    }
-    ret
+    reader.read().asInstanceOf[Iterator[Product2[Int, ColumnarBatch]]].map(_._2)
   }
 
   override def clearDependencies() {
