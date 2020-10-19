@@ -38,7 +38,7 @@ trait BlockWithSize {
 case class BlockRange[T <: BlockWithSize](
     block: T, rangeStart: Long, rangeEnd: Long) {
   require(rangeStart <= rangeEnd,
-    s"Instantiated a BlockRange with invalid ranges: $rangeStart to $rangeEnd")
+    s"Instantiated a BlockRange with invalid boundaries: $rangeStart to $rangeEnd")
 
   /**
    * Returns the size of this range in bytes
