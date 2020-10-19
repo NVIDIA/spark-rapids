@@ -49,6 +49,8 @@ pipeline {
                 defaultValue: '0.16-SNAPSHOT', description: 'Cudf version to use')
         string(name: 'CUDA_VERSION',
                 defaultValue: 'cuda10-1', description: 'cuda version to use')
+        string(name: 'PUBLIC_KEY',
+                defaultValue: '', description: 'public key')
         string(name: 'REF', defaultValue: 'branch-0.3', description: 'Commit to build')
     }
 
@@ -64,7 +66,7 @@ pipeline {
         CI_RAPIDS_JAR = 'rapids-4-spark_2.12-0.1-SNAPSHOT-ci.jar'
         CI_CUDF_JAR = 'cudf-0.14-cuda10-1.jar'
         URM_URL = "${urmUrl}"
-        CLUSTER_ID_LOC = "/tmp/ci_cluster_id_${BUILD_ID}"
+        CLUSTER_ID_LOC = "/tmp/ci_cluster_id_${BUILD_TAG}"
     }
 
     triggers {
@@ -79,8 +81,7 @@ pipeline {
                         sh "rm -rf spark-rapids-ci.tgz"
                         sh "tar -zcvf spark-rapids-ci.tgz *"
                         sh "echo \"CLUSTER ID FILE is: $CLUSTER_ID_LOC\""
-                        sh "PUB_KEY=cat /home/svcngcc/.ssh/id_rsa.pub"
-                        sh "python3.6 ./jenkins/databricks/run-tests.py -z ./spark-rapids-ci.tgz -t $DATABRICKS_TOKEN -p /home/svcngcc/.ssh/id_rsa -l ./jenkins/databricks/build.sh -j $CI_RAPIDS_JAR -b $DATABRICKS_VERSION -k $SPARK_VERSION_TO_INSTALL_JARS -a $SCALA_VERSION -f $CUDF_VERSION -u $CUDA_VERSION -m $CI_CUDF_JAR -w $PUB_KEY -o $CLUSTER_ID_LOC"
+                        sh "python3.6 ./jenkins/databricks/run-tests.py -z ./spark-rapids-ci.tgz -t $DATABRICKS_TOKEN -p /home/svcngcc/.ssh/id_rsa -l ./jenkins/databricks/build.sh -j $CI_RAPIDS_JAR -b $DATABRICKS_VERSION -k $SPARK_VERSION_TO_INSTALL_JARS -a $SCALA_VERSION -f $CUDF_VERSION -u $CUDA_VERSION -m $CI_CUDF_JAR -w $PUBLIC_KEY -o $CLUSTER_ID_LOC"
                         sh "./jenkins/databricks/deploy.sh"
                     }
                 }
