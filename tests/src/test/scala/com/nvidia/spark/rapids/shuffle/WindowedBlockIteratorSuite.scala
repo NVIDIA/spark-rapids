@@ -27,6 +27,13 @@ class WindowedBlockIteratorSuite extends RapidsShuffleTestHelper {
     assertThrows[NoSuchElementException](wbi.next)
   }
 
+  test ("1-byte+ ranges are allowed, but 0-byte or negative ranges are not") {
+    assertResult(1)(BlockRange(null, 123, 123).rangeSize())
+    assertResult(2)(BlockRange(null, 123, 124).rangeSize())
+    assertThrows[IllegalArgumentException](BlockRange(null, 123, 122))
+    assertThrows[IllegalArgumentException](BlockRange(null, 123, 121))
+  }
+
   test ("0-byte blocks are not allowed") {
     val block = mock[BlockWithSize]
     when(block.size).thenReturn(0)

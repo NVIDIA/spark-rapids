@@ -29,7 +29,7 @@ trait BlockWithSize {
 }
 
 /**
- * Specifies a start and end range of byes for a block.
+ * Specifies a start and end range of bytes for a block.
  * @param block - a BlockWithSize instance
  * @param rangeStart - byte offset for the start of the range
  * @param rangeEnd - byte offset for the end of the range
@@ -37,6 +37,8 @@ trait BlockWithSize {
  */
 case class BlockRange[T <: BlockWithSize](
     block: T, rangeStart: Long, rangeEnd: Long) {
+  require(rangeStart <= rangeEnd,
+    s"Instantiated a BlockRange with invalid ranges: $rangeStart to $rangeEnd")
 
   /**
    * Returns the size of this range in bytes
@@ -49,12 +51,35 @@ case class BlockRange[T <: BlockWithSize](
 
 /**
  * Given a set of blocks, this iterator returns BlockRanges
- * of such blocks that fit `windowSize`.
+ * of such blocks that fit `windowSize`. The ranges are just logical
+ * chunks of the blocks, so this class performs no memory management or copying.
  *
  * If a block is too large for the window, the block will be
- * returned in `next()` until the full block could be covered.
+ * returned in `next()` until the full block can be covered.
  *
- * @param transferBlocks - sequence of blocks to manage
+ * For example, given a block that is 4 window-sizes in length:
+ * block = [sb1, sb2, sb3, sb4]
+ *
+ * The window will return on `next()` four "sub-blocks", governed by `windowSize`:
+ * window.next() // sb1
+ * window.next() // sb2
+ * window.next() // sb3
+ * window.next() // sb4
+ *
+ * If blocks are smaller than the `windowSize`, they will be packed:
+ * block1 = [b1]
+ * block2 = [b2]
+ * window.next() // [b1, b2]
+ *
+ * A mix of both scenarios above is possible:
+ * block1 = [sb11, sb12, sb13] // where sb13 is smaller than window length
+ * block2 = [b2]
+ *
+ * window.next() // sb11
+ * window.next() // sb12
+ * window.next() // [sb13, b2]
+ *
+ * @param blocks - sequence of blocks to manage
  * @param windowSize - the size (in bytes) that block ranges should fit
  * @tparam T - the specific type of `BlockWithSize`
  * @note this class does not own `transferBlocks`
@@ -68,7 +93,6 @@ class WindowedBlockIterator[T <: BlockWithSize](blocks: Seq[T], windowSize: Long
   case class BlockWindow(start: Long, size: Long) {
     val end = start + size - 1
     def move(): BlockWindow = {
-      val windowLength = size - start
       BlockWindow(start + size, size)
     }
   }
