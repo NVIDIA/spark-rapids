@@ -91,7 +91,7 @@ class WindowedBlockIterator[T <: BlockWithSize](blocks: Seq[T], windowSize: Long
   require(windowSize > 0, s"Invalid window size specified $windowSize")
 
   private case class BlockWindow(start: Long, size: Long) {
-    val end = start + size // non-exclusive end offset
+    val end = start + size // exclusive end offset
     def move(): BlockWindow = {
       BlockWindow(start + size, size)
     }
