@@ -16,7 +16,7 @@
 
 package com.nvidia.spark.rapids.tests.tpcxbb
 
-import com.nvidia.spark.rapids.tests.common.{BenchmarkRunner, BenchmarkSuite}
+import com.nvidia.spark.rapids.tests.common.BenchmarkSuite
 
 import org.apache.spark.sql.{DataFrame, SparkSession}
 

@@ -105,7 +105,7 @@ The benchmark can be executed with the following syntax to execute the query and
 results to the driver.
 
 ```scala
-import com.nvidia.spark.rapids.tests.common._
+import com.nvidia.spark.rapids.tests._
 val benchmark = new BenchmarkRunner(TpcdsLikeBench)
 benchmark.collect(spark, "q5", iterations=3)
 ```
@@ -115,7 +115,7 @@ to Parquet. There are also `writeCsv` and `writeOrc` methods for writing the out
 files.
 
 ```scala
-import com.nvidia.spark.rapids.tests.common._
+import com.nvidia.spark.rapids.tests._
 val benchmark = new BenchmarkRunner(TpcdsLikeBench)
 benchmark.writeParquet(spark, "q5", "/data/output/tpcds/q5", iterations=3)
 ```
@@ -134,7 +134,7 @@ have the benchmark call `collect()` on the results instead.
 $SPARK_HOME/bin/spark-submit \
     --master $SPARK_MASTER_URL \
     --jars $SPARK_RAPIDS_PLUGIN_JAR,$CUDF_JAR \
-    --class com.nvidia.spark.rapids.tests.common.BenchmarkRunner \
+    --class com.nvidia.spark.rapids.tests.BenchmarkRunner \
     $SPARK_RAPIDS_PLUGIN_INTEGRATION_TEST_JAR \
     --benchmark tpcds \
     --query q5 \

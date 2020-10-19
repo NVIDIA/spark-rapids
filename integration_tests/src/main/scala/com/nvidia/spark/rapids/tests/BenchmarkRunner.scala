@@ -13,8 +13,9 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package com.nvidia.spark.rapids.tests.common
+package com.nvidia.spark.rapids.tests
 
+import com.nvidia.spark.rapids.tests.common.{BenchmarkSuite, BenchUtils}
 import com.nvidia.spark.rapids.tests.tpcds.TpcdsLikeBench
 import com.nvidia.spark.rapids.tests.tpch.TpchLikeBench
 import com.nvidia.spark.rapids.tests.tpcxbb.TpcxbbLikeBench
