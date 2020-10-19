@@ -532,6 +532,7 @@ object GpuOverrides {
         // There are so many of these that we don't need to print them out.
         override def print(append: StringBuilder, depth: Int, all: Boolean): Unit = {}
       }),
+    // TODO: maybe we should apply the conversion between decimal32 and decimal64 to promote precision?
     expr[PromotePrecision](
       "Eliminates unnecessary PromotePrecision expressions in GPU runtime",
       (a, conf, p, r) => new UnaryExprMeta[PromotePrecision](a, conf, p, r) {
