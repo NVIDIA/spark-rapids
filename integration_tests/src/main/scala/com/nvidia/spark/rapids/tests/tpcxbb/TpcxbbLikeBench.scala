@@ -21,7 +21,7 @@ import com.nvidia.spark.rapids.tests.common.{BenchmarkRunner, BenchmarkSuite}
 import org.apache.spark.sql.{DataFrame, SparkSession}
 
 object TpcxbbLikeBench  extends BenchmarkSuite {
-  override def name(): String = "TPC-xBB"
+  override def name(): String = "TPCx-BB"
 
   override def shortName(): String = "Tpcxbb"
 
@@ -84,4 +84,3 @@ object TpcxbbLikeBench  extends BenchmarkSuite {
     }
   }
 }
-
