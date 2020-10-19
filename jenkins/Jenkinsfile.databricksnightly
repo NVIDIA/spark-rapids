@@ -66,7 +66,7 @@ pipeline {
         CI_RAPIDS_JAR = 'rapids-4-spark_2.12-0.1-SNAPSHOT-ci.jar'
         CI_CUDF_JAR = 'cudf-0.14-cuda10-1.jar'
         URM_URL = "${urmUrl}"
-        CLUSTER_ID_LOC = "/${WORKSPACE}/ci_cluster_id_${BUILD_TAG}"
+        CLUSTER_ID_LOC = "${WORKSPACE}/ci_cluster_id_${BUILD_TAG}"
     }
 
     triggers {
