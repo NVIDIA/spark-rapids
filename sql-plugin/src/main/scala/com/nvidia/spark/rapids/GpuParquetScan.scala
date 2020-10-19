@@ -363,11 +363,7 @@ case class GpuParquetMultiFilePartitionReaderFactory(
     } else {
       false
     }
-    // logWarning(s"is cloud is: $isCloud")
-    // logWarning(s"checking all files took: ${System.nanoTime() - start}")
     val conf = broadcastedConf.value.value
-    // logDebug(s"Number files being read: ${files.size} for task ${TaskContext.get().partitionId()}")
-    // logInfo(s"using the optimized file reader, cloud=$isCloud")
     if ((canUseMultiThreadRead && isCloud) || !canUseCoalesceFilesRead) {
       logWarning("Using the multi-threaded multi-file parquet reader")
       buildBaseColumnarParquetReaderForCloud(files, conf)
