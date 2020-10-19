@@ -192,13 +192,16 @@ class GpuTransitionOverrides extends Rule[SparkPlan] {
 
   // This walks from the output to the input to look for any uses of InputFileName,
   // InputFileBlockStart, or InputFileBlockLength when we use a Parquet read because
-  // we can't support the small file optimization when this is used.
+  // we can't support the coalesce file reader optimization when this is used.
   private def updateScansForInput(plan: SparkPlan,
       disableUntilInput: Boolean = false): SparkPlan = plan match {
     case batchScan: GpuBatchScanExec =>
       if (batchScan.scan.isInstanceOf[GpuParquetScanBase] &&
         (disableUntilInput || disableScanUntilInput(batchScan))) {
         val parquetScanBase = batchScan.scan.asInstanceOf[GpuParquetScanBase]
+        if (parquetScanBase.getCanUseCoalesceFilesRead) {
+          logWarning("found gpu parquet scan file coalesce file reader")
+        }
         logWarning("replacing gpu batchscan exec")
         val t = ShimLoader.getSparkShims.copyParquetBatchScanExec(batchScan, false)
         logWarning("copied batch scan: " + t)
@@ -209,11 +212,10 @@ class GpuTransitionOverrides extends Rule[SparkPlan] {
       }
     case fileSourceScan: GpuFileSourceScanExec =>
       if (fileSourceScan.supportsMultiFileOpt == true &&
+        fileSourceScan.canUseCoalesceFilesRead == true &&
         (disableUntilInput || disableScanUntilInput(fileSourceScan))) {
-        logWarning("replacing gpu file source exec")
         ShimLoader.getSparkShims.copyFileSourceScanExec(fileSourceScan, false)
       } else {
-        logWarning("not replacing gpu file source exec")
         fileSourceScan
       }
     case p =>

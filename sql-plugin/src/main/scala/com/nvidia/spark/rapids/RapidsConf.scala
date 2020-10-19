@@ -505,7 +505,7 @@ object RapidsConf {
   val ENABLE_COALESCE_FILES_PARQUET_READS = conf(
     "spark.rapids.sql.format.parquet.coalesceFilesRead.enabled")
     .doc("When set to true, allows reading multiple small files within a partition more " +
-      "efficiently by coalescing multiple small files into a single buffer on the CPU side " +
+      "efficiently by coalescing those files into a single buffer on the CPU side " +
       "before sending it to the GPU. This optimization is used when reading from a local " +
       "filesystem. spark.rapids.cloudSchemes is used to determine if the file is from a local " +
       "filesystem. This does also copy blocks from a file in parallel using background threads " +

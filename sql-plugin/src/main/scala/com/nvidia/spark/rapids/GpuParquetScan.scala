@@ -98,7 +98,7 @@ abstract class GpuParquetScanBase(
         dataSchema, readDataSchema, readPartitionSchema, pushedFilters, rapidsConf, metrics,
         canUseMultiThreadRead, canUseCoalesceFilesRead)
     } else {
-      logWarning("Using the original per file parquet reader")
+      logInfo("Using the original per file parquet reader")
       GpuParquetPartitionReaderFactory(sparkSession.sessionState.conf, broadcastedConf,
         dataSchema, readDataSchema, readPartitionSchema, pushedFilters, rapidsConf, metrics)
     }
@@ -352,12 +352,10 @@ case class GpuParquetMultiFilePartitionReaderFactory(
     val filePartition = partition.asInstanceOf[FilePartition]
     val files = filePartition.files
     val filePaths = files.map(_.filePath)
-    val start = System.nanoTime()
     if (!canUseMultiThreadRead && !canUseCoalesceFilesRead) {
       throw new IllegalStateException("can't use the Multifile reader when both " +
         "canUseMultiThreadRead and canUseCoalesceFilesRead are off!")
     }
-    // logWarning(s"files paths are : ${filePaths.mkString(",")}")
     val isCloud = if (canUseMultiThreadRead) {
       filePaths.map(isCloudFileSystem).contains(true)
     } else {
@@ -365,10 +363,10 @@ case class GpuParquetMultiFilePartitionReaderFactory(
     }
     val conf = broadcastedConf.value.value
     if ((canUseMultiThreadRead && isCloud) || !canUseCoalesceFilesRead) {
-      logWarning("Using the multi-threaded multi-file parquet reader")
+      logInfo("Using the multi-threaded multi-file parquet reader")
       buildBaseColumnarParquetReaderForCloud(files, conf)
     } else {
-      logWarning("Using the coalesce multi-file parquet reader")
+      logInfo("Using the coalesce multi-file parquet reader")
       buildBaseColumnarParquetReader(files, conf)
     }
   }
@@ -1288,7 +1286,6 @@ class MultiFileCloudParquetPartitionReader(
   }
 
   override def next(): Boolean = {
-    // logWarning("opt supports small file cloud opt is: ")
     withResource(new NvtxWithMetrics("Parquet readBatch", NvtxColor.GREEN,
       metrics(TOTAL_TIME))) { _ =>
       if (isInitted == false) {
@@ -1486,7 +1483,6 @@ class ParquetPartitionReader(
   private val blockIterator:  BufferedIterator[BlockMetaData] = clippedBlocks.iterator.buffered
 
   override def next(): Boolean = {
-    // logWarning("no small opt supports small file opt is: " )
     batch.foreach(_.close())
     batch = None
     if (!isDone) {
