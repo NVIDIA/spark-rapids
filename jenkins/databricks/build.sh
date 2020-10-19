@@ -35,8 +35,6 @@ echo "scala version is: $SCALA_VERSION"
 
 # this has to match the Databricks init script
 DB_JAR_LOC=/databricks/jars/
-#DB_RAPIDS_JAR_LOC=$DB_JAR_LOC/$CI_RAPIDS_JAR
-#DB_CUDF_JAR_LOC=$DB_JAR_LOC/$CI_CUDF_JAR
 RAPIDS_BUILT_JAR=rapids-4-spark_$SCALA_VERSION-$SPARK_PLUGIN_JAR_VERSION.jar
 
 sudo apt install -y maven
@@ -97,10 +95,8 @@ mvn -B '-Pdatabricks,!snapshot-shims' clean package -DskipTests
 # exactly what is in the staticly setup Databricks cluster we use. 
 echo "Copying rapids jars: dist/target/$RAPIDS_BUILT_JAR $DB_JAR_LOC"
 sudo cp dist/target/$RAPIDS_BUILT_JAR $DB_JAR_LOC
-#sudo cp dist/target/$RAPIDS_BUILT_JAR $DB_RAPIDS_JAR_LOC
 echo "Copying cudf jars: $CUDF_JAR $DB_JAR_LOC"
 sudo cp $CUDF_JAR $DB_JAR_LOC
-#sudo cp $CUDF_JAR $DB_CUDF_JAR_LOC
 
 # tests
 export PATH=/databricks/conda/envs/databricks-ml-gpu/bin:/databricks/conda/condabin:$PATH
