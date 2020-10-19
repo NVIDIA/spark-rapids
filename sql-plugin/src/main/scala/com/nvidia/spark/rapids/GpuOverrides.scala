@@ -532,6 +532,19 @@ object GpuOverrides {
         // There are so many of these that we don't need to print them out.
         override def print(append: StringBuilder, depth: Int, all: Boolean): Unit = {}
       }),
+    expr[PromotePrecision](
+      "Eliminates unnecessary PromotePrecision expressions in GPU runtime",
+      (a, conf, p, r) => new UnaryExprMeta[PromotePrecision](a, conf, p, r) {
+        // Remove PromotePrecision and (GPU)Cast expression appended by DecimalPrecision
+        override def convertToGpu(child: Expression): GpuExpression = {
+          child match {
+            case c: GpuCast => c.child.asInstanceOf[GpuExpression]
+            case c => throw new IllegalStateException(
+              s"Child expression of PromotePrecision should always be (GPU)Cast, " +
+                s"but found ${c.prettyName}")
+          }
+        }
+      }),
     expr[Cast](
       "Convert a column of one type of data into another type",
       (cast, conf, p, r) => new CastExprMeta[Cast](cast, SparkSession.active.sessionState.conf
