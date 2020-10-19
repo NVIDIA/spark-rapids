@@ -31,62 +31,66 @@ object BenchmarkRunner {
   def main(args: Array[String]): Unit = {
     val conf = new BenchmarkConf(args)
 
-    val bench: BenchmarkSuite = conf.benchmark() match {
-      case "tpcds" => TpcdsLikeBench
-      case "tpch" => TpchLikeBench
-      case "tpcxbb" => TpcxbbLikeBench
-      case other => throw new IllegalArgumentException(s"Invalid benchmark name: $other")
-    }
+    val benchmarks = Map(
+      "tpcds" -> TpcdsLikeBench,
+      "tpch" -> TpchLikeBench,
+      "tpcxbb" -> TpcxbbLikeBench,
+    )
 
-    val spark = SparkSession.builder.appName(s"${bench.name()} Like Bench").getOrCreate()
-    conf.inputFormat().toLowerCase match {
-      case "parquet" => bench.setupAllParquet(spark, conf.input())
-      case "csv" => bench.setupAllCSV(spark, conf.input())
-      case "orc" => bench.setupAllOrc(spark, conf.input())
-      case other =>
-        println(s"Invalid input format: $other")
+    benchmarks.get(conf.benchmark().toLowerCase) match {
+      case Some(bench) =>
+        val spark = SparkSession.builder.appName(s"${bench.name()} Like Bench").getOrCreate()
+        conf.inputFormat().toLowerCase match {
+          case "parquet" => bench.setupAllParquet(spark, conf.input())
+          case "csv" => bench.setupAllCSV(spark, conf.input())
+          case "orc" => bench.setupAllOrc(spark, conf.input())
+          case other =>
+            System.err.println(s"Invalid input format: $other")
+            System.exit(-1)
+        }
+
+        val runner = new BenchmarkRunner(bench)
+        println(s"*** RUNNING ${bench.name()} QUERY ${conf.query()}")
+        conf.output.toOption match {
+          case Some(path) => conf.outputFormat().toLowerCase match {
+            case "parquet" =>
+              runner.writeParquet(
+                spark,
+                conf.query(),
+                path,
+                iterations = conf.iterations(),
+                summaryFilePrefix = conf.summaryFilePrefix.toOption)
+            case "csv" =>
+              runner.writeCsv(
+                spark,
+                conf.query(),
+                path,
+                iterations = conf.iterations(),
+                summaryFilePrefix = conf.summaryFilePrefix.toOption)
+            case "orc" =>
+              runner.writeOrc(
+                spark,
+                conf.query(),
+                path,
+                iterations = conf.iterations(),
+                summaryFilePrefix = conf.summaryFilePrefix.toOption)
+            case other =>
+              System.err.println(s"Invalid or unspecified output format: $other")
+              System.exit(-1)
+          }
+          case _ =>
+            runner.collect(
+              spark,
+              conf.query(),
+              conf.iterations(),
+              summaryFilePrefix = conf.summaryFilePrefix.toOption)
+        }
+      case _ =>
+        System.err.println(s"Invalid benchmark name: ${conf.benchmark()}. Supported benchmarks " +
+            s"are ${benchmarks.keys.mkString(",")}")
         System.exit(-1)
     }
-
-    val runner = new BenchmarkRunner(bench)
-
-    println(s"*** RUNNING ${bench.name()} QUERY ${conf.query()}")
-    conf.output.toOption match {
-      case Some(path) => conf.outputFormat().toLowerCase match {
-        case "parquet" =>
-          runner.writeParquet(
-            spark,
-            conf.query(),
-            path,
-            iterations = conf.iterations(),
-            summaryFilePrefix = conf.summaryFilePrefix.toOption)
-        case "csv" =>
-          runner.writeCsv(
-            spark,
-            conf.query(),
-            path,
-            iterations = conf.iterations(),
-            summaryFilePrefix = conf.summaryFilePrefix.toOption)
-        case "orc" =>
-          runner.writeOrc(
-            spark,
-            conf.query(),
-            path,
-            iterations = conf.iterations(),
-            summaryFilePrefix = conf.summaryFilePrefix.toOption)
-        case _ =>
-          println("Invalid or unspecified output format")
-          System.exit(-1)
-      }
-      case _ =>
-        runner.collect(
-          spark,
-          conf.query(),
-          conf.iterations(),
-          summaryFilePrefix = conf.summaryFilePrefix.toOption)
-    }
   }
-
 }
 
 /**
