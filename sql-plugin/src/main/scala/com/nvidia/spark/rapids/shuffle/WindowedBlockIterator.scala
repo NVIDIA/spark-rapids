@@ -31,22 +31,22 @@ trait BlockWithSize {
 /**
  * Specifies a start and end range of bytes for a block.
  * @param block - a BlockWithSize instance
- * @param rangeStart - byte offset for the start of the range
- * @param rangeEnd - byte offset for the end of the range
+ * @param rangeStart - byte offset for the start of the range (inclusive)
+ * @param rangeEnd - byte offset for the end of the range (exclusive)
  * @tparam T - the specific type of `BlockWithSize`
  */
 case class BlockRange[T <: BlockWithSize](
     block: T, rangeStart: Long, rangeEnd: Long) {
-  require(rangeStart <= rangeEnd,
+  require(rangeStart < rangeEnd,
     s"Instantiated a BlockRange with invalid boundaries: $rangeStart to $rangeEnd")
 
   /**
    * Returns the size of this range in bytes
    * @return - Long - size in bytes
    */
-  def rangeSize(): Long = rangeEnd - rangeStart + 1
+  def rangeSize(): Long = rangeEnd - rangeStart
 
-  def isComplete(): Boolean = rangeEnd == block.size - 1
+  def isComplete(): Boolean = rangeEnd == block.size
 }
 
 /**
@@ -90,8 +90,8 @@ class WindowedBlockIterator[T <: BlockWithSize](blocks: Seq[T], windowSize: Long
 
   require(windowSize > 0, s"Invalid window size specified $windowSize")
 
-  case class BlockWindow(start: Long, size: Long) {
-    val end = start + size - 1
+  private case class BlockWindow(start: Long, size: Long) {
+    val end = start + size // non-exclusive end offset
     def move(): BlockWindow = {
       BlockWindow(start + size, size)
     }
@@ -103,16 +103,18 @@ class WindowedBlockIterator[T <: BlockWithSize](blocks: Seq[T], windowSize: Long
 
   // helper class that captures the start/end byte offset
   // for `block` on creation
-  case class BlockWithOffset[T <: BlockWithSize](
+  private case class BlockWithOffset[T <: BlockWithSize](
       block: T, startOffset: Long, endOffset: Long)
 
-  private var lastOffset = 0L
-  private[this] val blocksWithOffsets = blocks.map { block =>
-    require(block.size > 0, "Invalid 0-byte block")
-    val startOffset = lastOffset
-    val endOffset = startOffset + block.size - 1
-    lastOffset = endOffset + 1 // for next block
-    BlockWithOffset(block, startOffset, endOffset)
+  private[this] val blocksWithOffsets = {
+    var lastOffset = 0L
+    blocks.map { block =>
+      require(block.size > 0, "Invalid 0-byte block")
+      val startOffset = lastOffset
+      val endOffset = startOffset + block.size
+      lastOffset = endOffset // for next block
+      BlockWithOffset(block, startOffset, endOffset)
+    }
   }
 
   case class BlocksForWindow(lastBlockIndex: Option[Int],
@@ -129,20 +131,20 @@ class WindowedBlockIterator[T <: BlockWithSize](blocks: Seq[T], windowSize: Long
     while (continue && thisBlock < blocksWithOffsets.size) {
       val b = blocksWithOffsets(thisBlock)
       // if at least 1 byte fits within the window, this block should be included
-      if (window.start <= b.endOffset && window.end >= b.startOffset) {
+      if (window.start < b.endOffset && window.end > b.startOffset) {
         var rangeStart = window.start - b.startOffset
         if (rangeStart < 0) {
           rangeStart = 0
         }
         var rangeEnd = window.end - b.startOffset
-        if (window.end > b.endOffset) {
+        if (window.end >= b.endOffset) {
           rangeEnd = b.endOffset - b.startOffset
         }
         blockRangesInWindow.append(BlockRange[T](b.block, rangeStart, rangeEnd))
         lastBlockIndex = Some(thisBlock)
       } else {
         // skip this block, unless it's before our window starts
-        continue = b.endOffset < window.start
+        continue = b.endOffset <= window.start
       }
       thisBlock = thisBlock + 1
     }

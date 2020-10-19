@@ -28,10 +28,10 @@ class WindowedBlockIteratorSuite extends RapidsShuffleTestHelper {
   }
 
   test ("1-byte+ ranges are allowed, but 0-byte or negative ranges are not") {
-    assertResult(1)(BlockRange(null, 123, 123).rangeSize())
-    assertResult(2)(BlockRange(null, 123, 124).rangeSize())
+    assertResult(1)(BlockRange(null, 123, 124).rangeSize())
+    assertResult(2)(BlockRange(null, 123, 125).rangeSize())
+    assertThrows[IllegalArgumentException](BlockRange(null, 123, 123))
     assertThrows[IllegalArgumentException](BlockRange(null, 123, 122))
-    assertThrows[IllegalArgumentException](BlockRange(null, 123, 121))
   }
 
   test ("0-byte blocks are not allowed") {
@@ -54,7 +54,7 @@ class WindowedBlockIteratorSuite extends RapidsShuffleTestHelper {
     blockRange.foreach { br =>
       assertResult(1)(br.rangeSize())
       assertResult(0)(br.rangeStart)
-      assertResult(0)(br.rangeEnd)
+      assertResult(1)(br.rangeEnd)
     }
     assertResult(false)(wbi.hasNext)
     assertThrows[NoSuchElementException](wbi.next)
@@ -72,21 +72,21 @@ class WindowedBlockIteratorSuite extends RapidsShuffleTestHelper {
     val blockRange = blockRanges.head
     assertResult(1024)(blockRange.rangeSize())
     assertResult(0)(blockRange.rangeStart)
-    assertResult(1023)(blockRange.rangeEnd)
+    assertResult(1024)(blockRange.rangeEnd)
     assertResult(true)(wbi.hasNext)
 
     val blockRangesMiddle = wbi.next()
     val blockRangeMiddle = blockRangesMiddle.head
     assertResult(1024)(blockRangeMiddle.rangeSize())
     assertResult(1024)(blockRangeMiddle.rangeStart)
-    assertResult(2047)(blockRangeMiddle.rangeEnd)
+    assertResult(2048)(blockRangeMiddle.rangeEnd)
     assertResult(true)(wbi.hasNext)
 
     val blockRangesLastByte = wbi.next()
     val blockRangeLastByte = blockRangesLastByte.head
     assertResult(1)(blockRangeLastByte.rangeSize())
     assertResult(2048)(blockRangeLastByte.rangeStart)
-    assertResult(2048)(blockRangeLastByte.rangeEnd)
+    assertResult(2049)(blockRangeLastByte.rangeEnd)
 
     assertResult(false)(wbi.hasNext)
     assertThrows[NoSuchElementException](wbi.next)
@@ -109,19 +109,19 @@ class WindowedBlockIteratorSuite extends RapidsShuffleTestHelper {
 
     assertResult(1000)(firstBlock.rangeSize())
     assertResult(0)(firstBlock.rangeStart)
-    assertResult(999)(firstBlock.rangeEnd)
+    assertResult(1000)(firstBlock.rangeEnd)
     assertResult(true)(wbi.hasNext)
 
     assertResult(24)(secondBlock.rangeSize())
     assertResult(0)(secondBlock.rangeStart)
-    assertResult(23)(secondBlock.rangeEnd)
+    assertResult(24)(secondBlock.rangeEnd)
     assertResult(true)(wbi.hasNext)
 
     val blockRangesLastByte = wbi.next()
     val blockRangeLastByte = blockRangesLastByte.head
     assertResult(976)(blockRangeLastByte.rangeSize())
     assertResult(24)(blockRangeLastByte.rangeStart)
-    assertResult(999)(blockRangeLastByte.rangeEnd)
+    assertResult(1000)(blockRangeLastByte.rangeEnd)
 
     assertResult(false)(wbi.hasNext)
     assertThrows[NoSuchElementException](wbi.next)
