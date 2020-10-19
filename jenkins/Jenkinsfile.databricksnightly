@@ -94,8 +94,8 @@ pipeline {
             script {
                 sh "echo ${WORKSPACE}"
                 sh "ls -la ${WORKSPACE}"
-                ID_FROM_FILE = sh "cat $CLUSTER_ID_LOC"
-                sh "python3.6 ./jenkins/databricks/shutdown.py -c $ID_FROM_FILE -t $DATABRICKS_TOKEN -d || true"
+                def ID_FROM_FILE = readFile $CLUSTER_ID_LOC
+                sh "python3.6 ./jenkins/databricks/shutdown.py -c ${ID_FROM_FILE} -t $DATABRICKS_TOKEN -d || true"
                 if (currentBuild.currentResult == "SUCCESS") {
                     // slack("#swrapids-spark-cicd", "Success", color: "#33CC33")
                 } else {
