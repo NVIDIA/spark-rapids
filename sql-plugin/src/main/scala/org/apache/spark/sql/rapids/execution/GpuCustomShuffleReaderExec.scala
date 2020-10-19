@@ -15,14 +15,14 @@
  */
 package org.apache.spark.sql.rapids.execution
 
-import com.nvidia.spark.rapids.{GpuCoalesceBatches, GpuExec, ShimLoader}
+import com.nvidia.spark.rapids.{CoalesceGoal, GpuExec, ShimLoader}
 import com.nvidia.spark.rapids.GpuMetricNames.{DESCRIPTION_TOTAL_TIME, TOTAL_TIME}
 
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.expressions.{Attribute, Expression}
 import org.apache.spark.sql.catalyst.plans.physical.{Partitioning, UnknownPartitioning}
-import org.apache.spark.sql.execution.{CoalescedPartitionSpec, PartialMapperPartitionSpec, PartialReducerPartitionSpec, ShufflePartitionSpec, SparkPlan, SQLExecution, UnaryExecNode}
+import org.apache.spark.sql.execution.{CoalescedPartitionSpec, PartialMapperPartitionSpec, PartialReducerPartitionSpec, ShufflePartitionSpec, SparkPlan, UnaryExecNode}
 import org.apache.spark.sql.execution.adaptive.ShuffleQueryStageExec
 import org.apache.spark.sql.execution.exchange.{Exchange, ReusedExchangeExec}
 import org.apache.spark.sql.execution.metric.{SQLMetric, SQLMetrics}
@@ -75,6 +75,9 @@ case class GpuCustomShuffleReaderExec(
       UnknownPartitioning(partitionSpecs.length)
     }
   }
+
+  // The same as what feeds us
+  override def outputBatching: CoalesceGoal = GpuExec.outputBatching(child)
 
   override def stringArgs: Iterator[Any] = {
     val desc = if (isLocalReader) {
