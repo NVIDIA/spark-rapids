@@ -18,7 +18,7 @@ from asserts import assert_gpu_and_cpu_are_equal_collect, assert_equal
 from data_gen import *
 from datetime import date
 import pyspark.sql.functions as f
-from spark_session import with_cpu_session, with_gpu_session, is_spark_300
+from spark_session import with_cpu_session, with_gpu_session, is_spark_300, is_before_spark_310
 from join_test import create_df
 from generate_expr_test import four_op_df
 from marks import incompat, allow_non_gpu, ignore_order
@@ -163,6 +163,7 @@ all_gen_restricting_dates = [StringGen(), ByteGen(), ShortGen(), IntegerGen(), L
 @pytest.mark.parametrize('data_gen', all_gen_restricting_dates, ids=idfn)
 @pytest.mark.parametrize('ts_write', ['INT96', 'TIMESTAMP_MICROS', 'TIMESTAMP_MILLIS'])
 @pytest.mark.parametrize('enableVectorized', ['true', 'false'], ids=idfn)
+@pytest.mark.xfail(condition=not(is_before_spark_310()), reason='https://github.com/NVIDIA/spark-rapids/issues/953')
 @allow_non_gpu('DataWritingCommandExec')
 def test_cache_posexplode_makearray(spark_tmp_path, data_gen, ts_rebase, ts_write, enableVectorized):
     if is_spark_300() and data_gen.data_type == BooleanType():

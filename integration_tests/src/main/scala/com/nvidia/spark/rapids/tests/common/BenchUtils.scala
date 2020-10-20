@@ -78,6 +78,27 @@ object BenchUtils {
       gcBetweenRuns)
   }
 
+  /** Perform benchmark of writing results to ORC */
+  def writeOrc(
+      spark: SparkSession,
+      createDataFrame: SparkSession => DataFrame,
+      queryDescription: String,
+      filenameStub: String,
+      iterations: Int,
+      gcBetweenRuns: Boolean,
+      path: String,
+      mode: SaveMode = SaveMode.Overwrite,
+      writeOptions: Map[String, String] = Map.empty): Unit = {
+    runBench(
+      spark,
+      createDataFrame,
+      WriteOrc(path, mode, writeOptions),
+      queryDescription,
+      filenameStub,
+      iterations,
+      gcBetweenRuns)
+  }
+
   /** Perform benchmark of writing results to Parquet */
   def writeParquet(
       spark: SparkSession,
@@ -147,6 +168,8 @@ object BenchUtils {
         case Collect() => df.collect()
         case WriteCsv(path, mode, options) =>
           df.write.mode(mode).options(options).csv(path)
+        case WriteOrc(path, mode, options) =>
+          df.write.mode(mode).options(options).orc(path)
         case WriteParquet(path, mode, options) =>
           df.write.mode(mode).options(options).parquet(path)
       }
@@ -227,6 +250,18 @@ object BenchUtils {
         queryPlansWithMetrics,
         queryTimes)
 
+      case w: WriteOrc => BenchmarkReport(
+        filename,
+        queryStartTime.toEpochMilli,
+        environment,
+        testConfiguration,
+        "orc",
+        w.writeOptions,
+        queryDescription,
+        queryPlan,
+        queryPlansWithMetrics,
+        queryTimes)
+
       case w: WriteParquet => BenchmarkReport(
         filename,
         queryStartTime.toEpochMilli,
@@ -255,6 +290,33 @@ object BenchUtils {
     os.write(writePretty(report).getBytes)
     os.close()
   }
+
+  def validateCoalesceRepartition(
+      coalesce: Map[String, Int],
+      repartition: Map[String, Int]): Unit = {
+    val duplicates = coalesce.keys.filter(name => repartition.contains(name))
+    if (duplicates.nonEmpty) {
+      throw new IllegalArgumentException(
+        s"Cannot both coalesce and repartition the same table: ${duplicates.mkString(",")}")
+    }
+  }
+
+  def applyCoalesceRepartition(
+      name: String,
+      df: DataFrame,
+      coalesce: Map[String, Int],
+      repartition: Map[String, Int]): DataFrame = {
+    (coalesce.get(name), repartition.get(name)) match {
+      case (Some(_), Some(_)) =>
+        // this should be unreachable due to earlier validation
+        throw new IllegalArgumentException(
+          s"Cannot both coalesce and repartition the same table: $name")
+      case (Some(n), _) => df.coalesce(n)
+      case (_, Some(n)) => df.repartition(n)
+      case _ => df
+    }
+  }
+
 
   /**
    * Generate a DOT graph for one query plan, or showing differences between two query plans.
@@ -586,6 +648,15 @@ class BenchmarkListener(list: ListBuffer[SparkPlanNode]) extends QueryExecutionL
   }
 }
 
+trait BenchmarkSuite {
+  def name(): String
+  def shortName(): String
+  def setupAllParquet(spark: SparkSession, path: String)
+  def setupAllCSV(spark: SparkSession, path: String)
+  def setupAllOrc(spark: SparkSession, path: String)
+  def createDataFrame(spark: SparkSession, query: String): DataFrame
+}
+
 /** Top level benchmark report class */
 case class BenchmarkReport(
     filename: String,
@@ -632,6 +703,11 @@ sealed trait ResultsAction
 case class Collect() extends ResultsAction
 
 case class WriteCsv(
+    path: String,
+    mode: SaveMode,
+    writeOptions: Map[String, String]) extends ResultsAction
+
+case class WriteOrc(
     path: String,
     mode: SaveMode,
     writeOptions: Map[String, String]) extends ResultsAction

@@ -350,6 +350,51 @@ object GpuOverrides {
     !regexList.exists(pattern => s.contains(pattern))
   }
 
+  private def canonicalizeToCpuForSortOrder(exp: Expression): Expression = exp match {
+    case g: GpuLiteral => Literal(g.value, g.dataType).canonicalized
+    case g: GpuKnownFloatingPointNormalized =>
+      KnownFloatingPointNormalized(canonicalizeToCpuForSortOrder(g.child)).canonicalized
+    case g: GpuNormalizeNaNAndZero =>
+      NormalizeNaNAndZero(canonicalizeToCpuForSortOrder(g.child)).canonicalized
+    case g: GpuAlias =>
+      Alias(canonicalizeToCpuForSortOrder(g.child), g.name)(
+        g.exprId,
+        g.qualifier,
+        g.explicitMetadata)
+          .canonicalized
+    case o: GpuExpression =>
+      throw new IllegalStateException(s"${o.getClass} is not expected to be a part of a SortOrder")
+    case other => other.canonicalized
+  }
+
+  private def gpuOrderingSemanticEquals(found: Expression, required: Expression): Boolean = {
+    found.deterministic && required.deterministic &&
+        canonicalizeToCpuForSortOrder(found) == canonicalizeToCpuForSortOrder(required)
+  }
+
+  private def orderingSatisfies(found: SortOrder, required: SortOrder): Boolean = {
+    (found.sameOrderExpressions + found.child).exists(
+      gpuOrderingSemanticEquals(_, required.child)) &&
+        found.direction == required.direction &&
+        found.nullOrdering == required.nullOrdering
+  }
+
+  private def orderingSatisfies(ordering1: Seq[SortOrder], ordering2: Seq[SortOrder]): Boolean = {
+    // We cannot use SortOrder.orderingSatisfies because there is a corner case where
+    // some operators like a Literal can be a part of SortOrder, which then results in errors
+    // because we may have converted it over to a GpuLiteral at that point and a Literal
+    // is not equivalent to a GpuLiteral, even though it should be.
+    if (ordering2.isEmpty) {
+      true
+    } else if (ordering2.length > ordering1.length) {
+      false
+    } else {
+      ordering2.zip(ordering1).forall {
+        case (o2, o1) => orderingSatisfies(o1, o2)
+      }
+    }
+  }
+
   @scala.annotation.tailrec
   def extractLit(exp: Expression): Option[Literal] = exp match {
     case l: Literal => Some(l)
@@ -1933,7 +1978,7 @@ case class GpuOverrides() extends Rule[SparkPlan] with Logging {
     // Now that we've performed any necessary shuffles, add sorts to guarantee output orderings:
     children = children.zip(requiredChildOrderings).map { case (child, requiredOrdering) =>
       // If child.outputOrdering already satisfies the requiredOrdering, we do not need to sort.
-      if (SortOrder.orderingSatisfies(child.outputOrdering, requiredOrdering)) {
+      if (GpuOverrides.orderingSatisfies(child.outputOrdering, requiredOrdering)) {
         child
       } else {
         val sort = SortExec(requiredOrdering, global = false, child = child)

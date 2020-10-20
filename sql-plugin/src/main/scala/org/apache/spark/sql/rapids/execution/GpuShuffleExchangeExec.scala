@@ -20,6 +20,7 @@ import scala.collection.AbstractIterator
 import scala.concurrent.Future
 
 import com.nvidia.spark.rapids._
+import com.nvidia.spark.rapids.GpuMetricNames.{DESCRIPTION_NUM_OUTPUT_BATCHES, DESCRIPTION_NUM_OUTPUT_ROWS, NUM_OUTPUT_BATCHES, NUM_OUTPUT_ROWS}
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 
 import org.apache.spark.{MapOutputStatistics, ShuffleDependency}
@@ -78,9 +79,14 @@ abstract class GpuShuffleExchangeExecBase(
     SQLShuffleWriteMetricsReporter.createShuffleWriteMetrics(sparkContext)
   lazy val readMetrics =
     SQLShuffleReadMetricsReporter.createShuffleReadMetrics(sparkContext)
-  override lazy val additionalMetrics : Map[String, SQLMetric] = Map(
-    "dataSize" -> SQLMetrics.createSizeMetric(sparkContext, "data size")
-  ) ++ readMetrics ++ writeMetrics
+
+  // Spark doesn't report totalTime for this operator so we override metrics directly rather
+  // than use additionalMetrics
+  override lazy val metrics: Map[String, SQLMetric] = Map(
+    NUM_OUTPUT_ROWS -> SQLMetrics.createMetric(sparkContext, DESCRIPTION_NUM_OUTPUT_ROWS),
+    NUM_OUTPUT_BATCHES -> SQLMetrics.createMetric(sparkContext, DESCRIPTION_NUM_OUTPUT_BATCHES),
+    "dataSize" -> SQLMetrics.createSizeMetric(sparkContext, "data size")) ++
+      readMetrics ++ writeMetrics
 
   override def nodeName: String = "GpuColumnarExchange"
 

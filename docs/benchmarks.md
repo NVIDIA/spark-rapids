@@ -25,9 +25,9 @@ benchmark.
 
 | Benchmark | Package                              | Class Names                      |
 |-----------|--------------------------------------|----------------------------------|
-| TPC-DS    | com.nvidia.spark.rapids.tests.tpcds  | TpcdsLikeSpark, TpcdsLikeBench   |
-| TPC-xBB   | com.nvidia.spark.rapids.tests.tpcxbb | TpcxbbLikeSpark, TpcxbbLikeBench |
-| TPC-H     | com.nvidia.spark.rapids.tests.tpch   | TpchLikeSpark, TpchLikeBench     |
+| TPC-DS    | com.nvidia.spark.rapids.tests.tpcds  | ConvertFiles, TpcdsLikeBench   |
+| TPC-xBB   | com.nvidia.spark.rapids.tests.tpcxbb | ConvertFiles, TpcxbbLikeBench  |
+| TPC-H     | com.nvidia.spark.rapids.tests.tpch   | ConvertFiles, TpchLikeBench    |
 
 ## Spark Shell
 
@@ -55,18 +55,43 @@ TpcdsLikeSpark.csvToParquet(spark, "/path/to/input", "/path/to/output")
 
 Note that the code for converting CSV to Parquet does not explicitly specify the number of 
 partitions to write, so the size of the resulting parquet files will vary depending on the value 
-for `spark.default.parallelism`, which by default is based on the number of available executor 
-cores. This value can be set explicitly to better control the size of the output files.
+for `spark.default.parallelism`, which by default is based on the number of available executor
+cores. However, the file conversion methods accept `coalesce` and `repartition` arguments to
+better control the size of the partitions on a per-table basis.
+
+Example using `coalesce` and `repartition` options to control the number and size of partitions
+for specific tables.
+
+```scala
+TpcdsLikeSpark.csvToParquet(spark, "/path/to/input", "/path/to/output", 
+  coalesce=Map("customer_address" -> 1), repartition=Map("web_sales" -> 256))
+```
+
+It is also possible to use `spark-submit` to run the file conversion process.
+
+```bash
+$SPARK_HOME/bin/spark-submit \
+    --master $SPARK_MASTER_URL \
+    --jars $SPARK_RAPIDS_PLUGIN_JAR,$CUDF_JAR \
+    --class com.nvidia.spark.rapids.tests.tpcds.ConvertFiles \
+    $SPARK_RAPIDS_PLUGIN_INTEGRATION_TEST_JAR \
+    --input /path/to/input \
+    --output /path/to/output \
+    --output-format parquet \
+    --coalesce customer_address=1 \
+    --repartition web_sales=256 inventory=128
+```
 
 It should also be noted that no decimal types will be output. The conversion code uses explicit 
-schemas to ensure that decimal types are converted to floating-point types instead.
+schemas to ensure that decimal types are converted to floating-point types instead because the
+plugin does not yet support decimal types but these will be supported in a future release.
 
-## Running Benchmarks
+## Running Benchmarks from a Spark shell
 
 The benchmarks can be executed in two modes currently:
 
 - Execute the query and collect the results to the driver
-- Execute the query and write the results to disk (in Parquet or CSV format)
+- Execute the query and write the results to disk (in Parquet, CSV, or ORC format)
 
 The following commands can be entered into spark-shell to register the data files that the 
 benchmark will query.
@@ -80,14 +105,45 @@ The benchmark can be executed with the following syntax to execute the query and
 results to the driver.
 
 ```scala
-TpcdsLikeBench.collect(spark, "q5", iterations=3)
+import com.nvidia.spark.rapids.tests._
+val benchmark = new BenchmarkRunner(TpcdsLikeBench)
+benchmark.collect(spark, "q5", iterations=3)
 ```
 
 The benchmark can be executed with the following syntax to execute the query and write the results 
-to Parquet. There is also a `writeCsv` method for writing the output to CSV files.
+to Parquet. There are also `writeCsv` and `writeOrc` methods for writing the output to CSV or ORC 
+files.
 
 ```scala
-TpcdsLikeBench.writeParquet(spark, "q5", "/data/output/tpcds/q5", iterations=3)
+import com.nvidia.spark.rapids.tests._
+val benchmark = new BenchmarkRunner(TpcdsLikeBench)
+benchmark.writeParquet(spark, "q5", "/data/output/tpcds/q5", iterations=3)
+```
+
+## Running Benchmarks from spark-submit
+
+The benchmark runner has a command-line interface, allowing it to be submitted 
+to Spark using `spark-submit` which can be more practical than using the Spark shell when 
+running a series of benchmarks using automation.
+
+Here is an example `spark-submit` command for running TPC-DS query 5, reading from Parquet and 
+writing results to Parquet. The `--output` and `--output-format` arguments can be omitted to 
+have the benchmark call `collect()` on the results instead. 
+
+```bash
+$SPARK_HOME/bin/spark-submit \
+    --master $SPARK_MASTER_URL \
+    --jars $SPARK_RAPIDS_PLUGIN_JAR,$CUDF_JAR \
+    --class com.nvidia.spark.rapids.tests.BenchmarkRunner \
+    $SPARK_RAPIDS_PLUGIN_INTEGRATION_TEST_JAR \
+    --benchmark tpcds \
+    --query q5 \
+    --input /raid/tpcds-3TB-parquet-largefiles \
+    --input-format parquet \
+    --output /raid/tpcds-output/tpcds-q5-cpu \
+    --output-format parquet \
+    --summary-file-prefix tpcds-q5-cpu \
+    --iterations 1
 ```
 
 ## Benchmark JSON Output
@@ -105,6 +161,12 @@ including the following items:
 Care should be taken to ensure that no sensitive information is captured from the environment 
 before sharing these JSON files. Environment variables with names containing the words `PASSWORD`, 
 `TOKEN`, or `SECRET` are filtered out, but this may not be sufficient to prevent leaking secrets.
+
+## Automating Benchmarks
+
+For convenience, the [benchmark.py](../integration_tests/src/main/python/benchmark.py) script is
+provided, allowing benchmarks to be run in an automated way with multiple configurations. Example
+usage is provided in the documentation within the script.
 
 ## Verifying Results
 
@@ -126,6 +188,19 @@ BenchUtils.compareResults(cpu, gpu, ignoreOrdering=true, epsilon=0.0001)
 ```
 
 This will report on any differences between the two dataframes.
+
+The verification utility can also be run using `spark-submit` using the following syntax.
+
+```bash
+$SPARK_HOME/bin/spark-submit \
+    --master $SPARK_MASTER_URL \
+    --jars $SPARK_RAPIDS_PLUGIN_JAR,$CUDF_JAR \
+    --class com.nvidia.spark.rapids.tests.common.CompareResults \
+    $SPARK_RAPIDS_PLUGIN_INTEGRATION_TEST_JAR \
+    --input1 /path/to/result1 \
+    --input2 /path/to/result2 \
+    --input-format parquet
+```
 
 ## Performance Tuning
 

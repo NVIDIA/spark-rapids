@@ -39,7 +39,9 @@ class WindowFunctionSuite extends SparkQueryCompareTestSuite {
       count("*").over(windowSpec)
     )
 
-  testSparkResultsAreEqual("[Window] [ROWS/RANGE] [default] ", windowTestDfOrc) {
+  testSparkResultsAreEqual("[Window] [ROWS/RANGE] [default] ", windowTestDfOrcNonNullable,
+      execsAllowedNonGpu=Seq("DeserializeToObjectExec", "CreateExternalRow",
+        "Invoke", "StaticInvoke")) {
     val rowsWindow = Window.partitionBy("uid")
         .orderBy("dateLong")
     windowAggregationTester(rowsWindow)
@@ -134,7 +136,8 @@ class WindowFunctionSuite extends SparkQueryCompareTestSuite {
            |   SUM(dollars)   OVER $windowClause,
            |   MIN(dollars)   OVER $windowClause,
            |   MAX(dollars)   OVER $windowClause,
-           |   COUNT(1) OVER $windowClause,
+           |   COUNT(dollars) OVER $windowClause,
+           |   COUNT(1)       OVER $windowClause,
            |   COUNT(*)       OVER $windowClause
            | FROM mytable
            |
