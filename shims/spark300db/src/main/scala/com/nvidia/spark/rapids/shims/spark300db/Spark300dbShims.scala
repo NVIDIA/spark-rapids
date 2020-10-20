@@ -105,20 +105,8 @@ class Spark300dbShims extends Spark300Shims {
               options)(sparkSession)
 
             val (canUseMultiThreadRead, canUseCoalesceFilesRead, supportsMultiFileOpt) =
-              newRelation.fileFormat match {
-                case _: ParquetFileFormat =>
-                  if (conf.isParquetSmallFilesEnabled &&
-                    (!conf.isParquetMultiThreadReadEnabled &&
-                      !conf.isParquetCoalesceFileReadEnabled)) {
-                    throw new IllegalArgumentException(s"Both small file read options " +
-                      s"${RapidsConf.ENABLE_MULTITHREAD_PARQUET_READS.key} and " +
-                      s"${RapidsConf.ENABLE_COALESCE_FILES_PARQUET_READS.key} can't be " +
-                      s"disabled when ${RapidsConf.ENABLE_SMALL_FILES_PARQUET.key} is enabled.")
-                  }
-                  (conf.isParquetMultiThreadReadEnabled, conf.isParquetCoalesceFileReadEnabled,
-                    conf.isParquetSmallFilesEnabled)
-                case _ => (false, false, false)
-              }
+              GpuFileSourceScanExec.multifileOptimizationOptions(newRelation.fileFormat, conf)
+
             GpuFileSourceScanExec(
               newRelation,
               wrapped.output,

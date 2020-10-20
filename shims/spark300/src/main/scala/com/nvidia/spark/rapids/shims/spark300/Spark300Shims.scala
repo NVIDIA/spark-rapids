@@ -18,8 +18,6 @@ package com.nvidia.spark.rapids.shims.spark300
 
 import java.time.ZoneId
 
-import scala.collection.JavaConverters._
-
 import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.spark300.RapidsShuffleManager
 
@@ -37,7 +35,6 @@ import org.apache.spark.sql.connector.read.Scan
 import org.apache.spark.sql.execution._
 import org.apache.spark.sql.execution.adaptive.ShuffleQueryStageExec
 import org.apache.spark.sql.execution.datasources.{FilePartition, FileScanRDD, HadoopFsRelation, PartitionDirectory, PartitionedFile}
-import org.apache.spark.sql.execution.datasources.parquet.ParquetFileFormat
 import org.apache.spark.sql.execution.datasources.v2.orc.OrcScan
 import org.apache.spark.sql.execution.datasources.v2.parquet.ParquetScan
 import org.apache.spark.sql.execution.exchange.{BroadcastExchangeExec, ShuffleExchangeExec}
@@ -155,20 +152,8 @@ class Spark300Shims extends SparkShims {
               options)(sparkSession)
 
             val (canUseMultiThreadRead, canUseCoalesceFilesRead, supportsMultiFileOpt) =
-              newRelation.fileFormat match {
-                case _: ParquetFileFormat =>
-                  if (conf.isParquetSmallFilesEnabled &&
-                    (!conf.isParquetMultiThreadReadEnabled &&
-                      !conf.isParquetCoalesceFileReadEnabled)) {
-                    throw new IllegalArgumentException(s"Both small file read options " +
-                      s"${RapidsConf.ENABLE_MULTITHREAD_PARQUET_READS.key} and " +
-                      s"${RapidsConf.ENABLE_COALESCE_FILES_PARQUET_READS.key} can't be " +
-                      s"disabled when ${RapidsConf.ENABLE_SMALL_FILES_PARQUET.key} is enabled.")
-                  }
-                  (conf.isParquetMultiThreadReadEnabled, conf.isParquetCoalesceFileReadEnabled,
-                    conf.isParquetSmallFilesEnabled)
-                case _ => (false, false, false)
-              }
+              GpuFileSourceScanExec.multifileOptimizationOptions(newRelation.fileFormat, conf)
+
             GpuFileSourceScanExec(
               newRelation,
               wrapped.output,

@@ -572,4 +572,29 @@ object GpuFileSourceScanExec {
         throw new IllegalArgumentException(s"${f.getClass.getCanonicalName} is not supported")
     }
   }
+
+  /**
+   * Checks to see if we can use the multifile reader optimizations. This is currently only
+   * supported on Parquet.
+   * @return (canUseMultiThreadRead, canUseCoalesceFilesRead, supportsMultiFileOpt)
+   */
+  def multifileOptimizationOptions(fileFormat: FileFormat,
+      conf: RapidsConf): (Boolean, Boolean, Boolean) = {
+    val (canUseMultiThreadRead, canUseCoalesceFilesRead, supportsMultiFileOpt) =
+      fileFormat match {
+        case _: ParquetFileFormat =>
+          if (conf.isParquetSmallFilesEnabled &&
+            (!conf.isParquetMultiThreadReadEnabled &&
+              !conf.isParquetCoalesceFileReadEnabled)) {
+            throw new IllegalArgumentException(s"Both small file read options " +
+              s"${RapidsConf.ENABLE_MULTITHREAD_PARQUET_READS.key} and " +
+              s"${RapidsConf.ENABLE_COALESCE_FILES_PARQUET_READS.key} can't be " +
+              s"disabled when ${RapidsConf.ENABLE_SMALL_FILES_PARQUET.key} is enabled.")
+          }
+          (conf.isParquetMultiThreadReadEnabled, conf.isParquetCoalesceFileReadEnabled,
+            conf.isParquetSmallFilesEnabled)
+        case _ => (false, false, false)
+      }
+    (canUseMultiThreadRead, canUseCoalesceFilesRead, supportsMultiFileOpt)
+  }
 }
