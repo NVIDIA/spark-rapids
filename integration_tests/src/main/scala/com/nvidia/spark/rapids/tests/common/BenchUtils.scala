@@ -648,6 +648,15 @@ class BenchmarkListener(list: ListBuffer[SparkPlanNode]) extends QueryExecutionL
   }
 }
 
+trait BenchmarkSuite {
+  def name(): String
+  def shortName(): String
+  def setupAllParquet(spark: SparkSession, path: String)
+  def setupAllCSV(spark: SparkSession, path: String)
+  def setupAllOrc(spark: SparkSession, path: String)
+  def createDataFrame(spark: SparkSession, query: String): DataFrame
+}
+
 /** Top level benchmark report class */
 case class BenchmarkReport(
     filename: String,
