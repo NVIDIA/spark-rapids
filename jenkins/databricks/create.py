@@ -87,7 +87,6 @@ def main():
   templ = ClusterUtils.generate_create_templ(sshkey, cluster_name, runtime, idletime,
           num_workers, driver_type, worker_type, printLoc=sys.stderr)
   clusterid = ClusterUtils.create_cluster(workspace, templ, token, printLoc=sys.stderr)
-  print("Cluster id is %s" % clusterid, file=sys.stderr)
   ClusterUtils.wait_for_cluster_start(workspace, clusterid, token, printLoc=sys.stderr)
 
   # only print the clusterid to stdout so a calling script can get it easily

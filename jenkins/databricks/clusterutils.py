@@ -82,15 +82,15 @@ class ClusterUtils(object):
     def is_cluster_running(jsonout):
         current_state = jsonout['state']
         if current_state in ['RUNNING', 'RESIZING']:
-            True
+            return True
         else:
-            False
+            return False
 
 
     @staticmethod
     def terminate_cluster(workspace, clusterid, token, printLoc=sys.stdout):
         jsonout = ClusterUtils.cluster_state(workspace, clusterid, token, printLoc=printLoc)
-        if not is_cluster_unning(jsonout):
+        if not ClusterUtils.is_cluster_unning(jsonout):
             print("Cluster is not running", file=printLoc)
             sys.exit(1)
 
@@ -127,12 +127,10 @@ class ClusterUtils(object):
     @staticmethod
     def get_master_addr_from_json(jsonout):
         master_addr = None
-        if is_cluster_running(jsonout):
+        if ClusterUtils.is_cluster_running(jsonout):
             driver = jsonout['driver']
             master_addr = driver["public_dns"]
-            return master_addr
-        else:
-            return None
+        return master_addr
 
 
     @staticmethod
@@ -147,5 +145,7 @@ class ClusterUtils(object):
     @staticmethod
     def cluster_get_master_addr(workspace, clusterid, token, printLoc=sys.stdout):
         jsonout = ClusterUtils.cluster_state(workspace, clusterid, token, printLoc=printLoc)
-        return get_master_addr_from_json(jsonout)
+        addr = ClusterUtils.get_master_addr_from_json(jsonout)
+        print("master addr is %s" % addr, file=printLoc)
+        return addr
 
