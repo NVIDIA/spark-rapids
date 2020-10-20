@@ -34,6 +34,7 @@ import org.apache.parquet.HadoopReadOptions
 import org.apache.parquet.column.ParquetProperties
 import org.apache.parquet.hadoop.{CodecFactory, MemoryManager, ParquetFileReader, ParquetFileWriter, ParquetInputFormat, ParquetOutputFormat, ParquetRecordWriter, ParquetWriter}
 import org.apache.parquet.hadoop.ParquetFileWriter.Mode
+import org.apache.parquet.hadoop.ParquetOutputFormat.{MEMORY_POOL_RATIO, MIN_MEMORY_ALLOCATION}
 import org.apache.parquet.hadoop.api.WriteSupport
 import org.apache.parquet.hadoop.metadata.CompressionCodecName
 import org.apache.parquet.io.{DelegatingPositionOutputStream, DelegatingSeekableInputStream, InputFile, OutputFile, PositionOutputStream, SeekableInputStream}
@@ -564,10 +565,7 @@ class ParquetCachedBatchSerializer extends CachedBatchSerializer with Arm {
       input.mapPartitions {
         internalRowIter =>
           new Iterator[CachedBatch]() {
-            private val parquetOutputFormat =
-              SQLConf.withExistingConf(broadcastedConf.value) {
-                new ParquetOutputFileFormat()
-              }
+            private val parquetOutputFormat = new ParquetOutputFileFormat()
 
             override def hasNext: Boolean = internalRowIter.hasNext
 
@@ -578,8 +576,9 @@ class ParquetCachedBatchSerializer extends CachedBatchSerializer with Arm {
               val stream = new ByteArrayOutputStream(ByteArrayOutputFile.BLOCK_SIZE)
               val outputFile: OutputFile = new ByteArrayOutputFile(stream)
 
-              val recordWriter = parquetOutputFormat.getRecordWriter(outputFile,
-                broadcastedHadoopConf.value.value)
+              val recordWriter = SQLConf.withExistingConf(broadcastedConf.value) {
+                parquetOutputFormat.getRecordWriter(outputFile, broadcastedHadoopConf.value.value)
+              }
 
               while (internalRowIter.hasNext) {
                 rows += 1
@@ -609,11 +608,7 @@ class ParquetCachedBatchSerializer extends CachedBatchSerializer with Arm {
 /**
  * Similar to ParquetFileFormat
  */
-class ParquetOutputFileFormat {
-
-  val writeSupport = new ParquetWriteSupport().asInstanceOf[WriteSupport[InternalRow]]
-  val DEFAULT_MEMORY_POOL_RATIO: Float = 0.95f
-  val DEFAULT_MIN_MEMORY_ALLOCATION: Long = 1 * 1024 * 1024 // 1MB
+class ParquetOutputFileFormat() {
 
   def getRecordWriter(output: OutputFile, conf: Configuration): RecordWriter[Void, InternalRow] = {
     import ParquetOutputFormat._
@@ -623,15 +618,11 @@ class ParquetOutputFileFormat {
       conf.getInt(MAX_PADDING_BYTES, ParquetWriter.MAX_PADDING_SIZE_DEFAULT)
     val validating = getValidation(conf)
 
+    val writeSupport = new ParquetWriteSupport().asInstanceOf[WriteSupport[InternalRow]]
     val init = writeSupport.init(conf)
     val writer = new ParquetFileWriter(output, init.getSchema,
       Mode.CREATE, blockSize, maxPaddingSize)
     writer.start()
-
-    val maxLoad = conf.getFloat(MEMORY_POOL_RATIO, DEFAULT_MEMORY_POOL_RATIO)
-    val minAllocation = conf.getLong(MIN_MEMORY_ALLOCATION, DEFAULT_MIN_MEMORY_ALLOCATION)
-
-    lazy val memoryManager = new MemoryManager(maxLoad, minAllocation)
 
     val writerVersion =
       ParquetProperties.WriterVersion.fromString(conf.get(ParquetOutputFormat.WRITER_VERSION,
@@ -642,6 +633,24 @@ class ParquetOutputFileFormat {
     new ParquetRecordWriter[InternalRow](writer, writeSupport, init.getSchema,
       init.getExtraMetaData, blockSize, getPageSize(conf),
       codecFactory.getCompressor(CompressionCodecName.UNCOMPRESSED), getDictionaryPageSize(conf),
-      getEnableDictionary(conf), validating, writerVersion, memoryManager)
+      getEnableDictionary(conf), validating, writerVersion,
+      ParquetOutputFileFormat.getMemoryManager(conf))
+  }
+}
+
+object ParquetOutputFileFormat {
+  var memoryManager: MemoryManager = null
+  val DEFAULT_MEMORY_POOL_RATIO: Float = 0.95f
+  val DEFAULT_MIN_MEMORY_ALLOCATION: Long = 1 * 1024 * 1024 // 1MB
+
+  def getMemoryManager(conf: Configuration): MemoryManager = {
+    synchronized {
+      if (memoryManager == null) {
+        val maxLoad = conf.getFloat(MEMORY_POOL_RATIO, DEFAULT_MEMORY_POOL_RATIO)
+        val minAllocation = conf.getLong(MIN_MEMORY_ALLOCATION, DEFAULT_MIN_MEMORY_ALLOCATION)
+        memoryManager = new MemoryManager(maxLoad, minAllocation)
+      }
+    }
+    memoryManager
   }
 }
