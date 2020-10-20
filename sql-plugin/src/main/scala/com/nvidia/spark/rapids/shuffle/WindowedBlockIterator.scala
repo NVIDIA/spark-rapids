@@ -117,6 +117,10 @@ class WindowedBlockIterator[T <: BlockWithSize](blocks: Seq[T], windowSize: Long
     }
   }
 
+  // the last block index that made it into a window, which
+  // is an index into the `blocksWithOffsets` sequence
+  private[this] var lastSeenBlock = 0
+
   case class BlocksForWindow(lastBlockIndex: Option[Int],
       blockRanges: Seq[BlockRange[T]],
       hasMoreBlocks: Boolean)
@@ -154,7 +158,6 @@ class WindowedBlockIterator[T <: BlockWithSize](blocks: Seq[T], windowSize: Long
       !continue || !lastBlock.isComplete())
   }
 
-  private var lastSeenBlock = 0
   def next(): Seq[BlockRange[T]] = {
     if (!hasNext) {
       throw new NoSuchElementException(s"BounceBufferWindow $window has been exhausted.")
