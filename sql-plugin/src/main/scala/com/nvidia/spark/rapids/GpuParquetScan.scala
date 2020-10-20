@@ -888,12 +888,11 @@ class MultiFileParquetPartitionReader(
       }
       val tasks = new java.util.ArrayList[Future[Seq[BlockMetaData]]]()
 
-      var succeeded = false
       val allBlocks = blocks.map(_._2)
       val initTotalSize = calculateParquetOutputSize(allBlocks, clippedSchema, true)
-      var hmb = HostMemoryBuffer.allocate(initTotalSize)
-      var out = new HostMemoryOutputStream(hmb)
-      try {
+      closeOnExcept(HostMemoryBuffer.allocate(initTotalSize)) { allocBuf =>
+        var hmb = allocBuf
+        val out = new HostMemoryOutputStream(hmb)
         out.write(ParquetPartitionReader.PARQUET_MAGIC)
         var offset = out.getPos
         val allOutputBlocks = scala.collection.mutable.ArrayBuffer[BlockMetaData]()
@@ -926,8 +925,7 @@ class MultiFileParquetPartitionReader(
             s"reallocing and copying data to bigger buffer size: $bufferSizeReq")
           val prevhmb = hmb
           val in = new HostMemoryInputStream(prevhmb, offset)
-          val newhmb = reallocHostBufferAndCopy(in, bufferSizeReq)
-          hmb = newhmb
+          hmb = reallocHostBufferAndCopy(in, bufferSizeReq)
           prevhmb.close()
           bufferSizeReq
         } else {
@@ -939,7 +937,6 @@ class MultiFileParquetPartitionReader(
         writeFooter(footerOut, allOutputBlocks, clippedSchema)
         BytesUtils.writeIntLittleEndian(footerOut, footerOut.getPos.toInt)
         footerOut.write(ParquetPartitionReader.PARQUET_MAGIC)
-        succeeded = true
         val amountWritten = offset + footerOut.getPos
         // triple check we didn't go over memory
         if (amountWritten > totalBufferSize) {
@@ -950,10 +947,6 @@ class MultiFileParquetPartitionReader(
           finalizehmb.close()
         }
         (hmb, amountWritten)
-      } finally {
-        if (!succeeded) {
-          hmb.close()
-        }
       }
     }
   }
