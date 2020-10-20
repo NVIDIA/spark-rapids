@@ -741,7 +741,9 @@ object RapidsConf {
     .createOptional
 
   val CLOUD_SCHEMES = conf("spark.rapids.cloudSchemes")
-    .doc("Comma separated list of URI schemes that are to be considered in the cloud.")
+    .doc("Comma separated list of additional URI schemes that are to be considered cloud based " +
+      "filesystems. Already included schemes: dbfs, s3, s3a, s3n, wasbs, gs. This is used with " +
+      "spark.rapids.sql.format.parquet.smallFileReadOpt.enabled")
     .stringConf
     .toSequence
     .createOptional

@@ -197,22 +197,16 @@ class GpuTransitionOverrides extends Rule[SparkPlan] {
       disableUntilInput: Boolean = false): SparkPlan = plan match {
     case batchScan: GpuBatchScanExec =>
       if (batchScan.scan.isInstanceOf[GpuParquetScanBase] &&
+        batchScan.scan.asInstanceOf[GpuParquetScanBase].getCanUseCoalesceFilesRead &&
+        batchScan.scan.asInstanceOf[GpuParquetScanBase].getSupportsMultiFileOpt &&
         (disableUntilInput || disableScanUntilInput(batchScan))) {
-        val parquetScanBase = batchScan.scan.asInstanceOf[GpuParquetScanBase]
-        if (parquetScanBase.getCanUseCoalesceFilesRead) {
-          logWarning("found gpu parquet scan file coalesce file reader")
-        }
-        logWarning("replacing gpu batchscan exec")
-        val t = ShimLoader.getSparkShims.copyParquetBatchScanExec(batchScan, false)
-        logWarning("copied batch scan: " + t)
-        t
+        ShimLoader.getSparkShims.copyParquetBatchScanExec(batchScan, false)
       } else {
-        logWarning("not replacing gpu batchscan exec")
         batchScan
       }
     case fileSourceScan: GpuFileSourceScanExec =>
-      if (fileSourceScan.supportsMultiFileOpt == true &&
-        fileSourceScan.canUseCoalesceFilesRead == true &&
+      if (fileSourceScan.supportsMultiFileOpt &&
+        fileSourceScan.canUseCoalesceFilesRead &&
         (disableUntilInput || disableScanUntilInput(fileSourceScan))) {
         ShimLoader.getSparkShims.copyFileSourceScanExec(fileSourceScan, false)
       } else {

@@ -78,11 +78,8 @@ abstract class GpuParquetScanBase(
     canUseCoalesceFilesRead: Boolean)
   extends ScanWithMetrics with Logging {
 
-  def getSupportsMultiFileOpt: Boolean = supportsMultiFileOpt
-
-  def getCanUseMultiThreadRead: Boolean = canUseMultiThreadRead
-
   def getCanUseCoalesceFilesRead: Boolean = canUseCoalesceFilesRead
+  def getSupportsMultiFileOpt: Boolean = supportsMultiFileOpt
 
   def isSplitableBase(path: Path): Boolean = true
 
@@ -362,6 +359,8 @@ case class GpuParquetMultiFilePartitionReaderFactory(
       false
     }
     val conf = broadcastedConf.value.value
+    logInfo(s"Multi-file reader reading files: ${filePaths.mkString(",")} task attemptid: " +
+      "${TaskContext.get.taskAttemptId()}")
     if ((canUseMultiThreadRead && isCloud) || !canUseCoalesceFilesRead) {
       logInfo("Using the multi-threaded multi-file parquet reader")
       buildBaseColumnarParquetReaderForCloud(files, conf)
@@ -384,7 +383,6 @@ case class GpuParquetMultiFilePartitionReaderFactory(
       files: Array[PartitionedFile],
       conf: Configuration): PartitionReader[ColumnarBatch] = {
     val conf = broadcastedConf.value.value
-    logDebug(s"Number files being read: ${files.size} for task ${TaskContext.get().partitionId()}")
     val clippedBlocks = ArrayBuffer[ParquetFileInfoWithSingleBlockMeta]()
     files.map { file =>
       val singleFileInfo = filterHandler.filterBlocks(file, conf, filters, readDataSchema)
@@ -482,7 +480,7 @@ abstract class FileParquetPartitionReaderBase(
   protected def calculateParquetOutputSize(
       currentChunkedBlocks: Seq[BlockMetaData],
       schema: MessageType,
-      handleMultiFiles: Boolean): Long = {
+      handleCoalesceFiles: Boolean): Long = {
     // start with the size of Parquet magic (at start+end) and footer length values
     var size: Long = 4 + 4 + 4
 
@@ -492,7 +490,7 @@ abstract class FileParquetPartitionReaderBase(
     size += currentChunkedBlocks.flatMap(_.getColumns.asScala.map(_.getTotalSize)).sum
 
     val footerSize = calculateParquetFooterSize(currentChunkedBlocks, schema)
-    val extraMemory = if (handleMultiFiles) {
+    val extraMemory = if (handleCoalesceFiles) {
       // we want to add extra memory because the ColumnChunks saved in the Footer have 2 fields
       // file_offset and data_page_offset that get much larger when we are combining files.
       // Here we estimate that by taking the number of columns * number of blocks which should be
@@ -735,6 +733,23 @@ abstract class FileParquetPartitionReaderBase(
     currentChunk
   }
 
+  protected def addPartitionValues(
+      batch: Option[ColumnarBatch],
+      inPartitionValues: InternalRow,
+      partitionSchema: StructType): Option[ColumnarBatch] = {
+    if (partitionSchema.nonEmpty) {
+      batch.map { cb =>
+        val partitionValues = inPartitionValues.toSeq(partitionSchema)
+        val partitionScalars = ColumnarPartitionReaderWithPartitionValues
+          .createPartitionValues(partitionValues, partitionSchema)
+        withResource(partitionScalars) { scalars =>
+          ColumnarPartitionReaderWithPartitionValues.addPartitionValues(cb, scalars)
+        }
+      }
+    } else {
+      batch
+    }
+  }
 }
 
 // Singleton threadpool that is used across all the tasks.
@@ -810,23 +825,6 @@ class MultiFileParquetPartitionReader(
   private val blockIterator: BufferedIterator[ParquetFileInfoWithSingleBlockMeta] =
     clippedBlocks.iterator.buffered
 
-  private def addPartitionValues(
-      batch: Option[ColumnarBatch],
-      inPartitionValues: InternalRow): Option[ColumnarBatch] = {
-    if (partitionSchema.nonEmpty) {
-      batch.map { cb =>
-        val partitionValues = inPartitionValues.toSeq(partitionSchema)
-        val partitionScalars = ColumnarPartitionReaderWithPartitionValues
-          .createPartitionValues(partitionValues, partitionSchema)
-        withResource(partitionScalars) { scalars =>
-          ColumnarPartitionReaderWithPartitionValues.addPartitionValues(cb, scalars)
-        }
-      }
-    } else {
-      batch
-    }
-  }
-
   class ParquetCopyBlocksRunner(
       file: Path,
       outhmb: HostMemoryBuffer,
@@ -846,7 +844,6 @@ class MultiFileParquetPartitionReader(
   }
 
   override def next(): Boolean = {
-    // logWarning("supports small file opt is: " )
     batch.foreach(_.close())
     batch = None
     if (!isDone) {
@@ -897,7 +894,6 @@ class MultiFileParquetPartitionReader(
       var hmb = HostMemoryBuffer.allocate(initTotalSize)
       var out = new HostMemoryOutputStream(hmb)
       try {
-        // logWarning("read part files for consolidating files")
         out.write(ParquetPartitionReader.PARQUET_MAGIC)
         var offset = out.getPos
         val allOutputBlocks = scala.collection.mutable.ArrayBuffer[BlockMetaData]()
@@ -976,7 +972,7 @@ class MultiFileParquetPartitionReader(
           // Someone is going to process this data, even if it is just a row count
           GpuSemaphore.acquireIfNecessary(TaskContext.get())
           val emptyBatch = new ColumnarBatch(Array.empty, numRows.toInt)
-          addPartitionValues(Some(emptyBatch), partValues)
+          addPartitionValues(Some(emptyBatch), partValues, partitionSchema)
         }
       } else {
         val table = readToTable(seqPathsAndBlocks, clippedSchema, isCorrectRebaseMode)
@@ -987,7 +983,7 @@ class MultiFileParquetPartitionReader(
           }
           // we have to add partition values here for this batch, we already verified that
           // its not different for all the blocks in this batch
-          addPartitionValues(maybeBatch, partValues)
+          addPartitionValues(maybeBatch, partValues, partitionSchema)
         } finally {
           table.foreach(_.close())
         }
@@ -1366,23 +1362,6 @@ class MultiFileCloudParquetPartitionReader(
     }
   }
 
-  private def addPartitionValues(
-      batch: Option[ColumnarBatch],
-      inPartitionValues: InternalRow): Option[ColumnarBatch] = {
-    if (partitionSchema.nonEmpty) {
-      batch.map { cb =>
-        val partitionValues = inPartitionValues.toSeq(partitionSchema)
-        val partitionScalars = ColumnarPartitionReaderWithPartitionValues
-            .createPartitionValues(partitionValues, partitionSchema)
-        withResource(partitionScalars) { scalars =>
-          ColumnarPartitionReaderWithPartitionValues.addPartitionValues(cb, scalars)
-        }
-      }
-    } else {
-      batch
-    }
-  }
-
   private def readBufferToTable(
       isCorrectRebaseMode: Boolean,
       clippedSchema: MessageType,
@@ -1399,7 +1378,7 @@ class MultiFileCloudParquetPartitionReader(
       // Someone is going to process this data, even if it is just a row count
       GpuSemaphore.acquireIfNecessary(TaskContext.get())
       val emptyBatch = new ColumnarBatch(Array.empty, dataSize.toInt)
-      return addPartitionValues(Some(emptyBatch), partValues)
+      return addPartitionValues(Some(emptyBatch), partValues, partitionSchema)
     }
     val table = withResource(hostBuffer) { _ =>
       if (debugDumpPrefix != null) {
@@ -1440,7 +1419,7 @@ class MultiFileCloudParquetPartitionReader(
       }
       // we have to add partition values here for this batch, we already verified that
       // its not different for all the blocks in this batch
-      addPartitionValues(maybeBatch, partValues)
+      addPartitionValues(maybeBatch, partValues, partitionSchema)
     } finally {
       table.foreach(_.close())
     }
