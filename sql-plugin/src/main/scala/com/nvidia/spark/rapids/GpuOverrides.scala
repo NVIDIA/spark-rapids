@@ -521,7 +521,7 @@ object GpuOverrides {
       "Gives a column a name",
       (a, conf, p, r) => new UnaryExprMeta[Alias](a, conf, p, r) {
         def isSupported(t: DataType) = t match {
-          case MapType(StringType, StringType, true) => true
+          case MapType(StringType, StringType, _) => true
           case _ => isSupportedType(t)
         }
         override def areAllSupportedTypes(types: DataType*): Boolean = types.forall(isSupported)
@@ -532,7 +532,7 @@ object GpuOverrides {
       "References an input column",
       (att, conf, p, r) => new BaseExprMeta[AttributeReference](att, conf, p, r) {
         def isSupported(t: DataType) = t match {
-          case MapType(StringType, StringType, true) => true
+          case MapType(StringType, StringType, _) => true
           case _ => isSupportedType(t)
         }
         override def areAllSupportedTypes(types: DataType*): Boolean = types.forall(isSupported)
@@ -733,7 +733,7 @@ object GpuOverrides {
       "Checks if a value is not null",
       (a, conf, p, r) => new UnaryExprMeta[IsNotNull](a, conf, p, r) {
         def isSupported(t: DataType) = t match {
-          case MapType(StringType, StringType, true) => true
+          case MapType(StringType, StringType, _) => true
           case _ => isSupportedType(t)
         }
         override def areAllSupportedTypes(types: DataType*): Boolean = types.forall(isSupported)
@@ -1100,7 +1100,7 @@ object GpuOverrides {
       "Check if the values are equal",
       (a, conf, p, r) => new BinaryExprMeta[EqualTo](a, conf, p, r) {
         def isSupported(t: DataType) = t match {
-          case MapType(StringType, StringType, true) => true
+          case MapType(StringType, StringType, _) => true
           case _ => isSupportedType(t)
         }
         override def areAllSupportedTypes(types: DataType*): Boolean = types.forall(isSupported)
@@ -1716,7 +1716,7 @@ object GpuOverrides {
       (proj, conf, p, r) => {
         new SparkPlanMeta[ProjectExec](proj, conf, p, r) {
           def isSupported(t: DataType) = t match {
-            case MapType(StringType, StringType, true) => true
+            case MapType(StringType, StringType, _) => true
             case _ => isSupportedType(t)
           }
           override def areAllSupportedTypes(types: DataType*): Boolean = types.forall(isSupported)
@@ -1803,7 +1803,7 @@ object GpuOverrides {
       "The backend for most filter statements",
       (filter, conf, p, r) => new SparkPlanMeta[FilterExec](filter, conf, p, r) {
         def isSupported(t: DataType) = t match {
-          case MapType(StringType, StringType, true) => true
+          case MapType(StringType, StringType, _) => true
           case _ => isSupportedType(t)
         }
         override def areAllSupportedTypes(types: DataType*): Boolean = types.forall(isSupported)

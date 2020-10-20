@@ -141,7 +141,7 @@ class Spark300Shims extends SparkShims {
         "Reading data from files, often from Hive tables",
         (fsse, conf, p, r) => new SparkPlanMeta[FileSourceScanExec](fsse, conf, p, r) {
           def isSupported(t: DataType) = t match {
-            case MapType(StringType, StringType, true) => true
+            case MapType(StringType, StringType, _) => true
             case _ => isSupportedType(t)
           }
           override def areAllSupportedTypes(types: DataType*): Boolean = types.forall(isSupported)
@@ -263,7 +263,7 @@ class Spark300Shims extends SparkShims {
             conf.isParquetMultiThreadReadEnabled)
         }
         def isSupported(t: DataType) = t match {
-          case MapType(StringType, StringType, true) => true
+          case MapType(StringType, StringType, _) => true
           case _ => isSupportedType(t)
         }
         override def areAllSupportedTypes(types: DataType*): Boolean = types.forall(isSupported)

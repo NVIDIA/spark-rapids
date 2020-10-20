@@ -79,7 +79,6 @@ public class GpuColumnVector extends GpuColumnVectorBase {
             }
             builders[i] = new ai.rapids.cudf.HostColumnVector.ColumnBuilder(new HostColumnVector.BasicType(true, DType.STRING), rows);
           } else if (type == DType.LIST) {
-            System.out.println("MAIN ROWS=" + rows);
             builders[i] = new ai.rapids.cudf.HostColumnVector.ColumnBuilder(new HostColumnVector.ListType(true,
                 new HostColumnVector.StructType(true, Arrays.asList(
                     new HostColumnVector.BasicType(true, DType.STRING),

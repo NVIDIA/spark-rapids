@@ -110,7 +110,7 @@ private object GpuRowToColumnConverter {
       // NOT SUPPORTED YET
       // case dt: DecimalType => new DecimalConverter(dt)
       //       NOT SUPPORTED YET
-      case (MapType(_, _, _), true) => MapConverter
+      case (MapType(StringType, StringType, _), _) => MapConverter
       case (unknown, _) => throw new UnsupportedOperationException(
         s"Type $unknown not supported")
     }

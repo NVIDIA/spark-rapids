@@ -109,7 +109,7 @@ class GpuGetMapValueMeta(
     GpuGetMapValue(child, key)
 
   def isSupported(t: DataType) = t match {
-    case MapType(StringType, StringType, true) => true
+    case MapType(StringType, StringType, _) => true
     case StringType => true
   }
 
