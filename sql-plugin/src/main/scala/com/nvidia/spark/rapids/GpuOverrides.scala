@@ -532,20 +532,6 @@ object GpuOverrides {
         // There are so many of these that we don't need to print them out.
         override def print(append: StringBuilder, depth: Int, all: Boolean): Unit = {}
       }),
-    // TODO: maybe we should apply the conversion between decimal32 and decimal64 to promote precision?
-    expr[PromotePrecision](
-      "Eliminates unnecessary PromotePrecision expressions in GPU runtime",
-      (a, conf, p, r) => new UnaryExprMeta[PromotePrecision](a, conf, p, r) {
-        // Remove PromotePrecision and (GPU)Cast expression appended by DecimalPrecision
-        override def convertToGpu(child: Expression): GpuExpression = {
-          child match {
-            case c: GpuCast => c.child.asInstanceOf[GpuExpression]
-            case c => throw new IllegalStateException(
-              s"Child expression of PromotePrecision should always be (GPU)Cast, " +
-                s"but found ${c.prettyName}")
-          }
-        }
-      }),
     expr[Cast](
       "Convert a column of one type of data into another type",
       (cast, conf, p, r) => new CastExprMeta[Cast](cast, SparkSession.active.sessionState.conf
@@ -553,6 +539,12 @@ object GpuOverrides {
     expr[AnsiCast](
       "Convert a column of one type of data into another type",
       (cast, conf, p, r) => new CastExprMeta[AnsiCast](cast, true, conf, p, r)),
+    expr[PromotePrecision](
+      "PromotePrecision before arithmetic operations between DecimalType data",
+      (a, conf, p, r) => new PromotePrecisionExprMeta(a, conf, p, r)),
+    expr[CheckOverflow](
+      "CheckOverflow after arithmetic operations between DecimalType data",
+      (a, conf, p, r) => new CheckOverflowExprMeta(a, conf, p, r)),
     expr[ToDegrees](
       "Converts radians to degrees",
       (a, conf, p, r) => new UnaryExprMeta[ToDegrees](a, conf, p, r) {
