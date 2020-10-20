@@ -77,11 +77,11 @@ def main():
   print('-e is ' + str(num_workers), file=sys.stderr)
 
   if not sshkey:
-      print("You must specify an sshkey!")
+      print("You must specify an sshkey!", file=sys.stderr)
       sys.exit(2)
 
   if not token:
-      print("You must specify an token!")
+      print("You must specify an token!", file=sys.stderr)
       sys.exit(2)
 
   templ = ClusterUtils.generate_create_templ(sshkey, cluster_name, runtime, idletime,
