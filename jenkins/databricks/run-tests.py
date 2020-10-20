@@ -43,7 +43,7 @@ def main():
 
   try:
       opts, args = getopt.getopt(sys.argv[1:], 'hw:t:c:p:l:d:z:j:b:k:a:f:u:m:v:',
-                                 ['workspace=', 'token=', 'clusterid=', 'private=', 'nocreate=', 'localscript=', 'dest=', 'sparktgz=', 'cirapidsjar=', 'databricksversion=', 'sparkversion=', 'scalaversion=', 'cudfversion=', 'cudaversion=', 'cicudfjar=', 'basesparkpomversion='])
+                                 ['workspace=', 'token=', 'clusterid=', 'private=', 'localscript=', 'dest=', 'sparktgz=', 'cirapidsjar=', 'databricksversion=', 'sparkversion=', 'scalaversion=', 'cudfversion=', 'cudaversion=', 'cicudfjar=', 'basesparkpomversion='])
   except getopt.GetoptError:
       print(
           'run-tests.py -s <workspace> -t <token> -c <clusterid> -p <privatekeyfile> -l <localscript> -d <scriptdestinatino> -z <sparktgz> -j <cirapidsjar> -b <databricksversion> -k <sparkversion> -a <scalaversion> -f <cudfversion> -u <cudaversion> -m <cicudfjar> -v <basesparkpomversion>')
@@ -62,8 +62,6 @@ def main():
           clusterid = arg
       elif opt in ('-p', '--private'):
           private_key_file = arg
-      elif opt in ('-n', '--nocreate'):
-          skip_create = arg
       elif opt in ('-l', '--localscript'):
           local_script = arg
       elif opt in ('-d', '--dest'):
