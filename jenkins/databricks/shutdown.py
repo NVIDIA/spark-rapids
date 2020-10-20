@@ -46,6 +46,14 @@ def main():
   print('-s is ' + workspace)
   print('-c is ' + clusterid)
 
+  if not clusterid:
+      print("You must specify clusterid!")
+      sys.exit(1)
+
+  if not token:
+      print("You must specify token!")
+      sys.exit(1)
+
   if delete:
       ClusterUtils.delete_cluster(workspace, clusterid, token)
   else:

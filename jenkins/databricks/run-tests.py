@@ -26,7 +26,6 @@ def main():
   workspace = 'https://dbc-9ff9942e-a9c4.cloud.databricks.com'
   token = ''
   private_key_file = "~/.ssh/id_rsa"
-  skip_create = None
   local_script = 'build.sh'
   script_dest = '/home/ubuntu/build.sh'
   source_tgz = 'spark-rapids-ci.tgz'
@@ -40,24 +39,22 @@ def main():
   cuda_version = 'cuda10-1'
   ci_cudf_jar = 'cudf-0.14-cuda10-1.jar'
   base_spark_pom_version = '3.0.0'
-  sshKey = ''
-  clusterid_out_file = ''
   clusterid = ''
 
   try:
-      opts, args = getopt.getopt(sys.argv[1:], 'hs:t:c:p:l:nd:z:j:b:k:a:f:u:m:v:w:o:',
-                                 ['workspace=', 'token=', 'private=', 'nocreate=', 'localscript=', 'dest=', 'sparktgz=', 'cirapidsjar=', 'databricksversion=', 'sparkversion=', 'scalaversion=', 'cudfversion=', 'cudaversion=', 'cicudfjar=', 'basesparkpomversion=', 'sshkey=', 'clusteroutfile='])
+      opts, args = getopt.getopt(sys.argv[1:], 'hw:t:c:p:l:d:z:j:b:k:a:f:u:m:v:',
+                                 ['workspace=', 'token=', 'clusterid=', 'private=', 'nocreate=', 'localscript=', 'dest=', 'sparktgz=', 'cirapidsjar=', 'databricksversion=', 'sparkversion=', 'scalaversion=', 'cudfversion=', 'cudaversion=', 'cicudfjar=', 'basesparkpomversion='])
   except getopt.GetoptError:
       print(
-          'run-tests.py -s <workspace> -t <token> -c <clusterid> -p <privatekeyfile> -n <skipstartingcluster> -l <localscript> -d <scriptdestinatino> -z <sparktgz> -j <cirapidsjar> -b <databricksversion> -k <sparkversion> -a <scalaversion> -f <cudfversion> -u <cudaversion> -m <cicudfjar> -v <basesparkpomversion> -o <clusteridoutfile>')
+          'run-tests.py -s <workspace> -t <token> -c <clusterid> -p <privatekeyfile> -l <localscript> -d <scriptdestinatino> -z <sparktgz> -j <cirapidsjar> -b <databricksversion> -k <sparkversion> -a <scalaversion> -f <cudfversion> -u <cudaversion> -m <cicudfjar> -v <basesparkpomversion>')
       sys.exit(2)
 
   for opt, arg in opts:
       if opt == '-h':
           print(
-              'run-tests.py -s <workspace> -t <token> -c <clusterid> -p <privatekeyfile> -n <skipstartingcluster> -l <localscript> -d <scriptdestinatino>, -z <sparktgz> -j <cirapidsjar> -b <databricksversion> -k <sparkversion> -a <scalaversion> -f <cudfversion> -u <cudaversion> -m <cicudfjar> -v <basesparkpomversion> -o <clusteridoutfile>')
+              'run-tests.py -s <workspace> -t <token> -c <clusterid> -p <privatekeyfile> -n <skipstartingcluster> -l <localscript> -d <scriptdestinatino>, -z <sparktgz> -j <cirapidsjar> -b <databricksversion> -k <sparkversion> -a <scalaversion> -f <cudfversion> -u <cudaversion> -m <cicudfjar> -v <basesparkpomversion>')
           sys.exit()
-      elif opt in ('-s', '--workspace'):
+      elif opt in ('-w', '--workspace'):
           workspace = arg
       elif opt in ('-t', '--token'):
           token = arg
@@ -89,18 +86,10 @@ def main():
           ci_cudf_jar = arg
       elif opt in ('-v', '--basesparkpomversion'):
           base_spark_pom_version = arg
-      elif opt in ('-w', '--sshkey'):
-          sshKey = arg
-      elif opt in ('-o', '--clusteridoutputfile'):
-          clusterid_out_file= arg
 
-  print('-s is ' + workspace)
+  print('-w is ' + workspace)
   print('-c is ' + clusterid)
   print('-p is ' + private_key_file)
-  if skip_create is not None:
-      print("-n: skip create")
-  else:
-      print("-n: don't skip create")
   print('-l is ' + local_script)
   print('-d is ' + script_dest)
   print('-z is ' + source_tgz)
@@ -112,38 +101,11 @@ def main():
   print('-u is ' + cuda_version)
   print('-m is ' + ci_cudf_jar)
   print('-v is ' + base_spark_pom_version)
-  print('-w is ' + sshKey)
-  print('-o is ' + clusterid_out_file)
 
-  master_addr = None
-  if skip_create is None:
-      # generate cluster template
-      initScriptFile = ''
-      if not clusterid_out_file:
-          print("You must specify an output file for the clusterid: use -o option")
-          sys.exit(3)
-      templ = ClusterUtils.generate_create_templ(sshKey, initScriptFile, db_version)
-      clusterid = ClusterUtils.create_cluster(workspace, templ, token)
-      with open(clusterid_out_file, 'a') as id_file:
-          id_file.write(clusterid)
-      print("Using cluster id is %s" % clusterid)
-      jsonout = ClusterUtils.cluster_state(workspace, clusterid, token)
-      current_state = jsonout['state']
-      if current_state in ['RUNNING']:
-          print("Cluster is already running - perhaps build/tests already running?")
-          sys.exit(4)
-
-      master_addr = ClusterUtils.wait_for_cluster_start(workspace, clusterid, token)
-  else:
-      if not clusterid:
-          print("You must specify a cluster id when skipping create")
-          sys.exit(6)
-      jsonout = ClusterUtils.cluster_state(workspace, clusterid, token)
-      master_addr = ClusterUtils.get_master_addr(jsonout)
-
+  master_addr = ClusterUtils.cluster_get_master_addr(workspace, clusterid, token)
   if master_addr is None:
       print("Error, didn't get master address")
-      sys.exit(5)
+      sys.exit(1)
   print("Master node address is: %s" % master_addr)
   print("Copying script")
   rsync_command = "rsync -I -Pave \"ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -p 2200 -i %s\" %s ubuntu@%s:%s" % (private_key_file, local_script, master_addr, script_dest)

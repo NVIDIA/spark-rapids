@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from datetime import datetime
+import time
 import json
 import time
 import os
@@ -22,19 +22,15 @@ import sys
 class ClusterUtils(object):
 
     @staticmethod
-    def generate_create_templ(sshKey, initScriptFile, version):
-        # TODO (in followup) - create directory if not there
-        init_script_loc = 'dbfs:/databricks/ci_init_scripts/' + initScriptFile
-        dt = datetime.now()
-        databricks_runtime_version = '7.0.x-gpu-ml-scala2.12'
-        idle_timeout = 240
-        date = dt.microsecond
-        uniq_name = version + "-" + str(date)
-        cluster_name = "CI-GPU-databricks-" + uniq_name
+    def generate_create_templ(sshKey, cluster_name, runtime, idle_timeout,
+            num_workers, driver_node_type, worker_node_type,
+            printLoc=sys.stdout):
+        timeStr = str(int(time.time()))
+        uniq_name = cluster_name + "-" + timeStr
         templ = {}
-        templ['cluster_name'] = cluster_name
-        print("cluster name is going to be %s" % cluster_name)
-        templ['spark_version'] = databricks_runtime_version
+        templ['cluster_name'] = uniq_name
+        print("cluster name is going to be %s" % uniq_name, file=printLoc)
+        templ['spark_version'] = runtime
         templ['aws_attributes'] = {
                     "zone_id": "us-west-2a",
                     "first_on_demand": 1,
@@ -45,93 +41,94 @@ class ClusterUtils(object):
         templ['autotermination_minutes'] = idle_timeout
         templ['enable_elastic_disk'] = 'false'
         templ['enable_local_disk_encryption'] = 'false'
-        templ['node_type_id'] = 'g4dn.xlarge'
-        templ['driver_node_type_id'] = 'g4dn.xlarge'
+        templ['node_type_id'] = worker_node_type
+        templ['driver_node_type_id'] = driver_node_type
         templ['ssh_public_keys'] = [ sshKey ]
-        templ['num_workers'] = 1
-        if initScriptFile:
-            # only need these when enabling the plugin
-            templ['spark_conf'] = { 'spark.plugins': 'com.nvidia.spark.SQLPlugin', }
-            templ['init_scripts'] = []
-            templ['init_scripts'].append({ "dbfs": { "destination": init_script_loc } })
-
+        templ['num_workers'] = num_workers
         return templ
 
 
     @staticmethod
-    def create_cluster(workspace, jsonCreateTempl, token):
+    def create_cluster(workspace, jsonCreateTempl, token, printLoc=sys.stdout):
         resp = requests.post(workspace + "/api/2.0/clusters/create", headers={'Authorization': 'Bearer %s' % token}, json=jsonCreateTempl)
-        print("create response is %s" % resp.text)
+        print("create response is %s" % resp.text, file=printLoc)
         clusterid = resp.json()['cluster_id']
-        print("cluster id is %s" % clusterid)
+        print("cluster id is %s" % clusterid, file=printLoc)
         return clusterid
 
 
     @staticmethod
-    def wait_for_cluster_start(workspace, clusterid, token):
+    def wait_for_cluster_start(workspace, clusterid, token, retries=20, printLoc=sys.stdout):
         p = 0
         waiting = True
         master_addr = None
         while waiting:
             time.sleep(30)
-            jsonout = ClusterUtils.cluster_state(workspace, clusterid, token)
+            jsonout = ClusterUtils.cluster_state(workspace, clusterid, token, printLoc=printLoc)
             current_state = jsonout['state']
-            print(clusterid + " state:" + current_state)
+            print(clusterid + " state:" + current_state, file=printLoc)
             if current_state in ['RUNNING']:
-                master_addr = ClusterUtils.get_master_addr(jsonout)
+                master_addr = ClusterUtils.get_master_addr_from_json(jsonout)
                 break
             if current_state in ['INTERNAL_ERROR', 'SKIPPED', 'TERMINATED'] or p >= 20:
-                if p >= 20:
+                if p >= retries:
                    print("Waited %d times already, stopping" % p)
                 sys.exit(4)
             p = p + 1
-        print("Done starting cluster")
+        print("Done starting cluster", file=printLoc)
         return master_addr
 
 
     @staticmethod
-    def terminate_cluster(workspace, clusterid, token):
-        jsonout = ClusterUtils.cluster_state(workspace, clusterid, token)
+    def is_cluster_running(jsonout):
         current_state = jsonout['state']
-        if current_state not in ['RUNNING', 'RESIZING']:
-            print("Cluster is not running")
+        if current_state in ['RUNNING', 'RESIZING']:
+            True
+        else:
+            False
+
+
+    @staticmethod
+    def terminate_cluster(workspace, clusterid, token, printLoc=sys.stdout):
+        jsonout = ClusterUtils.cluster_state(workspace, clusterid, token, printLoc=printLoc)
+        if not is_cluster_unning(jsonout):
+            print("Cluster is not running", file=printLoc)
             sys.exit(1)
 
-        print("Stopping cluster: " + clusterid)
+        print("Stopping cluster: " + clusterid, file=printLoc)
         resp = requests.post(workspace + "/api/2.0/clusters/delete", headers={'Authorization': 'Bearer %s' % token}, json={'cluster_id': clusterid})
-        print("stop response is %s" % resp.text)
-        print("Done stopping cluster")
+        print("stop response is %s" % resp.text, file=printLoc)
+        print("Done stopping cluster", file=printLoc)
 
 
     @staticmethod
-    def delete_cluster(workspace, clusterid, token):
-        print("Deleting cluster: " + clusterid)
+    def delete_cluster(workspace, clusterid, token, printLoc=sys.stdout):
+        print("Deleting cluster: " + clusterid, file=printLoc)
         resp = requests.post(workspace + "/api/2.0/clusters/permanent-delete", headers={'Authorization': 'Bearer %s' % token}, json={'cluster_id': clusterid})
-        print("delete response is %s" % resp.text)
-        print("Done deleting cluster")
+        print("delete response is %s" % resp.text, file=printLoc)
+        print("Done deleting cluster", file=printLoc)
 
 
     @staticmethod
-    def start_existing_cluster(workspace, clusterid, token):
-        print("Starting cluster: " + clusterid)
+    def start_existing_cluster(workspace, clusterid, token, printLoc=sys.stdout):
+        print("Starting cluster: " + clusterid, file=printLoc)
         resp = requests.post(workspace + "/api/2.0/clusters/start", headers={'Authorization': 'Bearer %s' % token}, json={'cluster_id': clusterid})
-        print("start response is %s" % resp.text)
+        print("start response is %s" % resp.text, file=printLoc)
 
 
     @staticmethod
-    def cluster_state(workspace, clusterid, token):
+    def cluster_state(workspace, clusterid, token, printLoc=sys.stdout):
         clusterresp = requests.get(workspace + "/api/2.0/clusters/get?cluster_id=%s" % clusterid, headers={'Authorization': 'Bearer %s' % token})
         clusterjson = clusterresp.text
-        print("cluster response is %s" % clusterjson)
+        print("cluster response is %s" % clusterjson, file=printLoc)
         jsonout = json.loads(clusterjson)
         return jsonout
 
 
     @staticmethod
-    def get_master_addr(jsonout):
-        current_state = jsonout['state']
+    def get_master_addr_from_json(jsonout):
         master_addr = None
-        if current_state in ['RUNNING']:
+        if is_cluster_running(jsonout):
             driver = jsonout['driver']
             master_addr = driver["public_dns"]
             return master_addr
@@ -140,10 +137,16 @@ class ClusterUtils(object):
 
 
     @staticmethod
-    def cluster_list(workspace, token):
+    def cluster_list(workspace, token, printLoc=sys.stdout):
         clusterresp = requests.get(workspace + "/api/2.0/clusters/list", headers={'Authorization': 'Bearer %s' % token})
         clusterjson = clusterresp.text
-        print("cluster list is %s" % clusterjson)
+        print("cluster list is %s" % clusterjson, file=printLoc)
         jsonout = json.loads(clusterjson)
         return jsonout
+
+
+    @staticmethod
+    def cluster_get_master_addr(workspace, clusterid, token, printLoc=sys.stdout):
+        jsonout = ClusterUtils.cluster_state(workspace, clusterid, token, printLoc=printLoc)
+        return get_master_addr_from_json(jsonout)
 
