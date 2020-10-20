@@ -989,7 +989,8 @@ class MultiFileParquetPartitionReader(
       Some(evolveSchemaIfNeededAndClose(table, fileName, clippedSchema))
     }
     try {
-      val maybeBatch = table.map(GpuColumnVector.from)
+      val colTypes = readDataSchema.fields.map(f => f.dataType).toList
+      val maybeBatch = table.map(t => GpuColumnVector.from(t, colTypes.asJava))
       maybeBatch.foreach { batch =>
         logDebug(s"GPU batch size: ${GpuColumnVector.getTotalDeviceMemoryUsed(batch)} bytes")
       }

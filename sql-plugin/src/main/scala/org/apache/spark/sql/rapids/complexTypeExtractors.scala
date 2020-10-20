@@ -79,10 +79,11 @@ case class GpuGetArrayItem(child: Expression, ordinal: Expression)
   override def doColumnar(lhs: GpuColumnVector, ordinal: Scalar): GpuColumnVector = {
     // Need to handle negative indexes...
     if (ordinal.isValid && ordinal.getInt >= 0) {
-      GpuColumnVector.from(lhs.getBase.extractListElement(ordinal.getInt))
+      GpuColumnVector.from(lhs.dataType(), lhs.getBase.extractListElement(ordinal.getInt))
     } else {
       withResource(Scalar.fromNull(GpuColumnVector.getRapidsType(dataType))) { nullScalar =>
-        GpuColumnVector.from(ColumnVector.fromScalar(nullScalar, lhs.getRowCount.toInt))
+        GpuColumnVector.from(lhs.dataType(),
+          ColumnVector.fromScalar(nullScalar, lhs.getRowCount.toInt))
       }
     }
   }
@@ -125,7 +126,8 @@ case class GpuGetMapValue(child: Expression, key: Expression)
   override def prettyName: String = "getMapValue"
 
   override def doColumnar(lhs: GpuColumnVector,
-    rhs: Scalar): GpuColumnVector = GpuColumnVector.from(lhs.getBase.getMapValue(rhs))
+    rhs: Scalar): GpuColumnVector = GpuColumnVector.from(lhs.dataType(),
+    lhs.getBase.getMapValue(rhs))
 
 
   override def doColumnar(lhs: Scalar,

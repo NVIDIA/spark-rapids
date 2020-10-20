@@ -216,28 +216,31 @@ public class GpuColumnVector extends GpuColumnVectorBase {
     }
   }
 
-  protected static final <T> DataType getSparkTypeFrom(ColumnViewAccess<T> access) {
-    DType type = access.getDataType();
-    if (type == DType.LIST) {
-      try (ColumnViewAccess<T> child = access.getChildColumnViewAccess(0)) {
-        DataType ret;
-        if (child.getDataType() == DType.STRUCT) {
-          try (ColumnViewAccess<T> firstChild = child.getChildColumnViewAccess(0);
-               ColumnViewAccess<T> secondChild = child.getChildColumnViewAccess(1)) {
-            if (firstChild.getDataType() == DType.STRING && secondChild.getDataType() == DType.STRING) {
-              ret = new MapType(DataTypes.StringType, DataTypes.StringType, true);
-            } else {
-              throw new IllegalStateException("Maps with non string type fields is not" +
-                  "supported and something has gone wrong!");
-            }
-          }
-        } else {
-          ret = new ArrayType(getSparkTypeFrom(child), true);
-        }
-        return ret;
-      }
-    } else {
-      return getSparkType(type);
+
+  static final DataType getSparkType(ColumnViewAccess columnViewAccess) {
+    switch (columnViewAccess.getDataType()) {
+      case BOOL8:
+        return DataTypes.BooleanType;
+      case INT8:
+        return DataTypes.ByteType;
+      case INT16:
+        return DataTypes.ShortType;
+      case INT32:
+        return DataTypes.IntegerType;
+      case INT64:
+        return DataTypes.LongType;
+      case FLOAT32:
+        return DataTypes.FloatType;
+      case FLOAT64:
+        return DataTypes.DoubleType;
+      case TIMESTAMP_DAYS:
+        return DataTypes.DateType;
+      case TIMESTAMP_MICROSECONDS:
+        return DataTypes.TimestampType;
+      case STRING:
+        return DataTypes.StringType;
+      default:
+        throw new IllegalArgumentException(columnViewAccess.getDataType() + " is not supported by spark yet.");
     }
   }
 
@@ -294,6 +297,9 @@ public class GpuColumnVector extends GpuColumnVectorBase {
     return from(table, 0, table.getNumberOfColumns());
   }
 
+  public static final ColumnarBatch from(Table table, List<DataType> colTypes) {
+    return from(table, colTypes, 0, table.getNumberOfColumns());
+  }
   /**
    * Get a ColumnarBatch from a set of columns in the Table. This gets the columns
    * starting at startColIndex and going until but not including untilColIndex. This will
@@ -335,12 +341,57 @@ public class GpuColumnVector extends GpuColumnVectorBase {
   }
 
   /**
+   * Get a ColumnarBatch from a set of columns in the Table. This gets the columns
+   * starting at startColIndex and going until but not including untilColIndex. This will
+   * increment the reference count for all columns converted so you will need to close
+   * both the table that is passed in and the batch returned to be sure that there are no leaks.
+   *
+   * @param table a table of vectors
+   * @param colTypes List of the column data types in the table passed in
+   * @param startColIndex index of the first vector you want in the final ColumnarBatch
+   * @param untilColIndex until index of the columns. (ie doesn't include that column num)
+   * @return a ColumnarBatch of the vectors from the table
+   */
+  public static final ColumnarBatch from(Table table, List<DataType> colTypes, int startColIndex, int untilColIndex) {
+    assert table != null : "Table cannot be null";
+    int numColumns = untilColIndex - startColIndex;
+    ColumnVector[] columns = new ColumnVector[numColumns];
+    int finalLoc = 0;
+    boolean success = false;
+    try {
+      for (int i = startColIndex; i < untilColIndex; i++) {
+        columns[finalLoc] = from(colTypes.get(i), table.getColumn(i).incRefCount());
+        finalLoc++;
+      }
+      long rows = table.getRowCount();
+      if (rows != (int) rows) {
+        throw new IllegalStateException("Cannot support a batch larger that MAX INT rows");
+      }
+      ColumnarBatch ret = new ColumnarBatch(columns, (int)rows);
+      success = true;
+      return ret;
+    } finally {
+      if (!success) {
+        for (ColumnVector cv: columns) {
+          if (cv != null) {
+            cv.close();
+          }
+        }
+      }
+    }
+  }
+
+  /**
    * Converts a cudf internal vector to a spark compatible vector. No reference counts
    * are incremented so you need to either close the returned value or the input value,
    * but not both.
    */
   public static final GpuColumnVector from(ai.rapids.cudf.ColumnVector cudfCv) {
-    return new GpuColumnVector(getSparkTypeFrom(cudfCv), cudfCv);
+    return new GpuColumnVector(getSparkType(cudfCv), cudfCv);
+  }
+
+  public static final GpuColumnVector from(DataType type, ai.rapids.cudf.ColumnVector cudfCv) {
+    return new GpuColumnVector(type, cudfCv);
   }
 
   public static final GpuColumnVector from(Scalar scalar, int count) {

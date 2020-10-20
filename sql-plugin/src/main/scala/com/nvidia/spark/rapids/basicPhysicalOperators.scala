@@ -30,7 +30,10 @@ import org.apache.spark.sql.execution.{LeafExecNode, SparkPlan, UnaryExecNode}
 import org.apache.spark.sql.execution.metric.SQLMetric
 import org.apache.spark.sql.rapids.GpuPredicateHelper
 import org.apache.spark.sql.rapids.execution.TrampolineUtil
+import org.apache.spark.sql.types.{DataType, MapType}
 import org.apache.spark.sql.vectorized.{ColumnarBatch, ColumnVector}
+
+import collection.JavaConverters._
 
 object GpuProjectExec {
   def projectAndClose[A <: Expression](cb: ColumnarBatch, boundExprs: Seq[A],
@@ -118,8 +121,10 @@ object GpuFilter extends Arm {
     try {
       filterConditionCv = boundCondition.columnarEval(batch).asInstanceOf[GpuColumnVector]
       tbl = GpuColumnVector.from(batch)
+      val colTypes =
+        (0 until batch.numCols()).map(i => batch.column(i).dataType())
       filtered = tbl.filter(filterConditionCv.getBase)
-      GpuColumnVector.from(filtered)
+      GpuColumnVector.from(filtered, colTypes.asJava)
     } finally {
       Seq(filtered, tbl, filterConditionCv, batch).safeClose()
     }
@@ -138,7 +143,8 @@ case class GpuFilterExec(condition: Expression, child: SparkPlan)
   /**
    * Potentially a lot is removed.
    */
-  override def coalesceAfter: Boolean = false
+  override def coalesceAfter: Boolean =
+    !child.expressions.exists(expr => expr.dataType.isInstanceOf[MapType])
 
   // If one expression and its children are null intolerant, it is null intolerant.
   private def isNullIntolerant(expr: Expression): Boolean = expr match {
