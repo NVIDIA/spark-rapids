@@ -105,7 +105,9 @@ The benchmark can be executed with the following syntax to execute the query and
 results to the driver.
 
 ```scala
-TpcdsLikeBench.collect(spark, "q5", iterations=3)
+import com.nvidia.spark.rapids.tests._
+val benchmark = new BenchmarkRunner(TpcdsLikeBench)
+benchmark.collect(spark, "q5", iterations=3)
 ```
 
 The benchmark can be executed with the following syntax to execute the query and write the results 
@@ -113,12 +115,14 @@ to Parquet. There are also `writeCsv` and `writeOrc` methods for writing the out
 files.
 
 ```scala
-TpcdsLikeBench.writeParquet(spark, "q5", "/data/output/tpcds/q5", iterations=3)
+import com.nvidia.spark.rapids.tests._
+val benchmark = new BenchmarkRunner(TpcdsLikeBench)
+benchmark.writeParquet(spark, "q5", "/data/output/tpcds/q5", iterations=3)
 ```
 
 ## Running Benchmarks from spark-submit
 
-Each of the TPC-* derived benchmarks has a command-line interface, allowing it to be submitted 
+The benchmark runner has a command-line interface, allowing it to be submitted 
 to Spark using `spark-submit` which can be more practical than using the Spark shell when 
 running a series of benchmarks using automation.
 
@@ -130,13 +134,14 @@ have the benchmark call `collect()` on the results instead.
 $SPARK_HOME/bin/spark-submit \
     --master $SPARK_MASTER_URL \
     --jars $SPARK_RAPIDS_PLUGIN_JAR,$CUDF_JAR \
-    --class com.nvidia.spark.rapids.tests.tpcds.TpcdsLikeBench \
+    --class com.nvidia.spark.rapids.tests.BenchmarkRunner \
     $SPARK_RAPIDS_PLUGIN_INTEGRATION_TEST_JAR \
+    --benchmark tpcds \
+    --query q5 \
     --input /raid/tpcds-3TB-parquet-largefiles \
     --input-format parquet \
     --output /raid/tpcds-output/tpcds-q5-cpu \
     --output-format parquet \
-    --query q5 \
     --summary-file-prefix tpcds-q5-cpu \
     --iterations 1
 ```

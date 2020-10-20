@@ -24,7 +24,7 @@ import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import org.apache.spark.{InterruptibleIterator, Partition, SparkContext, TaskContext}
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.InternalRow
-import org.apache.spark.sql.catalyst.expressions.{Attribute, AttributeReference, Expression, IsNotNull, NamedExpression, NullIntolerant, PredicateHelper, SortOrder}
+import org.apache.spark.sql.catalyst.expressions.{Attribute, AttributeReference, Expression, NamedExpression, NullIntolerant, SortOrder}
 import org.apache.spark.sql.catalyst.plans.physical.{Partitioning, RangePartitioning, SinglePartition, UnknownPartitioning}
 import org.apache.spark.sql.execution.{LeafExecNode, SparkPlan, UnaryExecNode}
 import org.apache.spark.sql.execution.metric.SQLMetric
@@ -89,6 +89,9 @@ case class GpuProjectExec(projectList: Seq[Expression], child: SparkPlan)
       GpuProjectExec.projectAndClose(cb, boundProjectList, totalTime)
     }
   }
+
+  // The same as what feeds us
+  override def outputBatching: CoalesceGoal = GpuExec.outputBatching(child)
 }
 
 /**
@@ -207,6 +210,8 @@ case class GpuRangeExec(range: org.apache.spark.sql.catalyst.plans.logical.Range
     }
   }
 
+  override def outputBatching: CoalesceGoal = TargetSize(targetSizeBytes)
+
   override def doCanonicalize(): SparkPlan = {
     GpuRangeExec(
       range.canonicalized.asInstanceOf[org.apache.spark.sql.catalyst.plans.logical.Range],
@@ -316,6 +321,10 @@ case class GpuUnionExec(children: Seq[SparkPlan]) extends SparkPlan with GpuExec
     }
   }
 
+  // The smallest of our children
+  override def outputBatching: CoalesceGoal =
+    children.map(GpuExec.outputBatching).reduce(CoalesceGoal.min)
+
   override def doExecute(): RDD[InternalRow] =
     throw new IllegalStateException(s"Row-based execution should not occur for $this")
 
@@ -342,6 +351,9 @@ case class GpuCoalesceExec(numPartitions: Int, child: SparkPlan)
     if (numPartitions == 1) SinglePartition
     else UnknownPartitioning(numPartitions)
   }
+
+  // The same as what feeds us
+  override def outputBatching: CoalesceGoal = GpuExec.outputBatching(child)
 
   protected override def doExecute(): RDD[InternalRow] = throw new UnsupportedOperationException(
     s"${getClass.getCanonicalName} does not support row-based execution")

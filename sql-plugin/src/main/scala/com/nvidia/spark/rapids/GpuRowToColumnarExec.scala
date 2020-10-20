@@ -480,6 +480,8 @@ case class GpuRowToColumnarExec(child: SparkPlan, goal: CoalesceGoal)
 
   override def outputOrdering: Seq[SortOrder] = child.outputOrdering
 
+  override def outputBatching: CoalesceGoal = goal
+
   override def doExecute(): RDD[InternalRow] = {
     child.execute()
   }

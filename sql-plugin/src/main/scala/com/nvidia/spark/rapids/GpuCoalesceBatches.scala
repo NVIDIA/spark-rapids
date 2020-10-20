@@ -95,6 +95,20 @@ object CoalesceGoal {
     case (TargetSize(aSize), TargetSize(bSize)) if aSize > bSize => a
     case _ => b
   }
+
+  def min(a: CoalesceGoal, b:CoalesceGoal): CoalesceGoal = (a, b) match {
+    case (RequireSingleBatch, _) => b
+    case (_, RequireSingleBatch) => a
+    case (TargetSize(aSize), TargetSize(bSize)) if aSize < bSize => a
+    case _ => b
+  }
+
+  def satisfies(found: CoalesceGoal, required: CoalesceGoal): Boolean = (found, required) match {
+    case (RequireSingleBatch, _) => true
+    case (_, RequireSingleBatch) => false
+    case (TargetSize(foundSize), TargetSize(requiredSize)) => foundSize >= requiredSize
+    case _ => false // found is null so it is not satisfied
+  }
 }
 
 sealed abstract class CoalesceGoal extends Serializable {
@@ -495,6 +509,8 @@ case class GpuCoalesceBatches(child: SparkPlan, goal: CoalesceGoal)
   override def output: Seq[Attribute] = child.output
 
   override def outputPartitioning: Partitioning = child.outputPartitioning
+
+  override def outputBatching: CoalesceGoal = goal
 
   override def doExecuteColumnar(): RDD[ColumnarBatch] = {
     val numInputRows = longMetric(NUM_INPUT_ROWS)
