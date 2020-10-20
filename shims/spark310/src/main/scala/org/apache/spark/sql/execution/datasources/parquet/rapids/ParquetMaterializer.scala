@@ -29,14 +29,21 @@ import org.apache.spark.sql.types.StructType
 /**
  * This class exposes the ParquetRecordMaterializer
  */
-class ParquetRecordMaterializer(parquetSchema: MessageType,
+class ParquetRecordMaterializer(
+   parquetSchema: MessageType,
    catalystSchema: StructType,
    schemaConverter: ParquetToSparkSchemaConverter,
    convertTz: Option[ZoneId],
    datetimeRebaseMode: LegacyBehaviorPolicy.Value) extends RecordMaterializer[InternalRow] {
 
   private val rootConverter = new ParquetRowConverter(
-    schemaConverter, parquetSchema, catalystSchema, convertTz, datetimeRebaseMode, NoopUpdater)
+    schemaConverter,
+    parquetSchema,
+    catalystSchema,
+    convertTz,
+    datetimeRebaseMode,
+    LegacyBehaviorPolicy.EXCEPTION,
+    NoopUpdater)
 
   override def getCurrentRecord: InternalRow = rootConverter.currentRecord
 
