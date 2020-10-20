@@ -61,14 +61,13 @@ class ClusterUtils(object):
     def wait_for_cluster_start(workspace, clusterid, token, retries=20, printLoc=sys.stdout):
         p = 0
         waiting = True
-        master_addr = None
+        jsonout = None
         while waiting:
             time.sleep(30)
             jsonout = ClusterUtils.cluster_state(workspace, clusterid, token, printLoc=printLoc)
             current_state = jsonout['state']
             print(clusterid + " state:" + current_state, file=printLoc)
             if current_state in ['RUNNING']:
-                master_addr = ClusterUtils.get_master_addr_from_json(jsonout)
                 break
             if current_state in ['INTERNAL_ERROR', 'SKIPPED', 'TERMINATED'] or p >= 20:
                 if p >= retries:
@@ -76,7 +75,7 @@ class ClusterUtils(object):
                 sys.exit(4)
             p = p + 1
         print("Done starting cluster", file=printLoc)
-        return master_addr
+        return jsonout
 
 
     @staticmethod

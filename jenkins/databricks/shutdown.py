@@ -15,6 +15,7 @@ from clusterutils import ClusterUtils
 import getopt
 import sys
 
+# shutdown or delete a databricks cluster
 def main():
   workspace = 'https://dbc-9ff9942e-a9c4.cloud.databricks.com'
   token = ''

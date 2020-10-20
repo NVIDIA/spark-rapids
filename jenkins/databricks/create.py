@@ -16,17 +16,16 @@ import getopt
 import sys
 
 # This scripts create and starts a Databricks cluster and waits for it to be running.
-# If a cluster id is provided along with --start option then it will start an existing cluster.
 #
 # The name parameter is meant to be a unique name used when creating the cluster. Note we
 # append the epoch time to the end of it to help prevent collisions.
+#
+# Returns cluster id to stdout, all other logs default to stderr
 #
 # User is responsible for removing cluster if a failure or when done with cluster.
 def main():
   workspace = 'https://dbc-9ff9942e-a9c4.cloud.databricks.com'
   token = ''
-  clusterid = ''
-  start = False
   sshkey = ''
   cluster_name = 'CI-GPU-databricks-0.3.0-SNAPSHOT'
   idletime = 240
@@ -36,27 +35,23 @@ def main():
   driver_type = 'g4dn.xlarge'
 
   try:
-      opts, args = getopt.getopt(sys.argv[1:], 'hw:t:c:sk:n:i:r:o:d:e:',
-                                 ['workspace=', 'token=', 'clusterid=', 'start', 'sshkey=',
-                                     'clustername=', 'idletime=', 'runtime=', 'workertype=', 'drivertype=', 'numworkers='])
+      opts, args = getopt.getopt(sys.argv[1:], 'hw:t:k:n:i:r:o:d:e:',
+                                 ['workspace=', 'token=', 'sshkey=', 'clustername=', 'idletime=',
+                                     'runtime=', 'workertype=', 'drivertype=', 'numworkers='])
   except getopt.GetoptError:
       print(
-          'create.py -w <workspace> -t <token> -c <clusterid> -k <sshkey> -n <clustername> -i <idletime> -r <runtime> -o <workernodetype> -d <drivernodetype> -e <numworkers>')
+          'create.py -w <workspace> -t <token> -k <sshkey> -n <clustername> -i <idletime> -r <runtime> -o <workernodetype> -d <drivernodetype> -e <numworkers>')
       sys.exit(2)
 
   for opt, arg in opts:
       if opt == '-h':
           print(
-              'create.py -w <workspace> -t <token> -c <clusterid> -k <sshkey> -n <clustername> -i <idletime> -r <runtime> -o <workernodetype> -d <drivernodetype> -e <numworkers>')
+              'create.py -w <workspace> -t <token> -k <sshkey> -n <clustername> -i <idletime> -r <runtime> -o <workernodetype> -d <drivernodetype> -e <numworkers>')
           sys.exit()
       elif opt in ('-w', '--workspace'):
           workspace = arg
       elif opt in ('-t', '--token'):
           token = arg
-      elif opt in ('-c', '--clusterid'):
-          clusterid = arg
-      elif opt in ('-s', '--start'):
-          start = True
       elif opt in ('-k', '--sshkey'):
           sshkey = arg
       elif opt in ('-n', '--clustername'):
@@ -73,8 +68,6 @@ def main():
           num_workers = arg
 
   print('-w is ' + workspace, file=sys.stderr)
-  print('-c is ' + clusterid, file=sys.stderr)
-  print('-s is ' + str(start), file=sys.stderr)
   print('-k is ' + sshkey, file=sys.stderr)
   print('-n is ' + cluster_name, file=sys.stderr)
   print('-i is ' + str(idletime), file=sys.stderr)
@@ -91,26 +84,11 @@ def main():
       print("You must specify an token!")
       sys.exit(2)
 
-  if clusterid and not start:
-      print("cluster id is only valid when using the --start option", file=sys.stderr)
-      sys.exit(2)
-
-  if not clusterid:
-      # generate cluster template
-      templ = ClusterUtils.generate_create_templ(sshkey, cluster_name, runtime, idletime,
-              num_workers, driver_type, worker_type, printLoc=sys.stderr)
-      clusterid = ClusterUtils.create_cluster(workspace, templ, token, printLoc=sys.stderr)
-      print("Using cluster id is %s" % clusterid, file=sys.stderr)
-      jsonout = ClusterUtils.cluster_state(workspace, clusterid, token, printLoc=sys.stderr)
-      current_state = jsonout['state']
-      if current_state in ['RUNNING']:
-          print("Cluster is already running - perhaps build/tests already running?", file=sys.stderr)
-          sys.exit(4)
-
-      master_addr = ClusterUtils.wait_for_cluster_start(workspace, clusterid, token, printLoc=sys.stderr)
-  else:
-      jsonout = ClusterUtils.cluster_state(workspace, clusterid, token, printLoc=sys.stderr)
-      master_addr = ClusterUtils.get_master_addr(jsonout)
+  templ = ClusterUtils.generate_create_templ(sshkey, cluster_name, runtime, idletime,
+          num_workers, driver_type, worker_type, printLoc=sys.stderr)
+  clusterid = ClusterUtils.create_cluster(workspace, templ, token, printLoc=sys.stderr)
+  print("Cluster id is %s" % clusterid, file=sys.stderr)
+  ClusterUtils.wait_for_cluster_start(workspace, clusterid, token, printLoc=sys.stderr)
 
   # only print the clusterid to stdout so a calling script can get it easily
   print(clusterid, file=sys.stdout)
