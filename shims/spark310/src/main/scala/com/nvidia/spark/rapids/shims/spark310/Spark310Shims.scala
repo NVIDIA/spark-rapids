@@ -16,7 +16,6 @@
 
 package com.nvidia.spark.rapids.shims.spark310
 
-
 import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.shims.spark301.Spark301Shims
 import com.nvidia.spark.rapids.spark310.RapidsShuffleManager
