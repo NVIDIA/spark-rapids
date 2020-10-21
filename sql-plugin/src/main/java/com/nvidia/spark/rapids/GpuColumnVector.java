@@ -61,8 +61,7 @@ public class GpuColumnVector extends GpuColumnVectorBase {
       try {
         for (int i = 0; i < len; i++) {
           StructField field = fields[i];
-          DType type = getRapidsType(field);
-          if (type == DType.STRING) {
+          if (field.dataType() instanceof StringType) {
             // If we cannot know the exact size, assume the string is small and allocate
             // 8 bytes per row.  The buffer of the builder will grow as needed if it is
             // too small.
@@ -78,12 +77,13 @@ public class GpuColumnVector extends GpuColumnVectorBase {
               }
             }
             builders[i] = new ai.rapids.cudf.HostColumnVector.ColumnBuilder(new HostColumnVector.BasicType(true, DType.STRING), rows);
-          } else if (type == DType.LIST) {
+          } else if (field.dataType() instanceof MapType) {
             builders[i] = new ai.rapids.cudf.HostColumnVector.ColumnBuilder(new HostColumnVector.ListType(true,
                 new HostColumnVector.StructType(true, Arrays.asList(
                     new HostColumnVector.BasicType(true, DType.STRING),
                     new HostColumnVector.BasicType(true, DType.STRING)))), rows);
           } else {
+            DType type = getRapidsType(field);
             builders[i] = new ai.rapids.cudf.HostColumnVector.ColumnBuilder(new HostColumnVector.BasicType(true, type), rows);
           }
           success = true;
@@ -165,8 +165,6 @@ public class GpuColumnVector extends GpuColumnVectorBase {
       return DType.TIMESTAMP_MICROSECONDS;
     } else if (type instanceof StringType) {
       return DType.STRING;
-    } else if (type instanceof MapType) {
-      return DType.LIST;
     }
     return null;
   }

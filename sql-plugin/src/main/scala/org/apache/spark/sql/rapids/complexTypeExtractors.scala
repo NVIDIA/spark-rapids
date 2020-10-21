@@ -19,7 +19,9 @@ package org.apache.spark.sql.rapids
 import ai.rapids.cudf.{ColumnVector, Scalar}
 import com.nvidia.spark.rapids.{BinaryExprMeta, ConfKeysAndIncompat, GpuBinaryExpression, GpuColumnVector, GpuExpression, GpuOverrides, RapidsConf, RapidsMeta}
 
+import org.apache.spark.sql.catalyst.analysis.TypeCheckResult
 import org.apache.spark.sql.catalyst.expressions.{ExpectsInputTypes, Expression, ExtractValue, GetArrayItem, GetMapValue, ImplicitCastInputTypes, NullIntolerant}
+import org.apache.spark.sql.catalyst.util.TypeUtils
 import org.apache.spark.sql.types.{AbstractDataType, AnyDataType, ArrayType, DataType, IntegralType, MapType, StringType}
 
 class GpuGetArrayItemMeta(
@@ -119,9 +121,19 @@ class GpuGetMapValueMeta(
 case class GpuGetMapValue(child: Expression, key: Expression)
   extends GpuBinaryExpression with ImplicitCastInputTypes with NullIntolerant {
 
+  private def keyType = child.dataType.asInstanceOf[MapType].keyType
+
+  override def checkInputDataTypes(): TypeCheckResult = {
+    super.checkInputDataTypes() match {
+      case f: TypeCheckResult.TypeCheckFailure => f
+      case TypeCheckResult.TypeCheckSuccess =>
+        TypeUtils.checkForOrderingExpr(keyType, s"function $prettyName")
+    }
+  }
+
   override def dataType: DataType = child.dataType.asInstanceOf[MapType].valueType
-  override def inputTypes: Seq[AbstractDataType] =
-    Seq(AnyDataType, child.dataType.asInstanceOf[MapType].keyType)
+
+  override def inputTypes: Seq[AbstractDataType] = Seq(AnyDataType, keyType)
 
   override def prettyName: String = "getMapValue"
 

@@ -204,7 +204,7 @@ public final class RapidsHostColumnVector extends ColumnVector {
     GpuColumnVector finSecondCv = GpuColumnVector.from(secondDevCv);
     //TODO: test more that offset and len are right
     return new ColumnarMap(finFirstCv.copyToHost(),finSecondCv.copyToHost(),
-        ordinal* DType.INT32.getSizeInBytes(), (ordinal + 1)* DType.INT32.getSizeInBytes());
+        ordinal * DType.INT32.getSizeInBytes(), (ordinal + 1) * DType.INT32.getSizeInBytes());
   }
 
   @Override
