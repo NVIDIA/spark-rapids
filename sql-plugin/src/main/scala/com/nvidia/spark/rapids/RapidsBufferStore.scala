@@ -213,8 +213,10 @@ abstract class RapidsBufferStore(
     val bufferToSpill = buffers.nextSpillableBuffer()
     if (bufferToSpill != null) {
       spillAndFreeBuffer(bufferToSpill, stream)
+      bufferToSpill.size
+    } else {
+      0
     }
-    bufferToSpill.size
   }
 
   private def spillAndFreeBuffer(buffer: RapidsBufferBase, stream: Cuda.Stream): Unit = {
