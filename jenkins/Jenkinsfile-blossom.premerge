@@ -261,5 +261,8 @@ void uploadDocker(String IMAGE_NAME) {
 }
 
 void deleteDockerTempTag(String tag) {
+    if (!tag?.trim()) { // return if the tag is null or empty
+        return
+    }
     sh "curl -u $URM_CREDS_USR:$URM_CREDS_PSW -XDELETE https://${ARTIFACTORY_NAME}/artifactory/sw-spark-docker-local/plugin/${tag} || true"
 }

@@ -33,7 +33,7 @@ class CopyCompressionCodec extends TableCompressionCodec with Arm {
     closeOnExcept(DeviceMemoryBuffer.allocate(buffer.getLength)) { outputBuffer =>
       outputBuffer.copyFromDeviceBufferAsync(0, buffer, 0, buffer.getLength, stream)
       val meta = MetaUtils.buildTableMeta(
-        tableId,
+        Some(tableId),
         contigTable.getTable,
         buffer,
         codecId,
@@ -81,7 +81,7 @@ class BatchedCopyCompressor(maxBatchMemory: Long, stream: Cuda.Stream)
       closeOnExcept(DeviceMemoryBuffer.allocate(inBuffer.getLength)) { outBuffer =>
         outBuffer.copyFromDeviceBufferAsync(0, inBuffer, 0, inBuffer.getLength, stream)
         val meta = MetaUtils.buildTableMeta(
-          0,
+          None,
           ct.getTable,
           inBuffer,
           CodecType.COPY,

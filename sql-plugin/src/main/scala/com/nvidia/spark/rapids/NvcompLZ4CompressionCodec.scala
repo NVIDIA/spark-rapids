@@ -35,7 +35,7 @@ class NvcompLZ4CompressionCodec extends TableCompressionCodec with Arm {
     closeOnExcept(oversizedBuffer) { oversizedBuffer =>
       require(compressedSize <= oversizedBuffer.getLength, "compressed buffer overrun")
       val tableMeta = MetaUtils.buildTableMeta(
-        tableId,
+        Some(tableId),
         contigTable.getTable,
         tableBuffer,
         CodecType.NVCOMP_LZ4,
@@ -137,7 +137,7 @@ class BatchedNvcompLZ4Compressor(maxBatchMemorySize: Long, stream: Cuda.Stream)
         val compressedSize = compressedSizes(i)
         require(compressedSize <= buffer.getLength, "compressed buffer overrun")
         val meta = MetaUtils.buildTableMeta(
-          tableId = 0,
+          None,
           contigTable.getTable,
           contigTable.getBuffer,
           CodecType.NVCOMP_LZ4,

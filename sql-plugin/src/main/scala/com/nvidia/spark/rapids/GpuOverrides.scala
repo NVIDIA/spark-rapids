@@ -350,6 +350,51 @@ object GpuOverrides {
     !regexList.exists(pattern => s.contains(pattern))
   }
 
+  private def canonicalizeToCpuForSortOrder(exp: Expression): Expression = exp match {
+    case g: GpuLiteral => Literal(g.value, g.dataType).canonicalized
+    case g: GpuKnownFloatingPointNormalized =>
+      KnownFloatingPointNormalized(canonicalizeToCpuForSortOrder(g.child)).canonicalized
+    case g: GpuNormalizeNaNAndZero =>
+      NormalizeNaNAndZero(canonicalizeToCpuForSortOrder(g.child)).canonicalized
+    case g: GpuAlias =>
+      Alias(canonicalizeToCpuForSortOrder(g.child), g.name)(
+        g.exprId,
+        g.qualifier,
+        g.explicitMetadata)
+          .canonicalized
+    case o: GpuExpression =>
+      throw new IllegalStateException(s"${o.getClass} is not expected to be a part of a SortOrder")
+    case other => other.canonicalized
+  }
+
+  private def gpuOrderingSemanticEquals(found: Expression, required: Expression): Boolean = {
+    found.deterministic && required.deterministic &&
+        canonicalizeToCpuForSortOrder(found) == canonicalizeToCpuForSortOrder(required)
+  }
+
+  private def orderingSatisfies(found: SortOrder, required: SortOrder): Boolean = {
+    (found.sameOrderExpressions + found.child).exists(
+      gpuOrderingSemanticEquals(_, required.child)) &&
+        found.direction == required.direction &&
+        found.nullOrdering == required.nullOrdering
+  }
+
+  private def orderingSatisfies(ordering1: Seq[SortOrder], ordering2: Seq[SortOrder]): Boolean = {
+    // We cannot use SortOrder.orderingSatisfies because there is a corner case where
+    // some operators like a Literal can be a part of SortOrder, which then results in errors
+    // because we may have converted it over to a GpuLiteral at that point and a Literal
+    // is not equivalent to a GpuLiteral, even though it should be.
+    if (ordering2.isEmpty) {
+      true
+    } else if (ordering2.length > ordering1.length) {
+      false
+    } else {
+      ordering2.zip(ordering1).forall {
+        case (o2, o1) => orderingSatisfies(o1, o2)
+      }
+    }
+  }
+
   @scala.annotation.tailrec
   def extractLit(exp: Expression): Option[Literal] = exp match {
     case l: Literal => Some(l)
@@ -494,8 +539,13 @@ object GpuOverrides {
       (lit, conf, p, r) => new ExprMeta[Literal](lit, conf, p, r) {
         override def convertToGpu(): GpuExpression = GpuLiteral(lit.value, lit.dataType)
 
-        // There are so many of these that we don't need to print them out.
-        override def print(append: StringBuilder, depth: Int, all: Boolean): Unit = {}
+        // There are so many of these that we don't need to print them out, unless it
+        // will not work on the GPU
+        override def print(append: StringBuilder, depth: Int, all: Boolean): Unit = {
+          if (!this.canThisBeReplaced) {
+            super.print(append, depth, all)
+          }
+        }
 
         /**
          * We are overriding this method because currently we only support CalendarIntervalType
@@ -598,6 +648,20 @@ object GpuOverrides {
       "Window function that returns the index for the row within the aggregation window",
       (rowNumber, conf, p, r) => new ExprMeta[RowNumber](rowNumber, conf, p, r) {
         override def convertToGpu(): GpuExpression = GpuRowNumber()
+      }
+    ),
+    expr[Lead](
+      "Window function that returns N entries ahead of this one",
+      (lead, conf, p, r) => new OffsetWindowFunctionMeta[Lead](lead, conf, p, r) {
+        override def convertToGpu(): GpuExpression =
+          GpuLead(input.convertToGpu(), offset.convertToGpu(), default.convertToGpu())
+      }
+    ),
+    expr[Lag](
+      "Window function that returns N entries behind this one",
+      (lag, conf, p, r) => new OffsetWindowFunctionMeta[Lag](lag, conf, p, r) {
+        override def convertToGpu(): GpuExpression =
+          GpuLag(input.convertToGpu(), offset.convertToGpu(), default.convertToGpu())
       }
     ),
     expr[UnaryMinus](
@@ -1748,7 +1812,10 @@ object GpuOverrides {
         }),
     exec[CollectLimitExec](
       "Reduce to single partition and apply limit",
-      (collectLimitExec, conf, p, r) => new GpuCollectLimitMeta(collectLimitExec, conf, p, r)),
+      (collectLimitExec, conf, p, r) => new GpuCollectLimitMeta(collectLimitExec, conf, p, r))
+        .disabledByDefault("Collect Limit replacement can be slower on the GPU, if huge number " +
+          "of rows in a batch it could help by limiting the number of rows transferred from " +
+          "GPU to CPU"),
     exec[FilterExec](
       "The backend for most filter statements",
       (filter, conf, p, r) => new SparkPlanMeta[FilterExec](filter, conf, p, r) {
@@ -1911,7 +1978,7 @@ case class GpuOverrides() extends Rule[SparkPlan] with Logging {
     // Now that we've performed any necessary shuffles, add sorts to guarantee output orderings:
     children = children.zip(requiredChildOrderings).map { case (child, requiredOrdering) =>
       // If child.outputOrdering already satisfies the requiredOrdering, we do not need to sort.
-      if (SortOrder.orderingSatisfies(child.outputOrdering, requiredOrdering)) {
+      if (GpuOverrides.orderingSatisfies(child.outputOrdering, requiredOrdering)) {
         child
       } else {
         val sort = SortExec(requiredOrdering, global = false, child = child)
