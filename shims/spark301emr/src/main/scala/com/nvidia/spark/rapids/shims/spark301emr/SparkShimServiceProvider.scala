@@ -16,7 +16,7 @@
 
 package com.nvidia.spark.rapids.shims.spark301emr
 
-import com.nvidia.spark.rapids.{EMRShimVersion, SparkShims, SparkShimVersion}
+import com.nvidia.spark.rapids.{EMRShimVersion, SparkShims}
 
 object SparkShimServiceProvider {
   val VERSION = EMRShimVersion(3, 0, 1)

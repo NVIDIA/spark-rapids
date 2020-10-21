@@ -22,14 +22,7 @@ import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.shims.spark301.Spark301Shims
 import com.nvidia.spark.rapids.spark301emr.RapidsShuffleManager
 
-import org.apache.spark.rdd.RDD
-import org.apache.spark.sql.SparkSession
-import org.apache.spark.sql.catalyst.InternalRow
-import org.apache.spark.sql.execution.datasources.{FilePartition, FileScanRDD, PartitionedFile}
-
 class Spark301EMRShims extends Spark301Shims {
-
-  private var fileScanRddConstructor: Option[Constructor[_]] = None
 
   override def getSparkShimVersion: ShimVersion = SparkShimServiceProvider.VERSION
 
