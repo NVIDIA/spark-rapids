@@ -163,6 +163,7 @@
         <slf4j.version>1.7.30</slf4j.version>
         <spark300.version>3.0.0</spark300.version>
         <spark300emr.version>3.0.0-amzn</spark300emr.version>
+        <spark301emr.version>3.0.1-amzn</spark301emr.version>
         <!--
          If you update a dependendy version so it is no longer a SNAPSHOT
          please update the snapshot-shims profile as well so it is accurate -->
