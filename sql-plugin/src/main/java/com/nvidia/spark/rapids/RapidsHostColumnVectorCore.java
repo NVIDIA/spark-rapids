@@ -17,11 +17,6 @@
 
 package com.nvidia.spark.rapids;
 
-import ai.rapids.cudf.DeviceMemoryBuffer;
-import ai.rapids.cudf.DType;
-import ai.rapids.cudf.HostColumnVectorCore;
-import ai.rapids.cudf.HostMemoryBuffer;
-
 import org.apache.spark.sql.types.DataType;
 import org.apache.spark.sql.types.Decimal;
 import org.apache.spark.sql.vectorized.ColumnVector;
@@ -30,7 +25,6 @@ import org.apache.spark.sql.vectorized.ColumnarBatch;
 import org.apache.spark.sql.vectorized.ColumnarMap;
 import org.apache.spark.unsafe.types.UTF8String;
 
-import java.util.Optional;
 
 /**
  * A GPU accelerated version of the Spark ColumnVector.

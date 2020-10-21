@@ -17,7 +17,6 @@
 
 package com.nvidia.spark.rapids;
 
-import ai.rapids.cudf.DeviceMemoryBuffer;
 import ai.rapids.cudf.DType;
 import ai.rapids.cudf.HostColumnVectorCore;
 import ai.rapids.cudf.HostMemoryBuffer;
