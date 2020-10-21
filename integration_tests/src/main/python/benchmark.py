@@ -75,15 +75,15 @@ def main():
                     help='Path to source data set')
     parser.add_argument('--input-format', required=True,
                         help='Format of input data set (parquet or csv)')
-    parser.add_argument('--output', required=True,
+    parser.add_argument('--output', required=False,
                     help='Path to write query output to')
-    parser.add_argument('--output-format', required=True,
+    parser.add_argument('--output-format', required=False,
                         help='Format to write to (parquet or orc)')
     parser.add_argument('--configs', required=True, type=str, nargs='+',
                     help='One or more configuration filenames to run')
     parser.add_argument('--query', required=True, type=str, nargs='+',
                     help='Queries to run')
-    parser.add_argument('--iterations', required=True,
+    parser.add_argument('--iterations', required=False,
                         help='The number of iterations to run (defaults to 1)')
 
     args = parser.parse_args()
@@ -106,9 +106,7 @@ def main():
             cmd.append("--benchmark " + args.benchmark)
             cmd.append("--query " + query)
             cmd.append("--input " + args.input)
-
-            if args.input_format is not None:
-                cmd.append("--input-format {}".format(args.input_format))
+            cmd.append("--input-format {}".format(args.input_format))
 
             if args.output is not None:
                 cmd.append("--output " + args.output + "/" + config_name + "/" + query)
