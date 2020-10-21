@@ -153,25 +153,17 @@ public final class RapidsHostColumnVector extends ColumnVector {
     ai.rapids.cudf.ColumnViewAccess<HostMemoryBuffer> structHcv = cudfCv.getChildColumnViewAccess(0);
     // keys
     ai.rapids.cudf.ColumnViewAccess<HostMemoryBuffer> firstHcv = structHcv.getChildColumnViewAccess(0);
-    HostColumnVectorCore firstHcvCore = new HostColumnVectorCore(firstHcv.getDataType(),
-        firstHcv.getRowCount(), Optional.of(firstHcv.getNullCount()), firstHcv.getDataBuffer(),
-        firstHcv.getValidityBuffer(), firstHcv.getOffsetBuffer(),
-        new ArrayList<HostColumnVectorCore>());
+    HostColumnVectorCore firstHcvCore = (HostColumnVectorCore) firstHcv;
     // values
     ai.rapids.cudf.ColumnViewAccess<HostMemoryBuffer> secondHcv = structHcv.getChildColumnViewAccess(1);
-    HostColumnVectorCore secondHcvCore = new HostColumnVectorCore(secondHcv.getDataType(),
-        secondHcv.getRowCount(), Optional.of(secondHcv.getNullCount()), secondHcv.getDataBuffer(),
-        secondHcv.getValidityBuffer(), secondHcv.getOffsetBuffer(),
-        new ArrayList<HostColumnVectorCore>());
+    HostColumnVectorCore secondHcvCore = (HostColumnVectorCore) secondHcv;
 
     RapidsHostColumnVectorCore firstChild = new RapidsHostColumnVectorCore(
         GpuColumnVector.getSparkType(firstHcvCore.getType()), firstHcvCore);
     RapidsHostColumnVectorCore secondChild = new RapidsHostColumnVectorCore(
         GpuColumnVector.getSparkType(secondHcvCore.getType()), secondHcvCore);
-    //TODO: test more that offset and len are right
     int startOffset = cudfCv.getOffsetBuffer().getInt(ordinal * DType.INT32.getSizeInBytes());
-    return new ColumnarMap(firstChild, secondChild,
-        startOffset,
+    return new ColumnarMap(firstChild, secondChild, startOffset,
         cudfCv.getOffsetBuffer().getInt((ordinal + 1) * DType.INT32.getSizeInBytes()) - startOffset);
   }
 
