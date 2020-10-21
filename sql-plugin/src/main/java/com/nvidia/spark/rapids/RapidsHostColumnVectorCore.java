@@ -21,7 +21,6 @@ import org.apache.spark.sql.types.DataType;
 import org.apache.spark.sql.types.Decimal;
 import org.apache.spark.sql.vectorized.ColumnVector;
 import org.apache.spark.sql.vectorized.ColumnarArray;
-import org.apache.spark.sql.vectorized.ColumnarBatch;
 import org.apache.spark.sql.vectorized.ColumnarMap;
 import org.apache.spark.unsafe.types.UTF8String;
 
@@ -33,35 +32,6 @@ import org.apache.spark.unsafe.types.UTF8String;
  * We also provide GPU accelerated versions of the transitions to and from rows.
  */
 public final class RapidsHostColumnVectorCore extends ColumnVector {
-
-  /**
-   * Get the underlying host cudf columns from the batch.  This does not increment any
-   * reference counts so if you want to use these columns after the batch is closed
-   * you will need to do that on your own.
-   */
-  public static ai.rapids.cudf.HostColumnVectorCore[] extractBases(ColumnarBatch batch) {
-    int numColumns = batch.numCols();
-    ai.rapids.cudf.HostColumnVectorCore[] vectors = new ai.rapids.cudf.HostColumnVectorCore[numColumns];
-    for (int i = 0; i < vectors.length; i++) {
-      vectors[i] = ((RapidsHostColumnVector)batch.column(i)).getBase();
-    }
-    return vectors;
-  }
-
-  /**
-   * Get the underlying spark compatible host columns from the batch.  This does not increment any
-   * reference counts so if you want to use these columns after the batch is closed
-   * you will need to do that on your own.
-   */
-  public static RapidsHostColumnVector[] extractColumns(ColumnarBatch batch) {
-    int numColumns = batch.numCols();
-    RapidsHostColumnVector[] vectors = new RapidsHostColumnVector[numColumns];
-
-    for (int i = 0; i < vectors.length; i++) {
-      vectors[i] = ((RapidsHostColumnVector)batch.column(i));
-    }
-    return vectors;
-  }
 
   private final ai.rapids.cudf.HostColumnVectorCore cudfCv;
 
@@ -76,7 +46,7 @@ public final class RapidsHostColumnVectorCore extends ColumnVector {
 
   @Override
   public void close() {
-    // Just pass through the reference counting
+    // Just pass through
     cudfCv.close();
   }
 

@@ -92,11 +92,7 @@ public class GpuColumnVector extends GpuColumnVectorBase {
         if (!success) {
           for (ai.rapids.cudf.HostColumnVector.ColumnBuilder b: builders) {
             if (b != null) {
-              try {
-                b.close();
-              } catch (Exception e) {
-                e.printStackTrace();
-              }
+              b.close();
             }
           }
         }
@@ -134,11 +130,7 @@ public class GpuColumnVector extends GpuColumnVectorBase {
     public void close() {
       for (ai.rapids.cudf.HostColumnVector.ColumnBuilder b: builders) {
         if (b != null) {
-          try {
-            b.close();
-          } catch (Exception e) {
-            e.printStackTrace();
-          }
+          b.close();
         }
       }
     }

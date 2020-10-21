@@ -89,7 +89,7 @@ public final class RapidsHostColumnVector extends ColumnVector {
 
   @Override
   public void close() {
-    // Just pass through the reference counting
+    // Just pass through
     cudfCv.close();
   }
 
@@ -169,8 +169,10 @@ public final class RapidsHostColumnVector extends ColumnVector {
     RapidsHostColumnVectorCore secondChild = new RapidsHostColumnVectorCore(
         GpuColumnVector.getSparkType(secondHcvCore.getType()), secondHcvCore);
     //TODO: test more that offset and len are right
+    int startOffset = cudfCv.getOffsetBuffer().getInt(ordinal * DType.INT32.getSizeInBytes());
     return new ColumnarMap(firstChild, secondChild,
-        ordinal * DType.INT32.getSizeInBytes(), (ordinal + 1) * DType.INT32.getSizeInBytes());
+        startOffset,
+        cudfCv.getOffsetBuffer().getInt((ordinal + 1) * DType.INT32.getSizeInBytes()) - startOffset);
   }
 
   @Override
