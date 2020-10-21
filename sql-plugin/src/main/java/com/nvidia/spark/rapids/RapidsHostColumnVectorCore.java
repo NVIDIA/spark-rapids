@@ -142,6 +142,11 @@ public final class RapidsHostColumnVectorCore extends ColumnVector {
   }
 
   @Override
+  public ColumnarMap getMap(int ordinal) {
+    throw new IllegalStateException("Maps are currently not supported by rapids cudf");
+  }
+
+  @Override
   public Decimal getDecimal(int rowId, int precision, int scale) {
     throw new IllegalStateException("The decimal type is currently not supported by rapids cudf");
   }
