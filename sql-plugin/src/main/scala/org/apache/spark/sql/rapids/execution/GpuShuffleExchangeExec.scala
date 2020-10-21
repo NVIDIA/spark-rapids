@@ -79,14 +79,15 @@ abstract class GpuShuffleExchangeExecBase(
     SQLShuffleWriteMetricsReporter.createShuffleWriteMetrics(sparkContext)
   lazy val readMetrics =
     SQLShuffleReadMetricsReporter.createShuffleReadMetrics(sparkContext)
+  override lazy val additionalMetrics : Map[String, SQLMetric] = Map(
+    "dataSize" -> SQLMetrics.createSizeMetric(sparkContext, "data size")
+  ) ++ readMetrics ++ writeMetrics
 
-  // Spark doesn't report totalTime for this operator so we override metrics directly rather
-  // than use additionalMetrics
+  // Spark doesn't report totalTime for this operator so we override metrics
   override lazy val metrics: Map[String, SQLMetric] = Map(
     NUM_OUTPUT_ROWS -> SQLMetrics.createMetric(sparkContext, DESCRIPTION_NUM_OUTPUT_ROWS),
-    NUM_OUTPUT_BATCHES -> SQLMetrics.createMetric(sparkContext, DESCRIPTION_NUM_OUTPUT_BATCHES),
-    "dataSize" -> SQLMetrics.createSizeMetric(sparkContext, "data size")) ++
-      readMetrics ++ writeMetrics
+    NUM_OUTPUT_BATCHES -> SQLMetrics.createMetric(sparkContext, DESCRIPTION_NUM_OUTPUT_BATCHES)
+  ) ++ additionalMetrics
 
   override def nodeName: String = "GpuColumnarExchange"
 
