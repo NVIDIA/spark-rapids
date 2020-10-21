@@ -31,23 +31,34 @@ class DecimalUnitTest extends FunSuite with Arm {
     val rapidsConf = new RapidsConf(Map[String, String]())
     val testWrapper = (input: Expression, expected: Expression) => {
       val output = GpuOverrides.wrapExpr(input, rapidsConf, None).convertToGpu()
+      println(output.sql)
+      println(expected.sql)
       expected.semanticEquals(output) shouldBe true
     }
-    val sparkConf = new SparkConf()
-      .set("spark.sql.legacy.allowNegativeScaleOfDecimal", "true")
+    val sparkConf = new SparkConf().set("spark.sql.legacy.allowNegativeScaleOfDecimal", "true")
     TestUtils.withGpuSparkSession(sparkConf) { _ =>
+      // no need to adjust
       testWrapper(
-        PromotePrecision(Cast(Literal(123.45), DecimalType(10, 3))),
-        GpuPromotePrecision(GpuCast(GpuLiteral(123.45, DoubleType), DecimalType(10, 3))))
+        PromotePrecision(Cast(Literal(1.0), DecimalType(10, 3))),
+        GpuPromotePrecision(GpuCast(GpuLiteral(1.0, DoubleType), DecimalType(10, 3))))
+      // GPU_MAX_PRECISION - intDigits = 19 - (22 - 10) = 7
+      // minScaleValue = min(10, GPU_MINIMUM_ADJUSTED_SCALE) = 6
+      // adjustedScale = max(7, 6) = 7
       testWrapper(
-        PromotePrecision(Cast(Literal(1000.123456789), DecimalType(22, 10))),
-        GpuPromotePrecision(GpuCast(GpuLiteral(1000.123456789, DoubleType), DecimalType(19, 7))))
+        PromotePrecision(Cast(Literal(1.0), DecimalType(22, 10))),
+        GpuPromotePrecision(GpuCast(GpuLiteral(1.0, DoubleType), DecimalType(19, 7))))
+      // GPU_MAX_PRECISION - intDigits = 19 - (20 - 5) = 4
+      // minScaleValue = min(5, GPU_MINIMUM_ADJUSTED_SCALE) = 5
+      // adjustedScale = max(4, 5) = 5
       testWrapper(
-        PromotePrecision(Cast(Literal(123456789.123), DecimalType(24, 3))),
-        GpuPromotePrecision(GpuCast(GpuLiteral(123456789.123, DoubleType), DecimalType(19, -2))))
+        PromotePrecision(Cast(Literal(1.0), DecimalType(20, 5))),
+        GpuPromotePrecision(GpuCast(GpuLiteral(1.0, DoubleType), DecimalType(19, 5))))
 
-      var cpuPP = PromotePrecision(Cast(Literal(1), DecimalType(20, 3)))
-      var gpuPP = GpuPromotePrecision(GpuCast(GpuLiteral(1, IntegerType), DecimalType(19, 2)))
+      // GPU_MAX_PRECISION - intDigits = 19 - (30 - 15) = 4
+      // minScaleValue = min(15, GPU_MINIMUM_ADJUSTED_SCALE) = 6
+      // adjustedScale = max(4, 6) = 6
+      var cpuPP = PromotePrecision(Cast(Literal(1), DecimalType(30, 15)))
+      var gpuPP = GpuPromotePrecision(GpuCast(GpuLiteral(1, IntegerType), DecimalType(19, 6)))
       testWrapper(
         CheckOverflow(Add(cpuPP, cpuPP), DecimalType(20, 3), false),
         GpuCheckOverflow(GpuAdd(gpuPP, gpuPP)))
@@ -57,6 +68,7 @@ class DecimalUnitTest extends FunSuite with Arm {
       testWrapper(
         CheckOverflow(Pmod(cpuPP, cpuPP), DecimalType(20, 3), false),
         GpuCheckOverflow(GpuPmod(gpuPP, gpuPP)))
+
       cpuPP = PromotePrecision(Cast(Literal(1), DecimalType(10, 3)))
       gpuPP = GpuPromotePrecision(GpuCast(GpuLiteral(1, IntegerType), DecimalType(10, 3)))
       assertThrows[IllegalStateException] {
@@ -64,6 +76,16 @@ class DecimalUnitTest extends FunSuite with Arm {
           CheckOverflow(Multiply(cpuPP, cpuPP), DecimalType(20, 6), false),
           GpuCheckOverflow(GpuMultiply(gpuPP, gpuPP)))
       }
+    }
+
+    sparkConf.set("spark.sql.decimalOperations.allowPrecisionLoss", "false")
+    TestUtils.withGpuSparkSession(sparkConf) { _ =>
+      testWrapper(
+        PromotePrecision(Cast(Literal(1.0), DecimalType(22, 10))),
+        GpuPromotePrecision(GpuCast(GpuLiteral(1.0, DoubleType), DecimalType(19, 10))))
+      testWrapper(
+        PromotePrecision(Cast(Literal(1.0), DecimalType(30, 20))),
+        GpuPromotePrecision(GpuCast(GpuLiteral(1.0, DoubleType), DecimalType(19, 19))))
     }
   }
 }

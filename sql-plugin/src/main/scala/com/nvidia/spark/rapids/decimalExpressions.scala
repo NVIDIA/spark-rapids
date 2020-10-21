@@ -16,12 +16,13 @@
 
 package com.nvidia.spark.rapids
 
-import scala.math.max
+import scala.math.{max, min}
 
 import org.apache.spark.sql.catalyst.expressions.{CheckOverflow, Expression, PromotePrecision}
 import org.apache.spark.sql.internal.SQLConf
-import org.apache.spark.sql.rapids.{GpuAdd, GpuDivide, GpuIntegralDivide, GpuMultiply, GpuPmod, GpuRemainder, GpuSubtract}
+import org.apache.spark.sql.rapids._
 import org.apache.spark.sql.types.{DataType, DecimalType}
+
 
 /**
  * A GPU substitution of CheckOverflow, serves as a placeholder.
@@ -59,17 +60,17 @@ class CheckOverflowExprMeta(
       // For Multiply, we need to infer result's precision from inputs' precision.
       case GpuMultiply(GpuPromotePrecision(lhs: GpuCast), _) =>
         val dt = lhs.dataType.asInstanceOf[DecimalType]
-        if (dt.precision * 2 + 1 > DecimalExpressions.gpuMaxPrecision) {
+        if (dt.precision * 2 + 1 > DecimalExpressions.GPU_MAX_PRECISION) {
           throw new IllegalStateException("DecimalPrecision overflow may occur because " +
-            s"inferred result precision(${dt.precision * 2 + 1}) exceeds GpuMaxPrecision.")
+            s"inferred result precision(${dt.precision * 2 + 1}) exceeds GPU_MAX_PRECISION.")
         }
       // For Divide, we need to infer result's precision from inputs' precision and scale.
       case GpuDivide(GpuPromotePrecision(lhs: GpuCast), _) =>
         val dt = lhs.dataType.asInstanceOf[DecimalType]
-        val scale = max(DecimalType.MINIMUM_ADJUSTED_SCALE, dt.precision + dt.scale + 1)
-        if (dt.precision + scale > DecimalExpressions.gpuMaxPrecision) {
+        val scale = max(DecimalExpressions.GPU_MINIMUM_ADJUSTED_SCALE, dt.precision + dt.scale + 1)
+        if (dt.precision + scale > DecimalExpressions.GPU_MAX_PRECISION) {
           throw new IllegalStateException("DecimalPrecision overflow may occur because " +
-            s"inferred result precision(${dt.precision + scale}) exceeds GpuMaxPrecision.")
+            s"inferred result precision(${dt.precision + scale}) exceeds GPU_MAX_PRECISION.")
         }
       case c =>
         throw new IllegalAccessException(
@@ -89,7 +90,13 @@ class PromotePrecisionExprMeta(
   override def convertToGpu(child: Expression): GpuExpression = {
     child match {
       case GpuCast(cc: Expression, dt: DecimalType, a: Boolean, t: Option[String]) =>
-        GpuPromotePrecision(GpuCast(cc, DecimalExpressions.gpuCheckPrecision(dt), a, t))
+        // refine DecimalTypeMeta with GPU constraints according to same strategy as CPU runtime
+        val refinedDt = if (SQLConf.get.decimalOperationsAllowPrecisionLoss) {
+          DecimalExpressions.adjustPrecisionScale(dt)
+        } else {
+          DecimalExpressions.bounded(dt.precision, dt.scale)
+        }
+        GpuPromotePrecision(GpuCast(cc, refinedDt, a, t))
       case c => throw new IllegalStateException(
         s"Child expression of PromotePrecision should always be GpuCast with DecimalType, " +
           s"but found ${c.prettyName}")
@@ -99,24 +106,42 @@ class PromotePrecisionExprMeta(
 
 object DecimalExpressions {
   // Underlying storage type of decimal data in cuDF is int64_t, whose max capacity is 19.
-  val gpuMaxPrecision: Int = 19
+  val GPU_MAX_PRECISION: Int = 19
+  val GPU_MAX_SCALE: Int = 19
+  // Keep up with MINIMUM_ADJUSTED_SCALE, is this better to be configurable?
+  val GPU_MINIMUM_ADJUSTED_SCALE = 6
 
   /**
-   * Check whether there exists Gpu precision overflow for given DecimalType.
-   * And try to shrink scale to avoid it if possible. Otherwise, an exception will be thrown.
-   *
-   * @return checked DecimalType
+   * A forked version of [[org.apache.spark.sql.types.DecimalType]] with GPU constants replacement
    */
-  def gpuCheckPrecision(dt: DecimalType): DecimalType = {
-    if (dt.precision > DecimalExpressions.gpuMaxPrecision) {
-      if (!SQLConf.get.decimalOperationsAllowPrecisionLoss) {
-        throw new IllegalStateException(
-          "Failed to reduce scale of decimalType which exceeds GpuMaxPrecision, " +
-            "because SQLConf.get.decimalOperationsAllowPrecisionLoss is disabled.")
-      }
-      val scale = dt.scale - (dt.precision - DecimalExpressions.gpuMaxPrecision)
-      return DecimalType(DecimalExpressions.gpuMaxPrecision, scale)
+  private[rapids] def adjustPrecisionScale(dt: DecimalType): DecimalType = {
+    if (dt.precision <= GPU_MAX_PRECISION) {
+      // Adjustment only needed when we exceed max precision
+      dt
+    } else if (dt.scale < 0) {
+      // Decimal can have negative scale (SPARK-24468). In this case, we cannot allow a precision
+      // loss since we would cause a loss of digits in the integer part.
+      // In this case, we are likely to meet an overflow.
+      DecimalType(GPU_MAX_PRECISION, dt.scale)
+    } else {
+      // Precision/scale exceed maximum precision. Result must be adjusted to MAX_PRECISION.
+      val intDigits = dt.precision - dt.scale
+      // If original scale is less than MINIMUM_ADJUSTED_SCALE, use original scale value; otherwise
+      // preserve at least MINIMUM_ADJUSTED_SCALE fractional digits
+      val minScaleValue = Math.min(dt.scale, GPU_MINIMUM_ADJUSTED_SCALE)
+      // The resulting scale is the maximum between what is available without causing a loss of
+      // digits for the integer part of the decimal and the minimum guaranteed scale, which is
+      // computed above
+      val adjustedScale = Math.max(GPU_MAX_PRECISION - intDigits, minScaleValue)
+
+      DecimalType(GPU_MAX_PRECISION, adjustedScale)
     }
-    dt
+  }
+
+  /**
+   * A forked version of [[org.apache.spark.sql.types.DecimalType]] with GPU constants replacement
+   */
+  private[rapids] def bounded(precision: Int, scale: Int): DecimalType = {
+    DecimalType(min(precision, GPU_MAX_PRECISION), min(scale, GPU_MAX_SCALE))
   }
 }
