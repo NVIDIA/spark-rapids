@@ -18,10 +18,9 @@ package com.nvidia.spark.udf
 
 import CatalystExpressionBuilder.simplify
 import java.nio.charset.Charset
-
 import javassist.bytecode.{CodeIterator, Opcode}
-import org.apache.spark.SparkException
 
+import org.apache.spark.SparkException
 import org.apache.spark.internal.Logging
 import org.apache.spark.sql.catalyst.ScalaReflection
 import org.apache.spark.sql.catalyst.expressions._
@@ -73,7 +72,8 @@ private object Repr {
     var string: Expression = Literal.default(StringType)
   }
 
-  case class DateTimeFormatter private (private[Repr] val pattern: Expression) extends CompilerInternal("java.time.format.DateTimeFormatter") {
+  case class DateTimeFormatter private (private[Repr] val pattern: Expression)
+      extends CompilerInternal("java.time.format.DateTimeFormatter") {
     def invoke(methodName: String, args: List[Expression]): Expression = {
       methodName match {
         case _ =>
@@ -86,7 +86,8 @@ private object Repr {
     def ofPattern(pattern: Expression): DateTimeFormatter = DateTimeFormatter(pattern)
   }
 
-  case class LocalDateTime private (private val dateTime: Expression) extends CompilerInternal("java.time.LocalDateTime") {
+  case class LocalDateTime private (private val dateTime: Expression)
+      extends CompilerInternal("java.time.LocalDateTime") {
     def invoke(methodName: String, args: List[Expression]): Expression = {
       methodName match {
         case "getYear" => Year(dateTime)
@@ -107,7 +108,8 @@ private object Repr {
     }
   }
 
-  case class ClassTag[T](classTag: scala.reflect.ClassTag[T]) extends CompilerInternal("scala.reflect.ClassTag")
+  case class ClassTag[T](classTag: scala.reflect.ClassTag[T])
+      extends CompilerInternal("scala.reflect.ClassTag")
 }
 
 /**
@@ -388,7 +390,8 @@ case class Instruction(opcode: Int, operand: Int, instructionStr: String) extend
       State(locals, localDateTimeOp(method.getName, args) :: rest, cond, expr)
     } else {
       // Other functions
-      throw new SparkException(s"Unsupported instruction: ${Opcode.INVOKEVIRTUAL} ${declaringClassName}")
+      throw new SparkException(
+        s"Unsupported instruction: ${Opcode.INVOKEVIRTUAL} ${declaringClassName}")
     }
   }
 
@@ -554,7 +557,8 @@ case class Instruction(opcode: Int, operand: Int, instructionStr: String) extend
         new Repr.ClassTag(scala.reflect.ClassTag.Double)
       case "apply" =>
         checkArgs(methodName, List(IntegerType, StringType), args)
-        new Repr.ClassTag(scala.reflect.ClassTag.apply(LambdaReflection.getClass(args.last.toString)))
+        new Repr.ClassTag(scala.reflect.ClassTag.apply(
+          LambdaReflection.getClass(args.last.toString)))
       case _ => throw new SparkException("Unsupported classTag function: " + methodName)
     }
   }

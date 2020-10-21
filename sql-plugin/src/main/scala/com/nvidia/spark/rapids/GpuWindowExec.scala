@@ -112,12 +112,17 @@ case class GpuWindowExec(
     } else ClusteredDistribution(partitionSpec) :: Nil
   }
 
+  override def childrenCoalesceGoal: Seq[CoalesceGoal] = Seq(RequireSingleBatch)
+
   override def requiredChildOrdering: Seq[Seq[SortOrder]] =
     Seq(partitionSpec.map(SortOrder(_, Ascending)) ++ orderSpec)
 
   override def outputOrdering: Seq[SortOrder] = child.outputOrdering
 
   override def outputPartitioning: Partitioning = child.outputPartitioning
+
+  // We require a single batch and that is what we produce
+  override def outputBatching: CoalesceGoal = RequireSingleBatch
 
   override protected def doExecute(): RDD[InternalRow] =
     throw new IllegalStateException(s"Row-based execution should not happen, in $this.")

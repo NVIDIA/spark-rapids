@@ -252,6 +252,8 @@ case class HostColumnarToGpu(child: SparkPlan, goal: CoalesceGoal)
 
   override def supportsColumnar: Boolean = true
 
+  override def outputBatching: CoalesceGoal = goal
+
   override protected def doExecute(): RDD[InternalRow] = {
     child.execute()
   }
