@@ -214,7 +214,7 @@ public class GpuColumnVector extends GpuColumnVectorBase {
   }
 
 
-  static final DataType getSparkType(ColumnViewAccess columnViewAccess) {
+  static final <T> DataType getSparkType(ColumnViewAccess<T> columnViewAccess) {
     switch (columnViewAccess.getDataType()) {
       case BOOL8:
         return DataTypes.BooleanType;
