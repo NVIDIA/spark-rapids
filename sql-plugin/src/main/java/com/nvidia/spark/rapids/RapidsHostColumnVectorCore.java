@@ -69,11 +69,6 @@ public final class RapidsHostColumnVectorCore extends ColumnVector {
     return vectors;
   }
 
-
-  public HostColumnVectorCore getCudfCv() {
-    return cudfCv;
-  }
-
   private final ai.rapids.cudf.HostColumnVectorCore cudfCv;
 
   /**
