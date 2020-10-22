@@ -205,6 +205,17 @@ public class GpuColumnVector extends GpuColumnVectorBase {
     }
   }
 
+  protected static final <T> DataType getSparkTypeFrom(ColumnViewAccess<T> access) {
+    DType type = access.getDataType();
+    if (type == DType.LIST) {
+      try (ColumnViewAccess<T> child = access.getChildColumnViewAccess(0)) {
+        return new ArrayType(getSparkTypeFrom(child), true);
+      }
+    } else {
+      return getSparkType(type);
+    }
+  }
+
   /**
    * Create an empty batch from the given format.  This should be used very sparingly because
    * returning an empty batch from an operator is almost always the wrong thing to do.
@@ -348,7 +359,7 @@ public class GpuColumnVector extends GpuColumnVectorBase {
    * but not both.
    */
   public static final GpuColumnVector from(ai.rapids.cudf.ColumnVector cudfCv) {
-    return new GpuColumnVector(getSparkType(cudfCv.getType()), cudfCv);
+    return new GpuColumnVector(getSparkTypeFrom(cudfCv), cudfCv);
   }
 
   public static final GpuColumnVector from(ai.rapids.cudf.ColumnVector cudfCv, DataType type) {
