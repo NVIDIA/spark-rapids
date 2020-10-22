@@ -173,7 +173,7 @@ class RebatchingRoundoffIterator(
 
 /**
  * A simple queue that holds the pending batches that need to line up with
- * and combined with batches comming back from python
+ * and combined with batches coming back from python
  */
 class BatchQueue extends AutoCloseable with Arm {
   private val queue: mutable.Queue[SpillableColumnarBatch] =

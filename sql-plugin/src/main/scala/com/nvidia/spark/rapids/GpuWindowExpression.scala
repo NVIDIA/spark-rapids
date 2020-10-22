@@ -25,6 +25,7 @@ import org.apache.spark.sql.catalyst.analysis.TypeCheckResult.{TypeCheckFailure,
 import org.apache.spark.sql.catalyst.expressions._
 import org.apache.spark.sql.catalyst.expressions.aggregate._
 import org.apache.spark.sql.rapids.GpuAggregateExpression
+import org.apache.spark.sql.rapids.execution.python.GpuPythonUDF
 import org.apache.spark.sql.types._
 import org.apache.spark.sql.vectorized.ColumnarBatch
 import org.apache.spark.unsafe.types.CalendarInterval
@@ -86,6 +87,7 @@ class GpuWindowExpressionMeta(
               s"Found ${anythingElse.prettyName}")
         }
       case _: WindowFunction =>
+      case _: GpuPythonUDF =>
       case _ =>
         willNotWorkOnGpu("Only AggregateExpressions are supported on GPU as WindowFunctions. " +
         s"Found ${windowFunction.prettyName}")
@@ -190,16 +192,27 @@ case class GpuWindowExpression(windowFunction: Expression, windowSpec: GpuWindow
       case other =>
         throw new IllegalStateException(s"${other.getClass} is not a supported window aggregation")
     }
+    // For Python UDF, it will be executed in Python processes. So return null here.
+    case _: GpuPythonUDF => null
     case other =>
       throw new IllegalStateException(s"${other.getClass} is not a supported window function")
   }
+  private lazy val windowInputProjection = if (windowFunc != null) {
+    windowFunc.windowInputProjection
+  }  else {
+    Seq.empty
+  }
   private lazy val boundRowProjectList = windowSpec.partitionSpec ++
-      windowFunc.windowInputProjection
+      windowInputProjection
   private lazy val boundRangeProjectList = windowSpec.partitionSpec ++
       windowSpec.orderSpec.map(_.child.asInstanceOf[GpuExpression]) ++
-      windowFunc.windowInputProjection
+      windowInputProjection
 
   override def columnarEval(cb: ColumnarBatch) : Any = {
+    if (windowFunc == null) {
+      throw new UnsupportedOperationException(
+        s"Python UDF is not evaluable.")
+    }
     frameType match {
       case RowFrame   => evaluateRowBasedWindowExpression(cb)
       case RangeFrame =>

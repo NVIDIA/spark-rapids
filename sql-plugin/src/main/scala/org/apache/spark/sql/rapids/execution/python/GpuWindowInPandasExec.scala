@@ -1,0 +1,374 @@
+/*
+ * Copyright (c) 2020, NVIDIA CORPORATION.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+package org.apache.spark.sql.rapids.execution.python
+
+import ai.rapids.cudf.Table
+import com.nvidia.spark.rapids._
+import com.nvidia.spark.rapids.GpuMetricNames.{NUM_OUTPUT_BATCHES, NUM_OUTPUT_ROWS}
+import com.nvidia.spark.rapids.python.PythonWorkerSemaphore
+import scala.collection.mutable
+import scala.collection.mutable.ArrayBuffer
+
+import org.apache.spark.TaskContext
+import org.apache.spark.api.python.{ChainedPythonFunctions, PythonEvalType}
+import org.apache.spark.rdd.RDD
+import org.apache.spark.sql.catalyst.InternalRow
+import org.apache.spark.sql.catalyst.expressions._
+import org.apache.spark.sql.catalyst.plans.physical.{AllTuples, ClusteredDistribution, Distribution, Partitioning}
+import org.apache.spark.sql.execution.{SparkPlan, UnaryExecNode}
+import org.apache.spark.sql.execution.python._
+import org.apache.spark.sql.rapids.GpuAggregateExpression
+import org.apache.spark.sql.types.{IntegerType, StructField, StructType}
+import org.apache.spark.sql.util.ArrowUtils
+import org.apache.spark.sql.vectorized.ColumnarBatch
+
+
+class GpuWindowInPandasExecMeta(
+    winPandas: WindowInPandasExec,
+    conf: RapidsConf,
+    parent: Option[RapidsMeta[_, _, _]],
+    rule: ConfKeysAndIncompat)
+  extends SparkPlanMeta[WindowInPandasExec](winPandas, conf, parent, rule) {
+
+  override def couldReplaceMessage: String = "could partially run on GPU"
+  override def noReplacementPossibleMessage(reasons: String): String =
+    s"cannot run even partially on the GPU because $reasons"
+
+  val windowExpressions: Seq[BaseExprMeta[NamedExpression]] =
+    winPandas.windowExpression.map(GpuOverrides.wrapExpr(_, conf, Some(this)))
+
+  val partitionSpec: Seq[BaseExprMeta[Expression]] =
+    winPandas.partitionSpec.map(GpuOverrides.wrapExpr(_, conf, Some(this)))
+
+  val orderSpec: Seq[BaseExprMeta[SortOrder]] =
+    winPandas.orderSpec.map(GpuOverrides.wrapExpr(_, conf, Some(this)))
+
+  // Same check with that in GpuWindowExecMeta
+  override def tagPlanForGpu(): Unit = {
+    // Implementation depends on receiving a `NamedExpression` wrapped WindowExpression.
+    windowExpressions.map(meta => meta.wrapped)
+      .filter(expr => !expr.isInstanceOf[NamedExpression])
+      .foreach(_ => willNotWorkOnGpu(because = "Unexpected query plan with Windowing Pandas UDF; " +
+        "cannot convert for GPU execution. " +
+        "(Detail: WindowExpression not wrapped in `NamedExpression`.)"))
+
+    // FIXME check the frame type, only support RowFrame now ?
+    // FIXME check the window function type ? Only accept PythonUDF,
+    //       can not mix with other window functions
+  }
+
+  override def convertToGpu(): GpuExec =
+    GpuWindowInPandasExec(
+      windowExpressions.map(_.convertToGpu()),
+      partitionSpec.map(_.convertToGpu()),
+      orderSpec.map(_.convertToGpu().asInstanceOf[SortOrder]),
+      childPlans.head.convertIfNeeded()
+    )
+}
+
+/*
+ * This GpuWindowInPandasExec aims at accelerating the data transfer between
+ * JVM and Python, and scheduling GPU resources for Python processes
+ *
+ */
+case class GpuWindowInPandasExec(
+    windowExpression: Seq[Expression],
+    partitionSpec: Seq[Expression],
+    orderSpec: Seq[SortOrder],
+    child: SparkPlan)
+  extends UnaryExecNode with GpuExec {
+
+  override def output: Seq[Attribute] =
+    child.output ++ windowExpression.map(_.asInstanceOf[NamedExpression].toAttribute)
+
+  override def requiredChildDistribution: Seq[Distribution] = {
+    if (partitionSpec.isEmpty) {
+      // Only show warning when the number of bytes is larger than 100 MiB?
+      logWarning("No Partition Defined for Window operation! Moving all data to a single "
+        + "partition, this can cause serious performance degradation.")
+      AllTuples :: Nil
+    } else {
+      ClusteredDistribution(partitionSpec) :: Nil
+    }
+  }
+
+  override def requiredChildOrdering: Seq[Seq[SortOrder]] =
+    Seq(partitionSpec.map(SortOrder(_, Ascending)) ++ orderSpec)
+
+  override def outputOrdering: Seq[SortOrder] = child.outputOrdering
+
+  override def outputPartitioning: Partitioning = child.outputPartitioning
+
+  /*
+   * Helper functions and data structures for window bounds
+   *
+   * It contains:
+   * (1) Total number of window bound indices in the python input row
+   * (2) Function from frame index to its lower bound column index in the python input row
+   * (3) Function from frame index to its upper bound column index in the python input row
+   * (4) Seq from frame index to its window bound type
+   */
+  private type WindowBoundHelpers = (Int, Int => Int, Int => Int, Seq[WindowBoundType])
+
+  /*
+   * Enum for window bound types. Used only inside this class.
+   */
+  private sealed case class WindowBoundType(value: String)
+  private object UnboundedWindow extends WindowBoundType("unbounded")
+  private object BoundedWindow extends WindowBoundType("bounded")
+
+  private val windowBoundTypeConf = "pandas_window_bound_types"
+
+  private def collectFunctions(udf: GpuPythonUDF): (ChainedPythonFunctions, Seq[Expression]) = {
+    udf.children match {
+      case Seq(u: GpuPythonUDF) =>
+        val (chained, children) = collectFunctions(u)
+        (ChainedPythonFunctions(chained.funcs ++ Seq(udf.func)), children)
+      case children =>
+        // There should not be any other UDFs, or the children can't be evaluated directly.
+        assert(children.forall(_.find(_.isInstanceOf[GpuPythonUDF]).isEmpty))
+        (ChainedPythonFunctions(Seq(udf.func)), udf.children)
+    }
+  }
+
+  // Similar with WindowExecBase.windowFrameExpressionFactoryPairs
+  // but the functions are not needed here.
+  private lazy val windowFramesWithExpressions = {
+    type FrameKey = (String, FrameType, Expression, Expression)
+    type ExpressionBuffer = mutable.Buffer[Expression]
+    val framedExpressions = mutable.Map.empty[FrameKey, ExpressionBuffer]
+
+    // Add expressions to the map for a given frame.
+    def collect(tpe: String, fr: GpuSpecifiedWindowFrame, e: Expression): Unit = {
+      val key = (tpe, fr.frameType, fr.lower, fr.upper)
+      val es = framedExpressions.getOrElseUpdate(key, mutable.ArrayBuffer.empty[Expression])
+      es += e
+    }
+
+    // Collect all valid window expressions and group them by their frame.
+    windowExpression.foreach { e =>
+      e.foreach {
+        case e @ GpuWindowExpression(function, spec) =>
+          val frame = spec.frameSpecification.asInstanceOf[GpuSpecifiedWindowFrame]
+          function match {
+            case GpuAggregateExpression(_, _, _, _, _) => collect("AGGREGATE", frame, e)
+            case _: GpuAggregateWindowFunction => collect("AGGREGATE", frame, e)
+            case _: GpuPythonUDF => collect("AGGREGATE", frame, e)
+            // OffsetWindowFunction is not supported yet, no harm to keep it here
+            case _: OffsetWindowFunction => collect("OFFSET", frame, e)
+            case f => sys.error(s"Unsupported window function: $f")
+          }
+        case _ =>
+      }
+    }
+
+    framedExpressions.toSeq.map {
+      // Remove the function type string
+      case ((_, ftp, lower, upper), es) => ((ftp, lower, upper), es)
+    }
+  }
+
+  /*
+   * See [[WindowBoundHelpers]] for details.
+   */
+  private def computeWindowBoundHelpers: WindowBoundHelpers = {
+
+    val windowBoundTypes = windowFramesWithExpressions.map(_._1).map {
+      case (_, UnboundedPreceding, UnboundedFollowing) => UnboundedWindow
+      case _ => BoundedWindow
+    }
+
+    val requiredIndices = windowBoundTypes.map {
+      case UnboundedWindow => 0
+      case _ => 2
+    }
+
+    val upperBoundIndices = requiredIndices.scan(0)(_ + _).tail
+    val boundIndices = requiredIndices.zip(upperBoundIndices).map { case (num, upperBoundIndex) =>
+      if (num == 0) {
+        // Sentinel values for unbounded window
+        (-1, -1)
+      } else {
+        (upperBoundIndex - 2, upperBoundIndex - 1)
+      }
+    }
+
+    def lowerBoundIndex(frameIndex: Int) = boundIndices(frameIndex)._1
+    def upperBoundIndex(frameIndex: Int) = boundIndices(frameIndex)._2
+
+    (requiredIndices.sum, lowerBoundIndex, upperBoundIndex, windowBoundTypes)
+  }
+
+  override protected def doExecute(): RDD[InternalRow] =
+    throw new IllegalStateException(s"Row-based execution should not occur for $this")
+
+  override def doExecuteColumnar(): RDD[ColumnarBatch] = {
+    val numOutputRows = longMetric(NUM_OUTPUT_ROWS)
+    val numOutputBatches = longMetric(NUM_OUTPUT_BATCHES)
+    val isPythonOnGpuEnabled = GpuPythonHelper.isPythonOnGpuEnabled(conf)
+    val sessionLocalTimeZone = conf.sessionLocalTimeZone
+
+    // 1) Unwrap the expressions and build some info data:
+    //    - Map from expression index to frame index
+    //    - Helper functions
+    //    - isBounded by given a frame index
+    val expressionsWithFrameIndex = windowFramesWithExpressions.map(_._2).zipWithIndex.flatMap {
+      case (bufferEs, frameIndex) => bufferEs.map(expr => (expr, frameIndex))
+    }
+    val exprIndex2FrameIndex = expressionsWithFrameIndex.map(_._2).zipWithIndex.map(_.swap).toMap
+    val (numBoundIndices, lowerBoundIndex, upperBoundIndex, frameWindowBoundTypes) =
+      computeWindowBoundHelpers
+    val isBounded = { frameIndex: Int => lowerBoundIndex(frameIndex) >= 0 }
+
+    // 2) Extract window functions, here should be Python (Pandas) UDFs
+    val allWindowExpressions = expressionsWithFrameIndex.map(_._1)
+    val udfExpressions = allWindowExpressions.map {
+      case e: GpuWindowExpression => e.windowFunction.asInstanceOf[GpuPythonUDF]
+    }
+    // We shouldn't be chaining anything here.
+    // All chained python functions should only contain one function.
+    val (pyFuncs, inputs) = udfExpressions.map(collectFunctions).unzip
+    require(pyFuncs.length == allWindowExpressions.length)
+
+    // 3) Build the python runner configs
+    val udfWindowBoundTypesStr = pyFuncs.indices
+      .map(expId => frameWindowBoundTypes(exprIndex2FrameIndex(expId)).value)
+      .mkString(",")
+    val pythonRunnerConf: Map[String, String] = ArrowUtils.getPythonRunnerConfMap(conf) +
+      (windowBoundTypeConf -> udfWindowBoundTypesStr)
+
+    // 4) Filter child output attributes down to only those that are UDF inputs.
+    // Also eliminate duplicate UDF inputs. This is similar to how other Python UDF node
+    // handles UDF inputs.
+    val dataInputs = new ArrayBuffer[Expression]
+    val argOffsets = inputs.map { input =>
+      input.map { e =>
+        if (dataInputs.exists(_.semanticEquals(e))) {
+          dataInputs.indexWhere(_.semanticEquals(e))
+        } else {
+          dataInputs += e
+          dataInputs.length - 1
+        }
+      }.toArray
+    }.toArray
+
+    // In addition to UDF inputs, we will prepend window bounds for each UDFs.
+    // For bounded windows, we prepend lower bound and upper bound. For unbounded windows,
+    // we no not add window bounds. (strictly speaking, we only need to lower or upper bound
+    // if the window is bounded only on one side, this can be improved in the future)
+
+    // 5) Setting window bounds for each window frames. Each window frame has different bounds so
+    // each has its own window bound columns.
+    val windowBoundsInput = windowFramesWithExpressions.indices.flatMap { frameIndex =>
+      if (isBounded(frameIndex)) {
+        Seq(
+          BoundReference(lowerBoundIndex(frameIndex), IntegerType, nullable = false),
+          BoundReference(upperBoundIndex(frameIndex), IntegerType, nullable = false)
+        )
+      } else {
+        Seq.empty
+      }
+    }
+
+    // 6) Setting the window bounds argOffset for each UDF. For UDFs with bounded window, argOffset
+    // for the UDF is (lowerBoundOffset, upperBoundOffset, inputOffset1, inputOffset2, ...)
+    // For UDFs with unbounded window, argOffset is (inputOffset1, inputOffset2, ...)
+    pyFuncs.indices.foreach { exprIndex =>
+      val frameIndex = exprIndex2FrameIndex(exprIndex)
+      if (isBounded(frameIndex)) {
+        argOffsets(exprIndex) = Array(lowerBoundIndex(frameIndex), upperBoundIndex(frameIndex)) ++
+            argOffsets(exprIndex).map(_ + windowBoundsInput.length)
+      } else {
+        argOffsets(exprIndex) = argOffsets(exprIndex).map(_ + windowBoundsInput.length)
+      }
+    }
+
+    // 7) Building the final input and schema
+    val allInputs = windowBoundsInput ++ dataInputs
+    val allInputTypes = allInputs.map(_.dataType)
+    val pythonInputSchema = StructType(
+      allInputTypes.zipWithIndex.map { case (dt, i) =>
+        StructField(s"_$i", dt)
+      }
+    )
+
+    // 8) Start processing.
+    child.executeColumnar().mapPartitions { inputIter =>
+      val context = TaskContext.get()
+      val queue: BatchQueue = new BatchQueue()
+
+      // TODO input iterator transformation
+      val projectedIterator = Iterator.empty
+
+      if (isPythonOnGpuEnabled) {
+        GpuPythonHelper.injectGpuInfo(pyFuncs, isPythonOnGpuEnabled)
+        PythonWorkerSemaphore.acquireIfNecessary(TaskContext.get())
+      }
+      var targetReadBatchSize = 1
+      val outputBatchIterator = new GpuArrowPythonRunner(
+        pyFuncs,
+        PythonEvalType.SQL_WINDOW_AGG_PANDAS_UDF,
+        argOffsets,
+        pythonInputSchema,
+        sessionLocalTimeZone,
+        pythonRunnerConf,
+        /* The whole group data should be written in a single call, so here is unlimited */
+        Int.MaxValue,
+        () => queue.finish()){
+        override def minReadTargetBatchSize: Int = targetReadBatchSize
+      }.compute(projectedIterator, context.partitionId(), context)
+
+
+      new Iterator[ColumnarBatch] {
+        // for hasNext we are waiting on the queue to have something inserted into it
+        // instead of waiting for a result to be ready from python. The reason for this
+        // is to let us know the target number of rows in the batch that we want when reading.
+        // It is a bit hacked up but it works. In the future when we support spilling we should
+        // store the number of rows separate from the batch. That way we can get the target batch
+        // size out without needing to grab the GpuSemaphore which we cannot do if we might block
+        // on a read operation.
+        override def hasNext: Boolean = queue.hasNext
+
+        private [this] def combine(origBatch: ColumnarBatch, table: Table): ColumnarBatch = {
+          val lColumns = GpuColumnVector.extractColumns(origBatch)
+          val rColumns = GpuColumnVector.extractColumns(table)
+          new ColumnarBatch(lColumns.map(_.incRefCount()) ++ rColumns.map(_.incRefCount()),
+            origBatch.numRows())
+        }
+
+        override def next(): ColumnarBatch = {
+          val numRows = queue.peekBatchSize
+          // This is a bit of a hack, but it lets us set what we want to read without
+          // copying/rewriting a lot of the abstraction that spark has in place.
+          targetReadBatchSize = numRows
+          withResource(outputBatchIterator.next()) { cb =>
+            withResource(GpuColumnVector.from(cb)) { fromPython =>
+              assert(fromPython.getRowCount == numRows)
+              withResource(queue.remove()) { origBatch =>
+                numOutputBatches += 1
+                numOutputRows += numRows
+                combine(origBatch, fromPython)
+              }
+            }
+          }
+        }
+
+      } // End of new Iterator
+    } // End of mapPartitions
+  } // End of doExecuteColumnar
+
+}

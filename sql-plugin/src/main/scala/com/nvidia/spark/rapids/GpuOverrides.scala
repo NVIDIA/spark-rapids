@@ -1951,6 +1951,11 @@ object GpuOverrides {
         " running the Python UDFs code on GPU when calling cuDF APIs in the UDF",
       (flatCoPy, conf, p, r) => new GpuFlatMapCoGroupsInPandasExecMeta(flatCoPy, conf, p, r))
         .disabledByDefault("Performance is not ideal now"),
+    GpuOverrides.exec[WindowInPandasExec](
+      "The backend for Pandas UDF with window functions, it runs on CPU itself now but" +
+        " supports running the Python UDFs code on GPU when calling cuDF APIs in the UDF",
+      (winPy, conf, p, r) => new GpuWindowInPandasExecMeta(winPy, conf, p, r))
+      .disabledByDefault("Performance is not ideal now"),
     neverReplaceExec[AlterNamespaceSetPropertiesExec]("Namespace metadata operation"),
     neverReplaceExec[CreateNamespaceExec]("Namespace metadata operation"),
     neverReplaceExec[DescribeNamespaceExec]("Namespace metadata operation"),
