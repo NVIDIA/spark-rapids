@@ -321,7 +321,7 @@ public class GpuColumnVector extends GpuColumnVectorBase {
     boolean success = false;
     try {
       for (int i = startColIndex; i < untilColIndex; i++) {
-        columns[finalLoc] = from(colTypes.get(i), table.getColumn(i).incRefCount());
+        columns[finalLoc] = from(table.getColumn(i).incRefCount(), colTypes.get(i));
         finalLoc++;
       }
       long rows = table.getRowCount();
@@ -351,7 +351,7 @@ public class GpuColumnVector extends GpuColumnVectorBase {
     return new GpuColumnVector(getSparkType(cudfCv.getType()), cudfCv);
   }
 
-  public static final GpuColumnVector from(DataType type, ai.rapids.cudf.ColumnVector cudfCv) {
+  public static final GpuColumnVector from(ai.rapids.cudf.ColumnVector cudfCv, DataType type) {
     return new GpuColumnVector(type, cudfCv);
   }
 

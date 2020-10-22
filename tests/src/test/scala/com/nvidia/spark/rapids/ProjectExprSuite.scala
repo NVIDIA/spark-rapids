@@ -48,4 +48,11 @@ class ProjectExprSuite extends SparkQueryCompareTestSuite {
     conf = forceHostColumnarToGpu()) {
     frame => frame.select("time")
   }
+
+  testSparkResultsAreEqual("getMapValue", frameFromParquet("map_of_strings.snappy.parquet")) {
+    frame =>
+      val res = frame.selectExpr("mapField['foo']")
+      res.explain()
+      res
+  }
 }
