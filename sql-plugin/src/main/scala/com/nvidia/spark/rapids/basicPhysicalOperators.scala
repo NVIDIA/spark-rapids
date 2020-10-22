@@ -146,8 +146,7 @@ case class GpuFilterExec(condition: Expression, child: SparkPlan)
   /**
    * Potentially a lot is removed.
    */
-  override def coalesceAfter: Boolean =
-    !child.expressions.exists(expr => expr.dataType.isInstanceOf[MapType])
+  override def coalesceAfter: Boolean = true
 
   // If one expression and its children are null intolerant, it is null intolerant.
   private def isNullIntolerant(expr: Expression): Boolean = expr match {
