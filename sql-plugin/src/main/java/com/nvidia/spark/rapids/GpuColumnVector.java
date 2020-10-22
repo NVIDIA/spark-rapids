@@ -205,34 +205,6 @@ public class GpuColumnVector extends GpuColumnVectorBase {
     }
   }
 
-
-  static final <T> DataType getSparkType(ColumnViewAccess<T> columnViewAccess) {
-    switch (columnViewAccess.getDataType()) {
-      case BOOL8:
-        return DataTypes.BooleanType;
-      case INT8:
-        return DataTypes.ByteType;
-      case INT16:
-        return DataTypes.ShortType;
-      case INT32:
-        return DataTypes.IntegerType;
-      case INT64:
-        return DataTypes.LongType;
-      case FLOAT32:
-        return DataTypes.FloatType;
-      case FLOAT64:
-        return DataTypes.DoubleType;
-      case TIMESTAMP_DAYS:
-        return DataTypes.DateType;
-      case TIMESTAMP_MICROSECONDS:
-        return DataTypes.TimestampType;
-      case STRING:
-        return DataTypes.StringType;
-      default:
-        throw new IllegalArgumentException(columnViewAccess.getDataType() + " is not supported by spark yet.");
-    }
-  }
-
   /**
    * Create an empty batch from the given format.  This should be used very sparingly because
    * returning an empty batch from an operator is almost always the wrong thing to do.
@@ -376,7 +348,7 @@ public class GpuColumnVector extends GpuColumnVectorBase {
    * but not both.
    */
   public static final GpuColumnVector from(ai.rapids.cudf.ColumnVector cudfCv) {
-    return new GpuColumnVector(getSparkType(cudfCv), cudfCv);
+    return new GpuColumnVector(getSparkType(cudfCv.getType()), cudfCv);
   }
 
   public static final GpuColumnVector from(DataType type, ai.rapids.cudf.ColumnVector cudfCv) {

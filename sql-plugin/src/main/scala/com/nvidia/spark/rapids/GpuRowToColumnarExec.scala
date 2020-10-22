@@ -262,6 +262,7 @@ private object GpuRowToColumnConverter {
     }
   }
 
+  // ONLY supports Map(String, String)
   private case object MapConverter
     extends VariableWidthTypeConverter {
     override def append(row: SpecializedGetters,
