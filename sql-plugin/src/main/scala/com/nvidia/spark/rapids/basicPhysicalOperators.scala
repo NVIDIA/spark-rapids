@@ -30,10 +30,7 @@ import org.apache.spark.sql.execution.{LeafExecNode, SparkPlan, UnaryExecNode}
 import org.apache.spark.sql.execution.metric.SQLMetric
 import org.apache.spark.sql.rapids.GpuPredicateHelper
 import org.apache.spark.sql.rapids.execution.TrampolineUtil
-import org.apache.spark.sql.types.{DataType, MapType}
 import org.apache.spark.sql.vectorized.{ColumnarBatch, ColumnVector}
-
-import collection.JavaConverters._
 
 object GpuProjectExec {
   def projectAndClose[A <: Expression](cb: ColumnarBatch, boundExprs: Seq[A],
@@ -122,6 +119,7 @@ object GpuFilter extends Arm {
     var tbl: cudf.Table = null
     var filtered: cudf.Table = null
     try {
+      import collection.JavaConverters._
       filterConditionCv = boundCondition.columnarEval(batch).asInstanceOf[GpuColumnVector]
       tbl = GpuColumnVector.from(batch)
       val colTypes =

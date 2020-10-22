@@ -18,11 +18,8 @@ package com.nvidia.spark.rapids.shims.spark300
 
 import java.time.ZoneId
 
-import scala.collection.JavaConverters._
-
-import com.nvidia.spark.rapids.GpuOverrides.isSupportedType
-
 import com.nvidia.spark.rapids._
+import com.nvidia.spark.rapids.GpuOverrides.isSupportedType
 import com.nvidia.spark.rapids.spark300.RapidsShuffleManager
 
 import org.apache.spark.SparkEnv

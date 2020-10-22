@@ -16,6 +16,8 @@
 
 package com.nvidia.spark.rapids
 
+import scala.collection.mutable.ArrayBuffer
+
 import ai.rapids.cudf.{NvtxColor, NvtxRange}
 import ai.rapids.cudf.HostColumnVector.StructData
 import com.nvidia.spark.rapids.GpuColumnVector.GpuColumnarBatchBuilder
@@ -33,9 +35,6 @@ import org.apache.spark.sql.execution.metric.{SQLMetric, SQLMetrics}
 import org.apache.spark.sql.rapids.execution.TrampolineUtil
 import org.apache.spark.sql.types._
 import org.apache.spark.sql.vectorized.ColumnarBatch
-
-import scala.collection.JavaConverters._
-import scala.collection.mutable.ArrayBuffer
 
 private class GpuRowToColumnConverter(schema: StructType) extends Serializable {
   private val converters = schema.fields.map {
@@ -267,6 +266,7 @@ private object GpuRowToColumnConverter {
     extends VariableWidthTypeConverter {
     override def append(row: SpecializedGetters,
       column: Int, builder: ai.rapids.cudf.HostColumnVector.ColumnBuilder): Long = {
+      import scala.collection.JavaConverters._
       val m = row.getMap(column)
       val numElements = m.numElements()
       val srcKeys = m.keyArray()

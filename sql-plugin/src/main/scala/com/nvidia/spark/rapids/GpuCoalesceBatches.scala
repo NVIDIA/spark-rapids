@@ -369,6 +369,7 @@ abstract class AbstractGpuCoalesceIterator(
   }
 }
 
+// Remove this iterator when contiguous_split supports nested types
 class GpuCoalesceIteratorForMaps(iter: Iterator[ColumnarBatch],
   schema: StructType,
   goal: CoalesceGoal,
