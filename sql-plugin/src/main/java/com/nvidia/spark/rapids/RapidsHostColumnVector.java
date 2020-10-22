@@ -159,7 +159,7 @@ public final class RapidsHostColumnVector extends ColumnVector {
 
   @Override
   public byte[] getBinary(int rowId) {
-    return cudfCv.getByteList(rowId);
+    return cudfCv.getBytesFromList(rowId);
   }
 
   @Override

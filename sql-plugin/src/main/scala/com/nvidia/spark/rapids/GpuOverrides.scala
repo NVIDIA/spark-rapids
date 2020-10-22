@@ -396,7 +396,6 @@ object GpuOverrides {
 
   def isSupportedType(dataType: DataType): Boolean = dataType match {
       case BooleanType => true
-      case BinaryType => true
       case ByteType => true
       case ShortType => true
       case IntegerType => true
@@ -518,6 +517,11 @@ object GpuOverrides {
       (a, conf, p, r) => new UnaryExprMeta[Alias](a, conf, p, r) {
         override def convertToGpu(child: Expression): GpuExpression =
           GpuAlias(child, a.name)(a.exprId, a.qualifier, a.explicitMetadata)
+
+        override def areAllSupportedTypes(types: DataType*): Boolean = types.forall {
+          case BinaryType => true
+          case x => isSupportedType(x)
+        }
       }),
     expr[AttributeReference](
       "References an input column",
@@ -531,7 +535,12 @@ object GpuOverrides {
     expr[Cast](
       "Convert a column of one type of data into another type",
       (cast, conf, p, r) => new CastExprMeta[Cast](cast, SparkSession.active.sessionState.conf
-        .ansiEnabled, conf, p, r)),
+        .ansiEnabled, conf, p, r){
+        override def areAllSupportedTypes(types: DataType*): Boolean = types.forall {
+          case BinaryType => true
+          case x => isSupportedType(x)
+        }
+      }),
     expr[AnsiCast](
       "Convert a column of one type of data into another type",
       (cast, conf, p, r) => new CastExprMeta[AnsiCast](cast, true, conf, p, r)),
@@ -1339,6 +1348,17 @@ object GpuOverrides {
         override def convertToGpu(): GpuExpression = GpuInputFileBlockLength()
       }
     ),
+    expr[Md5] (
+      "MD5 hash operator",
+      (a, conf, p, r) => new UnaryExprMeta[Md5](a, conf, p, r) {
+        override def convertToGpu(child: Expression): GpuExpression = GpuMd5(child)
+
+        override def areAllSupportedTypes(types: DataType*): Boolean = types.forall {
+            case BinaryType => true
+            case x => isSupportedType(x)
+        }
+      }
+    ),
     expr[Upper](
       "String uppercase operator",
       (a, conf, p, r) => new UnaryExprMeta[Upper](a, conf, p, r) {
@@ -1676,6 +1696,11 @@ object GpuOverrides {
         new SparkPlanMeta[ProjectExec](proj, conf, p, r) {
           override def convertToGpu(): GpuExec =
             GpuProjectExec(childExprs.map(_.convertToGpu()), childPlans(0).convertIfNeeded())
+
+          override def areAllSupportedTypes(types: DataType*): Boolean = types.forall {
+             case BinaryType => true
+             case x => isSupportedType(x)
+          }
         }
       }),
     exec[RangeExec](
