@@ -26,9 +26,7 @@ import org.apache.spark.storage.ShuffleBlockBatchId
 
 class RapidsShuffleServerSuite extends RapidsShuffleTestHelper {
 
-  def setupMocks(
-      deviceBuffers: Seq[DeviceMemoryBuffer],
-      numRows: Long): (RapidsShuffleRequestHandler,
+  def setupMocks(deviceBuffers: Seq[DeviceMemoryBuffer]): (RapidsShuffleRequestHandler,
       Seq[RapidsBuffer], util.HashMap[RapidsBuffer, Int]) = {
 
     val numCloses = new util.HashMap[RapidsBuffer, Int]()
@@ -97,7 +95,7 @@ class RapidsShuffleServerSuite extends RapidsShuffleTestHelper {
       withResource((0 until 10).map(_ => DeviceMemoryBuffer.allocate(1000))) { deviceBuffers =>
         val receiveSide = deviceBuffers.map(b => new MockBlockWithSize(b))
         val receiveWindow = new WindowedBlockIterator[MockBlockWithSize](receiveSide, 10000)
-        val (handler, mockBuffers, numCloses) = setupMocks(deviceBuffers, 100000)
+        val (handler, mockBuffers, numCloses) = setupMocks(deviceBuffers)
         withResource(new BufferSendState(mockTransferRequest, bounceBuffer, handler)) { bss =>
           assert(bss.hasNext)
           val alt = bss.next()
@@ -126,7 +124,7 @@ class RapidsShuffleServerSuite extends RapidsShuffleTestHelper {
       withResource((0 until 20).map(_ => DeviceMemoryBuffer.allocate(1000))) { deviceBuffers =>
         val receiveSide = deviceBuffers.map(b => new MockBlockWithSize(b))
         val receiveWindow = new WindowedBlockIterator[MockBlockWithSize](receiveSide, 10000)
-        val (handler, mockBuffers, numCloses) = setupMocks(deviceBuffers, 100000)
+        val (handler, mockBuffers, numCloses) = setupMocks(deviceBuffers)
         withResource(new BufferSendState(mockTransferRequest, bounceBuffer, handler)) { bss =>
           var buffs = bss.next()
           var receiveBlocks = receiveWindow.next()
@@ -157,12 +155,12 @@ class RapidsShuffleServerSuite extends RapidsShuffleTestHelper {
 
     val bb = closeOnExcept(getSendBounceBuffer(10000)) { bounceBuffer =>
       withResource((0 until 20).map(_ => DeviceMemoryBuffer.allocate(123000))) { deviceBuffers =>
-        val (handler, mockBuffers, numCloses) = setupMocks(deviceBuffers, 100000)
+        val (handler, mockBuffers, numCloses) = setupMocks(deviceBuffers)
 
         val receiveSide = deviceBuffers.map(b => new MockBlockWithSize(b))
         val receiveWindow = new WindowedBlockIterator[MockBlockWithSize](receiveSide, 10000)
         withResource(new BufferSendState(mockTransferRequest, bounceBuffer, handler)) { bss =>
-          (0 until 246).foreach { i =>
+          (0 until 246).foreach { _ =>
             try {
               bss.next()
               val receiveBlocks = receiveWindow.next()

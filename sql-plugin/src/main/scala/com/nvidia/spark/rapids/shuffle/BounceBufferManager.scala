@@ -29,18 +29,17 @@ import org.apache.spark.internal.Logging
  * back into the corresponding source `BounceBufferManager`
  *
  * @param buffer - cudf MemoryBuffer to be used as a bounce buffer
- * @param freeFn - a function that can return the buffer to the manager
  */
-class BounceBuffer(val buffer: MemoryBuffer,
-    freeFn: BounceBuffer => Unit) extends AutoCloseable {
-
+abstract class BounceBuffer(val buffer: MemoryBuffer) extends AutoCloseable {
   var isClosed = false
+
+  def free(bb: BounceBuffer): Unit
 
   override def close(): Unit = {
     if (isClosed) {
       throw new IllegalStateException("Bounce buffer closed too many times")
     }
-    freeFn(this)
+    free(this)
     isClosed = true
   }
 }
@@ -48,7 +47,7 @@ class BounceBuffer(val buffer: MemoryBuffer,
 /**
  * This class can hold 1 or 2 `BounceBuffer`s and is only used in the send case.
  *
- * Ideally, the device buffer is used if most of the buffers to be sent are on
+ * Ideally, the device buffer is used if most of the data to be sent is on
  * the device. The host buffer is used in the opposite case.
  *
  * @param deviceBounceBuffer - device buffer to use for sends
@@ -86,6 +85,12 @@ class BounceBufferManager[T <: MemoryBuffer](
   extends AutoCloseable
   with Logging {
 
+  class BounceBufferImpl(buff: MemoryBuffer) extends BounceBuffer(buff) {
+    override def free(bb: BounceBuffer): Unit = {
+      freeBuffer(bb)
+    }
+  }
+
   private[this] val freeBufferMap = new util.BitSet(numBuffers)
 
   private[this] val rootBuffer = allocator(bufferSize * numBuffers)
@@ -109,7 +114,7 @@ class BounceBufferManager[T <: MemoryBuffer](
     logDebug(s"$poolName: Buffer index: ${bufferIndex}")
     freeBufferMap.clear(bufferIndex)
     val res = rootBuffer.slice(bufferIndex * bufferSize, bufferSize)
-    new BounceBuffer(res, this.freeBuffer)
+    new BounceBufferImpl(res)
   }
 
   private def numFree(): Int = synchronized {

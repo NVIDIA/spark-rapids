@@ -18,12 +18,16 @@ package com.nvidia.spark.rapids.shuffle
 
 import java.util.concurrent.{ConcurrentLinkedQueue, Executor}
 
+import scala.collection.mutable.ArrayBuffer
+
 import ai.rapids.cudf.{Cuda, NvtxColor, NvtxRange}
-import com.nvidia.spark.rapids._
-import com.nvidia.spark.rapids.format.{TableMeta, TransferRequest}
+import com.nvidia.spark.rapids.{Arm, RapidsBuffer, RapidsConf, ShuffleMetadata}
+import com.nvidia.spark.rapids.RapidsPluginImplicits._
+import com.nvidia.spark.rapids.format.TableMeta
 
 import org.apache.spark.internal.Logging
 import org.apache.spark.storage.{BlockManagerId, ShuffleBlockBatchId}
+
 
 /**
  * Trait used for the server to get buffer metadata (for metadata requests), and
@@ -71,7 +75,7 @@ class RapidsShuffleServer(transport: RapidsShuffleTransport,
                           exec: Executor,
                           copyExec: Executor,
                           bssExec: Executor,
-                          rapidsConf: RapidsConf) extends AutoCloseable with Logging {
+                          rapidsConf: RapidsConf) extends AutoCloseable with Logging with Arm {
   /**
    * On close, this is set to false to indicate that the server is shutting down.
    */
@@ -173,58 +177,36 @@ class RapidsShuffleServer(transport: RapidsShuffleTransport,
    */
   bssExec.execute(() => {
     while (started) {
-      var bssContinue: BufferSendState = null
-      var bssToIssue = Seq[BufferSendState]()
+      val bssToIssue = new ArrayBuffer[BufferSendState]()
       try {
-        bssContinue = bssContinueQueue.peek()
+        var bssContinue = bssContinueQueue.poll()
         while (bssContinue != null) {
-          bssExec.synchronized {
-            bssContinueQueue.remove(bssContinue)
-            bssToIssue = bssToIssue :+ bssContinue
-            bssContinue = bssContinueQueue.peek()
+          bssToIssue.append(bssContinue)
+          bssContinue = bssContinueQueue.poll()
+        }
+
+        var continue = true
+        while (!pendingTransfersQueue.isEmpty && continue) {
+          // TODO: throttle on too big a send total so we don't acquire the world (in flight limit)
+          val sendBounceBuffers =
+            transport.tryGetSendBounceBuffers(1, 1)
+          if (sendBounceBuffers.nonEmpty) {
+            val pendingTransfer = pendingTransfersQueue.poll()
+            bssToIssue.append(new BufferSendState(
+              pendingTransfer.metaRequest,
+              sendBounceBuffers.head, // there's only one bounce buffer here for now
+              pendingTransfer.requestHandler,
+              serverStream))
+          } else {
+            // TODO: make this a metric => "blocked while waiting on bounce buffers"
+            logTrace(s"Can't acquire send bounce buffers")
+            continue = false
           }
         }
       } catch {
         case t: Throwable => {
-          logError("Error while handling BufferSendState", t)
-          if (bssContinue != null) {
-            bssContinue.close()
-            bssContinue = null
-          }
-        }
-      }
-
-      var pendingTransfer: PendingTransferResponse = null
-      pendingTransfer = pendingTransfersQueue.peek()
-      var continue = true
-      while (pendingTransfer != null && continue) {
-        // TODO: throttle on too big a send total so we don't acquire the world (in flight limit)
-        bssExec.synchronized {
-          val sendBounceBuffers =
-            transport.tryGetSendBounceBuffers(1, 1)
-          try {
-            if (sendBounceBuffers.nonEmpty) {
-              pendingTransfersQueue.remove(pendingTransfer)
-              bssToIssue = bssToIssue :+ new BufferSendState(
-                pendingTransfer.metaRequest,
-                sendBounceBuffers.head, // there's only one bounce buffer here for now
-                pendingTransfer.requestHandler,
-                serverStream)
-              pendingTransfer = pendingTransfersQueue.peek()
-            } else {
-              // TODO: make this a metric => "blocked while waiting on bounce buffers"
-              logTrace(s"Can't acquire send bounce buffers")
-              continue = false
-            }
-          } catch {
-            case t: Throwable => {
-              logError("Error while handling BufferSendState", t)
-              if (pendingTransfer != null) {
-                sendBounceBuffers.foreach(_.close())
-                pendingTransfer = null
-              }
-            }
-          }
+          bssToIssue.safeClose(t)
+          throw t
         }
       }
 
@@ -233,7 +215,9 @@ class RapidsShuffleServer(transport: RapidsShuffleTransport,
       }
 
       bssExec.synchronized {
-        bssExec.wait(100)
+        if (bssContinueQueue.isEmpty && pendingTransfersQueue.isEmpty) {
+          bssExec.wait(100)
+        }
       }
     }
   })
@@ -267,10 +251,9 @@ class RapidsShuffleServer(transport: RapidsShuffleTransport,
             doHandleMeta(tx, metaRequest)
           } else {
             val pendingTransfer = PendingTransferResponse(metaRequest, requestHandler)
-            pendingTransfersQueue.add(pendingTransfer)
-
             // tell the bssExec to wake up to try to handle the new BufferSendState
             bssExec.synchronized {
+              pendingTransfersQueue.add(pendingTransfer)
               bssExec.notifyAll()
             }
             logDebug(s"Got a transfer request ${pendingTransfer} from ${tx}. " +
@@ -391,24 +374,20 @@ class RapidsShuffleServer(transport: RapidsShuffleTransport,
    */
   def doHandleTransferRequest(bufferSendStates: Seq[BufferSendState]): Unit = {
     val bssBuffers = bufferSendStates.map { bufferSendState =>
-      val doHandleTransferRequest =
-        new NvtxRange(s"doHandleTransferRequest", NvtxColor.CYAN)
+      withResource(new NvtxRange(s"doHandleTransferRequest", NvtxColor.CYAN)) { _ =>
+        try {
+          require(bufferSendState.hasNext, "Attempting to handle a complete transfer request.")
 
-      try {
-        require(bufferSendState.hasNext, "Attempting to handle a complete transfer request.")
+          // For each `BufferSendState` we ask for a bounce buffer fill up
+          // so the server is servicing N (`bufferSendStates`) requests
+          val buffersToSend = bufferSendState.next()
 
-        // For each `BufferSendState` we ask for a bounce buffer fill up
-        // so the server is servicing N (`bufferSendStates`) requests
-        val buffersToSend = bufferSendState.next()
-
-        (bufferSendState, buffersToSend)
-      } catch {
-        case t: Throwable =>
-          logError("Error handling shuffle send", t)
-          bufferSendState.close()
-          throw t
-      } finally {
-        doHandleTransferRequest.close()
+          (bufferSendState, buffersToSend)
+        } catch {
+          case t: Throwable =>
+            bufferSendState.close()
+            throw t
+        }
       }
     }
 
@@ -449,12 +428,11 @@ class RapidsShuffleServer(transport: RapidsShuffleTransport,
                   transferResponseTx.close()
                 })
 
+              // wake up the bssExec since bounce buffers became available
               logDebug(s"Buffer send state ${buffersToSend.tag} is done. Closing. " +
                   s"Still pending: ${pendingTransfersQueue.size}.")
-              bufferSendState.close()
-
-              // wake up the bssExec since bounce buffers became available
               bssExec.synchronized {
+                bufferSendState.close()
                 bssExec.notifyAll()
               }
             }

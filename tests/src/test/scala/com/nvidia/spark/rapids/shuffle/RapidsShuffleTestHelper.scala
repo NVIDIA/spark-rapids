@@ -69,9 +69,11 @@ class RapidsShuffleTestHelper extends FunSuite
       fillBuffer(hmb)
       val db = DeviceMemoryBuffer.allocate(size)
       db.copyFromHostBuffer(hmb)
-      new BounceBuffer(db, _ => {
-        db.close()
-      })
+      new BounceBuffer(db) {
+        override def free(bb: BounceBuffer): Unit = {
+          db.close()
+        }
+      }
     }
   }
 
@@ -102,9 +104,11 @@ class RapidsShuffleTestHelper extends FunSuite
 
   def getSendBounceBuffer(size: Long): SendBounceBuffers = {
     val db = DeviceMemoryBuffer.allocate(size)
-    SendBounceBuffers(new BounceBuffer(db, _ => {
-      db.close()
-    }), None)
+    SendBounceBuffers(new BounceBuffer(db) {
+      override def free(bb: BounceBuffer): Unit = {
+        db.close()
+      }
+    }, None)
   }
 
   override def beforeEach(): Unit = {
@@ -199,9 +203,7 @@ object RapidsShuffleTestHelper extends MockitoSugar with Arm {
 
   def mockTableMeta(numRows: Long): TableMeta =
     withMockContiguousTable(numRows) { ct =>
-      val tableMeta = buildMockTableMeta(1, ct)
-      val bufferMeta = tableMeta.bufferMeta()
-      tableMeta
+      buildMockTableMeta(1, ct)
     }
 
   def prepareMetaTransferResponse(

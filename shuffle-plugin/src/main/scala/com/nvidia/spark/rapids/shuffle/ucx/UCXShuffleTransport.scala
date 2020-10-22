@@ -23,7 +23,7 @@ import java.util.concurrent._
 import scala.collection.mutable
 import scala.collection.mutable.ArrayBuffer
 
-import ai.rapids.cudf.{Cuda, DeviceMemoryBuffer, HostMemoryBuffer, MemoryBuffer, NvtxColor, NvtxRange}
+import ai.rapids.cudf.{DeviceMemoryBuffer, HostMemoryBuffer, MemoryBuffer, NvtxColor, NvtxRange}
 import com.google.common.util.concurrent.ThreadFactoryBuilder
 import com.nvidia.spark.rapids.{GpuDeviceManager, RapidsConf}
 import com.nvidia.spark.rapids.shuffle._
@@ -154,7 +154,7 @@ class UCXShuffleTransport(shuffleServerId: BlockManagerId, rapidsConf: RapidsCon
     // a monitor
     deviceReceiveBuffMgr.onFree(() => {
       inflightMonitor.synchronized {
-        inflightMonitor.notify()
+        inflightMonitor.notifyAll()
       }
     })
 
@@ -326,11 +326,11 @@ class UCXShuffleTransport(shuffleServerId: BlockManagerId, rapidsConf: RapidsCon
   /**
    * Updates the inflightSize by adding the `neededAmount`
    * @param neededAmount amount of bytes needed.
-   * @note This function is called only after a successful call to `wouldFit`. It also
-   *       calls `wouldFit` as a sanity check.
+   * @note This function is called only after a successful call to `wouldFitInFlightLimit`. It also
+   *       calls `wouldFitInFlightLimit` as a sanity check.
    */
   private def markBytesInFlight(neededAmount: Long): Unit = {
-    require(wouldFit(neededAmount),
+    require(wouldFitInFlightLimit(neededAmount),
       s"Inflight limit can't allow this size $neededAmount of request")
     inflightSize = inflightSize + neededAmount
   }
@@ -342,7 +342,7 @@ class UCXShuffleTransport(shuffleServerId: BlockManagerId, rapidsConf: RapidsCon
    * @param neededAmount amount of bytes needed
    * @return true if `neededAmount` would be allowed in the throttle
    */
-  private def wouldFit(neededAmount: Long): Boolean = {
+  private def wouldFitInFlightLimit(neededAmount: Long): Boolean = {
     inflightSize + neededAmount <= inflightLimit || inflightSize == 0
   }
 
@@ -406,7 +406,7 @@ class UCXShuffleTransport(shuffleServerId: BlockManagerId, rapidsConf: RapidsCon
             val altListIter = altList.iterator()
             var req = altListIter.next()
             while (req != null && keepAttempting) {
-              if (wouldFit(req.getLength)) {
+              if (wouldFitInFlightLimit(req.getLength)) {
                 val existingReq =
                   perClientReq.get(req.client)
                 if (existingReq.isEmpty) {
@@ -474,7 +474,7 @@ class UCXShuffleTransport(shuffleServerId: BlockManagerId, rapidsConf: RapidsCon
 
     inflightMonitor.synchronized {
       inflightStarted = false
-      inflightMonitor.notify()
+      inflightMonitor.notifyAll()
     }
 
     if (!exec.awaitTermination(500, TimeUnit.MILLISECONDS)) {

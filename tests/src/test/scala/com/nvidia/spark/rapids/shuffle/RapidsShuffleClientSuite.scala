@@ -408,7 +408,7 @@ class RapidsShuffleClientSuite extends RapidsShuffleTestHelper {
   def checkBuffer(
       source: HostMemoryBuffer,
       mockTable: TableMeta,
-      consumed: ConsumedBatchFromBounceBuffer) = {
+      consumed: ConsumedBatchFromBounceBuffer): Unit = {
     assertResult(mockTable.bufferMeta().size())(consumed.contigBuffer.getLength)
     assertResult(true)(
       areBuffersEqual(source, consumed.contigBuffer))
@@ -428,7 +428,7 @@ class RapidsShuffleClientSuite extends RapidsShuffleTestHelper {
   def endToEndTest(buff: BounceBuffer,
       expected: Seq[ExpectedTagAndMaterialized],
       ptrBuffs: Seq[(PendingTransferRequest, HostMemoryBuffer, TableMeta)]): Unit = {
-    withResource(ptrBuffs.map(_._2)) { case sources =>
+    withResource(ptrBuffs.map(_._2)) { sources =>
       withResource(new BufferReceiveState(buff, ptrBuffs.map(_._1))) { br =>
         val blocks = sources.map(x => new MockBlock(x))
         val sendWindow = new WindowedBlockIterator[MockBlock](blocks, 1000)
@@ -452,10 +452,9 @@ class RapidsShuffleClientSuite extends RapidsShuffleTestHelper {
             val consumed = br.consumeWindow()
             assertResult(materialized)(consumed.size)
             ranges.zip(consumed).foreach {
-              case (range: BlockRange[MockBlock], c: ConsumedBatchFromBounceBuffer) => {
+              case (range: BlockRange[MockBlock], c: ConsumedBatchFromBounceBuffer) =>
                 checkBuffer(range.block.hmb, c.meta, c)
                 c.contigBuffer.close()
-              }
             }
             assertResult(!isLast)(br.hasNext)
         }

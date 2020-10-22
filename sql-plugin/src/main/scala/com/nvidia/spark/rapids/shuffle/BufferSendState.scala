@@ -24,7 +24,7 @@ import com.nvidia.spark.rapids.format.{BufferMeta, BufferTransferRequest, Transf
 import org.apache.spark.internal.Logging
 
 /**
- * A helper case class to maintain the server side state in responde to a transfer
+ * A helper case class to maintain the server side state in response to a transfer
  * request initiated by a peer.
  *
  * The class implements the Iterator interface.
@@ -33,6 +33,10 @@ import org.apache.spark.internal.Logging
  * `AddressLengthTag` of the bounce buffer is returned. By convention, the tag used
  * is that of the first buffer contained in the payload. Buffers are copied to the bounce
  * buffer in TransferRequest order. The receiver has the same conventions.
+ *
+ * Synchronization with `serverStream` is outside of this class. It is assumed that the caller
+ * has several `BufferSendState` iterators and on calling next on this collection, it will
+ * perform a sync on `serverStream` before handing it off to the transport.
  *
  * It also is AutoCloseable. close() should be called to free bounce buffers.
  *
@@ -53,31 +57,33 @@ class BufferSendState(
     serverStream: Cuda.Stream = Cuda.DEFAULT_STREAM)
     extends Iterator[AddressLengthTag] with AutoCloseable with Logging with Arm {
 
-  class SendBlock(val bufferTransferRequest: BufferTransferRequest,
-      tableSize: Long) extends BlockWithSize {
+  class SendBlock(val bufferId: Int,
+      val tag: Long, tableSize: Long) extends BlockWithSize {
     override def size: Long = tableSize
-    def tag: Long = bufferTransferRequest.tag()
   }
 
   private[this] val transferRequest = ShuffleMetadata.getTransferRequest(request.getBuffer())
-  private[this] var bufferMetas = Seq[BufferMeta]()
+  private[this] val bufferMetas = new Array[BufferMeta](transferRequest.requestsLength())
   private[this] var isClosed = false
 
-  private[this] val blocksToSend: Seq[SendBlock] =
-    (0 until transferRequest.requestsLength()).map { btr =>
-      val bufferTransferRequest = transferRequest.requests(btr)
+  private[this] val blocksToSend: Seq[SendBlock] = {
+    val btr = new BufferTransferRequest() // for reuse
+    (0 until transferRequest.requestsLength()).map { case ix  =>
+      val bufferTransferRequest = transferRequest.requests(btr, ix)
       withResource(requestHandler.acquireShuffleBuffer(
-          bufferTransferRequest.bufferId())) { table =>
-        bufferMetas = bufferMetas :+ table.meta.bufferMeta()
-        new SendBlock(bufferTransferRequest, table.size)
+        bufferTransferRequest.bufferId())) { table =>
+        bufferMetas(ix) = table.meta.bufferMeta()
+        new SendBlock(bufferTransferRequest.bufferId(),
+          bufferTransferRequest.tag(), table.size)
       }
+    }
   }
 
   private[this] val windowedBlockIterator =
     new WindowedBlockIterator[SendBlock](blocksToSend, sendBounceBuffers.bounceBufferSize)
 
   // when the window has been exhausted
-  private[this] var markedDone = false
+  private[this] var hasMoreBlocks = windowedBlockIterator.hasNext
 
   // take out the device and host bounce buffers from the `SendBounceBuffers` case class
   private[this] val deviceBounceBuffer: BounceBuffer =
@@ -94,7 +100,7 @@ class BufferSendState(
     transferRequest
   }
 
-  def hasNext: Boolean = synchronized { !markedDone }
+  def hasNext: Boolean = synchronized { hasMoreBlocks }
 
   private[this] def freeBounceBuffers(): Unit = {
     sendBounceBuffers.close()
@@ -106,7 +112,9 @@ class BufferSendState(
   }
 
   override def close(): Unit = synchronized {
-    require(markedDone)
+    if (hasMoreBlocks) {
+      logWarning("Closing BufferSendState but we still have more blocks!")
+    }
     if (isClosed){
       throw new IllegalStateException("ALREADY CLOSED!")
     }
@@ -130,18 +138,17 @@ class BufferSendState(
     var bounceBuffToUse: MemoryBuffer = null
     var buffOffset = 0L
 
-    val buffsToSend = try {
-      if (!markedDone) {
+    val buffsToSend = {
+      if (hasMoreBlocks) {
         var deviceBuffs = 0L
         var hostBuffs = 0L
         acquiredBuffs = blockRanges.safeMap { blockRange =>
-          val transferRequest =
-            blockRange.block.bufferTransferRequest
+          val bufferId = blockRange.block.bufferId
 
           // we acquire these buffers now, and keep them until the caller releases them
           // using `releaseAcquiredToCatalog`
           closeOnExcept(
-            requestHandler.acquireShuffleBuffer(transferRequest.bufferId())) { rapidsBuffer =>
+            requestHandler.acquireShuffleBuffer(bufferId)) { rapidsBuffer =>
             //these are closed later, after we synchronize streams
             rapidsBuffer.storageTier match {
               case StorageTier.DEVICE =>
@@ -201,17 +208,13 @@ class BufferSendState(
           blockRanges = windowedBlockIterator.next()
         } else {
           blockRanges = Seq.empty
-          markedDone = true
+          hasMoreBlocks = false
         }
 
         alt
       } else {
-        null
+        throw new NoSuchElementException("BufferSendState is already done, yet next was called")
       }
-    } catch {
-      case t: Throwable =>
-        logError("Error while copying to bounce buffers on send.", t)
-        throw t
     }
 
     logDebug(s"Sending ${buffsToSend} for transfer request, " +
@@ -225,7 +228,7 @@ class BufferSendState(
    * allowing us to safely return buffers to the catalog to be potentially freed if spilling.
    */
   def releaseAcquiredToCatalog(): Unit = synchronized {
-    require(acquiredBuffs.nonEmpty, "Told to close rapids buffers, but nothing was acquired")
+    logWarning("Told to close rapids buffers, but nothing was acquired")
     acquiredBuffs.foreach(_.close())
     acquiredBuffs = Seq.empty
   }

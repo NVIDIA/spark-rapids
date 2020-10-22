@@ -16,8 +16,12 @@
 
 package com.nvidia.spark.rapids.shuffle
 
+import scala.collection.mutable.ArrayBuffer
+
 import ai.rapids.cudf.{Cuda, CudaUtil, DeviceMemoryBuffer, NvtxColor, NvtxRange}
 import com.nvidia.spark.rapids.format.TableMeta
+import com.nvidia.spark.rapids.Arm
+import com.nvidia.spark.rapids.RapidsPluginImplicits._
 
 import org.apache.spark.internal.Logging
 
@@ -52,7 +56,7 @@ class BufferReceiveState(
     requests: Seq[PendingTransferRequest],
     stream: Cuda.Stream = Cuda.DEFAULT_STREAM)
     extends Iterator[AddressLengthTag]
-        with AutoCloseable with Logging {
+        with AutoCloseable with Logging with Arm {
 
   class ReceiveBlock(val request: PendingTransferRequest) extends BlockWithSize {
     override def size: Long = request.getLength
@@ -61,9 +65,7 @@ class BufferReceiveState(
 
   // flags whether we need to populate a window, and if the client should send a
   // transfer request
-  private[this] var firstTime = true
-
-  private[this] var markedAsDone = false
+  private[this] var iterated = false
 
   // block ranges we'll work on next
   private[this] var nextBlocks: Seq[BlockRange[ReceiveBlock]] = Seq.empty
@@ -76,24 +78,26 @@ class BufferReceiveState(
   private[this] var workingOn: DeviceMemoryBuffer = null
 
   // offset tracking
-  private[this] var workingOnSoFar: Long = 0L
+  private[this] var workingOnOffset: Long = 0L
   private[this] var bounceBufferByteOffset = 0L
 
   // get block ranges for us to work with
   private[this] val windowedBlockIterator = new WindowedBlockIterator[ReceiveBlock](
     requests.map(r => new ReceiveBlock(r)), bounceBuffer.buffer.getLength)
 
+  private[this] var hasMoreBuffers = windowedBlockIterator.hasNext
+
   def getRequests: Seq[PendingTransferRequest] = requests
 
-  def isFirstTime: Boolean = synchronized { firstTime }
+  def hasIterated: Boolean = synchronized { iterated }
 
   override def close(): Unit = synchronized {
     if (bounceBuffer != null) {
       bounceBuffer.close()
     }
     if (workingOn != null) {
-      throw new IllegalStateException(
-        s"BufferReceiveState closing, but there are unfinished batches")
+      logWarning(s"BufferReceiveState closing, but there are unfinished batches")
+      workingOn.close()
     }
   }
 
@@ -102,18 +106,20 @@ class BufferReceiveState(
    * @param errMsg - the message to pass onto the handlers
    */
   def errorOcurred(errMsg: String): Unit = {
-    // get handlers for blocks that are currently being worked
-    val currentHandlers = currentBlocks.map(_.block.request.handler)
-   // signal error to all handlers
-    currentHandlers.foreach(_.transferError(errMsg))
+    currentBlocks.foreach(_.block.request.handler.transferError(errMsg))
   }
 
-  override def hasNext: Boolean = synchronized { !markedAsDone }
+  override def hasNext: Boolean = synchronized { hasMoreBuffers }
 
   override def next(): AddressLengthTag = synchronized {
-    if (firstTime) {
+    if (!hasMoreBuffers) {
+      throw new NoSuchElementException(
+        "BufferReceiveState is done, yet received a call to next")
+    }
+
+    if (!iterated) {
       nextBlocks = windowedBlockIterator.next()
-      firstTime = false
+      iterated = true
     }
     currentBlocks = nextBlocks
 
@@ -126,7 +132,7 @@ class BufferReceiveState(
       nextBlocks = windowedBlockIterator.next()
     } else {
       nextBlocks = Seq.empty
-      markedAsDone = true
+      hasMoreBuffers = false
     }
     alt
   }
@@ -134,41 +140,56 @@ class BufferReceiveState(
   private def getFirstTag(blockRanges: Seq[BlockRange[ReceiveBlock]]): Long =
     blockRanges.head.block.tag
 
+  /**
+   * When a receive is complete, the client calls `consumeWindow` to copy out
+   * of the bounce buffer in this `BufferReceiveState` any complete batches, or to
+   * buffer up a remaining batch in `workingOn`
+   *
+   * @return - a sequence of batches that were successfully consumed, or an empty
+   *         sequence if still working on a batch.
+   */
   def consumeWindow(): Seq[ConsumedBatchFromBounceBuffer] = synchronized {
     val windowRange = new NvtxRange("consumeWindow", NvtxColor.PURPLE)
+    val toClose = new ArrayBuffer[DeviceMemoryBuffer]()
     try {
-      val results = currentBlocks.flatMap { case b =>
+      val results = currentBlocks.flatMap { b =>
         val pendingTransferRequest = b.block.request
 
         val fullSize = pendingTransferRequest.tableMeta.bufferMeta().size()
 
         var contigBuffer: DeviceMemoryBuffer = null
+
+        // Receive buffers are always in the device, and so it is safe to assume
+        // that they are `DeviceMemoryBuffer`s here.
         val deviceBounceBuffer = bounceBuffer.buffer.asInstanceOf[DeviceMemoryBuffer]
 
         if (fullSize == b.rangeSize()) {
           // we have the full buffer!
           contigBuffer = CudaUtil.deviceAllocateOnStream(b.rangeSize(), stream)
+          toClose.append(contigBuffer)
+
           contigBuffer.copyFromDeviceBufferAsync(0, deviceBounceBuffer,
-            bounceBufferByteOffset, b.rangeSize(), stream)
+              bounceBufferByteOffset, b.rangeSize(), stream)
         } else {
           if (workingOn != null) {
-            workingOn.copyFromDeviceBufferAsync(workingOnSoFar, deviceBounceBuffer,
+            workingOn.copyFromDeviceBufferAsync(workingOnOffset, deviceBounceBuffer,
               bounceBufferByteOffset, b.rangeSize(), stream)
 
-            workingOnSoFar += b.rangeSize()
-            if (workingOnSoFar == fullSize) {
+            workingOnOffset += b.rangeSize()
+            if (workingOnOffset == fullSize) {
               contigBuffer = workingOn
               workingOn = null
-              workingOnSoFar = 0
+              workingOnOffset = 0
             }
           } else {
             // need to keep it around
             workingOn = CudaUtil.deviceAllocateOnStream(fullSize, stream)
+            toClose.append(workingOn)
 
-            workingOn.copyFromDeviceBufferAsync( 0, deviceBounceBuffer,
+            workingOn.copyFromDeviceBufferAsync(0, deviceBounceBuffer,
               bounceBufferByteOffset, b.rangeSize(), stream)
 
-            workingOnSoFar += b.rangeSize()
+            workingOnOffset += b.rangeSize()
           }
         }
         bounceBufferByteOffset += b.rangeSize()
@@ -190,6 +211,10 @@ class BufferReceiveState(
       stream.sync()
 
       results
+    } catch {
+      case t: Throwable =>
+        toClose.safeClose(t)
+        throw t
     } finally {
       windowRange.close()
     }

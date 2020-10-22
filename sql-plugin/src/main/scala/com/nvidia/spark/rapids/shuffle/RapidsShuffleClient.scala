@@ -20,7 +20,7 @@ import java.util.concurrent.Executor
 
 import scala.collection.mutable.ArrayBuffer
 
-import ai.rapids.cudf.{DeviceMemoryBuffer, MemoryBuffer, NvtxColor, NvtxRange}
+import ai.rapids.cudf.{DeviceMemoryBuffer, NvtxColor, NvtxRange}
 import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.format.{MetadataResponse, TableMeta, TransferState}
 
@@ -302,7 +302,7 @@ class RapidsShuffleClient(
    *                           the transport's throttle logic.
    */
   private[shuffle] def doIssueBufferReceives(bufferReceiveState: BufferReceiveState): Unit = {
-    if (bufferReceiveState.isFirstTime) {
+    if (!bufferReceiveState.hasIterated) {
       sendTransferRequest(bufferReceiveState)
     }
     receiveBuffers(bufferReceiveState)
@@ -440,16 +440,9 @@ class RapidsShuffleClient(
 
       // hand buffer off to the catalog
       buffMetas.foreach { consumed: ConsumedBatchFromBounceBuffer =>
-        try {
-          val bId = track(consumed.contigBuffer, consumed.meta)
-          consumed.handler.batchReceived(bId.asInstanceOf[ShuffleReceivedBufferId])
-          transport.doneBytesInFlight(consumed.contigBuffer.getLength)
-        } catch {
-          case e: Throwable => {
-            logError(s"Error while handling: $consumed", e)
-            throw e
-          }
-        }
+        val bId = track(consumed.contigBuffer, consumed.meta)
+        consumed.handler.batchReceived(bId.asInstanceOf[ShuffleReceivedBufferId])
+        transport.doneBytesInFlight(consumed.contigBuffer.getLength)
       }
 
       logDebug(s"Received buffer size ${stats.receiveSize} in" +
