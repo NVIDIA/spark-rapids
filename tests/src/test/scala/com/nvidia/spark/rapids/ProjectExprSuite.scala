@@ -50,9 +50,6 @@ class ProjectExprSuite extends SparkQueryCompareTestSuite {
   }
 
   testSparkResultsAreEqual("getMapValue", frameFromParquet("map_of_strings.snappy.parquet")) {
-    frame =>
-      val res = frame.selectExpr("mapField['foo']")
-      res.explain()
-      res
+    frame => frame.selectExpr("mapField['foo']")
   }
 }
