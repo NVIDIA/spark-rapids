@@ -31,8 +31,14 @@ object BenchmarkRunner {
   def main(args: Array[String]): Unit = {
     val conf = new BenchmarkConf(args)
 
+    if (conf.appendDat() && !conf.benchmark().equalsIgnoreCase("tpcds")) {
+      System.err.println(
+        s"The --append-dat flag is not supported for benchmark ${conf.benchmark()}")
+      System.exit(-1)
+    }
+
     val benchmarks = Map(
-      "tpcds" -> TpcdsLikeBench,
+      "tpcds" -> new TpcdsLikeBench(conf.appendDat()),
       "tpch" -> TpchLikeBench,
       "tpcxbb" -> TpcxbbLikeBench
     )
@@ -249,6 +255,7 @@ class BenchmarkConf(arguments: Seq[String]) extends ScallopConf(arguments) {
   val benchmark = opt[String](required = true)
   val input = opt[String](required = true)
   val inputFormat = opt[String](required = true)
+  val appendDat = opt[Boolean](required = false, default = Some(false))
   val query = opt[String](required = true)
   val iterations = opt[Int](default = Some(3))
   val output = opt[String](required = false)

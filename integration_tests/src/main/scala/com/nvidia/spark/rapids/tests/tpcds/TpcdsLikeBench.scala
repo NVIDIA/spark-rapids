@@ -20,21 +20,21 @@ import com.nvidia.spark.rapids.tests.common.BenchmarkSuite
 
 import org.apache.spark.sql.{DataFrame, SparkSession}
 
-object TpcdsLikeBench extends BenchmarkSuite {
+class TpcdsLikeBench(val appendDat: Boolean) extends BenchmarkSuite {
   override def name(): String = "TPC-DS"
 
   override def shortName(): String = "tpcds"
 
   override def setupAllParquet(spark: SparkSession, path: String): Unit = {
-    TpcdsLikeSpark.setupAllParquet(spark, path)
+    TpcdsLikeSpark.setupAllParquet(spark, path, appendDat)
   }
 
   override def setupAllCSV(spark: SparkSession, path: String): Unit = {
-    TpcdsLikeSpark.setupAllCSV(spark, path)
+    TpcdsLikeSpark.setupAllCSV(spark, path, appendDat)
   }
 
   override def setupAllOrc(spark: SparkSession, path: String): Unit = {
-    TpcdsLikeSpark.setupAllOrc(spark, path)
+    TpcdsLikeSpark.setupAllOrc(spark, path, appendDat)
   }
 
   override def createDataFrame(spark: SparkSession, query: String): DataFrame = {
