@@ -448,6 +448,7 @@ case class GpuFileSourceScanExec(
       }
     }
     if (isPerFileReadEnabled) {
+      logInfo("Using the original per file parquet reader")
       ShimLoader.getSparkShims.getFileScanRDD(fsRelation.sparkSession, readFile.get, filePartitions)
     } else {
       // here we are making an optimization to read more then 1 file at a time on the CPU side
@@ -500,6 +501,7 @@ case class GpuFileSourceScanExec(
       FilePartition.getFilePartitions(relation.sparkSession, splitFiles, maxSplitBytes)
 
     if (isPerFileReadEnabled) {
+      logInfo("Using the original per file parquet reader")
       ShimLoader.getSparkShims.getFileScanRDD(fsRelation.sparkSession, readFile.get, partitions)
     } else {
       // here we are making an optimization to read more then 1 file at a time on the CPU side
