@@ -1291,6 +1291,9 @@ object GpuOverrides {
           if (count.children.size > 1) {
             willNotWorkOnGpu("count of multiple columns not supported")
           }
+          if (count.children.exists(expr => expr.dataType.isInstanceOf[MapType])) {
+            willNotWorkOnGpu("Count on MapType is not supported")
+          }
         }
 
         override def convertToGpu(): GpuExpression = GpuCount(childExprs.map(_.convertToGpu()))
@@ -1305,6 +1308,9 @@ object GpuOverrides {
               "will compute incorrect results. If it is known that there are no NaNs, set " +
               s" ${RapidsConf.HAS_NANS} to false.")
           }
+          if (max.children.exists(expr => expr.dataType.isInstanceOf[MapType])) {
+            willNotWorkOnGpu("Max on MapType is not supported")
+          }
         }
         override def convertToGpu(child: Expression): GpuExpression = GpuMax(child)
       }),
@@ -1317,6 +1323,9 @@ object GpuOverrides {
             willNotWorkOnGpu("Min aggregation on floating point columns that can contain NaNs " +
               "will compute incorrect results. If it is known that there are no NaNs, set " +
               s" ${RapidsConf.HAS_NANS} to false.")
+          }
+          if (a.children.exists(expr => expr.dataType.isInstanceOf[MapType])) {
+            willNotWorkOnGpu("Min on MapType is not supported")
           }
         }
         override def convertToGpu(child: Expression): GpuExpression = GpuMin(child)
@@ -1333,6 +1342,9 @@ object GpuOverrides {
               " once as part of the same query.  To enable this anyways set" +
               s" ${RapidsConf.ENABLE_FLOAT_AGG} to true.")
           }
+          if (a.children.exists(expr => expr.dataType.isInstanceOf[MapType])) {
+            willNotWorkOnGpu("Sum on MapType is not supported")
+          }
         }
 
         override def convertToGpu(child: Expression): GpuExpression = GpuSum(child)
@@ -1348,6 +1360,9 @@ object GpuOverrides {
               " This can cause some Spark queries to produce an incorrect answer if the value is" +
               " computed more than once as part of the same query. To enable this anyways set" +
               s" ${RapidsConf.ENABLE_FLOAT_AGG} to true")
+          }
+          if (a.children.exists(expr => expr.dataType.isInstanceOf[MapType])) {
+            willNotWorkOnGpu("Avg on MapType is not supported")
           }
         }
 
