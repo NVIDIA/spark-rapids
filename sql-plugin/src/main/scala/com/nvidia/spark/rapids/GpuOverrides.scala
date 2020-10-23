@@ -535,7 +535,7 @@ object GpuOverrides {
     expr[Cast](
       "Convert a column of one type of data into another type",
       (cast, conf, p, r) => new CastExprMeta[Cast](cast, SparkSession.active.sessionState.conf
-        .ansiEnabled, conf, p, r){
+        .ansiEnabled, conf, p, r) {
         override def areAllSupportedTypes(types: DataType*): Boolean = types.forall {
           case BinaryType => true
           case x => isSupportedType(x)
