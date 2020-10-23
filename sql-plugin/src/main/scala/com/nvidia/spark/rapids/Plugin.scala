@@ -21,7 +21,6 @@ import java.util.concurrent.atomic.{AtomicBoolean, AtomicReference}
 
 import scala.collection.JavaConverters._
 
-import ai.rapids.cudf.Cuda
 import com.nvidia.spark.rapids.python.PythonWorkerSemaphore
 
 import org.apache.spark.{SparkConf, SparkContext}
