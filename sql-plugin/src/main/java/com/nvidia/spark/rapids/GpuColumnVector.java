@@ -22,12 +22,14 @@ import ai.rapids.cudf.HostColumnVector;
 import ai.rapids.cudf.Scalar;
 import ai.rapids.cudf.Schema;
 import ai.rapids.cudf.Table;
+
 import org.apache.spark.sql.catalyst.expressions.Attribute;
 import org.apache.spark.sql.execution.vectorized.WritableColumnVector;
 import org.apache.spark.sql.types.*;
 import org.apache.spark.sql.vectorized.ColumnVector;
 import org.apache.spark.sql.vectorized.ColumnarBatch;
 
+import java.util.Arrays;
 import java.util.List;
 
 /**
@@ -39,7 +41,7 @@ import java.util.List;
 public class GpuColumnVector extends GpuColumnVectorBase {
 
   public static final class GpuColumnarBatchBuilder implements AutoCloseable {
-    private final ai.rapids.cudf.HostColumnVector.Builder[] builders;
+    private final ai.rapids.cudf.HostColumnVector.ColumnBuilder[] builders;
     private final StructField[] fields;
 
     /**
@@ -54,13 +56,12 @@ public class GpuColumnVector extends GpuColumnVectorBase {
     public GpuColumnarBatchBuilder(StructType schema, int rows, ColumnarBatch batch) {
       fields = schema.fields();
       int len = fields.length;
-      builders = new ai.rapids.cudf.HostColumnVector.Builder[len];
+      builders = new ai.rapids.cudf.HostColumnVector.ColumnBuilder[len];
       boolean success = false;
       try {
         for (int i = 0; i < len; i++) {
           StructField field = fields[i];
-          DType type = getRapidsType(field);
-          if (type == DType.STRING) {
+          if (field.dataType() instanceof StringType) {
             // If we cannot know the exact size, assume the string is small and allocate
             // 8 bytes per row.  The buffer of the builder will grow as needed if it is
             // too small.
@@ -68,22 +69,28 @@ public class GpuColumnVector extends GpuColumnVectorBase {
             if (batch != null) {
               ColumnVector cv = batch.column(i);
               if (cv instanceof WritableColumnVector) {
-                WritableColumnVector wcv = (WritableColumnVector)cv;
+                WritableColumnVector wcv = (WritableColumnVector) cv;
                 if (!wcv.hasDictionary()) {
-                  bufferSize = wcv.getArrayOffset(rows-1) +
+                  bufferSize = wcv.getArrayOffset(rows - 1) +
                       wcv.getArrayLength(rows - 1);
                 }
               }
             }
-            builders[i] = ai.rapids.cudf.HostColumnVector.builder(rows, bufferSize);
+            builders[i] = new ai.rapids.cudf.HostColumnVector.ColumnBuilder(new HostColumnVector.BasicType(true, DType.STRING), rows);
+          } else if (field.dataType() instanceof MapType) {
+            builders[i] = new ai.rapids.cudf.HostColumnVector.ColumnBuilder(new HostColumnVector.ListType(true,
+                new HostColumnVector.StructType(true, Arrays.asList(
+                    new HostColumnVector.BasicType(true, DType.STRING),
+                    new HostColumnVector.BasicType(true, DType.STRING)))), rows);
           } else {
-            builders[i] = ai.rapids.cudf.HostColumnVector.builder(type, rows);
+            DType type = getRapidsType(field);
+            builders[i] = new ai.rapids.cudf.HostColumnVector.ColumnBuilder(new HostColumnVector.BasicType(true, type), rows);
           }
           success = true;
         }
       } finally {
         if (!success) {
-          for (ai.rapids.cudf.HostColumnVector.Builder b: builders) {
+          for (ai.rapids.cudf.HostColumnVector.ColumnBuilder b: builders) {
             if (b != null) {
               b.close();
             }
@@ -92,7 +99,7 @@ public class GpuColumnVector extends GpuColumnVectorBase {
       }
     }
 
-    public ai.rapids.cudf.HostColumnVector.Builder builder(int i) {
+    public ai.rapids.cudf.HostColumnVector.ColumnBuilder builder(int i) {
       return builders[i];
     }
 
@@ -121,7 +128,7 @@ public class GpuColumnVector extends GpuColumnVectorBase {
 
     @Override
     public void close() {
-      for (ai.rapids.cudf.HostColumnVector.Builder b: builders) {
+      for (ai.rapids.cudf.HostColumnVector.ColumnBuilder b: builders) {
         if (b != null) {
           b.close();
         }
@@ -262,6 +269,9 @@ public class GpuColumnVector extends GpuColumnVectorBase {
     return from(table, 0, table.getNumberOfColumns());
   }
 
+  public static final ColumnarBatch from(Table table, List<DataType> colTypes) {
+    return from(table, colTypes, 0, table.getNumberOfColumns());
+  }
   /**
    * Get a ColumnarBatch from a set of columns in the Table. This gets the columns
    * starting at startColIndex and going until but not including untilColIndex. This will
@@ -303,12 +313,57 @@ public class GpuColumnVector extends GpuColumnVectorBase {
   }
 
   /**
+   * Get a ColumnarBatch from a set of columns in the Table. This gets the columns
+   * starting at startColIndex and going until but not including untilColIndex. This will
+   * increment the reference count for all columns converted so you will need to close
+   * both the table that is passed in and the batch returned to be sure that there are no leaks.
+   *
+   * @param table a table of vectors
+   * @param colTypes List of the column data types in the table passed in
+   * @param startColIndex index of the first vector you want in the final ColumnarBatch
+   * @param untilColIndex until index of the columns. (ie doesn't include that column num)
+   * @return a ColumnarBatch of the vectors from the table
+   */
+  public static final ColumnarBatch from(Table table, List<DataType> colTypes, int startColIndex, int untilColIndex) {
+    assert table != null : "Table cannot be null";
+    int numColumns = untilColIndex - startColIndex;
+    ColumnVector[] columns = new ColumnVector[numColumns];
+    int finalLoc = 0;
+    boolean success = false;
+    try {
+      for (int i = startColIndex; i < untilColIndex; i++) {
+        columns[finalLoc] = from(table.getColumn(i).incRefCount(), colTypes.get(i));
+        finalLoc++;
+      }
+      long rows = table.getRowCount();
+      if (rows != (int) rows) {
+        throw new IllegalStateException("Cannot support a batch larger that MAX INT rows");
+      }
+      ColumnarBatch ret = new ColumnarBatch(columns, (int)rows);
+      success = true;
+      return ret;
+    } finally {
+      if (!success) {
+        for (ColumnVector cv: columns) {
+          if (cv != null) {
+            cv.close();
+          }
+        }
+      }
+    }
+  }
+
+  /**
    * Converts a cudf internal vector to a spark compatible vector. No reference counts
    * are incremented so you need to either close the returned value or the input value,
    * but not both.
    */
   public static final GpuColumnVector from(ai.rapids.cudf.ColumnVector cudfCv) {
     return new GpuColumnVector(getSparkTypeFrom(cudfCv), cudfCv);
+  }
+
+  public static final GpuColumnVector from(ai.rapids.cudf.ColumnVector cudfCv, DataType type) {
+    return new GpuColumnVector(type, cudfCv);
   }
 
   public static final GpuColumnVector from(Scalar scalar, int count) {

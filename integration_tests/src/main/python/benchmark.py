@@ -75,27 +75,18 @@ def main():
                     help='Path to source data set')
     parser.add_argument('--input-format', required=True,
                         help='Format of input data set (parquet or csv)')
-    parser.add_argument('--output', required=True,
+    parser.add_argument('--output', required=False,
                     help='Path to write query output to')
-    parser.add_argument('--output-format', required=True,
+    parser.add_argument('--output-format', required=False,
                         help='Format to write to (parquet or orc)')
     parser.add_argument('--configs', required=True, type=str, nargs='+',
                     help='One or more configuration filenames to run')
     parser.add_argument('--query', required=True, type=str, nargs='+',
                     help='Queries to run')
-    parser.add_argument('--iterations', required=True,
+    parser.add_argument('--iterations', required=False,
                         help='The number of iterations to run (defaults to 1)')
 
     args = parser.parse_args()
-
-    if args.benchmark == "tpcds":
-        class_name = "com.nvidia.spark.rapids.tests.tpcds.TpcdsLikeBench"
-    elif args.benchmark == "tpcxbb":
-        class_name = "com.nvidia.spark.rapids.tests.tpcxbb.TpcxbbLikeBench"
-    elif args.benchmark == "tpch":
-        class_name = "com.nvidia.spark.rapids.tests.tpch.TpchLikeBench"
-    else:
-        sys.exit("invalid benchmark name")
 
     with open(args.template, "r") as myfile:
         template = myfile.read()
@@ -110,12 +101,12 @@ def main():
                 cmd.append("--conf " + k + "=" + v)
 
             cmd.append("--jars $SPARK_RAPIDS_PLUGIN_JAR,$CUDF_JAR")
-            cmd.append("--class " + class_name)
+            cmd.append("--class com.nvidia.spark.rapids.tests.BenchmarkRunner")
             cmd.append("$SPARK_RAPIDS_PLUGIN_INTEGRATION_TEST_JAR")
+            cmd.append("--benchmark " + args.benchmark)
+            cmd.append("--query " + query)
             cmd.append("--input " + args.input)
-            
-            if args.input_format is not None:
-                cmd.append("--input-format {}".format(args.input_format))
+            cmd.append("--input-format {}".format(args.input_format))
 
             if args.output is not None:
                 cmd.append("--output " + args.output + "/" + config_name + "/" + query)
@@ -123,7 +114,6 @@ def main():
             if args.output_format is not None:
                 cmd.append("--output-format {}".format(args.output_format))
 
-            cmd.append("--query " + query)
             cmd.append("--summary-file-prefix " + summary_file_prefix)
 
             if args.iterations is None:

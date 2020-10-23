@@ -36,6 +36,8 @@ pipeline {
 
     options {
         ansiColor('xterm')
+        // timeout doesn't seem to work with environment variables so make sure to update below
+        // IDLE_TIMEOUT config as well
         timeout(time: 180, unit: 'MINUTES')
         buildDiscarder(logRotator(numToKeepStr: '10'))
     }
@@ -44,24 +46,28 @@ pipeline {
         choice(name: 'DEPLOY_TO', choices: ['Urm', 'Local'],
             description: 'Where to deploy artifacts to')
         string(name: 'DATABRICKS_VERSION',
-                defaultValue: '0.3.0-SNAPSHOT', description: 'Version to set')
+                defaultValue: '0.3.0-SNAPSHOT', description: 'Version to use for databricks jar produced')
         string(name: 'CUDF_VERSION',
                 defaultValue: '0.16-SNAPSHOT', description: 'Cudf version to use')
         string(name: 'CUDA_VERSION',
                 defaultValue: 'cuda10-1', description: 'cuda version to use')
-        string(name: 'CLUSTER_ID',
-                defaultValue: '0909-141326-pawl52', description: 'databricks cluster id')
+        string(name: 'RUNTIME',
+                defaultValue: '7.0.x-gpu-ml-scala2.12', description: 'databricks runtime')
+        string(name: 'PUBLIC_KEY',
+                defaultValue: '\"ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQDB+ValakyoKn7w+iBRoAi1KlLVH4yVmRXhLCZs1qUECBAhbck2o8Lgjp5wJ+epdT3+EAP2+t/zlK1mU9tTylidapR4fZuIk9ApoQSLOUEXcUtHkPpZulIoGAq78HoyiEs1sKovc6ULvpymjdnQ3ogCZlTlP9uqmL2E4kbtrNCNL0SVj/w10AqzrJ5lqQgO5dIdDRMHW2sv88JI1VLlfiSsofa9RdI7hDRuCnfZ0+dv2URJGGzGt2BkdEmk9t5F1BMpuXvZ8HzOYdACzw0U+THBOk9d4CACUYMyO1XqlXwoYweNKRnigXDCRaTWGFBzTkugRuW/BZBccTR1ON430uRB svcngcc@nvidia.com\"', description: 'public key')
         string(name: 'REF', defaultValue: 'branch-0.3', description: 'Commit to build')
     }
 
     environment {
+        IDLE_TIMEOUT = 180
         JENKINS_ROOT  = 'jenkins'
         MVN_URM_MIRROR='-s jenkins/settings.xml -P mirror-apache-to-urm'
         LIBCUDF_KERNEL_CACHE_PATH='/tmp'
         URM_CREDS = credentials("svcngcc_artifactory")
         DATABRICKS_TOKEN = credentials("SPARK_DATABRICKS_TOKEN")
         SCALA_VERSION = '2.12'
-        SPARK_VERSION = '3.0.0-databricks'
+        // the spark version used when we install databricks jars into .m2 directory
+        SPARK_VERSION_TO_INSTALL_JARS = '3.0.0-databricks'
         CI_RAPIDS_JAR = 'rapids-4-spark_2.12-0.1-SNAPSHOT-ci.jar'
         CI_CUDF_JAR = 'cudf-0.14-cuda10-1.jar'
         URM_URL = "${urmUrl}"
@@ -78,7 +84,11 @@ pipeline {
                     sshagent(credentials : ['svcngcc_pubpriv']) {
                         sh "rm -rf spark-rapids-ci.tgz"
                         sh "tar -zcvf spark-rapids-ci.tgz *"
-                        sh "python3.6 ./jenkins/databricks/run-tests.py -c $CLUSTER_ID -z ./spark-rapids-ci.tgz -t $DATABRICKS_TOKEN -p /home/svcngcc/.ssh/id_rsa -l ./jenkins/databricks/build.sh -j $CI_RAPIDS_JAR -b $DATABRICKS_VERSION -k $SPARK_VERSION -a $SCALA_VERSION -f $CUDF_VERSION -u $CUDA_VERSION -m $CI_CUDF_JAR"
+                        env.CLUSTERID = sh (
+                            script: "python3.6 ./jenkins/databricks/create.py -t $DATABRICKS_TOKEN -k $PUBLIC_KEY -r $RUNTIME -i $IDLE_TIMEOUT -n CI-GPU-databricks-${DATABRICKS_VERSION}",
+                            returnStdout: true
+                        ).trim()
+                        sh "python3.6 ./jenkins/databricks/run-tests.py -c ${env.CLUSTERID} -z ./spark-rapids-ci.tgz -t $DATABRICKS_TOKEN -p /home/svcngcc/.ssh/id_rsa -l ./jenkins/databricks/build.sh -j $CI_RAPIDS_JAR -b $DATABRICKS_VERSION -k $SPARK_VERSION_TO_INSTALL_JARS -a $SCALA_VERSION -f $CUDF_VERSION -u $CUDA_VERSION -m $CI_CUDF_JAR"
                         sh "./jenkins/databricks/deploy.sh"
                     }
                 }
@@ -88,7 +98,7 @@ pipeline {
     post {
         always {
             script {
-                sh "python3.6 ./jenkins/databricks/shutdown.py -c $CLUSTER_ID -t $DATABRICKS_TOKEN || true"
+                sh "python3.6 ./jenkins/databricks/shutdown.py -c ${env.CLUSTERID} -t $DATABRICKS_TOKEN -d || true"
                 if (currentBuild.currentResult == "SUCCESS") {
                     slack("#swrapids-spark-cicd", "Success", color: "#33CC33")
                 } else {

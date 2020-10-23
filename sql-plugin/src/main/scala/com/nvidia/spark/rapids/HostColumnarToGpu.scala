@@ -28,7 +28,7 @@ import org.apache.spark.sql.types.StructType
 import org.apache.spark.sql.vectorized.{ColumnarBatch, ColumnVector}
 
 object HostColumnarToGpu {
-  def columnarCopy(cv: ColumnVector, b: ai.rapids.cudf.HostColumnVector.Builder,
+  def columnarCopy(cv: ColumnVector, b: ai.rapids.cudf.HostColumnVector.ColumnBuilder,
       nullable: Boolean, rows: Int): Unit = {
     (GpuColumnVector.getRapidsType(cv.dataType()), nullable) match {
       case (DType.INT8 | DType.BOOL8, true) =>
