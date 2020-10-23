@@ -18,8 +18,6 @@ package com.nvidia.spark.rapids.shims.spark300
 
 import java.time.ZoneId
 
-import scala.collection.JavaConverters._
-
 import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.spark300.RapidsShuffleManager
 
@@ -44,7 +42,7 @@ import org.apache.spark.sql.execution.exchange.{BroadcastExchangeExec, ShuffleEx
 import org.apache.spark.sql.execution.joins.{BroadcastHashJoinExec, BroadcastNestedLoopJoinExec, HashJoin, SortMergeJoinExec}
 import org.apache.spark.sql.execution.joins.ShuffledHashJoinExec
 import org.apache.spark.sql.execution.python.WindowInPandasExec
-import org.apache.spark.sql.rapids.{GpuFileSourceScanExec, GpuTimeSub, ShuffleManagerShimBase}
+import org.apache.spark.sql.rapids.{GpuFileSourceScanExec, GpuStringReplace, GpuTimeSub, ShuffleManagerShimBase}
 import org.apache.spark.sql.rapids.execution.{GpuBroadcastExchangeExecBase, GpuBroadcastNestedLoopJoinExecBase, GpuShuffleExchangeExecBase}
 import org.apache.spark.sql.rapids.shims.spark300._
 import org.apache.spark.sql.types._
@@ -231,6 +229,22 @@ class Spark300Shims extends SparkShims {
 
           override def convertToGpu(): GpuExpression =
             GpuLast(child.convertToGpu(), ignoreNulls.convertToGpu())
+        }),
+      GpuOverrides.expr[RegExpReplace](
+        "RegExpReplace support for string literal input patterns",
+        (a, conf, p, r) => new TernaryExprMeta[RegExpReplace](a, conf, p, r) {
+          override def tagExprForGpu(): Unit = {
+            if (!GpuOverrides.isLit(a.rep)) {
+              willNotWorkOnGpu("Only literal values are supported for replacement string")
+            }
+            if (GpuOverrides.isNullOrEmptyOrRegex(a.regexp)) {
+              willNotWorkOnGpu(
+                "Only non-null, non-empty String literals that are not regex patterns " +
+                    "are supported by RegExpReplace on the GPU")
+            }
+          }
+          override def convertToGpu(lhs: Expression, regexp: Expression,
+              rep: Expression): GpuExpression = GpuStringReplace(lhs, regexp, rep)
         })
     ).map(r => (r.getClassFor.asSubclass(classOf[Expression]), r)).toMap
   }
