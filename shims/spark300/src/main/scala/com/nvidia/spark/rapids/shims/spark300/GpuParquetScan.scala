@@ -41,7 +41,7 @@ case class GpuParquetScan(
     options: CaseInsensitiveStringMap,
     partitionFilters: Seq[Expression],
     dataFilters: Seq[Expression],
-    1: RapidsConf,
+    rapidsConf: RapidsConf,
     queryUsesInputFile: Boolean = false)
   extends GpuParquetScanBase(sparkSession, hadoopConf, dataSchema,
     readDataSchema, readPartitionSchema, pushedFilters, rapidsConf,
