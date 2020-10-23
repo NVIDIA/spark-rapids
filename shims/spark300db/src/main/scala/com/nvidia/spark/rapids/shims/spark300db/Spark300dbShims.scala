@@ -104,9 +104,6 @@ class Spark300dbShims extends Spark300Shims {
               GpuFileSourceScanExec.convertFileFormat(wrapped.relation.fileFormat),
               options)(sparkSession)
 
-            val (canUseMultiThreadRead, canUseCoalesceFilesRead, supportsMultiFileOpt) =
-              GpuFileSourceScanExec.multifileOptimizationOptions(newRelation.fileFormat, conf)
-
             GpuFileSourceScanExec(
               newRelation,
               wrapped.output,
@@ -117,9 +114,7 @@ class Spark300dbShims extends Spark300Shims {
               None,
               wrapped.dataFilters,
               wrapped.tableIdentifier,
-              supportsMultiFileOpt,
-              canUseMultiThreadRead,
-              canUseCoalesceFilesRead)
+              conf)
           }
         }),
       GpuOverrides.exec[SortMergeJoinExec](
@@ -197,7 +192,7 @@ class Spark300dbShims extends Spark300Shims {
 
   override def copyFileSourceScanExec(
       scanExec: GpuFileSourceScanExec,
-      canUseCoalesceFilesRead: Boolean): GpuFileSourceScanExec = {
-    scanExec.copy(canUseCoalesceFilesRead=canUseCoalesceFilesRead)
+      queryUsesInputFile: Boolean): GpuFileSourceScanExec = {
+    scanExec.copy(queryUsesInputFile=queryUsesInputFile)
   }
 }

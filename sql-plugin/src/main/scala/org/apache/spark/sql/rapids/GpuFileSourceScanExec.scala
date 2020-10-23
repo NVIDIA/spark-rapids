@@ -53,11 +53,10 @@ import org.apache.spark.util.collection.BitSet
  * @param optionalNumCoalescedBuckets Number of coalesced buckets.
  * @param dataFilters Filters on non-partition columns.
  * @param tableIdentifier identifier for the table in the metastore.
- * @param supportsMultiFileOpt whether we can use the multiple file parquet reader.
- * @param canUseMultiThreadRead whether can use multi-threaded read optimization with cloud
- *                              filesystems.
- * @param canUseCoalesceFilesRead whether can use coalesce files optimization when local
- *                                filesystems.
+ * @param rapidsConf Rapids conf
+ * @param queryUsesInputFile This is a parameter to easily allow turning it
+ *                               off in GpuTransitionOverrides if InputFileName,
+ *                               InputFileBlockStart, or InputFileBlockLength are used
  */
 case class GpuFileSourceScanExec(
     @transient relation: HadoopFsRelation,
@@ -68,14 +67,15 @@ case class GpuFileSourceScanExec(
     optionalNumCoalescedBuckets: Option[Int],
     dataFilters: Seq[Expression],
     tableIdentifier: Option[TableIdentifier],
-    supportsMultiFileOpt: Boolean,
-    canUseMultiThreadRead: Boolean = true,
-    canUseCoalesceFilesRead: Boolean = true)
+    rapidsConf: RapidsConf,
+    queryUsesInputFile: Boolean = false)
     extends GpuDataSourceScanExec with GpuExec {
 
   override val nodeName: String = {
     s"GpuScan $relation ${tableIdentifier.map(_.unquotedString).getOrElse("")}"
   }
+
+  private val isParquetFileFormat: Boolean = relation.fileFormat.isInstanceOf[ParquetFileFormat]
 
   private lazy val driverMetrics: HashMap[String, Long] = HashMap.empty
 
@@ -287,7 +287,7 @@ case class GpuFileSourceScanExec(
    */
   lazy val inputRDD: RDD[InternalRow] = {
     val readFile: Option[(PartitionedFile) => Iterator[InternalRow]] =
-      if (!useMultiFileReader) {
+      if (rapidsConf.isParquetPerFileReadEnabled) {
         val fileFormat = relation.fileFormat.asInstanceOf[GpuReadFileFormatWithMetrics]
         val reader = fileFormat.buildReaderWithPartitionValuesAndMetrics(
           sparkSession = relation.sparkSession,
@@ -393,9 +393,6 @@ case class GpuFileSourceScanExec(
 
   override val nodeNamePrefix: String = "GpuFile"
 
-  private def useMultiFileReader: Boolean =
-    supportsMultiFileOpt && (canUseMultiThreadRead || canUseCoalesceFilesRead)
-
   /**
    * Create an RDD for bucketed reads.
    * The non-bucketed variant of this function is [[createNonBucketedReadRDD]].
@@ -449,7 +446,7 @@ case class GpuFileSourceScanExec(
           prunedFilesGroupedToBuckets.getOrElse(bucketId, Array.empty))
       }
     }
-    if (!useMultiFileReader) {
+    if (rapidsConf.isParquetPerFileReadEnabled) {
       ShimLoader.getSparkShims.getFileScanRDD(fsRelation.sparkSession, readFile.get, filePartitions)
     } else {
       // here we are making an optimization to read more then 1 file at a time on the CPU side
@@ -467,8 +464,7 @@ case class GpuFileSourceScanExec(
         pushedDownFilters.toArray,
         new RapidsConf(sqlConf),
         metrics,
-        canUseMultiThreadRead,
-        canUseCoalesceFilesRead)
+        queryUsesInputFile)
 
       // note we use the v2 DataSourceRDD instead of FileScanRDD so we don't have to copy more code
       new DataSourceRDD(relation.sparkSession.sparkContext, filePartitions,
@@ -502,7 +498,7 @@ case class GpuFileSourceScanExec(
     val partitions =
       FilePartition.getFilePartitions(relation.sparkSession, splitFiles, maxSplitBytes)
 
-    if (!useMultiFileReader) {
+    if (rapidsConf.isParquetPerFileReadEnabled) {
       ShimLoader.getSparkShims.getFileScanRDD(fsRelation.sparkSession, readFile.get, partitions)
     } else {
       // here we are making an optimization to read more then 1 file at a time on the CPU side
@@ -520,8 +516,7 @@ case class GpuFileSourceScanExec(
         pushedDownFilters.toArray,
         new RapidsConf(sqlConf),
         metrics,
-        canUseMultiThreadRead,
-        canUseCoalesceFilesRead)
+        queryUsesInputFile)
 
       // note we use the v2 DataSourceRDD instead of FileScanRDD so we don't have to copy more code
       new DataSourceRDD(relation.sparkSession.sparkContext, partitions, factory, supportsColumnar)
@@ -546,9 +541,8 @@ case class GpuFileSourceScanExec(
       optionalNumCoalescedBuckets,
       QueryPlan.normalizePredicates(dataFilters, output),
       None,
-      supportsMultiFileOpt,
-      canUseMultiThreadRead,
-      canUseCoalesceFilesRead)
+      rapidsConf,
+      queryUsesInputFile)
   }
 }
 
@@ -571,30 +565,5 @@ object GpuFileSourceScanExec {
       case f =>
         throw new IllegalArgumentException(s"${f.getClass.getCanonicalName} is not supported")
     }
-  }
-
-  /**
-   * Checks to see if we can use the multifile reader optimizations. This is currently only
-   * supported on Parquet.
-   * @return (canUseMultiThreadRead, canUseCoalesceFilesRead, supportsMultiFileOpt)
-   */
-  def multifileOptimizationOptions(fileFormat: FileFormat,
-      conf: RapidsConf): (Boolean, Boolean, Boolean) = {
-    val (canUseMultiThreadRead, canUseCoalesceFilesRead, supportsMultiFileOpt) =
-      fileFormat match {
-        case _: ParquetFileFormat =>
-          if (conf.isParquetSmallFilesEnabled &&
-            (!conf.isParquetMultiThreadReadEnabled &&
-              !conf.isParquetCoalesceFileReadEnabled)) {
-            throw new IllegalArgumentException(s"Both small file read options " +
-              s"${RapidsConf.ENABLE_MULTITHREAD_PARQUET_READS.key} and " +
-              s"${RapidsConf.ENABLE_COALESCE_FILES_PARQUET_READS.key} can't be " +
-              s"disabled when ${RapidsConf.ENABLE_SMALL_FILES_PARQUET.key} is enabled.")
-          }
-          (conf.isParquetMultiThreadReadEnabled, conf.isParquetCoalesceFileReadEnabled,
-            conf.isParquetSmallFilesEnabled)
-        case _ => (false, false, false)
-      }
-    (canUseMultiThreadRead, canUseCoalesceFilesRead, supportsMultiFileOpt)
   }
 }

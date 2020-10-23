@@ -151,9 +151,6 @@ class Spark300Shims extends SparkShims {
               GpuFileSourceScanExec.convertFileFormat(wrapped.relation.fileFormat),
               options)(sparkSession)
 
-            val (canUseMultiThreadRead, canUseCoalesceFilesRead, supportsMultiFileOpt) =
-              GpuFileSourceScanExec.multifileOptimizationOptions(newRelation.fileFormat, conf)
-
             GpuFileSourceScanExec(
               newRelation,
               wrapped.output,
@@ -163,9 +160,7 @@ class Spark300Shims extends SparkShims {
               None,
               wrapped.dataFilters,
               wrapped.tableIdentifier,
-              supportsMultiFileOpt,
-              canUseMultiThreadRead,
-              canUseCoalesceFilesRead)
+              conf)
           }
         }),
       GpuOverrides.exec[SortMergeJoinExec](
@@ -251,10 +246,7 @@ class Spark300Shims extends SparkShims {
             a.options,
             a.partitionFilters,
             a.dataFilters,
-            conf,
-            conf.isParquetSmallFilesEnabled,
-            conf.isParquetMultiThreadReadEnabled,
-            conf.isParquetCoalesceFileReadEnabled)
+            conf)
         }
       }),
     GpuOverrides.scan[OrcScan](
@@ -355,16 +347,16 @@ class Spark300Shims extends SparkShims {
 
   override def copyParquetBatchScanExec(
       batchScanExec: GpuBatchScanExec,
-      canUseCoalesceFilesRead: Boolean): GpuBatchScanExec = {
+      queryUsesInputFile: Boolean): GpuBatchScanExec = {
     val scan = batchScanExec.scan.asInstanceOf[GpuParquetScan]
-    val scanCopy = scan.copy(canUseCoalesceFilesRead=canUseCoalesceFilesRead)
+    val scanCopy = scan.copy(queryUsesInputFile=queryUsesInputFile)
     batchScanExec.copy(scan=scanCopy)
   }
 
   override def copyFileSourceScanExec(
       scanExec: GpuFileSourceScanExec,
-      canUseCoalesceFilesRead: Boolean): GpuFileSourceScanExec = {
-    scanExec.copy(canUseCoalesceFilesRead=canUseCoalesceFilesRead)
+      queryUsesInputFile: Boolean): GpuFileSourceScanExec = {
+    scanExec.copy(queryUsesInputFile=queryUsesInputFile)
   }
 
   override def getGpuColumnarToRowTransition(plan: SparkPlan,

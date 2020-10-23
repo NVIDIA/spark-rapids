@@ -24,6 +24,7 @@ import java.util.concurrent._
 
 import scala.annotation.tailrec
 import scala.collection.JavaConverters._
+import scala.collection.immutable.HashSet
 import scala.collection.mutable.{ArrayBuffer, LinkedHashMap, Queue}
 import scala.math.max
 
@@ -65,6 +66,21 @@ import org.apache.spark.sql.types.{StringType, StructType, TimestampType}
 import org.apache.spark.sql.vectorized.ColumnarBatch
 import org.apache.spark.util.SerializableConfiguration
 
+/**
+ * Base GpuParquetScan used for common code across Spark versions. Gpu version of
+ * Spark's 'ParquetScan'.
+ *
+ * @param sparkSession SparkSession.
+ * @param hadoopConf Hadoop configuration.
+ * @param dataSchema Schema of the data.
+ * @param readDataSchema Schema to read.
+ * @param readPartitionSchema Partition schema.
+ * @param pushedFilters Filters on non-partition columns.
+ * @param rapidsConf Rapids configuration.
+ * @param queryUsesInputFile This is a parameter to easily allow turning it
+ *                               off in GpuTransitionOverrides if InputFileName,
+ *                               InputFileBlockStart, or InputFileBlockLength are used
+ */
 abstract class GpuParquetScanBase(
     sparkSession: SparkSession,
     hadoopConf: Configuration,
@@ -73,31 +89,23 @@ abstract class GpuParquetScanBase(
     readPartitionSchema: StructType,
     pushedFilters: Array[Filter],
     rapidsConf: RapidsConf,
-    supportsMultiFileOpt: Boolean,
-    canUseMultiThreadRead: Boolean,
-    canUseCoalesceFilesRead: Boolean)
+    queryUsesInputFile: Boolean)
   extends ScanWithMetrics with Logging {
 
-  def getCanUseCoalesceFilesRead: Boolean = canUseCoalesceFilesRead
-  def getSupportsMultiFileOpt: Boolean = supportsMultiFileOpt
-
   def isSplitableBase(path: Path): Boolean = true
-
-  private def useMultiFileReader: Boolean =
-    supportsMultiFileOpt && (canUseMultiThreadRead || canUseCoalesceFilesRead)
 
   def createReaderFactoryBase(): PartitionReaderFactory = {
     val broadcastedConf = sparkSession.sparkContext.broadcast(
       new SerializableConfiguration(hadoopConf))
 
-    if (useMultiFileReader) {
-      GpuParquetMultiFilePartitionReaderFactory(sparkSession.sessionState.conf, broadcastedConf,
-        dataSchema, readDataSchema, readPartitionSchema, pushedFilters, rapidsConf, metrics,
-        canUseMultiThreadRead, canUseCoalesceFilesRead)
-    } else {
+    if (rapidsConf.isParquetPerFileReadEnabled) {
       logInfo("Using the original per file parquet reader")
       GpuParquetPartitionReaderFactory(sparkSession.sessionState.conf, broadcastedConf,
         dataSchema, readDataSchema, readPartitionSchema, pushedFilters, rapidsConf, metrics)
+    } else {
+      GpuParquetMultiFilePartitionReaderFactory(sparkSession.sessionState.conf, broadcastedConf,
+        dataSchema, readDataSchema, readPartitionSchema, pushedFilters, rapidsConf, metrics,
+        queryUsesInputFile)
     }
   }
 }
@@ -301,17 +309,22 @@ case class GpuParquetMultiFilePartitionReaderFactory(
     filters: Array[Filter],
     @transient rapidsConf: RapidsConf,
     metrics: Map[String, SQLMetric],
-    canUseMultiThreadRead: Boolean,
-    canUseCoalesceFilesRead: Boolean) extends PartitionReaderFactory with Arm with Logging {
+    queryUsesInputFile: Boolean) extends PartitionReaderFactory with Arm with Logging {
   private val isCaseSensitive = sqlConf.caseSensitiveAnalysis
   private val debugDumpPrefix = rapidsConf.parquetDebugDumpPrefix
   private val maxReadBatchSizeRows = rapidsConf.maxReadBatchSizeRows
   private val maxReadBatchSizeBytes = rapidsConf.maxReadBatchSizeBytes
   private val numThreads = rapidsConf.parquetMultiThreadReadNumThreads
   private val maxNumFileProcessed = rapidsConf.maxNumParquetFilesParallel
+  private val canUseMultiThreadReader = rapidsConf.isParquetMultiThreadReadEnabled
+  // we can't use the coalescing files reader when InputFileName, InputFileBlockStart,
+  // or InputFileBlockLength because we are combining all the files into a single buffer
+  // and we don't know which file is associated with each row.
+  private val canUseCoalesceFilesReader =
+    rapidsConf.isParquetCoalesceFileReadEnabled && !queryUsesInputFile
 
   private val configCloudSchemes = rapidsConf.getCloudSchemes
-  private val CLOUD_SCHEMES = Seq("dbfs", "s3", "s3a", "s3n", "wasbs", "gs")
+  private val CLOUD_SCHEMES = HashSet("dbfs", "s3", "s3a", "s3n", "wasbs", "gs")
   private val allCloudSchemes = CLOUD_SCHEMES ++ configCloudSchemes.getOrElse(Seq.empty)
 
   private val filterHandler = new GpuParquetFileFilterHandler(sqlConf)
@@ -334,6 +347,10 @@ case class GpuParquetMultiFilePartitionReaderFactory(
     new File(path).getAbsoluteFile().toURI()
   }
 
+  // We expect the filePath here to always have a scheme on it,
+  // if it doesn't we try using the local filesystem. If that
+  // doesn't work for some reason user would need to configure
+  // it directly.
   private def isCloudFileSystem(filePath: String): Boolean = {
     val uri = resolveURI(filePath)
     val scheme = uri.getScheme
@@ -344,28 +361,23 @@ case class GpuParquetMultiFilePartitionReaderFactory(
     }
   }
 
+  private def arePathsInCloud(filePaths: Array[String]): Boolean = {
+    filePaths.map(isCloudFileSystem).contains(true)
+  }
+
   override def createColumnarReader(partition: InputPartition): PartitionReader[ColumnarBatch] = {
     assert(partition.isInstanceOf[FilePartition])
     val filePartition = partition.asInstanceOf[FilePartition]
     val files = filePartition.files
     val filePaths = files.map(_.filePath)
-    if (!canUseMultiThreadRead && !canUseCoalesceFilesRead) {
-      throw new IllegalStateException("can't use the Multifile reader when both " +
-        "canUseMultiThreadRead and canUseCoalesceFilesRead are off!")
-    }
-    val isCloud = if (canUseMultiThreadRead) {
-      filePaths.map(isCloudFileSystem).contains(true)
-    } else {
-      false
-    }
     val conf = broadcastedConf.value.value
-    logInfo(s"Multi-file reader reading files: ${filePaths.mkString(",")} task attemptid: " +
-      "${TaskContext.get.taskAttemptId()}")
-    if ((canUseMultiThreadRead && isCloud) || !canUseCoalesceFilesRead) {
-      logInfo("Using the multi-threaded multi-file parquet reader")
+    if (!canUseCoalesceFilesReader || (canUseMultiThreadReader && arePathsInCloud(filePaths))) {
+      logInfo("Using the multi-threaded multi-file parquet reader, files: " +
+        s"${filePaths.mkString(",")} task attemptid: ${TaskContext.get.taskAttemptId()}")
       buildBaseColumnarParquetReaderForCloud(files, conf)
     } else {
-      logInfo("Using the coalesce multi-file parquet reader")
+      logInfo("Using the coalesce multi-file parquet reader, files: " +
+        s"${filePaths.mkString(",")} task attemptid: ${TaskContext.get.taskAttemptId()}")
       buildBaseColumnarParquetReader(files, conf)
     }
   }
@@ -879,12 +891,8 @@ class MultiFileParquetPartitionReader(
       metrics("bufferTime"))) { _ =>
       // ugly but we want to keep the order
       val filesAndBlocks = LinkedHashMap[Path, ArrayBuffer[BlockMetaData]]()
-      blocks.foreach { info =>
-        if (filesAndBlocks.contains(info._1)) {
-          filesAndBlocks(info._1) += info._2
-        } else {
-          filesAndBlocks(info._1) = ArrayBuffer(info._2)
-        }
+      blocks.foreach { case (path, block) =>
+        filesAndBlocks.getOrElseUpdate(path, new ArrayBuffer[BlockMetaData]) += block
       }
       val tasks = new java.util.ArrayList[Future[Seq[BlockMetaData]]]()
 

@@ -192,6 +192,17 @@ class TypedConfBuilder[T](
     }
   }
 
+  /** Check that user-provided values for the config match a pre-defined set. */
+  def checkValues(validValues: Set[T]): TypedConfBuilder[T] = {
+    transform { v =>
+      if (!validValues.contains(v)) {
+        throw new IllegalArgumentException(
+          s"The value of ${parent.key} should be one of ${validValues.mkString(", ")}, but was $v")
+      }
+      v
+    }
+  }
+
   def createWithDefault(value: T): ConfEntry[T] = {
     val ret = new ConfEntryWithDefault[T](parent.key, converter,
       parent.doc, parent.isInternal, value)
@@ -492,46 +503,53 @@ object RapidsConf {
     .booleanConf
     .createWithDefault(true)
 
-  val ENABLE_SMALL_FILES_PARQUET = conf("spark.rapids.sql.format.parquet.smallFileReadOpt.enabled")
-    .doc("When set to true, handles reading multiple small files within a partition more " +
-      "efficiently. The algorithm used is either coalescing files for local filesystems or " +
-      "reading files using multiple parallel threads for cloud filesystems. See " +
-      "spark.rapids.sql.format.parquet.coalesceFilesRead.enabled, " +
-      "spark.rapids.sql.format.parquet.multiThreadedRead.enabled, and " +
-      "spark.rapids.cloudSchemes.")
-    .booleanConf
-    .createWithDefault(true)
+  object ParquetReaderType extends Enumeration {
+    val AUTO, COALESCING, MULTITHREADED, PERFILE = Value
+  }
 
-  val ENABLE_COALESCE_FILES_PARQUET_READS = conf(
-    "spark.rapids.sql.format.parquet.coalesceFilesRead.enabled")
-    .doc("When set to true, allows reading multiple small files within a partition more " +
-      "efficiently by coalescing those files into a single buffer on the CPU side " +
-      "before sending it to the GPU. This optimization is used when reading from a local " +
-      "filesystem. spark.rapids.cloudSchemes is used to determine if the file is from a local " +
-      "filesystem. This does also copy blocks from a file in parallel using background threads " +
-      "and the number of threads used is controlled by " +
-      "spark.rapids.sql.format.parquet.multiThreadedRead.numThreads. " +
-      "For cloud filesystems see: spark.rapids.sql.format.parquet.multiThreadedRead.enabled.")
-    .booleanConf
-    .createWithDefault(true)
+  val PARQUET_READER_TYPE = conf("spark.rapids.sql.format.parquet.reader.type")
+    .doc("Sets the parquet reader type. We support different types that are optimized for " +
+      "different environments. The original Spark style reader can be selected by setting this " +
+      "to PERFILE. This is where the task reads each file assigned to it in serially and copies " +
+      "each one to the GPU after reading that file. That reader is not great at handling many " +
+      "small files, so using either COALESCING OR MULTITHREADED is better for that. The " +
+      "COALESCING reader is good when using a local file system where the executors are on the " +
+      "same nodes or close to the nodes the data is being read on. This reader coalescing all " +
+      "the files assigned to a task into a single buffer before sending it down to the GPU. " +
+      "It does copy blocks from a single file into a buffer in separate threads in parallel " +
+      "as well, see spark.rapids.sql.format.parquet.multiThreadedRead.numThreads." +
+      "MULTITHREADED is good for cloud environments where you are reading from a blobstore " +
+      "that is total separate and likely has a higher I/O read cost. Many times the cloud " +
+      "environments also get better throughput when you have multiple readers in parallel. " +
+      "This reader uses multiple threads to read each file in parallel and each file is sent " +
+      "to gpu separately. This allows CPU side keep reading while GPU is also doing work. " +
+      "See spark.rapids.sql.format.parquet.multiThreadedRead.numThreads and " +
+      "spark.rapids.sql.format.parquet.multiThreadedRead.maxNumFilesParallel to control " +
+      "the number of threads and amount of memory used. " +
+      "By default this is set to AUTO so we select the reader we think is best. This will " +
+      "either be the COALESCING or the MULTITHREADED based on whether we think the file is " +
+      "in the cloud. See spark.rapids.cloudSchemes.")
+    .stringConf
+    .transform(_.toUpperCase(java.util.Locale.ROOT))
+    .checkValues(ParquetReaderType.values.map(_.toString))
+    .createWithDefault(ParquetReaderType.AUTO.toString)
 
-  val ENABLE_MULTITHREAD_PARQUET_READS = conf(
-    "spark.rapids.sql.format.parquet.multiThreadedRead.enabled")
-    .doc("When set to true, allows reading multiple small files within a partition more " +
-      "efficiently by reading each file in a separate thread in parallel on the CPU side before " +
-      "sending to the GPU. This optimization is used when reading from a cloud blob store. " +
-      "spark.rapids.cloudSchemes is used to determine if the file is from a cloud filesystem. " +
-      "Limited by spark.rapids.sql.format.parquet.multiThreadedRead.numThreads " +
-      "and spark.rapids.sql.format.parquet.multiThreadedRead.maxNumFilesParallel. " +
-      "For non-cloud filesystems see: spark.rapids.sql.format.parquet.coalesceFiles.enabled.")
-    .booleanConf
-    .createWithDefault(true)
+  val CLOUD_SCHEMES = conf("spark.rapids.cloudSchemes")
+    .doc("Comma separated list of additional URI schemes that are to be considered cloud based " +
+      "filesystems. Schemes already included: dbfs, s3, s3a, s3n, wasbs, gs. Cloud based stores " +
+      "generally would be total separate from the executors and likely have a higher I/O read " +
+      "cost. Many times the cloud filesystems also get better throughput when you have multiple " +
+      "readers in parallel. This is used with spark.rapids.sql.format.parquet.reader.type")
+    .stringConf
+    .toSequence
+    .createOptional
 
   val PARQUET_MULTITHREAD_READ_NUM_THREADS =
     conf("spark.rapids.sql.format.parquet.multiThreadedRead.numThreads")
       .doc("The maximum number of threads, on the executor, to use for reading small " +
         "parquet files in parallel. This can not be changed at runtime after the executor has " +
-        "started.")
+        "started. Used with COALESCING and MULTITHREADED reader, see " +
+        "spark.rapids.sql.format.parquet.reader.type.")
       .integerConf
       .createWithDefault(20)
 
@@ -539,7 +557,8 @@ object RapidsConf {
     conf("spark.rapids.sql.format.parquet.multiThreadedRead.maxNumFilesParallel")
       .doc("A limit on the maximum number of files per task processed in parallel on the CPU " +
         "side before the file is sent to the GPU. This affects the amount of host memory used " +
-        "when reading the files in parallel.")
+        "when reading the files in parallel. Used with MULTITHREADED reader, see " +
+        "spark.rapids.sql.format.parquet.reader.type")
       .integerConf
       .checkValue(v => v > 0, "The maximum number of files must be greater than 0.")
       .createWithDefault(Integer.MAX_VALUE)
@@ -738,14 +757,6 @@ object RapidsConf {
       "com.nvidia.spark.rapids.shims.spark300.SparkShimServiceProvider. If you modified Spark " +
       "then there is no guarantee the RAPIDS Accelerator will function properly.")
     .stringConf
-    .createOptional
-
-  val CLOUD_SCHEMES = conf("spark.rapids.cloudSchemes")
-    .doc("Comma separated list of additional URI schemes that are to be considered cloud based " +
-      "filesystems. Schemes already included: dbfs, s3, s3a, s3n, wasbs, gs. This is used with " +
-      "spark.rapids.sql.format.parquet.smallFileReadOpt.enabled")
-    .stringConf
-    .toSequence
     .createOptional
 
   private def printSectionHeader(category: String): Unit =
@@ -966,11 +977,17 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
 
   lazy val isParquetEnabled: Boolean = get(ENABLE_PARQUET)
 
-  lazy val isParquetCoalesceFileReadEnabled: Boolean = get(ENABLE_COALESCE_FILES_PARQUET_READS)
+  lazy val isParquetPerFileReadEnabled: Boolean =
+    ParquetReaderType.withName(get(PARQUET_READER_TYPE)) == ParquetReaderType.PERFILE
 
-  lazy val isParquetSmallFilesEnabled: Boolean = get(ENABLE_SMALL_FILES_PARQUET)
+  lazy val isParquetAutoReaderEnabled: Boolean =
+    ParquetReaderType.withName(get(PARQUET_READER_TYPE)) == ParquetReaderType.AUTO
 
-  lazy val isParquetMultiThreadReadEnabled: Boolean = get(ENABLE_MULTITHREAD_PARQUET_READS)
+  lazy val isParquetCoalesceFileReadEnabled: Boolean = isParquetAutoReaderEnabled ||
+    ParquetReaderType.withName(get(PARQUET_READER_TYPE)) == ParquetReaderType.COALESCING
+
+  lazy val isParquetMultiThreadReadEnabled: Boolean = isParquetAutoReaderEnabled ||
+    ParquetReaderType.withName(get(PARQUET_READER_TYPE)) == ParquetReaderType.MULTITHREADED
 
   lazy val parquetMultiThreadReadNumThreads: Int = get(PARQUET_MULTITHREAD_READ_NUM_THREADS)
 

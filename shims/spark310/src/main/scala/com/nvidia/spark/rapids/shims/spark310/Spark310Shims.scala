@@ -123,9 +123,6 @@ class Spark310Shims extends Spark301Shims {
               GpuFileSourceScanExec.convertFileFormat(wrapped.relation.fileFormat),
               options)(sparkSession)
 
-            val (canUseMultiThreadRead, canUseCoalesceFilesRead, supportsMultiFileOpt) =
-              GpuFileSourceScanExec.multifileOptimizationOptions(newRelation.fileFormat, conf)
-
             GpuFileSourceScanExec(
               newRelation,
               wrapped.output,
@@ -135,9 +132,7 @@ class Spark310Shims extends Spark301Shims {
               wrapped.optionalNumCoalescedBuckets,
               wrapped.dataFilters,
               wrapped.tableIdentifier,
-              supportsMultiFileOpt,
-              canUseMultiThreadRead,
-              canUseCoalesceFilesRead)
+              conf)
           }
         }),
       GpuOverrides.exec[InMemoryTableScanExec](
@@ -190,8 +185,6 @@ class Spark310Shims extends Spark301Shims {
             a.partitionFilters,
             a.dataFilters,
             conf,
-            conf.isParquetSmallFilesEnabled,
-            conf.isParquetMultiThreadReadEnabled,
             conf.isParquetCoalesceFileReadEnabled)
         }
       }),
@@ -235,16 +228,16 @@ class Spark310Shims extends Spark301Shims {
 
   override def copyParquetBatchScanExec(
       batchScanExec: GpuBatchScanExec,
-      canUseCoalesceFilesRead: Boolean): GpuBatchScanExec = {
+      queryUsesInputFile: Boolean): GpuBatchScanExec = {
     val scan = batchScanExec.scan.asInstanceOf[GpuParquetScan]
-    val scanCopy = scan.copy(canUseCoalesceFilesRead=canUseCoalesceFilesRead)
+    val scanCopy = scan.copy(queryUsesInputFile=queryUsesInputFile)
     batchScanExec.copy(scan=scanCopy)
   }
 
   override def copyFileSourceScanExec(
       scanExec: GpuFileSourceScanExec,
-      canUseCoalesceFilesRead: Boolean): GpuFileSourceScanExec = {
-    scanExec.copy(canUseCoalesceFilesRead=canUseCoalesceFilesRead)
+      queryUsesInputFile: Boolean): GpuFileSourceScanExec = {
+    scanExec.copy(queryUsesInputFile=queryUsesInputFile)
   }
 
   override def getGpuColumnarToRowTransition(plan: SparkPlan,

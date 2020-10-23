@@ -201,18 +201,14 @@ class GpuTransitionOverrides extends Rule[SparkPlan] {
       disableUntilInput: Boolean = false): SparkPlan = plan match {
     case batchScan: GpuBatchScanExec =>
       if (batchScan.scan.isInstanceOf[GpuParquetScanBase] &&
-        batchScan.scan.asInstanceOf[GpuParquetScanBase].getCanUseCoalesceFilesRead &&
-        batchScan.scan.asInstanceOf[GpuParquetScanBase].getSupportsMultiFileOpt &&
         (disableUntilInput || disableScanUntilInput(batchScan))) {
-        ShimLoader.getSparkShims.copyParquetBatchScanExec(batchScan, false)
+        ShimLoader.getSparkShims.copyParquetBatchScanExec(batchScan, true)
       } else {
         batchScan
       }
     case fileSourceScan: GpuFileSourceScanExec =>
-      if (fileSourceScan.supportsMultiFileOpt &&
-        fileSourceScan.canUseCoalesceFilesRead &&
-        (disableUntilInput || disableScanUntilInput(fileSourceScan))) {
-        ShimLoader.getSparkShims.copyFileSourceScanExec(fileSourceScan, false)
+      if ((disableUntilInput || disableScanUntilInput(fileSourceScan))) {
+        ShimLoader.getSparkShims.copyFileSourceScanExec(fileSourceScan, true)
       } else {
         fileSourceScan
       }
