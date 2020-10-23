@@ -67,15 +67,16 @@ case class GpuFileSourceScanExec(
     optionalNumCoalescedBuckets: Option[Int],
     dataFilters: Seq[Expression],
     tableIdentifier: Option[TableIdentifier],
-    rapidsConf: RapidsConf,
+    @transient rapidsConf: RapidsConf,
     queryUsesInputFile: Boolean = false)
     extends GpuDataSourceScanExec with GpuExec {
+
+  private val isParquetFileFormat: Boolean = relation.fileFormat.isInstanceOf[ParquetFileFormat]
+  private val isPerFileReadEnabled = rapidsConf.isParquetPerFileReadEnabled || !isParquetFileFormat
 
   override val nodeName: String = {
     s"GpuScan $relation ${tableIdentifier.map(_.unquotedString).getOrElse("")}"
   }
-
-  private val isParquetFileFormat: Boolean = relation.fileFormat.isInstanceOf[ParquetFileFormat]
 
   private lazy val driverMetrics: HashMap[String, Long] = HashMap.empty
 
@@ -287,7 +288,7 @@ case class GpuFileSourceScanExec(
    */
   lazy val inputRDD: RDD[InternalRow] = {
     val readFile: Option[(PartitionedFile) => Iterator[InternalRow]] =
-      if (rapidsConf.isParquetPerFileReadEnabled) {
+      if (isPerFileReadEnabled) {
         val fileFormat = relation.fileFormat.asInstanceOf[GpuReadFileFormatWithMetrics]
         val reader = fileFormat.buildReaderWithPartitionValuesAndMetrics(
           sparkSession = relation.sparkSession,
@@ -446,7 +447,7 @@ case class GpuFileSourceScanExec(
           prunedFilesGroupedToBuckets.getOrElse(bucketId, Array.empty))
       }
     }
-    if (rapidsConf.isParquetPerFileReadEnabled) {
+    if (isPerFileReadEnabled) {
       ShimLoader.getSparkShims.getFileScanRDD(fsRelation.sparkSession, readFile.get, filePartitions)
     } else {
       // here we are making an optimization to read more then 1 file at a time on the CPU side
