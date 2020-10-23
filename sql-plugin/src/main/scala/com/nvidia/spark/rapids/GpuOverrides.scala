@@ -567,16 +567,12 @@ object GpuOverrides {
       (a, conf, p, r) => new UnaryExprMeta[Alias](a, conf, p, r) {
         def isSupported(t: DataType) = t match {
           case MapType(StringType, StringType, _) => true
+          case BinaryType => true
           case _ => isSupportedType(t)
         }
         override def areAllSupportedTypes(types: DataType*): Boolean = types.forall(isSupported)
         override def convertToGpu(child: Expression): GpuExpression =
           GpuAlias(child, a.name)(a.exprId, a.qualifier, a.explicitMetadata)
-
-        override def areAllSupportedTypes(types: DataType*): Boolean = types.forall {
-          case BinaryType => true
-          case x => isSupportedType(x)
-        }
       }),
     expr[AttributeReference](
       "References an input column",
