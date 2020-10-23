@@ -217,11 +217,6 @@ class Spark300Shims extends SparkShims {
           val ignoreNulls: BaseExprMeta[_] =
             GpuOverrides.wrapExpr(a.ignoreNullsExpr, conf, Some(this))
           override val childExprs: Seq[BaseExprMeta[_]] = Seq(child, ignoreNulls)
-          override def tagExprForGpu(): Unit = {
-            if (a.children.exists(expr => expr.dataType.isInstanceOf[MapType])) {
-              willNotWorkOnGpu("First on MapType is not supported")
-            }
-          }
 
           override def convertToGpu(): GpuExpression =
             GpuFirst(child.convertToGpu(), ignoreNulls.convertToGpu())
@@ -233,11 +228,6 @@ class Spark300Shims extends SparkShims {
           val ignoreNulls: BaseExprMeta[_] =
             GpuOverrides.wrapExpr(a.ignoreNullsExpr, conf, Some(this))
           override val childExprs: Seq[BaseExprMeta[_]] = Seq(child, ignoreNulls)
-          override def tagExprForGpu(): Unit = {
-            if (a.children.exists(expr => expr.dataType.isInstanceOf[MapType])) {
-              willNotWorkOnGpu("Last on MapType is not supported")
-            }
-          }
 
           override def convertToGpu(): GpuExpression =
             GpuLast(child.convertToGpu(), ignoreNulls.convertToGpu())

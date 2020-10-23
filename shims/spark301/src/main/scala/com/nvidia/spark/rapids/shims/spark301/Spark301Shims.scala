@@ -31,7 +31,6 @@ import org.apache.spark.sql.execution.adaptive.ShuffleQueryStageExec
 import org.apache.spark.sql.execution.exchange.{BroadcastExchangeLike, ShuffleExchangeLike}
 import org.apache.spark.sql.execution.joins.{BroadcastHashJoinExec, ShuffledHashJoinExec, SortMergeJoinExec}
 import org.apache.spark.sql.rapids.execution.{GpuBroadcastExchangeExecBase, GpuShuffleExchangeExecBase}
-import org.apache.spark.sql.types.MapType
 import org.apache.spark.storage.{BlockId, BlockManagerId}
 
 class Spark301Shims extends Spark300Shims {
@@ -56,22 +55,14 @@ class Spark301Shims extends Spark300Shims {
     GpuOverrides.expr[First](
       "first aggregate operator",
       (a, conf, p, r) => new ExprMeta[First](a, conf, p, r) {
-        override def tagExprForGpu(): Unit = {
-          if (a.children.exists(expr => expr.dataType.isInstanceOf[MapType])) {
-            willNotWorkOnGpu("First on MapType is not supported")
-          }
-        }
+
         override def convertToGpu(): GpuExpression =
           GpuFirst(childExprs(0).convertToGpu(), a.ignoreNulls)
       }),
     GpuOverrides.expr[Last](
       "last aggregate operator",
       (a, conf, p, r) => new ExprMeta[Last](a, conf, p, r) {
-        override def tagExprForGpu(): Unit = {
-          if (a.children.exists(expr => expr.dataType.isInstanceOf[MapType])) {
-            willNotWorkOnGpu("Last on MapType is not supported")
-          }
-        }
+
         override def convertToGpu(): GpuExpression =
           GpuLast(childExprs(0).convertToGpu(), a.ignoreNulls)
       })
