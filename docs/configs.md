@@ -32,7 +32,9 @@ Name | Description | Default Value
 <a name="memory.gpu.allocFraction"></a>spark.rapids.memory.gpu.allocFraction|The fraction of total GPU memory that should be initially allocated for pooled memory. Extra memory will be allocated as needed, but it may result in more fragmentation. This must be less than or equal to the maximum limit configured via spark.rapids.memory.gpu.maxAllocFraction.|0.9
 <a name="memory.gpu.debug"></a>spark.rapids.memory.gpu.debug|Provides a log of GPU memory allocations and frees. If set to STDOUT or STDERR the logging will go there. Setting it to NONE disables logging. All other values are reserved for possible future expansion and in the mean time will disable logging.|NONE
 <a name="memory.gpu.maxAllocFraction"></a>spark.rapids.memory.gpu.maxAllocFraction|The fraction of total GPU memory that limits the maximum size of the RMM pool. The value must be greater than or equal to the setting for spark.rapids.memory.gpu.allocFraction. Note that this limit will be reduced by the reserve memory configured in spark.rapids.memory.gpu.reserve.|1.0
-<a name="memory.gpu.pooling.enabled"></a>spark.rapids.memory.gpu.pooling.enabled|Should RMM act as a pooling allocator for GPU memory, or should it just pass through to CUDA memory allocation directly.|true
+<a name="memory.gpu.oomDumpDir"></a>spark.rapids.memory.gpu.oomDumpDir|The path to a local directory where a heap dump will be created if the GPU encounters an unrecoverable out-of-memory (OOM) error. The filename will be of the form: "gpu-oom-<pid>.hprof" where <pid> is the process ID.|None
+<a name="memory.gpu.pool"></a>spark.rapids.memory.gpu.pool|Select the RMM pooling allocator to use. Valid values are "DEFAULT", "ARENA", and "NONE". With "DEFAULT", `rmm::mr::pool_memory_resource` is used; with "ARENA", `rmm::mr::arena_memory_resource` is used. If set to "NONE", pooling is disabled and RMM just passes through to CUDA memory allocation directly.|ARENA
+<a name="memory.gpu.pooling.enabled"></a>spark.rapids.memory.gpu.pooling.enabled|Should RMM act as a pooling allocator for GPU memory, or should it just pass through to CUDA memory allocation directly. DEPRECATED: please use spark.rapids.memory.gpu.pool instead.|true
 <a name="memory.gpu.reserve"></a>spark.rapids.memory.gpu.reserve|The amount of GPU memory that should remain unallocated by RMM and left for system use such as memory needed for kernels, kernel launches or JIT compilation.|1073741824
 <a name="memory.host.spillStorageSize"></a>spark.rapids.memory.host.spillStorageSize|Amount of off-heap host memory to use for buffering spilled GPU data before spilling to local disk|1073741824
 <a name="memory.pinnedPool.size"></a>spark.rapids.memory.pinnedPool.size|The size of the pinned memory pool in bytes unless otherwise specified. Use 0 to disable the pool.|0
@@ -59,7 +61,7 @@ Name | Description | Default Value
 <a name="sql.format.orc.read.enabled"></a>spark.rapids.sql.format.orc.read.enabled|When set to false disables orc input acceleration|true
 <a name="sql.format.orc.write.enabled"></a>spark.rapids.sql.format.orc.write.enabled|When set to false disables orc output acceleration|true
 <a name="sql.format.parquet.enabled"></a>spark.rapids.sql.format.parquet.enabled|When set to false disables all parquet input and output acceleration|true
-<a name="sql.format.parquet.multiThreadedRead.enabled"></a>spark.rapids.sql.format.parquet.multiThreadedRead.enabled|When set to true, reads multiple small files within a partition more efficiently by reading each file in a separate thread in parallel on the CPU side before sending to the GPU. Limited by spark.rapids.sql.format.parquet.multiThreadedRead.numThreads and spark.rapids.sql.format.parquet.multiThreadedRead.maxNumFileProcessed|true
+<a name="sql.format.parquet.multiThreadedRead.enabled"></a>spark.rapids.sql.format.parquet.multiThreadedRead.enabled|When set to true, reads multiple small files within a partition more efficiently by reading each file in a separate thread in parallel on the CPU side before sending to the GPU. Limited by spark.rapids.sql.format.parquet.multiThreadedRead.numThreads and spark.rapids.sql.format.parquet.multiThreadedRead.maxNumFilesParallel|true
 <a name="sql.format.parquet.multiThreadedRead.maxNumFilesParallel"></a>spark.rapids.sql.format.parquet.multiThreadedRead.maxNumFilesParallel|A limit on the maximum number of files per task processed in parallel on the CPU side before the file is sent to the GPU. This affects the amount of host memory used when reading the files in parallel.|2147483647
 <a name="sql.format.parquet.multiThreadedRead.numThreads"></a>spark.rapids.sql.format.parquet.multiThreadedRead.numThreads|The maximum number of threads, on the executor, to use for reading small parquet files in parallel. This can not be changed at runtime after the executor has started.|20
 <a name="sql.format.parquet.read.enabled"></a>spark.rapids.sql.format.parquet.read.enabled|When set to false disables parquet input acceleration|true
@@ -138,6 +140,7 @@ Name | SQL Function(s) | Description | Default Value | Notes
 <a name="sql.expression.Floor"></a>spark.rapids.sql.expression.Floor|`floor`|Floor of a number|true|None|
 <a name="sql.expression.FromUnixTime"></a>spark.rapids.sql.expression.FromUnixTime|`from_unixtime`|Get the string from a unix timestamp|true|None|
 <a name="sql.expression.GetArrayItem"></a>spark.rapids.sql.expression.GetArrayItem| |Gets the field at `ordinal` in the Array|true|None|
+<a name="sql.expression.GetMapValue"></a>spark.rapids.sql.expression.GetMapValue| |Gets Value from a Map based on a key|true|None|
 <a name="sql.expression.GreaterThan"></a>spark.rapids.sql.expression.GreaterThan|`>`|> operator|true|None|
 <a name="sql.expression.GreaterThanOrEqual"></a>spark.rapids.sql.expression.GreaterThanOrEqual|`>=`|>= operator|true|None|
 <a name="sql.expression.Hour"></a>spark.rapids.sql.expression.Hour|`hour`|Returns the hour component of the string/timestamp|true|None|
@@ -153,7 +156,9 @@ Name | SQL Function(s) | Description | Default Value | Notes
 <a name="sql.expression.IsNotNull"></a>spark.rapids.sql.expression.IsNotNull|`isnotnull`|Checks if a value is not null|true|None|
 <a name="sql.expression.IsNull"></a>spark.rapids.sql.expression.IsNull|`isnull`|Checks if a value is null|true|None|
 <a name="sql.expression.KnownFloatingPointNormalized"></a>spark.rapids.sql.expression.KnownFloatingPointNormalized| |Tag to prevent redundant normalization|true|None|
+<a name="sql.expression.Lag"></a>spark.rapids.sql.expression.Lag|`lag`|Window function that returns N entries behind this one|true|None|
 <a name="sql.expression.LastDay"></a>spark.rapids.sql.expression.LastDay|`last_day`|Returns the last day of the month which the date belongs to|true|None|
+<a name="sql.expression.Lead"></a>spark.rapids.sql.expression.Lead|`lead`|Window function that returns N entries ahead of this one|true|None|
 <a name="sql.expression.Length"></a>spark.rapids.sql.expression.Length|`length`, `character_length`, `char_length`|String character length|true|None|
 <a name="sql.expression.LessThan"></a>spark.rapids.sql.expression.LessThan|`<`|< operator|true|None|
 <a name="sql.expression.LessThanOrEqual"></a>spark.rapids.sql.expression.LessThanOrEqual|`<=`|<= operator|true|None|
@@ -237,7 +242,7 @@ Name | SQL Function(s) | Description | Default Value | Notes
 Name | Description | Default Value | Notes
 -----|-------------|---------------|------------------
 <a name="sql.exec.CoalesceExec"></a>spark.rapids.sql.exec.CoalesceExec|The backend for the dataframe coalesce method|true|None|
-<a name="sql.exec.CollectLimitExec"></a>spark.rapids.sql.exec.CollectLimitExec|Reduce to single partition and apply limit|true|None|
+<a name="sql.exec.CollectLimitExec"></a>spark.rapids.sql.exec.CollectLimitExec|Reduce to single partition and apply limit|false|This is disabled by default because Collect Limit replacement can be slower on the GPU, if huge number of rows in a batch it could help by limiting the number of rows transferred from GPU to CPU|
 <a name="sql.exec.ExpandExec"></a>spark.rapids.sql.exec.ExpandExec|The backend for the expand operator|true|None|
 <a name="sql.exec.FileSourceScanExec"></a>spark.rapids.sql.exec.FileSourceScanExec|Reading data from files, often from Hive tables|true|None|
 <a name="sql.exec.FilterExec"></a>spark.rapids.sql.exec.FilterExec|The backend for most filter statements|true|None|

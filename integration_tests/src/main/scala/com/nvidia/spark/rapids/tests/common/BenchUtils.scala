@@ -31,7 +31,9 @@ import org.apache.spark.{SPARK_BUILD_USER, SPARK_VERSION}
 import org.apache.spark.sql.{DataFrame, Row, SaveMode, SparkSession}
 import org.apache.spark.sql.execution.{InputAdapter, QueryExecution, SparkPlan, WholeStageCodegenExec}
 import org.apache.spark.sql.execution.adaptive.{AdaptiveSparkPlanExec, QueryStageExec}
+import org.apache.spark.sql.execution.datasources.FilePartition
 import org.apache.spark.sql.functions.col
+import org.apache.spark.sql.types.DataTypes
 import org.apache.spark.sql.util.QueryExecutionListener
 
 object BenchUtils {
@@ -69,7 +71,28 @@ object BenchUtils {
     runBench(
       spark,
       createDataFrame,
-      WriteParquet(path, mode, writeOptions),
+      WriteCsv(path, mode, writeOptions),
+      queryDescription,
+      filenameStub,
+      iterations,
+      gcBetweenRuns)
+  }
+
+  /** Perform benchmark of writing results to ORC */
+  def writeOrc(
+      spark: SparkSession,
+      createDataFrame: SparkSession => DataFrame,
+      queryDescription: String,
+      filenameStub: String,
+      iterations: Int,
+      gcBetweenRuns: Boolean,
+      path: String,
+      mode: SaveMode = SaveMode.Overwrite,
+      writeOptions: Map[String, String] = Map.empty): Unit = {
+    runBench(
+      spark,
+      createDataFrame,
+      WriteOrc(path, mode, writeOptions),
       queryDescription,
       filenameStub,
       iterations,
@@ -145,6 +168,8 @@ object BenchUtils {
         case Collect() => df.collect()
         case WriteCsv(path, mode, options) =>
           df.write.mode(mode).options(options).csv(path)
+        case WriteOrc(path, mode, options) =>
+          df.write.mode(mode).options(options).orc(path)
         case WriteParquet(path, mode, options) =>
           df.write.mode(mode).options(options).parquet(path)
       }
@@ -225,6 +250,18 @@ object BenchUtils {
         queryPlansWithMetrics,
         queryTimes)
 
+      case w: WriteOrc => BenchmarkReport(
+        filename,
+        queryStartTime.toEpochMilli,
+        environment,
+        testConfiguration,
+        "orc",
+        w.writeOptions,
+        queryDescription,
+        queryPlan,
+        queryPlansWithMetrics,
+        queryTimes)
+
       case w: WriteParquet => BenchmarkReport(
         filename,
         queryStartTime.toEpochMilli,
@@ -253,6 +290,33 @@ object BenchUtils {
     os.write(writePretty(report).getBytes)
     os.close()
   }
+
+  def validateCoalesceRepartition(
+      coalesce: Map[String, Int],
+      repartition: Map[String, Int]): Unit = {
+    val duplicates = coalesce.keys.filter(name => repartition.contains(name))
+    if (duplicates.nonEmpty) {
+      throw new IllegalArgumentException(
+        s"Cannot both coalesce and repartition the same table: ${duplicates.mkString(",")}")
+    }
+  }
+
+  def applyCoalesceRepartition(
+      name: String,
+      df: DataFrame,
+      coalesce: Map[String, Int],
+      repartition: Map[String, Int]): DataFrame = {
+    (coalesce.get(name), repartition.get(name)) match {
+      case (Some(_), Some(_)) =>
+        // this should be unreachable due to earlier validation
+        throw new IllegalArgumentException(
+          s"Cannot both coalesce and repartition the same table: $name")
+      case (Some(n), _) => df.coalesce(n)
+      case (_, Some(n)) => df.repartition(n)
+      case _ => df
+    }
+  }
+
 
   /**
    * Generate a DOT graph for one query plan, or showing differences between two query plans.
@@ -379,6 +443,8 @@ object BenchUtils {
    *
    * @param df1            DataFrame to compare.
    * @param df2            DataFrame to compare.
+   * @param readPathAction Function to create DataFrame from a path when reading individual
+   *                       partitions from a partitioned data source.
    * @param ignoreOrdering Sort the data collected from the DataFrames before comparing them.
    * @param useIterator    When set to true, use `toLocalIterator` to load one partition at a time
    *                       into driver memory, reducing memory usage at the cost of performance
@@ -389,6 +455,7 @@ object BenchUtils {
   def compareResults(
       df1: DataFrame,
       df2: DataFrame,
+      readPathAction: String => DataFrame,
       ignoreOrdering: Boolean,
       useIterator: Boolean = false,
       maxErrors: Int = 10,
@@ -399,8 +466,15 @@ object BenchUtils {
 
     if (count1 == count2) {
       println(s"Both DataFrames contain $count1 rows")
-      val result1 = collectResults(df1, ignoreOrdering, useIterator)
-      val result2 = collectResults(df2, ignoreOrdering, useIterator)
+
+      val (result1, result2) = if (!ignoreOrdering &&
+          (df1.rdd.getNumPartitions > 1 || df2.rdd.getNumPartitions > 1)) {
+        (collectPartitioned(df1, readPathAction),
+        collectPartitioned(df2, readPathAction))
+      } else {
+        (collectResults(df1, ignoreOrdering, useIterator),
+        collectResults(df2, ignoreOrdering, useIterator))
+      }
 
       var errors = 0
       var i = 0
@@ -434,8 +508,16 @@ object BenchUtils {
 
     // apply sorting if specified
     val resultDf = if (ignoreOrdering) {
-      // let Spark do the sorting
-      df.sort(df.columns.map(col): _*)
+      // let Spark do the sorting, sorting by non-float columns first, then float columns
+      val nonFloatCols = df.schema.fields
+          .filter(field => !(field.dataType == DataTypes.FloatType ||
+              field.dataType == DataTypes.DoubleType))
+          .map(field => col(field.name))
+      val floatCols = df.schema.fields
+          .filter(field => field.dataType == DataTypes.FloatType ||
+              field.dataType == DataTypes.DoubleType)
+          .map(field => col(field.name))
+      df.sort((nonFloatCols ++ floatCols): _*)
     } else {
       df
     }
@@ -453,6 +535,23 @@ object BenchUtils {
 
     // map Iterator[Row] to Iterator[Seq[Any]]
     it.map(_.toSeq)
+  }
+
+  /**
+   * Collect data from a partitioned data source, preserving order by reading files in
+   * alphabetical order.
+   */
+  private def collectPartitioned(
+      df: DataFrame,
+      readPathAction: String => DataFrame): Iterator[Seq[Any]] = {
+    val files = df.rdd.partitions.flatMap {
+      case p: FilePartition => p.files
+      case other =>
+        throw new RuntimeException(s"Expected FilePartition, found ${other.getClass}")
+    }
+    files.map(_.filePath).sorted.flatMap(path => {
+      readPathAction(path).collect()
+    }).toIterator.map(_.toSeq)
   }
 
   private def rowEqual(row1: Seq[Any], row2: Seq[Any], epsilon: Double): Boolean = {
@@ -549,6 +648,15 @@ class BenchmarkListener(list: ListBuffer[SparkPlanNode]) extends QueryExecutionL
   }
 }
 
+trait BenchmarkSuite {
+  def name(): String
+  def shortName(): String
+  def setupAllParquet(spark: SparkSession, path: String)
+  def setupAllCSV(spark: SparkSession, path: String)
+  def setupAllOrc(spark: SparkSession, path: String)
+  def createDataFrame(spark: SparkSession, query: String): DataFrame
+}
+
 /** Top level benchmark report class */
 case class BenchmarkReport(
     filename: String,
@@ -595,6 +703,11 @@ sealed trait ResultsAction
 case class Collect() extends ResultsAction
 
 case class WriteCsv(
+    path: String,
+    mode: SaveMode,
+    writeOptions: Map[String, String]) extends ResultsAction
+
+case class WriteOrc(
     path: String,
     mode: SaveMode,
     writeOptions: Map[String, String]) extends ResultsAction

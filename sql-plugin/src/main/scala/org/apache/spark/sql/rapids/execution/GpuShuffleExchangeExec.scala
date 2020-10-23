@@ -20,6 +20,7 @@ import scala.collection.AbstractIterator
 import scala.concurrent.Future
 
 import com.nvidia.spark.rapids._
+import com.nvidia.spark.rapids.GpuMetricNames.{DESCRIPTION_NUM_OUTPUT_BATCHES, DESCRIPTION_NUM_OUTPUT_ROWS, NUM_OUTPUT_BATCHES, NUM_OUTPUT_ROWS}
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 
 import org.apache.spark.{MapOutputStatistics, ShuffleDependency}
@@ -82,6 +83,12 @@ abstract class GpuShuffleExchangeExecBase(
     "dataSize" -> SQLMetrics.createSizeMetric(sparkContext, "data size")
   ) ++ readMetrics ++ writeMetrics
 
+  // Spark doesn't report totalTime for this operator so we override metrics
+  override lazy val metrics: Map[String, SQLMetric] = Map(
+    NUM_OUTPUT_ROWS -> SQLMetrics.createMetric(sparkContext, DESCRIPTION_NUM_OUTPUT_ROWS),
+    NUM_OUTPUT_BATCHES -> SQLMetrics.createMetric(sparkContext, DESCRIPTION_NUM_OUTPUT_BATCHES)
+  ) ++ additionalMetrics
+
   override def nodeName: String = "GpuColumnarExchange"
 
   // 'mapOutputStatisticsFuture' is only needed when enable AQE.
@@ -97,8 +104,7 @@ abstract class GpuShuffleExchangeExecBase(
     throw new IllegalStateException()
   }
 
-  private val serializer: Serializer =
-    new GpuColumnarBatchSerializer(child.output.size, longMetric("dataSize"))
+  private val serializer: Serializer = new GpuColumnarBatchSerializer(longMetric("dataSize"))
 
   @transient lazy val inputBatchRDD: RDD[ColumnarBatch] = child.executeColumnar()
 

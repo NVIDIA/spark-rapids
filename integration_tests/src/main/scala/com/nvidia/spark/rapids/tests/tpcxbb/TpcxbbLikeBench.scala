@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019, NVIDIA CORPORATION. All rights reserved.
+ * Copyright (c) 2019-2020, NVIDIA CORPORATION. All rights reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,107 +16,29 @@
 
 package com.nvidia.spark.rapids.tests.tpcxbb
 
-import com.nvidia.spark.rapids.tests.common.BenchUtils
+import com.nvidia.spark.rapids.tests.common.BenchmarkSuite
 
-import org.apache.spark.internal.Logging
-import org.apache.spark.sql.{DataFrame, SaveMode, SparkSession}
+import org.apache.spark.sql.{DataFrame, SparkSession}
 
-object TpcxbbLikeBench extends Logging {
+object TpcxbbLikeBench  extends BenchmarkSuite {
+  override def name(): String = "TPCx-BB"
 
-  /**
-   * This method performs a benchmark of executing a query and collecting the results to the
-   * driver and can be called from Spark shell using the following syntax:
-   *
-   * TpcxbbLikeBench.collect(spark, "q5", 3)
-   *
-   * @param spark The Spark session
-   * @param query The name of the query to run e.g. "q5"
-   * @param iterations The number of times to run the query.
-   */
-  def collect(
-      spark: SparkSession,
-      query: String,
-      iterations: Int = 3,
-      gcBetweenRuns: Boolean = false): Unit = {
-    BenchUtils.collect(
-      spark,
-      spark => getQuery(query)(spark),
-      query,
-      s"tpcxbb-$query-collect",
-      iterations,
-      gcBetweenRuns)
+  override def shortName(): String = "Tpcxbb"
+
+  override def setupAllParquet(spark: SparkSession, path: String): Unit = {
+    TpcxbbLikeSpark.setupAllParquet(spark, path)
   }
 
-  /**
-   * This method performs a benchmark of executing a query and writing the results to CSV files
-   * and can be called from Spark shell using the following syntax:
-   *
-   * TpcxbbLikeBench.writeCsv(spark, "q5", 3, "/path/to/write")
-   *
-   * @param spark The Spark session
-   * @param query The name of the query to run e.g. "q5"
-   * @param iterations The number of times to run the query.
-   */
-  def writeCsv(
-      spark: SparkSession,
-      query: String,
-      path: String,
-      mode: SaveMode = SaveMode.Overwrite,
-      writeOptions: Map[String, String] = Map.empty,
-      iterations: Int = 3,
-      gcBetweenRuns: Boolean = false): Unit = {
-    BenchUtils.writeCsv(
-      spark,
-      spark => getQuery(query)(spark),
-      query,
-      s"tpcxbb-$query-csv",
-      iterations,
-      gcBetweenRuns,
-      path,
-      mode,
-      writeOptions)
+  override def setupAllCSV(spark: SparkSession, path: String): Unit = {
+    TpcxbbLikeSpark.setupAllCSV(spark, path)
   }
 
-  /**
-   * This method performs a benchmark of executing a query and writing the results to Parquet files
-   * and can be called from Spark shell using the following syntax:
-   *
-   * TpcxbbLikeBench.writeParquet(spark, "q5", 3, "/path/to/write")
-   *
-   * @param spark The Spark session
-   * @param query The name of the query to run e.g. "q5"
-   * @param iterations The number of times to run the query.
-   */
-  def writeParquet(
-      spark: SparkSession,
-      query: String,
-      path: String,
-      mode: SaveMode = SaveMode.Overwrite,
-      writeOptions: Map[String, String] = Map.empty,
-      iterations: Int = 3,
-      gcBetweenRuns: Boolean = false): Unit = {
-    BenchUtils.writeParquet(
-      spark,
-      spark => getQuery(query)(spark),
-      query,
-      s"tpcxbb-$query-parquet",
-      iterations,
-      gcBetweenRuns,
-      path,
-      mode,
-      writeOptions)
+  override def setupAllOrc(spark: SparkSession, path: String): Unit = {
+    TpcxbbLikeSpark.setupAllOrc(spark, path)
   }
 
-  def main(args: Array[String]): Unit = {
-    val input = args(0)
-
-    val spark = SparkSession.builder.appName("TPCxBB Bench").getOrCreate()
-    TpcxbbLikeSpark.setupAllParquet(spark, input)
-
-    args.drop(1).foreach(query => {
-      println(s"*** RUNNING TPCx-BB QUERY $query")
-      collect(spark, query)
-    })
+  override def createDataFrame(spark: SparkSession, query: String): DataFrame = {
+    getQuery(query)(spark)
   }
 
   def getQuery(query: String): SparkSession => DataFrame = {
@@ -160,6 +82,5 @@ object TpcxbbLikeBench extends Logging {
       case 30 => Q30Like.apply
       case _ => throw new IllegalArgumentException(s"Unknown TPCx-BB query number: $queryIndex")
     }
-
   }
 }

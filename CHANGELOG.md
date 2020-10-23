@@ -1,5 +1,107 @@
 # Change log
-Generated on 2020-09-18
+Generated on 2020-10-09
+
+## Release 0.3
+
+### Features
+|||
+|:---|:---|
+|[#96](https://github.com/NVIDIA/spark-rapids/issues/96)|[FEA] window integration tests|
+|[#864](https://github.com/NVIDIA/spark-rapids/issues/864)|[FEA] config option to enable RMM arena memory resource|
+|[#430](https://github.com/NVIDIA/spark-rapids/issues/430)|[FEA] Audit: Parquet Writer support for TIMESTAMP_MILLIS|
+|[#818](https://github.com/NVIDIA/spark-rapids/issues/818)|[FEA] Create shim layer for EMR|
+|[#608](https://github.com/NVIDIA/spark-rapids/issues/608)|[FEA] Parquet small file optimization improve handle merge schema|
+
+### Performance
+|||
+|:---|:---|
+|[#896](https://github.com/NVIDIA/spark-rapids/issues/896)|[FEA] Benchmark utility should have option to capture Spark event log|
+|[#795](https://github.com/NVIDIA/spark-rapids/issues/795)|[FEA] Make it easier to run TPC-* benchmarks with spark-submit|
+|[#849](https://github.com/NVIDIA/spark-rapids/issues/849)|[FEA] Have GpuColumnarBatchSerializer return GpuColumnVectorFromBuffer instances|
+|[#784](https://github.com/NVIDIA/spark-rapids/issues/784)|[FEA] Allow Host Spilling to be more dynamic|
+|[#627](https://github.com/NVIDIA/spark-rapids/issues/627)|[FEA] Further parquet reading small file improvements|
+|[#5](https://github.com/NVIDIA/spark-rapids/issues/5)|[FEA] Support Adaptive Execution|
+
+### Bugs Fixed
+|||
+|:---|:---|
+|[#868](https://github.com/NVIDIA/spark-rapids/issues/868)|[BUG] Rounding error when casting timestamp to string for timestamps before 1970|
+|[#880](https://github.com/NVIDIA/spark-rapids/issues/880)|[BUG] doing a window operation with an orderby for a single constant crashes|
+|[#776](https://github.com/NVIDIA/spark-rapids/issues/776)|[BUG] Integration test fails on spark 3.1.0-SNAPSHOT|
+|[#874](https://github.com/NVIDIA/spark-rapids/issues/874)|[BUG] `RapidsConf.scala` has some un-consistency for `spark.rapids.sql.format.parquet.multiThreadedRead`|
+|[#860](https://github.com/NVIDIA/spark-rapids/issues/860)|[BUG] we need to mark columns from received shuffle buffers as `GpuColumnVectorFromBuffer`|
+|[#122](https://github.com/NVIDIA/spark-rapids/issues/122)|[BUG] CSV Timestamp parseing is broken for TS < 1902 and TS > 2038|
+|[#810](https://github.com/NVIDIA/spark-rapids/issues/810)|[BUG] UDF Integration tests fail if pandas is not installed|
+|[#750](https://github.com/NVIDIA/spark-rapids/issues/750)|[BUG] udf_cudf_test::test_with_column fails with IPC error |
+|[#746](https://github.com/NVIDIA/spark-rapids/issues/746)|[BUG] cudf_udf_test.py is flakey|
+|[#811](https://github.com/NVIDIA/spark-rapids/issues/811)|[BUG] 0.3 nightly is timing out |
+|[#574](https://github.com/NVIDIA/spark-rapids/issues/574)|[BUG] Fix GpuTimeSub for Spark 3.1.0|
+
+### PRs
+|||
+|:---|:---|
+|[#850](https://github.com/NVIDIA/spark-rapids/pull/850)| Add in basic support for lead/lag|
+|[#843](https://github.com/NVIDIA/spark-rapids/pull/843)|[REVIEW] Cache plugin to handle reading CachedBatch to an InternalRow|
+|[#904](https://github.com/NVIDIA/spark-rapids/pull/904)|Add command-line argument for benchmark result filename|
+|[#909](https://github.com/NVIDIA/spark-rapids/pull/909)|GCP preview version image name update|
+|[#903](https://github.com/NVIDIA/spark-rapids/pull/903)|update getting-started-gcp.md with new component list|
+|[#900](https://github.com/NVIDIA/spark-rapids/pull/900)|Turn off CollectLimitExec replacement by default|
+|[#907](https://github.com/NVIDIA/spark-rapids/pull/907)|remove configs from databricks that shouldn't be used by default|
+|[#893](https://github.com/NVIDIA/spark-rapids/pull/893)|Fix rounding error when casting timestamp to string for timestamps before 1970|
+|[#899](https://github.com/NVIDIA/spark-rapids/pull/899)|Mark reduction corner case tests as xfail on databricks until they can be fixed|
+|[#894](https://github.com/NVIDIA/spark-rapids/pull/894)|Replace whole-buffer slicing with direct refcounting|
+|[#891](https://github.com/NVIDIA/spark-rapids/pull/891)|Add config to dump heap on GPU OOM|
+|[#890](https://github.com/NVIDIA/spark-rapids/pull/890)|Clean up CoalesceBatch to use withResource|
+|[#892](https://github.com/NVIDIA/spark-rapids/pull/892)|Only manifest the current batch in cached block shuffle read iterator|
+|[#871](https://github.com/NVIDIA/spark-rapids/pull/871)|Add support for using the arena allocator|
+|[#889](https://github.com/NVIDIA/spark-rapids/pull/889)|Fix crash on scalar only orderby|
+|[#879](https://github.com/NVIDIA/spark-rapids/pull/879)|Update SpillableColumnarBatch to remove buffer from catalog on close|
+|[#888](https://github.com/NVIDIA/spark-rapids/pull/888)|Shrink detect scope to compile only [skip ci]|
+|[#885](https://github.com/NVIDIA/spark-rapids/pull/885)|[BUG] fix IT dockerfile arguments [skip ci]|
+|[#883](https://github.com/NVIDIA/spark-rapids/pull/883)|[BUG] fix IT dockerfile args ordering [skip ci]|
+|[#875](https://github.com/NVIDIA/spark-rapids/pull/875)|fix the non-consistency for `spark.rapids.sql.format.parquet.multiThreadedRead` in RapidsConf.scala|
+|[#862](https://github.com/NVIDIA/spark-rapids/pull/862)|Migrate nightly&integration pipelines to blossom [skip ci]|
+|[#872](https://github.com/NVIDIA/spark-rapids/pull/872)|Ensure that receive-side batches use GpuColumnVectorFromBuffer to avoid|
+|[#833](https://github.com/NVIDIA/spark-rapids/pull/833)|Add nvcomp LZ4 codec support|
+|[#870](https://github.com/NVIDIA/spark-rapids/pull/870)|Cleaned up tests and documentation for csv timestamp parsing|
+|[#823](https://github.com/NVIDIA/spark-rapids/pull/823)|Add command-line interface for TPC-* for use with spark-submit|
+|[#856](https://github.com/NVIDIA/spark-rapids/pull/856)|Move GpuWindowInPandasExec in shims layers|
+|[#756](https://github.com/NVIDIA/spark-rapids/pull/756)|Add stream-time metric|
+|[#832](https://github.com/NVIDIA/spark-rapids/pull/832)|Skip pandas tests if pandas cannot be found|
+|[#841](https://github.com/NVIDIA/spark-rapids/pull/841)|Fix a hanging issue when processing empty data.|
+|[#840](https://github.com/NVIDIA/spark-rapids/pull/840)|[REVIEW] Fixed failing cache tests|
+|[#848](https://github.com/NVIDIA/spark-rapids/pull/848)|Update task memory and disk spill metrics when buffer store spills|
+|[#851](https://github.com/NVIDIA/spark-rapids/pull/851)|Use contiguous table when deserializing columnar batch|
+|[#857](https://github.com/NVIDIA/spark-rapids/pull/857)|fix pvc scheduling issue|
+|[#853](https://github.com/NVIDIA/spark-rapids/pull/853)|Remove nodeAffinity from premerge pipeline|
+|[#796](https://github.com/NVIDIA/spark-rapids/pull/796)|Record spark plan SQL metrics to JSON when running benchmarks|
+|[#781](https://github.com/NVIDIA/spark-rapids/pull/781)|Add AQE unit tests|
+|[#824](https://github.com/NVIDIA/spark-rapids/pull/824)|Skip cudf_udf test by default|
+|[#839](https://github.com/NVIDIA/spark-rapids/pull/839)|First/Last reduction and cleanup of agg APIs|
+|[#827](https://github.com/NVIDIA/spark-rapids/pull/827)|Add Spark 3.0 EMR Shim layer |
+|[#816](https://github.com/NVIDIA/spark-rapids/pull/816)|[BUG] fix nightly is timing out|
+|[#782](https://github.com/NVIDIA/spark-rapids/pull/782)|Benchmark utility to perform diff of output from benchmark runs, allowing for precision differences|
+|[#813](https://github.com/NVIDIA/spark-rapids/pull/813)|Revert "Enable tests in udf_cudf_test.py"|
+|[#788](https://github.com/NVIDIA/spark-rapids/pull/788)|[FEA] Persist workspace data on PVC for premerge|
+|[#805](https://github.com/NVIDIA/spark-rapids/pull/805)|[FEA] nightly build trigger both IT on spark 300 and 301|
+|[#797](https://github.com/NVIDIA/spark-rapids/pull/797)|Allow host spill store to fit a buffer larger than configured max size|
+|[#777](https://github.com/NVIDIA/spark-rapids/pull/777)|Enable tests in udf_cudf_test.py|
+|[#790](https://github.com/NVIDIA/spark-rapids/pull/790)|CI: Update cudf python to 0.16 nightly|
+|[#772](https://github.com/NVIDIA/spark-rapids/pull/772)|Add support for empty array construction.|
+|[#783](https://github.com/NVIDIA/spark-rapids/pull/783)|Improved GpuArrowEvalPythonExec|
+|[#771](https://github.com/NVIDIA/spark-rapids/pull/771)|Various improvements to benchmarks|
+|[#763](https://github.com/NVIDIA/spark-rapids/pull/763)|[REVIEW] Allow CoalesceBatch to spill data that is not in active use|
+|[#727](https://github.com/NVIDIA/spark-rapids/pull/727)|Update cudf dependency to 0.16-SNAPSHOT|
+|[#726](https://github.com/NVIDIA/spark-rapids/pull/726)|parquet writer support for TIMESTAMP_MILLIS|
+|[#674](https://github.com/NVIDIA/spark-rapids/pull/674)|Unit test for GPU exchange re-use with AQE|
+|[#723](https://github.com/NVIDIA/spark-rapids/pull/723)|Update code coverage to find source files in new places|
+|[#766](https://github.com/NVIDIA/spark-rapids/pull/766)|Update the integration Dockerfile to reduce the image size|
+|[#762](https://github.com/NVIDIA/spark-rapids/pull/762)|Fixing conflicts in branch-0.3|
+|[#738](https://github.com/NVIDIA/spark-rapids/pull/738)|[auto-merge] branch-0.2 to branch-0.3 - resolve conflict|
+|[#722](https://github.com/NVIDIA/spark-rapids/pull/722)|Initial code changes to support spilling outside of shuffle|
+|[#693](https://github.com/NVIDIA/spark-rapids/pull/693)|Update jenkins files for 0.3|
+|[#692](https://github.com/NVIDIA/spark-rapids/pull/692)|Merge shims dependency to spark-3.0.1 into branch-0.3|
+|[#690](https://github.com/NVIDIA/spark-rapids/pull/690)|Update the version to 0.3.0-SNAPSHOT|
 
 ## Release 0.2
 
@@ -59,7 +161,7 @@ Generated on 2020-09-18
 |[#601](https://github.com/NVIDIA/spark-rapids/issues/601)|[FEA] Optimize unnecessary sorts when replacing SortAggregate|
 |[#333](https://github.com/NVIDIA/spark-rapids/issues/333)|[FEA] Better handling of reading lots of small Parquet files|
 |[#511](https://github.com/NVIDIA/spark-rapids/issues/511)|[FEA] Connect shuffle table compression to shuffle exec metrics|
-|[#15](https://github.com/NVIDIA/spark-rapids/issues/15)|[FEA] Multiple threads shareing the same GPU|
+|[#15](https://github.com/NVIDIA/spark-rapids/issues/15)|[FEA] Multiple threads sharing the same GPU|
 |[#272](https://github.com/NVIDIA/spark-rapids/issues/272)|[DOC] Getting started guide for UCX shuffle|
 
 ### Bugs Fixed
@@ -118,6 +220,9 @@ Generated on 2020-09-18
 ### PRs
 |||
 |:---|:---|
+|[#826](https://github.com/NVIDIA/spark-rapids/pull/826)|Fix link to cudf-0.15-cuda11.jar|
+|[#815](https://github.com/NVIDIA/spark-rapids/pull/815)|Update documentation for Scala UDFs in 0.2 since you need two things|
+|[#802](https://github.com/NVIDIA/spark-rapids/pull/802)|Update 0.2 CHANGELOG|
 |[#793](https://github.com/NVIDIA/spark-rapids/pull/793)|Update Jenkins scripts for release|
 |[#798](https://github.com/NVIDIA/spark-rapids/pull/798)|Fix shims provider override config not being seen by executors|
 |[#785](https://github.com/NVIDIA/spark-rapids/pull/785)|Make shuffle run on CPU if we do a join where we read from bucketed table|

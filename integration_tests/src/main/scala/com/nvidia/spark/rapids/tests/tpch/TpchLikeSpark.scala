@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019, NVIDIA CORPORATION. All rights reserved.
+ * Copyright (c) 2019-2020, NVIDIA CORPORATION. All rights reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,34 +16,55 @@
 
 package com.nvidia.spark.rapids.tests.tpch
 
-import com.nvidia.spark.rapids.tests.DebugRange
+import com.nvidia.spark.rapids.tests.common.BenchUtils
+import com.nvidia.spark.rapids.tests.tpch.TpchLikeSpark.{csvToOrc, csvToParquet}
+import org.rogach.scallop.ScallopConf
 
-import org.apache.spark.sql.{DataFrame, SparkSession}
+import org.apache.spark.sql.{DataFrame, DataFrameWriter, Row, SparkSession}
 import org.apache.spark.sql.types._
 
 // scalastyle:off line.size.limit
 
 object TpchLikeSpark {
-  def csvToParquet(spark: SparkSession, basePath: String, baseOutput: String): Unit = {
-    readOrdersCSV(spark, basePath + "/orders.tbl").write.parquet(baseOutput + "/orders.tbl")
-    readLineitemCSV(spark, basePath + "/lineitem.tbl").write.parquet(baseOutput + "/lineitem.tbl")
-    readCustomerCSV(spark, basePath + "/customer.tbl").write.parquet(baseOutput + "/customer.tbl")
-    readNationCSV(spark, basePath + "/nation.tbl").write.parquet(baseOutput + "/nation.tbl")
-    readPartCSV(spark, basePath + "/part.tbl").write.parquet(baseOutput + "/part.tbl")
-    readPartsuppCSV(spark, basePath + "/partsupp.tbl").write.parquet(baseOutput + "/partsupp.tbl")
-    readRegionCSV(spark, basePath + "/region.tbl").write.parquet(baseOutput + "/region.tbl")
-    readSupplierCSV(spark, basePath + "/supplier.tbl").write.parquet(baseOutput + "/supplier.tbl")
+  private def setupWrite(
+      df: DataFrame, 
+      name: String,
+      coalesce: Map[String, Int],
+      repartition: Map[String, Int]): DataFrameWriter[Row] = {
+    val repart = BenchUtils.applyCoalesceRepartition(name, df, coalesce, repartition)
+    repart.write.mode("overwrite")
+  }
+  
+  def csvToParquet(
+      spark: SparkSession, 
+      basePath: String, 
+      baseOutput: String, 
+      coalesce: Map[String, Int],
+      repartition: Map[String, Int]): Unit = {
+    setupWrite(readOrdersCSV(spark, basePath + "/orders.tbl"), "orders", coalesce, repartition).parquet(baseOutput + "/orders.tbl")
+    setupWrite(readLineitemCSV(spark, basePath + "/lineitem.tbl"), "lineitem", coalesce, repartition).parquet(baseOutput + "/lineitem.tbl")
+    setupWrite(readCustomerCSV(spark, basePath + "/customer.tbl"), "customers", coalesce, repartition).parquet(baseOutput + "/customer.tbl")
+    setupWrite(readNationCSV(spark, basePath + "/nation.tbl"), "nation", coalesce, repartition).parquet(baseOutput + "/nation.tbl")
+    setupWrite(readPartCSV(spark, basePath + "/part.tbl"), "part", coalesce, repartition).parquet(baseOutput + "/part.tbl")
+    setupWrite(readPartsuppCSV(spark, basePath + "/partsupp.tbl"), "partsupp", coalesce, repartition).parquet(baseOutput + "/partsupp.tbl")
+    setupWrite(readRegionCSV(spark, basePath + "/region.tbl"), "region", coalesce, repartition).parquet(baseOutput + "/region.tbl")
+    setupWrite(readSupplierCSV(spark, basePath + "/supplier.tbl"), "supplier", coalesce, repartition).parquet(baseOutput + "/supplier.tbl")
   }
 
-  def csvToOrc(spark: SparkSession, basePath: String, baseOutput: String): Unit = {
-    readOrdersCSV(spark, basePath + "/orders.tbl").write.orc(baseOutput + "/orders.tbl")
-    readLineitemCSV(spark, basePath + "/lineitem.tbl").write.orc(baseOutput + "/lineitem.tbl")
-    readCustomerCSV(spark, basePath + "/customer.tbl").write.orc(baseOutput + "/customer.tbl")
-    readNationCSV(spark, basePath + "/nation.tbl").write.orc(baseOutput + "/nation.tbl")
-    readPartCSV(spark, basePath + "/part.tbl").write.orc(baseOutput + "/part.tbl")
-    readPartsuppCSV(spark, basePath + "/partsupp.tbl").write.orc(baseOutput + "/partsupp.tbl")
-    readRegionCSV(spark, basePath + "/region.tbl").write.orc(baseOutput + "/region.tbl")
-    readSupplierCSV(spark, basePath + "/supplier.tbl").write.orc(baseOutput + "/supplier.tbl")
+  def csvToOrc(
+      spark: SparkSession, 
+      basePath: String, 
+      baseOutput: String,
+      coalesce: Map[String, Int],
+      repartition: Map[String, Int]): Unit = {
+    setupWrite(readOrdersCSV(spark, basePath + "/orders.tbl"), "orders", coalesce, repartition).orc(baseOutput + "/orders.tbl")
+    setupWrite(readLineitemCSV(spark, basePath + "/lineitem.tbl"), "lineitem", coalesce, repartition).orc(baseOutput + "/lineitem.tbl")
+    setupWrite(readCustomerCSV(spark, basePath + "/customer.tbl"), "customers", coalesce, repartition).orc(baseOutput + "/customer.tbl")
+    setupWrite(readNationCSV(spark, basePath + "/nation.tbl"), "nation", coalesce, repartition).orc(baseOutput + "/nation.tbl")
+    setupWrite(readPartCSV(spark, basePath + "/part.tbl"), "part", coalesce, repartition).orc(baseOutput + "/part.tbl")
+    setupWrite(readPartsuppCSV(spark, basePath + "/partsupp.tbl"), "partsupp", coalesce, repartition).orc(baseOutput + "/partsupp.tbl")
+    setupWrite(readRegionCSV(spark, basePath + "/region.tbl"), "region", coalesce, repartition).orc(baseOutput + "/region.tbl")
+    setupWrite(readSupplierCSV(spark, basePath + "/supplier.tbl"), "supplier", coalesce, repartition).orc(baseOutput + "/supplier.tbl")
   }
 
   def setupAllCSV(spark: SparkSession, basePath: String): Unit = {
@@ -267,24 +288,6 @@ object TpchLikeSpark {
 
   def setupSupplierOrc(spark: SparkSession, path: String): Unit =
     spark.read.orc(path).createOrReplaceTempView("supplier")
-
-  def main(args: Array[String]): Unit = {
-    System.setProperty("ai.rapids.cudf.nvtx.enabled", "true")
-    val spark = SparkSession.builder.appName("TpchLike")
-      .config("spark.ui.showConsoleProgress", "false")
-      .config("spark.sql.join.preferSortMergeJoin", "false")
-      .config("spark.rapids.sql.variableFloatAgg.enabled", "true")
-      .config("spark.rapids.sql.incompatibleOps.enabled", "true")
-      .config("spark.rapids.sql.explain", "true")
-      .getOrCreate()
-    setupAllParquet(spark, args(0))
-    var range = new DebugRange("QUERY")
-    spark.time(Q5Like(spark).collect())
-    range.close()
-    range = new DebugRange("QUERY")
-    spark.time(Q5Like(spark).collect())
-    range.close()
-  }
 }
 
 object Q1Like {
@@ -1145,6 +1148,43 @@ object Q22Like {
       |        cntrycode
       |
       |""".stripMargin)
+}
+
+object ConvertFiles {
+  /**
+   * Main method allows us to submit using spark-submit to perform conversions from CSV to
+   * Parquet or Orc.
+   */
+  def main(arg: Array[String]): Unit = {
+    val conf = new FileConversionConf(arg)
+    val spark = SparkSession.builder.appName("TPC-H Like File Conversion").getOrCreate()
+    conf.outputFormat() match {
+      case "parquet" =>
+        csvToParquet(
+          spark,
+          conf.input(),
+          conf.output(),
+          conf.coalesce,
+          conf.repartition)
+      case "orc" =>
+        csvToOrc(
+          spark,
+          conf.input(),
+          conf.output(),
+          conf.coalesce,
+          conf.repartition)
+    }
+  }
+}
+
+class FileConversionConf(arguments: Seq[String]) extends ScallopConf(arguments) {
+  val input = opt[String](required = true)
+  val output = opt[String](required = true)
+  val outputFormat = opt[String](required = true)
+  val coalesce = propsLong[Int]("coalesce")
+  val repartition = propsLong[Int]("repartition")
+  verify()
+  BenchUtils.validateCoalesceRepartition(coalesce, repartition)
 }
 
 // scalastyle:on line.size.limit

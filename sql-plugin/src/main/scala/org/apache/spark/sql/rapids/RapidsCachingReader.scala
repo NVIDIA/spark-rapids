@@ -25,7 +25,6 @@ import com.nvidia.spark.rapids.shuffle.{RapidsShuffleIterator, RapidsShuffleTran
 import org.apache.spark.{InterruptibleIterator, TaskContext}
 import org.apache.spark.internal.Logging
 import org.apache.spark.shuffle.{ShuffleReader, ShuffleReadMetricsReporter}
-import org.apache.spark.sql.vectorized.ColumnarBatch
 import org.apache.spark.storage.{BlockId, BlockManagerId, ShuffleBlockBatchId, ShuffleBlockId}
 import org.apache.spark.util.CompletionIterator
 
@@ -50,19 +49,18 @@ class RapidsCachingReader[K, C](
     rapidsConf: RapidsConf,
     localId: BlockManagerId,
     blocksByAddress: Iterator[(BlockManagerId, Seq[(BlockId, Long, Int)])],
-    gpuHandle: GpuShuffleHandle[_, _],
     context: TaskContext,
     metrics: ShuffleReadMetricsReporter,
     transport: Option[RapidsShuffleTransport],
     catalog: ShuffleBufferCatalog)
-  extends ShuffleReader[K, C]  with Logging {
+  extends ShuffleReader[K, C]  with Arm with Logging {
 
   override def read(): Iterator[Product2[K, C]] = {
     val readRange = new NvtxRange(s"RapidsCachingReader.read", NvtxColor.DARK_GREEN)
     try {
       val blocksForRapidsTransport = new ArrayBuffer[(BlockManagerId, Seq[(BlockId, Long, Int)])]()
       val cachedBlocks = new ArrayBuffer[BlockId]()
-      val cachedBatches = new ArrayBuffer[ColumnarBatch]()
+      val cachedBufferIds = new ArrayBuffer[ShuffleBufferId]()
       val blocksByAddressMap: Map[BlockManagerId, Seq[(BlockId, Long, Int)]] = blocksByAddress.toMap
 
       blocksByAddressMap.keys.foreach(blockManagerId => {
@@ -75,28 +73,25 @@ class RapidsCachingReader[K, C](
             blockInfos.foreach(
               blockInfo => {
                 val blockId = blockInfo._1
-                val shuffleBufferIds: Seq[ShuffleBufferId] = blockId match {
+                val shuffleBufferIds: IndexedSeq[ShuffleBufferId] = blockId match {
                   case sbbid: ShuffleBlockBatchId =>
                     (sbbid.startReduceId to sbbid.endReduceId).flatMap { reduceId =>
                       cachedBlocks.append(blockId)
                       val sBlockId = ShuffleBlockId(sbbid.shuffleId, sbbid.mapId, reduceId)
-                      catalog.blockIdToBuffersIds(sBlockId).toSeq
+                      catalog.blockIdToBuffersIds(sBlockId)
                     }
                   case sbid: ShuffleBlockId =>
                     cachedBlocks.append(blockId)
-                    catalog.blockIdToBuffersIds(sbid).toSeq
+                    catalog.blockIdToBuffersIds(sbid)
                   case _ => throw new IllegalArgumentException(
                     s"${blockId.getClass} $blockId is not currently supported")
                 }
 
-                shuffleBufferIds.foreach { id =>
-                  val asb = catalog.acquireBuffer(id)
-                  try {
-                    cachedBatches += asb.getColumnarBatch
-                  } finally {
-                    asb.close()
-                  }
-                }
+                cachedBufferIds ++= shuffleBufferIds
+
+                // Update the spill priorities of these buffers to indicate they are about
+                // to be read and therefore should not be spilled if possible.
+                shuffleBufferIds.foreach(catalog.updateSpillPriorityForLocalRead)
 
                 if (shuffleBufferIds.nonEmpty) {
                   metrics.incLocalBlocksFetched(1)
@@ -135,8 +130,11 @@ class RapidsCachingReader[K, C](
 
       val itRange = new NvtxRange("Shuffle Iterator prep", NvtxColor.BLUE)
       try {
-        val cachedIt = cachedBatches.iterator.map(cb => {
+        val cachedIt = cachedBufferIds.iterator.map(bufferId => {
           GpuSemaphore.acquireIfNecessary(context)
+          val cb = withResource(catalog.acquireBuffer(bufferId)) { buffer =>
+            buffer.getColumnarBatch
+          }
           val cachedBytesRead = GpuColumnVector.getTotalDeviceMemoryUsed(cb)
           metrics.incLocalBytesRead(cachedBytesRead)
           metrics.incRecordsRead(cb.numRows())

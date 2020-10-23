@@ -17,6 +17,10 @@
 
 package com.nvidia.spark.rapids;
 
+import ai.rapids.cudf.DType;
+import ai.rapids.cudf.HostColumnVectorCore;
+import ai.rapids.cudf.HostMemoryBuffer;
+
 import org.apache.spark.sql.types.DataType;
 import org.apache.spark.sql.types.Decimal;
 import org.apache.spark.sql.vectorized.ColumnVector;
@@ -24,6 +28,9 @@ import org.apache.spark.sql.vectorized.ColumnarArray;
 import org.apache.spark.sql.vectorized.ColumnarBatch;
 import org.apache.spark.sql.vectorized.ColumnarMap;
 import org.apache.spark.unsafe.types.UTF8String;
+
+import java.util.ArrayList;
+import java.util.Optional;
 
 /**
  * A GPU accelerated version of the Spark ColumnVector.
@@ -82,7 +89,7 @@ public final class RapidsHostColumnVector extends ColumnVector {
 
   @Override
   public void close() {
-    // Just pass through the reference counting
+    // Just pass through
     cudfCv.close();
   }
 
@@ -143,7 +150,21 @@ public final class RapidsHostColumnVector extends ColumnVector {
 
   @Override
   public ColumnarMap getMap(int ordinal) {
-    throw new IllegalStateException("Maps are currently not supported by rapids cudf");
+    ai.rapids.cudf.ColumnViewAccess<HostMemoryBuffer> structHcv = cudfCv.getChildColumnViewAccess(0);
+    // keys
+    ai.rapids.cudf.ColumnViewAccess<HostMemoryBuffer> firstHcv = structHcv.getChildColumnViewAccess(0);
+    HostColumnVectorCore firstHcvCore = (HostColumnVectorCore) firstHcv;
+    // values
+    ai.rapids.cudf.ColumnViewAccess<HostMemoryBuffer> secondHcv = structHcv.getChildColumnViewAccess(1);
+    HostColumnVectorCore secondHcvCore = (HostColumnVectorCore) secondHcv;
+
+    RapidsHostColumnVectorCore firstChild = new RapidsHostColumnVectorCore(
+        GpuColumnVector.getSparkType(firstHcvCore.getType()), firstHcvCore);
+    RapidsHostColumnVectorCore secondChild = new RapidsHostColumnVectorCore(
+        GpuColumnVector.getSparkType(secondHcvCore.getType()), secondHcvCore);
+    int startOffset = cudfCv.getOffsetBuffer().getInt(ordinal * DType.INT32.getSizeInBytes());
+    return new ColumnarMap(firstChild, secondChild, startOffset,
+        cudfCv.getOffsetBuffer().getInt((ordinal + 1) * DType.INT32.getSizeInBytes()) - startOffset);
   }
 
   @Override

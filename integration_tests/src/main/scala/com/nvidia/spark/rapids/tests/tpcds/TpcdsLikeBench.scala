@@ -16,110 +16,29 @@
 
 package com.nvidia.spark.rapids.tests.tpcds
 
-import com.nvidia.spark.rapids.tests.common.BenchUtils
+import com.nvidia.spark.rapids.tests.common.BenchmarkSuite
 
-import org.apache.spark.internal.Logging
-import org.apache.spark.sql.{DataFrame, SaveMode, SparkSession}
+import org.apache.spark.sql.{DataFrame, SparkSession}
 
-object TpcdsLikeBench extends Logging {
+object TpcdsLikeBench extends BenchmarkSuite {
+  override def name(): String = "TPC-DS"
 
-  /**
-   * This method performs a benchmark of executing a query and collecting the results to the
-   * driver and can be called from Spark shell using the following syntax:
-   *
-   * TpcdsLikeBench.collect(spark, "q5", 3)
-   *
-   * @param spark The Spark session
-   * @param query The name of the query to run e.g. "q5"
-   * @param iterations The number of times to run the query.
-   */
-  def collect(
-      spark: SparkSession,
-      query: String,
-      iterations: Int = 3,
-      gcBetweenRuns: Boolean = false): Unit = {
-    BenchUtils.collect(
-      spark,
-      spark => TpcdsLikeSpark.query(query)(spark),
-      query,
-      s"tpcds-$query-collect",
-      iterations,
-      gcBetweenRuns)
+  override def shortName(): String = "tpcds"
+
+  override def setupAllParquet(spark: SparkSession, path: String): Unit = {
+    TpcdsLikeSpark.setupAllParquet(spark, path)
   }
 
-  /**
-   * This method performs a benchmark of executing a query and writing the results to CSV files
-   * and can be called from Spark shell using the following syntax:
-   *
-   * TpcdsLikeBench.writeCsv(spark, "q5", 3, "/path/to/write")
-   *
-   * @param spark The Spark session
-   * @param query The name of the query to run e.g. "q5"
-   * @param iterations The number of times to run the query.
-   */
-  def writeCsv(
-      spark: SparkSession,
-      query: String,
-      path: String,
-      mode: SaveMode = SaveMode.Overwrite,
-      writeOptions: Map[String, String] = Map.empty,
-      iterations: Int = 3,
-      gcBetweenRuns: Boolean = false): Unit = {
-    BenchUtils.writeCsv(
-      spark,
-      spark => TpcdsLikeSpark.query(query)(spark),
-      query,
-      s"tpcds-$query-csv",
-      iterations,
-      gcBetweenRuns,
-      path,
-      mode,
-      writeOptions)
+  override def setupAllCSV(spark: SparkSession, path: String): Unit = {
+    TpcdsLikeSpark.setupAllCSV(spark, path)
   }
 
-  /**
-   * This method performs a benchmark of executing a query and writing the results to Parquet files
-   * and can be called from Spark shell using the following syntax:
-   *
-   * TpcdsLikeBench.writeParquet(spark, "q5", 3, "/path/to/write")
-   *
-   * @param spark The Spark session
-   * @param query The name of the query to run e.g. "q5"
-   * @param iterations The number of times to run the query.
-   */
-  def writeParquet(
-      spark: SparkSession,
-      query: String,
-      path: String,
-      mode: SaveMode = SaveMode.Overwrite,
-      writeOptions: Map[String, String] = Map.empty,
-      iterations: Int = 3,
-      gcBetweenRuns: Boolean = false): Unit = {
-    BenchUtils.writeParquet(
-      spark,
-      spark => TpcdsLikeSpark.query(query)(spark),
-      query,
-      s"tpcds-$query-parquet",
-      iterations,
-      gcBetweenRuns,
-      path,
-      mode,
-      writeOptions)
+  override def setupAllOrc(spark: SparkSession, path: String): Unit = {
+    TpcdsLikeSpark.setupAllOrc(spark, path)
   }
 
-  /**
-   * The main method can be invoked by using spark-submit.
-   */
-  def main(args: Array[String]): Unit = {
-    val input = args(0)
-
-    val spark = SparkSession.builder.appName("TPC-DS Like Bench").getOrCreate()
-    TpcdsLikeSpark.setupAllParquet(spark, input)
-
-    args.drop(1).foreach(query => {
-      println(s"*** RUNNING TPC-DS QUERY $query")
-      collect(spark, query)
-    })
-
+  override def createDataFrame(spark: SparkSession, query: String): DataFrame = {
+    TpcdsLikeSpark.run(spark, query)
   }
 }
+

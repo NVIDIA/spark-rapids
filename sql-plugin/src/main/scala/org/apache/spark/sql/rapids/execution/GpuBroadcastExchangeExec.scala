@@ -40,7 +40,6 @@ import org.apache.spark.sql.execution.exchange.{BroadcastExchangeExec, Exchange}
 import org.apache.spark.sql.execution.joins.{BroadcastHashJoinExec, BroadcastNestedLoopJoinExec}
 import org.apache.spark.sql.execution.metric.SQLMetrics
 import org.apache.spark.sql.internal.{SQLConf, StaticSQLConf}
-import org.apache.spark.sql.rapids.execution
 import org.apache.spark.sql.vectorized.{ColumnarBatch, ColumnVector}
 
 @SerialVersionUID(100L)
@@ -246,6 +245,9 @@ abstract class GpuBroadcastExchangeExecBase(
     "broadcastTime" -> SQLMetrics.createNanoTimingMetric(sparkContext, "time to broadcast"))
 
   override def outputPartitioning: Partitioning = BroadcastPartitioning(mode)
+
+  // For now all broadcasts produce a single batch. We might need to change that at some point
+  override def outputBatching: CoalesceGoal = RequireSingleBatch
 
   @transient
   private lazy val promise = Promise[broadcast.Broadcast[Any]]()

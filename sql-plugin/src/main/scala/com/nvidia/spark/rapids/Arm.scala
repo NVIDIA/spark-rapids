@@ -55,7 +55,7 @@ trait Arm {
       block(r)
     } catch {
       case t: Throwable =>
-        r.safeClose()
+        r.safeClose(t)
         throw t
     }
   }
@@ -66,7 +66,7 @@ trait Arm {
       block(r)
     } catch {
       case t: Throwable =>
-        r.safeClose()
+        r.safeClose(t)
         throw t
     }
   }
@@ -77,7 +77,7 @@ trait Arm {
       block(r)
     } catch {
       case t: Throwable =>
-        r.safeClose()
+        r.safeClose(t)
         throw t
     }
   }
