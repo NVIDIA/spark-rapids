@@ -146,15 +146,15 @@ object TpcdsLikeSpark {
       appendDat))
   }
 
-  def setupAllCSV(spark: SparkSession, basePath: String, appendDat: Boolean): Unit = {
+  def setupAllCSV(spark: SparkSession, basePath: String, appendDat: Boolean = true): Unit = {
     tables.foreach(_.setupCSV(spark, basePath, appendDat))
   }
 
-  def setupAllParquet(spark: SparkSession, basePath: String, appendDat: Boolean): Unit = {
+  def setupAllParquet(spark: SparkSession, basePath: String, appendDat: Boolean = true): Unit = {
     tables.foreach(_.setupParquet(spark, basePath, appendDat))
   }
 
-  def setupAllOrc(spark: SparkSession, basePath: String, appendDat: Boolean): Unit = {
+  def setupAllOrc(spark: SparkSession, basePath: String, appendDat: Boolean = true): Unit = {
     tables.foreach(_.setupOrc(spark, basePath, appendDat))
   }
 
@@ -162,7 +162,7 @@ object TpcdsLikeSpark {
       spark: SparkSession,
       basePath: String,
       format: String,
-      appendDat: Boolean): Unit = {
+      appendDat: Boolean = true): Unit = {
     tables.foreach(_.setup(spark, basePath, format, appendDat))
   }
 
