@@ -454,6 +454,13 @@ class ParquetCachedBatchSerializer extends CachedBatchSerializer with Arm {
 
     val requestedSchema = getCatalystSchema(selectedAttributes, cacheAttributes)
     val options = HadoopReadOptions.builder(sharedHadoopConf).build()
+    /**
+     * We are getting this method using reflection because its a package-private
+     */
+    val readBatchMethod =
+      classOf[VectorizedColumnReader].getDeclaredMethod("readBatch", Integer.TYPE,
+        classOf[WritableColumnVector])
+    readBatchMethod.setAccessible(true)
 
     def getInternalRowIterator: Iterator[InternalRow] = {
 
@@ -563,10 +570,6 @@ class ParquetCachedBatchSerializer extends CachedBatchSerializer with Arm {
           .asInstanceOf[Array[org.apache.spark.sql.vectorized.ColumnVector]])
         val missingColumns = new Array[Boolean](reqParquetSchema.getFieldCount)
         var columnReaders: Array[VectorizedColumnReader] = null
-        val readBatchMethod =
-          classOf[VectorizedColumnReader].getDeclaredMethod("readBatch", Integer.TYPE,
-            classOf[WritableColumnVector])
-        readBatchMethod.setAccessible(true)
 
         var rowsReturned: Long = 0L
         var totalRowCount: Long = 0L
