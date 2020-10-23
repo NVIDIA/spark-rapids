@@ -463,7 +463,7 @@ case class GpuFileSourceScanExec(
         requiredSchema,
         relation.partitionSchema,
         pushedDownFilters.toArray,
-        new RapidsConf(sqlConf),
+        rapidsConf,
         metrics,
         queryUsesInputFile)
 
@@ -515,7 +515,7 @@ case class GpuFileSourceScanExec(
         requiredSchema,
         relation.partitionSchema,
         pushedDownFilters.toArray,
-        new RapidsConf(sqlConf),
+        rapidsConf,
         metrics,
         queryUsesInputFile)
 
