@@ -510,19 +510,19 @@ object RapidsConf {
   val PARQUET_READER_TYPE = conf("spark.rapids.sql.format.parquet.reader.type")
     .doc("Sets the parquet reader type. We support different types that are optimized for " +
       "different environments. The original Spark style reader can be selected by setting this " +
-      "to PERFILE. This is where the task reads each file assigned to it in serially and copies " +
+      "to PERFILE. This is where the task reads each file assigned to it serially and copies " +
       "each one to the GPU after reading that file. That reader is not great at handling many " +
       "small files, so using either COALESCING OR MULTITHREADED is better for that. The " +
       "COALESCING reader is good when using a local file system where the executors are on the " +
-      "same nodes or close to the nodes the data is being read on. This reader coalescing all " +
-      "the files assigned to a task into a single buffer before sending it down to the GPU. " +
-      "It does copy blocks from a single file into a buffer in separate threads in parallel " +
-      "as well, see spark.rapids.sql.format.parquet.multiThreadedRead.numThreads." +
+      "same nodes or close to the nodes the data is being read on. This reader coalesces all " +
+      "the files assigned to a task into a single host buffer before sending it down to the GPU. " +
+      "It does copy blocks from a single file into a host buffer in separate threads in  " +
+      "parallel, see spark.rapids.sql.format.parquet.multiThreadedRead.numThreads." +
       "MULTITHREADED is good for cloud environments where you are reading from a blobstore " +
       "that is total separate and likely has a higher I/O read cost. Many times the cloud " +
       "environments also get better throughput when you have multiple readers in parallel. " +
       "This reader uses multiple threads to read each file in parallel and each file is sent " +
-      "to gpu separately. This allows CPU side keep reading while GPU is also doing work. " +
+      "to gpu separately. This allows the CPU to keep reading while GPU is also doing work. " +
       "See spark.rapids.sql.format.parquet.multiThreadedRead.numThreads and " +
       "spark.rapids.sql.format.parquet.multiThreadedRead.maxNumFilesParallel to control " +
       "the number of threads and amount of memory used. " +
