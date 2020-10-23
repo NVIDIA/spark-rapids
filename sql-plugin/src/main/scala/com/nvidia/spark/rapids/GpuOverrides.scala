@@ -1594,22 +1594,6 @@ object GpuOverrides {
         override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression =
           GpuLike(lhs, rhs, a.escapeChar)
       }),
-    expr[RegExpReplace](
-      "RegExpReplace support for string literal input patterns",
-      (a, conf, p, r) => new TernaryExprMeta[RegExpReplace](a, conf, p, r) {
-        override def tagExprForGpu(): Unit = {
-          if (!isLit(a.rep)) {
-            willNotWorkOnGpu("Only literal values are supported for replacement string")
-          }
-          if (isNullOrEmptyOrRegex(a.regexp)) {
-            willNotWorkOnGpu(
-              "Only non-null, non-empty String literals that are not regex patterns " +
-                "are supported by RegExpReplace on the GPU")
-          }
-        }
-        override def convertToGpu(lhs: Expression, regexp: Expression,
-          rep: Expression): GpuExpression = GpuStringReplace(lhs, regexp, rep)
-      }),
     expr[Length](
       "String character length",
       (a, conf, p, r) => new UnaryExprMeta[Length](a, conf, p, r) {
