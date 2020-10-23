@@ -21,6 +21,7 @@ import java.util.concurrent.atomic.{AtomicBoolean, AtomicReference}
 
 import scala.collection.JavaConverters._
 
+import ai.rapids.cudf.Cuda
 import com.nvidia.spark.rapids.python.PythonWorkerSemaphore
 
 import org.apache.spark.{SparkConf, SparkContext}
@@ -51,6 +52,11 @@ class SQLExecPlugin extends (SparkSessionExtensions => Unit) with Logging {
   override def apply(extensions: SparkSessionExtensions): Unit = {
     logWarning("Installing extensions to enable rapids GPU SQL support." +
       s" To disable GPU support set `${RapidsConf.SQL_ENABLED}` to false")
+    if (Cuda.isPtdsEnabled()) {
+      logWarning("Using per-thread default stream")
+    } else {
+      logWarning("Using legacy default stream")
+    }
     extensions.injectColumnar(_ => ColumnarOverrideRules())
     ShimLoader.getSparkShims.injectQueryStagePrepRule(extensions, _ => GpuQueryStagePrepOverrides())
   }
