@@ -55,14 +55,12 @@ class Spark301Shims extends Spark300Shims {
     GpuOverrides.expr[First](
       "first aggregate operator",
       (a, conf, p, r) => new ExprMeta[First](a, conf, p, r) {
-
         override def convertToGpu(): GpuExpression =
           GpuFirst(childExprs(0).convertToGpu(), a.ignoreNulls)
       }),
     GpuOverrides.expr[Last](
       "last aggregate operator",
       (a, conf, p, r) => new ExprMeta[Last](a, conf, p, r) {
-
         override def convertToGpu(): GpuExpression =
           GpuLast(childExprs(0).convertToGpu(), a.ignoreNulls)
       })
