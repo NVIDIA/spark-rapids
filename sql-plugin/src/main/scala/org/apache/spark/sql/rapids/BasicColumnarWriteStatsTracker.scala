@@ -24,10 +24,22 @@ import org.apache.hadoop.fs.Path
 import org.apache.spark.{SparkContext, TaskContext}
 import org.apache.spark.internal.Logging
 import org.apache.spark.sql.execution.SQLExecution
-import org.apache.spark.sql.execution.datasources.{BasicWriteTaskStats, WriteTaskStats}
+import org.apache.spark.sql.execution.datasources.WriteTaskStats
 import org.apache.spark.sql.execution.metric.{SQLMetric, SQLMetrics}
 import org.apache.spark.sql.vectorized.ColumnarBatch
 import org.apache.spark.util.SerializableConfiguration
+
+/**
+ * Simple metrics collected during an instance of [[GpuFileFormatDataWriter]].
+ * These were first introduced in https://github.com/apache/spark/pull/18159 (SPARK-20703).
+ */
+case class BasicColumnarWriteTaskStats(
+    numPartitions: Int,
+    numFiles: Int,
+    numBytes: Long,
+    numRows: Long)
+    extends WriteTaskStats
+
 
 /**
  * Simple metrics collected during an instance of [[GpuFileFormatDataWriter]].
@@ -104,7 +116,7 @@ class BasicColumnarWriteTaskStatsTracker(hadoopConf: Configuration)
         "This could be due to the output format not writing empty files, " +
         "or files being not immediately visible in the filesystem.")
     }
-    BasicWriteTaskStats(numPartitions, numFiles, numBytes, numRows)
+    BasicColumnarWriteTaskStats(numPartitions, numFiles, numBytes, numRows)
   }
 }
 
@@ -112,7 +124,7 @@ class BasicColumnarWriteTaskStatsTracker(hadoopConf: Configuration)
 /**
  * Simple [[ColumnarWriteJobStatsTracker]] implementation that's serializable,
  * capable ofinstantiating [[BasicColumnarWriteTaskStatsTracker]] on executors and processing the
- * `BasicWriteTaskStats` they produce by aggregating the metrics and posting them
+ * `BasicColumnarWriteTaskStats` they produce by aggregating the metrics and posting them
  * as DriverMetricUpdates.
  */
 class BasicColumnarWriteJobStatsTracker(
@@ -131,7 +143,7 @@ class BasicColumnarWriteJobStatsTracker(
     var totalNumBytes: Long = 0L
     var totalNumOutput: Long = 0L
 
-    val basicStats = stats.map(_.asInstanceOf[BasicWriteTaskStats])
+    val basicStats = stats.map(_.asInstanceOf[BasicColumnarWriteTaskStats])
 
     basicStats.foreach { summary =>
       numPartitions += summary.numPartitions

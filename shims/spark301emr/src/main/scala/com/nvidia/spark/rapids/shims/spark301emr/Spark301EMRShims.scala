@@ -14,21 +14,19 @@
  * limitations under the License.
  */
 
-package com.nvidia.spark.rapids.shims.spark301
+package com.nvidia.spark.rapids.shims.spark301emr
 
-import com.nvidia.spark.rapids.{SparkShims, SparkShimVersion}
+import java.lang.reflect.Constructor
 
-object SparkShimServiceProvider {
-  val VERSION = SparkShimVersion(3, 0, 1)
-  val VERSIONNAMES = Seq(s"$VERSION")
-}
-class SparkShimServiceProvider extends com.nvidia.spark.rapids.SparkShimServiceProvider {
+import com.nvidia.spark.rapids._
+import com.nvidia.spark.rapids.shims.spark301.Spark301Shims
+import com.nvidia.spark.rapids.spark301emr.RapidsShuffleManager
 
-  def matchesVersion(version: String): Boolean = {
-    SparkShimServiceProvider.VERSIONNAMES.contains(version)
-  }
+class Spark301EMRShims extends Spark301Shims {
 
-  def buildShim: SparkShims = {
-    new Spark301Shims()
+  override def getSparkShimVersion: ShimVersion = SparkShimServiceProvider.VERSION
+
+  override def getRapidsShuffleManagerClass: String = {
+    classOf[RapidsShuffleManager].getCanonicalName
   }
 }
