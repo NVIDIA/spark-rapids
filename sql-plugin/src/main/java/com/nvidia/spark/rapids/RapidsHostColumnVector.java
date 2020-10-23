@@ -159,7 +159,7 @@ public final class RapidsHostColumnVector extends ColumnVector {
 
   @Override
   public byte[] getBinary(int rowId) {
-    return cudfCv.getBytesFromList(rowId);
+    throw new IllegalStateException("Binary data access is currently not supported by rapids cudf");
   }
 
   @Override
