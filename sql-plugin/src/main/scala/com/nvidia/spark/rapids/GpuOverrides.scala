@@ -1696,11 +1696,6 @@ object GpuOverrides {
         new SparkPlanMeta[ProjectExec](proj, conf, p, r) {
           override def convertToGpu(): GpuExec =
             GpuProjectExec(childExprs.map(_.convertToGpu()), childPlans(0).convertIfNeeded())
-
-          override def areAllSupportedTypes(types: DataType*): Boolean = types.forall {
-             case BinaryType => true
-             case x => isSupportedType(x)
-          }
         }
       }),
     exec[RangeExec](

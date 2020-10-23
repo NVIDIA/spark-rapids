@@ -247,11 +247,12 @@ class CastOpSuite extends GpuExpressionTestSuite {
       col("longs").cast(StringType),
       col("more_longs").cast(BooleanType),
       col("more_longs").cast(ByteType),
+      // Test requires ProjectExec support BinaryType, tested within md5 hash functionality instead
+      // col("longs").cast(BinaryType),
       col("longs").cast(ShortType),
       col("longs").cast(FloatType),
       col("longs").cast(DoubleType),
-      col("longs").cast(TimestampType),
-      col("longs").cast(BinaryType))
+      col("longs").cast(TimestampType))
   }
 
   testSparkResultsAreEqual("Test cast from float", mixedFloatDf) {
@@ -419,10 +420,11 @@ class CastOpSuite extends GpuExpressionTestSuite {
       col("c0").cast(FloatType))
   }
 
-  testSparkResultsAreEqual("Test cast from strings to binary", floatsAsStrings) {
-    frame => frame.select(
-      col("c0").cast(BinaryType))
-  }
+  // Test requires ProjectExec support BinaryType, tested within md5 hash functionality instead
+  // testSparkResultsAreEqual("Test cast from strings to binary", floatsAsStrings) {
+  //   frame => frame.select(
+  //     col("c0").cast(BinaryType))
+  // }
 }
 
 /** Data shared between CastOpSuite and AnsiCastOpSuite. */

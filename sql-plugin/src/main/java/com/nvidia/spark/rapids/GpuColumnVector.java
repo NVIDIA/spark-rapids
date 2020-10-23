@@ -136,8 +136,6 @@ public class GpuColumnVector extends GpuColumnVectorBase {
       return DType.FLOAT64;
     } else if (type instanceof ByteType) {
       return DType.INT8;
-    } else if (type instanceof BinaryType) {
-      return DType.LIST;
     } else if (type instanceof BooleanType) {
       return DType.BOOL8;
     } else if (type instanceof ShortType) {
