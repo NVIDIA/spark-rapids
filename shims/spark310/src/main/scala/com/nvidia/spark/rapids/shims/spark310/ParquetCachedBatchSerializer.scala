@@ -286,7 +286,6 @@ class ParquetCachedBatchSerializer extends CachedBatchSerializer with Arm {
      storageLevel: StorageLevel,
      conf: SQLConf): RDD[CachedBatch] = {
 
-    val parquetSchema = getCatalystSchema(schema, schema)
     val rapidsConf = new RapidsConf(conf)
     if (rapidsConf.isSqlEnabled && isSupportedByCudf(schema)) {
       def putOnGpuIfNeeded(batch: ColumnarBatch): ColumnarBatch = {
@@ -310,7 +309,8 @@ class ParquetCachedBatchSerializer extends CachedBatchSerializer with Arm {
         }
       })
     } else {
-      val broadcastedHadoopConf = getBroadcastedHadoopConf(conf, parquetSchema)
+      val cachedSchema = getCatalystSchema(schema, schema)
+      val broadcastedHadoopConf = getBroadcastedHadoopConf(conf, cachedSchema)
       val broadcastedConf = SparkSession.active.sparkContext.broadcast(conf)
       input.mapPartitions {
         cbIter =>
@@ -563,6 +563,10 @@ class ParquetCachedBatchSerializer extends CachedBatchSerializer with Arm {
           .asInstanceOf[Array[org.apache.spark.sql.vectorized.ColumnVector]])
         val missingColumns = new Array[Boolean](reqParquetSchema.getFieldCount)
         var columnReaders: Array[VectorizedColumnReader] = null
+        val readBatchMethod =
+          classOf[VectorizedColumnReader].getDeclaredMethod("readBatch", Integer.TYPE,
+            classOf[WritableColumnVector])
+        readBatchMethod.setAccessible(true)
 
         var rowsReturned: Long = 0L
         var totalRowCount: Long = 0L
@@ -614,10 +618,6 @@ class ParquetCachedBatchSerializer extends CachedBatchSerializer with Arm {
           val num = Math.min(capacity.toLong, totalCountLoadedSoFar - rowsReturned).toInt
           for (i <- columnReaders.indices) {
             if (columnReaders(i) != null) {
-              val readBatchMethod =
-                classOf[VectorizedColumnReader].getDeclaredMethod("readBatch", Integer.TYPE,
-                classOf[WritableColumnVector])
-              readBatchMethod.setAccessible(true)
               readBatchMethod.invoke(columnReaders(i), num.asInstanceOf[AnyRef],
                 columnVectors(i).asInstanceOf[AnyRef])
             }
@@ -805,8 +805,8 @@ class ParquetCachedBatchSerializer extends CachedBatchSerializer with Arm {
 
   private def getBroadcastedHadoopConf(
      conf: SQLConf,
-     parquetSchema: Seq[Attribute]): Broadcast[SerializableConfiguration] = {
-    val hadoopConf = getHadoopConf(parquetSchema.toStructType, conf)
+     requestedSchema: Seq[Attribute]): Broadcast[SerializableConfiguration] = {
+    val hadoopConf = getHadoopConf(requestedSchema.toStructType, conf)
     SparkSession.active.sparkContext.broadcast(new SerializableConfiguration(hadoopConf))
   }
 
