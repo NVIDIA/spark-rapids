@@ -184,8 +184,7 @@ class Spark310Shims extends Spark301Shims {
             a.options,
             a.partitionFilters,
             a.dataFilters,
-            conf,
-            conf.isParquetCoalesceFileReadEnabled)
+            conf)
         }
       }),
     GpuOverrides.scan[OrcScan](
