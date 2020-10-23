@@ -34,13 +34,9 @@ parquet_gens_list = [[byte_gen, short_gen, int_gen, long_gen, float_gen, double_
 
 # test with original parquet file reader, the multi-file parallel reader for cloud, and coalesce file reader for
 # non-cloud
-original_parquet_file_reader_conf={'spark.rapids.sql.format.parquet.smallFileReadOpt.enabled': 'false'}
-multithreaded_parquet_file_reader_conf={'spark.rapids.sql.format.parquet.smallFileReadOpt.enabled': 'true',
-                  'spark.rapids.sql.format.parquet.multiThreadedRead.enabled': 'true',
-                  'spark.rapids.cloudSchemes': 'file'}
-coalesce_parquet_file_reader_conf={'spark.rapids.sql.format.parquet.smallFileReadOpt.enabled': 'true',
-                  'spark.rapids.sql.format.parquet.multiThreadedRead.enabled': 'false',
-                  'spark.rapids.sql.format.parquet.coalesceFilesRead.enabled': 'true'}
+original_parquet_file_reader_conf={'spark.rapids.sql.format.parquet.reader.type', 'PERFILE'}
+multithreaded_parquet_file_reader_conf={'spark.rapids.sql.format.parquet.reader.type', 'MULTITHREADED'}
+coalesce_parquet_file_reader_conf={'spark.rapids.sql.format.parquet.reader.type', 'COALESCING'}
 reader_opt_confs = [original_parquet_file_reader_conf, multithreaded_parquet_file_reader_conf,
         coalesce_parquet_file_reader_conf]
 

@@ -499,7 +499,7 @@ case class GpuFileSourceScanExec(
     val partitions =
       FilePartition.getFilePartitions(relation.sparkSession, splitFiles, maxSplitBytes)
 
-    if (rapidsConf.isParquetPerFileReadEnabled) {
+    if (isPerFileReadEnabled) {
       ShimLoader.getSparkShims.getFileScanRDD(fsRelation.sparkSession, readFile.get, partitions)
     } else {
       // here we are making an optimization to read more then 1 file at a time on the CPU side
