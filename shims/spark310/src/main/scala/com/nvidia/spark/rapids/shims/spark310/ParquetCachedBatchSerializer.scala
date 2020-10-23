@@ -17,6 +17,7 @@
 package com.nvidia.spark.rapids.shims.spark310
 
 import java.io.{InputStream, IOException}
+import java.lang.reflect.Method
 import java.nio.ByteBuffer
 
 import scala.collection.JavaConverters._
@@ -46,9 +47,9 @@ import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.expressions.{Attribute, Expression}
 import org.apache.spark.sql.catalyst.expressions.codegen.GenerateUnsafeProjection
 import org.apache.spark.sql.columnar.{CachedBatch, CachedBatchSerializer}
-import org.apache.spark.sql.execution.datasources.parquet.{ParquetReadSupport, ParquetToSparkSchemaConverter, ParquetWriteSupport, RapidsVectorizedColumnReader, SparkToParquetSchemaConverter}
+import org.apache.spark.sql.execution.datasources.parquet.{ParquetReadSupport, ParquetToSparkSchemaConverter, ParquetWriteSupport, SparkToParquetSchemaConverter, VectorizedColumnReader}
 import org.apache.spark.sql.execution.datasources.parquet.rapids.ParquetRecordMaterializer
-import org.apache.spark.sql.execution.vectorized.OffHeapColumnVector
+import org.apache.spark.sql.execution.vectorized.{OffHeapColumnVector, WritableColumnVector}
 import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.internal.SQLConf.LegacyBehaviorPolicy
 import org.apache.spark.sql.types._
@@ -561,7 +562,7 @@ class ParquetCachedBatchSerializer extends CachedBatchSerializer with Arm {
         val columnarBatch: ColumnarBatch = new ColumnarBatch(columnVectors
           .asInstanceOf[Array[org.apache.spark.sql.vectorized.ColumnVector]])
         val missingColumns = new Array[Boolean](reqParquetSchema.getFieldCount)
-        var columnReaders: Array[RapidsVectorizedColumnReader] = null
+        var columnReaders: Array[VectorizedColumnReader] = null
 
         var rowsReturned: Long = 0L
         var totalRowCount: Long = 0L
@@ -591,13 +592,13 @@ class ParquetCachedBatchSerializer extends CachedBatchSerializer with Arm {
           }
           val columns = reqParquetSchema.getColumns
           val types = reqParquetSchema.asGroupType.getFields
-          columnReaders = new Array[RapidsVectorizedColumnReader](columns.size)
+          columnReaders = new Array[VectorizedColumnReader](columns.size)
           for (i <- 0 until columns.size) {
             if (!missingColumns(i)) {
               columnReaders(i) =
-                new RapidsVectorizedColumnReader(columns.get(i), types.get(i)
+                new VectorizedColumnReader(columns.get(i), types.get(i)
                   .getOriginalType, pages.getPageReader(columns.get(i)), null /*convertTz*/,
-                  LegacyBehaviorPolicy.CORRECTED.toString)
+                  LegacyBehaviorPolicy.CORRECTED.toString, LegacyBehaviorPolicy.EXCEPTION.toString)
             }
           }
           totalCountLoadedSoFar += pages.getRowCount
@@ -613,7 +614,12 @@ class ParquetCachedBatchSerializer extends CachedBatchSerializer with Arm {
           val num = Math.min(capacity.toLong, totalCountLoadedSoFar - rowsReturned).toInt
           for (i <- columnReaders.indices) {
             if (columnReaders(i) != null) {
-              columnReaders(i).readBatch(num, columnVectors(i))
+              val readBatchMethod =
+                classOf[VectorizedColumnReader].getDeclaredMethod("readBatch", Integer.TYPE,
+                classOf[WritableColumnVector])
+              readBatchMethod.setAccessible(true)
+              readBatchMethod.invoke(columnReaders(i), num.asInstanceOf[AnyRef],
+                columnVectors(i).asInstanceOf[AnyRef])
             }
           }
           rowsReturned += num
