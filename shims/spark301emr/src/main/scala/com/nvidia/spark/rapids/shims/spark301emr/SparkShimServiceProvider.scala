@@ -14,21 +14,29 @@
  * limitations under the License.
  */
 
-package com.nvidia.spark.rapids.shims.spark301
+package com.nvidia.spark.rapids.shims.spark301emr
 
-import com.nvidia.spark.rapids.{SparkShims, SparkShimVersion}
+import com.nvidia.spark.rapids.{EMRShimVersion, SparkShims}
 
 object SparkShimServiceProvider {
-  val VERSION = SparkShimVersion(3, 0, 1)
-  val VERSIONNAMES = Seq(s"$VERSION")
+  val VERSION = EMRShimVersion(3, 0, 1)
 }
+
 class SparkShimServiceProvider extends com.nvidia.spark.rapids.SparkShimServiceProvider {
 
   def matchesVersion(version: String): Boolean = {
-    SparkShimServiceProvider.VERSIONNAMES.contains(version)
+    // EMR version looks like 3.0.1-amzn-0
+    val baseVersion = SparkShimServiceProvider.VERSION.toString + raw"(-\d+)"
+    val amznVersion = baseVersion.r
+    val amznVersionSnapshot = (baseVersion + "-SNAPSHOT").r
+    version match {
+        case amznVersion(_*) => true
+        case amznVersionSnapshot(_*) => true
+        case _ => false
+    }
   }
 
   def buildShim: SparkShims = {
-    new Spark301Shims()
+    new Spark301EMRShims()
   }
 }

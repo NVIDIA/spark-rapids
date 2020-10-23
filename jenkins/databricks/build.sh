@@ -17,29 +17,30 @@
 
 set -e
 
-SPARKTGZ=$1
-DATABRICKS_VERSION=$2
+SPARKSRCTGZ=$1
+# this should match whatever is in the pom files for the version
+SPARK_PLUGIN_JAR_VERSION=$2
 SCALA_VERSION=$3
 CI_RAPIDS_JAR=$4
-SPARK_VERSION=$5
+# the version of spark used when we install the databricks jars in .m2
+SPARK_VERSION_TO_INSTALL_DATABRICKS_JARS=$5
 CUDF_VERSION=$6
 CUDA_VERSION=$7
 CI_CUDF_JAR=$8
+# version of Apache Spark we are building against
 BASE_SPARK_POM_VERSION=$9
 
-echo "Spark version is $SPARK_VERSION"
+echo "Spark version is $SPARK_VERSION_TO_INSTALL_DATABRICKS_JARS"
 echo "scala version is: $SCALA_VERSION"
 
 # this has to match the Databricks init script
-DB_JAR_LOC=/databricks/jars
-DB_RAPIDS_JAR_LOC=$DB_JAR_LOC/$CI_RAPIDS_JAR
-DB_CUDF_JAR_LOC=$DB_JAR_LOC/$CI_CUDF_JAR
-RAPIDS_BUILT_JAR=rapids-4-spark_$SCALA_VERSION-$DATABRICKS_VERSION.jar
+DB_JAR_LOC=/databricks/jars/
+RAPIDS_BUILT_JAR=rapids-4-spark_$SCALA_VERSION-$SPARK_PLUGIN_JAR_VERSION.jar
 
 sudo apt install -y maven
 rm -rf spark-rapids
 mkdir spark-rapids
-tar -zxvf $SPARKTGZ -C spark-rapids
+tar -zxvf $SPARKSRCTGZ -C spark-rapids
 cd spark-rapids
 export WORKSPACE=`pwd`
 mvn -B '-Pdatabricks,!snapshot-shims' clean package -DskipTests || true
@@ -60,7 +61,7 @@ mvn -B install:install-file \
    -Dfile=$JARDIR/$COREJAR \
    -DgroupId=org.apache.spark \
    -DartifactId=spark-core_$SCALA_VERSION \
-   -Dversion=$SPARK_VERSION \
+   -Dversion=$SPARK_VERSION_TO_INSTALL_DATABRICKS_JARS \
    -Dpackaging=jar \
    -DpomFile=$COREPOMPATH/$COREPOM
 
@@ -69,7 +70,7 @@ mvn -B install:install-file \
    -Dfile=$JARDIR/$CATALYSTJAR \
    -DgroupId=org.apache.spark \
    -DartifactId=spark-catalyst_$SCALA_VERSION \
-   -Dversion=$SPARK_VERSION \
+   -Dversion=$SPARK_VERSION_TO_INSTALL_DATABRICKS_JARS \
    -Dpackaging=jar
 
 mvn -B install:install-file \
@@ -77,7 +78,7 @@ mvn -B install:install-file \
    -Dfile=$JARDIR/$SQLJAR \
    -DgroupId=org.apache.spark \
    -DartifactId=spark-sql_$SCALA_VERSION \
-   -Dversion=$SPARK_VERSION \
+   -Dversion=$SPARK_VERSION_TO_INSTALL_DATABRICKS_JARS \
    -Dpackaging=jar
 
 mvn -B install:install-file \
@@ -85,17 +86,18 @@ mvn -B install:install-file \
    -Dfile=$JARDIR/$ANNOTJAR \
    -DgroupId=org.apache.spark \
    -DartifactId=spark-annotation_$SCALA_VERSION \
-   -Dversion=$SPARK_VERSION \
+   -Dversion=$SPARK_VERSION_TO_INSTALL_DATABRICKS_JARS \
    -Dpackaging=jar
 
 mvn -B '-Pdatabricks,!snapshot-shims' clean package -DskipTests
 
+
 # Copy so we pick up new built jar and latesty CuDF jar. Note that the jar names has to be
 # exactly what is in the staticly setup Databricks cluster we use. 
-echo "Copying rapids jars: dist/target/$RAPIDS_BUILT_JAR $DB_RAPIDS_JAR_LOC"
-sudo cp dist/target/$RAPIDS_BUILT_JAR $DB_RAPIDS_JAR_LOC
-echo "Copying cudf jars: $CUDF_JAR $DB_CUDF_JAR_LOC"
-sudo cp $CUDF_JAR $DB_CUDF_JAR_LOC
+echo "Copying rapids jars: dist/target/$RAPIDS_BUILT_JAR $DB_JAR_LOC"
+sudo cp dist/target/$RAPIDS_BUILT_JAR $DB_JAR_LOC
+echo "Copying cudf jars: $CUDF_JAR $DB_JAR_LOC"
+sudo cp $CUDF_JAR $DB_JAR_LOC
 
 # tests
 export PATH=/databricks/conda/envs/databricks-ml-gpu/bin:/databricks/conda/condabin:$PATH
