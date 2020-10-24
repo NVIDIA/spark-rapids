@@ -87,7 +87,7 @@ class GpuWindowExpressionMeta(
               s"Found ${anythingElse.prettyName}")
         }
       case _: WindowFunction =>
-      case _: GpuPythonUDF =>
+      case _: PythonUDF =>
       case _ =>
         willNotWorkOnGpu("Only AggregateExpressions are supported on GPU as WindowFunctions. " +
         s"Found ${windowFunction.prettyName}")

@@ -16,6 +16,7 @@
 
 package org.apache.spark.sql.rapids.execution.python
 
+import ai.rapids.cudf
 import ai.rapids.cudf.Table
 import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.GpuMetricNames.{NUM_OUTPUT_BATCHES, NUM_OUTPUT_ROWS}
@@ -35,7 +36,6 @@ import org.apache.spark.sql.rapids.GpuAggregateExpression
 import org.apache.spark.sql.types.{IntegerType, StructField, StructType}
 import org.apache.spark.sql.util.ArrowUtils
 import org.apache.spark.sql.vectorized.ColumnarBatch
-
 
 class GpuWindowInPandasExecMeta(
     winPandas: WindowInPandasExec,
@@ -68,7 +68,7 @@ class GpuWindowInPandasExecMeta(
 
     // FIXME check the frame type, only support RowFrame now ?
     // FIXME check the window function type ? Only accept PythonUDF,
-    //       can not mix with other window functions
+    //       can not mix with other window functions currently
   }
 
   override def convertToGpu(): GpuExec =
@@ -78,6 +78,20 @@ class GpuWindowInPandasExecMeta(
       orderSpec.map(_.convertToGpu().asInstanceOf[SortOrder]),
       childPlans.head.convertIfNeeded()
     )
+}
+
+/**
+ * This iterator will group the rows in the incoming batches per the window
+ * "partitionby" specification to make sure each group goes into only one batch, and
+ * each batch contains only one group data.
+ * @param wrapped the incoming ColumnarBatch iterator.
+ */
+class GroupingIterator(
+    wrapped: Iterator[ColumnarBatch]) extends Iterator[ColumnarBatch] with Arm {
+
+  // TODO implementation, probably need support from cuDF
+  override def hasNext(): Boolean = false
+  override def next(): ColumnarBatch = null
 }
 
 /*
@@ -213,10 +227,79 @@ case class GpuWindowInPandasExec(
     (requiredIndices.sum, lowerBoundIndex, upperBoundIndex, windowBoundTypes)
   }
 
+  private def insertWindowBounds(batch: ColumnarBatch): ColumnarBatch = {
+    val numRows = batch.numRows()
+
+    def buildLowerCV(lower: Expression): GpuColumnVector = {
+      lower match {
+        case UnboundedPreceding =>
+          // lower bound is always 0
+          withResource(cudf.Scalar.fromInt(0)) { zeroVal =>
+            GpuColumnVector.from(cudf.ColumnVector.fromScalar(zeroVal, numRows))
+          }
+        case CurrentRow =>
+          // offset is 0, simply create a integer sequence starting with 0
+          withResource(cudf.Scalar.fromInt(0)) { zeroVal =>
+            GpuColumnVector.from(cudf.ColumnVector.sequence(zeroVal, numRows))
+          }
+        case IntegerLiteral(offset) =>
+          // 1) Create a integer sequence starting with (0 + offset)
+          // 2) Replace the values less than 0 with 0 (offset is negative for lower bound)
+          val startIndex = 0 + offset
+          withResource(cudf.Scalar.fromInt(startIndex)) { startVal =>
+            withResource(cudf.ColumnVector.sequence(startVal, numRows)) { offsetCV =>
+              withResource(cudf.Scalar.fromInt(0)) { zeroVal =>
+                val lowerCV = offsetCV.clamp(zeroVal, null)
+                GpuColumnVector.from(lowerCV)
+              }
+            }
+          }
+      }
+    }
+
+    def buildUpperCV(upper: Expression): GpuColumnVector = {
+      upper match {
+        case UnboundedFollowing =>
+          // bound is always the length of the group, equal to numRows
+          withResource(cudf.Scalar.fromInt(numRows)) { numRowsVal =>
+            GpuColumnVector.from(cudf.ColumnVector.fromScalar(numRowsVal, numRows))
+          }
+        case CurrentRow =>
+          // offset is 0, simply create a integer sequence starting with 1 for upper bound
+          withResource(cudf.Scalar.fromInt(1)) { oneVal =>
+            GpuColumnVector.from(cudf.ColumnVector.sequence(oneVal, numRows))
+          }
+        case IntegerLiteral(offset) =>
+          // 1) Create a integer sequence starting with (1 + offset)
+          // 2) Replace the values larger than numRows with numRows
+          //    (offset is positive for upper bound)
+          val startIndex = 1 + offset
+          withResource(cudf.Scalar.fromInt(startIndex)) { startVal =>
+            withResource(cudf.ColumnVector.sequence(startVal, numRows)) { offsetCV =>
+              withResource(cudf.Scalar.fromInt(numRows)) { numRowsVal =>
+                val upperCV = offsetCV.clamp(null, numRowsVal)
+                GpuColumnVector.from(upperCV)
+              }
+            }
+          }
+      }
+    }
+
+    val boundsCVs = windowFramesWithExpressions.map(_._1).flatMap {
+      // Only support RowFrame here, should check it when replacing this node.
+      case (_, UnboundedPreceding, UnboundedFollowing) => Seq.empty
+      case (RowFrame, lower, upper) => Seq(buildLowerCV(lower), buildUpperCV(upper))
+      case (RangeFrame, _, _) => throw new UnsupportedOperationException("Range frame" +
+        " is not supported yet!")
+    }.toArray
+    val dataCVs = GpuColumnVector.extractColumns(batch)
+    new ColumnarBatch(boundsCVs ++ dataCVs.map(_.incRefCount()), numRows)
+  }
+
   override protected def doExecute(): RDD[InternalRow] =
     throw new IllegalStateException(s"Row-based execution should not occur for $this")
 
-  override def doExecuteColumnar(): RDD[ColumnarBatch] = {
+  override protected def doExecuteColumnar(): RDD[ColumnarBatch] = {
     val numOutputRows = longMetric(NUM_OUTPUT_ROWS)
     val numOutputBatches = longMetric(NUM_OUTPUT_BATCHES)
     val isPythonOnGpuEnabled = GpuPythonHelper.isPythonOnGpuEnabled(conf)
@@ -230,7 +313,7 @@ case class GpuWindowInPandasExec(
       case (bufferEs, frameIndex) => bufferEs.map(expr => (expr, frameIndex))
     }
     val exprIndex2FrameIndex = expressionsWithFrameIndex.map(_._2).zipWithIndex.map(_.swap).toMap
-    val (numBoundIndices, lowerBoundIndex, upperBoundIndex, frameWindowBoundTypes) =
+    val (_, lowerBoundIndex, upperBoundIndex, frameWindowBoundTypes) =
       computeWindowBoundHelpers
     val isBounded = { frameIndex: Int => lowerBoundIndex(frameIndex) >= 0 }
 
@@ -310,9 +393,22 @@ case class GpuWindowInPandasExec(
     child.executeColumnar().mapPartitions { inputIter =>
       val context = TaskContext.get()
       val queue: BatchQueue = new BatchQueue()
+      context.addTaskCompletionListener[Unit](_ => queue.close())
 
-      // TODO input iterator transformation
-      val projectedIterator = Iterator.empty
+      val boundReferences = GpuBindReferences.bindReferences(allInputs, child.output)
+      // Rebatching the input data by GroupingIterator
+      val groupedIterator = new GroupingIterator(inputIter)
+      val pythonInputIterator = groupedIterator.map { batch =>
+        // We have to do the project before we add the batch because the batch might be closed
+        // when it is added
+        val projectedBatch = GpuProjectExec.project(batch, boundReferences)
+        // Compute the window bounds and insert to the head of each row for one batch
+        val inputBatch = withResource(projectedBatch) { proCb =>
+          insertWindowBounds(proCb)
+        }
+        queue.add(batch)
+        inputBatch
+      }
 
       if (isPythonOnGpuEnabled) {
         GpuPythonHelper.injectGpuInfo(pyFuncs, isPythonOnGpuEnabled)
@@ -330,8 +426,7 @@ case class GpuWindowInPandasExec(
         Int.MaxValue,
         () => queue.finish()){
         override def minReadTargetBatchSize: Int = targetReadBatchSize
-      }.compute(projectedIterator, context.partitionId(), context)
-
+      }.compute(pythonInputIterator, context.partitionId(), context)
 
       new Iterator[ColumnarBatch] {
         // for hasNext we are waiting on the queue to have something inserted into it
@@ -366,8 +461,8 @@ case class GpuWindowInPandasExec(
             }
           }
         }
-
       } // End of new Iterator
+
     } // End of mapPartitions
   } // End of doExecuteColumnar
 
