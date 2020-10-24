@@ -567,6 +567,7 @@ object GpuOverrides {
       (a, conf, p, r) => new UnaryExprMeta[Alias](a, conf, p, r) {
         def isSupported(t: DataType) = t match {
           case MapType(StringType, StringType, _) => true
+          case BinaryType => true
           case _ => isSupportedType(t)
         }
         override def areAllSupportedTypes(types: DataType*): Boolean = types.forall(isSupported)
@@ -590,7 +591,12 @@ object GpuOverrides {
     expr[Cast](
       "Convert a column of one type of data into another type",
       (cast, conf, p, r) => new CastExprMeta[Cast](cast, SparkSession.active.sessionState.conf
-        .ansiEnabled, conf, p, r)),
+        .ansiEnabled, conf, p, r) {
+        override def areAllSupportedTypes(types: DataType*): Boolean = types.forall {
+          case BinaryType => true
+          case x => isSupportedType(x)
+        }
+      }),
     expr[AnsiCast](
       "Convert a column of one type of data into another type",
       (cast, conf, p, r) => new CastExprMeta[AnsiCast](cast, true, conf, p, r)),
@@ -1420,6 +1426,17 @@ object GpuOverrides {
       "Returns the length of the block being read, or -1 if not available",
       (a, conf, p, r) => new ExprMeta[InputFileBlockLength](a, conf, p, r) {
         override def convertToGpu(): GpuExpression = GpuInputFileBlockLength()
+      }
+    ),
+    expr[Md5] (
+      "MD5 hash operator",
+      (a, conf, p, r) => new UnaryExprMeta[Md5](a, conf, p, r) {
+        override def convertToGpu(child: Expression): GpuExpression = GpuMd5(child)
+
+        override def areAllSupportedTypes(types: DataType*): Boolean = types.forall {
+            case BinaryType => true
+            case x => isSupportedType(x)
+        }
       }
     ),
     expr[Upper](
