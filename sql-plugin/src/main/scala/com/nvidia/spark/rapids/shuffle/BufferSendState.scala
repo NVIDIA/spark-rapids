@@ -228,7 +228,9 @@ class BufferSendState(
    * allowing us to safely return buffers to the catalog to be potentially freed if spilling.
    */
   def releaseAcquiredToCatalog(): Unit = synchronized {
-    logWarning("Told to close rapids buffers, but nothing was acquired")
+    if (acquiredBuffs.isEmpty) {
+      logWarning("Told to close rapids buffers, but nothing was acquired")
+    }
     acquiredBuffs.foreach(_.close())
     acquiredBuffs = Seq.empty
   }
