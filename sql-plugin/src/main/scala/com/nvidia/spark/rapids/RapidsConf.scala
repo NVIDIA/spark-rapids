@@ -510,13 +510,14 @@ object RapidsConf {
   val PARQUET_READER_TYPE = conf("spark.rapids.sql.format.parquet.reader.type")
     .doc("Sets the parquet reader type. We support different types that are optimized for " +
       "different environments. The original Spark style reader can be selected by setting this " +
-      "to PERFILE which individually reads and copies files to the GPU. Loading many small files individually " +
-      "has high overhead, and using either COALESCING or MULTITHREADED is recommended instead. The " +
-      "COALESCING reader is good when using a local file system where the executors are on the " +
-      "same nodes or close to the nodes the data is being read on. This reader coalesces all " +
-      "the files assigned to a task into a single host buffer before sending it down to the GPU. " +
-      "It copies blocks from a single file into a host buffer in separate threads in " +
-      "parallel, see spark.rapids.sql.format.parquet.multiThreadedRead.numThreads. " +
+      "to PERFILE which individually reads and copies files to the GPU. Loading many small files " +
+      "individually has high overhead, and using either COALESCING or MULTITHREADED is " +
+      "recommended instead. The COALESCING reader is good when using a local file system where " +
+      "the executors are on the same nodes or close to the nodes the data is being read on. " +
+      "This reader coalesces all the files assigned to a task into a single host buffer before " +
+      "sending it down to the GPU. It copies blocks from a single file into a host buffer in " +
+      "separate threads in parallel, see " +
+      "spark.rapids.sql.format.parquet.multiThreadedRead.numThreads. " +
       "MULTITHREADED is good for cloud environments where you are reading from a blobstore " +
       "that is totally separate and likely has a higher I/O read cost. Many times the cloud " +
       "environments also get better throughput when you have multiple readers in parallel. " +
