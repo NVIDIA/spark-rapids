@@ -565,12 +565,23 @@ object GpuOverrides {
     expr[Alias](
       "Gives a column a name",
       (a, conf, p, r) => new UnaryExprMeta[Alias](a, conf, p, r) {
+        def isSupported(t: DataType) = t match {
+          case MapType(StringType, StringType, _) => true
+          case BinaryType => true
+          case _ => isSupportedType(t)
+        }
+        override def areAllSupportedTypes(types: DataType*): Boolean = types.forall(isSupported)
         override def convertToGpu(child: Expression): GpuExpression =
           GpuAlias(child, a.name)(a.exprId, a.qualifier, a.explicitMetadata)
       }),
     expr[AttributeReference](
       "References an input column",
       (att, conf, p, r) => new BaseExprMeta[AttributeReference](att, conf, p, r) {
+        def isSupported(t: DataType) = t match {
+          case MapType(StringType, StringType, _) => true
+          case _ => isSupportedType(t)
+        }
+        override def areAllSupportedTypes(types: DataType*): Boolean = types.forall(isSupported)
         // This is the only NOOP operator.  It goes away when things are bound
         override def convertToGpu(): Expression = att
 
@@ -580,7 +591,12 @@ object GpuOverrides {
     expr[Cast](
       "Convert a column of one type of data into another type",
       (cast, conf, p, r) => new CastExprMeta[Cast](cast, SparkSession.active.sessionState.conf
-        .ansiEnabled, conf, p, r)),
+        .ansiEnabled, conf, p, r) {
+        override def areAllSupportedTypes(types: DataType*): Boolean = types.forall {
+          case BinaryType => true
+          case x => isSupportedType(x)
+        }
+      }),
     expr[AnsiCast](
       "Convert a column of one type of data into another type",
       (cast, conf, p, r) => new CastExprMeta[AnsiCast](cast, true, conf, p, r)),
@@ -767,6 +783,11 @@ object GpuOverrides {
     expr[IsNotNull](
       "Checks if a value is not null",
       (a, conf, p, r) => new UnaryExprMeta[IsNotNull](a, conf, p, r) {
+        def isSupported(t: DataType) = t match {
+          case MapType(StringType, StringType, _) => true
+          case _ => isSupportedType(t)
+        }
+        override def areAllSupportedTypes(types: DataType*): Boolean = types.forall(isSupported)
         override def convertToGpu(child: Expression): GpuExpression = GpuIsNotNull(child)
       }),
     expr[IsNaN](
@@ -1129,6 +1150,11 @@ object GpuOverrides {
     expr[EqualTo](
       "Check if the values are equal",
       (a, conf, p, r) => new BinaryExprMeta[EqualTo](a, conf, p, r) {
+        def isSupported(t: DataType) = t match {
+          case MapType(StringType, StringType, _) => true
+          case _ => isSupportedType(t)
+        }
+        override def areAllSupportedTypes(types: DataType*): Boolean = types.forall(isSupported)
         override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression =
           GpuEqualTo(lhs, rhs)
       }),
@@ -1402,6 +1428,17 @@ object GpuOverrides {
         override def convertToGpu(): GpuExpression = GpuInputFileBlockLength()
       }
     ),
+    expr[Md5] (
+      "MD5 hash operator",
+      (a, conf, p, r) => new UnaryExprMeta[Md5](a, conf, p, r) {
+        override def convertToGpu(child: Expression): GpuExpression = GpuMd5(child)
+
+        override def areAllSupportedTypes(types: DataType*): Boolean = types.forall {
+            case BinaryType => true
+            case x => isSupportedType(x)
+        }
+      }
+    ),
     expr[Upper](
       "String uppercase operator",
       (a, conf, p, r) => new UnaryExprMeta[Upper](a, conf, p, r) {
@@ -1464,6 +1501,9 @@ object GpuOverrides {
     expr[GetArrayItem](
       "Gets the field at `ordinal` in the Array",
       (in, conf, p, r) => new GpuGetArrayItemMeta(in, conf, p, r)),
+    expr[GetMapValue](
+      "Gets Value from a Map based on a key",
+      (in, conf, p, r) => new GpuGetMapValueMeta(in, conf, p, r)),
     expr[StringLocate](
       "Substring search operator",
       (in, conf, p, r) => new TernaryExprMeta[StringLocate](in, conf, p, r) {
@@ -1594,22 +1634,6 @@ object GpuOverrides {
         override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression =
           GpuLike(lhs, rhs, a.escapeChar)
       }),
-    expr[RegExpReplace](
-      "RegExpReplace support for string literal input patterns",
-      (a, conf, p, r) => new TernaryExprMeta[RegExpReplace](a, conf, p, r) {
-        override def tagExprForGpu(): Unit = {
-          if (!isLit(a.rep)) {
-            willNotWorkOnGpu("Only literal values are supported for replacement string")
-          }
-          if (isNullOrEmptyOrRegex(a.regexp)) {
-            willNotWorkOnGpu(
-              "Only non-null, non-empty String literals that are not regex patterns " +
-                "are supported by RegExpReplace on the GPU")
-          }
-        }
-        override def convertToGpu(lhs: Expression, regexp: Expression,
-          rep: Expression): GpuExpression = GpuStringReplace(lhs, regexp, rep)
-      }),
     expr[Length](
       "String character length",
       (a, conf, p, r) => new UnaryExprMeta[Length](a, conf, p, r) {
@@ -1737,6 +1761,11 @@ object GpuOverrides {
       "The backend for most select, withColumn and dropColumn statements",
       (proj, conf, p, r) => {
         new SparkPlanMeta[ProjectExec](proj, conf, p, r) {
+          def isSupported(t: DataType) = t match {
+            case MapType(StringType, StringType, _) => true
+            case _ => isSupportedType(t)
+          }
+          override def areAllSupportedTypes(types: DataType*): Boolean = types.forall(isSupported)
           override def convertToGpu(): GpuExec =
             GpuProjectExec(childExprs.map(_.convertToGpu()), childPlans(0).convertIfNeeded())
         }
@@ -1819,6 +1848,11 @@ object GpuOverrides {
     exec[FilterExec](
       "The backend for most filter statements",
       (filter, conf, p, r) => new SparkPlanMeta[FilterExec](filter, conf, p, r) {
+        def isSupported(t: DataType) = t match {
+          case MapType(StringType, StringType, _) => true
+          case _ => isSupportedType(t)
+        }
+        override def areAllSupportedTypes(types: DataType*): Boolean = types.forall(isSupported)
         override def convertToGpu(): GpuExec =
           GpuFilterExec(childExprs(0).convertToGpu(), childPlans(0).convertIfNeeded())
       }),

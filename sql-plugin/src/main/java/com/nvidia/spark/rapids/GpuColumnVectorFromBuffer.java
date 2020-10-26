@@ -64,7 +64,7 @@ public final class GpuColumnVectorFromBuffer extends GpuColumnVector {
     try {
       for (int i = 0; i < numColumns; ++i) {
         ColumnVector v = table.getColumn(i);
-        DataType type = getSparkTypeFrom(v);
+        DataType type = getSparkType(v.getType());
         columns[i] = new GpuColumnVectorFromBuffer(type, v.incRefCount(), buffer);
       }
       return new ColumnarBatch(columns, (int) rows);

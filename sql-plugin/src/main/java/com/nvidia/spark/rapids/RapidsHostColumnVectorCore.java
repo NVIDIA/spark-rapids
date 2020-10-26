@@ -17,20 +17,13 @@
 
 package com.nvidia.spark.rapids;
 
-import ai.rapids.cudf.DType;
-import ai.rapids.cudf.HostColumnVectorCore;
-import ai.rapids.cudf.HostMemoryBuffer;
-
 import org.apache.spark.sql.types.DataType;
 import org.apache.spark.sql.types.Decimal;
 import org.apache.spark.sql.vectorized.ColumnVector;
 import org.apache.spark.sql.vectorized.ColumnarArray;
-import org.apache.spark.sql.vectorized.ColumnarBatch;
 import org.apache.spark.sql.vectorized.ColumnarMap;
 import org.apache.spark.unsafe.types.UTF8String;
 
-import java.util.ArrayList;
-import java.util.Optional;
 
 /**
  * A GPU accelerated version of the Spark ColumnVector.
@@ -38,53 +31,17 @@ import java.util.Optional;
  * is on the host, and we want to keep as much of the data on the device as possible.
  * We also provide GPU accelerated versions of the transitions to and from rows.
  */
-public final class RapidsHostColumnVector extends ColumnVector {
+public final class RapidsHostColumnVectorCore extends ColumnVector {
 
-  /**
-   * Get the underlying host cudf columns from the batch.  This does not increment any
-   * reference counts so if you want to use these columns after the batch is closed
-   * you will need to do that on your own.
-   */
-  public static ai.rapids.cudf.HostColumnVector[] extractBases(ColumnarBatch batch) {
-    int numColumns = batch.numCols();
-    ai.rapids.cudf.HostColumnVector[] vectors = new ai.rapids.cudf.HostColumnVector[numColumns];
-    for (int i = 0; i < vectors.length; i++) {
-      vectors[i] = ((RapidsHostColumnVector)batch.column(i)).getBase();
-    }
-    return vectors;
-  }
-
-  /**
-   * Get the underlying spark compatible host columns from the batch.  This does not increment any
-   * reference counts so if you want to use these columns after the batch is closed
-   * you will need to do that on your own.
-   */
-  public static RapidsHostColumnVector[] extractColumns(ColumnarBatch batch) {
-    int numColumns = batch.numCols();
-    RapidsHostColumnVector[] vectors = new RapidsHostColumnVector[numColumns];
-
-    for (int i = 0; i < vectors.length; i++) {
-      vectors[i] = ((RapidsHostColumnVector)batch.column(i));
-    }
-    return vectors;
-  }
-
-
-  private final ai.rapids.cudf.HostColumnVector cudfCv;
+  private final ai.rapids.cudf.HostColumnVectorCore cudfCv;
 
   /**
    * Sets up the data type of this column vector.
    */
-  RapidsHostColumnVector(DataType type, ai.rapids.cudf.HostColumnVector cudfCv) {
+  RapidsHostColumnVectorCore(DataType type, ai.rapids.cudf.HostColumnVectorCore cudfCv) {
     super(type);
     // TODO need some checks to be sure everything matches
     this.cudfCv = cudfCv;
-  }
-
-  public RapidsHostColumnVector incRefCount() {
-    // Just pass through the reference counting
-    cudfCv.incRefCount();
-    return this;
   }
 
   @Override
@@ -150,21 +107,7 @@ public final class RapidsHostColumnVector extends ColumnVector {
 
   @Override
   public ColumnarMap getMap(int ordinal) {
-    ai.rapids.cudf.ColumnViewAccess<HostMemoryBuffer> structHcv = cudfCv.getChildColumnViewAccess(0);
-    // keys
-    ai.rapids.cudf.ColumnViewAccess<HostMemoryBuffer> firstHcv = structHcv.getChildColumnViewAccess(0);
-    HostColumnVectorCore firstHcvCore = (HostColumnVectorCore) firstHcv;
-    // values
-    ai.rapids.cudf.ColumnViewAccess<HostMemoryBuffer> secondHcv = structHcv.getChildColumnViewAccess(1);
-    HostColumnVectorCore secondHcvCore = (HostColumnVectorCore) secondHcv;
-
-    RapidsHostColumnVectorCore firstChild = new RapidsHostColumnVectorCore(
-        GpuColumnVector.getSparkType(firstHcvCore.getType()), firstHcvCore);
-    RapidsHostColumnVectorCore secondChild = new RapidsHostColumnVectorCore(
-        GpuColumnVector.getSparkType(secondHcvCore.getType()), secondHcvCore);
-    int startOffset = cudfCv.getOffsetBuffer().getInt(ordinal * DType.INT32.getSizeInBytes());
-    return new ColumnarMap(firstChild, secondChild, startOffset,
-        cudfCv.getOffsetBuffer().getInt((ordinal + 1) * DType.INT32.getSizeInBytes()) - startOffset);
+    throw new IllegalStateException("Maps are currently not supported by rapids cudf");
   }
 
   @Override
@@ -188,13 +131,9 @@ public final class RapidsHostColumnVector extends ColumnVector {
     throw new IllegalStateException("Struct and struct like types are currently not supported by rapids cudf");
   }
 
-  public ai.rapids.cudf.HostColumnVector getBase() {
+  public ai.rapids.cudf.HostColumnVectorCore getBase() {
     return cudfCv;
   }
 
   public long getRowCount() { return cudfCv.getRowCount(); }
-
-  public GpuColumnVector copyToDevice() {
-    return new GpuColumnVector(type, cudfCv.copyToDevice());
-  }
 }

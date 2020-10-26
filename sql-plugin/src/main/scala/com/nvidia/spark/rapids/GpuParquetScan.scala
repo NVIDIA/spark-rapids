@@ -61,7 +61,7 @@ import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.rapids.InputFileUtils
 import org.apache.spark.sql.rapids.execution.TrampolineUtil
 import org.apache.spark.sql.sources.Filter
-import org.apache.spark.sql.types.{StringType, StructType, TimestampType}
+import org.apache.spark.sql.types.{MapType, StringType, StructType, TimestampType}
 import org.apache.spark.sql.vectorized.ColumnarBatch
 import org.apache.spark.util.SerializableConfiguration
 
@@ -117,7 +117,8 @@ object GpuParquetScanBase {
     }
 
     for (field <- readSchema) {
-      if (!GpuColumnVector.isSupportedType(field.dataType)) {
+      if (!GpuColumnVector.isSupportedType(field.dataType)
+        && !field.dataType.isInstanceOf[MapType]) {
         meta.willNotWorkOnGpu(s"GpuParquetScan does not support fields of type ${field.dataType}")
       }
     }
@@ -989,7 +990,8 @@ class MultiFileParquetPartitionReader(
       Some(evolveSchemaIfNeededAndClose(table, fileName, clippedSchema))
     }
     try {
-      val maybeBatch = table.map(GpuColumnVector.from)
+      val colTypes = readDataSchema.fields.map(f => f.dataType).toList
+      val maybeBatch = table.map(t => GpuColumnVector.from(t, colTypes.asJava))
       maybeBatch.foreach { batch =>
         logDebug(s"GPU batch size: ${GpuColumnVector.getTotalDeviceMemoryUsed(batch)} bytes")
       }
