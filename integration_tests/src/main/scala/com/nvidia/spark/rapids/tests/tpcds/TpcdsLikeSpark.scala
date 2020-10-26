@@ -28,7 +28,7 @@ case class Table(
     partitionColumns: Seq[String],
     schema: StructType) {
 
-  private[this] def path(basePath: String, appendDat: Boolean = true) = {
+  private[this] def path(basePath: String, appendDat: Boolean) = {
     val rest = if (appendDat) {
       ".dat"
     } else {
@@ -37,25 +37,25 @@ case class Table(
     basePath + "/" + name + rest
   }
 
-  def readCSV(spark: SparkSession, basePath: String, appendDat: Boolean = true): DataFrame =
+  def readCSV(spark: SparkSession, basePath: String, appendDat: Boolean): DataFrame =
     spark.read.option("delimiter", "|")
         .schema(schema)
         .csv(path(basePath, appendDat))
 
-  def setupCSV(spark: SparkSession, basePath: String, appendDat: Boolean = true): Unit =
+  def setupCSV(spark: SparkSession, basePath: String, appendDat: Boolean): Unit =
     readCSV(spark, basePath, appendDat).createOrReplaceTempView(name)
 
-  def setupParquet(spark: SparkSession, basePath: String, appendDat: Boolean = true): Unit =
+  def setupParquet(spark: SparkSession, basePath: String, appendDat: Boolean): Unit =
     spark.read.parquet(path(basePath, appendDat)).createOrReplaceTempView(name)
 
-  def setupOrc(spark: SparkSession, basePath: String, appendDat: Boolean = true): Unit =
+  def setupOrc(spark: SparkSession, basePath: String, appendDat: Boolean): Unit =
     spark.read.orc(path(basePath, appendDat)).createOrReplaceTempView(name)
 
   def setup(
       spark: SparkSession,
       basePath: String,
       format: String,
-      appendDat: Boolean = true): Unit = {
+      appendDat: Boolean): Unit = {
     spark.read.format(format).load(path(basePath, appendDat)).createOrReplaceTempView(name)
   }
 
@@ -66,7 +66,7 @@ case class Table(
       coalesce: Map[String, Int],
       repartition: Map[String, Int],
       writePartitioning: Boolean): DataFrameWriter[Row] = {
-    val df = readCSV(spark, inputBase)
+    val df = readCSV(spark, inputBase, appendDat = true)
     val repart = BenchUtils.applyCoalesceRepartition(name, df, coalesce, repartition)
     val tmp = repart.write.mode("overwrite")
     if (writePartitioning && partitionColumns.nonEmpty) {
@@ -82,9 +82,10 @@ case class Table(
       outputBase: String,
       coalesce: Map[String, Int],
       repartition: Map[String, Int],
-      writePartitioning: Boolean): Unit =
+      writePartitioning: Boolean,
+      appendDat: Boolean): Unit =
     setupWrite(spark, name, inputBase, coalesce, repartition, writePartitioning)
-        .parquet(path(outputBase))
+        .parquet(path(outputBase, appendDat))
 
   def csvToOrc(
       spark: SparkSession,
@@ -92,9 +93,10 @@ case class Table(
       outputBase: String,
       coalesce: Map[String, Int],
       repartition: Map[String, Int],
-      writePartitioning: Boolean): Unit =
+      writePartitioning: Boolean,
+      appendDat: Boolean): Unit =
     setupWrite(spark, name, inputBase, coalesce, repartition, writePartitioning)
-        .orc(path(outputBase))
+        .orc(path(outputBase, appendDat))
 }
 
 case class Query(name: String, query: String) {
@@ -114,14 +116,16 @@ object TpcdsLikeSpark {
       baseOutput: String,
       coalesce: Map[String, Int] = Map.empty,
       repartition: Map[String, Int] = Map.empty,
-      writePartitioning: Boolean = false): Unit = {
+      writePartitioning: Boolean = false,
+      appendDat: Boolean = true): Unit = {
     tables.foreach(_.csvToParquet(
       spark,
       baseInput,
       baseOutput,
       coalesce,
       repartition,
-      writePartitioning))
+      writePartitioning,
+      appendDat))
   }
 
   def csvToOrc(
@@ -130,14 +134,16 @@ object TpcdsLikeSpark {
       baseOutput: String,
       coalesce: Map[String, Int] = Map.empty,
       repartition: Map[String, Int] = Map.empty,
-      writePartitioning: Boolean = false): Unit = {
+      writePartitioning: Boolean = false,
+      appendDat: Boolean = true): Unit = {
     tables.foreach(_.csvToOrc(
       spark,
       baseInput,
       baseOutput,
       coalesce,
       repartition,
-      writePartitioning))
+      writePartitioning,
+      appendDat))
   }
 
   def setupAllCSV(spark: SparkSession, basePath: String, appendDat: Boolean = true): Unit = {
