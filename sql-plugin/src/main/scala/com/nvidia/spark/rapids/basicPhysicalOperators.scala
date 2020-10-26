@@ -119,10 +119,13 @@ object GpuFilter extends Arm {
     var tbl: cudf.Table = null
     var filtered: cudf.Table = null
     try {
+      import collection.JavaConverters._
       filterConditionCv = boundCondition.columnarEval(batch).asInstanceOf[GpuColumnVector]
       tbl = GpuColumnVector.from(batch)
+      val colTypes =
+        (0 until batch.numCols()).map(i => batch.column(i).dataType())
       filtered = tbl.filter(filterConditionCv.getBase)
-      GpuColumnVector.from(filtered)
+      GpuColumnVector.from(filtered, colTypes.asJava)
     } finally {
       Seq(filtered, tbl, filterConditionCv, batch).safeClose()
     }

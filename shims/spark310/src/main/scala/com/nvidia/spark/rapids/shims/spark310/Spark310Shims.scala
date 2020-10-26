@@ -17,6 +17,7 @@
 package com.nvidia.spark.rapids.shims.spark310
 
 import com.nvidia.spark.rapids._
+import com.nvidia.spark.rapids.GpuOverrides.isSupportedType
 import com.nvidia.spark.rapids.shims.spark301.Spark301Shims
 import com.nvidia.spark.rapids.spark310.RapidsShuffleManager
 
@@ -140,6 +141,11 @@ class Spark310Shims extends Spark301Shims {
           // partition filters and data filters are not run on the GPU
           override val childExprs: Seq[ExprMeta[_]] = Seq.empty
 
+          def isSupported(t: DataType) = t match {
+            case MapType(StringType, StringType, _) => true
+            case _ => isSupportedType(t)
+          }
+          override def areAllSupportedTypes(types: DataType*): Boolean = types.forall(isSupported)
           override def tagPlanForGpu(): Unit = GpuFileSourceScanExec.tagSupport(this)
 
           override def convertToGpu(): GpuExec = {
@@ -216,6 +222,11 @@ class Spark310Shims extends Spark301Shims {
             a.dataFilters,
             conf)
         }
+        def isSupported(t: DataType) = t match {
+          case MapType(StringType, StringType, _) => true
+          case _ => isSupportedType(t)
+        }
+        override def areAllSupportedTypes(types: DataType*): Boolean = types.forall(isSupported)
       }),
     GpuOverrides.scan[OrcScan](
       "ORC parsing",
