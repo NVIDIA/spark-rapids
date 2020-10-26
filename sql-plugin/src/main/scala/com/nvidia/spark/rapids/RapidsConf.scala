@@ -515,7 +515,7 @@ object RapidsConf {
       "COALESCING reader is good when using a local file system where the executors are on the " +
       "same nodes or close to the nodes the data is being read on. This reader coalesces all " +
       "the files assigned to a task into a single host buffer before sending it down to the GPU. " +
-      "It does copy blocks from a single file into a host buffer in separate threads in  " +
+      "It copies blocks from a single file into a host buffer in separate threads in " +
       "parallel, see spark.rapids.sql.format.parquet.multiThreadedRead.numThreads. " +
       "MULTITHREADED is good for cloud environments where you are reading from a blobstore " +
       "that is total separate and likely has a higher I/O read cost. Many times the cloud " +
