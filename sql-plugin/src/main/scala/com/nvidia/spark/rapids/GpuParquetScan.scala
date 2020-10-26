@@ -362,7 +362,7 @@ case class GpuParquetMultiFilePartitionReaderFactory(
   }
 
   private def arePathsInCloud(filePaths: Array[String]): Boolean = {
-    filePaths.map(isCloudFileSystem).contains(true)
+    filePaths.exists(isCloudFileSystem)
   }
 
   override def createColumnarReader(partition: InputPartition): PartitionReader[ColumnarBatch] = {
@@ -1602,4 +1602,3 @@ object ParquetPartitionReader {
     })
   }
 }
-
