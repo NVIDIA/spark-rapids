@@ -979,7 +979,8 @@ class MultiFileParquetPartitionReader(
       } else {
         val table = readToTable(seqPathsAndBlocks, clippedSchema, isCorrectRebaseMode)
         try {
-          val maybeBatch = table.map(GpuColumnVector.from)
+          val colTypes = readDataSchema.fields.map(f => f.dataType).toList
+          val maybeBatch = table.map(t => GpuColumnVector.from(t, colTypes.asJava))
           maybeBatch.foreach { batch =>
             logDebug(s"GPU batch size: ${GpuColumnVector.getTotalDeviceMemoryUsed(batch)} bytes")
           }
@@ -1497,7 +1498,8 @@ class ParquetPartitionReader(
       } else {
         val table = readToTable(currentChunkedBlocks)
         try {
-          val maybeBatch = table.map(GpuColumnVector.from)
+          val colTypes = readDataSchema.fields.map(f => f.dataType).toList
+          val maybeBatch = table.map(t => GpuColumnVector.from(t, colTypes.asJava))
           maybeBatch.foreach { batch =>
             logDebug(s"GPU batch size: ${GpuColumnVector.getTotalDeviceMemoryUsed(batch)} bytes")
           }
