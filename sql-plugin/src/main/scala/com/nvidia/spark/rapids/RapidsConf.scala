@@ -521,7 +521,7 @@ object RapidsConf {
       "that is totally separate and likely has a higher I/O read cost. Many times the cloud " +
       "environments also get better throughput when you have multiple readers in parallel. " +
       "This reader uses multiple threads to read each file in parallel and each file is sent " +
-      "to gpu separately. This allows the CPU to keep reading while GPU is also doing work. " +
+      "to the GPU separately. This allows the CPU to keep reading while GPU is also doing work. " +
       "See spark.rapids.sql.format.parquet.multiThreadedRead.numThreads and " +
       "spark.rapids.sql.format.parquet.multiThreadedRead.maxNumFilesParallel to control " +
       "the number of threads and amount of memory used. " +
