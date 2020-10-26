@@ -518,7 +518,7 @@ object RapidsConf {
       "It copies blocks from a single file into a host buffer in separate threads in " +
       "parallel, see spark.rapids.sql.format.parquet.multiThreadedRead.numThreads. " +
       "MULTITHREADED is good for cloud environments where you are reading from a blobstore " +
-      "that is total separate and likely has a higher I/O read cost. Many times the cloud " +
+      "that is totally separate and likely has a higher I/O read cost. Many times the cloud " +
       "environments also get better throughput when you have multiple readers in parallel. " +
       "This reader uses multiple threads to read each file in parallel and each file is sent " +
       "to gpu separately. This allows the CPU to keep reading while GPU is also doing work. " +
