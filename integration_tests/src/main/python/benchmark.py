@@ -75,6 +75,8 @@ def main():
                     help='Path to source data set')
     parser.add_argument('--input-format', required=True,
                         help='Format of input data set (parquet or csv)')
+    parser.add_argument('--append-dat', required=False, action='store_true',
+                        help='Append .dat to path (for tpcds only)')
     parser.add_argument('--output', required=False,
                     help='Path to write query output to')
     parser.add_argument('--output-format', required=False,
@@ -107,6 +109,9 @@ def main():
             cmd.append("--query " + query)
             cmd.append("--input " + args.input)
             cmd.append("--input-format {}".format(args.input_format))
+
+            if args.append_dat is True:
+                cmd.append("--append-dat ")
 
             if args.output is not None:
                 cmd.append("--output " + args.output + "/" + config_name + "/" + query)
