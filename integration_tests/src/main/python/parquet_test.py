@@ -50,9 +50,10 @@ def test_read_round_trip(spark_tmp_path, parquet_gens, read_func, reader_confs, 
     with_cpu_session(
             lambda spark : gen_df(spark, gen_list).write.parquet(data_path),
             conf={'spark.sql.legacy.parquet.datetimeRebaseModeInWrite': 'CORRECTED'})
-    reader_confs.update({'spark.sql.sources.useV1SourceList': v1_enabled_list})
+    all_confs = reader_confs.copy()
+    all_confs.update({'spark.sql.sources.useV1SourceList': v1_enabled_list})
     assert_gpu_and_cpu_are_equal_collect(read_func(data_path),
-            conf=reader_confs)
+            conf=all_confs)
 
 @allow_non_gpu('FileSourceScanExec')
 @pytest.mark.parametrize('read_func', [read_parquet_df, read_parquet_sql])
@@ -85,10 +86,11 @@ def test_compress_read_round_trip(spark_tmp_path, compress, v1_enabled_list, rea
     with_cpu_session(
             lambda spark : binary_op_df(spark, long_gen).write.parquet(data_path),
             conf={'spark.sql.parquet.compression.codec': compress})
-    reader_confs.update({'spark.sql.sources.useV1SourceList': v1_enabled_list})
+    all_confs = reader_confs.copy()
+    all_confs.update({'spark.sql.sources.useV1SourceList': v1_enabled_list})
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : spark.read.parquet(data_path),
-            conf=reader_confs)
+            conf=all_confs)
 
 parquet_pred_push_gens = [
         byte_gen, short_gen, int_gen, long_gen, float_gen, double_gen, boolean_gen,
@@ -109,10 +111,11 @@ def test_pred_push_round_trip(spark_tmp_path, parquet_gen, read_func, v1_enabled
             lambda spark : gen_df(spark, gen_list).orderBy('a').write.parquet(data_path),
             conf={'spark.sql.legacy.parquet.datetimeRebaseModeInWrite': 'CORRECTED'})
     rf = read_func(data_path)
-    reader_confs.update({'spark.sql.sources.useV1SourceList': v1_enabled_list})
+    all_confs = reader_confs.copy()
+    all_confs.update({'spark.sql.sources.useV1SourceList': v1_enabled_list})
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark: rf(spark).select(f.col('a') >= s0),
-            conf=reader_confs)
+            conf=all_confs)
 
 parquet_ts_write_options = ['INT96', 'TIMESTAMP_MICROS', 'TIMESTAMP_MILLIS']
 
@@ -129,10 +132,11 @@ def test_ts_read_round_trip(spark_tmp_path, ts_write, ts_rebase, v1_enabled_list
             lambda spark : unary_op_df(spark, gen).write.parquet(data_path),
             conf={'spark.sql.legacy.parquet.datetimeRebaseModeInWrite': ts_rebase,
                 'spark.sql.parquet.outputTimestampType': ts_write})
-    reader_confs.update({'spark.sql.sources.useV1SourceList': v1_enabled_list})
+    all_confs = reader_confs.copy()
+    all_confs.update({'spark.sql.sources.useV1SourceList': v1_enabled_list})
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : spark.read.parquet(data_path),
-            conf=reader_confs)
+            conf=all_confs)
 
 def readParquetCatchException(spark, data_path):
     with pytest.raises(Exception) as e_info:
@@ -152,10 +156,11 @@ def test_ts_read_fails_datetime_legacy(spark_tmp_path, ts_write, ts_rebase, v1_e
             lambda spark : unary_op_df(spark, gen).write.parquet(data_path),
             conf={'spark.sql.legacy.parquet.datetimeRebaseModeInWrite': ts_rebase,
                 'spark.sql.parquet.outputTimestampType': ts_write})
-    reader_confs.update({'spark.sql.sources.useV1SourceList': v1_enabled_list})
+    all_confs = reader_confs.copy()
+    all_confs.update({'spark.sql.sources.useV1SourceList': v1_enabled_list})
     with_gpu_session(
             lambda spark : readParquetCatchException(spark, data_path),
-            conf=reader_confs)
+            conf=all_confs)
 
 parquet_gens_legacy_list = [[byte_gen, short_gen, int_gen, long_gen, float_gen, double_gen,
     string_gen, boolean_gen, DateGen(start=date(1590, 1, 1)),
@@ -172,10 +177,11 @@ def test_read_round_trip_legacy(spark_tmp_path, parquet_gens, v1_enabled_list, r
     with_cpu_session(
             lambda spark : gen_df(spark, gen_list).write.parquet(data_path),
             conf={'spark.sql.legacy.parquet.datetimeRebaseModeInWrite': 'LEGACY'})
-    reader_confs.update({'spark.sql.sources.useV1SourceList': v1_enabled_list})
+    all_confs = reader_confs.copy()
+    all_confs.update({'spark.sql.sources.useV1SourceList': v1_enabled_list})
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : spark.read.parquet(data_path),
-            conf=reader_confs)
+            conf=all_confs)
 
 @pytest.mark.parametrize('reader_confs', reader_opt_confs)
 @pytest.mark.parametrize('v1_enabled_list', ["", "parquet"])
@@ -195,10 +201,11 @@ def test_simple_partitioned_read(spark_tmp_path, v1_enabled_list, reader_confs):
             lambda spark : gen_df(spark, gen_list).write.parquet(second_data_path),
             conf={'spark.sql.legacy.parquet.datetimeRebaseModeInWrite': 'CORRECTED'})
     data_path = spark_tmp_path + '/PARQUET_DATA'
-    reader_confs.update({'spark.sql.sources.useV1SourceList': v1_enabled_list})
+    all_confs = reader_confs.copy()
+    all_confs.update({'spark.sql.sources.useV1SourceList': v1_enabled_list})
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : spark.read.parquet(data_path),
-            conf=reader_confs)
+            conf=all_confs)
 
 # In this we are reading the data, but only reading the key the data was partitioned by
 @pytest.mark.parametrize('reader_confs', reader_opt_confs)
@@ -215,10 +222,11 @@ def test_partitioned_read_just_partitions(spark_tmp_path, v1_enabled_list, reade
             lambda spark : gen_df(spark, gen_list).write.parquet(second_data_path),
             conf={'spark.sql.legacy.parquet.datetimeRebaseModeInWrite': 'CORRECTED'})
     data_path = spark_tmp_path + '/PARQUET_DATA'
-    reader_confs.update({'spark.sql.sources.useV1SourceList': v1_enabled_list})
+    all_confs = reader_confs.copy()
+    all_confs.update({'spark.sql.sources.useV1SourceList': v1_enabled_list})
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : spark.read.parquet(data_path).select("key"),
-            conf=reader_confs)
+            conf=all_confs)
 
 @pytest.mark.parametrize('reader_confs', reader_opt_confs)
 @pytest.mark.parametrize('v1_enabled_list', ["", "parquet"])
@@ -237,12 +245,13 @@ def test_read_schema_missing_cols(spark_tmp_path, v1_enabled_list, reader_confs)
     with_cpu_session(
             lambda spark : gen_df(spark, second_gen_list, 1).write.parquet(second_data_path))
     data_path = spark_tmp_path + '/PARQUET_DATA'
-    reader_confs.update({'spark.sql.sources.useV1SourceList': v1_enabled_list,
+    all_confs = reader_confs.copy()
+    all_confs.update({'spark.sql.sources.useV1SourceList': v1_enabled_list,
           'spark.sql.files.maxPartitionBytes': "1g",
           'spark.sql.files.minPartitionNum': '1'})
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : spark.read.parquet(data_path),
-            conf=reader_confs)
+            conf=all_confs)
 
 @pytest.mark.parametrize('reader_confs', reader_opt_confs)
 @pytest.mark.parametrize('v1_enabled_list', ["", "parquet"])
@@ -263,10 +272,11 @@ def test_read_merge_schema(spark_tmp_path, v1_enabled_list, reader_confs):
             lambda spark : gen_df(spark, second_gen_list).write.parquet(second_data_path),
             conf={'spark.sql.legacy.parquet.datetimeRebaseModeInWrite': 'CORRECTED'})
     data_path = spark_tmp_path + '/PARQUET_DATA'
-    reader_confs.update({'spark.sql.sources.useV1SourceList': v1_enabled_list})
+    all_confs = reader_confs.copy()
+    all_confs.update({'spark.sql.sources.useV1SourceList': v1_enabled_list})
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : spark.read.option('mergeSchema', 'true').parquet(data_path),
-            conf=reader_confs)
+            conf=all_confs)
 
 @pytest.mark.parametrize('reader_confs', reader_opt_confs)
 @pytest.mark.parametrize('v1_enabled_list', ["", "parquet"])
@@ -286,12 +296,13 @@ def test_read_merge_schema_from_conf(spark_tmp_path, v1_enabled_list, reader_con
     with_cpu_session(
             lambda spark : gen_df(spark, second_gen_list).write.parquet(second_data_path),
             conf={'spark.sql.legacy.parquet.datetimeRebaseModeInWrite': 'CORRECTED'})
-    reader_confs.update({'spark.sql.sources.useV1SourceList': v1_enabled_list,
+    all_confs = reader_confs.copy()
+    all_confs.update({'spark.sql.sources.useV1SourceList': v1_enabled_list,
           'spark.sql.parquet.mergeSchema': "true"})
     data_path = spark_tmp_path + '/PARQUET_DATA'
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : spark.read.parquet(data_path),
-            conf=reader_confs)
+            conf=all_confs)
 
 parquet_write_gens_list = [
         [byte_gen, short_gen, int_gen, long_gen, float_gen, double_gen,
@@ -304,14 +315,15 @@ parquet_write_gens_list = [
 def test_write_round_trip(spark_tmp_path, parquet_gens, v1_enabled_list, ts_type, reader_confs):
     gen_list = [('_c' + str(i), gen) for i, gen in enumerate(parquet_gens)]
     data_path = spark_tmp_path + '/PARQUET_DATA'
-    reader_confs.update({'spark.sql.sources.useV1SourceList': v1_enabled_list,
+    all_confs = reader_confs.copy()
+    all_confs.update({'spark.sql.sources.useV1SourceList': v1_enabled_list,
             'spark.sql.legacy.parquet.datetimeRebaseModeInWrite': 'CORRECTED',
             'spark.sql.parquet.outputTimestampType': ts_type})
     assert_gpu_and_cpu_writes_are_equal_collect(
             lambda spark, path: gen_df(spark, gen_list).coalesce(1).write.parquet(path),
             lambda spark, path: spark.read.parquet(path),
             data_path,
-            conf=reader_confs)
+            conf=all_confs)
 
 @pytest.mark.parametrize('ts_type', ['TIMESTAMP_MILLIS', 'TIMESTAMP_MICROS'])
 @pytest.mark.parametrize('ts_rebase', ['CORRECTED'])
@@ -342,14 +354,15 @@ def test_part_write_round_trip(spark_tmp_path, parquet_gen, v1_enabled_list, ts_
     gen_list = [('a', RepeatSeqGen(parquet_gen, 10)),
             ('b', parquet_gen)]
     data_path = spark_tmp_path + '/PARQUET_DATA'
-    reader_confs.update({'spark.sql.sources.useV1SourceList': v1_enabled_list,
+    all_confs = reader_confs.copy()
+    all_confs.update({'spark.sql.sources.useV1SourceList': v1_enabled_list,
             'spark.sql.legacy.parquet.datetimeRebaseModeInWrite': 'CORRECTED',
             'spark.sql.parquet.outputTimestampType': ts_type})
     assert_gpu_and_cpu_writes_are_equal_collect(
             lambda spark, path: gen_df(spark, gen_list).coalesce(1).write.partitionBy('a').parquet(path),
             lambda spark, path: spark.read.parquet(path),
             data_path,
-            conf=reader_confs)
+            conf=all_confs)
 
 parquet_write_compress_options = ['none', 'uncompressed', 'snappy']
 @pytest.mark.parametrize('compress', parquet_write_compress_options)
@@ -357,13 +370,14 @@ parquet_write_compress_options = ['none', 'uncompressed', 'snappy']
 @pytest.mark.parametrize('v1_enabled_list', ["", "parquet"])
 def test_compress_write_round_trip(spark_tmp_path, compress, v1_enabled_list, reader_confs):
     data_path = spark_tmp_path + '/PARQUET_DATA'
-    reader_confs.update({'spark.sql.sources.useV1SourceList': v1_enabled_list,
+    all_confs = reader_confs.copy()
+    all_confs.update({'spark.sql.sources.useV1SourceList': v1_enabled_list,
             'spark.sql.parquet.compression.codec': compress})
     assert_gpu_and_cpu_writes_are_equal_collect(
             lambda spark, path : binary_op_df(spark, long_gen).coalesce(1).write.parquet(path),
             lambda spark, path : spark.read.parquet(path),
             data_path,
-            conf=reader_confs)
+            conf=all_confs)
 
 @pytest.mark.parametrize('reader_confs', reader_opt_confs)
 @pytest.mark.parametrize('v1_enabled_list', ["", "parquet"])
@@ -375,7 +389,8 @@ def test_input_meta(spark_tmp_path, v1_enabled_list, reader_confs):
     with_cpu_session(
             lambda spark : unary_op_df(spark, long_gen).write.parquet(second_data_path))
     data_path = spark_tmp_path + '/PARQUET_DATA'
-    reader_confs.update({'spark.sql.sources.useV1SourceList': v1_enabled_list})
+    all_confs = reader_confs.copy()
+    all_confs.update({'spark.sql.sources.useV1SourceList': v1_enabled_list})
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : spark.read.parquet(data_path)\
                     .filter(f.col('a') > 0)\
@@ -383,7 +398,7 @@ def test_input_meta(spark_tmp_path, v1_enabled_list, reader_confs):
                         'input_file_name()',
                         'input_file_block_start()',
                         'input_file_block_length()'),
-            conf=reader_confs)
+            conf=all_confs)
 
 def createBucketedTableAndJoin(spark):
     spark.range(10e4).write.bucketBy(4, "id").sortBy("id").mode('overwrite').saveAsTable("bucketed_4_10e4")
@@ -398,10 +413,11 @@ def createBucketedTableAndJoin(spark):
 @pytest.mark.parametrize('v1_enabled_list', ["", "parquet"])
 # this test would be better if we could ensure exchanges didn't exist - ie used buckets
 def test_buckets(spark_tmp_path, v1_enabled_list, reader_confs):
-    reader_confs.update({'spark.sql.sources.useV1SourceList': v1_enabled_list,
+    all_confs = reader_confs.copy()
+    all_confs.update({'spark.sql.sources.useV1SourceList': v1_enabled_list,
           "spark.sql.autoBroadcastJoinThreshold": '-1'})
     assert_gpu_and_cpu_are_equal_collect(createBucketedTableAndJoin,
-            conf=reader_confs)
+            conf=all_confs)
 
 @pytest.mark.parametrize('v1_enabled_list', ["", "parquet"])
 def test_small_file_memory(spark_tmp_path, v1_enabled_list):
