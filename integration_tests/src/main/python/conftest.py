@@ -199,7 +199,7 @@ class TmpTableFactory:
 
 @pytest.fixture
 def spark_tmp_table_factory(request):
-    base_id = 'tmp_table_{}'.format(random.randint(0, 1000000))
+    base_id = 'tmp_{}_table'.format(random.randint(0, 1000000))
     yield TmpTableFactory(base_id)
     sp = get_spark_i_know_what_i_am_doing()
     tables = sp.sql("SHOW TABLES".format(base_id)).collect()

@@ -48,8 +48,10 @@ else
     #    --conf 'spark.sql.session.timeZone=UTC' \
     #    --conf 'spark.sql.shuffle.partitions=12' \
     #    $SPARK_SUBMIT_FLAGS \
+
+    export RUN_PARALLEL=${RUN_PARALLEL:-4}
     python      "$SCRIPTPATH"/runtests.py --rootdir "$SCRIPTPATH" "$SCRIPTPATH"/src/main/python \
-          -n 4 \
+          -n $RUN_PARALLEL \
           -v -rfExXs "$TEST_TAGS" \
           --std_input_path="$SCRIPTPATH"/src/test/resources/ \
           "$TEST_ARGS" \
