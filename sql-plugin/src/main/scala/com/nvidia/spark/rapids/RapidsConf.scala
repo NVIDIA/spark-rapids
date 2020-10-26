@@ -510,9 +510,8 @@ object RapidsConf {
   val PARQUET_READER_TYPE = conf("spark.rapids.sql.format.parquet.reader.type")
     .doc("Sets the parquet reader type. We support different types that are optimized for " +
       "different environments. The original Spark style reader can be selected by setting this " +
-      "to PERFILE. This is where the task reads each file assigned to it serially and copies " +
-      "each one to the GPU after reading that file. That reader is not great at handling many " +
-      "small files, so using either COALESCING OR MULTITHREADED is better for that. The " +
+      "to PERFILE which individually reads and copies files to the GPU. Loading many small files individually " +
+      "has high overhead, and using either COALESCING or MULTITHREADED is recommended instead. The " +
       "COALESCING reader is good when using a local file system where the executors are on the " +
       "same nodes or close to the nodes the data is being read on. This reader coalesces all " +
       "the files assigned to a task into a single host buffer before sending it down to the GPU. " +
