@@ -25,7 +25,7 @@ import scala.collection.mutable.ArrayBuffer
 
 import ai.rapids.cudf.{DeviceMemoryBuffer, HostMemoryBuffer, MemoryBuffer, NvtxColor, NvtxRange}
 import com.google.common.util.concurrent.ThreadFactoryBuilder
-import com.nvidia.spark.rapids.{GpuDeviceManager, RapidsConf}
+import com.nvidia.spark.rapids.{GpuDeviceManager, HashedPriorityQueue, RapidsConf}
 import com.nvidia.spark.rapids.shuffle._
 import com.nvidia.spark.rapids.shuffle.{BounceBufferManager, BufferReceiveState, ClientConnection, PendingTransferRequest, RapidsShuffleClient, RapidsShuffleRequestHandler, RapidsShuffleServer, RapidsShuffleTransport, RefCountedDirectByteBuffer}
 
@@ -359,7 +359,7 @@ class UCXShuffleTransport(shuffleServerId: BlockManagerId, rapidsConf: RapidsCon
     inflightMonitor.notifyAll()
   }
 
-  private val altList = new PriorityQueue[PendingTransferRequest](
+  private val altList = new HashedPriorityQueue[PendingTransferRequest](
       1000,
       (t: PendingTransferRequest, t1: PendingTransferRequest) => {
         if (t.getLength < t1.getLength) {
@@ -388,7 +388,6 @@ class UCXShuffleTransport(shuffleServerId: BlockManagerId, rapidsConf: RapidsCon
   }
 
   exec.execute(() => {
-    import collection.JavaConverters._
     while (inflightStarted) {
       try {
         var perClientReq = mutable.Map[RapidsShuffleClient, PerClientReadyRequests]()
@@ -401,10 +400,8 @@ class UCXShuffleTransport(shuffleServerId: BlockManagerId, rapidsConf: RapidsCon
               waitRange.close()
             }
           } else {
-            var toRemove = Seq[PendingTransferRequest]()
             var keepAttempting = true
-            val altListIter = altList.iterator()
-            var req = altListIter.next()
+            var req = altList.peek()
             while (req != null && keepAttempting) {
               if (wouldFitInFlightLimit(req.getLength)) {
                 val existingReq =
@@ -417,7 +414,7 @@ class UCXShuffleTransport(shuffleServerId: BlockManagerId, rapidsConf: RapidsCon
                     val perClientReadyRequests = new PerClientReadyRequests(bbs.head)
                     perClientReadyRequests.addRequest(req)
                     perClientReq += req.client -> perClientReadyRequests
-                    toRemove = toRemove :+ req
+                    altList.remove(req)
                   } else {
                     // TODO: make this a metric => "blocked while waiting on bounce buffers"
                     logTrace("Can't acquire bounce buffers for receive.")
@@ -426,19 +423,14 @@ class UCXShuffleTransport(shuffleServerId: BlockManagerId, rapidsConf: RapidsCon
                   // bounce buffers already acquired
                   markBytesInFlight(req.getLength)
                   existingReq.foreach(_.addRequest(req))
-                  toRemove = toRemove :+ req
+                  altList.remove(req)
                 }
-                if (altListIter.hasNext) {
-                  req = altListIter.next()
-                } else {
-                  keepAttempting = false // no more requests to handle
-                }
+                req = altList.peek()
               } else {
                 // cannot fit anymore (reached inflight maximum)
                 keepAttempting = false
               }
             }
-            altList.removeAll(toRemove.asJava)
           }
           if (perClientReq.nonEmpty) {
             perClientReq.foreach { case (client, perClientRequests) =>
