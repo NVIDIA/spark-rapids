@@ -418,6 +418,7 @@ class UCXShuffleTransport(shuffleServerId: BlockManagerId, rapidsConf: RapidsCon
                   } else {
                     // TODO: make this a metric => "blocked while waiting on bounce buffers"
                     logTrace("Can't acquire bounce buffers for receive.")
+                    keepAttempting = false
                   }
                 } else {
                   // bounce buffers already acquired
