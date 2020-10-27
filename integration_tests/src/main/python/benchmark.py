@@ -87,6 +87,8 @@ def main():
                     help='Queries to run')
     parser.add_argument('--iterations', required=False,
                         help='The number of iterations to run (defaults to 1)')
+    parser.add_argument('--gc-between-runs', required=False, action='store_true',
+                        help='Whether to call System.gc between iterations')
 
     args = parser.parse_args()
 
@@ -120,6 +122,9 @@ def main():
                 cmd.append("--output-format {}".format(args.output_format))
 
             cmd.append("--summary-file-prefix " + summary_file_prefix)
+
+            if args.gc_between_runs is True:
+                cmd.append("--gc-between-runs ")
 
             if args.iterations is None:
                 cmd.append("--iterations 1")
