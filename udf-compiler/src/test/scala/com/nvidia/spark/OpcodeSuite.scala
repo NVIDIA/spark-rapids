@@ -20,6 +20,8 @@ import java.nio.charset.Charset
 import java.time.{LocalDate, LocalDateTime}
 import java.time.format.DateTimeFormatter
 
+import scala.collection.mutable
+
 import com.nvidia.spark.rapids.RapidsConf
 import org.scalatest.Assertions._
 import org.scalatest.FunSuite
@@ -2284,4 +2286,48 @@ class OpcodeSuite extends FunSuite {
     checkEquivNotCompiled(result, ref)
   }
 
+  test("Conditional array buffer processing") {
+    def cond(s: String): Boolean = {
+      s == null || s.trim.length == 0
+    }
+
+    def transform(str: String): String = {
+      if (cond(str)) {
+        null
+      } else {
+        if (str.toLowerCase.startsWith("@@@@")) {
+          "######" + str.substring("@@@@".length)
+        } else if (str.toLowerCase.startsWith("######")) {
+          "@@@@" + str.substring("######".length)
+        } else {
+          str
+        }
+      }
+    }
+
+    val u = makeUdf((x: String, y: String, z: Boolean) => {
+        var r = new mutable.ArrayBuffer[String]()
+        r = r :+ x
+        if (!cond(y)) {
+          r = r :+ y
+
+          if (z) {
+            r = r :+ transform(y)
+          }
+        }
+        if (z) {
+          r = r :+ transform(x)
+        }
+        r.distinct.toArray
+      })
+
+    val dataset = List(("######hello", null),
+                       ("world", "######hello"),
+                       ("", "@@@@target")).toDF("x", "y")
+    val result = dataset.withColumn("new", u('x, 'y, lit(true)))
+    val ref = List(("######hello", null, Array("######hello", "@@@@hello")),
+                   ("world", "######hello", Array("world", "######hello", "@@@@hello")),
+                   ("", "@@@@target", Array("", "@@@@target", "######target", null))).toDF
+    checkEquiv(result, ref)
+  }
 }
