@@ -109,10 +109,7 @@ class Spark300dbShims extends Spark300Shims {
               wrapped.relation.bucketSpec,
               GpuFileSourceScanExec.convertFileFormat(wrapped.relation.fileFormat),
               options)(sparkSession)
-            val canUseSmallFileOpt = newRelation.fileFormat match {
-              case _: ParquetFileFormat => conf.isParquetMultiThreadReadEnabled
-              case _ => false
-            }
+
             GpuFileSourceScanExec(
               newRelation,
               wrapped.output,
@@ -123,7 +120,7 @@ class Spark300dbShims extends Spark300Shims {
               None,
               wrapped.dataFilters,
               wrapped.tableIdentifier,
-              canUseSmallFileOpt)
+              conf)
           }
         }),
       GpuOverrides.exec[SortMergeJoinExec](
@@ -199,8 +196,9 @@ class Spark300dbShims extends Spark300Shims {
     FilePartition(index, files)
   }
 
-  override def copyFileSourceScanExec(scanExec: GpuFileSourceScanExec,
-      supportsSmallFileOpt: Boolean): GpuFileSourceScanExec = {
-    scanExec.copy(supportsSmallFileOpt=supportsSmallFileOpt)
+  override def copyFileSourceScanExec(
+      scanExec: GpuFileSourceScanExec,
+      queryUsesInputFile: Boolean): GpuFileSourceScanExec = {
+    scanExec.copy(queryUsesInputFile=queryUsesInputFile)
   }
 }
