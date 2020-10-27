@@ -192,6 +192,17 @@ class TypedConfBuilder[T](
     }
   }
 
+  /** Check that user-provided values for the config match a pre-defined set. */
+  def checkValues(validValues: Set[T]): TypedConfBuilder[T] = {
+    transform { v =>
+      if (!validValues.contains(v)) {
+        throw new IllegalArgumentException(
+          s"The value of ${parent.key} should be one of ${validValues.mkString(", ")}, but was $v")
+      }
+      v
+    }
+  }
+
   def createWithDefault(value: T): ConfEntry[T] = {
     val ret = new ConfEntryWithDefault[T](parent.key, converter,
       parent.doc, parent.isInternal, value)
@@ -492,21 +503,53 @@ object RapidsConf {
     .booleanConf
     .createWithDefault(true)
 
-  val ENABLE_MULTITHREAD_PARQUET_READS = conf(
-    "spark.rapids.sql.format.parquet.multiThreadedRead.enabled")
-    .doc("When set to true, reads multiple small files within a partition more efficiently " +
-      "by reading each file in a separate thread in parallel on the CPU side before " +
-      "sending to the GPU. Limited by " +
-      "spark.rapids.sql.format.parquet.multiThreadedRead.numThreads " +
-      "and spark.rapids.sql.format.parquet.multiThreadedRead.maxNumFilesParallel")
-    .booleanConf
-    .createWithDefault(true)
+  object ParquetReaderType extends Enumeration {
+    val AUTO, COALESCING, MULTITHREADED, PERFILE = Value
+  }
+
+  val PARQUET_READER_TYPE = conf("spark.rapids.sql.format.parquet.reader.type")
+    .doc("Sets the parquet reader type. We support different types that are optimized for " +
+      "different environments. The original Spark style reader can be selected by setting this " +
+      "to PERFILE which individually reads and copies files to the GPU. Loading many small files " +
+      "individually has high overhead, and using either COALESCING or MULTITHREADED is " +
+      "recommended instead. The COALESCING reader is good when using a local file system where " +
+      "the executors are on the same nodes or close to the nodes the data is being read on. " +
+      "This reader coalesces all the files assigned to a task into a single host buffer before " +
+      "sending it down to the GPU. It copies blocks from a single file into a host buffer in " +
+      "separate threads in parallel, see " +
+      "spark.rapids.sql.format.parquet.multiThreadedRead.numThreads. " +
+      "MULTITHREADED is good for cloud environments where you are reading from a blobstore " +
+      "that is totally separate and likely has a higher I/O read cost. Many times the cloud " +
+      "environments also get better throughput when you have multiple readers in parallel. " +
+      "This reader uses multiple threads to read each file in parallel and each file is sent " +
+      "to the GPU separately. This allows the CPU to keep reading while GPU is also doing work. " +
+      "See spark.rapids.sql.format.parquet.multiThreadedRead.numThreads and " +
+      "spark.rapids.sql.format.parquet.multiThreadedRead.maxNumFilesParallel to control " +
+      "the number of threads and amount of memory used. " +
+      "By default this is set to AUTO so we select the reader we think is best. This will " +
+      "either be the COALESCING or the MULTITHREADED based on whether we think the file is " +
+      "in the cloud. See spark.rapids.cloudSchemes.")
+    .stringConf
+    .transform(_.toUpperCase(java.util.Locale.ROOT))
+    .checkValues(ParquetReaderType.values.map(_.toString))
+    .createWithDefault(ParquetReaderType.AUTO.toString)
+
+  val CLOUD_SCHEMES = conf("spark.rapids.cloudSchemes")
+    .doc("Comma separated list of additional URI schemes that are to be considered cloud based " +
+      "filesystems. Schemes already included: dbfs, s3, s3a, s3n, wasbs, gs. Cloud based stores " +
+      "generally would be total separate from the executors and likely have a higher I/O read " +
+      "cost. Many times the cloud filesystems also get better throughput when you have multiple " +
+      "readers in parallel. This is used with spark.rapids.sql.format.parquet.reader.type")
+    .stringConf
+    .toSequence
+    .createOptional
 
   val PARQUET_MULTITHREAD_READ_NUM_THREADS =
     conf("spark.rapids.sql.format.parquet.multiThreadedRead.numThreads")
       .doc("The maximum number of threads, on the executor, to use for reading small " +
         "parquet files in parallel. This can not be changed at runtime after the executor has " +
-        "started.")
+        "started. Used with COALESCING and MULTITHREADED reader, see " +
+        "spark.rapids.sql.format.parquet.reader.type.")
       .integerConf
       .createWithDefault(20)
 
@@ -514,7 +557,8 @@ object RapidsConf {
     conf("spark.rapids.sql.format.parquet.multiThreadedRead.maxNumFilesParallel")
       .doc("A limit on the maximum number of files per task processed in parallel on the CPU " +
         "side before the file is sent to the GPU. This affects the amount of host memory used " +
-        "when reading the files in parallel.")
+        "when reading the files in parallel. Used with MULTITHREADED reader, see " +
+        "spark.rapids.sql.format.parquet.reader.type")
       .integerConf
       .checkValue(v => v > 0, "The maximum number of files must be greater than 0.")
       .createWithDefault(Integer.MAX_VALUE)
@@ -933,7 +977,17 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
 
   lazy val isParquetEnabled: Boolean = get(ENABLE_PARQUET)
 
-  lazy val isParquetMultiThreadReadEnabled: Boolean = get(ENABLE_MULTITHREAD_PARQUET_READS)
+  lazy val isParquetPerFileReadEnabled: Boolean =
+    ParquetReaderType.withName(get(PARQUET_READER_TYPE)) == ParquetReaderType.PERFILE
+
+  lazy val isParquetAutoReaderEnabled: Boolean =
+    ParquetReaderType.withName(get(PARQUET_READER_TYPE)) == ParquetReaderType.AUTO
+
+  lazy val isParquetCoalesceFileReadEnabled: Boolean = isParquetAutoReaderEnabled ||
+    ParquetReaderType.withName(get(PARQUET_READER_TYPE)) == ParquetReaderType.COALESCING
+
+  lazy val isParquetMultiThreadReadEnabled: Boolean = isParquetAutoReaderEnabled ||
+    ParquetReaderType.withName(get(PARQUET_READER_TYPE)) == ParquetReaderType.MULTITHREADED
 
   lazy val parquetMultiThreadReadNumThreads: Int = get(PARQUET_MULTITHREAD_READ_NUM_THREADS)
 
@@ -985,6 +1039,8 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
   lazy val shuffleCompressionMaxBatchMemory: Long = get(SHUFFLE_COMPRESSION_MAX_BATCH_MEMORY)
 
   lazy val shimsProviderOverride: Option[String] = get(SHIMS_PROVIDER_OVERRIDE)
+
+  lazy val getCloudSchemes: Option[Seq[String]] = get(CLOUD_SCHEMES)
 
   def isOperatorEnabled(key: String, incompat: Boolean, isDisabledByDefault: Boolean): Boolean = {
     val default = !(isDisabledByDefault || incompat) || (incompat && isIncompatEnabled)

@@ -29,7 +29,6 @@ import org.apache.spark.sql.connector.read.Scan
 import org.apache.spark.sql.execution._
 import org.apache.spark.sql.execution.columnar.InMemoryTableScanExec
 import org.apache.spark.sql.execution.datasources.HadoopFsRelation
-import org.apache.spark.sql.execution.datasources.parquet.ParquetFileFormat
 import org.apache.spark.sql.execution.datasources.v2.orc.OrcScan
 import org.apache.spark.sql.execution.datasources.v2.parquet.ParquetScan
 import org.apache.spark.sql.execution.joins.{BroadcastHashJoinExec, BroadcastNestedLoopJoinExec, HashJoin, ShuffledHashJoinExec, SortMergeJoinExec}
@@ -159,10 +158,7 @@ class Spark310Shims extends Spark301Shims {
               wrapped.relation.bucketSpec,
               GpuFileSourceScanExec.convertFileFormat(wrapped.relation.fileFormat),
               options)(sparkSession)
-            val canUseSmallFileOpt = newRelation.fileFormat match {
-              case _: ParquetFileFormat => conf.isParquetMultiThreadReadEnabled
-              case _ => false
-            }
+
             GpuFileSourceScanExec(
               newRelation,
               wrapped.output,
@@ -172,7 +168,7 @@ class Spark310Shims extends Spark301Shims {
               wrapped.optionalNumCoalescedBuckets,
               wrapped.dataFilters,
               wrapped.tableIdentifier,
-              canUseSmallFileOpt)
+              conf)
           }
         }),
       GpuOverrides.exec[InMemoryTableScanExec](
@@ -224,8 +220,7 @@ class Spark310Shims extends Spark301Shims {
             a.options,
             a.partitionFilters,
             a.dataFilters,
-            conf,
-            conf.isParquetMultiThreadReadEnabled)
+            conf)
         }
         def isSupported(t: DataType) = t match {
           case MapType(StringType, StringType, _) => true
@@ -271,16 +266,18 @@ class Spark310Shims extends Spark301Shims {
     new ShuffleManagerShim
   }
 
-  override def copyParquetBatchScanExec(batchScanExec: GpuBatchScanExec,
-      supportsSmallFileOpt: Boolean): GpuBatchScanExec = {
+  override def copyParquetBatchScanExec(
+      batchScanExec: GpuBatchScanExec,
+      queryUsesInputFile: Boolean): GpuBatchScanExec = {
     val scan = batchScanExec.scan.asInstanceOf[GpuParquetScan]
-    val scanCopy = scan.copy(supportsSmallFileOpt = supportsSmallFileOpt)
-    batchScanExec.copy(scan = scanCopy)
+    val scanCopy = scan.copy(queryUsesInputFile=queryUsesInputFile)
+    batchScanExec.copy(scan=scanCopy)
   }
 
-  override def copyFileSourceScanExec(scanExec: GpuFileSourceScanExec,
-      supportsSmallFileOpt: Boolean): GpuFileSourceScanExec = {
-    scanExec.copy(supportsSmallFileOpt = supportsSmallFileOpt)
+  override def copyFileSourceScanExec(
+      scanExec: GpuFileSourceScanExec,
+      queryUsesInputFile: Boolean): GpuFileSourceScanExec = {
+    scanExec.copy(queryUsesInputFile=queryUsesInputFile)
   }
 
   override def getGpuColumnarToRowTransition(plan: SparkPlan,
