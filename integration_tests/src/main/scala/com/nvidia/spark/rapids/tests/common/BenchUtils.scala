@@ -195,20 +195,24 @@ object BenchUtils {
       }
     }
 
-    // summarize all query times
-    for (i <- 0 until iterations) {
-      println(s"Iteration $i took ${queryTimes(i)} msec.")
-    }
+    // only show query times if there were no failed queries
+    if (!queryTimes.contains(-1)) {
 
-    // for multiple runs, summarize cold/hot timings
-    if (iterations > 1) {
-      println(s"Cold run: ${queryTimes(0)} msec.")
-      val hotRuns = queryTimes.drop(1)
-      val numHotRuns = hotRuns.length
-      println(s"Best of $numHotRuns hot run(s): ${hotRuns.min} msec.")
-      println(s"Worst of $numHotRuns hot run(s): ${hotRuns.max} msec.")
-      println(s"Average of $numHotRuns hot run(s): " +
-          s"${hotRuns.sum.toDouble / numHotRuns} msec.")
+      // summarize all query times
+      for (i <- 0 until iterations) {
+        println(s"Iteration $i took ${queryTimes(i)} msec.")
+      }
+
+      // for multiple runs, summarize cold/hot timings
+      if (iterations > 1) {
+        println(s"Cold run: ${queryTimes(0)} msec.")
+        val hotRuns = queryTimes.drop(1)
+        val numHotRuns = hotRuns.length
+        println(s"Best of $numHotRuns hot run(s): ${hotRuns.min} msec.")
+        println(s"Worst of $numHotRuns hot run(s): ${hotRuns.max} msec.")
+        println(s"Average of $numHotRuns hot run(s): " +
+            s"${hotRuns.sum.toDouble / numHotRuns} msec.")
+      }
     }
 
     // write results to file
