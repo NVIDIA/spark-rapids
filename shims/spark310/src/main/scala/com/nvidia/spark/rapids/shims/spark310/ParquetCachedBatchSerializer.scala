@@ -17,7 +17,6 @@
 package com.nvidia.spark.rapids.shims.spark310
 
 import java.io.{InputStream, IOException}
-import java.lang.reflect.Method
 import java.nio.ByteBuffer
 
 import scala.collection.JavaConverters._
@@ -399,7 +398,7 @@ class ParquetCachedBatchSerializer extends CachedBatchSerializer with Arm {
       val cbRdd = batches.map(batch => {
         withResource(batch) { gpuBatch =>
           val cols = GpuColumnVector.extractColumns(gpuBatch)
-          new ColumnarBatch(cols.map(_.copyToHost()).toArray, gpuBatch.numRows())
+          new ColumnarBatch(cols.safeMap(_.copyToHost()).toArray, gpuBatch.numRows())
         }
       })
       cbRdd.mapPartitions(iter => CloseableColumnBatchIterator(iter))
@@ -534,7 +533,7 @@ class ParquetCachedBatchSerializer extends CachedBatchSerializer with Arm {
     }
 
     /**
-     * This method returns an ColumnarBatch iterator over a CachedBatch.
+     * This method returns a ColumnarBatch iterator over a CachedBatch.
      * Each CachedBatch => ColumnarBatch is a 1-1 conversion so its pretty straight forward
      */
     def getColumnBatchIterator: Iterator[ColumnarBatch] = {
@@ -577,7 +576,6 @@ class ParquetCachedBatchSerializer extends CachedBatchSerializer with Arm {
         var batchIdx = 0
         var numBatched = 0
 
-        import scala.collection.JavaConverters._
         for (block <- parquetFileReader.getRowGroups.asScala) {
           this.totalRowCount += block.getRowCount
         }

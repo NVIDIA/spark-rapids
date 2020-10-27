@@ -216,7 +216,6 @@ def test_cache_partial_load(data_gen, enableVectorizedConf):
 @pytest.mark.parametrize('data_gen', all_gen, ids=idfn)
 @pytest.mark.parametrize('ts_write', ['TIMESTAMP_MICROS', 'TIMESTAMP_MILLIS'])
 @pytest.mark.parametrize('enableVectorized', ['true', 'false'], ids=idfn)
-@allow_non_gpu('CollectLimitExec')
 @ignore_order
 def test_cache_columnar(spark_tmp_path, data_gen, enableVectorized, ts_write):
     data_path_gpu = spark_tmp_path + '/PARQUET_DATA'
@@ -226,7 +225,7 @@ def test_cache_columnar(spark_tmp_path, data_gen, enableVectorized, ts_write):
             df.write.mode('overwrite').parquet(data_path)
             cached = spark.read.parquet(data_path).cache()
             cached.count()
-            return debug_df(cached.select(f.col("a")))
+            return cached.select(f.col("a"))
         return write_read_parquet_cached
     # rapids-spark doesn't support LEGACY read for parquet
     conf={'spark.sql.legacy.parquet.datetimeRebaseModeInWrite': 'CORRECTED',
