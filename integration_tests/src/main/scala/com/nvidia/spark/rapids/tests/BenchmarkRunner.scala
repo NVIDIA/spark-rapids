@@ -65,21 +65,24 @@ object BenchmarkRunner {
                 conf.query(),
                 path,
                 iterations = conf.iterations(),
-                summaryFilePrefix = conf.summaryFilePrefix.toOption)
+                summaryFilePrefix = conf.summaryFilePrefix.toOption,
+                gcBetweenRuns = conf.gcBetweenRuns())
             case "csv" =>
               runner.writeCsv(
                 spark,
                 conf.query(),
                 path,
                 iterations = conf.iterations(),
-                summaryFilePrefix = conf.summaryFilePrefix.toOption)
+                summaryFilePrefix = conf.summaryFilePrefix.toOption,
+                gcBetweenRuns = conf.gcBetweenRuns())
             case "orc" =>
               runner.writeOrc(
                 spark,
                 conf.query(),
                 path,
                 iterations = conf.iterations(),
-                summaryFilePrefix = conf.summaryFilePrefix.toOption)
+                summaryFilePrefix = conf.summaryFilePrefix.toOption,
+                gcBetweenRuns = conf.gcBetweenRuns())
             case other =>
               System.err.println(s"Invalid or unspecified output format: $other")
               System.exit(-1)
@@ -89,7 +92,8 @@ object BenchmarkRunner {
               spark,
               conf.query(),
               conf.iterations(),
-              summaryFilePrefix = conf.summaryFilePrefix.toOption)
+              summaryFilePrefix = conf.summaryFilePrefix.toOption,
+              gcBetweenRuns = conf.gcBetweenRuns())
         }
       case _ =>
         System.err.println(s"Invalid benchmark name: ${conf.benchmark()}. Supported benchmarks " +
@@ -261,5 +265,6 @@ class BenchmarkConf(arguments: Seq[String]) extends ScallopConf(arguments) {
   val output = opt[String](required = false)
   val outputFormat = opt[String](required = false)
   val summaryFilePrefix = opt[String](required = false)
+  val gcBetweenRuns = opt[Boolean](required = false, default = Some(false))
   verify()
 }
