@@ -48,7 +48,7 @@ pipeline {
         string(name: 'DATABRICKS_VERSION',
                 defaultValue: '0.3.0-SNAPSHOT', description: 'Version to use for databricks jar produced')
         string(name: 'CUDF_VERSION',
-                defaultValue: '0.16', description: 'Cudf version to use')
+                defaultValue: '0.17-SNAPSHOT', description: 'Cudf version to use')
         string(name: 'CUDA_VERSION',
                 defaultValue: 'cuda10-1', description: 'cuda version to use')
         string(name: 'RUNTIME',

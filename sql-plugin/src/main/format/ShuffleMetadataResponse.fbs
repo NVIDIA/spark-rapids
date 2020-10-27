@@ -46,7 +46,10 @@ table ColumnMeta {
   children: [ColumnMeta];
 
   /// ordinal of DType enum
-  dtype: int;
+  dtype_id: int;
+
+  /// DType scale for decimal types
+  dtype_scale: int;
 }
 
 /// Metadata about cuDF tables

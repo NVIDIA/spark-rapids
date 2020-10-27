@@ -34,7 +34,7 @@ def main():
   db_version = '0.3.0-SNAPSHOT'
   scala_version = '2.12'
   spark_version = '3.0.0'
-  cudf_version = '0.16'
+  cudf_version = '0.17-SNAPSHOT'
   cuda_version = 'cuda10-1'
   ci_cudf_jar = 'cudf-0.14-cuda10-1.jar'
   base_spark_pom_version = '3.0.0'
