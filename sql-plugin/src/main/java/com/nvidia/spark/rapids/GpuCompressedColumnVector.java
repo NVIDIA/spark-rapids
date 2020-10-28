@@ -92,7 +92,7 @@ public final class GpuCompressedColumnVector extends GpuColumnVectorBase {
     try {
       for (int i = 0; i < numColumns; ++i) {
         tableMeta.columnMetas(columnMeta, i);
-        DType dtype = DType.fromNative(columnMeta.dtype());
+        DType dtype = DType.fromNative(columnMeta.dtypeId(), columnMeta.dtypeScale());
         DataType type = GpuColumnVector.getSparkType(dtype);
         compressedBuffer.incRefCount();
         columns[i] = new GpuCompressedColumnVector(type, compressedBuffer, tableMeta);
