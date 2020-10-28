@@ -27,14 +27,16 @@ def _spark__init():
     # enableHiveSupport() is needed for parquet bucket tests
     #TODO need to figure out a better way to do this optionally
     import os
+    ALLOW_FRACTION = 1 / (int(os.getenv('RUN_PARALLEL')) + 2)
+    MAX_FRACTION = 1 / (int(os.getenv('RUN_PARALLEL')) + 1)
     _sb = SparkSession.builder
     _sb.config('spark.master', 'local') \
             .config('spark.ui.showConsoleProgress', 'false') \
             .config('spark.driver.extraClassPath', os.environ['EXTRA_CP']) \
             .config('spark.sql.session.timeZone', 'UTC') \
             .config('spark.sql.shuffle.partitions', '12') \
-            .config('spark.rapids.memory.gpu.allocFraction', '0.125')\
-            .config('spark.rapids.memory.gpu.maxAllocFraction', '0.2')\
+            .config('spark.rapids.memory.gpu.allocFraction', str(ALLOW_FRACTION))\
+            .config('spark.rapids.memory.gpu.maxAllocFraction', str(MAX_FRACTION))\
             .config('spark.plugins', 'com.nvidia.spark.SQLPlugin') \
             .config('spark.sql.queryExecutionListeners', 'com.nvidia.spark.rapids.ExecutionPlanCaptureCallback')
 
@@ -43,10 +45,10 @@ def _spark__init():
         d = "./derby_{}".format(wid)
         if not os.path.exists(d):
             os.makedirs(d)
-        _sb.config('spark.driver.extraJavaOptions', '-Duser.timezone=GMT -Dderby.system.home={}'.format(d)) \
+        _sb.config('spark.driver.extraJavaOptions', '-Duser.timezone=GMT -Dderby.system.home={} '.format(d) + str(os.getenv('COVERAGE_SUBMIT_FLAGS'))) \
                 .config('spark.executor.extraJavaOptions', '-Duser.timezone=GMT')
     else:
-        _sb.config('spark.driver.extraJavaOptions', '-Duser.timezone=GMT') \
+        _sb.config('spark.driver.extraJavaOptions', '-Duser.timezone=GMT ' + str(os.getenv('COVERAGE_SUBMIT_FLAGS'))) \
                 .config('spark.executor.extraJavaOptions', '-Duser.timezone=GMT')
  
     _s = _sb.enableHiveSupport() \
