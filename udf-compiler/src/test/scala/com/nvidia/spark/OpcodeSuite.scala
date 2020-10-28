@@ -25,7 +25,7 @@ import org.scalatest.Assertions._
 import org.scalatest.FunSuite
 
 import org.apache.spark.SparkConf
-import org.apache.spark.sql.{Dataset, SparkSession}
+import org.apache.spark.sql.{Dataset, Row, SparkSession}
 import org.apache.spark.sql.expressions.UserDefinedFunction
 import org.apache.spark.sql.functions._
 import org.apache.spark.sql.functions.{udf => makeUdf}
@@ -2086,4 +2086,202 @@ class OpcodeSuite extends FunSuite {
     val ref = dataset.select(lit(Array.empty[String]).as("emptyArrOfStr"))
     checkEquiv(result, ref)
   }
+
+  test("final static method call inside UDF") {
+    def simple_func2(str: String): Int = {
+      str.length
+    }
+    def simple_func1(str: String): Int = {
+      simple_func2(str) + simple_func2(str)
+    }
+    val myudf: (String) => Int = str => {
+      simple_func1(str)
+    }
+    val u = makeUdf(myudf)
+    val dataset = List("hello", "world").toDS()
+    val result = dataset.withColumn("new", u(col("value")))
+    val ref = dataset.withColumn("new", length(col("value")) + length(col("value")))
+    checkEquiv(result, ref)
+  }
+
+  test("FALLBACK TO CPU: class method call inside UDF") {
+    class C {
+      def simple_func(str: String): Int = {
+        str.length
+      }
+      val myudf: (String) => Int = str => {
+        simple_func(str)
+      }
+      def apply(dataset: Dataset[String]): Dataset[Row] = {
+        val u = makeUdf(myudf)
+        dataset.withColumn("new", u(col("value")))
+      }
+    }
+    val runner = new C
+    val dataset = List("hello", "world").toDS()
+    val result = runner(dataset)
+    val ref = dataset.withColumn("new", length(col("value")))
+    checkEquivNotCompiled(result, ref)
+  }
+
+  test("final class method call inside UDF") {
+    final class C {
+      def simple_func(str: String): Int = {
+        str.length
+      }
+      val myudf: (String) => Int = str => {
+        simple_func(str)
+      }
+      def apply(dataset: Dataset[String]): Dataset[Row] = {
+        val u = makeUdf(myudf)
+        dataset.withColumn("new", u(col("value")))
+      }
+    }
+    val runner = new C
+    val dataset = List("hello", "world").toDS()
+    val result = runner(dataset)
+    val ref = dataset.withColumn("new", length(col("value")))
+    checkEquiv(result, ref)
+  }
+
+  test("FALL BACK TO CPU: object method call inside UDF") {
+    object C {
+      def simple_func(str: String): Int = {
+        str.length
+      }
+      val myudf: (String) => Int = str => {
+        simple_func(str)
+      }
+      def apply(dataset: Dataset[String]): Dataset[Row] = {
+        val u = makeUdf(myudf)
+        dataset.withColumn("new", u(col("value")))
+      }
+    }
+    val dataset = List("hello", "world").toDS()
+    val result = C(dataset)
+    val ref = dataset.withColumn("new", length(col("value")))
+    checkEquivNotCompiled(result, ref)
+  }
+
+  test("final object method call inside UDF") {
+    final object C {
+      def simple_func(str: String): Int = {
+        str.length
+      }
+      val myudf: (String) => Int = str => {
+        simple_func(str)
+      }
+      def apply(dataset: Dataset[String]): Dataset[Row] = {
+        val u = makeUdf(myudf)
+        dataset.withColumn("new", u(col("value")))
+      }
+    }
+    val dataset = List("hello", "world").toDS()
+    val result = C(dataset)
+    val ref = dataset.withColumn("new", length(col("value")))
+    checkEquiv(result, ref)
+  }
+
+  test("super class final method call inside UDF") {
+    class B {
+      final def simple_func(str: String): Int = {
+        str.length
+      }
+    }
+    class D extends B {
+      val myudf: (String) => Int = str => {
+        simple_func(str)
+      }
+      def apply(dataset: Dataset[String]): Dataset[Row] = {
+        val u = makeUdf(myudf)
+        dataset.withColumn("new", u(col("value")))
+      }
+    }
+    val runner = new D
+    val dataset = List("hello", "world").toDS()
+    val result = runner(dataset)
+    val ref = dataset.withColumn("new", length(col("value")))
+    checkEquiv(result, ref)
+  }
+
+  test("FALLBACK TO CPU: final class calls super class method inside UDF") {
+    class B {
+      def simple_func(str: String): Int = {
+        str.length
+      }
+    }
+    final class D extends B {
+      val myudf: (String) => Int = str => {
+        simple_func(str)
+      }
+      def apply(dataset: Dataset[String]): Dataset[Row] = {
+        val u = makeUdf(myudf)
+        dataset.withColumn("new", u(col("value")))
+      }
+    }
+    val runner = new D
+    val dataset = List("hello", "world").toDS()
+    val result = runner(dataset)
+    val ref = dataset.withColumn("new", length(col("value")))
+    checkEquivNotCompiled(result, ref)
+  }
+
+  test("FALLBACK TO CPU: super class method call inside UDF") {
+    class B {
+      def simple_func(str: String): Int = {
+        str.length
+      }
+    }
+    class D extends B {
+      val myudf: (String) => Int = str => {
+        simple_func(str)
+      }
+      def apply(dataset: Dataset[String]): Dataset[Row] = {
+        val u = makeUdf(myudf)
+        dataset.withColumn("new", u(col("value")))
+      }
+    }
+    val runner = new D
+    val dataset = List("hello", "world").toDS()
+    val result = runner(dataset)
+    val ref = dataset.withColumn("new", length(col("value")))
+    checkEquivNotCompiled(result, ref)
+  }
+
+  test("FALLBACK TO CPU: capture a var in class") {
+    class C {
+      var capturedArg: Int = 4
+      val myudf: (String) => Int = str => {
+        str.length + capturedArg
+      }
+      def apply(dataset: Dataset[String]): Dataset[Row] = {
+        val u = makeUdf(myudf)
+        dataset.withColumn("new", u(col("value")))
+      }
+    }
+    val runner = new C
+    val dataset = List("hello", "world").toDS()
+    val result = runner(dataset)
+    val ref = dataset.withColumn("new", length(col("value")) + runner.capturedArg)
+    checkEquivNotCompiled(result, ref)
+  }
+
+  test("FALLBACK TO CPU: capture a var outside class") {
+    var capturedArg: Int = 4
+    class C {
+      val myudf: (String) => Int = str => {
+        str.length + capturedArg
+      }
+      def apply(dataset: Dataset[String]): Dataset[Row] = {
+        val u = makeUdf(myudf)
+        dataset.withColumn("new", u(col("value")))
+      }
+    }
+    val runner = new C
+    val dataset = List("hello", "world").toDS()
+    val result = runner(dataset)
+    val ref = dataset.withColumn("new", length(col("value")) + capturedArg)
+    checkEquivNotCompiled(result, ref)
+  }
+
 }

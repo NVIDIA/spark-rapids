@@ -63,11 +63,11 @@ case class CatalystExpressionBuilder(private val function: AnyRef) extends Loggi
    * @param children a sequence of catalyst arguments to the udf.
    * @return the compiled expression, optionally
    */
-  def compile(children: Seq[Expression]): Option[Expression] = {
+  def compile(children: Seq[Expression], objref: Option[Expression] = None): Option[Expression] = {
 
     // create starting state, this will be:
     //   State([children expressions], [empty stack], cond = true, expr = None)
-    val entryState = State.makeStartingState(lambdaReflection, children)
+    val entryState = State.makeStartingState(lambdaReflection, children, objref)
 
     // pick first of the Basic Blocks, and start recursing
     val entryBlock = cfg.basicBlocks.head
