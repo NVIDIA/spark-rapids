@@ -43,17 +43,18 @@ import org.apache.spark.broadcast.Broadcast
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.SparkSession
 import org.apache.spark.sql.catalyst.InternalRow
-import org.apache.spark.sql.catalyst.expressions.{Attribute, Expression}
+import org.apache.spark.sql.catalyst.expressions.{Attribute, AttributeReference, Expression, ExprId, GenericInternalRow}
 import org.apache.spark.sql.catalyst.expressions.codegen.GenerateUnsafeProjection
 import org.apache.spark.sql.columnar.{CachedBatch, CachedBatchSerializer}
 import org.apache.spark.sql.execution.datasources.parquet.{ParquetReadSupport, ParquetToSparkSchemaConverter, ParquetWriteSupport, SparkToParquetSchemaConverter, VectorizedColumnReader}
 import org.apache.spark.sql.execution.datasources.parquet.rapids.ParquetRecordMaterializer
-import org.apache.spark.sql.execution.vectorized.{OffHeapColumnVector, WritableColumnVector}
+import org.apache.spark.sql.execution.vectorized.{OffHeapColumnVector, OnHeapColumnVector, WritableColumnVector}
 import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.internal.SQLConf.LegacyBehaviorPolicy
 import org.apache.spark.sql.types._
 import org.apache.spark.sql.vectorized.ColumnarBatch
 import org.apache.spark.storage.StorageLevel
+import org.apache.spark.unsafe.types.CalendarInterval
 import org.apache.spark.util.SerializableConfiguration
 
 /**
@@ -252,12 +253,16 @@ private case class CloseableColumnBatchIterator(iter: Iterator[ColumnarBatch]) e
 class ParquetCachedBatchSerializer extends CachedBatchSerializer with Arm {
   override def supportsColumnarInput(schema: Seq[Attribute]): Boolean = true
 
-  override def supportsColumnarOutput(schema: StructType): Boolean = schema.fields.forall(f =>
+  override def supportsColumnarOutput(schema: StructType): Boolean = schema.fields.forall { f =>
     // only check spark b/c if we are on the GPU then we will be calling the gpu method regardless
-    isSupportedBySparkColumnar(f.dataType))
+    isTypeSupportedByColumnarSparkParquetWriter(f.dataType) || f.dataType == DataTypes.NullType
+  }
 
-  private def isSupportedBySparkColumnar(dataType: DataType): Boolean =
-    // AtomicType check. Everything is supported besides Structs, Maps or UDFs
+  // Between CPU and GPU we support every type
+  private def isSchemaSupportedByParquetSerializerOnCPU(schema: StructType): Boolean = true
+
+  private def isTypeSupportedByColumnarSparkParquetWriter(dataType: DataType): Boolean = {
+    // Columnar writer in Spark only supports AtomicTypes ATM
     dataType match {
       case TimestampType | StringType | BooleanType | DateType | BinaryType |
            DoubleType | FloatType | ByteType | IntegerType | LongType | ShortType => true
@@ -265,9 +270,17 @@ class ParquetCachedBatchSerializer extends CachedBatchSerializer with Arm {
       case _: DecimalType => true
       case _ => false
     }
+  }
 
   def isSupportedByCudf(schema: Seq[Attribute]): Boolean = {
     schema.forall(a => GpuColumnVector.isSupportedType(a.dataType))
+  }
+
+  def isTypeSupportedByParquet(dataType: DataType): Boolean = {
+    dataType match {
+      case CalendarIntervalType | NullType => false
+      case _ => true
+    }
   }
 
   /**
@@ -307,15 +320,19 @@ class ParquetCachedBatchSerializer extends CachedBatchSerializer with Arm {
           }
         }
       })
-    } else {
+    } else if (isSchemaSupportedByParquetSerializerOnCPU(schema.toStructType)){
       val cachedSchema = getCatalystSchema(schema, schema)
       val broadcastedHadoopConf = getBroadcastedHadoopConf(conf, cachedSchema)
       val broadcastedConf = SparkSession.active.sparkContext.broadcast(conf)
       input.mapPartitions {
         cbIter =>
-          new CachedBatchIteratorProducer[ColumnarBatch](cbIter, broadcastedHadoopConf.value.value,
-            broadcastedConf.value).getColumnarBatchToCachedBatchIterator
+          new CachedBatchIteratorProducer[ColumnarBatch](cbIter, cachedSchema,
+            broadcastedHadoopConf.value.value, broadcastedConf.value)
+            .getColumnarBatchToCachedBatchIterator
       }
+    } else {
+      // may be we should fallback to the DefaultCachedBatchSerializer?
+      throw new UnsupportedOperationException("We don't support data types in the cache schema")
     }
   }
 
@@ -392,7 +409,7 @@ class ParquetCachedBatchSerializer extends CachedBatchSerializer with Arm {
      selectedAttributes: Seq[Attribute],
      conf: SQLConf): RDD[ColumnarBatch] = {
     val rapidsConf = new RapidsConf(conf)
-    if (rapidsConf.isSqlEnabled) {
+    if (rapidsConf.isSqlEnabled && isSupportedByCudf(cacheAttributes)) {
       val batches = convertCachedBatchToColumnarInternal(input, cacheAttributes,
         selectedAttributes)
       val cbRdd = batches.map(batch => {
@@ -451,7 +468,8 @@ class ParquetCachedBatchSerializer extends CachedBatchSerializer with Arm {
      sharedHadoopConf: Configuration,
      sharedConf: SQLConf) {
 
-    val requestedSchema = getCatalystSchema(selectedAttributes, cacheAttributes)
+    val origRequestedSchema = getCatalystSchema(selectedAttributes, cacheAttributes)
+    val origCacheSchema = getCatalystSchema(cacheAttributes, cacheAttributes)
     val options = HadoopReadOptions.builder(sharedHadoopConf).build()
     /**
      * We are getting this method using reflection because its a package-private
@@ -462,8 +480,6 @@ class ParquetCachedBatchSerializer extends CachedBatchSerializer with Arm {
     readBatchMethod.setAccessible(true)
 
     def getInternalRowIterator: Iterator[InternalRow] = {
-
-      val cacheSchema = getCatalystSchema(cacheAttributes, cacheAttributes)
 
       /**
        * This iterator converts an iterator[CachedBatch] to an iterator[InternalRow].
@@ -505,6 +521,18 @@ class ParquetCachedBatchSerializer extends CachedBatchSerializer with Arm {
           val inputFile = new ByteArrayInputFile(parquetCachedBatch.buffer)
           val parquetFileReader = ParquetFileReader.open(inputFile, options)
           val parquetSchema = parquetFileReader.getFooter.getFileMetaData.getSchema
+          val hasUnsupportedType = cacheAttributes.toStructType.fields.exists { field =>
+            !isTypeSupportedByParquet(field.dataType)
+          }
+
+          val schemas = if (hasUnsupportedType) {
+              getSupportedSchemaFromUnsupported(origCacheSchema, origRequestedSchema)
+            } else {
+              (origCacheSchema, origRequestedSchema)
+            }
+
+          val cacheSchema = schemas._1
+          val requestedSchema = schemas._2
 
           val unsafeRows = new ArrayBuffer[InternalRow]
           import org.apache.parquet.io.ColumnIOFactory
@@ -527,7 +555,45 @@ class ParquetCachedBatchSerializer extends CachedBatchSerializer with Arm {
           val iter = unsafeRows.iterator
           val unsafeProjection =
             GenerateUnsafeProjection.generate(requestedSchema, cacheSchema)
-          iter.map(unsafeProjection)
+          if (hasUnsupportedType) {
+            new Iterator[InternalRow]() {
+              val wrappedIter = iter
+              val newRow = new GenericInternalRow(cacheSchema.length)
+
+              override def hasNext: Boolean = wrappedIter.hasNext
+
+              override def next(): InternalRow = {
+                //read a row and convert it to what the caller is expecting
+                val row = wrappedIter.next()
+                var newIndex = 0
+                origCacheSchema.indices.map { index =>
+                  val attribute = origCacheSchema(index)
+                  attribute.dataType match {
+                    case CalendarIntervalType => {
+                      // create a CalendarInterval based on the next three values
+                      val interval = new CalendarInterval(row.getInt(newIndex),
+                      row.getInt(newIndex + 1), row.getLong(newIndex + 2))
+                      newIndex += 3
+                      newRow.setInterval(index, interval)
+                    }
+                    case NullType => {
+                      newRow.setNullAt(index)
+                      newIndex += 1
+                    }
+                    case _ => {
+                      newRow.update(index, row.get(newIndex, attribute.dataType))
+                      newIndex += 1
+                    }
+                  }
+                }
+                val unsafeProjection =
+                  GenerateUnsafeProjection.generate(origRequestedSchema, origCacheSchema)
+                unsafeProjection.apply(newRow)
+              }
+            }
+          } else {
+            iter.map(unsafeProjection)
+          }
         }
       }
     }
@@ -544,12 +610,24 @@ class ParquetCachedBatchSerializer extends CachedBatchSerializer with Arm {
       val parquetFileReader = ParquetFileReader.open(inputFile, options)
       val parquetSchema = parquetFileReader.getFooter.getFileMetaData.getSchema
 
+      val hasUnsupportedType = cacheAttributes.exists { attribute =>
+          !isTypeSupportedByParquet(attribute.dataType)
+        }
+
       // we are getting parquet schema and then converting it to catalyst schema
       // because catalyst schema that we get from Spark doesn't have the exact schema expected by
       // the columnar parquet reader
       val parquetToSparkSchemaConverter = new ParquetToSparkSchemaConverter(sharedHadoopConf)
       val sparkSchema = parquetToSparkSchemaConverter.convert(parquetSchema)
       val sparkToParquetSchemaConverter = new SparkToParquetSchemaConverter(sharedHadoopConf)
+
+      val schemas = if (hasUnsupportedType) {
+        getSupportedSchemaFromUnsupported(origCacheSchema, origRequestedSchema)
+      } else {
+        (origCacheSchema, origRequestedSchema)
+      }
+      val requestedSchema = schemas._2
+      val cacheSchema = schemas._1
       val reqSparkSchema =
         StructType(sparkSchema.filter(field =>
           requestedSchema.exists(a => a.name.equals(field.name))))
@@ -565,7 +643,7 @@ class ParquetCachedBatchSerializer extends CachedBatchSerializer with Arm {
       new Iterator[ColumnarBatch] {
         val columnVectors = OffHeapColumnVector.allocateColumns(capacity,
           requestedSchema.toStructType)
-        val columnarBatch: ColumnarBatch = new ColumnarBatch(columnVectors
+        val columnarBatch = new ColumnarBatch(columnVectors
           .asInstanceOf[Array[org.apache.spark.sql.vectorized.ColumnVector]])
         val missingColumns = new Array[Boolean](reqParquetSchema.getFieldCount)
         var columnReaders: Array[VectorizedColumnReader] = null
@@ -658,12 +736,14 @@ class ParquetCachedBatchSerializer extends CachedBatchSerializer with Arm {
    * or ColumnarBatch then the behavior is undefined.
    *
    * @param iter - an iterator over InternalRow or ColumnarBatch
+   * @param cachedAttributes - Schema of the cached batch
    * @param sharedHadoopConf - Hadoop conf
    * @param sharedConf - SQL conf
    * @tparam T - Strictly either InternalRow or ColumnarBatch
    */
   private class CachedBatchIteratorProducer[T](
      iter: Iterator[T],
+     cachedAttributes: Seq[Attribute],
      sharedHadoopConf: Configuration,
      sharedConf: SQLConf) {
 
@@ -681,9 +761,72 @@ class ParquetCachedBatchSerializer extends CachedBatchSerializer with Arm {
      * and return the CachedBatch when next is called.
      */
     private class InternalRowToCachedBatchIterator extends Iterator[CachedBatch]() {
+      // is there a type that spark doesn't support by default in the schema?
+      val hasUnsupportedType = cachedAttributes.toStructType.fields.exists { field =>
+        !isTypeSupportedByParquet(field.dataType)
+      }
+
+      val newCachedAttributes =
+        if (hasUnsupportedType) {
+          val newCachedAttributes =
+            getSupportedSchemaFromUnsupported(getCatalystSchema(cachedAttributes,
+              cachedAttributes))._1
+          // save it to sharedConf and sharedHadoopConf
+          sharedHadoopConf.set(
+            ParquetReadSupport.SPARK_ROW_REQUESTED_SCHEMA, newCachedAttributes.toStructType.json)
+          sharedHadoopConf.set(
+            ParquetWriteSupport.SPARK_ROW_SCHEMA, newCachedAttributes.toStructType.json)
+          Option(newCachedAttributes)
+        } else {
+          Option.empty
+        }
 
       def getIterator: Iterator[InternalRow] = {
-        iter.asInstanceOf[Iterator[InternalRow]]
+        if (!hasUnsupportedType) {
+          iter.asInstanceOf[Iterator[InternalRow]]
+        } else {
+          new Iterator[InternalRow] {
+
+            val wrappedIter = iter.asInstanceOf[Iterator[InternalRow]]
+            // This row has CalendarIntervalType exploded
+            val newRow = InternalRow.fromSeq(newCachedAttributes.get)
+
+            override def hasNext: Boolean = iter.hasNext
+
+            override def next(): InternalRow = {
+              val row = wrappedIter.next()
+              val rowValueAndType =
+                scala.Range(0, cachedAttributes.size).zip(cachedAttributes).map {
+                in => (row.get(in._1, in._2.dataType), in._2.dataType)
+              }
+
+              var newIndex = 0
+              rowValueAndType.foreach { value  =>
+                value match {
+                  case (_, CalendarIntervalType) => {
+                    // write exploded CalendarInterval
+                    val interval = value._1.asInstanceOf[CalendarInterval]
+                    if (interval == null) {
+                      newRow.setNullAt(newIndex)
+                      newRow.setNullAt(newIndex + 1)
+                      newRow.setNullAt(newIndex + 2)
+                    } else {
+                      newRow.update(newIndex, interval.months)
+                      newRow.update(newIndex + 1, interval.days)
+                      newRow.update(newIndex + 2, interval.microseconds)
+                    }
+                    newIndex += 3
+                  }
+                  case (_, _) => {
+                    newRow.update(newIndex, value._1)
+                    newIndex += 1
+                  }
+                }
+              }
+              newRow
+            }
+          }
+        }
       }
 
       private val parquetOutputFormat = new ParquetOutputFileFormat()
@@ -718,13 +861,51 @@ class ParquetCachedBatchSerializer extends CachedBatchSerializer with Arm {
     }
 
     /**
-     *
+     * This class produces an Iterator[CachedBatch] from Iterator[ColumnarBatch]. This is a 1-1
+     * relationship. Each ColumnarBatch is converted to a single ParquetCachedBatch when next()
+     * is called on this iterator
      */
     private class ColumnarBatchToCachedBatchIterator extends InternalRowToCachedBatchIterator {
       override def getIterator: Iterator[InternalRow] = {
         iter.asInstanceOf[Iterator[ColumnarBatch]].next.rowIterator().asScala
       }
     }
+  }
+
+  private def getSupportedSchemaFromUnsupported(
+     cachedAttributes: Seq[Attribute],
+     requestedAttributes: Seq[Attribute] = Seq.empty): (Seq[Attribute], Seq[Attribute]) = {
+    // we only handle CalendarIntervalType and NullType ATM
+    // convert it to a supported type
+    val mapping = new mutable.HashMap[ExprId, List[Attribute]]()
+    val newCachedAttributes = cachedAttributes.flatMap {
+      attribute =>
+        if (attribute.dataType == DataTypes.CalendarIntervalType) {
+          val list = List(AttributeReference(attribute.name + "_cit_months",
+            DataTypes.IntegerType, attribute.nullable,
+            metadata = attribute.metadata)().asInstanceOf[Attribute],
+            AttributeReference(attribute.name + "_cit_days",
+              DataTypes.IntegerType, attribute.nullable,
+              metadata = attribute.metadata)().asInstanceOf[Attribute],
+            AttributeReference(attribute.name + "_cit_ms",
+              DataTypes.LongType, attribute.nullable,
+              metadata = attribute.metadata)().asInstanceOf[Attribute])
+          mapping.put(attribute.exprId, list)
+          list
+        } else if (attribute.dataType == DataTypes.NullType) {
+          val list = List(AttributeReference(attribute.name + "_nulltype", DataTypes.IntegerType,
+            attribute.nullable, metadata = attribute.metadata)().asInstanceOf[Attribute])
+          mapping.put(attribute.exprId, list)
+          list
+        }
+        else {
+          List(attribute)
+        }
+    }
+    val newRequestedAttributes = requestedAttributes.flatMap { attribute =>
+      mapping.getOrElse(attribute.exprId, List(attribute))
+    }
+    (newCachedAttributes, newRequestedAttributes)
   }
 
   private def getHadoopConf(requestedSchema: StructType,
@@ -792,15 +973,19 @@ class ParquetCachedBatchSerializer extends CachedBatchSerializer with Arm {
           cachedBatch
         }
       })
-    } else {
+    } else if (isSchemaSupportedByParquetSerializerOnCPU(schema.toStructType)) {
       val broadcastedHadoopConf = getBroadcastedHadoopConf(conf, parquetSchema)
       val broadcastedConf = SparkSession.active.sparkContext.broadcast(conf)
       // fallback to the CPU
       input.mapPartitions {
         cbIter =>
-          new CachedBatchIteratorProducer[InternalRow](cbIter, broadcastedHadoopConf.value.value,
-            broadcastedConf.value).getInternalRowToCachedBatchIterator
+          new CachedBatchIteratorProducer[InternalRow](cbIter, schema,
+            broadcastedHadoopConf.value.value, broadcastedConf.value)
+            .getInternalRowToCachedBatchIterator
       }
+    } else {
+      // may be we should fallback to the DefaultCachedBatchSerializer?
+      throw new UnsupportedOperationException("We don't support data types in the cache schema")
     }
   }
 
