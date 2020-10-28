@@ -62,13 +62,17 @@ class GpuWindowInPandasExecMeta(
     // Implementation depends on receiving a `NamedExpression` wrapped WindowExpression.
     windowExpressions.map(meta => meta.wrapped)
       .filter(expr => !expr.isInstanceOf[NamedExpression])
-      .foreach(_ => willNotWorkOnGpu(because = "Unexpected query plan with Windowing Pandas UDF; " +
-        "cannot convert for GPU execution. " +
+      .foreach(_ => willNotWorkOnGpu(because = "Unexpected query plan with Windowing" +
+        " Pandas UDF; cannot convert for GPU execution. " +
         "(Detail: WindowExpression not wrapped in `NamedExpression`.)"))
 
-    // FIXME check the frame type, only support RowFrame now ?
-    // FIXME check the window function type ? Only accept PythonUDF,
-    //       can not mix with other window functions currently
+    // Early check for the frame type, only supporting RowFrame for now, which is different from
+    // the node GpuWindowExec.
+    windowExpressions
+      .flatMap(meta => meta.wrapped.collect { case e: SpecifiedWindowFrame => e })
+      .filter(swf => swf.frameType.equals(RangeFrame))
+      .foreach(rf => willNotWorkOnGpu(because = s"Only support RowFrame for now," +
+        s" but found ${rf.frameType}"))
   }
 
   override def convertToGpu(): GpuExec =
@@ -82,7 +86,7 @@ class GpuWindowInPandasExecMeta(
 
 /**
  * This iterator will group the rows in the incoming batches per the window
- * "partitionby" specification to make sure each group goes into only one batch, and
+ * "partitionBy" specification to make sure each group goes into only one batch, and
  * each batch contains only one group data.
  * @param wrapped the incoming ColumnarBatch iterator.
  * @param partitionSpec the partition specification of the window expression for this node.
@@ -111,12 +115,11 @@ class GroupingIterator(
       if (batch.numRows() > 0 && batch.numCols() > 0 && partitionSpec.nonEmpty) {
         GpuSemaphore.acquireIfNecessary(TaskContext.get())
         val partitionIndices = partitionSpec.indices
-        // 1) Calculate the split indices via cudf.Table.grouBy and aggregation count
-        //   a) Compute the count number for each group in a batch
-        //   b) Restore the original order defined in the physical node, since cudf.Table.groupby
-        //      will break the original order.
-        //   c) The 'count' column can be used for compute the indices to split, of course except
-        //      the last element.
+        // 1) Calculate the split indices via cudf.Table.groupBy and aggregation Count.
+        //   a) Compute the count number for each group in a batch, including null values.
+        //   b) Restore the original order (Ascending with NullsFirst) defined in the plan,
+        //      since cudf.Table.groupBy will break the original order.
+        //   c) The 'count' column can be used to calculate the indices for split.
         val cntTable = withResource(GpuProjectExec.project(batch, partitionSpec)) { projected =>
           withResource(GpuColumnVector.from(projected)) { table =>
             table
@@ -125,7 +128,7 @@ class GroupingIterator(
           }
         }
         val orderedTable = withResource(cntTable) { table =>
-          table.orderBy(partitionIndices.map(id => Table.asc(id)): _*)
+          table.orderBy(partitionIndices.map(id => Table.asc(id, true)): _*)
         }
         val (countHostCol, numRows) = withResource(orderedTable) { table =>
           // Yes copying the data to host, it would be OK since just copying the aggregated
@@ -137,6 +140,7 @@ class GroupingIterator(
           // Also drop the last count value due to the split API definition.
           (0L until (numRows - 1)).map(id => cntCol.getInt(id))
         }.scan(0)(_+_).tail
+
         // 2) Split the table when needed
         val resultBatch = if (splitIndices.nonEmpty) {
           // More than one group, split it
@@ -158,7 +162,9 @@ class GroupingIterator(
         GpuSemaphore.releaseIfNecessary(TaskContext.get())
         resultBatch
       } else {
-        // Empty batch, or no partition defined for Window operation, return it directly
+        // Empty batch, or No partition defined for Window operation, return it directly.
+        // When no partition is defined in window, there will be only one partition with one batch,
+        // meaning one group.
         batch
       }
     }
@@ -204,12 +210,11 @@ case class GpuWindowInPandasExec(
    * Helper functions and data structures for window bounds
    *
    * It contains:
-   * (1) Total number of window bound indices in the python input row
-   * (2) Function from frame index to its lower bound column index in the python input row
-   * (3) Function from frame index to its upper bound column index in the python input row
-   * (4) Seq from frame index to its window bound type
+   * (1) Function from frame index to its lower bound column index in the python input row
+   * (2) Function from frame index to its upper bound column index in the python input row
+   * (3) Seq from frame index to its window bound type
    */
-  private type WindowBoundHelpers = (Int, Int => Int, Int => Int, Seq[WindowBoundType])
+  private type WindowBoundHelpers = (Int => Int, Int => Int, Seq[WindowBoundType])
 
   /*
    * Enum for window bound types. Used only inside this class.
@@ -298,7 +303,7 @@ case class GpuWindowInPandasExec(
     def lowerBoundIndex(frameIndex: Int) = boundIndices(frameIndex)._1
     def upperBoundIndex(frameIndex: Int) = boundIndices(frameIndex)._2
 
-    (requiredIndices.sum, lowerBoundIndex, upperBoundIndex, windowBoundTypes)
+    (lowerBoundIndex, upperBoundIndex, windowBoundTypes)
   }
 
   private def insertWindowBounds(batch: ColumnarBatch): ColumnarBatch = {
@@ -401,7 +406,7 @@ case class GpuWindowInPandasExec(
       case (bufferEs, frameIndex) => bufferEs.map(expr => (expr, frameIndex))
     }
     val exprIndex2FrameIndex = expressionsWithFrameIndex.map(_._2).zipWithIndex.map(_.swap).toMap
-    val (_, lowerBoundIndex, upperBoundIndex, frameWindowBoundTypes) =
+    val (lowerBoundIndex, upperBoundIndex, frameWindowBoundTypes) =
       computeWindowBoundHelpers
     val isBounded = { frameIndex: Int => lowerBoundIndex(frameIndex) >= 0 }
 
@@ -421,6 +426,7 @@ case class GpuWindowInPandasExec(
       .mkString(",")
     val pythonRunnerConf: Map[String, String] = ArrowUtils.getPythonRunnerConfMap(conf) +
       (windowBoundTypeConf -> udfWindowBoundTypesStr)
+
     // 4) Filter child output attributes down to only those that are UDF inputs.
     // Also eliminate duplicate UDF inputs. This is similar to how other Python UDF node
     // handles UDF inputs.
@@ -482,9 +488,9 @@ case class GpuWindowInPandasExec(
       val queue: BatchQueue = new BatchQueue()
       context.addTaskCompletionListener[Unit](_ => queue.close())
 
-      val boundDataRefs = GpuBindReferences.bindReferences(dataInputs, child.output)
-      // Rebatching the input data by GroupingIterator
-      val boundPartitionRefs = GpuBindReferences.bindReferences(partitionSpec, child.output)
+      val boundDataRefs = GpuBindReferences.bindGpuReferences(dataInputs, child.output)
+      // Re-batching the input data by GroupingIterator
+      val boundPartitionRefs = GpuBindReferences.bindGpuReferences(partitionSpec, child.output)
       val groupedIterator = new GroupingIterator(inputIter, boundPartitionRefs)
       val pythonInputIterator = groupedIterator.map { batch =>
         // We have to do the project before we add the batch because the batch might be closed
