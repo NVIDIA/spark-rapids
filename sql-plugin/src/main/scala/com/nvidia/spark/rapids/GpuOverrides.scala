@@ -882,6 +882,34 @@ object GpuOverrides {
         override def convertToGpu(): GpuExpression = GpuCoalesce(childExprs.map(_.convertToGpu()))
       }
     ),
+    expr[Least] (
+      "Returns the least value of all parameters, skipping null values",
+      (a, conf, p, r) => new ExprMeta[Least](a, conf, p, r) {
+        override def tagExprForGpu(): Unit = {
+          val dataType = a.dataType
+          if (conf.hasNans && (dataType == DoubleType || dataType == FloatType)) {
+            willNotWorkOnGpu("Least on floating point columns that can contain NaNs " +
+                "will compute incorrect results. If it is known that there are no NaNs, set " +
+                s" ${RapidsConf.HAS_NANS} to false.")
+          }
+        }
+        override def convertToGpu(): GpuExpression = GpuLeast(childExprs.map(_.convertToGpu()))
+      }
+    ),
+    expr[Greatest] (
+      "Returns the greatest value of all parameters, skipping null values",
+      (a, conf, p, r) => new ExprMeta[Greatest](a, conf, p, r) {
+        override def tagExprForGpu(): Unit = {
+          val dataType = a.dataType
+          if (conf.hasNans && (dataType == DoubleType || dataType == FloatType)) {
+            willNotWorkOnGpu("Greatest on floating point columns that can contain NaNs " +
+                "will compute incorrect results. If it is known that there are no NaNs, set " +
+                s" ${RapidsConf.HAS_NANS} to false.")
+          }
+        }
+        override def convertToGpu(): GpuExpression = GpuGreatest(childExprs.map(_.convertToGpu()))
+      }
+    ),
     expr[Atan](
       "Inverse tangent",
       (a, conf, p, r) => new UnaryExprMeta[Atan](a, conf, p, r) {

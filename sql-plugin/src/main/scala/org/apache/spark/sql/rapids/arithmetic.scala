@@ -18,9 +18,13 @@ package org.apache.spark.sql.rapids
 
 import ai.rapids.cudf._
 import com.nvidia.spark.rapids._
+import com.nvidia.spark.rapids.RapidsPluginImplicits._
 
-import org.apache.spark.sql.catalyst.expressions.{ExpectsInputTypes, Expression, NullIntolerant}
+import org.apache.spark.sql.catalyst.analysis.{TypeCheckResult, TypeCoercion}
+import org.apache.spark.sql.catalyst.expressions.{ComplexTypeMergingExpression, ExpectsInputTypes, Expression, NullIntolerant}
+import org.apache.spark.sql.catalyst.util.TypeUtils
 import org.apache.spark.sql.types._
+import org.apache.spark.sql.vectorized.ColumnarBatch
 
 case class GpuUnaryMinus(child: Expression) extends GpuUnaryExpression
     with ExpectsInputTypes with NullIntolerant {
@@ -224,4 +228,98 @@ case class GpuPmod(left: Expression, right: Expression) extends GpuDivModLike {
   override def symbol: String = "pmod"
 
   override def dataType: DataType = left.dataType
+}
+
+trait GpuGreatestLeastBase extends ComplexTypeMergingExpression with GpuExpression {
+  override def nullable: Boolean = children.forall(_.nullable)
+  override def foldable: Boolean = children.forall(_.foldable)
+
+  def binaryOp: BinaryOp
+  // TODO need a better way to do this for nested types
+  protected lazy val dtype: DType = GpuColumnVector.getRapidsType(dataType)
+
+  override def checkInputDataTypes(): TypeCheckResult = {
+    if (children.length <= 1) {
+      TypeCheckResult.TypeCheckFailure(
+        s"input to function $prettyName requires at least two arguments")
+    } else if (!TypeCoercion.haveSameType(inputTypesForMerging)) {
+      TypeCheckResult.TypeCheckFailure(
+        s"The expressions should all have the same type," +
+            s" got LEAST(${children.map(_.dataType.catalogString).mkString(", ")}).")
+    } else {
+      TypeUtils.checkForOrderingExpr(dataType, s"function $prettyName")
+    }
+  }
+
+  /**
+   * Convert the input into either a ColumnVector or a Scalar
+   * @param a what to convert
+   * @param expandScalar if we get a scalar should we expand it out to a ColumnVector to avoid
+   *                     scalar scalar math.
+   * @param rows If we expand a scalar how many rows should we do?
+   * @return the resulting ColumnVector or Scalar
+   */
+  private[this] def convertAndCloseIfNeeded(
+      a: Any,
+      expandScalar: Boolean,
+      rows: Int): AutoCloseable =
+    a match {
+      case gcv: GpuColumnVector => gcv.getBase
+      case cv: ColumnVector => cv
+      case s: Scalar =>
+        if (expandScalar) {
+          withResource(s) { s =>
+            ColumnVector.fromScalar(s, rows)
+          }
+        } else {
+          s
+        }
+      case a =>
+        if (expandScalar) {
+          withResource(GpuScalar.from(a, dataType)) { s =>
+            ColumnVector.fromScalar(s, rows)
+          }
+        } else {
+          GpuScalar.from(a, dataType)
+        }
+    }
+
+  /**
+   * Take 2 inputs that are either a Scalar or a ColumnVector and combine them with the correct
+   * operator. This will blow up if both of the values are scalars though.
+   * @param r first value
+   * @param c second value
+   * @return the combined value
+   */
+  private [this] def combineButNoClose(r: Any, c: Any): Any = (r, c) match {
+    case (r: ColumnVector, c: ColumnVector) =>
+      r.binaryOp(binaryOp, c, dtype)
+    case (r: ColumnVector, c: Scalar) =>
+      r.binaryOp(binaryOp, c, dtype)
+    case (r: Scalar, c: ColumnVector) =>
+      r.binaryOp(binaryOp, c, dtype)
+  }
+
+  override def columnarEval(batch: ColumnarBatch): Any = {
+    val numRows = batch.numRows()
+
+    val result = children.foldLeft[Any](null) { (r, c) =>
+      withResource(
+        convertAndCloseIfNeeded(c.columnarEval(batch), false, numRows)) { cVal =>
+        withResource(convertAndCloseIfNeeded(r, cVal.isInstanceOf[Scalar], numRows)) { rVal =>
+          combineButNoClose(rVal, cVal)
+        }
+      }
+    }
+    // The result should always be a ColumnVector at this point
+    GpuColumnVector.from(result.asInstanceOf[ColumnVector], dataType)
+  }
+}
+
+case class GpuLeast(children: Seq[Expression]) extends GpuGreatestLeastBase {
+  override def binaryOp: BinaryOp = BinaryOp.NULL_MIN
+}
+
+case class GpuGreatest(children: Seq[Expression]) extends GpuGreatestLeastBase {
+  override def binaryOp: BinaryOp = BinaryOp.NULL_MAX
 }
