@@ -235,6 +235,9 @@ trait GpuGreatestLeastBase extends ComplexTypeMergingExpression with GpuExpressi
   override def foldable: Boolean = children.forall(_.foldable)
 
   def binaryOp: BinaryOp
+  def shouldNaNWin: Boolean
+
+  private[this] def isFp = dataType == FloatType || dataType == DoubleType
   // TODO need a better way to do this for nested types
   protected lazy val dtype: DType = GpuColumnVector.getRapidsType(dataType)
 
@@ -291,13 +294,98 @@ trait GpuGreatestLeastBase extends ComplexTypeMergingExpression with GpuExpressi
    * @param c second value
    * @return the combined value
    */
-  private [this] def combineButNoClose(r: Any, c: Any): Any = (r, c) match {
+  private[this] def combineButNoClose(r: Any, c: Any): Any = (r, c) match {
     case (r: ColumnVector, c: ColumnVector) =>
       r.binaryOp(binaryOp, c, dtype)
     case (r: ColumnVector, c: Scalar) =>
       r.binaryOp(binaryOp, c, dtype)
     case (r: Scalar, c: ColumnVector) =>
       r.binaryOp(binaryOp, c, dtype)
+  }
+
+  private[this] def makeNanWin(checkForNans: ColumnVector, result: ColumnVector): ColumnVector = {
+    withResource(checkForNans.isNan) { shouldReplace =>
+      shouldReplace.ifElse(checkForNans, result)
+    }
+  }
+
+  private[this] def makeNanWin(checkForNans: Scalar, result: ColumnVector): ColumnVector = {
+    if (GpuScalar.isNan(checkForNans)) {
+      ColumnVector.fromScalar(checkForNans, result.getRowCount.toInt)
+    } else {
+      result.incRefCount()
+    }
+  }
+
+  private[this] def makeNanLose(resultIfNotNull: ColumnVector,
+      checkForNans: ColumnVector): ColumnVector = {
+    withResource(checkForNans.isNan) { isNan =>
+      withResource(resultIfNotNull.isNotNull) { isNotNull =>
+        withResource(isNan.and(isNotNull)) { shouldReplace =>
+          shouldReplace.ifElse(resultIfNotNull, checkForNans)
+        }
+      }
+    }
+  }
+
+  private[this] def makeNanLose(resultIfNotNull: Scalar,
+      checkForNans: ColumnVector): ColumnVector = {
+    if (resultIfNotNull.isValid) {
+      withResource(checkForNans.isNan) { shouldReplace =>
+        shouldReplace.ifElse(resultIfNotNull, checkForNans)
+      }
+    } else {
+      // Nothing to replace because the scalar is null
+      checkForNans.incRefCount()
+    }
+  }
+
+  /**
+   * Cudf does not handle floating point like spark wants when it comes to NaN values.
+   * Spark wants NaN > anything except for null, and null is either the smallest value when used
+   * with the greatest operator or the largest value when used with the least value.
+   * This does more computation, but gets the right answer in those cases.
+   * @param r first value
+   * @param c second value
+   * @return the combined value
+   */
+  private[this] def combineButNoCloseFp(r: Any, c: Any): Any = (r, c) match {
+    case (r: ColumnVector, c: ColumnVector) =>
+      withResource(r.binaryOp(binaryOp, c, dtype)) { tmp =>
+        if (shouldNaNWin) {
+          withResource(makeNanWin(r, tmp)) { tmp2 =>
+            makeNanWin(c, tmp2)
+          }
+        } else {
+          withResource(makeNanLose(r, tmp)) { tmp2 =>
+            makeNanLose(c, tmp2)
+          }
+        }
+      }
+    case (r: ColumnVector, c: Scalar) =>
+      withResource(r.binaryOp(binaryOp, c, dtype)) { tmp =>
+        if (shouldNaNWin) {
+          withResource(makeNanWin(r, tmp)) { tmp2 =>
+            makeNanWin(c, tmp2)
+          }
+        } else {
+          withResource(makeNanLose(r, tmp)) { tmp2 =>
+            makeNanLose(c, tmp2)
+          }
+        }
+      }
+    case (r: Scalar, c: ColumnVector) =>
+      withResource(r.binaryOp(binaryOp, c, dtype)) { tmp =>
+        if (shouldNaNWin) {
+          withResource(makeNanWin(r, tmp)) { tmp2 =>
+            makeNanWin(c, tmp2)
+          }
+        } else {
+          withResource(makeNanLose(r, tmp)) { tmp2 =>
+            makeNanLose(c, tmp2)
+          }
+        }
+      }
   }
 
   override def columnarEval(batch: ColumnarBatch): Any = {
@@ -307,7 +395,11 @@ trait GpuGreatestLeastBase extends ComplexTypeMergingExpression with GpuExpressi
       withResource(
         convertAndCloseIfNeeded(c.columnarEval(batch), false, numRows)) { cVal =>
         withResource(convertAndCloseIfNeeded(r, cVal.isInstanceOf[Scalar], numRows)) { rVal =>
-          combineButNoClose(rVal, cVal)
+          if (isFp) {
+            combineButNoCloseFp(rVal, cVal)
+          } else {
+            combineButNoClose(rVal, cVal)
+          }
         }
       }
     }
@@ -318,8 +410,10 @@ trait GpuGreatestLeastBase extends ComplexTypeMergingExpression with GpuExpressi
 
 case class GpuLeast(children: Seq[Expression]) extends GpuGreatestLeastBase {
   override def binaryOp: BinaryOp = BinaryOp.NULL_MIN
+  override def shouldNaNWin: Boolean = false
 }
 
 case class GpuGreatest(children: Seq[Expression]) extends GpuGreatestLeastBase {
   override def binaryOp: BinaryOp = BinaryOp.NULL_MAX
+  override def shouldNaNWin: Boolean = true
 }
