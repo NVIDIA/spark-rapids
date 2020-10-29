@@ -61,7 +61,7 @@ class GpuBroadcastNestedLoopJoinMeta(
     }
 
     if (!canBuildSideBeReplaced(buildSide)) {
-      buildSide.willNotWorkOnGpu("the broadcast for this join must be on the GPU too")
+      willNotWorkOnGpu("the broadcast for this join must be on the GPU too")
     }
 
     if (!canThisBeReplaced) {

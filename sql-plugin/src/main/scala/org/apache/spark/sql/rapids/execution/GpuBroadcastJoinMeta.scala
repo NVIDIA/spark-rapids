@@ -38,14 +38,15 @@ abstract class GpuBroadcastJoinMeta[INPUT <: SparkPlan](plan: INPUT,
 
   def verifyBuildSideWasReplaced(buildSide: SparkPlan): Unit = {
     val buildSideOnGpu = buildSide match {
-      case BroadcastQueryStageExec(_, gpu: GpuBroadcastExchangeExecBase) => true
+      case BroadcastQueryStageExec(_, _: GpuBroadcastExchangeExecBase) => true
       case BroadcastQueryStageExec(_, reused: ReusedExchangeExec) =>
         reused.child.isInstanceOf[GpuBroadcastExchangeExecBase]
-      case gpu: GpuBroadcastExchangeExecBase => true
       case reused: ReusedExchangeExec => reused.child.isInstanceOf[GpuBroadcastExchangeExecBase]
+      case _: GpuBroadcastExchangeExecBase => true
+      case _ => false
     }
     if (!buildSideOnGpu) {
-      throw new IllegalStateException(s"the broadcast must be on the GPU too: ${buildSide}")
+      throw new IllegalStateException(s"the broadcast must be on the GPU too")
     }
   }
 }
