@@ -28,6 +28,7 @@ import org.apache.spark.sql.catalyst.expressions.{Attribute, Expression}
 import org.apache.spark.sql.catalyst.plans.{Cross, ExistenceJoin, FullOuter, Inner, InnerLike, JoinType, LeftExistence, LeftOuter, RightOuter}
 import org.apache.spark.sql.catalyst.plans.physical.{BroadcastDistribution, Distribution, IdentityBroadcastMode, UnspecifiedDistribution}
 import org.apache.spark.sql.execution.{BinaryExecNode, SparkPlan}
+import org.apache.spark.sql.execution.adaptive.{BroadcastQueryStageExec, QueryStageExec, ShuffleQueryStageExec}
 import org.apache.spark.sql.execution.exchange.ReusedExchangeExec
 import org.apache.spark.sql.execution.joins.BroadcastNestedLoopJoinExec
 import org.apache.spark.sql.execution.metric.{SQLMetric, SQLMetrics}
@@ -39,7 +40,7 @@ class GpuBroadcastNestedLoopJoinMeta(
     conf: RapidsConf,
     parent: Option[RapidsMeta[_, _, _]],
     rule: ConfKeysAndIncompat)
-    extends SparkPlanMeta[BroadcastNestedLoopJoinExec](join, conf, parent, rule) {
+    extends GpuBroadcastJoinMeta[BroadcastNestedLoopJoinExec](join, conf, parent, rule) {
 
   val condition: Option[BaseExprMeta[_]] =
     join.condition.map(GpuOverrides.wrapExpr(_, conf, Some(this)))
@@ -59,13 +60,13 @@ class GpuBroadcastNestedLoopJoinMeta(
       case GpuBuildRight => childPlans(1)
     }
 
-    if (!buildSide.canThisBeReplaced) {
+    if (!canBuildSideBeReplaced(buildSide)) {
       willNotWorkOnGpu("the broadcast for this join must be on the GPU too")
     }
 
     if (!canThisBeReplaced) {
       buildSide.willNotWorkOnGpu(
-        "the GpuBroadcastNestedLoopJoin this feeds is not on the GPU")
+        "the BroadcastNestedLoopJoin this feeds is not on the GPU")
     }
   }
 
@@ -77,10 +78,8 @@ class GpuBroadcastNestedLoopJoinMeta(
     val buildSide = gpuBuildSide match {
       case GpuBuildLeft => left
       case GpuBuildRight => right
-    } 
-    if (!buildSide.isInstanceOf[GpuBroadcastExchangeExecBase]) {
-      throw new IllegalStateException("the broadcast must be on the GPU too")
     }
+    verifyBuildSideWasReplaced(buildSide)
     ShimLoader.getSparkShims.getGpuBroadcastNestedLoopJoinShim(
       left, right, join,
       join.joinType,
@@ -161,6 +160,9 @@ abstract class GpuBroadcastNestedLoopJoinExecBase(
   }
 
   def broadcastExchange: GpuBroadcastExchangeExecBase = broadcast match {
+    case BroadcastQueryStageExec(_, gpu: GpuBroadcastExchangeExecBase) => gpu
+    case BroadcastQueryStageExec(_, reused: ReusedExchangeExec) =>
+      reused.child.asInstanceOf[GpuBroadcastExchangeExecBase]
     case gpu: GpuBroadcastExchangeExecBase => gpu
     case reused: ReusedExchangeExec => reused.child.asInstanceOf[GpuBroadcastExchangeExecBase]
   }

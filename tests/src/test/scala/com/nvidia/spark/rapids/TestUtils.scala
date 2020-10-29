@@ -74,7 +74,7 @@ object TestUtils extends Assertions with Arm {
   }
 
   /** Return list of  matching predicates present in the plan */
-  def operatorCount(plan: SparkPlan, predicate: SparkPlan => Boolean): Seq[SparkPlan] = {
+  def findOperators(plan: SparkPlan, predicate: SparkPlan => Boolean): Seq[SparkPlan] = {
     def recurse(
       plan: SparkPlan,
       predicate: SparkPlan => Boolean,
