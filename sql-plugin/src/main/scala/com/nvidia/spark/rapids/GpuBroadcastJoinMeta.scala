@@ -13,13 +13,12 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package org.apache.spark.sql.rapids.execution
-
-import com.nvidia.spark.rapids.{ConfKeysAndIncompat, GpuExec, RapidsConf, RapidsMeta, SparkPlanMeta}
+package com.nvidia.spark.rapids
 
 import org.apache.spark.sql.execution.SparkPlan
 import org.apache.spark.sql.execution.adaptive.BroadcastQueryStageExec
 import org.apache.spark.sql.execution.exchange.ReusedExchangeExec
+import org.apache.spark.sql.rapids.execution.GpuBroadcastExchangeExecBase
 
 abstract class GpuBroadcastJoinMeta[INPUT <: SparkPlan](plan: INPUT,
     conf: RapidsConf,
