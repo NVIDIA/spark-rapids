@@ -29,8 +29,7 @@ abstract class GpuBroadcastJoinMeta[INPUT <: SparkPlan](plan: INPUT,
 
   def canBuildSideBeReplaced(buildSide: SparkPlanMeta[_]): Boolean = {
     buildSide.wrapped match {
-      case b: BroadcastQueryStageExec =>
-        b.plan.isInstanceOf[GpuExec]
+      case _: BroadcastQueryStageExec => true
       case _ =>
         buildSide.canThisBeReplaced
     }
