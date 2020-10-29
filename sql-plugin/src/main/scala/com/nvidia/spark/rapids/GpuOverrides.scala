@@ -882,6 +882,18 @@ object GpuOverrides {
         override def convertToGpu(): GpuExpression = GpuCoalesce(childExprs.map(_.convertToGpu()))
       }
     ),
+    expr[Least] (
+      "Returns the least value of all parameters, skipping null values",
+      (a, conf, p, r) => new ExprMeta[Least](a, conf, p, r) {
+        override def convertToGpu(): GpuExpression = GpuLeast(childExprs.map(_.convertToGpu()))
+      }
+    ),
+    expr[Greatest] (
+      "Returns the greatest value of all parameters, skipping null values",
+      (a, conf, p, r) => new ExprMeta[Greatest](a, conf, p, r) {
+        override def convertToGpu(): GpuExpression = GpuGreatest(childExprs.map(_.convertToGpu()))
+      }
+    ),
     expr[Atan](
       "Inverse tangent",
       (a, conf, p, r) => new UnaryExprMeta[Atan](a, conf, p, r) {
