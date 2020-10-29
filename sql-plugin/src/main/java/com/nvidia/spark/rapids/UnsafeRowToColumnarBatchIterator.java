@@ -29,6 +29,7 @@ import org.apache.spark.sql.catalyst.CudfUnsafeRow;
 import org.apache.spark.sql.catalyst.expressions.Attribute;
 import org.apache.spark.sql.catalyst.expressions.UnsafeRow;
 import org.apache.spark.sql.execution.metric.SQLMetric;
+import org.apache.spark.sql.types.DataType;
 import org.apache.spark.sql.vectorized.ColumnarBatch;
 import scala.collection.Iterator;
 
@@ -48,6 +49,7 @@ public abstract class UnsafeRowToColumnarBatchIterator implements Iterator<Colum
   protected final int numRowsEstimate;
   protected final long dataLength;
   protected final DType[] rapidsTypes;
+  protected final ArrayList<DataType> outputTypes;
   protected final SQLMetric totalTime;
   protected final SQLMetric numInputRows;
   protected final SQLMetric numOutputRows;
@@ -67,8 +69,11 @@ public abstract class UnsafeRowToColumnarBatchIterator implements Iterator<Colum
         Math.min(Integer.MAX_VALUE - 1, goal.targetSizeBytes() / sizePerRowEstimate));
     dataLength = ((long) sizePerRowEstimate) * numRowsEstimate;
     rapidsTypes = new DType[schema.length];
+    outputTypes = new ArrayList<>(schema.length);
+
     for (int i = 0; i < schema.length; i++) {
       rapidsTypes[i] = GpuColumnVector.getRapidsType(schema[i].dataType());
+      outputTypes.add(schema[i].dataType());
     }
     this.totalTime = totalTime;
     this.numInputRows = numInputRows;
@@ -87,18 +92,22 @@ public abstract class UnsafeRowToColumnarBatchIterator implements Iterator<Colum
       throw new NoSuchElementException();
     }
     final int BYTES_PER_OFFSET = DType.INT32.getSizeInBytes();
-    int dataOffset;
-    int currentRow;
 
     ColumnVector devColumn;
     NvtxRange buildRange;
+    // The row formatted data is stored as a column of lists of bytes.  The current java CUDF APIs
+    // don't do a great job from a performance standpoint with building this type of data structure
+    // and we want this to be as efficient as possible so we are going to allocate two host memory
+    // buffers.  One will be for the byte data and the second will be for the offsets. We will then
+    // write the data directly into those buffers using code generation in a child of this class.
+    // that implements fillBatch.
     try (HostMemoryBuffer dataBuffer = HostMemoryBuffer.allocate(dataLength);
          HostMemoryBuffer offsetsBuffer =
              HostMemoryBuffer.allocate(((long)numRowsEstimate + 1) * BYTES_PER_OFFSET)) {
 
       int[] used = fillBatch(dataBuffer, offsetsBuffer);
-      dataOffset = used[0];
-      currentRow = used[1];
+      int dataOffset = used[0];
+      int currentRow = used[1];
       // We don't want to loop forever trying to copy nothing
       assert (currentRow > 0);
       if (numInputRows != null) {
@@ -110,6 +119,12 @@ public abstract class UnsafeRowToColumnarBatchIterator implements Iterator<Colum
       if (numOutputBatches != null) {
         numOutputBatches.add(1);
       }
+      // Now that we have filled the buffers with the data, we need to turn them into a
+      // HostColumnVector and copy them to the device so the GPU can turn it into a Table.
+      // To do this we first need to make a HostColumnCoreVector for the data, and then
+      // put that into a HostColumnVector as its child.  This the basics of building up
+      // a column of lists of bytes in CUDF but it is typically hidden behind the higer level
+      // APIs.
       dataBuffer.incRefCount();
       offsetsBuffer.incRefCount();
       try (HostColumnVectorCore dataCv =
@@ -118,6 +133,7 @@ public abstract class UnsafeRowToColumnarBatchIterator implements Iterator<Colum
            HostColumnVector hostColumn = new HostColumnVector(DType.LIST,
                currentRow, Optional.of(0L), null, null,
                offsetsBuffer, Collections.singletonList(dataCv))) {
+        // Grab the semaphore because we are about to put data onto the GPU.
         TaskContext tc = TaskContext.get();
         if (tc != null) {
           GpuSemaphore$.MODULE$.acquireIfNecessary(tc);
@@ -133,8 +149,7 @@ public abstract class UnsafeRowToColumnarBatchIterator implements Iterator<Colum
     try (NvtxRange range = buildRange;
          ColumnVector cv = devColumn;
          Table tab = Table.convertFromRows(cv, rapidsTypes)) {
-      // TODO need to pass in the correct data types
-      return GpuColumnVector.from(tab);
+      return GpuColumnVector.from(tab, outputTypes);
     }
   }
 

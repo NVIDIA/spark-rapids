@@ -96,11 +96,13 @@ public final class CudfUnsafeRow extends InternalRow {
   private int[] remapping;
 
   /**
-   * Get the address of what a field is stored.
-   * @param i the index of the field in the row, not the user facing ordinal.
+   * Get the address where a field is stored.
+   * @param ordinal the user facing ordinal.
    * @return the address of the field.
    */
-  private long getFieldAddress(int i) {
+  private long getFieldAddressFromOrdinal(int ordinal) {
+    assertIndexIsValid(ordinal);
+    int i = remapping[ordinal];
     return address + startOffsets[i];
   }
 
@@ -134,6 +136,7 @@ public final class CudfUnsafeRow extends InternalRow {
     for (int i = 0; i < attributes.length; i++) {
       Attribute attr = attributes[i];
       int length = GpuColumnVector.getRapidsType(attr.dataType()).getSizeInBytes();
+      assert length > 0 : "Only fixed width types are currently supported.";
       offset = alignOffset(offset, length);
       startOffsets[i] = offset;
       offset += length;
@@ -197,56 +200,41 @@ public final class CudfUnsafeRow extends InternalRow {
 
   @Override
   public boolean getBoolean(int ordinal) {
-    int i = remapping[ordinal];
-    assertIndexIsValid(i);
-    return Platform.getBoolean(null, getFieldAddress(i));
+    return Platform.getBoolean(null, getFieldAddressFromOrdinal(ordinal));
   }
 
   @Override
   public byte getByte(int ordinal) {
-    int i = remapping[ordinal];
-    assertIndexIsValid(i);
-    return Platform.getByte(null, getFieldAddress(i));
+    return Platform.getByte(null, getFieldAddressFromOrdinal(ordinal));
   }
 
   @Override
   public short getShort(int ordinal) {
-    int i = remapping[ordinal];
-    assertIndexIsValid(i);
-    return Platform.getShort(null, getFieldAddress(i));
+    return Platform.getShort(null, getFieldAddressFromOrdinal(ordinal));
   }
 
   @Override
   public int getInt(int ordinal) {
-    int i = remapping[ordinal];
-    assertIndexIsValid(i);
-    return Platform.getInt(null, getFieldAddress(i));
+    return Platform.getInt(null, getFieldAddressFromOrdinal(ordinal));
   }
 
   @Override
   public long getLong(int ordinal) {
-    int i = remapping[ordinal];
-    assertIndexIsValid(i);
-    return Platform.getLong(null, getFieldAddress(i));
+    return Platform.getLong(null, getFieldAddressFromOrdinal(ordinal));
   }
 
   @Override
   public float getFloat(int ordinal) {
-    int i = remapping[ordinal];
-    assertIndexIsValid(i);
-    return Platform.getFloat(null, getFieldAddress(i));
+    return Platform.getFloat(null, getFieldAddressFromOrdinal(ordinal));
   }
 
   @Override
   public double getDouble(int ordinal) {
-    int i = remapping[ordinal];
-    assertIndexIsValid(i);
-    return Platform.getDouble(null, getFieldAddress(i));
+    return Platform.getDouble(null, getFieldAddressFromOrdinal(ordinal));
   }
 
   @Override
   public Decimal getDecimal(int ordinal, int precision, int scale) {
-//    int i = remapping[ordinal];
 //    if (isNullAt(ordinal)) {
 //      return null;
 //    }
@@ -263,7 +251,6 @@ public final class CudfUnsafeRow extends InternalRow {
 
   @Override
   public UTF8String getUTF8String(int ordinal) {
-//    int i = remapping[ordinal];
 //    if (isNullAt(ordinal)) return null;
 //    final long offsetAndSize = getLong(ordinal);
 //    final int offset = (int) (offsetAndSize >> 32);
@@ -274,7 +261,6 @@ public final class CudfUnsafeRow extends InternalRow {
 
   @Override
   public byte[] getBinary(int ordinal) {
-//    int i = remapping[ordinal];
 //    if (isNullAt(ordinal)) {
 //      return null;
 //    } else {
@@ -296,7 +282,6 @@ public final class CudfUnsafeRow extends InternalRow {
 
   @Override
   public CalendarInterval getInterval(int ordinal) {
-//    int i = remapping[ordinal];
 //    if (isNullAt(ordinal)) {
 //      return null;
 //    } else {
@@ -312,7 +297,6 @@ public final class CudfUnsafeRow extends InternalRow {
 
   @Override
   public CudfUnsafeRow getStruct(int ordinal, int numFields) {
-//    int i = remapping[ordinal];
 //    if (isNullAt(ordinal)) {
 //      return null;
 //    } else {
@@ -328,7 +312,6 @@ public final class CudfUnsafeRow extends InternalRow {
 
   @Override
   public ArrayData getArray(int ordinal) {
-//    int i = remapping[ordinal];
 //    if (isNullAt(ordinal)) {
 //      return null;
 //    } else {
@@ -344,7 +327,6 @@ public final class CudfUnsafeRow extends InternalRow {
 
   @Override
   public MapData getMap(int ordinal) {
-//    int i = remapping[ordinal];
 //    if (isNullAt(ordinal)) {
 //      return null;
 //    } else {

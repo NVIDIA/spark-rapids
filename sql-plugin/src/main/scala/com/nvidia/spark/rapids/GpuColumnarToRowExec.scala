@@ -141,10 +141,7 @@ class AcceleratedColumnarToRowIterator(
   }
 
   override def next(): InternalRow = {
-    if (at >= total) {
-      loadNextBatch()
-    }
-    if (at >= total) {
+    if (!hasNext) {
       throw new NoSuchElementException()
     }
     // Here we should do some code generation, but for now
