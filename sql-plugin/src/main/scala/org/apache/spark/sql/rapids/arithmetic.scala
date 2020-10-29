@@ -234,8 +234,17 @@ trait GpuGreatestLeastBase extends ComplexTypeMergingExpression with GpuExpressi
   override def nullable: Boolean = children.forall(_.nullable)
   override def foldable: Boolean = children.forall(_.foldable)
 
+  /**
+   * The binary operation that should be performed when combining two values together.
+   */
   def binaryOp: BinaryOp
-  def shouldNaNWin: Boolean
+
+  /**
+   * In the case of floating point values should NaN win and become the output if NaN is
+   * the value for either input, or lose and not be the output unless the other choice is
+   * null.
+   */
+  def shouldNanWin: Boolean
 
   private[this] def isFp = dataType == FloatType || dataType == DoubleType
   // TODO need a better way to do this for nested types
@@ -341,7 +350,7 @@ trait GpuGreatestLeastBase extends ComplexTypeMergingExpression with GpuExpressi
   }
 
   /**
-   * Cudf does not handle floating point like spark wants when it comes to NaN values.
+   * Cudf does not handle floating point like Spark wants when it comes to NaN values.
    * Spark wants NaN > anything except for null, and null is either the smallest value when used
    * with the greatest operator or the largest value when used with the least value.
    * This does more computation, but gets the right answer in those cases.
@@ -352,7 +361,7 @@ trait GpuGreatestLeastBase extends ComplexTypeMergingExpression with GpuExpressi
   private[this] def combineButNoCloseFp(r: Any, c: Any): Any = (r, c) match {
     case (r: ColumnVector, c: ColumnVector) =>
       withResource(r.binaryOp(binaryOp, c, dtype)) { tmp =>
-        if (shouldNaNWin) {
+        if (shouldNanWin) {
           withResource(makeNanWin(r, tmp)) { tmp2 =>
             makeNanWin(c, tmp2)
           }
@@ -364,7 +373,7 @@ trait GpuGreatestLeastBase extends ComplexTypeMergingExpression with GpuExpressi
       }
     case (r: ColumnVector, c: Scalar) =>
       withResource(r.binaryOp(binaryOp, c, dtype)) { tmp =>
-        if (shouldNaNWin) {
+        if (shouldNanWin) {
           withResource(makeNanWin(r, tmp)) { tmp2 =>
             makeNanWin(c, tmp2)
           }
@@ -376,7 +385,7 @@ trait GpuGreatestLeastBase extends ComplexTypeMergingExpression with GpuExpressi
       }
     case (r: Scalar, c: ColumnVector) =>
       withResource(r.binaryOp(binaryOp, c, dtype)) { tmp =>
-        if (shouldNaNWin) {
+        if (shouldNanWin) {
           withResource(makeNanWin(r, tmp)) { tmp2 =>
             makeNanWin(c, tmp2)
           }
@@ -410,10 +419,10 @@ trait GpuGreatestLeastBase extends ComplexTypeMergingExpression with GpuExpressi
 
 case class GpuLeast(children: Seq[Expression]) extends GpuGreatestLeastBase {
   override def binaryOp: BinaryOp = BinaryOp.NULL_MIN
-  override def shouldNaNWin: Boolean = false
+  override def shouldNanWin: Boolean = false
 }
 
 case class GpuGreatest(children: Seq[Expression]) extends GpuGreatestLeastBase {
   override def binaryOp: BinaryOp = BinaryOp.NULL_MAX
-  override def shouldNaNWin: Boolean = true
+  override def shouldNanWin: Boolean = true
 }
