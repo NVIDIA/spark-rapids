@@ -144,6 +144,17 @@ class GpuWindowExpressionMeta(
                 willNotWorkOnGpu("only a single date/time based column in window" +
                     " range functions is supported")
               }
+              // https://github.com/NVIDIA/spark-rapids/issues/1039 makes null values in
+              // The order by column to not work if any of the ranges are unbounded
+              // Once this is fixed please uncomment the tests in WindowFunctionSuite that
+              // are impacted by this change
+              val anyNullable = orderSpec.exists(_.nullable)
+              val areLowerAndUpperNotOkay = lower == Int.MaxValue || lower == Int.MinValue ||
+                  upper == Int.MaxValue || upper == Int.MinValue
+              if (anyNullable && areLowerAndUpperNotOkay) {
+                willNotWorkOnGpu("UNBOUNDED ranges for nullable date/timestamp ranges" +
+                    " are not supported")
+              }
             } else {
               willNotWorkOnGpu("a mixture of date/time and non date/time based" +
                   " columns is not supported in a window range function")

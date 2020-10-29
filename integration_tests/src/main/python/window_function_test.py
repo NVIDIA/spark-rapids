@@ -147,7 +147,8 @@ def test_multi_types_window_aggs_for_rows(a_gen, b_gen, c_gen):
 # See https://github.com/NVIDIA/spark-rapids/issues/216
 @ignore_order
 @pytest.mark.parametrize('data_gen', [_grpkey_longs_with_timestamps,
-                                      _grpkey_longs_with_nullable_timestamps], ids=idfn)
+                                      pytest.param(_grpkey_longs_with_nullable_timestamps, marks=pytest.mark.xfail(reason='https://github.com/NVIDIA/spark-rapids/issues/1039'))],
+                                      ids=idfn)
 def test_window_aggs_for_ranges(data_gen):
     assert_gpu_and_cpu_are_equal_sql(
         lambda spark: gen_df(spark, data_gen, length=2048),
@@ -174,6 +175,40 @@ def test_window_aggs_for_ranges(data_gen):
         ' max(c) over '
         '   (partition by a order by cast(b as timestamp) asc  '
         '       range between UNBOUNDED preceding and UNBOUNDED following) as max_c_unbounded '
+        'from window_agg_table')
+
+# Test for RANGE queries, with timestamp order-by expressions.
+# Non-timestamp order-by columns are currently unsupported for RANGE queries.
+# See https://github.com/NVIDIA/spark-rapids/issues/216
+# Once https://github.com/NVIDIA/spark-rapids/issues/1039 is fixed this test should be deleted in favor of test_window_aggs_for_ranges
+@ignore_order
+@pytest.mark.parametrize('data_gen', [_grpkey_longs_with_nullable_timestamps], ids=idfn)
+def test_window_aggs_for_non_unbounded_ranges(data_gen):
+    assert_gpu_and_cpu_are_equal_sql(
+        lambda spark: gen_df(spark, data_gen, length=2048),
+        "window_agg_table",
+        'select'
+        ' sum(c) over'
+        '   (partition by a order by cast(b as timestamp) asc  '
+        '       range between interval 1 day preceding and interval 1 day following) as sum_c_asc, '
+        ' max(c) over'
+        '   (partition by a order by cast(b as timestamp) desc '
+        '       range between interval 2 days preceding and interval 1 days following) as max_c_desc, '
+        ' min(c) over'
+        '   (partition by a order by cast(b as timestamp) asc  '
+        '       range between interval 2 days preceding and current row) as min_c_asc, '
+        ' count(1) over'
+        '   (partition by a order by cast(b as timestamp) asc  '
+        '       range between CURRENT ROW and interval 100000 days following) as count_1_asc, '
+        ' count(c) over'
+        '   (partition by a order by cast(b as timestamp) asc  '
+        '       range between CURRENT ROW and interval 100000 days following) as count_c_asc, '
+        ' sum(c) over'
+        '   (partition by a order by cast(b as timestamp) asc  '
+        '       range between interval 100000 days preceding and CURRENT ROW) as sum_c_unbounded, '
+        ' max(c) over'
+        '   (partition by a order by cast(b as timestamp) asc  '
+        '       range between interval 100000 days preceding and interval 100000 days following) as max_c_unbounded '
         'from window_agg_table')
 
 @pytest.mark.xfail(reason="[UNSUPPORTED] Ranges over non-timestamp columns "
