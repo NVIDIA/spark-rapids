@@ -26,9 +26,11 @@ import com.nvidia.spark.rapids.GpuRowToColumnConverter.{FixedWidthTypeConverter,
 
 import org.apache.spark.TaskContext
 import org.apache.spark.broadcast.Broadcast
+import org.apache.spark.internal.Logging
 import org.apache.spark.rdd.RDD
-import org.apache.spark.sql.catalyst.InternalRow
-import org.apache.spark.sql.catalyst.expressions.{Attribute, SortOrder, SpecializedGetters}
+import org.apache.spark.sql.catalyst.{CudfUnsafeRow, InternalRow}
+import org.apache.spark.sql.catalyst.expressions.{Attribute, SortOrder, SpecializedGetters, UnsafeRow}
+import org.apache.spark.sql.catalyst.expressions.codegen.{CodeAndComment, CodeFormatter, CodegenContext, CodeGenerator}
 import org.apache.spark.sql.catalyst.plans.physical.Partitioning
 import org.apache.spark.sql.execution.{SparkPlan, UnaryExecNode}
 import org.apache.spark.sql.execution.metric.{SQLMetric, SQLMetrics}
@@ -466,6 +468,156 @@ class RowToColumnarIterator(
   }
 }
 
+object GeneratedUnsafeRowToCudfRowIterator extends Logging {
+  def apply(input: Iterator[UnsafeRow],
+      schema: Array[Attribute],
+      goal: CoalesceGoal,
+      totalTime: SQLMetric,
+      numInputRows: SQLMetric,
+      numOutputRows: SQLMetric,
+      numOutputBatches: SQLMetric): UnsafeRowToColumnarBatchIterator = {
+    val ctx = new CodegenContext
+
+    ctx.addReferenceObj("iter", input, classOf[Iterator[UnsafeRow]].getName)
+    ctx.addReferenceObj("schema", schema, classOf[Array[Attribute]].getName)
+    ctx.addReferenceObj("goal", goal, classOf[CoalesceGoal].getName)
+    ctx.addReferenceObj("totalTime", totalTime, classOf[SQLMetric].getName)
+    ctx.addReferenceObj("numInputRows", numInputRows, classOf[SQLMetric].getName)
+    ctx.addReferenceObj("numOutputRows", numOutputRows, classOf[SQLMetric].getName)
+    ctx.addReferenceObj("numOutputBatches", numOutputBatches, classOf[SQLMetric].getName)
+
+    val rowBaseObj = ctx.freshName("rowBaseObj")
+    val rowBaseOffset = ctx.freshName("rowBaseOffset")
+
+    val sparkValidityOffset = UnsafeRow.calculateBitSetWidthInBytes(schema.length)
+    // This needs to match what is in cudf and CudfUnsafeRow
+    var cudfOffset = 0
+    // scalastyle:off line.size.limit
+    // The map will execute here because schema is an array. Not sure if there is a better way to
+    // do this or not
+    val copyData = schema.zipWithIndex.map { pair =>
+      val attr = pair._1
+      val colIndex = pair._2
+      // This only works on fixed width types
+      val length = attr.dataType.defaultSize
+      cudfOffset = CudfUnsafeRow.alignOffset(cudfOffset, length)
+      val ret = length match {
+        case 1 => s"Platform.putByte(null, startAddress + $cudfOffset, Platform.getByte($rowBaseObj, $rowBaseOffset + ${sparkValidityOffset + (colIndex * 8)}));"
+        case 2 => s"Platform.putShort(null, startAddress + $cudfOffset, Platform.getShort($rowBaseObj, $rowBaseOffset + ${sparkValidityOffset + (colIndex * 8)}));"
+        case 4 => s"Platform.putInt(null, startAddress + $cudfOffset, Platform.getInt($rowBaseObj, $rowBaseOffset + ${sparkValidityOffset + (colIndex * 8)}));"
+        case 8 => s"Platform.putLong(null, startAddress + $cudfOffset, Platform.getLong($rowBaseObj, $rowBaseOffset + ${sparkValidityOffset + (colIndex * 8)}));"
+        case _ => throw new IllegalStateException(s"$length  NOT SUPPORTED YET")
+      }
+      cudfOffset += length
+      ret
+    }
+
+    val sparkValidityTmp = ctx.freshName("unsafeRowTmp")
+
+    val cudfValidityStart = cudfOffset
+    val cudfBitSetWidthInBytes = CudfUnsafeRow.calculateBitSetWidthInBytes(schema.length)
+
+    val copyValidity = (0 until cudfBitSetWidthInBytes).map { cudfValidityByteIndex =>
+      var ret = ""
+      val byteOffsetInSparkLong = cudfValidityByteIndex % 8
+      if (byteOffsetInSparkLong == 0) {
+        // We need to get the validity data out of the unsafe row.
+        ret += s"$sparkValidityTmp = Platform.getLong($rowBaseObj, $rowBaseOffset + $cudfValidityByteIndex);\n"
+      }
+      // Now write out the sub-part of it we care about, but converted to validity instead of isNull
+      ret += s"Platform.putByte(null, startAddress + ${cudfValidityStart + cudfValidityByteIndex}, (byte)(0xFF & ~($sparkValidityTmp >> ${byteOffsetInSparkLong * 8})));"
+      ret
+    }
+
+    // Each row is 64-bit aligned
+    val rowLength = CudfUnsafeRow.alignOffset(cudfOffset + cudfBitSetWidthInBytes, 8)
+
+    // First copy the data, validity we will copy afterwards
+
+    val codeBody =
+      s"""
+         |public java.lang.Object generate(Object[] references) {
+         |  return new SpecificUnsafeRowToColumnarBatchIterator(references);
+         |}
+         |
+         |final class SpecificUnsafeRowToColumnarBatchIterator extends ${classOf[UnsafeRowToColumnarBatchIterator].getName} {
+         |
+         |  ${ctx.declareMutableStates()}
+         |
+         |  public SpecificUnsafeRowToColumnarBatchIterator(Object[] references) {
+         |    super((scala.collection.Iterator<UnsafeRow>)references[0],
+         |      (org.apache.spark.sql.catalyst.expressions.Attribute[])references[1],
+         |      (com.nvidia.spark.rapids.CoalesceGoal)references[2],
+         |      (org.apache.spark.sql.execution.metric.SQLMetric)references[3],
+         |      (org.apache.spark.sql.execution.metric.SQLMetric)references[4],
+         |      (org.apache.spark.sql.execution.metric.SQLMetric)references[5],
+         |      (org.apache.spark.sql.execution.metric.SQLMetric)references[6]);
+         |    ${ctx.initMutableStates()}
+         |  }
+         |
+         |  // Avoid virtual function calls by copying the data in a batch at a time instead
+         |  // of a row at a time.
+         |  @Override
+         |  public int[] fillBatch(ai.rapids.cudf.HostMemoryBuffer dataBuffer,
+         |      ai.rapids.cudf.HostMemoryBuffer offsetsBuffer) {
+         |    final long dataBaseAddress = dataBuffer.getAddress();
+         |    final long endDataAddress = dataBaseAddress + dataLength;
+         |
+         |    int dataOffset = 0;
+         |    int currentRow = 0;
+         |
+         |    offsetsBuffer.setInt(0, dataOffset);
+         |    // If we are here we have at least one row to process, so don't bother checking yet
+         |    boolean done = false;
+         |    while (!done) {
+         |      UnsafeRow row;
+         |      if (pending != null) {
+         |        row = pending;
+         |        pending = null;
+         |      } else {
+         |        row = (UnsafeRow)input.next();
+         |      }
+         |      int numBytesUsedByRow = copyInto(row, dataBaseAddress + dataOffset, endDataAddress);
+         |      if (numBytesUsedByRow < 0) {
+         |        pending = row;
+         |        done = true;
+         |      } else {
+         |        currentRow += 1;
+         |        dataOffset += numBytesUsedByRow;
+         |        done = !(currentRow < numRowsEstimate &&
+         |            dataOffset < dataLength &&
+         |            input.hasNext());
+         |      }
+         |    }
+         |    return new int[] {dataOffset, currentRow};
+         |  }
+         |
+         |  private int copyInto(UnsafeRow input, long startAddress, long endAddress) {
+         |    Object $rowBaseObj = input.getBaseObject();
+         |    long $rowBaseOffset = input.getBaseOffset();
+         |    ${copyData.mkString("\n")}
+         |
+         |    // validity
+         |    long $sparkValidityTmp;
+         |    ${copyValidity.mkString("\n")}
+         |
+         |    return $rowLength;
+         |  }
+         |
+         |  ${ctx.declareAddedFunctions()}
+         |}
+       """.stripMargin
+    // scalastyle:on line.size.limit
+
+    val code = CodeFormatter.stripOverlappingComments(
+      new CodeAndComment(codeBody, ctx.getPlaceHolderToComments()))
+    logDebug(s"code for ${schema.mkString(",")}:\n${CodeFormatter.format(code)}")
+
+    val (clazz, _) = CodeGenerator.compile(code)
+    clazz.generate(ctx.references.toArray).asInstanceOf[UnsafeRowToColumnarBatchIterator]
+  }
+}
+
 /**
  * GPU version of row to columnar transition.
  */
@@ -493,21 +645,30 @@ case class GpuRowToColumnarExec(child: SparkPlan, goal: CoalesceGoal)
   )
 
   override def doExecuteColumnar(): RDD[ColumnarBatch] = {
-    // TODO need to add in the GPU accelerated unsafe row translation when there is no
-    // variable length operations.
-
     // use local variables instead of class global variables to prevent the entire
     // object from having to be serialized
     val numInputRows = longMetric(NUM_INPUT_ROWS)
     val numOutputBatches = longMetric(NUM_OUTPUT_BATCHES)
     val numOutputRows = longMetric(NUM_OUTPUT_ROWS)
     val totalTime = longMetric(TOTAL_TIME)
-    val localSchema = schema
-    val converters = new GpuRowToColumnConverter(localSchema)
     val localGoal = goal
     val rowBased = child.execute()
-    rowBased.mapPartitions(rowIter => new RowToColumnarIterator(rowIter,
-      localSchema, localGoal, converters,
-      totalTime, numInputRows, numOutputRows, numOutputBatches))
+    // The cudf kernel only supports up to 1.5 KB per row which means at most 184 double/long
+    // values. Spark by default limits codegen to 100 fields "spark.sql.codegen.maxFields".
+    // So, we are going to be cautious and start with that until we have tested it more.
+    if (output.length > 0 && output.length < 100 &&
+        CudfRowTransitions.areAllSupported(output)) {
+      val localOutput = output
+      rowBased.mapPartitions(rowIter => GeneratedUnsafeRowToCudfRowIterator(
+        rowIter.asInstanceOf[Iterator[UnsafeRow]],
+        localOutput.toArray, localGoal, totalTime, numInputRows, numOutputRows,
+        numOutputBatches))
+    } else {
+      val localSchema = schema
+      val converters = new GpuRowToColumnConverter(localSchema)
+      rowBased.mapPartitions(rowIter => new RowToColumnarIterator(rowIter,
+        localSchema, localGoal, converters,
+        totalTime, numInputRows, numOutputRows, numOutputBatches))
+    }
   }
 }

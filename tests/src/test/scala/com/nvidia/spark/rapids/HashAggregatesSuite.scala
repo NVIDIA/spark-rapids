@@ -135,6 +135,11 @@ class HashAggregatesSuite extends SparkQueryCompareTestSuite {
           assert(gpuPlan.find(_.isInstanceOf[SortAggregateExec]).isEmpty)
           assert(gpuPlan.children.forall(exec => exec.isInstanceOf[GpuExec]))
 
+        case GpuColumnarToRowExec(plan, _) => // Codegen disabled
+          assert(plan.children.head.isInstanceOf[GpuHashAggregateExec])
+          assert(gpuPlan.find(_.isInstanceOf[SortAggregateExec]).isEmpty)
+          assert(gpuPlan.children.forall(exec => exec.isInstanceOf[GpuExec]))
+
         case a: AdaptiveSparkPlanExec =>
           assert(a.toString.startsWith("AdaptiveSparkPlan isFinalPlan=true"))
           assert(a.executedPlan.find(_.isInstanceOf[SortAggregateExec]).isEmpty)
@@ -172,6 +177,12 @@ class HashAggregatesSuite extends SparkQueryCompareTestSuite {
           assert(gpuPlan.find(_.isInstanceOf[GpuHashAggregateExec]).isDefined)
           assert(gpuPlan.children.forall(exec => exec.isInstanceOf[GpuExec]))
 
+        case GpuColumnarToRowExec(plan, _) => // codegen disabled
+          assert(plan.isInstanceOf[GpuSortExec])
+          assert(gpuPlan.find(_.isInstanceOf[SortAggregateExec]).isEmpty)
+          assert(gpuPlan.find(_.isInstanceOf[GpuHashAggregateExec]).isDefined)
+          assert(gpuPlan.children.forall(exec => exec.isInstanceOf[GpuExec]))
+
         case a: AdaptiveSparkPlanExec =>
           assert(a.toString.startsWith("AdaptiveSparkPlan isFinalPlan=true"))
           assert(a.executedPlan.find(_.isInstanceOf[GpuSortExec]).isDefined)
@@ -179,7 +190,7 @@ class HashAggregatesSuite extends SparkQueryCompareTestSuite {
           assert(a.executedPlan.children.forall(exec => exec.isInstanceOf[GpuExec]))
 
         case _ =>
-          fail("Incorrect plan")
+          fail(s"Incorrect plan $gpuPlan")
       }
 
     }, conf)
