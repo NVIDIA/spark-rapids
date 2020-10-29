@@ -118,6 +118,13 @@ class Spark300Shims extends SparkShims {
     }
   }
 
+  override def isGpuBroadcastNestedLoopJoin(plan: SparkPlan): Boolean = {
+    plan match {
+      case _: GpuBroadcastNestedLoopJoinExecBase => true
+      case _ => false
+    }
+  }
+
   override def isGpuShuffledHashJoin(plan: SparkPlan): Boolean = {
     plan match {
       case _: GpuShuffledHashJoinExec => true
