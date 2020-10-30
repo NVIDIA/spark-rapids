@@ -16,6 +16,7 @@
 
 package com.nvidia.spark.rapids
 
+import scala.collection.JavaConverters.{asScalaBufferConverter, seqAsJavaListConverter}
 import scala.collection.mutable.ArrayBuffer
 
 import ai.rapids.cudf.{ColumnVector, Table}
@@ -24,7 +25,7 @@ import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.expressions.SortOrder
 import org.apache.spark.sql.catalyst.plans.physical.{ClusteredDistribution, Distribution, OrderedDistribution}
-import org.apache.spark.sql.types.{DataType, IntegerType, StructField, StructType}
+import org.apache.spark.sql.types.{DataType, IntegerType, StructType}
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
 /**
@@ -119,7 +120,10 @@ case class GpuRangePartitioning(
       //get the table for upper bound calculation
       slicedSortedTbl = new Table(sortColumns: _*)
       //get the final column batch, remove the sort order sortColumns
-      finalSortedCb = GpuColumnVector.from(sortedTbl, numSortCols, sortedTbl.getNumberOfColumns)
+      val outputTypes = gpuOrdering.map(_.child.dataType) ++
+          GpuColumnVector.extractTypes(batch).asScala
+      finalSortedCb = GpuColumnVector.from(sortedTbl, outputTypes.asJava,
+        numSortCols, sortedTbl.getNumberOfColumns)
       val numRows = finalSortedCb.numRows
       partitionColumns = GpuColumnVector.extractColumns(finalSortedCb)
       // get the ranges table and get upper bounds if possible

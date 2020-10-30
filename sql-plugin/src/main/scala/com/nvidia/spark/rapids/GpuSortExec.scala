@@ -16,6 +16,8 @@
 
 package com.nvidia.spark.rapids
 
+import scala.collection.JavaConverters.{asScalaBufferConverter, seqAsJavaListConverter}
+
 import ai.rapids.cudf
 import ai.rapids.cudf.{NvtxColor, NvtxRange, Table}
 import com.nvidia.spark.rapids.GpuMetricNames._
@@ -27,6 +29,7 @@ import org.apache.spark.sql.catalyst.expressions.{Attribute, NullsFirst, NullsLa
 import org.apache.spark.sql.catalyst.plans.physical.{Distribution, OrderedDistribution, Partitioning, UnspecifiedDistribution}
 import org.apache.spark.sql.execution.{SortExec, SparkPlan, UnaryExecNode}
 import org.apache.spark.sql.execution.metric.{SQLMetric, SQLMetrics}
+import org.apache.spark.sql.types.DataType
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
 class GpuSortMeta(
@@ -160,18 +163,22 @@ class GpuColumnarBatchSorter(
       private def sortBatch(inputBatch: ColumnarBatch): ColumnarBatch = {
         val nvtxRange = initNvtxRange
         try {
+          var outputTypes: Seq[DataType] = Nil
           var inputTbl: Table = null
           var inputCvs: Seq[GpuColumnVector] = Nil
           try {
             if (sortOrder.nonEmpty) {
               inputCvs = SortUtils.getGpuColVectorsAndBindReferences(inputBatch, sortOrder)
               inputTbl = new cudf.Table(inputCvs.map(_.getBase): _*)
+              outputTypes = sortOrder.map(_.child.dataType) ++
+                  GpuColumnVector.extractTypes(inputBatch).asScala
             } else if (inputBatch.numCols() > 0) {
               inputTbl = GpuColumnVector.from(inputBatch)
+              outputTypes = GpuColumnVector.extractTypes(inputBatch).asScala
             }
             val orderByArgs = getOrderArgs(inputTbl)
             val startTimestamp = System.nanoTime()
-            val batch = doGpuSort(inputTbl, orderByArgs)
+            val batch = doGpuSort(inputTbl, orderByArgs, outputTypes)
             updateMetricValues(inputTbl, startTimestamp, batch)
             batch
           } finally {
@@ -244,11 +251,12 @@ class GpuColumnarBatchSorter(
 
   private def doGpuSort(
       tbl: Table,
-      orderByArgs: Seq[Table.OrderByArg]): ColumnarBatch = {
+      orderByArgs: Seq[Table.OrderByArg],
+      types: Seq[DataType]): ColumnarBatch = {
     var resultTbl: cudf.Table = null
     try {
       resultTbl = tbl.orderBy(orderByArgs: _*)
-      GpuColumnVector.from(resultTbl, numSortCols, resultTbl.getNumberOfColumns)
+      GpuColumnVector.from(resultTbl, types.asJava, numSortCols, resultTbl.getNumberOfColumns)
     } finally {
       if (resultTbl != null) {
         resultTbl.close()

@@ -29,6 +29,7 @@ import org.apache.spark.sql.types.*;
 import org.apache.spark.sql.vectorized.ColumnVector;
 import org.apache.spark.sql.vectorized.ColumnarBatch;
 
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 
@@ -261,10 +262,34 @@ public class GpuColumnVector extends GpuColumnVectorBase {
   }
 
   /**
+   * Get the data types for a batch.
+   */
+  public static final List<DataType> extractTypes(ColumnarBatch batch) {
+    ArrayList<DataType> ret = new ArrayList<>(batch.numCols());
+    for (int i = 0; i < batch.numCols(); i++) {
+      ret.add(batch.column(i).dataType());
+    }
+    return ret;
+  }
+
+  /**
+   * Get the data types for a struct.
+   */
+  public static final List<DataType> extractTypes(StructType st) {
+    ArrayList<DataType> ret = new ArrayList<>(st.size());
+    for (int i = 0; i < st.size(); i++) {
+      ret.add(st.apply(i).dataType());
+    }
+    return ret;
+  }
+
+  /**
    * Convert a Table to a ColumnarBatch.  The columns in the table will have their reference counts
    * incremented so you will need to close both the table passed in and the batch returned to
    * not have any leaks.
+   * @deprecated spark data types must be provided with it.
    */
+  @Deprecated
   public static final ColumnarBatch from(Table table) {
     return from(table, 0, table.getNumberOfColumns());
   }
@@ -272,6 +297,91 @@ public class GpuColumnVector extends GpuColumnVectorBase {
   public static final ColumnarBatch from(Table table, List<DataType> colTypes) {
     return from(table, colTypes, 0, table.getNumberOfColumns());
   }
+
+  /**
+   * This should only ever be called from an assertion.
+   */
+  private static boolean typeConversionAllowed(ColumnViewAccess cv, DataType colType) {
+    DType dt = cv.getDataType();
+    if (!dt.isNestedType()) {
+      return getSparkType(dt).equals(colType);
+    }
+    if (colType instanceof MapType) {
+      MapType mType = (MapType) colType;
+      // list of struct of key/value
+      if (!(dt.equals(DType.LIST))) {
+        return false;
+      }
+      try (ColumnViewAccess structCV = cv.getChildColumnViewAccess(0)) {
+        if (!(structCV.getDataType().equals(DType.STRUCT))) {
+          return false;
+        }
+        if (structCV.getNumChildren() != 2) {
+          return false;
+        }
+        try (ColumnViewAccess keyCv = structCV.getChildColumnViewAccess(0)) {
+          if (!typeConversionAllowed(keyCv, mType.keyType())) {
+            return false;
+          }
+        }
+        try (ColumnViewAccess valCv = structCV.getChildColumnViewAccess(1)) {
+          return typeConversionAllowed(valCv, mType.valueType());
+        }
+      }
+    } else if (colType instanceof ArrayType) {
+      if (!(dt.equals(DType.LIST))) {
+        return false;
+      }
+      try (ColumnViewAccess tmp = cv.getChildColumnViewAccess(0)) {
+        return typeConversionAllowed(tmp, ((ArrayType) colType).elementType());
+      }
+    } else if (colType instanceof StructType) {
+      if (!(dt.equals(DType.STRUCT))) {
+        return false;
+      }
+      StructType st = (StructType) colType;
+      final int numChildren = cv.getNumChildren();
+      if (numChildren != st.size()) {
+        return false;
+      }
+      for (int childIndex = 0; childIndex < numChildren; childIndex++) {
+        try (ColumnViewAccess tmp = cv.getChildColumnViewAccess(childIndex)) {
+          StructField entry = ((StructType) colType).apply(childIndex);
+          if (!typeConversionAllowed(tmp, entry.dataType())) {
+            return false;
+          }
+        }
+      }
+      return true;
+    } else if (colType instanceof BinaryType) {
+      if (!(dt.equals(DType.LIST))) {
+        return false;
+      }
+      try (ColumnViewAccess tmp = cv.getChildColumnViewAccess(0)) {
+        DType tmpType = tmp.getDataType();
+        return tmpType.equals(DType.INT8) || tmpType.equals(DType.UINT8);
+      }
+    } else {
+      // Unexpected type
+      return false;
+    }
+  }
+
+  /**
+   * This should only ever be called from an assertion.
+   */
+  private static boolean typeConversionAllowed(Table table, List<DataType> colTypes) {
+    final int numColumns = table.getNumberOfColumns();
+    if (numColumns != colTypes.size()) {
+      return false;
+    }
+    boolean ret = true;
+    for (int colIndex = 0; colIndex < numColumns; colIndex++) {
+      ret = ret && typeConversionAllowed(table.getColumn(colIndex), colTypes.get(colIndex));
+    }
+    return ret;
+  }
+
   /**
    * Get a ColumnarBatch from a set of columns in the Table. This gets the columns
    * starting at startColIndex and going until but not including untilColIndex. This will
@@ -282,8 +392,10 @@ public class GpuColumnVector extends GpuColumnVectorBase {
    * @param startColIndex index of the first vector you want in the final ColumnarBatch
    * @param untilColIndex until index of the columns. (ie doesn't include that column num)
    * @return a ColumnarBatch of the vectors from the table
+   * @deprecated must use the version that takes spark data types.
    */
-  public static final ColumnarBatch from(Table table, int startColIndex, int untilColIndex) {
+  @Deprecated
+  private static final ColumnarBatch from(Table table, int startColIndex, int untilColIndex) {
     assert table != null : "Table cannot be null";
     int numColumns = untilColIndex - startColIndex;
     ColumnVector[] columns = new ColumnVector[numColumns];
@@ -326,6 +438,8 @@ public class GpuColumnVector extends GpuColumnVectorBase {
    */
   public static final ColumnarBatch from(Table table, List<DataType> colTypes, int startColIndex, int untilColIndex) {
     assert table != null : "Table cannot be null";
+    assert typeConversionAllowed(table, colTypes) : "Type conversion is not allowed from " + table +
+        " to " + colTypes;
     int numColumns = untilColIndex - startColIndex;
     ColumnVector[] columns = new ColumnVector[numColumns];
     int finalLoc = 0;
@@ -399,6 +513,7 @@ public class GpuColumnVector extends GpuColumnVectorBase {
     return vectors;
   }
 
+  @Deprecated
   public static final GpuColumnVector[] extractColumns(Table table) {
     try (ColumnarBatch batch = from(table)) {
       return extractColumns(batch);
