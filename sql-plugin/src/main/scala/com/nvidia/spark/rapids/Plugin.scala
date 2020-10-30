@@ -17,6 +17,7 @@
 package com.nvidia.spark.rapids
 
 import java.util
+import java.util.Properties
 import java.util.concurrent.atomic.{AtomicBoolean, AtomicReference}
 
 import scala.collection.JavaConverters._
@@ -126,6 +127,38 @@ class RapidsExecutorPlugin extends ExecutorPlugin with Logging {
       val conf = new RapidsConf(extraConf.asScala.toMap)
       if (conf.shimsProviderOverride.isDefined) {
         ShimLoader.setSparkShimProviderClass(conf.shimsProviderOverride.get)
+      }
+
+      // Compare if the cudf version mentioned in the classpath is equal to the version which plugin
+      // expects. If there is a version mismatch, throw error. This check can be disabled by
+      // setting this config spark.rapids.cudf-version-override=true
+      if (!conf.cudfVersionOverride) {
+        val props = new Properties
+        val cudfClassLoader = classOf[ai.rapids.cudf.ColumnVector].getClassLoader
+        try {
+          props.load(cudfClassLoader.getResourceAsStream("cudf-java-version-info.properties"))
+        } catch {
+          case t: Throwable => {
+            logError("cudf properties file not found.", t)
+          }
+        }
+        val cudfVersion = props.get("version").toString
+
+        val pluginClassLoader = classOf[com.nvidia.spark.SQLPlugin].getClassLoader
+        try {
+          props.load(pluginClassLoader.getResourceAsStream("rapids4spark-version-info.properties"))
+        } catch {
+          case t: Throwable => {
+            logError("plugin properties file not found.", t)
+          }
+        }
+        val expectedCudfVersion = props.get("cudf_version").toString
+
+        if (cudfVersion != expectedCudfVersion) {
+          logError("Cudf version in the classpath is different. Found " + cudfVersion +
+            ", Plugin expects " + expectedCudfVersion)
+          System.exit(1)
+        }
       }
 
       // we rely on the Rapids Plugin being run with 1 GPU per executor so we can initialize

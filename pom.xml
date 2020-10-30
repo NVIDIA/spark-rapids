@@ -538,6 +538,7 @@
                                 <exec executable="bash" output="${project.build.directory}/extra-resources/rapids4spark-version-info.properties">
                                     <arg value="${project.basedir}/../build/build-info"/>
                                     <arg value="${project.version}"/>
+                                    <arg value="${cudf.version}"/>
                                 </exec>
                             </target>
                         </configuration>
