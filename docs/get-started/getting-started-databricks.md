@@ -36,7 +36,7 @@ We will need to create an initialization script for the cluster that installs th
 
     ![Init Script](../img/initscript.png)
 
-6. Now select the “Spark” tab, and paste the following config options into the Spark Config section.  Change the config values based on the workers you choose.  See Apache Spark [configuration](https://spark.apache.org/docs/latest/configuration.html) and RAPIDS Accelerator for Apache Spark [descriptions](../configs) for each config. 
+6. Now select the “Spark” tab, and paste the following config options into the Spark Config section.  Change the config values based on the workers you choose.  See Apache Spark [configuration](https://spark.apache.org/docs/latest/configuration.html) and RAPIDS Accelerator for Apache Spark [descriptions](../configs.md) for each config. 
 
     The [`spark.task.resource.gpu.amount`](https://spark.apache.org/docs/latest/configuration.html#scheduling) configuration is defaulted to 1 by Databricks. That means that only 1 task can run on an executor with 1 GPU, which is limiting, especially on the reads and writes from Parquet.  Set this to 1/(number of cores per executor) which will allow multiple tasks to run in parallel just like the CPU side.  Having the value smaller is fine as well. 
 
