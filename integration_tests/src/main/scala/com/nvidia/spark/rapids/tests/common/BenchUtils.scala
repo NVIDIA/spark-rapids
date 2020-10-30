@@ -183,8 +183,11 @@ object BenchUtils {
 
       } catch {
         case e: Exception =>
-          println(s"*** Iteration $i failed.")
+          val end = System.nanoTime()
+          val elapsed = NANOSECONDS.toMillis(end - start)
+          println(s"*** Iteration $i failed after $elapsed msec.")
           queryTimes.append(-1)
+          exceptions.append(e.toString)
           e.printStackTrace()
       }
 
@@ -216,7 +219,8 @@ object BenchUtils {
     }
 
     // write results to file
-    val filename = s"$filenameStub-${queryStartTime.toEpochMilli}.json"
+    val suffix = if (exceptions.isEmpty) "" else "-failed"
+    val filename = s"$filenameStub-${queryStartTime.toEpochMilli}$suffix.json"
     println(s"Saving benchmark report to $filename")
 
     // try not to leak secrets
