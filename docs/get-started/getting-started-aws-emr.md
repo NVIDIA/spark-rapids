@@ -137,22 +137,25 @@ Similar to spark-submit for on-prem clusters, AWS EMR supports a Spark applicato
  
 
 
-### Running Mortgage ETL PySpark Example using EMR Notebook
+### Running GPU Accelerated Mortgage ETL and XGBoost Example using EMR Notebook
 
 An EMR Notebook is a "serverless" Jupyter notebook. Unlike a traditional notebook, the contents of an EMR Notebook itself—the equations, visualizations, queries, models, code, and narrative text—are saved in Amazon S3 separately from the cluster that runs the code. This provides an EMR Notebook with durable storage, efficient access, and flexibility.
 
 You can use the following step-by-step guide to run the example mortgage dataset using Rapids on Amazon EMR GPU clusters. For more examples, please refer to [NVIDIA/spark-rapids](https://github.com/NVIDIA/spark-rapids/)
 
+![Create EMR Notebook](pics/EMR_notebook_2.png)
 
 #### Create EMR Notebook and Connect to EMR GPU Cluster 
 
-Go to the AWS Management Console and select Notebooks on the left column. Click the Create notebook button. You can then click "Choose an existing cluster" and pick the right cluster after click Choose button.
+Go to the AWS Management Console and select Notebooks on the left column. Click the Create notebook button. You can then click "Choose an existing cluster" and pick the right cluster after click Choose button. Once the instance is ready,  launch the Jupyter from EMR Notebook instance. 
 
-Then you can lauch the Jupyter Notebook from EMR Notebook instance. 
+![Create EMR Notebook](pics/EMR_notebook_1.png)
+
+#### Runn Mortgage ETL PySpark Notebook on EMR GPU Cluster 
+
+Download [the Mortgate ETL PySpark Notebook](Mortgage-ETL-GPU-EMR.ipynb). Make sure to use PySpark as kernel. This example use 1 year (year 2000) data for a two node g4dn GPU cluster. You can adjust settings in the notebook for full mortgage dataset ETL. 
 
 
-#### Download and Run GPU Mortgage ETL Example (using 1 year data)
+#### Runn Mortgage Xgboost Scala Notebook on EMR GPU Cluster 
 
-Download this Mortgate ETL PySpark Notebook from [here](Mortgage-ETL-GPU-EMR.ipynb). Make sure to use PySpark as kernel. 
-
-
+Please refer to this [quick start guide](https://github.com/NVIDIA/spark-xgboost-examples/blob/spark-2/getting-started-guides/csp/aws/Using_EMR_Notebook.md) to running GPU accelerated XGBoost on EMR Spark Cluster.
