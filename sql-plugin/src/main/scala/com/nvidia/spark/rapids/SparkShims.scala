@@ -62,6 +62,7 @@ trait SparkShims {
   def getSparkShimVersion: ShimVersion
   def isGpuHashJoin(plan: SparkPlan): Boolean
   def isGpuBroadcastHashJoin(plan: SparkPlan): Boolean
+  def isGpuBroadcastNestedLoopJoin(plan: SparkPlan): Boolean
   def isGpuShuffledHashJoin(plan: SparkPlan): Boolean
   def isBroadcastExchangeLike(plan: SparkPlan): Boolean
   def isShuffleExchangeLike(plan: SparkPlan): Boolean
@@ -132,10 +133,12 @@ trait SparkShims {
     readFunction: (PartitionedFile) => Iterator[InternalRow],
     filePartitions: Seq[FilePartition]): RDD[InternalRow]
 
-  def copyParquetBatchScanExec(batchScanExec: GpuBatchScanExec,
-      supportsSmallFileOpt: Boolean): GpuBatchScanExec
+  def copyParquetBatchScanExec(
+      batchScanExec: GpuBatchScanExec,
+      queryUsesInputFile: Boolean): GpuBatchScanExec
 
-  def copyFileSourceScanExec(scanExec: GpuFileSourceScanExec,
-      supportsSmallFileOpt: Boolean): GpuFileSourceScanExec
+  def copyFileSourceScanExec(
+      scanExec: GpuFileSourceScanExec,
+      queryUsesInputFile: Boolean): GpuFileSourceScanExec
 }
 

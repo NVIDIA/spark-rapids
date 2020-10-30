@@ -69,7 +69,7 @@ class ClusterUtils(object):
             print(clusterid + " state:" + current_state, file=printLoc)
             if current_state in ['RUNNING']:
                 break
-            if current_state in ['INTERNAL_ERROR', 'SKIPPED', 'TERMINATED'] or p >= 20:
+            if current_state in ['INTERNAL_ERROR', 'SKIPPED', 'TERMINATED'] or p >= 60:
                 if p >= retries:
                    print("Waited %d times already, stopping" % p)
                 sys.exit(4)

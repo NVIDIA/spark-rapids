@@ -18,7 +18,7 @@
 #
 # Arguments:
 #    CUDA_VER=10.1 or 10.2
-#    CUDF_VER=0.15 or 0.16-SNAPSHOT
+#    CUDF_VER=0.16 or 0.17-SNAPSHOT
 #    URM_URL=<maven repo url>
 ###
 ARG CUDA_VER=10.1

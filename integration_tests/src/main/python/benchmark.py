@@ -75,6 +75,8 @@ def main():
                     help='Path to source data set')
     parser.add_argument('--input-format', required=True,
                         help='Format of input data set (parquet or csv)')
+    parser.add_argument('--append-dat', required=False, action='store_true',
+                        help='Append .dat to path (for tpcds only)')
     parser.add_argument('--output', required=False,
                     help='Path to write query output to')
     parser.add_argument('--output-format', required=False,
@@ -85,6 +87,8 @@ def main():
                     help='Queries to run')
     parser.add_argument('--iterations', required=False,
                         help='The number of iterations to run (defaults to 1)')
+    parser.add_argument('--gc-between-runs', required=False, action='store_true',
+                        help='Whether to call System.gc between iterations')
 
     args = parser.parse_args()
 
@@ -108,6 +112,9 @@ def main():
             cmd.append("--input " + args.input)
             cmd.append("--input-format {}".format(args.input_format))
 
+            if args.append_dat is True:
+                cmd.append("--append-dat ")
+
             if args.output is not None:
                 cmd.append("--output " + args.output + "/" + config_name + "/" + query)
 
@@ -115,6 +122,9 @@ def main():
                 cmd.append("--output-format {}".format(args.output_format))
 
             cmd.append("--summary-file-prefix " + summary_file_prefix)
+
+            if args.gc_between_runs is True:
+                cmd.append("--gc-between-runs ")
 
             if args.iterations is None:
                 cmd.append("--iterations 1")

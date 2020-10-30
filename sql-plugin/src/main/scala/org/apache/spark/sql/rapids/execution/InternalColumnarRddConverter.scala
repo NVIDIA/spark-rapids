@@ -59,12 +59,12 @@ private object GpuExternalRowToColumnConverter {
 
   private abstract class FixedWidthTypeConverter extends TypeConverter {
     /** Append row value to the column builder */
-    def append(row: Row, column: Int, builder: ai.rapids.cudf.HostColumnVector.Builder): Unit
+    def append(row: Row, column: Int, builder: ai.rapids.cudf.HostColumnVector.ColumnBuilder): Unit
   }
 
   private abstract class VariableWidthTypeConverter extends TypeConverter {
     /** Append row value to the column builder and return the number of data bytes written */
-    def append(row: Row, column: Int, builder: ai.rapids.cudf.HostColumnVector.Builder): Long
+    def append(row: Row, column: Int, builder: ai.rapids.cudf.HostColumnVector.ColumnBuilder): Long
   }
 
   private def getConverterForType(dataType: DataType, nullable: Boolean): TypeConverter = {
@@ -106,7 +106,7 @@ private object GpuExternalRowToColumnConverter {
     override def append(
         row: Row,
         column: Int,
-        builder: ai.rapids.cudf.HostColumnVector.Builder): Unit =
+        builder: ai.rapids.cudf.HostColumnVector.ColumnBuilder): Unit =
       if (row.isNullAt(column)) {
         builder.appendNull()
       } else {
@@ -118,7 +118,7 @@ private object GpuExternalRowToColumnConverter {
     override def append(
         row: Row,
         column: Int,
-        builder: ai.rapids.cudf.HostColumnVector.Builder): Unit =
+        builder: ai.rapids.cudf.HostColumnVector.ColumnBuilder): Unit =
       builder.append(if (row.getBoolean(column)) 1.toByte else 0.toByte)
   }
 
@@ -126,7 +126,7 @@ private object GpuExternalRowToColumnConverter {
     override def append(
         row: Row,
         column: Int,
-        builder: ai.rapids.cudf.HostColumnVector.Builder): Unit =
+        builder: ai.rapids.cudf.HostColumnVector.ColumnBuilder): Unit =
       if (row.isNullAt(column)) {
         builder.appendNull()
       } else {
@@ -138,7 +138,7 @@ private object GpuExternalRowToColumnConverter {
     override def append(
         row: Row,
         column: Int,
-        builder: ai.rapids.cudf.HostColumnVector.Builder): Unit =
+        builder: ai.rapids.cudf.HostColumnVector.ColumnBuilder): Unit =
       builder.append(row.getByte(column))
   }
 
@@ -146,7 +146,7 @@ private object GpuExternalRowToColumnConverter {
     override def append(
         row: Row,
         column: Int,
-        builder: ai.rapids.cudf.HostColumnVector.Builder): Unit =
+        builder: ai.rapids.cudf.HostColumnVector.ColumnBuilder): Unit =
       if (row.isNullAt(column)) {
         builder.appendNull()
       } else {
@@ -158,7 +158,7 @@ private object GpuExternalRowToColumnConverter {
     override def append(
         row: Row,
         column: Int,
-        builder: ai.rapids.cudf.HostColumnVector.Builder): Unit =
+        builder: ai.rapids.cudf.HostColumnVector.ColumnBuilder): Unit =
       builder.append(row.getShort(column))
   }
 
@@ -166,7 +166,7 @@ private object GpuExternalRowToColumnConverter {
     override def append(
         row: Row,
         column: Int,
-        builder: ai.rapids.cudf.HostColumnVector.Builder): Unit =
+        builder: ai.rapids.cudf.HostColumnVector.ColumnBuilder): Unit =
       if (row.isNullAt(column)) {
         builder.appendNull()
       } else {
@@ -178,7 +178,7 @@ private object GpuExternalRowToColumnConverter {
     override def append(
         row: Row,
         column: Int,
-        builder: ai.rapids.cudf.HostColumnVector.Builder): Unit =
+        builder: ai.rapids.cudf.HostColumnVector.ColumnBuilder): Unit =
       builder.append(row.getInt(column))
   }
 
@@ -186,7 +186,7 @@ private object GpuExternalRowToColumnConverter {
     override def append(
         row: Row,
         column: Int,
-        builder: ai.rapids.cudf.HostColumnVector.Builder): Unit =
+        builder: ai.rapids.cudf.HostColumnVector.ColumnBuilder): Unit =
       if (row.isNullAt(column)) {
         builder.appendNull()
       } else {
@@ -198,7 +198,7 @@ private object GpuExternalRowToColumnConverter {
     override def append(
         row: Row,
         column: Int,
-        builder: ai.rapids.cudf.HostColumnVector.Builder): Unit =
+        builder: ai.rapids.cudf.HostColumnVector.ColumnBuilder): Unit =
       builder.append(row.getFloat(column))
   }
 
@@ -206,7 +206,7 @@ private object GpuExternalRowToColumnConverter {
     override def append(
         row: Row,
         column: Int,
-        builder: ai.rapids.cudf.HostColumnVector.Builder): Unit =
+        builder: ai.rapids.cudf.HostColumnVector.ColumnBuilder): Unit =
       if (row.isNullAt(column)) {
         builder.appendNull()
       } else {
@@ -218,7 +218,7 @@ private object GpuExternalRowToColumnConverter {
     override def append(
         row: Row,
         column: Int,
-        builder: ai.rapids.cudf.HostColumnVector.Builder): Unit =
+        builder: ai.rapids.cudf.HostColumnVector.ColumnBuilder): Unit =
       builder.append(row.getLong(column))
   }
 
@@ -226,7 +226,7 @@ private object GpuExternalRowToColumnConverter {
     override def append(
         row: Row,
         column: Int,
-        builder: ai.rapids.cudf.HostColumnVector.Builder): Unit =
+        builder: ai.rapids.cudf.HostColumnVector.ColumnBuilder): Unit =
       if (row.isNullAt(column)) {
         builder.appendNull()
       } else {
@@ -238,7 +238,7 @@ private object GpuExternalRowToColumnConverter {
     override def append(
         row: Row,
         column: Int,
-        builder: ai.rapids.cudf.HostColumnVector.Builder): Unit =
+        builder: ai.rapids.cudf.HostColumnVector.ColumnBuilder): Unit =
       builder.append(row.getDouble(column))
   }
 
@@ -246,7 +246,7 @@ private object GpuExternalRowToColumnConverter {
     override def append(
         row: Row,
         column: Int,
-        builder: ai.rapids.cudf.HostColumnVector.Builder): Unit =
+        builder: ai.rapids.cudf.HostColumnVector.ColumnBuilder): Unit =
       if (row.isNullAt(column)) {
         builder.appendNull()
       } else {
@@ -258,7 +258,7 @@ private object GpuExternalRowToColumnConverter {
     override def append(
         row: Row,
         column: Int,
-        builder: ai.rapids.cudf.HostColumnVector.Builder): Long = {
+        builder: ai.rapids.cudf.HostColumnVector.ColumnBuilder): Long = {
       val bytes = row.getString(column).getBytes
       builder.appendUTF8String(bytes)
       bytes.length

@@ -148,7 +148,7 @@ sealed class DegenerateRapidsBuffer(
     (0 until meta.columnMetasLength).foreach { i =>
       meta.columnMetas(columnMeta, i)
       assert(columnMeta.childrenLength == 0, "child columns are not yet supported")
-      val dtype = DType.fromNative(columnMeta.dtype)
+      val dtype = DType.fromNative(columnMeta.dtypeId(), columnMeta.dtypeScale())
       columns(i) = GpuColumnVector.from(new ai.rapids.cudf.ColumnVector(
         dtype, rowCount, nullCount, null, null, null))
     }

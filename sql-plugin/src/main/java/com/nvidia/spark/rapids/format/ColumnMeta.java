@@ -51,10 +51,15 @@ public final class ColumnMeta extends Table {
   /**
    * ordinal of DType enum
    */
-  public int dtype() { int o = __offset(16); return o != 0 ? bb.getInt(o + bb_pos) : 0; }
-  public boolean mutateDtype(int dtype) { int o = __offset(16); if (o != 0) { bb.putInt(o + bb_pos, dtype); return true; } else { return false; } }
+  public int dtypeId() { int o = __offset(16); return o != 0 ? bb.getInt(o + bb_pos) : 0; }
+  public boolean mutateDtypeId(int dtype_id) { int o = __offset(16); if (o != 0) { bb.putInt(o + bb_pos, dtype_id); return true; } else { return false; } }
+  /**
+   * DType scale for decimal types
+   */
+  public int dtypeScale() { int o = __offset(18); return o != 0 ? bb.getInt(o + bb_pos) : 0; }
+  public boolean mutateDtypeScale(int dtype_scale) { int o = __offset(18); if (o != 0) { bb.putInt(o + bb_pos, dtype_scale); return true; } else { return false; } }
 
-  public static void startColumnMeta(FlatBufferBuilder builder) { builder.startObject(7); }
+  public static void startColumnMeta(FlatBufferBuilder builder) { builder.startObject(8); }
   public static void addNullCount(FlatBufferBuilder builder, long nullCount) { builder.addLong(0, nullCount, 0L); }
   public static void addRowCount(FlatBufferBuilder builder, long rowCount) { builder.addLong(1, rowCount, 0L); }
   public static void addData(FlatBufferBuilder builder, int dataOffset) { builder.addStruct(2, dataOffset, 0); }
@@ -63,7 +68,8 @@ public final class ColumnMeta extends Table {
   public static void addChildren(FlatBufferBuilder builder, int childrenOffset) { builder.addOffset(5, childrenOffset, 0); }
   public static int createChildrenVector(FlatBufferBuilder builder, int[] data) { builder.startVector(4, data.length, 4); for (int i = data.length - 1; i >= 0; i--) builder.addOffset(data[i]); return builder.endVector(); }
   public static void startChildrenVector(FlatBufferBuilder builder, int numElems) { builder.startVector(4, numElems, 4); }
-  public static void addDtype(FlatBufferBuilder builder, int dtype) { builder.addInt(6, dtype, 0); }
+  public static void addDtypeId(FlatBufferBuilder builder, int dtypeId) { builder.addInt(6, dtypeId, 0); }
+  public static void addDtypeScale(FlatBufferBuilder builder, int dtypeScale) { builder.addInt(7, dtypeScale, 0); }
   public static int endColumnMeta(FlatBufferBuilder builder) {
     int o = builder.endObject();
     return o;

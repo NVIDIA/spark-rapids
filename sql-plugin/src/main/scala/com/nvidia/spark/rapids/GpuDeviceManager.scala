@@ -186,12 +186,10 @@ object GpuDeviceManager extends Logging {
       initialAllocation = adjustedMaxAllocation
     }
 
-    // Currently a max limit only works in pooled mode.  Need a general limit resource wrapper
-    // as requested in https://github.com/rapidsai/rmm/issues/442 to support for all RMM modes.
-    if (conf.isPooledMemEnabled) {
-      (initialAllocation, adjustedMaxAllocation)
-    } else {
+    if (!conf.isPooledMemEnabled || "none".equalsIgnoreCase(conf.rmmPool)) {
       (initialAllocation, 0)
+    } else {
+      (initialAllocation, adjustedMaxAllocation)
     }
   }
 

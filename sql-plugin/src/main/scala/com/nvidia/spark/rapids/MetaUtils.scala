@@ -160,7 +160,9 @@ object MetaUtils extends Arm {
         ColumnMeta.startColumnMeta(fbb)
         ColumnMeta.addNullCount(fbb, 0)
         ColumnMeta.addRowCount(fbb, batch.numRows)
-        ColumnMeta.addDtype(fbb, columns(i).getType.getNativeId)
+        val columnType = columns(i).getType
+        ColumnMeta.addDtypeId(fbb, columnType.getTypeId.getNativeId)
+        ColumnMeta.addDtypeScale(fbb, columnType.getScale)
         columnMetaOffsets.append(ColumnMeta.endColumnMeta(fbb))
       }
       Some(TableMeta.createColumnMetasVector(fbb, columnMetaOffsets.toArray))
@@ -196,7 +198,9 @@ object MetaUtils extends Arm {
     if (offsets != null) {
       ColumnMeta.addOffsets(fbb, addSubBuffer(fbb, baseAddress, offsets))
     }
-    ColumnMeta.addDtype(fbb, column.getType.getNativeId)
+    val columnType = column.getType
+    ColumnMeta.addDtypeId(fbb, columnType.getTypeId.getNativeId)
+    ColumnMeta.addDtypeScale(fbb, columnType.getScale)
     ColumnMeta.endColumnMeta(fbb)
   }
 
@@ -230,7 +234,7 @@ object MetaUtils extends Arm {
       if (s != null) buffer.slice(s.offset, s.length) else null
 
     assert(meta.childrenLength() == 0, "child columns are not yet supported")
-    val dtype = DType.fromNative(meta.dtype)
+    val dtype = DType.fromNative(meta.dtypeId(), meta.dtypeScale())
     val nullCount = if (meta.nullCount >= 0) {
       Optional.of(java.lang.Long.valueOf(meta.nullCount))
     } else {
@@ -318,7 +322,8 @@ object ShuffleMetadata extends Logging{
               offsets.length())
           ColumnMeta.addOffsets(fbb, offsetsOffset)
         }
-        ColumnMeta.addDtype(fbb, col.dtype())
+        ColumnMeta.addDtypeId(fbb, col.dtypeId())
+        ColumnMeta.addDtypeScale(fbb, col.dtypeScale())
         ColumnMeta.endColumnMeta(fbb)
       }
 
@@ -447,17 +452,18 @@ object ShuffleMetadata extends Logging{
         }
 
         // TODO: Need to expose native ID in cudf
-        if (DType.STRING == DType.fromNative(columnMeta.dtype())) {
+        val columnType = DType.fromNative(columnMeta.dtypeId(), columnMeta.dtypeScale())
+        if (DType.STRING == columnType) {
           val offsetLenStr = columnMeta.offsets().length().toString
           out.append(s"column: $i [rows=${columnMeta.rowCount}, " +
               s"data_len=${columnMeta.data().length()}, offset_len=${offsetLenStr}, " +
-              s"validity_len=$validityLen, type=${DType.fromNative(columnMeta.dtype())}, " +
+              s"validity_len=$validityLen, type=$columnType, " +
               s"null_count=${columnMeta.nullCount()}]\n")
         } else {
           val offsetLenStr = "NC"
           out.append(s"column: $i [rows=${columnMeta.rowCount}, " +
               s"data_len=${columnMeta.data().length()}, offset_len=${offsetLenStr}, " +
-              s"validity_len=$validityLen, type=${DType.fromNative(columnMeta.dtype())}, " +
+              s"validity_len=$validityLen, type=$columnType, " +
               s"null_count=${columnMeta.nullCount()}]\n")
         }
       }
