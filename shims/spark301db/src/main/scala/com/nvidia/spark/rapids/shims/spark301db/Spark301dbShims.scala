@@ -18,9 +18,10 @@ package com.nvidia.spark.rapids.shims.spark301db
 
 import java.time.ZoneId
 
+import com.nvidia.spark.rapids.GpuOverrides.isSupportedType
 import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.shims.spark301.Spark301Shims
-import com.nvidia.spark.rapids.shims.spark301db._
+import org.apache.spark.sql.rapids.shims.spark301db._
 import org.apache.hadoop.fs.Path
 
 import org.apache.spark.rdd.RDD
@@ -90,6 +91,11 @@ class Spark301dbShims extends Spark301Shims {
       GpuOverrides.exec[FileSourceScanExec](
         "Reading data from files, often from Hive tables",
         (fsse, conf, p, r) => new SparkPlanMeta[FileSourceScanExec](fsse, conf, p, r) {
+          def isSupported(t: DataType) = t match {
+            case MapType(StringType, StringType, _) => true
+            case _ => isSupportedType(t)
+          }
+          override def areAllSupportedTypes(types: DataType*): Boolean = types.forall(isSupported)
           // partition filters and data filters are not run on the GPU
           override val childExprs: Seq[ExprMeta[_]] = Seq.empty
 
@@ -105,10 +111,7 @@ class Spark301dbShims extends Spark301Shims {
               wrapped.relation.bucketSpec,
               GpuFileSourceScanExec.convertFileFormat(wrapped.relation.fileFormat),
               options)(sparkSession)
-            val canUseSmallFileOpt = newRelation.fileFormat match {
-              case _: ParquetFileFormat => conf.isParquetMultiThreadReadEnabled
-              case _ => false
-            }
+
             GpuFileSourceScanExec(
               newRelation,
               wrapped.output,
@@ -119,7 +122,7 @@ class Spark301dbShims extends Spark301Shims {
               None,
               wrapped.dataFilters,
               wrapped.tableIdentifier,
-              canUseSmallFileOpt)
+              conf)
           }
         }),
       GpuOverrides.exec[SortMergeJoinExec](
@@ -195,9 +198,10 @@ class Spark301dbShims extends Spark301Shims {
     FilePartition(index, files)
   }
 
-  override def copyFileSourceScanExec(scanExec: GpuFileSourceScanExec,
-      supportsSmallFileOpt: Boolean): GpuFileSourceScanExec = {
-    scanExec.copy(supportsSmallFileOpt=supportsSmallFileOpt)
+  override def copyFileSourceScanExec(
+      scanExec: GpuFileSourceScanExec,
+      queryUsesInputFile: Boolean): GpuFileSourceScanExec = {
+    scanExec.copy(queryUsesInputFile=queryUsesInputFile)
   }
 
   override def getGpuShuffleExchangeExec(

@@ -17,18 +17,15 @@
 
 set -e
 
-SPARKSRCTGZ=$1
-# this should match whatever is in the pom files for the version
-SPARK_PLUGIN_JAR_VERSION=$2
-SCALA_VERSION=$3
-CI_RAPIDS_JAR=$4
-# the version of spark used when we install the databricks jars in .m2
-SPARK_VERSION_TO_INSTALL_DATABRICKS_JARS=$5
-CUDF_VERSION=$6
-CUDA_VERSION=$7
-CI_CUDF_JAR=$8
-# version of Apache Spark we are building against
-BASE_SPARK_POM_VERSION=$9
+SPARK_PLUGIN_JAR_VERSION=0.3.0-SNAPSHOT
+SCALA_VERSION=2.12
+CI_RAPIDS_JAR=rapids-4-spark_2.12-0.1-SNAPSHOT-ci.jar
+SPARK_VERSION_TO_INSTALL_DATABRICKS_JARS=3.0.1-databricks
+CUDF_VERSION=0.16
+CUDA_VERSION=cuda10-1
+CI_CUDF_JAR=cudf-0.14-cuda10-1.jar
+BASE_SPARK_POM_VERSION=3.0.1
+
 
 echo "Spark version is $SPARK_VERSION_TO_INSTALL_DATABRICKS_JARS"
 echo "scala version is: $SCALA_VERSION"
@@ -38,10 +35,10 @@ DB_JAR_LOC=/databricks/jars/
 RAPIDS_BUILT_JAR=rapids-4-spark_$SCALA_VERSION-$SPARK_PLUGIN_JAR_VERSION.jar
 
 sudo apt install -y maven
-rm -rf spark-rapids
-mkdir spark-rapids
-tar -zxvf $SPARKSRCTGZ -C spark-rapids
-cd spark-rapids
+#rm -rf spark-rapids
+#mkdir spark-rapids
+#tar -zxvf $SPARKSRCTGZ -C spark-rapids
+#cd spark-rapids
 export WORKSPACE=`pwd`
 mvn -B '-Pdatabricks301,!snapshot-shims' clean package -DskipTests || true
 M2DIR=/home/ubuntu/.m2/repository
