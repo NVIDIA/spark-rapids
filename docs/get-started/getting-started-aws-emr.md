@@ -1,4 +1,4 @@
-https://raw.githubusercontent.com/mgzhao/spark-rapids/branch-0.3/docs/get-started/preview_config.jsonhttps://raw.githubusercontent.com/mgzhao/spark-rapids/branch-0.3/docs/get-started/preview_config.jsonk# Get Started with Rapids on AWS EMR
+# Get Started with Rapids on AWS EMR
 
 This is a getting started guide for Rapids on AWS EMR. At the end of this guide, the user will be able to run a sample Apache Spark application that runs on NVIDIA GPUs on AWS EMR.
 
