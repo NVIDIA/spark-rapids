@@ -107,6 +107,10 @@ class GpuTransitionOverrides extends Rule[SparkPlan] {
       GpuRowToColumnarExec(optimizeCoalesce(r2c.child), CoalesceGoal.max(goal, r2c.goal))
     case GpuCoalesceBatches(co: GpuCoalesceBatches, goal) =>
       GpuCoalesceBatches(optimizeCoalesce(co.child), CoalesceGoal.max(goal, co.goal))
+    case GpuCoalesceBatches(child: GpuExec, goal)
+      if (CoalesceGoal.satisfies(child.outputBatching, goal)) =>
+      // The goal is already satisfied so remove the batching
+      child.withNewChildren(child.children.map(optimizeCoalesce))
     case p =>
       p.withNewChildren(p.children.map(optimizeCoalesce))
   }
@@ -172,6 +176,47 @@ class GpuTransitionOverrides extends Rule[SparkPlan] {
    */
   private def disableCoalesceUntilInput(plan: SparkPlan): Boolean = {
     plan.expressions.exists(disableCoalesceUntilInput)
+  }
+
+  private def disableScanUntilInput(exec: Expression): Boolean = {
+    exec match {
+      case _: InputFileName => true
+      case _: InputFileBlockStart => true
+      case _: InputFileBlockLength => true
+      case _: GpuInputFileName => true
+      case _: GpuInputFileBlockStart => true
+      case _: GpuInputFileBlockLength => true
+      case e => e.children.exists(disableScanUntilInput)
+    }
+  }
+
+  private def disableScanUntilInput(plan: SparkPlan): Boolean = {
+    plan.expressions.exists(disableScanUntilInput)
+  }
+
+  // This walks from the output to the input to look for any uses of InputFileName,
+  // InputFileBlockStart, or InputFileBlockLength when we use a Parquet read because
+  // we can't support the coalesce file reader optimization when this is used.
+  private def updateScansForInput(plan: SparkPlan,
+      disableUntilInput: Boolean = false): SparkPlan = plan match {
+    case batchScan: GpuBatchScanExec =>
+      if (batchScan.scan.isInstanceOf[GpuParquetScanBase] &&
+        (disableUntilInput || disableScanUntilInput(batchScan))) {
+        ShimLoader.getSparkShims.copyParquetBatchScanExec(batchScan, true)
+      } else {
+        batchScan
+      }
+    case fileSourceScan: GpuFileSourceScanExec =>
+      if ((disableUntilInput || disableScanUntilInput(fileSourceScan))) {
+        ShimLoader.getSparkShims.copyFileSourceScanExec(fileSourceScan, true)
+      } else {
+        fileSourceScan
+      }
+    case p =>
+      val planDisableUntilInput = disableScanUntilInput(p) && hasDirectLineToInput(p)
+      p.withNewChildren(p.children.map(c => {
+        updateScansForInput(c, planDisableUntilInput || disableUntilInput)
+      }))
   }
 
   // This walks from the output to the input so disableUntilInput can walk its way from when
@@ -332,6 +377,7 @@ class GpuTransitionOverrides extends Rule[SparkPlan] {
     this.conf = new RapidsConf(plan.conf)
     if (conf.isSqlEnabled) {
       var updatedPlan = insertHashOptimizeSorts(plan)
+      updatedPlan = updateScansForInput(updatedPlan)
       updatedPlan = insertCoalesce(insertColumnarFromGpu(updatedPlan))
       updatedPlan = optimizeCoalesce(if (plan.conf.adaptiveExecutionEnabled) {
         optimizeAdaptiveTransitions(updatedPlan, None)

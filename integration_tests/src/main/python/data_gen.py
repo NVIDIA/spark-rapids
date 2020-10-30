@@ -541,6 +541,16 @@ def gen_scalar(data_gen, seed=0, force_no_nulls=False):
     v = list(gen_scalars(data_gen, 1, seed=seed, force_no_nulls=force_no_nulls))
     return v[0]
 
+def gen_scalar_values(data_gen, count, seed=0, force_no_nulls=False):
+    """Generate scalar values."""
+    src = _gen_scalars_common(data_gen, count, seed=seed)
+    return (src.gen(force_no_nulls=force_no_nulls) for i in range(0, count))
+
+def gen_scalar_value(data_gen, seed=0, force_no_nulls=False):
+    """Generate a single scalar value."""
+    v = list(gen_scalar_values(data_gen, 1, seed=seed, force_no_nulls=force_no_nulls))
+    return v[0]
+
 def debug_df(df):
     """print out the contents of a dataframe for debugging."""
     print('COLLECTED\n{}'.format(df.collect()))

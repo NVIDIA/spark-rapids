@@ -350,6 +350,51 @@ object GpuOverrides {
     !regexList.exists(pattern => s.contains(pattern))
   }
 
+  private def canonicalizeToCpuForSortOrder(exp: Expression): Expression = exp match {
+    case g: GpuLiteral => Literal(g.value, g.dataType).canonicalized
+    case g: GpuKnownFloatingPointNormalized =>
+      KnownFloatingPointNormalized(canonicalizeToCpuForSortOrder(g.child)).canonicalized
+    case g: GpuNormalizeNaNAndZero =>
+      NormalizeNaNAndZero(canonicalizeToCpuForSortOrder(g.child)).canonicalized
+    case g: GpuAlias =>
+      Alias(canonicalizeToCpuForSortOrder(g.child), g.name)(
+        g.exprId,
+        g.qualifier,
+        g.explicitMetadata)
+          .canonicalized
+    case o: GpuExpression =>
+      throw new IllegalStateException(s"${o.getClass} is not expected to be a part of a SortOrder")
+    case other => other.canonicalized
+  }
+
+  private def gpuOrderingSemanticEquals(found: Expression, required: Expression): Boolean = {
+    found.deterministic && required.deterministic &&
+        canonicalizeToCpuForSortOrder(found) == canonicalizeToCpuForSortOrder(required)
+  }
+
+  private def orderingSatisfies(found: SortOrder, required: SortOrder): Boolean = {
+    (found.sameOrderExpressions + found.child).exists(
+      gpuOrderingSemanticEquals(_, required.child)) &&
+        found.direction == required.direction &&
+        found.nullOrdering == required.nullOrdering
+  }
+
+  private def orderingSatisfies(ordering1: Seq[SortOrder], ordering2: Seq[SortOrder]): Boolean = {
+    // We cannot use SortOrder.orderingSatisfies because there is a corner case where
+    // some operators like a Literal can be a part of SortOrder, which then results in errors
+    // because we may have converted it over to a GpuLiteral at that point and a Literal
+    // is not equivalent to a GpuLiteral, even though it should be.
+    if (ordering2.isEmpty) {
+      true
+    } else if (ordering2.length > ordering1.length) {
+      false
+    } else {
+      ordering2.zip(ordering1).forall {
+        case (o2, o1) => orderingSatisfies(o1, o2)
+      }
+    }
+  }
+
   @scala.annotation.tailrec
   def extractLit(exp: Expression): Option[Literal] = exp match {
     case l: Literal => Some(l)
@@ -494,8 +539,13 @@ object GpuOverrides {
       (lit, conf, p, r) => new ExprMeta[Literal](lit, conf, p, r) {
         override def convertToGpu(): GpuExpression = GpuLiteral(lit.value, lit.dataType)
 
-        // There are so many of these that we don't need to print them out.
-        override def print(append: StringBuilder, depth: Int, all: Boolean): Unit = {}
+        // There are so many of these that we don't need to print them out, unless it
+        // will not work on the GPU
+        override def print(append: StringBuilder, depth: Int, all: Boolean): Unit = {
+          if (!this.canThisBeReplaced) {
+            super.print(append, depth, all)
+          }
+        }
 
         /**
          * We are overriding this method because currently we only support CalendarIntervalType
@@ -515,12 +565,23 @@ object GpuOverrides {
     expr[Alias](
       "Gives a column a name",
       (a, conf, p, r) => new UnaryExprMeta[Alias](a, conf, p, r) {
+        def isSupported(t: DataType) = t match {
+          case MapType(StringType, StringType, _) => true
+          case BinaryType => true
+          case _ => isSupportedType(t)
+        }
+        override def areAllSupportedTypes(types: DataType*): Boolean = types.forall(isSupported)
         override def convertToGpu(child: Expression): GpuExpression =
           GpuAlias(child, a.name)(a.exprId, a.qualifier, a.explicitMetadata)
       }),
     expr[AttributeReference](
       "References an input column",
       (att, conf, p, r) => new BaseExprMeta[AttributeReference](att, conf, p, r) {
+        def isSupported(t: DataType) = t match {
+          case MapType(StringType, StringType, _) => true
+          case _ => isSupportedType(t)
+        }
+        override def areAllSupportedTypes(types: DataType*): Boolean = types.forall(isSupported)
         // This is the only NOOP operator.  It goes away when things are bound
         override def convertToGpu(): Expression = att
 
@@ -530,7 +591,12 @@ object GpuOverrides {
     expr[Cast](
       "Convert a column of one type of data into another type",
       (cast, conf, p, r) => new CastExprMeta[Cast](cast, SparkSession.active.sessionState.conf
-        .ansiEnabled, conf, p, r)),
+        .ansiEnabled, conf, p, r) {
+        override def areAllSupportedTypes(types: DataType*): Boolean = types.forall {
+          case BinaryType => true
+          case x => isSupportedType(x)
+        }
+      }),
     expr[AnsiCast](
       "Convert a column of one type of data into another type",
       (cast, conf, p, r) => new CastExprMeta[AnsiCast](cast, true, conf, p, r)),
@@ -598,6 +664,20 @@ object GpuOverrides {
       "Window function that returns the index for the row within the aggregation window",
       (rowNumber, conf, p, r) => new ExprMeta[RowNumber](rowNumber, conf, p, r) {
         override def convertToGpu(): GpuExpression = GpuRowNumber()
+      }
+    ),
+    expr[Lead](
+      "Window function that returns N entries ahead of this one",
+      (lead, conf, p, r) => new OffsetWindowFunctionMeta[Lead](lead, conf, p, r) {
+        override def convertToGpu(): GpuExpression =
+          GpuLead(input.convertToGpu(), offset.convertToGpu(), default.convertToGpu())
+      }
+    ),
+    expr[Lag](
+      "Window function that returns N entries behind this one",
+      (lag, conf, p, r) => new OffsetWindowFunctionMeta[Lag](lag, conf, p, r) {
+        override def convertToGpu(): GpuExpression =
+          GpuLag(input.convertToGpu(), offset.convertToGpu(), default.convertToGpu())
       }
     ),
     expr[UnaryMinus](
@@ -703,6 +783,11 @@ object GpuOverrides {
     expr[IsNotNull](
       "Checks if a value is not null",
       (a, conf, p, r) => new UnaryExprMeta[IsNotNull](a, conf, p, r) {
+        def isSupported(t: DataType) = t match {
+          case MapType(StringType, StringType, _) => true
+          case _ => isSupportedType(t)
+        }
+        override def areAllSupportedTypes(types: DataType*): Boolean = types.forall(isSupported)
         override def convertToGpu(child: Expression): GpuExpression = GpuIsNotNull(child)
       }),
     expr[IsNaN](
@@ -1065,6 +1150,11 @@ object GpuOverrides {
     expr[EqualTo](
       "Check if the values are equal",
       (a, conf, p, r) => new BinaryExprMeta[EqualTo](a, conf, p, r) {
+        def isSupported(t: DataType) = t match {
+          case MapType(StringType, StringType, _) => true
+          case _ => isSupportedType(t)
+        }
+        override def areAllSupportedTypes(types: DataType*): Boolean = types.forall(isSupported)
         override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression =
           GpuEqualTo(lhs, rhs)
       }),
@@ -1338,6 +1428,17 @@ object GpuOverrides {
         override def convertToGpu(): GpuExpression = GpuInputFileBlockLength()
       }
     ),
+    expr[Md5] (
+      "MD5 hash operator",
+      (a, conf, p, r) => new UnaryExprMeta[Md5](a, conf, p, r) {
+        override def convertToGpu(child: Expression): GpuExpression = GpuMd5(child)
+
+        override def areAllSupportedTypes(types: DataType*): Boolean = types.forall {
+            case BinaryType => true
+            case x => isSupportedType(x)
+        }
+      }
+    ),
     expr[Upper](
       "String uppercase operator",
       (a, conf, p, r) => new UnaryExprMeta[Upper](a, conf, p, r) {
@@ -1400,6 +1501,9 @@ object GpuOverrides {
     expr[GetArrayItem](
       "Gets the field at `ordinal` in the Array",
       (in, conf, p, r) => new GpuGetArrayItemMeta(in, conf, p, r)),
+    expr[GetMapValue](
+      "Gets Value from a Map based on a key",
+      (in, conf, p, r) => new GpuGetMapValueMeta(in, conf, p, r)),
     expr[StringLocate](
       "Substring search operator",
       (in, conf, p, r) => new TernaryExprMeta[StringLocate](in, conf, p, r) {
@@ -1530,22 +1634,6 @@ object GpuOverrides {
         override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression =
           GpuLike(lhs, rhs, a.escapeChar)
       }),
-    expr[RegExpReplace](
-      "RegExpReplace support for string literal input patterns",
-      (a, conf, p, r) => new TernaryExprMeta[RegExpReplace](a, conf, p, r) {
-        override def tagExprForGpu(): Unit = {
-          if (!isLit(a.rep)) {
-            willNotWorkOnGpu("Only literal values are supported for replacement string")
-          }
-          if (isNullOrEmptyOrRegex(a.regexp)) {
-            willNotWorkOnGpu(
-              "Only non-null, non-empty String literals that are not regex patterns " +
-                "are supported by RegExpReplace on the GPU")
-          }
-        }
-        override def convertToGpu(lhs: Expression, regexp: Expression,
-          rep: Expression): GpuExpression = GpuStringReplace(lhs, regexp, rep)
-      }),
     expr[Length](
       "String character length",
       (a, conf, p, r) => new UnaryExprMeta[Length](a, conf, p, r) {
@@ -1673,6 +1761,11 @@ object GpuOverrides {
       "The backend for most select, withColumn and dropColumn statements",
       (proj, conf, p, r) => {
         new SparkPlanMeta[ProjectExec](proj, conf, p, r) {
+          def isSupported(t: DataType) = t match {
+            case MapType(StringType, StringType, _) => true
+            case _ => isSupportedType(t)
+          }
+          override def areAllSupportedTypes(types: DataType*): Boolean = types.forall(isSupported)
           override def convertToGpu(): GpuExec =
             GpuProjectExec(childExprs.map(_.convertToGpu()), childPlans(0).convertIfNeeded())
         }
@@ -1755,6 +1848,11 @@ object GpuOverrides {
     exec[FilterExec](
       "The backend for most filter statements",
       (filter, conf, p, r) => new SparkPlanMeta[FilterExec](filter, conf, p, r) {
+        def isSupported(t: DataType) = t match {
+          case MapType(StringType, StringType, _) => true
+          case _ => isSupportedType(t)
+        }
+        override def areAllSupportedTypes(types: DataType*): Boolean = types.forall(isSupported)
         override def convertToGpu(): GpuExec =
           GpuFilterExec(childExprs(0).convertToGpu(), childPlans(0).convertIfNeeded())
       }),
@@ -1914,7 +2012,7 @@ case class GpuOverrides() extends Rule[SparkPlan] with Logging {
     // Now that we've performed any necessary shuffles, add sorts to guarantee output orderings:
     children = children.zip(requiredChildOrderings).map { case (child, requiredOrdering) =>
       // If child.outputOrdering already satisfies the requiredOrdering, we do not need to sort.
-      if (SortOrder.orderingSatisfies(child.outputOrdering, requiredOrdering)) {
+      if (GpuOverrides.orderingSatisfies(child.outputOrdering, requiredOrdering)) {
         child
       } else {
         val sort = SortExec(requiredOrdering, global = false, child = child)

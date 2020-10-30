@@ -132,10 +132,12 @@ trait SparkShims {
     readFunction: (PartitionedFile) => Iterator[InternalRow],
     filePartitions: Seq[FilePartition]): RDD[InternalRow]
 
-  def copyParquetBatchScanExec(batchScanExec: GpuBatchScanExec,
-      supportsSmallFileOpt: Boolean): GpuBatchScanExec
+  def copyParquetBatchScanExec(
+      batchScanExec: GpuBatchScanExec,
+      queryUsesInputFile: Boolean): GpuBatchScanExec
 
-  def copyFileSourceScanExec(scanExec: GpuFileSourceScanExec,
-      supportsSmallFileOpt: Boolean): GpuFileSourceScanExec
+  def copyFileSourceScanExec(
+      scanExec: GpuFileSourceScanExec,
+      queryUsesInputFile: Boolean): GpuFileSourceScanExec
 }
 
