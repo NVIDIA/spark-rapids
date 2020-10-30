@@ -89,6 +89,12 @@ def main():
                         help='The number of iterations to run (defaults to 1)')
     parser.add_argument('--gc-between-runs', required=False, action='store_true',
                         help='Whether to call System.gc between iterations')
+    parser.add_argument('--s3-endpoint-url', required=False,
+                        help='S3 endpoint URL (optional)')
+    parser.add_argument('--s3-bucket', required=False,
+                        help='S3 bucket to write summary output to')
+    parser.add_argument('--s3-path', required=False,
+                        help='S3 path to write summary output to')
 
     args = parser.parse_args()
 
@@ -113,7 +119,7 @@ def main():
             cmd.append("--input-format {}".format(args.input_format))
 
             if args.append_dat is True:
-                cmd.append("--append-dat ")
+                cmd.append("--append-dat")
 
             if args.output is not None:
                 cmd.append("--output " + args.output + "/" + config_name + "/" + query)
@@ -124,7 +130,16 @@ def main():
             cmd.append("--summary-file-prefix " + summary_file_prefix)
 
             if args.gc_between_runs is True:
-                cmd.append("--gc-between-runs ")
+                cmd.append("--gc-between-runs")
+
+            if args.s3_endpoint_url is not None:
+                cmd.append("--s3-endpoint-url " + args.s3_endpoint_url)
+
+            if args.s3_bucket is not None:
+                cmd.append("--s3-bucket " + args.s3_bucket)
+
+            if args.s3_path is not None:
+                cmd.append("--s3-path " + args.s3_path)
 
             if args.iterations is None:
                 cmd.append("--iterations 1")

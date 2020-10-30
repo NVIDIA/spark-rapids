@@ -15,11 +15,16 @@
  */
 package com.nvidia.spark.rapids.tests
 
-import com.nvidia.spark.rapids.tests.common.{BenchmarkSuite, BenchUtils}
+import java.io.File
+import java.net.URL
+
+import com.nvidia.spark.rapids.tests.common.{BenchmarkReport, BenchmarkSuite, BenchUtils}
 import com.nvidia.spark.rapids.tests.tpcds.TpcdsLikeBench
 import com.nvidia.spark.rapids.tests.tpch.TpchLikeBench
 import com.nvidia.spark.rapids.tests.tpcxbb.TpcxbbLikeBench
 import org.rogach.scallop.ScallopConf
+import software.amazon.awssdk.services.s3.S3Client
+import software.amazon.awssdk.services.s3.model.PutObjectRequest
 
 import org.apache.spark.sql.{SaveMode, SparkSession}
 
@@ -57,7 +62,7 @@ object BenchmarkRunner {
 
         val runner = new BenchmarkRunner(bench)
         println(s"*** RUNNING ${bench.name()} QUERY ${conf.query()}")
-        conf.output.toOption match {
+        val report: BenchmarkReport = conf.output.toOption match {
           case Some(path) => conf.outputFormat().toLowerCase match {
             case "parquet" =>
               runner.writeParquet(
@@ -86,6 +91,7 @@ object BenchmarkRunner {
             case other =>
               System.err.println(s"Invalid or unspecified output format: $other")
               System.exit(-1)
+              null // unreachable
           }
           case _ =>
             runner.collect(
@@ -95,6 +101,27 @@ object BenchmarkRunner {
               summaryFilePrefix = conf.summaryFilePrefix.toOption,
               gcBetweenRuns = conf.gcBetweenRuns())
         }
+
+        if (conf.s3Bucket.isSupplied && conf.s3Path.isSupplied) {
+          // note that S3 credentials come from the environment
+          println(s"Uploading ${report.filename} to " +
+              s"s3://${conf.s3Bucket()}/${conf.s3Path()}/${report.filename}")
+          val s3 = if (conf.s3EndpointUrl.isSupplied) {
+            S3Client.builder
+                .endpointOverride(new URL(conf.s3EndpointUrl()).toURI)
+                .build()
+          } else {
+            S3Client.builder
+                .build()
+          }
+          val putObjectRequest = PutObjectRequest.builder()
+              .bucket(conf.s3Bucket())
+              .key(s"${conf.s3Path()}/${report.filename}")
+              .build()
+          s3.putObject(putObjectRequest, new File(report.filename).toPath)
+          s3.close()
+        }
+
       case _ =>
         System.err.println(s"Invalid benchmark name: ${conf.benchmark()}. Supported benchmarks " +
             s"are ${benchmarks.keys.mkString(",")}")
@@ -130,7 +157,7 @@ class BenchmarkRunner(val bench: BenchmarkSuite) {
       query: String,
       iterations: Int = 3,
       summaryFilePrefix: Option[String] = None,
-      gcBetweenRuns: Boolean = false): Unit = {
+      gcBetweenRuns: Boolean = false): BenchmarkReport = {
     BenchUtils.collect(
       spark,
       spark => bench.createDataFrame(spark, query),
@@ -165,7 +192,7 @@ class BenchmarkRunner(val bench: BenchmarkSuite) {
       writeOptions: Map[String, String] = Map.empty,
       iterations: Int = 3,
       summaryFilePrefix: Option[String] = None,
-      gcBetweenRuns: Boolean = false): Unit = {
+      gcBetweenRuns: Boolean = false): BenchmarkReport = {
     BenchUtils.writeCsv(
       spark,
       spark => bench.createDataFrame(spark, query),
@@ -203,7 +230,7 @@ class BenchmarkRunner(val bench: BenchmarkSuite) {
       writeOptions: Map[String, String] = Map.empty,
       iterations: Int = 3,
       summaryFilePrefix: Option[String] = None,
-      gcBetweenRuns: Boolean = false): Unit = {
+      gcBetweenRuns: Boolean = false): BenchmarkReport = {
     BenchUtils.writeOrc(
       spark,
       spark => bench.createDataFrame(spark, query),
@@ -241,7 +268,7 @@ class BenchmarkRunner(val bench: BenchmarkSuite) {
       writeOptions: Map[String, String] = Map.empty,
       iterations: Int = 3,
       summaryFilePrefix: Option[String] = None,
-      gcBetweenRuns: Boolean = false): Unit = {
+      gcBetweenRuns: Boolean = false): BenchmarkReport = {
     BenchUtils.writeParquet(
       spark,
       spark => bench.createDataFrame(spark, query),
@@ -266,5 +293,8 @@ class BenchmarkConf(arguments: Seq[String]) extends ScallopConf(arguments) {
   val outputFormat = opt[String](required = false)
   val summaryFilePrefix = opt[String](required = false)
   val gcBetweenRuns = opt[Boolean](required = false, default = Some(false))
+  val s3EndpointUrl = opt[String](required = false, argName = "s3-endpoint-url")
+  val s3Bucket = opt[String](required = false, argName = "s3-bucket")
+  val s3Path = opt[String](required = false, argName = "s3-path")
   verify()
 }
