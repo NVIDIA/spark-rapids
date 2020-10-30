@@ -1,4 +1,4 @@
-# Get Started with Rapids on AWS EMR
+https://raw.githubusercontent.com/mgzhao/spark-rapids/branch-0.3/docs/get-started/preview_config.jsonhttps://raw.githubusercontent.com/mgzhao/spark-rapids/branch-0.3/docs/get-started/preview_config.jsonk# Get Started with Rapids on AWS EMR
 
 This is a getting started guide for Rapids on AWS EMR. At the end of this guide, the user will be able to run a sample Apache Spark application that runs on NVIDIA GPUs on AWS EMR.
 
@@ -35,23 +35,24 @@ aws emr create-cluster \
 --region us-east-1
 ```
 
-Fill with actual value for KeyName, SubnetId, EmrManagedSlaveSecurityGroup, EmrManagedMasterSecurityGroup, S3 bucket for logs, name and region.
+Fill with actual value for KeyName, SubnetId, EmrManagedSlaveSecurityGroup, EmrManagedMasterSecurityGroup, S3 bucket for logs, name and region. 
 
+And download the JSON configuration file [preview_config.json](preview_config.json) in raw format to the local file storage where you will issue the above AWS CLI command.  
 
 ###  Launch EMR Cluster using AWS Console (GUI)
 
 Go to the AWS Management Console and select the `EMR` service from the "Analytics" section. Choose the region you want to launch your cluster in, e.g. US West Oregon, using the dropdown menu in the top right corner. Click `Create cluster` and select `Go to advanced options`, which will bring up a detailed cluster configuration page.
 
-#### Step 1:  Software and Steps
+#### Step 1:  Software, Configuration and Steps
 
 Select **emr-6.2.0** or latest EMR version for the release, uncheck all the software options, and then check **Hadoop 3.2.1**, **Spark 3.0.1** and **Livy 0.7.0**.
 
-In the "Edit software settings" field, add the followings  
+In the "Edit software settings" field, add the followings JSON file from S3 (). You can also customize and upload to you own S3 bucket.
 
-...
+In the "Steps" field, add Custom JAR with following JAR file (s3://us-east-1.elasticmapreduce/libs/script-runner/script-runner.jar) and  Arguments ("s3://awssupportdatasvcs.com/bootstrap-actions/rapids_preview_for_nvidia/step/run_rapids_itests.sh")
 
 
-![Step 1: Software and Steps](pics/emr-step-one-software-and-steps.png)
+![Step 1: Step 1:  Software, Configuration and Steps](pics/Rapids_EMR_GUI_1.PNG)
 
 #### Step 2: Hardware
 
@@ -59,7 +60,7 @@ Select the desired VPC and availability zone in the "Network" and "EC2 Subnet" f
 
 In the "Core" node row, change the "Instance type" to **g4dn.xlarge**, **g4dn.2xlarge**, or **p3.2xlarge** and ensure "Instance count" is set to **2**. Keep the default "Master" node instance type of **m5.xlarge** and ignore the unnecessary "Task" node configuration.
 
-![Step 2: Hardware](pics/emr-step-two-hardware.png)
+![Step 2: Hardware](pics/Rapids_EMR_GUI_2.PNG)
 
 #### Step 3:  General Cluster Settings
 
@@ -67,7 +68,7 @@ Enter a custom "Cluster name" and make a note of the s3 folder that cluster logs
 
 *Optionally* add key-value "Tags", configure a "Custom AMI", or add custom "Bootstrap Actions"  for the EMR cluster on this page.
 
-![Step 3: General Cluster Settings](pics/emr-step-three-general-cluster-settings.png)
+![Step 3: General Cluster Settings](pics/Rapids_EMR_GUI_3.PNG)
 
 ####  Step 4: Security
 
@@ -77,25 +78,17 @@ Select an existing "EC2 key pair" that will be used to authenticate SSH access t
 
 In the "EC2 security groups" tab, confirm that the security group chosen for the "Master" node allows for SSH access. Follow these instructions to [allow inbound SSH traffic](https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/authorizing-access-to-an-instance.html) if the security group does not allow it yet.
 
-![Step 4: Security](pics/emr-step-four-security.png)
+![Step 4: Security](pics/Rapids_EMR_GUI_4.PNG)
 
 #### Finish Cluster Configuration
 
 The EMR cluster management page displays the status of multiple clusters or detailed information about a chosen cluster. In the detailed cluster view, the "Summary" and "Hardware" tabs can be used to monitor the status of master and core nodes as they provision and initialize.
 
-![Cluster Details](pics/emr-cluster-details.png )
-
 When the cluster is ready, a green-dot will appear next to the cluster name and the "Status" column will display **Waiting, cluster ready**.
-
-![Cluster Waiting](pics/emr-cluster-waiting.png)
 
 In the cluster's "Summary" tab, find the "Master public DNS" field and click the `SSH` button. Follow the instructions to SSH to the new cluster's master node.
 
-![Cluster DNS](pics/emr-cluster-dns.png)
-
-![Cluster SSH](pics/emr-cluster-ssh.png)
-
-
+![Finish Cluster Configuration](pics/Rapids_EMR_GUI_5.PNG)
 
 
 ### Running an example joint operation using Spark Shell
@@ -140,7 +133,7 @@ scala> out.explain()
 
 ### Submit Spark jobs to a EMR Cluster Accelerated by GPUs
 
-Similar to spark-submit for on-prem clusters, AWS EMR supports a Spark applicaton job to be submitted. The mortgage examples we use above are also available as a spark application. 
+Similar to spark-submit for on-prem clusters, AWS EMR supports a Spark applicaton job to be submitted. The mortgage examples we use are also available as a spark application.  You can also use spark shell to run the scala code and pyspark to run the python code on master node through CLI.
  
 
 
@@ -155,11 +148,11 @@ You can use the following step-by-step guide to run the example mortgage dataset
 
 Go to the AWS Management Console and select Notebooks on the left column. Click the Create notebook button. You can then click "Choose an existing cluster" and pick the right cluster after click Choose button.
 
-Then you can lauch the Jupyter Notebook 
+Then you can lauch the Jupyter Notebook from EMR Notebook instance. 
 
 
 #### Download and Run GPU Mortgage ETL Example (using 1 year data)
 
-
+Download this Mortgate ETL PySpark Notebook from [here](Mortgage-ETL-GPU-EMR.ipynb). Make sure to use PySpark as kernel. 
 
 
