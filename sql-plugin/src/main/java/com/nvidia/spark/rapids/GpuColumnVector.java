@@ -179,7 +179,7 @@ public class GpuColumnVector extends GpuColumnVectorBase {
   }
 
   static final DataType getSparkType(DType type) {
-    switch (type) {
+    switch (type.getTypeId()) {
       case BOOL8:
         return DataTypes.BooleanType;
       case INT8:

@@ -18,6 +18,7 @@ package com.nvidia.spark.rapids
 
 import ai.rapids.cudf.{Aggregation, AggregationOnColumn, ColumnVector, WindowOptions}
 import com.nvidia.spark.rapids.GpuOverrides.wrapExpr
+import com.nvidia.spark.rapids.GpuWindowExpression.{getRangeBasedLower, getRangeBasedUpper}
 
 import org.apache.spark.sql.catalyst.analysis.TypeCheckResult
 import org.apache.spark.sql.catalyst.analysis.TypeCheckResult.{TypeCheckFailure, TypeCheckSuccess}
@@ -113,40 +114,40 @@ class GpuWindowExpressionMeta(
           case RangeFrame =>
             // Spark by default does a RangeFrame if no RowFrame is given
             // even for columns that are not time type columns. We can switch this back to row
-            // based iff the ranges we are looking at are current row or unbounded and the columns
-            // we are ordering on, are not nullable, because a null is by definition outside of the
-            // range, even of unbounded.
-            val orderSpec = wrapped.windowSpec.orderSpec
-            val allTime = orderSpec.forall { so =>
-              so.dataType match {
-                case DateType | TimestampType => true
-                case _ => false
-              }
-            }
-            val allNotTime = orderSpec.forall { so =>
-              so.dataType match {
-                case DateType | TimestampType => false
-                case _ => true
-              }
-            }
-            if (allNotTime) {
-              val anyNullable = orderSpec.exists(_.nullable)
-              val areLowerAndUpperOkay =
-                (lower == 0 || lower == Int.MaxValue || lower == Int.MinValue) &&
-                    (upper == 0 || upper == Int.MaxValue || upper == Int.MinValue)
-              if (anyNullable || !areLowerAndUpperOkay) {
-                willNotWorkOnGpu("range based windows on non-date/time columns is only supported" +
-                    " if the columns are not nullable and for very specific range values.")
-              }
-            } else if (allTime){
-              if (orderSpec.length > 1) {
-                // We only support a single time column
-                willNotWorkOnGpu("only a single date/time based column in window" +
-                    " range functions is supported")
-              }
+            // based iff the ranges we are looking at both unbounded. We do this for all range
+            // queries because https://github.com/NVIDIA/spark-rapids/issues/1039 makes it so
+            // we cannot support nulls in range queries
+            if (lower == Int.MinValue && upper == Int.MaxValue) {
+              // this is okay because we will translate it to be a row query
             } else {
-              willNotWorkOnGpu("a mixture of date/time and non date/time based" +
-                  " columns is not supported in a window range function")
+              val orderSpec = wrapped.windowSpec.orderSpec
+              val allTime = orderSpec.forall { so =>
+                so.dataType match {
+                  case DateType | TimestampType => true
+                  case _ => false
+                }
+              }
+              if (allTime) {
+                if (orderSpec.length > 1) {
+                  // We only support a single time column
+                  willNotWorkOnGpu("only a single date/time based column in window" +
+                      " range functions is supported")
+                }
+
+                // https://github.com/NVIDIA/spark-rapids/issues/1039
+                // The order by column does not work for nullable time range queries that include
+                // UNBOUNDED
+                // Once this is fixed please uncomment the tests in WindowFunctionSuite that
+                // are impacted by this change
+                if (orderSpec.exists(_.nullable) &&
+                    (lower == Int.MinValue || upper == Int.MaxValue)) {
+                  willNotWorkOnGpu("nullable date/timestamp ranges" +
+                      " are not supported with UNBOUNDED bounds")
+                }
+              } else {
+                willNotWorkOnGpu("a mixture of date/time and non date/time based" +
+                    " columns is not supported in a window range function")
+              }
             }
         }
       case other =>
@@ -198,23 +199,18 @@ case class GpuWindowExpression(windowFunction: Expression, windowSpec: GpuWindow
       windowSpec.orderSpec.map(_.child.asInstanceOf[GpuExpression]) ++
       windowFunc.windowInputProjection
 
-  private lazy val allNotTime = windowSpec.orderSpec.forall { so =>
-    so.dataType match {
-      case DateType | TimestampType => false
-      case _ => true
-    }
-  }
-
   override def columnarEval(cb: ColumnarBatch) : Any = {
     frameType match {
       case RowFrame   => evaluateRowBasedWindowExpression(cb)
       case RangeFrame =>
-      if (allNotTime) {
-        // We already verified that this will be okay...
-        evaluateRowBasedWindowExpression(cb)
-      } else {
-        evaluateRangeBasedWindowExpression(cb)
-      }
+        val lower = getRangeBasedLower(windowFrameSpec)
+        val upper = getRangeBasedUpper(windowFrameSpec)
+        if (lower == Int.MinValue && upper == Int.MaxValue) {
+          // We already verified that this will be okay...
+          evaluateRowBasedWindowExpression(cb)
+        } else {
+          evaluateRangeBasedWindowExpression(cb)
+        }
       case allElse    =>
         throw new UnsupportedOperationException(
           s"Unsupported window expression frame type: $allElse")
