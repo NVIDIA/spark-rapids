@@ -49,7 +49,7 @@ default version runs again Spark 3.0.0, to run against other version use one of 
 
 ## Integration tests
 
-Integration tests are stored in the [integration_tests](https://github.com/NVIDIA/spark-rapids/blob/branch-0.3/integration_tests/README.md) directory.
+Integration tests are stored in the [integration_tests](../integration_tests/README.md) directory.
 There are two frameworks used for testing. One is based off of pytest and pyspark in the 
 `src/main/python` directory. These tests will run as a part of the build if you have the environment
 variable `SPARK_HOME` set.  If you have` SPARK_CONF_DIR` also set the tests will try to use
