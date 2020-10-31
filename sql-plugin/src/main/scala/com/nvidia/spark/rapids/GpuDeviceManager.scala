@@ -244,6 +244,12 @@ object GpuDeviceManager extends Logging {
           s"initial size = ${toMB(initialAllocation)} MB, " +
           s"max size = ${toMB(maxAllocation)} MB on gpuId $gpuId")
 
+      if (Cuda.isPtdsEnabled()) {
+        logInfo("Using per-thread default stream")
+      } else {
+        logInfo("Using legacy default stream")
+      }
+
       try {
         Cuda.setDevice(gpuId)
         Rmm.initialize(init, logConf, initialAllocation, maxAllocation)
