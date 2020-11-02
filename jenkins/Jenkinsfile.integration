@@ -103,11 +103,14 @@ pipeline {
 
 void uploadDocker(String IMAGE_NAME) {
     def DOCKER_CMD="docker --config $WORKSPACE/.docker"
-    sh """
-        echo $URM_CREDS_PSW | $DOCKER_CMD login $ARTIFACTORY_NAME -u $URM_CREDS_USR --password-stdin
-        $DOCKER_CMD push $IMAGE_NAME
-        $DOCKER_CMD logout $ARTIFACTORY_NAME
-    """
+    retry(3) {
+        sleep(time: 30, unit: "SECONDS")
+        sh """
+            echo $URM_CREDS_PSW | $DOCKER_CMD login $ARTIFACTORY_NAME -u $URM_CREDS_USR --password-stdin
+            $DOCKER_CMD push $IMAGE_NAME
+            $DOCKER_CMD logout $ARTIFACTORY_NAME
+        """
+    }
 }
 
 void slack(Map params = [:], String channel, String message) {
