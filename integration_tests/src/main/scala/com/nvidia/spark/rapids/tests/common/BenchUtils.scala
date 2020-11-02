@@ -15,7 +15,7 @@
  */
 package com.nvidia.spark.rapids.tests.common
 
-import java.io.{File, FileOutputStream, FileWriter, PrintWriter}
+import java.io.{File, FileOutputStream, FileWriter, PrintWriter, StringWriter}
 import java.time.Instant
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.TimeUnit.NANOSECONDS
@@ -26,8 +26,8 @@ import scala.collection.mutable.ListBuffer
 import org.json4s.DefaultFormats
 import org.json4s.jackson.JsonMethods.parse
 import org.json4s.jackson.Serialization.writePretty
-
 import org.apache.spark.{SPARK_BUILD_USER, SPARK_VERSION}
+
 import org.apache.spark.sql.{DataFrame, Row, SaveMode, SparkSession}
 import org.apache.spark.sql.execution.{InputAdapter, QueryExecution, SparkPlan, WholeStageCodegenExec}
 import org.apache.spark.sql.execution.adaptive.{AdaptiveSparkPlanExec, QueryStageExec}
@@ -187,7 +187,7 @@ object BenchUtils {
           val elapsed = NANOSECONDS.toMillis(end - start)
           println(s"*** Iteration $i failed after $elapsed msec.")
           queryTimes.append(-1)
-          exceptions.append(e.toString)
+          exceptions.append(BenchUtils.toString(e))
           e.printStackTrace()
       }
 
@@ -634,6 +634,14 @@ object BenchUtils {
       case (a, b) => a == b
     }
   }
+
+  def toString(e: Exception): String = {
+    val sw = new StringWriter()
+    val w = new PrintWriter(sw)
+    e.printStackTrace(w)
+    w.close()
+    sw.toString
+  }
 }
 
 class BenchmarkListener(
@@ -646,7 +654,7 @@ class BenchmarkListener(
 
   override def onFailure(funcName: String, qe: QueryExecution, exception: Exception): Unit = {
     queryPlans += toJson(qe.executedPlan)
-    exceptions += exception.toString
+    exceptions += BenchUtils.toString(exception)
   }
 
   private def toJson(plan: SparkPlan): SparkPlanNode = {
