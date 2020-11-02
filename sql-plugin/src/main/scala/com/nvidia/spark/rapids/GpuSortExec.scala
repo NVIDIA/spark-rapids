@@ -16,8 +16,6 @@
 
 package com.nvidia.spark.rapids
 
-import scala.collection.JavaConverters.{asScalaBufferConverter, seqAsJavaListConverter}
-
 import ai.rapids.cudf
 import ai.rapids.cudf.{NvtxColor, NvtxRange, Table}
 import com.nvidia.spark.rapids.GpuMetricNames._
@@ -171,10 +169,10 @@ class GpuColumnarBatchSorter(
               inputCvs = SortUtils.getGpuColVectorsAndBindReferences(inputBatch, sortOrder)
               inputTbl = new cudf.Table(inputCvs.map(_.getBase): _*)
               outputTypes = sortOrder.map(_.child.dataType) ++
-                  GpuColumnVector.extractTypes(inputBatch).asScala
+                  GpuColumnVector.extractTypes(inputBatch)
             } else if (inputBatch.numCols() > 0) {
               inputTbl = GpuColumnVector.from(inputBatch)
-              outputTypes = GpuColumnVector.extractTypes(inputBatch).asScala
+              outputTypes = GpuColumnVector.extractTypes(inputBatch)
             }
             val orderByArgs = getOrderArgs(inputTbl)
             val startTimestamp = System.nanoTime()
@@ -256,7 +254,7 @@ class GpuColumnarBatchSorter(
     var resultTbl: cudf.Table = null
     try {
       resultTbl = tbl.orderBy(orderByArgs: _*)
-      GpuColumnVector.from(resultTbl, types.asJava, numSortCols, resultTbl.getNumberOfColumns)
+      GpuColumnVector.from(resultTbl, types.toArray, numSortCols, resultTbl.getNumberOfColumns)
     } finally {
       if (resultTbl != null) {
         resultTbl.close()

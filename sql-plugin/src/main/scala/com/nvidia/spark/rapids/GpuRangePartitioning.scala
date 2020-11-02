@@ -16,7 +16,6 @@
 
 package com.nvidia.spark.rapids
 
-import scala.collection.JavaConverters.{asScalaBufferConverter, seqAsJavaListConverter}
 import scala.collection.mutable.ArrayBuffer
 
 import ai.rapids.cudf.{ColumnVector, Table}
@@ -121,8 +120,8 @@ case class GpuRangePartitioning(
       slicedSortedTbl = new Table(sortColumns: _*)
       //get the final column batch, remove the sort order sortColumns
       val outputTypes = gpuOrdering.map(_.child.dataType) ++
-          GpuColumnVector.extractTypes(batch).asScala
-      finalSortedCb = GpuColumnVector.from(sortedTbl, outputTypes.asJava,
+          GpuColumnVector.extractTypes(batch)
+      finalSortedCb = GpuColumnVector.from(sortedTbl, outputTypes.toArray,
         numSortCols, sortedTbl.getNumberOfColumns)
       val numRows = finalSortedCb.numRows
       partitionColumns = GpuColumnVector.extractColumns(finalSortedCb)

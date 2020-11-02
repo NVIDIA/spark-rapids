@@ -264,10 +264,10 @@ public class GpuColumnVector extends GpuColumnVectorBase {
   /**
    * Get the data types for a batch.
    */
-  public static final List<DataType> extractTypes(ColumnarBatch batch) {
-    ArrayList<DataType> ret = new ArrayList<>(batch.numCols());
+  public static final DataType[] extractTypes(ColumnarBatch batch) {
+    DataType[] ret = new DataType[batch.numCols()];
     for (int i = 0; i < batch.numCols(); i++) {
-      ret.add(batch.column(i).dataType());
+      ret[i] = batch.column(i).dataType();
     }
     return ret;
   }
@@ -275,10 +275,10 @@ public class GpuColumnVector extends GpuColumnVectorBase {
   /**
    * Get the data types for a struct.
    */
-  public static final List<DataType> extractTypes(StructType st) {
-    ArrayList<DataType> ret = new ArrayList<>(st.size());
+  public static final DataType[] extractTypes(StructType st) {
+    DataType[] ret = new DataType[st.size()];
     for (int i = 0; i < st.size(); i++) {
-      ret.add(st.apply(i).dataType());
+      ret[i] = st.apply(i).dataType();
     }
     return ret;
   }
@@ -294,7 +294,7 @@ public class GpuColumnVector extends GpuColumnVectorBase {
     return from(table, 0, table.getNumberOfColumns());
   }
 
-  public static final ColumnarBatch from(Table table, List<DataType> colTypes) {
+  public static final ColumnarBatch from(Table table, DataType[] colTypes) {
     return from(table, colTypes, 0, table.getNumberOfColumns());
   }
 
@@ -312,19 +312,19 @@ public class GpuColumnVector extends GpuColumnVectorBase {
       if (!(dt.equals(DType.LIST))) {
         return false;
       }
-      try (ColumnViewAccess structCV = cv.getChildColumnViewAccess(0)) {
-        if (!(structCV.getDataType().equals(DType.STRUCT))) {
+      try (ColumnViewAccess structCv = cv.getChildColumnViewAccess(0)) {
+        if (!(structCv.getDataType().equals(DType.STRUCT))) {
           return false;
         }
-        if (structCV.getNumChildren() != 2) {
+        if (structCv.getNumChildren() != 2) {
           return false;
         }
-        try (ColumnViewAccess keyCv = structCV.getChildColumnViewAccess(0)) {
+        try (ColumnViewAccess keyCv = structCv.getChildColumnViewAccess(0)) {
           if (!typeConversionAllowed(keyCv, mType.keyType())) {
             return false;
           }
         }
-        try (ColumnViewAccess valCv = structCV.getChildColumnViewAccess(1)) {
+        try (ColumnViewAccess valCv = structCv.getChildColumnViewAccess(1)) {
           return typeConversionAllowed(valCv, mType.valueType());
         }
       }
@@ -368,16 +368,19 @@ public class GpuColumnVector extends GpuColumnVectorBase {
   }
 
   /**
-   * This should only ever be called from an assertion.
+   * This should only ever be called from an assertion. This is to avoid the performance overhead
+   * of doing the complicated check in production.  Sadly this means that we don't get to give a
+   * clear message about what part of the check failed, so the assertions that use this should
+   * include in the message both types so a user can see what is different about them.
    */
-  private static boolean typeConversionAllowed(Table table, List<DataType> colTypes) {
+  private static boolean typeConversionAllowed(Table table, DataType[] colTypes) {
     final int numColumns = table.getNumberOfColumns();
-    if (numColumns != colTypes.size()) {
+    if (numColumns != colTypes.length) {
       return false;
     }
     boolean ret = true;
     for (int colIndex = 0; colIndex < numColumns; colIndex++) {
-      ret = ret && typeConversionAllowed(table.getColumn(colIndex), colTypes.get(colIndex));
+      ret = ret && typeConversionAllowed(table.getColumn(colIndex), colTypes[colIndex]);
     }
     return ret;
   }
@@ -436,7 +439,7 @@ public class GpuColumnVector extends GpuColumnVectorBase {
    * @param untilColIndex until index of the columns. (ie doesn't include that column num)
    * @return a ColumnarBatch of the vectors from the table
    */
-  public static final ColumnarBatch from(Table table, List<DataType> colTypes, int startColIndex, int untilColIndex) {
+  public static final ColumnarBatch from(Table table, DataType[] colTypes, int startColIndex, int untilColIndex) {
     assert table != null : "Table cannot be null";
     assert typeConversionAllowed(table, colTypes) : "Type conversion is not allowed from " + table +
         " to " + colTypes;
@@ -446,7 +449,7 @@ public class GpuColumnVector extends GpuColumnVectorBase {
     boolean success = false;
     try {
       for (int i = startColIndex; i < untilColIndex; i++) {
-        columns[finalLoc] = from(table.getColumn(i).incRefCount(), colTypes.get(i));
+        columns[finalLoc] = from(table.getColumn(i).incRefCount(), colTypes[i]);
         finalLoc++;
       }
       long rows = table.getRowCount();
