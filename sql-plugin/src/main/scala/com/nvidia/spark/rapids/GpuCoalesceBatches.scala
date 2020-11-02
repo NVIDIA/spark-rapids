@@ -43,9 +43,11 @@ object ConcatAndConsumeAll {
    * blow up.
    * @param arrayOfBatches the batches to concat. This will be consumed and you do not need to
    *                       close any of the batches after this is called.
+   * @param schema the schema of the output types.
    * @return a single batch with all of them concated together.
    */
-  def buildNonEmptyBatch(arrayOfBatches: Array[ColumnarBatch]): ColumnarBatch = {
+  def buildNonEmptyBatch(arrayOfBatches: Array[ColumnarBatch],
+      schema: StructType): ColumnarBatch = {
     if (arrayOfBatches.length == 1) {
       arrayOfBatches(0)
     } else {
@@ -53,7 +55,7 @@ object ConcatAndConsumeAll {
       try {
         val combined = Table.concatenate(tables: _*)
         try {
-          GpuColumnVector.from(combined)
+          GpuColumnVector.from(combined, GpuColumnVector.extractTypes(schema))
         } finally {
           combined.close()
         }
@@ -465,7 +467,7 @@ class GpuCoalesceIteratorForMaps(iter: Iterator[ColumnarBatch],
     val tmp = batches.toArray
     // Clear the buffer so we don't close it again (buildNonEmptyBatch closed it for us).
     batches = ArrayBuffer.empty
-    val ret = ConcatAndConsumeAll.buildNonEmptyBatch(tmp)
+    val ret = ConcatAndConsumeAll.buildNonEmptyBatch(tmp, schema)
     // sum of current batches and concatenating batches. Approximately sizeof(ret * 2).
     maxDeviceMemory = GpuColumnVector.getTotalDeviceMemoryUsed(ret) * 2
     ret
@@ -608,7 +610,7 @@ class GpuCoalesceIterator(iter: Iterator[ColumnarBatch],
   }
 
   override def concatAllAndPutOnGPU(): ColumnarBatch = {
-    val ret = ConcatAndConsumeAll.buildNonEmptyBatch(popAllDecompressed())
+    val ret = ConcatAndConsumeAll.buildNonEmptyBatch(popAllDecompressed(), schema)
     // sum of current batches and concatenating batches. Approximately sizeof(ret * 2).
     maxDeviceMemory = GpuColumnVector.getTotalDeviceMemoryUsed(ret) * 2
     ret
