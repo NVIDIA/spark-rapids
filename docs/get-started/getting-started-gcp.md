@@ -8,9 +8,9 @@ parent: Getting-Started
 # Getting started with RAPIDS Accelerator on GCP Dataproc
  [Google Cloud Dataproc](https://cloud.google.com/dataproc) is Google Cloud's fully managed Apache Spark and Hadoop service.  This guide will walk through the steps to:
 
-* [Spin up a Dataproc Cluster Accelerated by GPUs](getting-started-gcp#spin-up-a-dataproc-cluster-accelerated-by-gpus)
-* [Run a sample Pyspark or Scala ETL and XGBoost training Notebook on a Dataproc Cluster Accelerated by GPUs](getting-started-gcp#run-pyspark-and-scala-notebook-a-dataproc-cluster-accelerated-by-gpus)
-* [Submit the same sample ETL application as a Spark job to a Dataproc Cluster Accelerated by GPUs](getting-started-gcp#submit-spark-jobs-to-a-dataproc-cluster-accelerated-by-gpus)
+* [Spin up a Dataproc Cluster Accelerated by GPUs](#spin-up-a-dataproc-cluster-accelerated-by-gpus)
+* [Run Pyspark or Scala ETL and XGBoost training Notebook on a Dataproc Cluster Accelerated by GPUs](#run-pyspark-or-scala-notebook-on-a-dataproc-cluster-accelerated-by-gpus)
+* [Submit the same sample ETL application as a Spark job to a Dataproc Cluster Accelerated by GPUs](#submit-spark-jobs-to-a-dataproc-cluster-accelerated-by-gpus)
 
 ## Spin up a Dataproc Cluster Accelerated by GPUs
  
@@ -31,7 +31,7 @@ The script below will initialize with the following:
 * Four NVIDIA T4 for each worker node
 * [Local SSD](https://cloud.google.com/dataproc/docs/concepts/compute/dataproc-local-ssds) is recommended for Spark scratch space to improve IO 
 * Component gateway enabled for accessing Web UIs hosted on the cluster
-* Configuration for [GPU scheduling and isolation](/get-started/yarn-gpu.html)
+* Configuration for [GPU scheduling and isolation](yarn-gpu.md)
 
 
 ```bash
@@ -61,7 +61,7 @@ This may take around 5-15 minutes to complete.  You can navigate to the Dataproc
 
 ![Dataproc Cluster](../img/dataproc-cluster.png)
 
-## Run Pyspark and Scala Notebook a Dataproc Cluster Accelerated by GPUs
+## Run PySpark or Scala Notebook on a Dataproc Cluster Accelerated by GPUs
 To use notebooks with a Dataproc cluster, click on the cluster name under the Dataproc cluster tab and navigate to the "Web Interfaces" tab.  Under "Web Interfaces", click on the JupyterLab or Jupyter link to start to use sample [Mortgage ETL on GPU Jupyter Notebook](../demo/GCP/Mortgage-ETL-GPU.ipynb) to process full 17 years [Mortgage data](https://rapidsai.github.io/demos/datasets/mortgage-data). 
 
 ![Dataproc Web Interfaces](../img/dataproc-service.png)
