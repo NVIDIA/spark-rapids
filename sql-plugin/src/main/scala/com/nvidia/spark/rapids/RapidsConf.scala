@@ -759,7 +759,7 @@ object RapidsConf {
     .stringConf
     .createOptional
 
-  val CUDF_VERSION_OVERRIDE = conf("spark.rapids.cudf-version-override")
+  val CUDF_VERSION_OVERRIDE = conf("spark.rapids.cudfVersionOverride")
     .internal()
     .doc("Overrides the cudf version compatibility check between cudf jar and plugin jar. " +
       "If you are sure that the cudf jar which is mentioned in the classpath is compatible with " +
