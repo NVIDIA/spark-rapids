@@ -310,6 +310,7 @@ trait GpuGreatestLeastBase extends ComplexTypeMergingExpression with GpuExpressi
       r.binaryOp(binaryOp, c, dtype)
     case (r: Scalar, c: ColumnVector) =>
       r.binaryOp(binaryOp, c, dtype)
+    case _ => throw new IllegalStateException(s"Unexpected inputs: $r, $c")
   }
 
   private[this] def makeNanWin(checkForNans: ColumnVector, result: ColumnVector): ColumnVector = {
@@ -395,6 +396,7 @@ trait GpuGreatestLeastBase extends ComplexTypeMergingExpression with GpuExpressi
           }
         }
       }
+    case _ => throw new IllegalStateException(s"Unexpected inputs: $r, $c")
   }
 
   override def columnarEval(batch: ColumnarBatch): Any = {

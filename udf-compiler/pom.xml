@@ -131,6 +131,9 @@
             <plugin>
                 <groupId>org.scalastyle</groupId>
                 <artifactId>scalastyle-maven-plugin</artifactId>
+		<configuration>
+                    <includeTestSourceDirectory>true</includeTestSourceDirectory>
+		</configuration>
             </plugin>
         </plugins>
     </build>

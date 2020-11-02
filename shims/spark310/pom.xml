@@ -58,6 +58,13 @@
                     </execution>
                 </executions>
             </plugin>
+            <plugin>
+                <groupId>org.scalastyle</groupId>
+                <artifactId>scalastyle-maven-plugin</artifactId>
+		<configuration>
+                    <includeTestSourceDirectory>false</includeTestSourceDirectory>
+		</configuration>
+            </plugin>
         </plugins>
 
         <resources>
