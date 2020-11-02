@@ -110,6 +110,7 @@ void uploadDocker(String IMAGE_NAME) {
             $DOCKER_CMD push $IMAGE_NAME
             $DOCKER_CMD logout $ARTIFACTORY_NAME
         """
+    }
 }
 
 void slack(Map params = [:], String channel, String message) {
