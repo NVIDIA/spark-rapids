@@ -57,6 +57,7 @@ import org.apache.spark.util.Utils
  */
 class RebatchingRoundoffIterator(
     wrapped: Iterator[ColumnarBatch],
+    schema: StructType,
     targetRoundoff: Int,
     inputRows: SQLMetric,
     inputBatches: SQLMetric)
@@ -95,7 +96,7 @@ class RebatchingRoundoffIterator(
       batches.append(SpillableColumnarBatch(got, SpillPriorities.ACTIVE_BATCHING_PRIORITY))
     }
     val toConcat = batches.safeMap(_.getColumnarBatch()).toArray
-    ConcatAndConsumeAll.buildNonEmptyBatch(toConcat)
+    ConcatAndConsumeAll.buildNonEmptyBatch(toConcat, schema)
   }
 
   override def next(): ColumnarBatch = {
@@ -539,6 +540,7 @@ case class GpuArrowEvalPythonExec(
 
     lazy val isPythonOnGpuEnabled = GpuPythonHelper.isPythonOnGpuEnabled(conf)
     val inputRDD = child.executeColumnar()
+    val schema = output.toStructType
     inputRDD.mapPartitions { iter =>
       val queue: BatchQueue = new BatchQueue()
       val context = TaskContext.get()
@@ -573,7 +575,7 @@ case class GpuArrowEvalPythonExec(
       })
 
       val boundReferences = GpuBindReferences.bindReferences(allInputs, child.output)
-      val batchedIterator = new RebatchingRoundoffIterator(iter, batchSize,
+      val batchedIterator = new RebatchingRoundoffIterator(iter, schema, batchSize,
         numInputRows, numInputBatches)
       val projectedIterator = batchedIterator.map { batch =>
         // We have to do the project before we add the batch because the batch might be closed
