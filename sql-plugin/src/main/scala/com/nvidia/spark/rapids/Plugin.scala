@@ -135,40 +135,63 @@ class RapidsExecutorPlugin extends ExecutorPlugin with Logging {
       // Compare if the cudf version mentioned in the classpath is equal to the version which plugin
       // expects. If there is a version mismatch, throw error. This check can be disabled by
       // setting this config spark.rapids.cudfVersionOverride=true
-      if (!conf.cudfVersionOverride) {
-        val props = new Properties
-        val cudfClassLoader = classOf[ai.rapids.cudf.ColumnVector].getClassLoader
-        val cudfProperties = cudfClassLoader.getResourceAsStream(cudfPropertiesFileName)
-
-        if (cudfProperties == null) {
-          throw new RuntimeException("Could not find the properties file in the cudf jar." +
+      val props = new Properties
+      val cudfClassLoader = classOf[ai.rapids.cudf.ColumnVector].getClassLoader
+      val cudfProperties = cudfClassLoader.getResourceAsStream(cudfPropertiesFileName)
+      if (cudfProperties == null) {
+        if (!conf.cudfVersionOverride) {
+          throw new RuntimeException("Could not find properties file in the cudf jar." +
+            " Cannot verify if the cudf version is same as expected by plugin")
+        } else {
+          logWarning("Could not find properties file in the cudf jar." +
             " Cannot verify if the cudf version is same as expected by plugin")
         }
-        props.load(cudfProperties)
-        val classpathCudfVersion = props.get("version")
-        if ( classpathCudfVersion == null) {
+      }
+      props.load(cudfProperties)
+
+      val classpathCudfVersion = props.get("version")
+      if (classpathCudfVersion == null) {
+        if (!conf.cudfVersionOverride) {
           throw new RuntimeException("Property name `version` not found in " +
             cudfPropertiesFileName + " file")
+        } else {
+          logWarning("Property name `version` not found in " + cudfPropertiesFileName + " file")
         }
-        val cudfVersion = classpathCudfVersion.toString
+      }
+      val cudfVersion = classpathCudfVersion.toString
 
-        val pluginClassLoader = classOf[com.nvidia.spark.SQLPlugin].getClassLoader
-        val pluginResource = pluginClassLoader.getResourceAsStream(pluginPropertiesFileName)
-        if (pluginResource == null) {
-          throw new RuntimeException("Could not find the properties file in the Rapids " +
+      val pluginClassLoader = classOf[com.nvidia.spark.SQLPlugin].getClassLoader
+      val pluginResource = pluginClassLoader.getResourceAsStream(pluginPropertiesFileName)
+      if (pluginResource == null) {
+        if (!conf.cudfVersionOverride) {
+          throw new RuntimeException("Could not find properties file in the Rapids " +
+            "Accelerator jar. Cannot verify if the cudf version is same as expected by plugin")
+        } else {
+          logWarning("Could not find properties file in the Rapids " +
             "Accelerator jar. Cannot verify if the cudf version is same as expected by plugin")
         }
-        props.load(pluginResource)
-        val pluginCudfVersion = props.get("cudf_version")
-        if (pluginCudfVersion == null) {
+      }
+      props.load(pluginResource)
+
+      val pluginCudfVersion = props.get("cudf_version")
+      if (pluginCudfVersion == null) {
+        if (!conf.cudfVersionOverride) {
           throw new RuntimeException("Property name `cudf_version` not found in "
             + pluginPropertiesFileName + " file")
+        } else {
+          logWarning("Property name `cudf_version` not found in " +
+            pluginPropertiesFileName + " file")
         }
-        val expectedCudfVersion = pluginCudfVersion.toString
-
-        if (!cudfVersion.equals(expectedCudfVersion)) {
-          throw new IllegalArgumentException("Cudf version in the classpath is different. Found " +
-            cudfVersion + ", Plugin expects " + expectedCudfVersion)
+      }
+      val expectedCudfVersion = pluginCudfVersion.toString
+      // compare cudf version in the classpath with the cudf version expected by plugin
+      if (!cudfVersion.equals(expectedCudfVersion)) {
+        if (!conf.cudfVersionOverride) {
+          throw new IllegalArgumentException("Cudf version in the classpath is different. " +
+            "Found " + cudfVersion + ", Plugin expects " + expectedCudfVersion)
+        } else {
+          logWarning("Cudf version in the classpath is different. " +
+            "Found " + cudfVersion + ", Plugin expects " + expectedCudfVersion)
         }
       }
 
