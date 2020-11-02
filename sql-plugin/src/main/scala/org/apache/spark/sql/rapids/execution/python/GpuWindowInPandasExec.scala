@@ -183,8 +183,10 @@ case class GpuWindowInPandasExec(
     child: SparkPlan)
   extends UnaryExecNode with GpuExec {
 
+  private def resultAttributes = windowExpression.map(_.asInstanceOf[NamedExpression].toAttribute)
+
   override def output: Seq[Attribute] =
-    child.output ++ windowExpression.map(_.asInstanceOf[NamedExpression].toAttribute)
+    child.output ++ resultAttributes
 
   override def requiredChildDistribution: Seq[Distribution] = {
     if (partitionSpec.isEmpty) {
@@ -492,7 +494,7 @@ case class GpuWindowInPandasExec(
       // Re-batching the input data by GroupingIterator
       val boundPartitionRefs = GpuBindReferences.bindGpuReferences(partitionSpec, child.output)
       val groupedIterator = new GroupingIterator(inputIter, boundPartitionRefs)
-      val pythonInputIterator = groupedIterator.map { batch =>
+      val pyInputIterator = groupedIterator.map { batch =>
         // We have to do the project before we add the batch because the batch might be closed
         // when it is added
         val projectedBatch = GpuProjectExec.project(batch, boundDataRefs)
@@ -509,8 +511,8 @@ case class GpuWindowInPandasExec(
         GpuPythonHelper.injectGpuInfo(pyFuncs, isPythonOnGpuEnabled)
         PythonWorkerSemaphore.acquireIfNecessary(TaskContext.get())
       }
-      var targetReadBatchSize = 1
-      val outputBatchIterator = new GpuArrowPythonRunner(
+
+      val pyRunner = new GpuArrowPythonRunner(
         pyFuncs,
         PythonEvalType.SQL_WINDOW_AGG_PANDAS_UDF,
         argOffsets,
@@ -519,9 +521,10 @@ case class GpuWindowInPandasExec(
         pythonRunnerConf,
         /* The whole group data should be written in a single call, so here is unlimited */
         Int.MaxValue,
-        () => queue.finish()){
-        override def minReadTargetBatchSize: Int = targetReadBatchSize
-      }.compute(pythonInputIterator, context.partitionId(), context)
+        () => queue.finish(),
+        StructType.fromAttributes(resultAttributes))
+
+      val outputBatchIterator = pyRunner.compute(pyInputIterator, context.partitionId(), context)
       new Iterator[ColumnarBatch] {
         // for hasNext we are waiting on the queue to have something inserted into it
         // instead of waiting for a result to be ready from python. The reason for this
@@ -532,26 +535,25 @@ case class GpuWindowInPandasExec(
         // on a read operation.
         override def hasNext: Boolean = queue.hasNext
 
-        private [this] def combine(origBatch: ColumnarBatch, table: Table): ColumnarBatch = {
+        private [this] def combine(
+            origBatch: ColumnarBatch,
+            retBatch: ColumnarBatch): ColumnarBatch = {
           val lColumns = GpuColumnVector.extractColumns(origBatch)
-          val rColumns = GpuColumnVector.extractColumns(table)
+          val rColumns = GpuColumnVector.extractColumns(retBatch)
           new ColumnarBatch(lColumns.map(_.incRefCount()) ++ rColumns.map(_.incRefCount()),
             origBatch.numRows())
         }
 
         override def next(): ColumnarBatch = {
           val numRows = queue.peekBatchSize
-          // This is a bit of a hack, but it lets us set what we want to read without
-          // copying/rewriting a lot of the abstraction that spark has in place.
-          targetReadBatchSize = numRows
-          withResource(outputBatchIterator.next()) { cb =>
-            withResource(GpuColumnVector.from(cb)) { fromPython =>
-              assert(fromPython.getRowCount == numRows)
-              withResource(queue.remove()) { origBatch =>
-                numOutputBatches += 1
-                numOutputRows += numRows
-                combine(origBatch, fromPython)
-              }
+          // Update the expected batch size for next read
+          pyRunner.minReadTargetBatchSize = numRows
+          withResource(outputBatchIterator.next()) { cbFromPython =>
+            assert(cbFromPython.numRows() == numRows)
+            withResource(queue.remove()) { origBatch =>
+              numOutputBatches += 1
+              numOutputRows += numRows
+              combine(origBatch, cbFromPython)
             }
           }
         }

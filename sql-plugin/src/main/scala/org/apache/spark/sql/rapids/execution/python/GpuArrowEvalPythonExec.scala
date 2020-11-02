@@ -287,13 +287,10 @@ case class GpuPythonUDF(
 }
 
 /**
- * A trait that can be mixed-in with `BasePythonRunner`. It implements the logic from
+ * A trait that can be mixed-in with `GpuArrowPythonRunner`. It implements the logic from
  * Python (Arrow) to GPU/JVM (ColumnarBatch).
  */
-trait GpuPythonArrowOutput extends Arm { self: BasePythonRunner[_, ColumnarBatch] =>
-
-  def minReadTargetBatchSize: Int = 1
-  def readSchema: Array[DataType]
+trait GpuPythonArrowOutput extends Arm { self: GpuArrowPythonRunner =>
 
   protected def newReaderIterator(
       stream: DataInputStream,
@@ -332,7 +329,7 @@ trait GpuPythonArrowOutput extends Arm { self: BasePythonRunner[_, ColumnarBatch
             // The GpuSemaphore is acquired in a callback
             val table =
               withResource(new NvtxRange("read python batch", NvtxColor.DARK_GREEN)) { _ =>
-                arrowReader.getNextIfAvailable(minReadTargetBatchSize)
+                arrowReader.getNextIfAvailable(self.minReadTargetBatchSize)
               }
             if (table == null) {
               batchLoaded = false
@@ -342,7 +339,7 @@ trait GpuPythonArrowOutput extends Arm { self: BasePythonRunner[_, ColumnarBatch
             } else {
               withResource(table) { table =>
                 batchLoaded = true
-                GpuColumnVector.from(table, readSchema)
+                GpuColumnVector.from(table, GpuColumnVector.extractTypes(self.pythonOutSchema))
               }
             }
           } else {
@@ -377,16 +374,15 @@ class GpuArrowPythonRunner(
     funcs: Seq[ChainedPythonFunctions],
     evalType: Int,
     argOffsets: Array[Array[Int]],
-    schema: StructType,
-    rdSchema: Array[DataType],
+    pythonInSchema: StructType,
     timeZoneId: String,
     conf: Map[String, String],
     batchSize: Long,
-    onDataWriteFinished: () => Unit)
+    onDataWriteFinished: () => Unit,
+    val pythonOutSchema: StructType,
+    var minReadTargetBatchSize: Int = 1)
     extends BasePythonRunner[ColumnarBatch, ColumnarBatch](funcs, evalType, argOffsets)
         with GpuPythonArrowOutput {
-
-  override def readSchema: Array[DataType] = rdSchema
 
   override val bufferSize: Int = SQLConf.get.pandasUDFBufferSize
   require(
@@ -422,7 +418,7 @@ class GpuArrowPythonRunner(
             table.close()
             GpuSemaphore.releaseIfNecessary(TaskContext.get())
           })
-          schema.foreach { field =>
+          pythonInSchema.foreach { field =>
             if (field.nullable) {
               builder.withColumnNames(field.name)
             } else {
@@ -544,6 +540,8 @@ case class GpuArrowEvalPythonExec(
     val numInputBatches = longMetric(NUM_INPUT_BATCHES)
 
     lazy val isPythonOnGpuEnabled = GpuPythonHelper.isPythonOnGpuEnabled(conf)
+    val inputSchema = child.output.toStructType
+
     val inputRDD = child.executeColumnar()
     val pythonOutputSchema = resultAttrs.map(_.dataType).toArray
 
@@ -582,14 +580,14 @@ case class GpuArrowEvalPythonExec(
         }.toArray
       }.toArray
 
-      val schema = StructType(dataTypes.zipWithIndex.map { case (dt, i) =>
+      val pyInputSchema = StructType(dataTypes.zipWithIndex.map { case (dt, i) =>
         StructField(s"_$i", dt)
       })
 
       val boundReferences = GpuBindReferences.bindReferences(allInputs, childOutput)
-      val batchedIterator = new RebatchingRoundoffIterator(iter, schema, targetBatchSize,
+      val batchedIterator = new RebatchingRoundoffIterator(iter, inputSchema, targetBatchSize,
         numInputRows, numInputBatches)
-      val projectedIterator = batchedIterator.map { batch =>
+      val pyInputIterator = batchedIterator.map { batch =>
         // We have to do the project before we add the batch because the batch might be closed
         // when it is added
         val ret = GpuProjectExec.project(batch, boundReferences)
@@ -602,22 +600,18 @@ case class GpuArrowEvalPythonExec(
         PythonWorkerSemaphore.acquireIfNecessary(context)
       }
 
-      var targetReadBatchSize = 1
-
-      val outputBatchIterator = new GpuArrowPythonRunner(
+      val pyRunner = new GpuArrowPythonRunner(
         pyFuncs,
         evalType,
         argOffsets,
-        schema,
-        resultAttrs.map(_.dataType).toArray,
+        pyInputSchema,
         timeZone,
         runnerConf,
         targetBatchSize,
-        () => queue.finish()){
-        override def minReadTargetBatchSize: Int = targetReadBatchSize
-      }.compute(projectedIterator,
-        context.partitionId(),
-        context)
+        () => queue.finish(),
+        StructType.fromAttributes(resultAttrs))
+
+      val outputBatchIterator = pyRunner.compute(pyInputIterator, context.partitionId(), context)
 
       new Iterator[ColumnarBatch] {
         // for hasNext we are waiting on the queue to have something inserted into it
@@ -629,26 +623,25 @@ case class GpuArrowEvalPythonExec(
         // on a read operation.
         override def hasNext: Boolean = queue.hasNext
 
-        private [this] def combine(origBatch: ColumnarBatch, table: Table): ColumnarBatch = {
+        private [this] def combine(
+            origBatch: ColumnarBatch,
+            retBatch: ColumnarBatch): ColumnarBatch = {
           val lColumns = GpuColumnVector.extractColumns(origBatch)
-          val rColumns = GpuColumnVector.extractColumns(table, pythonOutputSchema)
+          val rColumns = GpuColumnVector.extractColumns(retBatch)
           new ColumnarBatch(lColumns.map(_.incRefCount()) ++ rColumns.map(_.incRefCount()),
             origBatch.numRows())
         }
 
         override def next(): ColumnarBatch = {
           val numRows = queue.peekBatchSize
-          // This is a bit of a hack, but it lets us set what we want to read without
-          // copying/rewriting a lot of the abstraction that spark has in place.
-          targetReadBatchSize = numRows
-          withResource(outputBatchIterator.next()) { cb =>
-            withResource(GpuColumnVector.from(cb)) { fromPython =>
-              assert(fromPython.getRowCount == numRows)
-              withResource(queue.remove()) { origBatch =>
-                numOutputBatches += 1
-                numOutputRows += numRows
-                combine(origBatch, fromPython)
-              }
+          // Update the expected batch size for next read
+          pyRunner.minReadTargetBatchSize = numRows
+          withResource(outputBatchIterator.next()) { cbFromPython =>
+            assert(cbFromPython.numRows() == numRows)
+            withResource(queue.remove()) { origBatch =>
+              numOutputBatches += 1
+              numOutputRows += numRows
+              combine(origBatch, cbFromPython)
             }
           }
         }
