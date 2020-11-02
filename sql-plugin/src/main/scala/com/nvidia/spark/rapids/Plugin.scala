@@ -126,6 +126,8 @@ class RapidsExecutorPlugin extends ExecutorPlugin with Logging {
       extraConf: util.Map[String, String]): Unit = {
     try {
       val conf = new RapidsConf(extraConf.asScala.toMap)
+      val cudfPropertiesFileName = "cudf-java-version-info.properties"
+      val pluginPropertiesFileName = "rapids4spark-version-info.properties"
       if (conf.shimsProviderOverride.isDefined) {
         ShimLoader.setSparkShimProviderClass(conf.shimsProviderOverride.get)
       }
@@ -136,33 +138,33 @@ class RapidsExecutorPlugin extends ExecutorPlugin with Logging {
       if (!conf.cudfVersionOverride) {
         val props = new Properties
         val cudfClassLoader = classOf[ai.rapids.cudf.ColumnVector].getClassLoader
-        val cudfProperties = cudfClassLoader.
-          getResourceAsStream("cudf-java-version-info.properties")
+        val cudfProperties = cudfClassLoader.getResourceAsStream(cudfPropertiesFileName)
 
         if (cudfProperties == null) {
           throw new RuntimeException("Could not find the properties file in the cudf jar." +
             " Cannot verify if the cudf version is same as expected by plugin")
         }
         props.load(cudfProperties)
-        if (props.get("version") == null) {
-          throw new RuntimeException("Property name not found in " +
-            "cudf-java-version-info.properties file")
+        val classpathCudfVersion = props.get("version")
+        if ( classpathCudfVersion == null) {
+          throw new RuntimeException("Property name `version` not found in " +
+            cudfPropertiesFileName + " file")
         }
-        val cudfVersion = props.get("version").toString
+        val cudfVersion = classpathCudfVersion.toString
 
         val pluginClassLoader = classOf[com.nvidia.spark.SQLPlugin].getClassLoader
-        val pluginResource = pluginClassLoader.
-          getResourceAsStream("rapids4spark-version-info.properties")
+        val pluginResource = pluginClassLoader.getResourceAsStream(pluginPropertiesFileName)
         if (pluginResource == null) {
-          throw new RuntimeException("Could not find the properties file in the plugin jar." +
-            " Cannot verify if the cudf version is same as expected by plugin")
+          throw new RuntimeException("Could not find the properties file in the Rapids " +
+            "Accelerator jar. Cannot verify if the cudf version is same as expected by plugin")
         }
         props.load(pluginResource)
-        if (props.get("cudf_version") == null) {
-          throw new RuntimeException("Property name not found in " +
-            "rapids4spark-version-info.properties file")
+        val pluginCudfVersion = props.get("cudf_version")
+        if (pluginCudfVersion == null) {
+          throw new RuntimeException("Property name `cudf_version` not found in "
+            + pluginPropertiesFileName + " file")
         }
-        val expectedCudfVersion = props.get("cudf_version").toString
+        val expectedCudfVersion = pluginCudfVersion.toString
 
         if (!cudfVersion.equals(expectedCudfVersion)) {
           throw new IllegalArgumentException("Cudf version in the classpath is different. Found " +
