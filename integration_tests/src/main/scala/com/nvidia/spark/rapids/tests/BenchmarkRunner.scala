@@ -18,6 +18,8 @@ package com.nvidia.spark.rapids.tests
 import java.io.File
 import java.net.URL
 
+import scala.util.{Failure, Success, Try}
+
 import com.nvidia.spark.rapids.tests.common.{BenchmarkReport, BenchmarkSuite, BenchUtils}
 import com.nvidia.spark.rapids.tests.tpcds.TpcdsLikeBench
 import com.nvidia.spark.rapids.tests.tpch.TpchLikeBench
@@ -62,7 +64,7 @@ object BenchmarkRunner {
 
         val runner = new BenchmarkRunner(bench)
         println(s"*** RUNNING ${bench.name()} QUERY ${conf.query()}")
-        val report: BenchmarkReport = conf.output.toOption match {
+        val report = Try(conf.output.toOption match {
           case Some(path) => conf.outputFormat().toLowerCase match {
             case "parquet" =>
               runner.writeParquet(
@@ -89,9 +91,7 @@ object BenchmarkRunner {
                 summaryFilePrefix = conf.summaryFilePrefix.toOption,
                 gcBetweenRuns = conf.gcBetweenRuns())
             case other =>
-              System.err.println(s"Invalid or unspecified output format: $other")
-              System.exit(-1)
-              null // unreachable
+              throw new IllegalArgumentException(s"Invalid or unspecified output format: $other")
           }
           case _ =>
             runner.collect(
@@ -100,26 +100,33 @@ object BenchmarkRunner {
               conf.iterations(),
               summaryFilePrefix = conf.summaryFilePrefix.toOption,
               gcBetweenRuns = conf.gcBetweenRuns())
-        }
+        })
 
-        if (conf.s3Bucket.isSupplied && conf.s3Path.isSupplied) {
-          // note that S3 credentials come from the environment
-          println(s"Uploading ${report.filename} to " +
-              s"s3://${conf.s3Bucket()}/${conf.s3Path()}/${report.filename}")
-          val s3 = if (conf.s3EndpointUrl.isSupplied) {
-            S3Client.builder
-                .endpointOverride(new URL(conf.s3EndpointUrl()).toURI)
-                .build()
-          } else {
-            S3Client.builder
-                .build()
-          }
-          val putObjectRequest = PutObjectRequest.builder()
-              .bucket(conf.s3Bucket())
-              .key(s"${conf.s3Path()}/${report.filename}")
-              .build()
-          s3.putObject(putObjectRequest, new File(report.filename).toPath)
-          s3.close()
+        report match {
+          case Success(report) =>
+            if (conf.s3Bucket.isSupplied && conf.s3Path.isSupplied) {
+              // note that S3 credentials come from the environment
+              println(s"Uploading ${report.filename} to " +
+                  s"s3://${conf.s3Bucket()}/${conf.s3Path()}/${report.filename}")
+              val s3 = if (conf.s3EndpointUrl.isSupplied) {
+                S3Client.builder
+                    .endpointOverride(new URL(conf.s3EndpointUrl()).toURI)
+                    .build()
+              } else {
+                S3Client.builder
+                    .build()
+              }
+              val putObjectRequest = PutObjectRequest.builder()
+                  .bucket(conf.s3Bucket())
+                  .key(s"${conf.s3Path()}/${report.filename}")
+                  .build()
+              s3.putObject(putObjectRequest, new File(report.filename).toPath)
+              s3.close()
+            }
+
+          case Failure(e) =>
+            System.err.println(e.getMessage)
+            System.exit(-1)
         }
 
       case _ =>
