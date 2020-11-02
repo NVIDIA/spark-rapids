@@ -21,6 +21,7 @@ import com.nvidia.spark.rapids.TestUtils.findOperators
 import org.apache.spark.SparkConf
 import org.apache.spark.sql.functions.broadcast
 import org.apache.spark.sql.internal.SQLConf
+import org.apache.spark.sql.rapids.execution.GpuBroadcastNestedLoopJoinExecBase
 
 class BroadcastNestedLoopJoinSuite extends SparkQueryCompareTestSuite {
 
@@ -36,7 +37,7 @@ class BroadcastNestedLoopJoinSuite extends SparkQueryCompareTestSuite {
       df3.collect()
       val plan = df3.queryExecution.executedPlan
 
-      val nljCount = findOperators(plan, ShimLoader.getSparkShims.isGpuBroadcastNestedLoopJoin)
+      val nljCount = findOperators(plan, _.isInstanceOf[GpuBroadcastNestedLoopJoinExecBase])
       assert(nljCount.size === 1)
     }, conf)
   }
@@ -53,7 +54,7 @@ class BroadcastNestedLoopJoinSuite extends SparkQueryCompareTestSuite {
       df3.collect()
       val plan = df3.queryExecution.executedPlan
 
-      val nljCount = findOperators(plan, ShimLoader.getSparkShims.isGpuBroadcastNestedLoopJoin)
+      val nljCount = findOperators(plan, _.isInstanceOf[GpuBroadcastNestedLoopJoinExecBase])
 
       ShimLoader.getSparkShims.getSparkShimVersion match {
         case SparkShimVersion(3, 0, 0) =>

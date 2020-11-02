@@ -62,7 +62,6 @@ trait SparkShims {
   def getSparkShimVersion: ShimVersion
   def isGpuHashJoin(plan: SparkPlan): Boolean
   def isGpuBroadcastHashJoin(plan: SparkPlan): Boolean
-  def isGpuBroadcastNestedLoopJoin(plan: SparkPlan): Boolean
   def isGpuShuffledHashJoin(plan: SparkPlan): Boolean
   def isBroadcastExchangeLike(plan: SparkPlan): Boolean
   def isShuffleExchangeLike(plan: SparkPlan): Boolean
