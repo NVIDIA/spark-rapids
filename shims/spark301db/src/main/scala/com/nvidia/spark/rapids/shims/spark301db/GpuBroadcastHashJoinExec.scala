@@ -5,7 +5,7 @@
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
  *
- *     http://www.apache.org/licenses/LICENSE-2.0
+ *   http://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
@@ -13,11 +13,10 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-
 package com.nvidia.spark.rapids.shims.spark301db
 
-import com.nvidia.spark.rapids._
-import com.nvidia.spark.rapids.GpuMetricNames._
+import com.nvidia.spark.rapids.{BaseExprMeta, ConfKeysAndIncompat, GpuBindReferences, GpuBroadcastJoinMeta, GpuColumnVector, GpuExec, GpuOverrides, GpuProjectExec, RapidsConf, RapidsMeta, SparkPlanMeta}
+import com.nvidia.spark.rapids.GpuMetricNames.{NUM_OUTPUT_BATCHES, NUM_OUTPUT_ROWS, TOTAL_TIME}
 
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.InternalRow
@@ -33,15 +32,12 @@ import org.apache.spark.sql.execution.metric.{SQLMetric, SQLMetrics}
 import org.apache.spark.sql.rapids.execution.SerializeConcatHostBuffersDeserializeBatch
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
-/**
- *  Spark 3.1 changed packages of BuildLeft, BuildRight, BuildSide
- */
 class GpuBroadcastHashJoinMeta(
     join: BroadcastHashJoinExec,
     conf: RapidsConf,
     parent: Option[RapidsMeta[_, _, _]],
     rule: ConfKeysAndIncompat)
-  extends SparkPlanMeta[BroadcastHashJoinExec](join, conf, parent, rule) {
+  extends GpuBroadcastJoinMeta[BroadcastHashJoinExec](join, conf, parent, rule) {
 
   val leftKeys: Seq[BaseExprMeta[_]] =
     join.leftKeys.map(GpuOverrides.wrapExpr(_, conf, Some(this)))
@@ -56,11 +52,11 @@ class GpuBroadcastHashJoinMeta(
     GpuHashJoin.tagJoin(this, join.joinType, join.leftKeys, join.rightKeys, join.condition)
 
     val buildSide = join.buildSide match {
-      case BuildLeft => childPlans(0)
-      case BuildRight => childPlans(1)
+     case BuildLeft => childPlans(0)
+     case BuildRight => childPlans(1)
     }
 
-    if (!buildSide.canThisBeReplaced) {
+    if (!canBuildSideBeReplaced(buildSide)) {
       willNotWorkOnGpu("the broadcast for this join must be on the GPU too")
     }
 
@@ -77,9 +73,7 @@ class GpuBroadcastHashJoinMeta(
       case BuildLeft => left
       case BuildRight => right
     }
-    if (!buildSide.isInstanceOf[GpuBroadcastExchangeExec]) {
-      throw new IllegalStateException("the broadcast must be on the GPU too")
-    }
+    verifyBuildSideWasReplaced(buildSide)
     GpuBroadcastHashJoinExec(
       leftKeys.map(_.convertToGpu()),
       rightKeys.map(_.convertToGpu()),
@@ -123,7 +117,8 @@ case class GpuBroadcastHashJoinExec(
   }
 
   override def doExecute(): RDD[InternalRow] =
-    throw new IllegalStateException("GpuBroadcastHashJoin does not support row-based processing")
+    throw new IllegalStateException(
+      "GpuBroadcastHashJoin does not support row-based processing")
 
   override def doExecuteColumnar() : RDD[ColumnarBatch] = {
     val numOutputRows = longMetric(NUM_OUTPUT_ROWS)
@@ -160,3 +155,4 @@ case class GpuBroadcastHashJoinExec(
         numOutputBatches, streamTime, joinTime, filterTime, totalTime))
   }
 }
+
