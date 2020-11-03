@@ -39,6 +39,9 @@ Fill with actual value for KeyName, SubnetId, EmrManagedSlaveSecurityGroup, EmrM
 
 And download the JSON configuration file [preview_config.json](preview_config.json) in raw format to the local file storage where you will issue the above AWS CLI command.  
 
+For us-west-2 region, please use ami-0528a5175983e7f28 as custom-ami-id.
+
+
 ###  Launch EMR Cluster using AWS Console (GUI)
 
 Go to the AWS Management Console and select the `EMR` service from the "Analytics" section. Choose the region you want to launch your cluster in, e.g. US West Oregon, using the dropdown menu in the top right corner. Click `Create cluster` and select `Go to advanced options`, which will bring up a detailed cluster configuration page.
