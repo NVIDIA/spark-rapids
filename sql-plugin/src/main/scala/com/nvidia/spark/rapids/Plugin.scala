@@ -139,23 +139,23 @@ class RapidsExecutorPlugin extends ExecutorPlugin with Logging {
       val cudfClassLoader = classOf[ai.rapids.cudf.ColumnVector].getClassLoader
       val cudfProperties = cudfClassLoader.getResourceAsStream(cudfPropertiesFileName)
       if (cudfProperties == null) {
+        val errorMsg = s"Could not find properties file $cudfPropertiesFileName in " +
+          "the cudf jar. Cannot verify cudf version compatibility with RAPIDS Accelerator version."
         if (!conf.cudfVersionOverride) {
-          throw new RuntimeException("Could not find properties file in the cudf jar." +
-            " Cannot verify if the cudf version is same as expected by plugin")
+          throw new RuntimeException(errorMsg)
         } else {
-          logWarning("Could not find properties file in the cudf jar." +
-            " Cannot verify if the cudf version is same as expected by plugin")
+          logWarning(errorMsg)
         }
       }
       props.load(cudfProperties)
 
       val classpathCudfVersion = props.get("version")
       if (classpathCudfVersion == null) {
+        val errorMsg = s"Property name `version` not found in $cudfPropertiesFileName file"
         if (!conf.cudfVersionOverride) {
-          throw new RuntimeException("Property name `version` not found in " +
-            cudfPropertiesFileName + " file")
+          throw new RuntimeException(errorMsg)
         } else {
-          logWarning("Property name `version` not found in " + cudfPropertiesFileName + " file")
+          logWarning(errorMsg)
         }
       }
       val cudfVersion = classpathCudfVersion.toString
@@ -163,35 +163,35 @@ class RapidsExecutorPlugin extends ExecutorPlugin with Logging {
       val pluginClassLoader = classOf[com.nvidia.spark.SQLPlugin].getClassLoader
       val pluginResource = pluginClassLoader.getResourceAsStream(pluginPropertiesFileName)
       if (pluginResource == null) {
+        val errMsg = s"Could not find properties file $pluginPropertiesFileName in the RAPIDS " +
+          "Accelerator jar. Cannot verify cudf version compatibility with RAPIDS Accelerator " +
+          "version."
         if (!conf.cudfVersionOverride) {
-          throw new RuntimeException("Could not find properties file in the Rapids " +
-            "Accelerator jar. Cannot verify if the cudf version is same as expected by plugin")
+          throw new RuntimeException(errMsg)
         } else {
-          logWarning("Could not find properties file in the Rapids " +
-            "Accelerator jar. Cannot verify if the cudf version is same as expected by plugin")
+          logWarning(errMsg)
         }
       }
       props.load(pluginResource)
 
       val pluginCudfVersion = props.get("cudf_version")
       if (pluginCudfVersion == null) {
+        val errorMsg = s"Property name `cudf_version` not found in $pluginPropertiesFileName file"
         if (!conf.cudfVersionOverride) {
-          throw new RuntimeException("Property name `cudf_version` not found in "
-            + pluginPropertiesFileName + " file")
+          throw new RuntimeException(errorMsg)
         } else {
-          logWarning("Property name `cudf_version` not found in " +
-            pluginPropertiesFileName + " file")
+          logWarning(errorMsg)
         }
       }
       val expectedCudfVersion = pluginCudfVersion.toString
       // compare cudf version in the classpath with the cudf version expected by plugin
       if (!cudfVersion.equals(expectedCudfVersion)) {
+        val errorMsg = s"Cudf version in the classpath is different. Found $cudfVersion RAPIDS " +
+          s"Accelerator expects $expectedCudfVersion "
         if (!conf.cudfVersionOverride) {
-          throw new IllegalArgumentException("Cudf version in the classpath is different. " +
-            "Found " + cudfVersion + ", Plugin expects " + expectedCudfVersion)
+          throw new IllegalArgumentException(errorMsg)
         } else {
-          logWarning("Cudf version in the classpath is different. " +
-            "Found " + cudfVersion + ", Plugin expects " + expectedCudfVersion)
+          logWarning(errorMsg)
         }
       }
 
