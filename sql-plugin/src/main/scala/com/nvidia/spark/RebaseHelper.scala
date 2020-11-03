@@ -36,7 +36,7 @@ object RebaseHelper extends Arm {
           }
         }
       }
-    } else if (dtype.isTimestamp) {
+    } else if (dtype.isTimestampType) {
       assert(dtype == DType.TIMESTAMP_MICROSECONDS)
       withResource(
         Scalar.timestampFromLong(DType.TIMESTAMP_MICROSECONDS, startTs)) { minGood =>

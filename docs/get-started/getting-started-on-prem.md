@@ -38,13 +38,13 @@ to read the deployment method sections before doing any installations.
 ## Install Spark
 To install Apache Spark please follow the official 
 [instructions](https://spark.apache.org/docs/latest/#launching-on-a-cluster). Supported versions of
-Spark are listed on the [stable release](stable-release.md) page.  Please note that only
+Spark are listed on the [stable release](../version/stable-release.md) page.  Please note that only
 scala version 2.12 is currently supported by the accelerator. 
 
 ## Download the RAPIDS jars
 The [accelerator](https://mvnrepository.com/artifact/com.nvidia/rapids-4-spark_2.12) and 
 [cudf](https://mvnrepository.com/artifact/ai.rapids/cudf) jars are available in the 
-[download](../version/stable-release.md#download) section.
+[download](../version/stable-release.md) section.
 
 Download the RAPIDS Accelerator for Apache Spark plugin jar. Then download the version of the cudf
 jar that your version of the accelerator depends on. Each cudf jar is for a specific version of
@@ -55,7 +55,7 @@ CUDA and will not run on other versions. The jars use a maven classifier to keep
 - CUDA 11.0 => classifier cuda11
 
 For example, here is a sample version of the jars and cudf with CUDA 10.1 support:
-- cudf-0.16-cuda10-1.jar
+- cudf-0.17-SNAPSHOT-cuda10-1.jar
 - rapids-4-spark_2.12-0.3.0-SNAPSHOT.jar
 
 
@@ -63,7 +63,7 @@ For simplicity export the location to these jars. This example assumes the sampl
 been placed in the `/opt/sparkRapidsPlugin` directory:
 ```shell 
 export SPARK_RAPIDS_DIR=/opt/sparkRapidsPlugin
-export SPARK_CUDF_JAR=${SPARK_RAPIDS_DIR}/cudf-0.16-cuda10-1.jar
+export SPARK_CUDF_JAR=${SPARK_RAPIDS_DIR}/cudf-0.17-SNAPSHOT-cuda10-1.jar
 export SPARK_RAPIDS_PLUGIN_JAR=${SPARK_RAPIDS_DIR}/rapids-4-spark_2.12-0.3.0-SNAPSHOT.jar
 ```
 
@@ -565,7 +565,7 @@ replaced with GPU calls.
 
 The following is an example of a physical plan with operators running on the GPU: 
 
-![ease-of-use](/docs/img/ease-of-use.png)
+![ease-of-use](../img/ease-of-use.png)
 
 
 ## Debugging

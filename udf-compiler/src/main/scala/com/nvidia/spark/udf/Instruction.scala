@@ -18,16 +18,16 @@ package com.nvidia.spark.udf
 
 import CatalystExpressionBuilder.simplify
 import java.nio.charset.Charset
+import javassist.Modifier
 import javassist.bytecode.{CodeIterator, Opcode}
 
 import org.apache.spark.SparkException
 import org.apache.spark.internal.Logging
-import org.apache.spark.sql.catalyst.ScalaReflection
 import org.apache.spark.sql.catalyst.expressions._
 import org.apache.spark.sql.types._
 
 
-private object Repr {
+private[udf] object Repr {
 
   abstract class CompilerInternal(name: String) extends Expression {
     override def dataType: DataType = {
@@ -110,6 +110,8 @@ private object Repr {
 
   case class ClassTag[T](classTag: scala.reflect.ClassTag[T])
       extends CompilerInternal("scala.reflect.ClassTag")
+
+  case class UnknownCapturedArg() extends CompilerInternal("unknown captured arg")
 }
 
 /**
@@ -346,7 +348,8 @@ case class Instruction(opcode: Int, operand: Int, instructionStr: String) extend
           (List[Expression], List[Expression])): State = {
     val State(locals, stack, cond, expr) = state
     val method = lambdaReflection.lookupBehavior(operand)
-    val declaringClassName = method.getDeclaringClass.getName
+    val declaringClass = method.getDeclaringClass
+    val declaringClassName = declaringClass.getName
     val paramTypes = method.getParameterTypes
     val (args, rest) = getArgs(stack, paramTypes.length)
     // We don't support arbitrary calls.
@@ -389,9 +392,32 @@ case class Instruction(opcode: Int, operand: Int, instructionStr: String) extend
     } else if (declaringClassName.equals("java.time.LocalDateTime")) {
       State(locals, localDateTimeOp(method.getName, args) :: rest, cond, expr)
     } else {
-      // Other functions
-      throw new SparkException(
-        s"Unsupported instruction: ${Opcode.INVOKEVIRTUAL} ${declaringClassName}")
+      val mModifiers = method.getModifiers
+      val cModifiers = declaringClass.getModifiers
+      if (!javassist.Modifier.isEnum(mModifiers) &&
+          !javassist.Modifier.isInterface(mModifiers) &&
+          !javassist.Modifier.isNative(mModifiers) &&
+          !javassist.Modifier.isPackage(mModifiers) &&
+          !javassist.Modifier.isStrict(mModifiers) &&
+          !javassist.Modifier.isSynchronized(mModifiers) &&
+          !javassist.Modifier.isTransient(mModifiers) &&
+          !javassist.Modifier.isVarArgs(mModifiers) &&
+          !javassist.Modifier.isVolatile(mModifiers) &&
+          (javassist.Modifier.isFinal(mModifiers) ||
+           javassist.Modifier.isFinal(cModifiers))) {
+        val retval = {
+          if (javassist.Modifier.isStatic(mModifiers)) {
+            CatalystExpressionBuilder(method).compile(args)
+          } else {
+            CatalystExpressionBuilder(method).compile(args.tail, Some(args.head))
+          }
+        }
+        State(locals, retval.toList ::: rest, cond, expr)
+      } else {
+        // Other functions
+        throw new SparkException(
+          s"Unsupported invocation of ${declaringClassName}.${method.getName}")
+      }
     }
   }
 

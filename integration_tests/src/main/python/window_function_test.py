@@ -147,7 +147,8 @@ def test_multi_types_window_aggs_for_rows(a_gen, b_gen, c_gen):
 # See https://github.com/NVIDIA/spark-rapids/issues/216
 @ignore_order
 @pytest.mark.parametrize('data_gen', [_grpkey_longs_with_timestamps,
-                                      _grpkey_longs_with_nullable_timestamps], ids=idfn)
+                                      pytest.param(_grpkey_longs_with_nullable_timestamps, marks=pytest.mark.xfail(reason='https://github.com/NVIDIA/spark-rapids/issues/1039'))],
+                                      ids=idfn)
 def test_window_aggs_for_ranges(data_gen):
     assert_gpu_and_cpu_are_equal_sql(
         lambda spark: gen_df(spark, data_gen, length=2048),

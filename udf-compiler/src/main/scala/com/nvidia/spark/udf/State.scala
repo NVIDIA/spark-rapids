@@ -19,6 +19,7 @@ package com.nvidia.spark.udf
 import CatalystExpressionBuilder.simplify
 import javassist.CtClass
 
+import org.apache.spark.SparkException
 import org.apache.spark.sql.catalyst.expressions.{Expression, If, Literal, Or}
 
 /**
@@ -74,7 +75,7 @@ import org.apache.spark.sql.catalyst.expressions.{Expression, If, Literal, Or}
  * @param cond
  * @param expr
  */
-case class State(locals: Array[Expression],
+case class State(locals: IndexedSeq[Expression],
     stack: List[Expression] = List(),
     cond: Expression = Literal.TrueLiteral,
     expr: Option[Expression] = None) {
@@ -117,23 +118,23 @@ case class State(locals: Array[Expression],
 
 object State {
   def makeStartingState(lambdaReflection: LambdaReflection,
-      children: Seq[Expression]): State = {
+                        children: Seq[Expression],
+                        objref: Option[Expression]): State = {
     val max = lambdaReflection.maxLocals
-    val params: Seq[(CtClass, Expression)] = lambdaReflection.parameters.view.zip(children)
-    val (locals, _) = params.foldLeft((new Array[Expression](max), 0)) { (l, p) =>
-      val (locals: Array[Expression], index: Int) = l
-      val (param: CtClass, argExp: Expression) = p
-
-      val newIndex = if (param == CtClass.doubleType || param == CtClass.longType) {
+    val args = lambdaReflection.capturedArgs ++ children
+    val paramTypesAndArgs: Seq[(CtClass, Expression)] = lambdaReflection.parameters.view.zip(args)
+    val locals = paramTypesAndArgs.foldLeft(objref.toVector) { (l, p) =>
+      val (paramType : CtClass, argExp) = p
+      if (paramType == CtClass.doubleType || paramType == CtClass.longType) {
         // Long and Double occupies two slots in the local variable array.
+        // Append null to occupy an extra slot.
         // See https://docs.oracle.com/javase/specs/jvms/se8/html/jvms-2.html#jvms-2.6.1
-        index + 2
+        l :+ argExp :+ null
       } else {
-        index + 1
+        l :+ argExp
       }
-
-      (locals.updated(index, argExp), newIndex)
     }
-    State(locals)
+    // Ensure locals have enough slots with padTo.
+    State(locals.padTo(max, null))
   }
 }

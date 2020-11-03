@@ -42,7 +42,7 @@ class GpuBroadcastHashJoinMeta(
     conf: RapidsConf,
     parent: Option[RapidsMeta[_, _, _]],
     rule: ConfKeysAndIncompat)
-  extends SparkPlanMeta[BroadcastHashJoinExec](join, conf, parent, rule) {
+  extends GpuBroadcastJoinMeta[BroadcastHashJoinExec](join, conf, parent, rule) {
 
   val leftKeys: Seq[BaseExprMeta[_]] =
     join.leftKeys.map(GpuOverrides.wrapExpr(_, conf, Some(this)))
@@ -61,19 +61,14 @@ class GpuBroadcastHashJoinMeta(
       case BuildRight => childPlans(1)
     }
 
-    buildSide.wrapped match {
-      case _: BroadcastQueryStageExec =>
-      // this already ran on GPU
-
-      case _ =>
-        if (!buildSide.canThisBeReplaced) {
-          willNotWorkOnGpu("the broadcast for this join must be on the GPU too")
-        }
-
-        if (!canThisBeReplaced) {
-          buildSide.willNotWorkOnGpu("the BroadcastHashJoin this feeds is not on the GPU")
-        }
+    if (!canBuildSideBeReplaced(buildSide)) {
+      willNotWorkOnGpu("the broadcast for this join must be on the GPU too")
     }
+
+    if (!canThisBeReplaced) {
+      buildSide.willNotWorkOnGpu("the BroadcastHashJoin this feeds is not on the GPU")
+    }
+
   }
 
   override def convertToGpu(): GpuExec = {
@@ -84,11 +79,7 @@ class GpuBroadcastHashJoinMeta(
       case BuildLeft => left
       case BuildRight => right
     }
-    buildSide match {
-      case _: GpuBroadcastExchangeExecBase =>
-      case _: BroadcastQueryStageExec =>
-      case _ => throw new IllegalStateException("the broadcast must be on the GPU too")
-    }
+    verifyBuildSideWasReplaced(buildSide)
     GpuBroadcastHashJoinExec(
       leftKeys.map(_.convertToGpu()),
       rightKeys.map(_.convertToGpu()),

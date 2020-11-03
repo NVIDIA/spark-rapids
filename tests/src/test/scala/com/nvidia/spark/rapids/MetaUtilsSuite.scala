@@ -54,7 +54,8 @@ class MetaUtilsSuite extends FunSuite with Arm {
         assert(meta.columnMetas(columnMeta, i) != null)
         assertResult(col.getNullCount)(columnMeta.nullCount)
         assertResult(col.getRowCount)(columnMeta.rowCount)
-        assertResult(col.getType.getNativeId)(columnMeta.dtype)
+        assertResult(col.getType.getTypeId.getNativeId)(columnMeta.dtypeId())
+        assertResult(col.getType.getScale)(columnMeta.dtypeScale())
         val dataBuffer = col.getDeviceBufferFor(BufferType.DATA)
         assertResult(dataBuffer.getAddress - buffer.getAddress)(columnMeta.data.offset)
         assertResult(dataBuffer.getLength)(columnMeta.data.length)
@@ -119,7 +120,8 @@ class MetaUtilsSuite extends FunSuite with Arm {
         assertResult(0)(columnMeta.nullCount)
         assertResult(0)(columnMeta.rowCount)
         val expectedType = batch.column(i).asInstanceOf[GpuColumnVector].getBase.getType
-        assertResult(expectedType.getNativeId)(columnMeta.dtype)
+        assertResult(expectedType.getTypeId.getNativeId)(columnMeta.dtypeId())
+        assertResult(expectedType.getScale)(columnMeta.dtypeScale())
         assertResult(null)(columnMeta.data)
         assertResult(null)(columnMeta.validity)
         assertResult(null)(columnMeta.offsets)
@@ -144,7 +146,8 @@ class MetaUtilsSuite extends FunSuite with Arm {
             assertResult(0)(columnMeta.rowCount)
             val expectedType = uncompressedBatch.column(i).asInstanceOf[GpuColumnVector]
                 .getBase.getType
-            assertResult(expectedType.getNativeId)(columnMeta.dtype)
+            assertResult(expectedType.getTypeId.getNativeId)(columnMeta.dtypeId())
+            assertResult(expectedType.getScale)(columnMeta.dtypeScale())
             assertResult(null)(columnMeta.data)
             assertResult(null)(columnMeta.validity)
             assertResult(null)(columnMeta.offsets)

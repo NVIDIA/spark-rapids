@@ -42,8 +42,8 @@ else
     mkdir -p "$RUN_DIR"
     cd "$RUN_DIR"
     "$SPARK_HOME"/bin/spark-submit --jars "${ALL_JARS// /,}" \
-        --conf "spark.driver.extraJavaOptions=-Duser.timezone=GMT $COVERAGE_SUBMIT_FLAGS" \
-        --conf 'spark.executor.extraJavaOptions=-Duser.timezone=GMT' \
+        --conf "spark.driver.extraJavaOptions=-ea -Duser.timezone=GMT $COVERAGE_SUBMIT_FLAGS" \
+        --conf 'spark.executor.extraJavaOptions=-ea -Duser.timezone=GMT' \
         --conf 'spark.sql.session.timeZone=UTC' \
         --conf 'spark.sql.shuffle.partitions=12' \
         $SPARK_SUBMIT_FLAGS \
