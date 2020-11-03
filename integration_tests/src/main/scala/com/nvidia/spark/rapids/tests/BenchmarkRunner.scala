@@ -45,7 +45,8 @@ object BenchmarkRunner {
 
     benchmarks.get(conf.benchmark().toLowerCase) match {
       case Some(bench) =>
-        val spark = SparkSession.builder.appName(s"${bench.name()} Like Bench").getOrCreate()
+        val appName = s"${bench.name()} Like Bench ${conf.query()}"
+        val spark = SparkSession.builder.appName(appName).getOrCreate()
         conf.inputFormat().toLowerCase match {
           case "parquet" => bench.setupAllParquet(spark, conf.input())
           case "csv" => bench.setupAllCSV(spark, conf.input())
