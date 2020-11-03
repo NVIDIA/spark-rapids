@@ -135,6 +135,13 @@ class RapidsExecutorPlugin extends ExecutorPlugin with Logging {
       // by setting this config spark.rapids.cudfVersionOverride=true
       checkCudfVersion(conf)
 
+      // we rely on the Rapids Plugin being run with 1 GPU per executor so we can initialize
+      // on executor startup.
+      if (!GpuDeviceManager.rmmTaskInitEnabled) {
+        logInfo("Initializing memory from Executor Plugin")
+        GpuDeviceManager.initializeGpuAndMemory(pluginContext.resources().asScala.toMap)
+      }
+
       GpuSemaphore.initialize(conf.concurrentGpuTasks)
     } catch {
       case e: Throwable =>
@@ -179,7 +186,7 @@ class RapidsExecutorPlugin extends ExecutorPlugin with Logging {
       val pluginCudfVersion = props.get("cudf_version")
       if (pluginCudfVersion == null) {
         throw CudfVersionMismatchException(s"Property name `cudf_version` not found in" +
-          s"$pluginPropertiesFileName file.")
+          s" $pluginPropertiesFileName file.")
       }
       val expectedCudfVersion = pluginCudfVersion.toString
       // compare cudf version in the classpath with the cudf version expected by plugin
