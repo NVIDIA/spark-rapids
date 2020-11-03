@@ -130,82 +130,10 @@ class RapidsExecutorPlugin extends ExecutorPlugin with Logging {
         ShimLoader.setSparkShimProviderClass(conf.shimsProviderOverride.get)
       }
 
-      try {
-        // Compare if the cudf version mentioned in the classpath is equal to the version which
-        // plugin expects. If there is a version mismatch, throw error. This check can be disabled
-        // by setting this config spark.rapids.cudfVersionOverride=true
-        val cudfPropertiesFileName = "cudf-java-version-info.properties"
-        val pluginPropertiesFileName = "rapids4spark-version-info.properties"
-
-        val props = new Properties
-        val cudfClassLoader = classOf[ai.rapids.cudf.ColumnVector].getClassLoader
-        val cudfProperties = cudfClassLoader.getResourceAsStream(cudfPropertiesFileName)
-        if (cudfProperties == null) {
-          val errorMsg = s"Could not find properties file $cudfPropertiesFileName in the cudf " +
-            "jar. Cannot verify cudf version compatibility with RAPIDS Accelerator version."
-          if (!conf.cudfVersionOverride) {
-            throw new RuntimeException(errorMsg)
-          } else {
-            throw CudfVersionMismatchException(errorMsg)
-          }
-        }
-        props.load(cudfProperties)
-
-        val classpathCudfVersion = props.get("version")
-        if (classpathCudfVersion == null) {
-          val errorMsg = s"Property name `version` not found in $cudfPropertiesFileName file"
-          if (!conf.cudfVersionOverride) {
-            throw new RuntimeException(errorMsg)
-          } else {
-            throw CudfVersionMismatchException(errorMsg)
-          }
-        }
-        val cudfVersion = classpathCudfVersion.toString
-
-        val pluginClassLoader = classOf[com.nvidia.spark.SQLPlugin].getClassLoader
-        val pluginResource = pluginClassLoader.getResourceAsStream(pluginPropertiesFileName)
-        if (pluginResource == null) {
-          val errorMsg = s"Could not find properties file $pluginPropertiesFileName in the " +
-            "RAPIDS Accelerator jar. Cannot verify cudf version compatibility with RAPIDS " +
-            "Accelerator version."
-          if (!conf.cudfVersionOverride) {
-            throw new RuntimeException(errorMsg)
-          } else {
-            throw CudfVersionMismatchException(errorMsg)
-          }
-        }
-        props.load(pluginResource)
-
-        val pluginCudfVersion = props.get("cudf_version")
-        if (pluginCudfVersion == null) {
-          val errorMsg = s"Property name `cudf_version` not found in $pluginPropertiesFileName file"
-          if (!conf.cudfVersionOverride) {
-            throw new RuntimeException(errorMsg)
-          } else {
-            throw CudfVersionMismatchException(errorMsg)
-          }
-        }
-        val expectedCudfVersion = pluginCudfVersion.toString
-        // compare cudf version in the classpath with the cudf version expected by plugin
-        if (!cudfVersion.equals(expectedCudfVersion)) {
-          val errorMsg = s"Cudf version in the classpath is different. Found $cudfVersion, " +
-            s"RAPIDS Accelerator expects $expectedCudfVersion "
-          if (!conf.cudfVersionOverride) {
-            throw new IllegalArgumentException(errorMsg)
-          } else {
-            throw CudfVersionMismatchException(errorMsg)
-          }
-        }
-      } catch {
-        case x: CudfVersionMismatchException => logWarning(s"${x.errorMsg}")
-      }
-
-      // we rely on the Rapids Plugin being run with 1 GPU per executor so we can initialize
-      // on executor startup.
-      if (!GpuDeviceManager.rmmTaskInitEnabled) {
-        logInfo("Initializing memory from Executor Plugin")
-        GpuDeviceManager.initializeGpuAndMemory(pluginContext.resources().asScala.toMap)
-      }
+      // Compare if the cudf version mentioned in the classpath is equal to the version which
+      // plugin expects. If there is a version mismatch, throw error. This check can be disabled
+      // by setting this config spark.rapids.cudfVersionOverride=true
+      checkCudfVersion(conf)
 
       GpuSemaphore.initialize(conf.concurrentGpuTasks)
     } catch {
@@ -218,7 +146,55 @@ class RapidsExecutorPlugin extends ExecutorPlugin with Logging {
     }
   }
 
-  case class CudfVersionMismatchException(errorMsg: String) extends Exception
+  private def checkCudfVersion(conf: RapidsConf): Unit = {
+    try {
+      val cudfPropertiesFileName = "cudf-java-version-info.properties"
+      val pluginPropertiesFileName = "rapids4spark-version-info.properties"
+
+      val props = new Properties
+      val classLoader = classOf[RapidsExecutorPlugin].getClassLoader
+      val cudfProperties = classLoader.getResourceAsStream(cudfPropertiesFileName)
+      if (cudfProperties == null) {
+        throw CudfVersionMismatchException(s"Could not find properties file " +
+          s"$cudfPropertiesFileName in the cudf jar. Cannot verify cudf version compatibility " +
+          s"with RAPIDS Accelerator version.")
+      }
+      props.load(cudfProperties)
+
+      val classpathCudfVersion = props.get("version")
+      if (classpathCudfVersion == null) {
+        throw CudfVersionMismatchException(s"Property name `version` not found in " +
+          s"$cudfPropertiesFileName file.")
+      }
+      val cudfVersion = classpathCudfVersion.toString
+
+      //val pluginClassLoader = classOf[com.nvidia.spark.SQLPlugin].getClassLoader
+      val pluginResource = classLoader.getResourceAsStream(pluginPropertiesFileName)
+      if (pluginResource == null) {
+        throw CudfVersionMismatchException(s"Could not find properties file " +
+          s"$pluginPropertiesFileName in the RAPIDS Accelerator jar. Cannot verify cudf " +
+          s"version compatibility with RAPIDS Accelerator version.")
+      }
+      props.load(pluginResource)
+
+      val pluginCudfVersion = props.get("cudf_version")
+      if (pluginCudfVersion == null) {
+        throw CudfVersionMismatchException(s"Property name `cudf_version` not found in" +
+          s"$pluginPropertiesFileName file.")
+      }
+      val expectedCudfVersion = pluginCudfVersion.toString
+      // compare cudf version in the classpath with the cudf version expected by plugin
+      if (!cudfVersion.equals(expectedCudfVersion)) {
+        throw CudfVersionMismatchException(s"Cudf version in the classpath is different. " +
+          s"Found $cudfVersion, RAPIDS Accelerator expects $expectedCudfVersion")
+      }
+    } catch {
+      case x: CudfVersionMismatchException if conf.cudfVersionOverride =>
+        logWarning(s"${x.errorMsg}")
+    }
+  }
+
+  case class CudfVersionMismatchException(errorMsg: String) extends RuntimeException(errorMsg)
 
   override def shutdown(): Unit = {
     GpuSemaphore.shutdown()
