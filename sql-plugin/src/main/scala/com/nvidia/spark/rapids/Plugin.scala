@@ -168,7 +168,6 @@ class RapidsExecutorPlugin extends ExecutorPlugin with Logging {
       }
       val cudfVersion = classpathCudfVersion.toString
 
-      //val pluginClassLoader = classOf[com.nvidia.spark.SQLPlugin].getClassLoader
       val pluginResource = classLoader.getResourceAsStream(pluginPropertiesFileName)
       if (pluginResource == null) {
         throw CudfVersionMismatchException(s"Could not find properties file " +
