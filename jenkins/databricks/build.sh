@@ -22,6 +22,12 @@ SPARKSRCTGZ=$1
 BASE_SPARK_VERSION=$2
 BUILD_PROFILES=$3
 
+echo "tgz is $SPARKSRCTGZ"
+echo "Base Spark version is $BASE_SPARK_VERSION"
+echo "build profiles $BUILD_PROFILES"
+
+sudo apt install -y maven
+
 # this has to match the Databricks init script
 DB_JAR_LOC=/databricks/jars/
 SPARK_PLUGIN_JAR_VERSION=`mvn help:evaluate -q -pl dist -Dexpression=project.version -DforceStdout`
@@ -33,12 +39,11 @@ CUDA_VERSION=`mvn help:evaluate -q -pl dist -Dexpression=cuda.version -DforceStd
 SPARK_VERSION_TO_INSTALL_DATABRICKS_JARS=$BASE_SPARK_VERSION-databricks
 RAPIDS_BUILT_JAR=rapids-4-spark_$SCALA_VERSION-$SPARK_PLUGIN_JAR_VERSION.jar
 
-echo "Base Spark version is $BASE_SPARK_VERSION"
 echo "Scala version is: $SCALA_VERSION"
 
-sudo apt install -y maven
 rm -rf spark-rapids
 mkdir spark-rapids
+echo  "tar -zxvf $SPARKSRCTGZ -C spark-rapids"
 tar -zxvf $SPARKSRCTGZ -C spark-rapids
 cd spark-rapids
 export WORKSPACE=`pwd`
