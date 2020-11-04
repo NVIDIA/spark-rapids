@@ -30,6 +30,14 @@ sudo apt install -y maven
 
 # this has to match the Databricks init script
 DB_JAR_LOC=/databricks/jars/
+
+rm -rf spark-rapids
+mkdir spark-rapids
+echo  "tar -zxvf $SPARKSRCTGZ -C spark-rapids"
+tar -zxvf $SPARKSRCTGZ -C spark-rapids
+cd spark-rapids
+export WORKSPACE=`pwd`
+
 SPARK_PLUGIN_JAR_VERSION=`mvn help:evaluate -q -pl dist -Dexpression=project.version -DforceStdout`
 CUDF_VERSION=`mvn help:evaluate -q -pl dist -Dexpression=cudf.version -DforceStdout`
 SCALA_VERSION=`mvn help:evaluate -q -pl dist -Dexpression=scala.binary.version -DforceStdout`
@@ -40,13 +48,6 @@ SPARK_VERSION_TO_INSTALL_DATABRICKS_JARS=$BASE_SPARK_VERSION-databricks
 RAPIDS_BUILT_JAR=rapids-4-spark_$SCALA_VERSION-$SPARK_PLUGIN_JAR_VERSION.jar
 
 echo "Scala version is: $SCALA_VERSION"
-
-rm -rf spark-rapids
-mkdir spark-rapids
-echo  "tar -zxvf $SPARKSRCTGZ -C spark-rapids"
-tar -zxvf $SPARKSRCTGZ -C spark-rapids
-cd spark-rapids
-export WORKSPACE=`pwd`
 mvn -B -P${BUILD_PROFILES} clean package -DskipTests || true
 M2DIR=/home/ubuntu/.m2/repository
 CUDF_JAR=${M2DIR}/ai/rapids/cudf/${CUDF_VERSION}/cudf-${CUDF_VERSION}-${CUDA_VERSION}.jar
