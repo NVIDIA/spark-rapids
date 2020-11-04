@@ -20,6 +20,7 @@ import ai.rapids.cudf
 import ai.rapids.cudf.{Aggregation, Table}
 import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.GpuMetricNames.{NUM_OUTPUT_BATCHES, NUM_OUTPUT_ROWS}
+import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import com.nvidia.spark.rapids.python.PythonWorkerSemaphore
 import scala.collection.mutable
 import scala.collection.mutable.ArrayBuffer
@@ -95,7 +96,7 @@ class GroupingIterator(
     wrapped: Iterator[ColumnarBatch],
     partitionSpec: Seq[Expression]) extends Iterator[ColumnarBatch] with Arm {
 
-  // Currently do it in a somewhat ugly way. In the future it is better to do it in cuDF.
+  // Currently do it in a somewhat ugly way. In the future cuDF will provide a dedicated API.
   // Current solution assumes one group data exists in only one batch, so just split the
   // batch into multiple batches to make sure one batch contains only one group.
   private val groupBatches: mutable.Queue[SpillableColumnarBatch] = mutable.Queue.empty
@@ -143,16 +144,18 @@ class GroupingIterator(
 
         // 2) Split the table when needed
         val resultBatch = if (splitIndices.nonEmpty) {
-          // More than one group, split it
-          val splitTables = withResource(GpuColumnVector.from(batch)) { table =>
-            table.contiguousSplit(splitIndices:_*)
-          }
-          withResource(splitTables) { tables =>
-            // Return the first one and enqueue others
-            val splitBatches = tables.map(table => GpuColumnVectorFromBuffer.from(table))
-            groupBatches.enqueue(splitBatches.tail.map(sb =>
-              SpillableColumnarBatch(sb, SpillPriorities.ACTIVE_ON_DECK_PRIORITY)): _*)
-            splitBatches.head
+          // More than one group, split it and close this incoming batch
+          withResource(batch) { cb =>
+            withResource(GpuColumnVector.from(cb)) { table =>
+              withResource(table.contiguousSplit(splitIndices:_*)) { tables =>
+                // Return the first one and enqueue others
+                val splitBatches = tables.safeMap(table =>
+                  GpuColumnVectorFromBuffer.from(table, GpuColumnVector.extractTypes(batch)))
+                groupBatches.enqueue(splitBatches.tail.map(sb =>
+                  SpillableColumnarBatch(sb, SpillPriorities.ACTIVE_ON_DECK_PRIORITY)): _*)
+                splitBatches.head
+              }
+            }
           }
         } else {
           // Only one group, return it directly
@@ -242,13 +245,13 @@ case class GpuWindowInPandasExec(
   // Similar with WindowExecBase.windowFrameExpressionFactoryPairs
   // but the functions are not needed here.
   private lazy val windowFramesWithExpressions = {
-    type FrameKey = (String, FrameType, Expression, Expression)
+    type FrameKey = (String, GpuSpecifiedWindowFrame)
     type ExpressionBuffer = mutable.Buffer[Expression]
     val framedExpressions = mutable.Map.empty[FrameKey, ExpressionBuffer]
 
     // Add expressions to the map for a given frame.
     def collect(tpe: String, fr: GpuSpecifiedWindowFrame, e: Expression): Unit = {
-      val key = (tpe, fr.frameType, fr.lower, fr.upper)
+      val key = (tpe, fr)
       val es = framedExpressions.getOrElseUpdate(key, mutable.ArrayBuffer.empty[Expression])
       es += e
     }
@@ -272,7 +275,7 @@ case class GpuWindowInPandasExec(
 
     framedExpressions.toSeq.map {
       // Remove the function type string
-      case ((_, ftp, lower, upper), es) => ((ftp, lower, upper), es)
+      case ((_, frame), es) => (frame, es)
     }
   }
 
@@ -281,10 +284,12 @@ case class GpuWindowInPandasExec(
    */
   private def computeWindowBoundHelpers: WindowBoundHelpers = {
 
-    val windowBoundTypes = windowFramesWithExpressions.map(_._1).map {
-      case (_, GpuSpecialFrameBoundary(UnboundedPreceding),
-               GpuSpecialFrameBoundary(UnboundedFollowing)) => UnboundedWindow
-      case _ => BoundedWindow
+    val windowBoundTypes = windowFramesWithExpressions.map(_._1).map { frame =>
+      if (frame.isUnbounded) {
+        UnboundedWindow
+      } else {
+        BoundedWindow
+      }
     }
 
     val requiredIndices = windowBoundTypes.map {
@@ -373,20 +378,20 @@ case class GpuWindowInPandasExec(
       }
     }
 
-    val boundsCVs = windowFramesWithExpressions.map(_._1).flatMap {
-      // Skip unbound window frames
-      case (_, GpuSpecialFrameBoundary(UnboundedPreceding),
-               GpuSpecialFrameBoundary(UnboundedFollowing)) =>
-        Seq.empty
-      case (RowFrame, lower, upper) =>
-        GpuSemaphore.acquireIfNecessary(TaskContext.get())
-        val twoBounds = Seq(buildLowerCV(lower), buildUpperCV(upper))
-        GpuSemaphore.releaseIfNecessary(TaskContext.get())
-        twoBounds
-      // Only support RowFrame here, should check it when replacing this node.
-      case (RangeFrame, _, _) => throw new UnsupportedOperationException("Range frame" +
-        " is not supported yet!")
-      case u => throw new UnsupportedOperationException(s"Unsupported window frame ${u._1}")
+    val boundsCVs = windowFramesWithExpressions.map(_._1).flatMap { frame =>
+      (frame.isUnbounded, frame.frameType) match {
+        // Skip unbound window frames
+        case (true, _) => Seq.empty
+        case (false, RowFrame) =>
+          GpuSemaphore.acquireIfNecessary(TaskContext.get())
+          val twoBounds = Seq(buildLowerCV(frame.lower), buildUpperCV(frame.upper))
+          GpuSemaphore.releaseIfNecessary(TaskContext.get())
+          twoBounds
+        // Only support RowFrame here, should check it when replacing this node.
+        case (false, RangeFrame) => throw new UnsupportedOperationException("Range frame" +
+          " is not supported yet!")
+        case (false, f) => throw new UnsupportedOperationException(s"Unsupported window frame $f")
+      }
     }.toArray
     val dataCVs = GpuColumnVector.extractColumns(batch)
     new ColumnarBatch(boundsCVs ++ dataCVs.map(_.incRefCount()), numRows)
