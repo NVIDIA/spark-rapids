@@ -161,6 +161,15 @@ public class GpuColumnVector extends GpuColumnVectorBase {
       return DType.TIMESTAMP_MICROSECONDS;
     } else if (type instanceof StringType) {
       return DType.STRING;
+    } else if (type instanceof DecimalType) {
+      DecimalType decType = (DecimalType) type;
+      if (decType.precision() <= DType.DECIMAL32_MAX_PRECISION) {
+        return DType.create(DType.DTypeEnum.DECIMAL32, -decType.scale());
+      } else if (decType.precision() <= DType.DECIMAL64_MAX_PRECISION) {
+        return DType.create(DType.DTypeEnum.DECIMAL64, -decType.scale());
+      } else {
+        return null;
+      }
     }
     return null;
   }
@@ -180,6 +189,48 @@ public class GpuColumnVector extends GpuColumnVectorBase {
       throw new IllegalArgumentException(type + " is not supported for GPU processing yet.");
     }
     return result;
+  }
+
+  static DataType getSparkType(DType type) {
+    switch (type.getTypeId()) {
+      case BOOL8:
+        return DataTypes.BooleanType;
+      case INT8:
+        return DataTypes.ByteType;
+      case INT16:
+        return DataTypes.ShortType;
+      case INT32:
+        return DataTypes.IntegerType;
+      case INT64:
+        return DataTypes.LongType;
+      case FLOAT32:
+        return DataTypes.FloatType;
+      case FLOAT64:
+        return DataTypes.DoubleType;
+      case TIMESTAMP_DAYS:
+        return DataTypes.DateType;
+      case TIMESTAMP_MICROSECONDS:
+        return DataTypes.TimestampType;
+      case STRING:
+        return DataTypes.StringType;
+      case DECIMAL32:
+        return new DecimalType(DType.DECIMAL32_MAX_PRECISION, -type.getScale());
+      case DECIMAL64:
+        return new DecimalType(DType.DECIMAL64_MAX_PRECISION, -type.getScale());
+      default:
+        throw new IllegalArgumentException(type + " is not supported by spark yet.");
+    }
+  }
+
+  protected static <T> DataType getSparkTypeFrom(ColumnViewAccess<T> access) {
+    DType type = access.getDataType();
+    if (type == DType.LIST) {
+      try (ColumnViewAccess<T> child = access.getChildColumnViewAccess(0)) {
+        return new ArrayType(getSparkTypeFrom(child), true);
+      }
+    } else {
+      return getSparkType(type);
+    }
   }
 
   /**

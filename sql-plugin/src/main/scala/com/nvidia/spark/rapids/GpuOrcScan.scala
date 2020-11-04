@@ -56,7 +56,7 @@ import org.apache.spark.sql.execution.metric.SQLMetric
 import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.rapids.OrcFilters
 import org.apache.spark.sql.sources.Filter
-import org.apache.spark.sql.types.StructType
+import org.apache.spark.sql.types.{DataType, DecimalType, StructType}
 import org.apache.spark.sql.vectorized.ColumnarBatch
 import org.apache.spark.util.SerializableConfiguration
 
@@ -113,9 +113,18 @@ object GpuOrcScanBase {
       meta.willNotWorkOnGpu("mergeSchema and schema evolution is not supported yet")
     }
     schema.foreach { field =>
-      if (!GpuColumnVector.isSupportedType(field.dataType)) {
+      if (!isSupportedType(field.dataType)) {
         meta.willNotWorkOnGpu(s"GpuOrcScan does not support fields of type ${field.dataType}")
       }
+    }
+  }
+  // We need this specialized type check method because
+  // R/W ORC data with decimal columns has not supported by cuDF yet.
+  def isSupportedType(dataType: DataType): Boolean = {
+    GpuColumnVector.isSupportedType(dataType) match {
+      case false => false
+      case true if dataType.isInstanceOf[DecimalType] => false
+      case _ => true
     }
   }
 }

@@ -267,7 +267,7 @@ class ParquetCachedBatchSerializer extends CachedBatchSerializer with Arm {
     }
 
   def isSupportedByCudf(schema: Seq[Attribute]): Boolean = {
-    schema.forall(a => GpuColumnVector.isSupportedType(a.dataType))
+    schema.forall(a => GpuParquetScanBase.isSupportedType(a.dataType))
   }
 
   /**
