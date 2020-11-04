@@ -432,7 +432,7 @@ class CSVPartitionReader(
         if (readDataSchema.isEmpty) {
           table.map(t => new ColumnarBatch(Array.empty, t.getRowCount.toInt))
         } else {
-          table.map(GpuColumnVector.from)
+          table.map(GpuColumnVector.from(_, readDataSchema.toArray.map(_.dataType)))
         }
       } finally {
         metrics(NUM_OUTPUT_BATCHES) += 1

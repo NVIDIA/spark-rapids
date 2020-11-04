@@ -38,8 +38,8 @@ public final class GpuCompressedColumnVector extends GpuColumnVectorBase {
    * Build a columnar batch from a compressed table.
    * NOTE: The data remains compressed and cannot be accessed directly from the columnar batch.
    */
-  public static ColumnarBatch from(CompressedTable compressedTable) {
-    return from(compressedTable.buffer(), compressedTable.meta());
+  public static ColumnarBatch from(CompressedTable compressedTable, DataType[] colTypes) {
+    return from(compressedTable.buffer(), compressedTable.meta(), colTypes);
   }
 
   public static boolean isBatchCompressed(ColumnarBatch batch) {
@@ -79,7 +79,9 @@ public final class GpuCompressedColumnVector extends GpuColumnVectorBase {
   /**
    * Build a columnar batch from a compressed data buffer and specified table metadata
    * NOTE: The data remains compressed and cannot be accessed directly from the columnar batch.
+   * @deprecated use the version that takes the spark data types.
    */
+  @Deprecated
   public static ColumnarBatch from(DeviceMemoryBuffer compressedBuffer, TableMeta tableMeta) {
     long rows = tableMeta.rowCount();
     if (rows != (int) rows) {
@@ -94,6 +96,44 @@ public final class GpuCompressedColumnVector extends GpuColumnVectorBase {
         tableMeta.columnMetas(columnMeta, i);
         DType dtype = DType.fromNative(columnMeta.dtypeId(), columnMeta.dtypeScale());
         DataType type = GpuColumnVector.getSparkType(dtype);
+        compressedBuffer.incRefCount();
+        columns[i] = new GpuCompressedColumnVector(type, compressedBuffer, tableMeta);
+      }
+    } catch (Throwable t) {
+      for (int i = 0; i < numColumns; ++i) {
+        if (columns[i] != null) {
+          columns[i].close();
+        }
+      }
+      throw t;
+    }
+
+    return new ColumnarBatch(columns, (int) rows);
+  }
+
+
+  /**
+   * Build a columnar batch from a compressed data buffer and specified table metadata
+   * NOTE: The data remains compressed and cannot be accessed directly from the columnar batch.
+   */
+  public static ColumnarBatch from(DeviceMemoryBuffer compressedBuffer,
+      TableMeta tableMeta,
+      DataType[] colTypes) {
+    long rows = tableMeta.rowCount();
+    if (rows != (int) rows) {
+      throw new IllegalStateException("Cannot support a batch larger that MAX INT rows");
+    }
+
+    ColumnMeta columnMeta = new ColumnMeta();
+    int numColumns = tableMeta.columnMetasLength();
+    assert numColumns == colTypes.length : "Size mismatch on types";
+    ColumnVector[] columns = new ColumnVector[numColumns];
+    try {
+      for (int i = 0; i < numColumns; ++i) {
+        tableMeta.columnMetas(columnMeta, i);
+        DataType type = colTypes[i];
+        // TODO we need a good way to verify that we can map between the DType(s) we have in
+        //  columnMeta and the types passed in.
         compressedBuffer.incRefCount();
         columns[i] = new GpuCompressedColumnVector(type, compressedBuffer, tableMeta);
       }

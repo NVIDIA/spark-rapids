@@ -28,6 +28,7 @@ import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import org.apache.spark.TaskContext
 import org.apache.spark.serializer.{DeserializationStream, SerializationStream, Serializer, SerializerInstance}
 import org.apache.spark.sql.execution.metric.SQLMetric
+import org.apache.spark.sql.types.DataType
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
 /**
@@ -40,11 +41,12 @@ class GpuColumnarBatchSerializer(dataSize: SQLMetric = null) extends Serializer 
   override def supportsRelocationOfSerializedObjects: Boolean = true
 }
 
-private class GpuColumnarBatchSerializerInstance(dataSize: SQLMetric) extends SerializerInstance {
+private class GpuColumnarBatchSerializerInstance(dataSize: SQLMetric) extends SerializerInstance
+    with Arm {
 
   override def serializeStream(out: OutputStream): SerializationStream = new SerializationStream {
-    private[this] val dOut: DataOutputStream =
-      new DataOutputStream(new BufferedOutputStream(out))
+    private[this] val dOut: ObjectOutputStream =
+      new ObjectOutputStream(new BufferedOutputStream(out))
 
     override def writeValue[T: ClassTag](value: T): SerializationStream = {
       val batch = value.asInstanceOf[ColumnarBatch]
@@ -79,12 +81,11 @@ private class GpuColumnarBatchSerializerInstance(dataSize: SQLMetric) extends Se
           if (dataSize != null) {
             dataSize.add(JCudfSerialization.getSerializedSizeInBytes(columns, startRow, numRows))
           }
-          val range = new NvtxRange("Serialize Batch", NvtxColor.YELLOW)
-          try {
+          withResource(new NvtxRange("Serialize Batch", NvtxColor.YELLOW)) { _ =>
             JCudfSerialization.writeToStream(columns, dOut, startRow, numRows)
-          } finally {
-            range.close()
           }
+          val sparkSchema = (0 until numColumns).map(batch.column(_).dataType()).toArray
+          dOut.writeObject(sparkSchema)
         } else {
           val range = new NvtxRange("Serialize Row Only Batch", NvtxColor.YELLOW)
           try {
@@ -127,7 +128,7 @@ private class GpuColumnarBatchSerializerInstance(dataSize: SQLMetric) extends Se
 
   override def deserializeStream(in: InputStream): DeserializationStream = {
     new DeserializationStream {
-      private[this] val dIn: DataInputStream = new DataInputStream(new BufferedInputStream(in))
+      private[this] val dIn: ObjectInputStream = new ObjectInputStream(new BufferedInputStream(in))
 
       override def asKeyValueIterator: Iterator[(Int, ColumnarBatch)] = {
         new Iterator[(Int, ColumnarBatch)] {
@@ -143,26 +144,21 @@ private class GpuColumnarBatchSerializerInstance(dataSize: SQLMetric) extends Se
             // about to start using the GPU in this task
             GpuSemaphore.acquireIfNecessary(TaskContext.get())
 
-            val range = new NvtxRange("Deserialize Batch", NvtxColor.YELLOW)
-            try {
-              val tableInfo = JCudfSerialization.readTableFrom(dIn)
-              try {
+            withResource(new NvtxRange("Deserialize Batch", NvtxColor.YELLOW)) { _ =>
+              withResource(JCudfSerialization.readTableFrom(dIn)) { tableInfo =>
                 val contigTable = tableInfo.getContiguousTable
                 if (contigTable == null && tableInfo.getNumRows == 0) {
                   dIn.close()
                   None
                 } else {
                   if (contigTable != null) {
-                    Some(GpuColumnVectorFromBuffer.from(contigTable))
+                    val sparkSchema = dIn.readObject().asInstanceOf[Array[DataType]]
+                    Some(GpuColumnVectorFromBuffer.from(contigTable, sparkSchema))
                   } else {
                     Some(new ColumnarBatch(Array.empty, tableInfo.getNumRows))
                   }
                 }
-              } finally {
-                tableInfo.close()
               }
-            } finally {
-              range.close()
             }
           }
 
@@ -203,22 +199,17 @@ private class GpuColumnarBatchSerializerInstance(dataSize: SQLMetric) extends Se
         // about to start using the GPU in this task
         GpuSemaphore.acquireIfNecessary(TaskContext.get())
 
-        val range = new NvtxRange("Deserialize Batch", NvtxColor.YELLOW)
-        try {
-          val tableInfo = JCudfSerialization.readTableFrom(dIn)
-          val cb = try {
-            val table = tableInfo.getTable
-            if (table != null) {
-              Some(GpuColumnVector.from(table))
+        withResource(new NvtxRange("Deserialize Batch", NvtxColor.YELLOW)) { _ =>
+          val cb = withResource(JCudfSerialization.readTableFrom(dIn)) { tableInfo =>
+            val contigTable = tableInfo.getContiguousTable
+            if (contigTable != null) {
+              val sparkSchema = dIn.readObject().asInstanceOf[Array[DataType]]
+              Some(GpuColumnVectorFromBuffer.from(contigTable, sparkSchema))
             } else {
               Some(new ColumnarBatch(Array.empty, tableInfo.getNumRows))
             }
-          } finally {
-            tableInfo.close()
           }
           cb.asInstanceOf[T]
-        } finally {
-          range.close()
         }
       }
 
