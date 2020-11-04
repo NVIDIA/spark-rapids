@@ -91,7 +91,7 @@ pipeline {
     post {
         always {
             script {
-                sh "python3.6 ./jenkins/databricks/shutdown.py -c ${env.CLUSTERID} -t $DATABRICKS_TOKEN -d || true"
+                // sh "python3.6 ./jenkins/databricks/shutdown.py -c ${env.CLUSTERID} -t $DATABRICKS_TOKEN -d || true"
                 if (currentBuild.currentResult == "SUCCESS") {
                     // slack("#swrapids-spark-cicd", "Success", color: "#33CC33")
                 } else {
