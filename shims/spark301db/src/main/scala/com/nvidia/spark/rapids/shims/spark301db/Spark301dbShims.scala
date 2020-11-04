@@ -88,19 +88,6 @@ class Spark301dbShims extends Spark301Shims {
     }
   }
 
-  override def isBroadcastExchangeLike(plan: SparkPlan): Boolean =
-    plan.isInstanceOf[BroadcastExchangeLike]
-
-  override def isShuffleExchangeLike(plan: SparkPlan): Boolean =
-    plan.isInstanceOf[ShuffleExchangeLike]
-
-  override def injectQueryStagePrepRule(
-      extensions: SparkSessionExtensions,
-      ruleBuilder: SparkSession => Rule[SparkPlan]): Unit = {
-    extensions.injectQueryStagePrepRule(ruleBuilder)
-  }
-
-
   override def getExecs: Map[Class[_ <: SparkPlan], ExecRule[_ <: SparkPlan]] = {
     Seq(
       GpuOverrides.exec[FileSourceScanExec](
