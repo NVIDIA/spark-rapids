@@ -155,13 +155,37 @@ class ShuffledBatchRDD(
   }
 
   override def compute(split: Partition, context: TaskContext): Iterator[ColumnarBatch] = {
-    val shuffledRowPartition = split.asInstanceOf[ShuffledBatchRDDPartition]
+    val shuffledBatchPartition = split.asInstanceOf[ShuffledBatchRDDPartition]
+    // update partition metrics
+    metrics(GpuMetricNames.NUM_PARTITIONS).add(1)
+    val partitionSize = shuffledBatchPartition.spec match {
+      case CoalescedPartitionSpec(startReducerIndex, endReducerIndex) =>
+        val blocksByAddress = SparkEnv.get.mapOutputTracker.getMapSizesByExecutorId(
+          dependency.shuffleHandle.shuffleId, startReducerIndex, endReducerIndex)
+        blocksByAddress.flatMap(_._2).map(_._2).sum
+
+      case PartialReducerPartitionSpec(reducerIndex, startMapIndex, endMapIndex) =>
+        val blocksByAddress = SparkEnv.get.mapOutputTracker.getMapSizesByExecutorId(
+          dependency.shuffleHandle.shuffleId, reducerIndex, reducerIndex + 1)
+        blocksByAddress.flatMap(_._2)
+            .filter(tuple => tuple._3 >= startMapIndex && tuple._3 < endMapIndex)
+            .map(_._2).sum
+
+      case PartialMapperPartitionSpec(mapIndex, startReducerIndex, endReducerIndex) =>
+        val blocksByAddress = SparkEnv.get.mapOutputTracker.getMapSizesByExecutorId(
+          dependency.shuffleHandle.shuffleId, startReducerIndex, endReducerIndex)
+        blocksByAddress.flatMap(_._2)
+            .filter(_._3 == mapIndex)
+            .map(_._2).sum
+    }
+    metrics(GpuMetricNames.PARTITION_SIZE).add(partitionSize)
+
     val tempMetrics = context.taskMetrics().createTempShuffleReadMetrics()
     // `SQLShuffleReadMetricsReporter` will update its own metrics for SQL exchange operator,
     // as well as the `tempMetrics` for basic shuffle metrics.
     val sqlMetricsReporter = new SQLShuffleReadMetricsReporter(tempMetrics, metrics)
     val shuffleManagerShims = ShimLoader.getSparkShims.getShuffleManagerShims()
-    val reader = split.asInstanceOf[ShuffledBatchRDDPartition].spec match {
+    val reader = shuffledBatchPartition.spec match {
       case CoalescedPartitionSpec(startReducerIndex, endReducerIndex) =>
         SparkEnv.get.shuffleManager.getReader(
           dependency.shuffleHandle,
