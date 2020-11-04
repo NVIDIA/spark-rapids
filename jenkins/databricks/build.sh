@@ -22,16 +22,16 @@ SPARKSRCTGZ=$1
 BASE_SPARK_VERSION=$2
 BUILD_PROFILES=$3
 
-# the version of spark used when we install the databricks jars in .m2
-SPARK_VERSION_TO_INSTALL_DATABRICKS_JARS=$BASE_SPARK_VERSION-databricks
-
 # this has to match the Databricks init script
 DB_JAR_LOC=/databricks/jars/
-RAPIDS_BUILT_JAR=rapids-4-spark_$SCALA_VERSION-$SPARK_PLUGIN_JAR_VERSION.jar
 SPARK_PLUGIN_JAR_VERSION=`mvn help:evaluate -q -pl dist -Dexpression=project.version -DforceStdout`
 CUDF_VERSION=`mvn help:evaluate -q -pl dist -Dexpression=cudf.version -DforceStdout`
 SCALA_VERSION=`mvn help:evaluate -q -pl dist -Dexpression=scala.binary.version -DforceStdout`
 CUDA_VERSION=`mvn help:evaluate -q -pl dist -Dexpression=cuda.version -DforceStdout`
+
+# the version of spark used when we install the databricks jars in .m2
+SPARK_VERSION_TO_INSTALL_DATABRICKS_JARS=$BASE_SPARK_VERSION-databricks
+RAPIDS_BUILT_JAR=rapids-4-spark_$SCALA_VERSION-$SPARK_PLUGIN_JAR_VERSION.jar
 
 echo "Base Spark version is $BASE_SPARK_VERSION"
 echo "Scala version is: $SCALA_VERSION"
