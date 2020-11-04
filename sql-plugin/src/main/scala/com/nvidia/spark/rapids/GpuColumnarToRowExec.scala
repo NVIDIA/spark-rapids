@@ -16,21 +16,142 @@
 
 package com.nvidia.spark.rapids
 
-import ai.rapids.cudf.{NvtxColor, NvtxRange}
+import scala.collection.mutable.Queue
+
+import ai.rapids.cudf.{HostColumnVector, NvtxColor, NvtxRange, Table}
 import com.nvidia.spark.rapids.GpuMetricNames._
 
 import org.apache.spark.TaskContext
 import org.apache.spark.rdd.RDD
-import org.apache.spark.sql.catalyst.InternalRow
-import org.apache.spark.sql.catalyst.expressions.{Attribute, SortOrder, UnsafeProjection}
-import org.apache.spark.sql.catalyst.expressions.codegen._
-import org.apache.spark.sql.catalyst.expressions.codegen.Block._
+import org.apache.spark.sql.catalyst.{CudfUnsafeRow, InternalRow}
+import org.apache.spark.sql.catalyst.expressions.{Attribute, SortOrder, UnsafeProjection, UnsafeRow}
 import org.apache.spark.sql.catalyst.plans.physical.Partitioning
-import org.apache.spark.sql.execution.{CodegenSupport, SparkPlan, UnaryExecNode}
+import org.apache.spark.sql.execution.{SparkPlan, UnaryExecNode}
 import org.apache.spark.sql.execution.metric.{SQLMetric, SQLMetrics}
 import org.apache.spark.sql.rapids.execution.GpuColumnToRowMapPartitionsRDD
-import org.apache.spark.sql.types.DataType
-import org.apache.spark.sql.vectorized.{ColumnarBatch, ColumnVector}
+import org.apache.spark.sql.types._
+import org.apache.spark.sql.vectorized.ColumnarBatch
+
+/**
+ * An iterator that uses the GPU for columnar to row conversion of fixed width types.
+ */
+class AcceleratedColumnarToRowIterator(
+    schema: Seq[Attribute],
+    batches: Iterator[ColumnarBatch],
+    numInputBatches: SQLMetric = null,
+    numOutputRows: SQLMetric = null,
+    totalTime: SQLMetric = null) extends Iterator[InternalRow] with Arm with Serializable {
+  @transient private var pendingCvs: Queue[HostColumnVector] = Queue.empty
+  // GPU batches read in must be closed by the receiver (us)
+  @transient private var currentCv: Option[HostColumnVector] = None
+  // This only works on fixedWidth types for now...
+  assert(schema.forall(attr => UnsafeRow.isFixedLength(attr.dataType)))
+  // We want to remap the rows to improve packing.  This means that they should be sorted by
+  // the largest alignment to the smallest.
+
+  // for packMap the nth entry is the index of the original input column that we want at
+  // the nth entry.
+  private val packMap: Array[Int] = schema
+      .zipWithIndex
+      .sortWith(_._1.dataType.defaultSize > _._1.dataType.defaultSize)
+      .map(_._2)
+      .toArray
+  // For unpackMap the nth entry is the index in the row that came back for the original
+  private val unpackMap: Array[Int] = packMap
+      .zipWithIndex
+      .sortWith(_._1 < _._1)
+      .map(_._2)
+
+  private val outputRow = new CudfUnsafeRow(packMap.map(schema(_)), unpackMap)
+  private var baseDataAddress: Long = -1
+  private var at: Int = 0
+  private var total: Int = 0
+
+  TaskContext.get().addTaskCompletionListener[Unit](_ => closeAllPendingBatches())
+
+  private def setCurrentBatch(wip: HostColumnVector): Unit = {
+    currentCv = Some(wip)
+    at = 0
+    total = wip.getRowCount().toInt
+    val byteBuffer = currentCv.get.getChildColumnViewAccess(0).getDataBuffer
+    baseDataAddress = byteBuffer.getAddress
+  }
+
+  private def closeCurrentBatch(): Unit = {
+    currentCv.foreach(_.close())
+    currentCv = None
+  }
+
+  private def closeAllPendingBatches(): Unit = {
+    closeCurrentBatch()
+    pendingCvs.foreach(_.close())
+    pendingCvs = Queue.empty
+  }
+
+  private def rearrangeRows(cb: ColumnarBatch): Table = {
+    val columns = GpuColumnVector.extractBases(cb)
+    val rearrangedColumns = packMap.map(columns(_))
+    new Table(rearrangedColumns : _*)
+  }
+
+  def loadNextBatch(): Unit = {
+    closeCurrentBatch()
+    if (!pendingCvs.isEmpty) {
+      setCurrentBatch(pendingCvs.dequeue())
+    } else if (batches.hasNext) {
+      withResource(batches.next()) { cb =>
+        if (numInputBatches != null) {
+          numInputBatches += 1
+        }
+        // In order to match the numOutputRows metric in the generated code we update
+        // numOutputRows for each batch. This is less accurate than doing it at output
+        // because it will over count the number of rows output in the case of a limit,
+        // but it is more efficient.
+        if (numOutputRows != null) {
+          numOutputRows += cb.numRows()
+        }
+        val nvtxRange = if (totalTime != null) {
+          new NvtxWithMetrics("ColumnarToRow: batch", NvtxColor.RED, totalTime)
+        } else {
+          new NvtxRange("ColumnarToRow: batch", NvtxColor.RED)
+        }
+        withResource(nvtxRange) { _ =>
+          withResource(rearrangeRows(cb)) { table =>
+            withResource(table.convertToRows()) { rowsCvList =>
+              rowsCvList.foreach { rowsCv =>
+                pendingCvs += rowsCv.copyToHost()
+              }
+              setCurrentBatch(pendingCvs.dequeue())
+            }
+          }
+        }
+      }
+    }
+    GpuSemaphore.releaseIfNecessary(TaskContext.get())
+  }
+
+  override def hasNext: Boolean = {
+    val itHasNext = at < total
+    if (!itHasNext) {
+      loadNextBatch()
+      at < total
+    } else {
+      itHasNext
+    }
+  }
+
+  override def next(): InternalRow = {
+    if (!hasNext) {
+      throw new NoSuchElementException()
+    }
+    // Here we should do some code generation, but for now
+    val startReadOffset = currentCv.get.getStartListOffset(at)
+    val endReadOffset = currentCv.get.getEndListOffset(at)
+    outputRow.pointTo(baseDataAddress + startReadOffset, (endReadOffset - startReadOffset).toInt)
+    at += 1
+    outputRow
+  }
+}
 
 class ColumnarToRowIterator(batches: Iterator[ColumnarBatch], numInputBatches: SQLMetric = null,
    numOutputRows: SQLMetric = null, totalTime: SQLMetric = null) extends Iterator[InternalRow] {
@@ -102,14 +223,22 @@ class ColumnarToRowIterator(batches: Iterator[ColumnarBatch], numInputBatches: S
     }
     it.next()
   }
+}
 
-  // This is to convert the InternalRow to an UnsafeRow. Even though the type is
-  // InternalRow some operations downstream operations like collect require it to
-  // be UnsafeRow
+object CudfRowTransitions {
+  def isSupportedType(dataType: DataType): Boolean = dataType match {
+    // Only fixed width for now...
+    case ByteType | ShortType | IntegerType | LongType |
+         FloatType | DoubleType | BooleanType | DateType | TimestampType => true
+    case _ => false
+  }
+
+  def areAllSupported(schema: Seq[Attribute]): Boolean =
+    schema.forall(att => isSupportedType(att.dataType))
 }
 
 abstract class GpuColumnarToRowExecParent(child: SparkPlan, val exportColumnarRdd: Boolean)
-    extends UnaryExecNode with CodegenSupport with GpuExec {
+    extends UnaryExecNode with GpuExec {
   // We need to do this so the assertions don't fail
   override def supportsColumnar = false
 
@@ -119,21 +248,11 @@ abstract class GpuColumnarToRowExecParent(child: SparkPlan, val exportColumnarRd
 
   override def outputOrdering: Seq[SortOrder] = child.outputOrdering
 
-  // `GpuColumnarToRowExec` processes the input RDD directly, which is kind of a leaf node in the
-  // codegen stage and needs to do the limit check.
-  protected override def canCheckLimitNotReached: Boolean = true
-
-  override def supportCodegen: Boolean = !exportColumnarRdd
-
   // Override the original metrics to remove NUM_OUTPUT_BATCHES, which makes no sense.
   override lazy val metrics: Map[String, SQLMetric] = Map(
     NUM_OUTPUT_ROWS -> SQLMetrics.createMetric(sparkContext, DESCRIPTION_NUM_OUTPUT_ROWS),
     TOTAL_TIME -> SQLMetrics.createNanoTimingMetric(sparkContext, DESCRIPTION_TOTAL_TIME),
     NUM_INPUT_BATCHES -> SQLMetrics.createMetric(sparkContext, DESCRIPTION_NUM_INPUT_BATCHES))
-
-  override def inputRDDs(): Seq[RDD[InternalRow]] = {
-    Seq(child.executeColumnar().asInstanceOf[RDD[InternalRow]]) // Hack because of type erasure
-  }
 
   override def doExecute(): RDD[InternalRow] = {
     val numOutputRows = longMetric(NUM_OUTPUT_ROWS)
@@ -144,10 +263,26 @@ abstract class GpuColumnarToRowExecParent(child: SparkPlan, val exportColumnarRd
     // plan (this) in the closure.
     val localOutput = this.output
 
-    val f = (batches: Iterator[ColumnarBatch]) => {
-      // UnsafeProjection is not serializable so do it on the executor side
-      val toUnsafe = UnsafeProjection.create(localOutput, localOutput)
-      new ColumnarToRowIterator(batches, numInputBatches, numOutputRows, totalTime).map(toUnsafe)
+    val f = if (CudfRowTransitions.areAllSupported(child.output) &&
+        // For a small number of columns it is still best to do it the original way
+        child.output.length > 4 &&
+        // The cudf kernel only supports up to 1.5 KB per row which means at most 184 double/long
+        // values. Spark by default limits codegen to 100 fields "spark.sql.codegen.maxFields".
+        // So, we are going to be cautious and start with that until we have tested it more.
+        child.output.length < 100) {
+      (batches: Iterator[ColumnarBatch]) => {
+        // UnsafeProjection is not serializable so do it on the executor side
+        val toUnsafe = UnsafeProjection.create(localOutput, localOutput)
+        new AcceleratedColumnarToRowIterator(localOutput,
+          batches, numInputBatches, numOutputRows, totalTime).map(toUnsafe)
+      }
+    } else {
+      (batches: Iterator[ColumnarBatch]) => {
+        // UnsafeProjection is not serializable so do it on the executor side
+        val toUnsafe = UnsafeProjection.create(localOutput, localOutput)
+        new ColumnarToRowIterator(batches,
+          numInputBatches, numOutputRows, totalTime).map(toUnsafe)
+      }
     }
 
     val cdata = child.executeColumnar()
@@ -158,140 +293,6 @@ abstract class GpuColumnarToRowExecParent(child: SparkPlan, val exportColumnarRd
     } else {
       cdata.mapPartitions(f)
     }
-  }
-
-  /**
-   * Generate [[ColumnVector]] expressions for our parent to consume as rows.
-   * This is called once per [[ColumnVector]] in the batch.
-   */
-  private def genCodeColumnVector(
-      ctx: CodegenContext,
-      columnVar: String,
-      ordinal: String,
-      dataType: DataType,
-      nullable: Boolean): ExprCode = {
-    val javaType = CodeGenerator.javaType(dataType)
-    val value = CodeGenerator.getValueFromVector(columnVar, dataType, ordinal)
-    val isNullVar = if (nullable) {
-      JavaCode.isNullVariable(ctx.freshName("isNull"))
-    } else {
-      FalseLiteral
-    }
-    val valueVar = ctx.freshName("value")
-    val str = s"columnVector[$columnVar, $ordinal, ${dataType.simpleString}]"
-    val code = code"${ctx.registerComment(str)}" + (if (nullable) {
-      code"""
-        boolean $isNullVar = $columnVar.isNullAt($ordinal);
-        $javaType $valueVar = $isNullVar ? ${CodeGenerator.defaultValue(dataType)} : ($value);
-      """
-    } else {
-      code"$javaType $valueVar = $value;"
-    })
-    ExprCode(code, isNullVar, JavaCode.variable(valueVar, dataType))
-  }
-
-  /**
-   * Produce code to process the input iterator as `ColumnarBatch`es.
-   * This produces an `org.apache.spark.sql.catalyst.expressions.UnsafeRow` for each row in
-   * each batch..
-   */
-  override protected def doProduce(ctx: CodegenContext): String = {
-    // PhysicalRDD always just has one input
-    val input = ctx.addMutableState("scala.collection.Iterator", "input",
-      v => s"$v = inputs[0];")
-
-    // metrics
-    val numOutputRows = metricTerm(ctx, NUM_OUTPUT_ROWS)
-    val totalTime = metricTerm(ctx, TOTAL_TIME)
-    val numInputBatches = metricTerm(ctx, NUM_INPUT_BATCHES)
-
-    val columnarBatchClz = classOf[ColumnarBatch].getName
-    val initTCListener = ctx.freshName("initTCListener")
-    val devBatch = ctx.freshName("devBatch")
-    val hostBatch = ctx.addMutableState(columnarBatchClz, "hostBatch",
-    v => {
-      val initTCListenerFuncName = ctx.addNewFunction(initTCListener,
-        s"""
-           | private void $initTCListener() {
-           |   org.apache.spark.TaskContext.get().addTaskCompletionListener(
-           |      new org.apache.spark.util.TaskCompletionListener() {
-           |        @Override
-           |        public void onTaskCompletion(TaskContext context) {
-           |          if ($v != null) {
-           |            $v.close(); }
-           |        }
-           |    });
-           | }
-           """.stripMargin.trim)
-      s"$initTCListenerFuncName();" }, forceInline = true)
-
-    val idx = ctx.addMutableState(CodeGenerator.JAVA_INT, "batchIdx") // init as batchIdx = 0
-    val columnVectorClzs = child.vectorTypes.getOrElse(
-      Seq.fill(output.indices.size)(classOf[GpuColumnVector].getName))
-    val hostClz = classOf[RapidsHostColumnVector].getName
-    val (colVars, columnAssigns) = columnVectorClzs.zipWithIndex.map {
-      case (columnVectorClz, i) =>
-        val hostName = ctx.addMutableState(hostClz, s"hostColInstance$i")
-        (hostName, s"$hostName = (($columnVectorClz) $devBatch.column($i)).copyToHost();")
-    }.unzip
-
-    val batchArray = ctx.freshName("batchArray")
-    val convertStart = ctx.freshName("convertStart")
-    val convertRange = ctx.freshName("convertRange")
-    val nextBatch = ctx.freshName("nextBatch")
-    // scalastyle:off line.size.limit
-    val nextBatchFuncName = ctx.addNewFunction(nextBatch,
-      s"""
-         |private void $nextBatch() throws java.io.IOException {
-         |  if ($input.hasNext()) {
-         |    $columnarBatchClz $devBatch = ($columnarBatchClz)$input.next();
-         |    $numOutputRows.add($devBatch.numRows());
-         |    $numInputBatches.add(1);
-         |    $idx = 0;
-         |    long $convertStart = System.nanoTime();
-         |    ai.rapids.cudf.NvtxRange $convertRange = new ai.rapids.cudf.NvtxRange("ColumnarToRow: convert", ai.rapids.cudf.NvtxColor.CYAN);
-         |    ${columnAssigns.mkString("", "\n", "\n")}
-         |    $convertRange.close();
-         |    $totalTime.add(System.nanoTime() - $convertStart);
-         |    org.apache.spark.sql.vectorized.ColumnVector[] $batchArray = new org.apache.spark.sql.vectorized.ColumnVector[] {${colVars.mkString("", ", ", "")}};
-         |    $hostBatch = new org.apache.spark.sql.vectorized.ColumnarBatch($batchArray, $devBatch.numRows());
-         |    $devBatch.close();
-         |    com.nvidia.spark.rapids.GpuSemaphore$$.MODULE$$.releaseIfNecessary(org.apache.spark.TaskContext.get());
-         |  }
-         |}""".stripMargin)
-    // scalastyle:on line.size.limit
-
-    ctx.currentVars = null
-    val rowidx = ctx.freshName("rowIdx")
-    val columnsBatchInput = (output zip colVars).map { case (attr, colVar) =>
-      genCodeColumnVector(ctx, colVar, rowidx, attr.dataType, attr.nullable)
-    }
-    val localIdx = ctx.freshName("localIdx")
-    val localEnd = ctx.freshName("localEnd")
-    val numRows = ctx.freshName("numRows")
-    val shouldStop = if (parent.needStopCheck) {
-      s"if (shouldStop()) { $idx = $rowidx + 1; return; }"
-    } else {
-      "// shouldStop check is eliminated"
-    }
-    s"""
-       |if ($hostBatch == null) {
-       |  $nextBatchFuncName();
-       |}
-       |while ($limitNotReachedCond $hostBatch != null) {
-       |  int $numRows = $hostBatch.numRows();
-       |  int $localEnd = $numRows - $idx;
-       |  for (int $localIdx = 0; $localIdx < $localEnd; $localIdx++) {
-       |    int $rowidx = $idx + $localIdx;
-       |    ${consume(ctx, columnsBatchInput).trim}
-       |    $shouldStop
-       |  }
-       |  $idx = $numRows;
-       |  $hostBatch.close();
-       |  $hostBatch = null;
-       |  $nextBatchFuncName();
-       |}
-     """.stripMargin
   }
 }
 
