@@ -49,7 +49,7 @@ public abstract class UnsafeRowToColumnarBatchIterator implements Iterator<Colum
   protected final int numRowsEstimate;
   protected final long dataLength;
   protected final DType[] rapidsTypes;
-  protected final ArrayList<DataType> outputTypes;
+  protected final DataType[] outputTypes;
   protected final SQLMetric totalTime;
   protected final SQLMetric numInputRows;
   protected final SQLMetric numOutputRows;
@@ -69,11 +69,11 @@ public abstract class UnsafeRowToColumnarBatchIterator implements Iterator<Colum
         Math.min(Integer.MAX_VALUE - 1, goal.targetSizeBytes() / sizePerRowEstimate));
     dataLength = ((long) sizePerRowEstimate) * numRowsEstimate;
     rapidsTypes = new DType[schema.length];
-    outputTypes = new ArrayList<>(schema.length);
+    outputTypes = new DataType[schema.length];
 
     for (int i = 0; i < schema.length; i++) {
       rapidsTypes[i] = GpuColumnVector.getRapidsType(schema[i].dataType());
-      outputTypes.add(schema[i].dataType());
+      outputTypes[i] = schema[i].dataType();
     }
     this.totalTime = totalTime;
     this.numInputRows = numInputRows;
