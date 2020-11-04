@@ -17,30 +17,32 @@
 
 set -e
 
-SPARK_PLUGIN_JAR_VERSION=0.3.0-SNAPSHOT
-SCALA_VERSION=2.12
-CI_RAPIDS_JAR=rapids-4-spark_2.12-0.1-SNAPSHOT-ci.jar
-SPARK_VERSION_TO_INSTALL_DATABRICKS_JARS=3.0.1-databricks
-CUDF_VERSION=0.16
-CUDA_VERSION=cuda10-1
-CI_CUDF_JAR=cudf-0.14-cuda10-1.jar
-BASE_SPARK_POM_VERSION=3.0.1
+SPARKSRCTGZ=$1
+# version of Apache Spark we are building against
+BASE_SPARK_VERSION=$2
+BUILD_PROFILES=$3
 
-
-echo "Spark version is $SPARK_VERSION_TO_INSTALL_DATABRICKS_JARS"
-echo "scala version is: $SCALA_VERSION"
+# the version of spark used when we install the databricks jars in .m2
+SPARK_VERSION_TO_INSTALL_DATABRICKS_JARS=$BASE_SPARK_VERSION-databricks
 
 # this has to match the Databricks init script
 DB_JAR_LOC=/databricks/jars/
 RAPIDS_BUILT_JAR=rapids-4-spark_$SCALA_VERSION-$SPARK_PLUGIN_JAR_VERSION.jar
+SPARK_PLUGIN_JAR_VERSION=`mvn help:evaluate -q -pl dist -Dexpression=project.version -DforceStdout`
+CUDF_VERSION=`mvn help:evaluate -q -pl dist -Dexpression=cudf.version -DforceStdout`
+SCALA_VERSION=`mvn help:evaluate -q -pl dist -Dexpression=scala.binary.version -DforceStdout`
+CUDA_VERSION=`mvn help:evaluate -q -pl dist -Dexpression=cuda.version -DforceStdout`
+
+echo "Base Spark version is $BASE_SPARK_VERSION"
+echo "Scala version is: $SCALA_VERSION"
 
 sudo apt install -y maven
-#rm -rf spark-rapids
-#mkdir spark-rapids
-#tar -zxvf $SPARKSRCTGZ -C spark-rapids
-#cd spark-rapids
+rm -rf spark-rapids
+mkdir spark-rapids
+tar -zxvf $SPARKSRCTGZ -C spark-rapids
+cd spark-rapids
 export WORKSPACE=`pwd`
-mvn -B '-Pdatabricks301,!snapshot-shims' clean package -DskipTests || true
+mvn -B -P${BUILD_PROFILES} clean package -DskipTests || true
 M2DIR=/home/ubuntu/.m2/repository
 CUDF_JAR=${M2DIR}/ai/rapids/cudf/${CUDF_VERSION}/cudf-${CUDF_VERSION}-${CUDA_VERSION}.jar
 
@@ -51,8 +53,8 @@ CATALYSTJAR=----workspace_spark_3_0--sql--catalyst--catalyst-hive-2.3__hadoop-2.
 ANNOTJAR=----workspace_spark_3_0--common--tags--tags-hive-2.3__hadoop-2.7_${SCALA_VERSION}_deploy.jar
 COREJAR=----workspace_spark_3_0--core--core-hive-2.3__hadoop-2.7_${SCALA_VERSION}_deploy.jar
 # install the 3.0.0 pom file so we get dependencies
-COREPOM=spark-core_${SCALA_VERSION}-${BASE_SPARK_POM_VERSION}.pom
-COREPOMPATH=$M2DIR/org/apache/spark/spark-core_${SCALA_VERSION}/${BASE_SPARK_POM_VERSION}
+COREPOM=spark-core_${SCALA_VERSION}-${BASE_SPARK_VERSION}.pom
+COREPOMPATH=$M2DIR/org/apache/spark/spark-core_${SCALA_VERSION}/${BASE_SPARK_VERSION}
 mvn -B install:install-file \
    -Dmaven.repo.local=$M2DIR \
    -Dfile=$JARDIR/$COREJAR \
@@ -86,8 +88,7 @@ mvn -B install:install-file \
    -Dversion=$SPARK_VERSION_TO_INSTALL_DATABRICKS_JARS \
    -Dpackaging=jar
 
-mvn -B '-Pdatabricks301,!snapshot-shims' clean package -DskipTests
-
+mvn -B -P${BUILD_PROFILES} clean package -DskipTests
 
 # Copy so we pick up new built jar and latesty CuDF jar. Note that the jar names has to be
 # exactly what is in the staticly setup Databricks cluster we use. 
