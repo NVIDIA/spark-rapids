@@ -46,7 +46,7 @@ import org.apache.spark.sql.vectorized.{ColumnarBatch, ColumnVector}
 class SerializeConcatHostBuffersDeserializeBatch(
     private val data: Array[SerializeBatchDeserializeHostBuffer],
     private val output: Seq[Attribute])
-  extends Serializable with AutoCloseable {
+  extends Serializable with Arm with AutoCloseable {
   @transient private val headers = data.map(_.header)
   @transient private val buffers = data.map(_.buffer)
   @transient private var batchInternal: ColumnarBatch = null
@@ -68,11 +68,8 @@ class SerializeConcatHostBuffersDeserializeBatch(
     if (headers.length == 0) {
       import scala.collection.JavaConverters._
       // We didn't get any data back, but we need to write out an empty table that matches
-      val empty = GpuColumnVector.emptyBatch(output.asJava)
-      try {
-        JCudfSerialization.writeToStream(GpuColumnVector.extractBases(empty), out, 0, 0)
-      } finally {
-        empty.close()
+      withResource(GpuColumnVector.emptyHostColumns(output.asJava)) { hostVectors =>
+        JCudfSerialization.writeToStream(hostVectors, out, 0, 0)
       }
     } else if (headers.head.getNumColumns == 0) {
       JCudfSerialization.writeRowsToStream(out, numRows)
