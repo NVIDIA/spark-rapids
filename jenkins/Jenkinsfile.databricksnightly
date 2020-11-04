@@ -81,7 +81,7 @@ pipeline {
                             script: "python3.6 ./jenkins/databricks/create.py -t $DATABRICKS_TOKEN -k $PUBLIC_KEY -r $RUNTIME -i $IDLE_TIMEOUT -n CI-GPU-databricks-${BASE_SPARK_VERSION}",
                             returnStdout: true
                         ).trim()
-                        sh "python3.6 ./jenkins/databricks/run-tests.py -c ${env.CLUSTERID} -z ./spark-rapids-ci.tgz -t $DATABRICKS_TOKEN -p /home/svcngcc/.ssh/id_rsa -l ./jenkins/databricks/build.sh -m $BASE_SPARK_VERSION -d $BUILD_PROFILES"
+                        sh "python3.6 ./jenkins/databricks/run-tests.py -c ${env.CLUSTERID} -z ./spark-rapids-ci.tgz -t $DATABRICKS_TOKEN -p /home/svcngcc/.ssh/id_rsa -l ./jenkins/databricks/build.sh -m $BASE_SPARK_VERSION -b $BUILD_PROFILES"
                         sh "./jenkins/databricks/deploy.sh"
                     }
                 }

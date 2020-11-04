@@ -34,17 +34,17 @@ def main():
   build_profiles = 'databricks,!snapshot-shims'
 
   try:
-      opts, args = getopt.getopt(sys.argv[1:], 'hw:t:c:p:l:d:z:m:v:d:',
+      opts, args = getopt.getopt(sys.argv[1:], 'hw:t:c:p:l:d:z:m:v:b:',
                                  ['workspace=', 'token=', 'clusterid=', 'private=', 'localscript=', 'dest=', 'sparktgz=', 'sparkversion=', 'basesparkpomversion=', 'buildprofiles='])
   except getopt.GetoptError:
       print(
-          'run-tests.py -s <workspace> -t <token> -c <clusterid> -p <privatekeyfile> -l <localscript> -d <scriptdestinatino> -z <sparktgz> -v <basesparkpomversion> -d <buildprofiles>')
+          'run-tests.py -s <workspace> -t <token> -c <clusterid> -p <privatekeyfile> -l <localscript> -d <scriptdestinatino> -z <sparktgz> -v <basesparkpomversion> -b <buildprofiles>')
       sys.exit(2)
 
   for opt, arg in opts:
       if opt == '-h':
           print(
-              'run-tests.py -s <workspace> -t <token> -c <clusterid> -p <privatekeyfile> -n <skipstartingcluster> -l <localscript> -d <scriptdestinatino>, -z <sparktgz> -v <basesparkpomversion> -d <buildprofiles>')
+              'run-tests.py -s <workspace> -t <token> -c <clusterid> -p <privatekeyfile> -n <skipstartingcluster> -l <localscript> -d <scriptdestinatino>, -z <sparktgz> -v <basesparkpomversion> -b <buildprofiles>')
           sys.exit()
       elif opt in ('-w', '--workspace'):
           workspace = arg
@@ -62,7 +62,7 @@ def main():
           source_tgz = arg
       elif opt in ('-v', '--basesparkpomversion'):
           base_spark_pom_version = arg
-      elif opt in ('-d', '--bulidprofiles'):
+      elif opt in ('-b', '--bulidprofiles'):
           build_profiles = arg
 
   print('-w is ' + workspace)
@@ -72,7 +72,7 @@ def main():
   print('-d is ' + script_dest)
   print('-z is ' + source_tgz)
   print('-v is ' + base_spark_pom_version)
-  print('-d is ' + build_profiles)
+  print('-b is ' + build_profiles)
 
   master_addr = ClusterUtils.cluster_get_master_addr(workspace, clusterid, token)
   if master_addr is None:
