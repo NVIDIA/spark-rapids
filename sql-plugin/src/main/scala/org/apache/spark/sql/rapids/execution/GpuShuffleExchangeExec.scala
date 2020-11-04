@@ -192,9 +192,6 @@ object GpuShuffleExchangeExec {
       batch => partitioner.columnarEval(batch)
     }
     val rddWithPartitionIds: RDD[Product2[Int, ColumnarBatch]] = {
-
-      metrics(GpuMetricNames.NUM_PARTITIONS).add(newRdd.partitions.length)
-
       newRdd.mapPartitions { iter =>
         val getParts = getPartitioned
         new AbstractIterator[Product2[Int, ColumnarBatch]] {
