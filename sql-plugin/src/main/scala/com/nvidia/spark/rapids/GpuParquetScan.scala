@@ -62,7 +62,7 @@ import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.rapids.InputFileUtils
 import org.apache.spark.sql.rapids.execution.TrampolineUtil
 import org.apache.spark.sql.sources.Filter
-import org.apache.spark.sql.types.{DataType, DecimalType, MapType, StringType, StructType, TimestampType}
+import org.apache.spark.sql.types.{MapType, StringType, StructType, TimestampType}
 import org.apache.spark.sql.vectorized.ColumnarBatch
 import org.apache.spark.util.SerializableConfiguration
 
@@ -173,16 +173,6 @@ object GpuParquetScanBase {
       case "LEGACY" => // Good, but it really is EXCEPTION for us...
       case other =>
         meta.willNotWorkOnGpu(s"$other is not a supported read rebase mode")
-    }
-  }
-
-  // We need this specialized type check method because
-  // R/W parquet data with decimal columns has not supported by cuDF yet.
-  def isSupportedType(dataType: DataType): Boolean = {
-    GpuColumnVector.isSupportedType(dataType) match {
-      case false => false
-      case true if dataType.isInstanceOf[DecimalType] => false
-      case _ => true
     }
   }
 }

@@ -65,7 +65,7 @@ object GpuScalar {
     case DType.TIMESTAMP_DAYS => v.getInt
     case DType.TIMESTAMP_MICROSECONDS => v.getLong
     case DType.STRING => v.getJavaString
-    case dt: DType if dt.isDecimalType => v.getBigDecimal
+    case dt: DType if dt.isDecimalType => Decimal(v.getBigDecimal)
     case t => throw new IllegalStateException(s"$t is not a supported rapids scalar type yet")
   }
 
@@ -89,6 +89,7 @@ object GpuScalar {
     case b: Boolean => Scalar.fromBool(b)
     case s: String => Scalar.fromString(s)
     case s: UTF8String => Scalar.fromString(s.toString)
+    case dec: Decimal => Scalar.fromBigDecimal(dec.toBigDecimal.bigDecimal)
     case dec: BigDecimal => Scalar.fromBigDecimal(dec.bigDecimal)
     case _ =>
       throw new IllegalStateException(s"${v.getClass} '${v}' is not supported as a scalar yet")
@@ -98,6 +99,7 @@ object GpuScalar {
     case _ if v == null => Scalar.fromNull(GpuColumnVector.getRapidsType(t))
     case _ if t.isInstanceOf[DecimalType] =>
       var bigDec = v match {
+        case vv: Decimal => vv.toBigDecimal.bigDecimal
         case vv: BigDecimal => vv.bigDecimal
         case vv: Double => BigDecimal(vv).bigDecimal
         case vv: Float => BigDecimal(vv).bigDecimal

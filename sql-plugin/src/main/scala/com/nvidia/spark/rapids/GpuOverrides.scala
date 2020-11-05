@@ -504,6 +504,14 @@ object GpuOverrides {
   }
 
   /**
+   * A walkaround method to include DecimalType for expressions who supports Decimal.
+   */
+  def isSupportedTypeWithDecimal(dataType: DataType): Boolean = dataType match {
+    case dt: DecimalType => dt.precision <= ai.rapids.cudf.DType.DECIMAL64_MAX_PRECISION
+    case dt => isSupportedType(dt)
+  }
+
+  /**
    * Checks to see if any expressions are a String Literal
    */
   def isAnyStringLit(expressions: Seq[Expression]): Boolean =
@@ -597,8 +605,20 @@ object GpuOverrides {
           }
         }
 
+<<<<<<< HEAD
         override def isSupportedType(t: DataType): Boolean =
           GpuOverrides.isSupportedType(t, allowCalendarInterval = true)
+=======
+        /**
+         * We are overriding this method because currently we only support CalendarIntervalType
+         * as a Literal
+         */
+        override def areAllSupportedTypes(types: DataType*): Boolean = types.forall {
+            case CalendarIntervalType => true
+            case x => isSupportedTypeWithDecimal(x)
+          }
+
+>>>>>>> refine
       }),
     expr[Signum](
       "Returns -1.0, 0.0 or 1.0 as expr is negative, 0 or positive",
@@ -608,18 +628,35 @@ object GpuOverrides {
     expr[Alias](
       "Gives a column a name",
       (a, conf, p, r) => new UnaryExprMeta[Alias](a, conf, p, r) {
+<<<<<<< HEAD
         override def isSupportedType(t: DataType): Boolean =
           GpuOverrides.isSupportedType(t, allowStringMaps = true, allowBinary = true)
 
+=======
+        def isSupported(t: DataType) = t match {
+          case MapType(StringType, StringType, _) => true
+          case BinaryType => true
+          case _ => isSupportedTypeWithDecimal(t)
+        }
+        override def areAllSupportedTypes(types: DataType*): Boolean = types.forall(isSupported)
+>>>>>>> refine
         override def convertToGpu(child: Expression): GpuExpression =
           GpuAlias(child, a.name)(a.exprId, a.qualifier, a.explicitMetadata)
       }),
     expr[AttributeReference](
       "References an input column",
       (att, conf, p, r) => new BaseExprMeta[AttributeReference](att, conf, p, r) {
+<<<<<<< HEAD
         override def isSupportedType(t: DataType): Boolean =
           GpuOverrides.isSupportedType(t, allowStringMaps = true)
 
+=======
+        def isSupported(t: DataType) = t match {
+          case MapType(StringType, StringType, _) => true
+          case _ => isSupportedTypeWithDecimal(t)
+        }
+        override def areAllSupportedTypes(types: DataType*): Boolean = types.forall(isSupported)
+>>>>>>> refine
         // This is the only NOOP operator.  It goes away when things are bound
         override def convertToGpu(): Expression = att
 
