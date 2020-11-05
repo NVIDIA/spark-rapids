@@ -38,7 +38,7 @@ pipeline {
         ansiColor('xterm')
         // timeout doesn't seem to work with environment variables so make sure to update below
         // IDLE_TIMEOUT config as well
-        timeout(time: 180, unit: 'MINUTES')
+        timeout(time: 300, unit: 'MINUTES')
         buildDiscarder(logRotator(numToKeepStr: '10'))
     }
 
@@ -57,7 +57,7 @@ pipeline {
     }
 
     environment {
-        IDLE_TIMEOUT = 180
+        IDLE_TIMEOUT = 300
         JENKINS_ROOT  = 'jenkins'
         MVN_URM_MIRROR='-s jenkins/settings.xml -P mirror-apache-to-urm'
         LIBCUDF_KERNEL_CACHE_PATH='/tmp'
