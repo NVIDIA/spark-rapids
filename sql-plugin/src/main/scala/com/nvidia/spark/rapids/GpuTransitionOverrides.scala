@@ -23,7 +23,7 @@ import org.apache.spark.sql.execution.adaptive.{AdaptiveSparkPlanExec, Broadcast
 import org.apache.spark.sql.execution.columnar.InMemoryTableScanExec
 import org.apache.spark.sql.execution.command.ExecutedCommandExec
 import org.apache.spark.sql.execution.datasources.v2.DataSourceV2ScanExecBase
-import org.apache.spark.sql.execution.exchange.{Exchange, ShuffleExchangeExec}
+import org.apache.spark.sql.execution.exchange.{Exchange, ReusedExchangeExec, ShuffleExchangeExec}
 import org.apache.spark.sql.execution.joins.{BroadcastHashJoinExec, BroadcastNestedLoopJoinExec}
 import org.apache.spark.sql.rapids.{GpuDataSourceScanExec, GpuFileSourceScanExec, GpuInputFileBlockLength, GpuInputFileBlockStart, GpuInputFileName}
 import org.apache.spark.sql.rapids.execution.{GpuBroadcastExchangeExecBase, GpuCustomShuffleReaderExec, GpuShuffleExchangeExecBase}
@@ -55,21 +55,28 @@ class GpuTransitionOverrides extends Rule[SparkPlan] {
       GpuRowToColumnarExec(optimizeAdaptiveTransitions(r2c.child, Some(r2c)), goal)
 
     case ColumnarToRowExec(GpuBringBackToHost(
-      GpuCoalesceBatches(e: GpuShuffleExchangeExecBase, _))) if parent.isEmpty =>
-      // If this coalesced exchange has no parent it means that this plan is being created
-      // as a query stage when AQE is on. Because we must return an operator that implements
-      // ShuffleExchangeLike we need to remove the GpuCoalesceBatches operator here and
-      // re-insert it around the GpuCustomShuffleReaderExec in the parent query stage when that
-      // is created. Another option would be to create a custom operator that combines
-      // GpuCoalesceBatches and GpuShuffleExchangeExec and return that here instead. See
-      // https://github.com/NVIDIA/spark-rapids/issues/719 for more information.
-      optimizeAdaptiveTransitions(e, Some(plan))
+        GpuCoalesceBatches(e: GpuShuffleExchangeExecBase, _))) if parent.isEmpty =>
+      // new query stage
+      e.withNewChildren(e.children.map(c => optimizeAdaptiveTransitions(c, Some(e))))
+
+    case s: ShuffleQueryStageExec =>
+      val plan = getNonQueryStagePlan(s)
+      if (plan.supportsColumnar && plan.isInstanceOf[GpuExec]) {
+        // coalesce after shuffle, unless there is a custom shuffle reader
+        parent match {
+          case Some(_: GpuCustomShuffleReaderExec) =>
+            s
+          case _ =>
+            GpuCoalesceBatches(s, TargetSize(conf.gpuTargetBatchSizeBytes))
+        }
+      } else {
+        s
+      }
 
     case e: GpuCustomShuffleReaderExec =>
-      // this is where we re-insert the GpuCoalesceBatches that we removed from the
-      // shuffle exchange
+      // coalesce batches after we coalesce partitions
       GpuCoalesceBatches(e.copy(child = optimizeAdaptiveTransitions(e.child, Some(e))),
-          TargetSize(Long.MaxValue))
+          TargetSize(conf.gpuTargetBatchSizeBytes))
 
     // Query stages that have already executed on the GPU could be used by CPU operators
     // in future query stages. Note that because these query stages have already executed, we
@@ -78,9 +85,6 @@ class GpuTransitionOverrides extends Rule[SparkPlan] {
       getColumnarToRowExec(e)
     case ColumnarToRowExec(e: ShuffleQueryStageExec) =>
       getColumnarToRowExec(e)
-
-    case HostColumnarToGpu(e: BroadcastQueryStageExec, _) => e
-    case HostColumnarToGpu(e: ShuffleQueryStageExec, _) => e
 
     case ColumnarToRowExec(bb: GpuBringBackToHost) =>
       optimizeAdaptiveTransitions(bb.child, Some(bb)) match {
@@ -258,10 +262,21 @@ class GpuTransitionOverrides extends Rule[SparkPlan] {
    * Inserts a transition to be running on the GPU from CPU columnar
    */
   private def insertColumnarToGpu(plan: SparkPlan): SparkPlan = {
-    if (plan.supportsColumnar && !plan.isInstanceOf[GpuExec]) {
+    val nonQueryStagePlan = getNonQueryStagePlan(plan)
+    if (nonQueryStagePlan.supportsColumnar && !nonQueryStagePlan.isInstanceOf[GpuExec]) {
       HostColumnarToGpu(insertColumnarFromGpu(plan), TargetSize(conf.gpuTargetBatchSizeBytes))
     } else {
       plan.withNewChildren(plan.children.map(insertColumnarToGpu))
+    }
+  }
+
+  def getNonQueryStagePlan(plan: SparkPlan): SparkPlan = {
+    plan match {
+      case BroadcastQueryStageExec(_, ReusedExchangeExec(_, plan)) => plan
+      case BroadcastQueryStageExec(_, plan) => plan
+      case ShuffleQueryStageExec(_, ReusedExchangeExec(_, plan)) => plan
+      case ShuffleQueryStageExec(_, plan) => plan
+      case _ => plan
     }
   }
 
