@@ -266,7 +266,8 @@ class GpuTransitionOverrides extends Rule[SparkPlan] {
       HostColumnarToGpu(insertColumnarFromGpu(plan), TargetSize(conf.gpuTargetBatchSizeBytes))
     } else {
       plan.withNewChildren(plan.children.map(insertColumnarToGpu))
-    }  }
+    }
+  }
 
   private def insertHashOptimizeSorts(plan: SparkPlan): SparkPlan = {
     if (conf.enableHashOptimizeSort) {
