@@ -144,9 +144,7 @@ def writeParquetUpgradeCatchException(spark, df, data_path, spark_tmp_table_fact
     assert e_info.match(r".*SparkUpgradeException.*")
 
 # TODO - https://github.com/NVIDIA/spark-rapids/issues/1130 to handle TIMESTAMP_MILLIS
-parquet_ts_write_options = ['TIMESTAMP_MICROS']
-
-@pytest.mark.parametrize('ts_write', parquet_ts_write_options)
+@pytest.mark.parametrize('ts_write', ['TIMESTAMP_MICROS'])
 @pytest.mark.parametrize('ts_rebase', ['EXCEPTION'])
 def test_ts_write_fails_datetime_exception(spark_tmp_path, ts_write, ts_rebase, spark_tmp_table_factory):
     gen = TimestampGen(start=datetime(1590, 1, 1, tzinfo=timezone.utc))
@@ -174,22 +172,6 @@ parquet_ts_write_options = ['INT96', 'TIMESTAMP_MICROS', 'TIMESTAMP_MILLIS']
 @pytest.mark.parametrize('ts_write', parquet_ts_write_options)
 @pytest.mark.parametrize('ts_rebase', ['LEGACY'])
 def test_parquet_write_legacy_fallback(spark_tmp_path, ts_write, ts_rebase, spark_tmp_table_factory):
-    gen = TimestampGen(start=datetime(1590, 1, 1, tzinfo=timezone.utc))
-    data_path = spark_tmp_path + '/PARQUET_DATA'
-    all_confs={'spark.sql.legacy.parquet.datetimeRebaseModeInWrite': ts_rebase,
-            'spark.sql.legacy.parquet.int96RebaseModeInWrite': "CORRECTED",
-            'spark.sql.parquet.outputTimestampType': ts_write}
-    assert_gpu_fallback_write(
-            lambda spark, path: unary_op_df(spark, gen).coalesce(1).write.format("parquet").mode('overwrite').option("path", path).saveAsTable(spark_tmp_table_factory.get()),
-            lambda spark, path: spark.read.parquet(path),
-            data_path,
-            'DataWritingCommandExec',
-            conf=all_confs)
-
-@allow_non_gpu('DataWritingCommandExec')
-@pytest.mark.parametrize('ts_write', ['INT96'])
-@pytest.mark.parametrize('ts_rebase', ['CORRECTED', 'EXCEPTION', 'LEGACY'])
-def test_parquet_write_int96_fallback(spark_tmp_path, ts_write, ts_rebase, spark_tmp_table_factory):
     gen = TimestampGen(start=datetime(1590, 1, 1, tzinfo=timezone.utc))
     data_path = spark_tmp_path + '/PARQUET_DATA'
     all_confs={'spark.sql.legacy.parquet.datetimeRebaseModeInWrite': ts_rebase,
