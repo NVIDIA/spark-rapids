@@ -23,7 +23,7 @@ import org.apache.spark.sql.execution.adaptive.{AdaptiveSparkPlanExec, Broadcast
 import org.apache.spark.sql.execution.columnar.InMemoryTableScanExec
 import org.apache.spark.sql.execution.command.ExecutedCommandExec
 import org.apache.spark.sql.execution.datasources.v2.DataSourceV2ScanExecBase
-import org.apache.spark.sql.execution.exchange.{Exchange, ShuffleExchangeExec}
+import org.apache.spark.sql.execution.exchange.{Exchange, ReusedExchangeExec, ShuffleExchangeExec}
 import org.apache.spark.sql.execution.joins.{BroadcastHashJoinExec, BroadcastNestedLoopJoinExec}
 import org.apache.spark.sql.rapids.{GpuDataSourceScanExec, GpuFileSourceScanExec, GpuInputFileBlockLength, GpuInputFileBlockStart, GpuInputFileName}
 import org.apache.spark.sql.rapids.execution.{GpuBroadcastExchangeExecBase, GpuCustomShuffleReaderExec, GpuShuffleExchangeExecBase}
@@ -78,9 +78,6 @@ class GpuTransitionOverrides extends Rule[SparkPlan] {
       getColumnarToRowExec(e)
     case ColumnarToRowExec(e: ShuffleQueryStageExec) =>
       getColumnarToRowExec(e)
-
-    case HostColumnarToGpu(e: BroadcastQueryStageExec, _) => e
-    case HostColumnarToGpu(e: ShuffleQueryStageExec, _) => e
 
     case ColumnarToRowExec(bb: GpuBringBackToHost) =>
       optimizeAdaptiveTransitions(bb.child, Some(bb)) match {
@@ -258,12 +255,18 @@ class GpuTransitionOverrides extends Rule[SparkPlan] {
    * Inserts a transition to be running on the GPU from CPU columnar
    */
   private def insertColumnarToGpu(plan: SparkPlan): SparkPlan = {
-    if (plan.supportsColumnar && !plan.isInstanceOf[GpuExec]) {
+    val nonQueryStagePlan = plan match {
+      case BroadcastQueryStageExec(_, ReusedExchangeExec(_, plan)) => plan
+      case BroadcastQueryStageExec(_, plan) => plan
+      case ShuffleQueryStageExec(_, ReusedExchangeExec(_, plan)) => plan
+      case ShuffleQueryStageExec(_, plan) => plan
+      case _ => plan
+    }
+    if (nonQueryStagePlan.supportsColumnar && !nonQueryStagePlan.isInstanceOf[GpuExec]) {
       HostColumnarToGpu(insertColumnarFromGpu(plan), TargetSize(conf.gpuTargetBatchSizeBytes))
     } else {
       plan.withNewChildren(plan.children.map(insertColumnarToGpu))
-    }
-  }
+    }  }
 
   private def insertHashOptimizeSorts(plan: SparkPlan): SparkPlan = {
     if (conf.enableHashOptimizeSort) {
