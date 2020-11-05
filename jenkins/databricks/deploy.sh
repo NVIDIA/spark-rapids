@@ -25,12 +25,13 @@ echo "Maven mirror is $MVN_URM_MIRROR"
 SERVER_ID='snapshots'
 SERVER_URL="$URM_URL-local"
 SCALA_VERSION=`mvn help:evaluate -q -pl dist -Dexpression=scala.binary.version -DforceStdout`
-DATABRICKS_VERSION=$BASE_SPARK_VERSION-databricks
 # remove the periods so change something like 3.0.0 to 300
-VERSION_NUM=${DATABRICKS_VERSION//.}
+VERSION_NUM=${BASE_SPARK_VERSION//.}
 SPARK_VERSION_STR=spark$VERSION_NUM
+echo "version string is $SPARK_VERSION_STR"
+SPARK_PLUGIN_JAR_VERSION=`mvn help:evaluate -q -pl dist -Dexpression=project.version -DforceStdout`
 DB_SHIM_DIRECTORY=${SPARK_VERSION_STR}db
-DBJARFPATH=./shims/${DB_SHIM_DIRECTORY}/target/rapids-4-spark-shims-$SPARK_VERSION_STR-databricks_$SCALA_VERSION-$DATABRICKS_VERSION.jar
+DBJARFPATH=./shims/${DB_SHIM_DIRECTORY}/target/rapids-4-spark-shims-$SPARK_VERSION_STR-databricks_$SCALA_VERSION-$SPARK_PLUGIN_JAR_VERSION.jar
 echo "Databricks jar is: $DBJARFPTH"
 mvn -B deploy:deploy-file $MVN_URM_MIRROR '-P!snapshot-shims' -Durl=$SERVER_URL -DrepositoryId=$SERVER_ID \
     -Dfile=$DBJARFPATH -DpomFile=shims/${DB_SHIM_DIRECTORY}/pom.xml
