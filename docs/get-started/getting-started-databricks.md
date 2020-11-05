@@ -55,7 +55,7 @@ We will need to create an initialization script for the cluster that installs th
 
 ## Import the GPU Mortgage Example Notebook
 Import the example [notebook](../demo/gpu-mortgage_accelerated.ipynb) from the repo into your workspace, then open the notebook.
-odify the first cell to point to your workspace, and download a larger dataset if needed. You can find the links to the datasets at [docs.rapids.ai](https://docs.rapids.ai/datasets/mortgage-data). 
+Modify the first cell to point to your workspace, and download a larger dataset if needed. You can find the links to the datasets at [docs.rapids.ai](https://docs.rapids.ai/datasets/mortgage-data). 
 
 ```bash
 %sh
