@@ -23,6 +23,7 @@
 #   SPARK_VER - The version of spark
 
 # Parse cudf and spark dependency versions
+set -e
 
 CUDF_VER=$1
 CUDA_CLASSIFIER=$2
