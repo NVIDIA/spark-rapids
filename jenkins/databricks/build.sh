@@ -125,6 +125,7 @@ if [ `ls $DB_JAR_LOC/cudf* | wc -l` -gt 1 ]; then
     ls $DB_JAR_LOC/cudf*
     exit 1
 fi
-$SPARK_HOME/bin/spark-submit ./runtests.py --runtime_env="databricks"
+# temporary for testing
+#$SPARK_HOME/bin/spark-submit ./runtests.py --runtime_env="databricks"
 cd /home/ubuntu
 tar -zcvf spark-rapids-built.tgz spark-rapids

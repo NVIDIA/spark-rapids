@@ -24,6 +24,12 @@ cd spark-rapids
 echo "Maven mirror is $MVN_URM_MIRROR"
 SERVER_ID='snapshots'
 SERVER_URL="$URM_URL-local"
-DBJARFPATH=./shims/spark300db/target/rapids-4-spark-shims-spark300-databricks_$SCALA_VERSION-$DATABRICKS_VERSION.jar
+SCALA_VERSION=`mvn help:evaluate -q -pl dist -Dexpression=scala.binary.version -DforceStdout`
+DATABRICKS_VERSION=$BASE_SPARK_VERSION-databricks
+// remove the periods so change something like 3.0.0 to 300
+VERSION_NUM=${DATABRICKS_VERSION//.}
+SPARK_VERSION_STR=spark$VERSION_NUM
+DBJARFPATH=./shims/spark300db/target/rapids-4-spark-shims-$SPARK_VERSION_STR-databricks_$SCALA_VERSION-$DATABRICKS_VERSION.jar
+echo "Databricks jar is: $DBJARFPTH"
 mvn -B deploy:deploy-file $MVN_URM_MIRROR '-P!snapshot-shims' -Durl=$SERVER_URL -DrepositoryId=$SERVER_ID \
-    -Dfile=$DBJARFPATH -DpomFile=shims/spark300db/pom.xml
+    -Dfile=$DBJARFPATH -DpomFile=shims/${SPARK_VERSION_STR}db/pom.xml
