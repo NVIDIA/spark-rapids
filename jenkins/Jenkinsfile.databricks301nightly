@@ -17,7 +17,7 @@
 
 /**
 *
-* Jenkinsfile for building rapids-plugin on Databricks
+* Jenkinsfile for building rapids-plugin on Databricks based on Spark 3.0.1
 *
 */
 @Library(['shared-libs', 'spark-jenkins-shared-lib']) _
@@ -38,7 +38,7 @@ pipeline {
         ansiColor('xterm')
         // timeout doesn't seem to work with environment variables so make sure to update below
         // IDLE_TIMEOUT config as well
-        timeout(time: 300, unit: 'MINUTES')
+        timeout(time: 240, unit: 'MINUTES')
         buildDiscarder(logRotator(numToKeepStr: '10'))
     }
 
@@ -57,7 +57,7 @@ pipeline {
     }
 
     environment {
-        IDLE_TIMEOUT = 300
+        IDLE_TIMEOUT = 240
         JENKINS_ROOT  = 'jenkins'
         MVN_URM_MIRROR='-s jenkins/settings.xml -P mirror-apache-to-urm'
         LIBCUDF_KERNEL_CACHE_PATH='/tmp'
@@ -93,9 +93,9 @@ pipeline {
             script {
                 sh "python3.6 ./jenkins/databricks/shutdown.py -c ${env.CLUSTERID} -t $DATABRICKS_TOKEN -d || true"
                 if (currentBuild.currentResult == "SUCCESS") {
-                    // slack("#swrapids-spark-cicd", "Success", color: "#33CC33")
+                    slack("#swrapids-spark-cicd", "Success", color: "#33CC33")
                 } else {
-                    // slack("#swrapids-spark-cicd", "Failed", color: "#FF0000")
+                    slack("#swrapids-spark-cicd", "Failed", color: "#FF0000")
                 }
             }
         }
