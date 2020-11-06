@@ -93,6 +93,13 @@ def test_coalesce(data_gen):
             lambda spark : gen_df(spark, gen).select(
                 f.coalesce(*command_args)))
 
+def test_coalesce_constant_output():
+    # Coalesce can allow a constant value as output. Technically Spark should mark this
+    # as foldable and turn it into a constant, but it does not, so make sure our code
+    # can deal with it.  (This means something like + will get two constant scalar values)
+    assert_gpu_and_cpu_are_equal_collect(
+            lambda spark : spark.range(1, 100).selectExpr("4 + coalesce(5, id) as nine"))
+
 @pytest.mark.parametrize('data_gen', all_basic_gens, ids=idfn)
 def test_nvl2(data_gen):
     (s1, s2) = gen_scalars_for_sql(data_gen, 2, force_no_nulls=True)

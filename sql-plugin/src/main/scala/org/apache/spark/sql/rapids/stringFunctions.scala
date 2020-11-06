@@ -121,6 +121,12 @@ case class GpuStringLocate(substr: Expression, col: Expression, start: Expressio
     }
   }
 
+  override def doColumnar(numRows: Int, val0: Scalar, val1: Scalar, val2: Scalar): ColumnVector = {
+    withResource(GpuColumnVector.from(val1, numRows, col.dataType)) { val1Col =>
+      doColumnar(val0, val1Col, val2)
+    }
+  }
+
   override def doColumnar(
       val0: GpuColumnVector,
       val1: Scalar,
@@ -147,7 +153,7 @@ case class GpuStartsWith(left: Expression, right: Expression)
 
   override def sql: String = {
     val inputSQL = left.sql
-    val listSQL = right.sql.toString
+    val listSQL = right.sql
     s"($inputSQL STARTSWITH ($listSQL))"
   }
 
@@ -155,6 +161,12 @@ case class GpuStartsWith(left: Expression, right: Expression)
 
   def doColumnar(lhs: GpuColumnVector, rhs: Scalar): ColumnVector =
     lhs.getBase.startsWith(rhs)
+
+  override def doColumnar(numRows: Int, lhs: Scalar, rhs: Scalar): ColumnVector = {
+    withResource(GpuColumnVector.from(lhs, numRows, left.dataType)) { expandedLhs =>
+      doColumnar(expandedLhs, rhs)
+    }
+  }
 
   override def doColumnar(lhs: GpuColumnVector, rhs: GpuColumnVector): ColumnVector =
     throw new IllegalStateException(
@@ -172,7 +184,7 @@ case class GpuEndsWith(left: Expression, right: Expression)
 
   override def sql: String = {
     val inputSQL = left.sql
-    val listSQL = right.sql.toString
+    val listSQL = right.sql
     s"($inputSQL ENDSWITH ($listSQL))"
   }
 
@@ -180,6 +192,12 @@ case class GpuEndsWith(left: Expression, right: Expression)
 
   def doColumnar(lhs: GpuColumnVector, rhs: Scalar): ColumnVector =
     lhs.getBase.endsWith(rhs)
+
+  override def doColumnar(numRows: Int, lhs: Scalar, rhs: Scalar): ColumnVector = {
+    withResource(GpuColumnVector.from(lhs, numRows, left.dataType)) { expandedLhs =>
+      doColumnar(expandedLhs, rhs)
+    }
+  }
 
   override def doColumnar(lhs: GpuColumnVector, rhs: GpuColumnVector): ColumnVector =
     throw new IllegalStateException(
@@ -300,6 +318,12 @@ case class GpuContains(left: Expression, right: Expression) extends GpuBinaryExp
   def doColumnar(lhs: GpuColumnVector, rhs: Scalar): ColumnVector =
     lhs.getBase.stringContains(rhs)
 
+  override def doColumnar(numRows: Int, lhs: Scalar, rhs: Scalar): ColumnVector = {
+    withResource(GpuColumnVector.from(lhs, numRows, left.dataType)) { expandedLhs =>
+      doColumnar(expandedLhs, rhs)
+    }
+  }
+
   override def doColumnar(lhs: GpuColumnVector, rhs: GpuColumnVector): ColumnVector =
     throw new IllegalStateException("Really should not be here, " +
       "Cannot have two column vectors as input in Contains")
@@ -362,6 +386,12 @@ case class GpuSubstring(str: Expression, pos: Expression, len: Expression)
       }
     } else { // If position is negative, evaluate from end.
       column.getBase.substring(substringPos, Integer.MAX_VALUE)
+    }
+  }
+
+  override def doColumnar(numRows: Int, val0: Scalar, val1: Scalar, val2: Scalar): ColumnVector = {
+    withResource(GpuColumnVector.from(val0, numRows, str.dataType)) { val0Col =>
+      doColumnar(val0Col, val1, val2)
     }
   }
 
@@ -442,6 +472,12 @@ case class GpuStringReplace(
     }
   }
 
+  override def doColumnar(numRows: Int, val0: Scalar, val1: Scalar, val2: Scalar): ColumnVector = {
+    withResource(GpuColumnVector.from(val0, numRows, srcExpr.dataType)) { val0Col =>
+      doColumnar(val0Col, val1, val2)
+    }
+  }
+
   override def doColumnar(
       strExpr: GpuColumnVector,
       searchExpr: GpuColumnVector,
@@ -488,6 +524,12 @@ case class GpuLike(left: Expression, right: Expression, escapeChar: Char)
   override def doColumnar(lhs: GpuColumnVector, rhs: Scalar): ColumnVector = {
     val regexStr = escapeLikeRegex(rhs.getJavaString, escapeChar)
     lhs.getBase.matchesRe(regexStr)
+  }
+
+  override def doColumnar(numRows: Int, lhs: Scalar, rhs: Scalar): ColumnVector = {
+    withResource(GpuColumnVector.from(lhs, numRows, left.dataType)) { expandedLhs =>
+      doColumnar(expandedLhs, rhs)
+    }
   }
 
   override def inputTypes: Seq[AbstractDataType] = Seq(StringType, StringType)
@@ -628,6 +670,12 @@ case class GpuSubstringIndex(strExpr: Expression,
     }
   }
 
+  override def doColumnar(numRows: Int, val0: Scalar, val1: Scalar, val2: Scalar): ColumnVector = {
+    withResource(GpuColumnVector.from(val0, numRows, strExpr.dataType)) { val0Col =>
+      doColumnar(val0Col, val1, val2)
+    }
+  }
+
   override def doColumnar(
       str: GpuColumnVector,
       delim: GpuColumnVector,
@@ -691,6 +739,12 @@ trait BasePad extends GpuTernaryExpression with ImplicitCastInputTypes with Null
       withResource(Scalar.fromNull(DType.STRING)) { ns =>
         ColumnVector.fromScalar(ns, str.getRowCount.toInt)
       }
+    }
+  }
+
+  override def doColumnar(numRows: Int, val0: Scalar, val1: Scalar, val2: Scalar): ColumnVector = {
+    withResource(GpuColumnVector.from(val0, numRows, str.dataType)) { val0Col =>
+      doColumnar(val0Col, val1, val2)
     }
   }
 
@@ -798,6 +852,12 @@ case class GpuStringSplit(str: Expression, regex: Expression, limit: Expression)
   override def doColumnar(str: GpuColumnVector, regex: Scalar, limit: Scalar): ColumnVector = {
     val intLimit = limit.getInt
     str.getBase.stringSplitRecord(regex, intLimit)
+  }
+
+  override def doColumnar(numRows: Int, val0: Scalar, val1: Scalar, val2: Scalar): ColumnVector = {
+    withResource(GpuColumnVector.from(val0, numRows, str.dataType)) { val0Col =>
+      doColumnar(val0Col, val1, val2)
+    }
   }
 
   override def doColumnar(

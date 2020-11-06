@@ -243,6 +243,12 @@ case class GpuDateDiff(endDate: Expression, startDate: Expression)
       }
     }
   }
+
+  override def doColumnar(numRows: Int, lhs: Scalar, rhs: Scalar): ColumnVector = {
+    withResource(GpuColumnVector.from(lhs, numRows, left.dataType)) { expandedLhs =>
+      doColumnar(expandedLhs, rhs)
+    }
+  }
 }
 
 case class GpuQuarter(child: Expression) extends GpuDateUnaryExpression {
@@ -328,6 +334,7 @@ abstract class GpuToTimestamp
     throw new IllegalArgumentException("lhs has to be a vector and rhs has to be a scalar for " +
       "the unixtimestamp to work")
   }
+
   override def doColumnar(lhs: GpuColumnVector, rhs: Scalar): ColumnVector = {
     val tmp = if (lhs.dataType == StringType) {
       // rhs is ignored we already parsed the format
@@ -342,6 +349,12 @@ abstract class GpuToTimestamp
           longMicroSecs.div(downScaleFactor)
         }
       }
+    }
+  }
+
+  override def doColumnar(numRows: Int, lhs: Scalar, rhs: Scalar): ColumnVector = {
+    withResource(GpuColumnVector.from(lhs, numRows, left.dataType)) { expandedLhs =>
+      doColumnar(expandedLhs, rhs)
     }
   }
 }
@@ -462,6 +475,12 @@ case class GpuFromUnixTime(
     }
   }
 
+  override def doColumnar(numRows: Int, lhs: Scalar, rhs: Scalar): ColumnVector = {
+    withResource(GpuColumnVector.from(lhs, numRows, left.dataType)) { expandedLhs =>
+      doColumnar(expandedLhs, rhs)
+    }
+  }
+
   override def withTimeZone(timeZoneId: String): TimeZoneAwareExpression = {
     copy(timeZoneId = Option(timeZoneId))
   }
@@ -510,6 +529,12 @@ trait GpuDateMathBase extends GpuBinaryExpression with ExpectsInputTypes {
       withResource(daysSinceEpoch.binaryOp(binaryOp, rhs, daysSinceEpoch.getType)) { daysAsInts =>
         daysAsInts.castTo(DType.TIMESTAMP_DAYS)
       }
+    }
+  }
+
+  override def doColumnar(numRows: Int, lhs: Scalar, rhs: Scalar): ColumnVector = {
+    withResource(GpuColumnVector.from(lhs, numRows, left.dataType)) { expandedLhs =>
+      doColumnar(expandedLhs, rhs)
     }
   }
 }
