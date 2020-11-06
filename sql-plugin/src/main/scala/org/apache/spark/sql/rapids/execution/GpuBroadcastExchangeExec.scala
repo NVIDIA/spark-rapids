@@ -40,6 +40,7 @@ import org.apache.spark.sql.execution.exchange.{BroadcastExchangeExec, Exchange}
 import org.apache.spark.sql.execution.joins.{BroadcastHashJoinExec, BroadcastNestedLoopJoinExec}
 import org.apache.spark.sql.execution.metric.SQLMetrics
 import org.apache.spark.sql.internal.{SQLConf, StaticSQLConf}
+import org.apache.spark.sql.types.DataType
 import org.apache.spark.sql.vectorized.{ColumnarBatch, ColumnVector}
 
 @SerialVersionUID(100L)
@@ -71,10 +72,12 @@ class SerializeConcatHostBuffersDeserializeBatch(
       withResource(GpuColumnVector.emptyHostColumns(output.asJava)) { hostVectors =>
         JCudfSerialization.writeToStream(hostVectors, out, 0, 0)
       }
+      out.writeObject(output.map(_.dataType).toArray)
     } else if (headers.head.getNumColumns == 0) {
       JCudfSerialization.writeRowsToStream(out, numRows)
     } else {
       JCudfSerialization.writeConcatedStream(headers, buffers, out)
+      out.writeObject(output.map(_.dataType).toArray)
     }
   }
 
@@ -90,9 +93,10 @@ class SerializeConcatHostBuffersDeserializeBatch(
           this.batchInternal = new ColumnarBatch(new Array[ColumnVector](0))
           batchInternal.setNumRows(numRows.toInt)
         } else {
+          val colDataTypes = in.readObject().asInstanceOf[Array[DataType]]
           // This is read as part of the broadcast join so we expect it to leak.
           (0 until table.getNumberOfColumns).foreach(table.getColumn(_).noWarnLeakExpected())
-          this.batchInternal = GpuColumnVector.from(table)
+          this.batchInternal = GpuColumnVector.from(table, colDataTypes)
         }
       } finally {
         tableInfo.close()
