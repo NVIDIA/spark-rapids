@@ -18,7 +18,6 @@ import getopt
 import time
 import os
 import subprocess
-import shlex
 from clusterutils import ClusterUtils
 
 
