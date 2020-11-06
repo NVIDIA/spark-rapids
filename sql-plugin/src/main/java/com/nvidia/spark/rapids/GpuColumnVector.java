@@ -163,9 +163,8 @@ public class GpuColumnVector extends GpuColumnVectorBase {
       return DType.STRING;
     } else if (type instanceof DecimalType) {
       DecimalType decType = (DecimalType) type;
-      if (decType.precision() <= DType.DECIMAL32_MAX_PRECISION) {
-        return DType.create(DType.DTypeEnum.DECIMAL32, -decType.scale());
-      } else if (decType.precision() <= DType.DECIMAL64_MAX_PRECISION) {
+      // Currently, maps all DecimalTypes to DType.DECIMAL64 to reduce the complexity.
+      if (decType.precision() <= DType.DECIMAL64_MAX_PRECISION) {
         return DType.create(DType.DTypeEnum.DECIMAL64, -decType.scale());
       } else {
         return null;

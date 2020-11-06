@@ -24,6 +24,9 @@ import org.apache.spark.sql.vectorized.ColumnarArray;
 import org.apache.spark.sql.vectorized.ColumnarMap;
 import org.apache.spark.unsafe.types.UTF8String;
 
+import java.math.BigDecimal;
+import java.math.RoundingMode;
+
 
 /**
  * A GPU accelerated version of the Spark ColumnVector.
@@ -112,7 +115,9 @@ public final class RapidsHostColumnVectorCore extends ColumnVector {
 
   @Override
   public Decimal getDecimal(int rowId, int precision, int scale) {
-    throw new IllegalStateException("The decimal type is currently not supported by rapids cudf");
+    BigDecimal bigDec = cudfCv.getBigDecimal(rowId).setScale(scale, RoundingMode.UNNECESSARY);
+    assert bigDec.precision() <= precision;
+    return Decimal.apply(bigDec);
   }
 
   @Override

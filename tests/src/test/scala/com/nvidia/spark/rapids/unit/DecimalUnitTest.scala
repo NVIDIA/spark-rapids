@@ -17,9 +17,11 @@
 package com.nvidia.spark.rapids.unit
 
 import scala.util.Random
-import ai.rapids.cudf.DType
-import com.nvidia.spark.rapids.{GpuAlias, GpuLiteral, GpuOverrides, GpuScalar, GpuUnitTests, RapidsConf, TestUtils}
+
+import ai.rapids.cudf.{ColumnVector, DType}
+import com.nvidia.spark.rapids.{GpuAlias, GpuColumnVector, GpuIsNotNull, GpuIsNull, GpuLiteral, GpuOverrides, GpuScalar, GpuUnaryExpression, GpuUnitTests, RapidsConf, RapidsHostColumnVector, TestUtils}
 import org.scalatest.Matchers
+
 import org.apache.spark.sql.catalyst.expressions.{Alias, AttributeReference, Literal}
 import org.apache.spark.sql.types.{Decimal, DecimalType}
 
@@ -27,9 +29,9 @@ class DecimalUnitTest extends GpuUnitTests with Matchers {
   Random.setSeed(1234L)
 
   private val dec32Data = Array.fill[Decimal](10)(
-    Decimal.fromDecimal(BigDecimal(Random.nextInt() / 10, Random.nextInt(5))))
+    Decimal.fromDecimal(BigDecimal(Random.nextInt() / 1000, 3 + Random.nextInt(3))))
   private val dec64Data = Array.fill[Decimal](10)(
-    Decimal.fromDecimal(BigDecimal(Random.nextLong() / 1000, Random.nextInt(10))))
+    Decimal.fromDecimal(BigDecimal(Random.nextLong() / 1000, 7 + Random.nextInt(3))))
 
   test("test decimal as scalar") {
     Array(dec32Data, dec64Data).flatten.foreach { dec =>
@@ -64,6 +66,58 @@ class DecimalUnitTest extends GpuUnitTests with Matchers {
     }
   }
 
+  test("test decimal as column vector") {
+    withResource(
+      GpuColumnVector.from(ColumnVector.fromDecimals(dec32Data.map(_.toJavaBigDecimal): _*),
+        DecimalType(DType.DECIMAL32_MAX_PRECISION, 5))) { cv: GpuColumnVector =>
+
+      cv.getRowCount shouldEqual dec32Data.length
+      val (precision, scale) = cv.dataType() match {
+        case dt: DecimalType => (dt.precision, dt.scale)
+      }
+      withResource(cv.copyToHost()) { hostCv: RapidsHostColumnVector =>
+        dec32Data.zipWithIndex.foreach { case (dec, i) =>
+          val rescaled = dec.toJavaBigDecimal.setScale(scale)
+          hostCv.getInt(i) shouldEqual rescaled.unscaledValue().intValueExact()
+          hostCv.getDecimal(i, precision, scale) shouldEqual Decimal(rescaled)
+        }
+      }
+    }
+    val dec64WithNull = Array(null) ++ dec64Data.map(_.toJavaBigDecimal) ++ Array(null, null)
+    withResource(
+      GpuColumnVector.from(ColumnVector.fromDecimals(dec64WithNull: _*),
+        DecimalType(DType.DECIMAL64_MAX_PRECISION, 9))) { cv: GpuColumnVector =>
+      cv.getRowCount shouldEqual dec64WithNull.length
+      cv.hasNull shouldBe true
+      cv.numNulls() shouldEqual 3
+      val (precision, scale) = cv.dataType() match {
+        case dt: DecimalType => (dt.precision, dt.scale)
+      }
+      withResource(cv.copyToHost()) { hostCv: RapidsHostColumnVector =>
+        dec64WithNull.zipWithIndex.foreach {
+          case (dec, i) if dec == null =>
+            hostCv.getBase.isNull(i) shouldBe true
+          case (dec, i) =>
+            val rescaled = dec.setScale(scale)
+            hostCv.getLong(i) shouldEqual rescaled.unscaledValue().longValueExact()
+            hostCv.getDecimal(i, precision, scale) shouldEqual Decimal(rescaled)
+        }
+      }
+    }
+    // TODO: support fromScalar(cudf.ColumnVector cv, int rows) for fixed-point decimal in cuDF
+    /*
+    withResource(GpuScalar.from(dec64Data(0))) { scalar =>
+      withResource(GpuColumnVector.from(scalar, 10)) { cv =>
+        withResource(cv.copyToHost()) { hcv =>
+          (0 until 10).foreach { i =>
+            hcv.getDecimal(i, dec64Data(0).precision, dec64Data(0).scale) shouldEqual dec64Data(0)
+          }
+        }
+      }
+    }
+    */
+  }
+
   test("test basic expressions with decimal data") {
     val rapidsConf = new RapidsConf(Map[String, String]())
 
@@ -96,5 +150,22 @@ class DecimalUnitTest extends GpuUnitTests with Matchers {
     val wrp = GpuOverrides.wrapExpr(Literal(Decimal(12345L), DecimalType(38, 10)), rapidsConf, None)
     wrp.tagForGpu()
     wrp.canExprTreeBeReplaced shouldBe false
+  }
+
+  test("test gpu null check operators with decimal data") {
+    val decArray = Array(BigDecimal(0).bigDecimal, null, BigDecimal(1).bigDecimal)
+    withResource(GpuColumnVector.from(ColumnVector.fromDecimals(decArray: _*), DecimalType(1, 0))
+    ) { cv =>
+      withResource(GpuIsNull(null).doColumnar(cv).copyToHost()) { ret =>
+        ret.getBoolean(0) shouldBe false
+        ret.getBoolean(1) shouldBe true
+        ret.getBoolean(2) shouldBe false
+      }
+      withResource(GpuIsNotNull(null).doColumnar(cv).copyToHost()) { ret =>
+        ret.getBoolean(0) shouldBe true
+        ret.getBoolean(1) shouldBe false
+        ret.getBoolean(2) shouldBe true
+      }
+    }
   }
 }

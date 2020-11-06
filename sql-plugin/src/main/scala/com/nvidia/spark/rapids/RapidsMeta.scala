@@ -102,6 +102,7 @@ abstract class RapidsMeta[INPUT <: BASE, BASE, OUTPUT <: BASE](
   /**
    * Check if all the types are supported in this Meta
    */
+<<<<<<< HEAD
   final def areAllSupportedTypes(types: DataType*): Boolean =
     types.forall(isSupportedType)
 
@@ -110,6 +111,11 @@ abstract class RapidsMeta[INPUT <: BASE, BASE, OUTPUT <: BASE](
    */
   def isSupportedType(t: DataType): Boolean =
     GpuOverrides.isSupportedType(t)
+=======
+  def areAllSupportedTypes(types: DataType*): Boolean = {
+    GpuOverrides.areAllSupportedTypes(types, Some(this))
+  }
+>>>>>>> refine
 
   /**
    * Keep this on the CPU, but possibly convert its children under it to run on the GPU if enabled.
