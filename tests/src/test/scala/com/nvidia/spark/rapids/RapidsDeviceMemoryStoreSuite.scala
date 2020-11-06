@@ -104,17 +104,17 @@ class RapidsDeviceMemoryStoreSuite extends FunSuite with Arm with MockitoSugar {
 
   test("get column batch") {
     val catalog = new RapidsBufferCatalog
+    val sparkTypes =  Array[DataType](IntegerType, StringType, DoubleType)
     withResource(new RapidsDeviceMemoryStore(catalog)) { store =>
       val bufferId = MockRapidsBufferId(7)
       closeOnExcept(buildContiguousTable()) { ct =>
-        withResource(
-          GpuColumnVector.from(ct.getTable, Array[DataType](IntegerType, StringType, DoubleType))) {
+        withResource(GpuColumnVector.from(ct.getTable, sparkTypes)) {
           expectedBatch =>
             val meta = MetaUtils.buildTableMeta(bufferId.tableId, ct.getTable, ct.getBuffer)
             // store takes ownership of the buffer
             store.addBuffer(bufferId, ct.getBuffer, meta, initialSpillPriority = 3)
             withResource(catalog.acquireBuffer(bufferId)) { buffer =>
-              withResource(buffer.getColumnarBatch) { actualBatch =>
+              withResource(buffer.getColumnarBatch(sparkTypes)) { actualBatch =>
                 TestUtils.compareBatches(expectedBatch, actualBatch)
               }
             }

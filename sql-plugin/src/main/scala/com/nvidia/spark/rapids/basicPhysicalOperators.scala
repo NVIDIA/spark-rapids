@@ -33,7 +33,7 @@ import org.apache.spark.sql.rapids.execution.TrampolineUtil
 import org.apache.spark.sql.types.{DataType, LongType}
 import org.apache.spark.sql.vectorized.{ColumnarBatch, ColumnVector}
 
-object GpuProjectExec {
+object GpuProjectExec extends Arm {
   def projectAndClose[A <: Expression](cb: ColumnarBatch, boundExprs: Seq[A],
       totalTime: SQLMetric): ColumnarBatch = {
     val nvtxRange = new NvtxWithMetrics("ProjectExec", NvtxColor.CYAN, totalTime)
@@ -52,11 +52,8 @@ object GpuProjectExec {
         result match {
           case cv: ColumnVector => cv
           case other =>
-            val scalar = GpuScalar.from(other, expr.dataType)
-            try {
-              GpuColumnVector.from(scalar, cb.numRows())
-            } finally {
-              scalar.close()
+            withResource(GpuScalar.from(other, expr.dataType)) { scalar =>
+              GpuColumnVector.from(scalar, cb.numRows(), expr.dataType)
             }
         }
       }}.toArray

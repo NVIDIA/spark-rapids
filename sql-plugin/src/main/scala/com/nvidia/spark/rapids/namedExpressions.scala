@@ -18,6 +18,7 @@ package com.nvidia.spark.rapids
 
 import java.util.Objects
 
+import ai.rapids.cudf.ColumnVector
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 
 import org.apache.spark.sql.catalyst.analysis.UnresolvedAttribute
@@ -91,6 +92,6 @@ case class GpuAlias(child: Expression, name: String)(
   override def columnarEval(batch: ColumnarBatch): Any =
     child.columnarEval(batch)
 
-  override def doColumnar(input: GpuColumnVector): GpuColumnVector =
+  override def doColumnar(input: GpuColumnVector): ColumnVector =
     throw new IllegalStateException("GpuAlias should never have doColumnar called")
 }

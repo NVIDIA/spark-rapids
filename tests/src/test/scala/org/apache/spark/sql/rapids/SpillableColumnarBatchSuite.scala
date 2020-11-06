@@ -24,6 +24,7 @@ import com.nvidia.spark.rapids.StorageTier.StorageTier
 import com.nvidia.spark.rapids.format.TableMeta
 import org.scalatest.FunSuite
 
+import org.apache.spark.sql.types.{DataType, IntegerType}
 import org.apache.spark.sql.vectorized.ColumnarBatch
 import org.apache.spark.storage.TempLocalBlockId
 
@@ -35,7 +36,7 @@ class SpillableColumnarBatchSuite extends FunSuite with Arm {
     val oldBufferCount = catalog.numBuffers
     catalog.registerNewBuffer(mockBuffer)
     assertResult(oldBufferCount + 1)(catalog.numBuffers)
-    val spillableBatch = new SpillableColumnarBatchImpl(id, 5)
+    val spillableBatch = new SpillableColumnarBatchImpl(id, 5, Array[DataType](IntegerType))
     spillableBatch.close()
     assertResult(oldBufferCount)(catalog.numBuffers)
   }
@@ -44,12 +45,12 @@ class SpillableColumnarBatchSuite extends FunSuite with Arm {
     override val size: Long = 123
     override val meta: TableMeta = null
     override val storageTier: StorageTier = StorageTier.DEVICE
-    override def getColumnarBatch: ColumnarBatch = null
     override def getMemoryBuffer: MemoryBuffer = null
     override def addReference(): Boolean = true
     override def free(): Unit = {}
     override def getSpillPriority: Long = 0
     override def setSpillPriority(priority: Long): Unit = {}
     override def close(): Unit = {}
+    override def getColumnarBatch(sparkTypes: Array[DataType]): ColumnarBatch = null
   }
 }

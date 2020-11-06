@@ -82,47 +82,12 @@ public final class GpuCompressedColumnVector extends GpuColumnVectorBase {
   }
 
   /**
-   * Build a columnar batch from a compressed data buffer and specified table metadata
-   * NOTE: The data remains compressed and cannot be accessed directly from the columnar batch.
-   * @deprecated use the version that takes the spark data types.
-   */
-  @Deprecated
-  public static ColumnarBatch from(DeviceMemoryBuffer compressedBuffer, TableMeta tableMeta) {
-    long rows = tableMeta.rowCount();
-    if (rows != (int) rows) {
-      throw new IllegalStateException("Cannot support a batch larger that MAX INT rows");
-    }
-
-    ColumnMeta columnMeta = new ColumnMeta();
-    int numColumns = tableMeta.columnMetasLength();
-    ColumnVector[] columns = new ColumnVector[numColumns];
-    try {
-      for (int i = 0; i < numColumns; ++i) {
-        tableMeta.columnMetas(columnMeta, i);
-        DType dtype = DType.fromNative(columnMeta.dtypeId(), columnMeta.dtypeScale());
-        DataType type = GpuColumnVector.getSparkType(dtype);
-        compressedBuffer.incRefCount();
-        columns[i] = new GpuCompressedColumnVector(type, compressedBuffer, tableMeta);
-      }
-    } catch (Throwable t) {
-      for (int i = 0; i < numColumns; ++i) {
-        if (columns[i] != null) {
-          columns[i].close();
-        }
-      }
-      throw t;
-    }
-
-    return new ColumnarBatch(columns, (int) rows);
-  }
-
-  /**
    * This should only ever be called from an assertion.
    */
   private static boolean typeConversionAllowed(ColumnMeta columnMeta, DataType colType) {
     DType dt = DType.fromNative(columnMeta.dtypeId(), columnMeta.dtypeScale());
     if (!dt.isNestedType()) {
-      return GpuColumnVector.getSparkType(dt).equals(colType);
+      return GpuColumnVector.getRapidsType(colType).equals(dt);
     }
     if (colType instanceof MapType) {
       MapType mType = (MapType) colType;

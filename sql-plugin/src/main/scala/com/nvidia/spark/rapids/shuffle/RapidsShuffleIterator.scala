@@ -27,6 +27,7 @@ import org.apache.spark.TaskContext
 import org.apache.spark.internal.Logging
 import org.apache.spark.shuffle.{RapidsShuffleFetchFailedException, RapidsShuffleTimeoutException}
 import org.apache.spark.sql.rapids.{GpuShuffleEnv, ShuffleMetricsUpdater}
+import org.apache.spark.sql.types.DataType
 import org.apache.spark.sql.vectorized.ColumnarBatch
 import org.apache.spark.storage.{BlockId, BlockManagerId, ShuffleBlockBatchId, ShuffleBlockId}
 
@@ -51,6 +52,7 @@ class RapidsShuffleIterator(
     transport: RapidsShuffleTransport,
     blocksByAddress: Array[(BlockManagerId, Seq[(BlockId, Long, Int)])],
     metricsUpdater: ShuffleMetricsUpdater,
+    sparkTypes: Array[DataType],
     catalog: ShuffleReceivedBufferCatalog = GpuShuffleEnv.getReceivedCatalog,
     timeoutSeconds: Long = GpuShuffleEnv.shuffleFetchTimeoutSeconds)
   extends Iterator[ColumnarBatch]
@@ -325,7 +327,7 @@ class RapidsShuffleIterator(
           NvtxColor.PURPLE)
         try {
           sb = catalog.acquireBuffer(bufferId)
-          cb = sb.getColumnarBatch
+          cb = sb.getColumnarBatch(sparkTypes)
           metricsUpdater.update(blockedTime, 1, sb.size, cb.numRows())
         } finally {
           nvtxRangeAfterGettingBatch.close()
