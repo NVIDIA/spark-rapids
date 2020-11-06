@@ -89,6 +89,12 @@ def main():
                         help='The number of iterations to run (defaults to 1)')
     parser.add_argument('--gc-between-runs', required=False, action='store_true',
                         help='Whether to call System.gc between iterations')
+    parser.add_argument('--s3-endpoint-url', required=False,
+                        help='S3 endpoint URL (optional)')
+    parser.add_argument('--upload-uri', required=False,
+                        help='Upload URI for summary output')
+    parser.add_argument('--upload-path', required=False,
+                        help='Upload path for summary output')
 
     args = parser.parse_args()
 
@@ -125,6 +131,12 @@ def main():
 
             if args.gc_between_runs is True:
                 cmd.append("--gc-between-runs ")
+
+            if args.upload_uri is not None:
+                cmd.append("--upload-uri " + args.upload_uri)
+
+            if args.upload_path is not None:
+                cmd.append("--upload-path " + args.upload_path)
 
             if args.iterations is None:
                 cmd.append("--iterations 1")

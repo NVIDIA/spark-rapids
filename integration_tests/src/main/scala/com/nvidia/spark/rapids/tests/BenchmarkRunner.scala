@@ -15,10 +15,16 @@
  */
 package com.nvidia.spark.rapids.tests
 
-import com.nvidia.spark.rapids.tests.common.{BenchmarkSuite, BenchUtils}
+import java.net.URI
+
+import scala.util.{Failure, Success, Try}
+
+import com.nvidia.spark.rapids.tests.common.{BenchmarkReport, BenchmarkSuite, BenchUtils}
 import com.nvidia.spark.rapids.tests.tpcds.TpcdsLikeBench
 import com.nvidia.spark.rapids.tests.tpch.TpchLikeBench
 import com.nvidia.spark.rapids.tests.tpcxbb.TpcxbbLikeBench
+import org.apache.hadoop.conf.Configuration
+import org.apache.hadoop.fs.{FileSystem, Path}
 import org.rogach.scallop.ScallopConf
 
 import org.apache.spark.sql.{SaveMode, SparkSession}
@@ -58,7 +64,7 @@ object BenchmarkRunner {
 
         val runner = new BenchmarkRunner(bench)
         println(s"*** RUNNING ${bench.name()} QUERY ${conf.query()}")
-        conf.output.toOption match {
+        val report = Try(conf.output.toOption match {
           case Some(path) => conf.outputFormat().toLowerCase match {
             case "parquet" =>
               runner.writeParquet(
@@ -85,8 +91,7 @@ object BenchmarkRunner {
                 summaryFilePrefix = conf.summaryFilePrefix.toOption,
                 gcBetweenRuns = conf.gcBetweenRuns())
             case other =>
-              System.err.println(s"Invalid or unspecified output format: $other")
-              System.exit(-1)
+              throw new IllegalArgumentException(s"Invalid or unspecified output format: $other")
           }
           case _ =>
             runner.collect(
@@ -95,6 +100,32 @@ object BenchmarkRunner {
               conf.iterations(),
               summaryFilePrefix = conf.summaryFilePrefix.toOption,
               gcBetweenRuns = conf.gcBetweenRuns())
+        })
+
+        report match {
+          case Success(report) =>
+            if (conf.uploadUri.isSupplied && conf.uploadPath.isSupplied) {
+              println(s"Uploading ${report.filename} to " +
+                  s"s3://${conf.uploadUri()}/${conf.uploadPath()}/${report.filename}")
+
+              // because we are using the hadoop library directly, we need to convert the spark
+              // hadoop configuration settings into plain hadoop settings
+              val hadoopConf = new Configuration()
+              val sparkHadoopPrefix = "spark.hadoop."
+              spark.sqlContext.getAllConfs
+                  .filter(_._1.startsWith(sparkHadoopPrefix + "fs"))
+                  .foreach { entry =>
+                    hadoopConf.set(entry._1.substring(sparkHadoopPrefix.length), entry._2)
+                  }
+              val fs = FileSystem.newInstance(new URI(conf.uploadUri()), hadoopConf)
+              fs.copyFromLocalFile(
+                new Path(report.filename),
+                new Path(s"${conf.uploadPath()}/${report.filename}"))
+            }
+
+          case Failure(e) =>
+            System.err.println(e.getMessage)
+            System.exit(-1)
         }
       case _ =>
         System.err.println(s"Invalid benchmark name: ${conf.benchmark()}. Supported benchmarks " +
@@ -131,7 +162,7 @@ class BenchmarkRunner(val bench: BenchmarkSuite) {
       query: String,
       iterations: Int = 3,
       summaryFilePrefix: Option[String] = None,
-      gcBetweenRuns: Boolean = false): Unit = {
+      gcBetweenRuns: Boolean = false): BenchmarkReport = {
     BenchUtils.collect(
       spark,
       spark => bench.createDataFrame(spark, query),
@@ -166,7 +197,7 @@ class BenchmarkRunner(val bench: BenchmarkSuite) {
       writeOptions: Map[String, String] = Map.empty,
       iterations: Int = 3,
       summaryFilePrefix: Option[String] = None,
-      gcBetweenRuns: Boolean = false): Unit = {
+      gcBetweenRuns: Boolean = false): BenchmarkReport = {
     BenchUtils.writeCsv(
       spark,
       spark => bench.createDataFrame(spark, query),
@@ -204,7 +235,7 @@ class BenchmarkRunner(val bench: BenchmarkSuite) {
       writeOptions: Map[String, String] = Map.empty,
       iterations: Int = 3,
       summaryFilePrefix: Option[String] = None,
-      gcBetweenRuns: Boolean = false): Unit = {
+      gcBetweenRuns: Boolean = false): BenchmarkReport = {
     BenchUtils.writeOrc(
       spark,
       spark => bench.createDataFrame(spark, query),
@@ -242,7 +273,7 @@ class BenchmarkRunner(val bench: BenchmarkSuite) {
       writeOptions: Map[String, String] = Map.empty,
       iterations: Int = 3,
       summaryFilePrefix: Option[String] = None,
-      gcBetweenRuns: Boolean = false): Unit = {
+      gcBetweenRuns: Boolean = false): BenchmarkReport = {
     BenchUtils.writeParquet(
       spark,
       spark => bench.createDataFrame(spark, query),
@@ -267,5 +298,7 @@ class BenchmarkConf(arguments: Seq[String]) extends ScallopConf(arguments) {
   val outputFormat = opt[String](required = false)
   val summaryFilePrefix = opt[String](required = false)
   val gcBetweenRuns = opt[Boolean](required = false, default = Some(false))
+  val uploadUri = opt[String](required = false)
+  val uploadPath = opt[String](required = false)
   verify()
 }
