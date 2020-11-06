@@ -23,18 +23,14 @@
 #   SPARK_VER - The version of spark
 
 # Parse cudf and spark dependency versions
-set -e
 
 CUDF_VER=$1
 CUDA_CLASSIFIER=$2
 SERVER_ID=snapshots
-# set defualt values for 'M2DIR' & 'WORKSPACE' so that shims can get the correct cudf/spark dependnecy
-M2DIR=${M2DIR:-"$HOME/.m2/repository"}
-WORKSPACE=${WORKSPACE:-"../.."}
-${WORKSPACE}/jenkins/printJarVersion.sh "cudf_version" "${M2DIR}/ai/rapids/cudf/${CUDF_VER}" "cudf-${CUDF_VER}" "-${CUDA_CLASSIFIER}.jar" $SERVER_ID
+${WORKSPACE}/jenkins/printJarVersion.sh "cudf_version" "${HOME}/.m2/repository/ai/rapids/cudf/${CUDF_VER}" "cudf-${CUDF_VER}" "-${CUDA_CLASSIFIER}.jar" $SERVER_ID
 
 SPARK_VER=$3
-SPARK_SQL_VER=`${WORKSPACE}/jenkins/printJarVersion.sh "spark_version" "${M2DIR}/org/apache/spark/spark-sql_2.12/${SPARK_VER}" "spark-sql_2.12-${SPARK_VER}" ".jar" $SERVER_ID`
+SPARK_SQL_VER=`${WORKSPACE}/jenkins/printJarVersion.sh "spark_version" "${HOME}/.m2/repository/org/apache/spark/spark-sql_2.12/${SPARK_VER}" "spark-sql_2.12-${SPARK_VER}" ".jar" $SERVER_ID`
 
 # Split spark version from spark-sql_2.12 jar filename
 echo ${SPARK_SQL_VER/"-sql_2.12"/}
