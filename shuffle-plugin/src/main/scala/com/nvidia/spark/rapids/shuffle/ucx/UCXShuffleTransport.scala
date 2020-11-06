@@ -17,7 +17,6 @@
 package com.nvidia.spark.rapids.shuffle.ucx
 
 import java.nio.ByteBuffer
-import java.util.PriorityQueue
 import java.util.concurrent._
 
 import scala.collection.mutable

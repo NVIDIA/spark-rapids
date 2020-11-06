@@ -161,14 +161,10 @@ class RapidsShuffleServerSuite extends RapidsShuffleTestHelper {
         val receiveWindow = new WindowedBlockIterator[MockBlockWithSize](receiveSide, 10000)
         withResource(new BufferSendState(mockTransferRequest, bounceBuffer, handler)) { bss =>
           (0 until 246).foreach { _ =>
-            try {
-              bss.next()
-              val receiveBlocks = receiveWindow.next()
-              compareRanges(bounceBuffer, receiveBlocks)
-              bss.releaseAcquiredToCatalog()
-            } catch {
-              case t: Throwable => println(t)
-            }
+            bss.next()
+            val receiveBlocks = receiveWindow.next()
+            compareRanges(bounceBuffer, receiveBlocks)
+            bss.releaseAcquiredToCatalog()
           }
           assert(!bss.hasNext)
         }

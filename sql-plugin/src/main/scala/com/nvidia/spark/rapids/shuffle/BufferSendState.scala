@@ -68,7 +68,7 @@ class BufferSendState(
 
   private[this] val blocksToSend: Seq[SendBlock] = {
     val btr = new BufferTransferRequest() // for reuse
-    (0 until transferRequest.requestsLength()).map { case ix  =>
+    (0 until transferRequest.requestsLength()).map { ix  =>
       val bufferTransferRequest = transferRequest.requests(btr, ix)
       withResource(requestHandler.acquireShuffleBuffer(
         bufferTransferRequest.bufferId())) { table =>

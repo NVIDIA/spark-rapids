@@ -177,8 +177,7 @@ class RapidsShuffleServer(transport: RapidsShuffleTransport,
    */
   bssExec.execute(() => {
     while (started) {
-      val bssToIssue = new ArrayBuffer[BufferSendState]()
-      try {
+      closeOnExcept(new ArrayBuffer[BufferSendState]()) { bssToIssue =>
         var bssContinue = bssContinueQueue.poll()
         while (bssContinue != null) {
           bssToIssue.append(bssContinue)
@@ -203,15 +202,9 @@ class RapidsShuffleServer(transport: RapidsShuffleTransport,
             continue = false
           }
         }
-      } catch {
-        case t: Throwable => {
-          bssToIssue.safeClose(t)
-          throw t
+        if (bssToIssue.nonEmpty) {
+          asyncOnCopyThread(HandleTransferRequest(bssToIssue))
         }
-      }
-
-      if (bssToIssue.nonEmpty) {
-        asyncOnCopyThread(HandleTransferRequest(bssToIssue))
       }
 
       bssExec.synchronized {
