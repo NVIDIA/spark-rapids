@@ -28,19 +28,24 @@ import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import org.apache.spark.TaskContext
 import org.apache.spark.serializer.{DeserializationStream, SerializationStream, Serializer, SerializerInstance}
 import org.apache.spark.sql.execution.metric.SQLMetric
+import org.apache.spark.sql.types.DataType
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
 /**
  * Serializer for serializing `ColumnarBatch`s during shuffle.
  * The batches will be stored in an internal format specific to rapids.
  */
-class GpuColumnarBatchSerializer(dataSize: SQLMetric = null) extends Serializer with Serializable {
+class GpuColumnarBatchSerializer(
+    sparkSchema: Array[DataType],
+    dataSize: SQLMetric = null) extends Serializer with Serializable {
   override def newInstance(): SerializerInstance =
-    new GpuColumnarBatchSerializerInstance(dataSize)
+    new GpuColumnarBatchSerializerInstance(sparkSchema, dataSize)
   override def supportsRelocationOfSerializedObjects: Boolean = true
 }
 
-private class GpuColumnarBatchSerializerInstance(dataSize: SQLMetric) extends SerializerInstance {
+private class GpuColumnarBatchSerializerInstance(
+    sparkSchema: Array[DataType],
+    dataSize: SQLMetric) extends SerializerInstance {
 
   override def serializeStream(out: OutputStream): SerializationStream = new SerializationStream {
     private[this] val dOut: DataOutputStream =
@@ -153,7 +158,7 @@ private class GpuColumnarBatchSerializerInstance(dataSize: SQLMetric) extends Se
                   None
                 } else {
                   if (contigTable != null) {
-                    Some(GpuColumnVectorFromBuffer.from(contigTable))
+                    Some(GpuColumnVectorFromBuffer.from(contigTable, sparkSchema))
                   } else {
                     Some(new ColumnarBatch(Array.empty, tableInfo.getNumRows))
                   }
@@ -209,7 +214,7 @@ private class GpuColumnarBatchSerializerInstance(dataSize: SQLMetric) extends Se
           val cb = try {
             val table = tableInfo.getTable
             if (table != null) {
-              Some(GpuColumnVector.from(table))
+              Some(GpuColumnVector.from(table, sparkSchema))
             } else {
               Some(new ColumnarBatch(Array.empty, tableInfo.getNumRows))
             }

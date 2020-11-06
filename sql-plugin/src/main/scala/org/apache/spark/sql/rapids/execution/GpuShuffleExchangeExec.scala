@@ -104,7 +104,11 @@ abstract class GpuShuffleExchangeExecBase(
     throw new IllegalStateException()
   }
 
-  private val serializer: Serializer = new GpuColumnarBatchSerializer(longMetric("dataSize"))
+  // This value must be lazy because the child's output may not have been resolved
+  // yet in all cases.
+  private lazy val serializer: Serializer = new GpuColumnarBatchSerializer(
+    child.output.map(_.dataType).toArray,
+    longMetric("dataSize"))
 
   @transient lazy val inputBatchRDD: RDD[ColumnarBatch] = child.executeColumnar()
 

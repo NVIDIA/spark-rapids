@@ -21,7 +21,12 @@ import ai.rapids.cudf.DeviceMemoryBuffer;
 import com.nvidia.spark.rapids.format.ColumnMeta;
 import com.nvidia.spark.rapids.format.SubBufferMeta;
 import com.nvidia.spark.rapids.format.TableMeta;
+import org.apache.spark.sql.types.ArrayType;
+import org.apache.spark.sql.types.BinaryType;
 import org.apache.spark.sql.types.DataType;
+import org.apache.spark.sql.types.MapType;
+import org.apache.spark.sql.types.StructField;
+import org.apache.spark.sql.types.StructType;
 import org.apache.spark.sql.vectorized.ColumnVector;
 import org.apache.spark.sql.vectorized.ColumnarBatch;
 
@@ -38,8 +43,8 @@ public final class GpuCompressedColumnVector extends GpuColumnVectorBase {
    * Build a columnar batch from a compressed table.
    * NOTE: The data remains compressed and cannot be accessed directly from the columnar batch.
    */
-  public static ColumnarBatch from(CompressedTable compressedTable) {
-    return from(compressedTable.buffer(), compressedTable.meta());
+  public static ColumnarBatch from(CompressedTable compressedTable, DataType[] colTypes) {
+    return from(compressedTable.buffer(), compressedTable.meta(), colTypes);
   }
 
   public static boolean isBatchCompressed(ColumnarBatch batch) {
@@ -79,7 +84,9 @@ public final class GpuCompressedColumnVector extends GpuColumnVectorBase {
   /**
    * Build a columnar batch from a compressed data buffer and specified table metadata
    * NOTE: The data remains compressed and cannot be accessed directly from the columnar batch.
+   * @deprecated use the version that takes the spark data types.
    */
+  @Deprecated
   public static ColumnarBatch from(DeviceMemoryBuffer compressedBuffer, TableMeta tableMeta) {
     long rows = tableMeta.rowCount();
     if (rows != (int) rows) {
@@ -94,6 +101,106 @@ public final class GpuCompressedColumnVector extends GpuColumnVectorBase {
         tableMeta.columnMetas(columnMeta, i);
         DType dtype = DType.fromNative(columnMeta.dtypeId(), columnMeta.dtypeScale());
         DataType type = GpuColumnVector.getSparkType(dtype);
+        compressedBuffer.incRefCount();
+        columns[i] = new GpuCompressedColumnVector(type, compressedBuffer, tableMeta);
+      }
+    } catch (Throwable t) {
+      for (int i = 0; i < numColumns; ++i) {
+        if (columns[i] != null) {
+          columns[i].close();
+        }
+      }
+      throw t;
+    }
+
+    return new ColumnarBatch(columns, (int) rows);
+  }
+
+  /**
+   * This should only ever be called from an assertion.
+   */
+  private static boolean typeConversionAllowed(ColumnMeta columnMeta, DataType colType) {
+    DType dt = DType.fromNative(columnMeta.dtypeId(), columnMeta.dtypeScale());
+    if (!dt.isNestedType()) {
+      return GpuColumnVector.getSparkType(dt).equals(colType);
+    }
+    if (colType instanceof MapType) {
+      MapType mType = (MapType) colType;
+      // list of struct of key/value
+      if (!(dt.equals(DType.LIST))) {
+        return false;
+      }
+      ColumnMeta structCm = columnMeta.children(0);
+      if (structCm.dtypeId() != DType.STRUCT.getTypeId().getNativeId()) {
+        return false;
+      }
+      if (structCm.childrenLength() != 2) {
+        return false;
+      }
+      ColumnMeta keyCm = structCm.children(0);
+      if (!typeConversionAllowed(keyCm, mType.keyType())) {
+        return false;
+      }
+      ColumnMeta valCm = structCm.children(1);
+      return typeConversionAllowed(valCm, mType.valueType());
+    } else if (colType instanceof ArrayType) {
+      if (!(dt.equals(DType.LIST))) {
+        return false;
+      }
+      ColumnMeta tmp = columnMeta.children(0);
+      return typeConversionAllowed(tmp, ((ArrayType) colType).elementType());
+    } else if (colType instanceof StructType) {
+      if (!(dt.equals(DType.STRUCT))) {
+        return false;
+      }
+      StructType st = (StructType) colType;
+      final int numChildren = columnMeta.childrenLength();
+      if (numChildren != st.size()) {
+        return false;
+      }
+      for (int childIndex = 0; childIndex < numChildren; childIndex++) {
+        ColumnMeta tmp = columnMeta.children(childIndex);
+        StructField entry = ((StructType) colType).apply(childIndex);
+        if (!typeConversionAllowed(tmp, entry.dataType())) {
+          return false;
+        }
+      }
+      return true;
+    } else if (colType instanceof BinaryType) {
+      if (!(dt.equals(DType.LIST))) {
+        return false;
+      }
+      ColumnMeta tmp = columnMeta.children(0);
+      return tmp.dtypeId() == DType.INT8.getTypeId().getNativeId() ||
+          tmp.dtypeId() == DType.UINT8.getTypeId().getNativeId();
+    } else {
+      // Unexpected type
+      return false;
+    }
+  }
+
+  /**
+   * Build a columnar batch from a compressed data buffer and specified table metadata
+   * NOTE: The data remains compressed and cannot be accessed directly from the columnar batch.
+   */
+  public static ColumnarBatch from(DeviceMemoryBuffer compressedBuffer,
+      TableMeta tableMeta,
+      DataType[] colTypes) {
+    long rows = tableMeta.rowCount();
+    if (rows != (int) rows) {
+      throw new IllegalStateException("Cannot support a batch larger that MAX INT rows");
+    }
+
+    ColumnMeta columnMeta = new ColumnMeta();
+    int numColumns = tableMeta.columnMetasLength();
+    assert numColumns == colTypes.length : "Size mismatch on types";
+    ColumnVector[] columns = new ColumnVector[numColumns];
+    try {
+      for (int i = 0; i < numColumns; ++i) {
+        tableMeta.columnMetas(columnMeta, i);
+        DataType type = colTypes[i];
+        assert typeConversionAllowed(columnMeta, type) : "Type conversion is not allowed from " +
+            columnMeta + " to " + type + " at index " + i;
         compressedBuffer.incRefCount();
         columns[i] = new GpuCompressedColumnVector(type, compressedBuffer, tableMeta);
       }

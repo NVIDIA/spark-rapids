@@ -362,7 +362,7 @@ class ParquetCachedBatchSerializer extends CachedBatchSerializer with Arm {
           .includeColumn(requestedColumnNames.asJavaCollection).build()
         withResource(Table.readParquet(parquetOptions, parquetCB.buffer, 0,
           parquetCB.sizeInBytes)) { table =>
-          GpuColumnVector.from(table)
+          GpuColumnVector.from(table, selectedAttributes.map(_.dataType).toArray)
         }
       } else {
         throw new IllegalStateException("I don't know how to convert this batch")

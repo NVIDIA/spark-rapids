@@ -284,7 +284,7 @@ class GpuOrcPartitionReader(
       } else {
         val table = readToTable(currentStripes)
         try {
-          table.map(GpuColumnVector.from)
+          table.map(GpuColumnVector.from(_, readDataSchema.toArray.map(_.dataType)))
         } finally {
           table.foreach(_.close())
         }
