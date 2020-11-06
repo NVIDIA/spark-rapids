@@ -36,12 +36,9 @@ case class GpuUnaryMinus(child: Expression) extends GpuUnaryExpression
 
   override def sql: String = s"(- ${child.sql})"
 
-  override def doColumnar(input: GpuColumnVector) : GpuColumnVector = {
-    val scalar = Scalar.fromByte(0.toByte)
-    try {
-      GpuColumnVector.from(scalar.sub(input.getBase))
-    } finally {
-      scalar.close()
+  override def doColumnar(input: GpuColumnVector) : ColumnVector = {
+    withResource(Scalar.fromByte(0.toByte)) { scalar =>
+      scalar.sub(input.getBase)
     }
   }
 }
@@ -56,7 +53,7 @@ case class GpuUnaryPositive(child: Expression) extends GpuUnaryExpression
 
   override def sql: String = s"(+ ${child.sql})"
 
-  override def doColumnar(input: GpuColumnVector) : GpuColumnVector = input
+  override def doColumnar(input: GpuColumnVector) : ColumnVector = input.getBase.incRefCount()
 }
 
 case class GpuAbs(child: Expression) extends CudfUnaryExpression
@@ -99,7 +96,7 @@ case class GpuMultiply(left: Expression, right: Expression) extends CudfBinaryAr
 }
 
 object GpuDivModLike {
-  def replaceZeroWithNull(v: GpuColumnVector): GpuColumnVector = {
+  def replaceZeroWithNull(v: GpuColumnVector): ColumnVector = {
     var zeroScalar: Scalar = null
     var nullScalar: Scalar = null
     var zeroVec: ColumnVector = null
@@ -110,7 +107,7 @@ object GpuDivModLike {
       nullScalar = Scalar.fromNull(dtype)
       zeroVec = ColumnVector.fromScalar(zeroScalar, 1)
       nullVec = ColumnVector.fromScalar(nullScalar, 1)
-      GpuColumnVector.from(v.getBase.findAndReplaceAll(zeroVec, nullVec))
+      v.getBase.findAndReplaceAll(zeroVec, nullVec)
     } finally {
       if (zeroScalar != null) {
         zeroScalar.close()
@@ -157,31 +154,22 @@ trait GpuDivModLike extends CudfBinaryArithmetic {
 
   import GpuDivModLike._
 
-  override def doColumnar(lhs: GpuColumnVector, rhs: GpuColumnVector): GpuColumnVector = {
-    val replaced = replaceZeroWithNull(rhs)
-    try {
-      super.doColumnar(lhs, replaced)
-    } finally {
-      replaced.close()
+  override def doColumnar(lhs: GpuColumnVector, rhs: GpuColumnVector): ColumnVector = {
+    withResource(replaceZeroWithNull(rhs)) { replaced =>
+      super.doColumnar(lhs, GpuColumnVector.from(replaced, right.dataType))
     }
   }
 
-  override def doColumnar(lhs: Scalar, rhs: GpuColumnVector): GpuColumnVector = {
-    val replaced = replaceZeroWithNull(rhs)
-    try {
-      super.doColumnar(lhs, replaced)
-    } finally {
-      replaced.close()
+  override def doColumnar(lhs: Scalar, rhs: GpuColumnVector): ColumnVector = {
+    withResource(replaceZeroWithNull(rhs)) { replaced =>
+      super.doColumnar(lhs, GpuColumnVector.from(replaced, right.dataType))
     }
   }
 
-  override def doColumnar(lhs: GpuColumnVector, rhs: Scalar): GpuColumnVector = {
+  override def doColumnar(lhs: GpuColumnVector, rhs: Scalar): ColumnVector = {
     if (isScalarZero(rhs)) {
-      val nullScalar = Scalar.fromNull(lhs.getBase.getType)
-      try {
-        GpuColumnVector.from(ColumnVector.fromScalar(nullScalar, lhs.getRowCount.toInt))
-      } finally {
-        nullScalar.close()
+      withResource(Scalar.fromNull(lhs.getBase.getType)) { nullScalar =>
+        ColumnVector.fromScalar(nullScalar, lhs.getRowCount.toInt)
       }
     } else {
       super.doColumnar(lhs, rhs)

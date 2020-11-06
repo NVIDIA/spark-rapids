@@ -175,8 +175,6 @@ trait GpuHashJoin extends GpuExec with HashJoin {
 
   /**
    * Filter the builtBatch if needed.  builtBatch will be closed.
-   * @param builtBatch
-   * @return
    */
   def filterBuiltTableIfNeeded(builtBatch: ColumnarBatch): ColumnarBatch =
     if (shouldFilterBuiltTableForNulls) {
@@ -317,9 +315,11 @@ trait GpuHashJoin extends GpuExec with HashJoin {
           s" supported")
     }
     try {
-      val result = joinIndices.map(joinIndex =>
-        GpuColumnVector.from(joinedTable.getColumn(joinIndex).incRefCount()))
-        .toArray[ColumnVector]
+      val result = joinIndices.zip(output).map { pair =>
+        val joinIndex = pair._1
+        val dataType = pair._2.dataType
+        GpuColumnVector.from(joinedTable.getColumn(joinIndex).incRefCount(), dataType)
+      }.toArray[ColumnVector]
 
       new ColumnarBatch(result, joinedTable.getRowCount.toInt)
     } finally {
