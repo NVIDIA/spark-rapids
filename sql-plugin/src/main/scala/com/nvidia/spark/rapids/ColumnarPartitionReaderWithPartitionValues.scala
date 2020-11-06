@@ -21,7 +21,7 @@ import com.nvidia.spark.rapids.RapidsPluginImplicits._
 
 import org.apache.spark.sql.connector.read.PartitionReader
 import org.apache.spark.sql.execution.datasources.PartitionedFile
-import org.apache.spark.sql.types.StructType
+import org.apache.spark.sql.types.{DataType, StructType}
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
 /**
@@ -31,7 +31,8 @@ import org.apache.spark.sql.vectorized.ColumnarBatch
  */
 class ColumnarPartitionReaderWithPartitionValues(
     fileReader: PartitionReader[ColumnarBatch],
-    partitionValues: Array[Scalar]) extends PartitionReader[ColumnarBatch] {
+    partitionValues: Array[Scalar],
+    partValueTypes: Array[DataType]) extends PartitionReader[ColumnarBatch] {
   override def next(): Boolean = fileReader.next()
 
   override def get(): ColumnarBatch = {
@@ -39,7 +40,8 @@ class ColumnarPartitionReaderWithPartitionValues(
       fileReader.get()
     } else {
       val fileBatch: ColumnarBatch = fileReader.get()
-      ColumnarPartitionReaderWithPartitionValues.addPartitionValues(fileBatch, partitionValues)
+      ColumnarPartitionReaderWithPartitionValues.addPartitionValues(fileBatch,
+        partitionValues, partValueTypes)
     }
   }
 
@@ -49,13 +51,14 @@ class ColumnarPartitionReaderWithPartitionValues(
   }
 }
 
-object ColumnarPartitionReaderWithPartitionValues {
+object ColumnarPartitionReaderWithPartitionValues extends Arm {
   def newReader(partFile: PartitionedFile,
       baseReader: PartitionReader[ColumnarBatch],
       partitionSchema: StructType): PartitionReader[ColumnarBatch] = {
     val partitionValues = partFile.partitionValues.toSeq(partitionSchema)
     val partitionScalars = createPartitionValues(partitionValues, partitionSchema)
-    new ColumnarPartitionReaderWithPartitionValues(baseReader, partitionScalars)
+    new ColumnarPartitionReaderWithPartitionValues(baseReader, partitionScalars,
+      GpuColumnVector.extractTypes(partitionSchema))
   }
 
   def createPartitionValues(
@@ -69,10 +72,11 @@ object ColumnarPartitionReaderWithPartitionValues {
 
   def addPartitionValues(
       fileBatch: ColumnarBatch,
-      partitionValues: Array[Scalar]): ColumnarBatch = {
+      partitionValues: Array[Scalar],
+      sparkTypes: Array[DataType]): ColumnarBatch = {
     var partitionColumns: Array[GpuColumnVector] = null
     try {
-      partitionColumns = buildPartitionColumns(fileBatch.numRows, partitionValues)
+      partitionColumns = buildPartitionColumns(fileBatch.numRows, partitionValues, sparkTypes)
       val fileBatchCols = (0 until fileBatch.numCols).map(fileBatch.column)
       val resultCols = fileBatchCols ++ partitionColumns
       val result = new ColumnarBatch(resultCols.toArray, fileBatch.numRows)
@@ -91,13 +95,14 @@ object ColumnarPartitionReaderWithPartitionValues {
 
   private def buildPartitionColumns(
       numRows: Int,
-      partitionValues: Array[Scalar]): Array[GpuColumnVector] = {
+      partitionValues: Array[Scalar],
+      sparkTypes: Array[DataType]): Array[GpuColumnVector] = {
     var succeeded = false
     val result = new Array[GpuColumnVector](partitionValues.length)
     try {
       for (i <- result.indices) {
-        result(i) = GpuColumnVector.from(ai.rapids.cudf.ColumnVector.fromScalar(partitionValues(i),
-          numRows))
+        result(i) = GpuColumnVector.from(
+          ai.rapids.cudf.ColumnVector.fromScalar(partitionValues(i), numRows), sparkTypes(i))
       }
       succeeded = true
       result

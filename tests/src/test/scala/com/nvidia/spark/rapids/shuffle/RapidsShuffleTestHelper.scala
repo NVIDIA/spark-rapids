@@ -18,6 +18,8 @@ package com.nvidia.spark.rapids.shuffle
 
 import java.util.concurrent.Executor
 
+import scala.collection.mutable.ArrayBuffer
+
 import ai.rapids.cudf.{ColumnVector, ContiguousTable}
 import com.nvidia.spark.rapids.{Arm, GpuColumnVector, MetaUtils, RapidsConf, RapidsDeviceMemoryStore, ShuffleMetadata, ShuffleReceivedBufferCatalog}
 import com.nvidia.spark.rapids.format.TableMeta
@@ -25,10 +27,9 @@ import org.mockito.ArgumentMatchers.any
 import org.mockito.Mockito.{spy, when}
 import org.scalatest.{BeforeAndAfterEach, FunSuite}
 import org.scalatest.mockito.MockitoSugar
-import scala.collection.mutable.ArrayBuffer
 
-import org.apache.spark.{SparkConf, SparkEnv}
 import org.apache.spark.sql.rapids.ShuffleMetricsUpdater
+import org.apache.spark.sql.types.IntegerType
 import org.apache.spark.sql.vectorized.ColumnarBatch
 import org.apache.spark.storage.{BlockId, BlockManagerId, ShuffleBlockBatchId}
 
@@ -106,8 +107,8 @@ object RapidsShuffleTestHelper extends MockitoSugar with Arm {
     val rows: Seq[Integer] = (0 until numRows.toInt).map(new Integer(_))
     withResource(ColumnVector.fromBoxedInts(rows:_*)) { cvBase =>
       cvBase.incRefCount()
-      val gpuCv = GpuColumnVector.from(cvBase)
-      withResource(new ColumnarBatch(Seq(gpuCv).toArray)) { cb =>
+      val gpuCv = GpuColumnVector.from(cvBase, IntegerType)
+      withResource(new ColumnarBatch(Array(gpuCv))) { cb =>
         withResource(GpuColumnVector.from(cb)) { table =>
           withResource(table.contiguousSplit(0, numRows.toInt)) { ct =>
             body(ct(1)) // we get a degenerate table at 0 and another at 2

@@ -24,6 +24,7 @@ import com.nvidia.spark.rapids.StorageTier.StorageTier
 import com.nvidia.spark.rapids.format.{ColumnMeta, TableMeta}
 
 import org.apache.spark.sql.rapids.RapidsDiskBlockManager
+import org.apache.spark.sql.types.DataType
 import org.apache.spark.sql.vectorized.{ColumnarBatch, ColumnVector}
 
 /**
@@ -74,13 +75,14 @@ trait RapidsBuffer extends AutoCloseable {
   /**
    * Get the columnar batch within this buffer. The caller must have
    * successfully acquired the buffer beforehand.
+   * @param sparkTypes the spark data types the batch should have
    * @see [[addReference]]
    * @note It is the responsibility of the caller to close the batch.
    * @note If the buffer is compressed data then the resulting batch will be built using
    *       `GpuCompressedColumnVector`, and it is the responsibility of the caller to deal
    *       with decompressing the data if necessary.
    */
-  def getColumnarBatch: ColumnarBatch
+  def getColumnarBatch(sparkTypes: Array[DataType]): ColumnarBatch
 
   /**
    * Get the underlying memory buffer. This may be either a HostMemoryBuffer
@@ -140,7 +142,7 @@ sealed class DegenerateRapidsBuffer(
   override val size: Long = 0L
   override val storageTier: StorageTier = StorageTier.DEVICE
 
-  override def getColumnarBatch: ColumnarBatch = {
+  override def getColumnarBatch(sparkTypes: Array[DataType]): ColumnarBatch = {
     val rowCount = meta.rowCount
     val nullCount = Optional.of(java.lang.Long.valueOf(0))
     val columnMeta = new ColumnMeta
@@ -150,7 +152,8 @@ sealed class DegenerateRapidsBuffer(
       assert(columnMeta.childrenLength == 0, "child columns are not yet supported")
       val dtype = DType.fromNative(columnMeta.dtypeId(), columnMeta.dtypeScale())
       columns(i) = GpuColumnVector.from(new ai.rapids.cudf.ColumnVector(
-        dtype, rowCount, nullCount, null, null, null))
+        dtype, rowCount, nullCount, null, null, null),
+        sparkTypes(i))
     }
     new ColumnarBatch(columns, rowCount.toInt)
   }

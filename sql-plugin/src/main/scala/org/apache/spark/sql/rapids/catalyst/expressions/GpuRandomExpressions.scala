@@ -64,12 +64,9 @@ case class GpuRand(child: Expression) extends UnaryExpression with GpuExpression
       previousPartition = partId
     }
     val numRows = batch.numRows()
-    val builder = HostColumnVector.builder(DType.FLOAT64, numRows)
-    try {
+    withResource(HostColumnVector.builder(DType.FLOAT64, numRows)) { builder =>
       (0 until numRows).foreach(_ =>  builder.append(rng.nextDouble()))
-      GpuColumnVector.from(builder.buildAndPutOnDevice())
-    } finally {
-      builder.close()
+      GpuColumnVector.from(builder.buildAndPutOnDevice(), dataType)
     }
   }
 }

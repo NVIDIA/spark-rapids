@@ -151,7 +151,7 @@ abstract class GpuTimeMath(
             withResource(Scalar.fromLong(usToSub)) { us_s =>
               withResource(l.getBase.castTo(DType.INT64)) { us =>
                 withResource(intervalMath(us_s, us)) { longResult =>
-                  GpuColumnVector.from(longResult.castTo(DType.TIMESTAMP_MICROSECONDS))
+                  GpuColumnVector.from(longResult.castTo(DType.TIMESTAMP_MICROSECONDS), dataType)
                 }
               }
             }

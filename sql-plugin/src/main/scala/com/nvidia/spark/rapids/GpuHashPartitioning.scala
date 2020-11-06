@@ -89,6 +89,7 @@ case class GpuHashPartitioning(expressions: Seq[Expression], numPartitions: Int)
     try {
       gpuKeyColumns = getGpuKeyColumns(batch)
       gpuDataColumns = getGpuDataColumns(batch)
+      val sparkTypes = gpuDataColumns.map(_.dataType())
 
       val (keys, dataIndexes, table) = dedupe(gpuKeyColumns, gpuDataColumns)
       // Don't need the batch any more table has all we need in it.
@@ -102,8 +103,10 @@ case class GpuHashPartitioning(expressions: Seq[Expression], numPartitions: Int)
       val partedTable = table.onColumns(keys: _*).hashPartition(numPartitions)
       table.close()
       val parts = partedTable.getPartitions
-      val columns = dataIndexes.map { idx =>
-        GpuColumnVector.from(partedTable.getColumn(idx).incRefCount())
+      val columns = dataIndexes.zip(sparkTypes).map { pair =>
+        val idx = pair._1
+        val sparkType = pair._2
+        GpuColumnVector.from(partedTable.getColumn(idx).incRefCount(), sparkType)
       }
       partedTable.close()
       (parts, columns)
