@@ -44,7 +44,8 @@ tar -zxvf $SPARKSRCTGZ -C spark-rapids
 cd spark-rapids
 export WORKSPACE=`pwd`
 mvn -B '-Pdatabricks,!snapshot-shims' clean package -DskipTests || true
-M2DIR=/home/ubuntu/.m2/repository
+# export 'M2DIR' so that shims can get the correct cudf/spark dependnecy info
+export M2DIR=/home/ubuntu/.m2/repository
 CUDF_JAR=${M2DIR}/ai/rapids/cudf/${CUDF_VERSION}/cudf-${CUDF_VERSION}-${CUDA_VERSION}.jar
 
 # pull normal Spark artifacts and ignore errors then install databricks jars, then build again
