@@ -18,13 +18,14 @@ package com.nvidia.spark.rapids
 
 import java.io.File
 
-import ai.rapids.cudf.{Cuda, Table}
+import ai.rapids.cudf.Table
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import org.scalatest.FunSuite
 
 import org.apache.spark.SparkConf
 import org.apache.spark.sql.SparkSession
 import org.apache.spark.sql.rapids.{GpuShuffleEnv, RapidsDiskBlockManager}
+import org.apache.spark.sql.types.{DoubleType, IntegerType, StringType}
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
 class GpuPartitioningSuite extends FunSuite with Arm {
@@ -34,7 +35,7 @@ class GpuPartitioningSuite extends FunSuite with Arm {
         .column("five", "two", null, null, "one", "one", "one", "one", "one", "one")
         .column(5.0, 2.0, 3.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0)
         .build()) { table =>
-      GpuColumnVector.from(table)
+      GpuColumnVector.from(table, Array(IntegerType, StringType, DoubleType))
     }
   }
 

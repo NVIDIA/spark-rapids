@@ -40,13 +40,14 @@ import org.apache.spark.sql.execution.exchange.{BroadcastExchangeExec, Exchange}
 import org.apache.spark.sql.execution.joins.{BroadcastHashJoinExec, BroadcastNestedLoopJoinExec}
 import org.apache.spark.sql.execution.metric.SQLMetrics
 import org.apache.spark.sql.internal.{SQLConf, StaticSQLConf}
+import org.apache.spark.sql.types.DataType
 import org.apache.spark.sql.vectorized.{ColumnarBatch, ColumnVector}
 
 @SerialVersionUID(100L)
 class SerializeConcatHostBuffersDeserializeBatch(
     private val data: Array[SerializeBatchDeserializeHostBuffer],
     private val output: Seq[Attribute])
-  extends Serializable with AutoCloseable {
+  extends Serializable with Arm with AutoCloseable {
   @transient private val headers = data.map(_.header)
   @transient private val buffers = data.map(_.buffer)
   @transient private var batchInternal: ColumnarBatch = null
@@ -68,16 +69,15 @@ class SerializeConcatHostBuffersDeserializeBatch(
     if (headers.length == 0) {
       import scala.collection.JavaConverters._
       // We didn't get any data back, but we need to write out an empty table that matches
-      val empty = GpuColumnVector.emptyBatch(output.asJava)
-      try {
-        JCudfSerialization.writeToStream(GpuColumnVector.extractBases(empty), out, 0, 0)
-      } finally {
-        empty.close()
+      withResource(GpuColumnVector.emptyHostColumns(output.asJava)) { hostVectors =>
+        JCudfSerialization.writeToStream(hostVectors, out, 0, 0)
       }
+      out.writeObject(output.map(_.dataType).toArray)
     } else if (headers.head.getNumColumns == 0) {
       JCudfSerialization.writeRowsToStream(out, numRows)
     } else {
       JCudfSerialization.writeConcatedStream(headers, buffers, out)
+      out.writeObject(output.map(_.dataType).toArray)
     }
   }
 
@@ -93,9 +93,10 @@ class SerializeConcatHostBuffersDeserializeBatch(
           this.batchInternal = new ColumnarBatch(new Array[ColumnVector](0))
           batchInternal.setNumRows(numRows.toInt)
         } else {
+          val colDataTypes = in.readObject().asInstanceOf[Array[DataType]]
           // This is read as part of the broadcast join so we expect it to leak.
           (0 until table.getNumberOfColumns).foreach(table.getColumn(_).noWarnLeakExpected())
-          this.batchInternal = GpuColumnVector.from(table)
+          this.batchInternal = GpuColumnVector.from(table, colDataTypes)
         }
       } finally {
         tableInfo.close()

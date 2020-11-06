@@ -759,6 +759,14 @@ object RapidsConf {
     .stringConf
     .createOptional
 
+  val CUDF_VERSION_OVERRIDE = conf("spark.rapids.cudfVersionOverride")
+    .internal()
+    .doc("Overrides the cudf version compatibility check between cudf jar and RAPIDS Accelerator " +
+      "jar. If you are sure that the cudf jar which is mentioned in the classpath is compatible " +
+      "with the RAPIDS Accelerator version, then set this to true.")
+    .booleanConf
+    .createWithDefault(false)
+
   private def printSectionHeader(category: String): Unit =
     println(s"\n### $category")
 
@@ -1039,6 +1047,8 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
   lazy val shuffleCompressionMaxBatchMemory: Long = get(SHUFFLE_COMPRESSION_MAX_BATCH_MEMORY)
 
   lazy val shimsProviderOverride: Option[String] = get(SHIMS_PROVIDER_OVERRIDE)
+
+  lazy val cudfVersionOverride: Boolean = get(CUDF_VERSION_OVERRIDE)
 
   lazy val getCloudSchemes: Option[Seq[String]] = get(CLOUD_SCHEMES)
 

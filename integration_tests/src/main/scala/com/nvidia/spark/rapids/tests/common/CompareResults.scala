@@ -28,10 +28,10 @@ import org.apache.spark.sql.SparkSession
  * Example usage:
  *
  * <pre>
- * $SPARK_HOME/bin/spark-submit --jars $SPARK_RAPIDS_PLUGIN_JAR,$CUDF_JAR \
+ * \$SPARK_HOME/bin/spark-submit --jars \$SPARK_RAPIDS_PLUGIN_JAR,\$CUDF_JAR \
  *   --master local[*] \
  *   --class com.nvidia.spark.rapids.tests.common.CompareResults \
- *   $SPARK_RAPIDS_PLUGIN_INTEGRATION_TEST_JAR \
+ *   \$SPARK_RAPIDS_PLUGIN_INTEGRATION_TEST_JAR \
  *   --input1 /path/to/result1 \
  *   --input2 /path/to/result2 \
  *   --input-format parquet

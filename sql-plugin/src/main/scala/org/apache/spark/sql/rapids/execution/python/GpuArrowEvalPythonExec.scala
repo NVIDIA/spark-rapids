@@ -82,7 +82,7 @@ class RebatchingRoundoffIterator(
     withResource(GpuColumnVector.from(l)) { lTable =>
       withResource(GpuColumnVector.from(r)) { rTable =>
         withResource(Table.concatenate(lTable, rTable)) { concatTable =>
-          GpuColumnVector.from(concatTable)
+          GpuColumnVector.from(concatTable, GpuColumnVector.extractTypes(l))
         }
       }
     }
@@ -163,9 +163,10 @@ class RebatchingRoundoffIterator(
     withResource(split) { split =>
       assert(pending.isEmpty)
       pending =
-          Some(SpillableColumnarBatch(GpuColumnVectorFromBuffer.from(split.last),
+          Some(SpillableColumnarBatch(GpuColumnVectorFromBuffer.from(split.last,
+            GpuColumnVector.extractTypes(schema)),
             SpillPriorities.ACTIVE_ON_DECK_PRIORITY))
-      GpuColumnVectorFromBuffer.from(split.head)
+      GpuColumnVectorFromBuffer.from(split.head, GpuColumnVector.extractTypes(schema))
     }
   }
 }
@@ -292,6 +293,7 @@ case class GpuPythonUDF(
 trait GpuPythonArrowOutput extends Arm { self: BasePythonRunner[_, ColumnarBatch] =>
 
   def minReadTargetBatchSize: Int = 1
+  def readSchema: Array[DataType]
 
   protected def newReaderIterator(
       stream: DataInputStream,
@@ -340,7 +342,7 @@ trait GpuPythonArrowOutput extends Arm { self: BasePythonRunner[_, ColumnarBatch
             } else {
               withResource(table) { table =>
                 batchLoaded = true
-                GpuColumnVector.from(table)
+                GpuColumnVector.from(table, readSchema)
               }
             }
           } else {
@@ -376,12 +378,15 @@ class GpuArrowPythonRunner(
     evalType: Int,
     argOffsets: Array[Array[Int]],
     schema: StructType,
+    rdSchema: Array[DataType],
     timeZoneId: String,
     conf: Map[String, String],
     batchSize: Long,
     onDataWriteFinished: () => Unit)
     extends BasePythonRunner[ColumnarBatch, ColumnarBatch](funcs, evalType, argOffsets)
         with GpuPythonArrowOutput {
+
+  override def readSchema: Array[DataType] = rdSchema
 
   override val bufferSize: Int = SQLConf.get.pandasUDFBufferSize
   require(
@@ -540,7 +545,7 @@ case class GpuArrowEvalPythonExec(
 
     lazy val isPythonOnGpuEnabled = GpuPythonHelper.isPythonOnGpuEnabled(conf)
     val inputRDD = child.executeColumnar()
-    val schema = output.toStructType
+    val pythonOutputSchema = resultAttrs.map(_.dataType).toArray
     inputRDD.mapPartitions { iter =>
       val queue: BatchQueue = new BatchQueue()
       val context = TaskContext.get()
@@ -597,6 +602,7 @@ case class GpuArrowEvalPythonExec(
         evalType,
         argOffsets,
         schema,
+        resultAttrs.map(_.dataType).toArray,
         sessionLocalTimeZone,
         pythonRunnerConf,
         batchSize,
@@ -618,7 +624,7 @@ case class GpuArrowEvalPythonExec(
 
         private [this] def combine(origBatch: ColumnarBatch, table: Table): ColumnarBatch = {
           val lColumns = GpuColumnVector.extractColumns(origBatch)
-          val rColumns = GpuColumnVector.extractColumns(table)
+          val rColumns = GpuColumnVector.extractColumns(table, pythonOutputSchema)
           new ColumnarBatch(lColumns.map(_.incRefCount()) ++ rColumns.map(_.incRefCount()),
             origBatch.numRows())
         }

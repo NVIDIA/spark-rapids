@@ -19,14 +19,12 @@ package com.nvidia.spark.rapids
 import java.io.File
 import java.nio.file.Files
 
-import scala.collection.immutable.HashMap
-
 import ai.rapids.cudf.{ContiguousTable, Cuda, HostColumnVector, Table}
 import com.nvidia.spark.rapids.format.CodecType
 
 import org.apache.spark.sql.execution.metric.SQLMetric
 import org.apache.spark.sql.rapids.metrics.source.MockTaskContext
-import org.apache.spark.sql.types.{DataTypes, LongType, StructField, StructType}
+import org.apache.spark.sql.types.{DataType, DataTypes, LongType, StructField, StructType}
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
 class GpuCoalesceBatchesSuite extends SparkQueryCompareTestSuite {
@@ -403,7 +401,7 @@ class GpuCoalesceBatchesSuite extends SparkQueryCompareTestSuite {
 
   private def buildUncompressedBatch(start: Int, numRows: Int): ColumnarBatch = {
     withResource(buildContiguousTable(start, numRows)) { ct =>
-      GpuColumnVector.from(ct.getTable)
+      GpuColumnVector.from(ct.getTable, Array[DataType](LongType))
     }
   }
 
@@ -411,7 +409,7 @@ class GpuCoalesceBatchesSuite extends SparkQueryCompareTestSuite {
     val codec = TableCompressionCodec.getCodec(CodecType.NVCOMP_LZ4)
     withResource(codec.createBatchCompressor(0, Cuda.DEFAULT_STREAM)) { compressor =>
       compressor.addTableToCompress(buildContiguousTable(start, numRows))
-      GpuCompressedColumnVector.from(compressor.finish().head)
+      GpuCompressedColumnVector.from(compressor.finish().head, Array[DataType](LongType))
     }
   }
 }

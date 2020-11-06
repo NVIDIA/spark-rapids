@@ -127,6 +127,9 @@
             <plugin>
                 <groupId>org.scalastyle</groupId>
                 <artifactId>scalastyle-maven-plugin</artifactId>
+                <configuration>
+                  <sourceDirectory>${project.basedir}/src/test/scala</sourceDirectory>
+                </configuration>
             </plugin>
             <plugin>
                 <groupId>org.apache.rat</groupId>

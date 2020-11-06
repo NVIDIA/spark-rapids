@@ -30,6 +30,7 @@ import org.apache.spark.sql.execution.{LeafExecNode, SparkPlan, UnaryExecNode}
 import org.apache.spark.sql.execution.metric.SQLMetric
 import org.apache.spark.sql.rapids.GpuPredicateHelper
 import org.apache.spark.sql.rapids.execution.TrampolineUtil
+import org.apache.spark.sql.types.{DataType, LongType}
 import org.apache.spark.sql.vectorized.{ColumnarBatch, ColumnVector}
 
 object GpuProjectExec {
@@ -281,7 +282,7 @@ case class GpuRangeExec(range: org.apache.spark.sql.catalyst.plans.logical.Range
                         ai.rapids.cudf.ColumnVector.sequence(
                           startScalar, stepScalar, rowsThisBatch.toInt)) { vec =>
                         withResource(new Table(vec)) { tab =>
-                          GpuColumnVector.from(tab)
+                          GpuColumnVector.from(tab, Array[DataType](LongType))
                         }
                       }
                     }
