@@ -89,8 +89,6 @@ def main():
                         help='The number of iterations to run (defaults to 1)')
     parser.add_argument('--gc-between-runs', required=False, action='store_true',
                         help='Whether to call System.gc between iterations')
-    parser.add_argument('--s3-endpoint-url', required=False,
-                        help='S3 endpoint URL (optional)')
     parser.add_argument('--upload-uri', required=False,
                         help='Upload URI for summary output')
     parser.add_argument('--upload-path', required=False,
