@@ -43,7 +43,7 @@ class GpuUnitTests extends SparkQueryCompareTestSuite {
       val cv = v.asInstanceOf[ColumnVector]
       // close the vector that was passed in and return a new vector
       withResource(cv) { cv =>
-        GpuColumnVector.from(cv.castTo(GpuColumnVector.getRapidsType(to)))
+        GpuColumnVector.from(cv.castTo(GpuColumnVector.getRapidsType(to)), to)
       }
     }
 
@@ -167,12 +167,5 @@ class GpuUnitTests extends SparkQueryCompareTestSuite {
      expected: GpuColumnVector,
      inputBatch: ColumnarBatch = EmptyBatch): Unit = {
     checkEvaluationWithoutCodegen(gpuExpression, expected, inputBatch)
-  }
-
-  /**
-   * This method is to circumvent the scala limitation of children not able to call a static method
-   */
-  protected def getSparkType(dType: DType): DataType = {
-    GpuColumnVector.getSparkType(dType)
   }
 }

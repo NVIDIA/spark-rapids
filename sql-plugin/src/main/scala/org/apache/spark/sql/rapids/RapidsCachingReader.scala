@@ -25,6 +25,7 @@ import com.nvidia.spark.rapids.shuffle.{RapidsShuffleIterator, RapidsShuffleTran
 import org.apache.spark.{InterruptibleIterator, TaskContext}
 import org.apache.spark.internal.Logging
 import org.apache.spark.shuffle.{ShuffleReader, ShuffleReadMetricsReporter}
+import org.apache.spark.sql.types.DataType
 import org.apache.spark.storage.{BlockId, BlockManagerId, ShuffleBlockBatchId, ShuffleBlockId}
 import org.apache.spark.util.CompletionIterator
 
@@ -52,7 +53,8 @@ class RapidsCachingReader[K, C](
     context: TaskContext,
     metrics: ShuffleReadMetricsReporter,
     transport: Option[RapidsShuffleTransport],
-    catalog: ShuffleBufferCatalog)
+    catalog: ShuffleBufferCatalog,
+    sparkTypes: Array[DataType])
   extends ShuffleReader[K, C]  with Arm with Logging {
 
   override def read(): Iterator[Product2[K, C]] = {
@@ -133,7 +135,7 @@ class RapidsCachingReader[K, C](
         val cachedIt = cachedBufferIds.iterator.map(bufferId => {
           GpuSemaphore.acquireIfNecessary(context)
           val cb = withResource(catalog.acquireBuffer(bufferId)) { buffer =>
-            buffer.getColumnarBatch
+            buffer.getColumnarBatch(sparkTypes)
           }
           val cachedBytesRead = GpuColumnVector.getTotalDeviceMemoryUsed(cb)
           metrics.incLocalBytesRead(cachedBytesRead)
@@ -143,7 +145,7 @@ class RapidsCachingReader[K, C](
 
         val cbArrayFromUcx: Iterator[(K, C)] = if (blocksForRapidsTransport.nonEmpty) {
           val rapidsShuffleIterator = new RapidsShuffleIterator(localId, rapidsConf, transport.get,
-            blocksForRapidsTransport.toArray, metricsUpdater)
+            blocksForRapidsTransport.toArray, metricsUpdater, sparkTypes)
           rapidsShuffleIterator.map(cb => {
             (0, cb)
           }).asInstanceOf[Iterator[(K, C)]]

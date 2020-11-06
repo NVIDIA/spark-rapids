@@ -41,7 +41,10 @@ class GpuPartitioningSuite extends FunSuite with Arm {
 
   private def buildSubBatch(batch: ColumnarBatch, startRow: Int, endRow: Int): ColumnarBatch = {
     val columns = GpuColumnVector.extractBases(batch)
-    val sliced = columns.safeMap(c => GpuColumnVector.from(c.subVector(startRow, endRow)))
+    val types = GpuColumnVector.extractTypes(batch)
+    val sliced = columns.zip(types).map { case (c, t) =>
+      GpuColumnVector.from(c.subVector(startRow, endRow), t)
+    }
     new ColumnarBatch(sliced.toArray, endRow - startRow)
   }
 
@@ -109,6 +112,7 @@ class GpuPartitioningSuite extends FunSuite with Arm {
         }
         withResource(buildBatch()) { batch =>
           val columns = GpuColumnVector.extractColumns(batch)
+          val sparkTypes = GpuColumnVector.extractTypes(batch)
           val numRows = batch.numRows
           withResource(gp.sliceInternalOnGpu(numRows, partitionIndices, columns)) { partitions =>
             partitions.zipWithIndex.foreach { case (partBatch, partIndex) =>
@@ -144,7 +148,7 @@ class GpuPartitioningSuite extends FunSuite with Arm {
                 deviceStore.addBuffer(bufferId, devBuffer, gccv.getTableMeta, spillPriority)
                 withResource(buildSubBatch(batch, startRow, endRow)) { expectedBatch =>
                   withResource(catalog.acquireBuffer(bufferId)) { buffer =>
-                    compareBatches(expectedBatch, buffer.getColumnarBatch)
+                    compareBatches(expectedBatch, buffer.getColumnarBatch(sparkTypes))
                   }
                 }
               }

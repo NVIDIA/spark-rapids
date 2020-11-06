@@ -35,6 +35,7 @@ import org.apache.spark.sql.execution.exchange.{Exchange, ShuffleExchangeExec}
 import org.apache.spark.sql.execution.metric._
 import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.rapids.GpuShuffleDependency
+import org.apache.spark.sql.types.DataType
 import org.apache.spark.sql.vectorized.ColumnarBatch
 import org.apache.spark.util.MutablePair
 
@@ -104,10 +105,12 @@ abstract class GpuShuffleExchangeExecBase(
     throw new IllegalStateException()
   }
 
+  private lazy val sparkTypes: Array[DataType] = child.output.map(_.dataType).toArray
+
   // This value must be lazy because the child's output may not have been resolved
   // yet in all cases.
   private lazy val serializer: Serializer = new GpuColumnarBatchSerializer(
-    child.output.map(_.dataType).toArray,
+    sparkTypes,
     longMetric("dataSize"))
 
   @transient lazy val inputBatchRDD: RDD[ColumnarBatch] = child.executeColumnar()
@@ -123,6 +126,7 @@ abstract class GpuShuffleExchangeExecBase(
       inputBatchRDD,
       child.output,
       outputPartitioning,
+      sparkTypes,
       serializer,
       metrics,
       writeMetrics,
@@ -151,6 +155,7 @@ object GpuShuffleExchangeExec {
       rdd: RDD[ColumnarBatch],
       outputAttributes: Seq[Attribute],
       newPartitioning: Partitioning,
+      sparkTypes: Array[DataType],
       serializer: Serializer,
       metrics: Map[String, SQLMetric],
       writeMetrics: Map[String, SQLMetric],
@@ -244,6 +249,7 @@ object GpuShuffleExchangeExec {
     new GpuShuffleDependency[Int, ColumnarBatch, ColumnarBatch](
       rddWithPartitionIds,
       new BatchPartitionIdPassthrough(newPartitioning.numPartitions),
+      sparkTypes,
       serializer,
       shuffleWriterProcessor = ShuffleExchangeExec.createShuffleWriteProcessor(writeMetrics),
       metrics = additionalMetrics)

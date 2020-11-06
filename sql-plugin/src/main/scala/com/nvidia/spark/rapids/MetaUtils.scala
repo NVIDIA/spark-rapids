@@ -26,6 +26,7 @@ import com.google.flatbuffers.FlatBufferBuilder
 import com.nvidia.spark.rapids.format._
 
 import org.apache.spark.internal.Logging
+import org.apache.spark.sql.types.DataType
 import org.apache.spark.sql.vectorized.ColumnarBatch
 import org.apache.spark.storage.ShuffleBlockBatchId
 
@@ -213,23 +214,44 @@ object MetaUtils extends Arm {
   }
 
   /**
+   * Construct a table from a contiguous device buffer and a
+   * `TableMeta` message describing the schema of the buffer data.
+   * @param deviceBuffer contiguous buffer
+   * @param meta schema metadata
+   * @return table that must be closed by the caller
+   */
+  def getTableFromMeta(deviceBuffer: DeviceMemoryBuffer, meta: TableMeta): Table = {
+    closeOnExcept(new ArrayBuffer[ColumnVector](meta.columnMetasLength())) { columns =>
+      val columnMeta = new ColumnMeta
+      (0 until meta.columnMetasLength).foreach { i =>
+        columns.append(makeCudfColumn(deviceBuffer, meta.columnMetas(columnMeta, i)))
+      }
+      new Table(columns :_*)
+    }
+  }
+
+  /**
    * Construct a columnar batch from a contiguous device buffer and a
    * `TableMeta` message describing the schema of the buffer data.
    * @param deviceBuffer contiguous buffer
    * @param meta schema metadata
+   * @param sparkTypes the spark types that the `ColumnarBatch` should have.
    * @return columnar batch that must be closed by the caller
    */
-  def getBatchFromMeta(deviceBuffer: DeviceMemoryBuffer, meta: TableMeta): ColumnarBatch = {
+  def getBatchFromMeta(deviceBuffer: DeviceMemoryBuffer,
+      meta: TableMeta,
+      sparkTypes: Array[DataType]): ColumnarBatch = {
     closeOnExcept(new ArrayBuffer[GpuColumnVector](meta.columnMetasLength())) { columns =>
       val columnMeta = new ColumnMeta
       (0 until meta.columnMetasLength).foreach { i =>
-        columns.append(makeColumn(deviceBuffer, meta.columnMetas(columnMeta, i)))
+        columns.append(makeColumn(deviceBuffer, meta.columnMetas(columnMeta, i), sparkTypes(i)))
       }
       new ColumnarBatch(columns.toArray, meta.rowCount.toInt)
     }
   }
 
-  private def makeColumn(buffer: DeviceMemoryBuffer, meta: ColumnMeta): GpuColumnVector = {
+  private def makeCudfColumn(buffer: DeviceMemoryBuffer,
+      meta: ColumnMeta): ColumnVector = {
     def getSubBuffer(s: SubBufferMeta): DeviceMemoryBuffer =
       if (s != null) buffer.slice(s.offset, s.length) else null
 
@@ -243,9 +265,13 @@ object MetaUtils extends Arm {
     val dataBuffer = getSubBuffer(meta.data)
     val validBuffer = getSubBuffer(meta.validity)
     val offsetsBuffer = getSubBuffer(meta.offsets)
-    GpuColumnVector.from(new ColumnVector(dtype, meta.rowCount, nullCount,
-      dataBuffer, validBuffer, offsetsBuffer))
+    new ColumnVector(dtype, meta.rowCount, nullCount, dataBuffer, validBuffer, offsetsBuffer)
   }
+
+  private def makeColumn(buffer: DeviceMemoryBuffer,
+      meta: ColumnMeta,
+      sparkType: DataType): GpuColumnVector =
+    GpuColumnVector.from(makeCudfColumn(buffer, meta), sparkType)
 }
 
 class DirectByteBufferFactory extends FlatBufferBuilder.ByteBufferFactory {
