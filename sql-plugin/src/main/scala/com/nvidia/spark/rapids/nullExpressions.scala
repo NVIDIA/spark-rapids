@@ -87,11 +87,9 @@ case class GpuCoalesce(children: Seq[Expression]) extends GpuExpression with
       if (runningResult != null) {
         GpuColumnVector.from(runningResult.incRefCount(), dataType)
       } else if (runningScalar != null) {
-        GpuColumnVector.from(runningScalar, batch.numRows(), dataType)
+        GpuScalar.extract(runningScalar)
       } else {
-        withResource(GpuScalar.from(null, dataType)) { nullScalar =>
-          GpuColumnVector.from(nullScalar, batch.numRows(), dataType)
-        }
+        null
       }
     } finally {
       if (runningResult != null) {

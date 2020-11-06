@@ -103,9 +103,7 @@ case class GpuHashPartitioning(expressions: Seq[Expression], numPartitions: Int)
       val partedTable = table.onColumns(keys: _*).hashPartition(numPartitions)
       table.close()
       val parts = partedTable.getPartitions
-      val columns = dataIndexes.zip(sparkTypes).map { pair =>
-        val idx = pair._1
-        val sparkType = pair._2
+      val columns = dataIndexes.zip(sparkTypes).map { case (idx, sparkType) =>
         GpuColumnVector.from(partedTable.getColumn(idx).incRefCount(), sparkType)
       }
       partedTable.close()

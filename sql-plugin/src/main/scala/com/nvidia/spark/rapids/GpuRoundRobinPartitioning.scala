@@ -43,19 +43,17 @@ case class GpuRoundRobinPartitioning(numPartitions: Int)
     val sparkTypes = GpuColumnVector.extractTypes(batch)
     withResource(GpuColumnVector.from(batch)) { table =>
       if (numPartitions == 1) {
-        val columns = (0 until table.getNumberOfColumns).zip(sparkTypes).map { pair =>
-          val idx = pair._1
-          val sparkType = pair._2
-          GpuColumnVector.from(table.getColumn(idx).incRefCount(), sparkType)
+        val columns = (0 until table.getNumberOfColumns).zip(sparkTypes).map {
+          case(idx, sparkType) =>
+            GpuColumnVector.from(table.getColumn(idx).incRefCount(), sparkType)
         }.toArray
         return (Array(0), columns)
       }
       withResource(table.roundRobinPartition(numPartitions, getStartPartition)) { partedTable =>
         val parts = partedTable.getPartitions
-        val columns = (0 until partedTable.getNumberOfColumns.toInt).zip(sparkTypes).map { pair =>
-          val idx = pair._1
-          val sparkType = pair._2
-          GpuColumnVector.from(partedTable.getColumn(idx).incRefCount(), sparkType)
+        val columns = (0 until partedTable.getNumberOfColumns.toInt).zip(sparkTypes).map {
+          case(idx, sparkType) =>
+            GpuColumnVector.from(partedTable.getColumn(idx).incRefCount(), sparkType)
         }.toArray
         (parts, columns)
       }

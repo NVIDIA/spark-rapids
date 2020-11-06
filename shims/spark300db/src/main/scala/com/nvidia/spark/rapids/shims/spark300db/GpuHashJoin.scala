@@ -316,10 +316,8 @@ trait GpuHashJoin extends GpuExec with HashJoin {
           s" supported")
     }
     try {
-      val result = joinIndices.zip(output).map { pair =>
-        val joinIndex = pair._1
-        val dataType = pair._2.dataType
-        GpuColumnVector.from(joinedTable.getColumn(joinIndex).incRefCount(), dataType)
+      val result = joinIndices.zip(output).map { case (joinIndex, outAttr) =>
+        GpuColumnVector.from(joinedTable.getColumn(joinIndex).incRefCount(), outAttr.dataType)
       }.toArray[ColumnVector]
 
       new ColumnarBatch(result, joinedTable.getRowCount.toInt)

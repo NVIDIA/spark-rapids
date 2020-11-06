@@ -42,9 +42,7 @@ class GpuPartitioningSuite extends FunSuite with Arm {
   private def buildSubBatch(batch: ColumnarBatch, startRow: Int, endRow: Int): ColumnarBatch = {
     val columns = GpuColumnVector.extractBases(batch)
     val types = GpuColumnVector.extractTypes(batch)
-    val sliced = columns.zip(types).map { pair =>
-      val c = pair._1
-      val t = pair._2
+    val sliced = columns.zip(types).map { case (c, t) =>
       GpuColumnVector.from(c.subVector(startRow, endRow), t)
     }
     new ColumnarBatch(sliced.toArray, endRow - startRow)

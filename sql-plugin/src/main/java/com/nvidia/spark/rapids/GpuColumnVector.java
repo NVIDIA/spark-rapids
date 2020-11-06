@@ -233,8 +233,8 @@ public class GpuColumnVector extends GpuColumnVectorBase {
   }
 
   /**
-   * Convert a spark schema into a cudf schema
-   * @param input the spark schema to convert
+   * Convert a Spark schema into a cudf schema
+   * @param input the Spark schema to convert
    * @return the cudf schema
    */
   public static Schema from(StructType input) {
@@ -415,7 +415,7 @@ public class GpuColumnVector extends GpuColumnVectorBase {
   }
 
   /**
-   * Converts a cudf internal vector to a spark compatible vector. No reference counts
+   * Converts a cudf internal vector to a Spark compatible vector. No reference counts
    * are incremented so you need to either close the returned value or the input value,
    * but not both.
    */
@@ -444,7 +444,7 @@ public class GpuColumnVector extends GpuColumnVectorBase {
   }
 
   /**
-   * Get the underlying spark compatible columns from the batch.  This does not increment any
+   * Get the underlying Spark compatible columns from the batch.  This does not increment any
    * reference counts so if you want to use these columns after the batch is closed
    * you will need to do that on your own.
    */
