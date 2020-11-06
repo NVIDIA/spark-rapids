@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import os
 try:
     from pyspark.sql import SparkSession
 except ImportError as error:
@@ -26,33 +27,20 @@ def _spark__init():
     # can be reset in the middle of a test if specific operations are done (some types of cast etc)
     # enableHiveSupport() is needed for parquet bucket tests
     #TODO need to figure out a better way to do this optionally
-    import os
-    ALLOW_FRACTION = 1 / (int(os.getenv('RUN_PARALLEL')) + 2)
-    MAX_FRACTION = 1 / (int(os.getenv('RUN_PARALLEL')) + 1)
-    _sb = SparkSession.builder
-    _sb.config('spark.master', 'local') \
-            .config('spark.ui.showConsoleProgress', 'false') \
-            .config('spark.driver.extraClassPath', os.environ['EXTRA_CP']) \
-            .config('spark.sql.session.timeZone', 'UTC') \
-            .config('spark.sql.shuffle.partitions', '12') \
-            .config('spark.rapids.memory.gpu.allocFraction', str(ALLOW_FRACTION))\
-            .config('spark.rapids.memory.gpu.maxAllocFraction', str(MAX_FRACTION))\
+    _sb = SparkSession.builder \
             .config('spark.plugins', 'com.nvidia.spark.SQLPlugin') \
             .config('spark.sql.queryExecutionListeners', 'com.nvidia.spark.rapids.ExecutionPlanCaptureCallback')
 
-    if ('PYTEST_XDIST_WORKER' in os.environ):
-        wid = os.environ['PYTEST_XDIST_WORKER']
-        d = "./derby_{}".format(wid)
-        if not os.path.exists(d):
-            os.makedirs(d)
-        _sb.config('spark.driver.extraJavaOptions', '-Duser.timezone=GMT -Dderby.system.home={} '.format(d) + str(os.getenv('COVERAGE_SUBMIT_FLAGS'))) \
-                .config('spark.executor.extraJavaOptions', '-Duser.timezone=GMT')
-    else:
-        _sb.config('spark.driver.extraJavaOptions', '-Duser.timezone=GMT ' + str(os.getenv('COVERAGE_SUBMIT_FLAGS'))) \
-                .config('spark.executor.extraJavaOptions', '-Duser.timezone=GMT')
- 
+    # Run python parallel tests on spark local mode, if '$RAP_TEST_PARALLEL > 1'
+    if (int(os.getenv('RAP_TEST_PARALLEL')) > 1):
+        import rap_conf
+        rap_conf.update_conf_map()
+        for (key, value) in rap_conf.confMap.items():
+            _sb.config(key, value)
+
     _s = _sb.enableHiveSupport() \
             .appName('rapids spark plugin integration tests (python)').getOrCreate()
+
     #TODO catch the ClassNotFound error that happens if the classpath is not set up properly and
     # make it a better error message
     _s.sparkContext.setLogLevel("WARN")

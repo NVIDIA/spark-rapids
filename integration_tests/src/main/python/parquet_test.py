@@ -412,11 +412,10 @@ def createBucketedTableAndJoin(spark, tbl_1, tbl_2):
 @pytest.mark.parametrize('reader_confs', reader_opt_confs)
 @pytest.mark.parametrize('v1_enabled_list', ["", "parquet"])
 # this test would be better if we could ensure exchanges didn't exist - ie used buckets
-def test_buckets(spark_tmp_path, v1_enabled_list, reader_confs):
+def test_buckets(spark_tmp_path, v1_enabled_list, reader_confs, spark_tmp_table_factory):
     all_confs = reader_confs.copy()
     all_confs.update({'spark.sql.sources.useV1SourceList': v1_enabled_list,
           "spark.sql.autoBroadcastJoinThreshold": '-1'})
-def test_buckets(spark_tmp_path, mt_opt, v1_enabled_list, spark_tmp_table_factory):
     def do_it(spark):
         return createBucketedTableAndJoin(spark, spark_tmp_table_factory.get(),
             spark_tmp_table_factory.get())

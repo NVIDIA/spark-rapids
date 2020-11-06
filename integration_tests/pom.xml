@@ -204,6 +204,7 @@
                                 <TEST>${test}</TEST>
 				<COVERAGE_SUBMIT_FLAGS>${argLine}</COVERAGE_SUBMIT_FLAGS>
 				<TEST_TAGS>${pytest.TEST_TAGS}</TEST_TAGS>
+                                <RAP_TEST_PARALLEL>${pytest.RAP_TEST_PARALLEL}</RAP_TEST_PARALLEL>
                             </environmentVariables>
                         </configuration>
                     </execution>

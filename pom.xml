@@ -170,6 +170,8 @@
         <spark301.version>3.0.1</spark301.version>
         <spark302.version>3.0.2-SNAPSHOT</spark302.version>
         <spark310.version>3.1.0-SNAPSHOT</spark310.version>
+        <!-- Number of pytest parallelism  -->
+        <pytest.RAP_TEST_PARALLEL>1</pytest.RAP_TEST_PARALLEL>
     </properties>
 
     <dependencyManagement>

@@ -41,7 +41,7 @@ else
     RUN_DIR="$SCRIPTPATH"/target/run_dir
     mkdir -p "$RUN_DIR"
     cd "$RUN_DIR"
-    export EXTRA_CP="${ALL_JARS// /:}"
+    export RAP_TEST_EXTRA_CP="${ALL_JARS// /:}"
     #"$SPARK_HOME"/bin/spark-submit --jars "${ALL_JARS// /,}" \
     #    --conf "spark.driver.extraJavaOptions=-Duser.timezone=GMT $COVERAGE_SUBMIT_FLAGS" \
     #    --conf 'spark.executor.extraJavaOptions=-Duser.timezone=GMT' \
@@ -49,9 +49,8 @@ else
     #    --conf 'spark.sql.shuffle.partitions=12' \
     #    $SPARK_SUBMIT_FLAGS \
 
-    export RUN_PARALLEL=${RUN_PARALLEL:-4}
-    python      "$SCRIPTPATH"/runtests.py --rootdir "$SCRIPTPATH" "$SCRIPTPATH"/src/main/python \
-          -n $RUN_PARALLEL \
+    python "$SCRIPTPATH"/runtests.py --rootdir "$SCRIPTPATH" "$SCRIPTPATH"/src/main/python \
+          -n $RAP_TEST_PARALLEL \
           -v -rfExXs "$TEST_TAGS" \
           --std_input_path="$SCRIPTPATH"/src/test/resources/ \
           "$TEST_ARGS" \
