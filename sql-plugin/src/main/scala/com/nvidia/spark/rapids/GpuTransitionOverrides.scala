@@ -64,10 +64,8 @@ class GpuTransitionOverrides extends Rule[SparkPlan] {
       if (plan.supportsColumnar && plan.isInstanceOf[GpuExec]) {
         // coalesce after shuffle, unless there is a custom shuffle reader
         parent match {
-          case Some(_: GpuCustomShuffleReaderExec) =>
-            s
-          case _ =>
-            GpuCoalesceBatches(s, TargetSize(conf.gpuTargetBatchSizeBytes))
+          case Some(_: GpuCustomShuffleReaderExec) => s
+          case _ => GpuCoalesceBatches(s, TargetSize(conf.gpuTargetBatchSizeBytes))
         }
       } else {
         s
