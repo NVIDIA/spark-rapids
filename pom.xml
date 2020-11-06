@@ -535,8 +535,8 @@
                             <target>
                                 <mkdir dir="${project.build.directory}/extra-resources"/>
                                 <mkdir dir="${project.build.directory}/tmp"/>
-                                <exec executable="bash" failonerror="true" output="${project.build.directory}/extra-resources/rapids4spark-version-info.properties">
-                                    <arg value="${user.dir}/build/build-info"/>
+                                <exec executable="bash" output="${project.build.directory}/extra-resources/rapids4spark-version-info.properties">
+                                    <arg value="${project.basedir}/../build/build-info"/>
                                     <arg value="${project.version}"/>
                                     <arg value="${cudf.version}"/>
                                 </exec>
