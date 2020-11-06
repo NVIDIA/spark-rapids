@@ -16,8 +16,6 @@
 
 package com.nvidia.spark.rapids.shims.spark301db
 
-import java.time.ZoneId
-
 import com.nvidia.spark.rapids.GpuOverrides.isSupportedType
 import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.shims.spark301.Spark301Shims
