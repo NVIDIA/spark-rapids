@@ -756,7 +756,8 @@ abstract class FileParquetPartitionReaderBase(
         val partitionScalars = ColumnarPartitionReaderWithPartitionValues
           .createPartitionValues(partitionValues, partitionSchema)
         withResource(partitionScalars) { scalars =>
-          ColumnarPartitionReaderWithPartitionValues.addPartitionValues(cb, scalars)
+          ColumnarPartitionReaderWithPartitionValues.addPartitionValues(cb, scalars,
+            GpuColumnVector.extractTypes(partitionSchema))
         }
       }
     } else {

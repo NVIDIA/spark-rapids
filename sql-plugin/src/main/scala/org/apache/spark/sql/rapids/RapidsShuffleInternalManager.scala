@@ -335,7 +335,8 @@ abstract class RapidsShuffleInternalManagerBase(conf: SparkConf, isDriver: Boole
           context,
           metrics,
           transport,
-          catalog)
+          catalog,
+          gpu.dependency.sparkTypes)
       case other => {
         val shuffleHandle = RapidsShuffleInternalManagerBase.unwrapHandle(other)
         wrapped.getReader(shuffleHandle, startPartition, endPartition, context, metrics)
