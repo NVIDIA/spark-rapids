@@ -168,16 +168,17 @@ def test_broadcast_join_mixed(join_type):
 @pytest.mark.xfail(condition=is_emr_runtime(),
     reason='https://github.com/NVIDIA/spark-rapids/issues/821')
 @pytest.mark.parametrize('repartition', ["true", "false"], ids=idfn)
-def test_join_bucketed_table(repartition):
+def test_join_bucketed_table(repartition, spark_tmp_table_factory):
     def do_join(spark):
+        table_name = spark_tmp_table_factory.get()
         data = [("http://fooblog.com/blog-entry-116.html", "https://fooblog.com/blog-entry-116.html"),
                 ("http://fooblog.com/blog-entry-116.html", "http://fooblog.com/blog-entry-116.html")]
         resolved = spark.sparkContext.parallelize(data).toDF(['Url','ResolvedUrl'])
         feature_data = [("http://fooblog.com/blog-entry-116.html", "21")]
         feature = spark.sparkContext.parallelize(feature_data).toDF(['Url','Count'])
         feature.write.bucketBy(400, 'Url').sortBy('Url').format('parquet').mode('overwrite')\
-                 .saveAsTable('featuretable')
-        testurls = spark.sql("SELECT Url, Count FROM featuretable")
+                 .saveAsTable(table_name)
+        testurls = spark.sql("SELECT Url, Count FROM {}".format(table_name))
         if (repartition == "true"):
                 return testurls.repartition(20).join(resolved, "Url", "inner")
         else:
