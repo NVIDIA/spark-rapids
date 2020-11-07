@@ -18,7 +18,7 @@ package com.nvidia.spark.rapids
 
 import java.util.Random
 
-import ai.rapids.cudf.{NvtxColor, NvtxRange, Table}
+import ai.rapids.cudf.{NvtxColor, NvtxRange}
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 
 import org.apache.spark.TaskContext
@@ -40,24 +40,23 @@ case class GpuRoundRobinPartitioning(numPartitions: Int)
   override def dataType: DataType = IntegerType
 
   def partitionInternal(batch: ColumnarBatch): (Array[Int], Array[GpuColumnVector]) = {
-    val table: Table = GpuColumnVector.from(batch)
-    try {
+    val sparkTypes = GpuColumnVector.extractTypes(batch)
+    withResource(GpuColumnVector.from(batch)) { table =>
       if (numPartitions == 1) {
-        val columns = (0 until table.getNumberOfColumns).map(
-          idx => GpuColumnVector.from(table.getColumn(idx).incRefCount())).toArray
+        val columns = (0 until table.getNumberOfColumns).zip(sparkTypes).map {
+          case(idx, sparkType) =>
+            GpuColumnVector.from(table.getColumn(idx).incRefCount(), sparkType)
+        }.toArray
         return (Array(0), columns)
       }
-      val partedTable = table.roundRobinPartition(numPartitions, getStartPartition)
-      try {
+      withResource(table.roundRobinPartition(numPartitions, getStartPartition)) { partedTable =>
         val parts = partedTable.getPartitions
-        val columns = (0 until partedTable.getNumberOfColumns.toInt).map(
-          idx => GpuColumnVector.from(partedTable.getColumn(idx).incRefCount())).toArray
+        val columns = (0 until partedTable.getNumberOfColumns.toInt).zip(sparkTypes).map {
+          case(idx, sparkType) =>
+            GpuColumnVector.from(partedTable.getColumn(idx).incRefCount(), sparkType)
+        }.toArray
         (parts, columns)
-      } finally {
-        partedTable.close()
       }
-    } finally {
-      table.close()
     }
   }
 

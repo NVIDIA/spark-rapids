@@ -17,7 +17,7 @@
 package org.apache.spark.sql.rapids
 
 import ai.rapids.cudf.{BinaryOp, ColumnVector, DType, Scalar, UnaryOp}
-import com.nvidia.spark.rapids.{Arm, CudfBinaryExpression, GpuBinaryExpression, GpuColumnVector, GpuExpression, GpuUnaryExpression}
+import com.nvidia.spark.rapids.{Arm, CudfUnaryExpression, GpuBinaryExpression, GpuColumnVector}
 
 import org.apache.spark.sql.catalyst.expressions.{ExpectsInputTypes, Expression, ImplicitCastInputTypes}
 import org.apache.spark.sql.types._
@@ -59,23 +59,23 @@ object ShiftHelper extends Arm {
 trait GpuShiftBase extends GpuBinaryExpression with ImplicitCastInputTypes {
   def shiftOp: BinaryOp
 
-  override def doColumnar(lhs: GpuColumnVector, rhs: GpuColumnVector): GpuColumnVector = {
+  override def doColumnar(lhs: GpuColumnVector, rhs: GpuColumnVector): ColumnVector = {
     val lBase = lhs.getBase
     withResource(ShiftHelper.fixupDistanceNoClose(lBase.getType, rhs.getBase)) { distance =>
-      GpuColumnVector.from(lBase.binaryOp(shiftOp, distance, lBase.getType))
+      lBase.binaryOp(shiftOp, distance, lBase.getType)
     }
   }
 
-  override def doColumnar(lhs: Scalar, rhs: GpuColumnVector): GpuColumnVector = {
+  override def doColumnar(lhs: Scalar, rhs: GpuColumnVector): ColumnVector = {
     withResource(ShiftHelper.fixupDistanceNoClose(lhs.getType, rhs.getBase)) { distance =>
-      GpuColumnVector.from(lhs.binaryOp(shiftOp, distance, lhs.getType))
+      lhs.binaryOp(shiftOp, distance, lhs.getType)
     }
   }
 
-  override def doColumnar(lhs: GpuColumnVector, rhs: Scalar): GpuColumnVector = {
+  override def doColumnar(lhs: GpuColumnVector, rhs: Scalar): ColumnVector = {
     val lBase = lhs.getBase
     withResource(ShiftHelper.fixupDistanceNoClose(lBase.getType, rhs)) { distance =>
-      GpuColumnVector.from(lBase.binaryOp(shiftOp, distance, lBase.getType))
+      lBase.binaryOp(shiftOp, distance, lBase.getType)
     }
   }
 }
@@ -132,14 +132,12 @@ case class GpuBitwiseXor(left: Expression, right: Expression) extends CudfBinary
   override def binaryOp: BinaryOp = BinaryOp.BITWISE_XOR
 }
 
-case class GpuBitwiseNot(child: Expression) extends GpuUnaryExpression with ExpectsInputTypes {
+case class GpuBitwiseNot(child: Expression) extends CudfUnaryExpression with ExpectsInputTypes {
   override def inputTypes: Seq[AbstractDataType] = Seq(IntegralType)
+
+  override def unaryOp: UnaryOp = UnaryOp.BIT_INVERT
 
   override def dataType: DataType = child.dataType
 
   override def toString: String = s"~${child.sql}"
-
-  override protected def doColumnar(input: GpuColumnVector): GpuColumnVector = {
-    GpuColumnVector.from(input.getBase.unaryOp(UnaryOp.BIT_INVERT))
-  }
 }

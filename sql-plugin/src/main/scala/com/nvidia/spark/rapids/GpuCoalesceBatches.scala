@@ -30,7 +30,7 @@ import org.apache.spark.sql.catalyst.expressions.Attribute
 import org.apache.spark.sql.catalyst.plans.physical.Partitioning
 import org.apache.spark.sql.execution.{SparkPlan, UnaryExecNode}
 import org.apache.spark.sql.execution.metric.{SQLMetric, SQLMetrics}
-import org.apache.spark.sql.types.{DataTypes, MapType, StructType}
+import org.apache.spark.sql.types.{DataType, DataTypes, MapType, StructType}
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
 /**
@@ -397,6 +397,7 @@ class GpuCoalesceIteratorForMaps(iter: Iterator[ColumnarBatch],
     totalTime,
     opName) with Arm {
 
+  private val sparkTypes: Array[DataType] = GpuColumnVector.extractTypes(schema)
   private var batches: ArrayBuffer[ColumnarBatch] = ArrayBuffer.empty
   private var maxDeviceMemory: Long = 0
 
@@ -495,7 +496,8 @@ class GpuCoalesceIteratorForMaps(iter: Iterator[ColumnarBatch],
             val cv = compressedVecs(outputIndex)
             val batchIndex = compressedBatchIndices(outputIndex)
             val compressedBatch = batches(batchIndex)
-            batches(batchIndex) = MetaUtils.getBatchFromMeta(outputBuffer, cv.getTableMeta)
+            batches(batchIndex) =
+                MetaUtils.getBatchFromMeta(outputBuffer, cv.getTableMeta, sparkTypes)
             compressedBatch.close()
           }
         }
@@ -548,6 +550,7 @@ class GpuCoalesceIterator(iter: Iterator[ColumnarBatch],
     totalTime,
     opName) with Arm {
 
+  private val sparkTypes: Array[DataType] = GpuColumnVector.extractTypes(schema)
   private val batches: ArrayBuffer[SpillableColumnarBatch] = ArrayBuffer.empty
   private var maxDeviceMemory: Long = 0
 
@@ -599,7 +602,8 @@ class GpuCoalesceIterator(iter: Iterator[ColumnarBatch],
               val cv = compressedVecs(outputIndex)
               val batchIndex = compressedBatchIndices(outputIndex)
               val compressedBatch = wip(batchIndex)
-              wip(batchIndex) = MetaUtils.getBatchFromMeta(outputBuffer, cv.getTableMeta)
+              wip(batchIndex) =
+                  MetaUtils.getBatchFromMeta(outputBuffer, cv.getTableMeta, sparkTypes)
               compressedBatch.close()
             }
           }

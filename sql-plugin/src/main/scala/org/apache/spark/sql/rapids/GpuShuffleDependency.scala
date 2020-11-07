@@ -23,10 +23,12 @@ import org.apache.spark.rdd.RDD
 import org.apache.spark.serializer.Serializer
 import org.apache.spark.shuffle.ShuffleWriteProcessor
 import org.apache.spark.sql.execution.metric.SQLMetric
+import org.apache.spark.sql.types.DataType
 
 class GpuShuffleDependency[K: ClassTag, V: ClassTag, C: ClassTag](
     rdd: RDD[_ <: Product2[K, V]],
     partitioner: Partitioner,
+    val sparkTypes: Array[DataType],
     serializer: Serializer = SparkEnv.get.serializer,
     keyOrdering: Option[Ordering[K]] = None,
     aggregator: Option[Aggregator[K, V, C]] = None,

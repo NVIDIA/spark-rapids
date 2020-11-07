@@ -17,7 +17,7 @@ package com.nvidia.spark.rapids
 
 import scala.collection.mutable
 
-import ai.rapids.cudf.{DType, NvtxColor, Scalar}
+import ai.rapids.cudf.{NvtxColor, Scalar}
 import com.nvidia.spark.rapids.GpuMetricNames._
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 
@@ -28,6 +28,7 @@ import org.apache.spark.sql.catalyst.expressions._
 import org.apache.spark.sql.catalyst.plans.physical.{Partitioning, UnknownPartitioning}
 import org.apache.spark.sql.execution.{ExpandExec, SparkPlan, UnaryExecNode}
 import org.apache.spark.sql.execution.metric.{SQLMetric, SQLMetrics}
+import org.apache.spark.sql.types.DataType
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
 class GpuExpandExecMeta(
@@ -135,19 +136,20 @@ class GpuExpandIterator(
       "ExpandExec projections", NvtxColor.GREEN, totalTime)) { _ =>
 
       // ExpandExec typically produces many null columns so we re-use them where possible
-      val nullCVs = mutable.Map[DType,GpuColumnVector]()
+      val nullCVs = mutable.Map[DataType, GpuColumnVector]()
 
       /**
        * Create a null column vector for the specified data type, returning the vector and
        * a boolean indicating whether an existing vector was re-used.
        */
-      def getOrCreateNullCV(dataType: DType): (GpuColumnVector, Boolean) = {
+      def getOrCreateNullCV(dataType: DataType): (GpuColumnVector, Boolean) = {
+        val rapidsType = GpuColumnVector.getRapidsType(dataType)
         nullCVs.get(dataType) match {
           case Some(cv) =>
             (cv.incRefCount(), true)
           case None =>
-            val cv = withResource(Scalar.fromNull(dataType)) { scalar =>
-              GpuColumnVector.from(scalar, cb.numRows())
+            val cv = withResource(Scalar.fromNull(rapidsType)) { scalar =>
+              GpuColumnVector.from(scalar, cb.numRows(), dataType)
             }
             nullCVs.put(dataType, cv)
             (cv, false)
@@ -155,19 +157,19 @@ class GpuExpandIterator(
       }
 
       val projectedColumns = boundProjections(projectionIndex).safeMap(fn = expr => {
-        val rapidsType = GpuColumnVector.getRapidsType(expr.dataType)
+        val sparkType = expr.dataType
         val (cv, nullColumnReused) = expr.columnarEval(cb) match {
-          case null => getOrCreateNullCV(rapidsType)
-          case lit: GpuLiteral if lit.value == null => getOrCreateNullCV(rapidsType)
+          case null => getOrCreateNullCV(sparkType)
+          case lit: GpuLiteral if lit.value == null => getOrCreateNullCV(sparkType)
           case lit: GpuLiteral =>
             val cv = withResource(GpuScalar.from(lit.value, lit.dataType)) { scalar =>
-              GpuColumnVector.from(scalar, cb.numRows())
+              GpuColumnVector.from(scalar, cb.numRows(), sparkType)
             }
             (cv, false)
           case cv: GpuColumnVector => (cv, false)
           case other =>
-            val cv = withResource(GpuScalar.from(other, expr.dataType)) { scalar =>
-              GpuColumnVector.from(scalar, cb.numRows())
+            val cv = withResource(GpuScalar.from(other, sparkType)) { scalar =>
+              GpuColumnVector.from(scalar, cb.numRows(), sparkType)
             }
             (cv, false)
         }

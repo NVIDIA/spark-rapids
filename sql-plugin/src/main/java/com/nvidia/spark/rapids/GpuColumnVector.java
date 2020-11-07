@@ -182,44 +182,6 @@ public class GpuColumnVector extends GpuColumnVectorBase {
     return result;
   }
 
-  static DataType getSparkType(DType type) {
-    switch (type.getTypeId()) {
-      case BOOL8:
-        return DataTypes.BooleanType;
-      case INT8:
-        return DataTypes.ByteType;
-      case INT16:
-        return DataTypes.ShortType;
-      case INT32:
-        return DataTypes.IntegerType;
-      case INT64:
-        return DataTypes.LongType;
-      case FLOAT32:
-        return DataTypes.FloatType;
-      case FLOAT64:
-        return DataTypes.DoubleType;
-      case TIMESTAMP_DAYS:
-        return DataTypes.DateType;
-      case TIMESTAMP_MICROSECONDS:
-        return DataTypes.TimestampType;
-      case STRING:
-        return DataTypes.StringType;
-      default:
-        throw new IllegalArgumentException(type + " is not supported by spark yet.");
-    }
-  }
-
-  protected static <T> DataType getSparkTypeFrom(ColumnViewAccess<T> access) {
-    DType type = access.getDataType();
-    if (type == DType.LIST) {
-      try (ColumnViewAccess<T> child = access.getChildColumnViewAccess(0)) {
-        return new ArrayType(getSparkTypeFrom(child), true);
-      }
-    } else {
-      return getSparkType(type);
-    }
-  }
-
   /**
    * Create an empty batch from the given format.  This should be used very sparingly because
    * returning an empty batch from an operator is almost always the wrong thing to do.
@@ -271,8 +233,8 @@ public class GpuColumnVector extends GpuColumnVectorBase {
   }
 
   /**
-   * Convert a spark schema into a cudf schema
-   * @param input the spark schema to convert
+   * Convert a Spark schema into a cudf schema
+   * @param input the Spark schema to convert
    * @return the cudf schema
    */
   public static Schema from(StructType input) {
@@ -328,7 +290,7 @@ public class GpuColumnVector extends GpuColumnVectorBase {
   private static <T> boolean typeConversionAllowed(ColumnViewAccess<T> cv, DataType colType) {
     DType dt = cv.getDataType();
     if (!dt.isNestedType()) {
-      return getSparkType(dt).equals(colType);
+      return getRapidsType(colType).equals(dt);
     }
     if (colType instanceof MapType) {
       MapType mType = (MapType) colType;
@@ -453,22 +415,18 @@ public class GpuColumnVector extends GpuColumnVectorBase {
   }
 
   /**
-   * Converts a cudf internal vector to a spark compatible vector. No reference counts
+   * Converts a cudf internal vector to a Spark compatible vector. No reference counts
    * are incremented so you need to either close the returned value or the input value,
    * but not both.
-   * @deprecated use the version that takes a data type
    */
-  @Deprecated
-  public static GpuColumnVector from(ai.rapids.cudf.ColumnVector cudfCv) {
-    return new GpuColumnVector(getSparkTypeFrom(cudfCv), cudfCv);
-  }
-
   public static GpuColumnVector from(ai.rapids.cudf.ColumnVector cudfCv, DataType type) {
+    assert typeConversionAllowed(cudfCv, type) : "Type conversion is not allowed from " + cudfCv +
+        " to " + type;
     return new GpuColumnVector(type, cudfCv);
   }
 
-  public static GpuColumnVector from(Scalar scalar, int count) {
-    return from(ai.rapids.cudf.ColumnVector.fromScalar(scalar, count));
+  public static GpuColumnVector from(Scalar scalar, int count, DataType sparkType) {
+    return from(ai.rapids.cudf.ColumnVector.fromScalar(scalar, count), sparkType);
   }
 
   /**
@@ -486,7 +444,7 @@ public class GpuColumnVector extends GpuColumnVectorBase {
   }
 
   /**
-   * Get the underlying spark compatible columns from the batch.  This does not increment any
+   * Get the underlying Spark compatible columns from the batch.  This does not increment any
    * reference counts so if you want to use these columns after the batch is closed
    * you will need to do that on your own.
    */

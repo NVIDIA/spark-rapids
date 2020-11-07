@@ -34,6 +34,7 @@ class RapidsShuffleIteratorSuite extends RapidsShuffleTestHelper {
       mockTransport,
       blocksByAddress,
       testMetricsUpdater,
+      Array.empty,
       mockCatalog,
       123)
 
@@ -61,6 +62,7 @@ class RapidsShuffleIteratorSuite extends RapidsShuffleTestHelper {
         mockTransport,
         blocksByAddress,
         testMetricsUpdater,
+        Array.empty,
         mockCatalog,
         123))
 
@@ -94,6 +96,7 @@ class RapidsShuffleIteratorSuite extends RapidsShuffleTestHelper {
       mockTransport,
       blocksByAddress,
       testMetricsUpdater,
+      Array.empty,
       mockCatalog,
       123))
 
@@ -124,6 +127,7 @@ class RapidsShuffleIteratorSuite extends RapidsShuffleTestHelper {
       mockTransport,
       blocksByAddress,
       testMetricsUpdater,
+      Array.empty,
       mockCatalog,
       123)
 
@@ -135,9 +139,9 @@ class RapidsShuffleIteratorSuite extends RapidsShuffleTestHelper {
     val bufferId = ShuffleReceivedBufferId(1)
     val mockBuffer = mock[RapidsBuffer]
 
-    val cb = new ColumnarBatch(Seq[ColumnVector]().toArray, 10)
+    val cb = new ColumnarBatch(Array.empty, 10)
 
-    when(mockBuffer.getColumnarBatch).thenReturn(cb)
+    when(mockBuffer.getColumnarBatch(Array.empty)).thenReturn(cb)
     when(mockCatalog.acquireBuffer(any[ShuffleReceivedBufferId]())).thenReturn(mockBuffer)
     doNothing().when(mockCatalog).removeBuffer(any())
     cl.start()

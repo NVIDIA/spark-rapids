@@ -20,7 +20,7 @@ import ai.rapids.cudf.{BufferType, ContiguousTable, DeviceMemoryBuffer, Table}
 import com.nvidia.spark.rapids.format.{CodecType, ColumnMeta}
 import org.scalatest.FunSuite
 
-import org.apache.spark.sql.types.StructType
+import org.apache.spark.sql.types.{DataType, DoubleType, IntegerType, StringType, StructType}
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
 class MetaUtilsSuite extends FunSuite with Arm {
@@ -164,7 +164,8 @@ class MetaUtilsSuite extends FunSuite with Arm {
       val origBuffer = contigTable.getBuffer
       val meta = MetaUtils.buildTableMeta(10, table, origBuffer)
       withResource(origBuffer.sliceWithCopy(0, origBuffer.getLength)) { buffer =>
-        withResource(MetaUtils.getBatchFromMeta(buffer, meta)) { batch =>
+        withResource(MetaUtils.getBatchFromMeta(buffer, meta,
+          Array[DataType](IntegerType, StringType, DoubleType))) { batch =>
           assertResult(table.getRowCount)(batch.numRows)
           assertResult(table.getNumberOfColumns)(batch.numCols)
           (0 until table.getNumberOfColumns).foreach { i =>
