@@ -44,7 +44,7 @@ else
         # and then divide it up into 3GiB chunks
         # we subtract one for the main controlling process that will still
         # launch an application, but it will never be used
-        TEST_PARALLEL=`nvidia-smi --query-gpu=memory.total --format=csv,noheader | awk '{if (MAX < $1){ MAX = $1}} END {print int(MAX / (3 * 1024)) - 1}'`
+        TEST_PARALLEL=`nvidia-smi --query-gpu=memory.total --format=csv,noheader | awk '{if (MAX < $1){ MAX = $1}} END {print int(MAX / (2.3 * 1024)) - 1}'`
         echo "AUTO DETECTED PARALLELISM OF $TEST_PARALLEL"
     fi
     if python -c 'import findspark';
