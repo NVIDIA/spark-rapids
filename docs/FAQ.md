@@ -29,6 +29,7 @@ top of these changes and release updates as quickly as possible.
 The RAPIDS Accelerator for Apache Spark officially supports
 [Apache Spark](get-started/getting-started-on-prem.md),
 [Databricks Runtime 7.0](get-started/getting-started-databricks.md)
+[Databricks Runtime 7.3](get-started/getting-started-databricks.md)
 and [Google Cloud Dataproc](get-started/getting-started-gcp.md).
 Most distributions based off of Apache Spark 3.0.0 should work, but because the plugin replaces
 parts of the physical plan that Apache Spark considers to be internal the code for those plans
