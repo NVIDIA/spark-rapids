@@ -273,6 +273,12 @@ case class GpuNaNvl(left: Expression, right: Expression) extends GpuBinaryExpres
     }
   }
 
+  override def doColumnar(numRows: Int, lhs: Scalar, rhs: Scalar): ColumnVector = {
+    withResource(GpuColumnVector.from(lhs, numRows, left.dataType)) { expandedLhs =>
+      doColumnar(expandedLhs, rhs)
+    }
+  }
+
   override def dataType: DataType = left.dataType
 
   // Access to AbstractDataType is not allowed, and not really needed here
