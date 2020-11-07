@@ -17,7 +17,7 @@
 
 /**
 *
-* Jenkinsfile for building rapids-plugin on Databricks
+* Jenkinsfile for building rapids-plugin on Databricks based on Spark 3.0.1
 *
 */
 @Library(['shared-libs', 'spark-jenkins-shared-lib']) _
@@ -38,7 +38,7 @@ pipeline {
         ansiColor('xterm')
         // timeout doesn't seem to work with environment variables so make sure to update below
         // IDLE_TIMEOUT config as well
-        timeout(time: 180, unit: 'MINUTES')
+        timeout(time: 240, unit: 'MINUTES')
         buildDiscarder(logRotator(numToKeepStr: '10'))
     }
 
@@ -46,18 +46,18 @@ pipeline {
         choice(name: 'DEPLOY_TO', choices: ['Urm', 'Local'],
             description: 'Where to deploy artifacts to')
         string(name: 'RUNTIME',
-                defaultValue: '7.0.x-gpu-ml-scala2.12', description: 'databricks runtime')
+                defaultValue: '7.3.x-gpu-ml-scala2.12', description: 'databricks runtime')
         string(name: 'PUBLIC_KEY',
                 defaultValue: '\"ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQDB+ValakyoKn7w+iBRoAi1KlLVH4yVmRXhLCZs1qUECBAhbck2o8Lgjp5wJ+epdT3+EAP2+t/zlK1mU9tTylidapR4fZuIk9ApoQSLOUEXcUtHkPpZulIoGAq78HoyiEs1sKovc6ULvpymjdnQ3ogCZlTlP9uqmL2E4kbtrNCNL0SVj/w10AqzrJ5lqQgO5dIdDRMHW2sv88JI1VLlfiSsofa9RdI7hDRuCnfZ0+dv2URJGGzGt2BkdEmk9t5F1BMpuXvZ8HzOYdACzw0U+THBOk9d4CACUYMyO1XqlXwoYweNKRnigXDCRaTWGFBzTkugRuW/BZBccTR1ON430uRB svcngcc@nvidia.com\"', description: 'public key')
         string(name: 'REF', defaultValue: 'branch-0.3', description: 'Commit to build')
         string(name: 'BASE_SPARK_VERSION',
-                defaultValue: '3.0.0', description: 'Databricks base Spark version')
+                defaultValue: '3.0.1', description: 'Databricks base Spark version')
         string(name: 'BUILD_PROFILES',
-                defaultValue: 'databricks,!snapshot-shims', description: 'the mvn build profiles to use when building Databricks')
+                defaultValue: 'databricks301,!snapshot-shims', description: 'the mvn build profiles to use when building Databricks')
     }
 
     environment {
-        IDLE_TIMEOUT = 180
+        IDLE_TIMEOUT = 240
         JENKINS_ROOT  = 'jenkins'
         MVN_URM_MIRROR='-s jenkins/settings.xml -P mirror-apache-to-urm'
         LIBCUDF_KERNEL_CACHE_PATH='/tmp'
