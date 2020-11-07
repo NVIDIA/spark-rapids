@@ -78,6 +78,12 @@ trait GpuShiftBase extends GpuBinaryExpression with ImplicitCastInputTypes {
       lBase.binaryOp(shiftOp, distance, lBase.getType)
     }
   }
+
+  override def doColumnar(numRows: Int, lhs: Scalar, rhs: Scalar): ColumnVector = {
+    withResource(GpuColumnVector.from(lhs, numRows, left.dataType)) { expandedLhs =>
+      doColumnar(expandedLhs, rhs)
+    }
+  }
 }
 
 case class GpuShiftLeft(left: Expression, right: Expression) extends GpuShiftBase {

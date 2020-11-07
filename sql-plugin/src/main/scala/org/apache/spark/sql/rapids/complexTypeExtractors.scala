@@ -88,6 +88,12 @@ case class GpuGetArrayItem(child: Expression, ordinal: Expression)
       }
     }
   }
+
+  override def doColumnar(numRows: Int, lhs: Scalar, rhs: Scalar): ColumnVector = {
+    withResource(GpuColumnVector.from(lhs, numRows, left.dataType)) { expandedLhs =>
+      doColumnar(expandedLhs, rhs)
+    }
+  }
 }
 
 class GpuGetMapValueMeta(
@@ -139,6 +145,11 @@ case class GpuGetMapValue(child: Expression, key: Expression)
   override def doColumnar(lhs: GpuColumnVector, rhs: Scalar): ColumnVector =
     lhs.getBase.getMapValue(rhs)
 
+  override def doColumnar(numRows: Int, lhs: Scalar, rhs: Scalar): ColumnVector = {
+    withResource(GpuColumnVector.from(lhs, numRows, left.dataType)) { expandedLhs =>
+      doColumnar(expandedLhs, rhs)
+    }
+  }
 
   override def doColumnar(lhs: Scalar, rhs: GpuColumnVector): ColumnVector =
     throw new IllegalStateException("This is not supported yet")
