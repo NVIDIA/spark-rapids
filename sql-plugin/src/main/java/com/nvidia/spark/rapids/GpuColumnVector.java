@@ -161,14 +161,6 @@ public class GpuColumnVector extends GpuColumnVectorBase {
       return DType.TIMESTAMP_MICROSECONDS;
     } else if (type instanceof StringType) {
       return DType.STRING;
-    } else if (type instanceof DecimalType) {
-      DecimalType decType = (DecimalType) type;
-      // Currently, maps all DecimalTypes to DType.DECIMAL64 to reduce the complexity.
-      if (decType.precision() <= DType.DECIMAL64_MAX_PRECISION) {
-        return DType.create(DType.DTypeEnum.DECIMAL64, -decType.scale());
-      } else {
-        return null;
-      }
     }
     return null;
   }
