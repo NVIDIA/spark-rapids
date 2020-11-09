@@ -12,21 +12,44 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from pyspark.sql import SparkSession
+try:
+    from pyspark.sql import SparkSession
+except ImportError as error:
+    import findspark
+    findspark.init()
+    from pyspark.sql import SparkSession
+
+_DRIVER_ENV = 'PYSP_TEST_spark_driver_extraJavaOptions'
 
 def _spark__init():
     #Force the RapidsPlugin to be enabled, so it blows up if the classpath is not set properly
     # DO NOT SET ANY OTHER CONFIGS HERE!!!
     # due to bugs in pyspark/pytest it looks like any configs set here
     # can be reset in the middle of a test if specific operations are done (some types of cast etc)
-    # enableHiveSupport() is needed for parquet bucket tests
-    # disable adaptive query execution by default because some CSPs have it on by default and we don't
-    # support everywhere
-    _s = SparkSession.builder \
+    import os
+    _sb = SparkSession.builder
+    _sb.config('spark.master', 'local') \
             .config('spark.plugins', 'com.nvidia.spark.SQLPlugin') \
-            .config('spark.sql.queryExecutionListeners', 'com.nvidia.spark.rapids.ExecutionPlanCaptureCallback')\
             .config("spark.sql.adaptive.enabled", "false") \
-            .enableHiveSupport() \
+            .config('spark.sql.queryExecutionListeners', 'com.nvidia.spark.rapids.ExecutionPlanCaptureCallback')
+
+    for key, value in os.environ.items():
+        if key.startswith('PYSP_TEST_') and key != _DRIVER_ENV:
+            _sb.config(key[10:].replace('_', '.'), value)
+
+    driver_opts = os.environ.get(_DRIVER_ENV, "")
+
+    if ('PYTEST_XDIST_WORKER' in os.environ):
+        wid = os.environ['PYTEST_XDIST_WORKER']
+        d = "./derby_{}".format(wid)
+        if not os.path.exists(d):
+            os.makedirs(d)
+        _sb.config('spark.driver.extraJavaOptions', driver_opts + ' -Dderby.system.home={}'.format(d))
+    else:
+        _sb.config('spark.driver.extraJavaOptions', driver_opts)
+ 
+    # enableHiveSupport() is needed for parquet bucket tests
+    _s = _sb.enableHiveSupport() \
             .appName('rapids spark plugin integration tests (python)').getOrCreate()
     #TODO catch the ClassNotFound error that happens if the classpath is not set up properly and
     # make it a better error message

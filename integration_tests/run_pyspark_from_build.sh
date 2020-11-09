@@ -38,19 +38,80 @@ else
     then
         TEST_TAGS="-m $TEST_TAGS"
     fi
+    if [[ "${TEST_PARALLEL}" == "" ]];
+    then
+        # For now just assume that we are going to use the GPU on the
+        # system with the most free memory and then divide it up into chunks.
+        # We use free memory to try and avoid issues if the GPU also is working
+        # on graphics, which happens some times.
+        # We subtract one for the main controlling process that will still
+        # launch an application.  It will not run thing on the GPU but it needs
+        # to still launch a spark application.
+        TEST_PARALLEL=`nvidia-smi --query-gpu=memory.free --format=csv,noheader | awk '{if (MAX < $1){ MAX = $1}} END {print int(MAX / (2.3 * 1024)) - 1}'`
+        echo "AUTO DETECTED PARALLELISM OF $TEST_PARALLEL"
+    fi
+    if python -c 'import findspark';
+    then
+        echo "FOUND findspark"
+        FIND_SPARK=1
+    else
+        TEST_PARALLEL=0
+        FIND_SPARK=0
+        echo "findspark not installed cannot run tests in parallel"
+    fi
+    if python -c 'import xdist.plugin';
+    then
+        echo "FOUND xdist"
+    else
+        TEST_PARALLEL=0
+        echo "xdist not installed cannot run tests in parallel"
+    fi
+
+    if [[ ${TEST_PARALLEL} -lt 2 ]];
+    then
+        # With xdist 0 and 1 are the same parallelsm but
+        # 0 is more effecient
+        TEST_PARALLEL=""
+        MEMORY_FRACTION='1'
+    else
+        MEMORY_FRACTION=`python -c "print(1/($TEST_PARALLEL + 1))"`
+        TEST_PARALLEL="-n $TEST_PARALLEL"
+    fi
     RUN_DIR="$SCRIPTPATH"/target/run_dir
     mkdir -p "$RUN_DIR"
     cd "$RUN_DIR"
-    "$SPARK_HOME"/bin/spark-submit --jars "${ALL_JARS// /,}" \
-        --conf "spark.driver.extraJavaOptions=-ea -Duser.timezone=GMT $COVERAGE_SUBMIT_FLAGS" \
-        --conf 'spark.executor.extraJavaOptions=-ea -Duser.timezone=GMT' \
-        --conf 'spark.sql.session.timeZone=UTC' \
-        --conf 'spark.sql.shuffle.partitions=12' \
-        $SPARK_SUBMIT_FLAGS \
-        "$SCRIPTPATH"/runtests.py --rootdir "$SCRIPTPATH" "$SCRIPTPATH"/src/main/python \
+    if [[ "${FIND_SPARK}" == "1" ]];
+    then
+        export PYSP_TEST_spark_driver_extraClassPath="${ALL_JARS// /:}"
+        export PYSP_TEST_spark_driver_extraJavaOptions="-ea -Duser.timezone=GMT $COVERAGE_SUBMIT_FLAGS"
+        export PYSP_TEST_spark_executor_extraJavaOptions='-ea -Duser.timezone=GMT'
+        export PYSP_TEST_spark_ui_showConsoleProgress='false'
+        export PYSP_TEST_spark_sql_session_timeZone='UTC'
+        export PYSP_TEST_spark_sql_shuffle_partitions='12'
+        export PYSP_TEST_spark_rapids_memory_gpu_allocFraction=$MEMORY_FRACTION
+        export PYSP_TEST_spark_rapids_memory_gpu_maxAllocFraction=$MEMORY_FRACTION
+
+        python \
+          "$SCRIPTPATH"/runtests.py --rootdir "$SCRIPTPATH" "$SCRIPTPATH"/src/main/python \
+          $TEST_PARALLEL \
           -v -rfExXs "$TEST_TAGS" \
           --std_input_path="$SCRIPTPATH"/src/test/resources/ \
           "$TEST_ARGS" \
           $RUN_TEST_PARAMS \
           "$@"
+    else
+        "$SPARK_HOME"/bin/spark-submit --jars "${ALL_JARS// /,}" \
+          --conf "spark.driver.extraJavaOptions=-ea -Duser.timezone=GMT $COVERAGE_SUBMIT_FLAGS" \
+          --conf 'spark.executor.extraJavaOptions=-ea -Duser.timezone=GMT' \
+          --conf 'spark.sql.session.timeZone=UTC' \
+          --conf 'spark.sql.shuffle.partitions=12' \
+          $SPARK_SUBMIT_FLAGS \
+          "$SCRIPTPATH"/runtests.py --rootdir "$SCRIPTPATH" "$SCRIPTPATH"/src/main/python \
+          -v -rfExXs "$TEST_TAGS" \
+          --std_input_path="$SCRIPTPATH"/src/test/resources/ \
+          "$TEST_ARGS" \
+          $RUN_TEST_PARAMS \
+          "$@"
+
+    fi
 fi
