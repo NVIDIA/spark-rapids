@@ -187,6 +187,27 @@ def spark_tmp_path(request):
     if not debug:
         fs.delete(path)
 
+class TmpTableFactory:
+  def __init__(self, base_id):
+      self.base_id = base_id
+      self.running_id = 0
+
+  def get(self):
+      ret = '{}_{}'.format(self.base_id, self.running_id)
+      self.running_id = self.running_id + 1
+      return ret
+
+@pytest.fixture
+def spark_tmp_table_factory(request):
+    base_id = 'tmp_table_{}'.format(random.randint(0, 1000000))
+    yield TmpTableFactory(base_id)
+    sp = get_spark_i_know_what_i_am_doing()
+    tables = sp.sql("SHOW TABLES".format(base_id)).collect()
+    for row in tables:
+        t_name = row['tableName']
+        if (t_name.startswith(base_id)):
+            sp.sql("DROP TABLE IF EXISTS {}".format(t_name))
+
 def _get_jvm_session(spark):
     return spark._jsparkSession
 

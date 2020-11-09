@@ -90,7 +90,7 @@
             <groupId>ai.rapids</groupId>
             <artifactId>cudf</artifactId>
             <classifier>${cuda.version}</classifier>
-	    <scope>provided</scope>
+            <scope>provided</scope>
         </dependency>
         <dependency>
             <groupId>com.nvidia</groupId>
@@ -148,9 +148,9 @@
             <plugin>
                 <groupId>org.scalastyle</groupId>
                 <artifactId>scalastyle-maven-plugin</artifactId>
-		<configuration>
+                <configuration>
                     <includeTestSourceDirectory>true</includeTestSourceDirectory>
-		</configuration>
+                </configuration>
             </plugin>
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
@@ -202,8 +202,9 @@
                             <environmentVariables>
                                 <SKIP_TESTS>${skipTests}</SKIP_TESTS>
                                 <TEST>${test}</TEST>
-				<COVERAGE_SUBMIT_FLAGS>${argLine}</COVERAGE_SUBMIT_FLAGS>
-				<TEST_TAGS>${pytest.TEST_TAGS}</TEST_TAGS>
+                                <COVERAGE_SUBMIT_FLAGS>${argLine}</COVERAGE_SUBMIT_FLAGS>
+                                <TEST_TAGS>${pytest.TEST_TAGS}</TEST_TAGS>
+                                <TEST_PARALLEL>${pytest.TEST_PARALLEL}</TEST_PARALLEL>
                             </environmentVariables>
                         </configuration>
                     </execution>

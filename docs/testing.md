@@ -51,17 +51,34 @@ default version runs again Spark 3.0.0, to run against other version use one of 
 
 Integration tests are stored in the [integration_tests](../integration_tests/README.md) directory.
 There are two frameworks used for testing. One is based off of pytest and pyspark in the 
-`src/main/python` directory. These tests will run as a part of the build if you have the environment
-variable `SPARK_HOME` set.  If you have` SPARK_CONF_DIR` also set the tests will try to use
-whatever cluster you have configured.
+`src/main/python` directory. These tests will run as a part of the maven build if you have the environment
+variable `SPARK_HOME` set.
 
-To run the tests separate from the build go to the `integration_tests` directory and submit
-`run_tests.py` through `spark-submit`.  Be sure to include the necessary jars for the RAPIDS
-plugin either with `spark-submit` or with the cluster when it is 
+By default the tests try to use the python packages `pytest-xdist` and `findspark` to oversubscribe
+your GPU and run the tests in Spark local mode. This can speed up these tests significantly as all
+of the tests that run by default process relatively small amounts of data. Be careful because if
+you have `SPARK_CONF_DIR` also set the tests will try to use whatever cluster you have configured.
+If you do want to run the tests in parallel on an existing cluster it is recommended that you set
+`-Dpytest.TEST_PARALLEL` to one less than the number of worker applications that will be
+running on the cluster.  This is because `pytest-xdist` will launch one control application that
+is not included in that number. All it does is farm out work to the other applications, but because
+it needs to know about the Spark cluster to determine which tests to run and how it still shows up
+as a Spark application.
+
+To run the tests separate from the build go to the `integration_tests` directory. You can submit
+`runtests.py` through `spark-submit`, but if you want to run the tests in parallel with
+`pytest-xdist` you will need to submit it as a regular python application and have `findspark`
+installed.  Be sure to include the necessary jars for the RAPIDS plugin either with
+`spark-submit` or with the cluster when it is 
 [setup](get-started/getting-started-on-prem.md).
-The command line arguments to `run_tests.py` are the same as for 
+The command line arguments to `runtests.py` are the same as for 
 [pytest](https://docs.pytest.org/en/latest/usage.html). The only reason we have a separate script
 is that `spark-submit` uses python if the file name ends with `.py`.
+
+If you want to configure the Spark cluster you may also set environment variables for the tests.
+The name of the env var should be in the form `"PYSP_TEST_" + conf_key.replace('.', '_')`. Linux
+does not allow '.' in the name of an environment variable so we replace it with an underscore. As
+Spark configs avoid this character we have no other special processing.
 
 We also have a large number of integration tests that currently run as a part of the unit tests
 using scala test. Those are in the `src/test/scala` sub-directory and depend on the testing
