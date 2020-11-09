@@ -331,6 +331,14 @@ public class GpuColumnVector extends GpuColumnVectorBase {
    */
   private static <T> boolean typeConversionAllowed(ColumnViewAccess<T> cv, DataType colType) {
     DType dt = cv.getDataType();
+    if (dt.isDecimalType()) {
+      if (!(colType instanceof DecimalType)) {
+        return false;
+      }
+      // check for overflow
+      int maxPrecision = dt.isBackedByLong() ? DType.DECIMAL64_MAX_PRECISION : DType.DECIMAL32_MAX_PRECISION;
+      return ((DecimalType) colType).precision() <= maxPrecision;
+    }
     if (!dt.isNestedType()) {
       return getRapidsType(colType).equals(dt);
     }

@@ -104,6 +104,15 @@ class DecimalUnitTest extends GpuUnitTests with Matchers {
         }
       }
     }
+    // assertion error throws while running `typeConversionAllowed` check
+    assertThrows[AssertionError] {
+      withResource(GpuColumnVector.from(ColumnVector.decimalFromLongs(0, 1L),
+        DecimalType(DType.DECIMAL64_MAX_PRECISION + 1, 0))) { _ => }
+    }
+    assertThrows[AssertionError] {
+      withResource(GpuColumnVector.from(ColumnVector.decimalFromInts(0, 1),
+        DecimalType(DType.DECIMAL32_MAX_PRECISION + 1, 0))) { _ => }
+    }
     // TODO: support fromScalar(cudf.ColumnVector cv, int rows) for fixed-point decimal in cuDF
     /*
     withResource(GpuScalar.from(dec64Data(0))) { scalar =>
