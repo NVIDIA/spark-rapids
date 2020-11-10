@@ -172,6 +172,7 @@ case class Instruction(opcode: Int, operand: Int, instructionStr: String) extend
       case Opcode.LCMP => cmp(state)
       case Opcode.LDC | Opcode.LDC_W | Opcode.LDC2_W => ldc(lambdaReflection, state)
       case Opcode.DUP => dup(state)
+      case Opcode.POP => pop(state)
       case Opcode.GETSTATIC => getstatic(state)
       case Opcode.NEW => newObj(lambdaReflection, state)
       // Cast instructions
@@ -267,6 +268,11 @@ case class Instruction(opcode: Int, operand: Int, instructionStr: String) extend
   private def dup(state: State): State = {
     val State(locals, top :: rest, cond, expr) = state
     State(locals, top :: top :: rest, cond, expr)
+  }
+
+  private def pop(state: State): State = {
+    val State(locals, top :: rest, cond, expr) = state
+    State(locals, rest, cond, expr)
   }
 
   private def newObj(lambdaReflection: LambdaReflection,
