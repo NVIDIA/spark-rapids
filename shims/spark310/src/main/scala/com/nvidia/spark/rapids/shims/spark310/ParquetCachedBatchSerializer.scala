@@ -701,6 +701,11 @@ class ParquetCachedBatchSerializer extends CachedBatchSerializer with Arm {
 
         override def next(): ColumnarBatch = {
           if (nextBatch) {
+            // FYI, A very IMPORTANT thing to note is that we are returning the columnar batch
+            // as-is i.e. this batch has NullTypes saved as IntegerTypes with null values. The
+            // way Spark optimizes the read of NullTypes makes this work without having to rip out
+            // the IntegerType column to be replaced by a NullType column. This could change in
+            // future and will affect this code.
             columnarBatch
           } else {
             throw new NoSuchElementException("no elements found")
