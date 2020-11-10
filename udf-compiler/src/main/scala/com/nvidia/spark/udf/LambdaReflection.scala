@@ -59,17 +59,25 @@ class LambdaReflection private(private val classPool: ClassPool,
   }
 
   def lookupBehavior(constPoolIndex: Int): CtBehavior = {
-    if (constPool.getTag(constPoolIndex) != ConstPool.CONST_Methodref) {
-      throw new SparkException("Unexpected index for method reference")
-    }
-    val methodName = constPool.getMethodrefName(constPoolIndex)
-    val descriptor = constPool.getMethodrefType(constPoolIndex)
-    val className = constPool.getMethodrefClassName(constPoolIndex)
-    if (constPool.isConstructor(className, constPoolIndex) == 0) {
+    if (constPool.getTag(constPoolIndex) == ConstPool.CONST_InterfaceMethodref) {
+      val methodName = constPool.getInterfaceMethodrefName(constPoolIndex)
+      val descriptor = constPool.getInterfaceMethodrefType(constPoolIndex)
+      val className = constPool.getInterfaceMethodrefClassName(constPoolIndex)
+      val params = Descriptor.getParameterTypes(descriptor, classPool)
       classPool.getCtClass(className).getMethod(methodName, descriptor)
     } else {
-      val params = Descriptor.getParameterTypes(descriptor, classPool)
-      classPool.getCtClass(className).getDeclaredConstructor(params)
+      if (constPool.getTag(constPoolIndex) != ConstPool.CONST_Methodref) {
+        throw new SparkException(s"Unexpected index ${constPoolIndex} for method reference")
+      }
+      val methodName = constPool.getMethodrefName(constPoolIndex)
+      val descriptor = constPool.getMethodrefType(constPoolIndex)
+      val className = constPool.getMethodrefClassName(constPoolIndex)
+      if (constPool.isConstructor(className, constPoolIndex) == 0) {
+        classPool.getCtClass(className).getMethod(methodName, descriptor)
+      } else {
+        val params = Descriptor.getParameterTypes(descriptor, classPool)
+        classPool.getCtClass(className).getDeclaredConstructor(params)
+      }
     }
   }
 
