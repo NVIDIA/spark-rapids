@@ -18,8 +18,8 @@ package com.nvidia.spark.rapids.unit
 
 import scala.util.Random
 
-import ai.rapids.cudf.{ColumnVector, DType}
-import com.nvidia.spark.rapids.{GpuAlias, GpuColumnVector, GpuIsNotNull, GpuIsNull, GpuLiteral, GpuOverrides, GpuScalar, GpuUnaryExpression, GpuUnitTests, RapidsConf, RapidsHostColumnVector, TestUtils}
+import ai.rapids.cudf.{ColumnVector, DType, HostColumnVector}
+import com.nvidia.spark.rapids.{GpuAlias, GpuColumnVector, GpuIsNotNull, GpuIsNull, GpuLiteral, GpuOverrides, GpuScalar, GpuUnaryExpression, GpuUnitTests, HostColumnarToGpu, RapidsConf, RapidsHostColumnVector, TestUtils}
 import org.scalatest.Matchers
 
 import org.apache.spark.sql.catalyst.expressions.{Alias, AttributeReference, Literal}
@@ -174,6 +174,49 @@ class DecimalUnitTest extends GpuUnitTests with Matchers {
         ret.getBoolean(0) shouldBe true
         ret.getBoolean(1) shouldBe false
         ret.getBoolean(2) shouldBe true
+      }
+    }
+  }
+
+  test("test HostColumnarToGpu.columnarCopy") {
+    withResource(
+      GpuColumnVector.from(ColumnVector.fromDecimals(dec64Data.map(_.toJavaBigDecimal): _*),
+        DecimalType(DType.DECIMAL64_MAX_PRECISION, 9))) { cv =>
+      val dt = new HostColumnVector.BasicType(false, GpuColumnVector.getRapidsType(cv.dataType()))
+      val builder = new HostColumnVector.ColumnBuilder(dt, cv.getRowCount)
+      withResource(cv.copyToHost()) { hostCV =>
+        HostColumnarToGpu.columnarCopy(hostCV, builder, false, cv.getRowCount.toInt)
+        val actual = builder.build()
+        val expected = hostCV.getBase
+        actual.getDataType shouldEqual expected.getDataType
+        actual.getRowCount shouldEqual expected.getRowCount
+        (0 until actual.getRowCount.toInt).foreach { i =>
+          actual.getBigDecimal(i) shouldEqual expected.getBigDecimal(i)
+        }
+      }
+    }
+    val dec32WithNull = dec32Data.splitAt(5) match {
+      case (left, right) =>
+        Array(null) ++ left.map(_.toJavaBigDecimal) ++ Array(null) ++
+          right.map(_.toJavaBigDecimal) ++ Array(null)
+    }
+    withResource(
+      GpuColumnVector.from(ColumnVector.fromDecimals(dec32WithNull: _*),
+        DecimalType(DType.DECIMAL32_MAX_PRECISION, 5))) { cv =>
+      val dt = new HostColumnVector.BasicType(true, GpuColumnVector.getRapidsType(cv.dataType()))
+      val builder = new HostColumnVector.ColumnBuilder(dt, cv.getRowCount)
+      withResource(cv.copyToHost()) { hostCV =>
+        HostColumnarToGpu.columnarCopy(hostCV, builder, true, cv.getRowCount.toInt)
+        val actual = builder.build()
+        val expected = hostCV.getBase
+        actual.getDataType shouldEqual expected.getDataType
+        actual.getRowCount shouldEqual expected.getRowCount
+        (0 until actual.getRowCount.toInt).foreach { i =>
+          actual.isNull(i) shouldEqual expected.isNull(i)
+          if (!actual.isNull(i)) {
+            actual.getBigDecimal(i) shouldEqual expected.getBigDecimal(i)
+          }
+        }
       }
     }
   }

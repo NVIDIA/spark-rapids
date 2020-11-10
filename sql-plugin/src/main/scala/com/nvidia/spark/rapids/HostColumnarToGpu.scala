@@ -117,6 +117,25 @@ object HostColumnarToGpu {
         for (i <- 0 until rows) {
           b.appendUTF8String(cv.getUTF8String(i).getBytes)
         }
+      case (dt, nullable) if dt.isDecimalType =>
+        val precision = if (dt.isBackedByInt) {
+          DType.DECIMAL32_MAX_PRECISION
+        } else {
+          DType.DECIMAL64_MAX_PRECISION
+        }
+        if (nullable) {
+          for (i <- 0 until rows) {
+            if (cv.isNullAt(i)) {
+              b.appendNull()
+            } else {
+              b.append(cv.getDecimal(i, precision, -dt.getScale).toJavaBigDecimal)
+            }
+          }
+        } else {
+          for (i <- 0 until rows) {
+            b.append(cv.getDecimal(i, precision, -dt.getScale).toJavaBigDecimal)
+          }
+        }
       case (t, n) =>
         throw new UnsupportedOperationException(s"Converting to GPU for ${t} is not currently " +
           s"supported")

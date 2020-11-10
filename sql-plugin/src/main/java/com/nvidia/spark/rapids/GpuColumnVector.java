@@ -161,6 +161,17 @@ public class GpuColumnVector extends GpuColumnVectorBase {
       return DType.TIMESTAMP_MICROSECONDS;
     } else if (type instanceof StringType) {
       return DType.STRING;
+    } else if (type instanceof DecimalType) {
+      // Decimal supportable check has been conducted in the GPU plan overriding stage.
+      // So, we don't have to handle decimal-supportable problem at here.
+      DecimalType dt = (DecimalType) type;
+      if (dt.precision() > DType.DECIMAL64_MAX_PRECISION) {
+        return null;
+      } else if (dt.precision() > DType.DECIMAL32_MAX_PRECISION) {
+        return DType.create(DType.DTypeEnum.DECIMAL64, -dt.scale());
+      } else {
+        return DType.create(DType.DTypeEnum.DECIMAL32, -dt.scale());
+      }
     }
     return null;
   }
