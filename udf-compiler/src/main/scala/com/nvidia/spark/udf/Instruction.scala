@@ -142,6 +142,8 @@ case class Instruction(opcode: Int, operand: Int, instructionStr: String) extend
            Opcode.ISTORE_3 | Opcode.LSTORE_3 => store(state, 3)
       case Opcode.ASTORE | Opcode.DSTORE | Opcode.FSTORE |
            Opcode.ISTORE | Opcode.LSTORE => store(state, operand)
+      case Opcode.ACONST_NULL =>
+        const(state, null)
       case Opcode.DCONST_0 | Opcode.DCONST_1 =>
         const(state, (opcode - Opcode.DCONST_0).asInstanceOf[Double])
       case Opcode.FCONST_0 | Opcode.FCONST_1 | Opcode.FCONST_2 =>
