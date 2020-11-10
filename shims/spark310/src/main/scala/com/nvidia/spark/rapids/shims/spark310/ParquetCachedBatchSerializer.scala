@@ -258,9 +258,6 @@ class ParquetCachedBatchSerializer extends CachedBatchSerializer with Arm {
     isTypeSupportedByColumnarSparkParquetWriter(f.dataType) || f.dataType == DataTypes.NullType
   }
 
-  // Between CPU and GPU we support every type
-  private def isSchemaSupportedByParquetSerializerOnCPU(schema: StructType): Boolean = true
-
   private def isTypeSupportedByColumnarSparkParquetWriter(dataType: DataType): Boolean = {
     // Columnar writer in Spark only supports AtomicTypes ATM
     dataType match {
@@ -320,7 +317,7 @@ class ParquetCachedBatchSerializer extends CachedBatchSerializer with Arm {
           }
         }
       })
-    } else if (isSchemaSupportedByParquetSerializerOnCPU(schema.toStructType)){
+    } else {
       val cachedSchema = getCatalystSchema(schema, schema)
       val broadcastedHadoopConf = getBroadcastedHadoopConf(conf, cachedSchema)
       val broadcastedConf = SparkSession.active.sparkContext.broadcast(conf)
@@ -330,9 +327,6 @@ class ParquetCachedBatchSerializer extends CachedBatchSerializer with Arm {
             broadcastedHadoopConf.value.value, broadcastedConf.value)
             .getColumnarBatchToCachedBatchIterator
       }
-    } else {
-      // may be we should fallback to the DefaultCachedBatchSerializer?
-      throw new UnsupportedOperationException("We don't support data types in the cache schema")
     }
   }
 
@@ -525,14 +519,11 @@ class ParquetCachedBatchSerializer extends CachedBatchSerializer with Arm {
             !isTypeSupportedByParquet(field.dataType)
           }
 
-          val schemas = if (hasUnsupportedType) {
+          val (cacheSchema, requestedSchema) = if (hasUnsupportedType) {
               getSupportedSchemaFromUnsupported(origCacheSchema, origRequestedSchema)
             } else {
               (origCacheSchema, origRequestedSchema)
             }
-
-          val cacheSchema = schemas._1
-          val requestedSchema = schemas._2
 
           val unsafeRows = new ArrayBuffer[InternalRow]
           import org.apache.parquet.io.ColumnIOFactory
@@ -621,13 +612,11 @@ class ParquetCachedBatchSerializer extends CachedBatchSerializer with Arm {
       val sparkSchema = parquetToSparkSchemaConverter.convert(parquetSchema)
       val sparkToParquetSchemaConverter = new SparkToParquetSchemaConverter(sharedHadoopConf)
 
-      val schemas = if (hasUnsupportedType) {
+      val (cacheSchema, requestedSchema) = if (hasUnsupportedType) {
         getSupportedSchemaFromUnsupported(origCacheSchema, origRequestedSchema)
       } else {
         (origCacheSchema, origRequestedSchema)
       }
-      val requestedSchema = schemas._2
-      val cacheSchema = schemas._1
       val reqSparkSchema =
         StructType(sparkSchema.filter(field =>
           requestedSchema.exists(a => a.name.equals(field.name))))
@@ -762,8 +751,8 @@ class ParquetCachedBatchSerializer extends CachedBatchSerializer with Arm {
      */
     private class InternalRowToCachedBatchIterator extends Iterator[CachedBatch]() {
       // is there a type that spark doesn't support by default in the schema?
-      val hasUnsupportedType = cachedAttributes.toStructType.fields.exists { field =>
-        !isTypeSupportedByParquet(field.dataType)
+      val hasUnsupportedType = cachedAttributes.exists { attribute =>
+        !isTypeSupportedByParquet(attribute.dataType)
       }
 
       val newCachedAttributes =
@@ -973,7 +962,7 @@ class ParquetCachedBatchSerializer extends CachedBatchSerializer with Arm {
           cachedBatch
         }
       })
-    } else if (isSchemaSupportedByParquetSerializerOnCPU(schema.toStructType)) {
+    } else {
       val broadcastedHadoopConf = getBroadcastedHadoopConf(conf, parquetSchema)
       val broadcastedConf = SparkSession.active.sparkContext.broadcast(conf)
       // fallback to the CPU
@@ -983,9 +972,6 @@ class ParquetCachedBatchSerializer extends CachedBatchSerializer with Arm {
             broadcastedHadoopConf.value.value, broadcastedConf.value)
             .getInternalRowToCachedBatchIterator
       }
-    } else {
-      // may be we should fallback to the DefaultCachedBatchSerializer?
-      throw new UnsupportedOperationException("We don't support data types in the cache schema")
     }
   }
 
