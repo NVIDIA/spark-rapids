@@ -110,6 +110,23 @@ case class State(locals: IndexedSeq[Expression],
         s"cond=[${printExpressions(Seq(cond))}], expr=[${expr.map(e => e.toString())}])"
   }
 
+  // Remap all the references of oldExp in locals and stack with the references
+  // of newExp.  This is needed to deal with mutable expressions.  When a
+  // mutable expression is updated, we need to replace the expression before
+  // update (oldExp) with the expression that represents the update (newExp)
+  def remap(oldExp: Expression, newExp: Expression): State = {
+    val remapExp = (exp: Expression) => {
+      if (exp eq oldExp) {
+        newExp
+      } else {
+        exp
+      }
+    }
+    val newLocals = locals.map(remapExp)
+    val newStack = stack.map(remapExp)
+    copy(locals = newLocals, stack = newStack)
+  }
+
   private def printExpressions(expressions: Iterable[Expression]): String = {
     if (expressions == null) {
       "NULL"

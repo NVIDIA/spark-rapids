@@ -23,6 +23,7 @@ import javassist.bytecode.{CodeIterator, Opcode}
 
 import org.apache.spark.SparkException
 import org.apache.spark.internal.Logging
+import org.apache.spark.sql.catalyst.analysis.TypeCoercion
 import org.apache.spark.sql.catalyst.expressions._
 import org.apache.spark.sql.types._
 
@@ -80,6 +81,70 @@ private[udf] object Repr {
       extends CompilerInternal("bytecode$getstatic") {
     def getTypeName: String = {
       lambdaReflection.lookupField(index).getType.getName
+    }
+  }
+
+  // Internal representation of CanBuildFrom.
+  // This class is needed because we can't represent CanBuildFrom in Catalyst,
+  // but we need the getstatic information to handle some method calls
+  // (see the $colon$plus case of [[ArrayBuffer.invoke]] for example).
+  case class CanBuildFrom(objref: Repr.GetStatic)
+      extends CompilerInternal("scala.collection.generic.CanBuildFrom")
+
+  case class ArrayBuffer(var arrayBuffer: Expression = CreateArray(Seq.empty[Expression]))
+      extends CompilerInternal("scala.collection.mutable.ArrayBuffer") {
+    override def dataType: DataType = arrayBuffer.dataType
+
+    def invoke(methodName: String, args: List[Expression]): (Expression, Boolean) = {
+      methodName match {
+        case "ArrayBuffer" => (this, false)
+        case "distinct" => (ArrayBuffer(ArrayDistinct(arrayBuffer)), false)
+        case "toArray" => (arrayBuffer, false)
+        case "$plus$eq" | "$colon$plus" =>
+          val mutable = {
+            if (methodName == "$plus$eq") {
+              if (args.length != 1) {
+                throw new SparkException(
+                  s"ArrayBuffer.+= operation expects 1 argument, " +
+                  s"but instead got ${args.length} argument(s)")
+              }
+              true
+            } else {
+              if (args.length != 2) {
+                throw new SparkException(
+                  s"ArrayBuffer.:+ operation expects 2 arguments, " +
+                  s"but instead got ${args.length} argument(s)")
+              } else if (!args.last.isInstanceOf[Repr.CanBuildFrom] ||
+                         !args.last.asInstanceOf[Repr.CanBuildFrom].objref.getTypeName
+                           .equals("scala.collection.mutable.ArrayBuffer$")) {
+                throw new SparkException(
+                  s"ArrayBuffer.:+ operation expects CanBuildFrom for the last argument")
+              }
+              false
+            }
+          }
+          // Implement this with Concat as Catalyst doesn't have an operator for
+          // append.
+          val arrElemType = arrayBuffer.dataType.asInstanceOf[ArrayType].elementType
+          val elem = {
+            val elemType = args.head.dataType
+            val commonType = TypeCoercion.findTightestCommonType(arrElemType, elemType)
+            commonType.fold(throw new SparkException(s"type check failure")){ t =>
+              if (elemType == t) {
+                Seq(args.head)
+              } else {
+                Seq(Cast(args.head, t))
+              }
+            }
+          }
+          (arrayBuffer match {
+             case CreateArray(Nil, _) => ArrayBuffer(CreateArray(elem))
+             case array => ArrayBuffer(Concat(Seq(array, CreateArray(elem))))
+           },
+           mutable)
+        case _ =>
+          throw new SparkException(s"Unsupported ArrayBuffer op ${methodName}")
+      }
     }
   }
 
@@ -221,13 +286,13 @@ case class Instruction(opcode: Int, operand: Int, instructionStr: String) extend
         state.copy(expr = Some(state.stack.head))
       // Call instructions
       case Opcode.INVOKESTATIC =>
-        invoke(lambdaReflection, state,
+        invoke(opcode, lambdaReflection, state,
           (stack, n) => {
             val (args, rest) = stack.splitAt(n)
             (args.reverse, rest)
           })
-      case Opcode.INVOKEVIRTUAL | Opcode.INVOKESPECIAL =>
-        invoke(lambdaReflection, state,
+      case Opcode.INVOKEVIRTUAL | Opcode.INVOKESPECIAL | Opcode.INVOKEINTERFACE =>
+        invoke(opcode, lambdaReflection, state,
           (stack, n) => {
             val (args, rest) = stack.splitAt(n + 1)
             (args.reverse, rest)
@@ -294,6 +359,9 @@ case class Instruction(opcode: Int, operand: Int, instructionStr: String) extend
     if (typeName.equals("java.lang.StringBuilder")) {
       val State(locals, stack, cond, expr) = state
       State(locals, Repr.StringBuilder() :: stack, cond, expr)
+    } else if (typeName.equals("scala.collection.mutable.ArrayBuffer")) {
+      val State(locals, stack, cond, expr) = state
+      State(locals, Repr.ArrayBuffer() :: stack, cond, expr)
     } else {
       throw new SparkException("Unsupported type for new:" + typeName)
     }
@@ -338,10 +406,15 @@ case class Instruction(opcode: Int, operand: Int, instructionStr: String) extend
   private def checkcast(lambdaReflection: LambdaReflection, state: State): State = {
     val State(locals, top :: rest, cond, expr) = state
     val typeName = lambdaReflection.lookupClassName(operand)
-    if (LambdaReflection.parseTypeSig(typeName) != top.dataType) {
-      throw new SparkException(s"checkcast failed: ${typeName}")
+    LambdaReflection.parseTypeSig(typeName).fold{
+      // Defer the check until top is actually used.
+      state
+    }{ t =>
+      if (t != top.dataType) {
+        throw new SparkException(s"checkcast failed: ${typeName} ${t}")
+      }
+      state
     }
-    state
   }
 
   private def ifCmp(state: State,
@@ -362,7 +435,7 @@ case class Instruction(opcode: Int, operand: Int, instructionStr: String) extend
     State(locals, rest, cond, Some(top))
   }
 
-  private def invoke(lambdaReflection: LambdaReflection, state: State,
+  private def invoke(opcode:Int, lambdaReflection: LambdaReflection, state: State,
       getArgs: (List[Expression], Int) =>
           (List[Expression], List[Expression])): State = {
     val State(locals, stack, cond, expr) = state
@@ -393,6 +466,11 @@ case class Instruction(opcode: Int, operand: Int, instructionStr: String) extend
         classTagOp(lambdaReflection, method.getName, args) :: rest,
         cond,
         expr)
+    } else if (declaringClassName.equals("scala.collection.mutable.ArrayBuffer$")) {
+      State(locals,
+        arrayBufferOp(lambdaReflection, method.getName, args) :: rest,
+        cond,
+        expr)
     } else if (declaringClassName.equals("java.lang.Double")) {
       State(locals, doubleOp(method.getName, args) :: rest, cond, expr)
     } else if (declaringClassName.equals("java.lang.Float")) {
@@ -406,6 +484,24 @@ case class Instruction(opcode: Int, operand: Int, instructionStr: String) extend
       val retval = args.head.asInstanceOf[Repr.StringBuilder]
           .invoke(method.getName, args.tail)
       State(locals, retval :: rest, cond, expr)
+    } else if (declaringClassName.equals("scala.collection.mutable.ArrayBuffer") ||
+               ((!args.isEmpty && args.head.isInstanceOf[Repr.ArrayBuffer]) &&
+                ((declaringClassName.equals("scala.collection.AbstractSeq") &&
+                  opcode == Opcode.INVOKEVIRTUAL) ||
+                 (declaringClassName.equals("scala.collection.TraversableOnce") &&
+                  opcode == Opcode.INVOKEINTERFACE)))) {
+      if (!args.head.isInstanceOf[Repr.ArrayBuffer]) {
+        throw new SparkException(
+          s"Unexpected argument for ${declaringClassName}.${method.getName}")
+      }
+      val (retval, updateState) = args.head.asInstanceOf[Repr.ArrayBuffer]
+          .invoke(method.getName, args.tail)
+      val newState = State(locals, retval :: rest, cond, expr)
+      if (updateState) {
+        newState.remap(args.head, retval)
+      } else {
+        newState
+      }
     } else if (declaringClassName.equals("java.time.format.DateTimeFormatter")) {
       State(locals, dateTimeFormatterOp(method.getName, args) :: rest, cond, expr)
     } else if (declaringClassName.equals("java.time.LocalDateTime")) {
@@ -594,6 +690,25 @@ case class Instruction(opcode: Int, operand: Int, instructionStr: String) extend
         new Repr.ClassTag(scala.reflect.ClassTag.apply(
           LambdaReflection.getClass(args.last.toString)))
       case _ => throw new SparkException("Unsupported classTag function: " + methodName)
+    }
+  }
+
+  private def arrayBufferOp(lambdaReflection: LambdaReflection,
+      methodName: String, args: List[Expression]): Expression = {
+    // Make sure that the objref is scala.math.package$.
+    args.head match {
+      case getstatic: Repr.GetStatic =>
+        if (!getstatic.getTypeName.equals("scala.collection.mutable.ArrayBuffer$")) {
+          throw new SparkException("Unsupported arrayBuffer function objref: " + args.head)
+        }
+      case _ =>
+        throw new SparkException("Unsupported arrayBuffer function objref: " + args.head)
+    }
+    // Translate to Catalyst
+    methodName match {
+      case "canBuildFrom" =>
+        new Repr.CanBuildFrom(args.head.asInstanceOf[Repr.GetStatic])
+      case _ => throw new SparkException("Unsupported arrayBuffer function: " + methodName)
     }
   }
 

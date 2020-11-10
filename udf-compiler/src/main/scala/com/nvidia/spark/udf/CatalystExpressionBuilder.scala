@@ -416,6 +416,7 @@ object CatalystExpressionBuilder extends Logging {
           simplifyExpr(If(simplifyExpr(c),
             simplifyExpr(Cast(t, BooleanType, tz)),
             simplifyExpr(Cast(f, BooleanType, tz))))
+        case If(c, Repr.ArrayBuffer(t), Repr.ArrayBuffer(f)) => Repr.ArrayBuffer(If(c, t, f))
         case _ => expr
       }
       logDebug(s"[CatalystExpressionBuilder] simplify: ${expr} ==> ${res}")
