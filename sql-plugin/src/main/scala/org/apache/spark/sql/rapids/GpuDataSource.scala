@@ -42,6 +42,7 @@ import org.apache.spark.sql.execution.datasources.csv.CSVFileFormat
 import org.apache.spark.sql.execution.datasources.jdbc.JdbcRelationProvider
 import org.apache.spark.sql.execution.datasources.json.JsonFileFormat
 import org.apache.spark.sql.execution.datasources.orc.OrcFileFormat
+import org.apache.spark.sql.execution.datasources.parquet.ParquetFileFormat
 import org.apache.spark.sql.execution.datasources.v2.FileDataSourceV2
 import org.apache.spark.sql.execution.datasources.v2.orc.OrcDataSourceV2
 import org.apache.spark.sql.execution.streaming._
@@ -73,10 +74,22 @@ case class GpuDataSource(
     // [[FileDataSourceV2]] will still be used if we call the load()/save() method in
     // [[DataFrameReader]]/[[DataFrameWriter]], since they use method `lookupDataSource`
     // instead of `providingClass`.
-    cls.newInstance() match {
+    val fallbackCls = cls.newInstance() match {
       case f: FileDataSourceV2 => f.fallbackFileFormat
       case _ => cls
     }
+    // convert to GPU version
+    logWarning("fallbackCls providing is: " + fallbackCls)
+
+    val finalFormat = fallbackCls match {
+      case _: ParquetFileFormat =>
+        classOf[GpuParquetFileFormat]
+      case f =>
+        throw new Exception(s"unknown file format: ${fallbackCls}")
+        fallbackCls
+    }
+    logWarning("class providing is: " + finalFormat)
+    finalFormat
   }
 
 
@@ -711,24 +724,6 @@ object GpuDataSource extends Logging {
         } else {
           throw e
         }
-    }
-  }
-
-  /**
-   * Returns an optional [[TableProvider]] instance for the given provider. It returns None if
-   * there is no corresponding Data Source V2 implementation, or the provider is configured to
-   * fallback to Data Source V1 code path.
-   */
-  def lookupDataSourceV2(provider: String, conf: SQLConf): Option[TableProvider] = {
-    val useV1Sources = conf.getConf(SQLConf.USE_V1_SOURCE_LIST).toLowerCase(Locale.ROOT)
-      .split(",").map(_.trim)
-    val cls = lookupDataSource(provider, conf)
-    cls.newInstance() match {
-      case d: DataSourceRegister if useV1Sources.contains(d.shortName()) => None
-      case t: TableProvider
-          if !useV1Sources.contains(cls.getCanonicalName.toLowerCase(Locale.ROOT)) =>
-        Some(t)
-      case _ => None
     }
   }
 
