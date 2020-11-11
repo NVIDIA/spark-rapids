@@ -161,7 +161,7 @@ class GroupingIterator(
           // Only one group, return it directly
           batch
         }
-        // Shall we release the semaphore here ?
+
         GpuSemaphore.releaseIfNecessary(TaskContext.get())
         resultBatch
       } else {

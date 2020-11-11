@@ -192,27 +192,18 @@ case class GpuWindowExpression(windowFunction: Expression, windowSpec: GpuWindow
       case other =>
         throw new IllegalStateException(s"${other.getClass} is not a supported window aggregation")
     }
-    // For Python UDF, it will be executed in Python processes. So return null here.
-    case _: GpuPythonUDF => null
+    // Add support for Pandas (Python) UDF
+    case pythonFunc: GpuPythonUDF => pythonFunc
     case other =>
       throw new IllegalStateException(s"${other.getClass} is not a supported window function")
   }
-  private lazy val windowInputProjection = if (windowFunc != null) {
-    windowFunc.windowInputProjection
-  }  else {
-    Seq.empty
-  }
   private lazy val boundRowProjectList = windowSpec.partitionSpec ++
-      windowInputProjection
+      windowFunc.windowInputProjection
   private lazy val boundRangeProjectList = windowSpec.partitionSpec ++
       windowSpec.orderSpec.map(_.child.asInstanceOf[GpuExpression]) ++
-      windowInputProjection
+      windowFunc.windowInputProjection
 
   override def columnarEval(cb: ColumnarBatch) : Any = {
-    if (windowFunc == null) {
-      throw new UnsupportedOperationException(
-        s"Python UDF is not evaluable.")
-    }
     frameType match {
       case RowFrame   => evaluateRowBasedWindowExpression(cb)
       case RangeFrame =>
