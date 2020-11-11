@@ -30,7 +30,8 @@ CUDA_CLASSIFIER=$2
 SERVER_ID=snapshots
 # set defualt values for 'M2DIR' & 'WORKSPACE' so that shims can get the correct cudf/spark dependnecy
 M2DIR=${M2DIR:-"$HOME/.m2/repository"}
-WORKSPACE=${WORKSPACE:-"../.."}
+MY_PATH="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
+WORKSPACE=${WORKSPACE:-"$MY_PATH/.."}
 ${WORKSPACE}/jenkins/printJarVersion.sh "cudf_version" "${M2DIR}/ai/rapids/cudf/${CUDF_VER}" "cudf-${CUDF_VER}" "-${CUDA_CLASSIFIER}.jar" $SERVER_ID
 
 SPARK_VER=$3
