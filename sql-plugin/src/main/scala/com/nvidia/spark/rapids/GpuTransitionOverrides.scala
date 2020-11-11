@@ -56,23 +56,39 @@ class GpuTransitionOverrides extends Rule[SparkPlan] {
 
     case ColumnarToRowExec(GpuBringBackToHost(
         GpuCoalesceBatches(e: GpuShuffleExchangeExecBase, _))) if parent.isEmpty =>
-      // new query stage
+      // We typically want the final operator in the plan (the operator that has no parent) to be
+      // wrapped in `ColumnarToRowExec(GpuBringBackToHost(GpuCoalesceBatches(_)))` operators to
+      // bring the data back onto the host and be translated to rows so that it can be returned
+      // from the Spark API. However, in the case of AQE, each exchange operator is treated as an
+      // individual query with no parent and we need to remove these operators in this case
+      // because we need to return an operator that implements `BroadcastExchangeLike` or
+      // `ShuffleExchangeLike`. The coalesce step gets added back into the plan later on, in a
+      // future query stage that reads the output from this query stage. This is handled in the
+      // case clauses below.
       e.withNewChildren(e.children.map(c => optimizeAdaptiveTransitions(c, Some(e))))
 
     case s: ShuffleQueryStageExec =>
+      // When reading a materialized shuffle query stage in AQE mode, we need to insert an
+      // operator to coalesce batches. We either insert it directly around the shuffle query
+      // stage, or around the custom shuffle reader, if one exists.
       val plan = getNonQueryStagePlan(s)
       if (plan.supportsColumnar && plan.isInstanceOf[GpuExec]) {
-        // coalesce after shuffle, unless there is a custom shuffle reader
         parent match {
-          case Some(_: GpuCustomShuffleReaderExec) => s
-          case _ => GpuCoalesceBatches(s, TargetSize(conf.gpuTargetBatchSizeBytes))
+          case Some(_: GpuCustomShuffleReaderExec) =>
+            // We can't insert a coalesce batches operator between a custom shuffle reader
+            // and a shuffle query stage, so we instead insert it around the custom shuffle
+            // reader later on, in the next top-level case clause.
+            s
+          case _ =>
+            // Directly wrap shuffle query stage with coalesce batches operator
+            GpuCoalesceBatches(s, TargetSize(conf.gpuTargetBatchSizeBytes))
         }
       } else {
         s
       }
 
     case e: GpuCustomShuffleReaderExec =>
-      // coalesce batches after we coalesce partitions
+      // We wrap custom shuffle readers with a coalesce batches operator here.
       GpuCoalesceBatches(e.copy(child = optimizeAdaptiveTransitions(e.child, Some(e))),
           TargetSize(conf.gpuTargetBatchSizeBytes))
 
@@ -268,6 +284,11 @@ class GpuTransitionOverrides extends Rule[SparkPlan] {
     }
   }
 
+  /**
+   * Returning the underlying plan of a query stage, or the plan itself if it is not a
+   * query stage. This method is typically used when we want to determine if a plan is
+   * a GpuExec or not, and this gets hidden by the query stage wrapper.
+   */
   def getNonQueryStagePlan(plan: SparkPlan): SparkPlan = {
     plan match {
       case BroadcastQueryStageExec(_, ReusedExchangeExec(_, plan)) => plan
