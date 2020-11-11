@@ -25,9 +25,9 @@ function print_ver(){
     
     if [[ "$VERSION" == *"-SNAPSHOT" ]]; then
         PREFIX=${VERSION%-SNAPSHOT}
-        TIMESTAMP=`grep -oP '(?<=timestamp>)[^<]+' < $REPO/maven-metadata-$SERVER_ID.xml`
-        BUILD_NUM=`grep -oP '(?<=buildNumber>)[^<]+' < $REPO/maven-metadata-$SERVER_ID.xml`
-        echo $TAG=$PREFIX-$TIMESTAMP-$BUILD_NUM$SUFFIX
+        # List the latest SNAPSHOT jar file in the maven repo
+        FILE_NAME=`ls -t $REPO/$PREFIX-[0-9]*$SUFFIX | head -1 | xargs basename`
+        echo $TAG=$FILE_NAME
     else
         echo $TAG=$VERSION$SUFFIX
     fi
