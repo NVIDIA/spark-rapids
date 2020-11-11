@@ -681,15 +681,19 @@ case class GpuCoalesceBatches(child: SparkPlan, goal: CoalesceGoal)
     val totalTime = longMetric(TOTAL_TIME)
     val peakDevMemory = longMetric("peakDevMemory")
 
+    // cache in local vars to avoid serializing the plan
+    val outputSchema = schema
+    val decompressMemoryTarget = maxDecompressBatchMemory
+    val hasMaps = child.schema.fields.exists(_.dataType.isInstanceOf[MapType])
+
     val batches = child.executeColumnar()
     batches.mapPartitions { iter =>
-      val hasMaps = child.schema.fields.exists(field => field.dataType.isInstanceOf[MapType])
-      if (child.schema.nonEmpty && !hasMaps) {
-        new GpuCoalesceIterator(iter, schema, goal, maxDecompressBatchMemory,
+      if (outputSchema.nonEmpty && !hasMaps) {
+        new GpuCoalesceIterator(iter, outputSchema, goal, decompressMemoryTarget,
           numInputRows, numInputBatches, numOutputRows, numOutputBatches, collectTime,
           concatTime, totalTime, peakDevMemory, "GpuCoalesceBatches")
       } else if (hasMaps) {
-        new GpuCoalesceIteratorForMaps(iter, schema, goal, maxDecompressBatchMemory,
+        new GpuCoalesceIteratorForMaps(iter, outputSchema, goal, decompressMemoryTarget,
           numInputRows, numInputBatches, numOutputRows, numOutputBatches, collectTime,
           concatTime, totalTime, peakDevMemory, "GpuCoalesceBatches")
       } else {

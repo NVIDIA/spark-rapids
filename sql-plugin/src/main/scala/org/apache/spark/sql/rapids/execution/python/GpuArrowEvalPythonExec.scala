@@ -546,6 +546,13 @@ case class GpuArrowEvalPythonExec(
     lazy val isPythonOnGpuEnabled = GpuPythonHelper.isPythonOnGpuEnabled(conf)
     val inputRDD = child.executeColumnar()
     val pythonOutputSchema = resultAttrs.map(_.dataType).toArray
+
+    // cache in a local to avoid serializing the plan
+    val childOutput = child.output
+    val targetBatchSize = batchSize
+    val runnerConf = pythonRunnerConf
+    val timeZone = sessionLocalTimeZone
+
     inputRDD.mapPartitions { iter =>
       val queue: BatchQueue = new BatchQueue()
       val context = TaskContext.get()
@@ -579,8 +586,8 @@ case class GpuArrowEvalPythonExec(
         StructField(s"_$i", dt)
       })
 
-      val boundReferences = GpuBindReferences.bindReferences(allInputs, child.output)
-      val batchedIterator = new RebatchingRoundoffIterator(iter, schema, batchSize,
+      val boundReferences = GpuBindReferences.bindReferences(allInputs, childOutput)
+      val batchedIterator = new RebatchingRoundoffIterator(iter, schema, targetBatchSize,
         numInputRows, numInputBatches)
       val projectedIterator = batchedIterator.map { batch =>
         // We have to do the project before we add the batch because the batch might be closed
@@ -603,9 +610,9 @@ case class GpuArrowEvalPythonExec(
         argOffsets,
         schema,
         resultAttrs.map(_.dataType).toArray,
-        sessionLocalTimeZone,
-        pythonRunnerConf,
-        batchSize,
+        timeZone,
+        runnerConf,
+        targetBatchSize,
         () => queue.finish()){
         override def minReadTargetBatchSize: Int = targetReadBatchSize
       }.compute(projectedIterator,

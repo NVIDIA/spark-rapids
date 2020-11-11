@@ -264,6 +264,9 @@ case class GpuWindowInPandasExec(
     val allInputs = windowBoundsInput ++ dataInputs
     val allInputTypes = allInputs.map(_.dataType)
 
+    // cache in a local variable to avoid serializing the full child plan
+    val childOutput = child.output
+
     // Start processing.
     child.execute().mapPartitions { iter =>
       val context = TaskContext.get()
@@ -273,19 +276,19 @@ case class GpuWindowInPandasExec(
       val pythonInputProj = UnsafeProjection.create(
         allInputs,
         windowBoundsInput.map(ref =>
-          AttributeReference(s"i_${ref.ordinal}", ref.dataType)()) ++ child.output
+          AttributeReference(s"i_${ref.ordinal}", ref.dataType)()) ++ childOutput
       )
       val pythonInputSchema = StructType(
         allInputTypes.zipWithIndex.map { case (dt, i) =>
           StructField(s"_$i", dt)
         }
       )
-      val grouping = UnsafeProjection.create(partitionSpec, child.output)
+      val grouping = UnsafeProjection.create(partitionSpec, childOutput)
 
       // The queue used to buffer input rows so we can drain it to
       // combine input with output from Python.
       val queue = HybridRowQueue(context.taskMemoryManager(),
-        new File(Utils.getLocalDir(SparkEnv.get.conf)), child.output.length)
+        new File(Utils.getLocalDir(SparkEnv.get.conf)), childOutput.length)
       context.addTaskCompletionListener[Unit] { _ =>
         queue.close()
       }

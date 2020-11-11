@@ -653,6 +653,10 @@ case class GpuRowToColumnarExec(child: SparkPlan, goal: CoalesceGoal)
     val totalTime = longMetric(TOTAL_TIME)
     val localGoal = goal
     val rowBased = child.execute()
+
+    // cache in a local to avoid serializing the plan
+    val localSchema = schema
+
     // The cudf kernel only supports up to 1.5 KB per row which means at most 184 double/long
     // values. Spark by default limits codegen to 100 fields "spark.sql.codegen.maxFields".
     // So, we are going to be cautious and start with that until we have tested it more.
@@ -664,7 +668,6 @@ case class GpuRowToColumnarExec(child: SparkPlan, goal: CoalesceGoal)
         localOutput.toArray, localGoal, totalTime, numInputRows, numOutputRows,
         numOutputBatches))
     } else {
-      val localSchema = schema
       val converters = new GpuRowToColumnConverter(localSchema)
       rowBased.mapPartitions(rowIter => new RowToColumnarIterator(rowIter,
         localSchema, localGoal, converters,
