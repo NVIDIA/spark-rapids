@@ -18,13 +18,14 @@ package org.apache.spark.sql.rapids
 
 import java.util.{Locale, ServiceConfigurationError, ServiceLoader}
 
-import com.nvidia.spark.rapids.ColumnarFileFormat
-
 import scala.collection.JavaConverters._
 import scala.language.implicitConversions
 import scala.util.{Failure, Success, Try}
+
+import com.nvidia.spark.rapids.{ColumnarFileFormat, GpuParquetFileFormat}
 import org.apache.hadoop.conf.Configuration
 import org.apache.hadoop.fs.Path
+
 import org.apache.spark.SparkException
 import org.apache.spark.deploy.SparkHadoopUtil
 import org.apache.spark.internal.Logging
@@ -539,7 +540,7 @@ case class GpuDataSource(
     providingInstance() match {
       case dataSource: CreatableRelationProvider =>
         SaveIntoDataSourceCommand(data, dataSource, caseInsensitiveOptions, mode)
-      case format: FileFormat =>
+      case format: ColumnarFileFormat =>
         DataSource.validateSchema(data.schema)
         planForWritingFileFormat(format, mode, data)
       case _ =>
@@ -572,7 +573,7 @@ object DataSource extends Logging {
   private val backwardCompatibilityMap: Map[String, String] = {
     val jdbc = classOf[JdbcRelationProvider].getCanonicalName
     val json = classOf[JsonFileFormat].getCanonicalName
-    val parquet = classOf[ParquetFileFormat].getCanonicalName
+    val parquet = classOf[GpuParquetFileFormat].getCanonicalName
     val csv = classOf[CSVFileFormat].getCanonicalName
     val libsvm = "org.apache.spark.ml.source.libsvm.LibSVMFileFormat"
     val orc = "org.apache.spark.sql.hive.orc.OrcFileFormat"
