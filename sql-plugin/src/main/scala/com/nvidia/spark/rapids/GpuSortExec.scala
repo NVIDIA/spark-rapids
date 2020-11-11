@@ -85,13 +85,14 @@ case class GpuSortExec(
 
   override def doExecuteColumnar(): RDD[ColumnarBatch] = {
     val sortTime = longMetric("sortTime")
+    val peakDevMemory = longMetric("peakDevMemory")
 
     val crdd = child.executeColumnar()
     crdd.mapPartitions { cbIter =>
       val sorter = createBatchGpuSorter()
       val sortedIterator = sorter.sort(cbIter)
       sortTime += sorter.getSortTimeNanos
-      metrics("peakDevMemory") += sorter.getPeakMemoryUsage
+      peakDevMemory += sorter.getPeakMemoryUsage
       sortedIterator
     }
   }

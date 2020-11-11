@@ -372,6 +372,9 @@ case class GpuHashAggregateExec(
     //
     val rdd = child.executeColumnar()
 
+    // cache in a local variable to avoid serializing the full child plan
+    val childOutput = child.output
+
     rdd.mapPartitions { cbIter => {
       var batch: ColumnarBatch = null // incoming batch
       //
@@ -422,7 +425,7 @@ case class GpuHashAggregateExec(
       //  3. boundFinalProjections: on merged batches, finalize aggregates
       //     (GpuAverage => CudfSum/CudfCount)
       //  4. boundResultReferences: project the result expressions Spark expects in the output.
-      val boundExpression = setupReferences(child.output, groupingExpressions, aggregateExpressions)
+      val boundExpression = setupReferences(childOutput, groupingExpressions, aggregateExpressions)
       try {
         while (cbIter.hasNext) {
           // 1) Consume the raw incoming batch, evaluating nested expressions

@@ -89,8 +89,12 @@ case class GpuExpandExec(
   override protected def doExecuteColumnar(): RDD[ColumnarBatch] = {
     val boundProjections: Seq[Seq[GpuExpression]] =
       projections.map(GpuBindReferences.bindGpuReferences(_, child.output))
+
+    // cache in a local to avoid serializing the plan
+    val metricsMap = metrics
+
     child.executeColumnar().mapPartitions { it =>
-      new GpuExpandIterator(boundProjections, metrics, it)
+      new GpuExpandIterator(boundProjections, metricsMap, it)
     }
   }
 
