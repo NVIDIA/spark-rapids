@@ -356,6 +356,12 @@ class ParquetCachedBatchSerializer extends CachedBatchSerializer with Arm {
      cacheAttributes: Seq[Attribute],
      selectedAttributes: Seq[Attribute],
      conf: SQLConf): RDD[ColumnarBatch] = {
+    // optimize
+    if (selectedAttributes.isEmpty) {
+      return input.map { _ =>
+        new ColumnarBatch(Array())
+      }
+    }
     convertCachedBatchToColumnarInternal(input, cacheAttributes, selectedAttributes)
   }
 
@@ -373,7 +379,7 @@ class ParquetCachedBatchSerializer extends CachedBatchSerializer with Arm {
           .includeColumn(requestedColumnNames.asJavaCollection).build()
         withResource(Table.readParquet(parquetOptions, parquetCB.buffer, 0,
           parquetCB.sizeInBytes)) { table =>
-          GpuColumnVector.from(table)
+          GpuColumnVector.from(table, selectedAttributes.map(attr => attr.dataType).toArray)
         }
       } else {
         throw new IllegalStateException("I don't know how to convert this batch")
@@ -402,6 +408,12 @@ class ParquetCachedBatchSerializer extends CachedBatchSerializer with Arm {
      cacheAttributes: Seq[Attribute],
      selectedAttributes: Seq[Attribute],
      conf: SQLConf): RDD[ColumnarBatch] = {
+    // optimize
+    if (selectedAttributes.isEmpty) {
+      return input.map { _ =>
+        new ColumnarBatch(Array())
+      }
+    }
     val rapidsConf = new RapidsConf(conf)
     if (rapidsConf.isSqlEnabled && isSupportedByCudf(cacheAttributes)) {
       val batches = convertCachedBatchToColumnarInternal(input, cacheAttributes,
@@ -440,7 +452,12 @@ class ParquetCachedBatchSerializer extends CachedBatchSerializer with Arm {
      cacheAttributes: Seq[Attribute],
      selectedAttributes: Seq[Attribute],
      conf: SQLConf): RDD[InternalRow] = {
-
+    // optimize
+    if (selectedAttributes.isEmpty) {
+      return input.map { _ =>
+        InternalRow.empty
+      }
+    }
     val broadcastedHadoopConf = getBroadcastedHadoopConf(conf, selectedAttributes)
     val broadcastedConf = SparkSession.active.sparkContext.broadcast(conf)
     input.mapPartitions {
@@ -562,10 +579,15 @@ class ParquetCachedBatchSerializer extends CachedBatchSerializer with Arm {
                   attribute.dataType match {
                     case CalendarIntervalType => {
                       // create a CalendarInterval based on the next three values
-                      val interval = new CalendarInterval(row.getInt(newIndex),
-                      row.getInt(newIndex + 1), row.getLong(newIndex + 2))
+                      if (row.isNullAt(newIndex) || row.isNullAt(newIndex + 1) ||
+                        row.isNullAt(newIndex + 2)) {
+                          newRow.setNullAt(index)
+                      } else {
+                        val interval = new CalendarInterval(row.getInt(newIndex),
+                          row.getInt(newIndex + 1), row.getLong(newIndex + 2))
+                        newRow.setInterval(index, interval)
+                      }
                       newIndex += 3
-                      newRow.setInterval(index, interval)
                     }
                     case NullType => {
                       newRow.setNullAt(index)

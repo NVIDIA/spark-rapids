@@ -472,7 +472,7 @@ public class GpuColumnVector extends GpuColumnVectorBase {
   public static ColumnarBatch from(Table table, DataType[] colTypes, int startColIndex, int untilColIndex) {
     assert table != null : "Table cannot be null";
     assert typeConversionAllowed(table, colTypes) : "Type conversion is not allowed from " + table +
-        " to " + colTypes;
+        " to " + Arrays.toString(colTypes);
     int numColumns = untilColIndex - startColIndex;
     ColumnVector[] columns = new ColumnVector[numColumns];
     int finalLoc = 0;

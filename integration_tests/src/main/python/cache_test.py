@@ -241,8 +241,14 @@ def test_cache_columnar(spark_tmp_path, data_gen, enableVectorized, ts_write):
                "ExtractIntervalYears", "Year", "Month", "Second", "ExtractIntervalMonths",
                "ExtractIntervalSeconds", "SecondWithFraction", "ColumnarToRowExec")
 @pytest.mark.parametrize('selectExpr', [("NULL as d", "d"),
-                                        # We need to get individual elements of interval because pyspark doesn't know how # to parse CalendarIntervalType
-                                        ("make_interval(0,m,0,d,0,0,s) as d", ["cast(extract(years from d) as long)", "extract(months from d)", "extract(seconds from d)"])])
+                                        # In order to compare the results, since pyspark doesn't
+                                        # know how to parse interval types, we need to "extract"
+                                        # values from the interval. NOTE, "extract" is a misnomer
+                                        # because we are actually coverting the value to the
+                                        # requested time precision, which is not actually extraction
+                                        # i.e. 'extract(years from d) will actually convert the
+                                        # entire interval to year
+                                        ("make_interval(y,m,w,d,h,min,s) as d", ["cast(extract(years from d) as long)", "extract(months from d)", "extract(seconds from d)"])])
 def test_cache_additional_types(enableVectorized, func, selectExpr):
     def holder(cache):
         selectExprDF, selectExprProject = selectExpr
@@ -250,9 +256,14 @@ def test_cache_additional_types(enableVectorized, func, selectExpr):
             # the goal is to just get a DF of CalendarIntervalType, therefore limiting the values
             # so when we do get the individual parts of the interval, it doesn't overflow
             df = gen_df(spark, StructGen([('m', IntegerGen(min_val=-1000, max_val=1000, nullable=False)),
+                                          ('y', IntegerGen(min_val=-10000, max_val=10000, nullable=False)),
+                                          ('w', IntegerGen(min_val=-10000, max_val=10000, nullable=False)),
+                                          ('h', IntegerGen(min_val=-10000, max_val=10000, nullable=False)),
+                                          ('min', IntegerGen(min_val=-10000, max_val=10000, nullable=False)),
                                           ('d', IntegerGen(min_val=-10000, max_val=10000, nullable=False)),
                                           ('s', IntegerGen(min_val=-10000, max_val=10000, nullable=False))],
                                          nullable=False), seed=1)
+            # df.write.csv("/home/rjafri/interval.csv")
             duration_df = df.selectExpr(selectExprDF)
             if (cache):
                 duration_df.cache()
