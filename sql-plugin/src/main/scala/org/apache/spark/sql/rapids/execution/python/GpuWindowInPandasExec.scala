@@ -114,7 +114,6 @@ class GroupingIterator(
     } else {
       val batch = wrapped.next()
       if (batch.numRows() > 0 && batch.numCols() > 0 && partitionSpec.nonEmpty) {
-        GpuSemaphore.acquireIfNecessary(TaskContext.get())
         val partitionIndices = partitionSpec.indices
         // 1) Calculate the split indices via cudf.Table.groupBy and aggregation Count.
         //   a) Compute the count number for each group in a batch, including null values.
@@ -162,7 +161,6 @@ class GroupingIterator(
           batch
         }
 
-        GpuSemaphore.releaseIfNecessary(TaskContext.get())
         resultBatch
       } else {
         // Empty batch, or No partition defined for Window operation, return it directly.
@@ -382,11 +380,7 @@ case class GpuWindowInPandasExec(
       (frame.isUnbounded, frame.frameType) match {
         // Skip unbound window frames
         case (true, _) => Seq.empty
-        case (false, RowFrame) =>
-          GpuSemaphore.acquireIfNecessary(TaskContext.get())
-          val twoBounds = Seq(buildLowerCV(frame.lower), buildUpperCV(frame.upper))
-          GpuSemaphore.releaseIfNecessary(TaskContext.get())
-          twoBounds
+        case (false, RowFrame) => Seq(buildLowerCV(frame.lower), buildUpperCV(frame.upper))
         // Only support RowFrame here, should check it when replacing this node.
         case (false, RangeFrame) => throw new UnsupportedOperationException("Range frame" +
           " is not supported yet!")
