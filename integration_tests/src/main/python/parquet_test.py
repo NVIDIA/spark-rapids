@@ -441,3 +441,16 @@ def test_small_file_memory(spark_tmp_path, v1_enabled_list):
                   'spark.sql.sources.useV1SourceList': v1_enabled_list,
                   'spark.sql.files.maxPartitionBytes': "1g"})
 
+@pytest.mark.parametrize('parquet_gens', parquet_write_gens_list, ids=idfn)
+@pytest.mark.parametrize('ts_type', ["TIMESTAMP_MICROS", "TIMESTAMP_MILLIS"])
+def test_write_save_table(spark_tmp_path, parquet_gens, ts_type, spark_tmp_table_factory):
+    gen_list = [('_c' + str(i), gen) for i, gen in enumerate(parquet_gens)]
+    data_path = spark_tmp_path + '/PARQUET_DATA'
+    all_confs={'spark.sql.sources.useV1SourceList': "parquet",
+            'spark.sql.legacy.parquet.datetimeRebaseModeInWrite': 'CORRECTED',
+            'spark.sql.parquet.outputTimestampType': ts_type}
+    assert_gpu_and_cpu_writes_are_equal_collect(
+            lambda spark, path: gen_df(spark, gen_list).coalesce(1).write.mode('overwrite').saveAsTable(spark_tmp_table_factory.get()),
+            lambda spark, path: spark.read.parquet(path),
+            data_path,
+            conf=all_confs)

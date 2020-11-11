@@ -31,7 +31,7 @@ import org.apache.spark.sql.connector.read.Scan
 import org.apache.spark.sql.execution._
 import org.apache.spark.sql.execution.adaptive.{AdaptiveSparkPlanExec, BroadcastQueryStageExec, CustomShuffleReaderExec, ShuffleQueryStageExec}
 import org.apache.spark.sql.execution.aggregate.{HashAggregateExec, SortAggregateExec}
-import org.apache.spark.sql.execution.command.{DataWritingCommand, DataWritingCommandExec, ExecutedCommandExec}
+import org.apache.spark.sql.execution.command.{CreateDataSourceTableAsSelectCommand, DataWritingCommand, DataWritingCommandExec, ExecutedCommandExec}
 import org.apache.spark.sql.execution.datasources.InsertIntoHadoopFsRelationCommand
 import org.apache.spark.sql.execution.datasources.csv.CSVFileFormat
 import org.apache.spark.sql.execution.datasources.json.JsonFileFormat
@@ -326,6 +326,52 @@ final class InsertIntoHadoopFsRelationCommandMeta(
       cmd.mode,
       cmd.catalogTable,
       cmd.fileIndex,
+      cmd.outputColumnNames)
+  }
+}
+
+final class CreateDataSourceTableAsSelectCommandMeta(
+    cmd: CreateDataSourceTableAsSelectCommand,
+    conf: RapidsConf,
+    parent: Option[RapidsMeta[_, _, _]],
+    rule: ConfKeysAndIncompat)
+  extends DataWritingCommandMeta[CreateDataSourceTableAsSelectCommand](cmd, conf, parent, rule)
+    with Logging {
+
+  private var fileFormat: Option[ColumnarFileFormat] = None
+
+  override def tagSelfForGpu(): Unit = {
+    if (cmd.table.bucketSpec.isDefined) {
+      willNotWorkOnGpu("bucketing is not supported")
+    }
+
+    val spark = SparkSession.active
+
+    // todo - need to handle backwardCompatibilityMap?
+    // ResolveSessionCatalog builds the catalog with params similar to InsertInto
+    fileFormat = cmd.table.provider match {
+      case Some("parquet") => {
+        // TODO - test with parquestion options specified like compression
+        logWarning(s"table options are: ${cmd.table.storage.properties} " +
+          s"tble properties are ${cmd.table.properties}")
+        // the storage properties seems to match the options passe dinto buildCatalogTable
+        GpuParquetFileFormat.tagGpuSupport(this, spark,
+          cmd.table.storage.properties, cmd.query.schema)
+      }
+      case f =>
+        willNotWorkOnGpu(s"file format not supported: ${f.getClass.getCanonicalName}")
+        None
+    }
+  }
+
+  override def convertToGpu(): GpuDataWritingCommand = {
+    val format = fileFormat.getOrElse(
+      throw new IllegalStateException("fileFormat missing, tagSelfForGpu not called?"))
+
+    GpuCreateDataSourceTableAsSelectCommand(
+      cmd.table,
+      cmd.mode,
+      cmd.query,
       cmd.outputColumnNames)
   }
 }
@@ -1754,7 +1800,10 @@ object GpuOverrides {
       DataWritingCommandRule[_ <: DataWritingCommand]] = Seq(
     dataWriteCmd[InsertIntoHadoopFsRelationCommand](
       "Write to Hadoop filesystem",
-      (a, conf, p, r) => new InsertIntoHadoopFsRelationCommandMeta(a, conf, p, r))
+      (a, conf, p, r) => new InsertIntoHadoopFsRelationCommandMeta(a, conf, p, r)),
+    dataWriteCmd[CreateDataSourceTableAsSelectCommand](
+      "Create table with select command",
+      (a, conf, p, r) => new CreateDataSourceTableAsSelectCommandMeta(a, conf, p, r))
   ).map(r => (r.getClassFor.asSubclass(classOf[DataWritingCommand]), r)).toMap
 
   def wrapPlan[INPUT <: SparkPlan](
