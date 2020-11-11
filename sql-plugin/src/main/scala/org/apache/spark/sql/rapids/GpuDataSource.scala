@@ -18,13 +18,13 @@ package org.apache.spark.sql.rapids
 
 import java.util.{Locale, ServiceConfigurationError, ServiceLoader}
 
+import com.nvidia.spark.rapids.ColumnarFileFormat
+
 import scala.collection.JavaConverters._
 import scala.language.implicitConversions
 import scala.util.{Failure, Success, Try}
-
 import org.apache.hadoop.conf.Configuration
 import org.apache.hadoop.fs.Path
-
 import org.apache.spark.SparkException
 import org.apache.spark.deploy.SparkHadoopUtil
 import org.apache.spark.internal.Logging
@@ -430,7 +430,9 @@ case class GpuDataSource(
    * The returned command is unresolved and need to be analyzed.
    */
   private def planForWritingFileFormat(
-      format: FileFormat, mode: SaveMode, data: LogicalPlan): GpuInsertIntoHadoopFsRelationCommand = {
+      format: ColumnarFileFormat,
+      mode: SaveMode,
+      data: LogicalPlan): GpuInsertIntoHadoopFsRelationCommand = {
     // Don't glob path for the write path.  The contracts here are:
     //  1. Only one output path can be specified on the write path;
     //  2. Output path must be a legal HDFS style file system path;
@@ -497,10 +499,11 @@ case class GpuDataSource(
     }
 
     providingInstance() match {
+        // TODO - NOT SUPPORTED
       case dataSource: CreatableRelationProvider =>
         dataSource.createRelation(
           sparkSession.sqlContext, mode, caseInsensitiveOptions, Dataset.ofRows(sparkSession, data))
-      case format: FileFormat =>
+      case format: ColumnarFileFormat =>
         val cmd = planForWritingFileFormat(format, mode, data)
         val resolvedPartCols = cmd.partitionColumns.map { col =>
           // The partition columns created in `planForWritingFileFormat` should always be
