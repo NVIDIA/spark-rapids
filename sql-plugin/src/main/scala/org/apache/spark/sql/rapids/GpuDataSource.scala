@@ -81,9 +81,9 @@ case class GpuDataSource(
     // convert to GPU version
     logWarning("fallbackCls providing is: " + fallbackCls)
 
+    val parquetFileFormatCls = classOf[ParquetFileFormat]
     val finalFormat = fallbackCls match {
-      case _: ParquetFileFormat =>
-        classOf[GpuParquetFileFormat]
+      case parquetFileFormatCls => classOf[GpuParquetFileFormat]
       case f =>
         throw new Exception(s"unknown file format: ${fallbackCls}")
         fallbackCls
