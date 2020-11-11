@@ -534,7 +534,7 @@ case class GpuDataSource(
         val resolved = cmd.copy(
           partitionColumns = resolvedPartCols,
           outputColumnNames = outputColumnNames)
-        resolved.run(sparkSession, physicalPlan)
+        resolved.runColumnar(sparkSession, physicalPlan)
         // Replace the schema with that of the DataFrame we just wrote out to avoid re-inferring
         copy(userSpecifiedSchema = Some(outputColumns.toStructType.asNullable)).resolveRelation()
       case _ =>
