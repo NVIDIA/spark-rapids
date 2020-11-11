@@ -101,6 +101,8 @@ private object GpuRowToColumnConverter {
       case (TimestampType, false) => NotNullLongConverter
       case (StringType, true) => StringConverter
       case (StringType, false) => NotNullStringConverter
+      case (dt: DecimalType, true) => DecimalConverter(dt.precision, dt.scale)
+      case (dt: DecimalType, false) => NotNullDecimalConverter(dt.precision, dt.scale)
       // NOT SUPPORTED YET
       // case CalendarIntervalType => CalendarConverter
       // NOT SUPPORTED YET
@@ -108,8 +110,6 @@ private object GpuRowToColumnConverter {
       // NOT SUPPORTED YET
       // case st: StructType => new StructConverter(st.fields.map(
       // (f) => getConverterForType(f.dataType)))
-      // NOT SUPPORTED YET
-      // case dt: DecimalType => new DecimalConverter(dt)
       //       NOT SUPPORTED YET
       case (MapType(StringType, StringType, _), _) => MapConverter
       case (unknown, _) => throw new UnsupportedOperationException(
@@ -262,6 +262,26 @@ private object GpuRowToColumnConverter {
       builder.appendUTF8String(bytes)
       bytes.length
     }
+  }
+
+  private case class DecimalConverter(
+      precision: Int, scale: Int) extends FixedWidthTypeConverter {
+    override def append(row: SpecializedGetters,
+      column: Int,
+      builder: ai.rapids.cudf.HostColumnVector.ColumnBuilder): Unit =
+      if (row.isNullAt(column)) {
+        builder.appendNull()
+      } else {
+        NotNullDecimalConverter(precision, scale).append(row, column, builder)
+      }
+  }
+
+  private case class NotNullDecimalConverter(
+      precision: Int, scale: Int) extends FixedWidthTypeConverter {
+    override def append(row: SpecializedGetters,
+      column: Int,
+      builder: ai.rapids.cudf.HostColumnVector.ColumnBuilder): Unit =
+      builder.append(row.getDecimal(column, precision, scale).toJavaBigDecimal)
   }
 
   // ONLY supports Map(String, String)

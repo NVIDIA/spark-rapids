@@ -67,10 +67,11 @@ class DecimalUnitTest extends GpuUnitTests with Matchers {
   }
 
   test("test decimal as column vector") {
+    val dt32 = DecimalType(DType.DECIMAL32_MAX_PRECISION, 5)
+    val dt64 = DecimalType(DType.DECIMAL64_MAX_PRECISION, 9)
     withResource(
       GpuColumnVector.from(ColumnVector.fromDecimals(dec32Data.map(_.toJavaBigDecimal): _*),
-        DecimalType(DType.DECIMAL32_MAX_PRECISION, 5))) { cv: GpuColumnVector =>
-
+        dt32)) { cv: GpuColumnVector =>
       cv.getRowCount shouldEqual dec32Data.length
       val (precision, scale) = cv.dataType() match {
         case dt: DecimalType => (dt.precision, dt.scale)
@@ -84,9 +85,7 @@ class DecimalUnitTest extends GpuUnitTests with Matchers {
       }
     }
     val dec64WithNull = Array(null) ++ dec64Data.map(_.toJavaBigDecimal) ++ Array(null, null)
-    withResource(
-      GpuColumnVector.from(ColumnVector.fromDecimals(dec64WithNull: _*),
-        DecimalType(DType.DECIMAL64_MAX_PRECISION, 9))) { cv: GpuColumnVector =>
+    withResource(GpuColumnVector.from(ColumnVector.fromDecimals(dec64WithNull: _*), dt64)) { cv =>
       cv.getRowCount shouldEqual dec64WithNull.length
       cv.hasNull shouldBe true
       cv.numNulls() shouldEqual 3
@@ -115,11 +114,14 @@ class DecimalUnitTest extends GpuUnitTests with Matchers {
     }
     // TODO: support fromScalar(cudf.ColumnVector cv, int rows) for fixed-point decimal in cuDF
     /*
-    withResource(GpuScalar.from(dec64Data(0))) { scalar =>
-      withResource(GpuColumnVector.from(scalar, 10)) { cv =>
+    withResource(GpuScalar.from(dec64Data(0), dt64)) { scalar =>
+      withResource(GpuColumnVector.from(scalar, 10, dt64)) { cv =>
+        cv.getRowCount shouldEqual 10
         withResource(cv.copyToHost()) { hcv =>
           (0 until 10).foreach { i =>
-            hcv.getDecimal(i, dec64Data(0).precision, dec64Data(0).scale) shouldEqual dec64Data(0)
+            hcv.getLong(i) shouldEqual scalar.getLong
+            hcv.getDecimal(i, dt64.precision, dt64.scale).toJavaBigDecimal shouldEqual
+              scalar.getBigDecimal
           }
         }
       }
