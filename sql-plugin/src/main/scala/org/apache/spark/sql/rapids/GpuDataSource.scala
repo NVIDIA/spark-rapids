@@ -42,7 +42,6 @@ import org.apache.spark.sql.execution.datasources.csv.CSVFileFormat
 import org.apache.spark.sql.execution.datasources.jdbc.JdbcRelationProvider
 import org.apache.spark.sql.execution.datasources.json.JsonFileFormat
 import org.apache.spark.sql.execution.datasources.orc.OrcFileFormat
-import org.apache.spark.sql.execution.datasources.parquet.ParquetFileFormat
 import org.apache.spark.sql.execution.datasources.v2.FileDataSourceV2
 import org.apache.spark.sql.execution.datasources.v2.orc.OrcDataSourceV2
 import org.apache.spark.sql.execution.streaming._
@@ -67,7 +66,7 @@ case class GpuDataSource(
   case class SourceInfo(name: String, schema: StructType, partitionColumns: Seq[String])
 
   lazy val providingClass: Class[_] = {
-    val cls = DataSource.lookupDataSource(className, sparkSession.sessionState.conf)
+    val cls = GpuDataSource.lookupDataSource(className, sparkSession.sessionState.conf)
     // `providingClass` is used for resolving data source relation for catalog tables.
     // As now catalog for data source V2 is under development, here we fall back all the
     // [[FileDataSourceV2]] to [[FileFormat]] to guarantee the current catalog works.
@@ -79,6 +78,7 @@ case class GpuDataSource(
       case _ => cls
     }
   }
+
 
   private def providingInstance() = providingClass.getConstructor().newInstance()
 
@@ -93,7 +93,7 @@ case class GpuDataSource(
    * Whether or not paths should be globbed before being used to access files.
    */
   def globPaths: Boolean = {
-    options.get(DataSource.GLOB_PATHS_KEY)
+    options.get(GpuDataSource.GLOB_PATHS_KEY)
       .map(_ == "true")
       .getOrElse(true)
   }
@@ -562,12 +562,12 @@ case class GpuDataSource(
       checkEmptyGlobPath: Boolean,
       checkFilesExist: Boolean): Seq[Path] = {
     val allPaths = caseInsensitiveOptions.get("path") ++ paths
-    DataSource.checkAndGlobPathIfNecessary(allPaths.toSeq, newHadoopConfiguration(),
+    GpuDataSource.checkAndGlobPathIfNecessary(allPaths.toSeq, newHadoopConfiguration(),
       checkEmptyGlobPath, checkFilesExist, enableGlobbing = globPaths)
   }
 }
 
-object DataSource extends Logging {
+object GpuDataSource extends Logging {
 
   /** A map to maintain backward compatibility in case we move data sources around. */
   private val backwardCompatibilityMap: Map[String, String] = {
@@ -616,6 +616,7 @@ object DataSource extends Logging {
 
   /** Given a provider name, look up the data source class definition. */
   def lookupDataSource(provider: String, conf: SQLConf): Class[_] = {
+    logWarning("provider is: " + provider)
     val provider1 = backwardCompatibilityMap.getOrElse(provider, provider) match {
       case name if name.equalsIgnoreCase("orc") &&
           conf.getConf(SQLConf.ORC_IMPLEMENTATION) == "native" =>
@@ -628,6 +629,8 @@ object DataSource extends Logging {
       case name => name
     }
     val provider2 = s"$provider1.DefaultSource"
+    logWarning("provider2 is: " + provider2)
+
     val loader = Utils.getContextOrSparkClassLoader
     val serviceLoader = ServiceLoader.load(classOf[DataSourceRegister], loader)
 
@@ -639,6 +642,7 @@ object DataSource extends Logging {
             Try(loader.loadClass(provider1)).orElse(Try(loader.loadClass(provider2))) match {
               case Success(dataSource) =>
                 // Found the data source using fully qualified path
+                logWarning("loaded data source: " + dataSource)
                 dataSource
               case Failure(error) =>
                 if (provider1.startsWith("org.apache.spark.sql.hive.orc")) {
