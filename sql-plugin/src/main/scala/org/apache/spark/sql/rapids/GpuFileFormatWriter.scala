@@ -49,13 +49,13 @@ object GpuFileFormatWriter extends Logging {
   case class GpuEmpty2Null(child: Expression) extends GpuUnaryExpression {
     override def nullable: Boolean = true
 
-    override def doColumnar(input: GpuColumnVector): GpuColumnVector = {
+    override def doColumnar(input: GpuColumnVector): ColumnVector = {
       var from: ColumnVector = null
       var to: ColumnVector = null
       try {
         from = ColumnVector.fromStrings("")
         to = ColumnVector.fromStrings(null)
-        GpuColumnVector.from(input.getBase.findAndReplaceAll(from, to))
+        input.getBase.findAndReplaceAll(from, to)
       } finally {
         if (from != null) {
           from.close()

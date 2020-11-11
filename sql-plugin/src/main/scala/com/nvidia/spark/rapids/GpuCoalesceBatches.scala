@@ -30,7 +30,7 @@ import org.apache.spark.sql.catalyst.expressions.Attribute
 import org.apache.spark.sql.catalyst.plans.physical.Partitioning
 import org.apache.spark.sql.execution.{SparkPlan, UnaryExecNode}
 import org.apache.spark.sql.execution.metric.{SQLMetric, SQLMetrics}
-import org.apache.spark.sql.types.{DataTypes, MapType, StructType}
+import org.apache.spark.sql.types.{DataType, DataTypes, MapType, StructType}
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
 /**
@@ -397,6 +397,7 @@ class GpuCoalesceIteratorForMaps(iter: Iterator[ColumnarBatch],
     totalTime,
     opName) with Arm {
 
+  private val sparkTypes: Array[DataType] = GpuColumnVector.extractTypes(schema)
   private var batches: ArrayBuffer[ColumnarBatch] = ArrayBuffer.empty
   private var maxDeviceMemory: Long = 0
 
@@ -495,7 +496,8 @@ class GpuCoalesceIteratorForMaps(iter: Iterator[ColumnarBatch],
             val cv = compressedVecs(outputIndex)
             val batchIndex = compressedBatchIndices(outputIndex)
             val compressedBatch = batches(batchIndex)
-            batches(batchIndex) = MetaUtils.getBatchFromMeta(outputBuffer, cv.getTableMeta)
+            batches(batchIndex) =
+                MetaUtils.getBatchFromMeta(outputBuffer, cv.getTableMeta, sparkTypes)
             compressedBatch.close()
           }
         }
@@ -548,6 +550,7 @@ class GpuCoalesceIterator(iter: Iterator[ColumnarBatch],
     totalTime,
     opName) with Arm {
 
+  private val sparkTypes: Array[DataType] = GpuColumnVector.extractTypes(schema)
   private val batches: ArrayBuffer[SpillableColumnarBatch] = ArrayBuffer.empty
   private var maxDeviceMemory: Long = 0
 
@@ -599,7 +602,8 @@ class GpuCoalesceIterator(iter: Iterator[ColumnarBatch],
               val cv = compressedVecs(outputIndex)
               val batchIndex = compressedBatchIndices(outputIndex)
               val compressedBatch = wip(batchIndex)
-              wip(batchIndex) = MetaUtils.getBatchFromMeta(outputBuffer, cv.getTableMeta)
+              wip(batchIndex) =
+                  MetaUtils.getBatchFromMeta(outputBuffer, cv.getTableMeta, sparkTypes)
               compressedBatch.close()
             }
           }
@@ -677,15 +681,19 @@ case class GpuCoalesceBatches(child: SparkPlan, goal: CoalesceGoal)
     val totalTime = longMetric(TOTAL_TIME)
     val peakDevMemory = longMetric("peakDevMemory")
 
+    // cache in local vars to avoid serializing the plan
+    val outputSchema = schema
+    val decompressMemoryTarget = maxDecompressBatchMemory
+    val hasMaps = child.schema.fields.exists(_.dataType.isInstanceOf[MapType])
+
     val batches = child.executeColumnar()
     batches.mapPartitions { iter =>
-      val hasMaps = child.schema.fields.exists(field => field.dataType.isInstanceOf[MapType])
-      if (child.schema.nonEmpty && !hasMaps) {
-        new GpuCoalesceIterator(iter, schema, goal, maxDecompressBatchMemory,
+      if (outputSchema.nonEmpty && !hasMaps) {
+        new GpuCoalesceIterator(iter, outputSchema, goal, decompressMemoryTarget,
           numInputRows, numInputBatches, numOutputRows, numOutputBatches, collectTime,
           concatTime, totalTime, peakDevMemory, "GpuCoalesceBatches")
       } else if (hasMaps) {
-        new GpuCoalesceIteratorForMaps(iter, schema, goal, maxDecompressBatchMemory,
+        new GpuCoalesceIteratorForMaps(iter, outputSchema, goal, decompressMemoryTarget,
           numInputRows, numInputBatches, numOutputRows, numOutputBatches, collectTime,
           concatTime, totalTime, peakDevMemory, "GpuCoalesceBatches")
       } else {

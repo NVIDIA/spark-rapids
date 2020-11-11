@@ -72,21 +72,26 @@ case class GpuGetArrayItem(child: Expression, ordinal: Expression)
   override def nullable: Boolean = true
   override def dataType: DataType = child.dataType.asInstanceOf[ArrayType].elementType
 
-  override def doColumnar(lhs: GpuColumnVector, rhs: GpuColumnVector): GpuColumnVector =
+  override def doColumnar(lhs: GpuColumnVector, rhs: GpuColumnVector): ColumnVector =
     throw new IllegalStateException("This is not supported yet")
 
-  override def doColumnar(lhs: Scalar, rhs: GpuColumnVector): GpuColumnVector =
+  override def doColumnar(lhs: Scalar, rhs: GpuColumnVector): ColumnVector =
     throw new IllegalStateException("This is not supported yet")
 
-  override def doColumnar(lhs: GpuColumnVector, ordinal: Scalar): GpuColumnVector = {
+  override def doColumnar(lhs: GpuColumnVector, ordinal: Scalar): ColumnVector = {
     // Need to handle negative indexes...
     if (ordinal.isValid && ordinal.getInt >= 0) {
-      GpuColumnVector.from(lhs.getBase.extractListElement(ordinal.getInt), lhs.dataType())
+      lhs.getBase.extractListElement(ordinal.getInt)
     } else {
       withResource(Scalar.fromNull(GpuColumnVector.getRapidsType(dataType))) { nullScalar =>
-        GpuColumnVector.from(
-          ColumnVector.fromScalar(nullScalar, lhs.getRowCount.toInt), lhs.dataType())
+        ColumnVector.fromScalar(nullScalar, lhs.getRowCount.toInt)
       }
+    }
+  }
+
+  override def doColumnar(numRows: Int, lhs: Scalar, rhs: Scalar): ColumnVector = {
+    withResource(GpuColumnVector.from(lhs, numRows, left.dataType)) { expandedLhs =>
+      doColumnar(expandedLhs, rhs)
     }
   }
 }
@@ -137,17 +142,19 @@ case class GpuGetMapValue(child: Expression, key: Expression)
 
   override def prettyName: String = "getMapValue"
 
-  override def doColumnar(lhs: GpuColumnVector,
-    rhs: Scalar): GpuColumnVector = GpuColumnVector.from(
-    lhs.getBase.getMapValue(rhs), lhs.dataType())
+  override def doColumnar(lhs: GpuColumnVector, rhs: Scalar): ColumnVector =
+    lhs.getBase.getMapValue(rhs)
 
+  override def doColumnar(numRows: Int, lhs: Scalar, rhs: Scalar): ColumnVector = {
+    withResource(GpuColumnVector.from(lhs, numRows, left.dataType)) { expandedLhs =>
+      doColumnar(expandedLhs, rhs)
+    }
+  }
 
-  override def doColumnar(lhs: Scalar,
-    rhs: GpuColumnVector): GpuColumnVector =
+  override def doColumnar(lhs: Scalar, rhs: GpuColumnVector): ColumnVector =
     throw new IllegalStateException("This is not supported yet")
 
-  override def doColumnar(lhs: GpuColumnVector,
-    rhs: GpuColumnVector): GpuColumnVector =
+  override def doColumnar(lhs: GpuColumnVector, rhs: GpuColumnVector): ColumnVector =
     throw new IllegalStateException("This is not supported yet")
 
   override def left: Expression = child

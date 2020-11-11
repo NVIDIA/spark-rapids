@@ -278,9 +278,12 @@ case class HostColumnarToGpu(child: SparkPlan, goal: CoalesceGoal)
     val totalTime = longMetric(TOTAL_TIME)
     val peakDevMemory = longMetric("peakDevMemory")
 
+    // cache in a local to avoid serializing the plan
+    val outputSchema = schema
+
     val batches = child.executeColumnar()
     batches.mapPartitions { iter =>
-      new HostToGpuCoalesceIterator(iter, goal, schema,
+      new HostToGpuCoalesceIterator(iter, goal, outputSchema,
         numInputRows, numInputBatches, numOutputRows, numOutputBatches, collectTime, concatTime,
         totalTime, peakDevMemory, "HostColumnarToGpu")
     }

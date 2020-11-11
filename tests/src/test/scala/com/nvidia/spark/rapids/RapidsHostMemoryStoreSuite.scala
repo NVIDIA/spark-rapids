@@ -26,6 +26,7 @@ import org.scalatest.FunSuite
 import org.scalatest.mockito.MockitoSugar
 
 import org.apache.spark.sql.rapids.RapidsDiskBlockManager
+import org.apache.spark.sql.types.{DataType, DoubleType, IntegerType, LongType, StringType}
 
 class RapidsHostMemoryStoreSuite extends FunSuite with Arm with MockitoSugar {
   private def buildContiguousTable(): ContiguousTable = {
@@ -118,6 +119,7 @@ class RapidsHostMemoryStoreSuite extends FunSuite with Arm with MockitoSugar {
   }
 
   test("get memory buffer") {
+    val sparkTypes = Array[DataType](IntegerType, StringType, DoubleType)
     val bufferId = MockRapidsBufferId(7)
     val spillPriority = -10
     val hostStoreMaxSize = 1L * 1024 * 1024
@@ -127,18 +129,19 @@ class RapidsHostMemoryStoreSuite extends FunSuite with Arm with MockitoSugar {
         devStore.setSpillStore(hostStore)
         var ct = buildContiguousTable()
         try {
-          withResource(GpuColumnVector.from(ct.getTable)) { expectedBatch =>
-            // store takes ownership of the table
-            devStore.addTable(bufferId, ct.getTable, ct.getBuffer, spillPriority)
-            ct = null
+          withResource(GpuColumnVector.from(ct.getTable, sparkTypes)) {
+            expectedBatch =>
+              // store takes ownership of the table
+              devStore.addTable(bufferId, ct.getTable, ct.getBuffer, spillPriority)
+              ct = null
 
-            devStore.synchronousSpill(0)
-            withResource(catalog.acquireBuffer(bufferId)) { buffer =>
-              assertResult(StorageTier.HOST)(buffer.storageTier)
-              withResource(buffer.getColumnarBatch) { actualBatch =>
-                TestUtils.compareBatches(expectedBatch, actualBatch)
+              devStore.synchronousSpill(0)
+              withResource(catalog.acquireBuffer(bufferId)) { buffer =>
+                assertResult(StorageTier.HOST)(buffer.storageTier)
+                withResource(buffer.getColumnarBatch(sparkTypes)) { actualBatch =>
+                  TestUtils.compareBatches(expectedBatch, actualBatch)
+                }
               }
-            }
           }
         } finally {
           if (ct != null) {
@@ -150,6 +153,7 @@ class RapidsHostMemoryStoreSuite extends FunSuite with Arm with MockitoSugar {
   }
 
   test("buffer exceeds maximum size") {
+    val sparkTypes = Array[DataType](LongType)
     val bigBufferId = MockRapidsBufferId(7)
     val smallBufferId = MockRapidsBufferId(8)
     val spillPriority = -10
@@ -165,7 +169,7 @@ class RapidsHostMemoryStoreSuite extends FunSuite with Arm with MockitoSugar {
         try {
           bigTable = buildContiguousTable(1024 * 1024)
           smallTable = buildContiguousTable(1)
-          withResource(GpuColumnVector.from(bigTable.getTable)) { expectedBatch =>
+          withResource(GpuColumnVector.from(bigTable.getTable, sparkTypes)) { expectedBatch =>
             // store takes ownership of the table
             devStore.addTable(bigBufferId, bigTable.getTable, bigTable.getBuffer, spillPriority)
             bigTable = null
@@ -175,7 +179,7 @@ class RapidsHostMemoryStoreSuite extends FunSuite with Arm with MockitoSugar {
               ArgumentMatchers.any[Cuda.Stream])
             withResource(catalog.acquireBuffer(bigBufferId)) { buffer =>
               assertResult(StorageTier.HOST)(buffer.storageTier)
-              withResource(buffer.getColumnarBatch) { actualBatch =>
+              withResource(buffer.getColumnarBatch(sparkTypes)) { actualBatch =>
                 TestUtils.compareBatches(expectedBatch, actualBatch)
               }
             }

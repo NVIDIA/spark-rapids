@@ -400,11 +400,11 @@ def test_input_meta(spark_tmp_path, v1_enabled_list, reader_confs):
                         'input_file_block_length()'),
             conf=all_confs)
 
-def createBucketedTableAndJoin(spark):
-    spark.range(10e4).write.bucketBy(4, "id").sortBy("id").mode('overwrite').saveAsTable("bucketed_4_10e4")
-    spark.range(10e6).write.bucketBy(4, "id").sortBy("id").mode('overwrite').saveAsTable("bucketed_4_10e6")
-    bucketed_4_10e4 = spark.table("bucketed_4_10e4")
-    bucketed_4_10e6 = spark.table("bucketed_4_10e6")
+def createBucketedTableAndJoin(spark, tbl_1, tbl_2):
+    spark.range(10e4).write.bucketBy(4, "id").sortBy("id").mode('overwrite').saveAsTable(tbl_1)
+    spark.range(10e6).write.bucketBy(4, "id").sortBy("id").mode('overwrite').saveAsTable(tbl_2)
+    bucketed_4_10e4 = spark.table(tbl_1)
+    bucketed_4_10e6 = spark.table(tbl_2)
     return bucketed_4_10e4.join(bucketed_4_10e6, "id")
 
 @ignore_order
@@ -412,12 +412,14 @@ def createBucketedTableAndJoin(spark):
 @pytest.mark.parametrize('reader_confs', reader_opt_confs)
 @pytest.mark.parametrize('v1_enabled_list', ["", "parquet"])
 # this test would be better if we could ensure exchanges didn't exist - ie used buckets
-def test_buckets(spark_tmp_path, v1_enabled_list, reader_confs):
+def test_buckets(spark_tmp_path, v1_enabled_list, reader_confs, spark_tmp_table_factory):
     all_confs = reader_confs.copy()
     all_confs.update({'spark.sql.sources.useV1SourceList': v1_enabled_list,
           "spark.sql.autoBroadcastJoinThreshold": '-1'})
-    assert_gpu_and_cpu_are_equal_collect(createBucketedTableAndJoin,
-            conf=all_confs)
+    def do_it(spark):
+        return createBucketedTableAndJoin(spark, spark_tmp_table_factory.get(),
+                spark_tmp_table_factory.get())
+    assert_gpu_and_cpu_are_equal_collect(do_it, conf=all_confs)
 
 @pytest.mark.parametrize('v1_enabled_list', ["", "parquet"])
 def test_small_file_memory(spark_tmp_path, v1_enabled_list):
