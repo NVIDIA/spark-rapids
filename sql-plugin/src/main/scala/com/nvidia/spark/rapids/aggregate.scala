@@ -98,11 +98,8 @@ class GpuHashAggregateMeta(
       aggregateAttributes ++
       resultExpressions
 
-  def isSupported(t: DataType) = t match {
-    case MapType(StringType, StringType, _) => true
-    case _ => isSupportedType(t)
-  }
-  override def areAllSupportedTypes(types: DataType*): Boolean = types.forall(isSupported)
+  override def isSupportedType(t: DataType): Boolean =
+    GpuOverrides.isSupportedType(t, allowStringMaps = true)
 
   override def tagPlanForGpu(): Unit = {
     if (agg.resultExpressions.isEmpty) {

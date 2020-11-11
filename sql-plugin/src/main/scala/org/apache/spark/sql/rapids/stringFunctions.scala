@@ -834,8 +834,8 @@ class GpuStringSplitMeta(
       limit: Expression): GpuExpression =
     GpuStringSplit(str, regexp, limit)
 
-  // For now we support all of the possible input and output types for this operator
-  override def areAllSupportedTypes(types: DataType*): Boolean = true
+  override def isSupportedType(t: DataType): Boolean =
+    GpuOverrides.isSupportedType(t, allowArray = true, allowNesting = false)
 }
 
 case class GpuStringSplit(str: Expression, regex: Expression, limit: Expression)
