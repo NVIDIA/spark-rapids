@@ -320,12 +320,12 @@ case class GpuWindowInPandasExec(
         case GpuSpecialFrameBoundary(UnboundedPreceding) =>
           // lower bound is always 0
           withResource(cudf.Scalar.fromInt(0)) { zeroVal =>
-            GpuColumnVector.from(cudf.ColumnVector.fromScalar(zeroVal, numRows))
+            GpuColumnVector.from(cudf.ColumnVector.fromScalar(zeroVal, numRows), IntegerType)
           }
         case GpuSpecialFrameBoundary(CurrentRow) =>
           // offset is 0, simply create a integer sequence starting with 0
           withResource(cudf.Scalar.fromInt(0)) { zeroVal =>
-            GpuColumnVector.from(cudf.ColumnVector.sequence(zeroVal, numRows))
+            GpuColumnVector.from(cudf.ColumnVector.sequence(zeroVal, numRows), IntegerType)
           }
         case GpuLiteral(offset, _) =>
           // 1) Create a integer sequence starting with (0 + offset)
@@ -337,7 +337,7 @@ case class GpuWindowInPandasExec(
                 cudf.Scalar.fromNull(cudf.DType.INT32))
               withResource(loAndNullHi) { loNullHi =>
                 val lowerCV = offsetCV.clamp(loNullHi.head, loNullHi.last)
-                GpuColumnVector.from(lowerCV)
+                GpuColumnVector.from(lowerCV, IntegerType)
               }
             }
           }
@@ -351,12 +351,12 @@ case class GpuWindowInPandasExec(
         case GpuSpecialFrameBoundary(UnboundedFollowing) =>
           // bound is always the length of the group, equal to numRows
           withResource(cudf.Scalar.fromInt(numRows)) { numRowsVal =>
-            GpuColumnVector.from(cudf.ColumnVector.fromScalar(numRowsVal, numRows))
+            GpuColumnVector.from(cudf.ColumnVector.fromScalar(numRowsVal, numRows), IntegerType)
           }
         case GpuSpecialFrameBoundary(CurrentRow) =>
           // offset is 0, simply create a integer sequence starting with 1 for upper bound
           withResource(cudf.Scalar.fromInt(1)) { oneVal =>
-            GpuColumnVector.from(cudf.ColumnVector.sequence(oneVal, numRows))
+            GpuColumnVector.from(cudf.ColumnVector.sequence(oneVal, numRows), IntegerType)
           }
         case GpuLiteral(offset, _) =>
           // 1) Create a integer sequence starting with (1 + offset)
@@ -369,7 +369,7 @@ case class GpuWindowInPandasExec(
                 cudf.Scalar.fromInt(numRows))
               withResource(nullLoAndHi) { nullLoHi =>
                 val upperCV = offsetCV.clamp(nullLoHi.head, nullLoHi.last)
-                GpuColumnVector.from(upperCV)
+                GpuColumnVector.from(upperCV, IntegerType)
               }
             }
           }
