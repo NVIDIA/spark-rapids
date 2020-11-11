@@ -682,12 +682,14 @@ object GpuDataSource extends Logging {
           }
         case head :: Nil =>
           // there is exactly one registered alias
+          logWarning("shead: " + head.getClass)
           head.getClass
         case sources =>
           // There are multiple registered aliases for the input. If there is single datasource
           // that has "org.apache.spark" package in the prefix, we use it considering it is an
           // internal datasource within Spark.
           val sourceNames = sources.map(_.getClass.getName)
+          logWarning("sources names are: " + sourceNames)
           val internalSources = sources.filter(_.getClass.getName.startsWith("org.apache.spark"))
           if (internalSources.size == 1) {
             logWarning(s"Multiple sources found for $provider1 (${sourceNames.mkString(", ")}), " +
