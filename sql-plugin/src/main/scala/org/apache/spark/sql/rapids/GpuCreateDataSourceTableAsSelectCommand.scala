@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019, NVIDIA CORPORATION.
+ * Copyright (c) 2020, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -101,7 +101,7 @@ case class GpuCreateDataSourceTableAsSelectCommand(
       tableExists: Boolean): BaseRelation = {
     // Create the relation based on the input logical plan: `query`.
     val pathOption = tableLocation.map("path" -> CatalogUtils.URIToString(_))
-    val dataSource = DataSource(
+    val dataSource = GpuDataSource(
       session,
       className = table.provider.get,
       partitionColumns = table.partitionColumnNames,
