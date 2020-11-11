@@ -66,7 +66,7 @@ case class GpuDataSource(
 
   case class SourceInfo(name: String, schema: StructType, partitionColumns: Seq[String])
 
-  lazy val providingClass: Class[_] = {
+  lazy val originalProvidingClass: Class[_] = {
     val cls = GpuDataSource.lookupDataSource(className, sparkSession.sessionState.conf)
     // `providingClass` is used for resolving data source relation for catalog tables.
     // As now catalog for data source V2 is under development, here we fall back all the
@@ -81,12 +81,16 @@ case class GpuDataSource(
     // convert to GPU version
     logWarning("fallbackCls providing is: " + fallbackCls)
 
+    fallbackCls
+  }
+
+  lazy val providingClass: Class[_] = {
     val parquetFileFormatCls = classOf[ParquetFileFormat]
-    val finalFormat = fallbackCls match {
+    val finalFormat = originalProvidingClass match {
       case parquetFileFormatCls => classOf[GpuParquetFileFormat]
       case f =>
-        throw new Exception(s"unknown file format: ${fallbackCls}")
-        fallbackCls
+        throw new Exception(s"unknown file format: ${originalProvidingClass}")
+        originalProvidingClass
     }
     logWarning("class providing is: " + finalFormat)
     finalFormat
@@ -94,6 +98,7 @@ case class GpuDataSource(
 
 
   private def providingInstance() = providingClass.getConstructor().newInstance()
+  private def originalProvidingInstance() = originalProvidingClass.getConstructor().newInstance()
 
   private def newHadoopConfiguration(): Configuration =
     sparkSession.sessionState.newHadoopConfWithOptions(options)
@@ -331,7 +336,7 @@ case class GpuDataSource(
    *                        that files already exist, we don't need to check them again.
    */
   def resolveRelation(checkFilesExist: Boolean = true): BaseRelation = {
-    val relation = (providingInstance(), userSpecifiedSchema) match {
+    val relation = (originalProvidingInstance(), userSpecifiedSchema) match {
       // TODO: Throw when too much is given.
       case (dataSource: SchemaRelationProvider, Some(schema)) =>
         dataSource.createRelation(sparkSession.sqlContext, caseInsensitiveOptions, schema)
