@@ -368,7 +368,6 @@ final class CreateDataSourceTableAsSelectCommandMeta(
     val format = fileFormat.getOrElse(
       throw new IllegalStateException("fileFormat missing, tagSelfForGpu not called?"))
 
-    cmd.table.
     GpuCreateDataSourceTableAsSelectCommand(
       cmd.table,
       cmd.mode,
