@@ -161,6 +161,7 @@
         <pytest.TEST_TAGS>not qarun</pytest.TEST_TAGS>
         <pytest.TEST_PARALLEL></pytest.TEST_PARALLEL>
         <rat.consoleOutput>false</rat.consoleOutput>
+        <root.dir>${project.build.directory}</root.dir>
         <slf4j.version>1.7.30</slf4j.version>
         <spark300.version>3.0.0</spark300.version>
         <spark300emr.version>3.0.0-amzn</spark300emr.version>
@@ -537,7 +538,7 @@
                                 <mkdir dir="${project.build.directory}/extra-resources"/>
                                 <mkdir dir="${project.build.directory}/tmp"/>
                                 <exec executable="bash" failonerror="true" output="${project.build.directory}/extra-resources/rapids4spark-version-info.properties">
-                                    <arg value="${user.dir}/build/build-info"/>
+                                    <arg value="${root.dir}/build/build-info"/>
                                     <arg value="${project.version}"/>
                                     <arg value="${cudf.version}"/>
                                 </exec>

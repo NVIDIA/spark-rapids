@@ -24,10 +24,14 @@ function print_ver(){
     SERVER_ID=$5
     
     if [[ "$VERSION" == *"-SNAPSHOT" ]]; then
-        PREFIX=${VERSION%-SNAPSHOT}
-        # List the latest SNAPSHOT jar file in the maven repo
-        FILE_NAME=`ls -t $REPO/$PREFIX-[0-9]*$SUFFIX | head -1 | xargs basename`
-        echo $TAG=$FILE_NAME
+        # only run in Jenkins build
+        if [ -n "$JENKINS_URL" ]; then
+            echo $TAG=$VERSION
+        else
+            PREFIX=${VERSION%-SNAPSHOT}
+            # List the latest SNAPSHOT jar file in the maven repo
+            echo $TAG=`ls -t $REPO/$PREFIX-[0-9]*$SUFFIX | head -1 | xargs basename`
+        fi
     else
         echo $TAG=$VERSION$SUFFIX
     fi
