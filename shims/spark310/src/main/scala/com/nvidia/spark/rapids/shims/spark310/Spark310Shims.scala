@@ -291,7 +291,7 @@ class Spark310Shims extends Spark301Shims {
     }
   }
 
-  override def checkSchemaColumnNameDuplication(
+  override def checkColumnNameDuplication(
       schema: StructType,
       colType: String,
       resolver: Resolver): Unit = {

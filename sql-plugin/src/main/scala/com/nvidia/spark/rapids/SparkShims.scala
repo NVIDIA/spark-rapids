@@ -141,7 +141,7 @@ trait SparkShims {
       scanExec: GpuFileSourceScanExec,
       queryUsesInputFile: Boolean): GpuFileSourceScanExec
 
-  def checkSchemaColumnNameDuplication(
+  def checkColumnNameDuplication(
       schema: StructType,
       colType: String,
       resolver: Resolver): Unit

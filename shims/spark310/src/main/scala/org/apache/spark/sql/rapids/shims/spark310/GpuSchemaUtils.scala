@@ -22,7 +22,7 @@ import org.apache.spark.sql.util.SchemaUtils
 
 object GpuSchemaUtils {
 
-  def checkSchemaColumnNameDuplication(
+  def checkColumnNameDuplication(
       schema: StructType,
       colType: String,
       resolver: Resolver): Unit = {

@@ -392,10 +392,10 @@ class Spark300Shims extends SparkShims {
     GpuColumnarToRowExec(plan, exportColumnRdd)
   }
 
-  override def checkSchemaColumnNameDuplication(
+  override def checkColumnNameDuplication(
       schema: StructType,
       colType: String,
       resolver: Resolver): Unit = {
-    GpuSchemaUtils.checkSchemaColumnNameDuplication(schema, colType, resolver)
+    GpuSchemaUtils.checkColumnNameDuplication(schema, colType, resolver)
   }
 }
