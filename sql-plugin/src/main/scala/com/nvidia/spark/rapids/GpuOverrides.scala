@@ -288,7 +288,7 @@ final class InsertIntoHadoopFsRelationCommandMeta(
       willNotWorkOnGpu("bucketing is not supported")
     }
 
-     val spark = SparkSession.active
+    val spark = SparkSession.active
 
     fileFormat = cmd.fileFormat match {
       case _: CSVFileFormat =>
@@ -338,41 +338,48 @@ final class CreateDataSourceTableAsSelectCommandMeta(
   extends DataWritingCommandMeta[CreateDataSourceTableAsSelectCommand](cmd, conf, parent, rule)
     with Logging {
 
-  private var fileFormat: Option[ColumnarFileFormat] = None
+  private var origProvider: Class[_] = _
+  private var gpuProvider: Option[Class[_]] = _
+
 
   override def tagSelfForGpu(): Unit = {
     if (cmd.table.bucketSpec.isDefined) {
       willNotWorkOnGpu("bucketing is not supported")
     }
+    if (cmd.table.provider.isEmpty) {
+      willNotWorkOnGpu("provider must be defined")
+    }
 
     val spark = SparkSession.active
-
-    // todo - need to handle backwardCompatibilityMap?
-    // ResolveSessionCatalog builds the catalog with params similar to InsertInto
-    fileFormat = cmd.table.provider match {
-      case Some("parquet") => {
-        // TODO - test with parquestion options specified like compression
-        logWarning(s"table options are: ${cmd.table.storage.properties} " +
-          s"tble properties are ${cmd.table.properties}")
-        // the storage properties seems to match the options passe dinto buildCatalogTable
+    val origProvider =
+      GpuDataSource.lookupDataSourceWithFallback(cmd.table.provider.get, spark.sessionState.conf)
+    val parquetCls = classOf[ParquetFileFormat]
+    val orcCls = classOf[OrcFileFormat]
+    // Note that the data source V2 always fallsback to the V1 currently.
+    // If that changes then this will start failing because we don't have a mapping.
+    val gpuProvider = origProvider match {
+      case orcCls =>
+        GpuOrcFileFormat.tagGpuSupport(this, spark, cmd.table.storage.properties)
+      case parquetCls =>
         GpuParquetFileFormat.tagGpuSupport(this, spark,
           cmd.table.storage.properties, cmd.query.schema)
-      }
-      case f =>
-        willNotWorkOnGpu(s"file format not supported: ${f.getClass.getCanonicalName}")
+      case ds =>
+        willNotWorkOnGpu(s"Data source class not supported: ${ds}")
         None
     }
   }
 
   override def convertToGpu(): GpuDataWritingCommand = {
-    val format = fileFormat.getOrElse(
-      throw new IllegalStateException("fileFormat missing, tagSelfForGpu not called?"))
+    val newProvider = gpuProvider.getOrElse(
+      throw new IllegalStateException("fileFormat unexpected, tagSelfForGpu not called?"))
 
     GpuCreateDataSourceTableAsSelectCommand(
       cmd.table,
       cmd.mode,
       cmd.query,
-      cmd.outputColumnNames)
+      cmd.outputColumnNames,
+      origProvider,
+      newProvider)
   }
 }
 

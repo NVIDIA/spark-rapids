@@ -33,7 +33,9 @@ case class GpuCreateDataSourceTableAsSelectCommand(
     table: CatalogTable,
     mode: SaveMode,
     query: LogicalPlan,
-    outputColumnNames: Seq[String])
+    outputColumnNames: Seq[String],
+    origProvider: Class[_],
+    gpuProvider: Class[_])
   extends GpuDataWritingCommand {
 
   override def runColumnar(sparkSession: SparkSession, child: SparkPlan): Seq[ColumnarBatch] = {
@@ -107,11 +109,10 @@ case class GpuCreateDataSourceTableAsSelectCommand(
       partitionColumns = table.partitionColumnNames,
       bucketSpec = table.bucketSpec,
       options = table.storage.properties ++ pathOption,
-      catalogTable = if (tableExists) Some(table) else None)
-
-    logWarning("data source is: " + dataSource)
+      catalogTable = if (tableExists) Some(table) else None,
+      origProvider = origProvider,
+      gpuProvider = gpuProvider)
     try {
-      // TODO - need to replace with GpuInsertInto
       dataSource.writeAndRead(mode, query, outputColumnNames, physicalPlan)
     } catch {
       case ex: AnalysisException =>
@@ -120,12 +121,10 @@ case class GpuCreateDataSourceTableAsSelectCommand(
     }
   }
 
-
   private val isPartitioned = table.partitionColumnNames.nonEmpty
 
   private val isBucketed = table.bucketSpec.nonEmpty
 
-  // TODO - is this ok?
-  // We need a single batch if we have to sort the data
+  // use same logic as GpuInsertIntoHadoopFsRelationCommand
   override def requireSingleBatch: Boolean = isPartitioned || isBucketed
 }

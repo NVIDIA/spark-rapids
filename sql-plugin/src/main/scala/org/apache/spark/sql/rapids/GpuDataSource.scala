@@ -31,10 +31,9 @@ import org.apache.spark.deploy.SparkHadoopUtil
 import org.apache.spark.internal.Logging
 import org.apache.spark.sql._
 import org.apache.spark.sql.catalyst.analysis.UnresolvedAttribute
-import org.apache.spark.sql.catalyst.catalog.{BucketSpec, CatalogStorageFormat, CatalogTable, CatalogUtils}
+import org.apache.spark.sql.catalyst.catalog.{BucketSpec, CatalogTable}
 import org.apache.spark.sql.catalyst.plans.logical.LogicalPlan
 import org.apache.spark.sql.catalyst.util.CaseInsensitiveMap
-import org.apache.spark.sql.connector.catalog.TableProvider
 import org.apache.spark.sql.execution.SparkPlan
 import org.apache.spark.sql.execution.command.DataWritingCommand
 import org.apache.spark.sql.execution.datasources._
@@ -42,18 +41,22 @@ import org.apache.spark.sql.execution.datasources.csv.CSVFileFormat
 import org.apache.spark.sql.execution.datasources.jdbc.JdbcRelationProvider
 import org.apache.spark.sql.execution.datasources.json.JsonFileFormat
 import org.apache.spark.sql.execution.datasources.orc.OrcFileFormat
-import org.apache.spark.sql.execution.datasources.parquet.ParquetFileFormat
 import org.apache.spark.sql.execution.datasources.v2.FileDataSourceV2
 import org.apache.spark.sql.execution.datasources.v2.orc.OrcDataSourceV2
 import org.apache.spark.sql.execution.streaming._
 import org.apache.spark.sql.execution.streaming.sources.{RateStreamProvider, TextSocketSourceProvider}
 import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.sources._
-import org.apache.spark.sql.streaming.OutputMode
-import org.apache.spark.sql.types.{CalendarIntervalType, StructField, StructType}
+import org.apache.spark.sql.types.{CalendarIntervalType, StructType}
 import org.apache.spark.sql.util.SchemaUtils
 import org.apache.spark.util.{ThreadUtils, Utils}
 
+/**
+ * A truncated version of Spark DataSource that converts to use the GPU version of
+ * InsertIntoHadoopFsRelationCommand for FileFormats we support.
+ * This does not support DataSource V2 writing at this point because at the time of
+ * copying, it did not.
+ */
 case class GpuDataSource(
     sparkSession: SparkSession,
     className: String,
@@ -62,48 +65,16 @@ case class GpuDataSource(
     partitionColumns: Seq[String] = Seq.empty,
     bucketSpec: Option[BucketSpec] = None,
     options: Map[String, String] = Map.empty,
-    catalogTable: Option[CatalogTable] = None) extends Logging {
+    catalogTable: Option[CatalogTable] = None,
+    origProvider: Class[_],
+    gpuProvider: Class[_]) extends Logging {
 
-  case class SourceInfo(name: String, schema: StructType, partitionColumns: Seq[String])
-
-  lazy val originalProvidingClass: Class[_] = {
-    val cls = GpuDataSource.lookupDataSource(className, sparkSession.sessionState.conf)
-    // `providingClass` is used for resolving data source relation for catalog tables.
-    // As now catalog for data source V2 is under development, here we fall back all the
-    // [[FileDataSourceV2]] to [[FileFormat]] to guarantee the current catalog works.
-    // [[FileDataSourceV2]] will still be used if we call the load()/save() method in
-    // [[DataFrameReader]]/[[DataFrameWriter]], since they use method `lookupDataSource`
-    // instead of `providingClass`.
-    val fallbackCls = cls.newInstance() match {
-      case f: FileDataSourceV2 => f.fallbackFileFormat
-      case _ => cls
-    }
-    // convert to GPU version
-    logWarning("fallbackCls providing is: " + fallbackCls)
-
-    fallbackCls
-  }
-
-  lazy val providingClass: Class[_] = {
-    val parquetFileFormatCls = classOf[ParquetFileFormat]
-    val finalFormat = originalProvidingClass match {
-      case parquetFileFormatCls => classOf[GpuParquetFileFormat]
-      case f =>
-        throw new Exception(s"unknown file format: ${originalProvidingClass}")
-        originalProvidingClass
-    }
-    logWarning("class providing is: " + finalFormat)
-    finalFormat
-  }
-
-
-  private def providingInstance() = providingClass.getConstructor().newInstance()
-  private def originalProvidingInstance() = originalProvidingClass.getConstructor().newInstance()
+  private def originalProvidingInstance() = origProvider.getConstructor().newInstance()
+  private def gpuProvidingInstance() = gpuProvider.getConstructor().newInstance()
 
   private def newHadoopConfiguration(): Configuration =
     sparkSession.sessionState.newHadoopConfWithOptions(options)
 
-  lazy val sourceInfo: SourceInfo = sourceSchema()
   private val caseInsensitiveOptions = CaseInsensitiveMap(options)
   private val equality = sparkSession.sessionState.conf.resolver
 
@@ -217,113 +188,6 @@ case class GpuDataSource(
     (dataSchema, partitionSchema)
   }
 
-  /** Returns the name and schema of the source that can be used to continually read data. */
-  private def sourceSchema(): SourceInfo = {
-    providingInstance() match {
-      case s: StreamSourceProvider =>
-        val (name, schema) = s.sourceSchema(
-          sparkSession.sqlContext, userSpecifiedSchema, className, caseInsensitiveOptions)
-        SourceInfo(name, schema, Nil)
-
-      case format: FileFormat =>
-        val path = caseInsensitiveOptions.getOrElse("path", {
-          throw new IllegalArgumentException("'path' is not specified")
-        })
-
-        // Check whether the path exists if it is not a glob pattern.
-        // For glob pattern, we do not check it because the glob pattern might only make sense
-        // once the streaming job starts and some upstream source starts dropping data.
-        val hdfsPath = new Path(path)
-        if (!globPaths || !SparkHadoopUtil.get.isGlobPath(hdfsPath)) {
-          val fs = hdfsPath.getFileSystem(newHadoopConfiguration())
-          if (!fs.exists(hdfsPath)) {
-            throw new AnalysisException(s"Path does not exist: $path")
-          }
-        }
-
-        val isSchemaInferenceEnabled = sparkSession.sessionState.conf.streamingSchemaInference
-        val isTextSource = providingClass == classOf[text.TextFileFormat]
-        // If the schema inference is disabled, only text sources require schema to be specified
-        if (!isSchemaInferenceEnabled && !isTextSource && userSpecifiedSchema.isEmpty) {
-          throw new IllegalArgumentException(
-            "Schema must be specified when creating a streaming source DataFrame. " +
-              "If some files already exist in the directory, then depending on the file format " +
-              "you may be able to create a static DataFrame on that directory with " +
-              "'spark.read.load(directory)' and infer schema from it.")
-        }
-
-        val (dataSchema, partitionSchema) = getOrInferFileFormatSchema(format, () => {
-          // The operations below are expensive therefore try not to do them if we don't need to,
-          // e.g., in streaming mode, we have already inferred and registered partition columns,
-          // we will never have to materialize the lazy val below
-          val globbedPaths =
-            checkAndGlobPathIfNecessary(checkEmptyGlobPath = false, checkFilesExist = false)
-          createInMemoryFileIndex(globbedPaths)
-        })
-        val forceNullable =
-          sparkSession.sessionState.conf.getConf(SQLConf.FILE_SOURCE_SCHEMA_FORCE_NULLABLE)
-        val sourceDataSchema = if (forceNullable) dataSchema.asNullable else dataSchema
-        SourceInfo(
-          s"FileSource[$path]",
-          StructType(sourceDataSchema ++ partitionSchema),
-          partitionSchema.fieldNames)
-
-      case _ =>
-        throw new UnsupportedOperationException(
-          s"Data source $className does not support streamed reading")
-    }
-  }
-
-  /** Returns a source that can be used to continually read data. */
-  def createSource(metadataPath: String): Source = {
-    providingInstance() match {
-      case s: StreamSourceProvider =>
-        s.createSource(
-          sparkSession.sqlContext,
-          metadataPath,
-          userSpecifiedSchema,
-          className,
-          caseInsensitiveOptions)
-
-      case format: FileFormat =>
-        val path = caseInsensitiveOptions.getOrElse("path", {
-          throw new IllegalArgumentException("'path' is not specified")
-        })
-        new FileStreamSource(
-          sparkSession = sparkSession,
-          path = path,
-          fileFormatClassName = className,
-          schema = sourceInfo.schema,
-          partitionColumns = sourceInfo.partitionColumns,
-          metadataPath = metadataPath,
-          options = caseInsensitiveOptions)
-      case _ =>
-        throw new UnsupportedOperationException(
-          s"Data source $className does not support streamed reading")
-    }
-  }
-
-  /** Returns a sink that can be used to continually write data. */
-  def createSink(outputMode: OutputMode): Sink = {
-    providingInstance() match {
-      case s: StreamSinkProvider =>
-        s.createSink(sparkSession.sqlContext, caseInsensitiveOptions, partitionColumns, outputMode)
-
-      case fileFormat: FileFormat =>
-        val path = caseInsensitiveOptions.getOrElse("path", {
-          throw new IllegalArgumentException("'path' is not specified")
-        })
-        if (outputMode != OutputMode.Append) {
-          throw new AnalysisException(
-            s"Data source $className does not support $outputMode output mode")
-        }
-        new FileStreamSink(sparkSession, path, fileFormat, partitionColumns, caseInsensitiveOptions)
-
-      case _ =>
-        throw new UnsupportedOperationException(
-          s"Data source $className does not support streamed writing")
-    }
-  }
 
   /**
    * Create a resolved [[BaseRelation]] that can be used to read data from or write data into this
@@ -517,8 +381,7 @@ case class GpuDataSource(
       throw new AnalysisException("Cannot save interval data type into external storage.")
     }
 
-    providingInstance() match {
-        // TODO - NOT SUPPORTED
+    gpuProvidingInstance() match {
       case dataSource: CreatableRelationProvider =>
         dataSource.createRelation(
           sparkSession.sqlContext, mode, caseInsensitiveOptions, Dataset.ofRows(sparkSession, data))
@@ -543,26 +406,7 @@ case class GpuDataSource(
         // Replace the schema with that of the DataFrame we just wrote out to avoid re-inferring
         copy(userSpecifiedSchema = Some(outputColumns.toStructType.asNullable)).resolveRelation()
       case _ =>
-        sys.error(s"${providingClass.getCanonicalName} does not allow create table as select.")
-    }
-  }
-
-  /**
-   * Returns a logical plan to write the given [[LogicalPlan]] out to this [[DataSource]].
-   */
-  def planForWriting(mode: SaveMode, data: LogicalPlan): LogicalPlan = {
-    if (data.schema.map(_.dataType).exists(_.isInstanceOf[CalendarIntervalType])) {
-      throw new AnalysisException("Cannot save interval data type into external storage.")
-    }
-
-    providingInstance() match {
-      case dataSource: CreatableRelationProvider =>
-        SaveIntoDataSourceCommand(data, dataSource, caseInsensitiveOptions, mode)
-      case format: ColumnarFileFormat =>
-        DataSource.validateSchema(data.schema)
-        planForWritingFileFormat(format, mode, data)
-      case _ =>
-        sys.error(s"${providingClass.getCanonicalName} does not allow create table as select.")
+        sys.error(s"${gpuProvider.getCanonicalName} does not allow create table as select.")
     }
   }
 
@@ -631,6 +475,23 @@ object GpuDataSource extends Logging {
     "org.apache.spark.sql.DataFrame",
     "org.apache.spark.sql.sources.HadoopFsRelationProvider",
     "org.apache.spark.Logging")
+
+  def lookupDataSourceWithFallback(className: String, conf: SQLConf): Class[_] = {
+    val cls = GpuDataSource.lookupDataSource(className, conf)
+    // `providingClass` is used for resolving data source relation for catalog tables.
+    // As now catalog for data source V2 is under development, here we fall back all the
+    // [[FileDataSourceV2]] to [[FileFormat]] to guarantee the current catalog works.
+    // [[FileDataSourceV2]] will still be used if we call the load()/save() method in
+    // [[DataFrameReader]]/[[DataFrameWriter]], since they use method `lookupDataSource`
+    // instead of `providingClass`.
+    val fallbackCls = cls.newInstance() match {
+      case f: FileDataSourceV2 => f.fallbackFileFormat
+      case _ => cls
+    }
+    // convert to GPU version
+    logWarning("fallbackCls providing is: " + fallbackCls)
+    fallbackCls
+  }
 
   /** Given a provider name, look up the data source class definition. */
   def lookupDataSource(provider: String, conf: SQLConf): Class[_] = {
@@ -807,38 +668,4 @@ object GpuDataSource extends Logging {
     allPaths.toSeq
   }
 
-  /**
-   * When creating a data source table, the `path` option has a special meaning: the table location.
-   * This method extracts the `path` option and treat it as table location to build a
-   * [[CatalogStorageFormat]]. Note that, the `path` option is removed from options after this.
-   */
-  def buildStorageFormatFromOptions(options: Map[String, String]): CatalogStorageFormat = {
-    val path = CaseInsensitiveMap(options).get("path")
-    val optionsWithoutPath = options.filterKeys(_.toLowerCase(Locale.ROOT) != "path")
-    CatalogStorageFormat.empty.copy(
-      locationUri = path.map(CatalogUtils.stringToURI), properties = optionsWithoutPath.toMap)
-  }
-
-  /**
-   * Called before writing into a FileFormat based data source to make sure the
-   * supplied schema is not empty.
-   * @param schema
-   */
-  def validateSchema(schema: StructType): Unit = {
-    def hasEmptySchema(schema: StructType): Boolean = {
-      schema.size == 0 || schema.find {
-        case StructField(_, b: StructType, _, _) => hasEmptySchema(b)
-        case _ => false
-      }.isDefined
-    }
-
-
-    if (hasEmptySchema(schema)) {
-      throw new AnalysisException(
-        s"""
-           |Datasource does not support writing empty or nested empty schemas.
-           |Please make sure the data schema has at least one or more column(s).
-         """.stripMargin)
-    }
-  }
 }
