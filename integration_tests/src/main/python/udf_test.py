@@ -201,7 +201,6 @@ def test_group_apply_udf(data_gen):
             conf=arrow_udf_conf)
 
 
-@allow_non_gpu('MapInPandasExec', 'PythonUDF', 'Alias')
 @pytest.mark.parametrize('data_gen', [LongGen()], ids=idfn)
 def test_map_apply_udf(data_gen):
     def pandas_filter(iterator):

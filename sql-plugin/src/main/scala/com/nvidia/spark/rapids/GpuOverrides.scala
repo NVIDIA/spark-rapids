@@ -2008,7 +2008,7 @@ object GpuOverrides {
       "UDF run in an external python process. Does not actually run on the GPU, but " +
           "the transfer of data to/from it can be accelerated.",
       ExprChecks.fullAggAndProject(
-        TypeSig.commonCudfTypes + TypeSig.ARRAY.nested(TypeSig.commonCudfTypes),
+        (TypeSig.commonCudfTypes + TypeSig.ARRAY + TypeSig.STRUCT).nested(),
         TypeSig.all,
         repeatingParamCheck = Some(RepeatingParamCheck(
           "param",
@@ -2824,11 +2824,12 @@ object GpuOverrides {
         }
       }),
     exec[MapInPandasExec](
-      "The backend for Map Pandas Iterator UDF, it runs on CPU itself now but supports " +
-        " scheduling GPU resources for the Python process when enabled",
-      ExecChecks.hiddenHack(),
-      (mapPy, conf, p, r) => new GpuMapInPandasExecMeta(mapPy, conf, p, r))
-        .disabledByDefault("Performance is not ideal now"),
+      "The backend for Map Pandas Iterator UDF. Accelerates the data transfer between the" +
+        " Java process and the Python process. It also supports scheduling GPU resources" +
+        " for the Python process when enabled.",
+      ExecChecks((TypeSig.commonCudfTypes + TypeSig.ARRAY + TypeSig.STRUCT).nested(),
+        TypeSig.all),
+      (mapPy, conf, p, r) => new GpuMapInPandasExecMeta(mapPy, conf, p, r)),
     exec[FlatMapGroupsInPandasExec](
       "The backend for Grouped Map Pandas UDF, it runs on CPU itself now but supports " +
         " scheduling GPU resources for the Python process when enabled",
