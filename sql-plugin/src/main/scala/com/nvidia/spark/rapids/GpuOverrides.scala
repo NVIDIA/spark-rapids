@@ -339,7 +339,7 @@ final class CreateDataSourceTableAsSelectCommandMeta(
     with Logging {
 
   private var origProvider: Class[_] = _
-  private var gpuProvider: Option[Class[_]] = _
+  private var gpuProvider: Option[Class[_]] = None
 
 
   override def tagSelfForGpu(): Unit = {
