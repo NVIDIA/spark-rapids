@@ -22,7 +22,7 @@ import scala.collection.JavaConverters._
 import scala.language.implicitConversions
 import scala.util.{Failure, Success, Try}
 
-import com.nvidia.spark.rapids.{ColumnarFileFormat, GpuParquetFileFormat}
+import com.nvidia.spark.rapids.{ColumnarFileFormat, GpuParquetFileFormat, ShimLoader}
 import org.apache.hadoop.conf.Configuration
 import org.apache.hadoop.fs.Path
 
@@ -289,18 +289,18 @@ case class GpuDataSource(
     // TODO - SchemaUtils.checkSchemaColumnNameDuplication different api in 3.1
     relation match {
       case hs: HadoopFsRelation =>
-        SchemaUtils.checkColumnNameDuplication(
-          hs.dataSchema.map(_.name),
+        ShimLoader.getSparkShims.checkSchemaColumnNameDuplication(
+          hs.dataSchema,
           "in the data schema",
           equality)
-        SchemaUtils.checkColumnNameDuplication(
-          hs.partitionSchema.map(_.name),
+        ShimLoader.getSparkShims.checkSchemaColumnNameDuplication(
+          hs.partitionSchema,
           "in the partition schema",
            equality)
         DataSourceUtils.verifySchema(hs.fileFormat, hs.dataSchema)
       case _ =>
-        SchemaUtils.checkColumnNameDuplication(
-          relation.schema.map(_.name),
+        ShimLoader.getSparkShims.checkSchemaColumnNameDuplication(
+          relation.schema,
           "in the data schema",
            equality)
     }

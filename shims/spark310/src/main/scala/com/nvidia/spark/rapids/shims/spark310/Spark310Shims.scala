@@ -20,8 +20,8 @@ import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.GpuOverrides.isSupportedType
 import com.nvidia.spark.rapids.shims.spark301.Spark301Shims
 import com.nvidia.spark.rapids.spark310.RapidsShuffleManager
-
 import org.apache.spark.SparkEnv
+import org.apache.spark.sql.catalyst.analysis.Resolver
 import org.apache.spark.sql.catalyst.encoders.ExpressionEncoder
 import org.apache.spark.sql.catalyst.expressions._
 import org.apache.spark.sql.catalyst.plans.JoinType
@@ -290,4 +290,12 @@ class Spark310Shims extends Spark301Shims {
       GpuColumnarToRowExec(plan)
     }
   }
+
+  override def checkSchemaColumnNameDuplication(
+      schema: StructType,
+      colType: String,
+      resolver: Resolver): Unit = {
+    GpuSchemaUtils.checkSchemaColumnNameDuplication(schema, colType, resolver)
+  }
+
 }
