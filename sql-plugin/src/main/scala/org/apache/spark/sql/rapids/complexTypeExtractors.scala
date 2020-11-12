@@ -42,13 +42,8 @@ class GpuGetArrayItemMeta(
       ordinal: Expression): GpuExpression =
     GpuGetArrayItem(arr, ordinal)
 
-  def isSupported(t: DataType) = t match {
-    // For now we will only do one level of array type support
-    case a : ArrayType => isSupportedType(a.elementType)
-    case _ => isSupportedType(t)
-  }
-
-  override def areAllSupportedTypes(types: DataType*): Boolean = types.forall(isSupported)
+  override def isSupportedType(t: DataType): Boolean =
+    GpuOverrides.isSupportedType(t, allowArray = true, allowNesting = false)
 }
 
 /**
@@ -115,12 +110,8 @@ class GpuGetMapValueMeta(
     key: Expression): GpuExpression =
     GpuGetMapValue(child, key)
 
-  def isSupported(t: DataType) = t match {
-    case MapType(StringType, StringType, _) => true
-    case StringType => true
-  }
-
-  override def areAllSupportedTypes(types: DataType*): Boolean = types.forall(isSupported)
+  override def isSupportedType(t: DataType): Boolean =
+    GpuOverrides.isSupportedType(t, allowStringMaps = true)
 }
 
 case class GpuGetMapValue(child: Expression, key: Expression)
