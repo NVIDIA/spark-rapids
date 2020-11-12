@@ -72,6 +72,17 @@ private[udf] object Repr {
     var string: Expression = Literal.default(StringType)
   }
 
+  // Internal representation of the bytecode instruction getstatic.
+  // This class is needed because we can't represent getstatic in Catalyst, but
+  // we need the getstatic information to handle some method calls
+  // (see [[Instruction.mathOp]] for example).
+  case class GetStatic(lambdaReflection: LambdaReflection, index: Int)
+      extends CompilerInternal("bytecode$getstatic") {
+    def getTypeName: String = {
+      lambdaReflection.lookupField(index).getType.getName
+    }
+  }
+
   case class DateTimeFormatter private (private[Repr] val pattern: Expression)
       extends CompilerInternal("java.time.format.DateTimeFormatter") {
     def invoke(methodName: String, args: List[Expression]): Expression = {
@@ -175,7 +186,7 @@ case class Instruction(opcode: Int, operand: Int, instructionStr: String) extend
       case Opcode.LDC | Opcode.LDC_W | Opcode.LDC2_W => ldc(lambdaReflection, state)
       case Opcode.DUP => dup(state)
       case Opcode.POP => pop(state)
-      case Opcode.GETSTATIC => getstatic(state)
+      case Opcode.GETSTATIC => getstatic(lambdaReflection, state)
       case Opcode.NEW => newObj(lambdaReflection, state)
       // Cast instructions
       case Opcode.I2B => cast(state, ByteType)
@@ -288,9 +299,9 @@ case class Instruction(opcode: Int, operand: Int, instructionStr: String) extend
     }
   }
 
-  private def getstatic(state: State): State = {
+  private def getstatic(lambdaReflection: LambdaReflection, state: State): State = {
     val State(locals, stack, cond, expr) = state
-    State(locals, Literal(operand) :: stack, cond, expr)
+    State(locals, Repr.GetStatic(lambdaReflection, operand) :: stack, cond, expr)
   }
 
   private def cmp(state: State, default: Int): State = {
@@ -457,9 +468,8 @@ case class Instruction(opcode: Int, operand: Int, instructionStr: String) extend
     }
     // Make sure that the objref is scala.math.package$.
     args.head match {
-      case IntegerLiteral(index) =>
-        if (!lambdaReflection.lookupField(index.asInstanceOf[Int])
-            .getType.getName.equals("scala.math.package$")) {
+      case getstatic: Repr.GetStatic =>
+        if (!getstatic.getTypeName.equals("scala.math.package$")) {
           throw new SparkException("Unsupported math function objref: " + args.head)
         }
       case _ =>
@@ -491,9 +501,8 @@ case class Instruction(opcode: Int, operand: Int, instructionStr: String) extend
       methodName: String, args: List[Expression]): Expression = {
     // Make sure that the objref is scala.math.package$.
     args.head match {
-      case IntegerLiteral(index) =>
-        if (!lambdaReflection.lookupField(index.asInstanceOf[Int])
-            .getType.getName.equals("scala.Predef$")) {
+      case getstatic: Repr.GetStatic =>
+        if (!getstatic.getTypeName.equals("scala.Predef$")) {
           throw new SparkException("Unsupported predef function objref: " + args.head)
         }
       case _ =>
@@ -502,10 +511,10 @@ case class Instruction(opcode: Int, operand: Int, instructionStr: String) extend
     // Translate to Catalyst
     methodName match {
       case "double2Double" =>
-        checkArgs(methodName, List(IntegerType, DoubleType), args)
+        checkArgs(methodName, List(DoubleType), args.tail)
         args.last
       case "float2Float" =>
-        checkArgs(methodName, List(IntegerType, FloatType), args)
+        checkArgs(methodName, List(FloatType), args.tail)
         args.last
       case _ => throw new SparkException("Unsupported predef function: " + methodName)
     }
@@ -515,9 +524,8 @@ case class Instruction(opcode: Int, operand: Int, instructionStr: String) extend
       methodName: String, args: List[Expression]): Expression = {
     // Make sure that the objref is scala.math.package$.
     args.head match {
-      case IntegerLiteral(index) =>
-        if (!lambdaReflection.lookupField(index.asInstanceOf[Int])
-            .getType.getName.equals("scala.Array$")) {
+      case getstatic: Repr.GetStatic =>
+        if (!getstatic.getTypeName.equals("scala.Array$")) {
           throw new SparkException("Unsupported array function objref: " + args.head)
         }
       case _ =>
@@ -558,9 +566,8 @@ case class Instruction(opcode: Int, operand: Int, instructionStr: String) extend
       methodName: String, args: List[Expression]): Expression = {
     // Make sure that the objref is scala.math.package$.
     args.head match {
-      case IntegerLiteral(index) =>
-        if (!lambdaReflection.lookupField(index.asInstanceOf[Int])
-            .getType.getName.equals("scala.reflect.ClassTag$")) {
+      case getstatic: Repr.GetStatic =>
+        if (!getstatic.getTypeName.equals("scala.reflect.ClassTag$")) {
           throw new SparkException("Unsupported classTag function objref: " + args.head)
         }
       case _ =>
@@ -569,28 +576,21 @@ case class Instruction(opcode: Int, operand: Int, instructionStr: String) extend
     // Translate to Catalyst
     methodName match {
       case "Boolean" =>
-        checkArgs(methodName, List(IntegerType), args)
         new Repr.ClassTag(scala.reflect.ClassTag.Boolean)
       case "Byte" =>
-        checkArgs(methodName, List(IntegerType), args)
         new Repr.ClassTag(scala.reflect.ClassTag.Byte)
       case "Short" =>
-        checkArgs(methodName, List(IntegerType), args)
         new Repr.ClassTag(scala.reflect.ClassTag.Short)
       case "Int" =>
-        checkArgs(methodName, List(IntegerType), args)
         new Repr.ClassTag(scala.reflect.ClassTag.Int)
       case "Long" =>
-        checkArgs(methodName, List(IntegerType), args)
         new Repr.ClassTag(scala.reflect.ClassTag.Long)
       case "Float" =>
-        checkArgs(methodName, List(IntegerType), args)
         new Repr.ClassTag(scala.reflect.ClassTag.Float)
       case "Double" =>
-        checkArgs(methodName, List(IntegerType), args)
         new Repr.ClassTag(scala.reflect.ClassTag.Double)
       case "apply" =>
-        checkArgs(methodName, List(IntegerType, StringType), args)
+        checkArgs(methodName, List(StringType), args.tail)
         new Repr.ClassTag(scala.reflect.ClassTag.apply(
           LambdaReflection.getClass(args.last.toString)))
       case _ => throw new SparkException("Unsupported classTag function: " + methodName)
