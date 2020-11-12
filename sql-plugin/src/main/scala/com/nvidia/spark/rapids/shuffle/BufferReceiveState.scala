@@ -19,9 +19,9 @@ package com.nvidia.spark.rapids.shuffle
 import scala.collection.mutable.ArrayBuffer
 
 import ai.rapids.cudf.{Cuda, CudaUtil, DeviceMemoryBuffer, NvtxColor, NvtxRange}
-import com.nvidia.spark.rapids.format.TableMeta
 import com.nvidia.spark.rapids.Arm
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
+import com.nvidia.spark.rapids.format.TableMeta
 
 import org.apache.spark.internal.Logging
 
