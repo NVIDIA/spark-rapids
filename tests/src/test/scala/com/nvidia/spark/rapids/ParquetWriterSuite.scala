@@ -76,10 +76,9 @@ class ParquetWriterSuite extends SparkQueryCompareTestSuite {
     }
   }
 
-  testExpectedExceptionStartsWith(
+  testExpectedException[IllegalArgumentException](
       "int96 timestamps not supported",
-      classOf[IllegalArgumentException],
-      "Part of the plan is not columnar",
+      _.getMessage.startsWith("Part of the plan is not columnar"),
       frameFromParquet("timestamp-date-test-msec.parquet"),
       new SparkConf().set("spark.sql.parquet.outputTimestampType", "INT96")) {
     val tempFile = File.createTempFile("int96", "parquet")

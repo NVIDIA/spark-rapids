@@ -793,10 +793,9 @@ trait SparkQueryCompareTestSuite extends FunSuite with Arm {
     }
   }
 
-  def testExpectedExceptionStartsWith[T <: Throwable](
+  def testExpectedException[T <: Throwable](
       testName: String,
-      exceptionClass: Class[T],
-      expectedException: String,
+      expectedException: T => Boolean,
       df: SparkSession => DataFrame,
       conf: SparkConf = new SparkConf(),
       repart: Integer = 1,
@@ -819,8 +818,8 @@ trait SparkQueryCompareTestSuite extends FunSuite with Arm {
           compareResults(sort, maxFloatDiff, fromCpu, fromGpu)
         })
         t match {
-          case Failure(e) if e.getClass == exceptionClass => {
-            assert(e.getMessage != null && e.getMessage.startsWith(expectedException))
+          case Failure(e) if e.isInstanceOf[T] => {
+            assert(expectedException(e.asInstanceOf[T]))
           }
           case Failure(e) => throw e
           case _ => fail("Expected an exception")

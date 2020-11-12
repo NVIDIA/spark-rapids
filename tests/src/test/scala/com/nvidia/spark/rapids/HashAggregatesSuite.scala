@@ -283,10 +283,9 @@ class HashAggregatesSuite extends SparkQueryCompareTestSuite {
     frame => frame.agg(avg(lit("abc")),avg(lit("pqr")))
   }
 
-  testExpectedExceptionStartsWith(
+  testExpectedException[AnalysisException](
       "avg literals bools fail",
-      classOf[AnalysisException],
-      "cannot resolve",
+      _.getMessage.startsWith("cannot resolve"),
       longsFromCSVDf,
       conf = floatAggConf) {
     frame => frame.agg(avg(lit(true)),avg(lit(false)))
@@ -1550,10 +1549,10 @@ class HashAggregatesSuite extends SparkQueryCompareTestSuite {
 
   if (spark.SPARK_VERSION_SHORT < "3.1.0") {
     // A test that verifies that Distinct with Filter is not supported on the CPU or the GPU.
-    testExpectedExceptionStartsWith(
+    testExpectedException[AnalysisException](
         "Avg Distinct with filter - unsupported on CPU and GPU",
-        classOf[AnalysisException],
-        "DISTINCT and FILTER cannot be used in aggregate functions at the same time",
+        _.getMessage.startsWith(
+          "DISTINCT and FILTER cannot be used in aggregate functions at the same time"),
         longsFromCSVDf, conf = floatAggConf) {
       frame => frame.selectExpr("avg(distinct longs) filter (where longs < 5)")
     }
