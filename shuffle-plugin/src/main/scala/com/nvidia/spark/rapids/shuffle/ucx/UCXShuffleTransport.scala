@@ -59,6 +59,7 @@ class UCXShuffleTransport(shuffleServerId: BlockManagerId, rapidsConf: RapidsCon
   private[this] val bounceBufferSize = rapidsConf.shuffleUcxBounceBuffersSize
   private[this] val deviceNumBuffers = rapidsConf.shuffleUcxDeviceBounceBuffersCount
   private[this] val hostNumBuffers = rapidsConf.shuffleUcxHostBounceBuffersCount
+  private[this] var receiveBuffersFree = deviceNumBuffers
 
   private[this] var deviceSendBuffMgr: BounceBufferManager[DeviceMemoryBuffer] = null
   private[this] var hostSendBuffMgr: BounceBufferManager[HostMemoryBuffer] = null
@@ -152,9 +153,11 @@ class UCXShuffleTransport(shuffleServerId: BlockManagerId, rapidsConf: RapidsCon
     // encapsulated in a `BounceBuffer`, but we need visibility to notify
     // a monitor
     deviceReceiveBuffMgr.onFree(() => {
-      inflightMonitor.synchronized {
-        inflightMonitor.notifyAll()
-      }
+      // We are getting called within the `deviceReceiveBuffMgr` lock
+      // so we know that we have indeed freed a bounce buffer at this point.
+      // The notify would wake up the "inflight" thread as it could be waiting
+      // for a bounce buffer to be freed.
+      deviceReceiveBuffMgr.notifyAll()
     })
 
     hostSendBuffMgr =
@@ -328,7 +331,7 @@ class UCXShuffleTransport(shuffleServerId: BlockManagerId, rapidsConf: RapidsCon
    * @note This function is called only after a successful call to `wouldFitInFlightLimit`. It also
    *       calls `wouldFitInFlightLimit` as a sanity check.
    */
-  private def markBytesInFlight(neededAmount: Long): Unit = {
+  private def markBytesInFlight(neededAmount: Long): Unit = inflightMonitor.synchronized {
     require(wouldFitInFlightLimit(neededAmount),
       s"Inflight limit can't allow this size $neededAmount of request")
     inflightSize = inflightSize + neededAmount
@@ -341,7 +344,7 @@ class UCXShuffleTransport(shuffleServerId: BlockManagerId, rapidsConf: RapidsCon
    * @param neededAmount amount of bytes needed
    * @return true if `neededAmount` would be allowed in the throttle
    */
-  private def wouldFitInFlightLimit(neededAmount: Long): Boolean = {
+  private def wouldFitInFlightLimit(neededAmount: Long): Boolean = inflightMonitor.synchronized {
     inflightSize + neededAmount <= inflightLimit || inflightSize == 0
   }
 
@@ -389,47 +392,55 @@ class UCXShuffleTransport(shuffleServerId: BlockManagerId, rapidsConf: RapidsCon
   exec.execute(() => {
     while (inflightStarted) {
       try {
-        var perClientReq = mutable.Map[RapidsShuffleClient, PerClientReadyRequests]()
-        inflightMonitor.synchronized {
-          if (altList.isEmpty) {
-            val waitRange = new NvtxRange("Transport throttling", NvtxColor.RED)
-            try {
-              inflightMonitor.wait(100)
-            } finally {
-              waitRange.close()
+        var req: PendingTransferRequest = null
+        val requestsToHandle = new ArrayBuffer[PendingTransferRequest]()
+        var continue = true
+        altList.synchronized {
+          while (inflightStarted && continue) {
+            req = altList.poll()
+            if (req == null && requestsToHandle.isEmpty) {
+              altList.wait(100)
+            } else if (req != null) {
+              requestsToHandle.append(req)
+            } else {
+              continue = false
             }
-          } else {
-            var keepAttempting = true
-            var req = altList.peek()
-            while (req != null && keepAttempting) {
-              if (wouldFitInFlightLimit(req.getLength)) {
-                val existingReq =
-                  perClientReq.get(req.client)
-                if (existingReq.isEmpty) {
-                  // need to get bounce buffers
-                  val bbs = tryGetReceiveBounceBuffers(1, 1)
-                  if (bbs.nonEmpty) {
-                    markBytesInFlight(req.getLength)
-                    val perClientReadyRequests = new PerClientReadyRequests(bbs.head)
-                    perClientReadyRequests.addRequest(req)
-                    perClientReq += req.client -> perClientReadyRequests
-                    altList.remove(req)
-                  } else {
-                    // TODO: make this a metric => "blocked while waiting on bounce buffers"
-                    logTrace("Can't acquire bounce buffers for receive.")
-                    keepAttempting = false
-                  }
+          }
+        }
+
+        var requestIx = 0 
+        while (requestIx < requestsToHandle.size) {
+          var hasBounceBuffers = true
+          var fitsInFlight = true
+          var perClientReq = mutable.Map[RapidsShuffleClient, PerClientReadyRequests]()
+          var reqToHandle: PendingTransferRequest = null
+          while (requestIx < requestsToHandle.size && hasBounceBuffers && fitsInFlight) {
+            reqToHandle = requestsToHandle(requestIx)
+            if (wouldFitInFlightLimit(reqToHandle.getLength)) {
+              val existingReq =
+                perClientReq.get(reqToHandle.client)
+              if (existingReq.isEmpty) {
+                // need to get bounce buffers
+                val bbs = tryGetReceiveBounceBuffers(1, 1)
+                if (bbs.nonEmpty) {
+                  markBytesInFlight(reqToHandle.getLength)
+                  val perClientReadyRequests = new PerClientReadyRequests(bbs.head)
+                  perClientReadyRequests.addRequest(reqToHandle)
+                  perClientReq += reqToHandle.client -> perClientReadyRequests
+                  requestIx += 1
                 } else {
-                  // bounce buffers already acquired
-                  markBytesInFlight(req.getLength)
-                  existingReq.foreach(_.addRequest(req))
-                  altList.remove(req)
+                  // TODO: make this a metric => "blocked while waiting on bounce buffers"
+                  logTrace("Can't acquire bounce buffers for receive.")
+                  hasBounceBuffers = false
                 }
-                req = altList.peek()
               } else {
-                // cannot fit anymore (reached inflight maximum)
-                keepAttempting = false
+                // bounce buffers already acquired
+                markBytesInFlight(reqToHandle.getLength)
+                existingReq.foreach(_.addRequest(reqToHandle))
+                requestIx+= 1
               }
+            } else {
+              fitsInFlight = false
             }
           }
           if (perClientReq.nonEmpty) {
@@ -438,8 +449,19 @@ class UCXShuffleTransport(shuffleServerId: BlockManagerId, rapidsConf: RapidsCon
                 perClientRequests.transferRequests)
               client.issueBufferReceives(brs)
             }
+          } else if (!hasBounceBuffers) {
+            deviceReceiveBuffMgr.synchronized {
+              while (deviceReceiveBuffMgr.numFree() == 0){
+                deviceReceiveBuffMgr.wait(100)
+              }
+            }
           } else {
-            inflightMonitor.wait(100)
+            // then we must be waiting for the inflight limit
+            inflightMonitor.synchronized {
+              while (!wouldFitInFlightLimit(reqToHandle.getLength)) {
+                inflightMonitor.wait(100)
+              }
+            }
           }
         }
       } catch {
@@ -450,11 +472,11 @@ class UCXShuffleTransport(shuffleServerId: BlockManagerId, rapidsConf: RapidsCon
   })
 
   override def queuePending(reqs: Seq[PendingTransferRequest]): Unit =
-    inflightMonitor.synchronized {
+    altList.synchronized {
       import collection.JavaConverters._
       altList.addAll(reqs.asJava)
       logDebug(s"THROTTLING ${altList.size} queued requests")
-      inflightMonitor.notifyAll()
+      altList.notifyAll()
     }
 
   override def close(): Unit = {
@@ -464,9 +486,9 @@ class UCXShuffleTransport(shuffleServerId: BlockManagerId, rapidsConf: RapidsCon
     clientExecutor.shutdown()
     serverExecutor.shutdown()
 
-    inflightMonitor.synchronized {
+    altList.synchronized {
       inflightStarted = false
-      inflightMonitor.notifyAll()
+      altList.notifyAll()
     }
 
     if (!exec.awaitTermination(500, TimeUnit.MILLISECONDS)) {

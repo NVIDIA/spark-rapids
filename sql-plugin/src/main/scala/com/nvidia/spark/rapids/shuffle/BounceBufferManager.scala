@@ -117,7 +117,7 @@ class BounceBufferManager[T <: MemoryBuffer](
     new BounceBufferImpl(res)
   }
 
-  private def numFree(): Int = synchronized {
+  def numFree(): Int = synchronized {
     freeBufferMap.cardinality()
   }
 
@@ -155,8 +155,8 @@ class BounceBufferManager[T <: MemoryBuffer](
       logDebug(s"$poolName: Free buffer index ${bufferIndex}")
       buffer.close()
       freeBufferMap.set(bufferIndex.toInt)
+      onFreeCallback.foreach(fn => fn())
     }
-    onFreeCallback.foreach(fn => fn())
   }
 
   /**
