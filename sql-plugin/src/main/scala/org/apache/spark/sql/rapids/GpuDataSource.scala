@@ -67,10 +67,9 @@ case class GpuDataSource(
     options: Map[String, String] = Map.empty,
     catalogTable: Option[CatalogTable] = None,
     origProvider: Class[_],
-    gpuProvider: Class[_]) extends Logging {
+    gpuFileFormat: ColumnarFileFormat) extends Logging {
 
   private def originalProvidingInstance() = origProvider.getConstructor().newInstance()
-  private def gpuProvidingInstance() = gpuProvider.getConstructor().newInstance()
 
   private def newHadoopConfiguration(): Configuration =
     sparkSession.sessionState.newHadoopConfWithOptions(options)
@@ -286,7 +285,6 @@ case class GpuDataSource(
           s"$className is not a valid Spark SQL Data Source.")
     }
 
-    // TODO - SchemaUtils.checkSchemaColumnNameDuplication different api in 3.1
     relation match {
       case hs: HadoopFsRelation =>
         ShimLoader.getSparkShims.checkColumnNameDuplication(
@@ -381,33 +379,26 @@ case class GpuDataSource(
       throw new AnalysisException("Cannot save interval data type into external storage.")
     }
 
-    gpuProvidingInstance() match {
-      case dataSource: CreatableRelationProvider =>
-        dataSource.createRelation(
-          sparkSession.sqlContext, mode, caseInsensitiveOptions, Dataset.ofRows(sparkSession, data))
-      case format: ColumnarFileFormat =>
-        val cmd = planForWritingFileFormat(format, mode, data)
-        val resolvedPartCols = cmd.partitionColumns.map { col =>
-          // The partition columns created in `planForWritingFileFormat` should always be
-          // `UnresolvedAttribute` with a single name part.
-          assert(col.isInstanceOf[UnresolvedAttribute])
-          val unresolved = col.asInstanceOf[UnresolvedAttribute]
-          assert(unresolved.nameParts.length == 1)
-          val name = unresolved.nameParts.head
-          outputColumns.find(a => equality(a.name, name)).getOrElse {
-            throw new AnalysisException(
-              s"Unable to resolve $name given [${data.output.map(_.name).mkString(", ")}]")
-          }
-        }
-        val resolved = cmd.copy(
-          partitionColumns = resolvedPartCols,
-          outputColumnNames = outputColumnNames)
-        resolved.runColumnar(sparkSession, physicalPlan)
-        // Replace the schema with that of the DataFrame we just wrote out to avoid re-inferring
-        copy(userSpecifiedSchema = Some(outputColumns.toStructType.asNullable)).resolveRelation()
-      case _ =>
-        sys.error(s"${gpuProvider.getCanonicalName} does not allow create table as select.")
+    // Only currently support ColumnarFileFormat
+    val cmd = planForWritingFileFormat(gpuFileFormat, mode, data)
+    val resolvedPartCols = cmd.partitionColumns.map { col =>
+      // The partition columns created in `planForWritingFileFormat` should always be
+      // `UnresolvedAttribute` with a single name part.
+      assert(col.isInstanceOf[UnresolvedAttribute])
+      val unresolved = col.asInstanceOf[UnresolvedAttribute]
+      assert(unresolved.nameParts.length == 1)
+      val name = unresolved.nameParts.head
+      outputColumns.find(a => equality(a.name, name)).getOrElse {
+        throw new AnalysisException(
+          s"Unable to resolve $name given [${data.output.map(_.name).mkString(", ")}]")
+      }
     }
+    val resolved = cmd.copy(
+      partitionColumns = resolvedPartCols,
+      outputColumnNames = outputColumnNames)
+    resolved.runColumnar(sparkSession, physicalPlan)
+    // Replace the schema with that of the DataFrame we just wrote out to avoid re-inferring
+    copy(userSpecifiedSchema = Some(outputColumns.toStructType.asNullable)).resolveRelation()
   }
 
   /** Returns an [[InMemoryFileIndex]] that can be used to get partition schema and file list. */

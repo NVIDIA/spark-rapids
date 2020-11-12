@@ -18,7 +18,7 @@ package org.apache.spark.sql.rapids
 
 import java.net.URI
 
-import com.nvidia.spark.rapids.GpuDataWritingCommand
+import com.nvidia.spark.rapids.{ColumnarFileFormat, GpuDataWritingCommand}
 
 import org.apache.spark.sql._
 import org.apache.spark.sql.catalyst.catalog._
@@ -35,7 +35,7 @@ case class GpuCreateDataSourceTableAsSelectCommand(
     query: LogicalPlan,
     outputColumnNames: Seq[String],
     origProvider: Class[_],
-    gpuProvider: Class[_])
+    gpuFileFormat: ColumnarFileFormat)
   extends GpuDataWritingCommand {
 
   override def runColumnar(sparkSession: SparkSession, child: SparkPlan): Seq[ColumnarBatch] = {
@@ -111,7 +111,7 @@ case class GpuCreateDataSourceTableAsSelectCommand(
       options = table.storage.properties ++ pathOption,
       catalogTable = if (tableExists) Some(table) else None,
       origProvider = origProvider,
-      gpuProvider = gpuProvider)
+      gpuFileFormat = gpuFileFormat)
     try {
       dataSource.writeAndRead(mode, query, outputColumnNames, physicalPlan)
     } catch {

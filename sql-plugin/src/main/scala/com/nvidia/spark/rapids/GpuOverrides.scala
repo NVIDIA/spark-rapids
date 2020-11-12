@@ -339,7 +339,7 @@ final class CreateDataSourceTableAsSelectCommandMeta(
     with Logging {
 
   private var origProvider: Class[_] = _
-  private var gpuProvider: Option[Class[_]] = None
+  private var gpuProvider: Option[ColumnarFileFormat] = None
 
 
   override def tagSelfForGpu(): Unit = {
@@ -351,13 +351,13 @@ final class CreateDataSourceTableAsSelectCommandMeta(
     }
 
     val spark = SparkSession.active
-    val origProvider =
+    origProvider =
       GpuDataSource.lookupDataSourceWithFallback(cmd.table.provider.get, spark.sessionState.conf)
     val parquetCls = classOf[ParquetFileFormat]
     val orcCls = classOf[OrcFileFormat]
     // Note that the data source V2 always fallsback to the V1 currently.
     // If that changes then this will start failing because we don't have a mapping.
-    val gpuProvider = origProvider match {
+    gpuProvider = origProvider match {
       case orcCls =>
         GpuOrcFileFormat.tagGpuSupport(this, spark, cmd.table.storage.properties)
       case parquetCls =>
