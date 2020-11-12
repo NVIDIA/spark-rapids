@@ -1847,8 +1847,8 @@ object GpuOverrides {
         }),
     exec[ArrowEvalPythonExec](
       "The backend of the Scalar Pandas UDFs. Accelerates the data transfer between the" +
-          " Java process and Python process. It also supports running the Python UDFs code on" +
-          " the GPU when enabled",
+        " Java process and the Python process. It also supports scheduling GPU resources" +
+        " for the Python process when enabled",
       (e, conf, p, r) =>
         new SparkPlanMeta[ArrowEvalPythonExec](e, conf, p, r) {
           val udfs: Seq[BaseExprMeta[PythonUDF]] =
@@ -1953,25 +1953,31 @@ object GpuOverrides {
         }
       }),
     exec[MapInPandasExec](
-      "The backend for Map Pandas Iterator UDF, it runs on CPU itself now but supports running" +
-        " the Python UDFs code on GPU when calling cuDF APIs in the UDF",
+      "The backend for Map Pandas Iterator UDF, it runs on CPU itself now but supports " +
+        " scheduling GPU resources for the Python process when enabled",
       (mapPy, conf, p, r) => new GpuMapInPandasExecMeta(mapPy, conf, p, r))
         .disabledByDefault("Performance is not ideal now"),
     exec[FlatMapGroupsInPandasExec](
-      "The backend for Grouped Map Pandas UDF, it runs on CPU itself now but supports running" +
-        " the Python UDFs code on GPU when calling cuDF APIs in the UDF",
+      "The backend for Grouped Map Pandas UDF, it runs on CPU itself now but supports " +
+        " scheduling GPU resources for the Python process when enabled",
       (flatPy, conf, p, r) => new GpuFlatMapGroupsInPandasExecMeta(flatPy, conf, p, r))
         .disabledByDefault("Performance is not ideal now"),
     exec[AggregateInPandasExec](
       "The backend for Grouped Aggregation Pandas UDF, it runs on CPU itself now but supports" +
-        " running the Python UDFs code on GPU when calling cuDF APIs in the UDF",
+        " scheduling GPU resources for the Python process when enabled",
       (aggPy, conf, p, r) => new GpuAggregateInPandasExecMeta(aggPy, conf, p, r))
         .disabledByDefault("Performance is not ideal now"),
     exec[FlatMapCoGroupsInPandasExec](
       "The backend for CoGrouped Aggregation Pandas UDF, it runs on CPU itself now but supports" +
-        " running the Python UDFs code on GPU when calling cuDF APIs in the UDF",
+        " scheduling GPU resources for the Python process when enabled",
       (flatCoPy, conf, p, r) => new GpuFlatMapCoGroupsInPandasExecMeta(flatCoPy, conf, p, r))
         .disabledByDefault("Performance is not ideal now"),
+    exec[WindowInPandasExec](
+      "The backend for Window Aggregation Pandas UDF, Accelerates the data transfer between the" +
+        " Java process and the Python process. It also supports scheduling GPU resources" +
+        " for the Python process when enabled. For now it only supports row based window frame.",
+      (winPy, conf, p, r) => new GpuWindowInPandasExecMeta(winPy, conf, p, r))
+      .disabledByDefault("it only supports row based frame for now"),
     neverReplaceExec[AlterNamespaceSetPropertiesExec]("Namespace metadata operation"),
     neverReplaceExec[CreateNamespaceExec]("Namespace metadata operation"),
     neverReplaceExec[DescribeNamespaceExec]("Namespace metadata operation"),
