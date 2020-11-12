@@ -289,17 +289,17 @@ case class GpuDataSource(
     // TODO - SchemaUtils.checkSchemaColumnNameDuplication different api in 3.1
     relation match {
       case hs: HadoopFsRelation =>
-        ShimLoader.getSparkShims.checkSchemaColumnNameDuplication(
+        ShimLoader.getSparkShims.checkColumnNameDuplication(
           hs.dataSchema,
           "in the data schema",
           equality)
-        ShimLoader.getSparkShims.checkSchemaColumnNameDuplication(
+        ShimLoader.getSparkShims.checkColumnNameDuplication(
           hs.partitionSchema,
           "in the partition schema",
            equality)
         DataSourceUtils.verifySchema(hs.fileFormat, hs.dataSchema)
       case _ =>
-        ShimLoader.getSparkShims.checkSchemaColumnNameDuplication(
+        ShimLoader.getSparkShims.checkColumnNameDuplication(
           relation.schema,
           "in the data schema",
            equality)
