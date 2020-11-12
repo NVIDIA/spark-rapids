@@ -60,6 +60,7 @@ class SQLExecPlugin extends (SparkSessionExtensions => Unit) with Logging {
 
 object RapidsPluginUtils extends Logging {
   private val SQL_PLUGIN_NAME = classOf[SQLExecPlugin].getName
+  private val UDF_PLUGIN_NAME = "com.nvidia.spark.udf.Plugin"
   private val SQL_PLUGIN_CONF_KEY = StaticSQLConf.SPARK_SESSION_EXTENSIONS.key
   private val SERIALIZER_CONF_KEY = "spark.serializer"
   private val JAVA_SERIALIZER_NAME = classOf[JavaSerializer].getName
@@ -70,14 +71,16 @@ object RapidsPluginUtils extends Logging {
   def fixupConfigs(conf: SparkConf): Unit = {
     // First add in the SQL executor plugin because that is what we need at a minimum
     if (conf.contains(SQL_PLUGIN_CONF_KEY)) {
-      val previousValue = conf.get(SQL_PLUGIN_CONF_KEY).split(",").map(_.trim)
-      if (!previousValue.contains(SQL_PLUGIN_NAME)) {
-        conf.set(SQL_PLUGIN_CONF_KEY, (previousValue :+ SQL_PLUGIN_NAME).mkString(","))
-      } else {
-        conf.set(SQL_PLUGIN_CONF_KEY, previousValue.mkString(","))
+      for (pluginName <- Array(SQL_PLUGIN_NAME, UDF_PLUGIN_NAME)){
+        val previousValue = conf.get(SQL_PLUGIN_CONF_KEY).split(",").map(_.trim)
+        if (!previousValue.contains(pluginName)) {
+          conf.set(SQL_PLUGIN_CONF_KEY, (previousValue :+ pluginName).mkString(","))
+        } else {
+          conf.set(SQL_PLUGIN_CONF_KEY, previousValue.mkString(","))
+        }
       }
     } else {
-      conf.set(SQL_PLUGIN_CONF_KEY, SQL_PLUGIN_NAME)
+      conf.set(SQL_PLUGIN_CONF_KEY, Array(SQL_PLUGIN_NAME,UDF_PLUGIN_NAME).mkString(","))
     }
 
     val serializer = conf.get(SERIALIZER_CONF_KEY, JAVA_SERIALIZER_NAME)
