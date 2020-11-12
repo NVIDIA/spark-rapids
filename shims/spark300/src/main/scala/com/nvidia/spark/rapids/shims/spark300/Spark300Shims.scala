@@ -136,11 +136,9 @@ class Spark300Shims extends SparkShims {
       GpuOverrides.exec[FileSourceScanExec](
         "Reading data from files, often from Hive tables",
         (fsse, conf, p, r) => new SparkPlanMeta[FileSourceScanExec](fsse, conf, p, r) {
-          def isSupported(t: DataType) = t match {
-            case MapType(StringType, StringType, _) => true
-            case _ => isSupportedType(t)
-          }
-          override def areAllSupportedTypes(types: DataType*): Boolean = types.forall(isSupported)
+          override def isSupportedType(t: DataType): Boolean =
+            GpuOverrides.isSupportedType(t, allowStringMaps = true)
+
           // partition filters and data filters are not run on the GPU
           override val childExprs: Seq[ExprMeta[_]] = Seq.empty
 
@@ -270,11 +268,8 @@ class Spark300Shims extends SparkShims {
             a.dataFilters,
             conf)
         }
-        def isSupported(t: DataType) = t match {
-          case MapType(StringType, StringType, _) => true
-          case _ => isSupportedType(t)
-        }
-        override def areAllSupportedTypes(types: DataType*): Boolean = types.forall(isSupported)
+        override def isSupportedType(t: DataType): Boolean =
+          GpuOverrides.isSupportedType(t, allowStringMaps = true)
       }),
     GpuOverrides.scan[OrcScan](
       "ORC parsing",
