@@ -20,7 +20,8 @@ import CatalystExpressionBuilder.simplify
 import javassist.CtClass
 
 import org.apache.spark.SparkException
-import org.apache.spark.sql.catalyst.expressions.{Expression, If, Literal, Or}
+import org.apache.spark.sql.catalyst.analysis.TypeCoercion
+import org.apache.spark.sql.catalyst.expressions.{Cast, Expression, If, Literal, Or}
 
 /**
  * State is used as the main representation of block state, as we walk the bytecode.
@@ -84,7 +85,13 @@ case class State(locals: IndexedSeq[Expression],
     that.fold(this) { s =>
       val combine: ((Expression, Expression)) =>
           Expression = {
-        case (l1, l2) => simplify(If(cond, l1, l2))
+        case (l1, l2) =>
+          val commonType = TypeCoercion.findTightestCommonType(l1.dataType, l2.dataType)
+          commonType.fold(throw new SparkException(s"Conditional type check failure")){
+            t => simplify(If(cond,
+                             if (t == l1.dataType) l1 else Cast(l1, t),
+                             if (t == l2.dataType) l2 else Cast(l2, t)))
+          }
       }
       // At the end of the compliation, the expression at the top of stack is
       // returned, which must have all the conditionals embedded, if the
@@ -129,12 +136,12 @@ object State {
         // Long and Double occupies two slots in the local variable array.
         // Append null to occupy an extra slot.
         // See https://docs.oracle.com/javase/specs/jvms/se8/html/jvms-2.html#jvms-2.6.1
-        l :+ argExp :+ null
+        l :+ argExp :+ Literal(null)
       } else {
         l :+ argExp
       }
     }
     // Ensure locals have enough slots with padTo.
-    State(locals.padTo(max, null))
+    State(locals.padTo(max, Literal(null)))
   }
 }
