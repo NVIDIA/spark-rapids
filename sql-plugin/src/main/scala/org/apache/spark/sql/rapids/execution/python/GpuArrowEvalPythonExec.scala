@@ -287,7 +287,7 @@ case class GpuPythonUDF(
   }
 
   // Support window things
-  override val windowInputProjection = Seq.empty
+  override val windowInputProjection: Seq[Expression] = Seq.empty
   override def windowAggregation(inputs: Seq[(ColumnVector, Int)]): AggregationOnColumn = {
     throw new UnsupportedOperationException(s"GpuPythonUDF should run in a Python process.")
   }
@@ -547,17 +547,17 @@ case class GpuArrowEvalPythonExec(
     val numInputBatches = longMetric(NUM_INPUT_BATCHES)
 
     lazy val isPythonOnGpuEnabled = GpuPythonHelper.isPythonOnGpuEnabled(conf)
-    val inputSchema = child.output.toStructType
-
-    val inputRDD = child.executeColumnar()
-    val pythonOutputSchema = resultAttrs.map(_.dataType).toArray
 
     // cache in a local to avoid serializing the plan
+    val inputSchema = child.output.toStructType
+    val pythonOutputSchema = StructType.fromAttributes(resultAttrs)
+
     val childOutput = child.output
     val targetBatchSize = batchSize
     val runnerConf = pythonRunnerConf
     val timeZone = sessionLocalTimeZone
 
+    val inputRDD = child.executeColumnar()
     inputRDD.mapPartitions { iter =>
       val queue: BatchQueue = new BatchQueue()
       val context = TaskContext.get()
@@ -587,7 +587,7 @@ case class GpuArrowEvalPythonExec(
         }.toArray
       }.toArray
 
-      val pyInputSchema = StructType(dataTypes.zipWithIndex.map { case (dt, i) =>
+      val pythonInputSchema = StructType(dataTypes.zipWithIndex.map { case (dt, i) =>
         StructField(s"_$i", dt)
       })
 
@@ -611,12 +611,12 @@ case class GpuArrowEvalPythonExec(
         pyFuncs,
         evalType,
         argOffsets,
-        pyInputSchema,
+        pythonInputSchema,
         timeZone,
         runnerConf,
         targetBatchSize,
         () => queue.finish(),
-        StructType.fromAttributes(resultAttrs))
+        pythonOutputSchema)
 
       val outputBatchIterator = pyRunner.compute(pyInputIterator, context.partitionId(), context)
 

@@ -483,15 +483,20 @@ case class GpuWindowInPandasExec(
       }
     )
 
+    lazy val isPythonOnGpuEnabled = GpuPythonHelper.isPythonOnGpuEnabled(conf)
+    // cache in a local to avoid serializing the plan
+    val pythonOutputSchema = StructType.fromAttributes(resultAttributes)
+    val childOutput = child.output
+
     // 8) Start processing.
     child.executeColumnar().mapPartitions { inputIter =>
       val context = TaskContext.get()
       val queue: BatchQueue = new BatchQueue()
       context.addTaskCompletionListener[Unit](_ => queue.close())
 
-      val boundDataRefs = GpuBindReferences.bindGpuReferences(dataInputs, child.output)
+      val boundDataRefs = GpuBindReferences.bindGpuReferences(dataInputs, childOutput)
       // Re-batching the input data by GroupingIterator
-      val boundPartitionRefs = GpuBindReferences.bindGpuReferences(partitionSpec, child.output)
+      val boundPartitionRefs = GpuBindReferences.bindGpuReferences(partitionSpec, childOutput)
       val groupedIterator = new GroupingIterator(inputIter, boundPartitionRefs)
       val pyInputIterator = groupedIterator.map { batch =>
         // We have to do the project before we add the batch because the batch might be closed
@@ -505,7 +510,6 @@ case class GpuWindowInPandasExec(
         inputBatch
       }
 
-      val isPythonOnGpuEnabled = GpuPythonHelper.isPythonOnGpuEnabled(conf)
       if (isPythonOnGpuEnabled) {
         GpuPythonHelper.injectGpuInfo(pyFuncs, isPythonOnGpuEnabled)
         PythonWorkerSemaphore.acquireIfNecessary(TaskContext.get())
@@ -521,7 +525,7 @@ case class GpuWindowInPandasExec(
         /* The whole group data should be written in a single call, so here is unlimited */
         Int.MaxValue,
         () => queue.finish(),
-        StructType.fromAttributes(resultAttributes))
+        pythonOutputSchema)
 
       val outputBatchIterator = pyRunner.compute(pyInputIterator, context.partitionId(), context)
       new Iterator[ColumnarBatch] {
