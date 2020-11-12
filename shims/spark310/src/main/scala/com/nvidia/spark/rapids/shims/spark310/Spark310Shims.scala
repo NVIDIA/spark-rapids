@@ -295,7 +295,7 @@ class Spark310Shims extends Spark301Shims {
       schema: StructType,
       colType: String,
       resolver: Resolver): Unit = {
-    GpuSchemaUtils.checkSchemaColumnNameDuplication(schema, colType, resolver)
+    GpuSchemaUtils.checkColumnNameDuplication(schema, colType, resolver)
   }
 
 }
