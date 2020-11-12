@@ -20,9 +20,8 @@ import org.apache.spark.SparkConf
 import org.apache.spark.sql.functions.col
 
 class CsvScanSuite extends SparkQueryCompareTestSuite {
-  testExpectedExceptionStartsWith("Test CSV projection including unsupported types",
-      classOf[IllegalArgumentException],
-      "Part of the plan is not columnar",
+  testExpectedException[IllegalArgumentException]("Test CSV projection including unsupported types",
+      _.getMessage.startsWith("Part of the plan is not columnar"),
       mixedTypesFromCsvWithHeader) {
     frame => frame.select(col("c_string"), col("c_int"), col("c_timestamp"))
   }
