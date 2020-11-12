@@ -1954,9 +1954,9 @@ object GpuOverrides {
     exec[WindowInPandasExec](
       "The backend for Window Aggregation Pandas UDF, Accelerates the data transfer between the" +
         " Java process and the Python process. It also supports scheduling GPU resources" +
-        " for the Python process when enabled",
+        " for the Python process when enabled. For now it only supports row based window frame.",
       (winPy, conf, p, r) => new GpuWindowInPandasExecMeta(winPy, conf, p, r))
-      .disabledByDefault("Performance is not ideal now"),
+      .disabledByDefault("it only supports row based frame for now"),
     neverReplaceExec[AlterNamespaceSetPropertiesExec]("Namespace metadata operation"),
     neverReplaceExec[CreateNamespaceExec]("Namespace metadata operation"),
     neverReplaceExec[DescribeNamespaceExec]("Namespace metadata operation"),
