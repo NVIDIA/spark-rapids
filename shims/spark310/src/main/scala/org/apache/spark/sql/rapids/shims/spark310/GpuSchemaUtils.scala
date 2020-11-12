@@ -26,6 +26,6 @@ object GpuSchemaUtils {
       schema: StructType,
       colType: String,
       resolver: Resolver): Unit = {
-    SchemaUtils.checkColumnNameDuplication(schema, colType, resolver)
+    SchemaUtils.checkSchemaColumnNameDuplication(schema, colType, resolver)
   }
 }
