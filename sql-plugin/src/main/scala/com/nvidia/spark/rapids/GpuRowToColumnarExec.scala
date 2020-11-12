@@ -40,19 +40,27 @@ private class GpuRowToColumnConverter(schema: StructType) extends Serializable {
   }
 
   /**
-   * Append row values to the column builders and return the number of variable-width data bytes
-   * written
+   * Append row values to the column builders and return an approximation of the data bytes
+   * written.  It is a Double because of validity can be less than a single byte.
    */
-  final def convert(row: InternalRow, builders: GpuColumnarBatchBuilder): Long = {
+  final def convert(row: InternalRow, builders: GpuColumnarBatchBuilder): Double = {
     var bytes: Double = 0
     for (idx <- 0 until row.numFields) {
       bytes += converters(idx).append(row, idx, builders.builder(idx))
     }
-    bytes.toLong
+    bytes
   }
 }
 
 private object GpuRowToColumnConverter {
+  // Sizes estimates for different things
+  /*
+   * size of an offset entry.  In general we have 1 more offset entry than rows, so
+   * we might be off by one entry per column.
+   */
+  private[this] val OFFSET = Integer.BYTES
+  private[this] val VALIDITY = 0.125 // 1/8th of a byte (1 bit)
+  private[this] val VALIDITY_N_OFFSET = OFFSET + VALIDITY
 
   private abstract class TypeConverter extends Serializable {
     /** Append row value to the column builder and return the number of data bytes written */
@@ -115,7 +123,7 @@ private object GpuRowToColumnConverter {
       } else {
         NotNullBooleanConverter.append(row, column, builder)
       }
-      1.125 // Includes validity
+      1 + VALIDITY
     }
   }
 
@@ -137,7 +145,7 @@ private object GpuRowToColumnConverter {
       } else {
         NotNullByteConverter.append(row, column, builder)
       }
-      1.125
+      1 + VALIDITY
     }
   }
 
@@ -159,7 +167,7 @@ private object GpuRowToColumnConverter {
       } else {
         NotNullShortConverter.append(row, column, builder)
       }
-      2.125
+      2 + VALIDITY
     }
   }
 
@@ -181,7 +189,7 @@ private object GpuRowToColumnConverter {
       } else {
         NotNullIntConverter.append(row, column, builder)
       }
-      4.125
+      4 + VALIDITY
     }
   }
 
@@ -203,7 +211,7 @@ private object GpuRowToColumnConverter {
       } else {
         NotNullFloatConverter.append(row, column, builder)
       }
-      4.125
+      4 + VALIDITY
     }
   }
 
@@ -225,7 +233,7 @@ private object GpuRowToColumnConverter {
       } else {
         NotNullLongConverter.append(row, column, builder)
       }
-      8.125
+      8 + VALIDITY
     }
   }
 
@@ -247,7 +255,7 @@ private object GpuRowToColumnConverter {
       } else {
         NotNullDoubleConverter.append(row, column, builder)
       }
-      8.125
+      8 + VALIDITY
     }
   }
 
@@ -265,9 +273,9 @@ private object GpuRowToColumnConverter {
       column: Int, builder: ai.rapids.cudf.HostColumnVector.ColumnBuilder): Double =
       if (row.isNullAt(column)) {
         builder.appendNull()
-        4.125 // Offset and validity
+        VALIDITY_N_OFFSET
       } else {
-        NotNullStringConverter.append(row, column, builder) + 4.125
+        NotNullStringConverter.append(row, column, builder) + VALIDITY
       }
   }
 
@@ -277,7 +285,7 @@ private object GpuRowToColumnConverter {
       builder: ai.rapids.cudf.HostColumnVector.ColumnBuilder): Double = {
       val bytes = row.getUTF8String(column).getBytes
       builder.appendUTF8String(bytes)
-      bytes.length + 4 // Includes offset
+      bytes.length + OFFSET
     }
   }
 
@@ -301,7 +309,7 @@ private object GpuRowToColumnConverter {
       structBuilder.endStruct()
     }
     builder.endList()
-    ret + 4
+    ret + OFFSET
   }
 
   private case class MapConverter(
@@ -311,9 +319,9 @@ private object GpuRowToColumnConverter {
         column: Int, builder: ai.rapids.cudf.HostColumnVector.ColumnBuilder): Double = {
       if (row.isNullAt(column)) {
         builder.appendNull()
-        4.125
+        VALIDITY_N_OFFSET
       } else {
-        mapConvert(keyConverter, valueConverter, row, column, builder) + 0.125
+        mapConvert(keyConverter, valueConverter, row, column, builder) + VALIDITY
       }
     }
   }
@@ -355,8 +363,7 @@ private object GpuRowToColumnConverter {
       ret += childConverter.append(values, i, child)
     }
     builder.endList()
-    // Offset
-    ret + 4
+    ret + OFFSET
   }
 
   private case class ArrayConverter(childConverter: TypeConverter)
@@ -365,9 +372,9 @@ private object GpuRowToColumnConverter {
         column: Int, builder: ai.rapids.cudf.HostColumnVector.ColumnBuilder): Double = {
       if (row.isNullAt(column)) {
         builder.appendNull()
-        4.125
+        VALIDITY_N_OFFSET
       } else {
-        arrayConvert(childConverter, row, column, builder) + 0.125 // validity
+        arrayConvert(childConverter, row, column, builder) + VALIDITY
       }
     }
   }
@@ -462,7 +469,8 @@ class RowToColumnarIterator(
     val builders = new GpuColumnarBatchBuilder(localSchema, targetRows, null)
     try {
       var rowCount = 0
-      var byteCount: Long = 0
+      // Double because validity can be < 1 byte, and this is just an estimate anyways
+      var byteCount: Double = 0
       // read at least one row
       while (rowIter.hasNext &&
         (rowCount == 0 || rowCount < targetRows && byteCount < targetSizeBytes)) {
