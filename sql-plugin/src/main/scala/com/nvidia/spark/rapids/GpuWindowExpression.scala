@@ -25,6 +25,7 @@ import org.apache.spark.sql.catalyst.analysis.TypeCheckResult.{TypeCheckFailure,
 import org.apache.spark.sql.catalyst.expressions._
 import org.apache.spark.sql.catalyst.expressions.aggregate._
 import org.apache.spark.sql.rapids.GpuAggregateExpression
+import org.apache.spark.sql.rapids.execution.python.GpuPythonUDF
 import org.apache.spark.sql.types._
 import org.apache.spark.sql.vectorized.ColumnarBatch
 import org.apache.spark.unsafe.types.CalendarInterval
@@ -86,6 +87,7 @@ class GpuWindowExpressionMeta(
               s"Found ${anythingElse.prettyName}")
         }
       case _: WindowFunction =>
+      case _: PythonUDF =>
       case _ =>
         willNotWorkOnGpu("Only AggregateExpressions are supported on GPU as WindowFunctions. " +
         s"Found ${windowFunction.prettyName}")
@@ -190,6 +192,8 @@ case class GpuWindowExpression(windowFunction: Expression, windowSpec: GpuWindow
       case other =>
         throw new IllegalStateException(s"${other.getClass} is not a supported window aggregation")
     }
+    // Add support for Pandas (Python) UDF
+    case pythonFunc: GpuPythonUDF => pythonFunc
     case other =>
       throw new IllegalStateException(s"${other.getClass} is not a supported window function")
   }

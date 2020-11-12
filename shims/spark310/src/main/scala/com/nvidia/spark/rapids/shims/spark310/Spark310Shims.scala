@@ -32,7 +32,6 @@ import org.apache.spark.sql.execution.datasources.HadoopFsRelation
 import org.apache.spark.sql.execution.datasources.v2.orc.OrcScan
 import org.apache.spark.sql.execution.datasources.v2.parquet.ParquetScan
 import org.apache.spark.sql.execution.joins.{BroadcastHashJoinExec, BroadcastNestedLoopJoinExec, HashJoin, ShuffledHashJoinExec, SortMergeJoinExec}
-import org.apache.spark.sql.execution.python.WindowInPandasExec
 import org.apache.spark.sql.internal.StaticSQLConf
 import org.apache.spark.sql.rapids.{GpuFileSourceScanExec, GpuStringReplace, ShuffleManagerShimBase}
 import org.apache.spark.sql.rapids.execution.GpuBroadcastNestedLoopJoinExecBase
@@ -192,12 +191,7 @@ class Spark310Shims extends Spark301Shims {
         (join, conf, p, r) => new GpuBroadcastHashJoinMeta(join, conf, p, r)),
       GpuOverrides.exec[ShuffledHashJoinExec](
         "Implementation of join using hashed shuffled data",
-        (join, conf, p, r) => new GpuShuffledHashJoinMeta(join, conf, p, r)),
-      GpuOverrides.exec[WindowInPandasExec](
-          "The backend for Pandas UDF with window functions, it runs on CPU itself now but" +
-          " supports running the Python UDFs code on GPU when calling cuDF APIs in the UDF",
-      (winPy, conf, p, r) => new GpuWindowInPandasExecMeta(winPy, conf, p, r))
-        .disabledByDefault("Performance is not ideal now")
+        (join, conf, p, r) => new GpuShuffledHashJoinMeta(join, conf, p, r))
     ).map(r => (r.getClassFor.asSubclass(classOf[SparkPlan]), r)).toMap
   }
 
