@@ -20,7 +20,7 @@ import java.util.concurrent.Executor
 
 import scala.collection.mutable.ArrayBuffer
 
-import ai.rapids.cudf.{ColumnVector, ContiguousTable}
+import ai.rapids.cudf.{ColumnVector, ContiguousTable, DeviceMemoryBuffer, HostMemoryBuffer}
 import com.nvidia.spark.rapids.{Arm, GpuColumnVector, MetaUtils, RapidsConf, RapidsDeviceMemoryStore, ShuffleMetadata, ShuffleReceivedBufferCatalog}
 import com.nvidia.spark.rapids.format.TableMeta
 import org.mockito.ArgumentMatchers.any
@@ -64,12 +64,60 @@ class RapidsShuffleTestHelper extends FunSuite
   var testMetricsUpdater: TestShuffleMetricsUpdater = _
   var client: RapidsShuffleClient = _
 
+  def getBounceBuffer(size: Long): BounceBuffer = {
+    withResource(HostMemoryBuffer.allocate(size)) { hmb =>
+      fillBuffer(hmb)
+      val db = DeviceMemoryBuffer.allocate(size)
+      db.copyFromHostBuffer(hmb)
+      new BounceBuffer(db) {
+        override def free(bb: BounceBuffer): Unit = {
+          db.close()
+        }
+      }
+    }
+  }
+
+  def fillBuffer(hmb: HostMemoryBuffer): Unit = {
+    (0 until hmb.getLength.toInt by 4).foreach { b =>
+      hmb.setInt(b, b)
+    }
+  }
+
+  def areBuffersEqual(orig: HostMemoryBuffer, buff: DeviceMemoryBuffer): Boolean = {
+    var areEqual = orig.getLength == buff.getLength
+    if (areEqual) {
+      val len = orig.getLength.toInt
+      withResource(HostMemoryBuffer.allocate(len)) { hmb =>
+        hmb.copyFromDeviceBuffer(buff)
+        (0 until len by 4).foreach { b =>
+          areEqual = areEqual && hmb.getInt(b) == orig.getInt(b)
+          if (!areEqual) {
+            println(s"not equal at offset ${b} ${hmb.getInt(b)} -- ${orig.getInt(b)}")
+          }
+        }
+      }
+    } else {
+      println(s"NOT EQUAL LENGTH ${orig} vs ${buff}")
+    }
+    areEqual
+  }
+
+  def getSendBounceBuffer(size: Long): SendBounceBuffers = {
+    val db = DeviceMemoryBuffer.allocate(size)
+    SendBounceBuffers(new BounceBuffer(db) {
+      override def free(bb: BounceBuffer): Unit = {
+        db.close()
+      }
+    }, None)
+  }
+
   override def beforeEach(): Unit = {
     newMocks()
   }
 
   def newMocks(): Unit = {
     mockTransaction = mock[Transaction]
+    when(mockTransaction.getStats).thenReturn(mock[TransactionStats])
     mockConnection = spy(new MockConnection(mockTransaction))
     mockTransport = mock[RapidsShuffleTransport]
     mockExecutor = new ImmediateExecutor
@@ -143,6 +191,21 @@ object RapidsShuffleTestHelper extends MockitoSugar with Arm {
     tableMetas
   }
 
+  def prepareMetaTransferRequest(numTables: Int, numRows: Long): RefCountedDirectByteBuffer =
+    withMockContiguousTable(numRows) { ct =>
+      val tableMetaTags = (0 until numTables).map { t =>
+        (buildMockTableMeta(t, ct), t.toLong)
+      }
+      val trBuffer = ShuffleMetadata.buildTransferRequest(1, 123, tableMetaTags)
+      val refCountedRes = new RefCountedDirectByteBuffer(trBuffer)
+      refCountedRes
+    }
+
+  def mockTableMeta(numRows: Long): TableMeta =
+    withMockContiguousTable(numRows) { ct =>
+      buildMockTableMeta(1, ct)
+    }
+
   def prepareMetaTransferResponse(
       mockTransport: RapidsShuffleTransport,
       numRows: Long): TableMeta =
@@ -209,8 +272,7 @@ class MockConnection(mockTransaction: Transaction) extends ClientConnection {
     mockTransaction
   }
 
-  override def getPeerExecutorId: Long =
-    throw new UnsupportedOperationException
+  override def getPeerExecutorId: Long = 0
 
   override def assignResponseTag: Long = 1L
   override def assignBufferTag(msgId: Int): Long = 2L

@@ -20,7 +20,7 @@ import java.util.concurrent.Executor
 
 import scala.collection.mutable.ArrayBuffer
 
-import ai.rapids.cudf.{DeviceMemoryBuffer, MemoryBuffer, NvtxColor, NvtxRange}
+import ai.rapids.cudf.{DeviceMemoryBuffer, NvtxColor, NvtxRange}
 import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.format.{MetadataResponse, TableMeta, TransferState}
 
@@ -67,287 +67,7 @@ case class PendingTransferRequest(client: RapidsShuffleClient,
                                   tableMeta: TableMeta,
                                   tag: Long,
                                   handler: RapidsShuffleFetchHandler) {
-  def getLength: Long = tableMeta.bufferMeta.size
-}
-
-/**
- * Class describing the state of a set of [[PendingTransferRequest]]s.
- *
- * This class is *not thread safe*. The way the code is currently designed, bounce buffers being
- * used to receive, or copied from, are acted on a sequential basis, in time and in space.
- *
- * Callers use this class, like so:
- *
- * 1. [[getRequest]]
- *    - first call:
- *       - Initializes the state tracking the progress of `currentRequest` and our place in
- *          `requests` (e.g. offset, bytes remaining)
- *
- *    - subsequent calls:
- *       - if `currentRequest` is not done, it will return the current request. And perform
- *          sanity checks.
- *       - if `currentRequest` is done, it will perform sanity checks, and advance to the next
- *          request in `requests`
- *
- * 2. [[consumeBuffers]]
- *     - first call:
- *       - The first time around for `currentRequest` it will allocate the actual full device
- *         buffer that we will copy to, copy data sequentially from the bounce buffer to the 
- *         target buffer.
- *     - subsequent calls:
- *       - continue copy data sequentially from the bounce buffers passed in.
- *       - When `currentRequest` has been fully received, an optional `DeviceMemoryBuffer` is 
- *         set, and returned.
- *
- * 3. [[close]]
- *     - once the caller calls close, the bounce buffers are returned to the pool.
- *
- * @param transport a transport, which in this case is used to free bounce buffers
- * @param bounceMemoryBuffers a sequence of `MemoryBuffer` buffers to use for receives
- */
-class BufferReceiveState(
-    transport: RapidsShuffleTransport,
-    val bounceMemoryBuffers: Seq[MemoryBuffer])
-  extends AutoCloseable
-  with Logging {
-
-  private[this] var bounceBuffers: Seq[AddressLengthTag] = null
-  private[this] val requests = new ArrayBuffer[PendingTransferRequest]()
-
-  /**
-   * Use by the transport to add to this [[BufferReceiveState]] requests it needs to handle.
-   * @param pendingTransferRequest request to add to this [[BufferReceiveState]]
-   */
-  def addRequest(pendingTransferRequest: PendingTransferRequest): Unit = synchronized {
-    requests.append(pendingTransferRequest)
-  }
-
-  /**
-   * Holds the target device memory buffer. It is allocated at [[consumeBuffers]] when the first
-   * bounce buffer resolves, and it is also handed off to the caller in the same function.
-   */
-  private[this] var buff: DeviceMemoryBuffer = null
-
-  /**
-   * This is the address/length/tag object for the target buffer. It is used only to access a cuda
-   * synchronous copy method. We should do a regular copy from [[buff]] once we use the async
-   * method and add the cuda event synchronization.
-   */
-  private[this] var alt: AddressLengthTag = null
-
-  /**
-   * True iff this is the last request we are handling. It is used in [[isDone]] to find the
-   * stopping point.
-   */
-  private[this] var lastRequest: Boolean = false
-
-  /**
-   * The index into the [[requests]] sequence pointing to the current request we are handling.
-   * We handle requests sequentially.
-   */
-  private[this] var currentRequestIndex = -1
-
-  /**
-   * Amount of bytes left in the current request.
-   */
-  private[this] var currentRequestRemaining: Long = 0L
-
-  /**
-   * Byte offset we are currently at. [[getRequest]] uses and resets it, and [[consumeBuffers]]
-   * updates it.
-   */
-  private[this] var currentRequestOffset: Long = 0L
-
-  /**
-   * The current request (TableMeta, Handler (iterator))
-   */
-  private[this] var currentRequest: PendingTransferRequest = null
-
-  /**
-   * To help debug "closed multiple times" issues
-   */
-  private[this] var isClosed = false
-
-  /**
-   * Becomes true when there is an error detected, allowing the client to close this
-   * [[BufferReceiveState]] prematurely.
-   */
-  private[this] var errorOcurred = false
-
-  override def toString: String = {
-    s"BufferReceiveState(isDone=$isDone, currentRequestDone=$currentRequestDone, " +
-      s"requests=${requests.size}, currentReqIx=$currentRequestIndex, " +
-      s"currentReqOffset=$currentRequestOffset, currentReqRemaining=$currentRequestRemaining" +
-      s"bounceBuffers=$bounceBuffers)"
-  }
-
-  /**
-   * When a receive transaction is successful, this function is called to consume the bounce
-   * buffers received.
-   *
-   * @note If the target device buffer is not allocated, this function does so.
-   * @param bounceBuffers sequence of buffers that have been received
-   * @return if the current request is complete, returns a shallow copy of the target
-   *         device buffer as an `Option`. Callers will need to close the buffer.
-   */
-  def consumeBuffers(
-      bounceBuffers: Seq[AddressLengthTag]): Option[DeviceMemoryBuffer] = synchronized {
-    var needsCleanup = true
-
-    try {
-      if (buff == null) {
-        buff = DeviceMemoryBuffer.allocate(currentRequest.getLength)
-        alt = AddressLengthTag.from(buff, currentRequest.tag)
-      }
-
-      bounceBuffers.foreach(bb => {
-        currentRequestOffset = currentRequestOffset +
-          alt.cudaCopyFrom(bb, currentRequestOffset)
-      })
-
-      // buffers are sent in sequential order, so the length check is all we need (at the moment)
-      // to determine if we are done.
-      if (currentRequestDone) {
-        require(currentRequestOffset == currentRequest.getLength,
-          "Current request marked as done, but not all bounce buffers were consumed?")
-        logDebug(s"Done copying ${TransportUtils.formatTag(currentRequest.tag)}")
-        val res = buff
-        // The buffer [[buff]] is being handed off to the caller.
-        // It is the job of the caller to close it.
-        buff = null
-        needsCleanup = false
-        Some(res)
-      } else {
-        logDebug(s"More copying left for ${TransportUtils.formatTag(currentRequest.tag)}, " +
-           s"current offset is ${currentRequestOffset} out of ${currentRequest.getLength}")
-        needsCleanup = false
-        None
-      }
-    } finally {
-      if (needsCleanup) {
-        if (buff != null) {
-          buff.close()
-          buff = null
-        }
-      }
-    }
-  }
-
-  private[this] def currentRequestDone: Boolean = {
-    currentRequestRemaining == 0
-  }
-
-  /**
-   * Signals whether this [[BufferReceiveState]] is complete.
-   * @return boolean when at the last request, and that request is fully received
-   */
-  def isDone: Boolean = synchronized {
-    lastRequest && currentRequestDone
-  }
-
-  /**
-   * Return the current (making the next request current, if we are done) request and
-   * whether we advanced (want to kick off a transfer request to the server)
-   *
-   * @return returns the currently working transfer request, and
-   *         true if this is a new request we should be asking the server to trigger
-   */
-  def getRequest: (PendingTransferRequest, Boolean) = synchronized {
-    require(currentRequestIndex < requests.size,
-      "Something went wrong while handling buffer receives. Asking for more buffers than expected")
-
-    if (currentRequestRemaining > 0) {
-      require(currentRequest != null,
-        "Attempted to get the current request, but it was null")
-      (currentRequest, false)
-    } else {
-      if (currentRequest != null) {
-        logDebug(s"Done with ${currentRequest}, advancing.")
-        require(currentRequestDone,
-          s"Attempted to move on to the next buffer receive, but the prior buffer wasn't fully " +
-            s"transmitted, offset ${currentRequestOffset} == ${currentRequest.getLength}")
-        currentRequestOffset = 0L
-        currentRequest = null
-      }
-
-      // advance to the next request
-      currentRequestIndex = currentRequestIndex + 1
-
-      require(currentRequestIndex < requests.size,
-        s"getRequest was called too many times, looking for $currentRequestIndex out of " +
-          s"${requests.size}")
-
-      currentRequest = requests(currentRequestIndex)
-
-      currentRequestRemaining = currentRequest.getLength
-
-      // track if we are at the last request
-      lastRequest = currentRequestIndex == requests.size - 1
-
-      prepareBounceBuffers() // need to prepare these before returning the new request
-
-      (currentRequest, true)
-    }
-  }
-
-  private[this] def prepareBounceBuffers(): Unit = {
-    bounceBuffers = bounceMemoryBuffers.map(bmb => AddressLengthTag.from(bmb, currentRequest.tag))
-  }
-
-  private[this] def advance(bounceBufferLength: Long): Long = {
-    val lengthToRecv = Math.min(bounceBufferLength, currentRequestRemaining)
-    currentRequestRemaining = currentRequestRemaining - lengthToRecv
-    lengthToRecv
-  }
-
-  /**
-   * Used to cut the subset of bounce buffers the client will need to issue receives with.
-   *
-   * This is a subset, because at the moment, the full target length worth of bounce buffers
-   * could have been acquired. If we are at the tail end of receive, and it could be fulfilled
-   * with 1 bounce buffer, for example, we would return 1 bounce buffer here, rather than the
-   * number of buffers in acquired.
-   *
-   * @note that these extra buffers should really just be freed as soon as we realize
-   *       they are of no use.
-   *
-   * @return sequence of [[AddressLengthTag]] pointing to the receive bounce buffers.
-   */
-  def getBounceBuffersForReceive(): Seq[AddressLengthTag] = synchronized {
-    var bounceBufferIx = 0
-    var bounceBuffersForTransfer = Seq[AddressLengthTag]()
-    // we may have more bounce buffers than required for this send
-    while (bounceBufferIx < bounceBuffers.size && !currentRequestDone) {
-      val bb = bounceBuffers(bounceBufferIx)
-      val lengthToRecv = advance(bb.length)
-      bb.resetLength(lengthToRecv)
-
-      logDebug(s"Buffer for ${currentRequest}: ${bb}")
-      bounceBufferIx = bounceBufferIx + 1
-
-      // at the very end, we may have a smaller set of buffers, than those we acquired
-      bounceBuffersForTransfer = bounceBuffersForTransfer :+ bb
-    }
-    bounceBuffersForTransfer
-  }
-
-  // helpers used in logging
-  def getCurrentRequestRemaining: Long = currentRequestRemaining
-  def getCurrentRequestOffset : Long = currentRequestOffset
-
-  def closeWithError(): Unit = synchronized {
-    errorOcurred = true
-    close()
-  }
-
-  override def close(): Unit = synchronized {
-    require(isDone || errorOcurred)
-    if (isClosed) {
-      throw new IllegalStateException("ALREADY CLOSED")
-    }
-    isClosed = true
-    transport.freeReceiveBounceBuffers(bounceMemoryBuffers)
-  }
+  val getLength: Long = tableMeta.bufferMeta.size()
 }
 
 /**
@@ -424,13 +144,9 @@ class RapidsShuffleClient(
      *
      * @param tx live transaction for the buffer, to be closed after the buffer is handled
      * @param bufferReceiveState the object maintaining state for receives
-     * @param currentRequest the request these bounce buffers belong to
-     * @param bounceBuffers buffers used in the transfer, which contain the fragment of the data
      */
     case class HandleBounceBufferReceive(tx: Transaction,
-                                         bufferReceiveState: BufferReceiveState,
-                                         currentRequest: PendingTransferRequest,
-                                         bounceBuffers: Seq[AddressLengthTag])
+                                         bufferReceiveState: BufferReceiveState)
   }
 
   import ShuffleClientOps._
@@ -444,8 +160,8 @@ class RapidsShuffleClient(
           doFetch(shuffleRequests, rapidsShuffleFetchHandler, fullResponseSize)
         case IssueBufferReceives(bufferReceiveState) =>
           doIssueBufferReceives(bufferReceiveState)
-        case HandleBounceBufferReceive(tx, bufferReceiveState, currentRequest, bounceBuffers) =>
-          doHandleBounceBufferReceive(tx, bufferReceiveState, currentRequest, bounceBuffers)
+        case HandleBounceBufferReceive(tx, bufferReceiveState) =>
+          doHandleBounceBufferReceive(tx, bufferReceiveState)
       }
     } catch {
       case t: Throwable => {
@@ -550,10 +266,6 @@ class RapidsShuffleClient(
             // signal to the handler how many batches are expected
             handler.start(metadataResponse.tableMetasLength())
 
-            //TODO: nothing is preventing us from issuing transfers later, still letting
-            //  the metadata requests through early on, but doing the transfer requests later
-            //  (on iterator.next) saving connection/handshake time.
-
             // queue up the receives
             queueTransferRequests(metadataResponse, handler)
           } else {
@@ -590,48 +302,31 @@ class RapidsShuffleClient(
    *                           the transport's throttle logic.
    */
   private[shuffle] def doIssueBufferReceives(bufferReceiveState: BufferReceiveState): Unit = {
-    logDebug(s"At issue for ${bufferReceiveState}, " +
-      s"remaining: ${bufferReceiveState.getCurrentRequestRemaining}, " +
-      s"offset: ${bufferReceiveState.getCurrentRequestOffset}")
-
-    val (currentRequest, advanced) = bufferReceiveState.getRequest
-
-    if (advanced) {
-      // note this sends 1 at a time... need to experiment with `getRequest` returning more than
-      // 1 buffer if there are bounce buffers available
-      receiveBuffers(currentRequest, bufferReceiveState)
-      sendTransferRequest(Seq(currentRequest))
-    } else {
-      logDebug(s"Not the first time around for ${currentRequest}, NOT sending transfer request.")
-      receiveBuffers(currentRequest, bufferReceiveState)
+    if (!bufferReceiveState.hasIterated) {
+      sendTransferRequest(bufferReceiveState)
     }
+    receiveBuffers(bufferReceiveState)
   }
 
-  private def receiveBuffers(
-      currentRequest: PendingTransferRequest,
-      bufferReceiveState: BufferReceiveState): Transaction = {
-    val buffersToReceive = bufferReceiveState.getBounceBuffersForReceive()
+  private def receiveBuffers(bufferReceiveState: BufferReceiveState): Transaction = {
+    val buffersToReceive = bufferReceiveState.next()
 
-    logDebug(s"Issuing receive for ${TransportUtils.formatTag(currentRequest.tag)} at " +
-      s"startingOffset ${bufferReceiveState.getCurrentRequestOffset} with " +
-      s"${buffersToReceive.size} bounce buffers, and ${currentRequest.getLength} total length. " +
-      s"buffers = ${buffersToReceive.map(_.length).mkString(",")}")
+    logDebug(s"Issuing receive for ${TransportUtils.formatTag(buffersToReceive.tag)}")
 
-    connection.receive(buffersToReceive,
+    // TODO: make this use the single-receive version
+    connection.receive(Seq(buffersToReceive),
       tx => {
         tx.getStatus match {
           case TransactionStatus.Success =>
-            // TODO: during code review we agreed to make this receive per buffer, s.t.
-            //  buffers could be freed earlier and likely out of order.
-            asyncOnCopyThread(HandleBounceBufferReceive(tx, bufferReceiveState,
-              currentRequest, buffersToReceive))
+            logDebug(s"Handling response for ${TransportUtils.formatTag(buffersToReceive.tag)}")
+            asyncOnCopyThread(HandleBounceBufferReceive(tx, bufferReceiveState))
           case _ => try {
             val errMsg = s"Unsuccessful buffer receive ${tx}"
             logError(errMsg)
-            currentRequest.handler.transferError(errMsg)
+            bufferReceiveState.errorOcurred(errMsg)
           } finally {
             tx.close()
-            bufferReceiveState.closeWithError()
+            bufferReceiveState.close()
           }
         }
       })
@@ -643,16 +338,17 @@ class RapidsShuffleClient(
    * @param toIssue sequence of [[PendingTransferRequest]] we want included in the server
    *                transfers
    */
-  private[this] def sendTransferRequest(toIssue: Seq[PendingTransferRequest]): Unit = {
+  private[this] def sendTransferRequest(toIssue: BufferReceiveState): Unit = {
+    val requestsToIssue = toIssue.getRequests
     logDebug(s"Sending a transfer request for " +
-      s"${toIssue.map(r => TransportUtils.formatTag(r.tag)).mkString(",")}")
+        s"${requestsToIssue.map(r => TransportUtils.formatTag(r.tag)).mkString(",")}")
 
     // get a tag that the server can use to send its reply
     val responseTag = connection.assignResponseTag
 
     val transferReq = new RefCountedDirectByteBuffer(
       ShuffleMetadata.buildTransferRequest(localExecutorId, responseTag,
-        toIssue.map(i => (i.tableMeta, i.tag))))
+        requestsToIssue.map(i => (i.tableMeta, i.tag))))
 
     if (transferReq.getBuffer().remaining() > maximumMetadataSize) {
       throw new IllegalStateException("Trying to send a transfer request metadata buffer that " +
@@ -707,10 +403,11 @@ class RapidsShuffleClient(
     (0 until allTables).foreach { i =>
       val tableMeta = ShuffleMetadata.copyTableMetaToHeap(metaResponse.tableMetas(i))
       if (tableMeta.bufferMeta() != null) {
+        val tag = connection.assignBufferTag(tableMeta.bufferMeta().id)
         ptrs += PendingTransferRequest(
           this,
           tableMeta,
-          connection.assignBufferTag(tableMeta.bufferMeta().id),
+          tag,
           handler)
       } else {
         // Degenerate buffer (no device data) so no more data to request.
@@ -730,46 +427,28 @@ class RapidsShuffleClient(
    * state (consumeBuffers)
    * @param tx live transaction for these bounce buffers, it should be closed in this function
    * @param bufferReceiveState state management objects for live transfer requests
-   * @param currentRequest current transfer request being worked on
-   * @param bounceBuffers bounce buffers (just received) containing data to be consumed
    */
-  def doHandleBounceBufferReceive(tx: Transaction,
-                                  bufferReceiveState: BufferReceiveState,
-                                  currentRequest: PendingTransferRequest,
-                                  bounceBuffers: Seq[AddressLengthTag]): Unit = {
-    logDebug(s"At issue receive async with bounce buffers ${bounceBuffers} and ${currentRequest}" +
-      s" and starting offset ${bufferReceiveState.getCurrentRequestOffset}")
+  def doHandleBounceBufferReceive(tx: Transaction, 
+      bufferReceiveState: BufferReceiveState): Unit = {
     val nvtxRange = new NvtxRange("Buffer Callback", NvtxColor.RED)
     try {
-      // consume buffers, which will return true if done for the current request
-      val buff = bufferReceiveState.consumeBuffers(bounceBuffers)
-
-      if (buff.isDefined) {
-        logDebug(s"Done with receive [tag=${TransportUtils.formatTag(currentRequest.tag)}, " +
-          s"tx=${tx}]")
-
-        // release the bytes in flight
-        transport.doneBytesInFlight(currentRequest.getLength)
-
-        // hand buffer off to the catalog
-        val rapidsBufferId = track(buff.get, currentRequest.tableMeta)
-
-        // tell the iterator the batch has arrived, and is ready for processing
-        currentRequest.handler.batchReceived(
-          rapidsBufferId.asInstanceOf[ShuffleReceivedBufferId])
-      } else {
-        logDebug(s"Not done with: " +
-          s"[tag=${TransportUtils.formatTag(currentRequest.tag)}, tx=${tx}, " +
-          s"current_offset=${bufferReceiveState.getCurrentRequestOffset}, " +
-          s"total_length=${currentRequest.getLength}]")
-      }
+      // consume buffers, which will non empty for batches that are ready
+      // to be handed off to the catalog
+      val buffMetas = bufferReceiveState.consumeWindow()
 
       val stats = tx.getStats
+
+      // hand buffer off to the catalog
+      buffMetas.foreach { consumed: ConsumedBatchFromBounceBuffer =>
+        val bId = track(consumed.contigBuffer, consumed.meta)
+        consumed.handler.batchReceived(bId.asInstanceOf[ShuffleReceivedBufferId])
+        transport.doneBytesInFlight(consumed.contigBuffer.getLength)
+      }
 
       logDebug(s"Received buffer size ${stats.receiveSize} in" +
         s" ${stats.txTimeMs} ms @ bw: [recv: ${stats.recvThroughput}] GB/sec")
 
-      if (!bufferReceiveState.isDone) {
+      if (bufferReceiveState.hasNext) {
         logDebug(s"${bufferReceiveState} is not done.")
         asyncOnCopyThread(IssueBufferReceives(bufferReceiveState))
       } else {
