@@ -234,3 +234,51 @@ def test_cache_columnar(spark_tmp_path, data_gen, enableVectorized, ts_write):
           'spark.sql.parquet.outputTimestampType': ts_write}
 
     assert_gpu_and_cpu_are_equal_collect(read_parquet_cached(data_path_gpu), conf)
+
+@pytest.mark.parametrize('enableVectorized', ['false', 'true'], ids=idfn)
+@pytest.mark.parametrize('func', [with_cpu_session, with_gpu_session])
+@allow_non_gpu("ProjectExec", "Alias", "Literal", "DateAddInterval", "MakeInterval", "Cast",
+               "ExtractIntervalYears", "Year", "Month", "Second", "ExtractIntervalMonths",
+               "ExtractIntervalSeconds", "SecondWithFraction", "ColumnarToRowExec")
+@pytest.mark.parametrize('selectExpr', [("NULL as d", "d"),
+                                        # In order to compare the results, since pyspark doesn't
+                                        # know how to parse interval types, we need to "extract"
+                                        # values from the interval. NOTE, "extract" is a misnomer
+                                        # because we are actually coverting the value to the
+                                        # requested time precision, which is not actually extraction
+                                        # i.e. 'extract(years from d) will actually convert the
+                                        # entire interval to year
+                                        ("make_interval(y,m,w,d,h,min,s) as d", ["cast(extract(years from d) as long)", "extract(months from d)", "extract(seconds from d)"])])
+def test_cache_additional_types(enableVectorized, func, selectExpr):
+    def holder(cache):
+        selectExprDF, selectExprProject = selectExpr
+        def helper(spark):
+            # the goal is to just get a DF of CalendarIntervalType, therefore limiting the values
+            # so when we do get the individual parts of the interval, it doesn't overflow
+            df = gen_df(spark, StructGen([('m', IntegerGen(min_val=-1000, max_val=1000, nullable=False)),
+                                          ('y', IntegerGen(min_val=-10000, max_val=10000, nullable=False)),
+                                          ('w', IntegerGen(min_val=-10000, max_val=10000, nullable=False)),
+                                          ('h', IntegerGen(min_val=-10000, max_val=10000, nullable=False)),
+                                          ('min', IntegerGen(min_val=-10000, max_val=10000, nullable=False)),
+                                          ('d', IntegerGen(min_val=-10000, max_val=10000, nullable=False)),
+                                          ('s', IntegerGen(min_val=-10000, max_val=10000, nullable=False))],
+                                         nullable=False), seed=1)
+            duration_df = df.selectExpr(selectExprDF)
+            if (cache):
+                duration_df.cache()
+            duration_df.count
+            df_1 = duration_df.selectExpr(selectExprProject)
+            return df_1.collect()
+        return helper
+
+    cached_result = func(holder(True),
+       conf={'spark.sql.legacy.parquet.datetimeRebaseModeInWrite': 'CORRECTED',
+       'spark.sql.legacy.parquet.datetimeRebaseModeInRead' : 'CORRECTED',
+       'spark.sql.inMemoryColumnarStorage.enableVectorizedReader' : enableVectorized})
+    reg_result = func(holder(False),
+       conf={'spark.sql.legacy.parquet.datetimeRebaseModeInWrite': 'CORRECTED',
+       'spark.sql.legacy.parquet.datetimeRebaseModeInRead' : 'CORRECTED',
+       'spark.sql.inMemoryColumnarStorage.enableVectorizedReader' : enableVectorized})
+
+    #NOTE: we aren't comparing cpu and gpu results, we are comparing the cached and non-cached results.
+    assert_equal(reg_result, cached_result)
