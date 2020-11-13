@@ -485,6 +485,11 @@ class GpuSpecifiedWindowFrameMeta(
   // SpecifiedWindowFrame has no associated dataType.
   override val ignoreUnsetDataTypes: Boolean = true
 
+  override def isSupportedType(t: DataType): Boolean =
+    GpuOverrides.isSupportedType(t,
+      allowNull = true,
+      allowCalendarInterval = true)
+
   override def tagExprForGpu(): Unit = {
     if (windowFrame.frameType.equals(RangeFrame)) {
       // Expect either SpecialFrame (UNBOUNDED PRECEDING/FOLLOWING, or CURRENT ROW),
