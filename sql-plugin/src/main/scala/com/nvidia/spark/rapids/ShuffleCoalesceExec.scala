@@ -59,9 +59,7 @@ case class ShuffleCoalesceExec(child: SparkPlan, @transient rapidsConf: RapidsCo
 
   override def doExecuteColumnar(): RDD[ColumnarBatch] = {
     val metricsMap = metrics
-    // Keep the batch size below a 2GB limit so that no nested type child column can exceed
-    // the cudf 2^31 row count limit
-    val targetBatchByteSize = Math.min(rapidsConf.gpuTargetBatchSizeBytes, Integer.MAX_VALUE)
+    val targetBatchByteSize = rapidsConf.gpuTargetBatchSizeBytes
     val sparkSchema = GpuColumnVector.extractTypes(schema)
 
     child.executeColumnar().mapPartitions { iter =>
