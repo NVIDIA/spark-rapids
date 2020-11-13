@@ -140,21 +140,19 @@ class BounceBufferManager[T <: MemoryBuffer](
    * Free a `BounceBuffer`, putting it back into the pool.
    * @param bounceBuffer the memory buffer to free
    */
-  def freeBuffer(bounceBuffer: BounceBuffer): Unit = {
-    synchronized {
-      val buffer = bounceBuffer.buffer
-      require(buffer.getAddress >= rootBuffer.getAddress
-          && (buffer.getAddress - rootBuffer.getAddress) % bufferSize == 0,
-        s"$poolName: foreign buffer being freed")
-      val bufferIndex = (buffer.getAddress - rootBuffer.getAddress) / bufferSize
-      require(bufferIndex < numBuffers,
-        s"$poolName: buffer index invalid $bufferIndex should be less than $numBuffers")
+  def freeBuffer(bounceBuffer: BounceBuffer): Unit = synchronized {
+    val buffer = bounceBuffer.buffer
+    require(buffer.getAddress >= rootBuffer.getAddress
+        && (buffer.getAddress - rootBuffer.getAddress) % bufferSize == 0,
+      s"$poolName: foreign buffer being freed")
+    val bufferIndex = (buffer.getAddress - rootBuffer.getAddress) / bufferSize
+    require(bufferIndex < numBuffers,
+      s"$poolName: buffer index invalid $bufferIndex should be less than $numBuffers")
 
-      logDebug(s"$poolName: Free buffer index ${bufferIndex}")
-      buffer.close()
-      freeBufferMap.set(bufferIndex.toInt)
-      notifyAll() // notify any waiters that are checking the state of this manager
-    }
+    logDebug(s"$poolName: Free buffer index ${bufferIndex}")
+    buffer.close()
+    freeBufferMap.set(bufferIndex.toInt)
+    notifyAll() // notify any waiters that are checking the state of this manager
   }
 
   /**

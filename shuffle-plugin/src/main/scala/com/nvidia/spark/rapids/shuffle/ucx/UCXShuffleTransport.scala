@@ -383,17 +383,18 @@ class UCXShuffleTransport(shuffleServerId: BlockManagerId, rapidsConf: RapidsCon
       try {
         var req: PendingTransferRequest = null
         val requestsToHandle = new ArrayBuffer[PendingTransferRequest]()
-        var continue = true
         altList.synchronized {
-          while (inflightStarted && continue) {
+          // pick up a request if ready, or wait until
+          // a request is added to `altList`
+          req = altList.poll()
+          while (inflightStarted && req == null) {
+            altList.wait(100)
             req = altList.poll()
-            if (req == null && requestsToHandle.isEmpty) {
-              altList.wait(100)
-            } else if (req != null) {
-              requestsToHandle.append(req)
-            } else {
-              continue = false
-            }
+          }
+          // if we had 1 request, try to drain the rest
+          while (req != null) {
+            requestsToHandle.append(req)
+            req = altList.poll()
           }
         }
 
