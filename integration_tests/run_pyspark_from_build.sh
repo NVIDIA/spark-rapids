@@ -94,6 +94,7 @@ else
           $TEST_PARALLEL_OPTS \
           -v -rfExXs "$TEST_TAGS" \
           --std_input_path="$SCRIPTPATH"/src/test/resources/ \
+          --color=yes \
           "$TEST_ARGS" \
           $RUN_TEST_PARAMS \
           "$@"
@@ -107,6 +108,7 @@ else
           "$SCRIPTPATH"/runtests.py --rootdir "$SCRIPTPATH" "$SCRIPTPATH"/src/main/python \
           -v -rfExXs "$TEST_TAGS" \
           --std_input_path="$SCRIPTPATH"/src/test/resources/ \
+          --color=yes \
           "$TEST_ARGS" \
           $RUN_TEST_PARAMS \
           "$@"

@@ -679,19 +679,32 @@ abstract class BaseExprMeta[INPUT <: Expression](
   override def canExprTreeBeReplaced: Boolean =
     canThisBeReplaced && super.canExprTreeBeReplaced
 
+  def dataType: DataType = expr.dataType
+
   final override def tagSelfForGpu(): Unit = {
     try {
       if (!areAllSupportedTypes(expr.dataType)) {
         willNotWorkOnGpu(s"expression ${expr.getClass.getSimpleName} $expr " +
           s"produces an unsupported type ${expr.dataType}")
       }
-    }
-    catch {
+    } catch {
       case _ : java.lang.UnsupportedOperationException =>
         if (!ignoreUnsetDataTypes) {
           willNotWorkOnGpu(s"expression ${expr.getClass.getSimpleName} $expr " +
             s" does not have a corresponding dataType.")
         }
+    }
+    val inputDataTypes = childExprs.map { expr =>
+      try {
+        expr.dataType
+      } catch {
+        case _ : java.lang.UnsupportedOperationException => null
+      }
+    }.filter(_ != null).toArray
+    if (!areAllSupportedTypes(inputDataTypes :_*)) {
+      val unsupported = inputDataTypes
+          .filter(!areAllSupportedTypes(_)).toSet
+      willNotWorkOnGpu(s"unsupported data types in input: ${unsupported.mkString(", ")}")
     }
     tagExprForGpu()
   }

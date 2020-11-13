@@ -30,7 +30,7 @@ import org.apache.spark.sql.catalyst.expressions.Attribute
 import org.apache.spark.sql.catalyst.plans.physical.Partitioning
 import org.apache.spark.sql.execution.{SparkPlan, UnaryExecNode}
 import org.apache.spark.sql.execution.metric.{SQLMetric, SQLMetrics}
-import org.apache.spark.sql.types.{DataType, DataTypes, MapType, StructType}
+import org.apache.spark.sql.types.{ArrayType, DataType, DataTypes, MapType, StructType}
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
 /**
@@ -372,7 +372,7 @@ abstract class AbstractGpuCoalesceIterator(
 }
 
 // Remove this iterator when contiguous_split supports nested types
-class GpuCoalesceIteratorForMaps(iter: Iterator[ColumnarBatch],
+class GpuCoalesceIteratorNoSpill(iter: Iterator[ColumnarBatch],
   schema: StructType,
   goal: CoalesceGoal,
   maxDecompressBatchMemory: Long,
@@ -684,22 +684,27 @@ case class GpuCoalesceBatches(child: SparkPlan, goal: CoalesceGoal)
     // cache in local vars to avoid serializing the plan
     val outputSchema = schema
     val decompressMemoryTarget = maxDecompressBatchMemory
-    val hasMaps = child.schema.fields.exists(_.dataType.isInstanceOf[MapType])
+    val cannotSpill = child.schema.fields.exists { f =>
+      f.dataType match {
+        case MapType(_, _, _) | ArrayType(_, _) | StructType(_) => true
+        case _ => false
+      }
+    }
 
     val batches = child.executeColumnar()
     batches.mapPartitions { iter =>
-      if (outputSchema.nonEmpty && !hasMaps) {
-        new GpuCoalesceIterator(iter, outputSchema, goal, decompressMemoryTarget,
-          numInputRows, numInputBatches, numOutputRows, numOutputBatches, collectTime,
-          concatTime, totalTime, peakDevMemory, "GpuCoalesceBatches")
-      } else if (hasMaps) {
-        new GpuCoalesceIteratorForMaps(iter, outputSchema, goal, decompressMemoryTarget,
-          numInputRows, numInputBatches, numOutputRows, numOutputBatches, collectTime,
-          concatTime, totalTime, peakDevMemory, "GpuCoalesceBatches")
-      } else {
+      if (outputSchema.isEmpty) {
         val numRows = iter.map(_.numRows).sum
         val combinedCb = new ColumnarBatch(Array.empty, numRows)
         Iterator.single(combinedCb)
+      } else if (cannotSpill) {
+        new GpuCoalesceIteratorNoSpill(iter, outputSchema, goal, decompressMemoryTarget,
+          numInputRows, numInputBatches, numOutputRows, numOutputBatches, collectTime,
+          concatTime, totalTime, peakDevMemory, "GpuCoalesceBatches")
+      } else {
+        new GpuCoalesceIterator(iter, outputSchema, goal, decompressMemoryTarget,
+          numInputRows, numInputBatches, numOutputRows, numOutputBatches, collectTime,
+          concatTime, totalTime, peakDevMemory, "GpuCoalesceBatches")
       }
     }
   }
