@@ -532,7 +532,7 @@ class ParquetCachedBatchSerializer extends CachedBatchSerializer with Arm {
           val inputFile = new ByteArrayInputFile(parquetCachedBatch.buffer)
           val parquetFileReader = ParquetFileReader.open(inputFile, options)
           val parquetSchema = parquetFileReader.getFooter.getFileMetaData.getSchema
-          val hasUnsupportedType = cacheAttributes.toStructType.fields.exists { field =>
+          val hasUnsupportedType = cacheAttributes.exists { field =>
             !isTypeSupportedByParquet(field.dataType)
           }
 
