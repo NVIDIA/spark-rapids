@@ -25,7 +25,7 @@ import org.apache.spark.sql.execution.command.ExecutedCommandExec
 import org.apache.spark.sql.execution.datasources.v2.DataSourceV2ScanExecBase
 import org.apache.spark.sql.execution.exchange.{Exchange, ReusedExchangeExec, ShuffleExchangeExec}
 import org.apache.spark.sql.execution.joins.{BroadcastHashJoinExec, BroadcastNestedLoopJoinExec}
-import org.apache.spark.sql.rapids.{GpuDataSourceScanExec, GpuFileSourceScanExec, GpuInputFileBlockLength, GpuInputFileBlockStart, GpuInputFileName}
+import org.apache.spark.sql.rapids.{GpuDataSourceScanExec, GpuFileSourceScanExec, GpuInputFileBlockLength, GpuInputFileBlockStart, GpuInputFileName, GpuShuffleEnv}
 import org.apache.spark.sql.rapids.execution.{GpuBroadcastExchangeExecBase, GpuCustomShuffleReaderExec, GpuShuffleExchangeExecBase}
 
 /**
@@ -55,9 +55,9 @@ class GpuTransitionOverrides extends Rule[SparkPlan] {
       GpuRowToColumnarExec(optimizeAdaptiveTransitions(r2c.child, Some(r2c)), goal)
 
     case ColumnarToRowExec(GpuBringBackToHost(
-        GpuCoalesceBatches(e: GpuShuffleExchangeExecBase, _))) if parent.isEmpty =>
+        ShuffleCoalesceExec(e: GpuShuffleExchangeExecBase, _))) if parent.isEmpty =>
       // We typically want the final operator in the plan (the operator that has no parent) to be
-      // wrapped in `ColumnarToRowExec(GpuBringBackToHost(GpuCoalesceBatches(_)))` operators to
+      // wrapped in `ColumnarToRowExec(GpuBringBackToHost(ShuffleCoalesceExec(_)))` operators to
       // bring the data back onto the host and be translated to rows so that it can be returned
       // from the Spark API. However, in the case of AQE, each exchange operator is treated as an
       // individual query with no parent and we need to remove these operators in this case
@@ -81,7 +81,7 @@ class GpuTransitionOverrides extends Rule[SparkPlan] {
             s
           case _ =>
             // Directly wrap shuffle query stage with coalesce batches operator
-            GpuCoalesceBatches(s, TargetSize(conf.gpuTargetBatchSizeBytes))
+            ShuffleCoalesceExec(s, conf)
         }
       } else {
         s
@@ -89,8 +89,7 @@ class GpuTransitionOverrides extends Rule[SparkPlan] {
 
     case e: GpuCustomShuffleReaderExec =>
       // We wrap custom shuffle readers with a coalesce batches operator here.
-      GpuCoalesceBatches(e.copy(child = optimizeAdaptiveTransitions(e.child, Some(e))),
-          TargetSize(conf.gpuTargetBatchSizeBytes))
+      ShuffleCoalesceExec(e.copy(child = optimizeAdaptiveTransitions(e.child, Some(e))), conf)
 
     // Query stages that have already executed on the GPU could be used by CPU operators
     // in future query stages. Note that because these query stages have already executed, we
@@ -261,6 +260,14 @@ class GpuTransitionOverrides extends Rule[SparkPlan] {
       p.withNewChildren(p.children.map(c => insertCoalesce(c, shouldDisable)))
   }
 
+  /** Inserts a shuffle coalesce after every shuffle */
+  private def insertShuffleCoalesce(plan: SparkPlan): SparkPlan = plan match {
+    case exec: GpuShuffleExchangeExecBase =>
+      // always follow a GPU shuffle with a shuffle coalesce
+      ShuffleCoalesceExec(exec.withNewChildren(exec.children.map(insertShuffleCoalesce)), conf)
+    case exec => exec.withNewChildren(plan.children.map(insertShuffleCoalesce))
+  }
+
   /**
    * Inserts a transition to be running on the CPU columnar
    */
@@ -412,12 +419,18 @@ class GpuTransitionOverrides extends Rule[SparkPlan] {
     if (conf.isSqlEnabled) {
       var updatedPlan = insertHashOptimizeSorts(plan)
       updatedPlan = updateScansForInput(updatedPlan)
-      updatedPlan = insertCoalesce(insertColumnarFromGpu(updatedPlan))
-      updatedPlan = optimizeCoalesce(if (plan.conf.adaptiveExecutionEnabled) {
-        optimizeAdaptiveTransitions(updatedPlan, None)
+      updatedPlan = insertColumnarFromGpu(updatedPlan)
+      updatedPlan = insertCoalesce(updatedPlan)
+      // only insert shuffle coalesces when using normal shuffle
+      if (!GpuShuffleEnv.isRapidsShuffleEnabled) {
+        updatedPlan = insertShuffleCoalesce(updatedPlan)
+      }
+      if (plan.conf.adaptiveExecutionEnabled) {
+        updatedPlan = optimizeAdaptiveTransitions(updatedPlan, None)
       } else {
-        optimizeGpuPlanTransitions(updatedPlan)
-      })
+        updatedPlan = optimizeGpuPlanTransitions(updatedPlan)
+      }
+      updatedPlan = optimizeCoalesce(updatedPlan)
       if (conf.exportColumnarRdd) {
         updatedPlan = detectAndTagFinalColumnarOutput(updatedPlan)
       }
