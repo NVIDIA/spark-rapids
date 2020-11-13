@@ -231,6 +231,9 @@ class RepeatSeqGen(DataGen):
         self._length = length
         self._index = 0
 
+    def __repr__(self):
+        return super().__repr__() + '(' + str(self._child) + ')'
+
     def _loop_values(self):
         ret = self._vals[self._index]
         self._index = (self._index + 1) % self._length
@@ -362,6 +365,9 @@ class StructGen(DataGen):
         super().__init__(StructType(tmp), nullable=nullable, special_cases=special_cases)
         self.children = children
 
+    def __repr__(self):
+        return super().__repr__() + '(' + ','.join([str(i) for i in self.children]) + ')'
+
     def start(self, rand):
         for name, child in self.children:
             child.start(rand)
@@ -481,6 +487,9 @@ class ArrayGen(DataGen):
         self._min_length = min_length
         self._max_length = max_length
         self._child_gen = child_gen
+
+    def __repr__(self):
+        return super().__repr__() + '(' + str(self._child_gen) + ')'
 
     def start(self, rand):
         self._child_gen.start(rand)
@@ -643,10 +652,12 @@ int_n_long_gens = [int_gen, long_gen]
 all_basic_gens = [byte_gen, short_gen, int_gen, long_gen, float_gen, double_gen,
         string_gen, boolean_gen, date_gen, timestamp_gen]
 
+# TODO add in some array generators to this once that is supported for sorting
 # a selection of generators that should be orderable (sortable and compareable)
 orderable_gens = [byte_gen, short_gen, int_gen, long_gen, float_gen, double_gen,
         string_gen, boolean_gen, date_gen, timestamp_gen]
 
+# TODO add in some array generators to this once that is supported for these operations
 # a selection of generators that can be compared for equality
 eq_gens = [byte_gen, short_gen, int_gen, long_gen, float_gen, double_gen,
         string_gen, boolean_gen, date_gen, timestamp_gen]
@@ -655,3 +666,13 @@ date_gens = [date_gen]
 date_n_time_gens = [date_gen, timestamp_gen]
 
 boolean_gens = [boolean_gen]
+
+single_level_array_gens = [ArrayGen(sub_gen) for sub_gen in all_basic_gens]
+
+# Be careful to not make these too large of data generation takes for ever
+# This is only a few nested array gens, because nesting can be very deep
+nested_array_gens_sample = [ArrayGen(ArrayGen(short_gen, max_length=10), max_length=10),
+        ArrayGen(ArrayGen(string_gen, max_length=10), max_length=10)]
+
+# Some array gens, but not all because of nesting
+array_gens_sample = single_level_array_gens + nested_array_gens_sample
