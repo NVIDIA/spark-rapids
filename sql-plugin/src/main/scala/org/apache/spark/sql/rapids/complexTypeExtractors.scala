@@ -54,8 +54,7 @@ class GpuGetArrayItemMeta(
     GpuGetArrayItem(arr, ordinal)
 
   override def isSupportedType(t: DataType): Boolean =
-    // For expressions it is only the output that is checked, not the input types.
-    GpuOverrides.isSupportedType(t, allowArray = true)
+    GpuOverrides.isSupportedType(t, allowArray = true, allowNesting = true)
 }
 
 /**
@@ -114,10 +113,6 @@ class GpuGetMapValueMeta(
   override def tagExprForGpu(): Unit = {
     if (!isStringLit(expr.key)) {
       willNotWorkOnGpu("Only String literal keys are supported")
-    }
-    expr.child.dataType match {
-      case MapType(StringType, StringType, _) => // works
-      case _ => willNotWorkOnGpu("Only a Map[String, String] is supported")
     }
   }
 
