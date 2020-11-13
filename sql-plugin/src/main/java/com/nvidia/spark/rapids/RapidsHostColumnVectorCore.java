@@ -27,7 +27,6 @@ import org.apache.spark.unsafe.types.UTF8String;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 
-
 /**
  * A GPU accelerated version of the Spark ColumnVector.
  * Most of the standard Spark APIs should never be called, as they assume that the data
