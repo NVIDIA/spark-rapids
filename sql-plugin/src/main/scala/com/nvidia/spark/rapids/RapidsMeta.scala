@@ -682,14 +682,14 @@ abstract class BaseExprMeta[INPUT <: Expression](
   final override def tagSelfForGpu(): Unit = {
     try {
       if (!areAllSupportedTypes(expr.dataType)) {
-        willNotWorkOnGpu(s"expression ${expr.getClass.getSimpleName} ${expr} " +
+        willNotWorkOnGpu(s"expression ${expr.getClass.getSimpleName} $expr " +
           s"produces an unsupported type ${expr.dataType}")
       }
     }
     catch {
       case _ : java.lang.UnsupportedOperationException =>
         if (!ignoreUnsetDataTypes) {
-          willNotWorkOnGpu(s"expression ${expr.getClass.getSimpleName} ${expr} " +
+          willNotWorkOnGpu(s"expression ${expr.getClass.getSimpleName} $expr " +
             s" does not have a corresponding dataType.")
         }
     }

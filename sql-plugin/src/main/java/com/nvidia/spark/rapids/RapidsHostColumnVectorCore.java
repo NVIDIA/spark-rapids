@@ -17,8 +17,13 @@
 
 package com.nvidia.spark.rapids;
 
+import ai.rapids.cudf.ColumnViewAccess;
+import ai.rapids.cudf.HostColumnVectorCore;
+import ai.rapids.cudf.HostMemoryBuffer;
+import org.apache.spark.sql.types.ArrayType;
 import org.apache.spark.sql.types.DataType;
 import org.apache.spark.sql.types.Decimal;
+import org.apache.spark.sql.types.MapType;
 import org.apache.spark.sql.vectorized.ColumnVector;
 import org.apache.spark.sql.vectorized.ColumnarArray;
 import org.apache.spark.sql.vectorized.ColumnarMap;
@@ -31,109 +36,150 @@ import org.apache.spark.unsafe.types.UTF8String;
  * is on the host, and we want to keep as much of the data on the device as possible.
  * We also provide GPU accelerated versions of the transitions to and from rows.
  */
-public final class RapidsHostColumnVectorCore extends ColumnVector {
+public class RapidsHostColumnVectorCore extends ColumnVector {
 
-  private final ai.rapids.cudf.HostColumnVectorCore cudfCv;
+  private final HostColumnVectorCore cudfCv;
+  private final RapidsHostColumnVectorCore[] cachedChildren;
 
   /**
    * Sets up the data type of this column vector.
    */
-  RapidsHostColumnVectorCore(DataType type, ai.rapids.cudf.HostColumnVectorCore cudfCv) {
+  RapidsHostColumnVectorCore(DataType type, HostColumnVectorCore cudfCv) {
     super(type);
-    // TODO need some checks to be sure everything matches
     this.cudfCv = cudfCv;
+    if (type instanceof MapType) {
+      // Map is a special case where we cache 2 children because it really ends up being
+      // a list of structs in CUDF so the list only has one child, not the key/value of
+      // stored in the struct
+      cachedChildren = new RapidsHostColumnVectorCore[2];
+    } else {
+      cachedChildren = new RapidsHostColumnVectorCore[cudfCv.getNumChildren()];
+    }
   }
 
   @Override
-  public void close() {
-    // Just pass through
+  public final void close() {
+    for (int i = 0; i < cachedChildren.length; i++) {
+      RapidsHostColumnVectorCore cv = cachedChildren[i];
+      if (cv != null) {
+        cv.close();
+        // avoid double closing this
+        cachedChildren[i] = null;
+      }
+    }
     cudfCv.close();
   }
 
   @Override
-  public boolean hasNull() {
+  public final boolean hasNull() {
     return cudfCv.hasNulls();
   }
 
   @Override
-  public int numNulls() {
+  public final int numNulls() {
     return (int) cudfCv.getNullCount();
   }
 
   @Override
-  public boolean isNullAt(int rowId) {
+  public final boolean isNullAt(int rowId) {
     return cudfCv.isNull(rowId);
   }
 
   @Override
-  public boolean getBoolean(int rowId) {
+  public final boolean getBoolean(int rowId) {
     return cudfCv.getBoolean(rowId);
   }
 
   @Override
-  public byte getByte(int rowId) {
+  public final byte getByte(int rowId) {
     return cudfCv.getByte(rowId);
   }
 
   @Override
-  public short getShort(int rowId) {
+  public final short getShort(int rowId) {
     return cudfCv.getShort(rowId);
   }
 
   @Override
-  public int getInt(int rowId) {
+  public final int getInt(int rowId) {
     return cudfCv.getInt(rowId);
   }
 
   @Override
-  public long getLong(int rowId) {
+  public final long getLong(int rowId) {
     return cudfCv.getLong(rowId);
   }
 
   @Override
-  public float getFloat(int rowId) {
+  public final float getFloat(int rowId) {
     return cudfCv.getFloat(rowId);
   }
 
   @Override
-  public double getDouble(int rowId) {
+  public final double getDouble(int rowId) {
     return cudfCv.getDouble(rowId);
   }
 
   @Override
-  public ColumnarArray getArray(int rowId) {
-    throw new IllegalStateException("Arrays are currently not supported by rapids cudf");
+  public final ColumnarArray getArray(int rowId) {
+    if (cachedChildren[0] == null) {
+      // cache the child data
+      ArrayType at = (ArrayType) dataType();
+      HostColumnVectorCore data = (HostColumnVectorCore) cudfCv.getChildColumnViewAccess(0);
+      cachedChildren[0] = new RapidsHostColumnVectorCore(at.elementType(), data);
+    }
+    RapidsHostColumnVectorCore data = cachedChildren[0];
+    int startOffset = (int) cudfCv.getStartListOffset(rowId);
+    int endOffset = (int) cudfCv.getEndListOffset(rowId);
+    return new ColumnarArray(data, startOffset, endOffset - startOffset);
   }
 
   @Override
-  public ColumnarMap getMap(int ordinal) {
-    throw new IllegalStateException("Maps are currently not supported by rapids cudf");
+  public final ColumnarMap getMap(int ordinal) {
+    if (cachedChildren[0] == null) {
+      // Cache the key/value
+      MapType mt = (MapType) dataType();
+      ColumnViewAccess<HostMemoryBuffer> structHcv = cudfCv.getChildColumnViewAccess(0);
+      // keys
+      HostColumnVectorCore firstHcvCore = (HostColumnVectorCore) structHcv.getChildColumnViewAccess(0);
+
+      // values
+      HostColumnVectorCore secondHcvCore = (HostColumnVectorCore) structHcv.getChildColumnViewAccess(1);
+
+      cachedChildren[0] = new RapidsHostColumnVectorCore(mt.keyType(), firstHcvCore);
+      cachedChildren[1] = new RapidsHostColumnVectorCore(mt.valueType(), secondHcvCore);
+    }
+    RapidsHostColumnVectorCore keys = cachedChildren[0];
+    RapidsHostColumnVectorCore values = cachedChildren[1];
+
+    int startOffset = (int) cudfCv.getStartListOffset(ordinal);
+    int endOffset = (int) cudfCv.getEndListOffset(ordinal);
+    return new ColumnarMap(keys, values, startOffset,endOffset - startOffset);
   }
 
   @Override
-  public Decimal getDecimal(int rowId, int precision, int scale) {
+  public final Decimal getDecimal(int rowId, int precision, int scale) {
     throw new IllegalStateException("The decimal type is currently not supported by rapids cudf");
   }
 
   @Override
-  public UTF8String getUTF8String(int rowId) {
-    // TODO need a cheaper way to go directly to the String
-    return UTF8String.fromString(cudfCv.getJavaString(rowId));
+  public final UTF8String getUTF8String(int rowId) {
+    return UTF8String.fromBytes(cudfCv.getUTF8(rowId));
   }
 
   @Override
-  public byte[] getBinary(int rowId) {
+  public final byte[] getBinary(int rowId) {
     throw new IllegalStateException("Binary data access is currently not supported by rapids cudf");
   }
 
   @Override
-  public ColumnVector getChild(int ordinal) {
+  public final ColumnVector getChild(int ordinal) {
     throw new IllegalStateException("Struct and struct like types are currently not supported by rapids cudf");
   }
 
-  public ai.rapids.cudf.HostColumnVectorCore getBase() {
+  public HostColumnVectorCore getBase() {
     return cudfCv;
   }
 
-  public long getRowCount() { return cudfCv.getRowCount(); }
+  public final long getRowCount() { return cudfCv.getRowCount(); }
 }

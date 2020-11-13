@@ -609,7 +609,10 @@ object GpuOverrides {
       "Gives a column a name",
       (a, conf, p, r) => new UnaryExprMeta[Alias](a, conf, p, r) {
         override def isSupportedType(t: DataType): Boolean =
-          GpuOverrides.isSupportedType(t, allowStringMaps = true, allowBinary = true)
+          GpuOverrides.isSupportedType(t,
+            allowStringMaps = true,
+            allowArray = true,
+            allowNesting = true)
 
         override def convertToGpu(child: Expression): GpuExpression =
           GpuAlias(child, a.name)(a.exprId, a.qualifier, a.explicitMetadata)
@@ -618,7 +621,10 @@ object GpuOverrides {
       "References an input column",
       (att, conf, p, r) => new BaseExprMeta[AttributeReference](att, conf, p, r) {
         override def isSupportedType(t: DataType): Boolean =
-          GpuOverrides.isSupportedType(t, allowStringMaps = true)
+          GpuOverrides.isSupportedType(t,
+            allowStringMaps = true,
+            allowArray = true,
+            allowNesting = true)
 
         // This is the only NOOP operator.  It goes away when things are bound
         override def convertToGpu(): Expression = att
@@ -1799,7 +1805,10 @@ object GpuOverrides {
       (proj, conf, p, r) => {
         new SparkPlanMeta[ProjectExec](proj, conf, p, r) {
           override def isSupportedType(t: DataType): Boolean =
-            GpuOverrides.isSupportedType(t, allowStringMaps = true)
+            GpuOverrides.isSupportedType(t,
+              allowStringMaps = true,
+              allowArray = true,
+              allowNesting = true)
 
           override def convertToGpu(): GpuExec =
             GpuProjectExec(childExprs.map(_.convertToGpu()), childPlans(0).convertIfNeeded())

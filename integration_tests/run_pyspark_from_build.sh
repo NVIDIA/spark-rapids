@@ -53,10 +53,8 @@ else
     if python -c 'import findspark';
     then
         echo "FOUND findspark"
-        FIND_SPARK=1
     else
         TEST_PARALLEL=0
-        FIND_SPARK=0
         echo "findspark not installed cannot run tests in parallel"
     fi
     if python -c 'import xdist.plugin';
@@ -71,16 +69,16 @@ else
     then
         # With xdist 0 and 1 are the same parallelsm but
         # 0 is more effecient
-        TEST_PARALLEL=""
+        TEST_PARALLEL_OPTS=""
         MEMORY_FRACTION='1'
     else
         MEMORY_FRACTION=`python -c "print(1/($TEST_PARALLEL + 1))"`
-        TEST_PARALLEL="-n $TEST_PARALLEL"
+        TEST_PARALLEL_OPTS="-n $TEST_PARALLEL"
     fi
     RUN_DIR="$SCRIPTPATH"/target/run_dir
     mkdir -p "$RUN_DIR"
     cd "$RUN_DIR"
-    if [[ "${FIND_SPARK}" == "1" ]];
+    if [[ "${TEST_PARALLEL_OPTS}" != "" ]];
     then
         export PYSP_TEST_spark_driver_extraClassPath="${ALL_JARS// /:}"
         export PYSP_TEST_spark_driver_extraJavaOptions="-ea -Duser.timezone=GMT $COVERAGE_SUBMIT_FLAGS"
@@ -93,7 +91,7 @@ else
 
         python \
           "$SCRIPTPATH"/runtests.py --rootdir "$SCRIPTPATH" "$SCRIPTPATH"/src/main/python \
-          $TEST_PARALLEL \
+          $TEST_PARALLEL_OPTS \
           -v -rfExXs "$TEST_TAGS" \
           --std_input_path="$SCRIPTPATH"/src/test/resources/ \
           "$TEST_ARGS" \
@@ -112,6 +110,5 @@ else
           "$TEST_ARGS" \
           $RUN_TEST_PARAMS \
           "$@"
-
     fi
 fi
