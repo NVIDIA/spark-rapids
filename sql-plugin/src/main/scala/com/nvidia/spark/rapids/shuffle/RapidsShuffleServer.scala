@@ -282,14 +282,7 @@ class RapidsShuffleServer(transport: RapidsShuffleTransport,
         throw new IllegalStateException(s"Error occurred while while handling metadata $tx")
       } else {
         logDebug(s"Received metadata request: $tx => $metaRequest")
-        try {
-          handleMetadataRequest(metaRequest)
-        } catch {
-          case e: Throwable => {
-            logError(s"Exception while handling metadata request from $tx: ", e)
-            throw e
-          }
-        }
+        handleMetadataRequest(metaRequest)
       }
     } finally {
       logDebug(s"Metadata request handled in ${TransportUtils.timeDiffMs(start)} ms")
