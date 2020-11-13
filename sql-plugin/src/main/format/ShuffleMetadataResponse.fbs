@@ -16,15 +16,6 @@ include "ShuffleCommon.fbs";
 
 namespace com.nvidia.spark.rapids.format;
 
-/// Descriptor for a buffer within another uncompressed buffer.
-struct SubBufferMeta {
-  /// byte-offset from the start of the buffer where this buffer begins
-  offset: long;
-
-  /// size in bytes of the buffer
-  length: long;
-}
-
 /// Metadata about cuDF Columns
 table ColumnMeta {
   /// number of nulls in the column or -1 if unknown
@@ -33,14 +24,17 @@ table ColumnMeta {
   /// number of rows in the column
   row_count: long;
 
-  /// information about the column data buffer
-  data: SubBufferMeta;
+  /// offset of the column's data buffer
+  data_offset: long;
 
-  /// information about the column validity buffer
-  validity: SubBufferMeta;
+  /// length of the column's data buffer
+  data_length: long;
 
-  /// information about the column offset buffer
-  offsets: SubBufferMeta;
+  /// offset of the column's validity buffer
+  validity_offset: long;
+
+  /// offset of the column's offsets buffer
+  offsets_offset: long;
 
   /// child column metadata
   children: [ColumnMeta];
