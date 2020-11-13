@@ -221,10 +221,10 @@ object MetaUtils extends Arm {
    * @return table that must be closed by the caller
    */
   def getTableFromMeta(deviceBuffer: DeviceMemoryBuffer, meta: TableMeta): Table = {
-    closeOnExcept(new ArrayBuffer[ColumnVector](meta.columnMetasLength())) { columns =>
+    withResource(new Array[ColumnVector](meta.columnMetasLength())) { columns =>
       val columnMeta = new ColumnMeta
       (0 until meta.columnMetasLength).foreach { i =>
-        columns.append(makeCudfColumn(deviceBuffer, meta.columnMetas(columnMeta, i)))
+        columns(i) = makeCudfColumn(deviceBuffer, meta.columnMetas(columnMeta, i))
       }
       new Table(columns :_*)
     }
@@ -241,10 +241,10 @@ object MetaUtils extends Arm {
   def getBatchFromMeta(deviceBuffer: DeviceMemoryBuffer,
       meta: TableMeta,
       sparkTypes: Array[DataType]): ColumnarBatch = {
-    closeOnExcept(new ArrayBuffer[GpuColumnVector](meta.columnMetasLength())) { columns =>
+    withResource(new Array[GpuColumnVector](meta.columnMetasLength())) { columns =>
       val columnMeta = new ColumnMeta
       (0 until meta.columnMetasLength).foreach { i =>
-        columns.append(makeColumn(deviceBuffer, meta.columnMetas(columnMeta, i), sparkTypes(i)))
+        columns(i) = makeColumn(deviceBuffer, meta.columnMetas(columnMeta, i), sparkTypes(i))
       }
       new ColumnarBatch(columns.toArray, meta.rowCount.toInt)
     }
