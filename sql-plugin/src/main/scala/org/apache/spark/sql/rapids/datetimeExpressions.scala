@@ -374,7 +374,9 @@ abstract class GpuToTimestamp
       }
 
       def daysEqual(name: String): ColumnVector = {
-        lhs.getBase.equalTo(Scalar.fromString(name))
+        withResource(Scalar.fromString(name)) { scalarName =>
+          lhs.getBase.equalTo(scalarName)
+        }
       }
 
       // the cuDF `is_timestamp` function is less restrictive than Spark's behavior for UnixTime
