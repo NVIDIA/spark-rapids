@@ -341,7 +341,6 @@ final class CreateDataSourceTableAsSelectCommandMeta(
   private var origProvider: Class[_] = _
   private var gpuProvider: Option[ColumnarFileFormat] = None
 
-
   override def tagSelfForGpu(): Unit = {
     if (cmd.table.bucketSpec.isDefined) {
       willNotWorkOnGpu("bucketing is not supported")
@@ -353,14 +352,14 @@ final class CreateDataSourceTableAsSelectCommandMeta(
     val spark = SparkSession.active
     origProvider =
       GpuDataSource.lookupDataSourceWithFallback(cmd.table.provider.get, spark.sessionState.conf)
-    val parquetCls = classOf[ParquetFileFormat]
-    val orcCls = classOf[OrcFileFormat]
     // Note that the data source V2 always fallsback to the V1 currently.
     // If that changes then this will start failing because we don't have a mapping.
-    gpuProvider = origProvider match {
-      case orcCls =>
+    gpuProvider = origProvider.getConstructor().newInstance() match {
+      case format: OrcFileFormat =>
+        logWarning("using orc class")
         GpuOrcFileFormat.tagGpuSupport(this, spark, cmd.table.storage.properties)
-      case parquetCls =>
+      case format: ParquetFileFormat =>
+        logWarning("using parquet class")
         GpuParquetFileFormat.tagGpuSupport(this, spark,
           cmd.table.storage.properties, cmd.query.schema)
       case ds =>
