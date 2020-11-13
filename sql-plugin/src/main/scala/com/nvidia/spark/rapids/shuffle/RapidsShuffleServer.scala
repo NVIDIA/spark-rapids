@@ -18,12 +18,16 @@ package com.nvidia.spark.rapids.shuffle
 
 import java.util.concurrent.{ConcurrentLinkedQueue, Executor}
 
-import ai.rapids.cudf.{MemoryBuffer, NvtxColor, NvtxRange}
-import com.nvidia.spark.rapids._
-import com.nvidia.spark.rapids.format.{BufferMeta, TableMeta}
+import scala.collection.mutable.ArrayBuffer
+
+import ai.rapids.cudf.{Cuda, NvtxColor, NvtxRange}
+import com.nvidia.spark.rapids.{Arm, RapidsBuffer, RapidsConf, ShuffleMetadata}
+import com.nvidia.spark.rapids.RapidsPluginImplicits._
+import com.nvidia.spark.rapids.format.TableMeta
 
 import org.apache.spark.internal.Logging
 import org.apache.spark.storage.{BlockManagerId, ShuffleBlockBatchId}
+
 
 /**
  * Trait used for the server to get buffer metadata (for metadata requests), and
@@ -71,7 +75,7 @@ class RapidsShuffleServer(transport: RapidsShuffleTransport,
                           exec: Executor,
                           copyExec: Executor,
                           bssExec: Executor,
-                          rapidsConf: RapidsConf) extends AutoCloseable with Logging {
+                          rapidsConf: RapidsConf) extends AutoCloseable with Logging with Arm {
   /**
    * On close, this is set to false to indicate that the server is shutting down.
    */
@@ -94,7 +98,7 @@ class RapidsShuffleServer(transport: RapidsShuffleTransport,
      * in order to handle the request fully.
      * @param sendState instance of [[BufferSendState]] used to complete a transfer request.
      */
-    case class HandleTransferRequest(sendState: BufferSendState)
+    case class HandleTransferRequest(sendState: Seq[BufferSendState])
   }
 
   import ShuffleServerOps._
@@ -128,7 +132,7 @@ class RapidsShuffleServer(transport: RapidsShuffleTransport,
       serverTask match {
         case HandleMeta(tx, metaRequestBuffer) =>
           doHandleMeta(tx, metaRequestBuffer)
-        case HandleTransferRequest(wt: BufferSendState) =>
+        case HandleTransferRequest(wt: Seq[BufferSendState]) =>
           doHandleTransferRequest(wt)
       }
     } catch {
@@ -164,7 +168,8 @@ class RapidsShuffleServer(transport: RapidsShuffleTransport,
   /**
    * Keep a list of BufferSendState that are waiting for bounce buffers.
    */
-  private[this] val bssQueue = new ConcurrentLinkedQueue[BufferSendState]()
+  private[this] val pendingTransfersQueue = new ConcurrentLinkedQueue[PendingTransferResponse]()
+  private[this] val bssContinueQueue = new ConcurrentLinkedQueue[BufferSendState]()
 
   /**
    * Executor that loops until it finds bounce buffers for [[BufferSendState]],
@@ -172,36 +177,47 @@ class RapidsShuffleServer(transport: RapidsShuffleTransport,
    */
   bssExec.execute(() => {
     while (started) {
-      var bss: BufferSendState = null
-      try {
-        bss = bssQueue.peek()
-        if (bss != null) {
-          bssExec.synchronized {
-            if (bss.acquireBounceBuffersNonBlocking) {
-              bssQueue.remove(bss)
-              asyncOnCopyThread(HandleTransferRequest(bss))
-            } else {
-              bssExec.synchronized {
-                bssExec.wait(100)
-              }
-            }
-          }
-        } else {
-          bssExec.synchronized {
-            bssExec.wait(100)
+      closeOnExcept(new ArrayBuffer[BufferSendState]()) { bssToIssue =>
+        var bssContinue = bssContinueQueue.poll()
+        while (bssContinue != null) {
+          bssToIssue.append(bssContinue)
+          bssContinue = bssContinueQueue.poll()
+        }
+
+        var continue = true
+        while (!pendingTransfersQueue.isEmpty && continue) {
+          // TODO: throttle on too big a send total so we don't acquire the world (in flight limit)
+          val sendBounceBuffers =
+            transport.tryGetSendBounceBuffers(1, 1)
+          if (sendBounceBuffers.nonEmpty) {
+            val pendingTransfer = pendingTransfersQueue.poll()
+            bssToIssue.append(new BufferSendState(
+              pendingTransfer.metaRequest,
+              sendBounceBuffers.head, // there's only one bounce buffer here for now
+              pendingTransfer.requestHandler,
+              serverStream))
+          } else {
+            // TODO: make this a metric => "blocked while waiting on bounce buffers"
+            logTrace(s"Can't acquire send bounce buffers")
+            continue = false
           }
         }
-      } catch {
-        case t: Throwable => {
-          logError("Error while handling BufferSendState", t)
-          if (bss != null) {
-            bss.close()
-            bss = null
-          }
+        if (bssToIssue.nonEmpty) {
+          asyncOnCopyThread(HandleTransferRequest(bssToIssue))
+        }
+      }
+
+      bssExec.synchronized {
+        if (bssContinueQueue.isEmpty && pendingTransfersQueue.isEmpty) {
+          bssExec.wait(100)
         }
       }
     }
   })
+
+  // NOTE: this stream will likely move to its own non-blocking stream in the future
+  val serverStream = Cuda.DEFAULT_STREAM
+
   /**
    * Handler for a metadata request. It queues request handlers for either
    * [[RequestType.MetadataRequest]] or [[RequestType.TransferRequest]], and re-issues
@@ -227,22 +243,27 @@ class RapidsShuffleServer(transport: RapidsShuffleTransport,
             doIssueReceive(RequestType.MetadataRequest)
             doHandleMeta(tx, metaRequest)
           } else {
-            val bss = new BufferSendState(tx, metaRequest)
-            bssQueue.add(bss)
-
+            val pendingTransfer = PendingTransferResponse(metaRequest, requestHandler)
             // tell the bssExec to wake up to try to handle the new BufferSendState
             bssExec.synchronized {
+              pendingTransfersQueue.add(pendingTransfer)
               bssExec.notifyAll()
             }
-            logDebug(s"Got a transfer request ${bss} from ${tx}. " +
-              s"I now have ${bssQueue.size} BSSs")
+            logDebug(s"Got a transfer request ${pendingTransfer} from ${tx}. " +
+              s"Pending requests [new=${pendingTransfersQueue.size}, " +
+                s"continuing=${bssContinueQueue.size}]")
             doIssueReceive(RequestType.TransferRequest)
           }
         } finally {
           handleMetaRange.close()
+          tx.close()
         }
       })
   }
+
+  case class PendingTransferResponse(
+      metaRequest: RefCountedDirectByteBuffer,
+      requestHandler: RapidsShuffleRequestHandler)
 
   /**
    * Function to handle `MetadataRequest`s. It will populate and issue a
@@ -273,7 +294,6 @@ class RapidsShuffleServer(transport: RapidsShuffleTransport,
     } finally {
       logDebug(s"Metadata request handled in ${TransportUtils.timeDiffMs(start)} ms")
       doHandleMetaRange.close()
-      tx.close()
     }
   }
 
@@ -340,325 +360,80 @@ class RapidsShuffleServer(transport: RapidsShuffleTransport,
   }
 
   /**
-   * A helper case class to maintain the state associated with a transfer request initiated by
-   * a `TransferRequest` metadata message.
-   *
-   * This class is *not thread safe*. The way the code is currently designed, bounce buffers
-   * being used to send, or copied to, are acted on a sequential basis, in time and in space.
-   *
-   * Callers use this class, like so:
-   *
-   * 1) [[getBuffersToSend]]: is used to get bounce buffers that the server should .send on.
-   *    -- first time:
-   *          a) the corresponding catalog table is acquired,
-   *          b) bounce buffers are acquired,
-   *          c) data is copied from the original catalog table into the bounce buffers available
-   *          d) the length of the last bounce buffer is adjusted if it would satisfy the full
-   *             length of the catalog-backed buffer.
-   *          e) bounce buffers are returned
-   *
-   *    -- subsequent times:
-   *      if we are not done sending the acquired table:
-   *          a) data is copied from the original catalog table into the bounce buffers available
-   *             at sequentially incrementing offsets.
-   *          b) the length of the last bounce buffer is adjusted if it would satisfy the full
-   *             length of the catalog-backed buffer.
-   *          c) bounce buffers are returned
-   *
-   * 2) [[freeBounceBuffersIfNecessary]]: called  when a send finishes, in order to free bounce
-   *    buffers, if the current table is done sending.
-   *
-   * 3) [[close]]: used to free state as the [[BufferSendState]] object is no longer needed
-   *
-   * In terms of the lifecycle of this object, it begins with the client asking for transfers to
-   * start, it lasts through all buffers being transmitted, and ultimately finishes when a
-   * `TransferResponse` is sent back to the client.
-   *
-   * @param tx the original `Transaction` from the `TransferRequest`.
-   * @param request a transfer request
-   */
-  class BufferSendState(tx: Transaction, request: RefCountedDirectByteBuffer)
-      extends AutoCloseable {
-    private[this] var currentTableIndex = -1
-    private[this] var lastTable = false
-    private[this] var currentTableRemaining: Long = 0L
-    private[this] var currentTableOffset: Long = 0L
-    private[this] var currentAlt: AddressLengthTag = null
-    private[this] val transferRequest = ShuffleMetadata.getTransferRequest(request.getBuffer())
-    private[this] var bufferMetas = Seq[BufferMeta]()
-    private[this] var isClosed = false
-
-    def getTransferRequest() = synchronized { 
-      transferRequest 
-    }
-
-
-    case class TableIdTag(tableId: Int, tag: Long)
-
-    // this is the complete amount of buffers we need to send
-    private[this] val tableIdAndTags: Seq[TableIdTag] =
-      (0 until transferRequest.requestsLength()).map { btr =>
-        val bufferTransferRequest = transferRequest.requests(btr)
-        TableIdTag(bufferTransferRequest.bufferId(),
-          bufferTransferRequest.tag())
-      }
-
-    require(tableIdAndTags.nonEmpty)
-
-    def isDone: Boolean = synchronized {
-      lastTable &&
-        currentTableRemaining == 0
-    }
-
-    // while we acquire a table from the catalog, this value is non-null
-    private[this] var acquiredTable: RapidsBuffer = null
-    private[this] var acquiredBuffer: MemoryBuffer = null
-
-    // the set of buffers we will acquire and use to work the entirety of this transfer.
-    private[this] var bounceBuffers = Seq[AddressLengthTag]()
-
-    override def toString: String = {
-      s"BufferSendState(isDone=$isDone, currentTableRemaining=$currentTableRemaining, " +
-        s"requests=$tableIdAndTags, currentTableOffset=$currentTableIndex, " +
-        s"currentTableOffset=$currentTableOffset, bounceBuffers=$bounceBuffers)"
-    }
-
-    /**
-     * Used to pop a [[BufferSendState]] from its queue if and only if there are bounce
-     * buffers available
-     * @return true if bounce buffers are available to proceed
-     */
-    def acquireBounceBuffersNonBlocking: Boolean = {
-      // we need to secure the table we are about to send, in order to get the correct flavor of
-      // bounce buffer
-      acquireTable()
-
-      if (bounceBuffers.isEmpty) {
-        bounceBuffers = transport.tryGetSendBounceBuffers(
-          currentAlt.isDeviceBuffer(),
-          currentTableRemaining,
-          // TODO: currently we have 2 buffers here, but this value could change and should
-          //  perhaps be configurable, if we find that it should vary depending on the user's job
-          2).map(buff => AddressLengthTag.from(buff, currentAlt.tag))
-      }
-      // else, we may want to make acquisition of the table and state separate so
-      // the act of acquiring the table from the catalog and getting the bounce buffer
-      // doesn't affect the state in [[BufferSendState]], this is in the case where we are at
-      // the limit, and we want to spill everything in a tier (including the one buffer
-      // we are trying to pop from the [[BufferSendState]] queue)
-      bounceBuffers.nonEmpty
-    }
-
-    private[this] def getBounceBuffers(): Seq[AddressLengthTag] = {
-      bounceBuffers.foreach(b => b.resetLength())
-      bounceBuffers
-    }
-
-    private[this] def acquireTable(): AddressLengthTag = {
-      if (currentTableRemaining > 0) {
-        require(currentAlt != null)
-        currentAlt
-      } else {
-        currentTableIndex = currentTableIndex + 1
-
-        require(currentTableIndex < tableIdAndTags.size,
-          "Something went wrong while handling a transfer request. " +
-            "Asking for more tables than expected.")
-
-        if (acquiredBuffer != null) {
-          acquiredBuffer.close()
-          acquiredBuffer = null
-        }
-        if (acquiredTable != null) {
-          acquiredTable.close()
-          acquiredTable = null
-          currentTableOffset = 0L
-        }
-
-        val TableIdTag(tableId, tag) = tableIdAndTags(currentTableIndex)
-
-        logDebug(s"Handling buffer transfer request " +
-          s"[peer_executor_id=${transferRequest.executorId()}, " +
-          s"table_id=$tableId, tag=${TransportUtils.formatTag(tag)}]")
-
-        // acquire the buffer, adding a reference to it, it will not be freed under us
-        acquiredTable = requestHandler.acquireShuffleBuffer(tableId)
-        acquiredBuffer = acquiredTable.getMemoryBuffer
-
-        currentAlt = AddressLengthTag.from(acquiredBuffer, tag)
-
-        currentTableRemaining = acquiredTable.size
-
-        val bufferMeta = acquiredTable.meta.bufferMeta()
-
-        bufferMetas = bufferMetas :+ bufferMeta
-
-        lastTable = currentTableIndex == tableIdAndTags.size - 1
-
-        currentAlt
-      }
-    }
-
-    private[this] def freeBounceBuffers(): Unit = {
-      if (bounceBuffers.nonEmpty) {
-        transport.freeSendBounceBuffers(bounceBuffers.flatMap(_.memoryBuffer))
-        bounceBuffers = Seq.empty
-
-        // wake up the bssExec since bounce buffers became available
-        bssExec.synchronized {
-          bssExec.notifyAll()
-        }
-      }
-    }
-
-
-    def getTransferResponse(): RefCountedDirectByteBuffer = synchronized {
-      new RefCountedDirectByteBuffer(ShuffleMetadata.buildBufferTransferResponse(bufferMetas))
-    }
-
-    private def advance(toCopy: Long): Boolean = {
-      currentTableRemaining = currentTableRemaining - toCopy
-      currentTableOffset = currentTableOffset + toCopy
-      currentTableRemaining == 0
-    }
-
-    override def close(): Unit = synchronized {
-      require(isDone)
-      if (isClosed){
-        throw new IllegalStateException("ALREADY CLOSED!")
-      }
-      isClosed = true
-      freeBounceBuffers()
-      tx.close()
-      request.close()
-      if (acquiredBuffer != null) {
-        acquiredBuffer.close()
-        acquiredBuffer = null
-      }
-      if (acquiredTable != null) {
-        acquiredTable.close()
-        acquiredTable = null
-      }
-    }
-
-    /**
-     * This function returns bounce buffers that are ready to be sent. To get there,
-     * it will:
-     *   1) acquire the bounce buffers in the first place (if it hasn't already)
-     *   2) copy data from the source buffer to the bounce buffers, updating the offset accordingly
-     *   3) return either the full set of bounce buffers, or a subset, depending on how much is
-     *      left to send.
-     * @return bounce buffers ready to be sent.
-     */
-    def getBuffersToSend(): Seq[AddressLengthTag] = synchronized {
-      val alt = acquireTable()
-
-      logDebug(s"Handling transfer request for ${alt}")
-
-      logDebug(s"${currentTableRemaining} remaining, getting bounce buffers for tr ${alt}")
-
-      // get bounce buffers, note we may block
-      val bounceBuffers = getBounceBuffers()
-
-      logDebug(s"${bounceBuffers} got, for tr ${alt}")
-
-      var buffersToSend = Seq[AddressLengthTag]()
-
-      try {
-        // copy to the bounce buffer
-        var bounceBufferIx = 0
-        var done = false
-        while (bounceBufferIx < bounceBuffers.size && !done) {
-          val bb = bounceBuffers(bounceBufferIx)
-          val toCopy = Math.min(currentTableRemaining, bb.length)
-          alt.cudaCopyTo(bb, currentTableOffset, toCopy)
-          done = advance(toCopy)
-          if (done) {
-            // got to the end, that last buffer needs the correct length
-            bb.resetLength(toCopy)
-          }
-          buffersToSend = buffersToSend :+ bb
-          bounceBufferIx = bounceBufferIx + 1
-        }
-      } catch {
-        case t: Throwable =>
-          logError("Error while copying to bounce buffers on send.", t)
-          close()
-          throw t
-      }
-
-      logDebug(s"Sending ${buffersToSend} for transfer request, with " +
-        s"${currentTableRemaining} left [peer_executor_id=${transferRequest.executorId()}, " +
-        s"table_id=${acquiredTable.id}, tag=${TransportUtils.formatTag(alt.tag)}]")
-
-      buffersToSend
-    }
-
-    def freeBounceBuffersIfNecessary(): Unit = synchronized {
-      // let go of the buffers, we'll be acquiring them again on the next table we want to transfer
-      if (currentTableRemaining <= 0) {
-        logDebug(s"Freeing bounce buffers ${bounceBuffers}")
-        freeBounceBuffers()
-      }
-    }
-  }
-
-  /**
    * This will kick off, or continue to work, a [[BufferSendState]] object
    * until all tables are fully transmitted.
    *
-   * @param bufferSendState state object tracking sends needed to fulfill a TransferRequest
+   * @param bufferSendStates state objects tracking sends needed to fulfill a TransferRequest
    */
-  def doHandleTransferRequest(bufferSendState: BufferSendState): Unit = {
-    val doHandleTransferRequest = new NvtxRange("doHandleTransferRequest", NvtxColor.CYAN)
-    val start = System.currentTimeMillis()
-    try {
-      require(!bufferSendState.isDone, "Attempting to handle a complete transfer request.")
+  def doHandleTransferRequest(bufferSendStates: Seq[BufferSendState]): Unit = {
+    val bssBuffers = bufferSendStates.map { bufferSendState =>
+      withResource(new NvtxRange(s"doHandleTransferRequest", NvtxColor.CYAN)) { _ =>
+        try {
+          require(bufferSendState.hasNext, "Attempting to handle a complete transfer request.")
 
-      // [[BufferSendState]] will continue to return buffers to send, as long as there
-      // is work to be done.
-      val buffersToSend = bufferSendState.getBuffersToSend()
+          // For each `BufferSendState` we ask for a bounce buffer fill up
+          // so the server is servicing N (`bufferSendStates`) requests
+          val buffersToSend = bufferSendState.next()
 
-      val transferRequest = bufferSendState.getTransferRequest()
+          (bufferSendState, buffersToSend)
+        } catch {
+          case t: Throwable =>
+            bufferSendState.close()
+            throw t
+        }
+      }
+    }
 
-      logDebug(s"Handling transfer request for ${transferRequest.executorId()} " +
-        s"with ${buffersToSend}")
+    serverStream.sync()
 
-      serverConnection.send(transferRequest.executorId(), buffersToSend, new TransactionCallback {
+    // need to release at this point, we do this after the sync so
+    // we are sure we actually copied everything to the bounce buffer
+    bufferSendStates.foreach(_.releaseAcquiredToCatalog())
+
+    bssBuffers.foreach {
+      case (bufferSendState, buffersToSend) =>
+        val transferRequest = bufferSendState.getTransferRequest
+        serverConnection.send(transferRequest.executorId(), buffersToSend, new TransactionCallback {
         override def apply(bufferTx: Transaction): Unit = {
           try {
             logDebug(s"Done with the send for ${bufferSendState} with ${buffersToSend}")
 
-            if (!bufferSendState.isDone) {
+            if (bufferSendState.hasNext) {
               // continue issuing sends.
               logDebug(s"Buffer send state ${bufferSendState} is NOT done. " +
-                s"I now have ${bssQueue.size} BSSs")
-              asyncOnCopyThread(HandleTransferRequest(bufferSendState))
+                  s"Still pending: ${pendingTransfersQueue.size}.")
+              bssExec.synchronized {
+                bssContinueQueue.add(bufferSendState)
+                bssExec.notifyAll()
+              }
             } else {
               val transferResponse = bufferSendState.getTransferResponse()
 
+              logDebug(s"Handling transfer request for ${transferRequest.executorId()} " +
+                  s"with ${buffersToSend}")
+
               // send the transfer response
               serverConnection.send(
-                transferRequest.executorId(),
+                transferRequest.executorId,
                 AddressLengthTag.from(transferResponse.acquire(), transferRequest.responseTag()),
                 transferResponseTx => {
                   transferResponse.close()
                   transferResponseTx.close()
                 })
 
-              // close up the [[BufferSendState]] instance
-              logDebug(s"Buffer send state ${bufferSendState} is done. Closing. " +
-                s"I now have ${bssQueue.size} BSSs")
-              bufferSendState.close()
+              // wake up the bssExec since bounce buffers became available
+              logDebug(s"Buffer send state ${buffersToSend.tag} is done. Closing. " +
+                  s"Still pending: ${pendingTransfersQueue.size}.")
+              bssExec.synchronized {
+                bufferSendState.close()
+                bssExec.notifyAll()
+              }
             }
           } finally {
             bufferTx.close()
           }
         }
       })
-    } finally {
-      logDebug(s"Transfer request handled in ${TransportUtils.timeDiffMs(start)} ms")
-      doHandleTransferRequest.close()
     }
   }
 
