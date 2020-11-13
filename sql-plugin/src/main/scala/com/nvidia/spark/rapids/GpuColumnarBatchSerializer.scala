@@ -33,8 +33,20 @@ import org.apache.spark.sql.types.NullType
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
 /**
- * Serializer for serializing `ColumnarBatch`s during shuffle.
- * The batches will be stored in an internal format specific to rapids.
+ * Serializer for serializing `ColumnarBatch`s for use during normal shuffle.
+ *
+ * The serialization write path takes the cudf `Table` that is described by the `ColumnarBatch`
+ * and uses cudf APIs to serialize the data into a sequence of bytes on the host. The data is
+ * returned to the Spark shuffle code where it is compressed by the CPU and written to disk.
+ *
+ * The serialization read path is notably different. The sequence of serialized bytes IS NOT
+ * deserialized into a cudf `Table` but rather tracked in host memory by a `ColumnarBatch`
+ * that contains a [[SerializedTableColumn]]. During query planning, each GPU columnar shuffle
+ * exchange is followed by a [[ShuffleCoalesceExec]] that expects to receive only these
+ * custom batches of [[SerializedTableColumn]]. [[ShuffleCoalesceExec]] coalesces the smaller
+ * shuffle partitions into larger tables before placing them on the GPU for further processing.
+ *
+ * @note The RAPIDS shuffle does not use this code.
  */
 class GpuColumnarBatchSerializer(dataSize: SQLMetric = null) extends Serializer with Serializable {
   override def newInstance(): SerializerInstance =

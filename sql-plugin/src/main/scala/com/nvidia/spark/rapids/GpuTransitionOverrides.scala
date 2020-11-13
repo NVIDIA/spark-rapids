@@ -132,6 +132,17 @@ class GpuTransitionOverrides extends Rule[SparkPlan] {
       p.withNewChildren(p.children.map(c => optimizeAdaptiveTransitions(c, Some(p))))
   }
 
+  /**
+   * This optimizes the plan to remove [[GpuCoalesceBatches]] nodes that are unnecessary
+   * or undesired in some situations.
+   *
+   * @note This does not examine [[ShuffleCoalesceExec]] nodes in the plan, as they
+   *       are always required after GPU columnar exchanges during normal shuffle
+   *       to place the data after shuffle on the GPU. Those nodes also do not
+   *       coalesce to the same goal as used by [[GpuCoalesceBatches]], so a
+   *       [[ShuffleCoalesceExec]] immediately followed by a [[GpuCoalesceBatches]] is
+   *       not unusual.
+   */
   def optimizeCoalesce(plan: SparkPlan): SparkPlan = plan match {
     case c2r: GpuColumnarToRowExecParent if c2r.child.isInstanceOf[GpuCoalesceBatches] =>
       // Don't build a batch if we are just going to go back to ROWS
