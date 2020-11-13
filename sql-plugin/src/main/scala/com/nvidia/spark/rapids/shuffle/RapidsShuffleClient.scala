@@ -67,7 +67,7 @@ case class PendingTransferRequest(client: RapidsShuffleClient,
                                   tableMeta: TableMeta,
                                   tag: Long,
                                   handler: RapidsShuffleFetchHandler) {
-  def getLength: Long = tableMeta.bufferMeta.size()
+  val getLength: Long = tableMeta.bufferMeta.size()
 }
 
 /**
