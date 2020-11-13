@@ -290,7 +290,7 @@ Casting from string to timestamp currently has the following limitations.
  Only timezone 'Z' (UTC) is supported. Casting unsupported formats will result in null values. 
  
 ## UDF to Catalyst Expressions
-To speedup the process of UDF, spark-rapids introduces a udf-compiler extension to translate UDFs to Catalyst expressions. This compiler will be injected automatically to spark extensions by setting `spark.plugins=com.nvidia.spark.SQLPlugin` and is disabled by default.
+To speedup the process of UDF, spark-rapids introduces a udf-compiler extension to translate UDFs to Catalyst expressions. 
 
 To enable this operation on the GPU, set
 [`spark.rapids.sql.udfCompiler.enabled`](configs.md#sql.udfCompiler.enabled) to `true`.
