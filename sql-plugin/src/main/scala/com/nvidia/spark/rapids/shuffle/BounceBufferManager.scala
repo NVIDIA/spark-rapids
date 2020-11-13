@@ -95,8 +95,6 @@ class BounceBufferManager[T <: MemoryBuffer](
 
   private[this] val rootBuffer = allocator(bufferSize * numBuffers)
 
-  private[this] var onFreeCallback: Option[() => Unit] = None
-
   freeBufferMap.set(0, numBuffers)
 
   /**
@@ -155,7 +153,7 @@ class BounceBufferManager[T <: MemoryBuffer](
       logDebug(s"$poolName: Free buffer index ${bufferIndex}")
       buffer.close()
       freeBufferMap.set(bufferIndex.toInt)
-      onFreeCallback.foreach(fn => fn())
+      notifyAll() // notify any waiters that are checking the state of this manager
     }
   }
 
@@ -167,13 +165,4 @@ class BounceBufferManager[T <: MemoryBuffer](
   def getRootBuffer(): MemoryBuffer = rootBuffer
 
   override def close(): Unit = rootBuffer.close()
-
-  /**
-   * Registers a callback to be used on free.
-   * @param fn - user-defined function
-   */
-  def onFree(fn: () => Unit): Unit = {
-    require(onFreeCallback.isEmpty, "Already registered a free callback")
-    onFreeCallback = Some(fn)
-  }
 }
