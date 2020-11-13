@@ -77,10 +77,10 @@ object GpuPythonHelper extends Logging {
     }
   }
 
-  def isPythonOnGpuEnabled(sqlConf: SQLConf): Boolean = {
+  def isPythonOnGpuEnabled(sqlConf: SQLConf, name: String = "spark"): Boolean = {
     val pythonEnabled = new RapidsConf(sqlConf).get(PYTHON_GPU_ENABLED)
     if (pythonEnabled) {
-      checkPythonConfigs(sparkConf)
+      checkPythonConfigs(sparkConf, name)
     }
     pythonEnabled
   }
@@ -100,11 +100,19 @@ object GpuPythonHelper extends Logging {
     })
   }
 
+  // Not sure if need separate worker for databricks, will check it later.
+  private val mapDefaultPythonModules = Map(
+    ("spark", ("rapids.daemon", "rapids.worker")),
+    ("databricks", ("rapids.daemon_databricks", "rapids.worker"))
+  )
+
   // Check the related conf(s) to launch our rapids daemon or worker for
   // the GPU initialization when python on gpu enabled.
   // - python worker module if useDaemon is false, otherwise
   // - python daemon module.
-  private[sql] def checkPythonConfigs(conf: SparkConf): Unit = synchronized {
+  private[sql] def checkPythonConfigs(conf: SparkConf, name: String): Unit = synchronized {
+    val defaultDaemonWorker = mapDefaultPythonModules(name)
+    val allPythonModules = mapDefaultPythonModules.values
     val useDaemon = {
       val useDaemonEnabled = conf.get(PYTHON_USE_DAEMON)
       // This flag is ignored on Windows as it's unable to fork.
@@ -114,25 +122,29 @@ object GpuPythonHelper extends Logging {
       val oDaemon = conf.get(PYTHON_DAEMON_MODULE)
       if (oDaemon.nonEmpty) {
         val daemon = oDaemon.get
-        if (daemon != "rapids.daemon") {
+        val isAllowedDaemon = allPythonModules.exists(v => v._1 == daemon)
+        if (!isAllowedDaemon) {
           throw new IllegalArgumentException("Python daemon module config conflicts." +
-            s" Expect 'rapids.daemon' but set to $daemon")
+            s" Expect one of [${allPythonModules.map(v => v._1).toSet.mkString(", ")}]," +
+            s" but found $daemon")
         }
       } else {
         // Set daemon only when not specified
-        conf.set(PYTHON_DAEMON_MODULE, "rapids.daemon")
+        conf.set(PYTHON_DAEMON_MODULE, defaultDaemonWorker._1)
       }
     } else {
       val oWorker = conf.get(PYTHON_WORKER_MODULE)
       if (oWorker.nonEmpty) {
         val worker = oWorker.get
-        if (worker != "rapids.worker") {
+        val isAllowedWorker = allPythonModules.exists(v => v._2 == worker)
+        if (!isAllowedWorker) {
           throw new IllegalArgumentException("Python worker module config conflicts." +
-            s" Expect 'rapids.worker' but set to $worker")
+            s" Expect one of (${allPythonModules.map(v => v._2).toSet.mkString(", ")})," +
+            s" but found $worker")
         }
       } else {
         // Set worker only when not specified
-        conf.set(PYTHON_WORKER_MODULE, "rapids.worker")
+        conf.set(PYTHON_WORKER_MODULE, defaultDaemonWorker._2)
       }
     }
   }

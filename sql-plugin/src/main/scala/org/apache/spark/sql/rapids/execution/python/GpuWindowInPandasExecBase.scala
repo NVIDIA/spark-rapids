@@ -31,14 +31,14 @@ import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.expressions._
 import org.apache.spark.sql.catalyst.plans.physical.{AllTuples, ClusteredDistribution, Distribution, Partitioning}
-import org.apache.spark.sql.execution.{SparkPlan, UnaryExecNode}
+import org.apache.spark.sql.execution.UnaryExecNode
 import org.apache.spark.sql.execution.python._
 import org.apache.spark.sql.rapids.GpuAggregateExpression
 import org.apache.spark.sql.types.{IntegerType, StructField, StructType}
 import org.apache.spark.sql.util.ArrowUtils
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
-class GpuWindowInPandasExecMeta(
+abstract class GpuWindowInPandasExecMetaBase(
     winPandas: WindowInPandasExec,
     conf: RapidsConf,
     parent: Option[RapidsMeta[_, _, _]],
@@ -75,14 +75,6 @@ class GpuWindowInPandasExecMeta(
       .foreach(rf => willNotWorkOnGpu(because = s"Only support RowFrame for now," +
         s" but found ${rf.frameType}"))
   }
-
-  override def convertToGpu(): GpuExec =
-    GpuWindowInPandasExec(
-      windowExpressions.map(_.convertToGpu()),
-      partitionSpec.map(_.convertToGpu()),
-      orderSpec.map(_.convertToGpu().asInstanceOf[SortOrder]),
-      childPlans.head.convertIfNeeded()
-    )
 }
 
 /**
@@ -173,21 +165,21 @@ class GroupingIterator(
 }
 
 /*
- * This GpuWindowInPandasExec aims at accelerating the data transfer between
- * JVM and Python, and scheduling GPU resources for Python processes
+ * The base class of GpuWindowInPandasExec in different shim layers
  *
  */
-case class GpuWindowInPandasExec(
-    windowExpression: Seq[Expression],
-    partitionSpec: Seq[Expression],
-    orderSpec: Seq[SortOrder],
-    child: SparkPlan)
-  extends UnaryExecNode with GpuExec {
+trait GpuWindowInPandasExecBase extends UnaryExecNode with GpuExec {
 
-  private def resultAttributes = windowExpression.map(_.asInstanceOf[NamedExpression].toAttribute)
+  def windowExpression: Seq[Expression]
+  def partitionSpec: Seq[Expression]
+  def orderSpec: Seq[SortOrder]
 
-  override def output: Seq[Attribute] =
-    child.output ++ resultAttributes
+  // Used to choose the default python modules
+  // please refer to `GpuPythonHelper` for details.
+  def pythonModuleKey: String
+
+  // project the output from joined batch, you should close the joined batch if no longer needed.
+  def projectResult(joinedBatch: ColumnarBatch): ColumnarBatch
 
   override def requiredChildDistribution: Seq[Distribution] = {
     if (partitionSpec.isEmpty) {
@@ -483,9 +475,10 @@ case class GpuWindowInPandasExec(
       }
     )
 
-    lazy val isPythonOnGpuEnabled = GpuPythonHelper.isPythonOnGpuEnabled(conf)
+    lazy val isPythonOnGpuEnabled = GpuPythonHelper.isPythonOnGpuEnabled(conf, pythonModuleKey)
     // cache in a local to avoid serializing the plan
-    val pythonOutputSchema = StructType.fromAttributes(resultAttributes)
+    val retAttributes = windowExpression.map(_.asInstanceOf[NamedExpression].toAttribute)
+    val pythonOutputSchema = StructType.fromAttributes(retAttributes)
     val childOutput = child.output
 
     // 8) Start processing.
@@ -556,7 +549,7 @@ case class GpuWindowInPandasExec(
             withResource(queue.remove()) { origBatch =>
               numOutputBatches += 1
               numOutputRows += numRows
-              combine(origBatch, cbFromPython)
+              projectResult(combine(origBatch, cbFromPython))
             }
           }
         }
