@@ -48,6 +48,15 @@ class GpuTransitionOverrides extends Rule[SparkPlan] {
     ShimLoader.getSparkShims.getGpuColumnarToRowTransition(plan, exportColumnRdd)
   }
 
+  /** Adds the appropriate coalesce after a shuffle depending on the type of shuffle configured */
+  private def addPostShuffleCoalesce(plan: SparkPlan): SparkPlan = {
+    if (GpuShuffleEnv.isRapidsShuffleEnabled) {
+      GpuCoalesceBatches(plan, TargetSize(conf.gpuTargetBatchSizeBytes))
+    } else {
+      ShuffleCoalesceExec(plan, conf)
+    }
+  }
+
   def optimizeAdaptiveTransitions(
       plan: SparkPlan,
       parent: Option[SparkPlan]): SparkPlan = plan match {
@@ -58,6 +67,19 @@ class GpuTransitionOverrides extends Rule[SparkPlan] {
         ShuffleCoalesceExec(e: GpuShuffleExchangeExecBase, _))) if parent.isEmpty =>
       // We typically want the final operator in the plan (the operator that has no parent) to be
       // wrapped in `ColumnarToRowExec(GpuBringBackToHost(ShuffleCoalesceExec(_)))` operators to
+      // bring the data back onto the host and be translated to rows so that it can be returned
+      // from the Spark API. However, in the case of AQE, each exchange operator is treated as an
+      // individual query with no parent and we need to remove these operators in this case
+      // because we need to return an operator that implements `BroadcastExchangeLike` or
+      // `ShuffleExchangeLike`. The coalesce step gets added back into the plan later on, in a
+      // future query stage that reads the output from this query stage. This is handled in the
+      // case clauses below.
+      e.withNewChildren(e.children.map(c => optimizeAdaptiveTransitions(c, Some(e))))
+
+    case ColumnarToRowExec(GpuBringBackToHost(
+        GpuCoalesceBatches(e: GpuShuffleExchangeExecBase, _))) if parent.isEmpty =>
+      // We typically want the final operator in the plan (the operator that has no parent) to be
+      // wrapped in `ColumnarToRowExec(GpuBringBackToHost(GpuCoalesceBatches(_)))` operators to
       // bring the data back onto the host and be translated to rows so that it can be returned
       // from the Spark API. However, in the case of AQE, each exchange operator is treated as an
       // individual query with no parent and we need to remove these operators in this case
@@ -81,7 +103,7 @@ class GpuTransitionOverrides extends Rule[SparkPlan] {
             s
           case _ =>
             // Directly wrap shuffle query stage with coalesce batches operator
-            ShuffleCoalesceExec(s, conf)
+            addPostShuffleCoalesce(s)
         }
       } else {
         s
@@ -89,7 +111,7 @@ class GpuTransitionOverrides extends Rule[SparkPlan] {
 
     case e: GpuCustomShuffleReaderExec =>
       // We wrap custom shuffle readers with a coalesce batches operator here.
-      ShuffleCoalesceExec(e.copy(child = optimizeAdaptiveTransitions(e.child, Some(e))), conf)
+      addPostShuffleCoalesce(e.copy(child = optimizeAdaptiveTransitions(e.child, Some(e))))
 
     // Query stages that have already executed on the GPU could be used by CPU operators
     // in future query stages. Note that because these query stages have already executed, we
