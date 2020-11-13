@@ -263,7 +263,6 @@ def test_cache_additional_types(enableVectorized, func, selectExpr):
                                           ('d', IntegerGen(min_val=-10000, max_val=10000, nullable=False)),
                                           ('s', IntegerGen(min_val=-10000, max_val=10000, nullable=False))],
                                          nullable=False), seed=1)
-            # df.write.csv("/home/rjafri/interval.csv")
             duration_df = df.selectExpr(selectExprDF)
             if (cache):
                 duration_df.cache()
