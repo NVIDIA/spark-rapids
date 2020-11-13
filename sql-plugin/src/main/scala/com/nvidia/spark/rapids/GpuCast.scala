@@ -122,6 +122,12 @@ object GpuCast {
 
   val INVALID_FLOAT_CAST_MSG = "At least one value is either null or is an invalid number"
 
+  val EPOCH = "epoch"
+  val NOW = "now"
+  val TODAY = "today"
+  val YESTERDAY = "yesterday"
+  val TOMORROW = "tomorrow"
+
   /**
    * Returns true iff we can cast `from` to `to` using the GPU.
    */
@@ -181,6 +187,17 @@ object GpuCast {
       }
       case _ => false
     }
+  }
+
+  def calculateSpecialDates: Map[String, Int] = {
+    val now = DateTimeUtils.currentDate(ZoneId.of("UTC"))
+    Map(
+      EPOCH -> 0,
+      NOW -> now,
+      TODAY -> now,
+      YESTERDAY -> (now - 1),
+      TOMORROW -> (now + 1)
+    )
   }
 }
 
@@ -655,16 +672,6 @@ case class GpuCast(
       }
     }
 
-    // special dates
-    val now = DateTimeUtils.currentDate(ZoneId.of("UTC"))
-    val specialDates: Map[String, Int] = Map(
-      "epoch" -> 0,
-      "now" -> now,
-      "today" -> now,
-      "yesterday" -> (now - 1),
-      "tomorrow" -> (now + 1)
-    )
-
     var sanitizedInput = input.incRefCount()
 
     // replace partial months
@@ -676,6 +683,8 @@ case class GpuCast(
     sanitizedInput = withResource(sanitizedInput) { cv =>
       cv.stringReplaceWithBackrefs("-([0-9])([ T](:?[\\r\\n]|.)*)?\\Z", "-0\\1")
     }
+
+    val specialDates = calculateSpecialDates
 
     withResource(sanitizedInput) { sanitizedInput =>
 
