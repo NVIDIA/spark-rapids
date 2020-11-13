@@ -241,10 +241,10 @@ object MetaUtils extends Arm {
   def getBatchFromMeta(deviceBuffer: DeviceMemoryBuffer,
       meta: TableMeta,
       sparkTypes: Array[DataType]): ColumnarBatch = {
-    withResource(new Array[GpuColumnVector](meta.columnMetasLength())) { columns =>
+    closeOnExcept(new ArrayBuffer[GpuColumnVector](meta.columnMetasLength())) { columns =>
       val columnMeta = new ColumnMeta
       (0 until meta.columnMetasLength).foreach { i =>
-        columns(i) = makeColumn(deviceBuffer, meta.columnMetas(columnMeta, i), sparkTypes(i))
+        columns.append(makeColumn(deviceBuffer, meta.columnMetas(columnMeta, i), sparkTypes(i)))
       }
       new ColumnarBatch(columns.toArray, meta.rowCount.toInt)
     }
