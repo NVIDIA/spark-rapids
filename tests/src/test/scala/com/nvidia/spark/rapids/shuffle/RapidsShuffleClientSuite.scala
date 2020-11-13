@@ -143,13 +143,37 @@ class RapidsShuffleClientSuite extends RapidsShuffleTestHelper {
       verify(mockHandler, times(0)).start(any())
 
       // but the error handler will
-      verify(mockHandler, times(1)).transferError(anyString())
+      verify(mockHandler, times(1)).transferError(anyString(), isNull())
 
       // the transport will receive no pending requests (for buffers) for queuing
       verify(mockTransport, times(0)).queuePending(any())
 
       newMocks()
     }
+  }
+
+  test("exception in metadata fetch escalates to handler"){
+    when(mockTransaction.getStatus).thenThrow(new RuntimeException("test exception"))
+    val shuffleRequests = RapidsShuffleTestHelper.getShuffleBlocks
+    val contigBuffSize = 100000
+    RapidsShuffleTestHelper.mockMetaResponse(
+      mockTransport, contigBuffSize, 3)
+
+    client.doFetch(shuffleRequests.map(_._1), mockHandler)
+
+    assertResult(1)(mockConnection.requests.size)
+
+    // upon an errored response, the start handler will not be called
+    verify(mockHandler, times(0)).start(any())
+
+    // but the error handler will, and there will be an exception along.
+    verify(mockHandler, times(1))
+        .transferError(anyString(), any[RuntimeException]())
+
+    // the transport will receive no pending requests (for buffers) for queuing
+    verify(mockTransport, times(0)).queuePending(any())
+
+    newMocks()
   }
 
   test("successful buffer fetch") {
@@ -375,8 +399,9 @@ class RapidsShuffleClientSuite extends RapidsShuffleTestHelper {
         // Errored transaction. Therefore we should not be done
         assert(brs.hasNext)
 
-        // We should have called `transferError` in the `RapidsShuffleFetchHandler`
-        verify(mockHandler, times(1)).transferError(any())
+        // We should have called `transferError` in the `RapidsShuffleFetchHandler` and not
+        // pass a throwable, since this was a transport-level exception we caught
+        verify(mockHandler, times(1)).transferError(any(), isNull())
 
         // there was 1 receive, and the chain stopped because it wasn't successful
         verify(mockConnection, times(1)).receive(any[Seq[AddressLengthTag]](), any())
@@ -392,6 +417,42 @@ class RapidsShuffleClientSuite extends RapidsShuffleTestHelper {
     }
   }
 
+  test("exception in buffer fetch escalates to handler") {
+    when(mockTransaction.getStatus).thenThrow(new RuntimeException("test exception"))
+
+    val numRows = 100000
+    val tableMeta =
+      RapidsShuffleTestHelper.prepareMetaTransferResponse(mockTransport, numRows)
+
+    // error condition, so it doesn't matter much what we set here, only the first
+    // receive will happen
+    val sizePerBuffer = numRows * 4 / 10
+    closeOnExcept(getBounceBuffer(sizePerBuffer)) { bounceBuffer =>
+      val brs = prepareBufferReceiveState(tableMeta, bounceBuffer)
+
+      assert(brs.hasNext)
+
+      // Kick off receives
+      client.doIssueBufferReceives(brs)
+
+      // Errored transaction. Therefore we should not be done
+      assert(brs.hasNext)
+
+      // We should have called `transferError` in the `RapidsShuffleFetchHandler`
+      verify(mockHandler, times(1)).transferError(any(), any[RuntimeException]())
+
+      // there was 1 receive, and the chain stopped because it wasn't successful
+      verify(mockConnection, times(1)).receive(any[Seq[AddressLengthTag]](), any())
+
+      // we would have issued 1 request to issue a `TransferRequest` for the server to start
+      verify(mockConnection, times(1)).request(any(), any(), any())
+
+      // ensure we closed the BufferReceiveState => releasing the bounce buffers
+      assertResult(true)(bounceBuffer.isClosed)
+    }
+
+    newMocks()
+  }
 
   def makeRequest(
       tag: Long, numRows: Long): (PendingTransferRequest, HostMemoryBuffer, TableMeta) = {

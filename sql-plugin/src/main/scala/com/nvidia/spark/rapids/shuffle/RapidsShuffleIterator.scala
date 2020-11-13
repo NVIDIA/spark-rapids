@@ -83,7 +83,8 @@ class RapidsShuffleIterator(
       blockManagerId: BlockManagerId,
       blockId: ShuffleBlockBatchId,
       mapIndex: Int,
-      errorMessage: String) extends ShuffleClientResult
+      errorMessage: String,
+      throwable: Throwable) extends ShuffleClientResult
 
   // when batches (or errors) arrive from the transport, the are pushed
   // to the `resolvedBatches` queue.
@@ -241,15 +242,16 @@ class RapidsShuffleIterator(
               }
             }
 
-          override def transferError(errorMessage: String): Unit = resolvedBatches.synchronized {
-            // If Spark detects a single fetch failure, the whole task has failed
-            // as per `FetchFailedException`. In the future `mapIndex` will come from the
-            // error callback.
-            shuffleRequestsMapIndex.map { case BlockIdMapIndex(id, mapIndex) =>
-              resolvedBatches.offer(TransferError(
-              blockManagerId, id, mapIndex, errorMessage))
+          override def transferError(errorMessage: String, throwable: Throwable): Unit =
+            resolvedBatches.synchronized {
+              // If Spark detects a single fetch failure, the whole task has failed
+              // as per `FetchFailedException`. In the future `mapIndex` will come from the
+              // error callback.
+              shuffleRequestsMapIndex.map { case BlockIdMapIndex(id, mapIndex) =>
+                resolvedBatches.offer(TransferError(
+                  blockManagerId, id, mapIndex, errorMessage, throwable))
+              }
             }
-          }
         }
 
         logInfo(s"Client $blockManagerId triggered, for ${shuffleRequestsMapIndex.size} blocks")
@@ -337,18 +339,26 @@ class RapidsShuffleIterator(
           }
           catalog.removeBuffer(bufferId)
         }
-      case Some(TransferError(blockManagerId, shuffleBlockBatchId, mapIndex, errorMessage)) =>
+      case Some(
+        TransferError(blockManagerId, shuffleBlockBatchId, mapIndex, errorMessage, throwable)) =>
         taskContext.foreach(GpuSemaphore.releaseIfNecessary)
         metricsUpdater.update(blockedTime, 0, 0, 0)
         val errorMsg = s"Transfer error detected by shuffle iterator, failing task. ${errorMessage}"
-        logError(errorMsg)
-        throw new RapidsShuffleFetchFailedException(
+        val exp = new RapidsShuffleFetchFailedException(
           blockManagerId,
           shuffleBlockBatchId.shuffleId,
           shuffleBlockBatchId.mapId,
           mapIndex,
           shuffleBlockBatchId.startReduceId,
           errorMsg)
+
+        if (throwable != null) {
+          logError(errorMsg, throwable)
+          exp.addSuppressed(throwable)
+        } else {
+          logError(errorMsg)
+        }
+        throw exp
       case None =>
         // NOTE: this isn't perfect, since what we really want is the transport to
         // bubble this error, but for now we'll make this a fatal exception.
