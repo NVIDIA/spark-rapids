@@ -112,7 +112,7 @@ class DecimalUnitTest extends GpuUnitTests with Matchers {
       withResource(GpuColumnVector.from(ColumnVector.decimalFromInts(0, 1),
         DecimalType(DType.DECIMAL32_MAX_PRECISION + 1, 0))) { _ => }
     }
-    // TODO: support fromScalar(cudf.ColumnVector cv, int rows) for fixed-point decimal in cuDF
+    // FIXME: Enable below test after creating decimal vectors from scalar supported by cuDF.
     /*
     withResource(GpuScalar.from(dec64Data(0), dt64)) { scalar =>
       withResource(GpuColumnVector.from(scalar, 10, dt64)) { cv =>

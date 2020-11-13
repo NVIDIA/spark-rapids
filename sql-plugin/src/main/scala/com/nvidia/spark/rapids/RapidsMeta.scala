@@ -102,7 +102,6 @@ abstract class RapidsMeta[INPUT <: BASE, BASE, OUTPUT <: BASE](
   /**
    * Check if all the types are supported in this Meta
    */
-<<<<<<< HEAD
   final def areAllSupportedTypes(types: DataType*): Boolean =
     types.forall(isSupportedType)
 
@@ -111,11 +110,6 @@ abstract class RapidsMeta[INPUT <: BASE, BASE, OUTPUT <: BASE](
    */
   def isSupportedType(t: DataType): Boolean =
     GpuOverrides.isSupportedType(t)
-=======
-  def areAllSupportedTypes(types: DataType*): Boolean = {
-    GpuOverrides.areAllSupportedTypes(types, Some(this))
-  }
->>>>>>> refine
 
   /**
    * Keep this on the CPU, but possibly convert its children under it to run on the GPU if enabled.
@@ -439,6 +433,11 @@ abstract class SparkPlanMeta[INPUT <: SparkPlan](plan: INPUT,
   override val childScans: Seq[ScanMeta[_]] = Seq.empty
   override val childParts: Seq[PartMeta[_]] = Seq.empty
   override val childDataWriteCmds: Seq[DataWritingCommandMeta[_]] = Seq.empty
+
+  // We assume that all common plans are decimal supportable by default, considering
+  // whether decimal allowable is mainly determined in expression-level.
+  override def isSupportedType(t: DataType): Boolean =
+    GpuOverrides.isSupportedType(t, allowDecimal = true)
 
   override def convertToCpu(): SparkPlan = {
     wrapped.withNewChildren(childPlans.map(_.convertIfNeeded()))

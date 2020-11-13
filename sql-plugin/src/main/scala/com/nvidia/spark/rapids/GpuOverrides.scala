@@ -439,29 +439,7 @@ object GpuOverrides {
     }
   }
 
-  // Set of expressions which supports DecimalType
-  private val decimalSupportedExpr: Set[String] = Set()
-
-  def areAllSupportedTypes[I <: B, B, O <: B](
-      types: Seq[DataType],
-      meta: Option[RapidsMeta[I, B, O]] = None): Boolean = {
-    if (types.exists(_.isInstanceOf[DecimalType])) {
-      // For DataTypes with specific RapidsMeta, we match all possible decimal unsupported
-      // RapidsMetas. The default ones are assumed to support decimal.
-      meta match {
-        case None => false
-        case Some(exprMeta: BaseExprMeta[I]) =>
-          val node = exprMeta.wrapped.asInstanceOf[Expression].nodeName
-          decimalSupportedExpr.contains(node) && types.forall(isSupportedTypeWithDecimal)
-        case Some(_: ScanMeta[I]) => false
-        case Some(_: DataWritingCommandMeta[I]) => false
-        case Some(_: PartMeta[I]) => false
-        case Some(_) => types.forall(isSupportedTypeWithDecimal)
-      }
-    } else {
-      types.forall(isSupportedType)
-    }
-  }
+  def areAllSupportedTypes(types: DataType*): Boolean = types.forall(isSupportedType(_))
 
   /**
    * Is this particular type supported or not.
@@ -628,7 +606,7 @@ object GpuOverrides {
         }
 
         override def isSupportedType(t: DataType): Boolean =
-          GpuOverrides.isSupportedType(t, allowCalendarInterval = true)
+          GpuOverrides.isSupportedType(t, allowCalendarInterval = true, allowDecimal = true)
       }),
     expr[Signum](
       "Returns -1.0, 0.0 or 1.0 as expr is negative, 0 or positive",
@@ -639,7 +617,8 @@ object GpuOverrides {
       "Gives a column a name",
       (a, conf, p, r) => new UnaryExprMeta[Alias](a, conf, p, r) {
         override def isSupportedType(t: DataType): Boolean =
-          GpuOverrides.isSupportedType(t, allowStringMaps = true, allowBinary = true)
+          GpuOverrides.isSupportedType(t,
+            allowStringMaps = true, allowBinary = true, allowDecimal = true)
 
         override def convertToGpu(child: Expression): GpuExpression =
           GpuAlias(child, a.name)(a.exprId, a.qualifier, a.explicitMetadata)
@@ -648,7 +627,7 @@ object GpuOverrides {
       "References an input column",
       (att, conf, p, r) => new BaseExprMeta[AttributeReference](att, conf, p, r) {
         override def isSupportedType(t: DataType): Boolean =
-          GpuOverrides.isSupportedType(t, allowStringMaps = true)
+          GpuOverrides.isSupportedType(t, allowStringMaps = true, allowDecimal = true)
 
         // This is the only NOOP operator.  It goes away when things are bound
         override def convertToGpu(): Expression = att
@@ -840,16 +819,15 @@ object GpuOverrides {
     expr[IsNull](
       "Checks if a value is null",
       (a, conf, p, r) => new UnaryExprMeta[IsNull](a, conf, p, r) {
-        override def areAllSupportedTypes(types: DataType*): Boolean = {
-          types.forall(isSupportedTypeWithDecimal)
-        }
+        override def isSupportedType(t: DataType): Boolean =
+          GpuOverrides.isSupportedType(t, allowStringMaps = true, allowDecimal = true)
         override def convertToGpu(child: Expression): GpuExpression = GpuIsNull(child)
       }),
     expr[IsNotNull](
       "Checks if a value is not null",
       (a, conf, p, r) => new UnaryExprMeta[IsNotNull](a, conf, p, r) {
         override def isSupportedType(t: DataType): Boolean =
-          GpuOverrides.isSupportedType(t, allowStringMaps = true)
+          GpuOverrides.isSupportedType(t, allowStringMaps = true, allowDecimal = true)
         override def convertToGpu(child: Expression): GpuExpression = GpuIsNotNull(child)
       }),
     expr[IsNaN](
@@ -1832,7 +1810,7 @@ object GpuOverrides {
       (proj, conf, p, r) => {
         new SparkPlanMeta[ProjectExec](proj, conf, p, r) {
           override def isSupportedType(t: DataType): Boolean =
-            GpuOverrides.isSupportedType(t, allowStringMaps = true)
+            GpuOverrides.isSupportedType(t, allowStringMaps = true, allowDecimal = true)
 
           override def convertToGpu(): GpuExec =
             GpuProjectExec(childExprs.map(_.convertToGpu()), childPlans(0).convertIfNeeded())
@@ -1917,7 +1895,7 @@ object GpuOverrides {
       "The backend for most filter statements",
       (filter, conf, p, r) => new SparkPlanMeta[FilterExec](filter, conf, p, r) {
         override def isSupportedType(t: DataType): Boolean =
-          GpuOverrides.isSupportedType(t, allowStringMaps = true)
+          GpuOverrides.isSupportedType(t, allowStringMaps = true, allowDecimal = true)
 
         override def convertToGpu(): GpuExec =
           GpuFilterExec(childExprs(0).convertToGpu(), childPlans(0).convertIfNeeded())

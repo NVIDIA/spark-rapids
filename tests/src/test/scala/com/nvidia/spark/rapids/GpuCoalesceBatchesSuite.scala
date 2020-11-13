@@ -19,19 +19,19 @@ package com.nvidia.spark.rapids
 import java.io.File
 import java.nio.file.Files
 
-import ai.rapids.cudf.{ContiguousTable, Cuda, HostColumnVector, Table}
+import ai.rapids.cudf.{ContiguousTable, Cuda, DType, HostColumnVector, Table}
 import com.nvidia.spark.rapids.format.CodecType
 
 import org.apache.spark.sql.execution.metric.SQLMetric
 import org.apache.spark.sql.rapids.metrics.source.MockTaskContext
-import org.apache.spark.sql.types.{DataType, DataTypes, LongType, StructField, StructType}
+import org.apache.spark.sql.types.{DataType, DataTypes, DecimalType, LongType, StructField, StructType}
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
 class GpuCoalesceBatchesSuite extends SparkQueryCompareTestSuite {
 
   test("test with small input batches") {
     withGpuSparkSession(spark => {
-      val testData = doubleCsvDf(spark).coalesce(1)
+      val testData = mixedDf(spark, numSlices = 1)
       val gpuRowToColumnarExec = GpuRowToColumnarExec(testData.queryExecution.sparkPlan,
         TargetSize(1))
       val gpuCoalesceBatches = GpuCoalesceBatches(gpuRowToColumnarExec, TargetSize(100000))
@@ -43,7 +43,7 @@ class GpuCoalesceBatchesSuite extends SparkQueryCompareTestSuite {
       // assert final results are correct
       assert(batches.hasNext)
       val batch = batches.next()
-      assert(batch.numCols() == 2)
+      assert(batch.numCols() == 5)
       assert(batch.numRows() == 14)
       assert(!batches.hasNext)
       batch.close()
@@ -137,7 +137,7 @@ class GpuCoalesceBatchesSuite extends SparkQueryCompareTestSuite {
 
     withGpuSparkSession(spark => {
 
-      val df = longsCsvDf(spark)
+      val df = mixedDf(spark, numSlices = 7)
 
       // currently, GpuSortExec requires a single batch but this is likely to change in the
       // future, making this test invalid
@@ -149,7 +149,6 @@ class GpuCoalesceBatchesSuite extends SparkQueryCompareTestSuite {
       df2.collect()
       val executedPlan = ExecutionPlanCaptureCallback.extractExecutedPlan(
         ExecutionPlanCaptureCallback.getResultWithTimeout())
-
       val coalesce = executedPlan
         .find(_.isInstanceOf[GpuCoalesceBatches]).get
         .asInstanceOf[GpuCoalesceBatches]
@@ -184,13 +183,12 @@ class GpuCoalesceBatchesSuite extends SparkQueryCompareTestSuite {
     try {
       // convert csv test data to parquet
       withCpuSparkSession(spark => {
-        longsCsvDf(spark).write.parquet(path)
+        mixedDf(spark).write.parquet(path)
       }, conf)
 
       withGpuSparkSession(spark => {
         val df = spark.read.parquet(path)
-        val df2 = df
-          .sort(df.col("longs"))
+        val df2 = df.sort(df.col("longs"))
 
         // execute the plan
         ExecutionPlanCaptureCallback.startCapture()
@@ -198,7 +196,6 @@ class GpuCoalesceBatchesSuite extends SparkQueryCompareTestSuite {
 
         val executedPlan = ExecutionPlanCaptureCallback.extractExecutedPlan(
           ExecutionPlanCaptureCallback.getResultWithTimeout())
-
         // ensure that the plan does include the HostColumnarToGpu step
         val hostColumnarToGpu = executedPlan
           .find(_.isInstanceOf[HostColumnarToGpu]).get
@@ -212,8 +209,6 @@ class GpuCoalesceBatchesSuite extends SparkQueryCompareTestSuite {
 
         assert(gpuCoalesceBatches.goal == RequireSingleBatch)
         assert(gpuCoalesceBatches.goal.targetSizeBytes == Long.MaxValue)
-
-
       }, conf)
     } finally {
       dir.delete()
@@ -229,13 +224,13 @@ class GpuCoalesceBatchesSuite extends SparkQueryCompareTestSuite {
 
     withGpuSparkSession(spark => {
 
-      val df = longsCsvDf(spark)
+      val df = mixedDf(spark, numSlices = 14)
 
       // A coalesce step is added after the filter to help with the case where much of the
       // data is filtered out.  The select is there to prevent the coalesce from being
       // the last thing in the plan which will cause the coalesce to be optimized out.
       val df2 = df
-        .filter(df.col("six").gt(5)).select(df.col("six") * 2)
+        .filter(df.col("ints").gt(90)).select(df.col("ints") * 2)
 
       val coalesce = df2.queryExecution.executedPlan
         .find(_.isInstanceOf[GpuCoalesceBatches]).get
@@ -252,8 +247,8 @@ class GpuCoalesceBatchesSuite extends SparkQueryCompareTestSuite {
       df2.collect()
 
       // assert the metrics are correct
-      assert(coalesce.additionalMetrics("numInputBatches").value == 7)
-      assert(coalesce.longMetric(GpuMetricNames.NUM_OUTPUT_BATCHES).value == 7)
+      assert(coalesce.additionalMetrics("numInputBatches").value == 14)
+      assert(coalesce.longMetric(GpuMetricNames.NUM_OUTPUT_BATCHES).value == 11)
 
     }, conf)
   }
@@ -279,7 +274,9 @@ class GpuCoalesceBatchesSuite extends SparkQueryCompareTestSuite {
       }
     }
 
-    val schema = new StructType().add("i", LongType)
+    val schema = new StructType()
+      .add("i", LongType)
+      .add("j", DecimalType(DType.DECIMAL64_MAX_PRECISION, 3))
     val dummyMetric = new SQLMetric("ignored")
     val coalesceIter = new GpuCoalesceIterator(
       batchIter,
@@ -299,12 +296,17 @@ class GpuCoalesceBatchesSuite extends SparkQueryCompareTestSuite {
     var expected = 0
     while (coalesceIter.hasNext) {
       withResource(coalesceIter.next()) { batch =>
-        assertResult(1)(batch.numCols)
-        val col = GpuColumnVector.extractBases(batch).head
-        withResource(col.copyToHost) { hcv =>
-          (0 until hcv.getRowCount.toInt).foreach { i =>
-            assertResult(expected)(hcv.getLong(i))
-            expected += 1
+        assertResult(2)(batch.numCols)
+        val Array(longCol, decCol) = GpuColumnVector.extractBases(batch)
+        withResource(longCol.copyToHost) { longHcv =>
+          withResource(decCol.copyToHost) { decHcv =>
+            (0 until longHcv.getRowCount.toInt).foreach { i =>
+              assertResult(expected)(longHcv.getLong(i))
+              // FIXME: Enable assertions after native support of decimal contiguous split ready.
+              // assertResult(expected)(decHcv.getLong(i))
+              // assertResult(expected * 0.0001)(decHcv.getBigDecimal(i).doubleValue())
+              expected += 1
+            }
           }
         }
       }
@@ -355,7 +357,9 @@ class GpuCoalesceBatchesSuite extends SparkQueryCompareTestSuite {
       }
     }
 
-    val schema = new StructType().add("i", LongType)
+    val schema = new StructType()
+      .add("i", LongType)
+      .add("j", DecimalType(DType.DECIMAL64_MAX_PRECISION, 3))
     val dummyMetric = new SQLMetric("ignored")
     val coalesceIter = new GpuCoalesceIterator(
       batchIter,
@@ -375,12 +379,17 @@ class GpuCoalesceBatchesSuite extends SparkQueryCompareTestSuite {
     var expected = 0
     while (coalesceIter.hasNext) {
       withResource(coalesceIter.next()) { batch =>
-        assertResult(1)(batch.numCols)
-        val col = GpuColumnVector.extractBases(batch).head
-        withResource(col.copyToHost) { hcv =>
-          (0 until hcv.getRowCount.toInt).foreach { i =>
-            assertResult(expected)(hcv.getLong(i))
-            expected += 1
+        assertResult(2)(batch.numCols)
+        val Array(longCol, decCol) = GpuColumnVector.extractBases(batch)
+        withResource(longCol.copyToHost) { longHcv =>
+          withResource(decCol.copyToHost) { decHcv =>
+            (0 until longHcv.getRowCount.toInt).foreach { i =>
+              assertResult(expected)(longHcv.getLong(i))
+              // FIXME: Enable assertions after native support of decimal contiguous split ready.
+              // assertResult(expected)(decHcv.getLong(i))
+              // assertResult(expected * 0.0001)(decHcv.getBigDecimal(i).doubleValue())
+              expected += 1
+            }
           }
         }
       }
@@ -392,8 +401,12 @@ class GpuCoalesceBatchesSuite extends SparkQueryCompareTestSuite {
     val vals = (0 until numRows).map(_.toLong + start)
     withResource(HostColumnVector.fromLongs(vals:_*)) { hcv =>
       withResource(hcv.copyToDevice()) { cv =>
-        withResource(new Table(cv)) { table =>
-          table.contiguousSplit()(0)
+        withResource(HostColumnVector.decimalFromLongs(-3, vals:_*)) { decHcv =>
+          withResource(decHcv.copyToDevice()) { decCv =>
+            withResource(new Table(cv, decCv)) { table =>
+              table.contiguousSplit()(0)
+            }
+          }
         }
       }
     }
@@ -401,7 +414,8 @@ class GpuCoalesceBatchesSuite extends SparkQueryCompareTestSuite {
 
   private def buildUncompressedBatch(start: Int, numRows: Int): ColumnarBatch = {
     withResource(buildContiguousTable(start, numRows)) { ct =>
-      GpuColumnVector.from(ct.getTable, Array[DataType](LongType))
+      GpuColumnVector.from(ct.getTable,
+        Array[DataType](LongType, DecimalType(DType.DECIMAL64_MAX_PRECISION, 3)))
     }
   }
 
@@ -409,7 +423,8 @@ class GpuCoalesceBatchesSuite extends SparkQueryCompareTestSuite {
     val codec = TableCompressionCodec.getCodec(CodecType.NVCOMP_LZ4)
     withResource(codec.createBatchCompressor(0, Cuda.DEFAULT_STREAM)) { compressor =>
       compressor.addTableToCompress(buildContiguousTable(start, numRows))
-      GpuCompressedColumnVector.from(compressor.finish().head, Array[DataType](LongType))
+      GpuCompressedColumnVector.from(compressor.finish().head,
+        Array[DataType](LongType, DecimalType(DType.DECIMAL64_MAX_PRECISION, 3)))
     }
   }
 }

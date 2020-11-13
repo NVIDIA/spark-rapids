@@ -474,14 +474,8 @@ object InternalColumnarRddConverter extends Logging {
 
   def convert(df: DataFrame): RDD[Table] = {
     val schema = df.schema
-<<<<<<< HEAD
     if (!GpuOverrides.areAllSupportedTypes(schema.map(_.dataType) :_*)) {
       val unsupported = schema.map(_.dataType).filter(!GpuOverrides.isSupportedType(_)).toSet
-=======
-    if (!GpuOverrides.areAllSupportedTypes(schema.map(_.dataType))) {
-      val unsupported = schema.map(_.dataType)
-        .filter(dt => !GpuOverrides.areAllSupportedTypes(Seq(dt))).toSet
->>>>>>> refine
       throw new IllegalArgumentException(s"Cannot convert $df to GPU columnar $unsupported are " +
         s"not currently supported data types for columnar.")
     }
