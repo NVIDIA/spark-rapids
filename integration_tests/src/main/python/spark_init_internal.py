@@ -28,8 +28,7 @@ def _spark__init():
     # can be reset in the middle of a test if specific operations are done (some types of cast etc)
     import os
     _sb = SparkSession.builder
-    _sb.config('spark.master', 'local') \
-            .config('spark.plugins', 'com.nvidia.spark.SQLPlugin') \
+    _sb.config('spark.plugins', 'com.nvidia.spark.SQLPlugin') \
             .config("spark.sql.adaptive.enabled", "false") \
             .config('spark.sql.queryExecutionListeners', 'com.nvidia.spark.rapids.ExecutionPlanCaptureCallback')
 
