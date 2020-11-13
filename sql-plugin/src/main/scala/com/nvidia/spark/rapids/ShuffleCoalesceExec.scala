@@ -179,7 +179,7 @@ class ShuffleCoalesceIterator(
     batchByteSize = 0
     numRowsInBatch = 0
     if (numTablesInBatch > 0) {
-      require(numTablesInBatch == 1)
+      require(numTablesInBatch == 1, "should only track at most one buffer that is not in a batch")
       val header = serializedTables.peekFirst().header
       batchByteSize = header.getDataLen
       numRowsInBatch = header.getNumRows
