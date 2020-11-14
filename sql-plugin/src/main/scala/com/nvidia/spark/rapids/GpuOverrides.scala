@@ -504,14 +504,6 @@ object GpuOverrides {
   }
 
   /**
-   * A walkaround method to include DecimalType for expressions who supports Decimal.
-   */
-  def isSupportedTypeWithDecimal(dataType: DataType): Boolean = dataType match {
-      case dt: DecimalType => dt.precision <= ai.rapids.cudf.DType.DECIMAL64_MAX_PRECISION
-      case dt => isSupportedType(dt)
-    }
-
-  /**
    * Checks to see if any expressions are a String Literal
    */
   def isAnyStringLit(expressions: Seq[Expression]): Boolean =
