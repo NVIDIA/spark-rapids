@@ -17,14 +17,14 @@
 package com.nvidia.spark.rapids.shuffle.ucx
 
 import java.nio.ByteBuffer
-import java.util.PriorityQueue
 import java.util.concurrent._
 
 import scala.collection.mutable
+import scala.collection.mutable.ArrayBuffer
 
 import ai.rapids.cudf.{DeviceMemoryBuffer, HostMemoryBuffer, MemoryBuffer, NvtxColor, NvtxRange}
 import com.google.common.util.concurrent.ThreadFactoryBuilder
-import com.nvidia.spark.rapids.{GpuDeviceManager, RapidsConf}
+import com.nvidia.spark.rapids.{GpuDeviceManager, HashedPriorityQueue, RapidsConf}
 import com.nvidia.spark.rapids.shuffle._
 import com.nvidia.spark.rapids.shuffle.{BounceBufferManager, BufferReceiveState, ClientConnection, PendingTransferRequest, RapidsShuffleClient, RapidsShuffleRequestHandler, RapidsShuffleServer, RapidsShuffleTransport, RefCountedDirectByteBuffer}
 
@@ -59,6 +59,7 @@ class UCXShuffleTransport(shuffleServerId: BlockManagerId, rapidsConf: RapidsCon
   private[this] val bounceBufferSize = rapidsConf.shuffleUcxBounceBuffersSize
   private[this] val deviceNumBuffers = rapidsConf.shuffleUcxDeviceBounceBuffersCount
   private[this] val hostNumBuffers = rapidsConf.shuffleUcxHostBounceBuffersCount
+  private[this] var receiveBuffersFree = deviceNumBuffers
 
   private[this] var deviceSendBuffMgr: BounceBufferManager[DeviceMemoryBuffer] = null
   private[this] var hostSendBuffMgr: BounceBufferManager[HostMemoryBuffer] = null
@@ -160,84 +161,43 @@ class UCXShuffleTransport(shuffleServerId: BlockManagerId, rapidsConf: RapidsCon
     Seq(deviceSendBuffMgr, deviceReceiveBuffMgr, hostSendBuffMgr).foreach(_.close())
   }
 
-  def freeReceiveBounceBuffers(bounceBuffers: Seq[MemoryBuffer]): Unit = {
-    bounceBuffers.foreach(bb => {
-      deviceReceiveBuffMgr.freeBuffer(bb)
-    })
-
-    // let the throttle know some bounce buffers were freed, so we give it a chance to claim them
-    inflightMonitor.synchronized {
-      inflightMonitor.notify()
-    }
-  }
-
-  def freeSendBounceBuffers(bounceBuffers: Seq[MemoryBuffer]): Unit = {
-    bounceBuffers.foreach {
-      case hb: HostMemoryBuffer => hostSendBuffMgr.freeBuffer(hb)
-      case db: DeviceMemoryBuffer => deviceSendBuffMgr.freeBuffer(db)
-    }
-  }
-
   private def getNumBounceBuffers(remaining: Long, totalRequired: Int): Int = {
     val numBuffers = (remaining + bounceBufferSize - 1) / bounceBufferSize
     Math.min(numBuffers, totalRequired).toInt
   }
 
-  override def getSendBounceBuffers(
-      deviceMemory: Boolean,
-      remaining: Long,
-      totalRequired: Int): Seq[MemoryBuffer] = {
-
-    val numBuffs = getNumBounceBuffers(remaining, totalRequired)
-    if (!deviceMemory) {
-      acquireBounceBuffers(hostSendBuffMgr, numBuffs)
-    } else {
-      acquireBounceBuffers(deviceSendBuffMgr, numBuffs)
-    }
-  }
-
   override def tryGetSendBounceBuffers(
-      deviceMemory: Boolean,
       remaining: Long,
-      totalRequired: Int): Seq[MemoryBuffer] = {
-
+      totalRequired: Int): Seq[SendBounceBuffers] = {
     val numBuffs = getNumBounceBuffers(remaining, totalRequired)
-    if (!deviceMemory) {
-      tryAcquireBounceBuffers(hostSendBuffMgr, numBuffs)
+    val deviceBuffer = tryAcquireBounceBuffers(deviceSendBuffMgr, numBuffs)
+    if (deviceBuffer.nonEmpty) {
+      val hostBuffer = tryAcquireBounceBuffers(hostSendBuffMgr, numBuffs)
+      if (hostBuffer.nonEmpty) {
+        deviceBuffer.zip(hostBuffer).map { case (d, h) =>
+          SendBounceBuffers(d, Some(h))
+        }
+      } else {
+        deviceBuffer.map(d => SendBounceBuffers(d, None))
+      }
     } else {
-      tryAcquireBounceBuffers(deviceSendBuffMgr, numBuffs)
+      Seq.empty
     }
   }
 
-  override def getReceiveBounceBuffers(remaining: Long, totalRequired: Int): Seq[MemoryBuffer] = {
-    val numBuffs = getNumBounceBuffers(remaining, totalRequired)
-    acquireBounceBuffers(deviceReceiveBuffMgr, numBuffs)
-  }
-
-  def tryGetReceiveBounceBuffers(remaining: Long, totalRequired: Int): Seq[MemoryBuffer] = {
+  override def tryGetReceiveBounceBuffers(
+      remaining: Long, totalRequired: Int): Seq[BounceBuffer] = {
     val numBuffs = getNumBounceBuffers(remaining, totalRequired)
     tryAcquireBounceBuffers(deviceReceiveBuffMgr, numBuffs)
   }
 
-  private def acquireBounceBuffers[T <: MemoryBuffer](
-      bounceBuffMgr: BounceBufferManager[T],
-      numBuffs: Integer) : Seq[MemoryBuffer] = {
-    // if the # of buffers requested is more than what the pool has, we would deadlock
-    // this ensures we only get as many buffers as the pool could possibly give us.
-    val possibleNumBuffers = Math.min(bounceBuffMgr.numBuffers, numBuffs)
-    val bounceBuffers: Seq[MemoryBuffer] = bounceBuffMgr.acquireBuffersBlocking(possibleNumBuffers)
-    logTrace(s"Got ${bounceBuffers.size} bounce buffers from pool " +
-      s"out of ${numBuffs} requested.")
-    bounceBuffers
-  }
-
   private def tryAcquireBounceBuffers[T <: MemoryBuffer](
       bounceBuffMgr: BounceBufferManager[T],
-      numBuffs: Integer): Seq[MemoryBuffer] = {
+      numBuffs: Integer): Seq[BounceBuffer] = {
     // if the # of buffers requested is more than what the pool has, we would deadlock
     // this ensures we only get as many buffers as the pool could possibly give us.
     val possibleNumBuffers = Math.min(bounceBuffMgr.numBuffers, numBuffs)
-    val bounceBuffers: Seq[MemoryBuffer] =
+    val bounceBuffers =
       bounceBuffMgr.acquireBuffersNonBlocking(possibleNumBuffers)
     logTrace(s"Got ${bounceBuffers.size} bounce buffers from pool " +
       s"out of ${numBuffs} requested.")
@@ -355,39 +315,34 @@ class UCXShuffleTransport(shuffleServerId: BlockManagerId, rapidsConf: RapidsCon
   }
 
   /**
-   * Returns a sequence of bounce buffers if the transport allows for [[neededAmount]] + its
-   * inflight tally to be inflight at this time, and bounce buffers are available.
-   *
+   * Updates the inflightSize by adding the `neededAmount`
    * @param neededAmount amount of bytes needed.
-   * @return optional bounce buffers to be used to for the client to receive if amount of bytes
-   *         needed was allowed into the inflight amount, None otherwise (caller should try again)
+   * @note This function is called only after a successful call to `wouldFitInFlightLimit`. It also
+   *       calls `wouldFitInFlightLimit` as a sanity check.
    */
-  private def markBytesInFlight(neededAmount: Long)
-      : Option[Seq[MemoryBuffer]] = inflightMonitor.synchronized {
-    // if it would fit, or we are sending nothing (protects against the buffer that is bigger
-    // than limit), go ahead and allow it
-    if (wouldFit(neededAmount)) {
-      val bbs = tryGetReceiveBounceBuffers(neededAmount, 2)
-      if (bbs.nonEmpty) {
-        inflightSize = inflightSize + neededAmount
-        logDebug(s"New inflight size ${inflightSize} after adding = ${neededAmount} " +
-          s"and ${bbs} bounce buffers.")
-        Some(bbs)
-      } else {
-        None
-      }
-    } else {
-      logTrace(s"Did not update inflight size ${inflightSize}: ${neededAmount} + " +
-        s"${inflightSize} > ${inflightLimit}")
-      None
-    }
+  private def markBytesInFlight(neededAmount: Long): Unit = inflightMonitor.synchronized {
+    require(wouldFitInFlightLimit(neededAmount),
+      s"Inflight limit can't allow this size $neededAmount of request")
+    inflightSize = inflightSize + neededAmount
   }
 
-  // NOTE: this function is called from within monitor.synchronized blocks always
-  private def wouldFit(neededAmount: Long): Boolean = {
+  /**
+   * Returns true if the neededAmount fits within the throttle, or if the throttle is at 0.
+   * The "at 0" case helps in the case where we have buffer sizes that are greater than
+   * inflightLimit
+   * @param neededAmount amount of bytes needed
+   * @return true if `neededAmount` would be allowed in the throttle
+   */
+  private def wouldFitInFlightLimit(neededAmount: Long): Boolean = inflightMonitor.synchronized {
     inflightSize + neededAmount <= inflightLimit || inflightSize == 0
   }
 
+  /**
+   * Decreases the inflight size.
+   * @note We are holding onto the inflightMonitor lock here, which we use to update the limit
+   *       in all cases.
+   * @param bytesCompleted amount of bytes handled
+   */
   override def doneBytesInFlight(bytesCompleted: Long): Unit = inflightMonitor.synchronized {
     inflightSize = inflightSize - bytesCompleted
     logDebug(s"Done with ${bytesCompleted} bytes inflight, " +
@@ -395,7 +350,7 @@ class UCXShuffleTransport(shuffleServerId: BlockManagerId, rapidsConf: RapidsCon
     inflightMonitor.notifyAll()
   }
 
-  private val altList = new PriorityQueue[PendingTransferRequest](
+  private val altList = new HashedPriorityQueue[PendingTransferRequest](
       1000,
       (t: PendingTransferRequest, t1: PendingTransferRequest) => {
         if (t.getLength < t1.getLength) {
@@ -414,55 +369,91 @@ class UCXShuffleTransport(shuffleServerId: BlockManagerId, rapidsConf: RapidsCon
         .setDaemon(true)
         .build))
 
+  // helper class to hold transfer requests that have a bounce buffer
+  // and should be ready to be handled by a `BufferReceiveState`
+  class PerClientReadyRequests(val bounceBuffer: BounceBuffer) {
+    val transferRequests = new ArrayBuffer[PendingTransferRequest]()
+    def addRequest(req: PendingTransferRequest): Unit = {
+      transferRequests.append(req)
+    }
+  }
+
   exec.execute(() => {
     while (inflightStarted) {
       try {
-        var perClientReq = mutable.Map[RapidsShuffleClient, BufferReceiveState]()
-        var removed = false
-        inflightMonitor.synchronized {
-          var head: PendingTransferRequest = altList.peek()
-          if (head == null) {
-            val waitRange = new NvtxRange("Transport throttling", NvtxColor.RED)
-            try {
-              inflightMonitor.wait(100)
-            } finally {
-              waitRange.close()
-            }
-          } else {
-            var keepAttempting = true
-            while (head != null && keepAttempting) {
-              val existingReq: Option[BufferReceiveState] = perClientReq.get(head.client)
+        var req: PendingTransferRequest = null
+        val requestsToHandle = new ArrayBuffer[PendingTransferRequest]()
+        altList.synchronized {
+          // pick up a request if ready, or wait until
+          // a request is added to `altList`
+          req = altList.poll()
+          while (inflightStarted && req == null) {
+            altList.wait(100)
+            req = altList.poll()
+          }
+          // if we had 1 request, try to drain the rest
+          while (req != null) {
+            requestsToHandle.append(req)
+            req = altList.poll()
+          }
+        }
+
+        var requestIx = 0 
+        while (requestIx < requestsToHandle.size) {
+          var hasBounceBuffers = true
+          var fitsInFlight = true
+          var perClientReq = mutable.Map[RapidsShuffleClient, PerClientReadyRequests]()
+          var reqToHandle: PendingTransferRequest = null
+          while (requestIx < requestsToHandle.size && hasBounceBuffers && fitsInFlight) {
+            reqToHandle = requestsToHandle(requestIx)
+            if (wouldFitInFlightLimit(reqToHandle.getLength)) {
+              val existingReq =
+                perClientReq.get(reqToHandle.client)
               if (existingReq.isEmpty) {
                 // need to get bounce buffers
-                val bounceBuffers = if (head != null) {
-                  markBytesInFlight(head.getLength)
+                val bbs = tryGetReceiveBounceBuffers(1, 1)
+                if (bbs.nonEmpty) {
+                  markBytesInFlight(reqToHandle.getLength)
+                  val perClientReadyRequests = new PerClientReadyRequests(bbs.head)
+                  perClientReadyRequests.addRequest(reqToHandle)
+                  perClientReq += reqToHandle.client -> perClientReadyRequests
+                  requestIx += 1
                 } else {
-                  None
-                }
-                if (bounceBuffers.isEmpty) {
-                  inflightMonitor.wait(100)
-                  keepAttempting = false
-                } else {
-                  val brs = new BufferReceiveState(this, bounceBuffers.get)
-                  brs.addRequest(head)
-                  perClientReq += head.client -> brs
-                  altList.remove(head)
+                  // TODO: make this a metric => "blocked while waiting on bounce buffers"
+                  logTrace("Can't acquire bounce buffers for receive.")
+                  hasBounceBuffers = false
                 }
               } else {
                 // bounce buffers already acquired
-                existingReq.foreach(_.addRequest(head))
-                altList.remove(head)
+                markBytesInFlight(reqToHandle.getLength)
+                existingReq.foreach(_.addRequest(reqToHandle))
+                requestIx+= 1
               }
-              head = altList.peek()
+            } else {
+              fitsInFlight = false
+            }
+          }
+          if (perClientReq.nonEmpty) {
+            perClientReq.foreach { case (client, perClientRequests) =>
+              val brs = new BufferReceiveState(perClientRequests.bounceBuffer,
+                perClientRequests.transferRequests)
+              client.issueBufferReceives(brs)
+            }
+          } else if (!hasBounceBuffers) {
+            deviceReceiveBuffMgr.synchronized {
+              while (deviceReceiveBuffMgr.numFree() == 0){
+                deviceReceiveBuffMgr.wait(100)
+              }
+            }
+          } else {
+            // then we must be waiting for the inflight limit
+            inflightMonitor.synchronized {
+              while (!wouldFitInFlightLimit(reqToHandle.getLength)) {
+                inflightMonitor.wait(100)
+              }
             }
           }
         }
-        if (perClientReq.nonEmpty) {
-          logDebug(s"Issuing client req ${perClientReq.size}")
-        }
-        perClientReq.foreach { case (client, brs) => {
-          client.issueBufferReceives(brs)
-        }}
       } catch {
         case t: Throwable =>
           logError("Error in the UCX throttle loop", t)
@@ -471,11 +462,11 @@ class UCXShuffleTransport(shuffleServerId: BlockManagerId, rapidsConf: RapidsCon
   })
 
   override def queuePending(reqs: Seq[PendingTransferRequest]): Unit =
-    inflightMonitor.synchronized {
+    altList.synchronized {
       import collection.JavaConverters._
       altList.addAll(reqs.asJava)
       logDebug(s"THROTTLING ${altList.size} queued requests")
-      inflightMonitor.notifyAll()
+      altList.notifyAll()
     }
 
   override def close(): Unit = {
@@ -485,9 +476,9 @@ class UCXShuffleTransport(shuffleServerId: BlockManagerId, rapidsConf: RapidsCon
     clientExecutor.shutdown()
     serverExecutor.shutdown()
 
-    inflightMonitor.synchronized {
+    altList.synchronized {
       inflightStarted = false
-      inflightMonitor.notify()
+      altList.notifyAll()
     }
 
     if (!exec.awaitTermination(500, TimeUnit.MILLISECONDS)) {

@@ -221,10 +221,10 @@ object MetaUtils extends Arm {
    * @return table that must be closed by the caller
    */
   def getTableFromMeta(deviceBuffer: DeviceMemoryBuffer, meta: TableMeta): Table = {
-    closeOnExcept(new ArrayBuffer[ColumnVector](meta.columnMetasLength())) { columns =>
+    withResource(new Array[ColumnVector](meta.columnMetasLength())) { columns =>
       val columnMeta = new ColumnMeta
       (0 until meta.columnMetasLength).foreach { i =>
-        columns.append(makeCudfColumn(deviceBuffer, meta.columnMetas(columnMeta, i)))
+        columns(i) = makeCudfColumn(deviceBuffer, meta.columnMetas(columnMeta, i))
       }
       new Table(columns :_*)
     }

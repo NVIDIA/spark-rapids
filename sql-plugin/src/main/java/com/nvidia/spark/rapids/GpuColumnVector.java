@@ -39,6 +39,24 @@ import java.util.List;
  */
 public class GpuColumnVector extends GpuColumnVectorBase {
 
+  private static HostColumnVector.DataType convertFrom(DataType spark, boolean nullable) {
+    if (spark instanceof ArrayType) {
+      ArrayType arrayType = (ArrayType) spark;
+      return new HostColumnVector.ListType(nullable,
+          convertFrom(arrayType.elementType(), arrayType.containsNull()));
+    } else if (spark instanceof MapType) {
+      MapType mapType = (MapType) spark;
+      return new HostColumnVector.ListType(nullable,
+          new HostColumnVector.StructType(false, Arrays.asList(
+              convertFrom(mapType.keyType(), false),
+              convertFrom(mapType.valueType(), mapType.valueContainsNull())
+          )));
+    } else {
+      // Only works for basic types
+      return new HostColumnVector.BasicType(nullable, getRapidsType(spark));
+    }
+  }
+
   public static final class GpuColumnarBatchBuilder implements AutoCloseable {
     private final ai.rapids.cudf.HostColumnVector.ColumnBuilder[] builders;
     private final StructField[] fields;
@@ -60,17 +78,9 @@ public class GpuColumnVector extends GpuColumnVectorBase {
       try {
         for (int i = 0; i < len; i++) {
           StructField field = fields[i];
-          if (field.dataType() instanceof MapType) {
-            builders[i] = new ai.rapids.cudf.HostColumnVector.ColumnBuilder(new HostColumnVector.ListType(true,
-                new HostColumnVector.StructType(true, Arrays.asList(
-                    new HostColumnVector.BasicType(true, DType.STRING),
-                    new HostColumnVector.BasicType(true, DType.STRING)))), rows);
-          } else {
-            DType type = getRapidsType(field);
-            builders[i] = new ai.rapids.cudf.HostColumnVector.ColumnBuilder(new HostColumnVector.BasicType(true, type), rows);
-          }
-          success = true;
+          builders[i] = new HostColumnVector.ColumnBuilder(convertFrom(field.dataType(), field.nullable()), rows);
         }
+        success = true;
       } finally {
         if (!success) {
           for (ai.rapids.cudf.HostColumnVector.ColumnBuilder b: builders) {

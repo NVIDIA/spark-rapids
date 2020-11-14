@@ -197,6 +197,9 @@ class Spark300Shims extends SparkShims {
             }
           }
 
+          override def isSupportedType(t: DataType): Boolean =
+            GpuOverrides.isSupportedType(t, allowCalendarInterval = true)
+
           override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression = {
             GpuTimeSub(lhs, rhs)
           }

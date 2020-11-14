@@ -22,7 +22,7 @@ import com.nvidia.spark.rapids.{BinaryExprMeta, ConfKeysAndIncompat, GpuBinaryEx
 import org.apache.spark.sql.catalyst.analysis.TypeCheckResult
 import org.apache.spark.sql.catalyst.expressions.{ExpectsInputTypes, Expression, ExtractValue, GetArrayItem, GetMapValue, ImplicitCastInputTypes, NullIntolerant}
 import org.apache.spark.sql.catalyst.util.TypeUtils
-import org.apache.spark.sql.types.{AbstractDataType, AnyDataType, ArrayType, DataType, IntegralType, MapType, StringType}
+import org.apache.spark.sql.types.{AbstractDataType, AnyDataType, ArrayType, DataType, IntegralType, MapType, StringType, StructType}
 
 class GpuGetArrayItemMeta(
     expr: GetArrayItem,
@@ -33,8 +33,19 @@ class GpuGetArrayItemMeta(
   import GpuOverrides._
 
   override def tagExprForGpu(): Unit = {
-    if (!isLit(expr.ordinal)) {
+    val litOrd = extractLit(expr.ordinal)
+    if (litOrd.isEmpty) {
       willNotWorkOnGpu("only literal ordinals are supported")
+    } else {
+      // Once literal array/struct types are supported this can go away
+      val ord = litOrd.get.value
+      if (ord == null || ord.asInstanceOf[Int] < 0) {
+        expr.dataType match {
+          case ArrayType(_, _) | MapType(_, _, _) | StructType(_) =>
+            willNotWorkOnGpu("negative and null indexes are not supported for nested types")
+          case _ =>
+        }
+      }
     }
   }
   override def convertToGpu(
@@ -43,7 +54,7 @@ class GpuGetArrayItemMeta(
     GpuGetArrayItem(arr, ordinal)
 
   override def isSupportedType(t: DataType): Boolean =
-    GpuOverrides.isSupportedType(t, allowArray = true, allowNesting = false)
+    GpuOverrides.isSupportedType(t, allowArray = true, allowNesting = true)
 }
 
 /**
