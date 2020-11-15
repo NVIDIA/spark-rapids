@@ -1504,6 +1504,9 @@ object GpuOverrides {
           GpuPythonUDF(a.name, a.func, a.dataType,
             childExprs.map(_.convertToGpu()),
             a.evalType, a.udfDeterministic, a.resultId)
+
+        override def isSupportedType(t: DataType): Boolean =
+          GpuOverrides.isSupportedType(t, allowArray = true, allowNesting = true)
       }
     ),
     expr[Rand](

@@ -166,6 +166,9 @@ class GpuWindowExpressionMeta(
       childExprs.head.convertToGpu(),
       childExprs(1).convertToGpu().asInstanceOf[GpuWindowSpecDefinition]
     )
+
+  override def isSupportedType(t: DataType): Boolean =
+    GpuOverrides.isSupportedType(t, allowArray = true, allowNesting = true)
 }
 
 case class GpuWindowExpression(windowFunction: Expression, windowSpec: GpuWindowSpecDefinition)
