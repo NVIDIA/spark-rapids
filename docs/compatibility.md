@@ -214,18 +214,20 @@ different results from one run to another if the ordering is ambiguous on a wind
 
 ## Parsing strings as dates or timestamps
 
-When converting strings to dates or timestamps using functions like `to_date` and `unix_timestamp`, only a subset
-of possible formats is supported on GPU with full compatibility with Spark. The supported formats are:
+When converting strings to dates or timestamps using functions like `to_date` and `unix_timestamp`,
+only a subset of possible formats are supported on GPU with full compatibility with Spark. The
+supported formats are:
 
 - `dd/MM/yyyy`
 - `yyyy-MM-dd`
 - `yyyy-MM-dd HH:mm:ss`
 
-Other formats may result in incorrect results and will not run on GPU by default. Some of the specific issues with
-other formats are:
+Other formats may result in incorrect results and will not run on the GPU by default. Some
+specific issues with other formats are:
 
 - Spark supports partial microseconds but the plugin does not
-- The plugin will produce incorrect results for input data that is not in the correct format in some cases
+- The plugin will produce incorrect results for input data that is not in the correct format in
+some cases
 
 To enable all formats on GPU, set
 [`spark.rapids.sql.incompatibleDateFormats.enabled`](configs.md#sql.incompatibleDateFormats.enabled) to `true`.
