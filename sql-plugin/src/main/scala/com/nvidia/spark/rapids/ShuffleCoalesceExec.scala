@@ -78,7 +78,8 @@ class ShuffleCoalesceIterator(
     batchIter: Iterator[ColumnarBatch],
     targetBatchByteSize: Long,
     sparkSchema: Array[DataType],
-    metricsMap: Map[String, SQLMetric]) extends Iterator[ColumnarBatch] with Arm {
+    metricsMap: Map[String, SQLMetric])
+    extends Iterator[ColumnarBatch] with Arm with AutoCloseable {
   private[this] val totalTimeMetric = metricsMap(GpuMetricNames.TOTAL_TIME)
   private[this] val inputBatchesMetric = metricsMap(GpuMetricNames.NUM_INPUT_BATCHES)
   private[this] val inputRowsMetric = metricsMap(GpuMetricNames.NUM_INPUT_ROWS)
@@ -90,6 +91,8 @@ class ShuffleCoalesceIterator(
   private[this] var numTablesInBatch: Int = 0
   private[this] var numRowsInBatch: Int = 0
   private[this] var batchByteSize: Long = 0L
+
+  Option(TaskContext.get()).foreach(_.addTaskCompletionListener[Unit](_ => close()))
 
   override def hasNext: Boolean = {
     withResource(new MetricRange(totalTimeMetric)) { _ =>
@@ -105,6 +108,11 @@ class ShuffleCoalesceIterator(
       }
       concatenateBatch()
     }
+  }
+
+  override def close(): Unit = {
+    serializedTables.forEach(_.close())
+    serializedTables.clear()
   }
 
   private def batchIterHasNext: Boolean = {

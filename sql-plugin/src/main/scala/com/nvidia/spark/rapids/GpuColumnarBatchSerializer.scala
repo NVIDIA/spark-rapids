@@ -167,6 +167,8 @@ private class GpuColumnarBatchSerializerInstance(
                   Some(SerializedTableColumn.from(header))
                 }
               } else {
+                // at EOF
+                dIn.close()
                 None
               }
             }
