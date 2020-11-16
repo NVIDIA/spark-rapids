@@ -24,6 +24,8 @@ import org.apache.spark.sql.types.ArrayType;
 import org.apache.spark.sql.types.DataType;
 import org.apache.spark.sql.types.Decimal;
 import org.apache.spark.sql.types.MapType;
+import org.apache.spark.sql.types.StructField;
+import org.apache.spark.sql.types.StructType;
 import org.apache.spark.sql.vectorized.ColumnVector;
 import org.apache.spark.sql.vectorized.ColumnarArray;
 import org.apache.spark.sql.vectorized.ColumnarMap;
@@ -174,7 +176,15 @@ public class RapidsHostColumnVectorCore extends ColumnVector {
 
   @Override
   public final ColumnVector getChild(int ordinal) {
-    throw new IllegalStateException("Struct and struct like types are currently not supported by rapids cudf");
+    if (cachedChildren[ordinal] == null) {
+      StructType st = (StructType) dataType();
+      StructField[] fields = st.fields();
+      for (int i = 0; i < fields.length; i++) {
+        HostColumnVectorCore tmp = (HostColumnVectorCore) cudfCv.getChildColumnViewAccess(i);
+        cachedChildren[i] = new RapidsHostColumnVectorCore(fields[i].dataType(), tmp);
+      }
+    }
+    return cachedChildren[ordinal];
   }
 
   public HostColumnVectorCore getBase() {

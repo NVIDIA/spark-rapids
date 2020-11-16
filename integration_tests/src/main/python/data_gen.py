@@ -672,7 +672,17 @@ single_level_array_gens = [ArrayGen(sub_gen) for sub_gen in all_basic_gens]
 # Be careful to not make these too large of data generation takes for ever
 # This is only a few nested array gens, because nesting can be very deep
 nested_array_gens_sample = [ArrayGen(ArrayGen(short_gen, max_length=10), max_length=10),
-        ArrayGen(ArrayGen(string_gen, max_length=10), max_length=10)]
+        ArrayGen(ArrayGen(string_gen, max_length=10), max_length=10),
+        ArrayGen(StructGen([['child0', byte_gen], ['child1', string_gen], ['child2', float_gen]]))]
 
 # Some array gens, but not all because of nesting
 array_gens_sample = single_level_array_gens + nested_array_gens_sample
+
+# all of the basic types in a single struct
+all_basic_struct_gen = StructGen([['child'+str(ind), sub_gen] for ind, sub_gen in enumerate(all_basic_gens)])
+
+# Some struct gens, but not all because of nesting
+struct_gens_sample = [all_basic_struct_gen,
+        StructGen([['child0', byte_gen]]),
+        StructGen([['child0', ArrayGen(short_gen)], ['child1', double_gen]])]
+
