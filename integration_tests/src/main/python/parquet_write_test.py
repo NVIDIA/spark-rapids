@@ -136,7 +136,7 @@ def test_write_sql_save_table(spark_tmp_path, parquet_gens, ts_type, spark_tmp_t
             data_path,
             conf=all_confs)
 
-def writeParquetCatchException(spark, df, data_path, spark_tmp_table_factory, ts_rebase, ts_write):
+def writeParquetUpgradeCatchException(spark, df, data_path, spark_tmp_table_factory, ts_rebase, ts_write):
     spark.conf.set('spark.sql.legacy.parquet.datetimeRebaseModeInWrite', ts_rebase)
     spark.conf.set('spark.sql.parquet.outputTimestampType', ts_write)
     with pytest.raises(Exception) as e_info:
@@ -152,7 +152,21 @@ def test_ts_write_fails_datetime_exception(spark_tmp_path, ts_write, ts_rebase, 
     gen = TimestampGen(start=datetime(1590, 1, 1, tzinfo=timezone.utc))
     data_path = spark_tmp_path + '/PARQUET_DATA'
     with_gpu_session(
-            lambda spark : writeParquetCatchException(spark, unary_op_df(spark, gen), data_path, spark_tmp_table_factory, ts_rebase, ts_write))
+            lambda spark : writeParquetUpgradeCatchException(spark, unary_op_df(spark, gen), data_path, spark_tmp_table_factory, ts_rebase, ts_write))
+
+def writeParquetNoOverwriteCatchException(spark, df, data_path, table_name):
+    with pytest.raises(Exception) as e_info:
+        df.coalesce(1).write.format("parquet").option("path", data_path).saveAsTable(table_name)
+    assert e_info.match(r".*already exists.*")
+
+def test_ts_write_twice_fails_exception(spark_tmp_path, spark_tmp_table_factory):
+    gen = IntegerGen()
+    data_path = spark_tmp_path + '/PARQUET_DATA'
+    table_name = spark_tmp_table_factory.get()
+    with_gpu_session(
+            lambda spark : unary_op_df(spark, gen).coalesce(1).write.format("parquet").mode('overwrite').option("path", data_path).saveAsTable(table_name))
+    with_gpu_session(
+            lambda spark : writeParquetNoOverwriteCatchException(spark, unary_op_df(spark, gen), data_path, table_name))
 
 parquet_ts_write_options = ['INT96', 'TIMESTAMP_MICROS', 'TIMESTAMP_MILLIS']
 
