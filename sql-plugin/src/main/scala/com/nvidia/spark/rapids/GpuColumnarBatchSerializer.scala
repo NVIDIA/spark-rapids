@@ -22,29 +22,39 @@ import java.nio.ByteBuffer
 import scala.collection.mutable.ArrayBuffer
 import scala.reflect.ClassTag
 
-import ai.rapids.cudf.{HostColumnVector, JCudfSerialization, NvtxColor, NvtxRange}
+import ai.rapids.cudf.{HostColumnVector, HostMemoryBuffer, JCudfSerialization, NvtxColor, NvtxRange}
+import ai.rapids.cudf.JCudfSerialization.SerializedTableHeader
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 
 import org.apache.spark.TaskContext
 import org.apache.spark.serializer.{DeserializationStream, SerializationStream, Serializer, SerializerInstance}
 import org.apache.spark.sql.execution.metric.SQLMetric
-import org.apache.spark.sql.types.DataType
+import org.apache.spark.sql.types.NullType
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
 /**
- * Serializer for serializing `ColumnarBatch`s during shuffle.
- * The batches will be stored in an internal format specific to rapids.
+ * Serializer for serializing `ColumnarBatch`s for use during normal shuffle.
+ *
+ * The serialization write path takes the cudf `Table` that is described by the `ColumnarBatch`
+ * and uses cudf APIs to serialize the data into a sequence of bytes on the host. The data is
+ * returned to the Spark shuffle code where it is compressed by the CPU and written to disk.
+ *
+ * The serialization read path is notably different. The sequence of serialized bytes IS NOT
+ * deserialized into a cudf `Table` but rather tracked in host memory by a `ColumnarBatch`
+ * that contains a [[SerializedTableColumn]]. During query planning, each GPU columnar shuffle
+ * exchange is followed by a [[ShuffleCoalesceExec]] that expects to receive only these
+ * custom batches of [[SerializedTableColumn]]. [[ShuffleCoalesceExec]] coalesces the smaller
+ * shuffle partitions into larger tables before placing them on the GPU for further processing.
+ *
+ * @note The RAPIDS shuffle does not use this code.
  */
-class GpuColumnarBatchSerializer(
-    sparkSchema: Array[DataType],
-    dataSize: SQLMetric = null) extends Serializer with Serializable {
+class GpuColumnarBatchSerializer(dataSize: SQLMetric = null) extends Serializer with Serializable {
   override def newInstance(): SerializerInstance =
-    new GpuColumnarBatchSerializerInstance(sparkSchema, dataSize)
+    new GpuColumnarBatchSerializerInstance(dataSize)
   override def supportsRelocationOfSerializedObjects: Boolean = true
 }
 
 private class GpuColumnarBatchSerializerInstance(
-    sparkSchema: Array[DataType],
     dataSize: SQLMetric) extends SerializerInstance {
 
   override def serializeStream(out: OutputStream): SerializationStream = new SerializationStream {
@@ -135,7 +145,7 @@ private class GpuColumnarBatchSerializerInstance(
       private[this] val dIn: DataInputStream = new DataInputStream(new BufferedInputStream(in))
 
       override def asKeyValueIterator: Iterator[(Int, ColumnarBatch)] = {
-        new Iterator[(Int, ColumnarBatch)] {
+        new Iterator[(Int, ColumnarBatch)] with Arm {
           var toBeReturned: Option[ColumnarBatch] = None
 
           TaskContext.get().addTaskCompletionListener[Unit]((tc: TaskContext) => {
@@ -145,29 +155,20 @@ private class GpuColumnarBatchSerializerInstance(
           })
 
           def tryReadNext(): Option[ColumnarBatch] = {
-            // about to start using the GPU in this task
-            GpuSemaphore.acquireIfNecessary(TaskContext.get())
-
-            val range = new NvtxRange("Deserialize Batch", NvtxColor.YELLOW)
-            try {
-              val tableInfo = JCudfSerialization.readTableFrom(dIn)
-              try {
-                val contigTable = tableInfo.getContiguousTable
-                if (contigTable == null && tableInfo.getNumRows == 0) {
-                  dIn.close()
-                  None
-                } else {
-                  if (contigTable != null) {
-                    Some(GpuColumnVectorFromBuffer.from(contigTable, sparkSchema))
-                  } else {
-                    Some(new ColumnarBatch(Array.empty, tableInfo.getNumRows))
+            withResource(new NvtxRange("Read Batch", NvtxColor.YELLOW)) { _ =>
+              val header = new SerializedTableHeader(dIn)
+              if (header.wasInitialized) {
+                if (header.getNumColumns > 0) {
+                  closeOnExcept(HostMemoryBuffer.allocate(header.getDataLen)) { hostBuffer =>
+                    JCudfSerialization.readTableIntoBuffer(dIn, header, hostBuffer)
+                    Some(SerializedTableColumn.from(header, hostBuffer))
                   }
+                } else {
+                  Some(SerializedTableColumn.from(header))
                 }
-              } finally {
-                tableInfo.close()
+              } else {
+                None
               }
-            } finally {
-              range.close()
             }
           }
 
@@ -205,26 +206,8 @@ private class GpuColumnarBatchSerializerInstance(
       }
 
       override def readValue[T]()(implicit classType: ClassTag[T]): T = {
-        // about to start using the GPU in this task
-        GpuSemaphore.acquireIfNecessary(TaskContext.get())
-
-        val range = new NvtxRange("Deserialize Batch", NvtxColor.YELLOW)
-        try {
-          val tableInfo = JCudfSerialization.readTableFrom(dIn)
-          val cb = try {
-            val table = tableInfo.getTable
-            if (table != null) {
-              Some(GpuColumnVector.from(table, sparkSchema))
-            } else {
-              Some(new ColumnarBatch(Array.empty, tableInfo.getNumRows))
-            }
-          } finally {
-            tableInfo.close()
-          }
-          cb.asInstanceOf[T]
-        } finally {
-          range.close()
-        }
+        // This method should never be called by shuffle code.
+        throw new UnsupportedOperationException
       }
 
       override def readObject[T]()(implicit classType: ClassTag[T]): T = {
@@ -244,4 +227,39 @@ private class GpuColumnarBatchSerializerInstance(
     throw new UnsupportedOperationException
   override def deserialize[T: ClassTag](bytes: ByteBuffer, loader: ClassLoader): T =
     throw new UnsupportedOperationException
+}
+
+/**
+ * A special `ColumnVector` that describes a serialized table read from shuffle.
+ * This appears in a `ColumnarBatch` to pass serialized tables to [[ShuffleCoalesceExec]]
+ * which should always appear in the query plan immediately after a shuffle.
+ */
+class SerializedTableColumn(
+    val header: SerializedTableHeader,
+    val hostBuffer: HostMemoryBuffer) extends GpuColumnVectorBase(NullType) {
+  override def close(): Unit = {
+    if (hostBuffer != null) {
+      hostBuffer.close()
+    }
+  }
+
+  override def hasNull: Boolean = throw new IllegalStateException("should not be called")
+
+  override def numNulls(): Int = throw new IllegalStateException("should not be called")
+}
+
+object SerializedTableColumn {
+  /**
+   * Build a `ColumnarBatch` consisting of a single [[SerializedTableColumn]] describing
+   * the specified serialized table.
+   * @param header header for the serialized table
+   * @param hostBuffer host buffer containing the table data
+   * @return columnar batch to be passed to [[ShuffleCoalesceExec]]
+   */
+  def from(
+      header: SerializedTableHeader,
+      hostBuffer: HostMemoryBuffer = null): ColumnarBatch = {
+    val column = new SerializedTableColumn(header, hostBuffer)
+    new ColumnarBatch(Array(column), header.getNumRows)
+  }
 }
