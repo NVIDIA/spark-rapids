@@ -97,7 +97,7 @@ class ParseDateTimeSuite extends SparkQueryCompareTestSuite {
       GpuCast.NOW,
       GpuCast.TODAY,
       GpuCast.YESTERDAY,
-      GpuCast.TOMORROW,
+      GpuCast.TOMORROW
     ) ++ timestampValues
     values.toDF("c0")
   }

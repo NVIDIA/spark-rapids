@@ -96,8 +96,6 @@ object GpuCast {
     "\\A\\d{4}\\-\\d{2}\\-\\d{2}[ T]\\d{2}:\\d{2}:\\d{2}\\.\\d{6}Z\\Z"
   private val TIMESTAMP_REGEX_NO_DATE = "\\A[T]?(\\d{2}:\\d{2}:\\d{2}\\.\\d{6}Z)\\Z"
 
-  private val ONE_DAY_MICROSECONDS = 86400000000L
-
   /**
    * Regex for identifying strings that contain numeric values that can be casted to integral
    * types. This includes floating point numbers but not numbers containing exponents.
@@ -768,8 +766,8 @@ case class GpuCast(
       "epoch" -> 0,
       "now" -> today,
       "today" -> today,
-      "yesterday" -> (today - ONE_DAY_MICROSECONDS),
-      "tomorrow" -> (today + ONE_DAY_MICROSECONDS)
+      "yesterday" -> (today - DateUtils.ONE_DAY_MICROSECONDS),
+      "tomorrow" -> (today + DateUtils.ONE_DAY_MICROSECONDS)
     )
 
     var sanitizedInput = input.incRefCount()

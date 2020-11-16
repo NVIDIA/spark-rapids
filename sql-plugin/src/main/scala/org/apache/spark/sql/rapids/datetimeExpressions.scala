@@ -298,19 +298,15 @@ abstract class UnixTimeExprMeta[A <: BinaryExpression with TimeZoneAwareExpressi
       try {
         extractStringLit(expr.right) match {
           case Some(rightLit) =>
+            sparkFormat = rightLit
             if (GpuOverrides.getTimeParserPolicy == LegacyTimeParserPolicy) {
               willNotWorkOnGpu("legacyTimeParserPolicy is LEGACY")
+            } else if (GpuToTimestamp.COMPATIBLE_FORMATS.contains(sparkFormat) ||
+                conf.isIncompatEnabled) {
+              strfFormat = DateUtils.toStrf(sparkFormat)
             } else {
-              val gpuSupportedFormats = Seq(
-                "yyyy-MM-dd",
-                "yyyy-MM-dd HH:mm:ss"
-              )
-              sparkFormat = rightLit
-              if (gpuSupportedFormats.contains(sparkFormat)) {
-                strfFormat = DateUtils.toStrf(sparkFormat)
-              } else {
-                willNotWorkOnGpu(s"Unsupported GpuUnixTimestamp format: $sparkFormat")
-              }
+              willNotWorkOnGpu(s"incompatible format '$sparkFormat'. Set " +
+                  s"spark.rapids.sql.incompatibleOps.enabled=true to force onto GPU.")
             }
           case None =>
             willNotWorkOnGpu("format has to be a string literal")
@@ -327,6 +323,14 @@ sealed trait TimeParserPolicy extends Serializable
 object LegacyTimeParserPolicy extends TimeParserPolicy
 object ExceptionTimeParserPolicy extends TimeParserPolicy
 object CorrectedTimeParserPolicy extends TimeParserPolicy
+
+object GpuToTimestamp {
+  /** We are compatible with Spark for these formats */
+  val COMPATIBLE_FORMATS = Seq(
+    "yyyy-MM-dd",
+    "yyyy-MM-dd HH:mm:ss"
+  )
+}
 
 /**
  * A direct conversion of Spark's ToTimestamp class which converts time to UNIX timestamp by
@@ -363,10 +367,9 @@ abstract class GpuToTimestamp
     val tmp = if (lhs.dataType == StringType) {
       // rhs is ignored we already parsed the format
 
-      val DAY_MICROS = 24 * 60 * 60 * 1000000L
       val specialDates = GpuCast.calculateSpecialDates
           .map {
-            case (name, days) => (name, days * DAY_MICROS)
+            case (name, days) => (name, days * DateUtils.ONE_DAY_MICROSECONDS)
           }
 
       def daysScalar(name: String): Scalar = {
@@ -380,18 +383,22 @@ abstract class GpuToTimestamp
       }
 
       // the cuDF `is_timestamp` function is less restrictive than Spark's behavior for UnixTime
-      // and ToUnixTime and will support parsing a subset of a string so we check the length of 
-      // the string as well which works well for fixed-length formats but if/when we want to 
+      // and ToUnixTime and will support parsing a subset of a string so we check the length of
+      // the string as well which works well for fixed-length formats but if/when we want to
       // support variable-length formats (such as timestamps with milliseconds) then we will need
       // to use regex instead.
-      val isTimestamp = withResource(lhs.getBase.getCharLengths) { actualLen =>
-        withResource(Scalar.fromInt(sparkFormat.length)) { expectedLen =>
-          withResource(actualLen.equalTo(expectedLen)) { lengthOk =>
-            withResource(lhs.getBase.isTimestamp(strfFormat)) { isTimestamp =>
-              isTimestamp.and(lengthOk)
+      val isTimestamp = if (GpuToTimestamp.COMPATIBLE_FORMATS.contains(sparkFormat)) {
+        withResource(lhs.getBase.getCharLengths) { actualLen =>
+          withResource(Scalar.fromInt(sparkFormat.length)) { expectedLen =>
+            withResource(actualLen.equalTo(expectedLen)) { lengthOk =>
+              withResource(lhs.getBase.isTimestamp(strfFormat)) { isTimestamp =>
+                isTimestamp.and(lengthOk)
+              }
             }
           }
         }
+      } else {
+        ColumnVector.fromScalar(Scalar.fromBool(true), lhs.getRowCount.toInt)
       }
 
       // in addition to date/timestamp strings, we also need to check for special dates and null
