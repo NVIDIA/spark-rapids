@@ -822,6 +822,7 @@ object GpuOverrides {
           GpuOverrides.isSupportedType(t,
             allowStringMaps = true,
             allowArray = true,
+            allowStruct = true,
             allowNesting = true)
 
         override def convertToGpu(child: Expression): GpuExpression = GpuIsNull(child)
@@ -833,6 +834,7 @@ object GpuOverrides {
           GpuOverrides.isSupportedType(t,
             allowStringMaps = true,
             allowArray = true,
+            allowStruct = true,
             allowNesting = true)
 
         override def convertToGpu(child: Expression): GpuExpression = GpuIsNotNull(child)
@@ -861,7 +863,10 @@ object GpuOverrides {
           .map(GpuOverrides.wrapExpr(_, conf, Some(this)))
 
         override def isSupportedType(t: DataType): Boolean =
-          GpuOverrides.isSupportedType(t, allowArray = true, allowNesting = true)
+          GpuOverrides.isSupportedType(t,
+            allowArray = true,
+            allowStruct = true,
+            allowNesting = true)
 
         def convertToGpu(): GpuExpression = {
           GpuAtLeastNNonNulls(a.n, childExprs.map(_.convertToGpu()))
@@ -1916,6 +1921,7 @@ object GpuOverrides {
           GpuOverrides.isSupportedType(t,
             allowStringMaps = true,
             allowArray = true,
+            allowStruct = true,
             allowNesting = true)
 
         override def convertToGpu(): GpuExec =

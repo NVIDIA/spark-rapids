@@ -676,3 +676,11 @@ nested_array_gens_sample = [ArrayGen(ArrayGen(short_gen, max_length=10), max_len
 
 # Some array gens, but not all because of nesting
 array_gens_sample = single_level_array_gens + nested_array_gens_sample
+
+all_basic_struct_gen = StructGen([['child'+str(ind), sub_gen] for ind, sub_gen in enumerate(all_basic_gens)])
+
+# Some struct gens, but not all because of nesting
+struct_gens_sample = [all_basic_struct_gen,
+        StructGen([['child0', byte_gen]]),
+        StructGen([['child0', ArrayGen(short_gen)], ['child1', double_gen]])]
+
