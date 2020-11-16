@@ -29,7 +29,10 @@ def read_parquet_sql(data_path):
 
 parquet_gens_list = [[byte_gen, short_gen, int_gen, long_gen, float_gen, double_gen,
     string_gen, boolean_gen, date_gen,
-    TimestampGen(start=datetime(1900, 1, 1, tzinfo=timezone.utc))],
+    TimestampGen(start=datetime(1900, 1, 1, tzinfo=timezone.utc)), ArrayGen(byte_gen),
+    ArrayGen(long_gen), ArrayGen(string_gen), ArrayGen(date_gen),
+    ArrayGen(TimestampGen(start=datetime(1900, 1, 1, tzinfo=timezone.utc))),
+    ArrayGen(ArrayGen(byte_gen))],
     pytest.param([timestamp_gen], marks=pytest.mark.xfail(reason='https://github.com/NVIDIA/spark-rapids/issues/132'))]
 
 # test with original parquet file reader, the multi-file parallel reader for cloud, and coalesce file reader for
@@ -51,7 +54,9 @@ def test_read_round_trip(spark_tmp_path, parquet_gens, read_func, reader_confs, 
             lambda spark : gen_df(spark, gen_list).write.parquet(data_path),
             conf={'spark.sql.legacy.parquet.datetimeRebaseModeInWrite': 'CORRECTED'})
     all_confs = reader_confs.copy()
-    all_confs.update({'spark.sql.sources.useV1SourceList': v1_enabled_list})
+    all_confs.update({'spark.sql.sources.useV1SourceList': v1_enabled_list, 'spark.sql.legacy.parquet.datetimeRebaseModeInRead': 'CORRECTED'})
+    # once https://github.com/NVIDIA/spark-rapids/issues/1126 is in we can remove spark.sql.legacy.parquet.datetimeRebaseModeInRead config which is a workaround
+    # for nested timestamp/date support
     assert_gpu_and_cpu_are_equal_collect(read_func(data_path),
             conf=all_confs)
 
@@ -119,14 +124,36 @@ def test_pred_push_round_trip(spark_tmp_path, parquet_gen, read_func, v1_enabled
 
 parquet_ts_write_options = ['INT96', 'TIMESTAMP_MICROS', 'TIMESTAMP_MILLIS']
 
+
+# Once https://github.com/NVIDIA/spark-rapids/issues/1126 is fixed delete this test and merge it
+# into test_ts_read_round_trip nested timestamps and dates are not supported right now.
+@pytest.mark.parametrize('gen', [ArrayGen(TimestampGen(start=datetime(1900, 1, 1, tzinfo=timezone.utc))),
+    ArrayGen(ArrayGen(TimestampGen(start=datetime(1900, 1, 1, tzinfo=timezone.utc))))], ids=idfn)
 @pytest.mark.parametrize('ts_write', parquet_ts_write_options)
 @pytest.mark.parametrize('ts_rebase', ['CORRECTED', 'LEGACY'])
 @pytest.mark.parametrize('reader_confs', reader_opt_confs)
 @pytest.mark.parametrize('v1_enabled_list', ["", "parquet"])
-def test_ts_read_round_trip(spark_tmp_path, ts_write, ts_rebase, v1_enabled_list, reader_confs):
-    # Once https://github.com/NVIDIA/spark-rapids/issues/132 is fixed replace this with
-    # timestamp_gen
-    gen = TimestampGen(start=datetime(1900, 1, 1, tzinfo=timezone.utc))
+@pytest.mark.xfail(reason='https://github.com/NVIDIA/spark-rapids/issues/1126')
+def test_ts_read_round_trip_nested(gen, spark_tmp_path, ts_write, ts_rebase, v1_enabled_list, reader_confs):
+    data_path = spark_tmp_path + '/PARQUET_DATA'
+    with_cpu_session(
+            lambda spark : unary_op_df(spark, gen).write.parquet(data_path),
+            conf={'spark.sql.legacy.parquet.datetimeRebaseModeInWrite': ts_rebase,
+                'spark.sql.parquet.outputTimestampType': ts_write})
+    all_confs = reader_confs.copy()
+    all_confs.update({'spark.sql.sources.useV1SourceList': v1_enabled_list})
+    assert_gpu_and_cpu_are_equal_collect(
+            lambda spark : spark.read.parquet(data_path),
+            conf=all_confs)
+
+# Once https://github.com/NVIDIA/spark-rapids/issues/132 is fixed replace this with
+# timestamp_gen
+@pytest.mark.parametrize('gen', [TimestampGen(start=datetime(1900, 1, 1, tzinfo=timezone.utc))], ids=idfn)
+@pytest.mark.parametrize('ts_write', parquet_ts_write_options)
+@pytest.mark.parametrize('ts_rebase', ['CORRECTED', 'LEGACY'])
+@pytest.mark.parametrize('reader_confs', reader_opt_confs)
+@pytest.mark.parametrize('v1_enabled_list', ["", "parquet"])
+def test_ts_read_round_trip(gen, spark_tmp_path, ts_write, ts_rebase, v1_enabled_list, reader_confs):
     data_path = spark_tmp_path + '/PARQUET_DATA'
     with_cpu_session(
             lambda spark : unary_op_df(spark, gen).write.parquet(data_path),
@@ -143,14 +170,15 @@ def readParquetCatchException(spark, data_path):
         df = spark.read.parquet(data_path).collect()
     assert e_info.match(r".*SparkUpgradeException.*")
 
+# Once https://github.com/NVIDIA/spark-rapids/issues/1126 is fixed nested timestamps and dates should be added in
+# Once https://github.com/NVIDIA/spark-rapids/issues/132 is fixed replace this with
+# timestamp_gen
+@pytest.mark.parametrize('gen', [TimestampGen(start=datetime(1590, 1, 1, tzinfo=timezone.utc))], ids=idfn)
 @pytest.mark.parametrize('ts_write', parquet_ts_write_options)
 @pytest.mark.parametrize('ts_rebase', ['LEGACY'])
 @pytest.mark.parametrize('reader_confs', reader_opt_confs)
 @pytest.mark.parametrize('v1_enabled_list', ["", "parquet"])
-def test_ts_read_fails_datetime_legacy(spark_tmp_path, ts_write, ts_rebase, v1_enabled_list, reader_confs):
-    # Once https://github.com/NVIDIA/spark-rapids/issues/132 is fixed replace this with
-    # timestamp_gen
-    gen = TimestampGen(start=datetime(1590, 1, 1, tzinfo=timezone.utc))
+def test_ts_read_fails_datetime_legacy(gen, spark_tmp_path, ts_write, ts_rebase, v1_enabled_list, reader_confs):
     data_path = spark_tmp_path + '/PARQUET_DATA'
     with_cpu_session(
             lambda spark : unary_op_df(spark, gen).write.parquet(data_path),
