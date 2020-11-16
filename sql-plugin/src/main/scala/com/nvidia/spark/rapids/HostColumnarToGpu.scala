@@ -117,8 +117,8 @@ object HostColumnarToGpu {
         for (i <- 0 until rows) {
           b.appendUTF8String(cv.getUTF8String(i).getBytes)
         }
-      case (t, n) =>
-        throw new UnsupportedOperationException(s"Converting to GPU for ${t} is not currently " +
+      case (t, _) =>
+        throw new UnsupportedOperationException(s"Converting to GPU for $t is not currently " +
           s"supported")
     }
   }
@@ -142,7 +142,6 @@ class HostToGpuCoalesceIterator(iter: Iterator[ColumnarBatch],
     peakDevMemory: SQLMetric,
     opName: String)
   extends AbstractGpuCoalesceIterator(iter,
-    schema,
     goal,
     numInputRows,
     numInputBatches,
@@ -187,8 +186,8 @@ class HostToGpuCoalesceIterator(iter: Iterator[ColumnarBatch],
     totalRows += rows
   }
 
-  override def getColumnSizes(batch: ColumnarBatch): Array[Long] = {
-    schema.fields.indices.map(GpuBatchUtils.estimateGpuMemory(schema, _, batchRowLimit)).toArray
+  override def getBatchDataSize(cb: ColumnarBatch): Long = {
+    schema.fields.indices.map(GpuBatchUtils.estimateGpuMemory(schema, _, batchRowLimit)).sum
   }
 
   override def concatAllAndPutOnGPU(): ColumnarBatch = {

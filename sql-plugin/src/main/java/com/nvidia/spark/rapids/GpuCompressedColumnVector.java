@@ -19,7 +19,6 @@ package com.nvidia.spark.rapids;
 import ai.rapids.cudf.DType;
 import ai.rapids.cudf.DeviceMemoryBuffer;
 import com.nvidia.spark.rapids.format.ColumnMeta;
-import com.nvidia.spark.rapids.format.SubBufferMeta;
 import com.nvidia.spark.rapids.format.TableMeta;
 import org.apache.spark.sql.types.ArrayType;
 import org.apache.spark.sql.types.BinaryType;
@@ -53,32 +52,6 @@ public final class GpuCompressedColumnVector extends GpuColumnVectorBase {
     } else {
       return batch.column(0) instanceof GpuCompressedColumnVector;
     }
-  }
-
-  public static long[] getUncompressedColumnSizes(ColumnarBatch batch) {
-    GpuCompressedColumnVector compressedVector = (GpuCompressedColumnVector)batch.column(0);
-    TableMeta tableMeta = compressedVector.getTableMeta();
-    assert (tableMeta.columnMetasLength() == batch.numCols());
-    int numCols = tableMeta.columnMetasLength();
-    ColumnMeta columnMeta = new ColumnMeta();
-    SubBufferMeta subBufferMetaObj = new SubBufferMeta();
-    long[] sizes = new long[numCols];
-    for (int i = 0; i < numCols; i++) {
-      tableMeta.columnMetas(columnMeta, i);
-      SubBufferMeta subBuffer = columnMeta.data(subBufferMetaObj);
-      if (subBuffer != null) {
-        sizes[i] += subBuffer.length();
-      }
-      subBuffer = columnMeta.offsets(subBufferMetaObj);
-      if (subBuffer != null) {
-        sizes[i] += subBuffer.length();
-      }
-      subBuffer = columnMeta.validity(subBufferMetaObj);
-      if (subBuffer != null) {
-        sizes[i] += subBuffer.length();
-      }
-    }
-    return sizes;
   }
 
   /**
