@@ -770,8 +770,12 @@ abstract class BinaryExprMeta[INPUT <: BinaryExpression](
     expr: INPUT,
     conf: RapidsConf,
     parent: Option[RapidsMeta[_, _, _]],
-    rule: ConfKeysAndIncompat)
+    rule: ConfKeysAndIncompat,
+    allowDecimal: Boolean = false)
   extends ExprMeta[INPUT](expr, conf, parent, rule) {
+
+  override def isSupportedType(t: DataType): Boolean =
+    GpuOverrides.isSupportedType(t, allowDecimal = allowDecimal)
 
   override final def convertToGpu(): GpuExpression =
     convertToGpu(childExprs(0).convertToGpu(), childExprs(1).convertToGpu())

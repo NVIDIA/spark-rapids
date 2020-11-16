@@ -211,7 +211,8 @@ class DecimalUnitTest extends GpuUnitTests with Matchers {
         HostColumnarToGpu.columnarCopy(hostCV, builder, true, cv.getRowCount.toInt)
         val actual = builder.build()
         val expected = hostCV.getBase
-        actual.getDataType shouldEqual expected.getDataType
+        actual.getDataType shouldEqual
+          DType.create(DType.DTypeEnum.DECIMAL64, expected.getDataType.getScale)
         actual.getRowCount shouldEqual expected.getRowCount
         (0 until actual.getRowCount.toInt).foreach { i =>
           actual.isNull(i) shouldEqual expected.isNull(i)

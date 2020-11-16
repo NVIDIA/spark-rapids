@@ -1181,19 +1181,19 @@ object GpuOverrides {
       }),
     expr[Add](
       "Addition",
-      (a, conf, p, r) => new BinaryExprMeta[Add](a, conf, p, r) {
+      (a, conf, p, r) => new BinaryExprMeta[Add](a, conf, p, r, allowDecimal = true) {
         override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression =
           GpuAdd(lhs, rhs)
       }),
     expr[Subtract](
       "Subtraction",
-      (a, conf, p, r) => new BinaryExprMeta[Subtract](a, conf, p, r) {
+      (a, conf, p, r) => new BinaryExprMeta[Subtract](a, conf, p, r, allowDecimal = true) {
         override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression =
           GpuSubtract(lhs, rhs)
       }),
     expr[Multiply](
       "Multiplication",
-      (a, conf, p, r) => new BinaryExprMeta[Multiply](a, conf, p, r) {
+      (a, conf, p, r) => new BinaryExprMeta[Multiply](a, conf, p, r, allowDecimal = true) {
         override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression =
           GpuMultiply(lhs, rhs)
       }),
@@ -1219,20 +1219,21 @@ object GpuOverrides {
       "Check if the values are equal",
       (a, conf, p, r) => new BinaryExprMeta[EqualTo](a, conf, p, r) {
         override def isSupportedType(t: DataType): Boolean =
-          GpuOverrides.isSupportedType(t, allowStringMaps = true)
+          GpuOverrides.isSupportedType(t, allowStringMaps = true, allowDecimal = true)
 
         override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression =
           GpuEqualTo(lhs, rhs)
       }),
     expr[GreaterThan](
       "> operator",
-      (a, conf, p, r) => new BinaryExprMeta[GreaterThan](a, conf, p, r) {
+      (a, conf, p, r) => new BinaryExprMeta[GreaterThan](a, conf, p, r, allowDecimal = true) {
         override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression =
           GpuGreaterThan(lhs, rhs)
       }),
     expr[GreaterThanOrEqual](
       ">= operator",
-      (a, conf, p, r) => new BinaryExprMeta[GreaterThanOrEqual](a, conf, p, r) {
+      (a, conf, p, r) => new BinaryExprMeta[GreaterThanOrEqual](a, conf, p, r,
+        allowDecimal = true) {
         override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression =
           GpuGreaterThanOrEqual(lhs, rhs)
       }),
@@ -1273,13 +1274,13 @@ object GpuOverrides {
       }),
     expr[LessThan](
       "< operator",
-      (a, conf, p, r) => new BinaryExprMeta[LessThan](a, conf, p, r) {
+      (a, conf, p, r) => new BinaryExprMeta[LessThan](a, conf, p, r, allowDecimal = true) {
         override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression =
           GpuLessThan(lhs, rhs)
       }),
     expr[LessThanOrEqual](
       "<= operator",
-      (a, conf, p, r) => new BinaryExprMeta[LessThanOrEqual](a, conf, p, r) {
+      (a, conf, p, r) => new BinaryExprMeta[LessThanOrEqual](a, conf, p, r, allowDecimal = true) {
         override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression =
           GpuLessThanOrEqual(lhs, rhs)
       }),

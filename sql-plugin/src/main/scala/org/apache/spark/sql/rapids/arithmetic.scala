@@ -144,6 +144,8 @@ object GpuDivModLike {
       case DType.INT64 => Scalar.fromLong(0L)
       case DType.FLOAT32 => Scalar.fromFloat(0f)
       case DType.FLOAT64 => Scalar.fromDouble(0)
+      case dt if dt.isDecimalType && dt.isBackedByInt => Scalar.fromDecimal(0, 0)
+      case dt if dt.isDecimalType && dt.isBackedByLong => Scalar.fromDecimal(0, 0L)
       case t => throw new IllegalArgumentException(s"Unexpected type: $t")
     }
   }

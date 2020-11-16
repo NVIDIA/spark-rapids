@@ -49,6 +49,11 @@ class ProjectExprSuite extends SparkQueryCompareTestSuite {
     frame => frame.select("time")
   }
 
+  testSparkResultsAreEqual("project decimal", mixedDf(_),
+    conf = forceHostColumnarToGpu()) {
+    frame => frame.select("decimals")
+  }
+
   testSparkResultsAreEqual("getMapValue", frameFromParquet("map_of_strings.snappy.parquet")) {
     frame => frame.selectExpr("mapField['foo']")
   }

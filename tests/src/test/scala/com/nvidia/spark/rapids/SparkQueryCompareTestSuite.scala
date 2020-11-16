@@ -933,19 +933,19 @@ trait SparkQueryCompareTestSuite extends FunSuite with Arm {
 
   def mixedDf(session: SparkSession, numSlices: Int = 2): DataFrame = {
     val rows = Seq[Row](
-      Row(99, 100L, 1.0, "A", Decimal("1.23")),
-      Row(98, 200L, 2.0, "B", Decimal("1.23")),
-      Row(97, 300L, 3.0, "C", Decimal("1.23")),
-      Row(99, 400L, 4.0, "D", Decimal("1.23")),
-      Row(98, 500L, 5.0, "E", Decimal("1.23")),
-      Row(97, -100L, 6.0, "F", Decimal("1.23")),
-      Row(96, -500L, 0.0, "G", Decimal("1.23")),
-      Row(95, -700L, 8.0, "E\u0480\u0481", Decimal("1.23")),
-      Row(Int.MaxValue, Long.MinValue, Double.PositiveInfinity, "\u0000", Decimal("1.23")),
-      Row(Int.MinValue, Long.MaxValue, Double.NaN, "\u0000", Decimal("1.23")),
-      Row(null, null, null, "actions are judged by intentions", Decimal("1.23")),
-      Row(94, -900L, 9.0, "g\nH", Decimal("1.23")),
-      Row(92, -1200L, 12.0, "IJ\"\u0100\u0101\u0500\u0501", Decimal("1.23")),
+      Row(99, 100L, 1.0, "A", Decimal("1.2")),
+      Row(98, 200L, 2.0, "B", Decimal("1.3")),
+      Row(97, 300L, 3.0, "C", Decimal("1.4")),
+      Row(99, 400L, 4.0, "D", Decimal("1.5")),
+      Row(98, 500L, 5.0, "E", Decimal("1.6")),
+      Row(97, -100L, 6.0, "F", Decimal("1.7")),
+      Row(96, -500L, 0.0, "G", Decimal("1.8")),
+      Row(95, -700L, 8.0, "E\u0480\u0481", Decimal("1.9")),
+      Row(Int.MaxValue, Long.MinValue, Double.PositiveInfinity, "\u0000", Decimal("2.0")),
+      Row(Int.MinValue, Long.MaxValue, Double.NaN, "\u0000", Decimal("100.123")),
+      Row(null, null, null, "actions are judged by intentions", Decimal("200.246")),
+      Row(94, -900L, 9.0, "g\nH", Decimal("300.369")),
+      Row(92, -1200L, 12.0, "IJ\"\u0100\u0101\u0500\u0501", Decimal("-1.47e3")),
       Row(90, 1500L, 15.0, "\ud720\ud721", Decimal("-22.2345"))
     )
     val structType = StructType(

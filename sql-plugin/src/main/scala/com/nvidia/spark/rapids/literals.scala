@@ -89,8 +89,10 @@ object GpuScalar {
     case b: Boolean => Scalar.fromBool(b)
     case s: String => Scalar.fromString(s)
     case s: UTF8String => Scalar.fromString(s.toString)
-    case dec: Decimal => Scalar.fromDecimal(dec.toBigDecimal.bigDecimal)
-    case dec: BigDecimal => Scalar.fromDecimal(dec.bigDecimal)
+    case dec: Decimal =>
+      Scalar.fromDecimal(-dec.scale, dec.toUnscaledLong)
+    case dec: BigDecimal =>
+      Scalar.fromDecimal(-dec.scale, dec.bigDecimal.unscaledValue().longValueExact())
     case _ =>
       throw new IllegalStateException(s"${v.getClass} '${v}' is not supported as a scalar yet")
   }
@@ -114,7 +116,7 @@ object GpuScalar {
       if (bigDec.precision() > t.asInstanceOf[DecimalType].precision) {
         throw new IllegalArgumentException(s"BigDecimal $bigDec exceeds precision constraint of $t")
       }
-      Scalar.fromDecimal(bigDec)
+      Scalar.fromDecimal(-bigDec.scale(), bigDec.unscaledValue().longValueExact())
     case l: Long => t match {
       case LongType => Scalar.fromLong(l)
       case TimestampType => Scalar.timestampFromLong(DType.TIMESTAMP_MICROSECONDS, l)

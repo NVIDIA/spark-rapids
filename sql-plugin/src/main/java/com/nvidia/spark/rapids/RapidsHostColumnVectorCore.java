@@ -162,7 +162,7 @@ public class RapidsHostColumnVectorCore extends ColumnVector {
   @Override
   public Decimal getDecimal(int rowId, int precision, int scale) {
     BigDecimal bigDec = cudfCv.getBigDecimal(rowId).setScale(scale, RoundingMode.UNNECESSARY);
-    assert bigDec.precision() <= precision;
+    assert bigDec.precision() <= precision : "Assert" + bigDec.precision() + " <= " + precision;
     return Decimal.apply(bigDec);
   }
 
