@@ -54,7 +54,10 @@ class GpuGetArrayItemMeta(
     GpuGetArrayItem(arr, ordinal)
 
   override def isSupportedType(t: DataType): Boolean =
-    GpuOverrides.isSupportedType(t, allowArray = true, allowNesting = true)
+    GpuOverrides.isSupportedType(t,
+      allowArray = true,
+      allowStruct = true,
+      allowNesting = true)
 }
 
 /**
