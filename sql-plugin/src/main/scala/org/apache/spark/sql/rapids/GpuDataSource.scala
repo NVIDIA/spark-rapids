@@ -480,13 +480,11 @@ object GpuDataSource extends Logging {
       case _ => cls
     }
     // convert to GPU version
-    logWarning("fallbackCls providing is: " + fallbackCls)
     fallbackCls
   }
 
   /** Given a provider name, look up the data source class definition. */
   def lookupDataSource(provider: String, conf: SQLConf): Class[_] = {
-    logWarning("provider is: " + provider)
     val provider1 = backwardCompatibilityMap.getOrElse(provider, provider) match {
       case name if name.equalsIgnoreCase("orc") &&
           conf.getConf(SQLConf.ORC_IMPLEMENTATION) == "native" =>
@@ -499,8 +497,6 @@ object GpuDataSource extends Logging {
       case name => name
     }
     val provider2 = s"$provider1.DefaultSource"
-    logWarning("provider2 is: " + provider2)
-
     val loader = Utils.getContextOrSparkClassLoader
     val serviceLoader = ServiceLoader.load(classOf[DataSourceRegister], loader)
 
@@ -512,7 +508,6 @@ object GpuDataSource extends Logging {
             Try(loader.loadClass(provider1)).orElse(Try(loader.loadClass(provider2))) match {
               case Success(dataSource) =>
                 // Found the data source using fully qualified path
-                logWarning("loaded data source: " + dataSource)
                 dataSource
               case Failure(error) =>
                 if (provider1.startsWith("org.apache.spark.sql.hive.orc")) {
@@ -552,14 +547,12 @@ object GpuDataSource extends Logging {
           }
         case head :: Nil =>
           // there is exactly one registered alias
-          logWarning("shead: " + head.getClass)
           head.getClass
         case sources =>
           // There are multiple registered aliases for the input. If there is single datasource
           // that has "org.apache.spark" package in the prefix, we use it considering it is an
           // internal datasource within Spark.
           val sourceNames = sources.map(_.getClass.getName)
-          logWarning("sources names are: " + sourceNames)
           val internalSources = sources.filter(_.getClass.getName.startsWith("org.apache.spark"))
           if (internalSources.size == 1) {
             logWarning(s"Multiple sources found for $provider1 (${sourceNames.mkString(", ")}), " +
