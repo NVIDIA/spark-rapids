@@ -301,11 +301,11 @@ abstract class UnixTimeExprMeta[A <: BinaryExpression with TimeZoneAwareExpressi
             if (GpuOverrides.getTimeParserPolicy == LegacyTimeParserPolicy) {
               willNotWorkOnGpu("legacyTimeParserPolicy LEGACY is not supported")
             } else if (GpuToTimestamp.COMPATIBLE_FORMATS.contains(sparkFormat) ||
-                conf.isIncompatEnabled) {
+                conf.incompatDateFormats) {
               strfFormat = DateUtils.toStrf(sparkFormat)
             } else {
               willNotWorkOnGpu(s"incompatible format '$sparkFormat'. Set " +
-                  s"spark.rapids.sql.incompatibleOps.enabled=true to force onto GPU.")
+                  s"spark.rapids.sql.incompatibleDateFormats.enabled=true to force onto GPU.")
             }
           case None =>
             willNotWorkOnGpu("format has to be a string literal")
@@ -327,6 +327,7 @@ object GpuToTimestamp {
   /** We are compatible with Spark for these formats */
   val COMPATIBLE_FORMATS = Seq(
     "yyyy-MM-dd",
+    "dd/MM/yyyy",
     "yyyy-MM-dd HH:mm:ss"
   )
 }

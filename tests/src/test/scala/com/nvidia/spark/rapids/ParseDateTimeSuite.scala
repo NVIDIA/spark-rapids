@@ -23,10 +23,16 @@ import org.apache.spark.sql.internal.SQLConf
 
 class ParseDateTimeSuite extends SparkQueryCompareTestSuite {
 
-  testSparkResultsAreEqual("to_date",
+  testSparkResultsAreEqual("to_date yyyy-MM-dd",
       datesAsStrings,
       new SparkConf().set(SQLConf.LEGACY_TIME_PARSER_POLICY.key, "CORRECTED")) {
     df => df.withColumn("c1", to_date(col("c0"), "yyyy-MM-dd"))
+  }
+
+  testSparkResultsAreEqual("to_date dd/MM/yyyy",
+    datesAsStrings,
+    new SparkConf().set(SQLConf.LEGACY_TIME_PARSER_POLICY.key, "CORRECTED")) {
+    df => df.withColumn("c1", to_date(col("c0"), "dd/MM/yyyy"))
   }
 
   testSparkResultsAreEqual("to_date default pattern",
@@ -119,6 +125,8 @@ class ParseDateTimeSuite extends SparkQueryCompareTestSuite {
     "1999-12-31 11:59:59.9",
     "1999-12-31 11:59:59.99",
     "1999-12-31 11:59:59.999",
+    "31/12/1999",
+    "31/12/1999 11:59:59.999",
     "1999-12-31",
     "1999-12-31\n",
     "\t1999-12-31",
