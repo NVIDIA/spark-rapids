@@ -226,3 +226,12 @@ def test_parquet_writeLegacyFormat_fallback(spark_tmp_path, spark_tmp_table_fact
             data_path,
             'DataWritingCommandExec',
             conf=all_confs)
+
+@allow_non_gpu('DataWritingCommandExec')
+def test_buckets_write_fallback(spark_tmp_path, spark_tmp_table_factory):
+    data_path = spark_tmp_path + '/PARQUET_DATA'
+    assert_gpu_fallback_write(
+            lambda spark, path: spark.range(10e4).write.bucketBy(4, "id").sortBy("id").format('parquet').mode('overwrite').option("path", path).saveAsTable(spark_tmp_table_factory.get()),
+            lambda spark, path: spark.read.parquet(path),
+            data_path,
+            'DataWritingCommandExec')
