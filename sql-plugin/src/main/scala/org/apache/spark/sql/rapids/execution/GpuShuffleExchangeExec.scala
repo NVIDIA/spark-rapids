@@ -34,7 +34,7 @@ import org.apache.spark.sql.execution.SparkPlan
 import org.apache.spark.sql.execution.exchange.{Exchange, ShuffleExchangeExec}
 import org.apache.spark.sql.execution.metric._
 import org.apache.spark.sql.internal.SQLConf
-import org.apache.spark.sql.rapids.GpuShuffleDependency
+import org.apache.spark.sql.rapids.{GpuShuffleDependency, GpuShuffleEnv}
 import org.apache.spark.sql.types.DataType
 import org.apache.spark.sql.vectorized.ColumnarBatch
 import org.apache.spark.util.MutablePair
@@ -71,10 +71,10 @@ abstract class GpuShuffleExchangeExecBase(
     override val outputPartitioning: Partitioning,
     child: SparkPlan) extends Exchange with GpuExec {
 
-  /**
-   * Lots of small output batches we want to group together.
-   */
-  override def coalesceAfter: Boolean = true
+  // Shuffle produces a lot of small output batches that should be coalesced together.
+  // This coalesce occurs on the GPU and should always be done when using RAPIDS shuffle.
+  // Normal shuffle performs the coalesce on the CPU to optimize the transfers to the GPU.
+  override def coalesceAfter: Boolean = GpuShuffleEnv.isRapidsShuffleEnabled
 
   private lazy val writeMetrics =
     SQLShuffleWriteMetricsReporter.createShuffleWriteMetrics(sparkContext)
@@ -110,7 +110,6 @@ abstract class GpuShuffleExchangeExecBase(
   // This value must be lazy because the child's output may not have been resolved
   // yet in all cases.
   private lazy val serializer: Serializer = new GpuColumnarBatchSerializer(
-    sparkTypes,
     longMetric("dataSize"))
 
   @transient lazy val inputBatchRDD: RDD[ColumnarBatch] = child.executeColumnar()

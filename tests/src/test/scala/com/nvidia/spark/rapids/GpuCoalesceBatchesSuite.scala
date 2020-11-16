@@ -132,7 +132,7 @@ class GpuCoalesceBatchesSuite extends SparkQueryCompareTestSuite {
     val conf = makeBatchedBytes(1)
       .set(RapidsConf.MAX_READER_BATCH_SIZE_ROWS.key, "1")
       .set(RapidsConf.MAX_READER_BATCH_SIZE_BYTES.key, "1")
-      .set(RapidsConf.GPU_BATCH_SIZE_BYTES.key, "50000")
+      .set(RapidsConf.GPU_BATCH_SIZE_BYTES.key, "1")
       .set("spark.sql.shuffle.partitions", "1")
 
     withGpuSparkSession(spark => {
