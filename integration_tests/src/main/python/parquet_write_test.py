@@ -14,7 +14,7 @@
 
 import pytest
 
-from asserts import assert_gpu_and_cpu_are_equal_collect, assert_gpu_and_cpu_writes_are_equal_collect, assert_gpu_fallback_collect
+from asserts import assert_gpu_and_cpu_are_equal_collect, assert_gpu_and_cpu_writes_are_equal_collect, assert_gpu_fallback_write
 from datetime import date, datetime, timezone
 from data_gen import *
 from marks import *
@@ -109,11 +109,106 @@ def test_compress_write_round_trip(spark_tmp_path, compress, v1_enabled_list, re
 def test_write_save_table(spark_tmp_path, parquet_gens, ts_type, spark_tmp_table_factory):
     gen_list = [('_c' + str(i), gen) for i, gen in enumerate(parquet_gens)]
     data_path = spark_tmp_path + '/PARQUET_DATA'
-    all_confs={'spark.sql.sources.useV1SourceList': "parquet",
-            'spark.sql.legacy.parquet.datetimeRebaseModeInWrite': 'CORRECTED',
+    all_confs={'spark.sql.legacy.parquet.datetimeRebaseModeInWrite': 'CORRECTED',
             'spark.sql.parquet.outputTimestampType': ts_type}
     assert_gpu_and_cpu_writes_are_equal_collect(
             lambda spark, path: gen_df(spark, gen_list).coalesce(1).write.format("parquet").mode('overwrite').option("path", path).saveAsTable(spark_tmp_table_factory.get()),
             lambda spark, path: spark.read.parquet(path),
             data_path,
+            conf=all_confs)
+
+def write_parquet_sql_from(spark, df, data_path, write_to_table):
+    tmp_view_name = 'tmp_view_{}'.format(random.randint(0, 1000000))
+    df.createOrReplaceTempView(tmp_view_name)
+    write_cmd = 'CREATE TABLE `{}` USING PARQUET location \'{}\' AS SELECT * from `{}`'.format(write_to_table, data_path, tmp_view_name)
+    spark.sql(write_cmd)
+
+@pytest.mark.parametrize('parquet_gens', parquet_write_gens_list, ids=idfn)
+@pytest.mark.parametrize('ts_type', ["TIMESTAMP_MICROS", "TIMESTAMP_MILLIS"])
+def test_write_sql_save_table(spark_tmp_path, parquet_gens, ts_type, spark_tmp_table_factory):
+    gen_list = [('_c' + str(i), gen) for i, gen in enumerate(parquet_gens)]
+    data_path = spark_tmp_path + '/PARQUET_DATA'
+    all_confs={'spark.sql.legacy.parquet.datetimeRebaseModeInWrite': 'CORRECTED',
+            'spark.sql.parquet.outputTimestampType': ts_type}
+    assert_gpu_and_cpu_writes_are_equal_collect(
+            lambda spark, path: write_parquet_sql_from(spark, gen_df(spark, gen_list).coalesce(1), path, spark_tmp_table_factory.get()),
+            lambda spark, path: spark.read.parquet(path),
+            data_path,
+            conf=all_confs)
+
+def writeParquetCatchException(spark, df, data_path, spark_tmp_table_factory, ts_rebase, ts_write):
+    spark.conf.set('spark.sql.legacy.parquet.datetimeRebaseModeInWrite', ts_rebase)
+    spark.conf.set('spark.sql.parquet.outputTimestampType', ts_write)
+    with pytest.raises(Exception) as e_info:
+        df.coalesce(1).write.format("parquet").mode('overwrite').option("path", data_path).saveAsTable(spark_tmp_table_factory.get())
+    assert e_info.match(r".*SparkUpgradeException.*")
+
+# TODO - https://github.com/NVIDIA/spark-rapids/issues/1130 to handle TIMESTAMP_MILLIS 
+parquet_ts_write_options = ['TIMESTAMP_MICROS']
+
+@pytest.mark.parametrize('ts_write', parquet_ts_write_options)
+@pytest.mark.parametrize('ts_rebase', ['EXCEPTION'])
+def test_ts_write_fails_datetime_exception(spark_tmp_path, ts_write, ts_rebase, spark_tmp_table_factory):
+    gen = TimestampGen(start=datetime(1590, 1, 1, tzinfo=timezone.utc))
+    data_path = spark_tmp_path + '/PARQUET_DATA'
+    with_gpu_session(
+            lambda spark : writeParquetCatchException(spark, unary_op_df(spark, gen), data_path, spark_tmp_table_factory, ts_rebase, ts_write))
+
+parquet_ts_write_options = ['INT96', 'TIMESTAMP_MICROS', 'TIMESTAMP_MILLIS']
+
+@allow_non_gpu('DataWritingCommandExec')
+@pytest.mark.parametrize('ts_write', parquet_ts_write_options)
+@pytest.mark.parametrize('ts_rebase', ['LEGACY'])
+def test_parquet_write_legacy_fallback(spark_tmp_path, ts_write, ts_rebase, spark_tmp_table_factory):
+    gen = TimestampGen(start=datetime(1590, 1, 1, tzinfo=timezone.utc))
+    data_path = spark_tmp_path + '/PARQUET_DATA'
+    all_confs={'spark.sql.legacy.parquet.datetimeRebaseModeInWrite': ts_rebase,
+            'spark.sql.parquet.outputTimestampType': ts_write}
+    assert_gpu_fallback_write(
+            lambda spark, path: unary_op_df(spark, gen).coalesce(1).write.format("parquet").mode('overwrite').option("path", path).saveAsTable(spark_tmp_table_factory.get()),
+            lambda spark, path: spark.read.parquet(path),
+            data_path,
+            'DataWritingCommandExec',
+            conf=all_confs)
+
+@allow_non_gpu('DataWritingCommandExec')
+@pytest.mark.parametrize('ts_write', ['INT96'])
+@pytest.mark.parametrize('ts_rebase', ['CORRECTED', 'EXCEPTION', 'LEGACY'])
+def test_parquet_write_int96_fallback(spark_tmp_path, ts_write, ts_rebase, spark_tmp_table_factory):
+    gen = TimestampGen(start=datetime(1590, 1, 1, tzinfo=timezone.utc))
+    data_path = spark_tmp_path + '/PARQUET_DATA'
+    all_confs={'spark.sql.legacy.parquet.datetimeRebaseModeInWrite': ts_rebase,
+            'spark.sql.parquet.outputTimestampType': ts_write}
+    assert_gpu_fallback_write(
+            lambda spark, path: unary_op_df(spark, gen).coalesce(1).write.format("parquet").mode('overwrite').option("path", path).saveAsTable(spark_tmp_table_factory.get()),
+            lambda spark, path: spark.read.parquet(path),
+            data_path,
+            'DataWritingCommandExec',
+            conf=all_confs)
+
+@allow_non_gpu('DataWritingCommandExec')
+# note that others should fail as well but requires you to load the libraries for them
+# 'lzo', 'brotli', 'lz4', 'zstd' should all fallback
+@pytest.mark.parametrize('codec', ['gzip'])
+def test_parquet_write_compression_fallback(spark_tmp_path, codec, spark_tmp_table_factory):
+    gen = TimestampGen(start=datetime(1590, 1, 1, tzinfo=timezone.utc))
+    data_path = spark_tmp_path + '/PARQUET_DATA'
+    all_confs={'spark.sql.parquet.compression.codec': codec}
+    assert_gpu_fallback_write(
+            lambda spark, path: unary_op_df(spark, gen).coalesce(1).write.format("parquet").mode('overwrite').option("path", path).saveAsTable(spark_tmp_table_factory.get()),
+            lambda spark, path: spark.read.parquet(path),
+            data_path,
+            'DataWritingCommandExec',
+            conf=all_confs)
+
+@allow_non_gpu('DataWritingCommandExec')
+def test_parquet_writeLegacyFormat_fallback(spark_tmp_path, spark_tmp_table_factory):
+    gen = TimestampGen()
+    data_path = spark_tmp_path + '/PARQUET_DATA'
+    all_confs={'spark.sql.parquet.writeLegacyFormat': 'true'}
+    assert_gpu_fallback_write(
+            lambda spark, path: unary_op_df(spark, gen).coalesce(1).write.format("parquet").mode('overwrite').option("path", path).saveAsTable(spark_tmp_table_factory.get()),
+            lambda spark, path: spark.read.parquet(path),
+            data_path,
+            'DataWritingCommandExec',
             conf=all_confs)

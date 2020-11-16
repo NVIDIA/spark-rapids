@@ -14,7 +14,7 @@
 
 import pytest
 
-from asserts import assert_gpu_and_cpu_writes_are_equal_collect
+from asserts import assert_gpu_and_cpu_writes_are_equal_collect, assert_gpu_fallback_write
 from datetime import date, datetime, timezone
 from data_gen import *
 from marks import *
@@ -78,4 +78,33 @@ def test_write_save_table(spark_tmp_path, orc_gens, spark_tmp_table_factory):
             lambda spark, path: gen_df(spark, gen_list).coalesce(1).write.format("orc").mode('overwrite').option("path", path).saveAsTable(spark_tmp_table_factory.get()),
             lambda spark, path: spark.read.orc(path),
             data_path,
+            conf=all_confs)
+
+def write_orc_sql_from(spark, df, data_path, write_to_table):
+    tmp_view_name = 'tmp_view_{}'.format(random.randint(0, 1000000))
+    df.createOrReplaceTempView(tmp_view_name)
+    write_cmd = 'CREATE TABLE `{}` USING ORC location \'{}\' AS SELECT * from `{}`'.format(write_to_table, data_path, tmp_view_name)
+    spark.sql(write_cmd)
+
+@pytest.mark.parametrize('orc_gens', orc_write_gens_list, ids=idfn)
+@pytest.mark.parametrize('ts_type', ["TIMESTAMP_MICROS", "TIMESTAMP_MILLIS"])
+def test_write_sql_save_table(spark_tmp_path, orc_gens, ts_type, spark_tmp_table_factory):
+    gen_list = [('_c' + str(i), gen) for i, gen in enumerate(orc_gens)]
+    data_path = spark_tmp_path + '/ORC_DATA'
+    assert_gpu_and_cpu_writes_are_equal_collect(
+            lambda spark, path: write_orc_sql_from(spark, gen_df(spark, gen_list).coalesce(1), path, spark_tmp_table_factory.get()),
+            lambda spark, path: spark.read.orc(path),
+            data_path)
+
+@allow_non_gpu('DataWritingCommandExec')
+@pytest.mark.parametrize('codec', ['zlib', 'lzo'])
+def test_orc_write_compression_fallback(spark_tmp_path, codec, spark_tmp_table_factory):
+    gen = TimestampGen()
+    data_path = spark_tmp_path + '/PARQUET_DATA'
+    all_confs={'spark.sql.orc.compression.codec': codec}
+    assert_gpu_fallback_write(
+            lambda spark, path: unary_op_df(spark, gen).coalesce(1).write.format("orc").mode('overwrite').option("path", path).saveAsTable(spark_tmp_table_factory.get()),
+            lambda spark, path: spark.read.orc(path),
+            data_path,
+            'DataWritingCommandExec',
             conf=all_confs)
