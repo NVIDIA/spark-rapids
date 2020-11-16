@@ -335,8 +335,7 @@ final class CreateDataSourceTableAsSelectCommandMeta(
     conf: RapidsConf,
     parent: Option[RapidsMeta[_, _, _]],
     rule: ConfKeysAndIncompat)
-  extends DataWritingCommandMeta[CreateDataSourceTableAsSelectCommand](cmd, conf, parent, rule)
-    with Logging {
+  extends DataWritingCommandMeta[CreateDataSourceTableAsSelectCommand](cmd, conf, parent, rule) {
 
   private var origProvider: Class[_] = _
   private var gpuProvider: Option[ColumnarFileFormat] = None
@@ -356,10 +355,8 @@ final class CreateDataSourceTableAsSelectCommandMeta(
     // If that changes then this will start failing because we don't have a mapping.
     gpuProvider = origProvider.getConstructor().newInstance() match {
       case format: OrcFileFormat =>
-        logWarning("using orc class")
         GpuOrcFileFormat.tagGpuSupport(this, spark, cmd.table.storage.properties)
       case format: ParquetFileFormat =>
-        logWarning("using parquet class")
         GpuParquetFileFormat.tagGpuSupport(this, spark,
           cmd.table.storage.properties, cmd.query.schema)
       case ds =>

@@ -143,7 +143,7 @@ def writeParquetCatchException(spark, df, data_path, spark_tmp_table_factory, ts
         df.coalesce(1).write.format("parquet").mode('overwrite').option("path", data_path).saveAsTable(spark_tmp_table_factory.get())
     assert e_info.match(r".*SparkUpgradeException.*")
 
-# TODO - https://github.com/NVIDIA/spark-rapids/issues/1130 to handle TIMESTAMP_MILLIS 
+# TODO - https://github.com/NVIDIA/spark-rapids/issues/1130 to handle TIMESTAMP_MILLIS
 parquet_ts_write_options = ['TIMESTAMP_MICROS']
 
 @pytest.mark.parametrize('ts_write', parquet_ts_write_options)
