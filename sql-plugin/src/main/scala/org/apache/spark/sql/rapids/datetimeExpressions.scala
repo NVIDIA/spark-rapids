@@ -16,7 +16,6 @@
 
 package org.apache.spark.sql.rapids
 
-import java.sql.SQLException
 import java.time.ZoneId
 
 import ai.rapids.cudf.{BinaryOp, ColumnVector, DType, Scalar}
@@ -25,8 +24,8 @@ import com.nvidia.spark.rapids.DateUtils.TimestampFormatConversionException
 import com.nvidia.spark.rapids.GpuOverrides.{extractStringLit, getTimeParserPolicy}
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 
+import org.apache.spark.{SPARK_VERSION, SparkUpgradeException}
 import org.apache.spark.sql.catalyst.expressions.{BinaryExpression, ExpectsInputTypes, Expression, ImplicitCastInputTypes, NullIntolerant, TimeZoneAwareExpression}
-import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.types._
 import org.apache.spark.sql.vectorized.ColumnarBatch
 import org.apache.spark.unsafe.types.CalendarInterval
@@ -300,7 +299,7 @@ abstract class UnixTimeExprMeta[A <: BinaryExpression with TimeZoneAwareExpressi
           case Some(rightLit) =>
             sparkFormat = rightLit
             if (GpuOverrides.getTimeParserPolicy == LegacyTimeParserPolicy) {
-              willNotWorkOnGpu("legacyTimeParserPolicy is LEGACY")
+              willNotWorkOnGpu("legacyTimeParserPolicy LEGACY is not supported")
             } else if (GpuToTimestamp.COMPATIBLE_FORMATS.contains(sparkFormat) ||
                 conf.isIncompatEnabled) {
               strfFormat = DateUtils.toStrf(sparkFormat)
@@ -339,7 +338,7 @@ object GpuToTimestamp {
 abstract class GpuToTimestamp
   extends GpuBinaryExpression with TimeZoneAwareExpression with ExpectsInputTypes {
 
-  def downScaleFactor = 1000000 // MICROS IN SECOND
+  def downScaleFactor = DateUtils.ONE_SECOND_MICROSECONDS
 
   def sparkFormat: String
   def strfFormat: String
@@ -382,12 +381,12 @@ abstract class GpuToTimestamp
         }
       }
 
-      // the cuDF `is_timestamp` function is less restrictive than Spark's behavior for UnixTime
-      // and ToUnixTime and will support parsing a subset of a string so we check the length of
-      // the string as well which works well for fixed-length formats but if/when we want to
-      // support variable-length formats (such as timestamps with milliseconds) then we will need
-      // to use regex instead.
       val isTimestamp = if (GpuToTimestamp.COMPATIBLE_FORMATS.contains(sparkFormat)) {
+        // the cuDF `is_timestamp` function is less restrictive than Spark's behavior for UnixTime
+        // and ToUnixTime and will support parsing a subset of a string so we check the length of
+        // the string as well which works well for fixed-length formats but if/when we want to
+        // support variable-length formats (such as timestamps with milliseconds) then we will need
+        // to use regex instead.
         withResource(lhs.getBase.getCharLengths) { actualLen =>
           withResource(Scalar.fromInt(sparkFormat.length)) { expectedLen =>
             withResource(actualLen.equalTo(expectedLen)) { lengthOk =>
@@ -398,6 +397,8 @@ abstract class GpuToTimestamp
           }
         }
       } else {
+        // this is the incompatibleOps case where we do not guarantee compatibility with Spark
+        // and assume that all non-null inputs are valid
         ColumnVector.fromScalar(Scalar.fromBool(true), lhs.getRowCount.toInt)
       }
 
@@ -418,12 +419,13 @@ abstract class GpuToTimestamp
                     if (timeParserPolicy == ExceptionTimeParserPolicy) {
                       withResource(Scalar.fromBool(false)) { falseScalar =>
                         if (canBeConverted.hasNulls || canBeConverted.contains(falseScalar)) {
-                          throw new RuntimeException(
+                          throw new SparkUpgradeException(SPARK_VERSION,
                             s"Expression ${this.getClass.getSimpleName} failed to parse one or " +
                               "more values because they did not match the specified format. Set " +
                               "spark.sql.legacy.timeParserPolicy to CORRECTED to return null " +
                               "for invalid values, or to LEGACY for pre-Spark 3.0.0 behavior (" +
-                              "LEGACY will force this expression to run on CPU though)")
+                              "LEGACY will force this expression to run on CPU though)",
+                          new RuntimeException("Failed to parse one or more values"))
                         }
                       }
                     }
