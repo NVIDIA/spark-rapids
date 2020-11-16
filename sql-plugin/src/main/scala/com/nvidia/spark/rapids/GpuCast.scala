@@ -763,11 +763,11 @@ case class GpuCast(
     val today: Long = cal.getTimeInMillis * 1000
     val todayStr = new SimpleDateFormat("yyyy-MM-dd").format(cal.getTime)
     val specialDates: Map[String, Long] = Map(
-      "epoch" -> 0,
-      "now" -> today,
-      "today" -> today,
-      "yesterday" -> (today - DateUtils.ONE_DAY_MICROSECONDS),
-      "tomorrow" -> (today + DateUtils.ONE_DAY_MICROSECONDS)
+      GpuCast.EPOCH -> 0,
+      GpuCast.NOW -> today,
+      GpuCast.TODAY -> today,
+      GpuCast.YESTERDAY -> (today - DateUtils.ONE_DAY_MICROSECONDS),
+      GpuCast.TOMORROW -> (today + DateUtils.ONE_DAY_MICROSECONDS)
     )
 
     var sanitizedInput = input.incRefCount()
