@@ -51,6 +51,14 @@ public class GpuColumnVector extends GpuColumnVectorBase {
               convertFrom(mapType.keyType(), false),
               convertFrom(mapType.valueType(), mapType.valueContainsNull())
           )));
+    } else if (spark instanceof StructType) {
+      StructType stType = (StructType) spark;
+      HostColumnVector.DataType[] children = new HostColumnVector.DataType[stType.size()];
+      StructField[] fields = stType.fields();
+      for (int i = 0; i < children.length; i++) {
+        children[i] = convertFrom(fields[i].dataType(), fields[i].nullable());
+      }
+      return new HostColumnVector.StructType(nullable, children);
     } else {
       // Only works for basic types
       return new HostColumnVector.BasicType(nullable, getRapidsType(spark));
