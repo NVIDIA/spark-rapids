@@ -18,14 +18,15 @@ package com.nvidia.spark.rapids.shims.spark300db
 
 import java.time.ZoneId
 
-import com.nvidia.spark.rapids.GpuOverrides.isSupportedType
 import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.shims.spark300.Spark300Shims
+
 import org.apache.spark.sql.rapids.shims.spark300db._
 import org.apache.hadoop.fs.Path
 
 import org.apache.spark.rdd.RDD
 import org.apache.spark.SparkEnv
+
 import org.apache.spark.sql.SparkSession
 import org.apache.spark.sql.catalyst.encoders.ExpressionEncoder
 import org.apache.spark.sql.catalyst.InternalRow
@@ -91,7 +92,10 @@ class Spark300dbShims extends Spark300Shims {
         (fsse, conf, p, r) => new SparkPlanMeta[FileSourceScanExec](fsse, conf, p, r) {
 
           override def isSupportedType(t: DataType): Boolean =
-            GpuOverrides.isSupportedType(t, allowStringMaps = true)
+            GpuOverrides.isSupportedType(t,
+              allowArray = true,
+              allowStringMaps = true,
+              allowNesting = true)
 
           // partition filters and data filters are not run on the GPU
           override val childExprs: Seq[ExprMeta[_]] = Seq.empty

@@ -27,6 +27,7 @@ object RebaseHelper extends Arm {
   private[this] def isDateTimeRebaseNeeded(column: ColumnVector,
                                                 startDay: Int,
                                                 startTs: Long): Boolean = {
+    // TODO update this for nested column checks
     val dtype = column.getType
     if (dtype == DType.TIMESTAMP_DAYS) {
       withResource(Scalar.timestampDaysFromInt(startDay)) { minGood =>

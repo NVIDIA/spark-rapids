@@ -62,7 +62,7 @@ import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.rapids.InputFileUtils
 import org.apache.spark.sql.rapids.execution.TrampolineUtil
 import org.apache.spark.sql.sources.Filter
-import org.apache.spark.sql.types.{MapType, StringType, StructType, TimestampType}
+import org.apache.spark.sql.types.{ArrayType, DataType, DateType, MapType, StringType, StructType, TimestampType}
 import org.apache.spark.sql.vectorized.ColumnarBatch
 import org.apache.spark.util.SerializableConfiguration
 
@@ -134,8 +134,11 @@ object GpuParquetScanBase {
     }
 
     for (field <- readSchema) {
-      if (!GpuColumnVector.isSupportedType(field.dataType)
-        && !field.dataType.isInstanceOf[MapType]) {
+      if (!GpuOverrides.isSupportedType(
+        field.dataType,
+        allowStringMaps = true,
+        allowArray = true,
+        allowNesting = true)) {
         meta.willNotWorkOnGpu(s"GpuParquetScan does not support fields of type ${field.dataType}")
       }
     }
@@ -153,6 +156,17 @@ object GpuParquetScanBase {
     val schemaHasTimestamps = readSchema.exists { field =>
       TrampolineUtil.dataTypeExistsRecursively(field.dataType, _.isInstanceOf[TimestampType])
     }
+    def isTsOrDate(dt: DataType) : Boolean = dt match {
+      case TimestampType | DateType => true
+      case _ => false
+    }
+    val schemaMightNeedNestedRebase = readSchema.exists { field =>
+      field.dataType match {
+        case MapType(_, _, _) | ArrayType(_, _) | StructType(_) =>
+          TrampolineUtil.dataTypeExistsRecursively(field.dataType, isTsOrDate)
+        case _ => false
+      }
+    }
 
     // Currently timestamp conversion is not supported.
     // If support needs to be added then we need to follow the logic in Spark's
@@ -168,9 +182,16 @@ object GpuParquetScanBase {
     }
 
     sqlConf.get(SQLConf.LEGACY_PARQUET_REBASE_MODE_IN_READ.key) match {
-      case "EXCEPTION" => // Good
+      case "EXCEPTION" => if (schemaMightNeedNestedRebase) {
+        meta.willNotWorkOnGpu("Nested timestamp and date values are not supported when " +
+            s"${SQLConf.LEGACY_PARQUET_REBASE_MODE_IN_READ.key} is EXCEPTION")
+      }
       case "CORRECTED" => // Good
-      case "LEGACY" => // Good, but it really is EXCEPTION for us...
+      case "LEGACY" => // really is EXCEPTION for us...
+        if (schemaMightNeedNestedRebase) {
+          meta.willNotWorkOnGpu("Nested timestamp and date values are not supported when " +
+              s"${SQLConf.LEGACY_PARQUET_REBASE_MODE_IN_READ.key} is LEGACY")
+        }
       case other =>
         meta.willNotWorkOnGpu(s"$other is not a supported read rebase mode")
     }

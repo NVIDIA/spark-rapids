@@ -19,7 +19,6 @@ package com.nvidia.spark.rapids.shims.spark300
 import java.time.ZoneId
 
 import com.nvidia.spark.rapids._
-import com.nvidia.spark.rapids.GpuOverrides.isSupportedType
 import com.nvidia.spark.rapids.spark300.RapidsShuffleManager
 
 import org.apache.spark.SparkEnv
@@ -136,7 +135,10 @@ class Spark300Shims extends SparkShims {
         "Reading data from files, often from Hive tables",
         (fsse, conf, p, r) => new SparkPlanMeta[FileSourceScanExec](fsse, conf, p, r) {
           override def isSupportedType(t: DataType): Boolean =
-            GpuOverrides.isSupportedType(t, allowStringMaps = true)
+            GpuOverrides.isSupportedType(t,
+              allowArray = true,
+              allowStringMaps = true,
+              allowNesting = true)
 
           // partition filters and data filters are not run on the GPU
           override val childExprs: Seq[ExprMeta[_]] = Seq.empty
