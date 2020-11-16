@@ -612,6 +612,7 @@ object GpuOverrides {
           GpuOverrides.isSupportedType(t,
             allowStringMaps = true,
             allowArray = true,
+            allowStruct = true,
             allowNesting = true)
 
         override def convertToGpu(child: Expression): GpuExpression =
@@ -624,6 +625,7 @@ object GpuOverrides {
           GpuOverrides.isSupportedType(t,
             allowStringMaps = true,
             allowArray = true,
+            allowStruct = true,
             allowNesting = true)
 
         // This is the only NOOP operator.  It goes away when things are bound
@@ -1825,6 +1827,7 @@ object GpuOverrides {
             GpuOverrides.isSupportedType(t,
               allowStringMaps = true,
               allowArray = true,
+              allowStruct = true,
               allowNesting = true)
 
           override def convertToGpu(): GpuExec =

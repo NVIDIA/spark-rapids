@@ -67,7 +67,17 @@ private object GpuRowToColumnConverter {
     def append(row: SpecializedGetters,
       column: Int,
       builder: ai.rapids.cudf.HostColumnVector.ColumnBuilder): Double
+
+    /**
+     * This is here for structs.  When you append a null to a struct the size is not known
+     * ahead of time.  Also because structs push nulls down to the children this size should
+     * assume a validity even if the schema says it cannot be null.
+     */
+    def getNullSize: Double
   }
+
+  private def getConverterFor(field: StructField): TypeConverter =
+    getConverterForType(field.dataType, field.nullable)
 
   private def getConverterForType(dataType: DataType, nullable: Boolean): TypeConverter = {
     (dataType, nullable) match {
@@ -97,9 +107,10 @@ private object GpuRowToColumnConverter {
         ArrayConverter(getConverterForType(at.elementType, at.containsNull))
       case (at: ArrayType, false) =>
         NotNullArrayConverter(getConverterForType(at.elementType, at.containsNull))
-      // NOT SUPPORTED YET
-      // case st: StructType => new StructConverter(st.fields.map(
-      // (f) => getConverterForType(f.dataType)))
+      case (st: StructType, true) =>
+        StructConverter(st.fields.map(getConverterFor))
+      case (st: StructType, false) =>
+        NotNullStructConverter(st.fields.map(getConverterFor))
       // NOT SUPPORTED YET
       // case dt: DecimalType => new DecimalConverter(dt)
       //       NOT SUPPORTED YET
@@ -125,6 +136,8 @@ private object GpuRowToColumnConverter {
       }
       1 + VALIDITY
     }
+
+    override def getNullSize: Double = 1 + VALIDITY
   }
 
   private object NotNullBooleanConverter extends TypeConverter {
@@ -134,6 +147,8 @@ private object GpuRowToColumnConverter {
       builder.append(if (row.getBoolean(column)) 1.toByte else 0.toByte)
       1
     }
+
+    override def getNullSize: Double = 1 + VALIDITY
   }
 
   private object ByteConverter extends TypeConverter {
@@ -147,6 +162,8 @@ private object GpuRowToColumnConverter {
       }
       1 + VALIDITY
     }
+
+    override def getNullSize: Double = 1 + VALIDITY
   }
 
   private object NotNullByteConverter extends TypeConverter {
@@ -156,6 +173,8 @@ private object GpuRowToColumnConverter {
       builder.append(row.getByte(column))
       1
     }
+
+    override def getNullSize: Double = 1 + VALIDITY
   }
 
   private object ShortConverter extends TypeConverter {
@@ -169,6 +188,8 @@ private object GpuRowToColumnConverter {
       }
       2 + VALIDITY
     }
+
+    override def getNullSize: Double = 2 + VALIDITY
   }
 
   private object NotNullShortConverter extends TypeConverter {
@@ -178,6 +199,8 @@ private object GpuRowToColumnConverter {
       builder.append(row.getShort(column))
       2
     }
+
+    override def getNullSize: Double = 2 + VALIDITY
   }
 
   private object IntConverter extends TypeConverter {
@@ -191,6 +214,8 @@ private object GpuRowToColumnConverter {
       }
       4 + VALIDITY
     }
+
+    override def getNullSize: Double = 4 + VALIDITY
   }
 
   private object NotNullIntConverter extends TypeConverter {
@@ -200,6 +225,8 @@ private object GpuRowToColumnConverter {
       builder.append(row.getInt(column))
       4
     }
+
+    override def getNullSize: Double = 4 + VALIDITY
   }
 
   private object FloatConverter extends TypeConverter {
@@ -213,6 +240,8 @@ private object GpuRowToColumnConverter {
       }
       4 + VALIDITY
     }
+
+    override def getNullSize: Double = 4 + VALIDITY
   }
 
   private object NotNullFloatConverter extends TypeConverter {
@@ -222,6 +251,8 @@ private object GpuRowToColumnConverter {
       builder.append(row.getFloat(column))
       4
     }
+
+    override def getNullSize: Double = 4 + VALIDITY
   }
 
   private object LongConverter extends TypeConverter {
@@ -235,6 +266,8 @@ private object GpuRowToColumnConverter {
       }
       8 + VALIDITY
     }
+
+    override def getNullSize: Double = 8 + VALIDITY
   }
 
   private object NotNullLongConverter extends TypeConverter {
@@ -244,6 +277,8 @@ private object GpuRowToColumnConverter {
       builder.append(row.getLong(column))
       8
     }
+
+    override def getNullSize: Double = 8 + VALIDITY
   }
 
   private object DoubleConverter extends TypeConverter {
@@ -257,6 +292,8 @@ private object GpuRowToColumnConverter {
       }
       8 + VALIDITY
     }
+
+    override def getNullSize: Double = 8 + VALIDITY
   }
 
   private object NotNullDoubleConverter extends TypeConverter {
@@ -266,6 +303,8 @@ private object GpuRowToColumnConverter {
       builder.append(row.getDouble(column))
       8
     }
+
+    override def getNullSize: Double = 8 + VALIDITY
   }
 
   private object StringConverter extends TypeConverter {
@@ -277,6 +316,8 @@ private object GpuRowToColumnConverter {
       } else {
         NotNullStringConverter.append(row, column, builder) + VALIDITY
       }
+
+    override def getNullSize: Double = OFFSET + VALIDITY
   }
 
   private object NotNullStringConverter extends TypeConverter {
@@ -287,6 +328,8 @@ private object GpuRowToColumnConverter {
       builder.appendUTF8String(bytes)
       bytes.length + OFFSET
     }
+
+    override def getNullSize: Double = OFFSET + VALIDITY
   }
 
   private[this] def mapConvert(
@@ -324,6 +367,8 @@ private object GpuRowToColumnConverter {
         mapConvert(keyConverter, valueConverter, row, column, builder) + VALIDITY
       }
     }
+
+    override def getNullSize: Double = OFFSET + VALIDITY
   }
 
   private case class NotNullMapConverter(
@@ -332,6 +377,8 @@ private object GpuRowToColumnConverter {
     override def append(row: SpecializedGetters,
       column: Int, builder: ai.rapids.cudf.HostColumnVector.ColumnBuilder): Double =
       mapConvert(keyConverter, valueConverter, row, column, builder)
+
+    override def getNullSize: Double = OFFSET + VALIDITY
   }
 
   //  private object CalendarConverter extends FixedWidthTypeConverter {
@@ -377,6 +424,8 @@ private object GpuRowToColumnConverter {
         arrayConvert(childConverter, row, column, builder) + VALIDITY
       }
     }
+
+    override def getNullSize: Double = OFFSET + VALIDITY
   }
 
   private case class NotNullArrayConverter(childConverter: TypeConverter)
@@ -385,25 +434,52 @@ private object GpuRowToColumnConverter {
         column: Int, builder: ai.rapids.cudf.HostColumnVector.ColumnBuilder): Double = {
       arrayConvert(childConverter, row, column, builder)
     }
+
+    override def getNullSize: Double = OFFSET + VALIDITY
   }
-  //
-  //  private case class StructConverter(
-  //      childConverters: Array[TypeConverter]) extends TypeConverter {
-  //    override def append(row: SpecializedGetters,
-  //    column: Int,
-  //    builder: ai.rapids.cudf.HostColumnVector.Builder): Unit = {
-  //      if (row.isNullAt(column)) {
-  //        builder.appendNull()
-  //      } else {
-  //        cv.appendStruct(false)
-  //        val data = row.getStruct(column, childConverters.length)
-  //        for (i <- 0 until childConverters.length) {
-  //          childConverters(i).append(data, i, cv.getChild(i))
-  //        }
-  //      }
-  //    }
-  //  }
-  //
+
+  private[this] def structConvert(
+      childConverters: Array[TypeConverter],
+      row: SpecializedGetters,
+      column: Int,
+      builder: ai.rapids.cudf.HostColumnVector.ColumnBuilder) : Double = {
+    var ret = 0.0
+    val struct = row.getStruct(column, childConverters.length)
+    for (i <- childConverters.indices) {
+      ret += childConverters(i).append(struct, i, builder.getChild(i))
+    }
+    builder.endStruct()
+    ret
+  }
+
+  private case class StructConverter(
+      childConverters: Array[TypeConverter]) extends TypeConverter {
+    override def append(row: SpecializedGetters,
+        column: Int,
+        builder: ai.rapids.cudf.HostColumnVector.ColumnBuilder): Double = {
+      if (row.isNullAt(column)) {
+        builder.appendNull()
+        childConverters.map(_.getNullSize).sum + VALIDITY
+        // each child has to insert a null too, which is dependent on the child
+      } else {
+        structConvert(childConverters, row, column, builder) + VALIDITY
+      }
+    }
+
+    override def getNullSize: Double = childConverters.map(_.getNullSize).sum + VALIDITY
+  }
+
+  private case class NotNullStructConverter(
+      childConverters: Array[TypeConverter]) extends TypeConverter {
+    override def append(row: SpecializedGetters,
+        column: Int,
+        builder: ai.rapids.cudf.HostColumnVector.ColumnBuilder): Double = {
+      structConvert(childConverters, row, column, builder)
+    }
+
+    override def getNullSize: Double = childConverters.map(_.getNullSize).sum + VALIDITY
+  }
+
   //  private case class DecimalConverter(dt: DecimalType) extends TypeConverter {
   //    override def append(row: SpecializedGetters,
   //    column: Int,

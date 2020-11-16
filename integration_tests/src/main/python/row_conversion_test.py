@@ -33,6 +33,7 @@ def test_row_conversions():
             ["e", float_gen], ["f", double_gen], ["g", string_gen], ["h", boolean_gen],
             ["i", timestamp_gen], ["j", date_gen], ["k", ArrayGen(byte_gen)],
             ["l", ArrayGen(string_gen)], ["m", ArrayGen(float_gen)],
-            ["n", ArrayGen(boolean_gen)], ["o", ArrayGen(ArrayGen(short_gen))]]
+            ["n", ArrayGen(boolean_gen)], ["o", ArrayGen(ArrayGen(short_gen))],
+            ["p", StructGen([["c0", byte_gen], ["c1", ArrayGen(byte_gen)]])]]
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : gen_df(spark, gens).selectExpr("*", "a as a_again"))
