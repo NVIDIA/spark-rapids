@@ -1845,6 +1845,12 @@ object GpuOverrides {
         override val childScans: scala.Seq[ScanMeta[_]] =
           Seq(GpuOverrides.wrapScan(p.scan, conf, Some(this)))
 
+        override def isSupportedType(t: DataType): Boolean =
+          GpuOverrides.isSupportedType(t,
+            allowStringMaps = true,
+            allowArray = true,
+            allowNesting = true)
+
         override def convertToGpu(): GpuExec =
           GpuBatchScanExec(p.output, childScans(0).convertToGpu())
       }),
