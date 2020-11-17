@@ -1075,9 +1075,7 @@ object GpuOverrides {
             GpuToUnixTimestamp(lhs, rhs, sparkFormat, strfFormat)
           }
         }
-      })
-      .incompat("Incorrectly formatted strings and bogus dates produce garbage data" +
-        " instead of null"),
+      }),
     expr[UnixTimestamp](
       "Returns the UNIX timestamp of current or specified time",
       (a, conf, p, r) => new UnixTimeExprMeta[UnixTimestamp](a, conf, p, r){

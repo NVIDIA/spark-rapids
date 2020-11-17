@@ -47,6 +47,21 @@ class ParseDateTimeSuite extends SparkQueryCompareTestSuite {
     df => df.withColumn("c1", unix_timestamp(col("c0"), "yyyy-MM-dd"))
   }
 
+  testSparkResultsAreEqual("unix_timestamp parse yyyy/MM",
+    timestampsAsStrings,
+    new SparkConf().set(SQLConf.LEGACY_TIME_PARSER_POLICY.key, "CORRECTED")) {
+    df => df.withColumn("c1", unix_timestamp(col("c0"), "yyyy/MM"))
+  }
+
+  testSparkResultsAreEqual("to_unix_timestamp parse yyyy/MM",
+    timestampsAsStrings,
+    new SparkConf().set(SQLConf.LEGACY_TIME_PARSER_POLICY.key, "CORRECTED")) {
+    df => {
+      df.createOrReplaceTempView("df")
+      df.sqlContext.sql("SELECT c0, to_unix_timestamp(c0, 'yyyy/MM') FROM df")
+    }
+  }
+
   testSparkResultsAreEqual("unix_timestamp parse timestamp",
       timestampsAsStrings,
       new SparkConf().set(SQLConf.LEGACY_TIME_PARSER_POLICY.key, "CORRECTED")) {
@@ -128,6 +143,12 @@ class ParseDateTimeSuite extends SparkQueryCompareTestSuite {
     "31/12/1999",
     "31/12/1999 11:59:59.999",
     "1999-12-31",
+    "1999/12/31",
+    "1999-12",
+    "1999/12",
+    "1975/06",
+    "1975/06/18",
+    "1975/06/18 06:48:57",
     "1999-12-31\n",
     "\t1999-12-31",
     "\n1999-12-31",

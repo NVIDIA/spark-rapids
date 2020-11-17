@@ -327,6 +327,9 @@ object GpuToTimestamp {
   /** We are compatible with Spark for these formats */
   val COMPATIBLE_FORMATS = Seq(
     "yyyy-MM-dd",
+    "yyyy-MM",
+    "yyyy/MM/dd",
+    "yyyy/MM",
     "dd/MM/yyyy",
     "yyyy-MM-dd HH:mm:ss"
   )
