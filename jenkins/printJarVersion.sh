@@ -23,16 +23,12 @@ function print_ver(){
     SUFFIX=$4
     SERVER_ID=$5
     
-    if [[ "$VERSION" == *"-SNAPSHOT" ]]; then
-        # Collect snapshot dependency info only in Jenkins build, 
-        # In dev build, print 'SNAPSHOT' tag without time stamp, e.g.: cudf-0.17-SNAPSHOT.jar
-        if [ -n "$JENKINS_URL" ]; then
-            echo $TAG=$VERSION
-        else
-            PREFIX=${VERSION%-SNAPSHOT}
-            # List the latest SNAPSHOT jar file in the maven repo
-            echo $TAG=`ls -t $REPO/$PREFIX-[0-9]*$SUFFIX | head -1 | xargs basename`
-        fi
+    # Collect snapshot dependency info only in Jenkins build
+    # In dev build, print 'SNAPSHOT' tag without time stamp, e.g.: cudf-0.17-SNAPSHOT.jar
+    if [[ "$VERSION" == *"-SNAPSHOT" && -n "$JENKINS_URL" ]]; then
+        PREFIX=${VERSION%-SNAPSHOT}
+        # List the latest SNAPSHOT jar file in the maven repo
+        echo $TAG=`ls -t $REPO/$PREFIX-[0-9]*$SUFFIX | head -1 | xargs basename`
     else
         echo $TAG=$VERSION$SUFFIX
     fi
