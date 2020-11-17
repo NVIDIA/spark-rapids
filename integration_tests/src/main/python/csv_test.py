@@ -14,7 +14,7 @@
 
 import pytest
 
-from asserts import assert_gpu_and_cpu_are_equal_collect, assert_gpu_fallback_collect
+from asserts import assert_gpu_and_cpu_are_equal_collect, assert_gpu_fallback_collect, assert_gpu_fallback_write
 from datetime import datetime, timezone
 from data_gen import *
 from marks import *
@@ -245,3 +245,13 @@ def test_input_meta(spark_tmp_path, v1_enabled_list):
                         'input_file_block_start()',
                         'input_file_block_length()'),
             conf={'spark.sql.sources.useV1SourceList': v1_enabled_list})
+
+@allow_non_gpu('DataWritingCommandExec')
+def test_csv_save_as_table_fallback(spark_tmp_path, spark_tmp_table_factory):
+    gen = TimestampGen()
+    data_path = spark_tmp_path + '/CSV_DATA'
+    assert_gpu_fallback_write(
+            lambda spark, path: unary_op_df(spark, gen).coalesce(1).write.format("csv").mode('overwrite').option("path", path).saveAsTable(spark_tmp_table_factory.get()),
+            lambda spark, path: spark.read.csv(path),
+            data_path,
+            'DataWritingCommandExec')

@@ -33,7 +33,7 @@ import org.apache.spark.sql.connector.read.Scan
 import org.apache.spark.sql.execution._
 import org.apache.spark.sql.execution.adaptive.{AdaptiveSparkPlanExec, BroadcastQueryStageExec, CustomShuffleReaderExec, ShuffleQueryStageExec}
 import org.apache.spark.sql.execution.aggregate.{HashAggregateExec, SortAggregateExec}
-import org.apache.spark.sql.execution.command.{DataWritingCommand, DataWritingCommandExec, ExecutedCommandExec}
+import org.apache.spark.sql.execution.command.{CreateDataSourceTableAsSelectCommand, DataWritingCommand, DataWritingCommandExec, ExecutedCommandExec}
 import org.apache.spark.sql.execution.datasources.InsertIntoHadoopFsRelationCommand
 import org.apache.spark.sql.execution.datasources.csv.CSVFileFormat
 import org.apache.spark.sql.execution.datasources.json.JsonFileFormat
@@ -290,7 +290,7 @@ final class InsertIntoHadoopFsRelationCommandMeta(
       willNotWorkOnGpu("bucketing is not supported")
     }
 
-     val spark = SparkSession.active
+    val spark = SparkSession.active
 
     fileFormat = cmd.fileFormat match {
       case _: CSVFileFormat =>
@@ -329,6 +329,55 @@ final class InsertIntoHadoopFsRelationCommandMeta(
       cmd.catalogTable,
       cmd.fileIndex,
       cmd.outputColumnNames)
+  }
+}
+
+final class CreateDataSourceTableAsSelectCommandMeta(
+    cmd: CreateDataSourceTableAsSelectCommand,
+    conf: RapidsConf,
+    parent: Option[RapidsMeta[_, _, _]],
+    rule: ConfKeysAndIncompat)
+  extends DataWritingCommandMeta[CreateDataSourceTableAsSelectCommand](cmd, conf, parent, rule) {
+
+  private var origProvider: Class[_] = _
+  private var gpuProvider: Option[ColumnarFileFormat] = None
+
+  override def tagSelfForGpu(): Unit = {
+    if (cmd.table.bucketSpec.isDefined) {
+      willNotWorkOnGpu("bucketing is not supported")
+    }
+    if (cmd.table.provider.isEmpty) {
+      willNotWorkOnGpu("provider must be defined")
+    }
+
+    val spark = SparkSession.active
+    origProvider =
+      GpuDataSource.lookupDataSourceWithFallback(cmd.table.provider.get, spark.sessionState.conf)
+    // Note that the data source V2 always fallsback to the V1 currently.
+    // If that changes then this will start failing because we don't have a mapping.
+    gpuProvider = origProvider.getConstructor().newInstance() match {
+      case format: OrcFileFormat =>
+        GpuOrcFileFormat.tagGpuSupport(this, spark, cmd.table.storage.properties)
+      case format: ParquetFileFormat =>
+        GpuParquetFileFormat.tagGpuSupport(this, spark,
+          cmd.table.storage.properties, cmd.query.schema)
+      case ds =>
+        willNotWorkOnGpu(s"Data source class not supported: ${ds}")
+        None
+    }
+  }
+
+  override def convertToGpu(): GpuDataWritingCommand = {
+    val newProvider = gpuProvider.getOrElse(
+      throw new IllegalStateException("fileFormat unexpected, tagSelfForGpu not called?"))
+
+    GpuCreateDataSourceTableAsSelectCommand(
+      cmd.table,
+      cmd.mode,
+      cmd.query,
+      cmd.outputColumnNames,
+      origProvider,
+      newProvider)
   }
 }
 
@@ -1809,7 +1858,10 @@ object GpuOverrides {
       DataWritingCommandRule[_ <: DataWritingCommand]] = Seq(
     dataWriteCmd[InsertIntoHadoopFsRelationCommand](
       "Write to Hadoop filesystem",
-      (a, conf, p, r) => new InsertIntoHadoopFsRelationCommandMeta(a, conf, p, r))
+      (a, conf, p, r) => new InsertIntoHadoopFsRelationCommandMeta(a, conf, p, r)),
+    dataWriteCmd[CreateDataSourceTableAsSelectCommand](
+      "Create table with select command",
+      (a, conf, p, r) => new CreateDataSourceTableAsSelectCommandMeta(a, conf, p, r))
   ).map(r => (r.getClassFor.asSubclass(classOf[DataWritingCommand]), r)).toMap
 
   def wrapPlan[INPUT <: SparkPlan](
