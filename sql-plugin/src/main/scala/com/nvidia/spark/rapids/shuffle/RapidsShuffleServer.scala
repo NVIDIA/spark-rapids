@@ -356,7 +356,7 @@ class RapidsShuffleServer(transport: RapidsShuffleTransport,
    * @param bufferSendStates state objects tracking sends needed to fulfill a TransferRequest
    */
   def doHandleTransferRequest(bufferSendStates: Seq[BufferSendState]): Unit = {
-    try {
+    closeOnExcept(bufferSendStates) { _ =>
       val bssBuffers = bufferSendStates.map { bufferSendState =>
         withResource(new NvtxRange(s"doHandleTransferRequest", NvtxColor.CYAN)) { _ =>
           require(bufferSendState.hasNext, "Attempting to handle a complete transfer request.")
@@ -417,10 +417,6 @@ class RapidsShuffleServer(transport: RapidsShuffleTransport,
               bufferTx.close()
             })
       }
-    } catch {
-      case t: Throwable =>
-        bufferSendStates.safeClose(t)
-        throw t
     }
   }
 
