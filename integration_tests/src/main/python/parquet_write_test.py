@@ -19,7 +19,7 @@ from datetime import date, datetime, timezone
 from data_gen import *
 from marks import *
 from pyspark.sql.types import *
-from spark_session import with_cpu_session, with_gpu_session
+from spark_session import with_cpu_session, with_gpu_session, is_before_spark_310
 
 # test with original parquet file reader, the multi-file parallel reader for cloud, and coalesce file reader for
 # non-cloud
@@ -177,6 +177,7 @@ def test_parquet_write_legacy_fallback(spark_tmp_path, ts_write, ts_rebase, spar
     gen = TimestampGen(start=datetime(1590, 1, 1, tzinfo=timezone.utc))
     data_path = spark_tmp_path + '/PARQUET_DATA'
     all_confs={'spark.sql.legacy.parquet.datetimeRebaseModeInWrite': ts_rebase,
+            'spark.sql.legacy.parquet.int96RebaseModeInWrite': "CORRECTED",
             'spark.sql.parquet.outputTimestampType': ts_write}
     assert_gpu_fallback_write(
             lambda spark, path: unary_op_df(spark, gen).coalesce(1).write.format("parquet").mode('overwrite').option("path", path).saveAsTable(spark_tmp_table_factory.get()),
@@ -192,6 +193,7 @@ def test_parquet_write_int96_fallback(spark_tmp_path, ts_write, ts_rebase, spark
     gen = TimestampGen(start=datetime(1590, 1, 1, tzinfo=timezone.utc))
     data_path = spark_tmp_path + '/PARQUET_DATA'
     all_confs={'spark.sql.legacy.parquet.datetimeRebaseModeInWrite': ts_rebase,
+            'spark.sql.legacy.parquet.int96RebaseModeInWrite': "CORRECTED",
             'spark.sql.parquet.outputTimestampType': ts_write}
     assert_gpu_fallback_write(
             lambda spark, path: unary_op_df(spark, gen).coalesce(1).write.format("parquet").mode('overwrite').option("path", path).saveAsTable(spark_tmp_table_factory.get()),
@@ -205,7 +207,7 @@ def test_parquet_write_int96_fallback(spark_tmp_path, ts_write, ts_rebase, spark
 # 'lzo', 'brotli', 'lz4', 'zstd' should all fallback
 @pytest.mark.parametrize('codec', ['gzip'])
 def test_parquet_write_compression_fallback(spark_tmp_path, codec, spark_tmp_table_factory):
-    gen = TimestampGen(start=datetime(1590, 1, 1, tzinfo=timezone.utc))
+    gen = IntegerGen()
     data_path = spark_tmp_path + '/PARQUET_DATA'
     all_confs={'spark.sql.parquet.compression.codec': codec}
     assert_gpu_fallback_write(
@@ -217,7 +219,7 @@ def test_parquet_write_compression_fallback(spark_tmp_path, codec, spark_tmp_tab
 
 @allow_non_gpu('DataWritingCommandExec')
 def test_parquet_writeLegacyFormat_fallback(spark_tmp_path, spark_tmp_table_factory):
-    gen = TimestampGen()
+    gen = IntegerGen()
     data_path = spark_tmp_path + '/PARQUET_DATA'
     all_confs={'spark.sql.parquet.writeLegacyFormat': 'true'}
     assert_gpu_fallback_write(
