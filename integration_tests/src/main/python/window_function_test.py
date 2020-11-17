@@ -14,10 +14,11 @@
 
 import pytest
 
+from spark_session import is_before_spark_310
 from asserts import assert_gpu_and_cpu_are_equal_collect, assert_gpu_and_cpu_are_equal_sql
 from data_gen import *
-from pyspark.sql.types import *
 from marks import *
+from pyspark.sql.types import *
 from pyspark.sql.window import Window
 import pyspark.sql.functions as f
 
@@ -78,6 +79,7 @@ def meta_idfn(meta):
         return meta + idfn(something)
     return tmp
 
+@pytest.mark.xfail(condition=not(is_before_spark_310()), reason='https://github.com/NVIDIA/spark-rapids/issues/999')
 @ignore_order
 @approximate_float
 @pytest.mark.parametrize('c_gen', lead_lag_data_gens, ids=idfn)
