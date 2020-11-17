@@ -126,7 +126,10 @@ object RequireSingleBatch extends CoalesceGoal {
   override def toString: String = "RequireSingleBatch"
 }
 
-case class TargetSize(override val targetSizeBytes: Long) extends CoalesceGoal
+case class TargetSize(override val targetSizeBytes: Long) extends CoalesceGoal {
+  require(targetSizeBytes <= Integer.MAX_VALUE,
+    "Target cannot exceed 2GB without checks for cudf row count limit")
+}
 
 abstract class AbstractGpuCoalesceIterator(
     iter: Iterator[ColumnarBatch],
@@ -294,6 +297,10 @@ abstract class AbstractGpuCoalesceIterator(
             } else if (batchRowLimit > 0 && wouldBeRows > batchRowLimit) {
               saveOnDeck(cb)
             } else if (wouldBeBytes > goal.targetSizeBytes && numBytes > 0) {
+              // There are no explicit checks for the concatenate result exceeding the cudf 2^31
+              // row count limit for any column. We are relying on cudf's concatenate to throw
+              // an exception if this occurs and limiting performance-oriented goals to under
+              // 2GB data total to avoid hitting that error.
               saveOnDeck(cb)
             } else {
               addBatch(cb)
