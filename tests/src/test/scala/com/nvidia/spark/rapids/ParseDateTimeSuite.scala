@@ -91,18 +91,6 @@ class ParseDateTimeSuite extends SparkQueryCompareTestSuite {
     df => df.withColumn("c1", unix_timestamp(col("c0")))
   }
 
-  test("fail to parse when policy is EXCEPTION") {
-    val e = intercept[SparkException] {
-      val df = withGpuSparkSession(spark => {
-        timestampsAsStrings(spark)
-            .repartition(2)
-            .withColumn("c1", unix_timestamp(col("c0"), "yyyy-MM-dd HH:mm:ss"))
-      }, new SparkConf().set(SQLConf.LEGACY_TIME_PARSER_POLICY.key, "EXCEPTION"))
-      df.collect()
-    }
-    assert(e.getMessage.contains("failed to parse one or more values"))
-  }
-
   test("fall back to CPU when policy is LEGACY") {
     val e = intercept[IllegalArgumentException] {
       val df = withGpuSparkSession(spark => {

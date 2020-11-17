@@ -334,7 +334,7 @@ object GpuToTimestamp extends Arm {
     "yyyy-MM-dd HH:mm:ss"
   )
 
-  val specialDatesSceonds = GpuCast.calculateSpecialDates
+  val specialDatesSeconds = GpuCast.calculateSpecialDates
       .map {
         case (name, days) => (name, days * DateUtils.ONE_DAY_SECONDS)
       }
@@ -345,7 +345,7 @@ object GpuToTimestamp extends Arm {
       }
 
   def daysScalarSeconds(name: String): Scalar = {
-    Scalar.timestampFromLong(DType.TIMESTAMP_SECONDS, specialDatesSceonds(name))
+    Scalar.timestampFromLong(DType.TIMESTAMP_SECONDS, specialDatesSeconds(name))
   }
 
   def daysScalarMicros(name: String): Scalar = {
@@ -402,38 +402,6 @@ object GpuToTimestamp extends Arm {
             withResource(daysEqual(lhs.getBase, GpuCast.YESTERDAY)) { isYesterday =>
               withResource(daysEqual(lhs.getBase, GpuCast.TOMORROW)) { isTomorrow =>
                 withResource(lhs.getBase.isNull) { isNull =>
-
-                  // throw error if legacyTimeParserPolicy is EXCEPTION
-                  if (timeParserPolicy == ExceptionTimeParserPolicy) {
-                    withResource(Scalar.fromBool(false)) { falseScalar =>
-                      withResource(isTomorrow.or(isNull)) { a =>
-                        withResource(isYesterday.or(a)) { b =>
-                          withResource(isToday.or(b)) { c =>
-                            withResource(isNow.or(c)) { d =>
-                              withResource(isEpoch.or(d)) { e =>
-                                withResource(isTimestamp.or(e)) { canBeConverted =>
-                                  if (canBeConverted.hasNulls ||
-                                      canBeConverted.contains(falseScalar)) {
-                                    throw new SparkUpgradeException(SPARK_VERSION,
-                                      s"Expression ${this.getClass.getSimpleName} failed to " +
-                                          "parse one or more values because they did not match " +
-                                          "the specified format. Set " +
-                                          "spark.sql.legacy.timeParserPolicy to CORRECTED to " +
-                                          "return null for invalid values, or to LEGACY for " +
-                                          "pre-Spark 3.0.0 behavior (LEGACY will force this " +
-                                          "expression to run on CPU though)",
-                                      new RuntimeException("Failed to parse one or more values"))
-                                  }
-                                }
-                              }
-                            }
-                          }
-                        }
-                      }
-                    }
-                  }
-
-                  // do the conversion
                   withResource(Scalar.fromNull(dtype)) { nullValue =>
                     withResource(asTimestamp(lhs.getBase, strfFormat)) { converted =>
                       withResource(daysScalar(GpuCast.EPOCH)) { epoch =>
