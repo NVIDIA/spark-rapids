@@ -106,7 +106,7 @@ class RapidsShuffleIteratorSuite extends RapidsShuffleTestHelper {
     cl.start()
 
     val handler = ac.getValue.asInstanceOf[RapidsShuffleFetchHandler]
-    val causeException = new RuntimeException("Exception to suppress")
+    val causeException = new RuntimeException("some exception")
     handler.transferError("Test", causeException)
 
     assert(cl.hasNext)
