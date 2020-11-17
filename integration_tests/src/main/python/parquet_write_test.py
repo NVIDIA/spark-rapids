@@ -229,6 +229,7 @@ def test_parquet_writeLegacyFormat_fallback(spark_tmp_path, spark_tmp_table_fact
             'DataWritingCommandExec',
             conf=all_confs)
 
+@ignore_order
 @allow_non_gpu('DataWritingCommandExec')
 def test_buckets_write_fallback(spark_tmp_path, spark_tmp_table_factory):
     data_path = spark_tmp_path + '/PARQUET_DATA'
