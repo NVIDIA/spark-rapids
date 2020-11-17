@@ -188,9 +188,8 @@ str_date_and_format_gen = [pytest.param(StringGen('[0-9]{4}/[01][0-9]'),'yyyy/MM
 
 @pytest.mark.parametrize('data_gen,date_form', str_date_and_format_gen, ids=idfn)
 def test_string_to_unix_timestamp(data_gen, date_form):
-    conf = {"spark.rapids.sql.improvedTimeOps.enabled": "true"}
     assert_gpu_and_cpu_are_equal_collect(
-        lambda spark : unary_op_df(spark, data_gen, seed=1).selectExpr("to_unix_timestamp(a, '{}')".format(date_form)), conf)
+        lambda spark : unary_op_df(spark, data_gen, seed=1).selectExpr("to_unix_timestamp(a, '{}')".format(date_form)))
 
 @pytest.mark.parametrize('data_gen,date_form', str_date_and_format_gen, ids=idfn)
 def test_string_unix_timestamp(data_gen, date_form):

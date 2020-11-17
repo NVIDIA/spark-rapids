@@ -19,8 +19,7 @@ package org.apache.spark.sql.rapids
 import java.time.ZoneId
 
 import ai.rapids.cudf.{BinaryOp, ColumnVector, DType, Scalar}
-import com.nvidia.spark.RebaseHelper.withResource
-import com.nvidia.spark.rapids.{BinaryExprMeta, ConfKeysAndIncompat, DateUtils, GpuBinaryExpression, GpuCast, GpuColumnVector, GpuExpression, GpuOverrides, GpuScalar, GpuUnaryExpression, RapidsConf, RapidsMeta}
+import com.nvidia.spark.rapids.{Arm, BinaryExprMeta, ConfKeysAndIncompat, DateUtils, GpuBinaryExpression, GpuCast, GpuColumnVector, GpuExpression, GpuOverrides, GpuScalar, GpuUnaryExpression, RapidsConf, RapidsMeta}
 import com.nvidia.spark.rapids.DateUtils.TimestampFormatConversionException
 import com.nvidia.spark.rapids.GpuOverrides.{extractStringLit, getTimeParserPolicy}
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
@@ -324,7 +323,7 @@ object LegacyTimeParserPolicy extends TimeParserPolicy
 object ExceptionTimeParserPolicy extends TimeParserPolicy
 object CorrectedTimeParserPolicy extends TimeParserPolicy
 
-object GpuToTimestamp {
+object GpuToTimestamp extends Arm {
   /** We are compatible with Spark for these formats */
   val COMPATIBLE_FORMATS = Seq(
     "yyyy-MM-dd",
@@ -381,6 +380,76 @@ object GpuToTimestamp {
       ColumnVector.fromScalar(Scalar.fromBool(true), col.getRowCount.toInt)
     }
   }
+
+  def parseStringAsTimestamp(
+      col: ColumnVector,
+      sparkFormat: String,
+      strfFormat: String,
+      timeParserPolicy: TimeParserPolicy,
+      dtype: DType,
+      daysScalar: String => Scalar,
+      asTimestamp: (ColumnVector, String) => ColumnVector): ColumnVector = {
+
+    val isTimestamp = GpuToTimestamp.isTimestamp(col, sparkFormat, strfFormat)
+
+    // in addition to date/timestamp strings, we also need to check for special dates and null
+    // values, since anything else is invalid and should throw an error or be converted to null
+    // depending on the policy
+    withResource(isTimestamp) { isTimestamp =>
+      withResource(daysEqual(col, GpuCast.EPOCH)) { isEpoch =>
+        withResource(daysEqual(col, GpuCast.NOW)) { isNow =>
+          withResource(daysEqual(col, GpuCast.TODAY)) { isToday =>
+            withResource(daysEqual(col, GpuCast.YESTERDAY)) { isYesterday =>
+              withResource(daysEqual(col, GpuCast.TOMORROW)) { isTomorrow =>
+                withResource(col.isNull) { isNull =>
+                  val canBeConverted = isTimestamp.or(isEpoch.or(isNow.or(isToday.or(
+                    isYesterday.or(isTomorrow.or(isNull))))))
+
+                  // throw error if legacyTimeParserPolicy is EXCEPTION
+                  if (timeParserPolicy == ExceptionTimeParserPolicy) {
+                    withResource(Scalar.fromBool(false)) { falseScalar =>
+                      if (canBeConverted.hasNulls || canBeConverted.contains(falseScalar)) {
+                        throw new SparkUpgradeException(SPARK_VERSION,
+                          s"Expression ${this.getClass.getSimpleName} failed to parse one or " +
+                              "more values because they did not match the specified format. Set " +
+                              "spark.sql.legacy.timeParserPolicy to CORRECTED to return null " +
+                              "for invalid values, or to LEGACY for pre-Spark 3.0.0 behavior (" +
+                              "LEGACY will force this expression to run on CPU though)",
+                          new RuntimeException("Failed to parse one or more values"))
+                      }
+                    }
+                  }
+
+                  // do the conversion
+                  withResource(Scalar.fromNull(dtype)) { nullValue =>
+                    withResource(asTimestamp(col, strfFormat)) { converted =>
+                      withResource(daysScalar(GpuCast.EPOCH)) { epoch =>
+                        withResource(daysScalar(GpuCast.NOW)) { now =>
+                          withResource(daysScalar(GpuCast.TODAY)) { today =>
+                            withResource(daysScalar(GpuCast.YESTERDAY)) { yesterday =>
+                              withResource(daysScalar(GpuCast.TOMORROW)) { tomorrow =>
+                                isTimestamp.ifElse(converted,
+                                  isEpoch.ifElse(epoch,
+                                    isNow.ifElse(now,
+                                      isToday.ifElse(today,
+                                        isYesterday.ifElse(yesterday,
+                                          isTomorrow.ifElse(tomorrow,
+                                            nullValue))))))
+                              }
+                            }
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
 }
 
 /**
@@ -405,7 +474,7 @@ abstract class GpuToTimestamp
 
   override lazy val resolved: Boolean = childrenResolved && checkInputDataTypes().isSuccess
 
-  private val timeParserPolicy = getTimeParserPolicy
+  val timeParserPolicy = getTimeParserPolicy
 
   override def doColumnar(lhs: GpuColumnVector, rhs: GpuColumnVector): ColumnVector = {
     throw new IllegalArgumentException("rhs has to be a scalar for the unixtimestamp to work")
@@ -419,67 +488,14 @@ abstract class GpuToTimestamp
   override def doColumnar(lhs: GpuColumnVector, rhs: Scalar): ColumnVector = {
     val tmp = if (lhs.dataType == StringType) {
       // rhs is ignored we already parsed the format
-
-      val isTimestamp = GpuToTimestamp.isTimestamp(lhs.getBase, sparkFormat, strfFormat)
-
-      // in addition to date/timestamp strings, we also need to check for special dates and null
-      // values, since anything else is invalid and should throw an error or be converted to null
-      // depending on the policy
-      withResource(isTimestamp) { isTimestamp =>
-        withResource(daysEqual(lhs.getBase, GpuCast.EPOCH)) { isEpoch =>
-          withResource(daysEqual(lhs.getBase, GpuCast.NOW)) { isNow =>
-            withResource(daysEqual(lhs.getBase, GpuCast.TODAY)) { isToday =>
-              withResource(daysEqual(lhs.getBase, GpuCast.YESTERDAY)) { isYesterday =>
-                withResource(daysEqual(lhs.getBase, GpuCast.TOMORROW)) { isTomorrow =>
-                  withResource(lhs.getBase.isNull) { isNull =>
-                    val canBeConverted = isTimestamp.or(isEpoch.or(isNow.or(isToday.or(
-                      isYesterday.or(isTomorrow.or(isNull))))))
-
-                    // throw error if legacyTimeParserPolicy is EXCEPTION
-                    if (timeParserPolicy == ExceptionTimeParserPolicy) {
-                      withResource(Scalar.fromBool(false)) { falseScalar =>
-                        if (canBeConverted.hasNulls || canBeConverted.contains(falseScalar)) {
-                          throw new SparkUpgradeException(SPARK_VERSION,
-                            s"Expression ${this.getClass.getSimpleName} failed to parse one or " +
-                              "more values because they did not match the specified format. Set " +
-                              "spark.sql.legacy.timeParserPolicy to CORRECTED to return null " +
-                              "for invalid values, or to LEGACY for pre-Spark 3.0.0 behavior (" +
-                              "LEGACY will force this expression to run on CPU though)",
-                          new RuntimeException("Failed to parse one or more values"))
-                        }
-                      }
-                    }
-
-                    // do the conversion
-                    withResource(Scalar.fromNull(DType.TIMESTAMP_MICROSECONDS)) { nullValue =>
-                      withResource(lhs.getBase.asTimestampMicroseconds(strfFormat)) { converted =>
-                        withResource(daysScalarMicros(GpuCast.EPOCH)) { epoch =>
-                          withResource(daysScalarMicros(GpuCast.NOW)) { now =>
-                            withResource(daysScalarMicros(GpuCast.TODAY)) { today =>
-                              withResource(daysScalarMicros(GpuCast.YESTERDAY)) { yesterday =>
-                                withResource(daysScalarMicros(GpuCast.TOMORROW)) { tomorrow =>
-                                  isTimestamp.ifElse(converted,
-                                    isEpoch.ifElse(epoch,
-                                      isNow.ifElse(now,
-                                        isToday.ifElse(today,
-                                          isYesterday.ifElse(yesterday,
-                                            isTomorrow.ifElse(tomorrow,
-                                              nullValue))))))
-                                }
-                              }
-                            }
-                          }
-                        }
-                      }
-                    }
-                  }
-                }
-              }
-            }
-          }
-        }
-      }
-
+      parseStringAsTimestamp(
+        lhs.getBase,
+        sparkFormat,
+        strfFormat,
+        timeParserPolicy,
+        DType.TIMESTAMP_MICROSECONDS,
+        daysScalarMicros,
+        (col, strfFormat) => col.asTimestampMicroseconds(strfFormat))
     } else { // Timestamp or DateType
       lhs.getBase.asTimestampMicroseconds()
     }
@@ -507,72 +523,17 @@ abstract class GpuToTimestamp
 abstract class GpuToTimestampImproved extends GpuToTimestamp {
   import GpuToTimestamp._
 
-  private val timeParserPolicy = getTimeParserPolicy
-
   override def doColumnar(lhs: GpuColumnVector, rhs: Scalar): ColumnVector = {
     val tmp = if (lhs.dataType == StringType) {
       // rhs is ignored we already parsed the format
-
-      val isTimestamp = GpuToTimestamp.isTimestamp(lhs.getBase, sparkFormat, strfFormat)
-
-      // in addition to date/timestamp strings, we also need to check for special dates and null
-      // values, since anything else is invalid and should throw an error or be converted to null
-      // depending on the policy
-      withResource(isTimestamp) { isTimestamp =>
-        withResource(daysEqual(lhs.getBase, GpuCast.EPOCH)) { isEpoch =>
-          withResource(daysEqual(lhs.getBase, GpuCast.NOW)) { isNow =>
-            withResource(daysEqual(lhs.getBase, GpuCast.TODAY)) { isToday =>
-              withResource(daysEqual(lhs.getBase, GpuCast.YESTERDAY)) { isYesterday =>
-                withResource(daysEqual(lhs.getBase, GpuCast.TOMORROW)) { isTomorrow =>
-                  withResource(lhs.getBase.isNull) { isNull =>
-                    val canBeConverted = isTimestamp.or(isEpoch.or(isNow.or(isToday.or(
-                      isYesterday.or(isTomorrow.or(isNull))))))
-
-                    // throw error if legacyTimeParserPolicy is EXCEPTION
-                    if (timeParserPolicy == ExceptionTimeParserPolicy) {
-                      withResource(Scalar.fromBool(false)) { falseScalar =>
-                        if (canBeConverted.hasNulls || canBeConverted.contains(falseScalar)) {
-                          throw new SparkUpgradeException(SPARK_VERSION,
-                            s"Expression ${this.getClass.getSimpleName} failed to parse one or " +
-                              "more values because they did not match the specified format. Set " +
-                              "spark.sql.legacy.timeParserPolicy to CORRECTED to return null " +
-                              "for invalid values, or to LEGACY for pre-Spark 3.0.0 behavior (" +
-                              "LEGACY will force this expression to run on CPU though)",
-                            new RuntimeException("Failed to parse one or more values"))
-                        }
-                      }
-                    }
-
-                    // do the conversion
-                    withResource(Scalar.fromNull(DType.TIMESTAMP_SECONDS)) { nullValue =>
-                      withResource(lhs.getBase.asTimestampSeconds(strfFormat)) { converted =>
-                        withResource(daysScalarSeconds(GpuCast.EPOCH)) { epoch =>
-                          withResource(daysScalarSeconds(GpuCast.NOW)) { now =>
-                            withResource(daysScalarSeconds(GpuCast.TODAY)) { today =>
-                              withResource(daysScalarSeconds(GpuCast.YESTERDAY)) { yesterday =>
-                                withResource(daysScalarSeconds(GpuCast.TOMORROW)) { tomorrow =>
-                                  isTimestamp.ifElse(converted,
-                                    isEpoch.ifElse(epoch,
-                                      isNow.ifElse(now,
-                                        isToday.ifElse(today,
-                                          isYesterday.ifElse(yesterday,
-                                            isTomorrow.ifElse(tomorrow,
-                                              nullValue))))))
-                                }
-                              }
-                            }
-                          }
-                        }
-                      }
-                    }
-                  }
-                }
-              }
-            }
-          }
-        }
-      }
-
+      parseStringAsTimestamp(
+        lhs.getBase,
+        sparkFormat,
+        strfFormat,
+        timeParserPolicy,
+        DType.TIMESTAMP_SECONDS,
+        daysScalarSeconds,
+        (col, strfFormat) => col.asTimestampSeconds(strfFormat))
     } else if (lhs.dataType() == DateType){
       lhs.getBase.asTimestampSeconds()
     } else { // Timestamp
