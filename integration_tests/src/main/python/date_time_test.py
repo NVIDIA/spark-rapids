@@ -172,13 +172,15 @@ def test_to_unix_timestamp(data_gen):
 
 @pytest.mark.parametrize('data_gen', date_n_time_gens, ids=idfn)
 def test_unix_timestamp_improved(data_gen):
-    conf = {"spark.rapids.sql.improvedTimeOps.enabled": "true"}
+    conf = {"spark.rapids.sql.improvedTimeOps.enabled": "true",
+            "spark.sql.legacy.timeParserPolicy": "CORRECTED"}
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : unary_op_df(spark, data_gen).select(f.unix_timestamp(f.col('a'))), conf)
 
 @pytest.mark.parametrize('data_gen', date_n_time_gens, ids=idfn)
 def test_to_unix_timestamp_improved(data_gen):
-    conf = {"spark.rapids.sql.improvedTimeOps.enabled": "true"}
+    conf = {"spark.rapids.sql.improvedTimeOps.enabled": "true",
+            "spark.sql.legacy.timeParserPolicy": "CORRECTED"}
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : unary_op_df(spark, data_gen).selectExpr("to_unix_timestamp(a)"), conf)
 
@@ -188,12 +190,14 @@ str_date_and_format_gen = [pytest.param(StringGen('[0-9]{4}/[01][0-9]'),'yyyy/MM
 
 @pytest.mark.parametrize('data_gen,date_form', str_date_and_format_gen, ids=idfn)
 def test_string_to_unix_timestamp(data_gen, date_form):
+    conf = {"spark.sql.legacy.timeParserPolicy": "CORRECTED"}
     assert_gpu_and_cpu_are_equal_collect(
-        lambda spark : unary_op_df(spark, data_gen, seed=1).selectExpr("to_unix_timestamp(a, '{}')".format(date_form)))
+        lambda spark : unary_op_df(spark, data_gen, seed=1).selectExpr("to_unix_timestamp(a, '{}')".format(date_form)), conf)
 
 @pytest.mark.parametrize('data_gen,date_form', str_date_and_format_gen, ids=idfn)
 def test_string_unix_timestamp(data_gen, date_form):
+    conf = {"spark.sql.legacy.timeParserPolicy": "CORRECTED"}
     assert_gpu_and_cpu_are_equal_collect(
-            lambda spark : unary_op_df(spark, data_gen, seed=1).select(f.unix_timestamp(f.col('a'), date_form)))
+            lambda spark : unary_op_df(spark, data_gen, seed=1).select(f.unix_timestamp(f.col('a'), date_form)), conf)
 
 
