@@ -87,7 +87,7 @@ class RapidsShuffleIteratorSuite extends RapidsShuffleTestHelper {
     }
   }
 
-  test("a transport exception raises a fetch failure with the suppressed exception") {
+  test("a transport exception raises a fetch failure with the cause exception") {
     val blocksByAddress = RapidsShuffleTestHelper.getBlocksByAddress
 
     val cl = spy(new RapidsShuffleIterator(
@@ -106,8 +106,8 @@ class RapidsShuffleIteratorSuite extends RapidsShuffleTestHelper {
     cl.start()
 
     val handler = ac.getValue.asInstanceOf[RapidsShuffleFetchHandler]
-    val exceptionToSuppress = new RuntimeException("Exception to suppress")
-    handler.transferError("Test", exceptionToSuppress)
+    val causeException = new RuntimeException("Exception to suppress")
+    handler.transferError("Test", causeException)
 
     assert(cl.hasNext)
     assertThrows[RapidsShuffleFetchFailedException] {
@@ -115,9 +115,8 @@ class RapidsShuffleIteratorSuite extends RapidsShuffleTestHelper {
         cl.next()
       } catch {
         case rsffe: RapidsShuffleFetchFailedException =>
-          val suppressed = rsffe.getSuppressed
-          assertResult(suppressed.size)(1)
-          assertResult(suppressed.head)(exceptionToSuppress)
+          val cause = rsffe.getCause
+          assertResult(cause)(causeException)
           throw rsffe
         case _ =>
       }

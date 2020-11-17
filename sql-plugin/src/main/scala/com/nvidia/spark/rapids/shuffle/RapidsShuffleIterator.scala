@@ -183,8 +183,6 @@ class RapidsShuffleIterator(
           transport.makeClient(localExecutorId, blockManagerId)
         } catch {
           case t: Throwable => {
-            val errorMsg = s"Error getting client to fetch ${blockIds} from ${blockManagerId}: ${t}"
-            logError(errorMsg, t)
             val BlockIdMapIndex(firstId, firstMapIndex) = shuffleRequestsMapIndex.head
             throw new RapidsShuffleFetchFailedException(
               blockManagerId,
@@ -192,7 +190,8 @@ class RapidsShuffleIterator(
               firstId.mapId,
               firstMapIndex,
               firstId.startReduceId,
-              errorMsg)
+              s"Error getting client to fetch ${blockIds} from ${blockManagerId}",
+              t)
           }
         }
 
@@ -343,21 +342,14 @@ class RapidsShuffleIterator(
         TransferError(blockManagerId, shuffleBlockBatchId, mapIndex, errorMessage, throwable)) =>
         taskContext.foreach(GpuSemaphore.releaseIfNecessary)
         metricsUpdater.update(blockedTime, 0, 0, 0)
-        val errorMsg = s"Transfer error detected by shuffle iterator, failing task. ${errorMessage}"
         val exp = new RapidsShuffleFetchFailedException(
           blockManagerId,
           shuffleBlockBatchId.shuffleId,
           shuffleBlockBatchId.mapId,
           mapIndex,
           shuffleBlockBatchId.startReduceId,
-          errorMsg)
-
-        if (throwable != null) {
-          logError(errorMsg, throwable)
-          exp.addSuppressed(throwable)
-        } else {
-          logError(errorMsg)
-        }
+          s"Transfer error detected by shuffle iterator, failing task. ${errorMessage}",
+          throwable)
         throw exp
       case None =>
         // NOTE: this isn't perfect, since what we really want is the transport to
