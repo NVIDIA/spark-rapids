@@ -72,7 +72,7 @@ class RapidsShuffleIteratorSuite extends RapidsShuffleTestHelper {
       cl.start()
 
       val handler = ac.getValue.asInstanceOf[RapidsShuffleFetchHandler]
-      handler.transferError("Test")
+      handler.transferError("Test", null)
 
       assert(cl.hasNext)
       assertThrows[RapidsShuffleFetchFailedException](cl.next())
@@ -85,6 +85,49 @@ class RapidsShuffleIteratorSuite extends RapidsShuffleTestHelper {
 
       newMocks()
     }
+  }
+
+  test("a transport exception raises a fetch failure with the cause exception") {
+    val blocksByAddress = RapidsShuffleTestHelper.getBlocksByAddress
+
+    val cl = spy(new RapidsShuffleIterator(
+      RapidsShuffleTestHelper.makeMockBlockManager("1", "1"),
+      mockConf,
+      mockTransport,
+      blocksByAddress,
+      testMetricsUpdater,
+      Array.empty,
+      mockCatalog,
+      123))
+
+    val ac = ArgumentCaptor.forClass(classOf[RapidsShuffleFetchHandler])
+    when(mockTransport.makeClient(any(), any())).thenReturn(client)
+    doNothing().when(client).doFetch(any(), ac.capture(), any())
+    cl.start()
+
+    val handler = ac.getValue.asInstanceOf[RapidsShuffleFetchHandler]
+    val causeException = new RuntimeException("some exception")
+    handler.transferError("Test", causeException)
+
+    assert(cl.hasNext)
+    assertThrows[RapidsShuffleFetchFailedException] {
+      try {
+        cl.next()
+      } catch {
+        case rsffe: RapidsShuffleFetchFailedException =>
+          val cause = rsffe.getCause
+          assertResult(cause)(causeException)
+          throw rsffe
+        case _ =>
+      }
+    }
+    verify(testMetricsUpdater, times(1))
+        .update(any(), any(), any(), any())
+    assertResult(0)(testMetricsUpdater.totalRemoteBlocksFetched)
+    assertResult(0)(testMetricsUpdater.totalRemoteBytesRead)
+    assertResult(0)(testMetricsUpdater.totalRowsFetched)
+
+    newMocks()
   }
 
   test("a timeout while waiting for batches raises a fetch failure") {
