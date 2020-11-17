@@ -238,6 +238,42 @@ def assert_gpu_and_cpu_writes_are_equal_iterator(write_func, read_func, base_pat
     """
     _assert_gpu_and_cpu_writes_are_equal(write_func, read_func, base_path, False, conf=conf)
 
+def assert_gpu_fallback_write(write_func,
+        read_func,
+        base_path,
+        cpu_fallback_class_name,
+        conf={}):
+    conf = _prep_incompat_conf(conf)
+
+    print('### CPU RUN ###')
+    cpu_start = time.time()
+    cpu_path = base_path + '/CPU'
+    with_cpu_session(lambda spark : write_func(spark, cpu_path), conf=conf)
+    cpu_end = time.time()
+    print('### GPU RUN ###')
+    jvm = spark_jvm()
+    jvm.com.nvidia.spark.rapids.ExecutionPlanCaptureCallback.startCapture()
+    gpu_start = time.time()
+    gpu_path = base_path + '/GPU'
+    with_gpu_session(lambda spark : write_func(spark, gpu_path), conf=conf)
+    gpu_end = time.time()
+    jvm.com.nvidia.spark.rapids.ExecutionPlanCaptureCallback.assertCapturedAndGpuFellBack(cpu_fallback_class_name, 2000)
+    print('### WRITE: GPU TOOK {} CPU TOOK {} ###'.format(
+        gpu_end - gpu_start, cpu_end - cpu_start))
+
+    (cpu_bring_back, cpu_collect_type) = _prep_func_for_compare(
+            lambda spark: read_func(spark, cpu_path), True)
+    (gpu_bring_back, gpu_collect_type) = _prep_func_for_compare(
+            lambda spark: read_func(spark, gpu_path), True)
+
+    from_cpu = with_cpu_session(cpu_bring_back, conf=conf)
+    from_gpu = with_cpu_session(gpu_bring_back, conf=conf)
+    if should_sort_locally():
+        from_cpu.sort(key=_RowCmp)
+        from_gpu.sort(key=_RowCmp)
+
+    assert_equal(from_cpu, from_gpu)
+
 def assert_gpu_fallback_collect(func,
         cpu_fallback_class_name,
         conf={}):

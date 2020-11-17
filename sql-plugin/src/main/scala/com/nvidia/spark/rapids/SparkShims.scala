@@ -19,6 +19,7 @@ package com.nvidia.spark.rapids
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.{SparkSession, SparkSessionExtensions}
 import org.apache.spark.sql.catalyst.InternalRow
+import org.apache.spark.sql.catalyst.analysis.Resolver
 import org.apache.spark.sql.catalyst.encoders.ExpressionEncoder
 import org.apache.spark.sql.catalyst.expressions.Expression
 import org.apache.spark.sql.catalyst.plans.JoinType
@@ -139,5 +140,10 @@ trait SparkShims {
   def copyFileSourceScanExec(
       scanExec: GpuFileSourceScanExec,
       queryUsesInputFile: Boolean): GpuFileSourceScanExec
+
+  def checkColumnNameDuplication(
+      schema: StructType,
+      colType: String,
+      resolver: Resolver): Unit
 }
 
