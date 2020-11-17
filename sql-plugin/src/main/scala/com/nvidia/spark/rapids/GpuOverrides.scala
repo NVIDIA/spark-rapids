@@ -1909,6 +1909,7 @@ object GpuOverrides {
           GpuOverrides.isSupportedType(t,
             allowStringMaps = true,
             allowArray = true,
+            allowStruct = true,
             allowNesting = true)
 
         override def convertToGpu(): GpuExec =

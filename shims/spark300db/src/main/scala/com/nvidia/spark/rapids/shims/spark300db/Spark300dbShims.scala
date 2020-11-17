@@ -110,6 +110,7 @@ class Spark300dbShims extends Spark300Shims {
             GpuOverrides.isSupportedType(t,
               allowArray = true,
               allowStringMaps = true,
+              allowStruct = true,
               allowNesting = true)
 
           // partition filters and data filters are not run on the GPU
