@@ -381,7 +381,6 @@ object GpuToTimestamp extends Arm {
     }
   }
 
-  // scalastyle:off line.size.limit
   def parseStringAsTimestamp(
       lhs: GpuColumnVector,
       sparkFormat: String,
@@ -468,7 +467,6 @@ object GpuToTimestamp extends Arm {
       }
     }
   }
-  // scalastyle:on line.size.limit
 }
 
 /**
