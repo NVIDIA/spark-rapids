@@ -659,7 +659,7 @@ object GpuOverrides {
       (a, conf, p, r) => new UnaryExprMeta[Alias](a, conf, p, r) {
         override def isSupportedType(t: DataType): Boolean =
           GpuOverrides.isSupportedType(t,
-            allowStringMaps = true,
+            allowMaps = true,
             allowArray = true,
             allowStruct = true,
             allowNesting = true)
@@ -672,7 +672,7 @@ object GpuOverrides {
       (att, conf, p, r) => new BaseExprMeta[AttributeReference](att, conf, p, r) {
         override def isSupportedType(t: DataType): Boolean =
           GpuOverrides.isSupportedType(t,
-            allowStringMaps = true,
+            allowMaps = true,
             allowArray = true,
             allowStruct = true,
             allowNesting = true)
@@ -869,7 +869,7 @@ object GpuOverrides {
       (a, conf, p, r) => new UnaryExprMeta[IsNull](a, conf, p, r) {
         override def isSupportedType(t: DataType): Boolean =
           GpuOverrides.isSupportedType(t,
-            allowStringMaps = true,
+            allowMaps = true,
             allowArray = true,
             allowStruct = true,
             allowNesting = true)
@@ -881,7 +881,7 @@ object GpuOverrides {
       (a, conf, p, r) => new UnaryExprMeta[IsNotNull](a, conf, p, r) {
         override def isSupportedType(t: DataType): Boolean =
           GpuOverrides.isSupportedType(t,
-            allowStringMaps = true,
+            allowMaps = true,
             allowArray = true,
             allowStruct = true,
             allowNesting = true)
@@ -913,6 +913,7 @@ object GpuOverrides {
 
         override def isSupportedType(t: DataType): Boolean =
           GpuOverrides.isSupportedType(t,
+            allowMaps = true,
             allowArray = true,
             allowStruct = true,
             allowNesting = true)
@@ -1270,9 +1271,6 @@ object GpuOverrides {
     expr[EqualTo](
       "Check if the values are equal",
       (a, conf, p, r) => new BinaryExprMeta[EqualTo](a, conf, p, r) {
-        override def isSupportedType(t: DataType): Boolean =
-          GpuOverrides.isSupportedType(t, allowStringMaps = true)
-
         override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression =
           GpuEqualTo(lhs, rhs)
       }),
@@ -1882,7 +1880,7 @@ object GpuOverrides {
         new SparkPlanMeta[ProjectExec](proj, conf, p, r) {
           override def isSupportedType(t: DataType): Boolean =
             GpuOverrides.isSupportedType(t,
-              allowStringMaps = true,
+              allowMaps = true,
               allowArray = true,
               allowStruct = true,
               allowNesting = true)
@@ -1907,7 +1905,7 @@ object GpuOverrides {
 
         override def isSupportedType(t: DataType): Boolean =
           GpuOverrides.isSupportedType(t,
-            allowStringMaps = true,
+            allowMaps = true,
             allowArray = true,
             allowStruct = true,
             allowNesting = true)
@@ -1978,7 +1976,7 @@ object GpuOverrides {
       (filter, conf, p, r) => new SparkPlanMeta[FilterExec](filter, conf, p, r) {
         override def isSupportedType(t: DataType): Boolean =
           GpuOverrides.isSupportedType(t,
-            allowStringMaps = true,
+            allowMaps = true,
             allowArray = true,
             allowStruct = true,
             allowNesting = true)

@@ -109,7 +109,7 @@ class Spark300dbShims extends Spark300Shims {
           override def isSupportedType(t: DataType): Boolean =
             GpuOverrides.isSupportedType(t,
               allowArray = true,
-              allowStringMaps = true,
+              allowMaps = true,
               allowStruct = true,
               allowNesting = true)
 
