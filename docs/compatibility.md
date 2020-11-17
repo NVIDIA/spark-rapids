@@ -219,6 +219,9 @@ only a subset of possible formats are supported on GPU with full compatibility w
 supported formats are:
 
 - `dd/MM/yyyy`
+- `yyyy/MM`
+- `yyyy/MM/dd`
+- `yyyy-MM`
 - `yyyy-MM-dd`
 - `yyyy-MM-dd HH:mm:ss`
 
