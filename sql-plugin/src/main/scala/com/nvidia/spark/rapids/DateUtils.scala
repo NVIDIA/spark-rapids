@@ -38,6 +38,8 @@ object DateUtils {
 
   val ONE_SECOND_MICROSECONDS = 1000000
 
+  val ONE_DAY_SECONDS = 86400L
+
   val ONE_DAY_MICROSECONDS = 86400000000L
 
   case class FormatKeywordToReplace(word: String, startIndex: Int, endIndex: Int)
