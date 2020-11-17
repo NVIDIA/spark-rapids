@@ -24,7 +24,8 @@ function print_ver(){
     SERVER_ID=$5
     
     if [[ "$VERSION" == *"-SNAPSHOT" ]]; then
-        # only run in Jenkins build
+        # Collect snapshot dependency info only in Jenkins build, 
+        # In dev build, print 'SNAPSHOT' tag without time stamp, e.g.: cudf-0.17-SNAPSHOT.jar
         if [ -n "$JENKINS_URL" ]; then
             echo $TAG=$VERSION
         else
