@@ -498,6 +498,35 @@ class ArrayGen(DataGen):
             return [self._child_gen.gen() for _ in range(0, length)]
         self._start(rand, gen_array)
 
+    def contains_ts(self):
+        return self._child_gen.contains_ts()
+
+class MapGen(DataGen):
+    """Generate a Map"""
+    def __init__(self, key_gen, value_gen, min_length=0, max_length=20, nullable=True, special_cases=[]):
+        # keys cannot be nullable
+        assert not key_gen.nullable
+        self._min_length = min_length
+        self._max_length = max_length
+        self._key_gen = key_gen
+        self._value_gen = value_gen
+        super().__init__(MapType(key_gen.data_type, value_gen.data_type, valueContainsNull=value_gen.nullable), nullable=nullable, special_cases=special_cases)
+
+    def __repr__(self):
+        return super().__repr__() + '(' + str(self._key_gen) + ',' + str(self._value_gen) + ')'
+
+    def start(self, rand):
+        self._key_gen.start(rand)
+        self._value_gen.start(rand)
+        def make_dict():
+            length = rand.randint(self._min_length, self._max_length)
+            return {self._key_gen.gen(): self._value_gen.gen() for idx in range(0, length)}
+        self._start(rand, make_dict)
+
+    def contains_ts(self):
+        return self._key_gen.contains_ts() or self._value_gen.contains_ts()
+
+
 def skip_if_not_utc():
     if (not is_tz_utc()):
         pytest.skip('The java system time zone is not set to UTC')
@@ -686,3 +715,12 @@ struct_gens_sample = [all_basic_struct_gen,
         StructGen([['child0', byte_gen]]),
         StructGen([['child0', ArrayGen(short_gen)], ['child1', double_gen]])]
 
+simple_string_to_string_map_gen = MapGen(StringGen(pattern='key_[0-9]', nullable=False),
+        StringGen(), max_length=10)
+
+# Some map gens, but not all because of nesting
+map_gens_sample = [simple_string_to_string_map_gen,
+        MapGen(StringGen(pattern='key_[0-9]', nullable=False), ArrayGen(string_gen), max_length=10),
+        MapGen(RepeatSeqGen(IntegerGen(nullable=False), 10), long_gen, max_length=10),
+        MapGen(BooleanGen(nullable=False), boolean_gen, max_length=2),
+        MapGen(StringGen(pattern='key_[0-9]', nullable=False), simple_string_to_string_map_gen)]
