@@ -23,15 +23,28 @@ import org.apache.spark.sql.internal.SQLConf
 
 class ParseDateTimeSuite extends SparkQueryCompareTestSuite {
 
+  val execsAllowedNonGpu = ShimLoader.getSparkShims.getSparkShimVersion match {
+    case SparkShimVersion(3, 1, _) =>
+      // The behavior has changed in Spark 3.1.0 and `to_date` gets translated to
+      // `cast(gettimestamp(c0#20108, yyyy-MM-dd, Some(UTC)) as date)` and we do
+      // not currently support `gettimestamp` on GPU
+      // https://github.com/NVIDIA/spark-rapids/issues/1157
+      Seq("ProjectExec,Alias,Cast,GetTimestamp,Literal")
+    case _ =>
+      Seq.empty
+  }
+
   testSparkResultsAreEqual("to_date yyyy-MM-dd",
       datesAsStrings,
-      new SparkConf().set(SQLConf.LEGACY_TIME_PARSER_POLICY.key, "CORRECTED")) {
+      conf = new SparkConf().set(SQLConf.LEGACY_TIME_PARSER_POLICY.key, "CORRECTED"),
+      execsAllowedNonGpu = execsAllowedNonGpu) {
     df => df.withColumn("c1", to_date(col("c0"), "yyyy-MM-dd"))
   }
 
   testSparkResultsAreEqual("to_date dd/MM/yyyy",
     datesAsStrings,
-    new SparkConf().set(SQLConf.LEGACY_TIME_PARSER_POLICY.key, "CORRECTED")) {
+    conf = new SparkConf().set(SQLConf.LEGACY_TIME_PARSER_POLICY.key, "CORRECTED"),
+    execsAllowedNonGpu = execsAllowedNonGpu) {
     df => df.withColumn("c1", to_date(col("c0"), "dd/MM/yyyy"))
   }
 
