@@ -57,7 +57,9 @@ def test_ne(data_gen):
                 f.col('b') != f.lit(None).cast(data_type),
                 f.col('a') != f.col('b')))
 
-@pytest.mark.parametrize('data_gen', orderable_gens, ids=idfn)
+@incompat
+@pytest.mark.allow_non_gpu('ProjectExec', 'Alias')
+@pytest.mark.parametrize('data_gen', orderable_gens_with_decimal_gen, ids=idfn)
 def test_lt(data_gen):
     (s1, s2) = gen_scalars(data_gen, 2, force_no_nulls=True)
     data_type = data_gen.data_type

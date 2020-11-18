@@ -14,6 +14,7 @@
 
 import copy
 from datetime import date, datetime, timedelta, timezone
+from decimal import *
 import math
 from pyspark.sql.types import *
 import pyspark.sql.functions as f
@@ -207,6 +208,15 @@ class IntegerGen(DataGen):
 
     def start(self, rand):
         self._start(rand, lambda : rand.randint(self._min_val, self._max_val))
+
+
+class DecimalGen(DataGen):
+    """Generate Decimals, with some built in corner cases."""
+    def __init__(self, nullable=True):
+        super().__init__(DecimalType(7,3), nullable=nullable)
+
+    def start(self, rand):
+        self._start(rand, lambda : Decimal(str(round(random.uniform(2000, 4000), 2))))
 
 LONG_MIN = -(1 << 63)
 LONG_MAX = (1 << 63) - 1
@@ -668,8 +678,10 @@ string_gen = StringGen()
 boolean_gen = BooleanGen()
 date_gen = DateGen()
 timestamp_gen = TimestampGen()
+decimal_gen = DecimalGen()
 
 numeric_gens = [byte_gen, short_gen, int_gen, long_gen, float_gen, double_gen]
+
 integral_gens = [byte_gen, short_gen, int_gen, long_gen]
 # A lot of mathematical expressions only support a double as input
 # by parametrizing even for a single param for the test it makes the tests consistent
@@ -685,6 +697,8 @@ all_basic_gens = [byte_gen, short_gen, int_gen, long_gen, float_gen, double_gen,
 # a selection of generators that should be orderable (sortable and compareable)
 orderable_gens = [byte_gen, short_gen, int_gen, long_gen, float_gen, double_gen,
         string_gen, boolean_gen, date_gen, timestamp_gen]
+orderable_gens_with_decimal_gen = [byte_gen, short_gen, int_gen, long_gen, float_gen, double_gen,
+        string_gen, boolean_gen, date_gen, timestamp_gen, decimal_gen]
 
 # TODO add in some array generators to this once that is supported for these operations
 # a selection of generators that can be compared for equality
