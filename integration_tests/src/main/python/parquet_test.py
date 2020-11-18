@@ -185,6 +185,7 @@ def test_ts_read_fails_datetime_legacy(gen, spark_tmp_path, ts_write, ts_rebase,
     with_cpu_session(
             lambda spark : unary_op_df(spark, gen).write.parquet(data_path),
             conf={'spark.sql.legacy.parquet.datetimeRebaseModeInWrite': ts_rebase,
+                'spark.sql.legacy.parquet.int96RebaseModeInWrite': ts_rebase,
                 'spark.sql.parquet.outputTimestampType': ts_write})
     all_confs = reader_confs.copy()
     all_confs.update({'spark.sql.sources.useV1SourceList': v1_enabled_list})
