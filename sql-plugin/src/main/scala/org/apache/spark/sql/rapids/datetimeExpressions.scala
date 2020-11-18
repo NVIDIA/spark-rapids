@@ -334,22 +334,12 @@ object GpuToTimestamp extends Arm {
     "yyyy-MM-dd HH:mm:ss"
   )
 
-  val specialDatesSeconds = GpuCast.calculateSpecialDates
-      .map {
-        case (name, days) => (name, days * DateUtils.ONE_DAY_SECONDS)
-      }
-
-  val specialDatesMicros = GpuCast.calculateSpecialDates
-      .map {
-        case (name, days) => (name, days * DateUtils.ONE_DAY_MICROSECONDS)
-      }
-
   def daysScalarSeconds(name: String): Scalar = {
-    Scalar.timestampFromLong(DType.TIMESTAMP_SECONDS, specialDatesSeconds(name))
+    Scalar.timestampFromLong(DType.TIMESTAMP_SECONDS, DateUtils.specialDatesMicros(name)/1000000L)
   }
 
   def daysScalarMicros(name: String): Scalar = {
-    Scalar.timestampFromLong(DType.TIMESTAMP_MICROSECONDS, specialDatesMicros(name))
+    Scalar.timestampFromLong(DType.TIMESTAMP_MICROSECONDS, DateUtils.specialDatesMicros(name))
   }
 
   def daysEqual(col: ColumnVector, name: String): ColumnVector = {
@@ -396,19 +386,19 @@ object GpuToTimestamp extends Arm {
     // values, since anything else is invalid and should throw an error or be converted to null
     // depending on the policy
     withResource(isTimestamp) { isTimestamp =>
-      withResource(daysEqual(lhs.getBase, GpuCast.EPOCH)) { isEpoch =>
-        withResource(daysEqual(lhs.getBase, GpuCast.NOW)) { isNow =>
-          withResource(daysEqual(lhs.getBase, GpuCast.TODAY)) { isToday =>
-            withResource(daysEqual(lhs.getBase, GpuCast.YESTERDAY)) { isYesterday =>
-              withResource(daysEqual(lhs.getBase, GpuCast.TOMORROW)) { isTomorrow =>
+      withResource(daysEqual(lhs.getBase, DateUtils.EPOCH)) { isEpoch =>
+        withResource(daysEqual(lhs.getBase, DateUtils.NOW)) { isNow =>
+          withResource(daysEqual(lhs.getBase, DateUtils.TODAY)) { isToday =>
+            withResource(daysEqual(lhs.getBase, DateUtils.YESTERDAY)) { isYesterday =>
+              withResource(daysEqual(lhs.getBase, DateUtils.TOMORROW)) { isTomorrow =>
                 withResource(lhs.getBase.isNull) { isNull =>
                   withResource(Scalar.fromNull(dtype)) { nullValue =>
                     withResource(asTimestamp(lhs.getBase, strfFormat)) { converted =>
-                      withResource(daysScalar(GpuCast.EPOCH)) { epoch =>
-                        withResource(daysScalar(GpuCast.NOW)) { now =>
-                          withResource(daysScalar(GpuCast.TODAY)) { today =>
-                            withResource(daysScalar(GpuCast.YESTERDAY)) { yesterday =>
-                              withResource(daysScalar(GpuCast.TOMORROW)) { tomorrow =>
+                      withResource(daysScalar(DateUtils.EPOCH)) { epoch =>
+                        withResource(daysScalar(DateUtils.NOW)) { now =>
+                          withResource(daysScalar(DateUtils.TODAY)) { today =>
+                            withResource(daysScalar(DateUtils.YESTERDAY)) { yesterday =>
+                              withResource(daysScalar(DateUtils.TOMORROW)) { tomorrow =>
                                 withResource(isTomorrow.ifElse(tomorrow, nullValue)) { a =>
                                   withResource(isYesterday.ifElse(yesterday, a)) { b =>
                                     withResource(isToday.ifElse(today, b)) { c =>

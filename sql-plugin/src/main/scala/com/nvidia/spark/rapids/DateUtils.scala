@@ -16,7 +16,11 @@
 
 package com.nvidia.spark.rapids
 
+import java.time.ZoneId
+
 import scala.collection.mutable.ListBuffer
+
+import org.apache.spark.sql.catalyst.util.DateTimeUtils
 
 /**
  * Class for helper functions for Date
@@ -41,6 +45,35 @@ object DateUtils {
   val ONE_DAY_SECONDS = 86400L
 
   val ONE_DAY_MICROSECONDS = 86400000000L
+
+  val EPOCH = "epoch"
+  val NOW = "now"
+  val TODAY = "today"
+  val YESTERDAY = "yesterday"
+  val TOMORROW = "tomorrow"
+
+  def specialDatesDays: Map[String, Int] = {
+    val today = DateTimeUtils.currentDate(ZoneId.of("UTC"))
+    Map(
+      EPOCH -> 0,
+      NOW -> today,
+      TODAY -> today,
+      YESTERDAY -> (today - 1),
+      TOMORROW -> (today + 1)
+    )
+  }
+
+  def specialDatesMicros: Map[String, Long] = {
+    val today = DateTimeUtils.currentDate(ZoneId.of("UTC"))
+    val now = DateTimeUtils.currentTimestamp()
+    Map(
+      EPOCH -> 0,
+      NOW -> now * 1000L,
+      TODAY -> today * ONE_DAY_MICROSECONDS,
+      YESTERDAY -> (today - 1) * ONE_DAY_MICROSECONDS,
+      TOMORROW -> (today + 1) * ONE_DAY_MICROSECONDS
+    )
+  }
 
   case class FormatKeywordToReplace(word: String, startIndex: Int, endIndex: Int)
 
