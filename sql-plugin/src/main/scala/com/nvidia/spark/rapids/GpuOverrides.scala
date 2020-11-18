@@ -1578,6 +1578,24 @@ object GpuOverrides {
 
         override def convertToGpu(child: Expression): GpuExpression = GpuAverage(child)
       }),
+    expr[BRound](
+      "Round an expression to d decimal places using HALF_EVEN rounding mode",
+      (a, conf, p, r) => new RoundBaseMeta[BRound](a, conf, p, r) {
+        override def isSupportedType(t: DataType): Boolean =
+          GpuOverrides.isSupportedType(t,
+            allowDecimal = true)
+        override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression =
+          GpuBRound(lhs, rhs)
+      }),
+    expr[Round](
+      "Round an expression to d decimal places using HALF_UP rounding mode",
+      (a, conf, p, r) => new RoundBaseMeta[Round](a, conf, p, r) {
+        override def isSupportedType(t: DataType): Boolean =
+          GpuOverrides.isSupportedType(t,
+            allowDecimal = true)
+        override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression =
+          GpuRound(lhs, rhs)
+      }),
     expr[PythonUDF](
       "UDF run in an external python process. Does not actually run on the GPU, but " +
           "the transfer of data to/from it can be accelerated.",

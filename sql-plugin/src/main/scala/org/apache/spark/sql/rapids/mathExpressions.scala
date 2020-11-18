@@ -18,10 +18,11 @@ package org.apache.spark.sql.rapids
 
 import java.io.Serializable
 
-import ai.rapids.cudf.{BinaryOp, ColumnVector, DType, Scalar, UnaryOp}
-import com.nvidia.spark.rapids.{Arm, CudfBinaryExpression, CudfUnaryExpression, FloatUtils, GpuColumnVector, GpuUnaryExpression}
+import ai.rapids.cudf.{BinaryOp, ColumnVector, DType, RoundMode, Scalar, UnaryOp}
+import com.nvidia.spark.rapids.{Arm, CudfBinaryExpression, CudfUnaryExpression, FloatUtils, GpuColumnVector, GpuExpression, GpuRoundBase, GpuUnaryExpression}
+import com.nvidia.spark.rapids.RapidsPluginImplicits.ReallyAGpuExpression
 
-import org.apache.spark.sql.catalyst.expressions.{Expression, ImplicitCastInputTypes}
+import org.apache.spark.sql.catalyst.expressions.{BinaryExpression, EmptyRow, Expression, ImplicitCastInputTypes}
 import org.apache.spark.sql.types._
 
 abstract class CudfUnaryMathExpression(name: String) extends GpuUnaryMathExpression(name)
@@ -347,6 +348,53 @@ abstract class CudfBinaryMathExpression(name: String) extends CudfBinaryExpressi
   override def toString: String = s"$name($left, $right)"
   override def prettyName: String = name
   override def dataType: DataType = DoubleType
+}
+
+abstract class CudfRoundBase(child:Expression, scale:Expression) extends BinaryExpression
+  with Serializable with ImplicitCastInputTypes {
+  override def left: Expression = child
+  override def right: Expression = scale
+
+  override lazy val dataType: DataType = child.dataType match {
+    // if the new scale is bigger which means we are scaling up,
+    // keep the original scale as `Decimal` does
+    case DecimalType.Fixed(p, s) => DecimalType(p, if (_scale > s) s else _scale)
+    case t => t
+  }
+
+  // Avoid repeated evaluation since `scale` is a constant int,
+  // avoid unnecessary `child` evaluation in both codegen and non-codegen eval
+  // by checking if scaleV == null as well.
+  private lazy val scaleV: Any = scale match {
+    case _: GpuExpression => scale.columnarEval(null)
+    case _ => scale.eval(EmptyRow)
+  }
+  private lazy val _scale: Int = scaleV.asInstanceOf[Int]
+
+  override def inputTypes: Seq[AbstractDataType] = Seq(NumericType, IntegerType)
+}
+
+abstract class CudfRoundExpr(child: Expression, scale: Expression) extends
+  CudfRoundBase(child, scale) with GpuRoundBase
+
+case class GpuBRound(child: Expression, scale: Expression) extends
+  CudfRoundExpr(child, scale) {
+  override def roundMode: RoundMode = RoundMode.HALF_EVEN
+
+  override def doColumnar(val0: GpuColumnVector, val1: Scalar): ColumnVector = {
+    val lhs = val0.getBase
+    lhs.round(val1.getInt, roundMode)
+  }
+}
+
+case class GpuRound(child: Expression, scale: Expression) extends
+  CudfRoundExpr(child, scale) {
+  override def roundMode: RoundMode = RoundMode.HALF_UP
+
+  override def doColumnar(val0: GpuColumnVector, val1: Scalar): ColumnVector = {
+    val lhs = val0.getBase
+    lhs.round(val1.getInt, roundMode)
+  }
 }
 
 case class GpuPow(left: Expression, right: Expression)

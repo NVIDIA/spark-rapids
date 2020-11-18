@@ -16,7 +16,7 @@ import pytest
 
 from asserts import assert_gpu_and_cpu_are_equal_collect
 from data_gen import *
-from marks import incompat, approximate_float
+from marks import incompat, approximate_float, allow_non_gpu
 from pyspark.sql.types import *
 from spark_session import with_spark_session, is_before_spark_310
 import pyspark.sql.functions as f
@@ -182,6 +182,22 @@ def test_shift_right_unsigned(data_gen):
                 'shiftrightunsigned(cast(null as {}), b)'.format(string_type),
                 'shiftrightunsigned(a, cast(null as INT))',
                 'shiftrightunsigned(a, b)'))
+
+@pytest.mark.parametrize('data_gen', [decimal_gen_scale_precision], ids=idfn)
+def test_decimal_bround(data_gen):
+    assert_gpu_and_cpu_are_equal_collect(
+            lambda spark: unary_op_df(spark, data_gen, length=5).selectExpr(
+                'bround(a, 2)',
+                'bround(a)'),
+                conf=allow_negative_scale_of_decimal_conf)
+
+@pytest.mark.parametrize('data_gen', [decimal_gen_scale_precision], ids=idfn)
+def test_decimal_round(data_gen):
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark: unary_op_df(spark, data_gen, length=5).selectExpr(
+            'round(a, 2)',
+            'round(a)'),
+        conf=allow_negative_scale_of_decimal_conf)
 
 @approximate_float
 @pytest.mark.parametrize('data_gen', double_gens, ids=idfn)
