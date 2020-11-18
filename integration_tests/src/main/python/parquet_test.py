@@ -34,7 +34,7 @@ parquet_gens_list = [[byte_gen, short_gen, int_gen, long_gen, float_gen, double_
     ArrayGen(TimestampGen(start=datetime(1900, 1, 1, tzinfo=timezone.utc))),
     ArrayGen(ArrayGen(byte_gen)),
     StructGen([['child0', ArrayGen(byte_gen)], ['child1', byte_gen], ['child2', float_gen]]),
-    ArrayGen(StructGen([['child0', string_gen], ['child1', double_gen], ['child2', int_gen]]))],
+    ArrayGen(StructGen([['child0', string_gen], ['child1', double_gen], ['child2', int_gen]]))] + map_gens_sample,
     pytest.param([timestamp_gen], marks=pytest.mark.xfail(reason='https://github.com/NVIDIA/spark-rapids/issues/132'))]
 
 # test with original parquet file reader, the multi-file parallel reader for cloud, and coalesce file reader for

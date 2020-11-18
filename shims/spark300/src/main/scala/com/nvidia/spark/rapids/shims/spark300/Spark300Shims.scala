@@ -154,7 +154,7 @@ class Spark300Shims extends SparkShims {
           override def isSupportedType(t: DataType): Boolean =
             GpuOverrides.isSupportedType(t,
               allowArray = true,
-              allowStringMaps = true,
+              allowMaps = true,
               allowStruct = true,
               allowNesting = true)
 
@@ -285,8 +285,6 @@ class Spark300Shims extends SparkShims {
             a.dataFilters,
             conf)
         }
-        override def isSupportedType(t: DataType): Boolean =
-          GpuOverrides.isSupportedType(t, allowStringMaps = true)
       }),
     GpuOverrides.scan[OrcScan](
       "ORC parsing",
