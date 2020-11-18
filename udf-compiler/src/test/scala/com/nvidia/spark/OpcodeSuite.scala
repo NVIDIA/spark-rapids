@@ -2356,5 +2356,26 @@ class OpcodeSuite extends FunSuite {
                    ("world", "######hello", Array("world", "######hello", "@@@@hello")),
                    ("", "@@@@target", Array("", "@@@@target", "######target", null))).toDF
     checkEquiv(result, ref)
+    
+  test("compile child expresion in explode") {
+    val myudf: (String) => Array[String] = a => {
+      a.split(",")
+    }
+    val u = makeUdf(myudf)
+    val dataset = List("first,second").toDF("x").repartition(1)
+    var result = dataset.withColumn("new", explode(u(col("x"))))
+    val ref = List(("first,second","first"),("first,second","second")).toDF("x","new")
+    checkEquiv(result,ref)
+  }
+
+  test("compile child expresion in flatten") {
+    val myudf: (String) => Array[Array[String]] = a => {
+      a.split(",").map(x => Array(x))
+    }
+    val u = makeUdf(myudf)
+    val dataset = List("a,b").toDF("x").repartition(1)
+    val ref = dataset.withColumn("new", lit(Array("a","b")))
+    val result = dataset.withColumn("new", flatten(u(col("x"))))
+    checkEquiv(ref,result)
   }
 }
