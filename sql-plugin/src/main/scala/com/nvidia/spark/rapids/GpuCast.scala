@@ -96,8 +96,6 @@ object GpuCast {
     "\\A\\d{4}\\-\\d{2}\\-\\d{2}[ T]\\d{2}:\\d{2}:\\d{2}\\.\\d{6}Z\\Z"
   private val TIMESTAMP_REGEX_NO_DATE = "\\A[T]?(\\d{2}:\\d{2}:\\d{2}\\.\\d{6}Z)\\Z"
 
-  private val ONE_DAY_MICROSECONDS = 86400000000L
-
   /**
    * Regex for identifying strings that contain numeric values that can be casted to integral
    * types. This includes floating point numbers but not numbers containing exponents.
@@ -121,6 +119,12 @@ object GpuCast {
     "required range"
 
   val INVALID_FLOAT_CAST_MSG = "At least one value is either null or is an invalid number"
+
+  val EPOCH = "epoch"
+  val NOW = "now"
+  val TODAY = "today"
+  val YESTERDAY = "yesterday"
+  val TOMORROW = "tomorrow"
 
   /**
    * Returns true iff we can cast `from` to `to` using the GPU.
@@ -181,6 +185,17 @@ object GpuCast {
       }
       case _ => false
     }
+  }
+
+  def calculateSpecialDates: Map[String, Int] = {
+    val now = DateTimeUtils.currentDate(ZoneId.of("UTC"))
+    Map(
+      EPOCH -> 0,
+      NOW -> now,
+      TODAY -> now,
+      YESTERDAY -> (now - 1),
+      TOMORROW -> (now + 1)
+    )
   }
 }
 
@@ -655,16 +670,6 @@ case class GpuCast(
       }
     }
 
-    // special dates
-    val now = DateTimeUtils.currentDate(ZoneId.of("UTC"))
-    val specialDates: Map[String, Int] = Map(
-      "epoch" -> 0,
-      "now" -> now,
-      "today" -> now,
-      "yesterday" -> (now - 1),
-      "tomorrow" -> (now + 1)
-    )
-
     var sanitizedInput = input.incRefCount()
 
     // replace partial months
@@ -676,6 +681,8 @@ case class GpuCast(
     sanitizedInput = withResource(sanitizedInput) { cv =>
       cv.stringReplaceWithBackrefs("-([0-9])([ T](:?[\\r\\n]|.)*)?\\Z", "-0\\1")
     }
+
+    val specialDates = calculateSpecialDates
 
     withResource(sanitizedInput) { sanitizedInput =>
 
@@ -756,11 +763,11 @@ case class GpuCast(
     val today: Long = cal.getTimeInMillis * 1000
     val todayStr = new SimpleDateFormat("yyyy-MM-dd").format(cal.getTime)
     val specialDates: Map[String, Long] = Map(
-      "epoch" -> 0,
-      "now" -> today,
-      "today" -> today,
-      "yesterday" -> (today - ONE_DAY_MICROSECONDS),
-      "tomorrow" -> (today + ONE_DAY_MICROSECONDS)
+      GpuCast.EPOCH -> 0,
+      GpuCast.NOW -> today,
+      GpuCast.TODAY -> today,
+      GpuCast.YESTERDAY -> (today - DateUtils.ONE_DAY_MICROSECONDS),
+      GpuCast.TOMORROW -> (today + DateUtils.ONE_DAY_MICROSECONDS)
     )
 
     var sanitizedInput = input.incRefCount()

@@ -212,6 +212,29 @@ window functions like `row_number`, `lead`, and `lag` can produce different resu
 includes both `-0.0` and `0.0`, or if the ordering is ambiguous. Spark can produce
 different results from one run to another if the ordering is ambiguous on a window function too.
 
+## Parsing strings as dates or timestamps
+
+When converting strings to dates or timestamps using functions like `to_date` and `unix_timestamp`,
+only a subset of possible formats are supported on GPU with full compatibility with Spark. The
+supported formats are:
+
+- `dd/MM/yyyy`
+- `yyyy/MM`
+- `yyyy/MM/dd`
+- `yyyy-MM`
+- `yyyy-MM-dd`
+- `yyyy-MM-dd HH:mm:ss`
+
+Other formats may result in incorrect results and will not run on the GPU by default. Some
+specific issues with other formats are:
+
+- Spark supports partial microseconds but the plugin does not
+- The plugin will produce incorrect results for input data that is not in the correct format in
+some cases
+
+To enable all formats on GPU, set
+[`spark.rapids.sql.incompatibleDateFormats.enabled`](configs.md#sql.incompatibleDateFormats.enabled) to `true`.
+
 ## Casting between types
 
 In general, performing `cast` and `ansi_cast` operations on the GPU is compatible with the same operations on the CPU. However, there are some exceptions. For this reason, certain casts are disabled on the GPU by default and require configuration options to be specified to enable them. 
