@@ -18,7 +18,7 @@ package org.apache.spark.sql.rapids
 
 import scala.collection.mutable.ArrayBuffer
 
-import ai.rapids.cudf.{ColumnVector, DType, PadSide, Scalar, Table}
+import ai.rapids.cudf.{ColumnVector, ColumnView, DType, PadSide, Scalar, Table}
 import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 
@@ -289,7 +289,7 @@ case class GpuConcat(children: Seq[Expression]) extends GpuComplexTypeMergingExp
       }
       emptyStrScalar = GpuScalar.from("", StringType)
       GpuColumnVector.from(ColumnVector.stringConcatenate(emptyStrScalar, nullStrScalar,
-        columns.toArray[ColumnVector]), dataType)
+        columns.toArray[ColumnView]), dataType)
     } finally {
       columns.safeClose()
       if (emptyStrScalar != null) {

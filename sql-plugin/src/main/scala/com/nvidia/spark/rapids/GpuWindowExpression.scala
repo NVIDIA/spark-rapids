@@ -241,7 +241,7 @@ case class GpuWindowExpression(windowFunction: Expression, windowSpec: GpuWindow
       }
     }
     val expectedType = GpuColumnVector.getRapidsType(windowFunc.dataType)
-    if (expectedType != aggColumn.getDataType) {
+    if (expectedType != aggColumn.getType) {
       withResource(aggColumn) { aggColumn =>
         GpuColumnVector.from(aggColumn.castTo(expectedType), windowFunc.dataType)
       }
@@ -272,7 +272,7 @@ case class GpuWindowExpression(windowFunction: Expression, windowSpec: GpuWindow
       }
     }
     val expectedType = GpuColumnVector.getRapidsType(windowFunc.dataType)
-    if (expectedType != aggColumn.getDataType) {
+    if (expectedType != aggColumn.getType) {
       withResource(aggColumn) { aggColumn =>
         GpuColumnVector.from(aggColumn.castTo(expectedType), windowFunc.dataType)
       }
