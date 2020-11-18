@@ -19,12 +19,14 @@ set -ex
 
 . jenkins/version-def.sh
 
-mvn -U -B -Pinclude-databricks,snapshot-shims clean deploy $MVN_URM_MIRROR -Dmaven.repo.local=$WORKSPACE/.m2
+export 'M2DIR' so that shims can get the correct cudf/spark dependnecy info
+export M2DIR="$WORKSPACE/.m2"
+mvn -U -B -Pinclude-databricks,snapshot-shims clean deploy $MVN_URM_MIRROR -Dmaven.repo.local=$M2DIR
 # Run unit tests against other spark versions
-mvn -U -B -Pspark301tests,snapshot-shims test $MVN_URM_MIRROR -Dmaven.repo.local=$WORKSPACE/.m2
-mvn -U -B -Pspark302tests,snapshot-shims test $MVN_URM_MIRROR -Dmaven.repo.local=$WORKSPACE/.m2
-mvn -U -B -Pspark310tests,snapshot-shims test $MVN_URM_MIRROR -Dmaven.repo.local=$WORKSPACE/.m2
+mvn -U -B -Pspark301tests,snapshot-shims test $MVN_URM_MIRROR -Dmaven.repo.local=$M2DIR
+mvn -U -B -Pspark302tests,snapshot-shims test $MVN_URM_MIRROR -Dmaven.repo.local=$M2DIR
+mvn -U -B -Pspark310tests,snapshot-shims test $MVN_URM_MIRROR -Dmaven.repo.local=$M2DIR
 
 # Parse cudf and spark files from local mvn repo
-jenkins/printJarVersion.sh "CUDFVersion" "${WORKSPACE}/.m2/ai/rapids/cudf/${CUDF_VER}" "cudf-${CUDF_VER}" "-${CUDA_CLASSIFIER}.jar" $SERVER_ID
-jenkins/printJarVersion.sh "SPARKVersion" "${WORKSPACE}/.m2/org/apache/spark/spark-core_2.12/${SPARK_VER}" "spark-core_2.12-${SPARK_VER}" ".jar" $SERVER_ID
+jenkins/printJarVersion.sh "CUDFVersion" "$M2DIR/ai/rapids/cudf/${CUDF_VER}" "cudf-${CUDF_VER}" "-${CUDA_CLASSIFIER}.jar" $SERVER_ID
+jenkins/printJarVersion.sh "SPARKVersion" "$M2DIR/org/apache/spark/spark-core_2.12/${SPARK_VER}" "spark-core_2.12-${SPARK_VER}" ".jar" $SERVER_ID

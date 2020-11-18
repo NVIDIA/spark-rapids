@@ -49,7 +49,8 @@ RAPIDS_BUILT_JAR=rapids-4-spark_$SCALA_VERSION-$SPARK_PLUGIN_JAR_VERSION.jar
 
 echo "Scala version is: $SCALA_VERSION"
 mvn -B -P${BUILD_PROFILES} clean package -DskipTests || true
-M2DIR=/home/ubuntu/.m2/repository
+# export 'M2DIR' so that shims can get the correct cudf/spark dependnecy info
+export M2DIR=/home/ubuntu/.m2/repository
 CUDF_JAR=${M2DIR}/ai/rapids/cudf/${CUDF_VERSION}/cudf-${CUDF_VERSION}-${CUDA_VERSION}.jar
 
 # pull normal Spark artifacts and ignore errors then install databricks jars, then build again
