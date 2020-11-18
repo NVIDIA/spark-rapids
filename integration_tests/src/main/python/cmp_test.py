@@ -117,24 +117,24 @@ def test_isnan(data_gen):
             lambda spark : unary_op_df(spark, data_gen).select(
                 f.isnan(f.col('a'))))
 
-@pytest.mark.parametrize('data_gen', eq_gens + array_gens_sample + struct_gens_sample, ids=idfn)
+@pytest.mark.parametrize('data_gen', eq_gens + array_gens_sample + struct_gens_sample + map_gens_sample, ids=idfn)
 def test_dropna_any(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : binary_op_df(spark, data_gen).dropna())
 
-@pytest.mark.parametrize('data_gen', eq_gens + array_gens_sample + struct_gens_sample, ids=idfn)
+@pytest.mark.parametrize('data_gen', eq_gens + array_gens_sample + struct_gens_sample + map_gens_sample, ids=idfn)
 def test_dropna_all(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : binary_op_df(spark, data_gen).dropna(how='all'))
 
 #dropna is really a filter along with a test for null, but lets do an explicit filter test too
-@pytest.mark.parametrize('data_gen', eq_gens + array_gens_sample + struct_gens_sample, ids=idfn)
+@pytest.mark.parametrize('data_gen', eq_gens + array_gens_sample + struct_gens_sample + map_gens_sample, ids=idfn)
 def test_filter(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : three_col_df(spark, BooleanGen(), data_gen, data_gen).filter(f.col('a')))
 
 # coalesce batch happens after a filter, but only if something else happens on the GPU after that
-@pytest.mark.parametrize('data_gen', eq_gens + array_gens_sample + struct_gens_sample, ids=idfn)
+@pytest.mark.parametrize('data_gen', eq_gens + array_gens_sample + struct_gens_sample + map_gens_sample, ids=idfn)
 def test_filter_with_project(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : two_col_df(spark, BooleanGen(), data_gen).filter(f.col('a')).selectExpr('*', 'a as a2'))
