@@ -335,7 +335,7 @@ object GpuToTimestamp extends Arm {
   )
 
   def daysScalarSeconds(name: String): Scalar = {
-    Scalar.timestampFromLong(DType.TIMESTAMP_SECONDS, DateUtils.specialDatesMicros(name)/1000000L)
+    Scalar.timestampFromLong(DType.TIMESTAMP_SECONDS, DateUtils.specialDatesSeconds(name))
   }
 
   def daysScalarMicros(name: String): Scalar = {

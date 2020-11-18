@@ -124,13 +124,13 @@ class ParseDateTimeSuite extends SparkQueryCompareTestSuite {
           .repartition(2)
           .withColumn("c1", unix_timestamp(col("c0"), "yyyy-MM-dd HH:mm:ss"))
     }
-    val start = System.currentTimeMillis()
+    val startTimeSeconds = System.currentTimeMillis()/1000L
     val cpuNowSeconds = withCpuSparkSession(now).collect().head.toSeq(1).asInstanceOf[Long]
     val gpuNowSeconds = withGpuSparkSession(now).collect().head.toSeq(1).asInstanceOf[Long]
-    assert(cpuNowSeconds*1000 > start)
-    assert(gpuNowSeconds*1000 > start)
-    // CPU ran first so must produce a lower result
-    assert(cpuNowSeconds < gpuNowSeconds)
+    assert(cpuNowSeconds >= startTimeSeconds)
+    assert(gpuNowSeconds >= startTimeSeconds)
+    // CPU ran first so cannot have a greater value than the GPU run (but could be the same second)
+    assert(cpuNowSeconds <= gpuNowSeconds)
   }
 
   private def timestampsAsStrings(spark: SparkSession) = {

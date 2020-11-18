@@ -63,12 +63,24 @@ object DateUtils {
     )
   }
 
+  def specialDatesSeconds: Map[String, Long] = {
+    val today = DateTimeUtils.currentDate(ZoneId.of("UTC"))
+    val now = DateTimeUtils.currentTimestamp()
+    Map(
+      EPOCH -> 0,
+      NOW -> now / 1000000L,
+      TODAY -> today * ONE_DAY_SECONDS,
+      YESTERDAY -> (today - 1) * ONE_DAY_SECONDS,
+      TOMORROW -> (today + 1) * ONE_DAY_SECONDS
+    )
+  }
+
   def specialDatesMicros: Map[String, Long] = {
     val today = DateTimeUtils.currentDate(ZoneId.of("UTC"))
     val now = DateTimeUtils.currentTimestamp()
     Map(
       EPOCH -> 0,
-      NOW -> now * 1000L,
+      NOW -> now,
       TODAY -> today * ONE_DAY_MICROSECONDS,
       YESTERDAY -> (today - 1) * ONE_DAY_MICROSECONDS,
       TOMORROW -> (today + 1) * ONE_DAY_MICROSECONDS
