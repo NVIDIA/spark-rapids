@@ -16,11 +16,12 @@
 
 package com.nvidia.spark.rapids
 
-import java.time.ZoneId
+import java.time.LocalDate
 
 import scala.collection.mutable.ListBuffer
 
 import org.apache.spark.sql.catalyst.util.DateTimeUtils
+import org.apache.spark.sql.catalyst.util.DateTimeUtils.{localDateToDays, SQLDate}
 
 /**
  * Class for helper functions for Date
@@ -53,7 +54,7 @@ object DateUtils {
   val TOMORROW = "tomorrow"
 
   def specialDatesDays: Map[String, Int] = {
-    val today = DateTimeUtils.currentDate(ZoneId.of("UTC"))
+    val today = currentDate()
     Map(
       EPOCH -> 0,
       NOW -> today,
@@ -64,7 +65,7 @@ object DateUtils {
   }
 
   def specialDatesSeconds: Map[String, Long] = {
-    val today = DateTimeUtils.currentDate(ZoneId.of("UTC"))
+    val today = currentDate()
     val now = DateTimeUtils.currentTimestamp()
     Map(
       EPOCH -> 0,
@@ -76,7 +77,7 @@ object DateUtils {
   }
 
   def specialDatesMicros: Map[String, Long] = {
-    val today = DateTimeUtils.currentDate(ZoneId.of("UTC"))
+    val today = currentDate()
     val now = DateTimeUtils.currentTimestamp()
     Map(
       EPOCH -> 0,
@@ -86,6 +87,8 @@ object DateUtils {
       TOMORROW -> (today + 1) * ONE_DAY_MICROSECONDS
     )
   }
+
+  def currentDate(): SQLDate = localDateToDays(LocalDate.now())
 
   case class FormatKeywordToReplace(word: String, startIndex: Int, endIndex: Int)
 

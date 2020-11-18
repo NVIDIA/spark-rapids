@@ -17,15 +17,11 @@
 package com.nvidia.spark.rapids
 
 import java.text.SimpleDateFormat
-import java.time.ZoneId
-import java.util.{Calendar, TimeZone}
 
 import ai.rapids.cudf.{ColumnVector, DType, Scalar}
 
 import org.apache.spark.sql.catalyst.analysis.TypeCheckResult
 import org.apache.spark.sql.catalyst.expressions.{Cast, CastBase, Expression, NullIntolerant, TimeZoneAwareExpression}
-import org.apache.spark.sql.catalyst.util.DateTimeUtils
-import org.apache.spark.sql.catalyst.util.DateTimeUtils.SQLDate
 import org.apache.spark.sql.types._
 
 /** Meta-data for cast and ansi_cast. */
@@ -740,7 +736,7 @@ case class GpuCast(
     }
 
     // special timestamps
-    val today = DateTimeUtils.currentDate(ZoneId.of("UTC"))
+    val today = DateUtils.currentDate()
     val todayStr = new SimpleDateFormat("yyyy-MM-dd")
         .format(today * DateUtils.ONE_DAY_SECONDS * 1000L)
     val specialDates = DateUtils.specialDatesMicros
