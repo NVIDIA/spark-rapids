@@ -187,11 +187,6 @@ public class GpuColumnVector extends GpuColumnVectorBase {
     return toRapidsOrNull(type) != null;
   }
 
-  public static DType getRapidsType(StructField field) {
-    DataType type = field.dataType();
-    return getRapidsType(type);
-  }
-
   public static DType getRapidsType(DataType type) {
     DType result = toRapidsOrNull(type);
     if (result == null) {
