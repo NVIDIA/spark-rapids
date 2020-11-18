@@ -46,6 +46,7 @@ import org.apache.spark.sql.execution.exchange.{BroadcastExchangeExec, ShuffleEx
 import org.apache.spark.sql.execution.joins._
 import org.apache.spark.sql.execution.python._
 import org.apache.spark.sql.execution.window.WindowExec
+import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.rapids._
 import org.apache.spark.sql.rapids.catalyst.expressions.GpuRand
 import org.apache.spark.sql.rapids.execution.{GpuBroadcastMeta, GpuBroadcastNestedLoopJoinMeta, GpuCustomShuffleReaderExec, GpuShuffleMeta}
@@ -1142,28 +1143,24 @@ object GpuOverrides {
         override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression = {
           if (conf.isImprovedTimestampOpsEnabled) {
             // passing the already converted strf string for a little optimization
-            GpuToUnixTimestampImproved(lhs, rhs, strfFormat)
+            GpuToUnixTimestampImproved(lhs, rhs, sparkFormat, strfFormat)
           } else {
-            GpuToUnixTimestamp(lhs, rhs, strfFormat)
+            GpuToUnixTimestamp(lhs, rhs, sparkFormat, strfFormat)
           }
         }
-      })
-      .incompat("Incorrectly formatted strings and bogus dates produce garbage data" +
-        " instead of null"),
+      }),
     expr[UnixTimestamp](
       "Returns the UNIX timestamp of current or specified time",
       (a, conf, p, r) => new UnixTimeExprMeta[UnixTimestamp](a, conf, p, r){
         override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression = {
           if (conf.isImprovedTimestampOpsEnabled) {
             // passing the already converted strf string for a little optimization
-            GpuUnixTimestampImproved(lhs, rhs, strfFormat)
+            GpuUnixTimestampImproved(lhs, rhs, sparkFormat, strfFormat)
           } else {
-            GpuUnixTimestamp(lhs, rhs, strfFormat)
+            GpuUnixTimestamp(lhs, rhs, sparkFormat, strfFormat)
           }
         }
-      })
-      .incompat("Incorrectly formatted strings and bogus dates produce garbage data" +
-        " instead of null"),
+      }),
     expr[Hour](
       "Returns the hour component of the string/timestamp",
       (a, conf, p, r) => new UnaryExprMeta[Hour](a, conf, p, r) {
@@ -2094,6 +2091,16 @@ object GpuOverrides {
   ).map(r => (r.getClassFor.asSubclass(classOf[SparkPlan]), r)).toMap
   val execs: Map[Class[_ <: SparkPlan], ExecRule[_ <: SparkPlan]] =
     commonExecs ++ ShimLoader.getSparkShims.getExecs
+
+  def getTimeParserPolicy: TimeParserPolicy = {
+    val policy = SQLConf.get.getConfString(SQLConf.LEGACY_TIME_PARSER_POLICY.key, "EXCEPTION")
+    policy match {
+      case "LEGACY" => LegacyTimeParserPolicy
+      case "EXCEPTION" => ExceptionTimeParserPolicy
+      case "CORRECTED" => CorrectedTimeParserPolicy
+    }
+  }
+
 }
 /** Tag the initial plan when AQE is enabled */
 case class GpuQueryStagePrepOverrides() extends Rule[SparkPlan] with Logging {

@@ -36,6 +36,12 @@ object DateUtils {
     "MM" -> "%m", "LL" -> "%m", "dd" -> "%d", "mm" -> "%M", "ss" -> "%S", "HH" -> "%H",
     "yy" -> "%y", "yyyy" -> "%Y", "SSSSSS" -> "%f")
 
+  val ONE_SECOND_MICROSECONDS = 1000000
+
+  val ONE_DAY_SECONDS = 86400L
+
+  val ONE_DAY_MICROSECONDS = 86400000000L
+
   case class FormatKeywordToReplace(word: String, startIndex: Int, endIndex: Int)
 
   /**
