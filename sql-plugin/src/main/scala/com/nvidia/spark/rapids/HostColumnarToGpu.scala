@@ -16,22 +16,20 @@
 
 package com.nvidia.spark.rapids
 
-import ai.rapids.cudf.DType
-
 import org.apache.spark.TaskContext
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.expressions.Attribute
 import org.apache.spark.sql.execution.{SparkPlan, UnaryExecNode}
 import org.apache.spark.sql.execution.metric.{SQLMetric, SQLMetrics}
-import org.apache.spark.sql.types.StructType
+import org.apache.spark.sql.types._
 import org.apache.spark.sql.vectorized.{ColumnarBatch, ColumnVector}
 
 object HostColumnarToGpu {
   def columnarCopy(cv: ColumnVector, b: ai.rapids.cudf.HostColumnVector.ColumnBuilder,
       nullable: Boolean, rows: Int): Unit = {
-    (GpuColumnVector.getRapidsType(cv.dataType()), nullable) match {
-      case (DType.INT8 | DType.BOOL8, true) =>
+    (cv.dataType(), nullable) match {
+      case (ByteType | BooleanType, true) =>
         for (i <- 0 until rows) {
           if (cv.isNullAt(i)) {
             b.appendNull()
@@ -39,11 +37,11 @@ object HostColumnarToGpu {
             b.append(cv.getByte(i))
           }
         }
-      case (DType.INT8 | DType.BOOL8, false) =>
+      case (ByteType | BooleanType, false) =>
         for (i <- 0 until rows) {
           b.append(cv.getByte(i))
         }
-      case (DType.INT16, true) =>
+      case (ShortType, true) =>
         for (i <- 0 until rows) {
           if (cv.isNullAt(i)) {
             b.appendNull()
@@ -51,11 +49,11 @@ object HostColumnarToGpu {
             b.append(cv.getShort(i))
           }
         }
-      case (DType.INT16, false) =>
+      case (ShortType, false) =>
         for (i <- 0 until rows) {
           b.append(cv.getShort(i))
         }
-      case (DType.INT32 | DType.TIMESTAMP_DAYS, true) =>
+      case (IntegerType | DateType, true) =>
         for (i <- 0 until rows) {
           if (cv.isNullAt(i)) {
             b.appendNull()
@@ -63,12 +61,11 @@ object HostColumnarToGpu {
             b.append(cv.getInt(i))
           }
         }
-      case (DType.INT32 | DType.TIMESTAMP_DAYS, false) =>
+      case (IntegerType | DateType, false) =>
         for (i <- 0 until rows) {
           b.append(cv.getInt(i))
         }
-      case (DType.INT64 | DType.TIMESTAMP_SECONDS | DType.TIMESTAMP_MILLISECONDS
-            | DType.TIMESTAMP_MICROSECONDS | DType.TIMESTAMP_NANOSECONDS, true) =>
+      case (LongType | TimestampType, true) =>
         for (i <- 0 until rows) {
           if (cv.isNullAt(i)) {
             b.appendNull()
@@ -76,12 +73,11 @@ object HostColumnarToGpu {
             b.append(cv.getLong(i))
           }
         }
-      case (DType.INT64 | DType.TIMESTAMP_SECONDS | DType.TIMESTAMP_MILLISECONDS
-            | DType.TIMESTAMP_MICROSECONDS | DType.TIMESTAMP_NANOSECONDS, false) =>
+      case (LongType | TimestampType, false) =>
         for (i <- 0 until rows) {
           b.append(cv.getLong(i))
         }
-      case (DType.FLOAT32, true) =>
+      case (FloatType, true) =>
         for (i <- 0 until rows) {
           if (cv.isNullAt(i)) {
             b.appendNull()
@@ -89,11 +85,11 @@ object HostColumnarToGpu {
             b.append(cv.getFloat(i))
           }
         }
-      case (DType.FLOAT32, false) =>
+      case (FloatType, false) =>
         for (i <- 0 until rows) {
           b.append(cv.getFloat(i))
         }
-      case (DType.FLOAT64, true) =>
+      case (DoubleType, true) =>
         for (i <- 0 until rows) {
           if (cv.isNullAt(i)) {
             b.appendNull()
@@ -101,11 +97,11 @@ object HostColumnarToGpu {
             b.append(cv.getDouble(i))
           }
         }
-      case (DType.FLOAT64, false) =>
+      case (DoubleType, false) =>
         for (i <- 0 until rows) {
           b.append(cv.getDouble(i))
         }
-      case (DType.STRING, true) =>
+      case (StringType, true) =>
         for (i <- 0 until rows) {
           if (cv.isNullAt(i)) {
             b.appendNull()
@@ -113,12 +109,12 @@ object HostColumnarToGpu {
             b.appendUTF8String(cv.getUTF8String(i).getBytes)
           }
         }
-      case (DType.STRING, false) =>
+      case (StringType, false) =>
         for (i <- 0 until rows) {
           b.appendUTF8String(cv.getUTF8String(i).getBytes)
         }
-      case (t, n) =>
-        throw new UnsupportedOperationException(s"Converting to GPU for ${t} is not currently " +
+      case (t, _) =>
+        throw new UnsupportedOperationException(s"Converting to GPU for $t is not currently " +
           s"supported")
     }
   }
@@ -188,7 +184,7 @@ class HostToGpuCoalesceIterator(iter: Iterator[ColumnarBatch],
   }
 
   override def getColumnSizes(batch: ColumnarBatch): Array[Long] = {
-    schema.fields.indices.map(GpuBatchUtils.estimateGpuMemory(schema, _, batchRowLimit)).toArray
+    schema.fields.indices.map(GpuBatchUtils.estimateGpuMemory(schema, _, batch.numRows())).toArray
   }
 
   override def concatAllAndPutOnGPU(): ColumnarBatch = {

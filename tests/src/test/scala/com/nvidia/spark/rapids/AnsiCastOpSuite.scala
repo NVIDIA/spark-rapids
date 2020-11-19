@@ -67,55 +67,67 @@ class AnsiCastOpSuite extends GpuExpressionTestSuite {
   // Ansi cast from timestamp to integral types
   ///////////////////////////////////////////////////////////////////////////
 
+  def before3_1_0(s: SparkSession): (Boolean, String) = {
+    (s.version < "3.1.0", s"Spark version must be prior to 3.1.0")
+  }
+
   testSparkResultsAreEqual("ansi_cast timestamps to long",
-    generateValidValuesTimestampsDF(Short.MinValue, Short.MaxValue), sparkConf) {
+    generateValidValuesTimestampsDF(Short.MinValue, Short.MaxValue), sparkConf,
+    assumeCondition = before3_1_0) {
     frame => testCastTo(DataTypes.LongType)(frame)
   }
 
   testSparkResultsAreEqual("ansi_cast successful timestamps to shorts",
-    generateValidValuesTimestampsDF(Short.MinValue, Short.MaxValue), sparkConf) {
+    generateValidValuesTimestampsDF(Short.MinValue, Short.MaxValue), sparkConf,
+    assumeCondition = before3_1_0) {
     frame => testCastTo(DataTypes.ShortType)(frame)
   }
 
   testSparkResultsAreEqual("ansi_cast successful timestamps to ints",
-    generateValidValuesTimestampsDF(Int.MinValue, Int.MaxValue), sparkConf) {
+    generateValidValuesTimestampsDF(Int.MinValue, Int.MaxValue), sparkConf,
+    assumeCondition = before3_1_0) {
     frame => testCastTo(DataTypes.IntegerType)(frame)
   }
 
   testSparkResultsAreEqual("ansi_cast successful timestamps to bytes",
-    generateValidValuesTimestampsDF(Byte.MinValue, Byte.MaxValue), sparkConf) {
+    generateValidValuesTimestampsDF(Byte.MinValue, Byte.MaxValue), sparkConf,
+    assumeCondition = before3_1_0) {
     frame => testCastTo(DataTypes.ByteType)(frame)
   }
 
   testCastFailsForBadInputs("ansi_cast overflow timestamps to bytes",
-    generateOutOfRangeTimestampsDF(Byte.MinValue, Byte.MaxValue, Byte.MaxValue + 1), sparkConf) {
+    generateOutOfRangeTimestampsDF(Byte.MinValue, Byte.MaxValue, Byte.MaxValue + 1), sparkConf,
+    assumeCondition = before3_1_0) {
     frame => testCastTo(DataTypes.ByteType)(frame)
   }
 
   testCastFailsForBadInputs("ansi_cast underflow timestamps to bytes",
-    generateOutOfRangeTimestampsDF(Byte.MinValue, Byte.MaxValue, Byte.MinValue - 1), sparkConf) {
+    generateOutOfRangeTimestampsDF(Byte.MinValue, Byte.MaxValue, Byte.MinValue - 1), sparkConf,
+    assumeCondition = before3_1_0) {
     frame => testCastTo(DataTypes.ByteType)(frame)
   }
 
   testCastFailsForBadInputs("ansi_cast overflow timestamps to shorts",
-    generateOutOfRangeTimestampsDF(Short.MinValue, Short.MaxValue, Short.MaxValue + 1), sparkConf) {
+    generateOutOfRangeTimestampsDF(Short.MinValue, Short.MaxValue, Short.MaxValue + 1), sparkConf,
+    assumeCondition = before3_1_0) {
     frame => testCastTo(DataTypes.ShortType)(frame)
   }
 
   testCastFailsForBadInputs("ansi_cast underflow timestamps to shorts",
-    generateOutOfRangeTimestampsDF(Short.MinValue, Short.MaxValue, Short.MinValue - 1), sparkConf) {
+    generateOutOfRangeTimestampsDF(Short.MinValue, Short.MaxValue, Short.MinValue - 1), sparkConf,
+    assumeCondition = before3_1_0) {
     frame => testCastTo(DataTypes.ShortType)(frame)
   }
 
   testCastFailsForBadInputs("ansi_cast overflow timestamps to int",
     generateOutOfRangeTimestampsDF(Int.MinValue, Int.MaxValue, Int.MaxValue.toLong + 1),
-    sparkConf) {
+    sparkConf, assumeCondition = before3_1_0) {
     frame => testCastTo(DataTypes.IntegerType)(frame)
   }
 
   testCastFailsForBadInputs("ansi_cast underflow timestamps to int",
     generateOutOfRangeTimestampsDF(Int.MinValue, Int.MaxValue, Int.MinValue.toLong - 1),
-    sparkConf) {
+    sparkConf, assumeCondition = before3_1_0) {
     frame => testCastTo(DataTypes.IntegerType)(frame)
   }
 
@@ -123,31 +135,38 @@ class AnsiCastOpSuite extends GpuExpressionTestSuite {
   // Ansi cast from date
   ///////////////////////////////////////////////////////////////////////////
 
-  testSparkResultsAreEqual("ansi_cast date to bool", testDates, sparkConf) {
+  testSparkResultsAreEqual("ansi_cast date to bool", testDates, sparkConf,
+    assumeCondition = before3_1_0) {
     frame => testCastTo(DataTypes.BooleanType)(frame)
   }
 
-  testSparkResultsAreEqual("ansi_cast date to byte", testDates, sparkConf) {
+  testSparkResultsAreEqual("ansi_cast date to byte", testDates, sparkConf,
+    assumeCondition = before3_1_0) {
     frame => testCastTo(DataTypes.ByteType)(frame)
   }
 
-  testSparkResultsAreEqual("ansi_cast date to short", testDates, sparkConf) {
+  testSparkResultsAreEqual("ansi_cast date to short", testDates, sparkConf,
+    assumeCondition = before3_1_0) {
     frame => testCastTo(DataTypes.ShortType)(frame)
   }
 
-  testSparkResultsAreEqual("ansi_cast date to int", testDates, sparkConf) {
+  testSparkResultsAreEqual("ansi_cast date to int", testDates, sparkConf,
+    assumeCondition = before3_1_0) {
     frame => testCastTo(DataTypes.IntegerType)(frame)
   }
 
-  testSparkResultsAreEqual("ansi_cast date to long", testDates, sparkConf) {
+  testSparkResultsAreEqual("ansi_cast date to long", testDates, sparkConf,
+    assumeCondition = before3_1_0) {
     frame => testCastTo(DataTypes.LongType)(frame)
   }
 
-  testSparkResultsAreEqual("ansi_cast date to float", testDates, sparkConf) {
+  testSparkResultsAreEqual("ansi_cast date to float", testDates, sparkConf,
+    assumeCondition = before3_1_0) {
     frame => testCastTo(DataTypes.FloatType)(frame)
   }
 
-  testSparkResultsAreEqual("ansi_cast date to double", testDates, sparkConf) {
+  testSparkResultsAreEqual("ansi_cast date to double", testDates, sparkConf,
+    assumeCondition = before3_1_0) {
     frame => testCastTo(DataTypes.DoubleType)(frame)
   }
 
@@ -187,7 +206,8 @@ class AnsiCastOpSuite extends GpuExpressionTestSuite {
     frame => testCastTo(DataTypes.DoubleType)(frame)
   }
 
-  testSparkResultsAreEqual("ansi_cast bool to timestamp", testBools, sparkConf) {
+  testSparkResultsAreEqual("ansi_cast bool to timestamp", testBools, sparkConf,
+    assumeCondition = before3_1_0) {
     frame => testCastTo(DataTypes.TimestampType)(frame)
   }
 
@@ -219,7 +239,8 @@ class AnsiCastOpSuite extends GpuExpressionTestSuite {
     frame => testCastTo(DataTypes.BooleanType)(frame)
   }
 
-  testSparkResultsAreEqual("ansi_cast timestamp to bool", testTimestamps, sparkConf) {
+  testSparkResultsAreEqual("ansi_cast timestamp to bool", testTimestamps, sparkConf,
+    assumeCondition = before3_1_0) {
     frame => testCastTo(DataTypes.BooleanType)(frame)
   }
 
@@ -377,19 +398,23 @@ class AnsiCastOpSuite extends GpuExpressionTestSuite {
   // Ansi cast integral types to timestamp
   ///////////////////////////////////////////////////////////////////////////
 
-  testSparkResultsAreEqual("ansi_cast bytes to timestamp", testBytes, sparkConf) {
+  testSparkResultsAreEqual("ansi_cast bytes to timestamp", testBytes, sparkConf,
+    assumeCondition = before3_1_0) {
     frame => testCastTo(DataTypes.TimestampType)(frame)
   }
 
-  testSparkResultsAreEqual("ansi_cast shorts to timestamp", testShorts, sparkConf) {
+  testSparkResultsAreEqual("ansi_cast shorts to timestamp", testShorts, sparkConf,
+    assumeCondition = before3_1_0) {
     frame => testCastTo(DataTypes.TimestampType)(frame)
   }
 
-  testSparkResultsAreEqual("ansi_cast ints to timestamp", testInts, sparkConf) {
+  testSparkResultsAreEqual("ansi_cast ints to timestamp", testInts, sparkConf,
+    assumeCondition = before3_1_0) {
     frame => testCastTo(DataTypes.TimestampType)(frame)
   }
 
-  testSparkResultsAreEqual("ansi_cast longs to timestamp", testLongs, sparkConf) {
+  testSparkResultsAreEqual("ansi_cast longs to timestamp", testLongs, sparkConf,
+    assumeCondition = before3_1_0) {
     frame => testCastTo(DataTypes.TimestampType)(frame)
   }
 
@@ -613,10 +638,16 @@ class AnsiCastOpSuite extends GpuExpressionTestSuite {
       testName: String,
       frame: SparkSession => DataFrame,
       sparkConf: SparkConf = sparkConf,
-      msg: String = GpuCast.INVALID_INPUT_MESSAGE)(transformation: DataFrame => DataFrame)
+      msg: String = GpuCast.INVALID_INPUT_MESSAGE,
+      assumeCondition: SparkSession => (Boolean, String) = null)
+      (transformation: DataFrame => DataFrame)
     : Unit = {
 
     test(testName) {
+      if (assumeCondition != null) {
+        val (isAllowed, reason) = withCpuSparkSession(assumeCondition, conf = sparkConf)
+        assume(isAllowed, reason)
+      }
       try {
         withGpuSparkSession(spark => {
           val input = frame(spark).repartition(1)
