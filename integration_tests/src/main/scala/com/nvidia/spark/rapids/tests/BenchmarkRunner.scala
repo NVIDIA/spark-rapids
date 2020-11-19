@@ -106,7 +106,7 @@ object BenchmarkRunner {
           case Success(report) =>
             if (conf.uploadUri.isSupplied && conf.uploadPath.isSupplied) {
               println(s"Uploading ${report.filename} to " +
-                  s"s3://${conf.uploadUri()}/${conf.uploadPath()}/${report.filename}")
+                  s"${conf.uploadUri()}/${conf.uploadPath()}/${report.filename}")
 
               // because we are using the hadoop library directly, we need to convert the spark
               // hadoop configuration settings into plain hadoop settings
