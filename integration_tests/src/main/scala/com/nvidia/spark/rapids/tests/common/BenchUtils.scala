@@ -193,6 +193,9 @@ object BenchUtils {
 
       // cause Spark to call unregisterShuffle
       if (gcBetweenRuns) {
+        // we must null out the dataframe reference to allow
+        // GC to clean up the shuffle
+        df = null
         System.gc()
         System.gc()
       }
