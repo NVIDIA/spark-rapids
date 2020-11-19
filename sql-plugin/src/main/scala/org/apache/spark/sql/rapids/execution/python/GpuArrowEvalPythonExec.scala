@@ -92,6 +92,8 @@ class RebatchingRoundoffIterator(
     var rowsSoFar = batches.map(_.numRows()).sum
     while (wrapped.hasNext && rowsSoFar < targetRoundoff) {
       val got = wrapped.next()
+      inputBatches += 1
+      inputRows += got.numRows()
       rowsSoFar += got.numRows()
       batches.append(SpillableColumnarBatch(got, SpillPriorities.ACTIVE_BATCHING_PRIORITY))
     }
@@ -112,6 +114,8 @@ class RebatchingRoundoffIterator(
         // in a single call.
         val rowsNeeded = targetRoundoff - pending.get.numRows()
         val cb = wrapped.next()
+        inputBatches += 1
+        inputRows += cb.numRows()
         if (cb.numRows() >= rowsNeeded) {
           withResource(cb) { cb =>
             withResource(popPending()) { fromPending =>
@@ -135,6 +139,8 @@ class RebatchingRoundoffIterator(
       }
     } else {
       val cb = wrapped.next()
+      inputBatches += 1
+      inputRows += cb.numRows()
       if (cb.numRows() >= targetRoundoff) {
         cb
       } else {
