@@ -108,15 +108,7 @@ object BenchmarkRunner {
               println(s"Uploading ${report.filename} to " +
                   s"${conf.uploadUri()}/${conf.uploadPath()}/${report.filename}")
 
-              // because we are using the hadoop library directly, we need to convert the spark
-              // hadoop configuration settings into plain hadoop settings
-              val hadoopConf = new Configuration()
-              val sparkHadoopPrefix = "spark.hadoop."
-              spark.sqlContext.getAllConfs
-                  .filter(_._1.startsWith(sparkHadoopPrefix + "fs"))
-                  .foreach { entry =>
-                    hadoopConf.set(entry._1.substring(sparkHadoopPrefix.length), entry._2)
-                  }
+              val hadoopConf = spark.sparkContext.hadoopConfiguration
               val fs = FileSystem.newInstance(new URI(conf.uploadUri()), hadoopConf)
               fs.copyFromLocalFile(
                 new Path(report.filename),
