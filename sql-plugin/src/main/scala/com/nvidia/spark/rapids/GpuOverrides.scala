@@ -1555,6 +1555,12 @@ object GpuOverrides {
           GpuOverrides.isSupportedType(t, allowBinary = true)
       }
     ),
+    // expr[Murmur3Hash] (
+    //   "MD5 hash operator",
+    //   (a, conf, p, r) => new ExprMeta[Murmur3Hash](a, conf, p, r) {
+    //     override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression = GpuMurmur3Hash(lhs, rhs)
+    //   }
+    // ),
     expr[Upper](
       "String uppercase operator",
       (a, conf, p, r) => new UnaryExprMeta[Upper](a, conf, p, r) {
