@@ -47,6 +47,7 @@ object BenchmarkRunner {
       case Some(bench) =>
         val appName = s"${bench.name()} Like Bench ${conf.query()}"
         val spark = SparkSession.builder.appName(appName).getOrCreate()
+        spark.sparkContext.setJobDescription("Register input tables")
         conf.inputFormat().toLowerCase match {
           case "parquet" => bench.setupAllParquet(spark, conf.input())
           case "csv" => bench.setupAllCSV(spark, conf.input())
