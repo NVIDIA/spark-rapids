@@ -17,14 +17,11 @@
 package com.nvidia.spark.rapids
 
 import java.text.SimpleDateFormat
-import java.time.ZoneId
-import java.util.{Calendar, TimeZone}
 
 import ai.rapids.cudf.{ColumnVector, DType, Scalar}
 
 import org.apache.spark.sql.catalyst.analysis.TypeCheckResult
 import org.apache.spark.sql.catalyst.expressions.{Cast, CastBase, Expression, NullIntolerant, TimeZoneAwareExpression}
-import org.apache.spark.sql.catalyst.util.DateTimeUtils
 import org.apache.spark.sql.types._
 
 /** Meta-data for cast and ansi_cast. */
@@ -96,8 +93,6 @@ object GpuCast {
     "\\A\\d{4}\\-\\d{2}\\-\\d{2}[ T]\\d{2}:\\d{2}:\\d{2}\\.\\d{6}Z\\Z"
   private val TIMESTAMP_REGEX_NO_DATE = "\\A[T]?(\\d{2}:\\d{2}:\\d{2}\\.\\d{6}Z)\\Z"
 
-  private val ONE_DAY_MICROSECONDS = 86400000000L
-
   /**
    * Regex for identifying strings that contain numeric values that can be casted to integral
    * types. This includes floating point numbers but not numbers containing exponents.
@@ -121,6 +116,7 @@ object GpuCast {
     "required range"
 
   val INVALID_FLOAT_CAST_MSG = "At least one value is either null or is an invalid number"
+
 
   /**
    * Returns true iff we can cast `from` to `to` using the GPU.
@@ -655,16 +651,6 @@ case class GpuCast(
       }
     }
 
-    // special dates
-    val now = DateTimeUtils.currentDate(ZoneId.of("UTC"))
-    val specialDates: Map[String, Int] = Map(
-      "epoch" -> 0,
-      "now" -> now,
-      "today" -> now,
-      "yesterday" -> (now - 1),
-      "tomorrow" -> (now + 1)
-    )
-
     var sanitizedInput = input.incRefCount()
 
     // replace partial months
@@ -676,6 +662,8 @@ case class GpuCast(
     sanitizedInput = withResource(sanitizedInput) { cv =>
       cv.stringReplaceWithBackrefs("-([0-9])([ T](:?[\\r\\n]|.)*)?\\Z", "-0\\1")
     }
+
+    val specialDates = DateUtils.specialDatesDays
 
     withResource(sanitizedInput) { sanitizedInput =>
 
@@ -748,20 +736,10 @@ case class GpuCast(
     }
 
     // special timestamps
-    val cal = Calendar.getInstance(TimeZone.getTimeZone(ZoneId.of("UTC")))
-    cal.set(Calendar.HOUR_OF_DAY, 0)
-    cal.set(Calendar.MINUTE, 0)
-    cal.set(Calendar.SECOND, 0)
-    cal.set(Calendar.MILLISECOND, 0)
-    val today: Long = cal.getTimeInMillis * 1000
-    val todayStr = new SimpleDateFormat("yyyy-MM-dd").format(cal.getTime)
-    val specialDates: Map[String, Long] = Map(
-      "epoch" -> 0,
-      "now" -> today,
-      "today" -> today,
-      "yesterday" -> (today - ONE_DAY_MICROSECONDS),
-      "tomorrow" -> (today + ONE_DAY_MICROSECONDS)
-    )
+    val today = DateUtils.currentDate()
+    val todayStr = new SimpleDateFormat("yyyy-MM-dd")
+        .format(today * DateUtils.ONE_DAY_SECONDS * 1000L)
+    val specialDates = DateUtils.specialDatesMicros
 
     var sanitizedInput = input.incRefCount()
 

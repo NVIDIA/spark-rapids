@@ -52,7 +52,7 @@ trait RapidsShuffleFetchHandler {
    *
    * @param errorMessage - a string containing an error message
    */
-  def transferError(errorMessage: String): Unit
+  def transferError(errorMessage: String, throwable: Throwable = null): Unit
 }
 
 /**
@@ -101,7 +101,8 @@ class RapidsShuffleClient(
     clientCopyExecutor: Executor,
     maximumMetadataSize: Long,
     devStorage: RapidsDeviceMemoryStore = RapidsBufferCatalog.getDeviceStorage,
-    catalog: ShuffleReceivedBufferCatalog = GpuShuffleEnv.getReceivedCatalog) extends Logging {
+    catalog: ShuffleReceivedBufferCatalog = GpuShuffleEnv.getReceivedCatalog)
+      extends Logging with Arm {
 
   object ShuffleClientOps {
     /**
@@ -152,21 +153,16 @@ class RapidsShuffleClient(
   import ShuffleClientOps._
 
   private[this] def handleOp(op: Any): Unit = {
-    try {
-      op match {
-        case HandleMetadataResponse(tx, resp, shuffleRequests, rapidsShuffleFetchHandler) =>
-          doHandleMetadataResponse(tx, resp, shuffleRequests, rapidsShuffleFetchHandler)
-        case FetchRetry(shuffleRequests, rapidsShuffleFetchHandler, fullResponseSize) =>
-          doFetch(shuffleRequests, rapidsShuffleFetchHandler, fullResponseSize)
-        case IssueBufferReceives(bufferReceiveState) =>
-          doIssueBufferReceives(bufferReceiveState)
-        case HandleBounceBufferReceive(tx, bufferReceiveState) =>
-          doHandleBounceBufferReceive(tx, bufferReceiveState)
-      }
-    } catch {
-      case t: Throwable => {
-        logError("Exception occurred while handling shuffle client task.", t)
-      }
+    // functions we dispatch to must not throw
+    op match {
+      case HandleMetadataResponse(tx, resp, shuffleRequests, rapidsShuffleFetchHandler) =>
+        doHandleMetadataResponse(tx, resp, shuffleRequests, rapidsShuffleFetchHandler)
+      case FetchRetry(shuffleRequests, rapidsShuffleFetchHandler, fullResponseSize) =>
+        doFetch(shuffleRequests, rapidsShuffleFetchHandler, fullResponseSize)
+      case IssueBufferReceives(bufferReceiveState) =>
+        doIssueBufferReceives(bufferReceiveState)
+      case HandleBounceBufferReceive(tx, bufferReceiveState) =>
+        doHandleBounceBufferReceive(tx, bufferReceiveState)
     }
   }
 
@@ -196,44 +192,47 @@ class RapidsShuffleClient(
   def doFetch(shuffleRequests: Seq[ShuffleBlockBatchId],
               handler: RapidsShuffleFetchHandler,
               metadataSize: Long = maximumMetadataSize): Unit = {
-    val fetchRange = new NvtxRange("Client.fetch", NvtxColor.PURPLE)
     try {
-      if (shuffleRequests.isEmpty) {
-        throw new IllegalStateException("Sending empty blockIds in the MetadataRequest?")
+      withResource(new NvtxRange("Client.fetch", NvtxColor.PURPLE)) { _ =>
+        if (shuffleRequests.isEmpty) {
+          throw new IllegalStateException("Sending empty blockIds in the MetadataRequest?")
+        }
+
+        // get a metadata response tag so we can send it with the request
+        val responseTag = connection.assignResponseTag
+
+        // serialize a request, note that this includes the responseTag in the message
+        val metaReq = new RefCountedDirectByteBuffer(ShuffleMetadata.buildShuffleMetadataRequest(
+          localExecutorId, // needed s.t. the server knows what endpoint to pick
+          responseTag,
+          shuffleRequests,
+          metadataSize))
+
+        logDebug(s"Requesting block_ids=[$shuffleRequests] from connection $connection, req: \n " +
+            s"${ShuffleMetadata.printRequest(
+              ShuffleMetadata.getMetadataRequest(metaReq.getBuffer()))}")
+
+        val resp = transport.getMetaBuffer(metadataSize)
+
+        // make request
+        connection.request(
+          AddressLengthTag.from(
+            metaReq.acquire(),
+            connection.composeRequestTag(RequestType.MetadataRequest)),
+          AddressLengthTag.from(
+            resp.acquire(),
+            responseTag),
+          tx => {
+            try {
+              asyncOrBlock(HandleMetadataResponse(tx, resp, shuffleRequests, handler))
+            } finally {
+              metaReq.close()
+            }
+          })
       }
-
-      // get a metadata response tag so we can send it with the request
-      val responseTag = connection.assignResponseTag
-
-      // serialize a request, note that this includes the responseTag in the message
-      val metaReq = new RefCountedDirectByteBuffer(ShuffleMetadata.buildShuffleMetadataRequest(
-        localExecutorId, // needed s.t. the server knows what endpoint to pick
-        responseTag,
-        shuffleRequests,
-        metadataSize))
-
-      logDebug(s"Requesting block_ids=[$shuffleRequests] from connection $connection, req: \n " +
-        s"${ShuffleMetadata.printRequest(ShuffleMetadata.getMetadataRequest(metaReq.getBuffer()))}")
-
-      val resp = transport.getMetaBuffer(metadataSize)
-
-      // make request
-      connection.request(
-        AddressLengthTag.from(
-          metaReq.acquire(),
-          connection.composeRequestTag(RequestType.MetadataRequest)),
-        AddressLengthTag.from(
-          resp.acquire(),
-          responseTag),
-        tx => {
-          try {
-            asyncOrBlock(HandleMetadataResponse(tx, resp, shuffleRequests, handler))
-          } finally {
-            metaReq.close()
-          }
-        })
-    } finally {
-      fetchRange.close()
+    } catch {
+      case t: Throwable =>
+        handler.transferError("Error occurred while requesting metadata", t)
     }
   }
 
@@ -250,38 +249,44 @@ class RapidsShuffleClient(
       resp: RefCountedDirectByteBuffer,
       shuffleRequests: Seq[ShuffleBlockBatchId],
       handler: RapidsShuffleFetchHandler): Unit = {
-    val start = System.currentTimeMillis()
-    val handleMetaRange = new NvtxRange("Client.handleMeta", NvtxColor.CYAN)
     try {
-      tx.getStatus match {
-        case TransactionStatus.Success =>
-          // start the receives
-          val respBuffer = resp.getBuffer()
-          val metadataResponse: MetadataResponse = ShuffleMetadata.getMetadataResponse(respBuffer)
+      val start = System.currentTimeMillis()
+      val handleMetaRange = new NvtxRange("Client.handleMeta", NvtxColor.CYAN)
+      try {
+        tx.getStatus match {
+          case TransactionStatus.Success =>
+            // start the receives
+            val respBuffer = resp.getBuffer()
+            val metadataResponse: MetadataResponse = ShuffleMetadata.getMetadataResponse(respBuffer)
 
-          logDebug(s"Received from ${tx} response: \n:" +
-            s"${ShuffleMetadata.printResponse("received response", metadataResponse)}")
+            logDebug(s"Received from ${tx} response: \n:" +
+                s"${ShuffleMetadata.printResponse("received response", metadataResponse)}")
 
-          if (metadataResponse.fullResponseSize() <= respBuffer.capacity()) {
-            // signal to the handler how many batches are expected
-            handler.start(metadataResponse.tableMetasLength())
+            if (metadataResponse.fullResponseSize() <= respBuffer.capacity()) {
+              // signal to the handler how many batches are expected
+              handler.start(metadataResponse.tableMetasLength())
 
-            // queue up the receives
-            queueTransferRequests(metadataResponse, handler)
-          } else {
-            // NOTE: this path hasn't been tested yet.
-            logWarning("Large metadata message received, widening the receive size.")
-            asyncOrBlock(FetchRetry(shuffleRequests, handler, metadataResponse.fullResponseSize()))
-          }
-        case _ =>
-          handler.transferError(
-            tx.getErrorMessage.getOrElse(s"Unsuccessful metadata request ${tx}"))
+              // queue up the receives
+              queueTransferRequests(metadataResponse, handler)
+            } else {
+              // NOTE: this path hasn't been tested yet.
+              logWarning("Large metadata message received, widening the receive size.")
+              asyncOrBlock(
+                FetchRetry(shuffleRequests, handler, metadataResponse.fullResponseSize()))
+            }
+          case _ =>
+            handler.transferError(
+              tx.getErrorMessage.getOrElse(s"Unsuccessful metadata request ${tx}"))
+        }
+      } finally {
+        logDebug(s"Metadata response handled in ${TransportUtils.timeDiffMs(start)} ms")
+        handleMetaRange.close()
+        resp.close()
+        tx.close()
       }
-    } finally {
-      logDebug(s"Metadata response handled in ${TransportUtils.timeDiffMs(start)} ms")
-      handleMetaRange.close()
-      resp.close()
-      tx.close()
+    } catch {
+      case t: Throwable =>
+        handler.transferError("Error occurred while handling metadata", t)
     }
   }
 
@@ -302,10 +307,16 @@ class RapidsShuffleClient(
    *                           the transport's throttle logic.
    */
   private[shuffle] def doIssueBufferReceives(bufferReceiveState: BufferReceiveState): Unit = {
-    if (!bufferReceiveState.hasIterated) {
-      sendTransferRequest(bufferReceiveState)
+    try {
+      if (!bufferReceiveState.hasIterated) {
+        sendTransferRequest(bufferReceiveState)
+      }
+      receiveBuffers(bufferReceiveState)
+    } catch {
+      case t: Throwable =>
+        bufferReceiveState.errorOcurred("Error issuing buffer receives", t)
+        bufferReceiveState.close()
     }
-    receiveBuffers(bufferReceiveState)
   }
 
   private def receiveBuffers(bufferReceiveState: BufferReceiveState): Transaction = {
@@ -430,34 +441,38 @@ class RapidsShuffleClient(
    */
   def doHandleBounceBufferReceive(tx: Transaction, 
       bufferReceiveState: BufferReceiveState): Unit = {
-    val nvtxRange = new NvtxRange("Buffer Callback", NvtxColor.RED)
     try {
-      // consume buffers, which will non empty for batches that are ready
-      // to be handed off to the catalog
-      val buffMetas = bufferReceiveState.consumeWindow()
+      withResource(new NvtxRange("Buffer Callback", NvtxColor.RED)) { _ =>
+        withResource(tx) { tx =>
+          // consume buffers, which will non empty for batches that are ready
+          // to be handed off to the catalog
+          val buffMetas = bufferReceiveState.consumeWindow()
 
-      val stats = tx.getStats
+          val stats = tx.getStats
 
-      // hand buffer off to the catalog
-      buffMetas.foreach { consumed: ConsumedBatchFromBounceBuffer =>
-        val bId = track(consumed.contigBuffer, consumed.meta)
-        consumed.handler.batchReceived(bId.asInstanceOf[ShuffleReceivedBufferId])
-        transport.doneBytesInFlight(consumed.contigBuffer.getLength)
+          // hand buffer off to the catalog
+          buffMetas.foreach { consumed: ConsumedBatchFromBounceBuffer =>
+            val bId = track(consumed.contigBuffer, consumed.meta)
+            consumed.handler.batchReceived(bId.asInstanceOf[ShuffleReceivedBufferId])
+            transport.doneBytesInFlight(consumed.contigBuffer.getLength)
+          }
+
+          logDebug(s"Received buffer size ${stats.receiveSize} in" +
+              s" ${stats.txTimeMs} ms @ bw: [recv: ${stats.recvThroughput}] GB/sec")
+
+          if (bufferReceiveState.hasNext) {
+            logDebug(s"${bufferReceiveState} is not done.")
+            asyncOnCopyThread(IssueBufferReceives(bufferReceiveState))
+          } else {
+            logDebug(s"${bufferReceiveState} is DONE, closing.")
+            bufferReceiveState.close()
+          }
+        }
       }
-
-      logDebug(s"Received buffer size ${stats.receiveSize} in" +
-        s" ${stats.txTimeMs} ms @ bw: [recv: ${stats.recvThroughput}] GB/sec")
-
-      if (bufferReceiveState.hasNext) {
-        logDebug(s"${bufferReceiveState} is not done.")
-        asyncOnCopyThread(IssueBufferReceives(bufferReceiveState))
-      } else {
-        logDebug(s"${bufferReceiveState} is DONE, closing.")
+    } catch {
+      case t: Throwable =>
+        bufferReceiveState.errorOcurred("Error while handling buffer receives", t)
         bufferReceiveState.close()
-      }
-    } finally {
-      nvtxRange.close()
-      tx.close()
     }
   }
 

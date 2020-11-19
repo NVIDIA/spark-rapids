@@ -25,6 +25,7 @@ import org.apache.spark.SparkEnv
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.{SparkSession, SparkSessionExtensions}
 import org.apache.spark.sql.catalyst.InternalRow
+import org.apache.spark.sql.catalyst.analysis.Resolver
 import org.apache.spark.sql.catalyst.encoders.ExpressionEncoder
 import org.apache.spark.sql.catalyst.expressions._
 import org.apache.spark.sql.catalyst.expressions.aggregate.{First, Last}
@@ -40,8 +41,10 @@ import org.apache.spark.sql.execution.datasources.v2.parquet.ParquetScan
 import org.apache.spark.sql.execution.exchange.{BroadcastExchangeExec, ShuffleExchangeExec}
 import org.apache.spark.sql.execution.joins.{BroadcastHashJoinExec, BroadcastNestedLoopJoinExec, HashJoin, SortMergeJoinExec}
 import org.apache.spark.sql.execution.joins.ShuffledHashJoinExec
+import org.apache.spark.sql.execution.python.WindowInPandasExec
 import org.apache.spark.sql.rapids.{GpuFileSourceScanExec, GpuStringReplace, GpuTimeSub, ShuffleManagerShimBase}
 import org.apache.spark.sql.rapids.execution.{GpuBroadcastExchangeExecBase, GpuBroadcastNestedLoopJoinExecBase, GpuShuffleExchangeExecBase}
+import org.apache.spark.sql.rapids.execution.python.GpuWindowInPandasExecMetaBase
 import org.apache.spark.sql.rapids.shims.spark300._
 import org.apache.spark.sql.types._
 import org.apache.spark.storage.{BlockId, BlockManagerId}
@@ -131,13 +134,28 @@ class Spark300Shims extends SparkShims {
 
   override def getExecs: Map[Class[_ <: SparkPlan], ExecRule[_ <: SparkPlan]] = {
     Seq(
+      GpuOverrides.exec[WindowInPandasExec](
+        "The backend for Window Aggregation Pandas UDF, Accelerates the data transfer between" +
+          " the Java process and the Python process. It also supports scheduling GPU resources" +
+          " for the Python process when enabled. For now it only supports row based window frame.",
+        (winPy, conf, p, r) => new GpuWindowInPandasExecMetaBase(winPy, conf, p, r) {
+          override def convertToGpu(): GpuExec = {
+            GpuWindowInPandasExec(
+              windowExpressions.map(_.convertToGpu()),
+              partitionSpec.map(_.convertToGpu()),
+              orderSpec.map(_.convertToGpu().asInstanceOf[SortOrder]),
+              childPlans.head.convertIfNeeded()
+            )
+          }
+        }).disabledByDefault("it only supports row based frame for now"),
       GpuOverrides.exec[FileSourceScanExec](
         "Reading data from files, often from Hive tables",
         (fsse, conf, p, r) => new SparkPlanMeta[FileSourceScanExec](fsse, conf, p, r) {
           override def isSupportedType(t: DataType): Boolean =
             GpuOverrides.isSupportedType(t,
               allowArray = true,
-              allowStringMaps = true,
+              allowMaps = true,
+              allowStruct = true,
               allowNesting = true)
 
           // partition filters and data filters are not run on the GPU
@@ -267,8 +285,6 @@ class Spark300Shims extends SparkShims {
             a.dataFilters,
             conf)
         }
-        override def isSupportedType(t: DataType): Boolean =
-          GpuOverrides.isSupportedType(t, allowStringMaps = true)
       }),
     GpuOverrides.scan[OrcScan](
       "ORC parsing",
@@ -383,5 +399,12 @@ class Spark300Shims extends SparkShims {
   override def getGpuColumnarToRowTransition(plan: SparkPlan,
      exportColumnRdd: Boolean): GpuColumnarToRowExecParent = {
     GpuColumnarToRowExec(plan, exportColumnRdd)
+  }
+
+  override def checkColumnNameDuplication(
+      schema: StructType,
+      colType: String,
+      resolver: Resolver): Unit = {
+    GpuSchemaUtils.checkColumnNameDuplication(schema, colType, resolver)
   }
 }

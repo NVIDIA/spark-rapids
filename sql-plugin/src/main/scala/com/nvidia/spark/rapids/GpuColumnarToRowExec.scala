@@ -73,7 +73,7 @@ class AcceleratedColumnarToRowIterator(
     currentCv = Some(wip)
     at = 0
     total = wip.getRowCount().toInt
-    val byteBuffer = currentCv.get.getChildColumnViewAccess(0).getDataBuffer
+    val byteBuffer = currentCv.get.getChildColumnView(0).getData
     baseDataAddress = byteBuffer.getAddress
   }
 

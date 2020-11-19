@@ -14,22 +14,18 @@
  * limitations under the License.
  */
 
-package com.nvidia.spark.rapids.shims.spark300db
+package org.apache.spark.sql.rapids.shims.spark300
 
-import com.nvidia.spark.rapids.{DatabricksShimVersion, SparkShims}
+import org.apache.spark.sql.catalyst.analysis.Resolver
+import org.apache.spark.sql.types.StructType
+import org.apache.spark.sql.util.SchemaUtils
 
-object SparkShimServiceProvider {
-  val VERSION = DatabricksShimVersion(3, 0, 0)
-  val VERSIONNAMES = Seq(s"$VERSION")
-}
+object GpuSchemaUtils {
 
-class SparkShimServiceProvider extends com.nvidia.spark.rapids.SparkShimServiceProvider {
-
-  def matchesVersion(version: String): Boolean = {
-    SparkShimServiceProvider.VERSIONNAMES.contains(version)
-  }
-
-  def buildShim: SparkShims = {
-    new Spark300dbShims()
+  def checkColumnNameDuplication(
+      schema: StructType,
+      colType: String,
+      resolver: Resolver): Unit = {
+    SchemaUtils.checkColumnNameDuplication(schema.map(_.name), colType, resolver)
   }
 }

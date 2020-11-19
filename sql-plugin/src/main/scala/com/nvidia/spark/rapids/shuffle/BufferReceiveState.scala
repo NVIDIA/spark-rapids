@@ -105,8 +105,8 @@ class BufferReceiveState(
    * Calls `transferError` on each `RapidsShuffleFetchHandler`
    * @param errMsg - the message to pass onto the handlers
    */
-  def errorOcurred(errMsg: String): Unit = {
-    currentBlocks.foreach(_.block.request.handler.transferError(errMsg))
+  def errorOcurred(errMsg: String, throwable: Throwable = null): Unit = {
+    currentBlocks.foreach(_.block.request.handler.transferError(errMsg, throwable))
   }
 
   override def hasNext: Boolean = synchronized { hasMoreBuffers }

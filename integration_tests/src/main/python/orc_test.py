@@ -14,7 +14,7 @@
 
 import pytest
 
-from asserts import assert_gpu_and_cpu_are_equal_collect, assert_gpu_and_cpu_writes_are_equal_collect, assert_gpu_fallback_collect
+from asserts import assert_gpu_and_cpu_are_equal_collect, assert_gpu_fallback_collect
 from datetime import date, datetime, timezone
 from data_gen import *
 from marks import *
@@ -50,7 +50,7 @@ def test_orc_fallback(spark_tmp_path, read_func, disable_conf):
  
     gen_list = [('_c' + str(i), gen) for i, gen in enumerate(data_gens)]
     gen = StructGen(gen_list, nullable=False)
-    data_path = spark_tmp_path + '/PARQUET_DATA'
+    data_path = spark_tmp_path + '/ORC_DATA'
     reader = read_func(data_path)
     with_cpu_session(
             lambda spark : gen_df(spark, gen).write.orc(data_path))
@@ -151,55 +151,6 @@ def test_merge_schema_read(spark_tmp_path, v1_enabled_list):
             lambda spark : spark.read.option('mergeSchema', 'true').orc(data_path),
             conf={'spark.sql.sources.useV1SourceList': v1_enabled_list})
 
-orc_write_gens_list = [
-        [byte_gen, short_gen, int_gen, long_gen, float_gen, double_gen,
-            string_gen, boolean_gen, DateGen(start=date(1590, 1, 1)),
-            TimestampGen(start=datetime(1970, 1, 1, tzinfo=timezone.utc))],
-        pytest.param([date_gen], marks=pytest.mark.xfail(reason='https://github.com/NVIDIA/spark-rapids/issues/139')),
-        pytest.param([timestamp_gen], marks=pytest.mark.xfail(reason='https://github.com/NVIDIA/spark-rapids/issues/140'))]
-
-@pytest.mark.parametrize('orc_gens', orc_write_gens_list, ids=idfn)
-def test_write_round_trip(spark_tmp_path, orc_gens):
-    gen_list = [('_c' + str(i), gen) for i, gen in enumerate(orc_gens)]
-    data_path = spark_tmp_path + '/ORC_DATA'
-    assert_gpu_and_cpu_writes_are_equal_collect(
-            lambda spark, path: gen_df(spark, gen_list).coalesce(1).write.orc(path),
-            lambda spark, path: spark.read.orc(path),
-            data_path)
-
-orc_part_write_gens = [
-        byte_gen, short_gen, int_gen, long_gen, float_gen, double_gen, boolean_gen,
-        # Some file systems have issues with UTF8 strings so to help the test pass even there
-        StringGen('(\\w| ){0,50}'),
-        # Once https://github.com/NVIDIA/spark-rapids/issues/139 is fixed replace this with
-        # date_gen
-        DateGen(start=date(1590, 1, 1)),
-        # Once https://github.com/NVIDIA/spark-rapids/issues/140 is fixed replace this with
-        # timestamp_gen 
-        TimestampGen(start=datetime(1970, 1, 1, tzinfo=timezone.utc))]
-
-# There are race conditions around when individual files are read in for partitioned data
-@ignore_order
-@pytest.mark.parametrize('orc_gen', orc_part_write_gens, ids=idfn)
-def test_part_write_round_trip(spark_tmp_path, orc_gen):
-    gen_list = [('a', RepeatSeqGen(orc_gen, 10)),
-            ('b', orc_gen)]
-    data_path = spark_tmp_path + '/ORC_DATA'
-    assert_gpu_and_cpu_writes_are_equal_collect(
-            lambda spark, path: gen_df(spark, gen_list).coalesce(1).write.partitionBy('a').orc(path),
-            lambda spark, path: spark.read.orc(path),
-            data_path)
-
-orc_write_compress_options = ['none', 'uncompressed', 'snappy']
-@pytest.mark.parametrize('compress', orc_write_compress_options)
-def test_compress_write_round_trip(spark_tmp_path, compress):
-    data_path = spark_tmp_path + '/ORC_DATA'
-    assert_gpu_and_cpu_writes_are_equal_collect(
-            lambda spark, path : binary_op_df(spark, long_gen).coalesce(1).write.orc(path),
-            lambda spark, path : spark.read.orc(path),
-            data_path,
-            conf={'spark.sql.orc.compression.codec': compress})
-
 @pytest.mark.xfail(
     condition=not(is_before_spark_310()),
     reason='https://github.com/NVIDIA/spark-rapids/issues/576')
@@ -218,3 +169,4 @@ def test_input_meta(spark_tmp_path):
                         'input_file_name()',
                         'input_file_block_start()',
                         'input_file_block_length()'))
+

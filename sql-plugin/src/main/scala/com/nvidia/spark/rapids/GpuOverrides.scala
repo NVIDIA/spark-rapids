@@ -33,7 +33,7 @@ import org.apache.spark.sql.connector.read.Scan
 import org.apache.spark.sql.execution._
 import org.apache.spark.sql.execution.adaptive.{AdaptiveSparkPlanExec, BroadcastQueryStageExec, CustomShuffleReaderExec, ShuffleQueryStageExec}
 import org.apache.spark.sql.execution.aggregate.{HashAggregateExec, SortAggregateExec}
-import org.apache.spark.sql.execution.command.{DataWritingCommand, DataWritingCommandExec, ExecutedCommandExec}
+import org.apache.spark.sql.execution.command.{CreateDataSourceTableAsSelectCommand, DataWritingCommand, DataWritingCommandExec, ExecutedCommandExec}
 import org.apache.spark.sql.execution.datasources.InsertIntoHadoopFsRelationCommand
 import org.apache.spark.sql.execution.datasources.csv.CSVFileFormat
 import org.apache.spark.sql.execution.datasources.json.JsonFileFormat
@@ -46,6 +46,7 @@ import org.apache.spark.sql.execution.exchange.{BroadcastExchangeExec, ShuffleEx
 import org.apache.spark.sql.execution.joins._
 import org.apache.spark.sql.execution.python._
 import org.apache.spark.sql.execution.window.WindowExec
+import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.rapids._
 import org.apache.spark.sql.rapids.catalyst.expressions.GpuRand
 import org.apache.spark.sql.rapids.execution.{GpuBroadcastMeta, GpuBroadcastNestedLoopJoinMeta, GpuCustomShuffleReaderExec, GpuShuffleMeta}
@@ -290,7 +291,7 @@ final class InsertIntoHadoopFsRelationCommandMeta(
       willNotWorkOnGpu("bucketing is not supported")
     }
 
-     val spark = SparkSession.active
+    val spark = SparkSession.active
 
     fileFormat = cmd.fileFormat match {
       case _: CSVFileFormat =>
@@ -329,6 +330,55 @@ final class InsertIntoHadoopFsRelationCommandMeta(
       cmd.catalogTable,
       cmd.fileIndex,
       cmd.outputColumnNames)
+  }
+}
+
+final class CreateDataSourceTableAsSelectCommandMeta(
+    cmd: CreateDataSourceTableAsSelectCommand,
+    conf: RapidsConf,
+    parent: Option[RapidsMeta[_, _, _]],
+    rule: ConfKeysAndIncompat)
+  extends DataWritingCommandMeta[CreateDataSourceTableAsSelectCommand](cmd, conf, parent, rule) {
+
+  private var origProvider: Class[_] = _
+  private var gpuProvider: Option[ColumnarFileFormat] = None
+
+  override def tagSelfForGpu(): Unit = {
+    if (cmd.table.bucketSpec.isDefined) {
+      willNotWorkOnGpu("bucketing is not supported")
+    }
+    if (cmd.table.provider.isEmpty) {
+      willNotWorkOnGpu("provider must be defined")
+    }
+
+    val spark = SparkSession.active
+    origProvider =
+      GpuDataSource.lookupDataSourceWithFallback(cmd.table.provider.get, spark.sessionState.conf)
+    // Note that the data source V2 always fallsback to the V1 currently.
+    // If that changes then this will start failing because we don't have a mapping.
+    gpuProvider = origProvider.getConstructor().newInstance() match {
+      case format: OrcFileFormat =>
+        GpuOrcFileFormat.tagGpuSupport(this, spark, cmd.table.storage.properties)
+      case format: ParquetFileFormat =>
+        GpuParquetFileFormat.tagGpuSupport(this, spark,
+          cmd.table.storage.properties, cmd.query.schema)
+      case ds =>
+        willNotWorkOnGpu(s"Data source class not supported: ${ds}")
+        None
+    }
+  }
+
+  override def convertToGpu(): GpuDataWritingCommand = {
+    val newProvider = gpuProvider.getOrElse(
+      throw new IllegalStateException("fileFormat unexpected, tagSelfForGpu not called?"))
+
+    GpuCreateDataSourceTableAsSelectCommand(
+      cmd.table,
+      cmd.mode,
+      cmd.query,
+      cmd.outputColumnNames,
+      origProvider,
+      newProvider)
   }
 }
 
@@ -610,7 +660,7 @@ object GpuOverrides {
       (a, conf, p, r) => new UnaryExprMeta[Alias](a, conf, p, r) {
         override def isSupportedType(t: DataType): Boolean =
           GpuOverrides.isSupportedType(t,
-            allowStringMaps = true,
+            allowMaps = true,
             allowArray = true,
             allowStruct = true,
             allowNesting = true)
@@ -623,7 +673,7 @@ object GpuOverrides {
       (att, conf, p, r) => new BaseExprMeta[AttributeReference](att, conf, p, r) {
         override def isSupportedType(t: DataType): Boolean =
           GpuOverrides.isSupportedType(t,
-            allowStringMaps = true,
+            allowMaps = true,
             allowArray = true,
             allowStruct = true,
             allowNesting = true)
@@ -820,7 +870,7 @@ object GpuOverrides {
       (a, conf, p, r) => new UnaryExprMeta[IsNull](a, conf, p, r) {
         override def isSupportedType(t: DataType): Boolean =
           GpuOverrides.isSupportedType(t,
-            allowStringMaps = true,
+            allowMaps = true,
             allowArray = true,
             allowStruct = true,
             allowNesting = true)
@@ -832,7 +882,7 @@ object GpuOverrides {
       (a, conf, p, r) => new UnaryExprMeta[IsNotNull](a, conf, p, r) {
         override def isSupportedType(t: DataType): Boolean =
           GpuOverrides.isSupportedType(t,
-            allowStringMaps = true,
+            allowMaps = true,
             allowArray = true,
             allowStruct = true,
             allowNesting = true)
@@ -864,6 +914,7 @@ object GpuOverrides {
 
         override def isSupportedType(t: DataType): Boolean =
           GpuOverrides.isSupportedType(t,
+            allowMaps = true,
             allowArray = true,
             allowStruct = true,
             allowNesting = true)
@@ -1093,28 +1144,24 @@ object GpuOverrides {
         override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression = {
           if (conf.isImprovedTimestampOpsEnabled) {
             // passing the already converted strf string for a little optimization
-            GpuToUnixTimestampImproved(lhs, rhs, strfFormat)
+            GpuToUnixTimestampImproved(lhs, rhs, sparkFormat, strfFormat)
           } else {
-            GpuToUnixTimestamp(lhs, rhs, strfFormat)
+            GpuToUnixTimestamp(lhs, rhs, sparkFormat, strfFormat)
           }
         }
-      })
-      .incompat("Incorrectly formatted strings and bogus dates produce garbage data" +
-        " instead of null"),
+      }),
     expr[UnixTimestamp](
       "Returns the UNIX timestamp of current or specified time",
       (a, conf, p, r) => new UnixTimeExprMeta[UnixTimestamp](a, conf, p, r){
         override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression = {
           if (conf.isImprovedTimestampOpsEnabled) {
             // passing the already converted strf string for a little optimization
-            GpuUnixTimestampImproved(lhs, rhs, strfFormat)
+            GpuUnixTimestampImproved(lhs, rhs, sparkFormat, strfFormat)
           } else {
-            GpuUnixTimestamp(lhs, rhs, strfFormat)
+            GpuUnixTimestamp(lhs, rhs, sparkFormat, strfFormat)
           }
         }
-      })
-      .incompat("Incorrectly formatted strings and bogus dates produce garbage data" +
-        " instead of null"),
+      }),
     expr[Hour](
       "Returns the hour component of the string/timestamp",
       (a, conf, p, r) => new UnaryExprMeta[Hour](a, conf, p, r) {
@@ -1221,9 +1268,6 @@ object GpuOverrides {
     expr[EqualTo](
       "Check if the values are equal",
       (a, conf, p, r) => new BinaryExprMeta[EqualTo](a, conf, p, r) {
-        override def isSupportedType(t: DataType): Boolean =
-          GpuOverrides.isSupportedType(t, allowStringMaps = true)
-
         override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression =
           GpuEqualTo(lhs, rhs)
       }),
@@ -1809,7 +1853,10 @@ object GpuOverrides {
       DataWritingCommandRule[_ <: DataWritingCommand]] = Seq(
     dataWriteCmd[InsertIntoHadoopFsRelationCommand](
       "Write to Hadoop filesystem",
-      (a, conf, p, r) => new InsertIntoHadoopFsRelationCommandMeta(a, conf, p, r))
+      (a, conf, p, r) => new InsertIntoHadoopFsRelationCommandMeta(a, conf, p, r)),
+    dataWriteCmd[CreateDataSourceTableAsSelectCommand](
+      "Create table with select command",
+      (a, conf, p, r) => new CreateDataSourceTableAsSelectCommandMeta(a, conf, p, r))
   ).map(r => (r.getClassFor.asSubclass(classOf[DataWritingCommand]), r)).toMap
 
   def wrapPlan[INPUT <: SparkPlan](
@@ -1830,7 +1877,7 @@ object GpuOverrides {
         new SparkPlanMeta[ProjectExec](proj, conf, p, r) {
           override def isSupportedType(t: DataType): Boolean =
             GpuOverrides.isSupportedType(t,
-              allowStringMaps = true,
+              allowMaps = true,
               allowArray = true,
               allowStruct = true,
               allowNesting = true)
@@ -1855,8 +1902,9 @@ object GpuOverrides {
 
         override def isSupportedType(t: DataType): Boolean =
           GpuOverrides.isSupportedType(t,
-            allowStringMaps = true,
+            allowMaps = true,
             allowArray = true,
+            allowStruct = true,
             allowNesting = true)
 
         override def convertToGpu(): GpuExec =
@@ -1925,7 +1973,7 @@ object GpuOverrides {
       (filter, conf, p, r) => new SparkPlanMeta[FilterExec](filter, conf, p, r) {
         override def isSupportedType(t: DataType): Boolean =
           GpuOverrides.isSupportedType(t,
-            allowStringMaps = true,
+            allowMaps = true,
             allowArray = true,
             allowStruct = true,
             allowNesting = true)
@@ -2016,12 +2064,6 @@ object GpuOverrides {
         " scheduling GPU resources for the Python process when enabled",
       (flatCoPy, conf, p, r) => new GpuFlatMapCoGroupsInPandasExecMeta(flatCoPy, conf, p, r))
         .disabledByDefault("Performance is not ideal now"),
-    exec[WindowInPandasExec](
-      "The backend for Window Aggregation Pandas UDF, Accelerates the data transfer between the" +
-        " Java process and the Python process. It also supports scheduling GPU resources" +
-        " for the Python process when enabled. For now it only supports row based window frame.",
-      (winPy, conf, p, r) => new GpuWindowInPandasExecMeta(winPy, conf, p, r))
-      .disabledByDefault("it only supports row based frame for now"),
     neverReplaceExec[AlterNamespaceSetPropertiesExec]("Namespace metadata operation"),
     neverReplaceExec[CreateNamespaceExec]("Namespace metadata operation"),
     neverReplaceExec[DescribeNamespaceExec]("Namespace metadata operation"),
@@ -2047,6 +2089,16 @@ object GpuOverrides {
   ).map(r => (r.getClassFor.asSubclass(classOf[SparkPlan]), r)).toMap
   val execs: Map[Class[_ <: SparkPlan], ExecRule[_ <: SparkPlan]] =
     commonExecs ++ ShimLoader.getSparkShims.getExecs
+
+  def getTimeParserPolicy: TimeParserPolicy = {
+    val policy = SQLConf.get.getConfString(SQLConf.LEGACY_TIME_PARSER_POLICY.key, "EXCEPTION")
+    policy match {
+      case "LEGACY" => LegacyTimeParserPolicy
+      case "EXCEPTION" => ExceptionTimeParserPolicy
+      case "CORRECTED" => CorrectedTimeParserPolicy
+    }
+  }
+
 }
 /** Tag the initial plan when AQE is enabled */
 case class GpuQueryStagePrepOverrides() extends Rule[SparkPlan] with Logging {

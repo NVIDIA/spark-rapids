@@ -279,17 +279,9 @@ class RapidsShuffleServer(transport: RapidsShuffleTransport,
       if (tx.getStatus == TransactionStatus.Error) {
         logError("error getting metadata request: " + tx)
         metaRequest.close() // the buffer is not going to be handed anywhere else, so lets close it
-        throw new IllegalStateException(s"Error occurred while while handling metadata $tx")
       } else {
         logDebug(s"Received metadata request: $tx => $metaRequest")
-        try {
-          handleMetadataRequest(metaRequest)
-        } catch {
-          case e: Throwable => {
-            logError(s"Exception while handling metadata request from $tx: ", e)
-            throw e
-          }
-        }
+        handleMetadataRequest(metaRequest)
       }
     } finally {
       logDebug(s"Metadata request handled in ${TransportUtils.timeDiffMs(start)} ms")
@@ -342,8 +334,6 @@ class RapidsShuffleServer(transport: RapidsShuffleTransport,
         try {
           if (tx.getStatus == TransactionStatus.Error) {
             logError(s"Error sending metadata response in tx $tx")
-            throw new IllegalStateException(
-              s"Error while handling a metadata response send for $tx")
           } else {
             val stats = tx.getStats
             logDebug(s"Sent metadata ${stats.sendSize} in ${stats.txTimeMs} ms")
@@ -366,9 +356,9 @@ class RapidsShuffleServer(transport: RapidsShuffleTransport,
    * @param bufferSendStates state objects tracking sends needed to fulfill a TransferRequest
    */
   def doHandleTransferRequest(bufferSendStates: Seq[BufferSendState]): Unit = {
-    val bssBuffers = bufferSendStates.map { bufferSendState =>
-      withResource(new NvtxRange(s"doHandleTransferRequest", NvtxColor.CYAN)) { _ =>
-        try {
+    closeOnExcept(bufferSendStates) { _ =>
+      val bssBuffers = bufferSendStates.map { bufferSendState =>
+        withResource(new NvtxRange(s"doHandleTransferRequest", NvtxColor.CYAN)) { _ =>
           require(bufferSendState.hasNext, "Attempting to handle a complete transfer request.")
 
           // For each `BufferSendState` we ask for a bounce buffer fill up
@@ -376,64 +366,57 @@ class RapidsShuffleServer(transport: RapidsShuffleTransport,
           val buffersToSend = bufferSendState.next()
 
           (bufferSendState, buffersToSend)
-        } catch {
-          case t: Throwable =>
-            bufferSendState.close()
-            throw t
         }
       }
-    }
 
-    serverStream.sync()
+      serverStream.sync()
 
-    // need to release at this point, we do this after the sync so
-    // we are sure we actually copied everything to the bounce buffer
-    bufferSendStates.foreach(_.releaseAcquiredToCatalog())
+      // need to release at this point, we do this after the sync so
+      // we are sure we actually copied everything to the bounce buffer
+      bufferSendStates.foreach(_.releaseAcquiredToCatalog())
 
-    bssBuffers.foreach {
-      case (bufferSendState, buffersToSend) =>
-        val transferRequest = bufferSendState.getTransferRequest
-        serverConnection.send(transferRequest.executorId(), buffersToSend, new TransactionCallback {
-        override def apply(bufferTx: Transaction): Unit = {
-          try {
-            logDebug(s"Done with the send for ${bufferSendState} with ${buffersToSend}")
+      bssBuffers.foreach {
+        case (bufferSendState, buffersToSend) =>
+          val transferRequest = bufferSendState.getTransferRequest
+          serverConnection.send(transferRequest.executorId(), buffersToSend, bufferTx =>
+            try {
+              logDebug(s"Done with the send for ${bufferSendState} with ${buffersToSend}")
 
-            if (bufferSendState.hasNext) {
-              // continue issuing sends.
-              logDebug(s"Buffer send state ${bufferSendState} is NOT done. " +
-                  s"Still pending: ${pendingTransfersQueue.size}.")
-              bssExec.synchronized {
-                bssContinueQueue.add(bufferSendState)
-                bssExec.notifyAll()
+              if (bufferSendState.hasNext) {
+                // continue issuing sends.
+                logDebug(s"Buffer send state ${bufferSendState} is NOT done. " +
+                    s"Still pending: ${pendingTransfersQueue.size}.")
+                bssExec.synchronized {
+                  bssContinueQueue.add(bufferSendState)
+                  bssExec.notifyAll()
+                }
+              } else {
+                val transferResponse = bufferSendState.getTransferResponse()
+
+                logDebug(s"Handling transfer request for ${transferRequest.executorId()} " +
+                    s"with ${buffersToSend}")
+
+                // send the transfer response
+                serverConnection.send(
+                  transferRequest.executorId,
+                  AddressLengthTag.from(transferResponse.acquire(), transferRequest.responseTag()),
+                  transferResponseTx => {
+                    transferResponse.close()
+                    transferResponseTx.close()
+                  })
+
+                // wake up the bssExec since bounce buffers became available
+                logDebug(s"Buffer send state ${buffersToSend.tag} is done. Closing. " +
+                    s"Still pending: ${pendingTransfersQueue.size}.")
+                bssExec.synchronized {
+                  bufferSendState.close()
+                  bssExec.notifyAll()
+                }
               }
-            } else {
-              val transferResponse = bufferSendState.getTransferResponse()
-
-              logDebug(s"Handling transfer request for ${transferRequest.executorId()} " +
-                  s"with ${buffersToSend}")
-
-              // send the transfer response
-              serverConnection.send(
-                transferRequest.executorId,
-                AddressLengthTag.from(transferResponse.acquire(), transferRequest.responseTag()),
-                transferResponseTx => {
-                  transferResponse.close()
-                  transferResponseTx.close()
-                })
-
-              // wake up the bssExec since bounce buffers became available
-              logDebug(s"Buffer send state ${buffersToSend.tag} is done. Closing. " +
-                  s"Still pending: ${pendingTransfersQueue.size}.")
-              bssExec.synchronized {
-                bufferSendState.close()
-                bssExec.notifyAll()
-              }
-            }
-          } finally {
-            bufferTx.close()
-          }
-        }
-      })
+            } finally {
+              bufferTx.close()
+            })
+      }
     }
   }
 

@@ -85,7 +85,8 @@ class Spark301dbShims extends Spark301Shims {
           override def isSupportedType(t: DataType): Boolean =
             GpuOverrides.isSupportedType(t,
               allowArray = true,
-              allowStringMaps = true,
+              allowMaps = true,
+              allowStruct = true,
               allowNesting = true)
 
           // partition filters and data filters are not run on the GPU

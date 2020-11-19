@@ -136,8 +136,9 @@ object GpuParquetScanBase {
     for (field <- readSchema) {
       if (!GpuOverrides.isSupportedType(
         field.dataType,
-        allowStringMaps = true,
+        allowMaps = true,
         allowArray = true,
+        allowStruct = true,
         allowNesting = true)) {
         meta.willNotWorkOnGpu(s"GpuParquetScan does not support fields of type ${field.dataType}")
       }
