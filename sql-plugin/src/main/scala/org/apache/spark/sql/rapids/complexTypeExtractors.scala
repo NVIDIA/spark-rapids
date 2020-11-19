@@ -28,7 +28,7 @@ import org.apache.spark.sql.types.{AbstractDataType, AnyDataType, ArrayType, Dat
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
 case class GpuGetStructField(child: Expression, ordinal: Int, name: Option[String] = None)
-    extends UnaryExpression with GpuExpression with ExtractValue {
+    extends UnaryExpression with GpuExpression with ExtractValue with NullIntolerant {
 
   lazy val childSchema: StructType = child.dataType.asInstanceOf[StructType]
 
@@ -44,9 +44,8 @@ case class GpuGetStructField(child: Expression, ordinal: Int, name: Option[Strin
     child.sql + s".${quoteIdentifier(name.getOrElse(childSchema(ordinal).name))}"
 
   override def columnarEval(batch: ColumnarBatch): Any = {
-    val input = child.columnarEval(batch)
-    val dt = dataType
-    try {
+    withResourceIfAllowed(child.columnarEval(batch)) { input =>
+      val dt = dataType
       input match {
         case cv: GpuColumnVector =>
           withResource(cv.getBase.getChildColumnView(ordinal)) { view =>
@@ -59,11 +58,6 @@ case class GpuGetStructField(child: Expression, ordinal: Int, name: Option[Strin
           withResource(GpuScalar.from(tmp, dt)) { scalar =>
             GpuColumnVector.from(scalar, batch.numRows(), dt)
           }
-      }
-    } finally {
-      input match {
-        case ac: AutoCloseable => ac.close()
-        case _ => // NOOP
       }
     }
   }
