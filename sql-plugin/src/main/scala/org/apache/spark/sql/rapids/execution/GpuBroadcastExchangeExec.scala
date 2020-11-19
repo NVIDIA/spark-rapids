@@ -50,20 +50,22 @@ class SerializeConcatHostBuffersDeserializeBatch(
   extends Serializable with Arm with AutoCloseable {
   @transient private val headers = data.map(_.header)
   @transient private val buffers = data.map(_.buffer)
-  @transient @volatile private var batchInternal: ColumnarBatch = _
+  @transient @volatile private var batchInternalRef: ColumnarBatch = _
 
-  def batch: ColumnarBatch = {
-    if (batchInternal == null) {
+  def batch: ColumnarBatch = this.synchronized {
+    if (batchInternalRef == null) {
       // TODO we should come up with a better way for this to happen directly...
       val out = new ByteArrayOutputStream()
       val oout = new ObjectOutputStream(out)
       writeObject(oout)
       val barr = out.toByteArray
       val oin = new ObjectInputStream(new ByteArrayInputStream(barr))
-      batchInternal = readObject(oin)
+      batchInternalRef = readObject(oin)
     }
-    batchInternal
+    batchInternalRef
   }
+
+  def batchInternal = this.synchronized { batchInternalRef }
 
   private def writeObject(out: ObjectOutputStream): Unit = {
     if (headers.length == 0) {
