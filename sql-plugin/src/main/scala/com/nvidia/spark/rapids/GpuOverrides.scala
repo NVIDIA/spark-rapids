@@ -1609,6 +1609,20 @@ object GpuOverrides {
     expr[StringSplit](
        "Splits `str` around occurrences that match `regex`",
       (in, conf, p, r) => new GpuStringSplitMeta(in, conf, p, r)),
+
+    expr[GetStructField](
+      "Gets the named field of the struct",
+      (expr, conf, p, r) => new UnaryExprMeta[GetStructField](expr, conf, p, r) {
+        override def convertToGpu(arr: Expression): GpuExpression =
+          GpuGetStructField(arr, expr.ordinal, expr.name)
+
+        override def isSupportedType(t: DataType): Boolean =
+          GpuOverrides.isSupportedType(t,
+            allowArray = true,
+            allowStruct = true,
+            allowMaps = true,
+            allowNesting = true)
+      }),
     expr[GetArrayItem](
       "Gets the field at `ordinal` in the Array",
       (in, conf, p, r) => new GpuGetArrayItemMeta(in, conf, p, r)),
