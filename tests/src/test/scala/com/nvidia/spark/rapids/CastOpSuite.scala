@@ -49,7 +49,17 @@ class CastOpSuite extends GpuExpressionTestSuite {
     for (from <- supportedTypes; to <- supportedTypes) yield (from, to)
   }
 
+  def should310SkipAnsiCast(from: DataType, to: DataType): Boolean = (from, to) match {
+    case (_: NumericType, TimestampType | DateType) => true
+    case (BooleanType, TimestampType | DateType) => true
+    case (TimestampType | DateType, _: NumericType) => true
+    case (TimestampType | DateType, BooleanType) => true
+    case _ => false
+  }
+
+
   test("Test all supported casts with in-range values") {
+    val is310OrAfter = !withCpuSparkSession(s => s.version < "3.1.0")
 
     // test cast() and ansi_cast()
     Seq(false, true).foreach { ansiEnabled =>
@@ -63,8 +73,12 @@ class CastOpSuite extends GpuExpressionTestSuite {
 
       typeMatrix.foreach {
         case (from, to) =>
+          // In 3.1.0 Cast.canCast was split with a separate ANSI version
+          // Until we are on 3.1.0 or more we cannot call this easily so for now
+          // We will check and skip a very specific one.
+          val shouldSkip = is310OrAfter && ansiEnabled && should310SkipAnsiCast(to, from)
           // check if Spark supports this cast
-          if (Cast.canCast(from, to)) {
+          if (!shouldSkip && Cast.canCast(from, to)) {
             // check if plugin supports this cast
             if (GpuCast.canCast(from, to)) {
               // test the cast
@@ -87,7 +101,7 @@ class CastOpSuite extends GpuExpressionTestSuite {
                   fail(s"Cast from $from to $to failed; ansi=$ansiEnabled", e)
               }
             }
-          } else {
+          } else if (!shouldSkip) {
             // if Spark doesn't support this cast then the plugin shouldn't either
             assert(!GpuCast.canCast(from, to))
           }
