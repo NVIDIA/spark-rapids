@@ -19,7 +19,7 @@ set -ex
 
 . jenkins/version-def.sh
 
-export 'M2DIR' so that shims can get the correct cudf/spark dependnecy info
+## export 'M2DIR' so that shims can get the correct cudf/spark dependency info
 export M2DIR="$WORKSPACE/.m2"
 mvn -U -B -Pinclude-databricks,snapshot-shims clean deploy $MVN_URM_MIRROR -Dmaven.repo.local=$M2DIR
 # Run unit tests against other spark versions
