@@ -175,7 +175,6 @@ def test_window_aggregate_udf_array_from_python(data_gen, window):
 
     # When receiving the data of array type from Python side, split it right away
     # in case the following expressions or plans may not support array type yet.
-    # Such as SortOrder.
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark: binary_op_df(spark, data_gen)\
             .select(pandas_sum(f.col('b')).over(window).alias('py_array'))\

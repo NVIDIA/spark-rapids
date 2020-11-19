@@ -1505,8 +1505,21 @@ object GpuOverrides {
             childExprs.map(_.convertToGpu()),
             a.evalType, a.udfDeterministic, a.resultId)
 
-        override def isSupportedType(t: DataType): Boolean =
-          GpuOverrides.isSupportedType(t, allowArray = true, allowNesting = true)
+        override def tagExprForGpu(): Unit = {
+          // Allow array type data only in output for the top Python UDF. Because seems
+          // there is something wrong in writing array type data by cuDF arrow IPC writer.
+          wrapped.children
+            .filter(_.dataType.isInstanceOf[ArrayType])
+            .foreach(e => willNotWorkOnGpu(s"array type data($e) as the input of Python UDF is" +
+              " not supported on GPU"))
+        }
+
+        // Allow only one level array type data which has been verified now.
+        // Will update this after verifying the nested array type.
+        override def isSupportedType(t: DataType): Boolean = t match {
+          case ArrayType(elementType, _) => super.isSupportedType(elementType)
+          case _ => super.isSupportedType(t)
+        }
       }
     ),
     expr[Rand](
