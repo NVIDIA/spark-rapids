@@ -16,7 +16,7 @@
 
 package com.nvidia.spark.rapids;
 
-import ai.rapids.cudf.ColumnViewAccess;
+import ai.rapids.cudf.ColumnView;
 import ai.rapids.cudf.DType;
 import ai.rapids.cudf.HostColumnVector;
 import ai.rapids.cudf.Scalar;
@@ -305,8 +305,8 @@ public class GpuColumnVector extends GpuColumnVectorBase {
   /**
    * This should only ever be called from an assertion.
    */
-  private static <T> boolean typeConversionAllowed(ColumnViewAccess<T> cv, DataType colType) {
-    DType dt = cv.getDataType();
+  private static boolean typeConversionAllowed(ColumnView cv, DataType colType) {
+    DType dt = cv.getType();
     if (!dt.isNestedType()) {
       return getRapidsType(colType).equals(dt);
     }
@@ -316,19 +316,19 @@ public class GpuColumnVector extends GpuColumnVectorBase {
       if (!(dt.equals(DType.LIST))) {
         return false;
       }
-      try (ColumnViewAccess<T> structCv = cv.getChildColumnViewAccess(0)) {
-        if (!(structCv.getDataType().equals(DType.STRUCT))) {
+      try (ColumnView structCv = cv.getChildColumnView(0)) {
+        if (!(structCv.getType().equals(DType.STRUCT))) {
           return false;
         }
         if (structCv.getNumChildren() != 2) {
           return false;
         }
-        try (ColumnViewAccess<T> keyCv = structCv.getChildColumnViewAccess(0)) {
+        try (ColumnView keyCv = structCv.getChildColumnView(0)) {
           if (!typeConversionAllowed(keyCv, mType.keyType())) {
             return false;
           }
         }
-        try (ColumnViewAccess<T> valCv = structCv.getChildColumnViewAccess(1)) {
+        try (ColumnView valCv = structCv.getChildColumnView(1)) {
           return typeConversionAllowed(valCv, mType.valueType());
         }
       }
@@ -336,7 +336,7 @@ public class GpuColumnVector extends GpuColumnVectorBase {
       if (!(dt.equals(DType.LIST))) {
         return false;
       }
-      try (ColumnViewAccess<T> tmp = cv.getChildColumnViewAccess(0)) {
+      try (ColumnView tmp = cv.getChildColumnView(0)) {
         return typeConversionAllowed(tmp, ((ArrayType) colType).elementType());
       }
     } else if (colType instanceof StructType) {
@@ -349,7 +349,7 @@ public class GpuColumnVector extends GpuColumnVectorBase {
         return false;
       }
       for (int childIndex = 0; childIndex < numChildren; childIndex++) {
-        try (ColumnViewAccess<T> tmp = cv.getChildColumnViewAccess(childIndex)) {
+        try (ColumnView tmp = cv.getChildColumnView(childIndex)) {
           StructField entry = ((StructType) colType).apply(childIndex);
           if (!typeConversionAllowed(tmp, entry.dataType())) {
             return false;
@@ -361,8 +361,8 @@ public class GpuColumnVector extends GpuColumnVectorBase {
       if (!(dt.equals(DType.LIST))) {
         return false;
       }
-      try (ColumnViewAccess<T> tmp = cv.getChildColumnViewAccess(0)) {
-        DType tmpType = tmp.getDataType();
+      try (ColumnView tmp = cv.getChildColumnView(0)) {
+        DType tmpType = tmp.getType();
         return tmpType.equals(DType.INT8) || tmpType.equals(DType.UINT8);
       }
     } else {
