@@ -117,6 +117,22 @@ class ParseDateTimeSuite extends SparkQueryCompareTestSuite {
       "Part of the plan is not columnar class org.apache.spark.sql.execution.ProjectExec"))
   }
 
+  test("parse now") {
+    def now(spark: SparkSession) = {
+      import spark.implicits._
+      Seq("now").toDF("c0")
+          .repartition(2)
+          .withColumn("c1", unix_timestamp(col("c0"), "yyyy-MM-dd HH:mm:ss"))
+    }
+    val startTimeSeconds = System.currentTimeMillis()/1000L
+    val cpuNowSeconds = withCpuSparkSession(now).collect().head.toSeq(1).asInstanceOf[Long]
+    val gpuNowSeconds = withGpuSparkSession(now).collect().head.toSeq(1).asInstanceOf[Long]
+    assert(cpuNowSeconds >= startTimeSeconds)
+    assert(gpuNowSeconds >= startTimeSeconds)
+    // CPU ran first so cannot have a greater value than the GPU run (but could be the same second)
+    assert(cpuNowSeconds <= gpuNowSeconds)
+  }
+
   private def timestampsAsStrings(spark: SparkSession) = {
     import spark.implicits._
     timestampValues.toDF("c0")
@@ -125,11 +141,11 @@ class ParseDateTimeSuite extends SparkQueryCompareTestSuite {
   private def datesAsStrings(spark: SparkSession) = {
     import spark.implicits._
     val values = Seq(
-      GpuCast.EPOCH,
-      GpuCast.NOW,
-      GpuCast.TODAY,
-      GpuCast.YESTERDAY,
-      GpuCast.TOMORROW
+      DateUtils.EPOCH,
+      DateUtils.NOW,
+      DateUtils.TODAY,
+      DateUtils.YESTERDAY,
+      DateUtils.TOMORROW
     ) ++ timestampValues
     values.toDF("c0")
   }

@@ -16,7 +16,12 @@
 
 package com.nvidia.spark.rapids
 
+import java.time.LocalDate
+
 import scala.collection.mutable.ListBuffer
+
+import org.apache.spark.sql.catalyst.util.DateTimeUtils
+import org.apache.spark.sql.catalyst.util.DateTimeUtils.{localDateToDays, SQLDate}
 
 /**
  * Class for helper functions for Date
@@ -41,6 +46,49 @@ object DateUtils {
   val ONE_DAY_SECONDS = 86400L
 
   val ONE_DAY_MICROSECONDS = 86400000000L
+
+  val EPOCH = "epoch"
+  val NOW = "now"
+  val TODAY = "today"
+  val YESTERDAY = "yesterday"
+  val TOMORROW = "tomorrow"
+
+  def specialDatesDays: Map[String, Int] = {
+    val today = currentDate()
+    Map(
+      EPOCH -> 0,
+      NOW -> today,
+      TODAY -> today,
+      YESTERDAY -> (today - 1),
+      TOMORROW -> (today + 1)
+    )
+  }
+
+  def specialDatesSeconds: Map[String, Long] = {
+    val today = currentDate()
+    val now = DateTimeUtils.currentTimestamp()
+    Map(
+      EPOCH -> 0,
+      NOW -> now / 1000000L,
+      TODAY -> today * ONE_DAY_SECONDS,
+      YESTERDAY -> (today - 1) * ONE_DAY_SECONDS,
+      TOMORROW -> (today + 1) * ONE_DAY_SECONDS
+    )
+  }
+
+  def specialDatesMicros: Map[String, Long] = {
+    val today = currentDate()
+    val now = DateTimeUtils.currentTimestamp()
+    Map(
+      EPOCH -> 0,
+      NOW -> now,
+      TODAY -> today * ONE_DAY_MICROSECONDS,
+      YESTERDAY -> (today - 1) * ONE_DAY_MICROSECONDS,
+      TOMORROW -> (today + 1) * ONE_DAY_MICROSECONDS
+    )
+  }
+
+  def currentDate(): SQLDate = localDateToDays(LocalDate.now())
 
   case class FormatKeywordToReplace(word: String, startIndex: Int, endIndex: Int)
 

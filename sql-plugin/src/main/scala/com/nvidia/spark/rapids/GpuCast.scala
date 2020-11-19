@@ -17,14 +17,11 @@
 package com.nvidia.spark.rapids
 
 import java.text.SimpleDateFormat
-import java.time.ZoneId
-import java.util.{Calendar, TimeZone}
 
 import ai.rapids.cudf.{ColumnVector, DType, Scalar}
 
 import org.apache.spark.sql.catalyst.analysis.TypeCheckResult
 import org.apache.spark.sql.catalyst.expressions.{Cast, CastBase, Expression, NullIntolerant, TimeZoneAwareExpression}
-import org.apache.spark.sql.catalyst.util.DateTimeUtils
 import org.apache.spark.sql.types._
 
 /** Meta-data for cast and ansi_cast. */
@@ -120,11 +117,6 @@ object GpuCast {
 
   val INVALID_FLOAT_CAST_MSG = "At least one value is either null or is an invalid number"
 
-  val EPOCH = "epoch"
-  val NOW = "now"
-  val TODAY = "today"
-  val YESTERDAY = "yesterday"
-  val TOMORROW = "tomorrow"
 
   /**
    * Returns true iff we can cast `from` to `to` using the GPU.
@@ -185,17 +177,6 @@ object GpuCast {
       }
       case _ => false
     }
-  }
-
-  def calculateSpecialDates: Map[String, Int] = {
-    val now = DateTimeUtils.currentDate(ZoneId.of("UTC"))
-    Map(
-      EPOCH -> 0,
-      NOW -> now,
-      TODAY -> now,
-      YESTERDAY -> (now - 1),
-      TOMORROW -> (now + 1)
-    )
   }
 }
 
@@ -682,7 +663,7 @@ case class GpuCast(
       cv.stringReplaceWithBackrefs("-([0-9])([ T](:?[\\r\\n]|.)*)?\\Z", "-0\\1")
     }
 
-    val specialDates = calculateSpecialDates
+    val specialDates = DateUtils.specialDatesDays
 
     withResource(sanitizedInput) { sanitizedInput =>
 
@@ -755,20 +736,10 @@ case class GpuCast(
     }
 
     // special timestamps
-    val cal = Calendar.getInstance(TimeZone.getTimeZone(ZoneId.of("UTC")))
-    cal.set(Calendar.HOUR_OF_DAY, 0)
-    cal.set(Calendar.MINUTE, 0)
-    cal.set(Calendar.SECOND, 0)
-    cal.set(Calendar.MILLISECOND, 0)
-    val today: Long = cal.getTimeInMillis * 1000
-    val todayStr = new SimpleDateFormat("yyyy-MM-dd").format(cal.getTime)
-    val specialDates: Map[String, Long] = Map(
-      GpuCast.EPOCH -> 0,
-      GpuCast.NOW -> today,
-      GpuCast.TODAY -> today,
-      GpuCast.YESTERDAY -> (today - DateUtils.ONE_DAY_MICROSECONDS),
-      GpuCast.TOMORROW -> (today + DateUtils.ONE_DAY_MICROSECONDS)
-    )
+    val today = DateUtils.currentDate()
+    val todayStr = new SimpleDateFormat("yyyy-MM-dd")
+        .format(today * DateUtils.ONE_DAY_SECONDS * 1000L)
+    val specialDates = DateUtils.specialDatesMicros
 
     var sanitizedInput = input.incRefCount()
 
