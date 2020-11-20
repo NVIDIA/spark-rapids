@@ -19,7 +19,7 @@ package org.apache.spark.sql.rapids.execution.python
 import ai.rapids.cudf
 import ai.rapids.cudf.{Aggregation, Table}
 import com.nvidia.spark.rapids._
-import com.nvidia.spark.rapids.GpuMetricNames.{NUM_OUTPUT_BATCHES, NUM_OUTPUT_ROWS}
+import com.nvidia.spark.rapids.GpuMetricNames._
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import com.nvidia.spark.rapids.python.PythonWorkerSemaphore
 import scala.collection.mutable
@@ -32,6 +32,7 @@ import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.expressions._
 import org.apache.spark.sql.catalyst.plans.physical.{AllTuples, ClusteredDistribution, Distribution, Partitioning}
 import org.apache.spark.sql.execution.UnaryExecNode
+import org.apache.spark.sql.execution.metric.{SQLMetric, SQLMetrics}
 import org.apache.spark.sql.execution.python._
 import org.apache.spark.sql.rapids.GpuAggregateExpression
 import org.apache.spark.sql.types.{IntegerType, StructField, StructType}
@@ -86,7 +87,9 @@ abstract class GpuWindowInPandasExecMetaBase(
  */
 class GroupingIterator(
     wrapped: Iterator[ColumnarBatch],
-    partitionSpec: Seq[Expression]) extends Iterator[ColumnarBatch] with Arm {
+    partitionSpec: Seq[Expression],
+    inputRows: SQLMetric,
+    inputBatches: SQLMetric) extends Iterator[ColumnarBatch] with Arm {
 
   // Currently do it in a somewhat ugly way. In the future cuDF will provide a dedicated API.
   // Current solution assumes one group data exists in only one batch, so just split the
@@ -105,6 +108,8 @@ class GroupingIterator(
       groupBatches.dequeue().getColumnarBatch()
     } else {
       val batch = wrapped.next()
+      inputBatches += 1
+      inputRows += batch.numRows()
       if (batch.numRows() > 0 && batch.numCols() > 0 && partitionSpec.nonEmpty) {
         val partitionIndices = partitionSpec.indices
         // 1) Calculate the split indices via cudf.Table.groupBy and aggregation Count.
@@ -200,6 +205,9 @@ trait GpuWindowInPandasExecBase extends UnaryExecNode with GpuExec {
   override def outputPartitioning: Partitioning = child.outputPartitioning
 
   override def childrenCoalesceGoal: Seq[CoalesceGoal] = Seq(RequireSingleBatch)
+
+  // Ask for a single batch, the same with input.
+  override def outputBatching: CoalesceGoal = RequireSingleBatch
 
   /*
    * Helper functions and data structures for window bounds
@@ -383,10 +391,19 @@ trait GpuWindowInPandasExecBase extends UnaryExecNode with GpuExec {
     new ColumnarBatch(boundsCVs ++ dataCVs.map(_.incRefCount()), numRows)
   }
 
+  override lazy val metrics: Map[String, SQLMetric] = Map(
+    NUM_OUTPUT_ROWS -> SQLMetrics.createMetric(sparkContext, DESCRIPTION_NUM_OUTPUT_ROWS),
+    NUM_OUTPUT_BATCHES -> SQLMetrics.createMetric(sparkContext, DESCRIPTION_NUM_OUTPUT_BATCHES),
+    NUM_INPUT_ROWS -> SQLMetrics.createMetric(sparkContext, DESCRIPTION_NUM_INPUT_ROWS),
+    NUM_INPUT_BATCHES -> SQLMetrics.createMetric(sparkContext, DESCRIPTION_NUM_INPUT_BATCHES)
+  )
+
   override protected def doExecute(): RDD[InternalRow] =
     throw new IllegalStateException(s"Row-based execution should not occur for $this")
 
   override protected def doExecuteColumnar(): RDD[ColumnarBatch] = {
+    val numInputRows = longMetric(NUM_INPUT_ROWS)
+    val numInputBatches = longMetric(NUM_INPUT_BATCHES)
     val numOutputRows = longMetric(NUM_OUTPUT_ROWS)
     val numOutputBatches = longMetric(NUM_OUTPUT_BATCHES)
     val sessionLocalTimeZone = conf.sessionLocalTimeZone
@@ -490,7 +507,8 @@ trait GpuWindowInPandasExecBase extends UnaryExecNode with GpuExec {
       val boundDataRefs = GpuBindReferences.bindGpuReferences(dataInputs, childOutput)
       // Re-batching the input data by GroupingIterator
       val boundPartitionRefs = GpuBindReferences.bindGpuReferences(partitionSpec, childOutput)
-      val groupedIterator = new GroupingIterator(inputIter, boundPartitionRefs)
+      val groupedIterator = new GroupingIterator(inputIter, boundPartitionRefs,
+        numInputRows, numInputBatches)
       val pyInputIterator = groupedIterator.map { batch =>
         // We have to do the project before we add the batch because the batch might be closed
         // when it is added
