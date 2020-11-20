@@ -18,8 +18,7 @@ package com.nvidia.spark.rapids
 
 import java.io.File
 
-import ai.rapids.cudf.Table
-import com.nvidia.spark.rapids.RapidsPluginImplicits._
+import ai.rapids.cudf.{DType, Table}
 import org.scalatest.FunSuite
 
 import org.apache.spark.SparkConf
@@ -55,7 +54,7 @@ class GpuPartitioningSuite extends FunSuite with Arm {
     val actualColumns = GpuColumnVector.extractBases(expected)
     expectedColumns.zip(actualColumns).foreach { case (expected, actual) =>
       withResource(expected.equalToNullAware(actual)) { compareVector =>
-        withResource(compareVector.all()) { compareResult =>
+        withResource(compareVector.all(DType.BOOL8)) { compareResult =>
           assert(compareResult.getBoolean)
         }
       }
@@ -144,11 +143,14 @@ class GpuPartitioningSuite extends FunSuite with Arm {
                 val gccv = columns.head.asInstanceOf[GpuCompressedColumnVector]
                 val bufferId = MockRapidsBufferId(partIndex)
                 val devBuffer = gccv.getBuffer
+                // device store takes ownership of the buffer
                 devBuffer.incRefCount()
                 deviceStore.addBuffer(bufferId, devBuffer, gccv.getTableMeta, spillPriority)
                 withResource(buildSubBatch(batch, startRow, endRow)) { expectedBatch =>
                   withResource(catalog.acquireBuffer(bufferId)) { buffer =>
-                    compareBatches(expectedBatch, buffer.getColumnarBatch(sparkTypes))
+                    withResource(buffer.getColumnarBatch(sparkTypes)) { batch =>
+                      compareBatches(expectedBatch, batch)
+                    }
                   }
                 }
               }
