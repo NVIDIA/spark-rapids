@@ -155,6 +155,8 @@ object BenchUtils {
     var df: DataFrame = null
     val queryTimes = new ListBuffer[Long]()
     for (i <- 0 until iterations) {
+      spark.sparkContext.setJobDescription(s"Benchmark Run: query=$queryDescription; iteration=$i")
+      
       // cause Spark to call unregisterShuffle
       if (i > 0 && gcBetweenRuns) {
         // we must null out the dataframe reference to allow
