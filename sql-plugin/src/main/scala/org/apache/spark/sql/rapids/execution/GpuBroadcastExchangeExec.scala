@@ -50,9 +50,9 @@ class SerializeConcatHostBuffersDeserializeBatch(
   extends Serializable with Arm with AutoCloseable {
   @transient private val headers = data.map(_.header)
   @transient private val buffers = data.map(_.buffer)
-  @transient @volatile private var batchInternal: ColumnarBatch = _
+  @transient private var batchInternal: ColumnarBatch = null
 
-  def batch: ColumnarBatch = this.synchronized {
+  def batch: ColumnarBatch = {
     if (batchInternal == null) {
       // TODO we should come up with a better way for this to happen directly...
       val out = new ByteArrayOutputStream()
@@ -60,7 +60,7 @@ class SerializeConcatHostBuffersDeserializeBatch(
       writeObject(oout)
       val barr = out.toByteArray
       val oin = new ObjectInputStream(new ByteArrayInputStream(barr))
-      batchInternal = readObject(oin)
+      readObject(oin)
     }
     batchInternal
   }
@@ -81,7 +81,7 @@ class SerializeConcatHostBuffersDeserializeBatch(
     }
   }
 
-  private def readObject(in: ObjectInputStream): ColumnarBatch = {
+  private def readObject(in: ObjectInputStream): Unit = {
     val range = new NvtxRange("DeserializeBatch", NvtxColor.PURPLE)
     try {
       val tableInfo: JCudfSerialization.TableAndRowCountPair =
@@ -90,12 +90,13 @@ class SerializeConcatHostBuffersDeserializeBatch(
         val table = tableInfo.getTable
         if (table == null) {
           val numRows = tableInfo.getNumRows
-          new ColumnarBatch(new Array[ColumnVector](0), numRows.toInt)
+          this.batchInternal = new ColumnarBatch(new Array[ColumnVector](0))
+          batchInternal.setNumRows(numRows.toInt)
         } else {
           val colDataTypes = in.readObject().asInstanceOf[Array[DataType]]
           // This is read as part of the broadcast join so we expect it to leak.
           (0 until table.getNumberOfColumns).foreach(table.getColumn(_).noWarnLeakExpected())
-          GpuColumnVector.from(table, colDataTypes)
+          this.batchInternal = GpuColumnVector.from(table, colDataTypes)
         }
       } finally {
         tableInfo.close()
