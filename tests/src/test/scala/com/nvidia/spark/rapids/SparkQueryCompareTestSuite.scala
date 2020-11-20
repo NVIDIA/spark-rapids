@@ -937,24 +937,28 @@ trait SparkQueryCompareTestSuite extends FunSuite with Arm {
     ).toDF("ints", "longs", "doubles", "strings", "bucket_1", "bucket_2")
   }
 
-  def mixedDf(session: SparkSession): DataFrame = {
-    import session.sqlContext.implicits._
-    Seq[(java.lang.Integer, java.lang.Long, java.lang.Double, java.lang.String)](
-      (99, 100L, 1.0, "A"),
-      (98, 200L, 2.0, "B"),
-      (97,300L, 3.0, "C"),
-      (99, 400L, 4.0, "D"),
-      (98, 500L, 5.0, "E"),
-      (97, -100L, 6.0, "F"),
-      (96, -500L, 0.0, "G"),
-      (95, -700L, 8.0, "E\u0480\u0481"),
-      (Int.MaxValue, Long.MinValue, Double.PositiveInfinity, "\u0000"),
-      (Int.MinValue, Long.MaxValue, Double.NaN, "\u0000"),
-      (null, null, null, "actions are judged by intentions"),
-      (94, -900L, 9.0, "g\nH"),
-      (92, -1200L, 12.0, "IJ\"\u0100\u0101\u0500\u0501"),
-      (90, 1500L, 15.0, "\ud720\ud721")
-    ).toDF("ints", "longs", "doubles", "strings")
+  def mixedDf(session: SparkSession, numSlices: Int = 2): DataFrame = {
+    val rows = Seq[Row](Row(99, 100L, 1.0, "A", Decimal("1.2")),
+      Row(98, 200L, 2.0, "B", Decimal("1.3")),
+      Row(97, 300L, 3.0, "C", Decimal("1.4")),
+      Row(99, 400L, 4.0, "D", Decimal("1.5")),
+      Row(98, 500L, 5.0, "E", Decimal("1.6")),
+      Row(97, -100L, 6.0, "F", Decimal("1.7")),
+      Row(96, -500L, 0.0, "G", Decimal("1.8")),
+      Row(95, -700L, 8.0, "E\u0480\u0481", Decimal("1.9")),
+      Row(Int.MaxValue, Long.MinValue, Double.PositiveInfinity, "\u0000", Decimal("2.0")),
+      Row(Int.MinValue, Long.MaxValue, Double.NaN, "\u0000", Decimal("100.123")),
+      Row(null, null, null, "actions are judged by intentions", Decimal("200.246")),
+      Row(94, -900L, 9.0, "g\nH", Decimal("300.369")),
+      Row(92, -1200L, 12.0, "IJ\"\u0100\u0101\u0500\u0501", Decimal("-1.47e3")),
+      Row(90, 1500L, 15.0, "\ud720\ud721", Decimal("-22.2345")))
+    val structType = StructType(Seq(StructField("ints", IntegerType),
+        StructField("longs", LongType),
+        StructField("doubles", DoubleType),
+        StructField("strings", StringType),
+        StructField("decimals", DecimalType(15, 5))))
+    session.createDataFrame(
+      session.sparkContext.parallelize(rows, numSlices), structType)
   }
 
   def likeDf(session: SparkSession): DataFrame = {
