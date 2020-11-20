@@ -20,7 +20,7 @@ import scala.collection.AbstractIterator
 import scala.concurrent.Future
 
 import com.nvidia.spark.rapids._
-import com.nvidia.spark.rapids.GpuMetricNames.{DESCRIPTION_NUM_OUTPUT_BATCHES, DESCRIPTION_NUM_OUTPUT_ROWS, NUM_OUTPUT_BATCHES, NUM_OUTPUT_ROWS}
+import com.nvidia.spark.rapids.GpuMetricNames.{DESCRIPTION_NUM_OUTPUT_BATCHES, DESCRIPTION_NUM_OUTPUT_ROWS, DESCRIPTION_NUM_PARTITIONS, DESCRIPTION_PARTITION_SIZE, NUM_OUTPUT_BATCHES, NUM_OUTPUT_ROWS, NUM_PARTITIONS, PARTITION_SIZE}
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 
 import org.apache.spark.{MapOutputStatistics, ShuffleDependency}
@@ -86,6 +86,10 @@ abstract class GpuShuffleExchangeExecBase(
 
   // Spark doesn't report totalTime for this operator so we override metrics
   override lazy val metrics: Map[String, SQLMetric] = Map(
+    PARTITION_SIZE ->
+        SQLMetrics.createMetric(sparkContext, DESCRIPTION_PARTITION_SIZE),
+    NUM_PARTITIONS ->
+        SQLMetrics.createMetric(sparkContext, DESCRIPTION_NUM_PARTITIONS),
     NUM_OUTPUT_ROWS -> SQLMetrics.createMetric(sparkContext, DESCRIPTION_NUM_OUTPUT_ROWS),
     NUM_OUTPUT_BATCHES -> SQLMetrics.createMetric(sparkContext, DESCRIPTION_NUM_OUTPUT_BATCHES)
   ) ++ additionalMetrics
