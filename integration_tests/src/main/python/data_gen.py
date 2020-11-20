@@ -212,11 +212,29 @@ class IntegerGen(DataGen):
 
 class DecimalGen(DataGen):
     """Generate Decimals, with some built in corner cases."""
-    def __init__(self, nullable=True):
-        super().__init__(DecimalType(7,3), nullable=nullable)
+    def __init__(self, precision=7, scale=3, nullable=True, special_cases=None):
+        if special_cases is None:
+            # TODO need to add in special cases, like max value and min value
+            special_cases = [Decimal('0')]
+        super().__init__(DecimalType(precision, scale), nullable=nullable, special_cases=special_cases)
+        self._scale = scale
+        self._precision = precision
+        if (scale > 0):
+            pattern = "[0-9]{1,"+ str(precision - scale) + "}\.[0-9]{0," + str(scale) + "}"
+        else:
+            pattern = "[0-9]{1,"+ str(precision) + "}e" + str(-scale)
+        self.base_strs = sre_yield.AllStrings(pattern, flags=0, charset=sre_yield.CHARSET, max_count=_MAX_CHOICES)
+
+    def __repr__(self):
+        return super().__repr__() + '(' + str(self._precision) + ',' + str(self._scale) + ')'
 
     def start(self, rand):
-        self._start(rand, lambda : Decimal(str(round(random.uniform(2000, 4000), 2))))
+        strs = self.base_strs
+        try:
+            length = int(len(strs))
+        except OverflowError:
+            length = _MAX_CHOICES
+        self._start(rand, lambda : Decimal(strs[rand.randrange(0, length)]))
 
 LONG_MIN = -(1 << 63)
 LONG_MAX = (1 << 63) - 1
