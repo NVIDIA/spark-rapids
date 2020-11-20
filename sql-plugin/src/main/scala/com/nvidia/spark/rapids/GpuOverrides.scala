@@ -648,7 +648,10 @@ object GpuOverrides {
         }
 
         override def isSupportedType(t: DataType): Boolean =
-          GpuOverrides.isSupportedType(t, allowCalendarInterval = true, allowDecimal = true)
+          GpuOverrides.isSupportedType(t,
+            allowNull = true,
+            allowDecimal = true,
+            allowCalendarInterval = true)
       }),
     expr[Signum](
       "Returns -1.0, 0.0 or 1.0 as expr is negative, 0 or positive",
@@ -660,6 +663,7 @@ object GpuOverrides {
       (a, conf, p, r) => new UnaryExprMeta[Alias](a, conf, p, r) {
         override def isSupportedType(t: DataType): Boolean =
           GpuOverrides.isSupportedType(t,
+            allowNull = true,
             allowMaps = true,
             allowArray = true,
             allowStruct = true,
@@ -674,6 +678,7 @@ object GpuOverrides {
       (att, conf, p, r) => new BaseExprMeta[AttributeReference](att, conf, p, r) {
         override def isSupportedType(t: DataType): Boolean =
           GpuOverrides.isSupportedType(t,
+            allowNull = true,
             allowMaps = true,
             allowArray = true,
             allowStruct = true,
@@ -694,10 +699,7 @@ object GpuOverrides {
     expr[Cast](
       "Convert a column of one type of data into another type",
       (cast, conf, p, r) => new CastExprMeta[Cast](cast, SparkSession.active.sessionState.conf
-        .ansiEnabled, conf, p, r) {
-        override def isSupportedType(t: DataType): Boolean =
-          GpuOverrides.isSupportedType(t, allowBinary = true)
-      }),
+        .ansiEnabled, conf, p, r)),
     expr[AnsiCast](
       "Convert a column of one type of data into another type",
       (cast, conf, p, r) => new CastExprMeta[AnsiCast](cast, true, conf, p, r)),
@@ -872,6 +874,7 @@ object GpuOverrides {
       (a, conf, p, r) => new UnaryExprMeta[IsNull](a, conf, p, r) {
         override def isSupportedType(t: DataType): Boolean =
           GpuOverrides.isSupportedType(t,
+            allowNull = true,
             allowMaps = true,
             allowArray = true,
             allowStruct = true,
@@ -885,6 +888,7 @@ object GpuOverrides {
       (a, conf, p, r) => new UnaryExprMeta[IsNotNull](a, conf, p, r) {
         override def isSupportedType(t: DataType): Boolean =
           GpuOverrides.isSupportedType(t,
+            allowNull = true,
             allowMaps = true,
             allowArray = true,
             allowStruct = true,
@@ -918,6 +922,7 @@ object GpuOverrides {
 
         override def isSupportedType(t: DataType): Boolean =
           GpuOverrides.isSupportedType(t,
+            allowNull = true,
             allowMaps = true,
             allowArray = true,
             allowStruct = true,
@@ -990,18 +995,30 @@ object GpuOverrides {
     expr[Coalesce] (
       "Returns the first non-null argument if exists. Otherwise, null",
       (a, conf, p, r) => new ExprMeta[Coalesce](a, conf, p, r) {
+        override def isSupportedType(t: DataType): Boolean =
+          GpuOverrides.isSupportedType(t,
+            allowNull = true)
+
         override def convertToGpu(): GpuExpression = GpuCoalesce(childExprs.map(_.convertToGpu()))
       }
     ),
     expr[Least] (
       "Returns the least value of all parameters, skipping null values",
       (a, conf, p, r) => new ExprMeta[Least](a, conf, p, r) {
+        override def isSupportedType(t: DataType): Boolean =
+          GpuOverrides.isSupportedType(t,
+            allowNull = true)
+
         override def convertToGpu(): GpuExpression = GpuLeast(childExprs.map(_.convertToGpu()))
       }
     ),
     expr[Greatest] (
       "Returns the greatest value of all parameters, skipping null values",
       (a, conf, p, r) => new ExprMeta[Greatest](a, conf, p, r) {
+        override def isSupportedType(t: DataType): Boolean =
+          GpuOverrides.isSupportedType(t,
+            allowNull = true)
+
         override def convertToGpu(): GpuExpression = GpuGreatest(childExprs.map(_.convertToGpu()))
       }
     ),
@@ -1266,30 +1283,50 @@ object GpuOverrides {
     expr[EqualNullSafe](
       "Check if the values are equal including nulls <=>",
       (a, conf, p, r) => new BinaryExprMeta[EqualNullSafe](a, conf, p, r) {
+        override def isSupportedType(t: DataType): Boolean =
+          GpuOverrides.isSupportedType(t,
+            allowNull = true)
+
         override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression =
           GpuEqualNullSafe(lhs, rhs)
       }),
     expr[EqualTo](
       "Check if the values are equal",
       (a, conf, p, r) => new BinaryExprMeta[EqualTo](a, conf, p, r) {
+        override def isSupportedType(t: DataType): Boolean =
+          GpuOverrides.isSupportedType(t,
+            allowNull = true)
+
         override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression =
           GpuEqualTo(lhs, rhs)
       }),
     expr[GreaterThan](
       "> operator",
       (a, conf, p, r) => new BinaryExprMeta[GreaterThan](a, conf, p, r) {
+        override def isSupportedType(t: DataType): Boolean =
+          GpuOverrides.isSupportedType(t,
+            allowNull = true)
+
         override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression =
           GpuGreaterThan(lhs, rhs)
       }),
     expr[GreaterThanOrEqual](
       ">= operator",
       (a, conf, p, r) => new BinaryExprMeta[GreaterThanOrEqual](a, conf, p, r) {
+        override def isSupportedType(t: DataType): Boolean =
+          GpuOverrides.isSupportedType(t,
+            allowNull = true)
+
         override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression =
           GpuGreaterThanOrEqual(lhs, rhs)
       }),
     expr[In](
       "IN operator",
       (in, conf, p, r) => new ExprMeta[In](in, conf, p, r) {
+        override def isSupportedType(t: DataType): Boolean =
+          GpuOverrides.isSupportedType(t,
+            allowNull = true)
+
         override def tagExprForGpu(): Unit = {
           val unaliased = in.list.map(extractLit)
           if (!unaliased.forall(_.isDefined)) {
@@ -1309,6 +1346,10 @@ object GpuOverrides {
     expr[InSet](
       "INSET operator",
       (in, conf, p, r) => new ExprMeta[InSet](in, conf, p, r) {
+        override def isSupportedType(t: DataType): Boolean =
+          GpuOverrides.isSupportedType(t,
+            allowNull = true)
+
         override def tagExprForGpu(): Unit = {
           if (in.hset.contains(null)) {
             willNotWorkOnGpu("nulls are not supported")
@@ -1325,18 +1366,30 @@ object GpuOverrides {
     expr[LessThan](
       "< operator",
       (a, conf, p, r) => new BinaryExprMeta[LessThan](a, conf, p, r) {
+        override def isSupportedType(t: DataType): Boolean =
+          GpuOverrides.isSupportedType(t,
+            allowNull = true)
+
         override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression =
           GpuLessThan(lhs, rhs)
       }),
     expr[LessThanOrEqual](
       "<= operator",
       (a, conf, p, r) => new BinaryExprMeta[LessThanOrEqual](a, conf, p, r) {
+        override def isSupportedType(t: DataType): Boolean =
+          GpuOverrides.isSupportedType(t,
+            allowNull = true)
+
         override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression =
           GpuLessThanOrEqual(lhs, rhs)
       }),
     expr[CaseWhen](
       "CASE WHEN expression",
       (a, conf, p, r) => new ExprMeta[CaseWhen](a, conf, p, r) {
+        override def isSupportedType(t: DataType): Boolean =
+          GpuOverrides.isSupportedType(t,
+            allowNull = true)
+
         override def tagExprForGpu(): Unit = {
           val anyLit = a.branches.exists { case (predicate, _) => isLit(predicate) }
           if (anyLit) {
@@ -1359,6 +1412,10 @@ object GpuOverrides {
     expr[If](
       "IF expression",
       (a, conf, p, r) => new ExprMeta[If](a, conf, p, r) {
+        override def isSupportedType(t: DataType): Boolean =
+          GpuOverrides.isSupportedType(t,
+            allowNull = true)
+
         override def tagExprForGpu(): Unit = {
           if (isLit(a.predicate)) {
             willNotWorkOnGpu(s"literal predicate ${a.predicate} is not supported")
@@ -1405,10 +1462,13 @@ object GpuOverrides {
         } else {
           childrenExprMeta
         }
-       override def convertToGpu(): GpuExpression = {
-         // handle the case AggregateExpression has the resultIds parameter where its
-         // Seq[ExprIds] instead of single ExprId.
-         val resultId = try {
+        override def isSupportedType(t: DataType): Boolean =
+          GpuOverrides.isSupportedType(t,
+            allowNull = true)
+        override def convertToGpu(): GpuExpression = {
+          // handle the case AggregateExpression has the resultIds parameter where its
+          // Seq[ExprIds] instead of single ExprId.
+          val resultId = try {
             val resultMethod = a.getClass.getMethod("resultId")
             resultMethod.invoke(a).asInstanceOf[ExprId]
           } catch {
@@ -1418,7 +1478,7 @@ object GpuOverrides {
           }
           GpuAggregateExpression(childExprs(0).convertToGpu().asInstanceOf[GpuAggregateFunction],
             a.mode, a.isDistinct, filter.map(_.convertToGpu()), resultId)
-       }
+        }
       }),
     expr[SortOrder](
       "Sort order",
@@ -1426,6 +1486,9 @@ object GpuOverrides {
         // One of the few expressions that are not replaced with a GPU version
         override def convertToGpu(): Expression =
           a.withNewChildren(childExprs.map(_.convertToGpu()))
+
+        override def isSupportedType(t: DataType): Boolean =
+          GpuOverrides.isSupportedType(t, allowNull = true)
       }),
     expr[Count](
       "Count aggregate operator",
@@ -1435,6 +1498,10 @@ object GpuOverrides {
             willNotWorkOnGpu("count of multiple columns not supported")
           }
         }
+
+        override def isSupportedType(t: DataType): Boolean =
+          GpuOverrides.isSupportedType(t,
+            allowNull = true)
 
         override def convertToGpu(): GpuExpression = GpuCount(childExprs.map(_.convertToGpu()))
       }),
@@ -1449,6 +1516,11 @@ object GpuOverrides {
               s" ${RapidsConf.HAS_NANS} to false.")
           }
         }
+
+        override def isSupportedType(t: DataType): Boolean =
+          GpuOverrides.isSupportedType(t,
+            allowNull = true)
+
         override def convertToGpu(child: Expression): GpuExpression = GpuMax(child)
       }),
     expr[Min](
@@ -1462,6 +1534,11 @@ object GpuOverrides {
               s" ${RapidsConf.HAS_NANS} to false.")
           }
         }
+
+        override def isSupportedType(t: DataType): Boolean =
+          GpuOverrides.isSupportedType(t,
+            allowNull = true)
+
         override def convertToGpu(child: Expression): GpuExpression = GpuMin(child)
       }),
     expr[Sum](
@@ -1818,6 +1895,9 @@ object GpuOverrides {
         override val childExprs: Seq[BaseExprMeta[_]] =
           hp.expressions.map(GpuOverrides.wrapExpr(_, conf, Some(this)))
 
+        override def isSupportedType(t: DataType): Boolean =
+          GpuOverrides.isSupportedType(t, allowNull = true)
+
         override def convertToGpu(): GpuPartitioning =
           GpuHashPartitioning(childExprs.map(_.convertToGpu()), hp.numPartitions)
       }),
@@ -1826,6 +1906,10 @@ object GpuOverrides {
       (rp, conf, p, r) => new PartMeta[RangePartitioning](rp, conf, p, r) {
         override val childExprs: Seq[BaseExprMeta[_]] =
           rp.ordering.map(GpuOverrides.wrapExpr(_, conf, Some(this)))
+
+        override def isSupportedType(t: DataType): Boolean =
+          GpuOverrides.isSupportedType(t, allowNull = true)
+
         override def convertToGpu(): GpuPartitioning = {
           if (rp.numPartitions > 1) {
             val gpuOrdering = childExprs.map(_.convertToGpu()).asInstanceOf[Seq[SortOrder]]
@@ -1845,6 +1929,9 @@ object GpuOverrides {
     part[RoundRobinPartitioning](
       "Round robin partitioning",
       (rrp, conf, p, r) => new PartMeta[RoundRobinPartitioning](rrp, conf, p, r) {
+        override def isSupportedType(t: DataType): Boolean =
+          GpuOverrides.isSupportedType(t, allowNull = true)
+
         override def convertToGpu(): GpuPartitioning = {
           GpuRoundRobinPartitioning(rrp.numPartitions)
         }
@@ -1853,6 +1940,10 @@ object GpuOverrides {
       "Single partitioning",
       (sp, conf, p, r) => new PartMeta[SinglePartition.type](sp, conf, p, r) {
         override val childExprs: Seq[ExprMeta[_]] = Seq.empty[ExprMeta[_]]
+
+        override def isSupportedType(t: DataType): Boolean =
+          GpuOverrides.isSupportedType(t, allowNull = true)
+
         override def convertToGpu(): GpuPartitioning = {
           GpuSinglePartitioning(childExprs.map(_.convertToGpu()))
         }
@@ -1895,6 +1986,7 @@ object GpuOverrides {
         new SparkPlanMeta[ProjectExec](proj, conf, p, r) {
           override def isSupportedType(t: DataType): Boolean =
             GpuOverrides.isSupportedType(t,
+              allowNull = true,
               allowMaps = true,
               allowArray = true,
               allowStruct = true,
@@ -1932,6 +2024,10 @@ object GpuOverrides {
     exec[CoalesceExec](
       "The backend for the dataframe coalesce method",
       (coalesce, conf, parent, r) => new SparkPlanMeta[CoalesceExec](coalesce, conf, parent, r) {
+        override def isSupportedType(t: DataType): Boolean =
+          GpuOverrides.isSupportedType(t,
+            allowNull = true)
+
         override def convertToGpu(): GpuExec =
           GpuCoalesceExec(coalesce.numPartitions, childPlans.head.convertIfNeeded())
       }),
@@ -1992,6 +2088,7 @@ object GpuOverrides {
       (filter, conf, p, r) => new SparkPlanMeta[FilterExec](filter, conf, p, r) {
         override def isSupportedType(t: DataType): Boolean =
           GpuOverrides.isSupportedType(t,
+            allowNull = true,
             allowMaps = true,
             allowArray = true,
             allowStruct = true,
@@ -2006,6 +2103,10 @@ object GpuOverrides {
     exec[UnionExec](
       "The backend for the union operator",
       (union, conf, p, r) => new SparkPlanMeta[UnionExec](union, conf, p, r) {
+        override def isSupportedType(t: DataType): Boolean =
+          GpuOverrides.isSupportedType(t,
+            allowNull = true)
+
         override def convertToGpu(): GpuExec =
           GpuUnionExec(childPlans.map(_.convertIfNeeded()))
       }),
@@ -2023,6 +2124,10 @@ object GpuOverrides {
           join.condition.map(GpuOverrides.wrapExpr(_, conf, Some(this)))
 
         override val childExprs: Seq[BaseExprMeta[_]] = condition.toSeq
+
+        override def isSupportedType(t: DataType): Boolean =
+          GpuOverrides.isSupportedType(t,
+            allowNull = true)
 
         override def convertToGpu(): GpuExec =
           GpuCartesianProductExec(

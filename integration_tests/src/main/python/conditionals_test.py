@@ -22,8 +22,8 @@ import pyspark.sql.functions as f
 
 @pytest.mark.parametrize('data_gen', all_basic_gens, ids=idfn)
 def test_if_else(data_gen):
-    (s1, s2) = gen_scalars_for_sql(data_gen, 2, force_no_nulls=True)
-    string_type = to_cast_string(data_gen.data_type)
+    (s1, s2) = gen_scalars_for_sql(data_gen, 2, force_no_nulls=not isinstance(data_gen, NullGen))
+    null_lit = get_null_lit_string(data_gen.data_type)
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : three_col_df(spark, boolean_gen, data_gen, data_gen).selectExpr(
                 # A literal predicate is not supported yet
@@ -31,13 +31,13 @@ def test_if_else(data_gen):
                 'IF(a, {}, c)'.format(s1),
                 'IF(a, b, {})'.format(s2),
                 'IF(a, {}, {})'.format(s1, s2),
-                'IF(a, b, CAST(null as {}))'.format(string_type),
-                'IF(a, CAST(null as {}), c)'.format(string_type)))
+                'IF(a, b, {})'.format(null_lit),
+                'IF(a, {}, c)'.format(null_lit)))
 
 @pytest.mark.parametrize('data_gen', all_basic_gens, ids=idfn)
 def test_case_when(data_gen):
     num_cmps = 20
-    s1 = gen_scalar(data_gen, force_no_nulls=True)
+    s1 = gen_scalar(data_gen, force_no_nulls=not isinstance(data_gen, NullGen))
     # we want lots of false
     bool_gen = BooleanGen().with_special_case(False, weight=1000.0)
     gen_cols = [('_b' + str(x), bool_gen) for x in range(0, num_cmps)]
@@ -57,7 +57,7 @@ def test_case_when(data_gen):
 
 @pytest.mark.parametrize('data_gen', [float_gen, double_gen], ids=idfn)
 def test_nanvl(data_gen):
-    s1 = gen_scalar(data_gen, force_no_nulls=True)
+    s1 = gen_scalar(data_gen, force_no_nulls=not isinstance(data_gen, NullGen))
     data_type = data_gen.data_type
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : binary_op_df(spark, data_gen).select(
@@ -68,21 +68,21 @@ def test_nanvl(data_gen):
 
 @pytest.mark.parametrize('data_gen', all_basic_gens, ids=idfn)
 def test_nvl(data_gen):
-    (s1, s2) = gen_scalars_for_sql(data_gen, 2, force_no_nulls=True)
-    string_type = to_cast_string(data_gen.data_type)
+    (s1, s2) = gen_scalars_for_sql(data_gen, 2, force_no_nulls=not isinstance(data_gen, NullGen))
+    null_lit = get_null_lit_string(data_gen.data_type)
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : binary_op_df(spark, data_gen).selectExpr(
                 'nvl(a, b)',
                 'nvl(a, {})'.format(s2),
                 'nvl({}, b)'.format(s1),
-                'nvl(CAST(null as {}), b)'.format(string_type),
-                'nvl(a, CAST(null as {}))'.format(string_type)))
+                'nvl({}, b)'.format(null_lit),
+                'nvl(a, {})'.format(null_lit)))
 
 #nvl is translated into a 2 param version of coalesce
 @pytest.mark.parametrize('data_gen', all_basic_gens, ids=idfn)
 def test_coalesce(data_gen):
     num_cols = 20
-    s1 = gen_scalar(data_gen, force_no_nulls=True)
+    s1 = gen_scalar(data_gen, force_no_nulls=not isinstance(data_gen, NullGen))
     # we want lots of nulls
     gen = StructGen([('_c' + str(x), data_gen.copy_special_case(None, weight=1000.0)) 
         for x in range(0, num_cols)], nullable=False)
@@ -102,38 +102,36 @@ def test_coalesce_constant_output():
 
 @pytest.mark.parametrize('data_gen', all_basic_gens, ids=idfn)
 def test_nvl2(data_gen):
-    (s1, s2) = gen_scalars_for_sql(data_gen, 2, force_no_nulls=True)
-    string_type = to_cast_string(data_gen.data_type)
+    (s1, s2) = gen_scalars_for_sql(data_gen, 2, force_no_nulls=not isinstance(data_gen, NullGen))
+    null_lit = get_null_lit_string(data_gen.data_type)
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : three_col_df(spark, data_gen, data_gen, data_gen).selectExpr(
                 'nvl2(a, b, c)',
                 'nvl2(a, b, {})'.format(s2),
                 'nvl2({}, b, c)'.format(s1),
-                'nvl2(CAST(null as {}), b, c)'.format(string_type),
-                'nvl2(a, CAST(null as {}), c)'.format(string_type)))
+                'nvl2({}, b, c)'.format(null_lit),
+                'nvl2(a, {}, c)'.format(null_lit)))
 
 @pytest.mark.parametrize('data_gen', eq_gens, ids=idfn)
 def test_nullif(data_gen):
-    (s1, s2) = gen_scalars_for_sql(data_gen, 2, force_no_nulls=True)
-    string_type = to_cast_string(data_gen.data_type)
+    (s1, s2) = gen_scalars_for_sql(data_gen, 2, force_no_nulls=not isinstance(data_gen, NullGen))
+    null_lit = get_null_lit_string(data_gen.data_type)
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : binary_op_df(spark, data_gen).selectExpr(
                 'nullif(a, b)',
                 'nullif(a, {})'.format(s2),
                 'nullif({}, b)'.format(s1),
-                'nullif(CAST(null as {}), b)'.format(string_type),
-                'nullif(a, CAST(null as {}))'.format(string_type)))
+                'nullif({}, b)'.format(null_lit),
+                'nullif(a, {})'.format(null_lit)))
 
 @pytest.mark.parametrize('data_gen', eq_gens, ids=idfn)
 def test_ifnull(data_gen):
-    (s1, s2) = gen_scalars_for_sql(data_gen, 2, force_no_nulls=True)
-    string_type = to_cast_string(data_gen.data_type)
+    (s1, s2) = gen_scalars_for_sql(data_gen, 2, force_no_nulls=not isinstance(data_gen, NullGen))
+    null_lit = get_null_lit_string(data_gen.data_type)
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : binary_op_df(spark, data_gen).selectExpr(
                 'ifnull(a, b)',
                 'ifnull(a, {})'.format(s2),
                 'ifnull({}, b)'.format(s1),
-                'ifnull(CAST(null as {}), b)'.format(string_type),
-                'ifnull(a, CAST(null as {}))'.format(string_type)))
-
-
+                'ifnull({}, b)'.format(null_lit),
+                'ifnull(a, {})'.format(null_lit)))

@@ -41,7 +41,8 @@ class CastOpSuite extends GpuExpressionTestSuite {
     DataTypes.FloatType, DataTypes.DoubleType,
     DataTypes.DateType,
     DataTypes.TimestampType,
-    DataTypes.StringType
+    DataTypes.StringType,
+    DataTypes.NullType
   )
 
   /** Produces a matrix of all possible casts. */
@@ -98,7 +99,7 @@ class CastOpSuite extends GpuExpressionTestSuite {
 
               } catch {
                 case e: Exception =>
-                  fail(s"Cast from $from to $to failed; ansi=$ansiEnabled", e)
+                  fail(s"Cast from $from to $to failed; ansi=$ansiEnabled $e", e)
               }
             }
           } else if (!shouldSkip) {

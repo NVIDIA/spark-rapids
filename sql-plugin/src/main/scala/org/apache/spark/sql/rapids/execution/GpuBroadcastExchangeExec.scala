@@ -207,6 +207,10 @@ class GpuBroadcastMeta(
     rule: ConfKeysAndIncompat) extends
   SparkPlanMeta[BroadcastExchangeExec](exchange, conf, parent, rule) {
 
+  override def isSupportedType(t: DataType): Boolean =
+    GpuOverrides.isSupportedType(t,
+      allowNull = true)
+
   override def tagPlanForGpu(): Unit = {
     if (!TrampolineUtil.isSupportedRelation(exchange.mode)) {
       willNotWorkOnGpu(

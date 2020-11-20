@@ -18,8 +18,8 @@ package com.nvidia.spark.rapids.shims.spark301db
 
 import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.GpuMetricNames._
-
 import org.apache.spark.TaskContext
+
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.expressions.Expression
@@ -29,6 +29,7 @@ import org.apache.spark.sql.catalyst.plans.physical.{Distribution, HashClustered
 import org.apache.spark.sql.execution.{BinaryExecNode, SparkPlan}
 import org.apache.spark.sql.execution.joins.ShuffledHashJoinExec
 import org.apache.spark.sql.execution.metric.{SQLMetric, SQLMetrics}
+import org.apache.spark.sql.types.DataType
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
 object GpuJoinUtils {
@@ -58,6 +59,10 @@ class GpuShuffledHashJoinMeta(
     join.condition.map(GpuOverrides.wrapExpr(_, conf, Some(this)))
 
   override val childExprs: Seq[BaseExprMeta[_]] = leftKeys ++ rightKeys ++ condition
+
+  override def isSupportedType(t: DataType): Boolean =
+    GpuOverrides.isSupportedType(t,
+      allowNull = true)
 
   override def tagPlanForGpu(): Unit = {
     GpuHashJoin.tagJoin(this, join.joinType, join.leftKeys, join.rightKeys, join.condition)

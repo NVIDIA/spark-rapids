@@ -61,7 +61,7 @@ public class GpuColumnVector extends GpuColumnVectorBase {
       return new HostColumnVector.StructType(nullable, children);
     } else {
       // Only works for basic types
-      return new HostColumnVector.BasicType(nullable, getRapidsType(spark));
+      return new HostColumnVector.BasicType(nullable, getNonNestedRapidsType(spark));
     }
   }
 
@@ -179,6 +179,9 @@ public class GpuColumnVector extends GpuColumnVectorBase {
       return DType.TIMESTAMP_MICROSECONDS;
     } else if (type instanceof StringType) {
       return DType.STRING;
+    } else if (type instanceof NullType) {
+      // INT8 is used for both in this case
+      return DType.INT8;
     } else if (type instanceof DecimalType) {
       // Decimal supportable check has been conducted in the GPU plan overriding stage.
       // So, we don't have to handle decimal-supportable problem at here.
@@ -193,11 +196,11 @@ public class GpuColumnVector extends GpuColumnVectorBase {
     return null;
   }
 
-  public static boolean isSupportedType(DataType type) {
+  public static boolean isNonNestedSupportedType(DataType type) {
     return toRapidsOrNull(type) != null;
   }
 
-  public static DType getRapidsType(DataType type) {
+  public static DType getNonNestedRapidsType(DataType type) {
     DType result = toRapidsOrNull(type);
     if (result == null) {
       throw new IllegalArgumentException(type + " is not supported for GPU processing yet.");
@@ -262,7 +265,7 @@ public class GpuColumnVector extends GpuColumnVectorBase {
    */
   public static Schema from(StructType input) {
     Schema.Builder builder = Schema.builder();
-    input.foreach(f -> builder.column(GpuColumnVector.getRapidsType(f.dataType()), f.name()));
+    input.foreach(f -> builder.column(GpuColumnVector.getNonNestedRapidsType(f.dataType()), f.name()));
     return builder.build();
   }
 
@@ -321,7 +324,7 @@ public class GpuColumnVector extends GpuColumnVectorBase {
       return ((DecimalType) colType).precision() <= DType.DECIMAL64_MAX_PRECISION;
     }
     if (!dt.isNestedType()) {
-      return getRapidsType(colType).equals(dt);
+      return getNonNestedRapidsType(colType).equals(dt);
     }
     if (colType instanceof MapType) {
       MapType mType = (MapType) colType;

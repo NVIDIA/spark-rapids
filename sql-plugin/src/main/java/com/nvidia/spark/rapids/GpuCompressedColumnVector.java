@@ -87,7 +87,7 @@ public final class GpuCompressedColumnVector extends GpuColumnVectorBase {
   private static boolean typeConversionAllowed(ColumnMeta columnMeta, DataType colType) {
     DType dt = DType.fromNative(columnMeta.dtypeId(), columnMeta.dtypeScale());
     if (!dt.isNestedType()) {
-      return GpuColumnVector.getRapidsType(colType).equals(dt);
+      return GpuColumnVector.getNonNestedRapidsType(colType).equals(dt);
     }
     if (colType instanceof MapType) {
       MapType mType = (MapType) colType;
