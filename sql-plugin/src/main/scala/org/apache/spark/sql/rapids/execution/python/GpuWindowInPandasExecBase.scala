@@ -209,9 +209,6 @@ trait GpuWindowInPandasExecBase extends UnaryExecNode with GpuExec {
 
   override def childrenCoalesceGoal: Seq[CoalesceGoal] = Seq(RequireSingleBatch)
 
-  // Ask for a single batch, the same with input.
-  override def outputBatching: CoalesceGoal = RequireSingleBatch
-
   /*
    * Helper functions and data structures for window bounds
    *
