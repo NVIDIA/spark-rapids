@@ -90,8 +90,7 @@ class SerializeConcatHostBuffersDeserializeBatch(
         val table = tableInfo.getTable
         if (table == null) {
           val numRows = tableInfo.getNumRows
-          this.batchInternal = new ColumnarBatch(new Array[ColumnVector](0))
-          batchInternal.setNumRows(numRows.toInt)
+          this.batchInternal = new ColumnarBatch(new Array[ColumnVector](0), numRows.toInt)
         } else {
           val colDataTypes = in.readObject().asInstanceOf[Array[DataType]]
           // This is read as part of the broadcast join so we expect it to leak.
