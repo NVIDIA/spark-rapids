@@ -1238,7 +1238,7 @@ object GpuOverrides {
     expr[Subtract](
       "Subtraction",
       (a, conf, p, r) => new BinaryExprMeta[Subtract](a, conf, p, r) {
-         override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression =
+        override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression =
           GpuSubtract(lhs, rhs)
       }),
     expr[Multiply](
@@ -1274,13 +1274,13 @@ object GpuOverrides {
     expr[GreaterThan](
       "> operator",
       (a, conf, p, r) => new BinaryExprMeta[GreaterThan](a, conf, p, r) {
-      override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression =
+        override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression =
           GpuGreaterThan(lhs, rhs)
       }),
     expr[GreaterThanOrEqual](
       ">= operator",
       (a, conf, p, r) => new BinaryExprMeta[GreaterThanOrEqual](a, conf, p, r) {
-      override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression =
+        override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression =
           GpuGreaterThanOrEqual(lhs, rhs)
       }),
     expr[In](
@@ -1330,7 +1330,7 @@ object GpuOverrides {
     expr[LessThanOrEqual](
       "<= operator",
       (a, conf, p, r) => new BinaryExprMeta[LessThanOrEqual](a, conf, p, r) {
-       override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression =
+        override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression =
           GpuLessThanOrEqual(lhs, rhs)
       }),
     expr[CaseWhen](
@@ -1383,7 +1383,7 @@ object GpuOverrides {
     expr[IntegralDivide](
       "Division with a integer result",
       (a, conf, p, r) => new BinaryExprMeta[IntegralDivide](a, conf, p, r) {
-     override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression =
+        override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression =
           GpuIntegralDivide(lhs, rhs)
       }),
     expr[Remainder](
