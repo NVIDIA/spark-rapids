@@ -179,6 +179,16 @@ public class GpuColumnVector extends GpuColumnVectorBase {
       return DType.TIMESTAMP_MICROSECONDS;
     } else if (type instanceof StringType) {
       return DType.STRING;
+    } else if (type instanceof DecimalType) {
+      // Decimal supportable check has been conducted in the GPU plan overriding stage.
+      // So, we don't have to handle decimal-supportable problem at here.
+      DecimalType dt = (DecimalType) type;
+      if (dt.precision() > DType.DECIMAL64_MAX_PRECISION) {
+        return null;
+      } else {
+        // Map all DecimalType to DECIMAL64, in case of underlying DType transaction.
+        return DType.create(DType.DTypeEnum.DECIMAL64, -dt.scale());
+      }
     }
     return null;
   }
@@ -302,6 +312,14 @@ public class GpuColumnVector extends GpuColumnVectorBase {
    */
   private static boolean typeConversionAllowed(ColumnView cv, DataType colType) {
     DType dt = cv.getType();
+    // Only supports DECIMAL64, in case of DType transaction due to precision change.
+    if (dt.isDecimalType() && dt.isBackedByLong()) {
+      if (!(colType instanceof DecimalType)) {
+        return false;
+      }
+      // check for overflow
+      return ((DecimalType) colType).precision() <= DType.DECIMAL64_MAX_PRECISION;
+    }
     if (!dt.isNestedType()) {
       return getRapidsType(colType).equals(dt);
     }

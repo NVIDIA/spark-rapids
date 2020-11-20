@@ -648,7 +648,7 @@ object GpuOverrides {
         }
 
         override def isSupportedType(t: DataType): Boolean =
-          GpuOverrides.isSupportedType(t, allowCalendarInterval = true)
+          GpuOverrides.isSupportedType(t, allowCalendarInterval = true, allowDecimal = true)
       }),
     expr[Signum](
       "Returns -1.0, 0.0 or 1.0 as expr is negative, 0 or positive",
@@ -663,7 +663,8 @@ object GpuOverrides {
             allowMaps = true,
             allowArray = true,
             allowStruct = true,
-            allowNesting = true)
+            allowNesting = true,
+            allowDecimal = true)
 
         override def convertToGpu(child: Expression): GpuExpression =
           GpuAlias(child, a.name)(a.exprId, a.qualifier, a.explicitMetadata)
@@ -676,7 +677,8 @@ object GpuOverrides {
             allowMaps = true,
             allowArray = true,
             allowStruct = true,
-            allowNesting = true)
+            allowNesting = true,
+            allowDecimal = true)
 
         // This is the only NOOP operator.  It goes away when things are bound
         override def convertToGpu(): Expression = att
@@ -873,7 +875,8 @@ object GpuOverrides {
             allowMaps = true,
             allowArray = true,
             allowStruct = true,
-            allowNesting = true)
+            allowNesting = true,
+            allowDecimal = true)
 
         override def convertToGpu(child: Expression): GpuExpression = GpuIsNull(child)
       }),
@@ -885,7 +888,8 @@ object GpuOverrides {
             allowMaps = true,
             allowArray = true,
             allowStruct = true,
-            allowNesting = true)
+            allowNesting = true,
+            allowDecimal = true)
 
         override def convertToGpu(child: Expression): GpuExpression = GpuIsNotNull(child)
       }),
@@ -1894,7 +1898,8 @@ object GpuOverrides {
               allowMaps = true,
               allowArray = true,
               allowStruct = true,
-              allowNesting = true)
+              allowNesting = true,
+              allowDecimal = true)
 
           override def convertToGpu(): GpuExec =
             GpuProjectExec(childExprs.map(_.convertToGpu()), childPlans(0).convertIfNeeded())

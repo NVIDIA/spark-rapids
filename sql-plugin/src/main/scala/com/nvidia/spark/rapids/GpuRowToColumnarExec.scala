@@ -111,9 +111,10 @@ private object GpuRowToColumnConverter {
         StructConverter(st.fields.map(getConverterFor))
       case (st: StructType, false) =>
         NotNullStructConverter(st.fields.map(getConverterFor))
-      // NOT SUPPORTED YET
-      // case dt: DecimalType => new DecimalConverter(dt)
-      //       NOT SUPPORTED YET
+      case (dt: DecimalType, true) =>
+        new DecimalConverter(dt.precision, dt.scale)
+      case (dt: DecimalType, false) =>
+        new NotNullDecimalConverter(dt.precision, dt.scale)
       case (MapType(k, v, vcn), true) =>
         MapConverter(getConverterForType(k, nullable = false),
           getConverterForType(v, vcn))
@@ -480,27 +481,34 @@ private object GpuRowToColumnConverter {
     override def getNullSize: Double = childConverters.map(_.getNullSize).sum + VALIDITY
   }
 
-  //  private case class DecimalConverter(dt: DecimalType) extends TypeConverter {
-  //    override def append(row: SpecializedGetters,
-  //    column: Int,
-  //    builder: ai.rapids.cudf.HostColumnVector.Builder): Unit = {
-  //      if (row.isNullAt(column)) {
-  //        builder.appendNull()
-  //      } else {
-  //        val d = row.getDecimal(column, dt.precision, dt.scale)
-  //        if (dt.precision <= Decimal.MAX_INT_DIGITS) {
-  //          cv.appendInt(d.toUnscaledLong.toInt)
-  //        } else if (dt.precision <= Decimal.MAX_LONG_DIGITS) {
-  //          cv.appendLong(d.toUnscaledLong)
-  //        } else {
-  //          val integer = d.toJavaBigDecimal.unscaledValue
-  //          val bytes = integer.toByteArray
-  //          cv.appendByteArray(bytes, 0, bytes.length)
-  //        }
-  //      }
-  //    }
-  //  }
-  //
+  private class DecimalConverter(
+    precision: Int, scale: Int) extends NotNullDecimalConverter(precision, scale) {
+    override def append(
+      row: SpecializedGetters,
+      column: Int,
+      builder: ai.rapids.cudf.HostColumnVector.ColumnBuilder): Double = {
+      if (row.isNullAt(column)) {
+        builder.appendNull()
+      } else {
+        super.append(row, column, builder)
+      }
+      8 + VALIDITY
+    }
+  }
+
+  private class NotNullDecimalConverter(precision: Int, scale: Int) extends TypeConverter {
+    override def append(
+      row: SpecializedGetters,
+      column: Int,
+      builder: ai.rapids.cudf.HostColumnVector.ColumnBuilder): Double = {
+      // Because DECIMAL64 is the only supported decimal DType, we can
+      // append unscaledLongValue instead of BigDecimal itself to speedup this conversion.
+      builder.append(row.getDecimal(column, precision, scale).toUnscaledLong)
+      8
+    }
+
+    override def getNullSize: Double = 8 + VALIDITY
+  }
 }
 
 class RowToColumnarIterator(
