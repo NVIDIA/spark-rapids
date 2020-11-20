@@ -56,7 +56,7 @@ public final class CudfUnsafeRow extends InternalRow {
     // This needs to match what is in cudf and what is in the constructor.
     int offset = 0;
     for (Attribute attr : attributes) {
-      int length = GpuColumnVector.getRapidsType(attr.dataType()).getSizeInBytes();
+      int length = GpuColumnVector.getNonNestedRapidsType(attr.dataType()).getSizeInBytes();
       offset = alignOffset(offset, length);
       offset += length;
     }
@@ -135,7 +135,7 @@ public final class CudfUnsafeRow extends InternalRow {
     startOffsets = new int[attributes.length];
     for (int i = 0; i < attributes.length; i++) {
       Attribute attr = attributes[i];
-      int length = GpuColumnVector.getRapidsType(attr.dataType()).getSizeInBytes();
+      int length = GpuColumnVector.getNonNestedRapidsType(attr.dataType()).getSizeInBytes();
       assert length > 0 : "Only fixed width types are currently supported.";
       offset = alignOffset(offset, length);
       startOffsets[i] = offset;

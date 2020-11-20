@@ -71,7 +71,7 @@ class DecimalUnitTest extends GpuUnitTests {
   test("test decimal as column vector") {
     val dt32 = DecimalType(DType.DECIMAL64_MAX_PRECISION, 5)
     val dt64 = DecimalType(DType.DECIMAL64_MAX_PRECISION, 9)
-    val cudfCV = ColumnVector.decimalFromDoubles(GpuColumnVector.getRapidsType(dt32),
+    val cudfCV = ColumnVector.decimalFromDoubles(GpuColumnVector.getNonNestedRapidsType(dt32),
       RoundingMode.UNNECESSARY, dec32Data.map(_.toDouble): _*)
     withResource(GpuColumnVector.from(cudfCV, dt32)) { cv: GpuColumnVector =>
       assertResult(dec32Data.length)(cv.getRowCount)
@@ -193,7 +193,8 @@ class DecimalUnitTest extends GpuUnitTests {
     withResource(
       GpuColumnVector.from(ColumnVector.fromDecimals(dec64Data.map(_.toJavaBigDecimal): _*),
         DecimalType(DType.DECIMAL64_MAX_PRECISION, 9))) { cv =>
-      val dt = new HostColumnVector.BasicType(false, GpuColumnVector.getRapidsType(cv.dataType()))
+      val dt = new HostColumnVector.BasicType(false,
+        GpuColumnVector.getNonNestedRapidsType(cv.dataType()))
       val builder = new HostColumnVector.ColumnBuilder(dt, cv.getRowCount)
       withResource(cv.copyToHost()) { hostCV =>
         HostColumnarToGpu.columnarCopy(hostCV, builder, false, cv.getRowCount.toInt)
@@ -214,7 +215,8 @@ class DecimalUnitTest extends GpuUnitTests {
     withResource(
       GpuColumnVector.from(ColumnVector.fromDecimals(dec64WithNull: _*),
         DecimalType(DType.DECIMAL64_MAX_PRECISION, 9))) { cv =>
-      val dt = new HostColumnVector.BasicType(true, GpuColumnVector.getRapidsType(cv.dataType()))
+      val dt = new HostColumnVector.BasicType(true,
+        GpuColumnVector.getNonNestedRapidsType(cv.dataType()))
       val builder = new HostColumnVector.ColumnBuilder(dt, cv.getRowCount)
       withResource(cv.copyToHost()) { hostCV =>
         HostColumnarToGpu.columnarCopy(hostCV, builder, true, cv.getRowCount.toInt)
