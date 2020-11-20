@@ -21,7 +21,7 @@ from marks import ignore_order, allow_non_gpu, incompat
 from spark_session import with_spark_session, is_before_spark_310
 
 all_gen = [StringGen(), ByteGen(), ShortGen(), IntegerGen(), LongGen(),
-           BooleanGen(), DateGen(), TimestampGen(),
+           BooleanGen(), DateGen(), TimestampGen(), null_gen,
            pytest.param(FloatGen(), marks=[incompat]),
            pytest.param(DoubleGen(), marks=[incompat])]
 

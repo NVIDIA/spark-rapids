@@ -99,7 +99,7 @@ object GpuScalar {
   }
 
   def from(v: Any, t: DataType): Scalar = v match {
-    case _ if v == null => Scalar.fromNull(GpuColumnVector.getRapidsType(t))
+    case _ if v == null => Scalar.fromNull(GpuColumnVector.getNonNestedRapidsType(t))
     case _ if t.isInstanceOf[DecimalType] =>
       var bigDec = v match {
         case vv: Decimal => vv.toBigDecimal.bigDecimal
