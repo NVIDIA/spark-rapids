@@ -177,7 +177,7 @@ class GpuWindowExpressionMeta(
   // Allow array type only for Python UDF, also add an extra check in
   // `tagExprForGpu` to make sure this.
   override def isSupportedType(t: DataType): Boolean =
-    GpuOverrides.isSupportedType(t, allowArray = true, allowNesting = true)
+    GpuOverrides.isSupportedType(t, allowArray = true)
 }
 
 case class GpuWindowExpression(windowFunction: Expression, windowSpec: GpuWindowSpecDefinition)

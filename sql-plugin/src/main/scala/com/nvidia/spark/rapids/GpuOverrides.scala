@@ -1516,10 +1516,8 @@ object GpuOverrides {
 
         // Allow only one level array type data which has been verified now.
         // Will update this after verifying the nested array type.
-        override def isSupportedType(t: DataType): Boolean = t match {
-          case ArrayType(elementType, _) => super.isSupportedType(elementType)
-          case _ => super.isSupportedType(t)
-        }
+        override def isSupportedType(t: DataType): Boolean =
+          GpuOverrides.isSupportedType(t, allowArray = true)
       }
     ),
     expr[Rand](
