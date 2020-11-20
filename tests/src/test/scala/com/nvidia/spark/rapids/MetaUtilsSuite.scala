@@ -88,7 +88,9 @@ class MetaUtilsSuite extends FunSuite with Arm {
     }
 
     (0 until col.getNumChildren).foreach { i =>
-      verifyColumnMeta(buffer, col.getChildColumnView(i), columnMeta.children(i))
+      withResource(col.getChildColumnView(i)) { childView =>
+        verifyColumnMeta(buffer, childView, columnMeta.children(i))
+      }
     }
   }
 

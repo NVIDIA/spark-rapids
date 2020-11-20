@@ -186,7 +186,9 @@ object MetaUtils extends Arm {
     val columnType = column.getType
     val childVectorOffset = if (columnType.isNestedType) {
       val childMetaOffsets = (0 until column.getNumChildren).map { i =>
-        addColumnMeta(fbb, baseAddress, column.getChildColumnView(i))
+        withResource(column.getChildColumnView(i)) { childView =>
+          addColumnMeta(fbb, baseAddress, childView)
+        }
       }
       Some(ColumnMeta.createChildrenVector(fbb, childMetaOffsets.toArray))
     } else {
