@@ -35,7 +35,7 @@ import org.apache.spark.sql.execution.UnaryExecNode
 import org.apache.spark.sql.execution.metric.{SQLMetric, SQLMetrics}
 import org.apache.spark.sql.execution.python._
 import org.apache.spark.sql.rapids.GpuAggregateExpression
-import org.apache.spark.sql.types.{IntegerType, StructField, StructType}
+import org.apache.spark.sql.types.{DataType, IntegerType, StructField, StructType}
 import org.apache.spark.sql.util.ArrowUtils
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
@@ -76,6 +76,9 @@ abstract class GpuWindowInPandasExecMetaBase(
       .foreach(rf => willNotWorkOnGpu(because = s"Only support RowFrame for now," +
         s" but found ${rf.frameType}"))
   }
+
+  override def isSupportedType(t: DataType): Boolean =
+    GpuOverrides.isSupportedType(t, allowArray = true)
 }
 
 /**
@@ -205,9 +208,6 @@ trait GpuWindowInPandasExecBase extends UnaryExecNode with GpuExec {
   override def outputPartitioning: Partitioning = child.outputPartitioning
 
   override def childrenCoalesceGoal: Seq[CoalesceGoal] = Seq(RequireSingleBatch)
-
-  // Ask for a single batch, the same with input.
-  override def outputBatching: CoalesceGoal = RequireSingleBatch
 
   /*
    * Helper functions and data structures for window bounds

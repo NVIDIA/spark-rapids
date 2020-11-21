@@ -156,6 +156,13 @@ class GpuWindowExpressionMeta(
         willNotWorkOnGpu(s"only SpecifiedWindowFrame is a supported window-frame specification. " +
             s"Found ${other.prettyName}")
     }
+
+    // Allow array type only for Python UDF which has been verified.
+    if (windowFunction.dataType.isInstanceOf[ArrayType] &&
+        !windowFunction.isInstanceOf[PythonUDF]) {
+      willNotWorkOnGpu(s"function ${windowFunction.prettyName}[$windowFunction]" +
+        s" does not supports array type for now")
+    }
   }
 
   /**
@@ -166,6 +173,11 @@ class GpuWindowExpressionMeta(
       childExprs.head.convertToGpu(),
       childExprs(1).convertToGpu().asInstanceOf[GpuWindowSpecDefinition]
     )
+
+  // Allow array type only for Python UDF, also add an extra check in
+  // `tagExprForGpu` to make sure this.
+  override def isSupportedType(t: DataType): Boolean =
+    GpuOverrides.isSupportedType(t, allowArray = true)
 }
 
 case class GpuWindowExpression(windowFunction: Expression, windowSpec: GpuWindowSpecDefinition)
