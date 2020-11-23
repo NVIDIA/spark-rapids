@@ -21,7 +21,7 @@ import java.math.RoundingMode
 import scala.util.Random
 
 import ai.rapids.cudf.{ColumnVector, DType, HostColumnVector}
-import com.nvidia.spark.rapids.{GpuAlias, GpuColumnVector, GpuIsNotNull, GpuIsNull, GpuLiteral, GpuOverrides, GpuScalar, GpuUnitTests, HostColumnarToGpu, RapidsConf, RapidsHostColumnVector}
+import com.nvidia.spark.rapids.{GpuAlias, GpuColumnVector, GpuIsNotNull, GpuIsNull, GpuLiteral, GpuOverrides, GpuScalar, GpuUnitTests, HostColumnarToGpu, RapidsConf}
 
 import org.apache.spark.sql.catalyst.expressions.{Alias, AttributeReference, Literal}
 import org.apache.spark.sql.types.{Decimal, DecimalType}
@@ -78,7 +78,7 @@ class DecimalUnitTest extends GpuUnitTests {
       val (precision, scale) = cv.dataType() match {
         case dt: DecimalType => (dt.precision, dt.scale)
       }
-      withResource(cv.copyToHost()) { hostCv: RapidsHostColumnVector =>
+      withResource(cv.copyToHost()) { hostCv =>
         dec32Data.zipWithIndex.foreach { case (dec, i) =>
           val rescaled = dec.toJavaBigDecimal.setScale(scale)
           assertResult(rescaled.unscaledValue().longValueExact())(hostCv.getLong(i))
@@ -94,7 +94,7 @@ class DecimalUnitTest extends GpuUnitTests {
       val (precision, scale) = cv.dataType() match {
         case dt: DecimalType => (dt.precision, dt.scale)
       }
-      withResource(cv.copyToHost()) { hostCv: RapidsHostColumnVector =>
+      withResource(cv.copyToHost()) { hostCv =>
         dec64WithNull.zipWithIndex.foreach {
           case (dec, i) if dec == null =>
             assertResult(true)(hostCv.getBase.isNull(i))
@@ -107,13 +107,15 @@ class DecimalUnitTest extends GpuUnitTests {
     }
     // assertion error throws because of precision overflow
     assertThrows[AssertionError] {
-      withResource(GpuColumnVector.from(ColumnVector.decimalFromLongs(0, 1L),
-        DecimalType(DType.DECIMAL64_MAX_PRECISION + 1, 0))) { _ => }
+      withResource(ColumnVector.decimalFromLongs(0, 1L)) { dcv =>
+        GpuColumnVector.from(dcv, DecimalType(DType.DECIMAL64_MAX_PRECISION + 1, 0))
+      }
     }
     // assertion error throws because of unsupported DType DECIMAL32
     assertThrows[AssertionError] {
-      withResource(GpuColumnVector.from(ColumnVector.decimalFromInts(0, 1),
-        DecimalType(1, 0))) { _ => }
+      withResource(ColumnVector.decimalFromInts(0, 1)) { dcv =>
+        GpuColumnVector.from(dcv, DecimalType(1, 0))
+      }
     }
     withResource(GpuScalar.from(dec64Data(0), dt64)) { scalar =>
       withResource(GpuColumnVector.from(scalar, 10, dt64)) { cv =>
@@ -172,19 +174,23 @@ class DecimalUnitTest extends GpuUnitTests {
       BigDecimal(-123L).bigDecimal, null, null)
     withResource(GpuColumnVector.from(ColumnVector.fromDecimals(decArray: _*), DecimalType(10, 0))
     ) { cv =>
-      withResource(GpuIsNull(null).doColumnar(cv).copyToHost()) { ret =>
-        assertResult(false)(ret.getBoolean(0))
-        assertResult(true)(ret.getBoolean(1))
-        assertResult(false)(ret.getBoolean(2))
-        assertResult(true)(ret.getBoolean(3))
-        assertResult(true)(ret.getBoolean(4))
+      withResource(GpuIsNull(null).doColumnar(cv)) { isNullResult =>
+        withResource(isNullResult.copyToHost()) { ret =>
+          assertResult(false)(ret.getBoolean(0))
+          assertResult(true)(ret.getBoolean(1))
+          assertResult(false)(ret.getBoolean(2))
+          assertResult(true)(ret.getBoolean(3))
+          assertResult(true)(ret.getBoolean(4))
+        }
       }
-      withResource(GpuIsNotNull(null).doColumnar(cv).copyToHost()) { ret =>
-        assertResult(true)(ret.getBoolean(0))
-        assertResult(false)(ret.getBoolean(1))
-        assertResult(true)(ret.getBoolean(2))
-        assertResult(false)(ret.getBoolean(3))
-        assertResult(false)(ret.getBoolean(4))
+      withResource(GpuIsNotNull(null).doColumnar(cv)) { isNotNullResult =>
+        withResource(isNotNullResult.copyToHost()) { ret =>
+          assertResult(true)(ret.getBoolean(0))
+          assertResult(false)(ret.getBoolean(1))
+          assertResult(true)(ret.getBoolean(2))
+          assertResult(false)(ret.getBoolean(3))
+          assertResult(false)(ret.getBoolean(4))
+        }
       }
     }
   }
@@ -195,15 +201,17 @@ class DecimalUnitTest extends GpuUnitTests {
         DecimalType(DType.DECIMAL64_MAX_PRECISION, 9))) { cv =>
       val dt = new HostColumnVector.BasicType(false,
         GpuColumnVector.getNonNestedRapidsType(cv.dataType()))
-      val builder = new HostColumnVector.ColumnBuilder(dt, cv.getRowCount)
-      withResource(cv.copyToHost()) { hostCV =>
-        HostColumnarToGpu.columnarCopy(hostCV, builder, false, cv.getRowCount.toInt)
-        val actual = builder.build()
-        val expected = hostCV.getBase
-        assertResult(expected.getType)(actual.getType)
-        assertResult(expected.getRowCount)(actual.getRowCount)
-        (0 until actual.getRowCount.toInt).foreach { i =>
-          assertResult(expected.getBigDecimal(i))(actual.getBigDecimal(i))
+      withResource(new HostColumnVector.ColumnBuilder(dt, cv.getRowCount)) { builder =>
+        withResource(cv.copyToHost()) { hostCV =>
+          HostColumnarToGpu.columnarCopy(hostCV, builder, false, cv.getRowCount.toInt)
+          withResource(builder.build()) { actual =>
+            val expected = hostCV.getBase
+            assertResult(expected.getType)(actual.getType)
+            assertResult(expected.getRowCount)(actual.getRowCount)
+            (0 until actual.getRowCount.toInt).foreach { i =>
+              assertResult(expected.getBigDecimal(i))(actual.getBigDecimal(i))
+            }
+          }
         }
       }
     }
@@ -217,18 +225,20 @@ class DecimalUnitTest extends GpuUnitTests {
         DecimalType(DType.DECIMAL64_MAX_PRECISION, 9))) { cv =>
       val dt = new HostColumnVector.BasicType(true,
         GpuColumnVector.getNonNestedRapidsType(cv.dataType()))
-      val builder = new HostColumnVector.ColumnBuilder(dt, cv.getRowCount)
-      withResource(cv.copyToHost()) { hostCV =>
-        HostColumnarToGpu.columnarCopy(hostCV, builder, true, cv.getRowCount.toInt)
-        val actual = builder.build()
-        val expected = hostCV.getBase
-        assertResult(DType.create(DType.DTypeEnum.DECIMAL64, expected.getType.getScale)
-        )(actual.getType)
-        assertResult(expected.getRowCount)(actual.getRowCount)
-        (0 until actual.getRowCount.toInt).foreach { i =>
-          assertResult(expected.isNull(i))(actual.isNull(i))
-          if (!actual.isNull(i)) {
-            assertResult(expected.getBigDecimal(i))(actual.getBigDecimal(i))
+      withResource(new HostColumnVector.ColumnBuilder(dt, cv.getRowCount)) { builder =>
+        withResource(cv.copyToHost()) { hostCV =>
+          HostColumnarToGpu.columnarCopy(hostCV, builder, true, cv.getRowCount.toInt)
+          withResource(builder.build()) { actual =>
+            val expected = hostCV.getBase
+            assertResult(DType.create(DType.DTypeEnum.DECIMAL64, expected.getType.getScale)
+            )(actual.getType)
+            assertResult(expected.getRowCount)(actual.getRowCount)
+            (0 until actual.getRowCount.toInt).foreach { i =>
+              assertResult(expected.isNull(i))(actual.isNull(i))
+              if (!actual.isNull(i)) {
+                assertResult(expected.getBigDecimal(i))(actual.getBigDecimal(i))
+              }
+            }
           }
         }
       }

@@ -64,9 +64,10 @@ class RapidsDeviceMemoryStoreSuite extends FunSuite with Arm with MockitoSugar {
     withResource(new RapidsDeviceMemoryStore(catalog)) { store =>
       val spillPriority = 3
       val bufferId = MockRapidsBufferId(7)
-      val meta = closeOnExcept(buildContiguousTable()) { ct =>
+      val meta = withResource(buildContiguousTable()) { ct =>
         val meta = MetaUtils.buildTableMeta(bufferId.tableId, ct.getTable, ct.getBuffer)
         // store takes ownership of the buffer
+        ct.getBuffer.incRefCount()
         store.addBuffer(bufferId, ct.getBuffer, meta, spillPriority)
         meta
       }
@@ -83,11 +84,12 @@ class RapidsDeviceMemoryStoreSuite extends FunSuite with Arm with MockitoSugar {
     val catalog = new RapidsBufferCatalog
     withResource(new RapidsDeviceMemoryStore(catalog)) { store =>
       val bufferId = MockRapidsBufferId(7)
-      closeOnExcept(buildContiguousTable()) { ct =>
+      withResource(buildContiguousTable()) { ct =>
         withResource(HostMemoryBuffer.allocate(ct.getBuffer.getLength)) { expectedHostBuffer =>
           expectedHostBuffer.copyFromDeviceBuffer(ct.getBuffer)
           val meta = MetaUtils.buildTableMeta(bufferId.tableId, ct.getTable, ct.getBuffer)
           // store takes ownership of the buffer
+          ct.getBuffer.incRefCount()
           store.addBuffer(bufferId, ct.getBuffer, meta, initialSpillPriority = 3)
           withResource(catalog.acquireBuffer(bufferId)) { buffer =>
             withResource(buffer.getMemoryBuffer.asInstanceOf[DeviceMemoryBuffer]) { devbuf =>
@@ -107,11 +109,12 @@ class RapidsDeviceMemoryStoreSuite extends FunSuite with Arm with MockitoSugar {
     val sparkTypes =  Array[DataType](IntegerType, StringType, DoubleType)
     withResource(new RapidsDeviceMemoryStore(catalog)) { store =>
       val bufferId = MockRapidsBufferId(7)
-      closeOnExcept(buildContiguousTable()) { ct =>
+      withResource(buildContiguousTable()) { ct =>
         withResource(GpuColumnVector.from(ct.getTable, sparkTypes)) {
           expectedBatch =>
             val meta = MetaUtils.buildTableMeta(bufferId.tableId, ct.getTable, ct.getBuffer)
             // store takes ownership of the buffer
+            ct.getBuffer.incRefCount()
             store.addBuffer(bufferId, ct.getBuffer, meta, initialSpillPriority = 3)
             withResource(catalog.acquireBuffer(bufferId)) { buffer =>
               withResource(buffer.getColumnarBatch(sparkTypes)) { actualBatch =>

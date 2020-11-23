@@ -143,11 +143,14 @@ class GpuPartitioningSuite extends FunSuite with Arm {
                 val gccv = columns.head.asInstanceOf[GpuCompressedColumnVector]
                 val bufferId = MockRapidsBufferId(partIndex)
                 val devBuffer = gccv.getBuffer
+                // device store takes ownership of the buffer
                 devBuffer.incRefCount()
                 deviceStore.addBuffer(bufferId, devBuffer, gccv.getTableMeta, spillPriority)
                 withResource(buildSubBatch(batch, startRow, endRow)) { expectedBatch =>
                   withResource(catalog.acquireBuffer(bufferId)) { buffer =>
-                    compareBatches(expectedBatch, buffer.getColumnarBatch(sparkTypes))
+                    withResource(buffer.getColumnarBatch(sparkTypes)) { batch =>
+                      compareBatches(expectedBatch, batch)
+                    }
                   }
                 }
               }
