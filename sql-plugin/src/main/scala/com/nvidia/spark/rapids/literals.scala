@@ -95,7 +95,7 @@ object GpuScalar {
     case dec: BigDecimal =>
       Scalar.fromDecimal(-dec.scale, dec.bigDecimal.unscaledValue().longValueExact())
     case _ =>
-      throw new IllegalStateException(s"${v.getClass} '${v}' is not supported as a scalar yet")
+      throw new IllegalStateException(s"${v.getClass} '$v' is not supported as a scalar yet")
   }
 
   def from(v: Any, t: DataType): Scalar = v match {
@@ -105,13 +105,12 @@ object GpuScalar {
         case vv: Decimal => vv.toBigDecimal.bigDecimal
         case vv: BigDecimal => vv.bigDecimal
         case vv: Double => BigDecimal(vv).bigDecimal
-        case vv: Float => BigDecimal(vv).bigDecimal
+        case vv: Float => BigDecimal(vv.toDouble).bigDecimal
         case vv: String => BigDecimal(vv).bigDecimal
-        case vv: Double => BigDecimal(vv).bigDecimal
         case vv: Long => BigDecimal(vv).bigDecimal
         case vv: Int => BigDecimal(vv).bigDecimal
         case vv => throw new IllegalStateException(
-          s"${vv.getClass} '${vv}' is not supported as a scalar yet")
+          s"${vv.getClass} '$vv' is not supported as a scalar yet")
       }
       bigDec = bigDec.setScale(t.asInstanceOf[DecimalType].scale)
       if (bigDec.precision() > t.asInstanceOf[DecimalType].precision) {
@@ -137,7 +136,7 @@ object GpuScalar {
     case s: String => Scalar.fromString(s)
     case s: UTF8String => Scalar.fromString(s.toString)
     case _ =>
-      throw new IllegalStateException(s"${v.getClass} '${v}' is not supported as a scalar yet")
+      throw new IllegalStateException(s"${v.getClass} '$v' is not supported as a scalar yet")
   }
 
   def isNan(s: Scalar): Boolean = {
@@ -220,7 +219,7 @@ case class GpuLiteral (value: Any, dataType: DataType) extends GpuLeafExpression
         case Double.NegativeInfinity => s"CAST('-Infinity' AS ${DoubleType.sql})"
         case _ => v + "D"
       }
-    case (v: Decimal, t: DecimalType) => v + "BD"
+    case (v: Decimal, _: DecimalType) => v + "BD"
     case (v: Int, DateType) =>
       val formatter = DateFormatter(DateTimeUtils.getZoneId(SQLConf.get.sessionLocalTimeZone))
       s"DATE '${formatter.format(v)}'"
