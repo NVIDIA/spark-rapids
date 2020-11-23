@@ -204,8 +204,6 @@ case class GpuWindowExpression(windowFunction: Expression, windowSpec: GpuWindow
       case other =>
         throw new IllegalStateException(s"${other.getClass} is not a supported window aggregation")
     }
-    // Add support for Pandas (Python) UDF
-    case pythonFunc: GpuPythonUDF => pythonFunc
     case other =>
       throw new IllegalStateException(s"${other.getClass} is not a supported window function")
   }

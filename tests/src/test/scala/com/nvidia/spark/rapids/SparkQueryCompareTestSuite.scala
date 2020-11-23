@@ -20,6 +20,7 @@ import java.nio.file.Files
 import java.sql.{Date, Timestamp}
 import java.util.{Locale, TimeZone}
 
+import scala.reflect.ClassTag
 import scala.util.{Failure, Try}
 
 import org.scalatest.FunSuite
@@ -810,8 +811,8 @@ trait SparkQueryCompareTestSuite extends FunSuite with Arm {
       incompat: Boolean = false,
       execsAllowedNonGpu: Seq[String] = Seq.empty,
       sortBeforeRepart: Boolean = false)
-           (fun: DataFrame => DataFrame): Unit = {
-
+      (fun: DataFrame => DataFrame)(implicit classTag: ClassTag[T]): Unit = {
+    val clazz = classTag.runtimeClass
     val (testConf, qualifiedTestName) =
       setupTestConfAndQualifierName(testName, incompat, sort, conf, execsAllowedNonGpu,
         maxFloatDiff, sortBeforeRepart)
@@ -824,9 +825,8 @@ trait SparkQueryCompareTestSuite extends FunSuite with Arm {
           compareResults(sort, maxFloatDiff, fromCpu, fromGpu)
         })
         t match {
-          case Failure(e) if e.isInstanceOf[T] => {
+          case Failure(e) if clazz.isAssignableFrom(e.getClass) =>
             assert(expectedException(e.asInstanceOf[T]))
-          }
           case Failure(e) => throw e
           case _ => fail("Expected an exception")
         }
