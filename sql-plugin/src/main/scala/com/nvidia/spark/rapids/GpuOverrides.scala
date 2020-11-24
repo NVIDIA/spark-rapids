@@ -1266,24 +1266,36 @@ object GpuOverrides {
     expr[EqualNullSafe](
       "Check if the values are equal including nulls <=>",
       (a, conf, p, r) => new BinaryExprMeta[EqualNullSafe](a, conf, p, r) {
+        override def isSupportedType(t: DataType): Boolean =
+          GpuOverrides.isSupportedType(t, allowDecimal = true)
+
         override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression =
           GpuEqualNullSafe(lhs, rhs)
       }),
     expr[EqualTo](
       "Check if the values are equal",
       (a, conf, p, r) => new BinaryExprMeta[EqualTo](a, conf, p, r) {
+        override def isSupportedType(t: DataType): Boolean =
+          GpuOverrides.isSupportedType(t, allowDecimal = true)
+
         override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression =
           GpuEqualTo(lhs, rhs)
       }),
     expr[GreaterThan](
       "> operator",
       (a, conf, p, r) => new BinaryExprMeta[GreaterThan](a, conf, p, r) {
+        override def isSupportedType(t: DataType): Boolean =
+          GpuOverrides.isSupportedType(t, allowDecimal = true)
+
         override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression =
           GpuGreaterThan(lhs, rhs)
       }),
     expr[GreaterThanOrEqual](
       ">= operator",
       (a, conf, p, r) => new BinaryExprMeta[GreaterThanOrEqual](a, conf, p, r) {
+        override def isSupportedType(t: DataType): Boolean =
+          GpuOverrides.isSupportedType(t, allowDecimal = true)
+
         override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression =
           GpuGreaterThanOrEqual(lhs, rhs)
       }),
@@ -1334,6 +1346,9 @@ object GpuOverrides {
     expr[LessThanOrEqual](
       "<= operator",
       (a, conf, p, r) => new BinaryExprMeta[LessThanOrEqual](a, conf, p, r) {
+        override def isSupportedType(t: DataType): Boolean =
+          GpuOverrides.isSupportedType(t, allowDecimal = true)
+
         override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression =
           GpuLessThanOrEqual(lhs, rhs)
       }),

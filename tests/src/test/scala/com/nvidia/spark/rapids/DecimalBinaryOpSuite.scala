@@ -18,7 +18,7 @@ package com.nvidia.spark.rapids
 
 import ai.rapids.cudf.DType
 
-import org.apache.spark.sql.rapids.{GpuLessThan}
+import org.apache.spark.sql.rapids.{GpuEqualTo, GpuGreaterThan, GpuGreaterThanOrEqual, GpuLessThan, GpuLessThanOrEqual}
 import org.apache.spark.sql.types.{DataTypes, Decimal, DecimalType}
 
 class DecimalBinaryOpSuite extends GpuExpressionTestSuite {
@@ -29,6 +29,60 @@ class DecimalBinaryOpSuite extends GpuExpressionTestSuite {
   private val lit = GpuLiteral(litValue, DecimalType(DType.DECIMAL64_MAX_PRECISION, 5))
   private val leftExpr = GpuBoundReference(0, schema.head.dataType, nullable = true)
   private val rightExpr = GpuBoundReference(1, schema(1).dataType, nullable = true)
+
+  private val schemaSame = FuzzerUtils.createSchema(Seq(
+    DecimalType(DType.DECIMAL32_MAX_PRECISION, 3),
+    DecimalType(DType.DECIMAL32_MAX_PRECISION, 3)))
+  private val leftExprSame = GpuBoundReference(0, schemaSame.head.dataType, nullable = true)
+  private val rightExprSame = GpuBoundReference(1, schemaSame(1).dataType, nullable = true)
+
+  test("GpuEqualTo") {
+    val expectedFun = (l: Decimal, r: Decimal) => Option(l == r)
+    checkEvaluateGpuBinaryExpression(GpuEqualTo(leftExpr, rightExpr),
+      schema.head.dataType, schema(1).dataType, DataTypes.BooleanType,
+      expectedFun, schema)
+    checkEvaluateGpuBinaryExpression(GpuEqualTo(leftExprSame, rightExprSame),
+      schemaSame.head.dataType, schemaSame.head.dataType, DataTypes.BooleanType,
+      expectedFun, schemaSame)
+
+    val expectedFunVS = (x: Decimal) => Option(x == litValue)
+    checkEvaluateGpuUnaryExpression(GpuEqualTo(leftExpr, lit),
+      schema.head.dataType, DataTypes.BooleanType, expectedFunVS, schema)
+    val expectedFunSV = (x: Decimal) => Option(litValue == x)
+    checkEvaluateGpuUnaryExpression(GpuEqualTo(lit, leftExpr),
+      schema.head.dataType, DataTypes.BooleanType, expectedFunSV, schema)
+  }
+
+  test("GpuGreaterThan") {
+    val expectedFunVV = (l: Decimal, r: Decimal) => Option(l > r)
+    checkEvaluateGpuBinaryExpression(GpuGreaterThan(leftExpr, rightExpr),
+      schema.head.dataType, schema(1).dataType, DataTypes.BooleanType,
+      expectedFunVV, schema)
+
+    val expectedFunVS = (x: Decimal) => Option(x > litValue)
+    checkEvaluateGpuUnaryExpression(GpuGreaterThan(leftExpr, lit),
+      schema.head.dataType, DataTypes.BooleanType, expectedFunVS, schema)
+    val expectedFunSV = (x: Decimal) => Option(litValue > x)
+    checkEvaluateGpuUnaryExpression(GpuGreaterThan(lit, leftExpr),
+      schema.head.dataType, DataTypes.BooleanType, expectedFunSV, schema)
+  }
+
+  test("GpuGreaterThanOrEqual") {
+    val expectedFunVV = (l: Decimal, r: Decimal) => Option(l >= r)
+    checkEvaluateGpuBinaryExpression(GpuGreaterThanOrEqual(leftExpr, rightExpr),
+      schema.head.dataType, schema(1).dataType, DataTypes.BooleanType,
+      expectedFunVV, schema)
+    checkEvaluateGpuBinaryExpression(GpuGreaterThanOrEqual(leftExprSame, rightExprSame),
+      schemaSame.head.dataType, schemaSame.head.dataType, DataTypes.BooleanType,
+      expectedFunVV, schemaSame)
+
+    val expectedFunVS = (x: Decimal) => Option(x >= litValue)
+    checkEvaluateGpuUnaryExpression(GpuGreaterThanOrEqual(leftExpr, lit),
+      schema.head.dataType, DataTypes.BooleanType, expectedFunVS, schema)
+    val expectedFunSV = (x: Decimal) => Option(litValue >= x)
+    checkEvaluateGpuUnaryExpression(GpuGreaterThanOrEqual(lit, leftExpr),
+      schema.head.dataType, DataTypes.BooleanType, expectedFunSV, schema)
+  }
 
   test("GpuLessThan") {
     val expectedFunVV = (l: Decimal, r: Decimal) => Option(l < r)
@@ -41,6 +95,23 @@ class DecimalBinaryOpSuite extends GpuExpressionTestSuite {
       schema.head.dataType, DataTypes.BooleanType, expectedFunVS, schema)
     val expectedFunSV = (x: Decimal) => Option(litValue < x)
     checkEvaluateGpuUnaryExpression(GpuLessThan(lit, leftExpr),
+      schema.head.dataType, DataTypes.BooleanType, expectedFunSV, schema)
+  }
+
+  test("GpuLessThanOrEqual") {
+    val expectedFunVV = (l: Decimal, r: Decimal) => Option(l <= r)
+    checkEvaluateGpuBinaryExpression(GpuLessThanOrEqual(leftExpr, rightExpr),
+      schema.head.dataType, schema(1).dataType, DataTypes.BooleanType,
+      expectedFunVV, schema)
+    checkEvaluateGpuBinaryExpression(GpuLessThanOrEqual(leftExprSame, rightExprSame),
+      schemaSame.head.dataType, schemaSame.head.dataType, DataTypes.BooleanType,
+      expectedFunVV, schemaSame)
+
+    val expectedFunVS = (x: Decimal) => Option(x <= litValue)
+    checkEvaluateGpuUnaryExpression(GpuLessThanOrEqual(leftExpr, lit),
+      schema.head.dataType, DataTypes.BooleanType, expectedFunVS, schema)
+    val expectedFunSV = (x: Decimal) => Option(litValue <= x)
+    checkEvaluateGpuUnaryExpression(GpuLessThanOrEqual(lit, leftExpr),
       schema.head.dataType, DataTypes.BooleanType, expectedFunSV, schema)
   }
 }

@@ -210,12 +210,16 @@ class IntegerGen(DataGen):
         self._start(rand, lambda : rand.randint(self._min_val, self._max_val))
 
 
+#Maximum number of decimal digits a Long can represent is 18.
+DECIMAL_MIN = -(1 << 59)
+DECIMAL_MAX = (1 << 59)  #approximate
 class DecimalGen(DataGen):
     """Generate Decimals, with some built in corner cases."""
-    def __init__(self, precision=7, scale=3, nullable=True, special_cases=None):
-        if special_cases is None:
-            # TODO need to add in special cases, like max value and min value
-            special_cases = [Decimal('0')]
+    def __init__(self, precision=None, scale=None, nullable=True, special_cases=[]):
+        if precision is None:
+            precision = 18
+            scale = 0
+            special_cases = [Decimal('-1'), Decimal('0'), Decimal('1'), Decimal(DECIMAL_MIN), Decimal(DECIMAL_MAX)]
         super().__init__(DecimalType(precision, scale), nullable=nullable, special_cases=special_cases)
         self._scale = scale
         self._precision = precision
@@ -696,7 +700,9 @@ string_gen = StringGen()
 boolean_gen = BooleanGen()
 date_gen = DateGen()
 timestamp_gen = TimestampGen()
-decimal_gen = DecimalGen()
+decimal_gen_default = DecimalGen()
+decimal_gen_neg_scale = DecimalGen(precision=7, scale=-3)
+decimal_gen_scale_precision = DecimalGen(precision=7, scale=3)
 
 numeric_gens = [byte_gen, short_gen, int_gen, long_gen, float_gen, double_gen]
 
@@ -706,6 +712,7 @@ integral_gens = [byte_gen, short_gen, int_gen, long_gen]
 double_gens = [double_gen]
 double_n_long_gens = [double_gen, long_gen]
 int_n_long_gens = [int_gen, long_gen]
+decimal_gens = [decimal_gen_default, decimal_gen_neg_scale, decimal_gen_scale_precision]
 
 # all of the basic gens
 all_basic_gens = [byte_gen, short_gen, int_gen, long_gen, float_gen, double_gen,
@@ -714,14 +721,15 @@ all_basic_gens = [byte_gen, short_gen, int_gen, long_gen, float_gen, double_gen,
 # TODO add in some array generators to this once that is supported for sorting
 # a selection of generators that should be orderable (sortable and compareable)
 orderable_gens = [byte_gen, short_gen, int_gen, long_gen, float_gen, double_gen,
-        string_gen, boolean_gen, date_gen, timestamp_gen]
-orderable_gens_with_decimal_gen = [byte_gen, short_gen, int_gen, long_gen, float_gen, double_gen,
-        string_gen, boolean_gen, date_gen, timestamp_gen, decimal_gen]
+        string_gen, boolean_gen, date_gen, timestamp_gen ] + decimal_gens
 
 # TODO add in some array generators to this once that is supported for these operations
 # a selection of generators that can be compared for equality
 eq_gens = [byte_gen, short_gen, int_gen, long_gen, float_gen, double_gen,
         string_gen, boolean_gen, date_gen, timestamp_gen]
+
+# Include decimal type while testing equalTo and notEqualTo
+eq_gens_with_decimal_gen =  eq_gens + decimal_gens
 
 date_gens = [date_gen]
 date_n_time_gens = [date_gen, timestamp_gen]

@@ -21,7 +21,7 @@ from spark_session import with_cpu_session
 from pyspark.sql.types import *
 import pyspark.sql.functions as f
 
-@pytest.mark.parametrize('data_gen', eq_gens, ids=idfn)
+@pytest.mark.parametrize('data_gen', eq_gens_with_decimal_gen, ids=idfn)
 def test_eq(data_gen):
     (s1, s2) = gen_scalars(data_gen, 2, force_no_nulls=True)
     data_type = data_gen.data_type
@@ -31,7 +31,7 @@ def test_eq(data_gen):
                 s2 == f.col('b'),
                 f.lit(None).cast(data_type) == f.col('a'),
                 f.col('b') == f.lit(None).cast(data_type),
-                f.col('a') == f.col('b')))
+                f.col('a') == f.col('b')), conf={'spark.sql.legacy.allowNegativeScaleOfDecimal': 'true'})
 
 @pytest.mark.parametrize('data_gen', eq_gens, ids=idfn)
 def test_eq_ns(data_gen):
@@ -45,7 +45,7 @@ def test_eq_ns(data_gen):
                 f.col('b').eqNullSafe(f.lit(None).cast(data_type)),
                 f.col('a').eqNullSafe(f.col('b'))))
 
-@pytest.mark.parametrize('data_gen', eq_gens, ids=idfn)
+@pytest.mark.parametrize('data_gen', eq_gens_with_decimal_gen, ids=idfn)
 def test_ne(data_gen):
     (s1, s2) = gen_scalars(data_gen, 2, force_no_nulls=True)
     data_type = data_gen.data_type
@@ -55,11 +55,9 @@ def test_ne(data_gen):
                 s2 != f.col('b'),
                 f.lit(None).cast(data_type) != f.col('a'),
                 f.col('b') != f.lit(None).cast(data_type),
-                f.col('a') != f.col('b')))
+                f.col('a') != f.col('b')), conf={'spark.sql.legacy.allowNegativeScaleOfDecimal': 'true'})
 
-@incompat
-@pytest.mark.allow_non_gpu('ProjectExec', 'Alias')
-@pytest.mark.parametrize('data_gen', orderable_gens_with_decimal_gen, ids=idfn)
+@pytest.mark.parametrize('data_gen', orderable_gens, ids=idfn)
 def test_lt(data_gen):
     (s1, s2) = gen_scalars(data_gen, 2, force_no_nulls=True)
     data_type = data_gen.data_type
@@ -69,7 +67,7 @@ def test_lt(data_gen):
                 s2 < f.col('b'),
                 f.lit(None).cast(data_type) < f.col('a'),
                 f.col('b') < f.lit(None).cast(data_type),
-                f.col('a') < f.col('b')))
+                f.col('a') < f.col('b')), conf={'spark.sql.legacy.allowNegativeScaleOfDecimal': 'true'})
 
 @pytest.mark.parametrize('data_gen', orderable_gens, ids=idfn)
 def test_lte(data_gen):
@@ -81,7 +79,7 @@ def test_lte(data_gen):
                 s2 <= f.col('b'),
                 f.lit(None).cast(data_type) <= f.col('a'),
                 f.col('b') <= f.lit(None).cast(data_type),
-                f.col('a') <= f.col('b')))
+                f.col('a') <= f.col('b')), conf={'spark.sql.legacy.allowNegativeScaleOfDecimal': 'true'})
 
 @pytest.mark.parametrize('data_gen', orderable_gens, ids=idfn)
 def test_gt(data_gen):
@@ -93,7 +91,7 @@ def test_gt(data_gen):
                 s2 > f.col('b'),
                 f.lit(None).cast(data_type) > f.col('a'),
                 f.col('b') > f.lit(None).cast(data_type),
-                f.col('a') > f.col('b')))
+                f.col('a') > f.col('b')), conf={'spark.sql.legacy.allowNegativeScaleOfDecimal': 'true'})
 
 @pytest.mark.parametrize('data_gen', orderable_gens, ids=idfn)
 def test_gte(data_gen):
@@ -105,7 +103,7 @@ def test_gte(data_gen):
                 s2 >= f.col('b'),
                 f.lit(None).cast(data_type) >= f.col('a'),
                 f.col('b') >= f.lit(None).cast(data_type),
-                f.col('a') >= f.col('b')))
+                f.col('a') >= f.col('b')), conf={'spark.sql.legacy.allowNegativeScaleOfDecimal': 'true'})
 
 @pytest.mark.parametrize('data_gen', eq_gens + array_gens_sample, ids=idfn)
 def test_isnull(data_gen):
