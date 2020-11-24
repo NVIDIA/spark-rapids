@@ -59,17 +59,25 @@ class LambdaReflection private(private val classPool: ClassPool,
   }
 
   def lookupBehavior(constPoolIndex: Int): CtBehavior = {
-    if (constPool.getTag(constPoolIndex) != ConstPool.CONST_Methodref) {
-      throw new SparkException("Unexpected index for method reference")
-    }
-    val methodName = constPool.getMethodrefName(constPoolIndex)
-    val descriptor = constPool.getMethodrefType(constPoolIndex)
-    val className = constPool.getMethodrefClassName(constPoolIndex)
-    if (constPool.isConstructor(className, constPoolIndex) == 0) {
+    if (constPool.getTag(constPoolIndex) == ConstPool.CONST_InterfaceMethodref) {
+      val methodName = constPool.getInterfaceMethodrefName(constPoolIndex)
+      val descriptor = constPool.getInterfaceMethodrefType(constPoolIndex)
+      val className = constPool.getInterfaceMethodrefClassName(constPoolIndex)
+      val params = Descriptor.getParameterTypes(descriptor, classPool)
       classPool.getCtClass(className).getMethod(methodName, descriptor)
     } else {
-      val params = Descriptor.getParameterTypes(descriptor, classPool)
-      classPool.getCtClass(className).getDeclaredConstructor(params)
+      if (constPool.getTag(constPoolIndex) != ConstPool.CONST_Methodref) {
+        throw new SparkException(s"Unexpected index ${constPoolIndex} for method reference")
+      }
+      val methodName = constPool.getMethodrefName(constPoolIndex)
+      val descriptor = constPool.getMethodrefType(constPoolIndex)
+      val className = constPool.getMethodrefClassName(constPoolIndex)
+      if (constPool.isConstructor(className, constPoolIndex) == 0) {
+        classPool.getCtClass(className).getMethod(methodName, descriptor)
+      } else {
+        val params = Descriptor.getParameterTypes(descriptor, classPool)
+        classPool.getCtClass(className).getDeclaredConstructor(params)
+      }
     }
   }
 
@@ -147,25 +155,26 @@ object LambdaReflection {
     // scalastyle:on classforname
   }
 
-  def parseTypeSig(sig: String): DataType = {
+  def parseTypeSig(sig: String): Option[DataType] = {
     if (sig.head == '[') {
-      val elementType = parseTypeSig(sig.tail)
-      if (elementType == ByteType) {
-        DataTypes.BinaryType
-      } else {
-        DataTypes.createArrayType(parseTypeSig(sig.tail))
+      parseTypeSig(sig.tail).map{elementType =>
+        if (elementType == ByteType) {
+          DataTypes.BinaryType
+        } else {
+          DataTypes.createArrayType(elementType)
+        }
       }
     } else {
       sig match {
-        case "Z" => BooleanType
-        case "B" => ByteType
-        case "S" => ShortType
-        case "I" => IntegerType
-        case "J" => LongType
-        case "F" => FloatType
-        case "D" => DoubleType
-        case "Ljava.lang.String;" => StringType
-        case _ => throw new SparkException("Unsupported type signature")
+        case "Z" => Some(BooleanType)
+        case "B" => Some(ByteType)
+        case "S" => Some(ShortType)
+        case "I" => Some(IntegerType)
+        case "J" => Some(LongType)
+        case "F" => Some(FloatType)
+        case "D" => Some(DoubleType)
+        case "Ljava.lang.String;" => Some(StringType)
+        case _ => None
       }
     }
   }

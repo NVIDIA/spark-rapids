@@ -70,7 +70,8 @@ object SparkSessionHolder extends Logging {
     TimeZone.setDefault(TimeZone.getTimeZone("UTC"))
     // Add Locale setting
     Locale.setDefault(Locale.US)
-    SparkSession.builder()
+
+    val builder = SparkSession.builder()
         .master("local[1]")
         .config("spark.sql.adaptive.enabled", "false")
         .config("spark.rapids.sql.enabled", "false")
@@ -80,7 +81,17 @@ object SparkSessionHolder extends Logging {
           "com.nvidia.spark.rapids.ExecutionPlanCaptureCallback")
         .config("spark.sql.warehouse.dir", sparkWarehouseDir.getAbsolutePath)
         .appName("rapids spark plugin integration tests (scala)")
-        .getOrCreate()
+
+    // comma separated config from command line
+    val commandLineVariables = System.getenv("SPARK_CONF")
+    if (commandLineVariables != null) {
+      commandLineVariables.split(",").foreach { s =>
+        val a = s.split("=")
+        builder.config(a(0), a(1))
+      }
+    }
+
+    builder.getOrCreate()
   }
 
   private def reinitSession(): Unit = {
