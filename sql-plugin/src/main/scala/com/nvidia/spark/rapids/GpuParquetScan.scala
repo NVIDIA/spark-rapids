@@ -984,8 +984,7 @@ class MultiFileParquetPartitionReader(
   }
 
   private def readBatch(): Option[ColumnarBatch] = {
-    withResource(new NvtxWithMetrics("Parquet readBatch", NvtxColor.GREEN,
-      metrics(TOTAL_TIME))) { _ =>
+    withResource(new NvtxRange("Parquet readBatch", NvtxColor.GREEN)) { _ =>
       val (isCorrectRebaseMode, clippedSchema, partValues, seqPathsAndBlocks) =
         populateCurrentBlockChunk()
       if (readDataSchema.isEmpty) {
@@ -1308,8 +1307,7 @@ class MultiFileCloudParquetPartitionReader(
   }
 
   override def next(): Boolean = {
-    withResource(new NvtxWithMetrics("Parquet readBatch", NvtxColor.GREEN,
-      metrics(TOTAL_TIME))) { _ =>
+    withResource(new NvtxRange("Parquet readBatch", NvtxColor.GREEN)) { _ =>
       if (isInitted == false) {
         initAndStartReaders()
       }
@@ -1506,8 +1504,7 @@ class ParquetPartitionReader(
   }
 
   private def readBatch(): Option[ColumnarBatch] = {
-    withResource(new NvtxWithMetrics("Parquet readBatch", NvtxColor.GREEN,
-        metrics(TOTAL_TIME))) { _ =>
+    withResource(new NvtxRange("Parquet readBatch", NvtxColor.GREEN)) { _ =>
       val currentChunkedBlocks = populateCurrentBlockChunk(blockIterator,
         maxReadBatchSizeRows, maxReadBatchSizeBytes)
       if (readDataSchema.isEmpty) {
