@@ -19,13 +19,16 @@ package com.nvidia.spark.rapids
 import java.sql.{Date, Timestamp}
 
 import scala.collection.JavaConverters._
+import scala.collection.mutable
+import scala.collection.mutable.ListBuffer
 import scala.util.Random
 
 import com.nvidia.spark.rapids.GpuColumnVector.GpuColumnarBatchBuilder
 
 import org.apache.spark.sql.{DataFrame, Row, SparkSession}
-import org.apache.spark.sql.types.{DataType, DataTypes, StructField, StructType}
+import org.apache.spark.sql.types.{ArrayType, DataType, DataTypes, MapType, StructField, StructType}
 import org.apache.spark.sql.vectorized.ColumnarBatch
+import org.apache.spark.unsafe.types.CalendarInterval
 
 /**
  * Utilities for creating random inputs for unit tests.
@@ -39,6 +42,14 @@ object FuzzerUtils {
     numbersAsStrings = true,
     asciiStringsOnly = false,
     maxStringLen = 64)
+
+  /**
+   * Create a schema with the specified data types.
+   */
+  def createSchema(dataTypes: DataType*): StructType = {
+    new StructType(dataTypes.zipWithIndex
+      .map(pair => StructField(s"c${pair._2}", pair._1, true)).toArray)
+  }
 
   /**
    * Create a schema with the specified data types.
@@ -155,7 +166,7 @@ object FuzzerUtils {
   def generateDataFrame(
         spark: SparkSession,
         schema: StructType,
-        rowCount: Int,
+        rowCount: Int = 1024,
         options: FuzzerOptions = DEFAULT_OPTIONS,
         seed: Long = 0): DataFrame = {
     val r = new Random(seed)
@@ -166,27 +177,58 @@ object FuzzerUtils {
   /**
    * Creates a Row with random data based on the given field definitions.
    */
-  def generateRow(fields: Array[StructField], rand: Random, options: FuzzerOptions) = {
+  def generateRow(fields: Array[StructField], rand: Random, options: FuzzerOptions): Row = {
     val r = new EnhancedRandom(rand, options)
+
+    def handleDataType(dataType: DataType): Any = {
+      dataType match {
+        case DataTypes.BooleanType => r.nextBoolean()
+        case DataTypes.ByteType => r.nextByte()
+        case DataTypes.ShortType => r.nextShort()
+        case DataTypes.IntegerType => r.nextInt()
+        case DataTypes.LongType => r.nextLong()
+        case DataTypes.FloatType => r.nextFloat()
+        case DataTypes.DoubleType => r.nextDouble()
+        case DataTypes.StringType => r.nextString()
+        case DataTypes.TimestampType => r.nextTimestamp()
+        case DataTypes.DateType => r.nextDate()
+        case DataTypes.CalendarIntervalType => r.nextInterval()
+        case DataTypes.NullType => null
+        case ArrayType(elementType, _) =>
+          val list = new ListBuffer[Any]
+          //only generating 5 items in the array this can later be made configurable
+          scala.Range(0, 5).foreach { _ =>
+            list.append(handleDataType(elementType))
+          }
+          list.toList
+        case MapType(keyType, valueType, _) =>
+          val keyList = new ListBuffer[Any]
+          //only generating 5 items in the array this can later be made configurable
+          scala.Range(0, 5).foreach { _ =>
+            keyList.append(handleDataType(keyType))
+          }
+          val valueList = new ListBuffer[Any]
+          //only generating 5 items in the array this can later be made configurable
+          scala.Range(0, 5).foreach { _ =>
+            valueList.append(handleDataType(valueType))
+          }
+          val map = new mutable.HashMap[Any, Any]()
+          keyList.zip(valueList).map { values =>
+            map.put(values._1, values._2)
+          }
+          map.toMap
+        case s: StructType =>
+          generateRow(s.fields, rand, options)
+        case _ => throw new IllegalStateException(
+          s"fuzzer does not support data type $dataType")
+      }
+    }
+
     Row.fromSeq(fields.map { field =>
       if (field.nullable && r.nextFloat() < 0.2) {
         null
       } else {
-        field.dataType match {
-          case DataTypes.BooleanType => r.nextBoolean()
-          case DataTypes.ByteType => r.nextByte()
-          case DataTypes.ShortType => r.nextShort()
-          case DataTypes.IntegerType => r.nextInt()
-          case DataTypes.LongType => r.nextLong()
-          case DataTypes.FloatType => r.nextFloat()
-          case DataTypes.DoubleType => r.nextDouble()
-          case DataTypes.StringType => r.nextString()
-          case DataTypes.TimestampType => r.nextTimestamp()
-          case DataTypes.DateType => r.nextDate()
-          case DataTypes.NullType => null
-          case _ => throw new IllegalStateException(
-            s"fuzzer does not support data type ${field.dataType}")
-        }
+        handleDataType(field.dataType)
       }
     })
   }
@@ -200,6 +242,10 @@ object FuzzerUtils {
  * Wrapper around Random that generates more useful data for unit testing.
  */
 class EnhancedRandom(r: Random, options: FuzzerOptions) {
+
+  def nextInterval(): CalendarInterval = {
+    new CalendarInterval(nextInt(), nextInt(), nextLong())
+  }
 
   def nextBoolean(): Boolean = r.nextBoolean()
 
@@ -305,7 +351,6 @@ class EnhancedRandom(r: Random, options: FuzzerOptions) {
     } else {
       r.nextString(r.nextInt(options.maxStringLen))
     }
-
   }
 
   private val ASCII_CHARS = "abcdefghijklmnopqrstuvwxyz"
