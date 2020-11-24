@@ -16,7 +16,7 @@
 
 package com.nvidia.spark.rapids;
 
-import ai.rapids.cudf.ColumnViewAccess;
+import ai.rapids.cudf.ColumnView;
 import ai.rapids.cudf.DType;
 import ai.rapids.cudf.HostColumnVector;
 import ai.rapids.cudf.Scalar;
@@ -61,7 +61,7 @@ public class GpuColumnVector extends GpuColumnVectorBase {
       return new HostColumnVector.StructType(nullable, children);
     } else {
       // Only works for basic types
-      return new HostColumnVector.BasicType(nullable, getRapidsType(spark));
+      return new HostColumnVector.BasicType(nullable, getNonNestedRapidsType(spark));
     }
   }
 
@@ -179,20 +179,28 @@ public class GpuColumnVector extends GpuColumnVectorBase {
       return DType.TIMESTAMP_MICROSECONDS;
     } else if (type instanceof StringType) {
       return DType.STRING;
+    } else if (type instanceof NullType) {
+      // INT8 is used for both in this case
+      return DType.INT8;
+    } else if (type instanceof DecimalType) {
+      // Decimal supportable check has been conducted in the GPU plan overriding stage.
+      // So, we don't have to handle decimal-supportable problem at here.
+      DecimalType dt = (DecimalType) type;
+      if (dt.precision() > DType.DECIMAL64_MAX_PRECISION) {
+        return null;
+      } else {
+        // Map all DecimalType to DECIMAL64, in case of underlying DType transaction.
+        return DType.create(DType.DTypeEnum.DECIMAL64, -dt.scale());
+      }
     }
     return null;
   }
 
-  public static boolean isSupportedType(DataType type) {
+  public static boolean isNonNestedSupportedType(DataType type) {
     return toRapidsOrNull(type) != null;
   }
 
-  public static DType getRapidsType(StructField field) {
-    DataType type = field.dataType();
-    return getRapidsType(type);
-  }
-
-  public static DType getRapidsType(DataType type) {
+  public static DType getNonNestedRapidsType(DataType type) {
     DType result = toRapidsOrNull(type);
     if (result == null) {
       throw new IllegalArgumentException(type + " is not supported for GPU processing yet.");
@@ -257,7 +265,7 @@ public class GpuColumnVector extends GpuColumnVectorBase {
    */
   public static Schema from(StructType input) {
     Schema.Builder builder = Schema.builder();
-    input.foreach(f -> builder.column(GpuColumnVector.getRapidsType(f.dataType()), f.name()));
+    input.foreach(f -> builder.column(GpuColumnVector.getNonNestedRapidsType(f.dataType()), f.name()));
     return builder.build();
   }
 
@@ -305,10 +313,18 @@ public class GpuColumnVector extends GpuColumnVectorBase {
   /**
    * This should only ever be called from an assertion.
    */
-  private static <T> boolean typeConversionAllowed(ColumnViewAccess<T> cv, DataType colType) {
-    DType dt = cv.getDataType();
+  private static boolean typeConversionAllowed(ColumnView cv, DataType colType) {
+    DType dt = cv.getType();
+    // Only supports DECIMAL64, in case of DType transaction due to precision change.
+    if (dt.isDecimalType() && dt.isBackedByLong()) {
+      if (!(colType instanceof DecimalType)) {
+        return false;
+      }
+      // check for overflow
+      return ((DecimalType) colType).precision() <= DType.DECIMAL64_MAX_PRECISION;
+    }
     if (!dt.isNestedType()) {
-      return getRapidsType(colType).equals(dt);
+      return getNonNestedRapidsType(colType).equals(dt);
     }
     if (colType instanceof MapType) {
       MapType mType = (MapType) colType;
@@ -316,19 +332,19 @@ public class GpuColumnVector extends GpuColumnVectorBase {
       if (!(dt.equals(DType.LIST))) {
         return false;
       }
-      try (ColumnViewAccess<T> structCv = cv.getChildColumnViewAccess(0)) {
-        if (!(structCv.getDataType().equals(DType.STRUCT))) {
+      try (ColumnView structCv = cv.getChildColumnView(0)) {
+        if (!(structCv.getType().equals(DType.STRUCT))) {
           return false;
         }
         if (structCv.getNumChildren() != 2) {
           return false;
         }
-        try (ColumnViewAccess<T> keyCv = structCv.getChildColumnViewAccess(0)) {
+        try (ColumnView keyCv = structCv.getChildColumnView(0)) {
           if (!typeConversionAllowed(keyCv, mType.keyType())) {
             return false;
           }
         }
-        try (ColumnViewAccess<T> valCv = structCv.getChildColumnViewAccess(1)) {
+        try (ColumnView valCv = structCv.getChildColumnView(1)) {
           return typeConversionAllowed(valCv, mType.valueType());
         }
       }
@@ -336,7 +352,7 @@ public class GpuColumnVector extends GpuColumnVectorBase {
       if (!(dt.equals(DType.LIST))) {
         return false;
       }
-      try (ColumnViewAccess<T> tmp = cv.getChildColumnViewAccess(0)) {
+      try (ColumnView tmp = cv.getChildColumnView(0)) {
         return typeConversionAllowed(tmp, ((ArrayType) colType).elementType());
       }
     } else if (colType instanceof StructType) {
@@ -349,7 +365,7 @@ public class GpuColumnVector extends GpuColumnVectorBase {
         return false;
       }
       for (int childIndex = 0; childIndex < numChildren; childIndex++) {
-        try (ColumnViewAccess<T> tmp = cv.getChildColumnViewAccess(childIndex)) {
+        try (ColumnView tmp = cv.getChildColumnView(childIndex)) {
           StructField entry = ((StructType) colType).apply(childIndex);
           if (!typeConversionAllowed(tmp, entry.dataType())) {
             return false;
@@ -361,8 +377,8 @@ public class GpuColumnVector extends GpuColumnVectorBase {
       if (!(dt.equals(DType.LIST))) {
         return false;
       }
-      try (ColumnViewAccess<T> tmp = cv.getChildColumnViewAccess(0)) {
-        DType tmpType = tmp.getDataType();
+      try (ColumnView tmp = cv.getChildColumnView(0)) {
+        DType tmpType = tmp.getType();
         return tmpType.equals(DType.INT8) || tmpType.equals(DType.UINT8);
       }
     } else {

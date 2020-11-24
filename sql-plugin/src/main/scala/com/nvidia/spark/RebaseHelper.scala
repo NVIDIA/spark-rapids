@@ -39,7 +39,9 @@ object RebaseHelper extends Arm {
         }
       }
     } else if (dtype.isTimestampType) {
-      assert(dtype == DType.TIMESTAMP_MICROSECONDS)
+      // TODO - https://github.com/NVIDIA/spark-rapids/issues/1130 to properly handle
+      // TIMESTAMP_MILLIS, for use require so we fail if that happens
+      require(dtype == DType.TIMESTAMP_MICROSECONDS)
       withResource(
         Scalar.timestampFromLong(DType.TIMESTAMP_MICROSECONDS, startTs)) { minGood =>
         withResource(column.lessThan(minGood)) { hasBad =>

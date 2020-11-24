@@ -183,6 +183,7 @@ object FuzzerUtils {
           case DataTypes.StringType => r.nextString()
           case DataTypes.TimestampType => r.nextTimestamp()
           case DataTypes.DateType => r.nextDate()
+          case DataTypes.NullType => null
           case _ => throw new IllegalStateException(
             s"fuzzer does not support data type ${field.dataType}")
         }

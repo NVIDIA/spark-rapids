@@ -118,7 +118,6 @@ class RapidsShuffleIteratorSuite extends RapidsShuffleTestHelper {
           val cause = rsffe.getCause
           assertResult(cause)(causeException)
           throw rsffe
-        case _ =>
       }
     }
     verify(testMetricsUpdater, times(1))

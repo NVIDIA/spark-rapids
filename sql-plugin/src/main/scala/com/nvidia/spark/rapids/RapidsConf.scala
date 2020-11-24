@@ -427,6 +427,13 @@ object RapidsConf {
     .booleanConf
     .createWithDefault(false)
 
+  val INCOMPATIBLE_DATE_FORMATS = conf("spark.rapids.sql.incompatibleDateFormats.enabled")
+      .doc("When parsing strings as dates and timestamps in functions like unix_timestamp, " +
+          "setting this to true will force all parsing onto GPU even for formats that can " +
+          "result in incorrect results when parsing invalid inputs.")
+      .booleanConf
+      .createWithDefault(false)
+
   val IMPROVED_FLOAT_OPS = conf("spark.rapids.sql.improvedFloatOps.enabled")
     .doc("For some floating point operations spark uses one way to compute the value " +
       "and the underlying cudf implementation can use an improved algorithm. " +
@@ -921,6 +928,8 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
   lazy val exportColumnarRdd: Boolean = get(EXPORT_COLUMNAR_RDD)
 
   lazy val isIncompatEnabled: Boolean = get(INCOMPATIBLE_OPS)
+
+  lazy val incompatDateFormats: Boolean = get(INCOMPATIBLE_DATE_FORMATS)
 
   lazy val includeImprovedFloat: Boolean = get(IMPROVED_FLOAT_OPS)
 

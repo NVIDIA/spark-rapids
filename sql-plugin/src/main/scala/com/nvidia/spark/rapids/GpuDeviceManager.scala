@@ -127,6 +127,7 @@ object GpuDeviceManager extends Logging {
   }
 
   def shutdown(): Unit = synchronized {
+    RapidsBufferCatalog.close()
     Rmm.shutdown()
     singletonMemoryInitialized = false
   }

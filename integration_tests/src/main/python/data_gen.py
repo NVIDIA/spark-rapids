@@ -498,6 +498,45 @@ class ArrayGen(DataGen):
             return [self._child_gen.gen() for _ in range(0, length)]
         self._start(rand, gen_array)
 
+    def contains_ts(self):
+        return self._child_gen.contains_ts()
+
+class MapGen(DataGen):
+    """Generate a Map"""
+    def __init__(self, key_gen, value_gen, min_length=0, max_length=20, nullable=True, special_cases=[]):
+        # keys cannot be nullable
+        assert not key_gen.nullable
+        self._min_length = min_length
+        self._max_length = max_length
+        self._key_gen = key_gen
+        self._value_gen = value_gen
+        super().__init__(MapType(key_gen.data_type, value_gen.data_type, valueContainsNull=value_gen.nullable), nullable=nullable, special_cases=special_cases)
+
+    def __repr__(self):
+        return super().__repr__() + '(' + str(self._key_gen) + ',' + str(self._value_gen) + ')'
+
+    def start(self, rand):
+        self._key_gen.start(rand)
+        self._value_gen.start(rand)
+        def make_dict():
+            length = rand.randint(self._min_length, self._max_length)
+            return {self._key_gen.gen(): self._value_gen.gen() for idx in range(0, length)}
+        self._start(rand, make_dict)
+
+    def contains_ts(self):
+        return self._key_gen.contains_ts() or self._value_gen.contains_ts()
+
+
+class NullGen(DataGen):
+    """Generate NullType values"""
+    def __init__(self):
+        super().__init__(NullType(), nullable=True)
+
+    def start(self, rand):
+        def make_null():
+            return None
+        self._start(rand, make_null)
+
 def skip_if_not_utc():
     if (not is_tz_utc()):
         pytest.skip('The java system time zone is not set to UTC')
@@ -542,6 +581,8 @@ def _gen_scalars_common(data_gen, count, seed=0):
 
 def gen_scalars(data_gen, count, seed=0, force_no_nulls=False):
     """Generate scalar values."""
+    if force_no_nulls:
+        assert(not isinstance(data_gen, NullGen))
     src = _gen_scalars_common(data_gen, count, seed=seed)
     return (_mark_as_lit(src.gen(force_no_nulls=force_no_nulls)) for i in range(0, count))
 
@@ -611,6 +652,13 @@ def to_cast_string(spark_type):
     else:
         raise RuntimeError('CAST TO TYPE {} NOT SUPPORTED YET'.format(spark_type))
 
+def get_null_lit_string(spark_type):
+    if isinstance(spark_type, NullType):
+        return 'null'
+    else:
+        string_type = to_cast_string(spark_type)
+        return 'CAST(null as {})'.format(string_type)
+
 def _convert_to_sql(t, data):
     if isinstance(data, str):
         d = "'" + data.replace("'", "\\'") + "'"
@@ -626,6 +674,9 @@ def _convert_to_sql(t, data):
 def gen_scalars_for_sql(data_gen, count, seed=0, force_no_nulls=False):
     """Generate scalar values, but strings that can be used in selectExpr or SQL"""
     src = _gen_scalars_common(data_gen, count, seed=seed)
+    if isinstance(data_gen, NullGen):
+        assert not force_no_nulls
+        return ('null' for i in range(0, count))
     string_type = to_cast_string(data_gen.data_type)
     return (_convert_to_sql(string_type, src.gen(force_no_nulls=force_no_nulls)) for i in range(0, count))
 
@@ -640,6 +691,8 @@ boolean_gen = BooleanGen()
 date_gen = DateGen()
 timestamp_gen = TimestampGen()
 
+null_gen = NullGen()
+
 numeric_gens = [byte_gen, short_gen, int_gen, long_gen, float_gen, double_gen]
 integral_gens = [byte_gen, short_gen, int_gen, long_gen]
 # A lot of mathematical expressions only support a double as input
@@ -650,17 +703,17 @@ int_n_long_gens = [int_gen, long_gen]
 
 # all of the basic gens
 all_basic_gens = [byte_gen, short_gen, int_gen, long_gen, float_gen, double_gen,
-        string_gen, boolean_gen, date_gen, timestamp_gen]
+        string_gen, boolean_gen, date_gen, timestamp_gen, null_gen]
 
 # TODO add in some array generators to this once that is supported for sorting
 # a selection of generators that should be orderable (sortable and compareable)
 orderable_gens = [byte_gen, short_gen, int_gen, long_gen, float_gen, double_gen,
-        string_gen, boolean_gen, date_gen, timestamp_gen]
+        string_gen, boolean_gen, date_gen, timestamp_gen, null_gen]
 
 # TODO add in some array generators to this once that is supported for these operations
 # a selection of generators that can be compared for equality
 eq_gens = [byte_gen, short_gen, int_gen, long_gen, float_gen, double_gen,
-        string_gen, boolean_gen, date_gen, timestamp_gen]
+        string_gen, boolean_gen, date_gen, timestamp_gen, null_gen]
 
 date_gens = [date_gen]
 date_n_time_gens = [date_gen, timestamp_gen]
@@ -686,3 +739,12 @@ struct_gens_sample = [all_basic_struct_gen,
         StructGen([['child0', byte_gen]]),
         StructGen([['child0', ArrayGen(short_gen)], ['child1', double_gen]])]
 
+simple_string_to_string_map_gen = MapGen(StringGen(pattern='key_[0-9]', nullable=False),
+        StringGen(), max_length=10)
+
+# Some map gens, but not all because of nesting
+map_gens_sample = [simple_string_to_string_map_gen,
+        MapGen(StringGen(pattern='key_[0-9]', nullable=False), ArrayGen(string_gen), max_length=10),
+        MapGen(RepeatSeqGen(IntegerGen(nullable=False), 10), long_gen, max_length=10),
+        MapGen(BooleanGen(nullable=False), boolean_gen, max_length=2),
+        MapGen(StringGen(pattern='key_[0-9]', nullable=False), simple_string_to_string_map_gen)]

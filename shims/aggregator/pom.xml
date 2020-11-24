@@ -34,17 +34,6 @@
 
    <profiles>
         <profile>
-            <id>databricks</id>
-            <dependencies>
-                <dependency>
-                    <groupId>com.nvidia</groupId>
-                    <artifactId>rapids-4-spark-shims-spark300-databricks_${scala.binary.version}</artifactId>
-                    <version>${project.version}</version>
-                    <scope>compile</scope>
-                </dependency>
-            </dependencies>
-        </profile>
-        <profile>
             <id>databricks301</id>
             <dependencies>
                 <dependency>
@@ -59,12 +48,6 @@
             <!-- use a separate profile to just pull databricks from maven repository without building it -->
             <id>include-databricks</id>
             <dependencies>
-                <dependency>
-                    <groupId>com.nvidia</groupId>
-                    <artifactId>rapids-4-spark-shims-spark300-databricks_${scala.binary.version}</artifactId>
-                    <version>${project.version}</version>
-                    <scope>compile</scope>
-                </dependency>
                 <dependency>
                     <groupId>com.nvidia</groupId>
                     <artifactId>rapids-4-spark-shims-spark301-databricks_${scala.binary.version}</artifactId>

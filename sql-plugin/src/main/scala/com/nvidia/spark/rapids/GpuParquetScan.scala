@@ -136,7 +136,7 @@ object GpuParquetScanBase {
     for (field <- readSchema) {
       if (!GpuOverrides.isSupportedType(
         field.dataType,
-        allowStringMaps = true,
+        allowMaps = true,
         allowArray = true,
         allowStruct = true,
         allowNesting = true)) {

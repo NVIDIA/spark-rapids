@@ -99,7 +99,9 @@ class GpuHashAggregateMeta(
       resultExpressions
 
   override def isSupportedType(t: DataType): Boolean =
-    GpuOverrides.isSupportedType(t, allowStringMaps = true)
+    GpuOverrides.isSupportedType(t,
+      allowNull = true,
+      allowStringMaps = true)
 
   override def tagPlanForGpu(): Unit = {
     if (agg.resultExpressions.isEmpty) {
@@ -265,6 +267,10 @@ class GpuSortAggregateMeta(
       }
     }
   }
+
+  override def isSupportedType(t: DataType): Boolean =
+    GpuOverrides.isSupportedType(t,
+      allowNull = true)
 
   override def convertToGpu(): GpuExec = {
     // we simply convert to a HashAggregateExec and let GpuOverrides take care of inserting a
@@ -609,7 +615,7 @@ case class GpuHashAggregateExec(
         childCv
       } else {
         withResource(childCv) { childCv =>
-          val rapidsType = GpuColumnVector.getRapidsType(ref.dataType)
+          val rapidsType = GpuColumnVector.getNonNestedRapidsType(ref.dataType)
           GpuColumnVector.from(childCv.getBase.castTo(rapidsType), ref.dataType)
         }
       }
@@ -853,7 +859,7 @@ case class GpuHashAggregateExec(
 
           val resCols = new ArrayBuffer[ColumnVector](result.getNumberOfColumns)
           for (i <- 0 until result.getNumberOfColumns) {
-            val rapidsType = GpuColumnVector.getRapidsType(dataTypes(i))
+            val rapidsType = GpuColumnVector.getNonNestedRapidsType(dataTypes(i))
             // cast will be cheap if type matches, only does refCount++ in that case
             closeOnExcept(result.getColumn(i).castTo(rapidsType)) { castedCol =>
               resCols += GpuColumnVector.from(castedCol, dataTypes(i))
@@ -881,7 +887,7 @@ case class GpuHashAggregateExec(
               agg.mergeReductionAggregate
             }
             withResource(aggFn(toAggregateCvs(agg.getOrdinal(agg.ref)).getBase)) { res =>
-              val rapidsType = GpuColumnVector.getRapidsType(agg.dataType)
+              val rapidsType = GpuColumnVector.getNonNestedRapidsType(agg.dataType)
               withResource(cudf.ColumnVector.fromScalar(res, 1)) { cv =>
                 cvs += GpuColumnVector.from(cv.castTo(rapidsType), agg.dataType)
               }

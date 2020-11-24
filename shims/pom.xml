@@ -34,12 +34,6 @@
 
     <profiles>
         <profile>
-            <id>databricks</id>
-            <modules>
-                <module>spark300db</module>
-            </modules>
-        </profile>
-        <profile>
             <id>databricks301</id>
             <modules>
                 <module>spark301db</module>

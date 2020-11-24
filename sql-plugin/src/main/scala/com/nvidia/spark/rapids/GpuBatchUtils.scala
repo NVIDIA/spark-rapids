@@ -58,8 +58,11 @@ object GpuBatchUtils {
   /** Estimate the amount of GPU memory a batch of rows will occupy once converted */
   def estimateGpuMemory(schema: StructType, columnIndex: Int, rowCount: Long): Long = {
     val field = schema.fields(columnIndex)
-    val dataType = field.dataType
-    val validityBufferSize = if (field.nullable) {
+    estimateGpuMemory(field.dataType, field.nullable, rowCount)
+  }
+
+  def estimateGpuMemory(dataType: DataType, nullable: Boolean, rowCount: Long): Long = {
+    val validityBufferSize = if (nullable) {
       calculateValidityBufferSize(rowCount)
     } else {
       0
@@ -73,6 +76,19 @@ object GpuBatchUtils {
         val offsetBufferSize = calculateOffsetBufferSize(rowCount)
         val dataSize = dt.defaultSize * rowCount
         dataSize + offsetBufferSize
+      case dt: MapType =>
+        // The Spark default map size assumes one entry for good or bad
+        calculateOffsetBufferSize(rowCount) +
+            estimateGpuMemory(dt.keyType, false, rowCount) +
+            estimateGpuMemory(dt.valueType, dt.valueContainsNull, rowCount)
+      case dt: ArrayType =>
+        // The Spark default array size assumes one entry for good or bad
+        calculateOffsetBufferSize(rowCount) +
+            estimateGpuMemory(dt.elementType, dt.containsNull, rowCount)
+      case dt: StructType =>
+        dt.fields.map { f =>
+          estimateGpuMemory(f.dataType, f.nullable, rowCount)
+        }.sum
       case dt =>
         dt.defaultSize * rowCount
     }
